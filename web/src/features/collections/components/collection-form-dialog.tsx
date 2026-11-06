@@ -14,19 +14,15 @@ import { toast } from '@/shared/ui/toast'
 import { useSaveCollection, type Collection } from '../collections.api'
 
 const MAX_NAME_CHARS = 200
-// 离上限还剩这么多字时才显示计数，平时不占视线。
 const COUNT_HINT_FROM = MAX_NAME_CHARS - 20
 
 type CollectionFormDialogProps = {
-  /** 预填的名字，如关联合集搜索框里输入的词。 */
   initialName?: string
   onOpenChange: (open: boolean) => void
-  /** 返回服务端合集，供调用方选中它并刷新侧栏拓扑。 */
   onSaved: (collection: Collection) => void
   open: boolean
 }
 
-/** 新建合集的弹窗，供没有可原位编辑的列表行的入口使用（如首页关联合集）；侧栏在行内新建。 */
 export function CollectionFormDialog({
   initialName = '',
   onOpenChange,
@@ -38,7 +34,6 @@ export function CollectionFormDialog({
     <DialogRoot open={open} onOpenChange={onOpenChange}>
       <DialogSurface
         aria-label="新建合集"
-        // 打开时焦点交给名称框，而不是表头的关闭按钮。
         onOpenAutoFocus={(event) => {
           event.preventDefault()
           inputRef.current?.focus()

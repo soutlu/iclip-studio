@@ -6,7 +6,6 @@ describe('workspacePathOf', () => {
     ['video_shot.json', 'video_shot.json'],
     ['/shots//a.md', 'shots/a.md'],
     ['分镜/第一集.md', '分镜/第一集.md'],
-    // 组合字符归一成 NFC，与服务端存的键一致。
     ['café.md', 'café.md'],
   ])('%s → %s', (raw, expected) => {
     expect(workspacePathOf(raw)).toBe(expected)

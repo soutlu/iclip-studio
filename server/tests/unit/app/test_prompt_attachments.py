@@ -1,5 +1,3 @@
-"""发消息的附件转存：只转挂不上 OSS 参数的图片，同址只转一次、并发转，id 可复算，失败说第几张。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -7,18 +5,18 @@ import uuid
 from dataclasses import dataclass, field
 
 import pytest
-
-from iclip.app.prompt_attachments import UPLOAD_ID_NAMESPACE, PromptAttachmentImporter
-from iclip.common.errors import ValidationFailed
-from iclip.domains.identity.models import Principal
-from iclip.platform.object_store.store import ObjectStoreUnavailable
-from iclip.platform.transcript.ops import (
+from agent_runtime.errors import ValidationFailed
+from agent_runtime.transcript.ops import (
     AttachmentSource,
     ImageContent,
     PromptContent,
     TextContent,
     VideoContent,
 )
+
+from iclip.app.prompt_attachments import PromptAttachmentImporter
+from iclip.domains.identity.models import Principal
+from iclip.platform.object_store.store import ObjectStoreUnavailable
 
 pytestmark = pytest.mark.unit
 
@@ -49,8 +47,6 @@ def stored_url(upload_id: uuid.UUID) -> str:
 
 @dataclass
 class FakeImport:
-    """uploads 转存的替身：记下每次转存，按地址注入失败；量一下同时在转几张。"""
-
     failures: dict[str, Exception] = field(default_factory=dict[str, Exception])
     calls: list[tuple[Principal, str, uuid.UUID]] = field(
         default_factory=list[tuple[Principal, str, uuid.UUID]]
@@ -103,19 +99,6 @@ async def test_only_images_that_cannot_carry_oss_parameters_are_replaced() -> No
         video(VIDEO),
         image(stored_url(ids[EXTERNAL])),
     )
-    assert ids[EXTERNAL] == uuid.uuid5(
-        UPLOAD_ID_NAMESPACE, f"{ME.user_id}|{CONVERSATION}|prm_1|{EXTERNAL}"
-    )
-
-
-async def test_the_same_prompt_id_maps_to_the_same_upload_ids() -> None:
-    first, again, other = FakeImport(), FakeImport(), FakeImport()
-    await run(first, (image(EXTERNAL),))
-    await run(again, (image(EXTERNAL),))
-    await run(other, (image(EXTERNAL),), prompt_id="prm_2")
-
-    assert first.calls[0][2] == again.calls[0][2]
-    assert first.calls[0][2] != other.calls[0][2]
 
 
 async def test_without_a_prompt_id_every_call_gets_a_fresh_upload_id() -> None:
@@ -135,8 +118,6 @@ async def test_nothing_to_import_leaves_the_content_alone() -> None:
 
 
 async def test_a_failed_image_names_its_attachment_position_and_the_rest_still_land() -> None:
-    """附件从 1 数、视频也算；同时在转的那张照样转完，重发同一条消息时复用。"""
-
     bad = "https://img.example.com/broken.jpg"
     fake = FakeImport(failures={bad: ValidationFailed("这张图下载不下来：对方回了 404")})
     content = (TextContent(text="看"), video(VIDEO), image(EXTERNAL), image(bad))

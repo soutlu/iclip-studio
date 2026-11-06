@@ -1,0 +1,779 @@
+from __future__ import annotations
+
+import asyncio
+from datetime import UTC, datetime
+
+import pytest
+from pydantic_ai import Agent, Tool
+from pydantic_ai.messages import (
+    INTERRUPTED_TOOL_RETURN_CONTENT,
+    CompactionPart,
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ThinkingPart,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.usage import RequestUsage
+from pydantic_ai_harness.step_persistence import StepEvent
+
+from agent_runtime.harness.background import BackgroundTools
+from agent_runtime.harness.context_compaction import COMPACTED_BY_METADATA_KEY
+from agent_runtime.harness.job_status import JobStatus
+from agent_runtime.harness.media import media_tag
+from agent_runtime.harness.transcript.from_messages import (
+    ORPHAN_TOOL_ERROR,
+    ChildRun,
+    SteeredPrompt,
+    TurnState,
+    approvals_from_messages,
+    drop_last_turn,
+    run_ids_from_messages,
+    run_state_from_events,
+    tasks_from_messages,
+    turn_run_ids,
+    turn_usage,
+    turns_from_messages,
+)
+from agent_runtime.harness.transcript.prompt_media import model_prompt
+from agent_runtime.transcript.display import GenericDisplay, ToolDisplayRegistry
+from agent_runtime.transcript.ops import (
+    AttachmentSource,
+    ImageContent,
+    StepUsage,
+    TextContent,
+    TextFrame,
+    ThinkingFrame,
+    ToolFrame,
+    TranscriptTurn,
+    VideoContent,
+)
+
+RUN = "axRdrOK"
+
+
+def _at(minute: int) -> datetime:
+    return datetime(2026, 8, 27, 6, minute, tzinfo=UTC)
+
+
+def _ask(content: object, *, run_id: str | None = RUN, minute: int = 0) -> ModelRequest:
+    return ModelRequest(
+        parts=[UserPromptPart(content=content)],  # pyright: ignore[reportArgumentType]
+        run_id=run_id,
+        timestamp=_at(minute),
+    )
+
+
+def _reply(*parts: object, run_id: str | None = RUN, minute: int = 1) -> ModelResponse:
+    return ModelResponse(
+        parts=list(parts),  # pyright: ignore[reportArgumentType]
+        run_id=run_id,
+        timestamp=_at(minute),
+        usage=RequestUsage(
+            input_tokens=1000, cache_read_tokens=600, cache_write_tokens=100, output_tokens=50
+        ),
+        finish_reason="stop",
+    )
+
+
+def _returns(*parts: object, run_id: str | None = RUN, minute: int = 2) -> ModelRequest:
+    return ModelRequest(
+        parts=list(parts),  # pyright: ignore[reportArgumentType]
+        run_id=run_id,
+        timestamp=_at(minute),
+    )
+
+
+def test_trailing_message_without_a_run_id_stays_in_the_same_turn() -> None:
+    turns = turns_from_messages(
+        [
+            _ask("走"),
+            _reply(ToolCallPart(tool_name="Read", args={}, tool_call_id="c1")),
+            _returns(
+                ToolReturnPart(
+                    tool_name="Read", tool_call_id="c1", content="不行", outcome="retried"
+                ),
+                run_id=None,
+                minute=5,
+            ),
+        ]
+    )
+
+    assert len(turns) == 1
+    card = turns[0].steps[0].frames[0]
+    assert card.frame_id == "t1.1.c1"
+    assert isinstance(card, ToolFrame)
+    assert card.state == "error"
+
+
+@pytest.mark.parametrize(
+    ("part", "shown"),
+    [
+        (
+            ThinkingPart(content="思考摘要", provider_details={"raw_content": ["原始思维链"]}),
+            "思考摘要",
+        ),
+        (ThinkingPart(content="", signature="enc", provider_name="openai"), ""),
+    ],
+    ids=["content-over-raw-content", "signature-only"],
+)
+def test_thinking_frame_prefers_content_and_is_empty_without_any_text(
+    part: ThinkingPart, shown: str
+) -> None:
+    turns = turns_from_messages([_ask("想一想"), _reply(part)])
+
+    frame = turns[0].steps[0].frames[0]
+    assert isinstance(frame, ThinkingFrame)
+    assert frame.text == shown
+
+
+def test_two_runs_become_two_turns_in_time_order() -> None:
+    turns = turns_from_messages(
+        [
+            _ask("第二次", run_id="run-b", minute=30),
+            _reply(TextPart(content="B"), run_id="run-b", minute=31),
+            _ask("第一次", run_id="run-a", minute=10),
+            _reply(TextPart(content="A"), run_id="run-a", minute=11),
+        ]
+    )
+
+    assert [(turn.turn_id, turn.content) for turn in turns] == [
+        ("t1", (TextContent(text="第一次"),)),
+        ("t2", (TextContent(text="第二次"),)),
+    ]
+
+
+def _resumed() -> list[ModelRequest | ModelResponse]:
+    return [
+        _ask("出三张图", run_id="r1", minute=0),
+        _reply(
+            TextPart(content="在做了"),
+            ToolCallPart(tool_name="Read", args={}, tool_call_id="c1"),
+            run_id="r1",
+            minute=1,
+        ),
+        _returns(
+            ToolReturnPart(
+                tool_name="Read", content="运行中断", tool_call_id="c1", outcome="interrupted"
+            ),
+            UserPromptPart(content="接着做"),
+            run_id="r2",
+            minute=2,
+        ),
+        _reply(TextPart(content="好了"), run_id="r2", minute=3),
+    ]
+
+
+_OF_ONE_PROMPT = {"r1": "p1", "r2": "p1"}
+
+
+def test_the_turn_state_comes_from_the_last_run() -> None:
+    turns = turns_from_messages(
+        _resumed(),
+        turn_states={"r1": "failed", "r2": "completed"},
+        turn_errors={"r1": "RuntimeError('炸了')", "r2": None},
+        prompt_of_run=_OF_ONE_PROMPT,
+    )
+
+    assert turns[0].state == "completed"
+    assert turns[0].error is None
+    assert [step.state for step in turns[0].steps] == ["interrupted", "completed"]
+
+    broken_off: tuple[dict[str, TurnState], ...] = (
+        {"r1": "cancelled", "r2": "completed"},
+        {"r2": "completed"},
+    )
+    for states in broken_off:
+        broken = turns_from_messages(_resumed(), turn_states=states, prompt_of_run=_OF_ONE_PROMPT)
+        assert [step.state for step in broken[0].steps] == ["interrupted", "completed"]
+
+
+def _awaiting() -> list[ModelRequest | ModelResponse]:
+    return [
+        _ask("把这个文件改掉", run_id="r1", minute=0),
+        _reply(
+            TextPart(content="要动文件了"),
+            ToolCallPart(tool_name="write_file", args={}, tool_call_id="c1"),
+            run_id="r1",
+            minute=1,
+        ),
+    ]
+
+
+_BOTH_COMPLETED: dict[str, TurnState] = {"r1": "completed", "r2": "completed"}
+_SETTLED: dict[str, JobStatus] = {"r1": "completed", "r2": "completed"}
+
+
+def _card(turn: TranscriptTurn) -> ToolFrame:
+    card = turn.steps[0].frames[1]
+    assert isinstance(card, ToolFrame)
+    return card
+
+
+def test_a_frontier_approval_is_settled_by_the_prompt_that_stopped_waiting() -> None:
+
+    messages = _awaiting()
+    states: dict[str, TurnState] = {"r1": "completed"}
+    cases: tuple[tuple[JobStatus, TurnState], ...] = (
+        ("aborted", "cancelled"),
+        ("failed", "failed"),
+    )
+    for status, turn_state in cases:
+        turns = turns_from_messages(
+            messages,
+            turn_states=states,
+            prompt_of_run={"r1": "p1"},
+            prompt_status_of_run={"r1": status},
+        )
+        assert turns[0].state == turn_state
+        assert (_card(turns[0]).state, _card(turns[0]).error) == ("error", ORPHAN_TOOL_ERROR)
+        assert [
+            item.state
+            for item in approvals_from_messages(
+                messages,
+                turn_states=states,
+                prompt_of_run={"r1": "p1"},
+                prompt_status_of_run={"r1": status},
+            )
+        ] == ["cancelled"]
+
+
+def test_a_close_out_return_is_not_a_decision() -> None:
+    closed_out = [
+        *_awaiting(),
+        _returns(
+            ToolReturnPart(
+                tool_name="write_file", content="运行中断", tool_call_id="c1", outcome="failed"
+            ),
+            run_id="r2",
+            minute=2,
+        ),
+        _reply(TextPart(content="换个做法"), run_id="r2", minute=3),
+    ]
+    turns = turns_from_messages(
+        closed_out,
+        turn_states=_BOTH_COMPLETED,
+        prompt_of_run=_OF_ONE_PROMPT,
+        prompt_status_of_run=_SETTLED,
+    )
+    assert (_card(turns[0]).state, _card(turns[0]).approval_id) == ("error", None)
+    assert (
+        approvals_from_messages(
+            closed_out,
+            turn_states=_BOTH_COMPLETED,
+            prompt_of_run=_OF_ONE_PROMPT,
+            prompt_status_of_run=_SETTLED,
+        )
+        == ()
+    )
+    assert (
+        approvals_from_messages(
+            _resumed(),
+            turn_states={"r1": "failed", "r2": "completed"},
+            prompt_of_run=_OF_ONE_PROMPT,
+            prompt_status_of_run=_SETTLED,
+        )
+        == ()
+    )
+
+
+def test_an_official_repair_return_is_not_a_decision() -> None:
+    repaired = [
+        *_awaiting(),
+        _returns(
+            ToolReturnPart(
+                tool_name="write_file",
+                content=INTERRUPTED_TOOL_RETURN_CONTENT,
+                tool_call_id="c1",
+                outcome="interrupted",
+            ),
+            run_id="r2",
+            minute=2,
+        ),
+        _reply(TextPart(content="那我重新写一遍"), run_id="r2", minute=3),
+    ]
+    crashed: dict[str, TurnState] = {"r1": "failed", "r2": "completed"}
+    turns = turns_from_messages(
+        repaired, turn_states=crashed, prompt_of_run=_OF_ONE_PROMPT, prompt_status_of_run=_SETTLED
+    )
+
+    card = _card(turns[0])
+    assert (card.state, card.error, card.approval_id) == ("error", ORPHAN_TOOL_ERROR, None)
+    assert (
+        approvals_from_messages(
+            repaired,
+            turn_states=crashed,
+            prompt_of_run=_OF_ONE_PROMPT,
+            prompt_status_of_run=_SETTLED,
+        )
+        == ()
+    )
+
+
+def test_a_delegation_closed_by_a_repair_return_carries_no_error_text() -> None:
+    messages = [
+        _ask("给这条视频做分镜"),
+        _reply(ToolCallPart(tool_name="delegate_task", args={}, tool_call_id="c1")),
+        _returns(
+            ToolReturnPart(
+                tool_name="delegate_task",
+                content=INTERRUPTED_TOOL_RETURN_CONTENT,
+                tool_call_id="c1",
+                outcome="interrupted",
+            )
+        ),
+    ]
+    child = ChildRun(
+        run_id="child-1", agent_name="shot-writer", started_at=_at(1), ended_at=None, state="failed"
+    )
+
+    (task,) = tasks_from_messages(messages, subagent_of_call={"c1": "child-1"}, child_runs=[child])
+
+    assert (task.state, task.result_summary, task.error) == ("failed", None, None)
+
+
+def test_two_runs_without_a_mapping_stay_two_turns() -> None:
+
+    turns = turns_from_messages(_resumed(), turn_states={"r1": "failed", "r2": "completed"})
+
+    assert [(turn.turn_id, turn.content) for turn in turns] == [
+        ("t1", (TextContent(text="出三张图"),)),
+        ("t2", (TextContent(text="接着做"),)),
+    ]
+    assert [turn.state for turn in turns] == ["failed", "completed"]
+
+
+def test_step_usage_splits_cache_out_of_the_input_total() -> None:
+    turns = turns_from_messages([_ask("走"), _reply(TextPart(content="好"))])
+
+    usage = turns[0].steps[0].usage
+    assert usage is not None
+    assert usage.input_other == 300
+    assert usage.input_cache_read == 600
+    assert usage.input_cache_creation == 100
+    assert usage.output == 50
+
+
+def test_turn_usage_adds_up_the_step_readings() -> None:
+    assert turn_usage([]) is None
+
+    summed = turn_usage(
+        [
+            StepUsage(input_other=300, output=50, input_cache_read=600, input_cache_creation=100),
+            StepUsage(input_other=200, output=20, input_cache_read=10, input_cache_creation=5),
+        ]
+    )
+    assert summed is not None
+    assert summed.input_tokens == 300 + 100 + 200 + 5
+    assert summed.cached_tokens == 600 + 10
+    assert summed.output_tokens == 50 + 20
+
+
+def test_terminal_state_comes_from_the_caller_not_from_the_message_shape() -> None:
+    messages = [_ask("走"), _reply(TextPart(content="好"))]
+
+    assert turns_from_messages(messages)[0].state == "failed"
+    assert turns_from_messages(messages, turn_states={RUN: "completed"})[0].state == "completed"
+    assert turns_from_messages(messages, turn_states={RUN: "cancelled"})[0].state == "cancelled"
+
+
+def test_run_state_is_read_off_the_official_run_end_event() -> None:
+    def event(kind: str, error: str | None = None) -> StepEvent:
+        return StepEvent(run_id="r1", kind=kind, step_index=0, error=error)  # pyright: ignore[reportArgumentType]
+
+    assert run_state_from_events([event("run_started"), event("run_completed")]) == "completed"
+    assert run_state_from_events([event("run_failed", "CancelledError()")]) == "cancelled"
+    assert run_state_from_events([event("run_failed", "RunCancelled('用户停止')")]) == "cancelled"
+    assert run_state_from_events([event("run_failed", "RemoteProtocolError('...')")]) == "failed"
+    assert run_state_from_events([event("run_started")]) == "failed"
+
+
+def test_a_steer_arriving_before_any_step_leads_the_first_one() -> None:
+    turns = turns_from_messages(
+        [
+            _ask("走"),
+            _returns(UserPromptPart(content="补充一句"), minute=1),
+            _reply(TextPart(content="好"), minute=2),
+        ]
+    )
+
+    frames = turns[0].steps[0].frames
+    assert [frame.frame_id for frame in frames] == ["t1.1.f1", "t1.1.f2"]
+    leading = frames[0]
+    assert isinstance(leading, TextFrame)
+    assert leading.role == "user"
+    assert leading.text == "补充一句"
+
+
+def _steered(prompt_id: str, text_: str, *, run_id: str = RUN) -> SteeredPrompt:
+    return SteeredPrompt(prompt_id=prompt_id, run_id=run_id, content=(TextContent(text=text_),))
+
+
+def _user_prompt_ids(turn: TranscriptTurn) -> list[tuple[str, ...] | None]:
+    return [
+        frame.prompt_ids
+        for step in turn.steps
+        for frame in step.frames
+        if isinstance(frame, TextFrame) and frame.role == "user"
+    ]
+
+
+def test_a_steer_block_is_claimed_by_the_steered_prompt_with_the_same_content() -> None:
+    turns = turns_from_messages(
+        [
+            _ask("走"),
+            _reply(TextPart(content="好"), minute=1),
+            _returns(UserPromptPart(content="第一句插话"), minute=2),
+            _returns(UserPromptPart(content="没登记的插话"), minute=3),
+            _returns(UserPromptPart(content="第一句插话"), minute=4),
+            _reply(TextPart(content="收到"), minute=5),
+        ],
+        steered=(
+            _steered("prm_a", "第一句插话"),
+            _steered("prm_b", "第一句插话"),
+            _steered("prm_other", "没登记的插话", run_id="run-of-another-turn"),
+        ),
+    )
+
+    assert _user_prompt_ids(turns[0]) == [("prm_a",), None, ("prm_b",)]
+
+
+def test_a_steer_row_moved_to_the_resumed_run_still_claims_its_block() -> None:
+    turns = turns_from_messages(
+        [
+            _ask("走"),
+            _reply(TextPart(content="好"), minute=1),
+            _returns(UserPromptPart(content="插话"), minute=2),
+            _reply(TextPart(content="续跑答"), run_id="run-b", minute=3),
+        ],
+        prompt_of_run={RUN: "prm_1", "run-b": "prm_1"},
+        steered=(_steered("prm_s", "插话", run_id="run-b"),),
+    )
+
+    assert len(turns) == 1
+    assert turns[0].trigger_prompt_id == "prm_1"
+    assert _user_prompt_ids(turns[0]) == [("prm_s",)]
+
+
+def test_duration_is_only_reported_for_ended_turns() -> None:
+    messages = [_ask("走", minute=0), _reply(TextPart(content="好"), minute=2)]
+
+    ended = turns_from_messages(messages, turn_states={RUN: "completed"})
+    running = turns_from_messages(messages, turn_states={RUN: "running"})
+
+    assert ended[0].duration_ms == 120_000
+    assert running[0].duration_ms is None
+
+
+def test_attachments_survive_the_round_trip() -> None:
+    url = "https://bkt.oss-ap-southeast-1.aliyuncs.com/u/shot.png"
+    legacy = "https://cdn.test/u/style.jpg"
+    content = (
+        TextContent(text="参考这张图："),
+        ImageContent(source=AttachmentSource(kind="url", url=url)),
+        TextContent(text="和这张："),
+        ImageContent(source=AttachmentSource(kind="url", url=legacy)),
+        TextContent(text="照这个视频"),
+        VideoContent(source=AttachmentSource(kind="url", url="https://cdn.test/u/ref.mp4")),
+        TextContent(text="做个 30 秒的"),
+    )
+    stored = [*model_prompt(content[:3]), media_tag("image", legacy), *model_prompt(content[4:])]
+    turns = turns_from_messages([_ask(stored), _reply(TextPart(content="好"))])
+
+    assert turns[0].content == content
+
+
+def test_drop_last_turn_takes_every_run_of_that_turn() -> None:
+
+    messages = [
+        _ask("第一问", run_id="r1", minute=0),
+        _reply(TextPart(content="第一答"), run_id="r1", minute=1),
+        _ask("第二问", run_id="r2", minute=2),
+        _reply(TextPart(content="写到一半"), run_id="r2", minute=3),
+        _ask("接着做", run_id="r3", minute=4),
+        _reply(TextPart(content="第二答"), run_id="r3", minute=5),
+    ]
+
+    kept, dropped = drop_last_turn(messages, {"r1": "p1", "r2": "p2", "r3": "p2"})
+
+    assert dropped == ("r2", "r3")
+    assert kept == messages[:2]
+
+
+def test_drop_last_turn_takes_trailing_unstamped_messages_with_it() -> None:
+
+    messages = [
+        _ask("第一问", run_id="r1", minute=0),
+        _reply(TextPart(content="第一答"), run_id="r1", minute=1),
+        _ask("第二问", run_id="r2", minute=2),
+        _returns(
+            ToolReturnPart(
+                tool_name="Read", content="参数不对", tool_call_id="c1", outcome="retried"
+            ),
+            run_id=None,
+            minute=3,
+        ),
+    ]
+
+    kept, dropped = drop_last_turn(messages, {})
+
+    assert dropped == ("r2",)
+    assert kept == messages[:2]
+
+
+def test_turn_run_ids_groups_the_runs_of_one_prompt() -> None:
+
+    messages = [
+        _ask("第一问", run_id="r1", minute=0),
+        _reply(TextPart(content="第一答"), run_id="r1", minute=1),
+        _ask("第二问", run_id="r2", minute=2),
+        _reply(TextPart(content="写到一半"), run_id="r2", minute=3),
+        _ask("接着做", run_id="r3", minute=4),
+        _reply(TextPart(content="第二答"), run_id="r3", minute=5),
+    ]
+
+    assert turn_run_ids(messages, {"r1": "p1", "r2": "p2", "r3": "p2"}) == (("r1",), ("r2", "r3"))
+    assert turn_run_ids(messages, {}) == (("r1",), ("r2",), ("r3",))
+    assert run_ids_from_messages(messages) == ("r1", "r2", "r3")
+
+
+def _compaction(summary: str, *, run_id: str = RUN, minute: int) -> ModelResponse:
+    return ModelResponse(
+        parts=[CompactionPart(content=summary, provider_name="function")],
+        run_id=run_id,
+        timestamp=_at(minute),
+    )
+
+
+def test_a_compaction_boundary_is_not_a_step() -> None:
+    turns = turns_from_messages(
+        [
+            _ask("走", minute=0),
+            _compaction("旧账", minute=1),
+            _reply(TextPart(content="好"), minute=2),
+            _returns(minute=3),
+            _reply(TextPart(content="完了"), minute=4),
+        ]
+    )
+
+    assert [step.step_id for step in turns[0].steps] == ["t1.1", "t1.2"]
+
+
+def test_a_boundary_with_no_step_after_it_shows_nothing() -> None:
+    turns = turns_from_messages(
+        [
+            _ask("走", minute=0),
+            _reply(TextPart(content="好"), minute=1),
+            _compaction("旧账", minute=2),
+        ]
+    )
+
+    assert [frame.frame_id for frame in turns[0].steps[0].frames] == ["t1.1.f1"]
+
+
+def test_a_boundary_does_not_become_the_turns_start_time() -> None:
+    turns = turns_from_messages(
+        [
+            _ask("第一问", run_id="r1", minute=0),
+            _reply(TextPart(content="第一答"), run_id="r1", minute=1),
+            _compaction("旧账", run_id="r2", minute=8),
+            _ask("第二问", run_id="r2", minute=2),
+            _reply(TextPart(content="第二答"), run_id="r2", minute=3),
+        ]
+    )
+
+    assert [turn.started_at for turn in turns] == [_at(0).isoformat(), _at(2).isoformat()]
+
+
+def test_drop_last_turn_takes_the_boundary_of_that_run_with_it() -> None:
+
+    messages = [
+        _ask("第一问", run_id="r1", minute=0),
+        _reply(TextPart(content="第一答"), run_id="r1", minute=1),
+        _ask("第二问", run_id="r2", minute=2),
+        _compaction("旧账", run_id="r2", minute=8),
+        _reply(TextPart(content="第二答"), run_id="r2", minute=3),
+    ]
+
+    kept, dropped = drop_last_turn(messages, {})
+
+    assert dropped == ("r2",)
+    assert kept == messages[:2]
+
+
+def test_a_boundary_merged_into_a_response_still_shows_its_notice() -> None:
+    merged = ModelResponse(
+        parts=[
+            CompactionPart(content="旧账", provider_name="function"),
+            TextPart(content="第一答"),
+        ],
+        run_id=RUN,
+        timestamp=_at(8),
+    )
+    turns = turns_from_messages(
+        [
+            _ask("走", minute=0),
+            merged,
+            _returns(minute=9),
+            _reply(TextPart(content="第二答"), minute=10),
+        ]
+    )
+
+    assert [step.step_id for step in turns[0].steps] == ["t1.1", "t1.2"]
+    assert [frame.frame_id for frame in turns[0].steps[0].frames] == ["t1.1.f1"]
+    assert [frame.frame_id for frame in turns[0].steps[1].frames] == ["t1.2.compaction", "t1.2.f1"]
+
+
+def _compacted_by(run_id: str, *, cut_run: str, minute: int) -> ModelResponse:
+    return ModelResponse(
+        parts=[CompactionPart(content="旧账", provider_name="function")],
+        run_id=cut_run,
+        timestamp=_at(minute),
+        metadata={COMPACTED_BY_METADATA_KEY: run_id},
+    )
+
+
+def _frame_ids(turns: tuple[TranscriptTurn, ...]) -> list[list[str]]:
+    return [[frame.frame_id for step in turn.steps for frame in step.frames] for turn in turns]
+
+
+def test_a_boundary_cut_into_an_older_turn_shows_on_the_compacting_runs_next_step() -> None:
+    turns = turns_from_messages(
+        [
+            _ask("第一问", run_id="r1", minute=0),
+            _compacted_by("r2", cut_run="r1", minute=8),
+            _reply(TextPart(content="第一答"), run_id="r1", minute=1),
+            _ask("第二问", run_id="r2", minute=7),
+            _reply(TextPart(content="第二答"), run_id="r2", minute=9),
+        ]
+    )
+
+    assert _frame_ids(turns) == [["t1.1.f1"], ["t2.1.compaction", "t2.1.f1"]]
+
+
+def test_a_compaction_whose_run_made_no_step_shows_on_no_later_run() -> None:
+    turns = turns_from_messages(
+        [
+            _ask("第一问", run_id="r1", minute=0),
+            _compacted_by("r2", cut_run="r1", minute=8),
+            _reply(TextPart(content="第一答"), run_id="r1", minute=1),
+            _ask("第二问", run_id="r2", minute=7),
+            _ask("第三问", run_id="r3", minute=10),
+            _reply(TextPart(content="第三答"), run_id="r3", minute=11),
+        ]
+    )
+
+    assert _frame_ids(turns) == [["t1.1.f1"], [], ["t3.1.f1"]]
+
+
+BREAKDOWN_DISPLAY = ToolDisplayRegistry.merged(
+    {"breakdown_video": lambda _args: GenericDisplay(summary="拆解视频", detail="ugg-ref.mp4")}
+)
+
+
+async def _background_run() -> list[ModelMessage]:
+    async def breakdown_video() -> str:
+        await asyncio.sleep(0.01)
+        return "拆好了"
+
+    def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        if len(messages) == 1:
+            return ModelResponse(
+                parts=[ToolCallPart("breakdown_video", {}, tool_call_id="call_bg")]
+            )
+        return ModelResponse(parts=[TextPart("好")])
+
+    agent = Agent(
+        FunctionModel(script),
+        tools=[Tool(breakdown_video, name="breakdown_video", metadata={"background": True})],
+        capabilities=[BackgroundTools()],
+    )
+    return (await agent.run("拆一下", run_id=RUN)).all_messages()
+
+
+def _outcome_at(messages: list[ModelMessage]) -> int:
+    return next(
+        index
+        for index, message in enumerate(messages)
+        if isinstance(message, ModelRequest)
+        and any(isinstance(part, UserPromptPart) for part in message.parts)
+        and index > 0
+    )
+
+
+@pytest.mark.parametrize("steer_first", [True, False])
+async def test_a_steer_and_a_background_outcome_in_one_request_keep_their_part_order(
+    steer_first: bool,
+) -> None:
+    messages = await _background_run()
+    at = _outcome_at(messages)
+    request = messages[at]
+    assert isinstance(request, ModelRequest)
+    (outcome,) = request.parts
+    steer = UserPromptPart(content="插一句")
+    parts = [steer, outcome] if steer_first else [outcome, steer]
+    messages[at] = ModelRequest(parts=parts, run_id=RUN, timestamp=request.timestamp)
+
+    (turn,) = turns_from_messages(
+        messages, turn_states={RUN: "completed"}, display=BREAKDOWN_DISPLAY
+    )
+
+    users = [
+        (frame.frame_id, frame.text, frame.task_id)
+        for frame in turn.steps[1].frames
+        if isinstance(frame, TextFrame) and frame.role == "user"
+    ]
+    blocks = [("插一句", None), ("已拆解视频 ugg-ref.mp4", "call_bg")]
+    if not steer_first:
+        blocks.reverse()
+    assert users == [
+        (f"t1.2.f{ordinal}", text, task_id)
+        for ordinal, (text, task_id) in enumerate(blocks, start=2)
+    ]
+    card = turn.steps[0].frames[0]
+    assert isinstance(card, ToolFrame)
+    assert card.state == "done", "回执即结卡，结果不改原卡"
+
+
+@pytest.mark.parametrize(
+    ("run_state", "paused", "task_state"),
+    [
+        ("cancelled", False, "killed"),
+        ("completed", True, "killed"),
+        ("failed", False, "failed"),
+        ("completed", False, "failed"),
+    ],
+    ids=["stopped", "approval-pause", "failed-or-crashed", "ended-without-outcome"],
+)
+async def test_a_background_task_without_an_outcome_ends_by_how_its_run_ended(
+    run_state: TurnState, paused: bool, task_state: str
+) -> None:
+    messages = await _background_run()
+    kept = messages[: _outcome_at(messages)]
+    if paused:
+        kept.append(_reply(ToolCallPart(tool_name="write_file", args={}, tool_call_id="c9")))
+
+    (task,) = tasks_from_messages(
+        kept,
+        subagent_of_call={},
+        child_runs=[],
+        run_states={RUN: run_state},
+        display=BREAKDOWN_DISPLAY,
+    )
+    (turn,) = turns_from_messages(kept, turn_states={RUN: run_state}, display=BREAKDOWN_DISPLAY)
+
+    assert (task.task_id, task.kind, task.detached, task.description) == (
+        "call_bg",
+        "tool",
+        True,
+        "拆解视频 ugg-ref.mp4",
+    )
+    assert (task.state, task.result_summary, task.error) == (task_state, None, None)
+    assert task.ended_at is not None
+    card = turn.steps[0].frames[0]
+    assert isinstance(card, ToolFrame)
+    assert (card.state, card.output, card.error) == ("error", None, ORPHAN_TOOL_ERROR)

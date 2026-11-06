@@ -1,7 +1,3 @@
-"""资料库标签的测试替身与种数据：按名字找预置标签、种条目、读条目与它的标签、记下排了哪些打标。
-
-预置的标签树由迁移写入、用例共用；要改树的用例自己加、自己删。"""
-
 from __future__ import annotations
 
 import uuid
@@ -16,8 +12,6 @@ from iclip.domains.tagging.service import TaggingService
 
 
 async def tag_id(engine: AsyncEngine, dimension: str, *path: str) -> uuid.UUID:
-    """预置树里按名字一层层往下找：``tag_id(engine, "内容结构", "开箱测评型", "对比测评")``。"""
-
     async with engine.connect() as conn:
         current = (
             await conn.execute(
@@ -46,8 +40,6 @@ async def plant_entry(
     tags: Sequence[uuid.UUID] = (),
     started_minutes_ago: float | None = None,
 ) -> uuid.UUID:
-    """给一条参考视频直接种条目与标签；``started_minutes_ago`` 给了就把开始打标时刻放到那么久以前。"""
-
     entry_id = uuid.uuid4()
     async with engine.begin() as conn:
         await conn.execute(
@@ -75,8 +67,6 @@ async def plant_entry(
 
 
 async def entry_of(engine: AsyncEngine, reference_id: uuid.UUID) -> dict[str, Any]:
-    """一条参考视频的条目，另带 ``tags``（标签 id 的集合）。"""
-
     async with engine.connect() as conn:
         row = (
             (
@@ -105,8 +95,6 @@ async def entry_of(engine: AsyncEngine, reference_id: uuid.UUID) -> dict[str, An
 async def add_tag(
     engine: AsyncEngine, parent: uuid.UUID, name: str, *, position: int = 999
 ) -> uuid.UUID:
-    """在预置树里临时加一个标签；用完由用例删掉。"""
-
     new_id = uuid.uuid4()
     async with engine.begin() as conn:
         await conn.execute(
@@ -125,8 +113,6 @@ async def delete_tag(engine: AsyncEngine, one: uuid.UUID) -> None:
 
 
 class RecordingTaggingQueue:
-    """记下排了哪些条目，不执行。"""
-
     def __init__(self) -> None:
         self.enqueued: list[uuid.UUID] = []
 
@@ -137,8 +123,6 @@ class RecordingTaggingQueue:
 def tagging_service(
     engine: AsyncEngine, queue: RecordingTaggingQueue | None = None
 ) -> TaggingService:
-    """真的 Postgres 仓储，排打标记到 ``queue`` 里；不给就是打标没配置。"""
-
     return TaggingService(SqlTagStore(engine), queue=queue)
 
 

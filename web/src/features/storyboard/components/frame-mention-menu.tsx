@@ -1,7 +1,3 @@
-/** 正文 `@` 选图的弹层：挂在光标下方（放不下时 Radix 翻到上方），列本组全部图片，末格「+」添加图片。
- *
- * 焦点始终留在编辑器里：格子不可聚焦、按下不抢焦点，键盘由编辑器插件转发过来；`active` 是键盘停在的那格。 */
-
 import type { Ref, RefObject } from 'react'
 import type { CaretAnchor } from '@/shared/ui/composer/mention'
 import { PopupAnchor, PopupRoot, PopupSurface } from '@/shared/ui/popup'
@@ -9,12 +5,9 @@ import { FrameAddTile, FrameTile } from './frame-tile'
 
 type FrameMentionMenuProps = {
   anchor: RefObject<CaretAnchor>
-  /** 本组全部图片，下标 + 1 即帧号。 */
   frames: readonly string[]
   ratio: number
-  /** 键盘停在第几格；等于 `frames.length` 时停在「+」。 */
   active: number
-  /** 末格「+」：添加图片。 */
   onAdd: () => void
   listRef: Ref<HTMLUListElement>
   onPick: (frame: number) => void
@@ -53,7 +46,6 @@ export function FrameMentionMenu({
           role="listbox"
         >
           {frames.map((url, index) => {
-            // 帧号就是这格的身份：同一张图可以占两个编号。
             const frame = index + 1
             return (
               <li key={frame} role="presentation">

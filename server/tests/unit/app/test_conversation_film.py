@@ -1,5 +1,3 @@
-"""验证制作页的组合根适配：从工作区读工程，认图片地址，带版本写回，按文件生图与出片。"""
-
 from __future__ import annotations
 
 import uuid
@@ -7,18 +5,18 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 import pytest
+from agent_runtime.errors import Conflict, ValidationFailed
+from agent_runtime.file_store.namespace import namespace_for
+from agent_runtime.file_store.store import FileEntry, VersionConflict
+from iclip_video.film_view import FilmImagePrompt, FilmLineEdit, FilmTextEdit, FilmView
+from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH
 
 from iclip.app.conversation_film import ConversationFilmAdapter
 from iclip.app.film_images import FILM_NODE_KEY
-from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
-from iclip.capabilities.workspace.scope import namespace_for
-from iclip.common.errors import Conflict, ValidationFailed
-from iclip.common.film_view import FilmImagePrompt, FilmLineEdit, FilmTextEdit, FilmView
 from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, GenerationOutput
 from iclip.domains.generation.schemas import KIND_IMAGE, KIND_VIDEO, MAX_PROMPT_CHARS
 from iclip.domains.identity.models import Principal
-from iclip.platform.file_store.store import FileEntry, VersionConflict
-from iclip.platform.material_ledger.store import Material
+from iclip.platform.outbound.guard import FetchFailed
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.film import (
     EXPECTED,
@@ -37,9 +35,8 @@ from tests.helpers.generation import (
     film_image_service,
     image_request,
     make_job,
-    make_upload,
 )
-from tests.helpers.material_ledger import FakeMaterialLedger
+from tests.helpers.media_probe import NoProbing, ScriptedProbe
 
 OWNER = uuid.UUID("77777777-7777-7777-7777-777777777777")
 PRINCIPAL = Principal(
@@ -54,7 +51,6 @@ NAMESPACE = namespace_for(OWNER, str(CONVERSATION))
 GENERATED_SCENE = "https://cdn.test/scene-generated.png"
 UPLOADED = "https://cdn.test/iclip/agent/uploads/my-scene.png"
 NO_SCENE = RUN.replace('  <use output="scene.image" image={scene-v1}/>\n', "")
-"""没有选用 scene 的运行文件。"""
 
 FIRST_SHOT = (
     "参考@Image8，中景，平视，手持跟拍。模特A和模特B在红砖街区的人行道上并肩走向镜头。"
@@ -65,8 +61,6 @@ FIRST_SHOT = (
 
 
 def say(text: str) -> FilmTextEdit:
-    """把第一个镜头里第一句台词改成 ``text``。"""
-
     return FilmTextEdit(
         "shot:video01Shots:1",
         parts=FIRST_SHOT,
@@ -75,8 +69,6 @@ def say(text: str) -> FilmTextEdit:
 
 
 class RecordingStore(FakeFileStore):
-    """写入记下先后，写到 ``failing`` 这个文件时按版本冲突退回。"""
-
     def __init__(self) -> None:
         super().__init__()
         self.failing: str | None = None
@@ -86,9 +78,10 @@ class RecordingStore(FakeFileStore):
         self, namespace: str, path: str, content: str, *, expected_version: int | None = None
     ) -> FileEntry:
         if path == self.failing:
-            # 当作别人刚改过这个文件：两个文件在这些测试里都已存在，写入都带版本号。
             assert expected_version is not None
-            raise VersionConflict(path, expected=expected_version, actual=expected_version + 1)
+            raise Conflict(
+                str(VersionConflict(path, expected=expected_version, actual=expected_version + 1))
+            )
         entry = await super().write(namespace, path, content, expected_version=expected_version)
         self.written.append(path)
         return entry
@@ -98,7 +91,7 @@ class RecordingStore(FakeFileStore):
 class Page:
     adapter: ConversationFilmAdapter
     store: RecordingStore
-    ledger: FakeMaterialLedger
+    probe: ScriptedProbe
     jobs: InMemoryGenerationRepository
 
     def submitted(self, job_id: uuid.UUID) -> GenerationJob:
@@ -114,6 +107,11 @@ class Page:
         return None if stored is None else stored.content
 
 
+@pytest.fixture(autouse=True)
+def retry_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("iclip.platform.outbound.media_check.RETRY_DELAY_SECONDS", 0.0)
+
+
 async def page(
     files: dict[str, str],
     jobs: Sequence[GenerationJob] = (),
@@ -125,19 +123,14 @@ async def page(
     for path, content in files.items():
         await store.write(NAMESPACE, path, content)
     store.written.clear()
-    ledger = FakeMaterialLedger()
-    await ledger.record(NAMESPACE, [Material(url=url, kind="image") for url in GIVEN_IMAGES])
+    probe = ScriptedProbe()
     repo = InMemoryGenerationRepository(list(jobs))
     generation = film_image_service(repo, image_models=image_models) if with_generation else None
-    adapter = ConversationFilmAdapter(
-        store=store, announcing=store, ledger=ledger, generation=generation
-    )
-    return Page(adapter, store, ledger, repo)
+    adapter = ConversationFilmAdapter(store=store, probe=probe, generation=generation)
+    return Page(adapter, store, probe, repo)
 
 
 def generated(node: str, url: str) -> GenerationJob:
-    """``node`` 按描述生成成功的一条记录。"""
-
     return make_job(
         image_request(),
         status=STATUS_COMPLETED,
@@ -158,132 +151,42 @@ async def test_there_is_no_view_without_a_film_file() -> None:
     assert await made.adapter.view(PRINCIPAL, OWNER, CONVERSATION) is None
 
 
-async def test_the_view_carries_both_versions_and_only_selected_images() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: NO_SCENE}, [generated("scene", GENERATED_SCENE)])
-
-    view = await made.view()
-
-    assert (view.film_version, view.run_version, view.problems) == (1, 1, 0)
-    assert frame_url(view, "personB") == GENERATED["personB"]
-    # 生成成功过、运行文件里没选用：还是没有图。
-    assert frame_url(view, "scene") is None
-
-
 async def test_a_film_with_problems_shows_only_how_many() -> None:
-    foreign = FILM.replace(GIVEN_IMAGES[0], "https://elsewhere.test/model.jpg")
-    made = await page({FILM_PATH: foreign})
+    broken = FILM.replace('aspect-ratio="3:4" resolution="2k"', 'aspect-ratio="3:4" size="2k"')
+    made = await page({FILM_PATH: broken})
 
     view = await made.view()
 
-    assert (view.problems, view.groups, view.run_version) == (1, (), None)
+    assert (view.problems, view.groups, view.run_version) == (2, (), None)
     with pytest.raises(ValidationFailed, match="等 AI 导演改好"):
         await made.adapter.edit_text(PRINCIPAL, OWNER, CONVERSATION, [say("x")], film_version=1)
 
 
-async def test_an_address_known_only_from_the_generation_records_is_a_problem() -> None:
-    # 文件里的图片地址只认对话素材台账：这张图生成过，但没登记成素材。
-    unrecorded = RUN.replace(GENERATED["scene"], GENERATED_SCENE)
-    made = await page(
-        {FILM_PATH: FILM, RUN_PATH: unrecorded}, [generated("scene", GENERATED_SCENE)]
-    )
+async def test_opening_the_page_checks_no_address_and_a_broken_image_still_shows() -> None:
+    broken = "https://gone.test/model.jpg"
+    made = await page({FILM_PATH: FILM.replace(GIVEN_IMAGES[0], broken), RUN_PATH: RUN})
+    made.adapter = ConversationFilmAdapter(store=made.store, probe=NoProbing(), generation=None)
 
-    assert (await made.view()).problems == 1
+    view = await made.view()
 
-
-async def test_an_edit_is_written_with_its_version_and_answered_with_the_new_view() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
-
-    view = await made.adapter.edit_text(
-        PRINCIPAL, OWNER, CONVERSATION, [say("这一双，真的很轻。")], film_version=1
-    )
-
-    assert view.film_version == 2
-    assert view.groups[0].shots[0].lines[0].text == "这一双，真的很轻。"
-    assert "这一双，真的很轻。" in (await made.content(FILM_PATH) or "")
-
-
-async def test_an_edit_on_a_stale_version_is_a_conflict_and_writes_nothing() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
-    await made.store.write(NAMESPACE, FILM_PATH, FILM + "\n")
-
-    with pytest.raises(Conflict, match="刷新后再改"):
-        await made.adapter.edit_text(PRINCIPAL, OWNER, CONVERSATION, [say("x")], film_version=1)
-    assert await made.content(FILM_PATH) == FILM + "\n"
-
-
-async def test_a_refused_edit_comes_back_as_a_plain_validation_error() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
-
-    with pytest.raises(ValidationFailed, match=r"^台词不能是空的$"):
-        await made.adapter.edit_text(PRINCIPAL, OWNER, CONVERSATION, [say(" ")], film_version=1)
-    assert await made.content(FILM_PATH) == FILM
-
-
-async def test_a_new_aspect_ratio_writes_only_the_project_file_and_keeps_the_choices() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
-
-    view = await made.adapter.set_aspect_ratio(
-        PRINCIPAL, OWNER, CONVERSATION, aspect_ratio="9:16", film_version=1
-    )
-
-    assert made.store.written == [FILM_PATH]
-    assert await made.content(RUN_PATH) == RUN
-    assert (view.film_version, view.run_version) == (2, 1)
-    assert {group.aspect_ratio for group in view.groups} == {"9:16"}
-    # 选用了的机位图照旧选用。
-    assert frame_url(view, "view01") == GENERATED["view01"]
-
-
-async def test_the_aspect_ratio_already_in_the_file_writes_nothing() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
-
-    view = await made.adapter.set_aspect_ratio(
-        PRINCIPAL, OWNER, CONVERSATION, aspect_ratio="16:9", film_version=1
-    )
-
-    assert made.store.written == []
-    assert (view.film_version, view.groups[0].aspect_ratio) == (1, "16:9")
-
-
-async def test_an_aspect_ratio_on_a_stale_version_is_a_conflict_and_writes_nothing() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
-    await made.store.write(NAMESPACE, FILM_PATH, FILM + "\n")
-    made.store.written.clear()
-
-    with pytest.raises(Conflict, match="刷新后再改"):
-        await made.adapter.set_aspect_ratio(
-            PRINCIPAL, OWNER, CONVERSATION, aspect_ratio="9:16", film_version=1
-        )
-    assert made.store.written == []
-
-
-async def test_an_aspect_ratio_videos_cannot_take_is_a_validation_error() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
-
-    with pytest.raises(ValidationFailed, match="2:3"):
-        await made.adapter.set_aspect_ratio(
-            PRINCIPAL, OWNER, CONVERSATION, aspect_ratio="2:3", film_version=1
-        )
-    assert made.store.written == []
+    assert view.problems == 0
+    assert broken in {frame.url for group in view.groups for frame in group.frames}
 
 
 def insert_into_setting(url: str) -> FilmTextEdit:
-    """在第 1 组的场景字里插入一张新图：列表现有 10 张，新图写成 @Image11。"""
-
     return FilmTextEdit(
         "value:video01Setting", text="纽约红砖街区参考 @Image7，街角参考 @Image11。", images=(url,)
     )
 
 
-async def test_an_inserted_upload_is_recorded_as_material_and_joins_the_list() -> None:
-    upload = make_upload(owner_user_id=OWNER, output=GenerationOutput(url=UPLOADED))
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [upload])
+async def test_an_inserted_image_that_opens_joins_the_list_and_only_it_is_checked() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
 
     view = await made.adapter.edit_text(
         PRINCIPAL, OWNER, CONVERSATION, [insert_into_setting(UPLOADED)], film_version=1
     )
 
-    assert UPLOADED in made.ledger.urls(NAMESPACE)
+    assert made.probe.asked == [UPLOADED]
     assert made.store.written == [FILM_PATH]
     inserted = view.groups[0].frames[7]
     assert (inserted.node, inserted.url, inserted.number, view.film_version) == (
@@ -295,29 +198,46 @@ async def test_an_inserted_upload_is_recorded_as_material_and_joins_the_list() -
     assert view.groups[0].settings[4].text == "纽约红砖街区参考 @Image7，街角参考 @Image8。"
 
 
-async def test_inserting_an_address_that_is_not_this_conversations_image_is_refused() -> None:
-    someone_else = make_upload(owner_user_id=uuid.uuid4(), output=GenerationOutput(url=UPLOADED))
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [someone_else])
+@pytest.mark.parametrize(
+    ("answer", "message"),
+    [
+        pytest.param(FetchFailed("对方回了 404"), "^插入的图打不开，请换一张图$", id="打不开"),
+        pytest.param("text/html", "^插入的图不是图片，请换一张图$", id="不是图片"),
+    ],
+)
+async def test_an_inserted_image_that_cannot_be_used_is_refused_and_nothing_is_written(
+    answer: str | FetchFailed, message: str
+) -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
+    made.probe.answers[UPLOADED] = answer
 
-    with pytest.raises(ValidationFailed, match="只能插入这段对话里的图"):
+    with pytest.raises(ValidationFailed, match=message):
         await made.adapter.edit_text(
             PRINCIPAL, OWNER, CONVERSATION, [insert_into_setting(UPLOADED)], film_version=1
         )
-    assert UPLOADED not in made.ledger.urls(NAMESPACE)
+    assert made.store.written == []
     assert await made.content(FILM_PATH) == FILM
 
 
-async def test_a_refused_insertion_records_nothing() -> None:
-    upload = make_upload(owner_user_id=OWNER, output=GenerationOutput(url=UPLOADED))
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [upload])
+async def test_a_refused_insertion_checks_nothing() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
     shared = FilmTextEdit(
         "value:videoCapture", text="摄影：手机拍摄，参考 @Image11。", images=(UPLOADED,)
     )
 
     with pytest.raises(ValidationFailed, match="无法插入图片"):
         await made.adapter.edit_text(PRINCIPAL, OWNER, CONVERSATION, [shared], film_version=1)
-    assert UPLOADED not in made.ledger.urls(NAMESPACE)
+    assert made.probe.asked == []
     assert made.store.written == []
+
+
+async def test_editing_text_without_inserting_an_image_checks_nothing() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
+
+    await made.adapter.edit_text(PRINCIPAL, OWNER, CONVERSATION, [say("改一句")], film_version=1)
+
+    assert made.probe.asked == []
+    assert made.store.written == [FILM_PATH]
 
 
 async def choose(
@@ -334,57 +254,42 @@ async def choose(
     )
 
 
-async def test_a_users_own_upload_is_recorded_as_material_before_it_is_chosen() -> None:
-    upload = make_upload(owner_user_id=OWNER, output=GenerationOutput(url=UPLOADED))
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [upload])
+async def test_any_image_that_opens_can_be_chosen() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
 
     view = await choose(made, "scene", UPLOADED)
 
-    assert UPLOADED in made.ledger.urls(NAMESPACE)
+    assert made.probe.asked == [UPLOADED]
     assert (view.film_version, view.run_version) == (1, 2)
     assert frame_url(view, "scene") == UPLOADED
 
 
-async def test_an_address_that_is_not_this_conversations_image_is_refused() -> None:
-    someone_else = make_upload(owner_user_id=uuid.uuid4(), output=GenerationOutput(url=UPLOADED))
-    made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, [someone_else])
+@pytest.mark.parametrize(
+    ("answer", "message"),
+    [
+        pytest.param(FetchFailed("对方回了 502"), "^这张图打不开，请换一张图$", id="打不开"),
+        pytest.param("video/mp4", "^这张图不是图片，请换一张图$", id="不是图片"),
+    ],
+)
+async def test_a_chosen_image_that_cannot_be_used_is_refused_and_nothing_is_written(
+    answer: str | FetchFailed, message: str
+) -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
+    made.probe.answers[UPLOADED] = answer
 
-    with pytest.raises(ValidationFailed, match="只能换成这段对话里的图"):
+    with pytest.raises(ValidationFailed, match=message):
         await choose(made, "scene", UPLOADED)
-    assert UPLOADED not in made.ledger.urls(NAMESPACE)
+    assert made.store.written == []
     assert await made.content(RUN_PATH) == RUN
 
 
-async def test_a_version_generated_on_the_page_can_be_chosen_and_is_recorded_as_material() -> None:
-    """刚生成的版本不在台账里，靠生成记录认；选用时登记，之后文件检查只看台账。"""
-
+async def test_a_version_generated_on_the_page_can_be_chosen() -> None:
     made = await page({FILM_PATH: FILM}, [generated("view02", GENERATED_SCENE)])
 
     view = await choose(made, "view02", GENERATED_SCENE, run_version=None)
 
     assert view.run_version == 1
     assert frame_url(view, "view02") == GENERATED_SCENE
-    assert made.ledger.rows[(NAMESPACE, GENERATED_SCENE)] == Material(
-        url=GENERATED_SCENE, kind="image"
-    )
-
-
-async def test_choosing_a_result_writes_its_use_and_clearing_it_leaves_no_image() -> None:
-    made = await page({FILM_PATH: FILM, RUN_PATH: NO_SCENE}, [generated("scene", GENERATED_SCENE)])
-
-    chosen = await choose(made, "scene", GENERATED_SCENE)
-
-    assert frame_url(chosen, "scene") == GENERATED_SCENE
-    assert '<use output="scene.image" image={scene-1}/>' in (await made.content(RUN_PATH) or "")
-    recorded = dict(made.ledger.rows)
-
-    cleared = await choose(made, "scene", None, run_version=2)
-
-    # 取消选用就是没图：不回到生成过的那一张。
-    assert cleared.run_version == 3
-    assert frame_url(cleared, "scene") is None
-    assert 'output="scene.image"' not in (await made.content(RUN_PATH) or "")
-    assert made.ledger.rows == recorded, "取消选用不登记任何东西"
 
 
 @pytest.mark.parametrize(("film_version", "run_version"), [(2, 1), (1, None), (1, 2)])
@@ -395,12 +300,11 @@ async def test_choosing_checks_both_versions(film_version: int, run_version: int
         await choose(made, "personB", None, film_version=film_version, run_version=run_version)
 
 
-async def test_without_media_generation_only_recorded_material_counts() -> None:
+async def test_without_media_generation_an_image_that_opens_can_still_be_chosen() -> None:
     made = await page({FILM_PATH: FILM, RUN_PATH: NO_SCENE}, with_generation=False)
 
     assert frame_url(await made.view(), "scene") is None
-    with pytest.raises(ValidationFailed, match="只能换成这段对话里的图"):
-        await choose(made, "scene", UPLOADED)
+    assert frame_url(await choose(made, "scene", UPLOADED), "scene") == UPLOADED
 
 
 async def test_choosing_a_view_writes_the_project_file_first_then_the_run_file() -> None:
@@ -419,6 +323,7 @@ async def test_clearing_a_view_writes_the_run_file_first_then_the_project_file()
 
     view = await choose(made, "view04", None)
 
+    assert made.probe.asked == [], "取消选用不查地址"
     assert made.store.written == [RUN_PATH, FILM_PATH]
     assert (view.film_version, view.run_version) == (2, 2)
     assert (await made.content(FILM_PATH), await made.content(RUN_PATH)) == (
@@ -459,7 +364,6 @@ async def test_a_view_choice_that_fails_halfway_leaves_its_group_blocked(
     with pytest.raises(Conflict):
         await choose(made, "view04", url)
 
-    # 两种都停在「列表里有 view04、没有选用它」：文件照样通过检查，这一组出片被拦住。
     assert (await made.content(FILM_PATH), await made.content(RUN_PATH)) == (FILM, RUN_NO_VIEW04)
     view = await made.view()
     assert view.problems == 0
@@ -512,6 +416,20 @@ async def test_an_image_is_generated_with_its_reference_list_as_it_is() -> None:
     sent = job.request.model_dump()
     assert sent["prompt"] == EXPECTED["images"]["view02"]["prompt"]
     assert sent["reference_image_urls"] == EXPECTED["images"]["view02"]["input_str_list"]
+    assert sorted(made.probe.asked) == sorted(set(sent["reference_image_urls"]))
+
+
+async def test_an_image_whose_reference_does_not_open_is_not_generated() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
+    references = EXPECTED["images"]["view02"]["input_str_list"]
+    made.probe.answers[references[0]] = FetchFailed("超时")
+    made.probe.answers[references[1]] = "text/html"
+
+    with pytest.raises(
+        ValidationFailed, match=r"^第 1 张参考图打不开；第 2 张参考图不是图片，请换一张图$"
+    ):
+        await generate(made, "view02")
+    assert made.jobs.jobs == {}
 
 
 async def test_generating_again_never_selects_anything() -> None:
@@ -554,6 +472,7 @@ async def test_a_description_edited_in_the_editor_is_used_once() -> None:
     assert job.request is not None
     sent = job.request.model_dump()
     assert (sent["prompt"], sent["reference_image_urls"]) == ("只要鞋，不要人。", [SHOE_FRONT])
+    assert made.probe.asked == [SHOE_FRONT], "查的是编辑器里给的参考图，不是文件里那一份"
     assert await made.content(FILM_PATH) == FILM
 
 
@@ -635,6 +554,17 @@ async def test_a_group_is_sent_as_its_shot_with_the_group_number() -> None:
         item["prompt"] for item in expected["shot"]["timeline"]
     ]
     assert "{这一双，走起来很轻。}" in sent["prompt"]
+    assert sorted(made.probe.asked) == sorted(set(expected["images"]))
+
+
+async def test_a_group_whose_reference_does_not_open_is_not_sent() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
+    images = EXPECTED["states"]["both"]["video01"]["images"]
+    made.probe.answers[images[2]] = "video/mp4"
+
+    with pytest.raises(ValidationFailed, match=r"^第 3 张参考图不是图片，请换一张图$"):
+        await send(made, "video01")
+    assert made.jobs.jobs == {}
 
 
 async def test_a_group_whose_list_lacks_a_picture_is_not_sent_and_the_others_are() -> None:

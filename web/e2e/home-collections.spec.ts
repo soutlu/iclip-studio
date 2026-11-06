@@ -7,7 +7,6 @@ test('游客发送后登录，保留正文并发起对话', async ({ page }) => 
   await page.getByLabel('输入消息').fill(prompt)
   await page.getByRole('button', { name: '发送', exact: true }).click()
 
-  // 发送已经打开登录弹窗，直接填写当前表单，避免再次点击外壳的登录入口。
   const dialog = page.getByRole('dialog', { name: '登录 iClip' })
   await expect(dialog).toBeVisible()
   await dialog.getByLabel('用户名', { exact: true }).fill('tester')
@@ -27,11 +26,9 @@ test('游客发送后登录，保留正文并发起对话', async ({ page }) => 
 test('在侧栏合集行上新建任务：回首页预选这个合集、输入框聚焦，地址栏不留参数', async ({ page }) => {
   await page.goto('/')
   await login(page)
-  // 先进一段对话，从别的页面点回首页。
   await page.getByRole('link', { name: '无图分镜草稿', exact: true }).click()
   await expect(page).toHaveURL(/\/c\//)
 
-  // 悬停合集行后可直接新建关联任务。
   await page.getByRole('button', { name: '夏季亚麻系列 (2)', exact: true }).hover()
   const start = page.getByRole('button', { name: '在「夏季亚麻系列」里新建任务', exact: true })
   await expect(start).toBeVisible()
@@ -107,18 +104,15 @@ test('首页搜索并新建合集，首条消息带上关联，回首页后同�
     page.getByRole('button', { name: `${collectionName} (1)`, exact: true }),
   ).toBeVisible()
 
-  // 用应用内导航返回，继续使用同一登录态、合集缓存与服务端记录。
   await page.getByRole('button', { name: '新建任务', exact: true }).click()
   await expect(page).toHaveURL('/')
   await page.getByRole('button', { name: '关联合集：未关联合集', exact: true }).click()
   await page.getByRole('combobox', { name: '搜索合集' }).fill(collectionName)
   await page.getByRole('option', { name: collectionName, exact: true }).click()
 
-  // 合集的操作按钮随行悬停显示，先按用户操作移入对应合集行。
   await page.getByRole('button', { name: `${collectionName} (1)`, exact: true }).hover()
   await page.getByRole('button', { name: `${collectionName} 的操作`, exact: true }).click()
   await page.getByRole('menuitem', { name: '重命名', exact: true }).click()
-  // 侧栏合集在行内原位改名，回车保存。
   const renameInput = page.getByRole('textbox', { name: `重命名 ${collectionName}`, exact: true })
   await expect(renameInput).toBeFocused()
   await renameInput.fill(renamedCollection)

@@ -3,7 +3,6 @@ import type { Refusal } from './editing/result'
 
 const seconds = (ms: number) => `${ms / 1000} 秒`
 
-/** 编辑被拒时给人看的那句：原因与可以怎么做（界面文字规范见 ADR-0001）。 */
 export const REFUSAL_TEXT: Readonly<Record<Refusal, string>> = {
   'unknown-clip': '这一段已不在成片里，无法操作；请重新选择',
   'not-contiguous': '选中的几段不相连，无法一起挪动；请重新选择',
@@ -20,5 +19,4 @@ export const REFUSAL_TEXT: Readonly<Record<Refusal, string>> = {
   'drop-elsewhere': '这里放不了这个组件；请拖到画面轨或特效轨',
 }
 
-/** 拖长、挪动到成片总长上限时停住的原因 */
 export const FILM_LIMIT_TEXT = `成片最长 ${seconds(MAX_FILM_MS)}，不能再拉长`

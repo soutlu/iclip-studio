@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Final
 
+from agent_runtime.errors import ValidationFailed
 from pydantic import TypeAdapter
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.generation.schemas import (
     KIND_AUDIO,
     KIND_IMAGE,
@@ -65,8 +65,6 @@ _WITHOUT_REQUEST: Final = frozenset(
 def request_from_payload(
     kind: str, operation: str, payload: dict[str, Any] | None, *, has_source: bool
 ) -> GenerationRequest | None:
-    """按种类、操作与有没有来源读回请求快照：有来源的视频 generate 是编辑段，其余只看前两者。"""
-
     if (kind, operation) in _WITHOUT_REQUEST:
         if payload is not None:
             raise ValidationFailed(f"{kind} / {operation} 不该带请求")

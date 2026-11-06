@@ -1,5 +1,3 @@
-"""埋点端点的请求体，camelCase 别名。"""
-
 from __future__ import annotations
 
 import uuid

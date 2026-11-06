@@ -1,121 +1,242 @@
-# 后端架构
+# 系统架构
 
-> 本文说明模块职责、装配与运行机制。业务术语和不变量见 [CONTEXT.md](CONTEXT.md)，接口约定见 [contract/conventions.md](../contract/conventions.md)，开发流程见 [AGENTS.md](../AGENTS.md)。
+> 本文说明 Agent 运行时服务、视频插件包、视频业务后端与成片渲染服务的职责分工、代码分层与核心运行机制。
+> - 业务概念与不变量见 [CONTEXT.md](CONTEXT.md)
+> - 接口与跨端协议见 [contract/conventions.md](../contract/conventions.md)
+> - 新业务系统接入运行时见[新应用接入运行时](runtime-apps.md)
+> - 开发命令与门禁见 [AGENTS.md](../AGENTS.md)
 
-## 1. 模块职责
+## 1. 两个服务
 
-后端是 FastAPI 模块化单体，Agent 引擎使用 PydanticAI 与 Pydantic AI Harness。`app/` 是唯一组合根：读取配置、创建连接池、装配模块、连接模块间的协议并管理生命周期。
+系统由四个运行时组件构成，核心是**视频后端**与**Agent 运行时服务**的分离：
 
-以下路径均相对 `server/src/iclip/`。
+| 组件 | 所在目录与包名 | 核心职责与数据归属 |
+|---|---|---|
+| **运行时服务**（端口 `7790`） | [runtime/](../runtime/pyproject.toml)（`agent_runtime`） | 负责所有跟 Agent 相关的事：管理配置（技能库、模型供应商、MCP 服务、Agent 版本）、维护会话与消息队列、驱动大模型运行、推送聊天流（Transcript）、读写工作区文件、统计 Token 用量。数据存于 `agent_runtime` schema |
+| **视频插件包**（装入运行时镜像） | [plugins/video/](../plugins/video/pyproject.toml)（`iclip_video`） | 为 Agent 提供视频领域的专属工具集（如视频理解、视频拆解、生成分镜图、校验工程文件）。需要调用视频后端能力时，通过 HTTP 调用后端的内部接口 |
+| **视频后端**（端口 `7788`） | [server/](../server/pyproject.toml)（`iclip`） | 浏览器唯一访问的入口（BFF）：负责用户登录与权限校验、管理业务侧的对话列表、处理视频生成/参考视频拆解/资料库/成片草稿等业务逻辑。数据存于 `iclip` schema |
+| **成片渲染服务**（内网 `8080`） | [render/](../render/package.json)（Node.js） | 接收成片草稿，在无头浏览器中通过 HyperFrames 合成视频、特效、音乐与字幕，渲染成 MP4 并上传到对象存储 |
 
-| 位置 | 职责 |
+**依赖方向与隔离原则：**
+- **单向代码依赖**：`视频后端` 依赖 `视频插件包` 和 `运行时`（主要是复用类型定义与客户端库）；`视频插件包` 只依赖 `运行时`；`运行时` 不依赖任何业务包。
+- **同库不同 Schema**：后端和运行时连接同一个 PostgreSQL 数据库，但严格按 Schema 隔离（后端用 `iclip`，运行时用 `agent_runtime`）。两个 Schema 之间不建数据库外键，代码里也绝不跨 Schema 读写对方的表（由两边的架构测试强制检查）。所有数据库表结构的变更统一由后端的 Alembic 迁移脚本管理（见[后端的持久化与迁移](#后端的持久化与迁移)）。
+- **单进程运行限制**：目前后端和运行时都采用单进程（单 Worker）模式部署，因为实时消息流投影、事件广播和 WebSocket 连接池都维护在进程内存中。若未来扩展为多实例部署，需先引入跨实例连接路由。
+
+**视频后端与运行时之间的 4 条通信通道：**
+1. **应用接口 `/v1`**：视频后端作为应用 `video`，通过 Python [客户端库](#客户端库)调用运行时，完成创建会话、发消息、读聊天记录、读写工作区文件、拉取首页可用 Agent 列表、自动起标题和拉取统计数据（详见[运行时的接口](#运行时的接口)与[调运行时](#调运行时)）。
+2. **管理接口 `/v1/admin`**：对应管理后台的「技能库、模型供应商、MCP 服务、Agent 配置」四组接口，由视频后端先做权限校验和参数检查，再原样转发给运行时处理。
+3. **生命周期回调与内部接口 `/internal/runtime/`**：运行时在「开跑前检查、运行开始、对话轮次开始」三个时机回调视频后端；同时视频插件在执行抽帧、生图、拆解时也会调用后端的这套内部接口（统一使用环境变量 `RUNTIME_INTERNAL_TOKEN` 鉴权，详见[内部接口与视频插件包](#内部接口与视频插件包)）。
+4. **两条 WebSocket 实时流**：运行时提供「应用事件流 `/v1/events`」（推送所有会话的忙闲变化）和「对话内容流 `/v1/ws`」（推送某段对话的打字机输出与文件变更），视频后端接收后转发给前端浏览器的 `/ws` 连接（详见[浏览器连接与事件流](#浏览器连接与事件流)）。
+
+---
+
+## 2. 运行时服务
+
+### 运行时的模块
+
+Agent 引擎基于 PydanticAI 与 Pydantic AI Harness 构建。以下目录均位于 `runtime/src/agent_runtime/` 下（模块间的导入边界由 [runtime/tach.toml](../runtime/tach.toml) 和[架构测试](../runtime/tests/unit/architecture/test_architecture.py)检查）：
+
+| 目录 / 文件 | 职责说明 |
 |---|---|
-| `domains/` | 业务用例、领域模型、HTTP 入口及存储适配；不依赖 Agent 引擎 |
-| `harness/` | 通用 Agent 装配、运行驱动、消息持久化、上下文压缩与 transcript 投影；不解释业务身份和业务规则 |
-| `capabilities/` | 面向模型的类型化工具，连接 Agent 引擎与业务能力 |
-| `platform/` | 共用技术协议及适配器：数据库与行归属、对象存储、工作区文件存储、素材台账、ffmpeg 媒体处理（子进程、下载、探测、视频裁剪拼接、抽口播音频与音乐规整、字体文件解析，不含业务规则）与图片文件头、出网下载（只连公网，见 [platform/outbound/](../server/src/iclip/platform/outbound/__init__.py)）、HTTP 错误映射、翻页、transcript 类型 |
-| `common/` | 跨层共用的纯规则：领域错误分类、工具入参的 JSON 文本归一化、地址形状判定、镜头组规则（时间线连续、`@ImageN` 引用、参考图上限）、出片正文的拼装与反拆，以及生成记录的种类、状态词表 |
-| `config/` | 配置声明、环境变量定义与启动期解析 |
-| `app/` | 组合根及跨模块适配 |
-| `main.py` / `asgi.py` | CLI / ASGI 入口 |
+| `harness/` | 底层引擎：负责通用 Agent 装配、消息队列调度、运行历史持久化、上下文压缩和 Transcript 转换，完全不感知业务层的用户与权限规则 |
+| `transcript/` | 定义前端渲染聊天记录所需的树状结构（Turn / Step / Block）、工具卡片展示格式和 WebSocket 帧结构 |
+| `plugins/` | 定义插件接入接口（`PluginFactory`）、插件注册表类型，以及内置的 `workspace`（工作区文件读写）插件 |
+| `config/` | 管理后台四大配置模块（技能库、模型供应商、MCP 服务、Agent 配置）的业务逻辑与数据库读写 |
+| `assembly/` | 装配层：把数据库里的配置转化成可运行的 Agent 实例、构建大模型连接、执行连通性测试 |
+| `service/` | 面向接入应用的服务层：封装创建会话、对话分叉、跨会话复制文件等高层操作 |
+| `http/` | FastAPI 路由与 WebSocket 入口（Web 框架代码只出现在这一层） |
+| `live/` 与 `hooks.py` | 定义实时推送帧、按应用分发事件的集线器（`AppEventHub`），以及回调业务后端的 HTTP 客户端 |
+| `client/` | 提供给业务后端直接调用的 Python 客户端库（见[客户端库](#客户端库)） |
+| `file_store/` | 工作区文件的数据库存储实现 |
+| `outbound/` | 运行时自己的出网层（[outbound/](../runtime/src/agent_runtime/outbound/__init__.py)），基于 `httpx-secure` 提供只连公网的 HTTP 客户端与地址探测：只连公网地址的 80 / 443 端口，跳转后的新连接同样检查，不带用户名密码、不走代理；地址里带用户名密码、或端口不是 80 / 443 时在发请求前就拒绝，不去连接。插件在提交点做的地址检查（[harness/media_check.py](../runtime/src/agent_runtime/harness/media_check.py)）通过它发起 |
+| `secrets.py` 与 `run_deps.py` | 敏感字段（API Key、MCP 请求头等）的 MultiFernet 加密与打码工具、运行上下文 `AgentRunDeps` |
 
-依赖图与框架引用边界以 [tach.toml](../server/tach.toml) 和 [架构测试](../server/tests/unit/architecture/test_architecture.py) 为准。业务模块按职责拆文件，不要求每个模块凑齐固定文件模板。
+**启动与插件加载流程：**
+- 启动命令为 `python -m agent_runtime.main --config <yaml>`。生产环境的 Docker 镜像（[runtime/Dockerfile](../runtime/Dockerfile)）安装的是组合包 [deploy/runtime-video](../deploy/runtime-video/pyproject.toml)，它把 `runtime` 和 `plugins/video` 打包在了一起。
+- 启动配置文件（[settings.py](../runtime/src/agent_runtime/settings.py)）声明了允许接入的应用列表（`apps`）以及要加载的插件包入口（`plugins.factory`）。
+- 服务启动（[http/asgi.py](../runtime/src/agent_runtime/http/asgi.py)）时，会先初始化插件包（建立与后端的客户端连接并做启动前自检），然后再用插件包返回的注册表构建完整的运行时应用（[http/app.py](../runtime/src/agent_runtime/http/app.py)）。仅 `import` 模块时不会连接数据库，方便直接导出 OpenAPI 合同。
 
-能力包之间不互相 import。确需共享的技术协议下沉到 `platform/`，由组合根注入同一个实例；共用的产物形状与校验规则会用到 `pydantic_ai`（框架围栏只放 `harness/` 与 `capabilities/`），放在 `capabilities/` 下不带工具的模块里。协议随实际调用需求定义，不提前建立抽象层。
+### 运行时的接口
 
-存储适配跟随使用其协议的模块：业务自有表放对应模块的 `infra_sql.py`，外部只读库用独立适配器；官方 StepPersistence 的 Postgres 实现在 `harness/step_store_pg.py`。应用的数据库 engine 由组合根经 [platform/db/engine.py](../server/src/iclip/platform/db/engine.py) 的 `build_engine` 创建，测试、迁移与管理脚本也经同一个函数建 engine。
+运行时所有 HTTP 接口都在 `/v1` 路径下，完整定义见 [contract/runtime-openapi.json](../contract/runtime-openapi.json)，跨服务调用协议见 [conventions §20](../contract/conventions.md#20-运行时服务-agent-runtime)：
 
-显式组合根、Principal 解析器与 `api_keys` 表、StepPersistence 的 Postgres 后端是刻意自研的，不以「不重复造轮子」为由换成 DI 容器或第三方库。引擎依赖的精确版本由 [uv.lock](../server/uv.lock) 固定，CI 使用 `uv sync --locked`；升级时同步 [pyproject.toml](../server/pyproject.toml) 与 lockfile，并验证装配、持久化与 transcript 契约。
+- **会话与聊天接口**（`/v1/sessions…`、`/v1/agents`、`/v1/titles`）：供业务后端创建或分叉会话、发送消息、中止运行、插队、重新生成、提交审批、拉取聊天记录（Transcript）、读写工作区文件、获取首页 Agent 列表以及生成对话标题。
+- **后台管理接口**（`/v1/admin`）：供业务后端转发技能库、模型供应商、MCP 服务与 Agent 配置的增删改查请求。
+- **统计数据接口**（`/v1/stats`）：只读接口，按调用方应用过滤并返回会话、运行和 Token 消耗的原始记录行，由业务后端自行做报表聚合。
+- **固定模型代理接口**（`/v1/model-calls/responses`，[http/model_calls.py](../runtime/src/agent_runtime/http/model_calls.py)）：供业务后端调用代码中固定指定的模型（如火山方舟拆解与打标模型）。运行时根据传入的供应商声明名和模型名，在数据库里找出已启用且配好默认密钥的供应商，自动带上 API Key 转发给上游的 `/responses` 接口并原样返回结果（超时上限 900 秒，密钥始终保留在运行时内部，且日志自动脱敏）。
 
-## 2. 配置与装配
+### 实时通道与回调
 
-| 权威入口 | 内容 |
+运行时通过两条 WebSocket 流和三个 HTTP 回调与业务后端保持实时同步（协议见 [conventions §20](../contract/conventions.md#20-运行时服务-agent-runtime)）：
+
+- **应用事件流 `/v1/events`**：当任何会话的运行状态发生变化（如开始运行、进入等待审批、运行结束）时，任务队列会在数据库事务提交后通知 `AppEventHub`（[live/hub.py](../runtime/src/agent_runtime/live/hub.py)）。集线器查出该会话归属哪个业务应用，按顺序推送给该应用的事件流连接。
+- **对话内容流 `/v1/ws`**：业务后端按会话订阅后，实时推送大模型的流式输出（Transcript 操作帧）以及工作区文件变更通知（由 [file_store/announcing.py](../runtime/src/agent_runtime/file_store/announcing.py) 在文件写入成功后触发推送）。
+- **三个生命周期回调**（[hooks.py](../runtime/src/agent_runtime/hooks.py)）：
+  1. **开跑前检查（`gate`）**：在每次调用大模型前触发。如果业务后端一时连不上或返回 `502/503/504`，运行时会在约 30 秒窗口内自动退避重试（期间照常维持任务心跳锁）；如果后端明确返回非 2xx 拒绝（如用户已被停用），则直接将该轮消息标为失败。
+  2. **运行开始（`run_started`）**：在拿到运行锁后、发出第一条消息事件前同步调用，用于通知业务后端更新对话状态。
+  3. **轮次开始（`turn_started`）**：在新一轮用户消息首次开跑时在后台异步调用（不阻塞模型执行），业务后端收到后会为新对话触发自动生成标题。
+
+### 客户端库
+
+Python 业务后端统一使用运行时提供的客户端库 [agent_runtime/client/](../runtime/src/agent_runtime/client/__init__.py)（`RuntimeClient`）与运行时通信：
+- **自动还原业务异常**：针对 `/v1` 下的会话接口，客户端提供了带类型注解的方法，并会自动把运行时返回的 `404 / 409 / 422` 状态码还原成对应的领域异常（例如将 `409 agent_unavailable` 还原为 `AgentUnavailable` 异常）；如果遇到网络断开、超时或 5xx 错误，则统一抛出 `RuntimeUnavailable`，由业务后端向前端返回 `503` 服务不可用。
+- **管理接口透传（`admin_request`）**：将管理后台请求原样转发到 `/v1/admin/…` 并原样返回响应。
+- **WebSocket 自动心跳与前向兼容**：封装了 `connect_transcript` 和 `connect_events`，内部自动回复服务端心跳；对于未识别的新帧类型或新增字段直接原样透传，保证运行时先行升级时不会导致后端断连。
+
+### 对话固定版本与每次运行装配
+
+所有的模型、技能、MCP 和 Agent 配置都存储在数据库中，运行时不会在启动时预先加载，而是在每次对话运行时按需动态装配：
+
+1. **会话锁定 Agent 版本**：创建对话时，`SessionService`（[service/sessions.py](../runtime/src/agent_runtime/service/sessions.py)）检查所选 Agent 是否在首页公开、启用且已发布，并将该 Agent 当时的最新版本 ID 记录在 `agent_runtime.sessions` 表中。后续该会话的所有运行都固定使用这个版本。
+2. **运行前动态编译与 LRU 缓存（[assembly/agents.py](../runtime/src/agent_runtime/assembly/agents.py)）**：
+   - 用户发消息时以及后台准备开跑前，系统都会调用 `AgentRuntime` 读取会话锁定的版本并执行检查（`compile_agent`）。如果该版本依赖的模型已被停用、密钥已被删或插件已不存在，直接抛出 `AgentUnavailable`（发消息阶段直接返回 `409` 报错；若排队期间配置失效则在开跑时将消息标为失败）。
+   - **进程内缓存**：为了避免每条消息都重复构建对象，装配好的 Agent 实例会缓存在进程的 LRU 缓存中（大小由 `agent_runs.assembly_cache_size` 控制）。缓存 Key 包含了「Agent 版本 ID + 供应商与密钥更新时间 + 模型参数 + 思考档位 + MCP 服务更新时间与工具列表 + 各绑定技能最新版的 `name:content_hash` + 各子 Agent 的版本与描述」。一旦管理员在后台更新了密钥、发布了新技能或修改了子 Agent 描述，缓存 Key 就会自然变化，下一次运行立即用上最新配置，无需手动清理缓存或重启服务。
+3. **测试预览的装配**：测试预览会话在创建时不限制 Agent 是否已上架或已发布。如果预览的是草稿（未传 `version_id`），每次发消息都会按草稿当前的 `lock_version` 实时装配，改完草稿保存后下一条消息立刻生效。
+4. **技能文件本地落盘缓存**：由于底层引擎需要从磁盘路径读取技能文件，系统会将每个技能最新版本的文件写入本地缓存目录 `<skill_cache_dir>/<sha256(内容哈希+当前标识)>/<当前标识>/`（写入时自动将 `SKILL.md` 里的 `name` 替换为当前技能标识，并通过临时目录原子改名防止并发冲突）。
+
+### 工具、插件与 MCP 服务
+
+Agent 可用的工具来自两部分：**代码内置插件**和**管理员登记的远程 MCP 服务**。所有插件、MCP 工具和技能都必须按 Agent 显式挂载，子 Agent 不会自动继承主 Agent 的挂载（工具编写规范见 [tool-design.md](tool-design.md)）。
+
+- **代码插件机制（[plugins/base.py](../runtime/src/agent_runtime/plugins/base.py)）**：每个插件都是一个继承自 PydanticAI `Capability` 的类。服务启动时，组合根通过 `PluginCls.bind(...)` 将插件需要用到的外部客户端绑定到动态生成的子类属性上（这样既不用放进序列化配置，也不用塞进运行上下文 `deps`）。需要把多个能力打包成一个插件（例如 `video_breakdown` 同时包含拆解工具和后台异步执行能力 `BackgroundTools`）时，使用 `CombinedCapability`。
+- **MCP 服务接入（`config/mcp_servers/`，[conventions §22](../contract/conventions.md#22-mcp-服务-mcp-servers)）**：由 [assembly/mcp.py](../runtime/src/agent_runtime/assembly/mcp.py) 调用底层 [harness/mcp.py](../runtime/src/agent_runtime/harness/mcp.py) 的 `MCPToolset`，支持通过 Streamable HTTP 或 SSE 直连远程 MCP 服务，并为暴露给模型的工具自动加上 `mcp_<服务标识>_` 前缀。同时进程内维护了一份内存名册（`McpServerIndex`），供前端工具卡片展示对应的服务名称与工具中文名。
+- **通用校验下沉**：凡是与具体 Agent 无关的安全校验（如媒体地址的形状检查与提交点的「链接能打开、类型对」检查 [harness/materials.py](../runtime/src/agent_runtime/harness/materials.py) 与 [harness/media_check.py](../runtime/src/agent_runtime/harness/media_check.py)，后者每次检查自己建一个只连公网的客户端、用完即关；工作区文件大小与配额限制 [harness/files.py](../runtime/src/agent_runtime/harness/files.py)），统一写在底层 `harness/` 中，避免在各个插件里重复编写。地址来自参数的工具（如 `write_video_shots`、`generate_shot_frames`、`breakdown_video`）在 `args_validator` 里检查；地址来自工程文件的 `check_film`、`generate_images` 在工具主体里检查，`check_film` 把不能用的地址列进问题清单。
+
+### 模型供应商与 agent 配置
+
+- **模型供应商与并发锁（`config/model_providers/`）**：
+  - 服务启动时加载并校验 `declarations/*.yaml` 中的供应商声明。
+  - 在修改某个供应商的密钥、切换默认密钥、启停模型、设置全局默认模型或删除供应商时，都会在同一个数据库事务里先对该供应商行加悲观锁（`SELECT ... FOR UPDATE`），确保并发操作下绝不会破坏「默认密钥不能删」「默认模型必须处于启用状态」等约束。
+  - **连通性测试（[harness/probe.py](../runtime/src/agent_runtime/harness/probe.py)）**：向目标模型发送一条最多生成 16 个 Token、15 秒超时且不重试的极简请求；如果报错，会自动把错误信息中可能包含的 API Key 明文抹除后再返回给前端。
+  - **密钥加密（[secrets.py](../runtime/src/agent_runtime/secrets.py)）**：采用 `CREDENTIAL_ENCRYPTION_KEYS`（MultiFernet，支持配置多把密钥实现不停机轮换，见 [deploy.md#换密钥加密钥匙](deploy.md#换密钥加密钥匙)）统一加密模型密钥和 MCP 服务的地址与请求头。
+- **Agent 配置与反向引用检查（`config/agent_config/`）**：
+  - 发布检查函数 `compile_agent` 通过四个领域端口（`ModelDirectory`、`PluginDirectory`、`McpDirectory`、`SkillDirectory`）核对所有引用的资源是否有效。
+  - 反过来，当管理员试图归档技能、停用/删除模型或密钥、停用/删除 MCP 服务或归档某个 Agent 时，各自模块会通过 `AgentReferences` 扫描所有 Agent 的草稿与当前发布版本；一旦发现正在被引用，立即拒绝操作并返回具体的引用方列表（`usedBy`）。
+
+### 运行时的持久化
+
+运行时所有数据表均位于 `agent_runtime` schema 下（代码路径相对 `runtime/src/agent_runtime/`）：
+
+| 数据模块 | 代码位置与核心存储机制 |
 |---|---|
-| `server/configs/config.yaml`（不进仓库） | 运行参数、模型命名表与模型端点 |
-| [config/models.py](../server/src/iclip/config/models.py) | 配置字段、默认值、环境变量名、功能开关与依赖校验 |
-| `server/agents/agents.yaml`（不进仓库） | Agent ID、显示名、spec、模型引用、skill、capability 与子代理声明 |
-| `server/skills/`（不进仓库） | skill 库，一个子目录一个 skill（`SKILL.md` 及其 references） |
-| [config/agents.py](../server/src/iclip/config/agents.py) | 声明与资产路径解析 |
-| [app/bootstrap.py](../server/src/iclip/app/bootstrap.py) | 资源创建、模块装配、路由挂载与生命周期 |
-| [app/agent_layer.py](../server/src/iclip/app/agent_layer.py) | 模型表与 agent 注册表的装配、热重载与拒绝规则 |
+| **运行历史与消息快照** | `harness/step_store_pg.py`：实现 `StepStore` 协议。单条消息按内容的 sha256 哈希在 `snapshot_messages` 表中去重存储，快照行只保存消息哈希引用，大幅节省存储空间 |
+| **消息队列、运行锁与审批** | `harness/jobs.py`：基于 PostgreSQL 实现消息排队、同一对话运行互斥锁、租约心跳续期以及崩溃任务自动清扫 |
+| **会话与 Token 用量** | `harness/sessions.py`（记录会话归属应用、锁定的 Agent 版本与预览标记）、`harness/usage_ledger_pg.py`（每次模型回复后按「对话 + 模型」累加 Token 消耗） |
+| **工作区文件** | `file_store/pg.py` |
+| **四大后台配置表** | `config/{skills,model_providers,mcp_servers,agent_config}/infra_sql.py`：修改同一个技能或同一个 Agent 时先加行锁再递增版本号；表中的操作人字段（`created_by` 等）直接保存业务后端传来的用户 ID 字符串 |
 
-运行配置与 Agent 声明在启动期加载、校验并装配。配置文件路径分别由 `CONFIG_FILE`、`AGENTS_FILE` 指定，skill 库目录由 `SKILLS_DIR` 指定；CLI 的 `--config`、`--agents`、`--skills` 设置这三个入口。skill 库只在有 Agent 声明 skill 时要求存在。`models` 段、`conversations.title_model`、`agents/` 与 `skills/` 目录构成可热换的一层（[app/agent_layer.py](../server/src/iclip/app/agent_layer.py)）：后端监听两个声明文件所在目录，skill 库在启动时存在才一并监听，文件一变即重读、完整装配、整体替换，非热字段有变或装配出错即整体拒绝、沿用旧层，不做部分生效；`SIGHUP` 触发同一次重载，结果报告在 `/healthz` 的 `config` 段；其余配置段与环境变量改了要重启。这三个目录只存在于服务器与开发机，接口合同导出用 [scripts/contract/](../server/scripts/contract/config.yaml) 下的占位配置。依赖服务的连接信息与凭证由环境变量提供；模型凭证由 `models.*.api_key_env` 指向环境变量。可选功能的启用条件与缺失依赖处理集中在 `resolve_settings()`，不在业务模块中重新读取配置。
+**对话分叉（`fork`）的执行顺序设计：**
+由于分叉涉及多张表的写入且不跨事务锁全表，系统严格按照以下顺序分步提交：「1. 检查源会话当前空闲且轮次合法 → 2. 规划要截取的历史消息快照（若规划完发现源会话轮次变了则报错中止）→ 3. 创建新会话行 → 4. 复制工作区文件 → 5. 写入新会话的初始快照」。这样即使中途出错，最多只会在库里留下一条前端根本访问不到的孤立数据，绝不会污染源对话。
 
-Agent 声明文件必须存在；不启用 Agent 时写 `agent: {}`。`spec` 必须指向现存文件，文件内容可以为空；同目录的 `instructions.md` 自动加载。主 Agent ID 来自声明键，`name` 是首页 Agent 菜单显示的名字，不写就显示 ID；子 Agent 名称来自 spec 所在目录名；声明的名称、模型覆盖 spec 对应字段，关闭磁盘自动扫描。
+### 运行与订阅
 
-skill 与 capability 都按 Agent 显式挂载，子代理不继承主代理的挂载。skill 正文由 Harness 按需加载，reference 由随库挂载的 `get_skill_reference` 读取。capability 的实例和挂载依赖集中在 [app/capability_table.py](../server/src/iclip/app/capability_table.py)，工具声明规则见 [tool-design.md](tool-design.md)。
+- **后台运行与前端连接解耦**：Agent 运行由后台 `ConversationRunner`（[harness/transcript/runner.py](../runtime/src/agent_runtime/harness/transcript/runner.py)）独立驱动，用户关掉网页或断开 WebSocket 只会取消实时订阅，不会打断后台运行。当工具触发人工审批时，当前运行（Run）正常结束落库；等用户提交审批结果后，系统会启动一个新的 Run 接着跑（在界面上仍然归属于同一个对话轮次 Turn）。
+- **实时流与历史回放完全一致**：无论是刚打开页面从数据库历史消息还原（`from_messages`），还是在线接收实时流事件（`projector`），两边都共用同一套工具卡片注册表，保证生成的结构与编号分毫不差。每条实时流都带有一个唯一生命周期标识 `stream_epoch`，防止服务重启后旧连接把新序号误接在旧内容后面。
+- **上下文压缩保持技能可用**：当对话过长插入压缩摘要（`CompactionPart`）时，摘要器会自动把压缩边界之前加载过的技能重新补记在边界之后，确保压缩后模型依然记得已加载的技能。
+- **子 Agent 独立流**：主 Agent 每次通过 `delegate_task` 委派任务给子 Agent，都会产生一条独立的子运行（子 Agent 的 `agent_id` 即其 `run_id`）。前端只需在查询或订阅时传入该 `agent_id`，就能用完全相同的协议查看子 Agent 内部的执行过程。
 
-`video` 提供参考视频拆解（`video_parser`），依赖 `workspace`；由 `video` 配置段与 `VIDEO_UNDERSTANDING_*` 环境变量启用，不需要媒体生成、对象存储和 ffmpeg。`video_shots` 提供镜头组 prompt 表交付（`write_video_shots`），依赖 `workspace`，只用工作区与素材台账，始终登记；`video_shot.json` 的形状与前端约定见 [contract/conventions.md](../contract/conventions.md#6-对话-conversations)。`shot_video` 提供取帧与出图，依赖 `workspace` 与 `video`；由 `shot_video` 配置段启用，另需媒体生成、对象存储和 ffmpeg，三者是否齐由 `ResolvedSettings.shot_tools_enabled` 一处判定，能力表只在它成立时收到 `shot_video`。
+---
 
-`video_breakdown` 提供 `breakdown_video`，依赖 `workspace`，把一条视频的拆解文档写进工作区，工作区里已有那份就直接用：工具自己不调模型，经组合根的适配器（[app/reference_breakdown.py](../server/src/iclip/app/reference_breakdown.py)）交给下面的参考视频，与资料库读写同一行、同一份拆解。那一行有拆解就直接用；没有、或上次没拆成，就排一次后台拆解，每 3 秒查一次，最多等 20 分钟。这件工具挂在 Harness 的 `BackgroundTools` 上在后台跑：模型调用后先拿到一条回执，接着做别的事，拆解的结果之后作为一条消息送到模型。transcript 里工具卡只记启动：回执到达就结束，同时开一条 `tool` 任务；结果送达时任务收尾，并在送达处插一条完成通知，原卡不动（形状见 [conventions §5](../contract/conventions.md#后台工具)）。回执之后没等到结果、运行已不再存活时，结果不会再来：工具卡改为中断，任务进入终态，被停与审批暂停记 `killed`，失败、崩溃或运行结束仍没结果记 `failed`下一次运行开跑前，运行驱动把这种回执换成 interrupted 返回交给模型，换下的返回保留回执的时间戳并在 metadata 里带标记，刷新后的历史靠它仍按同一规则收卡、重建任务；续跑写实时基线时连同这一轮的任务一起写（[harness/background.py](../server/src/iclip/harness/background.py) 持有回执与结果的文本格式和这个标记，供 transcript 投影与运行驱动识别）。没拆成时按失败原因回模型：视频打不开让用户换一条；模型调用失败就让模型再调一次，每调一次都把这一行重新排队，重试次数由登记处的上限管，用完改报终局失败；其余让用户稍后再试。拆解本身怎么做见下面参考视频那段：不超过 60 秒的自己抽帧（每秒 10 帧）连同音轨发给模型，更长的把地址交给对方取帧。`video_breakdown` 由 `iclip_studio` 配置段与 `VIDEO_UNDERSTANDING_*` 环境变量启用，另需 ffmpeg；配了 `iclip_studio` 却没把参考视频服务交给能力表在装配期报错。启动期的 ffmpeg 检查另按 `ResolvedSettings.ffmpeg_required` 执行：取帧与出图要用它，媒体生成带的视频编辑（编辑段受理时探时长、合成）要用它，视频拆解（`iclip_studio` 配置段）读时长与抽帧也要用它，三者任一启用就必须有。要用 ffmpeg 时，组合根在装配期探测一次本地视频加工用哪套编解码（[platform/media/codec.py](../server/src/iclip/platform/media/codec.py)）：硬件优先，依次试 VideoToolbox、NVENC，真编一小段、再解一遍，都成功就选中，都不行用软件 libx264 并记 warning；选中的那套注入合成、参考视频的拆解抽帧与分镜取帧三处。合成与拆解两个队列的并发（`media_generation.compose_concurrency`、`iclip_studio.breakdown_concurrency`）不写时按选中的那套取：硬件 4，软件 2。
+## 3. 视频后端
 
-`iclip_studio` 是导演流程的工具集，依赖 `workspace`，不需要配置，始终登记；两件工具管工程文件：`check_film` 检查工作区里的 `film.icml` 与 `film.icrun`；`generate_images` 给用户指定的生图节点出图，实现保留，组合根现在不登记，图由人在制作页上生成。工程文件不导出成分镜，出片也在制作页上。生图经组合根的适配器走生成域：出图时给记录标上节点名，生成结果不算在用，检查与出片只认运行文件里选用的图；用的图片模型钉在包声明里。读文件、读剧本、检查与拼提示词都在 [iclip_studio/film/](../server/src/iclip/capabilities/iclip_studio/film/) 这个不带工具的子包里，标签和属性以其中的包声明为准；生图与视频提示词的模板包 `@iclip/film-kits` 也在这里，模板之外各段怎么排按模板写在拼提示词的代码里，图号由 AI 导演写在文件里，拼的时候原样发送。制作页（[conventions §6](../contract/conventions.md#6-对话-conversations)）走对话域的端点：对话域只管权限，组合根的 [conversation_film.py](../server/src/iclip/app/conversation_film.py) 读写工作区里的两个文件、认图片地址，分组、改字与换图的规则在同一个子包的 `studio.py`；视图的形状在 [common/film_view.py](../server/src/iclip/common/film_view.py)，对话域与子包共用。
+### 后端的模块
 
-[shot_document.py](../server/src/iclip/capabilities/shot_document.py) 持有镜头组表的结构与校验措辞，供 `video_shots` 的交付工具、制作页拼出片请求与对话域的文件写回共用；工程文件与运行文件的写回校验用 `iclip_studio/film/` 的同一套检查，只看被写的那一个文件；[video_understanding.py](../server/src/iclip/capabilities/video_understanding.py) 持有视频拆解协议与方舟适配器；[video_document.py](../server/src/iclip/capabilities/video_document.py) 回答拆解文档在工作区的路径与镜头时间码的写法，`shot_video` 靠它定位 `video` 写下的文档，拆解提示词与取帧解析器的报错引同一个写法。划分标准：模型看得见的东西（工具名、docstring、参数 schema、验证器措辞、display 表、指令）留在各自包内，换 agent 就可以不同；模型看不见、换 agent 也不允许有差异的机制下沉到 `harness/`、`common/` 或这类共用模块，不在包之间复制：素材台账校验在 [harness/materials.py](../server/src/iclip/harness/materials.py)，工作区写入与配额、版本错误的翻译在 [harness/files.py](../server/src/iclip/harness/files.py)，镜头组的时间线连续、`@ImageN` 引用与参考图上限在 [common/shot_rules.py](../server/src/iclip/common/shot_rules.py)，与生成域的出片请求共用。
+视频后端是一个基于 FastAPI 的模块化单体应用，`app/` 目录是唯一的装配中心（组合根）。以下路径均相对 `server/src/iclip/`（模块边界由 [server/tach.toml](../server/tach.toml) 和[架构测试](../server/tests/unit/architecture/test_architecture.py)守护）：
 
-模型适配集中在 [harness/models.py](../server/src/iclip/harness/models.py)，同名模型复用实例。provider 选择交给官方 `infer_model`；`api: responses` 使用官方 `OpenAIResponsesModel`。模型参数转换不进入业务模块或工具。
-
-lifespan 启动运行驱动、已启用的生成队列、参考视频的拆解队列与资料库的打标队列；关停时先停止后台任务并等待运行终态落库，再关闭 HTTP 客户端和本应用持有的连接池。启动不建表，迁移单独执行。
-
-## 3. 身份与模块协作
-
-HTTP 与 WebSocket 由 `PrincipalMiddleware` 统一解析身份。中间件只解析，端点级权限在路由上以 `Security` 声明并随合同导出，行级归属与条件性判断在业务用例执行；WebSocket 入口另行校验 Origin，订阅时校验对话可见性。钥匙替人办事不在中间件里：建对话、建需求单、发消息、提交生成、参考视频试生成、确认上传六个写入口拿到请求体后各调一次 [identity/acting.py](../server/src/iclip/domains/identity/acting.py) 的 `ActAs`，持 `users:act_as` 的 key 带 `user_name` 时就在这一步把主体换成那个人，下游照常只消费主体。帧的投递范围见 [conventions §5](../contract/conventions.md#5-agent-对话-transcript)。SSO callback 完成验证、账号关联与本地 cookie 签发；配置 PMS 时同步用户资料，失败即终止登录。后续普通请求不再调用 SSO/PMS。
-
-运行通过 `AgentRunDeps` 向工具传递可信主体与对话 ID，业务含义和权限约束见 [CONTEXT.md](CONTEXT.md)。harness 只传递 deps，不解包业务字段；工具所需服务由组合根闭包注入，不放进 deps。客户端 state 不作为运行身份或服务来源。
-
-跨模块协作在组合根适配。例如：合集元信息接入对话侧栏，工作区文件和素材台账接入对话的派生数据端口，生成任务仓库包一层状态广播把每次状态跳转发成 WebSocket 全局帧；上传确认经 uploads 声明的三个端口：两个由组合根接到生成域，一个查这次上传记过没有，一个落一条上传记录并交回最终地址，这一步只要生成仓储，媒体生成没开也照落；第三个判音乐要挂的对话是不是主体自己的，接到对话域。发消息（含带新内容的重新生成）的附件经 agents 域声明的端口，由组合根的 [app/prompt_attachments.py](../server/src/iclip/app/prompt_attachments.py) 接到 uploads：挂不上 OSS 处理参数的图片先转存成一条上传、换成新地址再交给 harness；uploads 下载经它声明的端口接到组合根建的出网下载器（lifespan 里关闭）；没有对象存储就不接，这类图片由 harness 受理时拒绝。需求单直接持有调用方确认的创作输入，创建时不依赖产品目录装配。模块只使用自身声明的协议，不自行创建其他模块的客户端或仓库。
-
-成片导出（[conventions §6](../contract/conventions.md#成片导出)）的端点与权限在对话域，经对话域声明的端口由组合根的 [app/whole_film_exports.py](../server/src/iclip/app/whole_film_exports.py) 接到生成域：受理时把草稿原样、各素材片与音乐的公开地址、每条素材片最新一条已完成的字幕记录记进一条成片生成记录的请求，排进生成队列，不调渲染服务。渲染服务是生成队列里自己一条 lane 的一家 provider（[generation/render.py](../server/src/iclip/domains/generation/render.py)），只用内网 HTTP 调它的 `/exports`（`WHOLE_FILM_RENDER_URL`，不鉴权）：提交时把本桶对象换成内网地址（上游发布的出片地址原样），签一个内网的 PUT 地址（`iclip/agent/whole-films/{记录 id}.mp4`，只签 `Content-Type`，对象随桶公共读）一起交过去；轮询读它那次导出的状态，完成后记录的产物地址是这个对象的公网地址，它查不到这次导出记 `RENDER_LOST`。这条 lane 的总时限与上传地址的有效期都是 6 小时，因为渲染服务一次只渲染一个。读最新一次导出时，已交出去的记录再转问渲染服务的排队位置与进度，答不上来只记日志、按记录给；取消由生成服务按记录状态决定，已交出去的先让渲染服务取消，连不上时端点答 502。provider 与端点共用组合根建的同一个客户端。
-
-渲染服务是仓库里单独的 Node 服务 [render/](../render/package.json)，自带依赖锁与镜像 `iclip-render`，只在内网可达、不鉴权。端点 `POST /exports`、`GET`/`DELETE /exports/{id}` 与 `GET /health`，以及请求、答复与错误码都以 [server.ts](../render/src/server.ts) 为准，后端的端口按同一份形状编写。它按请求里的草稿、素材地址与字幕调前端的合成代码（`web/src/features/storyboard/whole-film/composition/`，打包时编进服务）生成合成页，与编辑器预览是同一份；组件不认识、放的位置不对、草稿不合规矩在受理时就答 400，素材主机不在 `RENDER_ALLOWED_MEDIA_HOSTS` 里也是 400。受理后在内存里排队，一次一个、先进先出：先把素材取到本地临时目录，再用 HyperFrames producer 以 30 fps 渲成 MP4，最后按请求给的地址和请求头 PUT 上传，终态保留 1 小时，重启即全部丢失（后端那边的记录随之记为失败）。组件库是部署目录里挂进来的那一份（`RENDER_REGISTRY_ROOT`），与前端读的同一份，每次受理导出时读一次组件目录，渲染用受理时那一版（[library.ts](../render/src/library.ts)）；渲染期间只放行素材主机的出网请求，HyperFrames 自己去取的 Google Fonts 等外部资源一律拦下并记日志。日志是逐行 JSON，事件为中文短句。
-
-## 4. 持久化与迁移
-
-| 数据 | 实现位置 |
+| 目录 | 职责说明 |
 |---|---|
-| `iclip` 业务表 | 各领域模块的 `infra_sql.py` |
-| `iclip` 成片草稿 | `domains/conversations/infra_sql.py`；一段对话一行，保存按版本号带条件写。端点与权限在对话域，引用的生成记录由对话域声明的端口经组合根的 [app/whole_film_drafts.py](../server/src/iclip/app/whole_film_drafts.py) 接到生成仓储核对，媒体生成没开也照样核对 |
-| `agent_runtime` 运行历史与快照 | `harness/step_store_pg.py`，实现官方 StepStore 协议。快照消息的存法同官方 PostgresStepStore：每条消息按 sha256 在 `snapshot_messages` 只存一份，快照行只记引用；整段历史内联的旧行照常读。被修剪快照用过的消息与外置媒体一样不回收 |
-| `agent_runtime` prompt 队列、运行关联与审批记录 | `harness/jobs.py` |
-| `agent_runtime` 工作区与对话素材台账 | `platform/file_store/pg.py`、`platform/material_ledger/pg.py` |
-| `agent_runtime` 对话用量台账 | `harness/usage_ledger_pg.py`；`harness/usage_ledger.py` 的 capability 挂在每个 Agent 上，模型每答一次按（对话，模型）累加 token |
-| `public` 生成任务调度表 | procrastinate；DDL 随 Alembic 迁移维护；版本在 pyproject 精确 pin，升级时把它新增的迁移脚本抄成一个新 revision |
-| `iclip` 爆款视频 | `domains/inspirations/infra_sql.py`；数据由部署方自行导入，运行时只读不刷新 |
-| `iclip` 埋点事件 | `domains/tracking/infra_sql.py`；只追加，主语资格按表名读生成记录，审计按表名读下载事件 |
-| PDM 款目录外部库 | `domains/products/catalog_pg.py`，独立连接池设置会话级只读 |
-| 审计报表（跨 `iclip` 与 `agent_runtime` 九张表的只读聚合，含运行事件 `events` 与运行关联 `agent_job_runs`） | `domains/audit/reports_pg.py`；不建表、不写入，列、状态词或运行事件名被改动时由它的集成测试先红；总览与按人的时间窗、粒度、分期与均线补窗是 `domains/audit/overview.py` 里的纯函数，任务执行的异常门槛与翻页游标在 `domains/audit/executions.py` |
-| `iclip` 参考视频 | `domains/references/infra_sql.py`；一条视频一行，拆解与状态都在行上，状态跳转都是带条件的更新；标签与打标状态按表名读资料库标签的条目，筛选条件由标签域拼 |
-| `iclip` 资料库标签 | `domains/tagging/infra_sql.py`；标签树一张表（`parent_id` 为空是维度），每一库的一条是一个条目（`kind` 加指向那一库的外键，各一个部分唯一索引），条目的标签一张关联表；删标签由外键级联删掉下级与条目上的标签。改树的事务先拿一把事务级 advisory 锁再读树校验：跨层重名与 AI 取值上限要看整棵树，唯一约束只管同一上级。种类、`auto_fill` 与状态的取值只在 Python 里，不加 CHECK。条数按表名读参考视频的移除标记 |
-| `iclip` 品牌资源 | `domains/brand_templates/infra_sql.py`；资源一行一个，种类为开放文本（现只有字体），品牌未指定时为空，不从名称推断；只停用不删。字体直接签名上传对象存储、确认后建资源，读取实际字族、字重、样式与字形覆盖，不创建生成记录；字体解析经组合根的 [app/brand_templates.py](../server/src/iclip/app/brand_templates.py)。`brand_profiles` 表（每个品牌的标语、强调色）留在库里，目前没有读写。生成域不引用品牌资源域；生成记录对它们没有外键 |
-| 资料库（跨生成记录、对话、用户三张表的只读聚合） | `domains/library/reports_pg.py`；同上，每次请求现算卡面与副本的血缘装填，数据到十万级再换成随出片完成更新的读表。爆款素材库不建表：条目与标签经标签域写，列表、入选状态与素材片资格按表名读条目与生成记录 |
+| `domains/` | 各业务模块（用户权限、对话、生成任务、参考视频、资料库、标签、需求单、上传、审计等）的业务逻辑、接口路由与数据库操作（`infra_sql.py`） |
+| `platform/` | 通用技术底座：数据库连接池、OSS 对象存储、ffmpeg 音视频处理与硬件加速探测（`platform/media/`）、视频抽帧拼板与九宫格切图（`platform/shot_media/`）、视频拆解抽帧与火山方舟调用适配（`platform/video_breakdown/`）、后端自己的出网层（[platform/outbound/](../server/src/iclip/platform/outbound/__init__.py)，基于 `httpx-secure` 提供只连公网的客户端、下载器与制作页用的媒体地址检查；后端只引用运行时的类型定义、错误与客户端库，不引用运行时的出网层）、统一错误映射与管理接口转发（`platform/runtime_admin.py`） |
+| `common/` | 跨层共用的基础枚举与纯函数规则（如生成任务类型、状态枚举） |
+| `config/` | 配置文件模型（[config/models.py](../server/src/iclip/config/models.py)）、环境变量解析与功能开启条件检查 |
+| `app/` | 组合根（[app/bootstrap.py](../server/src/iclip/app/bootstrap.py)）以及连接不同业务模块或跨服务调用的适配器 |
 
-对话分叉横跨上表前四行：对话领域服务的分叉用例按顺序调两个端口写工作区与素材、种子快照，最后自己落对话行；端口由 [app/conversation_fork.py](../server/src/iclip/app/conversation_fork.py) 接到文件存储与 agent 引擎上，只回报事实，冲突与否由用例判。四处写入各开各的事务，没有统一回滚，靠这个顺序保证中途失败只留下寻址不到的孤儿数据。出片记录不拷，副本按血缘继承：生成域按对话读记录时经同一文件里的适配器问对话域要祖先与边界、主体读不读得到这段对话，递归查询只在对话的 Postgres 仓储上，不进对话仓储协议。做同款走建对话用例里的另一个端口，同样先拷后落行：[app/conversation_same_style.py](../server/src/iclip/app/conversation_same_style.py) 只拷固定几份制作文件（两份改名）与素材台账，同一份文件表也给资料库判断一段对话做不做得了同款，其中新片执行方案的路径也是爆款素材库判断能否入选、读来打标的那一份；源由同一文件里的认源端口按资料库读模型的卡给出属主，不走对话的可见范围。
+### 后端的配置与装配
 
-表结构只经 [Alembic 迁移](../server/migrations/versions/) 演进，命令见 [AGENTS.md](../AGENTS.md)。新增表与迁移的对账范围、人工核对要求见 [测试规范](test-design.md#3-postgres-测试环境)。
+- 服务启动时通过 `--config`（或环境变量 `CONFIG_FILE`）读取 `config.yaml`，并结合环境变量由 `resolve_settings()` 一次性完成校验；业务模块内部不再直接读取环境变量。
+- **启动期自动探测硬件编码器（[platform/media/codec.py](../server/src/iclip/platform/media/codec.py)）**：只要开启了需要本地處理视频的功能（抽帧出图、视频剪辑合成、参考视频拆解），后端在启动时会自动按 `Apple VideoToolbox → NVIDIA NVENC → 软件 libx264` 的顺序实际试编一小段视频，选出可用的最快编码器注入各模块；如果未手动指定队列并发数，硬件加速时默认并发为 4，纯软件编码时默认为 2。
 
-## 5. 运行、记录与订阅
+### 调运行时
 
-Agent 运行由 [ConversationRunner](../server/src/iclip/harness/transcript/runner.py) 驱动，与发起请求的连接生命周期分离。持久化机制：
+后端在组合根中维护一个全局的 `RuntimeClient`（通过环境变量 `RUNTIME_URL` 和 `RUNTIME_APP_KEY` 向运行时证明自己是应用 `video`）：
+- **转发管理后台接口**：技能库、模型供应商、MCP 服务与 Agent 配置四组路由在验完权限后，由 `platform/runtime_admin.py` 转发给运行时的 `/v1/admin`。由于运行时只存用户 ID、不存用户名，对于返回结果中包含 `createdBy` / `updatedBy` 的接口，后端会批量查询一次用户表，把创建人/修改人的显示名称补齐后再返回给前端。
+- **对话与工作区操作**：通过 `app/runtime_ports.py` 和 `app/runtime_workspace.py` 调用运行时的会话与文件接口，并在请求头 `X-End-User` 中传入该对话的所属用户 ID。新建对话时严格遵守**「先在运行时开好会话，再在后端落对话记录」**的顺序，防止出现没有底层会话的空壳对话。
+- **管理测试预览**：后端在 `iclip.agent_previews` 表中记录每个管理员在每个 Agent 下当前的预览会话 ID，并在 `ConversationService` 中集中检查权限（必须是创建者本人且当前仍拥有 `agent:manage` 权限）。在测试预览中调用工具生成的图片，视频插件会自动清空其业务对话归属，避免污染正式对话列表。
+- **运行时不可用兜底**：当运行时服务连不上、超时或报错时，后端统一向前端返回 `503` 错误信封，并将具体原因写入服务端日志。
 
-- prompt 先进入 Postgres 队列；数据库约束保证同一对话的运行互斥，租约、心跳与清扫处理认领和中断恢复。
-- StepPersistence 保存消息历史与可续跑快照；恢复读取持久记录。停止运行使用框架取消入口，等待终态落库。
-- 审批结束当前 run，决定持久化后以新 run 续跑，仍属于同一轮；审批工具只挂顶层 Agent。
-- 生成任务另由 procrastinate 的提交、轮询队列驱动，业务状态写回生成任务表。表上只有主键、外键与非空，种类、操作与各种行的形状只由生成域的代码保证，新增一种记录不改表。切图与上传创建即完成，直接落库，不进队列。视频的提交与任务查询对外是上游异步接口的镜像，请求原样转发、结果地址直接存。高清版（超分）与出片是同一家视频 provider、同一条提交队列：provider 按请求类型选提交地址（`VIDEO_ENHANCE_SUBMIT_URL`），任务查询与结果同出片。合成（video / compose）是同一套队列里的一家本地 provider，用 ffmpeg 在服务端拼接（[processing.py](../server/src/iclip/domains/generation/processing.py)）；编辑段与出片一样走视频 provider：图生接收正文引用的图片与显式输出时长，视频编辑的参考片段由前端按当前选用素材裁剪、拼接后上传，受理时用 ffprobe 探测实际参考时长；两种模式都按基底时长核对替换区间。片段入口的模式支持、时长范围与每种模式的上游任务语义（编辑正文前缀、`provider_options` 里的上游任务类型）由 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py) 按模型族声明，模型族只在这里按模型名匹配，模型列表与受理共用；受理时按声明把上游任务语义固定进请求，历史记录不套用当前能力限制。字幕识别（[subtitles.py](../server/src/iclip/domains/generation/subtitles.py)）在 `media_generation.subtitle` 段与千问AI平台的 API Key `QWEN_API_KEY` 都有时开通，是同一套队列里自己一条 lane 的一家 provider：一条出片或合成带着地址转为完成后，队列回调生成服务为它排一条字幕记录，回调失败只记日志、不改那条素材片；识别方下载素材片，用 ffmpeg 抽成单声道 16 kHz mp3，以 Base64 同步交给千问的 `qwen-audio-3.1-asr-flash`（模型钉在代码里），开说话人分离才拿得到全部句子的起止，结果写进记录的逐句列，没有轮询阶段；没有音轨就不调接口，记为没有口播。生成背景音乐（[music.py](../server/src/iclip/domains/generation/music.py)）在 `media_generation.music` 段与同一个 `QWEN_API_KEY` 都有时开通，也是自己一条 lane 的一家 provider：把提示词原样作为 `text_prompt` 同步交给千问的 `qwen-audio-3.1-tts-next`（模型钉在代码里），下载它给的 wav，用 ffmpeg 两遍规整（[platform/media/audio.py](../server/src/iclip/platform/media/audio.py) 的 `normalize_music`：先量去掉首尾静音后的响度，再线性缩放到固定响度、编成 48 kHz 双声道 AAC 的 m4a），转存进对象存储，记下地址与量出来的时长，没有轮询阶段；它不是素材片，完成后的回调不为它排字幕。图片、字幕识别与生成背景音乐这三类同步 provider 的上游 POST 与错误码映射共用 [upstream.py](../server/src/iclip/domains/generation/upstream.py)，千问两家的鉴权与 `request_id` 校验在 [qwen.py](../server/src/iclip/domains/generation/qwen.py)，`request_id` 缺失在取结果、存桶之前就判 `PROVIDER_MALFORMED`。上传的音乐与图片、视频走同一条直传，只按类型多一种媒体种类。
+### 浏览器连接与事件流
 
-参考视频在 `domains/references/`：用例、自有表与它自己的 procrastinate App（队列 `references`）。拆解、读上传记录与试生成都是领域声明的端口，领域不 import 能力包与生成域：组合根在 [app/reference_breakdown.py](../server/src/iclip/app/reference_breakdown.py) 用 `iclip_studio` 配置建 `BreakdownRunner` 与方舟适配器，把 ffmpeg 与模型的失败换成落到行上的失败原因（视频打不开、模型调用失败、模型失败；超时由下面的周期任务记）；上传记录经组合根的闭包按主体读生成域的那一行；试生成由 [app/reference_test_video.py](../server/src/iclip/app/reference_test_video.py) 记成属主名下的一条视频生成，读最新一次按 `metadata.referenceId` 查生成记录。一次后台任务先接手（排队改成拆解中，记开始时刻），再拆解，最后按开始时刻核对后写回，写回成功再经标签域排一次打标；任务不挂自动重试，崩在半路的行由每分钟一次的周期任务在拆解中满 20 分钟时按超时收尾。建行（上传与对话里的 `ensure`）时同时确保它在标签域有条目。
+前端浏览器只与视频后端建立一条 `/ws` WebSocket 连接，由后端在背后代理运行时的实时流：
+- **按对话鉴权并透传内容流**：每当浏览器连上 `/ws`，后端就同步与运行时建立一条 `/v1/ws` 连接。前端发来 `subscribe_v2` 订阅某段对话时，后端先检查该用户有没有权限看这段对话；无权查看的直接原地返回 `not_found`，有权查看的则转发给运行时，并将运行时后续发来的聊天流（`transcript.reset` / `ops`）和文件变更帧原样透传给浏览器。任何一端断开，后端都会以 `1001` 状态码关闭浏览器连接，让前端触发重连。
+- **消费全局事件流（[app/runtime_events.py](../server/src/iclip/app/runtime_events.py)）**：后端启动一个常驻后台任务连接运行时的 `/v1/events`，收到会话忙闲变化（`event.session.work_changed`，排除测试预览）后，自动推送给该对话的创建者以及在线的治理者。**断线防漂移机制**：一旦后端与运行时的事件流断开或重连成功，后端会主动以 `1001` 踢掉当时所有的浏览器 WebSocket 连接，强制前端重连并重新拉取对话列表，避免断线期间漏掉状态变化。
 
-资料库标签在 `domains/tagging/`：标签树、条目、按标签筛选的展开与 SQL 片段、打标用例与它自己的 procrastinate App（队列 `tagging`），参考视频与资料库依赖它，它不依赖它们（[ADR-0006](adr/0006-library-tags-as-data.md)）。取打标文字与打标是领域声明的端口：组合根的 [app/library_tagging.py](../server/src/iclip/app/library_tagging.py) 按条目种类取文字（参考视频读当前拆解；爆款素材经资料库读模型找到所在对话与它的属主，读那段对话工作区里当前的新片执行方案，资料库判断能否入选时问的「有没有这份文件」也由这里注入），并用 `iclip_studio` 的同一个模型打标。系统提示词只说明按文字选择、各维度可多选或为空；候选标签与说明按当时树里 `auto_fill = ai` 的维度编入 JSON Schema（字段 `d1…dn`）。每一级有下级时输出对象数组，对象的 `category` 指当前标签，`subcategories` 递归限定它的下级；当前层全是叶子时输出名字数组。维度下最多三级取值，沿用现有 `parent_id` 存储（[ADR-0007](adr/0007-library-tag-value-depth.md)）。输出的字段与父子关系校验、名字换 id、按持久化约定归一化祖先都在这个文件里。一次打标任务先接手（排队改成打标中，记开始时刻），取文字、读 AI 维度、调模型，最后在一个事务里按开始时刻核对、删掉条目在 AI 维度的旧标签、只插此刻仍在 AI 维度里的标签（打标中被删的跳过）；失败与超时只清 AI 维度。任务不挂自动重试，周期任务每分钟把打标中满 10 分钟的收成超时。
+### 内部接口与视频插件包
 
-生成、拆解与打标三个队列共用组合根建的一个连接器：媒体生成或拆解任一配好就建它，lifespan 里打开一次、worker 都停了再关；拆解与打标的 worker 只看 `iclip_studio` 配没配，不以媒体生成为前提，拆解每个进程的并发取 `iclip_studio.breakdown_concurrency`，不写时按启动时选中的编解码取（见[配置与装配](#2-配置与装配)）。它们与对话运行在同一个进程、同一个 lifespan 里起停，对话里的 `breakdown_video` 才等得到结果。
+后端在 `/internal/runtime/` 下提供了一组仅供运行时和视频插件调用的内部接口（通过 `RUNTIME_INTERNAL_TOKEN` 鉴权，协议见 [conventions §21](../contract/conventions.md#21-后端给运行时的内部接口)）。
 
-transcript 是运行记录的投影。历史由 `from_messages` 从持久消息生成，实时由 `projector` 从引擎事件生成；两条路径必须得到相同的编号和结构，共用工具 display 注册表。上下文压缩在完整历史中插入 `CompactionPart`，被摘掉的技能加载由摘要器补记一次、紧跟边界写入，压缩后技能仍保持加载；发送模型时从最后一条边界计算窗口，不删除原始消息。压缩提示与补记的加载卡挂在执行压缩那个 run 的下一步。
+内置的 6 个插件职责与后端配合方式如下：
 
-子代理各自一条 transcript 流，agent_id 即其 run id，一次 `delegate_task` 就是它的第一轮；父工具调用与子运行的关联记在官方 tool_effect 账本，实时与历史都据此重建。子代理任务的终态取自子运行的结束事件；父工具返回缺失时（父运行被停或崩溃）也按同一口径。读子代理流走同一组接口带 `agent_id`，归属由子运行记录的 `parent_run_id` 回溯到会话。
+| 插件名称 | 启用方式 | 依赖插件 | 功能说明与后端配合方式 |
+|---|---|---|---|
+| `workspace` | 始终启用（内置于运行时） | 无 | 提供工作区文件的查看、创建与修改工具 |
+| `video` | 始终启用（无需配置） | `workspace` | 提供 `video_parser` 工具：直接通过运行时托管的火山方舟连接进行视频内容理解，不经过视频后端 |
+| `video_shots` | 始终启用 | `workspace` | 提供 `write_video_shots` 工具：校验并生成标准分镜表 `video_shot.json`，交付前检查每张镜头帧的地址 |
+| `iclip_studio` | 始终启用 | `workspace` | 提供 `check_film` 工具：校验 AI 导演编写的工程文件 `film.icml` 与运行文件 `film.icrun` |
+| `shot_video` | 在 `runtime.yaml` 配置 `shot_video` 段 | `workspace`, `video` | 提供视频抽帧与分镜生图工具：由于插件内不做重度媒体处理，它会通过内部接口调用后端的 `app/shot_media.py`（抽帧拼板、宫格切图）与 `app/image_generations.py`（按渠道顺序调用图片模型） |
+| `video_breakdown` | 在 `runtime.yaml` 配置 `video_breakdown` 段 | `workspace` | 提供 `breakdown_video` 工具：作为**后台异步工具（`BackgroundTools`）**运行，通过内部接口调用后端的 `app/reference_breakdown.py` 查询或触发参考视频拆解队列 |
 
-实时投影与连接注册表在每个 worker 的内存中，快照持久化后才移交该轮实时状态。每条实时流建出时带一个 epoch，续订水位按 epoch 与批次号一起核对。连接注册表同时持有会话事件时钟（[session_events.py](../server/src/iclip/platform/transcript/session_events.py)），全局帧与文件变更帧在写入提交之后从它取号；对话域经组合根注入的端口取水位、广播整行与删除，不依赖 WebSocket 实现。当前没有跨 worker 广播：订阅落到其他 worker 时无法收到该运行的实时事件。多 worker 部署必须把这一限制纳入连接路由设计。
+- **启动期双向检查**：如果运行时配置启用了 `shot_video` 或 `video_breakdown`，在启动时会自动请求后端的 `/internal/runtime/plugins/services` 接口，确认后端已经配好对应的图片模型、OSS、ffmpeg 和拆解服务；如果后端没配齐，运行时会直接报错拒绝启动，避免运行期才发现工具不可用。
+- **后台异步工具机制（`BackgroundTools`）**：模型调用 `breakdown_video` 后会立刻收到一条「已启动拆解」的回执并可以继续和用户聊别的事；等后端拆解完成后，结果会作为一条新消息自动发给模型。如果拆解还没跑完这段对话就被用户中止或异常结束，下次发消息开跑前，系统会自动把当初那条回执替换成「已中断（`interrupted`）」标记，保证历史记录和界面上的任务卡片都能正确收尾。
 
-WebSocket 订阅、活动状态和文件变更帧的对外约定见 [contract/conventions.md](../contract/conventions.md)，本文不维护第二份帧与端点清单。
+### 身份与模块协作
 
-## 6. 日志
+- **统一鉴权与代指定用户操作（`ActAs`）**：所有 HTTP 和 WebSocket 请求由 `PrincipalMiddleware` 统一解析登录 Cookie 或 API Key（`/internal/runtime/` 内部接口除外），接口所需权限通过 FastAPI `Security` 直接声明在路由上。对于支持 `users:act_as` 的 6 个写接口（建对话、建需求单、发消息、提交生成、参考视频试生成、确认上传），在拿到请求体后会调用 [identity/acting.py](../server/src/iclip/domains/identity/acting.py) 的 `ActAs` 完成归属用户切换。
+- **模块间解耦**：`domains/` 下的各个业务模块互不直接导入对方的内部实现，需要跨模块协作时（例如发消息时自动把外部图片附件转存为上传记录、查询分叉对话的祖先出片记录、做同款时复制制作文件），一律由模块声明接口协议（Protocol），再由 `app/` 组合根注入适配器将两边接起来。
+- **出网下载与地址检查**：组合根建好只连公网的出网下载器与客户端（lifespan 结束时关闭）。发消息时转存外部图片附件，以及制作页在插入、选用图片与按文件生图、出片时检查图片地址（[app/conversation_film.py](../server/src/iclip/app/conversation_film.py)），都经出网下载器发起。取帧拼板（[app/shot_media.py](../server/src/iclip/app/shot_media.py)）与参考视频拆解要下载的视频地址可能是模型给的：本系统 OSS 桶里的对象换成内网地址、经普通的共用 HTTP 客户端下载，其他地址经只连公网的客户端原样下载。拆解遇到这类外部地址时先下载到本地、再在本地文件上探时长，不把远程地址交给 ffprobe（它会自己跟随跳转）。
 
-[app/logging.py](../server/src/iclip/app/logging.py) 统一配置 structlog 与标准库日志的渲染链。请求和 WebSocket 连接的 `request_id`、`principal` 通过 contextvars 传递；级别、格式由运行配置决定。业务日志写法和第三方噪音处理见 [AGENTS.md](../AGENTS.md)。
+### 成片渲染服务
+
+- **后端排队与调度（[generation/render.py](../server/src/iclip/domains/generation/render.py)）**：用户在前端点击导出成片后，对话模块会将当时的成片草稿、用到的视频与音乐地址以及最新字幕打包存为一条 `whole_film` 生成任务，放入异步队列的专属通道（lane）。队列任务通过内网 HTTP（`WHOLE_FILM_RENDER_URL`）将渲染任务和预签名的 OSS 上传地址发给渲染服务，并轮询进度（总超时与上传签名有效期均为 6 小时）。
+- **独立 Node 渲染服务（[render/](../render/package.json)）**：运行在内网（无鉴权），构建时直接把前端的成片合成代码（`web/src/features/storyboard/whole-film/composition/`）打包进来，并挂载与前端相同的成片组件库目录（`RENDER_REGISTRY_ROOT`）。收到任务后在内存队列中按先进先出顺序单任务执行：先把素材下载到本地临时目录 → 启动无头浏览器用 HyperFrames 按 30 fps 渲染出 MP4（期间拦截除素材白名单域名以外的一切外网请求）→ 通过预签名地址上传到 OSS。如果渲染服务重启，内存中正在进行的任务会丢失，后端轮询发现后会将其标记为 `RENDER_LOST` 失败，提示用户重新导出。
+
+### 后端的持久化与迁移
+
+业务表位于 `iclip` schema，异步队列调度表（procrastinate）位于 `public` schema，所有表结构演进均通过 [server/migrations/versions/](../server/migrations/versions/) 下的 Alembic 脚本管理：
+
+| 模块 / 报表视图 | 存储与查询机制 |
+|---|---|
+| **常规业务模块** | 各业务模块在自己的 `domains/*/infra_sql.py` 中维护自有数据表；外部 PDM 商品款目录通过 `domains/products/catalog_pg.py` 的独立只读连接池查询 |
+| **资料库标签（`domains/tagging/`）** | 独立维护标签树、被打标条目与关联关系三张表（见 [ADR-0006](adr/0006-library-tags-as-data.md)、[ADR-0007](adr/0007-library-tag-value-depth.md)）。管理员修改标签树结构时，会先获取数据库事务级咨询锁（Advisory Lock），再校验全树是否重名或超出层级/数量上限 |
+| **资料库聚合查询（`domains/library/reports_pg.py`）** | 不单独建冗余表，而是跨「生成记录、对话、用户」三张表实时聚合计算素材卡封面与分叉继承关系；爆款素材库直接关联标签域的条目表与生成记录表 |
+| **审计统计报表（`domains/audit/reports_pg.py`）** | 不建表。查询时先通过 `runtime_facts.py` 调用运行时的 `/v1/stats/*` 接口拉取会话、运行耗时与 Token 消耗记录，再作为参数化临时表与 `iclip` 的生成记录表在同一条 SQL 中关联聚合 |
+
+### 生成、拆解与打标队列
+
+后端的三个异步任务队列（媒体生成、参考视频拆解、资料库打标）共用同一个 procrastinate 数据库连接器，随后端服务一同启停，且**所有队列任务均不开启自动重试**：
+
+1. **媒体生成队列（`domains/generation/`）**：
+   - **宫格切图与文件上传**：同步处理完直接写入数据库（状态即 `completed`），不进异步队列。
+   - **视频生成（出片、局部编辑段、超分高清版）**：异步提交给上游视频网关并轮询结果；不同视频模型族的参数拼装规则集中在 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py)。
+   - **视频剪辑合成（`compose`）**：在本地调用 ffmpeg 将多段视频裁剪、重编码拼接后上传 OSS。
+   - **字幕识别（`subtitle`）与背景音乐生成（`audio`）**：各自拥有独立的队列通道。当一条素材片生成完成时，会自动触发回调排入一条字幕识别任务（抽取音频调用千问 ASR `qwen-audio-3.1-asr-flash`）；背景音乐则调用千问 TTS `qwen-audio-3.1-tts-next`，下载音频后用 ffmpeg 切除首尾静音、统一响度并转存为 m4a。
+   - **成片导出（`whole_film`）**：独立通道，转发给成片渲染服务处理（见[成片渲染服务](#成片渲染服务)）。
+2. **参考视频拆解队列（`domains/references/`，队列名 `references`）**：
+   - 调用 `BreakdownRunner`（60 秒以内的视频在本地按每秒 10 帧抽帧并提取音轨，超过 60 秒的视频直接传 URL 让上游抽帧），然后通过运行时的 `/v1/model-calls/responses` 接口调用火山方舟模型生成拆解报告。
+   - **错误分类映射**：
+     - `model_unavailable`：运行时返回 `409 model_unavailable`（后台未配置或未启用拆解模型）。
+     - `model_call_failed`（可重试错误）：火山方舟返回 429 限流或 5xx 错误、网络连不上、或返回的内容不是完整合法的 JSON。
+     - `model_failed`（不可重试错误）：其余 4xx 报错、调用超时或应用凭证被拒。
+     - `timeout`：后台定时任务每分钟扫描一次，将处于「拆解中」超过 20 分钟的任务强制收尾为超时。
+   - 拆解报告成功写回数据库后，会自动排入一次 AI 打标任务。
+3. **资料库 AI 打标队列（`domains/tagging/`，队列名 `tagging`）**：
+   - 读取参考视频的拆解报告（或爆款素材所属对话工作区里的 `treatment.md`），把当前标签树中所有开启了 `auto_fill=ai` 的维度动态拼装成 JSON Schema，通过运行时调用火山方舟模型打标。
+   - 拿到结果后，在单个事务内清空该条目原有的 AI 维度标签并写入新选中的标签（人工维度的标签保持不动）。后台定时任务每分钟将超过 10 分钟仍未结束的打标任务收尾为 `timeout`。
+
+---
+
+## 4. 日志
+
+视频后端（[app/logging.py](../server/src/iclip/app/logging.py)）与运行时服务（[agent_runtime/http/logging.py](../runtime/src/agent_runtime/http/logging.py)）采用完全一致的 `structlog` 日志配置：
+- 本地开发（Console 格式）打印本地时间并标明服务名（「后端」或「运行时」）；线上环境（JSON 格式）输出 ISO UTC 时间戳。
+- 自动屏蔽正常的 `/healthz` 健康检查请求日志和 WebSocket 重复连接日志，并通过 `QUIET_LOGGERS` 压低第三方库的无关日志噪音。
+- 每个请求的 `request_id` 和当前登录身份 `principal` 通过 `contextvars` 自动绑定到上下文中，业务代码打日志只需写固定中文短句和关键变量（见 [AGENTS.md](../AGENTS.md)）。

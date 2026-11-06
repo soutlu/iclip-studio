@@ -14,23 +14,34 @@ ENV UV_PYTHON_DOWNLOADS=never \
     UV_NO_CACHE=1 \
     PATH=/app/.venv/bin:$PATH
 
+# 构建上下文是仓库根（见 Dockerfile.dockerignore）。
 # alembic.ini 与 scripts.admin 按相对路径解析，工作目录必须是 server 根；
-# configs/、agents/、skills/ 不进镜像，由部署把三个目录挂到 /app 下。
+# configs/ 不进镜像，由部署挂到 /app/configs。
 WORKDIR /app
 
 # 先建运行用户、以它的身份装依赖和拷源码，文件生来就归它所有。不要在最后 chown -R /app：
 # 那会把整个虚拟环境复制成一个新层，每次改代码都要重新上传这个大层。
-RUN useradd --system --uid 1000 --home /app iclip && chown iclip:iclip /app
+# runtime 项目放在 /runtime、视频插件项目放在 /plugins/video，server 的路径依赖 ../runtime 与
+# ../plugins/video 从 /app 解析到它们。
+RUN useradd --system --uid 1000 --home /app iclip \
+    && chown iclip:iclip /app \
+    && mkdir /runtime && chown iclip:iclip /runtime \
+    && mkdir -p /plugins/video && chown -R iclip:iclip /plugins
 USER iclip
 
-# 先装依赖再拷源码，改代码不重装依赖。
-COPY --chown=iclip:iclip pyproject.toml uv.lock ./
-RUN uv sync --locked --no-dev --no-install-project
+# 先装第三方依赖再拷源码，改代码不重装依赖：server 与两个路径依赖这时只有项目文件，装的时候跳过它们。
+COPY --chown=iclip:iclip runtime/pyproject.toml /runtime/
+COPY --chown=iclip:iclip plugins/video/pyproject.toml /plugins/video/
+COPY --chown=iclip:iclip server/pyproject.toml server/uv.lock ./
+RUN uv sync --locked --no-dev --no-install-project \
+    --no-install-package agent-runtime --no-install-package iclip-video-plugins
 
-COPY --chown=iclip:iclip alembic.ini ./
-COPY --chown=iclip:iclip src ./src
-COPY --chown=iclip:iclip migrations ./migrations
-COPY --chown=iclip:iclip scripts ./scripts
+COPY --chown=iclip:iclip runtime/src /runtime/src
+COPY --chown=iclip:iclip plugins/video/src /plugins/video/src
+COPY --chown=iclip:iclip server/alembic.ini ./
+COPY --chown=iclip:iclip server/src ./src
+COPY --chown=iclip:iclip server/migrations ./migrations
+COPY --chown=iclip:iclip server/scripts ./scripts
 RUN uv sync --locked --no-dev
 
 EXPOSE 7788

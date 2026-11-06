@@ -1,42 +1,56 @@
-"""integration_no_llm 夹具：真实 Postgres 三级解析 + 迁移 + app 装配。
-
-Postgres 解析顺序：显式 ``TEST_DATABASE_URL`` > testcontainers 本地兜底
-> 不可用即 skip（CI 必须提供 service container，因此 CI 永不静默 skip）。
-"""
-
 from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Generator, Mapping
 from pathlib import Path
 
 import httpx
 import pytest
+from agent_runtime.plugins.base import PluginBinder, PluginRegistry
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from fastapi import FastAPI
 from pydantic_ai import models as pydantic_ai_models
+from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.pool import NullPool
 
-from iclip.app.bootstrap import build_app
-from iclip.config import ResolvedAgent
+from iclip.config import RuntimeConfig
 from iclip.domains.identity.pms import PmsUserClient
 from iclip.domains.identity.sso import SsoVerifier
 from iclip.platform.db.engine import build_engine
-from tests.helpers.app import TEST_MODEL_NAME, make_client, make_runtime_config
+from tests.helpers.agents import AgentSeed, model_builder, seed_agents
+from tests.helpers.app import (
+    TEST_CREDENTIAL_KEY,
+    TEST_MODEL_NAME,
+    make_client,
+    make_runtime_config,
+)
+from tests.helpers.media_probe import offline_media_checks
+from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected, reset_database
+from tests.helpers.runtime_backed import (
+    RUNTIME_APP_KEY,
+    RUNTIME_INTERNAL_TOKEN,
+    RUNTIME_URL,
+    build_backed_app,
+    config_services_of,
+    standard_plugins,
+)
 
 SERVER_DIR = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture(autouse=True)
 def _no_real_model_requests(monkeypatch: pytest.MonkeyPatch) -> None:
-    """官方护栏：这一层只用替身，任何真模型请求都直接报错。按用例开关，不影响同一进程里的其他层。"""
-
     monkeypatch.setattr(pydantic_ai_models, "ALLOW_MODEL_REQUESTS", False)
+
+
+@pytest.fixture(autouse=True)
+def _offline_media_checks(monkeypatch: pytest.MonkeyPatch) -> None:
+    offline_media_checks(monkeypatch)
 
 
 TEST_SECRET = "test-secret-0123456789-0123456789-xyz"
@@ -65,8 +79,6 @@ def pg_url() -> Generator[str]:
 
 @pytest.fixture(scope="session")
 def migrated_pg(pg_url: str) -> str:
-    """对测试库执行 alembic upgrade head（每会话一次）。"""
-
     cfg = AlembicConfig(str(SERVER_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(SERVER_DIR / "migrations"))
     cfg.attributes["sqlalchemy_url"] = pg_url
@@ -78,14 +90,16 @@ def migrated_pg(pg_url: str) -> str:
 def base_env(monkeypatch: pytest.MonkeyPatch, migrated_pg: str) -> None:
     monkeypatch.setenv("DATABASE_URL", migrated_pg)
     monkeypatch.setenv("AUTH_SECRET", TEST_SECRET)
+    monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEYS", TEST_CREDENTIAL_KEY)
+    monkeypatch.setenv("RUNTIME_URL", RUNTIME_URL)
+    monkeypatch.setenv("RUNTIME_APP_KEY", RUNTIME_APP_KEY)
+    monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", RUNTIME_INTERNAL_TOKEN)
     monkeypatch.delenv("SSO_BASE_URL", raising=False)
     monkeypatch.delenv("PMS_BASE_URL", raising=False)
     monkeypatch.delenv("SSO_REDIRECT_URL", raising=False)
     monkeypatch.delenv("ROOT_EMAIL", raising=False)
     monkeypatch.delenv("SSO_OAUTH_NAME", raising=False)
-    # 隔离开发机的产品目录库配置。
     monkeypatch.delenv("PRODUCT_CATALOG_DATABASE_URL", raising=False)
-    # 隔离开发机的对象存储凭证。
     monkeypatch.delenv("OSS_BUCKET", raising=False)
 
 
@@ -96,8 +110,6 @@ async def _reset(url: str) -> None:
 
 @pytest.fixture
 async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    """清空测试表后给出引擎，供直接装配仓储、报表与运行时的测试使用。"""
-
     await _reset(migrated_pg)
     engine = build_engine(migrated_pg)
     try:
@@ -107,40 +119,54 @@ async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
 
 
 @pytest.fixture
-def agent_declarations() -> tuple[ResolvedAgent, ...]:
-    """测试可覆写：非空即注册对应 agent（默认无 agent，/agents/* 全部 404）。"""
-
+def agent_seeds() -> tuple[AgentSeed, ...]:
     return ()
 
 
 @pytest.fixture
-def models() -> dict[str, TestModel]:
-    """官方 test 替身；agent 声明引用 TEST_MODEL_NAME。"""
-
+def models() -> Mapping[str, Model]:
     return {TEST_MODEL_NAME: TestModel()}
+
+
+@pytest.fixture
+def runtime_plugins() -> PluginRegistry | PluginBinder:
+    return standard_plugins
+
+
+def _build_app(
+    config: RuntimeConfig,
+    engine: AsyncEngine,
+    models: Mapping[str, Model],
+    plugins: PluginRegistry | PluginBinder,
+    skill_cache_dir: Path,
+) -> FastAPI:
+    return build_backed_app(
+        config,
+        engine=engine,
+        build_model=model_builder(models),
+        credential_probe=KeyCheckingProbe({GOOD_KEY}),
+        plugins=plugins,
+        skill_cache_dir=skill_cache_dir,
+    )
 
 
 @pytest.fixture
 async def app(
     base_env: None,
-    migrated_pg: str,
-    agent_declarations: tuple[ResolvedAgent, ...],
-    models: dict[str, TestModel],
-) -> AsyncGenerator[FastAPI]:
-    await _reset(migrated_pg)
-    engine = build_engine(migrated_pg)
-    try:
-        yield build_app(
-            make_runtime_config(), agents=agent_declarations, engine=engine, models=models
-        )
-    finally:
-        await engine.dispose()
+    engine: AsyncEngine,
+    agent_seeds: tuple[AgentSeed, ...],
+    models: Mapping[str, Model],
+    runtime_plugins: PluginRegistry | PluginBinder,
+    tmp_path: Path,
+) -> FastAPI:
+    built = _build_app(make_runtime_config(), engine, models, runtime_plugins, tmp_path / "skills")
+    if agent_seeds:
+        await seed_agents(config_services_of(built), engine, agent_seeds)
+    return built
 
 
 @pytest.fixture
 def cors_allow_origins() -> tuple[str, ...]:
-    """测试可覆写：WS app 的跨域白名单（默认空，只认同源）。"""
-
     return ()
 
 
@@ -148,37 +174,34 @@ def cors_allow_origins() -> tuple[str, ...]:
 def ws_agent_app(
     base_env: None,
     migrated_pg: str,
-    agent_declarations: tuple[ResolvedAgent, ...],
-    models: dict[str, TestModel],
+    agent_seeds: tuple[AgentSeed, ...],
+    models: Mapping[str, Model],
     cors_allow_origins: tuple[str, ...],
+    runtime_plugins: PluginRegistry | PluginBinder,
+    tmp_path: Path,
 ) -> Generator[FastAPI]:
-    """在 TestClient 事件循环中装配带 agent 的 WS app。
-
-    使用 NullPool 避免 asyncpg 连接跨事件循环复用。
-    """
-
     asyncio.run(_reset(migrated_pg))
     engine = build_engine(migrated_pg, poolclass=NullPool)
-    yield build_app(
+    built = _build_app(
         make_runtime_config(cors_allow_origins=cors_allow_origins),
-        agents=agent_declarations,
-        engine=engine,
-        models=models,
+        engine,
+        models,
+        runtime_plugins,
+        tmp_path / "skills",
     )
+    if agent_seeds:
+        asyncio.run(seed_agents(config_services_of(built), engine, agent_seeds))
+    yield built
     asyncio.run(engine.dispose())
 
 
 @pytest.fixture
 def root_email() -> str | None:
-    """测试可覆写：非空即启用 root 引导（ROOT_EMAIL）。"""
-
     return None
 
 
 @pytest.fixture
 def sso_oauth_name() -> str | None:
-    """测试可覆写：非空即设置 OAuth 账号表里的提供方名（SSO_OAUTH_NAME）。"""
-
     return None
 
 
@@ -192,8 +215,6 @@ async def sso_app(
     root_email: str | None,
     sso_oauth_name: str | None,
 ) -> AsyncGenerator[FastAPI]:
-    """SSO 开启的 app；协议外呼经 MockTransport。"""
-
     monkeypatch.setenv("SSO_BASE_URL", "https://sso.test")
     monkeypatch.setenv("SSO_REDIRECT_URL", "https://app.test/auth/sso/landing")
     if root_email:
@@ -217,7 +238,13 @@ async def sso_app(
     await _reset(migrated_pg)
     engine = build_engine(migrated_pg)
     try:
-        yield build_app(make_runtime_config(), engine=engine, sso_verifier=verifier, pms_client=pms)
+        yield build_backed_app(
+            make_runtime_config(),
+            engine=engine,
+            sso_verifier=verifier,
+            pms_client=pms,
+            credential_probe=KeyCheckingProbe({GOOD_KEY}),
+        )
     finally:
         await engine.dispose()
 

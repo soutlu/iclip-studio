@@ -39,7 +39,6 @@ describe('promptToDoc / docToPrompt', () => {
       schema.node('paragraph', null, [schema.text('前文'), chip, schema.text('后文')]),
     ])
     expect(docToPrompt(withChip)).toBe('前文后文')
-    // 有 chip 的文档在 chip 处多一个位置：chip 前后两个位置都对应正文偏移 2。
     expect([1, 2, 3, 4, 5, 6, 7].map((position) => promptOffsetAt(withChip, position))).toEqual([
       0, 1, 2, 2, 3, 4, 4,
     ])
@@ -96,7 +95,6 @@ describe('PromptEditor', () => {
     expect(changed).toBe(`新增${original}`)
     await userEvent.keyboard('{Control>}z{/Control}')
     expect(changed).toBe(original)
-    // 全选后插入引用：选区覆盖整段正文，整段换成这个引用。
     await userEvent.keyboard('{Control>}a{/Control}')
     act(() => ref.current?.insertFrame(1))
     expect(changed).toBe('@Image1')

@@ -1,21 +1,16 @@
-"""拼装规则的字面检查，以及反拆与拼装互为逆。
-
-前端「复制完整提示词」照同一规则显示，所以第一个期望串与 web 的 storyboard.api 单测一字不差；
-两边任何一边改了拼法，这里就得跟着改。"""
-
 from __future__ import annotations
 
 from typing import Any
 
 import pytest
-
-from iclip.common.shot_prompt import (
+from iclip_video.shot_prompt import (
     ShotCut,
     ShotScript,
     format_seconds,
     format_shot_prompt,
     parse_shot_prompt,
 )
+
 from iclip.domains.generation.schemas import VideoShotIn
 from tests.helpers.generation import LEGACY_SHOT_PROMPT, SHOT_PROMPT, video_shot
 
@@ -31,8 +26,6 @@ def test_single_shot_matches_the_frontend_fixture() -> None:
 
 
 def test_timestamps_are_printed_as_given_including_gaps_and_decimals() -> None:
-    """起止照分镜文件里的写，镜头之间留的空档也照实保留，不改成首尾相接。"""
-
     shot = shot_of(
         "设定。",
         {"timestamps": [0, 3.5], "prompt": "一。", "image_indexes": []},
@@ -77,7 +70,6 @@ MULTI_CUT = (
 )
 
 LOOKALIKE_SETTINGS = "0–2秒 这一行是设定，不是镜头。\n镜头语言统一用手持。"
-"""全局设定里有一行长得像镜头，「镜头：」之前的都不能拆成镜头。"""
 
 
 @pytest.mark.parametrize(
@@ -86,7 +78,6 @@ LOOKALIKE_SETTINGS = "0–2秒 这一行是设定，不是镜头。\n镜头语�
         SHOT_PROMPT,
         MULTI_CUT,
         "  设定。\n\n\n镜头：\n0–2秒   原文 @Image02。\n\n不要生成字幕，不要生成背景音乐。",
-        # 空的全局设定、空的正文，以及正文里另起一行写约束的原话
         "\n\n镜头：\n0–2秒 \n2–3秒 一。\n不要生成字幕，不要生成背景音乐。\n不要生成字幕，不要生成背景音乐。",
         f"{LOOKALIKE_SETTINGS}\n\n镜头：\n0–3秒 一。\n不要生成字幕，不要生成背景音乐。",
     ],
@@ -142,8 +133,6 @@ def test_a_settings_line_that_looks_like_a_shot_stays_in_the_settings() -> None:
 
 
 def test_the_bracketed_layout_with_one_line_per_shot_still_parses() -> None:
-    """2026-10-09 之前：每镜一行 ``[起–止秒｜镜头N] 正文``，没有「镜头：」。"""
-
     text = (
         "设定第一行。\n设定第二行。\n\n"
         "[0–3.5秒｜镜头1] 走近 @Image2，再看 @Image1。\n"
@@ -157,8 +146,6 @@ def test_the_bracketed_layout_with_one_line_per_shot_still_parses() -> None:
 
 
 def test_the_old_layout_with_markers_on_their_own_line_still_parses() -> None:
-    """2026-09-08 之前：约束行夹在全局设定里，标记独占一行，镜与镜之间空一行。"""
-
     text = (
         "人物保持一致。\n不要生成字幕，不要生成背景音乐。\n\n"
         "[0–2.5秒｜镜头1]\n模特走出门厅 @Image2。\n\n"
@@ -179,20 +166,15 @@ def test_the_old_layout_with_markers_on_their_own_line_still_parses() -> None:
     "text",
     [
         "模特走向镜头，停下微笑。",
-        # 现行写法：时间线接不上
         "设定。\n\n镜头：\n1–3秒 第一镜不从 0 起。",
         "设定。\n\n镜头：\n0–3秒 一。\n2–4秒 和上一镜交叠。",
         "设定。\n\n镜头：\n0–0秒 结束不晚于开始。",
-        # 现行写法：「镜头：」下面没有镜头，或第一行不是一镜
         "设定。\n\n镜头：\n不要生成字幕，不要生成背景音乐。",
         "设定。\n\n镜头：\n先写一句。\n0–3秒 一。",
-        # 没有「镜头：」时，长得像镜头的行不算
         "设定。\n\n0–3秒 一。\n不要生成字幕，不要生成背景音乐。",
-        # 旧写法：时间线接不上
         "设定。\n\n[1–3秒｜镜头1] 第一镜不从 0 起。",
         "设定。\n\n[0–3秒｜镜头1] 一。\n[2–4秒｜镜头2] 和上一镜交叠。",
         "设定。\n\n[0–0秒｜镜头1] 结束不晚于开始。",
-        # 几组镜头拼在一段里，每组都从 0 起，时间线接不上
         "镜头组 1\n设定。\n\n[0–3秒｜镜头1] 一。\n\n镜头组 2\n设定。\n\n[0–4秒｜镜头1] 二。",
     ],
 )

@@ -22,7 +22,6 @@ const context = contextOf(
   },
 )
 
-/** 成片 10 秒 */
 const film = () => draftOf([video('v1', 's1', 0, 10_000)])
 
 describe('setMusic', () => {

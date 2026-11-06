@@ -1,5 +1,3 @@
-/** 素材片区的规则：从本对话的视频记录里挑出这一组的出片、按提交时间排好，每张卡显示这条出片最新的一版，读出卡上画的几样，以及卡片尺寸。 */
-
 import { aspectOf } from '@/shared/lib/aspect-ratio'
 import { byFinish, isComposite } from './editing/version-lineage'
 import type { Shot } from './shot-document'
@@ -7,34 +5,22 @@ import { isShotVideo, phaseOfStatus } from './shots'
 import { historyShotOf, type GenerationJob } from './storyboard.api'
 import { editCountsByRoot } from './video-editor/edit-chain'
 
-/** 卡片的三种状态：排队与上游在跑都算在途。 */
 export type TakeState = 'running' | 'completed' | 'failed'
 
 export type Take = {
-  /** 这张卡的出片：卡的身份、排序、状态与请求里的几样都读它，编辑视频也以它打开。 */
   job: GenerationJob
-  /** 卡显示的这一版：这条出片最新完成的合成，没有就是出片本身；封面、播放、片长与下载都用它。 */
   shown: GenerationJob
   state: TakeState
-  /** 卡片画幅：这次出片请求的画幅，请求里没有就用分镜的。 */
   aspect: { w: number; h: number }
-  /** 请求里的分辨率档位原样；没记就是 undefined，不显示。 */
   resolution: string | undefined
-  /** 显示的这一版实测的片长（出片是上游给的，合成是渲染后量的）；没记就是 undefined，不拿请求秒数去猜。 */
   durationSeconds: number | undefined
-  /** 这条出片被成功编辑过几次。 */
   editCount: number
-  /** 请求用的模型 id；缺失或空白视为没记。 */
   model: string | undefined
-  /** 可回填到当前组的结构化镜头组；接口调用方只写了正文的记录没有。 */
   history: Shot['prompt'] | undefined
-  /** 显示的这一版的地址：只有出片成功且地址不空才有。 */
   outputUrl: string | undefined
-  /** 失败时服务端的原话。 */
   error: string | undefined
 }
 
-/** request 是不透明 JSON；只读字串字段，空白算没有。 */
 const requestText = (job: GenerationJob, key: string): string | undefined => {
   const value = job.request?.[key]
   const trimmed = typeof value === 'string' ? value.trim() : ''
@@ -46,8 +32,6 @@ const stateOf = (job: GenerationJob): TakeState => {
   return phase === 'queued' || phase === 'running' ? 'running' : phase
 }
 
-/** 各出片最新完成的合成，按原作 id 查：合成可以基于更早的合成，所以认原作不认来源；
- * 在跑、失败与没给地址的不算，与视频编辑页版本列表的最后一版同一口径。 */
 const latestCompositesByRoot = (
   jobs: readonly GenerationJob[],
 ): ReadonlyMap<string, GenerationJob> => {
@@ -55,13 +39,10 @@ const latestCompositesByRoot = (
     .filter((job) => isComposite(job) && job.status === 'completed' && job.outputUrl?.trim())
     .toSorted(byFinish)
   const latest = new Map<string, GenerationJob>()
-  // 按完成先后写进去，同一原作后完成的盖掉先完成的。
   for (const job of finished) if (job.rootJobId !== null) latest.set(job.rootJobId, job)
   return latest
 }
 
-/** 这一组的出片（编辑段、合成、图片与别的组都不成卡），按提交时间从新到旧；每张卡显示这条出片最新完成的合成，
- * 没有就显示出片本身。`aspectRatio` 是分镜的画幅，请求里没记画幅的卡按它画。 */
 export const takesOfShot = (
   jobs: readonly GenerationJob[],
   shotIndex: number,
@@ -92,7 +73,6 @@ export const takesOfShot = (
     })
 }
 
-/** 选中素材片时舞台工具条上的一个动作：不出现、可用，或置灰并说明原因。 */
 export type TakeAction =
   { kind: 'hidden' } | { kind: 'enabled' } | { kind: 'blocked'; reason: string }
 
@@ -102,10 +82,6 @@ const HIDDEN: TakeAction = { kind: 'hidden' }
 const ENABLED: TakeAction = { kind: 'enabled' }
 const blocked = (reason: string): TakeAction => ({ kind: 'blocked', reason })
 
-/** 舞台工具条上各动作的状态，规则沿用原生成记录：
- * - 回填只看有没有结构化镜头组，在途、失败也能回填；制作页没有回填（`refillable: false`），镜头组照文件拼；
- * - 下载、编辑视频只在出了片（成功且有地址）时可用；在途不出现，失败或没给地址置灰；
- * - 只读时没有编辑视频与回填，下载照旧。 */
 export const takeActionsOf = (
   take: Take,
   { readOnly, refillable = true }: { readOnly: boolean; refillable?: boolean },
@@ -127,14 +103,10 @@ export const takeActionsOf = (
   }
 }
 
-/** 素材片区的行高。 */
 export const TAKE_ROW_HEIGHT = 176
 
-/** 横屏卡最多占可见宽度的这么多，免得一张就占满、看不出还能往后滑。 */
 const LANDSCAPE_MAX_SHARE = 0.48
 
-/** 卡片尺寸：高是行高，宽按画幅算；横屏卡宽超过可见宽度的 48% 时等比缩小（同一行按底边对齐）。
- * 可见宽度还没量出来（0）时不封顶。 */
 export const takeCardSize = (
   aspect: { w: number; h: number },
   visibleWidth: number,

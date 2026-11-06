@@ -8,9 +8,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
+from agent_runtime.errors import Conflict, NotFound, ValidationFailed
+from iclip_video.shot_prompt import format_seconds
 
-from iclip.common.errors import Conflict, NotFound, ValidationFailed
-from iclip.common.shot_prompt import format_seconds
 from iclip.domains.generation.clip_models import UpstreamMode, clip_model
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
@@ -70,7 +70,6 @@ _logger = structlog.stdlib.get_logger(__name__)
 
 ClearCompletion = Callable[[uuid.UUID, uuid.UUID], Awaitable[None]]
 
-# 网关调度：不带参考音视频时 1 张图作首帧、2 张依次作首尾帧，更多才作参考图（multiflow docs/api.md）。
 _MAX_FIRST_FRAMES = 2
 _CONCRETE_RATIO = re.compile(r"\d+(\.\d+)?:\d+(\.\d+)?")
 
@@ -83,8 +82,6 @@ class ProviderTarget:
 
 @dataclass(frozen=True, slots=True)
 class VideoEnhanceSpec:
-    """高清版的运行配置：用哪个模型、配了哪几档（从高到低）、目标帧率（为空不插帧）。"""
-
     model: str
     resolutions: tuple[VideoEnhanceResolution, ...]
     fps: int | None
@@ -92,8 +89,6 @@ class VideoEnhanceSpec:
 
 @dataclass(frozen=True, slots=True)
 class EnhanceTier:
-    """一条视频能做的一档高清版，与这一档最近的一条超分记录（谁提的都算），还没有为空。"""
-
     resolution: VideoEnhanceResolution
     job: GenerationJob | None
 
@@ -101,7 +96,6 @@ class EnhanceTier:
 @dataclass(frozen=True, slots=True)
 class VideoEnhancements:
     downloaded_job_ids: tuple[uuid.UUID, ...]
-    """下载高清版时记下载事件的素材片：视频是它自己，成片是它导出时用到的各条。"""
     tiers: tuple[EnhanceTier, ...]
 
 
@@ -302,9 +296,6 @@ class GenerationService:
     async def _original_aspect_ratio(
         self, principal: Principal, base: GenerationJob, conversation_id: uuid.UUID | None
     ) -> str:
-        """原作出片请求里的画幅：参考图生成不给比例时网关按素材自适应，要与原片同画幅只能明说。
-        原作没记具体比例就拒，不让画幅悄悄跟着素材走。"""
-
         original = (
             base
             if base.root_job_id is None
@@ -347,17 +338,6 @@ class GenerationService:
             metadata=request.metadata,
             shot_index=None,
             source_job_id=base_id,
-        )
-
-    async def find_conversation_image(
-        self, principal: Principal, url: str, conversation_id: uuid.UUID
-    ) -> GenerationJob | None:
-        return await self._repo.find_by_output(
-            url,
-            kind=KIND_IMAGE,
-            owner=visible_owner_incl_act_as(principal),
-            conversation_id=conversation_id,
-            inherited=await self._inheritance(principal, conversation_id),
         )
 
     async def find_upload(self, principal: Principal, url: str) -> GenerationJob | None:
@@ -499,10 +479,6 @@ class GenerationService:
     async def submit_whole_film(
         self, principal: Principal, *, conversation_id: uuid.UUID, request: WholeFilmRequest
     ) -> GenerationJob:
-        """把一次成片导出记成一条生成记录、排进渲染服务那条队列。
-
-        归属与对话由调用方核对过。导出不是动手创作，不抹对话的收尾标记。"""
-
         self._require_render()
         return await self._queue_new(
             _pending_job(
@@ -518,16 +494,10 @@ class GenerationService:
         )
 
     async def cancel_whole_film(self, job: GenerationJob) -> None:
-        """取消一次成片导出，记为失败、错误码 ``CANCELLED``；调用方已核对归属。
-
-        还在排队就直接记；正在交给渲染服务答 409；已交出去的先让渲染服务取消（它查不到也行）再记，
-        渲染服务连不上抛 ``RenderUnavailable``、记录不动；已有结论的不改。"""
-
         render = self._require_render()
         if job.status == STATUS_PENDING:
             if await self._mark_cancelled(job.id, only_if_status=STATUS_PENDING) is not None:
                 return
-            # 读到排队之后队列已经接手，按它现在的状态再判一次；不会再回到排队。
             job = await self._repo.get(job.id, owner=None)
         if job.status == STATUS_SUBMITTING:
             raise Conflict("正在交给渲染服务，稍后再取消")
@@ -555,12 +525,6 @@ class GenerationService:
     async def submit_video_enhance(
         self, principal: Principal, request: VideoEnhanceIn
     ) -> GenerationJob:
-        """给一条素材片或一条导出完成的成片提一档高清版，记一条超分记录、排进视频那条队列。
-
-        来源不按属主取：资料库里全站的片谁都看得到、下载得到，高清版也一样。同一来源同一档已有
-        没失败的超分记录（谁提的都算），直接给那一条，不新建、不排队；失败的可以重做。超分记录
-        不挂对话、没有原作，镜号抄来源；产出的总是一个视频，种类一律是视频。"""
-
         enhance = self._require_enhance()
         source = await self._repo.get(request.source_job_id, owner=None)
         if not _enhanceable(source) or source.output.url is None:
@@ -598,9 +562,6 @@ class GenerationService:
         )
 
     async def enhancements(self, job_id: uuid.UUID) -> VideoEnhancements:
-        """一条视频能做的高清版各档与各档最近的一条超分记录。来源不按属主取，不存在抛 ``NotFound``；
-        来源做不了高清版时两项都空，高清版没开通时没有档。"""
-
         source = await self._repo.get(job_id, owner=None)
         if not _enhanceable(source):
             return VideoEnhancements(downloaded_job_ids=(), tiers=())
@@ -608,7 +569,6 @@ class GenerationService:
         if self._enhance is None:
             return VideoEnhancements(downloaded_job_ids=downloaded, tiers=())
         latest: dict[VideoEnhanceResolution, GenerationJob] = {}
-        # 新建的在前，每档取第一条就是最近的那条。
         for job in await self._repo.enhancements_of(source.id):
             resolution = _enhanced_to(job)
             if resolution is not None:
@@ -629,9 +589,6 @@ class GenerationService:
     async def _enhance_tiers(
         self, enhance: VideoEnhanceSpec, source: GenerationJob
     ) -> tuple[VideoEnhanceResolution, ...]:
-        """配置的档里比来源清晰的那几档（按短边比），保持配置的先后；来源清晰度推不出来就全给，
-        由上游去拒。"""
-
         edge = await self._short_edge(source)
         return tuple(
             resolution
@@ -640,9 +597,6 @@ class GenerationService:
         )
 
     async def _short_edge(self, source: GenerationJob) -> int | None:
-        """来源的短边像素，按出片请求里的分辨率推，不探测文件：合成取原作的，成片取画面轨第一条
-        素材片的。推不出来是 ``None``。"""
-
         video = source
         if video.kind == KIND_WHOLE_FILM:
             if not isinstance(video.request, WholeFilmRequest) or not video.request.videos:
@@ -737,9 +691,9 @@ class GenerationService:
         return job
 
     async def in_flight_by_conversation(
-        self, conversation_ids: Sequence[uuid.UUID], *, kind: GenerationKind
+        self, *, owner: uuid.UUID | None, kind: GenerationKind
     ) -> Mapping[uuid.UUID, InFlightPhase]:
-        return await self._repo.in_flight_by_conversation(conversation_ids, kind=kind)
+        return await self._repo.in_flight_by_conversation(owner=owner, kind=kind)
 
     async def latest_master_by_conversation(
         self, conversation_ids: Sequence[uuid.UUID]
@@ -784,8 +738,6 @@ def _require_base(job: GenerationJob) -> None:
 
 
 def _enhanceable(job: GenerationJob) -> bool:
-    """能做高清版的来源：一条素材片，或一条导出完成、有地址的成片。"""
-
     if is_base_master(job):
         return True
     return (
@@ -797,8 +749,6 @@ def _enhanceable(job: GenerationJob) -> bool:
 
 
 def _downloaded_with(source: GenerationJob) -> tuple[uuid.UUID, ...]:
-    """下载这条来源的高清版时记下载事件的素材片，口径同下载来源本身。"""
-
     if isinstance(source.request, WholeFilmRequest):
         return tuple(video.job_id for video in source.request.videos)
     return (source.id,)
@@ -812,8 +762,6 @@ _RESOLUTION = re.compile(r"(\d+)p")
 
 
 def _short_edge_of(resolution: str | None) -> int | None:
-    """``720p`` 这样的档位写法的短边像素；别的写法认不出，是 ``None``。"""
-
     if resolution is None:
         return None
     matched = _RESOLUTION.fullmatch(resolution.strip().lower())
@@ -846,8 +794,6 @@ def _pending_job(
     root_job_id: uuid.UUID | None = None,
     source_job_id: uuid.UUID | None = None,
 ) -> GenerationJob:
-    """一条刚受理、还在排队的记录，种类与操作随请求类型定。"""
-
     now = datetime.now(UTC)
     return GenerationJob(
         id=uuid.uuid4(),

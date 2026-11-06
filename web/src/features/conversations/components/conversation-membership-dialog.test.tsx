@@ -16,23 +16,16 @@ const TASK_A = '33333333-3333-4333-8333-333333333333'
 const TASK_B = '44444444-4444-4444-8444-444444444444'
 
 const conversation = (): Conversation => ({
-  activity: {
-    busy: false,
-    lastTurnReason: null,
-    pendingInteraction: 'none',
-    videoGeneration: 'none',
-  },
+  activity: { busy: false, lastTurnReason: null, pendingInteraction: 'none' },
   agentId: 'storyboard',
   collectionId: COLLECTION_A,
   completedAt: null,
   createdAt: '2026-09-11T00:00:00Z',
   deletedAt: null,
-  eventEpoch: 'epoch-1',
   forkTurn: null,
   forkedFrom: null,
   id: '55555555-5555-4555-8555-555555555555',
   lastRunId: null,
-  lastSeq: 0,
   ownerUserId: '66666666-6666-4666-8666-666666666666',
   taskId: TASK_A,
   title: '秋季新品分镜',

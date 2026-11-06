@@ -1,13 +1,15 @@
-"""conversations 装配单元：组合根只调用 ``build_conversations_module``。"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from iclip.domains.conversations.api import create_conversations_router
-from iclip.domains.conversations.repository import ConversationRepository, WholeFilmDraftStore
+from iclip.domains.conversations.api import create_conversations_router, create_previews_router
+from iclip.domains.conversations.repository import (
+    AgentPreviewStore,
+    ConversationRepository,
+    WholeFilmDraftStore,
+)
 from iclip.domains.conversations.service import (
     ActivitiesOf,
     AnnounceConversationDeleted,
@@ -15,19 +17,20 @@ from iclip.domains.conversations.service import (
     AnnounceTitle,
     BusyConversationIds,
     ClaimTask,
+    CollectionExists,
     ConversationFilm,
     ConversationService,
-    CopyConversationWorkspace,
-    CopySameStyle,
-    EventWatermarkOf,
-    ForkTranscript,
     GenerateTitle,
     LatestMasterUrls,
     ListAgents,
     ListCollections,
     ListDerivedFiles,
     ReadDerivedFile,
+    RuntimeSessions,
+    SameStyleFiles,
     SameStyleSource,
+    TaskExists,
+    VideoProgressOf,
     WholeFilmDraftReferences,
     WholeFilmExports,
     WorkspaceDocumentValidator,
@@ -39,7 +42,6 @@ from iclip.domains.identity.public import ActAs
 @dataclass(frozen=True)
 class ConversationsModule:
     routers: tuple[Any, ...]
-    """使用 Any 隔离 Web 框架类型。"""
 
     service: ConversationService
 
@@ -47,10 +49,14 @@ class ConversationsModule:
 def build_conversations_module(
     repo: ConversationRepository,
     *,
+    previews: AgentPreviewStore,
     act_as: ActAs,
     list_agents: ListAgents,
+    runtime: RuntimeSessions,
     list_collections: ListCollections,
     claim_task: ClaimTask,
+    task_exists: TaskExists,
+    collection_exists: CollectionExists,
     list_derived_files: ListDerivedFiles,
     read_derived_file: ReadDerivedFile,
     write_derived_file: WriteDerivedFile,
@@ -64,20 +70,20 @@ def build_conversations_module(
     activities_of: ActivitiesOf,
     busy_conversation_ids: BusyConversationIds,
     latest_master_urls: LatestMasterUrls,
-    fork_transcript: ForkTranscript,
-    copy_workspace: CopyConversationWorkspace,
-    copy_same_style: CopySameStyle,
+    video_progress_of: VideoProgressOf,
+    same_style_files: SameStyleFiles,
     same_style_source: SameStyleSource,
-    event_watermark: EventWatermarkOf,
     announce_row: AnnounceConversationRow,
     announce_deleted: AnnounceConversationDeleted,
 ) -> ConversationsModule:
-    """外部依赖由组合根注入，协议定义见 service.py。"""
-
     service = ConversationService(
         repo,
+        previews=previews,
+        runtime=runtime,
         list_collections=list_collections,
         claim_task=claim_task,
+        task_exists=task_exists,
+        collection_exists=collection_exists,
         list_derived_files=list_derived_files,
         read_derived_file=read_derived_file,
         write_derived_file=write_derived_file,
@@ -91,16 +97,17 @@ def build_conversations_module(
         activities_of=activities_of,
         busy_conversation_ids=busy_conversation_ids,
         latest_master_urls=latest_master_urls,
-        fork_transcript=fork_transcript,
-        copy_workspace=copy_workspace,
-        copy_same_style=copy_same_style,
+        video_progress_of=video_progress_of,
+        same_style_files=same_style_files,
         same_style_source=same_style_source,
-        event_watermark=event_watermark,
         announce_row=announce_row,
         announce_deleted=announce_deleted,
     )
     return ConversationsModule(
-        routers=(create_conversations_router(service, agents=list_agents, act_as=act_as),),
+        routers=(
+            create_conversations_router(service, agents=list_agents, act_as=act_as),
+            create_previews_router(service),
+        ),
         service=service,
     )
 

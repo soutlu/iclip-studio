@@ -1,5 +1,3 @@
-/** 带搜索框的选择列表（单选或多选）：过滤、活动项、键盘与 ARIA 在这里；候选顺序、行内容和选中语义由调用方组合。 */
-
 import {
   createContext,
   use,
@@ -49,20 +47,15 @@ const OPTION_CLASS =
 
 type SearchListRootProps = {
   options: readonly SearchListOption[]
-  /** 单选给一个 id 或 null；多选给已选 id 的数组，列表随之标成多选。 */
   value: string | null | readonly string[]
-  /** 点击或 Enter 选中某项；再次选中已选项是清除还是取消勾选由调用方决定。 */
   onSelect: (id: string) => void
   disabled?: boolean | undefined
-  /** 首次加载中：列表标 aria-busy，状态区显示加载文案。 */
   pending?: boolean | undefined
-  /** 读取失败原因；有缓存候选时与列表并存。 */
   error?: string | undefined
   className?: string | undefined
   children: ReactNode
 }
 
-/** 持有搜索词、匹配项、活动项与键盘处理，子组件通过 context 取用；自身只是一个纵向容器。 */
 export function SearchListRoot({
   options,
   value,
@@ -98,7 +91,6 @@ export function SearchListRoot({
   }
 
   const handleInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    // 保留输入法确认和系统编辑快捷键，避免把输入操作当成选择。
     if (
       disabled ||
       event.nativeEvent.isComposing ||
@@ -161,7 +153,6 @@ export function SearchListRoot({
   )
 }
 
-/** 调用方在 Root 内读写搜索词，例如清空按钮或「新建“{query}”」页脚。 */
 export function useSearchList(): {
   query: string
   setQuery: (query: string) => void
@@ -172,13 +163,11 @@ export function useSearchList(): {
 }
 
 type SearchListInputProps = {
-  /** 搜索框的可访问名与占位文案。 */
   label: string
   trailingAction?: ReactNode
   wrapperClassName?: string | undefined
 }
 
-/** combobox 角色的搜索框：键盘事件交给 Root，活动项通过 aria-activedescendant 暴露。 */
 export function SearchListInput({ label, trailingAction, wrapperClassName }: SearchListInputProps) {
   const { matches, query, changeQuery, activeId, disabled, listId, inputRef, handleInputKeyDown } =
     useSearchListContext()
@@ -212,14 +201,11 @@ export function SearchListInput({ label, trailingAction, wrapperClassName }: Sea
 export type SearchListOptionState = { selected: boolean; active: boolean }
 
 type SearchListOptionsProps = {
-  /** 列表的可访问名。 */
   label: string
   className?: string | undefined
-  /** 行内容；默认为高亮命中的名称加已选对勾。 */
   renderOption?: ((option: SearchListOption, state: SearchListOptionState) => ReactNode) | undefined
 }
 
-/** 匹配项的 listbox：选项不进 Tab 序列，点击与悬停都不抢搜索框的焦点。 */
 export function SearchListOptions({
   label,
   className,
@@ -244,7 +230,6 @@ export function SearchListOptions({
       aria-busy={pending}
       aria-label={label}
       aria-multiselectable={multiple || undefined}
-      // 列表自己限高滚动，不随外层弹层的高度上限收缩，否则受限空间里选项会被裁掉。
       className={cn('max-h-72 shrink-0 overflow-y-auto overscroll-contain', className)}
       id={listId}
       ref={listRef}
@@ -256,18 +241,12 @@ export function SearchListOptions({
         return (
           <button
             aria-selected={selected}
-            className={cn(
-              OPTION_CLASS,
-              selected && 'bg-state-active',
-              // 活动项写在选中态之后，键盘停在已选行时仍能看出焦点位置。
-              active && 'bg-state-focus',
-            )}
+            className={cn(OPTION_CLASS, selected && 'bg-state-active', active && 'bg-state-focus')}
             disabled={disabled}
             id={optionDomId(listId, option.id)}
             key={option.id}
             onClick={() => select(option.id)}
             onPointerDown={(event) => {
-              // 焦点始终留在搜索框，活动项通过 aria-activedescendant 告知辅助技术。
               if (event.button === 0) event.preventDefault()
             }}
             onPointerMove={() => setActiveId(option.id)}
@@ -287,11 +266,9 @@ export function SearchListOptions({
 type SearchListOptionContentProps = {
   option: SearchListOption
   selected: boolean
-  /** 名称前的图标或头像。 */
   leading?: ReactNode
 }
 
-/** 默认行内容：可选前缀、高亮命中的名称、已选对勾。 */
 export function SearchListOptionContent({
   option,
   selected,
@@ -323,14 +300,11 @@ function HighlightedLabel({ text }: { text: string }) {
 }
 
 type SearchListStatusProps = {
-  /** 候选的名词，用于加载与空态文案。 */
   label: string
   onRetry?: (() => void) | undefined
-  /** 自定义空态内容，收到去掉首尾空白的搜索词。 */
   renderEmpty?: ((query: string) => ReactNode) | undefined
 }
 
-/** 加载、失败与空态三选一；有候选且无异常时不渲染。 */
 export function SearchListStatus({ label, onRetry, renderEmpty }: SearchListStatusProps) {
   const { matches, query, pending, error, disabled, focusInput } = useSearchListContext()
   if (pending) {

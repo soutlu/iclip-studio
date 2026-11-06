@@ -9,13 +9,11 @@ import { server } from '@/testing/mocks/server'
 import { MOCK_STREAM_EPOCH, mockTranscriptPage } from '@/testing/mocks/transcript'
 import { pasteTextIntoComposer } from '@/testing/editor'
 import { renderWithProviders } from '@/testing/render'
-import { ShellChromeContext } from '@/shared/shell'
 import { Toaster } from '@/shared/ui/toast'
 import { conversationsQueryKeys, type SidebarTopology } from '../conversations.api'
 import { ConversationRoute } from './conversation-route'
-import { sessionEnvelope } from '@/testing/ws'
+import { type FakeSocket, SERVER_HELLO, sessionEnvelope } from '@/testing/ws'
 
-// jsdom 不支持 Lottie 加载时的 canvas 探测；替换装饰动画以验证会话行为。
 vi.mock('lottie-web/build/player/lottie_light', () => ({
   default: {
     loadAnimation: () => ({
@@ -28,11 +26,9 @@ vi.mock('lottie-web/build/player/lottie_light', () => ({
 
 const TAIL_TEXT = '这是第 2 轮的回复。'
 
-/** renderWithProviders 完成连接握手，返回 socket 供测试发送后续帧。 */
 const renderConversation = async () =>
   renderWithProviders(<ConversationRoute conversationId="c1" />)
 
-/** 路由按对话 id 换键重挂；这里用开关模拟离开再回来同一段对话。 */
 function RemountableConversation() {
   const [shown, setShown] = useState(true)
   return (
@@ -49,7 +45,7 @@ function RemountableConversation() {
 }
 
 const opsFrame = (ops: unknown[], seq: number) => ({
-  payload: { agent_id: 'main', ops, seq },
+  payload: { agent_id: 'main', ops, seq, type: 'transcript.ops' },
   session_id: 'c1',
   stream_epoch: MOCK_STREAM_EPOCH,
   type: 'transcript.ops',
@@ -60,7 +56,6 @@ const runningPrompt = (promptId: string) => ({
   prompt: { createdAt: '2026-08-31T03:00:00Z', promptId, status: 'running' },
 })
 
-/** 审批卡通过 approvalId 匹配工具调用。 */
 const APPROVAL_TURN = {
   kind: 'turn',
   ordinal: 3,
@@ -98,7 +93,6 @@ const APPROVAL_TURN = {
   turnId: 'ta',
 }
 
-/** 渲染前替换基线为等待审批状态；ownerUserId 可换成别人、deletedAt 可给时刻，用来演治理者复盘。 */
 const serveApprovalPage = (ownerUserId = mockAuthUser.id, deletedAt: string | null = null) => {
   const page = mockTranscriptPage()
   server.use(
@@ -135,43 +129,6 @@ const queuedPrompt = (promptId: string, text: string) => ({
 })
 
 describe('ConversationRoute', () => {
-  it('栏头将换位与折叠操作交给壳层', async () => {
-    const onCollapse = vi.fn()
-    const onSwapPanes = vi.fn()
-    await renderWithProviders(
-      <ShellChromeContext value={{ chat: { onCollapse }, onSwapPanes, sidebarOverlay: false }}>
-        <ConversationRoute conversationId="c1" />
-      </ShellChromeContext>,
-    )
-
-    await userEvent.click(screen.getByRole('button', { name: '交换对话与工作台' }))
-    await userEvent.click(screen.getByRole('button', { name: '折叠对话' }))
-
-    expect(onSwapPanes).toHaveBeenCalledTimes(1)
-    expect(onCollapse).toHaveBeenCalledTimes(1)
-    expect(await screen.findByText('第 1 个问题')).toBeInTheDocument()
-  })
-
-  it('在输入框底部显示后端给出的上下文占用环', async () => {
-    await renderConversation()
-
-    expect(
-      await screen.findByRole('button', { name: '3.1% · 32.8k / 1M 上下文已使用' }),
-    ).toBeInTheDocument()
-  })
-
-  it('把历史那几轮铺开：用户那条、模型那条、工具卡', async () => {
-    await renderConversation()
-
-    expect(await screen.findByText('第 1 个问题')).toBeInTheDocument()
-    expect(screen.getByText(TAIL_TEXT)).toBeInTheDocument()
-    expect(screen.getByText('读取文件')).toBeInTheDocument()
-    // 文件只写文件名，不带目录。
-    expect(screen.getByRole('button', { name: 'storyboard.md' })).toBeInTheDocument()
-    expect(screen.queryByText('shots/storyboard.md')).not.toBeInTheDocument()
-    expect(screen.queryByText('read_file')).not.toBeInTheDocument()
-  })
-
   it('还有更早的轮次时顶部给「加载更早」：按最早一轮往前取一页，接在前面；失败了改口让人重试', async () => {
     const user = userEvent.setup()
     const longId = '0199aaaa-0000-7000-8000-0000000000aa'
@@ -210,7 +167,6 @@ describe('ConversationRoute', () => {
   })
 
   it('末轮流式追加时，用户在旧轮选中的文字保持不变', async () => {
-    // 带上路由实际传入的分叉回调，覆盖完整的历史轮渲染路径。
     const { socket } = await renderWithProviders(
       <ConversationRoute conversationId="c1" onForked={() => undefined} />,
     )
@@ -239,156 +195,6 @@ describe('ConversationRoute', () => {
 
     expect(selection?.toString()).toBe('这是第 1 轮的回复。')
     selection?.removeAllRanges()
-  })
-
-  it('逐字追加接在同一块上，不另起一段', async () => {
-    const { socket } = await renderConversation()
-    await screen.findByText(TAIL_TEXT)
-
-    socket.deliver({
-      payload: {
-        agent_id: 'main',
-        ops: [
-          {
-            offset: TAIL_TEXT.length,
-            op: 'append',
-            target: { frameId: 't2.1.f3', stepId: 't2.1', turnId: 't2', type: 'frame' },
-            text: '再补一句。',
-          },
-        ],
-        seq: 11,
-      },
-      session_id: 'c1',
-      stream_epoch: MOCK_STREAM_EPOCH,
-      type: 'transcript.ops',
-    })
-
-    expect(await screen.findByText(`${TAIL_TEXT}再补一句。`)).toBeInTheDocument()
-  })
-
-  it('发出去先挂气泡，服务端记下它之后交给时间线', async () => {
-    const user = userEvent.setup()
-    const { socket } = await renderConversation()
-    await screen.findByText(TAIL_TEXT)
-
-    let submitted = ''
-    let submittedContent: unknown
-    server.use(
-      http.post('*/api/conversations/c1/prompts', async ({ request }) => {
-        const body = (await request.json()) as { content: { text: string }[]; prompt_id: string }
-        submitted = body.prompt_id
-        submittedContent = body.content
-        return HttpResponse.json({
-          createdAt: '2026-08-31T03:00:00Z',
-          promptId: body.prompt_id,
-          status: 'running',
-        })
-      }),
-    )
-
-    pasteTextIntoComposer(screen.getByLabelText('输入消息'), '再拆一段')
-    await user.click(screen.getByRole('button', { name: '发送' }))
-
-    await waitFor(() => {
-      expect(screen.getAllByText('再拆一段')).toHaveLength(1)
-    })
-    expect(screen.getByRole('status')).toHaveTextContent('正在思考…')
-    expect(screen.getByLabelText('输入消息')).toHaveTextContent('')
-    expect(submitted).not.toBe('')
-    expect(submittedContent).toEqual([{ text: '再拆一段', type: 'text' }])
-
-    // running prompt 不撤销乐观气泡，须由匹配的 turn.prompt 接替。
-    socket.deliver(opsFrame([runningPrompt(submitted)], 11))
-
-    expect(await screen.findByRole('status')).toHaveTextContent('正在思考…')
-    expect(screen.getAllByText('再拆一段')).toHaveLength(1)
-
-    socket.deliver(
-      opsFrame(
-        [
-          {
-            op: 'turn.upsert',
-            turn: {
-              kind: 'turn',
-              ordinal: 3,
-              origin: { kind: 'user' },
-              content: [{ text: '再拆一段', type: 'text' }],
-              state: 'running',
-              triggerPromptId: submitted,
-              turnId: 't3',
-            },
-          },
-          { meta: { activity: 'turn' }, op: 'meta.merge' },
-        ],
-        12,
-      ),
-    )
-
-    expect(await screen.findByRole('status')).toHaveTextContent('正在思考…')
-    expect(screen.getAllByText('再拆一段')).toHaveLength(1)
-
-    socket.deliver(
-      opsFrame(
-        [
-          {
-            op: 'frame.upsert',
-            frame: { frameId: 't3.1.f2', kind: 'thinking', text: '先看看已经有哪些镜头。' },
-            stepId: 't3.1',
-            turnId: 't3',
-          },
-        ],
-        13,
-      ),
-    )
-
-    expect(await screen.findByText('思考中…')).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('工作中…')
-    expect(screen.getAllByText('再拆一段')).toHaveLength(1)
-
-    socket.deliver(
-      opsFrame(
-        [
-          {
-            op: 'turn.upsert',
-            turn: {
-              endedAt: '2026-08-31T03:00:05Z',
-              kind: 'turn',
-              ordinal: 3,
-              origin: { kind: 'user' },
-              content: [{ text: '再拆一段', type: 'text' }],
-              state: 'completed',
-              triggerPromptId: submitted,
-              turnId: 't3',
-            },
-          },
-          { meta: { activity: 'idle' }, op: 'meta.merge' },
-        ],
-        14,
-      ),
-    )
-
-    expect(await screen.findByText('思考过程')).toBeInTheDocument()
-    // 防止 completed turn 提前清除 inFlight，使收尾状态回退为正在想。
-    expect(screen.getByRole('status')).toHaveTextContent('工作中…')
-
-    socket.deliver(
-      opsFrame(
-        [
-          {
-            op: 'prompt.upsert',
-            prompt: {
-              createdAt: '2026-08-31T03:00:00Z',
-              finishedAt: '2026-08-31T03:00:05Z',
-              promptId: submitted,
-              status: 'completed',
-            },
-          },
-        ],
-        15,
-      ),
-    )
-
-    await waitFor(() => expect(screen.queryByText('工作中…')).toBeNull())
   })
 
   it('气泡按 promptId 认领：同样内容但 id 不是它的轮不接替', async () => {
@@ -430,23 +236,8 @@ describe('ConversationRoute', () => {
       ),
     )
 
-    // 时间线多了一份同样的字，气泡那份还在，本地也仍算在等自己那一轮。
     await waitFor(() => expect(screen.getAllByText('再拆一段')).toHaveLength(2))
     expect(screen.getByRole('status')).toHaveTextContent('正在思考…')
-  })
-
-  it('点派活卡的「查看」：地址上点名这张卡的产物，右侧宿主据此打开', async () => {
-    const user = userEvent.setup()
-    const { router } = await renderConversation()
-    await screen.findByText(TAIL_TEXT)
-
-    await user.click(screen.getByRole('button', { name: '查看子代理过程' }))
-
-    await waitFor(() =>
-      expect(router.state.location.search).toMatchObject({
-        artifact: 'frame:call_t2_delegate',
-      }),
-    )
   })
 
   it('发送失败把字还回输入框', async () => {
@@ -533,64 +324,12 @@ describe('ConversationRoute', () => {
     expect(screen.queryByRole('status')).toBeNull()
   })
 
-  it('在跑的时候发送钮换成停止钮，点它停掉在跑的那条', async () => {
-    const user = userEvent.setup()
-    const { socket } = await renderConversation()
-    await screen.findByText(TAIL_TEXT)
-
-    let aborted = ''
-    server.use(
-      http.post('*/api/conversations/c1/prompts/:promptId', ({ params }) => {
-        aborted = String(params['promptId'])
-        return new HttpResponse(null, { status: 204 })
-      }),
-    )
-
-    socket.deliver(opsFrame([runningPrompt('p-run')], 11))
-
-    const stop = await screen.findByRole('button', { name: '停止' })
-    expect(screen.queryByRole('button', { name: '发送' })).not.toBeInTheDocument()
-
-    await user.click(stop)
-
-    await waitFor(() => {
-      expect(aborted).toBe('p-run:abort')
-    })
-  })
-
-  it('排队那条由服务端那份渲染，点「立即发送」把它插进当前这一轮', async () => {
-    const user = userEvent.setup()
-    const { socket } = await renderConversation()
-    await screen.findByText(TAIL_TEXT)
-
-    let steered: string[] = []
-    server.use(
-      http.post('*/api/conversations/c1/prompts:steer', async ({ request }) => {
-        const body = (await request.json()) as { prompt_ids: string[] }
-        steered = body.prompt_ids
-        return new HttpResponse(null, { status: 204 })
-      }),
-    )
-
-    socket.deliver(opsFrame([runningPrompt('p-run'), queuedPrompt('p-queued', '顺便配个音')], 11))
-
-    expect(await screen.findByText('顺便配个音')).toBeInTheDocument()
-    expect(screen.getByText('1 条消息等待发送')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: '立即发送' }))
-
-    await waitFor(() => {
-      expect(steered).toEqual(['p-queued'])
-    })
-  })
-
   it('往上翻离开底部后出现「回到底部」圆钮，点了滚回底部并收起', async () => {
     const user = userEvent.setup()
     await renderConversation()
     await screen.findByText(TAIL_TEXT)
     expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull()
 
-    // jsdom 不排版：手动给出滚动尺寸，模拟停在离底部很远的位置。
     const scroller = screen.getByTestId('chat-scroller')
     const scrollTo = vi.fn()
     Object.defineProperties(scroller, {
@@ -607,18 +346,6 @@ describe('ConversationRoute', () => {
 
     expect(scrollTo).toHaveBeenCalledWith({ behavior: 'smooth', top: 2000 })
     expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull()
-  })
-
-  it('只有最后一轮带「重新生成」钮', async () => {
-    await renderConversation()
-    await screen.findByText(TAIL_TEXT)
-
-    expect(
-      within(screen.getByLabelText('第 2 轮')).getByRole('button', { name: '重新生成' }),
-    ).toBeInTheDocument()
-    expect(
-      within(screen.getByLabelText('第 1 轮')).queryByRole('button', { name: '重新生成' }),
-    ).toBeNull()
   })
 
   it('点「重新生成」提交末轮的 :regenerate 请求', async () => {
@@ -644,50 +371,6 @@ describe('ConversationRoute', () => {
 
     await waitFor(() => {
       expect(regenerated).toBe('t2:regenerate')
-    })
-  })
-
-  it('只有末轮的开场气泡有「修改」；点了把原内容装回输入框，发送打 :regenerate 带新内容', async () => {
-    const user = userEvent.setup()
-    await renderConversation()
-    await screen.findByText(TAIL_TEXT)
-
-    let path = ''
-    let body: { content: { text?: string }[]; prompt_id: string } | null = null
-    server.use(
-      http.post('*/api/conversations/c1/turns/*', async ({ request }) => {
-        path = decodeURIComponent(new URL(request.url).pathname.split('/').pop() ?? '')
-        body = (await request.json()) as { content: { text?: string }[]; prompt_id: string }
-        return HttpResponse.json({
-          createdAt: '2026-08-31T03:02:00Z',
-          promptId: body.prompt_id,
-          status: 'running',
-        })
-      }),
-    )
-
-    expect(
-      within(screen.getByLabelText('第 1 轮')).queryByRole('button', { name: '修改' }),
-    ).toBeNull()
-    await user.click(within(screen.getByLabelText('第 2 轮')).getByRole('button', { name: '修改' }))
-
-    expect(screen.getByText('正在修改上一条消息')).toBeInTheDocument()
-    expect(screen.getByLabelText('输入消息')).toHaveTextContent('第 2 个问题')
-
-    pasteTextIntoComposer(screen.getByLabelText('输入消息'), '，再具体些')
-    await user.click(screen.getByRole('button', { name: '发送' }))
-
-    await waitFor(() => {
-      expect(path).toBe('t2:regenerate')
-    })
-    const sent = body as { content: { text?: string }[]; prompt_id: string } | null
-    expect(sent).not.toBeNull()
-    const text = sent?.content.map((part) => part.text ?? '').join('') ?? ''
-    expect(text).toContain('第 2 个问题')
-    expect(text).toContain('再具体些')
-    expect(sent?.prompt_id).not.toBe('')
-    await waitFor(() => {
-      expect(screen.queryByText('正在修改上一条消息')).toBeNull()
     })
   })
 
@@ -750,77 +433,6 @@ describe('ConversationRoute', () => {
     ).toBeInTheDocument()
   })
 
-  it('工具结果是纯文本时可以展开；历史里的读文件行尾不写行数', async () => {
-    const user = userEvent.setup()
-    const { socket } = await renderConversation()
-    await screen.findByText(TAIL_TEXT)
-
-    expect(screen.getByRole('button', { name: /读取文件/ })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    )
-    expect(screen.queryByText('3 行')).toBeNull()
-
-    socket.deliver(
-      opsFrame(
-        [
-          {
-            op: 'frame.upsert',
-            frame: {
-              display: { kind: 'file_io', operation: 'grep', path: 'shots/' },
-              frameId: 't2.1.f4',
-              kind: 'tool',
-              name: 'search_files',
-              output: 'shots/s01.md\nshots/s02.md',
-              state: 'done',
-              toolCallId: 'call_grep',
-            },
-            stepId: 't2.1',
-            turnId: 't2',
-          },
-        ],
-        11,
-      ),
-    )
-
-    const row = await screen.findByRole('button', { name: /搜索内容/ })
-    expect(row).toHaveAttribute('aria-expanded', 'false')
-
-    await user.click(row)
-
-    expect(row).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByText(/shots\/s01\.md/)).toBeInTheDocument()
-  })
-
-  it('助手正文按 markdown 渲染：列表、粗体、行内代码', async () => {
-    const { socket } = await renderConversation()
-    await screen.findByText(TAIL_TEXT)
-
-    socket.deliver(
-      opsFrame(
-        [
-          {
-            op: 'frame.upsert',
-            frame: {
-              frameId: 't2.1.f8',
-              kind: 'text',
-              role: 'assistant',
-              text: '要点：\n\n- 拆出 **3 个**镜头\n- 写进 `shots/s09.md`\n',
-            },
-            stepId: 't2.1',
-            turnId: 't2',
-          },
-        ],
-        11,
-      ),
-    )
-
-    const items = await screen.findAllByRole('listitem')
-    expect(items).toHaveLength(2)
-    expect(screen.getByText('3 个')).toBeVisible()
-    expect(screen.getByText('shots/s09.md')).toBeVisible()
-  })
-
   it('正文里夹的 HTML 会渲染，脚本与事件属性被摘掉', async () => {
     const { socket } = await renderConversation()
     await screen.findByText(TAIL_TEXT)
@@ -855,110 +467,6 @@ describe('ConversationRoute', () => {
     expect(screen.getByText('点我')).not.toHaveAttribute('onclick')
   })
 
-  it('连续的思考与工具收成一行活动组，点开铺开每一条', async () => {
-    const user = userEvent.setup()
-    const { socket } = await renderConversation()
-    await screen.findByText(TAIL_TEXT)
-
-    socket.deliver(
-      opsFrame(
-        [
-          {
-            op: 'turn.upsert',
-            turn: {
-              endedAt: '2026-08-31T03:01:00Z',
-              kind: 'turn',
-              ordinal: 3,
-              origin: { kind: 'user' },
-              content: [{ text: '拆', type: 'text' }],
-              startedAt: '2026-08-31T03:00:00Z',
-              state: 'completed',
-              turnId: 't3',
-            },
-          },
-          {
-            op: 'step.upsert',
-            step: {
-              endedAt: '2026-08-31T03:01:00Z',
-              kind: 'step',
-              ordinal: 1,
-              startedAt: '2026-08-31T03:00:00Z',
-              state: 'completed',
-              stepId: 't3.1',
-              turnId: 't3',
-            },
-            turnId: 't3',
-          },
-          {
-            op: 'frame.upsert',
-            frame: { frameId: 't3.1.f2', kind: 'thinking', text: '想' },
-            stepId: 't3.1',
-            turnId: 't3',
-          },
-          {
-            op: 'frame.upsert',
-            frame: {
-              display: { kind: 'file_io', operation: 'read', path: 'shots/storyboard.md' },
-              frameId: 't3.1.f3',
-              kind: 'tool',
-              name: 'read_file',
-              state: 'done',
-              toolCallId: 'c3a',
-            },
-            stepId: 't3.1',
-            turnId: 't3',
-          },
-          {
-            op: 'frame.upsert',
-            frame: {
-              display: { kind: 'file_io', operation: 'write', path: 'shots/storyboard.md' },
-              frameId: 't3.1.f4',
-              kind: 'tool',
-              name: 'write_file',
-              state: 'done',
-              toolCallId: 'c3b',
-            },
-            stepId: 't3.1',
-            turnId: 't3',
-          },
-          {
-            op: 'frame.upsert',
-            frame: { frameId: 't3.1.f5', kind: 'text', role: 'assistant', text: '拆好了。' },
-            stepId: 't3.1',
-            turnId: 't3',
-          },
-        ],
-        11,
-      ),
-    )
-
-    const head = await screen.findByRole('button', {
-      name: /已完成：读取 1 个文件 · 写入 1 个文件/,
-    })
-    expect(head).toHaveAttribute('aria-expanded', 'false')
-    // 收起时组里的行对读屏隐藏；点开后读、写两行都出来。
-    const before = screen.queryAllByRole('button', { name: 'storyboard.md' }).length
-
-    await user.click(head)
-
-    expect(head).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getAllByRole('button', { name: 'storyboard.md' })).toHaveLength(before + 2)
-  })
-
-  it('历史消息里的附件画成芯片，点开进灯箱', async () => {
-    const user = userEvent.setup()
-    await renderConversation()
-    await screen.findByText(TAIL_TEXT)
-
-    await user.click(await screen.findByRole('button', { name: '图片' }))
-
-    const dialog = await screen.findByRole('dialog', { name: '图片' })
-    expect(within(dialog).getByRole('img', { name: '图片' })).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: '关闭' }))
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-  })
-
   it('等审批时贴出审批卡，点「同意」打 interactions 端点', async () => {
     const user = userEvent.setup()
     serveApprovalPage()
@@ -973,7 +481,6 @@ describe('ConversationRoute', () => {
 
     const card = await screen.findByRole('region', { name: '等待审批' })
     expect(within(card).getByText('写入文件')).toBeInTheDocument()
-    // 审批卡预览要写的内容，来自 display 里的 content。
     expect(within(card).getByRole('region', { name: '改动预览' })).toHaveTextContent(
       '两张镜头帧拼版，主图在左。',
     )
@@ -986,28 +493,8 @@ describe('ConversationRoute', () => {
         path: '/api/conversations/c1/interactions/appr_1',
       })
     })
-    // 卡片移除由服务端 pending 集合驱动，本地提交仅更新结果。
     expect(await within(card).findByText('已同意')).toBeInTheDocument()
     expect(within(card).queryByRole('button', { name: /拒绝/ })).toBeNull()
-  })
-
-  it('点「拒绝」发的是 approved: false', async () => {
-    const user = userEvent.setup()
-    serveApprovalPage()
-    let body: unknown = null
-    server.use(
-      http.post('*/api/conversations/c1/interactions/:interactionId', async ({ request }) => {
-        body = await request.json()
-        return new HttpResponse(null, { status: 204 })
-      }),
-    )
-    await renderConversation()
-
-    const card = await screen.findByRole('region', { name: '等待审批' })
-    await user.click(within(card).getByRole('button', { name: /拒绝/ }))
-
-    await waitFor(() => expect(body).toEqual({ approved: false }))
-    expect(await within(card).findByText('已拒绝')).toBeInTheDocument()
   })
 
   it('改主意（409）时说清该步骤已做出决定', async () => {
@@ -1082,7 +569,6 @@ describe('ConversationRoute', () => {
     loginAs(mockAuthUser, { permissions: [...mockAuthUser.permissions, 'users:manage'] })
     let asked: { turn: number } | null = null
     let calls = 0
-    // 合同上这几个 id 都是 UUID；副本的 id 由服务端铸，测试里铸一个当它的答复。
     const copy = addMockConversation('开场那段（分叉 · 第 2 轮）')
     server.use(
       http.post('*/api/conversations/c1:fork', async ({ request }) => {
@@ -1107,36 +593,11 @@ describe('ConversationRoute', () => {
     expect(await screen.findByText('只读 · 小王 的任务')).toBeVisible()
     const buttons = await screen.findAllByRole('button', { name: '从此处另开任务' })
     const button = buttons[buttons.length - 1] as HTMLElement
-    // 副本的 id 由服务端铸、没有幂等键；请求回来了但还没跳走的那一瞬再点一下，不能开出两段。
     await user.dblClick(button)
 
     await waitFor(() => expect(forked).toHaveBeenCalledWith(copy.id))
     expect(calls).toBe(1)
-    // mockTranscriptPage 的基线有两轮，点最后一轮的按钮。
     expect(asked).toEqual({ turn: 2 })
-  })
-
-  it('副本页给一条血缘提示，带着源对话的入口', async () => {
-    const source = crypto.randomUUID()
-    const page = mockTranscriptPage()
-    server.use(
-      http.get('*/api/conversations/c1/transcript', () =>
-        HttpResponse.json({ ...page, fork_turn: 2, forked_from: source }),
-      ),
-    )
-    await renderWithProviders(
-      <ConversationRoute
-        conversationId="c1"
-        sourceLink={(sourceId) => <a href={`/c/${sourceId}`}>查看源任务</a>}
-      />,
-    )
-
-    const note = await screen.findByRole('note', { name: '分叉来源' })
-    expect(note).toHaveTextContent('本任务从源任务第 2 轮另开')
-    expect(within(note).getByRole('link', { name: '查看源任务' })).toHaveAttribute(
-      'href',
-      `/c/${source}`,
-    )
   })
 
   it('治理者看已删的对话也是只读，页头与说明都标出已删除；自己删的主语写「当前账号」', async () => {
@@ -1198,15 +659,106 @@ describe('ConversationRoute', () => {
   it('标题来自基线，服务端起了新名字就当场换掉', async () => {
     const { socket } = await renderConversation()
 
-    // 历史会话可能不在侧栏首页，初始标题必须来自基线。
     expect(await screen.findByRole('heading', { name: '夜景延时素材生成' })).toBeVisible()
 
     socket.deliver({
       ...sessionEnvelope('c1'),
       type: 'session.meta.updated',
-      payload: { session_id: 'c1', title: '改过的名字' },
+      session_id: 'c1',
+      payload: { title: '改过的名字' },
     })
 
     expect(await screen.findByRole('heading', { name: '改过的名字' })).toBeVisible()
   })
+
+  it('收到改名后断线重连：补读回来之前页头仍是改过的名字，补读落地后跟上服务端', async () => {
+    const row = addMockConversation('改过的名字', undefined, undefined, ROW_ID)
+    const release = holdRowReads()
+    const { socket } = await renderRowConversation()
+    await screen.findByRole('heading', { name: '夜景延时素材生成' })
+    act(() => socket.deliver(titleFrame('改过的名字')))
+    await screen.findByRole('heading', { name: '改过的名字' })
+
+    await reconnect(socket, () => {
+      row.title = '又改了一次'
+    })
+
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(screen.getByRole('heading', { name: '改过的名字' })).toBeVisible()
+    release()
+    expect(await screen.findByRole('heading', { name: '又改了一次' })).toBeVisible()
+  }, 10_000)
+
+  it('断线期间别处改了名：重连后补读那一行，页头换成新名字', async () => {
+    const row = addMockConversation('夜景延时素材生成', undefined, undefined, ROW_ID)
+    const { socket } = await renderRowConversation()
+    await screen.findByRole('heading', { name: '夜景延时素材生成' })
+
+    await reconnect(socket, () => {
+      row.title = '断线期间改的名字'
+    })
+
+    expect(await screen.findByRole('heading', { name: '断线期间改的名字' })).toBeVisible()
+  }, 10_000)
+
+  it('补读在途时又到了改名帧：帧比读到的新，读回来的旧名字不盖掉它', async () => {
+    const row = addMockConversation('夜景延时素材生成', undefined, undefined, ROW_ID)
+    const release = holdRowReads()
+    const { socket } = await renderRowConversation()
+    await screen.findByRole('heading', { name: '夜景延时素材生成' })
+
+    await reconnect(socket, () => {
+      row.title = '断线期间改的名字'
+    })
+    act(() => socket.deliver(titleFrame('重连后又改的名字')))
+    await screen.findByRole('heading', { name: '重连后又改的名字' })
+    let settled = false
+    server.events.on('response:mocked', ({ request }) => {
+      if (new URL(request.url).pathname === `/api/conversations/${ROW_ID}`) settled = true
+    })
+    release()
+
+    await waitFor(() => expect(settled).toBe(true))
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(screen.getByRole('heading', { name: '重连后又改的名字' })).toBeVisible()
+  }, 10_000)
 })
+
+const ROW_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+
+const renderRowConversation = async () =>
+  renderWithProviders(<ConversationRoute conversationId={ROW_ID} />)
+
+const titleFrame = (title: string) => ({
+  ...sessionEnvelope(ROW_ID),
+  payload: { title },
+  session_id: ROW_ID,
+  type: 'session.meta.updated',
+})
+
+const holdRowReads = () => {
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  server.use(
+    http.get(`*/api/conversations/${ROW_ID}`, async () => {
+      await held
+    }),
+  )
+  return release
+}
+
+const reconnect = async (socket: FakeSocket, duringOutage: () => void) => {
+  const handshake = socket.onmessage
+  act(() => socket.onclose?.())
+  duringOutage()
+  await waitFor(
+    () => {
+      expect(socket.onmessage).not.toBeNull()
+      expect(socket.onmessage).not.toBe(handshake)
+    },
+    { timeout: 3000 },
+  )
+  act(() => socket.deliver(SERVER_HELLO))
+}

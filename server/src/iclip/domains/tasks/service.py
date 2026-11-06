@@ -1,8 +1,3 @@
-"""需求单状态流转与写入权限。
-
-草稿仅创建者或治理者可改删；发布后冻结创作输入，补充字段见 _require_frozen_input_unchanged。
-所有具备 tasks:write 的主体可认领或撤回。状态冲突返回 409，权限不足返回 403。"""
-
 from __future__ import annotations
 
 import uuid
@@ -10,7 +5,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from iclip.common.errors import Conflict, PermissionDenied, ValidationFailed
+from agent_runtime.errors import Conflict, PermissionDenied, ValidationFailed
+
 from iclip.domains.identity.public import MANAGE_PERMISSION, Principal
 from iclip.domains.tasks.models import (
     ACTIVE_STATUSES,
@@ -33,16 +29,12 @@ _CONFLICT_RACED = "这张需求单刚被别人改过，请重新读一次再试"
 
 @dataclass(frozen=True, slots=True)
 class TaskPage:
-    """一页需求单，外加当前筛选下不随翻页变的总数。``next_cursor`` 为空即没有更多了。"""
-
     items: tuple[Task, ...]
     next_cursor: str | None
     total: int
 
 
 def _after(cursor: str | None) -> TaskCursor | None:
-    """把游标还原成仓库的排序键；``None`` 即从头取。"""
-
     if cursor is None:
         return None
     parsed = decode_cursor(cursor)
@@ -54,10 +46,6 @@ class TaskService:
         self._repo = repo
 
     async def create(self, principal: Principal, body: TaskCreateIn) -> tuple[Task, bool]:
-        """按调用方给定的 id 与状态落一张需求单，返回它与「本次是否新建」。
-
-        id 由调用方铸时按它幂等：重发同一个 id 返回已有那一张，不新建第二张。"""
-
         now = datetime.now(UTC)
         return await self._repo.create_if_absent(
             Task(
@@ -68,7 +56,6 @@ class TaskService:
                 deadline=body.deadline,
                 creator_user_id=principal.user_id,
                 inputs=body.inputs,
-                # 仓储使用数据库 now() 覆盖时间占位值。
                 created_at=now,
                 updated_at=now,
             )
@@ -86,8 +73,6 @@ class TaskService:
         limit: int = 20,
         cursor: str | None = None,
     ) -> TaskPage:
-        """按建立时间倒序翻页；``ids`` 是按 id 集合批量读取，一次最多一页。"""
-
         check_limit(limit)
         if ids is not None and len(ids) > MAX_LIST_LIMIT:
             raise ValidationFailed(f"ids 一次最多 {MAX_LIST_LIMIT} 个")
@@ -106,8 +91,6 @@ class TaskService:
         )
 
     async def update(self, principal: Principal, task_id: uuid.UUID, body: TaskIn) -> Task:
-        """整体覆盖可变字段；发布后提交内容若改变冻结字段则拒绝。"""
-
         task = await self._repo.get(task_id)
         if task.status == STATUS_WITHDRAWN:
             raise Conflict("已撤回的需求单改不动了")
@@ -132,8 +115,6 @@ class TaskService:
         return saved
 
     async def publish(self, principal: Principal, task_id: uuid.UUID) -> Task:
-        """发布草稿并冻结创作输入。"""
-
         task = await self._repo.get(task_id)
         _require_status(task, STATUS_DRAFT, action="发布")
         _require_creator_or_manager(principal, task, action="发布这张需求单")
@@ -142,13 +123,10 @@ class TaskService:
 
         published = await self._repo.publish(task_id)
         if published is None:
-            # 期限已过或状态已并发改变，调用方须重新读取。
             raise Conflict(f"发布失败：填了期限就必须晚于当前时间，或{_CONFLICT_RACED}")
         return published
 
     async def confirm(self, principal: Principal, task_id: uuid.UUID) -> Task:
-        """幂等认领需求单，支持多人认领；撤回后保留认领记录。"""
-
         task = await self._repo.get(task_id)
         if task.status not in ACTIVE_STATUSES:
             raise Conflict(f"只有已下发或已确认的需求单能认领，这张是 {task.status}")
@@ -158,13 +136,9 @@ class TaskService:
         return confirmed
 
     async def claim(self, task_id: uuid.UUID, user_id: uuid.UUID) -> None:
-        """对话挂上需求单就算认领：待认领或进行中的单记下这个人，其余状态不动也不报错。"""
-
         await self._repo.confirm(task_id, user_id=user_id)
 
     async def withdraw(self, task_id: uuid.UUID) -> Task:
-        """将 published 或 confirmed 转为 withdrawn 终态。"""
-
         task = await self._repo.get(task_id)
         if task.status not in ACTIVE_STATUSES:
             raise Conflict(f"只有已下发或已确认的需求单能撤回，这张是 {task.status}")
@@ -176,8 +150,6 @@ class TaskService:
         return withdrawn
 
     async def delete(self, principal: Principal, task_id: uuid.UUID) -> None:
-        """仅允许删除草稿；发布后的需求单通过撤回保留记录。"""
-
         task = await self._repo.get(task_id)
         _require_status(task, STATUS_DRAFT, action="删除")
         _require_creator_or_manager(principal, task, action="删除这张草稿")
@@ -191,8 +163,6 @@ def _require_status(task: Task, expected: TaskStatus, *, action: str) -> None:
 
 
 def _require_creator_or_manager(principal: Principal, task: Task, *, action: str) -> None:
-    """限制草稿写入为创建者或治理者；资源可见但不可写时返回 403。"""
-
     if principal.user_id == task.creator_user_id or principal.has(MANAGE_PERMISSION):
         return
     raise PermissionDenied(f"只有提出需求的人能{action}")

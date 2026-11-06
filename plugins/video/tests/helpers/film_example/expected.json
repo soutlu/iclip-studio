@@ -1,0 +1,343 @@
+{
+  "images": {
+    "personB": {
+      "prompt": "capture:\n画面是用手机实拍的，真实自然，光线自然，没有过度美颜。\n\nsubject:\n模特B，二十多岁的女性，黑色齐耳短发，穿米色风衣，神情轻松。She has a well-proportioned figure, very broad shoulders and excellent head-to-shoulder proportions.\n\nframing:\n全身入画。她站在画面正中，脸正对镜头，双手自然下垂。\n\nsetting:\n摄影棚。她身后是一面浅灰色的墙，脚下是同色的地面。",
+      "input_str_list": []
+    },
+    "scene": {
+      "prompt": "capture:\n画面是用手机实拍的，真实自然，光线自然，没有过度美颜。\n\nframing:\n从人行道边平视过去，画面里没有人。\n\nsetting:\n纽约红砖街区，清晨的自然光。近处是干净的红砖人行道，路边有几棵行道树，远处是一排红砖公寓楼。",
+      "input_str_list": []
+    },
+    "view01": {
+      "prompt": "capture:\n画面是用手机实拍的，真实自然，光线自然，没有过度美颜。\n\nsubject:\n模特A，长相和发型参考 @Image1，身材和服装参考 @Image2；模特B，长相、发型和服装参考 @Image3；模特A脚上穿着 SOLE_STRETCHY 鞋款，外观参考 @Image4（侧面）、@Image5（鞋头）。\n\nframing:\n中景，平视。两人站在人行道上、画面正中，并肩面朝镜头，模特A在左、模特B在右，双臂自然下垂。\n\nsetting:\n纽约红砖街区参考 @Image6。",
+      "input_str_list": [
+        "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+        "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
+        "https://preview.invalid/generated/personB-v1.png",
+        "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+        "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
+        "https://preview.invalid/generated/scene-v1.png"
+      ]
+    },
+    "view02": {
+      "prompt": "capture:\n画面是用手机实拍的，真实自然，光线自然，没有过度美颜。\n\nsubject:\n模特A的小腿和双脚，裤装参考 @Image1；她脚上的 SOLE_STRETCHY 鞋款，外观参考 @Image2（侧面）、@Image3（鞋底）。\n\nframing:\n侧面脚部特写，镜头与脚踝齐平，只拍到膝盖以下。她站在人行道上，脚尖朝向画面右侧，左脚在前、右脚在后，鞋底平踩在地上。\n\nsetting:\n纽约红砖街区的人行道参考 @Image4，红砖墙和光线与 @Image5 保持一致。",
+      "input_str_list": [
+        "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
+        "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+        "https://preview.invalid/uploads/shoeSolePhoto.jpg",
+        "https://preview.invalid/generated/scene-v1.png",
+        "https://preview.invalid/generated/view01-v1.png"
+      ]
+    },
+    "view03": {
+      "prompt": "capture:\n画面是用手机实拍的，真实自然，光线自然，没有过度美颜。\n\nsubject:\n模特B，长相、发型和服装参考 @Image1；模特A只拍到腰部以下，裤装参考 @Image2，脚上的 SOLE_STRETCHY 鞋款外观参考 @Image3（侧面）、@Image4（鞋头）。\n\nframing:\n近景，平视。模特B站在画面右侧，侧身低头看向画面左下方；模特A在画面左侧，只拍到腰部以下，右脚脚尖点地，鞋面朝向模特B。\n\nsetting:\n纽约红砖街区参考 @Image5，红砖墙和光线与 @Image6 保持一致。",
+      "input_str_list": [
+        "https://preview.invalid/generated/personB-v1.png",
+        "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
+        "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+        "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
+        "https://preview.invalid/generated/scene-v1.png",
+        "https://preview.invalid/generated/view01-v1.png"
+      ]
+    },
+    "view04": {
+      "prompt": "capture:\n画面是用手机实拍的，真实自然，光线自然，没有过度美颜。\n\nsubject:\n模特A的小腿和双脚，裤装参考 @Image1；她脚上的 SOLE_STRETCHY 鞋款，外观参考 @Image2（鞋头）、@Image3（侧面）。\n\nframing:\n低机位，正面脚部特写，只拍到膝盖以下。她站在人行道中间，面朝镜头，双脚并拢，鞋头朝向镜头。\n\nsetting:\n纽约红砖街区的人行道参考 @Image4，红砖墙和光线与 @Image5 保持一致。",
+      "input_str_list": [
+        "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
+        "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
+        "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+        "https://preview.invalid/generated/scene-v1.png",
+        "https://preview.invalid/generated/view01-v1.png"
+      ]
+    },
+    "view05": {
+      "prompt": "capture:\n画面是用手机实拍的，真实自然，光线自然，没有过度美颜。\n\nsubject:\n模特A，身材、服装和发型参考 @Image1；她脚上的 SOLE_STRETCHY 鞋款，外观参考 @Image2（侧面）、@Image3（鞋底）。\n\nframing:\n中景，从她身后略偏右平视。她站在人行道转角处，背对镜头，右脚在前、脚跟微微抬起，画面左侧是红砖墙。\n\nsetting:\n纽约红砖街区的人行道转角参考 @Image4，红砖墙和光线与 @Image5 保持一致。",
+      "input_str_list": [
+        "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
+        "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+        "https://preview.invalid/uploads/shoeSolePhoto.jpg",
+        "https://preview.invalid/generated/scene-v1.png",
+        "https://preview.invalid/generated/view01-v1.png"
+      ]
+    },
+    "view06": {
+      "prompt": "capture:\n画面是用手机实拍的，真实自然，光线自然，没有过度美颜。\n\nsubject:\n模特A，长相和发型参考 @Image1，身材和服装参考 @Image2；她脚上的 SOLE_STRETCHY 鞋款，外观参考 @Image3（侧面）、@Image4（鞋头）。\n\nframing:\n全身入画，平视。她站在人行道上、画面正中，侧身朝向画面左侧，右脚在前，双手自然下垂。\n\nsetting:\n纽约红砖街区参考 @Image5，红砖墙和光线与 @Image6 保持一致。",
+      "input_str_list": [
+        "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+        "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
+        "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+        "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
+        "https://preview.invalid/generated/scene-v1.png",
+        "https://preview.invalid/generated/view01-v1.png"
+      ]
+    }
+  },
+  "states": {
+    "both": {
+      "video01": {
+        "blocked": false,
+        "missing": [],
+        "shot": {
+          "global_settings": "拍摄与剪辑：\n摄影：手机拍摄，手持跟拍；景别以中景和脚部特写为主。\n剪辑：全片硬切，在迈步的动作点上剪。\n影调：清晨自然光，低对比，不做风格化调色。\n\n人物：\n模特A，长相和发型参考 @Image1，身材和服装参考 @Image2。\n模特B，长相、发型和服装参考 @Image3。\n\n产品：\nSOLE_STRETCHY 鞋款，外观参考 @Image4（侧面）、@Image5（鞋头）、@Image6（鞋底）。\n\n场景：\n纽约红砖街区参考 @Image7。\n\n声音：\n模特A：年轻女声，语气轻快，像随口跟朋友分享。\n模特B：略低的女声，带点好奇。",
+          "timeline": [
+            {
+              "timestamps": [
+                0.0,
+                6.0
+              ],
+              "prompt": "参考@Image8，中景，平视，手持跟拍。模特A和模特B在红砖街区的人行道上并肩走向镜头。模特A低头看鞋说：{这一双，走起来很轻。} 模特B侧头问：{鞋底是软的吗？} 音效：两人的脚步声与街道环境声。"
+            },
+            {
+              "timestamps": [
+                6.0,
+                12.0
+              ],
+              "prompt": "参考@Image9，硬切，侧面脚部特写。模特A右脚向前迈出，鞋底落地时微微压扁再弹起，鞋底侧边清楚可见。她说：{软，还回弹。} 音效：鞋底踩在人行道上的轻响。"
+            },
+            {
+              "timestamps": [
+                12.0,
+                18.0
+              ],
+              "prompt": "参考@Image10，硬切，近景，平视。模特B低头看了看模特A的鞋，抬头对着镜头笑。她说：{看着也挺百搭。}"
+            }
+          ]
+        },
+        "images": [
+          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+          "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
+          "https://preview.invalid/generated/personB-v1.png",
+          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+          "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
+          "https://preview.invalid/uploads/shoeSolePhoto.jpg",
+          "https://preview.invalid/generated/scene-v1.png",
+          "https://preview.invalid/generated/view01-v1.png",
+          "https://preview.invalid/generated/view02-v1.png",
+          "https://preview.invalid/generated/view03-v1.png"
+        ]
+      },
+      "video02": {
+        "blocked": false,
+        "missing": [],
+        "shot": {
+          "global_settings": "拍摄与剪辑：\n摄影：手机拍摄，手持跟拍；景别以中景和脚部特写为主。\n剪辑：全片硬切，在迈步的动作点上剪。\n影调：清晨自然光，低对比，不做风格化调色。\n\n人物：\n模特A，长相和发型参考 @Image1，身材和服装参考 @Image2。\n\n产品：\nSOLE_STRETCHY 鞋款，外观参考 @Image3（侧面）、@Image4（鞋头）、@Image5（鞋底）。\n\n场景：\n纽约红砖街区参考 @Image6。\n\n声音：\n模特A：年轻女声，语气轻快，像随口跟朋友分享。",
+          "timeline": [
+            {
+              "timestamps": [
+                0.0,
+                5.0
+              ],
+              "prompt": "参考@Image7，低机位，正面脚部特写。模特A朝镜头走来，右脚迈出，鞋底落地。她说：{走一整天都不累。} 音效：鞋底落地的一声轻响。"
+            },
+            {
+              "timestamps": [
+                5.0,
+                10.0
+              ],
+              "prompt": "参考@Image8，硬切，中景，手持跟拍。模特A迈步走过街角，镜头跟在她身后，走了几步她回头看向镜头。她回头说：{上班逛街都穿它。} 音效：脚步声与街道环境声。"
+            },
+            {
+              "timestamps": [
+                10.0,
+                15.0
+              ],
+              "prompt": "参考@Image9，硬切，全景，平视。模特A停下，转身面向镜头，鞋面朝向镜头。她笑着说：{穿上就知道了。}"
+            }
+          ]
+        },
+        "images": [
+          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+          "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
+          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+          "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
+          "https://preview.invalid/uploads/shoeSolePhoto.jpg",
+          "https://preview.invalid/generated/scene-v1.png",
+          "https://preview.invalid/generated/view04-v1.png",
+          "https://preview.invalid/generated/view05-v1.png",
+          "https://preview.invalid/generated/view06-v1.png"
+        ]
+      }
+    },
+    "no-view04": {
+      "video01": {
+        "blocked": false,
+        "missing": [],
+        "shot": {
+          "global_settings": "拍摄与剪辑：\n摄影：手机拍摄，手持跟拍；景别以中景和脚部特写为主。\n剪辑：全片硬切，在迈步的动作点上剪。\n影调：清晨自然光，低对比，不做风格化调色。\n\n人物：\n模特A，长相和发型参考 @Image1，身材和服装参考 @Image2。\n模特B，长相、发型和服装参考 @Image3。\n\n产品：\nSOLE_STRETCHY 鞋款，外观参考 @Image4（侧面）、@Image5（鞋头）、@Image6（鞋底）。\n\n场景：\n纽约红砖街区参考 @Image7。\n\n声音：\n模特A：年轻女声，语气轻快，像随口跟朋友分享。\n模特B：略低的女声，带点好奇。",
+          "timeline": [
+            {
+              "timestamps": [
+                0.0,
+                6.0
+              ],
+              "prompt": "参考@Image8，中景，平视，手持跟拍。模特A和模特B在红砖街区的人行道上并肩走向镜头。模特A低头看鞋说：{这一双，走起来很轻。} 模特B侧头问：{鞋底是软的吗？} 音效：两人的脚步声与街道环境声。"
+            },
+            {
+              "timestamps": [
+                6.0,
+                12.0
+              ],
+              "prompt": "参考@Image9，硬切，侧面脚部特写。模特A右脚向前迈出，鞋底落地时微微压扁再弹起，鞋底侧边清楚可见。她说：{软，还回弹。} 音效：鞋底踩在人行道上的轻响。"
+            },
+            {
+              "timestamps": [
+                12.0,
+                18.0
+              ],
+              "prompt": "参考@Image10，硬切，近景，平视。模特B低头看了看模特A的鞋，抬头对着镜头笑。她说：{看着也挺百搭。}"
+            }
+          ]
+        },
+        "images": [
+          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+          "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
+          "https://preview.invalid/generated/personB-v1.png",
+          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+          "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
+          "https://preview.invalid/uploads/shoeSolePhoto.jpg",
+          "https://preview.invalid/generated/scene-v1.png",
+          "https://preview.invalid/generated/view01-v1.png",
+          "https://preview.invalid/generated/view02-v1.png",
+          "https://preview.invalid/generated/view03-v1.png"
+        ]
+      },
+      "video02": {
+        "blocked": false,
+        "missing": [],
+        "shot": {
+          "global_settings": "拍摄与剪辑：\n摄影：手机拍摄，手持跟拍；景别以中景和脚部特写为主。\n剪辑：全片硬切，在迈步的动作点上剪。\n影调：清晨自然光，低对比，不做风格化调色。\n\n人物：\n模特A，长相和发型参考 @Image1，身材和服装参考 @Image2。\n\n产品：\nSOLE_STRETCHY 鞋款，外观参考 @Image3（侧面）、@Image4（鞋头）、@Image5（鞋底）。\n\n场景：\n纽约红砖街区参考 @Image6。\n\n声音：\n模特A：年轻女声，语气轻快，像随口跟朋友分享。",
+          "timeline": [
+            {
+              "timestamps": [
+                0.0,
+                5.0
+              ],
+              "prompt": "低机位，正面脚部特写。模特A朝镜头走来，右脚迈出，鞋底落地。她说：{走一整天都不累。} 音效：鞋底落地的一声轻响。"
+            },
+            {
+              "timestamps": [
+                5.0,
+                10.0
+              ],
+              "prompt": "参考@Image7，硬切，中景，手持跟拍。模特A迈步走过街角，镜头跟在她身后，走了几步她回头看向镜头。她回头说：{上班逛街都穿它。} 音效：脚步声与街道环境声。"
+            },
+            {
+              "timestamps": [
+                10.0,
+                15.0
+              ],
+              "prompt": "参考@Image8，硬切，全景，平视。模特A停下，转身面向镜头，鞋面朝向镜头。她笑着说：{穿上就知道了。}"
+            }
+          ]
+        },
+        "images": [
+          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+          "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
+          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+          "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
+          "https://preview.invalid/uploads/shoeSolePhoto.jpg",
+          "https://preview.invalid/generated/scene-v1.png",
+          "https://preview.invalid/generated/view05-v1.png",
+          "https://preview.invalid/generated/view06-v1.png"
+        ]
+      }
+    },
+    "no-personB": {
+      "video01": {
+        "blocked": true,
+        "missing": [
+          "personB"
+        ]
+      },
+      "video02": {
+        "blocked": false,
+        "missing": [],
+        "shot": {
+          "global_settings": "拍摄与剪辑：\n摄影：手机拍摄，手持跟拍；景别以中景和脚部特写为主。\n剪辑：全片硬切，在迈步的动作点上剪。\n影调：清晨自然光，低对比，不做风格化调色。\n\n人物：\n模特A，长相和发型参考 @Image1，身材和服装参考 @Image2。\n\n产品：\nSOLE_STRETCHY 鞋款，外观参考 @Image3（侧面）、@Image4（鞋头）、@Image5（鞋底）。\n\n场景：\n纽约红砖街区参考 @Image6。\n\n声音：\n模特A：年轻女声，语气轻快，像随口跟朋友分享。",
+          "timeline": [
+            {
+              "timestamps": [
+                0.0,
+                5.0
+              ],
+              "prompt": "参考@Image7，低机位，正面脚部特写。模特A朝镜头走来，右脚迈出，鞋底落地。她说：{走一整天都不累。} 音效：鞋底落地的一声轻响。"
+            },
+            {
+              "timestamps": [
+                5.0,
+                10.0
+              ],
+              "prompt": "参考@Image8，硬切，中景，手持跟拍。模特A迈步走过街角，镜头跟在她身后，走了几步她回头看向镜头。她回头说：{上班逛街都穿它。} 音效：脚步声与街道环境声。"
+            },
+            {
+              "timestamps": [
+                10.0,
+                15.0
+              ],
+              "prompt": "参考@Image9，硬切，全景，平视。模特A停下，转身面向镜头，鞋面朝向镜头。她笑着说：{穿上就知道了。}"
+            }
+          ]
+        },
+        "images": [
+          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+          "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
+          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+          "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
+          "https://preview.invalid/uploads/shoeSolePhoto.jpg",
+          "https://preview.invalid/generated/scene-v1.png",
+          "https://preview.invalid/generated/view04-v1.png",
+          "https://preview.invalid/generated/view05-v1.png",
+          "https://preview.invalid/generated/view06-v1.png"
+        ]
+      }
+    },
+    "none": {
+      "video01": {
+        "blocked": true,
+        "missing": [
+          "personB"
+        ]
+      },
+      "video02": {
+        "blocked": false,
+        "missing": [],
+        "shot": {
+          "global_settings": "拍摄与剪辑：\n摄影：手机拍摄，手持跟拍；景别以中景和脚部特写为主。\n剪辑：全片硬切，在迈步的动作点上剪。\n影调：清晨自然光，低对比，不做风格化调色。\n\n人物：\n模特A，长相和发型参考 @Image1，身材和服装参考 @Image2。\n\n产品：\nSOLE_STRETCHY 鞋款，外观参考 @Image3（侧面）、@Image4（鞋头）、@Image5（鞋底）。\n\n场景：\n纽约红砖街区参考 @Image6。\n\n声音：\n模特A：年轻女声，语气轻快，像随口跟朋友分享。",
+          "timeline": [
+            {
+              "timestamps": [
+                0.0,
+                5.0
+              ],
+              "prompt": "低机位，正面脚部特写。模特A朝镜头走来，右脚迈出，鞋底落地。她说：{走一整天都不累。} 音效：鞋底落地的一声轻响。"
+            },
+            {
+              "timestamps": [
+                5.0,
+                10.0
+              ],
+              "prompt": "参考@Image7，硬切，中景，手持跟拍。模特A迈步走过街角，镜头跟在她身后，走了几步她回头看向镜头。她回头说：{上班逛街都穿它。} 音效：脚步声与街道环境声。"
+            },
+            {
+              "timestamps": [
+                10.0,
+                15.0
+              ],
+              "prompt": "参考@Image8，硬切，全景，平视。模特A停下，转身面向镜头，鞋面朝向镜头。她笑着说：{穿上就知道了。}"
+            }
+          ]
+        },
+        "images": [
+          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+          "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
+          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+          "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
+          "https://preview.invalid/uploads/shoeSolePhoto.jpg",
+          "https://preview.invalid/generated/scene-v1.png",
+          "https://preview.invalid/generated/view05-v1.png",
+          "https://preview.invalid/generated/view06-v1.png"
+        ]
+      }
+    }
+  }
+}

@@ -103,11 +103,40 @@ import {
   Film,
   Layers,
   RotateCw,
+  SlidersHorizontal,
+  Cloud,
+  Timer,
+  RotateCcw,
+  Wrench,
+  Plug,
+  ScanEye,
+  KeyRound,
+  Cpu,
+  Link2,
+  Star,
+  Heading2,
+  Bold,
+  Italic,
+  List,
+  ListOrdered,
+  ListTree,
 } from 'lucide-react'
 import type { LucideProps } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
+import {
+  ResourceAgentGlyph,
+  ResourceFrameGlyph,
+  ResourceMcpGlyph,
+  ResourcePluginGlyph,
+  ResourceProjectGlyph,
+  ResourceProviderGlyph,
+  ResourceShotsGlyph,
+  ResourceSkillGlyph,
+  ResourceUnderstandingGlyph,
+  ResourceVideoGlyph,
+  ResourceWorkspaceGlyph,
+} from './resource-glyphs'
 
-/** 参考 Kimi ui-spinner；图形包含轨道与圆弧，旋转由调用方 animate-spin 控制。 */
 const LoadingGlyph = ({ strokeWidth: _strokeWidth, ...props }: LucideProps) => (
   <svg fill="none" viewBox="0 0 24 24" {...props}>
     <circle
@@ -130,7 +159,6 @@ const LoadingGlyph = ({ strokeWidth: _strokeWidth, ...props }: LucideProps) => (
   </svg>
 )
 
-/** 参考 WorkBuddy 复制图标；固定线宽属于图形比例，不使用统一 strokeWidth。 */
 const CopyGlyph = ({ strokeWidth: _strokeWidth, ...props }: LucideProps) => (
   <svg fill="none" viewBox="0 0 16 16" {...props}>
     <path
@@ -150,7 +178,6 @@ const CopyGlyph = ({ strokeWidth: _strokeWidth, ...props }: LucideProps) => (
   </svg>
 )
 
-/** 参考 WorkBuddy credit 图标；evenodd 保留内圈镂空。 */
 const CreditGlyph = ({ strokeWidth: _strokeWidth, ...props }: LucideProps) => (
   <svg fill="none" viewBox="0 0 12 12" {...props}>
     <path
@@ -162,8 +189,18 @@ const CreditGlyph = ({ strokeWidth: _strokeWidth, ...props }: LucideProps) => (
   </svg>
 )
 
-// 图标键按语义用途命名，底层图形集中替换。
 const ICONS = {
+  'resource-agent': ResourceAgentGlyph,
+  'resource-skill': ResourceSkillGlyph,
+  'resource-workspace': ResourceWorkspaceGlyph,
+  'resource-video': ResourceVideoGlyph,
+  'resource-project': ResourceProjectGlyph,
+  'resource-mcp': ResourceMcpGlyph,
+  'resource-provider': ResourceProviderGlyph,
+  'resource-plugin': ResourcePluginGlyph,
+  'resource-shots': ResourceShotsGlyph,
+  'resource-understanding': ResourceUnderstandingGlyph,
+  'resource-frame': ResourceFrameGlyph,
   add: Plus,
   arrow: ArrowUpRight,
   ellipse: Circle,
@@ -231,7 +268,6 @@ const ICONS = {
   locked: LockKeyhole,
   logout: LogOut,
   more: Ellipsis,
-  /** 列表里的一项往前、往后挪一位 */
   'move-up': ArrowUp,
   'move-down': ArrowDown,
   music: Music,
@@ -265,36 +301,46 @@ const ICONS = {
   user: User,
   video: Video,
   'video-type': Clapperboard,
-  /** 合成出来的视频版本 */
   composite: Clapperboard,
-  /** 编辑视频里一块在不在要合成的草稿里 */
   included: Eye,
   excluded: EyeOff,
   warning: TriangleAlert,
   waveform: AudioLines,
   zoom: ZoomIn,
   'zoom-out': ZoomOut,
-  /** 时间线吸附 */
   snap: Magnet,
-  /** 时间线缩放到适应宽度 */
   fit: MoveHorizontal,
-  /** AI 生成（如生成音乐） */
   sparkles: Sparkles,
-  /** 组件分类：效果、文字效果、场景 */
   blend: Blend,
   type: Type,
   film: Film,
-  /** 成片编辑器的特效轨 */
   layers: Layers,
-  /** 成片画面上的旋转把手 */
   rotate: RotateCw,
+  manage: SlidersHorizontal,
+  provider: Cloud,
+  timeout: Timer,
+  'max-calls': Repeat,
+  restore: RotateCcw,
+  skill: BookOpen,
+  credential: KeyRound,
+  model: Cpu,
+  link: Link2,
+  'make-default': Star,
+  plugin: Wrench,
+  'mcp-server': Plug,
+  'video-understanding': ScanEye,
+  'shot-list': ListTree,
+  heading: Heading2,
+  bold: Bold,
+  italic: Italic,
+  'bullet-list': List,
+  'ordered-list': ListOrdered,
 } as const
 
 export type IconName = keyof typeof ICONS
 
 type IconSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl'
 
-// CSS token 覆盖 SVG 尺寸属性，统一使用五档图标尺寸。
 const SIZE_CLASS: Record<IconSize, string> = {
   xs: 'size-(--icon-xs)',
   sm: 'size-(--icon-sm)',
@@ -307,11 +353,7 @@ type IconProps = {
   name: IconName
   size?: IconSize
   className?: string
-} & (
-  | { label: string; decorative?: never }
-  // 装饰图标须显式声明，避免有语义的图标缺少可访问名称。
-  | { decorative: true; label?: never }
-)
+} & ({ label: string; decorative?: never } | { decorative: true; label?: never })
 
 export function Icon({ name, size = 'md', className, ...intent }: IconProps) {
   const label = 'label' in intent ? intent.label : undefined

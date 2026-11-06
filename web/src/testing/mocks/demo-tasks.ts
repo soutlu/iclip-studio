@@ -1,4 +1,3 @@
-/** 浏览器演示需求：与单测的数据准备隔离，素材只通过 mock 入口加载。 */
 import apparelImage from './assets/apparel.webp'
 import backpackImage from './assets/backpack.webp'
 import loafersImage from './assets/loafers.webp'
@@ -54,10 +53,8 @@ const DEMO_TASKS: readonly DemoTask[] = [
   },
 ]
 
-/** 对话已有历史及工作区；需求单记载共同要求，认领人与对话属主保持一致。 */
 export function seedDemoTasks(conversations: readonly MockConversation[]) {
   for (const [index, demo] of DEMO_TASKS.entries()) {
-    // 按标题关联，改了对话标题这里当场报错，不静默少挂一段。
     const attempts = demo.conversations.map((title) => {
       const conversation = conversations.find((one) => one.title === title)
       if (!conversation) {
@@ -69,7 +66,6 @@ export function seedDemoTasks(conversations: readonly MockConversation[]) {
     task.creatorUserId = mockGovernor.id
     task.status = 'confirmed'
     task.assigneeUserIds = [...new Set(attempts.map((conversation) => conversation.ownerUserId))]
-    // 一周前建的，按列出的次序每张早一分钟，列表里保持这个次序。
     task.createdAt = new Date(Date.now() - 7 * 86400_000 - index * 60_000).toISOString()
     task.updatedAt = task.createdAt
     task.inputs.creative_requirement = demo.requirement

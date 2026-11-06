@@ -16,7 +16,6 @@ API_KEY_HEADER: Final = "x-oss-meta-api-key"
 
 
 def audit_metadata(*, user_id: uuid.UUID, api_key_id: uuid.UUID | None) -> dict[str, str]:
-    # OSS 的自定义元数据只收 ASCII。
     metadata = {UPLOADER_HEADER: str(user_id)}
     if api_key_id is not None:
         metadata[API_KEY_HEADER] = str(api_key_id)

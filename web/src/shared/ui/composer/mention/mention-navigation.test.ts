@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { linearNavigation, optionAfterArrow, type OptionBox } from './mention-navigation'
 
 describe('optionAfterArrow', () => {
-  // 两行：第一行 4 格，第二行 2 格；每格 40×90、间距 4。
   const box = (column: number, row: number): OptionBox => ({
     height: 90,
     left: column * 44,

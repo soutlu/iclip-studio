@@ -5,18 +5,14 @@ import { shiftSelect } from '../editing/range-select'
 import { MIN_CLIP_MS, type Layer0Clip } from './editing/draft'
 import type { MaterialPiece } from './editing/layer0'
 
-/** 视频素材区里的一版素材片：出自哪个镜头组、哪条原作，叫什么版本。 */
 export type Material = {
   jobId: string
   url: string
-  /** 记录上的时长（毫秒）；没记的要从文件读 */
   durationMs: number | null
   groupId: string
   groupLabel: string
   takeId: string
-  /** 「生成 A」「生成 B」……按原作在组里的先后 */
   takeLabel: string
-  /** 版本组里的版本名，如「V1 原片」「V3」，与其他页面同一个编号 */
   version: string
 }
 
@@ -24,7 +20,6 @@ export type MaterialTake = {
   id: string
   label: string
   versions: readonly Material[]
-  /** 最新完成的一版，素材区默认显示它 */
   latest: Material
 }
 
@@ -34,13 +29,8 @@ export type MaterialGroup = {
   takes: readonly MaterialTake[]
 }
 
-/** 素材里的一个镜头：关键帧切出的起止（素材时间，毫秒） */
 export type ShotSpan = { startMs: number; endMs: number }
 
-/**
- * 素材区里选中的一段：哪一版素材片里连着的哪几个镜头（shots，镜头原本的起止，按先后、至少一个），
- * 以及两端修剪后的范围 startMs–endMs（素材时间，毫秒）。镜头之间的边界就是加入成片时拆段的地方。
- */
 export type MaterialRange = {
   jobId: string
   takeId: string
@@ -49,7 +39,6 @@ export type MaterialRange = {
   shots: readonly ShotSpan[]
 }
 
-/** 只选一个镜头 */
 export const shotRange = (jobId: string, takeId: string, shot: ShotSpan): MaterialRange => ({
   jobId,
   takeId,
@@ -58,13 +47,8 @@ export const shotRange = (jobId: string, takeId: string, shot: ShotSpan): Materi
   shots: [shot],
 })
 
-/** 选区里镜头之间的边界（素材时间），按先后；只有一个镜头时为空 */
 const cutsOf = (range: MaterialRange): number[] => range.shots.slice(1).map((shot) => shot.startMs)
 
-/**
- * 选区一端能挪到的范围（毫秒）：往外不出素材的头尾；往里不越过最近的镜头边界（只有一个镜头时是
- * 另一端），并至少留 MIN_CLIP_MS
- */
 export const trimLimits = (
   range: MaterialRange,
   edge: Edge,
@@ -76,7 +60,6 @@ export const trimLimits = (
     : { min: (cuts.at(-1) ?? range.startMs) + MIN_CLIP_MS, max: durationMs }
 }
 
-/** 把选区的一端挪 deltaMs，收进 {@link trimLimits} */
 export const trimRange = (
   range: MaterialRange,
   edge: Edge,
@@ -88,7 +71,6 @@ export const trimRange = (
   return { ...range, [key]: Math.min(max, Math.max(min, range[key] + deltaMs)) }
 }
 
-/** 加入成片时拆成的段：每个镜头一段，第一段、最后一段带上两端的修剪 */
 export const rangePieces = (range: MaterialRange): MaterialPiece[] =>
   range.shots.map((shot, at) => {
     const start = at === 0 ? range.startMs : shot.startMs
@@ -96,11 +78,6 @@ export const rangePieces = (range: MaterialRange): MaterialPiece[] =>
     return { playbackStart: start, duration: end - start }
   })
 
-/**
- * Shift 点镜头 clicked（同一版素材里全部镜头是 shots，按先后），规则见 {@link shiftSelect}；别的
- * 素材、别的版本里的镜头只选它，全部去掉时为 null。没变的一端保留修剪，换了镜头的一端取镜头原本的
- * 起止；保留的修剪越过了新的镜头边界时收回到边界以内。
- */
 export const shiftShot = (
   range: MaterialRange | null,
   clicked: MaterialRange,
@@ -131,10 +108,8 @@ export const shiftShot = (
   }
 }
 
-/** 画面轨上的一段视频用了素材里的哪一段（毫秒） */
 export type UsedSpan = { clipId: string; startMs: number; endMs: number }
 
-/** 画面轨上每版素材片已经用了哪些段，按画面轨上的先后，以 jobId 分 */
 export const usedSpans = (
   layer0: readonly Layer0Clip[],
 ): ReadonlyMap<string, readonly UsedSpan[]> => {
@@ -151,7 +126,6 @@ export const usedSpans = (
   return used
 }
 
-/** 素材里 seconds 这一刻落在第几个镜头（从 1 数）；不在任何镜头里时 undefined */
 export const shotAt = (shots: readonly SecondsRange[], seconds: number): number | undefined => {
   const index = shots.findIndex((shot) => seconds >= shot.start - 0.001 && seconds < shot.end)
   return index < 0 ? undefined : index + 1
@@ -169,7 +143,6 @@ const takeLetter = (index: number): string => {
   return result
 }
 
-/** 按镜头组、组里的原作排好这段对话的素材片；一条原作的合成跟着它，版本名沿用版本组的编号。 */
 export const materialCatalog = (groups: readonly ConversationVideoGroup[]): MaterialCatalog => {
   const catalog = groups.map((group): MaterialGroup => {
     const byTake = new Map<string, typeof group.videos>()

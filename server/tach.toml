@@ -9,10 +9,6 @@ path = "iclip.platform.db"
 depends_on = []
 
 [[modules]]
-path = "iclip.platform.http"
-depends_on = ["iclip.common"]
-
-[[modules]]
 path = "iclip.platform.paging"
 depends_on = ["iclip.common"]
 
@@ -21,20 +17,27 @@ path = "iclip.platform.object_store"
 depends_on = []
 
 [[modules]]
-path = "iclip.platform.file_store"
-depends_on = []
-
-[[modules]]
 path = "iclip.platform.media"
-depends_on = ["iclip.common"]
-
-[[modules]]
-path = "iclip.platform.material_ledger"
-depends_on = []
+depends_on = ["iclip.common", "iclip.platform.outbound"]
 
 [[modules]]
 path = "iclip.platform.outbound"
 depends_on = []
+
+# 配置页三组管理接口转给运行时服务的那一层，技能库、模型供应商与 agent 配置的路由共用。
+[[modules]]
+path = "iclip.platform.runtime_admin"
+depends_on = []
+
+# 取帧拼板与宫格切格的像素处理，取帧台账、存储与切图记录在组合根的适配器里。
+[[modules]]
+path = "iclip.platform.shot_media"
+depends_on = ["iclip.platform.media"]
+
+# 视频拆解：抽帧取音轨与方舟模型适配器（经运行时服务的模型调用接口），供参考视频的拆解与资料库打标使用。
+[[modules]]
+path = "iclip.platform.video_breakdown"
+depends_on = ["iclip.platform.media"]
 
 [[modules]]
 path = "iclip.config"
@@ -42,11 +45,11 @@ depends_on = ["iclip.common"]
 
 [[modules]]
 path = "iclip.domains.identity"
-depends_on = ["iclip.common", "iclip.platform.db", "iclip.platform.http"]
+depends_on = ["iclip.common", "iclip.platform.db"]
 
 [[modules]]
 path = "iclip.domains.agents"
-depends_on = ["iclip.common", "iclip.domains.identity", "iclip.platform.transcript"]
+depends_on = ["iclip.common", "iclip.domains.identity", "iclip.platform.live"]
 
 [[modules]]
 path = "iclip.domains.conversations"
@@ -105,19 +108,18 @@ path = "iclip.domains.generation"
 depends_on = [
     "iclip.common",
     "iclip.platform.db",
-    "iclip.platform.http",
     "iclip.platform.media",
     "iclip.platform.object_store",
     "iclip.platform.paging",
     "iclip.domains.identity",
 ]
 
-# 资料库标签：取打标文字与打标都是端口，由组合根接到各库与能力包上；条数按表名读参考视频的移除标记。
+# 资料库标签：取打标文字与打标都是端口，由组合根接到各库与视频拆解的模型适配器上；条数按表名读参考视频的移除标记。
 [[modules]]
 path = "iclip.domains.tagging"
 depends_on = ["iclip.common", "iclip.domains.identity"]
 
-# 参考视频的拆解、上传记录都是端口，由组合根接到能力包与生成域上；标签经 tagging。
+# 参考视频的拆解、上传记录都是端口，由组合根接到视频拆解与生成域上；标签经 tagging。
 [[modules]]
 path = "iclip.domains.references"
 depends_on = [
@@ -132,6 +134,23 @@ depends_on = [
 path = "iclip.domains.brand_templates"
 depends_on = ["iclip.common", "iclip.platform.media", "iclip.platform.object_store", "iclip.domains.identity"]
 
+# 技能库、模型供应商、MCP 服务与 agent 配置的业务在运行时服务，这里只留转给它的接口路由。
+[[modules]]
+path = "iclip.domains.model_providers"
+depends_on = ["iclip.domains.identity", "iclip.platform.runtime_admin"]
+
+[[modules]]
+path = "iclip.domains.mcp_servers"
+depends_on = ["iclip.domains.identity", "iclip.platform.runtime_admin"]
+
+[[modules]]
+path = "iclip.domains.skills"
+depends_on = ["iclip.domains.identity", "iclip.platform.runtime_admin"]
+
+[[modules]]
+path = "iclip.domains.agent_config"
+depends_on = ["iclip.domains.identity", "iclip.platform.runtime_admin"]
+
 [[modules]]
 path = "iclip.domains.products"
 depends_on = ["iclip.common"]
@@ -141,43 +160,19 @@ path = "iclip.domains.inspirations"
 depends_on = ["iclip.common", "iclip.domains.identity", "iclip.domains.products"]
 
 [[modules]]
-path = "iclip.platform.transcript"
+path = "iclip.platform.live"
 depends_on = ["iclip.common"]
-
-[[modules]]
-path = "iclip.harness"
-depends_on = [
-    "iclip.common",
-    "iclip.platform.file_store",
-    "iclip.platform.material_ledger",
-    "iclip.platform.transcript",
-]
-
-[[modules]]
-path = "iclip.capabilities"
-depends_on = [
-    "iclip.common",
-    "iclip.platform.file_store",
-    "iclip.platform.material_ledger",
-    "iclip.platform.media",
-    "iclip.platform.transcript",
-    "iclip.harness",
-    "iclip.domains.identity",
-    "iclip.domains.agents",
-]
 
 [[modules]]
 path = "iclip.app"
 depends_on = [
     "iclip.common",
     "iclip.platform.db",
-    "iclip.platform.http",
     "iclip.platform.object_store",
-    "iclip.platform.file_store",
-    "iclip.platform.material_ledger",
     "iclip.platform.media",
     "iclip.platform.outbound",
-    "iclip.platform.transcript",
+    "iclip.platform.shot_media",
+    "iclip.platform.video_breakdown",
     "iclip.config",
     "iclip.domains.identity",
     "iclip.domains.agents",
@@ -194,6 +189,8 @@ depends_on = [
     "iclip.domains.tagging",
     "iclip.domains.brand_templates",
     "iclip.domains.tracking",
-    "iclip.harness",
-    "iclip.capabilities",
+    "iclip.domains.skills",
+    "iclip.domains.model_providers",
+    "iclip.domains.mcp_servers",
+    "iclip.domains.agent_config",
 ]

@@ -1,7 +1,3 @@
-"""参考视频的后台拆解：一次任务接手、拆解、写回，拆成再排一次打标；拆解不碰标签；四种失败各落各的
-原因并保留原来的拆解；超时收尾；任务抛出后不重投。拆解走真的适配器，HTTP 与抽帧是替身，打标队列
-只记下排了谁。"""
-
 from __future__ import annotations
 
 import uuid
@@ -25,6 +21,7 @@ from tests.helpers.references import (
     FakeSampler,
     NoTestVideos,
     ark_pipeline,
+    model_unavailable,
     plant_reference,
     plant_user,
     reference_row,
@@ -65,8 +62,6 @@ async def no_uploads(principal: Principal, upload_id: uuid.UUID) -> str | None:
 
 
 async def pending_row(engine: AsyncEngine) -> tuple[uuid.UUID, uuid.UUID, set[uuid.UUID]]:
-    """排着队的一行，带着上一次的拆解，条目上有一个人工标签与一个 AI 标签。"""
-
     owner = await plant_user(engine, "maya")
     reference_id = await plant_reference(
         engine, owner=owner, status="pending", document=OLD_DOCUMENT
@@ -193,6 +188,12 @@ async def test_a_breakdown_of_a_row_without_an_entry_creates_one_for_the_owner(
             "model_failed",
             id="timeout",
         ),
+        pytest.param(
+            FakeArk(breakdown=model_unavailable()),
+            None,
+            "model_unavailable",
+            id="model-unavailable",
+        ),
     ],
 )
 async def test_a_failed_breakdown_records_its_reason_and_keeps_the_old_breakdown(
@@ -260,8 +261,6 @@ async def test_running_rows_past_the_limit_time_out_and_keep_their_breakdown(
 async def test_a_late_result_does_not_overwrite_a_row_that_timed_out_and_was_rerun(
     engine: AsyncEngine,
 ) -> None:
-    """超时收尾后又重拆的行，上一次迟到的结果不写进去。"""
-
     reference_id, _, _ = await pending_row(engine)
     store = SqlReferenceStore(engine)
     first = await store.claim(reference_id)
@@ -288,8 +287,6 @@ async def test_a_late_result_does_not_overwrite_a_row_that_timed_out_and_was_rer
 
 
 async def test_a_task_that_raises_is_not_run_again(engine: AsyncEngine) -> None:
-    """崩在半路的任务停在 failed，不重投：再跑一次就是再付一次钱。"""
-
     reference_id, _, _ = await pending_row(engine)
     connector = InMemoryConnector()
     calls: list[str] = []

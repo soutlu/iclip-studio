@@ -1,5 +1,3 @@
-"""验证测试分层目录与命名规则。"""
-
 from __future__ import annotations
 
 import ast
@@ -7,8 +5,6 @@ from pathlib import Path
 
 TESTS = Path(__file__).resolve().parents[2]
 ALLOWED_TOP = {"unit", "integration_no_llm", "integration_llm", "e2e_full", "helpers"}
-
-PRIVATE_IMPORT_BASELINE: frozenset[str] = frozenset()
 
 
 def test_tree_layout() -> None:
@@ -27,11 +23,12 @@ def test_no_private_imports_from_src() -> None:
     for path in TESTS.rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("iclip"):
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and node.module.startswith(("iclip", "iclip_video", "agent_runtime"))
+            ):
                 for alias in node.names:
                     if alias.name.startswith("_"):
                         violations.add(f"{path.relative_to(TESTS)}:{alias.name}")
-    new = violations - PRIVATE_IMPORT_BASELINE
-    stale = PRIVATE_IMPORT_BASELINE - violations
-    assert not new, f"测试引入私有符号（禁止新增）: {sorted(new)}"
-    assert not stale, f"棘轮基线过期，请删除: {sorted(stale)}"
+    assert not violations, f"测试引入私有符号: {sorted(violations)}"

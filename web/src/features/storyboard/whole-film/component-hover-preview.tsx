@@ -1,13 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { HOVER_CANVAS } from './hover-preview'
 
-/** `@hyperframes/player` 注册的 `<hyperframes-player>` 元素上这里用到的那几样 */
 type PlayerElement = HTMLElement & { play: () => void }
 
-/**
- * 盖在组件卡片预览图上的播放器：静音、循环播放 srcdoc 这一页。第一帧画出来之前透明，底下的预览图
- * 照常显示；画好后开始播，播放器的 `loop` 在结尾跳回开头接着放。卸载时拆掉播放器。
- */
 export function ComponentHoverPreview({ srcdoc }: { srcdoc: string }) {
   const hostRef = useRef<HTMLSpanElement>(null)
 
@@ -40,5 +35,5 @@ export function ComponentHoverPreview({ srcdoc }: { srcdoc: string }) {
     }
   }, [srcdoc])
 
-  return <span aria-hidden className="wf-hover-slot" ref={hostRef} />
+  return <span aria-hidden className="wf-hover-slot" inert ref={hostRef} />
 }

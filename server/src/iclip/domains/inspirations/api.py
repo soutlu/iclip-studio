@@ -1,7 +1,3 @@
-"""按 PDM 款号只读查询爆款视频，使用 inspirations:read 权限。
-
-数据由部署方自行导入，路由无条件挂载；没有可用参考时返回空列表，不是 404。"""
-
 from __future__ import annotations
 
 from typing import Annotated

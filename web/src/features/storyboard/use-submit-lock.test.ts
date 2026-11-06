@@ -2,7 +2,6 @@ import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSubmitLock } from './use-submit-lock'
 
-/** 外面决定什么时候结束的 task。 */
 const deferred = () => {
   let resolve = (_accepted: boolean) => {}
   let reject = (_error: Error) => {}
@@ -27,7 +26,6 @@ describe('useSubmitLock', () => {
     vi.useRealTimers()
   })
 
-  /** 发起一次提交，停在 sending。 */
   const start = (run: ReturnType<typeof useSubmitLock>['run']) => {
     const task = deferred()
     let running: Promise<void> = Promise.resolve()
@@ -35,7 +33,6 @@ describe('useSubmitLock', () => {
       running = run(() => task.promise)
     })
     return {
-      /** task 以这个结果结束，并等 run 收尾。 */
       settle: (accepted: boolean) =>
         act(async () => {
           task.resolve(accepted)
@@ -54,7 +51,6 @@ describe('useSubmitLock', () => {
 
     const submission = start(result.current.run)
     expect(result.current.phase).toBe('sending')
-    // 请求走多久都不算进停留。
     advance(5_000)
     expect(result.current.phase).toBe('sending')
 

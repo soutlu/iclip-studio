@@ -1,7 +1,3 @@
-/** 详情里的标签：标签树里每个维度一行，按树的先后。能改时每个标签带「移除」，末尾的「+」从这一维度的取值里挑一个加上；
- * 每次改动交回整份（跨全部维度），由调用方去保存。AI 打的维度在名字旁带一个小提示。
- * 灵感库与爆款素材库共用；爆款入选前只给人工维度时，调用方传一份只含这些维度的查找表。 */
-
 import { useState } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -29,15 +25,10 @@ import {
 
 type LibraryTagEditorProps = {
   index: TagIndex
-  /** 这一条的全部标签，跨维度。 */
   value: readonly string[]
-  /** 能改：标签带「移除」，末尾有「+」。 */
   editable: boolean
-  /** 正在保存或后台正在打标：先不接新的改动。 */
   busy: boolean
-  /** 交回改完的整份，按树的先后。 */
   onChange: (tags: string[]) => void
-  /** AI 维度旁的提示：说清哪些操作会整组重写这一维度，各库不同。 */
   aiHint: string
 }
 
@@ -71,7 +62,6 @@ type TagRowProps = {
   values: readonly TagEntry[]
   editable: boolean
   busy: boolean
-  /** 交回这一维度上的取值。 */
   onChange: (ids: string[]) => void
   aiHint: string
 }
@@ -128,7 +118,6 @@ function TagRow({ dimension, values, editable, busy, onChange, aiHint }: TagRowP
                 align="start"
                 aria-label={`添加${label}`}
                 className="w-60"
-                // 浮层留在详情弹窗内，沿用弹窗的焦点与滚动边界。
                 container={pickerHost}
                 sideOffset={6}
               >
@@ -151,7 +140,6 @@ function TagRow({ dimension, values, editable, busy, onChange, aiHint }: TagRowP
   )
 }
 
-/** 名字旁的小图标；悬停时说明哪些操作会重写这一维度，读屏从图标的名字读到同一句。 */
 function AiHint({ hint }: { hint: string }) {
   return (
     <TooltipRoot>
@@ -165,7 +153,6 @@ function AiHint({ hint }: { hint: string }) {
   )
 }
 
-/** 可搜的清单：父级在前，后代逐级缩进。 */
 function AddPicker({
   label,
   options,

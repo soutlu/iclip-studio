@@ -1,6 +1,3 @@
-/** 分镜工作台顶栏：保存状态，「成片」入口，镜头组切换（上一组、下一组，点中间展开镜头组列表），以及复制整组的字。
- * 分镜页与制作页共用，各自给镜头组摘要和要复制的字。 */
-
 import type { ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -12,15 +9,10 @@ import { workbenchControl } from './workbench-control'
 
 type StoryboardToolbarProps = {
   groups: readonly ShotGroupSummary[]
-  /** 当前组在全部组里排第几，从 1 起。 */
   position: number
-  /** 保存状态，由调用方渲染好放进来。 */
   status: ReactNode
-  /** 切到第几组；与 ↑↓ 键同一条路径。 */
   onGoShot: (shot: number) => void
-  /** 复制按钮：按钮名、拷走的字与拷好后的提示；`blocked` 是此刻不能复制的原因，给了就置灰、悬停说原因。 */
   copy: { label: string; text: string; done: string; blocked?: string | undefined }
-  /** 打开成片编辑器；只读时不给，按钮不出现。 */
   onWholeFilm: (() => void) | undefined
 }
 

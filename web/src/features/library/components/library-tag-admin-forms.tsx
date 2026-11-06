@@ -1,12 +1,11 @@
-/** 标签管理的就地名称表单和规则编辑，共用现有输入、按钮与对话框组件。 */
 import { useEffect, useId, useRef, useState } from 'react'
 import type { LibraryTagUpdateIn } from '@/shared/api/generated/types.gen'
 import { Button } from '@/shared/ui/button'
 import { DialogBody, DialogHeader } from '@/shared/ui/dialog'
 import { Input, Textarea } from '@/shared/ui/field'
+import { Switch } from '@/shared/ui/switch'
 import { isAiDimension, type LibraryTag } from '../library-tags'
 
-/** 新维度在分组区就地编辑，保存后由真实维度卡接替。 */
 export function CreateDimensionForm({
   busy,
   onCancel,
@@ -213,17 +212,12 @@ export function RulesEditor({
                 <p>AI 自动打标</p>
                 <span>开启后，AI 将根据判断说明选择这个维度的标签</span>
               </div>
-              <button
-                aria-checked={autoFill}
+              <Switch
                 aria-label="AI 自动打标"
-                className="tag-admin__switch ui-focus"
+                checked={autoFill}
                 disabled={busy}
-                onClick={() => setAutoFill(!autoFill)}
-                role="switch"
-                type="button"
-              >
-                <span />
-              </button>
+                onCheckedChange={setAutoFill}
+              />
             </div>
           ) : null}
           <label className="tag-admin__field" htmlFor={guideId}>

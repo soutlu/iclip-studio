@@ -1,5 +1,3 @@
-/** app 层连接 shared 宿主与 feature 渲染器，避免 shared 反向依赖 feature。 */
-
 import { SubAgentPanel, agentCallOf } from '@/features/conversations'
 import { FILM_PATH, FilmPanel, SHOTS_PATH, StoryboardPanel } from '@/features/storyboard'
 import { WorkspaceFilesPanel } from '@/features/workspace'
@@ -7,7 +5,6 @@ import { ArtifactRegistry } from '@/shared/workbench'
 
 export const workbenchRegistry = new ArtifactRegistry()
 
-// 镜头产物交付后自动展开对应面板。
 workbenchRegistry.register({
   autoOpen: true,
   component: StoryboardPanel,
@@ -19,7 +16,6 @@ workbenchRegistry.register({
   type: 'storyboard',
 })
 
-// AI 导演的工程文件落地后自动展开制作页；别的 agent 不交付它，没有文件时选择页不列这一行。
 workbenchRegistry.register({
   autoOpen: true,
   component: FilmPanel,
@@ -30,7 +26,6 @@ workbenchRegistry.register({
   type: 'film',
 })
 
-// 工作区里有文件就能翻，但不自动展开，用户从面板的选择页点进来。
 workbenchRegistry.register({
   autoOpen: false,
   component: WorkspaceFilesPanel,
@@ -43,17 +38,14 @@ workbenchRegistry.register({
   type: 'workspace',
 })
 
-/** 菜单行尾放得下的任务摘要长度。 */
 const DETAIL_MAX = 14
 
 const clip = (text: string): string =>
   text.length > DETAIL_MAX ? `${text.slice(0, DETAIL_MAX)}…` : text
 
-// 派活卡不自动打开，点卡上的「查看」才切过来；打开的那一件才占标签位。
 workbenchRegistry.register({
   autoOpen: false,
   component: SubAgentPanel,
-  // 同一个子代理派过几次，菜单里靠任务摘要分开。
   detail: (source) => {
     const prompt = source.kind === 'frame' ? agentCallOf(source.display)?.prompt : undefined
     return prompt === undefined ? undefined : clip(prompt)

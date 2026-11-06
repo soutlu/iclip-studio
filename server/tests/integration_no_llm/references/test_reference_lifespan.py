@@ -1,8 +1,3 @@
-"""参考视频的拆解与打标 worker 与对话运行在同一个 lifespan 里起停；媒体生成没开时，排进去的拆解照样
-被执行完，拆完接着打标。
-
-直接驱动 lifespan_context，与 uvicorn 保持一致；队列连接真实测试数据库，拆解与打标的 HTTP 是替身。"""
-
 from __future__ import annotations
 
 import asyncio

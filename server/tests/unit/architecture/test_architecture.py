@@ -1,5 +1,3 @@
-"""验证 tach 依赖图之外的框架引用、模块纯度和异常处理约束。"""
-
 from __future__ import annotations
 
 import ast
@@ -7,10 +5,9 @@ from pathlib import Path
 
 SRC = Path(__file__).resolve().parents[3] / "src" / "iclip"
 
-# 框架及允许直接导入它的路径前缀（相对 src/iclip）。
 FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
-    ("pydantic_ai",): ("harness/", "capabilities/"),
-    ("pydantic_ai_harness",): ("harness/",),
+    ("pydantic_ai",): (),
+    ("pydantic_ai_harness",): (),
     ("fastapi", "starlette"): (
         "app/",
         "domains/identity/api.py",
@@ -24,36 +21,29 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
         "domains/library/api.py",
         "domains/references/api.py",
         "domains/tagging/api.py",
+        "domains/skills/api.py",
         "domains/brand_templates/api.py",
         "domains/tracking/api.py",
         "domains/uploads/api.py",
+        "domains/model_providers/api.py",
+        "domains/mcp_servers/api.py",
+        "domains/agent_config/api.py",
+        "platform/runtime_admin.py",
         "domains/identity/middleware.py",
         "domains/identity/accounts.py",
         "main.py",
     ),
     ("sqlalchemy",): (
         "platform/db/",
-        "platform/file_store/",
-        "platform/material_ledger/",
         "app/",
-        # StepPersistence 协议后端归属使用该协议的 harness。
-        "harness/step_store_pg.py",
-        # 对话用量台账的 Postgres 实现，同样归属 harness，表在 agent_runtime schema。
-        "harness/usage_ledger_pg.py",
-        # prompt 队列归属运行驱动，使用 agent_runtime schema。
-        "harness/jobs.py",
-        # 外部只读表使用独立适配器；infra_sql.py 仅表示模块自有表。
         "domains/products/catalog_pg.py",
-        # 审计报表与资料库跨模块只读聚合，同样不是模块自有表。
         "domains/audit/reports_pg.py",
         "domains/library/reports_pg.py",
     ),
     ("fastapi_users", "fastapi_users_db_sqlalchemy"): ("domains/identity/",),
-    ("openai",): ("harness/models.py",),
-    # 端口协议在 store.py，消费方不经 SDK 适配器就能依赖它。
+    ("openai",): (),
     ("oss2",): ("platform/object_store/oss.py",),
-    ("PIL",): ("capabilities/shot_video/board.py", "platform/media/image.py"),
-    # 队列实现、连接器类型与组合根需要直接引用 procrastinate。
+    ("PIL",): ("platform/shot_media/board.py", "platform/media/image.py"),
     ("procrastinate",): (
         "domains/generation/queue.py",
         "domains/generation/module.py",
@@ -64,9 +54,8 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
         "app/",
     ),
 }
-# 模块自有 SQL 按 infra_sql.py 文件名匹配。
 _SQLALCHEMY_MODULE_FILE = "infra_sql.py"
-_SQLALCHEMY_MODULE_PREFIXES = ("domains/", "capabilities/")
+_SQLALCHEMY_MODULE_PREFIXES = ("domains/",)
 
 
 def _python_files() -> list[Path]:
@@ -112,23 +101,18 @@ def test_cross_module_imports_only_public() -> None:
 
     violations: list[str] = []
     domains = [p.name for p in (SRC / "domains").iterdir() if p.is_dir()]
-    for root_name, has_own in (("domains", True), ("capabilities", False)):
-        for path in (SRC / root_name).rglob("*.py"):
-            rel = _rel(path)
-            own = rel.split("/")[1] if has_own else None
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.ImportFrom) or not node.module:
-                    continue
-                parts = node.module.split(".")
-                if parts[:2] == ["iclip", "domains"] and len(parts) >= 3:
-                    target = parts[2]
-                    if (
-                        target in domains
-                        and target != own
-                        and (len(parts) < 4 or parts[3] != "public")
-                    ):
-                        violations.append(f"{rel}: 绕过 public 引 {node.module}")
+    for path in (SRC / "domains").rglob("*.py"):
+        rel = _rel(path)
+        own = rel.split("/")[1]
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom) or not node.module:
+                continue
+            parts = node.module.split(".")
+            if parts[:2] == ["iclip", "domains"] and len(parts) >= 3:
+                target = parts[2]
+                if target in domains and target != own and (len(parts) < 4 or parts[3] != "public"):
+                    violations.append(f"{rel}: 绕过 public 引 {node.module}")
     assert not violations, "\n".join(violations)
 
 
@@ -169,6 +153,75 @@ def test_no_silent_exception_fallbacks() -> None:
             elif len(node.body) == 1 and isinstance(node.body[0], ast.Pass):
                 violations.append(f"{_rel(path)}:{node.lineno} except: pass")
     assert not violations, "\n".join(violations)
+
+
+RUNTIME_ALLOWLIST: dict[str, str] = {
+    "agent_runtime.client": "运行时服务的客户端库：HTTP 接口、两条 WebSocket、报错还原",
+    "agent_runtime.errors": "领域错误分类，两边同一套，客户端库按它还原运行时的 4xx",
+    "agent_runtime.http.errors": "状态码表、错误信封与校验文案，两边同一套",
+    "agent_runtime.urls": "地址形状判定",
+    "agent_runtime.app_wire": "会话接口的请求体与答复体",
+    "agent_runtime.hooks": "运行时回调后端的请求体",
+    "agent_runtime.live.frames": "两条 WebSocket 上运行时发的帧，浏览器收到的回执、文件变化与心跳就是它们",
+    "agent_runtime.transcript.wire": "transcript 的消息请求体、读页信封与帧的信封基类",
+    "agent_runtime.transcript.ops": "transcript 实体：消息内容、主 agent 的 id",
+    "agent_runtime.file_store.store": "工作区文件的形状与路径规则",
+    "agent_runtime.file_store.namespace": "工作区的命名空间规则",
+    "agent_runtime.config.skills.schemas": "技能库管理接口的请求体",
+    "agent_runtime.config.skills.models": "技能导入包的大小上限",
+    "agent_runtime.config.model_providers.schemas": "模型供应商管理接口的请求体",
+    "agent_runtime.config.model_providers.models": "模型类型的词表",
+    "agent_runtime.config.mcp_servers.schemas": "MCP 服务管理接口的请求体",
+    "agent_runtime.config.agent_config.schemas": "agent 配置管理接口的请求体",
+    "agent_runtime.agent_usage": "管理接口答复里「谁在用」的形状，后端补名字的答复照用",
+    "agent_runtime.config.agent_config.package": "agent 导出包的大小上限",
+}
+
+
+def test_the_server_imports_only_the_runtime_shapes_and_client() -> None:
+    violations: list[str] = []
+    for path in _python_files():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                modules = [node.module]
+            elif isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            else:
+                continue
+            for module in modules:
+                if module.split(".")[0] == "agent_runtime" and module not in RUNTIME_ALLOWLIST:
+                    violations.append(f"{_rel(path)}: {module}")
+    assert not violations, "后端引用了运行时的内部模块:\n" + "\n".join(violations)
+
+
+RUNTIME_SCHEMA = "agent_runtime"
+
+
+def _code_strings(tree: ast.AST) -> list[ast.Constant]:
+    docstrings = {
+        id(node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+    }
+    return [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in docstrings
+    ]
+
+
+def test_the_server_never_names_runtime_tables() -> None:
+    violations: list[str] = []
+    for path in _python_files():
+        rel = _rel(path)
+        for node in _code_strings(ast.parse(path.read_text(encoding="utf-8"))):
+            value = str(node.value)
+            if value == RUNTIME_SCHEMA or f"{RUNTIME_SCHEMA}." in value:
+                violations.append(f"{rel}:{node.lineno} {value.strip()[:80]!r}")
+    assert not violations, "后端写了运行时 schema 的表:\n" + "\n".join(violations)
 
 
 def test_config_only_consumed_by_app() -> None:

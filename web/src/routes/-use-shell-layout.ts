@@ -46,11 +46,10 @@ const write = (state: ShellLayoutState): void => {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   } catch {
-    // 浏览器禁用站点存储时，布局偏好仍在当前会话生效。
+    // 忽略浏览器禁用或写满 Web Storage 时抛出的异常。
   }
 }
 
-/** 拖动中可暂缓持久化；同步 ref 确保同一事件中的 persist 读取最终宽度。 */
 export function useShellLayout() {
   const [state, setState] = useState(read)
   const latestRef = useRef(state)

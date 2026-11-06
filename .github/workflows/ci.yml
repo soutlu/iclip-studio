@@ -35,6 +35,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      runtime: ${{ steps.scope.outputs.runtime }}
+      video_plugins: ${{ steps.scope.outputs.video_plugins }}
       server: ${{ steps.scope.outputs.server }}
       web: ${{ steps.scope.outputs.web }}
       web_format: ${{ steps.scope.outputs.web_format }}
@@ -52,6 +54,8 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          runtime=true
+          video_plugins=true
           server=true
           web=true
           web_format=false
@@ -59,6 +63,8 @@ jobs:
           # 只有 develop PR 按路径缩小范围；main 和其他目标分支都完整检查。
           if [ "$BASE_REF" = develop ]; then
             if git diff --name-only --no-renames -z "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/ci-changed-files"; then
+              runtime=false
+              video_plugins=false
               server=false
               web=false
               render=false
@@ -67,6 +73,10 @@ jobs:
                 # web/ 下的 Markdown 不是运行时输入，只查 prettier 格式。
                 case "$path" in
                   server/*) scope=server ;;
+                  runtime/*.md) scope=docs ;;
+                  runtime/*) scope=runtime ;;
+                  plugins/*.md) scope=docs ;;
+                  plugins/*) scope=video_plugins ;;
                   render/*.md) scope=docs ;;
                   render/*) scope=render ;;
                   web/*.md) scope=format ;;
@@ -75,11 +85,14 @@ jobs:
                   *) scope=all ;;
                 esac
                 case "$scope" in
+                  # 视频插件依赖 runtime，后端依赖两者：runtime 变了三处都查，插件变了插件与后端都查。
+                  runtime) runtime=true; video_plugins=true; server=true ;;
+                  video_plugins) video_plugins=true; server=true ;;
                   server) server=true ;;
                   web) web=true ;;
                   render) render=true ;;
                   format) web_format=true ;;
-                  all) server=true; web=true; render=true ;;
+                  all) runtime=true; video_plugins=true; server=true; web=true; render=true ;;
                 esac
                 # 渲染服务打包 web 的成片合成构建与后端合同的 zod 生成物，测试用 web 组装的测试组件库，
                 # 它们变了也要查渲染服务。
@@ -97,13 +110,97 @@ jobs:
           if [ "$web" = true ]; then
             web_format=false
           fi
-          echo "base=$BASE_REF server=$server web=$web web_format=$web_format render=$render"
+          echo "base=$BASE_REF runtime=$runtime video_plugins=$video_plugins server=$server web=$web web_format=$web_format render=$render"
           {
+            echo "runtime=$runtime"
+            echo "video_plugins=$video_plugins"
             echo "server=$server"
             echo "web=$web"
             echo "web_format=$web_format"
             echo "render=$render"
           } >> "$GITHUB_OUTPUT"
+
+  runtime_static:
+    name: runtime-static
+    needs: scope
+    if: needs.scope.outputs.runtime == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: runtime
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-server
+        with:
+          working-directory: runtime
+      - name: Lint Python
+        run: uv run ruff check .
+      - name: Check Python formatting
+        run: uv run ruff format --check .
+      - name: Check Python types
+        run: uv run pyright
+      - name: Check dependency boundaries
+        run: uv run tach check
+      - name: Check OpenAPI contract
+        run: uv run python scripts/dump_openapi.py --check
+
+  runtime_unit:
+    name: runtime-unit
+    needs: scope
+    if: needs.scope.outputs.runtime == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: runtime
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-server
+        with:
+          working-directory: runtime
+      - name: Run unit tests
+        run: uv run pytest tests/unit
+
+  video_plugins_static:
+    name: video-plugins-static
+    needs: scope
+    if: needs.scope.outputs.video_plugins == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: plugins/video
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-server
+        with:
+          working-directory: plugins/video
+      - name: Lint Python
+        run: uv run ruff check .
+      - name: Check Python formatting
+        run: uv run ruff format --check .
+      - name: Check Python types
+        run: uv run pyright
+      - name: Check dependency boundaries
+        run: uv run tach check
+
+  video_plugins_unit:
+    name: video-plugins-unit
+    needs: scope
+    if: needs.scope.outputs.video_plugins == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: plugins/video
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-server
+        with:
+          working-directory: plugins/video
+      - name: Run unit tests
+        run: uv run pytest tests/unit
 
   server_static:
     name: server-static
@@ -147,15 +244,74 @@ jobs:
     if: needs.scope.outputs.server == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # 每组独占一个 runner 和 Postgres；用例会清表，同一数据库内仍串行执行。
+    # 按 CI 实际耗时分组；每组独占 runner 和 Postgres，组内清表的用例仍串行执行。
     strategy:
       fail-fast: false
       matrix:
         include:
-          - group: agents
-            tests: tests/integration_no_llm/agents
+          - group: agents-collections
+            tests: >-
+              tests/integration_no_llm/agents
+              --ignore-glob=tests/integration_no_llm/agents/test_transcript_ws*.py
+              --ignore=tests/integration_no_llm/agents/test_transcript_relay.py
+              tests/integration_no_llm/collections
+          - group: realtime
+            tests: >-
+              tests/integration_no_llm/agents/test_transcript_ws*.py
+              tests/integration_no_llm/agents/test_transcript_relay.py
+          - group: conversations
+            tests: >-
+              tests/integration_no_llm/conversations
+              --ignore=tests/integration_no_llm/conversations/test_whole_film_draft.py
+              --ignore=tests/integration_no_llm/conversations/test_whole_film_export.py
+          - group: services
+            tests: >-
+              tests/integration_no_llm/runtime_service
+              tests/integration_no_llm/generation
+          - group: identity-library
+            tests: >-
+              tests/integration_no_llm/identity
+              tests/integration_no_llm/library
+              tests/integration_no_llm/references
+          - group: media
+            tests: >-
+              tests/integration_no_llm/conversations/test_whole_film_draft.py
+              tests/integration_no_llm/conversations/test_whole_film_export.py
+              tests/integration_no_llm/uploads
+              tests/integration_no_llm/platform
+              tests/integration_no_llm/plugins
+              tests/integration_no_llm/brand_templates
+          - group: configuration-audit
+            tests: >-
+              tests/integration_no_llm/agent_config
+              tests/integration_no_llm/runtime_calls
+              tests/integration_no_llm/runtime_internal
+              tests/integration_no_llm/skills
+              tests/integration_no_llm/model_providers
+              tests/integration_no_llm/audit
+              tests/integration_no_llm/test_job_queue_and_runner.py
           - group: application
-            tests: tests/integration_no_llm --ignore=tests/integration_no_llm/agents
+            tests: >-
+              tests/integration_no_llm
+              --ignore=tests/integration_no_llm/agents
+              --ignore=tests/integration_no_llm/agent_config
+              --ignore=tests/integration_no_llm/runtime_calls
+              --ignore=tests/integration_no_llm/runtime_internal
+              --ignore=tests/integration_no_llm/test_job_queue_and_runner.py
+              --ignore=tests/integration_no_llm/conversations
+              --ignore=tests/integration_no_llm/collections
+              --ignore=tests/integration_no_llm/identity
+              --ignore=tests/integration_no_llm/audit
+              --ignore=tests/integration_no_llm/runtime_service
+              --ignore=tests/integration_no_llm/generation
+              --ignore=tests/integration_no_llm/library
+              --ignore=tests/integration_no_llm/references
+              --ignore=tests/integration_no_llm/skills
+              --ignore=tests/integration_no_llm/model_providers
+              --ignore=tests/integration_no_llm/uploads
+              --ignore=tests/integration_no_llm/platform
+              --ignore=tests/integration_no_llm/plugins
+              --ignore=tests/integration_no_llm/brand_templates
     defaults:
       run:
         working-directory: server
@@ -176,19 +332,31 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-server
-      - name: Install ffmpeg
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg
+      - uses: ./.github/actions/setup-ffmpeg
       - name: Run integration tests
         run: uv run pytest ${{ matrix.tests }} -m integration_no_llm --durations=10
       # 合同导出会装配媒体能力，需要本 job 已安装的 ffmpeg。
       - name: Check OpenAPI contract
         if: matrix.group == 'application'
         run: uv run python scripts/dump_openapi.py --check
-      - name: Check migrations
-        if: matrix.group == 'application'
-        env:
-          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/iclip_test
-        run: uv run alembic upgrade head
+
+  # 运行时镜像按 deploy/runtime-video/uv.lock 安装，上面几组测的是 server/uv.lock 的版本。后端检查选中时
+  # runtime/、plugins/video/、server/ 都可能改了依赖，deploy/ 下的改动按 all 也会选中它。
+  runtime_image_lock:
+    name: runtime-image-lock
+    needs: scope
+    if: needs.scope.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      # 与 setup-server 固定同一版本；这里只核对锁，不同步依赖。
+      - uses: astral-sh/setup-uv@v10.0.1
+      - name: Check lock is up to date
+        run: uv lock --check
+        working-directory: deploy/runtime-video
+      - name: Check versions match server lock
+        run: python3 scripts/check-locks.py
 
   web_static:
     name: web-static
@@ -241,7 +409,7 @@ jobs:
         run: pnpm test --shard=${{ matrix.shard }}/4
 
   web_e2e:
-    name: web-e2e (${{ matrix.shard }}/4)
+    name: web-e2e (${{ matrix.shard }}/8)
     needs: scope
     if: needs.scope.outputs.web == 'true'
     runs-on: ubuntu-latest
@@ -249,7 +417,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     defaults:
       run:
         working-directory: web
@@ -260,7 +428,7 @@ jobs:
           playwright: 'true'
       # 每片自行构建 mock 并启动 preview；生产构建由 web-build 独立验证。
       - name: Run end-to-end tests
-        run: pnpm test:e2e --shard=${{ matrix.shard }}/4
+        run: pnpm test:e2e --shard=${{ matrix.shard }}/8
       - name: Upload Playwright traces
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
@@ -318,13 +486,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-render
-      # 测试读 web 组装好的测试组件库（组装要用 web 依赖里的 HyperFrames 运行时）。
-      - uses: ./.github/actions/setup-web
-      - name: Assemble test component library
-        working-directory: web
-        run: pnpm hf:registry
       # 真实渲染的集成测试还要 chrome-headless-shell 与 ffmpeg，runner 上没有，按用例名里的原因跳过；
-      # 它在本机验证。
+      # 它在本机组装测试组件库后验证，这里只安装快速测试需要的 render 依赖。
       - name: Run unit tests
         run: pnpm test
 
@@ -335,9 +498,14 @@ jobs:
     needs:
       - scope
       - secrets
+      - runtime_static
+      - runtime_unit
+      - video_plugins_static
+      - video_plugins_unit
       - server_static
       - server_unit
       - server_integration
+      - runtime_image_lock
       - web_static
       - web_build
       - web_unit
@@ -361,10 +529,17 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           SCOPE_RESULT: ${{ needs.scope.result }}
           SECRETS_RESULT: ${{ needs.secrets.result }}
+          RUNTIME_REQUIRED: ${{ needs.scope.outputs.runtime }}
+          RUNTIME_STATIC_RESULT: ${{ needs.runtime_static.result }}
+          RUNTIME_UNIT_RESULT: ${{ needs.runtime_unit.result }}
+          VIDEO_PLUGINS_REQUIRED: ${{ needs.scope.outputs.video_plugins }}
+          VIDEO_PLUGINS_STATIC_RESULT: ${{ needs.video_plugins_static.result }}
+          VIDEO_PLUGINS_UNIT_RESULT: ${{ needs.video_plugins_unit.result }}
           SERVER_REQUIRED: ${{ needs.scope.outputs.server }}
           SERVER_STATIC_RESULT: ${{ needs.server_static.result }}
           SERVER_UNIT_RESULT: ${{ needs.server_unit.result }}
           SERVER_INTEGRATION_RESULT: ${{ needs.server_integration.result }}
+          RUNTIME_IMAGE_LOCK_RESULT: ${{ needs.runtime_image_lock.result }}
           WEB_REQUIRED: ${{ needs.scope.outputs.web }}
           WEB_STATIC_RESULT: ${{ needs.web_static.result }}
           WEB_BUILD_RESULT: ${{ needs.web_build.result }}
@@ -383,18 +558,23 @@ jobs:
             if [ "$BASE_REF" = develop ]; then
               printf '检查模式：按变更范围。「需执行」为 false 表示本次变更不需要该检查；具体路径判定见 scope 日志。\n\n'
             else
-              printf '检查模式：完整检查 server、web 和 render。\n\n'
+              printf '检查模式：完整检查 runtime、plugins/video、server、web 和 render。\n\n'
             fi
             printf '| Job | 需执行 | 结果 |\n| --- | --- | --- |\n'
             printf '| scope | true | %s |\n' "$SCOPE_RESULT"
             printf '| secrets | true | %s |\n' "$SECRETS_RESULT"
+            printf '| runtime-static | %s | %s |\n' "$RUNTIME_REQUIRED" "$RUNTIME_STATIC_RESULT"
+            printf '| runtime-unit | %s | %s |\n' "$RUNTIME_REQUIRED" "$RUNTIME_UNIT_RESULT"
+            printf '| video-plugins-static | %s | %s |\n' "$VIDEO_PLUGINS_REQUIRED" "$VIDEO_PLUGINS_STATIC_RESULT"
+            printf '| video-plugins-unit | %s | %s |\n' "$VIDEO_PLUGINS_REQUIRED" "$VIDEO_PLUGINS_UNIT_RESULT"
             printf '| server-static | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_STATIC_RESULT"
             printf '| server-unit | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_UNIT_RESULT"
-            printf '| server-integration（2 组） | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_INTEGRATION_RESULT"
+            printf '| server-integration（8 组） | %s | %s |\n' "$SERVER_REQUIRED" "$SERVER_INTEGRATION_RESULT"
+            printf '| runtime-image-lock | %s | %s |\n' "$SERVER_REQUIRED" "$RUNTIME_IMAGE_LOCK_RESULT"
             printf '| web-static | %s | %s |\n' "$WEB_REQUIRED" "$WEB_STATIC_RESULT"
             printf '| web-build | %s | %s |\n' "$WEB_REQUIRED" "$WEB_BUILD_RESULT"
             printf '| web-unit（4 片） | %s | %s |\n' "$WEB_REQUIRED" "$WEB_UNIT_RESULT"
-            printf '| web-e2e（4 片） | %s | %s |\n' "$WEB_REQUIRED" "$WEB_E2E_RESULT"
+            printf '| web-e2e（8 片） | %s | %s |\n' "$WEB_REQUIRED" "$WEB_E2E_RESULT"
             printf '| web-format | %s | %s |\n' "$WEB_FORMAT_REQUIRED" "$WEB_FORMAT_RESULT"
             printf '| render-static | %s | %s |\n' "$RENDER_REQUIRED" "$RENDER_STATIC_RESULT"
             printf '| render-unit | %s | %s |\n' "$RENDER_REQUIRED" "$RENDER_UNIT_RESULT"
@@ -414,9 +594,14 @@ jobs:
             failed=1
           fi
           require_result secrets true "$SECRETS_RESULT" || failed=1
+          require_result runtime-static "$RUNTIME_REQUIRED" "$RUNTIME_STATIC_RESULT" || failed=1
+          require_result runtime-unit "$RUNTIME_REQUIRED" "$RUNTIME_UNIT_RESULT" || failed=1
+          require_result video-plugins-static "$VIDEO_PLUGINS_REQUIRED" "$VIDEO_PLUGINS_STATIC_RESULT" || failed=1
+          require_result video-plugins-unit "$VIDEO_PLUGINS_REQUIRED" "$VIDEO_PLUGINS_UNIT_RESULT" || failed=1
           require_result server-static "$SERVER_REQUIRED" "$SERVER_STATIC_RESULT" || failed=1
           require_result server-unit "$SERVER_REQUIRED" "$SERVER_UNIT_RESULT" || failed=1
           require_result server-integration "$SERVER_REQUIRED" "$SERVER_INTEGRATION_RESULT" || failed=1
+          require_result runtime-image-lock "$SERVER_REQUIRED" "$RUNTIME_IMAGE_LOCK_RESULT" || failed=1
           require_result web-static "$WEB_REQUIRED" "$WEB_STATIC_RESULT" || failed=1
           require_result web-build "$WEB_REQUIRED" "$WEB_BUILD_RESULT" || failed=1
           require_result web-unit "$WEB_REQUIRED" "$WEB_UNIT_RESULT" || failed=1

@@ -1,5 +1,3 @@
-/** 出片闸门：有组在上传时不发起，提交全程由 useSubmitLock 锁住。`preparing` 只表示请求还在路上，受理后的
- * 停留不算，那时脚本区已经可以编辑。 */
 import { useCallback, useState } from 'react'
 import { useSubmitLock } from './use-submit-lock'
 

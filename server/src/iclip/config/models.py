@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Final, Literal
+from typing import Annotated, Any, Final, Literal
 from urllib.parse import urlsplit
 
 from pydantic import (
@@ -41,11 +42,24 @@ VIDEO_ENHANCE_SUBMIT_URL_ENV: Final = "VIDEO_ENHANCE_SUBMIT_URL"
 
 QWEN_API_KEY_ENV: Final = "QWEN_API_KEY"
 
-VIDEO_UNDERSTANDING_URL_ENV: Final = "VIDEO_UNDERSTANDING_URL"
-
 PRODUCT_CATALOG_DATABASE_URL_ENV: Final = "PRODUCT_CATALOG_DATABASE_URL"
 
 WHOLE_FILM_RENDER_URL_ENV: Final = "WHOLE_FILM_RENDER_URL"
+
+RUNTIME_INTERNAL_TOKEN_ENV: Final = "RUNTIME_INTERNAL_TOKEN"
+
+RUNTIME_URL_ENV: Final = "RUNTIME_URL"
+
+RUNTIME_APP_KEY_ENV: Final = "RUNTIME_APP_KEY"
+
+_MOVED_TO_RUNTIME: Final[Mapping[str, str]] = {
+    "agent_runs": "agent_runs",
+    "conversations": "compaction（原 conversations.compaction）",
+}
+
+_RETIRED_SECTIONS: Final[Mapping[str, str]] = {
+    "video": "视频理解在运行时总是登记，模型写在代码里，连接用配置页的火山方舟",
+}
 
 
 class ConfigSection(BaseModel):
@@ -53,7 +67,7 @@ class ConfigSection(BaseModel):
 
 
 class EnvSettings(BaseSettings):
-    model_config = SettingsConfigDict(frozen=True, extra="ignore")
+    model_config = SettingsConfigDict(frozen=True, extra="ignore", hide_input_in_errors=True)
 
 
 class CoreEnv(EnvSettings):
@@ -89,7 +103,6 @@ class ObjectStoreEnv(EnvSettings):
     access_key_id: RequiredEnv = Field(validation_alias="OSS_ACCESS_KEY_ID")
     access_key_secret: RequiredEnv = Field(validation_alias="OSS_ACCESS_KEY_SECRET")
     public_url_base: RequiredEnv = Field(validation_alias="OSS_PUBLIC_URL_BASE")
-    # 阿里云的内网 endpoint 只在与桶同地域的 ECS 或 VPC 内可用。
     internal_endpoint: OptionalEnv = Field("", validation_alias="OSS_INTERNAL_ENDPOINT")
 
 
@@ -98,17 +111,11 @@ class MediaGenerationEnv(EnvSettings):
     video_status_base_url: RequiredEnv = Field(validation_alias="VIDEO_STATUS_BASE_URL")
     video_api_key: RequiredEnv = Field(validation_alias="VIDEO_API_KEY")
     image_api_base: RequiredEnv = Field(validation_alias="IMAGE_API_BASE")
-    # 高清版（超分）的完整提交地址；查询地址与 key 同出片。留空就是没开通。
     video_enhance_submit_url: OptionalEnv = Field("", validation_alias=VIDEO_ENHANCE_SUBMIT_URL_ENV)
 
 
 class QwenEnv(EnvSettings):
     api_key: RequiredEnv = Field(validation_alias=QWEN_API_KEY_ENV)
-
-
-class VideoUnderstandingEnv(EnvSettings):
-    url: RequiredEnv = Field(validation_alias=VIDEO_UNDERSTANDING_URL_ENV)
-    api_key: RequiredEnv = Field(validation_alias="VIDEO_UNDERSTANDING_API_KEY")
 
 
 class ProductCatalogEnv(EnvSettings):
@@ -117,7 +124,6 @@ class ProductCatalogEnv(EnvSettings):
 
 class WholeFilmRenderEnv(EnvSettings):
     url: RequiredEnv = Field(validation_alias=WHOLE_FILM_RENDER_URL_ENV)
-    """成片渲染服务的内网根地址（compose 里的服务名），只给服务端用。"""
 
     @field_validator("url")
     @classmethod
@@ -126,6 +132,37 @@ class WholeFilmRenderEnv(EnvSettings):
         if parts.scheme not in {"http", "https"} or not parts.netloc:
             raise ValueError(f"{WHOLE_FILM_RENDER_URL_ENV} 必须是 http:// 或 https:// 地址")
         return value.rstrip("/")
+
+
+class RuntimeInternalEnv(EnvSettings):
+    token: RequiredEnv = Field(validation_alias=RUNTIME_INTERNAL_TOKEN_ENV)
+
+    @field_validator("token")
+    @classmethod
+    def _long_enough(cls, value: str) -> str:
+        if len(value) < _MIN_SECRET_LENGTH:
+            raise ValueError(f"长度必须 ≥ {_MIN_SECRET_LENGTH} 字符")
+        return value
+
+
+class RuntimeServiceEnv(EnvSettings):
+    url: RequiredEnv = Field(validation_alias=RUNTIME_URL_ENV)
+    app_key: RequiredEnv = Field(validation_alias=RUNTIME_APP_KEY_ENV)
+
+    @field_validator("url")
+    @classmethod
+    def _http_url(cls, value: str) -> str:
+        parts = urlsplit(value)
+        if parts.scheme not in {"http", "https"} or not parts.netloc:
+            raise ValueError(f"{RUNTIME_URL_ENV} 必须是 http:// 或 https:// 地址")
+        return value.rstrip("/")
+
+    @field_validator("app_key")
+    @classmethod
+    def _long_enough(cls, value: str) -> str:
+        if len(value) < _MIN_SECRET_LENGTH:
+            raise ValueError(f"长度必须 ≥ {_MIN_SECRET_LENGTH} 字符")
+        return value
 
 
 class AppSection(ConfigSection):
@@ -162,29 +199,10 @@ class SsoSection(ConfigSection):
     app_name: str
 
 
-class ModelSection(ConfigSection):
-    provider: str
-    api: Literal["chat", "responses"] = "chat"
-    api_key_env: str
-    base_url: str | None = None
-    model: str | None = None
-    thinking: ThinkingEffort | None = None
-    context_window: int | None = Field(default=None, gt=0)
-
-
-ThinkingEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
-
-# 方舟收到别的取值会静默改用默认档。
-ArkReasoningEffort = Literal["minimal", "low", "medium", "high"]
-
-
 class VideoEnhanceSection(ConfigSection):
-    """高清版（超分）：用哪个模型、提到哪几档（从高到低，界面按这个顺序列）、帧率。"""
-
     model: str = Field(min_length=1)
     resolutions: tuple[VideoEnhanceResolution, ...] = Field(min_length=1)
     fps: int | None = Field(default=None, ge=15, le=60)
-    """目标帧率；不写就不插帧，保持原片帧率。"""
 
     @field_validator("resolutions")
     @classmethod
@@ -257,48 +275,12 @@ class MediaGenerationSection(ConfigSection):
     music: MusicSection | None = None
 
 
-class VideoSection(ConfigSection):
-    understanding_model: str
-    understanding_thinking: ArkReasoningEffort | None = None
-    understanding_fps: float | None = Field(default=None, ge=0.2, le=5)
-
-
 class IclipStudioSection(ConfigSection):
-    breakdown_model: str
     breakdown_concurrency: int | None = Field(default=None, ge=1)
 
 
 class ShotVideoSection(ConfigSection):
-    poll_interval_seconds: float = Field(default=5.0, gt=0)
-    dev_attempts: int = Field(default=2, ge=1)
-    pro_attempts: int = Field(default=1, ge=0)
-    backoff_seconds: float = Field(default=5.0, gt=0)
-    backoff_factor: float = Field(default=3.0, ge=1)
-    job_timeout_seconds: float = Field(default=1800.0, gt=0)
-
-
-class CompactionSection(ConfigSection):
-    max_fraction: float = Field(default=0.85, gt=0, lt=1)
-    keep_messages: int = Field(default=20, ge=1)
-
-
-class ConversationsSection(ConfigSection):
-    title_model: str | None = None
-    compaction: CompactionSection = CompactionSection()
-
-
-class AgentRunsSection(ConfigSection):
-    heartbeat_seconds: int = Field(default=10, gt=0)
-    lease_seconds: int = Field(default=30, gt=0)
-    sweep_seconds: int = Field(default=15, gt=0)
-    max_attempts: int = Field(default=2, ge=1)
-    max_snapshots_per_run: int = Field(default=3, ge=1)
-
-    @model_validator(mode="after")
-    def _lease_outlasts_a_heartbeat(self) -> AgentRunsSection:
-        if self.lease_seconds <= self.heartbeat_seconds:
-            raise ValueError("lease_seconds 必须大于 heartbeat_seconds")
-        return self
+    pass
 
 
 class OpsSection(ConfigSection):
@@ -314,13 +296,32 @@ class RuntimeConfig(BaseSettings):
     security: SecuritySection
     sso: SsoSection
     media_generation: MediaGenerationSection | None = None
-    video: VideoSection | None = None
     shot_video: ShotVideoSection | None = None
     iclip_studio: IclipStudioSection | None = None
-    models: dict[str, ModelSection] = Field(default_factory=dict[str, ModelSection])
-    conversations: ConversationsSection = ConversationsSection()
-    agent_runs: AgentRunsSection = AgentRunsSection()
     ops: OpsSection = OpsSection()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_sections_moved_to_the_runtime(cls, data: Any) -> Any:
+        if not isinstance(data, Mapping):
+            return data
+        sections: Mapping[str, Any] = data  # pyright: ignore[reportUnknownVariableType]
+        for name, moved_to in _MOVED_TO_RUNTIME.items():
+            if name in sections:
+                raise ValueError(
+                    f"{name} 段已搬到运行时服务的配置（configs/runtime.yaml 的 {moved_to}），"
+                    "从后端的配置文件里删掉它"
+                )
+        for name, why in _RETIRED_SECTIONS.items():
+            if name in sections:
+                raise ValueError(f"{name} 段已不用（{why}），从后端的配置文件里删掉它")
+        shot_video = sections.get("shot_video")
+        if isinstance(shot_video, Mapping) and shot_video:
+            raise ValueError(
+                "shot_video 段的出图重试策略已搬到运行时服务的配置（configs/runtime.yaml 的 "
+                "plugins.config.shot_video），后端这一段只留 shot_video: {}"
+            )
+        return data
 
     @classmethod
     def settings_customise_sources(
@@ -395,7 +396,6 @@ class ResolvedMediaGeneration:
     video_model: str
     video_allowed_models: tuple[str, ...]
     video_enhance: ResolvedVideoEnhance | None
-    """高清版；为 None 时提交端点答「没有开通」。"""
     image_models: tuple[ResolvedImageModel, ...]
     image_default_model: str
     image_env: str
@@ -409,30 +409,8 @@ class ResolvedMediaGeneration:
 
 
 @dataclass(frozen=True, slots=True)
-class ResolvedVideo:
-    understanding_url: str
-    understanding_api_key: str
-    understanding_model: str
-    understanding_thinking: ArkReasoningEffort | None
-    understanding_fps: float | None
-
-
-@dataclass(frozen=True, slots=True)
 class ResolvedIclipStudio:
-    breakdown_url: str
-    breakdown_api_key: str
-    breakdown_model: str
     breakdown_concurrency: int | None
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedShotVideo:
-    poll_interval_seconds: float
-    dev_attempts: int
-    pro_attempts: int
-    backoff_seconds: float
-    backoff_factor: float
-    job_timeout_seconds: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -446,30 +424,9 @@ class ResolvedWholeFilmRender:
 
 
 @dataclass(frozen=True, slots=True)
-class ResolvedAgentRuns:
-    heartbeat_seconds: int
-    lease_seconds: int
-    sweep_seconds: int
-    max_attempts: int
-    max_snapshots_per_run: int
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedCompaction:
-    max_fraction: float
-    keep_messages: int
-
-
-@dataclass(frozen=True, slots=True)
-class ResolvedModel:
-    name: str
-    provider: str
-    model: str
-    api: Literal["chat", "responses"]
-    api_key: str
-    base_url: str | None
-    thinking: ThinkingEffort | None
-    context_window: int | None
+class ResolvedRuntimeService:
+    url: str
+    app_key: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -481,22 +438,18 @@ class ResolvedSettings:
     sso: ResolvedSso | None
     object_store: ObjectStoreEnv | None
     media_generation: ResolvedMediaGeneration | None
-    video: ResolvedVideo | None
-    shot_video: ResolvedShotVideo | None
+    shot_video: bool
     iclip_studio: ResolvedIclipStudio | None
     product_catalog: ResolvedProductCatalog | None
     whole_film_render: ResolvedWholeFilmRender | None
-    """成片导出用的渲染服务；为 None 时导出端点答「没有开通」。"""
-    models: tuple[ResolvedModel, ...]
-    title_model: str | None
-    compaction: ResolvedCompaction
-    agent_runs: ResolvedAgentRuns
+    runtime_internal_token: str
+    runtime_service: ResolvedRuntimeService
     log_level: str
     log_format: Literal["console", "json"]
 
     @property
     def shot_tools_missing(self) -> tuple[str, ...]:
-        if self.shot_video is None:
+        if not self.shot_video:
             return ()
         return tuple(
             name
@@ -509,7 +462,7 @@ class ResolvedSettings:
 
     @property
     def shot_tools_enabled(self) -> bool:
-        return self.shot_video is not None and not self.shot_tools_missing
+        return self.shot_video and not self.shot_tools_missing
 
     @property
     def ffmpeg_required(self) -> bool:
@@ -577,8 +530,6 @@ def _resolve_media_generation(
 def _resolve_video_enhance(
     section: VideoEnhanceSection | None, submit_url: str
 ) -> ResolvedVideoEnhance | None:
-    """提交地址留空就是没开通；配了地址却没写 ``media_generation.video.enhance`` 段报错。"""
-
     if not submit_url:
         return None
     if section is None:
@@ -606,42 +557,10 @@ def _resolve_qwen_service(section: QwenServiceSection | None) -> ResolvedQwenSer
     )
 
 
-def _resolve_video(section: VideoSection | None) -> ResolvedVideo | None:
-    if section is None or not _switched_on(VIDEO_UNDERSTANDING_URL_ENV):
-        return None
-    env = _from_env(VideoUnderstandingEnv)
-    return ResolvedVideo(
-        understanding_url=env.url,
-        understanding_api_key=env.api_key,
-        understanding_model=section.understanding_model,
-        understanding_thinking=section.understanding_thinking,
-        understanding_fps=section.understanding_fps,
-    )
-
-
 def _resolve_iclip_studio(section: IclipStudioSection | None) -> ResolvedIclipStudio | None:
-    if section is None or not _switched_on(VIDEO_UNDERSTANDING_URL_ENV):
-        return None
-    env = _from_env(VideoUnderstandingEnv)
-    return ResolvedIclipStudio(
-        breakdown_url=env.url,
-        breakdown_api_key=env.api_key,
-        breakdown_model=section.breakdown_model,
-        breakdown_concurrency=section.breakdown_concurrency,
-    )
-
-
-def _resolve_shot_video(section: ShotVideoSection | None) -> ResolvedShotVideo | None:
     if section is None:
         return None
-    return ResolvedShotVideo(
-        poll_interval_seconds=section.poll_interval_seconds,
-        dev_attempts=section.dev_attempts,
-        pro_attempts=section.pro_attempts,
-        backoff_seconds=section.backoff_seconds,
-        backoff_factor=section.backoff_factor,
-        job_timeout_seconds=section.job_timeout_seconds,
-    )
+    return ResolvedIclipStudio(breakdown_concurrency=section.breakdown_concurrency)
 
 
 def _resolve_product_catalog() -> ResolvedProductCatalog | None:
@@ -667,6 +586,11 @@ def _resolve_whole_film_render(
             f"由生成队列交给渲染服务，成片上传进桶。补上它们"
         )
     return ResolvedWholeFilmRender(url=_from_env(WholeFilmRenderEnv).url)
+
+
+def _resolve_runtime_service() -> ResolvedRuntimeService:
+    env = _from_env(RuntimeServiceEnv)
+    return ResolvedRuntimeService(url=env.url, app_key=env.app_key)
 
 
 def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
@@ -701,46 +625,15 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
         sso=sso,
         object_store=object_store,
         media_generation=media_generation,
-        video=_resolve_video(config.video),
-        shot_video=_resolve_shot_video(config.shot_video),
+        shot_video=config.shot_video is not None,
         iclip_studio=_resolve_iclip_studio(config.iclip_studio),
         product_catalog=_resolve_product_catalog(),
         whole_film_render=_resolve_whole_film_render(
             object_store_on=object_store is not None,
             media_generation_on=media_generation is not None,
         ),
-        models=tuple(
-            ResolvedModel(
-                name=name,
-                provider=model.provider,
-                model=model.model or name,
-                api=model.api,
-                api_key=_require_model_key(name, model.api_key_env),
-                base_url=model.base_url,
-                thinking=model.thinking,
-                context_window=model.context_window,
-            )
-            for name, model in config.models.items()
-        ),
-        title_model=config.conversations.title_model,
-        compaction=ResolvedCompaction(
-            max_fraction=config.conversations.compaction.max_fraction,
-            keep_messages=config.conversations.compaction.keep_messages,
-        ),
-        agent_runs=ResolvedAgentRuns(
-            heartbeat_seconds=config.agent_runs.heartbeat_seconds,
-            lease_seconds=config.agent_runs.lease_seconds,
-            sweep_seconds=config.agent_runs.sweep_seconds,
-            max_attempts=config.agent_runs.max_attempts,
-            max_snapshots_per_run=config.agent_runs.max_snapshots_per_run,
-        ),
+        runtime_internal_token=_from_env(RuntimeInternalEnv).token,
+        runtime_service=_resolve_runtime_service(),
         log_level=config.ops.log_level,
         log_format=config.ops.log_format,
     )
-
-
-def _require_model_key(name: str, env_name: str) -> str:
-    value = os.environ.get(env_name, "").strip()
-    if not value:
-        raise RuntimeError(f"缺少运行必需的环境变量 {env_name}（模型 {name} 的 API Key）")
-    return value

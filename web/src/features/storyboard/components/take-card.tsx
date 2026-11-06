@@ -1,6 +1,3 @@
-/** 素材片区的一张卡：整张是一个按钮，点了在舞台上看这条素材片，选中时 `aria-pressed` 并加中性描边。
- * 成功卡铺封面，在途卡转圈走表，失败卡只有错误图标；画面上只有角标：左上分辨率、左下编辑次数、右下片长，各自缺了就不画。 */
-
 import { Icon } from '@/shared/icons'
 import { formatShortTime } from '@/shared/lib/date-time'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
@@ -8,7 +5,6 @@ import { formatDuration } from '@/shared/ui/media-preview'
 import type { Take } from '../takes'
 import { useElapsed } from '@/shared/ui/media-preview'
 
-/** 封面截帧宽度：横屏卡最宽三百来像素，两倍屏也够；固定一档，卡宽变了不重新请求。 */
 const POSTER_WIDTH = 640
 
 const STATE_TEXT = { completed: '', failed: '，生成失败', running: '，生成中' } as const
@@ -16,9 +12,7 @@ const STATE_TEXT = { completed: '', failed: '，生成失败', running: '，生�
 type TakeCardProps = {
   take: Take
   size: { width: number; height: number }
-  /** 下方时间按它算今天、昨天。 */
   now: Date
-  /** 舞台正在看这一条。 */
   selected: boolean
   onSelect: () => void
 }
@@ -85,13 +79,11 @@ function CompletedFace({ url }: { url: string | undefined }) {
           src={poster}
         />
       )}
-      {/* 遮罩照样压：角标是浅色字，没有封面时也要一层深底才读得清。 */}
       <span className="storyboard-take-veil" />
     </>
   )
 }
 
-/** 在途卡：扫光加转圈与已用时长。 */
 function RunningFace({ since }: { since: string }) {
   const elapsed = useElapsed(since)
   return (

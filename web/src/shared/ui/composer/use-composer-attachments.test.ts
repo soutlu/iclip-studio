@@ -24,13 +24,11 @@ describe('useComposerAttachments', () => {
         `${request.method} ${new URL(request.url).pathname.replace(/[\w-]{36}/, ':id')}`,
       )
     })
-    // jsdom 不解码图片；上传前的尺寸校验读这个桩。
     vi.stubGlobal('createImageBitmap', async () => ({ close: () => {}, height: 800, width: 600 }))
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
-    // 撤销测试添加到全局 URL 的方法，避免污染其他用例。
     delete (URL as unknown as Record<string, unknown>)['createObjectURL']
     delete (URL as unknown as Record<string, unknown>)['revokeObjectURL']
   })
@@ -46,7 +44,6 @@ describe('useComposerAttachments', () => {
     expect(entry?.url).toContain('/mock-oss/')
     expect(entry?.progress).toBeUndefined()
     expect(entry?.previewUrl).toBe(entry?.url)
-    // 条目要留到卸载，原文件只为失败重试而留。
     expect(entry?.file).toBeUndefined()
   })
 
@@ -71,7 +68,6 @@ describe('useComposerAttachments', () => {
     const attId = mint(result, file)
 
     await waitFor(() => expect(result.current.entries.get(attId)?.status).toBe('error'))
-    // 给出具体原因，而不是兜底的「上传失败」。
     expect(result.current.entries.get(attId)?.error).toMatch(/^(?!上传失败$)./)
     expect(requests).toEqual([])
   })
@@ -86,7 +82,6 @@ describe('useComposerAttachments', () => {
     expect(result.current.entries.has(dropped)).toBe(false)
     expect(result.current.entries.has(kept)).toBe(true)
 
-    // 上传晚于删除完成时，异步回写不得恢复已回收条目。
     await waitFor(() => expect(result.current.entries.get(kept)?.status).toBe('ready'))
     expect(result.current.entries.has(dropped)).toBe(false)
   })
@@ -105,7 +100,6 @@ describe('useComposerAttachments', () => {
   })
 
   it('retry：失败后用同一个文件重新签名直传，uploading → ready', async () => {
-    // 别的用例删掉的附件可能还在后台上传；按本用例独有的 webp 类型认请求，第一次签名失败，其余交给默认 handler。
     let webpSigns = 0
     server.use(
       http.post('*/api/uploads/sign', async ({ request }) => {
@@ -130,7 +124,6 @@ describe('useComposerAttachments', () => {
     })
 
     await waitFor(() => expect(result.current.entries.get(attId)?.status).toBe('ready'))
-    // 第二次签名仍是这张 webp：重试用的是同一个文件；传好之后原文件随即释放。
     expect(webpSigns).toBe(2)
     expect(result.current.entries.get(attId)?.file).toBeUndefined()
   })
@@ -146,7 +139,6 @@ describe('useComposerAttachments', () => {
 
     act(() => result.current.retry(restored.attId))
 
-    // retry 一旦执行会同步转成 uploading。
     expect(result.current.entries.get(restored.attId)?.status).toBe('error')
   })
 
@@ -158,7 +150,6 @@ describe('useComposerAttachments', () => {
     await waitFor(() => expect(result.current.entries.get(second)?.status).toBe('ready'))
     expect(result.current.entries.get(first)?.status).toBe('ready')
 
-    // 文档顺序与条目创建顺序相反，验证输出使用文档顺序。
     const ready = result.current.takeReady([second, first])
     expect(ready.map((entry) => entry.name)).toEqual(['二.png', '一.png'])
 

@@ -1,15 +1,11 @@
-"""改标签树的规则：整理名称与判断说明，查层级、重名与 AI 打标的取值上限，排同级的先后。
-
-都是纯函数，按调用方给的那一刻的树判断；服务在拿到写锁、读到当下的树之后调用，判断与写入在同一个
-事务里。不合格是 ``ValidationFailed``，消息直接给人看。"""
-
 from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from iclip.common.errors import NotFound, ValidationFailed
+from agent_runtime.errors import NotFound, ValidationFailed
+
 from iclip.domains.tagging.models import (
     AI_VALUE_LIMIT,
     AUTO_FILL_AI,
@@ -20,7 +16,6 @@ from iclip.domains.tagging.models import (
 )
 
 MAX_DEPTH = 3
-"""维度是 0，取值最多三级，深度依次是 1、2、3。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,8 +39,6 @@ def _places(tree: Sequence[TagNode]) -> dict[uuid.UUID, _Place]:
 
 
 def clean_name(name: str) -> str:
-    """去掉首尾空白；空的、超长的不收。"""
-
     cleaned = name.strip()
     if not cleaned:
         raise ValidationFailed("请填写名称")
@@ -55,8 +48,6 @@ def clean_name(name: str) -> str:
 
 
 def clean_guide(guide: str | None) -> str | None:
-    """去掉首尾空白，空的当作没有；超长的不收。"""
-
     if guide is None:
         return None
     cleaned = guide.strip()
@@ -66,8 +57,6 @@ def clean_guide(guide: str | None) -> str | None:
 
 
 def ai_value_count(tree: Sequence[TagNode]) -> int:
-    """``auto_fill = ai`` 的全部维度下的取值数，含小类。"""
-
     return sum(
         len(dimension.descendants()) for dimension in tree if dimension.auto_fill == AUTO_FILL_AI
     )
@@ -76,8 +65,6 @@ def ai_value_count(tree: Sequence[TagNode]) -> int:
 def _check_unique(
     tree: Sequence[TagNode], dimension: TagNode | None, name: str, *, self_id: uuid.UUID | None
 ) -> None:
-    """维度之间不重名；同一维度里的取值不论哪一层都不重名。``self_id`` 是正在改名的那一个。"""
-
     if dimension is None:
         if any(one.name == name and one.id != self_id for one in tree):
             raise ValidationFailed(f"已有名为「{name}」的维度")
@@ -93,9 +80,6 @@ def check_new(
     name: str,
     auto_fill: AutoFill | None,
 ) -> tuple[TagNode, ...]:
-    """在 ``parent_id`` 下（``None`` 即新维度）加一个叫 ``name`` 的标签合不合规矩；交回它将来的同级，
-    按现在的先后。``name`` 已整理过。"""
-
     if parent_id is None:
         _check_unique(tree, None, name, self_id=None)
         return tuple(tree)
@@ -122,9 +106,6 @@ def check_change(
     auto_fill: AutoFill | None,
     sets_auto_fill: bool,
 ) -> tuple[TagNode, tuple[TagNode, ...]]:
-    """改名（``name`` 不是 ``None`` 时，已整理过）或改 ``auto_fill``（``sets_auto_fill`` 为真时）合不合
-    规矩；交回这个标签与它的同级（含自己，按现在的先后）。没有这个标签是 ``NotFound``。"""
-
     places = _places(tree)
     place = places.get(tag_id)
     if place is None:
@@ -148,9 +129,6 @@ def check_change(
 
 
 def reorder(ids: Sequence[uuid.UUID], moving: uuid.UUID, index: int) -> list[uuid.UUID]:
-    """把 ``moving`` 放到第 ``index`` 个（0 起），其余照原来的先后；超出范围夹到首尾。``moving`` 不在
-    ``ids`` 里就是新来的，同样插进去。"""
-
     rest = [one for one in ids if one != moving]
     at = min(max(index, 0), len(rest))
     return [*rest[:at], moving, *rest[at:]]

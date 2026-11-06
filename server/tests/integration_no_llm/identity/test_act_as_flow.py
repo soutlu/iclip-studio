@@ -1,5 +1,3 @@
-"""钥匙替人办事全链路：有权限的钥匙把记录落到 user_name 名下并建占位账号，本人 SSO 登录按用户名认领。"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -9,10 +7,23 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from iclip.platform.db.engine import build_engine
+from tests.helpers.agents import CONVERSABLE_SEEDS, SEEDER, AgentSeed, seed_agents
 from tests.helpers.app import make_client, settled
 from tests.helpers.auth import register_and_login, set_roles_in_db
 from tests.helpers.pg import connected
+from tests.helpers.runtime_backed import config_services_of
 from tests.helpers.tasks import INPUTS
+
+
+@pytest.fixture
+def agent_seeds() -> tuple[AgentSeed, ...]:
+    return CONVERSABLE_SEEDS
+
+
+def people(listing: dict[str, Any]) -> list[str]:
+    return [user["username"] for user in listing["items"] if user["username"] != SEEDER]
+
 
 ACT_AS_GRANTS = ["agent:run", "agent:read", "tasks:read", "tasks:write", "users:act_as"]
 PLAIN_GRANTS = ["agent:run", "agent:read", "tasks:read", "tasks:write"]
@@ -21,8 +32,6 @@ PLAIN_GRANTS = ["agent:run", "agent:read", "tasks:read", "tasks:write"]
 async def issue_key(
     root: httpx.AsyncClient, pg_url: str, permissions: list[str]
 ) -> tuple[str, str]:
-    """用这个客户端注册 logan、提成 root、签一把钥匙；返回 (logan 的 id, 钥匙明文)。"""
-
     logan_id = await register_and_login(root)
     await set_roles_in_db(pg_url, "logan@example.com", ["root"])
     created = await root.post("/api-keys", json={"name": "partner-app", "permissions": permissions})
@@ -63,16 +72,13 @@ async def test_act_as_key_files_task_and_conversation_under_the_named_person(
             assert opened.status_code == 201, opened.text
             conversation_id = opened.json()["conversation"]["id"]
 
-            # 挂上会话就是认领：创建者与认领人是同一个人，单子进入进行中。
             after = (await gateway.get(f"/tasks/{task_id}")).json()["task"]
             assert after["status"] == "confirmed"
             assert after["assigneeUserIds"] == [creator]
 
-            # 能替任何人写的钥匙也读得到那个人的对话。
             files = await gateway.get(f"/conversations/{conversation_id}/workspace/files")
             assert files.status_code == 200, files.text
 
-        # 占位账号：只有用户名，没有角色；钥匙属主自己的侧栏里没有替别人开的对话。
         users = (await root.get("/users")).json()["items"]
         placeholder = next(user for user in users if user["username"] == "Sara.Hong")
         assert placeholder["id"] == creator
@@ -92,16 +98,13 @@ async def test_key_without_act_as_keeps_records_under_the_key_owner(
             assert opened.status_code == 201, opened.text
 
         assert len((await root.get("/conversations/search")).json()["items"]) == 1
-        assert (await root.get("/users")).json()["total"] == 1
+        assert people((await root.get("/users")).json()) == ["logan"]
 
 
 @pytest.mark.parametrize("registered", [False, True], ids=["placeholder", "registered"])
 async def test_act_as_key_can_prompt_the_conversation_it_opened_for_someone(
     app: FastAPI, migrated_pg: str, registered: bool
 ) -> None:
-    """上午出事的那条路：替人开的对话属主已换成他，同一把钥匙接着替他发消息必须还进得去。
-    他已注册过就记在他的账号上，没有就记在占位账号上；两种都只有他一个账号。"""
-
     async with make_client(app) as root:
         _, token = await issue_key(root, migrated_pg, ACT_AS_GRANTS)
         person_id: str | None = None
@@ -133,12 +136,12 @@ async def test_act_as_key_can_prompt_the_conversation_it_opened_for_someone(
         )
         if person_id is not None:
             assert owner == person_id
-        assert listing["total"] == 2, "钥匙属主加 Sara.Hong 一个账号，不多建占位"
+        assert sorted(people(listing)) == ["Sara.Hong", "logan"], (
+            "钥匙属主加 Sara.Hong 一个账号，不多建占位"
+        )
 
 
 async def job_owner(pg_url: str, conversation_id: str) -> str:
-    """这段对话最近一条消息记在谁名下。"""
-
     async with connected(pg_url) as conn:
         row = await conn.execute(
             text(
@@ -170,8 +173,6 @@ def pms_transport() -> httpx.MockTransport | None:
 
 
 class TestSsoAdoptsThePlaceholder:
-    """本人日后 SSO 登录，名字对上占位账号就认领它：真邮箱补上，替他开的对话都在他侧栏里。"""
-
     @pytest.fixture
     def sso_transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(
@@ -193,6 +194,11 @@ class TestSsoAdoptsThePlaceholder:
     async def test_login_adopts_placeholder_and_its_records(
         self, sso_app: FastAPI, migrated_pg: str
     ) -> None:
+        engine = build_engine(migrated_pg)
+        try:
+            await seed_agents(config_services_of(sso_app), engine, CONVERSABLE_SEEDS)
+        finally:
+            await engine.dispose()
         async with make_client(sso_app) as root:
             _, token = await issue_key(root, migrated_pg, ACT_AS_GRANTS)
             async with machine(sso_app, token) as gateway:
@@ -212,18 +218,15 @@ class TestSsoAdoptsThePlaceholder:
             listed = (await sara.get("/conversations/search")).json()["items"]
         assert [item["title"] for item in listed] == ["替他开的"]
 
-        # 认领的是同一行，没有多出第二个账号。
         async with make_client(sso_app) as root:
             login = await root.post(
                 "/auth/login", data={"username": "logan", "password": "password-123"}
             )
             assert login.status_code == 204, login.text
-            assert (await root.get("/users")).json()["total"] == 2
+            assert sorted(people((await root.get("/users")).json())) == ["Sara.Hong", "logan"]
 
 
 class TestSsoLeavesASameNameRealAccountAlone:
-    """SSO 无邮箱的真人与占位账号同域：同名新人首登另开账号，不接管他。"""
-
     @pytest.fixture
     def sso_transport(self) -> httpx.MockTransport:
         sessions = {
@@ -246,7 +249,6 @@ class TestSsoLeavesASameNameRealAccountAlone:
         self, sso_app: FastAPI, migrated_pg: str
     ) -> None:
         first = await sso_login(sso_app, "jwt-a")
-        # 前提：A 的显示名成了用户名，B 首登按这个名字查得到 A 这一行。
         assert first["username"] == "Sara.Hong"
         assert first["email"] == "u-7@sso.iclip.example"
 
@@ -265,8 +267,6 @@ class TestSsoLeavesASameNameRealAccountAlone:
 
 
 async def sso_login(app: FastAPI, jwt: str) -> dict[str, Any]:
-    """走一次 SSO 回调，返回登录后的 ``/users/me``。"""
-
     async with make_client(app) as client:
         callback = await client.get("/auth/sso/callback", params={"jwt": jwt})
         assert callback.status_code == 204, callback.text

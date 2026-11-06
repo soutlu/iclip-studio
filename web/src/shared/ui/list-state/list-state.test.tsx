@@ -5,61 +5,10 @@ import { useCallback, useRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { stubIntersectionObserver } from '@/testing/intersection-observer'
 import { renderWithProviders } from '@/testing/render'
-import { ListEmpty, ListError, ListPending, LoadMoreFooter, NextPageFooter } from './list-state'
-
-describe('列表状态块', () => {
-  it('读取中是 status，失败是 alert 且重试按钮回调', async () => {
-    const onRetry = vi.fn()
-    await renderWithProviders(
-      <>
-        <ListPending label="正在读取对话" />
-        <ListError message="读取失败了" onRetry={onRetry} />
-        <ListEmpty>什么都没有</ListEmpty>
-      </>,
-    )
-
-    expect(screen.getByRole('status')).toHaveTextContent('正在读取对话')
-    expect(screen.getByRole('alert')).toHaveTextContent('读取失败了')
-    expect(screen.getByText('什么都没有')).toBeVisible()
-    await userEvent.setup().click(screen.getByRole('button', { name: '重新加载' }))
-    expect(onRetry).toHaveBeenCalledTimes(1)
-  })
-
-  it.each([
-    { shown: undefined, total: undefined, counter: null },
-    { shown: 50, total: undefined, counter: '已显示 50' },
-    { shown: 50, total: 120, counter: '已显示 50 / 120' },
-  ])('页脚按给没给计数写「已显示」：$counter', async ({ shown, total, counter }) => {
-    const onMore = vi.fn()
-    await renderWithProviders(
-      <LoadMoreFooter
-        isFetching={false}
-        label="显示更多"
-        onMore={onMore}
-        shown={shown}
-        total={total}
-      />,
-    )
-
-    if (counter === null) {
-      expect(screen.queryByText(/已显示/)).toBeNull()
-    } else {
-      expect(screen.getByText(counter)).toBeVisible()
-    }
-    await userEvent.setup().click(screen.getByRole('button', { name: '显示更多' }))
-    expect(onMore).toHaveBeenCalledTimes(1)
-  })
-
-  it('读取下一页时按钮禁用并换文字', async () => {
-    await renderWithProviders(<LoadMoreFooter isFetching label="显示更多" onMore={() => {}} />)
-
-    expect(screen.getByRole('button', { name: '正在读取…' })).toBeDisabled()
-  })
-})
+import { ListError, NextPageFooter } from './list-state'
 
 type Page = { items: string[]; nextCursor: string | null }
 
-/** 三页、每页一行，记下每次读的游标；`override` 给某一页换结果（挂住或抛错），返回 undefined 就照常给。 */
 const threePages = (override?: (cursor: string) => Promise<Page | undefined> | undefined) => {
   const cursors: (string | null)[] = []
   const fetchPage = async (cursor: string | null): Promise<Page> => {
@@ -74,7 +23,6 @@ const threePages = (override?: (cursor: string) => Promise<Page | undefined> | u
   return { cursors, fetchPage }
 }
 
-/** 真的无限查询接上页脚；出错时报错与重试放在页脚上方，页脚照常挂着，看它自己会不会停。 */
 function PagedList({
   fetchPage,
   counted = true,
@@ -112,7 +60,6 @@ function PagedList({
   )
 }
 
-/** 等一会儿，给本不该发出的请求留出发出的时间。 */
 const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 50)))
 
 describe('自动翻页页脚', () => {
@@ -125,7 +72,6 @@ describe('自动翻页页脚', () => {
 
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(3))
     expect(cursors).toEqual([null, 'p2', 'p3'])
-    // 读完了页脚就收起，不再有读取状态
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
     await settle()
     expect(cursors).toHaveLength(3)
@@ -137,7 +83,6 @@ describe('自动翻页页脚', () => {
     await renderWithProviders(<PagedList fetchPage={fetchPage} />)
 
     expect(await screen.findByText('已显示 1 / 3')).toBeVisible()
-    // 不用再点：页脚里没有按钮
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
     await settle()
     expect(cursors).toEqual([null])

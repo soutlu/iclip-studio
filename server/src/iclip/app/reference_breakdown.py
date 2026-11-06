@@ -1,33 +1,30 @@
-"""参考视频的拆解：把 references 声明的拆解端口接到 ``video_breakdown`` 的拆解（``BreakdownRunner``）上；
-反过来把 ``video_breakdown`` 的 ``ReferenceBreakdowns`` 端口接到参考视频服务上。打标在
-[library_tagging.py](library_tagging.py)。"""
-
 from __future__ import annotations
 
-from collections.abc import Callable
+import uuid
+from collections.abc import Awaitable, Callable
 
-import httpx
+from agent_runtime.client import RuntimeClient
+from iclip_video.video_breakdown.ports import FailedBreakdown
 
-from iclip.capabilities.video_breakdown.media import FfmpegVideoSampler
-from iclip.capabilities.video_breakdown.model import ArkBreakdownModel
-from iclip.capabilities.video_breakdown.ports import BreakdownError, FailedBreakdown
-from iclip.capabilities.video_breakdown.service import BreakdownRunner
-from iclip.config import ResolvedIclipStudio
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import (
     ERROR_MODEL_CALL_FAILED,
     ERROR_MODEL_FAILED,
+    ERROR_MODEL_UNAVAILABLE,
     ERROR_VIDEO_UNREADABLE,
     BreakdownFailed,
 )
 from iclip.domains.references.service import ReferenceService
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.errors import MediaError
+from iclip.platform.media.fetch import MediaDownloads
+from iclip.platform.video_breakdown.media import FfmpegVideoSampler
+from iclip.platform.video_breakdown.model import BREAKDOWN_MODEL, ArkBreakdownModel
+from iclip.platform.video_breakdown.ports import BreakdownError, BreakdownModelUnavailable
+from iclip.platform.video_breakdown.service import BreakdownRunner
 
 
 class ArkVideoBreakdowns:
-    """``VideoBreakdowns`` 的实现：用 ``BreakdownRunner`` 拆，把它的两种失败换成落到行上的原因。"""
-
     def __init__(self, breakdown: BreakdownRunner) -> None:
         self._breakdown = breakdown
 
@@ -36,19 +33,24 @@ class ArkVideoBreakdowns:
             return await self._breakdown.run(video_url)
         except MediaError as exc:
             raise BreakdownFailed(str(exc), code=ERROR_VIDEO_UNREADABLE) from exc
+        except BreakdownModelUnavailable as exc:
+            raise BreakdownFailed(str(exc), code=ERROR_MODEL_UNAVAILABLE) from exc
         except BreakdownError as exc:
-            # 可重试的（限流、服务端错、连不上、答得不完整）再拆可能就好；被拒与等满总超时不会。
             code = ERROR_MODEL_CALL_FAILED if exc.retryable else ERROR_MODEL_FAILED
             raise BreakdownFailed(str(exc), code=code) from exc
 
 
 class ReferenceBreakdownsAdapter:
-    """``video_breakdown`` 的 ``ReferenceBreakdowns``：接到参考视频服务的 ``ensure``，与资料库读写同一行。"""
-
-    def __init__(self, service: ReferenceService) -> None:
+    def __init__(
+        self,
+        service: ReferenceService,
+        resolve_principal: Callable[[uuid.UUID], Awaitable[Principal]],
+    ) -> None:
         self._service = service
+        self._resolve_principal = resolve_principal
 
-    async def ensure(self, principal: Principal, video_url: str) -> str | FailedBreakdown:
+    async def ensure(self, user_id: uuid.UUID, video_url: str) -> str | FailedBreakdown:
+        principal = await self._resolve_principal(user_id)
         outcome = await self._service.ensure(principal, video_url)
         if outcome.document is not None:
             return outcome.document
@@ -58,24 +60,10 @@ class ReferenceBreakdownsAdapter:
 
 
 def build_reference_breakdown(
-    settings: ResolvedIclipStudio,
-    client: httpx.AsyncClient,
-    codec: MediaCodec,
-    *,
-    fetch_url: Callable[[str], str],
+    runtime: RuntimeClient, downloads: MediaDownloads, codec: MediaCodec
 ) -> ArkVideoBreakdowns:
-    """按 ``iclip_studio`` 的配置建参考视频自己的一份拆解；HTTP 连接池与组合根共用，抽帧解码用启动时
-    选定的 ``codec``，探时长与下载视频前用 ``fetch_url`` 换算地址。"""
-
-    model = ArkBreakdownModel(
-        client,
-        url=settings.breakdown_url,
-        api_key=settings.breakdown_api_key,
-        model=settings.breakdown_model,
-    )
-    breakdown = BreakdownRunner(
-        model=model, sampler=FfmpegVideoSampler(client, codec, fetch_url=fetch_url)
-    )
+    model = ArkBreakdownModel(runtime, model=BREAKDOWN_MODEL)
+    breakdown = BreakdownRunner(model=model, sampler=FfmpegVideoSampler(downloads, codec))
     return ArkVideoBreakdowns(breakdown)
 
 

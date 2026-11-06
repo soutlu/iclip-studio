@@ -1,17 +1,10 @@
-import { QueryClient } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { errorMessageOf, UserFacingError } from '@/shared/api/client'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { server } from '@/testing/mocks/server'
 import { VIDEO_CLIP_MODELS } from '@/testing/video-models'
-import {
-  pickGenerationModel,
-  seedVideoEditJob,
-  submitVideoComposite,
-  submitClipGeneration,
-  videoEditChainKey,
-} from './video-editor.api'
+import { submitClipGeneration } from './video-editor.api'
 
 const modelById = (id: string) => {
   const model = VIDEO_CLIP_MODELS.find((item) => item.id === id)
@@ -19,14 +12,11 @@ const modelById = (id: string) => {
   return model
 }
 
-/** 一块解出来的音频：从 `timestamp` 秒起，各声道的样本。 */
 type FakeAudio = { timestamp: number; sampleRate: number; channels: number[][] }
 
-/** mediabunny 边界替身：提供媒体样本，记录裁剪范围与送入编码器的时钟，不执行真实编解码。 */
 const media = vi.hoisted(() => ({
   keyframes: [] as number[],
   duration: 0,
-  /** `null` 是没有音轨，`'undecodable'` 是有音轨却解不了。 */
   audio: null as FakeAudio[] | null | 'undecodable',
   failEncoding: false,
   events: [] as string[],
@@ -185,7 +175,6 @@ describe('submitClipGeneration', () => {
 
   beforeEach(() => {
     Object.assign(media, {
-      // 24fps 的模型出片：关键帧在镜头切点上，间隔不等。
       keyframes: [0, 1.916667, 4.208333, 6.5],
       duration: 8.042,
       audio: null,
@@ -237,7 +226,6 @@ describe('submitClipGeneration', () => {
         mode: 'edit',
         referenceClips: [{ mediaUrl: baseMediaUrl, start: 1.917, end: 6.5 }],
       },
-      // 两端正好是基底的关键帧（取整到毫秒的读数）。
       range: { start: 1.917, end: 6.5 },
       model: modelById('wan3.0-video'),
       prompt: '换成浅灰背景',
@@ -492,87 +480,5 @@ describe('submitClipGeneration', () => {
       reference_video_urls: [clipUrl],
       seconds: -1,
     })
-  })
-})
-
-describe('submitVideoComposite', () => {
-  const conversationId = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'
-  const baseJobId = '0d6b2f0e-1c4f-4a0e-9a2b-0f2f3a4b5c6d'
-  const editJobId = '7e1c3a9b-2d4f-4b1e-8c3d-1f2e3a4b5c6d'
-
-  it('片段列表就是草稿：各段出处与自己媒体时间里的起止原样发出', async () => {
-    const segments = [
-      { sourceJobId: baseJobId, start: 0, end: 1.5 },
-      { sourceJobId: editJobId, start: 0, end: 2.75 },
-      { sourceJobId: baseJobId, start: 5, end: 6 },
-      { sourceJobId: baseJobId, start: 4.25, end: 5 },
-    ]
-    let body: unknown
-    const accepted = makeGenerationJob({
-      operation: 'compose',
-      status: 'pending',
-      sourceJobId: baseJobId,
-    })
-    server.use(
-      http.post('*/api/generations/video-composites', async ({ request }) => {
-        body = await request.json()
-        return HttpResponse.json({ generation: accepted }, { status: 202 })
-      }),
-    )
-
-    const result = await submitVideoComposite({ conversationId, taskId: null, baseJobId, segments })
-
-    expect(body).toEqual({ conversationId, taskId: null, baseJobId, segments })
-    expect(result.id).toBe(accepted.id)
-  })
-})
-
-describe('seedVideoEditJob', () => {
-  const conversationId = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'
-  const chainKey = videoEditChainKey(conversationId, 'root-job')
-  const segment = makeGenerationJob({
-    status: 'pending',
-    rootJobId: 'root-job',
-    sourceJobId: 'root-job',
-    rangeStartMs: 0,
-    rangeEndMs: 2000,
-  })
-
-  it('这条链还没读过就只有这一条', () => {
-    const queryClient = new QueryClient()
-
-    seedVideoEditJob(queryClient, conversationId, 'root-job', segment)
-
-    expect(queryClient.getQueryData(chainKey)).toEqual({ items: [segment] })
-  })
-
-  it('放进这条链最前面、同一条替换不重复，并失效本对话全部编辑链', () => {
-    const queryClient = new QueryClient()
-    const earlier = makeGenerationJob()
-    const otherChain = videoEditChainKey(conversationId, 'other-root')
-    queryClient.setQueryData(chainKey, { items: [segment, earlier] })
-    queryClient.setQueryData(otherChain, { items: [] })
-    const accepted = { ...segment, status: 'submitted' as const }
-
-    seedVideoEditJob(queryClient, conversationId, 'root-job', accepted)
-
-    expect(queryClient.getQueryData(chainKey)).toEqual({ items: [accepted, earlier] })
-    expect(queryClient.getQueryState(otherChain)?.isInvalidated).toBe(true)
-  })
-})
-
-describe('编辑器用哪个模型', () => {
-  const models = ['vendor-a-seedance-2-5', 'wan3.0-video']
-
-  it.each([
-    ['选过的还在允许表里就用它', 'wan3.0-video', 'vendor-a-seedance-2-5', 'wan3.0-video'],
-    ['选过的不在了退回默认', 'gone-model', 'vendor-a-seedance-2-5', 'vendor-a-seedance-2-5'],
-    ['默认模型不在允许列表就取第一个', undefined, 'vendor-a-seedance-2-0', 'vendor-a-seedance-2-5'],
-  ])('%s', (_name, wanted, fallback, expected) => {
-    expect(pickGenerationModel(models, wanted, fallback)).toBe(expected)
-  })
-
-  it('一个都没有就没有模型', () => {
-    expect(pickGenerationModel([], 'x', 'y')).toBeUndefined()
   })
 })

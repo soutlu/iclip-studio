@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { drainPages } from './paging'
 
-/** 按脚本逐页作答，同时记下每次收到的令牌。 */
 const scripted = <Item, Token>(pages: readonly { items: Item[]; next: Token | null }[]) => {
   const tokens: (Token | undefined)[] = []
   let index = 0

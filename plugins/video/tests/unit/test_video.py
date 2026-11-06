@@ -1,0 +1,207 @@
+from __future__ import annotations
+
+import uuid
+from typing import Any
+
+import pytest
+from agent_runtime.file_store.store import FileSpace
+from agent_runtime.plugins.workspace.scope import workspace_namespace
+from agent_runtime.run_deps import AgentRunDeps
+from pydantic_ai import Agent, ToolFailed
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.test import TestModel
+from pydantic_ai.tools import RunContext
+from pydantic_ai.usage import RunUsage
+
+from iclip_video.video.capability import Video, VideoToolset
+from iclip_video.video_document import video_doc_path
+from iclip_video.video_understanding import (
+    VideoUnderstandingError,
+    VideoUnderstandingUnavailable,
+)
+from tests.helpers.file_store import FakeFileStore
+from tests.helpers.plugins import with_requirements
+from tests.helpers.video_understanding import FakeUnderstanding
+
+USER = uuid.UUID("11111111-1111-1111-1111-111111111111")
+VIDEO = "https://cdn.test/ref.mp4"
+NAMESPACE = f"{USER}/thread-1"
+OTHER_NAMESPACE = f"{USER}/thread-2"
+DOCUMENT = "## 逐镜拉片表\n**[00:00.000-00:30.000]** 产品演示。"
+
+
+@pytest.fixture
+def files() -> FakeFileStore:
+    return FakeFileStore()
+
+
+@pytest.fixture
+def understanding() -> FakeUnderstanding:
+    return FakeUnderstanding(document=DOCUMENT)
+
+
+@pytest.fixture
+def capability(files: FakeFileStore, understanding: FakeUnderstanding) -> Video[object]:
+    return Video.bind(
+        space=FileSpace(store=files, namespace=workspace_namespace), understanding=understanding
+    ).from_spec()
+
+
+@pytest.fixture
+def tools(capability: Video[object]) -> VideoToolset[object]:
+    return capability.get_toolset()
+
+
+def make_deps() -> AgentRunDeps:
+    return AgentRunDeps(user_id=USER, conversation_id="thread-1", user_name="logan")
+
+
+def make_context(deps: object) -> RunContext[object]:
+    return RunContext[object](deps=deps, model=TestModel(), usage=RunUsage(), messages=[])
+
+
+async def invoke(
+    capability: Video[object], tool_name: str, args: str | dict[str, Any]
+) -> list[ModelMessage]:
+    def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart(tool_name, args, tool_call_id="video-call")])
+        return ModelResponse(parts=[TextPart("本轮结束。")])
+
+    result = await Agent(
+        FunctionModel(script), capabilities=with_requirements(capability, capability.space)
+    ).run("处理参考素材。", deps=make_deps())
+    return result.all_messages()
+
+
+def _tool_returns(messages: list[ModelMessage]) -> list[ToolReturnPart]:
+    return [
+        part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)
+    ]
+
+
+def refusals(messages: list[ModelMessage]) -> list[ToolReturnPart]:
+    return [part for part in _tool_returns(messages) if part.outcome == "retried"]
+
+
+def returns(messages: list[ModelMessage]) -> list[ToolReturnPart]:
+    return [part for part in _tool_returns(messages) if part.outcome != "retried"]
+
+
+async def test_parse_stores_document_in_shared_workspace(
+    capability: Video[object], files: FakeFileStore, understanding: FakeUnderstanding
+) -> None:
+    messages = await invoke(capability, "video_parser", {"video_url": VIDEO})
+
+    assert refusals(messages) == []
+    assert understanding.calls == [VIDEO]
+    stored = await files.read(NAMESPACE, video_doc_path(VIDEO))
+    assert stored is not None
+    assert stored.content == DOCUMENT
+    delivered = returns(messages)
+    assert len(delivered) == 1
+    assert delivered[0].outcome == "success"
+    assert video_doc_path(VIDEO) in str(delivered[0].content)
+    assert await files.entries(OTHER_NAMESPACE) == []
+
+
+async def test_any_http_address_goes_to_the_model_without_an_address_check(
+    capability: Video[object], files: FakeFileStore, understanding: FakeUnderstanding
+) -> None:
+    url = "https://cdn.test/never-mentioned.mp4"
+
+    messages = await invoke(capability, "video_parser", {"video_url": url})
+
+    assert refusals(messages) == []
+    assert understanding.calls == [url]
+    assert await files.read(NAMESPACE, video_doc_path(url)) is not None
+
+
+@pytest.mark.parametrize("url", ["reference.mp4", "file:///etc/passwd", "ftp://host/ref.mp4"])
+async def test_parse_rejects_non_http_addresses_before_understanding(
+    capability: Video[object],
+    files: FakeFileStore,
+    understanding: FakeUnderstanding,
+    url: str,
+) -> None:
+    messages = await invoke(capability, "video_parser", {"video_url": url})
+
+    rejected = refusals(messages)
+    assert len(rejected) == 1
+    assert "http" in rejected[0].model_response_str()
+    assert understanding.calls == []
+    assert await files.entries(NAMESPACE) == []
+
+
+async def test_parse_failure_preserves_existing_document(
+    capability: Video[object], files: FakeFileStore, understanding: FakeUnderstanding
+) -> None:
+    await files.write(NAMESPACE, video_doc_path(VIDEO), DOCUMENT)
+    original = await files.read(NAMESPACE, video_doc_path(VIDEO))
+    understanding.error = VideoUnderstandingError("理解服务未完成")
+
+    messages = await invoke(capability, "video_parser", {"video_url": VIDEO})
+
+    assert len(refusals(messages)) == 1
+    assert understanding.calls == [VIDEO]
+    assert await files.read(NAMESPACE, video_doc_path(VIDEO)) == original
+    assert returns(messages) == []
+
+
+async def test_files_land_in_the_normalized_namespace(
+    files: FakeFileStore, understanding: FakeUnderstanding
+) -> None:
+    toolset = Video[object](
+        space=FileSpace(store=files, namespace=lambda _ctx: f"{USER}//thread-1"),
+        understanding=understanding,
+    ).get_toolset()
+
+    await toolset.video_parser(make_context(make_deps()), VIDEO)
+    assert await files.read(NAMESPACE, video_doc_path(VIDEO)) is not None
+
+
+async def test_an_unavailable_model_is_final_and_asks_for_an_admin(
+    tools: VideoToolset[object], files: FakeFileStore, understanding: FakeUnderstanding
+) -> None:
+    reason = "配置页的火山方舟里没有启用的模型 doubao-seed-test（或没有默认密钥）"
+    understanding.error = VideoUnderstandingUnavailable(reason)
+
+    with pytest.raises(ToolFailed) as raised:
+        await tools.video_parser(make_context(make_deps()), VIDEO)
+
+    assert raised.value.message == (
+        f"拆解失败：{reason}。不要重试，告诉用户需要管理员在配置页启用这个模型。"
+    )
+    assert await files.read(NAMESPACE, video_doc_path(VIDEO)) is None
+
+
+async def test_missing_run_identity_is_a_bug_not_a_retry(tools: VideoToolset[object]) -> None:
+    with pytest.raises(RuntimeError, match="AgentRunDeps"):
+        await tools.video_parser(make_context(object()), VIDEO)
+
+
+async def test_quota_failure_preserves_existing_file(understanding: FakeUnderstanding) -> None:
+    files = FakeFileStore(max_file_bytes=4096)
+    capability = Video[object](
+        space=FileSpace(store=files, namespace=workspace_namespace), understanding=understanding
+    )
+    args = {"video_url": VIDEO}
+    path = video_doc_path(VIDEO)
+    first = await invoke(capability, "video_parser", args)
+    assert refusals(first) == []
+    original = await files.read(NAMESPACE, path)
+    assert original is not None
+    understanding.document = DOCUMENT * 1000
+
+    messages = await invoke(capability, "video_parser", args)
+
+    assert len(refusals(messages)) == 1
+    assert await files.read(NAMESPACE, path) == original
+    assert returns(messages) == []

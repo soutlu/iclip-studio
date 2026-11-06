@@ -1,5 +1,3 @@
-"""字幕记录落在生成记录表里：逐句结果的往返与状态守卫，以及它不混进视频的在途与素材片口径。"""
-
 from __future__ import annotations
 
 import uuid
@@ -147,8 +145,6 @@ async def test_the_status_guard_keeps_a_failed_subtitle_record_failed(engine: As
 async def test_subtitle_records_do_not_count_as_videos_in_flight_or_masters(
     engine: AsyncEngine,
 ) -> None:
-    """对话的「视频在跑」与最新素材片只看视频：排队、提交中、完成的字幕记录都不算。"""
-
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
     quiet, busy_subtitles = uuid.uuid4(), uuid.uuid4()
@@ -162,5 +158,5 @@ async def test_subtitle_records_do_not_count_as_videos_in_flight_or_masters(
         finished.id, sentences=SENTENCES, provider_status="succeeded", provider_task_id="r"
     )
 
-    assert await repo.in_flight_by_conversation([quiet, busy_subtitles], kind="video") == {}
+    assert await repo.in_flight_by_conversation(owner=owner, kind="video") == {}
     assert await repo.latest_master_by_conversation([quiet, busy_subtitles]) == {quiet: TAKE_URL}

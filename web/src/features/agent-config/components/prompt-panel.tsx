@@ -1,0 +1,25 @@
+import { SourceEditor } from '@/shared/ui/source-editor'
+import { PanelShell } from './panel-shell'
+
+export function PromptPanel({
+  onChange,
+  onClose,
+  value,
+}: {
+  value: string
+  onChange: (markdown: string) => void
+  onClose: () => void
+}) {
+  return (
+    <PanelShell onClose={onClose} scroll={false} title="系统提示词">
+      <SourceEditor
+        ariaLabel="系统提示词"
+        className="max-w-180 flex-1"
+        kind="markdown"
+        onChange={onChange}
+        placeholder="描述这个 Agent 的角色、工作方式与表达准则"
+        value={value}
+      />
+    </PanelShell>
+  )
+}

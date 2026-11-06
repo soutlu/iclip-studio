@@ -47,7 +47,6 @@ export function ReferenceCard({ item, tags, width, onOpen, onAuthor }: Reference
   )
 }
 
-/** 左上角的后台状态：拆解没结束或没拆成时说拆解；拆完了再说打标（排队与打标中合成一种）。 */
 function StatusBadge({ item }: { item: Pick<ReferenceItem, 'breakdownStatus' | 'tagStatus'> }) {
   const { breakdownStatus: status, tagStatus } = item
   if (status !== 'completed')

@@ -1,5 +1,3 @@
-"""网关的生成接口没有幂等键：提交阶段不自动重试、不切换渠道，以免重复计费或改变调用方选择的价格。"""
-
 from __future__ import annotations
 
 import uuid
@@ -9,8 +7,8 @@ from typing import Any, Final
 from urllib.parse import urlsplit
 
 import httpx
+from agent_runtime.urls import is_http_url
 
-from iclip.common.urls import is_http_url
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.provider import (
     ImageModelSpec,
@@ -28,7 +26,6 @@ from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicObje
 
 _DOWNLOAD_TIMEOUT_SECONDS: Final = 60.0
 
-# 网关按它认调用方，取值须在它的来源白名单里。
 TASK_SOURCE: Final = "iclip_agent"
 
 _MIME_BY_SUFFIX: Final = {
@@ -111,7 +108,6 @@ class GatewayImageProvider:
             transport=self._transport,
         )
         return ProviderSubmission(
-            # 网关不返回任务 id，使用请求 data_id 对账。
             provider_task_id=str(job.id),
             provider_status="succeeded",
             output_url=output_url,

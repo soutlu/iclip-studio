@@ -23,7 +23,6 @@ const ssoErrorCodeFromError = (error: unknown): SsoErrorCode => {
 export function SsoLandingPage({ jwt }: SsoLandingPageProps) {
   const navigate = useNavigate()
   const completeSsoLogin = useCompleteSsoLogin()
-  // StrictMode 下 effect 双跑，jwt 只允许换发一次会话。
   const startedRef = useRef(false)
 
   useEffect(() => {
@@ -33,7 +32,6 @@ export function SsoLandingPage({ jwt }: SsoLandingPageProps) {
 
     startedRef.current = true
 
-    // 失败回首页并传递错误码，由应用壳显示登录弹窗。
     const fail = (code: SsoErrorCode) =>
       void navigate({ replace: true, search: { ssoError: code }, to: '/' })
 

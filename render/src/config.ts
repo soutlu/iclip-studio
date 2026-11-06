@@ -1,12 +1,3 @@
-/**
- * 渲染服务的配置，全部来自环境变量：
- *   PORT                         监听端口，默认 8080（后端 WHOLE_FILM_RENDER_URL 指向它）
- *   RENDER_ALLOWED_MEDIA_HOSTS   允许的素材主机（逗号分隔，可带端口），必填
- *   RENDER_REGISTRY_ROOT         组件库目录（根上是 catalog.json，组件在 <version>/ 下），必填
- *   RENDER_WORK_DIR              临时项目目录，默认系统临时目录下的 iclip-render
- *   RENDER_TIMEOUT_MS            单个导出从开始渲染到上传完成的上限，默认 30 分钟
- *   LOG_LEVEL                    debug / info / warn / error，默认 info
- */
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { LogLevel } from './log'
@@ -42,7 +33,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RenderConfig {
   return {
     port: positiveInteger('PORT', env['PORT'], 8080),
     allowedHosts,
-    // 绝对路径：临时项目目录里链接组件库时，相对路径会按链接所在目录解析。
     registryRoot: resolve(registryRoot),
     workDir: resolve(env['RENDER_WORK_DIR'] || join(tmpdir(), 'iclip-render')),
     timeoutMs: positiveInteger('RENDER_TIMEOUT_MS', env['RENDER_TIMEOUT_MS'], 30 * 60 * 1000),

@@ -1,7 +1,3 @@
-"""用真实 ffmpeg 抽音轨、httpx 替身当识别接口，验证字幕识别发出去的请求与各种收尾。
-
-不调真实付费接口：识别端点是 MockTransport。"""
-
 from __future__ import annotations
 
 import base64
@@ -55,8 +51,6 @@ NO_WORDS = {
 
 
 class FakeServices:
-    """取视频与识别接口的替身：视频地址给固定字节，识别端点按剧本回应并记下收到的请求。"""
-
     def __init__(self, video: bytes | None, response: httpx.Response | Exception) -> None:
         self.video = video
         self.response = response
@@ -140,8 +134,6 @@ async def test_a_video_without_audio_is_no_voice_over_and_the_service_is_not_cal
 
 
 async def test_audio_without_speech_is_a_normal_empty_result() -> None:
-    """有声音却没人说话（只有音乐）：识别服务明确返回空数组，这是正常结果。"""
-
     services = FakeServices(
         _video(audio=True),
         httpx.Response(200, json={"output": {"text": "", "sentences": []}, "request_id": "req-0"}),

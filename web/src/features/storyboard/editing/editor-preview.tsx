@@ -23,9 +23,7 @@ import { timeLabel } from './time-label'
 type Boundary = 'start' | 'end'
 
 export type EditorPreviewHandle = {
-  /** 停下并跳到 clock */
   previewAt: (clock: number, boundary?: Boundary) => void
-  /** 同播放按钮：从播放头播到结尾，正在播就暂停；按钮置灰时不起播 */
   toggle: () => void
 }
 
@@ -37,7 +35,6 @@ const SLOTS: readonly { id: string; slot: Slot }[] = [
   { id: 'b', slot: 1 },
 ]
 
-// requestAnimationFrame 约 16ms 一帧，提前两帧切到预载好的下一段。
 const SWITCH_AHEAD = 0.03
 
 const sameSegments = (
@@ -74,27 +71,20 @@ type Props = {
   poster: string | undefined
   backdrop: string | undefined
   currentTime: number
-  /** 工具条上写的时刻，不给时是 `currentTime`：拖修剪把手时是把手所在的标尺位置，与播放头一致。 */
   shownTime?: number | undefined
-  /** 工具条上写的总长，不给时是舞台所放内容的长度：拖修剪把手时按松手前的样子写，同「共 X 秒」。 */
   shownDuration?: number | undefined
   onTime: (clock: number) => void
   onPlay: () => void
   onPlaybackChange?: ((playback: PreviewPlayback) => void) | undefined
-  /** 当前视频不再下载时调用：下完或浏览器停止缓冲、加载失败、没有内容可加载。可能调用多次。 */
   onDownloadSettled?: (() => void) | undefined
   externalAudio?: { blocked: string | undefined } | undefined
   aspectRatio?: number | undefined
   overlay: ReactNode
   readout: ReactNode
   timeline: ReactNode
-  /** 工具条左端，播放按钮之前，中间隔一条分隔线。 */
   barStart: ReactNode
-  /** 时间之后的提醒；为 null 时连同它前面的分隔线都不显示。 */
   barNotice: ReactNode
-  /** 右组里静音之前的工具。 */
   barTools: ReactNode
-  /** 工具条右端，前面隔一条分隔线。 */
   barEnd: ReactNode
   ref: Ref<EditorPreviewHandle>
 }
@@ -137,7 +127,6 @@ export function EditorPreview({
   const [enlarged, setEnlarged] = useState(false)
   const closeEnlargedRef = useRef<HTMLButtonElement>(null)
   const enlargeRef = useRef<HTMLButtonElement>(null)
-  // 放大与还原只把这个节点挪到另一个槽：两个 <video> 一旦重挂，播放、静音与预载就会中断。
   const [stageHost] = useState(() => {
     const host = document.createElement('div')
     host.className = 'editor-stage-host'
@@ -155,7 +144,7 @@ export function EditorPreview({
     },
     [stageHost],
   )
-  // 媒体元素短暂离开文档会被浏览器暂停，挪进挪出必须在同一次提交里完成。
+  // <video> 节点移出文档会被浏览器自动暂停，须在同一渲染提交内完成容器切换。
   const placeEnlarged = useCallback(
     (slot: HTMLDivElement) => {
       slot.appendChild(stageHost)
@@ -240,7 +229,6 @@ export function EditorPreview({
   const seekFromEffect = useEffectEvent(seek)
 
   const pause = () => {
-    // 未完成的 play() 被 pause 打断会以失败落定，先撤销这一轮，免得误报加载失败。
     stopPlaybackRef.current?.()
     for (const element of elementsRef.current) element?.pause()
     setPlaying(false)
@@ -372,7 +360,7 @@ export function EditorPreview({
       style={{ '--preview-ratio': aspectRatio ?? aspect } as CSSProperties}
     >
       {SLOTS.map(({ id, slot }) => (
-        // eslint-disable-next-line jsx-a11y-x/media-has-caption -- 生成的视频没有字幕轨，不装样子
+        // eslint-disable-next-line jsx-a11y-x/media-has-caption -- 生成视频无字幕轨
         <video
           aria-hidden={slot !== active}
           aria-label={slot === active ? '视频播放器' : undefined}
@@ -456,7 +444,6 @@ export function EditorPreview({
     </div>
   )
 
-  // 子节点的顺序固定：portal 换了位置或容器，舞台就会重挂。
   return (
     <>
       <div className="editor-stage-area">
@@ -474,11 +461,9 @@ export function EditorPreview({
             bare
             className="editor-enlarge"
             onCloseAutoFocus={(event) => {
-              // Radix 默认把焦点还给打开前的元素。
               event.preventDefault()
               enlargeRef.current?.focus()
             }}
-            // 舞台在 React 树里属于编辑器，Radix 会把点舞台当成点了外面。
             onInteractOutside={(event) => event.preventDefault()}
             onOpenAutoFocus={(event) => {
               event.preventDefault()

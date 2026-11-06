@@ -1,7 +1,3 @@
-"""对话 HTTP 端点。对话读取使用 agent:read，Agent 目录和写操作使用 agent:run。
-
-不可见对话返回 404；治理者可跨属主读取，写入仍限属主。"""
-
 from __future__ import annotations
 
 import uuid
@@ -10,10 +6,13 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Path, Query, Response
 
-from iclip.domains.conversations.models import Conversation, ConversationActivity, EventWatermark
+from iclip.domains.conversations.models import Conversation, ConversationActivity
 from iclip.domains.conversations.schemas import (
+    MAX_AGENT_ID_CHARS,
+    AgentPreviewIn,
+    AgentPreviewOut,
     ConversationAgentOut,
     ConversationAgentsOut,
     ConversationCollectionIn,
@@ -32,6 +31,7 @@ from iclip.domains.conversations.schemas import (
     ConversationsAuditOut,
     ConversationsPageOut,
     ConversationTaskIn,
+    ConversationVideoProgressOut,
     FilmAspectRatioIn,
     FilmImageChoiceIn,
     FilmImageGenerationIn,
@@ -41,6 +41,7 @@ from iclip.domains.conversations.schemas import (
     FilmViewEnvelope,
     SidebarCollectionOut,
     SidebarOut,
+    agent_preview_out,
     audit_item_out,
     conversation_out,
     film_image_prompt,
@@ -65,6 +66,7 @@ from iclip.domains.conversations.whole_film_schemas import (
     whole_film_export_out,
 )
 from iclip.domains.identity.public import (
+    AGENT_MANAGE_PERMISSION,
     MANAGE_PERMISSION,
     ActAs,
     Principal,
@@ -75,8 +77,6 @@ from iclip.platform.paging import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
 
 @contextmanager
 def _render_unavailable_as_502() -> Generator[None]:
-    """渲染服务不可用不是调用方的错，照 SSO / PMS 不可达的先例答 502，``detail`` 是原因。"""
-
     try:
         yield
     except WholeFilmRenderUnavailable as exc:
@@ -88,38 +88,32 @@ def create_conversations_router(
 ) -> APIRouter:
     router = APIRouter(prefix="/conversations", tags=["conversations"])
 
-    # 活动状态独立于对话记录，在序列化前批量读取。事件水位 ``events`` 由各端点在读库或写库
-    # 之前取，行上的 ``lastSeq`` 才不会比行里的字段新。
-    async def _out(conversation: Conversation, events: EventWatermark) -> ConversationOut:
+    async def _out(conversation: Conversation) -> ConversationOut:
         activities = await service.activities([conversation.id])
-        return conversation_out(conversation, activities[conversation.id], events)
+        return conversation_out(conversation, activities[conversation.id])
 
-    async def _outs(items: Sequence[Conversation], events: EventWatermark) -> list[ConversationOut]:
+    async def _outs(items: Sequence[Conversation]) -> list[ConversationOut]:
         activities = await service.activities([item.id for item in items])
-        return [conversation_out(item, activities[item.id], events) for item in items]
+        return [conversation_out(item, activities[item.id]) for item in items]
 
     def _page_out_with(
-        page: ConversationPage,
-        activities: Mapping[uuid.UUID, ConversationActivity],
-        events: EventWatermark,
+        page: ConversationPage, activities: Mapping[uuid.UUID, ConversationActivity]
     ) -> ConversationPageOut:
         return ConversationPageOut(
-            items=[conversation_out(item, activities[item.id], events) for item in page.items],
+            items=[conversation_out(item, activities[item.id]) for item in page.items],
             next_cursor=page.next_cursor,
         )
 
-    async def _page_out(page: ConversationPage, events: EventWatermark) -> ConversationPageOut:
-        return _page_out_with(
-            page, await service.activities([item.id for item in page.items]), events
-        )
+    async def _page_out(page: ConversationPage) -> ConversationPageOut:
+        return _page_out_with(page, await service.activities([item.id for item in page.items]))
 
     @router.get("/agents", response_model=ConversationAgentsOut)
     async def list_agents(
         _: Annotated[Principal, require_permission("agent:run")],
     ) -> ConversationAgentsOut:
-        """读取当前装配的顶层 Agent 名册，按声明顺序返回；热重载后下次请求即见新目录。"""
+        """首页能选的顶层 Agent：上菜单、在用、发布过，按配置里的先后；第一个是默认项。"""
 
-        directory = agents()
+        directory = await agents()
         return ConversationAgentsOut(
             items=[ConversationAgentOut(id=entry.id, name=entry.name) for entry in directory.items],
             default=directory.default,
@@ -135,10 +129,12 @@ def create_conversations_router(
 
         带 ``sameAs`` 是做同款：调用者没有 ``generation:read``、或 ``sameAs`` 不是挂着对话的
         资料库卡是 404，源没有工程文件或分镜文件是 422。
+
+        新对话固定在 agent 此刻的当前版本上：没有这个 agent 或它不上首页菜单是 422，已归档或还没发布过
+        是 409。
         """
 
         principal = await act_as(principal, body.user_name)
-        events = service.watermark()
         conversation, created = await service.create(
             principal,
             agent_id=body.agent_id,
@@ -150,7 +146,7 @@ def create_conversations_router(
         )
         if not created:
             response.status_code = 200
-        return ConversationEnvelope(conversation=await _out(conversation, events))
+        return ConversationEnvelope(conversation=await _out(conversation))
 
     @router.post("/{conversation_id}:fork", response_model=ConversationEnvelope, status_code=201)
     async def fork_conversation(
@@ -160,10 +156,10 @@ def create_conversations_router(
     ) -> ConversationEnvelope:
         """从看得见的某段对话的第 ``turn`` 轮分叉出一段自己的对话，源对话不变。
 
-        源看不见是 404，正在跑是 409，轮号越界是 422。副本的 id 由服务端铸。
+        源看不见是 404，正在跑是 409，轮号越界是 422。副本的 id 由服务端铸。副本沿用源对话固定的
+        agent 版本；换了 ``agentId`` 时按开新对话的规矩固定那个 agent 的当前版本。
         """
 
-        events = service.watermark()
         conversation = await service.fork(
             principal,
             conversation_id,
@@ -172,7 +168,7 @@ def create_conversations_router(
             agent_id=body.agent_id,
             collection_id=body.collection_id,
         )
-        return ConversationEnvelope(conversation=await _out(conversation, events))
+        return ConversationEnvelope(conversation=await _out(conversation))
 
     @router.get("", response_model=SidebarOut)
     async def read_sidebar(
@@ -188,7 +184,6 @@ def create_conversations_router(
         ``all`` 不筛；两个数字按同一个筛选算。
         """
 
-        events = service.watermark()
         view = await service.sidebar(principal, state=state)
         return SidebarOut(
             collections=[
@@ -197,12 +192,12 @@ def create_conversations_router(
                     name=group.collection.name,
                     updated_at=group.collection.updated_at,
                     conversation_count=group.total,
-                    page=_page_out_with(group.page, view.activities, events),
+                    page=_page_out_with(group.page, view.activities),
                 )
                 for group in view.groups
             ],
             ungrouped_count=view.ungrouped_total,
-            ungrouped=_page_out_with(view.ungrouped, view.activities, events),
+            ungrouped=_page_out_with(view.ungrouped, view.activities),
         )
 
     @router.get("/ungrouped", response_model=ConversationPageOut)
@@ -213,10 +208,7 @@ def create_conversations_router(
     ) -> ConversationPageOut:
         """侧栏「任务」区往下滑：接着上一页给。``cursor`` 原样回传响应里的 ``nextCursor``。"""
 
-        events = service.watermark()
-        return await _page_out(
-            await service.ungrouped(principal, cursor=cursor, state=state), events
-        )
+        return await _page_out(await service.ungrouped(principal, cursor=cursor, state=state))
 
     @router.get("/by-collection/{collection_id}", response_model=ConversationPageOut)
     async def list_collection_conversations(
@@ -230,10 +222,8 @@ def create_conversations_router(
         不存在的合集、别人的合集，都给一页空的——与「这个合集是空的」同一个结果。
         """
 
-        events = service.watermark()
         return await _page_out(
-            await service.in_collection(principal, collection_id, cursor=cursor, state=state),
-            events,
+            await service.in_collection(principal, collection_id, cursor=cursor, state=state)
         )
 
     @router.get("/search", response_model=ConversationsPageOut)
@@ -244,9 +234,8 @@ def create_conversations_router(
     ) -> ConversationsPageOut:
         """按标题搜自己的对话，最近建的排前面。筛选在库里做，搜得到全部历史。"""
 
-        events = service.watermark()
         found = await service.search(principal, limit=limit, title_query=q)
-        return ConversationsPageOut(items=await _outs(found, events))
+        return ConversationsPageOut(items=await _outs(found))
 
     @router.get("/audit", response_model=ConversationsAuditOut)
     async def audit_conversations(
@@ -268,7 +257,6 @@ def create_conversations_router(
         ``all`` 都看。``total`` 与 ``runningTotal`` 是真总数，不随翻页变。
         """
 
-        events = service.watermark()
         page = await service.audit(
             owner_user_id=owner_user_id,
             task_id=task_id,
@@ -282,14 +270,26 @@ def create_conversations_router(
         activities = await service.activities([item.id for item in page.items])
         return ConversationsAuditOut(
             items=[
-                audit_item_out(
-                    item, activities[item.id], page.latest_master_urls.get(item.id), events
-                )
+                audit_item_out(item, activities[item.id], page.latest_master_urls.get(item.id))
                 for item in page.items
             ],
             next_cursor=page.next_cursor,
             total=page.total,
             running_total=page.running_total,
+        )
+
+    @router.get("/video-progress", response_model=ConversationVideoProgressOut)
+    async def read_video_progress(
+        principal: Annotated[Principal, require_permission("agent:read")],
+    ) -> ConversationVideoProgressOut:
+        """还有视频记录没跑完的对话各到哪一步；没列出的就是没有。
+
+        出片、编辑段与合成都算，至少一条已离开排队就是 ``running``；字幕、音频、成片与超分记录不算。
+        范围按记录的属主：普通用户只看自己的，治理者与替人办事的钥匙看全平台。收到本对话的视频帧
+        就重拉这一份。"""
+
+        return ConversationVideoProgressOut(
+            conversations=dict(await service.video_progress(principal))
         )
 
     @router.get("/by-task/{task_id}", response_model=ConversationsPageOut)
@@ -304,9 +304,8 @@ def create_conversations_router(
         全部。查别人的走 ``/conversations/audit?taskId=``。
         """
 
-        events = service.watermark()
         found = await service.list_for_task(principal, task_id)
-        return ConversationsPageOut(items=await _outs(found, events))
+        return ConversationsPageOut(items=await _outs(found))
 
     @router.get("/{conversation_id}/workspace/files", response_model=ConversationFilesOut)
     async def list_conversation_files(
@@ -547,9 +546,8 @@ def create_conversations_router(
         body: ConversationRename,
         principal: Annotated[Principal, require_permission("agent:run")],
     ) -> ConversationEnvelope:
-        events = service.watermark()
         conversation = await service.rename(principal, conversation_id, title=body.title)
-        return ConversationEnvelope(conversation=await _out(conversation, events))
+        return ConversationEnvelope(conversation=await _out(conversation))
 
     @router.put("/{conversation_id}/collection", response_model=ConversationEnvelope)
     async def set_conversation_collection(
@@ -557,11 +555,10 @@ def create_conversations_router(
         body: ConversationCollectionIn,
         principal: Annotated[Principal, require_permission("agent:run")],
     ) -> ConversationEnvelope:
-        events = service.watermark()
         conversation = await service.set_collection(
             principal, conversation_id, collection_id=body.collection_id
         )
-        return ConversationEnvelope(conversation=await _out(conversation, events))
+        return ConversationEnvelope(conversation=await _out(conversation))
 
     @router.put("/{conversation_id}/task", response_model=ConversationEnvelope)
     async def set_conversation_task(
@@ -569,9 +566,8 @@ def create_conversations_router(
         body: ConversationTaskIn,
         principal: Annotated[Principal, require_permission("agent:run")],
     ) -> ConversationEnvelope:
-        events = service.watermark()
         conversation = await service.set_task(principal, conversation_id, task_id=body.task_id)
-        return ConversationEnvelope(conversation=await _out(conversation, events))
+        return ConversationEnvelope(conversation=await _out(conversation))
 
     @router.put("/{conversation_id}/completion", response_model=ConversationEnvelope)
     async def set_conversation_completion(
@@ -581,11 +577,10 @@ def create_conversations_router(
     ) -> ConversationEnvelope:
         """属主标记这段对话收尾了，或取消标记。机器不会自己标。"""
 
-        events = service.watermark()
         conversation = await service.set_completed(
             principal, conversation_id, completed=body.completed
         )
-        return ConversationEnvelope(conversation=await _out(conversation, events))
+        return ConversationEnvelope(conversation=await _out(conversation))
 
     @router.delete("/{conversation_id}", status_code=204)
     async def delete_conversation(
@@ -595,7 +590,6 @@ def create_conversations_router(
         await service.delete(principal, conversation_id)
         return Response(status_code=204)
 
-    # 带路径参数的单行读放在最后：``/agents``、``/search``、``/audit``、``/ungrouped`` 先匹配。
     @router.get("/{conversation_id}", response_model=ConversationEnvelope)
     async def read_conversation(
         conversation_id: uuid.UUID,
@@ -604,13 +598,38 @@ def create_conversations_router(
         """读一段对话的整行，给列表在轮次状态变化后单独刷新这一行（照 Kimi 按 id 取会话）。
 
         可见范围同其他读路径：治理者读得到所有人的对话，含属主删掉的墓碑；其余人只见自己活着的，
-        看不见与不存在一样是 404。``lastSeq`` 是读这一行之前的事件水位。"""
+        看不见与不存在一样是 404。"""
 
-        events = service.watermark()
         conversation = await service.get(principal, conversation_id)
-        return ConversationEnvelope(conversation=await _out(conversation, events))
+        return ConversationEnvelope(conversation=await _out(conversation))
 
     return router
 
 
-__all__ = ["create_conversations_router"]
+PreviewAgentId = Annotated[str, Path(min_length=1, max_length=MAX_AGENT_ID_CHARS)]
+
+
+def create_previews_router(service: ConversationService) -> APIRouter:
+    router = APIRouter(prefix="/agents/{agent_id}/previews", tags=["agents"])
+
+    @router.post("", response_model=AgentPreviewOut, status_code=201)
+    async def open_preview(
+        agent_id: PreviewAgentId,
+        principal: Annotated[Principal, require_permission(AGENT_MANAGE_PERMISSION)],
+        body: AgentPreviewIn | None = None,
+    ) -> AgentPreviewOut:
+        """给调用者开一段新的测试预览，换掉他在这个 agent 上的当前预览：不给 ``versionId`` 试这个 agent 当下的
+        草稿（每次发消息都按那一刻的草稿装配），给了试它的那一版。不看上不上菜单、在不在用、发没发布过。
+
+        没有这个 agent 是 404，版本不是它的是 422，这时当前那段不动。换掉之前先中断当前那段，中断不成就返回错误、
+        不换；换掉的那段 id 在哪个端点上都是 404。"""
+
+        preview = await service.open_preview(
+            principal, agent_id, version_id=None if body is None else body.version_id
+        )
+        return agent_preview_out(preview)
+
+    return router
+
+
+__all__ = ["create_conversations_router", "create_previews_router"]

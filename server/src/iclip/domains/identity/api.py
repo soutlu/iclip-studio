@@ -1,5 +1,3 @@
-"""identity HTTP 驱动适配器：认证、用户管理、API key、SSO 路由。"""
-
 from __future__ import annotations
 
 import uuid
@@ -7,12 +5,12 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated
 
+from agent_runtime.errors import NotFound
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi_users import FastAPIUsers
 from fastapi_users.exceptions import UserNotExists
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 
-from iclip.common.errors import NotFound
 from iclip.domains.identity.accounts import (
     CookieAuthSettings,
     UserCreate,
@@ -59,15 +57,13 @@ def create_account_routers(
     sessions: SessionFactory,
     auth: CookieAuthSettings,
 ) -> tuple[APIRouter, ...]:
-    """fastapi-users 的 /auth/login、/auth/logout 与 /auth/register。"""
-
     backend = build_cookie_backend(auth)
 
     async def get_user_db() -> AsyncIterator[SQLAlchemyUserDatabase[User, uuid.UUID]]:
         async with sessions() as session:
             yield SQLAlchemyUserDatabase(session, User, OAuthAccount)
 
-    # 闭包依赖必须用默认值式 Depends：Annotated 内的字符串化注解无法解析闭包局部名。
+    # 启用延迟类型注解时，FastAPI 无法解析 Annotated 引用的闭包局部变量，须使用默认参数形式的 Depends。
     async def get_user_manager(
         user_db: SQLAlchemyUserDatabase[User, uuid.UUID] = Depends(get_user_db),  # noqa: B008
     ) -> AsyncIterator[UserManager]:
@@ -210,12 +206,10 @@ def create_sso_router(
                     inner_user_id=session.inner_user_id, authorization=jwt
                 )
             except PmsUnavailable as exc:
-                # PMS 启用即资料同步是登录链路的一部分：失败终止本次 callback。
                 raise HTTPException(status_code=502, detail=str(exc)) from exc
 
         async with user_manager_ctx() as manager:
             email = session.email or sso_placeholder_email(session.union_id)
-            # 仅新建账号时设置默认角色；同邮箱关联不得重置既有授权。
             is_new_account = False
             try:
                 await manager.get_by_oauth_account(oauth_name, session.union_id)
@@ -224,10 +218,7 @@ def create_sso_router(
                     await manager.get_by_email(email)
                 except UserNotExists:
                     is_new_account = True
-                    # 钥匙替这个人建过占位账号的话就认领它，之前替他提交的记录都在他名下。
                     await manager.adopt_placeholder(session.name, email)
-            # fastapi-users 的 oauth_callback 泛型 self 绑定过窄（UOAP 不变型），
-            # User 实际满足 OAuth 协议（持有 oauth_accounts relationship）。
             user = await manager.oauth_callback(  # pyright: ignore[reportAttributeAccessIssue]
                 oauth_name,
                 access_token=jwt,
@@ -246,7 +237,6 @@ def create_sso_router(
             job_title=profile.job_title if profile is not None else None,
             departments=profile.departments if profile is not None else None,
         )
-        # root 引导：配置指定的邮箱登录即确保持有 root 角色（唯一自动授权入口）。
         if root_email and user.email.lower() == root_email.lower():
             await users.ensure_role(user.id, ROOT_ROLE)
         await users.touch_last_login(user.id, datetime.now(UTC))

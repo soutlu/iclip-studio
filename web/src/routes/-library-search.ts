@@ -28,7 +28,6 @@ export const librarySearchSchema = z.object({
   userName: z.string().min(1).optional().catch(undefined),
   tags: z.array(z.uuid()).min(1).optional().catch(undefined),
   video: z.uuid().optional().catch(undefined),
-  /** 与 `video` 一起用：打开那张卡时先选中这一版。 */
   version: z.uuid().optional().catch(undefined),
   reference: z.uuid().optional().catch(undefined),
   film: z.uuid().optional().catch(undefined),

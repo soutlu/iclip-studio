@@ -1,5 +1,3 @@
-/** 对话页输入框：发送失败恢复输入，支持修改已发消息；附件入口由 uploads:write 权限控制。 */
-
 import { useEffect, useRef, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
@@ -13,16 +11,16 @@ type ComposerEditing = {
 }
 
 type ConversationComposerProps = {
-  /** 按编辑器顺序提交文字与附件；抛错时恢复输入内容。 */
   onSend: (parts: ComposerSubmission['parts']) => Promise<void>
   busy?: boolean
   awaitingApproval?: boolean
   contextTokens: number | undefined
   maxContextTokens: number | undefined
   onStop?: (() => void) | undefined
-  /** 修改态替换编辑器内容；退出时由调用方清除 editing。 */
   editing?: ComposerEditing | undefined
   onCancelEdit?: (() => void) | undefined
+  placeholder?: string | undefined
+  onSendError?: ((error: unknown) => void) | undefined
 }
 
 const submissionOf = (parts: readonly ComposerPart[]): ComposerSubmission => ({
@@ -39,7 +37,9 @@ export function ConversationComposer({
   maxContextTokens,
   onCancelEdit,
   onSend,
+  onSendError,
   onStop,
+  placeholder = '继续输入…',
 }: ConversationComposerProps) {
   const composerRef = useRef<ComposerHandle>(null)
   const [sending, setSending] = useState(false)
@@ -63,7 +63,8 @@ export function ConversationComposer({
       await onSend(submission.parts)
     } catch (error) {
       composerRef.current?.restore(submission)
-      toast.error(errorMessageOf(error, '发送失败'))
+      if (onSendError === undefined) toast.error(errorMessageOf(error, '发送失败'))
+      else onSendError(error)
     } finally {
       setSending(false)
     }
@@ -89,7 +90,7 @@ export function ConversationComposer({
         dense
         onStop={onStop}
         onSubmit={(submission) => void send(submission)}
-        placeholder={awaitingApproval ? '请先确认上方的步骤' : '继续输入…'}
+        placeholder={awaitingApproval ? '请先确认上方的步骤' : placeholder}
         ref={composerRef}
         sending={sending}
         trailing={

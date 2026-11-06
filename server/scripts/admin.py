@@ -1,17 +1,3 @@
-"""引导型管理 CLI：直连数据库，绕过 API 层。
-
-root 引导有两条路：SSO 场景配置 ROOT_EMAIL，非 SSO 场景用这里的 set-roles
-（密码注册默认 viewer、SSO 首登默认 editor，均无法自提权）。
-
-用法：
-    uv run --env-file ../.env python -m scripts.admin list-users
-    uv run --env-file ../.env python -m scripts.admin set-roles <username_or_email> root,editor
-    uv run --env-file ../.env python -m scripts.admin issue-key <username_or_email> <key名> <perm1,perm2>
-
-issue-key 默认随机生成明文；设置 API_KEY_TOKEN 则按它签发，用于沿用调用方
-已在用的串。
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -21,11 +7,11 @@ import sys
 import uuid
 from datetime import UTC, datetime
 
+from agent_runtime.errors import ValidationFailed
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.identity.infra_sql import ApiKeyRow, User
 from iclip.domains.identity.rbac import PERMISSIONS, ROLES
 from iclip.domains.identity.service import (

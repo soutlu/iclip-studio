@@ -306,35 +306,6 @@
   font-size: var(--text-body-sm);
 }
 
-.tag-admin__switch {
-  display: flex;
-  width: 36px;
-  height: 20px;
-  flex-shrink: 0;
-  padding: 3px;
-  border: 1px solid var(--color-outline);
-  border-radius: var(--radius-full);
-  cursor: pointer;
-}
-
-.tag-admin__switch > span {
-  width: 12px;
-  height: 12px;
-  border-radius: var(--radius-full);
-  background: var(--color-on-surface-variant);
-  transition: transform var(--dur-s) var(--ease);
-}
-
-.tag-admin__switch[aria-checked='true'] {
-  border-color: var(--color-inverse-surface);
-  background: var(--color-inverse-surface);
-}
-
-.tag-admin__switch[aria-checked='true'] > span {
-  transform: translateX(16px);
-  background: var(--color-inverse-on-surface);
-}
-
 .tag-admin__dialog-actions {
   display: flex;
   justify-content: flex-end;

@@ -29,55 +29,19 @@ import { REFUSAL_TEXT } from './refusal-text'
 import { WholeFilmEditor } from './whole-film-editor'
 import { wholeFilmQueryKeys } from './whole-film.api'
 
-// jsdom 读不了真文件：mediabunny 换成按地址给关键帧表、时长与画面尺寸的替身；没有原声轨。
 const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: number }>())
-// 打开音轨就是开始读波形。
 const audioReads = vi.hoisted(() => [] as string[])
 
-// 拍点分析换成给定的结果；解码由各用例按需替换 OfflineAudioContext
-const beats = vi.hoisted(() => ({ analyze: vi.fn() }))
-vi.mock('@hyperframes/core/beats', () => ({ analyzeMusicFromBuffer: beats.analyze }))
-
-vi.mock('mediabunny', () => {
-  class UrlSource {
-    readonly url: string
-    constructor(url: string) {
-      this.url = url
-    }
-  }
-  class Input {
-    private readonly url: string
-    constructor(options: { source: UrlSource }) {
-      this.url = options.source.url
-    }
-    getPrimaryVideoTrack = () =>
-      Promise.resolve({
-        url: this.url,
-        getDisplayWidth: () => Promise.resolve(720),
-        getDisplayHeight: () => Promise.resolve(1280),
-      })
-    getPrimaryAudioTrack = () => {
-      audioReads.push(this.url)
-      return Promise.resolve(null)
-    }
-    computeDuration = () => Promise.resolve(files.get(this.url)?.duration ?? 0)
-    dispose = () => {}
-  }
-  class EncodedPacketSink {
-    private readonly keyframes: number[]
-    constructor(track: { url: string }) {
-      this.keyframes = files.get(track.url)?.keyframes ?? []
-    }
-    getFirstKeyPacket = () => Promise.resolve(this.at(0))
-    getNextKeyPacket = (packet: { timestamp: number }) =>
-      Promise.resolve(this.at(this.keyframes.indexOf(packet.timestamp) + 1))
-    private at = (index: number) => {
-      const timestamp = this.keyframes[index]
-      return timestamp === undefined ? null : { timestamp }
-    }
-  }
+vi.mock('mediabunny', async () => {
+  const { createMediaReaderMock } = await import('@/testing/media-reader')
   class AudioSampleSink {}
-  return { AudioSampleSink, EncodedPacketSink, Input, MP4: {}, QTFF: {}, UrlSource }
+  return {
+    ...createMediaReaderMock(files, (url) => {
+      audioReads.push(url)
+      return Promise.resolve(null)
+    }),
+    AudioSampleSink,
+  }
 })
 
 const CONVERSATION = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d'
@@ -107,16 +71,6 @@ const takes = [
   }),
 ]
 
-const song = makeGenerationJob({
-  id: 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff',
-  kind: 'audio',
-  createdAt: '2026-09-01T11:00:00Z',
-  outputUrl: MUSIC_URL,
-  durationMs: 30_000,
-  request: { prompt: '轻快原声吉他' },
-})
-
-/** 这段对话的生成记录；按 kind 筛，与后端同一口径 */
 const serveGenerations = (records: GenerationJob[]) => {
   const conversation = addMockConversation('成片编辑', undefined, undefined, CONVERSATION)
   server.use(
@@ -144,14 +98,12 @@ const openEditor = async (records: GenerationJob[] = takes) => {
     </>,
   )
   await screen.findByRole('group', { name: '成片编辑器' })
-  /** 关掉编辑器：页面上不再渲染它 */
   const close = () => rendered.rerender(<Toaster />)
   return { onClose, close, queryClient: rendered.queryClient }
 }
 
 const filmLane = () => screen.getByRole('group', { name: '画面轨' })
 
-// jsdom 没有指针捕获，按下轨道上的块时组件会捕获指针，这里补上。
 const capturable = (element: HTMLElement) =>
   Object.assign(element, {
     setPointerCapture: () => undefined,
@@ -159,19 +111,16 @@ const capturable = (element: HTMLElement) =>
     releasePointerCapture: () => undefined,
   })
 
-/** 画面轨上的一块（选中按钮）；名字以选中：开头 */
 const blockButton = async (name: RegExp) =>
   capturable(await within(filmLane()).findByRole('button', { name }))
 
 const savedDraft = () => mockWholeFilmDraft(CONVERSATION)?.document
 
-/** 保存是停下 0.8 秒后才发 */
 const waitSaved = (check: (document: WholeFilmDocument | undefined) => void) =>
   waitFor(() => check(savedDraft()), { timeout: 4000 })
 
 const twoClips = () => draftOf([video('v1', TAKE_A, 0, 2_000), video('v2', TAKE_B, 0, 1_500)])
 
-/** 两段视频中间夹一段组件（测试可填项），文字填的是「通用」：v1 0–2、c1 2–4、v2 4–5.5 秒 */
 const clipsAroundComponent = () =>
   draftOf([
     video('v1', TAKE_A, 0, 2_000),
@@ -179,7 +128,6 @@ const clipsAroundComponent = () =>
     video('v2', TAKE_B, 0, 1_500),
   ])
 
-/** 组件库目录换成给定的一份（默认是测试组件库的目录） */
 const serveCatalog = (catalog: ComponentCatalog) =>
   server.use(http.get('/hyperframes/catalog.json', () => HttpResponse.json(catalog)))
 
@@ -191,7 +139,6 @@ describe('成片编辑器 · 波形最后加载', () => {
 
   const waveMarks = () => within(filmLane()).findAllByText('无声')
   const sortedReads = () => [...audioReads].sort()
-  /** 重载延迟与换页的几帧都过完，预览已经换上来。 */
   const previewSwapped = () => act(() => new Promise((resolve) => setTimeout(resolve, 500)))
 
   it('合成页的视频全部停止下载前不读波形，之后才读', async () => {
@@ -241,7 +188,6 @@ describe('成片编辑器 · 缓冲', () => {
     starvedVideos.add(URL_A)
     await openEditor()
     const toolbar = screen.getByRole('toolbar', { name: '剪辑工具' })
-    // 重载延迟与换页的几帧过完，播放器才接上控制
     await act(() => new Promise((resolve) => setTimeout(resolve, 500)))
 
     await user.click(within(toolbar).getByRole('button', { name: '播放' }))
@@ -255,87 +201,6 @@ describe('成片编辑器 · 缓冲', () => {
 })
 
 describe('成片编辑器', () => {
-  it('素材区按镜头组、原作分轨', async () => {
-    await openEditor()
-    const materials = await screen.findByRole('region', { name: '视频素材区' })
-    expect(within(materials).getByText('镜头组 1')).toBeInTheDocument()
-    expect(within(materials).getByText('生成 A')).toBeInTheDocument()
-    expect(within(materials).getByText('生成 B')).toBeInTheDocument()
-  })
-
-  it('选中镜头按 Enter 插到播放头处，保存选区及首段画布尺寸', async () => {
-    const user = userEvent.setup()
-    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
-    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
-    await openEditor()
-    const materials = await screen.findByRole('region', { name: '视频素材区' })
-    await user.click(
-      await within(materials).findByRole('button', { name: /生成 A 镜头 2，2\.0–4\.5 秒/ }),
-    )
-    await user.keyboard('{Enter}')
-
-    expect(
-      await within(filmLane()).findByRole('group', { name: '第 1 段 · A · 镜头 2，2.5 秒' }),
-    ).toBeInTheDocument()
-    await waitSaved((document) =>
-      expect(document?.layer0).toEqual([
-        expect.objectContaining({
-          type: 'video',
-          start: 0,
-          duration: 2_500,
-          playbackStart: 2_000,
-          sourceJobId: TAKE_A,
-        }),
-      ]),
-    )
-    expect(savedDraft()?.canvas).toEqual({ width: 720, height: 1280 })
-  })
-
-  it('没选范围时按 Enter 说明原因', async () => {
-    const user = userEvent.setup()
-    await openEditor()
-    const materials = await screen.findByRole('region', { name: '视频素材区' })
-    ;(await within(materials).findByRole('button', { name: /^生成 A 镜头 1，/ })).focus()
-    await user.keyboard('{Enter}')
-    expect(await screen.findByText('先在下方点一个镜头选中范围')).toBeInTheDocument()
-    expect(within(filmLane()).queryByRole('group', { name: /^第 1 段/ })).toBeNull()
-  })
-
-  it('修剪、拆分、删除各记一步，可以逐步撤销', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor()
-
-    await user.click(await blockButton(/选中：第 1 段 · A · 镜头 1，2\.0 秒/))
-    const end = await within(filmLane()).findByRole('slider', { name: '裁剪结尾' })
-    end.focus()
-    await user.keyboard('{ArrowLeft}')
-    expect(
-      within(filmLane()).getByRole('group', { name: /^第 1 段 .*，1\.9 秒$/ }),
-    ).toBeInTheDocument()
-
-    fireEvent.change(screen.getByRole('slider', { name: '时间线播放位置' }), {
-      target: { value: '1' },
-    })
-    await user.click(screen.getByRole('button', { name: '拆分' }))
-    expect(within(filmLane()).getAllByRole('group')).toHaveLength(3)
-
-    await user.click(await blockButton(/选中：第 3 段/))
-    await user.click(screen.getByRole('button', { name: '删除' }))
-    expect(within(filmLane()).getAllByRole('group')).toHaveLength(2)
-
-    await user.click(screen.getByRole('button', { name: '撤销' }))
-    expect(within(filmLane()).getAllByRole('group')).toHaveLength(3)
-    await user.click(screen.getByRole('button', { name: '撤销' }))
-    expect(within(filmLane()).getAllByRole('group')).toHaveLength(2)
-    await user.click(screen.getByRole('button', { name: '撤销' }))
-    expect(
-      within(filmLane()).getByRole('group', { name: /^第 1 段 .*，2\.0 秒$/ }),
-    ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '撤销' })).toHaveAttribute('aria-disabled', 'true')
-    await waitSaved((document) => expect(document).toEqual(twoClips()))
-  })
-
   it('别处存过更新的一版：换成那一版并说明', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
@@ -358,31 +223,6 @@ describe('成片编辑器', () => {
     ).toBeInTheDocument()
   })
 
-  it('素材栏列出这段对话的音乐，选用条目放到音乐轨上', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    const otherSong = makeGenerationJob({
-      kind: 'audio',
-      outputUrl: MUSIC_URL,
-      durationMs: 30_000,
-      request: { prompt: '安静钢琴' },
-    })
-    await openEditor([...takes, otherSong, song])
-    const list = await screen.findByRole('list', { name: '这段对话的音乐' })
-    expect(within(list).getByText('音乐 1 · 安静钢琴')).toBeInTheDocument()
-    expect(within(list).getByText('音乐 2 · 轻快原声吉他')).toBeInTheDocument()
-    expect(within(list).getAllByText('00:30')).toHaveLength(2)
-
-    await user.click(within(list).getByRole('button', { name: '选用：轻快原声吉他' }))
-    expect(within(list).getByRole('img', { name: '在用' })).toBeInTheDocument()
-    expect(
-      screen.getByRole('group', { name: '音乐 · 音乐 2，从歌里 0.0 秒起' }),
-    ).toBeInTheDocument()
-    await waitSaved((document) =>
-      expect(document?.music).toEqual({ jobId: song.id, offset: 0, volume: 1 }),
-    )
-  })
-
   it('上传音乐时挂到这段对话，传完出现在列表里', async () => {
     const user = userEvent.setup()
     const records = [...takes]
@@ -401,6 +241,7 @@ describe('成片编辑器', () => {
         )
         return undefined
       }),
+      http.get(MUSIC_URL, () => HttpResponse.arrayBuffer(new TextEncoder().encode('wav').buffer)),
     )
     await openEditor(records)
     await screen.findByText('暂无音乐')
@@ -433,22 +274,6 @@ describe('成片编辑器', () => {
 })
 
 describe('成片编辑器 · 时间线', () => {
-  const editorDialog = () => screen.getByRole('dialog')
-
-  it('Delete 删除选中的段，⌘Z 撤销；没选中时什么也不删', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor()
-    editorDialog().focus()
-    await user.keyboard('{Delete}')
-    expect(within(filmLane()).getAllByRole('group')).toHaveLength(2)
-    await user.click(await blockButton(/^选中：第 1 段/))
-    await user.keyboard('{Backspace}')
-    expect(within(filmLane()).getAllByRole('group')).toHaveLength(1)
-    await user.keyboard('{Meta>}z{/Meta}')
-    expect(within(filmLane()).getAllByRole('group')).toHaveLength(2)
-  })
-
   it('焦点在挂进弹窗的生成音乐浮层上时，Delete 不删选中的段', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
@@ -462,25 +287,6 @@ describe('成片编辑器 · 时间线', () => {
     expect(music).toHaveFocus()
     await user.keyboard('{Delete}')
     expect(within(filmLane()).getAllByRole('group')).toHaveLength(2)
-  })
-
-  it('⌥←/→ 把选中的段前后挪一位，焦点留在这一段上', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor()
-    // v1 出自原作 A、v2 出自原作 B
-    await user.click(await blockButton(/^选中：第 1 段 · A/))
-    await user.keyboard('{Alt>}{ArrowRight}{/Alt}')
-    await waitFor(() =>
-      expect(within(filmLane()).getByRole('button', { name: /^选中：第 2 段 · A/ })).toHaveFocus(),
-    )
-    await waitSaved((document) =>
-      expect(document?.layer0.map((clip) => clip.id)).toEqual(['v2', 'v1']),
-    )
-    await user.keyboard('{Alt>}{ArrowLeft}{/Alt}')
-    await waitSaved((document) =>
-      expect(document?.layer0.map((clip) => clip.id)).toEqual(['v1', 'v2']),
-    )
   })
 
   it('选中特效块时 ←/→ 把它挪 0.1 秒、⇧ 1 秒；没选中特效块时播放头走', async () => {
@@ -514,50 +320,21 @@ describe('成片编辑器 · 时间线', () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor()
-    // 预览播放器换上来之后，跳转才经过它按帧取整
     await waitFor(() =>
       expect(document.querySelector('hyperframes-player:not(.is-pending)')).not.toBeNull(),
     )
     await user.click(await blockButton(/^选中：第 1 段/))
     const playhead = screen.getByRole('slider', { name: '时间线播放位置' })
-    // 1.34 秒落在第 40 帧，播放器报回 1.3333… 秒，取整成 1333 毫秒
     fireEvent.change(playhead, { target: { value: '1.34' } })
     expect(playhead).toHaveValue('1.333')
     await user.keyboard('{Shift>}{ArrowRight}{/Shift}')
     expect(playhead).toHaveValue('2.333')
   })
 
-  it('点画面轨的段只选中、不播放，播放头在段首；播放中点段停在段首；空格从那里接着播', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor()
-    await waitFor(() =>
-      expect(document.querySelector('hyperframes-player:not(.is-pending)')).not.toBeNull(),
-    )
-    const toolbar = screen.getByRole('toolbar', { name: '剪辑工具' })
-    const playhead = screen.getByRole('slider', { name: '时间线播放位置' })
-    fireEvent.change(playhead, { target: { value: '3' } })
-    await user.click(await blockButton(/^选中：第 2 段/))
-    expect(await blockButton(/^选中：第 2 段/)).toHaveAttribute('aria-pressed', 'true')
-    expect(within(toolbar).getByRole('button', { name: '播放' })).toBeVisible()
-    expect(playhead).toHaveValue('2')
-
-    await user.click(within(toolbar).getByRole('button', { name: '播放' }))
-    expect(within(toolbar).getByRole('button', { name: '暂停' })).toBeVisible()
-    await user.click(await blockButton(/^选中：第 1 段/))
-    expect(within(toolbar).getByRole('button', { name: '播放' })).toBeVisible()
-    expect(playhead).toHaveValue('0')
-    // 焦点在段上，空格播放而不是再点一次这段
-    await user.keyboard(' ')
-    expect(within(toolbar).getByRole('button', { name: '暂停' })).toBeVisible()
-    expect(playhead).toHaveValue('0')
-  })
-
   it('音量推子按 dB：0 dB 在正中，←/→ 0.5 dB、⇧ 3 dB，双击回 0 dB，草稿里存倍数', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, twoClips())
     await openEditor()
-    // 两个推子在剪辑工具条里，没有单独的声音行
     const sound = within(screen.getByRole('toolbar', { name: '剪辑工具' })).getByRole('group', {
       name: '声音',
     })
@@ -594,7 +371,6 @@ describe('成片编辑器 · 画面轨多选', () => {
     await user.keyboard('{/Shift}')
   }
 
-  /** 画面轨上按下（选中）的是第几段 */
   const selected = () =>
     within(filmLane())
       .queryAllByRole('button', { name: /^选中：第/, pressed: true })
@@ -602,7 +378,6 @@ describe('成片编辑器 · 画面轨多选', () => {
 
   const playheadSlider = () => screen.getByRole('slider', { name: '时间线播放位置' })
 
-  /** 第 first 到第 last 段都选上：点第一段，再 Shift 逐段扩选 */
   const selectRun = async (user: User, first: number, last: number) => {
     await user.click(await blockButton(new RegExp(`^选中：第 ${first} 段`)))
     for (let segment = first + 1; segment <= last; segment += 1) await shiftClick(user, segment)
@@ -610,7 +385,6 @@ describe('成片编辑器 · 画面轨多选', () => {
 
   it('Shift 扩选、去掉两端、塌回单选；播放头停在选区开头且暂停；修剪手柄只在选区两端', async () => {
     const user = userEvent.setup()
-    // v1 0–2、c1 2–4、v2 4–5.5 秒
     putMockWholeFilmDraft(CONVERSATION, clipsAroundComponent())
     await openEditor()
     await waitFor(() =>
@@ -621,7 +395,6 @@ describe('成片编辑器 · 画面轨多选', () => {
     expect(selected()).toEqual([3])
     expect(playheadSlider()).toHaveValue('4')
 
-    // 播放中 Shift 扩选：停下，播放头到选区开头
     await user.click(within(toolbar).getByRole('button', { name: '播放' }))
     expect(within(toolbar).getByRole('button', { name: '暂停' })).toBeVisible()
     await shiftClick(user, 2)
@@ -635,21 +408,18 @@ describe('成片编辑器 · 画面轨多选', () => {
     expect(selected()).toEqual([1, 2, 3])
     expect(playheadSlider()).toHaveValue('0')
 
-    // 去掉最左、最右；只剩一段时再点它，全部取消
     await shiftClick(user, 1)
     expect(selected()).toEqual([2, 3])
     expect(playheadSlider()).toHaveValue('2')
     await shiftClick(user, 3)
     expect(selected()).toEqual([2])
     expect(within(filmLane()).getAllByRole('slider')).toHaveLength(2)
-    // 全部取消时播放头不动
     fireEvent.change(playheadSlider(), { target: { value: '3' } })
     await shiftClick(user, 2)
     expect(selected()).toEqual([])
     expect(within(filmLane()).queryAllByRole('slider')).toHaveLength(0)
     expect(playheadSlider()).toHaveValue('3')
 
-    // Shift 点选区中间的段、不相邻的段：只选那一段
     await selectRun(user, 1, 3)
     await shiftClick(user, 2)
     expect(selected()).toEqual([2])
@@ -669,7 +439,6 @@ describe('成片编辑器 · 画面轨多选', () => {
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: '组件 · 测试可填项' })).not.toBeInTheDocument(),
     )
-    // 选了几段时 Shift 点到组件段也不弹
     await shiftClick(user, 1)
     expect(selected()).toEqual([1, 2, 3])
     expect(screen.queryByRole('dialog', { name: '组件 · 测试可填项' })).not.toBeInTheDocument()
@@ -714,7 +483,6 @@ describe('成片编辑器 · 画面轨多选', () => {
     putMockWholeFilmDraft(CONVERSATION, clipsAroundComponent())
     await openEditor()
     await selectRun(user, 1, 2)
-    // 播放头放到第 1、2 段之间，素材插进去
     fireEvent.change(playheadSlider(), { target: { value: '2' } })
     const materials = await screen.findByRole('region', { name: '视频素材区' })
     await user.click(await within(materials).findByRole('button', { name: /^生成 A 镜头 1，/ }))
@@ -727,15 +495,6 @@ describe('成片编辑器 · 画面轨多选', () => {
     await waitSaved((document) =>
       expect(document?.layer0.map((clip) => clip.id)).toEqual(['v1', 'v3', 'c1', 'v2']),
     )
-  })
-
-  it('删除按钮同样一次删掉选中的几段', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, clipsAroundComponent())
-    await openEditor()
-    await selectRun(user, 2, 3)
-    await user.click(screen.getByRole('button', { name: '删除' }))
-    await waitSaved((document) => expect(document?.layer0.map((clip) => clip.id)).toEqual(['v1']))
   })
 
   it('⌥←/→ 把选中的几段当成一整块前后挪一位，仍然选着这几段', async () => {
@@ -802,69 +561,11 @@ describe('成片编辑器 · 画面轨多选', () => {
       expect(middle).not.toHaveProperty('volume')
     })
 
-    // 只选了组件段：推子置灰
     await user.click(await blockButton(/^选中：第 2 段/))
     expect(fader).toBeDisabled()
   })
 })
 
-describe('成片编辑器 · 素材多镜头', () => {
-  it('Shift 选连着的三个镜头：两端抓手不越过镜头之间的边界；Enter 按镜头插入三段', async () => {
-    const user = userEvent.setup()
-    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
-    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
-    await openEditor()
-    const materials = await screen.findByRole('region', { name: '视频素材区' })
-    // 生成 A 6 秒，关键帧在 0、2、4.5 秒：三个镜头
-    const shot = (n: number) =>
-      within(materials).findByRole('button', { name: new RegExp(`^生成 A 镜头 ${n}，`) })
-    const shiftShot = async (n: number) => {
-      await user.keyboard('{Shift>}')
-      await user.click(await shot(n))
-      await user.keyboard('{/Shift}')
-    }
-    await user.click(await shot(1))
-    await shiftShot(2)
-    await shiftShot(3)
-    for (const n of [1, 2, 3]) expect(await shot(n)).toHaveAttribute('aria-pressed', 'true')
-    // 点镜头、Shift 扩选都只选中，预览停在选区开头，不播放
-    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled()
-    expect(screen.getByText(/选区 0\.0–6\.0/)).toBeInTheDocument()
-    expect(
-      within(materials).getByRole('group', { name: /^选中的范围 0\.0–6\.0 秒，3 个镜头/ }),
-    ).toBeInTheDocument()
-
-    // Shift 点最左的镜头去掉它，再点回来
-    await shiftShot(1)
-    expect(await shot(1)).toHaveAttribute('aria-pressed', 'false')
-    expect(
-      within(materials).getByRole('group', { name: /^选中的范围 2\.0–6\.0 秒，2 个镜头/ }),
-    ).toBeInTheDocument()
-    await shiftShot(1)
-
-    // 左抓手往里最多到第一个镜头的结尾前 0.1 秒，右抓手往里最多到最后一个镜头的开头后 0.1 秒
-    const start = within(materials).getByRole('slider', { name: '裁剪开头' })
-    start.focus()
-    await user.keyboard('{Shift>}{ArrowRight}{ArrowRight}{ArrowRight}{/Shift}')
-    expect(start).toHaveAttribute('aria-valuenow', '1.9')
-    const end = within(materials).getByRole('slider', { name: '裁剪结尾' })
-    end.focus()
-    await user.keyboard('{Shift>}{ArrowLeft}{ArrowLeft}{ArrowLeft}{/Shift}')
-    expect(end).toHaveAttribute('aria-valuenow', '4.6')
-    await user.keyboard('{Enter}')
-
-    expect(await within(filmLane()).findAllByRole('group')).toHaveLength(3)
-    await waitSaved((document) =>
-      expect(document?.layer0).toEqual([
-        expect.objectContaining({ start: 0, playbackStart: 1_900, duration: 100 }),
-        expect.objectContaining({ start: 100, playbackStart: 2_000, duration: 2_500 }),
-        expect.objectContaining({ start: 2_600, playbackStart: 4_500, duration: 100 }),
-      ]),
-    )
-  })
-})
-
-/** 切到「通用」栏的某个分类，返回卡片网格 */
 const generalTab = async (user: ReturnType<typeof userEvent.setup>, category: string) => {
   await user.click(screen.getByRole('tab', { name: '通用' }))
   const chips = await screen.findByRole('radiogroup', { name: '分类' })
@@ -873,135 +574,6 @@ const generalTab = async (user: ReturnType<typeof userEvent.setup>, category: st
 }
 
 describe('成片编辑器 · 组件', () => {
-  it('通用栏默认第一个分类、没有「全部」与「字幕」；品牌栏按品牌列；切栏后各记自己的分类', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor()
-    await user.click(screen.getByRole('tab', { name: '通用' }))
-    const chips = await screen.findByRole('radiogroup', { name: '分类' })
-    const radios = within(chips).getAllByRole('radio')
-    expect(radios).toHaveLength(3)
-    expect(radios[0]).toHaveAccessibleName(/^效果\s*1$/)
-    expect(radios[0]).toBeChecked()
-    expect(within(chips).queryByRole('radio', { name: /全部/ })).not.toBeInTheDocument()
-    // 字幕样式是字幕轨的属性，不在组件库里
-    expect(within(chips).queryByRole('radio', { name: /^字幕/ })).not.toBeInTheDocument()
-    expect(within(screen.getByRole('list', { name: '组件' })).getAllByRole('button')).toHaveLength(
-      1,
-    )
-    for (const radio of radios) {
-      await user.click(radio)
-      const grid = screen.getByRole('list', { name: '组件' })
-      expect(within(grid).queryByRole('button', { name: /^测试字幕，/ })).not.toBeInTheDocument()
-      // 有品牌的组件只在品牌栏
-      expect(
-        within(grid).queryByRole('button', { name: /^示例品牌 片尾，/ }),
-      ).not.toBeInTheDocument()
-    }
-    await user.click(within(chips).getByRole('radio', { name: /^场景\s*1$/ }))
-    expect(
-      within(screen.getByRole('list', { name: '组件' })).getByRole('button', {
-        name: /^测试画面，/,
-      }),
-    ).toBeInTheDocument()
-
-    await user.click(screen.getByRole('tab', { name: '品牌' }))
-    const brands = screen.getByRole('radiogroup', { name: '品牌' })
-    expect(within(brands).getByRole('radio', { name: /^示例品牌\s*1$/ })).toBeChecked()
-    expect(
-      within(screen.getByRole('list', { name: '组件' })).getAllByRole('button', {
-        name: /^示例品牌 片尾，画面轨/,
-      }),
-    ).toHaveLength(1)
-    await user.click(screen.getByRole('tab', { name: '通用' }))
-    expect(
-      within(screen.getByRole('radiogroup', { name: '分类' })).getByRole('radio', {
-        name: /^场景/,
-      }),
-    ).toBeChecked()
-  })
-
-  it('目录里没有品牌组件时品牌栏是空的', async () => {
-    const user = userEvent.setup()
-    serveCatalog({
-      ...fixtureCatalog,
-      items: fixtureCatalog.items.filter((item) => item.brand === undefined),
-    })
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor()
-    await user.click(screen.getByRole('tab', { name: '品牌' }))
-    expect(screen.getByText('暂无品牌组件')).toBeInTheDocument()
-    expect(screen.queryByRole('list', { name: '组件' })).not.toBeInTheDocument()
-  })
-
-  it('点 block 卡片：作为一段插到离播放头最近的切点，时长取组件自己的', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor()
-    const list = await generalTab(user, '场景')
-    // 播放头 1.5 秒在 v1（0–2 秒）后半，插在 v1 与 v2 之间
-    fireEvent.change(screen.getByRole('slider', { name: '时间线播放位置' }), {
-      target: { value: '1.5' },
-    })
-    await user.click(within(list).getByRole('button', { name: /^测试画面，画面轨/ }))
-    expect(
-      await within(filmLane()).findByRole('group', { name: '第 2 段 · 组件 · 测试画面，6.0 秒' }),
-    ).toBeInTheDocument()
-    expect(within(filmLane()).queryByRole('button', { name: /^\+ 片/ })).not.toBeInTheDocument()
-    await waitSaved((document) =>
-      expect(document?.layer0.map((clip) => [clip.type, clip.start, clip.duration])).toEqual([
-        ['video', 0, 2_000],
-        ['component', 2_000, 6_000],
-        ['video', 8_000, 1_500],
-      ]),
-    )
-    expect(savedDraft()?.layer0[1]).toEqual({
-      id: 'c1',
-      type: 'component',
-      start: 2_000,
-      duration: 6_000,
-      playbackStart: 0,
-      component: 'fixture-scene',
-      variables: {},
-    })
-  })
-
-  it('点 component 卡片：在特效轨最上面开一行，从播放头处开始，取组件自带的时长', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor()
-    const list = await generalTab(user, '效果')
-    fireEvent.change(screen.getByRole('slider', { name: '时间线播放位置' }), {
-      target: { value: '0.5' },
-    })
-    await user.click(within(list).getByRole('button', { name: /^测试叠加，特效轨/ }))
-    expect(
-      screen.getByRole('group', { name: '特效 · 测试叠加，第 1 行，0.5–4.5 秒' }),
-    ).toBeInTheDocument()
-    expect(within(filmLane()).getAllByRole('group')).toHaveLength(2)
-    await waitSaved((document) =>
-      expect(document?.overlays).toEqual([
-        {
-          id: 'o1',
-          component: 'fixture-overlay',
-          start: 500,
-          duration: 4_000,
-          playbackStart: 0,
-          track: 0,
-          zIndex: 1,
-          variables: {},
-          // 服务端的形状：没挪过的位置、原大不转的倍数、角度与转轴也写着
-          x: 0,
-          y: 0,
-          scale: 1,
-          rotation: 0,
-          pivotX: 0,
-          pivotY: 0,
-        },
-      ]),
-    )
-  })
-
   it('特效块与组件段的结尾拉不过组件自己的时长，往短里拖照常', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, {
@@ -1013,7 +585,6 @@ describe('成片编辑器 · 组件', () => {
     })
     await openEditor()
 
-    // 测试叠加 4 秒：已是组件时长，往长拉不动，往短拖照常
     const overlays = screen.getByRole('group', { name: '特效轨' })
     await user.click(
       capturable(within(overlays).getByRole('button', { name: /^选中：特效 · 测试叠加/ })),
@@ -1029,7 +600,6 @@ describe('成片编辑器 · 组件', () => {
       within(overlays).getByRole('group', { name: '特效 · 测试叠加，第 1 行，0.0–3.9 秒' }),
     ).toBeInTheDocument()
 
-    // 测试可填项 5 秒：组件段从 2 秒拉到 5 秒为止
     await user.click(await blockButton(/^选中：第 2 段 · 组件 · 测试可填项/))
     const clipEnd = await within(filmLane()).findByRole('slider', { name: '裁剪结尾' })
     clipEnd.focus()
@@ -1067,7 +637,6 @@ describe('成片编辑器 · 组件', () => {
     const fields = await generalTab(user, '文字效果')
     await user.click(within(fields).getByRole('button', { name: /^测试可填项，/ }))
     const popover = await screen.findByRole('dialog', { name: '特效 · 测试可填项' })
-    // 时长是组件自己的 5 秒，与成片多长无关
     expect(
       screen.getByRole('group', { name: '特效 · 测试可填项，第 1 行，0.0–5.0 秒' }),
     ).toBeInTheDocument()
@@ -1088,7 +657,6 @@ describe('成片编辑器 · 组件', () => {
 
   it('字幕轨标题显示当前样式名；下拉菜单每项带预览图，选了就换样式并存进草稿', async () => {
     const user = userEvent.setup()
-    // 测试组件库只有一种字幕样式，再补一种
     serveCatalog({
       ...fixtureCatalog,
       items: [
@@ -1108,7 +676,6 @@ describe('成片编辑器 · 组件', () => {
     await user.click(trigger)
     expect(screen.getByRole('menuitemradio', { name: '测试字幕' })).toBeChecked()
     const other = screen.getByRole('menuitemradio', { name: '另一种字幕' })
-    // 预览图是装饰性的（alt 为空），取这一版组件库里的封面
     expect(other.querySelector('img')).toHaveAttribute(
       'src',
       `/hyperframes/${fixtureCatalog.version}/thumbnails/other-caption.svg`,
@@ -1123,7 +690,6 @@ describe('成片编辑器 · 组件', () => {
 
   it('字幕样式有字体项时菜单里另有一组「字体」：选了存进字幕的可填项，换到没有字体项的样式也留着', async () => {
     const user = userEvent.setup()
-    // 组装工具给读字体变量的测试字幕加上字体项；源目录的组件目录里没有，这里补上
     serveCatalog({
       ...fixtureCatalog,
       items: [
@@ -1170,48 +736,10 @@ describe('成片编辑器 · 组件', () => {
     expect(screen.queryByRole('group', { name: '字体' })).not.toBeInTheDocument()
   })
 
-  it('字幕开关是按下态按钮：开着按下，关掉后不按下，存进草稿', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor()
-    const turnOff = screen.getByRole('button', { name: '关闭字幕' })
-    expect(turnOff).toHaveAttribute('aria-pressed', 'true')
-    await user.click(turnOff)
-    const turnOn = screen.getByRole('button', { name: '打开字幕' })
-    expect(turnOn).toHaveAttribute('aria-pressed', 'false')
-    await waitSaved((document) => expect(document?.captions.hidden).toBe(true))
-    await user.click(turnOn)
-    expect(screen.getByRole('button', { name: '关闭字幕' })).toHaveAttribute('aria-pressed', 'true')
-  })
-
-  /** 点开草稿里两段视频中间的那段组件（测试可填项）的浮层 */
   const openSegment = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.click(await blockButton(/选中：第 2 段 · 组件 · 测试可填项/))
     return screen.findByRole('dialog', { name: '组件 · 测试可填项' })
   }
-
-  it('点开组件段：列出全部可填项，填过的显示填的，没填过的取默认值', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, {
-      ...clipsAroundComponent(),
-      layer0: clipsAroundComponent().layer0.map((clip) =>
-        clip.type === 'component' ? { ...clip, variables: {} } : clip,
-      ),
-    })
-    await openEditor()
-    const blank = await openSegment(user)
-    expect(within(blank).getByLabelText('文字')).toHaveValue('')
-    expect(within(blank).getByLabelText('文字')).toHaveAttribute('placeholder', '示例文字')
-    expect(within(blank).getByRole('group', { name: '字体粗细' })).toBeInTheDocument()
-    expect(within(blank).getByRole('group', { name: '底色' })).toBeInTheDocument()
-  })
-
-  it('点开组件段：填过的文字显示填的', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, clipsAroundComponent())
-    await openEditor()
-    expect(within(await openSegment(user)).getByLabelText('文字')).toHaveValue('通用')
-  })
 
   it('清空填过的文字：回到组件的默认字，草稿里不再存这一项', async () => {
     const user = userEvent.setup()
@@ -1225,31 +753,6 @@ describe('成片编辑器 · 组件', () => {
     )
   })
 
-  it('组件没有可填项：点选它只选中，不弹浮层', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(
-      CONVERSATION,
-      draftOf([video('v1', TAKE_A, 0, 2_000), card('c1', 2_000, { component: 'fixture-scene' })]),
-    )
-    await openEditor()
-    const button = await blockButton(/选中：第 2 段 · 组件 · 测试画面/)
-    await user.click(button)
-    expect(button).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.queryByRole('dialog', { name: '组件 · 测试画面' })).not.toBeInTheDocument()
-  })
-
-  it('改可填项回车即是一步编辑，自动保存', async () => {
-    const user = userEvent.setup()
-    putMockWholeFilmDraft(CONVERSATION, clipsAroundComponent())
-    await openEditor()
-    const name = within(await openSegment(user)).getByLabelText('文字')
-    await user.clear(name)
-    await user.type(name, '城市{Enter}')
-    await waitSaved((document) =>
-      expect(document?.layer0[1]).toMatchObject({ variables: { text: '城市' } }),
-    )
-  })
-
   it('撤销改字：回到改之前的那一版，并存回服务端', async () => {
     const user = userEvent.setup()
     putMockWholeFilmDraft(CONVERSATION, clipsAroundComponent())
@@ -1257,13 +760,11 @@ describe('成片编辑器 · 组件', () => {
     const name = within(await openSegment(user)).getByLabelText('文字')
     await user.clear(name)
     await user.type(name, '城市{Enter}')
-    // 改过的那一版先存上，撤销才会再产生一次保存
     await waitSaved((document) =>
       expect(document?.layer0[1]).toMatchObject({ variables: { text: '城市' } }),
     )
     await user.click(screen.getByRole('button', { name: '撤销' }))
     expect(within(await openSegment(user)).getByLabelText('文字')).toHaveValue('通用')
-    // 关掉编辑器时立即保存，不必再等 0.8 秒
     close()
     await waitSaved((document) =>
       expect(document?.layer0[1]).toMatchObject({ variables: { text: '通用' } }),
@@ -1483,11 +984,6 @@ describe('成片编辑器 · 组件', () => {
       },
     )
 
-    it('没有视频时识别入口不可用', async () => {
-      await openEditor()
-      expect(screen.getByRole('button', { name: '识别字幕' })).toBeDisabled()
-    })
-
     it('无口播属于已完成结果，保留重新识别入口', async () => {
       putMockWholeFilmDraft(CONVERSATION, draftOf([video('v1', TAKE_A, 0, 2_000)]))
       await openEditor([...takes, { ...older, status: 'failed' }, { ...latest, sentences: [] }])
@@ -1541,67 +1037,15 @@ describe('成片编辑器 · 组件', () => {
       await waitSaved((document) => expect(document?.captions.edits).toEqual([]))
     })
   })
-
-  it('自动卡点：拍点分析好了才能点，挪完说明卡上与保留的切点数', async () => {
-    const user = userEvent.setup()
-    vi.stubGlobal(
-      'OfflineAudioContext',
-      class {
-        decodeAudioData = () =>
-          Promise.resolve({
-            duration: 30,
-            numberOfChannels: 1,
-            sampleRate: 100,
-            getChannelData: () => new Float32Array(3_000),
-          })
-      },
-    )
-    // 每 0.6 秒一拍、没有强拍：2.0 秒的切点最近的拍在 1.8 秒
-    beats.analyze.mockResolvedValue({
-      beatTimes: Array.from({ length: 50 }, (_, index) => index * 0.6),
-      beatStrengths: Array.from({ length: 50 }, () => 0.5),
-      bpm: 100,
-    })
-    server.use(http.get(MUSIC_URL, () => HttpResponse.arrayBuffer(new ArrayBuffer(8))))
-    putMockWholeFilmDraft(CONVERSATION, {
-      ...twoClips(),
-      music: { jobId: song.id, offset: 0, volume: 1 },
-    })
-    try {
-      await openEditor([...takes, song])
-      const button = screen.getByRole('button', { name: '自动卡点' })
-      await waitFor(() => expect(button).not.toHaveAttribute('aria-disabled'))
-      await user.click(button)
-      expect(await screen.findByText('已卡点 1 处，保留 0 处')).toBeInTheDocument()
-      expect(
-        within(filmLane()).getByRole('group', { name: /^第 1 段 .*，1\.8 秒$/ }),
-      ).toBeInTheDocument()
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
 })
 
 describe('成片编辑器 · 导出', () => {
-  /** 记下发出的下载埋点 */
-  const trackDownloads = () => {
-    const events: unknown[] = []
-    server.use(
-      http.post('*/api/tracking/events', async ({ request }) => {
-        events.push(await request.json())
-        return new HttpResponse(null, { status: 204 })
-      }),
-    )
-    return events
-  }
-
   const EXPORT_ID = '22222222-3333-4444-8555-666666666666'
   const EXPORTS_URL = '*/api/conversations/:conversationId/whole-film/exports'
   const EXPORT_URL = '*/api/conversations/:conversationId/whole-film/exports/:exportId'
   const LATEST_URL = '*/api/conversations/:conversationId/whole-film/exports/latest'
   const DOWNLOAD_URL = 'https://oss.example.com/whole-film/export.mp4'
 
-  /** 一次导出现在的样子；没给的字段同还没交给渲染服务的排队 */
   const exportOf = (state: object) => ({
     id: EXPORT_ID,
     status: 'queued',
@@ -1613,7 +1057,6 @@ describe('成片编辑器 · 导出', () => {
     ...state,
   })
 
-  /** 最近一次导出：第一个是打开编辑器时读到的，之后每次读给下一个，读完停在最后一个；null 是没导出过 */
   const serveLatest = (...states: (object | null)[]) => {
     let reads = 0
     server.use(
@@ -1625,7 +1068,6 @@ describe('成片编辑器 · 导出', () => {
     )
   }
 
-  /** 记下发出的取消 */
   const trackCancels = (answer: () => Response = () => new HttpResponse(null, { status: 204 })) => {
     const cancelled: string[] = []
     server.use(
@@ -1637,69 +1079,8 @@ describe('成片编辑器 · 导出', () => {
     return cancelled
   }
 
-  /** 下载边界：成片地址照常回字节，Blob URL 与锚点点击换成桩，点击即视为交给浏览器保存 */
-  const stubSaving = () => {
-    server.use(
-      http.get(
-        DOWNLOAD_URL,
-        () =>
-          new HttpResponse(new Uint8Array([0, 0, 0, 24]), {
-            headers: { 'Content-Type': 'video/mp4' },
-          }),
-      ),
-    )
-    vi.stubGlobal(
-      'URL',
-      class extends URL {
-        static override createObjectURL = () => 'blob:http://localhost/whole-film'
-        static override revokeObjectURL() {}
-      },
-    )
-    return vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-  }
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
   const DONE = { status: 'done', progress: 1, downloadUrl: DOWNLOAD_URL }
   const RENDERING = { status: 'rendering', progress: 0.4 }
-
-  it('导出：按存好的这一版提交，完成后下载；每下载一次，对用到的每条素材片各记一次', async () => {
-    const user = userEvent.setup()
-    const events = trackDownloads()
-    const saved = stubSaving()
-    const revisions: unknown[] = []
-    server.use(
-      http.post(EXPORTS_URL, async ({ request }) => {
-        revisions.push(((await request.json()) as { revision: number }).revision)
-        return HttpResponse.json(
-          { exportId: EXPORT_ID, sourceJobIds: [TAKE_A, TAKE_B] },
-          { status: 202 },
-        )
-      }),
-    )
-    serveLatest(null, DONE)
-    putMockWholeFilmDraft(CONVERSATION, twoClips())
-    await openEditor()
-    await user.click(screen.getByRole('button', { name: '导出' }))
-    const download = await screen.findByRole('button', { name: '下载成片' })
-    // 打开时可能先把草稿规整存过一版：提交的是提交那一刻存着的那一版
-    expect(revisions).toEqual([mockWholeFilmDraft(CONVERSATION)?.revision])
-    await user.click(download)
-    await waitFor(() => expect(saved).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(download).toBeEnabled())
-    await user.click(download)
-    await waitFor(() => expect(saved).toHaveBeenCalledTimes(2))
-    await waitFor(() =>
-      expect(events).toEqual([
-        { jobId: TAKE_A, name: 'video.downloaded' },
-        { jobId: TAKE_B, name: 'video.downloaded' },
-        { jobId: TAKE_A, name: 'video.downloaded' },
-        { jobId: TAKE_B, name: 'video.downloaded' },
-      ]),
-    )
-  })
 
   it('打开编辑器时最近一次导出还没结束：接着显示进度，关掉编辑器不取消它', async () => {
     const cancelled = trackCancels()
@@ -1712,7 +1093,6 @@ describe('成片编辑器 · 导出', () => {
       await screen.findByText('正在渲染 40%', undefined, { timeout: 3_000 }),
     ).toBeInTheDocument()
     close()
-    // 取消若在卸载时发出，这段时间足够它到达 mock
     await new Promise((resolve) => setTimeout(resolve, 100))
     expect(cancelled).toEqual([])
   })

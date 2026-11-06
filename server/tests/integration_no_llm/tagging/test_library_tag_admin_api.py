@@ -1,10 +1,3 @@
-"""标签管理：``POST /library-tags``、``PATCH /library-tags/{id}``、``DELETE /library-tags/{id}``。
-
-只有 ``library_tags:manage`` 能改；名称、层级、重名、AI 打标与取值上限不合格都是 422，同上级撞唯一约束也是；
-``position`` 把同级重新编成 0..n-1；删掉的标签连同下级从条目上去掉，条数跟着变。
-
-预置的树各用例共用：这里只在自己加的「测试」维度里动，用完删掉。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -14,11 +7,11 @@ from typing import Any
 
 import httpx
 import pytest
+from agent_runtime.errors import ValidationFailed
 from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.tagging.infra_sql import SqlTagStore
 from iclip.domains.tagging.models import AI_VALUE_LIMIT
 from iclip.domains.tagging.schemas import LibraryTagCreateIn
@@ -32,8 +25,6 @@ PREFIX = "测试"
 
 @pytest.fixture
 async def scratch(engine: AsyncEngine) -> AsyncGenerator[None]:
-    """用例结束时删掉名字以「测试」开头的维度，连同下级与条目上的这些标签。"""
-
     yield
     async with engine.begin() as conn:
         await conn.execute(
@@ -63,8 +54,6 @@ async def dimension(client: httpx.AsyncClient, name: str) -> dict[str, Any]:
 
 
 async def plant_values(engine: AsyncEngine, parent: str, count: int) -> None:
-    """直接往表里塞 ``count`` 个取值，造 AI 取值上限的场面。"""
-
     async with engine.begin() as conn:
         await conn.execute(
             text(
@@ -167,8 +156,6 @@ async def test_governor_adds_three_levels_of_values_in_order(
 async def test_deep_values_can_be_assigned_filtered_counted_and_deleted(
     client: httpx.AsyncClient, migrated_pg: str, engine: AsyncEngine
 ) -> None:
-    """末级可人工补标；各级筛选包含后代，计数去重，删中间节点会级联清理末级关联。"""
-
     await login_as_governor(client, migrated_pg)
     made = await create(client, name=f"{PREFIX}场景", autoFill="ai")
     city = await create(client, parentId=made["id"], name="城市")
@@ -351,8 +338,6 @@ async def entry_tags(engine: AsyncEngine, entry_id: uuid.UUID) -> set[uuid.UUID]
 async def test_a_same_parent_name_clash_at_the_table_is_422_not_500(
     client: httpx.AsyncClient, migrated_pg: str, engine: AsyncEngine
 ) -> None:
-    """服务层查过重名，唯一约束只在有人绕过写锁时才撞上；撞上了同样是给人看的 422。"""
-
     await login_as_governor(client, migrated_pg)
     made = await create(client, name=f"{PREFIX}渠道")
     await create(client, parentId=made["id"], name="AMZ")
@@ -376,8 +361,6 @@ async def test_a_same_parent_name_clash_at_the_table_is_422_not_500(
 async def test_a_concurrent_add_waits_and_then_sees_the_other_name(
     client: httpx.AsyncClient, migrated_pg: str, engine: AsyncEngine
 ) -> None:
-    """同一维度里两处同时加同名：表上的唯一约束只管同一上级，靠写锁让后到的等先到的提交再读树。"""
-
     await login_as_governor(client, migrated_pg)
     made = await create(client, name=f"{PREFIX}结构")
     value = await create(client, parentId=made["id"], name="大类")
@@ -387,7 +370,6 @@ async def test_a_concurrent_add_waits_and_then_sees_the_other_name(
         second = asyncio.create_task(
             service.create(LibraryTagCreateIn(parent_id=uuid.UUID(value["id"]), name="撞名"))
         )
-        # 让后到的那一个先跑到等锁（没有锁就是已经读完树）。
         await asyncio.sleep(0.3)
         assert not second.done()
         await first.insert(

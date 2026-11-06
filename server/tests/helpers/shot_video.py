@@ -1,20 +1,26 @@
-"""镜头素材能力的内存替身：生成、对象存储和视频解析。"""
-
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import get_args
 
-from iclip.capabilities.shot_video.ports import (
+import httpx
+from agent_runtime.file_store.store import FileSpace
+from iclip_video.shot_video.capability import GenerationPolicy, ShotVideo
+from iclip_video.shot_video.generation import IMAGE_MODEL
+from iclip_video.shot_video.ports import (
     ImageChannel,
+    ImageGenerations,
     ImageJob,
     ImageRequest,
     InvalidImageRequest,
 )
+
+from iclip.app.shot_media import FrameBoardsAdapter, GridCutsAdapter
 from iclip.domains.generation.schemas import IMAGE_ASPECT_RATIOS, IMAGE_RESOLUTIONS
-from iclip.domains.identity.public import Principal
+from iclip.platform.media.codec import MediaCodec
+from tests.helpers.fetch_url import all_own
 
 _ASPECT_RATIOS: frozenset[str] = frozenset(get_args(IMAGE_ASPECT_RATIOS))
 _RESOLUTIONS: frozenset[str] = frozenset(get_args(IMAGE_RESOLUTIONS))
@@ -22,8 +28,6 @@ _RESOLUTIONS: frozenset[str] = frozenset(get_args(IMAGE_RESOLUTIONS))
 
 @dataclass(frozen=True, slots=True)
 class Outcome:
-    """预设的生成结果。"""
-
     status: str = "completed"
     output_url: str | None = "https://cdn.test/out.png"
     error_code: str | None = None
@@ -32,11 +36,6 @@ class Outcome:
 
 @dataclass
 class FakeGenerations:
-    """按预设顺序返回结果，耗尽后重复最后一条。
-
-    submit 始终返回 pending，get 才返回结果，以覆盖工具的轮询逻辑。
-    """
-
     outcomes: list[Outcome] = field(default_factory=lambda: [Outcome()])
     submitted: list[ImageRequest] = field(default_factory=list[ImageRequest])
     job_ids: list[uuid.UUID] = field(default_factory=list[uuid.UUID])
@@ -44,15 +43,9 @@ class FakeGenerations:
     jobs: dict[uuid.UUID, tuple[ImageChannel, Outcome]] = field(
         default_factory=dict[uuid.UUID, tuple[ImageChannel, Outcome]]
     )
-    cuts: list[tuple[uuid.UUID, tuple[str, ...]]] = field(
-        default_factory=list[tuple[uuid.UUID, tuple[str, ...]]]
-    )
-    """记过的切图：(宫格任务号, 各格地址)。"""
-    cut_error: Exception | None = None
-    """设了就在记切图时抛它，模拟落库失败。"""
 
-    async def submit(self, principal: Principal, request: ImageRequest) -> ImageJob:
-        _ = principal
+    async def submit(self, user_id: uuid.UUID, request: ImageRequest) -> ImageJob:
+        _ = user_id
         if request.aspect_ratio not in _ASPECT_RATIOS:
             raise InvalidImageRequest(f"aspect_ratio: 不是可选的画幅 {request.aspect_ratio!r}")
         if request.resolution not in _RESOLUTIONS:
@@ -65,8 +58,8 @@ class FakeGenerations:
         self.jobs[job_id] = (request.channel, outcome)
         return ImageJob(job_id=job_id, status="pending", channel=request.channel)
 
-    async def get(self, principal: Principal, job_id: uuid.UUID) -> ImageJob:
-        _ = principal
+    async def get(self, user_id: uuid.UUID, job_id: uuid.UUID) -> ImageJob:
+        _ = user_id
         self.polls += 1
         channel, outcome = self.jobs[job_id]
         return ImageJob(
@@ -78,22 +71,28 @@ class FakeGenerations:
             error_message=outcome.error_message,
         )
 
-    async def record_cuts(
-        self, principal: Principal, grid_job_id: uuid.UUID, urls: Sequence[str]
-    ) -> None:
-        _ = principal
-        if self.cut_error is not None:
-            raise self.cut_error
-        self.cuts.append((grid_job_id, tuple(urls)))
-
     def channels(self) -> list[str]:
         return [request.channel for request in self.submitted]
 
 
 @dataclass
-class FakeObjects:
-    """记录对象 key 并返回固定格式的 URL；设置 error 后写入抛出该异常。"""
+class FakeCutRecords:
+    cuts: list[tuple[uuid.UUID, tuple[str, ...]]] = field(
+        default_factory=list[tuple[uuid.UUID, tuple[str, ...]]]
+    )
+    error: Exception | None = None
 
+    async def record_cuts(
+        self, user_id: uuid.UUID, grid_job_id: uuid.UUID, urls: Sequence[str]
+    ) -> None:
+        _ = user_id
+        if self.error is not None:
+            raise self.error
+        self.cuts.append((grid_job_id, tuple(urls)))
+
+
+@dataclass
+class FakeObjects:
     written: dict[str, bytes] = field(default_factory=dict[str, bytes])
     error: Exception | None = None
 
@@ -110,8 +109,6 @@ class FakeObjects:
 
 @dataclass
 class FakeUnderstanding:
-    """返回预设文档或抛出预设异常。"""
-
     document: str = "## 4、逐镜拉片表\n**[00:00.000-00:03.800]** 中景……"
     error: Exception | None = None
     calls: list[str] = field(default_factory=list[str])
@@ -123,4 +120,32 @@ class FakeUnderstanding:
         return self.document
 
 
-__all__ = ["FakeGenerations", "FakeObjects", "FakeUnderstanding", "Outcome"]
+def mount_shot_video(
+    *,
+    space: FileSpace,
+    generations: ImageGenerations,
+    objects: FakeObjects,
+    records: FakeCutRecords,
+    client: httpx.AsyncClient,
+    fetch_url: Callable[[str], str],
+    policy: GenerationPolicy,
+    codec: MediaCodec,
+) -> ShotVideo[object]:
+    return ShotVideo.bind(
+        space=space,
+        generations=generations,
+        boards=FrameBoardsAdapter(all_own(client, fetch_url), objects=objects, codec=codec),
+        cuts=GridCutsAdapter(client, fetch_url=fetch_url, objects=objects, records=records),
+        image_models=frozenset({IMAGE_MODEL}),
+        policy=policy,
+    ).from_spec()
+
+
+__all__ = [
+    "FakeCutRecords",
+    "FakeGenerations",
+    "FakeObjects",
+    "FakeUnderstanding",
+    "Outcome",
+    "mount_shot_video",
+]

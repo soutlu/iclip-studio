@@ -1,12 +1,6 @@
-/** 编辑器舞台的模糊底，图片编辑与视频编辑共用；样式见 storyboard.css「编辑器舞台共用」一节。 */
-
 import { useState } from 'react'
 import { cn } from '@/shared/lib/utils'
 
-/** 舞台底：舞台上那张图（视频是海报）放大、模糊，压一层底色，画面两侧不留空。
- * 新图加载成功后才淡入；连续换图或装饰图加载失败时保留上一张已加载的图。
- * 没有图时立即清空，露出舞台底色，不留上一来源的画面。
- * 放在舞台里的第一层，舞台自己负责圆角裁切。 */
 export function StageBackdrop({ url }: { url: string | undefined }) {
   const [loaded, setLoaded] = useState<{
     current: string | undefined
@@ -38,7 +32,6 @@ export function StageBackdrop({ url }: { url: string | undefined }) {
           ref={
             layer === url
               ? (image) => {
-                  // 切回仍挂在底层的缓存图片时不会再触发 load；同样认浏览器已解码的结果。
                   if (image?.complete === true && image.naturalWidth > 0) ready()
                 }
               : undefined

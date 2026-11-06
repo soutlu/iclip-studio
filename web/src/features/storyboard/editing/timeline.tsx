@@ -24,9 +24,7 @@ import './timeline.css'
 const TICK_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60]
 
 type TimelineRulerProps = {
-  /** 标尺铺满的秒数：刻度一直标到这里。 */
   scale: number
-  /** 刻度间隔按这么多秒定；不给就按 `scale`。 */
   tickScale?: number | undefined
   total: number
   currentTime: number
@@ -48,7 +46,6 @@ export function TimelineRuler({
   onSeek,
   onScrub,
 }: TimelineRulerProps) {
-  // 指针与键盘都由定位头内部变色表示状态，刻度区域不加外框。
   const [seekByPointer, setSeekByPointer] = useState(false)
   const [seeking, setSeeking] = useState(false)
   const seekPointerRef = useRef<number | null>(null)
@@ -60,7 +57,6 @@ export function TimelineRuler({
   useEffect(() => {
     const hide = () => setPreview(null)
     const hideOnScroll = (event: Event) => {
-      // 背景会话的自动滚动不会移动标尺，不应清掉编辑器里的提示。
       if (
         event.target === window ||
         (event.target instanceof Node && event.target.contains(viewportRef.current))
@@ -197,16 +193,10 @@ export function TimelinePlayhead({ style }: { style: CSSProperties }) {
 
 type LimitBubbleProps = {
   text: string
-  /** 把手离内容层左边多远（CSS 长度）。 */
   left: string
-  /** 时间线的横向滚动区：把手离它可视范围两端太近时气泡靠向里面。 */
   viewportRef: RefObject<HTMLElement | null>
 }
 
-/**
- * 拖到边界停住时把手旁的说明（为什么拖不过去），两个编辑器共用。气泡以把手为中心，把手贴近时间线可视范围两端时
- * 收回来、靠向里面；每次画完按把手此刻在可视范围里的位置定（拖动中自动滚动的每一步都会重画）。
- */
 export function LimitBubble({ text, left, viewportRef }: LimitBubbleProps) {
   const ref = useRef<HTMLSpanElement>(null)
   useLayoutEffect(() => {
@@ -230,23 +220,15 @@ export function LimitBubble({ text, left, viewportRef }: LimitBubbleProps) {
   )
 }
 
-/** 画面行最多画几格。 */
 const MAX_FRAMES = 24
-/** 格宽从这么多秒起，格子太多时翻倍。 */
 const FRAME_STEP = 0.5
 
-/** 格宽：0.5 秒 × 2^k 里放得下 `length` 秒、格子不超过上限的最小值（两端各可能多出被裁掉的一格）。 */
 const frameStepOf = (length: number) => {
   let step = FRAME_STEP
   while (Math.ceil(length / step) + 1 > MAX_FRAMES) step *= 2
   return step
 }
 
-/**
- * 一段素材的画面行。格子按素材自己的时间铺：从 0 秒起、每格 `step` 秒、取格子中点那一帧，只画与这一段有重叠
- * 的格子，两端的格子被边裁掉。起止变了只在两端增减格子，中间的图不换地址、不重新请求；同一素材的不同段命中
- * 同一批地址。格宽只看长度，跨过阈值才换一次。
- */
 export function Frames({ part }: { part: PlaySegment }) {
   const length = Math.max(0, part.end - part.start)
   const step = frameStepOf(length)
@@ -278,7 +260,6 @@ export function Frames({ part }: { part: PlaySegment }) {
   )
 }
 
-// 加载过的图再次挂载（拖动插入预览、回流）直接显示，不排队也不闪。
 const loadedFrames = new Set<string>()
 
 function Frame({ src, style }: { src: string; style: CSSProperties }) {

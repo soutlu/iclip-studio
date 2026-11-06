@@ -22,23 +22,15 @@ const FILE_ICONS: Partial<Record<string, IconName>> = {
   webm: 'file-video',
 }
 
-/** 列表与阅读页头的类型图标只看后缀：同一套线性图形靠形状区分，认不出的后缀给空白文件。 */
 export const fileIconOf = (path: string): IconName => FILE_ICONS[extensionOf(path)] ?? 'file-other'
 
-/** 根目录文件的目录是空串。 */
 export const dirName = (path: string): string => {
   const slash = path.lastIndexOf('/')
   return slash === -1 ? '' : path.slice(0, slash)
 }
 
-/** 截中间时固定显示的主名末尾字数（扩展名另算）。 */
 const KEPT_STEM_TAIL = 4
 
-/**
- * 把文件名拆成「可截的开头」与「固定的结尾」，供页头纯 CSS 截中间：窄宽时开头出省略号，
- * 结尾（主名末 4 字 + 扩展名）始终可见，如 `vid…shot.json`。
- * 没有扩展名（含 `.gitignore` 这类点开头的名字）或主名不超过 4 字时不拆，`tail` 为空串，整名按末尾截断。
- */
 export const splitFileName = (name: string): { head: string; tail: string } => {
   const cut = name.lastIndexOf('.') - KEPT_STEM_TAIL
   if (cut <= 0) return { head: name, tail: '' }
@@ -50,7 +42,6 @@ export type FileGroup<T extends { path: string }> = {
   files: T[]
 }
 
-/** 根目录在前，其余目录按路径排序；同目录内按文件名排序。 */
 export const groupByDirectory = <T extends { path: string }>(
   files: readonly T[],
 ): FileGroup<T>[] => {
@@ -75,7 +66,6 @@ export const formatBytes = (bytes: number): string => {
 
 const pad = (value: number) => String(value).padStart(2, '0')
 
-/** 当天只给时分，往前的日子带上月日；无效时间给空串。 */
 export const formatWhen = (iso: string, now = new Date()): string => {
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return ''

@@ -1,5 +1,3 @@
-"""uploads 测试替身。"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -8,11 +6,6 @@ from iclip.platform.object_store.store import ObjectStoreUnavailable, StoredObje
 
 
 class FakeBucket:
-    """PublicBucket 内存替身；``put`` 模拟浏览器直传，测试负责填充对象。
-
-    ``delete_fails`` 为真时删除抛 ``ObjectStoreUnavailable``，对象留在桶里；``put_fails`` 为真时
-    服务端写对象抛同一个错。服务端写入的字节与元数据按 key 记在 ``written``。"""
-
     def __init__(self, *, base: str = "https://cdn.test") -> None:
         self.base = base
         self.objects: dict[str, StoredObject] = {}

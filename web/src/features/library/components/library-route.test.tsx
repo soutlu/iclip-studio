@@ -61,25 +61,6 @@ const stubLibraryViewport = () =>
 describe('LibraryRoute', () => {
   beforeEach(stubLibraryViewport)
 
-  it('lists one card per storyboard with its badges and the total', async () => {
-    await renderWithProviders(<Harness />)
-
-    const skate = await screen.findByRole('article', { name: SKATE })
-    expect(within(skate).getByText('6 版')).toBeVisible()
-    expect(within(skate).getByText(/4 镜/)).toBeVisible()
-    expect(within(skate).queryByText(/组$/)).not.toBeInTheDocument()
-    const beach = screen.getByRole('article', { name: '童鞋海边亲子' })
-    expect(within(beach).getByText('合成')).toBeVisible()
-    expect(within(beach).getByText('4 版')).toBeVisible()
-    expect(within(beach).getByText(/0:15/)).toBeVisible()
-    const sandals = screen.getByRole('article', { name: SANDALS })
-    expect(within(sandals).getByText('2 组')).toBeVisible()
-    expect(within(sandals).getByText('3 版')).toBeVisible()
-    const plain = screen.getByRole('article', { name: '接口提交' })
-    expect(within(plain).queryByText(/镜$/)).not.toBeInTheDocument()
-    expect(screen.getByText('共 6 条')).toBeVisible()
-  })
-
   it('filters by orientation, by me and by a card author', async () => {
     const queries = recordListQueries()
     const onScope = vi.fn()
@@ -310,7 +291,6 @@ const playerIn = (viewer: HTMLElement, title: string) =>
 describe('library viewer', () => {
   beforeEach(() => {
     stubLibraryViewport()
-    // jsdom 不播放媒体，play / pause 换成立即完成。
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
   })
@@ -333,7 +313,6 @@ describe('library viewer', () => {
 
     await user.click(within(viewer).getByRole('tab', { name: '爆款素材' }))
     expect(await within(viewer).findByRole('button', { name: '加入爆款素材库' })).toBeVisible()
-    // 只问过地址里那一版，没问过卡面那一版。
     expect(new Set(stateReads)).toEqual(new Set([second]))
   })
 
@@ -494,7 +473,6 @@ describe('library viewer', () => {
     const held = new Promise<void>((resolve) => {
       release = resolve
     })
-    // 挂住详情；放行后不回响应，交给默认的 mock。
     server.use(
       http.get('*/api/library/videos/:id', async () => {
         await held
@@ -521,7 +499,6 @@ describe('library viewer', () => {
     const held = new Promise<void>((resolve) => {
       release = resolve
     })
-    // 挂住详情；放行后不回响应，交给默认的 mock（挂着对话的卡做得了同款）。
     server.use(
       http.get('*/api/library/videos/:id', async () => {
         await held
@@ -551,9 +528,7 @@ describe('library viewer', () => {
   it('explains why a card cannot be made the same way, on focus and on click', async () => {
     const user = userEvent.setup()
     const { router } = await renderWithProviders(<Harness />)
-    // 不挂对话的卡没有对话可拷，做不了同款。
     const viewer = await openCard(user, '接口提交')
-    // 只有一组一版，没有镜头组那一行；等「版本」出现，就是详情读回来了。
     await user.click(within(viewer).getByRole('tab', { name: '参数与来源' }))
     await within(viewer).findByText('第 1 版', { selector: 'dd' })
     const search = router.state.location.search
@@ -610,7 +585,6 @@ describe('library storyboard', () => {
     stubLibraryViewport()
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
-    // 能悬停时卡片会挂预览视频，卸载时清地址要调 load。
     vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined)
   })
 

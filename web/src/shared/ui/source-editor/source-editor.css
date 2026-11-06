@@ -1,0 +1,157 @@
+/* 原文编辑器外观：全部等宽，颜色只取 token。
+   CodeMirror 的基础主题以 `.ͼN .cm-*` 注入且只有浅色，这里的覆盖都写成三层类名，不依赖注入顺序。 */
+
+.source-editor .cm-editor {
+  height: 100%;
+  color: var(--color-on-surface);
+  background: transparent;
+}
+.source-editor .cm-editor.cm-focused {
+  outline: none;
+}
+.source-editor .cm-editor .cm-scroller {
+  font-family: var(--font-mono);
+  /* design-allow -- 原型确认的等宽正文字号，字阶里没有 13px 一档 */
+  font-size: 13px;
+  line-height: 22px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-chat-scrollbar-thumb) transparent;
+}
+.source-editor .cm-editor .cm-content {
+  padding: 4px 0 24px;
+  caret-color: var(--color-on-surface);
+}
+.source-editor .cm-editor .cm-line {
+  padding: 0;
+}
+.source-editor .cm-editor .cm-cursor {
+  border-left-color: var(--color-on-surface);
+  border-left-width: 1.5px;
+}
+.source-editor .cm-editor .cm-selectionBackground {
+  background: color-mix(in srgb, var(--color-on-surface) 10%, transparent);
+}
+.source-editor .cm-editor.cm-focused .cm-selectionBackground,
+.source-editor .cm-editor.cm-focused .cm-content ::selection {
+  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+}
+.source-editor .cm-editor .cm-selectionMatch {
+  background: color-mix(in srgb, var(--color-on-surface) 7%, transparent);
+}
+.source-editor .cm-editor .cm-matchingBracket,
+.source-editor .cm-editor .cm-nonmatchingBracket {
+  background: color-mix(in srgb, var(--color-on-surface) 8%, transparent);
+  color: inherit;
+  outline: 0;
+}
+.source-editor .cm-editor .cm-placeholder {
+  color: var(--color-on-surface-faint);
+}
+.source-editor .cm-editor .cm-specialChar {
+  color: var(--color-on-surface-faint);
+}
+
+/* 搜索面板（Mod-F），在编辑器顶部 */
+.source-editor .cm-editor .cm-panels {
+  background: var(--color-background);
+  color: var(--color-on-surface);
+}
+.source-editor .cm-editor .cm-panels-top {
+  border-bottom: 1px solid var(--color-hairline);
+}
+.source-editor .cm-editor .cm-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0 8px;
+  font-family: var(--font-cue-ui);
+  font-size: var(--text-label);
+}
+.source-editor .cm-editor .cm-search br {
+  display: none;
+}
+.source-editor .cm-editor .cm-search .cm-textfield {
+  height: 28px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--radius-sm);
+  background: var(--color-background);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+}
+.source-editor .cm-editor .cm-search .cm-textfield:focus {
+  border-color: var(--color-on-surface);
+  outline: 0;
+}
+.source-editor .cm-editor .cm-search .cm-button {
+  height: 28px;
+  margin: 0;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-state-active);
+  background-image: none;
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+}
+.source-editor .cm-editor .cm-search .cm-button:hover {
+  background: var(--color-state-hover);
+}
+.source-editor .cm-editor .cm-search label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-label);
+  color: var(--color-on-surface-variant);
+}
+.source-editor .cm-editor .cm-search [name='close'] {
+  font-size: var(--text-title);
+  color: var(--color-on-surface-variant);
+}
+.source-editor .cm-editor .cm-searchMatch {
+  background: color-mix(in srgb, var(--color-tertiary-container) 70%, transparent);
+  outline: 0;
+}
+.source-editor .cm-editor .cm-searchMatch-selected {
+  background: var(--color-tertiary-container);
+}
+
+/* 写法检查：出错处红色波浪线，悬停出浮层；不要 gutter，不要其他提示 */
+.source-editor .cm-editor .cm-lintRange-error {
+  background-image: none;
+  text-decoration: wavy underline var(--color-error);
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+}
+.source-editor .cm-editor .cm-tooltip.cm-tooltip-hover {
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-lowest);
+  box-shadow:
+    0 0 0 1px var(--color-hairline),
+    var(--shadow-2);
+}
+.source-editor .cm-editor .cm-tooltip-lint {
+  padding: 4px 0;
+}
+.source-editor .cm-editor .cm-diagnostic {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 10px;
+  border-left: 0;
+  font-family: var(--font-cue-ui);
+  font-size: var(--text-body-sm);
+  line-height: 18px;
+  color: var(--color-on-surface);
+}
+.source-editor .cm-editor .cm-diagnostic-error::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-error);
+  flex-shrink: 0;
+}

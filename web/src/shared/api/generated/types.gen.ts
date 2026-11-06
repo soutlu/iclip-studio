@@ -5,6 +5,73 @@ export type ClientOptions = {
 }
 
 /**
+ * ActiveVersionOut
+ *
+ * 当前版本的摘要。
+ */
+export type ActiveVersionOut = {
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Publishedat
+   */
+  publishedAt: string
+  /**
+   * Version
+   */
+  version: number
+}
+
+/**
+ * AgentConfig
+ *
+ * 一个 agent 的配置。草稿里 ``model`` 可以为空，发布时必填。技能不写在这里，存在绑定表里。
+ */
+export type AgentConfig = {
+  /**
+   * Instructions
+   */
+  instructions?: string
+  model?: AgentModelRef | null
+  /**
+   * Schema Version
+   */
+  schema_version: 1
+  /**
+   * Subagents
+   */
+  subagents?: Array<SubagentConfig>
+  /**
+   * Tools
+   */
+  tools?: Array<CapToolConfig | McpToolConfig>
+}
+
+/**
+ * AgentCreateIn
+ */
+export type AgentCreateIn = {
+  /**
+   * Description
+   */
+  description?: string
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Listed
+   */
+  listed?: boolean
+  /**
+   * Name
+   */
+  name: string
+}
+
+/**
  * AgentDescriptor
  */
 export type AgentDescriptor = {
@@ -35,6 +102,385 @@ export type AgentDescriptor = {
 }
 
 /**
+ * AgentDetailOut
+ */
+export type AgentDetailOut = {
+  activeVersion: ActiveVersionOut | null
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Createdbyname
+   */
+  createdByName: string | null
+  /**
+   * Description
+   */
+  description: string
+  draft: AgentDraftOut
+  /**
+   * Hassubagents
+   */
+  hasSubagents: boolean
+  /**
+   * Hasunpublishedchanges
+   */
+  hasUnpublishedChanges: boolean
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Issubagent
+   */
+  isSubagent: boolean
+  /**
+   * Listed
+   */
+  listed: boolean
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Sortorder
+   */
+  sortOrder: number
+  /**
+   * Status
+   */
+  status: 'active' | 'archived'
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+  /**
+   * Usedby
+   */
+  usedBy: Array<AgentUsageOut>
+}
+
+/**
+ * AgentDraftIn
+ */
+export type AgentDraftIn = {
+  config: AgentConfig
+  /**
+   * Lockversion
+   */
+  lockVersion: number
+  /**
+   * Skillids
+   */
+  skillIds: Array<string>
+}
+
+/**
+ * AgentDraftOut
+ */
+export type AgentDraftOut = {
+  /**
+   * Baseversionid
+   */
+  baseVersionId: string | null
+  config: AgentConfig
+  /**
+   * Lockversion
+   */
+  lockVersion: number
+  /**
+   * Skillids
+   */
+  skillIds: Array<string>
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+  /**
+   * Updatedby
+   */
+  updatedBy: string
+  /**
+   * Updatedbyname
+   */
+  updatedByName: string | null
+}
+
+/**
+ * AgentImportItemOut
+ */
+export type AgentImportItemOut = {
+  /**
+   * Action
+   */
+  action: 'create' | 'overwrite'
+  /**
+   * Agentid
+   */
+  agentId: string
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Problems
+   */
+  problems: Array<AgentProblemOut>
+  /**
+   * Warnings
+   */
+  warnings: Array<AgentProblemOut>
+}
+
+/**
+ * AgentImportOut
+ *
+ * 导入检查或导入的结果。只建或覆盖草稿，不发布。
+ */
+export type AgentImportOut = {
+  /**
+   * Agents
+   */
+  agents: Array<AgentImportItemOut>
+  /**
+   * Entry
+   */
+  entry: string | null
+  /**
+   * Problems
+   */
+  problems: Array<AgentProblemOut>
+  /**
+   * Warnings
+   */
+  warnings: Array<string>
+}
+
+/**
+ * AgentModelRef
+ *
+ * 用哪个模型：``provider`` 是供应商的引用名，``name`` 是它的 llm 模型名。
+ */
+export type AgentModelRef = {
+  /**
+   * Credential Id
+   */
+  credential_id?: string | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Provider
+   */
+  provider: string
+  settings?: AgentModelSettings
+}
+
+/**
+ * AgentModelSettings
+ */
+export type AgentModelSettings = {
+  /**
+   * Thinking
+   */
+  thinking?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null
+}
+
+/**
+ * AgentOrderIn
+ */
+export type AgentOrderIn = {
+  /**
+   * Ids
+   */
+  ids: Array<string>
+}
+
+/**
+ * AgentOut
+ */
+export type AgentOut = {
+  activeVersion: ActiveVersionOut | null
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Createdbyname
+   */
+  createdByName: string | null
+  /**
+   * Description
+   */
+  description: string
+  /**
+   * Hassubagents
+   */
+  hasSubagents: boolean
+  /**
+   * Hasunpublishedchanges
+   */
+  hasUnpublishedChanges: boolean
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Issubagent
+   */
+  isSubagent: boolean
+  /**
+   * Listed
+   */
+  listed: boolean
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Sortorder
+   */
+  sortOrder: number
+  /**
+   * Status
+   */
+  status: 'active' | 'archived'
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
+ * AgentPluginOut
+ */
+export type AgentPluginOut = {
+  /**
+   * Description
+   */
+  description: string
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Parameters
+   */
+  parameters: {
+    [key: string]: unknown
+  }
+  /**
+   * Requires
+   */
+  requires: Array<string>
+}
+
+/**
+ * AgentPluginsOut
+ */
+export type AgentPluginsOut = {
+  /**
+   * Items
+   */
+  items: Array<AgentPluginOut>
+}
+
+/**
+ * AgentPreviewIn
+ *
+ * 开一段 agent 测试预览：不给 ``versionId`` 试这个 agent 当下的草稿，给了试它的那一版。
+ */
+export type AgentPreviewIn = {
+  /**
+   * Versionid
+   */
+  versionId?: string | null
+}
+
+/**
+ * AgentPreviewOut
+ *
+ * 一段 agent 测试预览。``id`` 当对话 id 用在 transcript、发消息、订阅与读工作区文件的端点上，只有开它
+ * 的人、且他此刻持 ``agent:manage`` 时认得。
+ */
+export type AgentPreviewOut = {
+  /**
+   * Agentid
+   */
+  agentId: string
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Versionid
+   */
+  versionId: string | null
+}
+
+/**
+ * AgentProblemOut
+ */
+export type AgentProblemOut = {
+  /**
+   * Message
+   */
+  message: string
+  /**
+   * Path
+   */
+  path: string
+}
+
+/**
+ * AgentPublishIn
+ */
+export type AgentPublishIn = {
+  /**
+   * Lockversion
+   */
+  lockVersion: number
+  /**
+   * Note
+   */
+  note?: string | null
+}
+
+/**
+ * AgentPublishProblemsOut
+ *
+ * 发布被拦下的 422：``detail`` 是一句话，``problems`` 列出全部问题。
+ */
+export type AgentPublishProblemsOut = {
+  /**
+   * Detail
+   */
+  detail: string
+  /**
+   * Problems
+   */
+  problems: Array<AgentProblemOut>
+}
+
+/**
  * AgentRef
  */
 export type AgentRef = {
@@ -46,6 +492,16 @@ export type AgentRef = {
    * Role
    */
   role?: 'child' | 'member' | null
+}
+
+/**
+ * AgentRestoreIn
+ */
+export type AgentRestoreIn = {
+  /**
+   * Lockversion
+   */
+  lockVersion: number
 }
 
 /**
@@ -64,6 +520,135 @@ export type AgentStatusMeta = {
    * Maxcontexttokens
    */
   maxContextTokens?: number | null
+}
+
+/**
+ * AgentUpdateIn
+ *
+ * 不给或给 ``null`` 的项不动。
+ */
+export type AgentUpdateIn = {
+  /**
+   * Description
+   */
+  description?: string | null
+  /**
+   * Listed
+   */
+  listed?: boolean | null
+  /**
+   * Name
+   */
+  name?: string | null
+}
+
+/**
+ * AgentUsageOut
+ *
+ * 接口里 ``usedBy`` 的一项：一个在用的 agent，草稿或当前版本里引用了。
+ */
+export type AgentUsageOut = {
+  /**
+   * Agentid
+   */
+  agentId: string
+  /**
+   * Agentname
+   */
+  agentName: string
+  /**
+   * Inactiveversion
+   */
+  inActiveVersion: boolean
+  /**
+   * Indraft
+   */
+  inDraft: boolean
+}
+
+/**
+ * AgentVersionDetailOut
+ */
+export type AgentVersionDetailOut = {
+  config: AgentConfig
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Createdbyname
+   */
+  createdByName: string | null
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Note
+   */
+  note: string | null
+  /**
+   * Skillids
+   */
+  skillIds: Array<string>
+  /**
+   * Version
+   */
+  version: number
+}
+
+/**
+ * AgentVersionOut
+ */
+export type AgentVersionOut = {
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Createdbyname
+   */
+  createdByName: string | null
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Note
+   */
+  note: string | null
+  /**
+   * Version
+   */
+  version: number
+}
+
+/**
+ * AgentVersionsOut
+ */
+export type AgentVersionsOut = {
+  /**
+   * Items
+   */
+  items: Array<AgentVersionOut>
+}
+
+/**
+ * AgentsOut
+ */
+export type AgentsOut = {
+  /**
+   * Items
+   */
+  items: Array<AgentOut>
 }
 
 /**
@@ -316,6 +901,30 @@ export type BodyAuthCookieLoginAuthLoginPost = {
 }
 
 /**
+ * Body_import_agents_agents_import_post
+ */
+export type BodyImportAgentsAgentsImportPost = {
+  /**
+   * File
+   *
+   * agent 的导出包（YAML）
+   */
+  file: Blob | File
+}
+
+/**
+ * Body_import_skill_skills_import_post
+ */
+export type BodyImportSkillSkillsImportPost = {
+  /**
+   * File
+   *
+   * 技能的 zip 压缩包
+   */
+  file: Blob | File
+}
+
+/**
  * BrandFontConfirmIn
  */
 export type BrandFontConfirmIn = {
@@ -437,6 +1046,32 @@ export type BrandTemplatesOut = {
    * Items
    */
   items: Array<BrandTemplateOut>
+}
+
+/**
+ * CapToolConfig
+ *
+ * 挂一个插件：``toolset`` 是插件的登记名，``parameters`` 按插件自己的参数校验。
+ */
+export type CapToolConfig = {
+  /**
+   * Enabled
+   */
+  enabled?: boolean
+  /**
+   * Parameters
+   */
+  parameters?: {
+    [key: string]: unknown
+  }
+  /**
+   * Toolset
+   */
+  toolset: string
+  /**
+   * Type
+   */
+  type: 'cap'
 }
 
 /**
@@ -572,10 +1207,6 @@ export type ConversationActivityOut = {
    * Pendinginteraction
    */
   pendingInteraction: 'none' | 'approval' | 'question'
-  /**
-   * Videogeneration
-   */
-  videoGeneration: 'none' | 'queued' | 'running'
 }
 
 /**
@@ -818,10 +1449,6 @@ export type ConversationOut = {
    */
   deletedAt: string | null
   /**
-   * Eventepoch
-   */
-  eventEpoch: string
-  /**
    * Forkturn
    */
   forkTurn: number | null
@@ -837,10 +1464,6 @@ export type ConversationOut = {
    * Lastrunid
    */
   lastRunId: string | null
-  /**
-   * Lastseq
-   */
-  lastSeq: number
   /**
    * Owneruserid
    */
@@ -898,6 +1521,22 @@ export type ConversationTaskIn = {
 }
 
 /**
+ * ConversationVideoProgressOut
+ *
+ * 看得见的对话里，哪些下面还有视频记录没跑完、各到哪一步；没列出的就是没有。
+ *
+ * 单独一个接口而不放在对话行上：它随生成任务变，不随轮次变，生成帧一到只重拉这一份。
+ */
+export type ConversationVideoProgressOut = {
+  /**
+   * Conversations
+   */
+  conversations: {
+    [key: string]: 'queued' | 'running'
+  }
+}
+
+/**
  * ConversationsAuditItemOut
  *
  * 审计列表里的一段对话。
@@ -928,10 +1567,6 @@ export type ConversationsAuditItemOut = {
    */
   deletedAt: string | null
   /**
-   * Eventepoch
-   */
-  eventEpoch: string
-  /**
    * Forkturn
    */
   forkTurn: number | null
@@ -947,10 +1582,6 @@ export type ConversationsAuditItemOut = {
    * Lastrunid
    */
   lastRunId: string | null
-  /**
-   * Lastseq
-   */
-  lastSeq: number
   /**
    * Latestmasterurl
    */
@@ -1011,6 +1642,290 @@ export type ConversationsPageOut = {
 }
 
 /**
+ * CredentialCreateIn
+ */
+export type CredentialCreateIn = {
+  /**
+   * Fields
+   */
+  fields: {
+    [key: string]: string
+  }
+  /**
+   * Name
+   */
+  name: string
+}
+
+/**
+ * CredentialFieldOut
+ *
+ * 密钥表单的一个字段。``secret`` 的值只会以打码形式返回。
+ */
+export type CredentialFieldOut = {
+  /**
+   * Default
+   */
+  default: string | null
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Required
+   */
+  required: boolean
+  /**
+   * Type
+   */
+  type: 'secret' | 'text'
+}
+
+/**
+ * CredentialOptionOut
+ *
+ * agent 能选的一把密钥。
+ */
+export type CredentialOptionOut = {
+  /**
+   * Fields
+   */
+  fields: {
+    [key: string]: string
+  }
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Isdefault
+   */
+  isDefault: boolean
+  /**
+   * Name
+   */
+  name: string
+}
+
+/**
+ * CredentialOut
+ */
+export type CredentialOut = {
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Fields
+   */
+  fields: {
+    [key: string]: string
+  }
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+  /**
+   * Usedby
+   */
+  usedBy: Array<AgentUsageOut>
+}
+
+/**
+ * CredentialTestIn
+ *
+ * ``credentialId`` 与 ``fields`` 至少给一个：只给 ``credentialId`` 试已保存的那一把；只给
+ * ``fields`` 试一组还没保存的字段（规则同新建）；两个都给就是把 ``fields`` 叠到已保存的那一把上再试
+ * （规则同修改）。
+ */
+export type CredentialTestIn = {
+  /**
+   * Credentialid
+   */
+  credentialId?: string | null
+  /**
+   * Fields
+   */
+  fields?: {
+    [key: string]: string
+  } | null
+}
+
+/**
+ * CredentialUpdateIn
+ *
+ * 不给或给 ``null`` 的项不动。
+ */
+export type CredentialUpdateIn = {
+  /**
+   * Fields
+   */
+  fields?: {
+    [key: string]: string
+  } | null
+  /**
+   * Name
+   */
+  name?: string | null
+}
+
+/**
+ * CustomModelCreateIn
+ */
+export type CustomModelCreateIn = {
+  /**
+   * Api
+   */
+  api?: 'chat' | 'responses' | 'gemini' | null
+  /**
+   * Contextsize
+   */
+  contextSize?: number | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Thinking
+   */
+  thinking?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>
+  /**
+   * Type
+   */
+  type: 'llm' | 'embedding' | 'rerank'
+}
+
+/**
+ * DeclarationOut
+ *
+ * 一家可以接入的供应商。
+ */
+export type DeclarationOut = {
+  /**
+   * Apis
+   */
+  apis: Array<'chat' | 'responses' | 'gemini'>
+  /**
+   * Credentialfields
+   */
+  credentialFields: Array<CredentialFieldOut>
+  /**
+   * Custommodels
+   */
+  customModels: boolean
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Models
+   */
+  models: Array<DeclaredModelOut>
+  /**
+   * Name
+   */
+  name: string
+}
+
+/**
+ * DeclarationsOut
+ */
+export type DeclarationsOut = {
+  /**
+   * Declarations
+   */
+  declarations: Array<DeclarationOut>
+}
+
+/**
+ * DeclaredModelOut
+ */
+export type DeclaredModelOut = {
+  /**
+   * Api
+   */
+  api: 'chat' | 'responses' | 'gemini' | null
+  /**
+   * Contextsize
+   */
+  contextSize: number | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Thinking
+   */
+  thinking: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>
+  /**
+   * Type
+   */
+  type: 'llm' | 'embedding' | 'rerank'
+}
+
+/**
+ * DefaultModelIn
+ */
+export type DefaultModelIn = {
+  /**
+   * Modelname
+   */
+  modelName: string
+  /**
+   * Providerid
+   */
+  providerId: string
+}
+
+/**
+ * DefaultModelOut
+ */
+export type DefaultModelOut = {
+  /**
+   * Modelname
+   */
+  modelName: string
+  /**
+   * Providerid
+   */
+  providerId: string
+  /**
+   * Providername
+   */
+  providerName: string
+  /**
+   * Type
+   */
+  type: 'llm' | 'embedding' | 'rerank'
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
+ * DefaultModelsOut
+ */
+export type DefaultModelsOut = {
+  /**
+   * Defaults
+   */
+  defaults: Array<DefaultModelOut>
+}
+
+/**
  * DepartmentOut
  */
 export type DepartmentOut = {
@@ -1054,6 +1969,88 @@ export type DepartmentOut = {
    * Uid
    */
   uid: string
+}
+
+/**
+ * DraftFileInfoOut
+ */
+export type DraftFileInfoOut = {
+  /**
+   * Hash
+   */
+  hash: string
+  /**
+   * Path
+   */
+  path: string
+  /**
+   * Size
+   */
+  size: number
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
+ * DraftFileOut
+ */
+export type DraftFileOut = {
+  /**
+   * Content
+   */
+  content: string
+  /**
+   * Hash
+   */
+  hash: string
+  /**
+   * Path
+   */
+  path: string
+  /**
+   * Size
+   */
+  size: number
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
+ * DraftFileRenameIn
+ *
+ * 把草稿里的一个文件改到新路径，内容不变。
+ */
+export type DraftFileRenameIn = {
+  /**
+   * Basehash
+   */
+  baseHash: string
+  /**
+   * From
+   */
+  from: string
+  /**
+   * To
+   */
+  to: string
+}
+
+/**
+ * DraftFileWriteIn
+ */
+export type DraftFileWriteIn = {
+  /**
+   * Basehash
+   */
+  baseHash: string | null
+  /**
+   * Content
+   */
+  content: string
 }
 
 /**
@@ -1857,7 +2854,8 @@ export type HitCaseEntryOut = {
   /**
    * Tagerror
    */
-  tagError: 'no_source_text' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  tagError:
+    'no_source_text' | 'model_call_failed' | 'model_failed' | 'model_unavailable' | 'timeout' | null
   /**
    * Tagids
    */
@@ -1902,7 +2900,8 @@ export type HitCaseOut = {
   /**
    * Tagerror
    */
-  tagError: 'no_source_text' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  tagError:
+    'no_source_text' | 'model_call_failed' | 'model_failed' | 'model_unavailable' | 'timeout' | null
   /**
    * Tagids
    */
@@ -2333,6 +3332,299 @@ export type LibraryVideosOut = {
 }
 
 /**
+ * McpCheckIn
+ *
+ * 试连一份还没保存的配置，什么都不存。给了 ``serverId`` 时，没给 ``url`` 就用那个已保存的服务的地址，
+ * 没给 ``value`` 的请求头取它里面同名请求头的值；没给 ``serverId`` 时 ``url`` 与每个请求头的 ``value``
+ * 都要给。
+ */
+export type McpCheckIn = {
+  /**
+   * Headers
+   */
+  headers?: Array<McpHeaderIn>
+  /**
+   * Serverid
+   */
+  serverId?: string | null
+  /**
+   * Timeoutseconds
+   */
+  timeoutSeconds?: number
+  /**
+   * Transport
+   */
+  transport: 'streamable_http' | 'sse'
+  /**
+   * Url
+   */
+  url?: string | null
+}
+
+/**
+ * McpCheckOut
+ *
+ * 一次试连。没通也是 ``200``，看 ``ok``。
+ */
+export type McpCheckOut = {
+  /**
+   * Elapsedms
+   */
+  elapsedMs: number
+  /**
+   * Ok
+   */
+  ok: boolean
+  /**
+   * Reason
+   */
+  reason: string | null
+  /**
+   * Tools
+   */
+  tools: Array<McpToolOut> | null
+}
+
+/**
+ * McpHeaderIn
+ *
+ * 一个请求头。改已保存的服务时 ``value`` 可以不给，就是沿用同名请求头原来的值；新建时必须给。
+ */
+export type McpHeaderIn = {
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Value
+   */
+  value?: string | null
+}
+
+/**
+ * McpHeaderOut
+ */
+export type McpHeaderOut = {
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Value
+   */
+  value: string
+}
+
+/**
+ * McpLastCheckOut
+ */
+export type McpLastCheckOut = {
+  /**
+   * Checkedat
+   */
+  checkedAt: string
+  /**
+   * Elapsedms
+   */
+  elapsedMs: number
+  /**
+   * Ok
+   */
+  ok: boolean
+  /**
+   * Reason
+   */
+  reason: string | null
+}
+
+/**
+ * McpServerCreateIn
+ */
+export type McpServerCreateIn = {
+  /**
+   * Description
+   */
+  description?: string
+  /**
+   * Enabled
+   */
+  enabled?: boolean
+  /**
+   * Headers
+   */
+  headers?: Array<McpHeaderIn>
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Timeoutseconds
+   */
+  timeoutSeconds?: number
+  /**
+   * Transport
+   */
+  transport: 'streamable_http' | 'sse'
+  /**
+   * Url
+   */
+  url: string
+}
+
+/**
+ * McpServerOut
+ */
+export type McpServerOut = {
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Description
+   */
+  description: string
+  /**
+   * Enabled
+   */
+  enabled: boolean
+  /**
+   * Headers
+   */
+  headers: Array<McpHeaderOut>
+  /**
+   * Id
+   */
+  id: string
+  lastCheck: McpLastCheckOut | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Timeoutseconds
+   */
+  timeoutSeconds: number
+  /**
+   * Tools
+   */
+  tools: Array<McpToolOut> | null
+  /**
+   * Transport
+   */
+  transport: 'streamable_http' | 'sse'
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+  /**
+   * Updatedby
+   */
+  updatedBy: string
+  /**
+   * Url
+   */
+  url: string
+  /**
+   * Usedby
+   */
+  usedBy: Array<AgentUsageOut>
+}
+
+/**
+ * McpServerUpdateIn
+ *
+ * 不给或给 ``null`` 的项不动，``url`` 不给就沿用原来的地址。给了 ``headers`` 就整份替换请求头，其中
+ * 没给 ``value`` 的沿用同名请求头原来的值。
+ */
+export type McpServerUpdateIn = {
+  /**
+   * Description
+   */
+  description?: string | null
+  /**
+   * Enabled
+   */
+  enabled?: boolean | null
+  /**
+   * Headers
+   */
+  headers?: Array<McpHeaderIn> | null
+  /**
+   * Name
+   */
+  name?: string | null
+  /**
+   * Timeoutseconds
+   */
+  timeoutSeconds?: number | null
+  /**
+   * Transport
+   */
+  transport?: 'streamable_http' | 'sse' | null
+  /**
+   * Url
+   */
+  url?: string | null
+}
+
+/**
+ * McpServersOut
+ */
+export type McpServersOut = {
+  /**
+   * Items
+   */
+  items: Array<McpServerOut>
+}
+
+/**
+ * McpToolConfig
+ *
+ * 挂一个 MCP 服务：``server`` 是服务的标识，``tools`` 是放给模型的工具（服务自己给的名字），``null``
+ * 是全部。
+ */
+export type McpToolConfig = {
+  /**
+   * Server
+   */
+  server: string
+  /**
+   * Tools
+   */
+  tools?: Array<string> | null
+  /**
+   * Type
+   */
+  type: 'mcp'
+}
+
+/**
+ * McpToolOut
+ */
+export type McpToolOut = {
+  /**
+   * Description
+   */
+  description: string | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Title
+   */
+  title: string | null
+}
+
+/**
  * MetaMergeOp
  */
 export type MetaMergeOp = {
@@ -2466,6 +3758,177 @@ export type MetricsOut = {
   readonly tokensPerDelivery: number | null
   upstreamSeconds: SpreadOut | null
   usage: UsageOut
+}
+
+/**
+ * ModelOptionOut
+ *
+ * agent 能选的一个对话模型。
+ */
+export type ModelOptionOut = {
+  /**
+   * Contextsize
+   */
+  contextSize: number | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Thinking
+   */
+  thinking: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>
+}
+
+/**
+ * ModelOptionsOut
+ *
+ * agent 编辑页选模型用：只读，只列启用的供应商。
+ */
+export type ModelOptionsOut = {
+  /**
+   * Providers
+   */
+  providers: Array<ProviderOptionOut>
+}
+
+/**
+ * ModelProviderCreateIn
+ */
+export type ModelProviderCreateIn = {
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Provider
+   */
+  provider: string
+}
+
+/**
+ * ModelProviderOut
+ */
+export type ModelProviderOut = {
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Credentials
+   */
+  credentials: Array<CredentialOut>
+  /**
+   * Defaultcredentialid
+   */
+  defaultCredentialId: string | null
+  /**
+   * Enabled
+   */
+  enabled: boolean
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Models
+   */
+  models: Array<ProviderModelOut>
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Provider
+   */
+  provider: string
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
+ * ModelProviderUpdateIn
+ *
+ * 不给或给 ``null`` 的项不动。
+ */
+export type ModelProviderUpdateIn = {
+  /**
+   * Defaultcredentialid
+   */
+  defaultCredentialId?: string | null
+  /**
+   * Enabled
+   */
+  enabled?: boolean | null
+  /**
+   * Label
+   */
+  label?: string | null
+}
+
+/**
+ * ModelProvidersOut
+ */
+export type ModelProvidersOut = {
+  /**
+   * Providers
+   */
+  providers: Array<ModelProviderOut>
+}
+
+/**
+ * ModelTestIn
+ *
+ * 测试供应商的一个模型：用 ``credentialId`` 那把密钥，不给就用供应商的默认密钥。
+ */
+export type ModelTestIn = {
+  /**
+   * Credentialid
+   */
+  credentialId?: string | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Type
+   */
+  type: 'llm' | 'embedding' | 'rerank'
+}
+
+/**
+ * ModelUpdateIn
+ *
+ * 不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余三项只有自己加的模型能改，
+ * ``contextSize`` 给 ``null`` 即清掉。
+ */
+export type ModelUpdateIn = {
+  /**
+   * Api
+   */
+  api?: 'chat' | 'responses' | 'gemini' | null
+  /**
+   * Contextsize
+   */
+  contextSize?: number | null
+  /**
+   * Enabled
+   */
+  enabled?: boolean | null
+  /**
+   * Thinking
+   */
+  thinking?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'> | null
 }
 
 /**
@@ -2756,6 +4219,8 @@ export type Permission =
   | 'api_keys:issue'
   | 'agent:read'
   | 'agent:run'
+  | 'agent:manage'
+  | 'model:manage'
 
 /**
  * PersonOut
@@ -2772,6 +4237,24 @@ export type PersonOut = {
    * Username
    */
   userName: string
+}
+
+/**
+ * ProbeOut
+ */
+export type ProbeOut = {
+  /**
+   * Elapsedms
+   */
+  elapsedMs: number
+  /**
+   * Ok
+   */
+  ok: boolean
+  /**
+   * Reason
+   */
+  reason: string | null
 }
 
 /**
@@ -2861,6 +4344,74 @@ export type PromptUpsertOp = {
 }
 
 /**
+ * ProviderModelOut
+ *
+ * 供应商的一个模型：声明里的叠加停用设置，或自己加的。
+ */
+export type ProviderModelOut = {
+  /**
+   * Api
+   */
+  api: 'chat' | 'responses' | 'gemini' | null
+  /**
+   * Contextsize
+   */
+  contextSize: number | null
+  /**
+   * Enabled
+   */
+  enabled: boolean
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Source
+   */
+  source: 'declared' | 'custom'
+  /**
+   * Thinking
+   */
+  thinking: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>
+  /**
+   * Type
+   */
+  type: 'llm' | 'embedding' | 'rerank'
+  /**
+   * Usedby
+   */
+  usedBy: Array<AgentUsageOut>
+}
+
+/**
+ * ProviderOptionOut
+ *
+ * agent 能选的一个供应商。
+ */
+export type ProviderOptionOut = {
+  /**
+   * Credentials
+   */
+  credentials: Array<CredentialOptionOut>
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Models
+   */
+  models: Array<ModelOptionOut>
+  /**
+   * Name
+   */
+  name: string
+}
+
+/**
  * ReferenceCreateIn
  */
 export type ReferenceCreateIn = {
@@ -2929,7 +4480,13 @@ export type ReferenceVideoItemOut = {
   /**
    * Errorcode
    */
-  errorCode: 'video_unreadable' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  errorCode:
+    | 'video_unreadable'
+    | 'model_call_failed'
+    | 'model_failed'
+    | 'model_unavailable'
+    | 'timeout'
+    | null
   /**
    * Id
    */
@@ -2937,7 +4494,8 @@ export type ReferenceVideoItemOut = {
   /**
    * Tagerror
    */
-  tagError: 'no_source_text' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  tagError:
+    'no_source_text' | 'model_call_failed' | 'model_failed' | 'model_unavailable' | 'timeout' | null
   /**
    * Tagids
    */
@@ -2989,7 +4547,13 @@ export type ReferenceVideoOut = {
   /**
    * Errorcode
    */
-  errorCode: 'video_unreadable' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  errorCode:
+    | 'video_unreadable'
+    | 'model_call_failed'
+    | 'model_failed'
+    | 'model_unavailable'
+    | 'timeout'
+    | null
   /**
    * Id
    */
@@ -2997,7 +4561,8 @@ export type ReferenceVideoOut = {
   /**
    * Tagerror
    */
-  tagError: 'no_source_text' | 'model_call_failed' | 'model_failed' | 'timeout' | null
+  tagError:
+    'no_source_text' | 'model_call_failed' | 'model_failed' | 'model_unavailable' | 'timeout' | null
   /**
    * Tagids
    */
@@ -3184,6 +4749,338 @@ export type SidebarOut = {
 }
 
 /**
+ * SkillCreateIn
+ *
+ * 新建一个技能，同时生成一份带 frontmatter 的 ``SKILL.md`` 草稿。
+ */
+export type SkillCreateIn = {
+  /**
+   * Description
+   */
+  description: string
+  /**
+   * Displayname
+   */
+  displayName: string
+  /**
+   * Name
+   */
+  name: string
+}
+
+/**
+ * SkillDetailOut
+ */
+export type SkillDetailOut = {
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Createdbyname
+   */
+  createdByName: string | null
+  /**
+   * Description
+   */
+  description: string
+  /**
+   * Displayname
+   */
+  displayName: string
+  /**
+   * Draftfiles
+   */
+  draftFiles: Array<DraftFileInfoOut>
+  /**
+   * Hasunpublishedchanges
+   */
+  hasUnpublishedChanges: boolean
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Latestversion
+   */
+  latestVersion: number | null
+  /**
+   * Latestversionid
+   */
+  latestVersionId: string | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Status
+   */
+  status: 'active' | 'archived'
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+  /**
+   * Usedby
+   */
+  usedBy: Array<AgentUsageOut>
+}
+
+/**
+ * SkillFileOut
+ *
+ * 清单里的一个文件。
+ */
+export type SkillFileOut = {
+  /**
+   * Hash
+   */
+  hash: string
+  /**
+   * Path
+   */
+  path: string
+  /**
+   * Size
+   */
+  size: number
+}
+
+/**
+ * SkillImportOut
+ *
+ * 导入检查或导入的结果。只建或覆盖草稿，不发布。
+ */
+export type SkillImportOut = {
+  /**
+   * Action
+   */
+  action: 'create' | 'overwrite' | null
+  /**
+   * Description
+   */
+  description: string | null
+  /**
+   * Displayname
+   */
+  displayName: string | null
+  /**
+   * Files
+   */
+  files: Array<SkillFileOut>
+  /**
+   * Name
+   */
+  name: string | null
+  /**
+   * Problems
+   */
+  problems: Array<string>
+  /**
+   * Skillid
+   */
+  skillId: string | null
+}
+
+/**
+ * SkillOut
+ */
+export type SkillOut = {
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Createdbyname
+   */
+  createdByName: string | null
+  /**
+   * Description
+   */
+  description: string
+  /**
+   * Displayname
+   */
+  displayName: string
+  /**
+   * Hasunpublishedchanges
+   */
+  hasUnpublishedChanges: boolean
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Latestversion
+   */
+  latestVersion: number | null
+  /**
+   * Latestversionid
+   */
+  latestVersionId: string | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Status
+   */
+  status: 'active' | 'archived'
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+}
+
+/**
+ * SkillPublishIn
+ */
+export type SkillPublishIn = {
+  /**
+   * Note
+   */
+  note?: string | null
+}
+
+/**
+ * SkillUpdateIn
+ *
+ * 改显示名或标识，不给的项不动，至少给一项；都不进版本，保存即生效。
+ */
+export type SkillUpdateIn = {
+  /**
+   * Displayname
+   */
+  displayName?: string | null
+  /**
+   * Name
+   */
+  name?: string | null
+}
+
+/**
+ * SkillVersionDetailOut
+ */
+export type SkillVersionDetailOut = {
+  /**
+   * Contenthash
+   */
+  contentHash: string
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Createdbyname
+   */
+  createdByName: string | null
+  /**
+   * Files
+   */
+  files: Array<SkillFileOut>
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Note
+   */
+  note: string | null
+  /**
+   * Version
+   */
+  version: number
+}
+
+/**
+ * SkillVersionFileOut
+ */
+export type SkillVersionFileOut = {
+  /**
+   * Content
+   */
+  content: string
+  /**
+   * Hash
+   */
+  hash: string
+  /**
+   * Path
+   */
+  path: string
+  /**
+   * Size
+   */
+  size: number
+}
+
+/**
+ * SkillVersionOut
+ */
+export type SkillVersionOut = {
+  /**
+   * Contenthash
+   */
+  contentHash: string
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Createdby
+   */
+  createdBy: string
+  /**
+   * Createdbyname
+   */
+  createdByName: string | null
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Note
+   */
+  note: string | null
+  /**
+   * Version
+   */
+  version: number
+}
+
+/**
+ * SkillVersionsOut
+ */
+export type SkillVersionsOut = {
+  /**
+   * Items
+   */
+  items: Array<SkillVersionOut>
+}
+
+/**
+ * SkillsOut
+ */
+export type SkillsOut = {
+  /**
+   * Items
+   */
+  items: Array<SkillOut>
+}
+
+/**
  * SpreadOut
  *
  * 一组时长样本的分布，单位秒。
@@ -3325,6 +5222,30 @@ export type StyleMatchOut = {
    * Styleno
    */
   styleNo: string
+}
+
+/**
+ * SubagentConfig
+ *
+ * 派活给哪个 agent。后三项与派活工具的同名控制项一致，不写就不限。
+ */
+export type SubagentConfig = {
+  /**
+   * Agent
+   */
+  agent: string
+  /**
+   * Max Calls
+   */
+  max_calls?: number | null
+  /**
+   * On Failure
+   */
+  on_failure?: string | null
+  /**
+   * Timeout Seconds
+   */
+  timeout_seconds?: number | null
 }
 
 /**
@@ -5666,6 +7587,503 @@ export type WholeFilmVideoClip = {
   volume: number
 }
 
+export type ListAgentsAgentsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/agents'
+}
+
+export type ListAgentsAgentsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentsOut
+}
+
+export type ListAgentsAgentsGetResponse =
+  ListAgentsAgentsGetResponses[keyof ListAgentsAgentsGetResponses]
+
+export type CreateAgentAgentsPostData = {
+  body: AgentCreateIn
+  path?: never
+  query?: never
+  url: '/agents'
+}
+
+export type CreateAgentAgentsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateAgentAgentsPostError =
+  CreateAgentAgentsPostErrors[keyof CreateAgentAgentsPostErrors]
+
+export type CreateAgentAgentsPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: AgentDetailOut
+}
+
+export type CreateAgentAgentsPostResponse =
+  CreateAgentAgentsPostResponses[keyof CreateAgentAgentsPostResponses]
+
+export type ImportAgentsAgentsImportPostData = {
+  body: BodyImportAgentsAgentsImportPost
+  path?: never
+  query?: {
+    /**
+     * Dryrun
+     */
+    dryRun?: boolean
+  }
+  url: '/agents/import'
+}
+
+export type ImportAgentsAgentsImportPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ImportAgentsAgentsImportPostError =
+  ImportAgentsAgentsImportPostErrors[keyof ImportAgentsAgentsImportPostErrors]
+
+export type ImportAgentsAgentsImportPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentImportOut
+}
+
+export type ImportAgentsAgentsImportPostResponse =
+  ImportAgentsAgentsImportPostResponses[keyof ImportAgentsAgentsImportPostResponses]
+
+export type AgentModelOptionsAgentsModelOptionsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/agents/model-options'
+}
+
+export type AgentModelOptionsAgentsModelOptionsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ModelOptionsOut
+}
+
+export type AgentModelOptionsAgentsModelOptionsGetResponse =
+  AgentModelOptionsAgentsModelOptionsGetResponses[keyof AgentModelOptionsAgentsModelOptionsGetResponses]
+
+export type ReorderAgentsAgentsOrderPutData = {
+  body: AgentOrderIn
+  path?: never
+  query?: never
+  url: '/agents/order'
+}
+
+export type ReorderAgentsAgentsOrderPutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReorderAgentsAgentsOrderPutError =
+  ReorderAgentsAgentsOrderPutErrors[keyof ReorderAgentsAgentsOrderPutErrors]
+
+export type ReorderAgentsAgentsOrderPutResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentsOut
+}
+
+export type ReorderAgentsAgentsOrderPutResponse =
+  ReorderAgentsAgentsOrderPutResponses[keyof ReorderAgentsAgentsOrderPutResponses]
+
+export type ListAgentPluginsAgentsPluginsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/agents/plugins'
+}
+
+export type ListAgentPluginsAgentsPluginsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentPluginsOut
+}
+
+export type ListAgentPluginsAgentsPluginsGetResponse =
+  ListAgentPluginsAgentsPluginsGetResponses[keyof ListAgentPluginsAgentsPluginsGetResponses]
+
+export type AgentDetailAgentsAgentIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}'
+}
+
+export type AgentDetailAgentsAgentIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type AgentDetailAgentsAgentIdGetError =
+  AgentDetailAgentsAgentIdGetErrors[keyof AgentDetailAgentsAgentIdGetErrors]
+
+export type AgentDetailAgentsAgentIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentDetailOut
+}
+
+export type AgentDetailAgentsAgentIdGetResponse =
+  AgentDetailAgentsAgentIdGetResponses[keyof AgentDetailAgentsAgentIdGetResponses]
+
+export type UpdateAgentAgentsAgentIdPatchData = {
+  body: AgentUpdateIn
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}'
+}
+
+export type UpdateAgentAgentsAgentIdPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateAgentAgentsAgentIdPatchError =
+  UpdateAgentAgentsAgentIdPatchErrors[keyof UpdateAgentAgentsAgentIdPatchErrors]
+
+export type UpdateAgentAgentsAgentIdPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentDetailOut
+}
+
+export type UpdateAgentAgentsAgentIdPatchResponse =
+  UpdateAgentAgentsAgentIdPatchResponses[keyof UpdateAgentAgentsAgentIdPatchResponses]
+
+export type ArchiveAgentAgentsAgentIdArchivePostData = {
+  body?: never
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/archive'
+}
+
+export type ArchiveAgentAgentsAgentIdArchivePostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ArchiveAgentAgentsAgentIdArchivePostError =
+  ArchiveAgentAgentsAgentIdArchivePostErrors[keyof ArchiveAgentAgentsAgentIdArchivePostErrors]
+
+export type ArchiveAgentAgentsAgentIdArchivePostResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentDetailOut
+}
+
+export type ArchiveAgentAgentsAgentIdArchivePostResponse =
+  ArchiveAgentAgentsAgentIdArchivePostResponses[keyof ArchiveAgentAgentsAgentIdArchivePostResponses]
+
+export type SaveAgentDraftAgentsAgentIdDraftPutData = {
+  body: AgentDraftIn
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/draft'
+}
+
+export type SaveAgentDraftAgentsAgentIdDraftPutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SaveAgentDraftAgentsAgentIdDraftPutError =
+  SaveAgentDraftAgentsAgentIdDraftPutErrors[keyof SaveAgentDraftAgentsAgentIdDraftPutErrors]
+
+export type SaveAgentDraftAgentsAgentIdDraftPutResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentDetailOut
+}
+
+export type SaveAgentDraftAgentsAgentIdDraftPutResponse =
+  SaveAgentDraftAgentsAgentIdDraftPutResponses[keyof SaveAgentDraftAgentsAgentIdDraftPutResponses]
+
+export type ExportAgentAgentsAgentIdExportGetData = {
+  body?: never
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/export'
+}
+
+export type ExportAgentAgentsAgentIdExportGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ExportAgentAgentsAgentIdExportGetError =
+  ExportAgentAgentsAgentIdExportGetErrors[keyof ExportAgentAgentsAgentIdExportGetErrors]
+
+export type ExportAgentAgentsAgentIdExportGetResponses = {
+  /**
+   * agent 的导出包
+   */
+  200: unknown
+}
+
+export type OpenPreviewAgentsAgentIdPreviewsPostData = {
+  /**
+   * Body
+   */
+  body?: AgentPreviewIn | null
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/previews'
+}
+
+export type OpenPreviewAgentsAgentIdPreviewsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type OpenPreviewAgentsAgentIdPreviewsPostError =
+  OpenPreviewAgentsAgentIdPreviewsPostErrors[keyof OpenPreviewAgentsAgentIdPreviewsPostErrors]
+
+export type OpenPreviewAgentsAgentIdPreviewsPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: AgentPreviewOut
+}
+
+export type OpenPreviewAgentsAgentIdPreviewsPostResponse =
+  OpenPreviewAgentsAgentIdPreviewsPostResponses[keyof OpenPreviewAgentsAgentIdPreviewsPostResponses]
+
+export type UnarchiveAgentAgentsAgentIdUnarchivePostData = {
+  body?: never
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/unarchive'
+}
+
+export type UnarchiveAgentAgentsAgentIdUnarchivePostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UnarchiveAgentAgentsAgentIdUnarchivePostError =
+  UnarchiveAgentAgentsAgentIdUnarchivePostErrors[keyof UnarchiveAgentAgentsAgentIdUnarchivePostErrors]
+
+export type UnarchiveAgentAgentsAgentIdUnarchivePostResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentDetailOut
+}
+
+export type UnarchiveAgentAgentsAgentIdUnarchivePostResponse =
+  UnarchiveAgentAgentsAgentIdUnarchivePostResponses[keyof UnarchiveAgentAgentsAgentIdUnarchivePostResponses]
+
+export type AgentVersionsAgentsAgentIdVersionsGetData = {
+  body?: never
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/versions'
+}
+
+export type AgentVersionsAgentsAgentIdVersionsGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type AgentVersionsAgentsAgentIdVersionsGetError =
+  AgentVersionsAgentsAgentIdVersionsGetErrors[keyof AgentVersionsAgentsAgentIdVersionsGetErrors]
+
+export type AgentVersionsAgentsAgentIdVersionsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentVersionsOut
+}
+
+export type AgentVersionsAgentsAgentIdVersionsGetResponse =
+  AgentVersionsAgentsAgentIdVersionsGetResponses[keyof AgentVersionsAgentsAgentIdVersionsGetResponses]
+
+export type PublishAgentAgentsAgentIdVersionsPostData = {
+  body: AgentPublishIn
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/versions'
+}
+
+export type PublishAgentAgentsAgentIdVersionsPostErrors = {
+  /**
+   * 发布被拦下
+   */
+  422: AgentPublishProblemsOut
+}
+
+export type PublishAgentAgentsAgentIdVersionsPostError =
+  PublishAgentAgentsAgentIdVersionsPostErrors[keyof PublishAgentAgentsAgentIdVersionsPostErrors]
+
+export type PublishAgentAgentsAgentIdVersionsPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: AgentVersionOut
+}
+
+export type PublishAgentAgentsAgentIdVersionsPostResponse =
+  PublishAgentAgentsAgentIdVersionsPostResponses[keyof PublishAgentAgentsAgentIdVersionsPostResponses]
+
+export type AgentVersionAgentsAgentIdVersionsVersionIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+    /**
+     * Version Id
+     */
+    version_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/versions/{version_id}'
+}
+
+export type AgentVersionAgentsAgentIdVersionsVersionIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type AgentVersionAgentsAgentIdVersionsVersionIdGetError =
+  AgentVersionAgentsAgentIdVersionsVersionIdGetErrors[keyof AgentVersionAgentsAgentIdVersionsVersionIdGetErrors]
+
+export type AgentVersionAgentsAgentIdVersionsVersionIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentVersionDetailOut
+}
+
+export type AgentVersionAgentsAgentIdVersionsVersionIdGetResponse =
+  AgentVersionAgentsAgentIdVersionsVersionIdGetResponses[keyof AgentVersionAgentsAgentIdVersionsVersionIdGetResponses]
+
+export type RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostData = {
+  body: AgentRestoreIn
+  path: {
+    /**
+     * Agent Id
+     */
+    agent_id: string
+    /**
+     * Version Id
+     */
+    version_id: string
+  }
+  query?: never
+  url: '/agents/{agent_id}/versions/{version_id}/restore'
+}
+
+export type RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostError =
+  RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostErrors[keyof RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostErrors]
+
+export type RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostResponses = {
+  /**
+   * Successful Response
+   */
+  200: AgentDetailOut
+}
+
+export type RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostResponse =
+  RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostResponses[keyof RestoreAgentVersionAgentsAgentIdVersionsVersionIdRestorePostResponses]
+
 export type ListKeysApiKeysGetData = {
   body?: never
   path?: never
@@ -6622,6 +9040,23 @@ export type ListUngroupedConversationsUngroupedGetResponses = {
 
 export type ListUngroupedConversationsUngroupedGetResponse =
   ListUngroupedConversationsUngroupedGetResponses[keyof ListUngroupedConversationsUngroupedGetResponses]
+
+export type ReadVideoProgressConversationsVideoProgressGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/conversations/video-progress'
+}
+
+export type ReadVideoProgressConversationsVideoProgressGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ConversationVideoProgressOut
+}
+
+export type ReadVideoProgressConversationsVideoProgressGetResponse =
+  ReadVideoProgressConversationsVideoProgressGetResponses[keyof ReadVideoProgressConversationsVideoProgressGetResponses]
 
 export type DeleteConversationConversationsConversationIdDeleteData = {
   body?: never
@@ -7674,6 +10109,55 @@ export type ForkConversationConversationsConversationIdForkPostResponses = {
 export type ForkConversationConversationsConversationIdForkPostResponse =
   ForkConversationConversationsConversationIdForkPostResponses[keyof ForkConversationConversationsConversationIdForkPostResponses]
 
+export type DefaultModelsDefaultModelsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/default-models'
+}
+
+export type DefaultModelsDefaultModelsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: DefaultModelsOut
+}
+
+export type DefaultModelsDefaultModelsGetResponse =
+  DefaultModelsDefaultModelsGetResponses[keyof DefaultModelsDefaultModelsGetResponses]
+
+export type SetDefaultModelDefaultModelsModelTypePutData = {
+  body: DefaultModelIn
+  path: {
+    /**
+     * Model Type
+     */
+    model_type: 'llm' | 'embedding' | 'rerank'
+  }
+  query?: never
+  url: '/default-models/{model_type}'
+}
+
+export type SetDefaultModelDefaultModelsModelTypePutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SetDefaultModelDefaultModelsModelTypePutError =
+  SetDefaultModelDefaultModelsModelTypePutErrors[keyof SetDefaultModelDefaultModelsModelTypePutErrors]
+
+export type SetDefaultModelDefaultModelsModelTypePutResponses = {
+  /**
+   * Successful Response
+   */
+  200: DefaultModelOut
+}
+
+export type SetDefaultModelDefaultModelsModelTypePutResponse =
+  SetDefaultModelDefaultModelsModelTypePutResponses[keyof SetDefaultModelDefaultModelsModelTypePutResponses]
+
 export type ListGenerationsGenerationsGetData = {
   body?: never
   path?: never
@@ -8627,6 +11111,612 @@ export type WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses = {
 export type WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponse =
   WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses[keyof WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses]
 
+export type McpServersMcpServersGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/mcp-servers'
+}
+
+export type McpServersMcpServersGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: McpServersOut
+}
+
+export type McpServersMcpServersGetResponse =
+  McpServersMcpServersGetResponses[keyof McpServersMcpServersGetResponses]
+
+export type CreateMcpServerMcpServersPostData = {
+  body: McpServerCreateIn
+  path?: never
+  query?: never
+  url: '/mcp-servers'
+}
+
+export type CreateMcpServerMcpServersPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateMcpServerMcpServersPostError =
+  CreateMcpServerMcpServersPostErrors[keyof CreateMcpServerMcpServersPostErrors]
+
+export type CreateMcpServerMcpServersPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: McpServerOut
+}
+
+export type CreateMcpServerMcpServersPostResponse =
+  CreateMcpServerMcpServersPostResponses[keyof CreateMcpServerMcpServersPostResponses]
+
+export type CheckUnsavedMcpServerMcpServersCheckPostData = {
+  body: McpCheckIn
+  path?: never
+  query?: never
+  url: '/mcp-servers/check'
+}
+
+export type CheckUnsavedMcpServerMcpServersCheckPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CheckUnsavedMcpServerMcpServersCheckPostError =
+  CheckUnsavedMcpServerMcpServersCheckPostErrors[keyof CheckUnsavedMcpServerMcpServersCheckPostErrors]
+
+export type CheckUnsavedMcpServerMcpServersCheckPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: McpCheckOut
+}
+
+export type CheckUnsavedMcpServerMcpServersCheckPostResponse =
+  CheckUnsavedMcpServerMcpServersCheckPostResponses[keyof CheckUnsavedMcpServerMcpServersCheckPostResponses]
+
+export type DeleteMcpServerMcpServersServerIdDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Server Id
+     */
+    server_id: string
+  }
+  query?: never
+  url: '/mcp-servers/{server_id}'
+}
+
+export type DeleteMcpServerMcpServersServerIdDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type DeleteMcpServerMcpServersServerIdDeleteError =
+  DeleteMcpServerMcpServersServerIdDeleteErrors[keyof DeleteMcpServerMcpServersServerIdDeleteErrors]
+
+export type DeleteMcpServerMcpServersServerIdDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  204: void
+}
+
+export type DeleteMcpServerMcpServersServerIdDeleteResponse =
+  DeleteMcpServerMcpServersServerIdDeleteResponses[keyof DeleteMcpServerMcpServersServerIdDeleteResponses]
+
+export type McpServerMcpServersServerIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Server Id
+     */
+    server_id: string
+  }
+  query?: never
+  url: '/mcp-servers/{server_id}'
+}
+
+export type McpServerMcpServersServerIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type McpServerMcpServersServerIdGetError =
+  McpServerMcpServersServerIdGetErrors[keyof McpServerMcpServersServerIdGetErrors]
+
+export type McpServerMcpServersServerIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: McpServerOut
+}
+
+export type McpServerMcpServersServerIdGetResponse =
+  McpServerMcpServersServerIdGetResponses[keyof McpServerMcpServersServerIdGetResponses]
+
+export type UpdateMcpServerMcpServersServerIdPatchData = {
+  body: McpServerUpdateIn
+  path: {
+    /**
+     * Server Id
+     */
+    server_id: string
+  }
+  query?: never
+  url: '/mcp-servers/{server_id}'
+}
+
+export type UpdateMcpServerMcpServersServerIdPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateMcpServerMcpServersServerIdPatchError =
+  UpdateMcpServerMcpServersServerIdPatchErrors[keyof UpdateMcpServerMcpServersServerIdPatchErrors]
+
+export type UpdateMcpServerMcpServersServerIdPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: McpServerOut
+}
+
+export type UpdateMcpServerMcpServersServerIdPatchResponse =
+  UpdateMcpServerMcpServersServerIdPatchResponses[keyof UpdateMcpServerMcpServersServerIdPatchResponses]
+
+export type CheckMcpServerMcpServersServerIdCheckPostData = {
+  body?: never
+  path: {
+    /**
+     * Server Id
+     */
+    server_id: string
+  }
+  query?: never
+  url: '/mcp-servers/{server_id}/check'
+}
+
+export type CheckMcpServerMcpServersServerIdCheckPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CheckMcpServerMcpServersServerIdCheckPostError =
+  CheckMcpServerMcpServersServerIdCheckPostErrors[keyof CheckMcpServerMcpServersServerIdCheckPostErrors]
+
+export type CheckMcpServerMcpServersServerIdCheckPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: McpCheckOut
+}
+
+export type CheckMcpServerMcpServersServerIdCheckPostResponse =
+  CheckMcpServerMcpServersServerIdCheckPostResponses[keyof CheckMcpServerMcpServersServerIdCheckPostResponses]
+
+export type ModelProvidersModelProvidersGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/model-providers'
+}
+
+export type ModelProvidersModelProvidersGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ModelProvidersOut
+}
+
+export type ModelProvidersModelProvidersGetResponse =
+  ModelProvidersModelProvidersGetResponses[keyof ModelProvidersModelProvidersGetResponses]
+
+export type CreateModelProviderModelProvidersPostData = {
+  body: ModelProviderCreateIn
+  path?: never
+  query?: never
+  url: '/model-providers'
+}
+
+export type CreateModelProviderModelProvidersPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateModelProviderModelProvidersPostError =
+  CreateModelProviderModelProvidersPostErrors[keyof CreateModelProviderModelProvidersPostErrors]
+
+export type CreateModelProviderModelProvidersPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: ModelProviderOut
+}
+
+export type CreateModelProviderModelProvidersPostResponse =
+  CreateModelProviderModelProvidersPostResponses[keyof CreateModelProviderModelProvidersPostResponses]
+
+export type ModelProviderDeclarationsModelProvidersDeclarationsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/model-providers/declarations'
+}
+
+export type ModelProviderDeclarationsModelProvidersDeclarationsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: DeclarationsOut
+}
+
+export type ModelProviderDeclarationsModelProvidersDeclarationsGetResponse =
+  ModelProviderDeclarationsModelProvidersDeclarationsGetResponses[keyof ModelProviderDeclarationsModelProvidersDeclarationsGetResponses]
+
+export type DeleteModelProviderModelProvidersProviderIdDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}'
+}
+
+export type DeleteModelProviderModelProvidersProviderIdDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type DeleteModelProviderModelProvidersProviderIdDeleteError =
+  DeleteModelProviderModelProvidersProviderIdDeleteErrors[keyof DeleteModelProviderModelProvidersProviderIdDeleteErrors]
+
+export type DeleteModelProviderModelProvidersProviderIdDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  204: void
+}
+
+export type DeleteModelProviderModelProvidersProviderIdDeleteResponse =
+  DeleteModelProviderModelProvidersProviderIdDeleteResponses[keyof DeleteModelProviderModelProvidersProviderIdDeleteResponses]
+
+export type UpdateModelProviderModelProvidersProviderIdPatchData = {
+  body: ModelProviderUpdateIn
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}'
+}
+
+export type UpdateModelProviderModelProvidersProviderIdPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateModelProviderModelProvidersProviderIdPatchError =
+  UpdateModelProviderModelProvidersProviderIdPatchErrors[keyof UpdateModelProviderModelProvidersProviderIdPatchErrors]
+
+export type UpdateModelProviderModelProvidersProviderIdPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: ModelProviderOut
+}
+
+export type UpdateModelProviderModelProvidersProviderIdPatchResponse =
+  UpdateModelProviderModelProvidersProviderIdPatchResponses[keyof UpdateModelProviderModelProvidersProviderIdPatchResponses]
+
+export type CreateProviderCredentialModelProvidersProviderIdCredentialsPostData = {
+  body: CredentialCreateIn
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}/credentials'
+}
+
+export type CreateProviderCredentialModelProvidersProviderIdCredentialsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateProviderCredentialModelProvidersProviderIdCredentialsPostError =
+  CreateProviderCredentialModelProvidersProviderIdCredentialsPostErrors[keyof CreateProviderCredentialModelProvidersProviderIdCredentialsPostErrors]
+
+export type CreateProviderCredentialModelProvidersProviderIdCredentialsPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: CredentialOut
+}
+
+export type CreateProviderCredentialModelProvidersProviderIdCredentialsPostResponse =
+  CreateProviderCredentialModelProvidersProviderIdCredentialsPostResponses[keyof CreateProviderCredentialModelProvidersProviderIdCredentialsPostResponses]
+
+export type TestProviderCredentialModelProvidersProviderIdCredentialsTestPostData = {
+  body: CredentialTestIn
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}/credentials/test'
+}
+
+export type TestProviderCredentialModelProvidersProviderIdCredentialsTestPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type TestProviderCredentialModelProvidersProviderIdCredentialsTestPostError =
+  TestProviderCredentialModelProvidersProviderIdCredentialsTestPostErrors[keyof TestProviderCredentialModelProvidersProviderIdCredentialsTestPostErrors]
+
+export type TestProviderCredentialModelProvidersProviderIdCredentialsTestPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: ProbeOut
+}
+
+export type TestProviderCredentialModelProvidersProviderIdCredentialsTestPostResponse =
+  TestProviderCredentialModelProvidersProviderIdCredentialsTestPostResponses[keyof TestProviderCredentialModelProvidersProviderIdCredentialsTestPostResponses]
+
+export type DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+    /**
+     * Credential Id
+     */
+    credential_id: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}/credentials/{credential_id}'
+}
+
+export type DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteError =
+  DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteErrors[keyof DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteErrors]
+
+export type DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteResponses =
+  {
+    /**
+     * Successful Response
+     */
+    204: void
+  }
+
+export type DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteResponse =
+  DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteResponses[keyof DeleteProviderCredentialModelProvidersProviderIdCredentialsCredentialIdDeleteResponses]
+
+export type UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchData = {
+  body: CredentialUpdateIn
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+    /**
+     * Credential Id
+     */
+    credential_id: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}/credentials/{credential_id}'
+}
+
+export type UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchError =
+  UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchErrors[keyof UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchErrors]
+
+export type UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchResponses =
+  {
+    /**
+     * Successful Response
+     */
+    200: CredentialOut
+  }
+
+export type UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchResponse =
+  UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchResponses[keyof UpdateProviderCredentialModelProvidersProviderIdCredentialsCredentialIdPatchResponses]
+
+export type AddProviderModelModelProvidersProviderIdModelsPostData = {
+  body: CustomModelCreateIn
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}/models'
+}
+
+export type AddProviderModelModelProvidersProviderIdModelsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type AddProviderModelModelProvidersProviderIdModelsPostError =
+  AddProviderModelModelProvidersProviderIdModelsPostErrors[keyof AddProviderModelModelProvidersProviderIdModelsPostErrors]
+
+export type AddProviderModelModelProvidersProviderIdModelsPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: ProviderModelOut
+}
+
+export type AddProviderModelModelProvidersProviderIdModelsPostResponse =
+  AddProviderModelModelProvidersProviderIdModelsPostResponses[keyof AddProviderModelModelProvidersProviderIdModelsPostResponses]
+
+export type TestProviderModelModelProvidersProviderIdModelsTestPostData = {
+  body: ModelTestIn
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}/models/test'
+}
+
+export type TestProviderModelModelProvidersProviderIdModelsTestPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type TestProviderModelModelProvidersProviderIdModelsTestPostError =
+  TestProviderModelModelProvidersProviderIdModelsTestPostErrors[keyof TestProviderModelModelProvidersProviderIdModelsTestPostErrors]
+
+export type TestProviderModelModelProvidersProviderIdModelsTestPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: ProbeOut
+}
+
+export type TestProviderModelModelProvidersProviderIdModelsTestPostResponse =
+  TestProviderModelModelProvidersProviderIdModelsTestPostResponses[keyof TestProviderModelModelProvidersProviderIdModelsTestPostResponses]
+
+export type DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+    /**
+     * Model Type
+     */
+    model_type: 'llm' | 'embedding' | 'rerank'
+    /**
+     * Model Name
+     */
+    model_name: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}/models/{model_type}/{model_name}'
+}
+
+export type DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteError =
+  DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteErrors[keyof DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteErrors]
+
+export type DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  204: void
+}
+
+export type DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteResponse =
+  DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteResponses[keyof DeleteProviderModelModelProvidersProviderIdModelsModelTypeModelNameDeleteResponses]
+
+export type UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchData = {
+  body: ModelUpdateIn
+  path: {
+    /**
+     * Provider Id
+     */
+    provider_id: string
+    /**
+     * Model Type
+     */
+    model_type: 'llm' | 'embedding' | 'rerank'
+    /**
+     * Model Name
+     */
+    model_name: string
+  }
+  query?: never
+  url: '/model-providers/{provider_id}/models/{model_type}/{model_name}'
+}
+
+export type UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchError =
+  UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchErrors[keyof UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchErrors]
+
+export type UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: ProviderModelOut
+}
+
+export type UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchResponse =
+  UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchResponses[keyof UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchResponses]
+
 export type ListReferencesReferencesGetData = {
   body?: never
   path?: never
@@ -8950,6 +12040,568 @@ export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostRespo
 
 export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponse =
   StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponses[keyof StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponses]
+
+export type ListSkillsSkillsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/skills'
+}
+
+export type ListSkillsSkillsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillsOut
+}
+
+export type ListSkillsSkillsGetResponse =
+  ListSkillsSkillsGetResponses[keyof ListSkillsSkillsGetResponses]
+
+export type CreateSkillSkillsPostData = {
+  body: SkillCreateIn
+  path?: never
+  query?: never
+  url: '/skills'
+}
+
+export type CreateSkillSkillsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateSkillSkillsPostError =
+  CreateSkillSkillsPostErrors[keyof CreateSkillSkillsPostErrors]
+
+export type CreateSkillSkillsPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: SkillDetailOut
+}
+
+export type CreateSkillSkillsPostResponse =
+  CreateSkillSkillsPostResponses[keyof CreateSkillSkillsPostResponses]
+
+export type ImportSkillSkillsImportPostData = {
+  body: BodyImportSkillSkillsImportPost
+  path?: never
+  query?: {
+    /**
+     * Dryrun
+     */
+    dryRun?: boolean
+  }
+  url: '/skills/import'
+}
+
+export type ImportSkillSkillsImportPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ImportSkillSkillsImportPostError =
+  ImportSkillSkillsImportPostErrors[keyof ImportSkillSkillsImportPostErrors]
+
+export type ImportSkillSkillsImportPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillImportOut
+}
+
+export type ImportSkillSkillsImportPostResponse =
+  ImportSkillSkillsImportPostResponses[keyof ImportSkillSkillsImportPostResponses]
+
+export type SkillDetailSkillsSkillIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}'
+}
+
+export type SkillDetailSkillsSkillIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SkillDetailSkillsSkillIdGetError =
+  SkillDetailSkillsSkillIdGetErrors[keyof SkillDetailSkillsSkillIdGetErrors]
+
+export type SkillDetailSkillsSkillIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillDetailOut
+}
+
+export type SkillDetailSkillsSkillIdGetResponse =
+  SkillDetailSkillsSkillIdGetResponses[keyof SkillDetailSkillsSkillIdGetResponses]
+
+export type UpdateSkillSkillsSkillIdPatchData = {
+  body: SkillUpdateIn
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}'
+}
+
+export type UpdateSkillSkillsSkillIdPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateSkillSkillsSkillIdPatchError =
+  UpdateSkillSkillsSkillIdPatchErrors[keyof UpdateSkillSkillsSkillIdPatchErrors]
+
+export type UpdateSkillSkillsSkillIdPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillDetailOut
+}
+
+export type UpdateSkillSkillsSkillIdPatchResponse =
+  UpdateSkillSkillsSkillIdPatchResponses[keyof UpdateSkillSkillsSkillIdPatchResponses]
+
+export type ArchiveSkillSkillsSkillIdArchivePostData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/archive'
+}
+
+export type ArchiveSkillSkillsSkillIdArchivePostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ArchiveSkillSkillsSkillIdArchivePostError =
+  ArchiveSkillSkillsSkillIdArchivePostErrors[keyof ArchiveSkillSkillsSkillIdArchivePostErrors]
+
+export type ArchiveSkillSkillsSkillIdArchivePostResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillDetailOut
+}
+
+export type ArchiveSkillSkillsSkillIdArchivePostResponse =
+  ArchiveSkillSkillsSkillIdArchivePostResponses[keyof ArchiveSkillSkillsSkillIdArchivePostResponses]
+
+export type RenameDraftFileSkillsSkillIdDraftFilesRenamePostData = {
+  body: DraftFileRenameIn
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/draft/files/rename'
+}
+
+export type RenameDraftFileSkillsSkillIdDraftFilesRenamePostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type RenameDraftFileSkillsSkillIdDraftFilesRenamePostError =
+  RenameDraftFileSkillsSkillIdDraftFilesRenamePostErrors[keyof RenameDraftFileSkillsSkillIdDraftFilesRenamePostErrors]
+
+export type RenameDraftFileSkillsSkillIdDraftFilesRenamePostResponses = {
+  /**
+   * Successful Response
+   */
+  200: DraftFileOut
+}
+
+export type RenameDraftFileSkillsSkillIdDraftFilesRenamePostResponse =
+  RenameDraftFileSkillsSkillIdDraftFilesRenamePostResponses[keyof RenameDraftFileSkillsSkillIdDraftFilesRenamePostResponses]
+
+export type DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+    /**
+     * Path
+     */
+    path: string
+  }
+  query: {
+    /**
+     * Basehash
+     */
+    baseHash: string
+  }
+  url: '/skills/{skill_id}/draft/files/{path}'
+}
+
+export type DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteError =
+  DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteErrors[keyof DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteErrors]
+
+export type DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  204: void
+}
+
+export type DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteResponse =
+  DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteResponses[keyof DeleteDraftFileSkillsSkillIdDraftFilesPathDeleteResponses]
+
+export type ReadDraftFileSkillsSkillIdDraftFilesPathGetData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+    /**
+     * Path
+     */
+    path: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/draft/files/{path}'
+}
+
+export type ReadDraftFileSkillsSkillIdDraftFilesPathGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReadDraftFileSkillsSkillIdDraftFilesPathGetError =
+  ReadDraftFileSkillsSkillIdDraftFilesPathGetErrors[keyof ReadDraftFileSkillsSkillIdDraftFilesPathGetErrors]
+
+export type ReadDraftFileSkillsSkillIdDraftFilesPathGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: DraftFileOut
+}
+
+export type ReadDraftFileSkillsSkillIdDraftFilesPathGetResponse =
+  ReadDraftFileSkillsSkillIdDraftFilesPathGetResponses[keyof ReadDraftFileSkillsSkillIdDraftFilesPathGetResponses]
+
+export type WriteDraftFileSkillsSkillIdDraftFilesPathPutData = {
+  body: DraftFileWriteIn
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+    /**
+     * Path
+     */
+    path: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/draft/files/{path}'
+}
+
+export type WriteDraftFileSkillsSkillIdDraftFilesPathPutErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type WriteDraftFileSkillsSkillIdDraftFilesPathPutError =
+  WriteDraftFileSkillsSkillIdDraftFilesPathPutErrors[keyof WriteDraftFileSkillsSkillIdDraftFilesPathPutErrors]
+
+export type WriteDraftFileSkillsSkillIdDraftFilesPathPutResponses = {
+  /**
+   * Successful Response
+   */
+  200: DraftFileOut
+}
+
+export type WriteDraftFileSkillsSkillIdDraftFilesPathPutResponse =
+  WriteDraftFileSkillsSkillIdDraftFilesPathPutResponses[keyof WriteDraftFileSkillsSkillIdDraftFilesPathPutResponses]
+
+export type ExportSkillSkillsSkillIdExportGetData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+  }
+  query?: {
+    /**
+     * Versionid
+     */
+    versionId?: string | null
+  }
+  url: '/skills/{skill_id}/export'
+}
+
+export type ExportSkillSkillsSkillIdExportGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ExportSkillSkillsSkillIdExportGetError =
+  ExportSkillSkillsSkillIdExportGetErrors[keyof ExportSkillSkillsSkillIdExportGetErrors]
+
+export type ExportSkillSkillsSkillIdExportGetResponses = {
+  /**
+   * 技能的 zip 压缩包
+   */
+  200: Blob | File
+}
+
+export type ExportSkillSkillsSkillIdExportGetResponse =
+  ExportSkillSkillsSkillIdExportGetResponses[keyof ExportSkillSkillsSkillIdExportGetResponses]
+
+export type UnarchiveSkillSkillsSkillIdUnarchivePostData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/unarchive'
+}
+
+export type UnarchiveSkillSkillsSkillIdUnarchivePostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UnarchiveSkillSkillsSkillIdUnarchivePostError =
+  UnarchiveSkillSkillsSkillIdUnarchivePostErrors[keyof UnarchiveSkillSkillsSkillIdUnarchivePostErrors]
+
+export type UnarchiveSkillSkillsSkillIdUnarchivePostResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillDetailOut
+}
+
+export type UnarchiveSkillSkillsSkillIdUnarchivePostResponse =
+  UnarchiveSkillSkillsSkillIdUnarchivePostResponses[keyof UnarchiveSkillSkillsSkillIdUnarchivePostResponses]
+
+export type SkillVersionsSkillsSkillIdVersionsGetData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/versions'
+}
+
+export type SkillVersionsSkillsSkillIdVersionsGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SkillVersionsSkillsSkillIdVersionsGetError =
+  SkillVersionsSkillsSkillIdVersionsGetErrors[keyof SkillVersionsSkillsSkillIdVersionsGetErrors]
+
+export type SkillVersionsSkillsSkillIdVersionsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillVersionsOut
+}
+
+export type SkillVersionsSkillsSkillIdVersionsGetResponse =
+  SkillVersionsSkillsSkillIdVersionsGetResponses[keyof SkillVersionsSkillsSkillIdVersionsGetResponses]
+
+export type PublishSkillSkillsSkillIdVersionsPostData = {
+  body: SkillPublishIn
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/versions'
+}
+
+export type PublishSkillSkillsSkillIdVersionsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type PublishSkillSkillsSkillIdVersionsPostError =
+  PublishSkillSkillsSkillIdVersionsPostErrors[keyof PublishSkillSkillsSkillIdVersionsPostErrors]
+
+export type PublishSkillSkillsSkillIdVersionsPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: SkillVersionOut
+}
+
+export type PublishSkillSkillsSkillIdVersionsPostResponse =
+  PublishSkillSkillsSkillIdVersionsPostResponses[keyof PublishSkillSkillsSkillIdVersionsPostResponses]
+
+export type SkillVersionSkillsSkillIdVersionsVersionIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+    /**
+     * Version Id
+     */
+    version_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/versions/{version_id}'
+}
+
+export type SkillVersionSkillsSkillIdVersionsVersionIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SkillVersionSkillsSkillIdVersionsVersionIdGetError =
+  SkillVersionSkillsSkillIdVersionsVersionIdGetErrors[keyof SkillVersionSkillsSkillIdVersionsVersionIdGetErrors]
+
+export type SkillVersionSkillsSkillIdVersionsVersionIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillVersionDetailOut
+}
+
+export type SkillVersionSkillsSkillIdVersionsVersionIdGetResponse =
+  SkillVersionSkillsSkillIdVersionsVersionIdGetResponses[keyof SkillVersionSkillsSkillIdVersionsVersionIdGetResponses]
+
+export type SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+    /**
+     * Version Id
+     */
+    version_id: string
+    /**
+     * Path
+     */
+    path: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/versions/{version_id}/files/{path}'
+}
+
+export type SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetError =
+  SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetErrors[keyof SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetErrors]
+
+export type SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillVersionFileOut
+}
+
+export type SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetResponse =
+  SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetResponses[keyof SkillVersionFileSkillsSkillIdVersionsVersionIdFilesPathGetResponses]
+
+export type RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostData = {
+  body?: never
+  path: {
+    /**
+     * Skill Id
+     */
+    skill_id: string
+    /**
+     * Version Id
+     */
+    version_id: string
+  }
+  query?: never
+  url: '/skills/{skill_id}/versions/{version_id}/restore'
+}
+
+export type RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostError =
+  RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostErrors[keyof RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostErrors]
+
+export type RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostResponses = {
+  /**
+   * Successful Response
+   */
+  200: SkillDetailOut
+}
+
+export type RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostResponse =
+  RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostResponses[keyof RestoreSkillVersionSkillsSkillIdVersionsVersionIdRestorePostResponses]
 
 export type ListTasksTasksGetData = {
   body?: never

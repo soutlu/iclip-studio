@@ -1,86 +1,106 @@
 # AGENTS.md — 开发约定
 
-先读本文与 [docs/CONTEXT.md](docs/CONTEXT.md)。修改后端时查 [docs/architecture.md](docs/architecture.md)，修改前端时再读 [web/AGENTS.md](web/AGENTS.md)。按任务查阅专项文档，入口见[文档地图](#文档地图)。
+开始任何开发前请先阅读本文与 [docs/CONTEXT.md](docs/CONTEXT.md)：
+- 修改后端、运行时或视频插件时，查阅 [docs/architecture.md](docs/architecture.md)。
+- 修改前端时，查阅 [web/AGENTS.md](web/AGENTS.md)。
+- 其他专项文档入口见文末[文档地图](#文档地图)。
+
+---
 
 ## 1. 命令与验证
 
-命令在仓库根目录执行；前端专项命令见 [web/AGENTS.md](web/AGENTS.md)。
+以下命令在仓库根目录执行（前端专属命令见 [web/AGENTS.md](web/AGENTS.md)）：
 
 | 命令 | 用途 |
 |---|---|
 | `make setup` | 安装后端与前端依赖 |
-| `make dev` | 启动后端；环境准备见[本地启动](docs/deploy.md#本地启动) |
-| `make db-upgrade` | 执行 Alembic 迁移；服务启动不自动建表 |
-| `make check` | 后端 lint、格式、类型、依赖边界、常规测试，以及合同与文档对账；CI 已包含这些检查，本地不必跑 |
-| `make web-check` | 前端 `ci:check`；CI 已包含这些检查，本地不必跑 |
-| `make test` | 后端单元与无真实 LLM 的集成测试 |
-| `make test-external` | 使用外部服务凭证的测试；环境与跳过规则见 [测试规范](docs/test-design.md) |
-| `make contract` | 从后端导出 OpenAPI |
-| `make docs-check` | 核对 Markdown 相对链接与 make 目标 |
-| `make hooks` | 安装本地 pre-commit / pre-push hooks |
+| `make dev` | 启动视频后端与 Agent 运行时服务（环境准备见[本地启动](docs/deploy.md#本地启动)） |
+| `make db-upgrade` | 执行 Alembic 数据库迁移（服务启动时不会自动建表） |
+| `make check` | 运行全套静态检查与常规测试（包含 `runtime/`、`plugins/video/`、`server/` 的 lint、格式、类型检查、依赖边界、单测/集成测试，以及 OpenAPI 合同、锁文件与文档链接检查）。CI 会自动跑，本地无需全量执行 |
+| `make web-check` | 运行前端全套检查（`pnpm ci:check`）。CI 会自动跑，本地无需全量执行 |
+| `make test` | 运行 `runtime/`、`plugins/video/` 与 `server/` 的单元测试及不依赖真实大模型的集成测试 |
+| `make test-external` | 运行需要真实外部服务凭证的测试（环境配置与跳过规则见[测试规范](docs/test-design.md)） |
+| `make contract` | 从视频后端与运行时服务导出最新的 OpenAPI 合同文件 |
+| `make docs-check` | 检查全仓 Markdown 相对路径链接是否有效、文中提到的 `make` 目标是否存在 |
+| `make lock-check` | 检查运行时部署镜像的锁文件 `deploy/runtime-video/uv.lock` 是否与项目依赖一致，并确保与 `server/uv.lock` 中的共有包版本完全一致 |
+| `make hooks` | 安装本地 Git `pre-commit` / `pre-push` 钩子 |
 
-`make up` 调用本机维护、不入库的 `scripts/dev-up.sh`；新检出的仓库按[本地启动](docs/deploy.md#本地启动)的步骤。
+> 注：`make up` 调用的是开发者本机自用的 `scripts/dev-up.sh`（不入库）；新克隆的仓库请按[本地启动](docs/deploy.md#本地启动)的步骤启动。
 
-本地只跑与改动相关的检查，通过后再推送；生产构建与全量 e2e 交给 CI，不在本地重复。
+### 本地按需验证原则
 
-- 后端变更提交前执行 `make lint`、`make format-check` 与 `make typecheck`，并运行与改动直接相关的 pytest；改了端点再跑 `make contract`，改了模块依赖关系再跑 `make tach`。完整测试由 CI 运行，本地不重复跑 `make check`。前端变更另按 [web/AGENTS.md](web/AGENTS.md) 验证。
-- 成片渲染服务（`render/`，以及它编进去的前端成片合成代码、组件目录与生成的合同）变更在 `render/` 执行 `pnpm lint`、`pnpm typecheck` 与 `pnpm test`；本机找不到 chrome-headless-shell 时真实渲染的集成测试跳过并写明原因。
-- 纯文档变更运行 `make docs-check`，修改 `web/` 下的 Markdown 另查格式；不为措辞新增业务测试。
-- 修改 SSO / PMS 接入后，本地走通一次真实登录回调。
-- 数据库测试只用一次性测试库或临时 schema；`TEST_DATABASE_URL` 不得指向业务库。迁移检查范围见 [测试规范](docs/test-design.md)。
+本地只跑与本次改动直接相关的检查，通过后再推送；耗时的生产构建与全量 E2E 测试交给 CI 执行：
 
-提交钩子使用 Gitleaks 检查暂存区，CI 的 `secrets` job 检查完整提交历史（含合并提交），失败会阻止 `ci` 通过。两处固定同一 Gitleaks 版本并共用 [.gitleaks.toml](.gitleaks.toml)；误报仅按已核实的具体文件和固定值同时匹配放行，不排除整个测试目录。扫描日志脱敏。新工作区执行 `make hooks` 安装钩子。
+- **修改 Python 代码（`server/`、`runtime/`、`plugins/video/`）**：提交前执行 `make lint`、`make format-check` 和 `make typecheck`，并运行与改动直接相关的 `pytest` 用例。
+  - 如果改了 HTTP 接口，额外运行 `make contract`；
+  - 如果改了模块间的导入关系，额外运行 `make tach`；
+  - 如果改了 Python 依赖包，额外运行 `make lock-check`。
+- **修改成片渲染服务（`render/`，或其引用的前端合成代码、组件目录、生成合同）**：在 `render/` 目录下执行 `pnpm lint`、`pnpm typecheck` 和 `pnpm test`（若本机未安装 `chrome-headless-shell`，真实渲染集成测试会自动跳过，需在汇报中说明）。
+- **纯文档修改**：运行 `make docs-check`；若修改了 `web/` 目录下的 Markdown，还需在 `web/` 下运行 `pnpm format:check`。
+- **修改 SSO / PMS 登录接入**：必须在本地完整走通一次真实的登录回调流程。
+- **数据库测试安全**：测试只能连接一次性测试库或临时 Schema，`TEST_DATABASE_URL` 严禁指向真实业务数据库（详见[测试规范](docs/test-design.md)）。
+- **密钥泄露扫描（Gitleaks）**：本地提交钩子会扫描暂存区，CI 的 `secrets` 任务会扫描完整 Git 历史。两处共用 [.gitleaks.toml](.gitleaks.toml) 配置；如有误报，只能按「具体文件路径 + 固定测试值」精确放行，禁止将整个测试目录加入白名单。
 
-### CI
+### CI 工作流
 
-| 工作流 | 触发 | 内容 |
+| 工作流 | 触发时机 | 执行内容 |
 |---|---|---|
-| [ci](.github/workflows/ci.yml) | PR 打开、推送新提交、重新打开、修改目标分支；只改标题或正文时不运行检查，合入后的 push 不触发 | 每次都查文档与 Git 历史中的密钥；目标为 `develop` 时按改动路径选择后端、前端、渲染服务检查，前端只改了 `web/` 下的 Markdown 时只查格式，目标为其他分支（含 `main`）时全部都查；结果汇总为 `ci` |
-| [cache-warm](.github/workflows/cache-warm.yml) | 推送 `develop`、`main`（含 PR 合入）；手动运行 | 只安装依赖、不跑检查，把依赖缓存存到该分支，供指向它的 PR 恢复 |
-| [release-images](.github/workflows/release-images.yml) | 推送 `vX.Y.Z` tag；手动选择分支 | 构建并上传镜像，见[镜像发布](docs/release.md) |
+| [ci](.github/workflows/ci.yml) | 打开 PR、推送新提交、重新打开 PR 或修改目标分支（仅修改 PR 标题/正文或合并后的 push 不触发） | 1. 必查文档链接与 Git 历史密钥泄露。<br>2. 目标分支为 `develop` 时，按改动路径智能选择检查范围（`plugins/video` 依赖 `runtime`，`server` 依赖前两者：改了 `runtime` 三处都查；改了 `plugins/video` 则查它与 `server`；仅改 `web/*.md` 时只查前端格式）。<br>3. 目标为其他分支（含 `main`）时全量检查。所有结果汇总为 `ci` 状态 |
+| [cache-warm](.github/workflows/cache-warm.yml) | 推送到 `develop` 或 `main`（含 PR 合入）、手动触发 | 仅安装依赖并保存缓存，供后续 PR 加速恢复 |
+| [release-images](.github/workflows/release-images.yml) | 推送 `vX.Y.Z` 标签、手动指定分支触发 | 构建并上传四个 Docker 镜像（见[发版与镜像发布](docs/release.md)） |
 
-选中的静态检查、构建与测试并行执行；集成测试每组使用独立 Postgres，前端单测与 e2e 按分片运行。本次选中了哪些端看运行 Summary，路径判定看 `scope` 日志。`ci` 结果怎样决定合并见[分支与交付](#3-分支与交付)。
+---
 
 ## 2. 合同与实现边界
 
-- 领域术语与不变量以 [docs/CONTEXT.md](docs/CONTEXT.md) 为准，两端共用。
-- 对外端点、字段、状态码与端点权限由后端定义，以 [contract/openapi.json](contract/openapi.json) 为准，端点权限只在路由上声明、不在文档里手抄；它表达不了的约定写在 [contract/conventions.md](contract/conventions.md)。
-- 修改端点的顺序：后端实现 → `make contract` → 在 `web/` 执行 `pnpm contract:generate`。前端消费生成类型与 zod，不手写端点 schema。
-- 基础 token 以 [design-system.html](design-system.html) 为准。token 先改规范，再同步运行时 CSS，通过 `pnpm lint:design`；验收截图放 `.artifacts/design-qa/`。
-- 不通过忽略类型错误、关闭 lint 或放宽检查配置消除失败；先修正实现。
-
-日志使用 `structlog.stdlib.get_logger(__name__)`，事件为固定短句，变量用关键字参数；不拼接 f-string 或 `%s`。请求上下文由中间件绑定，业务只增加本层字段。第三方常态噪音在 [app/logging.py](server/src/iclip/app/logging.py) 的 `QUIET_LOGGERS` 调整。
+- **领域概念统一**：前后端共用同一套领域术语与系统不变量，以 [docs/CONTEXT.md](docs/CONTEXT.md) 为准。
+- **接口合同先行**：对外 HTTP 接口路径、字段、状态码与权限由后端路由定义，导出至 [contract/openapi.json](contract/openapi.json)；OpenAPI 无法表达的跨端约定记录在 [contract/conventions.md](contract/conventions.md)。
+- **修改接口的标准顺序**：先改后端实现 → 根目录运行 `make contract` 导出合同 → 在 `web/` 目录运行 `pnpm contract:generate` 生成前端类型与 Zod Schema（前端直接消费生成物，禁止手写接口 Schema）。
+- **设计系统 Token**：基础视觉 Token 以 [design-system.html](design-system.html) 为准。修改 Token 时先改规范文件，再同步 CSS，并通过 `pnpm lint:design` 检查；UI 验收截图统一放在 `.artifacts/design-qa/`。
+- **不掩盖错误**：严禁通过 `@ts-ignore`、`# type: ignore`、关闭 lint 规则或放宽检查配置来让报错消失；必须直接修复代码实现。
+- **结构化日志规范**：Python 统一使用 `structlog.stdlib.get_logger(__name__)`。日志事件写简短固定的中文短句，动态变量通过关键字参数传入（禁止使用 f-string 或 `%s` 拼接日志正文）。第三方库的日志噪音统一在 [app/logging.py](server/src/iclip/app/logging.py) 的 `QUIET_LOGGERS` 中压低。
 
 ```python
 _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
 ```
 
+---
+
 ## 3. 分支与交付
 
-两条线：日常开发进 `develop`，`ci` 通过即自动合入；发版与热修进 `main`，开发者确认后手动合入。`main` 与 `develop` 都不直接 push、不强推、不删除；`develop` 由规则集强制要求 `ci` 通过，但不要求分支先更新到最新，`develop` 前进不会让在途 PR 重跑 CI。
+仓库采用双主干分支模型：
+- **`develop`（日常开发分支）**：所有日常功能与修复均向 `develop` 提 PR，`ci` 检查通过后自动 Squash 合并。
+- **`main`（正式发版分支）**：只接收版本发布和紧急热修，**创建或合并指向 `main` 的 PR 必须先获得开发者明确确认**。
+- `main` 与 `develop` 均禁止直接 push、禁止强推（force push）、禁止删除。
 
-### 日常开发
+### 日常开发流程（Worktree 模式）
 
-开发在独立 worktree 中进行；主目录常驻 `develop`，不在其中开发或切换分支。
+主目录常驻 `develop` 分支，不在主目录直接写代码或切分支；每个任务都在独立的 Git Worktree 中进行：
 
-1. **建分支**：从最新 `origin/develop` 起步。
+1. **拉取最新代码并创建 Worktree**：
    ```bash
    git fetch origin
    git worktree add .claude/worktrees/<任务名> -b <分支名> origin/develop
    ```
-   依赖未合 PR 时从该 PR 分支起步，PR 描述注明「依赖 #N」；#N squash 合入后，把本分支移到新的 `develop` 上再推送：`git fetch origin && git rebase --onto origin/develop <依赖分支名> && git push --force-with-lease`。
-2. **本地验证**：按[命令与验证](#1-命令与验证)跑与改动相关的检查，通过后 commit。
-3. **推送、开 PR、开自动合并**：在任务 worktree 中执行，确认 PR 目标是 `develop` 再开自动合并。
+   - 如果当前任务依赖另一个尚未合并的 PR `#N`，则基于那个 PR 的分支创建 Worktree，并在新 PR 描述中注明「依赖 #N」；等 `#N` 合并进 `develop` 后，执行 `git fetch origin && git rebase --onto origin/develop <被依赖分支名> && git push --force-with-lease`。
+
+2. **本地验证并提交**：按[命令与验证](#1-命令与验证)跑完相关检查后 `git commit`。
+
+3. **推送分支、创建 PR 并开启自动合并**：
    ```bash
    git push -u origin HEAD
    gh pr create --base develop
    gh pr merge <n> --auto --squash
    ```
-   `main` 没有必需检查，误指 `main` 的 PR 开自动合并会直接合入；先用 `gh pr edit <n> --base develop` 修正，`ci` 会按新目标重跑。
+   - **注意 1**：开启自动合并前务必确认目标分支是 `develop`（`main` 分支没有配置必过状态检查，如果误指向 `main` 开自动合并会直接合入！若选错请先执行 `gh pr edit <n> --base develop`）。
+   - **注意 2**：PR 创建后尽量不要只修改标题或正文（GitHub 在只改标题/正文时不会重新触发 `ci`，会导致自动合并一直卡住；如果确实改了标题或正文，请运行 `gh pr update-branch <n>` 或推一个空提交重新触发 `ci`）。
 
-   PR 创建后不再编辑标题或正文：只改标题或正文不会触发 `ci`，自动合并会一直等不到结果；确需修改时，改完用 `gh pr update-branch <n>` 让 `ci` 重跑，`develop` 没有前进时改为推送一个空提交。
-4. **等 `ci`**：通过即自动 squash 合入。失败时先读失败 job 的日志，e2e 另下载对应 `playwright-e2e-*` artifact 中的 trace（名称包含分片与运行次数）；与改动无关的偶发失败用 **Re-run failed jobs** 只重跑失败的 job，其余修复后推送新提交，自动合并保持开启。
-5. **清理**：`gh pr view <n> --json state` 为 `MERGED`，且 `git worktree list` 确认是自己的 worktree、没有待保留的未提交修改后，回主目录执行：
+4. **等待 `ci` 通过与故障排查**：
+   - `ci` 通过后会自动 Squash 合入 `develop`。
+   - 如果 `ci` 失败，先查看失败 Job 的日志（前端 E2E 失败可下载 `playwright-e2e-*` 构建产物中的 trace 排查）。如果是与本次改动无关的偶发波动，只点 **Re-run failed jobs** 重跑失败项；如果是代码问题，直接推送新提交修复即可（自动合并保持开启）。
+
+5. **合并后清理 Worktree**：
+   确认 `gh pr view <n> --json state` 状态为 `MERGED` 且无未提交代码后，回到主目录清理：
    ```bash
    git pull --ff-only
    git worktree remove .claude/worktrees/<任务名>
@@ -89,33 +109,34 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
 
 ### 发版与热修
 
-`main` 是已交付版本，只接收发版和热修；**创建或合并目标为 `main` 的 PR 都必须先获开发者确认**。发版、热修、热修回流前读 [docs/release.md](docs/release.md#发版与热修)。
+`main` 代表已交付的线上版本。执行版本发布、线上紧急热修或热修回流 `develop` 前，请先阅读 [docs/release.md](docs/release.md#发版与热修)。
+
+---
 
 ## 4. 文档维护
 
-- 文档只写现行事实和可执行规则，不写过程、进度或历史解释；决策与取舍写进 ADR。
-- 新增或修改 ADR 前读 [docs/adr/README.md](docs/adr/README.md)。
-- 引用 ADR：普通文档陈述由 ADR 决定的事实且理由不显然时，在句末链到那篇 ADR；CONTEXT.md 只在开头链一次 `adr/`，词条里不链；代码注释只在理由不明显时写 `ADR-NNNN`。
-- 一处事实只有一个权威来源，其余链接过去；文档归属见[文档地图](#文档地图)。
-- 不复述类型、配置、检查工具已完整表达的细节；保留职责、入口、工具无法判断的约束与操作步骤。
-- 发现文档与实现不一致时，结合合同、CONTEXT 与已接受的 ADR 判断；实现偏差不能自动变成新规范。
-- 更新文档后核对命令、路径、链接，并运行 `make docs-check`。
+- **只写现行事实**：文档只描述系统当前真实的规则与操作步骤，不写开发过程、历史进度或临时待办；架构取舍与背景原因统一写进 ADR（见 [docs/adr/README.md](docs/adr/README.md)）。
+- **如何引用 ADR**：普通文档在陈述某项由 ADR 拍板的规则且原因不直观时，在句末加上该 ADR 的链接；`CONTEXT.md` 只在文件开头链接一次 `adr/` 目录；代码注释只在原因不明显时标注 `ADR-NNNN`。
+- **单一事实源**：同一条规则只在一份权威文档里维护，其他文档通过链接指向它，不在多处重复抄写。
+- **不复述代码已表达的细节**：类型定义、配置默认值、Linter 规则已经能自动检查的细节不在文档里罗列；文档重点写职责边界、核心流程和工具无法自动检查的业务约束。
+- **修改文档后必查**：核对文中的命令、文件路径与链接，并运行 `make docs-check`。
 
 ### 文档地图
 
-| 文档 | 何时读 | 内容与更新时机 |
+| 文档 | 什么时候读 | 核心内容与更新时机 |
 |---|---|---|
-| [AGENTS.md](AGENTS.md) | 任何改动前 | 全仓操作与开发规则变化时更新 |
-| [web/AGENTS.md](web/AGENTS.md) | 修改前端时 | 前端命令、目录职责、边界、验证要求变化时更新 |
-| [docs/CONTEXT.md](docs/CONTEXT.md) | 任何改动前 | 两端共用的领域术语、不变量和禁止逻辑变化时更新 |
-| [docs/architecture.md](docs/architecture.md) | 修改后端时 | 后端分层、职责和装配机制变化时更新 |
-| [docs/adr/](docs/adr/) | 新增或修改 ADR 前 | 已接受的架构决策与取舍，编写规则见目录内 README；决策变化时新增一篇并标明取代关系 |
-| [docs/deploy.md](docs/deploy.md) | 本地启动、部署或升级服务器前 | 本地启动、服务器部署、升级与改配置步骤变化时更新 |
-| [docs/release.md](docs/release.md) | 发版、热修、热修回流或修改镜像流水线前 | 发版与热修步骤、版本号规则、镜像构建与上传流水线、仓库配置变化时更新 |
-| [contract/openapi.json](contract/openapi.json) | 调用或修改端点前 | 后端端点变更后由 `make contract` 导出 |
-| [contract/conventions.md](contract/conventions.md) | 修改端点或跨端约定前 | OpenAPI 无法表达的跨端约定变化时更新 |
-| [design-system.html](design-system.html) | 修改 token 或界面样式前 | 基础 token 变化时更新 |
-| [web/README.md](web/README.md) | 启动前端前 | 前端启动参数变化时更新 |
-| [web/docs/frontend-implementation.md](web/docs/frontend-implementation.md) | 写或改前端组件与测试前 | 前端实现与测试约定变化时更新 |
-| [docs/test-design.md](docs/test-design.md) | 写或改后端测试前 | 后端测试分层、边界和环境变化时更新 |
-| [docs/tool-design.md](docs/tool-design.md) | 改 Agent 工具的名称、描述、参数前 | Agent 工具面向模型的接口与文字规范变化时更新 |
+| [AGENTS.md](AGENTS.md) | 任何改动前 | 全仓通用开发流程、命令与交付规则变化时更新 |
+| [web/AGENTS.md](web/AGENTS.md) | 修改前端代码时 | 前端命令、目录职责边界与验证要求变化时更新 |
+| [docs/CONTEXT.md](docs/CONTEXT.md) | 任何改动前 | 前后端共用的核心业务概念、系统不变量与禁止逻辑变化时更新 |
+| [docs/architecture.md](docs/architecture.md) | 修改后端、运行时或视频插件时 | 各服务职责分工、通信通道、模块分层与运行装配机制变化时更新 |
+| [docs/runtime-apps.md](docs/runtime-apps.md) | 新业务系统接入运行时，或修改应用与运行时对接方式时 | 新应用接入步骤、回调要求、WebSocket 转发规则与现有限制变化时更新 |
+| [docs/adr/](docs/adr/) | 新增或调整架构决策前 | 已拍板的重大架构决策与取舍（编写规范见目录内 README） |
+| [docs/deploy.md](docs/deploy.md) | 本地启动、服务器部署或升级时 | 本地环境搭建、服务器部署、版本升级与密钥轮换步骤变化时更新 |
+| [docs/release.md](docs/release.md) | 发版、热修或修改镜像打包流水线时 | 发版/热修操作流程、版本号规范与 Docker 镜像构建流水线变化时更新 |
+| [contract/openapi.json](contract/openapi.json) | 调用或修改后端接口前 | 后端路由变更后由 `make contract` 自动导出 |
+| [contract/conventions.md](contract/conventions.md) | 修改接口或跨端实时协议前 | OpenAPI 无法表达的认证、状态机、错误码与 WebSocket 协议变化时更新 |
+| [design-system.html](design-system.html) | 修改视觉 Token 或组件样式前 | 基础设计 Token 变化时更新 |
+| [web/README.md](web/README.md) | 启动前端开发服务器前 | 前端开发服务器端口与代理环境变量变化时更新 |
+| [web/docs/frontend-implementation.md](web/docs/frontend-implementation.md) | 编写前端组件、文案或测试前 | 前端组件实现规范、界面文案规范与测试分层变化时更新 |
+| [docs/test-design.md](docs/test-design.md) | 编写或调整 Python 测试时 | 各模块测试职责、分层原则、数据库夹具与验证边界变化时更新 |
+| [docs/tool-design.md](docs/tool-design.md) | 新增或修改 Agent 工具时 | Agent 工具面向大模型的 docstring 写法、参数校验与卡片展示规范变化时更新 |

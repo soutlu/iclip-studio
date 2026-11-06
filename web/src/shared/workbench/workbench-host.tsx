@@ -1,11 +1,9 @@
-/** 宿主负责产物选择与渲染；可见性、宽度和聚焦布局由应用壳控制。 */
-
 import { useQueryClient } from '@tanstack/react-query'
 import { use, useEffect, useMemo, useRef } from 'react'
 import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
 import { useConversationReadOnly } from '@/shared/transcript/use-conversation-read-only'
+import { useConversationTitle } from '@/shared/transcript/use-conversation-title'
 import { useTranscript } from '@/shared/transcript/use-transcript'
-import { useSessionTitles } from '@/shared/transcript/use-session-titles'
 import type { TranscriptItem } from '@/shared/transcript/vendor'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -20,7 +18,6 @@ import { useWorkbenchOpenRequest } from './use-workbench-open-request'
 import { WorkbenchLayoutContext } from './workbench-layout-context'
 import { useWorkspaceFiles, workspaceQueryKeys } from './workspace.api'
 
-/** 主流里的每张工具卡都是候选产物，命不命中由注册表定；view 缺省按协议算 generic。 */
 const toolFrames = (items: readonly TranscriptItem[]): WorkbenchFrame[] =>
   items.flatMap((item) =>
     item.kind !== 'turn'
@@ -42,7 +39,6 @@ const toolFrames = (items: readonly TranscriptItem[]): WorkbenchFrame[] =>
         ),
   )
 
-/** 常驻类型与被点开的那张工具卡才占标签位；没点开的派活卡留在选择页里，或从卡上「查看」进来。 */
 const tabArtifacts = (
   registry: ArtifactRegistry,
   artifacts: readonly Artifact[],
@@ -57,7 +53,6 @@ type ChooserRow = {
   key: string
   label: string
   icon: ArtifactEntry['icon']
-  /** 有产物就能打开；常驻类型还没有产物时灰着，detail 说明为什么。 */
   artifactId?: string
   detail?: string
 }
@@ -73,7 +68,6 @@ const artifactRow = (entry: ArtifactEntry, artifact: Artifact): ChooserRow => {
   }
 }
 
-/** 常驻类型按登记顺序，每件产物一行，没有产物且登记了原因的列一行灰的；工具卡产物一件一行。 */
 const chooserRows = (registry: ArtifactRegistry, artifacts: readonly Artifact[]): ChooserRow[] => {
   const standing = registry.standing().flatMap((entry): ChooserRow[] => {
     const own = artifacts.filter((candidate) => candidate.type === entry.type)
@@ -103,10 +97,8 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
   const artifactId = useArtifactSearch()
   const openArtifact = useOpenArtifact()
   const files = useWorkspaceFiles(conversationId)
-  // 与聊天页共用主会话池里的同一份流（按对话记持有数），这里再用不会踢掉它的订阅。
   const { view } = useTranscript(conversationId)
-  const { titleOf } = useSessionTitles()
-  const conversationTitle = titleOf(conversationId) ?? view.title
+  const conversationTitle = useConversationTitle(conversationId, view.title)
   const readOnly = useConversationReadOnly(view)
   const frames = useMemo(() => toolFrames(view.items), [view.items])
   const { openToken } = useWorkbenchOpenRequest()
@@ -118,7 +110,6 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
     token: openToken,
   })
 
-  // 重连后重拉文件，补偿断线期间通知丢失（contract/conventions.md §5）。
   useEffect(() => {
     if (connection === null) return undefined
     return connection.watchSessions((update) => {
@@ -127,7 +118,6 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
     })
   }, [connection, conversationId, queryClient])
 
-  // 订整个工作区：任何文件变了，列表与那个文件的查询一起失效。分镜标签在 video_shot.json 落地那一刻出现。
   useEffect(() => {
     if (connection === null) return undefined
     return connection.watchFs(
@@ -146,11 +136,9 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
   }, [connection, conversationId, queryClient])
 
   const artifacts = composeArtifacts(registry, files.data?.files ?? [], frames)
-  // 地址点名的或 autoOpen 的那件才算选中；都没有就给选择页，不替用户挑第一件。
   const selected = pickArtifact(registry, artifacts, artifactId)
   const entry = selected === undefined ? undefined : registry.resolve(selected.type)
   const selectedId = selected?.id
-  // 只响应新的产物选择或显式「查看」请求；壳隐藏工作台时保留渲染器，不重新自动展开。
   useEffect(() => {
     const previous = previousOpenRef.current
     previousOpenRef.current = { selectedId, token: openToken }
@@ -251,7 +239,6 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
   )
 }
 
-/** 选择页：正文居中一列，能打开的项一行一个；没有产物的常驻类型灰着，行尾说明为什么。 */
 function Chooser({ onPick, rows }: { onPick: (id: string) => void; rows: readonly ChooserRow[] }) {
   return (
     <nav

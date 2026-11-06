@@ -4,12 +4,12 @@ import uuid
 from collections.abc import Sequence
 from typing import Any, Final
 
+from iclip_video.shot_prompt import parse_shot_prompt
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from sqlalchemy import TextClause, text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.common.shot_prompt import parse_shot_prompt
 from iclip.domains.library.models import (
     HitCaseScope,
     MaterialSource,
@@ -43,7 +43,6 @@ _COMPOSE: Final = "compose"
 
 _INDEXED_MASTER: Final = """g.kind = 'video' AND g.status = 'completed' AND (g.output ->> 'url') IS NOT NULL
       AND ((g.operation = 'generate' AND g.source_job_id IS NULL) OR g.operation = 'compose')"""
-"""与 ``ix_generation_jobs_masters`` 的部分索引条件同式：只用它的查询才能走仅索引扫描。"""
 
 _MASTER: Final = (
     _INDEXED_MASTER
@@ -216,7 +215,7 @@ lineage AS (
     JOIN iclip.conversations p ON p.id = l.forked_from
 )"""
 
-# OFFSET 0 不让规划器把子查询拉平：递归 CTE 的行数按十倍估，拉平后会改用哈希连接扫全部素材片。
+# OFFSET 0 阻止 PostgreSQL 查询规划器拉平子查询，避免因递归 CTE 行数高估退化为全表哈希连接。
 _VISIBLE: Final = f"""
 visible AS (
     SELECT l.card_id, o.*
@@ -377,7 +376,6 @@ JOIN iclip.generation_jobs t ON t.id = COALESCE(g.root_job_id, g.id)
 JOIN iclip.users u ON u.id = g.owner_user_id
 LEFT JOIN iclip.conversations c ON c.id = g.conversation_id
 WHERE le.id IS NOT NULL AND {_MASTER}"""
-"""在库的爆款素材：有条目、仍是素材片；卡 id 的算法同素材卡。"""
 
 _HIT_CASES_FILTER: Final = """
   AND (CAST(:user_name AS text) IS NULL OR u.username = CAST(:user_name AS text))
@@ -448,8 +446,6 @@ class _StoredVideoRequest(BaseModel):
 
 
 class _StoredWholeFilmSource(BaseModel):
-    """成片导出请求里 ``videos`` 的一项（按别名落库），只取素材片 id。"""
-
     model_config = ConfigDict(extra="ignore", frozen=True)
 
     job_id: uuid.UUID = Field(alias="jobId")

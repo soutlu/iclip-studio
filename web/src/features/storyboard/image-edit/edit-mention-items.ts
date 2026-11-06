@@ -1,5 +1,3 @@
-/** `@` 菜单能引用的东西：编辑底图、画布上的标注、本组的图片（分镜页叫帧）。 */
-
 import type { EditFrame, ImageAnnotation } from './image-edit-types'
 
 export type EditMentionItem =
@@ -14,7 +12,6 @@ export const mentionLabelOf = (item: EditMentionItem): string =>
       ? `标注 ${item.annotation.number}`
       : item.name
 
-/** 按分组顺序给出名称含查询词的项；标注按编号排。 */
 export function editMentionItems({
   annotations,
   baseUrl,
@@ -22,7 +19,6 @@ export function editMentionItems({
   query,
 }: {
   annotations: readonly ImageAnnotation[]
-  /** 编辑底图；按描述再生成没有底图，为 undefined。 */
   baseUrl: string | undefined
   frames: readonly EditFrame[]
   query: string

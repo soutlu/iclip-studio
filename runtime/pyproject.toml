@@ -1,0 +1,90 @@
+[project]
+name = "agent-runtime"
+version = "0.1.0"
+description = "Agent 运行时：agent 执行引擎与装配、技能库、模型供应商与 agent 配置、对话内容格式、插件基础、工作区文件，供各应用服务依赖"
+requires-python = ">=3.13"
+dependencies = [
+    "sqlalchemy[asyncio]>=2.0.52",
+    "pydantic>=2.13.5",
+    "structlog>=26.1.0",
+    "pydantic-ai-slim[openai,mcp,google]>=2.63.0",  # OpenAI 兼容端点（含百炼、OpenRouter）；Gemini 原生接口；MCP 服务的客户端
+    # 0.x 的 minor 版本可能破坏 API；导入边界见 tests/unit/architecture/test_architecture.py
+    "pydantic-ai-harness>=0.63.0",
+    "pyyaml>=6",  # 供应商声明、技能 frontmatter 与 agent 导出包
+    "cryptography>=50.0.1",  # 密钥字段的 MultiFernet 加密
+    "packaging>=26",  # 导出包的格式版本比较
+    # 运行时服务（agent_runtime.http 与 main.py）：版本与后端 uv.lock 一致。
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.52.4",
+    "pydantic-settings>=2.15.0",
+    "python-multipart>=0.0.32",  # 导入技能与 agent 的表单上传
+    "asyncpg>=0.31.0",
+    "httpx>=0.28.1",  # 回调应用（开跑检查、运行与轮次开始）；应用用的客户端库
+    "httpx-secure>=2.0.0,<3",  # 出网防护：提交点探素材地址只连公网
+    "httpx-ws>=0.9.0",  # 客户端库连两条 WebSocket
+    "wsproto>=1.3.2",  # httpx-ws 的协议层；往已关的连接上发帧抛它的错误
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.0",
+    "pytest-timeout>=2.4.0",
+    "ruff>=0.16.6",
+    "pyright>=1.1.411",
+    "tach>=0.35.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_runtime"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "TID251"]
+# RUF001/002/003：中文全角标点是本仓文案约定，不是笔误。
+ignore = ["E501", "RUF001", "RUF002", "RUF003"]
+
+# 日志统一由运行它的服务配置：运行时服务在 http/logging.py，嵌在后端里时由后端配置。
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"logging.getLogger".msg = "日志走 structlog：_logger = structlog.stdlib.get_logger(__name__)"
+"structlog.get_logger".msg = "用带类型的 structlog.stdlib.get_logger(__name__)"
+
+[tool.ruff.lint.per-file-ignores]
+"src/agent_runtime/http/logging.py" = ["TID251"]
+"tests/**" = ["TID251"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+pythonVersion = "3.13"
+venvPath = "."
+venv = ".venv"
+include = ["src", "tests", "scripts"]
+# 第三方库（sqlalchemy）无完整类型导出产生的 Unknown 噪音；结构性 strict 检查全部保留。
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportMissingTypeStubs = false
+# FastAPI 路由处理器是装饰器注册的闭包，无法被静态分析识别为已使用。
+reportUnusedFunction = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# 单个用例的墙钟上限：卡住就报错并打印栈，不让整条门禁挂死。
+timeout = 180
+markers = [
+    "unit: 纯逻辑与进程内契约（默认门禁）",
+    "integration_no_llm: 无 LLM 的集成面，使用真实 Postgres（默认门禁）",
+    "integration_llm: 真实模型（外部门禁）",
+    "e2e_full: 全链路（外部门禁）",
+    "external: 依赖外部凭证（外部门禁）",
+]

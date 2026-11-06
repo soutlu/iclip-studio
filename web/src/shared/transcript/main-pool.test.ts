@@ -17,7 +17,6 @@ const append = (offset: number, text: string): TranscriptOperation[] => [
 
 const HISTORY = mockTranscriptPage().items as unknown as SeedStream['items']
 
-/** 一轮只有一句回复的历史；ordinal 从 1 起。 */
 const turn = (ordinal: number) => ({
   content: [{ text: `第 ${ordinal} 问`, type: 'text' }],
   kind: 'turn',
@@ -77,7 +76,6 @@ const setup = ({
 const ready = async (pool: MainTranscriptPool, id = 'c1') =>
   vi.waitFor(() => expect(pool.view(id).status).toBe('ready'))
 
-/** 让排在宏任务里的帧与回调都跑完。 */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30))
 
 afterEach(() => {
@@ -177,7 +175,6 @@ describe('MainTranscriptPool', () => {
     fake.restart()
     const restarted = fake.stream('c1').epoch
     connection.reconnect()
-    // 新流的第 1 批：号比旧水位小，epoch 不同，不能当重复批次吞掉。
     await vi.waitFor(() => expect(connection.watermarkOf('c1', 'main')?.epoch).toBe(restarted))
     fake.push('c1', 'main', append(TAIL_TEXT.length + 2, '丙'))
 
@@ -210,7 +207,12 @@ describe('MainTranscriptPool', () => {
 
     const stream = fake.stream('c1')
     fake.broadcast({
-      payload: { agent_id: 'main', ops: append(999, '错位'), seq: stream.seq + 1 },
+      payload: {
+        agent_id: 'main',
+        ops: append(999, '错位'),
+        seq: stream.seq + 1,
+        type: 'transcript.ops',
+      },
       seq: 0,
       session_id: 'c1',
       stream_epoch: stream.epoch,
@@ -246,6 +248,7 @@ describe('MainTranscriptPool', () => {
           tasks: [],
           todos: [],
         },
+        type: 'transcript.reset',
       },
       seq: 0,
       session_id: 'c1',
@@ -264,6 +267,7 @@ describe('MainTranscriptPool', () => {
           },
         ],
         seq: 41,
+        type: 'transcript.ops',
       },
       seq: 0,
       session_id: 'c1',
@@ -299,6 +303,7 @@ describe('MainTranscriptPool', () => {
           tasks: [],
           todos: [],
         },
+        type: 'transcript.reset',
       },
       seq: 0,
       session_id: 'c1',
@@ -317,6 +322,7 @@ describe('MainTranscriptPool', () => {
           },
         ],
         seq: 41,
+        type: 'transcript.ops',
       },
       seq: 0,
       session_id: 'c1',
@@ -340,7 +346,6 @@ describe('MainTranscriptPool', () => {
     const release = fake.holdPages()
     pool.activate('c1')()
     await vi.waitFor(() => expect(fake.pageRequests.at(-1)?.conversationId).toBe('c1'))
-    // c3 还常驻，再用它不读基线，但会把在途的 c1 挤成最久没碰的那个而被淘汰。
     pool.activate('c3')()
     release()
     await settle()
@@ -374,6 +379,7 @@ describe('MainTranscriptPool', () => {
         has_more_older: true,
         seq: stream.seq,
         snapshot: { interactions: [], items: [], meta: {}, prompts: [], tasks: [], todos: [] },
+        type: 'transcript.reset',
       },
       seq: 0,
       session_id: 'c1',
@@ -429,7 +435,6 @@ describe('MainTranscriptPool', () => {
     const unsubscribed = fake.received('unsubscribe_v2').map((frame) => frame.payload?.session_id)
     expect(unsubscribed).toEqual(['c2'])
 
-    // c1 还常驻：再用它不重读基线。
     const before = fake.pageRequests.length
     pool.activate('c1')
     await settle()

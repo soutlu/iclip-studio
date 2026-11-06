@@ -17,13 +17,11 @@ import { PreviewPlayer, type PreviewControl } from './preview-player'
 const FIRST = 'https://oss/first.mp4'
 const SECOND = 'https://oss/second.mp4'
 
-/** 时间线 0–2 秒是第一段，2–4 秒是第二段。 */
 const page = (suffix = '') =>
   `<!doctype html><html><head></head><body>${suffix}` +
   `<video src="${FIRST}" data-start="0" data-duration="2"></video>` +
   `<video src="${SECOND}" data-start="2" data-duration="2"></video></body></html>`
 
-/** 时间线第 0 秒起的片段，取素材的 1–9 秒。 */
 const LONG_CLIP = `<!doctype html><html><head></head><body><video src="${FIRST}" data-start="0" data-duration="8" data-media-start="1"></video></body></html>`
 
 type Player = HTMLElement & {
@@ -65,7 +63,6 @@ const preview = (srcdoc: string, on: ReturnType<typeof handlers>) => (
   />
 )
 
-/** 挂上预览，等播放器换上来。 */
 const openPreview = async (srcdoc = page()) => {
   const on = handlers()
   const view = render(preview(srcdoc, on))
@@ -298,7 +295,6 @@ describe('换页', () => {
     const { control, showPage } = await openPreview()
     act(() => control().play())
     const old = playerOf()
-    // 换页要等几帧：不给帧，新播放器就一直停在待换上的状态
     vi.stubGlobal('requestAnimationFrame', () => 0)
     showPage(page('<p></p>'))
     await waitFor(() => expect(document.querySelectorAll('hyperframes-player')).toHaveLength(2))
@@ -338,7 +334,6 @@ describe('换页', () => {
 })
 
 describe('缓冲够了才继续', () => {
-  /** 播到片段里素材的第 `at` 秒时数据不够，时间线停下等待；视频还在下载。 */
   const waitAt = async (at: number) => {
     const opened = await openPreview(LONG_CLIP)
     const video = playerOf().iframeElement.contentDocument?.querySelector('video')
@@ -350,7 +345,6 @@ describe('缓冲够了才继续', () => {
     expect(opened.onBuffering).toHaveBeenLastCalledWith(true)
     return opened
   }
-  /** 浏览器报告这些缓冲段，视频也到了能往下放的状态。 */
   const report = (ranges: readonly (readonly [number, number])[], event = 'progress') => {
     starvedVideos.delete(FIRST)
     bufferedVideos.set(FIRST, ranges)

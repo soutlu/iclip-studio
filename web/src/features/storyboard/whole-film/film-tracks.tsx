@@ -80,13 +80,8 @@ import {
 
 export type MusicView = { url: string; title: string; peaks: PeaksState }
 
-/** 组件在轨道上的样子：中文名，与组件栏卡片同一张缩略图（没有时用分类图标） */
 export type ComponentFace = { title: string; thumbnail: string | undefined; icon: IconName }
 
-/**
- * 指针落在时间线的哪一处：哪条轨的哪个时刻（毫秒），以及在特效轨上对应哪一行。拖到特效轨的东西
- * 带着长度时，时刻是两端吸附后的开始时间，`guideMs` 是吸附线。
- */
 export type DropPoint = {
   timeMs: number
   lane: TrackLane
@@ -94,37 +89,26 @@ export type DropPoint = {
   guideMs: number | null
 }
 
-/** 落在某处会怎样：放得下时是放进去之后的草稿，放不下时是原因 */
 export type Attempt = { ok: true; draft: WholeFilmDraft } | { ok: false; reason: string }
 
-/** 从素材区、组件栏拖到时间线的东西 */
 export type CarryPayload = {
   durationMs: number
-  /** 三种来源使用相同的缩略图、名称与时长卡片。 */
   ghost?: { face: InsertionFace; origin: InsertionBox } | undefined
-  /** 落在这一处会怎样；这条轨不收它时为 undefined（不提示） */
   attempt: (point: DropPoint) => Attempt | undefined
-  /** 松手落在这一处：真的放进去，返回放进去了没有 */
   drop: (point: DropPoint) => boolean
 }
 
-/** 时间线给拖东西过来的一方用的接口 */
 export type TracksHandle = {
-  /** 带着东西移到这里：预览完整占位和相邻片段让位，松手前不写草稿 */
   carry: (clientX: number, clientY: number, payload: CarryPayload) => void
-  /** 在这里松手：落在能接收的轨上就放进去；没放进去时缩影退回拿起的地方 */
   release: (clientX: number, clientY: number, payload: CarryPayload) => boolean
   cancel: () => void
-  /** 把焦点放回某一段（键盘挪动之后） */
   focusClip: (clipId: string) => void
 }
 
-/** 组件段与特效块的浮层：开着的是哪一个、怎么画它的内容；组件没有可填项时点开不弹 */
 export type ComponentPopovers = {
   openId: string | null
   onOpen: (id: string | null) => void
   render: (id: string) => ReactNode
-  /** 这个组件有没有可填项（组件库里没有的组件也弹，好说明原因并移除） */
   hasFields: (component: string) => boolean
 }
 
@@ -136,10 +120,8 @@ type FilmTracksProps = {
   onSeek: (ms: number) => void
   selection: Selection
   onSelect: (selection: Selection) => void
-  /** 点画面轨上的一段（extend：按着 Shift）：选中它或扩选、去掉一端，播放头停在选区开头 */
   onClipClick: (clip: Layer0Clip, extend: boolean) => void
   snap: boolean
-  /** 拍点（成片时间） */
   beats: readonly MusicBeat[]
   clipLabel: (clip: VideoClip) => string
   componentFace: (name: string) => ComponentFace
@@ -150,47 +132,30 @@ type FilmTracksProps = {
   onViewportWidth: (width: number) => void
   tracksRef: RefObject<TracksHandle | null>
   popovers: ComponentPopovers
-  /** 放进成片的字幕（每段画面里的一份句子） */
   captions: readonly PlacedCaption[]
-  /** 改字时输入框里的整句：改过的字或识别结果 */
   sentenceText: (caption: PlacedCaption) => string
   onCaptionText: (caption: PlacedCaption, text: string) => void
-  /** 字幕轨标题：样式选择与手动识别入口 */
   captionControls: ReactNode
-  /** 识别进度、空结果或失败说明；不替换已经显示的字幕 */
   captionStatus: ReactNode
-  /** 音乐轨轨名旁的按钮（生成音乐的「+」） */
   musicAction: ReactNode
 }
 
 const seconds = (ms: number) => (ms / 1000).toFixed(1)
 
-/** 时间区左右让出的宽度：左 8 像素（播放头的头完整露出）、右 16 像素，与 whole-film.css 一致 */
 const INSET_START_PX = 8
 const INSET_END_PX = 16
-/** 特效轨每行 24 像素（块高 22、行距 2），第一行上面留 2 像素，与 whole-film.css 一致 */
 const ROW_PX = 24
 const ROWS_TOP_PX = 2
-/** 在所有行上方、下方这么近的地方松手就新开一行 */
 const NEW_ROW_ABOVE_PX = 8
 const NEW_ROW_BELOW_PX = 10
-/** 画面轨上方这么近也算拖到了画面轨上 */
 const DROP_SLOP_PX = 16
-/** 相邻轨之间的空隙里，离哪条轨这么近就算那条轨 */
 const LANE_SLOP_PX = 4
-/** 拍点在切点前后这么近就算卡在拍上 */
 const ON_BEAT_MS = 10
 
 type Edge = 'start' | 'end'
 
-/** 画面轨上连着的几段一共多长 */
 const spanMs = (clips: readonly Layer0Clip[]) => clips.reduce((sum, clip) => sum + clip.duration, 0)
 
-/**
- * 修剪画面轨的一段 `clip` 时把手有没有被挡住：按吸附之前的指针位移 `deltaMs` 修剪，修剪后的长度不是想要的长度
- * 就是被挡住了。拉不长是到了成片总长上限，或这段素材（组件）本身的开头、结尾；剪不短是到了最短。没被挡住时为
- * undefined。
- */
 const layer0TrimNote = (
   draft: WholeFilmDraft,
   clip: Layer0Clip,
@@ -208,23 +173,16 @@ const layer0TrimNote = (
   return TRIM_LIMIT_TEXT[edge]
 }
 
-/** 拖到某处时算出的一步：编辑结果，以及拖动中要画的吸附线、停住的原因、特效块要去的行 */
 type GestureStep = {
-  /** 修剪的是画面轨的哪一段的哪一端：拖动中别的段按已提交的草稿画，被拖的段画成一整块 */
   trim?: { clipId: string; edge: Edge } | undefined
   result: EditResult
   guideMs?: number | null
-  /** 拖不过去的原因（如到了成片总长上限），拖动中写在旁边 */
   note?: string | undefined
-  /** 原因写在哪个时刻上方 */
   noteAtMs?: number | undefined
-  /** 拖动特效块时它要去的行：轨道上的行先不变，松手才换 */
   row?: OverlayRow | undefined
-  /** 正在挪的特效块 */
   overlayId?: string | undefined
 }
 
-/** 拖动中的样子：上一个放得下的结果，与这一刻的提示 */
 const filmPreviewOf = (preview: GesturePreview<GestureStep> | null) => {
   if (preview === null) return null
   const { last, step } = preview
@@ -251,13 +209,9 @@ type Carrying = {
   destination?: InsertionBox | undefined
 }
 
-/** 按住画面轨上的段拖动排序：按住的是选中的段时拖整个选区，否则只拖这一段 */
 type Lift = {
-  /** 拖着的段，按画面轨先后 */
   clipIds: readonly string[]
-  /** 拖着的第一段原来在第几段 */
   from: number
-  /** 拖着的几段一共多长 */
   durationMs: number
   pointerId: number
   originX: number
@@ -266,7 +220,6 @@ type Lift = {
   clientY: number
   moved: boolean
   origin: InsertionBox
-  /** 松手会插到第几段之前（按原来的顺序）；不在画面轨上为 undefined */
   to: number | undefined
   returning: boolean
   destination?: InsertionBox | undefined
@@ -287,10 +240,8 @@ type BlockProps = {
   onSelect: (event: MouseEvent<HTMLButtonElement>) => void
   pointer: PointerHandlers
   handles: ReactNode
-  /** 点开的浮层（组件块才有） */
   popover?: ReactNode
   clipId?: string
-  /** 松开修剪把手后要滑到新位置的块（见 useReleaseSlide） */
   slide?: string
   shortcuts?: string
   motion?:
@@ -301,7 +252,6 @@ type BlockProps = {
         width: number
         opacity: number
         animate: boolean
-        /** 横向拖动直接跟手，换行仍由动效驱动衔接。 */
         followX?: boolean
         initial?: MotionSnapshot | undefined
       }
@@ -309,7 +259,6 @@ type BlockProps = {
   children: ReactNode
 }
 
-/** 轨道上的一块：整块是一个选中按钮（按住可拖），选中后在选区两端出现修剪手柄 */
 function Block({
   className,
   name,
@@ -398,7 +347,6 @@ function Block({
   )
 }
 
-/** 组件的缩略图；没有缩略图时是分类图标 */
 function ComponentThumb({ face }: { face: ComponentFace }) {
   return face.thumbnail === undefined ? (
     <Icon decorative name={face.icon} size="xs" />
@@ -407,7 +355,6 @@ function ComponentThumb({ face }: { face: ComponentFace }) {
   )
 }
 
-/** 特效块的样子：左边缩略图，右边名字 */
 function OverlayFace({ face }: { face: ComponentFace }) {
   return (
     <>
@@ -458,9 +405,6 @@ export function FilmTracks({
   })
   const preview = filmPreviewOf(gesture.preview)
   const previewed = preview?.draft ?? draft
-  // 修剪画面轨的一段：拖动中别的段按已提交的草稿画、不动；被拖的段画成一整块（已提交与修剪后合起来）、盖在相邻
-  // 的段上，要剪掉的那段调暗；松手后后面的段（连同选区外框）滑过去。特效块的修剪与挪动、音乐偏移照常按拖动中的
-  // 样子画。
   const shown = preview?.trim === undefined ? previewed : draft
   const layer0Trim = (() => {
     const trim = preview?.trim
@@ -468,7 +412,6 @@ export function FilmTracks({
     const after = previewed.layer0.find((candidate) => candidate.id === trim?.clipId)
     if (trim === undefined || clip === undefined || after === undefined) return undefined
     const spans = trimSpans(trim.edge, { at: clip.start, len: clip.duration }, after.duration)
-    // 画出来的这一整块：从 block 起止，素材从两次入点里早的那个起
     const face: Layer0Clip = {
       ...clip,
       start: spans.block.at,
@@ -495,7 +438,6 @@ export function FilmTracks({
     id: string
     snapshot: MotionSnapshot | undefined
   } | null>(null)
-  // 拖动中指针最后在哪；靠近边缘时自动滚动用
   const pointerRef = useRef<{ clientX: number; clientY: number } | null>(null)
 
   useEffect(() => {
@@ -512,7 +454,6 @@ export function FilmTracks({
   const timeAt = (clientX: number) =>
     Math.max(0, pxToMs(clientX - (contentRef.current?.getBoundingClientRect().left ?? 0), pps))
 
-  // 命中使用已提交的行号；新增行只参与预演，松手前不写入草稿。
   const rows = overlayRowCount(draft.overlays)
   const carriedRow =
     carry !== null && !carry.returning && carry.point?.lane === 'overlay' && carry.attempt?.ok
@@ -522,7 +463,6 @@ export function FilmTracks({
   const newRow = previewRow !== undefined && 'insertAt' in previewRow ? previewRow : undefined
   const laneRows = Math.max(1, rows + (newRow === undefined ? 0 : 1))
 
-  /** 指针纵坐标落在特效轨的哪一行；在所有行之上、之下不远处就开一行；离得太远是 undefined */
   const overlayRowFrom = (
     clientY: number,
     activeRow = carriedRow,
@@ -531,7 +471,6 @@ export function FilmTracks({
     const lane = overlayLaneRef.current?.getBoundingClientRect()
     if (lane === undefined) return undefined
     const expanding = activeRow !== undefined && 'insertAt' in activeRow && rows > 0
-    // 时间线底部固定，新行向上让出空间；按展开后的几何命中，不取动画途中尚未让开的高度。
     const top = expanding
       ? lane.bottom - ((rows + 1) * ROW_PX + ROWS_TOP_PX)
       : (originTop ?? lane.top)
@@ -539,7 +478,6 @@ export function FilmTracks({
     if (expanding) {
       const previewTop = top + ROWS_TOP_PX + activeRow.insertAt * ROW_PX
       const edge = (originTop ?? lane.top) + ROWS_TOP_PX + activeRow.insertAt * ROW_PX
-      // 展开时整条时间线可能上移。新行同时接住原来的边缘热区和已经展开的行，避免预览反复收开。
       const from = Math.min(previewTop, edge - (activeRow.insertAt === 0 ? NEW_ROW_ABOVE_PX : 0))
       const to = Math.max(
         previewTop + ROW_PX,
@@ -565,7 +503,6 @@ export function FilmTracks({
     )
   }
 
-  /** 占位内保持当前插入点；跨过相邻片段中点才换位，避免让位动画反过来推动落点。 */
   const filmIndex = (clientX: number, duration: number, lifted?: Lift) => {
     const items =
       lifted === undefined
@@ -610,7 +547,6 @@ export function FilmTracks({
     return lifted !== undefined && index > lifted.from ? index + lifted.clipIds.length : index
   }
 
-  /** 指针下是哪条轨的哪一刻；带着长度拖到特效轨时，开头、结尾吸附到切点、播放头、拍点、其他块边缘和刻度 */
   const pointAt = (
     clientX: number,
     clientY: number,
@@ -741,13 +677,11 @@ export function FilmTracks({
       },
       release: (clientX, clientY, payload) => {
         pointerRef.current = null
-        // 松手确认已经显示的落点，不能让预告导致的布局变化重新选择另一条轨。
         const point = carry !== null && !carry.returning ? carry.point : undefined
         const attempt = point === undefined ? undefined : payload.attempt(point)
         const dropped = point !== undefined && attempt !== undefined && payload.drop(point)
         let destination: InsertionBox | undefined
         if (dropped && attempt.ok && point.lane === 'film') {
-          // 素材选了几个镜头时连着加入几段：缩影落到这几段一起占的位置
           const added = attempt.draft.layer0.filter(
             (clip) => !draft.layer0.some((before) => before.id === clip.id),
           )
@@ -790,8 +724,6 @@ export function FilmTracks({
     }
   })
 
-  // 带着东西靠近时间区左右边缘：自动横向滚动，落点跟着重算。东西是从时间区外（素材区、组件栏）拖来的，指针在
-  // 时间区里（上方留一点余量）才滚
   useEdgeScroll({
     viewportRef: scrollRef,
     active: (carry !== null && !carry.returning) || (lift?.moved === true && !lift.returning),
@@ -830,16 +762,13 @@ export function FilmTracks({
     width: `${Math.max(6, msToPx(duration, pps) - 2)}px`,
   })
 
-  /** 组件库里有这个组件，知道它多长 */
   const knownComponent = (component: string) => context.components[component] !== undefined
 
-  /** 修剪要知道视频段的素材、组件段的组件多长；组件库里没有的组件不能修剪 */
   const editable = (clip: Layer0Clip) =>
     clip.type === 'component'
       ? knownComponent(clip.component)
       : context.sources[clip.sourceJobId] !== undefined
 
-  /** 按下之后交给拖动预览的那几个指针事件 */
   const gestureFollow: Omit<PointerHandlers, 'onPointerDown'> = {
     onPointerMove: gesture.move,
     onPointerUp: gesture.end,
@@ -848,13 +777,11 @@ export function FilmTracks({
 
   const startTrim = (event: PointerEvent<HTMLElement>, clip: Layer0Clip, edge: Edge) => {
     const edgeMs = edge === 'end' ? clip.start + clip.duration : clip.start
-    // 吸附目标只取被拖段之前的边界（之后的边界随波纹一起动）、播放头与拍点
     const targets = snapTargets({
       spans: draft.layer0.slice(0, draft.layer0.indexOf(clip)),
       playheadMs,
       beatsMs,
     }).filter((target) => Math.round(target.time * 1000) !== edgeMs)
-    // 拖动中别的段按已提交的草稿画，把手停在已提交布局里的这一刻（左边钉在 0 时停在 0）：吸附线、提示都画在把手处
     const trim = { clipId: clip.id, edge }
     gesture.startTrim(event, { slide: `clip:${clip.id}`, edge }, (deltaPx): GestureStep => {
       const pointerMs = pxToMs(deltaPx, pps)
@@ -869,7 +796,6 @@ export function FilmTracks({
         result,
         trim,
         guideMs: after.duration === wanted ? snapped.guideMs : null,
-        // 停住的原因按吸附之前的指针算：吸到边界上不算被挡住
         note: layer0TrimNote(draft, clip, edge, pointerMs, context),
         noteAtMs: edge === 'end' ? kept.at + kept.len : kept.at,
       }
@@ -903,14 +829,12 @@ export function FilmTracks({
     })
   }
 
-  /** 按住特效块中部拖：左右改时间（长度不变），上下换行；两端吸附到切点、播放头、拍点、其他块的边缘和刻度 */
   const startOverlayMove = (event: PointerEvent<HTMLElement>, overlay: OverlayClip) => {
     const targets = snapTargets({
       spans: [...draft.layer0, ...draft.overlays.filter((o) => o.id !== overlay.id)],
       playheadMs,
       beatsMs,
     })
-    // 指针离开特效轨时，仍去上一次指着的那一行
     let row: OverlayRow = { track: overlay.track }
     const originTop = overlayLaneRef.current?.getBoundingClientRect().top
     gesture.start(event, (deltaPx, clientY): GestureStep => {
@@ -932,7 +856,6 @@ export function FilmTracks({
       return {
         result,
         guideMs: after?.start === snapped.ms ? snapped.guideMs : null,
-        // 拖过成片总长上限：停在放得下的地方并写明原因
         note:
           result.ok && snapped.ms + overlay.duration <= MAX_FILM_MS ? undefined : FILM_LIMIT_TEXT,
         row,
@@ -951,7 +874,6 @@ export function FilmTracks({
     apply(trim(Math.round(step * 1000)))
   }
 
-  /** `shiftPx`：修剪拖动中两个把手各离块的边沿多远（像素，往右为正），没在拖时都是 0。 */
   const trimHandles = (
     edges: readonly Edge[],
     durationMs: number,
@@ -981,10 +903,6 @@ export function FilmTracks({
       />
     ))
 
-  /**
-   * 选中的段在选区两端的修剪手柄：前一段没选中的出开头的手柄，后一段没选中的出结尾的手柄，所以
-   * 单选两端都有，多选只有第一段的开头与最后一段的结尾
-   */
   const clipEdges = (clip: Layer0Clip, index: number): Edge[] => {
     if (!editable(clip)) return []
     const chosen = (at: number) => {
@@ -997,12 +915,10 @@ export function FilmTracks({
     ]
   }
 
-  /** 点选特效块：有可填项时弹出浮层 */
   const openPopover = (id: string, component: string) => {
     if (popovers.hasFields(component)) popovers.onOpen(id)
   }
 
-  // ---- 画面轨上的段拖动排序：保留捕获指针的节点，预演位置，松手才提交 ----
   const liftPointer = (clip: Layer0Clip): PointerHandlers => ({
     onPointerDown: (event) => {
       if (event.button !== 0) return
@@ -1081,7 +997,6 @@ export function FilmTracks({
   const musicMedia = draft.music === null ? undefined : context.music[draft.music.jobId]
   const shortfall = musicMedia === undefined ? 0 : musicShortfallMs(shown, context)
 
-  /** 组件段、特效块的浮层：锚在块上，向上弹 */
   const popoverOf = (id: string, label: string) => (
     <PopupRoot
       onOpenChange={(open) => popovers.onOpen(open ? id : null)}
@@ -1101,10 +1016,6 @@ export function FilmTracks({
     </PopupRoot>
   )
 
-  /**
-   * 画面轨上的段里画的东西：视频段上面是画面、下面是原声；组件段上面是组件的画面、下面写组件名。`named` 是写名字
-   * 用的那一段：修剪拖动中名字按已提交的段起，画面按画出来的整块
-   */
   const clipBody = (clip: Layer0Clip, named: Layer0Clip = clip) => {
     if (clip.type === 'component') {
       const face = componentFace(clip.component)
@@ -1154,7 +1065,6 @@ export function FilmTracks({
     )
   }
 
-  // ---- 插入预演只影响块的位置；播放、字幕与草稿仍使用已提交的数据 ----
   const hover = carry !== null && !carry.returning ? carry : null
   const insertClock = (index: number) => draft.layer0[index]?.start ?? layer0End(draft)
   const marker: { index: number; text: string; blocked: boolean } | undefined = (() => {
@@ -1192,7 +1102,6 @@ export function FilmTracks({
         : hover?.attempt?.ok === true
           ? projected.layer0.find((clip) => !draft.layer0.some((before) => before.id === clip.id))
           : undefined
-  /** 拖着的段手上的缩影：第一段的画面与名字，拖着几段时名字后注明段数，时长是几段一共的 */
   const liftFace = (clip: Layer0Clip, { clipIds, durationMs }: Lift): InsertionFace => {
     const more = clipIds.length > 1 ? ` 等 ${clipIds.length} 段` : ''
     if (clip.type === 'component') {
@@ -1235,7 +1144,6 @@ export function FilmTracks({
     }
   })()
 
-  /** 新行占用完整行高；已有行在预演中让出空间，取消后由同一动效驱动收回。 */
   const rowTop = (row: OverlayRow) =>
     ROWS_TOP_PX + ('track' in row ? row.track : row.insertAt) * ROW_PX
 
@@ -1262,7 +1170,6 @@ export function FilmTracks({
   const insertionActive = hover !== null || (lift?.moved === true && !lift.returning)
   const overlayAnimating = insertionActive || moving !== undefined
   const projectedById = new Map(projected.layer0.map((clip) => [clip.id, clip]))
-  // 画面轨的选区外框：选中的段每连着的一串画一个；拖着东西预演时不画
   const selectionRuns: { first: Layer0Clip; last: Layer0Clip }[] = []
   if (!insertionActive)
     shown.layer0.forEach((clip, index) => {
@@ -1271,19 +1178,15 @@ export function FilmTracks({
       if (run !== undefined && run.last === shown.layer0[index - 1]) run.last = clip
       else selectionRuns.push({ first: clip, last: clip })
     })
-  /** 一段此刻框住的起止：修剪拖动中被拖的那段按修剪后的范围（选区外框、把手按它摆）。 */
   const keptOf = (clip: Layer0Clip) =>
     layer0Trim?.clipId === clip.id
       ? { start: layer0Trim.kept.at, end: layer0Trim.kept.at + layer0Trim.kept.len }
       : { start: clip.start, end: clip.start + clip.duration }
-  /** 一段此刻画成什么样：修剪拖动中被拖的那段是已提交与修剪后合起来的一整块。 */
   const drawnOf = (clip: Layer0Clip) => (layer0Trim?.clipId === clip.id ? layer0Trim.face : clip)
-  /** 修剪拖动中要剪掉的那段（`at` 从被拖的段画出来的开头量）：与段一样左边对齐、右边让 2 像素。 */
   const trimMark = ({ at, len }: { at: number; len: number }) => ({
     left: `${msToPx(at, pps)}px`,
     width: `${Math.max(0, msToPx(len, pps) - 2)}px`,
   })
-  // 往右拉长最后一段时，拉长出来的那段也放得下
   const previewWidth = Math.max(
     contentWidth,
     msToPx(layer0End(projected), pps),
@@ -1336,7 +1239,6 @@ export function FilmTracks({
             total={total / 1000}
             viewportRef={scrollRef}
           />
-          {/* 拍点刻度：透明度随拍点强度连续变化 */}
           {beats.map((beat) => (
             <span
               aria-hidden="true"
@@ -1345,7 +1247,6 @@ export function FilmTracks({
               style={{ left: `${msToPx(beat.timeMs, pps)}px`, opacity: 0.3 + 0.7 * beat.strength }}
             />
           ))}
-          {/* 点轨道空处：取消选中、播放头跳过去（轨道本身不接指针，空处的点按落在这一层） */}
           <div
             className="wf-lanes"
             onPointerDown={(event) => {
@@ -1378,7 +1279,6 @@ export function FilmTracks({
                     clipId={clip.id}
                     handles={
                       <>
-                        {/* 修剪拖动中要剪掉的那段：调暗，画在这段里、把手之下 */}
                         {layer0Trim?.clipId !== clip.id || layer0Trim.cut === undefined ? null : (
                           <span
                             aria-hidden="true"
@@ -1626,7 +1526,6 @@ export function FilmTracks({
                     onPointerDown: (event) => {
                       const current = draft.music
                       if (current === null || musicMedia === undefined) return
-                      // 往左拖是用歌里更靠后的一段：成片 0 秒对齐的位置后移
                       gesture.start(event, (deltaPx) => ({
                         result: setMusicOffset(
                           draft,
@@ -1689,7 +1588,6 @@ export function FilmTracks({
             />
           )}
           <TimelinePlayhead style={{ left: `${msToPx(Math.min(playheadMs, total), pps)}px` }} />
-          {/* 停住的原因画在播放头之后：同一层级时盖住播放头，字不被挡 */}
           {preview?.note !== undefined && preview.noteAtMs !== undefined ? (
             <LimitBubble
               left={`${msToPx(preview.noteAtMs, pps)}px`}
@@ -1731,16 +1629,11 @@ export function FilmTracks({
 type CaptionChipsProps = {
   captions: readonly PlacedCaption[]
   place: (start: number, duration: number) => { left: string; width: string }
-  /** 在画面上选中的那一块字幕 */
   selectedKey: string | undefined
   sentenceText: (caption: PlacedCaption) => string
   onCommit: (caption: PlacedCaption, text: string) => void
 }
 
-/**
- * 字幕轨：每段画面里的一份句子一块。点一块改这一整句的字（跨段的句子两块改的是同一句），
- * 回车或离开输入框记一步编辑，Esc 放弃；清空后回到识别结果。在画面上点中的那一块显示为选中。
- */
 function CaptionChips({ captions, place, selectedKey, sentenceText, onCommit }: CaptionChipsProps) {
   const [editing, setEditing] = useState<string | null>(null)
   return captions.map((caption) => {
@@ -1774,7 +1667,6 @@ function CaptionChips({ captions, place, selectedKey, sentenceText, onCommit }: 
   })
 }
 
-/** 改字的输入框：打开即聚焦全选；`onDone` 只调一次，放弃时传 undefined */
 function CaptionInput({
   initial,
   onDone,
@@ -1798,7 +1690,6 @@ function CaptionInput({
       onKeyDown={(event) => {
         if (event.key === 'Enter') finish(text)
         if (event.key === 'Escape') {
-          // 只关输入框，不关整个编辑器
           event.stopPropagation()
           finish(undefined)
         }

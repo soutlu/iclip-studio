@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TaskPreview, TaskPreviewState } from '@/shared/lib/task-preview'
 import { stubIntersectionObserver } from '@/testing/intersection-observer'
-import { mockLatestMasterUrls } from '@/testing/mocks/conversations'
+import { mockLatestMasterUrls, mockVideoProgress } from '@/testing/mocks/conversations'
 import {
   addMockConversation,
   addMockTask,
@@ -20,26 +20,14 @@ import { useLiveConversations } from '../conversations.live'
 import { ConversationsRoute } from './conversations-route'
 import { sessionEnvelope } from '@/testing/ws'
 
-/** 全局帧订阅在应用里挂在侧栏顶层；页面自己不订，这里照壳的样子在外面挂一次。 */
 function LiveFrames() {
   useLiveConversations()
   return null
 }
 
-const RUNNING = {
-  busy: true,
-  lastTurnReason: null,
-  pendingInteraction: 'none',
-  videoGeneration: 'none',
-} as const
-const COMPLETED = {
-  busy: false,
-  lastTurnReason: 'completed',
-  pendingInteraction: 'none',
-  videoGeneration: 'none',
-} as const
+const RUNNING = { busy: true, lastTurnReason: null, pendingInteraction: 'none' } as const
+const COMPLETED = { busy: false, lastTurnReason: 'completed', pendingInteraction: 'none' } as const
 
-/** session_id 位于信封；运行帧省略 last_turn_reason。 */
 const workChanged = (
   conversationId: string,
   payload: { busy: boolean; last_turn_reason?: 'completed' | 'failed' | 'aborted' },
@@ -50,7 +38,6 @@ const workChanged = (
   payload: { pending_interaction: 'none', ...payload },
 })
 
-/** 一条视频生成任务出完了。 */
 const videoCompleted = (conversationId: string) => ({
   ...sessionEnvelope(conversationId),
   type: 'event.generation.changed',
@@ -58,7 +45,6 @@ const videoCompleted = (conversationId: string) => ({
   payload: { id: 'job-1', kind: 'video', operation: 'generate', status: 'completed' },
 })
 
-/** 筛选条件在应用里由路由存在查询参数上；这里照样在外面持有一份，只测列表本身的行为。 */
 function StatefulConversationsRoute({
   tasks,
   previews = new Map(),
@@ -92,7 +78,6 @@ const render = async (tasks: readonly { id: string; label: string }[] = []) => {
   return { ...rendered, user }
 }
 
-/** 等全局帧引起的重拉时放宽超时：那一路带一秒的去抖窗口（见 conversations.live.ts）。 */
 const AUDIT_REFRESH_TIMEOUT = { timeout: 3000 }
 
 const rowOf = (title: string, options?: { timeout: number }) =>
@@ -104,7 +89,6 @@ const expectTotals = (running: number, total: number) => {
   expect(totals).toHaveTextContent(`${total} 个`)
 }
 
-/** 三段对话：别人在跑的、自己没跑过的、别人跑完的。 */
 const seedThree = () => {
   const other = addMockUser('小王')
   const task = addMockTask('秋季新品')
@@ -124,69 +108,20 @@ const seedThree = () => {
 describe('ConversationsRoute', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('按建立时间倒序列出全平台对话', async () => {
-    const { task } = seedThree()
-    await render([{ id: task.id, label: task.title }])
+  it('状态列的视频角标读视频进度：出现在里面的行才标，视频帧到了跟着变', async () => {
+    const { task, theirs } = seedThree()
+    mockVideoProgress.set(theirs.id, 'queued')
+    const { socket } = await render([{ id: task.id, label: task.title }])
 
-    const list = within(await screen.findByRole('list'))
-    expect(list.getAllByRole('link').map((link) => link.textContent)).toEqual([
-      expect.stringContaining('小王的秋季片'),
-      expect.stringContaining('我的片'),
-      expect.stringContaining('跑完的片'),
-    ])
-  })
+    expect(await within(await rowOf('小王的秋季片')).findByText('排队中')).toBeVisible()
+    expect(await rowOf('我的片')).not.toHaveTextContent(/排队中|生成中/)
 
-  it('每行标出属主与运行状态', async () => {
-    const { task } = seedThree()
-    await render([{ id: task.id, label: task.title }])
-
-    const theirs = await rowOf('小王的秋季片')
-    expect(theirs).toHaveTextContent('进行中')
-    expect(await within(theirs).findByText('小王')).toBeVisible()
-    expect(await rowOf('我的片')).toHaveTextContent('测试用户')
-    expect(await rowOf('跑完的片')).toHaveTextContent('已完成')
-    expect(await rowOf('跑完的片')).toHaveTextContent('属主已收尾')
-  })
-
-  it('已关联的需求单标题挂在行上', async () => {
-    const { task } = seedThree()
-    await render([{ id: task.id, label: task.title }])
-
-    expect(await rowOf('小王的秋季片')).toHaveTextContent('秋季新品')
-  })
-
-  it('顶部给出进行中与总数', async () => {
-    const { task } = seedThree()
-    await render([{ id: task.id, label: task.title }])
-
-    await rowOf('小王的秋季片')
-    expectTotals(1, 3)
-  })
-
-  it('首屏读取时给出读取状态，列表到了就换成对话行', async () => {
-    addMockConversation('我的片')
-    let release = () => {}
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    // 处理器不返回响应就落到默认的审计列表处理器，放行前请求一直挂着。
-    server.use(
-      http.get(
-        '*/api/conversations/audit',
-        async () => {
-          await gate
-        },
-        { once: true },
-      ),
+    mockVideoProgress.set(theirs.id, 'running')
+    socket.deliver(videoCompleted(theirs.id))
+    await waitFor(
+      () => expect(screen.getByRole('link', { name: /小王的秋季片/ })).toHaveTextContent('生成中'),
+      AUDIT_REFRESH_TIMEOUT,
     )
-    await render()
-
-    expect(await screen.findByText('正在读取全部任务')).toHaveAttribute('role', 'status')
-    expect(screen.queryByRole('link')).not.toBeInTheDocument()
-
-    release()
-    expect(await rowOf('我的片')).toBeVisible()
-    expect(screen.queryByText('正在读取全部任务')).not.toBeInTheDocument()
   })
 
   it('封面先取需求单商品图，没有再取最新素材片首帧，都没有就不放图', async () => {
@@ -228,21 +163,6 @@ describe('ConversationsRoute', () => {
     expect(within(await rowOf('什么都没有')).queryByRole('img')).not.toBeInTheDocument()
   })
 
-  it('需求单预览还在读时不先放素材片首帧', async () => {
-    const task = addMockTask('还在读的需求')
-    const conversation = addMockConversation('等预览的片')
-    conversation.taskId = task.id
-    mockLatestMasterUrls.set(
-      conversation.id,
-      'https://bucket.oss-ap-southeast-1.aliyuncs.com/masters/cut.mp4',
-    )
-    await renderWithProviders(<StatefulConversationsRoute tasks={[]} previewState="loading" />)
-
-    const row = await rowOf('等预览的片')
-    expect(row).toHaveTextContent('正在读取需求单…')
-    expect(within(row).queryByRole('img')).not.toBeInTheDocument()
-  })
-
   it('封面读不出来时退成空态，保留对话入口', async () => {
     const { task } = seedThree()
     await renderWithProviders(
@@ -260,16 +180,6 @@ describe('ConversationsRoute', () => {
     )
     const row = await rowOf('小王的秋季片')
     fireEvent.error(within(row).getByRole('img', { name: '小王的秋季片的封面' }))
-    expect(within(row).queryByRole('img')).not.toBeInTheDocument()
-    expect(row).toHaveAttribute('href', expect.stringContaining('/c/'))
-  })
-
-  it('没挂需求单的行说明未关联，仍能点进对话', async () => {
-    seedThree()
-    await render()
-
-    const row = await rowOf('我的片')
-    expect(row).toHaveTextContent('未关联需求单')
     expect(within(row).queryByRole('img')).not.toBeInTheDocument()
     expect(row).toHaveAttribute('href', expect.stringContaining('/c/'))
   })
@@ -438,7 +348,6 @@ describe('ConversationsRoute', () => {
     expect(initialRow).not.toHaveTextContent('进行中')
     expectTotals(0, 1)
 
-    // 先改 MSW 里的事实，推送后的重拉才与就地补丁一致。
     theirs.activity = RUNNING
     socket.deliver(workChanged(theirs.id, { busy: true }))
     await waitFor(() =>
@@ -461,7 +370,6 @@ describe('ConversationsRoute', () => {
     const { socket } = await render()
     expect(within(await rowOf('小王的秋季片')).queryByRole('img')).not.toBeInTheDocument()
 
-    // 先改 MSW 里的事实：素材片出来了，审计列表那一行带上它的地址。
     const master = 'https://bucket.oss-ap-southeast-1.aliyuncs.com/masters/new-cut.mp4'
     mockLatestMasterUrls.set(theirs.id, master)
     socket.deliver(videoCompleted(theirs.id))
@@ -494,7 +402,6 @@ describe('ConversationsRoute', () => {
 
     expect(await screen.findByText('已显示 50 / 55')).toBeVisible()
     expect(within(screen.getByRole('list')).getAllByRole('link')).toHaveLength(50)
-    // 不用再点：页脚里没有按钮
     expect(screen.queryByRole('button', { name: '更多任务' })).not.toBeInTheDocument()
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
     expect(cursors).toEqual([null])

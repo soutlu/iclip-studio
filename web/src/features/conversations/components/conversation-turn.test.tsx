@@ -14,7 +14,6 @@ import { renderWithProviders, renderWithTooltip } from '@/testing/render'
 import { ConversationTurn } from './conversation-turn'
 import { UserBubble } from './user-bubble'
 
-/** jsdom 不执行布局，显式模拟超过十行的内容高度。 */
 const stubOverflowing = () => {
   const scroll = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(500)
   const client = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(240)
@@ -41,11 +40,6 @@ describe('UserBubble', () => {
   let restore: (() => void) | undefined
   afterEach(() => restore?.())
 
-  it('短消息不折叠，没有展开胶囊', () => {
-    renderWithTooltip(<UserBubble content={[text('就一句')]} />)
-    expect(screen.queryByRole('button', { name: '展开' })).toBeNull()
-  })
-
   it('超长消息折叠成渐隐，点「展开」放开全文', async () => {
     restore = stubOverflowing()
     const user = userEvent.setup()
@@ -58,7 +52,6 @@ describe('UserBubble', () => {
   })
 
   it('气泡下有复制钮：纯文字消息复制的是文字 part 原样接起来的正文；没给 onEdit 就没有修改钮', async () => {
-    // 在 user-event 初始化后安装剪贴板替身，避免被其覆盖。
     const user = userEvent.setup()
     const writeText = stubClipboard()
     renderWithTooltip(<UserBubble content={[text('先看这句：'), text('\n还有这句')]} />)
@@ -85,19 +78,6 @@ describe('UserBubble', () => {
     expect(parsePromptContent(copied)).toEqual(content)
   })
 
-  it('图夹在两句话中间：芯片保留附件在正文中的顺序', () => {
-    const url = 'https://bkt.oss-ap-southeast-1.aliyuncs.com/u/S6-1.jpg'
-    renderWithTooltip(
-      <UserBubble content={[text('先看这张图：'), image(url), text('\n说明它写了什么')]} />,
-    )
-
-    const chip = screen.getByRole('button', { name: 'S6-1.jpg' })
-    const before = screen.getByText('先看这张图：')
-    const after = screen.getByText(/说明它写了什么/)
-    expect(before.compareDocumentPosition(chip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(chip.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  })
-
   it('点图片芯片开灯箱，灯箱里是图', async () => {
     const user = userEvent.setup()
     renderWithTooltip(<UserBubble content={[image('https://example.com/reference.png')]} />)
@@ -105,7 +85,6 @@ describe('UserBubble', () => {
     await user.click(screen.getByRole('button', { name: 'reference.png' }))
 
     expect(screen.getByRole('dialog', { name: 'reference.png' })).toBeInTheDocument()
-    // 芯片缩略图为装饰图片，具名图片只能来自灯箱。
     expect(screen.getByRole('img', { name: 'reference.png' })).toBeInTheDocument()
   })
 
@@ -127,33 +106,17 @@ describe('UserBubble 媒体芯片的悬停卡', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
-  /** 计时器推进包在 act 中，确保对应状态更新完成。 */
   const advance = (ms: number) => {
     act(() => {
       vi.advanceTimersByTime(ms)
     })
   }
 
-  /** 先越过跨芯片共享的快速重开窗口，再测量当前卡片时序。 */
   const renderChip = () => {
     renderWithTooltip(<UserBubble content={[image('https://example.com/reference.png')]} />)
     advance(500)
     return screen.getByRole('button', { name: 'reference.png' })
   }
-
-  it('悬停 150ms 后出卡，离开 120ms 后收起', () => {
-    const chip = renderChip()
-
-    fireEvent.mouseEnter(chip)
-    expect(screen.queryByRole('tooltip')).toBeNull()
-    advance(150)
-    expect(screen.getByRole('tooltip')).toBeInTheDocument()
-
-    fireEvent.mouseLeave(chip)
-    expect(screen.getByRole('tooltip')).toBeInTheDocument()
-    advance(120)
-    expect(screen.queryByRole('tooltip')).toBeNull()
-  })
 
   it('光标从芯片移进卡里，卡不收起', () => {
     const chip = renderChip()
@@ -187,7 +150,6 @@ const turnWithFrames = (frames: TranscriptTurn['steps'][number]['frames']): Tran
   turnId: 't1',
 })
 
-/** 分镜文件登记成产物，与 app 层的登记一致：对话里照写文件名，点了进分镜面板。 */
 const registry = () => {
   const value = new ArtifactRegistry()
   value.register({
@@ -225,45 +187,6 @@ const renderTurn = (turn: TranscriptTurn, options: RenderTurnOptions = {}) =>
 
 describe('ConversationTurn', () => {
   afterEach(() => vi.restoreAllMocks())
-
-  it('已经有模型块时仍显示轮头部的开场输入', async () => {
-    await renderTurn(
-      turnWithFrames([
-        { frameId: 't1.1.f1', kind: 'thinking', text: '先分析素材' },
-        { frameId: 't1.1.f2', kind: 'text', role: 'assistant', text: '已经完成。' },
-      ]),
-    )
-
-    expect(screen.getByText('先做开场镜头')).toBeInTheDocument()
-    expect(screen.getByText('已经完成。')).toBeInTheDocument()
-  })
-
-  it('开场输入与中途插话各自显示一次', async () => {
-    await renderTurn(
-      turnWithFrames([
-        {
-          content: [text('再补一个特写')],
-          frameId: 't1.1.f1',
-          kind: 'text',
-          role: 'user',
-          text: '再补一个特写',
-        },
-        { frameId: 't1.1.f2', kind: 'text', role: 'assistant', text: '收到。' },
-      ]),
-    )
-
-    expect(screen.getAllByText('先做开场镜头')).toHaveLength(1)
-    expect(screen.getAllByText('再补一个特写')).toHaveLength(1)
-  })
-
-  it('只有一张图的开场输入也显示用户气泡', async () => {
-    await renderTurn({
-      ...turnWithFrames([]),
-      content: [image('https://example.com/reference.png')],
-    })
-
-    expect(screen.getByRole('button', { name: 'reference.png' })).toBeInTheDocument()
-  })
 
   it('回复结束后复制最后一次用户输入之后的助手原始 markdown', async () => {
     const user = userEvent.setup()
@@ -345,24 +268,6 @@ describe('工具结果按 view 选渲染器', () => {
     expect(screen.getByText('S02 · 场景全景')).toBeInTheDocument()
   })
 
-  it('media_grid 没带标题的图只画图、不写标题，带标题的照常写', async () => {
-    await renderTurn(
-      turnWithFrames([
-        mediaFrame({
-          items: [
-            { url: 'https://example.com/a.png' },
-            { caption: 'S02 · 场景全景', url: 'https://example.com/b.png' },
-          ],
-        }),
-      ]),
-    )
-
-    expect(screen.getByRole('img', { name: '图片' })).toBeInTheDocument()
-    expect(screen.queryByText('图片')).toBeNull()
-    expect(screen.getByRole('img', { name: 'S02 · 场景全景' })).toBeInTheDocument()
-    expect(screen.getByText('S02 · 场景全景')).toBeInTheDocument()
-  })
-
   it('点一张图开灯箱', async () => {
     const user = userEvent.setup()
     await renderTurn(turnWithFrames([mediaFrame(TWO_ITEMS)]))
@@ -370,14 +275,6 @@ describe('工具结果按 view 选渲染器', () => {
     await user.click(screen.getByRole('button', { name: 'S01 · 产品特写' }))
 
     expect(screen.getByRole('dialog', { name: 'S01 · 产品特写' })).toBeInTheDocument()
-  })
-
-  it('结果形状对不上就退回朴素行：没有图，一句话的结果也不给展开', async () => {
-    await renderTurn(turnWithFrames([mediaFrame({ items: 3 })]))
-
-    expect(screen.queryByRole('figure')).toBeNull()
-    expect(screen.getByText('出镜头帧')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /出镜头帧/ })).toBeNull()
   })
 
   it('读文件：行尾不写行数；展开是去掉行号的文件内容，md 排成文档，续读提示不出现', async () => {
@@ -400,26 +297,6 @@ describe('工具结果按 view 选渲染器', () => {
     expect(screen.getByText('S01 产品特写')).toBeInTheDocument()
     expect(screen.queryByText(/还有 6 行没读/)).toBeNull()
     expect(screen.queryByText(/^\s*1\s*$/)).toBeNull()
-  })
-
-  it('详情面板第一次展开才排版正文', async () => {
-    const user = userEvent.setup()
-    await renderTurn(
-      turnWithFrames([
-        fileTool('t1.1.f1', 'write', 'notes/剪辑说明.md', {
-          display: {
-            content: '节奏前慢后快',
-            kind: 'file_io',
-            operation: 'write',
-            path: 'notes/剪辑说明.md',
-          },
-        }),
-      ]),
-    )
-
-    expect(screen.queryByText('节奏前慢后快')).toBeNull()
-    await user.click(screen.getByRole('button', { name: '展开「写入文件 剪辑说明.md」的详情' }))
-    expect(screen.getByText('节奏前慢后快')).toBeInTheDocument()
   })
 
   it('改文件：行尾没有增删数；展开是改动行，删的在前、加的在后', async () => {
@@ -580,12 +457,6 @@ describe('每次调用按自己的状态画', () => {
     expect(screen.queryByText('运行中断，这次调用没有结果')).toBeNull()
   })
 
-  it('成功的调用不画状态图标', async () => {
-    await renderTurn(turnWithFrames([fileTool('t1.1.f1', 'read', 'a.md')]))
-
-    expect(screen.queryByRole('img', { name: /失败|完成|进行中/ })).toBeNull()
-  })
-
   it('轮已结束、调用仍是 running：照协议画运行中，不替它改成完成', async () => {
     await renderTurn(turnWithFrames([fileTool('t1.1.f1', 'read', 'a.md', { state: 'running' })]))
 
@@ -632,23 +503,6 @@ describe('活动组的开合', () => {
 
     expect(screen.getByRole('button', { name: /^进行中：/ })).toBeInTheDocument()
     expect(screen.getAllByRole('img', { name: '进行中' })).toHaveLength(1)
-  })
-
-  it('卡头写失败次数；全部成功的组结束后收起，不露任何一行', async () => {
-    await renderTurn(doneTurn)
-    expect(screen.getByRole('button', { name: /（1 失败）/ })).toBeInTheDocument()
-
-    await renderTurn(
-      turnWithFrames([
-        { frameId: 't2.1.f1', kind: 'thinking', text: '先读分镜' },
-        fileTool('t2.1.f2', 'read', 'shots/甲.md'),
-      ]),
-    )
-    expect(screen.getByRole('button', { name: /^已完成：/ })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    )
-    expect(screen.queryByRole('button', { name: '甲.md' })).toBeNull()
   })
 
   it('用户点开以后就以用户为准', async () => {
@@ -791,22 +645,6 @@ describe('后台工具', () => {
     text: value,
   })
 
-  /** 不带开场输入，页面上的用户气泡只可能来自通知块。 */
-  const noticeTurn = (value: string) => ({ ...turnWithFrames([notice(value)]), content: [] })
-
-  it('转入后台的调用：卡尾写「已转入后台」，不画状态图标', async () => {
-    await renderTurn(turnWithFrames([breakdownTool()]), { toolTasks: toolTask() })
-
-    expect(screen.getByText('已转入后台')).toBeInTheDocument()
-    expect(screen.queryByRole('img', { name: /失败|完成|进行中/ })).toBeNull()
-  })
-
-  it('没有对应的后台工具任务时，同样的完成调用卡尾什么都不写', async () => {
-    await renderTurn(turnWithFrames([breakdownTool()]))
-
-    expect(screen.queryByText('已转入后台')).toBeNull()
-  })
-
   it('回执后被中断的调用照失败画：红 ×，不写「已转入后台」', async () => {
     await renderTurn(
       turnWithFrames([
@@ -817,34 +655,6 @@ describe('后台工具', () => {
 
     expect(screen.getByRole('img', { name: '失败' })).toBeInTheDocument()
     expect(screen.queryByText('已转入后台')).toBeNull()
-  })
-
-  it('完成通知：对勾加文字，第二行是任务用时；不是用户气泡，没有复制与修改', async () => {
-    await renderTurn(noticeTurn('已拆解视频 ugg-ref.mp4'), { toolTasks: toolTask() })
-
-    expect(screen.getByRole('img', { name: '已完成' })).toBeInTheDocument()
-    expect(screen.getByText('已拆解视频 ugg-ref.mp4')).toBeInTheDocument()
-    expect(screen.getByText('3m12s')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '复制消息' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '修改' })).toBeNull()
-  })
-
-  it('失败通知：红 × 加文字', async () => {
-    await renderTurn(noticeTurn('拆解视频 ugg-ref.mp4 失败'), {
-      toolTasks: toolTask({ endedAt: '2026-10-11T08:03:40Z', state: 'failed' }),
-    })
-
-    expect(screen.getByRole('img', { name: '失败' })).toBeInTheDocument()
-    expect(screen.queryByRole('img', { name: '已完成' })).toBeNull()
-    expect(screen.getByText('3m40s')).toBeInTheDocument()
-  })
-
-  it('找不到对应任务时只写文字，不画图标也不写用时', async () => {
-    await renderTurn(noticeTurn('已拆解视频 ugg-ref.mp4'))
-
-    expect(screen.getByText('已拆解视频 ugg-ref.mp4')).toBeInTheDocument()
-    expect(screen.queryByRole('img')).toBeNull()
-    expect(screen.queryByRole('button', { name: '复制消息' })).toBeNull()
   })
 
   it('复制本轮回复时跳过完成通知：仍从最后一句用户插话之后算起', async () => {

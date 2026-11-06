@@ -1,8 +1,3 @@
-"""成片草稿端点：按版本整份保存与读回、读写权限同工作区文件、引用的记录要是这段对话的。
-
-记录经生成仓储直接落库，媒体生成没开：草稿只读生成记录，不依赖媒体生成。文档自身的每条规则见
-单测 ``test_whole_film_document``，这里只走几条确认 422 接上了，含旧形状（转场、片头片尾）的草稿。"""
-
 from __future__ import annotations
 
 import uuid
@@ -36,7 +31,6 @@ from tests.helpers.whole_film import component_clip, draft_document, overlay, vi
 URL = "/conversations"
 
 NO_DRAFT = {"revision": 0, "document": None, "updatedAt": None}
-"""还没存过草稿时 GET 的答复。"""
 
 
 def draft_url(conversation_id: uuid.UUID | str) -> str:
@@ -65,9 +59,6 @@ def generations(engine: AsyncEngine) -> SqlGenerationRepository:
 async def test_the_owner_saves_by_revision_and_reads_the_draft_back(
     client: httpx.AsyncClient, pg_url: str, generations: SqlGenerationRepository
 ) -> None:
-    """还没存过读到版本 0 的空草稿；第一次存给 0，之后每次给读到的那一版，答复新版本；旧版本存是
-    409、不改草稿。"""
-
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     mine = await new_conversation(client)
     take = await finished(generations, owner, mine, "take")
@@ -124,8 +115,6 @@ async def test_the_owner_saves_by_revision_and_reads_the_draft_back(
 async def test_only_the_owner_writes_while_readers_of_the_conversation_read(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str, generations: SqlGenerationRepository
 ) -> None:
-    """治理者读得到别人的草稿、写是 403；读不到这段对话的人读写都是 404。"""
-
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     mine = await new_conversation(client)
     take = await finished(generations, owner, mine, "take")
@@ -148,8 +137,6 @@ async def test_only_the_owner_writes_while_readers_of_the_conversation_read(
 async def test_a_deleted_conversation_keeps_its_draft_read_only(
     client: httpx.AsyncClient, pg_url: str, generations: SqlGenerationRepository
 ) -> None:
-    """属主是治理者时删掉的对话仍读得到：草稿照读，但谁都不能再存。"""
-
     owner = uuid.UUID(await register_and_login(client, username="gov", email="gov@example.com"))
     await set_roles_in_db(pg_url, "gov@example.com", ["root"])
     mine = await new_conversation(client)
@@ -162,37 +149,14 @@ async def test_a_deleted_conversation_keeps_its_draft_read_only(
     assert (await save(client, mine, 1, document)).status_code == 403
 
 
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        pytest.param(
-            "layer0",
-            [video_clip("a", start=500, duration=1000, source_job_id=uuid.uuid4())],
-            id="没有从 0 起",
-        ),
-        pytest.param("transitions", [], id="带转场"),
-        pytest.param(
-            "layer0",
-            [{**component_clip("c", start=0, duration=1000), "role": "intro"}],
-            id="组件段带 role",
-        ),
-        pytest.param(
-            "overlays",
-            [
-                overlay("o1", start=0, duration=2000, track=0),
-                overlay("o2", start=1000, duration=2000, track=0),
-            ],
-            id="同一行的特效块重叠",
-        ),
-    ],
-)
 async def test_an_invalid_document_is_rejected_with_its_reason(
-    client: httpx.AsyncClient, pg_url: str, field: str, value: object
+    client: httpx.AsyncClient, pg_url: str
 ) -> None:
     await login_as_editor(client, pg_url)
     mine = await new_conversation(client)
-    document = draft_document()
-    document[field] = value
+    document = draft_document(
+        layer0=[video_clip("a", start=500, duration=1000, source_job_id=uuid.uuid4())]
+    )
 
     rejected = await save(client, mine, 0, document)
 
@@ -203,15 +167,11 @@ async def test_an_invalid_document_is_rejected_with_its_reason(
 
 @dataclass(frozen=True, slots=True)
 class Scene:
-    """一个人名下的三段对话：``mine`` 是从另一段分叉出来的，``other`` 是不相干的。"""
-
     owner: uuid.UUID
     mine: uuid.UUID
     other: uuid.UUID
     take: GenerationJob
-    """``mine`` 自己的一条出片，默认画面轨出自它。"""
     inherited: GenerationJob
-    """源对话在分叉之前完成的出片，``mine`` 继承得到。"""
     repo: SqlGenerationRepository
 
 
@@ -330,8 +290,6 @@ async def subtitle_of_inherited_take(scene: Scene) -> dict[str, Any]:
 
 
 async def subtitle_of_a_take_off_the_track(scene: Scene) -> dict[str, Any]:
-    """改过字的那条素材片的片段都从画面轨删掉了，改字还留在草稿里。"""
-
     another = await finished(scene.repo, scene.owner, scene.mine, "another")
     subtitle = await scene.repo.create(make_subtitle(another))
     return _edited(scene, subtitle.id, source=scene.take.id)

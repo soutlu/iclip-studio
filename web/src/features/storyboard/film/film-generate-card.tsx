@@ -1,12 +1,3 @@
-/** 舞台上一张没有图（没选用）的生成图，按它最近一次按描述生成的任务分四种：
- * - 从没生成过：照发给模型的描述画出来，参考图在它出现的位置是图片芯片，编号是这张图自己的参考图列表里的（与组的
- *   编号无关），没有图的画空位；底下「生成这张」。
- * - 在生成：转圈加已用时长。
- * - 失败：描述照旧，写原因，按钮变「重新生成」。
- * - 生成好了还没选用：放那次结果的预览，底下「再生成」与「选用这张」；生成不会自动用上，选用了舞台才换成它。
- * 底部显示这张图在工程文件里写的比例，只读时也显示；有按钮时，它挂的参考图里有没选用的（`missing`），按钮上方一行写
- * 缺哪几张，生成与再生成不可用，「选用这张」照常。 */
-
 import { useId } from 'react'
 import { Icon } from '@/shared/icons'
 import { Button } from '@/shared/ui/button'
@@ -18,21 +9,15 @@ import type { FilmFrame } from './film.api'
 import { missingReferencesText, unselectedImageText } from './film-content'
 import { FilmImageChip } from './film-image-chip'
 
-/** 卡上正在提交的那件事：按描述生成，或选用那次结果。 */
 export type GenerateCardBusy = 'generate' | 'choose' | null
 
 type FilmGenerateCardProps = {
   frame: FilmFrame
-  /** 这张图最近一次按描述生成的任务。 */
   job: GenerationJob | undefined
-  /** 只读时没有按钮。 */
   readOnly: boolean
-  /** 正在提交的那件事；提交完（拿到任务号或选用写好）回到 null。 */
   busy: GenerateCardBusy
-  /** 上次提交没被收下的原话。 */
   error: string | undefined
   onGenerate: () => void
-  /** 选用这次生成出来的 `url`。 */
   onChoose: (url: string) => void
   onEnlarge: (url: string, label: string) => void
 }
@@ -51,9 +36,7 @@ export function FilmGenerateCard({
   if (job !== undefined && isRunningStatus(job.status)) return <Generating since={job.createdAt} />
   const result = job?.status === 'completed' ? (job.outputUrl ?? undefined) : undefined
   const failed = job?.status === 'failed'
-  // 提交没被收下的原话优先；其次是上次生成失败的原因。
   const reason = error ?? (failed ? (job.errorMessage ?? '本次生成失败') : undefined)
-  // 参考图有没选用的就不能生成：后端照样会拒，这里先拦住并说清缺哪几张。
   const blocker = missingReferencesText(frame.missing)
   const generateProps = {
     'aria-describedby': blocker === undefined ? undefined : blockerId,
@@ -141,11 +124,9 @@ export function FilmGenerateCard({
             if (run.kind !== 'image') return run.text
             return (
               <FilmImageChip
-                // 描述按出现的先后排，同一张图可以出现几次，没有别的身份。
                 key={`${run.node}@${String(index)}`}
                 label={run.label}
                 onEnlarge={(url) => onEnlarge(url, run.label)}
-                // 编号是这张图自己的参考图列表里的，与组的编号无关；没选用的画空位。
                 tag={`@${String(run.number)}`}
                 url={run.url}
               />
@@ -160,7 +141,6 @@ export function FilmGenerateCard({
 
 function Generating({ since }: { since: string }) {
   const elapsed = useElapsed(since)
-  // 占的是将要出来的那张图的位置，与在途素材片一样铺满画幅框；描述卡不进画幅框。
   return (
     <div className="storyboard-hero">
       <div aria-label={`生成中，已用 ${elapsed}`} className="storyboard-take-stage" role="status">

@@ -1,11 +1,3 @@
-"""PMS 用户资料客户端。
-
-只在 SSO callback 调用一次；普通产品请求不外呼。协议：
-  GET {base}/pms-console/user/selectUserById/{innerUserId}
-  Authorization: {SSO jwt}
-  → {success: true, data: {city, jobTitle, depts: [...]}}
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -20,7 +12,7 @@ _TIMEOUT_SECONDS = 5.0
 
 
 class PmsUnavailable(Exception):
-    """PMS 用户资料服务不可达或响应不符合约定（映射 502，终止本次 SSO callback）。"""
+    pass
 
 
 @dataclass(frozen=True, slots=True)

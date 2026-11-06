@@ -1,26 +1,19 @@
-/** 本组图片的格子：缩略图按画幅占位、不裁，下面标 @N，帧计数弹层与正文 `@` 选图共用；末尾的「+」只在 `@` 选图里。 */
-
 import type { ButtonHTMLAttributes } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { workbenchControl } from './workbench-control'
 
-/** 往这段正文添加图片的入口（关联已有或上传）。正文只读时 `@` 打不开，所以这里不再有挡住的状态。 */
 export type FrameAdd = () => void
 
 type TileButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children' | 'type'>
 
 type FrameTileProps = TileButtonProps & {
   frame: number
-  /** 还没有图（制作页没选用的生成图）为 null，画一格同样大小的空位。 */
   url: string | null
-  /** 画幅宽高比，缩略图按它占位。 */
   ratio: number
-  /** 舞台上正在看的这张，缩略图描边。 */
   outlined?: boolean
 }
 
-/** 选中态认 `aria-current`（帧计数：正在看的）或 `aria-selected`（选图：键盘停在的）。 */
 export function FrameTile({
   className,
   frame,
@@ -63,7 +56,6 @@ export function FrameTile({
   )
 }
 
-/** 底边与缩略图对齐：外层要在下面留出「@N」那一行的高度（`pb-6`）。 */
 export function FrameAddTile({ className, ...props }: TileButtonProps) {
   return (
     <button

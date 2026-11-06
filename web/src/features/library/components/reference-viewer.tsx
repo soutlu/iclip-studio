@@ -42,14 +42,12 @@ const INVERTED_CLASS = 'rounded-full disabled:bg-disabled-container'
 
 const CONFLICT_MESSAGE = '该拆解已被修改，刷新将丢弃本次修改'
 
-/** AI 维度旁的提示：重拆与重新打标都会整组重写这一维度。 */
 const REFERENCE_AI_HINT = '由 AI 自动打标，重新拆解或重新打标时会重写该项标签'
 
 const isConflict = (error: unknown) => error instanceof ApiError && error.status === 409
 
 type Mode = 'view' | 'edit' | 'confirm-rerun' | 'confirm-retag' | 'confirm-remove'
 
-/** 底栏原地确认的说明与确认按钮；`aiDimensions` 是 AI 打的维度名，如「品类、场景」，没有时为空。 */
 const CONFIRMS: Record<
   'confirm-rerun' | 'confirm-retag' | 'confirm-remove',
   { message: (aiDimensions: string) => string; action: string }
@@ -196,7 +194,6 @@ function ViewerBody({
   const title = tagNames.length === 0 ? '参考视频' : tagNames.join(' · ')
   const author = reference.userName
   const saving = update.isPending
-  // 重新打标照当前拆解：拆解得在、不在拆，也不在打标。
   const canRetag =
     reference.canEdit && detail !== undefined && document !== null && !busy && !tagging
   const aiDimensions = tags.dimensions
@@ -287,7 +284,6 @@ function ViewerBody({
     startTest.mutate(nearestTestAspectRatio(measuredRatio), {
       onError: (error) => {
         toast.error(errorMessageOf(error, '试生成失败'))
-        // 服务端以 409 表示拆解状态或上一次试生成与画面上的不一致。
         if (isConflict(error)) onRefresh()
       },
     })
@@ -600,7 +596,6 @@ function ViewerBody({
   )
 }
 
-/** 标签下面的一行后台状态：还没拆完时说拆完自动打；正在打标；没打成按原因说一句，能重新打标的人原地点「重新打标」。 */
 function TagStatusLine({
   reference,
   canRetag,

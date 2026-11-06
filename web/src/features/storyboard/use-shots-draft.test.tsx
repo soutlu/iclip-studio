@@ -60,11 +60,9 @@ type WriteReply = (write: Write, count: number) => Promise<Response | undefined>
 const serveWorkspace = (document = initialDocument(), reply?: WriteReply) => {
   let file = { content: JSON.stringify(document), path: PATH, version: 1 }
   const writes: Write[] = []
-  /** 每次读取到达时服务端的版本。 */
   const reads: number[] = []
   let readGate: Promise<void> | undefined
   server.use(
-    // 读取按到达那一刻的文件作答；闸住时晚些才返回，模拟慢于后续写入的旧读取。
     http.get(ENDPOINT, async () => {
       const snapshot = file
       reads.push(snapshot.version)
@@ -86,7 +84,6 @@ const serveWorkspace = (document = initialDocument(), reply?: WriteReply) => {
   return {
     writes,
     reads,
-    /** 之后到达的读取都等到返回的闸门放开才作答。 */
     holdReads: () => {
       const gate = deferred()
       readGate = gate.promise
@@ -387,7 +384,6 @@ describe('分镜草稿整份写回与版本冲突', () => {
       expect(result.current.document).toEqual(first)
       expect(result.current.hasUnsavedChanges).toBe(false)
 
-      // 像编辑器那样：拿页面显示的正文接着打字，再把整段提示词交回草稿。
       const shown = result.current.document?.shots.find((shot) => shot.index === 1)
       if (shown === undefined) throw new Error('页面上没有第一组')
       act(() => {

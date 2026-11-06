@@ -187,7 +187,6 @@ describe('annotation image coordinates', () => {
 })
 
 describe('selected annotation toolbar placement', () => {
-  // The 400×300 image fills the 800×600 viewport at 2×: viewport px = image px × 2.
   const viewport = { width: 800, height: 600 }
   const image = { width: 400, height: 300, scale: 2 }
   const BAR_HEIGHT = 44
@@ -204,7 +203,6 @@ describe('selected annotation toolbar placement', () => {
 
   it('centres the bar on the selected number, above both the mark and its number', () => {
     const bar = placeAnnotationToolbar({ viewport, image, selected, labels: [selected.label] })
-    // The number's top edge sits at 160 px; the bar keeps a gap above it.
     expect(bar).toEqual({ left: 80, top: 100, width: 240 })
   })
 
@@ -212,7 +210,6 @@ describe('selected annotation toolbar placement', () => {
     const nearTop = { top: 10, height: 50, label: label(100, 20) }
     const labels = [nearTop.label]
     const bar = placeAnnotationToolbar({ viewport, image, selected: nearTop, labels })
-    // Mark bottom is at 120 px.
     expect(bar.top).toBe(132)
     expect(covers(bar, nearTop.label)).toBe(false)
   })
@@ -228,7 +225,6 @@ describe('selected annotation toolbar placement', () => {
   it('falls back below the mark and past lower numbers once stepping up leaves the viewport', () => {
     const labels = [selected.label, label(100, 40), label(100, 160)]
     const bar = placeAnnotationToolbar({ viewport, image, selected, labels })
-    // Mark bottom is at 300 px; the lowest number spans 300–340 px.
     expect(bar.top).toBe(348)
     for (const box of labels) expect(covers(bar, box)).toBe(false)
   })

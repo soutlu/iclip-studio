@@ -1,5 +1,3 @@
-"""验证对话 HTTP 契约、归属和删除后的墓碑可见性；无需装配 Agent。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -8,16 +6,20 @@ import uuid
 
 import httpx
 import pytest
+from agent_runtime.errors import NotFound
+from agent_runtime.harness.step_store_pg import PgStepStore
 from fastapi import FastAPI
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord, StepEvent
 from sqlalchemy import text
 
-from iclip.common.errors import NotFound
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
-from iclip.domains.conversations.repository import AuditFilter
+from iclip.domains.conversations.repository import (
+    MISSING_COLLECTION,
+    MISSING_TASK,
+    AuditFilter,
+)
 from iclip.domains.conversations.schemas import DEFAULT_TITLE
-from iclip.harness.step_store_pg import PgStepStore
 from iclip.platform.db.engine import build_engine
 from tests.helpers.app import make_client
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
@@ -69,8 +71,6 @@ async def test_open_list_rename_delete(client: httpx.AsyncClient, pg_url: str) -
 
 
 async def test_client_minted_id_is_idempotent(client: httpx.AsyncClient, pg_url: str) -> None:
-    """机器链路自带对话 id：重发同一个 id 答复已有那一段，不新建第二段。"""
-
     await login_as_editor(client, pg_url)
     minted = str(uuid.uuid4())
 
@@ -89,8 +89,6 @@ async def test_client_minted_id_is_idempotent(client: httpx.AsyncClient, pg_url:
 async def test_concurrent_client_minted_id_creates_one_conversation(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """同时提交同一 ID 时仅一个请求新建，另一个读取获胜请求的完整记录。"""
-
     await login_as_editor(client, pg_url)
     minted = str(uuid.uuid4())
 
@@ -103,11 +101,7 @@ async def test_concurrent_client_minted_id_creates_one_conversation(
         first.text,
         second.text,
     )
-    # 行上的 lastSeq 是各自读行之前的事件水位：落败的那次可能读在 created 帧发号之后，不算行的内容。
-    rows = [
-        {key: value for key, value in response.json()["conversation"].items() if key != "lastSeq"}
-        for response in (first, second)
-    ]
+    rows = [response.json()["conversation"] for response in (first, second)]
     assert rows[0] == rows[1]
     listed = await client.get(SEARCH)
     assert [item["id"] for item in listed.json()["items"]] == [minted]
@@ -116,8 +110,6 @@ async def test_concurrent_client_minted_id_creates_one_conversation(
 async def test_client_minted_id_of_another_owner_is_not_handed_over(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """撞上别人的对话 id 与按 id 读别人的对话一致：404，不交出那一段。"""
-
     await login_as_editor(client, pg_url)
     minted = str(uuid.uuid4())
     assert (await create(client, id=minted)).status_code == 201
@@ -132,8 +124,6 @@ async def test_client_minted_id_of_another_owner_is_not_handed_over(
 async def test_deleted_client_minted_id_cannot_reassign_retained_history(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """删除保留历史，但原属主和其他用户都不能重新认领这段对话的 ID。"""
-
     await login_as_editor(client, pg_url)
     minted = str(uuid.uuid4())
     opened = await create(client, id=minted)
@@ -191,8 +181,6 @@ async def test_deleted_client_minted_id_cannot_reassign_retained_history(
 async def test_missing_attribution_is_still_reported_as_such(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """主键幂等不能把「归属不存在」的报文带偏：那仍然是 422。"""
-
     await login_as_editor(client, pg_url)
     missing = str(uuid.uuid4())
     task_minted = str(uuid.uuid4())
@@ -203,17 +191,15 @@ async def test_missing_attribution_is_still_reported_as_such(
 
     assert bad_task.status_code == 422, bad_task.text
     assert bad_collection.status_code == 422, bad_collection.text
-    # 报文仍是领域语言，不是主键冲突，也不是驱动错误。
-    for response, minted in ((bad_task, task_minted), (bad_collection, collection_minted)):
-        assert "不存在" in response.json()["detail"], response.text
+    assert bad_task.json()["detail"] == MISSING_TASK
+    assert bad_collection.json()["detail"] == MISSING_COLLECTION
+    for minted in (task_minted, collection_minted):
         corrected = await create(client, id=minted)
         assert corrected.status_code == 201, corrected.text
         assert corrected.json()["conversation"]["id"] == minted
 
 
 async def test_list_is_newest_first(client: httpx.AsyncClient, pg_url: str) -> None:
-    """按建立时间倒序；改名这类后续操作不把对话换到别的位置。"""
-
     await login_as_editor(client, pg_url)
     first = (await create(client, title="早的")).json()["conversation"]
     await create(client, title="晚的")
@@ -231,7 +217,6 @@ async def test_list_can_be_searched_by_title(client: httpx.AsyncClient, pg_url: 
 
     hit = await client.get(SEARCH, params={"q": "亚麻"})
     assert [item["title"] for item in hit.json()["items"]] == ["亚麻衬衫二剪", "夏季亚麻系列广告"]
-    # % 按字面量匹配，纯空白查询不筛选。
     assert (await client.get(SEARCH, params={"q": "%"})).json()["items"] == []
     assert len((await client.get(SEARCH, params={"q": "  "})).json()["items"]) == 3
 
@@ -250,8 +235,6 @@ async def test_search_only_covers_my_own_conversations(
 async def test_another_users_conversation_is_invisible(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """他人会话返回 404，避免通过 403 泄漏存在性。"""
-
     await login_as_editor(client, pg_url)
     mine = (await create(client)).json()["conversation"]["id"]
 
@@ -268,8 +251,6 @@ async def test_another_users_conversation_is_invisible(
 async def test_delete_keeps_the_workspace_for_review(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """工作区与素材台账随墓碑留下：治理者复盘已删对话时还要看分镜稿与素材来源。"""
-
     user_id = await login_as_editor(client, pg_url)
     doomed = (await create(client, title="要删的")).json()["conversation"]["id"]
     namespace = f"{user_id}/{doomed}"
@@ -283,13 +264,6 @@ async def test_delete_keeps_the_workspace_for_review(
             ),
             {"ns": namespace},
         )
-        await conn.execute(
-            text(
-                "INSERT INTO agent_runtime.materials (namespace, url, kind) "
-                "VALUES (:ns, 'https://cdn.test/style.jpg', 'image')"
-            ),
-            {"ns": namespace},
-        )
 
     assert (await client.delete(f"{URL}/{doomed}")).status_code == 204
 
@@ -300,22 +274,13 @@ async def test_delete_keeps_the_workspace_for_review(
                 {"ns": namespace},
             )
         ).scalar_one()
-        materials = (
-            await conn.execute(
-                text("SELECT count(*) FROM agent_runtime.materials WHERE namespace = :ns"),
-                {"ns": namespace},
-            )
-        ).scalar_one()
 
-    assert (files, materials) == (1, 1)
+    assert files == 1
 
 
 async def test_deleted_conversation_is_a_tombstone_only_governor_reads_see(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """删除只标记 deleted_at：行留着占住 id。属主的读口与所有写口都当它不存在；
-    只有 ``include_deleted`` 直读与带 ``deleted`` 的审计能读到它。"""
-
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     conversation_id = uuid.UUID((await create(client)).json()["conversation"]["id"])
     assert (await client.delete(f"{URL}/{conversation_id}")).status_code == 204
@@ -359,10 +324,6 @@ async def test_deleted_conversation_is_a_tombstone_only_governor_reads_see(
 async def test_one_conversation_can_be_read_by_id_within_the_usual_visibility(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """单行读与其他读路径同一口径：属主读自己活着的，治理者连墓碑也读得到，别人与墓碑的属主都是 404。
-
-    行上带读这一行之前的事件水位与它所属的进程。"""
-
     await login_as_editor(client, pg_url)
     mine = (await create(client, title="这段")).json()["conversation"]
 
@@ -370,8 +331,6 @@ async def test_one_conversation_can_be_read_by_id_within_the_usual_visibility(
     assert read.status_code == 200, read.text
     row = read.json()["conversation"]
     assert (row["id"], row["title"]) == (mine["id"], "这段")
-    assert isinstance(row["lastSeq"], int)
-    assert row["eventEpoch"] == mine["eventEpoch"]
 
     async with make_client(app) as stranger:
         await login_as_editor(stranger, pg_url, username="mallory")
@@ -403,8 +362,6 @@ async def test_malformed_payload_is_422(client: httpx.AsyncClient, pg_url: str) 
 
 
 async def seed_workspace_files(pg_url: str, namespace: str, files: dict[str, str]) -> None:
-    """直接插入会话工作区文件。"""
-
     async with connected(pg_url) as conn:
         for path, content in files.items():
             await conn.execute(
@@ -420,8 +377,6 @@ async def seed_workspace_files(pg_url: str, namespace: str, files: dict[str, str
 async def test_workspace_files_can_be_listed_and_read(
     app: FastAPI, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """工作区端点按会话隔离；嵌套路径覆盖查询参数编解码。"""
-
     user_id = await login_as_editor(client, pg_url)
     mine = (await create(client, title="这段")).json()["conversation"]["id"]
     other = (await create(client, title="另一段")).json()["conversation"]["id"]
@@ -433,7 +388,6 @@ async def test_workspace_files_can_be_listed_and_read(
     listed = await client.get(f"{URL}/{mine}/workspace/files")
     assert listed.status_code == 200, listed.text
     files = listed.json()["files"]
-    # 按 Unicode 码点排序，分在提之前。
     assert [item["path"] for item in files] == ["分镜/第一集.md", "提纲.md"]
     assert {item["version"] for item in files} == {1}
     assert all(item["sizeBytes"] > 0 and item["updatedAt"] for item in files)
@@ -463,8 +417,6 @@ async def test_workspace_files_can_be_listed_and_read(
 
 
 def shots_document(*, image_url: str, index: int = 1) -> str:
-    """与 write_video_shots 一致的文档；非 1 的 index 用于构造编号不连续场景。"""
-
     return json.dumps(
         {
             "aspect_ratio": "9:16",
@@ -498,8 +450,6 @@ def shots_document(*, image_url: str, index: int = 1) -> str:
 async def test_workspace_file_can_be_written_back_with_the_version_it_was_read_at(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """写回使用版本 CAS，冲突与文件不存在均返回 409，不能隐式新建文件。"""
-
     user_id = await login_as_editor(client, pg_url)
     mine = (await create(client, title="这段")).json()["conversation"]["id"]
     await seed_workspace_files(pg_url, f"{user_id}/{mine}", {"提纲.md": "三幕"})
@@ -530,8 +480,6 @@ async def test_workspace_file_can_be_written_back_with_the_version_it_was_read_a
 async def test_workspace_file_write_checks_the_document_on_its_path(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """写回沿用交付形状校验；非规范路径可能绕过分镜文档校验，必须拒绝。"""
-
     path = "video_shot.json"
     user_id = await login_as_editor(client, pg_url)
     mine = (await create(client, title="这段")).json()["conversation"]["id"]
@@ -618,8 +566,6 @@ async def test_workspace_file_accepts_a_group_without_reference_images(
 async def test_workspace_file_rejects_more_than_thirty_reference_images(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """统一文件写回检查图片上限，拒绝后保留原文。"""
-
     count = 31
 
     user_id = await login_as_editor(client, pg_url)

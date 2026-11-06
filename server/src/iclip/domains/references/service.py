@@ -1,9 +1,3 @@
-"""参考视频用例：建行与排拆解、列表与筛选、修改、改标签、重拆、重新打标、移除、试生成，以及给对话
-里的拆解工具用的 ``ensure``。
-
-端点权限由路由声明；这里管行级归属：谁都看得到，只有属主能改、能改标签、能重拆、能重新打标、能
-移除；试生成只限属主本人。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -13,8 +7,8 @@ from datetime import UTC, datetime
 from typing import Final
 
 import structlog
+from agent_runtime.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 
-from iclip.common.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from iclip.domains.identity.public import Principal, visible_owner_incl_act_as
 from iclip.domains.references.models import (
     BREAKDOWN_TIMEOUT_SECONDS,
@@ -55,34 +49,25 @@ _logger = structlog.stdlib.get_logger(__name__)
 UPLOAD_PERMISSION: Final = "uploads:write"
 
 ENSURE_POLL_SECONDS: Final = 3.0
-"""对话里等一条拆解时隔多久查一次这一行。"""
 
 _BUSY: Final = frozenset({STATUS_PENDING, STATUS_RUNNING})
 
 
 def _as_utc(moment: datetime | None) -> datetime | None:
-    """无时区输入按 UTC 解释，避免与 timestamptz 比较时驱动报错。"""
-
     if moment is None or moment.tzinfo is not None:
         return moment
     return moment.replace(tzinfo=UTC)
 
 
 def _unique[T](values: Sequence[T]) -> tuple[T, ...]:
-    """去掉重复的，保留第一次出现的先后。"""
-
     return tuple(dict.fromkeys(values))
 
 
 def _can_edit(principal: Principal, row: ReferenceVideo) -> bool:
-    """看得到不等于改得动：只有属主，或读得到任何人记录的治理者与替人办事的钥匙。"""
-
     return visible_owner_incl_act_as(principal) in (None, row.owner_user_id)
 
 
 def _require_owner(principal: Principal, row: ReferenceVideo) -> None:
-    """别人的参考视频明确拒绝，不当作不存在。"""
-
     if not _can_edit(principal, row):
         raise PermissionDenied("只有它的属主能改这条参考视频")
 
@@ -117,8 +102,6 @@ def _test_video(row: ReferenceVideo, job: TestVideoJob | None) -> TestVideoOut |
 
 
 def _stale(document: str | None, prompt: str | None) -> bool:
-    """当前拆解拼出的提示词与试生成用的不同；拼不出、或记录里没有正文，也算不同。"""
-
     if document is None or prompt is None:
         return True
     try:
@@ -136,11 +119,6 @@ def _entry_key(reference_id: uuid.UUID) -> EntryKey:
 
 
 class ReferenceService:
-    """``queue`` 为 ``None`` 即拆解没配置：读照常，建行、重拆与 ``ensure`` 不可用。``uploads_available``
-    为假即上传没装配（没有对象存储）：建行不可用，重拆与 ``ensure`` 照常。``test_videos`` 一直在：
-    详情都带最新的一次试生成；它能不能提交由组合根定，提交不了时试生成的入口不挂。标签都经
-    ``tagging``：改标签一直可用，重新打标看它配没配。"""
-
     def __init__(
         self,
         store: ReferenceStore,
@@ -164,29 +142,18 @@ class ReferenceService:
 
     @property
     def accepts_uploads(self) -> bool:
-        """能不能把视频上传放进资料库：拆解已配置，且上传可用。"""
-
         return self._queue is not None and self._uploads_available
 
     def can_upload(self, principal: Principal) -> bool:
-        """资料库收上传，且读者持 ``uploads:write``。"""
-
         return self.accepts_uploads and principal.has(UPLOAD_PERMISSION)
 
     @property
     def can_retag(self) -> bool:
-        """能不能重新打标：打标已配置。"""
-
         return self._tagging.can_tag
 
     async def create(
         self, principal: Principal, upload_id: uuid.UUID
     ) -> tuple[ReferenceVideoOut, bool]:
-        """把调用者自己的一条视频上传放进资料库；第二项是这次是不是新建的。
-
-        同一个文件在上传时已经合成一个地址，所以按地址找行就够了：新建的排上第一次拆解；已有的直接
-        交回，不再付费；移除过的回到资料库，属主换成这次上传的人（原属主移除时已经放手）。别人的上传、不是视频的上传、不存在的都是 ``NotFound``。"""
-
         if not self.accepts_uploads:
             raise RuntimeError("资料库不收上传，建行的入口不该挂上")
         queue = self._require_queue()
@@ -219,9 +186,6 @@ class ReferenceService:
         limit: int = 20,
         cursor: str | None = None,
     ) -> ReferenceVideosOut:
-        """建立晚的排前面；满页才给下一页游标，总数只在第一页给。``tags`` 按维度分组：维度之间都要
-        命中，同一维度里命中任一即算，选了上级也算它的下级；不存在的标签是 ``ValidationFailed``。"""
-
         check_limit(limit)
         since, until = _as_utc(since), _as_utc(until)
         if since is not None and until is not None and since >= until:
@@ -250,8 +214,6 @@ class ReferenceService:
         )
 
     async def filters(self) -> ReferenceFiltersOut:
-        """名下有参考视频的属主，各带条数；只数没移除的。"""
-
         owner_counts = await self._store.owner_counts()
         return ReferenceFiltersOut(
             owners=[OwnerCountOut(user_name=name, count=count) for name, count in owner_counts],
@@ -263,8 +225,6 @@ class ReferenceService:
     async def update(
         self, principal: Principal, reference_id: uuid.UUID, body: ReferenceUpdateIn
     ) -> ReferenceVideoOut:
-        """属主改拆解正文。版本对不上、正在拆解都是 ``Conflict``。"""
-
         row = await self._listed(reference_id)
         _require_owner(principal, row)
         if row.breakdown_status in _BUSY:
@@ -279,9 +239,6 @@ class ReferenceService:
     async def replace_tags(
         self, principal: Principal, reference_id: uuid.UUID, body: ReferenceTagsIn
     ) -> ReferenceVideoOut:
-        """属主整份替换各维度的标签。正在打标是 ``Conflict``；不存在的标签、维度本身是
-        ``ValidationFailed``。"""
-
         row = await self._listed(reference_id)
         _require_owner(principal, row)
         await self._tagging.replace(
@@ -290,9 +247,6 @@ class ReferenceService:
         return await self._detail(principal, await self._get(reference_id))
 
     async def retag(self, principal: Principal, reference_id: uuid.UUID) -> ReferenceVideoOut:
-        """属主按当前拆解重新打标：AI 维度整组重写，人工维度不动。拆解还没完成、正在打标都是
-        ``Conflict``。"""
-
         if not self._tagging.can_tag:
             raise RuntimeError("打标没配置，重新打标的入口不该挂上")
         row = await self._listed(reference_id)
@@ -303,9 +257,6 @@ class ReferenceService:
         return await self._detail(principal, await self._get(reference_id))
 
     async def rerun(self, principal: Principal, reference_id: uuid.UUID) -> ReferenceVideoOut:
-        """属主重新拆解：已完成或已失败的行重新排队，拆成就覆盖拆解、再重新打标。正在拆是
-        ``Conflict``。"""
-
         queue = self._require_queue()
         row = await self._listed(reference_id)
         _require_owner(principal, row)
@@ -323,13 +274,6 @@ class ReferenceService:
     async def start_test_video(
         self, principal: Principal, reference_id: uuid.UUID, body: TestVideoIn, *, user_name: str
     ) -> ReferenceVideoOut:
-        """属主本人按当前拆解拼一段提示词，生成一条视频与原片对照；``user_name`` 是入口定好的归属标签。
-
-        只限属主本人：这条生成记在提交人名下，只有属主本人提交才记在属主名下，所有读者看到的才是
-        同一条。别人的是 ``PermissionDenied``；拆解还没完成、上一次试生成还没结束都是 ``Conflict``；
-        拆解拼不出提示词或拼出来太长是 ``ValidationFailed``。两次同时提交可能都过了检查，各生成一条，
-        不加锁。"""
-
         row = await self._listed(reference_id)
         if principal.user_id != row.owner_user_id:
             raise PermissionDenied("只有它的属主本人能试生成这条参考视频")
@@ -345,21 +289,12 @@ class ReferenceService:
         return await self._detail(principal, row)
 
     async def remove(self, principal: Principal, reference_id: uuid.UUID) -> None:
-        """属主把它从资料库移除：只记移除时刻，按地址仍能读到它的拆解。"""
-
         row = await self._listed(reference_id)
         _require_owner(principal, row)
         if not await self._store.remove(reference_id):
             raise NotFound("资料库里没有这条参考视频")
 
     async def ensure(self, principal: Principal, video_url: str) -> Outcome:
-        """对话里拆解工具的入口：同一条视频只拆一次，别人在拆就等那一次。
-
-        有拆解就直接用，哪怕有人正在重拆；没有就建行并排队，已失败的重新排队（每调一次工具就是
-        一次尝试，还拆不拆由工具的重试次数管）；然后每 ``poll_seconds`` 查一次，最多等
-        ``wait_seconds``，交回文档或失败原因。不查上传记录：这条视频是对话素材，不一定是本人的上传；
-        属主记第一次拆它的人。移除过的照样用。"""
-
         queue = self._require_queue()
         row, created = await self._store.ensure_row(
             video_url,
@@ -373,7 +308,6 @@ class ReferenceService:
         if created:
             await self._enqueue(queue, row.id)
         elif row.breakdown_status == STATUS_FAILED:
-            # 条件更新：并发的几次只有一次改得动，只有它排队。
             requeued = await self._store.requeue(
                 row.id,
                 from_failed_only=True,
@@ -399,9 +333,6 @@ class ReferenceService:
             await asyncio.sleep(self._poll_seconds)
 
     async def _enqueue(self, queue: BreakdownQueue, reference_id: uuid.UUID) -> None:
-        """排一次拆解。排不上就把这一行收成 ``failed / model_call_failed``，免得它一直停在排队中、
-        谁也重拆不了；再把错误抛给调用方。"""
-
         try:
             await queue.enqueue_breakdown(reference_id)
         except Exception:
@@ -415,8 +346,6 @@ class ReferenceService:
         return self._queue
 
     async def _detail(self, principal: Principal, row: ReferenceVideo) -> ReferenceVideoOut:
-        """详情连同属主名下最新的一次试生成：按属主查，不按读者，谁读都是同一条。"""
-
         job = await self._test_videos.latest(row.owner_user_id, row.id)
         return ReferenceVideoOut.model_validate(
             {
@@ -433,8 +362,6 @@ class ReferenceService:
         return row
 
     async def _listed(self, reference_id: uuid.UUID) -> ReferenceVideo:
-        """资料库里的这一行；不存在或已移除都是 ``NotFound``。"""
-
         row = await self._store.get(reference_id)
         if row is None or row.deleted_at is not None:
             raise NotFound("资料库里没有这条参考视频")

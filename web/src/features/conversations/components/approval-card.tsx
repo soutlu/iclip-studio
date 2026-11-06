@@ -1,5 +1,3 @@
-/** 审批与工具卡共用 display 合同；两个正式按钮，数字键 1 / 2 是快捷方式。 */
-
 import { useEffect, useId, useRef, useState } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import type { ToolCallFrame } from '@/shared/transcript/vendor'
@@ -18,17 +16,13 @@ import { useClampable } from './use-clampable'
 type ApprovalCardProps = {
   conversationId: string
   interactionId: string
-  /** 按 approvalId 匹配调用；未匹配时省略参数。 */
   frame: ToolCallFrame | undefined
-  /** 决定与服务端状态冲突时刷新内容。 */
   onRefresh: () => void
-  /** 看别人的对话：只展示在等什么，按钮与数字快捷键都不接。 */
   readOnly: boolean
 }
 
 const DECISION_LABELS = { approved: '已同意', rejected: '已拒绝' } as const
 
-/** 数字键落在输入区里时不算快捷键：用户正在打字。 */
 const inEditor = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement &&
   target.closest('input, textarea, [contenteditable="true"]') !== null
@@ -45,7 +39,6 @@ export function ApprovalCard({
   const cardRef = useRef<HTMLElement | null>(null)
   const [decision, setDecision] = useState<keyof typeof DECISION_LABELS | null>(null)
   const [sending, setSending] = useState(false)
-  // 卡片移除由服务端 pending 集合决定；interactionId 变化时由父组件 key 重置本地决定。
   const settled = decision !== null
 
   const respond = async (approved: boolean) => {
@@ -75,7 +68,6 @@ export function ApprovalCard({
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== '1' && event.key !== '2') return
-      // 弹窗盖着这张卡时数字键是打给弹窗的，不能替看不见的审批做决定。
       if (event.defaultPrevented || inEditor(event.target) || isBehindModal(cardRef.current)) return
       decide(event.key === '1')
     }
@@ -91,7 +83,6 @@ export function ApprovalCard({
     >
       <header className="flex min-w-0 items-baseline gap-2 px-4 pt-3">
         <h2 className="shrink-0 text-body font-medium text-chat-message-text">{card.label}</h2>
-        {/* 写入与编辑只给文件名；其余审批照旧显示主语原文。 */}
         {change !== undefined ? (
           <p className="min-w-0 truncate text-body-sm text-chat-muted-text">
             {baseName(change.path)}
@@ -102,7 +93,6 @@ export function ApprovalCard({
           </p>
         )}
       </header>
-      {/* display 提供操作说明与可预览的改动，内部参数不进入审批正文。 */}
       {change === undefined ? null : <ChangePreview change={change} />}
       <p className="px-4 pt-3 text-body text-chat-message-text">该步骤需经同意后继续执行</p>
       <footer className="mt-3 flex items-center justify-between gap-3 border-t-[0.5px] border-chat-hairline px-4 py-3">
@@ -115,7 +105,6 @@ export function ApprovalCard({
           <p className="text-caption text-chat-muted-text">等待任务属主决定</p>
         ) : (
           <>
-            {/* 触屏没有数字键，提示不显示；按钮靠 ml-auto 留在右边。 */}
             <p className="text-caption text-chat-muted-text touch:hidden">
               按 1 可同意，按 2 可拒绝
             </p>
@@ -129,7 +118,6 @@ export function ApprovalCard({
               >
                 拒绝
               </Button>
-              {/* 主操作用墨色：品牌绿只留给「生成」。 */}
               <Button
                 disabled={sending}
                 onClick={() => decide(true)}
@@ -147,17 +135,10 @@ export function ApprovalCard({
   )
 }
 
-/** 收起时的可见行数；展开后的上限（二十四行）写在 .chat-preview-expanded。 */
 const PREVIEW_LINES = 12
 
-/**
- * 给用户看「要写进去的是什么」：Markdown 排成文档，其余按正文字体原样换行；
- * 编辑只给改动前后的片段，相同的首尾行当上下文，删掉的行灰色划线，新写的行墨色加浅灰底。
- * 超过十二行先收起，「展开全部」后在框内滚动。
- */
 function ChangePreview({ change }: { change: FileChange }) {
   const [expanded, setExpanded] = useState(false)
-  // fileChangeOf 每次渲染都给新对象，按文本重新测量。
   const text = 'content' in change ? change.content : `${change.before}\n${change.after}`
   const { clampable, ref } = useClampable(PREVIEW_LINES, text)
   const bodyId = useId()

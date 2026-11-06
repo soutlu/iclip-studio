@@ -1,5 +1,3 @@
-/** 媒体描述独立于上传条目；缩略图由 previewUrl 派生，避免重复存储。 */
-
 import type { IconName } from '@/shared/icons'
 
 type MediaKind = 'file' | 'image' | 'video'
@@ -11,11 +9,8 @@ export type MediaUploadState =
 
 export type MediaDescriptor = {
   readonly kind: MediaKind
-  /** 名称为空时使用媒体种类文案。 */
   readonly name: string
-  /** 字节数缺失时省略大小。 */
   readonly size?: number | undefined
-  /** 缺少预览地址时禁用预览与放大。 */
   readonly previewUrl?: string | undefined
   readonly upload?: MediaUploadState | undefined
 }

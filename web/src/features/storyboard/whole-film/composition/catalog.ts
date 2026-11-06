@@ -1,17 +1,7 @@
-/**
- * 组件目录（组件库根上的 `catalog.json`）的结构。目录随组件库在部署侧维护，由
- * `web/scripts/hyperframes-registry.mjs` 组装：组件文件、运行时与封面放在 `<version>/` 下，
- * 路径都相对它。
- */
-
 export type VariableValue = string | number | boolean
 
 export interface CatalogVariable {
   id: string
-  /**
-   * `font` 是字体可填项：取值是 {@link ComponentCatalog.fonts} 里的字体名，空字符串是组件自带的字体；
-   * 组件读 `--font-display`、`--font-body` 时由组装工具加上（id 为 `font`）。
-   */
   type: 'string' | 'number' | 'color' | 'boolean' | 'enum' | 'font' | 'image'
   label: string
   default: VariableValue
@@ -24,32 +14,22 @@ export interface CatalogVariable {
 
 export interface CatalogItem {
   name: string
-  /** 点卡片时的默认去处：block 插进画面轨，component 放到特效轨；拖放时看落在哪条轨。 */
   kind: 'block' | 'component'
   title: string
   description: string
   category: string
-  /** `caption` 是字幕样式，只能换掉全部字幕的样式；其余组件为 null，放在哪条轨都行。 */
   placement: 'caption' | null
-  /** 品牌组件所属的品牌，只给组件栏分栏用；放置与合成不看它。 */
   brand?: string
-  /** 合成文件，相对组件目录根。 */
   src: string
-  /** 组件按固定尺寸设计时的尺寸；null 表示铺满所在位置。 */
   size: { width: number; height: number } | null
-  /** 组件自己的动画时长（秒），放进成片的默认时长与最长时长；字幕样式铺满整片，为 null。 */
   duration: number | null
   variables: CatalogVariable[]
-  /** `<version>/thumbnails/` 下的缩略图文件名。 */
   thumbnail: string | null
-  /** 组件用到的网页字体，合成页引用它们的 CSS（见 {@link ComponentCatalog.fonts}）。 */
   fonts: string[]
 }
 
 export interface CatalogFont {
-  /** 这个字体整套字形的 CSS，相对组件目录根（`vendor/fonts/families/` 下）。 */
   css: string
-  /** 品牌缩写，同组件条目的 `brand`；带品牌的字体是字体可填项的选项。 */
   brand?: string
 }
 
@@ -60,20 +40,8 @@ export interface ExcludedItem {
 }
 
 export interface ComponentCatalog {
-  /** 组件库的版本号（组装时按全部输入算出），也是组件文件所在的目录名。 */
   version: string
-  /**
-   * 合成页要加载的运行时脚本与中文字体 CSS，相对组件目录根。中文字体是合成页的默认字体，
-   * 组件没写字体或字体变量未定义时也用它，预览与导出一致。
-   */
   runtime: { hyperframes: string; gsap: string; cjkFont: string }
-  /**
-   * 字体名 → 它整套字形的 CSS 与品牌。组件里写的字体：西文字形是组件库里请求过的全部字重，加上同名、
-   * 只覆盖中日韩码位、字形取 Noto Sans SC 的中文字形，只写字体名不引用字体文件的组件也能拿到这个字体，
-   * 中文不再落到各平台各不相同的系统字体。组件库自带字体文件的字体（品牌字体）只有它自己的字形，经字体
-   * 可填项使用，中文由字体变量里的 Noto Sans SC 兜底。渲染服务把它内联进合成页，HyperFrames 就不再另补
-   * 同名字体。
-   */
   fonts: Record<string, CatalogFont>
   categories: { id: string; label: string }[]
   items: CatalogItem[]

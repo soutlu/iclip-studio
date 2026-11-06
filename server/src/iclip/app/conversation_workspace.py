@@ -1,50 +1,20 @@
-"""对话与工作区的适配：文件读写、素材登记及文档校验。"""
-
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
 
-from iclip.capabilities.iclip_studio.film.checks import check_project_content, check_run_content
-from iclip.capabilities.shot_document import validate_shots_document
-from iclip.capabilities.workspace.scope import namespace_for
-from iclip.common.errors import Conflict, ValidationFailed
+from agent_runtime.errors import ValidationFailed
+from agent_runtime.file_store.namespace import namespace_for
+from agent_runtime.file_store.store import InvalidPath, normalize_path
+from iclip_video.iclip_studio.film.checks import check_project_content, check_run_content
+from iclip_video.shot_document import validate_shots_document
+
+from iclip.app.runtime_workspace import WorkspaceFiles
 from iclip.domains.conversations.service import DerivedFile, DerivedFileContent
-from iclip.platform.file_store.pg import PgFileStore
-from iclip.platform.file_store.store import (
-    FileStore,
-    InvalidContent,
-    InvalidPath,
-    QuotaExceeded,
-    VersionConflict,
-    normalize_path,
-)
-from iclip.platform.material_ledger.store import Material, MaterialLedger
-from iclip.platform.transcript.ops import ImageContent, PromptContent, VideoContent
 
 
 class ConversationWorkspace:
-    """在组合根将属主与对话 id 转换为工作区命名空间，隔离两侧领域知识。"""
-
-    def __init__(self, store: PgFileStore, announcing: FileStore, ledger: MaterialLedger) -> None:
+    def __init__(self, store: WorkspaceFiles) -> None:
         self._store = store
-        self._announcing = announcing
-        self._ledger = ledger
-
-    async def record_materials(
-        self, owner: uuid.UUID, conversation_id: str, content: Sequence[PromptContent]
-    ) -> None:
-        """登记用户附件，使工具可按素材来源规则使用其地址。"""
-
-        materials = [
-            Material(
-                url=part.source.url,
-                kind="image" if isinstance(part, ImageContent) else "video",
-            )
-            for part in content
-            if isinstance(part, ImageContent | VideoContent) and part.source.url is not None
-        ]
-        await self._ledger.record(namespace_for(owner, conversation_id), materials)
 
     async def list_files(
         self, owner: uuid.UUID, conversation_id: uuid.UUID
@@ -64,12 +34,7 @@ class ConversationWorkspace:
     async def read_file(
         self, owner: uuid.UUID, conversation_id: uuid.UUID, path: str
     ) -> DerivedFileContent | None:
-        """读取工作区文件，路径格式错误转换为 422。"""
-
-        try:
-            stored = await self._store.read(namespace_for(owner, str(conversation_id)), path)
-        except InvalidPath as exc:
-            raise ValidationFailed(str(exc)) from exc
+        stored = await self._store.read(namespace_for(owner, str(conversation_id)), path)
         if stored is None:
             return None
         return DerivedFileContent(path=stored.path, content=stored.content, version=stored.version)
@@ -82,29 +47,21 @@ class ConversationWorkspace:
         content: str,
         expected_version: int,
     ) -> DerivedFileContent:
-        """按期望版本覆盖文件，冲突返回 409。
-
-        仅接受规范路径，避免存储层归一化后的路径绕过按原始路径匹配的文档校验。"""
-
         try:
             if normalize_path(path) != path:
                 raise ValidationFailed(f"路径 {path!r} 不是规范形式，按工作区文件列表里的写法给")
-            entry = await self._announcing.write(
-                namespace_for(owner, str(conversation_id)),
-                path,
-                content,
-                expected_version=expected_version,
-            )
-        except VersionConflict as exc:
-            raise Conflict(str(exc)) from exc
-        except (InvalidPath, InvalidContent, QuotaExceeded) as exc:
+        except InvalidPath as exc:
             raise ValidationFailed(str(exc)) from exc
+        entry = await self._store.write(
+            namespace_for(owner, str(conversation_id)),
+            path,
+            content,
+            expected_version=expected_version,
+        )
         return DerivedFileContent(path=entry.path, content=content, version=entry.version)
 
 
 async def validate_video_shots(owner: uuid.UUID, conversation_id: uuid.UUID, content: str) -> None:
-    """使用交付工具的同一解析器校验用户写回的镜头组 prompt 表。"""
-
     _ = (owner, conversation_id)
     try:
         validate_shots_document(content)
@@ -113,17 +70,11 @@ async def validate_video_shots(owner: uuid.UUID, conversation_id: uuid.UUID, con
 
 
 async def validate_film(owner: uuid.UUID, conversation_id: uuid.UUID, content: str) -> None:
-    """用户写回工程文件时，按工具的同一套规则检查这一个文件。
-
-    这里只拿得到这一份内容：要对照运行文件和对话素材的规则留给 ``check_film``。"""
-
     _ = (owner, conversation_id)
     _reject(check_project_content(content))
 
 
 async def validate_film_run(owner: uuid.UUID, conversation_id: uuid.UUID, content: str) -> None:
-    """用户写回运行文件时检查这一个文件；``use`` 写的节点存不存在留给 ``check_film``。"""
-
     _ = (owner, conversation_id)
     _reject(check_run_content(content))
 

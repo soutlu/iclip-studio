@@ -71,7 +71,6 @@ describe('laneEditsOf', () => {
     const second = edit([2, 4])
     const third = edit([3, 5])
     const fourth = edit([0, 1])
-    // 列表里新的在前，排行仍按生成先后。
     const lane = laneEditsOf('root', [fourth, third, second, first], shots)
     expect(lane.map(({ id, row }) => [id, row])).toEqual([
       [first.id, 0],

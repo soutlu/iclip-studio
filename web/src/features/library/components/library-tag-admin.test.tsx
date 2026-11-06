@@ -33,7 +33,6 @@ function Harness() {
   )
 }
 
-/** 记下改标签树的请求（不含读树）。 */
 const recordTagWrites = () => {
   const writes: { method: string; path: string; body: unknown }[] = []
   server.events.on('request:start', ({ request }) => {

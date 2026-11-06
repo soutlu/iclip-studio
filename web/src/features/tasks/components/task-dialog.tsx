@@ -43,13 +43,11 @@ type TaskDialogProps = {
   creation?: TaskCreationStarter | undefined
   onOpenChange: (open: boolean) => void
   open: boolean
-  /** 有 taskId 时编辑详情，否则新建。 */
   taskId?: string | undefined
 }
 
 const toIso = (local: string): string | null => (local ? new Date(local).toISOString() : null)
 
-/** 详情使用完整数据执行 PUT，遗漏字段会被清空；发布后仅管理信息和 PLANNER 字段可编辑，撤回后只读。 */
 export function TaskDialog({
   creation,
   relatedContent,
@@ -156,7 +154,6 @@ export function TaskDialog({
                   onConfirm={(agentId) => void startCreation(agentId)}
                 />
               ) : isCreate || task ? (
-                // 切换需求单或新建模式时重挂表单，以重新初始化 useState。
                 <TaskDialogForm
                   key={taskId ?? 'create'}
                   onOpenChange={changeOpen}
@@ -303,7 +300,6 @@ function TaskDialogForm({ onOpenChange, onPreview, task }: TaskDialogFormProps) 
       <DialogBody className="px-6 pt-3 pb-5">
         <TaskFormFields
           form={form}
-          // 上传中不增减商品：图片字段按位置挂载，删一款会让还在传的那一款换位置。
           editable={(field) => !busy && !(field === 'products' && uploading) && editable(field)}
           onChange={setForm}
           onUploadingChange={(field, value) =>

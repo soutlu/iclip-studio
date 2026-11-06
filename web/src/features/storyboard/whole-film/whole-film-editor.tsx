@@ -121,10 +121,8 @@ type Props = {
 
 type SideTab = 'materials' | 'brand' | 'general'
 
-/** 品牌栏、通用栏各自选中的小标题；没选过为 undefined，取第一个 */
 type SideChips = Readonly<Record<'brand' | 'general', string | undefined>>
 
-/** 能删除的选中：字幕以外的 */
 type Removable = Exclude<NonNullable<Selection>, { kind: 'caption' }>
 
 function EditorHeader({ actions, title }: { actions: ReactNode; title: string }) {
@@ -138,11 +136,9 @@ function EditorHeader({ actions, title }: { actions: ReactNode; title: string })
   )
 }
 
-/** 成片编辑器：把这段对话的各条素材片剪成一条成片，草稿自动存在服务端。 */
 export function WholeFilmEditor({ conversationId, conversationTitle, onClose }: Props) {
   const draftQuery = useWholeFilmDraftQuery(conversationId)
   const catalogQuery = useComponentCatalog()
-  // 快捷键挂在弹窗上，草稿读到之后由编辑区接上
   const keysRef = useRef<((event: KeyboardEvent<HTMLDivElement>) => void) | null>(null)
   const failed = draftQuery.isError ? draftQuery : catalogQuery.isError ? catalogQuery : undefined
   return (
@@ -151,11 +147,9 @@ export function WholeFilmEditor({ conversationId, conversationTitle, onClose }: 
         aria-describedby={undefined}
         className="editor-dialog wf-dialog"
         onEscapeKeyDown={(event) => {
-          // 字幕改字时 Esc 只放弃这次输入，不关编辑器
           if (event.target instanceof Element && event.target.closest('.wf-caption') !== null)
             event.preventDefault()
         }}
-        // 打开时焦点落在弹窗本身：落在顶栏按钮上会直接弹出它的说明
         onOpenAutoFocus={(event) => {
           event.preventDefault()
           if (event.target instanceof HTMLElement) event.target.focus()
@@ -198,13 +192,11 @@ export function WholeFilmEditor({ conversationId, conversationTitle, onClose }: 
 
 const takeLetterOf = (material: Material) => material.takeLabel.replace(/^生成\s*/, '')
 
-/** 素材里 ms 这一刻是第几个镜头；镜头表还没读到时 undefined */
 const shotNumberOf = (ms: number, url: string, keyframes: KeyframeStates) => {
   const state = keyframes.get(url)
   return state?.kind === 'ready' ? shotAt(keyframeRanges(state.index), ms / 1000) : undefined
 }
 
-/** 素材选区写成「 · 镜头 2」或「 · 镜头 2–4」（按选中的头尾两个镜头）；镜头表还没读到时为空 */
 const shotsLabelOf = (range: MaterialRange, url: string, keyframes: KeyframeStates) => {
   const [first] = range.shots
   const last = range.shots.at(-1)
@@ -238,7 +230,6 @@ function EditorBody({
   const [materialMs, setMaterialMs] = useState(0)
   const [materialPlaying, setMaterialPlaying] = useState(false)
   const materialPreviewRef = useRef<MaterialPreviewControl | null>(null)
-  // 拖播放头、点画面轨或做成片编辑时回到成片；播放暂停控制当前预览。
   const leaveMaterial = () => {
     setMaterialView(null)
     setMaterialPlaying(false)
@@ -327,7 +318,6 @@ function EditorBody({
   const previewRef = useRef<PreviewControl | null>(null)
   const [selection, setSelection] = useState<Selection>(null)
   const [popoverId, setPopoverId] = useState<string | null>(null)
-  // 画面上正在显示的合成页，画面点选在它里面找点中了什么
   const [previewFrame, setPreviewFrame] = useState<HTMLIFrameElement | null>(null)
   const [mediaSettled, setMediaSettled] = useState(false)
   const [buffering, setBuffering] = useState(false)
@@ -342,7 +332,6 @@ function EditorBody({
   const total = filmDuration(draft)
   const scale = timelineScale(viewportWidth, total, zoom)
   const playhead = Math.min(playheadMs, total)
-  // 停在成片末尾时仍取最后一帧所在的镜头；组件或空白段不沿用上一镜的背景。
   const frameMs = Math.min(playhead, Math.max(0, total - 1))
   const previewClip = draft.layer0.find(
     (clip) => clip.start <= frameMs && frameMs < clip.start + clip.duration,
@@ -362,10 +351,6 @@ function EditorBody({
     if (playing) previewRef.current?.pause()
     else previewRef.current?.play()
   }
-  /**
-   * 点画面轨上的段（extend：按着 Shift）：选中、扩选或去掉一端，播放头停在选区开头，不播放；
-   * 只选了一段组件段且它有可填项时打开浮层，选了几段时不开
-   */
   const selectClip = (clip: Layer0Clip, extend: boolean) => {
     const next = clickClip(draft.layer0, selection, clip.id, extend)
     setSelection(next)
@@ -378,12 +363,10 @@ function EditorBody({
   }
 
   const rangeMaterial = range === null ? undefined : materials.byJob.get(range.jobId)
-  // 画布还没定时，第一段视频的画面尺寸定画布：选中镜头就开始读
   const sizeUrl = draft.canvas === null ? rangeMaterial?.url : undefined
   const size = useVideoSize(sizeUrl)
   const queryClient = useQueryClient()
 
-  // 拖动中能不能放：素材时长没读到、画面尺寸读取失败时写原因；尺寸还在读不拦，插入时等它读到
   const addBlocked =
     range === null
       ? '先在下方点一个镜头选中范围'
@@ -393,7 +376,6 @@ function EditorBody({
           ? errorMessageOf(size.error, '画面尺寸读取失败，无法加入成片')
           : undefined
 
-  /** 把 picked 插到 at；画布还没定时 sourceSize 是这条素材的画面尺寸 */
   const insertResult = (
     picked: MaterialRange,
     at: InsertAt,
@@ -406,7 +388,6 @@ function EditorBody({
         ? withSourceSize(context, picked.jobId, sourceSize)
         : context,
     )
-  // 画面尺寸读到时已经过了几次渲染：用那时的草稿插
   const insertResultRef = useRef(insertResult)
   useEffect(() => {
     insertResultRef.current = insertResult
@@ -418,7 +399,6 @@ function EditorBody({
       return false
     }
     if (draft.canvas !== null || size.data !== undefined) return apply(insertResult(range, at))
-    // 画面尺寸还在读：等读到再插，不让人重按
     const picked = range
     void queryClient.fetchQuery(videoSizeQuery(sizeUrl)).then(
       (read) => apply(insertResultRef.current(picked, at, read)),
@@ -427,7 +407,6 @@ function EditorBody({
     return true
   }
 
-  /** 拖着素材区选中的范围 picked：落在画面轨上插到最近的切点 */
   const materialPayload = (
     picked: MaterialRange,
     origin?: MaterialCarry['origin'],
@@ -467,7 +446,6 @@ function EditorBody({
     }
   }
 
-  // 撤销、重做也是成片编辑：预览回到成片
   const undo = () => {
     leaveMaterial()
     session.undo()
@@ -478,7 +456,6 @@ function EditorBody({
   }
 
   const selectedClipIds = clipIdsOf(selection)
-  // 原声推子显示选区里第一段视频的音量
   const selectedVideo = draft.layer0.find(
     (clip): clip is VideoClip => clip.type === 'video' && selectedClipIds.includes(clip.id),
   )
@@ -493,7 +470,6 @@ function EditorBody({
       : target.kind === 'overlay'
         ? removeOverlay(draft, { overlayId: target.id })
         : removeMusic(draft)
-  /** 删除选中的；字幕是识别出来的，不能删 */
   const remove = (target: Selection) => {
     if (target === null || target.kind === 'caption') return
     if (apply(removeResult(target))) {
@@ -502,10 +478,6 @@ function EditorBody({
     }
   }
 
-  /**
-   * 单键快捷键：空格播放、暂停；Delete / ⌫ 删除选中的；⌥←/→ 把选中的段整块前后挪一位；选中特效块时
-   * ←/→ 把它挪 0.1 秒（⇧ 1 秒），否则播放头走 0.1 秒（⇧ 1 秒）。修剪手柄、音量推子自己处理方向键。
-   */
   const shortcut = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || !isShortcutTarget(event)) return
     const { key } = event
@@ -520,7 +492,6 @@ function EditorBody({
       return
     }
     if (key !== 'ArrowLeft' && key !== 'ArrowRight') return
-    // 刻度尺上的定位滑块自己走播放头
     if (event.target instanceof HTMLInputElement) return
     event.preventDefault()
     const sign = key === 'ArrowLeft' ? -1 : 1
@@ -549,7 +520,6 @@ function EditorBody({
   useEffect(() => {
     keysRef.current = (event) => {
       handleUndoShortcut(event, session, leaveMaterial)
-      // 焦点不在任何控件上时（落在弹窗本身），Enter 把选区插到播放头处
       if (event.key === 'Enter' && event.target === event.currentTarget) {
         event.preventDefault()
         insert({ timeMs: playhead })
@@ -562,9 +532,7 @@ function EditorBody({
     }
   })
 
-  // 音乐列表与时长读到之前，编辑操作拿不到这首音乐的事实（时长、拍点）
   const musicKnown = draft.music !== null && context.music[draft.music.jobId] !== undefined
-  // 卡点要知道每个组件段多长才能挪它的出点；组件库里没有的组件不知道
   const unknownComponent = draft.layer0.some(
     (clip) => clip.type === 'component' && context.components[clip.component] === undefined,
   )
@@ -584,7 +552,6 @@ function EditorBody({
     toast.info(`已卡点 ${result.moved} 处，保留 ${result.kept} 处`)
   }
 
-  // ---- 组件 ----
   const componentFace = (name: string): ComponentFace => {
     const item = itemOf(catalog, name)
     return {
@@ -593,7 +560,6 @@ function EditorBody({
       icon: (item === undefined ? undefined : CATEGORY_ICON[item.category]) ?? 'grid',
     }
   }
-  /** 放进成片后选中新的组件段或特效块；有可填项就打开它的浮层 */
   const place = (item: CatalogItem, placing: Placing): boolean => {
     const result = placeComponent(draft, item, placing)
     if (!apply(result) || !result.ok) return false
@@ -611,10 +577,6 @@ function EditorBody({
     timeMs: point.timeMs,
     overlayRow: point.overlayRow,
   })
-  /**
-   * 拖着组件卡：落在画面轨插成一段，落在特效轨放成特效块，音乐轨不收组件。
-   * 手上的缩影是预览图加名字的小条，拿起时的卡片位置是它退回的地方。
-   */
   const componentPayload = (item: CatalogItem, origin?: CardCarry['origin']): CarryPayload => ({
     durationMs: durationMsOf(item),
     ghost:
@@ -687,7 +649,6 @@ function EditorBody({
     )
   }
 
-  // ---- 字幕 ----
   const subtitleRecords = useMemo(() => {
     const records: Record<string, SubtitleRecord | null> = {}
     for (const [jobId, source] of Object.entries(context.sources)) records[jobId] = source.subtitle
@@ -703,7 +664,6 @@ function EditorBody({
         edit.subtitleJobId === caption.subtitleJobId &&
         edit.sentenceIndex === caption.sentenceIndex,
     )?.text ?? recognized(caption)
-  /** 改一句字幕的字；返回写没写进草稿（没变不记编辑） */
   const editCaption = (caption: PlacedCaption, text: string): boolean => {
     const result = captionTextEdit(draft, {
       caption,
@@ -714,7 +674,6 @@ function EditorBody({
     return result !== null && apply(result)
   }
 
-  // ---- 预览 ----（React Compiler 按草稿与素材缓存，播放头走动时不重新生成）
   const preview = previewState(
     draft,
     compositionMedia(draft, {
@@ -726,16 +685,13 @@ function EditorBody({
     window.location.origin,
   )
   const playBlocked = preview.kind === 'blocked' ? preview.message : undefined
-  // 视频先下载，波形等它们停下再读同一份缓存；预览被挡住时舞台不加载视频，没有可等的。
   const peaks = useAudioPeaks(sourceUrls, { enabled: mediaSettled || preview.kind === 'blocked' })
   const canvas = draft.canvas ?? DEFAULT_CANVAS
-  /** 在画面上点中：等于在时间线上点中，但不打开组件浮层 */
   const selectOnCanvas = (next: Selection) => {
     setSelection(next)
     setPopoverId(null)
   }
 
-  // ---- 导出 ----
   const exporting = useWholeFilmExport(conversationId, session.settle)
   const exportBlocked =
     draft.layer0.length === 0 ? '成片里还没有画面，无法导出；请先加入视频或组件' : undefined
@@ -749,7 +705,6 @@ function EditorBody({
       : `${takeLetterOf(material)} · 镜头 ${shot}`
   }
 
-  // ---- 素材预览 ----
   const viewedMaterial =
     materialView === null ? undefined : materials.byJob.get(materialView.range.jobId)
   const materialLabel = (material: Material, shown: MaterialRange) =>

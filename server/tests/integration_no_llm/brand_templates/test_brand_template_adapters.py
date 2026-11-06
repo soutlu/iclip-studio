@@ -1,5 +1,3 @@
-"""组合根接上品牌模板的字体适配器：经内网地址下载文件，读字族、字重、样式与字形覆盖。"""
-
 from __future__ import annotations
 
 from pathlib import Path

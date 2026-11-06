@@ -1,5 +1,3 @@
-"""经 HTTP 注册登录，以及测试内直接写库授角色。"""
-
 from __future__ import annotations
 
 import json
@@ -17,8 +15,6 @@ async def register_and_login(
     email: str = "logan@example.com",
     password: str = "password-123",
 ) -> str:
-    """注册 + 登录；返回用户 id。"""
-
     created = await client.post(
         "/auth/register",
         json={"email": email, "password": password, "username": username},
@@ -30,8 +26,6 @@ async def register_and_login(
 
 
 async def set_roles_in_db(pg_url: str, email: str, roles: list[str]) -> None:
-    """测试内的角色引导（生产路径是 ROOT_EMAIL / scripts/admin.py）。"""
-
     async with connected(pg_url) as conn:
         await conn.execute(
             text("UPDATE iclip.users SET roles = CAST(:roles AS jsonb) WHERE email = :email"),
@@ -39,15 +33,38 @@ async def set_roles_in_db(pg_url: str, email: str, roles: list[str]) -> None:
         )
 
 
+async def set_display_name_in_db(pg_url: str, email: str, display_name: str) -> None:
+    async with connected(pg_url) as conn:
+        await conn.execute(
+            text("UPDATE iclip.users SET display_name = :name WHERE email = :email"),
+            {"name": display_name, "email": email},
+        )
+
+
+async def set_direct_permissions_in_db(pg_url: str, email: str, permissions: list[str]) -> None:
+    async with connected(pg_url) as conn:
+        await conn.execute(
+            text(
+                "UPDATE iclip.users SET direct_permissions = CAST(:permissions AS jsonb)"
+                " WHERE email = :email"
+            ),
+            {"permissions": json.dumps(permissions), "email": email},
+        )
+
+
 async def login_as_editor(
     client: httpx.AsyncClient, pg_url: str, *, username: str = "logan"
 ) -> str:
-    """以 ``{username}@example.com`` 注册登录并授 editor 角色；返回用户 id。"""
-
     email = f"{username}@example.com"
     user_id = await register_and_login(client, username=username, email=email)
     await set_roles_in_db(pg_url, email, ["editor"])
     return user_id
 
 
-__all__ = ["login_as_editor", "register_and_login", "set_roles_in_db"]
+__all__ = [
+    "login_as_editor",
+    "register_and_login",
+    "set_direct_permissions_in_db",
+    "set_display_name_in_db",
+    "set_roles_in_db",
+]

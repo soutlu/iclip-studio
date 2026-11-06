@@ -11,6 +11,7 @@ import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
+import { Switch } from '@/shared/ui/switch'
 import {
   fontLabel,
   fontOptions,
@@ -28,7 +29,6 @@ import type { ComponentVariables } from './editing/draft'
 
 const UNIT_TEXT: Record<string, string> = { s: '秒', px: '像素', '%': '%', deg: '°' }
 
-/** 选项不超过这么多时用分段按钮，更多时用下拉 */
 const SEGMENTED_MAX = 4
 
 type ComponentPopoverProps = {
@@ -39,10 +39,6 @@ type ComponentPopoverProps = {
   onRemove: () => void
 }
 
-/**
- * 组件段与特效块共用的调整浮层：一行一项列出组件的全部可填项。文字项没填过时空着、组件的默认字作
- * 灰色提示，清空即回到默认字。每次改动是一步编辑，只影响这条成片。
- */
 export function ComponentPopover({
   catalog,
   item,
@@ -88,9 +84,7 @@ export function ComponentPopover({
 type FieldProps = {
   variable: CatalogVariable
   values: ComponentVariables
-  /** 字体项的选项 */
   fonts: readonly FontOption[]
-  /** undefined 表示不再填，回到组件的默认值 */
   onChange: (value: VariableValue | undefined) => void
 }
 
@@ -99,7 +93,6 @@ function VariableField({ variable, values, fonts, onChange }: FieldProps) {
   const labelId = `${id}-label`
   const stored = values[variable.id]
   const value = variableValue(variable, values)
-  // 输入框、开关用 label 关联；分段按钮、色块这类一组按钮用 aria-labelledby
   let labelFor: string | undefined = id
   let input: ReactNode
   switch (variable.type) {
@@ -114,7 +107,6 @@ function VariableField({ variable, values, fonts, onChange }: FieldProps) {
             </button>
           </MenuTrigger>
           <MenuSurface align="start" side="top">
-            {/* 选回组件目录里的默认值时不再存这一项 */}
             <MenuRadioGroup
               onValueChange={(next) => onChange(next === variable.default ? undefined : next)}
               value={current}
@@ -235,16 +227,7 @@ function VariableField({ variable, values, fonts, onChange }: FieldProps) {
     case 'boolean':
       input = (
         <span>
-          <button
-            aria-checked={value === true}
-            className="wf-switch ui-focus"
-            id={id}
-            onClick={() => onChange(value !== true)}
-            role="switch"
-            type="button"
-          >
-            <i />
-          </button>
+          <Switch checked={value === true} id={id} onCheckedChange={onChange} />
         </span>
       )
       break
@@ -269,7 +252,6 @@ function VariableField({ variable, values, fonts, onChange }: FieldProps) {
   )
 }
 
-/** 其他颜色：系统取色器关上（原生 change）时记一步编辑，拖动取色的过程不记 */
 function ColorInput({ value, onCommit }: { value: string; onCommit: (color: string) => void }) {
   const ref = useRef<HTMLInputElement>(null)
   const commitRef = useRef(onCommit)
@@ -307,7 +289,6 @@ type CommitInputProps = {
   onCommit: (text: string) => void
 }
 
-/** 输入时只改显示，回车或离开输入框才记一步编辑；Esc 放弃这次输入 */
 function CommitInput({ id, type, value, placeholder, min, max, step, onCommit }: CommitInputProps) {
   const [text, setText] = useState(value)
   const commit = () => {

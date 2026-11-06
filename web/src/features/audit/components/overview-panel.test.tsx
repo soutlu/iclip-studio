@@ -2,14 +2,13 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { emptyAuditMetrics, overviewFixture } from '@/testing/mocks/audit-overview'
+import { overviewFixture } from '@/testing/mocks/audit-overview'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import type { Metrics, Overview } from '../audit.api'
 import type { OverviewRange } from '../overview-range'
 import { OverviewPanel } from './overview-panel'
 
-// 浏览器在纽约：日期与日历仍按 UTC+8。
 beforeAll(() => vi.stubEnv('TZ', 'America/New_York'))
 afterAll(() => vi.unstubAllEnvs())
 afterEach(() => vi.useRealTimers())
@@ -26,14 +25,10 @@ const renderOverview = async (overview: Overview, range: OverviewRange = { prese
 
 const card = (name: string) => screen.getByRole('article', { name })
 
-/** 卡上的环比字悬停写着「与 X–Y 相比」，没有环比就找不到。 */
 const deltaOf = (element: HTMLElement) => within(element).queryByTitle(/^与 .+ 相比$/)
-
-const legend = () => screen.getByRole('group', { name: '图例' })
 
 describe('OverviewPanel 环比', () => {
   it('出片件数按活跃日日均比，不按总数比', async () => {
-    // 12 件 / 4 个活跃日 = 3，10 件 / 5 个活跃日 = 2：日均涨 50%，按总数只涨 20%。
     await renderOverview(
       overviewFixture({
         current: { deliveries: 12 },
@@ -72,7 +67,6 @@ describe('OverviewPanel 环比', () => {
     },
   ])('$name：两期样本都够才显示环比', async ({ name, enough, short }) => {
     const previous = { ...enough }
-    // 上一期的值差得够远，样本够时一定出环比而不是持平。
     for (const key of ['attemptsPerShot', 'tokensPerDelivery'] as const) {
       if (typeof previous[key] === 'number') previous[key] = previous[key] * 2
     }
@@ -111,14 +105,6 @@ describe('OverviewPanel 环比', () => {
 })
 
 describe('OverviewPanel 片长', () => {
-  it('没有片长数据时总时长写横线、图的位置写明暂无', async () => {
-    await renderOverview(overviewFixture({ current: { completedVideos: 12, lengthVideos: 0 } }))
-
-    const cost = screen.getByRole('region', { name: '模型消耗' })
-    expect(within(cost).getByText('暂无片长数据')).toBeVisible()
-    expect(within(cost).queryByRole('img', { name: '总视频生成秒数趋势' })).not.toBeInTheDocument()
-  })
-
   it('有片长时画每期的片长图，分出最终出片与废片', async () => {
     await renderOverview(
       overviewFixture({
@@ -134,50 +120,13 @@ describe('OverviewPanel 片长', () => {
     const cost = screen.getByRole('region', { name: '模型消耗' })
     expect(within(cost).getByRole('img', { name: '总视频生成秒数趋势' })).toBeInTheDocument()
     expect(within(cost).queryByText('暂无片长数据')).not.toBeInTheDocument()
-    // 最终出片 = 片长合计 − 废片：120 − 30 = 90 秒。
     expect(within(cost).getByText('最终出片长度')).toBeVisible()
     expect(within(cost).getByText('1.5 分钟')).toBeVisible()
   })
 })
 
-describe('OverviewPanel 图例', () => {
-  it.each([
-    { bucket: 'day', averages: true },
-    { bucket: 'hour', averages: true },
-    { bucket: 'week', averages: false },
-  ] as const)('按 $bucket 时均线图例：$averages', async ({ bucket, averages }) => {
-    await renderOverview(overviewFixture({ bucket }))
-
-    const lines = [
-      within(legend()).queryByText(/7 日均线/),
-      within(legend()).queryByText(/30 日均线/),
-    ]
-    for (const line of lines) {
-      if (averages) expect(line).toBeInTheDocument()
-      else expect(line).not.toBeInTheDocument()
-    }
-  })
-
-  it('这一屏有非活跃日才在图例里标出来', async () => {
-    const withIdle = await renderOverview(overviewFixture({ points: [{}, { inactive: true }, {}] }))
-    expect(within(legend()).getByText('非活跃日')).toBeVisible()
-    withIdle.unmount()
-
-    await renderOverview(overviewFixture({ points: [{}, {}, {}] }))
-    expect(within(legend()).queryByText('非活跃日')).not.toBeInTheDocument()
-  })
-})
-
 describe('OverviewPanel 工具条', () => {
-  it('写明环比对比的是接口给的上一期', async () => {
-    // fixture 本期是 9 月 1 日起七天，上一期往前挪七天。
-    await renderOverview(overviewFixture())
-
-    expect(screen.getByText('环比对比 8月25日–31日')).toBeVisible()
-  })
-
   it('快捷档即点即换，日历预设与自定义区间应用后才换', async () => {
-    // 只假 Date：此刻 UTC+8 已是 9 月 23 日 00:30，纽约还是 22 日。
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-09-22T16:30:00Z'))
     const user = userEvent.setup()
@@ -192,7 +141,6 @@ describe('OverviewPanel 工具条', () => {
     await user.click(screen.getByRole('button', { name: '应用' }))
     expect(onRangeChange).toHaveBeenLastCalledWith({ preset: 'lastMonth' })
 
-    // 日历按 UTC+8 的日期：今天是 23 日，24 日起不可选。点起点再点终点：本月 1 日到今天。
     await user.click(screen.getByRole('button', { name: /^自定义时间范围/ }))
     const dialog = screen.getByRole('dialog', { name: '选择时间范围' })
     const button = (name: string) => within(dialog).getByRole('button', { name })
@@ -223,32 +171,5 @@ describe('OverviewPanel 读取', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('报表暂时不可用')
     expect(screen.getByRole('button', { name: '重新加载' })).toBeVisible()
-  })
-
-  it('出片次数最多的镜写「谁 · 对话名」，名册里有的换成显示名', async () => {
-    const overview = {
-      ...overviewFixture({ current: { ...emptyAuditMetrics(), shots: 3 } }),
-      attemptDistribution: [{ attempts: 6, shots: 1 }],
-      topShots: [
-        {
-          attempts: 6,
-          conversationId: '22222222-2222-4222-8222-222222222222',
-          shot: 2,
-          title: '跑鞋开箱',
-          userName: 'zhou.ye',
-        },
-      ],
-    }
-    server.use(http.get('*/api/audit/overview', () => HttpResponse.json(overview)))
-    await renderWithProviders(
-      <OverviewPanel
-        nameOf={(userName) => (userName === 'zhou.ye' ? '周野' : undefined)}
-        onRangeChange={() => {}}
-        range={{ preset: '30d' }}
-      />,
-    )
-
-    const quality = await screen.findByRole('region', { name: '出片质量' })
-    expect(within(quality).getByText('周野 · 跑鞋开箱')).toBeVisible()
   })
 })

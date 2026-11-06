@@ -1,8 +1,3 @@
-"""公开对象 key 的统一布局；所有对象位于 iclip/agent 命名空间。
-
-key 按业务 id 或内容摘要稳定生成，用于幂等写入。
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -10,16 +5,11 @@ from dataclasses import dataclass
 from typing import Final
 
 OSS_ROOT: Final = "iclip/agent"
-"""本服务在共享桶中的命名空间，由 OSS 适配器校验边界。"""
 
 
 @dataclass(frozen=True, slots=True)
 class MediaPaths:
-    """统一生成对象 key，调用方通过组合根共享同一实例。"""
-
     def chat_media(self, *, digest: str, ext: str) -> str:
-        """按内容摘要命名聊天媒体。"""
-
         return f"{OSS_ROOT}/chat-media/{digest}.{ext}"
 
     def generated_image(self, *, job_id: uuid.UUID, ext: str) -> str:
@@ -31,18 +21,12 @@ class MediaPaths:
         return f"{OSS_ROOT}/generated-music/{job_id}.{ext}"
 
     def video_master(self, *, job_id: uuid.UUID, ext: str) -> str:
-        """拼出来的素材片（合成），长期保留，不进过期规则。"""
-
         return f"{OSS_ROOT}/video-masters/{job_id}.{ext}"
 
     def whole_film(self, *, job_id: uuid.UUID) -> str:
-        """导出的成片，按它那条生成记录的 id 命名，长期保留，不进过期规则。"""
-
         return f"{OSS_ROOT}/whole-films/{job_id}.mp4"
 
     def shot_board(self, *, extraction_key: str, index: int) -> str:
-        """按取帧键分目录，使同一视频与镜头表复用预览板。"""
-
         return f"{OSS_ROOT}/shot-frames/{extraction_key}/board/{index}.jpg"
 
     def shot_cell(self, *, job_id: uuid.UUID, cell_id: str) -> str:
@@ -58,8 +42,6 @@ class MediaPaths:
         return f"{OSS_ROOT}/uploads/{upload_id}.{ext}"
 
     def upload_prefix(self, *, upload_id: uuid.UUID) -> str:
-        """按 uploadId 查找上传对象；扩展名从桶读取，不接受客户端声明。"""
-
         return f"{OSS_ROOT}/uploads/{upload_id}."
 
     def font_upload(self, *, user_id: uuid.UUID, upload_id: uuid.UUID, ext: str) -> str:
@@ -71,7 +53,6 @@ class MediaPaths:
 
 
 MEDIA_PATHS: Final = MediaPaths()
-"""共享布局实例；harness 与 capability 通过组合根注入。"""
 
 
 __all__ = ["MEDIA_PATHS", "OSS_ROOT", "MediaPaths"]

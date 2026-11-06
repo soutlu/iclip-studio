@@ -95,7 +95,6 @@ describe('爆款素材库列表', () => {
     expect(within(sandals).queryByText(/打标/)).not.toBeInTheDocument()
     expect(within(screen.getByRole('article', { name: BEACH })).getByText('正在打标')).toBeVisible()
     expect(within(screen.getByRole('article', { name: SKATE })).getByText('打标失败')).toBeVisible()
-    // 一张卡里的一版，不带整张卡的组数与版数。
     expect(within(screen.getByRole('article', { name: SKATE })).queryByText(/版$/)).toBeNull()
     expect(screen.getByText('共 3 条')).toBeVisible()
   })
@@ -112,7 +111,6 @@ describe('爆款素材库列表', () => {
 
     await user.click(screen.getByRole('button', { name: '平台&渠道：平台&渠道' }))
     const popup = await screen.findByRole('dialog', { name: '选择平台&渠道' })
-    // 候选旁的条数是爆款素材库自己的。
     expect(within(popup).getByRole('checkbox', { name: /^AMZ/ })).toHaveAccessibleName('AMZ1')
     expect(within(popup).getByRole('checkbox', { name: /^TikTok/ })).toHaveAccessibleName('TikTok0')
     await user.click(within(popup).getByRole('checkbox', { name: /^AMZ/ }))

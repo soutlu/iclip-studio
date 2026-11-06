@@ -16,7 +16,6 @@ type ConversationDeleteDialogProps = {
   open: boolean
 }
 
-/** 删除对话前的确认；确认后才删，成功即关闭，失败留在弹窗里报错。列表由删除 mutation 自己刷新。 */
 export function ConversationDeleteDialog({
   conversation,
   onOpenChange,

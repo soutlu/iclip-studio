@@ -1,11 +1,9 @@
-"""试生成提示词：从拆解里取哪几块、怎么排，秒数怎么取，缺了什么就拼不出。"""
-
 from __future__ import annotations
 
 import pytest
+from agent_runtime.errors import ValidationFailed
+from iclip_video.shot_prompt import parse_shot_prompt
 
-from iclip.common.errors import ValidationFailed
-from iclip.common.shot_prompt import parse_shot_prompt
 from iclip.domains.references.test_prompt import build_test_prompt
 
 ELEMENTS = """\

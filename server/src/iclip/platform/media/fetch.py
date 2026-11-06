@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
@@ -9,6 +10,7 @@ from typing import Final
 import httpx
 
 from iclip.platform.media.errors import MediaError
+from iclip.platform.outbound.guard import FetchFailed, failure_of
 
 _DOWNLOAD_CHUNK: Final = 256 * 1024
 
@@ -20,7 +22,7 @@ MAX_IMAGE_BYTES: Final = 64 * 1024 * 1024
 MAX_AUDIO_BYTES: Final = 64 * 1024 * 1024
 
 REMOTE_INPUT: Final = (
-    # ffmpeg 按内容探测格式，一份伪装成 mp4 的播放列表会让 HLS 解复用器去跟里面的地址。
+    # FFmpeg 按内容探测容器格式，禁用网络协议与播放列表解复用器以防伪装成 MP4 的 M3U8 触发 SSRF。
     "-protocol_whitelist",
     "http,https,tcp,tls",
     "-rw_timeout",
@@ -32,6 +34,19 @@ REMOTE_INPUT: Final = (
     "-reconnect_delay_max",
     "5",
 )
+
+
+@dataclass(frozen=True, slots=True)
+class MediaDownloads:
+    internal: httpx.AsyncClient
+    public: httpx.AsyncClient
+    fetch_url: Callable[[str], str]
+    owns: Callable[[str], bool]
+
+    def target(self, url: str) -> tuple[httpx.AsyncClient, str]:
+        if self.owns(url):
+            return self.internal, self.fetch_url(url)
+        return self.public, url
 
 
 @asynccontextmanager
@@ -55,8 +70,10 @@ async def download(client: httpx.AsyncClient, url: str, dest: Path, *, max_bytes
                     if written > max_bytes:
                         raise MediaError(f"素材超过 {max_bytes} 字节的上限: {url}")
                     handle.write(chunk)
-    except httpx.HTTPError as exc:
-        raise MediaError(f"取不到素材（{type(exc).__name__}）: {url}") from exc
+    except (httpx.HTTPError, httpx.InvalidURL, UnicodeError) as exc:
+        raise MediaError(f"取不到素材（{failure_of(exc)}）: {url}") from exc
+    except FetchFailed as exc:
+        raise MediaError(f"取不到素材（{exc}）: {url}") from exc
     if written == 0:
         raise MediaError(f"取到的素材是空的: {url}")
 
@@ -72,6 +89,7 @@ __all__ = [
     "MAX_VIDEO_BYTES",
     "REMOTE_INPUT",
     "REMOTE_READ_TIMEOUT_SECONDS",
+    "MediaDownloads",
     "download",
     "fetched",
     "without_query",

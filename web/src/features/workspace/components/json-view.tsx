@@ -1,10 +1,3 @@
-/**
- * JSON 的标准格式化视图：保留引号、括号与 2 空格缩进，左侧留一栏放折叠箭头，不显示行号。
- * 键、字符串、数字与 true / false / null 各用一种代码着色，标点保持淡灰；每层缩进画一条极淡的参考线，
- * 悬停行铺一层淡灰，收起的摘要带一枚项数小胶囊。长字符串在框内换行、续行对齐缩进。
- * 图片地址原文不改，行尾附一张小缩略图，点开走共享灯箱。
- */
-
 import { type CSSProperties, useState } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -14,7 +7,6 @@ import type { JsonFold } from '../use-json-fold'
 
 const IMAGE_URL = /^(data:image\/|https?:\/\/.+\.(?:jpe?g|png|webp|gif|avif|svg)(?:[?#].*)?$)/i
 
-/** 灯箱标题只留地址最后一段，够认出是哪张图；data 地址没有名字。 */
 const tailOf = (url: string): string => {
   if (url.startsWith('data:')) return '图片'
   const path = url.split(/[?#]/, 1)[0] ?? url
@@ -35,7 +27,6 @@ export function JsonView({ fold }: { fold: JsonFold }) {
   )
 }
 
-/** 解析失败：红色 × 加一句灰字，下面原样显示原文（等宽、不折叠）。 */
 export function JsonParseFailure({ text }: { text: string }) {
   return (
     <div className="flex flex-col gap-3">
@@ -50,10 +41,6 @@ export function JsonParseFailure({ text }: { text: string }) {
   )
 }
 
-/**
- * 每层缩进一条 1px 参考线，落在上层括号字符的正中（2ch 一档，偏移 0.5ch）；
- * 背景只铺在缩进区内，正文与折行续行不受影响。根层没有缩进，不画。
- */
 const indentStyle = (depth: number): CSSProperties => {
   const indent = `${depth * 2}ch`
   if (depth === 0) return { paddingLeft: indent }
@@ -100,7 +87,6 @@ function JsonRow({ line, onPreview, onToggle }: JsonRowProps) {
           </button>
         )}
       </span>
-      {/* 缩进用左内边距而不是空格：长字符串折行时续行对齐到同一缩进，参考线也随整行高度连贯。 */}
       <span className="min-w-0 wrap-anywhere whitespace-pre-wrap" style={indentStyle(line.depth)}>
         {line.key === undefined ? null : (
           <>

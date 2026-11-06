@@ -1,15 +1,11 @@
-"""对话的 wire 形状。字段名按跨端约定用 camelCase。"""
-
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
 from typing import Annotated, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from pydantic.alias_generators import to_camel
-
-from iclip.common.film_view import (
+from agent_runtime.urls import is_http_url
+from iclip_video.film_view import (
     FilmImagePrompt,
     FilmLineEdit,
     FilmPromptImage,
@@ -20,11 +16,14 @@ from iclip.common.film_view import (
     FrameKind,
     SettingKind,
 )
-from iclip.common.urls import is_http_url
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic.alias_generators import to_camel
+
 from iclip.domains.conversations.models import (
+    AgentPreview,
     Conversation,
     ConversationActivity,
-    EventWatermark,
+    VideoPhase,
 )
 
 MAX_TITLE_CHARS: Final = 200
@@ -63,24 +62,14 @@ class ConversationIn(CamelModel):
     """
 
     id: uuid.UUID | None = None
-    """由调用方铸的对话 id，可不给（服务端生成）。给了就按它幂等：重发同一个 id
-    不会多出第二段对话，答复的是已有那一段。"""
 
     agent_id: Annotated[str, Field(min_length=1, max_length=MAX_AGENT_ID_CHARS)]
     title: Title | None = None
     task_id: uuid.UUID | None = None
     collection_id: uuid.UUID | None = None
     user_name: str | None = None
-    """替谁开这段对话。持 ``users:act_as`` 的 API key 按它定属主；其余钥匙照旧记在
-    自己名下；浏览器会话只能写自己的用户名。"""
 
     same_as: uuid.UUID | None = None
-    """做同款的源对话 id（资料库卡的 id）。给了就在建对话时把源的 ``treatment.md``、
-    ``film.icml``（改名 ``old_film.icml``）、``film.icrun``、``video_shot.json``（改名
-    ``old_video_shot.json``）有的拷进来，连同整份素材台账；不拷历史，也不记血缘。源按资料库认，
-    不看调用者打不打得开那段对话、它删没删：调用者没有 ``generation:read``、或这个 id 不是挂着
-    对话的资料库卡是 404，源既没有 ``film.icml`` 也没有 ``video_shot.json`` 是 422；带同一个
-    ``id`` 重发不再拷。"""
 
 
 class ConversationForkIn(CamelModel):
@@ -91,16 +80,12 @@ class ConversationForkIn(CamelModel):
     """
 
     turn: Annotated[int, Field(ge=1)]
-    """从源对话的第几轮分叉，从 1 数。这一轮包含在副本里。"""
 
     title: Title | None = None
-    """副本的名字。不给就沿用源标题加个后缀。"""
 
     agent_id: Annotated[str, Field(min_length=1, max_length=MAX_AGENT_ID_CHARS)] | None = None
-    """副本用哪个 Agent 跑。不给就沿用源对话的，给了就换一个，用于对照试跑。"""
 
     collection_id: uuid.UUID | None = None
-    """把副本直接放进自己的某个合集。源对话的合集不会带过来。"""
 
 
 class ConversationRename(CamelModel):
@@ -139,14 +124,11 @@ class ConversationActivityOut(CamelModel):
     busy: bool
     pending_interaction: Literal["none", "approval", "question"]
     last_turn_reason: Literal["completed", "failed", "aborted"] | None = None
-    video_generation: Literal["none", "queued", "running"]
-    """还没跑完的视频出片到哪一步；与轮次是否在跑互不蕴含。"""
 
 
 class ConversationOut(CamelModel):
     id: uuid.UUID
     owner_user_id: uuid.UUID
-    """谁的对话。治理者的审计视图要看得出这一点，所以对外发。"""
     agent_id: str
     title: str
     last_run_id: str | None
@@ -155,20 +137,10 @@ class ConversationOut(CamelModel):
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None
-    """属主删掉它的时刻。只有治理者审计带 ``deleted`` 筛选时才会见到非空值。"""
     completed_at: datetime | None
-    """属主标记这活儿收尾的时刻；没标过为空。属主再动手会被抹回空。"""
     forked_from: uuid.UUID | None
-    """从哪段对话分叉来的；不是分叉来的为空。前端据此画血缘提示。"""
     fork_turn: int | None
-    """分叉自源对话的第几轮，从 1 数。与 ``forkedFrom`` 同时有值。"""
     activity: ConversationActivityOut
-    last_seq: int
-    """读这一行之前，这段对话已发出的最大会话事件序号（WebSocket 全局帧信封上的 ``seq``）。
-
-    行里的字段至少与序号不大于它的事件一样新；客户端收到序号更大的事件帧时，以帧上的值为准。"""
-    event_epoch: str
-    """``lastSeq`` 所属的服务进程；与帧信封的 ``epoch`` 不同时两者不可比，以这一行为准。"""
 
 
 class ConversationEnvelope(CamelModel):
@@ -234,6 +206,15 @@ class ConversationsAuditOut(CamelModel):
     running_total: int
 
 
+class ConversationVideoProgressOut(CamelModel):
+    """看得见的对话里，哪些下面还有视频记录没跑完、各到哪一步；没列出的就是没有。
+
+    单独一个接口而不放在对话行上：它随生成任务变，不随轮次变，生成帧一到只重拉这一份。
+    """
+
+    conversations: dict[uuid.UUID, VideoPhase]
+
+
 class ConversationFileOut(CamelModel):
     """agent 在这段对话里写下的一个文件的元信息。``version`` 变了内容才变，前端据此决定要不要重读。"""
 
@@ -270,13 +251,10 @@ class ConversationFileEnvelope(CamelModel):
 
 
 MAX_FILM_EDITS: Final = 64
-"""一次最多改几段字：页面自动保存时一次只送改过的那几段。"""
 
 MAX_FILM_REFERENCES: Final = 10
-"""按描述再生成时最多几张参考图，与生成域的图片参考图上限相同。"""
 
 MAX_FILM_VIDEO_REFERENCES: Final = 30
-"""改一段字时最多新插入几张图：一次视频请求最多 30 张参考图，再多保存检查也不会通过。"""
 
 
 class FilmPromptTextOut(CamelModel):
@@ -397,7 +375,6 @@ class FilmTextEditIn(CamelModel):
     images: Annotated[
         list[str], Field(default_factory=list[str], max_length=MAX_FILM_VIDEO_REFERENCES)
     ]
-    """新插入的图：列表现有 M 张时，字里的 ``@Image(M+1)`` 起依次指这里的每一张。"""
 
     @field_validator("images")
     @classmethod
@@ -579,11 +556,7 @@ def film_view_out(view: FilmView) -> FilmViewEnvelope:
     )
 
 
-def conversation_out(
-    conversation: Conversation, activity: ConversationActivity, events: EventWatermark
-) -> ConversationOut:
-    """合并对话记录、引擎提供的活动投影与读行之前取的事件水位，转换为响应模型。"""
-
+def conversation_out(conversation: Conversation, activity: ConversationActivity) -> ConversationOut:
     return ConversationOut(
         id=conversation.id,
         owner_user_id=conversation.owner_user_id,
@@ -602,23 +575,40 @@ def conversation_out(
             busy=activity.busy,
             pending_interaction=activity.pending_interaction,
             last_turn_reason=activity.last_turn_reason,
-            video_generation=activity.video_generation,
         ),
-        last_seq=events.seq_of(conversation.id),
-        event_epoch=events.epoch,
+    )
+
+
+class AgentPreviewIn(CamelModel):
+    """开一段 agent 测试预览：不给 ``versionId`` 试这个 agent 当下的草稿，给了试它的那一版。"""
+
+    version_id: uuid.UUID | None = None
+
+
+class AgentPreviewOut(CamelModel):
+    """一段 agent 测试预览。``id`` 当对话 id 用在 transcript、发消息、订阅与读工作区文件的端点上，只有开它
+    的人、且他此刻持 ``agent:manage`` 时认得。"""
+
+    id: uuid.UUID
+    agent_id: str
+    version_id: uuid.UUID | None
+    created_at: datetime
+
+
+def agent_preview_out(preview: AgentPreview) -> AgentPreviewOut:
+    return AgentPreviewOut(
+        id=preview.id,
+        agent_id=preview.agent_id,
+        version_id=preview.version_id,
+        created_at=preview.created_at,
     )
 
 
 def audit_item_out(
-    conversation: Conversation,
-    activity: ConversationActivity,
-    latest_master_url: str | None,
-    events: EventWatermark,
+    conversation: Conversation, activity: ConversationActivity, latest_master_url: str | None
 ) -> ConversationsAuditItemOut:
-    """在 ``conversation_out`` 之上补这段对话自己最新一条素材片的地址，转换为审计列表的条目。"""
-
     return ConversationsAuditItemOut(
-        **dict(conversation_out(conversation, activity, events)),
+        **dict(conversation_out(conversation, activity)),
         latest_master_url=latest_master_url,
     )
 
@@ -627,6 +617,8 @@ __all__ = [
     "DEFAULT_TITLE",
     "MAX_AGENT_ID_CHARS",
     "MAX_TITLE_CHARS",
+    "AgentPreviewIn",
+    "AgentPreviewOut",
     "ConversationActivityOut",
     "ConversationAgentsOut",
     "ConversationCollectionIn",
@@ -642,11 +634,13 @@ __all__ = [
     "ConversationPageOut",
     "ConversationRename",
     "ConversationTaskIn",
+    "ConversationVideoProgressOut",
     "ConversationsAuditItemOut",
     "ConversationsAuditOut",
     "ConversationsPageOut",
     "SidebarCollectionOut",
     "SidebarOut",
+    "agent_preview_out",
     "audit_item_out",
     "conversation_out",
 ]

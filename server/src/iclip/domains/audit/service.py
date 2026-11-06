@@ -1,13 +1,11 @@
-"""审计报表用例：把查询参数整理成筛选范围，负责游标与参数校验，拼装总览、按人与任务执行。
-治理者权限由路由声明。"""
-
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Final, overload
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from iclip.common.errors import ValidationFailed
+from agent_runtime.errors import ValidationFailed
+
 from iclip.domains.audit.executions import (
     RETRY_AT_LEAST,
     SPEND_TIMES,
@@ -50,8 +48,6 @@ def _as_utc(moment: None) -> None: ...
 @overload
 def _as_utc(moment: datetime | None) -> datetime | None: ...
 def _as_utc(moment: datetime | None) -> datetime | None:
-    """无时区输入按 UTC 解释，避免与 timestamptz 比较时驱动报错。"""
-
     if moment is None or moment.tzinfo is not None:
         return moment
     return moment.replace(tzinfo=UTC)
@@ -65,6 +61,42 @@ def _check_timezone(name: str) -> str:
     return name
 
 
+async def _period(reports: AuditReports, scope: Scope, timezone: str) -> OverviewPeriodOut:
+    return OverviewPeriodOut(
+        metrics=await reports.overall(scope),
+        active_days=await reports.active_days(scope, timezone=timezone),
+    )
+
+
+async def _series(
+    reports: AuditReports, window: OverviewWindow, timezone: str
+) -> list[TrendPointOut]:
+    current = Scope(since=window.since, until=window.until)
+    if window.bucket == "week":
+        rows = await reports.by_period(current, bucket="week", timezone=timezone)
+        return [
+            TrendPointOut(
+                period_start=row.period_start,
+                inactive=False,
+                metrics=row.metrics,
+                ma7=None,
+                ma30=None,
+            )
+            for row in rows
+        ]
+    grid = Scope(since=window.lookback, until=window.until)
+    rows = await reports.by_period(grid, bucket=window.grid, timezone=timezone)
+    units = await reports.delivery_units(grid, bucket=window.grid, timezone=timezone)
+    cells = build_cells(rows, units, until=window.until)
+    head = head_cell(cells, window.since)
+    head_metrics = (
+        await reports.overall(Scope(since=window.since, until=head.end))
+        if head.start < window.since
+        else None
+    )
+    return trend(cells, window, head_metrics=head_metrics)
+
+
 class AuditService:
     def __init__(self, reports: AuditReports) -> None:
         self._reports = reports
@@ -72,8 +104,6 @@ class AuditService:
     async def overview(
         self, *, since: datetime, until: datetime | None = None, timezone: str = "UTC"
     ) -> OverviewOut:
-        """审计总览：本期与上一期整段各查一次，趋势按粒度分期；时间窗与均线规则见 overview.py。"""
-
         now = datetime.now(UTC)
         window = plan_window(
             since=_as_utc(since),
@@ -83,6 +113,7 @@ class AuditService:
         )
         current = Scope(since=window.since, until=window.until)
         previous = Scope(since=window.previous_since, until=window.previous_until)
+        reports = await self._reports.spanning(Scope(since=window.lookback, until=window.until))
         return OverviewOut(
             window=OverviewWindowOut(
                 since=window.since,
@@ -93,53 +124,16 @@ class AuditService:
                 timezone=timezone,
                 generated_at=now,
             ),
-            current=await self._period(current, timezone),
-            previous=await self._period(previous, timezone),
-            series=await self._series(window, timezone),
-            attempt_distribution=list(await self._reports.attempt_distribution(current)),
-            top_shots=list(await self._reports.top_shots(current, limit=TOP_SHOT_COUNT)),
+            current=await _period(reports, current, timezone),
+            previous=await _period(reports, previous, timezone),
+            series=await _series(reports, window, timezone),
+            attempt_distribution=list(await reports.attempt_distribution(current)),
+            top_shots=list(await reports.top_shots(current, limit=TOP_SHOT_COUNT)),
         )
-
-    async def _period(self, scope: Scope, timezone: str) -> OverviewPeriodOut:
-        return OverviewPeriodOut(
-            metrics=await self._reports.overall(scope),
-            active_days=await self._reports.active_days(scope, timezone=timezone),
-        )
-
-    async def _series(self, window: OverviewWindow, timezone: str) -> list[TrendPointOut]:
-        """按周直接切本期；按小时 / 按天先铺回看下限起的基础格，均线从格里补窗。"""
-
-        current = Scope(since=window.since, until=window.until)
-        if window.bucket == "week":
-            rows = await self._reports.by_period(current, bucket="week", timezone=timezone)
-            return [
-                TrendPointOut(
-                    period_start=row.period_start,
-                    inactive=False,
-                    metrics=row.metrics,
-                    ma7=None,
-                    ma30=None,
-                )
-                for row in rows
-            ]
-        grid = Scope(since=window.lookback, until=window.until)
-        rows = await self._reports.by_period(grid, bucket=window.grid, timezone=timezone)
-        units = await self._reports.delivery_units(grid, bucket=window.grid, timezone=timezone)
-        cells = build_cells(rows, units, until=window.until)
-        head = head_cell(cells, window.since)
-        # since 不在格边界上时，首期只算 since 之后的，与按周的首期同一规则；均线仍用整格。
-        head_metrics = (
-            await self._reports.overall(Scope(since=window.since, until=head.end))
-            if head.start < window.since
-            else None
-        )
-        return trend(cells, window, head_metrics=head_metrics)
 
     async def people(
         self, *, since: datetime, until: datetime | None = None, timezone: str = "UTC"
     ) -> AuditPeopleOut:
-        """时间窗里出过片或跑过的人，出片多的在前、再看运行次数、同数按名字；时间窗与粒度同总览。"""
-
         window = plan_window(
             since=_as_utc(since),
             until=_as_utc(until),
@@ -183,9 +177,6 @@ class AuditService:
         limit: int = 20,
         cursor: str | None = None,
     ) -> AuditExecutionsOut:
-        """任务执行一页；``until`` 为空或晚于此刻按此刻。消耗离群的基准按整个时间窗算，不看
-        ``user_name``。满页才给下一页游标，游标只对发它的那种排序与方向有效。"""
-
         check_limit(limit)
         now = datetime.now(UTC)
         start = _as_utc(since)

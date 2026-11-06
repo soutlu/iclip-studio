@@ -1,5 +1,3 @@
-"""identity 的跨模块契约：其它模块只准从这里 import。"""
-
 from __future__ import annotations
 
 from iclip.domains.identity.acting import ActAs
@@ -12,6 +10,7 @@ from iclip.domains.identity.middleware import (
 from iclip.domains.identity.models import Principal, UserAccount
 from iclip.domains.identity.rbac import (
     ACT_AS_PERMISSION,
+    AGENT_MANAGE_PERMISSION,
     MANAGE_PERMISSION,
     PERMISSIONS,
     ROLES,
@@ -22,6 +21,7 @@ from iclip.domains.identity.visibility import visible_owner, visible_owner_incl_
 
 __all__ = [
     "ACT_AS_PERMISSION",
+    "AGENT_MANAGE_PERMISSION",
     "MANAGE_PERMISSION",
     "PERMISSIONS",
     "ROLES",

@@ -1,7 +1,6 @@
-"""一次性改写脚本：内联历史的快照行改成按消息引用存，可重复运行，读出来不变。"""
-
 from __future__ import annotations
 
+from agent_runtime.harness.step_store_pg import PgStepStore
 from pydantic_ai.messages import (
     BinaryContent,
     ModelMessage,
@@ -15,7 +14,6 @@ from pydantic_ai_harness.step_persistence import ContinuableSnapshot
 from scripts.dedup_snapshot_messages import rewrite_inline_snapshots
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.harness.step_store_pg import PgStepStore
 from tests.helpers.pg import insert_inline_snapshot, raw_snapshot_messages, stored_message_count
 
 
@@ -43,7 +41,7 @@ async def _reads(store: PgStepStore) -> list[tuple[str, int, bytes]]:
 
 async def test_rewrite_converts_inline_rows_idempotently(engine: AsyncEngine) -> None:
     store = PgStepStore(engine)
-    blob = bytes(range(256)) * 512  # 128 KiB，超过外置阈值
+    blob = bytes(range(256)) * 512
     first = [
         ModelRequest(
             parts=[
@@ -85,7 +83,6 @@ async def test_rewrite_converts_inline_rows_idempotently(engine: AsyncEngine) ->
     assert await rewrite_inline_snapshots(engine, batch_size=2) == 0
     assert await raw_snapshot_messages(engine) == raw
 
-    # 改写存下的消息与 save_snapshot 存的逐字节一致：同样的历史再保存一次，不新增消息。
     await store.save_snapshot(
         ContinuableSnapshot(run_id="r3", step_index=1, messages=longer, state="complete")
     )

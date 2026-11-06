@@ -1,21 +1,12 @@
-/**
- * 合成页上的 data-hf-id 与编辑器选中之间的对应。合成构建在每一段、每一块的最外层写草稿 id，
- * 字幕组件在每一句上写 `caption:N`，N 是 `placeCaptions` 结果的下标。
- */
 import type { PlacedCaption } from './composition/captions'
 import type { WholeFilmDraft } from './editing/draft'
 import type { Selection } from './selection'
 
 const CAPTION_PREFIX = 'caption:'
 
-/**
- * 一块字幕的身份：哪段画面里、哪条字幕记录的第几句。选中字幕记这个，不记下标：草稿一变，
- * 放进成片的字幕重新排，下标就会错位。
- */
 export const captionKey = (caption: PlacedCaption) =>
   `${caption.clipId}:${caption.subtitleJobId}:${caption.sentenceIndex}`
 
-/** 合成页上的 data-hf-id 是哪一块；组件自带的、对不上当前草稿的返回 undefined */
 export function selectionOfHfId(
   hfId: string,
   draft: WholeFilmDraft,
@@ -32,10 +23,6 @@ export function selectionOfHfId(
   return undefined
 }
 
-/**
- * 选中的这一块在合成页上写的 data-hf-id；在这一刻之外（不在它的时间范围里）、不在画面上（音乐）、
- * 或画面轨上选了几段时为 undefined，不画选中框。
- */
 export function hfIdOnScreen(
   selection: Selection,
   draft: WholeFilmDraft,

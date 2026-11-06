@@ -1,0 +1,278 @@
+from __future__ import annotations
+
+import uuid
+from collections.abc import Collection
+from dataclasses import dataclass, field
+
+import pytest
+
+from agent_runtime.errors import Conflict, NotFound, ValidationFailed
+from agent_runtime.file_store.namespace import namespace_for
+from agent_runtime.file_store.store import StoredFile
+from agent_runtime.harness.jobs import JobQueueView
+from agent_runtime.service.sessions import (
+    PREVIEW_NOT_FORKABLE,
+    SESSION_ID_TAKEN,
+    SESSION_NOT_FOUND,
+    SessionQueue,
+    SessionService,
+)
+from tests.helpers.file_store import FakeFileStore
+
+APP = "video"
+OTHER_APP = "shop"
+SOURCE = uuid.uuid4()
+TARGET = uuid.uuid4()
+SOURCE_USER = uuid.uuid4()
+TARGET_USER = uuid.uuid4()
+SOURCE_SPACE = namespace_for(SOURCE_USER, str(SOURCE))
+TARGET_SPACE = namespace_for(TARGET_USER, str(TARGET))
+ASSISTANT_VERSION = uuid.uuid4()
+
+
+@dataclass
+class RecordingSessions:
+    apps: dict[uuid.UUID, str] = field(default_factory=lambda: {SOURCE: APP, TARGET: APP})
+    preview_ids: frozenset[uuid.UUID] = frozenset()
+    target_taken: bool = False
+    written: bool = False
+
+    async def open(
+        self,
+        session_id: uuid.UUID,
+        *,
+        app_id: str,
+        agent_version_id: uuid.UUID | None,
+        preview_agent_id: str | None = None,
+    ) -> bool:
+        self.written = not self.target_taken
+        return self.written
+
+    async def copy(self, source_id: uuid.UUID, target_id: uuid.UUID, *, app_id: str) -> bool:
+        self.written = not self.target_taken
+        return self.written
+
+    async def owned(
+        self, session_ids: Collection[uuid.UUID], *, app_id: str
+    ) -> frozenset[uuid.UUID]:
+        return frozenset(one for one in session_ids if self.apps.get(one) == app_id)
+
+    async def previews(self, session_ids: Collection[uuid.UUID]) -> frozenset[uuid.UUID]:
+        return frozenset(session_ids) & self.preview_ids
+
+
+async def current_version(agent_id: str) -> uuid.UUID:
+    if agent_id != "assistant":
+        raise ValidationFailed(f"没有标识为 {agent_id} 的 agent")
+    return ASSISTANT_VERSION
+
+
+async def check_preview_target(agent_id: str, version_id: uuid.UUID | None) -> None:
+    if agent_id != "assistant":
+        raise NotFound(f"没有标识为 {agent_id} 的 agent")
+
+
+class IdleQueue:
+    async def view(self, conversation_id: str) -> JobQueueView:
+        assert conversation_id == str(SOURCE)
+        return JobQueueView(active=None, queued=())
+
+
+@dataclass
+class RecordingSeed:
+    committed: bool = False
+
+    async def commit(self) -> None:
+        self.committed = True
+
+
+@dataclass
+class TwoTurnHistory:
+    moved: bool = False
+    planned: list[tuple[str, int, str]] = field(default_factory=list)
+    seed: RecordingSeed = field(default_factory=RecordingSeed)
+
+    async def turn_count(self, conversation_id: str) -> int:
+        assert conversation_id == str(SOURCE)
+        return 2
+
+    async def plan_fork(
+        self, conversation_id: str, *, ordinal: int, target_conversation_id: str
+    ) -> RecordingSeed | None:
+        self.planned.append((conversation_id, ordinal, target_conversation_id))
+        return None if self.moved else self.seed
+
+
+@dataclass
+class Runtime:
+    sessions: RecordingSessions = field(default_factory=RecordingSessions)
+    queue: SessionQueue = field(default_factory=IdleQueue)
+    history: TwoTurnHistory = field(default_factory=TwoTurnHistory)
+    files: FakeFileStore = field(default_factory=FakeFileStore)
+
+    def service(self) -> SessionService:
+        return SessionService(
+            sessions=self.sessions,
+            version_for_new_session=current_version,
+            check_preview_target=check_preview_target,
+            queue=self.queue,
+            history=self.history,
+            files=self.files,
+        )
+
+    async def seed_source(self, files: dict[str, str]) -> None:
+        for path, content in files.items():
+            await self.files.write(SOURCE_SPACE, path, content)
+
+    async def target_files(self) -> dict[str, StoredFile]:
+        found: dict[str, StoredFile] = {}
+        for entry in await self.files.entries(TARGET_SPACE):
+            stored = await self.files.read(TARGET_SPACE, entry.path)
+            assert stored is not None
+            found[entry.path] = stored
+        return found
+
+    async def nothing_written(self) -> bool:
+        return not self.sessions.written and not await self.files.entries(TARGET_SPACE)
+
+
+async def fork(runtime: Runtime, *, turn: int = 1, agent_id: str | None = None) -> None:
+    await runtime.service().fork(
+        app_id=APP,
+        source_id=SOURCE,
+        source_user=SOURCE_USER,
+        target_id=TARGET,
+        target_user=TARGET_USER,
+        turn=turn,
+        agent_id=agent_id,
+    )
+
+
+async def test_a_source_that_moved_before_planning_is_a_conflict_before_any_write() -> None:
+    runtime = Runtime(history=TwoTurnHistory(moved=True))
+    await runtime.seed_source({"video_shot.json": "{}"})
+
+    with pytest.raises(Conflict) as raised:
+        await fork(runtime)
+
+    assert str(raised.value) == "这段对话刚刚又跑了一轮，重新挑一个分叉点"
+    assert runtime.history.planned == [(str(SOURCE), 1, str(TARGET))]
+    assert await runtime.nothing_written()
+
+
+async def test_an_agent_that_cannot_open_fails_the_fork_before_any_file_is_copied() -> None:
+    runtime = Runtime()
+    await runtime.seed_source({"video_shot.json": "{}"})
+
+    with pytest.raises(ValidationFailed, match="没有标识为 gone 的 agent"):
+        await fork(runtime, agent_id="gone")
+
+    assert not await runtime.files.entries(TARGET_SPACE)
+
+
+FILES = (("film.icml", "old_film.icml"), ("treatment.md", "treatment.md"))
+REQUIRED = frozenset({"film.icml"})
+
+
+async def copy_files(runtime: Runtime, *, require_any: frozenset[str] = REQUIRED) -> bool:
+    return await runtime.service().copy_files(
+        app_id=APP,
+        source_id=SOURCE,
+        source_user=SOURCE_USER,
+        target_id=TARGET,
+        target_user=TARGET_USER,
+        files=FILES,
+        require_any=require_any,
+    )
+
+
+async def test_copy_files_without_a_precondition_copies_what_the_source_has() -> None:
+    runtime = Runtime()
+    await runtime.seed_source({"treatment.md": "方案"})
+
+    assert await copy_files(runtime, require_any=frozenset())
+
+    copied = await runtime.target_files()
+    assert {path: stored.content for path, stored in copied.items()} == {"treatment.md": "方案"}
+
+
+class UnreadableQueue:
+    async def view(self, conversation_id: str) -> JobQueueView:
+        raise AssertionError("归属校验失败前不应读取队列")
+
+
+async def test_a_fork_from_another_apps_session_is_not_found_before_anything_else() -> None:
+    runtime = Runtime(
+        sessions=RecordingSessions(apps={SOURCE: OTHER_APP}),
+        queue=UnreadableQueue(),
+    )
+    await runtime.seed_source({"video_shot.json": "{}"})
+
+    with pytest.raises(NotFound) as raised:
+        await fork(runtime)
+
+    assert str(raised.value) == SESSION_NOT_FOUND
+    assert await runtime.nothing_written()
+
+
+@pytest.mark.parametrize("agent_id", [None, "assistant"], ids=["copy-pin", "switch-agent"])
+async def test_a_fork_onto_an_id_another_app_holds_is_a_conflict_before_any_file_is_copied(
+    agent_id: str | None,
+) -> None:
+    runtime = Runtime(sessions=RecordingSessions(target_taken=True))
+    await runtime.seed_source({"video_shot.json": "{}"})
+
+    with pytest.raises(Conflict) as raised:
+        await fork(runtime, agent_id=agent_id)
+
+    assert str(raised.value) == SESSION_ID_TAKEN
+    assert await runtime.nothing_written()
+
+
+@pytest.mark.parametrize("preview", [SOURCE, TARGET], ids=["source-preview", "target-preview"])
+async def test_a_fork_touching_a_preview_session_is_refused_before_anything_else(
+    preview: uuid.UUID,
+) -> None:
+    runtime = Runtime(
+        sessions=RecordingSessions(preview_ids=frozenset({preview})), queue=UnreadableQueue()
+    )
+    await runtime.seed_source({"video_shot.json": "{}"})
+
+    with pytest.raises(ValidationFailed) as raised:
+        await fork(runtime)
+
+    assert str(raised.value) == PREVIEW_NOT_FORKABLE
+    assert runtime.history.planned == []
+    assert await runtime.nothing_written()
+
+
+@pytest.mark.parametrize("preview", [SOURCE, TARGET], ids=["source-preview", "target-preview"])
+async def test_copy_files_touching_a_preview_session_is_refused_before_any_write(
+    preview: uuid.UUID,
+) -> None:
+    runtime = Runtime(sessions=RecordingSessions(preview_ids=frozenset({preview})))
+    await runtime.seed_source({"film.icml": "<film/>"})
+
+    with pytest.raises(ValidationFailed) as raised:
+        await copy_files(runtime)
+
+    assert str(raised.value) == PREVIEW_NOT_FORKABLE
+    assert await runtime.nothing_written()
+
+
+@pytest.mark.parametrize(
+    "apps",
+    [{SOURCE: OTHER_APP, TARGET: APP}, {SOURCE: APP, TARGET: OTHER_APP}, {SOURCE: APP}],
+    ids=["source-elsewhere", "target-elsewhere", "target-missing"],
+)
+async def test_copy_files_needs_both_sessions_to_be_the_callers_before_reading_anything(
+    apps: dict[uuid.UUID, str],
+) -> None:
+    runtime = Runtime(sessions=RecordingSessions(apps=apps))
+    await runtime.seed_source({"film.icml": "<film/>"})
+
+    with pytest.raises(NotFound) as raised:
+        await copy_files(runtime)
+
+    assert str(raised.value) == SESSION_NOT_FOUND
+    assert not await runtime.files.entries(TARGET_SPACE)

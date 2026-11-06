@@ -8,12 +8,16 @@ import {
   type zTaskOut,
 } from '@/shared/api/generated/zod.gen'
 import { PERMISSION } from '@/shared/auth/permissions'
+import { agentConfigHandlers, mockMcpServerUsage, mockModelUsage } from './agent-config'
+import { agentPreviewHandlers } from './agent-previews'
 import { audioHandlers } from './audio'
 import { auditHandlers } from './audit'
 import { enhancementHandlers } from './enhancements'
 import { filmHandlers } from './film'
 import { forgetMockHitCaseTags, hitCaseHandlers, mockHitCaseTagSets } from './hit-cases'
 import { libraryHandlers } from './library'
+import { mcpServerHandlers } from './mcp-servers'
+import { modelProviderHandlers } from './model-providers'
 import { mockAuthUser, mockGovernor } from './auth-user'
 import {
   addMockCollection,
@@ -22,12 +26,14 @@ import {
   mockAuditRow,
   mockCollections,
   mockConversations,
+  mockVideoProgress,
   resetMockConversations,
   type MockConversation,
 } from './conversations'
 import { byCreatedDesc, mockCreatedAt, pageByCreated } from './paging'
 import { libraryTagHandlers } from './library-tags'
 import { forgetMockReferenceTags, mockReferenceTagSets, referenceHandlers } from './references'
+import { skillHandlers } from './skills'
 import { transcriptHandlers } from './transcript'
 import { resetMockUploads, uploadHandlers } from './uploads'
 import { wholeFilmHandlers } from './whole-film'
@@ -41,6 +47,7 @@ export {
   mockCollections,
   mockConversations,
   mockGovernor,
+  mockVideoProgress,
   resetMockConversations,
 }
 
@@ -48,10 +55,6 @@ export type MockUser = typeof mockAuthUser
 
 let currentUser: MockUser | null = null
 
-/**
- * 单测的登录态：直接把 mock 会话设成这个用户，`/users/me`、按属主过滤的列表与认领都认它，退出登录照常清掉。
- * overrides 换权限等字段；返回实际登录的用户。
- */
 export const loginAs = (user: MockUser, overrides: Partial<MockUser> = {}): MockUser => {
   currentUser = { ...user, ...overrides }
   return currentUser
@@ -122,7 +125,6 @@ export const resetMockTasks = () => {
   mockTasks.length = 0
 }
 
-/** 名册里两个登录账号之外的其他人；治理视图用它把 ownerUserId 翻成名字。 */
 export const mockUsers: MockUser[] = []
 
 export const addMockUser = (displayName: string, id = crypto.randomUUID()) => {
@@ -166,7 +168,6 @@ export const handlers = [
       : new HttpResponse(null, { status: 401 }),
   ),
 
-  // 登录是 OAuth2 表单（username / password），不是 JSON。
   http.post('*/api/auth/login', async ({ request }) => {
     const form = new URLSearchParams(await request.text())
     currentUser = form.get('username') === mockGovernor.username ? mockGovernor : mockAuthUser
@@ -178,7 +179,6 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 })
   }),
 
-  // mock 不启用 SSO，以 404 表示路由未挂载。
   http.get('*/api/auth/sso/authorize', () => new HttpResponse(null, { status: 404 })),
 
   http.get('*/api/users', ({ request }) => {
@@ -203,6 +203,19 @@ export const handlers = [
       ...pageByCreated(rows.map(mockAuditRow), query.get('cursor'), limit),
       runningTotal: scoped.filter((item) => item.activity.busy).length,
       total: rows.length,
+    })
+  }),
+
+  http.get('*/api/conversations/video-progress', () => {
+    const user = currentUser ?? mockAuthUser
+    const everyone = user.permissions.includes(PERMISSION.usersManage)
+    const owners = new Map(mockConversations.map((item) => [item.id, item.ownerUserId]))
+    return HttpResponse.json({
+      conversations: Object.fromEntries(
+        [...mockVideoProgress].filter(
+          ([conversationId]) => everyone || owners.get(conversationId) === user.id,
+        ),
+      ),
     })
   }),
 
@@ -232,7 +245,6 @@ export const handlers = [
     }),
   ),
 
-  // 列表按 createdAt 倒序、游标是 createdAt|id（合同 §3）；前端将游标视为不透明值。
   http.get('*/api/conversations', ({ request }) => {
     const state = new URL(request.url).searchParams.get('state')
     const rows = mine().filter((item) => inState(item, state))
@@ -253,7 +265,6 @@ export const handlers = [
     })
   }),
 
-  // 带 id 重发答复已有那一段；墓碑的 id 不能再用（合同 §6）。
   http.post('*/api/conversations', async ({ request }) => {
     const body = zConversationIn.parse(await request.json())
     const existing = mockConversations.find((item) => item.id === body.id)
@@ -330,7 +341,6 @@ export const handlers = [
     return HttpResponse.json({ conversation })
   }),
 
-  // 删除留下墓碑：行还在，deletedAt 记下时刻，审计的 deleted 筛选列得出它（合同 §6）。
   http.delete('*/api/conversations/:conversationId', ({ params }) => {
     const conversation = liveMockConversation(String(params['conversationId']))
     if (!conversation) return HttpResponse.json({ detail: '没有这段对话' }, { status: 404 })
@@ -366,7 +376,6 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 })
   }),
 
-  // 与对话列表同一条排序键（合同 §3）：建立时间倒序，游标是上一页末行的「时刻|id」。
   http.get('*/api/tasks', ({ request }) => {
     const url = new URL(request.url)
     let items: MockTask[] = mockTasks
@@ -480,4 +489,16 @@ export const handlers = [
       forgetMockHitCaseTags(ids)
     },
   ),
+
+  ...agentConfigHandlers(() => {
+    const user = currentUser ?? mockAuthUser
+    return { id: user.id, name: user.displayName }
+  }),
+  ...skillHandlers(() => {
+    const user = currentUser ?? mockAuthUser
+    return { id: user.id, name: user.displayName }
+  }),
+  ...mcpServerHandlers(mockMcpServerUsage),
+  ...agentPreviewHandlers,
+  ...modelProviderHandlers(mockModelUsage),
 ]

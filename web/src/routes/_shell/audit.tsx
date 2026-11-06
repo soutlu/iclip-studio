@@ -25,7 +25,6 @@ const TABS = [
 
 type TabValue = (typeof TABS)[number]['value']
 
-/** 等于缺省的条件不落地址栏，非法取值退回缺省。 */
 const auditSearchSchema = z.object({
   ...overviewRangeSearchFields,
   ...executionSortSearchFields,
@@ -33,26 +32,22 @@ const auditSearchSchema = z.object({
   userName: z.string().min(1).optional().catch(undefined),
 })
 
-// 标签、时间范围、按人筛选与排序都存在查询参数里，退回报表、刷新与分享链接都还原同一屏。
 export const Route = createFileRoute('/_shell/audit')({
   beforeLoad: requireGovernor,
   component: AuditPage,
   validateSearch: auditSearchSchema,
 })
 
-/** 两个标签共用一个时间范围；按人筛选与排序只在清单里用。 */
 function AuditPage() {
   const search = Route.useSearch()
   const { tab = 'overview' } = search
   const navigate = Route.useNavigate()
-  // 按任务执行次数滚到底自动翻页，要以整页的滚动容器为准。
   const mainRef = useRef<HTMLElement>(null)
   const getScrollElement = useCallback(() => mainRef.current, [])
   const directory = useUsersDirectory(true)
   const range = overviewRangeFromSearch(search)
   const userName = search.userName ?? null
   const sort = executionSortFromSearch(search)
-  // 改一项时其余原样带上。
   const navigateWith = (next: {
     range?: OverviewRange
     tab?: TabValue
@@ -69,10 +64,8 @@ function AuditPage() {
       },
     })
 
-  // 报表按上游归属的用户名归人，显示名按用户名查。
   const nameOf = directory.nameOfUsername
 
-  // 总览是默认标签，不写进地址。
   const selectTab = (value: string) =>
     navigateWith({ tab: TABS.find((item) => item.value === value)?.value ?? 'overview' })
 
@@ -82,7 +75,6 @@ function AuditPage() {
       className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-dashboard-bg"
       ref={mainRef}
     >
-      {/* 预留应用壳中侧栏展开按钮的空间。 */}
       <div className="mx-auto flex w-full max-w-(--layout-list-page-max) flex-col gap-5 px-4 pt-12 pb-14 sm:px-(--layout-list-page-gutter)">
         <TabsRoot className="flex flex-col gap-4" onValueChange={selectTab} value={tab}>
           <header className="flex flex-wrap items-center justify-between gap-4">

@@ -12,6 +12,7 @@
     "moduleDetection": "force",
     "esModuleInterop": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
 
     "paths": {
       "@/*": ["./src/*"]

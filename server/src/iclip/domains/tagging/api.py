@@ -1,5 +1,3 @@
-"""资料库标签 HTTP 端点，约定见合同「标签」一节。"""
-
 from __future__ import annotations
 
 import uuid

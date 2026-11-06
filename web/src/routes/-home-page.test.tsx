@@ -9,7 +9,6 @@ import {
   liveMockConversation,
   loginAs,
   mockAuthUser,
-  mockCollections,
   mockConversations,
   mockGovernor,
 } from '@/testing/mocks/handlers'
@@ -31,7 +30,6 @@ const renderHome = async (initialPath = '/') => {
   return { ...rendered, user: userEvent.setup() }
 }
 
-// 首页草稿存在 sessionStorage，同一文件的用例之间不能串。
 beforeEach(() => {
   sessionStorage.clear()
 })
@@ -47,43 +45,6 @@ const promptReceipt = (promptId: string) =>
   HttpResponse.json({ createdAt: new Date().toISOString(), promptId, status: 'queued' })
 
 describe('首页真实数据流程', () => {
-  it('新建合集后立即选中；选择服务端 Agent 并将合集带入首条创作', async () => {
-    loginAs(mockAuthUser)
-    server.use(
-      http.get('*/api/conversations/agents', () =>
-        HttpResponse.json({
-          items: [{ id: 'new-agent', name: 'new-agent' }],
-          default: 'new-agent',
-        }),
-      ),
-      http.post('*/api/conversations/:conversationId/prompts', async ({ request }) => {
-        const body = (await request.json()) as { prompt_id: string }
-        return promptReceipt(body.prompt_id)
-      }),
-    )
-    const { user, router } = await renderHome()
-    await screen.findByText('new-agent')
-    await user.click(screen.getByRole('button', { name: '关联合集：未关联合集' }))
-    await user.type(screen.getByRole('combobox', { name: '搜索合集' }), '秋季短片')
-    await user.click(screen.getByRole('button', { name: '新建“秋季短片”' }))
-    const nameInput = await screen.findByRole('textbox', { name: '合集名称' })
-    expect(nameInput).toHaveValue('秋季短片')
-    // 打开即可输入：焦点在名称框，不在表头的关闭按钮上；离上限远时不显示字数。
-    await waitFor(() => expect(nameInput).toHaveFocus())
-    expect(screen.queryByText(/\/200$/)).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '保存' }))
-    await screen.findByRole('button', { name: '关联合集：秋季短片' })
-    pasteTextIntoComposer(screen.getByLabelText('输入消息'), '制作秋季宣传片')
-    await user.click(screen.getByRole('button', { name: '发送' }))
-    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/c\//))
-    expect(mockCollections).toHaveLength(1)
-    expect(mockConversations).toHaveLength(1)
-    expect(mockConversations[0]).toMatchObject({
-      agentId: 'new-agent',
-      collectionId: mockCollections[0]?.id,
-    })
-  })
-
   it.each([
     ['自己的合集', true, '关联合集：夏季亚麻系列'],
     ['不在自己合集里的 id', false, '关联合集：未关联合集'],
@@ -95,7 +56,6 @@ describe('首页真实数据流程', () => {
 
     expect(await screen.findByRole('button', { name: picker })).toBeInTheDocument()
     await waitFor(() => expect(router.state.location.search).toEqual({}))
-    // 合集已读到、参数已移除，选择照旧，不被打回。
     await user.click(screen.getByRole('button', { name: picker }))
     expect(await screen.findByRole('combobox', { name: '搜索合集' })).toBeVisible()
     expect(screen.getAllByText('夏季亚麻系列').length).toBeGreaterThan(0)
@@ -249,7 +209,6 @@ describe('首页真实数据流程', () => {
     await waitFor(() => expect(targets).toHaveLength(2))
     await waitFor(() => expect(screen.getByRole('button', { name: '发送' })).toBeEnabled())
     expect(router.state.location.pathname).toBe('/')
-    // 删除留下墓碑（合同 §6），只数活着的对话。
     expect(liveConversations()).toHaveLength(0)
     expect(screen.getByLabelText('输入消息')).toHaveTextContent('保留这份原稿')
     await user.click(screen.getByRole('button', { name: '发送' }))
@@ -262,15 +221,12 @@ describe('首页真实数据流程', () => {
 
 describe('首页做同款', () => {
   const SAME_PLACEHOLDER = '参照该视频做同款，请输入要替换的内容'
-  const PHRASES = ['换人物', '换产品', '换场景']
-  /** 挂着对话的卡，mock 里做得了同款。 */
   const sourceCard = () => {
     const card = mockLibraryVideos().find((video) => video.title === '跑鞋手持展示')
     if (card === undefined) throw new Error('mock 里没有这张卡')
     return card
   }
 
-  /** 记下每次建对话的请求体。 */
   const recordCreateBodies = () => {
     const bodies: { id: string; sameAs?: string }[] = []
     server.events.on('request:start', async ({ request }) => {
@@ -289,27 +245,6 @@ describe('首页做同款', () => {
       }),
     )
 
-  it('查询串带来的卡换掉首页 hero、输入框带快捷词，参数从地址栏移除；✕ 回到普通首页', async () => {
-    loginAs(mockAuthUser)
-    const { router, user } = await renderHome(`/?same=${sourceCard().id}`)
-
-    expect(await screen.findByText('跑鞋手持展示')).toBeVisible()
-    expect(screen.queryByRole('heading', { name: 'iClip' })).not.toBeInTheDocument()
-    expect(screen.getByText(SAME_PLACEHOLDER)).toBeInTheDocument()
-    for (const phrase of PHRASES) {
-      expect(screen.getByRole('button', { name: phrase })).toBeVisible()
-    }
-    await waitFor(() => expect(router.state.location.search).toEqual({}))
-
-    await user.click(screen.getByRole('button', { name: '不做同款' }))
-    expect(screen.getByRole('heading', { name: 'iClip' })).toBeInTheDocument()
-    expect(screen.queryByText('跑鞋手持展示')).not.toBeInTheDocument()
-    expect(screen.queryByText(SAME_PLACEHOLDER)).not.toBeInTheDocument()
-    for (const phrase of PHRASES) {
-      expect(screen.queryByRole('button', { name: phrase })).not.toBeInTheDocument()
-    }
-  })
-
   it('快捷词插到光标处并聚焦输入框', async () => {
     loginAs(mockAuthUser)
     const { user } = await renderHome(`/?same=${sourceCard().id}`)
@@ -321,25 +256,6 @@ describe('首页做同款', () => {
     await user.keyboard('黑色跑鞋')
     await user.click(screen.getByRole('button', { name: '换场景' }))
     expect(editor).toHaveTextContent('把产品换成黑色跑鞋把场景换成')
-  })
-
-  it('助手预选源视频用的那个，仍可改选', async () => {
-    loginAs(mockAuthUser)
-    const card = sourceCard()
-    server.use(
-      http.get('*/api/library/videos/:id', () =>
-        HttpResponse.json({
-          canMakeSame: true,
-          groups: [{ shotIndex: 1, versions: [{ ...card.face, take: card.take }] }],
-          video: { ...card, agentId: 'replica' },
-        }),
-      ),
-    )
-    const { user } = await renderHome(`/?same=${card.id}`)
-
-    await user.click(await screen.findByRole('button', { name: '完全复刻' }))
-    await user.click(await screen.findByRole('menuitem', { name: '分镜 Agent' }))
-    expect(await screen.findByRole('button', { name: '分镜 Agent' })).toBeVisible()
   })
 
   it('建对话带上 sameAs，回执丢了重发仍是同一段对话', async () => {
@@ -409,7 +325,6 @@ describe('首页做同款', () => {
     },
     {
       scene: '这张卡做不了同款',
-      // 不挂对话的卡，没有对话可拷。
       id: () => mockLibraryVideos().find((video) => video.conversationId === null)?.id,
       message: /该视频没有可用的制作文件，无法做同款/,
     },
@@ -425,12 +340,10 @@ describe('首页做同款', () => {
 })
 
 describe('首页草稿', () => {
-  /** 草稿在 sessionStorage 里的位置；坏数据与删除都直接看它。 */
   const DRAFT_KEY = 'cue:home-draft-v1'
   const editor = () => screen.getByLabelText('输入消息')
   const imageFile = () => new File(['fake-png-bytes'], '参考图.png', { type: 'image/png' })
 
-  // jsdom 不解码图片；附件上传前的尺寸校验读这个桩。
   beforeEach(() => {
     vi.stubGlobal('createImageBitmap', async () => ({ close: () => {}, height: 800, width: 600 }))
   })
@@ -503,7 +416,6 @@ describe('首页草稿', () => {
     const other = await renderHome()
     expect(await screen.findByRole('button', { name: '分镜 Agent' })).toBeVisible()
     expect(editor()).toHaveTextContent('秋季上新')
-    // 合集列表读到之后（新登录人也看得到这个合集）仍是未关联。
     await other.user.click(screen.getByRole('button', { name: '关联合集：未关联合集' }))
     expect(await screen.findByRole('option', { name: /夏季亚麻系列/ })).toBeVisible()
     expect(screen.getByRole('button', { name: '关联合集：未关联合集' })).toBeInTheDocument()

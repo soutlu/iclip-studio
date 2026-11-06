@@ -1,0 +1,737 @@
+from __future__ import annotations
+
+import asyncio
+import inspect
+import json
+import uuid
+
+import pytest
+from pydantic_ai import Agent, ModelRetry
+from pydantic_ai.messages import (
+    ImageUrl,
+    ModelMessage,
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturn,
+    ToolReturnPart,
+)
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.test import TestModel
+from pydantic_ai.tools import RunContext
+from pydantic_ai.usage import RunUsage
+from pydantic_ai_harness.subagents import SubAgent, SubAgents
+from structlog.testing import capture_logs
+
+from agent_runtime.file_store.namespace import namespace_for, parse_namespace
+from agent_runtime.file_store.store import (
+    FileSpace,
+    InvalidPath,
+    StoredFile,
+    normalize_path,
+)
+from agent_runtime.plugins.workspace.capability import (
+    FULL_RESOLUTION_MAX_BYTES,
+    MAX_READ_CHARS,
+    CropRegion,
+    Workspace,
+    WorkspaceToolset,
+)
+from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
+from agent_runtime.plugins.workspace.scope import workspace_namespace
+from agent_runtime.run_deps import AgentRunDeps
+from tests.helpers.file_store import FakeFileStore
+
+USER = uuid.UUID("11111111-1111-1111-1111-111111111111")
+OTHER_USER = uuid.UUID("22222222-2222-2222-2222-222222222222")
+THREAD = "thread-1"
+OTHER_THREAD = "thread-2"
+NS = f"{USER}/{THREAD}"
+
+OSS_IMAGE = "https://bucket.oss-ap-southeast-1.aliyuncs.com/style.jpg"
+
+
+A_BIG_JPEG = ImageInfo(media_type="image/jpeg", size_bytes=2048, width=3000, height=2000)
+
+
+class FakeProbe:
+    def __init__(self, info: ImageInfo = A_BIG_JPEG, *, error: str | None = None) -> None:
+        self.info = info
+        self.error = error
+
+    async def image_info(self, url: str) -> ImageInfo:
+        _ = url
+        if self.error is not None:
+            raise MediaProbeFailed(self.error)
+        return self.info
+
+
+def make_deps(user_id: uuid.UUID = USER, conversation_id: str = THREAD) -> AgentRunDeps:
+    return AgentRunDeps(user_id=user_id, conversation_id=conversation_id, user_name="logan")
+
+
+def make_context(deps: object) -> RunContext[object]:
+
+    return RunContext[object](deps=deps, model=TestModel(), usage=RunUsage(), messages=[])
+
+
+def make_workspace(store: FakeFileStore, probe: FakeProbe | None = None) -> Workspace[object]:
+    return Workspace[object](
+        space=FileSpace(store=store, namespace=workspace_namespace),
+        probe=probe if probe is not None else FakeProbe(),
+    )
+
+
+def model_facing(result: ToolReturn) -> list[object]:
+    value = result.return_value
+    assert isinstance(value, list)
+    return list(value)
+
+
+def text(result: ToolReturn) -> str:
+    value = result.return_value
+    assert isinstance(value, str)
+    return value
+
+
+@pytest.fixture
+def store() -> FakeFileStore:
+    return FakeFileStore()
+
+
+@pytest.fixture
+def capability(store: FakeFileStore) -> Workspace[object]:
+    return make_workspace(store)
+
+
+@pytest.fixture
+def tools(capability: Workspace[object]) -> WorkspaceToolset[object]:
+    return WorkspaceToolset(capability)
+
+
+@pytest.fixture
+def ctx() -> RunContext[object]:
+    return make_context(make_deps())
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "../etc/passwd",
+        "分镜/../../secrets.md",
+        "a/./b.md",
+        "..",
+        "notes\\a.md",
+        "notes/",
+        "",
+        "/",
+        "a\x00b.md",
+        "/".join("x" * 2 for _ in range(20)),
+        "x" * 200 + ".md",
+    ],
+)
+def test_illegal_paths_are_refused(path: str) -> None:
+    with pytest.raises(InvalidPath):
+        normalize_path(path)
+
+
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [
+        ("/分镜/第一集.md", "分镜/第一集.md"),
+        ("分镜//第一集.md", "分镜/第一集.md"),
+        ("笔记.md", "笔记.md"),
+    ],
+)
+def test_paths_are_canonicalized(given: str, expected: str) -> None:
+    assert normalize_path(given) == expected
+
+
+def test_unicode_paths_normalize_to_one_file() -> None:
+    assert normalize_path("caf\u00e9.md") == normalize_path("cafe\u0301.md")
+
+
+def test_namespace_fails_closed_when_deps_is_not_a_run_deps() -> None:
+    with pytest.raises(RuntimeError, match="不是 AgentRunDeps"):
+        workspace_namespace(make_context({"user_id": str(USER)}))
+
+
+def test_namespace_for_rejects_a_conversation_id_that_is_not_a_path_segment() -> None:
+    with pytest.raises(InvalidPath):
+        namespace_for(USER, "thread-1/")
+
+
+@pytest.mark.parametrize(
+    "namespace",
+    [NS, str(USER), f"{USER}/{OTHER_USER}/extra", f"logan/{OTHER_USER}", ""],
+)
+def test_parse_namespace_refuses_what_namespace_for_would_not_build_for_a_conversation(
+    namespace: str,
+) -> None:
+    with pytest.raises(ValueError, match="不是「属主/对话 id」形式"):
+        parse_namespace(namespace)
+
+
+async def test_two_users_do_not_see_each_other(
+    tools: WorkspaceToolset[object], store: FakeFileStore
+) -> None:
+    mine = make_context(make_deps())
+    theirs = make_context(make_deps(OTHER_USER))
+    await tools.write_file(mine, "笔记.md", "我的稿子")
+    assert "笔记.md" in text(await tools.list_files(mine))
+    assert "笔记.md" not in text(await tools.list_files(theirs))
+    assert await store.read(f"{OTHER_USER}/{THREAD}", "笔记.md") is None
+
+
+async def test_two_conversations_of_one_user_do_not_see_each_other(
+    tools: WorkspaceToolset[object],
+) -> None:
+
+    here = make_context(make_deps())
+    there = make_context(make_deps(conversation_id=OTHER_THREAD))
+    await tools.write_file(here, "笔记.md", "这段对话的稿子")
+    assert "笔记.md" not in text(await tools.list_files(there))
+
+
+async def test_write_then_read_round_trip(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+    assert "分镜/第一集.md" in text(await tools.write_file(ctx, "分镜/第一集.md", "镜头一\n镜头二"))
+    assert text(await tools.read_file(ctx, "分镜/第一集.md")) == "     1\t镜头一\n     2\t镜头二"
+
+
+async def test_read_missing_file_is_retryable(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+    with pytest.raises(ModelRetry, match="用 list_files"):
+        await tools.read_file(ctx, "不存在.md")
+
+
+async def test_read_pages_and_says_how_much_is_left(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+    await tools.write_file(ctx, "长稿.md", "\n".join(f"第{n}行" for n in range(1, 11)))
+    page = await tools.read_file(ctx, "长稿.md", offset=3, limit=2)
+    assert "     3\t第3行" in text(page)
+    assert "     4\t第4行" in text(page)
+    assert "6 行" in text(page)
+    assert "offset=5" in text(page)
+    assert page.metadata == {"path": "长稿.md", "lines": 2, "truncated": True}
+    whole = await tools.read_file(ctx, "长稿.md")
+    assert whole.metadata == {"path": "长稿.md", "lines": 10, "truncated": False}
+
+
+async def test_read_past_the_end_is_retryable(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+    await tools.write_file(ctx, "短稿.md", "只有一行")
+    with pytest.raises(ModelRetry, match="只有 1 行"):
+        await tools.read_file(ctx, "短稿.md", offset=99)
+
+
+async def test_read_stops_at_a_whole_line_once_the_char_limit_is_reached(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+    line = "x" * 20_000
+    await tools.write_file(ctx, "宽稿.md", "\n".join([line] * 5))
+
+    page = await tools.read_file(ctx, "宽稿.md")
+
+    body = text(page)
+    assert len(body) <= MAX_READ_CHARS
+    assert f"     2\t{line}\n" in body
+    assert "     3\t" not in body
+    assert "offset=3" in body
+    assert page.metadata == {"path": "宽稿.md", "lines": 2, "truncated": True}
+    assert text(await tools.read_file(ctx, "宽稿.md", offset=3)).startswith(f"     3\t{line}\n")
+
+
+async def test_read_cuts_a_single_line_over_the_char_limit_and_says_so(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+    await tools.write_file(ctx, "面板.json", "y" * 80_000 + "\n第二行")
+
+    page = await tools.read_file(ctx, "面板.json")
+
+    body = text(page)
+    assert len(body) <= MAX_READ_CHARS
+    first, *notes = body.split("\n")
+    kept = len(first) - len("     1\t")
+    assert first == "     1\t" + "y" * kept
+    assert 0 < kept < 80_000
+    assert [note[0] for note in notes] == ["[", "["]
+    assert "80000" in notes[0]
+    assert str(kept) in notes[0]
+    assert "offset=2" in notes[1]
+    assert page.metadata == {"path": "面板.json", "lines": 1, "truncated": True}
+
+
+async def test_edit_replaces_a_unique_match(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+    await tools.write_file(ctx, "稿.md", "开场是夜景\n结尾是日景")
+    edited = await tools.edit_file(ctx, "稿.md", "夜景", "黄昏")
+    assert "开场是黄昏" in text(await tools.read_file(ctx, "稿.md"))
+    assert edited.metadata == {"added": 1, "removed": 1}
+
+
+async def test_edit_refuses_an_ambiguous_match(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+
+    await tools.write_file(ctx, "稿.md", "夜景\n夜景")
+    with pytest.raises(ModelRetry, match="出现了 2 次"):
+        await tools.edit_file(ctx, "稿.md", "夜景", "黄昏")
+
+
+async def test_edit_reports_a_miss_instead_of_guessing(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+    await tools.write_file(ctx, "稿.md", "夜景")
+    with pytest.raises(ModelRetry, match="找不到这段原文"):
+        await tools.edit_file(ctx, "稿.md", "雨景", "黄昏")
+
+
+async def test_edit_on_a_missing_file_points_at_write_file(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+    with pytest.raises(ModelRetry, match="要新建就用 write_file"):
+        await tools.edit_file(ctx, "不存在.md", "夜景", "黄昏")
+
+
+async def test_edit_surfaces_a_concurrent_change_instead_of_clobbering_it(
+    store: FakeFileStore, ctx: RunContext[object]
+) -> None:
+    class RacingStore(FakeFileStore):
+        async def read(self, namespace: str, path: str) -> StoredFile | None:
+            found = await super().read(namespace, path)
+            await super().write(namespace, path, "别人写的内容")
+            return found
+
+    racing = RacingStore()
+    await racing.write(NS, "稿.md", "夜景")
+    tools = WorkspaceToolset(make_workspace(racing))
+    with pytest.raises(ModelRetry, match="重新读一遍"):
+        await tools.edit_file(ctx, "稿.md", "夜景", "黄昏")
+
+
+async def test_delete_removes_the_file_and_reports_a_miss(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+    await tools.write_file(ctx, "废稿.md", "不要了")
+    assert "废稿.md" in await tools.delete_file(ctx, "废稿.md")
+    with pytest.raises(ModelRetry, match="无从删除"):
+        await tools.delete_file(ctx, "废稿.md")
+
+
+async def test_move_renames_the_file_with_identical_content(
+    tools: WorkspaceToolset[object], store: FakeFileStore, ctx: RunContext[object]
+) -> None:
+    content = "镜头一\n  缩进与末尾空白 \n\n"
+    await tools.write_file(ctx, "old_film.icml", content)
+
+    moved = await tools.move_file(ctx, "old_film.icml", "成片/film.icml")
+
+    assert "old_film.icml" in moved
+    assert "成片/film.icml" in moved
+    stored = await store.read(NS, "成片/film.icml")
+    assert stored is not None and stored.content == content
+    assert await store.read(NS, "old_film.icml") is None
+
+
+async def test_move_refuses_to_overwrite_an_existing_destination(
+    tools: WorkspaceToolset[object], store: FakeFileStore, ctx: RunContext[object]
+) -> None:
+    await tools.write_file(ctx, "old_film.icml", "新稿")
+    await tools.write_file(ctx, "film.icml", "旧稿")
+
+    with pytest.raises(ModelRetry, match="delete_file"):
+        await tools.move_file(ctx, "old_film.icml", "film.icml")
+
+    source = await store.read(NS, "old_film.icml")
+    destination = await store.read(NS, "film.icml")
+    assert source is not None and source.content == "新稿"
+    assert destination is not None and destination.content == "旧稿"
+
+
+async def test_move_of_a_missing_source_is_retryable(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+    with pytest.raises(ModelRetry, match="list_files"):
+        await tools.move_file(ctx, "不存在.md", "film.icml")
+
+
+async def test_move_onto_the_same_path_is_refused(
+    tools: WorkspaceToolset[object], store: FakeFileStore, ctx: RunContext[object]
+) -> None:
+    await tools.write_file(ctx, "分镜/film.icml", "原稿")
+
+    with pytest.raises(ModelRetry, match="destination"):
+        await tools.move_file(ctx, "分镜/film.icml", "/分镜//film.icml")
+
+    stored = await store.read(NS, "分镜/film.icml")
+    assert stored is not None and stored.content == "原稿"
+
+
+async def test_list_scopes_by_segment_boundary(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+
+    await tools.write_file(ctx, "分镜/第一集.md", "a")
+    await tools.write_file(ctx, "分镜稿.md", "b")
+    listed = await tools.list_files(ctx, prefix="分镜")
+    assert "分镜/第一集.md" in text(listed)
+    assert "分镜稿.md" not in text(listed)
+    assert listed.metadata == {"chip": "1 个文件"}
+
+
+async def test_search_reports_the_matching_lines(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+    await tools.write_file(ctx, "稿.md", "开场是夜景\n中段是雨\n结尾也是夜景")
+    found = await tools.search_files(ctx, "夜景")
+    assert "稿.md:1" in text(found)
+    assert "稿.md:3" in text(found)
+    assert "稿.md:2" not in text(found)
+    assert found.metadata == {
+        "query": "夜景",
+        "truncated": False,
+        "matches": [
+            {"file": "稿.md", "line": 1, "text": "开场是夜景"},
+            {"file": "稿.md", "line": 3, "text": "结尾也是夜景"},
+        ],
+    }
+
+
+async def test_search_is_case_insensitive_and_literal(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+    await tools.write_file(ctx, "稿.md", "SCENE 100%\n别的行")
+    assert "稿.md:1" in text(await tools.search_files(ctx, "scene"))
+    assert "没有包含" in text(await tools.search_files(ctx, "%别的"))
+
+
+async def test_search_without_hits_says_so(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+    await tools.write_file(ctx, "稿.md", "夜景")
+    missed = await tools.search_files(ctx, "雨景")
+    assert "没有包含" in text(missed)
+    assert missed.metadata == {"query": "雨景", "truncated": False, "matches": []}
+
+
+async def test_search_flags_that_it_held_matches_back(
+    tools: WorkspaceToolset[object], ctx: RunContext[object]
+) -> None:
+    await tools.write_file(ctx, "a.md", "夜景")
+    await tools.write_file(ctx, "b.md", "夜景")
+    found = await tools.search_files(ctx, "夜景", limit=1)
+    assert "只报了一部分" in text(found)
+
+
+async def test_oversized_file_is_refused_with_the_file_limit(ctx: RunContext[object]) -> None:
+    tools = WorkspaceToolset(make_workspace(FakeFileStore(max_file_bytes=100)))
+    with pytest.raises(ModelRetry, match="超过单文件上限"):
+        await tools.write_file(ctx, "稿.md", "x" * 101)
+
+
+async def test_full_workspace_tells_the_model_how_to_recover(ctx: RunContext[object]) -> None:
+
+    tools = WorkspaceToolset(make_workspace(FakeFileStore(max_namespace_bytes=100)))
+    await tools.write_file(ctx, "a.md", "x" * 80)
+    with pytest.raises(ModelRetry, match="删掉"):
+        await tools.write_file(ctx, "b.md", "y" * 80)
+    assert "a.md" in text(await tools.write_file(ctx, "a.md", "z" * 90))
+
+
+def read_tools(probe: FakeProbe) -> WorkspaceToolset[object]:
+    return WorkspaceToolset(make_workspace(FakeFileStore(), probe))
+
+
+async def check_args(
+    tools: WorkspaceToolset[object], ctx: RunContext[object], **args: object
+) -> None:
+    validator = tools.tools["ReadMediaFile"].args_validator
+    assert validator is not None, "ReadMediaFile 登记时没挂验证器"
+    outcome = validator(ctx, **args)
+    assert inspect.isawaitable(outcome), "本包的验证器都是 async 的"
+    await outcome
+
+
+async def test_a_big_image_is_downsampled_and_says_so() -> None:
+    result = await read_tools(FakeProbe()).read_media_file(make_context(make_deps()), OSS_IMAGE)
+
+    facing = model_facing(result)
+    assert len(facing) == 4
+    assert facing[0] == f'<image url="{OSS_IMAGE}">'
+    assert facing[2] == ImageUrl(
+        url=f"{OSS_IMAGE}?x-oss-process=image/resize,l_1024", media_type="image/jpeg"
+    )
+    assert facing[3] == "</image>"
+    summary = str(facing[1])
+    assert "3000×2000" in summary
+    assert "1024" in summary
+    assert result.metadata == {"items": [{"url": f"{OSS_IMAGE}?x-oss-process=image/resize,l_1024"}]}
+
+
+async def test_a_small_image_goes_untouched() -> None:
+    probe = FakeProbe(ImageInfo(media_type="image/png", size_bytes=1536, width=800, height=600))
+    result = await read_tools(probe).read_media_file(make_context(make_deps()), OSS_IMAGE)
+
+    facing = model_facing(result)
+    assert len(facing) == 4
+    assert facing[0] == f'<image url="{OSS_IMAGE}">'
+    assert facing[2] == ImageUrl(url=OSS_IMAGE, media_type="image/png")
+    assert facing[3] == "</image>"
+    summary = str(facing[1])
+    assert "800×600" in summary
+    assert "1024" not in summary
+
+
+async def test_a_region_crops_in_original_coordinates_and_flags_the_offset() -> None:
+    result = await read_tools(FakeProbe()).read_media_file(
+        make_context(make_deps()),
+        OSS_IMAGE,
+        region=CropRegion(x=100, y=100, width=5000, height=5000),
+    )
+
+    delivered = f"{OSS_IMAGE}?x-oss-process=image/crop,x_100,y_100,w_5000,h_5000/resize,l_1024"
+    facing = model_facing(result)
+    assert len(facing) == 4
+    assert facing[0] == f'<image url="{OSS_IMAGE}">'
+    assert facing[2] == ImageUrl(url=delivered, media_type="image/jpeg")
+    assert facing[3] == "</image>"
+    summary = str(facing[1])
+    assert "x=100, y=100" in summary
+    assert "2900×1900" in summary
+    assert "1024" in summary
+
+
+async def test_a_stringified_region_is_parsed_on_the_agent_path(store: FakeFileStore) -> None:
+    args = json.dumps(
+        {"url": OSS_IMAGE, "region": '{"x": 100, "y": 100, "width": 5000, "height": 5000}'}
+    )
+
+    def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart("ReadMediaFile", args)])
+        return ModelResponse(parts=[TextPart("看完了")])
+
+    agent = Agent(
+        FunctionModel(script),
+        deps_type=AgentRunDeps,
+        capabilities=[make_workspace(store, FakeProbe())],
+    )
+
+    with capture_logs() as logs:
+        result = await agent.run("看这块", deps=make_deps())
+
+    refusals = [
+        part
+        for message in result.all_messages()
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+        and part.outcome == "retried"
+        and part.tool_name == "ReadMediaFile"
+    ]
+    assert refusals == []
+    assert result.output == "看完了"
+    parsed = [log for log in logs if log["event"] == "工具参数以字符串传入，已解析"]
+    assert [log["field"] for log in parsed] == ["region"]
+
+
+async def test_a_small_region_is_not_downsampled_again() -> None:
+
+    result = await read_tools(FakeProbe()).read_media_file(
+        make_context(make_deps()), OSS_IMAGE, region=CropRegion(x=10, y=20, width=200, height=100)
+    )
+
+    assert model_facing(result)[2] == ImageUrl(
+        url=f"{OSS_IMAGE}?x-oss-process=image/crop,x_10,y_20,w_200,h_100",
+        media_type="image/jpeg",
+    )
+    assert "已降采样" not in str(model_facing(result)[1])
+
+
+async def test_a_region_starting_outside_the_image_reports_the_real_size() -> None:
+    with pytest.raises(ModelRetry, match="3000×2000") as failure:
+        await read_tools(FakeProbe()).read_media_file(
+            make_context(make_deps()),
+            OSS_IMAGE,
+            region=CropRegion(x=3000, y=0, width=100, height=100),
+        )
+
+    assert "重算坐标" in str(failure.value)
+
+
+async def test_full_resolution_over_the_limit_points_at_region() -> None:
+    probe = FakeProbe(
+        ImageInfo(
+            media_type="image/png",
+            size_bytes=FULL_RESOLUTION_MAX_BYTES + 1,
+            width=8000,
+            height=6000,
+        )
+    )
+    with pytest.raises(ModelRetry, match="region") as failure:
+        await read_tools(probe).read_media_file(
+            make_context(make_deps()), OSS_IMAGE, full_resolution=True
+        )
+
+    assert "10.0 MB" in str(failure.value)
+
+
+async def test_full_resolution_under_the_limit_hands_over_the_bare_address() -> None:
+    result = await read_tools(FakeProbe()).read_media_file(
+        make_context(make_deps()), OSS_IMAGE, full_resolution=True
+    )
+
+    facing = model_facing(result)
+    assert len(facing) == 4
+    assert facing[0] == f'<image url="{OSS_IMAGE}">'
+    assert facing[2] == ImageUrl(url=OSS_IMAGE, media_type="image/jpeg")
+    assert facing[3] == "</image>"
+    summary = str(facing[1])
+    assert "3000×2000" in summary
+    assert "1024" not in summary
+
+
+async def test_region_and_full_resolution_are_mutually_exclusive() -> None:
+
+    with pytest.raises(ModelRetry, match="二选一"):
+        await read_tools(FakeProbe()).read_media_file(
+            make_context(make_deps()),
+            OSS_IMAGE,
+            region=CropRegion(x=0, y=0, width=10, height=10),
+            full_resolution=True,
+        )
+
+
+async def test_an_unreachable_image_is_refused_before_the_model_sees_it() -> None:
+    with capture_logs() as logs, pytest.raises(ModelRetry, match="图片无法读取") as failure:
+        await read_tools(FakeProbe(error="地址访问不到")).read_media_file(
+            make_context(make_deps()), OSS_IMAGE
+        )
+
+    assert "地址访问不到" in str(failure.value)
+    assert "换一个" not in str(failure.value)
+    failures = [log for log in logs if log["event"] == "读图失败"]
+    assert [(log["url"], log["reason"]) for log in failures] == [(OSS_IMAGE, "地址访问不到")]
+
+
+async def test_an_address_that_cannot_carry_scaling_is_refused() -> None:
+    with pytest.raises(ModelRetry, match="图片无法读取"):
+        await read_tools(FakeProbe()).read_media_file(
+            make_context(make_deps()), "https://cdn.test/no-extension"
+        )
+
+
+async def test_an_oss_image_never_seen_in_the_conversation_is_read() -> None:
+    tools = read_tools(FakeProbe())
+    ctx = make_context(make_deps())
+    fresh = "https://bucket.oss-ap-southeast-1.aliyuncs.com/never-mentioned.jpg"
+
+    await check_args(tools, ctx, url=fresh)
+    result = await tools.read_media_file(ctx, fresh)
+
+    assert model_facing(result)[0] == f'<image url="{fresh}">'
+
+
+@pytest.mark.parametrize("url", ["style.jpg", "file:///etc/passwd", "ftp://host/a.jpg"])
+async def test_read_media_file_only_takes_http_urls(url: str) -> None:
+    with pytest.raises(ModelRetry, match="http"):
+        await check_args(read_tools(FakeProbe()), make_context(make_deps()), url=url)
+
+
+async def test_edits_to_one_file_in_one_reply_both_land() -> None:
+    class YieldingStore(FakeFileStore):
+        async def read(self, namespace: str, path: str) -> StoredFile | None:
+            found = await super().read(namespace, path)
+            await asyncio.sleep(0)
+            return found
+
+    store = YieldingStore()
+    await store.write(NS, "treatment.md", "开场是夜景\n结尾是日景")
+
+    def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        if len(messages) == 1:
+            return ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "edit_file",
+                        {"path": "treatment.md", "old_text": "夜景", "new_text": "黄昏"},
+                    ),
+                    ToolCallPart(
+                        "edit_file",
+                        {"path": "treatment.md", "old_text": "日景", "new_text": "雨夜"},
+                    ),
+                ]
+            )
+        return ModelResponse(parts=[TextPart("改完了")])
+
+    agent = Agent(
+        FunctionModel(script), deps_type=AgentRunDeps, capabilities=[make_workspace(store)]
+    )
+    result = await agent.run("改稿", deps=make_deps())
+
+    retries = [
+        part
+        for message in result.all_messages()
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.outcome == "retried"
+    ]
+    assert retries == []
+    assert result.output == "改完了"
+    stored = await store.read(NS, "treatment.md")
+    assert stored is not None and stored.content == "开场是黄昏\n结尾是雨夜"
+
+
+async def test_a_subagent_shares_the_conversation_workspace(store: FakeFileStore) -> None:
+    workspace = make_workspace(store)
+
+    def child_script(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        if not any(isinstance(message, ModelResponse) for message in messages):
+            return ModelResponse(
+                parts=[ToolCallPart("write_file", {"path": "分镜/第一集.md", "content": "镜头一"})]
+            )
+        return ModelResponse(parts=[TextPart("下属写完了")])
+
+    worker = Agent(
+        FunctionModel(child_script),
+        name="worker",
+        deps_type=AgentRunDeps,
+        capabilities=[workspace],
+    )
+
+    turns: list[str] = []
+
+    def parent_script(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        turns.append("turn")
+        if len(turns) == 1:
+            return ModelResponse(
+                parts=[ToolCallPart("delegate_task", {"agent_name": "worker", "task": "写第一集"})]
+            )
+        if len(turns) == 2:
+            return ModelResponse(parts=[ToolCallPart("read_file", {"path": "分镜/第一集.md"})])
+        return ModelResponse(parts=[TextPart("我读到了下属写的稿子")])
+
+    boss = Agent(
+        FunctionModel(parent_script),
+        name="boss",
+        deps_type=AgentRunDeps,
+        capabilities=[workspace, SubAgents(agents=[SubAgent(worker)], agent_folders=None)],
+    )
+
+    result = await boss.run("安排下去", deps=make_deps())
+
+    retries = [
+        part
+        for message in result.all_messages()
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.outcome == "retried"
+    ]
+    assert retries == [], f"主 agent 读不到下属写的文件: {retries}"
+    assert result.output == "我读到了下属写的稿子"
+    stored = await store.read(NS, "分镜/第一集.md")
+    assert stored is not None and stored.content == "镜头一"
+    assert [entry.path for entry in await store.entries(NS)] == ["分镜/第一集.md"]

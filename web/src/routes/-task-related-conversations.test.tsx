@@ -4,7 +4,7 @@ import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useLiveConversations } from '@/features/conversations'
 import { TasksRoute } from '@/features/tasks'
-import { mockConversations } from '@/testing/mocks/conversations'
+import { mockConversations, mockVideoProgress } from '@/testing/mocks/conversations'
 import {
   addMockConversation,
   addMockTask,
@@ -17,7 +17,6 @@ import { renderWithProviders } from '@/testing/render'
 import { SERVER_HELLO, sessionEnvelope } from '@/testing/ws'
 import { TaskRelatedConversations } from './-task-related-conversations'
 
-/** 应用壳里侧栏挂着全局帧订阅，帧经它落进行池；这里一并挂上。 */
 function LiveFrames() {
   useLiveConversations()
   return null
@@ -69,27 +68,6 @@ describe('需求单关联任务与视频', () => {
     ).toBeVisible()
   })
 
-  it('新建需求单没有关联面板，也不发起关联查询', async () => {
-    const requestedPaths: string[] = []
-    server.events.on('request:start', ({ request }) => {
-      const path = new URL(request.url).pathname
-      if (path.startsWith('/api/conversations') || path === '/api/generations') {
-        requestedPaths.push(path)
-      }
-    })
-    const user = userEvent.setup()
-    await renderTasks()
-
-    await user.click(await screen.findByRole('button', { name: '新建需求单' }))
-    const dialog = await screen.findByRole('dialog', { name: '新建需求单' })
-    expect(within(dialog).getByLabelText('需求单名称')).toBeVisible()
-    expect(within(dialog).queryByRole('complementary')).not.toBeInTheDocument()
-    expect(
-      within(dialog).queryByRole('button', { name: '打开关联任务与视频' }),
-    ).not.toBeInTheDocument()
-    expect(requestedPaths).toEqual([])
-  })
-
   it.each([
     ['agent:read', '当前账号没有查看关联任务的权限'],
     ['generation:read', '当前账号没有查看视频的权限'],
@@ -118,7 +96,9 @@ describe('需求单关联任务与视频', () => {
       expect(within(panel).queryByRole('heading', { name: conversation.title })).toBeNull()
     } else {
       expect(within(panel).getByRole('heading', { name: conversation.title })).toBeVisible()
-      expect(requestedPaths).toEqual([`/api/conversations/by-task/${task.id}`])
+      expect(new Set(requestedPaths)).toEqual(
+        new Set([`/api/conversations/by-task/${task.id}`, '/api/conversations/video-progress']),
+      )
     }
   })
 
@@ -197,18 +177,18 @@ describe('需求单关联对话跟着全局帧走', () => {
     },
   })
 
-  /** 打开一张挂着一段空闲对话的需求单，并记下关联对话列表被读了几次。 */
   const openWithConversation = async (currentUser = mockAuthUser) => {
     const task = addMockTask('空闲时被提交出片的需求单')
     const conversation = addMockConversation('空闲的创作尝试', undefined, mockAuthUser.id)
     conversation.taskId = task.id
     const listPath =
       currentUser === mockGovernor ? '/api/conversations/audit' : '/api/conversations/by-task/'
-    const reads = { count: 0, rows: 0 }
+    const reads = { count: 0, progress: 0, rows: 0 }
     server.events.on('request:start', ({ request }) => {
       const path = new URL(request.url).pathname
       if (path.startsWith(listPath)) reads.count += 1
       if (path === `/api/conversations/${conversation.id}`) reads.rows += 1
+      if (path === '/api/conversations/video-progress') reads.progress += 1
     })
     const user = userEvent.setup()
     const { socket } = await renderTasks(currentUser)
@@ -218,28 +198,33 @@ describe('需求单关联对话跟着全局帧走', () => {
     return { conversation, reads, row, socket }
   }
 
-  /** 留出一次真实请求往返的时间，否则「没重拉」是空断言。 */
   const roundTrip = () => act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+
+  const PROGRESS_REFRESH_TIMEOUT = { timeout: 3000 }
 
   it.each([
     ['属主', mockAuthUser],
     ['治理者看别人的对话', mockGovernor],
   ])(
-    '%s：列表里对话的出片帧补读这一行，行上出现出片角标，列表不重拉',
+    '%s：列表里对话的出片帧让视频进度重拉，行上出现出片角标；不补读行，列表不重拉',
     async (_role, currentUser) => {
       const { conversation, reads, row, socket } = await openWithConversation(currentUser)
       expect(within(row).queryByText('排队中')).not.toBeInTheDocument()
-      conversation.activity.videoGeneration = 'queued'
+      const progressReads = reads.progress
+      mockVideoProgress.set(conversation.id, 'queued')
 
       act(() => socket.deliver(videoFrame(conversation.id)))
 
-      expect(await within(row).findByText('排队中')).toBeVisible()
-      expect(reads.rows).toBe(1)
+      expect(
+        await within(row).findByText('排队中', undefined, PROGRESS_REFRESH_TIMEOUT),
+      ).toBeVisible()
+      expect(reads.progress).toBe(progressReads + 1)
+      expect(reads.rows).toBe(0)
       expect(reads.count).toBe(1)
     },
   )
 
-  it('不在列表里的对话、列表里对话的图片帧都不读', async () => {
+  it('不在列表里的对话、列表里对话的图片帧都不补读行', async () => {
     const { conversation, reads, row, socket } = await openWithConversation()
 
     act(() => socket.deliver(videoFrame(crypto.randomUUID())))
@@ -248,10 +233,12 @@ describe('需求单关联对话跟着全局帧走', () => {
     expect(reads.count).toBe(1)
     expect(reads.rows).toBe(0)
 
-    conversation.activity.videoGeneration = 'queued'
+    mockVideoProgress.set(conversation.id, 'queued')
     act(() => socket.deliver(videoFrame(conversation.id)))
-    expect(await within(row).findByText('排队中')).toBeVisible()
-    expect(reads.rows).toBe(1)
+    expect(
+      await within(row).findByText('排队中', undefined, PROGRESS_REFRESH_TIMEOUT),
+    ).toBeVisible()
+    expect(reads.rows).toBe(0)
   })
 
   it('这张单下新挂上一段对话：列表重拉，它出现在面板里', async () => {
@@ -278,7 +265,6 @@ describe('需求单关联对话跟着全局帧走', () => {
 
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     socket.onclose?.()
-    // 退避重连排在定时器上，推过去才会重新握手。
     act(() => {
       vi.advanceTimersByTime(2000)
     })

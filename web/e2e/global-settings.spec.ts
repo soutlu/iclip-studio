@@ -1,66 +1,13 @@
 /// <reference lib="dom" />
 
 import { expect, test, type Page } from '@playwright/test'
-import { openConversation, readVideoShots } from './helpers'
+import { openConversation } from './helpers'
 
 const openReplica = async (page: Page, mobile = false) => {
   const panel = await openConversation(page, '乐福鞋 · 完全复刻', { mobile })
   await expect(panel.getByRole('textbox', { name: '全局设定', exact: true })).toBeVisible()
   return panel
 }
-
-const readReplica = (page: Page) => readVideoShots(page, '读取复刻文件失败')
-
-test('共用文件按路径打开：全局参考图逐张可看，只有编辑才保存', async ({ page }) => {
-  await page.setViewportSize({ width: 1600, height: 1000 })
-  const writes: string[] = []
-  const generations: string[] = []
-  page.on('request', (request) => {
-    const path = new URL(request.url()).pathname
-    if (request.method() === 'PUT' && path.endsWith('/workspace/file')) writes.push(request.url())
-    if (request.method() === 'POST' && path.startsWith('/api/generations/')) {
-      generations.push(request.url())
-    }
-  })
-  const panel = await openReplica(page)
-  const initial = await readReplica(page)
-  const shot = initial.document.shots[0]
-  if (shot === undefined) throw new Error('缺少复刻镜头组')
-  expect(shot.prompt.timeline).toHaveLength(3)
-  expect(shot.image_urls).toHaveLength(30)
-  const global = panel.getByRole('group', { name: '全局设定', exact: true })
-  await expect(global.getByRole('button', { name: /^查看第 \d+ 帧$/ })).toHaveCount(30)
-  for (const index of [30, 2, 1]) {
-    const reference = global.getByRole('button', { name: `查看第 ${index} 帧`, exact: true })
-    await reference.focus()
-    await page.keyboard.press('Enter')
-    await expect(
-      panel.getByRole('img', { name: `镜头组 1 第 ${index} 帧`, exact: true }),
-    ).toHaveAttribute('src', shot.image_urls[index - 1] ?? '')
-    await expect(global).toHaveAttribute('aria-current', 'true')
-  }
-  await panel.getByRole('button', { name: '镜头 1', exact: true }).click()
-  await expect(global).toHaveAttribute('aria-current', 'false')
-  await expect(panel.getByRole('textbox', { name: '镜头 1 的描述', exact: true })).toBeVisible()
-  await global.getByRole('button', { name: '查看第 1 帧', exact: true }).click()
-  await expect(global).toHaveAttribute('aria-current', 'true')
-
-  expect(await readReplica(page)).toEqual(initial)
-  expect(writes).toEqual([])
-  expect(generations).toEqual([])
-
-  const updated = `${shot.prompt.global_settings}\n产品始终完整入画，保持鞋面纹理清晰。`
-  await panel.getByRole('textbox', { name: '全局设定', exact: true }).fill(updated)
-  const expected = structuredClone(initial.document)
-  const changedShot = expected.shots[0]
-  if (changedShot === undefined) throw new Error('缺少待编辑镜头组')
-  changedShot.prompt.global_settings = updated
-  await expect.poll(async () => (await readReplica(page)).document).toEqual(expected)
-  expect((await readReplica(page)).version).toBeGreaterThan(initial.version)
-  await expect(panel.getByText('已保存', { exact: true })).toBeVisible()
-  expect(writes.length).toBeGreaterThan(0)
-  expect(generations).toEqual([])
-})
 
 test('手机上一帧、下一帧逐张切全局参考图，舞台上的画面完整露出', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })

@@ -1,12 +1,3 @@
-/** 文案列：列头（`ScriptHead`）写镜头数与总长、带「收成摘要」开关和镜头条；正文区最上面是全局设定卡，
- * 之后按时间线排各镜头，左轨写序号与起始时间，末尾一行写总长与「结束」。
- * 默认全文；收成摘要时未选中的镜头只露两行、全局设定三行。点哪段选中哪段，舞台跟着切到它的首帧。
- * 时间一律写一位小数加 s，总长取最后一镜的止秒。版式见 storyboard.css 的「文案列」一节。
- *
- * 每张段卡是这段正文的图片拖放区：落在正文里按落点插入（编辑器先收下），落在标题行等别处接到正文末尾。
- * 拖放区按段而不是整列：落点就说明了图归哪段，不用再看选中了谁。列里段卡以外的地方拒收，免得文件漏给聊天输入框；
- * 舞台是另一列，「拖到舞台上替换当前帧」与这里互不重叠。 */
-
 import { useRef, useState, type FocusEvent, type ReactNode, type Ref } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -28,7 +19,6 @@ import { copyWithToast } from './copy-with-toast'
 import { PromptEditor, type PromptEditorHandle, type PromptImages } from './prompt-editor'
 import { DurationPill, ScriptHead } from './script-head'
 
-/** 段卡上的拖放：`blocked` 时照样接管文件、不收；落下的交给第 `content` 段。 */
 type ScriptDrop = {
   blocked: boolean
   onFiles: (content: string, files: readonly File[]) => void
@@ -38,16 +28,11 @@ type ScriptDrop = {
 type ShotScriptProps = {
   shot: Shot
   aspectRatio: string
-  /** 第 `content` 段正文里 `@` 选图末格的「+」。 */
   add: (content: string) => void
-  /** 第 `content` 段正文收图片（粘贴、拖放）要的；没有上传权限时为 undefined。 */
   images: (content: string) => PromptImages | undefined
   drop: ScriptDrop
-  /** 要排出来的段，见 `scriptSegments`。 */
   segments: readonly ShotContent[]
-  /** 选中的段；舞台在看素材片时为 undefined，哪段都不标。 */
   selectedId: string | undefined
-  /** 选中段里正在看的帧，正文里对应的 @N 高亮。 */
   frameNumber: number | undefined
   readOnly: boolean
   editorRef: (id: string) => Ref<PromptEditorHandle>
@@ -55,10 +40,8 @@ type ShotScriptProps = {
   onUpdateShot: (updater: (current: Shot) => Shot) => unknown
 }
 
-/** 镜头段与它的序号（从 1 起）、时间和点缀色。 */
 type Scene = { segment: ShotContent; number: number; time: SegmentTime; accent: ShotAccent }
 
-// 段里自带选中动作的控件（展开全局设定、点缩略图）聚焦时不再走「焦点进段就选中」，免得先选段再选帧跳两次。
 const keepFocusInside = (event: FocusEvent) => event.stopPropagation()
 
 export function ShotScript({
@@ -93,13 +76,11 @@ export function ShotScript({
   })
   const settings = segments.find((segment) => segment.kind === 'global')
 
-  // 焦点落进这段（点正文、Tab 进来）或点段标题就选中；已选中的段再点、再打字不重置帧。
   const select = (segment: ShotContent) => {
     if (segment.id !== selectedId) onSelect(segment.id)
   }
   const jumpTo = (segment: ShotContent) => {
     select(segment)
-    // 平滑与否交给滚动容器的 scroll-behavior，减少动效时样式里关掉。
     itemsRef.current.get(segment.id)?.scrollIntoView({ block: 'nearest' })
   }
   const copyButton = (segment: ShotContent) => (
@@ -118,7 +99,6 @@ export function ShotScript({
       frames={shot.image_urls}
       highlighted={selected ? frameNumber : undefined}
       images={images(segment.id)}
-      // 插进去的那帧上舞台，与其它添加入口一致。
       mention={{ add: () => add(segment.id), onInserted: (number) => onSelect(segment.id, number) }}
       onChange={(text) => onUpdateShot((current) => updateContentPrompt(current, segment.id, text))}
       onPickFrame={(number) => {
@@ -258,7 +238,6 @@ type SegmentCardProps = {
   children: ReactNode
 }
 
-/** 段卡：焦点落进来就选中这段；整张卡是这段正文的图片拖放区，拖到上面时盖一层「松开添加到…」。 */
 function SegmentCard({
   children,
   clamped,
@@ -295,17 +274,14 @@ function SegmentCard({
 type SettingsCardProps = {
   prompt: string
   selected: boolean
-  /** 收成摘要时只露三行。 */
   clamped: boolean
   drop: SegmentDrop
-  /** 收成摘要且没选中时才有「展开 / 收起」；选中时本来就是全文。 */
   expansion: { expanded: boolean; toggle: () => void } | undefined
   copy: ReactNode
   onFocus: () => void
   children: ReactNode
 }
 
-/** 全局设定卡：标题旁写字数；正文按原文换行分段，不识别任何关键词。 */
 function SettingsCard({
   children,
   clamped,

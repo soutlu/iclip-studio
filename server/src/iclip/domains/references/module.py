@@ -1,5 +1,3 @@
-"""references 装配单元：组合根只调用 ``build_references_module``。"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -22,8 +20,6 @@ from iclip.domains.tagging.public import TaggingService
 
 @dataclass(frozen=True, slots=True)
 class BreakdownSetup:
-    """拆解配好时才有的那一组：拆解、队列连接器与并发。"""
-
     breakdowns: VideoBreakdowns
     connector: procrastinate.BaseConnector
     concurrency: int
@@ -32,11 +28,9 @@ class BreakdownSetup:
 @dataclass(frozen=True)
 class ReferencesModule:
     routers: tuple[Any, ...]
-    """使用 Any 隔离 Web 框架类型。"""
 
     service: ReferenceService
     queue: ReferenceQueue | None
-    """拆解没配置时为 ``None``；有的话由组合根在 lifespan 里起停 worker。"""
 
 
 def build_references_module(
@@ -50,11 +44,6 @@ def build_references_module(
     test_videos: TestVideos,
     testable: bool,
 ) -> ReferencesModule:
-    """``breakdown`` 为 ``None`` 即拆解没配置：只挂读端点与改标签，列表的 ``canUpload`` 恒为假；配了
-    就要求 ``tagging`` 也能排打标，拆完要排。``uploads_available`` 为假即上传模块没装配：不挂建行，
-    ``canUpload`` 同样恒为假，重拆照挂。``testable`` 为假即媒体生成没开、``test_videos`` 提交不了：
-    不挂试生成，详情照样带最新的一次。"""
-
     if breakdown is not None and not tagging.can_tag:
         raise RuntimeError("拆解配好了却不能打标；拆完要排打标")
     queue = (

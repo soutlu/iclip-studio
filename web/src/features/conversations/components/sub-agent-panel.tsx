@@ -1,5 +1,3 @@
-/** 子代理那条流的面板：顶部是名字、状态与耗时，正文复用轮渲染。数据走子代理读取池（每段对话只订当前在看的那个），关面板就退订它那一条。 */
-
 import { useRef } from 'react'
 import { useTranscript } from '@/shared/transcript/use-transcript'
 import type { TranscriptTurn } from '@/shared/transcript/vendor'
@@ -21,7 +19,6 @@ const STATUS = {
   running: { label: '进行中', variant: 'running' },
 } as const
 
-/** 秒以下不显示；一分钟以上带分。 */
 const duration = (ms: number | undefined): string | undefined => {
   if (ms === undefined) return undefined
   const seconds = Math.round(ms / 1000)
@@ -56,7 +53,6 @@ function SubAgentStream({ agentId, agentName, conversationId }: SubAgentStreamPr
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const keepPlace = useKeepPlaceOnPrepend(scrollerRef, turns[0]?.turnId, view.loadingOlder)
   const latest = turns.at(-1)
-  // 跑着的时候 meta 先于轮头说话；结束后以轮的终态为准。
   const state = view.activity === 'turn' ? 'running' : latest?.state
   const status = state === undefined ? undefined : STATUS[state]
   const elapsed = duration(latest?.durationMs)
@@ -82,7 +78,6 @@ function SubAgentStream({ agentId, agentName, conversationId }: SubAgentStreamPr
       ) : null}
       {view.status === 'ready' ? (
         <div className="chat-scroller min-h-0 flex-1 overflow-y-auto" ref={scrollerRef}>
-          {/* 这里每一轮都按历史轮画：终态栏悬停才露出、叠在轮下方 28px 里，见 ConversationTurn；轮间与尾部都留出这段。 */}
           <div className="flex flex-col gap-7 px-5 pt-4 pb-11">
             <LoadOlder
               hasMoreOlder={view.hasMoreOlder}

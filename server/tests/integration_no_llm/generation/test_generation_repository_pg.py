@@ -1,5 +1,3 @@
-"""验证生成仓储的数据库时钟、JSON 往返、外键、条件更新原子性与分叉继承的读范围。"""
-
 from __future__ import annotations
 
 import json
@@ -8,12 +6,14 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import httpx
 import pytest
+from agent_runtime.errors import NotFound, ValidationFailed
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.common.errors import NotFound, ValidationFailed
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
+from iclip.domains.generation.api import create_generations_router
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
@@ -28,6 +28,9 @@ from iclip.domains.generation.models import (
 )
 from iclip.domains.generation.schemas import SubtitleSentence
 from iclip.domains.generation.stored_requests import GenerationRequest
+from iclip.domains.identity.acting import ActAs
+from iclip.domains.identity.public import Principal
+from tests.helpers.app import app_with_principal, make_client
 from tests.helpers.fork_lineage import (
     complete,
     finished,
@@ -39,6 +42,7 @@ from tests.helpers.generation import (
     compose_request,
     edit_range,
     edit_request,
+    film_image_service,
     image_request,
     make_composite,
     make_cut,
@@ -48,6 +52,22 @@ from tests.helpers.generation import (
     make_upload,
     video_request,
 )
+from tests.helpers.identity import InMemoryUserRepository
+
+
+def query_client(repo: SqlGenerationRepository, owner: uuid.UUID) -> httpx.AsyncClient:
+    app = app_with_principal(
+        Principal(
+            kind="user",
+            user_id=owner,
+            permissions=frozenset({"generation:read"}),
+            audit_label="reader",
+        )
+    )
+    app.include_router(
+        create_generations_router(film_image_service(repo), act_as=ActAs(InMemoryUserRepository()))
+    )
+    return make_client(app)
 
 
 async def insert_job(
@@ -124,8 +144,6 @@ async def test_sync_result_backfills_the_submitted_moment(engine: AsyncEngine) -
 
 
 async def test_status_guard_never_overwrites_a_real_result(engine: AsyncEngine) -> None:
-    """WHERE 状态守卫须阻止延迟的中断清理覆盖已成功的生成结果。"""
-
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
     job = await insert_job(repo, owner, image_request())
@@ -152,8 +170,6 @@ async def test_status_guard_never_overwrites_a_real_result(engine: AsyncEngine) 
 async def test_a_late_result_cannot_revive_a_job_that_was_already_failed(
     engine: AsyncEngine,
 ) -> None:
-    """反向也要守住：heal 按心跳判失联不等于原来那次真死了，它回来时不能把失败改回成功。"""
-
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
     job = await insert_job(repo, owner, image_request())
@@ -177,8 +193,6 @@ async def test_a_late_result_cannot_revive_a_job_that_was_already_failed(
 
 
 async def test_stage_reports_stop_at_a_conclusion(engine: AsyncEngine) -> None:
-    """阶段上报只写 provider_status；已有结论后，迟到的上报不许改它。"""
-
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
     job = await insert_job(repo, owner, image_request())
@@ -306,8 +320,6 @@ async def test_deleting_the_owner_takes_their_generations_with_it(
 async def test_metadata_containment_filtering_pagination_and_owner_scope(
     engine: AsyncEngine,
 ) -> None:
-    """坐标存 JSONB 列，筛选走 ``@>`` 包含匹配，且在分页截断之前生效。"""
-
     def coordinate(frame: int) -> dict[str, Any]:
         return {"path": "video_shot.json", "shot": 1, "frame": frame}
 
@@ -323,33 +335,42 @@ async def test_metadata_containment_filtering_pagination_and_owner_scope(
     other = await make_user(engine)
     first = await repo.create(edit(1, owner))
     second = await repo.create(edit(1, owner))
-    await repo.create(edit(2, owner))
+    other_frame = await repo.create(edit(2, owner))
+    await repo.create(make_job(owner_user_id=owner))
     foreign = await repo.create(edit(1, other))
 
-    async def page_before(before: uuid.UUID | None = None) -> tuple[GenerationJob, ...]:
-        return await repo.list_for_owner(
-            owner=owner,
-            limit=1,
-            kind="image",
-            metadata={"shot": 1, "frame": 1},
-            before=before,
-        )
+    async with query_client(repo, owner) as http:
 
-    page = await page_before()
-    assert [job.id for job in page] == [second.id]
-    assert page[0].request == second.request
-    assert [job.id for job in await page_before(before=second.id)] == [first.id]
-    assert await page_before(before=first.id) == ()
-    with pytest.raises(NotFound):
-        await page_before(before=foreign.id)
+        async def page_before(before: uuid.UUID | None = None) -> httpx.Response:
+            params = {
+                "limit": "1",
+                "kind": "image",
+                "metadata": json.dumps({"shot": 1, "frame": 1}),
+            }
+            if before is not None:
+                params["before"] = str(before)
+            return await http.get("/generations", params=params)
+
+        page = await page_before()
+        assert page.status_code == 200, page.text
+        assert [job["id"] for job in page.json()["items"]] == [str(second.id)]
+        assert [job["id"] for job in (await page_before(second.id)).json()["items"]] == [
+            str(first.id)
+        ]
+        assert (await page_before(first.id)).json()["items"] == []
+        assert (await page_before(foreign.id)).status_code == 404
+        by_shot = await http.get("/generations", params={"metadata": json.dumps({"shot": 1})})
+        assert {job["id"] for job in by_shot.json()["items"]} == {
+            str(first.id),
+            str(second.id),
+            str(other_frame.id),
+        }
+    assert (await repo.get(second.id, owner=owner)).request == second.request
 
 
 async def test_in_flight_by_conversation_summarises_unfinished_video_jobs(
     engine: AsyncEngine,
 ) -> None:
-    """侧栏角标要的摘要：全在排队是 queued，有一条交给上游就是 running，跑完的和图片不算；
-    编辑段与合成也是视频行，在跑时对话同样算在出片。"""
-
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
     queued_only, running, settled, images_only, editing, composing = (
@@ -377,10 +398,7 @@ async def test_in_flight_by_conversation_summarises_unfinished_video_jobs(
     )
     await repo.mark_submitting(composite.id)
 
-    phases = await repo.in_flight_by_conversation(
-        [queued_only, running, settled, images_only, editing, composing, uuid.uuid4()],
-        kind="video",
-    )
+    phases = await repo.in_flight_by_conversation(owner=owner, kind="video")
 
     assert phases == {
         queued_only: "queued",
@@ -388,26 +406,21 @@ async def test_in_flight_by_conversation_summarises_unfinished_video_jobs(
         editing: "queued",
         composing: "running",
     }
-    assert await repo.in_flight_by_conversation([], kind="video") == {}
+    assert await repo.in_flight_by_conversation(owner=await make_user(engine), kind="video") == {}
 
 
 async def test_latest_master_by_conversation_takes_each_conversations_newest_master(
     engine: AsyncEngine,
 ) -> None:
-    """审计列表要的最新素材片：按完成时刻取最晚的出片或合成，同一刻取 id 大的；编辑段、失败与在途的
-    出片、没有地址的记录、图片都不算；每段对话只看记在自己名下的。"""
-
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
     newest, composed, tied, nothing = (uuid.uuid4() for _ in range(4))
 
-    # 先建后完成：完成时刻最晚的是它，建立时刻却是最早的。
     started_first = await repo.create(
         make_job(video_request(), owner_user_id=owner, conversation_id=newest)
     )
     take = await finished(repo, owner, newest, "take")
     started_first = await complete(repo, started_first, "https://example.test/started-first.mp4")
-    # 下面几条都比它晚，但都不是素材片。
     await complete(
         repo,
         await repo.create(make_edit(take, owner_user_id=owner, conversation_id=newest)),
@@ -453,7 +466,6 @@ async def test_latest_master_by_conversation_takes_each_conversations_newest_mas
     tie_winner = max(pair, key=lambda job: job.id)
 
     await finished(repo, owner, nothing, "nothing-image", image_request())
-    # 没问到的对话里最晚的素材片，不串进别的对话。
     await finished(repo, owner, uuid.uuid4(), "outsider")
 
     latest = await repo.latest_master_by_conversation(
@@ -471,9 +483,6 @@ async def test_latest_master_by_conversation_takes_each_conversations_newest_mas
 async def test_latest_master_by_conversation_leaves_inherited_masters_out(
     engine: AsyncEngine,
 ) -> None:
-    """分叉副本读得到祖先的素材片，最新素材片却只看它自己名下的：只在继承来的出片上剪了一段、还没合成的
-    副本没有素材片。"""
-
     chain = await three_level_fork(engine)
     repo = SqlGenerationRepository(engine)
     bare = await open_conversation(
@@ -499,9 +508,6 @@ async def test_latest_master_by_conversation_leaves_inherited_masters_out(
 
 
 async def test_operation_source_and_range_round_trip_and_filter(engine: AsyncEngine) -> None:
-    """编辑段与合成的来源、原作落列，区间记在请求里，都读得回；列表按 operation、source_job_id 筛，
-    与别的筛选叠加收窄。"""
-
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
     take = await repo.create(make_job(video_request(), owner_user_id=owner))
@@ -510,6 +516,8 @@ async def test_operation_source_and_range_round_trip_and_filter(engine: AsyncEng
     )
     composite = await repo.create(make_composite(edit, owner_user_id=owner))
     other_edit = await repo.create(make_edit(take, owner_user_id=owner))
+    other_take = await repo.create(make_job(video_request(), owner_user_id=owner))
+    unrelated_edit = await repo.create(make_edit(other_take, owner_user_id=owner))
 
     read_back = await repo.get(edit.id, owner=owner)
     assert (
@@ -530,21 +538,37 @@ async def test_operation_source_and_range_round_trip_and_filter(engine: AsyncEng
         "合成的各段连同出处读回来原样，取到结尾的那段仍是开放的"
     )
 
-    async def listed(**filters: Any) -> set[uuid.UUID]:
-        return {job.id for job in await repo.list_for_owner(owner=owner, limit=10, **filters)}
+    async with query_client(repo, owner) as http:
 
-    assert await listed(source_job_id=take.id) == {edit.id, other_edit.id, composite.id}
-    assert await listed(source_job_id=take.id, operation="generate") == {edit.id, other_edit.id}
-    assert await listed(operation="compose") == {composite.id}
-    assert await listed(operation="generate", root_job_id=take.id) == {edit.id, other_edit.id}
-    assert await listed(operation="generate") == {take.id, edit.id, other_edit.id}
+        async def listed(**filters: str) -> set[uuid.UUID]:
+            response = await http.get("/generations", params=filters)
+            assert response.status_code == 200, response.text
+            return {uuid.UUID(job["id"]) for job in response.json()["items"]}
+
+        assert await listed(sourceJobId=str(take.id)) == {edit.id, other_edit.id, composite.id}
+        assert await listed(sourceJobId=str(edit.id)) == set(), "合成的来源是基底，不是夹入的编辑段"
+        assert await listed(sourceJobId=str(take.id), operation="generate") == {
+            edit.id,
+            other_edit.id,
+        }
+        assert await listed(operation="compose") == {composite.id}
+        assert await listed(rootJobId=str(take.id)) == {edit.id, other_edit.id, composite.id}
+        assert await listed(operation="generate", rootJobId=str(take.id)) == {
+            edit.id,
+            other_edit.id,
+        }
+        assert await listed(operation="generate") == {
+            take.id,
+            edit.id,
+            other_edit.id,
+            other_take.id,
+            unrelated_edit.id,
+        }
 
 
 async def test_shot_index_round_trips_and_filters_alongside_the_coordinates(
     engine: AsyncEngine,
 ) -> None:
-    """镜号落列读回；列表按镜号筛，可与坐标、对话叠加收窄，坐标里的同名键不算镜号。"""
-
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
     conversation = uuid.uuid4()
@@ -571,19 +595,21 @@ async def test_shot_index_round_trips_and_filters_alongside_the_coordinates(
     assert (await repo.get(edit.id, owner=owner)).shot_index == 2
     assert (await repo.get(tagged_only.id, owner=owner)).shot_index is None
 
-    async def listed(**filters: Any) -> set[uuid.UUID]:
-        return {job.id for job in await repo.list_for_owner(owner=owner, limit=10, **filters)}
+    async with query_client(repo, owner) as http:
 
-    assert await listed(shot_index=2) == {take.id, edit.id}
-    assert await listed(shot_index=2, conversation_id=uuid.uuid4()) == set()
-    assert await listed(shot_index=2, metadata={"frame": 1}) == {take.id}
-    assert await listed(shot_index=3) == {other_shot.id}
-    assert await listed(shot_index=4) == set()
+        async def listed(**filters: str) -> set[uuid.UUID]:
+            response = await http.get("/generations", params=filters)
+            assert response.status_code == 200, response.text
+            return {uuid.UUID(job["id"]) for job in response.json()["items"]}
+
+        assert await listed(shotIndex="2") == {take.id, edit.id}
+        assert await listed(shotIndex="2", conversationId=str(uuid.uuid4())) == set()
+        assert await listed(shotIndex="2", metadata=json.dumps({"frame": 1})) == {take.id}
+        assert await listed(shotIndex="3") == {other_shot.id}
+        assert await listed(shotIndex="4") == set()
 
 
 async def test_duration_is_written_only_when_completion_brings_one(engine: AsyncEngine) -> None:
-    """时长记进产出；完成时没给时长，产出里就没有。"""
-
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
     take = await repo.create(make_job(video_request(), owner_user_id=owner))
@@ -613,9 +639,6 @@ async def test_duration_is_written_only_when_completion_brings_one(engine: Async
 async def test_settled_rows_land_once_on_the_database_clock_without_a_request(
     engine: AsyncEngine,
 ) -> None:
-    """创建即完成的几行一次落：与输入同序，建立与完成是数据库时钟的同一刻，请求是 SQL NULL。
-    同 id 再落一次跳过、不覆盖，返回值里没有它。"""
-
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
     stale = datetime.now(UTC) - timedelta(days=365)
@@ -657,8 +680,6 @@ _MD5 = "0123456789abcdef0123456789abcdef"
 async def test_a_video_upload_is_found_by_its_md5_earliest_first_across_owners(
     engine: AsyncEngine,
 ) -> None:
-    """按 MD5 找视频上传：不看属主，取最早建立的那条；别的 MD5、没记 MD5 的不算，没有给 None。"""
-
     repo = SqlGenerationRepository(engine)
     sara, logan = await make_user(engine), await make_user(engine)
     other = "f" * 32
@@ -679,9 +700,6 @@ async def test_a_video_upload_is_found_by_its_md5_earliest_first_across_owners(
 async def test_an_output_round_trips_and_stores_only_its_present_top_level_keys(
     engine: AsyncEngine,
 ) -> None:
-    """产出存成 snake_case 的对象：顶层空项不存，句子里的 ``speaker: null`` 照存，读回一致；
-    没有产出存 SQL NULL，读回是空对象。"""
-
     repo = SqlGenerationRepository(engine)
     owner = await make_user(engine)
     take = await finished(repo, owner, uuid.uuid4(), "take")
@@ -783,9 +801,6 @@ def _video_upload(owner: uuid.UUID, md5: str) -> GenerationJob:
 async def test_a_record_is_found_by_its_address_within_the_conversation_and_what_it_inherits(
     engine: AsyncEngine,
 ) -> None:
-    """按产物地址找某一种记录：本对话按属主收敛的、经继承读得到的；没有对话就只找没有对话的；给了
-    操作只找那一种；未完成的、别的种类、别的对话、边界之后的都找不到；对上多条取最早建立的。"""
-
     repo = SqlGenerationRepository(engine)
     conversations = SqlConversationRepository(engine)
     author, forker, stranger = [await make_user(engine) for _ in range(3)]
@@ -898,17 +913,9 @@ async def test_output_urls_answer_only_for_rows_that_have_one(engine: AsyncEngin
     assert await repo.output_urls([done.id, pending.id, uuid.uuid4()]) == {done.id: done.output.url}
 
 
-# --- 分叉继承 -------------------------------------------------------------------
-# 场景与构造器在 tests/helpers/fork_lineage.py，资料库的集成测试用同一个场景。
-
-
 async def test_each_hop_has_its_own_boundary_and_only_finished_takes_are_inherited(
     engine: AsyncEngine,
 ) -> None:
-    """孙对话继承父对话在孙建立前完成的，和祖父在父建立前完成的；边界不是一刀切在孙的建立时刻。
-
-    分叉那一刻还在跑、之后才完成的不算，失败的也不算；编辑段是一行普通的完成记录，照样继承。"""
-
     repo = SqlGenerationRepository(engine)
     conversations = SqlConversationRepository(engine)
     chain = await three_level_fork(engine)
@@ -935,8 +942,6 @@ async def test_each_hop_has_its_own_boundary_and_only_finished_takes_are_inherit
 
 
 async def test_ancestry_walks_through_a_deleted_source(engine: AsyncEngine) -> None:
-    """源对话删成墓碑，副本从它那里继承的出片照旧在。"""
-
     conversations = SqlConversationRepository(engine)
     author = await make_user(engine)
     source = await open_conversation(conversations, author)
@@ -949,9 +954,6 @@ async def test_ancestry_walks_through_a_deleted_source(engine: AsyncEngine) -> N
 async def test_inherited_records_keep_their_facts_and_obey_the_other_filters(
     engine: AsyncEngine,
 ) -> None:
-    """继承只是读得到：属主与所在对话不变。按原作、来源、种类、操作与坐标筛时，继承来的与自己的
-    一视同仁。"""
-
     repo = SqlGenerationRepository(engine)
     conversations = SqlConversationRepository(engine)
     author, forker = await make_user(engine), await make_user(engine)
@@ -1009,8 +1011,6 @@ async def test_inherited_records_keep_their_facts_and_obey_the_other_filters(
 async def test_pages_turn_on_an_inherited_anchor_and_reads_stop_at_the_boundary(
     engine: AsyncEngine,
 ) -> None:
-    """按对话翻页时上一页最后一条可能是继承来的，锚点要读得到它；边界之后的仍然读不到。"""
-
     repo = SqlGenerationRepository(engine)
     conversations = SqlConversationRepository(engine)
     author, forker = await make_user(engine), await make_user(engine)

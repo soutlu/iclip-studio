@@ -14,7 +14,6 @@ import {
 } from './shot-content'
 import type { Shot } from './shot-document'
 
-// 全局设定引用 @1；镜头 1 引用 @2、@1；镜头 2 没有图；@3 谁都没引用。
 const shot: Shot = {
   index: 1,
   seconds: 6,

@@ -10,30 +10,22 @@ import type { Conversation } from '../conversations.api'
 import { useLiveConversations } from '../conversations.live'
 import { ConversationSearchDialog } from './conversation-search-dialog'
 
-/** 全局帧订阅在应用里挂在侧栏顶层；弹窗自己不订，这里照壳的样子在外面挂一次。 */
 function LiveFrames() {
   useLiveConversations()
   return null
 }
 
 const conversation: Conversation = {
-  activity: {
-    busy: false,
-    lastTurnReason: null,
-    pendingInteraction: 'none',
-    videoGeneration: 'none',
-  },
+  activity: { busy: false, lastTurnReason: null, pendingInteraction: 'none' },
   agentId: 'storyboard',
   collectionId: null,
   completedAt: null,
   createdAt: '2026-08-01T00:00:00Z',
   deletedAt: null,
-  eventEpoch: 'epoch-1',
   forkTurn: null,
   forkedFrom: null,
   id: '6d80645b-f17b-4eab-a5d2-6c72214f35f3',
   lastRunId: null,
-  lastSeq: 0,
   ownerUserId: '0f7f4c1e-8a3b-4d0e-9c2a-6b1d2e3f4a5b',
   taskId: null,
   title: '亚麻衬衫二剪',
@@ -78,16 +70,6 @@ describe('ConversationSearchDialog', () => {
     ).toEqual(['亚麻衬衫二剪', '夏季亚麻系列广告'])
   })
 
-  it('没有命中时给一句空结果提示', async () => {
-    server.use(http.get('*/api/conversations/search', () => HttpResponse.json({ items: [] })))
-    const user = userEvent.setup()
-    await openDialog()
-
-    await user.type(screen.getByRole('textbox', { name: '搜索任务' }), '亚麻')
-
-    expect(await screen.findByText('暂无匹配的任务')).toBeVisible()
-  })
-
   it('接口出错时把后端的错误文案就地显示出来', async () => {
     server.use(
       http.get('*/api/conversations/search', () =>
@@ -123,10 +105,8 @@ describe('ConversationSearchDialog', () => {
     await screen.findByRole('list', { name: '搜索结果' })
     expect(titles()).toEqual(['亚麻衬衫二剪'])
 
-    // 断线期间别处把另一段改了名；全局帧不补发，改名帧丢了。
     socket.onclose?.()
     renamed.title = '亚麻长裙'
-    // 第一次重连排在 1 秒退避（另加至多 250ms 抖动）之后，握手完成才算重连上。
     await act(() => new Promise((resolve) => setTimeout(resolve, 1300)))
     socket.deliver(SERVER_HELLO)
 

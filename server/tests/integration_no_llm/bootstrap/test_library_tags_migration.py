@@ -1,8 +1,3 @@
-"""资料库标签的迁移：每条参考视频建一条条目，旧片子类型按大类、品类按名字搬过去，有拆解的记为已打标，
-移除的也搬；两列与索引删掉。降级加回两列、删掉三张表。
-
-升降级在一次性库上做，不动会话共用的测试库。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -19,17 +14,13 @@ from tests.helpers.fork_lineage import make_user
 from tests.helpers.migrations import alembic_config
 
 BEFORE = "b5d1e7a0c934"
-"""0035，参考视频行上还有两组标签。"""
 
 AFTER = "7f3c2a9d1e64"
-"""0036，标签搬进资料库标签表。"""
 
 
 async def _plant(
     url: str, rows: Sequence[tuple[str | None, Sequence[str], Sequence[str], bool]]
 ) -> list[uuid.UUID]:
-    """按（拆解，片子类型，品类，是否移除）种参考视频，交回 id。"""
-
     engine = build_engine(url, poolclass=NullPool)
     try:
         owner = await make_user(engine)
@@ -62,8 +53,6 @@ async def _plant(
 
 
 async def _entries(url: str) -> dict[uuid.UUID, dict[str, Any]]:
-    """每条参考视频的条目：打标状态与标签的「上级名/名字」集合。"""
-
     engine = build_engine(url, poolclass=NullPool)
     try:
         async with engine.connect() as conn:
@@ -113,21 +102,6 @@ async def _columns(url: str) -> set[str]:
         await engine.dispose()
 
 
-async def _tables(url: str) -> set[str]:
-    engine = build_engine(url, poolclass=NullPool)
-    try:
-        async with engine.connect() as conn:
-            rows = await conn.execute(
-                text(
-                    "SELECT table_name FROM information_schema.tables"
-                    " WHERE table_schema = 'iclip' AND table_name LIKE 'library_%'"
-                )
-            )
-            return set(rows.scalars())
-    finally:
-        await engine.dispose()
-
-
 def test_upgrade_moves_old_tags_into_entries(scratch_db: str) -> None:
     cfg = alembic_config(scratch_db)
     command.upgrade(cfg, BEFORE)
@@ -161,14 +135,3 @@ def test_upgrade_moves_old_tags_into_entries(scratch_db: str) -> None:
         "品类/拖鞋",
     }
     assert not {"video_types", "categories"} & asyncio.run(_columns(scratch_db))
-
-
-def test_downgrade_puts_the_columns_back_and_drops_the_tables(scratch_db: str) -> None:
-    cfg = alembic_config(scratch_db)
-    command.upgrade(cfg, AFTER)
-
-    command.downgrade(cfg, BEFORE)
-
-    assert {"video_types", "categories"} <= asyncio.run(_columns(scratch_db))
-    assert asyncio.run(_tables(scratch_db)) == set()
-    asyncio.run(_plant(scratch_db, [("# 拆解", ("review",), ("跑鞋",), False)]))

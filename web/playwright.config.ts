@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
-import { resolveMockPort } from './vite/mock-port'
+import { resolveMockPort } from './vite/mock-port.ts'
 
 // 后端响应由浏览器 MSW 提供：本地跑 dev:mock 便于复用已开的服务，CI 用 mock 构建的 preview，
 // 避免 dev server 按需编译在并行用例下造成首屏超时。端口按 worktree 区分，复用的只会是本检出

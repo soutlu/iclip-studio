@@ -1,10 +1,8 @@
-/** 测试用的请求、组件目录、队列与假的渲染器。 */
 import catalogJson from '../../web/scripts/hyperframes-fixtures/catalog.json'
 import type { ComponentCatalog } from '../../web/src/features/storyboard/whole-film/composition/catalog'
 import type { ExportWorker, RenderedFile, UploadTarget } from './jobs'
 import { createLogger, type Logger } from './log'
 
-/** 测试组件库（web/scripts/hyperframes-fixtures/）的组件目录，配一个固定的版本号；不需要组装好的组件库。 */
 export const catalog: ComponentCatalog = {
   ...(catalogJson as Omit<ComponentCatalog, 'version'>),
   version: 'test-fixtures',
@@ -14,7 +12,6 @@ export const SOURCE_JOB = '6f1b5c3e-2a4d-4e8f-9b1c-0d2e3f4a5b6c'
 export const SUBTITLE_JOB = '7a2c6d4f-3b5e-4f9a-8c2d-1e3f4a5b6c7d'
 export const MUSIC_JOB = '8b3d7e5a-4c6f-4a0b-9d3e-2f4a5b6c7d8e'
 
-/** 一份合法的 POST /exports 请求体：一段素材片带字幕、配乐、一个包装。 */
 export function exportRequest(
   overrides: { id?: string; mediaHost?: string } = {},
 ): Record<string, unknown> {
@@ -75,7 +72,6 @@ export function exportRequest(
   }
 }
 
-/** 收集日志行的记录器。 */
 export function memoryLogger(): { logger: Logger; lines: Record<string, unknown>[] } {
   const lines: Record<string, unknown>[] = []
   return {
@@ -91,9 +87,6 @@ interface Pending<T> {
   reject(error: unknown): void
 }
 
-/**
- * 手动推进的假渲染器：每次 render / upload 挂起，由测试决定何时完成、失败或观察取消。
- */
 export function manualWorker() {
   const renders: {
     id: string
@@ -136,5 +129,4 @@ export function manualWorker() {
   return { worker, renders, uploads, cleaned, rendered }
 }
 
-/** 等挂起的 promise 链走完一轮。 */
 export const flush = () => new Promise((resolve) => setImmediate(resolve))

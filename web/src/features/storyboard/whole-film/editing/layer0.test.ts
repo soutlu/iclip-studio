@@ -30,11 +30,9 @@ const context = contextOf(
     wide: { ...source(5_000), width: 1920, height: 1080 },
   },
   {},
-  // long 比 120 秒还长，只受总长上限约束
   { card: 3_000, long: 200_000 },
 )
 
-/** 组件段 2 秒、两段视频、组件段 1.5 秒：c1 0–2000、v1 2000–5000、v2 5000–7000、c2 7000–8500 */
 const withCards = () =>
   draftOf([
     card('c1', 2_000),
@@ -121,7 +119,6 @@ describe('insertMaterial', () => {
       ok: false,
       refusal: 'film-too-long',
     })
-    // 几段一起加时按几段的总长算
     const pieces = (last: number) => ({
       sourceJobId: 'big',
       pieces: [
@@ -290,7 +287,6 @@ describe('moveClips', () => {
   it('连着的几段当成一整块挪，块里先后不变', () => {
     expect(move(withCards(), ['v1', 'v2'], 0)).toEqual(['v1', 'v2', 'c1', 'c2'])
     expect(move(withCards(), ['c1', 'v1'], 4)).toEqual(['v2', 'c2', 'c1', 'v1'])
-    // ⌥→ 往后挪一位：落点是块后第二段之前
     const { draft } = expectOk(moveClips(withCards(), { clipIds: ['c1', 'v1'], to: 3 }))
     expect(spans(draft)).toEqual([
       ['v2', 0, 2_000],
@@ -316,7 +312,6 @@ describe('moveClips', () => {
 })
 
 describe('trimClip', () => {
-  /** v1 0–3000（s1 入点 1000）、v2 3000–5000，1 秒处有特效块 */
   const base = (): WholeFilmDraft =>
     draftOf([video('v1', 's1', 1_000, 3_000), video('v2', 's2', 0, 2_000)], {
       overlays: [overlay('o1', 1_000, 500)],

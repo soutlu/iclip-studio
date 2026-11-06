@@ -1,9 +1,3 @@
-"""发消息的附件接到 uploads：挂不上 OSS 处理参数的图片地址先转存进本桶，消息里存新地址。
-
-给模型的缩图、查图片信息、缩放与裁切都要在地址后面挂 OSS 处理参数；外部地址、带签名 query 的
-地址挂不上，受理前在这里换成本桶里的一份。视频不挂参数，不转存。
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -11,35 +5,26 @@ import uuid
 from typing import Final, Protocol
 
 import structlog
+from agent_runtime.errors import ValidationFailed
+from agent_runtime.transcript.ops import ImageContent, PromptContent
+from agent_runtime.urls import is_http_url, is_oss_processable
 
-from iclip.common.errors import ValidationFailed
-from iclip.common.urls import is_http_url, is_oss_processable
 from iclip.domains.identity.public import Principal
-from iclip.platform.transcript.ops import ImageContent, PromptContent
 
 _logger = structlog.stdlib.get_logger(__name__)
 
 UPLOAD_ID_NAMESPACE: Final = uuid.UUID("c14654b9-c134-4d85-9746-ebe95a5b8263")
-"""转存的上传 id 按（主体，对话，消息 id，原地址）在这个命名空间里算 uuid5，同一条消息重发
-时算出同一个 id，uploads 认出记过就不再下载。改了它，已转存的消息重发会再转一份。"""
 
 
 def needs_import(url: str) -> bool:
-    """是 http(s) 地址却挂不上 OSS 处理参数。不是 http(s) 的不转存，留给受理时的校验返回 422。"""
-
     return is_http_url(url) and not is_oss_processable(url)
 
 
 class ImportImage(Protocol):
-    """uploads 的按地址转存一张图片（``UploadService.import_image``）。"""
-
     async def __call__(self, principal: Principal, url: str, *, upload_id: uuid.UUID) -> str: ...
 
 
 class PromptAttachmentImporter:
-    """``ImportAttachments`` 端口的实现：逐个找出要转存的图片附件，并发交给 uploads 转存，
-    再把消息里的地址换掉。同一个地址出现几次只转一次。"""
-
     def __init__(self, import_image: ImportImage) -> None:
         self._import_image = import_image
 
@@ -51,11 +36,6 @@ class PromptAttachmentImporter:
         prompt_id: str | None,
         content: tuple[PromptContent, ...],
     ) -> tuple[PromptContent, ...]:
-        """交回换过地址的 content。有一张转存不了（``ValidationFailed``）就整条拒绝，报错里说是
-        第几张附件；同时在转的其余几张照样转完、记录保留，同一个 ``prompt_id`` 重发时直接复用。
-        写桶等其他失败原样抛出。"""
-
-        # 原地址 → 它第一次出现时是第几张附件（图片与视频一起从 1 数）。
         ordinals: dict[str, int] = {}
         attachments = (part for part in content if part.type != "text")
         for ordinal, part in enumerate(attachments, start=1):
@@ -64,7 +44,6 @@ class PromptAttachmentImporter:
                 ordinals.setdefault(url, ordinal)
         if not ordinals:
             return content
-        # 等所有转存都有结果再报错：已经转成的留下记录，重发同一条消息时不再下载。
         results = await asyncio.gather(
             *(self._import(principal, conversation_id, prompt_id, url) for url in ordinals),
             return_exceptions=True,
@@ -81,7 +60,6 @@ class PromptAttachmentImporter:
     async def _import(
         self, principal: Principal, conversation_id: str, prompt_id: str | None, url: str
     ) -> str:
-        # 不带消息 id 的重新生成没有可复算的键，每次都算一个新的。
         upload_id = (
             uuid.uuid4()
             if prompt_id is None

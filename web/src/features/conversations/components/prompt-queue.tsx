@@ -1,5 +1,3 @@
-/** 队列状态来自服务端 prompts；仅提供追加和撤回，服务端没有重排接口。 */
-
 import { useState } from 'react'
 import { Icon } from '@/shared/icons'
 import { fileNameOfUrl } from '@/shared/lib/media-url'
@@ -16,9 +14,7 @@ type QueueItem = {
 
 type PromptQueueProps = {
   prompts: readonly QueueItem[]
-  /** 仅运行中的轮次支持立即追加。 */
   canSteer: boolean
-  /** 看别人的对话：队列只展示，没有追加与撤回。 */
   readOnly: boolean
   onSteer: (promptId: string) => void
   onDiscard: (promptId: string) => void
@@ -49,7 +45,6 @@ export function PromptQueue({ canSteer, onDiscard, onSteer, prompts, readOnly }:
           ))}
         </section>
       )}
-      {/* 挂在队列外：正在看的那条被发走、队列清空时，灯箱不跟着消失。 */}
       <MediaLightbox media={viewing} onClose={() => setViewing(null)} />
     </>
   )

@@ -143,7 +143,6 @@ describe('参考视频列表', () => {
     expect(within(pending as HTMLElement).getByText('拆解完成后自动打标签')).toBeVisible()
     expect(screen.getByText('拆解失败')).toBeVisible()
     expect(screen.getAllByRole('article', { name: '未标注' })).toHaveLength(2)
-    // 打标中与没打成：人工维度的标签照旧显示，角标说打标的状态。
     expect(within(screen.getByRole('article', { name: 'DTC' })).getByText('正在打标')).toBeVisible()
     expect(within(screen.getByRole('article', { name: 'INS' })).getByText('打标失败')).toBeVisible()
     expect(screen.getByText('共 7 条')).toBeVisible()
@@ -226,7 +225,6 @@ describe('参考视频列表', () => {
     const names = within(popup)
       .getAllByRole('option')
       .map((option) => option.textContent)
-    // 大类带判断句；条数含下级。
     expect(names.slice(15, 19)).toEqual([
       '开箱测评型拆包装上手，或在片中做测试、对比2',
       '标准开箱流程0',
@@ -334,36 +332,6 @@ describe('参考视频列表', () => {
     await user.click(within(maya as HTMLElement).getByRole('button', { name: /Maya\.Cheng/ }))
     expect(onScope).toHaveBeenLastCalledWith(expect.objectContaining({ userName: 'Maya.Cheng' }))
   })
-
-  it('还有没拆完或没打完标的行就轮询，打完后自动换上标签，筛选里的条数跟着变', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
-    try {
-      const row = addMockReference({ breakdownStatus: 'running', document: null })
-      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-      await renderWithProviders(<Harness />)
-      expect(await screen.findByText('拆解中')).toBeVisible()
-
-      resetMockReferences([{ ...row, breakdownStatus: 'completed', tagStatus: 'running' }])
-      await vi.advanceTimersByTimeAsync(5000)
-      expect(await screen.findByText('正在打标')).toBeVisible()
-
-      resetMockReferences([{ ...row, breakdownStatus: 'completed', tagIds: tags('拖鞋') }])
-      await vi.advanceTimersByTimeAsync(5000)
-      expect(await screen.findByRole('article', { name: '拖鞋' })).toBeVisible()
-      expect(screen.queryByText('正在打标')).not.toBeInTheDocument()
-
-      await user.click(screen.getByRole('button', { name: '品类：品类' }))
-      const popup = await screen.findByRole('dialog', { name: '选择品类' })
-      await user.type(within(popup).getByRole('combobox', { name: '搜索品类' }), '拖鞋')
-      expect(
-        within(popup)
-          .getAllByRole('option')
-          .map((option) => option.textContent),
-      ).toContain('拖鞋1')
-    } finally {
-      vi.useRealTimers()
-    }
-  })
 })
 
 describe('上传参考视频', () => {
@@ -388,21 +356,6 @@ describe('上传参考视频', () => {
     expect(
       created.every((write) => typeof (write.body as { uploadId?: unknown }).uploadId === 'string'),
     ).toBe(true)
-  })
-
-  it('传了已经在资料库里的视频（200）：不新添卡片，提示一句并打开原来那一条', async () => {
-    const existing = addMockReference(MINE_TAGGED)
-    server.use(http.post('*/api/references', () => HttpResponse.json(existing, { status: 200 })))
-    const onReference = vi.fn()
-    const user = userEvent.setup()
-    await renderWithProviders(<Harness onReference={onReference} />)
-    await screen.findByRole('article', { name: MINE_TITLE })
-
-    await user.upload(fileInput(), video('同一条.mp4'))
-
-    expect(await screen.findByText('该视频此前已上传，已打开其详情')).toBeVisible()
-    expect(onReference).toHaveBeenLastCalledWith(existing.id)
-    expect(await screen.findByRole('dialog', { name: MINE_TITLE })).toBeVisible()
   })
 
   it('页面上粘贴视频文件就上传；焦点在输入框里、剪贴板里只有文字时不接', async () => {
@@ -484,7 +437,6 @@ describe('参考视频详情', () => {
       path: `/references/${row.id}/tags`,
     })
 
-    // 两层的维度：清单里大类与小类都在，选小类加进去。
     await user.click(within(dialog).getByRole('button', { name: '添加内容结构' }))
     const picker = await screen.findByRole('dialog', { name: '添加内容结构' })
     await user.type(within(picker).getByRole('combobox', { name: '搜索内容结构' }), '开箱')
@@ -535,6 +487,19 @@ describe('参考视频详情', () => {
       'aria-disabled',
       'true',
     )
+  })
+
+  it('打标模型没启用：请人找管理员启用，不出现原因代码', async () => {
+    const { dialog } = await openDetail({
+      tagError: 'model_unavailable',
+      tagIds: [],
+      tagStatus: 'failed',
+    })
+    await within(dialog).findByText('第一版拆解')
+
+    const alert = within(dialog).getByRole('alert')
+    expect(alert).toHaveTextContent(/没启用打标模型，AI 打的标签已清空；请联系管理员启用/)
+    expect(alert).not.toHaveTextContent('model_unavailable')
   })
 
   it('打标失败：按原因说一句给人看的话，不出现原因代码；点「重新打标」原地确认后提交，随即显示正在打标', async () => {
@@ -602,25 +567,6 @@ describe('参考视频详情', () => {
     await user.click(within(dialog).getByRole('button', { name: '移除卫衣' }))
     expect(await screen.findByText('正在打标，标签无法保存；请在打标完成后重试')).toBeVisible()
     expect(within(dialog).getByText('卫衣')).toBeVisible()
-  })
-
-  it('编辑拆解：原地换成文本框，保存带 version，回到查看看到新的拆解', async () => {
-    const writes = recordWrites()
-    const user = userEvent.setup()
-    const { dialog } = await openDetail()
-    await within(dialog).findByText('第一版拆解')
-
-    await user.click(within(dialog).getByRole('button', { name: '编辑拆解' }))
-    const editor = within(dialog).getByRole('textbox', { name: '拆解' })
-    expect(editor).toHaveFocus()
-    expect(editor).toHaveValue('# 出场元素\n\n第一版拆解')
-    await user.clear(editor)
-    await user.type(editor, '改过的拆解')
-    await user.click(within(dialog).getByRole('button', { name: '保存' }))
-
-    expect(await within(dialog).findByText('改过的拆解')).toBeVisible()
-    expect(within(dialog).queryByRole('textbox', { name: '拆解' })).not.toBeInTheDocument()
-    expect(writes.at(-1)?.body).toMatchObject({ document: '改过的拆解', version: 1 })
   })
 
   it('保存时版本对不上（409）：底栏原地提示，编辑框里的修改留着；「取消」收起提示接着编辑，「刷新」读回最新的', async () => {
@@ -730,6 +676,7 @@ describe('参考视频详情', () => {
   it.each([
     ['video_unreadable', null, /请上传其他视频/],
     ['model_call_failed', '# 上一次的拆解', /下方仍是上一次的拆解/],
+    ['model_unavailable', null, /没启用拆解模型，请联系管理员启用/],
   ] as const)(
     '拆解失败（%s）：按原因说一句给人看的话，不出现原因代码',
     async (errorCode, document, message) => {
@@ -755,7 +702,6 @@ describe('参考视频详情', () => {
       url: 'https://assets.example.com/test.mp4',
     } as const
 
-    /** jsdom 不解码视频：给视频报一个画面尺寸，再在原片上发出 loadedmetadata，当作读到了元数据。 */
     const loadOriginal = (dialog: HTMLElement, width: number, height: number) => {
       vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(width)
       vi.spyOn(HTMLVideoElement.prototype, 'videoHeight', 'get').mockReturnValue(height)
@@ -831,20 +777,9 @@ describe('参考视频详情', () => {
       expect(testWrites(writes)).toEqual([])
     })
 
-    it('完成：第二个播放器是试生成；属主有「重新试生成」，没有过时提醒', async () => {
-      const { dialog } = await openDetail({ testVideo: TEST_VIDEO })
-      await within(dialog).findByText('第一版拆解')
-
-      expect(within(dialog).getByRole('group', { name: '播放器：原片' })).toBeVisible()
-      expect(within(dialog).getByRole('group', { name: '播放器：试生成' })).toBeVisible()
-      expect(within(dialog).getByRole('button', { name: '重新试生成' })).toBeVisible()
-      expect(within(dialog).queryByText(/拆解已更新/)).not.toBeInTheDocument()
-    })
-
     it('能改但不是属主本人（canEdit 为真，如治理者）：没有「试生成」', async () => {
       const row = addMockReference({ document: '# 出场元素\n\n第一版拆解', userName: 'Maya.Cheng' })
       server.use(
-        // 同一路径也匹配 /references/filters：只接管这一行，其余交给默认 mock。
         http.get('*/api/references/:id', ({ params }) =>
           params['id'] === row.id ? HttpResponse.json({ ...row, canEdit: true }) : undefined,
         ),

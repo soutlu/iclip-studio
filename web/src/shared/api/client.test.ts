@@ -8,7 +8,6 @@ const FALLBACK = '读取示例失败'
 const probeSchema = z.object({ title: z.string() })
 const readProbe = () => apiFetch('/probe', probeSchema, { fallbackErrorMessage: FALLBACK })
 
-/** 断言失败被包成可直接展示的 ApiError，返回它供进一步检查。 */
 const rejectionOf = async (promise: Promise<unknown>): Promise<ApiError> => {
   const error: unknown = await promise.then(
     () => undefined,
@@ -88,6 +87,15 @@ describe('apiFetch 失败形态', () => {
 
     expect(error.status).toBe(status)
     expect(error.message).toBe(message)
+  })
+
+  it('HTTP 失败的 JSON 正文原样留在 body，信封外的字段由调用方再校验；正文不是 JSON 时 body 为空', async () => {
+    const envelope = { detail: '发布被拦下', problems: [{ path: 'model', message: '请选择模型' }] }
+    server.use(http.get('*/api/probe', () => HttpResponse.json(envelope, { status: 422 })))
+    expect((await rejectionOf(readProbe())).body).toEqual(envelope)
+
+    server.use(http.get('*/api/probe', () => new HttpResponse('Bad Gateway', { status: 502 })))
+    expect((await rejectionOf(readProbe())).body).toBeUndefined()
   })
 })
 

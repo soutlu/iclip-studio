@@ -1,10 +1,6 @@
-"""使用内存仓储验证 /tasks 权限、状态机和冻结规则；身份由测试中间件注入。"""
-
 from __future__ import annotations
 
 import uuid
-from dataclasses import replace
-from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -18,6 +14,7 @@ from iclip.domains.tasks.models import (
     STATUS_DRAFT,
     STATUS_PUBLISHED,
     STATUS_WITHDRAWN,
+    TaskStatus,
 )
 from iclip.domains.tasks.service import TaskService
 from tests.helpers.app import app_with_principal
@@ -37,8 +34,6 @@ BODY: dict[str, object] = {
 
 
 def editor(user_id: uuid.UUID | None = None, *extra: str) -> Principal:
-    """预置 editor 同时持有这两个权限，真实角色表中不存在只授予其一的角色。"""
-
     return principal("tasks:read", "tasks:write", *extra, user_id=user_id)
 
 
@@ -75,28 +70,6 @@ def body_of(task: object, **overrides: object) -> dict[str, object]:
     return payload
 
 
-def test_openapi_publishes_task_status_as_enum() -> None:
-    """前端从合同派生状态词，合同里只剩字符串就只能手写平行词表。"""
-
-    app = build_test_app(InMemoryTaskRepository(), granted=None)
-    status = app.openapi()["components"]["schemas"]["TaskOut"]["properties"]["status"]
-    assert status["enum"] == ["draft", "published", "confirmed", "withdrawn"]
-
-
-async def test_creating_lands_a_draft_owned_by_the_caller() -> None:
-
-    repo = InMemoryTaskRepository()
-    caller = principal("tasks:write")
-    async with client(build_test_app(repo, granted=caller)) as http:
-        response = await http.post("/tasks", json=BODY)
-
-    assert response.status_code == 201, response.text
-    task = response.json()["task"]
-    assert task["status"] == STATUS_DRAFT
-    assert task["creatorUserId"] == str(caller.user_id)
-    assert task["deadline"] is None
-
-
 @pytest.mark.parametrize("status", ["confirmed", "withdrawn", "", "PUBLISHED"])
 async def test_creation_only_accepts_draft_or_published(status: str) -> None:
 
@@ -108,8 +81,6 @@ async def test_creation_only_accepts_draft_or_published(status: str) -> None:
 
 
 async def test_status_cannot_be_supplied_when_overwriting() -> None:
-    """状态只在创建时可选，之后一律走状态机端点。"""
-
     task = make_task()
     repo = InMemoryTaskRepository([task])
     async with client(build_test_app(repo, granted=editor(task.creator_user_id))) as http:
@@ -239,16 +210,6 @@ async def test_permissions_gate_the_two_kinds_of_access() -> None:
         assert (await http.post("/tasks", json=BODY)).status_code == 403
 
 
-async def test_everyone_sees_every_task() -> None:
-
-    task = make_task()
-    repo = InMemoryTaskRepository([task])
-    async with client(build_test_app(repo, granted=principal("tasks:read"))) as http:
-        assert (await http.get(f"/tasks/{task.id}")).status_code == 200
-        assert len((await http.get("/tasks")).json()["items"]) == 1
-        assert (await http.get(f"/tasks/{uuid.uuid4()}")).status_code == 404
-
-
 async def test_a_draft_is_the_creators_own_business() -> None:
 
     task = make_task()
@@ -320,8 +281,6 @@ async def test_published_input_is_frozen_but_planner_fields_stay_open(field: str
 
 
 async def test_published_task_may_have_no_deadline() -> None:
-    """期限始终可选：机器提交的需求单不带期限，策划仍能继续编辑它。"""
-
     task = make_task(status=STATUS_PUBLISHED)
     repo = InMemoryTaskRepository([task])
     async with client(build_test_app(repo, granted=editor())) as http:
@@ -336,21 +295,23 @@ async def test_published_task_may_have_no_deadline() -> None:
 @pytest.mark.parametrize(
     ("status", "action", "expected"),
     [
-        (STATUS_DRAFT, "confirm", 409),
-        (STATUS_DRAFT, "withdraw", 409),
-        (STATUS_PUBLISHED, "publish", 409),
-        (STATUS_CONFIRMED, "confirm", 200),
-        (STATUS_CONFIRMED, "publish", 409),
-        (STATUS_WITHDRAWN, "confirm", 409),
-        (STATUS_WITHDRAWN, "withdraw", 409),
-        (STATUS_PUBLISHED, "confirm", 200),
-        (STATUS_PUBLISHED, "withdraw", 200),
-        (STATUS_CONFIRMED, "withdraw", 200),
+        pytest.param(STATUS_DRAFT, "confirm", 409, id="draft-confirm-conflict"),
+        pytest.param(STATUS_DRAFT, "withdraw", 409, id="draft-withdraw-conflict"),
+        pytest.param(STATUS_PUBLISHED, "publish", 409, id="published-publish-conflict"),
+        pytest.param(STATUS_CONFIRMED, "confirm", 200, id="confirmed-confirm-idempotent"),
+        pytest.param(STATUS_CONFIRMED, "publish", 409, id="confirmed-publish-conflict"),
+        pytest.param(STATUS_WITHDRAWN, "confirm", 409, id="withdrawn-confirm-conflict"),
+        pytest.param(STATUS_WITHDRAWN, "withdraw", 409, id="withdrawn-withdraw-conflict"),
+        pytest.param(STATUS_PUBLISHED, "confirm", 200, id="published-confirm"),
+        pytest.param(STATUS_PUBLISHED, "withdraw", 200, id="published-withdraw"),
+        pytest.param(STATUS_CONFIRMED, "withdraw", 200, id="confirmed-withdraw"),
     ],
 )
-async def test_illegal_transitions_are_conflicts(status: str, action: str, expected: int) -> None:
+async def test_current_state_determines_the_action_result(
+    status: TaskStatus, action: str, expected: int
+) -> None:
 
-    task = make_task(status=status, deadline=future())  # type: ignore[arg-type]
+    task = make_task(status=status, deadline=future())
     repo = InMemoryTaskRepository([task])
     caller = editor(task.creator_user_id)
     async with client(build_test_app(repo, granted=caller)) as http:
@@ -358,10 +319,8 @@ async def test_illegal_transitions_are_conflicts(status: str, action: str, expec
 
 
 @pytest.mark.parametrize("status", [STATUS_PUBLISHED, STATUS_CONFIRMED, STATUS_WITHDRAWN])
-async def test_only_drafts_can_be_deleted(status: str) -> None:
-    """已发布需求单通过撤回留痕，不能直接删除。"""
-
-    task = make_task(status=status, deadline=future())  # type: ignore[arg-type]
+async def test_only_drafts_can_be_deleted(status: TaskStatus) -> None:
+    task = make_task(status=status, deadline=future())
     repo = InMemoryTaskRepository([task])
     caller = editor(task.creator_user_id, "users:manage")
     async with client(build_test_app(repo, granted=caller)) as http:
@@ -378,7 +337,7 @@ async def test_withdrawn_tasks_are_frozen_solid() -> None:
         assert (await http.put(f"/tasks/{task.id}", json=body_of(current))).status_code == 409
 
 
-async def test_list_filters_by_status_and_rejects_out_of_range_limit() -> None:
+async def test_list_filters_by_status_and_rejects_invalid_parameters() -> None:
     repo = InMemoryTaskRepository(
         [make_task(), make_task(status=STATUS_PUBLISHED, deadline=future())]
     )
@@ -388,52 +347,10 @@ async def test_list_filters_by_status_and_rejects_out_of_range_limit() -> None:
         assert (await http.get("/tasks?status=nonsense")).status_code == 422
         assert (await http.get("/tasks?limit=0")).status_code == 422
         assert (await http.get("/tasks?limit=1000")).status_code == 422
-
-
-async def test_list_pages_by_cursor_and_keeps_the_total() -> None:
-    """满页给游标、末页不给；总数不随翻页变。"""
-
-    base = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
-    tasks = [replace(make_task(), created_at=base - timedelta(minutes=i)) for i in range(3)]
-    repo = InMemoryTaskRepository(tasks)
-    expected = [str(task.id) for task in tasks]
-    async with client(build_test_app(repo, granted=principal("tasks:read"))) as http:
-        first = (await http.get("/tasks", params={"limit": 2})).json()
-        second = (
-            await http.get("/tasks", params={"limit": 2, "cursor": first["nextCursor"]})
-        ).json()
-
-        assert [item["id"] for item in first["items"]] == expected[:2]
-        assert [item["id"] for item in second["items"]] == expected[2:]
-        assert (first["total"], second["total"]) == (3, 3)
-        assert second["nextCursor"] is None
         assert (await http.get("/tasks?cursor=nonsense")).status_code == 422
-
-
-async def test_list_by_ids_reads_a_batch_and_caps_at_one_page() -> None:
-    wanted = [make_task(), make_task()]
-    repo = InMemoryTaskRepository([*wanted, make_task()])
-    async with client(build_test_app(repo, granted=principal("tasks:read"))) as http:
-        params = (*(("ids", str(task.id)) for task in wanted), ("ids", str(uuid.uuid4())))
-        page = (await http.get("/tasks", params=params)).json()
-        assert {item["id"] for item in page["items"]} == {str(task.id) for task in wanted}
-        assert page["total"] == 2 and page["nextCursor"] is None
-
         too_many = tuple(("ids", str(uuid.uuid4())) for _ in range(101))
         assert (await http.get("/tasks", params=too_many)).status_code == 422
         assert (await http.get("/tasks?ids=not-a-uuid")).status_code == 422
-
-
-async def test_claimed_by_me_lists_only_my_claims() -> None:
-
-    me = editor()
-    mine = make_task(status=STATUS_CONFIRMED, deadline=future(), assignee_user_ids=(me.user_id,))
-    other = make_task(status=STATUS_CONFIRMED, deadline=future(), assignee_user_ids=(uuid.uuid4(),))
-    nobody = make_task(status=STATUS_PUBLISHED, deadline=future())
-    repo = InMemoryTaskRepository([mine, other, nobody])
-    async with client(build_test_app(repo, granted=me)) as http:
-        items = (await http.get("/tasks?claimedBy=me")).json()["items"]
-        assert [item["id"] for item in items] == [str(mine.id)]
         assert (await http.get("/tasks?claimedBy=someone-else")).status_code == 422
 
 

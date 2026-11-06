@@ -50,7 +50,6 @@ describe('fetchTaskConversations', () => {
     )
 
     await expect(fetchTaskConversations(TASK_ID, true, signal())).resolves.toEqual([first, second])
-    // state 与列表页共用一个构造器，取的是接口默认的 all。
     expect(requests.map((params) => Object.fromEntries(params))).toEqual([
       { taskId: TASK_ID, deleted: 'live', limit: '100', state: 'all' },
       { taskId: TASK_ID, deleted: 'live', limit: '100', state: 'all', cursor: nextCursor },
@@ -125,25 +124,40 @@ const conversationWith = (activity: Partial<Conversation['activity']>): Conversa
 }
 
 describe('taskConversationsRefetchInterval', () => {
-  it.each([
-    ['对话在跑', { busy: true }],
-    ['出片排队中', { videoGeneration: 'queued' as const }],
-    ['出片生成中', { videoGeneration: 'running' as const }],
-  ])('%s 时每五秒兜底刷新', (_label, activity) => {
+  it('对话在跑时每五秒兜底刷新', () => {
     expect(
-      taskConversationsRefetchInterval([
-        conversationWith({ busy: false, lastTurnReason: 'completed' }),
-        conversationWith(activity),
-      ]),
+      taskConversationsRefetchInterval(
+        [
+          conversationWith({ busy: false, lastTurnReason: 'completed' }),
+          conversationWith({ busy: true }),
+        ],
+        {},
+      ),
     ).toBe(5000)
   })
 
-  it('全部对话都闲着时停止轮询', () => {
+  it.each(['queued', 'running'] as const)(
+    '列表里的对话在视频进度里（%s）时每五秒兜底刷新',
+    (phase) => {
+      const idle = conversationWith({ busy: false, lastTurnReason: 'completed' })
+      const making = conversationWith({ busy: false, lastTurnReason: 'completed' })
+      expect(taskConversationsRefetchInterval([idle, making], { [making.id]: phase })).toBe(5000)
+    },
+  )
+
+  it('视频进度里只有别的对话时不算：全部对话都闲着就停止轮询', () => {
     expect(
-      taskConversationsRefetchInterval([
-        conversationWith({ busy: false, lastTurnReason: 'completed' }),
-        conversationWith({ busy: false, lastTurnReason: 'failed', pendingInteraction: 'approval' }),
-      ]),
+      taskConversationsRefetchInterval(
+        [
+          conversationWith({ busy: false, lastTurnReason: 'completed' }),
+          conversationWith({
+            busy: false,
+            lastTurnReason: 'failed',
+            pendingInteraction: 'approval',
+          }),
+        ],
+        { [crypto.randomUUID()]: 'running' },
+      ),
     ).toBe(false)
   })
 
@@ -151,6 +165,6 @@ describe('taskConversationsRefetchInterval', () => {
     ['还没读到结果', undefined],
     ['一个对话都没有', []],
   ])('%s 时不轮询', (_label, conversations) => {
-    expect(taskConversationsRefetchInterval(conversations)).toBe(false)
+    expect(taskConversationsRefetchInterval(conversations, undefined)).toBe(false)
   })
 })

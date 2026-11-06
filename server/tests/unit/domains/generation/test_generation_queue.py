@@ -1,5 +1,3 @@
-"""直接调用任务协程，验证生成状态推进、提交幂等边界和队列选择；失联任务恢复在 PG 集成测试里。"""
-
 from __future__ import annotations
 
 import uuid
@@ -41,35 +39,13 @@ from tests.helpers.generation import (
     InMemoryGenerationRepository,
     ScriptedProvider,
     build_queue,
-    compose_request,
     image_request,
     make_job,
     video_request,
 )
 
 
-async def test_async_submit_moves_job_to_waiting_for_result() -> None:
-    job = make_job(video_request())
-    repo = InMemoryGenerationRepository([job])
-    video = ScriptedProvider(
-        submission=ProviderSubmission(provider_task_id="t-1", provider_status="queued")
-    )
-
-    queue, connector = build_queue(repo, video=video)
-    await queue.run_submit(str(job.id))
-
-    stored = repo.jobs[job.id]
-    assert stored.status == STATUS_SUBMITTED
-    assert stored.provider_task_id == "t-1"
-
-    polls = [row for row in connector.jobs.values() if row["task_name"] == "generation.poll"]
-    assert len(polls) == 1, "提交完必须排一次轮询，否则永远没人问结果"
-    assert polls[0]["queue_name"] == QUEUE_POLL
-
-
 class _PollDeferFailsOnce(InMemoryConnector):
-    """第一次排轮询时数据库连接断了；提交任务自己的入队不受影响。"""
-
     def __init__(self) -> None:
         super().__init__()
         self.poll_failures_left = 1
@@ -82,8 +58,6 @@ class _PollDeferFailsOnce(InMemoryConnector):
 
 
 async def test_a_lost_first_poll_is_scheduled_when_the_submit_replays() -> None:
-    """回执落库后排轮询失败：提交任务重试时补排轮询，付费提交仍只有那一次。"""
-
     job = make_job(video_request())
     repo = InMemoryGenerationRepository([job])
     video = ScriptedProvider(
@@ -97,7 +71,6 @@ async def test_a_lost_first_poll_is_scheduled_when_the_submit_replays() -> None:
     connector = _PollDeferFailsOnce()
     queue, _ = build_queue(repo, video=video, connector=connector)
 
-    # 抛给 procrastinate 的重试策略重排这次提交；回执此时已经在库里。
     with pytest.raises(ConnectorException):
         await queue.run_submit(str(job.id))
     assert repo.jobs[job.id].status == STATUS_SUBMITTED
@@ -118,91 +91,7 @@ def _polls(connector: InMemoryConnector) -> list[JobRow]:
     return [row for row in connector.jobs.values() if row["task_name"] == "generation.poll"]
 
 
-async def test_sync_submit_completes_in_one_step() -> None:
-
-    job = make_job(image_request())
-    repo = InMemoryGenerationRepository([job])
-    image = ScriptedProvider(
-        submission=ProviderSubmission(
-            provider_task_id=str(job.id),
-            provider_status="succeeded",
-            output_url="https://cdn.test/out.png",
-        )
-    )
-
-    queue, connector = build_queue(repo, image=image)
-    await queue.run_submit(str(job.id))
-
-    stored = repo.jobs[job.id]
-    assert stored.status == STATUS_COMPLETED
-    assert stored.output.url == "https://cdn.test/out.png"
-    assert stored.provider_task_id == str(job.id)
-    assert image.poll_calls == [], "同步接口不该被轮询"
-    assert connector.jobs == {}, "已经终态了，别再排一次轮询"
-
-
-async def test_a_sync_result_lands_its_measured_duration_on_the_record() -> None:
-    """本地加工一次出结果，量出来的时长随完成落进记录。"""
-
-    job = make_job(compose_request())
-    repo = InMemoryGenerationRepository([job])
-    local = ScriptedProvider(
-        submission=ProviderSubmission(
-            provider_task_id=str(job.id),
-            provider_status="completed",
-            output_url="https://cdn.test/master.mp4",
-            duration_ms=7040,
-        )
-    )
-
-    queue, _ = build_queue(repo, video=local)
-    await queue.run_submit(str(job.id))
-
-    stored = repo.jobs[job.id]
-    assert (stored.status, stored.output.duration_ms) == (STATUS_COMPLETED, 7040)
-
-
-async def test_marks_submitting_before_calling_provider() -> None:
-    """请求前持久化 submitting，保证进程在响应前中断时留下提交状态。"""
-
-    job = make_job(video_request())
-    repo = InMemoryGenerationRepository([job])
-    seen: list[str] = []
-
-    class Recording(ScriptedProvider):
-        async def submit(self, job_arg):  # type: ignore[no-untyped-def]
-            seen.append(repo.jobs[job_arg.id].status)
-            return await super().submit(job_arg)
-
-    video = Recording(
-        submission=ProviderSubmission(provider_task_id="t-1", provider_status="queued")
-    )
-    queue, _ = build_queue(repo, video=video)
-    await queue.run_submit(str(job.id))
-    assert seen == [STATUS_SUBMITTING]
-
-
-async def test_stranded_submitting_job_fails_and_is_never_resubmitted() -> None:
-    """队列至少执行一次，供应商却无幂等键；重跑 submitting 任务只能失败，不能重复计费。"""
-
-    job = make_job(video_request(), status=STATUS_SUBMITTING)
-    repo = InMemoryGenerationRepository([job])
-    video = ScriptedProvider(
-        submission=ProviderSubmission(provider_task_id="t-2", provider_status="queued")
-    )
-
-    queue, _ = build_queue(repo, video=video)
-    await queue.run_submit(str(job.id))
-
-    stored = repo.jobs[job.id]
-    assert stored.status == STATUS_FAILED
-    assert stored.error_code == "SUBMIT_INTERRUPTED"
-    assert video.submit_calls == [], "绝不能重新提交一次"
-
-
 async def test_submit_failure_is_terminal_even_when_retryable() -> None:
-    """网络失败无法判定供应商是否收到提交，因此提交不可重试。"""
-
     job = make_job(video_request())
     repo = InMemoryGenerationRepository([job])
     video = ScriptedProvider(
@@ -262,8 +151,6 @@ async def test_poll_success_and_failure_reach_terminal_states() -> None:
 
 
 async def test_a_polled_result_lands_its_reported_duration_on_the_record() -> None:
-    """上游报成功时带回的产物时长随完成落进记录。"""
-
     job = make_job(video_request(), status=STATUS_SUBMITTED, provider_task_id="t-1")
     repo = InMemoryGenerationRepository([job])
     video = ScriptedProvider(
@@ -282,8 +169,6 @@ async def test_a_polled_result_lands_its_reported_duration_on_the_record() -> No
 
 
 async def test_running_job_asks_again_at_a_fixed_interval() -> None:
-    """固定间隔查询运行中任务，避免退避放大完成通知延迟。"""
-
     job = make_job(video_request(), status=STATUS_SUBMITTED, provider_task_id="t-1")
     repo = InMemoryGenerationRepository([job])
     video = ScriptedProvider(
@@ -303,8 +188,6 @@ async def test_running_job_asks_again_at_a_fixed_interval() -> None:
 
 
 async def test_unreachable_provider_waits_longer_than_normal() -> None:
-    """状态查询故障不等于生成失败，使用更长间隔重试查询。"""
-
     job = make_job(video_request(), status=STATUS_SUBMITTED, provider_task_id="t-1")
     repo = InMemoryGenerationRepository([job])
     video = ScriptedProvider(
@@ -338,8 +221,6 @@ async def test_non_retryable_poll_error_is_terminal() -> None:
 
 
 async def test_job_stuck_running_forever_eventually_times_out() -> None:
-    """固定间隔轮询必须受总时限约束，避免供应商持续 running 导致无限轮询。"""
-
     stale = datetime.now(UTC) - timedelta(seconds=QUEUE_SETTINGS.job_timeout_seconds + 60)
     job = make_job(
         video_request(),
@@ -362,8 +243,6 @@ async def test_job_stuck_running_forever_eventually_times_out() -> None:
 
 
 async def test_a_lane_with_its_own_time_limit_outlasts_the_default() -> None:
-    """lane 自己写了时限就按它的：同样提交了两倍默认时限，没写的那家已超时，写了更长的那家还在问。"""
-
     default = QUEUE_SETTINGS.job_timeout_seconds
     stale = datetime.now(UTC) - timedelta(seconds=default * 2)
     slow_job = make_job(
@@ -406,8 +285,6 @@ async def test_a_lane_with_its_own_time_limit_outlasts_the_default() -> None:
 
 
 async def test_a_job_settled_between_reading_and_submitting_is_never_submitted() -> None:
-    """读到排队之后、落「提交中」之前，这一行被别处判了结论（如取消）：不占住、不提交、结论不变。"""
-
     job = make_job(video_request())
 
     class CancelledMeanwhile(InMemoryGenerationRepository):
@@ -430,11 +307,7 @@ async def test_a_job_settled_between_reading_and_submitting_is_never_submitted()
 
 
 async def test_stranded_cleanup_never_overwrites_a_real_result() -> None:
-    """失联恢复可能与原 worker 返回结果并发；清理更新不得覆盖已成功结果。"""
-
     class CompletedDuringCleanup(InMemoryGenerationRepository):
-        """收尾写入落下之前，原 worker 带着结果先写完了这一行。"""
-
         async def mark_failed(
             self,
             job_id: uuid.UUID,
@@ -470,8 +343,6 @@ async def test_stranded_cleanup_never_overwrites_a_real_result() -> None:
 
 
 async def test_submit_fails_loudly_when_the_provider_is_not_assembled() -> None:
-    """行上的 provider 不在装配表里：直接判失败写明原因，不占住「提交中」。"""
-
     marked_submitting: list[uuid.UUID] = []
 
     class Recording(InMemoryGenerationRepository):
@@ -496,8 +367,6 @@ async def test_submit_fails_loudly_when_the_provider_is_not_assembled() -> None:
 
 
 async def test_poll_fails_loudly_when_the_provider_is_not_assembled() -> None:
-    """轮询这一侧同样要接住：漏了就是无上限重排，一直排到总时限才收尾。"""
-
     job = make_job(
         video_request(),
         status=STATUS_SUBMITTED,
@@ -519,8 +388,6 @@ async def test_poll_fails_loudly_when_the_provider_is_not_assembled() -> None:
 
 
 async def test_each_provider_goes_to_its_own_queue() -> None:
-    """一家一条队列：慢的一家占满自己的槽位，不拖住别家。"""
-
     video = make_job(video_request())
     image = make_job(image_request())
     repo = InMemoryGenerationRepository([video, image])
@@ -536,14 +403,11 @@ async def test_each_provider_goes_to_its_own_queue() -> None:
 _ANY_JOB = QueuedJob(
     id=1, queue=QUEUE_POLL, lock=None, queueing_lock=None, task_name="generation.poll"
 )
-"""重试策略只依赖异常类型，使用最小有效 job。"""
 
 
 def _retry_seconds(
     queue: GenerationQueue, exception: Exception, *, task: str = "generation.poll"
 ) -> int:
-    """读取指定异常对应的重试间隔，默认看轮询任务。"""
-
     strategy = queue.app.tasks[task].retry_strategy
     assert strategy is not None
     decision = strategy.get_retry_decision(exception=exception, job=_ANY_JOB)

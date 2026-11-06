@@ -1,7 +1,3 @@
-/** 总览的时间序列图：柱、折线、堆叠面积、堆叠柱四种，叠 7 日实线与 30 日灰虚线、非活跃日灰底与悬停提示。
-
-Recharts 画坐标、柱、线与面积；灰底、悬停带、当天的点与超出纵轴的小三角是读坐标系的自绘层。 */
-
 import { useId } from 'react'
 import {
   Area,
@@ -32,14 +28,11 @@ const Y_AXIS_WIDTH = 46
 const TICK = { fill: 'var(--color-on-surface-muted)', fontSize: 11 }
 const CARD = 'var(--color-dashboard-card)'
 
-/** 自绘层在 Recharts 分层里的位置：灰底与悬停带在网格（-100）之下，点与三角在线之上。 */
 const Z = { inactive: -150, hover: -120, marks: 600, crosshair: 1100 } as const
 
 type OverviewChartProps = {
   model: ChartModel
-  /** 读屏用的图名。 */
   label: string
-  /** 给了就用固定高度；不给就撑满父容器（卡片里的图）。 */
   height?: number
   className?: string
 }
@@ -84,7 +77,6 @@ export function OverviewChart({ model, label, height, className }: OverviewChart
           <InactiveBands points={model.points} />
           <HoverLayer model={model} />
           <CartesianGrid stroke="var(--color-chart-grid)" vertical={false} />
-          {/* 折线也按格排：点落在每格正中，灰底与悬停带才有宽度。 */}
           <XAxis
             axisLine={false}
             dataKey="key"
@@ -153,7 +145,6 @@ export function OverviewChart({ model, label, height, className }: OverviewChart
                   isAnimationActive={false}
                   key={color}
                   stackId="parts"
-                  // 层与层之间用卡片色细线隔开；最上一层不描边。
                   stroke={part < model.partColors.length - 1 ? CARD : 'none'}
                   strokeWidth={1.5}
                   type="linear"
@@ -184,7 +175,6 @@ export function OverviewChart({ model, label, height, className }: OverviewChart
               ))
             : null}
 
-          {/* 柱图与堆叠柱上叠的 7 日均线用主色，和柱子分得开。 */}
           {(model.kind === 'bar' || model.kind === 'stackbar') && model.hasLine ? (
             <Line
               activeDot={false}
@@ -225,7 +215,6 @@ export function OverviewChart({ model, label, height, className }: OverviewChart
   )
 }
 
-/** 基准线的说明写在线的右端上方。viewBox 由 Recharts 克隆标签时传入。 */
 function BaselineLabel({
   text,
   viewBox,
@@ -247,7 +236,6 @@ function BaselineLabel({
   )
 }
 
-/** 一格在横轴上的起止与中点。 */
 const useBand = () => {
   const scale = useXAxisScale()
   return (key: string) => {
@@ -260,7 +248,6 @@ const useBand = () => {
   }
 }
 
-/** 非活跃日铺浅灰底，读的人一眼知道那天的 0 是没人用，不是出了事。 */
 function InactiveBands({ points }: { points: readonly ChartPoint[] }) {
   const bandOf = useBand()
   const plot = usePlotArea()
@@ -284,7 +271,6 @@ function InactiveBands({ points }: { points: readonly ChartPoint[] }) {
   )
 }
 
-/** 悬停的那一格铺一条浅带；折线类再加一根竖线和主线上的点。 */
 function HoverLayer({ model }: { model: ChartModel }) {
   const active = useActiveTooltipLabel()
   const bandOf = useBand()
@@ -334,10 +320,6 @@ function HoverLayer({ model }: { model: ChartModel }) {
   )
 }
 
-/**
- * 有均线时当天的值画成点（折线用比线深一档的绿，堆叠面积用中性深灰），超出纵轴的画成图顶朝上的小三角；
- * 按周没有均线，折线本身就是原始值，四十五格以内在每格上点一个圆点。
- */
 function DayMarks({ model, yMax }: { model: ChartModel; yMax: number }) {
   const bandOf = useBand()
   const yScale = useYAxisScale()
@@ -386,18 +368,15 @@ function DayMarks({ model, yMax }: { model: ChartModel; yMax: number }) {
   )
 }
 
-/** 顶边两角圆、底边直角的柱形路径。 */
 const roundedTop = (x: number, y: number, width: number, height: number, radius: number) => {
   const r = Math.min(radius, width / 2, height)
   return `M${x},${y + height}V${y + r}Q${x},${y} ${x + r},${y}H${x + width - r}Q${x + width},${y} ${x + width},${y + r}V${y + height}Z`
 }
 
-/** 零值画一截贴底的短横，免得读成没数据。 */
 function Nub({ x, width, base }: { x: number; width: number; base: number }) {
   return <rect fill="var(--color-hairline)" height={2} rx={1} width={width} x={x} y={base - 2} />
 }
 
-/** 悬停时其余格的柱子压淡，突出当前这一格。 */
 const useDimmed = (key: string) => {
   const active = useActiveTooltipLabel()
   return active !== undefined && active !== key
@@ -421,7 +400,6 @@ function BarMark({ x, y, width, height, payload }: BarShapeProps) {
   )
 }
 
-/** 堆叠柱的一段：段与段之间留 2px 缝，只有最上面一段圆角；整格为零时只由第一段画一截短横。 */
 function StackSegment({
   x,
   y,

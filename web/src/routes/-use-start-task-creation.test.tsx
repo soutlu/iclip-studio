@@ -22,7 +22,6 @@ function TaskCreationPage() {
 
 const liveConversations = () => mockConversations.filter((item) => item.deletedAt === null)
 
-/** 打开一张可开始的需求单的预览；给了 agentName 就在预览里选上它。 */
 const prepare = async (agentName: string | null = '分镜 Agent') => {
   loginAs(mockAuthUser)
   const task = addMockTask('短靴创作需求')
@@ -133,7 +132,6 @@ describe('需求单发起对话', () => {
       title: task.title,
     })
 
-    // 外部需求更新不会悄悄改变已经确认、正在重试的这条消息。
     task.inputs = { ...task.inputs, creative_requirement: '后来改动的要求' }
     await user.click(screen.getByRole('button', { name: /确认并开始|重试发送/ }))
     await waitFor(() => expect(router.state.location.pathname).toBe(`/c/${conversation.id}`))
@@ -192,7 +190,6 @@ describe('需求单发起对话', () => {
         '*/api/conversations',
         async ({ request }) => {
           const body = (await request.json()) as { id: string; taskId: string; title: string }
-          // 服务端已经落库，回执在路上丢了。
           Object.assign(addMockConversation(body.title), { id: body.id, taskId: body.taskId })
           return HttpResponse.error()
         },
@@ -239,7 +236,6 @@ describe('需求单发起对话', () => {
 
     await user.click(screen.getByRole('button', { name: /确认并开始|重试发送/ }))
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('对话已不存在'))
-    // 删除留下墓碑（合同 §6），只数活着的对话。
     expect(liveConversations()).toHaveLength(0)
 
     await user.click(screen.getByRole('button', { name: /确认并开始|重试发送/ }))

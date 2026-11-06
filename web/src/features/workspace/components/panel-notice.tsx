@@ -3,7 +3,6 @@ type PanelNoticeProps = {
   hint?: string
 }
 
-/** 面板正中一句状态：读取中、出错、空态。 */
 export function PanelNotice({ hint, text }: PanelNoticeProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-6 text-center">

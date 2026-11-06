@@ -2,8 +2,6 @@ import type { ComponentPropsWithRef, ReactNode } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 
-// 带图标时外壳承担边框与背景，input 只应用文字样式，避免重复边框。
-// 聚焦时 1px 边框转墨色就是焦点指示；无外壳的字段用 ui-focus-inline 把焦点环收成压在边框上的 1px。
 const FIELD_SURFACE =
   'ui-state w-full rounded-lg border border-input-border bg-input-bg px-[15px] focus-within:border-on-surface aria-invalid:border-error'
 const FIELD_TEXT = 'text-body text-on-surface placeholder:text-on-surface-faint'
@@ -13,7 +11,6 @@ const NESTED_INPUT_CLASS =
 type InputProps = ComponentPropsWithRef<'input'> & {
   leadingIcon?: IconName
   trailingAction?: ReactNode
-  /** 带图标时 wrapperClassName 控制外壳，className 控制内部 input。 */
   wrapperClassName?: string
 }
 

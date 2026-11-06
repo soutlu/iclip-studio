@@ -1,8 +1,3 @@
-/** 制作页正文 `@` 选图的弹层：向上弹出（放不下时 Radix 翻到下方），列这组参考图列表里能插入的图（机位图随选用进出列表，
- * 不在这里列），每格写 @N；有上传权限时末格「+」从电脑上传。格子与分镜页 `@` 选图同一种（`FrameTile`）。
- *
- * 焦点始终留在编辑器里：格子不可聚焦、按下不抢焦点，键盘由编辑器插件转发过来；`active` 是键盘停在的那格。 */
-
 import type { Ref, RefObject } from 'react'
 import type { CaretAnchor } from '@/shared/ui/composer/mention'
 import { PopupAnchor, PopupRoot, PopupSurface } from '@/shared/ui/popup'
@@ -11,12 +6,9 @@ import type { FilmFrame } from './film.api'
 
 type FilmMentionMenuProps = {
   anchor: RefObject<CaretAnchor>
-  /** 能插入的图，都有编号。 */
   frames: readonly FilmFrame[]
   ratio: number
-  /** 键盘停在第几格；等于 `frames.length` 时停在「+」。 */
   active: number
-  /** 末格「+」：从电脑上传；没有上传权限时为 undefined，不给这一格。 */
   onUpload: (() => void) | undefined
   listRef: Ref<HTMLUListElement>
   onPick: (index: number) => void

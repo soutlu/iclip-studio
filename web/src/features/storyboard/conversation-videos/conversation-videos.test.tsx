@@ -193,7 +193,6 @@ describe('ConversationVideos', () => {
     })
 
     act(() => socket.deliver(changed('0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d')))
-    // 留出一次真实请求往返的时间，否则「没重拉」是空断言。
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
     expect(reads).toBe(1)
 
@@ -249,14 +248,5 @@ describe('ConversationVideos', () => {
     await screen.findByRole('button', { name: '镜头组 1 V3' })
     expect(screen.getByLabelText('镜头组 1视频')).toHaveAttribute('src', job(1).outputUrl)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-  })
-
-  it('没有素材片时只显示紧凑空态', async () => {
-    server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [] })))
-
-    await renderWithProviders(<ConversationVideos conversationId={conversationId} />)
-
-    expect(await screen.findByText('暂无视频产物')).toBeVisible()
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 })

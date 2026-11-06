@@ -8,9 +8,7 @@ import { FADER_MAX, FADER_MIN, faderToGain, gainText, gainToFader, stepGain } fr
 type ToolProps = {
   icon: IconName
   label: string
-  /** 悬停或键盘聚焦时在按钮上方的说明；写明快捷键 */
   tip: ReactNode
-  /** 不能用的原因；给了就置灰、悬停说原因 */
   blocked?: string | undefined
   pressed?: boolean
   onClick: () => void
@@ -30,7 +28,6 @@ function Tool({
   shortcuts,
   className,
 }: ToolProps) {
-  // 置灰时提示换成原因；点按也亮出原因（同 BlockedReason），按钮本身不重挂，焦点不丢
   const [hint, setHint] = useState(false)
   return (
     <TooltipRoot onOpenChange={setHint} open={hint}>
@@ -74,7 +71,6 @@ const Keys = ({ children }: { children: string }) => <kbd className="wf-kbd">{ch
 type EditorToolbarProps = {
   playheadMs: number
   totalMs: number
-  /** 预览放不了的原因 */
   playBlocked: string | undefined
   playing: boolean
   onPlay: () => void
@@ -92,11 +88,9 @@ type EditorToolbarProps = {
   onBeatSync: () => void
   onZoom: (direction: 'in' | 'out') => void
   onFit: () => void
-  /** 选中那段视频的原声音量；没选中视频时为 undefined，推子置灰并悬停说 clipBlocked */
   clipVolume: number | undefined
   clipBlocked: string
   onClipVolume: (value: number) => void
-  /** 配乐音量；没有选用音乐时为 undefined */
   musicVolume: number | undefined
   onMusicVolume: (value: number) => void
 }
@@ -242,19 +236,13 @@ export function EditorToolbar({
 
 type VolumeFaderProps = {
   label: string
-  /** 倍数，0–+12 dB */
   value: number
   blocked?: string | undefined
   onCommit: (value: number) => void
 }
 
-/**
- * 音量推子（同 HyperFrames）：按 dB 刻度，0 dB 在正中，最左静音、最右 +12 dB；左边的按钮静音或取消静音。
- * 拖动中只改显示，松手（或失焦）才记一步编辑；双击回到 0 dB，←/→ 每次 0.5 dB，按住 ⇧ 3 dB。
- */
 function VolumeFader({ label, value, blocked, onCommit }: VolumeFaderProps) {
   const [live, setLive] = useState<number | null>(null)
-  // 取消静音时回到静音前的音量；不记在草稿里，关掉编辑器就忘
   const [beforeMute, setBeforeMute] = useState(1)
   const shown = live ?? value
   const disabled = blocked !== undefined

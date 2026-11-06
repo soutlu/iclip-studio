@@ -1,7 +1,3 @@
-"""资料库标签的三张表与它们的 Postgres 仓储，以及给各库列表拼标签字段与筛选条件的 SQL 片段。
-
-时间统一用数据库时钟；外部输入一律走绑定参数，拼进 SQL 的只有代码里的常量。"""
-
 from __future__ import annotations
 
 import uuid
@@ -10,6 +6,7 @@ from collections.abc import AsyncGenerator, Collection, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, Final
 
+from agent_runtime.errors import ValidationFailed
 from sqlalchemy import (
     Column,
     DateTime,
@@ -28,7 +25,6 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.tagging.models import (
     AUTO_FILL_AI,
     BUSY_STATUSES,
@@ -139,7 +135,6 @@ _SUBJECT_COLUMN: Final[Mapping[EntryKind, str]] = {
     KIND_REFERENCE: "reference_id",
     KIND_HIT_CASE: "job_id",
 }
-"""每种条目用哪一列指它那一库的行。"""
 
 if set(_SUBJECT_COLUMN) != set(ENTRY_KINDS):
     raise RuntimeError("_SUBJECT_COLUMN 与 ENTRY_KINDS 对不上")
@@ -159,7 +154,6 @@ ai_tags AS (
     SELECT d.id FROM dim d JOIN iclip.library_tags v ON v.id = d.dimension_id
     WHERE v.auto_fill = :ai AND d.id <> d.dimension_id
 )"""
-"""每个标签所在的维度，以及此刻在 AI 维度里的全部取值。"""
 
 _TREE: Final = text("""
 SELECT id, parent_id, name, auto_fill, guide, position
@@ -167,7 +161,6 @@ FROM iclip.library_tags
 ORDER BY position, id""")
 
 _LOCK_TREE: Final = text("SELECT pg_advisory_xact_lock(hashtext('iclip.library_tags'))")
-"""改树的事务一个接一个：跨层重名与 AI 取值上限要读整棵树再判，只靠行锁和唯一约束挡不住并发。"""
 
 _INSERT_TAG: Final = text("""
 INSERT INTO iclip.library_tags (id, parent_id, name, guide, auto_fill, position)
@@ -250,8 +243,6 @@ RETURNING id""")
 
 
 def _by_kind(statement: str) -> Mapping[EntryKind, Any]:
-    """按条目种类各编一份；``{col}`` 换成那一种指向来源行的列名。"""
-
     return {kind: text(statement.format(col=column)) for kind, column in _SUBJECT_COLUMN.items()}
 
 
@@ -291,8 +282,6 @@ def _key_params(key: EntryKey) -> dict[str, Any]:
 
 
 def _build_tree(rows: Sequence[RowMapping]) -> tuple[TagNode, ...]:
-    """行已按 ``position, id`` 排好；同级的先后照搬。"""
-
     children: dict[uuid.UUID | None, list[RowMapping]] = defaultdict(list)
     for row in rows:
         children[row["parent_id"]].append(row)
@@ -317,15 +306,11 @@ async def _clear_ai(conn: AsyncConnection, entry_ids: Sequence[uuid.UUID]) -> No
 
 
 def _violated_constraint(error: IntegrityError) -> str:
-    """违反的约束名；asyncpg 把它挂在被包起来的原异常上。"""
-
     cause = getattr(error.orig, "__cause__", None)
     return getattr(cause, "constraint_name", None) or ""
 
 
 class _SqlTagTreeWriter:
-    """``TagTreeWriter`` 的 Postgres 实现，用一条已拿到写锁的事务连接。"""
-
     def __init__(self, conn: AsyncConnection) -> None:
         self._conn = conn
 
@@ -373,8 +358,6 @@ class _SqlTagTreeWriter:
 
 
 class SqlTagStore:
-    """``TagStore`` 的 Postgres 实现。"""
-
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
@@ -390,7 +373,6 @@ class SqlTagStore:
                 await conn.execute(_LOCK_TREE)
                 yield _SqlTagTreeWriter(conn)
         except IntegrityError as exc:
-            # 服务层已按树查过重名；走到这里是有人绕过了写锁直接改表。
             if _violated_constraint(exc) in _DUPLICATE_NAME_CONSTRAINTS:
                 raise ValidationFailed("同一上级下已有同名标签") from exc
             raise
@@ -548,9 +530,6 @@ class SqlTagStore:
 
 
 def entry_join_sql(*, kind: EntryKind, subject_expr: str, alias: str = "le") -> str:
-    """把来源行接上它的条目：``LEFT JOIN``，没有条目的行照样出来。``subject_expr`` 是来源行 id 的
-    列表达式（如 ``r.id``），必须是代码里的常量。"""
-
     return (
         f"LEFT JOIN iclip.library_entries {alias}"
         f" ON {alias}.kind = '{kind}' AND {alias}.{_subject_column(kind)} = {subject_expr}"
@@ -558,9 +537,6 @@ def entry_join_sql(*, kind: EntryKind, subject_expr: str, alias: str = "le") -> 
 
 
 def entry_columns_sql(alias: str = "le") -> str:
-    """配合 ``entry_join_sql`` 读出的三列：``tag_status``、``tag_error`` 与 ``tag_ids``（uuid 数组，
-    按标签的 ``position``、id 排；没有条目时为空数组）。"""
-
     return (
         f"{alias}.tag_status, {alias}.tag_error,"
         " ARRAY(SELECT let.tag_id FROM iclip.library_entry_tags let"
@@ -576,9 +552,6 @@ def entry_filter_sql(
     subject_expr: str,
     param_prefix: str = "tag_group",
 ) -> tuple[str, dict[str, Any]]:
-    """标签筛选：每组一个 ``EXISTS``，组间都要命中，组内命中任一即算。交回以 `` AND`` 开头的条件与
-    它的绑定参数；没有组时是空串。``subject_expr`` 同 ``entry_join_sql``。"""
-
     clauses: list[str] = []
     params: dict[str, Any] = {}
     column = _subject_column(kind)

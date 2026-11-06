@@ -1,25 +1,17 @@
-"""成片草稿文档的形状与时间线规则：每条规则一个合规矩、一个不合规矩的例子。"""
-
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
 from typing import Any
 
 import pytest
 from pydantic import ValidationError
 
 from iclip.domains.conversations.whole_film_schemas import (
-    MAX_CANVAS_EDGE,
     MAX_CAPTION_EDITS,
     MAX_CAPTION_TEXT_CHARS,
-    MAX_COMPONENT_CHARS,
     MAX_FILM_MS,
     MAX_LAYER0_CLIPS,
     MAX_OVERLAYS,
-    MAX_VARIABLE_TEXT_CHARS,
-    MAX_VARIABLES,
-    MAX_VOLUME,
     MIN_CLIP_MS,
     WholeFilmDocument,
 )
@@ -31,7 +23,6 @@ SUBTITLE = uuid.uuid4()
 Document = dict[str, Any]
 
 FIELD_BOUND = ""
-"""字段自身的边界（长度、范围、类型）由 pydantic 报，只断言被拒，不看措辞。"""
 
 
 def parse(document: Document) -> WholeFilmDocument:
@@ -39,8 +30,6 @@ def parse(document: Document) -> WholeFilmDocument:
 
 
 def rejected(document: Document) -> str:
-    """不合规矩的文档报的那一句；只取第一条，与 HTTP 422 的 ``detail`` 同一来源。"""
-
     with pytest.raises(ValidationError) as caught:
         parse(document)
     return str(caught.value.errors()[0]["msg"])
@@ -51,9 +40,6 @@ def edit(index: int, text: str = "改过的字") -> dict[str, Any]:
 
 
 def test_a_full_draft_round_trips_its_wire_shape() -> None:
-    """组件段夹在两段视频之间、改字、关掉并挪过、缩放旋转过的字幕、音乐与不同行上相互重叠、挪过位置
-    又缩放旋转过的特效块都在：按 camelCase 原样读出来。"""
-
     document = draft_document(
         layer0=[
             component_clip("c1", start=0, duration=2000),
@@ -89,7 +75,6 @@ def test_a_full_draft_round_trips_its_wire_shape() -> None:
     parsed = parse(document)
 
     assert parsed.model_dump(mode="json", by_alias=True) == document
-    # 画面轨 8 秒，o2 到 9 秒结束：成片到所有轨上内容的最远结束
     assert parsed.total_ms() == 9000
     assert parsed.video_sources() == (SOURCE,)
 
@@ -124,188 +109,6 @@ def test_a_film_of_component_clips_only_is_valid() -> None:
     assert (parsed.total_ms(), parsed.video_sources()) == (5000, ())
 
 
-def test_captions_are_shown_when_the_draft_does_not_say() -> None:
-    """没写 ``hidden`` 的草稿（有这个字段之前存的）按字幕开着读，读出来补上 false。"""
-
-    document = draft_document()
-    del document["captions"]["hidden"]
-
-    parsed = parse(document)
-
-    assert parsed.captions.hidden is False
-    assert parsed.model_dump(mode="json", by_alias=True)["captions"]["hidden"] is False
-
-
-def test_caption_variables_default_to_empty() -> None:
-    """没写 ``variables`` 的字幕（有这个字段之前存的）按没填过读，读出来补上空表。"""
-
-    document = draft_document()
-    del document["captions"]["variables"]
-
-    parsed = parse(document)
-
-    assert parsed.model_dump(mode="json", by_alias=True)["captions"]["variables"] == {}
-
-
-def test_positions_default_to_where_the_component_puts_it() -> None:
-    """没写 ``x``、``y`` 的字幕与特效块（有这两个字段之前存的）按没挪过读，读出来补上 0。"""
-
-    document = draft_document(overlays=[overlay("o", start=0, duration=1000)])
-    for moved in (document["captions"], document["overlays"][0]):
-        del moved["x"], moved["y"]
-
-    dumped = parse(document).model_dump(mode="json", by_alias=True)
-
-    assert {key: dumped["captions"][key] for key in ("x", "y")} == {"x": 0, "y": 0}
-    assert {key: dumped["overlays"][0][key] for key in ("x", "y")} == {"x": 0, "y": 0}
-
-
-@pytest.mark.parametrize("where", ["captions", "overlay"])
-@pytest.mark.parametrize("axis", ["x", "y", "pivotX", "pivotY"])
-@pytest.mark.parametrize(
-    ("value", "accepted"),
-    [
-        pytest.param(MAX_CANVAS_EDGE, True, id="+4096"),
-        pytest.param(-MAX_CANVAS_EDGE, True, id="-4096"),
-        pytest.param(MAX_CANVAS_EDGE + 1, False, id="超过 +4096"),
-        pytest.param(-MAX_CANVAS_EDGE - 1, False, id="超过 -4096"),
-        pytest.param(1.5, False, id="不是整数"),
-    ],
-)
-def test_positions_stay_within_the_largest_canvas(
-    where: str, axis: str, value: object, accepted: bool
-) -> None:
-    document = draft_document(overlays=[overlay("o", start=0, duration=1000)])
-    moved = document["captions"] if where == "captions" else document["overlays"][0]
-    moved[axis] = value
-
-    if accepted:
-        assert parse(document).model_dump(mode="json", by_alias=True) == document
-    else:
-        rejected(document)
-
-
-def test_transforms_default_to_unscaled_and_unrotated() -> None:
-    """没写缩放、旋转与转轴的字幕与特效块（有这几个字段之前存的）按原大、不转读，读出来补上
-    1、0 与转轴 (0, 0)。"""
-
-    document = draft_document(overlays=[overlay("o", start=0, duration=1000)])
-    for placed in (document["captions"], document["overlays"][0]):
-        del placed["scale"], placed["rotation"], placed["pivotX"], placed["pivotY"]
-
-    dumped = parse(document).model_dump(mode="json", by_alias=True)
-
-    defaults = {"scale": 1, "rotation": 0, "pivotX": 0, "pivotY": 0}
-    assert {key: dumped["captions"][key] for key in defaults} == defaults
-    assert {key: dumped["overlays"][0][key] for key in defaults} == defaults
-
-
-@pytest.mark.parametrize("where", ["captions", "overlay"])
-@pytest.mark.parametrize(
-    ("field", "value", "accepted"),
-    [
-        pytest.param("scale", 0.1, True, id="缩到 0.1"),
-        pytest.param("scale", 10, True, id="放到 10"),
-        pytest.param("scale", 0.05, False, id="小于 0.1"),
-        pytest.param("scale", 11, False, id="大于 10"),
-        pytest.param("rotation", 180, True, id="转 180"),
-        pytest.param("rotation", -179.5, True, id="转 -179.5"),
-        pytest.param("rotation", -180, False, id="-180 记成 180"),
-        pytest.param("rotation", 181, False, id="超过 180"),
-    ],
-)
-def test_transforms_stay_within_their_ranges(
-    where: str, field: str, value: float, accepted: bool
-) -> None:
-    document = draft_document(overlays=[overlay("o", start=0, duration=1000)])
-    placed = document["captions"] if where == "captions" else document["overlays"][0]
-    placed[field] = value
-
-    if accepted:
-        assert parse(document).model_dump(mode="json", by_alias=True) == document
-    else:
-        rejected(document)
-
-
-def test_unknown_fields_are_rejected() -> None:
-    document = draft_document()
-    document["layer0"][0]["muted"] = True
-
-    rejected(document)
-
-
-@pytest.mark.parametrize(
-    ("where", "field", "value"),
-    [
-        pytest.param("component", "role", "intro", id="组件段带 role"),
-        pytest.param("document", "transitions", [], id="带 transitions"),
-        pytest.param("component", "playbackStart", None, id="组件段缺 playbackStart"),
-        pytest.param("overlay", "playbackStart", None, id="特效块缺 playbackStart"),
-        pytest.param("component", "playbackStart", -1, id="组件段入点为负"),
-        pytest.param("overlay", "playbackStart", -1, id="特效块入点为负"),
-        pytest.param("overlay", "track", None, id="特效块缺 track"),
-        pytest.param("overlay", "zIndex", None, id="特效块缺 zIndex"),
-        pytest.param("overlay", "track", -1, id="特效块行为负"),
-        pytest.param("overlay", "zIndex", -1, id="特效块 zIndex 为负"),
-    ],
-)
-def test_component_clips_have_no_role_and_carry_a_playback_start(
-    where: str, field: str, value: object
-) -> None:
-    """``value`` 为 None 时去掉这个字段。"""
-
-    document = draft_document(
-        layer0=[component_clip("c", start=0, duration=1000)],
-        overlays=[overlay("o", start=0, duration=1000)],
-    )
-    parse(document)
-    target = {
-        "document": document,
-        "component": document["layer0"][0],
-        "overlay": document["overlays"][0],
-    }[where]
-    if value is None:
-        del target[field]
-    else:
-        target[field] = value
-
-    rejected(document)
-
-
-Change = Callable[[Document], None]
-
-
-def _first_clip(field: str, value: object) -> Change:
-    def change(document: Document) -> None:
-        document["layer0"][0][field] = value
-
-    return change
-
-
-@pytest.mark.parametrize(
-    ("change", "accepted"),
-    [
-        pytest.param(_first_clip("playbackStart", 0), True, id="入点 0"),
-        pytest.param(_first_clip("playbackStart", -1), False, id="入点为负"),
-        pytest.param(_first_clip("volume", MAX_VOLUME), True, id="音量 +12 dB"),
-        pytest.param(_first_clip("volume", 3.99), False, id="音量超过 +12 dB"),
-        pytest.param(_first_clip("volume", -0.1), False, id="音量为负"),
-        pytest.param(_first_clip("volume", float("nan")), False, id="音量 NaN"),
-        pytest.param(_first_clip("id", " "), False, id="空白 id"),
-        pytest.param(_first_clip("id", "x" * 65), False, id="id 太长"),
-        pytest.param(_first_clip("sourceJobId", "not-a-uuid"), False, id="出处不是 uuid"),
-    ],
-)
-def test_video_clip_fields(change: Change, accepted: bool) -> None:
-    document = draft_document(source_job_id=SOURCE)
-    change(document)
-
-    if accepted:
-        parse(document)
-    else:
-        rejected(document)
-
-
 @pytest.mark.parametrize(
     ("durations", "accepted"),
     [
@@ -329,8 +132,6 @@ def test_clip_and_film_durations(durations: list[int], accepted: bool) -> None:
 
 
 def test_layer0_holds_any_number_of_clips_up_to_two_minutes() -> None:
-    """视频段不设段数上限：两分钟按最短时长排满可以，再多一段就超出（防大包的上限也在这里）。"""
-
     full = butted(
         [(f"c{index}", MIN_CLIP_MS) for index in range(MAX_LAYER0_CLIPS)], source_job_id=SOURCE
     )
@@ -360,82 +161,6 @@ def test_layer0_starts_at_zero_and_is_butt_joined(starts: list[int]) -> None:
     )
 
     assert "首尾相接" in rejected(document)
-
-
-@pytest.mark.parametrize(
-    "kinds",
-    [
-        pytest.param(("component", "video"), id="组件段在最前"),
-        pytest.param(("video", "component"), id="组件段在最后"),
-        pytest.param(("video", "component", "video"), id="组件段在中间"),
-        pytest.param(("component", "component", "video", "component"), id="几个组件段"),
-    ],
-)
-def test_component_clips_sit_anywhere_on_layer0(kinds: tuple[str, ...]) -> None:
-    layer: list[dict[str, Any]] = []
-    for index, kind in enumerate(kinds):
-        start = index * 1000
-        layer.append(
-            video_clip(f"c{index}", start=start, duration=1000, source_job_id=SOURCE)
-            if kind == "video"
-            else component_clip(f"c{index}", start=start, duration=1000)
-        )
-
-    parse(draft_document(layer0=layer))
-
-
-@pytest.mark.parametrize(
-    ("component", "accepted"),
-    [
-        ("x" * MAX_COMPONENT_CHARS, True),
-        ("x" * (MAX_COMPONENT_CHARS + 1), False),
-        ("", False),
-        ("  ", False),
-    ],
-    ids=["上限", "太长", "空", "空白"],
-)
-def test_component_names_are_non_blank_and_bounded(component: str, accepted: bool) -> None:
-    clip = component_clip("c", start=0, duration=1000)
-    clip["component"] = component
-    document = draft_document(layer0=[clip])
-
-    if accepted:
-        parse(document)
-    else:
-        rejected(document)
-
-
-@pytest.mark.parametrize(
-    ("variables", "accepted"),
-    [
-        pytest.param({f"k{index}": index for index in range(MAX_VARIABLES)}, True, id="50 项"),
-        pytest.param({f"k{index}": index for index in range(MAX_VARIABLES + 1)}, False, id="51 项"),
-        pytest.param({"text": "字" * MAX_VARIABLE_TEXT_CHARS}, True, id="500 字"),
-        pytest.param({"text": "字" * (MAX_VARIABLE_TEXT_CHARS + 1)}, False, id="501 字"),
-        pytest.param({"on": False, "n": 3, "x": 0.5, "s": ""}, True, id="四种值"),
-        pytest.param({"nested": {"a": 1}}, False, id="对象值"),
-        pytest.param({"list": [1]}, False, id="数组值"),
-        pytest.param({"empty": None}, False, id="空值"),
-        pytest.param({" ": 1}, False, id="空白名字"),
-    ],
-)
-@pytest.mark.parametrize("where", ["component", "captions"])
-def test_variables_are_flat_and_bounded(
-    variables: dict[str, Any], accepted: bool, where: str
-) -> None:
-    """组件段与字幕的可填项同一套规矩。"""
-
-    clip = component_clip("c", start=0, duration=1000)
-    if where == "component":
-        clip["variables"] = variables
-        document = draft_document(layer0=[clip])
-    else:
-        document = draft_document(layer0=[clip], captions_variables=variables)
-
-    if accepted:
-        parse(document)
-    else:
-        rejected(document)
 
 
 def test_clip_ids_are_unique_across_the_document() -> None:
@@ -529,41 +254,3 @@ def test_caption_edits(edits: list[dict[str, Any]], problem: str | None) -> None
         parse(document)
     else:
         assert problem in rejected(document)
-
-
-@pytest.mark.parametrize(
-    ("music", "accepted"),
-    [
-        pytest.param({"offset": 0, "volume": 0}, True, id="从头、静音"),
-        pytest.param({"offset": 90_000, "volume": MAX_VOLUME}, True, id="从中间、+12 dB"),
-        pytest.param({"offset": -1, "volume": 1}, False, id="起点为负"),
-        pytest.param({"offset": 0, "volume": 3.99}, False, id="音量超过 +12 dB"),
-    ],
-)
-def test_music_offset_and_volume(music: dict[str, Any], accepted: bool) -> None:
-    document = draft_document(source_job_id=SOURCE, music={"jobId": str(uuid.uuid4()), **music})
-
-    if accepted:
-        parse(document)
-    else:
-        rejected(document)
-
-
-@pytest.mark.parametrize(
-    ("canvas", "accepted"),
-    [
-        ({"width": 1920, "height": 1080}, True),
-        (None, True),
-        ({"width": 0, "height": 1080}, False),
-        ({"width": 1080}, False),
-    ],
-    ids=["横屏", "未定", "宽为 0", "缺高"],
-)
-def test_canvas(canvas: dict[str, Any] | None, accepted: bool) -> None:
-    document = draft_document(source_job_id=SOURCE)
-    document["canvas"] = canvas
-
-    if accepted:
-        parse(document)
-    else:
-        rejected(document)

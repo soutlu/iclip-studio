@@ -1,29 +1,35 @@
-"""统一标准库与 structlog 日志。单个 root handler 通过 ProcessorFormatter 输出 console 或 JSON。
-请求上下文经 contextvars 合并至日志，包括 uvicorn 访问日志。"""
-
 from __future__ import annotations
 
 import logging
 import sys
+import unicodedata
 from typing import Literal
 
 import structlog
-from structlog.typing import Processor
+from structlog.dev import Column, KeyValueColumnFormatter
+from structlog.typing import EventDict, Processor, WrappedLogger
 
 LogFormat = Literal["console", "json"]
 
+SERVICE_NAME = "后端"
+
 QUIET_LOGGERS = ("procrastinate", "httpx")
-"""仅保留警告及以上级别的第三方 logger，抑制周期心跳与逐请求 INFO。"""
+
+_SERVICE_WIDTH = 6
+
+_CONSOLE_LOGGER_NAMES = {"uvicorn.error": "uvicorn"}
+
+_WEBSOCKETS_LINES = frozenset({"connection open", "connection closed"})
 
 
 def configure_logging(level: str, fmt: LogFormat) -> None:
-    """整体替换 root 日志配置，重复调用不叠加 handler。"""
-
     shared: list[Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso" if fmt == "json" else "%H:%M:%S"),
+        structlog.processors.TimeStamper(fmt="iso")
+        if fmt == "json"
+        else structlog.processors.TimeStamper(fmt="%H:%M:%S", utc=False),
     ]
     tail: list[Processor] = (
         [
@@ -31,7 +37,7 @@ def configure_logging(level: str, fmt: LogFormat) -> None:
             structlog.processors.JSONRenderer(ensure_ascii=False),
         ]
         if fmt == "json"
-        else [structlog.dev.ConsoleRenderer(colors=sys.stderr.isatty())]
+        else [_ConsoleColumns(SERVICE_NAME), _console_renderer()]
     )
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(
@@ -40,6 +46,7 @@ def configure_logging(level: str, fmt: LogFormat) -> None:
             processors=[structlog.stdlib.ProcessorFormatter.remove_processors_meta, *tail],
         )
     )
+    handler.addFilter(_keep_record)
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level)
@@ -50,9 +57,50 @@ def configure_logging(level: str, fmt: LogFormat) -> None:
         processors=[*shared, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
         logger_factory=structlog.stdlib.LoggerFactory(),
         wrapper_class=structlog.stdlib.BoundLogger,
-        # 禁用缓存，使重新配置可应用于已使用的 logger。
         cache_logger_on_first_use=False,
     )
 
 
-__all__ = ["QUIET_LOGGERS", "LogFormat", "configure_logging"]
+def _console_renderer() -> structlog.dev.ConsoleRenderer:
+    renderer = structlog.dev.ConsoleRenderer(colors=sys.stderr.isatty(), pad_event_to=0)
+    columns = renderer.columns
+    service = Column(
+        "service",
+        KeyValueColumnFormatter(key_style=None, value_style="", reset_style="", value_repr=str),
+    )
+    renderer.columns = [
+        *(column for column in columns if column.key == "timestamp"),
+        service,
+        *(column for column in columns if column.key != "timestamp"),
+    ]
+    return renderer
+
+
+class _ConsoleColumns:
+    def __init__(self, service: str) -> None:
+        self._service = service + " " * max(0, _SERVICE_WIDTH - _display_width(service))
+
+    def __call__(self, logger: WrappedLogger, name: str, event_dict: EventDict) -> EventDict:
+        event_dict["service"] = self._service
+        logger_name = event_dict.get("logger")
+        if isinstance(logger_name, str):
+            event_dict["logger"] = _CONSOLE_LOGGER_NAMES.get(logger_name, logger_name)
+        return event_dict
+
+
+def _display_width(text: str) -> int:
+    return sum(2 if unicodedata.east_asian_width(char) in ("W", "F") else 1 for char in text)
+
+
+def _keep_record(record: logging.LogRecord) -> bool:
+    if record.name == "uvicorn.access":
+        args = record.args
+        return not (
+            isinstance(args, tuple) and len(args) == 5 and args[2] == "/healthz" and args[4] == 200
+        )
+    if record.name == "uvicorn.error":
+        return record.msg not in _WEBSOCKETS_LINES
+    return True
+
+
+__all__ = ["QUIET_LOGGERS", "SERVICE_NAME", "LogFormat", "configure_logging"]

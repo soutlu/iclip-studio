@@ -44,7 +44,7 @@ _EDITS = "kind = 'image' AND jsonb_exists(metadata, 'sourceUrl')"
 """带底图地址的图片行，也就是 0020 之前的帧图编辑。视频行的 metadata 是调用方的标签，不动。"""
 
 _HTTP_URL = "{value} ~* '^https?://[^/?#:@[:space:]]' AND {value} !~ '[[:space:]]'"
-"""与请求字段 ``sourceUrl`` 的校验（``common.urls.is_http_url``）同一口径：scheme 不分大小写、
+"""与请求字段 ``sourceUrl`` 的校验（``agent_runtime.urls.is_http_url``）同一口径：scheme 不分大小写、
 紧跟着主机、整串没有空白。"""
 
 _INDEX = "ix_generation_jobs_conversation_image_output"

@@ -1,16 +1,3 @@
-/** 制作页的 mock：每段对话一份读好的工程（形状同 `GET /conversations/{id}/film`），改字照后端的规矩查，
- * 改完把工作区里 `film.icml` 的版本加一，文件列表与制作页的版本对得上；出片记一条视频记录，镜号是组号。
- *
- * 照后端现行的写法：`frames` 先是这组视频的参考图列表，按列表先后，`number` 就是位置，没有图的也有；再按镜头先后接上
- * 还没进列表的机位图，`number` 为 null。全局设定与镜头正文里用 `@ImageN` 指列表第 N 张，选用了机位图的镜头开头写
- * 「参考@ImageN，」；`settings[].images` 恒为空。
- * 图照后端的规矩定：用户给的图总有图；生成图只认选用，没选用就没图，生成出来的不自动用上。机位图第一次选用时插进列表
- * （排在镜头更靠后的机位图之前）、那一镜开头写引用、后面的图号加一，取消选用时反过来（同后端 `_place_view`）。
- * 生图描述按它自己的参考图列表写 `@ImageN`，读的时候每个都拆成图片段，带这个编号，没图的地址为 null、称呼记进
- * `missing`。列表里有没图的，生图、出片都拒。
- * 改字时字里插入、删除图片照后端 `_renumber_group`：新图从 M+1 起编、地址在 `images` 里，已在列表里的用原编号，不在的
- * 排在机位图之前（叫「素材照片N」），后面的编号与镜头开头的引用顺延；不再用的元素图出列表；机位图的引用删不掉、挪不动。 */
-
 import { http, HttpResponse } from 'msw'
 import type {
   FilmAspectRatioIn,
@@ -31,15 +18,12 @@ import { acceptMockImage, acceptMockVideo, putMockWorkspaceFile } from './worksp
 const FILM_PATH = 'film.icml'
 const RUN_PATH = 'film.icrun'
 
-/** 工程文件里的一张图：生成图带描述（`@ImageN` 指 `references` 的第 N 张）与画幅，用户给的图带地址。 */
 type MockImage = Pick<FilmFrameOut, 'aspectRatio' | 'kind' | 'label' | 'node'> & {
   photo: string | null
   description: string | null
   references: readonly string[]
 }
 
-/** 工程文件里的一组视频：`images` 是参考图列表照文件写，`views` 是各镜头 `view` 指的机位图；地址、编号、描述的拆分与
- * 正文读的时候现算（见 `resolved`）。 */
 type MockGroup = Omit<FilmGroupOut, 'frames' | 'prompt'> & {
   images: readonly MockImage[]
   views: readonly MockImage[]
@@ -48,22 +32,17 @@ type MockGroup = Omit<FilmGroupOut, 'frames' | 'prompt'> & {
 type MockFilm = Omit<FilmViewOut, 'groups'> & { groups: MockGroup[] }
 
 const films = new Map<string, MockFilm>()
-/** 每段对话里每张图现在的地址：生成图是运行文件里的选用（null 是没选用），用户给的图是工程文件里的地址。 */
 const chosen = new Map<string, Map<string, string | null>>()
-/** 放工程时就选用了的生成图：人物与镜头 2 的机位图；场景图与镜头 1 的机位图没选用。 */
 const SEEDED_CHOICES: ReadonlyMap<string, string> = new Map([
   ['girl_look', apparelImage],
   ['shot2_view', backpackImage],
 ])
-/** `complete` 时另外选用的：列表里每张都有图，能出片。 */
 const COMPLETE_CHOICES: ReadonlyMap<string, string> = new Map([
   ['park_look', `${backpackImage}?view=park`],
   ['shot1_view', `${apparelImage}?view=shot1`],
 ])
-/** 按描述生图出过几张，给每张一个不同的地址。 */
 let generatedCount = 0
 
-/** 文件页上看到的工程原文；制作页不读它，只是让文件页有东西可看。 */
 const FILM_SOURCE = [
   '<?icml using="iclip-studio/film@1"?>',
   '<Film version="1">',
@@ -101,8 +80,6 @@ const photo = (node: string, label: string, url: string): MockImage => ({
   references: [],
 })
 
-/** 一组 12 秒的穿搭短片，照文件写、还没有任何机位图进列表：参考图列表依次是人物一张生成图、产品两张用户给的、场景一张
- * 生成图；镜头 1、镜头 2 各有一张机位图；四个镜头，两句台词。同一个元素的几张图都叫元素的名字，与后端相同。 */
 const mockGroup = (): MockGroup => ({
   aspectRatio: '9:16',
   images: [
@@ -119,7 +96,6 @@ const mockGroup = (): MockGroup => ({
   index: 1,
   model: 'vendor-a-seedance-2-0',
   seconds: 12,
-  // 拍法与声音在完整的工程里是几组视频共用的（这里只摆出第 1 组），`shared` 为 true。
   settings: [
     {
       images: [],
@@ -219,7 +195,6 @@ const IMAGE_NUMBER = /@Image(\d+)/g
 
 const cite = (number: number) => `参考@Image${String(number)}，`
 
-/** 一组的字（全局设定与镜头正文）里的图号按 `shift` 改：`shift(K)` 给出新的 K。 */
 const renumbered = (group: MockGroup, shift: (number: number) => number): MockGroup => {
   const apply = (text: string) =>
     text.replace(IMAGE_NUMBER, (_, digits: string) => `@Image${String(shift(Number(digits)))}`)
@@ -230,7 +205,6 @@ const renumbered = (group: MockGroup, shift: (number: number) => number): MockGr
   }
 }
 
-/** 第 `index` 镜正文开头（首部空白之后）的字换成 `edit(去掉首部空白的字)`。 */
 const editShotHead = (group: MockGroup, index: number, edit: (text: string) => string) => ({
   ...group,
   shots: group.shots.map((shot, at) => {
@@ -241,9 +215,6 @@ const editShotHead = (group: MockGroup, index: number, edit: (text: string) => s
   }),
 })
 
-/** 让机位图 `node` 在这组的参考图列表里（`listed`）或不在，同后端 `_place_view`：插进列表时排在镜头更靠后的机位图之前，
- * 那一镜开头写「参考@ImageN，」，不小于 N 的图号加一；移出时删掉这两处，比 N 大的图号减一。不是这组的机位图或本来就是
- * 这样时原样返回。 */
 const placeView = (group: MockGroup, node: string, listed: boolean): MockGroup => {
   const shot = group.shots.findIndex((item) => item.view === node)
   const view = group.views.find((item) => item.node === node)
@@ -272,7 +243,6 @@ const placeView = (group: MockGroup, node: string, listed: boolean): MockGroup =
   return { ...shifted, images: shifted.images.toSpliced(present, 1) }
 }
 
-/** 按选用把各组的机位图放进或移出列表。 */
 const placeViews = (groups: readonly MockGroup[], picks: ReadonlyMap<string, string | null>) =>
   groups.map((group) =>
     group.views.reduce(
@@ -281,7 +251,6 @@ const placeViews = (groups: readonly MockGroup[], picks: ReadonlyMap<string, str
     ),
   )
 
-/** 人物的身材句：同时用在人物设定图的描述里，是一段与生图共用的元素描述（`shared`），字里不能有图。 */
 const SHARED_BODY: FilmGroupOut['settings'][number] = {
   images: [],
   kind: 'element',
@@ -291,9 +260,6 @@ const SHARED_BODY: FilmGroupOut['settings'][number] = {
   text: '身材高挑匀称，肩宽适中。',
 }
 
-/** 给一段对话放一份能用的工程：工作区里有 `film.icml` 与 `film.icrun`，制作页读得出一组。默认场景图与镜头 1 的
- * 机位图没选用、出不了片；`complete` 时全都选用了；`sharedBody` 时人物后面多一段与生图共用的身材句。工程按选用经
- * `placeView` 摆好，与后端选用时写回的一样。`musicDescription` 是工程里写的配乐描述，默认没有。 */
 export const seedMockFilm = (
   conversationId: string,
   options: {
@@ -329,7 +295,6 @@ export const seedMockFilm = (
   })
 }
 
-/** 模拟 AI 导演改了文件：第 `shot` 镜换成 `text`，工程文件版本加一。 */
 export const editMockFilmShot = (conversationId: string, shot: number, text: string) => {
   const film = films.get(conversationId)
   if (film === undefined) return
@@ -351,8 +316,6 @@ export const resetMockFilm = () => {
   generatedCount = 0
 }
 
-/** 一张生成图的描述照后端拆：每个 `@ImageN` 都是图片段，带 N 与现在的地址（没图为 null）；没图的称呼按列表先后记进
- * `missing`。 */
 const resolvedPrompt = (
   image: MockImage,
   labelOf: (node: string) => string,
@@ -377,8 +340,6 @@ const resolvedPrompt = (
 
 const seconds = (value: number) => String(value)
 
-/** 照后端（shot_prompt.py）拼一组出片的正文：全局设定按段名一段一段写（段名、换行、同名的几段一行一段，段与段之间
- * 空一行），再空一行写「镜头：」，每镜一行起止秒与正文（台词写成 `{台词}`），末尾约束。 */
 const videoPrompt = (group: MockGroup): string => {
   const sections: { label: string; texts: string[] }[] = []
   for (const setting of group.settings) {
@@ -406,7 +367,6 @@ const videoPrompt = (group: MockGroup): string => {
 const allImages = (film: MockFilm) =>
   film.groups.flatMap((group) => [...group.images, ...group.views])
 
-/** 这段对话现在每张图的地址：用户给的图用文件里的地址，生成图只认选用。 */
 const urlsOf = (conversationId: string, film: MockFilm) => {
   const picks = chosen.get(conversationId) ?? new Map<string, string | null>()
   const images = allImages(film)
@@ -416,7 +376,6 @@ const urlsOf = (conversationId: string, film: MockFilm) => {
   }
 }
 
-/** 读的那一刻的制作页：参考图按列表先后编号，后面接没进列表的机位图；地址、描述的拆分与这组的正文现算。 */
 const resolved = (conversationId: string, film: MockFilm): FilmViewOut => {
   const urlOf = urlsOf(conversationId, film)
   const images = allImages(film)
@@ -456,7 +415,6 @@ const imageOf = (film: MockFilm, node: string) =>
 
 const rejected = (detail: string) => HttpResponse.json({ detail }, { status: 422 })
 
-/** 后端保存检查的一条：一组的字里写的 `@ImageN` 正好是 1 到列表长度。 */
 const numbersMatch = (group: MockGroup): boolean => {
   const texts = [
     ...group.settings.map((setting) => setting.text),
@@ -466,14 +424,11 @@ const numbersMatch = (group: MockGroup): boolean => {
   return used.size === group.images.length && group.images.every((_, index) => used.has(index + 1))
 }
 
-/** 改过的字里一处图号指的图：数字是这组参考图列表里现有的第几张（从 0 起），字符串是新插入的图的地址。 */
 type MockKey = number | string
 type MockRun = string | { key: MockKey }
 
 const VIEW_LOCKED = '机位图的引用随选用增删；请在镜头上取消选用'
 
-/** 照后端拆一段改过的字：列表现有 `count` 张，`@Image1`…`@Image{count}` 是现有的图，再往后依次是 `keys`（新插入的图）。
- * 这组没有的编号返回给人看的一句话。 */
 const parseRuns = (
   text: string,
   count: number,
@@ -497,7 +452,6 @@ const parseRuns = (
   return runs
 }
 
-/** 页面插入的新照片：「素材」里已有同一地址的就用它，没有就叫「素材照片N」（N 取第一个没被占用的）。 */
 const photoFor = (film: MockFilm, url: string): MockImage => {
   const images = allImages(film)
   const same = images.find((image) => image.kind === 'photo' && image.photo === url)
@@ -508,9 +462,6 @@ const photoFor = (film: MockFilm, url: string): MockImage => {
   return photo(name, name, url)
 }
 
-/** 照后端 `_renumber_group` 改一组的字：新插入的图不在列表里时排在元素图之后、机位图之前，字里一处都不再用的元素图从
- * 列表删掉，再按新旧编号对照改这组全部的字；机位图开头的引用删掉、挪动或多写一处都不写。拍法与声音在后端是几组共用的字，
- * 不能写图号。 */
 const renumberGroup = (
   film: MockFilm,
   group: MockGroup,
@@ -607,7 +558,6 @@ const renumberGroup = (
   }
 }
 
-/** 按后端的规矩把几段字改进去；不合规矩返回给人看的一句话。 */
 const applyEdits = (
   film: MockFilm,
   body: FilmTextEditsIn,
@@ -694,8 +644,6 @@ export const filmHandlers = [
     return HttpResponse.json({ film: resolved(conversationId, next) })
   }),
 
-  // 生成图登记进运行文件并选用，运行文件版本加一；机位图第一次选用、取消选用时工程文件跟着改，版本也加一。
-  // 用户给的图改工程文件里的地址，工程文件版本加一。
   http.put('*/api/conversations/:conversationId/film/image', async ({ params, request }) => {
     const conversationId = String(params['conversationId'])
     const film = films.get(conversationId)
@@ -707,7 +655,6 @@ export const filmHandlers = [
     if (image === undefined) return rejected('要换的这张图找不到了，刷新后再换')
     const picks = chosen.get(conversationId) ?? new Map<string, string | null>()
     chosen.set(conversationId, picks)
-    // 生成图取消选用就是没图，不回到生成过的哪一张。
     if (body.url === null && image.kind === 'photo')
       return rejected('这张图是你给的，只能换成另一张，不能清空')
     picks.set(body.node, body.url)
@@ -733,7 +680,6 @@ export const filmHandlers = [
     return HttpResponse.json({ film: resolved(conversationId, next) })
   }),
 
-  // 整份工程一起改：每组视频与各组的机位图换成新画幅，工程文件版本加一；本来就是它时不写，照样答复整页。
   http.put('*/api/conversations/:conversationId/film/aspect-ratio', async ({ params, request }) => {
     const conversationId = String(params['conversationId'])
     const film = films.get(conversationId)
@@ -741,7 +687,6 @@ export const filmHandlers = [
     const body = (await request.json()) as FilmAspectRatioIn
     if (body.filmVersion !== film.filmVersion)
       return HttpResponse.json({ detail: '分镜刚被改过，刷新后再改' }, { status: 409 })
-    // 视频能写的画幅与出片栏的档位是同一组（后端 `VIDEO_ASPECTS`）。
     if (!ASPECT_RATIOS.some((ratio) => ratio === body.aspectRatio))
       return rejected(`不支持 ${body.aspectRatio} 画幅，可选 ${ASPECT_RATIOS.join('、')}`)
     const views = new Set(film.groups.flatMap((group) => group.views.map((view) => view.node)))
@@ -785,7 +730,6 @@ export const filmHandlers = [
       const missing = image.references.filter((node) => urlOf(node) === null)
       if (missing.length > 0)
         return rejected(missingText(missing.map((node) => imageOf(film, node)?.label ?? node)))
-      // 每次出的地址都不一样：同一个地址会被当成这张图在用的那版，进不了版本条。
       generatedCount += 1
       const created = acceptMockImage({
         conversationId,

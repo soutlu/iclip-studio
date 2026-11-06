@@ -27,7 +27,6 @@ const statusDotVariants = cva('inline-flex items-center gap-2 text-body-sm font-
   },
 })
 
-/** 需求单状态的中文标签与配色，卡片与弹窗共用同一份映射。 */
 export function TaskStatusTag({
   appearance = 'tag',
   status,

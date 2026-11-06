@@ -1,8 +1,3 @@
-"""identity 业务规则：Principal 构造、API key 生命周期、用户管理。
-
-出站只经 repository Protocol；不 import 框架。
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -11,12 +6,13 @@ import secrets
 import uuid
 from datetime import UTC, datetime
 
-from iclip.common.errors import (
+from agent_runtime.errors import (
     AuthenticationFailed,
     NotFound,
     PermissionDenied,
     ValidationFailed,
 )
+
 from iclip.domains.identity.commands import CreateApiKey, UpdateUser
 from iclip.domains.identity.models import ApiKeyRecord, Principal, UserAccount
 from iclip.domains.identity.rbac import MANAGE_PERMISSION, effective_permissions, is_known_role
@@ -31,7 +27,7 @@ _TOKEN_CHARSET = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 class SelfManagementForbidden(ValidationFailed):
-    """用户管理者不能修改自己的授权或停用自己（wire 层映射 400）。"""
+    pass
 
 
 def generate_api_key_token() -> str:
@@ -39,12 +35,6 @@ def generate_api_key_token() -> str:
 
 
 def validate_api_key_token(token: str) -> str:
-    """校验调用方自带的 key 明文。
-
-    长度下限护的是库：存的是无盐哈希加前 16 位明文，短串连库泄露就等于明文。
-    字符集限制保证它能原样放进 Authorization 头。
-    """
-
     if len(token) < _MIN_TOKEN_LENGTH:
         raise ValidationFailed(f"key 至少 {_MIN_TOKEN_LENGTH} 个字符")
     if not _TOKEN_CHARSET.match(token):
@@ -81,11 +71,6 @@ class IdentityService:
         )
 
     async def authenticate_api_key(self, token: str) -> Principal:
-        """校验 Bearer API key 并构造主体；任何一步不满足都判定凭证无效。
-
-        有效权限 = key 显式授权集；属主停用/吊销/过期即失效。
-        """
-
         record = await self._api_keys.get_by_hash(hash_api_key_token(token))
         if record is None or record.revoked_at is not None:
             raise AuthenticationFailed("API key 无效")
@@ -115,8 +100,6 @@ class IdentityService:
     async def issue_api_key(
         self, principal: Principal, command: CreateApiKey
     ) -> tuple[ApiKeyRecord, str]:
-        """签发 key；明文只在返回值出现一次。``api_keys:issue`` 由路由声明，这里管 key 不能签 key。"""
-
         if principal.kind != "user":
             raise PermissionDenied("API key 不能签发新的 API key")
         name = command.name.strip()
@@ -165,17 +148,29 @@ class IdentityService:
     async def update_user(
         self, principal: Principal, user_id: uuid.UUID, patch: UpdateUser
     ) -> UserAccount:
-        """改他人的角色、直接授权与启用状态；``users:manage`` 由路由声明，这里管不能改自己。"""
-
+        changes_access = patch.roles is not None or patch.direct_permissions is not None
         if patch.roles is not None:
             unknown_roles = {role for role in patch.roles if not is_known_role(role)}
             if unknown_roles:
                 raise ValidationFailed(f"未知角色: {', '.join(sorted(unknown_roles))}")
         if user_id == principal.user_id:
-            if patch.roles is not None or patch.direct_permissions is not None:
+            if changes_access:
                 raise SelfManagementForbidden("不能修改自己的授权")
             if patch.is_active is False:
                 raise SelfManagementForbidden("不能停用自己")
+        else:
+            target = await self.get_account(user_id)
+            before = effective_permissions(target.roles, target.direct_permissions)
+            after = effective_permissions(
+                target.roles if patch.roles is None else patch.roles,
+                (
+                    target.direct_permissions
+                    if patch.direct_permissions is None
+                    else patch.direct_permissions
+                ),
+            )
+            if not before | after <= principal.permissions:
+                raise PermissionDenied("不能修改权限超出自己的用户，也不能授予超出自己的权限")
         updated = await self._users.update_access_fields(
             user_id,
             roles=patch.roles,

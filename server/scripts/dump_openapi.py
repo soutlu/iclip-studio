@@ -1,12 +1,3 @@
-"""把后端的 OpenAPI 导出到 ``contract/openapi.json``。
-
-使用占位环境变量与 ``contract/`` 下的占位配置启用全部可选模块，供前端生成完整类型与 zod schema。
-占位值仅用于装配，不建立连接或发送请求；新增必需环境变量时须更新 ``PLACEHOLDER_ENV``，
-新增影响路由的配置段时须更新占位配置。真实配置不进仓库。
-
-用法：``make contract`` 导出，``make contract-check`` 只校验不写（已进 ``make check``）。
-"""
-
 from __future__ import annotations
 
 import json
@@ -15,12 +6,10 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-# 占位值须符合 Pydantic 的 URL 格式和密钥长度约束。
 PLACEHOLDER_ENV = {
     "AUTH_SECRET": "openapi-dump-placeholder-secret-0123456789",
     "DATABASE_URL": "postgresql+asyncpg://placeholder:placeholder@127.0.0.1:5432/placeholder",
     "IMAGE_API_BASE": "https://placeholder.invalid/image",
-    "MODEL_API_KEY": "openapi-dump-placeholder",
     "OSS_ACCESS_KEY_ID": "placeholder",
     "OSS_ACCESS_KEY_SECRET": "placeholder",
     "OSS_BUCKET": "placeholder",
@@ -28,14 +17,15 @@ PLACEHOLDER_ENV = {
     "OSS_PUBLIC_URL_BASE": "https://placeholder.invalid/public",
     "PRODUCT_CATALOG_DATABASE_URL": "postgresql+asyncpg://placeholder:placeholder@127.0.0.1:5432/placeholder",
     "QWEN_API_KEY": "openapi-dump-placeholder",
+    "RUNTIME_APP_KEY": "openapi-dump-placeholder-runtime-key-0123456789",
+    "RUNTIME_INTERNAL_TOKEN": "openapi-dump-placeholder-internal-0123456789",
+    "RUNTIME_URL": "https://placeholder.invalid/runtime",
     "SSO_BASE_URL": "https://placeholder.invalid/sso",
     "SSO_REDIRECT_URL": "https://placeholder.invalid/auth/sso/callback",
     "VIDEO_API_KEY": "openapi-dump-placeholder",
     "VIDEO_ENHANCE_SUBMIT_URL": "https://placeholder.invalid/video/enhance",
     "VIDEO_STATUS_BASE_URL": "https://placeholder.invalid/video/status",
     "VIDEO_SUBMIT_URL": "https://placeholder.invalid/video/submit",
-    "VIDEO_UNDERSTANDING_API_KEY": "openapi-dump-placeholder",
-    "VIDEO_UNDERSTANDING_URL": "https://placeholder.invalid/video/understanding",
 }
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -44,12 +34,9 @@ PLACEHOLDER_CONFIG_DIR = Path(__file__).resolve().parent / "contract"
 
 
 def build_document() -> dict[str, object]:
-    """使用占位环境装配完整应用，获取 OpenAPI 文档。"""
-
     for name, value in PLACEHOLDER_ENV.items():
         os.environ.setdefault(name, value)
     os.environ.setdefault("CONFIG_FILE", str(PLACEHOLDER_CONFIG_DIR / "config.yaml"))
-    os.environ.setdefault("AGENTS_FILE", str(PLACEHOLDER_CONFIG_DIR / "agents.yaml"))
 
     from iclip.asgi import app
 
@@ -57,8 +44,6 @@ def build_document() -> dict[str, object]:
 
 
 def render(document: dict[str, object]) -> str:
-    """排序键名，避免字典顺序变化导致合同漂移。"""
-
     return json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
 

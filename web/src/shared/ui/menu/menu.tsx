@@ -42,7 +42,6 @@ type MenuItemProps = ComponentPropsWithoutRef<typeof DropdownMenu.Item> & {
   destructive?: boolean
   icon?: Parameters<typeof Icon>[0]['name']
   shortcut?: readonly string[]
-  /** 靠右的灰色小字或小图标，如预计时间、计时、重试图标。 */
   trailing?: ReactNode
 }
 
@@ -61,7 +60,6 @@ export function MenuItem({
       {...props}
     >
       {icon ? (
-        // 危险项的图标沿用文字色，禁用时随 ui-state 一起变淡。
         <Icon
           className={cn('shrink-0', !destructive && 'text-on-surface-variant')}
           decorative
@@ -86,7 +84,6 @@ export function MenuItem({
   )
 }
 
-/** `ref` 透传到菜单项，调用方可在打开后把焦点放到指定项上。 */
 export function MenuRadioItem({
   children,
   className,
@@ -98,7 +95,6 @@ export function MenuRadioItem({
       {...props}
     >
       {children}
-      {/* 选中态用墨色：品牌绿只留给出片主按钮与状态色。 */}
       <DropdownMenu.ItemIndicator asChild>
         <Icon className="text-on-surface" decorative name="check" size="md" />
       </DropdownMenu.ItemIndicator>
@@ -112,16 +108,9 @@ const ICON_ITEM_CLASS =
 
 type MenuIconRadioItemProps = Omit<ComponentProps<typeof DropdownMenu.RadioItem>, 'children'> & {
   icon: IconName
-  /** 读屏用的名字，也是鼠标悬停时的提示。 */
   label: string
 }
 
-/**
- * 只有图标的单选项，几个横排在菜单的一行里（如外观的三档）。选中的一层浅墨底，与侧栏任务筛选的选中项同款。
- *
- * 选了菜单不关：换完马上看得到效果，也能接着换。提示只在鼠标悬停时弹出：键盘移动高亮时也弹的话，
- * Esc 要先关提示、再按一次才关菜单；键盘与读屏靠可访问名称。
- */
 export function MenuIconRadioItem({
   className,
   icon,
@@ -131,11 +120,7 @@ export function MenuIconRadioItem({
 }: MenuIconRadioItemProps) {
   return (
     <TooltipRoot>
-      <TooltipTrigger
-        asChild
-        // 菜单项自己的聚焦处理先跑完，这里再拦下提示的聚焦打开。
-        onFocus={(event) => event.preventDefault()}
-      >
+      <TooltipTrigger asChild onFocus={(event) => event.preventDefault()}>
         <DropdownMenu.RadioItem
           aria-label={label}
           className={cn(ICON_ITEM_CLASS, className)}

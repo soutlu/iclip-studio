@@ -1,7 +1,3 @@
-"""编辑段从受理到交上游走一遍装配好的模块：受理时探基底与参考片段的时长，入队后原样交给上游。
-
-基底与片段放在本地 HTTP 服务上，由真 ffprobe 去探；上游是计数的 MockTransport，断言付费接口调没调。"""
-
 from __future__ import annotations
 
 import json
@@ -85,8 +81,6 @@ def _edit_module(
     *,
     fetch_url: Callable[[str], str] = as_is,
 ) -> GenerationModule:
-    """装配好的生成模块；上游是 MockTransport，收到的请求体记进 ``sent``。"""
-
     def upstream(request: httpx.Request) -> httpx.Response:
         sent.append(json.loads(request.content))
         return httpx.Response(200, json={"task_id": "upstream-1"})
@@ -134,9 +128,6 @@ def _edit_in(source_job_id: uuid.UUID, clip_url: str, *, start_ms: int, end_ms: 
 async def _run_edit(
     repo: InMemoryGenerationRepository, *, clip_seconds: int, start_ms: int, end_ms: int
 ) -> tuple[GenerationJob, list[dict[str, Any]], str]:
-    """6 秒的出片作基底（没量过时长，受理时去探），本人上传一条 ``clip_seconds`` 秒的片段，
-    受理一次编辑段并跑提交；返回落库的编辑段、上游收到的请求与片段地址。受理不通过就抛出。"""
-
     sent: list[dict[str, Any]] = []
     module = _edit_module(repo, sent)
     with TemporaryDirectory(prefix="edit-fixture-") as tmp:
@@ -184,9 +175,6 @@ async def test_an_edit_goes_upstream_as_is_with_its_clip_recorded() -> None:
 async def test_durations_are_probed_at_the_rewritten_addresses_and_upstream_gets_the_public_ones() -> (
     None
 ):
-    """基底与片段记的是本桶公网地址，只在换过的地址上读得到；受理时探的是换过的，交给上游的
-    仍是公网地址。"""
-
     public = "https://cdn.test"
     base_url, clip_url = f"{public}/iclip/agent/base.mp4", f"{public}/iclip/agent/clip.mp4"
     repo = InMemoryGenerationRepository()
@@ -223,9 +211,6 @@ async def test_durations_are_probed_at_the_rewritten_addresses_and_upstream_gets
 async def test_a_clip_someone_else_uploaded_first_still_counts_as_my_upload(
     engine: AsyncEngine,
 ) -> None:
-    """同一个片段别人先传过：本人那条上传按 MD5 去重，落的是他的地址；按地址认本人的视频上传
-    照样认得出，编辑照常受理、交给上游。走真库，两条上传都经 ``SettledRecords`` 落。"""
-
     repo = SqlGenerationRepository(engine)
     records = SettledRecords(repo)
     me = replace(PRINCIPAL, user_id=await make_user(engine))
@@ -274,8 +259,6 @@ async def test_a_clip_someone_else_uploaded_first_still_counts_as_my_upload(
 async def test_a_reference_with_a_different_duration_is_submitted_without_rewriting_the_range(
     clip_seconds: int,
 ) -> None:
-    """真实探测的参考长短不限制基底替换区间；受理后入队并将实际参考地址原样提交上游。"""
-
     repo = InMemoryGenerationRepository()
     edit, sent, clip_url = await _run_edit(
         repo, clip_seconds=clip_seconds, start_ms=1000, end_ms=6000

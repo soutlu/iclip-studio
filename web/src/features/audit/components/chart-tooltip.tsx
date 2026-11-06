@@ -1,5 +1,3 @@
-/** 图表悬停提示的卡片：值在前、名在后，行首的小记号跟图上的记号同形同色。 */
-
 import { cn } from '@/shared/lib/utils'
 import type { TipRow } from '../overview-model'
 

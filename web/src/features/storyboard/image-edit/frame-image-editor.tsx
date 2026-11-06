@@ -40,24 +40,13 @@ import './image-edit.css'
 
 type FrameImageEditorProps = {
   target: FrameEditTarget
-  /** 这张图此刻在用的那一版；已经不在分镜里时为 undefined，在分镜里但没有在用的（制作页没选用的生成图）为 null。
-   * 随替换实时变，不记打开那一刻的。 */
   currentUrl: string | null | undefined
-  /** 标题「编辑图片」后面的一句：分镜页写组与帧，制作页写图的名字。 */
   subtitle: string
-  /** 输入卡里 `@` 与「+」能插的本组图片，下标加一是编号。 */
   frames: readonly EditFrame[]
   aspectRatio: string
-  /** 打开时先选中哪一条；从帧上「有新结果」进来时是那条任务。 */
   initialKey?: string | undefined
-  /** `opened` 是本次真正点开看过（看时已落定）的任务 id，只有它们可以标成看过。 */
   onClose: (opened: ReadonlySet<string>) => void
-  /** 把这一帧从 `previousUrl` 换成 `url`；替换与撤销都走它，这一帧已不是 `previousUrl` 时应当拒绝。
-   * null 只出现在 `currentUrl` 可以为 null 的地方：从没有在用的图第一次选用，或撤销回没有在用的图。 */
   onApply: (previousUrl: string | null, url: string | null) => Promise<void>
-  /** 按描述再生成（制作页的生成图才有）：`parts` 是这张图的描述，参考图是图片；`submit` 收输入卡里的样子，
-   * 失败时抛出给人看的原因。新的出来进版本条，选用才用上。`blocked` 是此刻不能再生成的原因（如参考图尚未选用），
-   * 给了就在输入卡上方写出来，提交按钮置灰、回车不提交。 */
   regenerate?:
     | {
         parts: readonly EditDraftPart[]
@@ -67,10 +56,8 @@ type FrameImageEditorProps = {
     | undefined
 }
 
-/** 版本条末尾「再生成」那一格的选中键；任务号与地址都不会是它。 */
 const REGENERATE_KEY = 'regenerate'
 
-/** 编辑图片窗口：装配舞台、版本条与输入卡，持有选中条目、选中标注与生成偏好。 */
 export function FrameImageEditor({
   target,
   currentUrl,
@@ -85,19 +72,15 @@ export function FrameImageEditor({
   const queryClient = useQueryClient()
   const drafts = useFrameEditDrafts(target)
   const lock = useSubmitLock()
-  // 只随用户点版本条而变：提交新任务、任务落定都不挪舞台。
   const [selectedKey, setSelectedKey] = useState(initialKey ?? CURRENT_KEY)
   const [selectedAnnotation, setSelectedAnnotation] = useState<string | null>(null)
   const [wantedModel, setWantedModel] = useState<string>()
   const [wantedChannel, setWantedChannel] = useState<ImageChannel>('dev')
   const [wantedResolution, setWantedResolution] = useState<ImageResolution>('2k')
   const [operationError, setOperationError] = useState<string | null>(null)
-  // 从外部整份换掉草稿时加一：画布与输入卡换 key 重挂，撤销栈随之清空、输入卡装回新草稿。
   const [draftRevision, setDraftRevision] = useState(0)
-  // 标注工具条的位置：桌面叠在舞台左侧，窄屏是舞台下方一行；画布用 portal 渲染进来。
   const [toolbarHost, setToolbarHost] = useState<HTMLDivElement | null>(null)
   const composerRef = useRef<EditComposerHandle>(null)
-  // 再生成时输入卡里的描述：开着编辑器时留着改过的样子，关掉再开回到文件里的。
   const [regenerateParts, setRegenerateParts] = useState(regenerate?.parts ?? [])
   const regenerating = regenerate !== undefined && selectedKey === REGENERATE_KEY
   const modelsQuery = useImageModels()
@@ -115,12 +98,10 @@ export function FrameImageEditor({
   )
   const words = editorWordsOf(target)
   const frameReplace = useFrameReplace({ currentUrl, onApply })
-  // 图已经不在分镜里时舞台只说这一句，当前帧那一格空着。
   const entries = useMemo(
     () => frameImageEntries(jobs, currentUrl === undefined ? '' : currentUrl),
     [jobs, currentUrl],
   )
-  // 选中的那条被折进当前帧格（刚替换过）或还没拉回来时，落回当前帧；撤销后它回到条里，舞台随之回到对比。
   const selected = entries.find((entry) => entry.key === selectedKey) ?? entries[0]
   const unseen = useUnseenResults(
     entries.flatMap((entry) => (entry.kind === 'pending' ? [entry.job.id] : [])),
@@ -131,7 +112,6 @@ export function FrameImageEditor({
   const baseUrl = selected === undefined ? '' : entryBaseUrl(selected, currentUrl ?? '')
   const draft = useMemo(() => draftOf(drafts.drafts, baseUrl), [drafts.drafts, baseUrl])
   const inFlight = entries.filter((entry) => entry.kind === 'pending').length
-  // 说的是舞台上这一张；没有要提醒的就不占这一行（画幅在输入卡的设置行里）。
   const footnote =
     inFlight > 0
       ? `有 ${inFlight} 个任务正在生成或排队，关闭窗口不影响生成`
@@ -145,7 +125,6 @@ export function FrameImageEditor({
     setSelectedKey(key)
     setSelectedAnnotation(null)
     setOperationError(null)
-    // 翻看版本条时正好看见了当前帧那一格。
     frameReplace.acknowledge()
   }
   const submit = async (parts: EditDraftPart[]) => {
@@ -169,7 +148,6 @@ export function FrameImageEditor({
     }
     setOperationError(null)
     try {
-      // 引用了标注才导出标注图，它代替干净底图占 @图片1。
       const annotatedUrl = referencesAnnotation(parts)
         ? (await uploadMediaFile(await exportAnnotatedImage(baseUrl, annotations), 'image')).url
         : undefined
@@ -204,7 +182,6 @@ export function FrameImageEditor({
   }
   const replace = async (url: string) => {
     if (await frameReplace.replace(url)) {
-      // 这张图成了当前帧，画在它上面的圈是上一轮的输入，留着只会误导。
       drafts.clearDraft(url)
     }
   }
@@ -217,7 +194,6 @@ export function FrameImageEditor({
       toast.error('该记录没有可恢复的输入')
       return
     }
-    // 草稿归属于底图。恢复时也切回它，避免画面和装回的输入指向不同图片。
     const wanted = job.sourceUrl ?? currentUrl
     const onBase = entries.find(
       (entry) => (entry.kind === 'image' || entry.kind === 'current') && entry.url === wanted,
@@ -229,7 +205,6 @@ export function FrameImageEditor({
       { prompt: readSubmittedPrompt(job), referenceImageUrls: urls },
       base,
     )
-    // 保存的是带标注的图片，无法还原画布上可编辑的圈与编号。
     drafts.updateDraft(base, () => ({ annotations: [], parts }))
     setDraftRevision((value) => value + 1)
     select(destination.key)
@@ -251,7 +226,6 @@ export function FrameImageEditor({
         className="image-edit-dialog"
         onInteractOutside={(event) => event.preventDefault()}
         onEscapeKeyDown={(event) => {
-          // Dialog 先于画布捕获 Escape；画布内取消笔迹/选择时不能关闭编辑器。
           if (selectedAnnotation !== null) {
             event.preventDefault()
             setSelectedAnnotation(null)
@@ -276,7 +250,6 @@ export function FrameImageEditor({
         <div className="image-edit-body">
           <div
             className="image-edit-stage-area"
-            // 横版的小图格更宽，画面两侧按它让出版本条的位置。
             style={
               {
                 '--image-edit-thumb-width': `${versionThumbSize(aspectRatio).width}px`,
@@ -347,7 +320,6 @@ export function FrameImageEditor({
                 selected.kind !== 'current' &&
                 selected.job !== null ? (
                   <MenuRoot>
-                    {/* disabled 交给菜单触发器：它拦下自己的按下与按键，再转交给按钮置灰。 */}
                     <MenuTrigger asChild disabled={frameReplace.pending !== null}>
                       <IconButton
                         label="图片历史操作"
@@ -420,7 +392,6 @@ export function FrameImageEditor({
               }}
               onSubmit={(parts) => void lock.run(() => submitRegenerate(parts))}
               phase={lock.phase}
-              // 模型与画幅照文件里写的，这里不选。
               settings={null}
               submitBlocked={regenerate.blocked !== undefined}
             />
@@ -435,7 +406,6 @@ export function FrameImageEditor({
               aspectRatio={aspectRatio}
               annotations={draft.annotations}
               selectedAnnotation={selectedAnnotation}
-              // 芯片指的是画在当前底图上的圈，选中的那条条目不变。
               onSelectAnnotation={setSelectedAnnotation}
               initialParts={draft.parts}
               onPartsChange={(parts) => {

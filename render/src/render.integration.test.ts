@@ -1,10 +1,3 @@
-/**
- * 用真实的 @hyperframes/producer 渲染：一份 2 秒的草稿（画面、字幕、配乐）经本机上传目标收下，
- * 核对成片的时长、画面尺寸与音轨；另把组件可填项的取值与目录默认值各渲染一遍、字幕在默认字体与
- * 品牌字体下各渲染一遍，比较画面。
- * 组件来自组装好的测试组件库（在 web/ 运行 pnpm hf:registry；RENDER_REGISTRY_ROOT 可另指）。
- * 需要 chrome-headless-shell、ffmpeg 与组装好的组件库；缺任何一样时整组跳过，跳过原因写在用例名里。
- */
 import { execFile, spawnSync } from 'node:child_process'
 import { createReadStream, createWriteStream, existsSync } from 'node:fs'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
@@ -29,7 +22,6 @@ const REGISTRY_ROOT =
 const library: ComponentLibrary | null = existsSync(join(REGISTRY_ROOT, 'catalog.json'))
   ? await loadLibrary(REGISTRY_ROOT)
   : null
-// 跳过时不会用到：用例都在 describe.skipIf 里
 const catalog = library?.catalog as ComponentLibrary['catalog']
 const REGISTRY = library?.dir ?? ''
 
@@ -53,13 +45,8 @@ function skipReason(): string | null {
 const reason = skipReason()
 
 const FRAME = { width: 640, height: 360 }
-/**
- * 测试可填项（fixture-fields）在 640×360 画面上的文字所在：1920×1080 的设计稿缩到 1/3 后，色底在
- * 左下 (40, 240)–(340, 313)，字从 x≈56 起、竖直居中
- */
 const TEXT_AREA = { x: 60, y: 258, width: 260, height: 38 }
 
-/** 成片在 `at` 秒处的一帧，逐像素 RGB。 */
 async function frameAt(file: string, at: number): Promise<Buffer> {
   const { stdout } = await run(
     'ffmpeg',
@@ -96,7 +83,6 @@ function eachPixel(region: Region, visit: (offset: number) => void) {
   }
 }
 
-/** 两帧在区域内的平均逐通道差（0–255）。 */
 function meanDifference(a: Buffer, b: Buffer, region: Region): number {
   let sum = 0
   eachPixel(region, (offset) => {
@@ -107,7 +93,6 @@ function meanDifference(a: Buffer, b: Buffer, region: Region): number {
   return sum / (region.width * region.height * 3)
 }
 
-/** 整帧里明显偏蓝的像素数。 */
 function bluePixels(frame: Buffer): number {
   let count = 0
   eachPixel({ x: 0, y: 0, ...FRAME }, (offset) => {
@@ -117,7 +102,6 @@ function bluePixels(frame: Buffer): number {
   return count
 }
 
-/** 区域内每个像素的平均颜色（RGB，0–255）。 */
 function meanColor(frame: Buffer, region: Region): [number, number, number] {
   let [r, g, b] = [0, 0, 0]
   eachPixel(region, (offset) => {
@@ -129,7 +113,6 @@ function meanColor(frame: Buffer, region: Region): [number, number, number] {
   return [r / count, g / count, b / count]
 }
 
-/** 本机素材与上传目标：GET 带 Range 读 dir 下的文件，PUT 存进 dir/received.mp4。 */
 async function startServer(dir: string): Promise<{ server: Server; origin: string }> {
   const server = createServer(async (req, res) => {
     const path = join(dir, new URL(req.url ?? '/', 'http://x').pathname)
@@ -272,7 +255,6 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       },
       media: {
         videos: { [SOURCE_JOB]: { url: `${origin}/clip.mp4` } },
-        // 本机 http 素材：producer 只肯取 https 公网地址，渲染服务自己先取到本地。
         music: { url: `${origin}/music.mp3` },
         subtitles: {
           [SOURCE_JOB]: {
@@ -341,7 +323,6 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       logger,
     })
     const gray = `${origin}/gray.mp4`
-    // 测试可填项放三处：第一处只改底色（默认蓝色），后两处只改文字，不改就只剩文字一处不同。
     const film = (values: boolean, video: string) =>
       buildComposition({
         draft: {
@@ -395,7 +376,6 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
         media: { videos: { [SOURCE_JOB]: { url: video } }, music: null, subtitles: {} },
         catalog,
       }).html
-    // 取帧：改底色的那处在 1 秒；改文字的两处在各自时段里的同一进度（开始后 1.3 秒）。
     const frames = async (values: boolean) => {
       const rendered = await worker.render(
         {
@@ -419,12 +399,10 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const withValues = await frames(true)
     const withDefaults = await frames(false)
 
-    // 默认值的两处一模一样，差别只是编码噪声；填了取值的两处与默认值、彼此都不同。
     expect(meanDifference(withDefaults.first, withDefaults.second, TEXT_AREA)).toBeLessThan(3)
     expect(meanDifference(withValues.first, withDefaults.first, TEXT_AREA)).toBeGreaterThan(6)
     expect(meanDifference(withValues.second, withDefaults.second, TEXT_AREA)).toBeGreaterThan(6)
     expect(meanDifference(withValues.first, withValues.second, TEXT_AREA)).toBeGreaterThan(6)
-    // 底色默认蓝色，改成红色后画面上没有蓝。
     expect(bluePixels(withDefaults.headline)).toBeGreaterThan(100)
     expect(bluePixels(withValues.headline)).toBeLessThan(10)
   }, 600_000)
@@ -437,10 +415,8 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       logger,
     })
     const gray = `${origin}/gray.mp4`
-    // 测试组件库里带品牌的字体（字体项的选项），与测试字幕默认的 Noto Sans SC 是两种字形
     const brandFont = Object.entries(catalog.fonts).find(([, font]) => font.brand)?.[0]
     expect(brandFont).toBeDefined()
-    // 西文字：中文字形在两种字体下都取 Noto Sans SC，看不出差别
     const film = (variables: Record<string, string>, video: string) =>
       buildComposition({
         draft: {
@@ -483,7 +459,6 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
         },
         catalog,
       }).html
-    // 1 秒时字幕在画面上，2.5 秒时这句已经结束
     const frames = async (id: string, variables: Record<string, string>) => {
       const rendered = await worker.render(
         {
@@ -506,9 +481,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const own = await frames('caption-own-font', {})
     const brand = await frames('caption-brand-font', { font: brandFont ?? '' })
 
-    // 字幕在 640×360 画面下方居中，字高约 24 像素
     const area = { x: 100, y: 280, width: 440, height: 56 }
-    // 两次都有字（与这句结束后的空画面不同），字形彼此明显不同
     expect(meanDifference(own.caption, own.blank, area)).toBeGreaterThan(6)
     expect(meanDifference(brand.caption, brand.blank, area)).toBeGreaterThan(6)
     expect(meanDifference(own.caption, brand.caption, area)).toBeGreaterThan(6)
@@ -524,8 +497,6 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const clip = `${origin}/clip.mp4`
     const gray = `${origin}/gray.mp4`
     const GRAY_JOB = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
-    // 画面轨：测试图 0–2 秒、组件段（测试画面）2–4 秒、灰底 4–6 秒；特效块（测试可填项）4.5–7 秒，
-    // 比画面轨多出 1 秒；测试图那段带一句字幕。
     const rendered = await worker.render(
       {
         id: 'model-b',
@@ -583,11 +554,9 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       const [testCard, segment, grayBefore, overlayOnGray, overlayPastEnd] = await Promise.all(
         [1, 3, 4.3, 5.8, 6.6].map((at) => frameAt(rendered.file, at)),
       )
-      // 组件段有自己的画面：与前后两段视频都明显不同，也不是一片黑。
       expect(meanDifference(segment!, testCard!, whole)).toBeGreaterThan(10)
       expect(meanDifference(segment!, grayBefore!, whole)).toBeGreaterThan(3)
       expect(meanDifference(segment!, Buffer.alloc(segment!.length), whole)).toBeGreaterThan(3)
-      // 特效块叠在灰底上；过了画面轨的结尾仍在空画面（黑底）上。
       expect(meanDifference(overlayOnGray!, grayBefore!, TEXT_AREA)).toBeGreaterThan(6)
       expect(
         meanDifference(overlayPastEnd!, Buffer.alloc(overlayPastEnd!.length), TEXT_AREA),
@@ -605,8 +574,6 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       logger,
     })
     const gray = `${origin}/gray.mp4`
-    // 测试可填项：1920×1080 的设计稿缩到 640×360，左下角一块实心蓝底（#2756ff）。同一组件放两次：
-    // 0–2.5 秒在原处，2.5–5 秒挪开 (300, -150) 画面像素。
     const shifted = { x: 300, y: -150 }
     const block = (id: string, start: number, at: { x: number; y: number }) => ({
       id,
@@ -654,15 +621,12 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       { signal: new AbortController().signal, onProgress: () => {} },
     )
     try {
-      // 两处都取进场动画（0.6 秒）结束后的同一进度
       const [still, moved] = await Promise.all([1.5, 4].map((at) => frameAt(rendered.file, at)))
-      // 色块左边距里一条没有字的竖条
       const home = { x: 42, y: 270, width: 7, height: 30 }
       const away = { ...home, x: home.x + shifted.x, y: home.y + shifted.y }
       const isBlue = ([r, , b]: [number, number, number]) => b > 180 && b - r > 100
       const isGray = (color: [number, number, number]) =>
         color.every((channel) => Math.abs(channel - 0x20) < 12)
-      // 没挪的那块在原处；挪过的那块原处只剩灰底，挪到的地方是色块
       expect(meanColor(still!, home)).toSatisfy(isBlue)
       expect(meanColor(still!, away)).toSatisfy(isGray)
       expect(meanColor(moved!, home)).toSatisfy(isGray)
@@ -680,9 +644,6 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       logger,
     })
     const gray = `${origin}/gray.mp4`
-    // 测试可填项放两次：0–2.5 秒原样，2.5–5 秒挪开 shift、绕 pivot 放大 1.2 倍、顺时针转 20°。
-    // 转轴取在色块左上角附近（不是它的中心），挪开的距离不为 0：转轴若按挪开之后的坐标算，
-    // 色块会落在别处。
     const shift = { x: 120, y: -160 }
     const turn = { scale: 1.2, rotation: 20, pivotX: 50, pivotY: 250 }
     const block = (id: string, start: number, placement: object) => ({
@@ -731,15 +692,12 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       { signal: new AbortController().signal, onProgress: () => {} },
     )
     try {
-      // 两处都取进场动画（0.6 秒）结束后的同一进度
       const [still, turned] = await Promise.all([1.5, 4].map((at) => frameAt(rendered.file, at)))
       const before = blueBox(still!)
       const after = blueBox(turned!)
-      // 原样的色块：中心与宽高从画面上量
       const center = { x: (before.left + before.right) / 2, y: (before.top + before.bottom) / 2 }
       const width = before.right - before.left
       const height = before.bottom - before.top
-      // 预期：中心 = 转轴 + 挪开 + 缩放旋转（中心 − 转轴）；外框是转过的矩形的外接框
       const angle = (turn.rotation * Math.PI) / 180
       const [cos, sin] = [Math.cos(angle), Math.sin(angle)]
       const [dx, dy] = [center.x - turn.pivotX, center.y - turn.pivotY]
@@ -749,7 +707,6 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
         width: turn.scale * (width * cos + height * sin),
         height: turn.scale * (width * sin + height * cos),
       }
-      // 转过的色块整块在画面里，外框没被画面边缘截掉
       expect(after.left).toBeGreaterThan(0)
       expect(after.top).toBeGreaterThan(0)
       expect(after.right).toBeLessThan(FRAME.width - 1)
@@ -764,7 +721,6 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
   }, 600_000)
 })
 
-/** 整帧里实心蓝（色块 #2756ff，不算它半透明的投影）像素的外接框，右、下边是开区间。 */
 function blueBox(frame: Buffer): { left: number; top: number; right: number; bottom: number } {
   let [left, top, right, bottom] = [Infinity, Infinity, -Infinity, -Infinity]
   for (let y = 0; y < FRAME.height; y += 1) {
@@ -782,7 +738,6 @@ function blueBox(frame: Buffer): { left: number; top: number; right: number; bot
   return { left, top, right, bottom }
 }
 
-/** 「两段视频夹一个组件段 + 一个特效块 + 字幕」的草稿，第二段视频出自 `grayJob`。 */
 function modelBDraft(grayJob: string) {
   return {
     canvas: FRAME,

@@ -8,7 +8,6 @@ import { ComponentsPanel, HOVER_PREVIEW_DELAY_MS } from './components-panel'
 
 const scene = fixtureItem('fixture-scene')
 const overlay = fixtureItem('fixture-overlay')
-// 目录里能放的组件都有时长；这里造一张没有时长的卡片
 const timeless: CatalogItem = {
   ...fixtureItem('fixture-fields'),
   name: 'timeless',
@@ -35,14 +34,12 @@ const renderPanel = () =>
 const cardOf = (item: CatalogItem) =>
   screen.getByRole('button', { name: new RegExp(`^${item.title}，`) })
 
-// React 按 pointerover / pointerout 合成卡片上的 enter / leave
 const hover = (item: CatalogItem, pointerType = 'mouse') =>
   fireEvent.pointerOver(cardOf(item), { pointerType })
 const unhover = (item: CatalogItem) => fireEvent.pointerOut(cardOf(item), { pointerType: 'mouse' })
 
 const players = () => [...document.querySelectorAll('hyperframes-player')]
 
-/** 走过 ms 毫秒，并等播放器模块加载完挂上 */
 const elapse = async (ms: number) => {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(ms)
@@ -50,7 +47,6 @@ const elapse = async (ms: number) => {
 }
 
 describe('组件栏 · 悬停预览', () => {
-  // 播放器模块（测试替身）先加载好：之后挂播放器只等微任务，计时器走到哪一刻就看到哪一刻的样子
   beforeAll(async () => {
     await import('@hyperframes/player')
   })

@@ -224,6 +224,13 @@
   --color-accent-6: var(--color-accent-6);
   --color-accent-7: var(--color-accent-7);
   --color-accent-8: var(--color-accent-8);
+  --color-resource-agent: var(--color-resource-agent);
+  --color-resource-skill: var(--color-resource-skill);
+  --color-resource-workspace: var(--color-resource-workspace);
+  --color-resource-video: var(--color-resource-video);
+  --color-resource-project: var(--color-resource-project);
+  --color-resource-connection: var(--color-resource-connection);
+  --color-resource-provider: var(--color-resource-provider);
   --color-code-key: var(--color-code-key);
   --color-code-string: var(--color-code-string);
   --color-code-literal: var(--color-code-literal);

@@ -1,9 +1,3 @@
-/**
- * 把文字写进剪贴板；失败时抛错，由调用方决定怎么提示。
- *
- * `navigator.clipboard` 只在安全上下文（HTTPS、localhost）里存在，HTTP 下退回
- * 「选中隐藏文本框再 execCommand('copy')」这条老路。
- */
 export const copyText = async (text: string): Promise<void> => {
   if (navigator.clipboard !== undefined) {
     await navigator.clipboard.writeText(text)

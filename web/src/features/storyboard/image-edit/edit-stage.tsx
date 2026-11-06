@@ -1,5 +1,3 @@
-/** 编辑器的舞台：按版本条上选中的那条分流显示，自己不改选中。 */
-
 import {
   useEffect,
   useRef,
@@ -20,35 +18,27 @@ import { CompareSlider } from './compare-slider'
 import { entryLabel, type StripEntry } from './edit-history'
 import type { EditorWords } from './edit-target'
 
-/** 替换当前帧与撤销的状态，由 useFrameReplace 提供。 */
 type StageReplace = {
   pending: 'replace' | 'undo' | null
   error: string | null
-  /** 刚替换过、撤销入口还在。 */
   undoable: boolean
   onReplace: (url: string) => void
   onUndo: () => void
 }
 
 type EditStageProps = {
-  /** 选中的条目；条目还没读回来时为空，按当前帧显示。 */
   entry: StripEntry | undefined
-  /** 分镜里这一帧此刻的图；帧已经不在分镜里时为 undefined，没有在用的图（制作页没选用的生成图）时为 null。 */
   currentUrl: string | null | undefined
-  /** 选中条目的底图：在途与失败的任务显示它当初的底图；没有底图时是空串。 */
   baseUrl: string
   aspectRatio: string
-  /** 当前帧上的标注画布。 */
   canvas: ReactNode
   replace: StageReplace
-  /** 随所在页面变的称呼与主操作的样子：在用的那一版、主操作、图已经不在了。 */
   words: Pick<
     EditorWords,
     'current' | 'replace' | 'replacing' | 'replaced' | 'replaceTone' | 'gone'
   >
 }
 
-/** 不是画布的几种画面共用的图框：按分镜画幅放在标注工具条与版本条之间，圆角投影与画布上的图一致。 */
 function Hero({ aspectRatio, children }: { aspectRatio: string; children: ReactNode }) {
   return (
     <div className="image-edit-hero-wrap">
@@ -62,7 +52,6 @@ function Hero({ aspectRatio, children }: { aspectRatio: string; children: ReactN
   )
 }
 
-/** 舞台：底下铺舞台上那张图的模糊放大版（没有图时不铺），上面放画面与操作。 */
 function Stage({ backdrop, children }: { backdrop: string | undefined; children: ReactNode }) {
   return (
     <div className="image-edit-stage">
@@ -72,7 +61,6 @@ function Stage({ backdrop, children }: { backdrop: string | undefined; children:
   )
 }
 
-/** 按描述再生成时的舞台：只放在用的那张（没有在用的就空着），不画标注；新的出来进版本条，选用才用上。 */
 export function StillStage({
   aspectRatio,
   label,
@@ -91,7 +79,6 @@ export function StillStage({
   )
 }
 
-/** 任务提交时的底图，衬在状态胶囊下面；按描述生成的任务没有底图（空串），只留胶囊。 */
 function BaseImage({ url }: { url: string }) {
   const [failed, setFailed] = useState(false)
   if (url === '') return null
@@ -117,12 +104,6 @@ function RunningPill({ since }: { since: string }) {
   )
 }
 
-/**
- * 替换与撤销成功后，按下的那个按钮随画面换掉，焦点会落回弹窗本身；把它接到对面那个按钮上，
- * 键盘用户可以接着撤销或再替换。焦点本来就在别处（比如版本条）时不抢。
- *
- * @param ready 按钮可用时才接：写回进行中它是禁用的，接不住。
- */
 function useCatchDroppedFocus(target: RefObject<HTMLElement | null>, ready: boolean) {
   useEffect(() => {
     if (!ready) return
@@ -132,7 +113,6 @@ function useCatchDroppedFocus(target: RefObject<HTMLElement | null>, ready: bool
   }, [target, ready])
 }
 
-/** 刚替换完：给 6 秒撤销；撤销失败的原因跟在旁边。 */
 function UndoBar({ done, replace }: { done: string; replace: StageReplace }) {
   const undoRef = useRef<HTMLButtonElement>(null)
   useCatchDroppedFocus(undoRef, replace.pending === null)
@@ -160,7 +140,6 @@ function UndoBar({ done, replace }: { done: string; replace: StageReplace }) {
   )
 }
 
-/** 对比时的主操作：把选中的这张换成当前帧。 */
 function ReplaceBar({
   replace,
   url,
@@ -200,12 +179,6 @@ function ReplaceError({ error }: { error: string | null }) {
   )
 }
 
-/**
- * 当前帧画标注；排队、生成中是压暗的底图，计时胶囊在正中；失败压得更暗，胶囊与原因在正中；
- * 结果与上一版和当前帧左右对比，满意就「替换当前帧」，替换后 6 秒内可撤销。
- * 没有在用的图（制作页没选用的生成图）时没有当前帧可画、可比：结果单独放，主操作是「选用这张」。
- * 舞台底的模糊图取舞台上那一张：画布与在途、失败是底图，对比是结果。
- */
 export function EditStage({
   entry,
   currentUrl,

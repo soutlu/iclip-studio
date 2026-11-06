@@ -1,9 +1,3 @@
-"""成片草稿的 wire 形状与文档规则。
-
-文档的字段名就是前端编辑器与渲染服务读写的那份 JSON，时间一律是整数毫秒。这里只判文档自身的
-形状与时间线规则；片段出自哪条记录、合不合格由用例经端口核对，组件名不对照组件库（渲染服务判）。
-"""
-
 from __future__ import annotations
 
 import uuid
@@ -16,11 +10,8 @@ from iclip.domains.conversations.models import WholeFilmExport, WholeFilmExportS
 from iclip.domains.conversations.schemas import CamelModel
 
 MIN_CLIP_MS: Final = 100
-"""画面轨每段、每个特效块至少这么长。"""
 MAX_FILM_MS: Final = 120_000
-"""成片（画面轨首尾相接的总长）至多两分钟，特效块也不能在这之后结束。"""
 MAX_LAYER0_CLIPS: Final = MAX_FILM_MS // MIN_CLIP_MS
-"""防大包的上限：两分钟按最短时长排满的段数，正常编辑用不到。"""
 MAX_OVERLAYS: Final = MAX_FILM_MS // MIN_CLIP_MS
 MAX_CAPTION_EDITS: Final = 1000
 MAX_CAPTION_TEXT_CHARS: Final = 500
@@ -30,7 +21,6 @@ MAX_VARIABLES: Final = 50
 MAX_VARIABLE_NAME_CHARS: Final = 64
 MAX_VARIABLE_TEXT_CHARS: Final = 500
 MAX_VOLUME: Final = 3.981072
-"""音量是倍数：1 是原声，0 是静音；上限 +12 dB，同 HyperFrames 的 audioGain。"""
 MAX_CANVAS_EDGE: Final = 4096
 
 
@@ -55,18 +45,14 @@ VariableName = Annotated[
 ]
 VariableValue = bool | int | FiniteFloat | Annotated[str, Field(max_length=MAX_VARIABLE_TEXT_CHARS)]
 Variables = Annotated[dict[VariableName, VariableValue], Field(max_length=MAX_VARIABLES)]
-"""组件的可填项，原样交给组件；不对照组件的声明。"""
 
 Ms = Annotated[int, Field(ge=0)]
 Index = Annotated[int, Field(ge=0)]
 ClipMs = Annotated[int, Field(ge=MIN_CLIP_MS)]
 Volume = Annotated[FiniteFloat, Field(ge=0, le=MAX_VOLUME)]
 Offset = Annotated[int, Field(ge=-MAX_CANVAS_EDGE, le=MAX_CANVAS_EDGE)]
-"""画面像素：在画面上挪开的距离，向右、向下为正。"""
 Scale = Annotated[FiniteFloat, Field(ge=0.1, le=10)]
-"""等比缩放的倍数，1 是原大。"""
 Degrees = Annotated[FiniteFloat, Field(gt=-180, le=180)]
-"""顺时针旋转的角度。"""
 
 
 class WholeFilmCanvas(CamelModel):
@@ -122,7 +108,7 @@ class WholeFilmCaptions(CamelModel):
 
     component: ComponentName
     edits: Annotated[list[WholeFilmCaptionEdit], Field(max_length=MAX_CAPTION_EDITS)]
-    # 不用 default_factory：合同里要带上 default，生成的前端 zod 才补上空表；pydantic 每次复制默认值
+    # 使用 default=[] 使 OpenAPI Schema 输出默认值（Pydantic 会自动深拷贝默认列表）。
     variables: Variables = Field(default={})
     hidden: bool = False
     x: Offset = 0
@@ -185,17 +171,12 @@ class WholeFilmDocument(CamelModel):
         return self
 
     def total_ms(self) -> int:
-        """成片总长：同 HyperFrames，所有轨上内容的最远结束，即画面轨的结尾（各段时长之和）与
-        特效块最晚的结尾里大的那个。两者都不超过上限，总长也就不超过。"""
-
         overlay_end = max(
             (overlay.start + overlay.duration for overlay in self.overlays), default=0
         )
         return max(sum(clip.duration for clip in self.layer0), overlay_end)
 
     def video_sources(self) -> tuple[uuid.UUID, ...]:
-        """画面轨里各段视频出自的素材片，去重，按在画面轨里第一次出现的先后。"""
-
         return tuple(
             dict.fromkeys(
                 clip.source_job_id for clip in self.layer0 if isinstance(clip, WholeFilmVideoClip)
@@ -212,8 +193,6 @@ def _check_ids(document: WholeFilmDocument) -> None:
 
 
 def _check_layer0(layer0: list[WholeFilmClip]) -> None:
-    """画面轨从 0 起、首尾相接，视频段与组件段先后不限，总长不超过上限。"""
-
     end = 0
     for index, clip in enumerate(layer0):
         if clip.start != end:
@@ -239,9 +218,6 @@ def _check_caption_edits(edits: list[WholeFilmCaptionEdit]) -> None:
 
 
 def _check_overlays(overlays: list[WholeFilmOverlay]) -> None:
-    """特效块不在两分钟之后结束，同一行里彼此不重叠；不同行可以重叠，也可以超出画面轨的结尾
-    （成片随之变长）。"""
-
     rows: dict[int, list[WholeFilmOverlay]] = {}
     for overlay in overlays:
         if overlay.start + overlay.duration > MAX_FILM_MS:

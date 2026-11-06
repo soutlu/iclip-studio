@@ -1,12 +1,7 @@
 import { http, HttpResponse } from 'msw'
 
-// 上传协议的 mock：签名、直传与确认共用上传类型记录，保持确认响应与签名一致。
-// mock 里只有一个登录人，确认过的上传都算他本人的。
-
-/** 按 uploadId 记录签名时的 contentType，确认响应复用此信息。 */
 const signedUploads = new Map<string, string>()
 const storedBytes = new Map<string, { body: ArrayBuffer; contentType: string }>()
-/** 确认过的上传：地址 → contentType。 */
 const confirmedUploads = new Map<string, string>()
 
 const uploadUrlOf = (uploadId: string) => `http://localhost/mock-oss/${uploadId}`
@@ -17,11 +12,9 @@ export const resetMockUploads = () => {
   confirmedUploads.clear()
 }
 
-/** 这个地址是不是确认过的一条视频上传；编辑段的参考片段要是它。 */
 export const isMockVideoUpload = (url: string): boolean =>
   confirmedUploads.get(url)?.startsWith('video/') ?? false
 
-/** 确认过的一次上传：地址、类型与直传上来的字节；没确认过是 undefined。建参考视频按它认人认内容。 */
 export const mockConfirmedUpload = (
   uploadId: string,
 ): { url: string; contentType: string; body: ArrayBuffer | undefined } | undefined => {
@@ -40,7 +33,6 @@ type ConfirmListener = (upload: {
 
 let confirmListener: ConfirmListener | null = null
 
-/** 确认上传时通知一声；生成记录的 mock 据此把挂到对话上的音乐记成一条上传的音频记录（合同 §10）。 */
 export const onMockUploadConfirmed = (listener: ConfirmListener) => {
   confirmListener = listener
 }

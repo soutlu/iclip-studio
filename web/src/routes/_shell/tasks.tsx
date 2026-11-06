@@ -4,7 +4,6 @@ import { ensureSessionUser } from '@/shared/auth'
 import { useStartTaskCreation } from '../-use-start-task-creation'
 import { TaskRelatedConversations } from '../-task-related-conversations'
 
-// 需求单路由要求登录，会话失效后返回首页。
 export const Route = createFileRoute('/_shell/tasks')({
   beforeLoad: async () => {
     if (!(await ensureSessionUser())) {

@@ -1,6 +1,4 @@
-/* 不进 Tailwind layer：提交中与已提交要盖过 ui-state 对 :disabled、[aria-disabled] 的置灰。 */
 .submit-button:not([data-phase='idle']) {
-  /* 转圈的轨道读这个变量，默认的浅灰在主色底上看不见。 */
   --color-chat-hairline: color-mix(in srgb, currentcolor 30%, transparent);
   background-image: none;
   cursor: default;
@@ -24,7 +22,6 @@
   justify-content: center;
   gap: inherit;
 }
-/* 宽度只由隐藏层决定：过渡文案比原文长时（如「再生成」→「提交中…」）向两侧的内边距溢出，按钮不变宽。 */
 .submit-button-current {
   width: 0;
   min-width: 100%;
@@ -54,7 +51,6 @@
   }
 }
 
-/* 全局减弱动效把动画压成一圈就停，这里只留慢速转圈，否则提交中看着像卡住。 */
 @media (prefers-reduced-motion: reduce) {
   .submit-button .animate-spin {
     animation-duration: 1.8s !important;

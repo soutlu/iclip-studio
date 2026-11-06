@@ -22,7 +22,6 @@ const ghostPosition = (x: number, y: number) => ({
   y: Math.max(8, Math.min(window.innerHeight - 60, y + 36)),
 })
 
-/** 拖到时间线上的东西共用的紧凑缩影；按住时坐标直接跟手，松手后才缓动到落点或来源。 */
 export function InsertionGhost({
   face,
   motion,
@@ -108,7 +107,6 @@ export type InsertionPreviewPosition = {
   alignEnd: boolean
 }
 
-/** 占位长度等于完整时长，内部颜色表示可放置；各条轨使用相同结构。 */
 export function InsertionPreview({
   face,
   position,

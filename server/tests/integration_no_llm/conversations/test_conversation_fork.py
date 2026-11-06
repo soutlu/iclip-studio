@@ -1,13 +1,7 @@
-"""验证对话分叉：副本拷什么、继承什么、源保持不变、谁分得动、什么时候分不动。
-
-默认的 app 没装媒体生成；出片记录的继承另装一个开了媒体生成的 app 走一遍端到端，
-边界、筛选与翻页的细节在 [生成仓储测试](../generation/test_generation_repository_pg.py) 里验。
-"""
-
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -15,16 +9,18 @@ from typing import NoReturn
 
 import httpx
 import pytest
+from agent_runtime.errors import Conflict, NotFound
+from agent_runtime.harness.step_store_pg import PgStepStore
 from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord, StepEvent
 from sqlalchemy import text
 
-from iclip.app.bootstrap import build_app
-from iclip.common.errors import Conflict, NotFound
-from iclip.config import ResolvedAgent, VideoGenerationSection
+from iclip.app.conversation_same_style import SAME_STYLE
+from iclip.config import VideoGenerationSection
 from iclip.domains.conversations.infra_sql import (
+    SqlAgentPreviewStore,
     SqlConversationRepository,
     SqlWholeFilmDraftStore,
 )
@@ -33,12 +29,10 @@ from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob, GenerationOutput
 from iclip.domains.generation.schemas import KIND_VIDEO
 from iclip.domains.identity.public import Principal
-from iclip.harness.step_store_pg import PgStepStore
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.process import ffmpeg_available
-from iclip.platform.transcript.session_events import SessionEventClock
-from tests.helpers.agents import declared_agent
+from tests.helpers.agents import AgentSeed, seed_agents
 from tests.helpers.app import make_client, settled
 from tests.helpers.auth import register_and_login, set_roles_in_db
 from tests.helpers.film import UnusedFilmPage
@@ -52,20 +46,19 @@ from tests.helpers.generation import (
 )
 from tests.helpers.media import synthesize_video
 from tests.helpers.media_server import serving
+from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected, reset_database
+from tests.helpers.runtime_backed import build_backed_app, config_services_of
 
 URL = "/conversations"
 AGENT_ID = "storyboard"
 BASE = datetime(2026, 9, 1, tzinfo=UTC)
 INHERITED_DETAIL = "分叉带过来的历史不能重新生成或编辑，只能接着往下聊。"
-"""继承轮重新生成的 404 文案；前端原样弹出。"""
 
 
 @pytest.fixture
-def agent_declarations(tmp_path: Path) -> tuple[ResolvedAgent, ...]:
-    """装上源对话用的 agent，要真跑出消息行的用例才跑得起来。"""
-
-    return (declared_agent(tmp_path, AGENT_ID),)
+def agent_seeds() -> tuple[AgentSeed, ...]:
+    return (AgentSeed(AGENT_ID), AgentSeed("assistant"))
 
 
 async def login_as(
@@ -84,11 +77,6 @@ async def open_conversation(client: httpx.AsyncClient, **body: object) -> str:
 
 
 async def seed_turns(pg_url: str, conversation_id: str, prompts: list[str]) -> list[str]:
-    """给对话造出几轮已跑完的历史，返回各轮的 run id。
-
-    没有 agent_jobs 映射时每个 run 自成一轮，正是副本读继承轮的样子。
-    """
-
     engine = build_engine(pg_url)
     run_ids: list[str] = []
     try:
@@ -127,8 +115,6 @@ async def seed_turns(pg_url: str, conversation_id: str, prompts: list[str]) -> l
 
 
 async def seed_side_data(pg_url: str, namespace: str) -> None:
-    """工作区文件与素材台账各放一条，两者都按命名空间隔离。"""
-
     async with connected(pg_url) as conn:
         await conn.execute(
             text(
@@ -138,18 +124,11 @@ async def seed_side_data(pg_url: str, namespace: str) -> None:
             ),
             {"ns": namespace, "content": '{"shots": []}'},
         )
-        await conn.execute(
-            text(
-                "INSERT INTO agent_runtime.materials (namespace, url, kind)"
-                " VALUES (:ns, 'https://example.test/ref.mp4', 'video')"
-            ),
-            {"ns": namespace},
-        )
 
 
-async def side_data(pg_url: str, namespace: str) -> tuple[list[str], list[str]]:
+async def side_data(pg_url: str, namespace: str) -> list[str]:
     async with connected(pg_url) as conn:
-        paths = list(
+        return list(
             (
                 await conn.execute(
                     text(
@@ -160,17 +139,6 @@ async def side_data(pg_url: str, namespace: str) -> tuple[list[str], list[str]]:
                 )
             ).scalars()
         )
-        urls = list(
-            (
-                await conn.execute(
-                    text(
-                        "SELECT url FROM agent_runtime.materials WHERE namespace = :ns ORDER BY url"
-                    ),
-                    {"ns": namespace},
-                )
-            ).scalars()
-        )
-    return paths, urls
 
 
 async def fork(client: httpx.AsyncClient, conversation_id: str, **body: object) -> httpx.Response:
@@ -178,8 +146,6 @@ async def fork(client: httpx.AsyncClient, conversation_id: str, **body: object) 
 
 
 async def say(client: httpx.AsyncClient, conversation_id: str, said: str) -> None:
-    """发一条消息并等它跑完。"""
-
     sent = await client.post(
         f"{URL}/{conversation_id}/prompts",
         json={
@@ -210,26 +176,44 @@ def _untouched(*_: object, **__: object) -> NoReturn:
 
 
 class StartMovedUnderUs:
-    """起点端口的替身：源闲着、有一轮，可写种子快照时报源变了。"""
-
     def __init__(self) -> None:
         self.targets: list[uuid.UUID] = []
 
-    async def idle(self, conversation_id: uuid.UUID) -> bool:
-        return True
+    async def abort(self, session_id: uuid.UUID) -> None:
+        _untouched()
 
-    async def turn_count(self, conversation_id: uuid.UUID) -> int:
-        return 1
+    async def open(self, session_id: uuid.UUID, *, agent_id: str) -> None:
+        _untouched()
 
-    async def seed(self, *, source_id: uuid.UUID, target_id: uuid.UUID, turn: int) -> bool:
+    async def open_preview(
+        self, session_id: uuid.UUID, *, agent_id: str, version_id: uuid.UUID | None
+    ) -> None:
+        _untouched()
+
+    async def fork(
+        self,
+        *,
+        source_id: uuid.UUID,
+        source_user: uuid.UUID,
+        target_id: uuid.UUID,
+        target_user: uuid.UUID,
+        turn: int,
+        agent_id: str | None,
+    ) -> None:
         self.targets.append(target_id)
-        return False
+        raise Conflict("这段对话刚刚又跑了一轮，重新挑一个分叉点")
 
-
-async def copy_no_workspace(
-    *, source_owner: uuid.UUID, source_id: uuid.UUID, target_owner: uuid.UUID, target_id: uuid.UUID
-) -> None:
-    return None
+    async def copy_files(
+        self,
+        *,
+        source_id: uuid.UUID,
+        source_user: uuid.UUID,
+        target_id: uuid.UUID,
+        target_user: uuid.UUID,
+        files: Sequence[tuple[str, str]],
+        require_any: frozenset[str],
+    ) -> bool:
+        _untouched()
 
 
 async def test_fork_carries_history_and_workspace_and_leaves_the_source_alone(
@@ -264,23 +248,15 @@ async def test_fork_carries_history_and_workspace_and_leaves_the_source_alone(
         "终态是拿原 run id 回源查的，副本没存运行记录"
     )
 
-    assert await side_data(pg_url, f"{owner}/{copy['id']}") == (
-        ["video_shot.json"],
-        ["https://example.test/ref.mp4"],
-    )
+    assert await side_data(pg_url, f"{owner}/{copy['id']}") == ["video_shot.json"]
     source_history = await client.get(f"{URL}/{source}/transcript")
     assert len(source_history.json()["items"]) == 3, "源对话的历史不能被分叉动到"
-    assert await side_data(pg_url, f"{owner}/{source}") == (
-        ["video_shot.json"],
-        ["https://example.test/ref.mp4"],
-    )
+    assert await side_data(pg_url, f"{owner}/{source}") == ["video_shot.json"]
 
 
 async def test_fork_copies_the_file_but_not_its_version(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """副本的文件从第 1 版起：源的版本号是给源那份乐观锁用的，跟着搬会让副本的首次写对不上。"""
-
     owner = await login_as(client, pg_url, username="logan")
     source = await open_conversation(client)
     await seed_turns(pg_url, source, ["第一句"])
@@ -320,10 +296,7 @@ async def test_governor_forks_anyone_including_tombstones(
         copy = forked.json()["conversation"]
         assert copy["ownerUserId"] == boss
         assert copy["deletedAt"] is None, "副本是活的，墓碑只是它的来源"
-        assert await side_data(pg_url, f"{boss}/{copy['id']}") == (
-            ["video_shot.json"],
-            ["https://example.test/ref.mp4"],
-        )
+        assert await side_data(pg_url, f"{boss}/{copy['id']}") == ["video_shot.json"]
 
     assert (await fork(client, source)).status_code == 404, "属主自己也看不见墓碑"
 
@@ -368,8 +341,6 @@ async def test_turn_beyond_the_end_and_conversations_that_never_ran_are_422(
 async def test_source_with_an_unfinished_prompt_is_409(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """排队中的那条一旦起跑就会写新快照，轮号跟着变，分叉点会指到别的地方去。"""
-
     owner = await login_as(client, pg_url, username="logan")
     source = await open_conversation(client)
     await seed_turns(pg_url, source, ["第一句"])
@@ -395,12 +366,6 @@ async def test_source_with_an_unfinished_prompt_is_409(
 async def test_start_moving_between_counting_and_seeding_voids_the_fork(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """数完轮数到写种子快照之间源变了，起点端口回 False：这次分叉作废，对话行不落库。
-
-    HTTP 层造不出这个间隙，直接装配用例：仓储用真的，起点端口用一个报「源变了」的替身，
-    分叉用不到的端口一碰就报错。中途失败只留下寻址不到的副本数据，见 architecture.md §4 对话分叉。
-    """
-
     owner = await login_as(client, pg_url, username="logan")
     source = await open_conversation(client)
     start = StartMovedUnderUs()
@@ -409,8 +374,12 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
         repo = SqlConversationRepository(engine)
         service = ConversationService(
             repo,
+            previews=SqlAgentPreviewStore(engine),
+            runtime=start,
             list_collections=_untouched,
             claim_task=_untouched,
+            task_exists=_untouched,
+            collection_exists=_untouched,
             list_derived_files=_untouched,
             read_derived_file=_untouched,
             write_derived_file=_untouched,
@@ -424,11 +393,9 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
             activities_of=_untouched,
             busy_conversation_ids=_untouched,
             latest_master_urls=_untouched,
-            fork_transcript=start,
-            copy_workspace=copy_no_workspace,
-            copy_same_style=_untouched,
+            video_progress_of=_untouched,
+            same_style_files=SAME_STYLE,
             same_style_source=_untouched,
-            event_watermark=SessionEventClock().snapshot,
             announce_row=_untouched,
             announce_deleted=_untouched,
         )
@@ -462,8 +429,6 @@ async def test_a_fork_of_a_fork_points_at_its_direct_parent(
 async def test_inherited_turns_cannot_be_regenerated(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """继承轮的消息行在源对话名下，副本里不能拿它重跑；往后接着说才是副本自己的轮。"""
-
     await login_as(client, pg_url, username="logan")
     source = await open_conversation(client)
     await say(client, source, "第一句")
@@ -491,8 +456,6 @@ async def test_inherited_turns_cannot_be_regenerated(
 async def media_app(
     base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch
 ) -> AsyncGenerator[FastAPI]:
-    """开了媒体生成的 app：对象存储与队列连接器用替身，受理只落库、不外呼。"""
-
     for name, value in MEDIA_ENVS.items():
         monkeypatch.setenv(name, value)
     async with connected(migrated_pg) as conn:
@@ -514,13 +477,16 @@ async def media_app(
     )
     engine = build_engine(migrated_pg)
     try:
-        yield build_app(
+        built = build_backed_app(
             config,
             engine=engine,
             object_store=MemoryObjectStore(),
             queue_connector=InMemoryConnector(),
             media_codec=SOFTWARE,
+            credential_probe=KeyCheckingProbe({GOOD_KEY}),
         )
+        await seed_agents(config_services_of(built), engine, (AgentSeed(AGENT_ID),))
+        yield built
     finally:
         await engine.dispose()
 
@@ -553,11 +519,6 @@ async def listed_ids(client: httpx.AsyncClient, conversation_id: str) -> set[str
 async def test_a_fork_inherits_finished_takes_instead_of_copying_them(
     media_app: FastAPI, pg_url: str
 ) -> None:
-    """分叉不往生成表里写一行；副本按对话列记录时带上源在分叉前完成的，剪片时拿它当原作。
-
-    分叉那一刻还在跑的、分叉之后才出的都不归副本，同一个人按属主读得到也不行；
-    读不到副本的人拿副本 id 什么也列不出来。受理编辑要探参考片段的时长，片段放在本地媒体服务上。"""
-
     engine = build_engine(pg_url)
     repo = SqlGenerationRepository(engine)
     with TemporaryDirectory(prefix="fork-clip-") as tmp:
@@ -632,7 +593,6 @@ async def test_a_fork_inherits_finished_takes_instead_of_copying_them(
             for outside in (after.id, in_flight.id):
                 refused = await edit_on(outside)
                 assert refused.status_code == 422, refused.text
-            # 编辑段还在排队、不可能是继承来的：列得出来就说明它记在副本名下。
             assert await listed_ids(client, copy) == {str(take.id), edit["id"]}
             assert edit["id"] not in await listed_ids(client, source)
 
@@ -646,8 +606,6 @@ async def test_a_fork_inherits_finished_takes_instead_of_copying_them(
 async def test_audit_list_carries_only_each_conversations_own_latest_master(
     media_app: FastAPI, pg_url: str
 ) -> None:
-    """全部对话列表的每一段带自己名下最新一条素材片的地址：源对话有，只继承了它的副本为空。"""
-
     engine = build_engine(pg_url)
     repo = SqlGenerationRepository(engine)
     try:

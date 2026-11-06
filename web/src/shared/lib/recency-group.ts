@@ -1,5 +1,3 @@
-/** 按本地日历日把时刻归入「今天 / 昨天 / 7 天内 / 更早」，给按时间倒序的列表插分组标题。 */
-
 export type RecencyBucket = 'today' | 'yesterday' | 'week' | 'earlier'
 
 export const RECENCY_LABEL: Record<RecencyBucket, string> = {
@@ -14,14 +12,10 @@ const DAY_MS = 24 * 60 * 60_000
 const startOfLocalDay = (at: Date): number =>
   new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime()
 
-/**
- * 与 now 相差的本地日历日数决定分组：0 天今天、1 天昨天、2–6 天 7 天内，其余更早。
- * 比 now 还晚的时刻（两端时钟有偏差）算今天；无效时刻算更早。
- */
 export const recencyBucket = (iso: string, now: Date): RecencyBucket => {
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return 'earlier'
-  // 夏令时切换日只有 23 或 25 小时，取整后仍是整日差。
+  // 按四舍五入计算整日差，以兼容夏令时切换日的 23 或 25 小时。
   const days = Math.round((startOfLocalDay(now) - startOfLocalDay(at)) / DAY_MS)
   if (days <= 0) return 'today'
   if (days === 1) return 'yesterday'
@@ -29,7 +23,6 @@ export const recencyBucket = (iso: string, now: Date): RecencyBucket => {
   return 'earlier'
 }
 
-/** 按原顺序把相邻同组的条目切成一段，不重排；空组自然不出现。 */
 export const groupByRecency = <T>(
   items: readonly T[],
   dateOf: (item: T) => string,

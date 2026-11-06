@@ -1,5 +1,3 @@
-/** 详情视频下方的一行分段：切这张卡的镜头组、切这一组的版本。只有一组不出组分段，只有一版不出版本分段。 */
-
 import { useEffect, useRef, type ReactNode } from 'react'
 import { formatRelativeTime } from '@/shared/lib/relative-time'
 import type { LibraryShotGroup } from '../library.api'
@@ -10,11 +8,9 @@ const ROW_CLASS =
 
 type LibraryVersionBarProps = {
   groups: readonly LibraryShotGroup[]
-  /** 正在播的那一组与它的全部版本、正在播的那一版。 */
   group: LibraryShotGroup
   versions: readonly LibraryVersion[]
   version: LibraryVersion
-  /** 选中一版；点组时给那一组最新的一版。 */
   onSelect: (jobId: string) => void
 }
 
@@ -76,8 +72,6 @@ export function LibraryVersionBar({
   )
 }
 
-/** 详情读回来之前照卡上的组数与版数占住这一行，读回来不跳（窄屏折成两行也一样）。
- * 卡面那一组有几版要等详情；多组时假定多出来的版都在卡面那一组。这一行不会出现时什么都不占。 */
 export function LibraryVersionBarSkeleton({
   groupCount,
   versionCount,
@@ -96,7 +90,6 @@ export function LibraryVersionBarSkeleton({
   )
 }
 
-/** 与真分段同样的说明文字和轨道，里面是空的分段位，宽度与折行跟真的一致。 */
 function SkeletonUnit({ caption, count }: { caption: string; count: number }) {
   return (
     <div aria-hidden="true" className="flex max-w-full min-w-0 items-center gap-2">
@@ -110,7 +103,6 @@ function SkeletonUnit({ caption, count }: { caption: string; count: number }) {
   )
 }
 
-/** 小字说明加一条分段；分段里不折行，放不下就在自己里面横向滑。 */
 function SegmentUnit({
   caption,
   label,
@@ -119,12 +111,10 @@ function SegmentUnit({
 }: {
   caption: string
   label: string
-  /** 选中项的标识，变了就把选中项滚进可视区。 */
   selected: string
   children: ReactNode
 }) {
   const trackRef = useRef<HTMLDivElement>(null)
-  // 只动分段自己的 scrollLeft：scrollIntoView 会连弹层与页面一起滚。
   useEffect(() => {
     const track = trackRef.current
     const pressed = track?.querySelector<HTMLElement>('[aria-pressed="true"]')
@@ -139,7 +129,6 @@ function SegmentUnit({
 
   return (
     <div className="flex max-w-full min-w-0 items-center gap-2">
-      {/* 分段自己带 aria-label，说明文字不再给读屏读一遍。 */}
       <span aria-hidden="true" className="shrink-0 text-caption text-on-surface-faint">
         {caption}
       </span>

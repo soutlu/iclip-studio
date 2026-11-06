@@ -23,8 +23,6 @@ from iclip.platform.paging import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
 
 
 def create_library_router(service: LibraryService, hit_cases: HitCaseService) -> APIRouter:
-    """打标没配置（``hit_cases.can_retag`` 为假）时不挂重新打标。"""
-
     router = APIRouter(prefix="/library", tags=["library"])
 
     @router.get("/videos", response_model=LibraryVideosOut)

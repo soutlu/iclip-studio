@@ -1,5 +1,3 @@
-"""爆款视频的 wire 形状。字段名按跨端约定用 camelCase。"""
-
 from __future__ import annotations
 
 from decimal import Decimal
@@ -16,7 +14,6 @@ from iclip.domains.inspirations.models import (
 )
 
 MAX_STYLES_PER_SEARCH: Final = 20
-"""一次最多问几个款。上限不是性能考虑——是让「把整个款库倒进来」这件事做不出来。"""
 
 MAX_STYLE_CHARS: Final = 64
 DEFAULT_LIMIT: Final = 50
@@ -73,8 +70,6 @@ class VideoSearchOut(CamelModel):
 
 
 def filters_of(body: MetricFiltersIn) -> MetricFilters:
-    """wire 形状 → 领域形状。"""
-
     return MetricFilters(
         min_impressions=body.min_impressions,
         min_views=body.min_views,
@@ -85,8 +80,6 @@ def filters_of(body: MetricFiltersIn) -> MetricFilters:
 
 
 def search_out(result: VideoSearchResult) -> VideoSearchOut:
-    """领域形状 → wire 形状。"""
-
     return VideoSearchOut(
         video_urls=list(result.oss_urls),
         matches=[

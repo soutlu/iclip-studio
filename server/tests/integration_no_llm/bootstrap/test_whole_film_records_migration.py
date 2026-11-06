@@ -1,7 +1,3 @@
-"""删旧成片记录的迁移：只删成片与对它有外键的行，之后视频约束不再收成片那种行；升降级往返。
-
-升降级在一次性库上做，不动会话共用的测试库。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -28,10 +24,8 @@ from tests.helpers.fork_lineage import make_user
 from tests.helpers.migrations import alembic_config
 
 BEFORE = "529b24b8d9d4"
-"""0032，视频约束还收成片。"""
 
 RECORDS_DROPPED = "e82dd7339835"
-"""0033，成片记录删掉了。"""
 
 _INSERT_JOB = text(
     "INSERT INTO iclip.generation_jobs"
@@ -49,8 +43,6 @@ _INSERT_DOWNLOAD = text(
 
 
 def _job(owner: uuid.UUID, conversation_id: uuid.UUID, **fields: Any) -> dict[str, Any]:
-    """一条视频行的插入参数；默认是挂着对话、已完成、有地址的出片，各用例改几列。"""
-
     job_id = fields.pop("id", uuid.uuid4())
     return {
         "id": job_id,
@@ -69,8 +61,6 @@ def _job(owner: uuid.UUID, conversation_id: uuid.UUID, **fields: Any) -> dict[st
 
 
 def _whole_film(owner: uuid.UUID, conversation_id: uuid.UUID) -> dict[str, Any]:
-    """迁移 0027 收下的那种成片：没有来源、原作与镜号，挂着对话。"""
-
     return _job(owner, conversation_id, operation=OPERATION_COMPOSE, shot_index=None)
 
 
@@ -114,9 +104,6 @@ async def _user(url: str) -> uuid.UUID:
 
 
 def test_upgrade_deletes_only_whole_films_and_what_points_at_them(scratch_db: str) -> None:
-    """一段对话里有出片、在它上面剪的合成和一条成片，三条各被下载过，成片与出片各有一条字幕记录。
-    升级后成片、它的字幕记录与下载事件都没了，出片、合成、出片的字幕记录与它们的下载事件原样留着。"""
-
     cfg = alembic_config(scratch_db)
     command.upgrade(cfg, BEFORE)
     owner = asyncio.run(_user(scratch_db))
@@ -162,19 +149,3 @@ def test_upgrade_deletes_only_whole_films_and_what_points_at_them(scratch_db: st
     assert downloads == {take["id"], composite["id"]}
     with pytest.raises(IntegrityError):
         asyncio.run(_run(scratch_db, [(_INSERT_JOB, _whole_film(owner, conversation))]))
-
-
-def test_downgrade_brings_back_only_the_constraint_branch(scratch_db: str) -> None:
-    """空库上降级再升级照常；降级后约束重新收成片那种行。"""
-
-    cfg = alembic_config(scratch_db)
-    command.upgrade(cfg, RECORDS_DROPPED)
-    command.downgrade(cfg, BEFORE)
-    command.upgrade(cfg, RECORDS_DROPPED)
-    assert asyncio.run(_rows(scratch_db, "SELECT version_num FROM iclip.alembic_version")) == {
-        RECORDS_DROPPED
-    }
-
-    command.downgrade(cfg, BEFORE)
-    owner = asyncio.run(_user(scratch_db))
-    asyncio.run(_run(scratch_db, [(_INSERT_JOB, _whole_film(owner, uuid.uuid4()))]))

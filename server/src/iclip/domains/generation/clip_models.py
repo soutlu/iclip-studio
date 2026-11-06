@@ -3,7 +3,8 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any
 
-from iclip.common.errors import ValidationFailed
+from agent_runtime.errors import ValidationFailed
+
 from iclip.domains.generation.schemas import (
     MAX_PROMPT_CHARS,
     ClipEditDurationOut,
@@ -40,7 +41,6 @@ class UpstreamMode:
 class ClipModel:
     spec: VideoClipModelOut
     edit_mode: UpstreamMode = UpstreamMode()
-    """视频编辑时补的上游语义；图生沿用网关按图片张数的原生调度，不补。"""
 
 
 _MODELS = (
@@ -59,7 +59,7 @@ _MODELS = (
             image=ClipImageDurationOut(min_seconds=4, max_seconds=30, default_seconds=5),
             edit=ClipEditDurationOut(min_seconds=4, max_seconds=30),
         ),
-        # Seedance 2.5 只有显式指定原生子任务才按视频编辑执行。
+        # Seedance 2.5 仅在显式指定原生子任务时按视频编辑执行。
         edit_mode=UpstreamMode(provider_options={"omni_reference_task_type": "edit"}),
     ),
     ClipModel(
@@ -69,7 +69,7 @@ _MODELS = (
             image=ClipImageDurationOut(min_seconds=2, max_seconds=30, default_seconds=5),
             edit=ClipEditDurationOut(min_seconds=1, max_seconds=15),
         ),
-        # Wan 靠正文开头的「编辑视频，」认出视频编辑任务。
+        # Wan 通过提示词开头的「编辑视频，」前缀识别视频编辑任务。
         edit_mode=UpstreamMode(prompt_prefix="编辑视频，"),
     ),
 )

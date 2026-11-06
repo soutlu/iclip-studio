@@ -8,12 +8,12 @@ export {
 export { useLiveConversations } from './conversations.live'
 export { useConversationRows } from './conversation-rows'
 export { useTaskConversations } from './task-conversations.api'
+export { useVideoPhase } from './video-progress.api'
 export { useLiveTaskConversations } from './task-conversations.live'
 export { useRecordOpenedConversation } from './conversations.unread'
 export { conversationStatus } from './conversation-status'
 export {
   conversationListStateSchema,
-  conversationsQueryKeys,
   refreshConversationLists,
   useStartConversation,
   useConversationAgents,
@@ -25,6 +25,8 @@ export { ConversationsRoute } from './components/conversations-route'
 export { ConversationDeleteDialog } from './components/conversation-delete-dialog'
 export { ConversationMembershipDialog } from './components/conversation-membership-dialog'
 export { ConversationRoute } from './components/conversation-route'
+export { ConversationTimeline } from './components/conversation-timeline'
+export { RunTrace } from './components/run-trace'
 export { ConversationSearchDialog } from './components/conversation-search-dialog'
 export { SidebarConversationRow } from './components/sidebar-conversation-row'
 export {

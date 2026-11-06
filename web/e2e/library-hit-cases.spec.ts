@@ -43,7 +43,6 @@ test('关闭入选详情后按尚未打上的标签筛选，打标完成自动�
   await page.getByRole('button', { name: '资料库' }).click()
   const main = page.getByRole('main', { name: '资料库' })
 
-  // 成片素材里打开一条，在「爆款素材」页签带一个人工维度的标签加入。
   const title = '跑鞋手持展示'
   await main
     .getByRole('article', { name: title })
@@ -59,11 +58,9 @@ test('关闭入选详情后按尚未打上的标签筛选，打标完成自动�
   await viewer.getByRole('button', { name: '加入爆款素材库' }).click()
   await expect(viewer.getByText('正在打标，完成后自动更新标签')).toBeVisible()
 
-  // 在打标完成前关掉详情，当前筛选结果里没有这一条，也要继续观察该任务。
   await page.keyboard.press('Escape')
   await expect(viewer).toBeHidden()
 
-  // 先按尚未打上的标签筛选，任务完成后应自动刷新列表。
   await page.getByRole('tab', { name: '爆款素材库' }).click()
   await expect(page).toHaveURL(/tab=hit-cases/)
   await main.getByRole('button', { name: '品类：品类' }).click()
@@ -76,7 +73,6 @@ test('关闭入选详情后按尚未打上的标签筛选，打标完成自动�
   const card = main.getByRole('article', { name: title })
   await expect(card).toBeVisible()
 
-  // 点开定位到那一张卡的那一版，「爆款素材」页签上是已入选的样子。
   await card.getByRole('button', { name: /查看详情/ }).click()
   const opened = page.getByRole('dialog', { name: title })
   await expect(page).toHaveURL(/video=[0-9a-f-]+/)

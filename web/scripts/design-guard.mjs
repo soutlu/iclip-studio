@@ -1,15 +1,4 @@
 #!/usr/bin/env node
-/**
- * design-guard：设计系统机械门禁（棘轮模式）。
- *
- * 扫描 src/ 中违反仓库根目录 design-system.html 的硬编码模式，与基线
- * scripts/design-guard.baseline.json 对比：任一模式计数超过基线即失败。
- * 修复存量后运行 `node scripts/design-guard.mjs --update` 收紧基线
- * （新计数低于基线时也提示收紧，保证只降不升）。
- *
- * 确实绕不开时在上一行写 `// design-allow -- 原因`（CSS 用 /* *\/ 注释）豁免；
- * 不写原因的豁免不算数，会被当成违规报出来。
- */
 import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -18,10 +7,8 @@ const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..')
 const SRC = join(ROOT, 'src')
 const BASELINE_PATH = join(ROOT, 'scripts', 'design-guard.baseline.json')
 
-/** 豁免文件：token 事实源本身 */
 const EXEMPT = new Set(['src/app/base.css', 'src/app/globals.css'])
 
-/** 各违规模式；match 返回该文件的命中行号列表 */
 const RULES = [
   {
     id: 'bare-hex-color',
@@ -145,7 +132,6 @@ const RULES = [
   },
 ]
 
-/** 上一行写了带原因的豁免，本行免检 */
 const ALLOW_RE = /(?:\/\/|\/\*)\s*design-allow\s*--\s*\S/
 
 const walk = (dir, acc = []) => {

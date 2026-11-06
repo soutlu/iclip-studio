@@ -17,7 +17,6 @@ type AppContentPaneProps = {
   children: ReactNode
 }
 
-/** 固定 DOM 顺序保留编辑器与滚动状态；壳以 flex 方向换位，折叠只隐藏正文。 */
 export function AppContentPane({
   pane,
   width,

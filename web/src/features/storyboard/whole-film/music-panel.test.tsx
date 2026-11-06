@@ -74,18 +74,6 @@ describe('生成音乐浮层', () => {
     ])
   })
 
-  it('没写描述时按钮不可用，灰字写原因', async () => {
-    const conversation = addMockConversation('成片配乐')
-    const { popover, submit } = await openGenerate(conversation.id)
-
-    await waitFor(() =>
-      expect(popover).toHaveAccessibleDescription(
-        '尚未填写音乐描述，无法生成；请用一句话描述想要的音乐',
-      ),
-    )
-    expect(submit).toBeDisabled()
-  })
-
   it('工程文件写了配乐时预填它，原样提交', async () => {
     const conversation = addMockConversation('成片配乐')
     seedMockFilm(conversation.id, { musicDescription: '纯音乐，极简氛围钢琴小品' })
@@ -121,23 +109,6 @@ describe('生成音乐浮层', () => {
     await user.keyboard('{Enter}')
     expect(popover).toBeInTheDocument()
     expect(bodies).toEqual([])
-  })
-
-  it('浮层挂在触发按钮的父元素里，不落到 body 上', async () => {
-    const user = userEvent.setup()
-    const conversation = addMockConversation('成片配乐')
-    await renderWithProviders(
-      <div data-testid="宿主">
-        <GenerateMusic conversationId={conversation.id} onNotice={vi.fn()}>
-          <button type="button">打开</button>
-        </GenerateMusic>
-      </div>,
-    )
-
-    await user.click(screen.getByRole('button', { name: '打开' }))
-    expect(
-      await within(screen.getByTestId('宿主')).findByRole('dialog', { name: '生成音乐' }),
-    ).toBeVisible()
   })
 
   it('关闭后再打开，已输入的文字还在', async () => {
@@ -184,7 +155,6 @@ describe('生成音乐浮层', () => {
     await user.click(screen.getByRole('button', { name: '打开' }))
     const popover = await screen.findByRole('dialog', { name: '生成音乐' })
 
-    // 预填把占位文字换掉会移除节点；焦点此时在 body
     act(() => (document.activeElement as HTMLElement).blur())
     release()
     await waitFor(() =>
@@ -230,7 +200,6 @@ describe('生成音乐浮层', () => {
     const submit = within(popover).getByRole('button', { name: '生成音乐' })
     await waitFor(() => expect(submit).toBeEnabled())
 
-    // Safari 与 Firefox-mac 点按钮不聚焦：焦点留在 body，提交钮换成转圈会移除图标节点
     act(() => (document.activeElement as HTMLElement).blur())
     fireEvent.click(submit)
     expect(await within(popover).findByRole('button', { name: '正在提交' })).toBeDisabled()

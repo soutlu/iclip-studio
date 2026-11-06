@@ -1,5 +1,3 @@
-"""合集 HTTP 端点。读取受属主范围限制，治理者可查询全部；写入仅允许属主或治理者。"""
-
 from __future__ import annotations
 
 import uuid

@@ -1,5 +1,3 @@
-"""使用真实 PostgreSQL 与 FunctionModel 验证 prompt 队列、运行恢复及实时与历史 transcript 一致性。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -10,6 +8,25 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+from agent_runtime.errors import Conflict, NotFound, ValidationFailed
+from agent_runtime.harness.background import BackgroundTools
+from agent_runtime.harness.jobs import JobQueue, JobRow
+from agent_runtime.harness.step_store_pg import PgStepStore
+from agent_runtime.harness.transcript.activity import IDLE, ActivityState
+from agent_runtime.harness.transcript.from_messages import ORPHAN_TOOL_ERROR, run_ids_from_messages
+from agent_runtime.harness.transcript.history import TranscriptHistory
+from agent_runtime.harness.transcript.service import TranscriptService
+from agent_runtime.harness.transcript.store import TranscriptStore
+from agent_runtime.transcript.ops import (
+    MAIN_AGENT_ID,
+    AgentStatusMeta,
+    AttachmentSource,
+    ImageContent,
+    PromptUpsertOp,
+    TextContent,
+    TextFrame,
+    TranscriptTurn,
+)
 from pydantic_ai import Agent, AgentRunResult, Tool
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import (
@@ -33,26 +50,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from structlog.testing import capture_logs
 
-from iclip.common.errors import Conflict, NotFound, ValidationFailed
 from iclip.domains.references.infra_sql import SqlReferenceStore
-from iclip.harness.background import BackgroundTools
-from iclip.harness.jobs import JobQueue, JobRow
-from iclip.harness.step_store_pg import PgStepStore
-from iclip.harness.transcript.activity import IDLE, ActivityState
-from iclip.harness.transcript.from_messages import ORPHAN_TOOL_ERROR, run_ids_from_messages
-from iclip.harness.transcript.history import TranscriptHistory
-from iclip.harness.transcript.service import TranscriptService
-from iclip.harness.transcript.store import TranscriptStore
-from iclip.platform.transcript.ops import (
-    MAIN_AGENT_ID,
-    AgentStatusMeta,
-    AttachmentSource,
-    ImageContent,
-    PromptUpsertOp,
-    TextContent,
-    TextFrame,
-    TranscriptTurn,
-)
 from tests.helpers.pg import connected
 from tests.helpers.runtime import (
     AGENT_ID,
@@ -70,7 +68,6 @@ from tests.helpers.runtime import (
     make_runner,
     plant_interrupted,
     prompt_text,
-    records_nothing,
     replay,
     says,
     submit_text,
@@ -84,8 +81,6 @@ from tests.helpers.runtime import (
 def _waits_twice(
     entered: tuple[asyncio.Event, asyncio.Event], gates: tuple[asyncio.Event, asyncio.Event]
 ) -> FunctionModel:
-    """分别阻塞两次请求；第二次等待使追加消息已被读取，再测试取消后的队列状态。"""
-
     asked = 0
 
     async def stream(
@@ -102,8 +97,6 @@ def _waits_twice(
 
 
 def _speaks_then_waits(entered: asyncio.Event, gate: asyncio.Event) -> FunctionModel:
-    """先吐一段让响应流打开，再阻塞，保持运行未收尾。"""
-
     async def stream(
         _messages: list[ModelMessage], _info: AgentInfo
     ) -> AsyncIterator[str | DeltaToolCalls]:
@@ -129,8 +122,6 @@ async def _live_context_status(
 def _records(
     seen: list[list[ModelMessage]], entered: asyncio.Event, gate: asyncio.Event
 ) -> FunctionModel:
-    """记录模型输入并阻塞首个请求；后续请求用于验证追加消息触发 redirect。"""
-
     async def stream(
         messages: list[ModelMessage], _info: AgentInfo
     ) -> AsyncIterator[str | DeltaToolCalls]:
@@ -146,8 +137,6 @@ def _records(
 
 
 def _skeleton(turns: tuple[TranscriptTurn, ...]) -> list[Any]:
-    """比较结构、id、正文、工具卡的状态、返回与错误，以及轮错误，忽略时间戳。"""
-
     return [
         (
             turn.turn_id,
@@ -178,29 +167,6 @@ def _skeleton(turns: tuple[TranscriptTurn, ...]) -> list[Any]:
     ]
 
 
-async def test_one_prompt_runs_and_lands_in_both_paths(engine: AsyncEngine) -> None:
-
-    store = TranscriptStore()
-    runner, step_store, queue = build_runner(engine, says("好的，我来写"), store=store)
-    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
-
-    prompt_id = await submit_text(runner, queue, conversation_id, "写三个镜头")
-    await runner.shutdown()
-
-    derived = (await TranscriptHistory(step_store, queue).read(conversation_id)).turns
-    assert [turn.state for turn in derived] == ["completed"]
-    assert prompt_text(derived[0]) == "写三个镜头"
-    assert derived[0].steps[0].frames[0].text == "好的，我来写"  # pyright: ignore[reportAttributeAccessIssue]
-
-    row = await queue.get(prompt_id)
-    assert row is not None
-    assert row.status == "completed"
-    # 队列与消息使用同一 run_id，保证终态可直接关联。
-    snapshot = await step_store.latest_conversation_snapshot(conversation_id=conversation_id)
-    assert snapshot is not None
-    assert run_ids_from_messages(snapshot.messages) == (row.run_id,)
-
-
 async def test_second_prompt_queues_then_runs_after_the_first(engine: AsyncEngine) -> None:
 
     store = TranscriptStore()
@@ -214,7 +180,6 @@ async def test_second_prompt_queues_then_runs_after_the_first(engine: AsyncEngin
     assert queued is not None
     assert queued.status == "queued"
 
-    # 等待队列自然清空；shutdown 会取消刚启动的下一项。
     await drained(queue, conversation_id)
     await runner.shutdown()
 
@@ -254,15 +219,11 @@ async def test_usage_is_filled_in_when_the_run_finishes(engine: AsyncEngine) -> 
         history=TranscriptHistory(step_store, queue),
         queue=queue,
         runner=runner,
-        context_limits={AGENT_ID: MAX_CONTEXT_TOKENS},
-        record_materials=records_nothing,
     ).page(conversation_id, runtime_agent_id=AGENT_ID)
     assert restored.meta.agent == live_status
 
 
 async def test_the_context_gauge_updates_before_the_run_finishes(engine: AsyncEngine) -> None:
-    """模型请求前的上下文读数实时推给订阅者，不等运行收尾。"""
-
     entered, gate = asyncio.Event(), asyncio.Event()
     store = TranscriptStore()
     runner, _step_store, queue = build_runner(
@@ -283,8 +244,6 @@ async def test_the_context_gauge_updates_before_the_run_finishes(engine: AsyncEn
 
 
 async def test_sweep_settles_an_expired_lease_and_wakes_the_queue(engine: AsyncEngine) -> None:
-    """租约过期且认领次数耗尽时终结任务并唤醒队列，避免会话永久阻塞。"""
-
     store = TranscriptStore()
     runner, _step_store, queue = build_runner(engine, says("轮到我了"), store=store)
     conversation_id = f"c-{uuid.uuid4().hex[:8]}"
@@ -330,8 +289,6 @@ async def test_sweep_settles_an_expired_lease_and_wakes_the_queue(engine: AsyncE
 
 
 async def test_an_interrupted_prompt_resumes_into_the_same_turn(engine: AsyncEngine) -> None:
-    """续跑创建新 run，但须映射到原轮，保留已有输出且不重复用户消息。"""
-
     store = TranscriptStore()
     runner, step_store, queue = build_runner(engine, says("接着写完了"), store=store)
     conversation_id = f"c-{uuid.uuid4().hex[:8]}"
@@ -354,7 +311,6 @@ async def test_an_interrupted_prompt_resumes_into_the_same_turn(engine: AsyncEng
     assert row.status == "completed"
     assert row.attempt == 1
     assert row.run_id != first_run
-    # run 到 prompt 的映射使多次运行归入同一轮。
     assert set(await queue.prompt_of_runs(conversation_id)) == {first_run, row.run_id}
 
     derived = (await TranscriptHistory(step_store, queue).read(conversation_id)).turns
@@ -366,16 +322,10 @@ async def test_an_interrupted_prompt_resumes_into_the_same_turn(engine: AsyncEng
 
     replayed = replay(store, conversation_id)
     assert _skeleton(replayed) == _skeleton(derived)
-    # 恢复时需标记旧 run 末步中断，保持实时与历史步骤状态一致。
     assert [step.state for step in replayed[0].steps] == ["interrupted", "completed"]
 
 
 def _mid_tool_cycle_messages(run_id: str) -> list[ModelMessage]:
-    """模拟两次工具调用中仅一次返回已持久化，末尾请求标记 interrupted。
-
-    固定过去时间，确保续跑消息排在这段历史之后。
-    """
-
     started = datetime(2026, 9, 1, 10, 0, tzinfo=UTC)
     return [
         ModelRequest(
@@ -401,8 +351,6 @@ def _mid_tool_cycle_messages(run_id: str) -> list[ModelMessage]:
 async def test_a_run_interrupted_mid_tool_cycle_is_repaired_by_the_official_path(
     engine: AsyncEngine,
 ) -> None:
-    """框架补充未完成调用的 interrupted 返回后续跑，不新增用户消息。"""
-
     store = TranscriptStore()
     runner, step_store, queue = build_runner(engine, says("剩下那张也出好了"), store=store)
     conversation_id = f"c-{uuid.uuid4().hex[:8]}"
@@ -433,16 +381,14 @@ async def test_a_run_interrupted_mid_tool_cycle_is_repaired_by_the_official_path
     repaired = returns["call_2"]
     assert repaired.outcome == "interrupted"
     assert repaired.content == INTERRUPTED_TOOL_RETURN_CONTENT
-    assert repaired.metadata  # 框架修复标记的键名由其私有模块定义。
+    assert repaired.metadata
     assert texts(list(snapshot.messages)) == ["把这三个镜头出图"]
 
     derived = (await TranscriptHistory(step_store, queue).read(conversation_id)).turns
     cards = {card.tool_call_id: card for card in tool_cards(derived)}
     assert cards["call_1"].state == "done"
-    # 修复返回在两条路上都按孤儿卡收尾，不透出框架的英文文案。
     assert (cards["call_2"].state, cards["call_2"].error) == ("error", ORPHAN_TOOL_ERROR)
 
-    # 框架补偿返回不发事件，实时投影需显式结束对应工具卡，文案与历史同一句。
     replayed = replay(store, conversation_id)
     live = {card.tool_call_id: card for card in tool_cards(replayed)}
     assert (live["call_2"].state, live["call_2"].output, live["call_2"].error) == (
@@ -456,8 +402,6 @@ async def test_a_run_interrupted_mid_tool_cycle_is_repaired_by_the_official_path
 async def test_a_run_interrupted_before_any_tool_return_re_executes_the_frontier(
     engine: AsyncEngine,
 ) -> None:
-    """首个工具返回前中断会重新执行调用；结果须更新原卡，避免生成重复工具卡。"""
-
     ran = 0
 
     def draft() -> str:
@@ -513,8 +457,6 @@ async def test_a_run_interrupted_before_any_tool_return_re_executes_the_frontier
 async def test_a_graceful_shutdown_releases_the_lease_for_a_later_resume(
     engine: AsyncEngine,
 ) -> None:
-    """优雅关停释放租约但不判失败，保留持久化进度供下一进程续跑。"""
-
     entered = (asyncio.Event(), asyncio.Event())
     gates = (asyncio.Event(), asyncio.Event())
     store = TranscriptStore()
@@ -549,7 +491,6 @@ async def test_a_graceful_shutdown_releases_the_lease_for_a_later_resume(
     assert resumed is not None
     assert resumed.status == "completed"
     assert resumed.attempt == 1
-    # 已读取的追加消息改属续跑 run，终态随新运行更新。
     settled = await queue.get(second)
     assert settled is not None
     assert settled.status == "completed"
@@ -559,8 +500,6 @@ async def test_a_graceful_shutdown_releases_the_lease_for_a_later_resume(
 async def test_sweep_does_not_claim_a_row_this_process_is_still_running(
     engine: AsyncEngine,
 ) -> None:
-    """事件循环阻塞可能使本进程心跳过期；清扫不得重复认领仍在执行的任务。"""
-
     entered, gate = asyncio.Event(), asyncio.Event()
     store = TranscriptStore()
     runner, _step_store, queue = build_runner(engine, waits(entered, gate), store=store)
@@ -585,8 +524,6 @@ async def test_sweep_does_not_claim_a_row_this_process_is_still_running(
 
 
 async def test_a_prompt_that_used_up_its_attempts_is_failed(engine: AsyncEngine) -> None:
-    """认领次数耗尽时任务及已递交的追加消息均应失败。"""
-
     store = TranscriptStore()
     runner, step_store, queue = build_runner(engine, says("不该跑到我"), store=store)
     for attempt in (1, 2):
@@ -621,8 +558,6 @@ async def test_a_prompt_that_used_up_its_attempts_is_failed(engine: AsyncEngine)
 async def test_a_prompt_interrupted_before_its_first_snapshot_runs_again(
     engine: AsyncEngine,
 ) -> None:
-    """首个快照前中断没有用户历史，必须按原 prompt 重跑，不能走不添加消息的续跑流程。"""
-
     store = TranscriptStore()
     runner, step_store, queue = build_runner(engine, says("这次跑完了"), store=store)
     conversation_id = f"c-{uuid.uuid4().hex[:8]}"
@@ -688,7 +623,6 @@ async def test_a_queued_prompt_survives_a_restart_and_gets_picked_up(
             now=now,
             locked_by=DEAD,
         )
-    # 模拟前一运行已收尾、进程在唤醒下一任务前退出。
     await queue.finish("prm_head", status="completed", now=now, locked_by=DEAD, attempt=0)
 
     runner, _step_store, _queue = build_runner(engine, says("轮到我了"), store=TranscriptStore())
@@ -703,8 +637,6 @@ async def test_a_queued_prompt_survives_a_restart_and_gets_picked_up(
 
 
 async def test_a_run_whose_lease_was_taken_cancels_itself(engine: AsyncEngine) -> None:
-    """租约转移后旧进程必须取消运行并停止写入，避免两个进程同时推进会话。"""
-
     entered, gate = asyncio.Event(), asyncio.Event()
     store = TranscriptStore()
     runner, _step_store, queue = build_runner(engine, waits(entered, gate), store=store)
@@ -719,7 +651,7 @@ async def test_a_run_whose_lease_was_taken_cancels_itself(engine: AsyncEngine) -
             {"id": prompt_id},
         )
     await runner.heartbeat_once()
-    gate.set()  # 释放模型请求，使运行可处理取消。
+    gate.set()
     await runner.shutdown()
 
     assert [turn.state for turn in replay(store, conversation_id)] == ["cancelled"]
@@ -732,11 +664,6 @@ async def test_a_run_whose_lease_was_taken_cancels_itself(engine: AsyncEngine) -
 
 
 async def test_a_run_that_lost_its_lease_before_starting_does_nothing(engine: AsyncEngine) -> None:
-    """认领之后、开跑之前租约就被别的进程拿走：一步都不执行，全部交给新持有者。
-
-    不调模型、不写快照、不报开场；不迁插话、不收尾、不启动下一条。
-    """
-
     model_requests = 0
 
     async def stream(
@@ -768,12 +695,10 @@ async def test_a_run_that_lost_its_lease_before_starting_does_nothing(engine: As
             now=now,
             locked_by=runner.locked_by,
         )
-    # 上一次运行留下的 run 与挂在它上面的插话：续跑时才会迁插话。
     await queue.attach_run("prm_stale", "r-old", locked_by=runner.locked_by, attempt=0)
     await queue.mark_steered(("prm_steer",), run_id="r-old", now=now)
     stale = await queue.get("prm_stale")
     assert stale is not None
-    # 别的进程按过期租约认领了它：持有者与 attempt 都变了，runner 手里那份是旧的。
     async with engine.begin() as conn:
         await conn.execute(
             text(
@@ -838,8 +763,6 @@ async def test_only_the_running_row_carries_a_lease(engine: AsyncEngine) -> None
 
 
 async def test_attach_run_maps_every_run_to_its_prompt(engine: AsyncEngine) -> None:
-    """按会话加载 run 到 prompt 的映射，避免跨会话错误合轮。"""
-
     queue = JobQueue(engine)
     now = datetime.now(UTC)
     for prompt_id, conversation_id in (("prm_mine", "c-mine"), ("prm_yours", "c-yours")):
@@ -873,8 +796,6 @@ async def test_attach_run_maps_every_run_to_its_prompt(engine: AsyncEngine) -> N
 
 
 async def test_attach_run_writes_nothing_when_the_lease_moved_on(engine: AsyncEngine) -> None:
-    """失租后 attach_run 既不能更新任务，也不能写 run 映射，避免污染轮归属。"""
-
     queue = JobQueue(engine)
     await queue.submit(
         prompt_id="prm_fenced",
@@ -902,8 +823,6 @@ async def test_attach_run_writes_nothing_when_the_lease_moved_on(engine: AsyncEn
 async def test_repeated_prompt_receipts_do_not_run_the_model_twice(
     engine: AsyncEngine, same_worker: bool, concurrent: bool
 ) -> None:
-    """消息回执丢失后重试，或两个 worker 同时受理，均只能执行一次模型请求。"""
-
     entered, gate = asyncio.Event(), asyncio.Event()
     model_requests = 0
 
@@ -926,8 +845,6 @@ async def test_repeated_prompt_receipts_do_not_run_the_model_twice(
             history=TranscriptHistory(step_store, queue),
             queue=queue,
             runner=runner,
-            context_limits={AGENT_ID: MAX_CONTEXT_TOKENS},
-            record_materials=records_nothing,
         )
 
     first = service()
@@ -994,8 +911,6 @@ async def test_resubmitting_the_same_prompt_id_returns_the_existing_row(
 async def test_the_same_prompt_id_in_another_conversation_is_rejected(
     engine: AsyncEngine,
 ) -> None:
-    """prompt id 由客户端生成；重复 id 须检查会话归属，防止返回其他用户的记录。"""
-
     queue = JobQueue(engine)
     now = datetime.now(UTC)
     await queue.submit(
@@ -1024,8 +939,6 @@ async def test_the_same_prompt_id_in_another_conversation_is_rejected(
 async def test_the_same_prompt_id_submitted_twice_at_once_lands_as_one_row(
     engine: AsyncEngine,
 ) -> None:
-    """重复请求预查与插入之间无锁，并发请求需通过主键冲突路径返回同一任务。"""
-
     queue = JobQueue(engine)
     conversation_id = f"c-{uuid.uuid4().hex[:8]}"
     now = datetime.now(UTC)
@@ -1052,8 +965,6 @@ async def test_the_same_prompt_id_submitted_twice_at_once_lands_as_one_row(
 
 
 async def test_a_write_from_an_older_attempt_changes_nothing(engine: AsyncEngine) -> None:
-    """同一进程重新认领时 locked_by 不变，须以 attempt 区分新旧运行并拒绝旧写入。"""
-
     queue = JobQueue(engine)
     conversation_id = f"c-{uuid.uuid4().hex[:8]}"
     now = datetime.now(UTC)
@@ -1093,8 +1004,6 @@ async def test_a_write_from_an_older_attempt_changes_nothing(engine: AsyncEngine
 async def test_a_message_withdrawn_while_queued_is_not_the_last_turn_reason(
     engine: AsyncEngine,
 ) -> None:
-    """排队后撤销的消息未执行，其较晚 finished_at 不应覆盖最近实际运行的结果。"""
-
     queue = JobQueue(engine)
     conversation_id = f"c-{uuid.uuid4().hex[:8]}"
     now = datetime.now(UTC)
@@ -1148,8 +1057,6 @@ async def test_an_append_riding_the_turn_does_not_hide_the_approval(
 
 
 async def test_busy_conversations_are_the_ones_holding_a_job(engine: AsyncEngine) -> None:
-    """此刻占着的对话按属主或全平台取；跑完的、没跑过的都不在里面。"""
-
     queue = JobQueue(engine)
     now = datetime.now(UTC)
     running_id = f"c-{uuid.uuid4().hex[:8]}"
@@ -1177,8 +1084,6 @@ async def test_busy_conversations_are_the_ones_holding_a_job(engine: AsyncEngine
 async def test_aborting_the_conversation_leaves_nothing_queued_to_pick_up(
     engine: AsyncEngine,
 ) -> None:
-    """停止会话须先清空队列，避免取消当前运行后的收尾逻辑启动队首。"""
-
     entered, gate = asyncio.Event(), asyncio.Event()
     store = TranscriptStore()
     runner, _step_store, queue = build_runner(engine, waits(entered, gate), store=store)
@@ -1190,7 +1095,7 @@ async def test_aborting_the_conversation_leaves_nothing_queued_to_pick_up(
     await entered.wait()
 
     await runner.abort_conversation(conversation_id)
-    gate.set()  # 释放模型请求，使运行可处理取消。
+    gate.set()
     await drained(queue, conversation_id)
     await runner.shutdown()
 
@@ -1204,8 +1109,6 @@ async def test_aborting_the_conversation_leaves_nothing_queued_to_pick_up(
 
 
 async def test_aborting_a_queued_prompt_marks_it_aborted(engine: AsyncEngine) -> None:
-    """排队任务无租约，撤销应使用不要求租约的状态更新路径。"""
-
     entered, gate = asyncio.Event(), asyncio.Event()
     store = TranscriptStore()
     runner, _step_store, queue = build_runner(engine, waits(entered, gate), store=store)
@@ -1226,8 +1129,6 @@ async def test_aborting_a_queued_prompt_marks_it_aborted(engine: AsyncEngine) ->
 
 
 def _breaks_down_then_ends(ended: asyncio.Event) -> FunctionModel:
-    """首个请求调后台拆解；之后说一句就结束响应并置位 ended，运行停在等拆解结果上。"""
-
     async def stream(
         messages: list[ModelMessage], _info: AgentInfo
     ) -> AsyncIterator[str | DeltaToolCalls]:
@@ -1241,8 +1142,6 @@ def _breaks_down_then_ends(ended: asyncio.Event) -> FunctionModel:
 
 
 def _polling_breakdown(engine: AsyncEngine) -> Tool[Any]:
-    """后台跑的拆解：像参考视频服务等拆解那样，经真实存储反复查一行还没出现的参考视频。"""
-
     store = SqlReferenceStore(engine)
     reference_id = uuid.uuid4()
 
@@ -1255,9 +1154,6 @@ def _polling_breakdown(engine: AsyncEngine) -> Tool[Any]:
 
 
 async def _until_a_query_waits_on_the_lock(lock: AsyncConnection) -> None:
-    """等到别的连接查 reference_videos 时卡在锁上。锁连接开着事务，pg_stat_activity 在事务里
-    只取一次快照，所以每次看之前先清掉。"""
-
     for _ in range(500):
         await lock.execute(text("select pg_stat_clear_snapshot()"))
         waiting = (
@@ -1275,8 +1171,6 @@ async def _until_a_query_waits_on_the_lock(lock: AsyncConnection) -> None:
 
 
 async def _settled_status(lock: AsyncConnection, prompt_id: str) -> str:
-    """等这条 prompt 离开排队与运行中，返回最后看到的状态。经锁连接读，不占被测 engine 的连接。"""
-
     status = ""
     for _ in range(250):
         status = (
@@ -1305,7 +1199,6 @@ async def test_stopping_while_a_background_tool_waits_on_the_database_aborts_the
     )
     conversation_id = f"c-{uuid.uuid4().hex[:8]}"
     try:
-        # 锁住参考视频表，拆解的查询就停在库里；一直锁到这次运行收尾，停止正好落在查询中。
         async with connected(migrated_pg) as lock:
             await lock.execute(text("lock table iclip.reference_videos in access exclusive mode"))
             prompt_id = await submit_text(runner, queue, conversation_id, "拆一下这条视频")
@@ -1317,7 +1210,6 @@ async def test_stopping_while_a_background_tool_waits_on_the_database_aborts_the
         await runner.shutdown()
 
     assert status == "aborted"
-    # 被取消打断的连接没留给后面的查询。
     for _ in range(5):
         async with engine.connect() as conn:
             assert (await conn.execute(text("select 1"))).scalar_one() == 1
@@ -1326,8 +1218,6 @@ async def test_stopping_while_a_background_tool_waits_on_the_database_aborts_the
 async def test_an_append_landing_after_the_last_model_request_still_reaches_the_model(
     engine: AsyncEngine,
 ) -> None:
-    """末次请求期间到达的追加消息须立即交给框架，才能在运行结束前触发 redirect。"""
-
     seen: list[list[ModelMessage]] = []
     entered, gate = asyncio.Event(), asyncio.Event()
     store = TranscriptStore()
@@ -1367,8 +1257,6 @@ async def test_an_append_landing_after_the_last_model_request_still_reaches_the_
 async def test_an_append_is_cancelled_with_the_turn_instead_of_starting_a_new_one(
     engine: AsyncEngine,
 ) -> None:
-    """插进当前一轮的追加消息随停止一并撤回，否则停止后会作为新轮启动。"""
-
     entered, gate = asyncio.Event(), asyncio.Event()
     store = TranscriptStore()
     runner, _step_store, queue = build_runner(engine, waits(entered, gate), store=store)
@@ -1394,8 +1282,6 @@ async def test_an_append_is_cancelled_with_the_turn_instead_of_starting_a_new_on
 async def test_marking_a_delivered_append_takes_only_rows_still_queued(
     engine: AsyncEngine,
 ) -> None:
-    """确认递入时 queued 转 steered 并离开队列；递入前已撤回的行不动。"""
-
     queue = JobQueue(engine)
     conversation_id = f"c-{uuid.uuid4().hex[:8]}"
     now = datetime.now(UTC)
@@ -1425,7 +1311,6 @@ async def test_marking_a_delivered_append_takes_only_rows_still_queued(
     assert moved.status == "steered"
     assert moved.run_id == f"{AGENT_ID}-live"
     assert moved.steered_at == now
-    # 对外协议不含 steered，需映射为已定义状态。
     assert moved.as_entity().status == "running"
     assert (await queue.view(conversation_id)).queued == ()
     still = await queue.get("prm_dropped")
@@ -1449,8 +1334,6 @@ async def test_appending_when_nothing_is_running_is_a_conflict(engine: AsyncEngi
 
 @dataclass
 class _SteersAfterRun(AbstractCapability[Any]):
-    """在 after_run 里插一次话：此时框架末次 drain 已关上队列，runner 还登记着这次运行。"""
-
     steer: Callable[[], Awaitable[None]] | None = None
 
     async def after_run(
@@ -1465,8 +1348,6 @@ class _SteersAfterRun(AbstractCapability[Any]):
 async def test_a_steer_landing_after_the_final_drain_runs_as_the_next_turn(
     engine: AsyncEngine,
 ) -> None:
-    """框架队列关上之后、运行摘下控制句柄之前到达的插话留在队列，下一轮照常跑它。"""
-
     entered, gate = asyncio.Event(), asyncio.Event()
     late = _SteersAfterRun()
     step_store = PgStepStore(engine)
@@ -1519,8 +1400,6 @@ async def test_a_steer_landing_after_the_final_drain_runs_as_the_next_turn(
 async def test_a_steer_the_crashed_run_never_took_is_not_settled_by_the_resume(
     engine: AsyncEngine,
 ) -> None:
-    """崩溃时还没递进模型的插话保持 queued：续跑不认领它，它在续跑之后作为自己的一轮运行。"""
-
     entered, gate = asyncio.Event(), asyncio.Event()
     store = TranscriptStore()
     runner, _step_store, queue = build_runner(engine, waits(entered, gate), store=store)
@@ -1530,7 +1409,6 @@ async def test_a_steer_the_crashed_run_never_took_is_not_settled_by_the_resume(
     second = await submit_text(runner, queue, conversation_id, "临时插一句")
     await entered.wait()
     await runner.steer(conversation_id, (second,))
-    # 进程「死了」：心跳过期，第一个 runner 卡在请求里，既不推进也不收尾。
     await expire_lease(engine, conversation_id)
 
     store2 = TranscriptStore()
@@ -1551,7 +1429,6 @@ async def test_a_steer_the_crashed_run_never_took_is_not_settled_by_the_resume(
     derived = (await TranscriptHistory(step_store2, queue).read(conversation_id)).turns
     assert [prompt_text(turn) for turn in derived] == ["先做这个", "临时插一句"]
 
-    # 收拾卡住的第一个 runner；它的租约早已易手，收尾写不进任何一行。
     await runner.shutdown()
 
 
@@ -1560,11 +1437,6 @@ def _blocks_then_speaks(
     gates: tuple[asyncio.Event, asyncio.Event],
     after_delivery: Callable[[], Awaitable[None]] | None = None,
 ) -> FunctionModel:
-    """首个请求阻塞到 gates[0]；后续请求先吐一段，再执行 after_delivery、置 entered[1]、阻塞到 gates[1]。
-
-    框架拉取响应的下一段之前先派发已缓冲的事件，吐出首段之后递入确认已经处理完。
-    """
-
     asked = 0
 
     async def stream(
@@ -1587,8 +1459,6 @@ def _blocks_then_speaks(
 
 
 async def test_a_steer_stays_queued_until_the_model_takes_it(engine: AsyncEngine) -> None:
-    """插话递入后仍是 queued；框架确认它进了消息历史才记为 steered，带上 run_id 与插话时间并广播。"""
-
     entered = (asyncio.Event(), asyncio.Event())
     gates = (asyncio.Event(), asyncio.Event())
     delivered: list[JobRow | None] = []
@@ -1650,8 +1520,6 @@ async def test_a_steer_stays_queued_until_the_model_takes_it(engine: AsyncEngine
 
 
 async def test_stopping_the_turn_drops_a_steer_it_never_took(engine: AsyncEngine) -> None:
-    """单条停止当前一轮时，还没递进模型的插话一并撤回，不作为新一轮运行。"""
-
     entered, gate = asyncio.Event(), asyncio.Event()
     store = TranscriptStore()
     runner, _step_store, queue = build_runner(engine, waits(entered, gate), store=store)
@@ -1672,7 +1540,6 @@ async def test_stopping_the_turn_drops_a_steer_it_never_took(engine: AsyncEngine
     assert stopped is not None
     assert appended is not None
     assert (stopped.status, appended.status) == ("aborted", "aborted")
-    # 没递进模型：不挂在这一轮上，也没有插话时间。
     assert (appended.run_id, appended.steered_at) == (None, None)
     assert await queue.prompt_of_runs(conversation_id) == {stopped.run_id: first}
     assert [prompt_text(turn) for turn in replay(store, conversation_id)] == ["先做这个"]
@@ -1681,8 +1548,6 @@ async def test_stopping_the_turn_drops_a_steer_it_never_took(engine: AsyncEngine
 async def test_a_steer_withdrawn_before_the_model_takes_it_stays_aborted(
     engine: AsyncEngine,
 ) -> None:
-    """停整段对话先撤队列、后发取消；插话在两者之间被框架递入时，确认递入不改动已撤回的行。"""
-
     seen: list[list[ModelMessage]] = []
     entered, gate = asyncio.Event(), asyncio.Event()
     store = TranscriptStore()
@@ -1694,7 +1559,6 @@ async def test_a_steer_withdrawn_before_the_model_takes_it_stays_aborted(
     await entered.wait()
     await runner.steer(conversation_id, (second,))
 
-    # abort_conversation 的第一步；取消还没发出，框架照常递入。
     await queue.abort_queued(conversation_id, now=datetime.now(UTC))
     gate.set()
     await drained(queue, conversation_id)
@@ -1712,8 +1576,6 @@ async def test_a_steer_withdrawn_before_the_model_takes_it_stays_aborted(
 async def test_stopping_one_steer_waiting_for_delivery_conflicts_like_a_delivered_one(
     engine: AsyncEngine,
 ) -> None:
-    """已入队、框架还没递入的插话也撤不出框架队列，单条停止与已递入的一样返回冲突。"""
-
     entered = (asyncio.Event(), asyncio.Event())
     gates = (asyncio.Event(), asyncio.Event())
     store = TranscriptStore()
@@ -1775,8 +1637,6 @@ async def test_steering_the_same_prompt_twice_enqueues_it_once(engine: AsyncEngi
 async def test_a_run_that_died_mid_tool_still_shows_up_after_a_refresh(
     engine: AsyncEngine,
 ) -> None:
-    """历史展示须读取 interrupted 快照；仅使用恢复执行的完整快照读取规则会丢失失败轮。"""
-
     def boom() -> str:
         raise RuntimeError("工具炸了")
 
@@ -1817,8 +1677,6 @@ async def test_a_run_that_died_mid_tool_still_shows_up_after_a_refresh(
 async def test_the_close_out_result_tells_the_model_the_call_failed(
     engine: AsyncEngine,
 ) -> None:
-    """悬空调用的补偿结果必须显式标记失败；裸字符串会被框架包装为成功 ToolReturn。"""
-
     def boom() -> str:
         raise RuntimeError("工具炸了")
 
@@ -1853,8 +1711,6 @@ async def test_the_close_out_result_tells_the_model_the_call_failed(
 async def test_the_next_turn_after_a_failed_one_does_not_reuse_its_ordinal(
     engine: AsyncEngine,
 ) -> None:
-    """中断快照也占用轮号；下一运行必须递增，避免实时轮覆盖历史失败轮。"""
-
     def boom() -> str:
         raise RuntimeError("工具炸了")
 
@@ -1865,7 +1721,6 @@ async def test_the_next_turn_after_a_failed_one_does_not_reuse_its_ordinal(
     await submit_text(runner, queue, conversation_id, "先做这个")
     await drained(queue, conversation_id)
 
-    # 换一个接同一数据库的 runner 和正常模型跑下一轮。
     store2 = TranscriptStore()
     runner2, _step_store2, queue2 = build_runner(engine, says("好"), store=store2)
     await submit_text(runner2, queue2, conversation_id, "再做那个")
@@ -1881,8 +1736,6 @@ async def test_the_next_turn_after_a_failed_one_does_not_reuse_its_ordinal(
 async def test_shutdown_leaves_an_append_the_run_never_read_in_the_queue(
     engine: AsyncEngine,
 ) -> None:
-    """关停时框架尚未递入的追加消息保持 queued，避免被续跑误标为已完成。"""
-
     entered, gate = asyncio.Event(), asyncio.Event()
     store = TranscriptStore()
     runner, _step_store, queue = build_runner(engine, waits(entered, gate), store=store)
@@ -1893,7 +1746,6 @@ async def test_shutdown_leaves_an_append_the_run_never_read_in_the_queue(
     await entered.wait()
 
     await runner.steer(conversation_id, (second,))
-    # 保持 gate 关闭，使取消发生在请求内部，追加消息仍未被读取。
     await runner.shutdown()
 
     appended = await queue.get(second)
@@ -1922,8 +1774,6 @@ async def test_aborting_a_prompt_from_another_conversation_is_not_found(
 
 
 def _waits_then_calls(name: str, entered: asyncio.Event, gate: asyncio.Event) -> FunctionModel:
-    """阻塞首次响应供追加消息进入 run，再触发待审批工具调用。"""
-
     asked = 0
 
     async def stream(
@@ -1944,11 +1794,6 @@ def _waits_then_calls(name: str, entered: asyncio.Event, gate: asyncio.Event) ->
 async def test_an_append_arriving_as_the_run_would_park_on_approval_is_not_lost(
     engine: AsyncEngine,
 ) -> None:
-    """追加消息可使待审批运行转为正常结束，但末尾仍有无返回调用。
-
-    StepPersistence 不保存该形状，运行层须补存快照，避免历史和轮号丢失。
-    """
-
     entered, gate = asyncio.Event(), asyncio.Event()
     store = TranscriptStore()
     runner, step_store, queue = build_runner(
@@ -1990,8 +1835,6 @@ async def test_an_append_arriving_as_the_run_would_park_on_approval_is_not_lost(
 async def test_a_tool_needing_approval_ends_the_run_and_parks_the_prompt(
     engine: AsyncEngine,
 ) -> None:
-    """待审批时结束 run 并持久化等待状态，不能将可能持续数天的等待保留在进程内。"""
-
     store = TranscriptStore()
     runner, step_store, queue = approval_runner(engine, store)
     conversation_id = f"c-{uuid.uuid4().hex[:8]}"
@@ -2003,7 +1846,6 @@ async def test_a_tool_needing_approval_ends_the_run_and_parks_the_prompt(
     assert (row.locked_by, row.heartbeat_at) == (None, None)
     assert row.run_id is not None
 
-    # 框架不持久化含开放调用的快照，此时由运行层保存。
     assert (await step_store.latest_conversation_snapshot(conversation_id=conversation_id)) is None
     parked = await step_store.latest_conversation_snapshot(
         conversation_id=conversation_id, include_interrupted=True
@@ -2020,14 +1862,11 @@ async def test_a_tool_needing_approval_ends_the_run_and_parks_the_prompt(
         item.interaction_id for item in store.pending_interactions(conversation_id, MAIN_AGENT_ID)
     ] == ["apr_call_1"]
 
-    # 使用空实时 store 模拟重启，验证待审批状态可从数据库恢复。
     page = await TranscriptService(
         store=TranscriptStore(),
         history=TranscriptHistory(step_store, queue),
         queue=queue,
         runner=runner,
-        context_limits={AGENT_ID: MAX_CONTEXT_TOKENS},
-        record_materials=records_nothing,
     ).page(conversation_id, runtime_agent_id=AGENT_ID)
     assert [turn.state for turn in page.items] == ["running"]
     restored = tool_cards(page.items)[0]
@@ -2043,8 +1882,6 @@ async def test_a_tool_needing_approval_ends_the_run_and_parks_the_prompt(
 
 
 async def test_every_run_start_is_reported_once_with_its_run_id(engine: AsyncEngine) -> None:
-    """首跑与审批续跑各报一次，带的 run_id 就是记进运行映射的那两个。"""
-
     started: list[tuple[str, str]] = []
 
     async def note(row: JobRow, run_id: str) -> None:
@@ -2065,8 +1902,6 @@ async def test_every_run_start_is_reported_once_with_its_run_id(engine: AsyncEng
 
 
 async def test_a_failing_run_start_hook_does_not_stop_the_run(engine: AsyncEngine) -> None:
-    """开场动作只是记账，它抛错运行照常跑完。"""
-
     async def explode(_row: JobRow, _run_id: str) -> None:
         raise RuntimeError("对话行不见了")
 
@@ -2090,8 +1925,6 @@ async def test_a_failing_run_start_hook_does_not_stop_the_run(engine: AsyncEngin
 async def test_a_turn_start_action_runs_while_the_turn_is_still_running(
     engine: AsyncEngine,
 ) -> None:
-    """开场动作（自动起名）在这一轮开始时就做，模型还没答完它已经做完，不等这一轮结束。"""
-
     entered, gate = asyncio.Event(), asyncio.Event()
     named = asyncio.Event()
     started: list[str] = []
@@ -2120,8 +1953,6 @@ async def test_a_turn_start_action_runs_while_the_turn_is_still_running(
 async def test_a_slow_turn_start_action_neither_holds_up_the_turn_nor_outlives_shutdown(
     engine: AsyncEngine,
 ) -> None:
-    """开场动作卡住时这一轮照常跑完；关停时把它取消掉，不留悬挂任务。"""
-
     never = asyncio.Event()
     entered = asyncio.Event()
     cancelled = asyncio.Event()
@@ -2151,8 +1982,6 @@ async def test_a_slow_turn_start_action_neither_holds_up_the_turn_nor_outlives_s
 
 
 async def test_a_failing_turn_start_action_does_not_stop_the_turn(engine: AsyncEngine) -> None:
-    """起名失败只记日志，这一轮照常跑完。"""
-
     async def explode(_row: JobRow) -> None:
         raise RuntimeError("标题模型不可用")
 
@@ -2174,8 +2003,6 @@ async def test_a_failing_turn_start_action_does_not_stop_the_turn(engine: AsyncE
 
 
 async def test_an_approval_continuation_does_not_start_the_turn_again(engine: AsyncEngine) -> None:
-    """审批续跑仍是同一轮：开场动作只在首次 run 做一次。"""
-
     started: list[str] = []
 
     async def note(row: JobRow) -> None:
@@ -2195,69 +2022,9 @@ async def test_an_approval_continuation_does_not_start_the_turn_again(engine: As
     assert len(await queue.prompt_of_runs(conversation_id)) == 2
 
 
-async def test_approving_resumes_the_same_turn(engine: AsyncEngine) -> None:
-    """审批续跑保持同一轮且不增加 attempt；该计数仅表示中断后的重新认领。"""
-
-    store = TranscriptStore()
-    runner, step_store, queue = approval_runner(engine, store)
-    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
-
-    prompt_id = await submit_text(runner, queue, conversation_id, "把这个文件改掉")
-    await awaits(queue, prompt_id)
-    await runner.approve(conversation_id, "apr_call_1", approved=True)
-    await drained(queue, conversation_id)
-    await runner.shutdown()
-
-    row = await queue.get(prompt_id)
-    assert row is not None
-    assert (row.status, row.attempt) == ("completed", 0)
-    assert row.decisions == {"call_1": True}
-    assert len(await queue.prompt_of_runs(conversation_id)) == 2
-
-    derived = (await TranscriptHistory(step_store, queue).read(conversation_id)).turns
-    assert [(turn.turn_id, turn.state) for turn in derived] == [("t1", "completed")]
-    card = tool_cards(derived)[0]
-    assert (card.state, card.approval_id) == ("done", "apr_call_1")
-    assert [item.state for item in derived[0].steps] == ["completed", "completed"]
-    assert [getattr(frame, "text", None) for frame in derived[0].steps[1].frames] == ["改完了"]
-    assert [
-        item.state
-        for item in (await TranscriptHistory(step_store, queue).read(conversation_id)).interactions
-    ] == ["approved"]
-
-    assert _skeleton(replay(store, conversation_id)) == _skeleton(derived)
-
-
-async def test_rejecting_settles_the_card_as_an_error_and_the_model_moves_on(
-    engine: AsyncEngine,
-) -> None:
-
-    store = TranscriptStore()
-    runner, step_store, queue = approval_runner(engine, store, reply="那我不动它")
-    conversation_id = f"c-{uuid.uuid4().hex[:8]}"
-
-    prompt_id = await submit_text(runner, queue, conversation_id, "把这个文件改掉")
-    await awaits(queue, prompt_id)
-    await runner.approve(conversation_id, "apr_call_1", approved=False)
-    await drained(queue, conversation_id)
-    await runner.shutdown()
-
-    history = await TranscriptHistory(step_store, queue).read(conversation_id)
-    assert [turn.state for turn in history.turns] == ["completed"]
-    card = tool_cards(history.turns)[0]
-    assert (card.state, card.approval_id) == ("error", "apr_call_1")
-    assert [item.state for item in history.interactions] == ["rejected"]
-    assert [getattr(frame, "text", None) for frame in history.turns[0].steps[1].frames] == [
-        "那我不动它"
-    ]
-    assert _skeleton(replay(store, conversation_id)) == _skeleton(history.turns)
-
-
 async def test_the_run_resumes_only_once_every_approval_is_answered(
     engine: AsyncEngine,
 ) -> None:
-    """框架要求全部待审批调用都有决定，仅在结果齐全后续跑。"""
-
     store = TranscriptStore()
     runner, step_store, queue = approval_runner(engine, store, calls=2)
     conversation_id = f"c-{uuid.uuid4().hex[:8]}"
@@ -2270,11 +2037,9 @@ async def test_the_run_resumes_only_once_every_approval_is_answered(
     assert half is not None
     assert (half.status, half.decisions) == ("awaiting", {"call_1": True})
 
-    # 同一决定幂等，冲突决定须拒绝，因为工具可能已按原决定执行。
     await runner.approve(conversation_id, "apr_call_1", approved=True)
     with pytest.raises(Conflict):
         await runner.approve(conversation_id, "apr_call_1", approved=False)
-    # 未知调用 id 不能产生审批记录。
     with pytest.raises(NotFound):
         await runner.approve(conversation_id, "apr_nobody", approved=True)
 
@@ -2293,8 +2058,6 @@ async def test_the_run_resumes_only_once_every_approval_is_answered(
 async def test_a_conversation_waiting_for_approval_takes_no_steering_and_queues_the_next(
     engine: AsyncEngine,
 ) -> None:
-    """待审批时新消息排队；撤销需清理实时交互和工具卡，再推进队列。"""
-
     store = TranscriptStore()
     runner, step_store, queue = approval_runner(engine, store)
     conversation_id = f"c-{uuid.uuid4().hex[:8]}"
@@ -2319,7 +2082,6 @@ async def test_a_conversation_waiting_for_approval_takes_no_steering_and_queues_
 
     replayed = replay(store, conversation_id)
     assert replayed[0].state == "cancelled"
-    # 撤回审批的轮头与历史一样，终态就带耗时。
     assert replayed[0].duration_ms is not None
     assert [card.state for card in tool_cards(replayed[:1])] == ["error"]
     assert store.pending_interactions(conversation_id, MAIN_AGENT_ID) == ()
@@ -2337,15 +2099,12 @@ async def test_a_conversation_waiting_for_approval_takes_no_steering_and_queues_
 async def test_stopping_the_conversation_also_drops_the_one_waiting_for_approval(
     engine: AsyncEngine,
 ) -> None:
-    """停止会话须处理无活动 run 的待审批任务，并取消其 steered 消息，避免永久占用。"""
-
     store = TranscriptStore()
     runner, _step_store, queue = approval_runner(engine, store)
     conversation_id = f"c-{uuid.uuid4().hex[:8]}"
 
     prompt_id = await submit_text(runner, queue, conversation_id, "把这个文件改掉")
     parked = await awaits(queue, prompt_id)
-    # 模拟已递交、等待审批续跑处理的 steered 消息。
     appended = await submit_text(runner, queue, conversation_id, "临时插一句")
     assert parked.run_id is not None
     await queue.mark_steered((appended,), run_id=parked.run_id, now=datetime.now(UTC))
@@ -2362,18 +2121,13 @@ async def test_stopping_the_conversation_also_drops_the_one_waiting_for_approval
     assert [turn.state for turn in replay(store, conversation_id)] == ["cancelled"]
 
 
-# --- 受理规则收紧之前排进队列的旧消息：图片地址挂不上缩放参数 ------------------------
-
 LEGACY_IMAGE = (
     TextContent(text="照这张图"),
     ImageContent(source=AttachmentSource(kind="url", url="https://cdn.test/legacy.jpg")),
 )
-"""直接写进队列，绕过受理时的检查，模拟上线那一刻已经排着的旧消息。"""
 
 
 def _prompt_texts(messages: list[ModelMessage]) -> list[str]:
-    """用户 part 里的文字，连同开跑时 ``model_prompt`` 交的列表形式（共用的 ``texts`` 只认字符串）。"""
-
     found: list[str] = []
     for message in messages:
         for part in getattr(message, "parts", ()):
@@ -2387,8 +2141,6 @@ def _prompt_texts(messages: list[ModelMessage]) -> list[str]:
 async def test_a_queued_legacy_image_fails_its_run_and_the_queue_moves_on(
     engine: AsyncEngine,
 ) -> None:
-    """开跑时拼不出模型输入：这条记失败、模型一次没调，不挂住，下一条照常跑。"""
-
     seen: list[list[ModelMessage]] = []
 
     async def stream(
@@ -2418,7 +2170,6 @@ async def test_a_queued_legacy_image_fails_its_run_and_the_queue_moves_on(
     assert len(seen) == 1, "旧消息没有发给模型"
     assert "接着做" in _prompt_texts(seen[0])
     assert "照这张图" not in _prompt_texts(seen[0])
-    # 原因随失败记进带栈的错误日志，异常里带着那个地址。
     assert [
         entry["log_level"]
         for entry in logs
@@ -2429,8 +2180,6 @@ async def test_a_queued_legacy_image_fails_its_run_and_the_queue_moves_on(
 async def test_steering_a_legacy_image_is_refused_and_the_batch_stays_queued(
     engine: AsyncEngine,
 ) -> None:
-    """插话时拼不出模型输入：整批一条都不递，都留在队列里，调用方拿到 ValidationFailed（422）。"""
-
     entered, gate = asyncio.Event(), asyncio.Event()
     store = TranscriptStore()
     runner, _step_store, queue = build_runner(engine, waits(entered, gate), store=store)

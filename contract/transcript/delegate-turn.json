@@ -110,7 +110,6 @@
     "meta": {
       "activity": "idle"
     },
-    "title": "",
     "agents": [
       {
         "agentId": "main",
@@ -187,7 +186,6 @@
     "meta": {
       "activity": "idle"
     },
-    "title": "",
     "agents": [
       {
         "agentId": "main",

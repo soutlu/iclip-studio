@@ -1,15 +1,3 @@
-"""一次性改写：把 ``agent_runtime.snapshots`` 里仍内联整段历史的快照行改成按消息引用存，可重复运行。
-
-该版本若附带手动执行的历史格式迁移 SQL，先执行那条 SQL 再跑本脚本：改写后消息存在
-``snapshot_messages``，那条 SQL 会拒绝执行。
-
-在停机窗口、迁移到 head 之后手动运行，不接进 Alembic 与启动流程：
-    docker compose run --rm server python -m scripts.dedup_snapshot_messages [--batch-size 200]
-本地开发库在 ``server/`` 下：``uv run --env-file ../.env python -m scripts.dedup_snapshot_messages``。
-
-跑完后执行 ``VACUUM FULL agent_runtime.snapshots`` 才会把空间还给磁盘（期间锁表）。
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -19,10 +7,10 @@ import os
 import sys
 from typing import Final
 
+from agent_runtime.harness.step_store_pg import snapshots_table, store_snapshot_history
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.harness.step_store_pg import snapshots_table, store_snapshot_history
 from iclip.platform.db.engine import build_engine
 
 DEFAULT_BATCH_SIZE: Final = 200
@@ -38,11 +26,8 @@ def _database_url() -> str:
 async def rewrite_inline_snapshots(
     engine: AsyncEngine, *, batch_size: int = DEFAULT_BATCH_SIZE
 ) -> int:
-    """改写全部内联历史的快照行，返回改写的行数；每批打印一行进度。"""
-
     if batch_size < 1:
         raise ValueError(f"batch_size must be >= 1, got {batch_size!r}")
-    # 引用格式以 ``{`` 开头、内联历史是 JSON 列表，与官方 message_refs 的判断一致。
     inline = ~snapshots_table.c.messages.startswith("{", autoescape=True)
     last_seq = 0
     rewritten = 0

@@ -20,20 +20,18 @@ const OTHER_USER = '22222222-2222-4222-8222-222222222222'
 
 type Record = Parameters<typeof makeGenerationJob>[0]
 
-/** 一帧超分记录的状态跳转：不挂对话，信封上只有属主与 epoch。 */
 const enhanceFrame = (
   status: string,
   owner = mockAuthUser.id,
   operation = 'enhance',
   id = ENHANCED,
 ) => ({
-  epoch: 'e1',
   owner_user_id: owner,
   payload: { id, kind: 'video', operation, status },
+  timestamp: '2026-10-30T08:00:00+00:00',
   type: 'event.generation.changed',
 })
 
-/** 这条超分记录（缺省是 ENHANCED）与它来源的各档；返回读记录与读各档的次数。 */
 const serveRecord = (record: Record = {}) => {
   const reads = { enhancements: 0, record: 0 }
   const id = record.id ?? ENHANCED
@@ -74,7 +72,6 @@ const renderNotices = async () => {
       />
     </>,
   )
-  // 属主比对要等身份读回来。
   await waitFor(() =>
     expect(rendered.queryClient.getQueryData(['auth', 'current-user'])).toBeTruthy(),
   )
@@ -177,7 +174,6 @@ describe('EnhanceNotices', () => {
     act(() => socket.deliver(enhanceFrame('completed', OTHER_USER)))
 
     await waitFor(() => expect(reads.enhancements).toBe(2))
-    // 留出一次请求往返，否则「没读记录」是空断言。
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
     expect(reads.record).toBe(0)
     expect(screen.queryByText(/高清版/)).not.toBeInTheDocument()
@@ -199,7 +195,6 @@ describe('EnhanceNotices', () => {
   })
 
   describe('看过', () => {
-    /** 每个用例一条新的超分记录：看过的记录在模块里，跨用例留着。 */
     const freshRecord = (record: Record = {}) => {
       const id = crypto.randomUUID()
       serveRecord({ id, ...record })
@@ -224,7 +219,6 @@ describe('EnhanceNotices', () => {
       return id
     }
 
-    /** 一直挂着读看过的记录；`.current` 随记录更新。 */
     const watchSeen = () => renderHook(() => useSeenEnhancements()).result
 
     afterEach(() => {
@@ -260,7 +254,6 @@ describe('EnhanceNotices', () => {
       const notice = (await screen.findByText('第 2 组的高清版 1080p 已生成')).closest('li')
       if (notice === null) throw new Error('提示条不在列表里')
 
-      // 默认在底部居中，往下划过阈值即关闭；第一次移动先锁定方向。
       fireEvent.pointerDown(notice, { clientX: 0, clientY: 0, pointerId: 1 })
       fireEvent.pointerMove(notice, { clientX: 0, clientY: 5, pointerId: 1 })
       fireEvent.pointerMove(notice, { clientX: 0, clientY: 120, pointerId: 1 })
@@ -297,7 +290,6 @@ describe('EnhanceNotices', () => {
     await waitFor(() => expect(reads.enhancements).toBe(1))
 
     act(() => socket.onclose?.())
-    // 连接按退避（至少 1 秒）重连，换上新回调后再握手。
     await waitFor(() => expect(socket.onmessage).not.toBeNull(), { timeout: 3000 })
     act(() => socket.deliver(SERVER_HELLO))
 

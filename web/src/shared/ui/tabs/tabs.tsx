@@ -1,5 +1,3 @@
-/** 下划线式标签页：文字标签，选中项加粗并在容器底边压一条墨色线（选中一律用墨色，主色只留给主动作）。几何由调用方的容器给。 */
-
 import { Tabs } from 'radix-ui'
 import type { ComponentPropsWithoutRef } from 'react'
 import { cn } from '@/shared/lib/utils'

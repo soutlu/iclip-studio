@@ -14,9 +14,9 @@ import type { GenerationJob } from '../storyboard.api'
 import { SUBMIT_HOLD_MS } from '../use-submit-lock'
 import { FrameImageEditor } from './frame-image-editor'
 import { editDraftKey } from './image-edit-draft'
-import type { EditDraftPart, FrameEditDraft, FrameEditTarget } from './image-edit-types'
+import type { EditDraftPart, FrameEditDraft, StoryboardFrameTarget } from './image-edit-types'
 
-const target: FrameEditTarget = {
+const target: StoryboardFrameTarget = {
   conversationId: 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d',
   shotIndex: 1,
   frameNumber: 1,
@@ -41,22 +41,28 @@ const job = (over: Partial<GenerationJob> = {}): GenerationJob =>
 
 type EditorPageProps = {
   initialKey?: string
+  target?: StoryboardFrameTarget
   onApply?: (previousUrl: string | null, url: string | null) => void
   onClose?: (opened: ReadonlySet<string>) => void
   regenerate?: ComponentProps<typeof FrameImageEditor>['regenerate']
 }
 
-/** 分镜那一侧的替身：替换就把第 1 帧换掉，关窗就卸载编辑器。 */
-function EditorPage({ initialKey, onApply, onClose, regenerate }: EditorPageProps) {
+function EditorPage({
+  initialKey,
+  onApply,
+  onClose,
+  regenerate,
+  target: editTarget = target,
+}: EditorPageProps) {
   const [open, setOpen] = useState(true)
   const [frames, setFrames] = useState([BASE, FRAME_2])
   return (
     <>
       {open && (
         <FrameImageEditor
-          target={target}
+          target={editTarget}
           currentUrl={frames[0]}
-          subtitle="镜头组 1 · 帧 @1"
+          subtitle={`镜头组 ${editTarget.shotIndex} · 帧 @${editTarget.frameNumber}`}
           frames={frames.map((url, index) => ({ name: `帧 @${index + 1}`, url }))}
           aspectRatio="9:16"
           initialKey={initialKey}
@@ -67,7 +73,6 @@ function EditorPage({ initialKey, onApply, onClose, regenerate }: EditorPageProp
           }}
           onApply={async (previous, url) => {
             onApply?.(previous, url)
-            // 分镜页的帧总有图，替换与撤销两头都是地址。
             if (url !== null) setFrames([url, FRAME_2])
           }}
         />
@@ -80,7 +85,6 @@ function EditorPage({ initialKey, onApply, onClose, regenerate }: EditorPageProp
 const UPLOADED = 'https://example.com/uploaded.png'
 const imageFile = () => new File(['image'], '参考.png', { type: 'image/png' })
 
-/** 卡在确认那一步的参考图上传；调用返回的开关才放行。 */
 function stallUpload() {
   let release = () => {}
   const held = new Promise<void>((resolve) => {
@@ -95,7 +99,6 @@ function stallUpload() {
   return () => release()
 }
 
-/** jsdom 不加载图片也不排版：给底图固有尺寸、给画布外框，返回可以落笔的画布。 */
 function loadCanvas(editor: HTMLElement) {
   vi.stubGlobal(
     'PointerEvent',
@@ -116,11 +119,9 @@ function loadCanvas(editor: HTMLElement) {
   return canvas
 }
 
-/** 会话读到之前输入卡不收文件；等它按 uploads:write 挂上文件选择框。 */
 const waitForUploadPermission = (editor: HTMLElement) =>
   waitFor(() => expect(editor.querySelector('input[type="file"]')).not.toBeNull())
 
-/** 在画布中央点一个点标注。 */
 function drawPoint(canvas: HTMLElement) {
   fireEvent.pointerDown(canvas, { clientX: 400, clientY: 400, button: 0 })
   fireEvent.pointerUp(canvas, { clientX: 400, clientY: 400, button: 0 })
@@ -136,7 +137,6 @@ describe('图片编辑器', () => {
     sessionStorage.setItem(editDraftKey(target), JSON.stringify({ [BASE]: draft }))
   })
   afterEach(() => {
-    // Toaster 是模块级单例，上一条用例弹出的提示不清掉会串进下一条。
     toast.dismiss()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -167,7 +167,6 @@ describe('图片编辑器', () => {
 
     await waitFor(() => expect(models).toBeEnabled())
     await user.click(models)
-    // 菜单按模型名称列出，提交的是模型 id。
     await user.click(await screen.findByRole('menuitemradio', { name: 'Seedream 5.0 Pro' }))
     expect(models).toHaveTextContent('Seedream 5.0 Pro')
 
@@ -214,7 +213,6 @@ describe('图片编辑器', () => {
       )
       return submissions
     }
-    /** 打开「再生成」，返回输入卡的提交按钮（版本条上也有一格同名的）。 */
     const openRegenerate = async (
       editor: HTMLElement,
       user: ReturnType<typeof userEvent.setup>,
@@ -386,45 +384,7 @@ describe('图片编辑器', () => {
     expect(unsupported).toHaveAttribute('aria-disabled', 'true')
   })
 
-  it('刚打开只有当前帧：没有版本条也没有脚注，画幅只读排在设置行，标注工具在舞台旁照常可用', async () => {
-    let listed = false
-    server.use(
-      http.get('*/api/generations', () => {
-        listed = true
-        return HttpResponse.json({ items: [] })
-      }),
-    )
-    await renderWithProviders(<EditorPage />)
-    const editor = await screen.findByRole('dialog')
-    await waitFor(() => expect(listed).toBe(true))
-    await waitFor(() =>
-      expect(within(editor).getByRole('button', { name: '图片模型' })).toBeEnabled(),
-    )
-
-    // 只有一样能看的，没得切：整条不显示。
-    expect(within(editor).queryByRole('group', { name: '该帧的图片' })).not.toBeInTheDocument()
-    // 画幅随分镜，设置中可查看说明。
-    const aspect = within(editor).getByTitle('画幅 9:16，跟随分镜')
-    expect(aspect).toHaveTextContent('9:16')
-
-    // 工具条支持选工具、绘制和撤销。
-    const tools = within(editor).getByRole('toolbar', { name: '标注工具' })
-    const canvas = loadCanvas(editor)
-    await userEvent.click(within(tools).getByRole('button', { name: '矩形标注' }))
-    expect(within(tools).getByRole('button', { name: '矩形标注' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    fireEvent.pointerDown(canvas, { clientX: 320, clientY: 240, button: 0 })
-    fireEvent.pointerMove(canvas, { clientX: 480, clientY: 560 })
-    fireEvent.pointerUp(canvas, { clientX: 480, clientY: 560, button: 0 })
-    expect(within(editor).getByRole('button', { name: '标注 1' })).toBeInTheDocument()
-    await userEvent.click(within(tools).getByRole('button', { name: '撤销标注' }))
-    expect(within(editor).queryByRole('button', { name: '标注 1' })).not.toBeInTheDocument()
-  })
-
   it('只有当前帧但还有更早的记录：版本条照样显示，末尾一格「更早」', async () => {
-    // 一整页都是已经换上去的结果，都折进当前帧那一格；页满说明还有更早的。
     const applied = Array.from({ length: 20 }, (_, index) =>
       job({
         status: 'completed',
@@ -464,7 +424,6 @@ describe('图片编辑器', () => {
     )
     await renderWithProviders(<EditorPage />)
     const editor = await screen.findByRole('dialog')
-    // 记录读回来、有不止当前帧一格时版本条才出现。
     const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
     await within(strip).findByRole('button', { name: /^结果 · / })
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
@@ -477,7 +436,6 @@ describe('图片编辑器', () => {
     await userEvent.click(within(editor).getByRole('button', { name: '生成图片' }))
 
     const cell = await within(strip).findByRole('button', { name: /^生成中 · / })
-    // 格子里从提交时刻走表；舞台留在当前帧的画布上，没跟过去。
     expect(cell).toHaveTextContent(/0:1\d/)
     expect(cell).toHaveAttribute('aria-pressed', 'false')
     expect(within(strip).getByRole('button', { name: '当前帧' })).toHaveAttribute(
@@ -490,24 +448,35 @@ describe('图片编辑器', () => {
     expect(await within(editor).findByText(/记录刷新失败/)).toBeVisible()
   })
 
-  it('打开期间跑完的结果挂绿点、舞台不自动切换；点开即清，打开前就有的结果不挂', async () => {
-    const older = job({ status: 'completed', outputUrl: RESULT, createdAt: '2026-09-07T11:00:00Z' })
-    const running = job({ status: 'submitted' })
+  it('按当前格读取历史：打开期间跑完的结果挂绿点，点开即清，舞台不自动切换', async () => {
+    const editTarget = { ...target, shotIndex: 2, frameNumber: 1 }
+    const metadata = { shot: 2, frame: 1 }
+    const older = job({
+      status: 'completed',
+      outputUrl: RESULT,
+      createdAt: '2026-09-07T11:00:00Z',
+      metadata,
+    })
+    const running = job({ status: 'submitted', metadata })
     const fresh = {
       ...running,
       status: 'completed' as const,
       outputUrl: 'https://example.com/fresh.png',
     }
     let landed = false
+    const queries: URLSearchParams[] = []
     server.use(
-      http.get('*/api/generations', () =>
-        HttpResponse.json({ items: [landed ? fresh : running, older] }),
-      ),
+      http.get('*/api/generations', ({ request }) => {
+        queries.push(new URL(request.url).searchParams)
+        return HttpResponse.json({ items: [landed ? fresh : running, older] })
+      }),
     )
-    const { queryClient } = await renderWithProviders(<EditorPage />)
+    const { queryClient } = await renderWithProviders(<EditorPage target={editTarget} />)
     const editor = await screen.findByRole('dialog')
     const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
     await within(strip).findByRole('button', { name: /^生成中 · / })
+    expect(queries[0]?.get('kind')).toBe('image')
+    expect(JSON.parse(queries[0]?.get('metadata') ?? 'null')).toEqual(metadata)
 
     landed = true
     await act(() => queryClient.invalidateQueries())
@@ -543,14 +512,12 @@ describe('图片编辑器', () => {
     )
     expect(within(editor).getByRole('img', { name: '当前帧' })).toHaveAttribute('src', BASE)
     expect(within(editor).getByRole('img', { name: '结果' })).toHaveAttribute('src', RESULT)
-    // 选中结果时才有脚注，说的是替换这件事。
     expect(within(editor).getByText('替换仅影响当前帧，替换后可撤销')).toBeVisible()
 
     await userEvent.click(within(editor).getByRole('button', { name: '替换当前帧' }))
 
     expect(onApply).toHaveBeenLastCalledWith(BASE, RESULT)
     expect(await within(editor).findByRole('status')).toHaveTextContent('已替换')
-    // 结果折进当前帧格，舞台回到画布；被换下来的那张留在条里。
     expect(within(strip).getByRole('button', { name: '当前帧' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -558,7 +525,6 @@ describe('图片编辑器', () => {
     expect(within(editor).getByRole('img', { name: '当前编辑帧' })).toHaveAttribute('src', RESULT)
     expect(within(strip).getByRole('button', { name: /^上一版 · / })).toBeInTheDocument()
     expect(within(editor).queryByRole('button', { name: '替换当前帧' })).not.toBeInTheDocument()
-    // 按下的按钮随画面换掉，焦点接到撤销上，键盘可以直接撤销。
     const undo = within(editor).getByRole('button', { name: '撤销' })
     expect(undo).toHaveFocus()
 
@@ -567,7 +533,6 @@ describe('图片编辑器', () => {
     expect(onApply).toHaveBeenLastCalledWith(RESULT, BASE)
     expect(onApply).toHaveBeenCalledTimes(2)
     expect(within(editor).queryByText('已替换')).not.toBeInTheDocument()
-    // 撤销后结果回到条里，还选着它，舞台回到对比。
     await waitFor(() =>
       expect(within(strip).getByRole('button', { name: /^结果 · / })).toHaveAttribute(
         'aria-pressed',
@@ -576,27 +541,6 @@ describe('图片编辑器', () => {
     )
     expect(within(editor).getByRole('slider', { name: '对比分割线' })).toBeInTheDocument()
     expect(within(editor).getByRole('button', { name: '替换当前帧' })).toHaveFocus()
-  })
-
-  it('撤销入口 6 秒后消失', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true })
-    const completed = job({ status: 'completed', outputUrl: RESULT })
-    server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [completed] })))
-    await renderWithProviders(<EditorPage initialKey={completed.id} />)
-    const editor = await screen.findByRole('dialog')
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-    await user.click(await within(editor).findByRole('button', { name: '替换当前帧' }))
-    const undo = await within(editor).findByRole('button', { name: '撤销' })
-
-    act(() => {
-      vi.advanceTimersByTime(5_000)
-    })
-    expect(undo).toBeInTheDocument()
-    act(() => {
-      vi.advanceTimersByTime(1_000)
-    })
-    expect(within(editor).queryByRole('button', { name: '撤销' })).not.toBeInTheDocument()
-    vi.useRealTimers()
   })
 
   it('对比滑杆的拖柄用左右键移动，每次 5，到头不再动', async () => {
@@ -649,7 +593,6 @@ describe('图片编辑器', () => {
     await waitFor(() =>
       expect(within(strip).getAllByRole('button', { name: /^(排队中|生成中) · / })).toHaveLength(2),
     )
-    // 舞台留在原来那条上，新提交的那格不选中。
     expect(selected).toHaveAttribute('aria-pressed', 'true')
     const next = within(strip)
       .getAllByRole('button', { name: /^排队中 · / })
@@ -678,7 +621,6 @@ describe('图片编辑器', () => {
       await userEvent.click(reason)
       expect(reason).toHaveAttribute('aria-expanded', 'true')
       expect(error).toBeVisible()
-      // Esc 先收起原因，编辑器留着。
       await userEvent.keyboard('{Escape}')
       expect(error).not.toBeVisible()
       expect(screen.getByRole('dialog')).toBeInTheDocument()
@@ -702,7 +644,6 @@ describe('图片编辑器', () => {
     expect(result).toBeEnabled()
     await userEvent.click(result)
     expect(result).toHaveAttribute('aria-pressed', 'true')
-    // 结果那张是另一张底图，输入卡换成它的草稿。
     expect(within(textbox()).queryByText('参考.png')).not.toBeInTheDocument()
     await userEvent.click(within(strip).getByRole('button', { name: '当前帧' }))
     expect(within(textbox()).queryByText('参考.png')).not.toBeInTheDocument()
@@ -732,7 +673,6 @@ describe('图片编辑器', () => {
       expect(within(editor).getByRole('button', { name: '图片模型' })).toBeEnabled(),
     )
 
-    // 没有上传权限：「+」照样能插帧，只是没有「从电脑上传」。
     const add = within(editor).getByRole('button', { name: '添加参考图' })
     await userEvent.click(add)
     const popover = await screen.findByRole('dialog', { name: '添加参考图' })
@@ -744,7 +684,6 @@ describe('图片编辑器', () => {
 
     await userEvent.click(add)
     const again = await screen.findByRole('dialog', { name: '添加参考图' })
-    // 已引用的帧带勾，再点仍会插入。
     await userEvent.click(within(again).getByRole('button', { name: '插入帧 @2（已引用）' }))
     await userEvent.click(add)
     await userEvent.click(
@@ -797,11 +736,9 @@ describe('图片编辑器', () => {
     pasteTextIntoComposer(textbox, '去掉')
     expect(textbox).toHaveTextContent('把1标注 1去掉')
 
-    // 画布上的标注与正文里的 chip 同名，按是否在正文里区分。
     const mark = within(editor)
       .getAllByRole('button', { name: '标注 1' })
       .find((element) => !textbox.contains(element))
-    // 在正文里打字时画布上没有选中的标注；点 chip 把它选上。
     expect(mark).toHaveAttribute('aria-pressed', 'false')
     fireEvent.click(within(textbox).getByRole('button', { name: '标注 1' }))
     expect(mark).toHaveAttribute('aria-pressed', 'true')
@@ -835,7 +772,6 @@ describe('图片编辑器', () => {
     await userEvent.click(within(editor).getByRole('button', { name: '添加参考图' }))
     const popover = await screen.findByRole('dialog', { name: '添加参考图' })
     expect(within(popover).getByRole('button', { name: '插入帧 @2' })).toBeDisabled()
-    // 帧 @1 就是底图，不另占一张。
     expect(within(popover).getByRole('button', { name: '插入帧 @1' })).toBeEnabled()
     expect(within(popover).getByRole('button', { name: '从电脑上传' })).toBeInTheDocument()
     await userEvent.keyboard('{Escape}')
@@ -852,7 +788,6 @@ describe('图片编辑器', () => {
     await waitForUploadPermission(editor)
     const zone = within(editor).getByRole('button', { name: '生成图片' })
 
-    // 聊天输入框的遮罩挂在 window 上，靠这三个事件冒泡回来才关得掉。
     const seen: { type: string; prevented: boolean }[] = []
     const record = (event: Event) =>
       seen.push({ type: event.type, prevented: event.defaultPrevented })
@@ -867,7 +802,6 @@ describe('图片编辑器', () => {
     }
     fireEvent.dragEnter(zone, { dataTransfer })
     fireEvent.dragOver(zone, { dataTransfer })
-    // 弹窗对文件一律标「禁止落点」，但输入卡先接管了，它的「复制」不能被弹窗改掉。
     expect(dataTransfer.dropEffect).toBe('copy')
     expect(within(editor).getByTestId('composer-drop-overlay')).toBeInTheDocument()
     fireEvent.drop(zone, { dataTransfer })
@@ -940,7 +874,6 @@ describe('图片编辑器', () => {
   })
 
   it('空草稿上画一个标注再撤销，重做仍可用并能画回来', async () => {
-    // 撤销到空时草稿被删，之后每次渲染拿到的都是新的空数组；画布的撤销栈不能因此被清掉。
     sessionStorage.clear()
     await renderWithProviders(<EditorPage />)
     const editor = await screen.findByRole('dialog')

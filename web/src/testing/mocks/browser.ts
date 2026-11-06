@@ -2,7 +2,7 @@ import { http } from 'msw'
 import { setupWorker } from 'msw/browser'
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
-import { mockLatestMasterUrls } from './conversations'
+import { mockLatestMasterUrls, mockVideoProgress } from './conversations'
 import {
   addMockCollection,
   addMockConversation,
@@ -42,23 +42,13 @@ const seeded = DEMO_CONVERSATIONS.map((title, index) =>
 
 const awaiting = seeded.at(-1)
 if (awaiting !== undefined) {
-  awaiting.activity = {
-    busy: true,
-    lastTurnReason: null,
-    pendingInteraction: 'approval',
-    videoGeneration: 'none',
-  }
+  awaiting.activity = { busy: true, lastTurnReason: null, pendingInteraction: 'approval' }
   markMockAwaitingApproval(awaiting.id)
 }
 
 const unseen = seeded[3]
 if (unseen !== undefined) {
-  unseen.activity = {
-    busy: false,
-    lastTurnReason: 'completed',
-    pendingInteraction: 'none',
-    videoGeneration: 'none',
-  }
+  unseen.activity = { busy: false, lastTurnReason: 'completed', pendingInteraction: 'none' }
   markMockJustFinished(unseen)
 }
 
@@ -67,13 +57,11 @@ if (withShots !== undefined) {
   seedMockWorkspace(withShots.id, { httpFrames: true })
   seedMockMusic(withShots.id)
   seedMockSubtitles(withShots.id)
-  withShots.activity = { ...withShots.activity, videoGeneration: 'running' }
+  mockVideoProgress.set(withShots.id, 'running')
 }
 
 const queuedVideo = seeded[3]
-if (queuedVideo !== undefined) {
-  queuedVideo.activity = { ...queuedVideo.activity, videoGeneration: 'queued' }
-}
+if (queuedVideo !== undefined) mockVideoProgress.set(queuedVideo.id, 'queued')
 
 const withoutImages = addMockConversation('无图分镜草稿')
 seedMockWorkspace(withoutImages.id, { withoutImages: true })
@@ -103,7 +91,7 @@ const governorShots = addMockConversation(
   mockGovernor.id,
 )
 seedMockWorkspace(governorShots.id, { httpFrames: true })
-governorShots.activity = { ...governorShots.activity, videoGeneration: 'running' }
+mockVideoProgress.set(governorShots.id, 'running')
 const governorDone = addMockConversation(
   '治理者 · 门店陈列参考',
   new Date(Date.now() - 4 * 3600_000).toISOString(),
@@ -114,23 +102,13 @@ governorDone.lastRunId = 'run-governor-1'
 
 const wang = addMockUser('小王')
 const wangRunning = addMockConversation('小王 · 秋季新品短片', undefined, wang.id)
-wangRunning.activity = {
-  busy: true,
-  lastTurnReason: null,
-  pendingInteraction: 'none',
-  videoGeneration: 'none',
-}
+wangRunning.activity = { busy: true, lastTurnReason: null, pendingInteraction: 'none' }
 const wangDone = addMockConversation(
   '小王 · 通勤鞋开箱',
   new Date(Date.now() - 2 * 3600_000).toISOString(),
   wang.id,
 )
-wangDone.activity = {
-  busy: false,
-  lastTurnReason: 'completed',
-  pendingInteraction: 'none',
-  videoGeneration: 'none',
-}
+wangDone.activity = { busy: false, lastTurnReason: 'completed', pendingInteraction: 'none' }
 wangDone.lastRunId = 'run-wang-1'
 
 mockLatestMasterUrls.set(replica.id, sampleVideoUrl)
@@ -156,10 +134,6 @@ export const worker = setupWorker(...handlers)
 
 const pausedResponses = new Map<string, () => void>()
 
-/**
- * 浏览器用例暂停某个路径的 mock 响应：暂停后到达的请求照常发出，响应等 `release` 后再交给原有 handler。
- * 挂在 `window.cueMockResponses` 上，用例经 `page.evaluate` 调用。
- */
 const mockResponseGate = {
   pause(pathname: string) {
     if (pausedResponses.has(pathname)) return
@@ -168,7 +142,6 @@ const mockResponseGate = {
       release = resolve
     })
     pausedResponses.set(pathname, release)
-    // resolver 不返回响应时，MSW 接着交给后面匹配的 handler。
     worker.use(
       http.all(`*${pathname}`, async () => {
         await released

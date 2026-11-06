@@ -1,5 +1,3 @@
-"""爆款视频查询的测试数据：插入爆款视频、按 video_id 推出默认地址。"""
-
 from __future__ import annotations
 
 import datetime as dt
@@ -38,8 +36,6 @@ async def seed_video(
     orders: int = 0,
     revenue: str = "0",
 ) -> None:
-    """插入一条可下载的爆款视频。"""
-
     async with engine.begin() as conn:
         await conn.execute(
             _INSERT_VIDEO,
@@ -63,8 +59,6 @@ async def seed_video(
 
 
 def urls_of(video_ids: Sequence[str]) -> list[str]:
-    """按 video_id 拼出 seed_video 默认使用的地址，供断言比对顺序。"""
-
     return [f"https://bucket.example.com/{video_id}.mp4" for video_id in video_ids]
 
 

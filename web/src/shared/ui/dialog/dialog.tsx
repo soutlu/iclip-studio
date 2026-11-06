@@ -11,7 +11,6 @@ export const DialogTitle = DialogPrimitive.Title
 type DialogSurfaceProps = ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
   children: ReactNode
   bare?: boolean
-  /** 画布弹层通过遮罩类名声明 React Flow 的 nodrag / nopan。 */
   overlayClassName?: string
   returnFocus?: boolean
 }

@@ -1,6 +1,3 @@
-/** Composer 的可选扩展：使用方节点、`@` 菜单、卡片拖放、只收图片、附件上限、自定义入口与提交按钮、弹窗里的浮层。
- * 默认形态（首页、对话）见 composer.test.tsx。 */
-
 import { act, createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { delay, http, HttpResponse } from 'msw'
@@ -75,7 +72,6 @@ const fileDrag = (files: File[]) => ({
   items: files.map((file) => ({ kind: 'file', type: file.type, webkitGetAsEntry: () => null })),
   types: ['Files'],
 })
-/** 只在正文里找：失败卡片与悬停卡上也有文件名。 */
 const pillHost = (name: string): HTMLElement => {
   const host = within(editor()).getByText(name).parentElement
   if (host === null) throw new Error(`没找到 ${name} 的 pill`)
@@ -188,7 +184,6 @@ describe('Composer 扩展点', () => {
     const { onSubmit } = await renderComposer({ mention })
     act(() => editor().focus())
 
-    // 不能选的项：Enter 不插入也不提交，菜单留着；Esc 关掉，字留着。
     await user.keyboard('@满')
     await user.keyboard('{Enter}')
     expect(screen.getByRole('listbox', { name: '插入引用' })).toBeInTheDocument()
@@ -211,7 +206,6 @@ describe('Composer 扩展点', () => {
     expect(editor().textContent).toBe('@满，看帧 @2')
     expect(onSubmit).not.toHaveBeenCalled()
 
-    // 菜单关着时 Enter 回到发送。
     await user.keyboard('{Enter}')
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -258,7 +252,6 @@ describe('Composer 扩展点', () => {
     await renderComposer({ attachmentsEnabled: true, dropScope: 'card' })
     const drag = fileDrag([imageFile()])
 
-    // 落在卡片外：卡片模式不当整页兜底。
     fireEvent.dragEnter(window, { dataTransfer: drag })
     expect(screen.queryByTestId('composer-drop-overlay')).not.toBeInTheDocument()
     fireEvent.drop(window, { dataTransfer: drag })

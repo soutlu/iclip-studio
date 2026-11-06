@@ -1,8 +1,3 @@
-"""核对仓内 Markdown：相对链接指向的文件必须存在，提到的 make 目标必须在 Makefile 里。
-
-只用标准库；`make docs-check` 调用，失败时逐条列出并以非零退出。
-"""
-
 from __future__ import annotations
 
 import re
@@ -18,7 +13,11 @@ MAKE_TARGET = re.compile(r"^([A-Za-z0-9_-]+):", re.M)
 
 def tracked_markdown() -> list[Path]:
     out = subprocess.run(
-        ["git", "ls-files", "*.md", "**/*.md"], cwd=ROOT, capture_output=True, text=True, check=True
+        ["git", "ls-files", "*.md", "**/*.md"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
     return [ROOT / line for line in out.splitlines() if "node_modules" not in line]
 

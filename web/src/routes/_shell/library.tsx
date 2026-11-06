@@ -70,11 +70,9 @@ function LibraryPage() {
       if (id !== null && !replace) pushedRef.current = true
       void navigate({
         replace: id === null || replace,
-        // 切卡或关掉时一并清掉地址里指定的版本，不让它在下一次打开时又选上。
         search: (prev) => ({ ...prev, [key]: id ?? undefined, version: undefined }),
       })
     }
-  // 爆款素材按版本打开：地址里同时写卡与那一版，关掉的规则同上。
   const setHitCase = (target: HitCaseTarget | null, replace: boolean) => {
     if (target === null && pushedRef.current) {
       pushedRef.current = false

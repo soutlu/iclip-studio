@@ -1,7 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { openConversation } from './helpers'
 
-/** 演示对话里：第 2 组一条竖版 6 秒素材片，第 3 组一条横版素材片；这段对话有一首生成的音乐、一首上传的音乐。 */
 const openWholeFilm = async (page: Page, panel: Locator) => {
   await panel.getByRole('button', { name: '成片', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '夜景延时素材生成' })
@@ -10,7 +9,6 @@ const openWholeFilm = async (page: Page, panel: Locator) => {
   return dialog
 }
 
-/** 点刻度上某个时刻：播放位置滑块铺满整条时间区 */
 const seek = async (page: Page, dialog: Locator, seconds: number) => {
   const ruler = dialog.getByRole('slider', { name: '时间线播放位置' })
   const box = await ruler.boundingBox()
@@ -27,7 +25,6 @@ const draftSaved = (page: Page) =>
       response.ok(),
   )
 
-/** 等真实预览完成加载，避免点击尚未接上控制的播放器。 */
 const readyPlayer = async (dialog: Locator) => {
   const player = dialog.getByRole('region', { name: '预览' }).locator('hyperframes-player')
   await expect
@@ -42,7 +39,6 @@ const readyPlayer = async (dialog: Locator) => {
 }
 
 test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关掉再开草稿还在', async ({ page }) => {
-  // 一条走完成片编辑全程的长用例，本地约 15 秒；CI 分片并行时会超过默认的 30 秒
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
@@ -64,7 +60,6 @@ test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await page.keyboard.press('ArrowLeft')
   await expect(first).not.toHaveAttribute('aria-label', before ?? '')
 
-  // 当前只有这一段，结尾滑块的值就是总长；从中间拆开。
   const total = Number(
     await film.getByRole('slider', { name: '裁剪结尾' }).getAttribute('aria-valuenow'),
   )
@@ -84,13 +79,11 @@ test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   }
   await expect(film.getByRole('group', { name: /^第 4 段/ })).toBeVisible()
 
-  // 自动卡点：mock 的音乐是每分钟 120 拍的鼓点，分析出拍点后才能点
   const beatSync = dialog.getByRole('button', { name: '自动卡点' })
   await expect(beatSync).not.toHaveAttribute('aria-disabled', 'true', { timeout: 15_000 })
   await beatSync.click()
   await expect(page.getByText(/^已卡点 \d+ 处，保留 \d+ 处$/)).toBeVisible()
 
-  // 组件栏：component 卡片放到特效轨、block 卡片插进画面轨；字幕样式在字幕轨标题上换
   await dialog.getByRole('tab', { name: '通用' }).click()
   const categories = dialog.getByRole('radiogroup', { name: '分类' })
   await categories.getByRole('radio', { name: /^文字效果/ }).click()
@@ -98,7 +91,6 @@ test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   const overlays = dialog.getByRole('group', { name: '特效轨' })
   await components.getByRole('button', { name: /^测试可填项，特效轨/ }).click()
   await expect(overlays.getByRole('group', { name: /^特效 · 测试可填项/ })).toBeVisible()
-  // 有可填项的组件放下就打开浮层
   const fields = page.getByRole('dialog', { name: '特效 · 测试可填项' })
   await expect(fields.getByLabel('文字')).toHaveAttribute('placeholder', '示例文字')
   const textSaved = page.waitForRequest(
@@ -124,7 +116,6 @@ test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await components.getByRole('button', { name: /^测试叠加，特效轨/ }).click()
   await expect(dialog.getByRole('group', { name: /^特效 · 测试叠加/ })).toBeVisible()
 
-  // 字幕样式菜单列出组件库里的字幕样式，每项带这一版组件库里的封面
   const captionStyle = dialog.getByRole('button', { name: /^字幕样式：/ })
   await expect(captionStyle).toHaveText('测试字幕')
   await captionStyle.click()
@@ -140,7 +131,6 @@ test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await page.keyboard.press('Escape')
   await expect(captionStyle).toHaveAccessibleName('字幕样式：测试字幕')
 
-  // 字幕开关：关掉存进草稿（预览与导出都按它不放字幕），撤销回到开着；再关上，下面关着改字
   const turnOff = dialog.getByRole('button', { name: '关闭字幕', exact: true })
   const turnOn = dialog.getByRole('button', { name: '打开字幕', exact: true })
   const hiddenSaved = page.waitForRequest(
@@ -158,7 +148,6 @@ test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await turnOff.click()
   await expect(turnOn).toBeVisible()
 
-  // 字幕轨（字幕关着）：改一句字。选的范围只有一秒，第一句被切成了几块，输入框里是整句
   const captions = dialog.getByRole('group', { name: '字幕轨' })
   await captions
     .getByRole('button', { name: /^字幕：/ })
@@ -176,13 +165,11 @@ test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await captionInput.press('Enter')
   await captionSaved
 
-  // 导出：mock 渲染排队、渲染、上传后给下载地址；下载时对用到的素材片各记一次
   const exported = page.waitForResponse(
     (response) => response.url().includes('/whole-film/exports') && response.status() === 202,
   )
   await dialog.getByRole('button', { name: '导出', exact: true }).click()
   const { exportId } = (await (await exported).json()) as { exportId: string }
-  // 导出完成后读这次导出能做的高清版；mock 里能做，「下载成片」先开菜单。
   const tiers = page.waitForResponse(
     (response) => response.url().includes(`/generations/${exportId}/enhancements`),
     { timeout: 20_000 },
@@ -200,7 +187,6 @@ test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   expect((await tracked).postDataJSON()).toMatchObject({ name: 'video.downloaded' })
   expect((await fileSaved).suggestedFilename()).toMatch(/\.mp4$/)
 
-  // 关掉再打开：成片留着，接着显示最近一次导出
   await dialog.getByRole('button', { name: '关闭成片编辑' }).click()
   await expect(dialog).toBeHidden()
   const reopened = await openWholeFilm(page, panel)

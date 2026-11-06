@@ -1,5 +1,3 @@
-/** 资料库「成片」的接口：导出的成片，一段对话一张卡。合同见 contract/conventions.md §13。 */
-
 import { useInfiniteQuery } from '@tanstack/react-query'
 import type { z } from 'zod'
 import { apiFetch } from '@/shared/api/client'

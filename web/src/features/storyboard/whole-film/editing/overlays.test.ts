@@ -18,7 +18,6 @@ import { setComponentVariables } from './variables'
 const withOverlays = (overlays: OverlayClip[]): WholeFilmDraft =>
   draftOf([video('v1', 's1', 0, 10_000)], { overlays })
 
-/** 每块的 [id, 行, 开始, 结束, zIndex]，按草稿里的先后 */
 const layout = (draft: WholeFilmDraft) =>
   draft.overlays.map((o) => [o.id, o.track, o.start, o.start + o.duration, o.zIndex])
 
@@ -78,7 +77,6 @@ describe('overlayRowAt：指针落在哪一行', () => {
 })
 
 describe('dropOverlay：拖卡片到特效轨', () => {
-  /** 第 0 行 x 2–3 秒；第 1 行 y 0–3 秒、z 3–6 秒 */
   const film = () =>
     withOverlays([
       overlay('x', 2_000, 1_000, { track: 0, zIndex: 1 }),
@@ -156,7 +154,6 @@ describe('moveOverlay：拖特效块', () => {
   })
 
   it('往上挪：盖过现在压在它下面、时间上重叠的块；别的块不变', () => {
-    // a 在第 0 行、z 5；b 在第 1 行、z 1，与 a 重叠；c 在第 1 行、z 9，与 b 不重叠
     const film = withOverlays([
       overlay('a', 0, 4_000, { track: 0, zIndex: 5 }),
       overlay('b', 1_000, 2_000, { track: 1, zIndex: 1 }),
@@ -209,7 +206,6 @@ describe('moveOverlay：拖特效块', () => {
       overlay('c', 4_000, 4_000, { track: 2, zIndex: 3 }),
     ])
     const { draft } = expectOk(moveOverlay(film, { overlayId: 'a', deltaMs: 0, row: { track: 2 } }))
-    // c 在 4–8 秒，a 落到 0–4 秒；第 0 行空了，行号收紧；a 现在只与上面的 b 重叠，沉到 b 之下
     expect(layout(draft)).toEqual([
       ['a', 1, 0, 4_000, 0],
       ['b', 0, 0, 4_000, 1],
@@ -219,7 +215,6 @@ describe('moveOverlay：拖特效块', () => {
 })
 
 describe('trimOverlay', () => {
-  // badge 放得比 120 秒还长，这一组只看其他边界；短的组件 3 秒
   const context = contextOf({}, {}, { badge: 200_000, short: 3_000 })
 
   const film = () =>
@@ -293,7 +288,6 @@ describe('trimOverlay', () => {
       )
       expect(timing(draft, 's')).toEqual([1_000, 4_000, 0])
     }
-    // 入点已在组件时长之后：收到最短 0.1 秒
     const late = withOverlays([
       overlay('s', 1_000, 2_000, { component: 'short', playbackStart: 3_500 }),
     ])
@@ -342,7 +336,6 @@ describe('setOverlayPosition：在画面上挪', () => {
     ])
     const far = expectOk(setOverlayPosition(film(), { overlayId: 'a', x: 5_000, y: -9_999 })).draft
     expect(far.overlays[0]).toMatchObject({ x: 4_096, y: -4_096 })
-    // -0.4 取整得 -0，记成 0
     const near = expectOk(setOverlayPosition(moved, { overlayId: 'b', x: -0.4, y: 0 })).draft
     expect(Object.is(near.overlays[1]?.x, 0)).toBe(true)
   })
@@ -352,7 +345,6 @@ describe('setOverlayPosition：在画面上挪', () => {
     expect(expectOk(setOverlayPosition(draft, { overlayId: 'a', x: 0.3, y: -0.2 })).draft).toBe(
       draft,
     )
-    // 有位置之前存的草稿没写 x、y
     const { x: _x, y: _y, ...legacy } = overlay('a', 0, 1_000)
     const unset = withOverlays([legacy])
     expect(expectOk(setOverlayPosition(unset, { overlayId: 'a', x: 0, y: 0 })).draft).toBe(unset)
@@ -425,7 +417,6 @@ describe('setOverlayTransform：在画面上缩放、旋转', () => {
     const rotationOf = (rotation: number) =>
       expectOk(setOverlayTransform(film(), { overlayId: 'a', scale: 1, rotation, pivot })).draft
         .overlays[0]?.rotation
-    // 范围里的小数原样记下，不带出浮点误差
     expect([-180, 190, 540, -190, 180, -179.5, 720.5, -2.3].map(rotationOf)).toEqual([
       180, -170, 180, 170, 180, -179.5, 0.5, -2.3,
     ])
@@ -441,7 +432,6 @@ describe('setOverlayTransform：在画面上缩放、旋转', () => {
       }),
     ).draft
     expect(first.overlays[0]).toMatchObject({ pivotX: 121, pivotY: -4_096 })
-    // 变换着时再转、再缩、缩回原大都沿用记下的转轴
     const again = expectOk(
       setOverlayTransform(first, {
         overlayId: 'a',
@@ -460,12 +450,10 @@ describe('setOverlayTransform：在画面上缩放、旋转', () => {
       setOverlayTransform(again, { overlayId: 'a', scale: 1, rotation: 0, pivot: { x: 3, y: 4 } }),
     ).draft
     expect(back.overlays[0]).toMatchObject({ scale: 1, rotation: 0, pivotX: 121, pivotY: -4_096 })
-    // 回到原大、不转之后画面上没有变换，下一次变换取新的转轴
     const anew = expectOk(
       setOverlayTransform(back, { overlayId: 'a', scale: 1, rotation: 45, pivot: { x: 5, y: 6 } }),
     ).draft
     expect(anew.overlays[0]).toMatchObject({ scale: 1, rotation: 45, pivotX: 5, pivotY: 6 })
-    // 有这几个字段之前存的草稿没写它们，按原大、不转算，第一次变换就记下转轴
     const { scale: _s, rotation: _r, pivotX: _px, pivotY: _py, ...legacy } = overlay('a', 0, 1_000)
     const legacyTurned = expectOk(
       setOverlayTransform(withOverlays([legacy]), { overlayId: 'a', scale: 2, rotation: 0, pivot }),
@@ -478,7 +466,6 @@ describe('setOverlayTransform：在画面上缩放、旋转', () => {
     expect(
       expectOk(setOverlayTransform(draft, { overlayId: 'a', scale: 1, rotation: 0, pivot })).draft,
     ).toBe(draft)
-    // 规整之后再比：360° 是 0°，300° 是 -60°
     expect(
       expectOk(setOverlayTransform(draft, { overlayId: 'a', scale: 1, rotation: 360, pivot }))
         .draft,
@@ -496,7 +483,6 @@ describe('setOverlayTransform：在画面上缩放、旋转', () => {
         }),
       ).draft,
     ).toBe(turned)
-    // 有这几个字段之前存的草稿没写它们
     const { scale: _s, rotation: _r, pivotX: _px, pivotY: _py, ...legacy } = overlay('a', 0, 1_000)
     const unset = withOverlays([legacy])
     expect(

@@ -1,5 +1,3 @@
-/** 全平台对话列表：筛选由服务端执行，条件存在地址栏由路由层下发，状态与总数由应用壳的全局订阅刷新。 */
-
 import { useCallback, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { errorMessageOf } from '@/shared/api/client'
@@ -17,16 +15,14 @@ import { useConversationRows } from '../conversation-rows'
 import { auditCoverUrl } from '../audit-cover'
 import { conversationStatus } from '../conversation-status'
 import { taskCellOf } from '../task-cell'
+import { useVideoProgress, videoPhaseOf, type VideoPhase } from '../video-progress.api'
 import { AuditFiltersBar } from './audit-filters'
 import type { PickerSource } from '@/shared/ui/search-picker'
 
 type ConversationsRouteProps = {
-  /** 当前筛选条件与写回，由路由层落在查询参数上。 */
   filters: AuditFilters
   onFiltersChange: (next: AuditFilters) => void
-  /** 在本页点开某段对话，供路由层记下从哪一屏进去的；新标签页打开不算。 */
   onOpen?: (conversationId: string) => void
-  /** 需求单候选由路由层查询，feature 之间不直接互引；null 表示当前账号没有 tasks:read 权限。 */
   tasks: PickerSource | null
   taskPreviews: ReadonlyMap<string, TaskPreview>
   taskPreviewState: TaskPreviewState
@@ -47,10 +43,10 @@ export function ConversationsRoute({
   const directory = useUsersDirectory(true)
   const users = userPickerSourceOf(directory, 'id')
   const query = useAuditConversations(filters, true)
-  // 成员与顺序取这一页的查询，行取池里的当前值；带墓碑的筛选下保留刚删的那行，等重拉换上带 deletedAt 的。
   const rows = useConversationRows(query.data?.pages.flatMap((page) => page.items) ?? [], {
     keepDeleted: filters.deleted !== 'live',
   })
+  const videoProgress = useVideoProgress()
   const latest = query.data?.pages.at(-1)
   const totals =
     latest === undefined ? undefined : { runningTotal: latest.runningTotal, total: latest.total }
@@ -62,7 +58,6 @@ export function ConversationsRoute({
       className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-surface-container-lowest"
       ref={mainRef}
     >
-      {/* 预留应用壳中侧栏展开按钮的空间。 */}
       <div className="mx-auto flex w-full max-w-(--layout-list-page-max) flex-col px-4 pt-12 pb-8 sm:px-(--layout-list-page-gutter) md:pb-10">
         <h1 className="mb-4 text-headline font-semibold text-on-surface md:mb-5">全部任务</h1>
         <AuditFiltersBar
@@ -110,6 +105,7 @@ export function ConversationsRoute({
                     taskLabel={
                       conversation.taskId === null ? undefined : taskLabels.get(conversation.taskId)
                     }
+                    video={videoPhaseOf(videoProgress.data, conversation.id)}
                   />
                 ))}
               </ul>
@@ -130,9 +126,6 @@ export function ConversationsRoute({
   )
 }
 
-// 1280 起是五列表格加一列箭头：需求单列在 200–304px 之间伸缩，创作内容弹性、保底 280px。
-// 更窄时收成卡片：封面占左侧两行，右边是标题和「需求单 · 属主」，状态与时间另起一整行。
-// 卡片里的几块靠 display: contents 在表格下拆成各自的列，所以下面几组类名要一起改。
 const COLUMNS_CLASS =
   'lg:grid-cols-[minmax(280px,1fr)_minmax(200px,304px)_120px_112px_72px_16px] lg:gap-x-5'
 
@@ -174,6 +167,7 @@ type AuditRowProps = {
   taskLabel: string | undefined
   taskPreview: TaskPreview | undefined
   taskPreviewState: TaskPreviewState
+  video: VideoPhase
 }
 
 function AuditRow({
@@ -183,6 +177,7 @@ function AuditRow({
   taskLabel,
   taskPreview,
   taskPreviewState,
+  video,
 }: AuditRowProps) {
   const owner = ownerName ?? '未知用户'
   const status = conversationStatus(conversation.activity)
@@ -194,7 +189,6 @@ function AuditRow({
       <Link
         className={cn('group ui-state text-on-surface ui-focus', ROW_CLASS)}
         onClick={(event) => {
-          // 修饰键打开新标签页时，不改变当前页面的返回位置。
           if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
           onOpen?.(conversation.id)
         }}
@@ -245,7 +239,6 @@ function AuditRow({
               title={conversation.taskId === null ? undefined : taskName}
             >
               {taskName}
-              {/* 卡片里没有列名，得说清是没关联需求单。 */}
               {conversation.taskId === null ? <span className="lg:sr-only">需求单</span> : null}
             </span>
           </span>
@@ -268,19 +261,14 @@ function AuditRow({
         <span className={FOOT_CLASS}>
           <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 lg:flex-col lg:flex-nowrap lg:items-start lg:gap-1.5">
             {status === 'idle' ? (
-              // 从没跑过没有对应的角标，这一列仍要说出来。
               <span className="text-body whitespace-nowrap text-on-surface-faint">
                 暂无运行记录
               </span>
             ) : (
               <StatusBadge appearance="label" kind="conversation" status={status} />
             )}
-            {conversation.activity.videoGeneration === 'none' ? null : (
-              <StatusBadge
-                appearance="label"
-                kind="video"
-                status={conversation.activity.videoGeneration}
-              />
+            {video === 'none' ? null : (
+              <StatusBadge appearance="label" kind="video" status={video} />
             )}
             {conversation.completedAt === null ? null : <Tag variant="soft">属主已收尾</Tag>}
           </span>
@@ -304,7 +292,6 @@ function AuditRow({
   )
 }
 
-/** 方框裁切铺满、居中，细描边压在图上；没有图或读不出来时只有中性底上的一个淡图标。 */
 function AuditCover({
   deleted,
   title,
@@ -344,7 +331,6 @@ function AuditCover({
   )
 }
 
-// 骨架几行的标题与需求单占位长短错开，看着像真列表。
 const SKELETONS = [
   { id: 'a', title: 'w-5/12', task: 'w-3/4' },
   { id: 'b', title: 'w-1/3', task: 'w-2/3' },
@@ -356,7 +342,6 @@ const SKELETONS = [
 
 const BAR_CLASS = 'rounded-xs bg-surface-container-low'
 
-/** 首屏读取：沿用行的网格画几行灰条，读屏只听到状态文字。 */
 function AuditSkeleton() {
   return (
     <>

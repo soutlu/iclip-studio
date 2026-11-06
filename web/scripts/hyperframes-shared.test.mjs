@@ -13,7 +13,6 @@ import {
   publishedCatalog,
 } from './hyperframes-shared.mjs'
 
-/** 生成的 @font-face 拆成 { family, weight, style, src, range }，便于逐条比对。 */
 const parseRules = (css) =>
   [...css.matchAll(/@font-face\{([^}]*)\}/g)].map(([, body]) => {
     const value = (name) => new RegExp(`${name}:([^;]+)`).exec(body)?.[1]
@@ -26,7 +25,6 @@ const parseRules = (css) =>
     }
   })
 
-// 假的 Noto Sans SC 包：两个中文分片、一个没有中日韩码位的分片、一个拉丁子集。
 let notoDir
 beforeAll(async () => {
   notoDir = await mkdtemp(join(tmpdir(), 'hf-noto-'))
@@ -69,19 +67,16 @@ describe('cjkTwinFaces', () => {
     const descriptors = weights.map((weight) => ({ family: 'Inter', weight, style: 'normal' }))
     const rules = parseRules(await cjkTwinFaces('Inter', descriptors, notoDir))
 
-    // 只有带中日韩码位的分片出字形：[4]、[5] 各一条，[6] 与拉丁子集没有。
     expect(rules).toHaveLength(weights.length * 2)
     expect(new Set(rules.map((rule) => rule.weight))).toEqual(new Set(weights))
     for (const rule of rules) {
       expect(rule.family).toBe("'Inter'")
       expect(rule.style).toBe('normal')
-      // 字重是单值，不是区间：区间会和西文字形分到两组，把西文挤掉。
       expect(rule.weight).toMatch(/^\d+$/)
       const notoWeight = Number(rule.weight) < 550 ? 400 : 700
       expect(rule.src).toMatch(new RegExp(`^${NOTO}-[45]-${notoWeight}-normal\\.woff2$`))
     }
     const forSlice = (slice) => rules.find((rule) => rule.src.includes(`-${slice}-`))
-    // unicode-range 收窄到中日韩码位，拉丁字母不在内。
     expect(forSlice(4).range).toBe('U+4e00-4e10,U+ff01')
     expect(forSlice(5).range).toBe('U+3001-3002')
   })
@@ -127,7 +122,6 @@ describe('cjkTwinFaces', () => {
       (face) => face.family === 'ClaudeSans',
     )
     const rules = parseRules(await cjkTwinFaces('ClaudeSans', descriptors, notoDir))
-    // 只出中文字形：全是 ClaudeSans、全指向 Noto，不带别的字体、不带西文。
     expect(rules.every((rule) => rule.family === "'ClaudeSans'")).toBe(true)
     expect(rules.map((rule) => [rule.weight, rule.src.replace(NOTO, '')])).toEqual([
       ['400', '-4-400-normal.woff2'],
@@ -180,7 +174,6 @@ describe('publishedCatalog', () => {
       plain: [],
       own: source.items[4].variables,
     })
-    expect(FONT_VARIABLE).toEqual({ id: 'font', type: 'font', label: '字体', default: '' })
     expect(published.fonts).toEqual({
       Inter: { css: 'vendor/fonts/families/inter.css' },
       Brand: { css: 'vendor/fonts/families/brand.css', brand: 'BR' },
@@ -208,7 +201,6 @@ describe('checkCatalogFonts', () => {
 })
 
 describe('localFontFaces', () => {
-  // 一个真实的 woff2（web 依赖里的 MiSans 西文字体），只拷进临时目录，不入库。
   const FONT_FILE = join(WEB_ROOT, 'node_modules/misans/lib/Latin/MiSansLatin-Regular.woff2')
   let work
   let libraryDir

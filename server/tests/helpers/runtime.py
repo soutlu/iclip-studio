@@ -1,8 +1,3 @@
-"""用真 Postgres 与假模型把 ConversationRunner 跑起来的公共夹具。
-
-runner 的队列、续跑测试与 transcript 场景测试共用这一份，改装配只改这里。
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -12,6 +7,37 @@ from collections.abc import AsyncIterator, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
+from agent_runtime.errors import AgentUnavailable
+from agent_runtime.harness.agents import (
+    DELEGATE_TOOL,
+    SubAgentSlot,
+    build_agent,
+    build_subagents,
+    profile_metadata,
+    subagent_profile,
+)
+from agent_runtime.harness.jobs import JobQueue, JobRow
+from agent_runtime.harness.step_store_pg import PgStepStore
+from agent_runtime.harness.transcript.history import TranscriptHistory
+from agent_runtime.harness.transcript.runner import (
+    ConversationRunner,
+    DepsFor,
+    RunAgent,
+    RunStarted,
+    TurnStarted,
+)
+from agent_runtime.harness.transcript.store import TranscriptStore
+from agent_runtime.harness.transcript.subagents import SubAgentMirror
+from agent_runtime.harness.usage_ledger import UsageLedger
+from agent_runtime.transcript.display import ToolDisplayRegistry
+from agent_runtime.transcript.ops import (
+    MAIN_AGENT_ID,
+    PromptContent,
+    StepUsage,
+    TextContent,
+    ToolFrame,
+    TranscriptTurn,
+)
 from pydantic_ai import Agent, Tool
 from pydantic_ai.capabilities import AgentCapability
 from pydantic_ai.messages import (
@@ -22,6 +48,7 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai_harness.step_persistence import (
@@ -33,35 +60,11 @@ from pydantic_ai_harness.step_persistence import (
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.harness.agents import DELEGATE_TOOL
-from iclip.harness.jobs import JobQueue, JobRow
-from iclip.harness.step_store_pg import PgStepStore
-from iclip.harness.transcript.history import TranscriptHistory
-from iclip.harness.transcript.runner import (
-    ConversationRunner,
-    DepsFor,
-    RunStarted,
-    TurnStarted,
-)
-from iclip.harness.transcript.store import TranscriptStore
-from iclip.harness.usage_ledger import UsageLedger
-from iclip.platform.transcript.display import ToolDisplayRegistry
-from iclip.platform.transcript.ops import (
-    MAIN_AGENT_ID,
-    PromptContent,
-    StepUsage,
-    TextContent,
-    ToolFrame,
-    TranscriptTurn,
-)
-
 AGENT_ID = "storyboard"
 MAX_CONTEXT_TOKENS = 4096
 OWNER = uuid.UUID("11111111-2222-3333-4444-555555555555")
 LOCKED_BY = "w-test"
-"""只经过队列、不经过 runner 的用例使用的租约属主；runner 自己的属主读 runner.locked_by。"""
 DEAD = "w-dead"
-"""模拟已退出进程的租约属主，不再更新心跳。"""
 
 
 class _DiscardingUsageStore:
@@ -70,8 +73,6 @@ class _DiscardingUsageStore:
 
 
 def discarding_usage_ledger() -> UsageLedger:
-    """装配要求每个 Agent 都挂用量台账；这里的测试不看记了什么。"""
-
     return UsageLedger(store=_DiscardingUsageStore(), conversation_of=lambda _deps: "conversation")
 
 
@@ -79,20 +80,7 @@ def new_conversation_id() -> str:
     return f"c-{uuid.uuid4().hex[:8]}"
 
 
-async def records_nothing(
-    owner: uuid.UUID, conversation_id: str, content: Sequence[PromptContent]
-) -> None:
-    """只读场景使用空素材登记实现。"""
-
-    _ = (owner, conversation_id, content)
-
-
-# --- 假模型 -----------------------------------------------------------------
-
-
 def says(*replies: str) -> FunctionModel:
-    """按预设顺序返回模型回复。"""
-
     said = 0
 
     async def stream(
@@ -106,8 +94,6 @@ def says(*replies: str) -> FunctionModel:
 
 
 def delegates(*calls: tuple[str, str]) -> FunctionModel:
-    """父模型：第一次响应一口气派出这些子代理，之后收尾。toolCallId 写死。"""
-
     async def stream(
         messages: list[ModelMessage], _info: AgentInfo
     ) -> AsyncIterator[str | DeltaToolCalls]:
@@ -129,8 +115,6 @@ def delegates(*calls: tuple[str, str]) -> FunctionModel:
 
 
 def waits(entered: asyncio.Event, gate: asyncio.Event) -> FunctionModel:
-    """通过事件阻塞响应，确定性地保持运行中状态。"""
-
     async def stream(
         _messages: list[ModelMessage], _info: AgentInfo
     ) -> AsyncIterator[str | DeltaToolCalls]:
@@ -142,8 +126,6 @@ def waits(entered: asyncio.Event, gate: asyncio.Event) -> FunctionModel:
 
 
 def calls_tool(name: str) -> FunctionModel:
-    """首个请求触发工具调用，后续请求不应发生。"""
-
     async def stream(
         _messages: list[ModelMessage], _info: AgentInfo
     ) -> AsyncIterator[str | DeltaToolCalls]:
@@ -153,8 +135,6 @@ def calls_tool(name: str) -> FunctionModel:
 
 
 def calls_then_says(name: str, reply: str, *, calls: int = 1) -> FunctionModel:
-    """首次调用待审批工具，后续响应覆盖审批决定后的续跑。"""
-
     asked = 0
 
     async def stream(
@@ -174,8 +154,6 @@ def calls_then_says(name: str, reply: str, *, calls: int = 1) -> FunctionModel:
 
 
 def wrote() -> str:
-    """一件要审批才能动的工具。审批本身不经过它，所以内容无所谓。"""
-
     return "写好了"
 
 
@@ -188,7 +166,64 @@ def texts(messages: list[ModelMessage]) -> list[str]:
     ]
 
 
-# --- 装配 -------------------------------------------------------------------
+class FixedAgents:
+    def __init__(
+        self, agents: Mapping[str, Agent[Any, Any]], context_limits: Mapping[str, int]
+    ) -> None:
+        self._agents = dict(agents)
+        self._limits = dict(context_limits)
+
+    async def for_conversation(self, conversation_id: str, agent_id: str) -> RunAgent:
+        agent = self._agents.get(agent_id)
+        if agent is None:
+            raise AgentUnavailable(f"没有登记 agent {agent_id}")
+        return RunAgent(agent=agent, context_window=self._limits.get(agent_id))
+
+
+def delegating_agent(
+    *,
+    parent: Model,
+    children: Mapping[str, Model],
+    step_store: PgStepStore,
+    live: TranscriptStore,
+    display: ToolDisplayRegistry = ToolDisplayRegistry.EMPTY,
+) -> Agent[Any, Any]:
+    ledger = discarding_usage_ledger()
+    profiles = {name: subagent_profile(name, model) for name, model in children.items()}
+    slots = [
+        SubAgentSlot(
+            name=name,
+            description="",
+            agent=build_agent(
+                name=name,
+                model=model,
+                instructions="",
+                plugins=(),
+                plugin_types=(),
+                step_store=step_store,
+                usage_ledger=ledger,
+                run_metadata=profile_metadata(profiles[name]),
+                accepts_deferred=False,
+            ),
+        )
+        for name, model in children.items()
+    ]
+    return build_agent(
+        name=AGENT_ID,
+        model=parent,
+        instructions="",
+        plugins=(),
+        plugin_types=(),
+        step_store=step_store,
+        usage_ledger=ledger,
+        run_metadata={},
+        accepts_deferred=True,
+        extra=[
+            build_subagents(
+                slots, mirror=SubAgentMirror(live=live, display=display, profiles=profiles)
+            )
+        ],
+    )
 
 
 def make_runner(
@@ -205,11 +240,6 @@ def make_runner(
     deps_for: DepsFor | None = None,
     compaction_keep_messages: int | None = None,
 ) -> tuple[ConversationRunner, PgStepStore, JobQueue]:
-    """按生产接法装 runner；context_limits 不给就按 AGENT_ID 开一个窗口，deps_for 不给运行依赖为 None。
-
-    compaction_keep_messages 不给就用 runner 的默认保留条数。
-    """
-
     queue = JobQueue(engine)
 
     async def no_deps(_row: Any) -> object:
@@ -221,15 +251,15 @@ def make_runner(
         else {"compaction_keep_messages": compaction_keep_messages}
     )
     runner = ConversationRunner(
-        agents=dict(agents),
+        agents=FixedAgents(
+            agents,
+            {AGENT_ID: MAX_CONTEXT_TOKENS} if context_limits is None else context_limits,
+        ),
         store=store,
         queue=queue,
         snapshots=step_store,
         history=TranscriptHistory(step_store, queue, display, DELEGATE_TOOL),
         deps_for=no_deps if deps_for is None else deps_for,
-        context_limits=(
-            {AGENT_ID: MAX_CONTEXT_TOKENS} if context_limits is None else dict(context_limits)
-        ),
         heartbeat_seconds=10,
         lease_seconds=30,
         sweep_seconds=15,
@@ -257,16 +287,12 @@ def build_runner(
     deps_for: DepsFor | None = None,
     compaction_keep_messages: int | None = None,
 ) -> tuple[ConversationRunner, PgStepStore, JobQueue]:
-    """一个主 agent、一个假模型的 runner；capabilities 挂在持久化之后。"""
-
     step_store = PgStepStore(engine)
     agent = Agent(
         model,
         name=AGENT_ID,
         tools=list(tools),
-        # DeferredToolRequests 必须纳入输出类型，以允许待审批工具结束本次 run。
         output_type=[str, DeferredToolRequests],
-        # 不设置顶层 agent_name，保持调用方传入的 run_id。
         capabilities=[StepPersistence(store=step_store), *capabilities],
     )
     return make_runner(
@@ -293,8 +319,6 @@ def approval_runner(
     on_run_started: RunStarted | None = None,
     on_turn_started: TurnStarted | None = None,
 ) -> tuple[ConversationRunner, PgStepStore, JobQueue]:
-    """装配待审批工具；首个请求调用工具，后续请求返回文本。"""
-
     return build_runner(
         engine,
         calls_then_says("write_file", reply, calls=calls),
@@ -305,9 +329,6 @@ def approval_runner(
     )
 
 
-# --- 驱动 -------------------------------------------------------------------
-
-
 async def submit_text(
     runner: ConversationRunner,
     queue: JobQueue,
@@ -316,8 +337,6 @@ async def submit_text(
     *,
     content: tuple[PromptContent, ...] | None = None,
 ) -> str:
-    """提交一条消息并交给 runner；content 给了就用它，不给就是一段文字。"""
-
     prompt_id = f"prm_{uuid.uuid4().hex[:8]}"
     row, _ = await queue.submit(
         prompt_id=prompt_id,
@@ -334,8 +353,6 @@ async def submit_text(
 
 
 async def expire_lease(engine: AsyncEngine, conversation_id: str, *, attempt: int = 0) -> None:
-    """将心跳设为一小时前以模拟租约过期；attempt 参数控制是否允许再次认领。"""
-
     async with engine.begin() as conn:
         await conn.execute(
             text(
@@ -348,8 +365,6 @@ async def expire_lease(engine: AsyncEngine, conversation_id: str, *, attempt: in
 
 
 def first_run_messages(run_id: str) -> list[ModelMessage]:
-    """模拟已完成工具周期后的中断历史；固定过去时间确保续跑消息排序在后。"""
-
     started = datetime(2026, 9, 1, 10, 0, tzinfo=UTC)
     return [
         ModelRequest(
@@ -378,11 +393,6 @@ async def plant_interrupted(
     messages: list[ModelMessage] | None = None,
     attempt: int = 0,
 ) -> str:
-    """插入 running、心跳过期的任务及 run 映射。
-
-    提供 messages 时另存快照和 run_started，不写终止事件；否则模拟首个快照前中断。
-    """
-
     prompt_id = f"prm_{uuid.uuid4().hex[:8]}"
     await queue.submit(
         prompt_id=prompt_id,
@@ -412,8 +422,6 @@ async def plant_interrupted(
 
 
 async def drained(queue: JobQueue, conversation_id: str, *, tries: int = 200) -> None:
-    """等待运行中和排队任务清空；待审批任务需使用 awaits 等待。"""
-
     for _ in range(tries):
         view = await queue.view(conversation_id)
         if view.active is None and not view.queued:
@@ -431,9 +439,6 @@ async def awaits(queue: JobQueue, prompt_id: str, *, tries: int = 200) -> JobRow
     raise AssertionError("这条 prompt 没停在审批上")
 
 
-# --- 读 ---------------------------------------------------------------------
-
-
 def prompt_text(turn: TranscriptTurn) -> str:
     return "".join(part.text for part in turn.content if part.type == "text")
 
@@ -441,8 +446,6 @@ def prompt_text(turn: TranscriptTurn) -> str:
 def replay_journal(
     store: TranscriptStore, conversation_id: str, agent_id: str = MAIN_AGENT_ID
 ) -> TranscriptStore:
-    """把客户端实际收到的批次重放进一个新 store；轮持久化后原 store 的 live_turns 会清空。"""
-
     replayed = TranscriptStore()
     epoch = store.subscribe_view(conversation_id, agent_id).epoch
     for batch in store.subscribe_view(conversation_id, agent_id, since=0, epoch=epoch).batches:
@@ -476,11 +479,13 @@ __all__ = [
     "LOCKED_BY",
     "MAX_CONTEXT_TOKENS",
     "OWNER",
+    "FixedAgents",
     "approval_runner",
     "awaits",
     "build_runner",
     "calls_then_says",
     "calls_tool",
+    "delegating_agent",
     "drained",
     "expire_lease",
     "first_run_messages",
@@ -488,7 +493,6 @@ __all__ = [
     "new_conversation_id",
     "plant_interrupted",
     "prompt_text",
-    "records_nothing",
     "replay",
     "replay_journal",
     "says",

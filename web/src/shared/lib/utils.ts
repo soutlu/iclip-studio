@@ -1,7 +1,6 @@
 import { type ClassValue, clsx } from 'clsx'
 import { extendTailwindMerge } from 'tailwind-merge'
 
-/** 将自定义 text-* 字阶登记到 font-size 组，避免 tailwind-merge 与文字颜色互斥；新增字阶须同步登记。 */
 const twMerge = extendTailwindMerge({
   extend: {
     classGroups: {

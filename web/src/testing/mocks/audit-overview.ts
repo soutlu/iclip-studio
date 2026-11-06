@@ -1,11 +1,3 @@
-/** 审计总览的 mock：按小时确定地造一段历史活动，再按请求的时间窗切期、算上一期与 7 / 30 日均线。
-
-单测与 dev:mock 共用。分期按 UTC+8 算：前端固定传 UTC+8 的时区，这里自己按固定偏移算一份，与运行环境的时区无关，也不借前端的换算，好当它的独立对照。
-每 29 天里有连续 3 天没人发起运行（非活跃日）；片长只从本月 1 日起有数据，整段在那之前的时间窗是「暂无片长数据」。
-粒度按跨度定：两天以内按小时，120 天以内按天，更长按周。
-
-均线与补窗只求演示自洽，不是后端口径的参考实现；测试要断言数字，用 overviewFixture 喂自己的数据。 */
-
 import { http, HttpResponse } from 'msw'
 import type { z } from 'zod'
 import {
@@ -25,12 +17,9 @@ type TrendPoint = z.output<typeof zTrendPointOut>
 type Bucket = Overview['window']['bucket']
 
 const HOUR_MS = 3_600_000
-/** 最早造到多少天前；更早的时间窗是空的。 */
 const HISTORY_DAYS = 200
-/** 均线窗里至少要有几个活跃日，不够就往前补。 */
 const MIN_ACTIVE_DAYS = 3
 
-/** 出片的五个人；清单的 mock 也用这组人。 */
 export const PEOPLE = [
   mockAuthUser.username,
   mockGovernor.username,
@@ -45,17 +34,13 @@ export const GOODS = ['童鞋', '滑板鞋', '跑鞋', '帆布鞋', '凉鞋', '�
 export const USES = ['主图视频', '种草短片', '上新视频', '卖点讲解', '开箱', '穿搭']
 const CLIP_SECONDS = [5, 8, 10, 12, 15]
 
-// ——— UTC+8 日历 ———
-
 const OFFSET_MS = 8 * HOUR_MS
 const DAY_MS = 24 * HOUR_MS
 
-/** UTC+8 日期的序号（距 1970-01-01 的天数），用作每天的随机种子。 */
 const dayNumber = (at: number): number => Math.floor((at + OFFSET_MS) / DAY_MS)
 
 const startOfDay = (at: number): number => dayNumber(at) * DAY_MS - OFFSET_MS
 
-/** UTC+8 没有夏令时，一天恒为 24 小时。 */
 const addDays = (at: number, days: number): number => at + days * DAY_MS
 
 const startOfMonth = (at: number): number => {
@@ -63,12 +48,9 @@ const startOfMonth = (at: number): number => {
   return Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), 1) - OFFSET_MS
 }
 
-/** UTC+8 的星期，0 为周日。 */
 const weekdayOf = (at: number): number => new Date(at + OFFSET_MS).getUTCDay()
 
 const iso = (at: number) => new Date(at).toISOString()
-
-// ——— 确定性随机 ———
 
 export const mulberry32 = (seed: number) => {
   let a = seed
@@ -107,7 +89,6 @@ const poisson = (random: () => number, lambda: number): number => {
   return count - 1
 }
 
-/** 由两个整数确定地拼一个 v4 形状的 UUID。 */
 export const uuidOf = (day: number, index: number): string => {
   const hex = (value: number, width: number) =>
     (value >>> 0).toString(16).padStart(width, '0').slice(-width)
@@ -116,15 +97,11 @@ export const uuidOf = (day: number, index: number): string => {
   return `${hex(part(), 8)}-${hex(part(), 4)}-4${hex(part(), 3)}-8${hex(part(), 3)}-${hex(part(), 8)}${hex(part(), 4)}`
 }
 
-// ——— 可加的一格 ———
-
 type Sum = { total: number; count: number }
 
 type Cell = {
   runs: number
-  /** 发起运行的人，按 PEOPLE 下标记位。 */
   users: number
-  /** 出过片的人，按 PEOPLE 下标记位。 */
   producers: number
   deliveredTasks: number
   orphans: number
@@ -145,7 +122,6 @@ type Cell = {
   lengthVideos: number
   lengthSeconds: number
   discarded: number
-  /** 下标是成功生成次数，值是镜数。 */
   histogram: number[]
 }
 
@@ -217,11 +193,8 @@ const addCell = (into: Cell, from: Cell) => {
   })
 }
 
-// ——— 按天造数据 ———
-
 type Day = { hours: Map<number, Cell>; total: Cell; heavy: HeavyShot[] }
 
-/** 一段对话的活动，全部记在它开始的那个小时里。 */
 const simulateConversation = (
   random: () => number,
   cell: Cell,
@@ -259,7 +232,6 @@ const simulateConversation = (
   cell.output += tokens.output
   cell.requests += Math.max(1, Math.round(total / 38_000))
 
-  // 约一成的对话只跑了 agent、没出片。
   if (random() < 0.12) return
   const shotCount = pickWeighted(random, [1, 2, 3, 4], [0.3, 0.35, 0.22, 0.13])
   let delivered = false
@@ -279,9 +251,7 @@ const simulateConversation = (
         cell.lengthSeconds += seconds
       }
     }
-    // 一镜成功过多条时，除最后一条以外都算废片。
     if (withLength && succeeded > 1) cell.discarded += (succeeded - 1) * seconds
-    // 失败的不算；一次都没成功的镜不算镜。
     if (succeeded === 0) continue
     delivered = true
     cell.shots += 1
@@ -307,7 +277,6 @@ const simulateConversation = (
   const active = 1500 + random() * 3900
   cell.activeCycle.total += active
   cell.activeCycle.count += 1
-  // 约一成隔天回来重出，墙钟时长拖出长尾。
   cell.wallCycle.total += active * (random() < 0.1 ? 20 + random() * 30 : 1 + random() * 2.5)
   cell.wallCycle.count += 1
 }
@@ -346,7 +315,6 @@ const dayOf = (dayStart: number, now: number): Day => {
   return day
 }
 
-/** [from, to) 里的活动：整天用当天合计，被截断的那一天按小时取。 */
 const collect = (from: number, to: number, now: number): Cell => {
   const into = emptyCell()
   for (let day = startOfDay(from); day < to; day = addDays(day, 1)) {
@@ -370,8 +338,6 @@ const activeDaysIn = (from: number, to: number, now: number): number => {
   }
   return count
 }
-
-// ——— 指标 ———
 
 const bitCount = (mask: number) => mask.toString(2).replaceAll('0', '').length
 
@@ -425,11 +391,8 @@ const metricsOf = (cell: Cell): Metrics => {
   }
 }
 
-// ——— 均线 ———
-
 type AverageContext = { now: number; floor: number }
 
-/** 窗起点：往前推 days 天（含 end 所在那天），活跃日不够就再往前补。 */
 const windowStart = (days: number, end: number, { now, floor }: AverageContext): number => {
   let from = addDays(startOfDay(end - 1), -(days - 1))
   while (from > floor && activeDaysIn(from, end, now) < MIN_ACTIVE_DAYS) from = addDays(from, -1)
@@ -442,7 +405,6 @@ const averageOf = (value: number | null, from: number, to: number): MovingAverag
   value,
 })
 
-/** 件数类：窗里各活跃日日值的平均。 */
 const countAverage = (
   pick: (cell: Cell) => number,
   days: number,
@@ -460,7 +422,6 @@ const countAverage = (
   return averageOf(value, from, end)
 }
 
-/** 比率类：把整个窗当一格重算，样本不够再往前补；返回窗的起点与那一格。 */
 const sampledWindow = (
   sample: (cell: Cell) => number,
   needed: number,
@@ -489,7 +450,6 @@ const movingAveragesOf = (
   const videos = sampledWindow((cell) => cell.upstream.count, 30, days, end, context)
   const perDelivery = (pick: (cell: Cell) => number) =>
     averageOf(ratio(pick(deliveries.cell), deliveriesOf(deliveries.cell)), deliveries.from, end)
-  // 件数类的均线只在按天时有：每小时的柱配日均线没有意义。
   const count = (pick: (cell: Cell) => number) =>
     bucket === 'day' ? countAverage(pick, days, end, context) : null
   return {
@@ -518,14 +478,11 @@ const movingAveragesOf = (
   }
 }
 
-// ——— 组装 ———
-
 const calendarDays = (since: number, until: number) =>
   Math.round((startOfDay(until - 1) - startOfDay(since)) / 86_400_000) + 1
 
 const bucketFor = (days: number): Bucket => (days <= 2 ? 'hour' : days <= 120 ? 'day' : 'week')
 
-/** 时间窗里每一期的起点；按周时首期从所在周的周一算起。 */
 const periodStarts = (since: number, until: number, bucket: Bucket): number[] => {
   const starts: number[] = []
   if (bucket === 'hour') {
@@ -544,7 +501,6 @@ const periodStarts = (since: number, until: number, bucket: Bucket): number[] =>
 const nextPeriod = (start: number, bucket: Bucket) =>
   bucket === 'hour' ? start + HOUR_MS : addDays(start, bucket === 'week' ? 7 : 1)
 
-/** 时间窗的粒度与每一期的起点，与总览同一规则；按人的迷你图也按它分期。 */
 export const mockPeriodsOf = (since: number, until: number) => {
   const bucket = bucketFor(calendarDays(since, until))
   return {
@@ -556,7 +512,6 @@ export const mockPeriodsOf = (since: number, until: number) => {
   }
 }
 
-/** 按请求的时间窗算一份总览；now 可注入方便测试。 */
 export const mockOverviewOf = (query: URLSearchParams, now: number = Date.now()): Overview => {
   const since = new Date(query.get('since') ?? '').getTime()
   const requestedUntil = query.get('until')
@@ -620,13 +575,9 @@ export const overviewHandler = http.get('*/api/audit/overview', ({ request }) =>
   if (Number.isNaN(new Date(query.get('since') ?? '').getTime())) {
     return HttpResponse.json({ detail: 'since 必填' }, { status: 422 })
   }
-  // 按生成的 schema 过一遍，mock 形状漂移时在这里就报出来。
   return HttpResponse.json(zOverviewOut.parse(mockOverviewOf(query)))
 })
 
-// ——— 单测 fixture ———
-
-/** 全零的一格指标，给只关心某几个字段的用例当底座。 */
 export const emptyAuditMetrics = (): Metrics => ({
   activeCycleSeconds: null,
   activeUsers: 0,
@@ -670,11 +621,9 @@ type FixtureOptions = {
   currentActiveDays?: number
   previous?: Partial<Metrics>
   previousActiveDays?: number
-  /** 缺省七期、全零、都是活跃日。 */
   points?: FixturePoint[]
 }
 
-/** 每条均线都取 1，窗就是这一期往前的七天；按小时时件数类为空，按周整组为空。 */
 const fixtureAverages = (end: number, bucket: Bucket): MovingAverages => {
   const line = averageOf(1, addDays(end, -7), end)
   const count = bucket === 'day' ? line : null
@@ -696,10 +645,8 @@ const fixtureAverages = (end: number, bucket: Bucket): MovingAverages => {
   }
 }
 
-/** fixture 本期的起点：2026 年 9 月 1 日 UTC+8 零点。 */
 export const FIXTURE_SINCE = Date.parse('2026-09-01T00:00:00+08:00')
 
-/** 一份形状完整的总览：本期从 FIXTURE_SINCE 起，按 bucket 排 points 期。 */
 export const overviewFixture = ({
   bucket = 'day',
   current = {},

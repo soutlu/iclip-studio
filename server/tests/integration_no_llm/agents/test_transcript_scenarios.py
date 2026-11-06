@@ -1,18 +1,49 @@
-"""transcript 场景测试：假模型跑真实运行，实时收到的页与冷启动重建的页必须一字不差。
-
-一个场景一个用例。先比两条路（补发日志重放出来的页 vs 空实时店从持久化重建的页），
-再补这个场景特有的几条事实。三个场景另存金样给前端测试消费。
-"""
-
 from __future__ import annotations
 
 import asyncio
 import difflib
 import json
+import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
+from agent_runtime.file_store.store import FileSpace
+from agent_runtime.harness.agents import DELEGATE_TOOL, delegate_display_table
+from agent_runtime.harness.background import (
+    BackgroundOutcome,
+    BackgroundTools,
+    is_receipt,
+    parse_outcome,
+)
+from agent_runtime.harness.jobs import JobQueue, JobRow
+from agent_runtime.harness.skills import CachedSkill, build_skill_capabilities, skill_display_table
+from agent_runtime.harness.step_store_pg import PgStepStore
+from agent_runtime.harness.transcript.from_messages import ORPHAN_TOOL_ERROR
+from agent_runtime.harness.transcript.history import TranscriptHistory
+from agent_runtime.harness.transcript.runner import ConversationRunner
+from agent_runtime.harness.transcript.service import TranscriptService
+from agent_runtime.harness.transcript.store import TranscriptStore
+from agent_runtime.plugins.workspace.scope import workspace_namespace
+from agent_runtime.run_deps import AgentRunDeps
+from agent_runtime.transcript.display import (
+    FileIoDisplay,
+    GenericDisplay,
+    ToolDisplay,
+    ToolDisplayEntry,
+    ToolDisplayRegistry,
+)
+from agent_runtime.transcript.ops import (
+    MAIN_AGENT_ID,
+    TextContent,
+    TextFrame,
+    ToolFrame,
+    TranscriptTask,
+    utf16_len,
+)
+from agent_runtime.transcript.wire import TranscriptPage
+from iclip_video.video_breakdown.capability import VideoBreakdown
+from iclip_video.video_breakdown.ports import FailedBreakdown
 from pydantic_ai import Agent, Tool
 from pydantic_ai._deferred_capabilities import parse_loaded_capabilities
 from pydantic_ai.exceptions import ModelRetry
@@ -37,51 +68,6 @@ from pydantic_ai.models.function import (
 )
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.capabilities.video_breakdown.capability import VideoBreakdown
-from iclip.capabilities.video_breakdown.ports import FailedBreakdown
-from iclip.capabilities.workspace.scope import workspace_namespace
-from iclip.domains.agents.public import AgentRunDeps
-from iclip.domains.identity.public import Principal
-from iclip.harness.agents import (
-    DELEGATE_TOOL,
-    AgentDefinition,
-    SubAgentDefinition,
-    build_agent_registry,
-    delegate_display_table,
-    subagent_profiles,
-)
-from iclip.harness.background import (
-    BackgroundOutcome,
-    BackgroundTools,
-    is_receipt,
-    parse_outcome,
-)
-from iclip.harness.jobs import JobQueue, JobRow
-from iclip.harness.skills import build_skill_capabilities, skill_display_table
-from iclip.harness.step_store_pg import PgStepStore
-from iclip.harness.transcript.from_messages import ORPHAN_TOOL_ERROR
-from iclip.harness.transcript.history import TranscriptHistory
-from iclip.harness.transcript.runner import ConversationRunner
-from iclip.harness.transcript.service import TranscriptService
-from iclip.harness.transcript.store import TranscriptStore
-from iclip.harness.transcript.subagents import SubAgentMirror
-from iclip.platform.file_store.store import FileSpace
-from iclip.platform.transcript.display import (
-    FileIoDisplay,
-    GenericDisplay,
-    ToolDisplay,
-    ToolDisplayEntry,
-    ToolDisplayRegistry,
-)
-from iclip.platform.transcript.ops import (
-    MAIN_AGENT_ID,
-    TextContent,
-    TextFrame,
-    ToolFrame,
-    TranscriptTask,
-    utf16_len,
-)
-from iclip.platform.transcript.wire import TranscriptPage
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.runtime import (
     AGENT_ID,
@@ -90,13 +76,12 @@ from tests.helpers.runtime import (
     build_runner,
     calls_then_says,
     delegates,
-    discarding_usage_ledger,
+    delegating_agent,
     drained,
     first_run_messages,
     make_runner,
     new_conversation_id,
     plant_interrupted,
-    records_nothing,
     says,
     submit_text,
     texts,
@@ -127,15 +112,9 @@ DISPLAYS = ToolDisplayRegistry.merged(
     delegate_display_table(),
     skill_display_table(),
 )
-"""非空注册表，避免两条路同时缺 display 也能相等。"""
-
-
-# --- 假模型 -----------------------------------------------------------------
 
 
 def thinks_then_says(thought: str, *chunks: str) -> FunctionModel:
-    """一次响应：先一段思考，再按块吐正文。"""
-
     async def stream(
         _messages: list[ModelMessage], _info: AgentInfo
     ) -> AsyncIterator[str | DeltaThinkingCalls]:
@@ -147,8 +126,6 @@ def thinks_then_says(thought: str, *chunks: str) -> FunctionModel:
 
 
 def reads_then_says(path: str, reply: str) -> FunctionModel:
-    """第一步读文件，第二步说一句。toolCallId 写死，金样才稳定。"""
-
     asked = 0
 
     async def stream(
@@ -177,9 +154,6 @@ def read_tool() -> Tool[Any]:
     return Tool(read, name="Read")
 
 
-# --- 两条路 -----------------------------------------------------------------
-
-
 async def both_pages(
     store: TranscriptStore,
     step_store: PgStepStore,
@@ -188,8 +162,6 @@ async def both_pages(
     conversation_id: str,
     agent_id: str = MAIN_AGENT_ID,
 ) -> tuple[TranscriptPage, TranscriptPage]:
-    """实时重放的页与冷启动重建的页，比对后一并返回。"""
-
     live = await live_page(
         store,
         conversation_id,
@@ -214,8 +186,6 @@ async def both_pages(
 
 
 def assert_same_page(live: TranscriptPage, cold: TranscriptPage) -> None:
-    """两页不等时给出逐行 diff，比 pytest 对大字典的摘要好读。"""
-
     a = json.dumps(comparable(live), ensure_ascii=False, indent=1).splitlines()
     b = json.dumps(comparable(cold), ensure_ascii=False, indent=1).splitlines()
     if a != b:
@@ -234,12 +204,7 @@ def _appends_to(frames: list[Any], frame_id: str) -> list[tuple[int, str]]:
 
 
 def _args(card: ToolFrame) -> dict[str, Any]:
-    """工具卡的参数：假模型给的是 JSON 字符串，真厂商多是对象，两种都认。"""
-
     return json.loads(card.input) if isinstance(card.input, str) else dict(card.input or {})
-
-
-# --- 场景 -------------------------------------------------------------------
 
 
 async def test_thinking_then_text_with_emoji(engine: AsyncEngine) -> None:
@@ -264,7 +229,6 @@ async def test_thinking_then_text_with_emoji(engine: AsyncEngine) -> None:
         ("t1.1.f2", "text"),
     ]
     assert frames[1].text == "好👌，分三组🎬拍。"
-    # 逐字追加的 offset 按 UTF-16 累加，emoji 占两个单位。
     assert _appends_to(ws_frames(store, conversation_id), "t1.1.f2") == [
         (0, "好👌，"),
         (utf16_len("好👌，"), "分三组🎬拍。"),
@@ -352,7 +316,6 @@ async def test_a_steer_lands_on_the_step_that_was_running(engine: AsyncEngine) -
     await runner.shutdown()
     live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
-    # 插话挂在当时正在跑的那一步末尾，与正文共用块序号；模型的回应开新的一步。
     assert [
         (frame.frame_id, getattr(frame, "role", None), getattr(frame, "prompt_ids", None))
         for frame in frames_of(live, "t1", "t1.1")
@@ -364,8 +327,6 @@ async def test_a_steer_lands_on_the_step_that_was_running(engine: AsyncEngine) -
 
 
 async def test_stopping_the_run_ends_the_turn_as_cancelled(engine: AsyncEngine) -> None:
-    """第二步说到一半被停。官方只在节点边界存快照，第一步就停的轮历史里没有，那是持久化的边界。"""
-
     entered = asyncio.Event()
     store = TranscriptStore()
     runner, step_store, queue = build_runner(
@@ -392,8 +353,6 @@ async def test_stopping_the_run_ends_the_turn_as_cancelled(engine: AsyncEngine) 
 
 
 async def test_a_model_failure_ends_the_turn_as_failed(engine: AsyncEngine) -> None:
-    """第二步说到一半上游炸了；第一步就炸的轮同上，历史里没有。"""
-
     store = TranscriptStore()
     runner, step_store, queue = build_runner(
         engine,
@@ -430,7 +389,6 @@ async def test_an_approved_tool_resumes_the_same_turn(engine: AsyncEngine) -> No
     await runner.shutdown()
     live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
-    # 审批前后是两个 run，合成一轮、步号连续；交互是不分页的全局实体。
     assert [step.step_id for step in live.items[0].steps] == ["t1.1", "t1.2"]
     card = frames_of(live, "t1", "t1.1")[0]
     assert isinstance(card, ToolFrame)
@@ -483,7 +441,6 @@ async def test_a_crashed_run_resumes_into_the_same_turn(engine: AsyncEngine) -> 
     await runner.shutdown()
     live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
-    # 续跑是新 run，但落回原轮：旧步标中断、新步接着编号，用户消息不重复。
     assert [(turn.turn_id, turn.state) for turn in live.items] == [("t1", "completed")]
     assert [step.state for step in live.items[0].steps] == ["interrupted", "completed"]
     assert [frame.frame_id for frame in frames_of(live, "t1", "t1.1")] == ["t1.1.call_1"]
@@ -501,8 +458,6 @@ async def test_regenerating_the_last_turn_replaces_it(engine: AsyncEngine) -> No
         history=TranscriptHistory(step_store, queue, DISPLAYS, DELEGATE_TOOL),
         queue=queue,
         runner=runner,
-        context_limits={},
-        record_materials=records_nothing,
     )
 
     first = await submit_text(runner, queue, conversation_id, "写一句")
@@ -512,7 +467,6 @@ async def test_regenerating_the_last_turn_replaces_it(engine: AsyncEngine) -> No
     await runner.shutdown()
     live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
-    # 重跑前先删旧轮，新的一轮沿用 t1，但认领的是新那条消息。
     removals = [
         op
         for frame in ws_frames(store, conversation_id)
@@ -528,16 +482,12 @@ async def test_regenerating_the_last_turn_replaces_it(engine: AsyncEngine) -> No
     assert frames_of(live, "t1", "t1.1")[0].text == "第二次"
 
 
-# --- 压缩 -----------------------------------------------------------------------
-
 SKILL = "storyboard"
 SKILL_BODY = "分镜按三组写，每组三个镜头。"
 LOAD_CALL = "call_load"
 
 
 def loads_skill_then_says(delivered: list[bool]) -> FunctionModel:
-    """首轮先加载技能再答，之后每次直接答；每次对话请求记下技能正文是否送达。摘要请求回一段摘要。"""
-
     def summarize(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         return ModelResponse(parts=[TextPart(content="## Intent\n给视频做分镜")])
 
@@ -568,8 +518,6 @@ def loads_skill_then_says(delivered: list[bool]) -> FunctionModel:
 async def test_a_skill_loaded_before_compaction_stays_loaded_and_shows_its_recorded_load(
     engine: AsyncEngine, tmp_path: Path
 ) -> None:
-    """窗口小到每次请求都压：压掉的技能加载补记一次，刷新前后同一步各显示一张加载卡。"""
-
     (tmp_path / SKILL).mkdir()
     (tmp_path / SKILL / "SKILL.md").write_text(
         f"---\nname: {SKILL}\ndescription: 写分镜\n---\n\n{SKILL_BODY}\n", encoding="utf-8"
@@ -581,7 +529,7 @@ async def test_a_skill_loaded_before_compaction_stays_loaded_and_shows_its_recor
         loads_skill_then_says(delivered),
         store=store,
         display=DISPLAYS,
-        capabilities=build_skill_capabilities(tmp_path, (SKILL,)),
+        capabilities=build_skill_capabilities(tmp_path, [CachedSkill(name=SKILL, library=".")]),
         context_limits={AGENT_ID: 1},
         compaction_keep_messages=2,
     )
@@ -593,14 +541,12 @@ async def test_a_skill_loaded_before_compaction_stays_loaded_and_shows_its_recor
     await runner.shutdown()
     live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
-    # 加载之后每次请求都带着技能正文，两次压掉加载也一样。
     assert delivered == [False, True, True, True]
     assert [[step.step_id for step in turn.steps] for turn in live.items] == [
         ["t1.1", "t1.2"],
         ["t2.1"],
         ["t3.1"],
     ]
-    # 第一轮压缩时加载还在保留的尾部里，不补记；后两轮压掉了加载，各补记一次，卡挂在压缩提示后面。
     steps = {step.step_id: step for turn in live.items for step in turn.steps}
     assert [
         step_id
@@ -637,7 +583,7 @@ async def test_regenerating_a_compacting_turn_keeps_the_skill_loaded(
         loads_skill_then_says(delivered),
         store=store,
         display=DISPLAYS,
-        capabilities=build_skill_capabilities(tmp_path, (SKILL,)),
+        capabilities=build_skill_capabilities(tmp_path, [CachedSkill(name=SKILL, library=".")]),
         context_limits={AGENT_ID: 1},
         compaction_keep_messages=3,
     )
@@ -646,8 +592,6 @@ async def test_regenerating_a_compacting_turn_keeps_the_skill_loaded(
         history=TranscriptHistory(step_store, queue, DISPLAYS, DELEGATE_TOOL),
         queue=queue,
         runner=runner,
-        context_limits={AGENT_ID: 1},
-        record_materials=records_nothing,
     )
     conversation_id = new_conversation_id()
 
@@ -679,16 +623,12 @@ async def test_regenerating_a_compacting_turn_keeps_the_skill_loaded(
     assert {card.state for card in cards} == {"done"}
 
 
-# --- 后台工具 -------------------------------------------------------------------
-
 BREAKDOWN_CALL = "call_bd"
 BREAKDOWN_DONE = "视频拆解完毕，文档在 references/ref.md。"
 BREAKDOWN_ARGS = '{"video_url": "https://cdn.test/ref.mp4"}'
 
 
 def slow_breakdown(release: asyncio.Event) -> Tool[Any]:
-    """后台跑的拆解：等测试放行才返回。"""
-
     async def breakdown_video(video_url: str) -> str:
         await release.wait()
         return BREAKDOWN_DONE
@@ -697,8 +637,6 @@ def slow_breakdown(release: asyncio.Event) -> Tool[Any]:
 
 
 def sequential_write() -> Tool[Any]:
-    """与工作区写文件工具一样依次执行。"""
-
     def write_file(path: str) -> str:
         return f"{path} 写好了"
 
@@ -725,9 +663,6 @@ def _breakdown_call(tool_call_id: str = BREAKDOWN_CALL) -> DeltaToolCall:
 def waits_for_breakdown(
     ended: asyncio.Event, *, write: bool = False, seen: list[list[ModelMessage]] | None = None
 ) -> FunctionModel:
-    """首个请求调拆解（write 时同一响应里再写一份简报）；拆解没回来就说一句、结束这次响应，回来了
-    再答一句。用户另起一条「继续」时直接答。seen 记下每次请求模型收到的消息。"""
-
     async def stream(
         messages: list[ModelMessage], _info: AgentInfo
     ) -> AsyncIterator[str | DeltaToolCalls]:
@@ -776,12 +711,9 @@ def _breakdown_card(page: TranscriptPage, tool_call_id: str = BREAKDOWN_CALL) ->
 
 
 BREAKDOWN_TITLE = "拆解视频 ref.mp4"
-"""DISPLAYS 给拆解卡的标题，任务描述与完成通知都用它。"""
 
 
 def _breakdown_task(page: TranscriptPage, tool_call_id: str = BREAKDOWN_CALL) -> TranscriptTask:
-    """这次后台调用的任务；描述是卡标题，id 是调用 id。"""
-
     (task,) = [task for task in page.tasks if task.task_id == tool_call_id]
     assert (task.kind, task.detached, task.description) == ("tool", True, BREAKDOWN_TITLE)
     assert task.started_at is not None
@@ -800,14 +732,10 @@ def _receipt(messages: list[ModelMessage], tool_call_id: str = BREAKDOWN_CALL) -
 
 
 def _assert_settled_by_receipt(card: ToolFrame, receipt: ToolReturnPart) -> None:
-    """原卡只记启动：回执到达即正常结卡，output 是回执原文。"""
-
     assert (card.state, card.output, card.error) == ("done", receipt.content, None)
 
 
 def _assert_interrupted(card: ToolFrame, task: TranscriptTask, state: str) -> None:
-    """回执之后没等到结果、运行已不在：卡收成中断，任务进入终态，不带结果与错误。"""
-
     assert (card.state, card.output, card.metadata, card.error) == (
         "error",
         None,
@@ -841,13 +769,11 @@ async def test_a_background_breakdown_lets_the_model_write_first_and_settles_lat
     await runner.shutdown()
     live, cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
-    # 模型在拆解跑着时结束了响应，结果到了被拉回来再答一次：中间没有工具调用，也开新的一步。
     assert [step.step_id for step in live.items[0].steps] == ["t1.1", "t1.2", "t1.3"]
     messages = await _history(step_store, conversation_id)
     card = _breakdown_card(live)
     _assert_settled_by_receipt(card, _receipt(messages))
     assert card.frame_id == f"t1.1.{BREAKDOWN_CALL}"
-    # 结果到达处（当时的末步）插一条完成通知，原卡不动。
     notice = TextFrame(
         frame_id="t1.2.f2",
         role="user",
@@ -873,7 +799,6 @@ async def test_a_background_breakdown_lets_the_model_write_first_and_settles_lat
     assert written < delivered
 
     sample = {"ws": normalize(ws_frames(store, conversation_id)), "rest": comparable(cold)}
-    # 前端 schema 会剥掉未声明的字段：金样里要真有完成通知的 taskId 与 tool 任务，前端才测得出漏声明。
     rest = sample["rest"]
     frames = [frame for turn in rest["items"] for step in turn["steps"] for frame in step["frames"]]
     assert [frame["taskId"] for frame in frames if "taskId" in frame] == [BREAKDOWN_CALL]
@@ -906,8 +831,6 @@ async def test_a_steer_during_a_background_wait_still_shows_and_the_outcome_sett
     await runner.shutdown()
     live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
-    # 插话与完成通知各是一块，按递入先后挂在当时的末步：插话让模型先答一次，结果到时末步已是下一步。
-    # 插话带消息 id，通知带任务 id。
     assert [
         (frame.frame_id, frame.text, frame.prompt_ids, frame.task_id)
         for frame in _user_frames(live)
@@ -953,7 +876,6 @@ async def test_stopping_during_a_background_breakdown_interrupts_the_call(
     await runner.shutdown()
     live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
-    # 下一轮交给模型的历史里，回执换成了 interrupted 返回，模型不会再等一个不会来的结果。
     returns = [
         part
         for message in seen[-1]
@@ -968,8 +890,6 @@ async def test_stopping_during_a_background_breakdown_interrupts_the_call(
 
 
 def breaks_down_and_writes(reply: str) -> FunctionModel:
-    """首个请求在同一响应里调后台拆解和一件要审批的写文件，之后的请求直接答。"""
-
     asked = 0
 
     async def stream(
@@ -1008,7 +928,6 @@ async def test_an_approval_pause_closes_the_background_card_and_keeps_the_approv
     await awaits(queue, prompt_id)
     live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
-    # 暂停时没跑完的后台调用被丢掉，卡收成中断、任务 killed；等审批的卡带着审批 id 保持开放。
     assert live.items[0].state == "running"
     _assert_interrupted(_breakdown_card(live), _breakdown_task(live), "killed")
     approval = _breakdown_card(live, "call_1")
@@ -1028,8 +947,6 @@ async def test_an_approval_pause_closes_the_background_card_and_keeps_the_approv
 
 
 async def _receipt_without_outcome(run_id: str) -> list[ModelMessage]:
-    """真跑一次后台拆解，截到回执那条请求：等同于在模型下一次作答时崩了留下的快照。"""
-
     async def breakdown_video(video_url: str) -> str:
         await asyncio.sleep(0.2)
         return BREAKDOWN_DONE
@@ -1081,7 +998,6 @@ async def test_a_crash_during_a_background_breakdown_resumes_with_the_call_inter
         run_id=dead_run,
         messages=await _receipt_without_outcome(dead_run),
     )
-    # 续跑前刷新：死掉的运行留下回执却没有结果，卡收成中断、任务 failed。
     before = await cold_page(
         step_store,
         conversation_id,
@@ -1110,7 +1026,6 @@ async def test_a_crash_during_a_background_breakdown_resumes_with_the_call_inter
         ("interrupted", INTERRUPTED_TOOL_RETURN_CONTENT)
     ]
     assert [step.state for step in live.items[0].steps] == ["interrupted", "completed"]
-    # 续跑后回执已换成带标记的 interrupted 返回：历史仍认得出这次后台调用，续跑基线也带上了任务。
     _assert_interrupted(_breakdown_card(live), _breakdown_task(live), "failed")
     assert _breakdown_task(cold).started_at == _breakdown_task(before).started_at, (
         "换下的返回保留回执的时间戳"
@@ -1118,12 +1033,10 @@ async def test_a_crash_during_a_background_breakdown_resumes_with_the_call_inter
 
 
 class FailingBreakdowns:
-    """参考视频拆解的替身：每次都是模型调用失败；记下被要了几次。"""
-
     def __init__(self) -> None:
         self.calls = 0
 
-    async def ensure(self, principal: Principal, video_url: str) -> str | FailedBreakdown:
+    async def ensure(self, user_id: uuid.UUID, video_url: str) -> str | FailedBreakdown:
         self.calls += 1
         return FailedBreakdown(reason="model_call_failed")
 
@@ -1134,9 +1047,6 @@ CALL_AGAIN = "拆解失败，再调用一次。"
 async def test_a_retryable_breakdown_failure_reaches_the_model_and_errors_the_card(
     engine: AsyncEngine,
 ) -> None:
-    """真 VideoBreakdown 挂 BackgroundTools：可重试的失败作为后台结果送到模型，卡片记错误；模型照
-    提示再调一次，就再排一次拆解。"""
-
     seen: list[list[ModelMessage]] = []
 
     async def stream(
@@ -1162,15 +1072,7 @@ async def test_a_retryable_breakdown_failure_reaches_the_model_and_errors_the_ca
 
     async def deps_for(row: JobRow) -> AgentRunDeps:
         return AgentRunDeps(
-            principal=Principal(
-                kind="user",
-                user_id=row.owner_user_id,
-                permissions=frozenset({"agent:run"}),
-                audit_label="logan",
-                api_key_id=None,
-            ),
-            conversation_id=row.conversation_id,
-            user_name="logan",
+            user_id=row.owner_user_id, conversation_id=row.conversation_id, user_name="logan"
         )
 
     store = TranscriptStore()
@@ -1195,7 +1097,6 @@ async def test_a_retryable_breakdown_failure_reaches_the_model_and_errors_the_ca
         ("call_bd2", "error", CALL_AGAIN),
     ]
     assert breakdowns.calls == 2, "每次再调都重新排一次拆解"
-    # 失败的结果不改原卡；到达处插「… 失败」的通知，任务 failed 并带错误原文。
     messages = await _history(step_store, conversation_id)
     for tool_call_id in ("call_bd1", "call_bd2"):
         _assert_settled_by_receipt(
@@ -1209,18 +1110,16 @@ async def test_a_retryable_breakdown_failure_reaches_the_model_and_errors_the_ca
     ]
 
 
-# --- 子代理 -------------------------------------------------------------------
-
 WRITER = "shot-writer"
 COPY = "copy-writer"
 TASK = "写第 3 组的三个镜头"
 
 
-async def test_a_delegation_becomes_its_own_stream(engine: AsyncEngine, tmp_path: Path) -> None:
+async def test_a_delegation_becomes_its_own_stream(engine: AsyncEngine) -> None:
     store = TranscriptStore()
     writer = says("S3-1 特写；S3-2 中景；S3-3 全景")
     runner, step_store, queue = subagent_runner(
-        engine, tmp_path, store=store, parent=delegates((WRITER, TASK)), children={WRITER: writer}
+        engine, store=store, parent=delegates((WRITER, TASK)), children={WRITER: writer}
     )
     conversation_id = new_conversation_id()
 
@@ -1237,7 +1136,6 @@ async def test_a_delegation_becomes_its_own_stream(engine: AsyncEngine, tmp_path
         (task.task_id, task.state, task.description, task.result_summary, task.model)
         for task in live.tasks
     ] == [(child_id, "completed", WRITER, "S3-1 特写；S3-2 中景；S3-3 全景", writer.model_name)]
-    # 子代理的描述随任务结束：disposedAt 就是任务的 endedAt。
     assert [(agent.agent_id, agent.type, agent.disposed_at) for agent in live.agents] == [
         (MAIN_AGENT_ID, "main", None),
         (child_id, "sub", live.tasks[0].ended_at),
@@ -1258,13 +1156,10 @@ async def test_a_delegation_becomes_its_own_stream(engine: AsyncEngine, tmp_path
     check_golden("delegate-turn", {"rest": comparable(cold), "child_rest": comparable(child_cold)})
 
 
-async def test_two_delegations_in_one_response_do_not_cross(
-    engine: AsyncEngine, tmp_path: Path
-) -> None:
+async def test_two_delegations_in_one_response_do_not_cross(engine: AsyncEngine) -> None:
     store = TranscriptStore()
     runner, step_store, queue = subagent_runner(
         engine,
-        tmp_path,
         store=store,
         parent=delegates((WRITER, TASK), (COPY, "写一句文案")),
         children={WRITER: says("镜头一、镜头二"), COPY: says("一句文案")},
@@ -1294,12 +1189,11 @@ async def test_two_delegations_in_one_response_do_not_cross(
     assert len({card.agent_refs[0].agent_id for card in cards if card.agent_refs}) == 2
 
 
-async def test_stopping_the_parent_kills_the_child(engine: AsyncEngine, tmp_path: Path) -> None:
+async def test_stopping_the_parent_kills_the_child(engine: AsyncEngine) -> None:
     entered = asyncio.Event()
     store = TranscriptStore()
     runner, step_store, queue = subagent_runner(
         engine,
-        tmp_path,
         store=store,
         parent=delegates((WRITER, TASK)),
         children={WRITER: hangs(entered)},
@@ -1317,7 +1211,6 @@ async def test_stopping_the_parent_kills_the_child(engine: AsyncEngine, tmp_path
     assert [task.state for task in live.tasks] == ["killed"]
     card = frames_of(live, "t1", "t1.1")[0]
     assert isinstance(card, ToolFrame) and card.agent_refs is not None
-    # 子运行在它的第一个响应里就被停了，快照里没有它，冷侧读不到；这条边界与主 agent 相同。
     await assert_child_stream(
         store,
         step_store,
@@ -1331,49 +1224,20 @@ async def test_stopping_the_parent_kills_the_child(engine: AsyncEngine, tmp_path
     )
 
 
-def _spec(root: Path, name: str) -> Path:
-    folder = root / name
-    folder.mkdir(parents=True, exist_ok=True)
-    path = folder / "agent.yaml"
-    path.write_text("model: test\n", encoding="utf-8")
-    return path
-
-
 def subagent_runner(
     engine: AsyncEngine,
-    root: Path,
     *,
     store: TranscriptStore,
     parent: FunctionModel,
     children: dict[str, FunctionModel],
 ) -> tuple[ConversationRunner, PgStepStore, JobQueue]:
-    """按真实装配路径建一个带子代理的主 agent，再按生产接法装 runner。"""
-
     step_store = PgStepStore(engine)
-    models: dict[str, Any] = {AGENT_ID: parent, **children}
-    definitions = (
-        AgentDefinition(
-            agent_id=AGENT_ID,
-            spec=_spec(root, AGENT_ID),
-            model=AGENT_ID,
-            subagents=tuple(
-                SubAgentDefinition(name=name, spec=_spec(root, name), model=name)
-                for name in children
-            ),
-        ),
-    )
-    registry = build_agent_registry(
-        definitions,
-        step_store=step_store,
-        usage_ledger=discarding_usage_ledger(),
-        models=models,
-        subagent_mirror=SubAgentMirror(
-            live=store, display=DISPLAYS, profiles=subagent_profiles(definitions, models)
-        ),
+    agent = delegating_agent(
+        parent=parent, children=children, step_store=step_store, live=store, display=DISPLAYS
     )
     return make_runner(
         engine,
-        agents=registry.agents,
+        agents={AGENT_ID: agent},
         step_store=step_store,
         store=store,
         display=DISPLAYS,
@@ -1393,11 +1257,6 @@ async def assert_child_stream(
     state: str = "completed",
     cold: bool = True,
 ) -> tuple[TranscriptPage, TranscriptPage | None]:
-    """子代理那条流：按它的 id 走同一个 REST 接口，实时重放与刷新后重建逐字相等，且只有以任务文本开头的 t1。
-
-    cold=False 只看实时那份：子运行没落过快照时刷新后读不到，与主 agent 首个响应期间被停的边界相同。
-    """
-
     live = await live_page(
         store,
         conversation_id,
@@ -1426,12 +1285,7 @@ async def assert_child_stream(
     return live, rebuilt
 
 
-# --- 更多假模型 -----------------------------------------------------------------
-
-
 def reads_then_hangs(entered: asyncio.Event) -> FunctionModel:
-    """第一步读文件，第二步说半句就卡住。先过一个节点边界，这半句才会落进中断快照。"""
-
     asked = 0
 
     async def stream(
@@ -1455,8 +1309,6 @@ def reads_then_hangs(entered: asyncio.Event) -> FunctionModel:
 
 
 def reads_then_explodes(reason: str) -> FunctionModel:
-    """第一步读文件，第二步说半句就炸。"""
-
     asked = 0
 
     async def stream(
@@ -1480,8 +1332,6 @@ def reads_then_explodes(reason: str) -> FunctionModel:
 def waits_then_says(
     entered: asyncio.Event, gate: asyncio.Event, first: str, second: str
 ) -> FunctionModel:
-    """首个请求卡在门上等插话进来，之后各答一句。"""
-
     asked = 0
 
     async def stream(
@@ -1500,8 +1350,6 @@ def waits_then_says(
 
 
 def hangs(entered: asyncio.Event) -> FunctionModel:
-    """子代理用：说了半句就卡住，等父运行来停它。"""
-
     async def stream(
         _messages: list[ModelMessage], _info: AgentInfo
     ) -> AsyncIterator[str | DeltaToolCalls]:

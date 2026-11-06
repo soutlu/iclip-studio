@@ -1,0 +1,688 @@
+from __future__ import annotations
+
+import json
+from collections.abc import Mapping, Sequence
+from datetime import datetime
+from typing import Any, Final, Literal, cast, get_args
+
+import structlog
+from pydantic import TypeAdapter
+from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
+from pydantic_ai_harness.media import (
+    MediaContext,
+    MediaStore,
+    externalize_media,
+    media_uri_for,
+    parse_media_uri,
+    restore_media,
+)
+from pydantic_ai_harness.step_persistence import (
+    ContinuableSnapshot,
+    EventKind,
+    RunRecord,
+    SnapshotState,
+    StepEvent,
+    ToolEffectRecord,
+    ToolEffectStatus,
+)
+from pydantic_ai_harness.step_persistence._messages import (
+    MessageRefs,
+    keyed_messages,
+    message_refs,
+    referenced_history_json,
+)
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    Identity,
+    Index,
+    Integer,
+    LargeBinary,
+    MetaData,
+    PrimaryKeyConstraint,
+    Select,
+    Table,
+    Text,
+    any_,
+    delete,
+    literal,
+    select,
+    text,
+    tuple_,
+    union,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, TIMESTAMP
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+
+_logger = structlog.stdlib.get_logger(__name__)
+
+DB_SCHEMA: Final = "agent_runtime"
+
+_DEFAULT_MEDIA_THRESHOLD_BYTES: Final = 64 * 1024
+
+_EVENT_KINDS: Final[frozenset[EventKind]] = frozenset(get_args(EventKind))
+_TOOL_STATUSES: Final[frozenset[ToolEffectStatus]] = frozenset(get_args(ToolEffectStatus))
+_SNAPSHOT_STATES: Final[frozenset[SnapshotState]] = frozenset(get_args(SnapshotState))
+
+_EMPTY_CONTEXT: Final = MediaContext()
+
+_MESSAGES_PER_INSERT: Final = 1000
+
+_OBJECT_LIST_ADAPTER: Final = TypeAdapter(list[object])
+
+metadata_obj = MetaData(schema=DB_SCHEMA)
+
+runs_table = Table(
+    "runs",
+    metadata_obj,
+    Column("run_id", Text, primary_key=True),
+    Column("conversation_id", Text),
+    Column("parent_run_id", Text),
+    Column("agent_name", Text),
+    Column("metadata", Text, nullable=False),
+    Column("started_at", TIMESTAMP(timezone=True), nullable=False),
+    Column("registration_id", Text),
+    Index("idx_runs_conv", "conversation_id"),
+    Index("idx_runs_parent", "parent_run_id"),
+    Index("idx_runs_started", "started_at"),
+)
+
+events_table = Table(
+    "events",
+    metadata_obj,
+    Column("seq", BigInteger, Identity(always=True), primary_key=True),
+    Column("run_id", Text, nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("step_index", Integer, nullable=False),
+    Column("timestamp", TIMESTAMP(timezone=True), nullable=False),
+    Column("conversation_id", Text),
+    Column("parent_run_id", Text),
+    Column("agent_name", Text),
+    Column("tool_call_id", Text),
+    Column("tool_name", Text),
+    Column("error", Text),
+    Column("metadata", Text, nullable=False),
+    Column("idempotency_key", Text),
+    Index("idx_events_run", "run_id", "seq"),
+    Index(
+        "idx_events_run_started",
+        "timestamp",
+        postgresql_where=text("kind = 'run_started'"),
+    ),
+    Index(
+        "idx_events_idempotency",
+        "run_id",
+        "idempotency_key",
+        unique=True,
+        postgresql_where=text("idempotency_key IS NOT NULL"),
+    ),
+)
+
+snapshots_table = Table(
+    "snapshots",
+    metadata_obj,
+    Column("seq", BigInteger, Identity(always=True), primary_key=True),
+    Column("run_id", Text, nullable=False),
+    Column("step_index", Integer, nullable=False),
+    Column("conversation_id", Text),
+    Column("parent_run_id", Text),
+    Column("agent_name", Text),
+    Column("timestamp", TIMESTAMP(timezone=True), nullable=False),
+    Column("state", Text, nullable=False, server_default="complete"),
+    Column("messages", Text, nullable=False),
+    Column("idempotency_key", Text),
+    Index("idx_snapshots_run", "run_id", "seq"),
+    Index("idx_snapshots_conv", "conversation_id", "seq"),
+)
+
+snapshot_messages_table = Table(
+    "snapshot_messages",
+    metadata_obj,
+    Column("sha256", Text, primary_key=True),
+    Column("message", Text, nullable=False),
+)
+
+snapshot_idempotency_keys_table = Table(
+    "snapshot_idempotency_keys",
+    metadata_obj,
+    Column("run_id", Text, nullable=False),
+    Column("idempotency_key", Text, nullable=False),
+    PrimaryKeyConstraint("run_id", "idempotency_key"),
+)
+
+tool_effects_table = Table(
+    "tool_effects",
+    metadata_obj,
+    Column("run_id", Text, nullable=False),
+    Column("tool_call_id", Text, nullable=False),
+    Column("tool_name", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("started_at", TIMESTAMP(timezone=True), nullable=False),
+    Column("ended_at", TIMESTAMP(timezone=True)),
+    Column("idempotency_key", Text),
+    Column("effect_summary", Text),
+    PrimaryKeyConstraint("run_id", "tool_call_id"),
+)
+
+media_table = Table(
+    "media",
+    metadata_obj,
+    Column("sha256", Text, primary_key=True),
+    Column("media_type", Text),
+    Column("bytes", LargeBinary, nullable=False),
+    Column("size_bytes", BigInteger, nullable=False),
+    Column("metadata", Text),
+)
+
+
+def _str_str_dict(raw: object) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        raise ValueError(f"metadata payload must be a JSON object, got {type(raw).__name__}")
+    out: dict[str, str] = {}
+    for key, value in cast("dict[object, object]", raw).items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise ValueError(f"metadata entries must be str→str, got {key!r}: {value!r}")
+        out[key] = value
+    return out
+
+
+def _literal[T: str](raw: object, allowed: frozenset[T], what: str) -> T:
+    if isinstance(raw, str) and raw in allowed:
+        return cast(T, raw)
+    raise ValueError(f"unknown {what} {raw!r}")
+
+
+async def store_snapshot_history(conn: AsyncConnection, messages_json: object) -> str:
+    keyed = keyed_messages(_OBJECT_LIST_ADAPTER.validate_python(messages_json))
+    rows = sorted(dict(keyed).items())
+    for start in range(0, len(rows), _MESSAGES_PER_INSERT):
+        chunk = rows[start : start + _MESSAGES_PER_INSERT]
+        await conn.execute(
+            pg_insert(snapshot_messages_table)
+            .values([{"sha256": sha256, "message": message} for sha256, message in chunk])
+            .on_conflict_do_nothing(index_elements=["sha256"])
+        )
+    return json.dumps(MessageRefs(message_refs=[sha256 for sha256, _ in keyed]))
+
+
+async def _load_messages(conn: AsyncConnection, messages_texts: Sequence[str]) -> dict[str, str]:
+    refs = {ref for raw in messages_texts for ref in (message_refs(raw) or ())}
+    if not refs:
+        return {}
+    stmt = select(snapshot_messages_table.c.sha256, snapshot_messages_table.c.message).where(
+        snapshot_messages_table.c.sha256 == any_(literal(sorted(refs), ARRAY(Text)))
+    )
+    rows = (await conn.execute(stmt)).all()
+    return {cast("str", row[0]): cast("str", row[1]) for row in rows}
+
+
+class PgMediaStore:
+    def __init__(self, engine: AsyncEngine) -> None:
+        self._engine = engine
+
+    async def put(self, data: bytes, *, context: MediaContext = _EMPTY_CONTEXT) -> str:
+        uri = media_uri_for(data)
+        stmt = (
+            pg_insert(media_table)
+            .values(
+                sha256=parse_media_uri(uri),
+                media_type=context.media_type,
+                bytes=data,
+                size_bytes=len(data),
+                metadata=json.dumps(dict(context.metadata)),
+            )
+            .on_conflict_do_nothing(index_elements=["sha256"])
+        )
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
+        return uri
+
+    async def get(self, uri: str, *, context: MediaContext = _EMPTY_CONTEXT) -> bytes:
+        digest = parse_media_uri(uri)
+        async with self._engine.connect() as conn:
+            row = (
+                await conn.execute(
+                    select(media_table.c.bytes).where(media_table.c.sha256 == digest)
+                )
+            ).one_or_none()
+        if row is None:
+            raise FileNotFoundError(f"media not found: {digest}")
+        return bytes(row[0])
+
+    async def exists(self, uri: str, *, context: MediaContext = _EMPTY_CONTEXT) -> bool:
+        digest = parse_media_uri(uri)
+        async with self._engine.connect() as conn:
+            row = (
+                await conn.execute(
+                    select(media_table.c.sha256).where(media_table.c.sha256 == digest)
+                )
+            ).one_or_none()
+        return row is not None
+
+    async def public_url(self, uri: str, *, context: MediaContext = _EMPTY_CONTEXT) -> str | None:
+        return None
+
+    async def get_metadata(
+        self, uri: str, *, context: MediaContext = _EMPTY_CONTEXT
+    ) -> dict[str, str]:
+        digest = parse_media_uri(uri)
+        async with self._engine.connect() as conn:
+            row = (
+                await conn.execute(
+                    select(media_table.c.metadata).where(media_table.c.sha256 == digest)
+                )
+            ).one_or_none()
+        if row is None:
+            raise FileNotFoundError(f"media not found: {digest}")
+        raw = cast("str | None", row[0])
+        if raw is None:
+            return {}
+        return _str_str_dict(json.loads(raw))
+
+
+class PgStepStore:
+    def __init__(
+        self,
+        engine: AsyncEngine,
+        *,
+        media_store: MediaStore | Literal["auto"] | None = "auto",
+        media_threshold_bytes: int = _DEFAULT_MEDIA_THRESHOLD_BYTES,
+        max_snapshots_per_run: int | None = None,
+    ) -> None:
+        if max_snapshots_per_run is not None and max_snapshots_per_run < 1:
+            raise ValueError(
+                f"max_snapshots_per_run must be an int >= 1 or None, got {max_snapshots_per_run!r}"
+            )
+        self._engine = engine
+        self._max_snapshots_per_run = max_snapshots_per_run
+        self._media_store: MediaStore | None = (
+            PgMediaStore(engine) if media_store == "auto" else media_store
+        )
+        self._media_threshold_bytes = media_threshold_bytes
+
+    async def register_run(self, record: RunRecord) -> None:
+        stmt = runs_table.insert().values(
+            run_id=record.run_id,
+            conversation_id=record.conversation_id,
+            parent_run_id=record.parent_run_id,
+            agent_name=record.agent_name,
+            metadata=json.dumps(dict(record.metadata)),
+            started_at=record.started_at,
+            registration_id=record.registration_id,
+        )
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
+
+    async def get_run(self, *, run_id: str) -> RunRecord | None:
+        async with self._engine.connect() as conn:
+            row = (
+                await conn.execute(select(runs_table).where(runs_table.c.run_id == run_id))
+            ).one_or_none()
+        if row is None:
+            return None
+        return self._run_from_row(row)
+
+    async def list_runs(
+        self,
+        *,
+        parent_run_id: str | None = None,
+        conversation_id: str | None = None,
+    ) -> list[RunRecord]:
+        stmt = select(runs_table).order_by(runs_table.c.started_at.asc(), runs_table.c.run_id.asc())
+        if parent_run_id is not None:
+            stmt = stmt.where(runs_table.c.parent_run_id == parent_run_id)
+        if conversation_id is not None:
+            stmt = stmt.where(runs_table.c.conversation_id == conversation_id)
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [self._run_from_row(row) for row in rows]
+
+    async def list_child_runs(self, parent_run_ids: Sequence[str]) -> Mapping[str, list[RunRecord]]:
+        wanted = list(dict.fromkeys(parent_run_ids))
+        found: dict[str, list[RunRecord]] = {run_id: [] for run_id in wanted}
+        if not wanted:
+            return found
+        stmt = (
+            select(runs_table)
+            .where(runs_table.c.parent_run_id.in_(wanted))
+            .order_by(runs_table.c.started_at.asc(), runs_table.c.run_id.asc())
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        for row in rows:
+            record = self._run_from_row(row)
+            found[cast("str", record.parent_run_id)].append(record)
+        return found
+
+    @staticmethod
+    def _run_from_row(row: object) -> RunRecord:
+        r = cast("_RunRow", row)
+        return RunRecord(
+            run_id=r.run_id,
+            conversation_id=r.conversation_id,
+            parent_run_id=r.parent_run_id,
+            agent_name=r.agent_name,
+            metadata=_str_str_dict(json.loads(r.metadata)),
+            started_at=r.started_at,
+            registration_id=r.registration_id,
+        )
+
+    async def append_event(self, event: StepEvent) -> None:
+        stmt = pg_insert(events_table).values(
+            run_id=event.run_id,
+            kind=event.kind,
+            step_index=event.step_index,
+            timestamp=event.timestamp,
+            conversation_id=event.conversation_id,
+            parent_run_id=event.parent_run_id,
+            agent_name=event.agent_name,
+            tool_call_id=event.tool_call_id,
+            tool_name=event.tool_name,
+            error=event.error,
+            metadata=json.dumps(dict(event.metadata)),
+            idempotency_key=event.idempotency_key,
+        )
+        if event.idempotency_key is not None:
+            stmt = stmt.on_conflict_do_nothing(
+                index_elements=["run_id", "idempotency_key"],
+                index_where=events_table.c.idempotency_key.isnot(None),
+            )
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
+
+    async def list_events(self, *, run_id: str) -> list[StepEvent]:
+        stmt = (
+            select(events_table)
+            .where(events_table.c.run_id == run_id)
+            .order_by(events_table.c.seq.asc())
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [self._event_from_row(row) for row in rows]
+
+    async def list_events_for_runs(self, run_ids: Sequence[str]) -> Mapping[str, list[StepEvent]]:
+        wanted = list(dict.fromkeys(run_ids))
+        found: dict[str, list[StepEvent]] = {run_id: [] for run_id in wanted}
+        if not wanted:
+            return found
+        stmt = (
+            select(events_table)
+            .where(events_table.c.run_id.in_(wanted))
+            .order_by(events_table.c.run_id.asc(), events_table.c.seq.asc())
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        for row in rows:
+            event = self._event_from_row(row)
+            found[event.run_id].append(event)
+        return found
+
+    @staticmethod
+    def _event_from_row(row: object) -> StepEvent:
+        r = cast("_EventRow", row)
+        return StepEvent(
+            run_id=r.run_id,
+            kind=_literal(r.kind, _EVENT_KINDS, "event kind"),
+            step_index=r.step_index,
+            timestamp=r.timestamp,
+            conversation_id=r.conversation_id,
+            parent_run_id=r.parent_run_id,
+            agent_name=r.agent_name,
+            tool_call_id=r.tool_call_id,
+            tool_name=r.tool_name,
+            error=r.error,
+            metadata=_str_str_dict(json.loads(r.metadata)),
+            idempotency_key=r.idempotency_key,
+        )
+
+    async def save_snapshot(self, snapshot: ContinuableSnapshot) -> None:
+        messages_json: object = json.loads(
+            ModelMessagesTypeAdapter.dump_json(snapshot.messages).decode("utf-8")
+        )
+        if self._media_store is not None:
+            messages_json = await externalize_media(
+                messages_json,
+                media_store=self._media_store,
+                threshold_bytes=self._media_threshold_bytes,
+            )
+        async with self._engine.begin() as conn:
+            if snapshot.idempotency_key is not None:
+                claimed = (
+                    await conn.execute(
+                        pg_insert(snapshot_idempotency_keys_table)
+                        .values(
+                            run_id=snapshot.run_id,
+                            idempotency_key=snapshot.idempotency_key,
+                        )
+                        .on_conflict_do_nothing()
+                        .returning(snapshot_idempotency_keys_table.c.run_id)
+                    )
+                ).first()
+                if claimed is None:
+                    return
+            refs_json = await store_snapshot_history(conn, messages_json)
+            await conn.execute(
+                snapshots_table.insert().values(
+                    run_id=snapshot.run_id,
+                    step_index=snapshot.step_index,
+                    conversation_id=snapshot.conversation_id,
+                    parent_run_id=snapshot.parent_run_id,
+                    agent_name=snapshot.agent_name,
+                    timestamp=snapshot.timestamp,
+                    state=snapshot.state,
+                    messages=refs_json,
+                    idempotency_key=snapshot.idempotency_key,
+                )
+            )
+            if self._max_snapshots_per_run is not None:
+                newest_keep = (
+                    select(snapshots_table.c.seq)
+                    .where(snapshots_table.c.run_id == snapshot.run_id)
+                    .order_by(snapshots_table.c.seq.desc())
+                    .limit(self._max_snapshots_per_run)
+                )
+                newest_complete = (
+                    select(snapshots_table.c.seq)
+                    .where(
+                        snapshots_table.c.run_id == snapshot.run_id,
+                        snapshots_table.c.state == "complete",
+                    )
+                    .order_by(snapshots_table.c.seq.desc())
+                    .limit(1)
+                )
+                await conn.execute(
+                    delete(snapshots_table).where(
+                        snapshots_table.c.run_id == snapshot.run_id,
+                        snapshots_table.c.seq.not_in(union(newest_keep, newest_complete)),
+                    )
+                )
+
+    async def latest_snapshot(
+        self, *, run_id: str, include_interrupted: bool = False
+    ) -> ContinuableSnapshot | None:
+        stmt = select(snapshots_table).where(snapshots_table.c.run_id == run_id)
+        if not include_interrupted:
+            stmt = stmt.where(snapshots_table.c.state == "complete")
+        return await self._first_snapshot(stmt.order_by(snapshots_table.c.seq.desc()).limit(1))
+
+    async def latest_conversation_snapshot(
+        self, *, conversation_id: str, include_interrupted: bool = False
+    ) -> ContinuableSnapshot | None:
+        stmt = select(snapshots_table).where(snapshots_table.c.conversation_id == conversation_id)
+        if not include_interrupted:
+            stmt = stmt.where(snapshots_table.c.state == "complete")
+        return await self._first_snapshot(stmt.order_by(snapshots_table.c.seq.desc()).limit(1))
+
+    async def _first_snapshot(self, stmt: Select[Any]) -> ContinuableSnapshot | None:
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(stmt)).one_or_none()
+            if row is None:
+                return None
+            stored = await _load_messages(conn, [cast("_SnapshotRow", row).messages])
+        return await self._snapshot_from_row(cast("_SnapshotRow", row).run_id, row, stored)
+
+    async def list_snapshots(
+        self, *, run_id: str, include_interrupted: bool = False
+    ) -> list[ContinuableSnapshot]:
+        stmt = select(snapshots_table).where(snapshots_table.c.run_id == run_id)
+        if not include_interrupted:
+            stmt = stmt.where(snapshots_table.c.state == "complete")
+        stmt = stmt.order_by(snapshots_table.c.seq.asc())
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+            stored = await _load_messages(
+                conn, [cast("_SnapshotRow", row).messages for row in rows]
+            )
+        snapshots: list[ContinuableSnapshot] = []
+        for row in rows:
+            try:
+                snapshots.append(await self._snapshot_from_row(run_id, row, stored))
+            except Exception:
+                _logger.warning("跳过读不出的快照行", run_id=run_id, exc_info=True)
+        return snapshots
+
+    async def _snapshot_from_row(
+        self, run_id: str, row: object, stored: dict[str, str]
+    ) -> ContinuableSnapshot:
+        r = cast("_SnapshotRow", row)
+        messages_text = r.messages
+        refs = message_refs(messages_text)
+        if refs is not None:
+            messages_text = referenced_history_json(refs, stored)
+        messages_json: object = json.loads(messages_text)
+        if self._media_store is not None:
+            messages_json = await restore_media(messages_json, media_store=self._media_store)
+        messages: list[ModelMessage] = ModelMessagesTypeAdapter.validate_python(messages_json)
+        return ContinuableSnapshot(
+            run_id=run_id,
+            step_index=r.step_index,
+            messages=messages,
+            conversation_id=r.conversation_id,
+            parent_run_id=r.parent_run_id,
+            agent_name=r.agent_name,
+            timestamp=r.timestamp,
+            state=_literal(r.state, _SNAPSHOT_STATES, "snapshot state"),
+            idempotency_key=r.idempotency_key,
+        )
+
+    async def record_tool_effect(self, record: ToolEffectRecord) -> None:
+        stmt = pg_insert(tool_effects_table).values(
+            run_id=record.run_id,
+            tool_call_id=record.tool_call_id,
+            tool_name=record.tool_name,
+            status=record.status,
+            started_at=record.started_at,
+            ended_at=record.ended_at,
+            idempotency_key=record.idempotency_key,
+            effect_summary=record.effect_summary,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["run_id", "tool_call_id"],
+            set_={
+                "tool_name": stmt.excluded.tool_name,
+                "status": stmt.excluded.status,
+                "started_at": stmt.excluded.started_at,
+                "ended_at": stmt.excluded.ended_at,
+                "idempotency_key": stmt.excluded.idempotency_key,
+                "effect_summary": stmt.excluded.effect_summary,
+            },
+        )
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
+
+    async def get_tool_effect(self, *, run_id: str, tool_call_id: str) -> ToolEffectRecord | None:
+        stmt = select(tool_effects_table).where(
+            tool_effects_table.c.run_id == run_id,
+            tool_effects_table.c.tool_call_id == tool_call_id,
+        )
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(stmt)).one_or_none()
+        if row is None:
+            return None
+        return self._tool_effect_from_row(row)
+
+    async def get_tool_effects(
+        self, keys: Sequence[tuple[str, str]]
+    ) -> Mapping[tuple[str, str], ToolEffectRecord]:
+        wanted = list(dict.fromkeys(keys))
+        if not wanted:
+            return {}
+        stmt = select(tool_effects_table).where(
+            tuple_(tool_effects_table.c.run_id, tool_effects_table.c.tool_call_id).in_(wanted)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        records = (self._tool_effect_from_row(row) for row in rows)
+        return {(record.run_id, record.tool_call_id): record for record in records}
+
+    async def list_unresolved_tool_effects(self, *, run_id: str) -> list[ToolEffectRecord]:
+        stmt = select(tool_effects_table).where(
+            tool_effects_table.c.run_id == run_id,
+            tool_effects_table.c.status == "started",
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        return [self._tool_effect_from_row(row) for row in rows]
+
+    @staticmethod
+    def _tool_effect_from_row(row: object) -> ToolEffectRecord:
+        r = cast("_ToolEffectRow", row)
+        return ToolEffectRecord(
+            tool_call_id=r.tool_call_id,
+            tool_name=r.tool_name,
+            run_id=r.run_id,
+            status=_literal(r.status, _TOOL_STATUSES, "tool-effect status"),
+            started_at=r.started_at,
+            ended_at=r.ended_at,
+            idempotency_key=r.idempotency_key,
+            effect_summary=r.effect_summary,
+        )
+
+
+class _RunRow:
+    run_id: str
+    conversation_id: str | None
+    parent_run_id: str | None
+    agent_name: str | None
+    metadata: str
+    started_at: datetime
+    registration_id: str | None
+
+
+class _EventRow:
+    run_id: str
+    kind: str
+    step_index: int
+    timestamp: datetime
+    conversation_id: str | None
+    parent_run_id: str | None
+    agent_name: str | None
+    tool_call_id: str | None
+    tool_name: str | None
+    error: str | None
+    metadata: str
+    idempotency_key: str | None
+
+
+class _SnapshotRow:
+    run_id: str
+    step_index: int
+    conversation_id: str | None
+    parent_run_id: str | None
+    agent_name: str | None
+    timestamp: datetime
+    state: str
+    messages: str
+    idempotency_key: str | None
+
+
+class _ToolEffectRow:
+    run_id: str
+    tool_call_id: str
+    tool_name: str
+    status: str
+    started_at: datetime
+    ended_at: datetime | None
+    idempotency_key: str | None
+    effect_summary: str | None

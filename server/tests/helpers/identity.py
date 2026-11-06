@@ -1,12 +1,12 @@
-"""identity 测试替身与构造器。"""
-
 from __future__ import annotations
 
 import uuid
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from iclip.domains.identity.models import ApiKeyRecord, UserAccount
+from agent_runtime.errors import NotFound
+
+from iclip.domains.identity.models import ApiKeyRecord, Principal, UserAccount
 
 
 def make_account(
@@ -33,6 +33,19 @@ def make_account(
         created_at=datetime.now(UTC),
         last_login_at=None,
     )
+
+
+class FakePrincipals:
+    def __init__(self, *principals: Principal) -> None:
+        self._principals = {principal.user_id: principal for principal in principals}
+        self.asked: list[uuid.UUID] = []
+
+    async def __call__(self, user_id: uuid.UUID) -> Principal:
+        self.asked.append(user_id)
+        principal = self._principals.get(user_id)
+        if principal is None:
+            raise NotFound("用户不存在")
+        return principal
 
 
 class InMemoryUserRepository:

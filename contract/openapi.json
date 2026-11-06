@@ -1,6 +1,123 @@
 {
   "components": {
     "schemas": {
+      "ActiveVersionOut": {
+        "additionalProperties": false,
+        "description": "当前版本的摘要。",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "title": "Publishedat",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "publishedAt"
+        ],
+        "title": "ActiveVersionOut",
+        "type": "object"
+      },
+      "AgentConfig": {
+        "additionalProperties": false,
+        "description": "一个 agent 的配置。草稿里 ``model`` 可以为空，发布时必填。技能不写在这里，存在绑定表里。",
+        "properties": {
+          "instructions": {
+            "default": "",
+            "title": "Instructions",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentModelRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schema_version": {
+            "const": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "subagents": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SubagentConfig"
+            },
+            "title": "Subagents",
+            "type": "array"
+          },
+          "tools": {
+            "default": [],
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "cap": "#/components/schemas/CapToolConfig",
+                  "mcp": "#/components/schemas/McpToolConfig"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/CapToolConfig"
+                },
+                {
+                  "$ref": "#/components/schemas/McpToolConfig"
+                }
+              ]
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "schema_version"
+        ],
+        "title": "AgentConfig",
+        "type": "object"
+      },
+      "AgentCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "listed": {
+            "default": false,
+            "title": "Listed",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "AgentCreateIn",
+        "type": "object"
+      },
       "AgentDescriptor": {
         "additionalProperties": false,
         "properties": {
@@ -75,6 +192,662 @@
         "title": "AgentDescriptor",
         "type": "object"
       },
+      "AgentDetailOut": {
+        "additionalProperties": false,
+        "properties": {
+          "activeVersion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActiveVersionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "title": "Createdby",
+            "type": "string"
+          },
+          "createdByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyname"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/AgentDraftOut"
+          },
+          "hasSubagents": {
+            "title": "Hassubagents",
+            "type": "boolean"
+          },
+          "hasUnpublishedChanges": {
+            "title": "Hasunpublishedchanges",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "isSubagent": {
+            "title": "Issubagent",
+            "type": "boolean"
+          },
+          "listed": {
+            "title": "Listed",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sortOrder": {
+            "title": "Sortorder",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "usedBy": {
+            "items": {
+              "$ref": "#/components/schemas/AgentUsageOut"
+            },
+            "title": "Usedby",
+            "type": "array"
+          }
+        },
+        "required": [
+          "createdByName",
+          "id",
+          "name",
+          "description",
+          "status",
+          "listed",
+          "sortOrder",
+          "activeVersion",
+          "hasUnpublishedChanges",
+          "hasSubagents",
+          "isSubagent",
+          "createdBy",
+          "createdAt",
+          "updatedAt",
+          "draft",
+          "usedBy"
+        ],
+        "title": "AgentDetailOut",
+        "type": "object"
+      },
+      "AgentDraftIn": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/AgentConfig"
+          },
+          "lockVersion": {
+            "title": "Lockversion",
+            "type": "integer"
+          },
+          "skillIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Skillids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "config",
+          "skillIds",
+          "lockVersion"
+        ],
+        "title": "AgentDraftIn",
+        "type": "object"
+      },
+      "AgentDraftOut": {
+        "additionalProperties": false,
+        "properties": {
+          "baseVersionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseversionid"
+          },
+          "config": {
+            "$ref": "#/components/schemas/AgentConfig"
+          },
+          "lockVersion": {
+            "title": "Lockversion",
+            "type": "integer"
+          },
+          "skillIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Skillids",
+            "type": "array"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "updatedBy": {
+            "format": "uuid",
+            "title": "Updatedby",
+            "type": "string"
+          },
+          "updatedByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedbyname"
+          }
+        },
+        "required": [
+          "updatedByName",
+          "config",
+          "skillIds",
+          "baseVersionId",
+          "lockVersion",
+          "updatedBy",
+          "updatedAt"
+        ],
+        "title": "AgentDraftOut",
+        "type": "object"
+      },
+      "AgentImportItemOut": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "create",
+              "overwrite"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "agentId": {
+            "title": "Agentid",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProblemOut"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProblemOut"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "agentId",
+          "name",
+          "action",
+          "problems",
+          "warnings"
+        ],
+        "title": "AgentImportItemOut",
+        "type": "object"
+      },
+      "AgentImportOut": {
+        "additionalProperties": false,
+        "description": "导入检查或导入的结果。只建或覆盖草稿，不发布。",
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentImportItemOut"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "entry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProblemOut"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "entry",
+          "agents",
+          "problems",
+          "warnings"
+        ],
+        "title": "AgentImportOut",
+        "type": "object"
+      },
+      "AgentModelRef": {
+        "additionalProperties": false,
+        "description": "用哪个模型：``provider`` 是供应商的引用名，``name`` 是它的 llm 模型名。",
+        "properties": {
+          "credential_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Id"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "provider": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Provider",
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/AgentModelSettings",
+            "default": {}
+          }
+        },
+        "required": [
+          "provider",
+          "name"
+        ],
+        "title": "AgentModelRef",
+        "type": "object"
+      },
+      "AgentModelSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "thinking": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking"
+          }
+        },
+        "title": "AgentModelSettings",
+        "type": "object"
+      },
+      "AgentOrderIn": {
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "title": "AgentOrderIn",
+        "type": "object"
+      },
+      "AgentOut": {
+        "additionalProperties": false,
+        "properties": {
+          "activeVersion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActiveVersionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "title": "Createdby",
+            "type": "string"
+          },
+          "createdByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyname"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "hasSubagents": {
+            "title": "Hassubagents",
+            "type": "boolean"
+          },
+          "hasUnpublishedChanges": {
+            "title": "Hasunpublishedchanges",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "isSubagent": {
+            "title": "Issubagent",
+            "type": "boolean"
+          },
+          "listed": {
+            "title": "Listed",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sortOrder": {
+            "title": "Sortorder",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdByName",
+          "id",
+          "name",
+          "description",
+          "status",
+          "listed",
+          "sortOrder",
+          "activeVersion",
+          "hasUnpublishedChanges",
+          "hasSubagents",
+          "isSubagent",
+          "createdBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "AgentOut",
+        "type": "object"
+      },
+      "AgentPluginOut": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "requires": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Requires",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "description",
+          "requires",
+          "parameters"
+        ],
+        "title": "AgentPluginOut",
+        "type": "object"
+      },
+      "AgentPluginsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentPluginOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AgentPluginsOut",
+        "type": "object"
+      },
+      "AgentPreviewIn": {
+        "additionalProperties": false,
+        "description": "开一段 agent 测试预览：不给 ``versionId`` 试这个 agent 当下的草稿，给了试它的那一版。",
+        "properties": {
+          "versionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Versionid"
+          }
+        },
+        "title": "AgentPreviewIn",
+        "type": "object"
+      },
+      "AgentPreviewOut": {
+        "additionalProperties": false,
+        "description": "一段 agent 测试预览。``id`` 当对话 id 用在 transcript、发消息、订阅与读工作区文件的端点上，只有开它\n的人、且他此刻持 ``agent:manage`` 时认得。",
+        "properties": {
+          "agentId": {
+            "title": "Agentid",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "versionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Versionid"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "versionId",
+          "createdAt"
+        ],
+        "title": "AgentPreviewOut",
+        "type": "object"
+      },
+      "AgentProblemOut": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message"
+        ],
+        "title": "AgentProblemOut",
+        "type": "object"
+      },
+      "AgentPublishIn": {
+        "additionalProperties": false,
+        "properties": {
+          "lockVersion": {
+            "title": "Lockversion",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "lockVersion"
+        ],
+        "title": "AgentPublishIn",
+        "type": "object"
+      },
+      "AgentPublishProblemsOut": {
+        "description": "发布被拦下的 422：``detail`` 是一句话，``problems`` 列出全部问题。",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProblemOut"
+            },
+            "title": "Problems",
+            "type": "array"
+          }
+        },
+        "required": [
+          "detail",
+          "problems"
+        ],
+        "title": "AgentPublishProblemsOut",
+        "type": "object"
+      },
       "AgentRef": {
         "additionalProperties": false,
         "properties": {
@@ -102,6 +875,20 @@
           "agentId"
         ],
         "title": "AgentRef",
+        "type": "object"
+      },
+      "AgentRestoreIn": {
+        "additionalProperties": false,
+        "properties": {
+          "lockVersion": {
+            "title": "Lockversion",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "lockVersion"
+        ],
+        "title": "AgentRestoreIn",
         "type": "object"
       },
       "AgentStatusMeta": {
@@ -146,6 +933,236 @@
           }
         },
         "title": "AgentStatusMeta",
+        "type": "object"
+      },
+      "AgentUpdateIn": {
+        "additionalProperties": false,
+        "description": "不给或给 ``null`` 的项不动。",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "listed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Listed"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "AgentUpdateIn",
+        "type": "object"
+      },
+      "AgentUsageOut": {
+        "additionalProperties": false,
+        "description": "接口里 ``usedBy`` 的一项：一个在用的 agent，草稿或当前版本里引用了。",
+        "properties": {
+          "agentId": {
+            "title": "Agentid",
+            "type": "string"
+          },
+          "agentName": {
+            "title": "Agentname",
+            "type": "string"
+          },
+          "inActiveVersion": {
+            "title": "Inactiveversion",
+            "type": "boolean"
+          },
+          "inDraft": {
+            "title": "Indraft",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agentId",
+          "agentName",
+          "inDraft",
+          "inActiveVersion"
+        ],
+        "title": "AgentUsageOut",
+        "type": "object"
+      },
+      "AgentVersionDetailOut": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/AgentConfig"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "title": "Createdby",
+            "type": "string"
+          },
+          "createdByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyname"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "skillIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Skillids",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "createdByName",
+          "id",
+          "version",
+          "note",
+          "createdBy",
+          "createdAt",
+          "config",
+          "skillIds"
+        ],
+        "title": "AgentVersionDetailOut",
+        "type": "object"
+      },
+      "AgentVersionOut": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "title": "Createdby",
+            "type": "string"
+          },
+          "createdByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyname"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "createdByName",
+          "id",
+          "version",
+          "note",
+          "createdBy",
+          "createdAt"
+        ],
+        "title": "AgentVersionOut",
+        "type": "object"
+      },
+      "AgentVersionsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentVersionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AgentVersionsOut",
+        "type": "object"
+      },
+      "AgentsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AgentsOut",
         "type": "object"
       },
       "ApiKeyCreateIn": {
@@ -623,6 +1640,36 @@
         "title": "Body_auth_cookie_login_auth_login_post",
         "type": "object"
       },
+      "Body_import_agents_agents_import_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": "agent 的导出包（YAML）",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_agents_agents_import_post",
+        "type": "object"
+      },
+      "Body_import_skill_skills_import_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": "技能的 zip 压缩包",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_skill_skills_import_post",
+        "type": "object"
+      },
       "BrandFontConfirmIn": {
         "additionalProperties": false,
         "properties": {
@@ -849,6 +1896,39 @@
         "title": "BrandTemplatesOut",
         "type": "object"
       },
+      "CapToolConfig": {
+        "additionalProperties": false,
+        "description": "挂一个插件：``toolset`` 是插件的登记名，``parameters`` 按插件自己的参数校验。",
+        "properties": {
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "toolset": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Toolset",
+            "type": "string"
+          },
+          "type": {
+            "const": "cap",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "toolset"
+        ],
+        "title": "CapToolConfig",
+        "type": "object"
+      },
       "ClipEditDurationOut": {
         "additionalProperties": false,
         "description": "片段编辑接受的实际参考视频时长范围，单位秒。",
@@ -1044,21 +2124,11 @@
             ],
             "title": "Pendinginteraction",
             "type": "string"
-          },
-          "videoGeneration": {
-            "enum": [
-              "none",
-              "queued",
-              "running"
-            ],
-            "title": "Videogeneration",
-            "type": "string"
           }
         },
         "required": [
           "busy",
-          "pendingInteraction",
-          "videoGeneration"
+          "pendingInteraction"
         ],
         "title": "ConversationActivityOut",
         "type": "object"
@@ -1469,10 +2539,6 @@
             ],
             "title": "Deletedat"
           },
-          "eventEpoch": {
-            "title": "Eventepoch",
-            "type": "string"
-          },
           "forkTurn": {
             "anyOf": [
               {
@@ -1511,10 +2577,6 @@
               }
             ],
             "title": "Lastrunid"
-          },
-          "lastSeq": {
-            "title": "Lastseq",
-            "type": "integer"
           },
           "ownerUserId": {
             "format": "uuid",
@@ -1557,9 +2619,7 @@
           "completedAt",
           "forkedFrom",
           "forkTurn",
-          "activity",
-          "lastSeq",
-          "eventEpoch"
+          "activity"
         ],
         "title": "ConversationOut",
         "type": "object"
@@ -1633,6 +2693,31 @@
         "title": "ConversationTaskIn",
         "type": "object"
       },
+      "ConversationVideoProgressOut": {
+        "additionalProperties": false,
+        "description": "看得见的对话里，哪些下面还有视频记录没跑完、各到哪一步；没列出的就是没有。\n\n单独一个接口而不放在对话行上：它随生成任务变，不随轮次变，生成帧一到只重拉这一份。",
+        "properties": {
+          "conversations": {
+            "additionalProperties": {
+              "enum": [
+                "queued",
+                "running"
+              ],
+              "type": "string"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "title": "Conversations",
+            "type": "object"
+          }
+        },
+        "required": [
+          "conversations"
+        ],
+        "title": "ConversationVideoProgressOut",
+        "type": "object"
+      },
       "ConversationsAuditItemOut": {
         "additionalProperties": false,
         "description": "审计列表里的一段对话。\n\n``latestMasterUrl`` 是这段对话自己名下最新完成的一条素材片（出片或合成）的地址，不含分叉继承来的；\n没有素材片为 null。",
@@ -1685,10 +2770,6 @@
             ],
             "title": "Deletedat"
           },
-          "eventEpoch": {
-            "title": "Eventepoch",
-            "type": "string"
-          },
           "forkTurn": {
             "anyOf": [
               {
@@ -1727,10 +2808,6 @@
               }
             ],
             "title": "Lastrunid"
-          },
-          "lastSeq": {
-            "title": "Lastseq",
-            "type": "integer"
           },
           "latestMasterUrl": {
             "anyOf": [
@@ -1785,8 +2862,6 @@
           "forkedFrom",
           "forkTurn",
           "activity",
-          "lastSeq",
-          "eventEpoch",
           "latestMasterUrl"
         ],
         "title": "ConversationsAuditItemOut",
@@ -1847,6 +2922,510 @@
           "items"
         ],
         "title": "ConversationsPageOut",
+        "type": "object"
+      },
+      "CredentialCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "fields"
+        ],
+        "title": "CredentialCreateIn",
+        "type": "object"
+      },
+      "CredentialFieldOut": {
+        "additionalProperties": false,
+        "description": "密钥表单的一个字段。``secret`` 的值只会以打码形式返回。",
+        "properties": {
+          "default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "enum": [
+              "secret",
+              "text"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "type",
+          "required",
+          "default"
+        ],
+        "title": "CredentialFieldOut",
+        "type": "object"
+      },
+      "CredentialOptionOut": {
+        "additionalProperties": false,
+        "description": "agent 能选的一把密钥。",
+        "properties": {
+          "fields": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "isDefault": {
+            "title": "Isdefault",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "fields",
+          "isDefault"
+        ],
+        "title": "CredentialOptionOut",
+        "type": "object"
+      },
+      "CredentialOut": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "fields": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "usedBy": {
+            "items": {
+              "$ref": "#/components/schemas/AgentUsageOut"
+            },
+            "title": "Usedby",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "fields",
+          "usedBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "CredentialOut",
+        "type": "object"
+      },
+      "CredentialTestIn": {
+        "additionalProperties": false,
+        "description": "``credentialId`` 与 ``fields`` 至少给一个：只给 ``credentialId`` 试已保存的那一把；只给\n``fields`` 试一组还没保存的字段（规则同新建）；两个都给就是把 ``fields`` 叠到已保存的那一把上再试\n（规则同修改）。",
+        "properties": {
+          "credentialId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credentialid"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
+          }
+        },
+        "title": "CredentialTestIn",
+        "type": "object"
+      },
+      "CredentialUpdateIn": {
+        "additionalProperties": false,
+        "description": "不给或给 ``null`` 的项不动。",
+        "properties": {
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "CredentialUpdateIn",
+        "type": "object"
+      },
+      "CustomModelCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "api": {
+            "anyOf": [
+              {
+                "enum": [
+                  "chat",
+                  "responses",
+                  "gemini"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api"
+          },
+          "contextSize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextsize"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "thinking": {
+            "default": [],
+            "items": {
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "type": "string"
+            },
+            "title": "Thinking",
+            "type": "array"
+          },
+          "type": {
+            "enum": [
+              "llm",
+              "embedding",
+              "rerank"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "CustomModelCreateIn",
+        "type": "object"
+      },
+      "DeclarationOut": {
+        "additionalProperties": false,
+        "description": "一家可以接入的供应商。",
+        "properties": {
+          "apis": {
+            "items": {
+              "enum": [
+                "chat",
+                "responses",
+                "gemini"
+              ],
+              "type": "string"
+            },
+            "title": "Apis",
+            "type": "array"
+          },
+          "credentialFields": {
+            "items": {
+              "$ref": "#/components/schemas/CredentialFieldOut"
+            },
+            "title": "Credentialfields",
+            "type": "array"
+          },
+          "customModels": {
+            "title": "Custommodels",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/DeclaredModelOut"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "apis",
+          "credentialFields",
+          "customModels",
+          "models"
+        ],
+        "title": "DeclarationOut",
+        "type": "object"
+      },
+      "DeclarationsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "declarations": {
+            "items": {
+              "$ref": "#/components/schemas/DeclarationOut"
+            },
+            "title": "Declarations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "declarations"
+        ],
+        "title": "DeclarationsOut",
+        "type": "object"
+      },
+      "DeclaredModelOut": {
+        "additionalProperties": false,
+        "properties": {
+          "api": {
+            "anyOf": [
+              {
+                "enum": [
+                  "chat",
+                  "responses",
+                  "gemini"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api"
+          },
+          "contextSize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextsize"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "thinking": {
+            "items": {
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "type": "string"
+            },
+            "title": "Thinking",
+            "type": "array"
+          },
+          "type": {
+            "enum": [
+              "llm",
+              "embedding",
+              "rerank"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "api",
+          "contextSize",
+          "thinking"
+        ],
+        "title": "DeclaredModelOut",
+        "type": "object"
+      },
+      "DefaultModelIn": {
+        "additionalProperties": false,
+        "properties": {
+          "modelName": {
+            "title": "Modelname",
+            "type": "string"
+          },
+          "providerId": {
+            "format": "uuid",
+            "title": "Providerid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "providerId",
+          "modelName"
+        ],
+        "title": "DefaultModelIn",
+        "type": "object"
+      },
+      "DefaultModelOut": {
+        "additionalProperties": false,
+        "properties": {
+          "modelName": {
+            "title": "Modelname",
+            "type": "string"
+          },
+          "providerId": {
+            "format": "uuid",
+            "title": "Providerid",
+            "type": "string"
+          },
+          "providerName": {
+            "title": "Providername",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "llm",
+              "embedding",
+              "rerank"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "providerId",
+          "providerName",
+          "modelName",
+          "updatedAt"
+        ],
+        "title": "DefaultModelOut",
+        "type": "object"
+      },
+      "DefaultModelsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "defaults": {
+            "items": {
+              "$ref": "#/components/schemas/DefaultModelOut"
+            },
+            "title": "Defaults",
+            "type": "array"
+          }
+        },
+        "required": [
+          "defaults"
+        ],
+        "title": "DefaultModelsOut",
         "type": "object"
       },
       "DepartmentOut": {
@@ -1927,6 +3506,122 @@
           "order"
         ],
         "title": "DepartmentOut",
+        "type": "object"
+      },
+      "DraftFileInfoOut": {
+        "additionalProperties": false,
+        "properties": {
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "hash",
+          "updatedAt"
+        ],
+        "title": "DraftFileInfoOut",
+        "type": "object"
+      },
+      "DraftFileOut": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content",
+          "size",
+          "hash",
+          "updatedAt"
+        ],
+        "title": "DraftFileOut",
+        "type": "object"
+      },
+      "DraftFileRenameIn": {
+        "additionalProperties": false,
+        "description": "把草稿里的一个文件改到新路径，内容不变。",
+        "properties": {
+          "baseHash": {
+            "title": "Basehash",
+            "type": "string"
+          },
+          "from": {
+            "title": "From",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "baseHash"
+        ],
+        "title": "DraftFileRenameIn",
+        "type": "object"
+      },
+      "DraftFileWriteIn": {
+        "additionalProperties": false,
+        "properties": {
+          "baseHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basehash"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "baseHash"
+        ],
+        "title": "DraftFileWriteIn",
         "type": "object"
       },
       "ErrorModel": {
@@ -3389,6 +5084,7 @@
                   "no_source_text",
                   "model_call_failed",
                   "model_failed",
+                  "model_unavailable",
                   "timeout"
                 ],
                 "type": "string"
@@ -3480,6 +5176,7 @@
                   "no_source_text",
                   "model_call_failed",
                   "model_failed",
+                  "model_unavailable",
                   "timeout"
                 ],
                 "type": "string"
@@ -4387,6 +6084,545 @@
         "title": "LibraryVideosOut",
         "type": "object"
       },
+      "McpCheckIn": {
+        "additionalProperties": false,
+        "description": "试连一份还没保存的配置，什么都不存。给了 ``serverId`` 时，没给 ``url`` 就用那个已保存的服务的地址，\n没给 ``value`` 的请求头取它里面同名请求头的值；没给 ``serverId`` 时 ``url`` 与每个请求头的 ``value``\n都要给。",
+        "properties": {
+          "headers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/McpHeaderIn"
+            },
+            "title": "Headers",
+            "type": "array"
+          },
+          "serverId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serverid"
+          },
+          "timeoutSeconds": {
+            "default": 30,
+            "title": "Timeoutseconds",
+            "type": "integer"
+          },
+          "transport": {
+            "enum": [
+              "streamable_http",
+              "sse"
+            ],
+            "title": "Transport",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "transport"
+        ],
+        "title": "McpCheckIn",
+        "type": "object"
+      },
+      "McpCheckOut": {
+        "additionalProperties": false,
+        "description": "一次试连。没通也是 ``200``，看 ``ok``。",
+        "properties": {
+          "elapsedMs": {
+            "title": "Elapsedms",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/McpToolOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tools"
+          }
+        },
+        "required": [
+          "ok",
+          "elapsedMs",
+          "reason",
+          "tools"
+        ],
+        "title": "McpCheckOut",
+        "type": "object"
+      },
+      "McpHeaderIn": {
+        "additionalProperties": false,
+        "description": "一个请求头。改已保存的服务时 ``value`` 可以不给，就是沿用同名请求头原来的值；新建时必须给。",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "McpHeaderIn",
+        "type": "object"
+      },
+      "McpHeaderOut": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "title": "McpHeaderOut",
+        "type": "object"
+      },
+      "McpLastCheckOut": {
+        "additionalProperties": false,
+        "properties": {
+          "checkedAt": {
+            "format": "date-time",
+            "title": "Checkedat",
+            "type": "string"
+          },
+          "elapsedMs": {
+            "title": "Elapsedms",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "ok",
+          "elapsedMs",
+          "reason",
+          "checkedAt"
+        ],
+        "title": "McpLastCheckOut",
+        "type": "object"
+      },
+      "McpServerCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "headers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/McpHeaderIn"
+            },
+            "title": "Headers",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "timeoutSeconds": {
+            "default": 30,
+            "title": "Timeoutseconds",
+            "type": "integer"
+          },
+          "transport": {
+            "enum": [
+              "streamable_http",
+              "sse"
+            ],
+            "title": "Transport",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "url",
+          "transport"
+        ],
+        "title": "McpServerCreateIn",
+        "type": "object"
+      },
+      "McpServerOut": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "title": "Createdby",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "headers": {
+            "items": {
+              "$ref": "#/components/schemas/McpHeaderOut"
+            },
+            "title": "Headers",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "lastCheck": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/McpLastCheckOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "timeoutSeconds": {
+            "title": "Timeoutseconds",
+            "type": "integer"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/McpToolOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tools"
+          },
+          "transport": {
+            "enum": [
+              "streamable_http",
+              "sse"
+            ],
+            "title": "Transport",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "updatedBy": {
+            "format": "uuid",
+            "title": "Updatedby",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "usedBy": {
+            "items": {
+              "$ref": "#/components/schemas/AgentUsageOut"
+            },
+            "title": "Usedby",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "url",
+          "transport",
+          "timeoutSeconds",
+          "headers",
+          "enabled",
+          "lastCheck",
+          "tools",
+          "usedBy",
+          "createdBy",
+          "updatedBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "McpServerOut",
+        "type": "object"
+      },
+      "McpServerUpdateIn": {
+        "additionalProperties": false,
+        "description": "不给或给 ``null`` 的项不动，``url`` 不给就沿用原来的地址。给了 ``headers`` 就整份替换请求头，其中\n没给 ``value`` 的沿用同名请求头原来的值。",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "headers": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/McpHeaderIn"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headers"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "timeoutSeconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeoutseconds"
+          },
+          "transport": {
+            "anyOf": [
+              {
+                "enum": [
+                  "streamable_http",
+                  "sse"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transport"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "title": "McpServerUpdateIn",
+        "type": "object"
+      },
+      "McpServersOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/McpServerOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "McpServersOut",
+        "type": "object"
+      },
+      "McpToolConfig": {
+        "additionalProperties": false,
+        "description": "挂一个 MCP 服务：``server`` 是服务的标识，``tools`` 是放给模型的工具（服务自己给的名字），``null``\n是全部。",
+        "properties": {
+          "server": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Server",
+            "type": "string"
+          },
+          "tools": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tools"
+          },
+          "type": {
+            "const": "mcp",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "server"
+        ],
+        "title": "McpToolConfig",
+        "type": "object"
+      },
+      "McpToolOut": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "description"
+        ],
+        "title": "McpToolOut",
+        "type": "object"
+      },
       "MetaMergeOp": {
         "additionalProperties": false,
         "properties": {
@@ -4665,6 +6901,333 @@
           "tokensPerDelivery"
         ],
         "title": "MetricsOut",
+        "type": "object"
+      },
+      "ModelOptionOut": {
+        "additionalProperties": false,
+        "description": "agent 能选的一个对话模型。",
+        "properties": {
+          "contextSize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextsize"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "thinking": {
+            "items": {
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "type": "string"
+            },
+            "title": "Thinking",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "contextSize",
+          "thinking"
+        ],
+        "title": "ModelOptionOut",
+        "type": "object"
+      },
+      "ModelOptionsOut": {
+        "additionalProperties": false,
+        "description": "agent 编辑页选模型用：只读，只列启用的供应商。",
+        "properties": {
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderOptionOut"
+            },
+            "title": "Providers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "providers"
+        ],
+        "title": "ModelOptionsOut",
+        "type": "object"
+      },
+      "ModelProviderCreateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "provider",
+          "label"
+        ],
+        "title": "ModelProviderCreateIn",
+        "type": "object"
+      },
+      "ModelProviderOut": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "credentials": {
+            "items": {
+              "$ref": "#/components/schemas/CredentialOut"
+            },
+            "title": "Credentials",
+            "type": "array"
+          },
+          "defaultCredentialId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defaultcredentialid"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderModelOut"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "provider",
+          "label",
+          "enabled",
+          "defaultCredentialId",
+          "credentials",
+          "models",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ModelProviderOut",
+        "type": "object"
+      },
+      "ModelProviderUpdateIn": {
+        "additionalProperties": false,
+        "description": "不给或给 ``null`` 的项不动。",
+        "properties": {
+          "defaultCredentialId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defaultcredentialid"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "title": "ModelProviderUpdateIn",
+        "type": "object"
+      },
+      "ModelProvidersOut": {
+        "additionalProperties": false,
+        "properties": {
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ModelProviderOut"
+            },
+            "title": "Providers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "providers"
+        ],
+        "title": "ModelProvidersOut",
+        "type": "object"
+      },
+      "ModelTestIn": {
+        "additionalProperties": false,
+        "description": "测试供应商的一个模型：用 ``credentialId`` 那把密钥，不给就用供应商的默认密钥。",
+        "properties": {
+          "credentialId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credentialid"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "llm",
+              "embedding",
+              "rerank"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "ModelTestIn",
+        "type": "object"
+      },
+      "ModelUpdateIn": {
+        "additionalProperties": false,
+        "description": "不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余三项只有自己加的模型能改，\n``contextSize`` 给 ``null`` 即清掉。",
+        "properties": {
+          "api": {
+            "anyOf": [
+              {
+                "enum": [
+                  "chat",
+                  "responses",
+                  "gemini"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api"
+          },
+          "contextSize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextsize"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "thinking": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "none",
+                    "minimal",
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking"
+          }
+        },
+        "title": "ModelUpdateIn",
         "type": "object"
       },
       "ModelUsageOut": {
@@ -5203,7 +7766,9 @@
           "users:act_as",
           "api_keys:issue",
           "agent:read",
-          "agent:run"
+          "agent:run",
+          "agent:manage",
+          "model:manage"
         ],
         "type": "string"
       },
@@ -5232,6 +7797,37 @@
           "trend"
         ],
         "title": "PersonOut",
+        "type": "object"
+      },
+      "ProbeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "elapsedMs": {
+            "title": "Elapsedms",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "ok",
+          "elapsedMs",
+          "reason"
+        ],
+        "title": "ProbeOut",
         "type": "object"
       },
       "Prompt": {
@@ -5436,6 +8032,141 @@
         "title": "PromptUpsertOp",
         "type": "object"
       },
+      "ProviderModelOut": {
+        "additionalProperties": false,
+        "description": "供应商的一个模型：声明里的叠加停用设置，或自己加的。",
+        "properties": {
+          "api": {
+            "anyOf": [
+              {
+                "enum": [
+                  "chat",
+                  "responses",
+                  "gemini"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api"
+          },
+          "contextSize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextsize"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "declared",
+              "custom"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "thinking": {
+            "items": {
+              "enum": [
+                "none",
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "type": "string"
+            },
+            "title": "Thinking",
+            "type": "array"
+          },
+          "type": {
+            "enum": [
+              "llm",
+              "embedding",
+              "rerank"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "usedBy": {
+            "items": {
+              "$ref": "#/components/schemas/AgentUsageOut"
+            },
+            "title": "Usedby",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "api",
+          "contextSize",
+          "thinking",
+          "source",
+          "enabled",
+          "usedBy"
+        ],
+        "title": "ProviderModelOut",
+        "type": "object"
+      },
+      "ProviderOptionOut": {
+        "additionalProperties": false,
+        "description": "agent 能选的一个供应商。",
+        "properties": {
+          "credentials": {
+            "items": {
+              "$ref": "#/components/schemas/CredentialOptionOut"
+            },
+            "title": "Credentials",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelOptionOut"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "label",
+          "models",
+          "credentials"
+        ],
+        "title": "ProviderOptionOut",
+        "type": "object"
+      },
       "ReferenceCreateIn": {
         "additionalProperties": false,
         "properties": {
@@ -5538,6 +8269,7 @@
                   "video_unreadable",
                   "model_call_failed",
                   "model_failed",
+                  "model_unavailable",
                   "timeout"
                 ],
                 "type": "string"
@@ -5560,6 +8292,7 @@
                   "no_source_text",
                   "model_call_failed",
                   "model_failed",
+                  "model_unavailable",
                   "timeout"
                 ],
                 "type": "string"
@@ -5678,6 +8411,7 @@
                   "video_unreadable",
                   "model_call_failed",
                   "model_failed",
+                  "model_unavailable",
                   "timeout"
                 ],
                 "type": "string"
@@ -5700,6 +8434,7 @@
                   "no_source_text",
                   "model_call_failed",
                   "model_failed",
+                  "model_unavailable",
                   "timeout"
                 ],
                 "type": "string"
@@ -6062,6 +8797,602 @@
         "title": "SidebarOut",
         "type": "object"
       },
+      "SkillCreateIn": {
+        "additionalProperties": false,
+        "description": "新建一个技能，同时生成一份带 frontmatter 的 ``SKILL.md`` 草稿。",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "displayName",
+          "description"
+        ],
+        "title": "SkillCreateIn",
+        "type": "object"
+      },
+      "SkillDetailOut": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "title": "Createdby",
+            "type": "string"
+          },
+          "createdByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyname"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          },
+          "draftFiles": {
+            "items": {
+              "$ref": "#/components/schemas/DraftFileInfoOut"
+            },
+            "title": "Draftfiles",
+            "type": "array"
+          },
+          "hasUnpublishedChanges": {
+            "title": "Hasunpublishedchanges",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "latestVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latestversion"
+          },
+          "latestVersionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latestversionid"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "usedBy": {
+            "items": {
+              "$ref": "#/components/schemas/AgentUsageOut"
+            },
+            "title": "Usedby",
+            "type": "array"
+          }
+        },
+        "required": [
+          "createdByName",
+          "id",
+          "name",
+          "displayName",
+          "description",
+          "status",
+          "latestVersionId",
+          "latestVersion",
+          "hasUnpublishedChanges",
+          "createdBy",
+          "createdAt",
+          "updatedAt",
+          "draftFiles",
+          "usedBy"
+        ],
+        "title": "SkillDetailOut",
+        "type": "object"
+      },
+      "SkillFileOut": {
+        "additionalProperties": false,
+        "description": "清单里的一个文件。",
+        "properties": {
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "hash"
+        ],
+        "title": "SkillFileOut",
+        "type": "object"
+      },
+      "SkillImportOut": {
+        "additionalProperties": false,
+        "description": "导入检查或导入的结果。只建或覆盖草稿，不发布。",
+        "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "enum": [
+                  "create",
+                  "overwrite"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displayname"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SkillFileOut"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "skillId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skillid"
+          }
+        },
+        "required": [
+          "action",
+          "skillId",
+          "name",
+          "displayName",
+          "description",
+          "files",
+          "problems"
+        ],
+        "title": "SkillImportOut",
+        "type": "object"
+      },
+      "SkillOut": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "title": "Createdby",
+            "type": "string"
+          },
+          "createdByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyname"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "displayName": {
+            "title": "Displayname",
+            "type": "string"
+          },
+          "hasUnpublishedChanges": {
+            "title": "Hasunpublishedchanges",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "latestVersion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latestversion"
+          },
+          "latestVersionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latestversionid"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdByName",
+          "id",
+          "name",
+          "displayName",
+          "description",
+          "status",
+          "latestVersionId",
+          "latestVersion",
+          "hasUnpublishedChanges",
+          "createdBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "SkillOut",
+        "type": "object"
+      },
+      "SkillPublishIn": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "title": "SkillPublishIn",
+        "type": "object"
+      },
+      "SkillUpdateIn": {
+        "additionalProperties": false,
+        "description": "改显示名或标识，不给的项不动，至少给一项；都不进版本，保存即生效。",
+        "properties": {
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displayname"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "SkillUpdateIn",
+        "type": "object"
+      },
+      "SkillVersionDetailOut": {
+        "additionalProperties": false,
+        "properties": {
+          "contentHash": {
+            "title": "Contenthash",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "title": "Createdby",
+            "type": "string"
+          },
+          "createdByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyname"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/SkillFileOut"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "createdByName",
+          "id",
+          "version",
+          "note",
+          "contentHash",
+          "createdBy",
+          "createdAt",
+          "files"
+        ],
+        "title": "SkillVersionDetailOut",
+        "type": "object"
+      },
+      "SkillVersionFileOut": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "hash": {
+            "title": "Hash",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "size",
+          "hash",
+          "content"
+        ],
+        "title": "SkillVersionFileOut",
+        "type": "object"
+      },
+      "SkillVersionOut": {
+        "additionalProperties": false,
+        "properties": {
+          "contentHash": {
+            "title": "Contenthash",
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "createdBy": {
+            "format": "uuid",
+            "title": "Createdby",
+            "type": "string"
+          },
+          "createdByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyname"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "createdByName",
+          "id",
+          "version",
+          "note",
+          "contentHash",
+          "createdBy",
+          "createdAt"
+        ],
+        "title": "SkillVersionOut",
+        "type": "object"
+      },
+      "SkillVersionsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SkillVersionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SkillVersionsOut",
+        "type": "object"
+      },
+      "SkillsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SkillOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SkillsOut",
+        "type": "object"
+      },
       "SpreadOut": {
         "additionalProperties": false,
         "description": "一组时长样本的分布，单位秒。",
@@ -6306,6 +9637,58 @@
           "matchLevel"
         ],
         "title": "StyleMatchOut",
+        "type": "object"
+      },
+      "SubagentConfig": {
+        "additionalProperties": false,
+        "description": "派活给哪个 agent。后三项与派活工具的同名控制项一致，不写就不限。",
+        "properties": {
+          "agent": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Agent",
+            "type": "string"
+          },
+          "max_calls": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Calls"
+          },
+          "on_failure": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "On Failure"
+          },
+          "timeout_seconds": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout Seconds"
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "title": "SubagentConfig",
         "type": "object"
       },
       "SubtitleIn": {
@@ -10891,6 +14274,954 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/agents": {
+      "get": {
+        "description": "全部 agent，含已归档的，每个带当前版本摘要、有没有未发布的修改与子 agent 的两个标记。",
+        "operationId": "list_agents_agents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "List Agents",
+        "tags": [
+          "agents"
+        ]
+      },
+      "post": {
+        "description": "新建一个 agent，草稿是空配置；``listed`` 不给就不上首页菜单。标识已被占用是 409。",
+        "operationId": "create_agent_agents_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Create Agent",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/agents/import": {
+      "post": {
+        "description": "导入一个导出包：``dryRun=true`` 只检查不写；否则覆盖同标识 agent 的草稿、新建没有的，都不\n发布，有问题是 422。",
+        "operationId": "import_agents_agents_import_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dryRun",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Dryrun",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_agents_agents_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentImportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Import Agents",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/agents/model-options": {
+      "get": {
+        "description": "agent 能选的模型：启用的供应商，各带启用的对话模型与打码的密钥。只读，不要 ``model:manage``。",
+        "operationId": "agent_model_options_agents_model_options_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelOptionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Agent Model Options",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/agents/order": {
+      "put": {
+        "description": "按给的先后排；要给出全部 agent 的标识。",
+        "operationId": "reorder_agents_agents_order_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentOrderIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Reorder Agents",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/agents/plugins": {
+      "get": {
+        "description": "本部署能挂的全部插件：插件名、名字、说明、要求一起启用的插件与参数的 JSON Schema。",
+        "operationId": "list_agent_plugins_agents_plugins_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPluginsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "List Agent Plugins",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/agents/{agent_id}": {
+      "get": {
+        "description": "一个 agent 连同草稿、技能绑定、``lockVersion`` 与当前版本摘要。",
+        "operationId": "agent_detail_agents__agent_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Agent Detail",
+        "tags": [
+          "agents"
+        ]
+      },
+      "patch": {
+        "description": "改名称、描述或上不上菜单；标识不能改。",
+        "operationId": "update_agent_agents__agent_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Update Agent",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/agents/{agent_id}/archive": {
+      "post": {
+        "description": "归档；别的 agent 的草稿或当前版本还把它当作子 agent 是 409。",
+        "operationId": "archive_agent_agents__agent_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Archive Agent",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/agents/{agent_id}/draft": {
+      "put": {
+        "description": "整份保存草稿；``lockVersion`` 对不上是 409。只查结构，不查引用。",
+        "operationId": "save_agent_draft_agents__agent_id__draft_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentDraftIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Save Agent Draft",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/agents/{agent_id}/export": {
+      "get": {
+        "description": "把它与它的子 agent 各自的当前版本写成导出包；没发布过是 404。",
+        "operationId": "export_agent_agents__agent_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/yaml": {}
+            },
+            "description": "agent 的导出包"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Export Agent",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/agents/{agent_id}/previews": {
+      "post": {
+        "description": "给调用者开一段新的测试预览，换掉他在这个 agent 上的当前预览：不给 ``versionId`` 试这个 agent 当下的\n草稿（每次发消息都按那一刻的草稿装配），给了试它的那一版。不看上不上菜单、在不在用、发没发布过。\n\n没有这个 agent 是 404，版本不是它的是 422，这时当前那段不动。换掉之前先中断当前那段，中断不成就返回错误、\n不换；换掉的那段 id 在哪个端点上都是 404。",
+        "operationId": "open_preview_agents__agent_id__previews_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AgentPreviewIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Open Preview",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/agents/{agent_id}/unarchive": {
+      "post": {
+        "operationId": "unarchive_agent_agents__agent_id__unarchive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Unarchive Agent",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/agents/{agent_id}/versions": {
+      "get": {
+        "operationId": "agent_versions_agents__agent_id__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentVersionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Agent Versions",
+        "tags": [
+          "agents"
+        ]
+      },
+      "post": {
+        "description": "把草稿发布成新版本。``lockVersion`` 对不上是 409；编译没通过是 422，带全部问题；与当前版本\n相同是 422「没有可发布的改动」，``problems`` 为空。",
+        "operationId": "publish_agent_agents__agent_id__versions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPublishIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentVersionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPublishProblemsOut"
+                }
+              }
+            },
+            "description": "发布被拦下"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Publish Agent",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/agents/{agent_id}/versions/{version_id}": {
+      "get": {
+        "description": "一个版本连同它的配置与技能名单。",
+        "operationId": "agent_version_agents__agent_id__versions__version_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentVersionDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Agent Version",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/agents/{agent_id}/versions/{version_id}/restore": {
+      "post": {
+        "description": "把这个版本的配置与技能名单抄回草稿；不发布。``lockVersion`` 对不上是 409。",
+        "operationId": "restore_agent_version_agents__agent_id__versions__version_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRestoreIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Restore Agent Version",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
     "/api-keys": {
       "get": {
         "operationId": "list_keys_api_keys_get",
@@ -12222,7 +16553,7 @@
         ]
       },
       "post": {
-        "description": "开一段对话。带 ``id`` 重发时不新建，答复已有那一段并把状态码降为 200。\n\n带 ``sameAs`` 是做同款：调用者没有 ``generation:read``、或 ``sameAs`` 不是挂着对话的\n资料库卡是 404，源没有工程文件或分镜文件是 422。",
+        "description": "开一段对话。带 ``id`` 重发时不新建，答复已有那一段并把状态码降为 200。\n\n带 ``sameAs`` 是做同款：调用者没有 ``generation:read``、或 ``sameAs`` 不是挂着对话的\n资料库卡是 404，源没有工程文件或分镜文件是 422。\n\n新对话固定在 agent 此刻的当前版本上：没有这个 agent 或它不上首页菜单是 422，已归档或还没发布过\n是 409。",
         "operationId": "create_conversation_conversations_post",
         "requestBody": {
           "content": {
@@ -12276,7 +16607,7 @@
     },
     "/conversations/agents": {
       "get": {
-        "description": "读取当前装配的顶层 Agent 名册，按声明顺序返回；热重载后下次请求即见新目录。",
+        "description": "首页能选的顶层 Agent：上菜单、在用、发布过，按配置里的先后；第一个是默认项。",
         "operationId": "list_agents_conversations_agents_get",
         "responses": {
           "200": {
@@ -12780,6 +17111,40 @@
         ]
       }
     },
+    "/conversations/video-progress": {
+      "get": {
+        "description": "还有视频记录没跑完的对话各到哪一步；没列出的就是没有。\n\n出片、编辑段与合成都算，至少一条已离开排队就是 ``running``；字幕、音频、成片与超分记录不算。\n范围按记录的属主：普通用户只看自己的，治理者与替人办事的钥匙看全平台。收到本对话的视频帧\n就重拉这一份。",
+        "operationId": "read_video_progress_conversations_video_progress_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationVideoProgressOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:read"
+            ]
+          }
+        ],
+        "summary": "Read Video Progress",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
     "/conversations/{conversation_id}": {
       "delete": {
         "operationId": "delete_conversation_conversations__conversation_id__delete",
@@ -12828,7 +17193,7 @@
         ]
       },
       "get": {
-        "description": "读一段对话的整行，给列表在轮次状态变化后单独刷新这一行（照 Kimi 按 id 取会话）。\n\n可见范围同其他读路径：治理者读得到所有人的对话，含属主删掉的墓碑；其余人只见自己活着的，\n看不见与不存在一样是 404。``lastSeq`` 是读这一行之前的事件水位。",
+        "description": "读一段对话的整行，给列表在轮次状态变化后单独刷新这一行（照 Kimi 按 id 取会话）。\n\n可见范围同其他读路径：治理者读得到所有人的对话，含属主删掉的墓碑；其余人只见自己活着的，\n看不见与不存在一样是 404。",
         "operationId": "read_conversation_conversations__conversation_id__get",
         "parameters": [
           {
@@ -14723,7 +19088,7 @@
     },
     "/conversations/{conversation_id}:fork": {
       "post": {
-        "description": "从看得见的某段对话的第 ``turn`` 轮分叉出一段自己的对话，源对话不变。\n\n源看不见是 404，正在跑是 409，轮号越界是 422。副本的 id 由服务端铸。",
+        "description": "从看得见的某段对话的第 ``turn`` 轮分叉出一段自己的对话，源对话不变。\n\n源看不见是 404，正在跑是 409，轮号越界是 422。副本的 id 由服务端铸。副本沿用源对话固定的\nagent 版本；换了 ``agentId`` 时按开新对话的规矩固定那个 agent 的当前版本。",
         "operationId": "fork_conversation_conversations__conversation_id__fork_post",
         "parameters": [
           {
@@ -14784,6 +19149,110 @@
         "summary": "Fork Conversation",
         "tags": [
           "conversations"
+        ]
+      }
+    },
+    "/default-models": {
+      "get": {
+        "description": "各类型的默认模型。",
+        "operationId": "default_models_default_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultModelsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Default Models",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/default-models/{model_type}": {
+      "put": {
+        "description": "把这个类型的默认模型设成某供应商一个已启用的模型。",
+        "operationId": "set_default_model_default_models__model_type__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "llm",
+                "embedding",
+                "rerank"
+              ],
+              "title": "Model Type",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DefaultModelIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultModelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Set Default Model",
+        "tags": [
+          "model-providers"
         ]
       }
     },
@@ -16763,6 +21232,1154 @@
         ]
       }
     },
+    "/mcp-servers": {
+      "get": {
+        "description": "全部 MCP 服务，带打码的请求头、上一次试连、发现的工具与挂着它的 agent。",
+        "operationId": "mcp_servers_mcp_servers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServersOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Mcp Servers",
+        "tags": [
+          "mcp-servers"
+        ]
+      },
+      "post": {
+        "description": "建一个 MCP 服务，不连它。",
+        "operationId": "create_mcp_server_mcp_servers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpServerCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Create Mcp Server",
+        "tags": [
+          "mcp-servers"
+        ]
+      }
+    },
+    "/mcp-servers/check": {
+      "post": {
+        "description": "按一份还没保存的配置试连，什么都不存；没通也是 200。",
+        "operationId": "check_unsaved_mcp_server_mcp_servers_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpCheckIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpCheckOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Check Unsaved Mcp Server",
+        "tags": [
+          "mcp-servers"
+        ]
+      }
+    },
+    "/mcp-servers/{server_id}": {
+      "delete": {
+        "description": "删一个 MCP 服务；有 agent 挂着时不能删。",
+        "operationId": "delete_mcp_server_mcp_servers__server_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Delete Mcp Server",
+        "tags": [
+          "mcp-servers"
+        ]
+      },
+      "get": {
+        "description": "一个 MCP 服务。",
+        "operationId": "mcp_server_mcp_servers__server_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Mcp Server",
+        "tags": [
+          "mcp-servers"
+        ]
+      },
+      "patch": {
+        "description": "改给了的项，不连它；有 agent 挂着时不能停用。",
+        "operationId": "update_mcp_server_mcp_servers__server_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpServerUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpServerOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Update Mcp Server",
+        "tags": [
+          "mcp-servers"
+        ]
+      }
+    },
+    "/mcp-servers/{server_id}/check": {
+      "post": {
+        "description": "按已保存的配置试连，记下结果；通了换掉发现的工具。没通也是 200。",
+        "operationId": "check_mcp_server_mcp_servers__server_id__check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpCheckOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Check Mcp Server",
+        "tags": [
+          "mcp-servers"
+        ]
+      }
+    },
+    "/model-providers": {
+      "get": {
+        "description": "接入的全部供应商，带打码的密钥、默认密钥与合并后的模型列表。",
+        "operationId": "model_providers_model_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProvidersOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Model Providers",
+        "tags": [
+          "model-providers"
+        ]
+      },
+      "post": {
+        "description": "按一份声明接入一个供应商，启用、还没有密钥。",
+        "operationId": "create_model_provider_model_providers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelProviderCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProviderOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Create Model Provider",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/model-providers/declarations": {
+      "get": {
+        "description": "可以接入的供应商声明：显示名、密钥表单字段、能不能自己加模型、内置的模型。",
+        "operationId": "model_provider_declarations_model_providers_declarations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeclarationsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Model Provider Declarations",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/model-providers/{provider_id}": {
+      "delete": {
+        "description": "删一个供应商连同它的密钥与模型；有 agent 的草稿或当前版本写着它、或它有默认模型是 409。",
+        "operationId": "delete_model_provider_model_providers__provider_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Delete Model Provider",
+        "tags": [
+          "model-providers"
+        ]
+      },
+      "patch": {
+        "description": "改显示名、启停或默认密钥。",
+        "operationId": "update_model_provider_model_providers__provider_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelProviderUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProviderOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Update Model Provider",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/model-providers/{provider_id}/credentials": {
+      "post": {
+        "description": "新建一把密钥，不试连；供应商的第一把成为默认密钥。",
+        "operationId": "create_provider_credential_model_providers__provider_id__credentials_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Create Provider Credential",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/model-providers/{provider_id}/credentials/test": {
+      "post": {
+        "description": "试连，不保存；结果在答复里，没通过也是 200。",
+        "operationId": "test_provider_credential_model_providers__provider_id__credentials_test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialTestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProbeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Test Provider Credential",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/model-providers/{provider_id}/credentials/{credential_id}": {
+      "delete": {
+        "description": "删一把密钥；默认密钥不能删。",
+        "operationId": "delete_provider_credential_model_providers__provider_id__credentials__credential_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Delete Provider Credential",
+        "tags": [
+          "model-providers"
+        ]
+      },
+      "patch": {
+        "description": "改名或改字段，不试连。",
+        "operationId": "update_provider_credential_model_providers__provider_id__credentials__credential_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CredentialOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Update Provider Credential",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/model-providers/{provider_id}/models": {
+      "post": {
+        "description": "自己加一个模型；声明允许自己加模型时才能加。",
+        "operationId": "add_provider_model_model_providers__provider_id__models_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomModelCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderModelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Add Provider Model",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/model-providers/{provider_id}/models/test": {
+      "post": {
+        "description": "用一把密钥（不给就是默认密钥）测试一个 llm 模型，不保存；结果在答复里，没通过也是 200。",
+        "operationId": "test_provider_model_model_providers__provider_id__models_test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelTestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProbeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Test Provider Model",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
+    "/model-providers/{provider_id}/models/{model_type}/{model_name}": {
+      "delete": {
+        "description": "删一个自己加的模型；声明里的模型只能停用。",
+        "operationId": "delete_provider_model_model_providers__provider_id__models__model_type___model_name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "llm",
+                "embedding",
+                "rerank"
+              ],
+              "title": "Model Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_name",
+            "required": true,
+            "schema": {
+              "title": "Model Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Delete Provider Model",
+        "tags": [
+          "model-providers"
+        ]
+      },
+      "patch": {
+        "description": "启停一个模型，或改自己加的模型的属性。模型名放在路径最后，可以带斜杠。",
+        "operationId": "update_provider_model_model_providers__provider_id__models__model_type___model_name__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_type",
+            "required": true,
+            "schema": {
+              "enum": [
+                "llm",
+                "embedding",
+                "rerank"
+              ],
+              "title": "Model Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_name",
+            "required": true,
+            "schema": {
+              "title": "Model Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderModelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Update Provider Model",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
     "/references": {
       "get": {
         "description": "全站没移除的参考视频，建立晚的排前面。\n\n``tags`` 可以重复给：同一维度里命中任一即算，不同维度都要命中，选了上级也算它的下级；不存在\n的标签是 ``422``。``userName`` 筛属主；``q`` 按字面包含匹配拆解全文；时间窗\n``[since, until)`` 作用在建立时刻上。``total`` 只在第一页给。",
@@ -17425,6 +23042,1051 @@
         "summary": "Start Reference Test Video",
         "tags": [
           "references"
+        ]
+      }
+    },
+    "/skills": {
+      "get": {
+        "description": "全部技能，含已归档的，每个带有没有未发布的修改。",
+        "operationId": "list_skills_skills_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "List Skills",
+        "tags": [
+          "skills"
+        ]
+      },
+      "post": {
+        "description": "新建一个技能，草稿里生成一份带 frontmatter 的 ``SKILL.md``；标识已被占用是 409。",
+        "operationId": "create_skill_skills_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Create Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/import": {
+      "post": {
+        "description": "导入一个技能压缩包：``dryRun=true`` 只检查不写；否则新建技能或覆盖同名技能的草稿，都不\n发布，有问题是 422。",
+        "operationId": "import_skill_skills_import_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dryRun",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Dryrun",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_skill_skills_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillImportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Import Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}": {
+      "get": {
+        "description": "一个技能连同草稿的文件清单。",
+        "operationId": "skill_detail_skills__skill_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Skill Detail",
+        "tags": [
+          "skills"
+        ]
+      },
+      "patch": {
+        "description": "改显示名或标识，不进版本，保存即生效；两项都没给是 422，标识已被别的技能占用是 409。",
+        "operationId": "update_skill_skills__skill_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Update Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/archive": {
+      "post": {
+        "operationId": "archive_skill_skills__skill_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Archive Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/draft/files/rename": {
+      "post": {
+        "description": "把草稿里的一个文件改到新路径，内容不变，一次写完：``baseHash`` 对不上或新路径已有文件是 409，\n``SKILL.md`` 不能改名、新路径不合格是 422。",
+        "operationId": "rename_draft_file_skills__skill_id__draft_files_rename_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftFileRenameIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftFileOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Rename Draft File",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/draft/files/{path}": {
+      "delete": {
+        "description": "删草稿里的一个文件，``baseHash`` 与库里对不上是 409；``SKILL.md`` 不能删。",
+        "operationId": "delete_draft_file_skills__skill_id__draft_files__path__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "baseHash",
+            "required": true,
+            "schema": {
+              "title": "Basehash",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Delete Draft File",
+        "tags": [
+          "skills"
+        ]
+      },
+      "get": {
+        "description": "草稿里的一个文件，带内容与 ``hash``。",
+        "operationId": "read_draft_file_skills__skill_id__draft_files__path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftFileOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Read Draft File",
+        "tags": [
+          "skills"
+        ]
+      },
+      "put": {
+        "description": "写草稿里的一个文件：新建给 ``baseHash: null``，改给读到的 ``hash``，对不上是 409。",
+        "operationId": "write_draft_file_skills__skill_id__draft_files__path__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftFileWriteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftFileOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Write Draft File",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/export": {
+      "get": {
+        "description": "把一个版本（不给就是最新版）打成 zip，顶层目录、文件名与 ``SKILL.md`` 的 ``name`` 都用技能\n当前的标识；没发布过是 404。",
+        "operationId": "export_skill_skills__skill_id__export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "versionId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Versionid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {}
+            },
+            "description": "技能的 zip 压缩包"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Export Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/unarchive": {
+      "post": {
+        "operationId": "unarchive_skill_skills__skill_id__unarchive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Unarchive Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/versions": {
+      "get": {
+        "operationId": "skill_versions_skills__skill_id__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillVersionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Skill Versions",
+        "tags": [
+          "skills"
+        ]
+      },
+      "post": {
+        "description": "把草稿发布成新版本；草稿不合格或与最新版相同是 422。",
+        "operationId": "publish_skill_skills__skill_id__versions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillPublishIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillVersionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Publish Skill",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/versions/{version_id}": {
+      "get": {
+        "description": "一个版本连同它的文件清单。",
+        "operationId": "skill_version_skills__skill_id__versions__version_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillVersionDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Skill Version",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/versions/{version_id}/files/{path}": {
+      "get": {
+        "operationId": "skill_version_file_skills__skill_id__versions__version_id__files__path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillVersionFileOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Skill Version File",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/skills/{skill_id}/versions/{version_id}/restore": {
+      "post": {
+        "description": "把这个版本的文件整份抄回草稿，替换草稿里的全部文件；不发布。",
+        "operationId": "restore_skill_version_skills__skill_id__versions__version_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Version Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Restore Skill Version",
+        "tags": [
+          "skills"
         ]
       }
     },

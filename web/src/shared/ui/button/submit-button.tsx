@@ -1,5 +1,3 @@
-/** 付费提交的主按钮：提交中转圈、受理后打勾停一会儿再恢复，文字保持清晰、宽度不变。只负责显示，拦截点击归调用方。 */
-
 import { useState, type ComponentProps } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -54,7 +52,6 @@ export function SubmitButton({
   variant = 'primary',
   ...props
 }: SubmitButtonProps) {
-  // 首次挂载不播动画，切过一次阶段之后才播；换 label 时当前层不重挂，也就不重播。
   const [previousPhase, setPreviousPhase] = useState(phase)
   const [animated, setAnimated] = useState(false)
   if (phase !== previousPhase) {
@@ -77,7 +74,6 @@ export function SubmitButton({
           {label}
         </span>
         <span className="submit-button-layer submit-button-current" key={phase}>
-          {/* 进场动画放在外层：svg 自己的 animation 留给转圈。 */}
           <span className={cn('submit-button-icon', animated && ICON_ENTER)}>
             <PhaseIcon animated={animated} leadingIcon={leadingIcon} phase={phase} />
           </span>

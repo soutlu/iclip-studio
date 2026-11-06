@@ -38,7 +38,6 @@ const openSource = async (clip: ReferenceClip, inputs: Input[]) => {
     throw new UserFacingError(
       '当前浏览器不支持解码所选片段的画面，无法制作参考视频；请使用其他浏览器',
     )
-  // 容器时长可能长于画面：原声音轨比画面略长时，这段尾音也属于素材。
   if (clip.end > roundToMs(await input.computeDuration()))
     throw new UserFacingError('所选区间超出视频时长，无法制作参考视频；请重新选择片段')
   if (audio !== null && !(await audio.canDecode()))
@@ -63,7 +62,7 @@ export const concatenateReferenceClips = async (clips: readonly ReferenceClip[])
     for (const clip of rest) sources.push(await openSource(clip, inputs))
     const numberOfChannels = Math.max(...sources.map((source) => source.channels))
 
-    // AVC 要求偶数尺寸。
+    // H.264 (AVC) 编码要求宽高均为偶数。
     const width = Math.ceil((await first.video.getDisplayWidth()) / 2) * 2
     const height = Math.ceil((await first.video.getDisplayHeight()) / 2) * 2
     const quality = new Quality('high')
@@ -103,7 +102,7 @@ export const concatenateReferenceClips = async (clips: readonly ReferenceClip[])
         Math.ceil(duration * sampleRate),
         sampleRate,
       )
-      // WebCodecs 的 AAC 编码不提供 priming 信息，会把声音推迟；Opus 保持声音起点准确。
+      // WebCodecs AAC 编码不输出 priming 延迟信息，故音频轨使用 Opus 编码以防音画偏移。
       audioSource = new AudioSampleSource({ codec: 'opus', quality: new Quality('high') })
       output.addAudioTrack(audioSource)
     }

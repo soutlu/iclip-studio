@@ -1,9 +1,3 @@
-"""参考视频 HTTP 端点，约定见合同「参考视频」一节。
-
-读要 ``generation:read``；建行要 ``uploads:write``；重拆、重新打标与试生成都是付费调用，另要
-``generation:submit``；修改、改标签与移除只要读权限，属主检查在用例里。拆解没配置时只挂读端点与
-改标签；上传不可用时另不挂建行，重拆照挂；打标没配置时不挂重新打标；媒体生成没开时不挂试生成。"""
-
 from __future__ import annotations
 
 import uuid
@@ -40,10 +34,6 @@ def create_references_router(
     retaggable: bool,
     testable: bool,
 ) -> APIRouter:
-    """``uploadable`` 为假（拆解没配置或上传不可用）时不挂建行；``rerunnable`` 为假（拆解没配置）时
-    不挂重拆；``retaggable`` 为假（打标没配置）时不挂重新打标；``testable`` 为假（媒体生成没开）时
-    不挂试生成。"""
-
     router = APIRouter(prefix="/references", tags=["references"])
 
     @router.get("", response_model=ReferenceVideosOut)
@@ -75,7 +65,6 @@ def create_references_router(
             cursor=cursor,
         )
 
-    # 写在 /{reference_id} 之前，否则 filters 会被当成 id 解析。
     @router.get("/filters", response_model=ReferenceFiltersOut)
     async def reference_filters(
         _: Annotated[Principal, require_permission("generation:read")],

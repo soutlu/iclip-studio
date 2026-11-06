@@ -1,36 +1,29 @@
 from __future__ import annotations
 
-import asyncio
-import signal
 import uuid
 from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import Literal
+from typing import Final
 
 import httpx
 import procrastinate
 import structlog
+from agent_runtime.client import RuntimeClient
+from agent_runtime.errors import NotFound
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH
+from iclip_video.shot_document import SHOTS_PATH
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from iclip.app.agent_layer import (
-    CurrentAgentLayer,
-    LayerDeps,
-    ReloadSource,
-    build_agent_layer,
-    live_agent_directory,
-    live_agents,
-    live_context_limits,
-    live_title_generator,
-    watch_and_reload,
-)
 from iclip.app.brand_templates import template_font_prober
-from iclip.app.capability_table import build_capability_table, build_display_registry
 from iclip.app.conversation_film import ConversationFilmAdapter
-from iclip.app.conversation_fork import ForkLineageAdapter, ForkTranscriptAdapter, WorkspaceCopier
-from iclip.app.conversation_same_style import LibrarySameStyleSource, SameStyleCopier
+from iclip.app.conversation_fork import ForkLineageAdapter
+from iclip.app.conversation_same_style import (
+    SAME_STYLE,
+    LibrarySameStyleSource,
+    ProductionFilesProbe,
+)
 from iclip.app.conversation_workspace import (
     ConversationWorkspace,
     validate_film,
@@ -39,6 +32,7 @@ from iclip.app.conversation_workspace import (
 )
 from iclip.app.errors import install_error_handlers
 from iclip.app.generation_live import AnnouncingGenerationRepository
+from iclip.app.image_generations import GenerationsAdapter
 from iclip.app.library_tagging import (
     HitCaseTreatments,
     LibrarySourceText,
@@ -46,39 +40,55 @@ from iclip.app.library_tagging import (
 )
 from iclip.app.logging import configure_logging
 from iclip.app.prompt_attachments import PromptAttachmentImporter
-from iclip.app.reference_breakdown import build_reference_breakdown
+from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter, build_reference_breakdown
 from iclip.app.reference_test_video import GenerationTestVideos
+from iclip.app.runtime_events import RuntimeEvents
+from iclip.app.runtime_internal import (
+    RUNTIME_INTERNAL_PREFIX,
+    RuntimePluginServices,
+    ShotServices,
+    TurnNaming,
+    create_runtime_internal_router,
+)
+from iclip.app.runtime_ports import RuntimeServicePorts
+from iclip.app.runtime_workspace import RuntimeFiles
+from iclip.app.shot_media import CutRecordsAdapter, FrameBoardsAdapter, GridCutsAdapter
 from iclip.app.whole_film_drafts import GenerationDraftReferences
 from iclip.app.whole_film_exports import WholeFilmExportAdapter
-from iclip.capabilities.iclip_studio.film.film import FILM_PATH, RUN_PATH
-from iclip.capabilities.shot_document import SHOTS_PATH
-from iclip.capabilities.workspace.scope import parse_namespace
-from iclip.common.errors import NotFound
 from iclip.config import (
     QWEN_API_KEY_ENV,
     ObjectStoreEnv,
-    ResolvedAgent,
     ResolvedMediaGeneration,
     ResolvedProductCatalog,
     ResolvedQwenService,
     RuntimeConfig,
     resolve_settings,
 )
-from iclip.domains.agents.public import AgentRunDeps
-from iclip.domains.agents.transcript_api import LiveConnections, create_transcript_router
+from iclip.domains.agent_config.module import build_agent_config_module
+from iclip.domains.agents.transcript_api import (
+    GOING_AWAY,
+    LiveConnections,
+    create_transcript_router,
+)
 from iclip.domains.audit.module import build_audit_module
 from iclip.domains.audit.reports_pg import PgAuditReports
+from iclip.domains.audit.runtime_facts import RuntimeStats
 from iclip.domains.brand_templates.infra_sql import SqlBrandTemplateStore
 from iclip.domains.brand_templates.module import BrandTemplatesModule, build_brand_templates_module
 from iclip.domains.collections.infra_sql import SqlCollectionRepository
 from iclip.domains.collections.module import build_collections_module
 from iclip.domains.conversations.infra_sql import (
+    SqlAgentPreviewStore,
     SqlConversationRepository,
     SqlWholeFilmDraftStore,
 )
 from iclip.domains.conversations.module import build_conversations_module
-from iclip.domains.conversations.service import CollectionInfo, ConversationActivity
+from iclip.domains.conversations.service import (
+    CollectionInfo,
+    ConversationActivity,
+)
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
+from iclip.domains.generation.models import InFlightPhase
 from iclip.domains.generation.module import (
     GenerationModule,
     ImageModelConfig,
@@ -105,10 +115,13 @@ from iclip.domains.inspirations.module import build_inspirations_module
 from iclip.domains.inspirations.service import NoStyleDirectory
 from iclip.domains.library.module import build_library_module
 from iclip.domains.library.reports_pg import PgLibraryReports
+from iclip.domains.mcp_servers.module import build_mcp_servers_module
+from iclip.domains.model_providers.module import build_model_providers_module
 from iclip.domains.products.catalog_pg import PgStyleDirectory
 from iclip.domains.references.infra_sql import SqlReferenceStore
 from iclip.domains.references.module import BreakdownSetup, build_references_module
 from iclip.domains.references.repository import VideoBreakdowns
+from iclip.domains.skills.module import build_skills_module
 from iclip.domains.tagging.infra_sql import SqlTagStore
 from iclip.domains.tagging.module import TaggingSetup, build_tagging_module
 from iclip.domains.tagging.repository import Tagger
@@ -118,33 +131,16 @@ from iclip.domains.tracking.infra_sql import SqlTrackingRepository
 from iclip.domains.tracking.module import build_tracking_module
 from iclip.domains.uploads.module import UploadsModule, build_uploads_module
 from iclip.domains.uploads.service import FetchBytes
-from iclip.harness.agents import DELEGATE_TOOL
-from iclip.harness.jobs import JobQueue, JobRow
-from iclip.harness.models import BuiltModels
-from iclip.harness.step_store_pg import PgStepStore
-from iclip.harness.transcript.activity import ActivityState
-from iclip.harness.transcript.history import TranscriptHistory
-from iclip.harness.transcript.runner import ConversationRunner
-from iclip.harness.transcript.service import TranscriptService
-from iclip.harness.transcript.store import TranscriptStore
-from iclip.harness.usage_ledger import UsageLedger
-from iclip.harness.usage_ledger_pg import PgConversationUsage
 from iclip.platform.db.engine import build_engine
-from iclip.platform.file_store.pg import PgFileStore
-from iclip.platform.file_store.store import (
-    FileEntry,
-    FileStore,
-    SearchResult,
-    StoredFile,
-)
-from iclip.platform.material_ledger.pg import PgMaterialLedger
 from iclip.platform.media.codec import MediaCodec, detect_codec
+from iclip.platform.media.fetch import MediaDownloads
 from iclip.platform.media.fonts import ProbeFont
 from iclip.platform.media.process import ffmpeg_available
 from iclip.platform.object_store.oss import (
     OssObjectStore,
     OssSettings,
     oss_fetch_url,
+    oss_owns_url,
     validate_internal_endpoint,
     validate_public_url_base,
 )
@@ -153,7 +149,9 @@ from iclip.platform.object_store.store import (
     PublicObjectStore,
     ServerUploadSigner,
 )
-from iclip.platform.outbound.fetch import PublicFetcher
+from iclip.platform.outbound.fetch import TOTAL_TIMEOUT_SECONDS, PublicFetcher
+from iclip.platform.outbound.guard import public_client
+from iclip.platform.outbound.media_check import UrlProber
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -161,14 +159,13 @@ _logger = structlog.stdlib.get_logger(__name__)
 def _object_store(
     settings: ObjectStoreEnv | None,
     injected: PublicBucket | None,
-) -> tuple[PublicBucket | None, Callable[[str], str], ServerUploadSigner | None]:
-    """桶、服务端下载用的地址换算与给别的服务端签上传地址的端口。注入了桶（测试）时没有签名端口，
-    成片导出开不了。"""
-
+) -> tuple[
+    PublicBucket | None, Callable[[str], str], Callable[[str], bool], ServerUploadSigner | None
+]:
     if injected is not None:
-        return injected, _as_is, None
+        return injected, _as_is, _never, None
     if settings is None:
-        return None, _as_is, None
+        return None, _as_is, _never, None
     oss = OssSettings(
         bucket=settings.bucket,
         endpoint=settings.endpoint,
@@ -178,68 +175,18 @@ def _object_store(
         internal_endpoint=validate_internal_endpoint(settings.internal_endpoint),
     )
     store = OssObjectStore(oss)
-    return store, oss_fetch_url(oss), store
+    return store, oss_fetch_url(oss), oss_owns_url(oss), store
 
 
 def _as_is(url: str) -> str:
     return url
 
 
-def _namespace_owner(namespace: str) -> tuple[uuid.UUID, uuid.UUID] | None:
-    try:
-        return parse_namespace(namespace)
-    except ValueError:
-        return None
+def _never(url: str) -> bool:
+    return False
 
 
-class AnnouncingFileStore:
-    def __init__(self, inner: FileStore, live: LiveConnections) -> None:
-        self._inner = inner
-        self._live = live
-
-    async def read(self, namespace: str, path: str) -> StoredFile | None:
-        return await self._inner.read(namespace, path)
-
-    async def write(
-        self, namespace: str, path: str, content: str, *, expected_version: int | None = None
-    ) -> FileEntry:
-        entry = await self._inner.write(namespace, path, content, expected_version=expected_version)
-        self._announce(namespace, entry.path, "created" if entry.version == 1 else "modified")
-        return entry
-
-    async def delete(self, namespace: str, path: str) -> bool:
-        deleted = await self._inner.delete(namespace, path)
-        if deleted:
-            self._announce(namespace, path, "deleted")
-        return deleted
-
-    def _announce(
-        self, namespace: str, path: str, change: Literal["created", "modified", "deleted"]
-    ) -> None:
-        addressed = _namespace_owner(namespace)
-        if addressed is not None:
-            owner, conversation_id = addressed
-            self._live.announce_fs_changed(owner, conversation_id, path=path, change=change)
-
-    async def entries(self, namespace: str, *, prefix: str = "") -> Sequence[FileEntry]:
-        return await self._inner.entries(namespace, prefix=prefix)
-
-    async def search(self, namespace: str, query: str, *, limit: int) -> SearchResult:
-        return await self._inner.search(namespace, query, limit=limit)
-
-
-def _conversation_of(deps: object) -> str | None:
-    return deps.conversation_id if isinstance(deps, AgentRunDeps) else None
-
-
-def _install_hup_reload(agent_layer: CurrentAgentLayer) -> bool:
-    # 非主线程与 Windows 的事件循环不支持 add_signal_handler。
-    try:
-        asyncio.get_running_loop().add_signal_handler(signal.SIGHUP, agent_layer.reload)
-    except (AttributeError, NotImplementedError, RuntimeError, ValueError) as exc:
-        _logger.warning("装不上 SIGHUP 处理器，配置热重载不可用", reason=str(exc))
-        return False
-    return True
+VIDEO_APP_ID: Final = "video"
 
 
 def _require_ffmpeg(required: bool) -> None:
@@ -352,9 +299,7 @@ def _generation_module(
 def build_app(
     config: RuntimeConfig,
     *,
-    agents: Sequence[ResolvedAgent] = (),
     engine: AsyncEngine | None = None,
-    models: BuiltModels | None = None,
     sso_verifier: SsoVerifier | None = None,
     pms_client: PmsUserClient | None = None,
     object_store: PublicBucket | None = None,
@@ -366,13 +311,19 @@ def build_app(
     library_tagger: Tagger | None = None,
     brand_font_probe: ProbeFont | None = None,
     media_codec: MediaCodec | None = None,
-    reload_source: ReloadSource | None = None,
-    watch_paths: Sequence[Path] = (),
+    runtime_transport: httpx.AsyncBaseTransport | None = None,
+    media_probe: UrlProber | None = None,
 ) -> FastAPI:
     settings = resolve_settings(config)
     if settings.db_schema != DB_SCHEMA:
         raise RuntimeError(f"db.schema 当前固定为 {DB_SCHEMA}（declarative 元数据定义期绑定）")
     configure_logging(settings.log_level, settings.log_format)
+    runtime_client = RuntimeClient(
+        settings.runtime_service.url,
+        settings.runtime_service.app_key,
+        transport=runtime_transport,
+    )
+    runtime_ports = RuntimeServicePorts(runtime_client)
 
     owns_engine = engine is None
     active_engine = engine if engine is not None else build_engine(settings.database_url)
@@ -398,9 +349,10 @@ def build_app(
         sso_verifier=sso_verifier,
         pms_client=pms_client,
     )
-    public_objects, fetch_url, server_uploads = _object_store(settings.object_store, object_store)
+    public_objects, fetch_url, owns_url, server_uploads = _object_store(
+        settings.object_store, object_store
+    )
     _require_ffmpeg(settings.ffmpeg_required)
-    # 一个客户端：生成队列经它提交、轮询，导出端点经它读进度、取消；lifespan 结束时关。
     render_client = (
         None
         if settings.whole_film_render is None
@@ -442,6 +394,11 @@ def build_app(
             requires=f"media_generation.music 段与千问AI平台的 API Key {QWEN_API_KEY_ENV}",
         )
     http_client = httpx.AsyncClient(follow_redirects=True)
+    public_http_client = public_client(timeout=TOTAL_TIMEOUT_SECONDS)
+    public_fetcher = PublicFetcher()
+    model_url_downloads = MediaDownloads(
+        internal=http_client, public=public_http_client, fetch_url=fetch_url, owns=owns_url
+    )
     catalog_engine = _product_catalog_engine(settings.product_catalog, product_catalog_engine)
     owns_catalog_engine = catalog_engine is not None and product_catalog_engine is None
     if catalog_engine is None:
@@ -450,14 +407,10 @@ def build_app(
         PgInspirationVideos(active_engine),
         PgStyleDirectory(catalog_engine) if catalog_engine is not None else NoStyleDirectory(),
     )
-    workspace_store = PgFileStore(active_engine)
+    workspace_files = RuntimeFiles(runtime_client)
     live_connections = LiveConnections()
-    announcing_workspace_store = AnnouncingFileStore(workspace_store, live_connections)
-
-    material_ledger = PgMaterialLedger(active_engine)
-    conversation_workspace = ConversationWorkspace(
-        workspace_store, announcing_workspace_store, material_ledger
-    )
+    runtime_events = RuntimeEvents(runtime_client, live_connections)
+    conversation_workspace = ConversationWorkspace(workspace_files)
 
     async def clear_conversation_completion(conversation_id: uuid.UUID, owner: uuid.UUID) -> None:
         await conversations.service.clear_completed(conversation_id, owner)
@@ -540,18 +493,16 @@ def build_app(
             raise RuntimeError("拆解已启用却没选编解码；ffmpeg_required 应当已包含 iclip_studio")
         breakdown_setup = BreakdownSetup(
             breakdowns=reference_breakdowns
-            or build_reference_breakdown(
-                settings.iclip_studio, http_client, codec, fetch_url=fetch_url
-            ),
+            or build_reference_breakdown(runtime_client, model_url_downloads, codec),
             connector=connector,
             concurrency=breakdown_concurrency,
         )
         tagging_setup = TaggingSetup(
-            tagger=library_tagger or build_library_tagger(settings.iclip_studio, http_client),
+            tagger=library_tagger or build_library_tagger(runtime_client),
             connector=connector,
         )
     library_reports = PgLibraryReports(active_engine)
-    hit_case_treatments = HitCaseTreatments(workspace_store)
+    hit_case_treatments = HitCaseTreatments(workspace_files)
     tagging = build_tagging_module(
         SqlTagStore(active_engine),
         source_text=LibrarySourceText(
@@ -572,12 +523,6 @@ def build_app(
         testable=generation is not None,
     )
 
-    step_store = PgStepStore(
-        active_engine, max_snapshots_per_run=settings.agent_runs.max_snapshots_per_run
-    )
-    usage_ledger = UsageLedger(
-        store=PgConversationUsage(active_engine), conversation_of=_conversation_of
-    )
     collection_repo = SqlCollectionRepository(active_engine)
     collections = build_collections_module(collection_repo)
 
@@ -587,92 +532,72 @@ def build_app(
             CollectionInfo(id=item.id, name=item.name, updated_at=item.updated_at) for item in found
         )
 
-    def on_activity(conversation_id: str, owner: uuid.UUID, state: ActivityState) -> None:
-        live_connections.announce_activity(
-            owner,
-            uuid.UUID(conversation_id),
-            busy=state.busy,
-            pending_interaction=state.pending_interaction,
-            last_turn_reason=state.last_turn_reason,
-        )
+    async def collection_exists(collection_id: uuid.UUID) -> bool:
+        try:
+            await collection_repo.get(collection_id, owner=None)
+        except NotFound:
+            return False
+        return True
 
-    job_queue = JobQueue(active_engine, on_activity=on_activity)
+    async def video_progress_of(owner: uuid.UUID | None) -> Mapping[uuid.UUID, InFlightPhase]:
+        if generation is None:
+            return {}
+        return await generation.service.in_flight_by_conversation(owner=owner, kind=KIND_VIDEO)
 
     async def activities_of(
         conversation_ids: Sequence[uuid.UUID],
     ) -> Mapping[uuid.UUID, ConversationActivity]:
-        states = await job_queue.activities([str(one) for one in conversation_ids])
-        videos = (
-            await generation.service.in_flight_by_conversation(conversation_ids, kind=KIND_VIDEO)
-            if generation is not None
-            else {}
-        )
-        return {
-            one: ConversationActivity(
-                busy=state.busy,
-                pending_interaction=state.pending_interaction,
-                last_turn_reason=state.last_turn_reason,
-                video_generation=videos.get(one, "none"),
+        states = await runtime_ports.activities(conversation_ids)
+        activities: dict[uuid.UUID, ConversationActivity] = {}
+        for one in conversation_ids:
+            state = states.get(one)
+            activities[one] = ConversationActivity(
+                busy=state is not None and state.busy,
+                pending_interaction="none" if state is None else state.pending_interaction,
+                last_turn_reason=None if state is None else state.last_turn_reason,
             )
-            for one, state in ((one, states[str(one)]) for one in conversation_ids)
-        }
-
-    async def busy_conversation_ids(owner: uuid.UUID | None) -> frozenset[uuid.UUID]:
-        return frozenset(uuid.UUID(one) for one in await job_queue.busy_conversation_ids(owner))
+        return activities
 
     async def latest_master_urls(conversation_ids: Sequence[uuid.UUID]) -> Mapping[uuid.UUID, str]:
         if generation is None:
             return {}
         return await generation.service.latest_master_by_conversation(conversation_ids)
 
-    capability_table = build_capability_table(
-        workspace_store=announcing_workspace_store,
-        material_ledger=material_ledger,
-        http_client=http_client,
-        fetch_url=fetch_url,
-        generation_service=generation.service if generation is not None else None,
-        settled_records=settled_records,
-        image_models=generation.image_models if generation is not None else frozenset(),
-        object_store=public_objects,
-        video=settings.video,
-        shot_video=settings.shot_video if settings.shot_tools_enabled else None,
-        iclip_studio=settings.iclip_studio,
-        reference_service=references.service if references.queue is not None else None,
-        media_codec=codec,
-    )
-    tool_displays = build_display_registry(capability_table)
-    transcript_store = TranscriptStore()
-    layer_deps = LayerDeps(
-        table=capability_table,
-        step_store=step_store,
-        usage_ledger=usage_ledger,
-        live=transcript_store,
-        display=tool_displays,
-    )
-    agent_layer = CurrentAgentLayer(
-        build_agent_layer(settings, agents, layer_deps, models=models),
-        deps=layer_deps,
-        source=reload_source if reload_source is not None else (lambda: (config, agents)),
-    )
-
-    transcript_history = TranscriptHistory(step_store, job_queue, tool_displays, DELEGATE_TOOL)
+    async def user_principal(user_id: uuid.UUID) -> Principal:
+        return identity.service.principal_for_user(await identity.service.get_account(user_id))
 
     tasks = build_tasks_module(SqlTaskRepository(active_engine), act_as=identity.act_as)
+
+    async def task_exists(task_id: uuid.UUID) -> bool:
+        try:
+            await tasks.service.get(task_id)
+        except NotFound:
+            return False
+        return True
+
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
-    audit = build_audit_module(PgAuditReports(active_engine))
-    same_style = SameStyleCopier(store=workspace_store, ledger=material_ledger)
+    skills = build_skills_module(runtime_client, identity.users.display_names)
+    model_providers = build_model_providers_module(runtime_client)
+    mcp_servers = build_mcp_servers_module(runtime_client)
+    agent_config = build_agent_config_module(runtime_client, identity.users.display_names)
+
+    audit = build_audit_module(PgAuditReports(active_engine, RuntimeStats(runtime_client)))
     library = build_library_module(
         library_reports,
-        has_production_files=same_style.has_production_files,
+        has_production_files=ProductionFilesProbe(workspace_files).has_production_files,
         tagging=tagging.service,
         has_treatment=hit_case_treatments.exists,
     )
     conversations = build_conversations_module(
         conversation_repo,
+        previews=SqlAgentPreviewStore(active_engine),
         act_as=identity.act_as,
-        list_agents=live_agent_directory(agent_layer),
+        list_agents=runtime_ports.list_agents,
+        runtime=runtime_ports,
         list_collections=list_owner_collections,
         claim_task=tasks.service.claim,
+        task_exists=task_exists,
+        collection_exists=collection_exists,
         list_derived_files=conversation_workspace.list_files,
         read_derived_file=conversation_workspace.read_file,
         write_derived_file=conversation_workspace.write_file,
@@ -682,9 +607,8 @@ def build_app(
             RUN_PATH: validate_film_run,
         },
         film=ConversationFilmAdapter(
-            store=workspace_store,
-            announcing=announcing_workspace_store,
-            ledger=material_ledger,
+            store=workspace_files,
+            probe=media_probe if media_probe is not None else public_fetcher.probe,
             generation=generation.service if generation is not None else None,
         ),
         drafts=SqlWholeFilmDraftStore(active_engine),
@@ -696,132 +620,63 @@ def build_app(
         else WholeFilmExportAdapter(
             generation=generation.service, generations=generation_repo, render=render_client
         ),
-        generate_title=live_title_generator(agent_layer),
+        generate_title=runtime_ports.generate_title,
         announce_title=live_connections.announce_title,
-        event_watermark=live_connections.clock.snapshot,
         announce_row=live_connections.announce_session_row,
         announce_deleted=live_connections.announce_session_deleted,
         activities_of=activities_of,
-        busy_conversation_ids=busy_conversation_ids,
+        busy_conversation_ids=runtime_ports.busy,
         latest_master_urls=latest_master_urls,
-        fork_transcript=ForkTranscriptAdapter(queue=job_queue, history=transcript_history),
-        copy_workspace=WorkspaceCopier(store=workspace_store, ledger=material_ledger),
-        copy_same_style=same_style,
+        video_progress_of=video_progress_of,
+        same_style_files=SAME_STYLE,
         same_style_source=LibrarySameStyleSource(library_reports),
     )
     uploads: UploadsModule | None = None
-    owned_fetcher: PublicFetcher | None = None
     if public_objects is not None:
-        if image_fetcher is None:
-            owned_fetcher = PublicFetcher()
-            image_fetcher = owned_fetcher.fetch
         uploads = build_uploads_module(
             public_objects,
             act_as=identity.act_as,
             record=settled_records.record_upload,
             find_recorded=settled_records.recorded_upload,
-            fetch=image_fetcher,
+            fetch=image_fetcher if image_fetcher is not None else public_fetcher.fetch,
             conversation_writable=conversations.service.workspace_writable,
         )
-    context_limits = live_context_limits(agent_layer)
 
-    async def name_conversation(row: JobRow) -> None:
-        try:
-            await conversations.service.name_at_turn_start(uuid.UUID(row.conversation_id), row.text)
-        except NotFound:
-            _logger.info("对话已删除，跳过自动起名", conversation_id=row.conversation_id)
-
-    async def note_run_started(row: JobRow, run_id: str) -> None:
-        try:
-            await conversations.service.begin_run(
-                owner=row.owner_user_id,
-                agent_id=row.agent_id,
-                conversation_id=row.conversation_id,
-                run_id=run_id,
-            )
-        except NotFound:
-            _logger.info(
-                "对话已删除，这次运行不再记到对话上",
-                conversation_id=row.conversation_id,
-                run_id=run_id,
-            )
-
-    async def deps_for_prompt(row: JobRow) -> AgentRunDeps:
-        account = await identity.service.get_account(row.owner_user_id)
-        return AgentRunDeps(
-            principal=identity.service.principal_for_user(account),
-            conversation_id=row.conversation_id,
-            user_name=row.user_name,
-        )
-
-    transcripts = TranscriptService(
-        store=transcript_store,
-        history=transcript_history,
-        queue=job_queue,
-        context_limits=context_limits,
-        record_materials=conversation_workspace.record_materials,
-        runner=ConversationRunner(
-            agents=live_agents(agent_layer),
-            store=transcript_store,
-            queue=job_queue,
-            snapshots=step_store,
-            history=transcript_history,
-            deps_for=deps_for_prompt,
-            context_limits=context_limits,
-            heartbeat_seconds=settings.agent_runs.heartbeat_seconds,
-            lease_seconds=settings.agent_runs.lease_seconds,
-            sweep_seconds=settings.agent_runs.sweep_seconds,
-            max_attempts=settings.agent_runs.max_attempts,
-            compaction_max_fraction=settings.compaction.max_fraction,
-            compaction_keep_messages=settings.compaction.keep_messages,
-            on_turn_started=name_conversation,
-            on_run_started=note_run_started,
-            display=tool_displays,
-        ),
-    )
+    turn_naming = TurnNaming(conversations.service)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
-        hup_installed = _install_hup_reload(agent_layer)
-        stop_watching = asyncio.Event()
-        watcher = (
-            asyncio.create_task(
-                watch_and_reload(watch_paths, agent_layer.reload, stop=stop_watching)
-            )
-            if watch_paths
-            else None
-        )
-        await transcripts.runner.start()
-        if connector is not None:
-            await connector.open_async()
-        if generation is not None:
-            generation.queue.start()
-        if references.queue is not None:
-            references.queue.start()
-        if tagging.queue is not None:
-            tagging.queue.start()
         try:
-            yield
+            async with runtime_client:
+                runtime_events.start()
+                if connector is not None:
+                    await connector.open_async()
+                if generation is not None:
+                    generation.queue.start()
+                if references.queue is not None:
+                    references.queue.start()
+                if tagging.queue is not None:
+                    tagging.queue.start()
+                try:
+                    yield
+                finally:
+                    if tagging.queue is not None:
+                        await tagging.queue.stop()
+                    if references.queue is not None:
+                        await references.queue.stop()
+                    if generation is not None:
+                        await generation.queue.stop()
+                    if connector is not None:
+                        await connector.close_async()
+                    await runtime_events.stop()
+                    live_connections.close_all(GOING_AWAY)
+                    await turn_naming.aclose()
         finally:
-            if tagging.queue is not None:
-                await tagging.queue.stop()
-            if references.queue is not None:
-                await references.queue.stop()
-            if generation is not None:
-                await generation.queue.stop()
-            if connector is not None:
-                await connector.close_async()
-            await transcripts.runner.shutdown()
             await http_client.aclose()
+            await public_http_client.aclose()
             if render_client is not None:
                 await render_client.aclose()
-            if owned_fetcher is not None:
-                await owned_fetcher.aclose()
-            if hup_installed:
-                asyncio.get_running_loop().remove_signal_handler(signal.SIGHUP)
-            if watcher is not None:
-                stop_watching.set()
-                await watcher
+            await public_fetcher.aclose()
             if owns_catalog_engine and catalog_engine is not None:
                 await catalog_engine.dispose()
             if owns_engine:
@@ -830,10 +685,12 @@ def build_app(
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
     install_error_handlers(app)
+    app.state.turn_naming = turn_naming
+    app.state.runtime_events = runtime_events
 
     @app.get("/healthz")
     async def healthz() -> dict[str, object]:
-        return {"status": "ok", "config": agent_layer.status()}
+        return {"status": "ok"}
 
     for router in identity.routers:
         app.include_router(router)
@@ -862,9 +719,17 @@ def build_app(
             app.include_router(router)
     for router in tracking.routers:
         app.include_router(router)
+    for router in skills.routers:
+        app.include_router(router)
+    for router in model_providers.routers:
+        app.include_router(router)
+    for router in mcp_servers.routers:
+        app.include_router(router)
+    for router in agent_config.routers:
+        app.include_router(router)
     app.include_router(
         create_transcript_router(
-            transcripts,
+            runtime_client,
             conversations.service,
             act_as=identity.act_as,
             allowed_origins=settings.security.cors_allow_origins,
@@ -876,9 +741,47 @@ def build_app(
             ),
         )
     )
+    shot_services: ShotServices | None = None
+    if (
+        settings.shot_tools_enabled
+        and generation is not None
+        and public_objects is not None
+        and codec is not None
+    ):
+        shot_services = ShotServices(
+            generations=GenerationsAdapter(generation.service, user_principal),
+            boards=FrameBoardsAdapter(model_url_downloads, objects=public_objects, codec=codec),
+            cuts=GridCutsAdapter(
+                http_client,
+                fetch_url=fetch_url,
+                objects=public_objects,
+                records=CutRecordsAdapter(settled_records, user_principal),
+            ),
+            image_models=generation.image_models,
+        )
+    app.include_router(
+        create_runtime_internal_router(
+            token=settings.runtime_internal_token,
+            user_principal=user_principal,
+            conversations=conversations.service,
+            naming=turn_naming,
+            plugins=RuntimePluginServices(
+                shot_video=shot_services,
+                breakdowns=(
+                    ReferenceBreakdownsAdapter(references.service, user_principal)
+                    if settings.iclip_studio is not None and references.queue is not None
+                    else None
+                ),
+            ),
+        )
+    )
 
-    # Starlette 里后加的中间件在外层；CORS 要在最外层，preflight 不带凭证也得被它应答。
-    app.add_middleware(PrincipalMiddleware, resolver=identity.resolver)
+    # Starlette 后注册的中间件位于最外层；CORS 须置于最外层以直接响应无凭证的 OPTIONS 预检请求。
+    app.add_middleware(
+        PrincipalMiddleware,
+        resolver=identity.resolver,
+        anonymous_prefixes=(f"{RUNTIME_INTERNAL_PREFIX}/",),
+    )
     if settings.security.cors_allow_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -888,10 +791,8 @@ def build_app(
             allow_headers=["*"],
         )
 
-    app.state.agent_layer = agent_layer
-    # 集成测试经它直接调生成队列的任务协程，不起 worker。
     app.state.generation = generation
     return app
 
 
-__all__ = ["build_app"]
+__all__ = ["VIDEO_APP_ID", "build_app"]

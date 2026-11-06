@@ -1,12 +1,9 @@
-"""成片草稿引用的生成记录，经组合根接到生成仓储上：对话域只管权限，记录合不合格在这里判。
-
-只用生成仓储与对话的血缘，媒体生成没开也照样核对。"""
-
 from __future__ import annotations
 
 import uuid
 
-from iclip.common.errors import NotFound, ValidationFailed
+from agent_runtime.errors import NotFound, ValidationFailed
+
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.conversations.whole_film_schemas import WholeFilmDocument, WholeFilmVideoClip
 from iclip.domains.generation.models import STATUS_COMPLETED, Inheritance, is_base_master
@@ -16,12 +13,6 @@ from iclip.domains.identity.public import Principal
 
 
 class GenerationDraftReferences:
-    """对话域的 ``WholeFilmDraftReferences``。
-
-    画面轨与音乐按「这段对话自己的或继承来的」读记录，与生成域按对话列记录同一口径。字幕记录按
-    id 直接读，再按同一口径核它的出处是这段对话读得到的素材片：继承来的素材片在分叉之后才识别完的
-    字幕不在继承边界里，按对话读会漏掉它。出处不必还在画面轨上，删掉片段时改字留在草稿里。"""
-
     def __init__(
         self, *, generations: GenerationRepository, conversations: SqlConversationRepository
     ) -> None:
@@ -33,7 +24,6 @@ class GenerationDraftReferences:
     ) -> None:
         inheritance = await self._conversations.ancestry(conversation_id)
         checked: set[uuid.UUID] = set()
-        # 几段常出自同一条素材片，每条只读一次。
         for clip in document.layer0:
             if isinstance(clip, WholeFilmVideoClip) and clip.source_job_id not in checked:
                 if not await self._is_master(
@@ -79,8 +69,6 @@ class GenerationDraftReferences:
         inheritance: Inheritance,
         job_id: uuid.UUID,
     ) -> bool:
-        """``job_id`` 是不是这段对话自己的或继承来的一条素材片（出片或合成）。"""
-
         record = await conversation_record(
             self._generations,
             principal,
@@ -91,8 +79,6 @@ class GenerationDraftReferences:
         return record is not None and is_base_master(record)
 
     async def _subtitle_source(self, subtitle_id: uuid.UUID) -> uuid.UUID | None:
-        """字幕记录识别的那条视频；没有这条或它不是字幕记录时为 ``None``。"""
-
         try:
             subtitle = await self._generations.get(subtitle_id, owner=None)
         except NotFound:

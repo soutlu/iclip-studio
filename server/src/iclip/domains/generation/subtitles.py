@@ -1,6 +1,3 @@
-"""千问录音文件识别：开说话人分离才拿得到全部句子的起止时间（``output.sentences``），而说话人分离只收
-单声道音频，所以先在本地把素材片抽成单声道 mp3。"""
-
 from __future__ import annotations
 
 import base64
@@ -32,7 +29,6 @@ PROVIDER_NAME: Final = "qwen_asr"
 
 SUBTITLE_MODEL: Final = "qwen-audio-3.1-asr-flash"
 
-# 接口文档写明编码后的音频不能超过 10 MB，按 10^7 字符算。
 MAX_AUDIO_DATA_CHARS: Final = 10_000_000
 
 _AUDIO_MIME: Final = "audio/mp3"
@@ -113,7 +109,6 @@ class QwenSubtitleProvider:
                 payload,
                 label=_LABEL,
                 transport=self._transport,
-                # 只要最终结果，不要 SSE 流式返回。
                 headers={"X-DashScope-SSE": "disable"},
             )
         except UpstreamRejected as exc:
@@ -132,7 +127,7 @@ class QwenSubtitleProvider:
 
 
 def _is_no_words(body: object) -> TypeIs[dict[str, Any]]:
-    # 识别出来一句都没有时，接口答 400 而不是空的 sentences。
+    # 上游 ASR 接口在未识别出任何语音时返回 HTTP 400，而非空列表。
     return (
         isinstance(body, dict)
         and body.get("code") == "CLIENT_ERROR"
@@ -191,7 +186,6 @@ def sentences_from_response(body: Mapping[str, Any]) -> tuple[SubtitleSentence, 
 
 
 def _words_of(raw: object, *, where: str) -> tuple[SubtitleWord, ...]:
-    # 接口可能不给 words，那就没有逐词时间。
     if raw is None:
         return ()
     if not isinstance(raw, list):

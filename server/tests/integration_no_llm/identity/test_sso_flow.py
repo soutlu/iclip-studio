@@ -1,5 +1,3 @@
-"""验证 SSO 身份校验、PMS 资料同步、账号关联和 cookie 签发。"""
-
 from __future__ import annotations
 
 import uuid
@@ -81,7 +79,6 @@ async def test_first_login_creates_editor_with_pms_profile(sso_app: FastAPI) -> 
     user = me.json()["user"]
     assert user["roles"] == ["editor"]
     assert user["displayName"] == "Logan W"
-    # 显示名同时成为用户名：它是发消息时发往上游的归属标签。
     assert user["username"] == "Logan W"
     assert user["email"] == "logan@corp.test"
     assert user["city"] == "新加坡"
@@ -104,11 +101,8 @@ async def test_second_login_reuses_account_and_keeps_roles(
 
 
 class TestBindingToExistingAccount:
-    """同邮箱的既有账号首次走 SSO：只关联身份，不重置授权。"""
-
     @pytest.fixture
     def sso_transport(self) -> httpx.MockTransport:
-        # 使用允许密码注册的邮箱域名，先创建可供 SSO 关联的账号。
         return _json_transport(
             {
                 "result": "OK",
@@ -139,8 +133,6 @@ class TestBindingToExistingAccount:
 
 
 class TestConfiguredOAuthName:
-    """配了 ``SSO_OAUTH_NAME``：回调按这个提供方名认 OAuth 账号表里已有的关联。"""
-
     @pytest.fixture
     def sso_oauth_name(self) -> str | None:
         return "legacy_sso"
@@ -148,7 +140,6 @@ class TestConfiguredOAuthName:
     async def test_callback_signs_in_account_linked_under_configured_name(
         self, sso_app: FastAPI, migrated_pg: str
     ) -> None:
-        # 老账号的邮箱与这次 SSO 给的不同：只有按提供方名加 unionId 才找得到它，按邮箱会另建一个。
         async with make_client(sso_app) as client:
             user_id = await register_and_login(client, username="old", email="old@example.com")
         async with connected(migrated_pg) as conn:
@@ -174,8 +165,6 @@ class TestConfiguredOAuthName:
 
 
 class TestDisplayNameAlreadyTaken:
-    """两个 SSO 账号同名：后来者用户名留空，登录照常成功。"""
-
     @pytest.fixture
     def sso_transport(self) -> httpx.MockTransport:
         sessions = iter(

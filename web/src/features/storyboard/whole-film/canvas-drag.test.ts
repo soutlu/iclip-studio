@@ -19,7 +19,6 @@ describe('拖哪个元素', () => {
 
 describe('屏幕位移换成画布像素', () => {
   it('除以缩放（iframe 宽 / 画布宽）后取整', () => {
-    // 1080 宽的画布显示成 360 像素宽：屏幕上 1 像素是画布 3 像素
     expect(canvasDelta({ dx: 10.2, dy: -4.9, scale: 1 / 3, from: { x: 0, y: 0 } })).toEqual({
       dx: 31,
       dy: -15,
@@ -39,7 +38,6 @@ describe('屏幕位移换成画布像素', () => {
 
 describe('吸附', () => {
   const frame = { left: 0, top: 0, width: 360, height: 640 }
-  // 宽 100、高 40 的一块，中线在 x=150
   const moving = { left: 100, top: 400, width: 100, height: 40 }
 
   it('靠近画面的竖中线时吸住，画一条横跨整个画面高度的参考线', () => {
@@ -60,7 +58,6 @@ describe('吸附', () => {
       dy: 0,
       guides: [],
     })
-    // 这块的竖中线离画面中线 1 像素，刚按下时不该被拽过去
     const near = { ...moving, left: 131 }
     expect(snapDrag({ moving: near, frame, dx: 2, dy: 1, enabled: true, rotated: false })).toEqual({
       dx: 2,

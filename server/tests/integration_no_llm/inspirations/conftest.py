@@ -1,7 +1,3 @@
-"""爆款视频查询的测试装置。
-
-用例先清空业务表再插入受控数据；降级要按品类与品牌圈选同类款，所以还需要产品资料替身表。"""
-
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
@@ -10,17 +6,15 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from iclip.app.bootstrap import build_app
 from iclip.platform.db.engine import build_engine
 from tests.helpers.app import make_runtime_config
 from tests.helpers.pdm import recreate_pdm_styles
 from tests.helpers.pg import reset_database
+from tests.helpers.runtime_backed import build_backed_app
 
 
 @pytest.fixture
 async def catalog_engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    """与业务库共用测试容器的产品资料替身表。"""
-
     engine = build_engine(migrated_pg)
     try:
         await recreate_pdm_styles(engine)
@@ -31,8 +25,6 @@ async def catalog_engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
 
 @pytest.fixture
 async def business_engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    """清空业务表后的业务库连接，用例只面对自己插的数据。"""
-
     engine = build_engine(migrated_pg)
     try:
         async with engine.begin() as conn:
@@ -50,13 +42,10 @@ async def app(
     business_engine: AsyncEngine,
     catalog_engine: AsyncEngine,
 ) -> AsyncGenerator[FastAPI]:
-    """启用爆款视频查询的 app。"""
-
     monkeypatch.setenv("PRODUCT_CATALOG_DATABASE_URL", migrated_pg)
-    yield build_app(
+    yield build_backed_app(
         make_runtime_config(),
         engine=business_engine,
-        models={},
         product_catalog_engine=catalog_engine,
     )
 
@@ -65,6 +54,4 @@ async def app(
 async def app_without_catalog(
     base_env: None, business_engine: AsyncEngine
 ) -> AsyncGenerator[FastAPI]:
-    """未配置产品资料库的 app：接口照常挂载，但降级整级失效。"""
-
-    yield build_app(make_runtime_config(), engine=business_engine, models={})
+    yield build_backed_app(make_runtime_config(), engine=business_engine)

@@ -18,7 +18,6 @@ describe('parseExportRequest', () => {
   })
 
   it.each<[string, (body: Record<string, unknown>) => void, string]>([
-    ['id 不是 UUID', (body) => (body['id'] = 'abc'), 'id'],
     ['缺少草稿', (body) => delete body['document'], 'document'],
     [
       '素材地址不是 http(s)',

@@ -20,7 +20,6 @@ export type PeaksState =
   | { kind: 'ready'; peaks: AudioPeaks }
   | { kind: 'failed'; error: unknown }
 
-// 读波形要下载整个文件，同一时间只读一个。
 let peaksTurn: Promise<unknown> = Promise.resolve()
 
 const readPeaksInTurn = (url: string) => {

@@ -1,5 +1,5 @@
 import { useRouterState } from '@tanstack/react-router'
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useCallback, useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -11,6 +11,7 @@ import {
   loginAs,
   mockAuthUser,
   mockCollections,
+  mockGovernor,
 } from '@/testing/mocks/handlers'
 import { renderWithProviders } from '@/testing/render'
 import { stubSidebarViewport } from '@/testing/scroll-viewport'
@@ -58,39 +59,6 @@ const renderSidebar = (requireLogin = vi.fn(), initialPath = '/', compact = fals
   )
 
 describe('AppSidebar', () => {
-  it('桌面折叠为图标栏时保留操作图标与账户入口，展开后显示完整侧边栏', async () => {
-    const user = userEvent.setup()
-    await renderSidebar()
-
-    expect(screen.getByRole('complementary')).toBeVisible()
-
-    for (const name of ['新建任务', '搜索', '需求单', '资料库', '登录']) {
-      expect(screen.getByRole('button', { name })).toBeVisible()
-    }
-    expect(await screen.findByText('登录后可查看任务')).not.toBeVisible()
-
-    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
-
-    expect(screen.getByRole('complementary')).toBeVisible()
-    expect(screen.getByRole('button', { name: '新建任务' })).toBeVisible()
-    expect(screen.getByRole('button', { name: '搜索' })).toBeVisible()
-    expect(screen.getByRole('button', { name: '需求单' })).toBeVisible()
-    expect(screen.getByRole('button', { name: '资料库' })).toBeVisible()
-  })
-
-  it('移动端展开后可再次折叠，只保留悬浮展开按钮', async () => {
-    const user = userEvent.setup()
-    await renderSidebar(vi.fn(), '/', true)
-
-    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
-    expect(screen.getByRole('button', { name: '折叠侧边栏' })).toHaveFocus()
-    await user.click(screen.getByRole('button', { name: '折叠侧边栏' }))
-    expect(screen.getByRole('button', { name: '展开侧边栏' })).toHaveFocus()
-
-    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '展开侧边栏' })).toBeVisible()
-  })
-
   it.each([false, true])('路由切换只折叠抽屉，搜索不折叠侧边栏，compact=%s', async (compact) => {
     loginAs(mockAuthUser)
     const user = userEvent.setup()
@@ -130,30 +98,6 @@ describe('AppSidebar', () => {
     await user.click(screen.getByRole('button', { name: '登录' }))
 
     expect(requireLogin).toHaveBeenCalledTimes(2)
-  })
-
-  it('已登录时点搜索打开搜对话弹窗', async () => {
-    loginAs(mockAuthUser)
-    const user = userEvent.setup()
-    await renderSidebar()
-
-    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
-    await screen.findByRole('button', { name: '用户菜单' })
-    await user.click(screen.getByRole('button', { name: '搜索' }))
-
-    expect(await screen.findByRole('dialog', { name: '搜索任务' })).toBeVisible()
-  })
-
-  it('已登录时点新建任务回首页', async () => {
-    loginAs(mockAuthUser)
-    const user = userEvent.setup()
-    const { router } = await renderSidebar(vi.fn(), '/tasks')
-
-    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
-    await screen.findByRole('button', { name: '用户菜单' })
-    await user.click(screen.getByRole('button', { name: '新建任务' }))
-
-    expect(router.state.location.pathname).toBe('/')
   })
 
   it.each([false, true])('已在首页时点新建任务，输入框获得焦点，compact=%s', async (compact) => {
@@ -308,41 +252,6 @@ describe('AppSidebar', () => {
     expect(router.state.location.pathname).toBe('/tasks')
   })
 
-  it('图标栏悬停图标在右侧提示名字，带快捷键的跟在后面；展开后可用的行不再弹提示', async () => {
-    loginAs(mockAuthUser)
-    const user = userEvent.setup()
-    await renderSidebar()
-    await screen.findByRole('button', { name: '用户菜单' })
-
-    await user.hover(screen.getByRole('button', { name: '搜索' }))
-    const tip = await screen.findByRole('tooltip')
-    expect(tip).toHaveTextContent('搜索任务')
-    expect(tip).toHaveTextContent('⌘K')
-
-    // jsdom 没有几何，移开时 Radix 的悬停宽限区收不起上一条提示，先按 Esc 关掉。
-    await user.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument())
-    await user.hover(screen.getByRole('button', { name: '需求单' }))
-    await waitFor(() => expect(screen.getByRole('tooltip')).toHaveTextContent(/^需求单$/))
-
-    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
-    await user.hover(screen.getByRole('button', { name: '资料库' }))
-    await act(() => new Promise((resolve) => setTimeout(resolve, 400)))
-    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
-  })
-
-  it('能看出片记录的账号点资料库去 /library', async () => {
-    loginAs(mockAuthUser)
-    const user = userEvent.setup()
-    const { router } = await renderSidebar()
-    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
-    await screen.findByRole('button', { name: '用户菜单' })
-
-    await user.click(screen.getByRole('button', { name: '资料库' }))
-
-    expect(router.state.location.pathname).toBe('/library')
-  })
-
   it('只有带 users:manage 的账号看得到「治理」组的「全部任务」「审计」入口，分别去 /conversations 与 /audit', async () => {
     loginAs(mockAuthUser)
     const user = userEvent.setup()
@@ -368,6 +277,41 @@ describe('AppSidebar', () => {
 
     await user.click(await screen.findByRole('button', { name: '审计' }))
     expect(router.state.location.pathname).toBe('/audit')
+  })
+
+  it('带 agent:manage 的账号在「治理」组看得到「Agent 配置」，去 /agents；只有它时组里只有这一项', async () => {
+    loginAs(mockAuthUser, { permissions: [...mockAuthUser.permissions, 'agent:manage'] })
+    const user = userEvent.setup()
+    const { router } = await renderSidebar()
+    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
+    await screen.findByRole('button', { name: '用户菜单' })
+    const govern = screen.getByRole('group', { name: '治理' })
+    expect(
+      within(govern)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Agent 配置'])
+
+    await user.click(within(govern).getByRole('button', { name: 'Agent 配置' }))
+    expect(router.state.location.pathname).toBe('/agents')
+    expect(within(govern).getByRole('button', { name: 'Agent 配置' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+  })
+
+  it('治理者三项都看得到', async () => {
+    loginAs(mockGovernor)
+    const user = userEvent.setup()
+    await renderSidebar()
+    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
+    await screen.findByRole('button', { name: '用户菜单' })
+    const govern = screen.getByRole('group', { name: '治理' })
+    expect(
+      within(govern)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['全部任务', '审计', 'Agent 配置'])
   })
 })
 

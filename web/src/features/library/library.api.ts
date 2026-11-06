@@ -100,7 +100,6 @@ export const useLibraryVideo = (id: string | null) =>
     queryKey: libraryQueryKeys.video(id ?? ''),
   })
 
-/** 按人筛选的候选：取自 `path` 给的作者名单，不随翻到的卡片变化。 */
 export const useAuthorSource = (path: AuthorsPath): PickerSource => {
   const query = useQuery({
     queryFn: ({ signal }) =>

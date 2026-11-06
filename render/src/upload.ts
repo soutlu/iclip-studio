@@ -1,7 +1,3 @@
-/**
- * 把成片 PUT 到预签名地址：带上 Python 给的头（签名里包含它们），按文件大小写 Content-Length 流式发送。
- * OSS 不接受分块传输的 PUT，所以不用 fetch 的流式请求体。
- */
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'

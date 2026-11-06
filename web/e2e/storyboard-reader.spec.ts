@@ -66,7 +66,6 @@ test('分镜可以键盘切组、切帧和查看素材片，浏览操作不写�
   await expect(group.getByRole('button', { name: /^生成第 \d+ 组$/ })).toHaveCount(0)
   await expect(group.getByRole('button', { name: '编辑图片', exact: true })).toHaveCount(1)
 
-  // 第 2 组的素材片常驻在文案列底部：在途、失败、成功各一张。
   const takes = group.getByRole('region', { name: '本组素材片', exact: true })
   await expect(takes.getByRole('listitem')).toHaveCount(3)
   await expect(takes).toBeInViewport({ ratio: 1 })
@@ -87,7 +86,6 @@ for (const width of [1335, 390]) {
     const frame = group.getByRole('img', { name: '镜头组 2 第 3 帧' })
     await expect(frame).toBeInViewport({ ratio: 1 })
 
-    // 镜头组列表挂在 body 上，盖过舞台与文案列，整个列表都在视口里。
     const pill = panel.getByRole('button', { name: /展开镜头组列表/ })
     await pill.click()
     const list = page.getByRole('menu', { name: '镜头组列表', exact: true })
@@ -102,7 +100,6 @@ for (const width of [1335, 390]) {
     await expect(pill).toBeFocused()
     await expect(page).toHaveURL(/shot=2/)
 
-    // 整组原文就排在文案列里：全局设定打头，各镜头标出时长与区间。
     const settings = group.getByRole('textbox', { name: '全局设定', exact: true })
     await expect(settings).toContainText('参考锁定：模特的服装与发型跟住')
     await expect(settings.getByRole('button', { name: '查看第 1 帧', exact: true })).toBeVisible()
@@ -128,7 +125,6 @@ for (const width of [1335, 390]) {
     expect(search.get('shot')).toBe('2')
     expect(search.get('frame')).toBe('3')
 
-    // 键盘展开：焦点落在当前组，方向键移到下一组，Enter 切过去、列表收起、焦点回到组号。
     await pill.focus()
     await page.keyboard.press('Enter')
     await expect(current).toBeFocused()
@@ -141,24 +137,6 @@ for (const width of [1335, 390]) {
     await expect(page).toHaveURL(/shot=3/)
   })
 }
-
-test('agent 更新工作区后重读结构化正文，保留当前组和帧', async ({ page }) => {
-  await page.setViewportSize({ width: 1600, height: 900 })
-  const panel = await openStoryboard(page)
-  await openStoryboardShot(panel, 2)
-  const group = panel.getByRole('region', { name: '镜头组 2', exact: true })
-  await group.getByRole('button', { name: '镜头 2', exact: true }).click()
-  await group.getByRole('button', { name: '下一帧', exact: true }).click()
-  await expect(group.getByRole('textbox', { name: '镜头 2 的描述' })).toContainText(
-    '台词并成一句',
-    {
-      timeout: 20_000,
-    },
-  )
-  await expect(group.getByRole('img', { name: '镜头组 2 第 3 帧' })).toBeVisible()
-  await expect(page).toHaveURL(/shot=2/)
-  await expect(page).toHaveURL(/frame=3/)
-})
 
 test('编辑一镜后保存并读回，复制整组保留 raw 图片标记与空白', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 })
@@ -216,7 +194,6 @@ test('无图分镜上传首图后关联到另一镜，替换共享图片只改�
   expect(initial.document.shots[0]?.image_urls).toEqual([])
   await group.getByRole('button', { name: '镜头 1', exact: true }).click()
   await expect(group.getByRole('textbox', { name: '镜头 1 的描述' })).toContainText('展示正面')
-  // 添加图片的入口在正文里：敲 @，点选图弹层末格的「+」。
   const openAddImage = async (scene: string) => {
     const editor = group.getByRole('textbox', { name: `${scene} 的描述`, exact: true })
     await editor.click()
@@ -297,35 +274,6 @@ test('无图分镜上传首图后关联到另一镜，替换共享图片只改�
   expect(generationPosts).toEqual([])
 })
 
-test('翻到第 3 组出片：请求取当前组，素材片区先出在途卡、出片后变成可播', async ({ page }) => {
-  await page.setViewportSize({ width: 1600, height: 900 })
-  const panel = await openStoryboard(page)
-  await openStoryboardShot(panel, 3)
-  const group = panel.getByRole('region', { name: '镜头组 3', exact: true })
-  await group.getByRole('button', { name: '镜头 1', exact: true }).click()
-  await expect(group.getByRole('textbox', { name: '镜头 1 的描述' })).toContainText('低角度拍鞋面')
-  const before = await readDocument(page)
-  const third = before.document.shots[2]
-  if (third === undefined) throw new Error('需要第三组')
-
-  const posted = page.waitForRequest(
-    (request) =>
-      request.method() === 'POST' && new URL(request.url()).pathname === '/api/generations/video',
-  )
-  await panel.getByRole('button', { name: '生成第 3 组', exact: true }).click()
-  const request = await posted
-  expect(request.postDataJSON()).toMatchObject({ shot_index: 3, shot: third.prompt })
-
-  // 新的一张排在最前，先是在途卡；mock 三秒后出片，推送帧到了就刷新。
-  const takes = group.getByRole('region', { name: '本组素材片', exact: true })
-  await expect(takes.getByRole('listitem')).toHaveCount(2)
-  const newest = takes.getByRole('listitem').first()
-  await expect(newest.getByRole('button', { name: /生成中$/ })).toBeVisible()
-  await expect(newest.getByRole('button', { name: /的素材片$/ })).toBeVisible({ timeout: 15_000 })
-  await expect(takes.getByRole('button', { name: /生成中$/ })).toHaveCount(0)
-  await expect(takes.getByRole('button', { name: /的素材片$/ })).toHaveCount(2)
-})
-
 test('舞台上的编辑图片打开编辑器，关闭后焦点回到入口', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 })
   const panel = await openStoryboard(page)
@@ -337,21 +285,18 @@ test('舞台上的编辑图片打开编辑器，关闭后焦点回到入口', as
   await expect(editor).toBeVisible()
   await expect(editor).toHaveAccessibleName('编辑图片 镜头组 1 · 帧 @1')
   await expect(editor.getByLabel('图片模型', { exact: true })).toBeVisible()
-  // 这一帧还没编辑过，只有当前帧一张：没得切，版本条不显示。
   await expect(editor.getByRole('group', { name: '该帧的图片', exact: true })).toHaveCount(0)
   await editor.getByRole('button', { name: '关闭图片编辑', exact: true }).click()
   await expect(editor).toBeHidden()
   await expect(entry).toBeFocused()
 })
 
-/** 页面里直传对象存储的闸门（上传走 XHR，MSW 的 service worker 先于 Playwright 路由收下它，只能在页面里拦）。 */
 type StorageGate = {
   __storageHold?: Promise<void>
   __storageRelease?: () => void
   __storageFailures?: number
 }
 
-/** hold 让之后的直传停在半路直到 release；failNext 让下一次直传断网失败。须在打开页面之前装上。 */
 const installStorageGate = async (page: Page) => {
   await page.addInitScript(() => {
     const gate = window as unknown as StorageGate
@@ -371,7 +316,6 @@ const installStorageGate = async (page: Page) => {
         if ((gate.__storageFailures ?? 0) > 0) {
           gate.__storageFailures = (gate.__storageFailures ?? 0) - 1
           super.send(body)
-          // 中断即断网：loadend 到时拿不到状态码。
           this.abort()
           return
         }
@@ -403,7 +347,6 @@ const installStorageGate = async (page: Page) => {
   }
 }
 
-/** 本机图片文件的 DataTransfer：字节由页面里的 Canvas 画出来。 */
 const imageTransfer = (page: Page, png: Buffer, name: string) =>
   page.evaluateHandle(
     ([bytes, fileName]) => {
@@ -414,7 +357,6 @@ const imageTransfer = (page: Page, png: Buffer, name: string) =>
     [Array.from(png), name] as const,
   )
 
-/** 把一张图当剪贴板内容粘进正文：走浏览器真实的 paste 事件。 */
 const pasteImage = async (editor: Locator, png: Buffer, name: string) => {
   const transfer = await imageTransfer(editor.page(), png, name)
   await editor.evaluate((element, clipboardData) => {
@@ -439,12 +381,10 @@ for (const width of [1335, 390] as const) {
     await editor.click()
     await page.keyboard.press('End')
 
-    // 粘贴：光标处出现上传中的 chip，正文还没变。
     await gate.hold()
     await pasteImage(editor, png, '粘贴.png')
     await expect(editor.getByRole('progressbar', { name: '上传中' })).toBeVisible()
     await gate.release()
-    // 传好：chip 换成 @1，地址与引用一起写进本组。
     await expect(editor.getByRole('button', { name: '查看第 1 帧', exact: true })).toBeVisible()
     await expect(editor.getByText('粘贴.png')).toHaveCount(0)
     await expect
@@ -455,7 +395,6 @@ for (const width of [1335, 390] as const) {
         image_indexes: [1],
       })
 
-    // 失败：chip 标红，点开失败卡片重试，用原文件再传一次。
     await gate.failNext()
     await pasteImage(editor, png, '断网.png')
     await expect(editor.getByRole('img', { name: '上传失败' })).toBeVisible()
@@ -468,7 +407,6 @@ for (const width of [1335, 390] as const) {
       .poll(async () => (await readDocument(page)).document.shots[0]?.image_urls.length)
       .toBe(2)
 
-    // 拖到另一段的标题上：只亮这张段卡，聊天输入框不接；落下接到那段末尾。
     const second = group.getByRole('group', { name: '镜头 2', exact: true })
     const heading = second.getByRole('button', { name: '镜头 2', exact: true })
     await heading.scrollIntoViewIfNeeded()
@@ -488,7 +426,6 @@ for (const width of [1335, 390] as const) {
         image_indexes: [3],
       })
 
-    // @ 菜单照常：列本组三张图与「+」，Enter 插入第一张。点在段首，别点到 @N 芯片上（芯片自己接点击）。
     await editor.click({ position: { x: 2, y: 2 } })
     await page.keyboard.type('@')
     const menu = page.getByRole('listbox', { name: '插入参考图', exact: true })

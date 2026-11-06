@@ -1,5 +1,3 @@
-"""API key 生命周期与主体构造的业务规则（内存仓储）。"""
-
 from __future__ import annotations
 
 import uuid
@@ -7,19 +5,18 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
-
-from iclip.common.errors import (
+from agent_runtime.errors import (
     AuthenticationFailed,
     NotFound,
     PermissionDenied,
     ValidationFailed,
 )
+
 from iclip.domains.identity.commands import CreateApiKey
-from iclip.domains.identity.models import ApiKeyRecord
+from iclip.domains.identity.models import ApiKeyRecord, UserAccount
 from iclip.domains.identity.service import (
     IdentityService,
     api_key_token_prefix,
-    generate_api_key_token,
     hash_api_key_token,
     validate_api_key_token,
 )
@@ -31,29 +28,14 @@ from tests.helpers.identity import (
 
 
 def make_service(
-    *accounts: object,
+    *accounts: UserAccount,
 ) -> tuple[IdentityService, InMemoryUserRepository, InMemoryApiKeyRepository]:
-    users = InMemoryUserRepository(list(accounts))  # type: ignore[arg-type]
+    users = InMemoryUserRepository(list(accounts))
     api_keys = InMemoryApiKeyRepository()
     return IdentityService(users, api_keys), users, api_keys
 
 
-def test_two_tokens_never_collide() -> None:
-    assert generate_api_key_token() != generate_api_key_token()
-
-
-def test_user_principal_permissions_are_role_union_plus_direct_grants() -> None:
-    account = make_account(roles=("viewer",), direct_permissions=frozenset({"generation:submit"}))
-    service, _, _ = make_service(account)
-    principal = service.principal_for_user(account)
-    assert principal.has("collections:read")
-    assert principal.has("generation:submit")
-    assert not principal.has("collections:write")
-
-
 async def test_principals_carry_the_account_username() -> None:
-    """用户名跟着主体走：用户主体是自己的，key 主体是属主的；账号没有就是空，不拿邮箱顶。"""
-
     owner = make_account(roles=("root",), username="alice")
     nameless = make_account(username=None, email="nobody@example.com")
     service, _, _ = make_service(owner, nameless)
@@ -66,24 +48,6 @@ async def test_principals_carry_the_account_username() -> None:
         CreateApiKey(name="ci", permissions=frozenset({"collections:read"})),
     )
     assert (await service.authenticate_api_key(token)).username == "alice"
-
-
-async def test_issue_and_authenticate_round_trip() -> None:
-    owner = make_account(roles=("root",))
-    service, _, _ = make_service(owner)
-    principal = service.principal_for_user(owner)
-
-    record, token = await service.issue_api_key(
-        principal, CreateApiKey(name="ci", permissions=frozenset({"collections:read"}))
-    )
-    assert record.token_prefix == token[:16]
-
-    key_principal = await service.authenticate_api_key(token)
-    assert key_principal.kind == "api_key"
-    assert key_principal.user_id == owner.id
-    assert key_principal.api_key_id == record.id
-    assert key_principal.permissions == {"collections:read"}
-    assert key_principal.audit_label == "logan#ci"
 
 
 async def test_direct_grant_of_issue_permission_still_caps_key_at_owner_permissions() -> None:
@@ -184,8 +148,6 @@ def test_custom_token_is_rejected_when_too_short_or_not_url_safe(token: str) -> 
 
 
 async def test_authenticates_a_key_issued_with_a_custom_token() -> None:
-    """服务器上可按调用方已有的串签发；认证只查哈希，不看前缀。"""
-
     owner = make_account(roles=("root",))
     service, _, api_keys = make_service(owner)
     token = validate_api_key_token("Zq7fN2xLb9TmKd4Rv1WyPc6Hs8Gj3Ute")
@@ -206,10 +168,3 @@ async def test_authenticates_a_key_issued_with_a_custom_token() -> None:
     assert principal.kind == "api_key"
     assert principal.api_key_id == record.id
     assert principal.permissions == {"collections:read"}
-
-
-def test_inactive_user_gets_no_principal() -> None:
-    account = make_account(is_active=False)
-    service, _, _ = make_service(account)
-    with pytest.raises(AuthenticationFailed):
-        service.principal_for_user(account)

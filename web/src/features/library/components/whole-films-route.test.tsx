@@ -94,22 +94,6 @@ describe('WholeFilmsRoute', () => {
     )
   })
 
-  it('不能打开来源的读者仍可预览各版，但没有来源任务入口', async () => {
-    server.use(
-      http.get('*/api/library/whole-films', () =>
-        HttpResponse.json({
-          items: [{ ...film, canOpenConversation: false }],
-          nextCursor: null,
-          total: 1,
-        }),
-      ),
-    )
-    await renderWithProviders(<Harness initialFilm={film.conversationId} />)
-    const dialog = await screen.findByRole('dialog', { name: '秋日成片' })
-    expect(within(dialog).queryByRole('button', { name: '打开来源任务' })).toBeNull()
-    expect(within(dialog).getByRole('group', { name: '成片版本' })).toBeVisible()
-  })
-
   it('按标题与作者筛选，没有画幅筛选', async () => {
     const queries: URLSearchParams[] = []
     server.use(

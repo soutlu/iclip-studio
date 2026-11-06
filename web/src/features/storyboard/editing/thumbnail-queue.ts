@@ -15,7 +15,6 @@ const advance = () => {
   }
 }
 
-/** 排队等一个名额，轮到时调用 `start`。返回的函数取消排队或释放已占的名额，可重复调用。 */
 export const acquire = (start: () => void): (() => void) => {
   const ticket = { start }
   waiting.add(ticket)

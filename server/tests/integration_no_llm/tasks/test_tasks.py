@@ -1,5 +1,3 @@
-"""验证需求单的数据库时钟、表约束、条件更新原子性和持久化往返。"""
-
 from __future__ import annotations
 
 import uuid
@@ -52,8 +50,6 @@ async def test_full_lifecycle_over_http(client: httpx.AsyncClient, pg_url: str) 
 async def test_client_minted_id_lands_published_without_a_deadline(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """机器链路自带 id、直接落已下发、不带期限，重发同一个 id 不新建第二张。"""
-
     await login_as_editor(client, pg_url)
     minted = str(uuid.uuid4())
 
@@ -104,8 +100,6 @@ async def test_timestamps_come_from_the_database_clock(engine: AsyncEngine) -> N
 async def test_a_draft_without_a_deadline_can_be_published(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """期限可以不填，不填的草稿照样能发布。"""
-
     await login_as_editor(client, pg_url)
     task = (await create(client, deadline=None)).json()["task"]
 
@@ -130,8 +124,6 @@ async def test_a_deadline_in_the_past_cannot_be_published(
 
 
 async def test_status_guard_refuses_a_write_built_on_a_stale_status(engine: AsyncEngine) -> None:
-    """服务读完状态再写，中间可能被别人改过；仓储按读到的状态条件写入，对不上就一行不动。"""
-
     repo = SqlTaskRepository(engine)
     draft, _ = await repo.create_if_absent(make_task(creator_user_id=await make_user(engine)))
     assert await repo.publish(draft.id) is not None
@@ -180,8 +172,6 @@ async def test_constraints_live_on_the_table(
 
 
 async def test_a_task_outlives_nothing_silently(client: httpx.AsyncClient, pg_url: str) -> None:
-    """需求单创建者外键使用 RESTRICT，避免删除账号破坏业务记录。"""
-
     user_id = await login_as_editor(client, pg_url)
     await create(client)
 
@@ -217,9 +207,6 @@ async def test_viewer_reads_everyones_tasks_but_writes_none(
 async def test_list_pages_by_cursor_and_filters_by_ids_or_claimant(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """数据库时钟下依次建三张，按建立时间倒序翻页，续页不重不漏；``ids`` 批量读取只回点名的，
-    ``claimedBy=me`` 只回自己认领的。"""
-
     await login_as_editor(client, pg_url)
     created = [
         (await create(client, title=f"第 {i} 张", status="published")).json()["task"]["id"]
@@ -248,8 +235,6 @@ async def test_list_pages_by_cursor_and_filters_by_ids_or_claimant(
 async def test_tasks_made_at_the_same_moment_page_by_id(
     client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """同一时刻建的按 id 倒序兜底；续页接着这个排序键，不跳行也不重行。"""
-
     await login_as_editor(client, pg_url)
     low, high = map(str, sorted(uuid.uuid4() for _ in range(2)))
     for minted in (low, high):
@@ -268,8 +253,6 @@ async def test_tasks_made_at_the_same_moment_page_by_id(
 async def test_second_claim_adds_a_person_without_touching_the_task_row(
     app: object, client: httpx.AsyncClient, pg_url: str
 ) -> None:
-    """联合主键防止重复认领；已 confirmed 时只新增认领记录，不更新需求单时间。"""
-
     first_id = await login_as_editor(client, pg_url, username="logan")
     task = (await create(client)).json()["task"]
     await client.post(f"{URL}/{task['id']}/publish")

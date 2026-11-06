@@ -4,10 +4,11 @@ import json
 import uuid
 from typing import Annotated, Any
 
+from agent_runtime.errors import ValidationFailed
+from agent_runtime.http.errors import validation_error_detail
 from fastapi import APIRouter, Query
 from pydantic import TypeAdapter, ValidationError
 
-from iclip.common.errors import ValidationFailed
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import (
     GenerationEnvelope,
@@ -39,7 +40,6 @@ from iclip.domains.identity.public import (
     require_permission,
     resolve_user_name,
 )
-from iclip.platform.http import validation_error_detail
 from iclip.platform.paging import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
 
 
@@ -246,7 +246,6 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
             items=[generation_out(job, source_address=addresses.get(job.id)) for job in jobs]
         )
 
-    # 带固定路径段的都要声明在 /{job_id} 之前，否则被路径参数吞掉。
     @router.get("/video-models", response_model=VideoModelsOut)
     async def list_video_models(
         principal: Annotated[Principal, require_permission("generation:read")],

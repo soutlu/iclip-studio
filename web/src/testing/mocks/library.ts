@@ -1,5 +1,3 @@
-/** 筛选与翻页照 contract/conventions.md §13。 */
-
 import { http, HttpResponse } from 'msw'
 import type { z } from 'zod'
 import type {
@@ -8,7 +6,7 @@ import type {
   zScriptOut,
   zWholeFilmCardOut,
 } from '@/shared/api/generated/zod.gen'
-// no-inline：地址要进 <video src>，不能被构建内联成 data URI。
+// ?no-inline 阻止 Vite 将小体积媒体资源内联为 data URI。
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
 import { mockAuthUser } from './auth-user'
@@ -39,7 +37,6 @@ type Spec = {
   aspectRatio: string
   model: string
   groups: readonly GroupSpec[]
-  /** 出片请求里的分辨率，缺省 720p；高清版按它列可做的档。 */
   resolution?: '480p' | '720p'
 }
 
@@ -265,14 +262,12 @@ const mockLibraryCards = (now: number): LibraryCard[] =>
 export const mockLibraryVideos = (now: number = Date.now()): LibraryVideo[] =>
   mockLibraryCards(now).map((card) => card.video)
 
-/** 按标题找到的那张卡里全部版本的 id，按组与版本的先后；单测按它挑非卡面的一版。 */
 export const mockLibraryVersionIds = (title: string): string[] => {
   const card = mockLibraryCards(Date.now()).find(({ video }) => video.title === title)
   if (card === undefined) throw new Error(`成片素材 mock 里没有「${title}」`)
   return card.groups.flatMap((group) => group.versions.map((version) => version.jobId))
 }
 
-/** 成片素材里这一版与它所在的卡；没有为 undefined。爆款素材的 mock 按它拼列表项、判能否入选。 */
 export const findMockLibraryCardOf = (
   jobId: string,
 ): { video: LibraryVideo; version: Version } | undefined => {
@@ -284,7 +279,6 @@ export const findMockLibraryCardOf = (
   return undefined
 }
 
-/** 成片素材里的一版（出片或合成）与它的镜号，高清版的 mock 按它定来源；没有为 undefined。 */
 export const findMockLibraryVersion = (
   jobId: string,
 ): { version: Version; shotIndex: number | null } | undefined =>
@@ -384,7 +378,6 @@ export function authorsOf(cards: readonly { userName: string | null }[]) {
 
 type WholeFilmCard = z.output<typeof zWholeFilmCardOut>
 
-/** 两段任务的导出：第一段导出过两次，第二段一次；每次用到的素材片取自成片素材的卡面。 */
 export const mockLibraryWholeFilms = (now: number = Date.now()): WholeFilmCard[] => {
   const sources = mockLibraryVideos(now).map((video) => video.face.jobId)
   return ['春夏品牌成片', '城市漫步成片'].map((title, index) => {

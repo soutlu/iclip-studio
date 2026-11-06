@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ShellRouteImport } from './routes/_shell'
 import { Route as ShellIndexRouteImport } from './routes/_shell/index'
+import { Route as ShellAgentsRouteImport } from './routes/_shell/agents'
 import { Route as ShellAuditRouteImport } from './routes/_shell/audit'
 import { Route as ShellConversationsRouteImport } from './routes/_shell/conversations'
 import { Route as ShellLibraryRouteImport } from './routes/_shell/library'
@@ -25,6 +26,11 @@ const ShellRoute = ShellRouteImport.update({
 const ShellIndexRoute = ShellIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellAgentsRoute = ShellAgentsRouteImport.update({
+  id: '/agents',
+  path: '/agents',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellAuditRoute = ShellAuditRouteImport.update({
@@ -60,6 +66,7 @@ const AuthSsoLandingRoute = AuthSsoLandingRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof ShellIndexRoute
+  '/agents': typeof ShellAgentsRoute
   '/audit': typeof ShellAuditRoute
   '/conversations': typeof ShellConversationsRoute
   '/library': typeof ShellLibraryRoute
@@ -68,6 +75,7 @@ export interface FileRoutesByFullPath {
   '/auth/sso/landing': typeof AuthSsoLandingRoute
 }
 export interface FileRoutesByTo {
+  '/agents': typeof ShellAgentsRoute
   '/audit': typeof ShellAuditRoute
   '/conversations': typeof ShellConversationsRoute
   '/library': typeof ShellLibraryRoute
@@ -79,6 +87,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_shell': typeof ShellRouteWithChildren
+  '/_shell/agents': typeof ShellAgentsRoute
   '/_shell/audit': typeof ShellAuditRoute
   '/_shell/conversations': typeof ShellConversationsRoute
   '/_shell/library': typeof ShellLibraryRoute
@@ -91,6 +100,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/agents'
     | '/audit'
     | '/conversations'
     | '/library'
@@ -99,6 +109,7 @@ export interface FileRouteTypes {
     | '/auth/sso/landing'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/agents'
     | '/audit'
     | '/conversations'
     | '/library'
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_shell'
+    | '/_shell/agents'
     | '/_shell/audit'
     | '/_shell/conversations'
     | '/_shell/library'
@@ -137,6 +149,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof ShellIndexRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/agents': {
+      id: '/_shell/agents'
+      path: '/agents'
+      fullPath: '/agents'
+      preLoaderRoute: typeof ShellAgentsRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/audit': {
@@ -185,6 +204,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface ShellRouteChildren {
+  ShellAgentsRoute: typeof ShellAgentsRoute
   ShellAuditRoute: typeof ShellAuditRoute
   ShellConversationsRoute: typeof ShellConversationsRoute
   ShellLibraryRoute: typeof ShellLibraryRoute
@@ -194,6 +214,7 @@ interface ShellRouteChildren {
 }
 
 const ShellRouteChildren: ShellRouteChildren = {
+  ShellAgentsRoute: ShellAgentsRoute,
   ShellAuditRoute: ShellAuditRoute,
   ShellConversationsRoute: ShellConversationsRoute,
   ShellLibraryRoute: ShellLibraryRoute,

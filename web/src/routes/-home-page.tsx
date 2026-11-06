@@ -19,13 +19,11 @@ import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { toast } from '@/shared/ui/toast'
 import { useLoginPrompt } from './-login-prompt'
 
-/** 路由组合首页输入、真实合集与对话创建；两端 feature 不互相依赖。 */
 export function HomePage() {
   const { data: user } = useUser()
   const requireLogin = useLoginPrompt()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  // 输入内容、所选助手与合集都进本标签页的草稿，离开首页再回来照常恢复；只认当前登录人选的。
   const draft = useHomeDraft(user?.id)
   const {
     agentId: chosenAgentId,
@@ -40,8 +38,6 @@ export function HomePage() {
   const agents = useConversationAgents(canRun)
   const collectionsQuery = useCollections(canReadCollections)
   const collections = collectionsQuery.data ?? []
-  // 侧栏合集行「在合集里新建任务」把合集带在查询串里：等登录身份就绪后预选一次，再从地址栏移除。
-  // 输入框聚焦由侧栏经应用壳请求，这里不重复。不在自己合集里的 id 由下面的合集校验退回无关联。
   const requestedCollection = useSearch({
     select: (search) => search.collection,
     strict: false,
@@ -51,8 +47,6 @@ export function HomePage() {
     setAppliedRequest(requestedCollection)
     if (requestedCollection !== undefined) chooseCollection(requestedCollection)
   }
-  // 做同款按来源读取生成素材或灵感视频；身份就绪后消费一次查询参数。
-  // 换了身份就不再算数；只有生成素材会预选源视频的助手。
   const requestedSame = useSearch({
     select: (search) => search.same,
     strict: false,
@@ -99,7 +93,6 @@ export function HomePage() {
     sameStyle !== null && sameStyle.ownerUserId === (user?.id ?? null) ? sameStyle : null
   const sameAs = activeSameStyle?.kind === 'video' ? activeSameStyle.id : null
   const referenceId = activeSameStyle?.kind === 'reference' ? activeSameStyle.id : null
-  // 能不能做同款只有资料库详情知道；读不了、读失败或做不了都退出做同款并说明原因。
   const canReadLibrary = hasPermission(user, PERMISSION.generationRead)
   const source = useLibraryVideo(sameAs !== null && canReadLibrary ? sameAs : null)
   const reference = useReference(canReadLibrary ? referenceId : null)
@@ -113,13 +106,11 @@ export function HomePage() {
       if (reference.isError && !reference.isFetching)
         sameStyleFailure = errorMessageOf(reference.error, '读取该参考视频失败，无法做同款')
     } else if (source.isError && !source.isFetching) {
-      // 上次读失败留在缓存里时，等这次重读落定再判断。
       sameStyleFailure = errorMessageOf(source.error, '读取该视频失败，无法做同款')
     } else if (sourceCard?.canMakeSame === false) {
       sameStyleFailure = '该视频没有可用的制作文件，无法做同款'
     }
   }
-  // 渲染期退出，提示交给 effect 弹；每次失败一个新对象，同样的原因再来一次也照样提示。
   const [sameStyleNotice, setSameStyleNotice] = useState<{ message: string } | null>(null)
   if (sameStyleFailure !== null) {
     setSameStyle(null)
@@ -128,11 +119,9 @@ export function HomePage() {
   useEffect(() => {
     if (sameStyleNotice !== null) toast.error(sameStyleNotice.message)
   }, [sameStyleNotice])
-  // 已删除的合集回到无关联；读取失败时保留缓存里的当前选择。
   const collectionId = collections.some((item) => item.id === chosenCollectionId)
     ? chosenCollectionId
     : null
-  // 做同款默认用源视频的助手，它不在可选列表里时用默认助手；用户选过的优先。
   const sourceAgentId = sourceCard?.video.agentId ?? null
   const presetAgentId = agents.data?.items.some((item) => item.id === sourceAgentId)
     ? sourceAgentId
@@ -192,7 +181,6 @@ export function HomePage() {
             : agentId
               ? '所选创作助手已不可用'
               : '暂无可用的创作助手'
-  // 只有一个可用助手且已选中它时，下拉只会列出它自己，改为只显示名字。
   const onlyAgent =
     canRun && agents.isSuccess && agents.data.items.length === 1 ? agents.data.items[0] : undefined
   const composerFocus = useShellChrome().composerFocus
@@ -294,7 +282,6 @@ export function HomePage() {
         }}
         onSaved={(collection) => {
           chooseCollection(collection.id)
-          // 侧栏的合集列表来自对话拓扑，新建后让它重拉。
           void refreshConversationLists(queryClient, 'sidebar')
         }}
         open={newCollectionName !== null}

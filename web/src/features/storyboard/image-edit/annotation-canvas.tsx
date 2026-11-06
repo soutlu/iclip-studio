@@ -32,8 +32,6 @@ type AnnotationCanvasProps = {
   onSelect: (id: string | null) => void
   disabled?: boolean
   onInsertReference?: (id: string) => void
-  /** 标注工具条渲染进的元素：由调用方摆位置（桌面叠在舞台左侧，窄屏在舞台下方一行）。
-   * 还没挂上（null）时不渲染工具条。 */
   toolbarHost: HTMLElement | null
 }
 
@@ -73,7 +71,6 @@ export function AnnotationCanvas({
   const [nextNumber, setNextNumber] = useState(
     () => Math.max(0, ...annotations.map((annotation) => annotation.number)) + 1,
   )
-  // 撤销栈只属于这次挂载：外部换掉整份标注（恢复输入、重新开始、换底图）时由父组件换 key 重挂。
   const [history, setHistory] = useState({
     past: [] as ImageAnnotation[][],
     future: [] as ImageAnnotation[][],
@@ -163,7 +160,6 @@ export function AnnotationCanvas({
       original = selected
       kind = handle >= 0 ? 'resize' : 'move'
     } else {
-      // 第一次空白点击仅取消当前选择，不能意外新增点或笔迹。
       if (selectedId !== null) {
         onSelect(null)
         return
@@ -211,7 +207,6 @@ export function AnnotationCanvas({
       } else if (previous.original.kind === 'pen') {
         const last = previous.current.points.at(-1)
         if (last && Math.hypot(last.x - point.x, last.y - point.y) < 0.001) return previous
-        // 长笔迹均匀降采样，保留整段轨迹，不能截断后把终点直接连回第 499 个点。
         const points =
           previous.current.points.length >= 500
             ? previous.current.points.filter((_, index) => index % 2 === 0)
@@ -303,7 +298,6 @@ export function AnnotationCanvas({
       })
     : null
 
-  // 工具与撤销、重做、清空分两组：窄屏排成一行时两组各靠一端。
   const tools = (
     <div className="image-edit-tools" role="toolbar" aria-label="标注工具">
       <div className="image-edit-tools-group">
@@ -358,11 +352,9 @@ export function AnnotationCanvas({
         ref={viewportRef}
         className="image-edit-canvas-viewport"
         onPointerDown={(event) => {
-          // 图框只有图那么大，点在图外的舞台上落在这里：与点在图上的空白一样，只取消选择。
           if (event.target === event.currentTarget && !blocked && !gesture) onSelect(null)
         }}
       >
-        {/* 图框按图片本身的宽高比 contain 在可用区域里，圆角投影画在它上面；读到尺寸前铺满、不画投影。 */}
         <div
           className={ready ? 'image-edit-canvas-frame stage-picture' : 'image-edit-canvas-frame'}
           data-ready={ready ? '' : undefined}
@@ -588,7 +580,6 @@ function AnnotationMark({
             strokeWidth={2 * unit}
             pointerEvents="none"
           />
-          {/* 序号与标注线同色的红色实心，细白圈；导出给模型的标注图同样画法（annotation-export）。 */}
           <rect
             x={geometry.label.x - geometry.label.width / 2}
             y={geometry.label.y - geometry.label.height / 2}

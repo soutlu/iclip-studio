@@ -1,6 +1,3 @@
-/** 文案列的列头与时长胶囊，分镜页与制作页共用。列头写镜头数与总长，带「收起为摘要」开关和按时长切分的镜头条
- * （色段与左轨短色签同取镜头的点缀色），点一段跳到那个镜头。版式见 storyboard.css 的「文案列」一节。 */
-
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
@@ -8,12 +5,10 @@ import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip
 import type { ShotAccent } from '../shot-accent'
 import { formatTimeRange, formatTimecode, type SegmentTime } from '../shot-content'
 
-/** 镜头条上的一段。 */
 export type ScriptScene = { id: string; label: string; time: SegmentTime; accent: ShotAccent }
 
 type ScriptHeadProps = {
   scenes: readonly ScriptScene[]
-  /** 总长：最后一镜的止秒。 */
   total: number
   selectedId: string | undefined
   compact: boolean
@@ -56,7 +51,6 @@ export function ScriptHead({
                   aria-label={summary.join('，')}
                   className={cn('storyboard-timeline-segment ui-focus', accent.segment)}
                   onClick={() => onJump(id)}
-                  // 按原始起止秒排比例，不用取整后的时长。
                   style={{ flexGrow: time.end - time.start }}
                   type="button"
                 />
@@ -74,7 +68,6 @@ export function ScriptHead({
   )
 }
 
-/** 时长胶囊：显示时长，悬停提示与读屏给完整区间。 */
 export function DurationPill({ time }: { time: SegmentTime }) {
   const range = formatTimeRange(time)
   return (

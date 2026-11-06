@@ -80,7 +80,6 @@ describe('readAudioPeaks', () => {
   })
 
   it('每秒 50 个峰值，各声道取最大的绝对值，整条最响的是 1', async () => {
-    // 采样率 100：每个峰值管两个样本。
     media.audio = [
       {
         timestamp: 0,
@@ -101,7 +100,6 @@ describe('readAudioPeaks', () => {
     ]
     expect(await readAudioPeaks('https://oss.example.com/take.mp4')).toEqual({
       rate: 50,
-      // 样本按 32 位浮点存，比值只到浮点精度。
       peaks: [expect.closeTo(0.25), expect.closeTo(0.5), 1],
     })
     expect(media.disposed).toBe(1)

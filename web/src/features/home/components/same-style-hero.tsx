@@ -3,33 +3,24 @@ import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 
-/** 做同款的那条视频：卡片标题（来源对话没有标题时为 null，不压字）、卡面素材片的地址与画幅。 */
 export type SameStyleVideo = {
   title: string | null
   outputUrl: string
   aspectRatio: string | null
 }
 
-/** 封面截帧的宽度：卡片最宽约 300 CSS 像素，按 2 倍屏取。 */
 const SNAPSHOT_WIDTH = 600
 
-/** 封面框只分竖、横、方三种，卡片高度固定，宽度随画幅；画面按框裁切。 */
 const frameRatioOf = (aspectRatio: string | null): string => {
   const { w, h } = aspectOf(aspectRatio)
   return w > h ? '4 / 3' : w < h ? '3 / 4' : '1 / 1'
 }
 
 type SameStyleHeroProps = {
-  /** 源视频；读回来之前为 null，先摆出卡片的占位。 */
   video: SameStyleVideo | null
-  /** 右上角 ✕：退出做同款，回到普通首页。 */
   onExit: () => void
 }
 
-/**
- * 做同款时首页顶部换成这条视频的封面：标题压在封面底部的深色渐变上，后面斜叠两张卡片，像从资料库里抽出来的那一张。
- * 不另加说明文字。封面是 OSS 截帧；不是 OSS 地址截不了帧，就用不出声、不预加载全片的视频元素显示首帧。
- */
 export function SameStyleHero({ video, onExit }: SameStyleHeroProps) {
   const poster = video === null ? undefined : videoSnapshotUrl(video.outputUrl, SNAPSHOT_WIDTH)
   return (
@@ -60,7 +51,7 @@ export function SameStyleHero({ video, onExit }: SameStyleHeroProps) {
                 muted
                 playsInline
                 preload="metadata"
-                // 媒体片段让 Safari 也画出首帧；地址自带片段时照原样。
+                // 附加 #t=0.001 使 Safari 渲染视频首帧。
                 src={video.outputUrl.includes('#') ? video.outputUrl : `${video.outputUrl}#t=0.1`}
                 tabIndex={-1}
               />

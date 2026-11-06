@@ -1,9 +1,3 @@
-"""资料库打标的组合根适配：把 tagging 声明的两个端口接到方舟 Responses 接口与各库的文字上。
-
-打标是一次纯文本调用。输出约束按当前标签树里 ``auto_fill = ai`` 的维度现拼：每个维度是字段
-``d1…dn``，名字与说明放在 JSON Schema 中；有下级的维度按树组织选项，其余维度直接选名字。
-``parse_tag_answer`` 校验输出并换成标签 id。"""
-
 from __future__ import annotations
 
 import json
@@ -12,32 +6,32 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
-import httpx
+from agent_runtime.client import RuntimeClient
+from agent_runtime.file_store.namespace import namespace_for
 
 from iclip.app.conversation_same_style import TREATMENT_PATH
-from iclip.capabilities.video_breakdown.model import ArkBreakdownModel
-from iclip.capabilities.video_breakdown.ports import BreakdownError
-from iclip.capabilities.workspace.scope import namespace_for
-from iclip.config import ResolvedIclipStudio
+from iclip.app.runtime_workspace import WorkspaceFiles
 from iclip.domains.library.repository import LibraryReports
 from iclip.domains.references.repository import ReferenceStore
 from iclip.domains.tagging.models import (
     ERROR_MODEL_CALL_FAILED,
     ERROR_MODEL_FAILED,
+    ERROR_MODEL_UNAVAILABLE,
     KIND_REFERENCE,
     EntryKey,
     TaggingFailed,
     TagNode,
 )
-from iclip.platform.file_store.store import FileStore
+from iclip.platform.video_breakdown.model import ArkBreakdownModel
+from iclip.platform.video_breakdown.ports import BreakdownError, BreakdownModelUnavailable
+
+TAG_MODEL: Final = "doubao-seed-2-1-lite-260915"
 
 TAG_REASONING_EFFORT: Final = "low"
 
 TAG_MAX_OUTPUT_TOKENS: Final = 8_192
-"""含思考的输出上限。实测思考强度 low 时一次约 2200 个，给到约四倍，避免答到一半被截断。"""
 
 TAG_TIMEOUT_SECONDS: Final = 180.0
-"""打标的总超时，短于打标中的超时收尾。"""
 
 _INTRO: Final = (
     "你会拿到一段描述一条视频的文字。按文字给视频打标签，只用文字里写到的内容，没写的不要猜。\n"
@@ -52,16 +46,11 @@ _HIERARCHY_DESCRIPTION: Final = (
 
 @dataclass(frozen=True, slots=True)
 class TagRequest:
-    """一次打标的请求与解析依据，按当时的 AI 维度现拼。"""
-
     system_prompt: str
     text_format: dict[str, Any]
     choices: Mapping[str, Mapping[str, TagNode]]
-    """每个字段（``d1``…）里能填的名字与它对应的节点。"""
     groups: Mapping[str, Mapping[str, TagNode]]
-    """有层级的字段及其第一级选项；沿各节点的 children 逐层限定可选下级。"""
     parents: Mapping[uuid.UUID, uuid.UUID | None]
-    """这些维度里每个节点的上级。"""
 
 
 def _choice(node: TagNode) -> dict[str, Any]:
@@ -93,9 +82,6 @@ def _group(node: TagNode) -> dict[str, Any]:
 
 
 def build_tag_request(dimensions: Sequence[TagNode]) -> TagRequest:
-    """``dimensions`` 是 AI 维度，按给的先后编成 ``d1…dn``。同一维度里名字重复说明标签树坏了，直接
-    抛 ``RuntimeError``。"""
-
     properties: dict[str, Any] = {}
     choices: dict[str, dict[str, TagNode]] = {}
     groups: dict[str, dict[str, TagNode]] = {}
@@ -169,9 +155,6 @@ def _ancestors(tag_id: uuid.UUID, parents: Mapping[uuid.UUID, uuid.UUID | None])
 
 
 def parse_tag_answer(raw: str, request: TagRequest) -> tuple[uuid.UUID, ...]:
-    """校验字段、候选名字及父子关系，错误抛 ``TaggingFailed``（``model_failed``），不静默丢弃。
-    名字换成 id 并去重，按持久化约定归一化祖先；按字段与作答的先后排。"""
-
     try:
         answer = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -198,8 +181,6 @@ def parse_tag_answer(raw: str, request: TagRequest) -> tuple[uuid.UUID, ...]:
 
 
 class ArkTagger:
-    """``Tagger`` 的实现：一次方舟纯文本调用加 ``parse_tag_answer``。"""
-
     def __init__(self, model: ArkBreakdownModel) -> None:
         self._model = model
 
@@ -214,31 +195,25 @@ class ArkTagger:
                 text_format=request.text_format,
                 timeout=TAG_TIMEOUT_SECONDS,
             )
+        except BreakdownModelUnavailable as exc:
+            raise TaggingFailed(str(exc), code=ERROR_MODEL_UNAVAILABLE) from exc
         except BreakdownError as exc:
-            # 可重试的（限流、服务端错、连不上、答得不完整）再打可能就好；被拒与等满总超时不会。
             code = ERROR_MODEL_CALL_FAILED if exc.retryable else ERROR_MODEL_FAILED
             raise TaggingFailed(str(exc), code=code) from exc
         return parse_tag_answer(raw, request)
 
 
 class HitCaseTreatments:
-    """爆款素材的新片执行方案：素材片所在对话（按对话属主与对话 id 定位）工作区里的 ``treatment.md``。
-    只读当前那一份，不存快照。"""
-
-    def __init__(self, store: FileStore) -> None:
+    def __init__(self, store: WorkspaceFiles) -> None:
         self._store = store
 
     async def exists(self, owner: uuid.UUID, conversation_id: uuid.UUID) -> bool:
-        """那段对话的工作区里有没有这份文件；空文件也算有。"""
-
         entries = await self._store.entries(
             namespace_for(owner, str(conversation_id)), prefix=TREATMENT_PATH
         )
         return any(entry.path == TREATMENT_PATH for entry in entries)
 
     async def text(self, owner: uuid.UUID, conversation_id: uuid.UUID) -> str | None:
-        """这份文件的内容；没有或只有空白给 ``None``。"""
-
         stored = await self._store.read(namespace_for(owner, str(conversation_id)), TREATMENT_PATH)
         if stored is None or not stored.content.strip():
             return None
@@ -246,9 +221,6 @@ class HitCaseTreatments:
 
 
 class LibrarySourceText:
-    """``SourceText`` 的实现：灵感库的条目读参考视频当前的拆解；爆款素材读它所在对话当前的新片执行
-    方案，不挂对话或对话不存在时没有文字。"""
-
     def __init__(
         self,
         references: ReferenceStore,
@@ -270,21 +242,13 @@ class LibrarySourceText:
         return await self._treatments.text(source.conversation_owner, source.conversation_id)
 
 
-def build_library_tagger(settings: ResolvedIclipStudio, client: httpx.AsyncClient) -> ArkTagger:
-    """按 ``iclip_studio`` 的配置建打标；HTTP 连接池与组合根共用，模型与拆解是同一个。"""
-
-    return ArkTagger(
-        ArkBreakdownModel(
-            client,
-            url=settings.breakdown_url,
-            api_key=settings.breakdown_api_key,
-            model=settings.breakdown_model,
-        )
-    )
+def build_library_tagger(runtime: RuntimeClient) -> ArkTagger:
+    return ArkTagger(ArkBreakdownModel(runtime, model=TAG_MODEL))
 
 
 __all__ = [
     "TAG_MAX_OUTPUT_TOKENS",
+    "TAG_MODEL",
     "TAG_REASONING_EFFORT",
     "TAG_TIMEOUT_SECONDS",
     "ArkTagger",

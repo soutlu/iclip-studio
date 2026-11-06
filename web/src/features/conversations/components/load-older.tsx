@@ -1,5 +1,3 @@
-/** 时间线顶部的「加载更早」：还有更早的轮次才出现；读的时候转圈，读失败改口让人重试。 */
-
 import { Icon } from '@/shared/icons'
 
 type LoadOlderProps = {

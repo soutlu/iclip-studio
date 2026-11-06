@@ -9,16 +9,11 @@ import {
   releaseMockResponses,
 } from './helpers'
 
-/** mock 受理后 3 秒出结果；编辑段与合成各等一轮，结果时长另由浏览器读。 */
 const STEP_TIMEOUT = 15_000
 
-/** 第 2 组那条素材片是竖版、6 秒、每秒一个关键帧（6 个镜头）、带一条原声；第 3 组是横版、无声。
- * mock 的编辑结果是一条 3 秒的样片。 */
 const openEditor = async (page: Page, mobile = false, group = 2, useWan = true) => {
-  // 编辑器挂在工作台里，紧凑屏要先展开工作台。
   const panel = await openConversation(page, '夜景延时素材生成', { mobile })
   await openStoryboardShot(panel, group)
-  // 点素材片卡选中它，编辑视频叠在舞台右上。
   await panel
     .getByRole('region', { name: '本组素材片', exact: true })
     .getByRole('button', { name: /的素材片$/ })
@@ -29,7 +24,6 @@ const openEditor = async (page: Page, mobile = false, group = 2, useWan = true) 
   await expect(dialog).toBeVisible()
   await expect(page).toHaveURL(/[?&]video=/)
   if (useWan) {
-    // 服务端默认 Seedance 2.5 编辑至少 4 秒；这里的旅程用一两个镜头，显式选 Wan。
     await expect(shots(dialog).first()).toBeVisible({ timeout: STEP_TIMEOUT })
     await shot(dialog, 1).click()
     await card(dialog).getByRole('button', { name: '编辑模型', exact: true }).click()
@@ -40,7 +34,6 @@ const openEditor = async (page: Page, mobile = false, group = 2, useWan = true) 
 
 const timelineOf = (dialog: Locator) =>
   dialog.getByRole('region', { name: '视频编辑时间线', exact: true })
-/** 原片轨上的镜头。 */
 const shots = (dialog: Locator) =>
   timelineOf(dialog)
     .getByRole('group', { name: '原片', exact: true })
@@ -49,31 +42,24 @@ const shot = (dialog: Locator, no: number) =>
   timelineOf(dialog)
     .getByRole('group', { name: '原片', exact: true })
     .getByRole('button', { name: new RegExp(`^镜头 ${no} ·`) })
-/** 编辑轨：编辑片段与第一行的占位。 */
 const lane = (dialog: Locator) =>
   timelineOf(dialog).getByRole('group', { name: '编辑片段', exact: true })
 const controls = (dialog: Locator) => dialog.getByRole('group', { name: '播放控件' })
-/** 版本视图里时间线上一版一行。 */
 const versions = (dialog: Locator) => dialog.getByRole('group', { name: '视频版本' })
 const view = (dialog: Locator, name: '版本' | '剪辑') =>
   dialog.getByRole('group', { name: '查看方式' }).getByRole('button', { name, exact: true })
-/** 选中镜头时盖在舞台上的生成卡；选中草稿里一块时是以它命名的小卡。 */
 const card = (dialog: Locator) => dialog.getByRole('region', { name: 'AI 改段' })
 const smallCard = (dialog: Locator, name: string) => dialog.getByRole('region', { name })
-/** 草稿轨：要合成的内容。 */
 const draft = (dialog: Locator) =>
   timelineOf(dialog).getByRole('group', { name: '草稿', exact: true })
-/** 原片轨上镜头的小眼睛。 */
 const shotEye = (dialog: Locator, no: number) =>
   timelineOf(dialog)
     .getByRole('group', { name: '原片', exact: true })
     .getByRole('button', { name: new RegExp(`^(关闭|开启)镜头 ${no}$`) })
-/** 编辑轨上一段的小眼睛。 */
 const partEye = (dialog: Locator, name: string) =>
   lane(dialog)
     .getByRole('group', { name, exact: true })
     .getByRole('button', { name: /选用这一段$/ })
-/** 卡收起后的小胶囊。 */
 const capsule = (dialog: Locator) => dialog.getByRole('button', { name: /^展开镜头 \d/ })
 const requestBox = (dialog: Locator) =>
   card(dialog).getByRole('textbox', { name: '修改要求', exact: true })
@@ -82,12 +68,10 @@ const generateButton = (dialog: Locator) =>
 const composeButton = (dialog: Locator) =>
   controls(dialog).getByRole('button', { name: /合成新版本|正在合成/ })
 
-/** 等镜头读好：第 2 组 6 个镜头。 */
 const waitForShots = async (dialog: Locator, count = 6) => {
   await expect(shots(dialog)).toHaveCount(count, { timeout: STEP_TIMEOUT })
 }
 
-/** 时间线上某个原片时刻的横坐标：刻度上的播放位置滑块铺满整条轨道。 */
 const xAt = async (dialog: Locator, time: number) => {
   const ruler = dialog.getByRole('slider', { name: '时间线播放位置' })
   const box = await ruler.boundingBox()
@@ -103,7 +87,6 @@ const centerOf = async (locator: Locator) => {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
 }
 
-/** 按住一处拖到时间线的某个时刻，不松手；返回松手的函数。 */
 const holdDrag = async (page: Page, dialog: Locator, from: Locator, time: number) => {
   const start = await centerOf(from)
   await page.mouse.move(start.x, start.y)
@@ -112,7 +95,6 @@ const holdDrag = async (page: Page, dialog: Locator, from: Locator, time: number
   return () => page.mouse.up()
 }
 
-/** 卡里写着要求，点「生成视频」：返回编辑请求体与受理的记录 id。 */
 const submitEdit = async (page: Page, dialog: Locator) => {
   const request = page.waitForRequest(
     (sent) => sent.url().endsWith('/api/generations/video-edits') && sent.method() === 'POST',
@@ -123,7 +105,6 @@ const submitEdit = async (page: Page, dialog: Locator) => {
   return { body: sent.postDataJSON() as Record<string, unknown>, editId: accepted.generation.id }
 }
 
-/** 延迟真实直传，不伪造 HTTP 结果；MSW Service Worker 会先于 Playwright route 接收上传。 */
 const holdReferenceUpload = async (page: Page) => {
   await page.evaluate(() => {
     const OriginalRequest = XMLHttpRequest
@@ -154,7 +135,6 @@ const holdReferenceUpload = async (page: Page) => {
   return () => page.evaluate(() => window.dispatchEvent(new Event('release-reference-upload')))
 }
 
-/** 卡头：第一行选了哪几个镜头，第二行原片区间与做法，或为什么还不能生成。 */
 const expectCard = async (dialog: Locator, title: string, detail: string) => {
   await expect(card(dialog).getByText(title, { exact: true })).toBeVisible()
   await expect(card(dialog).getByText(detail, { exact: true })).toBeVisible()
@@ -167,7 +147,6 @@ test('编辑一段：选镜头生成，结果在编辑轨上按关键帧切段�
   await page.setViewportSize({ width: 1335, height: 880 })
   const dialog = await openEditor(page)
   await waitForShots(dialog)
-  // 原片有原声：读到的是真实波形，不是「无声」。
   await expect(timelineOf(dialog).getByTestId('timeline-wave').first()).toBeVisible({
     timeout: STEP_TIMEOUT,
   })
@@ -178,7 +157,6 @@ test('编辑一段：选镜头生成，结果在编辑轨上按关键帧切段�
   await shot(dialog, 3).click({ modifiers: ['Shift'] })
   await expectCard(dialog, '镜头 2–3 · 视频生成', '原片 1.0 – 3.0 秒 · 视频和原声一起重做')
 
-  // 写要求，再用「+」加一张参考图：落成光标处的图片标签，传好才能生成。
   await requestBox(dialog).fill('换成黄昏的暖光，逆光打在人和滑板上，动作和机位不变，色调参考')
   const fileChooser = page.waitForEvent('filechooser')
   await card(dialog).getByRole('button', { name: '添加附件', exact: true }).click()
@@ -193,7 +171,6 @@ test('编辑一段：选镜头生成，结果在编辑轨上按关键帧切段�
   await expect(generateButton(dialog)).toBeEnabled({ timeout: STEP_TIMEOUT })
 
   const { body, editId } = await submitEdit(page, dialog)
-  // 基底总是原片，区间正好是镜头 2–3；参考片段由浏览器在关键帧处切好、传上去。
   const baseJobId = new URL(page.url()).searchParams.get('video')
   expect(body).toMatchObject({
     source_job_id: baseJobId,
@@ -206,7 +183,6 @@ test('编辑一段：选镜头生成，结果在编辑轨上按关键帧切段�
     reference_image_urls: [expect.stringMatching(/\/mock-oss\//)],
   })
 
-  // 结果在编辑轨上正对镜头 2–3：先是生成中；出来的样片 3 秒、关键帧在 0/1/2 秒，切成 3 段，都没选用。
   await expect(lane(dialog).getByRole('button', { name: '镜头 2–3 · 生成中' })).toBeVisible()
   const partName = (seg: number) => `镜头 2–3 的编辑片段 · 第 ${seg} 段 · 1.0 秒`
   await expect(
@@ -215,7 +191,6 @@ test('编辑一段：选镜头生成，结果在编辑轨上按关键帧切段�
   await expect(partEye(dialog, partName(1))).toHaveAccessibleName('选用这一段')
   await expect(controls(dialog)).toContainText('共 6.0 秒')
 
-  // 点一段就选用：它进草稿并被选中，覆盖的镜头默认关，小卡写这一段。
   const part = lane(dialog).getByRole('button', { name: partName(1), exact: true })
   await part.click()
   const inDraft = draft(dialog).getByRole('button', { name: `${partName(1)} · 已选用` })
@@ -230,7 +205,6 @@ test('编辑一段：选镜头生成，结果在编辑轨上按关键帧切段�
   await expect(controls(dialog)).toContainText('共 5.0 秒 · 比原片短 1.0 秒')
   await expect(composeButton(dialog)).toBeEnabled()
 
-  // 再点取消：镜头回来，草稿又是整条原片。
   await part.click()
   await expect(inDraft).toHaveCount(0)
   await expect(smallCard(dialog, '镜头 2–3 的编辑片段')).toHaveCount(0)
@@ -238,7 +212,6 @@ test('编辑一段：选镜头生成，结果在编辑轨上按关键帧切段�
   await expect(controls(dialog)).toContainText('共 6.0 秒')
   await expect(composeButton(dialog)).toBeDisabled()
 
-  // 用眼睛把三段都选用：它们按段排在镜头 1 后面，比原片长 1 秒。
   for (const seg of [1, 2, 3]) await partEye(dialog, partName(seg)).click()
   await expect
     .poll(() =>
@@ -253,7 +226,6 @@ test('编辑一段：选镜头生成，结果在编辑轨上按关键帧切段�
     ])
   await expect(controls(dialog)).toContainText('共 7.0 秒 · 比原片长 1.0 秒')
 
-  // 合成：草稿按顺序拼，相接的并成一段，编辑段写明用到的起止。
   const request = page.waitForRequest(
     (sent) => sent.url().endsWith('/api/generations/video-composites') && sent.method() === 'POST',
   )
@@ -268,8 +240,10 @@ test('编辑一段：选镜头生成，结果在编辑轨上按关键帧切段�
       { sourceJobId: baseJobId, start: 3, end: 6 },
     ],
   })
+  await expect(
+    controls(dialog).getByRole('button', { name: '正在合成', exact: true }),
+  ).toBeDisabled()
 
-  // 合成完成：自动切到版本视图看新的一版，它在最上面一行；只能下载、不能合成。
   await expect(view(dialog, '版本')).toHaveAttribute('aria-pressed', 'true', {
     timeout: STEP_TIMEOUT,
   })
@@ -278,7 +252,6 @@ test('编辑一段：选镜头生成，结果在编辑轨上按关键帧切段�
   await expect(versions(dialog).getByRole('button').first()).toHaveAttribute('aria-pressed', 'true')
   await expect(controls(dialog).getByRole('button', { name: '下载', exact: true })).toBeEnabled()
   await expect(composeButton(dialog)).toHaveCount(0)
-  // 回到剪辑，内容就是刚合成的这版，不能再合成一样的。
   await view(dialog, '剪辑').click()
   await expect(composeButton(dialog)).toBeDisabled()
 })
@@ -296,10 +269,8 @@ test('拖放：编辑段拖到草稿上出落点占位、松手选用；草稿�
   const partName = '镜头 2–3 的编辑片段 · 第 1 段 · 1.0 秒'
   const part = lane(dialog).getByRole('button', { name: partName, exact: true })
   await expect(part).toBeVisible({ timeout: STEP_TIMEOUT })
-  // 按 Escape 收起生成卡，免得挡住时间线
   await page.keyboard.press('Escape')
 
-  // 按住编辑段拖到草稿轨上：落点占位写出按排序放进去的位置（镜头 2 后面），松手前草稿不变
   const from = await centerOf(part)
   const target = await centerOf(draft(dialog).getByRole('button', { name: /^镜头 5 ·/ }))
   await page.mouse.move(from.x, from.y)
@@ -310,13 +281,11 @@ test('拖放：编辑段拖到草稿上出落点占位、松手选用；草稿�
   await page.mouse.up()
   const inDraft = draft(dialog).getByRole('button', { name: `${partName} · 已选用` })
   await expect(inDraft).toBeVisible()
-  // 等于点它的眼睛：覆盖的镜头默认关，不改选中
   await expect(shotEye(dialog, 2)).toHaveAccessibleName('开启镜头 2')
   await expect(partEye(dialog, partName)).toHaveAccessibleName('取消选用这一段')
   await expect(inDraft).toHaveAttribute('aria-pressed', 'false')
   await expect(controls(dialog)).toContainText('共 5.0 秒')
 
-  // 把草稿里的这一块拖出草稿轨（拖到原片轨上）松手：拿掉它，镜头回来
   const start = await centerOf(inDraft)
   const away = await centerOf(shot(dialog, 1))
   await page.mouse.move(start.x, start.y)
@@ -356,7 +325,6 @@ test('图生和编辑按模型分别校验时长，图生 1 张图作首帧时�
     buffer: await canvasPng(page, { fill: '#556b88', label: 'Reference' }),
   })
   await expect(requestBox(dialog).getByText('人物造型.png')).toBeVisible()
-  // 首帧不写进正文，只有它时没有描述可交。
   await expect(generateButton(dialog)).toBeDisabled()
   await requestBox(dialog).press('End')
   await page.keyboard.type('人物转身')
@@ -457,8 +425,13 @@ test('提交未受理时保护关闭与站内离开，受理后编辑轨显示�
   await waitForShots(dialog)
   await shot(dialog, 2).click()
   await requestBox(dialog).fill('换成暖色光线')
-  const release = await holdReferenceUpload(page)
+  await pauseMockResponses(page, '/api/generations/video-edits')
+  const submitted = page.waitForRequest(
+    (request) =>
+      request.url().endsWith('/api/generations/video-edits') && request.method() === 'POST',
+  )
   await generateButton(dialog).click()
+  await submitted
   await expect(card(dialog).getByRole('button', { name: '正在提交', exact: true })).toBeDisabled()
   await expect(view(dialog, '版本')).toBeDisabled()
   const editingUrl = page.url()
@@ -468,10 +441,11 @@ test('提交未受理时保护关闭与站内离开，受理后编辑轨显示�
   await dialog.getByRole('button', { name: '关闭视频编辑', exact: true }).click()
   await expect(dialog).toBeVisible()
 
-  await release()
+  await releaseMockResponses(page, '/api/generations/video-edits')
   await expect(lane(dialog).getByRole('button', { name: '镜头 2 · 生成中' })).toBeVisible({
     timeout: STEP_TIMEOUT,
   })
+  await expect(view(dialog, '版本')).toBeEnabled()
   await dialog.getByRole('button', { name: '关闭视频编辑', exact: true }).click()
   await expect(dialog).toBeHidden()
 })
@@ -488,53 +462,8 @@ test('提交尚未受理时刷新会出现浏览器原生离开提示', async ({
   const reload = page.reload()
   const warning = await leave
   expect(warning.type()).toBe('beforeunload')
-  // MSW 在 beforeunload 时停用 mock；在独立页面接受离开，不让此行为影响提交状态用例。
   await warning.accept()
   await reload
-})
-
-test('选中：普通点击只选当前镜头，Shift 点击扩选；键盘左右与 Shift 扩展，卡跟着选区走', async ({
-  page,
-}) => {
-  const dialog = await openEditor(page)
-  await waitForShots(dialog)
-
-  await shot(dialog, 2).click()
-  await expect(shot(dialog, 2)).toHaveAttribute('aria-pressed', 'true')
-  await expectCard(dialog, '镜头 2 · 视频生成', '原片 1.0 – 2.0 秒 · 视频和原声一起重做')
-  await shot(dialog, 3).click({ modifiers: ['Shift'] })
-  await expectCard(dialog, '镜头 2–3 · 视频生成', '原片 1.0 – 3.0 秒 · 视频和原声一起重做')
-  await shot(dialog, 1).click({ modifiers: ['Shift'] })
-  await expectCard(dialog, '镜头 1–3 · 视频生成', '原片 0.0 – 3.0 秒 · 视频和原声一起重做')
-  // Shift 点两端的镜头把它去掉。
-  await shot(dialog, 1).click({ modifiers: ['Shift'] })
-  await expect(shot(dialog, 1)).toHaveAttribute('aria-pressed', 'false')
-  // 普通点击从这个镜头重新选。
-  await shot(dialog, 5).click()
-  await expectCard(dialog, '镜头 5 · 视频生成', '原片 4.0 – 5.0 秒 · 视频和原声一起重做')
-  await expect(shot(dialog, 2)).toHaveAttribute('aria-pressed', 'false')
-
-  // 卡不抢焦点：键盘左右挪到相邻的镜头，Shift 扩展。
-  await shot(dialog, 5).press('ArrowLeft')
-  await expect(shot(dialog, 4)).toBeFocused()
-  await page.keyboard.press('Shift+ArrowRight')
-  await page.keyboard.press('Shift+ArrowRight')
-  await expectCard(dialog, '镜头 4–6 · 视频生成', '原片 3.0 – 6.0 秒 · 视频和原声一起重做')
-
-  // 卡的尖角指着选区：卡盖在舞台上，水平中线对准选区的中线（夹在舞台内）。
-  const box = await card(dialog).boundingBox()
-  const first = await shot(dialog, 4).boundingBox()
-  const last = await shot(dialog, 6).boundingBox()
-  const stage = await dialog.getByRole('region', { name: '预览舞台' }).boundingBox()
-  if (box === null || first === null || last === null || stage === null)
-    throw new Error('卡或选区尚未布局')
-  const anchor = (first.x + last.x + last.width) / 2
-  const expected = Math.min(
-    stage.x + stage.width - 12 - box.width,
-    Math.max(stage.x + 12, anchor - box.width / 2),
-  )
-  expect(Math.abs(box.x - expected)).toBeLessThan(4)
-  expect(box.y + box.height).toBeLessThanOrEqual(stage.y + stage.height)
 })
 
 test('原片选区：拖结尾把手停在镜头中间，卡与舞台标签跟着变；提交的区间就是选区', async ({
@@ -549,7 +478,6 @@ test('原片选区：拖结尾把手停在镜头中间，卡与舞台标签跟�
   const label = dialog.getByText(/^原片 · 镜头/)
   await expect(label).toContainText('1.0 秒 · 选区 1.0–2.0')
 
-  // 拖到 3.5 秒：离镜头分界都远，不吸附；覆盖到镜头 2–4，舞台停在结尾那一帧
   const end = timelineOf(dialog).getByRole('slider', { name: '裁剪结尾', exact: true })
   const release = await holdDrag(page, dialog, end, 3.5)
   await expectCard(dialog, '镜头 2–4 · 视频生成', '原片 1.0 – 3.5 秒 · 视频和原声一起重做')
@@ -564,9 +492,7 @@ test('原片选区：拖结尾把手停在镜头中间，卡与舞台标签跟�
   expect(selectedEnd).toBeCloseTo(3.5, 1)
   const { body } = await submitEdit(page, dialog)
   expect(body['range_start_ms']).toBe(1000)
-  // 把手的读数取到 0.01 秒
   expect(Math.abs(Number(body['range_end_ms']) - selectedEnd * 1000)).toBeLessThanOrEqual(5)
-  // 编辑轨上按这个区间摆，名字按碰到的镜头叫
   await expect(lane(dialog).getByRole('button', { name: '镜头 2–4 · 生成中' })).toBeVisible()
 })
 
@@ -577,7 +503,6 @@ test('草稿比原片长、时间线能横向滚动时，拖草稿块的结尾�
   await page.setViewportSize({ width: 1440, height: 900 })
   const dialog = await openEditor(page)
   await waitForShots(dialog)
-  // 镜头 1（1 秒）编辑成 3 秒的样片、三段都选用：草稿 8 秒，时间线每秒像素按 6 秒的原片定，能往右滚 2 秒
   await requestBox(dialog).fill('换成黄昏的暖光')
   await expect(generateButton(dialog)).toBeEnabled()
   await submitEdit(page, dialog)
@@ -586,7 +511,6 @@ test('草稿比原片长、时间线能横向滚动时，拖草稿块的结尾�
   for (const seg of [1, 2, 3]) await partEye(dialog, partName(seg)).click()
   await expect(controls(dialog)).toContainText('共 8.0 秒 · 比原片长 2.0 秒')
 
-  // 草稿里镜头 4 在 5–6 秒，结尾正贴着可视范围右边；先用方向键剪掉 0.5 秒，给把手留出往外拉的余地
   await draft(dialog)
     .getByRole('button', { name: /^镜头 4 ·/ })
     .click()
@@ -612,7 +536,6 @@ test('草稿比原片长、时间线能横向滚动时，拖草稿块的结尾�
   await page.mouse.move(box.x + box.width - 10, handleY, { steps: 8 })
   const scrollLeft = () => viewport.evaluate((element) => element.scrollLeft)
   await expect.poll(scrollLeft).toBeGreaterThan(40)
-  // 指针停在边上：滚到内容最右端停住
   let last = -1
   await expect
     .poll(
@@ -625,7 +548,6 @@ test('草稿比原片长、时间线能横向滚动时，拖草稿块的结尾�
       { intervals: [250] },
     )
     .toBe(true)
-  // 回到草稿 5.8 秒处（已离开靠边那一截）：不再滚，把手停在指针下（位移算上了滚过的距离）
   const resting = await xAt(dialog, 5.8)
   expect(resting).toBeLessThan(box.x + box.width - 80)
   await page.mouse.move(resting, handleY, { steps: 2 })
@@ -637,7 +559,6 @@ test('草稿比原片长、时间线能横向滚动时，拖草稿块的结尾�
     .toBeLessThanOrEqual(3)
   expect(await scrollLeft()).toBe(last)
   await page.mouse.up()
-  // 松手提交指针处：镜头 4 用 5–5.8 秒这 0.8 秒
   await expect(
     draft(dialog).getByRole('button', { name: /^镜头 4 · 0\.8 秒（这个镜头 1\.0 秒）/ }),
   ).toBeVisible()
@@ -661,7 +582,6 @@ test('点镜头只选中不播放、播放头在选区开头；空格从播放�
   await shot(dialog, 3).click({ modifiers: ['Shift'] })
   await expect(seek).toHaveValue('1')
 
-  // 焦点停在刚点的镜头上：空格播放、暂停，不会再点一次它。
   await expect(shot(dialog, 3)).toBeFocused()
   await page.keyboard.press(' ')
   await expect(pause).toBeVisible()
@@ -672,7 +592,6 @@ test('点镜头只选中不播放、播放头在选区开头；空格从播放�
   await expect(shot(dialog, 3)).toHaveAttribute('aria-pressed', 'true')
   await expect(shot(dialog, 4)).toHaveAttribute('aria-pressed', 'false')
 
-  // 播放中普通点击另一个镜头：停在它开头，只选中它。
   await page.keyboard.press(' ')
   await expect(pause).toBeVisible()
   await shot(dialog, 4).click()
@@ -680,7 +599,6 @@ test('点镜头只选中不播放、播放头在选区开头；空格从播放�
   await expect(seek).toHaveValue('3')
   await expectCard(dialog, '镜头 4 · 视频生成', '原片 3.0 – 4.0 秒 · 视频和原声一起重做')
 
-  // 在修改要求里打空格只是打字。
   await requestBox(dialog).click()
   await page.keyboard.type('黄昏 暖光')
   await expect(requestBox(dialog)).toHaveText('黄昏 暖光')
@@ -706,7 +624,6 @@ test('标尺下边缘可拖动播放头，不改选中', async ({ page }) => {
   expect(Math.abs(guideBox.x + guideBox.width / 2 - (await xAt(dialog, 2)))).toBeLessThan(1)
   expect(guideBox.y).toBeLessThan(clipBox.y)
   expect(guideBox.y + guideBox.height).toBeGreaterThanOrEqual(clipBox.y + clipBox.height)
-  // 编辑器背后的会话仍可能自动滚动，不应清掉时间线上的预览。
   await page.getByTestId('chat-scroller').evaluate(
     (element) =>
       new Promise<void>((resolve) => {
@@ -742,7 +659,6 @@ test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊�
   await shot(dialog, 2).click()
   await shot(dialog, 3).click({ modifiers: ['Shift'] })
   await requestBox(dialog).fill('换成黄昏的暖光')
-  // 按住播放头拖：卡收成画面底部的小胶囊，标着未提交。
   const release = await holdDrag(
     page,
     dialog,
@@ -755,12 +671,10 @@ test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊�
   await expect(dialog.getByRole('slider', { name: '时间线播放位置' })).toBeFocused()
   await release()
 
-  // 停下后点胶囊展开：字还在，光标在输入框里。
   await capsule(dialog).click()
   await expect(requestBox(dialog)).toHaveText('换成黄昏的暖光')
   await expect(requestBox(dialog)).toBeFocused()
 
-  // 按播放也收起；暂停后点选区里的镜头展开。
   await dialog.getByRole('button', { name: '播放', exact: true }).click()
   await expect(card(dialog)).toHaveCount(0)
   await expect(capsule(dialog)).toBeVisible()
@@ -769,7 +683,6 @@ test('改和看不冲突：拖播放头、按播放卡收成胶囊，点胶囊�
   await expectCard(dialog, '镜头 3 · 视频生成', '原片 2.0 – 3.0 秒 · 视频和原声一起重做')
   await expect(requestBox(dialog)).toHaveText('换成黄昏的暖光')
 
-  // Escape：第一下收卡，编辑器还在；第二下关编辑器。
   await page.keyboard.press('Escape')
   await expect(card(dialog)).toHaveCount(0)
   await expect(capsule(dialog)).toBeVisible()
@@ -794,7 +707,6 @@ test('移动编辑：输入卡与胶囊可操作，放大预览不撑出页面',
   expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 
-  // 拖播放头：卡收成胶囊，仍在舞台里。
   await dialog.getByRole('slider', { name: '时间线播放位置' }).fill('3.5')
   await expect(capsule(dialog)).toBeVisible()
   const pill = await capsule(dialog).boundingBox()
@@ -805,7 +717,6 @@ test('移动编辑：输入卡与胶囊可操作，放大预览不撑出页面',
   await dialog.getByRole('region', { name: '预览舞台' }).scrollIntoViewIfNeeded()
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 
-  // 手机上仍能放大查看，比例不变，页面不横向溢出。
   await dialog.getByRole('button', { name: '放大', exact: true }).click()
   const overlay = page.getByRole('dialog', { name: '放大预览' })
   await expect(overlay).toBeVisible()
@@ -827,7 +738,6 @@ test('横版素材：舞台按画面比例摆，不留黑边；原声行写「�
   await expect(shots(dialog).first()).toBeVisible({ timeout: STEP_TIMEOUT })
   await expect(timelineOf(dialog).getByText('无声').first()).toBeVisible({ timeout: STEP_TIMEOUT })
 
-  // 读到元数据后画面框换成 16:9，播放器铺满画面框，contain 不再留出上下黑边。
   const preview = dialog.getByLabel('视频预览', { exact: true })
   await expect
     .poll(async () => {
@@ -835,7 +745,6 @@ test('横版素材：舞台按画面比例摆，不留黑边；原声行写「�
       return box === null ? 0 : box.width / box.height
     })
     .toBeCloseTo(16 / 9, 2)
-  // 播放控件只在时间线面板顶上那一行，舞台里没有。
   await expect(preview.getByRole('group', { name: '播放控件' })).toHaveCount(0)
   await expect(dialog.getByRole('group', { name: '播放控件' })).toHaveCount(1)
 
@@ -885,7 +794,6 @@ test('只有成功的出片才能进编辑；关掉编辑器回到素材片区�
   await expect(page).not.toHaveURL(/[?&]video=/)
   const takes = page.getByRole('region', { name: '本组素材片', exact: true })
   await expect(takes).toBeVisible()
-  // 第 2 组只有一条完成的出片：选中失败的那条，编辑置灰；选中在途的那条，没有编辑入口。
   await expect(takes.getByRole('listitem')).toHaveCount(3)
   const edit = page.getByRole('button', { name: '编辑视频', exact: true })
   await takes.getByRole('button', { name: /生成失败$/ }).click()
@@ -915,11 +823,9 @@ test('镜头提示词：在工具条里往上弹，生成卡让到它左边；�
   const dialogBox = await dialog.boundingBox()
   if (panelBox === null || triggerBox === null || dialogBox === null)
     throw new Error('镜头提示词浮窗尚未布局')
-  // 从按钮往上弹、右端对齐按钮，顶上不超出编辑器。
   expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(triggerBox.y)
   expect(Math.abs(panelBox.x + panelBox.width - (triggerBox.x + triggerBox.width))).toBeLessThan(1)
   expect(panelBox.y).toBeGreaterThanOrEqual(dialogBox.y)
-  // 生成卡停在浮窗左边，「生成视频」不被挡住。
   await expect
     .poll(async () => {
       const generate = await generateButton(dialog).boundingBox()

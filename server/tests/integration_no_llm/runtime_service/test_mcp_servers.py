@@ -1,0 +1,690 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import uuid
+from collections.abc import AsyncIterator, Mapping
+from dataclasses import dataclass, field
+from typing import Any
+
+import httpx
+import pytest
+from agent_runtime.agent_usage import AgentUsage
+from agent_runtime.assembly.config_services import ConfigServices
+from agent_runtime.assembly.mcp import HarnessMcpProbe
+from agent_runtime.config.mcp_servers.index import McpServerIndex
+from agent_runtime.config.mcp_servers.infra_sql import SqlMcpServerStore
+from agent_runtime.config.mcp_servers.service import McpServerService, rotate_mcp_server_keys
+from agent_runtime.secrets import CredentialCipher
+from cryptography.fernet import Fernet
+from fastapi import FastAPI
+from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
+from pydantic_ai.models import Model
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from tests.helpers.app import TEST_CREDENTIAL_KEY, TEST_MODEL_NAME
+from tests.helpers.mcp import TITLES, TOKEN, TOOLS, LocalMcp, free_port, local_mcp
+from tests.helpers.runtime_service import PROVIDER, add_model, connect_provider, settled
+
+AGENT = "director"
+MASKED = "••••" + TOKEN[-4:]
+
+
+@dataclass
+class Script:
+    call: tuple[str, dict[str, Any]] | None = None
+    offered: list[list[str]] = field(default_factory=list[list[str]])
+    requests: list[list[ModelMessage]] = field(default_factory=list[list[ModelMessage]])
+
+
+@pytest.fixture
+def script() -> Script:
+    return Script()
+
+
+@pytest.fixture
+def models(script: Script) -> dict[str, Model]:
+    async def stream(
+        messages: list[ModelMessage], info: AgentInfo
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        script.offered.append(sorted(tool.name for tool in info.function_tools))
+        script.requests.append(list(messages))
+        if script.call is not None and len(messages) == 1:
+            name, args = script.call
+            yield {0: DeltaToolCall(name=name, json_args=json.dumps(args), tool_call_id="call_mcp")}
+        else:
+            yield "好了"
+
+    return {TEST_MODEL_NAME: FunctionModel(stream_function=stream)}
+
+
+@pytest.fixture
+async def mcp() -> AsyncIterator[LocalMcp]:
+    async with local_mcp() as server:
+        yield server
+
+
+def server_body(mcp: LocalMcp, **fields: Any) -> dict[str, Any]:
+    return {
+        "id": "calc",
+        "name": "计算器",
+        "url": mcp.http_url,
+        "transport": "streamable_http",
+        "timeoutSeconds": 5,
+        "headers": [{"name": "Authorization", "value": TOKEN}],
+        **fields,
+    }
+
+
+async def create_server(admin: httpx.AsyncClient, mcp: LocalMcp, **fields: Any) -> dict[str, Any]:
+    created = await admin.post("/mcp-servers", json=server_body(mcp, **fields))
+    assert created.status_code == 201, created.text
+    assert TOKEN not in created.text
+    return created.json()
+
+
+async def check(admin: httpx.AsyncClient, server_id: str = "calc") -> dict[str, Any]:
+    checked = await admin.post(f"/mcp-servers/{server_id}/check")
+    assert checked.status_code == 200, checked.text
+    assert TOKEN not in checked.text
+    return checked.json()
+
+
+async def read(admin: httpx.AsyncClient, server_id: str = "calc") -> dict[str, Any]:
+    found = await admin.get(f"/mcp-servers/{server_id}")
+    assert found.status_code == 200, found.text
+    assert TOKEN not in found.text
+    return found.json()
+
+
+async def stored_headers(engine: AsyncEngine, server_id: str = "calc") -> list[dict[str, str]]:
+    async with engine.connect() as conn:
+        raw = (
+            await conn.execute(
+                text("SELECT headers FROM agent_runtime.mcp_servers WHERE id = :id"),
+                {"id": server_id},
+            )
+        ).scalar_one()
+    return raw if isinstance(raw, list) else json.loads(raw)
+
+
+async def stored_url(engine: AsyncEngine, server_id: str = "calc") -> tuple[str, str]:
+    async with engine.connect() as conn:
+        row = (
+            await conn.execute(
+                text("SELECT url, url_hash FROM agent_runtime.mcp_servers WHERE id = :id"),
+                {"id": server_id},
+            )
+        ).one()
+    return row.url, row.url_hash
+
+
+def plain(headers: list[dict[str, str]], cipher: CredentialCipher) -> dict[str, str]:
+    return {one["name"]: cipher.decrypt(one["value"]) for one in headers}
+
+
+def mcp_tool(server: str = "calc", tools: list[str] | None = None) -> dict[str, Any]:
+    return {"type": "mcp", "server": server, "tools": tools}
+
+
+async def save_draft(admin: httpx.AsyncClient, *tools: dict[str, Any]) -> int:
+    detail = await admin.get(f"/agents/{AGENT}")
+    if detail.status_code == 404:
+        detail = await admin.post("/agents", json={"id": AGENT, "name": "导演"})
+    assert detail.status_code in {200, 201}, detail.text
+    saved = await admin.put(
+        f"/agents/{AGENT}/draft",
+        json={
+            "config": {
+                "schema_version": 1,
+                "model": {"provider": PROVIDER, "name": TEST_MODEL_NAME},
+                "tools": list(tools),
+            },
+            "skillIds": [],
+            "lockVersion": detail.json()["draft"]["lockVersion"],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    return int(saved.json()["draft"]["lockVersion"])
+
+
+async def publish(admin: httpx.AsyncClient, lock_version: int) -> httpx.Response:
+    return await admin.post(f"/agents/{AGENT}/versions", json={"lockVersion": lock_version})
+
+
+async def publish_listed(admin: httpx.AsyncClient, *tools: dict[str, Any]) -> None:
+    published = await publish(admin, await save_draft(admin, *tools))
+    assert published.status_code == 201, published.text
+    listed = await admin.patch(f"/agents/{AGENT}", json={"listed": True})
+    assert listed.status_code == 200, listed.text
+
+
+@pytest.fixture
+async def provider(admin: httpx.AsyncClient) -> None:
+    provider_id = await connect_provider(admin)
+    await add_model(admin, provider_id, TEST_MODEL_NAME)
+
+
+async def open_and_prompt(app_client: httpx.AsyncClient) -> str:
+    session = str(uuid.uuid4())
+    opened = await app_client.post("/sessions", json={"id": session, "agent_id": AGENT})
+    assert opened.status_code == 204, opened.text
+    sent = await app_client.post(
+        f"/sessions/{session}/prompts",
+        json={
+            "prompt_id": "prm_mcp",
+            "content": [{"type": "text", "text": "算一下"}],
+            "user_name": "logan",
+            "agent_id": AGENT,
+        },
+    )
+    assert sent.status_code == 200, sent.text
+    await settled(app_client, session)
+    return session
+
+
+async def only_turn(app_client: httpx.AsyncClient, session: str) -> dict[str, Any]:
+    page = await app_client.get(f"/sessions/{session}/transcript", params={"session_agent": AGENT})
+    assert page.status_code == 200, page.text
+    (turn,) = page.json()["items"]
+    return turn
+
+
+def tool_frames(turn: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        frame for step in turn["steps"] for frame in step["frames"] if frame.get("kind") == "tool"
+    ]
+
+
+async def test_headers_are_encrypted_masked_and_kept_when_omitted(
+    admin: httpx.AsyncClient, engine: AsyncEngine, mcp: LocalMcp
+) -> None:
+    cipher = CredentialCipher([TEST_CREDENTIAL_KEY])
+    created = await create_server(admin, mcp)
+
+    assert created["headers"] == [{"name": "Authorization", "value": MASKED}]
+    assert (created["lastCheck"], created["tools"], created["usedBy"]) == (None, None, [])
+    (stored,) = await stored_headers(engine)
+    assert stored["value"] != TOKEN
+    assert cipher.decrypt(stored["value"]) == TOKEN
+
+    kept = await admin.patch(
+        "/mcp-servers/calc",
+        json={"headers": [{"name": "authorization"}, {"name": "X-Tenant", "value": "acme-01"}]},
+    )
+    assert kept.status_code == 200, kept.text
+    assert TOKEN not in kept.text
+    assert [one["value"] for one in kept.json()["headers"]] == [MASKED, "••••"]
+    assert plain(await stored_headers(engine), cipher) == {
+        "authorization": TOKEN,
+        "X-Tenant": "acme-01",
+    }
+
+    unknown = await admin.patch("/mcp-servers/calc", json={"headers": [{"name": "X-New"}]})
+    assert unknown.status_code == 422
+    assert "X-New" in unknown.json()["detail"]
+    repeated = await admin.patch(
+        "/mcp-servers/calc",
+        json={"headers": [{"name": "A", "value": "1"}, {"name": "a", "value": "2"}]},
+    )
+    assert repeated.status_code == 422
+
+    cleared = await admin.patch("/mcp-servers/calc", json={"headers": []})
+    assert cleared.json()["headers"] == []
+    assert await stored_headers(engine) == []
+
+
+async def test_the_url_is_encrypted_and_returned_in_full(
+    admin: httpx.AsyncClient, engine: AsyncEngine, mcp: LocalMcp
+) -> None:
+    cipher = CredentialCipher([TEST_CREDENTIAL_KEY])
+    created = await create_server(admin, mcp, url=f"  {mcp.http_url}  ")
+
+    assert created["url"] == mcp.http_url
+    assert (await read(admin))["url"] == mcp.http_url
+    (listed,) = (await admin.get("/mcp-servers")).json()["items"]
+    assert listed["url"] == mcp.http_url
+    url, url_hash = await stored_url(engine)
+    assert mcp.http_url not in url
+    assert cipher.decrypt(url) == mcp.http_url
+    assert url_hash == hashlib.sha256(mcp.http_url.encode()).hexdigest()
+
+
+async def test_a_repeated_url_or_name_is_refused_naming_the_server(
+    admin: httpx.AsyncClient, mcp: LocalMcp
+) -> None:
+    await create_server(admin, mcp)
+
+    same_url = await admin.post(
+        "/mcp-servers", json=server_body(mcp, id="calc-2", name="另一个", url=f" {mcp.http_url} ")
+    )
+    assert same_url.status_code == 409, same_url.text
+    assert same_url.json()["detail"] == "这个地址已经登记过：计算器"
+    same_name = await admin.post(
+        "/mcp-servers", json=server_body(mcp, id="calc-2", url=mcp.sse_url, transport="sse")
+    )
+    assert same_name.status_code == 409, same_name.text
+    assert same_name.json()["detail"] == "这个名称已经有了：计算器"
+
+    await create_server(admin, mcp, id="spare", name="备用", url=mcp.sse_url, transport="sse")
+    moved = await admin.patch("/mcp-servers/spare", json={"url": mcp.http_url})
+    assert moved.status_code == 409, moved.text
+    assert moved.json()["detail"] == "这个地址已经登记过：计算器"
+    renamed = await admin.patch("/mcp-servers/spare", json={"name": "计算器"})
+    assert renamed.status_code == 409, renamed.text
+    assert renamed.json()["detail"] == "这个名称已经有了：计算器"
+    spare = await read(admin, "spare")
+    assert (spare["name"], spare["url"]) == ("备用", mcp.sse_url)
+    kept = await admin.patch("/mcp-servers/spare", json={"name": "备用", "url": mcp.sse_url})
+    assert kept.status_code == 200, kept.text
+
+
+async def test_update_keeps_the_url_when_omitted_and_clears_the_check_only_when_it_changes(
+    admin: httpx.AsyncClient, engine: AsyncEngine, mcp: LocalMcp
+) -> None:
+    cipher = CredentialCipher([TEST_CREDENTIAL_KEY])
+    await create_server(admin, mcp)
+    await check(admin)
+
+    renamed = await admin.patch("/mcp-servers/calc", json={"name": "算术", "url": None})
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["url"] == mcp.http_url
+    assert renamed.json()["lastCheck"]["ok"] is True
+    assert [tool["name"] for tool in renamed.json()["tools"]] == list(TOOLS)
+    assert cipher.decrypt((await stored_url(engine))[0]) == mcp.http_url
+
+    resubmitted = await admin.patch("/mcp-servers/calc", json={"url": mcp.http_url})
+    assert resubmitted.status_code == 200, resubmitted.text
+    assert resubmitted.json()["lastCheck"] is not None
+    assert resubmitted.json()["tools"] is not None
+
+    elsewhere = f"http://127.0.0.1:{free_port()}/mcp"
+    moved = await admin.patch("/mcp-servers/calc", json={"url": elsewhere})
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["url"] == elsewhere
+    assert (moved.json()["lastCheck"], moved.json()["tools"]) == (None, None)
+    url, url_hash = await stored_url(engine)
+    assert cipher.decrypt(url) == elsewhere
+    assert url_hash == hashlib.sha256(elsewhere.encode()).hexdigest()
+
+
+async def test_create_checks_the_fields(admin: httpx.AsyncClient, mcp: LocalMcp) -> None:
+    for fields in (
+        {"id": "Calc"},
+        {"id": "calc_2"},
+        {"url": "ftp://127.0.0.1/mcp"},
+        {"transport": "stdio"},
+        {"timeoutSeconds": 0},
+        {"headers": [{"name": "Authorization"}]},
+        {"headers": [{"name": "Bad Name", "value": "x"}]},
+    ):
+        refused = await admin.post("/mcp-servers", json=server_body(mcp, **fields))
+        assert refused.status_code == 422, (fields, refused.text)
+    await create_server(admin, mcp)
+    taken = await admin.post("/mcp-servers", json=server_body(mcp))
+    assert taken.status_code == 409
+
+
+async def test_saved_check_records_the_result_and_the_discovered_tools(
+    admin: httpx.AsyncClient, mcp: LocalMcp
+) -> None:
+    await create_server(admin, mcp)
+
+    reached = await check(admin)
+    assert reached["ok"] is True
+    assert reached["reason"] is None
+    assert reached["elapsedMs"] >= 0
+    assert [tool["name"] for tool in reached["tools"]] == list(TOOLS)
+    assert reached["tools"][0]["description"] == "Add two integers."
+    assert {tool["name"]: tool["title"] for tool in reached["tools"]} == TITLES
+    saved = await read(admin)
+    assert saved["lastCheck"]["ok"] is True
+    assert [tool["name"] for tool in saved["tools"]] == list(TOOLS)
+
+    wrong = await admin.patch(
+        "/mcp-servers/calc", json={"headers": [{"name": "Authorization", "value": "Bearer nope"}]}
+    )
+    assert wrong.status_code == 200, wrong.text
+    refused = await check(admin)
+    assert (refused["ok"], refused["tools"]) == (False, None)
+    assert refused["reason"]
+    after = await read(admin)
+    assert after["lastCheck"]["ok"] is False
+    assert after["lastCheck"]["reason"] == refused["reason"]
+    assert [tool["name"] for tool in after["tools"]] == list(TOOLS)
+
+    moved = await admin.patch(
+        "/mcp-servers/calc",
+        json={
+            "url": mcp.sse_url,
+            "transport": "sse",
+            "headers": [{"name": "Authorization", "value": TOKEN}],
+        },
+    )
+    assert moved.status_code == 200, moved.text
+    assert (moved.json()["lastCheck"], moved.json()["tools"]) == (None, None)
+    assert (await check(admin))["ok"] is True
+
+
+async def test_unsaved_check_stores_nothing_and_can_reuse_saved_header_values(
+    admin: httpx.AsyncClient, mcp: LocalMcp
+) -> None:
+    form = {k: v for k, v in server_body(mcp).items() if k not in {"id", "name"}}
+    passed = await admin.post("/mcp-servers/check", json=form)
+    assert passed.status_code == 200, passed.text
+    assert passed.json()["ok"] is True
+    assert [tool["name"] for tool in passed.json()["tools"]] == list(TOOLS)
+    without_token = await admin.post("/mcp-servers/check", json={**form, "headers": []})
+    assert without_token.json()["ok"] is False
+    refused = await admin.post(
+        "/mcp-servers/check", json={**form, "url": mcp.sse_url, "transport": "sse", "headers": []}
+    )
+    assert refused.json()["ok"] is False
+    assert "401" in refused.json()["reason"]
+    assert mcp.sse_url not in refused.json()["reason"]
+    assert "••••" in refused.json()["reason"]
+
+    await create_server(admin, mcp)
+    reused = await admin.post(
+        "/mcp-servers/check",
+        json={**form, "serverId": "calc", "headers": [{"name": "Authorization"}]},
+    )
+    assert reused.status_code == 200, reused.text
+    assert reused.json()["ok"] is True
+    assert (await read(admin))["lastCheck"] is None
+    without_url = {k: v for k, v in form.items() if k != "url"}
+    stored = await admin.post(
+        "/mcp-servers/check",
+        json={**without_url, "serverId": "calc", "headers": [{"name": "Authorization"}]},
+    )
+    assert stored.status_code == 200, stored.text
+    assert stored.json()["ok"] is True
+    assert [tool["name"] for tool in stored.json()["tools"]] == list(TOOLS)
+    no_url = await admin.post("/mcp-servers/check", json=without_url)
+    assert no_url.status_code == 422, no_url.text
+
+    no_value = await admin.post("/mcp-servers/check", json={**form, "headers": [{"name": "A"}]})
+    assert no_value.status_code == 422
+    ghost = await admin.post("/mcp-servers/check", json={**form, "serverId": "ghost"})
+    assert ghost.status_code == 404
+
+    unreachable = await admin.post(
+        "/mcp-servers/check",
+        json={**form, "url": f"http://127.0.0.1:{free_port()}/mcp", "timeoutSeconds": 2},
+    )
+    assert unreachable.status_code == 200, unreachable.text
+    assert unreachable.json()["ok"] is False
+    assert unreachable.json()["reason"]
+
+
+async def test_publish_checks_the_server_and_the_chosen_tools(
+    admin: httpx.AsyncClient, mcp: LocalMcp, provider: None
+) -> None:
+    lock = await save_draft(admin, mcp_tool(tools=["add"]))
+    missing = await publish(admin, lock)
+    assert missing.status_code == 422
+    assert [one["path"] for one in missing.json()["problems"]] == ["tools[0].server"]
+
+    await create_server(admin, mcp)
+    never_reached = await publish(admin, lock)
+    assert never_reached.status_code == 422
+    assert "测试连接" in never_reached.json()["problems"][0]["message"]
+
+    await check(admin)
+    lock = await save_draft(admin, mcp_tool(tools=["add", "sqrt"]))
+    unknown_tool = await publish(admin, lock)
+    assert unknown_tool.status_code == 422
+    assert [one["path"] for one in unknown_tool.json()["problems"]] == ["tools[0].tools[1]"]
+
+    lock = await save_draft(admin, mcp_tool(tools=["add"]))
+    assert (await publish(admin, lock)).status_code == 201
+
+    disabled = await admin.post(
+        "/mcp-servers",
+        json=server_body(
+            mcp, id="spare", name="备用", url=mcp.sse_url, transport="sse", enabled=False
+        ),
+    )
+    assert disabled.status_code == 201, disabled.text
+    lock = await save_draft(admin, mcp_tool(tools=["add"]), mcp_tool("spare"))
+    off = await publish(admin, lock)
+    assert off.status_code == 422
+    assert {one["path"] for one in off.json()["problems"]} == {"tools[1].server"}
+    assert "已停用" in off.json()["problems"][0]["message"]
+
+
+async def test_a_server_in_use_cannot_be_disabled_or_deleted(
+    admin: httpx.AsyncClient, mcp: LocalMcp, provider: None
+) -> None:
+    await create_server(admin, mcp)
+    await check(admin)
+    await publish_listed(admin, mcp_tool(tools=["add"]))
+
+    assert (await read(admin))["usedBy"] == [
+        {"agentId": AGENT, "agentName": "导演", "inDraft": True, "inActiveVersion": True}
+    ]
+    disabled = await admin.patch("/mcp-servers/calc", json={"enabled": False})
+    deleted = await admin.delete("/mcp-servers/calc")
+    assert (disabled.status_code, deleted.status_code) == (409, 409)
+    assert AGENT in deleted.json()["detail"]
+
+    await save_draft(admin)
+    assert (await read(admin))["usedBy"][0]["inDraft"] is False
+    assert (await admin.delete("/mcp-servers/calc")).status_code == 409
+
+    await publish(admin, int((await admin.get(f"/agents/{AGENT}")).json()["draft"]["lockVersion"]))
+    assert (await read(admin))["usedBy"] == []
+    assert (await admin.patch("/mcp-servers/calc", json={"enabled": False})).status_code == 200
+    assert (await admin.delete("/mcp-servers/calc")).status_code == 204
+    assert (await admin.get("/mcp-servers/calc")).status_code == 404
+
+
+class NoUsages:
+    async def mcp_server_users(self) -> Mapping[str, tuple[AgentUsage, ...]]:
+        return {}
+
+
+async def test_rotation_reencrypts_the_url_and_the_header_values(
+    admin: httpx.AsyncClient, engine: AsyncEngine, mcp: LocalMcp
+) -> None:
+    await create_server(admin, mcp)
+    await create_server(
+        admin, mcp, id="spare", name="备用", url=mcp.sse_url, transport="sse", headers=[]
+    )
+    new_key = Fernet.generate_key().decode()
+
+    rotated = await rotate_mcp_server_keys(
+        SqlMcpServerStore(engine), cipher=CredentialCipher([new_key, TEST_CREDENTIAL_KEY])
+    )
+
+    assert rotated == 2
+    only_new = CredentialCipher([new_key])
+    (stored,) = await stored_headers(engine)
+    assert only_new.decrypt(stored["value"]) == TOKEN
+    with pytest.raises(RuntimeError):
+        CredentialCipher([TEST_CREDENTIAL_KEY]).decrypt(stored["value"])
+    for server_id, plain_url in (("calc", mcp.http_url), ("spare", mcp.sse_url)):
+        url, _ = await stored_url(engine, server_id)
+        assert only_new.decrypt(url) == plain_url
+        with pytest.raises(RuntimeError):
+            CredentialCipher([TEST_CREDENTIAL_KEY]).decrypt(url)
+    service = McpServerService(
+        SqlMcpServerStore(engine),
+        cipher=only_new,
+        probe=HarnessMcpProbe(),
+        usages=NoUsages(),
+        index=McpServerIndex(),
+    )
+    assert (await service.check("calc")).ok is True
+    assert (await service.get("calc")).url == mcp.http_url
+
+
+async def test_importing_a_package_checks_the_mcp_servers_it_names(
+    admin: httpx.AsyncClient, mcp: LocalMcp, provider: None
+) -> None:
+    await create_server(admin, mcp, enabled=False)
+    package = {
+        "format_version": "1.0.0",
+        "entry": AGENT,
+        "agents": {
+            AGENT: {
+                "name": "导演",
+                "description": "",
+                "listed": True,
+                "config": {
+                    "schema_version": 1,
+                    "model": {"provider": PROVIDER, "name": TEST_MODEL_NAME},
+                    "tools": [mcp_tool(tools=["add"]), mcp_tool("ghost")],
+                },
+                "skills": [],
+            }
+        },
+    }
+
+    checked = await admin.post(
+        "/agents/import",
+        params={"dryRun": "true"},
+        files={"file": ("director.yaml", json.dumps(package).encode(), "application/yaml")},
+    )
+
+    assert checked.status_code == 200, checked.text
+    (item,) = checked.json()["agents"]
+    assert [one["path"] for one in item["problems"]] == ["config.tools[1].server"]
+    assert [one["path"] for one in item["warnings"]] == ["config.tools[0].server"]
+
+
+async def test_the_agent_calls_a_chosen_mcp_tool(
+    running: None,
+    admin: httpx.AsyncClient,
+    app_client: httpx.AsyncClient,
+    engine: AsyncEngine,
+    mcp: LocalMcp,
+    provider: None,
+    script: Script,
+) -> None:
+    await create_server(admin, mcp)
+    await check(admin)
+    await publish_listed(admin, mcp_tool(tools=["add"]))
+    script.call = ("mcp_calc_add", {"a": 2, "b": 3})
+
+    session = await open_and_prompt(app_client)
+
+    assert (await app_client.get(f"/sessions/{session}/status")).json() == {"status": "completed"}
+    assert mcp.http_url not in (await stored_url(engine))[0]
+    assert mcp.calls == [("add", {"a": 2, "b": 3})]
+    assert script.offered[0] == ["mcp_calc_add"]
+    (returned,) = [
+        part
+        for message in script.requests[1]
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    ]
+    assert returned.tool_name == "mcp_calc_add"
+    assert "5" in str(returned.content)
+    (card,) = tool_frames(await only_turn(app_client, session))
+    assert (card["name"], card["state"]) == ("mcp_calc_add", "done")
+    assert card["display"] == {"kind": "generic", "summary": "计算器 · 加法", "detail": None}
+
+    renamed = await admin.patch("/mcp-servers/calc", json={"name": "算术"})
+    assert renamed.status_code == 200, renamed.text
+    (card,) = tool_frames(await only_turn(app_client, session))
+    assert card["display"] == {"kind": "generic", "summary": "算术 · 加法", "detail": None}
+
+
+async def test_startup_reads_the_server_index_from_the_database(
+    admin: httpx.AsyncClient, runtime_app: FastAPI, mcp: LocalMcp
+) -> None:
+    await create_server(admin, mcp)
+    await check(admin)
+    services: ConfigServices = runtime_app.state.config_services
+    index = services.mcp_index
+    index.remove("calc")
+
+    async with runtime_app.router.lifespan_context(runtime_app):
+        found = index.get("calc")
+
+    assert found is not None
+    assert found.name == "计算器"
+    assert dict(found.tools) == TITLES
+
+
+async def test_tools_stored_without_a_title_load_with_no_title(
+    admin: httpx.AsyncClient, runtime_app: FastAPI, engine: AsyncEngine, mcp: LocalMcp
+) -> None:
+    await create_server(admin, mcp)
+    await check(admin)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "UPDATE agent_runtime.mcp_servers SET tools = ("
+                "SELECT jsonb_agg(tool - 'title') FROM jsonb_array_elements(tools) AS tool"
+                ") WHERE id = 'calc'"
+            )
+        )
+    services: ConfigServices = runtime_app.state.config_services
+    services.mcp_index.remove("calc")
+
+    async with runtime_app.router.lifespan_context(runtime_app):
+        found = services.mcp_index.get("calc")
+
+    assert found is not None
+    assert dict(found.tools) == dict.fromkeys(TOOLS)
+    assert [tool["title"] for tool in (await read(admin))["tools"]] == [None, None, None]
+
+
+async def test_a_failing_mcp_tool_goes_back_to_the_model(
+    running: None,
+    admin: httpx.AsyncClient,
+    app_client: httpx.AsyncClient,
+    mcp: LocalMcp,
+    provider: None,
+    script: Script,
+) -> None:
+    await create_server(admin, mcp)
+    await check(admin)
+    await publish_listed(admin, mcp_tool())
+    script.call = ("mcp_calc_divide", {"a": 1, "b": 0})
+
+    session = await open_and_prompt(app_client)
+
+    assert (await app_client.get(f"/sessions/{session}/status")).json() == {"status": "completed"}
+    assert script.offered[0] == ["mcp_calc_add", "mcp_calc_divide", "mcp_calc_shout"]
+    assert mcp.calls == [("divide", {"a": 1, "b": 0})]
+    (returned,) = [
+        part
+        for message in script.requests[1]
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    ]
+    assert returned.tool_name == "mcp_calc_divide"
+    assert "cannot divide by zero" in str(returned.content)
+
+
+async def test_an_unreachable_server_fails_the_run_naming_it(
+    running: None,
+    admin: httpx.AsyncClient,
+    app_client: httpx.AsyncClient,
+    mcp: LocalMcp,
+    provider: None,
+    script: Script,
+) -> None:
+    await create_server(admin, mcp)
+    await check(admin)
+    await publish_listed(admin, mcp_tool(tools=["add"]))
+    gone = await admin.patch(
+        "/mcp-servers/calc", json={"url": f"http://127.0.0.1:{free_port()}/mcp"}
+    )
+    assert gone.status_code == 200, gone.text
+
+    session = await open_and_prompt(app_client)
+
+    assert (await app_client.get(f"/sessions/{session}/status")).json() == {"status": "failed"}
+    assert script.offered == [], "连不上就不调模型"
+    turn = await only_turn(app_client, session)
+    assert turn["state"] == "failed"
+    assert "MCP 服务 计算器（calc）连不上" in turn["error"]
+    assert TOKEN not in json.dumps(turn, ensure_ascii=False)

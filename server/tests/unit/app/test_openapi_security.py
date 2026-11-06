@@ -1,5 +1,3 @@
-"""合同 security 守卫：端点权限只在路由上声明，导出的每个受保护操作都带着它。"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -8,12 +6,11 @@ import pytest
 from scripts.dump_openapi import PLACEHOLDER_CONFIG_DIR, PLACEHOLDER_ENV
 
 from iclip.app.bootstrap import build_app
-from iclip.config import load_agent_declarations, load_runtime_config
+from iclip.config import load_runtime_config
 from iclip.domains.identity.public import PERMISSIONS
 from iclip.platform.media.codec import SOFTWARE
 
 SCHEMES = {"SessionCookie", "BearerToken"}
-"""合同公开的两个 scheme 名；改名就是改合同。"""
 
 PUBLIC = {
     ("get", "/healthz"),
@@ -22,27 +19,18 @@ PUBLIC = {
     ("get", "/auth/sso/authorize"),
     ("get", "/auth/sso/callback"),
 }
-"""不要凭证的操作，恰好这几条。"""
 
 HTTP_METHODS = {"get", "put", "post", "delete", "patch", "options", "head", "trace"}
 
 
 @pytest.fixture(scope="module")
 def document() -> dict[str, Any]:
-    """与 ``make contract`` 同一份装配：占位环境与占位配置，全部可选模块打开，路由才齐。"""
-
     with pytest.MonkeyPatch.context() as patch:
         for name, value in PLACEHOLDER_ENV.items():
             patch.setenv(name, value)
-        # unit 门禁的机器不装 ffmpeg；这里只取文档，不处理媒体，也不跑编解码探测。
         patch.setattr("iclip.app.bootstrap.ffmpeg_available", lambda: True)
         app = build_app(
-            load_runtime_config(PLACEHOLDER_CONFIG_DIR / "config.yaml"),
-            # 占位注册表是空的，没人声明 skill，skill 库目录不会被查。
-            agents=load_agent_declarations(
-                PLACEHOLDER_CONFIG_DIR / "agents.yaml", skills_dir=PLACEHOLDER_CONFIG_DIR / "skills"
-            ),
-            media_codec=SOFTWARE,
+            load_runtime_config(PLACEHOLDER_CONFIG_DIR / "config.yaml"), media_codec=SOFTWARE
         )
         return app.openapi()
 
@@ -81,6 +69,4 @@ def test_scopes_are_known_permissions(document: dict[str, Any]) -> None:
 
 
 def test_logout_is_guarded_by_the_session_cookie_alone(document: dict[str, Any]) -> None:
-    """logout 是 fastapi-users 的路由，靠换掉 cookie transport 的 scheme 才用上合同里的名字。"""
-
     assert operations(document)[("post", "/auth/logout")]["security"] == [{"SessionCookie": []}]

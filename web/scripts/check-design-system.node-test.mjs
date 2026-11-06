@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** 验证真实 token 一致，并能检出浅色、深色和工具类登记的漂移。 */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
@@ -47,16 +46,13 @@ test('颜色 token 没登记成工具类即报「工具类未登记」', () => {
   assert.match(problems[0], /工具类未登记：--color-canvas-label-text/)
 })
 
-// 经变量传入类名，避免 Prettier 的 Tailwind 插件重排测试输入。
 const merge = (classes) => cn(classes)
 
 test('cn() 不把字阶类与颜色类当冲突', () => {
-  // 两者分属 font-size 与 text-color 两组，同时出现时都要留下
   assert.equal(merge('text-body text-on-surface'), 'text-body text-on-surface')
   assert.equal(
     merge('text-canvas-label text-canvas-label-text'),
     'text-canvas-label text-canvas-label-text',
   )
-  // 两个文字颜色仍然互斥，后写的胜出
   assert.equal(merge('text-on-surface text-primary'), 'text-primary')
 })

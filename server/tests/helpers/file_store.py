@@ -1,8 +1,3 @@
-"""文件存储内存替身，沿用 PgFileStore 的校验顺序以保持错误优先级一致。
-
-asyncio.Lock 模拟 advisory 锁，但锁粒度为全局；数据库并发行为由集成测试验证。
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -10,7 +5,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from iclip.platform.file_store.store import (
+from agent_runtime.file_store.store import (
     DEFAULT_MAX_FILE_BYTES,
     DEFAULT_MAX_NAMESPACE_BYTES,
     MAX_SEARCH_FILES,
@@ -37,8 +32,6 @@ class _Row:
 
 
 class FakeFileStore:
-    """``FileStore`` 的内存实现。"""
-
     def __init__(
         self,
         *,

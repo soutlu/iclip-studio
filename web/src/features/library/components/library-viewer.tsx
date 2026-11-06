@@ -25,25 +25,20 @@ import { LibraryVersionBar, LibraryVersionBarSkeleton } from './library-version-
 import { LibraryViewerFrame } from './library-viewer-frame'
 import { ViewerPending, ViewerStage, ViewerVideo } from './library-viewer-stage'
 
-// 恰好跳到镜头起点时画面可能停在上一镜的最后一帧，往后让一点。
 const SEEK_NUDGE_S = 0.05
 
-/** 右栏的页签；切到别的卡或别的版时留在原来的页签上。 */
 type DetailPanel = 'script' | 'params' | 'hit-case'
 
 type LibraryViewerProps = {
   videoId: string
-  /** 打开时先选中的那一版；卡里没有这一版就选卡面。 */
   versionId: string | null
   listed: LibraryVideo | undefined
   startAt: number | null
-  /** 上一条、下一条的 id，原样交给 `onNavigate`；是卡 id 还是版本 id 由调用方定。 */
   prevId: string | null
   nextId: string | null
   shareLink: string
   onNavigate: (id: string) => void
   onClose: () => void
-  /** 点作者按人筛选；不给就只显示作者。 */
   onAuthor?: ((userName: string) => void) | undefined
   onRestoreFocus: () => boolean
 }
@@ -65,7 +60,6 @@ export function LibraryViewer({
   const video = detail.data?.video ?? listed
   const [panel, setPanel] = useState<DetailPanel>('script')
 
-  // React portal 里的嵌套浮层（菜单、参考图大图）的按键也冒泡到这里，它们自己用方向键。
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
     const target = event.target
@@ -335,7 +329,6 @@ function ViewerBody({
             className="min-h-0 flex-1 overflow-y-auto px-6 pt-4 pb-6 max-md:overflow-visible max-md:px-4"
             value="hit-case"
           >
-            {/* 版本还没读全时卡面那一版可能不是要找的那一版，读全了再问它的爆款状态。 */}
             {detail === undefined && detailError === null ? (
               <HitCasePanelSkeleton />
             ) : (
@@ -426,7 +419,6 @@ function MakeSameButton({ cardId, canMakeSame }: { cardId: string; canMakeSame: 
     <TooltipRoot onOpenChange={setHint} open={hint}>
       <TooltipTrigger
         asChild
-        // 触屏没有悬停，点按也要亮出提示；拦下默认处理，Radix 才不会在点击时把它关掉。
         onClick={(event) => {
           event.preventDefault()
           setHint(true)

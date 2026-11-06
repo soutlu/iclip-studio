@@ -1,5 +1,3 @@
-/** 出片次数分布：1 / 2 / 3 / 4 / 5 次及以上五根柱，同一套有序色阶，柱顶标镜数。 */
-
 import {
   Bar,
   BarChart,
@@ -85,7 +83,6 @@ export function AttemptBars({ summary }: { summary: AttemptSummary }) {
   )
 }
 
-/** 零镜的档不画柱，只留柱顶的「0」。 */
 function CategoryBar({ x, y, width, height, fill }: BarShapeProps) {
   if (height <= 0) return null
   const drawn = Math.max(3, height)

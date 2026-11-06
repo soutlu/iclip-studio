@@ -1,5 +1,3 @@
-"""identity wire 模型（camelCase）。"""
-
 from __future__ import annotations
 
 import uuid
@@ -117,8 +115,6 @@ def _department_out(dept: PmsDepartment) -> DepartmentOut:
 
 
 def user_out(account: UserAccount, *, permissions: frozenset[str] | None = None) -> UserOut:
-    """用户视图；``permissions`` 缺省为账号有效权限（角色并集 ∪ 直接授权）。"""
-
     if permissions is None:
         permissions = effective_permissions(account.roles, account.direct_permissions)
     return UserOut(
@@ -140,8 +136,6 @@ def user_out(account: UserAccount, *, permissions: frozenset[str] | None = None)
 
 
 def user_out_for_principal(account: UserAccount, principal: Principal) -> UserOut:
-    """``/users/me`` 专用：权限取主体生效集（API key 场景为 key 显式授权集）。"""
-
     return user_out(account, permissions=principal.permissions)
 
 

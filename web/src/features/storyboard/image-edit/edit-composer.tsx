@@ -1,8 +1,3 @@
-/** 图片编辑的输入卡：首页那张 composer 加上标注 chip、`@` 引用、「+」插本组图片、卡内拖放、只收图片与张数上限。
- *
- * 草稿按底图分份：挂载时（调用方按底图换 key）把这张底图的草稿装回来，之后每次变化只把就绪的部分写回。
- * 编辑底图与引用标注时的标注图是隐式提交的，不占 chip；上限 10 张里它固定占一张。 */
-
 import { useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { aspectValueOf } from '@/shared/lib/aspect-ratio'
@@ -42,36 +37,25 @@ const composerPartsOf = (parts: readonly EditDraftPart[]): ComposerPart<Annotati
 const LIMIT_REASON = `最多引用 ${MAX_EDIT_REFERENCES} 张图片`
 
 export type EditComposerHandle = {
-  /** 画布上点「引用」：把这个标注插到光标处。 */
   insertAnnotation: (annotation: ImageAnnotation) => void
 }
 
 type EditComposerProps = {
   ref?: Ref<EditComposerHandle>
-  /** 编辑底图；按描述再生成（`regenerate`）没有底图，为 undefined，不占引用名额、`@` 里也没有它。 */
   baseUrl: string | undefined
-  /** 按描述再生成：输入卡装的是这张图的描述，提交按钮叫「再生成」，没有模型设置。 */
   regenerate?: boolean
-  /** `@` 与「+」能插的本组图片，下标加一是编号。 */
   frames: readonly EditFrame[]
-  /** 它们的统称：分镜页叫帧，制作页叫图。 */
   frameGroup: string
   aspectRatio: string
   annotations: readonly ImageAnnotation[]
   selectedAnnotation: string | null
   onSelectAnnotation: (id: string) => void
-  /** 这张底图的草稿，只在挂载时读。 */
   initialParts: readonly EditDraftPart[]
   onPartsChange: (parts: EditDraftPart[]) => void
-  /** 终校、导出标注图与提交都归调用方；提交期间输入不清空。 */
   onSubmit: (parts: EditDraftPart[]) => void
-  /** 提交的进度。锁在调用方：换底图会换 key 重挂这张卡，不能把锁丢了。 */
   phase: SubmitPhase
-  /** 模型、分辨率与渠道。 */
   settings: ReactNode
-  /** 底图是一张还没替换上去的结果：舞台的主操作是「替换当前帧」，生成退为中性。 */
   editingResult: boolean
-  /** 此刻不让提交（如再生成缺参考图）：按钮灰着，回车也不提交；原因由调用方在输入卡旁说明。 */
   submitBlocked?: boolean
 }
 
@@ -120,7 +104,6 @@ export function EditComposer({
 
   const slots = imageSlotsOf(parts)
   const referenced = (url: string) => slots.some((slot) => slot.url === url)
-  // 底图隐式提交、固定占一张；正文里指向底图的图片并进它，不另占。再生成没有底图。
   const remaining = () =>
     MAX_EDIT_REFERENCES -
     (baseUrl === undefined ? 0 : 1) -

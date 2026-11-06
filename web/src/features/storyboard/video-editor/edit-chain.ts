@@ -19,10 +19,6 @@ export type ChainVersion = {
   mediaUrl: string
 }
 
-/**
- * 原作 root 所在的版本组。这条原作的合成以编辑链 chainJobs 为准（提交后立刻写进、刷新最及时），
- * 组里其余原作与合成取本对话视频记录 conversationJobs；root 没出片时为 undefined。
- */
 export const rootVersionGroup = (
   root: GenerationJob,
   chainJobs: readonly GenerationJob[],
@@ -34,7 +30,6 @@ export const rootVersionGroup = (
   )
 }
 
-/** 版本视图的各版：这条原作与它完成的合成，按完成先后，名字沿用版本组的编号，所以编号可以不连续。 */
 export const projectVersions = (
   root: GenerationJob,
   group: ConversationVideoGroup | undefined,
@@ -47,11 +42,9 @@ export const projectVersions = (
       mediaUrl: video.outputUrl,
     }))
 
-/** 直接基于原片 rootJobId 的合成：只有它们能推出选用、能跟现在的合成内容比。 */
 const rootComposites = (jobs: readonly GenerationJob[], rootJobId: string) =>
   jobs.filter((job) => isComposite(job) && job.sourceJobId === rootJobId)
 
-/** 基于原片最近完成的那次合成。 */
 export const latestCompositeOf = (
   jobs: readonly GenerationJob[],
   rootJobId: string,
@@ -61,7 +54,6 @@ export const latestCompositeOf = (
     .sort(byFinish)
     .at(-1)
 
-/** 基于原片、还在合成的那次（取最近提交的）。 */
 export const composingOf = (
   jobs: readonly GenerationJob[],
   rootJobId: string,
@@ -71,7 +63,6 @@ export const composingOf = (
     .sort(byCreation)
     .at(-1)
 
-/** 基于原片最近提交的那次合成失败了时就是它；之后又提交过合成，前面的失败就不算了。 */
 export const failedCompositeOf = (
   jobs: readonly GenerationJob[],
   rootJobId: string,

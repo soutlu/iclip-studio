@@ -21,17 +21,11 @@ const NOTICE_MS = 8000
 
 const enhanceRequestSchema = z.object({ resolution: zVideoEnhanceIn.shape.resolution })
 
-/** 提示里怎么称呼来源：有镜号叫第 N 组，没有就叫视频。 */
 const sourceLabel = (job: { shotIndex?: number | null | undefined }): string => {
   if (job.shotIndex !== null && job.shotIndex !== undefined) return `第 ${job.shotIndex} 组`
   return '视频'
 }
 
-/**
- * 高清版的全局跟进：超分记录的状态跳转帧到了或重连后，失效全部高清版查询，各处下载按钮跟着刷新；
- * 自己提的那一条做好或没做成时，在哪个页面都弹一条提示，带「下载」或「重试」。
- * 治理者也收得到别人的帧，只对属主是自己的弹；应用关着时错过的不补弹。
- */
 export function EnhanceNotices() {
   const connection = use(TranscriptConnectionContext)
   const queryClient = useQueryClient()
@@ -46,8 +40,6 @@ export function EnhanceNotices() {
     const { resolution } = enhanceRequestSchema.parse(job.request)
     const id = enhanceNoticeId(sourceJobId, resolution)
     const label = sourceLabel(job)
-    // 点了提示条（sonner 点 action 不触发 onDismiss，所以在 action 里另记）或手动关掉都算看过；
-    // 8 秒自己收起走 onAutoClose，不算。
     const seen = () => markEnhancementsSeen([job.id])
     if (job.status === 'completed' && job.outputUrl !== null) {
       const { downloadedJobIds } = await queryClient.fetchQuery(videoEnhancementsQuery(sourceJobId))
@@ -82,7 +74,6 @@ export function EnhanceNotices() {
   }
 
   const onUpdate = useEffectEvent((update: SessionUpdate) => {
-    // 全局帧不补发：重连后同样重拉，补上断线期间的跳转。
     if (update.kind === 'reconnected') {
       void queryClient.invalidateQueries({ queryKey: videoEnhancementsKeys.all })
       return
@@ -90,8 +81,7 @@ export function EnhanceNotices() {
     if (update.kind !== 'generation' || update.operation !== 'enhance') return
     void queryClient.invalidateQueries({ queryKey: videoEnhancementsKeys.all })
     const settled = update.status === 'completed' || update.status === 'failed'
-    if (!settled || user === null || user === undefined || update.mark.ownerUserId !== user.id)
-      return
+    if (!settled || user === null || user === undefined || update.ownerUserId !== user.id) return
     announce(update.jobId).catch((error: unknown) => {
       console.warn('高清版提示没弹出', { error, jobId: update.jobId })
     })

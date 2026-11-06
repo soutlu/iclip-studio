@@ -1,7 +1,3 @@
-/** 资料库标签树的 mock：照迁移预置的五个维度（品牌空、平台&渠道人工、品类 / 场景 / 内容结构由 AI 打），
- * id 固定可复现。条数由调用方给出各条目的标签现算；按标签筛选的匹配照合同 §15 做。改树的三个写接口
- * 改内存里的树，每例由 `resetMockLibraryTags` 放回预置的树。单测与演示行用 `mockTagId(名字)` 取 id。 */
-
 import { http, HttpResponse } from 'msw'
 import type {
   LibraryTagCreateIn,
@@ -71,7 +67,6 @@ const CATEGORIES = [
   '连衣裙',
 ] as const
 
-/** 内容结构的大类（名字、判断句）与各自的小类（名字、英文名）。 */
 const STRUCTURE: readonly (readonly [string, string, readonly (readonly [string, string])[]])[] = [
   [
     '产品展示型',
@@ -160,7 +155,6 @@ const node = (
 
 const leaves = (names: readonly string[]) => names.map((name, index) => node(name, index))
 
-/** 预置的树；id 每次从头编，重置后与演示行里取到的 id 一致。 */
 const seedTree = (): Node[] => {
   nextId = 0
   return [
@@ -190,7 +184,6 @@ const seedTree = (): Node[] => {
   ]
 }
 
-/** 每个节点在树里的位置：所在维度（维度自己就是它）、上级与全部下级。 */
 type Place = {
   node: Node
   dimension: Node
@@ -209,7 +202,6 @@ const walk = (current: Node, dimension: Node, parent: Node | null, depth = 0): s
   places.set(current.id, { depth, descendants, dimension, node: current, parent })
   return descendants
 }
-/** 树改过之后重算各节点的位置，同级的 `position` 重新编成 0..n-1。 */
 const reindex = () => {
   places.clear()
   const renumber = (nodes: Node[]) =>
@@ -221,37 +213,30 @@ const reindex = () => {
   for (const dimension of tree) walk(dimension, dimension, null)
 }
 
-/** 每例清空后放回预置的树，id 与上一次相同；演示行的标签要在它之后重放。 */
 export const resetMockLibraryTags = () => {
   tree = seedTree()
   reindex()
 }
 resetMockLibraryTags()
 
-/** 按名字取 id；不在树里给 undefined（演示数据跟着修改后的树走）。 */
 export const findMockTagId = (name: string): string | undefined => {
   for (const place of places.values()) if (place.node.name === name) return place.node.id
   return undefined
 }
 
-/** 按名字取 id；名字不在树里直接报错，免得演示数据写错了不出声。 */
 export const mockTagId = (name: string): string => {
   const found = findMockTagId(name)
   if (found === undefined) throw new Error(`标签树里没有「${name}」`)
   return found
 }
 
-/** 是树里的取值（不是维度本身）。 */
 export const isMockTagValue = (id: string): boolean => {
   const place = places.get(id)
   return place !== undefined && place.parent !== null
 }
 
-/** 这个取值是不是 AI 打的维度下的。 */
 export const isMockAiTag = (id: string): boolean => places.get(id)?.dimension.autoFill === 'ai'
 
-/** 按标签筛选：选中的按维度分组，同一维度命中任一，不同维度都要命中，选了上级也算它的下级。
- * 有不认识的 id 交回 null（合同里是 422）。 */
 export const mockTagMatcher = (
   selected: readonly string[],
 ): ((tagIds: readonly string[]) => boolean) | null => {
@@ -267,7 +252,6 @@ export const mockTagMatcher = (
   return (tagIds) => [...groups.values()].every((group) => tagIds.some((id) => group.has(id)))
 }
 
-/** 两库各条目的标签，条数照它现算。 */
 type TagSets = {
   references?: readonly (readonly string[])[]
   hitCases?: readonly (readonly string[])[]
@@ -284,7 +268,6 @@ const withCounts = (current: Node, entries: TagSets): LibraryTagOut => {
   }
 }
 
-/** `GET /library-tags` 的答复；`entries` 是两库各条目的标签，条数照它现算。 */
 export const mockLibraryTagTree = (entries: TagSets = {}): LibraryTagsOut => ({
   dimensions: tree.map((dimension) => withCounts(dimension, entries)),
 })
@@ -294,7 +277,6 @@ const AI_VALUE_LIMIT = 500
 const invalid = (detail: string) => HttpResponse.json({ detail }, { status: 422 })
 const NOT_FOUND = () => HttpResponse.json({ detail: '标签不存在' }, { status: 404 })
 
-/** 名称与判断说明的整理，照合同 §15「改树」；不合格交回原因。 */
 const cleanName = (name: string): string | { error: string } => {
   const cleaned = name.trim()
   if (cleaned === '') return { error: '请填写名称' }
@@ -307,7 +289,6 @@ const cleanGuide = (guide: string | null | undefined): string | null | { error: 
   return cleaned === '' ? null : cleaned
 }
 
-/** 维度之间不重名；同一维度里不论哪一层都不重名。 */
 const duplicateOf = (dimension: Node | null, name: string, self: string | null) => {
   if (dimension === null)
     return tree.some((one) => one.name === name && one.id !== self)
@@ -335,7 +316,6 @@ const publicNode = (id: string, entries: TagSets) => {
   return place === undefined ? undefined : withCounts(place.node, entries)
 }
 
-/** `entries` 给出此刻每条没移除的参考视频与在库的爆款素材的标签；`forget` 把删掉的标签从两库条目上去掉。 */
 export const libraryTagHandlers = (
   entries: () => TagSets,
   forget: (ids: ReadonlySet<string>) => void,

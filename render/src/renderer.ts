@@ -1,11 +1,3 @@
-/**
- * 用 @hyperframes/producer 渲染一份合成页。临时项目目录里：组件库按同样的相对位置链接进来（合成页里
- * 组件与运行时的路径都相对组件目录根），素材先取到 media/ 下，合成页用本地路径引用它们；字体 CSS
- * 里的字体在合成页里先声明一次，HyperFrames 就不另补（见 fonts.ts）。
- *
- * 素材自己取而不交给 producer：producer 只取 https 且主机不是内网字面地址的素材，取不到时报的是笼统的
- * 渲染失败；自己取可以把「素材取不到」单独报出来（media-unreachable），producer 只读本地文件。
- */
 import { createHash } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from 'node:fs/promises'
@@ -20,12 +12,9 @@ import { producerLogger, type Logger } from './log'
 import { uploadFile } from './upload'
 
 export interface RendererOptions {
-  /** 临时项目目录的父目录。 */
   workDir: string
-  /** 有硬件视频编码器时用它编码。 */
   gpuEncode: boolean
   logger: Logger
-  /** 单个素材下载的上限，默认 10 分钟。 */
   mediaTimeoutMs?: number
 }
 
@@ -34,7 +23,6 @@ const describeUrl = (url: string) => {
   return `${parsed.host}${parsed.pathname}`
 }
 
-/** 素材取到 dir/media/；返回「原地址 → 相对项目目录的路径」。取不到即 media-unreachable。 */
 async function downloadMedia(
   urls: string[],
   dir: string,

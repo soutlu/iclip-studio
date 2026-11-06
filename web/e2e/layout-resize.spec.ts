@@ -2,8 +2,6 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { openConversation } from './helpers'
 import { login } from './login'
 
-// 在真实浏览器中验证拖动宽度跨刷新持久化。
-
 test.use({ viewport: { height: 900, width: 1600 } })
 
 test('拖侧栏拖柄改宽，刷新之后还在', async ({ page }) => {
@@ -32,7 +30,6 @@ test('拖侧栏拖柄改宽，刷新之后还在', async ({ page }) => {
     .poll(async () => (await sidebar.boundingBox())?.width)
     .toBeCloseTo(before.width + 60, 0)
 
-  // 缩窄后的用户宽度也保留；继续拖到边缘可折叠，再往回拖能恢复。
   const narrowWidth = before.width / 2
   await dragBy(page, handle, narrowWidth - (await bounds(sidebar)).width)
   await widthIs(sidebar, narrowWidth)
@@ -56,7 +53,6 @@ test('双击侧栏拖柄恢复默认宽', async ({ page }) => {
   await widthIs(sidebar, initialWidth)
 })
 
-/** 拖动真实边界热区，位移正负由当前列顺序决定。 */
 const dragBy = async (page: Page, handle: Locator, delta: number) => {
   const box = await bounds(handle)
   const x = box.x + box.width / 2
@@ -235,7 +231,6 @@ test('拖动栏头换位、键盘换回和取消调宽', async ({ page }) => {
   await page.mouse.up()
   await expect.poll(async () => (await bounds(workbench)).x).toBeLessThan((await bounds(chat)).x)
 
-  // dnd-kit 在松手后保留 50ms 的 click 拦截，防止把拖动误判为点击。
   await page.waitForTimeout(60)
   const swap = chat.getByRole('button', { name: '交换对话与工作台' })
   await swap.focus()
@@ -308,7 +303,6 @@ test('三种布局、窄屏切换与桌面偏好恢复', async ({ page }) => {
   )
 })
 
-/** 焦点目标必须完整落在可见栏内，不能仅检查 overflow 裁切下仍为 visible 的节点。 */
 const expectContainedFocus = async (control: Locator, pane: Locator) => {
   await expect(control).toBeFocused()
   await expect

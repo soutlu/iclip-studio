@@ -1,5 +1,3 @@
-"""identity 纯领域对象：账号快照、API key、Principal。"""
-
 from __future__ import annotations
 
 import uuid
@@ -12,8 +10,6 @@ PrincipalKind = Literal["user", "api_key"]
 
 @dataclass(frozen=True, slots=True)
 class PmsDepartment:
-    """PMS 返回的部门条目（SSO 登录时快照进用户行）。"""
-
     id: int
     uid: str
     name: str
@@ -28,8 +24,6 @@ class PmsDepartment:
 
 @dataclass(frozen=True, slots=True)
 class UserAccount:
-    """用户账号的不可变快照。"""
-
     id: uuid.UUID
     email: str
     username: str | None
@@ -47,8 +41,6 @@ class UserAccount:
 
 @dataclass(frozen=True, slots=True)
 class ApiKeyRecord:
-    """API key 元数据；token 明文不落库，只存哈希与展示前缀。"""
-
     id: uuid.UUID
     owner_user_id: uuid.UUID
     name: str
@@ -62,16 +54,6 @@ class ApiKeyRecord:
 
 @dataclass(frozen=True, slots=True)
 class Principal:
-    """唯一可信调用主体；下游一切授权与审计只消费本对象。
-
-    ``permissions`` 是主体的有效权限集：用户为角色并集 ∪ 直接授权，
-    API key 为 key 显式授权集。``audit_label`` 是日志/审计输出用的
-    人类可读主体标识（用户为 username/email，key 为「属主#key名」）。
-    ``username`` 是属主账号的用户名，给发往上游的归属标签取默认值用；
-    账号没有用户名时为空，不拿邮箱顶替。``key_name`` 只有 key 主体有，
-    替人办事时拼新的审计标识用（见 ``acting.py``）。
-    """
-
     kind: PrincipalKind
     user_id: uuid.UUID
     permissions: frozenset[str]

@@ -5,8 +5,8 @@ import uuid
 from typing import Final, Protocol
 
 import structlog
+from agent_runtime.errors import Conflict, ValidationFailed
 
-from iclip.common.errors import Conflict, ValidationFailed
 from iclip.domains.identity.public import Principal
 from iclip.domains.uploads.models import (
     MAX_BYTES,
@@ -26,11 +26,11 @@ from iclip.platform.object_store.direct_upload import (
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicBucket, StoredObject
 from iclip.platform.outbound.fetch import FetchTooLarge
-from iclip.platform.outbound.guard import FetchFailed, FetchRefused
+from iclip.platform.outbound.guard import FetchFailed
 
 _logger = structlog.stdlib.get_logger(__name__)
 
-# OSS 只有一次整传（Normal）的对象 ETag 才是内容的 MD5。
+# 阿里云 OSS 仅对单次普通上传（PutObject）返回内容 MD5 作为 ETag。
 _NORMAL_OBJECT: Final = "Normal"
 
 _MD5_HEX: Final = re.compile(r"[0-9a-fA-F]{32}")
@@ -58,9 +58,6 @@ class RecordUpload(Protocol):
 
 
 class ConversationWritable(Protocol):
-    """主体能不能改这段对话：看不见抛 ``NotFound``，看得见却不是属主（或已删除）抛
-    ``PermissionDenied``。由组合根接到对话域。"""
-
     async def __call__(self, principal: Principal, conversation_id: uuid.UUID, /) -> object: ...
 
 
@@ -111,8 +108,6 @@ class UploadService:
         *,
         conversation_id: uuid.UUID | None = None,
     ) -> ConfirmedUpload:
-        """``conversation_id`` 只收音乐，主体要是那段对话的属主；记过的上传照旧交回，不再看它。"""
-
         recorded = await self._find_recorded(upload_id)
         if recorded is None:
             found = await self._objects.find_object(
@@ -149,8 +144,6 @@ class UploadService:
             content = await self._fetch(url, max_bytes=limit)
         except FetchTooLarge as exc:
             raise ValidationFailed(_too_large(limit)) from exc
-        except FetchRefused as exc:
-            raise ValidationFailed(f"这个地址不允许服务端下载：{exc}") from exc
         except FetchFailed as exc:
             raise ValidationFailed(f"这张图下载不下来：{exc}") from exc
         if len(content) > limit:
