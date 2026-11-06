@@ -25,6 +25,7 @@ class Conversation:
     completed_at: datetime | None = None
     forked_from: uuid.UUID | None = None
     fork_turn: int | None = None
+    same_as: uuid.UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)

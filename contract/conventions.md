@@ -175,6 +175,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 `POST /conversations` 传入 `sameAs`（资料库中某张关联了对话的素材卡 ID）：
 - 只要调用者拥有 `generation:read` 权限，且源对话的工作区里有 `film.icml` 或 `video_shot.json`（缺少制作文件返回 `422`），即使调用者打不开源对话或源对话已被删除，也可以创建同款新对话。
 - 系统会将源对话工作区里的 `treatment.md`、`film.icrun` 按原名复制，把 `film.icml` 改名为 `old_film.icml`、把 `video_shot.json` 改名为 `old_video_shot.json` 复制到新对话中（不复制聊天历史，也不继承原视频）。
+- 新对话的 `conversations.same_as` 列记下源对话 ID，接口不返回这一列；分叉不写它。
 
 ### 两处归属、收尾标记与治理者复盘
 
