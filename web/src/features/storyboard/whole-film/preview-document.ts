@@ -19,6 +19,14 @@ export const withBaseHref = (html: string, baseHref: string): string => {
   return `${html.slice(0, at)}\n<base href="${escapeAttribute(baseHref)}">${html.slice(at)}`
 }
 
+// 只改预览，合成输出还要跑在渲染服务里。preload 写 none 时运行时按播放位置调 load()，一次只加载用得到的片段；
+// 写 metadata 会一开始就下载，运行时之后设成 none 也停不下来，几个文件会一起抢带宽。
+const withPreviewMedia = (html: string): string =>
+  html
+    .replaceAll('<video ', '<video crossorigin="anonymous" ')
+    .replaceAll('preload="auto"', 'preload="none"')
+    .replace(/<head[^>]*>/i, '$&\n<meta name="hyperframes-studio-preview" content="1">')
+
 type MediaSources = {
   videoUrl: (sourceJobId: string) => string | undefined
   musicUrl: string | undefined
@@ -65,7 +73,7 @@ export const previewState = (
     const { html, durationMs } = buildComposition({ draft, media, catalog })
     return {
       kind: 'ready',
-      html: withBaseHref(html, componentBaseHref(origin, catalog)),
+      html: withBaseHref(withPreviewMedia(html), componentBaseHref(origin, catalog)),
       durationMs,
     }
   } catch (error) {

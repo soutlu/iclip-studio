@@ -28,8 +28,10 @@ type PlayerElement = HTMLElement & {
   pause: () => void
   seek: (seconds: number) => void
   readonly currentTime: number
+  readonly duration: number
   readonly paused: boolean
   readonly painted: boolean
+  readonly _media: { _createEntry: () => null }
 }
 
 type PreviewPlayerProps = {
@@ -42,6 +44,8 @@ type PreviewPlayerProps = {
   onPlaying: (playing: boolean) => void
   controlRef: RefObject<PreviewControl | null>
   onFrame: (iframe: HTMLIFrameElement | null) => void
+  onMediaSettled?: (() => void) | undefined
+  onBuffering?: ((buffering: boolean) => void) | undefined
   children?: ReactNode
 }
 
@@ -49,6 +53,27 @@ const once = (target: EventTarget, type: string) =>
   new Promise<void>((resolve) => target.addEventListener(type, () => resolve(), { once: true }))
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+
+const RESUME_BUFFER_SECONDS = 3
+
+const BUFFER_START_TOLERANCE_SECONDS = 0.05
+
+const hasResumeBuffer = (video: HTMLVideoElement) => {
+  if (video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) return false
+  // 下完的文件 buffered 也可能够不到结尾，不再下载就不会有新数据，等下去是永远转圈
+  if (video.networkState !== HTMLMediaElement.NETWORK_LOADING) return true
+  const { buffered, currentTime } = video
+  const clipEnd = Number(video.dataset['mediaStart'] ?? 0) + Number(video.dataset['duration'])
+  const needed = Math.max(0, Math.min(RESUME_BUFFER_SECONDS, clipEnd - currentTime))
+  return Array.from({ length: buffered.length }).some(
+    (_, at) =>
+      buffered.start(at) <= currentTime + BUFFER_START_TOLERANCE_SECONDS &&
+      buffered.end(at) - currentTime >= needed,
+  )
+}
+
+// 媒体事件不冒泡，要在 iframe 文档上捕获
+const MEDIA_EVENTS = ['suspend', 'error', 'progress', 'canplay', 'seeked']
 
 export function PreviewPlayer({
   srcdoc,
@@ -60,16 +85,20 @@ export function PreviewPlayer({
   onPlaying,
   controlRef,
   onFrame,
+  onMediaSettled,
+  onBuffering,
   children,
 }: PreviewPlayerProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const [loaded, setLoaded] = useState(false)
   const [active, setActive] = useState<PlayerElement | null>(null)
   const activeRef = useRef<PlayerElement | null>(null)
-  const callbacksRef = useRef({ onTime, onPlaying, onFrame })
+  const callbacksRef = useRef({ onTime, onPlaying, onFrame, onMediaSettled, onBuffering })
   const sizeRef = useRef({ width, height })
+  const wantsPlayRef = useRef(false)
+  const swappingRef = useRef(false)
   useLayoutEffect(() => {
-    callbacksRef.current = { onTime, onPlaying, onFrame }
+    callbacksRef.current = { onTime, onPlaying, onFrame, onMediaSettled, onBuffering }
     sizeRef.current = { width, height }
   })
 
@@ -91,30 +120,69 @@ export function PreviewPlayer({
   }, [])
 
   useEffect(() => {
-    if (active === null) return
+    const page = active?.iframeElement.contentDocument
+    if (active === null || page === null || page === undefined) return
+    swappingRef.current = false
+    let buffering = false
+    const atEnd = () => active.currentTime >= active.duration
+    const syncMedia = () => {
+      const wantsPlay = wantsPlayRef.current && !swappingRef.current
+      const videos = [...page.querySelectorAll<HTMLVideoElement>('video[data-start]')]
+      const seconds = active.currentTime
+      const clip = videos.find((video) => {
+        const start = Number(video.dataset['start'])
+        return start <= seconds && seconds < start + Number(video.dataset['duration'])
+      })
+      const clipReady =
+        clip === undefined ||
+        clip.error !== null ||
+        (buffering ? hasResumeBuffer(clip) : clip.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA)
+      if (buffering !== (wantsPlay && !clipReady)) {
+        buffering = !buffering
+        callbacksRef.current.onBuffering?.(buffering)
+      }
+      const running = wantsPlay && !buffering
+      // 放到结尾时播放器已停、ended 还没来；这时 play() 会跳回开头重放
+      if (running && active.paused && !atEnd()) active.play()
+      if (!running && !active.paused) active.pause()
+      if (
+        videos.length > 0 &&
+        videos.every((video) => video.networkState !== HTMLMediaElement.NETWORK_LOADING)
+      )
+        callbacksRef.current.onMediaSettled?.()
+    }
+    const setWantsPlay = (wantsPlay: boolean) => {
+      wantsPlayRef.current = wantsPlay
+      callbacksRef.current.onPlaying(wantsPlay)
+      syncMedia()
+    }
     const onTimeUpdate = (event: Event) => {
       const seconds = (event as CustomEvent<{ currentTime: number }>).detail.currentTime
       callbacksRef.current.onTime(Math.round(seconds * 1000))
+      syncMedia()
     }
-    const onPlay = () => callbacksRef.current.onPlaying(true)
-    const onPause = () => callbacksRef.current.onPlaying(false)
+    const onEnded = () => setWantsPlay(false)
     active.addEventListener('timeupdate', onTimeUpdate)
-    active.addEventListener('play', onPlay)
-    active.addEventListener('pause', onPause)
-    active.addEventListener('ended', onPause)
+    active.addEventListener('ended', onEnded)
+    for (const type of MEDIA_EVENTS) page.addEventListener(type, syncMedia, true)
     controlRef.current = {
-      play: () => active.play(),
-      pause: () => active.pause(),
+      play: () => {
+        if (atEnd()) active.seek(0)
+        setWantsPlay(true)
+      },
+      pause: () => setWantsPlay(false),
       seek: (ms) => {
-        active.pause()
+        setWantsPlay(false)
         active.seek(frameSeconds(ms))
       },
     }
+    // 换上来之前的媒体事件已经错过，小文件这时不会再有事件
+    syncMedia()
     return () => {
+      if (buffering) callbacksRef.current.onBuffering?.(false)
       active.removeEventListener('timeupdate', onTimeUpdate)
-      active.removeEventListener('play', onPlay)
-      active.removeEventListener('pause', onPause)
-      active.removeEventListener('ended', onPause)
+      active.removeEventListener('ended', onEnded)
+      for (const type of MEDIA_EVENTS) page.removeEventListener(type, syncMedia, true)
       active.remove()
       controlRef.current = null
     }
@@ -129,7 +197,7 @@ export function PreviewPlayer({
   useEffect(() => {
     if (!loaded) return
     if (srcdoc === undefined) {
-      activeRef.current?.pause()
+      controlRef.current?.pause()
       return
     }
     let cancelled = false
@@ -138,10 +206,12 @@ export function PreviewPlayer({
       const host = hostRef.current
       if (host === null) return
       const old = activeRef.current
-      const resumePlaying = old !== null && !old.paused
+      swappingRef.current = true
       old?.pause()
       const resumeAt = old?.currentTime ?? 0
       const next = document.createElement('hyperframes-player') as PlayerElement
+      // 播放器给每段视频在父页面另建不跨域的副本，每个文件下载两遍。没有公开开关，版本锁定，升级要复查
+      next._media._createEntry = () => null
       pending = next
       next.setAttribute('disable-click-to-play', '')
       next.setAttribute('width', String(sizeRef.current.width))
@@ -161,7 +231,6 @@ export function PreviewPlayer({
         next.classList.remove('is-pending')
         activeRef.current = next
         setActive(next)
-        if (resumePlaying) next.play()
       })()
     }, RELOAD_DELAY_MS)
     return () => {
@@ -169,7 +238,7 @@ export function PreviewPlayer({
       clearTimeout(timer)
       pending?.remove()
     }
-  }, [loaded, srcdoc])
+  }, [loaded, srcdoc, controlRef])
 
   return (
     <div aria-label="预览" className="wf-preview" role="region">
