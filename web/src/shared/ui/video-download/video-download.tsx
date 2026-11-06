@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useId, useLayoutEffect, useState, type ReactNode } from 'react'
+import { useId, useLayoutEffect, useState, type ComponentProps, type ReactNode } from 'react'
 import { useMediaDownload } from '@/shared/api/media-download'
 import { recordVideoDownloaded } from '@/shared/api/tracking'
 import {
@@ -30,6 +30,7 @@ type VideoDownloadProps = {
   enhanceSourceId?: string
   originalLabel?: string
   durationMs?: number | null | undefined
+  variant?: ComponentProps<typeof Button>['variant']
 }
 
 const ENHANCE_SLOWDOWN = 20
@@ -71,6 +72,7 @@ export function VideoDownload({
   jobId,
   originalLabel = '下载原片',
   url,
+  variant,
   watermarkUrl,
 }: VideoDownloadProps) {
   const { downloading, download: fetchAndSave } = useMediaDownload()
@@ -135,6 +137,7 @@ export function VideoDownload({
         loading={downloading}
         onClick={onClick}
         size="md"
+        variant={variant}
       >
         {children}
       </Button>

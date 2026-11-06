@@ -1,4 +1,11 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, type RefObject } from 'react'
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  type ReactNode,
+  type RefObject,
+} from 'react'
 import { Icon } from '@/shared/icons'
 import { IconButton } from '@/shared/ui/button'
 import { placeCard } from '../editing/card-placement'
@@ -7,11 +14,19 @@ type SelectionCardProps = {
   frame: string | undefined
   title: string
   line: string
+  action?: ReactNode
   anchorRef: RefObject<HTMLElement | null>
   onClose: () => void
 }
 
-export function SelectionCard({ frame, title, line, anchorRef, onClose }: SelectionCardProps) {
+export function SelectionCard({
+  frame,
+  title,
+  line,
+  action,
+  anchorRef,
+  onClose,
+}: SelectionCardProps) {
   const cardRef = useRef<HTMLElement>(null)
 
   const place = useEffectEvent(() => {
@@ -60,6 +75,7 @@ export function SelectionCard({ frame, title, line, anchorRef, onClose }: Select
           <p>{title}</p>
           <p>{line}</p>
         </div>
+        {action}
         <IconButton label="关闭" name="close" onClick={onClose} size="sm" />
       </div>
     </section>
