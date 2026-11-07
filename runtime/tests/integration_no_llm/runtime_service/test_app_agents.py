@@ -5,9 +5,9 @@ import pytest
 from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel
 
-from tests.helpers.app import TEST_MODEL_NAME
 from tests.helpers.runtime_service import (
     ADMIN_KEY,
+    TEST_MODEL_NAME,
     add_model,
     connect_provider,
     publish_agent,

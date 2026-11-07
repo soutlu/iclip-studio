@@ -5,19 +5,19 @@ import uuid
 
 import httpx
 import pytest
+from fastapi import FastAPI
+from httpx_ws.transport import ASGIWebSocketTransport
+from pydantic_ai.models import Model
+
 from agent_runtime.app_wire import SessionOpenIn, SessionPromptIn
 from agent_runtime.client import AppRejected, RuntimeClient, StreamClosed, WorkChangedFrame
 from agent_runtime.live.frames import Ack, TranscriptOpsFrame, TranscriptResetFrame
 from agent_runtime.transcript.ops import AttachmentSource, ImageContent, TextContent, TurnUpsertOp
 from agent_runtime.transcript.wire import Subscribe, SubscribePayload
-from fastapi import FastAPI
-from httpx_ws.transport import ASGIWebSocketTransport
-from pydantic_ai.models import Model
-
-from tests.helpers.app import TEST_MODEL_NAME
 from tests.helpers.runtime import says
 from tests.helpers.runtime_service import (
     READER_KEY,
+    TEST_MODEL_NAME,
     add_model,
     connect_provider,
     publish_agent,

@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import sys
 import uuid
 from collections.abc import Mapping
 from pathlib import Path
 
 import httpx
 import pytest
+from fastapi import FastAPI
+from httpx_ws.transport import ASGIWebSocketTransport
+from pydantic_ai.models import Model
+from sqlalchemy.ext.asyncio import AsyncEngine
+
 from agent_runtime.app_wire import ActivitiesIn, SessionOpenIn, SessionPromptIn
 from agent_runtime.client import RuntimeClient, WorkChangedFrame
 from agent_runtime.errors import NotFound
@@ -22,20 +25,16 @@ from agent_runtime.settings import (
 )
 from agent_runtime.transcript.ops import TextContent, TurnUpsertOp
 from agent_runtime.transcript.wire import Subscribe, SubscribePayload
-from fastapi import FastAPI
-from httpx_ws.transport import ASGIWebSocketTransport
-from pydantic_ai.models import Model
-from sqlalchemy.ext.asyncio import AsyncEngine
-
-from tests.helpers.agents import model_builder
-from tests.helpers.app import TEST_CREDENTIAL_KEY, TEST_MODEL_NAME
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.runtime import says
 from tests.helpers.runtime_service import (
     ADMIN_KEY,
     READER_KEY,
+    TEST_CREDENTIAL_KEY,
+    TEST_MODEL_NAME,
     add_model,
     connect_provider,
+    model_builder,
     publish_agent,
 )
 
@@ -46,8 +45,6 @@ CRM_KEY = READER_KEY
 AGENT = "director"
 REPLY = "答：收到"
 WAIT = 10.0
-
-VIDEO_CODE = ("iclip", "iclip_video")
 
 
 @pytest.fixture
@@ -184,69 +181,3 @@ async def test_the_second_app_and_video_cannot_reach_each_others_sessions(
             ack = Ack.model_validate_json((await channel.receive()).text)
     assert ack.payload is not None
     assert (ack.payload.accepted, ack.payload.not_found) == ((), (str(theirs),))
-
-
-ENTRY_CONFIG = """\
-apps:
-  video:
-    key_env: STUB_VIDEO_APP_KEY
-    admin: true
-    hooks: {gate: null, run_started: null, turn_started: null}
-  crm:
-    key_env: STUB_CRM_APP_KEY
-    hooks: {gate: null, run_started: null, turn_started: null}
-agent_runs:
-  skill_cache_dir: SKILL_CACHE
-ops:
-  log_level: WARNING
-"""
-
-ENTRY_PROBE = f"""\
-import asyncio, sys
-import httpx
-from agent_runtime.http.asgi import app_from_env
-
-async def main():
-    app = app_from_env()
-    async with app.router.lifespan_context(app):
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://runtime.test"
-        ) as client:
-            found = await client.get("/v1/agents", headers={{"Authorization": "Bearer {CRM_KEY}"}})
-            assert found.status_code == 200, found.text
-
-asyncio.run(main())
-print("loaded:" + ",".join(sorted(
-    name for name in sys.modules if name.split(".")[0] in {VIDEO_CODE!r}
-)))
-"""
-
-
-async def test_the_runtime_entry_without_a_plugin_package_loads_no_video_code(
-    engine: AsyncEngine, migrated_pg: str, tmp_path: Path
-) -> None:
-    config = tmp_path / "runtime.yaml"
-    config.write_text(
-        ENTRY_CONFIG.replace("SKILL_CACHE", str(tmp_path / "skills")), encoding="utf-8"
-    )
-    env = {
-        **os.environ,
-        "AGENT_RUNTIME_CONFIG": str(config),
-        "DATABASE_URL": migrated_pg,
-        "CREDENTIAL_ENCRYPTION_KEYS": TEST_CREDENTIAL_KEY,
-        "STUB_VIDEO_APP_KEY": VIDEO_KEY,
-        "STUB_CRM_APP_KEY": CRM_KEY,
-    }
-    process = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "-c",
-        ENTRY_PROBE,
-        cwd=tmp_path,
-        env=env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
-
-    assert process.returncode == 0, stderr.decode(errors="replace")
-    assert stdout.decode().strip().splitlines()[-1] == "loaded:"

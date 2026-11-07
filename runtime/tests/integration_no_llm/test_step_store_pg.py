@@ -6,7 +6,6 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from agent_runtime.harness.step_store_pg import PgMediaStore, PgStepStore
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
     BinaryContent,
@@ -29,9 +28,9 @@ from pydantic_ai_harness.step_persistence import (
 )
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from iclip.platform.db.engine import build_engine
+from agent_runtime.harness.step_store_pg import PgMediaStore, PgStepStore
 from tests.helpers.pg import (
     insert_inline_snapshot,
     raw_snapshot_messages,
@@ -44,7 +43,7 @@ T0 = datetime(2026, 8, 21, 10, 0, 0, tzinfo=UTC)
 
 @pytest.fixture
 async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    engine = build_engine(migrated_pg)
+    engine = create_async_engine(migrated_pg, pool_pre_ping=True)
     async with engine.begin() as conn:
         await truncate_clean(
             conn,

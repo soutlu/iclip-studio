@@ -3,7 +3,7 @@
 本文说明一个新的业务系统（下称「应用」）如何接入 Agent 运行时服务，快速获得 Agent 对话与工具运行能力。
 - 运行时内部机制见 [架构 §2](architecture.md#2-运行时服务)
 - 接口定义以 [runtime-openapi.json](../contract/runtime-openapi.json) 为准，通信协议细节见 [conventions §20](../contract/conventions.md#20-运行时服务-agent-runtime)
-- 完整接入示例可参考现有的视频后端（应用 `video`）或最小接入集成测试 [test_second_app.py](../server/tests/integration_no_llm/runtime_service/test_second_app.py)
+- 完整接入示例可参考现有的视频后端（应用 `video`）或最小接入集成测试 [test_second_app.py](../runtime/tests/integration_no_llm/runtime_service/test_second_app.py)
 
 ## 职责分工
 

@@ -7,9 +7,14 @@ import httpx
 import pytest
 from pydantic_ai.models import Model
 
-from tests.helpers.app import TEST_MODEL_NAME
 from tests.helpers.runtime import waits
-from tests.helpers.runtime_service import add_model, connect_provider, publish_agent, settled
+from tests.helpers.runtime_service import (
+    TEST_MODEL_NAME,
+    add_model,
+    connect_provider,
+    publish_agent,
+    settled,
+)
 
 AGENT = "director"
 

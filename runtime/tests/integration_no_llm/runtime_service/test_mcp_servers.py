@@ -9,13 +9,6 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.agent_usage import AgentUsage
-from agent_runtime.assembly.config_services import ConfigServices
-from agent_runtime.assembly.mcp import HarnessMcpProbe
-from agent_runtime.config.mcp_servers.index import McpServerIndex
-from agent_runtime.config.mcp_servers.infra_sql import SqlMcpServerStore
-from agent_runtime.config.mcp_servers.service import McpServerService, rotate_mcp_server_keys
-from agent_runtime.secrets import CredentialCipher
 from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
@@ -24,9 +17,22 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from tests.helpers.app import TEST_CREDENTIAL_KEY, TEST_MODEL_NAME
+from agent_runtime.agent_usage import AgentUsage
+from agent_runtime.assembly.config_services import ConfigServices
+from agent_runtime.assembly.mcp import HarnessMcpProbe
+from agent_runtime.config.mcp_servers.index import McpServerIndex
+from agent_runtime.config.mcp_servers.infra_sql import SqlMcpServerStore
+from agent_runtime.config.mcp_servers.service import McpServerService, rotate_mcp_server_keys
+from agent_runtime.secrets import CredentialCipher
 from tests.helpers.mcp import TITLES, TOKEN, TOOLS, LocalMcp, free_port, local_mcp
-from tests.helpers.runtime_service import PROVIDER, add_model, connect_provider, settled
+from tests.helpers.runtime_service import (
+    PROVIDER,
+    TEST_CREDENTIAL_KEY,
+    TEST_MODEL_NAME,
+    add_model,
+    connect_provider,
+    settled,
+)
 
 AGENT = "director"
 MASKED = "••••" + TOKEN[-4:]

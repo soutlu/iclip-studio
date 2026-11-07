@@ -5,6 +5,8 @@ import uuid
 from collections.abc import AsyncGenerator
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+
 from agent_runtime.file_store.pg import PgFileStore
 from agent_runtime.file_store.store import (
     InvalidContent,
@@ -12,15 +14,12 @@ from agent_runtime.file_store.store import (
     QuotaExceeded,
     VersionConflict,
 )
-from sqlalchemy.ext.asyncio import AsyncEngine
-
-from iclip.platform.db.engine import build_engine
 from tests.helpers.pg import truncate_clean
 
 
 @pytest.fixture
 async def engine(migrated_pg: str) -> AsyncGenerator[AsyncEngine]:
-    engine = build_engine(migrated_pg)
+    engine = create_async_engine(migrated_pg, pool_pre_ping=True)
     async with engine.begin() as conn:
         await truncate_clean(conn, ("agent_runtime.workspace_files",))
     yield engine
