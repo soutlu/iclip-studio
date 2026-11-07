@@ -7,7 +7,7 @@ permissions:
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*", "runtime-v*"]
   workflow_dispatch:
 
 concurrency:
@@ -28,6 +28,7 @@ jobs:
       tag: ${{ steps.refs.outputs.tag }}
       release: ${{ steps.refs.outputs.release }}
       commit: ${{ steps.refs.outputs.commit }}
+      services: ${{ steps.refs.outputs.services }}
     steps:
       - uses: actions/checkout@v7
       - name: Check upload progress logging
@@ -37,9 +38,13 @@ jobs:
         run: |
           case "$GITHUB_EVENT_NAME:$GITHUB_REF_TYPE" in
             push:tag)
-              if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                echo "::error::Release tags must use vX.Y.Z"
-                echo "准备失败：版本标签必须符合 vX.Y.Z 格式。" >> "$GITHUB_STEP_SUMMARY"
+              if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                services='["server","web","render"]'
+              elif [[ "$GITHUB_REF_NAME" =~ ^runtime-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                services='["runtime"]'
+              else
+                echo "::error::Release tags must use vX.Y.Z or runtime-vX.Y.Z"
+                echo "准备失败：版本标签必须符合 vX.Y.Z（应用版本）或 runtime-vX.Y.Z（运行时版本）格式。" >> "$GITHUB_STEP_SUMMARY"
                 exit 1
               fi
               tag=$GITHUB_REF_NAME
@@ -49,6 +54,7 @@ jobs:
               tag=$(printf '%s' "$GITHUB_REF_NAME" | sed 's/[^a-zA-Z0-9_.-]/-/g')
               # 分支验证不能覆盖正式版本或 latest。
               tag="branch-$tag"
+              services='["server","web","render","runtime"]'
               release=false
               ;;
             *)
@@ -66,6 +72,7 @@ jobs:
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "services=$services" >> "$GITHUB_OUTPUT"
       - name: Record preparation result
         if: always()
         env:
@@ -90,19 +97,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - service: server
-            context: .
-            dockerfile: server/Dockerfile
-          - service: web
-            context: .
-            dockerfile: web/Dockerfile
-          - service: render
-            context: .
-            dockerfile: render/Dockerfile
-          - service: runtime
-            context: .
-            dockerfile: runtime/Dockerfile
+        service: ${{ fromJSON(needs.prepare.outputs.services) }}
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3.12.0
@@ -126,8 +121,8 @@ jobs:
         timeout-minutes: 20
         uses: docker/build-push-action@v6.18.0
         with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
+          context: .
+          file: ${{ matrix.service }}/Dockerfile
           platforms: linux/amd64
           # ACR 不接受默认 OCI 溯源与 SBOM 清单，使用 Docker manifest。
           # 保留压缩层摘要，上传时只传 ACR 缺少的层。
@@ -212,7 +207,7 @@ jobs:
     if: needs.prepare.outputs.release == 'true' && needs.images.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # 先取得跨版本共用的锁，再确认 main，避免旧版本重跑回退 latest。
+    # 先取得跨版本共用的锁，再判断这个版本是否最新，避免旧版本重跑回退 latest。
     concurrency:
       group: release-images-latest
       cancel-in-progress: false
@@ -221,12 +216,25 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: main
-      - name: Check current release commit
+      - name: Check current release
         id: current
+        shell: bash
         env:
           RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          if [ "$(git rev-parse HEAD)" = "$RELEASE_COMMIT" ]; then
+          if [[ "$RELEASE_TAG" == runtime-v* ]]; then
+            newest=$(git ls-remote --tags --refs --sort=v:refname origin 'runtime-v*' \
+              | sed 's|.*refs/tags/||' \
+              | grep -E '^runtime-v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | tail -n 1)
+            if [ "$newest" = "$RELEASE_TAG" ]; then
+              echo "publish=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              printf '跳过 latest：该版本不是最大的运行时版本（`%s`），保留版本标签。\n' "$newest" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          elif [ "$(git rev-parse HEAD)" = "$RELEASE_COMMIT" ]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "publish=false" >> "$GITHUB_OUTPUT"
@@ -247,9 +255,12 @@ jobs:
         if: steps.current.outputs.publish == 'true'
         env:
           IMAGE_TAG: ${{ needs.prepare.outputs.tag }}
+          SERVICES: ${{ needs.prepare.outputs.services }}
         run: |
           trap 'printf "更新 latest 失败：服务 %s，阶段 %s。\n" "$service" "$stage" >> "$GITHUB_STEP_SUMMARY"' ERR
-          for service in server web render runtime; do
+          stage='读取服务列表'
+          services=$(jq -r '.[]' <<< "$SERVICES")
+          for service in $services; do
             image="${REGISTRY}/${NAMESPACE}/iclip-${service}"
             stage='读取版本摘要'
             digest=$(skopeo inspect --format '{{.Digest}}' "docker://${image}:${IMAGE_TAG}")

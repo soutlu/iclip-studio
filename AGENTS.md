@@ -47,7 +47,7 @@
 |---|---|---|
 | [ci](.github/workflows/ci.yml) | 打开 PR、推送新提交、重新打开 PR 或修改目标分支（仅修改 PR 标题/正文或合并后的 push 不触发） | 1. 必查文档链接与 Git 历史密钥泄露。<br>2. 目标分支为 `develop` 时，按改动路径智能选择检查范围（`plugins/video` 依赖 `runtime`，`server` 依赖前两者：改了 `runtime` 三处都查；改了 `plugins/video` 则查它与 `server`；仅改 `web/*.md` 时只查前端格式）。<br>3. 目标为其他分支（含 `main`）时全量检查。所有结果汇总为 `ci` 状态 |
 | [cache-warm](.github/workflows/cache-warm.yml) | 推送到 `develop` 或 `main`（含 PR 合入）、手动触发 | 仅安装依赖并保存缓存，供后续 PR 加速恢复 |
-| [release-images](.github/workflows/release-images.yml) | 推送 `vX.Y.Z` 标签、手动指定分支触发 | 构建并上传四个 Docker 镜像（见[发版与镜像发布](docs/release.md)） |
+| [release-images](.github/workflows/release-images.yml) | 推送 `vX.Y.Z` 或 `runtime-vX.Y.Z` 标签、手动指定分支触发 | `vX.Y.Z` 构建并上传后端、前端、渲染三个镜像，`runtime-vX.Y.Z` 只构建并上传运行时镜像，手动运行构建全部四个（见[发版与镜像发布](docs/release.md)） |
 
 ---
 
@@ -109,7 +109,7 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
 
 ### 发版与热修
 
-`main` 代表已交付的线上版本。执行版本发布、线上紧急热修或热修回流 `develop` 前，请先阅读 [docs/release.md](docs/release.md#发版与热修)。
+`main` 代表已交付的应用版本。执行版本发布、线上紧急热修或热修回流 `develop` 前，请先阅读 [docs/release.md](docs/release.md#发版与热修)。
 
 ---
 
