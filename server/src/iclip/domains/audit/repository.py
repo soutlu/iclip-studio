@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
@@ -24,9 +25,7 @@ class ExecutionPage:
     last: ExecutionCursor | None
 
 
-class AuditReports(Protocol):
-    async def spanning(self, span: Scope) -> AuditReports: ...
-
+class AuditSnapshot(Protocol):
     async def overall(self, scope: Scope) -> MetricsOut: ...
 
     async def by_user(self, scope: Scope) -> Mapping[str, MetricsOut]: ...
@@ -62,4 +61,10 @@ class AuditReports(Protocol):
     ) -> ExecutionPage: ...
 
 
-__all__ = ["AuditReports", "ExecutionPage"]
+class AuditReports(Protocol):
+    def snapshot(
+        self, span: Scope, *, include_created: bool = False
+    ) -> AbstractAsyncContextManager[AuditSnapshot]: ...
+
+
+__all__ = ["AuditReports", "AuditSnapshot", "ExecutionPage"]

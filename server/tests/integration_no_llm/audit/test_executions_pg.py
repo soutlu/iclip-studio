@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.audit.executions import SortValue
 from iclip.domains.audit.models import ExecutionSort, Scope, SortOrder
-from iclip.domains.audit.reports_pg import PgAuditReports
 from iclip.domains.audit.schemas import AuditExecutionsOut, ExecutionOut
 from iclip.domains.audit.service import AuditService
 from iclip.domains.generation.models import (
@@ -19,7 +18,7 @@ from iclip.domains.generation.models import (
     STATUS_SUBMITTED,
     STATUS_SUBMITTING,
 )
-from tests.helpers.audit import Plant
+from tests.helpers.audit import FreshReports, Plant
 
 BASE = datetime.now(UTC).replace(microsecond=0)
 SARA = "Sara.Hong"
@@ -39,7 +38,7 @@ def by_id(page: AuditExecutionsOut) -> dict[uuid.UUID, ExecutionOut]:
 
 
 async def test_conversation_belongs_to_latest_run_else_latest_video_owner(
-    engine: AsyncEngine, reports: PgAuditReports, service: AuditService
+    engine: AsyncEngine, reports: FreshReports, service: AuditService
 ) -> None:
     async with engine.begin() as conn:
         plant = Plant(conn)

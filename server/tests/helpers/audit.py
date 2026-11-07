@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections import Counter
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, Final
@@ -23,8 +23,15 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from iclip.app.bootstrap import VIDEO_APP_ID
+from iclip.domains.audit.models import OverviewBucket, Scope
 from iclip.domains.audit.reports_pg import PgAuditReports
 from iclip.domains.audit.runtime_facts import RuntimeStats
+from iclip.domains.audit.schemas import (
+    AttemptBucketOut,
+    MetricsOut,
+    PeriodMetricsOut,
+    TopShotOut,
+)
 from iclip.domains.generation.models import STATUS_COMPLETED
 from iclip.domains.generation.schemas import KIND_VIDEO, OPERATION_GENERATE
 from iclip.domains.tracking.models import VIDEO_DOWNLOADED
@@ -74,10 +81,34 @@ async def audit_runtime_client(engine: AsyncEngine) -> AsyncGenerator[CountingRu
         yield client
 
 
+class FreshReports(PgAuditReports):
+    async def overall(self, scope: Scope) -> MetricsOut:
+        async with self.snapshot(scope) as snapshot:
+            return await snapshot.overall(scope)
+
+    async def by_user(self, scope: Scope) -> Mapping[str, MetricsOut]:
+        async with self.snapshot(scope) as snapshot:
+            return await snapshot.by_user(scope)
+
+    async def by_period(
+        self, scope: Scope, *, bucket: OverviewBucket, timezone: str
+    ) -> Sequence[PeriodMetricsOut]:
+        async with self.snapshot(scope) as snapshot:
+            return await snapshot.by_period(scope, bucket=bucket, timezone=timezone)
+
+    async def attempt_distribution(self, scope: Scope) -> Sequence[AttemptBucketOut]:
+        async with self.snapshot(scope) as snapshot:
+            return await snapshot.attempt_distribution(scope)
+
+    async def top_shots(self, scope: Scope, *, limit: int) -> Sequence[TopShotOut]:
+        async with self.snapshot(scope) as snapshot:
+            return await snapshot.top_shots(scope, limit=limit)
+
+
 @asynccontextmanager
-async def audit_reports(engine: AsyncEngine) -> AsyncGenerator[PgAuditReports]:
+async def audit_reports(engine: AsyncEngine) -> AsyncGenerator[FreshReports]:
     async with audit_runtime_client(engine) as client:
-        yield PgAuditReports(engine, RuntimeStats(client))
+        yield FreshReports(engine, RuntimeStats(client))
 
 
 class Plant:
@@ -282,6 +313,7 @@ class Plant:
 __all__ = [
     "EVER",
     "CountingRuntimeClient",
+    "FreshReports",
     "Plant",
     "audit_reports",
     "audit_runtime_client",
