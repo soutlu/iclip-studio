@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from agent_runtime.config.agent_config.config import AgentConfig, load_config, problems_from_errors
-from agent_runtime.config.agent_config.infra_sql import SqlAgentStore
+from agent_runtime.config.agent_config.infra_sql import SqlAgentStore, metadata_obj
 from agent_runtime.config.agent_config.models import (
     AgentState,
     AgentVersion,
@@ -85,6 +85,7 @@ __all__ = [
     "SkillFacts",
     "SqlAgentStore",
     "load_config",
+    "metadata_obj",
     "problems_from_errors",
     "split_mcp_tool_name",
 ]

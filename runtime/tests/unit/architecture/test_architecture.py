@@ -18,9 +18,11 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
     ("fastapi", "starlette"): ("http/",),
     ("uvicorn",): ("main.py",),
     ("httpx_ws", "wsproto"): ("client/",),
+    ("alembic",): ("migrations/",),
     ("sqlalchemy",): (
         "http/app.py",
         "admin.py",
+        "migrations/",
         "assembly/config_services.py",
         "file_store/pg.py",
         "harness/step_store_pg.py",

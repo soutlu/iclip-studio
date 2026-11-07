@@ -15,7 +15,7 @@
 |---|---|
 | `make setup` | 安装后端与前端依赖 |
 | `make dev` | 启动视频后端与 Agent 运行时服务（环境准备见[本地启动](docs/deploy.md#本地启动)） |
-| `make db-upgrade` | 执行 Alembic 数据库迁移（服务启动时不会自动建表） |
+| `make db-upgrade` | 执行后端与运行时两边的 Alembic 数据库迁移（服务启动时不会自动建表） |
 | `make check` | 运行全套静态检查与常规测试（包含 `runtime/`、`plugins/video/`、`server/` 的 lint、格式、类型检查、依赖边界、单测/集成测试，以及 OpenAPI 合同、锁文件与文档链接检查）。CI 会自动跑，本地无需全量执行 |
 | `make web-check` | 运行前端全套检查（`pnpm ci:check`）。CI 会自动跑，本地无需全量执行 |
 | `make test` | 运行 `runtime/`、`plugins/video/` 与 `server/` 的单元测试及不依赖真实大模型的集成测试 |

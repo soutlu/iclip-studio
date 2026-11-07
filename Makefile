@@ -73,8 +73,10 @@ contract-check:
 	cd server && uv run python scripts/dump_openapi.py --check
 	cd runtime && uv run python scripts/dump_openapi.py --check
 
+# 后端的虚拟环境可编辑地装着 runtime/，运行时的迁移也经它执行。
 db-upgrade:
 	cd server && uv run --env-file ../.env alembic upgrade head
+	cd server && uv run --env-file ../.env python -m agent_runtime.admin migrate
 
 test-external:
 	cd server && uv run --env-file ../.env pytest -m "integration_llm or e2e_full or external" -v
