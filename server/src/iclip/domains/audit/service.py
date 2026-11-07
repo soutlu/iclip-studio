@@ -25,7 +25,7 @@ from iclip.domains.audit.overview import (
     plan_window,
     trend,
 )
-from iclip.domains.audit.repository import AuditReports
+from iclip.domains.audit.repository import AuditReports, AuditSnapshot
 from iclip.domains.audit.schemas import (
     AuditExecutionsOut,
     AuditPeopleOut,
@@ -61,7 +61,7 @@ def _check_timezone(name: str) -> str:
     return name
 
 
-async def _period(reports: AuditReports, scope: Scope, timezone: str) -> OverviewPeriodOut:
+async def _period(reports: AuditSnapshot, scope: Scope, timezone: str) -> OverviewPeriodOut:
     return OverviewPeriodOut(
         metrics=await reports.overall(scope),
         active_days=await reports.active_days(scope, timezone=timezone),
@@ -69,7 +69,7 @@ async def _period(reports: AuditReports, scope: Scope, timezone: str) -> Overvie
 
 
 async def _series(
-    reports: AuditReports, window: OverviewWindow, timezone: str
+    reports: AuditSnapshot, window: OverviewWindow, timezone: str
 ) -> list[TrendPointOut]:
     current = Scope(since=window.since, until=window.until)
     if window.bucket == "week":
@@ -113,23 +113,24 @@ class AuditService:
         )
         current = Scope(since=window.since, until=window.until)
         previous = Scope(since=window.previous_since, until=window.previous_until)
-        reports = await self._reports.spanning(Scope(since=window.lookback, until=window.until))
-        return OverviewOut(
-            window=OverviewWindowOut(
-                since=window.since,
-                until=window.until,
-                previous_since=window.previous_since,
-                previous_until=window.previous_until,
-                bucket=window.bucket,
-                timezone=timezone,
-                generated_at=now,
-            ),
-            current=await _period(reports, current, timezone),
-            previous=await _period(reports, previous, timezone),
-            series=await _series(reports, window, timezone),
-            attempt_distribution=list(await reports.attempt_distribution(current)),
-            top_shots=list(await reports.top_shots(current, limit=TOP_SHOT_COUNT)),
-        )
+        span = Scope(since=window.lookback, until=window.until)
+        async with self._reports.snapshot(span) as reports:
+            return OverviewOut(
+                window=OverviewWindowOut(
+                    since=window.since,
+                    until=window.until,
+                    previous_since=window.previous_since,
+                    previous_until=window.previous_until,
+                    bucket=window.bucket,
+                    timezone=timezone,
+                    generated_at=now,
+                ),
+                current=await _period(reports, current, timezone),
+                previous=await _period(reports, previous, timezone),
+                series=await _series(reports, window, timezone),
+                attempt_distribution=list(await reports.attempt_distribution(current)),
+                top_shots=list(await reports.top_shots(current, limit=TOP_SHOT_COUNT)),
+            )
 
     async def people(
         self, *, since: datetime, until: datetime | None = None, timezone: str = "UTC"
@@ -141,10 +142,11 @@ class AuditService:
             now=datetime.now(UTC),
         )
         scope = Scope(since=window.since, until=window.until)
-        metrics = await self._reports.by_user(scope)
-        deliveries = await self._reports.user_deliveries(
-            scope, bucket=window.bucket, timezone=timezone
-        )
+        async with self._reports.snapshot(scope) as reports:
+            metrics = await reports.by_user(scope)
+            deliveries = await reports.user_deliveries(
+                scope, bucket=window.bucket, timezone=timezone
+            )
         starts = period_starts(window)
         active = sorted(
             (
@@ -186,17 +188,19 @@ class AuditService:
         if start >= end:
             raise ValidationFailed("since 必须早于 until")
         after = None if cursor is None else decode_execution_cursor(cursor, sort=sort, order=order)
-        baseline = await self._reports.overall(Scope(since=start, until=end))
-        threshold = spend_tokens(baseline.tokens_per_delivery)
-        page = await self._reports.executions(
-            Scope(since=start, until=end, user_name=user_name),
-            sort=sort,
-            order=order,
-            limit=limit,
-            after=after,
-            spend_tokens=threshold,
-            now=now,
-        )
+        span = Scope(since=start, until=end)
+        async with self._reports.snapshot(span, include_created=True) as reports:
+            baseline = await reports.overall(span)
+            threshold = spend_tokens(baseline.tokens_per_delivery)
+            page = await reports.executions(
+                Scope(since=start, until=end, user_name=user_name),
+                sort=sort,
+                order=order,
+                limit=limit,
+                after=after,
+                spend_tokens=threshold,
+                now=now,
+            )
         next_cursor = (
             encode_execution_cursor(page.last)
             if page.last is not None and len(page.items) == limit

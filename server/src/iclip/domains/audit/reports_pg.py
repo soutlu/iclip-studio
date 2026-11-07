@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Final
 
@@ -20,10 +20,11 @@ from iclip.domains.audit.executions import (
 from iclip.domains.audit.models import ExecutionSort, OverviewBucket, Scope, SortOrder
 from iclip.domains.audit.repository import ExecutionPage
 from iclip.domains.audit.runtime_facts import (
-    FACTS_CTE,
-    RuntimeFacts,
+    PROMPT_FACTS,
+    RUN_FACTS,
+    SESSION_FACTS,
+    USAGE_FACTS,
     RuntimeStats,
-    WindowFacts,
 )
 from iclip.domains.audit.schemas import (
     EMPTY_METRICS,
@@ -38,45 +39,45 @@ from iclip.domains.audit.schemas import (
     UsageOut,
 )
 
-_VIDEOS: Final = """
-videos AS (
-    SELECT g.id, g.conversation_id, g.status, g.created_at, g.submitted_at, g.finished_at,
-           (g.output ->> 'duration_ms')::int AS duration_ms,
-           -- 完成的出片：出成了且有完成时刻；各口径只引用这一列。
-           (g.status = 'completed' AND g.finished_at IS NOT NULL) AS delivered,
-           COALESCE(r.downloaded, false) AS downloaded,
-           g.shot_index AS shot,
-           u.username AS user_name,
-           c.task_id
+_VIDEO_JOBS: Final = """
     FROM iclip.generation_jobs g
     JOIN iclip.conversations c ON c.id = g.conversation_id
     JOIN iclip.users u ON u.id = g.owner_user_id
-    LEFT JOIN iclip.video_generation_report r ON r.job_id = g.id
     -- 出片 = 没有来源的视频 generate，且有镜号；编辑段与合成抄了原作的镜号，也一律不算。
     WHERE g.kind = 'video' AND g.operation = 'generate' AND g.source_job_id IS NULL
       AND g.shot_index IS NOT NULL
-      AND c.forked_from IS NULL
-)"""
+      AND c.forked_from IS NULL"""
 
-_PERSON: Final = """
-latest_video_owner AS (
-    SELECT DISTINCT ON (v.conversation_id) v.conversation_id, v.user_name
-    FROM videos v
-    ORDER BY v.conversation_id, v.created_at DESC, v.id DESC
-),
-person AS (
+# 完成的出片：出成了且有完成时刻；各口径只引用这一列。
+_DELIVERED: Final = "(g.status = 'completed' AND g.finished_at IS NOT NULL)"
+
+_VIDEOS: Final = f"""
+    SELECT g.id, g.conversation_id, g.status, g.created_at, g.submitted_at, g.finished_at,
+           (g.output ->> 'duration_ms')::int AS duration_ms,
+           {_DELIVERED} AS delivered,
+           g.id IN (SELECT r.job_id FROM iclip.video_generation_report r WHERE r.downloaded)
+               AS downloaded,
+           g.shot_index AS shot,
+           u.username AS user_name,
+           c.task_id
+    {_VIDEO_JOBS}"""
+
+_PERSON: Final = f"""
+    WITH latest_video_owner AS (
+        SELECT DISTINCT ON (v.conversation_id) v.conversation_id, v.user_name
+        FROM videos v
+        ORDER BY v.conversation_id, v.created_at DESC, v.id DESC
+    )
     SELECT c.id AS conversation_id, c.title, c.owner_user_id, c.task_id,
            c.created_at, c.updated_at, c.deleted_at,
-           COALESCE(sf.latest_user_name, o.user_name) AS user_name,
-           sf.first_prompt_at
+           COALESCE(f.latest_user_name, o.user_name) AS user_name,
+           f.first_prompt_at
     FROM iclip.conversations c
-    LEFT JOIN session_facts sf ON sf.conversation_id = c.id
+    LEFT JOIN {SESSION_FACTS} ON f.conversation_id = c.id
     LEFT JOIN latest_video_owner o ON o.conversation_id = c.id
-    WHERE c.forked_from IS NULL
-)"""
+    WHERE c.forked_from IS NULL"""
 
 _SHOTS: Final = """
-shots AS (
     SELECT v.conversation_id, v.shot, v.task_id,
            count(*) AS attempts,
            min(v.finished_at) AS first_at,
@@ -86,98 +87,104 @@ shots AS (
            (array_agg(v.user_name ORDER BY v.finished_at, v.id))[1] AS user_name
     FROM videos v
     WHERE v.delivered
-    GROUP BY v.conversation_id, v.shot, v.task_id
-)"""
+    GROUP BY v.conversation_id, v.shot, v.task_id"""
 
-_RUNS: Final = """
-runs AS (
-    SELECT j.created_at, j.user_name, c.id AS conversation_id, c.task_id
-    FROM prompt_facts j
-    JOIN iclip.conversations c ON c.id = j.conversation_id
-    WHERE c.forked_from IS NULL
-)"""
+_RUNS: Final = f"""
+    SELECT f.created_at, f.user_name, c.id AS conversation_id, c.task_id
+    FROM {PROMPT_FACTS}
+    JOIN iclip.conversations c ON c.id = f.conversation_id
+    WHERE c.forked_from IS NULL"""
 
-_AGENT_RUNS: Final = """
-agent_runs AS (
-    SELECT a.user_name, c.id AS conversation_id, c.task_id, a.started_at, a.ended_at
-    FROM run_facts a
-    JOIN iclip.conversations c ON c.id = a.conversation_id
-    WHERE c.forked_from IS NULL
-)"""
+_AGENT_RUNS: Final = f"""
+    SELECT f.user_name, c.id AS conversation_id, c.task_id, f.started_at, f.ended_at
+    FROM {RUN_FACTS}
+    JOIN iclip.conversations c ON c.id = f.conversation_id
+    WHERE c.forked_from IS NULL"""
 
 _STARTED_AT: Final = "COALESCE(p.first_prompt_at, p.created_at)"
 
-_CYCLES: Final = f"""
-cycles AS (
-    SELECT d.conversation_id, p.user_name, p.task_id, d.delivered_at,
-           {_STARTED_AT} AS started_at
-    FROM (
-        SELECT v.conversation_id, max(v.finished_at) AS delivered_at
-        FROM videos v
-        WHERE v.delivered
-        GROUP BY v.conversation_id
-    ) d
-    JOIN person p ON p.conversation_id = d.conversation_id
-)"""
-
-_ACTIVE_CYCLES: Final = """
-cycle_spans AS (
-    SELECT y.conversation_id,
-           greatest(i.s, y.started_at) AS s,
-           least(i.e, y.delivered_at) AS e
-    FROM cycles y
-    JOIN (
-        SELECT a.conversation_id, a.started_at AS s, a.ended_at AS e FROM agent_runs a
-        UNION ALL
-        SELECT v.conversation_id, v.created_at, COALESCE(v.finished_at, v.created_at)
-        FROM videos v
-    ) i ON i.conversation_id = y.conversation_id
-    WHERE i.s <= y.delivered_at AND i.e >= y.started_at
-),
-cycle_reach AS (
-    SELECT z.conversation_id, z.s, z.e,
-           max(z.e) OVER (PARTITION BY z.conversation_id ORDER BY z.s, z.e
-                          ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS reach
-    FROM cycle_spans z
-),
-cycle_islands AS (
-    SELECT m.conversation_id, m.s, m.e,
-           sum(CASE WHEN m.reach IS NULL OR m.s > m.reach + interval '30 minutes' THEN 1 ELSE 0 END)
-               OVER (PARTITION BY m.conversation_id ORDER BY m.s, m.e
-                     ROWS UNBOUNDED PRECEDING) AS island
-    FROM cycle_reach m
-),
-island_spans AS (
-    SELECT l.conversation_id, max(l.e) - min(l.s) AS span
-    FROM cycle_islands l
-    GROUP BY l.conversation_id, l.island
-),
-active_cycles AS (
+_ACTIVE_CYCLES: Final = f"""
+    WITH cycles AS (
+        SELECT d.conversation_id, p.user_name, p.task_id, d.delivered_at,
+               {_STARTED_AT} AS started_at
+        FROM (
+            SELECT v.conversation_id, max(v.finished_at) AS delivered_at
+            FROM videos v
+            WHERE v.delivered
+            GROUP BY v.conversation_id
+        ) d
+        JOIN person p ON p.conversation_id = d.conversation_id
+    ),
+    cycle_spans AS (
+        SELECT y.conversation_id,
+               greatest(i.s, y.started_at) AS s,
+               least(i.e, y.delivered_at) AS e
+        FROM cycles y
+        JOIN (
+            SELECT a.conversation_id, a.started_at AS s, a.ended_at AS e FROM agent_runs a
+            UNION ALL
+            SELECT v.conversation_id, v.created_at, COALESCE(v.finished_at, v.created_at)
+            FROM videos v
+        ) i ON i.conversation_id = y.conversation_id
+        WHERE i.s <= y.delivered_at AND i.e >= y.started_at
+    ),
+    cycle_reach AS (
+        SELECT z.conversation_id, z.s, z.e,
+               max(z.e) OVER (PARTITION BY z.conversation_id ORDER BY z.s, z.e
+                              ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS reach
+        FROM cycle_spans z
+    ),
+    cycle_islands AS (
+        SELECT m.conversation_id, m.s, m.e,
+               sum(CASE WHEN m.reach IS NULL OR m.s > m.reach + interval '30 minutes'
+                        THEN 1 ELSE 0 END)
+                   OVER (PARTITION BY m.conversation_id ORDER BY m.s, m.e
+                         ROWS UNBOUNDED PRECEDING) AS island
+        FROM cycle_reach m
+    ),
+    island_spans AS (
+        SELECT l.conversation_id, max(l.e) - min(l.s) AS span
+        FROM cycle_islands l
+        GROUP BY l.conversation_id, l.island
+    )
     SELECT y.conversation_id, y.user_name, y.task_id, y.started_at, y.delivered_at,
            COALESCE(sum(extract(epoch FROM w.span)), 0) AS active_seconds
     FROM cycles y
     LEFT JOIN island_spans w ON w.conversation_id = y.conversation_id
-    GROUP BY y.conversation_id, y.user_name, y.task_id, y.started_at, y.delivered_at
-)"""
+    GROUP BY y.conversation_id, y.user_name, y.task_id, y.started_at, y.delivered_at"""
 
 _TAKES: Final = """
-takes AS (
     SELECT v.*,
            row_number() OVER (PARTITION BY v.conversation_id, v.shot
                               ORDER BY v.finished_at DESC, v.id DESC) > 1 AS discarded
     FROM videos v
-    WHERE v.delivered
-)"""
+    WHERE v.delivered"""
 
-_USAGE: Final = """
-usage_rows AS (
-    SELECT c.id AS conversation_id, p.user_name, p.task_id, u.model_name,
-           u.requests, u.input_tokens, u.cache_read_tokens, u.cache_write_tokens,
-           u.output_tokens, u.last_at
-    FROM usage_facts u
-    JOIN iclip.conversations c ON c.id = u.conversation_id
-    JOIN person p ON p.conversation_id = c.id
-)"""
+_USAGE: Final = f"""
+    SELECT p.conversation_id, p.user_name, p.task_id, f.model_name,
+           f.requests, f.input_tokens, f.cache_read_tokens, f.cache_write_tokens,
+           f.output_tokens, f.last_at
+    FROM {USAGE_FACTS}
+    JOIN person p ON p.conversation_id = f.conversation_id"""
+
+_TABLES: Final[Mapping[str, str]] = {
+    "videos": _VIDEOS,
+    "person": _PERSON,
+    "runs": _RUNS,
+    "agent_runs": _AGENT_RUNS,
+    "usage_rows": _USAGE,
+    "shots": _SHOTS,
+    "active_cycles": _ACTIVE_CYCLES,
+}
+# autovacuum 不分析临时表，不手动 ANALYZE 规划器就没有统计信息。
+_BUILD_TABLES: Final = tuple(
+    statement
+    for name, body in _TABLES.items()
+    for statement in (
+        text(f"CREATE TEMP TABLE {name} ON COMMIT DROP AS {body}"),
+        text(f"ANALYZE {name}"),
+    )
+)
 
 _WINDOW: Final = """
     AND (CAST(:since AS timestamptz) IS NULL OR {anchor} >= CAST(:since AS timestamptz))
@@ -210,8 +217,7 @@ _PERIOD_AXIS: Final = """
         CAST(:timezone AS text)) AS axis"""
 
 _METRICS: Final = f"""
-WITH {FACTS_CTE}, {_VIDEOS}, {_PERSON}, {_SHOTS}, {_RUNS}, {_AGENT_RUNS}, {_CYCLES},
-{_ACTIVE_CYCLES}, {_TAKES}, {_USAGE},
+WITH takes AS ({_TAKES}),
 completed AS (
     SELECT {{k_video}} AS k,
            count(*) AS completed_videos,
@@ -360,7 +366,6 @@ _DIMENSIONS: Final[Mapping[str, _Dimension]] = {
 _METRICS_SQL: Final = {name: text(dimension.sql()) for name, dimension in _DIMENSIONS.items()}
 
 _ATTEMPTS: Final = text(f"""
-WITH {_VIDEOS}, {_SHOTS}
 SELECT s.attempts, count(*) AS shots
 FROM shots s
 WHERE TRUE
@@ -371,7 +376,6 @@ ORDER BY s.attempts
 """)
 
 _ACTIVE_DAYS: Final = text(f"""
-WITH {FACTS_CTE}, {_RUNS}
 SELECT count(DISTINCT date_trunc('day', r.created_at, CAST(:timezone AS text))) AS days
 FROM runs r
 WHERE TRUE
@@ -380,7 +384,6 @@ WHERE TRUE
 """)
 
 _DELIVERY_UNITS: Final = text(f"""
-WITH {_VIDEOS}
 SELECT {_BUCKET.format(anchor="v.finished_at")} AS k,
        array_agg(DISTINCT COALESCE(CAST(v.task_id AS text), 'c:' || CAST(v.conversation_id AS text)))
            AS units
@@ -393,7 +396,6 @@ ORDER BY 1
 """)
 
 _USER_DELIVERIES: Final = text(f"""
-WITH {_VIDEOS}
 SELECT v.user_name, {_BUCKET.format(anchor="v.finished_at")} AS k,
        count(DISTINCT v.task_id)
            + count(DISTINCT v.conversation_id) FILTER (WHERE v.task_id IS NULL) AS deliveries
@@ -404,8 +406,8 @@ GROUP BY 1, 2
 """)
 
 _TOP_ORDER: Final = "{t}.attempts DESC, {t}.last_at DESC, {t}.conversation_id, {t}.shot"
-_TOP: Final = f"""
-top AS (
+_TOP_SHOTS: Final = text(f"""
+WITH top AS (
     SELECT s.*
     FROM shots s
     WHERE TRUE
@@ -413,49 +415,35 @@ top AS (
     {_FILTERS.format(t="s")}
     ORDER BY {_TOP_ORDER.format(t="s")}
     LIMIT :limit
-)"""
-
-_TOP_SHOT_CONVERSATIONS: Final = text(f"""
-WITH {_VIDEOS}, {_SHOTS}, {_TOP}
-SELECT DISTINCT t.conversation_id FROM top t
-""")
-
-_TOP_SHOTS: Final = text(f"""
-WITH {FACTS_CTE}, {_VIDEOS}, {_PERSON}, {_SHOTS}, {_TOP}
+)
 SELECT t.conversation_id, t.shot, t.attempts, p.title, p.user_name
 FROM top t
 JOIN person p ON p.conversation_id = t.conversation_id
 ORDER BY {_TOP_ORDER.format(t="t")}
 """)
 
-_CYCLE_CONVERSATIONS: Final = text(f"""
-WITH {_VIDEOS}
-SELECT v.conversation_id, max(v.finished_at) AS delivered_at
-FROM videos v
-WHERE v.delivered
-GROUP BY v.conversation_id
-HAVING TRUE
-{_WINDOW.format(anchor="max(v.finished_at)")}
+_DELIVERED_CONVERSATIONS: Final = text(f"""
+SELECT DISTINCT g.conversation_id
+{_VIDEO_JOBS}
+  AND {_DELIVERED}
+  {_WINDOW.format(anchor="g.finished_at")}
 """)
 
-_CREATED_CONVERSATIONS: Final = text("""
+_CREATED_CONVERSATIONS: Final = text(f"""
 SELECT c.id FROM iclip.conversations c
 WHERE c.forked_from IS NULL
-  AND c.created_at >= CAST(:since AS timestamptz)
-  AND c.created_at < CAST(:until AS timestamptz)
+{_WINDOW.format(anchor="c.created_at")}
 """)
 
 
 _EXECUTIONS: Final = f"""
-WITH {FACTS_CTE}, {_VIDEOS}, {_PERSON}, {_SHOTS}, {_AGENT_RUNS}, {_CYCLES}, {_ACTIVE_CYCLES},
-executions AS (
+WITH executions AS (
     SELECT p.conversation_id, p.title, p.user_name, p.task_id, p.created_at, p.deleted_at,
            {_STARTED_AT} AS started_at
     FROM person p
     WHERE p.created_at >= CAST(:since AS timestamptz)
       AND p.created_at < CAST(:until AS timestamptz)
-      -- 跑过（有首条消息）或有出片。对 videos 用不相关的 IN：整个集合哈希一次；逐行 EXISTS 会对
-      -- 物化的 CTE 每行全扫一遍。
+      -- 跑过（有首条消息）或有出片。
       AND (p.first_prompt_at IS NOT NULL
            OR p.conversation_id IN (SELECT v.conversation_id FROM videos v))
 ),
@@ -469,13 +457,12 @@ shot_totals AS (
     GROUP BY s.conversation_id
 ),
 token_totals AS (
-    SELECT c.id AS conversation_id,
+    SELECT u.conversation_id,
            sum(u.input_tokens + u.cache_read_tokens + u.cache_write_tokens + u.output_tokens)::bigint
                AS tokens
-    FROM usage_facts u
-    JOIN iclip.conversations c ON c.id = u.conversation_id
-    WHERE c.id IN (SELECT e.conversation_id FROM executions e)
-    GROUP BY c.id
+    FROM usage_rows u
+    WHERE u.conversation_id IN (SELECT e.conversation_id FROM executions e)
+    GROUP BY u.conversation_id
 ),
 stuck_tasks AS (
     SELECT e.task_id
@@ -552,22 +539,19 @@ _EXECUTIONS_SQL: Final[Mapping[tuple[ExecutionSort, SortOrder], TextClause]] = {
     for order, (direction, op) in _DIRECTIONS.items()
 }
 
-_SHOTS_OF: Final = text(f"""
-WITH {_VIDEOS}, {_SHOTS}
+_SHOTS_OF: Final = text("""
 SELECT s.conversation_id, s.shot, s.attempts, s.one_take, s.effective
 FROM shots s
 WHERE s.conversation_id = ANY(CAST(:ids AS uuid[]))
 ORDER BY s.conversation_id, s.shot
 """)
 
-_USAGE_OF: Final = text(f"""
-WITH {FACTS_CTE}
-SELECT c.id AS conversation_id, u.model_name, u.requests, u.input_tokens,
+_USAGE_OF: Final = text("""
+SELECT u.conversation_id, u.model_name, u.requests, u.input_tokens,
        u.cache_read_tokens, u.cache_write_tokens, u.output_tokens
-FROM usage_facts u
-JOIN iclip.conversations c ON c.id = u.conversation_id
-WHERE c.id = ANY(CAST(:ids AS uuid[]))
-ORDER BY c.id, u.model_name
+FROM usage_rows u
+WHERE u.conversation_id = ANY(CAST(:ids AS uuid[]))
+ORDER BY u.conversation_id, u.model_name
 """)
 
 
@@ -641,51 +625,48 @@ async def audit_connection(engine: AsyncEngine) -> AsyncGenerator[AsyncConnectio
 
 
 class PgAuditReports:
-    def __init__(
-        self, engine: AsyncEngine, stats: RuntimeStats, window: WindowFacts | None = None
-    ) -> None:
+    def __init__(self, engine: AsyncEngine, stats: RuntimeStats) -> None:
         self._engine = engine
         self._stats = stats
-        self._window = window
 
-    async def spanning(self, span: Scope) -> PgAuditReports:
-        return PgAuditReports(self._engine, self._stats, await self._load(span))
-
-    async def _ids(self, statement: TextClause, params: dict[str, Any]) -> list[uuid.UUID]:
+    @asynccontextmanager
+    async def snapshot(
+        self, span: Scope, *, include_created: bool = False
+    ) -> AsyncGenerator[PgAuditSnapshot]:
+        bounds = {"since": span.since, "until": span.until}
         async with audit_connection(self._engine) as conn:
-            return list((await conn.execute(statement, params)).scalars().all())
-
-    async def _load(self, span: Scope) -> WindowFacts:
-        async with audit_connection(self._engine) as conn:
-            rows = await conn.execute(
-                _CYCLE_CONVERSATIONS, {"since": span.since, "until": span.until}
+            delivered = (await conn.execute(_DELIVERED_CONVERSATIONS, bounds)).scalars().all()
+            created = (
+                (await conn.execute(_CREATED_CONVERSATIONS, bounds)).scalars().all()
+                if include_created
+                else ()
             )
-            cycles = {row.conversation_id: row.delivered_at for row in rows}
-        usage = await self._stats.usage_in(span.since, span.until)
-        session_ids = frozenset({*cycles, *(row.session_id for row in usage)})
-        return WindowFacts(
-            since=span.since,
-            until=span.until,
-            prompts=await self._stats.prompts_in(span.since, span.until),
-            runs=await self._stats.runs_in(span.since, span.until),
-            usage=usage,
-            cycles=cycles,
-            cycle_runs=await self._stats.runs_of(cycles.keys()),
-            session_ids=session_ids,
-            sessions=await self._stats.sessions_of(session_ids),
+        facts = await self._stats.facts(
+            span.since, span.until, delivered=delivered, created=created
         )
+        async with audit_connection(self._engine) as conn:
+            params = facts.params()
+            for statement in _BUILD_TABLES:
+                await conn.execute(statement, params)
+            yield PgAuditSnapshot(conn, span)
 
-    async def _window_facts(self, scope: Scope) -> RuntimeFacts:
-        window = self._window if self._window is not None else await self._load(scope)
-        if not window.covers(scope.since, scope.until):
-            raise ValueError("筛选范围越出了预取事实行的时间窗")
-        return window.within(scope.since, scope.until)
+
+class PgAuditSnapshot:
+    def __init__(self, conn: AsyncConnection, span: Scope) -> None:
+        self._conn = conn
+        self._span = span
+
+    def _params(self, scope: Scope) -> dict[str, Any]:
+        span = self._span
+        if scope.since < span.since or (
+            span.until is not None and (scope.until is None or scope.until > span.until)
+        ):
+            raise ValueError("筛选范围越出了快照的时间窗")
+        return _scope_params(scope)
 
     async def _metrics(self, dimension: str, scope: Scope, **extra: Any) -> Sequence[RowMapping]:
-        facts = await self._window_facts(scope)
-        params = {**_scope_params(scope), **facts.params(), **extra}
-        async with audit_connection(self._engine) as conn:
-            return (await conn.execute(_METRICS_SQL[dimension], params)).mappings().all()
+        params = {**self._params(scope), **extra}
+        return (await self._conn.execute(_METRICS_SQL[dimension], params)).mappings().all()
 
     async def overall(self, scope: Scope) -> MetricsOut:
         rows = await self._metrics("overall", scope)
@@ -702,68 +683,42 @@ class PgAuditReports:
         return [PeriodMetricsOut(period_start=row["k"], metrics=_metrics_of(row)) for row in rows]
 
     async def active_days(self, scope: Scope, *, timezone: str) -> int:
-        facts = (
-            await self._window_facts(scope)
-            if self._window is not None
-            else RuntimeFacts(prompts=await self._stats.prompts_in(scope.since, scope.until))
-        )
-        params = {**_scope_params(scope), **facts.params(), "timezone": timezone}
-        async with audit_connection(self._engine) as conn:
-            days = (await conn.execute(_ACTIVE_DAYS, params)).scalar_one()
-        return int(days)
+        params = {**self._params(scope), "timezone": timezone}
+        return int((await self._conn.execute(_ACTIVE_DAYS, params)).scalar_one())
 
     async def delivery_units(
         self, scope: Scope, *, bucket: OverviewBucket, timezone: str
     ) -> Mapping[datetime, frozenset[str]]:
-        params = {**_scope_params(scope), "bucket": bucket, "timezone": timezone}
-        async with audit_connection(self._engine) as conn:
-            rows = (await conn.execute(_DELIVERY_UNITS, params)).mappings().all()
+        params = {**self._params(scope), "bucket": bucket, "timezone": timezone}
+        rows = (await self._conn.execute(_DELIVERY_UNITS, params)).mappings().all()
         return {row["k"]: frozenset(row["units"]) for row in rows}
 
     async def user_deliveries(
         self, scope: Scope, *, bucket: OverviewBucket, timezone: str
     ) -> Mapping[str, Mapping[datetime, int]]:
-        params = {
-            "since": scope.since,
-            "until": scope.until,
-            "bucket": bucket,
-            "timezone": timezone,
-        }
-        async with audit_connection(self._engine) as conn:
-            rows = (await conn.execute(_USER_DELIVERIES, params)).mappings().all()
+        params = {**self._params(scope), "bucket": bucket, "timezone": timezone}
+        rows = (await self._conn.execute(_USER_DELIVERIES, params)).mappings().all()
         found: dict[str, dict[datetime, int]] = {}
         for row in rows:
             found.setdefault(row["user_name"], {})[row["k"]] = int(row["deliveries"])
         return found
 
     async def top_shots(self, scope: Scope, *, limit: int) -> Sequence[TopShotOut]:
-        params = {**_scope_params(scope), "limit": limit}
-        conversations = frozenset(await self._ids(_TOP_SHOT_CONVERSATIONS, params))
-        window = self._window
-        known = window.session_ids if window is not None else frozenset()
-        cached = (
-            [row for row in window.sessions if row.session_id in conversations]
-            if window is not None
-            else []
-        )
-        fetched = await self._stats.sessions_of(conversations - known)
-        facts = RuntimeFacts(sessions=[*cached, *fetched])
-        async with audit_connection(self._engine) as conn:
-            rows = (await conn.execute(_TOP_SHOTS, {**params, **facts.params()})).mappings()
-            return [
-                TopShotOut(
-                    conversation_id=row["conversation_id"],
-                    title=row["title"],
-                    user_name=row["user_name"],
-                    shot=int(row["shot"]),
-                    attempts=int(row["attempts"]),
-                )
-                for row in rows
-            ]
+        params = {**self._params(scope), "limit": limit}
+        rows = (await self._conn.execute(_TOP_SHOTS, params)).mappings()
+        return [
+            TopShotOut(
+                conversation_id=row["conversation_id"],
+                title=row["title"],
+                user_name=row["user_name"],
+                shot=int(row["shot"]),
+                attempts=int(row["attempts"]),
+            )
+            for row in rows
+        ]
 
     async def attempt_distribution(self, scope: Scope) -> Sequence[AttemptBucketOut]:
-        async with audit_connection(self._engine) as conn:
-            rows = (await conn.execute(_ATTEMPTS, _scope_params(scope))).mappings().all()
+        rows = (await self._conn.execute(_ATTEMPTS, self._params(scope))).mappings().all()
         return [
             AttemptBucketOut(attempts=_int(row["attempts"]), shots=_int(row["shots"]))
             for row in rows
@@ -781,9 +736,7 @@ class PgAuditReports:
         now: datetime,
     ) -> ExecutionPage:
         params = {
-            "since": scope.since,
-            "until": scope.until,
-            "user_name": scope.user_name,
+            **self._params(scope),
             "retry_at_least": RETRY_AT_LEAST,
             "task_conversations": TASK_CONVERSATIONS,
             "stuck_before": now - timedelta(hours=STUCK_HOURS),
@@ -792,27 +745,10 @@ class PgAuditReports:
             "after_id": after.conversation_id if after else None,
             "limit": limit,
         }
-        created = await self._ids(
-            _CREATED_CONVERSATIONS, {"since": scope.since, "until": scope.until}
-        )
-        facts = RuntimeFacts(
-            runs=await self._stats.runs_of(created),
-            usage=await self._stats.usage_of(created),
-            sessions=await self._stats.sessions_of(created),
-        )
-        async with audit_connection(self._engine) as conn:
-            rows = (
-                (await conn.execute(_EXECUTIONS_SQL[(sort, order)], {**params, **facts.params()}))
-                .mappings()
-                .all()
-            )
+        rows = (await self._conn.execute(_EXECUTIONS_SQL[(sort, order)], params)).mappings().all()
         heads = [row for row in rows if row["conversation_id"] is not None]
         ids = [head["conversation_id"] for head in heads]
-        metrics, shots, usage = (
-            await self._details(ids, replace(facts, prompts=await self._stats.prompts_of(ids)))
-            if ids
-            else ({}, {}, {})
-        )
+        metrics, shots, usage = await self._details(ids) if ids else ({}, {}, {})
 
         items = [
             ExecutionOut(
@@ -847,29 +783,18 @@ class PgAuditReports:
         )
 
     async def _details(
-        self, ids: Sequence[uuid.UUID], facts: RuntimeFacts
+        self, ids: Sequence[uuid.UUID]
     ) -> tuple[
         dict[uuid.UUID, MetricsOut],
         dict[uuid.UUID, list[ExecutionShotOut]],
         dict[uuid.UUID, list[ModelUsageOut]],
     ]:
-        scoped = {
-            "since": None,
-            "until": None,
-            "user_name": None,
-            "conversation_ids": list(ids),
-            **facts.params(),
-        }
-        async with audit_connection(self._engine) as conn:
-            metric_rows = (
-                (await conn.execute(_METRICS_SQL["conversation"], scoped)).mappings().all()
-            )
-            shot_rows = (await conn.execute(_SHOTS_OF, {"ids": list(ids)})).mappings().all()
-            usage_rows = (
-                (await conn.execute(_USAGE_OF, {"ids": list(ids), **facts.params()}))
-                .mappings()
-                .all()
-            )
+        scoped = {"since": None, "until": None, "user_name": None, "conversation_ids": list(ids)}
+        metric_rows = (
+            (await self._conn.execute(_METRICS_SQL["conversation"], scoped)).mappings().all()
+        )
+        shot_rows = (await self._conn.execute(_SHOTS_OF, {"ids": list(ids)})).mappings().all()
+        usage_rows = (await self._conn.execute(_USAGE_OF, {"ids": list(ids)})).mappings().all()
 
         shots: dict[uuid.UUID, list[ExecutionShotOut]] = {}
         for row in shot_rows:
@@ -889,4 +814,4 @@ class PgAuditReports:
         return {row["k"]: _metrics_of(row) for row in metric_rows}, shots, usage
 
 
-__all__ = ["PgAuditReports", "audit_connection"]
+__all__ = ["PgAuditReports", "PgAuditSnapshot", "audit_connection"]
