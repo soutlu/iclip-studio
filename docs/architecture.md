@@ -208,7 +208,7 @@ Agent 可用的工具来自两部分：**代码内置插件**和**管理员登�
 | **常规业务模块** | 各业务模块在自己的 `domains/*/infra_sql.py` 中维护自有数据表；外部 PDM 商品款目录通过 `domains/products/catalog_pg.py` 的独立只读连接池查询 |
 | **资料库标签（`domains/tagging/`）** | 独立维护标签树、被打标条目与关联关系三张表（见 [ADR-0006](adr/0006-library-tags-as-data.md)、[ADR-0007](adr/0007-library-tag-value-depth.md)）。管理员修改标签树结构时，会先获取数据库事务级咨询锁（Advisory Lock），再校验全树是否重名或超出层级/数量上限 |
 | **资料库聚合查询（`domains/library/reports_pg.py`）** | 不单独建冗余表，而是跨「生成记录、对话、用户」三张表实时聚合计算素材卡封面与分叉继承关系；爆款素材库直接关联标签域的条目表与生成记录表 |
-| **审计统计报表（`domains/audit/reports_pg.py`）** | 不建表。查询时先通过 `runtime_facts.py` 调用运行时的 `/v1/stats/*` 接口拉取会话、运行耗时与 Token 消耗记录，再作为参数化临时表与 `iclip` 的生成记录表在同一条 SQL 中关联聚合 |
+| **审计统计报表（`domains/audit/reports_pg.py`）** | 不建持久表。每个审计请求先用短查询拿到需要的对话 ID，再在不占用数据库连接的情况下通过 `runtime_facts.py` 调用运行时的 `/v1/stats/*` 接口拉取会话、运行耗时与 Token 消耗记录，最后在一个事务里把这些记录与 `iclip` 的生成记录写入事务级临时表，该请求的全部指标 SQL 都在这个事务里读这些临时表 |
 
 ### 生成、拆解与打标队列
 

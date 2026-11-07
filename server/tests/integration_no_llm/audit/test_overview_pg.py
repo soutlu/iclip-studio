@@ -20,7 +20,7 @@ from iclip.domains.audit.runtime_facts import RuntimeStats
 from iclip.domains.audit.schemas import MetricsOut
 from iclip.domains.audit.service import AuditService
 from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED
-from tests.helpers.audit import EVER, Plant, audit_runtime_client
+from tests.helpers.audit import EVER, FreshReports, Plant, audit_runtime_client
 from tests.helpers.runtime import (
     AGENT_ID,
     build_runner,
@@ -72,7 +72,7 @@ def _boom() -> str:
 
 
 async def test_run_seconds_count_top_level_runs_that_reached_an_end(
-    engine: AsyncEngine, reports: PgAuditReports, tmp_path: Path
+    engine: AsyncEngine, reports: FreshReports, tmp_path: Path
 ) -> None:
     async with engine.begin() as conn:
         plant = Plant(conn)
@@ -126,7 +126,7 @@ async def test_run_seconds_count_top_level_runs_that_reached_an_end(
 
 
 async def test_active_cycle_merges_gaps_up_to_thirty_minutes(
-    engine: AsyncEngine, reports: PgAuditReports, service: AuditService
+    engine: AsyncEngine, reports: FreshReports, service: AuditService
 ) -> None:
     async with engine.begin() as conn:
         plant = Plant(conn)
@@ -191,7 +191,7 @@ async def test_active_cycle_merges_gaps_up_to_thirty_minutes(
 
 
 async def test_length_counts_only_known_durations_and_discards_all_but_the_last_take(
-    engine: AsyncEngine, reports: PgAuditReports, service: AuditService
+    engine: AsyncEngine, reports: FreshReports, service: AuditService
 ) -> None:
     async with engine.begin() as conn:
         plant = Plant(conn)
@@ -386,8 +386,33 @@ async def test_overview_takes_each_kind_of_runtime_fact_once(engine: AsyncEngine
     assert client.stats_calls == {"prompts": 1, "usage": 1, "runs": 2, "sessions": 1}
 
 
+async def test_top_shot_names_the_latest_runner_when_the_conversation_delivers_after_the_window(
+    engine: AsyncEngine, service: AuditService
+) -> None:
+    until = local(DAY0 + timedelta(days=7))
+    async with engine.begin() as conn:
+        plant = Plant(conn)
+        sara = await plant.user(SARA)
+        conversation_id = await plant.conversation(sara, at=local(DAY0, 8))
+        await plant.turn(
+            conversation_id, user_name=DEREK, started_at=local(DAY0, 9), ended_at=local(DAY0, 10)
+        )
+        for shot, at in ((1, local(DAY0, 11)), (2, until + timedelta(days=1))):
+            await plant.video(
+                conversation_id,
+                owner=sara,
+                shot=shot,
+                created_at=at,
+                finished_at=at + timedelta(minutes=5),
+            )
+
+    overview = await service.overview(since=local(DAY0), until=until, timezone="Asia/Singapore")
+
+    assert [(shot.shot, shot.user_name) for shot in overview.top_shots] == [(1, DEREK)]
+
+
 async def test_a_shot_lands_on_its_first_success_and_belongs_to_its_owner(
-    engine: AsyncEngine, reports: PgAuditReports
+    engine: AsyncEngine, reports: FreshReports
 ) -> None:
     day1, day2, day3 = (DAY0 + timedelta(days=offset) for offset in range(3))
     async with engine.begin() as conn:

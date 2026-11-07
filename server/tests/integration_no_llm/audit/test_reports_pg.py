@@ -14,7 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from iclip.domains.audit.models import Scope
-from iclip.domains.audit.reports_pg import PgAuditReports, audit_connection
+from iclip.domains.audit.reports_pg import audit_connection
 from iclip.domains.audit.schemas import ExecutionOut
 from iclip.domains.audit.service import AuditService
 from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED, STATUS_SUBMITTED
@@ -33,7 +33,7 @@ from iclip.domains.generation.schemas import (
 )
 from iclip.domains.tracking.models import VIDEO_DOWNLOADED
 from iclip.platform.db.engine import build_engine
-from tests.helpers.audit import EVER, open_session
+from tests.helpers.audit import EVER, FreshReports, open_session
 
 BASE = datetime.now(UTC).replace(microsecond=0)
 SARA = "Sara.Hong"
@@ -486,7 +486,7 @@ async def executions_by_id(service: AuditService) -> dict[uuid.UUID, ExecutionOu
 
 
 async def test_overall_counts_every_metric_on_its_own_anchor(
-    reports: PgAuditReports, seed: Seed
+    reports: FreshReports, seed: Seed
 ) -> None:
     overall = await reports.overall(Scope(since=EVER))
 
@@ -515,7 +515,7 @@ async def test_overall_counts_every_metric_on_its_own_anchor(
     assert overall.tokens_per_delivery == 2410 / 2
 
 
-async def test_window_applies_to_each_metric_anchor(reports: PgAuditReports, seed: Seed) -> None:
+async def test_window_applies_to_each_metric_anchor(reports: FreshReports, seed: Seed) -> None:
     recent = await reports.overall(Scope(since=ago(hours=2)))
 
     assert recent.completed_videos == 4
@@ -527,7 +527,7 @@ async def test_window_applies_to_each_metric_anchor(reports: PgAuditReports, see
     assert recent.usage.requests == 5
 
 
-async def test_empty_scope_is_all_zeros(reports: PgAuditReports, seed: Seed) -> None:
+async def test_empty_scope_is_all_zeros(reports: FreshReports, seed: Seed) -> None:
     nothing = await reports.overall(Scope(since=EVER, user_name="Nobody"))
 
     assert nothing.completed_videos == 0
@@ -537,7 +537,7 @@ async def test_empty_scope_is_all_zeros(reports: PgAuditReports, seed: Seed) -> 
 
 
 async def test_attempt_distribution_buckets_shots_by_their_attempt_count(
-    reports: PgAuditReports, seed: Seed
+    reports: FreshReports, seed: Seed
 ) -> None:
     everything = await reports.attempt_distribution(Scope(since=EVER))
     recent = await reports.attempt_distribution(Scope(since=ago(hours=2)))
@@ -551,7 +551,7 @@ async def test_attempt_distribution_buckets_shots_by_their_attempt_count(
 
 
 async def test_by_user_attributes_videos_by_owner_and_conversations_by_latest_run(
-    reports: PgAuditReports, seed: Seed
+    reports: FreshReports, seed: Seed
 ) -> None:
     rows = await reports.by_user(Scope(since=EVER))
 
@@ -572,7 +572,7 @@ async def test_by_user_attributes_videos_by_owner_and_conversations_by_latest_ru
     assert eva.cycle_seconds is None
 
 
-async def test_by_period_buckets_in_the_given_timezone(reports: PgAuditReports, seed: Seed) -> None:
+async def test_by_period_buckets_in_the_given_timezone(reports: FreshReports, seed: Seed) -> None:
     singapore = ZoneInfo("Asia/Singapore")
 
     rows = await reports.by_period(
@@ -589,7 +589,7 @@ async def test_by_period_buckets_in_the_given_timezone(reports: PgAuditReports, 
 
 
 async def test_by_period_fills_every_bucket_of_a_bounded_window(
-    reports: PgAuditReports, seed: Seed
+    reports: FreshReports, seed: Seed
 ) -> None:
     singapore = ZoneInfo("Asia/Singapore")
     since = ago(days=3)
@@ -649,7 +649,7 @@ async def test_executions_window_falls_on_creation_and_user_filters_rows(
 
 
 async def test_effective_shots_are_downloaded_shots(
-    reports: PgAuditReports, service: AuditService, seed: Seed
+    reports: FreshReports, service: AuditService, seed: Seed
 ) -> None:
     overall = await reports.overall(Scope(since=EVER))
     assert (overall.shots, overall.effective_shots) == (4, 2)
@@ -682,7 +682,7 @@ async def test_effective_shots_are_downloaded_shots(
 
 
 async def test_forks_do_not_count_toward_any_metric(
-    reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
+    reports: FreshReports, service: AuditService, seed: Seed, engine: AsyncEngine
 ) -> None:
     before = await reports.overall(Scope(since=EVER))
     before_executions = await executions_by_id(service)
@@ -761,7 +761,7 @@ async def test_forks_do_not_count_toward_any_metric(
 
 
 async def test_videos_of_an_owner_without_username_count_overall_only(
-    reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
+    reports: FreshReports, service: AuditService, seed: Seed, engine: AsyncEngine
 ) -> None:
     before = await reports.overall(Scope(since=EVER))
     before_users = set(await reports.by_user(Scope(since=EVER)))
@@ -821,7 +821,7 @@ async def test_videos_of_an_owner_without_username_count_overall_only(
 
 
 async def test_uploads_and_cuts_do_not_count_toward_any_metric(
-    reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
+    reports: FreshReports, service: AuditService, seed: Seed, engine: AsyncEngine
 ) -> None:
     before = await reports.overall(Scope(since=EVER))
     before_users = await reports.by_user(Scope(since=EVER))
@@ -863,7 +863,7 @@ async def test_uploads_and_cuts_do_not_count_toward_any_metric(
 
 
 async def test_subtitle_records_do_not_count_toward_any_metric(
-    reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
+    reports: FreshReports, service: AuditService, seed: Seed, engine: AsyncEngine
 ) -> None:
     before = await reports.overall(Scope(since=EVER))
     before_users = await reports.by_user(Scope(since=EVER))
@@ -1017,7 +1017,7 @@ async def plant_download(conn: AsyncConnection, job_id: uuid.UUID, *, user_id: u
 
 
 async def test_a_composite_downloaded_in_a_fork_counts_toward_the_ancestors_shot(
-    reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
+    reports: FreshReports, service: AuditService, seed: Seed, engine: AsyncEngine
 ) -> None:
     before = await reports.overall(Scope(since=EVER))
     at = ago(minutes=30)
@@ -1155,7 +1155,7 @@ async def film_holding_a_composite(shots: ThreeShots) -> uuid.UUID:
     ],
 )
 async def test_a_download_makes_the_shots_it_came_from_effective(
-    reports: PgAuditReports,
+    reports: FreshReports,
     service: AuditService,
     seed: Seed,
     engine: AsyncEngine,
@@ -1256,7 +1256,7 @@ async def test_downloading_a_composite_of_an_edit_segment_credits_its_take(
 
 
 async def test_audio_records_do_not_count_toward_any_metric(
-    reports: PgAuditReports, service: AuditService, seed: Seed, engine: AsyncEngine
+    reports: FreshReports, service: AuditService, seed: Seed, engine: AsyncEngine
 ) -> None:
     before = await reports.overall(Scope(since=EVER))
     before_users = await reports.by_user(Scope(since=EVER))
