@@ -57,11 +57,9 @@
 - **构建缓存**：流水线自动使用 GitHub Container Registry（GHCR）保存 Docker 层缓存，并只向 ACR 上传远端缺失的镜像层，无需额外配置 GHCR 密钥。
 - **构建失败处理**：如果是网络抖动或 ACR 凭证过期导致失败，修复后直接在原运行页面点击 **Re-run failed jobs** 即可复用缓存重跑；如果需要修改代码或 Dockerfile，则必须走 PR 合入后用新版本号重新发版。
 
-### 仓库环境变量与密钥配置
+### 仓库密钥配置
 
-在 GitHub 仓库 Settings → Secrets and variables → Actions 中配置：
-- **Variables**：`ACR_REGISTRY`、`ACR_NAMESPACE`
-- **Secrets**：`ACR_USERNAME`、`ACR_PASSWORD`
+在 GitHub 仓库 Settings → Secrets and variables → Actions 中配置 Secrets：`ACR_REGISTRY`、`ACR_NAMESPACE`、`ACR_USERNAME`、`ACR_PASSWORD`。
 
 ### 本地手动构建镜像
 

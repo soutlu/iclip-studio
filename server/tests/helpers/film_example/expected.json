@@ -11,10 +11,10 @@
     "view01": {
       "prompt": "capture:\n画面是用手机实拍的，真实自然，光线自然，没有过度美颜。\n\nsubject:\n模特A，长相和发型参考 @Image1，身材和服装参考 @Image2；模特B，长相、发型和服装参考 @Image3；模特A脚上穿着 SOLE_STRETCHY 鞋款，外观参考 @Image4（侧面）、@Image5（鞋头）。\n\nframing:\n中景，平视。两人站在人行道上、画面正中，并肩面朝镜头，模特A在左、模特B在右，双臂自然下垂。\n\nsetting:\n纽约红砖街区参考 @Image6。",
       "input_str_list": [
-        "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+        "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
         "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
         "https://preview.invalid/generated/personB-v1.png",
-        "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+        "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
         "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
         "https://preview.invalid/generated/scene-v1.png"
       ]
@@ -23,7 +23,7 @@
       "prompt": "capture:\n画面是用手机实拍的，真实自然，光线自然，没有过度美颜。\n\nsubject:\n模特A的小腿和双脚，裤装参考 @Image1；她脚上的 SOLE_STRETCHY 鞋款，外观参考 @Image2（侧面）、@Image3（鞋底）。\n\nframing:\n侧面脚部特写，镜头与脚踝齐平，只拍到膝盖以下。她站在人行道上，脚尖朝向画面右侧，左脚在前、右脚在后，鞋底平踩在地上。\n\nsetting:\n纽约红砖街区的人行道参考 @Image4，红砖墙和光线与 @Image5 保持一致。",
       "input_str_list": [
         "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
-        "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+        "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
         "https://preview.invalid/uploads/shoeSolePhoto.jpg",
         "https://preview.invalid/generated/scene-v1.png",
         "https://preview.invalid/generated/view01-v1.png"
@@ -34,7 +34,7 @@
       "input_str_list": [
         "https://preview.invalid/generated/personB-v1.png",
         "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
-        "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+        "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
         "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
         "https://preview.invalid/generated/scene-v1.png",
         "https://preview.invalid/generated/view01-v1.png"
@@ -45,7 +45,7 @@
       "input_str_list": [
         "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
         "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
-        "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+        "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
         "https://preview.invalid/generated/scene-v1.png",
         "https://preview.invalid/generated/view01-v1.png"
       ]
@@ -54,7 +54,7 @@
       "prompt": "capture:\n画面是用手机实拍的，真实自然，光线自然，没有过度美颜。\n\nsubject:\n模特A，身材、服装和发型参考 @Image1；她脚上的 SOLE_STRETCHY 鞋款，外观参考 @Image2（侧面）、@Image3（鞋底）。\n\nframing:\n中景，从她身后略偏右平视。她站在人行道转角处，背对镜头，右脚在前、脚跟微微抬起，画面左侧是红砖墙。\n\nsetting:\n纽约红砖街区的人行道转角参考 @Image4，红砖墙和光线与 @Image5 保持一致。",
       "input_str_list": [
         "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
-        "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+        "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
         "https://preview.invalid/uploads/shoeSolePhoto.jpg",
         "https://preview.invalid/generated/scene-v1.png",
         "https://preview.invalid/generated/view01-v1.png"
@@ -63,9 +63,9 @@
     "view06": {
       "prompt": "capture:\n画面是用手机实拍的，真实自然，光线自然，没有过度美颜。\n\nsubject:\n模特A，长相和发型参考 @Image1，身材和服装参考 @Image2；她脚上的 SOLE_STRETCHY 鞋款，外观参考 @Image3（侧面）、@Image4（鞋头）。\n\nframing:\n全身入画，平视。她站在人行道上、画面正中，侧身朝向画面左侧，右脚在前，双手自然下垂。\n\nsetting:\n纽约红砖街区参考 @Image5，红砖墙和光线与 @Image6 保持一致。",
       "input_str_list": [
-        "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+        "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
         "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
-        "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+        "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
         "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
         "https://preview.invalid/generated/scene-v1.png",
         "https://preview.invalid/generated/view01-v1.png"
@@ -104,10 +104,10 @@
           ]
         },
         "images": [
-          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+          "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
           "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
           "https://preview.invalid/generated/personB-v1.png",
-          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+          "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
           "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
           "https://preview.invalid/uploads/shoeSolePhoto.jpg",
           "https://preview.invalid/generated/scene-v1.png",
@@ -146,9 +146,9 @@
           ]
         },
         "images": [
-          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+          "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
           "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
-          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+          "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
           "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
           "https://preview.invalid/uploads/shoeSolePhoto.jpg",
           "https://preview.invalid/generated/scene-v1.png",
@@ -189,10 +189,10 @@
           ]
         },
         "images": [
-          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+          "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
           "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
           "https://preview.invalid/generated/personB-v1.png",
-          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+          "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
           "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
           "https://preview.invalid/uploads/shoeSolePhoto.jpg",
           "https://preview.invalid/generated/scene-v1.png",
@@ -231,9 +231,9 @@
           ]
         },
         "images": [
-          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+          "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
           "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
-          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+          "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
           "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
           "https://preview.invalid/uploads/shoeSolePhoto.jpg",
           "https://preview.invalid/generated/scene-v1.png",
@@ -279,9 +279,9 @@
           ]
         },
         "images": [
-          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+          "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
           "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
-          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+          "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
           "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
           "https://preview.invalid/uploads/shoeSolePhoto.jpg",
           "https://preview.invalid/generated/scene-v1.png",
@@ -328,9 +328,9 @@
           ]
         },
         "images": [
-          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+          "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
           "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
-          "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+          "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
           "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
           "https://preview.invalid/uploads/shoeSolePhoto.jpg",
           "https://preview.invalid/generated/scene-v1.png",

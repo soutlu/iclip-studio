@@ -34,9 +34,9 @@ EXPECTED: Final[dict[str, Any]] = json.loads(
 )
 
 PHOTOS: Final = {
-    "modelAPortraitPhoto": "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
+    "modelAPortraitPhoto": "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/d4c4ce47-9e3b-4cde-80ee-cf1062a43d6e.jpg",
     "modelAFullBodyPhoto": "https://preview.invalid/uploads/modelAFullBodyPhoto.jpg",
-    "shoeSidePhoto": "https://mmt-aigc-sz-public.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
+    "shoeSidePhoto": "https://bucket.oss-cn-shenzhen.aliyuncs.com/iclip/agent/uploads/6383e34c-9c74-4ea4-b546-de95ba70789d.jpg",
     "shoeFrontPhoto": "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
     "shoeSolePhoto": "https://preview.invalid/uploads/shoeSolePhoto.jpg",
 }
