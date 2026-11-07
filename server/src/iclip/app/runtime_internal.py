@@ -16,6 +16,7 @@ from agent_runtime.errors import (
 )
 from agent_runtime.hooks import GatePayload, RunStartedPayload, TurnStartedPayload
 from fastapi import APIRouter, Depends, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from iclip_video.plugin_services import PluginServices, ShotVideoServices
@@ -39,6 +40,7 @@ from iclip_video.shot_video.wire import (
 )
 from iclip_video.video_breakdown.ports import ReferenceBreakdowns
 from iclip_video.video_breakdown.wire import ReferenceBreakdownCall, ReferenceBreakdownResult
+from pydantic import BaseModel, ValidationError
 
 from iclip.domains.conversations.service import ConversationActivity, ConversationService
 from iclip.domains.identity.public import AGENT_MANAGE_PERMISSION, Principal
@@ -107,6 +109,13 @@ def _bearer_check(token: str) -> Callable[[Request], Awaitable[None]]:
     return check
 
 
+async def _hook_payload[P: BaseModel](request: Request, model: type[P]) -> P:
+    try:
+        return model.model_validate_json(await request.body(), extra="ignore")
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
+
+
 class TurnNaming:
     def __init__(self, conversations: ConversationService) -> None:
         self._conversations = conversations
@@ -151,14 +160,16 @@ def create_runtime_internal_router(
     )
 
     @router.post("/hooks/gate", status_code=204)
-    async def gate(payload: GatePayload) -> Response:
+    async def gate(request: Request) -> Response:
+        payload = await _hook_payload(request, GatePayload)
         owner = await user_principal(payload.owner_user_id)
         if payload.preview and not owner.has(AGENT_MANAGE_PERMISSION):
             raise PermissionDenied("预览的属主已不能管理 agent")
         return Response(status_code=204)
 
     @router.post("/hooks/run-started", status_code=204)
-    async def run_started(payload: RunStartedPayload) -> Response:
+    async def run_started(request: Request) -> Response:
+        payload = await _hook_payload(request, RunStartedPayload)
         if payload.preview:
             return Response(status_code=204)
         reported = payload.activity
@@ -174,7 +185,8 @@ def create_runtime_internal_router(
         return Response(status_code=204)
 
     @router.post("/hooks/turn-started", status_code=204)
-    async def turn_started(payload: TurnStartedPayload) -> Response:
+    async def turn_started(request: Request) -> Response:
+        payload = await _hook_payload(request, TurnStartedPayload)
         if not payload.preview:
             naming.start(payload.session_id, payload.text)
         return Response(status_code=204)

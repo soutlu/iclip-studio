@@ -202,6 +202,20 @@ async def test_a_detail_names_its_creator_and_the_drafts_editor_in_one_lookup(
     assert body["draft"]["config"] == wire(detail)["draft"]["config"]
 
 
+async def test_unknown_fields_in_a_named_answer_are_ignored_at_every_level(
+    client: httpx.AsyncClient, runtime: Runtime
+) -> None:
+    item = wire(skill("a", ALICE))
+    runtime.answer = httpx.Response(
+        200, json={"items": [{**item, "addedLater": 1}], "addedLater": 1}
+    )
+
+    listed = await client.get("/skills")
+
+    assert listed.status_code == 200, listed.text
+    assert listed.json() == {"items": [{**item, "createdByName": "爱丽丝"}]}
+
+
 async def test_a_failed_answer_is_relayed_unchanged_without_a_lookup(
     client: httpx.AsyncClient, runtime: Runtime, names: Names
 ) -> None:

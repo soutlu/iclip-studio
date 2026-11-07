@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from types import TracebackType
-from typing import Any, Final, Self
+from typing import Any, Final, Protocol, Self
 from urllib.parse import quote
 
 import httpx
 from httpx_ws import AsyncWebSocketSession, WebSocketDisconnect, WebSocketUpgradeError, aconnect_ws
 from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic.config import ExtraValues
 
 from agent_runtime.app_wire import (
     END_USER_HEADER,
@@ -100,9 +101,13 @@ def _file_path(path: str) -> str:
     )
 
 
-def _parse[T](response: httpx.Response, parse: Callable[[bytes], T]) -> T:
+class _Parser[T](Protocol):
+    def __call__(self, data: bytes, /, *, extra: ExtraValues | None) -> T: ...
+
+
+def _parse[T](response: httpx.Response, parse: _Parser[T]) -> T:
     try:
-        return parse(response.content)
+        return parse(response.content, extra="ignore")
     except ValidationError as exc:
         raise RuntimeUnavailable("运行时的答复体解析不了", status=response.status_code) from exc
 

@@ -82,6 +82,32 @@ async def test_the_gate_lets_an_active_owner_through(
     assert gate.content == b""
 
 
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [
+        ("gate", None),
+        (
+            "run-started",
+            {"session_id": str(uuid.uuid4()), "run_id": "r", "activity": IDLE, "preview": True},
+        ),
+        ("turn-started", {"session_id": str(uuid.uuid4()), "text": "做视频", "preview": True}),
+    ],
+    ids=["gate", "run-started", "turn-started"],
+)
+async def test_a_hook_body_with_an_unknown_field_is_accepted(
+    client: httpx.AsyncClient, engine: AsyncEngine, path: str, body: dict[str, Any] | None
+) -> None:
+    known = gate_body(await plant_user(engine, "logan")) if body is None else body
+
+    hook = await client.post(
+        f"/internal/runtime/hooks/{path}",
+        json={**known, "added_later": 1},
+        headers=AUTHORIZED,
+    )
+
+    assert hook.status_code == 204, hook.text
+
+
 async def test_the_gate_refuses_a_deactivated_owner_with_403(
     client: httpx.AsyncClient, engine: AsyncEngine
 ) -> None:
@@ -175,6 +201,46 @@ def test_run_started_records_the_run_and_broadcasts_the_reported_activity(
     }
     assert (row["lastRunId"], row["completedAt"]) == ("run-from-runtime", None)
     assert datetime.fromisoformat(row["updatedAt"]) > datetime.fromisoformat(before["updatedAt"])
+
+
+def test_run_started_with_an_unknown_field_in_the_activity_still_records_the_run(
+    ws_agent_app: FastAPI, pg_url: str
+) -> None:
+    with TestClient(ws_agent_app) as tc:
+        sign_in(tc, pg_url)
+        conversation_id = open_conversation(tc)
+
+        started = tc.post(
+            "/internal/runtime/hooks/run-started",
+            json={
+                "session_id": conversation_id,
+                "run_id": "run-from-newer-runtime",
+                "activity": {**IDLE, "added_later": 1},
+            },
+            headers=AUTHORIZED,
+        )
+        row = tc.get(f"/conversations/{conversation_id}").json()["conversation"]
+
+    assert started.status_code == 204, started.text
+    assert row["lastRunId"] == "run-from-newer-runtime"
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [
+        ("gate", b'{"session_id": "not-a-uuid"}'),
+        ("run-started", b'{"session_id": "00000000-0000-0000-0000-000000000001"}'),
+        ("turn-started", b"not json"),
+    ],
+    ids=["gate-wrong-fields", "run-started-missing-fields", "turn-started-not-json"],
+)
+async def test_a_malformed_hook_body_is_422_in_the_error_envelope(
+    client: httpx.AsyncClient, path: str, body: bytes
+) -> None:
+    hook = await client.post(f"/internal/runtime/hooks/{path}", content=body, headers=AUTHORIZED)
+
+    assert hook.status_code == 422, hook.text
+    assert isinstance(hook.json()["detail"], str)
 
 
 async def test_run_started_on_a_deleted_conversation_is_404(
