@@ -33,7 +33,7 @@
 make db-upgrade   # 执行后端与运行时两边的 Alembic 数据库迁移（如果库里已有重要数据请先备份）
 make dev          # 先启动视频后端 (:7788)，健康检查通过后自动启动运行时服务 (:7790)
 ```
-- **已有的本地库**：运行时的迁移报表已存在时，说明这个库还没打基线标记，见[升级](#升级)第 2 步；本地在 `server/` 目录下用 `uv run --env-file ../.env python -m agent_runtime.admin stamp-baseline` 执行。
+- **已有的本地库**：运行时的迁移报表已存在时，说明这个库还没打基线标记，见[升级运行时](#升级运行时)第 2 步；本地在 `server/` 目录下用 `uv run --env-file ../.env python -m agent_runtime.admin stamp-baseline` 执行。
 - **初始化后台配置**：新库刚启动时还没有任何模型和 Agent。请使用 root 账号登录网页后台，在「配置页」中接入模型供应商、创建并发布技能与 Agent（如果需要用到视频理解、参考视频拆解或自动打标功能，请按下方[服务器部署](#服务器部署)第 6 步接入火山方舟）。
 
 ### 4. 启动前端开发服务（另开终端）
@@ -69,7 +69,7 @@ CREATE DATABASE iclip OWNER iclip;
 ### 3. 准备服务器部署目录
 在服务器上新建部署目录，放入以下文件与子目录：
 - `compose.yaml`：从仓库 `deploy/compose.yaml` 复制。
-- `.env`：配置镜像版本号 `IMAGE_TAG`、对外端口、`DATABASE_URL`、OSS 凭证以及运行时所需的四个核心变量（`RUNTIME_URL=http://runtime:7790`、`RUNTIME_APP_KEY`、`RUNTIME_INTERNAL_TOKEN`、`CREDENTIAL_ENCRYPTION_KEYS`）。
+- `.env`：配置镜像版本号 `IMAGE_TAG` 与 `RUNTIME_IMAGE_TAG`（见[升级](#升级)）、对外端口、`DATABASE_URL`、OSS 凭证以及运行时所需的四个核心变量（`RUNTIME_URL=http://runtime:7790`、`RUNTIME_APP_KEY`、`RUNTIME_INTERNAL_TOKEN`、`CREDENTIAL_ENCRYPTION_KEYS`）。
   - **重要提醒**：请将 `CREDENTIAL_ENCRYPTION_KEYS` 与数据库备份分开妥善保管；一旦丢失，数据库里已保存的所有模型 API Key 和 MCP 配置都将无法解密，只能重新录入。
   - 如果服务器是与 OSS 同地域的阿里云 ECS，建议配置 `OSS_INTERNAL_ENDPOINT` 走内网高速读写；
   - 如需开启视频超分（高清版），配置 `VIDEO_ENHANCE_SUBMIT_URL` 并在 `config.yaml` 中配置 `media_generation.video.enhance`；
@@ -135,26 +135,52 @@ rsync -a <本机输出目录>/catalog.json <服务器>:<部署目录>/components
 
 > **只能从 v0.16.3 或之后的版本直接升级**。后端的迁移基线就是 v0.16.3 的迁移头，更早的库执行 `alembic upgrade head` 会报 `Can't locate revision` 并停下，不改任何表。这样的库先把 `IMAGE_TAG` 改成 `v0.16.3` 按 v0.16.3 自带的本文档升上去，再回到本节；从 v0.15（运行时还未独立拆分的旧版本）升到 v0.16.3 按文末的[升级到运行时独立部署的版本](#升级到运行时独立部署的版本)执行。
 
+应用和运行时各有一条发布线（见[发版与镜像发布](release.md)），分开升级，互不重启。两边谁先升见[跨版本兼容](../contract/conventions.md#跨版本兼容)。
+
+`.env` 要同时写明 `IMAGE_TAG` 和 `RUNTIME_IMAGE_TAG`：两者缺省都是 `latest`，没写的一边下次拉取时会被带到最新版本。
+
+**一次性步骤**：第一次换上含 `RUNTIME_IMAGE_TAG` 的 `compose.yaml` 时，在 `.env` 加上这个变量，填运行时容器当前在用的镜像标签。运行时单独发版之前的运行时镜像用应用版本号做标签，也就是当时 `IMAGE_TAG` 的值。
+
+#### 升级应用
+
+升级后端、前端和渲染服务，运行时容器不动：
+
 1. 对照新版本的 [compose.yaml](../deploy/compose.yaml) 和[配置模型](../server/src/iclip/config/models.py)，检查是否需要在 `.env` 或配置文件中补充新变量；修改 `.env` 中的 `IMAGE_TAG` 为新版本号，拉取新镜像：
    ```bash
-   docker compose pull
+   docker compose pull server web render
+   ```
+2. 执行后端的迁移：
+   ```bash
+   docker compose run --rm server alembic upgrade head
+   ```
+3. 用新镜像重启：
+   ```bash
+   docker compose up -d server web render
+   ```
+4. **可选的数据库空间回收（针对升到 v0.16.3 的历史版本）**：
+   - 升级到「快照消息按哈希去重存储」的版本后（见[运行时的持久化](architecture.md#运行时的持久化)），可在停机窗口运行 `docker compose run --rm server python -m scripts.dedup_snapshot_messages` 转换旧快照，随后在数据库执行 `VACUUM FULL agent_runtime.snapshots` 回收磁盘空间。
+   - 升级到迁移 `0039`（生成任务结果合并进 `output` 列）时，需先停掉后端服务再跑迁移，并在同一停机窗口执行 `VACUUM FULL iclip.generation_jobs`。
+
+#### 升级运行时
+
+只升级运行时容器（运行时 + 视频插件）：
+
+1. 对照 `runtime-vX.Y.Z` 标签上 [compose.yaml](../deploy/compose.yaml) 的 `runtime` 段和 [runtime.example.yaml](../deploy/runtime.example.yaml)，检查是否需要在 `.env` 或配置文件中补充新变量；修改 `.env` 中的 `RUNTIME_IMAGE_TAG` 为新版本号，拉取新镜像：
+   ```bash
+   docker compose pull runtime
    ```
 2. **一次性步骤**：已有的库第一次升到运行时自己管迁移的版本时，先打基线标记。命令只写版本表，不动表结构；库里没有运行时的表或已经打过标记时报错退出。此后的升级跳过这一步：
    ```bash
    docker compose run --rm --no-deps runtime python -m agent_runtime.admin stamp-baseline
    ```
-3. 执行两边的迁移。漏了第 2 步时运行时的迁移会报表已存在并回滚，补上再跑：
+3. 执行运行时的迁移。漏了第 2 步时迁移会报表已存在并回滚，补上再跑：
    ```bash
-   docker compose run --rm server alembic upgrade head
    docker compose run --rm --no-deps runtime python -m agent_runtime.admin migrate
    ```
-4. 用新镜像重启：
+4. 用新镜像重启运行时。`--no-deps` 不能省：后端整份加载 `.env`，改了 `RUNTIME_IMAGE_TAG` 后不加它会连后端一起重建：
    ```bash
-   docker compose up -d
+   docker compose up -d --no-deps runtime
    ```
-5. **可选的数据库空间回收（针对升到 v0.16.3 的历史版本）**：
-   - 升级到「快照消息按哈希去重存储」的版本后（见[运行时的持久化](architecture.md#运行时的持久化)），可在停机窗口运行 `docker compose run --rm server python -m scripts.dedup_snapshot_messages` 转换旧快照，随后在数据库执行 `VACUUM FULL agent_runtime.snapshots` 回收磁盘空间。
-   - 升级到迁移 `0039`（生成任务结果合并进 `output` 列）时，需先停掉后端服务再跑迁移，并在同一停机窗口执行 `VACUUM FULL iclip.generation_jobs`。
 
 ### 修改线上配置
 
