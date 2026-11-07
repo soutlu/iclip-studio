@@ -16,8 +16,8 @@ concurrency:
   queue: max
 
 env:
-  REGISTRY: ${{ vars.ACR_REGISTRY }}
-  NAMESPACE: ${{ vars.ACR_NAMESPACE }}
+  REGISTRY: ${{ secrets.ACR_REGISTRY }}
+  NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
 
 jobs:
   prepare:
