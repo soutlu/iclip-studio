@@ -7,6 +7,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from agent_runtime.migrations.runner import upgrade as upgrade_runtime
 from agent_runtime.plugins.base import PluginBinder, PluginRegistry
 from alembic import command
 from alembic.config import Config as AlembicConfig
@@ -83,6 +84,7 @@ def migrated_pg(pg_url: str) -> str:
     cfg.set_main_option("script_location", str(SERVER_DIR / "migrations"))
     cfg.attributes["sqlalchemy_url"] = pg_url
     command.upgrade(cfg, "head")
+    upgrade_runtime(pg_url)
     return pg_url
 
 

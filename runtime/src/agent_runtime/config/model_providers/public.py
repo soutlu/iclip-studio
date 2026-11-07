@@ -7,7 +7,7 @@ from agent_runtime.config.model_providers.catalog import (
     ProviderDeclaration,
     load_declarations,
 )
-from agent_runtime.config.model_providers.infra_sql import SqlModelProviderStore
+from agent_runtime.config.model_providers.infra_sql import SqlModelProviderStore, metadata_obj
 from agent_runtime.config.model_providers.models import (
     ModelType,
     ProbeResult,
@@ -74,5 +74,6 @@ __all__ = [
     "RuntimeModel",
     "SqlModelProviderStore",
     "load_declarations",
+    "metadata_obj",
     "rotate_credential_keys",
 ]

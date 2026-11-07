@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from agent_runtime.config.mcp_servers.index import IndexedMcpServer, McpServerIndex
-from agent_runtime.config.mcp_servers.infra_sql import SqlMcpServerStore
+from agent_runtime.config.mcp_servers.infra_sql import SqlMcpServerStore, metadata_obj
 from agent_runtime.config.mcp_servers.models import (
     McpEndpoint,
     McpProbeResult,
@@ -40,5 +40,6 @@ __all__ = [
     "McpUsages",
     "RuntimeMcpServer",
     "SqlMcpServerStore",
+    "metadata_obj",
     "rotate_mcp_server_keys",
 ]

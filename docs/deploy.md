@@ -30,9 +30,10 @@
 
 ### 3. 执行数据库迁移并启动后端服务
 ```bash
-make db-upgrade   # 执行 Alembic 数据库迁移（如果库里已有重要数据请先备份）
+make db-upgrade   # 执行后端与运行时两边的 Alembic 数据库迁移（如果库里已有重要数据请先备份）
 make dev          # 先启动视频后端 (:7788)，健康检查通过后自动启动运行时服务 (:7790)
 ```
+- **已有的本地库**：运行时的迁移报表已存在时，说明这个库还没打基线标记，见[升级](#升级)第 2 步；本地在 `server/` 目录下用 `uv run --env-file ../.env python -m agent_runtime.admin stamp-baseline` 执行。
 - **初始化后台配置**：新库刚启动时还没有任何模型和 Agent。请使用 root 账号登录网页后台，在「配置页」中接入模型供应商、创建并发布技能与 Agent（如果需要用到视频理解、参考视频拆解或自动打标功能，请按下方[服务器部署](#服务器部署)第 6 步接入火山方舟）。
 
 ### 4. 启动前端开发服务（另开终端）
@@ -79,10 +80,13 @@ CREATE DATABASE iclip OWNER iclip;
 ### 4. 执行数据库迁移并启动容器
 ```bash
 docker login <ACR_REGISTRY>
+docker compose pull
 docker compose run --rm server alembic upgrade head
-docker compose pull && docker compose up -d
+docker compose run --rm --no-deps runtime python -m agent_runtime.admin migrate
+docker compose up -d
 curl http://localhost/api/healthz
 ```
+运行时的命令要加 `--no-deps`：`compose.yaml` 里运行时依赖后端健康，不加会先把后端拉起来。
 
 ### 5. 设置首个 root 与管理员账号
 - **方式一（SSO 自动授权）**：在 `.env` 中设置 `ROOT_EMAIL=<管理员邮箱>`，该邮箱首次通过 SSO 登录时会自动获得 `root` 角色。
@@ -129,18 +133,26 @@ rsync -a <本机输出目录>/catalog.json <服务器>:<部署目录>/components
 
 ### 升级
 
-> 如果是从 v0.15（运行时还未独立拆分的旧版本）升级，请跳过本节，直接按文末的[升级到运行时独立部署的版本](#升级到运行时独立部署的版本)执行。
+> **只能从 v0.16.3 或之后的版本直接升级**。后端的迁移基线就是 v0.16.3 的迁移头，更早的库执行 `alembic upgrade head` 会报 `Can't locate revision` 并停下，不改任何表。这样的库先把 `IMAGE_TAG` 改成 `v0.16.3` 按 v0.16.3 自带的本文档升上去，再回到本节；从 v0.15（运行时还未独立拆分的旧版本）升到 v0.16.3 按文末的[升级到运行时独立部署的版本](#升级到运行时独立部署的版本)执行。
 
-1. 如果新版本包含数据库表结构变更，先执行迁移：
+1. 对照新版本的 [compose.yaml](../deploy/compose.yaml) 和[配置模型](../server/src/iclip/config/models.py)，检查是否需要在 `.env` 或配置文件中补充新变量；修改 `.env` 中的 `IMAGE_TAG` 为新版本号，拉取新镜像：
+   ```bash
+   docker compose pull
+   ```
+2. **一次性步骤**：已有的库第一次升到运行时自己管迁移的版本时，先打基线标记。命令只写版本表，不动表结构；库里没有运行时的表或已经打过标记时报错退出。此后的升级跳过这一步：
+   ```bash
+   docker compose run --rm --no-deps runtime python -m agent_runtime.admin stamp-baseline
+   ```
+3. 执行两边的迁移。漏了第 2 步时运行时的迁移会报表已存在并回滚，补上再跑：
    ```bash
    docker compose run --rm server alembic upgrade head
+   docker compose run --rm --no-deps runtime python -m agent_runtime.admin migrate
    ```
-2. 对照新版本的 [compose.yaml](../deploy/compose.yaml) 和[配置模型](../server/src/iclip/config/models.py)，检查是否需要在 `.env` 或配置文件中补充新变量。
-3. 修改 `.env` 中的 `IMAGE_TAG` 为新版本号，拉取新镜像并重启：
+4. 用新镜像重启：
    ```bash
-   docker compose pull && docker compose up -d
+   docker compose up -d
    ```
-4. **可选的数据库空间回收（针对特定历史版本）**：
+5. **可选的数据库空间回收（针对升到 v0.16.3 的历史版本）**：
    - 升级到「快照消息按哈希去重存储」的版本后（见[运行时的持久化](architecture.md#运行时的持久化)），可在停机窗口运行 `docker compose run --rm server python -m scripts.dedup_snapshot_messages` 转换旧快照，随后在数据库执行 `VACUUM FULL agent_runtime.snapshots` 回收磁盘空间。
    - 升级到迁移 `0039`（生成任务结果合并进 `output` 列）时，需先停掉后端服务再跑迁移，并在同一停机窗口执行 `VACUUM FULL iclip.generation_jobs`。
 
@@ -164,7 +176,7 @@ rsync -a <本机输出目录>/catalog.json <服务器>:<部署目录>/components
 
 ### 升级到运行时独立部署的版本
 
-> **历史版本迁移归档（仅适用于从 v0.15 / 数据库迁移 0039 升级）**：从该版本起，Agent 拆分为独立的 `runtime` 容器运行，且模型、Agent 与技能配置从本地 YAML 文件迁入数据库管理。请在停机维护窗口内按顺序执行。
+> **历史版本迁移归档（仅适用于从 v0.15 / 数据库迁移 0039 升级）**：必须先升到 v0.16.3（下文的新版都指它），走完本节再按[升级](#升级)升到之后的版本。从该版本起，Agent 拆分为独立的 `runtime` 容器运行，且模型、Agent 与技能配置从本地 YAML 文件迁入数据库管理。请在停机维护窗口内按顺序执行。
 
 1. **停服并备份数据与配置**：
    ```bash
@@ -173,7 +185,7 @@ rsync -a <本机输出目录>/catalog.json <服务器>:<部署目录>/components
    cp -a compose.yaml .env configs agents skills <备份目录>/
    cp configs/config.yaml configs/config.old.yaml
    ```
-2. **更新 `compose.yaml` 与 `.env`**：换上新版 `compose.yaml`，修改 `.env` 中的 `IMAGE_TAG` 并执行 `docker compose pull`。在 `.env` 中补充 `RUNTIME_URL=http://runtime:7790`、`RUNTIME_APP_KEY`、`RUNTIME_INTERNAL_TOKEN` 和 `CREDENTIAL_ENCRYPTION_KEYS`，同时记下并删掉废弃的 `VIDEO_UNDERSTANDING_URL` 与 `VIDEO_UNDERSTANDING_API_KEY`。
+2. **更新 `compose.yaml` 与 `.env`**：换上 v0.16.3 的 `compose.yaml`，把 `.env` 中的 `IMAGE_TAG` 改成 `v0.16.3` 并执行 `docker compose pull`。在 `.env` 中补充 `RUNTIME_URL=http://runtime:7790`、`RUNTIME_APP_KEY`、`RUNTIME_INTERNAL_TOKEN` 和 `CREDENTIAL_ENCRYPTION_KEYS`，同时记下并删掉废弃的 `VIDEO_UNDERSTANDING_URL` 与 `VIDEO_UNDERSTANDING_API_KEY`。
 3. **执行数据库迁移**：
    ```bash
    docker compose run --rm server alembic upgrade head

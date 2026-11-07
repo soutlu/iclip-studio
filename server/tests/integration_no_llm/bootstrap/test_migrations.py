@@ -2,15 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent_runtime.config.agent_config.infra_sql import metadata_obj as agent_config_metadata
-from agent_runtime.config.mcp_servers.infra_sql import metadata_obj as mcp_servers_metadata
-from agent_runtime.config.model_providers.infra_sql import metadata_obj as model_providers_metadata
-from agent_runtime.config.skills.infra_sql import metadata_obj as skills_metadata
-from agent_runtime.file_store.pg import metadata_obj as file_store_metadata
-from agent_runtime.harness.jobs import metadata_obj as jobs_metadata
-from agent_runtime.harness.sessions import metadata_obj as sessions_metadata
-from agent_runtime.harness.step_store_pg import metadata_obj as step_store_metadata
-from agent_runtime.harness.usage_ledger_pg import metadata_obj as usage_ledger_metadata
 from sqlalchemy import Column, MetaData, inspect, text
 
 from iclip.domains.brand_templates.infra_sql import metadata_obj as brand_templates_metadata
@@ -37,28 +28,16 @@ _MODULE_METADATA: tuple[MetaData, ...] = (
     references_metadata,
     tagging_metadata,
     brand_templates_metadata,
-    skills_metadata,
-    model_providers_metadata,
-    mcp_servers_metadata,
-    agent_config_metadata,
-    step_store_metadata,
-    jobs_metadata,
-    sessions_metadata,
-    usage_ledger_metadata,
-    file_store_metadata,
 )
-
-_SCHEMAS = (DB_SCHEMA, "agent_runtime")
 
 
 def _columns_in_db(sync_conn: Any) -> dict[str, set[str]]:
     inspector = inspect(sync_conn)
     return {
-        f"{schema}.{table}": {
-            column["name"] for column in inspector.get_columns(table, schema=schema)
+        f"{DB_SCHEMA}.{table}": {
+            column["name"] for column in inspector.get_columns(table, schema=DB_SCHEMA)
         }
-        for schema in _SCHEMAS
-        for table in inspector.get_table_names(schema=schema)
+        for table in inspector.get_table_names(schema=DB_SCHEMA)
         if table != "alembic_version"
     }
 

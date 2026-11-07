@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent_runtime.config.skills.infra_sql import SqlSkillStore
+from agent_runtime.config.skills.infra_sql import SqlSkillStore, metadata_obj
 from agent_runtime.config.skills.models import MAX_ARCHIVE_BYTES, SKILL_MD, STATUS_ARCHIVED, Skill
 from agent_runtime.config.skills.repository import SkillUsages
 from agent_runtime.config.skills.rules import with_frontmatter_name
@@ -42,5 +42,6 @@ __all__ = [
     "SkillsOut",
     "SkillsService",
     "SqlSkillStore",
+    "metadata_obj",
     "with_frontmatter_name",
 ]

@@ -19,7 +19,7 @@
 
 **依赖方向与隔离原则：**
 - **单向代码依赖**：`视频后端` 依赖 `视频插件包` 和 `运行时`（主要是复用类型定义与客户端库）；`视频插件包` 只依赖 `运行时`；`运行时` 不依赖任何业务包。
-- **同库不同 Schema**：后端和运行时连接同一个 PostgreSQL 数据库，但严格按 Schema 隔离（后端用 `iclip`，运行时用 `agent_runtime`）。两个 Schema 之间不建数据库外键，代码里也绝不跨 Schema 读写对方的表（由两边的架构测试强制检查）。所有数据库表结构的变更统一由后端的 Alembic 迁移脚本管理（见[后端的持久化与迁移](#后端的持久化与迁移)）。
+- **同库不同 Schema**：后端和运行时连接同一个 PostgreSQL 数据库，但严格按 Schema 隔离（后端用 `iclip`，运行时用 `agent_runtime`）。两个 Schema 之间不建数据库外键，代码里也绝不跨 Schema 读写对方的表（由两边的架构测试强制检查）。表结构的变更各管各的：后端的 Alembic 迁移管 `iclip` 与 `public`（见[后端的持久化与迁移](#后端的持久化与迁移)），运行时自己的 Alembic 迁移管 `agent_runtime`（见[运行时的持久化](#运行时的持久化)），版本表也各放在自己的 Schema 里。
 - **单进程运行限制**：目前后端和运行时都采用单进程（单 Worker）模式部署，因为实时消息流投影、事件广播和 WebSocket 连接池都维护在进程内存中。若未来扩展为多实例部署，需先引入跨实例连接路由。
 
 **视频后端与运行时之间的 4 条通信通道：**
@@ -115,7 +115,9 @@ Agent 可用的工具来自两部分：**代码内置插件**和**管理员登�
 
 ### 运行时的持久化
 
-运行时所有数据表均位于 `agent_runtime` schema 下（代码路径相对 `runtime/src/agent_runtime/`）：
+运行时所有数据表均位于 `agent_runtime` schema 下，表结构演进通过运行时自己的 Alembic 迁移管理：脚本在 [migrations/versions/](../runtime/src/agent_runtime/migrations/versions/)，随包发布，不依赖 `alembic.ini`；版本表是 `agent_runtime.alembic_version`；执行入口是 `python -m agent_runtime.admin migrate`（部署步骤见[部署指南](deploy.md#升级)）。
+
+各数据模块如下（代码路径相对 `runtime/src/agent_runtime/`）：
 
 | 数据模块 | 代码位置与核心存储机制 |
 |---|---|
@@ -201,7 +203,7 @@ Agent 可用的工具来自两部分：**代码内置插件**和**管理员登�
 
 ### 后端的持久化与迁移
 
-业务表位于 `iclip` schema，异步队列调度表（procrastinate）位于 `public` schema，所有表结构演进均通过 [server/migrations/versions/](../server/migrations/versions/) 下的 Alembic 脚本管理：
+业务表位于 `iclip` schema，异步队列调度表（procrastinate）位于 `public` schema，这两个 Schema 的表结构演进均通过 [server/migrations/versions/](../server/migrations/versions/) 下的 Alembic 脚本管理，`agent_runtime` 不归后端的迁移管：
 
 | 模块 / 报表视图 | 存储与查询机制 |
 |---|---|

@@ -6,6 +6,7 @@ import asyncio
 import os
 
 from alembic import context
+from alembic.runtime.environment import NameFilterParentNames, NameFilterType
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
@@ -22,6 +23,12 @@ def _database_url() -> str:
     return url
 
 
+def _include_name(
+    name: str | None, type_: NameFilterType, parent_names: NameFilterParentNames
+) -> bool:
+    return type_ != "schema" or name == DB_SCHEMA
+
+
 def _run_migrations(connection: Connection) -> None:
     connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}"))
     context.configure(
@@ -29,6 +36,7 @@ def _run_migrations(connection: Connection) -> None:
         target_metadata=target_metadata,
         version_table_schema=DB_SCHEMA,
         include_schemas=True,
+        include_name=_include_name,
     )
     with context.begin_transaction():
         context.run_migrations()

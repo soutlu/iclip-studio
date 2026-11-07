@@ -4,7 +4,7 @@
 # 机密只写放它的环境变量名；DATABASE_URL 与 CREDENTIAL_ENCRYPTION_KEYS 也来自环境变量。
 
 apps:
-  # 视频后端。应用标识必须是 video：后端经它开的会话与迁移 0044 回填的会话都归它。
+  # 视频后端。应用标识必须是 video：后端开的会话与库里已有的会话都归它。
   video:
     # 与后端的 RUNTIME_APP_KEY 是同一个值（不少于 32 个字符）。
     key_env: RUNTIME_APP_KEY
