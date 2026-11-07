@@ -7,15 +7,15 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.harness.sessions import PgSessionStore
 from fastapi import FastAPI
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from tests.helpers.app import TEST_MODEL_NAME
+from agent_runtime.harness.sessions import PgSessionStore
 from tests.helpers.runtime import waits
 from tests.helpers.runtime_service import (
     ADMIN_KEY,
+    TEST_MODEL_NAME,
     add_model,
     connect_provider,
     publish_agent,

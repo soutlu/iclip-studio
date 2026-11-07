@@ -8,6 +8,10 @@ from typing import Any
 
 import pytest
 import yaml
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import AsyncEngine
+
 from agent_runtime.assembly.directories import (
     LibrarySkillDirectory,
     McpServerDirectory,
@@ -44,14 +48,9 @@ from agent_runtime.config.skills.schemas import SkillCreateIn, SkillPublishIn
 from agent_runtime.config.skills.service import SkillsService
 from agent_runtime.errors import Conflict, NotFound, ValidationFailed
 from agent_runtime.secrets import CredentialCipher
-from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError
-from sqlalchemy.ext.asyncio import AsyncEngine
-
 from tests.helpers.agent_config import NOTES, FakePlugins
-from tests.helpers.app import TEST_CREDENTIAL_KEY
 from tests.helpers.model_providers import GOOD_KEY, OTHER_KEY, KeyCheckingProbe
-from tests.helpers.references import plant_user
+from tests.helpers.runtime_service import TEST_CREDENTIAL_KEY
 
 TABLES = (
     "agents",
@@ -80,7 +79,7 @@ class World:
 
 @pytest.fixture
 async def world(engine: AsyncEngine) -> World:
-    author = await plant_user(engine, "agent-author")
+    author = uuid.uuid4()
     agent_store = SqlAgentStore(engine)
     references = AgentReferences(agent_store)
     skills = SkillsService(SqlSkillStore(engine), usages=references)

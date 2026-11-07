@@ -7,18 +7,21 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.http.app import create_app
-from agent_runtime.plugins.base import PluginRegistry
-from agent_runtime.settings import AgentRunsSection, CompactionSection, ResolvedApp, RuntimeSettings
 from fastapi import FastAPI
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncEngine
 from structlog.testing import capture_logs
 
-from tests.helpers.agents import model_builder
-from tests.helpers.app import TEST_CREDENTIAL_KEY
+from agent_runtime.http.app import create_app
+from agent_runtime.plugins.base import PluginRegistry
+from agent_runtime.settings import AgentRunsSection, CompactionSection, ResolvedApp, RuntimeSettings
 from tests.helpers.model_providers import KeyCheckingProbe, add_credential, connect_provider
-from tests.helpers.runtime_service import ADMIN_KEY, READER_KEY
+from tests.helpers.runtime_service import (
+    ADMIN_KEY,
+    READER_KEY,
+    TEST_CREDENTIAL_KEY,
+    model_builder,
+)
 
 MODEL = "doubao-seed-test"
 ARK_KEY = "sk-test-ark"

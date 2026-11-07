@@ -31,7 +31,6 @@ from agent_runtime.harness.transcript.subagents import SubAgentMirror
 from agent_runtime.harness.usage_ledger import UsageLedger
 from agent_runtime.transcript.display import ToolDisplayRegistry
 from agent_runtime.transcript.ops import (
-    MAIN_AGENT_ID,
     PromptContent,
     StepUsage,
     TextContent,
@@ -63,7 +62,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 AGENT_ID = "storyboard"
 MAX_CONTEXT_TOKENS = 4096
 OWNER = uuid.UUID("11111111-2222-3333-4444-555555555555")
-LOCKED_BY = "w-test"
 DEAD = "w-dead"
 
 
@@ -110,17 +108,6 @@ def delegates(*calls: tuple[str, str]) -> FunctionModel:
             }
         else:
             yield "都写完了"
-
-    return FunctionModel(stream_function=stream)
-
-
-def waits(entered: asyncio.Event, gate: asyncio.Event) -> FunctionModel:
-    async def stream(
-        _messages: list[ModelMessage], _info: AgentInfo
-    ) -> AsyncIterator[str | DeltaToolCalls]:
-        entered.set()
-        await gate.wait()
-        yield "跑完了"
 
     return FunctionModel(stream_function=stream)
 
@@ -443,26 +430,6 @@ def prompt_text(turn: TranscriptTurn) -> str:
     return "".join(part.text for part in turn.content if part.type == "text")
 
 
-def replay_journal(
-    store: TranscriptStore, conversation_id: str, agent_id: str = MAIN_AGENT_ID
-) -> TranscriptStore:
-    replayed = TranscriptStore()
-    epoch = store.subscribe_view(conversation_id, agent_id).epoch
-    for batch in store.subscribe_view(conversation_id, agent_id, since=0, epoch=epoch).batches:
-        replayed.append(conversation_id, agent_id, batch.ops)
-    return replayed
-
-
-def replay(
-    store: TranscriptStore, conversation_id: str, agent_id: str = MAIN_AGENT_ID
-) -> tuple[TranscriptTurn, ...]:
-    return (
-        replay_journal(store, conversation_id, agent_id)
-        .subscribe_view(conversation_id, agent_id)
-        .live_turns
-    )
-
-
 def tool_cards(turns: Sequence[TranscriptTurn]) -> list[ToolFrame]:
     return [
         frame
@@ -476,7 +443,6 @@ def tool_cards(turns: Sequence[TranscriptTurn]) -> list[ToolFrame]:
 __all__ = [
     "AGENT_ID",
     "DEAD",
-    "LOCKED_BY",
     "MAX_CONTEXT_TOKENS",
     "OWNER",
     "FixedAgents",
@@ -493,12 +459,9 @@ __all__ = [
     "new_conversation_id",
     "plant_interrupted",
     "prompt_text",
-    "replay",
-    "replay_journal",
     "says",
     "submit_text",
     "texts",
     "tool_cards",
-    "waits",
     "wrote",
 ]

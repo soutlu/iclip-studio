@@ -6,11 +6,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
-from agent_runtime.app_wire import MAX_STATS_SESSIONS
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from tests.helpers.audit import Plant
+from agent_runtime.app_wire import MAX_STATS_SESSIONS
+from tests.helpers.stats import Plant
 
 BASE = datetime.now(UTC).replace(microsecond=0)
 

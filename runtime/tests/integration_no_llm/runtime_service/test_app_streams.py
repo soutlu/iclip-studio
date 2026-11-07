@@ -4,15 +4,15 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
-from agent_runtime.harness.transcript.store import TranscriptStore
 from pydantic_ai.models import Model
 
-from tests.helpers.app import TEST_MODEL_NAME
+from agent_runtime.harness.transcript.store import TranscriptStore
 from tests.helpers.runtime import calls_then_says, says
 from tests.helpers.runtime_service import (
     ADMIN_KEY,
     JOTTED,
     READER_KEY,
+    TEST_MODEL_NAME,
     LiveRuntime,
     ops_until_turn_ends,
     receive,

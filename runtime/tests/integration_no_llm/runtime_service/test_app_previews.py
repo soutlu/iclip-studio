@@ -5,9 +5,9 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.settings import ResolvedHooks
 from pydantic_ai.models import Model
 
+from agent_runtime.settings import ResolvedHooks
 from tests.helpers.runtime import says
 from tests.helpers.runtime_service import (
     PROVIDER,

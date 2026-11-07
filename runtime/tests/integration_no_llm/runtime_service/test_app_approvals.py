@@ -5,12 +5,12 @@ import uuid
 
 import httpx
 import pytest
-from agent_runtime.plugins.base import PluginRegistry
 from pydantic_ai.models import Model
 
-from tests.helpers.app import TEST_MODEL_NAME
+from agent_runtime.plugins.base import PluginRegistry
 from tests.helpers.runtime import calls_then_says
 from tests.helpers.runtime_service import (
+    TEST_MODEL_NAME,
     ApprovingPlugin,
     add_model,
     connect_provider,

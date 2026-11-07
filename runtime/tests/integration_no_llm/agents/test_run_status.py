@@ -4,6 +4,10 @@ import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from sqlalchemy.ext.asyncio import AsyncEngine
+
 from agent_runtime.harness.agents import DELEGATE_TOOL
 from agent_runtime.harness.jobs import JobQueue
 from agent_runtime.harness.step_store_pg import PgStepStore
@@ -13,10 +17,6 @@ from agent_runtime.harness.transcript.service import TranscriptService
 from agent_runtime.harness.transcript.store import TranscriptStore
 from agent_runtime.transcript.display import ToolDisplayRegistry
 from agent_runtime.transcript.ops import TextContent
-from pydantic_ai.messages import ModelMessage
-from pydantic_ai.models.function import AgentInfo, FunctionModel
-from sqlalchemy.ext.asyncio import AsyncEngine
-
 from tests.helpers.runtime import (
     AGENT_ID,
     LOCKED_BY,

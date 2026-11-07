@@ -26,8 +26,18 @@
 | `e2e_full/` | 连接真实外部服务的全链路端到端测试 |
 | `helpers/` | 共用测试工具与夹具（不放具体测试用例） |
 
+### `runtime/tests/` 目录分层
+
+| 目录 | 测试范围与环境要求 |
+|---|---|
+| `unit/` | 纯逻辑与进程内契约，不连接真实数据库 |
+| `integration_no_llm/` | 连接真实 PostgreSQL 数据库，测试运行时自身的调度恢复、数据库读写、运行时接口与客户端库；大模型使用替身 |
+| `helpers/` | 运行时自己的测试工具与夹具 |
+
+`runtime/tests/` 不引用 `iclip`、`iclip_video` 或 `server/` 的任何东西，只装 `runtime/` 自己的依赖就能运行。运行时自身的行为写在这里；要用到后端代码、后端表或视频插件才成立的行为写在 `server/tests/`。
+
 **关键测试机制说明：**
-- **后端与运行时联合测试夹具（[runtime_backed.py](../server/tests/helpers/runtime_backed.py)）**：后端集成测试会将「视频后端」与「运行时服务」一起启动并连接同一个测试数据库，两者之间通过内存 ASGI 传输层直接互相调用。需要替换默认插件时，可在测试中覆写 `runtime_plugins` 夹具。
+- **后端与运行时联合测试夹具（[runtime_backed.py](../server/tests/helpers/runtime_backed.py)）**：后端集成测试会将「视频后端」与「运行时服务」一起启动并连接同一个测试数据库（两边的迁移都由后端的 `migrated_pg` 夹具执行），两者之间通过内存 ASGI 传输层直接互相调用。需要替换默认插件时，可在测试中覆写 `runtime_plugins` 夹具。
 - **Transcript 金样对齐测试（Golden Test）**：后端的[场景测试](../server/tests/integration_no_llm/agents/test_transcript_scenarios.py)使用假模型跑完真实运行流程，验证「实时流拼出的结果」与「从数据库历史重建的结果」完全一致，并将结果保存为 `contract/transcript/` 下的金样文件（设置 `UPDATE_GOLDEN=1` 可更新金样）；前端的 [golden.test.ts](../web/src/shared/transcript/golden.test.ts) 则直接读取同一份金样文件做解析测试，确保前后端协议绝对对齐。
 - **自动标记与目录规范**：Pytest marker 由 [tests/conftest.py](../server/tests/conftest.py) 按所在目录自动注入；测试目录结构与禁止导入私有符号的规则由[集合契约测试](../server/tests/unit/architecture/test_collection_contract.py)自动检查。
 
@@ -51,7 +61,7 @@
 2. 如果未设置，则通过 `Testcontainers` 自动拉起一个临时的 PostgreSQL 容器并在整个测试会话内复用。
 3. 如果本机既未设置 `TEST_DATABASE_URL`、也没有运行 Docker，本地数据库测试会自动跳过（汇报验证结果时必须明确说明跳过了数据库测试）。
 
-运行时的 [integration_no_llm/conftest.py](../runtime/tests/integration_no_llm/conftest.py) 只走 `Testcontainers`，不看 `TEST_DATABASE_URL`，每个用例建自己的临时库；没有 Docker 时同样自动跳过。
+运行时的 [integration_no_llm/conftest.py](../runtime/tests/integration_no_llm/conftest.py) 只走 `Testcontainers`，不看 `TEST_DATABASE_URL`，没有 Docker 时用例直接失败、不跳过。整个测试会话共用一个迁移好的库，用例之间只清 `agent_runtime` schema 的表；迁移测试每个用例建自己的临时库。
 
 > **迁移对账要求**：每当在 `iclip` 中新增数据模块时，必须将该模块的 SQLAlchemy 元数据加入[后端迁移对账测试](../server/tests/integration_no_llm/bootstrap/test_migrations.py)的 `_MODULE_METADATA` 中。由于该测试只自动比对表名和列名，字段类型、非空约束、索引以及 procrastinate 调度表的迁移仍需人工核对。`agent_runtime` 中新增数据模块时，把元数据加入 [runner.py](../runtime/src/agent_runtime/migrations/runner.py) 的 `_MODULE_METADATA`，[运行时迁移测试](../runtime/tests/integration_no_llm/test_migrations.py)用 Alembic 的自动比对核对表、列、类型、非空约束与索引。
 

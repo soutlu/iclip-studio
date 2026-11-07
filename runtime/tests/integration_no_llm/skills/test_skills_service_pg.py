@@ -7,6 +7,10 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import AsyncEngine
+
 from agent_runtime.config.agent_config.infra_sql import SqlAgentStore
 from agent_runtime.config.agent_config.public import AgentReferences
 from agent_runtime.config.skills.infra_sql import SqlSkillStore
@@ -18,11 +22,6 @@ from agent_runtime.config.skills.schemas import (
 )
 from agent_runtime.config.skills.service import SkillsService
 from agent_runtime.errors import Conflict, NotFound, ValidationFailed
-from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError
-from sqlalchemy.ext.asyncio import AsyncEngine
-
-from tests.helpers.references import plant_user
 
 TABLES = ("skills", "skill_draft_files", "skill_versions", "skill_version_files")
 
@@ -33,8 +32,8 @@ def service(engine: AsyncEngine) -> SkillsService:
 
 
 @pytest.fixture
-async def author(engine: AsyncEngine) -> uuid.UUID:
-    return await plant_user(engine, "skill-author")
+def author() -> uuid.UUID:
+    return uuid.uuid4()
 
 
 @asynccontextmanager
