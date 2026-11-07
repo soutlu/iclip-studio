@@ -92,7 +92,7 @@ async def relay_named(
     answer = await _send(runtime, method, path, actor=actor, body=body)
     if not 200 <= answer.status_code < 300:
         return _raw(answer)
-    parsed = out.model_validate_json(answer.content)
+    parsed = out.model_validate_json(answer.content, extra="ignore")
     ids = set(_actor_ids(parsed))
     names = await user_names(ids) if ids else {}
     return Response(

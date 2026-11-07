@@ -96,7 +96,7 @@ class InternalApi:
         if not response.is_success:
             raise self.unexpected(response)
         try:
-            return adapter.validate_json(response.content)
+            return adapter.validate_json(response.content, extra="ignore")
         except ValidationError as exc:
             raise self.unexpected(response, why="答复的形状不对") from exc
 
@@ -114,7 +114,7 @@ class InternalApi:
         if not isinstance(payload, dict) or "code" not in payload:
             raise self.unexpected(response, why="答复里没有 code")
         try:
-            return model.model_validate(payload)
+            return model.model_validate(payload, extra="ignore")
         except ValidationError as exc:
             raise self.unexpected(response, why="答复的形状不对") from exc
 

@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from agent_runtime.app_wire import (
+    ActivitiesIn,
     FileWriteIn,
     ModelCallIn,
 )
@@ -21,6 +22,7 @@ from agent_runtime.errors import (
     NotFound,
     ValidationFailed,
 )
+from agent_runtime.file_store.store import StoredFile
 
 BASE = "http://runtime.test"
 KEY = "app-key-0123456789-0123456789-abcdef"
@@ -191,6 +193,34 @@ async def test_anything_but_a_domain_error_is_runtime_unavailable(
     assert not isinstance(raised.value, DomainError)
     assert raised.value.status == status
     assert KEY not in str(raised.value)
+
+
+async def test_unknown_fields_in_a_model_answer_are_ignored_at_every_level(
+    client: RuntimeClient, recorder: Recorder
+) -> None:
+    recorder.reply = lambda _r: httpx.Response(
+        200,
+        json={
+            "items": {S: {"busy": True, "pending_interaction": "none", "added_later": 1}},
+            "added_later": 1,
+        },
+    )
+
+    answer = await client.activities(ActivitiesIn(ids=(SESSION,)))
+
+    assert answer.items[SESSION].busy is True
+
+
+async def test_unknown_fields_in_a_stored_file_answer_are_ignored(
+    client: RuntimeClient, recorder: Recorder
+) -> None:
+    recorder.reply = lambda _r: httpx.Response(
+        200, json={"path": "notes.md", "content": "x", "version": 3, "added_later": 1}
+    )
+
+    stored = await client.read_file(SESSION, "notes.md", owner=OWNER)
+
+    assert stored == StoredFile(path="notes.md", content="x", version=3)
 
 
 async def test_nothing_is_retried(client: RuntimeClient, recorder: Recorder) -> None:

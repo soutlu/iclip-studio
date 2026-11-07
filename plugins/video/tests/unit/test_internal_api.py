@@ -247,6 +247,38 @@ async def test_a_reference_breakdown_comes_back_as_the_document_or_the_failure()
     assert failure == FailedBreakdown(reason="video_unreadable")
 
 
+async def test_unknown_fields_in_a_success_answer_are_ignored_at_every_level() -> None:
+    ledger = LEDGER.model_dump(mode="json", by_alias=True)
+    backend = Backend(
+        body={"ledger": {**ledger, "addedLater": 1}, "reused": True, "added_later": 1}
+    )
+
+    result = await HttpFrameBoards(backend.api()).boards(
+        video_url="https://cdn.test/ref.mp4", rows=ROWS, previous=None
+    )
+
+    assert result == BoardsResult(ledger=LEDGER, reused=True)
+
+
+async def test_unknown_fields_at_the_top_of_a_model_answer_are_ignored() -> None:
+    backend = Backend(body={"urls": ["https://cdn.test/1.jpg"], "added_later": 1})
+
+    got = await HttpGridCuts(backend.api()).cut(
+        USER, JOB, grid_url=GRID_URL, cells=ShotCells(cell_ids=("S1-1",)), aspect=None
+    )
+
+    assert got == ("https://cdn.test/1.jpg",)
+
+
+async def test_unknown_fields_in_a_failure_answer_are_ignored() -> None:
+    backend = Backend(
+        status=422, body={"detail": "切不开", "code": "grid_cut_failed", "added_later": 1}
+    )
+
+    with pytest.raises(GridCutFailed, match="切不开"):
+        await call_cut(backend.api())
+
+
 async def test_plugin_services_are_read_back() -> None:
     backend = Backend(
         body={"shot_video": {"image_models": ["gpt-image-2.5"]}, "video_breakdown": False}
