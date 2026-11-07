@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Literal
 
-from agent_runtime.errors import PermissionDenied
+from cue.errors import PermissionDenied
 
 from iclip.domains.collections.models import Collection
 from iclip.domains.collections.repository import CollectionRepository

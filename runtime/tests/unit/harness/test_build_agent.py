@@ -15,7 +15,7 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 from pydantic_ai.models.test import TestModel
 from pydantic_ai_harness.step_persistence import InMemoryStepStore
 
-from agent_runtime.harness.agents import (
+from cue.harness.agents import (
     DELEGATE_TOOL,
     SubAgentSlot,
     build_agent,
@@ -23,8 +23,8 @@ from agent_runtime.harness.agents import (
     profile_metadata,
     subagent_profile,
 )
-from agent_runtime.harness.transcript.store import TranscriptStore
-from agent_runtime.harness.transcript.subagents import SubAgentMirror
+from cue.harness.transcript.store import TranscriptStore
+from cue.harness.transcript.subagents import SubAgentMirror
 from tests.helpers.runtime import discarding_usage_ledger
 
 WRITER = "shot-writer"

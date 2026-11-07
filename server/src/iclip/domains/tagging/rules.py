@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from agent_runtime.errors import NotFound, ValidationFailed
+from cue.errors import NotFound, ValidationFailed
 
 from iclip.domains.tagging.models import (
     AI_VALUE_LIMIT,

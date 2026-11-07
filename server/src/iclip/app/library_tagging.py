@@ -6,8 +6,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
-from agent_runtime.client import RuntimeClient
-from agent_runtime.file_store.namespace import namespace_for
+from cue.client import RuntimeClient
+from cue.file_store.namespace import namespace_for
 
 from iclip.app.conversation_same_style import TREATMENT_PATH
 from iclip.app.runtime_workspace import WorkspaceFiles

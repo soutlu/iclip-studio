@@ -9,8 +9,8 @@ from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.usage import RequestUsage
 
-from agent_runtime.harness.usage_ledger import UsageLedger
-from agent_runtime.transcript.ops import StepUsage
+from cue.harness.usage_ledger import UsageLedger
+from cue.transcript.ops import StepUsage
 
 pytestmark = pytest.mark.unit
 

@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from agent_runtime.errors import Conflict, NotFound, ValidationFailed
+from cue.errors import Conflict, NotFound, ValidationFailed
 from iclip_video.shot_prompt import format_seconds
 
 from iclip.domains.generation.clip_models import UpstreamMode, clip_model

@@ -9,18 +9,18 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.assembly.config_services import ConfigServices
-from agent_runtime.config.agent_config.schemas import AgentCreateIn, AgentDraftIn, AgentUpdateIn
-from agent_runtime.config.model_providers.schemas import (
+from cue.assembly.config_services import ConfigServices
+from cue.config.agent_config.schemas import AgentCreateIn, AgentDraftIn, AgentUpdateIn
+from cue.config.model_providers.schemas import (
     CredentialUpdateIn,
     CustomModelCreateIn,
     DefaultModelIn,
     ModelUpdateIn,
 )
-from agent_runtime.config.skills.schemas import DraftFileWriteIn, SkillPublishIn, SkillUpdateIn
-from agent_runtime.errors import AgentUnavailable
-from agent_runtime.harness.step_store_pg import PgStepStore
-from agent_runtime.harness.transcript.store import TranscriptStore
+from cue.config.skills.schemas import DraftFileWriteIn, SkillPublishIn, SkillUpdateIn
+from cue.errors import AgentUnavailable
+from cue.harness.step_store_pg import PgStepStore
+from cue.harness.transcript.store import TranscriptStore
 from fastapi import FastAPI
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
@@ -52,7 +52,7 @@ from tests.helpers.runtime import (
     new_conversation_id,
     submit_text,
 )
-from tests.helpers.runtime_backed import agent_runtime_of, build_backed_app, config_services_of
+from tests.helpers.runtime_backed import build_backed_app, config_services_of, runtime_of
 
 OTHER_MODEL = "other-model"
 TITLE_MODEL = "title-model"
@@ -375,7 +375,7 @@ async def test_assemblies_are_reused_until_something_they_use_changes(
         ),
     )
     services = services_of(app)
-    runtime = agent_runtime_of(app)
+    runtime = runtime_of(app)
     async with make_client(app) as client:
         await login_as_editor(client, pg_url)
         conversation_id = await open_conversation(client)
@@ -514,7 +514,7 @@ async def test_the_draft_entry_assembles_the_unpublished_draft(
     )
 
     store = PgStepStore(engine)
-    resolved = await agent_runtime_of(app).for_draft(AGENT_ID)
+    resolved = await runtime_of(app).for_draft(AGENT_ID)
     async with resolved.agent.run_stream_events(
         "试试", conversation_id="draft-1", run_id="draft-run-1"
     ) as events:
@@ -528,7 +528,7 @@ async def test_the_draft_entry_assembles_the_unpublished_draft(
     assert "agent_version_id" not in run.metadata
     assert (await services.agent_config.detail(AGENT_ID)).active_version is not None
     with pytest.raises(AgentUnavailable):
-        await agent_runtime_of(app).for_draft("nobody")
+        await runtime_of(app).for_draft("nobody")
 
 
 @pytest.mark.parametrize("with_default", [True, False], ids=["设了默认模型", "没设"])

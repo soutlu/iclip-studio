@@ -8,9 +8,9 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from agent_runtime.http.app import create_app
-from agent_runtime.run_deps import AgentRunDeps, conversation_of
-from agent_runtime.settings import AgentRunsSection, CompactionSection, ResolvedApp, RuntimeSettings
+from cue.http.app import create_app
+from cue.run_deps import AgentRunDeps, conversation_of
+from cue.settings import AgentRunsSection, CompactionSection, ResolvedApp, RuntimeSettings
 
 APP_KEY = "bff-app-key-0123456789-0123456789-ab"
 SESSION = "0b8e9f4c-6a1d-4f2e-9c3b-5d7a1e2f3c4d"

@@ -4,9 +4,9 @@ import uuid
 
 import pytest
 
-from agent_runtime.file_store.announcing import AnnouncingFileStore, FileChange
-from agent_runtime.file_store.namespace import namespace_for
-from agent_runtime.file_store.store import VersionConflict
+from cue.file_store.announcing import AnnouncingFileStore, FileChange
+from cue.file_store.namespace import namespace_for
+from cue.file_store.store import VersionConflict
 from tests.helpers.file_store import FakeFileStore
 
 OWNER = uuid.UUID("6f1d8a4e-2b7c-4e0a-9d51-3c2f7e8b9a10")

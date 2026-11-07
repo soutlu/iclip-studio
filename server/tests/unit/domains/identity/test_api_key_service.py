@@ -5,7 +5,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from agent_runtime.errors import (
+from cue.errors import (
     AuthenticationFailed,
     NotFound,
     PermissionDenied,

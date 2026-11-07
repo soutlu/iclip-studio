@@ -1,194 +1,194 @@
 source_roots = ["src"]
 
 [[modules]]
-path = "agent_runtime.errors"
+path = "cue.errors"
 depends_on = []
 utility = true
 
 [[modules]]
-path = "agent_runtime.urls"
+path = "cue.urls"
 depends_on = []
 utility = true
 
 [[modules]]
-path = "agent_runtime.model_vocab"
+path = "cue.model_vocab"
 depends_on = []
 utility = true
 
 [[modules]]
-path = "agent_runtime.agent_usage"
+path = "cue.agent_usage"
 depends_on = []
 utility = true
 
 [[modules]]
-path = "agent_runtime.tool_args"
+path = "cue.tool_args"
 depends_on = []
 utility = true
 
 # 按代码里写定的模型找连接：模型供应商实现查找，插件与给应用的模型调用接口用它。
 [[modules]]
-path = "agent_runtime.model_connections"
+path = "cue.model_connections"
 depends_on = []
 utility = true
 
 # 机密值的加密与打码：模型供应商的密钥与 MCP 服务的请求头共用。
 [[modules]]
-path = "agent_runtime.secrets"
+path = "cue.secrets"
 depends_on = []
 utility = true
 
 # 只连公网的出网客户端与探地址（建在 httpx-secure 上）：harness 的提交点地址检查经它。
 [[modules]]
-path = "agent_runtime.outbound"
+path = "cue.outbound"
 depends_on = []
 
 [[modules]]
-path = "agent_runtime.file_store"
+path = "cue.file_store"
 depends_on = []
 
 [[modules]]
-path = "agent_runtime.run_deps"
+path = "cue.run_deps"
 depends_on = []
 
 [[modules]]
-path = "agent_runtime.transcript"
+path = "cue.transcript"
 depends_on = []
 
 [[modules]]
-path = "agent_runtime.harness"
+path = "cue.harness"
 depends_on = [
-    "agent_runtime.file_store",
-    "agent_runtime.outbound",
-    "agent_runtime.transcript",
+    "cue.file_store",
+    "cue.outbound",
+    "cue.transcript",
 ]
 
 [[modules]]
-path = "agent_runtime.plugins"
+path = "cue.plugins"
 depends_on = [
-    "agent_runtime.file_store",
-    "agent_runtime.run_deps",
-    "agent_runtime.transcript",
-    "agent_runtime.harness",
+    "cue.file_store",
+    "cue.run_deps",
+    "cue.transcript",
+    "cue.harness",
 ]
 
 [[modules]]
-path = "agent_runtime.config.skills"
+path = "cue.config.skills"
 depends_on = []
 
 # 试连是端口，由装配接到 Agent 引擎上。
 [[modules]]
-path = "agent_runtime.config.model_providers"
+path = "cue.config.model_providers"
 depends_on = []
 
 # 试连是端口，由装配接到引擎的 MCP 客户端上。
 [[modules]]
-path = "agent_runtime.config.mcp_servers"
+path = "cue.config.mcp_servers"
 depends_on = []
 
 # 模型供应商、插件登记表、MCP 服务与技能库都经端口查，由装配接上；那几边问「谁在用」也经它们自己的端口。
 [[modules]]
-path = "agent_runtime.config.agent_config"
+path = "cue.config.agent_config"
 depends_on = []
 
 # 给应用的应用服务：经引擎的队列、历史与会话表，以及文件存储操作会话；版本查询由组合根注入。
 [[modules]]
-path = "agent_runtime.service"
+path = "cue.service"
 depends_on = [
-    "agent_runtime.file_store",
-    "agent_runtime.harness",
-    "agent_runtime.plugins",
+    "cue.file_store",
+    "cue.harness",
+    "cue.plugins",
 ]
 
 # 运行时服务的配置：YAML 与环境变量。
 [[modules]]
-path = "agent_runtime.settings"
+path = "cue.settings"
 depends_on = []
 
 # 给应用的实时通道：帧的形状与按应用分发事件的集线器，应用那一侧也引用这里的帧。
 [[modules]]
-path = "agent_runtime.live"
-depends_on = ["agent_runtime.transcript"]
+path = "cue.live"
+depends_on = ["cue.transcript"]
 
 # 给应用的 /v1 接口的请求体与答复体：路由与客户端库共用，不碰 Web 框架。
 [[modules]]
-path = "agent_runtime.app_wire"
+path = "cue.app_wire"
 depends_on = [
-    "agent_runtime.transcript",
-    "agent_runtime.file_store",
+    "cue.transcript",
+    "cue.file_store",
 ]
 
 # 应用用的客户端库：经 HTTP 与 WebSocket 调运行时服务，只认接口与帧的形状，不碰服务端的实现。
 [[modules]]
-path = "agent_runtime.client"
+path = "cue.client"
 depends_on = [
-    "agent_runtime.app_wire",
-    "agent_runtime.transcript",
-    "agent_runtime.live",
-    "agent_runtime.file_store",
+    "cue.app_wire",
+    "cue.transcript",
+    "cue.live",
+    "cue.file_store",
 ]
 
 # 回调应用：请求体的形状与按会话归属找地址发请求，应用那一侧也引用这里的请求体。
 [[modules]]
-path = "agent_runtime.hooks"
-depends_on = ["agent_runtime.settings", "agent_runtime.transcript"]
+path = "cue.hooks"
+depends_on = ["cue.settings", "cue.transcript"]
 
 # 运行时服务的 HTTP 入口：组合根建出四块配置的服务与运行驱动这一整套，挂上管理接口、给应用的会话接口与
 # 两条 WebSocket，接上回调；插件登记表由调用方交进来。
 [[modules]]
-path = "agent_runtime.http"
+path = "cue.http"
 depends_on = [
-    "agent_runtime.app_wire",
-    "agent_runtime.settings",
-    "agent_runtime.live",
-    "agent_runtime.hooks",
-    "agent_runtime.config.skills",
-    "agent_runtime.config.model_providers",
-    "agent_runtime.config.mcp_servers",
-    "agent_runtime.config.agent_config",
-    "agent_runtime.assembly",
-    "agent_runtime.plugins",
-    "agent_runtime.harness",
-    "agent_runtime.service",
-    "agent_runtime.transcript",
-    "agent_runtime.file_store",
-    "agent_runtime.run_deps",
+    "cue.app_wire",
+    "cue.settings",
+    "cue.live",
+    "cue.hooks",
+    "cue.config.skills",
+    "cue.config.model_providers",
+    "cue.config.mcp_servers",
+    "cue.config.agent_config",
+    "cue.assembly",
+    "cue.plugins",
+    "cue.harness",
+    "cue.service",
+    "cue.transcript",
+    "cue.file_store",
+    "cue.run_deps",
 ]
 
 [[modules]]
-path = "agent_runtime.main"
-depends_on = ["agent_runtime.http"]
+path = "cue.main"
+depends_on = ["cue.http"]
 
 # agent_runtime schema 的迁移：自动生成要看全部模块的表。
 [[modules]]
-path = "agent_runtime.migrations"
+path = "cue.migrations"
 depends_on = [
-    "agent_runtime.config.skills",
-    "agent_runtime.config.model_providers",
-    "agent_runtime.config.mcp_servers",
-    "agent_runtime.config.agent_config",
-    "agent_runtime.file_store",
-    "agent_runtime.harness",
+    "cue.config.skills",
+    "cue.config.model_providers",
+    "cue.config.mcp_servers",
+    "cue.config.agent_config",
+    "cue.file_store",
+    "cue.harness",
 ]
 
 # 直连数据库的管理命令：迁移与换钥（模型供应商的密钥与 MCP 服务的请求头）。
 [[modules]]
-path = "agent_runtime.admin"
+path = "cue.admin"
 depends_on = [
-    "agent_runtime.settings",
-    "agent_runtime.config.model_providers",
-    "agent_runtime.config.mcp_servers",
-    "agent_runtime.migrations",
+    "cue.settings",
+    "cue.config.model_providers",
+    "cue.config.mcp_servers",
+    "cue.migrations",
 ]
 
 # 装配把四块配置接到引擎：按对话固定的版本装出 Agent、建供应商模型、连 MCP 服务、实现 agent 配置的查询端口。
 [[modules]]
-path = "agent_runtime.assembly"
+path = "cue.assembly"
 depends_on = [
-    "agent_runtime.config.skills",
-    "agent_runtime.config.model_providers",
-    "agent_runtime.config.mcp_servers",
-    "agent_runtime.config.agent_config",
-    "agent_runtime.harness",
-    "agent_runtime.plugins",
-    "agent_runtime.transcript",
+    "cue.config.skills",
+    "cue.config.model_providers",
+    "cue.config.mcp_servers",
+    "cue.config.agent_config",
+    "cue.harness",
+    "cue.plugins",
+    "cue.transcript",
 ]

@@ -8,11 +8,11 @@
 
 ## 1. 两个服务
 
-系统由四个运行时组件构成，核心是**视频后端**与**Agent 运行时服务**的分离：
+系统由四个运行时组件构成，核心是**视频后端**与**Agent 运行时服务（Cue）**的分离：
 
 | 组件 | 所在目录与包名 | 核心职责与数据归属 |
 |---|---|---|
-| **运行时服务**（端口 `7790`） | [runtime/](../runtime/pyproject.toml)（`agent_runtime`） | 负责所有跟 Agent 相关的事：管理配置（技能库、模型供应商、MCP 服务、Agent 版本）、维护会话与消息队列、驱动大模型运行、推送聊天流（Transcript）、读写工作区文件、统计 Token 用量。数据存于 `agent_runtime` schema |
+| **运行时服务**（端口 `7790`） | [runtime/](../runtime/pyproject.toml)（`cue`） | 负责所有跟 Agent 相关的事：管理配置（技能库、模型供应商、MCP 服务、Agent 版本）、维护会话与消息队列、驱动大模型运行、推送聊天流（Transcript）、读写工作区文件、统计 Token 用量。数据存于 `agent_runtime` schema |
 | **视频插件包**（装入运行时镜像） | [plugins/video/](../plugins/video/pyproject.toml)（`iclip_video`） | 为 Agent 提供视频领域的专属工具集（如视频理解、视频拆解、生成分镜图、校验工程文件）。需要调用视频后端能力时，通过 HTTP 调用后端的内部接口 |
 | **视频后端**（端口 `7788`） | [server/](../server/pyproject.toml)（`iclip`） | 浏览器唯一访问的入口（BFF）：负责用户登录与权限校验、管理业务侧的对话列表、处理视频生成/参考视频拆解/资料库/成片草稿等业务逻辑。数据存于 `iclip` schema |
 | **成片渲染服务**（内网 `8080`） | [render/](../render/package.json)（Node.js） | 接收成片草稿，在无头浏览器中通过 HyperFrames 合成视频、特效、音乐与字幕，渲染成 MP4 并上传到对象存储 |
@@ -34,7 +34,7 @@
 
 ### 运行时的模块
 
-Agent 引擎基于 PydanticAI 与 Pydantic AI Harness 构建。以下目录均位于 `runtime/src/agent_runtime/` 下（模块间的导入边界由 [runtime/tach.toml](../runtime/tach.toml) 和[架构测试](../runtime/tests/unit/architecture/test_architecture.py)检查）：
+Agent 引擎基于 PydanticAI 与 Pydantic AI Harness 构建。以下目录均位于 `runtime/src/cue/` 下（模块间的导入边界由 [runtime/tach.toml](../runtime/tach.toml) 和[架构测试](../runtime/tests/unit/architecture/test_architecture.py)检查）：
 
 | 目录 / 文件 | 职责说明 |
 |---|---|
@@ -48,37 +48,37 @@ Agent 引擎基于 PydanticAI 与 Pydantic AI Harness 构建。以下目录均�
 | `live/` 与 `hooks.py` | 定义实时推送帧、按应用分发事件的集线器（`AppEventHub`），以及回调业务后端的 HTTP 客户端 |
 | `client/` | 提供给业务后端直接调用的 Python 客户端库（见[客户端库](#客户端库)） |
 | `file_store/` | 工作区文件的数据库存储实现 |
-| `outbound/` | 运行时自己的出网层（[outbound/](../runtime/src/agent_runtime/outbound/__init__.py)），基于 `httpx-secure` 提供只连公网的 HTTP 客户端与地址探测：只连公网地址的 80 / 443 端口，跳转后的新连接同样检查，不带用户名密码、不走代理；地址里带用户名密码、或端口不是 80 / 443 时在发请求前就拒绝，不去连接。插件在提交点做的地址检查（[harness/media_check.py](../runtime/src/agent_runtime/harness/media_check.py)）通过它发起 |
+| `outbound/` | 运行时自己的出网层（[outbound/](../runtime/src/cue/outbound/__init__.py)），基于 `httpx-secure` 提供只连公网的 HTTP 客户端与地址探测：只连公网地址的 80 / 443 端口，跳转后的新连接同样检查，不带用户名密码、不走代理；地址里带用户名密码、或端口不是 80 / 443 时在发请求前就拒绝，不去连接。插件在提交点做的地址检查（[harness/media_check.py](../runtime/src/cue/harness/media_check.py)）通过它发起 |
 | `secrets.py` 与 `run_deps.py` | 敏感字段（API Key、MCP 请求头等）的 MultiFernet 加密与打码工具、运行上下文 `AgentRunDeps` |
 
 **启动与插件加载流程：**
-- 启动命令为 `python -m agent_runtime.main --config <yaml>`。生产环境的 Docker 镜像（[runtime/Dockerfile](../runtime/Dockerfile)）安装的是组合包 [deploy/runtime-video](../deploy/runtime-video/pyproject.toml)，它把 `runtime` 和 `plugins/video` 打包在了一起。
-- 启动配置文件（[settings.py](../runtime/src/agent_runtime/settings.py)）声明了允许接入的应用列表（`apps`）以及要加载的插件包入口（`plugins.factory`）。
-- 服务启动（[http/asgi.py](../runtime/src/agent_runtime/http/asgi.py)）时，会先初始化插件包（建立与后端的客户端连接并做启动前自检），然后再用插件包返回的注册表构建完整的运行时应用（[http/app.py](../runtime/src/agent_runtime/http/app.py)）。仅 `import` 模块时不会连接数据库，方便直接导出 OpenAPI 合同。
+- 启动命令为 `python -m cue.main --config <yaml>`。生产环境的 Docker 镜像（[runtime/Dockerfile](../runtime/Dockerfile)）安装的是组合包 [deploy/runtime-video](../deploy/runtime-video/pyproject.toml)，它把 `runtime` 和 `plugins/video` 打包在了一起。
+- 启动配置文件（[settings.py](../runtime/src/cue/settings.py)）声明了允许接入的应用列表（`apps`）以及要加载的插件包入口（`plugins.factory`）。
+- 服务启动（[http/asgi.py](../runtime/src/cue/http/asgi.py)）时，会先初始化插件包（建立与后端的客户端连接并做启动前自检），然后再用插件包返回的注册表构建完整的运行时应用（[http/app.py](../runtime/src/cue/http/app.py)）。仅 `import` 模块时不会连接数据库，方便直接导出 OpenAPI 合同。
 
 ### 运行时的接口
 
-运行时所有 HTTP 接口都在 `/v1` 路径下，完整定义见 [contract/runtime-openapi.json](../contract/runtime-openapi.json)，跨服务调用协议见 [conventions §20](../contract/conventions.md#20-运行时服务-agent-runtime)：
+运行时所有 HTTP 接口都在 `/v1` 路径下，完整定义见 [contract/runtime-openapi.json](../contract/runtime-openapi.json)，跨服务调用协议见 [conventions §20](../contract/conventions.md#20-运行时服务-cue)：
 
 - **会话与聊天接口**（`/v1/sessions…`、`/v1/agents`、`/v1/titles`）：供业务后端创建或分叉会话、发送消息、中止运行、插队、重新生成、提交审批、拉取聊天记录（Transcript）、读写工作区文件、获取首页 Agent 列表以及生成对话标题。
 - **后台管理接口**（`/v1/admin`）：供业务后端转发技能库、模型供应商、MCP 服务与 Agent 配置的增删改查请求。
 - **统计数据接口**（`/v1/stats`）：只读接口，按调用方应用过滤并返回会话、运行和 Token 消耗的原始记录行，由业务后端自行做报表聚合。
-- **固定模型代理接口**（`/v1/model-calls/responses`，[http/model_calls.py](../runtime/src/agent_runtime/http/model_calls.py)）：供业务后端调用代码中固定指定的模型（如火山方舟拆解与打标模型）。运行时根据传入的供应商声明名和模型名，在数据库里找出已启用且配好默认密钥的供应商，自动带上 API Key 转发给上游的 `/responses` 接口并原样返回结果（超时上限 900 秒，密钥始终保留在运行时内部，且日志自动脱敏）。
+- **固定模型代理接口**（`/v1/model-calls/responses`，[http/model_calls.py](../runtime/src/cue/http/model_calls.py)）：供业务后端调用代码中固定指定的模型（如火山方舟拆解与打标模型）。运行时根据传入的供应商声明名和模型名，在数据库里找出已启用且配好默认密钥的供应商，自动带上 API Key 转发给上游的 `/responses` 接口并原样返回结果（超时上限 900 秒，密钥始终保留在运行时内部，且日志自动脱敏）。
 
 ### 实时通道与回调
 
-运行时通过两条 WebSocket 流和三个 HTTP 回调与业务后端保持实时同步（协议见 [conventions §20](../contract/conventions.md#20-运行时服务-agent-runtime)）：
+运行时通过两条 WebSocket 流和三个 HTTP 回调与业务后端保持实时同步（协议见 [conventions §20](../contract/conventions.md#20-运行时服务-cue)）：
 
-- **应用事件流 `/v1/events`**：当任何会话的运行状态发生变化（如开始运行、进入等待审批、运行结束）时，任务队列会在数据库事务提交后通知 `AppEventHub`（[live/hub.py](../runtime/src/agent_runtime/live/hub.py)）。集线器查出该会话归属哪个业务应用，按顺序推送给该应用的事件流连接。
-- **对话内容流 `/v1/ws`**：业务后端按会话订阅后，实时推送大模型的流式输出（Transcript 操作帧）以及工作区文件变更通知（由 [file_store/announcing.py](../runtime/src/agent_runtime/file_store/announcing.py) 在文件写入成功后触发推送）。
-- **三个生命周期回调**（[hooks.py](../runtime/src/agent_runtime/hooks.py)）：
+- **应用事件流 `/v1/events`**：当任何会话的运行状态发生变化（如开始运行、进入等待审批、运行结束）时，任务队列会在数据库事务提交后通知 `AppEventHub`（[live/hub.py](../runtime/src/cue/live/hub.py)）。集线器查出该会话归属哪个业务应用，按顺序推送给该应用的事件流连接。
+- **对话内容流 `/v1/ws`**：业务后端按会话订阅后，实时推送大模型的流式输出（Transcript 操作帧）以及工作区文件变更通知（由 [file_store/announcing.py](../runtime/src/cue/file_store/announcing.py) 在文件写入成功后触发推送）。
+- **三个生命周期回调**（[hooks.py](../runtime/src/cue/hooks.py)）：
   1. **开跑前检查（`gate`）**：在每次调用大模型前触发。如果业务后端一时连不上或返回 `502/503/504`，运行时会在约 30 秒窗口内自动退避重试（期间照常维持任务心跳锁）；如果后端明确返回非 2xx 拒绝（如用户已被停用），则直接将该轮消息标为失败。
   2. **运行开始（`run_started`）**：在拿到运行锁后、发出第一条消息事件前同步调用，用于通知业务后端更新对话状态。
   3. **轮次开始（`turn_started`）**：在新一轮用户消息首次开跑时在后台异步调用（不阻塞模型执行），业务后端收到后会为新对话触发自动生成标题。
 
 ### 客户端库
 
-Python 业务后端统一使用运行时提供的客户端库 [agent_runtime/client/](../runtime/src/agent_runtime/client/__init__.py)（`RuntimeClient`）与运行时通信：
+Python 业务后端统一使用运行时提供的客户端库 [cue/client/](../runtime/src/cue/client/__init__.py)（`RuntimeClient`）与运行时通信：
 - **自动还原业务异常**：针对 `/v1` 下的会话接口，客户端提供了带类型注解的方法，并会自动把运行时返回的 `404 / 409 / 422` 状态码还原成对应的领域异常（例如将 `409 agent_unavailable` 还原为 `AgentUnavailable` 异常）；如果遇到网络断开、超时或 5xx 错误，则统一抛出 `RuntimeUnavailable`，由业务后端向前端返回 `503` 服务不可用。
 - **管理接口透传（`admin_request`）**：将管理后台请求原样转发到 `/v1/admin/…` 并原样返回响应。
 - **WebSocket 自动心跳与前向兼容**：封装了 `connect_transcript` 和 `connect_events`，内部自动回复服务端心跳；对于未识别的新帧类型或新增字段直接原样透传，保证运行时先行升级时不会导致后端断连。
@@ -87,8 +87,8 @@ Python 业务后端统一使用运行时提供的客户端库 [agent_runtime/cli
 
 所有的模型、技能、MCP 和 Agent 配置都存储在数据库中，运行时不会在启动时预先加载，而是在每次对话运行时按需动态装配：
 
-1. **会话锁定 Agent 版本**：创建对话时，`SessionService`（[service/sessions.py](../runtime/src/agent_runtime/service/sessions.py)）检查所选 Agent 是否在首页公开、启用且已发布，并将该 Agent 当时的最新版本 ID 记录在 `agent_runtime.sessions` 表中。后续该会话的所有运行都固定使用这个版本。
-2. **运行前动态编译与 LRU 缓存（[assembly/agents.py](../runtime/src/agent_runtime/assembly/agents.py)）**：
+1. **会话锁定 Agent 版本**：创建对话时，`SessionService`（[service/sessions.py](../runtime/src/cue/service/sessions.py)）检查所选 Agent 是否在首页公开、启用且已发布，并将该 Agent 当时的最新版本 ID 记录在 `agent_runtime.sessions` 表中。后续该会话的所有运行都固定使用这个版本。
+2. **运行前动态编译与 LRU 缓存（[assembly/agents.py](../runtime/src/cue/assembly/agents.py)）**：
    - 用户发消息时以及后台准备开跑前，系统都会调用 `AgentRuntime` 读取会话锁定的版本并执行检查（`compile_agent`）。如果该版本依赖的模型已被停用、密钥已被删或插件已不存在，直接抛出 `AgentUnavailable`（发消息阶段直接返回 `409` 报错；若排队期间配置失效则在开跑时将消息标为失败）。
    - **进程内缓存**：为了避免每条消息都重复构建对象，装配好的 Agent 实例会缓存在进程的 LRU 缓存中（大小由 `agent_runs.assembly_cache_size` 控制）。缓存 Key 包含了「Agent 版本 ID + 供应商与密钥更新时间 + 模型参数 + 思考档位 + MCP 服务更新时间与工具列表 + 各绑定技能最新版的 `name:content_hash` + 各子 Agent 的版本与描述」。一旦管理员在后台更新了密钥、发布了新技能或修改了子 Agent 描述，缓存 Key 就会自然变化，下一次运行立即用上最新配置，无需手动清理缓存或重启服务。
 3. **测试预览的装配**：测试预览会话在创建时不限制 Agent 是否已上架或已发布。如果预览的是草稿（未传 `version_id`），每次发消息都会按草稿当前的 `lock_version` 实时装配，改完草稿保存后下一条消息立刻生效。
@@ -98,26 +98,26 @@ Python 业务后端统一使用运行时提供的客户端库 [agent_runtime/cli
 
 Agent 可用的工具来自两部分：**代码内置插件**和**管理员登记的远程 MCP 服务**。所有插件、MCP 工具和技能都必须按 Agent 显式挂载，子 Agent 不会自动继承主 Agent 的挂载（工具编写规范见 [tool-design.md](tool-design.md)）。
 
-- **代码插件机制（[plugins/base.py](../runtime/src/agent_runtime/plugins/base.py)）**：每个插件都是一个继承自 PydanticAI `Capability` 的类。服务启动时，组合根通过 `PluginCls.bind(...)` 将插件需要用到的外部客户端绑定到动态生成的子类属性上（这样既不用放进序列化配置，也不用塞进运行上下文 `deps`）。需要把多个能力打包成一个插件（例如 `video_breakdown` 同时包含拆解工具和后台异步执行能力 `BackgroundTools`）时，使用 `CombinedCapability`。
-- **MCP 服务接入（`config/mcp_servers/`，[conventions §22](../contract/conventions.md#22-mcp-服务-mcp-servers)）**：由 [assembly/mcp.py](../runtime/src/agent_runtime/assembly/mcp.py) 调用底层 [harness/mcp.py](../runtime/src/agent_runtime/harness/mcp.py) 的 `MCPToolset`，支持通过 Streamable HTTP 或 SSE 直连远程 MCP 服务，并为暴露给模型的工具自动加上 `mcp_<服务标识>_` 前缀。同时进程内维护了一份内存名册（`McpServerIndex`），供前端工具卡片展示对应的服务名称与工具中文名。
-- **通用校验下沉**：凡是与具体 Agent 无关的安全校验（如媒体地址的形状检查与提交点的「链接能打开、类型对」检查 [harness/materials.py](../runtime/src/agent_runtime/harness/materials.py) 与 [harness/media_check.py](../runtime/src/agent_runtime/harness/media_check.py)，后者每次检查自己建一个只连公网的客户端、用完即关；工作区文件大小与配额限制 [harness/files.py](../runtime/src/agent_runtime/harness/files.py)），统一写在底层 `harness/` 中，避免在各个插件里重复编写。地址来自参数的工具（如 `write_video_shots`、`generate_shot_frames`、`breakdown_video`）在 `args_validator` 里检查；地址来自工程文件的 `check_film`、`generate_images` 在工具主体里检查，`check_film` 把不能用的地址列进问题清单。
+- **代码插件机制（[plugins/base.py](../runtime/src/cue/plugins/base.py)）**：每个插件都是一个继承自 PydanticAI `Capability` 的类。服务启动时，组合根通过 `PluginCls.bind(...)` 将插件需要用到的外部客户端绑定到动态生成的子类属性上（这样既不用放进序列化配置，也不用塞进运行上下文 `deps`）。需要把多个能力打包成一个插件（例如 `video_breakdown` 同时包含拆解工具和后台异步执行能力 `BackgroundTools`）时，使用 `CombinedCapability`。
+- **MCP 服务接入（`config/mcp_servers/`，[conventions §22](../contract/conventions.md#22-mcp-服务-mcp-servers)）**：由 [assembly/mcp.py](../runtime/src/cue/assembly/mcp.py) 调用底层 [harness/mcp.py](../runtime/src/cue/harness/mcp.py) 的 `MCPToolset`，支持通过 Streamable HTTP 或 SSE 直连远程 MCP 服务，并为暴露给模型的工具自动加上 `mcp_<服务标识>_` 前缀。同时进程内维护了一份内存名册（`McpServerIndex`），供前端工具卡片展示对应的服务名称与工具中文名。
+- **通用校验下沉**：凡是与具体 Agent 无关的安全校验（如媒体地址的形状检查与提交点的「链接能打开、类型对」检查 [harness/materials.py](../runtime/src/cue/harness/materials.py) 与 [harness/media_check.py](../runtime/src/cue/harness/media_check.py)，后者每次检查自己建一个只连公网的客户端、用完即关；工作区文件大小与配额限制 [harness/files.py](../runtime/src/cue/harness/files.py)），统一写在底层 `harness/` 中，避免在各个插件里重复编写。地址来自参数的工具（如 `write_video_shots`、`generate_shot_frames`、`breakdown_video`）在 `args_validator` 里检查；地址来自工程文件的 `check_film`、`generate_images` 在工具主体里检查，`check_film` 把不能用的地址列进问题清单。
 
 ### 模型供应商与 agent 配置
 
 - **模型供应商与并发锁（`config/model_providers/`）**：
   - 服务启动时加载并校验 `declarations/*.yaml` 中的供应商声明。
   - 在修改某个供应商的密钥、切换默认密钥、启停模型、设置全局默认模型或删除供应商时，都会在同一个数据库事务里先对该供应商行加悲观锁（`SELECT ... FOR UPDATE`），确保并发操作下绝不会破坏「默认密钥不能删」「默认模型必须处于启用状态」等约束。
-  - **连通性测试（[harness/probe.py](../runtime/src/agent_runtime/harness/probe.py)）**：向目标模型发送一条最多生成 16 个 Token、15 秒超时且不重试的极简请求；如果报错，会自动把错误信息中可能包含的 API Key 明文抹除后再返回给前端。
-  - **密钥加密（[secrets.py](../runtime/src/agent_runtime/secrets.py)）**：采用 `CREDENTIAL_ENCRYPTION_KEYS`（MultiFernet，支持配置多把密钥实现不停机轮换，见 [deploy.md#换密钥加密钥匙](deploy.md#换密钥加密钥匙)）统一加密模型密钥和 MCP 服务的地址与请求头。
+  - **连通性测试（[harness/probe.py](../runtime/src/cue/harness/probe.py)）**：向目标模型发送一条最多生成 16 个 Token、15 秒超时且不重试的极简请求；如果报错，会自动把错误信息中可能包含的 API Key 明文抹除后再返回给前端。
+  - **密钥加密（[secrets.py](../runtime/src/cue/secrets.py)）**：采用 `CREDENTIAL_ENCRYPTION_KEYS`（MultiFernet，支持配置多把密钥实现不停机轮换，见 [deploy.md#换密钥加密钥匙](deploy.md#换密钥加密钥匙)）统一加密模型密钥和 MCP 服务的地址与请求头。
 - **Agent 配置与反向引用检查（`config/agent_config/`）**：
   - 发布检查函数 `compile_agent` 通过四个领域端口（`ModelDirectory`、`PluginDirectory`、`McpDirectory`、`SkillDirectory`）核对所有引用的资源是否有效。
   - 反过来，当管理员试图归档技能、停用/删除模型或密钥、停用/删除 MCP 服务或归档某个 Agent 时，各自模块会通过 `AgentReferences` 扫描所有 Agent 的草稿与当前发布版本；一旦发现正在被引用，立即拒绝操作并返回具体的引用方列表（`usedBy`）。
 
 ### 运行时的持久化
 
-运行时所有数据表均位于 `agent_runtime` schema 下，表结构演进通过运行时自己的 Alembic 迁移管理：脚本在 [migrations/versions/](../runtime/src/agent_runtime/migrations/versions/)，随包发布，不依赖 `alembic.ini`；版本表是 `agent_runtime.alembic_version`；执行入口是 `python -m agent_runtime.admin migrate`（部署步骤见[部署指南](deploy.md#升级)）。
+运行时所有数据表均位于 `agent_runtime` schema 下，表结构演进通过运行时自己的 Alembic 迁移管理：脚本在 [migrations/versions/](../runtime/src/cue/migrations/versions/)，随包发布，不依赖 `alembic.ini`；版本表是 `agent_runtime.alembic_version`；执行入口是 `python -m cue.admin migrate`（部署步骤见[部署指南](deploy.md#升级)）。
 
-各数据模块如下（代码路径相对 `runtime/src/agent_runtime/`）：
+各数据模块如下（代码路径相对 `runtime/src/cue/`）：
 
 | 数据模块 | 代码位置与核心存储机制 |
 |---|---|
@@ -132,7 +132,7 @@ Agent 可用的工具来自两部分：**代码内置插件**和**管理员登�
 
 ### 运行与订阅
 
-- **后台运行与前端连接解耦**：Agent 运行由后台 `ConversationRunner`（[harness/transcript/runner.py](../runtime/src/agent_runtime/harness/transcript/runner.py)）独立驱动，用户关掉网页或断开 WebSocket 只会取消实时订阅，不会打断后台运行。当工具触发人工审批时，当前运行（Run）正常结束落库；等用户提交审批结果后，系统会启动一个新的 Run 接着跑（在界面上仍然归属于同一个对话轮次 Turn）。
+- **后台运行与前端连接解耦**：Agent 运行由后台 `ConversationRunner`（[harness/transcript/runner.py](../runtime/src/cue/harness/transcript/runner.py)）独立驱动，用户关掉网页或断开 WebSocket 只会取消实时订阅，不会打断后台运行。当工具触发人工审批时，当前运行（Run）正常结束落库；等用户提交审批结果后，系统会启动一个新的 Run 接着跑（在界面上仍然归属于同一个对话轮次 Turn）。
 - **实时流与历史回放完全一致**：无论是刚打开页面从数据库历史消息还原（`from_messages`），还是在线接收实时流事件（`projector`），两边都共用同一套工具卡片注册表，保证生成的结构与编号分毫不差。每条实时流都带有一个唯一生命周期标识 `stream_epoch`，防止服务重启后旧连接把新序号误接在旧内容后面。
 - **上下文压缩保持技能可用**：当对话过长插入压缩摘要（`CompactionPart`）时，摘要器会自动把压缩边界之前加载过的技能重新补记在边界之后，确保压缩后模型依然记得已加载的技能。
 - **子 Agent 独立流**：主 Agent 每次通过 `delegate_task` 委派任务给子 Agent，都会产生一条独立的子运行（子 Agent 的 `agent_id` 即其 `run_id`）。前端只需在查询或订阅时传入该 `agent_id`，就能用完全相同的协议查看子 Agent 内部的执行过程。
@@ -238,7 +238,7 @@ Agent 可用的工具来自两部分：**代码内置插件**和**管理员登�
 
 ## 4. 日志
 
-视频后端（[app/logging.py](../server/src/iclip/app/logging.py)）与运行时服务（[agent_runtime/http/logging.py](../runtime/src/agent_runtime/http/logging.py)）采用完全一致的 `structlog` 日志配置：
+视频后端（[app/logging.py](../server/src/iclip/app/logging.py)）与运行时服务（[cue/http/logging.py](../runtime/src/cue/http/logging.py)）采用完全一致的 `structlog` 日志配置：
 - 本地开发（Console 格式）打印本地时间并标明服务名（「后端」或「运行时」）；线上环境（JSON 格式）输出 ISO UTC 时间戳。
 - 自动屏蔽正常的 `/healthz` 健康检查请求日志和 WebSocket 重复连接日志，并通过 `QUIET_LOGGERS` 压低第三方库的无关日志噪音。
 - 每个请求的 `request_id` 和当前登录身份 `principal` 通过 `contextvars` 自动绑定到上下文中，业务代码打日志只需写固定中文短句和关键变量（见 [AGENTS.md](../AGENTS.md)）。

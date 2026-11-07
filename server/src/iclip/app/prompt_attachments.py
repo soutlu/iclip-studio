@@ -5,9 +5,9 @@ import uuid
 from typing import Final, Protocol
 
 import structlog
-from agent_runtime.errors import ValidationFailed
-from agent_runtime.transcript.ops import ImageContent, PromptContent
-from agent_runtime.urls import is_http_url, is_oss_processable
+from cue.errors import ValidationFailed
+from cue.transcript.ops import ImageContent, PromptContent
+from cue.urls import is_http_url, is_oss_processable
 
 from iclip.domains.identity.public import Principal
 

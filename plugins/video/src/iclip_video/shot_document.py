@@ -4,7 +4,7 @@ import json
 from collections.abc import Sequence
 from typing import Annotated, Final
 
-from agent_runtime.tool_args import JsonText
+from cue.tool_args import JsonText
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from iclip_video.shot_rules import (

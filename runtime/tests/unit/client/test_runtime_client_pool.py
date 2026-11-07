@@ -12,8 +12,8 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from agent_runtime.app_wire import AgentDirectoryOut
-from agent_runtime.client import RuntimeClient
+from cue.app_wire import AgentDirectoryOut
+from cue.client import RuntimeClient
 
 KEY = "app-key-0123456789-0123456789-abcdef"
 

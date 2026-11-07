@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent_runtime.errors import NotFound, ValidationFailed
+from cue.errors import NotFound, ValidationFailed
 
 from iclip.domains.identity.public import Principal
 from iclip.domains.tracking.models import TrackingEvent

@@ -8,8 +8,8 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.assembly.config_services import ConfigServices
-from agent_runtime.config.model_providers.schemas import DefaultModelIn
+from cue.assembly.config_services import ConfigServices
+from cue.config.model_providers.schemas import DefaultModelIn
 from fastapi import FastAPI
 from pydantic_ai.models import Model
 from pydantic_ai.models.test import TestModel

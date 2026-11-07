@@ -5,7 +5,7 @@ import uuid
 
 import httpx
 import pytest
-from agent_runtime.plugins.base import PluginRegistry
+from cue.plugins.base import PluginRegistry
 from pydantic_ai.models import Model
 
 from tests.helpers.app import TEST_MODEL_NAME

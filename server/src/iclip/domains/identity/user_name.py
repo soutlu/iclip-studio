@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent_runtime.errors import ValidationFailed
+from cue.errors import ValidationFailed
 
 from iclip.domains.identity.models import Principal
 

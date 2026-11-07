@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Final
 
-from agent_runtime.errors import NotFound
+from cue.errors import NotFound
 from sqlalchemy import (
     Column,
     ColumnElement,

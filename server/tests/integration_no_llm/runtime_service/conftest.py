@@ -7,9 +7,9 @@ from pathlib import Path
 
 import httpx
 import pytest
-from agent_runtime.http.app import create_app
-from agent_runtime.plugins.base import PluginRegistry
-from agent_runtime.settings import (
+from cue.http.app import create_app
+from cue.plugins.base import PluginRegistry
+from cue.settings import (
     AgentRunsSection,
     CompactionSection,
     ResolvedApp,

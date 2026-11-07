@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Final, Literal, get_args, overload
 
-from agent_runtime.urls import is_http_url
+from cue.urls import is_http_url
 from iclip_video.shot_prompt import format_seconds, format_shot_prompt
 from iclip_video.shot_rules import (
     MAX_REFERENCE_IMAGES,

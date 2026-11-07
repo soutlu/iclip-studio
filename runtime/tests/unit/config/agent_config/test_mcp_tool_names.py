@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent_runtime.config.agent_config.models import (
+from cue.config.agent_config.models import (
     mcp_tool_name,
     mcp_tool_prefix,
     split_mcp_tool_name,

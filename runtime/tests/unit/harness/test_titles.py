@@ -8,8 +8,8 @@ import pytest
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from agent_runtime.harness.models import ModelSpec, build_model
-from agent_runtime.harness.titles import MAX_TITLE_CHARS, clean_title, title_generator
+from cue.harness.models import ModelSpec, build_model
+from cue.harness.titles import MAX_TITLE_CHARS, clean_title, title_generator
 
 pytestmark = pytest.mark.unit
 

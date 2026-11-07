@@ -12,14 +12,14 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.file_store.store import FileSpace
-from agent_runtime.harness.media import media_tag
-from agent_runtime.harness.transcript.from_messages import turns_from_messages
-from agent_runtime.harness.transcript.projector import TranscriptEventStream
-from agent_runtime.harness.transcript.store import TranscriptStore
-from agent_runtime.plugins.workspace.scope import workspace_namespace
-from agent_runtime.run_deps import AgentRunDeps
-from agent_runtime.transcript.ops import MAIN_AGENT_ID, TextContent, ToolFrame
+from cue.file_store.store import FileSpace
+from cue.harness.media import media_tag
+from cue.harness.transcript.from_messages import turns_from_messages
+from cue.harness.transcript.projector import TranscriptEventStream
+from cue.harness.transcript.store import TranscriptStore
+from cue.plugins.workspace.scope import workspace_namespace
+from cue.run_deps import AgentRunDeps
+from cue.transcript.ops import MAIN_AGENT_ID, TextContent, ToolFrame
 from iclip_video.shot_video.capability import GenerationPolicy
 from iclip_video.shot_video.delivery import FrameRequest
 from iclip_video.shot_video.extraction import EXTRACTION_PATH

@@ -4,12 +4,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final, Self
 
-from agent_runtime.file_store.store import FileSpace, FileStore
-from agent_runtime.harness.files import write_or_retry
-from agent_runtime.harness.materials import require_http
-from agent_runtime.plugins.base import CapPlugin
-from agent_runtime.plugins.workspace.capability import Workspace
-from agent_runtime.transcript.display import DisplayFn, GenericDisplay, url_filename
+from cue.file_store.store import FileSpace, FileStore
+from cue.harness.files import write_or_retry
+from cue.harness.materials import require_http
+from cue.plugins.base import CapPlugin
+from cue.plugins.workspace.capability import Workspace
+from cue.transcript.display import DisplayFn, GenericDisplay, url_filename
 from pydantic_ai import ModelRetry, ToolFailed
 from pydantic_ai.capabilities import CapabilityOrdering
 from pydantic_ai.tools import AgentDepsT, RunContext, Tool

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from agent_runtime.client import RuntimeClient
+from cue.client import RuntimeClient
 
 from iclip.domains.model_providers.api import (
     create_default_models_router,

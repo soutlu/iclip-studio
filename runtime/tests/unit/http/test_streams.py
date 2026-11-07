@@ -13,28 +13,28 @@ from fastapi import FastAPI
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from agent_runtime.errors import NotFound
-from agent_runtime.harness.transcript.service import TranscriptService
-from agent_runtime.harness.transcript.store import Listener, OpBatch
-from agent_runtime.harness.transcript.subscription import SubscribeFrames
-from agent_runtime.http import streams
-from agent_runtime.http.auth import build_app_auth
-from agent_runtime.http.streams import (
+from cue.errors import NotFound
+from cue.harness.transcript.service import TranscriptService
+from cue.harness.transcript.store import Listener, OpBatch
+from cue.harness.transcript.subscription import SubscribeFrames
+from cue.http import streams
+from cue.http.auth import build_app_auth
+from cue.http.streams import (
     MAX_OUTBOUND,
     create_events_router,
     create_transcript_ws_router,
 )
-from agent_runtime.live.frames import (
+from cue.live.frames import (
     FsChanged,
     FsChangeEntry,
     FsChangesPayload,
     SessionWorkChanged,
 )
-from agent_runtime.live.hub import AppEventHub, FileChangeSink, SessionFileChanges
-from agent_runtime.service.sessions import SessionService
-from agent_runtime.settings import ResolvedApp
-from agent_runtime.transcript.ops import MAIN_AGENT_ID, ItemsRemoveOp, TranscriptSnapshot
-from agent_runtime.transcript.wire import OpsPayload, ResetPayload, SessionActivityOut
+from cue.live.hub import AppEventHub, FileChangeSink, SessionFileChanges
+from cue.service.sessions import SessionService
+from cue.settings import ResolvedApp
+from cue.transcript.ops import MAIN_AGENT_ID, ItemsRemoveOp, TranscriptSnapshot
+from cue.transcript.wire import OpsPayload, ResetPayload, SessionActivityOut
 
 BFF_KEY = "bff-app-key-0123456789-0123456789-ab"
 TOOL_KEY = "tool-app-key-0123456789-0123456789-a"

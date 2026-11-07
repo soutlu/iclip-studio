@@ -8,8 +8,8 @@ from typing import Final
 import httpx
 import procrastinate
 import structlog
-from agent_runtime.client import RuntimeClient
-from agent_runtime.errors import NotFound
+from cue.client import RuntimeClient
+from cue.errors import NotFound
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH

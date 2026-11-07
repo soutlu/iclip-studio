@@ -9,12 +9,12 @@ from dataclasses import dataclass
 from typing import Any, Self
 
 import httpx
-from agent_runtime.file_store.namespace import namespace_for
-from agent_runtime.file_store.store import FileStore
-from agent_runtime.plugins.base import CapPlugin
-from agent_runtime.run_deps import AgentRunDeps
-from agent_runtime.settings import ResolvedHooks
-from agent_runtime.transcript.display import DisplayFn, ToolDisplayEntry
+from cue.file_store.namespace import namespace_for
+from cue.file_store.store import FileStore
+from cue.plugins.base import CapPlugin
+from cue.run_deps import AgentRunDeps
+from cue.settings import ResolvedHooks
+from cue.transcript.display import DisplayFn, ToolDisplayEntry
 from fastapi import FastAPI
 from pydantic_ai import RunContext, Tool
 from pydantic_ai.capabilities import Capability

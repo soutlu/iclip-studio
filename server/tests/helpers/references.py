@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, TypedDict
 
 import httpx
-from agent_runtime.client import RuntimeClient
+from cue.client import RuntimeClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 

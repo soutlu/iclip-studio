@@ -5,10 +5,10 @@ from typing import Any, cast
 
 import httpx
 import pytest
-from agent_runtime.harness.background import BackgroundTools
-from agent_runtime.model_connections import ModelConnection
-from agent_runtime.plugins.base import PluginHost, PluginRegistry
-from agent_runtime.plugins.workspace.capability import Workspace
+from cue.harness.background import BackgroundTools
+from cue.model_connections import ModelConnection
+from cue.plugins.base import PluginHost, PluginRegistry
+from cue.plugins.workspace.capability import Workspace
 from pydantic import ValidationError
 
 from iclip_video.iclip_studio.capability import IclipStudio

@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.harness.sessions import PgSessionStore
+from cue.harness.sessions import PgSessionStore
 from fastapi import FastAPI
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncEngine

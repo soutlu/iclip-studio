@@ -6,10 +6,10 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
-from agent_runtime.harness.jobs import JobQueue
-from agent_runtime.harness.step_store_pg import PgStepStore
-from agent_runtime.harness.transcript.runner import ConversationRunner
-from agent_runtime.harness.transcript.store import TranscriptStore
+from cue.harness.jobs import JobQueue
+from cue.harness.step_store_pg import PgStepStore
+from cue.harness.transcript.runner import ConversationRunner
+from cue.harness.transcript.store import TranscriptStore
 from pydantic_ai.messages import ModelMessage
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine

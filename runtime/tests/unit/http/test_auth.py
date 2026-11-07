@@ -8,8 +8,8 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from agent_runtime.http.app import create_app
-from agent_runtime.settings import AgentRunsSection, CompactionSection, ResolvedApp, RuntimeSettings
+from cue.http.app import create_app
+from cue.settings import AgentRunsSection, CompactionSection, ResolvedApp, RuntimeSettings
 
 ADMIN_KEY = "admin-app-key-0123456789-0123456789"
 READER_KEY = "reader-app-key-0123456789-012345678"

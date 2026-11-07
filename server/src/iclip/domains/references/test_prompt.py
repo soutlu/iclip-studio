@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Final
 
-from agent_runtime.errors import ValidationFailed
+from cue.errors import ValidationFailed
 from iclip_video.shot_prompt import ShotCut, ShotScript, format_shot_prompt
 
 _ELEMENTS: Final = "出场元素"

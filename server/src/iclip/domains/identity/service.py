@@ -6,7 +6,7 @@ import secrets
 import uuid
 from datetime import UTC, datetime
 
-from agent_runtime.errors import (
+from cue.errors import (
     AuthenticationFailed,
     NotFound,
     PermissionDenied,

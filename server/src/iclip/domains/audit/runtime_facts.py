@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Final, Protocol
 
-from agent_runtime.app_wire import (
+from cue.app_wire import (
     MAX_STATS_SESSIONS,
     PromptStatOut,
     RunStatOut,
@@ -16,7 +16,7 @@ from agent_runtime.app_wire import (
     StatsSessionsIn,
     UsageStatOut,
 )
-from agent_runtime.client import RuntimeClient
+from cue.client import RuntimeClient
 
 PROMPT_FACTS: Final = """unnest(
         CAST(:f_prompt_sessions AS uuid[]), CAST(:f_prompt_users AS text[]),

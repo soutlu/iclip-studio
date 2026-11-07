@@ -8,15 +8,15 @@ from collections.abc import AsyncGenerator, Callable
 import httpx
 import pytest
 
-from agent_runtime.errors import HookRejected
-from agent_runtime.hooks import (
+from cue.errors import HookRejected
+from cue.hooks import (
     AppHooks,
     GatePayload,
     RunStartedPayload,
     TurnStartedPayload,
 )
-from agent_runtime.settings import ResolvedHooks
-from agent_runtime.transcript.wire import SessionActivityOut
+from cue.settings import ResolvedHooks
+from cue.transcript.wire import SessionActivityOut
 
 SESSION = uuid.UUID("0b8e9f4c-6a1d-4f2e-9c3b-5d7a1e2f3c4d")
 QUIET_SESSION = uuid.UUID("1a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d")

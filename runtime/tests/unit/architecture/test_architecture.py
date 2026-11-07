@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parents[3]
-SRC = PROJECT / "src" / "agent_runtime"
+SRC = PROJECT / "src" / "cue"
 TESTS = PROJECT / "tests"
 
 HOST_PACKAGES = frozenset({"iclip", "iclip_video"})
@@ -38,32 +38,32 @@ FRAMEWORK_FENCES: dict[tuple[str, ...], tuple[str, ...]] = {
 }
 
 CONFIG = SRC / "config"
-CONFIG_PACKAGE = "agent_runtime.config"
+CONFIG_PACKAGE = "cue.config"
 
 LEAF_MODULES = frozenset(
     {
-        "agent_runtime.errors",
-        "agent_runtime.urls",
-        "agent_runtime.model_vocab",
-        "agent_runtime.model_connections",
-        "agent_runtime.agent_usage",
-        "agent_runtime.tool_args",
-        "agent_runtime.secrets",
+        "cue.errors",
+        "cue.urls",
+        "cue.model_vocab",
+        "cue.model_connections",
+        "cue.agent_usage",
+        "cue.tool_args",
+        "cue.secrets",
     }
 )
 
 
 CLIENT = SRC / "client"
-CLIENT_PACKAGE = "agent_runtime.client"
+CLIENT_PACKAGE = "cue.client"
 
 CLIENT_RUNTIME_IMPORTS = frozenset(
     {
-        "agent_runtime.errors",
-        "agent_runtime.app_wire",
-        "agent_runtime.transcript.wire",
-        "agent_runtime.transcript.ops",
-        "agent_runtime.live.frames",
-        "agent_runtime.file_store.store",
+        "cue.errors",
+        "cue.app_wire",
+        "cue.transcript.wire",
+        "cue.transcript.ops",
+        "cue.live.frames",
+        "cue.file_store.store",
     }
 )
 CLIENT_THIRD_PARTY = frozenset({"httpx", "httpx_ws", "wsproto", "pydantic"})
@@ -121,7 +121,7 @@ def test_client_imports_only_wire_shapes() -> None:
     violations: list[str] = []
     for path in _python_files(CLIENT):
         rel = path.relative_to(SRC).as_posix()
-        for top in _imported_top_levels(path) - stdlib - CLIENT_THIRD_PARTY - {"agent_runtime"}:
+        for top in _imported_top_levels(path) - stdlib - CLIENT_THIRD_PARTY - {"cue"}:
             violations.append(f"{rel}: 第三方 {top}")
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
@@ -132,7 +132,7 @@ def test_client_imports_only_wire_shapes() -> None:
                 modules = [alias.name for alias in node.names]
             for module in modules:
                 if (
-                    module.startswith("agent_runtime")
+                    module.startswith("cue")
                     and module not in CLIENT_RUNTIME_IMPORTS
                     and module != CLIENT_PACKAGE
                     and not module.startswith(f"{CLIENT_PACKAGE}.")
@@ -146,15 +146,13 @@ def test_importing_the_client_loads_no_server_side_package() -> None:
     import sys
 
     probe = (
-        "import sys, agent_runtime.client; "
+        "import sys, cue.client; "
         f"print(','.join(name for name in {SERVER_SIDE_PACKAGES!r} if name in sys.modules))"
     )
     result = subprocess.run(
         [sys.executable, "-c", probe], capture_output=True, text=True, check=True
     )
-    assert result.stdout.strip() == "", (
-        f"import agent_runtime.client 带进了 {result.stdout.strip()}"
-    )
+    assert result.stdout.strip() == "", f"import cue.client 带进了 {result.stdout.strip()}"
 
 
 def _config_domains() -> list[str]:
@@ -173,7 +171,7 @@ def test_cross_module_imports_only_public() -> None:
             if not isinstance(node, ast.ImportFrom) or not node.module:
                 continue
             parts = node.module.split(".")
-            if parts[:2] == ["agent_runtime", "config"] and len(parts) >= 3:
+            if parts[:2] == ["cue", "config"] and len(parts) >= 3:
                 target = parts[2]
                 if target in domains and target != own and (len(parts) < 4 or parts[3] != "public"):
                     violations.append(f"{rel}: 绕过 public 引 {node.module}")
@@ -190,7 +188,7 @@ def test_models_and_commands_are_pure() -> None:
             rel = path.relative_to(SRC).as_posix()
             own = f"{CONFIG_PACKAGE}.{path.parent.name}"
             for top in _imported_top_levels(path):
-                if top not in stdlib and top != "agent_runtime":
+                if top not in stdlib and top != "cue":
                     violations.append(f"{rel}: 第三方 {top}")
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
@@ -198,7 +196,7 @@ def test_models_and_commands_are_pure() -> None:
                     continue
                 module = node.module
                 if (
-                    module.startswith("agent_runtime")
+                    module.startswith("cue")
                     and module not in LEAF_MODULES
                     and module != own
                     and not module.startswith(f"{own}.")

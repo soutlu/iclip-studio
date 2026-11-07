@@ -3,9 +3,9 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from agent_runtime.client import RuntimeClient
-from agent_runtime.config.skills.models import MAX_ARCHIVE_BYTES
-from agent_runtime.config.skills.schemas import (
+from cue.client import RuntimeClient
+from cue.config.skills.models import MAX_ARCHIVE_BYTES
+from cue.config.skills.schemas import (
     DraftFileOut,
     DraftFileRenameIn,
     DraftFileWriteIn,

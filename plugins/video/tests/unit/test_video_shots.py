@@ -7,10 +7,10 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.file_store.store import FileSpace
-from agent_runtime.plugins.workspace.scope import workspace_namespace
-from agent_runtime.run_deps import AgentRunDeps
-from agent_runtime.transcript.display import FileIoDisplay, ToolDisplayRegistry
+from cue.file_store.store import FileSpace
+from cue.plugins.workspace.scope import workspace_namespace
+from cue.run_deps import AgentRunDeps
+from cue.transcript.display import FileIoDisplay, ToolDisplayRegistry
 from pydantic_ai import Agent, ModelRetry
 from pydantic_ai.messages import (
     ModelMessage,

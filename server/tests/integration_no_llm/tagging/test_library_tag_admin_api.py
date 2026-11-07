@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.errors import ValidationFailed
+from cue.errors import ValidationFailed
 from fastapi import FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine

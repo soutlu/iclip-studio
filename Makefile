@@ -17,7 +17,7 @@ dev:
 	(cd server && uv run --env-file ../.env python -m iclip.main --config configs/config.yaml --reload --reload-dir . --reload-dir ../runtime/src --reload-dir ../plugins/video/src) & \
 	for _ in $$(seq 1 60); do curl -sf http://localhost:7788/healthz >/dev/null && break; sleep 1; done; \
 	curl -sf http://localhost:7788/healthz >/dev/null || { echo '后端 60 秒内没能通过 /healthz，往上翻它打出来的报错' >&2; exit 1; }; \
-	(cd server && uv run --env-file ../.env python -m agent_runtime.main --config configs/runtime.yaml --reload --reload-dir ../runtime/src --reload-dir ../plugins/video/src) & \
+	(cd server && uv run --env-file ../.env python -m cue.main --config configs/runtime.yaml --reload --reload-dir ../runtime/src --reload-dir ../plugins/video/src) & \
 	wait
 
 up:
@@ -76,7 +76,7 @@ contract-check:
 # 后端的虚拟环境可编辑地装着 runtime/，运行时的迁移也经它执行。
 db-upgrade:
 	cd server && uv run --env-file ../.env alembic upgrade head
-	cd server && uv run --env-file ../.env python -m agent_runtime.admin migrate
+	cd server && uv run --env-file ../.env python -m cue.admin migrate
 
 test-external:
 	cd server && uv run --env-file ../.env pytest -m "integration_llm or e2e_full or external" -v

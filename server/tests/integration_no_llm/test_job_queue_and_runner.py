@@ -8,16 +8,16 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from agent_runtime.errors import Conflict, NotFound, ValidationFailed
-from agent_runtime.harness.background import BackgroundTools
-from agent_runtime.harness.jobs import JobQueue, JobRow
-from agent_runtime.harness.step_store_pg import PgStepStore
-from agent_runtime.harness.transcript.activity import IDLE, ActivityState
-from agent_runtime.harness.transcript.from_messages import ORPHAN_TOOL_ERROR, run_ids_from_messages
-from agent_runtime.harness.transcript.history import TranscriptHistory
-from agent_runtime.harness.transcript.service import TranscriptService
-from agent_runtime.harness.transcript.store import TranscriptStore
-from agent_runtime.transcript.ops import (
+from cue.errors import Conflict, NotFound, ValidationFailed
+from cue.harness.background import BackgroundTools
+from cue.harness.jobs import JobQueue, JobRow
+from cue.harness.step_store_pg import PgStepStore
+from cue.harness.transcript.activity import IDLE, ActivityState
+from cue.harness.transcript.from_messages import ORPHAN_TOOL_ERROR, run_ids_from_messages
+from cue.harness.transcript.history import TranscriptHistory
+from cue.harness.transcript.service import TranscriptService
+from cue.harness.transcript.store import TranscriptStore
+from cue.transcript.ops import (
     MAIN_AGENT_ID,
     AgentStatusMeta,
     AttachmentSource,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from agent_runtime.errors import ValidationFailed
+from cue.errors import ValidationFailed
 from iclip_video.shot_prompt import parse_shot_prompt
 
 from iclip.domains.references.test_prompt import build_test_prompt

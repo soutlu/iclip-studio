@@ -3,12 +3,12 @@
 # 第三方依赖的版本钉在后端 server/uv.lock 的同一版：任一边改了依赖，在本目录 `uv lock` 后按后端的锁
 # 用 `uv lock -P <包>==<版本>` 对齐不一致的那几个。
 [project]
-name = "agent-runtime-video"
+name = "cue-video"
 version = "0.1.0"
 description = "运行时服务的视频部署包：Agent 运行时与视频插件"
 requires-python = ">=3.13"
 dependencies = [
-    "agent-runtime",
+    "cue",
     "iclip-video-plugins",
 ]
 
@@ -16,5 +16,5 @@ dependencies = [
 package = false
 
 [tool.uv.sources]
-agent-runtime = { path = "../../runtime", editable = true }
+cue = { path = "../../runtime", editable = true }
 iclip-video-plugins = { path = "../../plugins/video", editable = true }

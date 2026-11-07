@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from agent_runtime.live.frames import (
+from cue.live.frames import (
     Ack,
     FsChanged,
     Ping,
@@ -11,7 +11,7 @@ from agent_runtime.live.frames import (
     TranscriptOpsFrame,
     TranscriptResetFrame,
 )
-from agent_runtime.transcript.wire import Envelope, Subscribe, Unsubscribe
+from cue.transcript.wire import Envelope, Subscribe, Unsubscribe
 from pydantic import Field
 
 from iclip.common.generation_vocab import GenerationKind, GenerationOperation, GenerationStatus

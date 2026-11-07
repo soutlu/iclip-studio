@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import pytest
-from agent_runtime.errors import Conflict, NotFound, ValidationFailed
+from cue.errors import Conflict, NotFound, ValidationFailed
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.identity.models import Principal

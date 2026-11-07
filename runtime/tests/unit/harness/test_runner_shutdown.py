@@ -7,13 +7,13 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from agent_runtime.harness.job_status import JobStatus
-from agent_runtime.harness.jobs import JobQueue, JobRow
-from agent_runtime.harness.step_store_pg import PgStepStore
-from agent_runtime.harness.transcript.history import TranscriptHistory
-from agent_runtime.harness.transcript.runner import ConversationRunner
-from agent_runtime.harness.transcript.store import TranscriptStore
-from agent_runtime.transcript.ops import TextContent
+from cue.harness.job_status import JobStatus
+from cue.harness.jobs import JobQueue, JobRow
+from cue.harness.step_store_pg import PgStepStore
+from cue.harness.transcript.history import TranscriptHistory
+from cue.harness.transcript.runner import ConversationRunner
+from cue.harness.transcript.store import TranscriptStore
+from cue.transcript.ops import TextContent
 from tests.helpers.runtime import FixedAgents
 
 pytestmark = pytest.mark.unit

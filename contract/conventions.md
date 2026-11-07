@@ -330,7 +330,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 ---
 
-## 20. 运行时服务 (Agent Runtime)
+## 20. 运行时服务 (Cue)
 
 运行时服务的接口（`/v1/*`）只供业务后端在服务端调用，不对浏览器开放（接口定义以 [`runtime-openapi.json`](runtime-openapi.json) 为准，新系统接入步骤见 [runtime-apps.md](../docs/runtime-apps.md)）：
 

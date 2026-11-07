@@ -8,32 +8,32 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from agent_runtime.file_store.store import FileSpace
-from agent_runtime.harness.agents import DELEGATE_TOOL, delegate_display_table
-from agent_runtime.harness.background import (
+from cue.file_store.store import FileSpace
+from cue.harness.agents import DELEGATE_TOOL, delegate_display_table
+from cue.harness.background import (
     BackgroundOutcome,
     BackgroundTools,
     is_receipt,
     parse_outcome,
 )
-from agent_runtime.harness.jobs import JobQueue, JobRow
-from agent_runtime.harness.skills import CachedSkill, build_skill_capabilities, skill_display_table
-from agent_runtime.harness.step_store_pg import PgStepStore
-from agent_runtime.harness.transcript.from_messages import ORPHAN_TOOL_ERROR
-from agent_runtime.harness.transcript.history import TranscriptHistory
-from agent_runtime.harness.transcript.runner import ConversationRunner
-from agent_runtime.harness.transcript.service import TranscriptService
-from agent_runtime.harness.transcript.store import TranscriptStore
-from agent_runtime.plugins.workspace.scope import workspace_namespace
-from agent_runtime.run_deps import AgentRunDeps
-from agent_runtime.transcript.display import (
+from cue.harness.jobs import JobQueue, JobRow
+from cue.harness.skills import CachedSkill, build_skill_capabilities, skill_display_table
+from cue.harness.step_store_pg import PgStepStore
+from cue.harness.transcript.from_messages import ORPHAN_TOOL_ERROR
+from cue.harness.transcript.history import TranscriptHistory
+from cue.harness.transcript.runner import ConversationRunner
+from cue.harness.transcript.service import TranscriptService
+from cue.harness.transcript.store import TranscriptStore
+from cue.plugins.workspace.scope import workspace_namespace
+from cue.run_deps import AgentRunDeps
+from cue.transcript.display import (
     FileIoDisplay,
     GenericDisplay,
     ToolDisplay,
     ToolDisplayEntry,
     ToolDisplayRegistry,
 )
-from agent_runtime.transcript.ops import (
+from cue.transcript.ops import (
     MAIN_AGENT_ID,
     TextContent,
     TextFrame,
@@ -41,7 +41,7 @@ from agent_runtime.transcript.ops import (
     TranscriptTask,
     utf16_len,
 )
-from agent_runtime.transcript.wire import TranscriptPage
+from cue.transcript.wire import TranscriptPage
 from iclip_video.video_breakdown.capability import VideoBreakdown
 from iclip_video.video_breakdown.ports import FailedBreakdown
 from pydantic_ai import Agent, Tool

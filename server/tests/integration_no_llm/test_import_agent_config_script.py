@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 import yaml
-from agent_runtime.file_store.pg import PgFileStore
-from agent_runtime.model_connections import ModelConnection
-from agent_runtime.plugins.base import PluginHost
+from cue.file_store.pg import PgFileStore
+from cue.model_connections import ModelConnection
+from cue.plugins.base import PluginHost
 from scripts.import_agent_config import ImportRefused, run_import
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine

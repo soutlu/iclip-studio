@@ -3,9 +3,9 @@ from __future__ import annotations
 import os
 
 import pytest
-from agent_runtime.assembly.models import PydanticAiCredentialProbe
-from agent_runtime.config.model_providers.catalog import load_declarations
-from agent_runtime.config.model_providers.models import ProviderModel
+from cue.assembly.models import PydanticAiCredentialProbe
+from cue.config.model_providers.catalog import load_declarations
+from cue.config.model_providers.models import ProviderModel
 
 REQUIRED_ENV = ("MODEL_API_KEY", "MODEL_BASE_URL")
 

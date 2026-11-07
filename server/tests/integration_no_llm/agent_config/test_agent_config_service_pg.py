@@ -8,16 +8,16 @@ from typing import Any
 
 import pytest
 import yaml
-from agent_runtime.assembly.directories import (
+from cue.assembly.directories import (
     LibrarySkillDirectory,
     McpServerDirectory,
     ProviderDirectory,
 )
-from agent_runtime.assembly.mcp import HarnessMcpProbe
-from agent_runtime.config.agent_config.config import AgentConfig
-from agent_runtime.config.agent_config.infra_sql import SqlAgentStore
-from agent_runtime.config.agent_config.public import AgentReferences
-from agent_runtime.config.agent_config.schemas import (
+from cue.assembly.mcp import HarnessMcpProbe
+from cue.config.agent_config.config import AgentConfig
+from cue.config.agent_config.infra_sql import SqlAgentStore
+from cue.config.agent_config.public import AgentReferences
+from cue.config.agent_config.schemas import (
     AgentCreateIn,
     AgentDraftIn,
     AgentOrderIn,
@@ -25,25 +25,25 @@ from agent_runtime.config.agent_config.schemas import (
     AgentRestoreIn,
     AgentUpdateIn,
 )
-from agent_runtime.config.agent_config.service import AgentConfigService, AgentPublishBlocked
-from agent_runtime.config.mcp_servers.index import McpServerIndex
-from agent_runtime.config.mcp_servers.infra_sql import SqlMcpServerStore
-from agent_runtime.config.mcp_servers.service import McpServerService
-from agent_runtime.config.model_providers.catalog import load_declarations
-from agent_runtime.config.model_providers.infra_sql import SqlModelProviderStore
-from agent_runtime.config.model_providers.schemas import (
+from cue.config.agent_config.service import AgentConfigService, AgentPublishBlocked
+from cue.config.mcp_servers.index import McpServerIndex
+from cue.config.mcp_servers.infra_sql import SqlMcpServerStore
+from cue.config.mcp_servers.service import McpServerService
+from cue.config.model_providers.catalog import load_declarations
+from cue.config.model_providers.infra_sql import SqlModelProviderStore
+from cue.config.model_providers.schemas import (
     CredentialCreateIn,
     CustomModelCreateIn,
     ModelProviderCreateIn,
     ModelProviderUpdateIn,
     ModelUpdateIn,
 )
-from agent_runtime.config.model_providers.service import ModelProviderService
-from agent_runtime.config.skills.infra_sql import SqlSkillStore
-from agent_runtime.config.skills.schemas import SkillCreateIn, SkillPublishIn
-from agent_runtime.config.skills.service import SkillsService
-from agent_runtime.errors import Conflict, NotFound, ValidationFailed
-from agent_runtime.secrets import CredentialCipher
+from cue.config.model_providers.service import ModelProviderService
+from cue.config.skills.infra_sql import SqlSkillStore
+from cue.config.skills.schemas import SkillCreateIn, SkillPublishIn
+from cue.config.skills.service import SkillsService
+from cue.errors import Conflict, NotFound, ValidationFailed
+from cue.secrets import CredentialCipher
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine

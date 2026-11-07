@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated
 
-from agent_runtime.errors import NotFound
+from cue.errors import NotFound
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi_users import FastAPIUsers
 from fastapi_users.exceptions import UserNotExists

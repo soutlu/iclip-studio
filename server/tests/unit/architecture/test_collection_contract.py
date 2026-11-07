@@ -26,7 +26,7 @@ def test_no_private_imports_from_src() -> None:
             if (
                 isinstance(node, ast.ImportFrom)
                 and node.module
-                and node.module.startswith(("iclip", "iclip_video", "agent_runtime"))
+                and node.module.startswith(("iclip", "iclip_video", "cue"))
             ):
                 for alias in node.names:
                     if alias.name.startswith("_"):

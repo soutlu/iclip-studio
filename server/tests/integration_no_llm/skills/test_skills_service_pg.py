@@ -7,17 +7,17 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import pytest
-from agent_runtime.config.agent_config.infra_sql import SqlAgentStore
-from agent_runtime.config.agent_config.public import AgentReferences
-from agent_runtime.config.skills.infra_sql import SqlSkillStore
-from agent_runtime.config.skills.schemas import (
+from cue.config.agent_config.infra_sql import SqlAgentStore
+from cue.config.agent_config.public import AgentReferences
+from cue.config.skills.infra_sql import SqlSkillStore
+from cue.config.skills.schemas import (
     DraftFileWriteIn,
     SkillCreateIn,
     SkillPublishIn,
     SkillUpdateIn,
 )
-from agent_runtime.config.skills.service import SkillsService
-from agent_runtime.errors import Conflict, NotFound, ValidationFailed
+from cue.config.skills.service import SkillsService
+from cue.errors import Conflict, NotFound, ValidationFailed
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine

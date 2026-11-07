@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Final
 
-from agent_runtime.errors import ValidationFailed
+from cue.errors import ValidationFailed
 from pydantic import TypeAdapter
 
 from iclip.domains.generation.schemas import (

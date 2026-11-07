@@ -4,10 +4,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Final, Self
 
-from agent_runtime.file_store.store import FileSpace
-from agent_runtime.plugins.base import CapPlugin
-from agent_runtime.plugins.workspace.capability import Workspace
-from agent_runtime.transcript.display import (
+from cue.file_store.store import FileSpace
+from cue.plugins.base import CapPlugin
+from cue.plugins.workspace.capability import Workspace
+from cue.transcript.display import (
     MEDIA_GRID_VIEW,
     DisplayFn,
     GenericDisplay,

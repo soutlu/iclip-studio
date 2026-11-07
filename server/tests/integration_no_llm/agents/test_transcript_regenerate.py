@@ -8,15 +8,15 @@ from datetime import UTC, datetime
 
 import httpx
 import pytest
-from agent_runtime.errors import Conflict, ValidationFailed
-from agent_runtime.harness.jobs import JobQueue, JobQueueView, Submission
-from agent_runtime.harness.step_store_pg import PgStepStore
-from agent_runtime.harness.transcript.activity import ActivityState
-from agent_runtime.harness.transcript.history import TranscriptHistory, TurnRewind
-from agent_runtime.harness.transcript.runner import ConversationRunner
-from agent_runtime.harness.transcript.service import TranscriptService
-from agent_runtime.harness.transcript.store import TranscriptStore
-from agent_runtime.transcript.ops import (
+from cue.errors import Conflict, ValidationFailed
+from cue.harness.jobs import JobQueue, JobQueueView, Submission
+from cue.harness.step_store_pg import PgStepStore
+from cue.harness.transcript.activity import ActivityState
+from cue.harness.transcript.history import TranscriptHistory, TurnRewind
+from cue.harness.transcript.runner import ConversationRunner
+from cue.harness.transcript.service import TranscriptService
+from cue.harness.transcript.store import TranscriptStore
+from cue.transcript.ops import (
     MAIN_AGENT_ID,
     AttachmentSource,
     ImageContent,

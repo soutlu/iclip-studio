@@ -1,5 +1,5 @@
-# 运行时服务（agent_runtime）的配置样例：复制成部署目录的 configs/runtime.yaml（本地是 server/configs/runtime.yaml），
-# 按部署改地址与要开的插件段。形状以 runtime/src/agent_runtime/settings.py 与视频插件包的
+# 运行时服务（Cue）的配置样例：复制成部署目录的 configs/runtime.yaml（本地是 server/configs/runtime.yaml），
+# 按部署改地址与要开的插件段。形状以 runtime/src/cue/settings.py 与视频插件包的
 # plugins/video/src/iclip_video/registry.py（VideoPluginsConfig）为准，步骤见 docs/deploy.md。
 # 机密只写放它的环境变量名；DATABASE_URL 与 CREDENTIAL_ENCRYPTION_KEYS 也来自环境变量。
 

@@ -6,11 +6,11 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from agent_runtime.errors import Conflict, NotFound, ValidationFailed
-from agent_runtime.file_store.namespace import namespace_for
-from agent_runtime.file_store.store import StoredFile
-from agent_runtime.harness.jobs import JobQueueView
-from agent_runtime.service.sessions import (
+from cue.errors import Conflict, NotFound, ValidationFailed
+from cue.file_store.namespace import namespace_for
+from cue.file_store.store import StoredFile
+from cue.harness.jobs import JobQueueView
+from cue.service.sessions import (
     PREVIEW_NOT_FORKABLE,
     SESSION_ID_TAKEN,
     SESSION_NOT_FOUND,

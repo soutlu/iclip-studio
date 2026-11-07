@@ -6,8 +6,8 @@ import uuid
 
 import httpx
 import pytest
-from agent_runtime.errors import NotFound
-from agent_runtime.harness.step_store_pg import PgStepStore
+from cue.errors import NotFound
+from cue.harness.step_store_pg import PgStepStore
 from fastapi import FastAPI
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord, StepEvent

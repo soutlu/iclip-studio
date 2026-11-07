@@ -3,8 +3,8 @@ from __future__ import annotations
 import uuid
 from typing import Final
 
-from agent_runtime.errors import ValidationFailed
-from agent_runtime.http.errors import validation_error_detail
+from cue.errors import ValidationFailed
+from cue.http.errors import validation_error_detail
 from pydantic import ValidationError
 
 from iclip.domains.generation.models import REFERENCE_TRIAL_KEY, GenerationJob

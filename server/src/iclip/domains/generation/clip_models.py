@@ -3,7 +3,7 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any
 
-from agent_runtime.errors import ValidationFailed
+from cue.errors import ValidationFailed
 
 from iclip.domains.generation.schemas import (
     MAX_PROMPT_CHARS,

@@ -8,13 +8,13 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 import structlog
-from agent_runtime.errors import (
+from cue.errors import (
     AuthenticationFailed,
     NotFound,
     PermissionDenied,
     ValidationFailed,
 )
-from agent_runtime.hooks import GatePayload, RunStartedPayload, TurnStartedPayload
+from cue.hooks import GatePayload, RunStartedPayload, TurnStartedPayload
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse

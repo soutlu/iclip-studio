@@ -6,10 +6,10 @@ from collections.abc import Sequence
 
 import httpx
 import pytest
-from agent_runtime.file_store.store import FileSpace
-from agent_runtime.harness.background import is_receipt, parse_outcome
-from agent_runtime.plugins.workspace.scope import workspace_namespace
-from agent_runtime.run_deps import AgentRunDeps
+from cue.file_store.store import FileSpace
+from cue.harness.background import is_receipt, parse_outcome
+from cue.plugins.workspace.scope import workspace_namespace
+from cue.run_deps import AgentRunDeps
 from pydantic_ai import Agent, ModelRetry, ToolFailed
 from pydantic_ai.messages import (
     ModelMessage,

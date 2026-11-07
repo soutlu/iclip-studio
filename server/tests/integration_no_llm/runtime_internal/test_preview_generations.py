@@ -9,9 +9,9 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.file_store.store import FileSpace
-from agent_runtime.plugins.workspace.scope import workspace_namespace
-from agent_runtime.run_deps import AgentRunDeps
+from cue.file_store.store import FileSpace
+from cue.plugins.workspace.scope import workspace_namespace
+from cue.run_deps import AgentRunDeps
 from fastapi import FastAPI
 from iclip_video.shot_video.capability import GenerationPolicy
 from iclip_video.shot_video.ports import ImageRequest

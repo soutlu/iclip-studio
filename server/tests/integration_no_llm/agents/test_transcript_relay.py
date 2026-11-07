@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
-from agent_runtime.client import (
+from cue.client import (
     EventStream,
     RawFrame,
     RuntimeClient,
@@ -18,10 +18,10 @@ from agent_runtime.client import (
     TranscriptChannel,
     WorkChangedFrame,
 )
-from agent_runtime.harness.transcript.store import TranscriptStore
-from agent_runtime.live.frames import Ping, PingPayload, timestamp_now
-from agent_runtime.plugins.base import PluginHost, PluginRegistry
-from agent_runtime.transcript.wire import Envelope
+from cue.harness.transcript.store import TranscriptStore
+from cue.live.frames import Ping, PingPayload, timestamp_now
+from cue.plugins.base import PluginHost, PluginRegistry
+from cue.transcript.wire import Envelope
 from fastapi import FastAPI
 from sqlalchemy import text
 from starlette.testclient import TestClient
@@ -210,7 +210,7 @@ def test_relayed_frames_are_the_runtimes_frames_field_for_field(
         assert browser == runtime[: len(browser)]
 
 
-_RUNTIME_SEND = "agent_runtime.http.streams._Channel._send"
+_RUNTIME_SEND = "cue.http.streams._Channel._send"
 
 _TRANSCRIPT_FRAMES = ("transcript.reset", "transcript.ops", "ack")
 

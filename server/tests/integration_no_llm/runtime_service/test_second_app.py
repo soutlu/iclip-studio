@@ -9,19 +9,19 @@ from pathlib import Path
 
 import httpx
 import pytest
-from agent_runtime.app_wire import ActivitiesIn, SessionOpenIn, SessionPromptIn
-from agent_runtime.client import RuntimeClient, WorkChangedFrame
-from agent_runtime.errors import NotFound
-from agent_runtime.http.app import create_app
-from agent_runtime.live.frames import Ack, TranscriptOpsFrame, TranscriptResetFrame
-from agent_runtime.settings import (
+from cue.app_wire import ActivitiesIn, SessionOpenIn, SessionPromptIn
+from cue.client import RuntimeClient, WorkChangedFrame
+from cue.errors import NotFound
+from cue.http.app import create_app
+from cue.live.frames import Ack, TranscriptOpsFrame, TranscriptResetFrame
+from cue.settings import (
     AgentRunsSection,
     CompactionSection,
     ResolvedApp,
     RuntimeSettings,
 )
-from agent_runtime.transcript.ops import TextContent, TurnUpsertOp
-from agent_runtime.transcript.wire import Subscribe, SubscribePayload
+from cue.transcript.ops import TextContent, TurnUpsertOp
+from cue.transcript.wire import Subscribe, SubscribePayload
 from fastapi import FastAPI
 from httpx_ws.transport import ASGIWebSocketTransport
 from pydantic_ai.models import Model
@@ -204,7 +204,7 @@ ops:
 ENTRY_PROBE = f"""\
 import asyncio, sys
 import httpx
-from agent_runtime.http.asgi import app_from_env
+from cue.http.asgi import app_from_env
 
 async def main():
     app = app_from_env()
@@ -231,7 +231,7 @@ async def test_the_runtime_entry_without_a_plugin_package_loads_no_video_code(
     )
     env = {
         **os.environ,
-        "AGENT_RUNTIME_CONFIG": str(config),
+        "CUE_CONFIG": str(config),
         "DATABASE_URL": migrated_pg,
         "CREDENTIAL_ENCRYPTION_KEYS": TEST_CREDENTIAL_KEY,
         "STUB_VIDEO_APP_KEY": VIDEO_KEY,

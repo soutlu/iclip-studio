@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import uuid
 
-from agent_runtime.config.agent_config.models import AgentRefs, ConfigRefs
-from agent_runtime.config.agent_config.usage import subagent_users
+from cue.config.agent_config.models import AgentRefs, ConfigRefs
+from cue.config.agent_config.usage import subagent_users
 
 
 def refs(

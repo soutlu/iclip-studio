@@ -6,13 +6,13 @@ from dataclasses import dataclass
 
 import pytest
 
-from agent_runtime.live.frames import (
+from cue.live.frames import (
     AppEvent,
     FsChanged,
     SessionWorkChanged,
 )
-from agent_runtime.live.hub import AppEventHub, RouteOf
-from agent_runtime.transcript.wire import SessionActivityOut
+from cue.live.hub import AppEventHub, RouteOf
+from cue.transcript.wire import SessionActivityOut
 
 BFF_SESSION = "0b8e9f4c-6a1d-4f2e-9c3b-5d7a1e2f3c4d"
 OTHER_BFF_SESSION = "9d2c1b0a-5e4f-4a3b-8c7d-6e5f4a3b2c1d"

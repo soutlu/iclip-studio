@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 import httpx
 import structlog
-from agent_runtime.urls import is_http_url
+from cue.urls import is_http_url
 
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.provider import (

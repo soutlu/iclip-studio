@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from agent_runtime.plugins.base import PluginRegistry
-from agent_runtime.run_deps import AgentRunDeps
+from cue.plugins.base import PluginRegistry
+from cue.run_deps import AgentRunDeps
 from fastapi import FastAPI
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import Capability

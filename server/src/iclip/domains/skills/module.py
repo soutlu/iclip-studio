@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from agent_runtime.client import RuntimeClient
+from cue.client import RuntimeClient
 
 from iclip.domains.skills.api import create_skills_router
 from iclip.platform.runtime_admin import UserNames

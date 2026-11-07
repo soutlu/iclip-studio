@@ -8,7 +8,7 @@ from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.openrouter import OpenRouterModel
 
-from agent_runtime.harness.models import (
+from cue.harness.models import (
     ModelApi,
     ModelSpec,
     ThinkingEffort,

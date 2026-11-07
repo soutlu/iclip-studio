@@ -7,7 +7,7 @@ import sys
 import uuid
 from datetime import UTC, datetime
 
-from agent_runtime.errors import ValidationFailed
+from cue.errors import ValidationFailed
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker

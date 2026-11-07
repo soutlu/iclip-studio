@@ -5,7 +5,7 @@ from typing import cast
 
 import httpx
 import pytest
-from agent_runtime.errors import NotFound
+from cue.errors import NotFound
 from iclip_video.shot_video.ports import (
     EXTRACTION_VERSION,
     AnchorSheets,

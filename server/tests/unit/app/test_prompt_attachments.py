@@ -5,8 +5,8 @@ import uuid
 from dataclasses import dataclass, field
 
 import pytest
-from agent_runtime.errors import ValidationFailed
-from agent_runtime.transcript.ops import (
+from cue.errors import ValidationFailed
+from cue.transcript.ops import (
     AttachmentSource,
     ImageContent,
     PromptContent,

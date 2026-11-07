@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from agent_runtime.settings import (
+from cue.settings import (
     load_config,
     resolve_settings,
 )

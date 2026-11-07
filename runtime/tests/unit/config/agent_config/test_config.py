@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent_runtime.config.agent_config.config import AgentConfig, parse_config
-from agent_runtime.config.agent_config.models import Problem
+from cue.config.agent_config.config import AgentConfig, parse_config
+from cue.config.agent_config.models import Problem
 
 
 def config(**fields: Any) -> dict[str, Any]:

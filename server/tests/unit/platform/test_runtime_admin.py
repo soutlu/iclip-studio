@@ -8,10 +8,10 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.client import RuntimeClient
-from agent_runtime.config.agent_config.config import AgentConfig
-from agent_runtime.config.agent_config.schemas import AgentDetailOut, AgentDraftOut
-from agent_runtime.config.skills.schemas import SkillOut, SkillsOut
+from cue.client import RuntimeClient
+from cue.config.agent_config.config import AgentConfig
+from cue.config.agent_config.schemas import AgentDetailOut, AgentDraftOut
+from cue.config.skills.schemas import SkillOut, SkillsOut
 from fastapi import FastAPI
 
 from iclip.domains.agent_config.api import create_agent_config_router

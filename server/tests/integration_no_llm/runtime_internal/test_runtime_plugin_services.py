@@ -9,7 +9,7 @@ from typing import cast
 
 import httpx
 import pytest
-from agent_runtime.errors import AuthenticationFailed
+from cue.errors import AuthenticationFailed
 from fastapi import FastAPI
 from iclip_video.shot_video.ports import (
     EXTRACTION_VERSION,

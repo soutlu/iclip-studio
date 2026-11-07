@@ -8,64 +8,6 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "agent-runtime"
-version = "0.1.0"
-source = { editable = "../../runtime" }
-dependencies = [
-    { name = "alembic" },
-    { name = "asyncpg" },
-    { name = "cryptography" },
-    { name = "fastapi" },
-    { name = "httpx" },
-    { name = "httpx-secure" },
-    { name = "httpx-ws" },
-    { name = "packaging" },
-    { name = "pydantic" },
-    { name = "pydantic-ai-harness" },
-    { name = "pydantic-ai-slim", extra = ["google", "mcp", "openai"] },
-    { name = "pydantic-settings" },
-    { name = "python-multipart" },
-    { name = "pyyaml" },
-    { name = "sqlalchemy", extra = ["asyncio"] },
-    { name = "structlog" },
-    { name = "uvicorn", extra = ["standard"] },
-    { name = "wsproto" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "alembic", specifier = ">=1.19.1" },
-    { name = "asyncpg", specifier = ">=0.31.0" },
-    { name = "cryptography", specifier = ">=50.0.1" },
-    { name = "fastapi", specifier = ">=0.141.1" },
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "httpx-secure", specifier = ">=2.0.0,<3" },
-    { name = "httpx-ws", specifier = ">=0.9.0" },
-    { name = "packaging", specifier = ">=26" },
-    { name = "pydantic", specifier = ">=2.13.5" },
-    { name = "pydantic-ai-harness", specifier = ">=0.63.0" },
-    { name = "pydantic-ai-slim", extras = ["openai", "mcp", "google"], specifier = ">=2.63.0" },
-    { name = "pydantic-settings", specifier = ">=2.15.0" },
-    { name = "python-multipart", specifier = ">=0.0.32" },
-    { name = "pyyaml", specifier = ">=6" },
-    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.52" },
-    { name = "structlog", specifier = ">=26.1.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.52.4" },
-    { name = "wsproto", specifier = ">=1.3.2" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pyright", specifier = ">=1.1.411" },
-    { name = "pytest", specifier = ">=9.2.0" },
-    { name = "pytest-asyncio", specifier = ">=1.4.0" },
-    { name = "pytest-timeout", specifier = ">=2.4.0" },
-    { name = "ruff", specifier = ">=0.16.6" },
-    { name = "tach", specifier = ">=0.35.0" },
-    { name = "testcontainers", extras = ["postgres"], specifier = ">=4.15.0" },
-]
-
-[[package]]
 name = "aiofile"
 version = "3.12.3"
 source = { registry = "https://pypi.org/simple" }
@@ -495,6 +437,64 @@ wheels = [
 ]
 
 [[package]]
+name = "cue"
+version = "0.1.0"
+source = { editable = "../../runtime" }
+dependencies = [
+    { name = "alembic" },
+    { name = "asyncpg" },
+    { name = "cryptography" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "httpx-secure" },
+    { name = "httpx-ws" },
+    { name = "packaging" },
+    { name = "pydantic" },
+    { name = "pydantic-ai-harness" },
+    { name = "pydantic-ai-slim", extra = ["google", "mcp", "openai"] },
+    { name = "pydantic-settings" },
+    { name = "python-multipart" },
+    { name = "pyyaml" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "structlog" },
+    { name = "uvicorn", extra = ["standard"] },
+    { name = "wsproto" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "alembic", specifier = ">=1.19.1" },
+    { name = "asyncpg", specifier = ">=0.31.0" },
+    { name = "cryptography", specifier = ">=50.0.1" },
+    { name = "fastapi", specifier = ">=0.141.1" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "httpx-secure", specifier = ">=2.0.0,<3" },
+    { name = "httpx-ws", specifier = ">=0.9.0" },
+    { name = "packaging", specifier = ">=26" },
+    { name = "pydantic", specifier = ">=2.13.5" },
+    { name = "pydantic-ai-harness", specifier = ">=0.63.0" },
+    { name = "pydantic-ai-slim", extras = ["openai", "mcp", "google"], specifier = ">=2.63.0" },
+    { name = "pydantic-settings", specifier = ">=2.15.0" },
+    { name = "python-multipart", specifier = ">=0.0.32" },
+    { name = "pyyaml", specifier = ">=6" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.52" },
+    { name = "structlog", specifier = ">=26.1.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.52.4" },
+    { name = "wsproto", specifier = ">=1.3.2" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pyright", specifier = ">=1.1.411" },
+    { name = "pytest", specifier = ">=9.2.0" },
+    { name = "pytest-asyncio", specifier = ">=1.4.0" },
+    { name = "pytest-timeout", specifier = ">=2.4.0" },
+    { name = "ruff", specifier = ">=0.16.6" },
+    { name = "tach", specifier = ">=0.35.0" },
+    { name = "testcontainers", extras = ["postgres"], specifier = ">=4.15.0" },
+]
+
+[[package]]
 name = "distro"
 version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -860,7 +860,7 @@ name = "iclip-video-plugins"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "agent-runtime" },
+    { name = "cue" },
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pydantic-ai-slim" },
@@ -879,7 +879,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-runtime", editable = "../../runtime" },
+    { name = "cue", editable = "../../runtime" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "pydantic-ai-slim", specifier = ">=2.63.0" },

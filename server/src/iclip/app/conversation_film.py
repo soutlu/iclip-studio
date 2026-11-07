@@ -4,10 +4,10 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from agent_runtime.errors import Conflict, NotFound, ValidationFailed
-from agent_runtime.file_store.namespace import namespace_for
-from agent_runtime.file_store.store import StoredFile
-from agent_runtime.http.errors import validation_error_detail
+from cue.errors import Conflict, NotFound, ValidationFailed
+from cue.file_store.namespace import namespace_for
+from cue.file_store.store import StoredFile
+from cue.http.errors import validation_error_detail
 from iclip_video.film_view import FilmImagePrompt, FilmTextEdit, FilmView
 from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
 from iclip_video.iclip_studio.film.load import load_film

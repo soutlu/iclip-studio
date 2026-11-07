@@ -7,9 +7,9 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.http.app import create_app
-from agent_runtime.plugins.base import PluginRegistry
-from agent_runtime.settings import AgentRunsSection, CompactionSection, ResolvedApp, RuntimeSettings
+from cue.http.app import create_app
+from cue.plugins.base import PluginRegistry
+from cue.settings import AgentRunsSection, CompactionSection, ResolvedApp, RuntimeSettings
 from fastapi import FastAPI
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncEngine

@@ -6,7 +6,7 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from agent_runtime.harness.step_store_pg import PgMediaStore, PgStepStore
+from cue.harness.step_store_pg import PgMediaStore, PgStepStore
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
     BinaryContent,

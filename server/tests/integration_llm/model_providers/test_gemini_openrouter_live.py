@@ -3,10 +3,10 @@ from __future__ import annotations
 import os
 
 import pytest
-from agent_runtime.assembly.models import build_provider_model
-from agent_runtime.config.model_providers.catalog import load_declarations
-from agent_runtime.config.model_providers.models import ModelProperties, ProviderModel
-from agent_runtime.model_vocab import ModelApi
+from cue.assembly.models import build_provider_model
+from cue.config.model_providers.catalog import load_declarations
+from cue.config.model_providers.models import ModelProperties, ProviderModel
+from cue.model_vocab import ModelApi
 from pydantic_ai.direct import model_request
 from pydantic_ai.messages import ModelRequest, TextPart
 

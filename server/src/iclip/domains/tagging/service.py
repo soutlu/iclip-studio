@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Collection, Mapping, Sequence
 
 import structlog
-from agent_runtime.errors import Conflict, NotFound, ValidationFailed
+from cue.errors import Conflict, NotFound, ValidationFailed
 
 from iclip.domains.tagging.models import EntryKey, TagCounts, TagNode
 from iclip.domains.tagging.repository import TaggingQueuePort, TagStore

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Awaitable, Callable
 
-from agent_runtime.client import RuntimeClient
+from cue.client import RuntimeClient
 from iclip_video.video_breakdown.ports import FailedBreakdown
 
 from iclip.domains.identity.public import Principal

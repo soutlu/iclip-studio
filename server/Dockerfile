@@ -34,7 +34,7 @@ COPY --chown=iclip:iclip runtime/pyproject.toml /runtime/
 COPY --chown=iclip:iclip plugins/video/pyproject.toml /plugins/video/
 COPY --chown=iclip:iclip server/pyproject.toml server/uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project \
-    --no-install-package agent-runtime --no-install-package iclip-video-plugins
+    --no-install-package cue --no-install-package iclip-video-plugins
 
 COPY --chown=iclip:iclip runtime/src /runtime/src
 COPY --chown=iclip:iclip plugins/video/src /plugins/video/src

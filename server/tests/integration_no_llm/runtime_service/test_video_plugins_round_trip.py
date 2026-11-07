@@ -9,8 +9,8 @@ from typing import Any, cast
 
 import httpx
 import pytest
-from agent_runtime.http.app import create_app
-from agent_runtime.settings import (
+from cue.http.app import create_app
+from cue.settings import (
     AgentRunsSection,
     CompactionSection,
     ResolvedApp,

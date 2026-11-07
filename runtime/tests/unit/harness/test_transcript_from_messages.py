@@ -21,11 +21,11 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.usage import RequestUsage
 from pydantic_ai_harness.step_persistence import StepEvent
 
-from agent_runtime.harness.background import BackgroundTools
-from agent_runtime.harness.context_compaction import COMPACTED_BY_METADATA_KEY
-from agent_runtime.harness.job_status import JobStatus
-from agent_runtime.harness.media import media_tag
-from agent_runtime.harness.transcript.from_messages import (
+from cue.harness.background import BackgroundTools
+from cue.harness.context_compaction import COMPACTED_BY_METADATA_KEY
+from cue.harness.job_status import JobStatus
+from cue.harness.media import media_tag
+from cue.harness.transcript.from_messages import (
     ORPHAN_TOOL_ERROR,
     ChildRun,
     SteeredPrompt,
@@ -39,9 +39,9 @@ from agent_runtime.harness.transcript.from_messages import (
     turn_usage,
     turns_from_messages,
 )
-from agent_runtime.harness.transcript.prompt_media import model_prompt
-from agent_runtime.transcript.display import GenericDisplay, ToolDisplayRegistry
-from agent_runtime.transcript.ops import (
+from cue.harness.transcript.prompt_media import model_prompt
+from cue.transcript.display import GenericDisplay, ToolDisplayRegistry
+from cue.transcript.ops import (
     AttachmentSource,
     ImageContent,
     StepUsage,

@@ -6,8 +6,8 @@ import httpx
 import pytest
 from pydantic_ai import ModelRetry
 
-from agent_runtime.harness.materials import require_media
-from agent_runtime.harness.media_check import MediaKind, bad_urls
+from cue.harness.materials import require_media
+from cue.harness.media_check import MediaKind, bad_urls
 from tests.helpers.loopback import LoopbackServer, Route, checks_reach, loopback_server
 
 pytestmark = pytest.mark.unit
@@ -32,7 +32,7 @@ async def server() -> AsyncGenerator[LoopbackServer]:
 
 @pytest.fixture(autouse=True)
 def retry_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("agent_runtime.harness.media_check.RETRY_DELAY_SECONDS", 0.0)
+    monkeypatch.setattr("cue.harness.media_check.RETRY_DELAY_SECONDS", 0.0)
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ def answering(
     def build(**_: object) -> httpx.AsyncClient:
         return httpx.AsyncClient(transport=httpx.MockTransport(answer))
 
-    monkeypatch.setattr("agent_runtime.harness.media_check.public_client", build)
+    monkeypatch.setattr("cue.harness.media_check.public_client", build)
     return asked
 
 
@@ -195,6 +195,6 @@ async def test_nothing_to_check_builds_no_client(monkeypatch: pytest.MonkeyPatch
     def build(**_: object) -> None:
         raise AssertionError("没有地址时不该建客户端")
 
-    monkeypatch.setattr("agent_runtime.harness.media_check.public_client", build)
+    monkeypatch.setattr("cue.harness.media_check.public_client", build)
 
     assert await bad_urls([], kind="image") == {}

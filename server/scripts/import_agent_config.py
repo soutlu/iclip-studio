@@ -14,31 +14,31 @@ from pathlib import Path
 from typing import Any, cast, get_args
 
 import yaml
-from agent_runtime.assembly.config_services import ConfigServices, build_config_services
-from agent_runtime.config.agent_config.config import AgentConfig
-from agent_runtime.config.agent_config.models import AGENT_ID_PATTERN, RESERVED_AGENT_IDS
-from agent_runtime.config.agent_config.schemas import (
+from cue.assembly.config_services import ConfigServices, build_config_services
+from cue.config.agent_config.config import AgentConfig
+from cue.config.agent_config.models import AGENT_ID_PATTERN, RESERVED_AGENT_IDS
+from cue.config.agent_config.schemas import (
     AgentCreateIn,
     AgentDraftIn,
     AgentOrderIn,
     AgentPublishIn,
     AgentUpdateIn,
 )
-from agent_runtime.config.model_providers.catalog import Declarations, ProviderDeclaration
-from agent_runtime.config.model_providers.public import CredentialProbe, load_declarations
-from agent_runtime.config.model_providers.schemas import (
+from cue.config.model_providers.catalog import Declarations, ProviderDeclaration
+from cue.config.model_providers.public import CredentialProbe, load_declarations
+from cue.config.model_providers.schemas import (
     CredentialCreateIn,
     CustomModelCreateIn,
     DefaultModelIn,
     ModelProviderCreateIn,
 )
-from agent_runtime.config.skills.schemas import SkillPublishIn
-from agent_runtime.errors import DomainError
-from agent_runtime.file_store.pg import PgFileStore
-from agent_runtime.model_connections import ModelConnection
-from agent_runtime.model_vocab import ThinkingEffort
-from agent_runtime.plugins.base import PluginFactory, PluginHost, PluginRegistry
-from agent_runtime.settings import CREDENTIAL_ENCRYPTION_KEYS_ENV, CredentialKeysEnv, load_config
+from cue.config.skills.schemas import SkillPublishIn
+from cue.errors import DomainError
+from cue.file_store.pg import PgFileStore
+from cue.model_connections import ModelConnection
+from cue.model_vocab import ThinkingEffort
+from cue.plugins.base import PluginFactory, PluginHost, PluginRegistry
+from cue.settings import CREDENTIAL_ENCRYPTION_KEYS_ENV, CredentialKeysEnv, load_config
 from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine

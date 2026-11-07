@@ -8,13 +8,13 @@ from typing import Any
 import httpx
 import pytest
 
-from agent_runtime.app_wire import (
+from cue.app_wire import (
     ActivitiesIn,
     FileWriteIn,
     ModelCallIn,
 )
-from agent_runtime.client import AppRejected, ModelCallTimedOut, RuntimeClient, RuntimeUnavailable
-from agent_runtime.errors import (
+from cue.client import AppRejected, ModelCallTimedOut, RuntimeClient, RuntimeUnavailable
+from cue.errors import (
     AgentUnavailable,
     Conflict,
     DomainError,
@@ -22,7 +22,7 @@ from agent_runtime.errors import (
     NotFound,
     ValidationFailed,
 )
-from agent_runtime.file_store.store import StoredFile
+from cue.file_store.store import StoredFile
 
 BASE = "http://runtime.test"
 KEY = "app-key-0123456789-0123456789-abcdef"

@@ -7,10 +7,10 @@ from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.models.openrouter import OpenRouterModel
 
-from agent_runtime.assembly.models import build_provider_model
-from agent_runtime.config.model_providers.catalog import load_declarations
-from agent_runtime.config.model_providers.models import ModelProperties, ProviderModel
-from agent_runtime.model_vocab import ModelApi
+from cue.assembly.models import build_provider_model
+from cue.config.model_providers.catalog import load_declarations
+from cue.config.model_providers.models import ModelProperties, ProviderModel
+from cue.model_vocab import ModelApi
 
 RELAY = "https://relay.example/v1"
 ARK = "https://ark.cn-beijing.volces.com/api/v3"

@@ -8,11 +8,11 @@ from typing import Any
 import httpx2
 import pytest
 
-from agent_runtime.assembly.models import PydanticAiCredentialProbe
-from agent_runtime.config.model_providers.catalog import load_declarations
-from agent_runtime.config.model_providers.models import ModelProperties, ProviderModel
-from agent_runtime.harness.probe import PROBE_MAX_TOKENS
-from agent_runtime.model_vocab import ModelApi, ThinkingEffort
+from cue.assembly.models import PydanticAiCredentialProbe
+from cue.config.model_providers.catalog import load_declarations
+from cue.config.model_providers.models import ModelProperties, ProviderModel
+from cue.harness.probe import PROBE_MAX_TOKENS
+from cue.model_vocab import ModelApi, ThinkingEffort
 
 KEY = "sk-test-not-a-real-key"
 RELAY = "https://relay.example/v1"

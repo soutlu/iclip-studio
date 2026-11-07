@@ -11,7 +11,7 @@ from starlette.applications import Starlette
 from starlette.routing import WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from agent_runtime.client import (
+from cue.client import (
     AppRejected,
     RawFrame,
     RuntimeClient,
@@ -19,7 +19,7 @@ from agent_runtime.client import (
     StreamClosed,
     WorkChangedFrame,
 )
-from agent_runtime.live.frames import (
+from cue.live.frames import (
     Ack,
     FsChanged,
     FsChangeEntry,
@@ -31,8 +31,8 @@ from agent_runtime.live.frames import (
     TranscriptOpsFrame,
     TranscriptResetFrame,
 )
-from agent_runtime.transcript.ops import TranscriptSnapshot
-from agent_runtime.transcript.wire import (
+from cue.transcript.ops import TranscriptSnapshot
+from cue.transcript.wire import (
     Envelope,
     OpsPayload,
     ResetPayload,

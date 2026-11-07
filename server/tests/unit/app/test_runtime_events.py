@@ -5,7 +5,7 @@ from collections.abc import AsyncGenerator, Iterator
 from contextlib import asynccontextmanager
 from typing import Any, Self, cast
 
-from agent_runtime.client import EventStream, RuntimeClient, RuntimeUnavailable, StreamClosed
+from cue.client import EventStream, RuntimeClient, RuntimeUnavailable, StreamClosed
 from structlog.testing import capture_logs
 
 from iclip.app.runtime_events import RuntimeEvents

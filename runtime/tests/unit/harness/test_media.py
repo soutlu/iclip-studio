@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent_runtime.harness.media import (
+from cue.harness.media import (
     cropped_image_url,
     image_info_url,
     media_tag_open,

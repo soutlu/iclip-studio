@@ -7,7 +7,7 @@ import pytest
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from agent_runtime.errors import (
+from cue.errors import (
     AgentUnavailable,
     AuthenticationFailed,
     Conflict,
@@ -16,7 +16,7 @@ from agent_runtime.errors import (
     PermissionDenied,
     ValidationFailed,
 )
-from agent_runtime.http.errors import (
+from cue.http.errors import (
     install_error_handlers,
     status_code_for,
     validation_error_detail,

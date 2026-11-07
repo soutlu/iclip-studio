@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal, NoReturn, cast
 
 import pytest
-from agent_runtime.errors import NotFound
+from cue.errors import NotFound
 
 from iclip.domains.conversations.models import Conversation, ConversationActivity, TitleKind
 from iclip.domains.conversations.repository import (

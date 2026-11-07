@@ -6,10 +6,10 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Annotated, Any, Final, Self
 
 import httpx
-from agent_runtime.file_store.store import FileSpace
-from agent_runtime.plugins.base import CapPlugin, PluginBinder, PluginHost, PluginRegistry
-from agent_runtime.plugins.workspace.capability import Workspace
-from agent_runtime.plugins.workspace.scope import workspace_namespace
+from cue.file_store.store import FileSpace
+from cue.plugins.base import CapPlugin, PluginBinder, PluginHost, PluginRegistry
+from cue.plugins.workspace.capability import Workspace
+from cue.plugins.workspace.scope import workspace_namespace
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, StringConstraints, model_validator
 
 from iclip_video.iclip_studio.capability import IclipStudio

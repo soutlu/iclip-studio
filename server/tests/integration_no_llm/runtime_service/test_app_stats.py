@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
-from agent_runtime.app_wire import MAX_STATS_SESSIONS
+from cue.app_wire import MAX_STATS_SESSIONS
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from agent_runtime.urls import is_http_url
+from cue.urls import is_http_url
 
 from iclip.platform.media.errors import MediaError
 from iclip.platform.media.fetch import REMOTE_INPUT, without_query

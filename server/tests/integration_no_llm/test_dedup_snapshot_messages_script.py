@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent_runtime.harness.step_store_pg import PgStepStore
+from cue.harness.step_store_pg import PgStepStore
 from pydantic_ai.messages import (
     BinaryContent,
     ModelMessage,

@@ -1,5 +1,5 @@
 [project]
-name = "agent-runtime"
+name = "cue"
 version = "0.1.0"
 description = "Agent 运行时：agent 执行引擎与装配、技能库、模型供应商与 agent 配置、对话内容格式、插件基础、工作区文件，供各应用服务依赖"
 requires-python = ">=3.13"
@@ -14,7 +14,7 @@ dependencies = [
     "pyyaml>=6",  # 供应商声明、技能 frontmatter 与 agent 导出包
     "cryptography>=50.0.1",  # 密钥字段的 MultiFernet 加密
     "packaging>=26",  # 导出包的格式版本比较
-    # 运行时服务（agent_runtime.http 与 main.py）：版本与后端 uv.lock 一致。
+    # 运行时服务（cue.http 与 main.py）：版本与后端 uv.lock 一致。
     "fastapi>=0.141.1",
     "uvicorn[standard]>=0.52.4",
     "pydantic-settings>=2.15.0",
@@ -42,7 +42,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agent_runtime"]
+packages = ["src/cue"]
 
 [tool.ruff]
 line-length = 100
@@ -60,7 +60,7 @@ ignore = ["E501", "RUF001", "RUF002", "RUF003"]
 "structlog.get_logger".msg = "用带类型的 structlog.stdlib.get_logger(__name__)"
 
 [tool.ruff.lint.per-file-ignores]
-"src/agent_runtime/http/logging.py" = ["TID251"]
+"src/cue/http/logging.py" = ["TID251"]
 "tests/**" = ["TID251"]
 
 [tool.pyright]

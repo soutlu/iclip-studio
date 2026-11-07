@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from agent_runtime.file_store.store import (
+from cue.file_store.store import (
     DEFAULT_MAX_FILE_BYTES,
     DEFAULT_MAX_NAMESPACE_BYTES,
     MAX_SEARCH_FILES,

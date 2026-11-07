@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import httpx
-from agent_runtime.config.model_providers.public import (
+from cue.config.model_providers.public import (
     ProbeResult,
     ProviderDeclaration,
     ProviderModel,

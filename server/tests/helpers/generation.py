@@ -420,7 +420,7 @@ class InMemoryGenerationRepository:
     async def get(
         self, job_id: uuid.UUID, *, owner: uuid.UUID | None, inherited: Inheritance = ()
     ) -> GenerationJob:
-        from agent_runtime.errors import NotFound
+        from cue.errors import NotFound
 
         job = self.jobs.get(job_id)
         if job is None or not (

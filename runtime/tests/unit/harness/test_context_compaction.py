@@ -31,16 +31,16 @@ from pydantic_ai_harness.compaction._summary import (
 )
 from pydantic_ai_harness.step_persistence import InMemoryStepStore, StepPersistence
 
-from agent_runtime.harness.context_compaction import (
+from cue.harness.context_compaction import (
     ContextCompaction,
     compaction_boundary,
     compaction_window,
     recorded_loads,
 )
-from agent_runtime.harness.skills import CachedSkill, build_skill_capabilities
-from agent_runtime.harness.transcript.from_messages import turns_from_messages
-from agent_runtime.harness.transcript.projector import step_responses
-from agent_runtime.transcript.ops import TextContent
+from cue.harness.skills import CachedSkill, build_skill_capabilities
+from cue.harness.transcript.from_messages import turns_from_messages
+from cue.harness.transcript.projector import step_responses
+from cue.transcript.ops import TextContent
 
 pytestmark = pytest.mark.unit
 

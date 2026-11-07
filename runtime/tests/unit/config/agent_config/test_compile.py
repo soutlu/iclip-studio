@@ -4,9 +4,9 @@ import uuid
 from dataclasses import replace
 from typing import Any
 
-from agent_runtime.config.agent_config.compile import compile_agent
-from agent_runtime.config.agent_config.config import AgentConfig
-from agent_runtime.config.agent_config.models import (
+from cue.config.agent_config.compile import compile_agent
+from cue.config.agent_config.config import AgentConfig
+from cue.config.agent_config.models import (
     AgentRefs,
     CompiledAgent,
     CompiledMcpServer,

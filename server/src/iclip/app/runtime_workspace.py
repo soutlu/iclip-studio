@@ -3,11 +3,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
-from agent_runtime.app_wire import FileWriteIn
-from agent_runtime.client import RuntimeClient
-from agent_runtime.errors import NotFound
-from agent_runtime.file_store.namespace import parse_namespace
-from agent_runtime.file_store.store import FileEntry, StoredFile
+from cue.app_wire import FileWriteIn
+from cue.client import RuntimeClient
+from cue.errors import NotFound
+from cue.file_store.namespace import parse_namespace
+from cue.file_store.store import FileEntry, StoredFile
 
 
 class WorkspaceFiles(Protocol):

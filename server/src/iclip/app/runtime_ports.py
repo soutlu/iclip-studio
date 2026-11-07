@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Mapping, Sequence
 
-from agent_runtime.app_wire import (
+from cue.app_wire import (
     ActivitiesIn,
     FilesCopyIn,
     PreviewTargetIn,
@@ -11,8 +11,8 @@ from agent_runtime.app_wire import (
     SessionOpenIn,
     TitleIn,
 )
-from agent_runtime.client import RuntimeClient
-from agent_runtime.transcript.wire import SessionActivityOut
+from cue.client import RuntimeClient
+from cue.transcript.wire import SessionActivityOut
 
 from iclip.domains.conversations.service import AgentDirectory, AgentEntry
 

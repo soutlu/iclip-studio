@@ -7,8 +7,8 @@ import zipfile
 
 import pytest
 
-from agent_runtime.config.skills.archive import read_archive
-from agent_runtime.config.skills.models import MAX_FILE_BYTES, MAX_FILES, SKILL_MD
+from cue.config.skills.archive import read_archive
+from cue.config.skills.models import MAX_FILE_BYTES, MAX_FILES, SKILL_MD
 
 SKILL = "---\nname: pdf-tools\ndescription: 处理 PDF\n---\n\n# PDF 工具\n"
 

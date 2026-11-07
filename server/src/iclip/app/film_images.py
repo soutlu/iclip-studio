@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import uuid
 
-from agent_runtime.errors import ValidationFailed
-from agent_runtime.http.errors import validation_error_detail
+from cue.errors import ValidationFailed
+from cue.http.errors import validation_error_detail
 from iclip_video.iclip_studio.ports import (
     InvalidNodeImageRequest,
     NodeImageJob,

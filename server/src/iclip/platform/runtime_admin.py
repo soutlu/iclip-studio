@@ -5,7 +5,7 @@ from collections.abc import Collection, Iterator, Mapping, Sequence
 from typing import Final, Protocol, cast
 from urllib.parse import quote
 
-from agent_runtime.client import AdminFiles, AdminResponse, RuntimeClient
+from cue.client import AdminFiles, AdminResponse, RuntimeClient
 from fastapi import Response, UploadFile
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel

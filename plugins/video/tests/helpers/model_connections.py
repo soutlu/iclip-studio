@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from agent_runtime.errors import ModelUnavailable
-from agent_runtime.model_connections import ModelConnection
+from cue.errors import ModelUnavailable
+from cue.model_connections import ModelConnection
 
 
 class FakeModelConnections:

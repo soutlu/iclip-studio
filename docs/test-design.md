@@ -53,7 +53,7 @@
 
 运行时的 [integration_no_llm/conftest.py](../runtime/tests/integration_no_llm/conftest.py) 只走 `Testcontainers`，不看 `TEST_DATABASE_URL`，每个用例建自己的临时库；没有 Docker 时同样自动跳过。
 
-> **迁移对账要求**：每当在 `iclip` 中新增数据模块时，必须将该模块的 SQLAlchemy 元数据加入[后端迁移对账测试](../server/tests/integration_no_llm/bootstrap/test_migrations.py)的 `_MODULE_METADATA` 中。由于该测试只自动比对表名和列名，字段类型、非空约束、索引以及 procrastinate 调度表的迁移仍需人工核对。`agent_runtime` 中新增数据模块时，把元数据加入 [runner.py](../runtime/src/agent_runtime/migrations/runner.py) 的 `_MODULE_METADATA`，[运行时迁移测试](../runtime/tests/integration_no_llm/test_migrations.py)用 Alembic 的自动比对核对表、列、类型、非空约束与索引。
+> **迁移对账要求**：每当在 `iclip` 中新增数据模块时，必须将该模块的 SQLAlchemy 元数据加入[后端迁移对账测试](../server/tests/integration_no_llm/bootstrap/test_migrations.py)的 `_MODULE_METADATA` 中。由于该测试只自动比对表名和列名，字段类型、非空约束、索引以及 procrastinate 调度表的迁移仍需人工核对。`agent_runtime` 中新增数据模块时，把元数据加入 [runner.py](../runtime/src/cue/migrations/runner.py) 的 `_MODULE_METADATA`，[运行时迁移测试](../runtime/tests/integration_no_llm/test_migrations.py)用 Alembic 的自动比对核对表、列、类型、非空约束与索引。
 
 ---
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from agent_runtime.errors import ValidationFailed
+from cue.errors import ValidationFailed
 from iclip_video.shot_prompt import format_seconds
 
 SEGMENT_END_TOLERANCE_MS: Final = 50

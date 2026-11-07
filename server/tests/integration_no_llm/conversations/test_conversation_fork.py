@@ -9,8 +9,8 @@ from typing import NoReturn
 
 import httpx
 import pytest
-from agent_runtime.errors import Conflict, NotFound
-from agent_runtime.harness.step_store_pg import PgStepStore
+from cue.errors import Conflict, NotFound
+from cue.harness.step_store_pg import PgStepStore
 from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart

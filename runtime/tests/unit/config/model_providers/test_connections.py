@@ -8,8 +8,8 @@ from typing import Any, cast
 
 import pytest
 
-from agent_runtime.config.model_providers.catalog import load_declarations
-from agent_runtime.config.model_providers.models import (
+from cue.config.model_providers.catalog import load_declarations
+from cue.config.model_providers.models import (
     SOURCE_CUSTOM,
     CredentialRecord,
     ModelProperties,
@@ -17,16 +17,16 @@ from agent_runtime.config.model_providers.models import (
     ProviderRecord,
     ProviderState,
 )
-from agent_runtime.config.model_providers.repository import (
+from cue.config.model_providers.repository import (
     CredentialProbe,
     ModelProviderStore,
     ModelUsages,
 )
-from agent_runtime.config.model_providers.rules import encrypt_fields, new_fields
-from agent_runtime.config.model_providers.service import ModelProviderService
-from agent_runtime.errors import ModelUnavailable
-from agent_runtime.model_connections import ModelConnection
-from agent_runtime.secrets import CredentialCipher
+from cue.config.model_providers.rules import encrypt_fields, new_fields
+from cue.config.model_providers.service import ModelProviderService
+from cue.errors import ModelUnavailable
+from cue.model_connections import ModelConnection
+from cue.secrets import CredentialCipher
 
 DECLARATIONS = load_declarations()
 ARK = DECLARATIONS["volcengine"]

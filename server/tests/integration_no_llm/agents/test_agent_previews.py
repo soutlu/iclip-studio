@@ -9,9 +9,9 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.client import RuntimeClient, RuntimeUnavailable
-from agent_runtime.plugins.base import PluginRegistry
-from agent_runtime.transcript.ops import MAIN_AGENT_ID
+from cue.client import RuntimeClient, RuntimeUnavailable
+from cue.plugins.base import PluginRegistry
+from cue.transcript.ops import MAIN_AGENT_ID
 from fastapi import FastAPI
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ModelMessage

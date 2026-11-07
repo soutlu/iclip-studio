@@ -4,8 +4,8 @@ import json
 import uuid
 from typing import Annotated, Any
 
-from agent_runtime.errors import ValidationFailed
-from agent_runtime.http.errors import validation_error_detail
+from cue.errors import ValidationFailed
+from cue.http.errors import validation_error_detail
 from fastapi import APIRouter, Query
 from pydantic import TypeAdapter, ValidationError
 

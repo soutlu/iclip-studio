@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Final
 
-from agent_runtime.errors import NotFound, ValidationFailed
+from cue.errors import NotFound, ValidationFailed
 from sqlalchemy import (
     CheckConstraint,
     Column,

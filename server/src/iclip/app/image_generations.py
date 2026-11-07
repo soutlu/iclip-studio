@@ -3,8 +3,8 @@ from __future__ import annotations
 import uuid
 from collections.abc import Awaitable, Callable
 
-from agent_runtime.errors import ValidationFailed
-from agent_runtime.http.errors import validation_error_detail
+from cue.errors import ValidationFailed
+from cue.http.errors import validation_error_detail
 from iclip_video.shot_video.ports import ImageJob, ImageRequest, InvalidImageRequest
 from pydantic import ValidationError
 

@@ -15,7 +15,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from agent_runtime.harness.background import BackgroundOutcome, BackgroundTools, parse_outcome
+from cue.harness.background import BackgroundOutcome, BackgroundTools, parse_outcome
 
 pytestmark = pytest.mark.unit
 

@@ -5,7 +5,7 @@ from collections.abc import AsyncGenerator, Mapping
 
 import httpx
 import pytest
-from agent_runtime.config.model_providers.schemas import DefaultModelIn
+from cue.config.model_providers.schemas import DefaultModelIn
 from fastapi import FastAPI
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models import Model

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from agent_runtime.config.skills.models import (
+from cue.config.skills.models import (
     MAX_DESCRIPTION_CHARS,
     MAX_FILE_BYTES,
     MAX_FILES,
     MAX_TOTAL_BYTES,
     SKILL_MD,
 )
-from agent_runtime.config.skills.rules import (
+from cue.config.skills.rules import (
     check_name,
     check_publish,
     content_problem,
@@ -23,7 +23,7 @@ from agent_runtime.config.skills.rules import (
     path_problem,
     with_frontmatter_name,
 )
-from agent_runtime.errors import ValidationFailed
+from cue.errors import ValidationFailed
 
 
 def skill_md(frontmatter: str, body: str = "\n# 标题\n") -> str:

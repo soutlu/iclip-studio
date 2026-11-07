@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from agent_runtime.agent_usage import AgentUsageOut
-from agent_runtime.config.agent_config.schemas import AgentDraftOut as RuntimeAgentDraftOut
-from agent_runtime.config.agent_config.schemas import AgentOut as RuntimeAgentOut
-from agent_runtime.config.agent_config.schemas import (
+from cue.agent_usage import AgentUsageOut
+from cue.config.agent_config.schemas import AgentDraftOut as RuntimeAgentDraftOut
+from cue.config.agent_config.schemas import AgentOut as RuntimeAgentOut
+from cue.config.agent_config.schemas import (
     AgentVersionDetailOut as RuntimeAgentVersionDetailOut,
 )
-from agent_runtime.config.agent_config.schemas import AgentVersionOut as RuntimeAgentVersionOut
+from cue.config.agent_config.schemas import AgentVersionOut as RuntimeAgentVersionOut
 
 from iclip.platform.runtime_admin import AdminOut, CreatedByName, UpdatedByName
 

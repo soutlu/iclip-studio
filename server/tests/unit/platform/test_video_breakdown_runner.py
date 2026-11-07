@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.client import RuntimeClient
+from cue.client import RuntimeClient
 
 from iclip.platform.media.errors import MediaError
 from iclip.platform.video_breakdown.model import BREAKDOWN_MODEL, ArkBreakdownModel

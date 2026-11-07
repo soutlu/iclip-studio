@@ -8,15 +8,15 @@ from pathlib import Path
 from typing import Any, Final
 
 import httpx
-from agent_runtime.assembly.agents import AgentRuntime, ModelBuilder, build_runtime_model
-from agent_runtime.assembly.config_services import ConfigServices
-from agent_runtime.config.model_providers.repository import CredentialProbe
-from agent_runtime.file_store.store import FileSpace
-from agent_runtime.http.app import create_app
-from agent_runtime.plugins.base import PluginBinder, PluginHost, PluginRegistry
-from agent_runtime.plugins.workspace.capability import Workspace
-from agent_runtime.plugins.workspace.scope import workspace_namespace
-from agent_runtime.settings import (
+from cue.assembly.agents import AgentRuntime, ModelBuilder, build_runtime_model
+from cue.assembly.config_services import ConfigServices
+from cue.config.model_providers.repository import CredentialProbe
+from cue.file_store.store import FileSpace
+from cue.http.app import create_app
+from cue.plugins.base import PluginBinder, PluginHost, PluginRegistry
+from cue.plugins.workspace.capability import Workspace
+from cue.plugins.workspace.scope import workspace_namespace
+from cue.settings import (
     AgentRunsSection,
     CompactionSection,
     ResolvedApp,
@@ -174,8 +174,8 @@ def config_services_of(app: FastAPI) -> ConfigServices:
     return app.state.runtime_service.state.config_services
 
 
-def agent_runtime_of(app: FastAPI) -> AgentRuntime:
-    return app.state.runtime_service.state.agent_runtime
+def runtime_of(app: FastAPI) -> AgentRuntime:
+    return app.state.runtime_service.state.runtime
 
 
 @asynccontextmanager
@@ -195,10 +195,10 @@ __all__ = [
     "SERVER_URL",
     "LateASGITransport",
     "OneUpgradeAtATime",
-    "agent_runtime_of",
     "build_backed_app",
     "config_services_of",
     "runtime_admin",
+    "runtime_of",
     "runtime_settings",
     "standard_plugins",
 ]

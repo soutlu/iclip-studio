@@ -1,8 +1,8 @@
 # 新应用接入运行时指南
 
-本文说明一个新的业务系统（下称「应用」）如何接入 Agent 运行时服务，快速获得 Agent 对话与工具运行能力。
+本文说明一个新的业务系统（下称「应用」）如何接入 Agent 运行时服务（Cue），快速获得 Agent 对话与工具运行能力。
 - 运行时内部机制见 [架构 §2](architecture.md#2-运行时服务)
-- 接口定义以 [runtime-openapi.json](../contract/runtime-openapi.json) 为准，通信协议细节见 [conventions §20](../contract/conventions.md#20-运行时服务-agent-runtime)
+- 接口定义以 [runtime-openapi.json](../contract/runtime-openapi.json) 为准，通信协议细节见 [conventions §20](../contract/conventions.md#20-运行时服务-cue)
 - 完整接入示例可参考现有的视频后端（应用 `video`）或最小接入集成测试 [test_second_app.py](../server/tests/integration_no_llm/runtime_service/test_second_app.py)
 
 ## 职责分工
@@ -19,7 +19,7 @@
 
 ### 第一步：在运行时配置文件中登记应用
 
-在运行时的配置文件 `configs/runtime.yaml`（参考 [settings.py](../runtime/src/agent_runtime/settings.py) 与 [样例](../deploy/runtime.example.yaml)）的 `apps` 下新增一项，修改后重启运行时服务：
+在运行时的配置文件 `configs/runtime.yaml`（参考 [settings.py](../runtime/src/cue/settings.py) 与 [样例](../deploy/runtime.example.yaml)）的 `apps` 下新增一项，修改后重启运行时服务：
 
 ```yaml
 apps:
@@ -39,7 +39,7 @@ apps:
 
 ### 第二步：实现生命周期回调接口（可选）
 
-运行时会在三个时机向 `hooks` 配置的地址发送 `POST` 请求（请求头带 `Authorization: Bearer <回调令牌>`，协议见 [conventions §20「回调」](../contract/conventions.md#回调)，数据结构见 [hooks.py](../runtime/src/agent_runtime/hooks.py)，视频后端的参考实现见 [app/runtime_internal.py](../server/src/iclip/app/runtime_internal.py)）：
+运行时会在三个时机向 `hooks` 配置的地址发送 `POST` 请求（请求头带 `Authorization: Bearer <回调令牌>`，协议见 [conventions §20「回调」](../contract/conventions.md#回调)，数据结构见 [hooks.py](../runtime/src/cue/hooks.py)，视频后端的参考实现见 [app/runtime_internal.py](../server/src/iclip/app/runtime_internal.py)）：
 
 | 回调名称 | 触发时机 | 业务应用应该怎么响应 | 视频后端的实际做法 |
 |---|---|---|---|
@@ -49,7 +49,7 @@ apps:
 
 ### 第三步：调用会话与发消息接口
 
-如果业务应用使用 Python 开发，可以直接依赖 `runtime/` 并使用内置的 `RuntimeClient`（见 [agent_runtime/client/](../runtime/src/agent_runtime/client/__init__.py)，错误处理见[架构「客户端库」](architecture.md#客户端库)）；其他语言可直接按 `runtime-openapi.json` 调用 HTTP 接口：
+如果业务应用使用 Python 开发，可以直接依赖 `runtime/` 并使用内置的 `RuntimeClient`（见 [cue/client/](../runtime/src/cue/client/__init__.py)，错误处理见[架构「客户端库」](architecture.md#客户端库)）；其他语言可直接按 `runtime-openapi.json` 调用 HTTP 接口：
 
 1. **获取可用 Agent 列表**：调用 `GET /v1/agents`，拿到当前在首页上架、启用且已发布的 Agent。
 2. **创建会话**：调用 `POST /v1/sessions`（传入应用自己生成的 UUID `id` 和所选的 `agent_id`），会话创建后即自动锁定该 Agent 当时的最新版本。

@@ -7,7 +7,7 @@ from typing import NoReturn
 
 import httpx
 import pytest
-from agent_runtime.errors import ValidationFailed
+from cue.errors import ValidationFailed
 from fastapi import FastAPI
 from PIL import Image
 from structlog.testing import capture_logs

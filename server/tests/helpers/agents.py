@@ -5,23 +5,23 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from agent_runtime.assembly.agents import ModelBuilder
-from agent_runtime.assembly.config_services import ConfigServices
-from agent_runtime.config.agent_config.config import AgentConfig
-from agent_runtime.config.agent_config.schemas import (
+from cue.assembly.agents import ModelBuilder
+from cue.assembly.config_services import ConfigServices
+from cue.config.agent_config.config import AgentConfig
+from cue.config.agent_config.schemas import (
     AgentCreateIn,
     AgentDraftIn,
     AgentPublishIn,
     AgentUpdateIn,
 )
-from agent_runtime.config.model_providers.public import RuntimeModel
-from agent_runtime.config.model_providers.schemas import (
+from cue.config.model_providers.public import RuntimeModel
+from cue.config.model_providers.schemas import (
     CredentialCreateIn,
     CustomModelCreateIn,
     ModelProviderCreateIn,
 )
-from agent_runtime.config.skills.schemas import DraftFileWriteIn, SkillCreateIn, SkillPublishIn
-from agent_runtime.model_vocab import ThinkingEffort
+from cue.config.skills.schemas import DraftFileWriteIn, SkillCreateIn, SkillPublishIn
+from cue.model_vocab import ThinkingEffort
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncEngine
 

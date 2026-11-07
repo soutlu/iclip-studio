@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 import structlog
 
-from agent_runtime.http.logging import QUIET_LOGGERS, SERVICE_NAME, LogFormat, configure_logging
+from cue.http.logging import QUIET_LOGGERS, SERVICE_NAME, LogFormat, configure_logging
 
 
 @pytest.fixture(autouse=True)
@@ -58,7 +58,7 @@ def test_console_line_starts_with_local_time_and_service(
     configure_logging("INFO", "console")
 
     before = datetime.now().strftime("%H:%M:%S")
-    structlog.stdlib.get_logger("agent_runtime.test").info("生成任务提交失败", job_id="j1")
+    structlog.stdlib.get_logger("cue.test").info("生成任务提交失败", job_id="j1")
     after = datetime.now().strftime("%H:%M:%S")
 
     (line,) = capsys.readouterr().err.splitlines()
@@ -66,7 +66,7 @@ def test_console_line_starts_with_local_time_and_service(
     assert clock in {before, after}
     assert clock[:5] != datetime.now(UTC).strftime("%H:%M")
     assert rest.startswith("运行时 [info")
-    assert "生成任务提交失败 [agent_runtime.test] job_id=j1" in line
+    assert "生成任务提交失败 [cue.test] job_id=j1" in line
 
 
 def test_console_shows_uvicorn_error_as_uvicorn(capsys: pytest.CaptureFixture[str]) -> None:
@@ -112,7 +112,7 @@ def test_routine_noise_is_dropped_in_both_formats(
 
 
 def test_mcp_client_logs_use_the_service_format(capsys: pytest.CaptureFixture[str]) -> None:
-    importlib.import_module("agent_runtime.harness.mcp")
+    importlib.import_module("cue.harness.mcp")
 
     configure_logging("INFO", "console")
 
@@ -145,7 +145,7 @@ def test_json_lines_keep_iso_utc_and_the_original_logger(
     configure_logging("INFO", "json")
 
     logging.getLogger("uvicorn.error").info("Started server process [%d]", 42)
-    structlog.stdlib.get_logger("agent_runtime.test").warning("捡回中断的运行", count=2)
+    structlog.stdlib.get_logger("cue.test").warning("捡回中断的运行", count=2)
 
     foreign, ours = (json.loads(line) for line in capsys.readouterr().err.splitlines())
     assert foreign == {
@@ -157,7 +157,7 @@ def test_json_lines_keep_iso_utc_and_the_original_logger(
     assert ours == {
         "event": "捡回中断的运行",
         "count": 2,
-        "logger": "agent_runtime.test",
+        "logger": "cue.test",
         "level": "warning",
         "timestamp": ours["timestamp"],
     }

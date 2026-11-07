@@ -32,7 +32,7 @@ def offline_media_checks(monkeypatch: pytest.MonkeyPatch) -> None:
             transport=httpx.MockTransport(lambda _request: httpx.Response(200))
         )
 
-    monkeypatch.setattr("agent_runtime.harness.media_check.public_client", build)
+    monkeypatch.setattr("cue.harness.media_check.public_client", build)
 
 
 __all__ = ["NoProbing", "ScriptedProbe", "offline_media_checks"]

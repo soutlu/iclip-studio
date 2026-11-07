@@ -9,14 +9,14 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.agent_usage import AgentUsage
-from agent_runtime.assembly.config_services import ConfigServices
-from agent_runtime.assembly.mcp import HarnessMcpProbe
-from agent_runtime.config.mcp_servers.index import McpServerIndex
-from agent_runtime.config.mcp_servers.infra_sql import SqlMcpServerStore
-from agent_runtime.config.mcp_servers.service import McpServerService, rotate_mcp_server_keys
-from agent_runtime.secrets import CredentialCipher
 from cryptography.fernet import Fernet
+from cue.agent_usage import AgentUsage
+from cue.assembly.config_services import ConfigServices
+from cue.assembly.mcp import HarnessMcpProbe
+from cue.config.mcp_servers.index import McpServerIndex
+from cue.config.mcp_servers.infra_sql import SqlMcpServerStore
+from cue.config.mcp_servers.service import McpServerService, rotate_mcp_server_keys
+from cue.secrets import CredentialCipher
 from fastapi import FastAPI
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
 from pydantic_ai.models import Model

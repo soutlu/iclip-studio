@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.errors import NotFound, ValidationFailed
+from cue.errors import NotFound, ValidationFailed
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 

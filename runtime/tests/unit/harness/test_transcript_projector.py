@@ -28,17 +28,17 @@ from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.providers.alibaba import AlibabaProvider
 
-from agent_runtime.harness.agents import DELEGATE_TOOL, SubAgentProfile, delegate_display_table
-from agent_runtime.harness.transcript.from_messages import turns_from_messages
-from agent_runtime.harness.transcript.projector import TranscriptEventStream
-from agent_runtime.harness.transcript.store import TranscriptStore
-from agent_runtime.transcript.display import (
+from cue.harness.agents import DELEGATE_TOOL, SubAgentProfile, delegate_display_table
+from cue.harness.transcript.from_messages import turns_from_messages
+from cue.harness.transcript.projector import TranscriptEventStream
+from cue.harness.transcript.store import TranscriptStore
+from cue.transcript.display import (
     FileIoDisplay,
     ToolDisplay,
     ToolDisplayEntry,
     ToolDisplayRegistry,
 )
-from agent_runtime.transcript.ops import (
+from cue.transcript.ops import (
     MAIN_AGENT_ID,
     AgentRef,
     FrameUpsertOp,

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Final, Literal
 
-from agent_runtime.urls import is_http_url
+from cue.urls import is_http_url
 from iclip_video.film_view import (
     FilmImagePrompt,
     FilmLineEdit,

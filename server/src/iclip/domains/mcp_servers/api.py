@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from agent_runtime.client import RuntimeClient
-from agent_runtime.config.mcp_servers.schemas import (
+from cue.client import RuntimeClient
+from cue.config.mcp_servers.schemas import (
     McpCheckIn,
     McpCheckOut,
     McpServerCreateIn,

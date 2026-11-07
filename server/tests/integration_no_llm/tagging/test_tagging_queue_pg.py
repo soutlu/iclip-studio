@@ -6,7 +6,7 @@ from collections.abc import Sequence
 
 import httpx
 import pytest
-from agent_runtime.file_store.pg import PgFileStore
+from cue.file_store.pg import PgFileStore
 from procrastinate.testing import InMemoryConnector
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine

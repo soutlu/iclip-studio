@@ -3,9 +3,9 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from agent_runtime.client import RuntimeClient
-from agent_runtime.config.agent_config.package import MAX_PACKAGE_BYTES
-from agent_runtime.config.agent_config.schemas import (
+from cue.client import RuntimeClient
+from cue.config.agent_config.package import MAX_PACKAGE_BYTES
+from cue.config.agent_config.schemas import (
     AgentCreateIn,
     AgentDraftIn,
     AgentImportOut,
@@ -16,7 +16,7 @@ from agent_runtime.config.agent_config.schemas import (
     AgentRestoreIn,
     AgentUpdateIn,
 )
-from agent_runtime.config.model_providers.schemas import ModelOptionsOut
+from cue.config.model_providers.schemas import ModelOptionsOut
 from fastapi import APIRouter, File, Query, Response, UploadFile
 from pydantic import BaseModel
 

@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Final
 
-from agent_runtime.errors import NotFound
+from cue.errors import NotFound
 from sqlalchemy import (
     CheckConstraint,
     Column,

@@ -4,8 +4,8 @@ from typing import Literal
 
 import pytest
 
-from agent_runtime.harness.transcript.store import JOURNAL_CAPACITY, TranscriptStore
-from agent_runtime.transcript.ops import (
+from cue.harness.transcript.store import JOURNAL_CAPACITY, TranscriptStore
+from cue.transcript.ops import (
     AgentRef,
     AppendOp,
     FrameTarget,

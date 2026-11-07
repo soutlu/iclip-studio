@@ -7,7 +7,7 @@ from typing import Annotated, Any
 from urllib.parse import urlsplit
 
 import structlog
-from agent_runtime.errors import DomainError
+from cue.errors import DomainError
 from fastapi import Depends, HTTPException, Request, Security, WebSocket
 from fastapi.security import (
     APIKeyCookie,

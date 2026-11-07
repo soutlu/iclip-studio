@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Final
 
-from agent_runtime.errors import NotFound, ValidationFailed
+from cue.errors import NotFound, ValidationFailed
 
 from iclip.domains.identity.public import MANAGE_PERMISSION, Principal, visible_owner_incl_act_as
 from iclip.domains.library.models import (

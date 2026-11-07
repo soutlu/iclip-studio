@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from agent_runtime.config.skills.schemas import SkillDetailOut as RuntimeSkillDetailOut
-from agent_runtime.config.skills.schemas import SkillOut as RuntimeSkillOut
-from agent_runtime.config.skills.schemas import (
+from cue.config.skills.schemas import SkillDetailOut as RuntimeSkillDetailOut
+from cue.config.skills.schemas import SkillOut as RuntimeSkillOut
+from cue.config.skills.schemas import (
     SkillVersionDetailOut as RuntimeSkillVersionDetailOut,
 )
-from agent_runtime.config.skills.schemas import SkillVersionOut as RuntimeSkillVersionOut
+from cue.config.skills.schemas import SkillVersionOut as RuntimeSkillVersionOut
 
 from iclip.platform.runtime_admin import AdminOut, CreatedByName
 

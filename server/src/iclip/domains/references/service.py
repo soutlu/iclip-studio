@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import Final
 
 import structlog
-from agent_runtime.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from cue.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 
 from iclip.domains.identity.public import Principal, visible_owner_incl_act_as
 from iclip.domains.references.models import (

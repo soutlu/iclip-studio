@@ -23,23 +23,23 @@ from pydantic_ai.usage import RunUsage
 from pydantic_ai_harness.subagents import SubAgent, SubAgents
 from structlog.testing import capture_logs
 
-from agent_runtime.file_store.namespace import namespace_for, parse_namespace
-from agent_runtime.file_store.store import (
+from cue.file_store.namespace import namespace_for, parse_namespace
+from cue.file_store.store import (
     FileSpace,
     InvalidPath,
     StoredFile,
     normalize_path,
 )
-from agent_runtime.plugins.workspace.capability import (
+from cue.plugins.workspace.capability import (
     FULL_RESOLUTION_MAX_BYTES,
     MAX_READ_CHARS,
     CropRegion,
     Workspace,
     WorkspaceToolset,
 )
-from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
-from agent_runtime.plugins.workspace.scope import workspace_namespace
-from agent_runtime.run_deps import AgentRunDeps
+from cue.plugins.workspace.ports import ImageInfo, MediaProbeFailed
+from cue.plugins.workspace.scope import workspace_namespace
+from cue.run_deps import AgentRunDeps
 from tests.helpers.file_store import FakeFileStore
 
 USER = uuid.UUID("11111111-1111-1111-1111-111111111111")

@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 
 import httpx
-from agent_runtime.harness.media import image_info_url
-from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
+from cue.harness.media import image_info_url
+from cue.plugins.workspace.ports import ImageInfo, MediaProbeFailed
 
 _IMAGE_MEDIA_TYPES: Mapping[str, str] = {
     "jpg": "image/jpeg",

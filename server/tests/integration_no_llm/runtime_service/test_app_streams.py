@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
-from agent_runtime.harness.transcript.store import TranscriptStore
+from cue.harness.transcript.store import TranscriptStore
 from pydantic_ai.models import Model
 
 from tests.helpers.app import TEST_MODEL_NAME

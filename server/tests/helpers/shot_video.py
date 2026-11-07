@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import get_args
 
 import httpx
-from agent_runtime.file_store.store import FileSpace
+from cue.file_store.store import FileSpace
 from iclip_video.shot_video.capability import GenerationPolicy, ShotVideo
 from iclip_video.shot_video.generation import IMAGE_MODEL
 from iclip_video.shot_video.ports import (

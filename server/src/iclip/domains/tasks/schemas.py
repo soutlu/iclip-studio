@@ -4,8 +4,8 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Any, Final, Literal
 
-from agent_runtime.errors import ValidationFailed
-from agent_runtime.urls import is_http_url
+from cue.errors import ValidationFailed
+from cue.urls import is_http_url
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from pydantic.alias_generators import to_camel
 

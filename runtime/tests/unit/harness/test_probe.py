@@ -9,7 +9,7 @@ from pydantic_ai.exceptions import (
 )
 from pydantic_ai.models.test import TestModel
 
-from agent_runtime.harness.probe import describe_failure, probe_model
+from cue.harness.probe import describe_failure, probe_model
 
 SECRET = "sk-live-aaaaaaaaaaaaaaaa"
 

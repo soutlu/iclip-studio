@@ -6,7 +6,7 @@ from collections.abc import AsyncGenerator, Collection, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, Final
 
-from agent_runtime.errors import ValidationFailed
+from cue.errors import ValidationFailed
 from sqlalchemy import (
     Column,
     DateTime,

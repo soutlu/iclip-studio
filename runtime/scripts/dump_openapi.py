@@ -13,8 +13,8 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from agent_runtime.http.app import create_app
-from agent_runtime.settings import (
+from cue.http.app import create_app
+from cue.settings import (
     AgentRunsSection,
     CompactionSection,
     ResolvedApp,

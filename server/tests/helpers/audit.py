@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import Any, Final
 
 import httpx
-from agent_runtime.app_wire import (
+from cue.app_wire import (
     PromptStatsOut,
     RunStatsOut,
     SessionStatsOut,
@@ -17,8 +17,8 @@ from agent_runtime.app_wire import (
     StatsSessionsIn,
     UsageStatsOut,
 )
-from agent_runtime.client import RuntimeClient
-from agent_runtime.http.app import create_app
+from cue.client import RuntimeClient
+from cue.http.app import create_app
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 

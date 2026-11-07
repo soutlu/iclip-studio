@@ -5,10 +5,10 @@ from collections.abc import AsyncGenerator
 
 import httpx
 import pytest
-from agent_runtime.harness.jobs import JobRow
-from agent_runtime.harness.transcript.store import TranscriptStore
-from agent_runtime.hooks import AppHooks, GatePayload
-from agent_runtime.settings import ResolvedHooks
+from cue.harness.jobs import JobRow
+from cue.harness.transcript.store import TranscriptStore
+from cue.hooks import AppHooks, GatePayload
+from cue.settings import ResolvedHooks
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncEngine
 

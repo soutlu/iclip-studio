@@ -17,8 +17,8 @@ class ScriptedMedia:
         self.answers[str(httpx.URL(url))] = answer
 
     def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("agent_runtime.harness.media_check.public_client", self._client)
-        monkeypatch.setattr("agent_runtime.harness.media_check.RETRY_DELAY_SECONDS", 0.0)
+        monkeypatch.setattr("cue.harness.media_check.public_client", self._client)
+        monkeypatch.setattr("cue.harness.media_check.RETRY_DELAY_SECONDS", 0.0)
 
     def _client(self, **_: object) -> httpx.AsyncClient:
         return httpx.AsyncClient(transport=httpx.MockTransport(self._answer))

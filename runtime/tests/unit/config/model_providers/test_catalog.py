@@ -6,10 +6,10 @@ from typing import Any
 import pytest
 import yaml
 
-from agent_runtime.config.model_providers.catalog import ModelDeclaration, load_declarations
-from agent_runtime.config.model_providers.rules import custom_model, merged_fields, new_fields
-from agent_runtime.errors import ValidationFailed
-from agent_runtime.model_vocab import ModelApi
+from cue.config.model_providers.catalog import ModelDeclaration, load_declarations
+from cue.config.model_providers.rules import custom_model, merged_fields, new_fields
+from cue.errors import ValidationFailed
+from cue.model_vocab import ModelApi
 
 
 def valid() -> dict[str, Any]:

@@ -5,7 +5,7 @@ import contextlib
 from typing import Final
 
 import structlog
-from agent_runtime.client import RuntimeClient, RuntimeUnavailable, WorkChangedFrame
+from cue.client import RuntimeClient, RuntimeUnavailable, WorkChangedFrame
 
 from iclip.domains.agents.transcript_api import GOING_AWAY, LiveConnections
 

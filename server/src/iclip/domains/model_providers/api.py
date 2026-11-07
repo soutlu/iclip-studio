@@ -3,9 +3,9 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from agent_runtime.client import RuntimeClient
-from agent_runtime.config.model_providers.models import ModelType
-from agent_runtime.config.model_providers.schemas import (
+from cue.client import RuntimeClient
+from cue.config.model_providers.models import ModelType
+from cue.config.model_providers.schemas import (
     CredentialCreateIn,
     CredentialOut,
     CredentialTestIn,

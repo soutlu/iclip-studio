@@ -4,11 +4,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Self
 
-from agent_runtime.file_store.store import FileSpace
-from agent_runtime.plugins.base import CapPlugin
-from agent_runtime.plugins.workspace.capability import Workspace
-from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
-from agent_runtime.transcript.display import DisplayFn, ToolDisplayEntry
+from cue.file_store.store import FileSpace
+from cue.plugins.base import CapPlugin
+from cue.plugins.workspace.capability import Workspace
+from cue.plugins.workspace.ports import ImageInfo, MediaProbeFailed
+from cue.transcript.display import DisplayFn, ToolDisplayEntry
 from pydantic_ai.capabilities import AbstractCapability, CombinedCapability
 
 from iclip_video.video.capability import Video

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import uuid
 
-from agent_runtime.errors import ValidationFailed
-from agent_runtime.file_store.namespace import namespace_for
-from agent_runtime.file_store.store import InvalidPath, normalize_path
+from cue.errors import ValidationFailed
+from cue.file_store.namespace import namespace_for
+from cue.file_store.store import InvalidPath, normalize_path
 from iclip_video.iclip_studio.film.checks import check_project_content, check_run_content
 from iclip_video.shot_document import validate_shots_document
 

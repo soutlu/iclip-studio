@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Collection, Mapping, Sequence
 from typing import Any, Final
 
-from agent_runtime.errors import NotFound, ValidationFailed
+from cue.errors import NotFound, ValidationFailed
 from sqlalchemy import (
     Column,
     ColumnElement,

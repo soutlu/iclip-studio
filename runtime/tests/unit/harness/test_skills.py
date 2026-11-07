@@ -13,9 +13,9 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from agent_runtime.config.skills.rules import with_frontmatter_name
-from agent_runtime.harness import skills as skills_module
-from agent_runtime.harness.skills import (
+from cue.config.skills.rules import with_frontmatter_name
+from cue.harness import skills as skills_module
+from cue.harness.skills import (
     MAX_REFERENCE_CHARS,
     TRUNCATION_MARKER,
     CachedSkill,

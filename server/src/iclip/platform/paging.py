@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Final
 
-from agent_runtime.errors import ValidationFailed
+from cue.errors import ValidationFailed
 
 MAX_LIST_LIMIT: Final = 100
 DEFAULT_LIST_LIMIT: Final = 20

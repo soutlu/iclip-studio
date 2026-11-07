@@ -9,9 +9,9 @@ from datetime import UTC, datetime
 import pytest
 from cryptography.fernet import Fernet
 
-from agent_runtime.agent_usage import AgentUsage
-from agent_runtime.config.mcp_servers.index import McpServerIndex
-from agent_runtime.config.mcp_servers.models import (
+from cue.agent_usage import AgentUsage
+from cue.config.mcp_servers.index import McpServerIndex
+from cue.config.mcp_servers.models import (
     McpCheck,
     McpEndpoint,
     McpHeader,
@@ -20,11 +20,11 @@ from agent_runtime.config.mcp_servers.models import (
     McpTool,
     McpTransport,
 )
-from agent_runtime.config.mcp_servers.rules import url_hash
-from agent_runtime.config.mcp_servers.schemas import McpServerCreateIn, McpServerUpdateIn
-from agent_runtime.config.mcp_servers.service import McpServerService
-from agent_runtime.errors import Conflict, NotFound
-from agent_runtime.secrets import CredentialCipher
+from cue.config.mcp_servers.rules import url_hash
+from cue.config.mcp_servers.schemas import McpServerCreateIn, McpServerUpdateIn
+from cue.config.mcp_servers.service import McpServerService
+from cue.errors import Conflict, NotFound
+from cue.secrets import CredentialCipher
 
 BY = uuid.uuid4()
 NOW = datetime(2026, 11, 1, tzinfo=UTC)

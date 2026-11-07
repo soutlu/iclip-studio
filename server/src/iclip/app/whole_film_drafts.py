@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from agent_runtime.errors import NotFound, ValidationFailed
+from cue.errors import NotFound, ValidationFailed
 
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.conversations.whole_film_schemas import WholeFilmDocument, WholeFilmVideoClip

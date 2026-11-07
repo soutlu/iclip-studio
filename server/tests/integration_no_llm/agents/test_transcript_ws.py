@@ -6,7 +6,7 @@ import uuid
 from typing import Any
 
 import pytest
-from agent_runtime.harness.transcript.store import TranscriptStore
+from cue.harness.transcript.store import TranscriptStore
 from fastapi import FastAPI
 from sqlalchemy import text
 from starlette.testclient import TestClient

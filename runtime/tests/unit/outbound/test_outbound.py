@@ -6,13 +6,13 @@ from collections.abc import AsyncGenerator
 import httpx
 import pytest
 
-from agent_runtime.outbound.guard import (
+from cue.outbound.guard import (
     PUBLIC_INTERNET,
     FetchFailed,
     OutboundPolicy,
     public_client,
 )
-from agent_runtime.outbound.probe import probe
+from cue.outbound.probe import probe
 from tests.helpers.loopback import LoopbackServer, Route, loopback_client, loopback_server
 
 pytestmark = pytest.mark.unit

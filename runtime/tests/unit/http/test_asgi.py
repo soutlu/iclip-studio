@@ -11,8 +11,8 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from agent_runtime.http.asgi import CONFIG_ENV, PluginsAtStartup, app_from_env
-from agent_runtime.plugins.base import PluginBinder, PluginHost, PluginRegistry
+from cue.http.asgi import CONFIG_ENV, PluginsAtStartup, app_from_env
+from cue.plugins.base import PluginBinder, PluginHost, PluginRegistry
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.model_connections import FakeModelConnections
 

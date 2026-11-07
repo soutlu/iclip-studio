@@ -5,15 +5,15 @@ import json
 from typing import Any, Final
 
 import httpx
-from agent_runtime.app_wire import MODEL_CALL_TIMEOUT_SECONDS, ModelCallIn
-from agent_runtime.client import (
+from cue.app_wire import MODEL_CALL_TIMEOUT_SECONDS, ModelCallIn
+from cue.client import (
     AppRejected,
     ModelCallResponse,
     ModelCallTimedOut,
     RuntimeClient,
     RuntimeUnavailable,
 )
-from agent_runtime.errors import ModelUnavailable
+from cue.errors import ModelUnavailable
 
 from iclip.platform.video_breakdown.media import FRAME_FPS, FRAME_MAX_PIXELS
 from iclip.platform.video_breakdown.ports import (

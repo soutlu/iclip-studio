@@ -11,14 +11,14 @@ from sqlalchemy import Connection, text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
-from agent_runtime import admin
-from agent_runtime.harness.sessions import DB_SCHEMA
-from agent_runtime.migrations.runner import include_name, include_object, target_metadata
+from cue import admin
+from cue.harness.sessions import DB_SCHEMA
+from cue.migrations.runner import include_name, include_object, target_metadata
 
 
 def _admin(monkeypatch: pytest.MonkeyPatch, url: str, command: str) -> None:
     monkeypatch.setenv("DATABASE_URL", url)
-    monkeypatch.setattr(sys, "argv", ["agent_runtime.admin", command])
+    monkeypatch.setattr(sys, "argv", ["cue.admin", command])
     admin.main()
 
 

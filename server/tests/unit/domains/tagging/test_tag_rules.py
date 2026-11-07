@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from agent_runtime.errors import ValidationFailed
+from cue.errors import ValidationFailed
 
 from iclip.domains.tagging.models import (
     AI_VALUE_LIMIT,

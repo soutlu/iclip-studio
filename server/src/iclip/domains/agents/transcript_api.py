@@ -8,24 +8,24 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Final, Literal, Protocol
 
 import structlog
-from agent_runtime.app_wire import SessionPromptIn
-from agent_runtime.client import (
+from cue.app_wire import SessionPromptIn
+from cue.client import (
     RawFrame,
     RuntimeClient,
     RuntimeUnavailable,
     TranscriptChannel,
     WorkChangedFrame,
 )
-from agent_runtime.errors import DomainError
-from agent_runtime.live.frames import (
+from cue.errors import DomainError
+from cue.live.frames import (
     Ack,
     Ping,
     PingPayload,
     SubscribeAckPayload,
     timestamp_now,
 )
-from agent_runtime.transcript.ops import MAIN_AGENT_ID, Prompt, PromptContent
-from agent_runtime.transcript.wire import (
+from cue.transcript.ops import MAIN_AGENT_ID, Prompt, PromptContent
+from cue.transcript.wire import (
     ApprovalRequest,
     OpsCatchup,
     PromptQueueOut,
@@ -36,7 +36,7 @@ from agent_runtime.transcript.wire import (
     Subscribe,
     Unsubscribe,
 )
-from agent_runtime.transcript.wire import TranscriptPage as SessionTranscriptPage
+from cue.transcript.wire import TranscriptPage as SessionTranscriptPage
 from fastapi import APIRouter, Depends, Path, Query, WebSocket, WebSocketDisconnect
 from fastapi.websockets import WebSocketState
 from pydantic import TypeAdapter, ValidationError

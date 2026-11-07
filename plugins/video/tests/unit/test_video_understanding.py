@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.model_connections import ModelConnection
+from cue.model_connections import ModelConnection
 
 from iclip_video.video_document import video_doc_path
 from iclip_video.video_understanding import (

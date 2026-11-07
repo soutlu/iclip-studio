@@ -45,7 +45,7 @@ def _run_after_importing_the_app(tmp_path: Path, code: str) -> subprocess.Comple
 def test_importing_the_asgi_app_neither_connects_to_database_nor_loads_runtime_service(
     tmp_path: Path,
 ) -> None:
-    done = _run_after_importing_the_app(tmp_path, "print('agent_runtime.http.app' in sys.modules)")
+    done = _run_after_importing_the_app(tmp_path, "print('cue.http.app' in sys.modules)")
 
     assert done.returncode == 0, done.stderr
     assert done.stdout.strip().splitlines()[-1] == "False"

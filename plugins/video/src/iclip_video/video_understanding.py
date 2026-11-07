@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any, Final, Protocol
 
 import httpx
-from agent_runtime.errors import ModelUnavailable
-from agent_runtime.model_connections import ModelConnectionLookup
+from cue.errors import ModelUnavailable
+from cue.model_connections import ModelConnectionLookup
 
 from iclip_video.video_document import SHOT_TIMECODE_SHAPE
 

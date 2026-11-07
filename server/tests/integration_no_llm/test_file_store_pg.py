@@ -5,8 +5,8 @@ import uuid
 from collections.abc import AsyncGenerator
 
 import pytest
-from agent_runtime.file_store.pg import PgFileStore
-from agent_runtime.file_store.store import (
+from cue.file_store.pg import PgFileStore
+from cue.file_store.store import (
     InvalidContent,
     InvalidPath,
     QuotaExceeded,

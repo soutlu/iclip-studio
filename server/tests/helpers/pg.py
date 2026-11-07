@@ -6,7 +6,7 @@ from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
-from agent_runtime.harness.step_store_pg import PgMediaStore, snapshots_table
+from cue.harness.step_store_pg import PgMediaStore, snapshots_table
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 from pydantic_ai_harness.media import externalize_media
 from sqlalchemy import text

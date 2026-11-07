@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import NoReturn, cast
 
 import pytest
-from agent_runtime.errors import NotFound, ValidationFailed
+from cue.errors import NotFound, ValidationFailed
 
 from iclip.domains.conversations.models import Conversation
 from iclip.domains.conversations.repository import (

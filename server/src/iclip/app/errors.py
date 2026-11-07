@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Final
 
 import structlog
-from agent_runtime.client import AppRejected, RuntimeUnavailable
-from agent_runtime.http.errors import install_error_handlers as install_runtime_error_handlers
+from cue.client import AppRejected, RuntimeUnavailable
+from cue.http.errors import install_error_handlers as install_runtime_error_handlers
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 

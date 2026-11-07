@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-from agent_runtime.assembly.displays import UNKNOWN_MCP_SERVER, build_display_registry
-from agent_runtime.config.mcp_servers.public import McpServerIndex, McpServerRecord, McpTool
-from agent_runtime.transcript.display import GenericDisplay
+from cue.assembly.displays import UNKNOWN_MCP_SERVER, build_display_registry
+from cue.config.mcp_servers.public import McpServerIndex, McpServerRecord, McpTool
+from cue.transcript.display import GenericDisplay
 
 NOW = datetime(2026, 11, 1, tzinfo=UTC)
 BY = uuid.uuid4()

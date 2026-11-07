@@ -19,7 +19,7 @@
 
 ## 2. 面向大模型的 docstring 写法
 
-工具的 docstring 是直接给大模型看的指令，**只写会影响模型调用行为的信息**（完整范例可参考 [WorkspaceToolset.read_media_file](../runtime/src/agent_runtime/plugins/workspace/capability.py)）：
+工具的 docstring 是直接给大模型看的指令，**只写会影响模型调用行为的信息**（完整范例可参考 [WorkspaceToolset.read_media_file](../runtime/src/cue/plugins/workspace/capability.py)）：
 
 - **首行一句话定性**：第一行直接写清楚这个工具做什么。
 - **写清边界与调用时机**：明确说明什么时候该调、什么时候不要调、重复调用是否会直接复用已有结果，以及是否支持并发/分批调用。
@@ -32,9 +32,9 @@
 
 ## 3. 工具注册与参数校验
 
-工具统一通过 `Tool(..., args_validator=...)` 注册到插件（Capability）中（参考 [workspace](../runtime/src/agent_runtime/plugins/workspace/capability.py)、[shot_video](../plugins/video/src/iclip_video/shot_video/toolset.py) 与 [skills](../runtime/src/agent_runtime/harness/skills.py)）：
+工具统一通过 `Tool(..., args_validator=...)` 注册到插件（Capability）中（参考 [workspace](../runtime/src/cue/plugins/workspace/capability.py)、[shot_video](../plugins/video/src/iclip_video/shot_video/toolset.py) 与 [skills](../runtime/src/cue/harness/skills.py)）：
 
-- **前置参数校验放 `args_validator`**：像媒体地址、已挂载的技能这类单工具入参范围检查，统一放在 `args_validator` 中拦截，不要散落在工具主体代码里。地址不在参数里、要从工程文件读出来的（`check_film`、`generate_images`）在工具主体里检查，`check_film` 把不能用的地址列进问题清单。共用的地址校验在 [harness/materials.py](../runtime/src/agent_runtime/harness/materials.py)：
+- **前置参数校验放 `args_validator`**：像媒体地址、已挂载的技能这类单工具入参范围检查，统一放在 `args_validator` 中拦截，不要散落在工具主体代码里。地址不在参数里、要从工程文件读出来的（`check_film`、`generate_images`）在工具主体里检查，`check_film` 把不能用的地址列进问题清单。共用的地址校验在 [harness/materials.py](../runtime/src/cue/harness/materials.py)：
   - `require_http` 只检查地址形状是否为合法的 HTTP(S) 链接。
   - 提交类工具用 `require_media` 检查链接能否打开、类型是否正确。有不能用的地址时抛 `ModelRetry`，按位置称呼（如「第 2 组第 1 张」）逐条列出称呼与原因，让模型换地址，不回显地址。
   - 读取类工具不做这项检查（规则见 [CONTEXT.md「媒体地址」](CONTEXT.md#术语)）。
@@ -50,7 +50,7 @@
 
 - **返回值长度限制**：单次返回给大模型的文本不得超过 `50,000` 个字符；如果产出内容过长（如 `video_parser` 的长视频分析），应先写入工作区文件，再向模型返回文件路径与简短摘要。
 - **分离「给模型看的内容」与「给用户界面看的数据」**：
-  使用 `ToolReturn(return_value=给模型看的文本, metadata=给前端渲染卡片的结构化数据)`。其中 `metadata` 会随聊天记录持久化落库并推送给前端，但不会放进发给大模型的上下文窗口（数据结构见 [transcript/display.py](../runtime/src/agent_runtime/transcript/display.py)）。
+  使用 `ToolReturn(return_value=给模型看的文本, metadata=给前端渲染卡片的结构化数据)`。其中 `metadata` 会随聊天记录持久化落库并推送给前端，但不会放进发给大模型的上下文窗口（数据结构见 [transcript/display.py](../runtime/src/cue/transcript/display.py)）。
 - **前端工具卡片标题规范（`generic` 卡片）**：
   - `summary`（主标题）：使用 4～5 个字的书面动宾短语（如「读取图片」「生成画面」「拆解视频」），不带数字、文件路径或口语简写。
   - `detail`（副标题/操作对象）：写本次操作的具体目标（如文件名、路径、镜头号），没有则留空。

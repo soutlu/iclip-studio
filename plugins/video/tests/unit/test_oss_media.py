@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.plugins.workspace.ports import ImageInfo, MediaProbeFailed
+from cue.plugins.workspace.ports import ImageInfo, MediaProbeFailed
 
 from iclip_video.oss_media import OssMediaProbe, rebased_fetch_url
 

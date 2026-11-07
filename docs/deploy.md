@@ -33,7 +33,7 @@
 make db-upgrade   # 执行后端与运行时两边的 Alembic 数据库迁移（如果库里已有重要数据请先备份）
 make dev          # 先启动视频后端 (:7788)，健康检查通过后自动启动运行时服务 (:7790)
 ```
-- **已有的本地库**：运行时的迁移报表已存在时，说明这个库还没打基线标记，见[升级运行时](#升级运行时)第 2 步；本地在 `server/` 目录下用 `uv run --env-file ../.env python -m agent_runtime.admin stamp-baseline` 执行。
+- **已有的本地库**：运行时的迁移报表已存在时，说明这个库还没打基线标记，见[升级运行时](#升级运行时)第 2 步；本地在 `server/` 目录下用 `uv run --env-file ../.env python -m cue.admin stamp-baseline` 执行。
 - **初始化后台配置**：新库刚启动时还没有任何模型和 Agent。请使用 root 账号登录网页后台，在「配置页」中接入模型供应商、创建并发布技能与 Agent（如果需要用到视频理解、参考视频拆解或自动打标功能，请按下方[服务器部署](#服务器部署)第 6 步接入火山方舟）。
 
 ### 4. 启动前端开发服务（另开终端）
@@ -82,7 +82,7 @@ CREATE DATABASE iclip OWNER iclip;
 docker login <ACR_REGISTRY>
 docker compose pull
 docker compose run --rm server alembic upgrade head
-docker compose run --rm --no-deps runtime python -m agent_runtime.admin migrate
+docker compose run --rm --no-deps runtime python -m cue.admin migrate
 docker compose up -d
 curl http://localhost/api/healthz
 ```
@@ -139,7 +139,7 @@ rsync -a <本机输出目录>/catalog.json <服务器>:<部署目录>/components
 
 `.env` 要同时写明 `IMAGE_TAG` 和 `RUNTIME_IMAGE_TAG`：两者缺省都是 `latest`，没写的一边下次拉取时会被带到最新版本。
 
-**一次性步骤**：第一次换上含 `RUNTIME_IMAGE_TAG` 的 `compose.yaml` 时，在 `.env` 加上这个变量，填运行时容器当前在用的镜像标签。运行时单独发版之前的运行时镜像用应用版本号做标签，也就是当时 `IMAGE_TAG` 的值。
+**一次性步骤**：第一次换上这份 `compose.yaml` 时，在 `.env` 加上 `RUNTIME_IMAGE_TAG`，填第一个 `runtime-vX.Y.Z`，两者要一起换：`compose.yaml` 的启动命令是 `python -m cue.main`，更早的运行时镜像里没有 `cue`。
 
 #### 升级应用
 
@@ -171,11 +171,11 @@ rsync -a <本机输出目录>/catalog.json <服务器>:<部署目录>/components
    ```
 2. **一次性步骤**：已有的库第一次升到运行时自己管迁移的版本时，先打基线标记。命令只写版本表，不动表结构；库里没有运行时的表或已经打过标记时报错退出。此后的升级跳过这一步：
    ```bash
-   docker compose run --rm --no-deps runtime python -m agent_runtime.admin stamp-baseline
+   docker compose run --rm --no-deps runtime python -m cue.admin stamp-baseline
    ```
 3. 执行运行时的迁移。漏了第 2 步时迁移会报表已存在并回滚，补上再跑：
    ```bash
-   docker compose run --rm --no-deps runtime python -m agent_runtime.admin migrate
+   docker compose run --rm --no-deps runtime python -m cue.admin migrate
    ```
 4. 用新镜像重启运行时。`--no-deps` 不能省：后端整份加载 `.env`，改了 `RUNTIME_IMAGE_TAG` 后不加它会连后端一起重建：
    ```bash
@@ -194,7 +194,7 @@ rsync -a <本机输出目录>/catalog.json <服务器>:<部署目录>/components
 1. 生成一把新的 Fernet 密钥，拼在 `.env` 中 `CREDENTIAL_ENCRYPTION_KEYS` 现有值的**最前面**（用逗号隔开），然后执行 `docker compose up -d`。
 2. 运行以下命令，将数据库里所有的模型密钥和 MCP 服务配置用新密钥重新加密一遍：
    ```bash
-   docker compose run --rm runtime python -m agent_runtime.admin rotate-credential-keys
+   docker compose run --rm runtime python -m cue.admin rotate-credential-keys
    ```
 3. 从 `.env` 的 `CREDENTIAL_ENCRYPTION_KEYS` 中删掉旧密钥，再次执行 `docker compose up -d` 完成轮换。
 

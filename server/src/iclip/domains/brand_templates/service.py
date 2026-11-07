@@ -4,7 +4,7 @@ import uuid
 from typing import Final
 
 import structlog
-from agent_runtime.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from cue.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 
 from iclip.common.brand_vocab import BRAND_FONT
 from iclip.domains.brand_templates.models import FONT_EXTENSIONS

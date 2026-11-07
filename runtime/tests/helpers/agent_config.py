@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from agent_runtime.config.agent_config.public import PluginFacts, Problem, problems_from_errors
+from cue.config.agent_config.public import PluginFacts, Problem, problems_from_errors
 
 NOTES = "notes"
 

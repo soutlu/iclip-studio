@@ -7,7 +7,7 @@ import os
 import sys
 from typing import Final
 
-from agent_runtime.harness.step_store_pg import snapshots_table, store_snapshot_history
+from cue.harness.step_store_pg import snapshots_table, store_snapshot_history
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 

@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 import httpx
 import pytest
 
-from agent_runtime.outbound.guard import OutboundPolicy, public_client
+from cue.outbound.guard import OutboundPolicy, public_client
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,7 +81,7 @@ def checks_reach(
     def build(**_: object) -> httpx.AsyncClient:
         return loopback_client(server, timeout=timeout)
 
-    monkeypatch.setattr("agent_runtime.harness.media_check.public_client", build)
+    monkeypatch.setattr("cue.harness.media_check.public_client", build)
 
 
 __all__ = ["LoopbackServer", "Route", "checks_reach", "loopback_client", "loopback_server"]

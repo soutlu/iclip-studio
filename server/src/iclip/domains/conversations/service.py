@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
 
 import structlog
-from agent_runtime.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from cue.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from iclip_video.film_view import FilmImagePrompt, FilmTextEdit, FilmView
 
 from iclip.domains.conversations.models import (

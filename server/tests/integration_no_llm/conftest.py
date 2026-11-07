@@ -7,10 +7,10 @@ from pathlib import Path
 
 import httpx
 import pytest
-from agent_runtime.migrations.runner import upgrade as upgrade_runtime
-from agent_runtime.plugins.base import PluginBinder, PluginRegistry
 from alembic import command
 from alembic.config import Config as AlembicConfig
+from cue.migrations.runner import upgrade as upgrade_runtime
+from cue.plugins.base import PluginBinder, PluginRegistry
 from fastapi import FastAPI
 from pydantic_ai import models as pydantic_ai_models
 from pydantic_ai.models import Model
