@@ -1,6 +1,6 @@
-# iclip-studio 领域概念与核心规则
+# iClip-Agent 领域概念与核心规则
 
-本文定义 Productor 视频创作产品的核心业务概念、系统不变量与禁止的设计模式，前后端共同遵守。
+本文定义 iClip-Agent 的核心业务概念、系统不变量与禁止的设计模式，前后端共同遵守。
 - 日常开发命令见 [../AGENTS.md](../AGENTS.md)
 - 系统架构与模块分工见 [architecture.md](architecture.md)
 - 接口与跨端协议见 [../contract/conventions.md](../contract/conventions.md)
@@ -8,7 +8,7 @@
 
 ## 上下文
 
-- **产品定位**：Productor 是一款 AI 视频创作工具。用户通过与 AI Agent 对话推进视频制作：从拆解参考视频、编写分镜脚本或导演工程文件，到生成分镜图片、视频片段，最终合成为完整成片。
+- **产品定位**：iClip-Agent 是一款 AI 视频创作工具。用户通过与 AI Agent 对话推进视频制作：从拆解参考视频、编写分镜脚本或导演工程文件，到生成分镜图片、视频片段，最终合成为完整成片。
 - **系统组成**：
   - `web/`：前端网页应用。
   - `server/`：视频业务后端（浏览器唯一访问的入口）。
