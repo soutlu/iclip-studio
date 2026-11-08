@@ -83,7 +83,9 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
    ```bash
    git fetch origin
    git worktree add .claude/worktrees/<任务名> -b <分支名> origin/develop
+   cd .claude/worktrees/<任务名> && make runtime
    ```
+   - 新 Worktree 里没有运行时检出，Python 相关的检查和推送钩子都要用到它，所以建好后先执行 `make runtime`。
    - 如果当前任务依赖另一个尚未合并的 PR `#N`，则基于那个 PR 的分支创建 Worktree，并在新 PR 描述中注明「依赖 #N」；等 `#N` 合并进 `develop` 后，执行 `git fetch origin && git rebase --onto origin/develop <被依赖分支名> && git push --force-with-lease`。
 
 2. **本地验证并提交**：按[命令与验证](#1-命令与验证)跑完相关检查后 `git commit`。
