@@ -68,7 +68,7 @@ CREATE DATABASE iclip OWNER iclip;
 
 ### 3. 准备服务器部署目录
 在服务器上新建部署目录，放入以下文件与子目录：
-- `compose.yaml`：从仓库 `deploy/compose.yaml` 复制。
+- `compose.yaml` 与 `upgrade.sh`：从仓库 `deploy/compose.yaml` 与 [deploy/upgrade.sh](../deploy/upgrade.sh) 复制，`upgrade.sh` 保留可执行权限，升级时用（见[升级](#升级)）。
 - `.env`：配置镜像版本号 `IMAGE_TAG` 与 `RUNTIME_IMAGE_TAG`（见[升级](#升级)）、对外端口、`DATABASE_URL`、OSS 凭证以及运行时所需的四个核心变量（`RUNTIME_URL=http://runtime:7790`、`RUNTIME_APP_KEY`、`RUNTIME_INTERNAL_TOKEN`、`CREDENTIAL_ENCRYPTION_KEYS`）。
   - **重要提醒**：请将 `CREDENTIAL_ENCRYPTION_KEYS` 与数据库备份分开妥善保管；一旦丢失，数据库里已保存的所有模型 API Key 和 MCP 配置都将无法解密，只能重新录入。
   - 如果服务器是与 OSS 同地域的阿里云 ECS，建议配置 `OSS_INTERNAL_ENDPOINT` 走内网高速读写；
@@ -137,47 +137,43 @@ rsync -a <本机输出目录>/catalog.json <服务器>:<部署目录>/components
 
 应用和运行时各有一条发布线（见[发版与镜像发布](release.md)），分开升级，互不重启。两边谁先升见[跨版本兼容](../contract/conventions.md#跨版本兼容)。
 
-`.env` 要同时写明 `IMAGE_TAG` 和 `RUNTIME_IMAGE_TAG`：两者缺省都是 `latest`，没写的一边下次拉取时会被带到最新版本。
+升级用部署目录里的 `upgrade.sh`（[deploy/upgrade.sh](../deploy/upgrade.sh)），在部署目录执行。脚本先用新版本号拉镜像，拉取成功才把新版本号写进 `.env`，拉取失败时 `.env` 不变。之后任何一步失败，脚本停下并打印回滚提示：把 `.env` 里的版本号改回提示中的旧值，再执行提示中的重启命令；数据库迁移不会自动回退。升级成功后脚本打印新旧版本号，并清掉没有标签的悬空镜像，带标签的旧版本保留，回滚时要用。出问题时可以按下面列出的顺序手工接着做。
 
-**一次性步骤**：第一次换上含 `RUNTIME_IMAGE_TAG` 的 `compose.yaml` 时，在 `.env` 加上这个变量，填运行时容器当前在用的镜像标签。运行时单独发版之前的运行时镜像用应用版本号做标签，也就是当时 `IMAGE_TAG` 的值。
+`.env` 要同时写明 `IMAGE_TAG` 和 `RUNTIME_IMAGE_TAG`：两者缺省都是 `latest`，没写的一边下次拉取时会被带到最新版本。升级应用时 `.env` 里还没有 `RUNTIME_IMAGE_TAG`，脚本会读出运行时容器当前在用的镜像标签，补进 `.env` 并打印出来；运行时容器没在运行、读不出标签或标签是 `latest` 时，脚本报错退出，需要手动在 `.env` 里写上：运行时单独发版之前的运行时镜像用应用版本号做标签，也就是当时 `IMAGE_TAG` 的值。
 
 #### 升级应用
 
-升级后端、前端和渲染服务，运行时容器不动：
+升级后端、前端和渲染服务，运行时容器不动。先对照新版本的 [compose.yaml](../deploy/compose.yaml) 和[配置模型](../server/src/iclip/config/models.py)，检查是否需要在 `.env` 或配置文件中补充新变量，然后执行：
 
-1. 对照新版本的 [compose.yaml](../deploy/compose.yaml) 和[配置模型](../server/src/iclip/config/models.py)，检查是否需要在 `.env` 或配置文件中补充新变量；修改 `.env` 中的 `IMAGE_TAG` 为新版本号，拉取新镜像：
-   ```bash
-   docker compose pull server web render
-   ```
-2. 执行后端的迁移：
-   ```bash
-   docker compose run --rm server alembic upgrade head
-   ```
-3. 用新镜像重启：
-   ```bash
-   docker compose up -d server web render
-   ```
+```bash
+./upgrade.sh app vX.Y.Z
+```
+
+脚本依次执行：
+
+1. `.env` 里没有 `RUNTIME_IMAGE_TAG` 时，按上面说的补上。
+2. `IMAGE_TAG=vX.Y.Z docker compose pull server web render` 拉取新镜像，成功后把 `.env` 的 `IMAGE_TAG` 改成 `vX.Y.Z`。
+3. 执行后端的迁移：`docker compose run --rm server alembic upgrade head`。
+4. 用新镜像重启：`docker compose up -d server web render`。
+5. 等 `server`、`render` 的健康检查通过（最长 180 秒），并确认 `web` 在运行。
 
 #### 升级运行时
 
-只升级运行时容器（运行时 + 视频插件）：
+只升级运行时容器（运行时 + 视频插件）。先对照 `runtime-vX.Y.Z` 标签上 [compose.yaml](../deploy/compose.yaml) 的 `runtime` 段和 [runtime.example.yaml](../deploy/runtime.example.yaml)，检查是否需要在 `.env` 或配置文件中补充新变量，然后执行：
 
-1. 对照 `runtime-vX.Y.Z` 标签上 [compose.yaml](../deploy/compose.yaml) 的 `runtime` 段和 [runtime.example.yaml](../deploy/runtime.example.yaml)，检查是否需要在 `.env` 或配置文件中补充新变量；修改 `.env` 中的 `RUNTIME_IMAGE_TAG` 为新版本号，拉取新镜像：
-   ```bash
-   docker compose pull runtime
-   ```
-2. **一次性步骤**：已有的库第一次升到运行时自己管迁移的版本时，先打基线标记。命令只写版本表，不动表结构；库里没有运行时的表或已经打过标记时报错退出。此后的升级跳过这一步：
-   ```bash
-   docker compose run --rm --no-deps runtime python -m agent_runtime.admin stamp-baseline
-   ```
-3. 执行运行时的迁移。漏了第 2 步时迁移会报表已存在并回滚，补上再跑：
-   ```bash
-   docker compose run --rm --no-deps runtime python -m agent_runtime.admin migrate
-   ```
-4. 用新镜像重启运行时。`--no-deps` 不能省：后端整份加载 `.env`，改了 `RUNTIME_IMAGE_TAG` 后不加它会连后端一起重建：
-   ```bash
-   docker compose up -d --no-deps runtime
-   ```
+```bash
+./upgrade.sh runtime runtime-vX.Y.Z
+```
+
+已有的库第一次升到运行时自己管迁移的版本时，命令末尾加 `--stamp-baseline`，先打基线标记，此后的升级不加。基线标记只写版本表，不动表结构；库里没有运行时的表或已经打过标记时报错退出。漏加时迁移会报表已存在并回滚，加上 `--stamp-baseline` 重新执行即可。
+
+脚本依次执行如下步骤。第 2 至 4 步的命令都带 `--no-deps`：`compose.yaml` 里运行时依赖后端健康，后端又整份加载 `.env`，不加会把后端拉起来或连后端一起重建。
+
+1. `RUNTIME_IMAGE_TAG=runtime-vX.Y.Z docker compose pull runtime` 拉取新镜像，成功后把 `.env` 的 `RUNTIME_IMAGE_TAG` 改成 `runtime-vX.Y.Z`。
+2. 带 `--stamp-baseline` 时打基线标记：`docker compose run --rm --no-deps runtime python -m agent_runtime.admin stamp-baseline`。
+3. 执行运行时的迁移：`docker compose run --rm --no-deps runtime python -m agent_runtime.admin migrate`。
+4. 用新镜像重启运行时：`docker compose up -d --no-deps runtime`。
+5. 等 `runtime` 的健康检查通过（最长 180 秒）。
 
 ### 修改线上配置
 
