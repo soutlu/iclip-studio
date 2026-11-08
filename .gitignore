@@ -1,0 +1,51 @@
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# env / secrets：任何 env 文件都不进仓库，模板也不放
+.env
+.env.*
+*.env
+env.example
+
+# node
+node_modules/
+# 仓库放在外挂卷时 pnpm 会把 store 建在项目旁边
+.pnpm-store/
+web/dist/
+web/dist-mock/
+web/test-results/
+web/playwright-report/
+web/coverage/
+
+# tooling
+.DS_Store
+*.log
+
+# 视觉 QA 截图、生成产物等一次性大文件
+.artifacts/
+artifacts/
+
+# make up 调用的本地启动脚本：依赖地址与跳板机每台机器不一样，各自维护
+scripts/dev-up.sh
+
+# 运行时检出，按 runtime.ref 拉取，不进本仓库
+/runtime/
+
+# 开发 worktree（见 AGENTS.md）
+.claude/worktrees/
+
+# 前端本地文件
+web/.env.local
+web/.tanstack/
+
+# 模型表、agent、skill 只存在于服务器与本机，仓库只放代码
+server/configs/
+server/agents/
+server/skills/

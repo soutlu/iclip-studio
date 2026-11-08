@@ -1,0 +1,300 @@
+import {
+  appendContentImage,
+  decodeContentId,
+  encodeContentId,
+  insertContentReference,
+  resolveShotSelection,
+  shotContents,
+  type ShotContentRef,
+} from './shot-content'
+import { describe, expect, it } from 'vitest'
+import {
+  parseShotsDocument,
+  shotName,
+  type Shot,
+  type ShotsDocument,
+  extractImageIndexes,
+  formatShotPrompt,
+  updateTimelinePrompt,
+  validateShot,
+  validateShotsDocument,
+} from './shot-document'
+
+const shot: Shot = {
+  image_urls: ['a.png', 'b.png'],
+  index: 1,
+  prompt: {
+    global_settings: '  参考锁定：服装保持一致。\n剪辑形式：硬切。\n',
+    timeline: [
+      {
+        timestamps: [0, 3.5],
+        prompt: '  开场，她站在门厅 @Image2，转身看向屋内 @Image1。\n',
+        image_indexes: [2, 1],
+      },
+      {
+        timestamps: [4.25, 8.5],
+        prompt: '走近拍摄鞋面 @Image1。',
+        image_indexes: [1],
+      },
+      {
+        timestamps: [8.5, 9],
+        prompt: '只有旁白，没有图片引用。',
+        image_indexes: [],
+      },
+    ],
+  },
+  seconds: 6,
+}
+
+const document: ShotsDocument = { aspect_ratio: '9:16', shots: [shot] }
+
+const serializedShot = (overrides: Record<string, unknown>): string =>
+  JSON.stringify({ ...document, shots: [{ ...shot, ...overrides }] })
+
+const serializedTimelineItem = (overrides: Record<string, unknown>): string =>
+  serializedShot({
+    prompt: {
+      ...shot.prompt,
+      timeline: [{ ...shot.prompt.timeline[0], ...overrides }],
+    },
+  })
+
+const withBody = (prompt: string, image_indexes: number[] = [], index = 2): Shot => ({
+  ...shot,
+  index,
+  prompt: {
+    ...shot.prompt,
+    timeline: [{ timestamps: [0, 6], prompt, image_indexes }],
+  },
+})
+
+describe('parseShotsDocument', () => {
+  it('按文件字段读取，保留正文空白、时间空档、小数和独立填写的组时长', () => {
+    expect(parseShotsDocument(JSON.stringify(document))).toEqual(document)
+  })
+
+  it.each([
+    ['不是 JSON', '{ 这不是 JSON'],
+    ['根不是对象', '[]'],
+    ['缺镜头组列表', JSON.stringify({ aspect_ratio: '9:16' })],
+    ['时间戳长度错误', serializedTimelineItem({ timestamps: [0, 2, 3] })],
+    ['镜头正文类型错误', serializedTimelineItem({ prompt: 1 })],
+  ])('%s 时返回空结果，不抛异常', (_case, content) => {
+    expect(parseShotsDocument(content)).toBeNull()
+  })
+
+  it.each([
+    ['零编号', [0]],
+    ['超出本组图片数', [3]],
+    ['小数编号', [1.5]],
+    ['字符串编号', ['1']],
+  ])('图片引用为%s 时拒绝读取', (_case, image_indexes) => {
+    expect(parseShotsDocument(serializedTimelineItem({ image_indexes }))).toBeNull()
+  })
+
+  it('每组图片编号独立，同一张图片可以由多个镜头使用', () => {
+    const second = withBody('第二组使用自己的首图 @Image1。', [1], 2)
+    const multiple = { ...document, shots: [shot, { ...second, image_urls: ['other.png'] }] }
+
+    expect(parseShotsDocument(JSON.stringify(multiple))).toEqual(multiple)
+  })
+
+  it('没有任何图片时仍可读取完整镜头组，空数组保持为空', () => {
+    const empty: ShotsDocument = {
+      ...document,
+      shots: [{ ...withBody('只有动作描述，没有图片引用。', [], 1), image_urls: [] }],
+    }
+    expect(parseShotsDocument(JSON.stringify(empty))).toEqual(empty)
+  })
+
+  it.each(['global_settings', 'timeline'] as const)('空图片组拒绝%s 中的悬空引用', (field) => {
+    const empty = { ...withBody('无图镜头。', [], 1), image_urls: [] }
+    if (field === 'global_settings') empty.prompt.global_settings = '跟住 @Image1。'
+    else
+      empty.prompt.timeline[0] = {
+        timestamps: [0, 6],
+        prompt: '跟住 @Image1。',
+        image_indexes: [1],
+      }
+    expect(parseShotsDocument(JSON.stringify({ ...document, shots: [empty] }))).toBeNull()
+  })
+
+  it('拒绝正文与派生引用不一致，不在读取时修补', () => {
+    expect(parseShotsDocument(serializedTimelineItem({ image_indexes: [1, 2] }))).toBeNull()
+  })
+})
+
+describe('structured editing', () => {
+  it('只更新一段正文和对应引用，保留其它段落、图片与时间值', () => {
+    const before = structuredClone(shot)
+    const next = updateTimelinePrompt(shot, 1, '  第二镜 @Image2，重复 @Image2。\n')
+    expect(shot).toEqual(before)
+    expect(next.prompt.timeline[0]).toBe(shot.prompt.timeline[0])
+    expect(next.prompt.timeline[2]).toBe(shot.prompt.timeline[2])
+    expect(next.prompt.global_settings).toBe(shot.prompt.global_settings)
+    expect(next.image_urls).toBe(shot.image_urls)
+    expect(next.seconds).toBe(shot.seconds)
+    expect(next.prompt.timeline[1]).toEqual({
+      ...shot.prompt.timeline[1],
+      prompt: '  第二镜 @Image2，重复 @Image2。\n',
+      image_indexes: [2],
+    })
+  })
+
+  it('删除最后一个引用只解除关系，图片和原编号保留', () => {
+    const next = updateTimelinePrompt(shot, 0, '这段保留纯文字。')
+    expect(next.prompt.timeline[0]?.image_indexes).toEqual([])
+    expect(next.image_urls).toEqual(shot.image_urls)
+    expect(validateShot(next)).toBeUndefined()
+  })
+
+  it('保存前拦截空正文与非法编号，编辑操作保留用户输入', () => {
+    const blank = updateTimelinePrompt(shot, 1, ' \n')
+    const invalid = updateTimelinePrompt(shot, 1, '人物 @Image9。')
+    expect(blank.prompt.timeline[1]?.prompt).toBe(' \n')
+    expect(validateShot(blank)).toContain('第 2 镜')
+    expect(validateShot(invalid)).toContain('@Image9')
+    expect(extractImageIndexes('@Image02 @Image1 @Image2')).toEqual([2, 1])
+  })
+
+  it.each([
+    [
+      '参考图片超过上限',
+      { ...shot, image_urls: Array.from({ length: 31 }, (_, index) => `${index}.png`) },
+      '镜头组 1：参考图片最多 30 张',
+    ],
+    ['时长超出范围', { ...shot, seconds: 31 }, '镜头组 1：时长须为 4–30 秒的整数'],
+    [
+      '没有镜头',
+      { ...shot, prompt: { ...shot.prompt, timeline: [] } },
+      '镜头组 1：请至少保留 1 个镜头',
+    ],
+    ['多出的字段', { ...shot, extra: true }, '镜头组 1：包含无法识别的内容'],
+    [
+      '没有专门文案的类型不符',
+      {
+        ...shot,
+        prompt: {
+          ...shot.prompt,
+          timeline: [{ ...shot.prompt.timeline[0], timestamps: [0, '3.5'] }],
+        },
+      },
+      '镜头组 1 的第 1 镜：格式不正确',
+    ],
+  ])('校验不过时（%s）给出中文原因，不出现 zod 的英文默认文案', (_case, input, message) => {
+    expect(validateShot(input as Shot)).toBe(message)
+  })
+
+  it('整份分镜没有镜头组时给出中文原因', () => {
+    expect(validateShotsDocument({ ...document, shots: [] })).toBe('请至少保留 1 个镜头组')
+  })
+
+  it('上传追加新编号，并将引用插到指定的正文选区', () => {
+    const body = shot.prompt.timeline[0]?.prompt ?? ''
+    const next = appendContentImage(shot, 'scene:1', 'new.png', { text: body, start: 2, end: 4 })
+    expect(next.image_urls).toEqual(['a.png', 'b.png', 'new.png'])
+    expect(next.prompt.timeline[0]?.prompt).toBe(body.slice(0, 2) + '@Image3' + body.slice(4))
+    expect(next.prompt.timeline[0]?.image_indexes).toEqual([3, 2, 1])
+    expect(next.prompt.timeline[1]).toBe(shot.prompt.timeline[1])
+  })
+
+  it('旧选区不覆盖新文字，追加引用时不重编号其它图片', () => {
+    const next = appendContentImage(shot, 'scene:2', 'new.png', {
+      text: '旧正文',
+      start: 0,
+      end: 3,
+    })
+    expect(next.prompt.timeline[1]?.prompt).toBe('走近拍摄鞋面 @Image1。 @Image3')
+    expect(next.prompt.timeline[0]?.prompt).toBe(shot.prompt.timeline[0]?.prompt)
+  })
+
+  it('关联已有图片不增加图片槽，空图组添加首图后获得编号1', () => {
+    const linked = insertContentReference(shot, 'scene:3', 2)
+    expect(linked.image_urls).toBe(shot.image_urls)
+    expect(linked.prompt.timeline[2]?.image_indexes).toEqual([2])
+    const empty = { ...withBody('纯文字。', [], 1), image_urls: [] }
+    const first = appendContentImage(empty, 'scene:1', 'first.png')
+    expect(first.image_urls).toEqual(['first.png'])
+    expect(first.prompt.timeline[0]?.prompt).toBe('纯文字。 @Image1')
+    expect(first.prompt.timeline[0]?.image_indexes).toEqual([1])
+  })
+
+  it('文本导出保留原文空白、原始标记和小数时间', () => {
+    const original = updateTimelinePrompt(shot, 0, '  原文 @Image02。\n')
+    const exported = formatShotPrompt(original)
+    expect(exported).toBe(
+      `${original.prompt.global_settings}\n\n` +
+        '镜头：\n' +
+        '0–3.5秒   原文 @Image02。\n\n' +
+        '4.25–8.5秒 走近拍摄鞋面 @Image1。\n' +
+        '8.5–9秒 只有旁白，没有图片引用。\n' +
+        '不要生成字幕，不要生成背景音乐。',
+    )
+  })
+
+  it.each([
+    [0, 4, '0–4秒'],
+    [3.5, 8.25, '3.5–8.25秒'],
+    [1.0004, 2.0006, '1–2.001秒'],
+  ])('起止秒 %d–%d 取整到毫秒并去掉末尾的零', (start, end, heading) => {
+    const timed: Shot = {
+      ...shot,
+      prompt: {
+        ...shot.prompt,
+        timeline: [{ timestamps: [start, end], prompt: '一。', image_indexes: [] }],
+      },
+    }
+    expect(formatShotPrompt(timed).split('\n')).toContain(`${heading} 一。`)
+  })
+})
+
+describe('shotName', () => {
+  it('取第一镜的首句，帧记号不算标题文字', () => {
+    expect(
+      shotName(
+        withBody('硬切，她从长椅间走向镜头 @Image2，走到近处停下微笑。第二句。\n第二段', [2]),
+      ),
+    ).toBe('硬切，她从长椅间走向镜头，走到近处停下微笑')
+  })
+
+  it('第一镜正文以空行开头时往下找', () => {
+    expect(shotName(withBody('\n  \n收尾镜头'))).toBe('收尾镜头')
+  })
+
+  it('不拿全局设定当作组名', () => {
+    expect(shotName(withBody('她从长椅间走向镜头。'))).toBe('她从长椅间走向镜头')
+  })
+
+  it('第一镜只含帧记号时用组序号起名', () => {
+    expect(shotName(withBody('@Image1 @Image2', [1, 2], 3))).toBe('镜头组 3')
+  })
+})
+
+describe('内容 id 编解码', () => {
+  it.each([
+    { kind: 'global' },
+    { kind: 'unreferenced' },
+    { kind: 'scene', scene: 3 },
+  ] satisfies ShotContentRef[])('往返 $kind', (ref) => {
+    expect(decodeContentId(encodeContentId(ref))).toEqual(ref)
+  })
+
+  it.each(['', 'scene:0', 'scene:01', 'scene:x', 'Global', 'scene:1 '])('拒绝 %j', (id) => {
+    expect(decodeContentId(id)).toBeUndefined()
+  })
+})
+
+describe('resolveShotSelection', () => {
+  it.each([
+    ['scene:1', 1, 'scene:1', 1],
+    ['scene:1', undefined, 'scene:1', 2],
+    ['scene:1', 3, 'scene:1', 2],
+    ['scene:9', 1, 'global', undefined],
+    [undefined, 1, 'global', undefined],
+    ['scene:3', undefined, 'scene:3', undefined],
+  ])('内容 %s、帧 %s 落到 %s 的第 %s 帧', (content, frame, contentId, frameNumber) => {
+    const selection = resolveShotSelection(shotContents(shot), { content, frame })
+    expect(selection.content.id).toBe(contentId)
+    expect(selection.frame).toBe(frameNumber)
+  })
+})

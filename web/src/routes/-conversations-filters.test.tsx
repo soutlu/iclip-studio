@@ -1,0 +1,184 @@
+import { QueryClientProvider } from '@tanstack/react-query'
+import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router'
+import { screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
+import { afterEach, describe, expect, it } from 'vitest'
+import { routeTree } from '@/routeTree.gen'
+import { queryClient } from '@/shared/api/query-client'
+import { TranscriptProvider } from '@/shared/transcript/transcript-provider'
+import {
+  addMockConversation,
+  addMockTask,
+  addMockUser,
+  loginAs,
+  mockGovernor,
+} from '@/testing/mocks/handlers'
+import { server } from '@/testing/mocks/server'
+import { renderWithTooltip } from '@/testing/render'
+import { FakeSocket } from '@/testing/ws'
+import { conversationsReturnSearch } from './-conversations-return'
+
+const renderAt = async (initialPath: string) => {
+  const router = createRouter({
+    history: createMemoryHistory({ initialEntries: [initialPath] }),
+    routeTree,
+  })
+  await router.load()
+
+  renderWithTooltip(
+    <QueryClientProvider client={queryClient}>
+      <TranscriptProvider createSocket={() => new FakeSocket() as unknown as WebSocket}>
+        <RouterProvider router={router} />
+      </TranscriptProvider>
+    </QueryClientProvider>,
+  )
+
+  return router
+}
+
+afterEach(() => {
+  queryClient.clear()
+  window.sessionStorage.clear()
+})
+
+describe('全部对话的需求单预览', () => {
+  it('列表中的需求单展示标题与商品图，只有参考图的没有封面，关联到的需求单去重后一批读取', async () => {
+    loginAs(mockGovernor)
+    const recent = addMockTask('夏季上新')
+    recent.inputs.products = recent.inputs.products.map((product) => ({
+      ...product,
+      image_oss_urls: ['https://example.com/shirt.jpg'],
+    }))
+    const historical = addMockTask('冬季上新')
+    historical.inputs.reference_image_oss_urls.outfit = ['https://example.com/outfit.jpg']
+    addMockConversation('衬衫尝试').taskId = recent.id
+    addMockConversation('外套尝试一').taskId = historical.id
+    addMockConversation('外套尝试二').taskId = historical.id
+    const batchRequests: string[][] = []
+    server.use(
+      http.get('*/api/tasks', ({ request }) => {
+        const ids = new URL(request.url).searchParams.getAll('ids')
+        if (ids.length > 0) batchRequests.push(ids)
+        return HttpResponse.json({ items: [historical, recent], nextCursor: null, total: 2 })
+      }),
+    )
+
+    await renderAt('/conversations')
+
+    const recentRow = await screen.findByRole('link', { name: /衬衫尝试/ })
+    expect(await within(recentRow).findByRole('img', { name: '衬衫尝试的封面' })).toHaveAttribute(
+      'src',
+      'https://example.com/shirt.jpg',
+    )
+    expect(within(recentRow).getByText(recent.title)).toBeVisible()
+    for (const title of ['外套尝试一', '外套尝试二']) {
+      const row = await screen.findByRole('link', { name: new RegExp(title) })
+      expect(within(row).getByText(historical.title)).toBeVisible()
+      expect(within(row).queryByRole('img')).toBeNull()
+    }
+    expect(batchRequests).toEqual([[historical.id, recent.id].sort()])
+  })
+
+  it('需求单读取失败时把失败与未关联分开说，重试成功后预览补上', async () => {
+    loginAs(mockGovernor)
+    const task = addMockTask('历史需求')
+    task.inputs.products = task.inputs.products.map((product) => ({
+      ...product,
+      image_oss_urls: ['https://example.com/shoes.jpg'],
+    }))
+    addMockConversation('历史尝试').taskId = task.id
+    addMockConversation('自由创作')
+    server.use(
+      http.get('*/api/tasks', () => HttpResponse.json({ message: '读取失败' }, { status: 500 })),
+    )
+
+    await renderAt('/conversations')
+
+    const failedRow = await screen.findByRole('link', { name: /历史尝试/ })
+    expect(
+      await within(failedRow).findByText('需求单信息暂不可用', {}, { timeout: 3000 }),
+    ).toBeVisible()
+    const unlinkedRow = await screen.findByRole('link', { name: /自由创作/ })
+    expect(unlinkedRow).toHaveTextContent('未关联需求单')
+
+    server.use(
+      http.get('*/api/tasks', () =>
+        HttpResponse.json({ items: [task], nextCursor: null, total: 1 }),
+      ),
+    )
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '重新读取需求单' }))
+
+    expect(await within(failedRow).findByRole('img', { name: '历史尝试的封面' })).toBeVisible()
+    expect(within(failedRow).getByText(task.title)).toBeVisible()
+    expect(screen.queryByRole('button', { name: '重新读取需求单' })).toBeNull()
+  })
+
+  it('没有需求单读取权限时不请求素材并保留对话审计', async () => {
+    loginAs(mockGovernor, {
+      permissions: mockGovernor.permissions.filter((permission) => permission !== 'tasks:read'),
+    })
+    const requests: string[] = []
+    server.use(
+      http.get('*/api/tasks', ({ request }) => {
+        requests.push(request.url)
+        return HttpResponse.json({ items: [], nextCursor: null, total: 0 })
+      }),
+      http.get('*/api/tasks/:taskId', ({ request }) => {
+        requests.push(request.url)
+        return new HttpResponse(null, { status: 403 })
+      }),
+    )
+    addMockConversation('关联需求的对话').taskId = crypto.randomUUID()
+
+    await renderAt('/conversations')
+
+    const row = await screen.findByRole('link', { name: /关联需求的对话/ })
+    expect((await within(row).findAllByText('当前账号没有查看需求单权限')).length).toBeGreaterThan(
+      0,
+    )
+    expect(requests).toEqual([])
+  })
+})
+
+describe('全部对话的筛选条件', () => {
+  it('地址栏带着属主就只列他的对话，退回来还是这一屏', async () => {
+    loginAs(mockGovernor)
+    const other = addMockUser('小王')
+    const theirs = addMockConversation('小王的秋季片', '2026-09-02T00:00:00Z', other.id)
+    addMockConversation('自己的冬季片', '2026-09-03T00:00:00Z')
+    const user = userEvent.setup()
+
+    const router = await renderAt(`/conversations?ownerUserId=${other.id}`)
+
+    const row = await screen.findByRole('link', { name: /小王的秋季片/ })
+    expect(screen.queryByRole('link', { name: /自己的冬季片/ })).toBeNull()
+
+    await user.click(row)
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/c/${theirs.id}`))
+    expect(conversationsReturnSearch(theirs.id)).toEqual({ ownerUserId: other.id })
+    expect(conversationsReturnSearch('别的对话')).toEqual({})
+
+    router.history.back()
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/conversations'))
+    expect(router.state.location.search).toEqual({ ownerUserId: other.id })
+    expect(await screen.findByRole('link', { name: /小王的秋季片/ })).toBeVisible()
+    expect(screen.queryByRole('link', { name: /自己的冬季片/ })).toBeNull()
+  })
+
+  it('改筛选只换地址不堆历史记录', async () => {
+    loginAs(mockGovernor)
+    addMockConversation('自己的冬季片', '2026-09-03T00:00:00Z')
+    const user = userEvent.setup()
+
+    const router = await renderAt('/conversations')
+    await screen.findByRole('link', { name: /自己的冬季片/ })
+
+    await user.click(screen.getByRole('radio', { name: '进行中' }))
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ state: 'running' }))
+    expect(router.history.length).toBe(1)
+  })
+})

@@ -1,0 +1,55 @@
+import { useNavigate } from '@tanstack/react-router'
+import { useEffect, useRef } from 'react'
+import { ApiError } from '@/shared/api/client'
+import { consumeSsoNextPath, sanitizeCueAuthNextPath, useCompleteSsoLogin } from '@/shared/auth'
+import type { SsoErrorCode } from '../sso-error'
+
+type SsoLandingPageProps = {
+  jwt?: string | undefined
+}
+
+const ssoErrorCodeFromError = (error: unknown): SsoErrorCode => {
+  if (error instanceof ApiError && error.status === 401) {
+    return 'invalid'
+  }
+
+  if (error instanceof ApiError && error.status === 403) {
+    return 'forbidden'
+  }
+
+  return 'unavailable'
+}
+
+export function SsoLandingPage({ jwt }: SsoLandingPageProps) {
+  const navigate = useNavigate()
+  const completeSsoLogin = useCompleteSsoLogin()
+  const startedRef = useRef(false)
+
+  useEffect(() => {
+    if (startedRef.current) {
+      return
+    }
+
+    startedRef.current = true
+
+    const fail = (code: SsoErrorCode) =>
+      void navigate({ replace: true, search: { ssoError: code }, to: '/' })
+
+    if (!jwt) {
+      fail('missing')
+      return
+    }
+
+    completeSsoLogin(jwt)
+      .then(() => {
+        void navigate({ replace: true, to: sanitizeCueAuthNextPath(consumeSsoNextPath()) })
+      })
+      .catch((error: unknown) => fail(ssoErrorCodeFromError(error)))
+  }, [completeSsoLogin, jwt, navigate])
+
+  return (
+    <main className="flex min-h-dvh items-center justify-center text-on-background">
+      <p className="text-body">正在完成企业 SSO 登录…</p>
+    </main>
+  )
+}

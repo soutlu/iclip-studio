@@ -1,0 +1,191 @@
+/// <reference lib="dom" />
+
+import { expect, test, type Locator, type Page } from '@playwright/test'
+import { login } from './login'
+
+const MY_TITLES = [
+  '画廊验收｜秋冬鞋履系列新品内容创作，保留完整需求名称以便跨团队识别与查找',
+  '画廊验收｜多款通勤系列',
+  '画廊验收｜周末轻运动',
+  '画廊验收｜经典正装系列',
+  '画廊验收｜日常穿搭系列',
+  '画廊验收｜秋季新品系列',
+] as const
+const OTHER_TITLES = [
+  '画廊其他｜细带凉鞋创作任务',
+  '画廊其他｜方跟短靴创作任务',
+  '画廊其他｜乐福鞋创作任务',
+]
+
+test.afterEach(async ({ page }) => {
+  expect(await page.pageErrors(), '页面不应出现未捕获异常').toEqual([])
+})
+
+const PRODUCT_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+)
+
+const openGallery = async (page: Page) => {
+  await page.goto('/')
+  await login(page)
+  await page.evaluate(
+    async ({ bytes, mine, others }) => {
+      const post = async (path: string, body?: unknown) => {
+        const response = await fetch(path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        })
+        if (!response.ok) throw new Error(`测试数据准备失败：${path} (${response.status})`)
+        return response.json() as Promise<unknown>
+      }
+      const uploadImage = async (imageBytes = bytes) => {
+        const signed = (await post('/api/uploads/sign', {
+          contentType: 'image/png',
+          fileName: '商品.png',
+          sizeBytes: imageBytes.length,
+        })) as { uploadId: string; upload: { url: string; headers: Record<string, string> } }
+        const upload = await fetch(signed.upload.url, {
+          method: 'PUT',
+          headers: signed.upload.headers,
+          body: new Uint8Array(imageBytes),
+        })
+        if (!upload.ok) throw new Error(`测试图片上传失败 (${upload.status})`)
+        return (await post(`/api/uploads/${signed.uploadId}/confirm`)) as { url: string }
+      }
+      const image = await uploadImage()
+      const canvas = document.createElement('canvas')
+      canvas.width = 80
+      canvas.height = 40
+      const context = canvas.getContext('2d')
+      if (!context) throw new Error('浏览器不支持生成参考图样本')
+      context.fillStyle = '#b9c8b9'
+      context.fillRect(0, 0, 80, 40)
+      context.fillStyle = '#385943'
+      context.fillRect(10, 10, 60, 20)
+      const wideBlob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(
+          (blob) => (blob ? resolve(blob) : reject(new Error('参考图样本生成失败'))),
+          'image/png',
+        )
+      })
+      const wideImage = await uploadImage([...new Uint8Array(await wideBlob.arrayBuffer())])
+      const references = [
+        wideImage,
+        ...(await Promise.all(Array.from({ length: 8 }, () => uploadImage()))),
+      ]
+
+      const create = async (title: string, index: number, claimed: boolean) => {
+        const created = (await post('/api/tasks', {
+          title,
+          inputs: {
+            creative_requirement: '展示商品原有轮廓与细节，保留调用方填写的需求名称。',
+            video_spec: {
+              platform: 'douyin',
+              video_type: 'product_showcase',
+              content_type: 'short_video',
+            },
+            reference_image_oss_urls: {
+              model: index === 1 ? references.map((reference) => reference.url) : [],
+              outfit: [],
+              prop: [],
+            },
+            products: Array.from({ length: index === 1 ? 4 : 1 }, (_, productIndex) => ({
+              style_no: `QA-${claimed ? 'MINE' : 'ALL'}-${index}-${productIndex}`,
+              name: ['黑色乐福鞋', '细带凉鞋', '白色运动鞋'][index % 3],
+              image_oss_urls: [image.url],
+            })),
+          },
+        })) as { task: { id: string } }
+        await post(`/api/tasks/${created.task.id}/publish`)
+        if (claimed) await post(`/api/tasks/${created.task.id}/confirm`)
+      }
+      for (let index = mine.length - 1; index >= 0; index -= 1) {
+        await create(mine[index], index, true)
+      }
+      for (let index = others.length - 1; index >= 0; index -= 1) {
+        await create(others[index], index, false)
+      }
+    },
+    { bytes: [...PRODUCT_PNG], mine: [...MY_TITLES], others: OTHER_TITLES },
+  )
+  await page.getByRole('button', { name: '需求单', exact: true }).click()
+  if ((page.viewportSize()?.width ?? 1335) < 600) {
+    await expect(page.getByRole('button', { name: '展开侧边栏', exact: true })).toBeVisible()
+    await expect(page.getByRole('complementary', { name: '侧边栏', exact: true })).toBeHidden()
+  }
+  await expect(page.getByRole('region', { name: '我的需求单' })).toBeVisible()
+}
+
+const cardsIn = (region: Locator) =>
+  region.getByRole('button', { name: /^查看需求：画廊(?:验收|其他)｜/ })
+
+const boundsOf = async (locator: Locator) => {
+  const bounds = await locator.boundingBox()
+  if (!bounds) throw new Error('待验收元素未参与可见布局')
+  return bounds
+}
+
+test('参考图可加载，左右滚动不会打开详情，键盘可打开需求', async ({ page }) => {
+  await page.setViewportSize({ width: 1335, height: 1197 })
+  await openGallery(page)
+  const mine = page.getByRole('region', { name: '我的需求单' })
+  const strip = mine.getByLabel('商品与参考图', { exact: true })
+  const thumbnails = strip.getByRole('button', { name: /^打开需求详情：/ })
+  await expect(thumbnails).toHaveCount(9)
+  const image = thumbnails.first().getByRole('img')
+  await expect
+    .poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth))
+    .toBeGreaterThan(0)
+  const thumbnailBounds = await boundsOf(image)
+  const ratio = await image.evaluate(
+    (element: HTMLImageElement) => element.naturalWidth / element.naturalHeight,
+  )
+  expect(Math.abs(thumbnailBounds.width / thumbnailBounds.height - ratio)).toBeLessThan(0.02)
+  await mine.getByRole('button', { name: '向右滚动参考图' }).click()
+  await expect.poll(() => strip.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  const rightPosition = await strip.evaluate((element) => element.scrollLeft)
+  await mine.getByRole('button', { name: '向左滚动参考图' }).click()
+  await expect
+    .poll(() => strip.evaluate((element) => element.scrollLeft))
+    .toBeLessThan(rightPosition)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await thumbnails.first().focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('dialog', { name: MY_TITLES[1], exact: true })).toBeVisible()
+})
+
+for (const viewport of [
+  { name: 'desktop', width: 1335, height: 1197 },
+  { name: 'mobile', width: 390, height: 844 },
+]) {
+  test(`画廊 ${viewport.name}：长标题可识别，打开详情后可返回列表`, async ({ page }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    await openGallery(page)
+    const mine = page.getByRole('region', { name: '我的需求单' })
+    const card = cardsIn(mine).first()
+    await expect(card).toHaveAccessibleName(`查看需求：${MY_TITLES[0]}`)
+    await expect(page.getByRole('button', { name: '新建需求单', exact: true })).toBeVisible()
+    await expect(page.getByRole('textbox', { name: '搜索需求单' })).toBeVisible()
+    await expect(card.getByLabel('发布平台：抖音')).toBeVisible()
+    await expect(card.getByLabel('视频类型：产品展示')).toBeVisible()
+    await expect(card.getByLabel('内容类型：短视频')).toBeVisible()
+    const image = card.getByRole('img').first()
+    await expect(image).toBeVisible()
+    await expect
+      .poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth))
+      .toBeGreaterThan(0)
+    expect(
+      await page.getByRole('main').evaluate((main) => main.scrollWidth <= main.clientWidth),
+    ).toBe(true)
+    await card.click()
+    const detail = page.getByRole('dialog', { name: MY_TITLES[0], exact: true })
+    await expect(detail).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(detail).toBeHidden()
+    await expect(card).toBeVisible()
+    await expect(page).toHaveURL('/tasks')
+  })
+}

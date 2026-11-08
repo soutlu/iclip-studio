@@ -1,0 +1,378 @@
+from __future__ import annotations
+
+import uuid
+
+import httpx
+import pytest
+from fastapi import FastAPI
+
+from iclip.domains.identity.acting import ActAs
+from iclip.domains.identity.models import Principal
+from iclip.domains.tasks.api import create_tasks_router
+from iclip.domains.tasks.models import (
+    STATUS_CONFIRMED,
+    STATUS_DRAFT,
+    STATUS_PUBLISHED,
+    STATUS_WITHDRAWN,
+    TaskStatus,
+)
+from iclip.domains.tasks.service import TaskService
+from tests.helpers.app import app_with_principal
+from tests.helpers.identity import InMemoryUserRepository
+from tests.helpers.tasks import (
+    STYLE_NO,
+    InMemoryTaskRepository,
+    future,
+    make_inputs,
+    make_task,
+)
+
+BODY: dict[str, object] = {
+    "title": "秋冬新品短视频",
+    "inputs": make_inputs().model_dump(),
+}
+
+
+def editor(user_id: uuid.UUID | None = None, *extra: str) -> Principal:
+    return principal("tasks:read", "tasks:write", *extra, user_id=user_id)
+
+
+def principal(*permissions: str, user_id: uuid.UUID | None = None) -> Principal:
+    return Principal(
+        kind="user",
+        user_id=user_id or uuid.uuid4(),
+        permissions=frozenset(permissions),
+        audit_label="tester",
+    )
+
+
+def build_test_app(
+    repo: InMemoryTaskRepository,
+    *,
+    granted: Principal | None,
+) -> FastAPI:
+    app = app_with_principal(granted)
+    app.include_router(
+        create_tasks_router(TaskService(repo), act_as=ActAs(InMemoryUserRepository()))
+    )
+    return app
+
+
+def client(app: FastAPI) -> httpx.AsyncClient:
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
+
+
+def body_of(task: object, **overrides: object) -> dict[str, object]:
+
+    assert isinstance(task, dict)
+    payload = {key: task[key] for key in ("title", "priority", "deadline", "inputs")}
+    payload.update(overrides)
+    return payload
+
+
+@pytest.mark.parametrize("status", ["confirmed", "withdrawn", "", "PUBLISHED"])
+async def test_creation_only_accepts_draft_or_published(status: str) -> None:
+
+    async with client(
+        build_test_app(InMemoryTaskRepository(), granted=principal("tasks:write"))
+    ) as http:
+        response = await http.post("/tasks", json={**BODY, "status": status})
+    assert response.status_code == 422
+
+
+async def test_status_cannot_be_supplied_when_overwriting() -> None:
+    task = make_task()
+    repo = InMemoryTaskRepository([task])
+    async with client(build_test_app(repo, granted=editor(task.creator_user_id))) as http:
+        current = (await http.get(f"/tasks/{task.id}")).json()["task"]
+        response = await http.put(
+            f"/tasks/{task.id}", json=body_of(current, status=STATUS_PUBLISHED)
+        )
+    assert response.status_code == 422
+
+
+async def test_draft_products_are_editable_except_for_their_style_numbers() -> None:
+    task = make_task(
+        inputs=make_inputs(products=[{"style_no": STYLE_NO}, {"style_no": "DEMO24002W"}])
+    )
+    repo = InMemoryTaskRepository([task])
+    async with client(build_test_app(repo, granted=editor(task.creator_user_id))) as http:
+        current = (await http.get(f"/tasks/{task.id}")).json()["task"]
+        inputs = current["inputs"]
+        inputs["products"][0].update(
+            name="及膝长靴",
+            brand="品牌甲",
+            category="鞋靴",
+            color_name="黑色",
+            image_oss_urls=["https://example.com/boots.jpg"],
+        )
+        saved = await http.put(f"/tasks/{task.id}", json=body_of(current, inputs=inputs))
+        assert saved.status_code == 200
+        assert saved.json()["task"]["inputs"]["products"] == inputs["products"]
+        for products in (
+            [inputs["products"][0]],
+            [*inputs["products"], {"style_no": "DEMO24003W"}],
+            [inputs["products"][1], inputs["products"][0]],
+            [{**inputs["products"][0], "style_no": "OTHER1"}, inputs["products"][1]],
+        ):
+            response = await http.put(
+                f"/tasks/{task.id}", json=body_of(current, inputs={**inputs, "products": products})
+            )
+            assert response.status_code == 409, products
+        after = (await http.get(f"/tasks/{task.id}")).json()["task"]
+        assert [item["style_no"] for item in after["inputs"]["products"]] == [
+            STYLE_NO,
+            "DEMO24002W",
+        ]
+
+
+@pytest.mark.parametrize("field", ["name", "brand", "category", "color_name", "image_oss_urls"])
+async def test_products_freeze_on_publish(field: str) -> None:
+    task = make_task(status=STATUS_PUBLISHED)
+    repo = InMemoryTaskRepository([task])
+    async with client(build_test_app(repo, granted=editor())) as http:
+        current = (await http.get(f"/tasks/{task.id}")).json()["task"]
+        current["inputs"]["products"][0][field] = (
+            ["https://example.com/new.jpg"] if field == "image_oss_urls" else "new value"
+        )
+        response = await http.put(f"/tasks/{task.id}", json=body_of(current))
+        assert response.status_code == 409
+        assert "products" in response.json()["detail"]
+
+
+async def test_creator_cannot_be_supplied_by_the_client() -> None:
+
+    async with client(
+        build_test_app(InMemoryTaskRepository(), granted=principal("tasks:write"))
+    ) as http:
+        response = await http.post("/tasks", json={**BODY, "creatorUserId": str(uuid.uuid4())})
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {**BODY, "title": ""},
+        {
+            **BODY,
+            "inputs": {"products": [{"style_no": STYLE_NO}], "video_spec": {"duration_seconds": 1}},
+        },
+        {
+            **BODY,
+            "inputs": {"products": [{"style_no": STYLE_NO}], "video_spec": {"aspect_ratio": "7:3"}},
+        },
+        {
+            **BODY,
+            "inputs": {
+                "products": [{"style_no": STYLE_NO, "image_oss_urls": ["file:///etc/passwd"]}]
+            },
+        },
+        {
+            **BODY,
+            "inputs": {
+                "products": [{"style_no": STYLE_NO}],
+                "reference_image_oss_urls": {"model": ["https://"]},
+            },
+        },
+        {
+            **BODY,
+            "inputs": {
+                "products": [{"style_no": STYLE_NO}],
+                "reference_video_oss_url": "file:///video.mp4",
+            },
+        },
+        {**BODY, "inputs": {"products": [{"style_no": STYLE_NO}], "unknown_field": "x"}},
+        {"title": "x"},
+        {**BODY, "inputs": {"products": [{"style_no": ""}]}},
+        {**BODY, "inputs": {"products": [{"style_no": "   "}]}},
+        {**BODY, "inputs": {"products": []}},
+        {**BODY, "inputs": {"product": {"style_no": STYLE_NO}}},
+        {**BODY, "inputs": {"products": [{"style_no": STYLE_NO}, {"style_no": f" {STYLE_NO}"}]}},
+        {**BODY, "inputs": {"products": [{"style_no": f"SKU{i}"} for i in range(21)]}},
+        {**BODY, "inputs": {"products": [{"style_no": STYLE_NO, "brand": "x" * 201}]}},
+    ],
+)
+async def test_bad_request_shapes_are_rejected(payload: dict[str, object]) -> None:
+    async with client(
+        build_test_app(InMemoryTaskRepository(), granted=principal("tasks:write"))
+    ) as http:
+        assert (await http.post("/tasks", json=payload)).status_code == 422
+
+
+async def test_permissions_gate_the_two_kinds_of_access() -> None:
+    task = make_task()
+    repo = InMemoryTaskRepository([task])
+
+    async with client(build_test_app(repo, granted=None)) as http:
+        assert (await http.get("/tasks")).status_code == 401
+    async with client(build_test_app(repo, granted=principal("tasks:read"))) as http:
+        assert (await http.get("/tasks")).status_code == 200
+        assert (await http.post("/tasks", json=BODY)).status_code == 403
+
+
+async def test_a_draft_is_the_creators_own_business() -> None:
+
+    task = make_task()
+    repo = InMemoryTaskRepository([task])
+    payload = {"title": "改个名", "inputs": make_inputs().model_dump()}
+
+    async with client(build_test_app(repo, granted=principal("tasks:write"))) as http:
+        assert (await http.put(f"/tasks/{task.id}", json=payload)).status_code == 403
+        assert (await http.delete(f"/tasks/{task.id}")).status_code == 403
+
+    manager = principal("tasks:write", "users:manage")
+    async with client(build_test_app(repo, granted=manager)) as http:
+        assert (await http.put(f"/tasks/{task.id}", json=payload)).status_code == 200
+
+    owner = principal("tasks:write", user_id=task.creator_user_id)
+    async with client(build_test_app(repo, granted=owner)) as http:
+        assert (await http.delete(f"/tasks/{task.id}")).status_code == 204
+    assert repo.tasks == {}
+
+
+async def test_publishing_needs_something_to_make() -> None:
+    creator = uuid.uuid4()
+    bare = make_task(creator_user_id=creator, inputs=make_inputs(creative_requirement=""))
+    repo = InMemoryTaskRepository([bare])
+    caller = editor(creator)
+
+    async with client(build_test_app(repo, granted=caller)) as http:
+        assert (await http.post(f"/tasks/{bare.id}/publish")).status_code == 422
+        said = body_of(
+            (await http.get(f"/tasks/{bare.id}")).json()["task"],
+            inputs=make_inputs().model_dump(),
+        )
+        assert (await http.put(f"/tasks/{bare.id}", json=said)).status_code == 200
+        published = await http.post(f"/tasks/{bare.id}/publish")
+
+    assert published.status_code == 200, published.text
+    assert published.json()["task"]["status"] == STATUS_PUBLISHED
+
+
+async def test_publishing_is_the_creators_call() -> None:
+    task = make_task(deadline=future())
+    repo = InMemoryTaskRepository([task])
+    async with client(build_test_app(repo, granted=principal("tasks:write"))) as http:
+        assert (await http.post(f"/tasks/{task.id}/publish")).status_code == 403
+
+
+@pytest.mark.parametrize("field", ["platform", "video_type", "content_type"])
+async def test_published_input_is_frozen_but_planner_fields_stay_open(field: str) -> None:
+    task = make_task(status=STATUS_PUBLISHED)
+    repo = InMemoryTaskRepository([task])
+    async with client(build_test_app(repo, granted=editor())) as http:
+        current = (await http.get(f"/tasks/{task.id}")).json()["task"]
+        inputs = current["inputs"]
+        inputs["video_spec"][field] = "changed"
+        assert (await http.put(f"/tasks/{task.id}", json=body_of(current))).status_code == 409
+        inputs["video_spec"][field] = ""
+        inputs["video_spec"].update(duration_seconds=30, aspect_ratio="9:16", resolution="1080p")
+        inputs["creative_requirement"] = "新创作要求"
+        inputs["reference_image_oss_urls"] = {
+            "model": ["https://example.com/model.jpg"],
+            "outfit": ["https://example.com/outfit.jpg"],
+            "prop": ["https://example.com/prop.jpg"],
+        }
+        inputs["reference_video_oss_url"] = "https://example.com/video.mp4"
+        saved = await http.put(f"/tasks/{task.id}", json=body_of(current, title="策划师改的标题"))
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["task"]["inputs"] == inputs
+    assert saved.json()["task"]["title"] == "策划师改的标题"
+
+
+async def test_published_task_may_have_no_deadline() -> None:
+    task = make_task(status=STATUS_PUBLISHED)
+    repo = InMemoryTaskRepository([task])
+    async with client(build_test_app(repo, granted=editor())) as http:
+        current = (await http.get(f"/tasks/{task.id}")).json()["task"]
+        cleared = body_of(current, deadline=None)
+        saved = await http.put(f"/tasks/{task.id}", json=cleared)
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["task"]["deadline"] is None
+
+
+@pytest.mark.parametrize(
+    ("status", "action", "expected"),
+    [
+        pytest.param(STATUS_DRAFT, "confirm", 409, id="draft-confirm-conflict"),
+        pytest.param(STATUS_DRAFT, "withdraw", 409, id="draft-withdraw-conflict"),
+        pytest.param(STATUS_PUBLISHED, "publish", 409, id="published-publish-conflict"),
+        pytest.param(STATUS_CONFIRMED, "confirm", 200, id="confirmed-confirm-idempotent"),
+        pytest.param(STATUS_CONFIRMED, "publish", 409, id="confirmed-publish-conflict"),
+        pytest.param(STATUS_WITHDRAWN, "confirm", 409, id="withdrawn-confirm-conflict"),
+        pytest.param(STATUS_WITHDRAWN, "withdraw", 409, id="withdrawn-withdraw-conflict"),
+        pytest.param(STATUS_PUBLISHED, "confirm", 200, id="published-confirm"),
+        pytest.param(STATUS_PUBLISHED, "withdraw", 200, id="published-withdraw"),
+        pytest.param(STATUS_CONFIRMED, "withdraw", 200, id="confirmed-withdraw"),
+    ],
+)
+async def test_current_state_determines_the_action_result(
+    status: TaskStatus, action: str, expected: int
+) -> None:
+
+    task = make_task(status=status, deadline=future())
+    repo = InMemoryTaskRepository([task])
+    caller = editor(task.creator_user_id)
+    async with client(build_test_app(repo, granted=caller)) as http:
+        assert (await http.post(f"/tasks/{task.id}/{action}")).status_code == expected
+
+
+@pytest.mark.parametrize("status", [STATUS_PUBLISHED, STATUS_CONFIRMED, STATUS_WITHDRAWN])
+async def test_only_drafts_can_be_deleted(status: TaskStatus) -> None:
+    task = make_task(status=status, deadline=future())
+    repo = InMemoryTaskRepository([task])
+    caller = editor(task.creator_user_id, "users:manage")
+    async with client(build_test_app(repo, granted=caller)) as http:
+        assert (await http.delete(f"/tasks/{task.id}")).status_code == 409
+    assert task.id in repo.tasks
+
+
+async def test_withdrawn_tasks_are_frozen_solid() -> None:
+    task = make_task(status=STATUS_WITHDRAWN, deadline=future())
+    repo = InMemoryTaskRepository([task])
+    caller = editor(task.creator_user_id, "users:manage")
+    async with client(build_test_app(repo, granted=caller)) as http:
+        current = (await http.get(f"/tasks/{task.id}")).json()["task"]
+        assert (await http.put(f"/tasks/{task.id}", json=body_of(current))).status_code == 409
+
+
+async def test_list_filters_by_status_and_rejects_invalid_parameters() -> None:
+    repo = InMemoryTaskRepository(
+        [make_task(), make_task(status=STATUS_PUBLISHED, deadline=future())]
+    )
+    async with client(build_test_app(repo, granted=principal("tasks:read"))) as http:
+        assert len((await http.get("/tasks")).json()["items"]) == 2
+        assert len((await http.get(f"/tasks?status={STATUS_DRAFT}")).json()["items"]) == 1
+        assert (await http.get("/tasks?status=nonsense")).status_code == 422
+        assert (await http.get("/tasks?limit=0")).status_code == 422
+        assert (await http.get("/tasks?limit=1000")).status_code == 422
+        assert (await http.get("/tasks?cursor=nonsense")).status_code == 422
+        too_many = tuple(("ids", str(uuid.uuid4())) for _ in range(101))
+        assert (await http.get("/tasks", params=too_many)).status_code == 422
+        assert (await http.get("/tasks?ids=not-a-uuid")).status_code == 422
+        assert (await http.get("/tasks?claimedBy=someone-else")).status_code == 422
+
+
+@pytest.mark.parametrize(
+    "media",
+    [
+        {
+            "products": [
+                {"style_no": STYLE_NO},
+                {"style_no": "DEMO24002W", "image_oss_urls": ["https://example.com/product.jpg"]},
+            ]
+        },
+        {"reference_image_oss_urls": {"model": ["https://example.com/model.jpg"]}},
+        {"reference_image_oss_urls": {"outfit": ["https://example.com/outfit.jpg"]}},
+        {"reference_image_oss_urls": {"prop": ["https://example.com/prop.jpg"]}},
+        {"reference_video_oss_url": "https://example.com/video.mp4"},
+    ],
+)
+async def test_a_supplied_creative_asset_is_enough_to_publish(media: dict[str, object]) -> None:
+    task = make_task(deadline=future(), inputs=make_inputs(creative_requirement="", **media))
+    async with client(
+        build_test_app(InMemoryTaskRepository([task]), granted=editor(task.creator_user_id))
+    ) as http:
+        response = await http.post(f"/tasks/{task.id}/publish")
+    assert response.status_code == 200, response.text

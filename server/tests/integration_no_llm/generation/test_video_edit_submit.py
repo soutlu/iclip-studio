@@ -1,0 +1,318 @@
+from __future__ import annotations
+
+import json
+import uuid
+from collections.abc import Callable
+from dataclasses import replace
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Any
+
+import httpx
+import pytest
+from procrastinate.testing import InMemoryConnector
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from iclip.domains.generation.infra_sql import SqlGenerationRepository
+from iclip.domains.generation.models import (
+    STATUS_COMPLETED,
+    STATUS_SUBMITTED,
+    GenerationJob,
+    GenerationOutput,
+)
+from iclip.domains.generation.module import (
+    GenerationModule,
+    ImageModelConfig,
+    build_generation_module,
+)
+from iclip.domains.generation.repository import GenerationRepository
+from iclip.domains.generation.schemas import (
+    KIND_VIDEO,
+    VideoEditIn,
+    VideoEditRequest,
+    generation_out,
+)
+from iclip.domains.generation.service import SettledRecords
+from iclip.domains.generation.video import VideoProviderSettings
+from iclip.domains.identity.acting import ActAs
+from iclip.domains.identity.models import Principal
+from iclip.platform.media.codec import SOFTWARE
+from iclip.platform.media.process import ffmpeg_available
+from tests.helpers.fetch_url import as_is, rewriting
+from tests.helpers.fork_lineage import make_user
+from tests.helpers.generation import (
+    FixedLineage,
+    InMemoryGenerationRepository,
+    MemoryObjectStore,
+    make_job,
+    make_upload,
+    stored_request,
+    video_request,
+)
+from tests.helpers.identity import InMemoryUserRepository
+from tests.helpers.media import synthesize_video
+from tests.helpers.media_server import serving
+
+pytestmark = [
+    pytest.mark.anyio,
+    pytest.mark.skipif(not ffmpeg_available(), reason="本机 PATH 上没有 ffmpeg/ffprobe"),
+]
+
+MODEL = "vendor-a-seedance-2-5"
+
+CLIP_MD5 = "0123456789abcdef0123456789abcdef"
+
+PRINCIPAL = Principal(
+    kind="user",
+    user_id=uuid.uuid4(),
+    permissions=frozenset({"generation:submit"}),
+    audit_label="tester",
+    username="tester",
+)
+
+
+async def _keep_completion(_conversation_id: uuid.UUID, _owner: uuid.UUID) -> None:
+    return None
+
+
+def _edit_module(
+    repo: GenerationRepository,
+    sent: list[dict[str, Any]],
+    *,
+    fetch_url: Callable[[str], str] = as_is,
+) -> GenerationModule:
+    def upstream(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"task_id": "upstream-1"})
+
+    return build_generation_module(
+        repo,
+        act_as=ActAs(InMemoryUserRepository()),
+        clear_completion=_keep_completion,
+        lineage=FixedLineage(),
+        video=VideoProviderSettings(
+            submit_url="https://video.test/generate",
+            status_base_url="https://video.test/tasks",
+            api_key="secret-key",
+        ),
+        video_default_model=MODEL,
+        video_allowed_models=(MODEL,),
+        image_models=[
+            ImageModelConfig(name="nano_banana_pro", api_base="https://image.test", concurrency=1)
+        ],
+        image_default_model="nano_banana_pro",
+        image_env="test",
+        image_text_to_image_task="text-to-image",
+        image_edit_task="image-edit",
+        object_store=MemoryObjectStore(),
+        queue_connector=InMemoryConnector(),
+        media_codec=SOFTWARE,
+        fetch_url=fetch_url,
+        video_transport=httpx.MockTransport(upstream),
+    )
+
+
+def _edit_in(source_job_id: uuid.UUID, clip_url: str, *, start_ms: int, end_ms: int) -> VideoEditIn:
+    return VideoEditIn(
+        source_job_id=source_job_id,
+        range_start_ms=start_ms,
+        range_end_ms=end_ms,
+        reference_video_urls=[clip_url],
+        model=MODEL,
+        prompt="换一双鞋",
+        user_name="tester",
+        seconds=-1,
+    )
+
+
+async def _run_edit(
+    repo: InMemoryGenerationRepository, *, clip_seconds: int, start_ms: int, end_ms: int
+) -> tuple[GenerationJob, list[dict[str, Any]], str]:
+    sent: list[dict[str, Any]] = []
+    module = _edit_module(repo, sent)
+    with TemporaryDirectory(prefix="edit-fixture-") as tmp:
+        base = synthesize_video(Path(tmp) / "base.mp4", size="320x240", seconds=6, audio=True)
+        clip = synthesize_video(
+            Path(tmp) / "clip.mp4", size="320x240", seconds=clip_seconds, audio=True
+        )
+    async with serving({"base.mp4": base, "clip.mp4": clip}) as server:
+        take = make_job(
+            video_request(),
+            status=STATUS_COMPLETED,
+            owner_user_id=PRINCIPAL.user_id,
+            output=GenerationOutput(url=server.url("base.mp4")),
+        )
+        upload = make_upload(
+            kind=KIND_VIDEO,
+            owner_user_id=PRINCIPAL.user_id,
+            output=GenerationOutput(url=server.url("clip.mp4")),
+        )
+        repo.jobs.update({take.id: take, upload.id: upload})
+        job = await module.service.submit_video_edit(
+            PRINCIPAL, _edit_in(take.id, server.url("clip.mp4"), start_ms=start_ms, end_ms=end_ms)
+        )
+        await module.queue.run_submit(str(job.id))
+        clip_url = server.url("clip.mp4")
+    return repo.jobs[job.id], sent, clip_url
+
+
+async def test_an_edit_goes_upstream_as_is_with_its_clip_recorded() -> None:
+    edit, sent, clip_url = await _run_edit(
+        InMemoryGenerationRepository(), clip_seconds=4, start_ms=1000, end_ms=3000
+    )
+
+    assert edit.status == STATUS_SUBMITTED, edit.error_message
+    (body,) = sent
+    assert body["reference_video_urls"] == [clip_url], "片段地址原样交给上游"
+    assert (body["seconds"], body["user_name"], body["prompt"]) == (-1, "tester", "换一双鞋")
+    request = stored_request(edit)
+    assert isinstance(request, VideoEditRequest)
+    assert (request.range_start_ms, request.range_end_ms) == (1000, 3000), "区间原样记，不改写"
+    assert request.model_dump()["reference_video_urls"] == [clip_url]
+    assert generation_out(edit, source_address=None).clip_stage is None, "编辑段没有本地加工"
+
+
+async def test_durations_are_probed_at_the_rewritten_addresses_and_upstream_gets_the_public_ones() -> (
+    None
+):
+    public = "https://cdn.test"
+    base_url, clip_url = f"{public}/iclip/agent/base.mp4", f"{public}/iclip/agent/clip.mp4"
+    repo = InMemoryGenerationRepository()
+    sent: list[dict[str, Any]] = []
+    with TemporaryDirectory(prefix="edit-fixture-") as tmp:
+        base = synthesize_video(Path(tmp) / "base.mp4", size="320x240", seconds=4, audio=True)
+        clip = synthesize_video(Path(tmp) / "clip.mp4", size="320x240", seconds=4, audio=True)
+    async with serving({"iclip/agent/base.mp4": base, "iclip/agent/clip.mp4": clip}) as server:
+        module = _edit_module(repo, sent, fetch_url=rewriting(public, server.base_url))
+        take = make_job(
+            video_request(),
+            status=STATUS_COMPLETED,
+            owner_user_id=PRINCIPAL.user_id,
+            output=GenerationOutput(url=base_url),
+        )
+        upload = make_upload(
+            kind=KIND_VIDEO, owner_user_id=PRINCIPAL.user_id, output=GenerationOutput(url=clip_url)
+        )
+        repo.jobs.update({take.id: take, upload.id: upload})
+        job = await module.service.submit_video_edit(
+            PRINCIPAL, _edit_in(take.id, clip_url, start_ms=1000, end_ms=3000)
+        )
+        await module.queue.run_submit(str(job.id))
+
+    assert repo.jobs[job.id].status == STATUS_SUBMITTED, repo.jobs[job.id].error_message
+    assert {delivery.target for delivery in server.deliveries} == {
+        "iclip/agent/base.mp4",
+        "iclip/agent/clip.mp4",
+    }
+    (body,) = sent
+    assert body["reference_video_urls"] == [clip_url], "交给上游的是公网地址"
+
+
+async def test_a_clip_someone_else_uploaded_first_still_counts_as_my_upload(
+    engine: AsyncEngine,
+) -> None:
+    repo = SqlGenerationRepository(engine)
+    records = SettledRecords(repo)
+    me = replace(PRINCIPAL, user_id=await make_user(engine))
+    other = replace(PRINCIPAL, user_id=await make_user(engine), username="sara")
+    sent: list[dict[str, Any]] = []
+    module = _edit_module(repo, sent)
+    with TemporaryDirectory(prefix="edit-fixture-") as tmp:
+        base = synthesize_video(Path(tmp) / "base.mp4", size="320x240", seconds=4, audio=True)
+        clip = synthesize_video(Path(tmp) / "clip.mp4", size="320x240", seconds=4, audio=True)
+    async with serving({"base.mp4": base, "clip.mp4": clip}) as server:
+        take = await repo.create(make_job(video_request(), owner_user_id=me.user_id))
+        await repo.mark_completed(
+            take.id,
+            output=GenerationOutput(url=server.url("base.mp4")),
+            provider_status="succeeded",
+        )
+        theirs = await records.record_upload(
+            other,
+            upload_id=uuid.uuid4(),
+            kind=KIND_VIDEO,
+            url=server.url("clip.mp4"),
+            content_md5=CLIP_MD5,
+            conversation_id=None,
+        )
+        mine = await records.record_upload(
+            me,
+            upload_id=uuid.uuid4(),
+            kind=KIND_VIDEO,
+            url=server.url("my-copy.mp4"),
+            content_md5=CLIP_MD5,
+            conversation_id=None,
+        )
+        job = await module.service.submit_video_edit(
+            me, _edit_in(take.id, mine.url, start_ms=1000, end_ms=3000)
+        )
+        await module.queue.run_submit(str(job.id))
+
+    assert mine.url == theirs.url == server.url("clip.mp4"), "本人那条落的是先传那份的地址"
+    edit = await repo.get(job.id, owner=None)
+    assert edit.status == STATUS_SUBMITTED, edit.error_message
+    (body,) = sent
+    assert body["reference_video_urls"] == [mine.url]
+
+
+@pytest.mark.parametrize("clip_seconds", [4, 6], ids=["参考短于替换区间", "参考长于替换区间"])
+async def test_a_reference_with_a_different_duration_is_submitted_without_rewriting_the_range(
+    clip_seconds: int,
+) -> None:
+    repo = InMemoryGenerationRepository()
+    edit, sent, clip_url = await _run_edit(
+        repo, clip_seconds=clip_seconds, start_ms=1000, end_ms=6000
+    )
+
+    assert len(repo.jobs) == 3, "基底、上传与编辑段均已落库"
+    assert edit.status == STATUS_SUBMITTED, edit.error_message
+    assert edit.provider_task_id == "upstream-1", "编辑段经过队列提交并保存了上游任务"
+    assert edit.source_job_id is not None
+    assert edit.root_job_id == edit.source_job_id
+    assert repo.jobs[edit.source_job_id].source_job_id is None, "替换基底仍是原始出片"
+    request = stored_request(edit)
+    assert isinstance(request, VideoEditRequest)
+    assert (request.range_start_ms, request.range_end_ms) == (1000, 6000), (
+        "替换区间不按参考时长改写"
+    )
+    (body,) = sent
+    assert body["reference_video_urls"] == [clip_url]
+    assert body["seconds"] == -1, "实际生成时长跟随参考"
+    assert request.model_dump()["reference_video_urls"] == [clip_url]
+
+
+async def test_an_image_clip_goes_through_the_same_queue_as_a_first_frame_request() -> None:
+    repo = InMemoryGenerationRepository()
+    take = make_job(
+        video_request(),
+        status=STATUS_COMPLETED,
+        owner_user_id=PRINCIPAL.user_id,
+        output=GenerationOutput(url="https://cdn.test/base.mp4", duration_ms=6000),
+        shot_index=2,
+    )
+    repo.jobs[take.id] = take
+    sent: list[dict[str, Any]] = []
+    module = _edit_module(repo, sent)
+    job = await module.service.submit_video_edit(
+        PRINCIPAL,
+        VideoEditIn(
+            source_job_id=take.id,
+            range_start_ms=1000,
+            range_end_ms=2000,
+            model=MODEL,
+            prompt="参考 @Image1，人物转身",
+            user_name="tester",
+            seconds=5,
+            reference_image_urls=["https://cdn.test/outfit.png"],
+        ),
+    )
+    await module.queue.run_submit(str(job.id))
+    edit = repo.jobs[job.id]
+    assert edit.status == STATUS_SUBMITTED, edit.error_message
+    assert (edit.source_job_id, edit.root_job_id, edit.shot_index) == (take.id, take.id, 2)
+    (body,) = sent
+    assert body["reference_video_urls"] == []
+    assert body["reference_image_urls"] == ["https://cdn.test/outfit.png"]
+    assert body["seconds"] == 5
+    assert "provider_options" not in body, "单图交给网关按首帧调度，不指定子任务"
+    assert "aspect_ratio" not in body

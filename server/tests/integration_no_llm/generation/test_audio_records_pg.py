@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+import uuid
+
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from iclip.domains.generation.infra_sql import SqlGenerationRepository
+from iclip.domains.generation.models import (
+    STATUS_COMPLETED,
+    STATUS_SUBMITTING,
+    GenerationOutput,
+)
+from iclip.domains.generation.schemas import MusicRequest
+from tests.helpers.fork_lineage import make_user
+from tests.helpers.generation import MUSIC_PROMPT, make_job, make_music, video_request
+
+MUSIC_URL = "https://cdn.example.test/iclip/agent/generated-music/m.m4a"
+TAKE_URL = "https://cdn.example.test/take.mp4"
+
+
+async def test_generated_music_round_trips_its_request_address_and_duration(
+    engine: AsyncEngine,
+) -> None:
+    repo = SqlGenerationRepository(engine)
+    owner = await make_user(engine)
+    conversation = uuid.uuid4()
+
+    created = await repo.create(make_music(owner_user_id=owner, conversation_id=conversation))
+    assert created.request == MusicRequest(model="qwen-audio-3.1-tts-next", prompt=MUSIC_PROMPT)
+    await repo.mark_submitting(created.id)
+    done = await repo.mark_completed(
+        created.id,
+        output=GenerationOutput(url=MUSIC_URL, duration_ms=31_500),
+        provider_status="succeeded",
+        provider_task_id="req-7",
+        only_if_status=STATUS_SUBMITTING,
+    )
+
+    assert done is not None
+    assert (done.status, done.output.url, done.output.duration_ms) == (
+        STATUS_COMPLETED,
+        MUSIC_URL,
+        31_500,
+    )
+    assert (await repo.get(created.id, owner=owner)).request == created.request
+    listed = await repo.list_for_owner(
+        owner=owner, limit=10, kind="audio", conversation_id=conversation
+    )
+    assert [job.id for job in listed] == [created.id]
+
+
+async def test_audio_records_do_not_count_as_videos_in_flight_or_masters(
+    engine: AsyncEngine,
+) -> None:
+    repo = SqlGenerationRepository(engine)
+    owner = await make_user(engine)
+    quiet, busy_music = uuid.uuid4(), uuid.uuid4()
+    take = await repo.create(make_job(video_request(), owner_user_id=owner, conversation_id=quiet))
+    await repo.mark_completed(
+        take.id,
+        output=GenerationOutput(url=TAKE_URL, watermark_url="https://cdn.example.test/take-wm.mp4"),
+        provider_status="succeeded",
+    )
+    await repo.create(make_music(owner_user_id=owner, conversation_id=quiet))
+    submitting = await repo.create(make_music(owner_user_id=owner, conversation_id=busy_music))
+    await repo.mark_submitting(submitting.id)
+    finished = await repo.create(make_music(owner_user_id=owner, conversation_id=quiet))
+    await repo.mark_submitting(finished.id)
+    await repo.mark_completed(
+        finished.id,
+        output=GenerationOutput(url=MUSIC_URL, duration_ms=1000),
+        provider_status="succeeded",
+    )
+
+    assert await repo.in_flight_by_conversation(owner=owner, kind="video") == {}
+    assert await repo.latest_master_by_conversation([quiet, busy_music]) == {quiet: TAKE_URL}

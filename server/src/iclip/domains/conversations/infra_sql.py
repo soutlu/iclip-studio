@@ -1,0 +1,698 @@
+from __future__ import annotations
+
+import uuid
+from collections.abc import Mapping
+from datetime import datetime
+from typing import Any, Final
+
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    ColumnElement,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    MetaData,
+    Table,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    and_,
+    false,
+    func,
+    literal,
+    or_,
+    select,
+    update,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.engine.row import RowMapping
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from iclip.common.errors import NotFound, ValidationFailed
+from iclip.domains.conversations.models import AgentPreview, Conversation, WholeFilmDraft
+from iclip.domains.conversations.repository import (
+    MISSING_COLLECTION,
+    MISSING_TASK,
+    AuditFilter,
+    CollectionConversations,
+    DeletedFilter,
+    PageCursor,
+    StateFilter,
+)
+from iclip.platform.db.ownership import owner_conditions
+
+DB_SCHEMA: Final = "iclip"
+
+metadata_obj = MetaData(schema=DB_SCHEMA)
+
+conversations_table = Table(
+    "conversations",
+    metadata_obj,
+    Column("id", Uuid, primary_key=True),
+    Column(
+        "owner_user_id",
+        Uuid,
+        ForeignKey(f"{DB_SCHEMA}.users.id", ondelete="restrict"),
+        nullable=False,
+    ),
+    Column("agent_id", Text, nullable=False),
+    Column("title", Text, nullable=False),
+    Column("title_kind", Text, nullable=False, server_default="default"),
+    Column("last_run_id", Text, nullable=True),
+    Column(
+        "task_id",
+        Uuid,
+        ForeignKey(f"{DB_SCHEMA}.tasks.id", ondelete="set null"),
+        nullable=True,
+    ),
+    Column(
+        "collection_id",
+        Uuid,
+        ForeignKey(f"{DB_SCHEMA}.collections.id", ondelete="set null"),
+        nullable=True,
+    ),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column("deleted_at", DateTime(timezone=True), nullable=True),
+    Column("completed_at", DateTime(timezone=True), nullable=True),
+    Column(
+        "forked_from",
+        Uuid,
+        ForeignKey(f"{DB_SCHEMA}.conversations.id", ondelete="restrict"),
+        nullable=True,
+    ),
+    Column("fork_turn", Integer, nullable=True),
+    Column(
+        "same_as",
+        Uuid,
+        ForeignKey(
+            f"{DB_SCHEMA}.conversations.id", name="fk_conversations_same_as", ondelete="set null"
+        ),
+        nullable=True,
+    ),
+)
+
+_ROWS = conversations_table.c
+_LIVE = _ROWS.deleted_at.is_(None)
+_DELETED = _ROWS.deleted_at.is_not(None)
+
+Index(
+    "ix_conversations_owner_created",
+    _ROWS.owner_user_id,
+    _ROWS.created_at.desc(),
+    _ROWS.id.desc(),
+    postgresql_where=_LIVE,
+)
+
+Index("ix_conversations_created", _ROWS.created_at.desc(), _ROWS.id.desc())
+
+Index("ix_conversations_updated", _ROWS.updated_at.desc(), _ROWS.id.desc())
+
+Index(
+    "ix_conversations_task",
+    _ROWS.task_id,
+    _ROWS.created_at,
+    postgresql_where=and_(_ROWS.task_id.isnot(None), _LIVE),
+)
+Index(
+    "ix_conversations_collection",
+    _ROWS.collection_id,
+    _ROWS.created_at.desc(),
+    _ROWS.id.desc(),
+    postgresql_where=and_(_ROWS.collection_id.isnot(None), _LIVE),
+)
+
+
+whole_film_drafts_table = Table(
+    "whole_film_drafts",
+    metadata_obj,
+    Column(
+        "conversation_id",
+        Uuid,
+        ForeignKey(f"{DB_SCHEMA}.conversations.id", name="fk_whole_film_drafts_conversation"),
+        primary_key=True,
+    ),
+    Column("document", JSONB, nullable=False),
+    Column("revision", Integer, nullable=False),
+    Column(
+        "updated_by",
+        Uuid,
+        ForeignKey(f"{DB_SCHEMA}.users.id", name="fk_whole_film_drafts_updated_by"),
+        nullable=False,
+    ),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    CheckConstraint("revision >= 1", name="ck_whole_film_drafts_revision"),
+    CheckConstraint("jsonb_typeof(document) = 'object'", name="ck_whole_film_drafts_document"),
+)
+
+_DRAFTS = whole_film_drafts_table.c
+
+agent_previews_table = Table(
+    "agent_previews",
+    metadata_obj,
+    Column("id", Uuid, primary_key=True),
+    Column(
+        "owner_user_id",
+        Uuid,
+        ForeignKey(f"{DB_SCHEMA}.users.id", name="fk_agent_previews_owner", ondelete="cascade"),
+        nullable=False,
+    ),
+    Column("agent_id", Text, nullable=False),
+    Column("version_id", Uuid, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint("owner_user_id", "agent_id", name="uq_agent_previews_owner_agent"),
+)
+
+_PREVIEWS = agent_previews_table.c
+
+
+def _row(mapping: RowMapping) -> Conversation:
+    return Conversation(
+        id=mapping["id"],
+        owner_user_id=mapping["owner_user_id"],
+        agent_id=mapping["agent_id"],
+        title=mapping["title"],
+        title_kind=mapping["title_kind"],
+        last_run_id=mapping["last_run_id"],
+        task_id=mapping["task_id"],
+        collection_id=mapping["collection_id"],
+        created_at=mapping["created_at"],
+        updated_at=mapping["updated_at"],
+        deleted_at=mapping["deleted_at"],
+        completed_at=mapping["completed_at"],
+        forked_from=mapping["forked_from"],
+        fork_turn=mapping["fork_turn"],
+        same_as=mapping["same_as"],
+    )
+
+
+_ORDER: Final = (_ROWS.created_at.desc(), _ROWS.id.desc())
+
+
+def _after(cursor: PageCursor | None) -> list[ColumnElement[bool]]:
+    if cursor is None:
+        return []
+    return [
+        or_(
+            _ROWS.created_at < cursor.created_at,
+            and_(_ROWS.created_at == cursor.created_at, _ROWS.id < cursor.conversation_id),
+        )
+    ]
+
+
+def _state_conditions(state: StateFilter | None) -> list[ColumnElement[bool]]:
+    if state is None:
+        return []
+    if state.state == "done":
+        return [_ROWS.completed_at.is_not(None)]
+    if state.state == "open":
+        return [_ROWS.completed_at.is_(None)]
+    return [_ROWS.id.in_(state.busy)] if state.busy else [false()]
+
+
+def _deleted_conditions(deleted: DeletedFilter) -> list[ColumnElement[bool]]:
+    if deleted == "live":
+        return [_LIVE]
+    if deleted == "deleted":
+        return [_DELETED]
+    return []
+
+
+def _audit_conditions(scope: AuditFilter, state: StateFilter | None) -> list[ColumnElement[bool]]:
+    conditions = [*_deleted_conditions(scope.deleted), *_state_conditions(state)]
+    if scope.owner is not None:
+        conditions.append(_ROWS.owner_user_id == scope.owner)
+    if scope.task_id is not None:
+        conditions.append(_ROWS.task_id == scope.task_id)
+    if scope.since is not None:
+        conditions.append(_ROWS.created_at >= scope.since)
+    if scope.until is not None:
+        conditions.append(_ROWS.created_at < scope.until)
+    return conditions
+
+
+def _reject_missing_reference(error: IntegrityError) -> ValidationFailed:
+    constraint = getattr(getattr(error, "orig", None), "diag", None)
+    name = getattr(constraint, "constraint_name", None) or ""
+    if "task" in name:
+        return ValidationFailed(MISSING_TASK)
+    if "collection" in name:
+        return ValidationFailed(MISSING_COLLECTION)
+    return ValidationFailed("指定的需求单或合集不存在")
+
+
+class SqlConversationRepository:
+    def __init__(self, engine: AsyncEngine) -> None:
+        self._engine = engine
+
+    async def create_if_absent(self, conversation: Conversation) -> tuple[Conversation, bool]:
+        statement = (
+            pg_insert(conversations_table)
+            .values(
+                id=conversation.id,
+                owner_user_id=conversation.owner_user_id,
+                agent_id=conversation.agent_id,
+                title=conversation.title,
+                title_kind=conversation.title_kind,
+                last_run_id=None,
+                task_id=conversation.task_id,
+                collection_id=conversation.collection_id,
+                created_at=func.now(),
+                updated_at=func.now(),
+                forked_from=conversation.forked_from,
+                fork_turn=conversation.fork_turn,
+                same_as=conversation.same_as,
+            )
+            .on_conflict_do_nothing(index_elements=[_ROWS.id])
+            .returning(*conversations_table.c)
+        )
+        try:
+            async with self._engine.begin() as conn:
+                row = (await conn.execute(statement)).mappings().one_or_none()
+        except IntegrityError as exc:
+            raise _reject_missing_reference(exc) from exc
+        if row is None:
+            return await self.get(conversation.id, owner=conversation.owner_user_id), False
+        return _row(row), True
+
+    async def get(
+        self,
+        conversation_id: uuid.UUID,
+        *,
+        owner: uuid.UUID | None,
+        include_deleted: bool = False,
+    ) -> Conversation:
+        statement = select(conversations_table).where(
+            _ROWS.id == conversation_id,
+            *([] if include_deleted else [_LIVE]),
+            *owner_conditions(_ROWS.owner_user_id, owner),
+        )
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(statement)).mappings().one_or_none()
+        if row is None:
+            raise NotFound("没有这段对话")
+        return _row(row)
+
+    async def ancestry(self, conversation_id: uuid.UUID) -> tuple[tuple[uuid.UUID, datetime], ...]:
+        start = (
+            select(
+                _ROWS.forked_from.label("ancestor"),
+                _ROWS.created_at.label("boundary"),
+                literal(1).label("depth"),
+            )
+            .where(_ROWS.id == conversation_id, _ROWS.forked_from.is_not(None))
+            .cte("lineage", recursive=True)
+        )
+        parent = conversations_table.alias("parent")
+        lineage = start.union_all(
+            select(parent.c.forked_from, parent.c.created_at, start.c.depth + 1).where(
+                parent.c.id == start.c.ancestor, parent.c.forked_from.is_not(None)
+            )
+        )
+        statement = select(lineage.c.ancestor, lineage.c.boundary).order_by(lineage.c.depth)
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(statement)).all()
+        return tuple((ancestor, boundary) for ancestor, boundary in rows)
+
+    async def list_for_owner(
+        self, *, owner: uuid.UUID, limit: int, title_contains: str | None = None
+    ) -> tuple[Conversation, ...]:
+        conditions = [_ROWS.owner_user_id == owner, _LIVE]
+        if title_contains is not None:
+            conditions.append(_ROWS.title.icontains(title_contains, autoescape=True))
+        statement = select(conversations_table).where(*conditions).order_by(*_ORDER).limit(limit)
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(statement)).mappings().all()
+        return tuple(_row(row) for row in rows)
+
+    async def list_ungrouped(
+        self,
+        *,
+        owner: uuid.UUID,
+        limit: int,
+        after: PageCursor | None = None,
+        state: StateFilter | None = None,
+    ) -> tuple[Conversation, ...]:
+        return await self._page(
+            _ROWS.owner_user_id == owner,
+            _ROWS.collection_id.is_(None),
+            _LIVE,
+            *_state_conditions(state),
+            limit=limit,
+            after=after,
+        )
+
+    async def count_ungrouped(self, *, owner: uuid.UUID, state: StateFilter | None = None) -> int:
+        statement = (
+            select(func.count())
+            .select_from(conversations_table)
+            .where(
+                _ROWS.owner_user_id == owner,
+                _ROWS.collection_id.is_(None),
+                _LIVE,
+                *_state_conditions(state),
+            )
+        )
+        async with self._engine.connect() as conn:
+            return int((await conn.execute(statement)).scalar_one())
+
+    async def list_in_collection(
+        self,
+        *,
+        owner: uuid.UUID,
+        collection_id: uuid.UUID,
+        limit: int,
+        after: PageCursor | None = None,
+        state: StateFilter | None = None,
+    ) -> tuple[Conversation, ...]:
+        return await self._page(
+            _ROWS.owner_user_id == owner,
+            _ROWS.collection_id == collection_id,
+            _LIVE,
+            *_state_conditions(state),
+            limit=limit,
+            after=after,
+        )
+
+    async def _page(
+        self,
+        *conditions: ColumnElement[bool],
+        limit: int,
+        after: PageCursor | None,
+    ) -> tuple[Conversation, ...]:
+        statement = (
+            select(conversations_table)
+            .where(*conditions, *_after(after))
+            .order_by(*_ORDER)
+            .limit(limit)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(statement)).mappings().all()
+        return tuple(_row(row) for row in rows)
+
+    async def list_by_collections(
+        self,
+        *,
+        owner: uuid.UUID,
+        collection_ids: tuple[uuid.UUID, ...],
+        per_collection: int,
+        state: StateFilter | None = None,
+    ) -> tuple[CollectionConversations, ...]:
+        if not collection_ids:
+            return ()
+        total = func.count().over(partition_by=_ROWS.collection_id).label("total")
+        rank = (
+            func.row_number().over(partition_by=_ROWS.collection_id, order_by=_ORDER).label("rank")
+        )
+        ranked = (
+            select(conversations_table, total, rank)
+            .where(
+                _ROWS.owner_user_id == owner,
+                _ROWS.collection_id.in_(collection_ids),
+                _LIVE,
+                *_state_conditions(state),
+            )
+            .subquery()
+        )
+        statement = (
+            select(ranked)
+            .where(ranked.c.rank <= per_collection)
+            .order_by(ranked.c.collection_id, ranked.c.rank)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(statement)).mappings().all()
+
+        grouped: dict[uuid.UUID, list[RowMapping]] = {}
+        for row in rows:
+            grouped.setdefault(row["collection_id"], []).append(row)
+        return tuple(
+            CollectionConversations(
+                collection_id=collection_id,
+                total=int(grouped[collection_id][0]["total"]),
+                conversations=tuple(_row(row) for row in grouped[collection_id]),
+            )
+            for collection_id in collection_ids
+            if collection_id in grouped
+        )
+
+    async def list_for_task(
+        self, *, task_id: uuid.UUID, owner: uuid.UUID
+    ) -> tuple[Conversation, ...]:
+        statement = (
+            select(conversations_table)
+            .where(_ROWS.task_id == task_id, _ROWS.owner_user_id == owner, _LIVE)
+            .order_by(*_ORDER)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(statement)).mappings().all()
+        return tuple(_row(row) for row in rows)
+
+    async def list_audit(
+        self,
+        scope: AuditFilter,
+        *,
+        state: StateFilter | None = None,
+        limit: int,
+        after: PageCursor | None = None,
+    ) -> tuple[Conversation, ...]:
+        return await self._page(*_audit_conditions(scope, state), limit=limit, after=after)
+
+    async def count_audit(self, scope: AuditFilter, *, state: StateFilter | None = None) -> int:
+        statement = (
+            select(func.count())
+            .select_from(conversations_table)
+            .where(*_audit_conditions(scope, state))
+        )
+        async with self._engine.connect() as conn:
+            return int((await conn.execute(statement)).scalar_one())
+
+    async def set_collection(
+        self, conversation_id: uuid.UUID, *, owner: uuid.UUID, collection_id: uuid.UUID | None
+    ) -> Conversation:
+        return await self._set_membership(
+            conversation_id, owner=owner, values={"collection_id": collection_id}
+        )
+
+    async def set_task(
+        self, conversation_id: uuid.UUID, *, owner: uuid.UUID, task_id: uuid.UUID | None
+    ) -> Conversation:
+        return await self._set_membership(conversation_id, owner=owner, values={"task_id": task_id})
+
+    async def _set_membership(
+        self, conversation_id: uuid.UUID, *, owner: uuid.UUID, values: dict[str, uuid.UUID | None]
+    ) -> Conversation:
+
+        statement = (
+            update(conversations_table)
+            .where(_ROWS.id == conversation_id, _ROWS.owner_user_id == owner, _LIVE)
+            .values(**values, updated_at=func.now())
+            .returning(*conversations_table.c)
+        )
+        try:
+            async with self._engine.begin() as conn:
+                row = (await conn.execute(statement)).mappings().one_or_none()
+        except IntegrityError as exc:
+            raise _reject_missing_reference(exc) from exc
+        if row is None:
+            raise NotFound("没有这段对话")
+        return _row(row)
+
+    async def apply_generated_title(self, conversation_id: uuid.UUID, *, title: str) -> bool:
+        statement = (
+            update(conversations_table)
+            .where(_ROWS.id == conversation_id, _ROWS.title_kind == "default", _LIVE)
+            .values(title=title, title_kind="generated")
+            .returning(_ROWS.id)
+        )
+        async with self._engine.begin() as conn:
+            written = (await conn.execute(statement)).one_or_none()
+        return written is not None
+
+    async def rename(
+        self, conversation_id: uuid.UUID, *, owner: uuid.UUID, title: str
+    ) -> Conversation:
+        statement = (
+            update(conversations_table)
+            .where(_ROWS.id == conversation_id, _ROWS.owner_user_id == owner, _LIVE)
+            .values(title=title, title_kind="custom", updated_at=func.now())
+            .returning(*conversations_table.c)
+        )
+        async with self._engine.begin() as conn:
+            row = (await conn.execute(statement)).mappings().one_or_none()
+        if row is None:
+            raise NotFound("没有这段对话")
+        return _row(row)
+
+    async def set_completed(
+        self, conversation_id: uuid.UUID, *, owner: uuid.UUID, completed: bool
+    ) -> Conversation:
+        statement = (
+            update(conversations_table)
+            .where(_ROWS.id == conversation_id, _ROWS.owner_user_id == owner, _LIVE)
+            .values(completed_at=func.now() if completed else None, updated_at=func.now())
+            .returning(*conversations_table.c)
+        )
+        async with self._engine.begin() as conn:
+            row = (await conn.execute(statement)).mappings().one_or_none()
+        if row is None:
+            raise NotFound("没有这段对话")
+        return _row(row)
+
+    async def delete(self, conversation_id: uuid.UUID, *, owner: uuid.UUID) -> None:
+        statement = (
+            update(conversations_table)
+            .where(_ROWS.id == conversation_id, _ROWS.owner_user_id == owner, _LIVE)
+            .values(deleted_at=func.now())
+            .returning(_ROWS.id)
+        )
+        async with self._engine.begin() as conn:
+            row = (await conn.execute(statement)).first()
+        if row is None:
+            raise NotFound("没有这段对话")
+
+    async def touch_run(
+        self, conversation_id: uuid.UUID, *, owner: uuid.UUID, agent_id: str, run_id: str
+    ) -> Conversation:
+        statement = (
+            update(conversations_table)
+            .where(
+                _ROWS.id == conversation_id,
+                _ROWS.owner_user_id == owner,
+                _ROWS.agent_id == agent_id,
+                _LIVE,
+            )
+            .values(last_run_id=run_id, updated_at=func.now(), completed_at=None)
+            .returning(*conversations_table.c)
+        )
+        async with self._engine.begin() as conn:
+            row = (await conn.execute(statement)).mappings().one_or_none()
+        if row is None:
+            raise NotFound("没有这段对话")
+        return _row(row)
+
+
+def _draft(mapping: RowMapping) -> WholeFilmDraft:
+    return WholeFilmDraft(
+        conversation_id=mapping["conversation_id"],
+        document=mapping["document"],
+        revision=mapping["revision"],
+        updated_by=mapping["updated_by"],
+        updated_at=mapping["updated_at"],
+    )
+
+
+class SqlWholeFilmDraftStore:
+    def __init__(self, engine: AsyncEngine) -> None:
+        self._engine = engine
+
+    async def get(self, conversation_id: uuid.UUID) -> WholeFilmDraft | None:
+        statement = select(whole_film_drafts_table).where(
+            _DRAFTS.conversation_id == conversation_id
+        )
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(statement)).mappings().one_or_none()
+        return None if row is None else _draft(row)
+
+    async def save(
+        self,
+        conversation_id: uuid.UUID,
+        *,
+        document: Mapping[str, Any],
+        revision: int,
+        updated_by: uuid.UUID,
+    ) -> WholeFilmDraft | None:
+        if revision == 0:
+            statement = (
+                pg_insert(whole_film_drafts_table)
+                .values(
+                    conversation_id=conversation_id,
+                    document=dict(document),
+                    revision=1,
+                    updated_by=updated_by,
+                    updated_at=func.now(),
+                )
+                .on_conflict_do_nothing(index_elements=[_DRAFTS.conversation_id])
+                .returning(*whole_film_drafts_table.c)
+            )
+        else:
+            statement = (
+                update(whole_film_drafts_table)
+                .where(_DRAFTS.conversation_id == conversation_id, _DRAFTS.revision == revision)
+                .values(
+                    document=dict(document),
+                    revision=_DRAFTS.revision + 1,
+                    updated_by=updated_by,
+                    updated_at=func.now(),
+                )
+                .returning(*whole_film_drafts_table.c)
+            )
+        async with self._engine.begin() as conn:
+            row = (await conn.execute(statement)).mappings().one_or_none()
+        return None if row is None else _draft(row)
+
+
+def _preview(mapping: RowMapping) -> AgentPreview:
+    return AgentPreview(
+        id=mapping["id"],
+        owner_user_id=mapping["owner_user_id"],
+        agent_id=mapping["agent_id"],
+        version_id=mapping["version_id"],
+        created_at=mapping["created_at"],
+    )
+
+
+class SqlAgentPreviewStore:
+    def __init__(self, engine: AsyncEngine) -> None:
+        self._engine = engine
+
+    async def current(self, *, owner: uuid.UUID, agent_id: str) -> AgentPreview | None:
+        statement = select(agent_previews_table).where(
+            _PREVIEWS.owner_user_id == owner, _PREVIEWS.agent_id == agent_id
+        )
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(statement)).mappings().one_or_none()
+        return None if row is None else _preview(row)
+
+    async def get(self, preview_id: uuid.UUID) -> AgentPreview | None:
+        statement = select(agent_previews_table).where(_PREVIEWS.id == preview_id)
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(statement)).mappings().one_or_none()
+        return None if row is None else _preview(row)
+
+    async def replace(
+        self,
+        preview_id: uuid.UUID,
+        *,
+        owner: uuid.UUID,
+        agent_id: str,
+        version_id: uuid.UUID | None,
+    ) -> AgentPreview:
+        statement = pg_insert(agent_previews_table).values(
+            id=preview_id, owner_user_id=owner, agent_id=agent_id, version_id=version_id
+        )
+        statement = statement.on_conflict_do_update(
+            constraint="uq_agent_previews_owner_agent",
+            set_={
+                "id": statement.excluded.id,
+                "version_id": statement.excluded.version_id,
+                "created_at": func.now(),
+            },
+        ).returning(*agent_previews_table.c)
+        async with self._engine.begin() as conn:
+            return _preview((await conn.execute(statement)).mappings().one())
+
+
+__all__ = [
+    "DB_SCHEMA",
+    "SqlAgentPreviewStore",
+    "SqlConversationRepository",
+    "SqlWholeFilmDraftStore",
+    "agent_previews_table",
+    "conversations_table",
+    "metadata_obj",
+    "whole_film_drafts_table",
+]

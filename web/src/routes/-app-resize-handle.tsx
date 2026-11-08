@@ -1,0 +1,104 @@
+import { useEffect, useRef, useState } from 'react'
+import { cn } from '@/shared/lib/utils'
+import { APP_RESIZE_HANDLE_WIDTH, type ResizeInput } from './-app-shell-layout'
+
+const KEY_STEP = 16
+
+type AppResizeHandleProps = {
+  label: string
+  position?: number
+  value: number
+  min: number
+  max: number
+  onResizeStart: () => void
+  onResize: (delta: number, input: ResizeInput) => void
+  onResizeEnd: () => void
+  onResizeCancel: () => void
+  onReset: () => void
+}
+
+export function AppResizeHandle({
+  label,
+  position = 0,
+  max,
+  min,
+  onReset,
+  onResize,
+  onResizeEnd,
+  onResizeCancel,
+  onResizeStart,
+  value,
+}: AppResizeHandleProps) {
+  const [dragging, setDragging] = useState(false)
+  const detachRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => detachRef.current?.(), [])
+
+  const startDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return
+    detachRef.current?.()
+    detachRef.current = null
+    event.preventDefault()
+    event.currentTarget.focus({ preventScroll: true })
+    const origin = event.clientX
+    onResizeStart()
+    setDragging(true)
+    const move = (moved: PointerEvent) => onResize(moved.clientX - origin, 'pointer')
+    const stop = () => finish(false)
+    const cancel = () => finish(true)
+    const keydown = (key: KeyboardEvent) => {
+      if (key.key === 'Escape') {
+        key.preventDefault()
+        cancel()
+      }
+    }
+    const finish = (cancelled: boolean) => {
+      detachRef.current?.()
+      detachRef.current = null
+      setDragging(false)
+      if (cancelled) onResizeCancel()
+      else onResizeEnd()
+    }
+    detachRef.current = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+      window.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('keydown', keydown)
+      window.removeEventListener('blur', cancel)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+    window.addEventListener('pointercancel', cancel)
+    window.addEventListener('keydown', keydown)
+    window.addEventListener('blur', cancel)
+  }
+
+  const nudge = (event: React.KeyboardEvent) => {
+    const step = event.key === 'ArrowLeft' ? -KEY_STEP : event.key === 'ArrowRight' ? KEY_STEP : 0
+    if (step === 0) return
+    event.preventDefault()
+    onResizeStart()
+    onResize(step, 'keyboard')
+    onResizeEnd()
+  }
+
+  return (
+    <button
+      aria-label={label}
+      className="group layer-sidebar absolute inset-y-0 cursor-col-resize touch-none ui-focus select-none"
+      onDoubleClick={onReset}
+      onKeyDown={nudge}
+      onPointerDown={startDrag}
+      style={{ left: position - APP_RESIZE_HANDLE_WIDTH / 2, width: APP_RESIZE_HANDLE_WIDTH }}
+      title={`${label}（当前 ${value}px，拖动可在 ${min}–${max}px 之间调整，双击可恢复默认）`}
+      type="button"
+    >
+      <span
+        aria-hidden
+        className={cn(
+          'absolute inset-y-0 left-1/2 w-px -translate-x-1/2 ui-motion-s',
+          dragging ? 'bg-border-hover' : 'bg-border group-hover:bg-border-hover',
+        )}
+      />
+    </button>
+  )
+}

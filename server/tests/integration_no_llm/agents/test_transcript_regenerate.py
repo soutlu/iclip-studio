@@ -1,0 +1,517 @@
+from __future__ import annotations
+
+import asyncio
+import uuid
+from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
+
+import httpx
+import pytest
+from agent_runtime.errors import Conflict, ValidationFailed
+from agent_runtime.harness.jobs import JobQueue, JobQueueView, Submission
+from agent_runtime.harness.step_store_pg import PgStepStore
+from agent_runtime.harness.transcript.activity import ActivityState
+from agent_runtime.harness.transcript.history import TranscriptHistory, TurnRewind
+from agent_runtime.harness.transcript.runner import ConversationRunner
+from agent_runtime.harness.transcript.service import TranscriptService
+from agent_runtime.harness.transcript.store import TranscriptStore
+from agent_runtime.transcript.ops import (
+    MAIN_AGENT_ID,
+    AttachmentSource,
+    ImageContent,
+    ItemsRemoveOp,
+    PromptContent,
+    TextContent,
+    TextFrame,
+)
+from fastapi import FastAPI
+from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai_harness.step_persistence import ContinuableSnapshot
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from tests.helpers.agents import AgentSeed
+from tests.helpers.app import TEST_MODEL_NAME, make_client, new_conversation, settled
+from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
+from tests.helpers.pg import connected
+from tests.helpers.runtime import (
+    OWNER,
+    build_runner,
+    drained,
+    new_conversation_id,
+    prompt_text,
+    says,
+    submit_text,
+)
+
+AGENT_ID = "storyboard"
+
+
+@pytest.fixture
+def agent_seeds() -> tuple[AgentSeed, ...]:
+    return (AgentSeed(AGENT_ID),)
+
+
+def _last_user_text(messages: list[ModelMessage]) -> str:
+    for message in reversed(messages):
+        if isinstance(message, ModelRequest):
+            for part in message.parts:
+                if not isinstance(part, UserPromptPart):
+                    continue
+                items = [part.content] if isinstance(part.content, str) else list(part.content)
+                texts = [item for item in items if isinstance(item, str)]
+                if texts:
+                    return "\n".join(texts)
+    return ""
+
+
+@pytest.fixture
+def reply_allowed() -> asyncio.Event:
+    allowed = asyncio.Event()
+    allowed.set()
+    return allowed
+
+
+@pytest.fixture
+def models(reply_allowed: asyncio.Event) -> dict[str, FunctionModel]:
+    async def reply(messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str]:
+        await reply_allowed.wait()
+        yield f"答：{_last_user_text(messages)}"
+
+    return {TEST_MODEL_NAME: FunctionModel(stream_function=reply)}
+
+
+async def _send(
+    client: httpx.AsyncClient, conversation_id: str, prompt_id: str, text_: str
+) -> None:
+    sent = await client.post(
+        f"/conversations/{conversation_id}/prompts",
+        json={"prompt_id": prompt_id, "content": [{"type": "text", "text": text_}]},
+    )
+    assert sent.status_code == 200, sent.text
+
+
+async def _run_count(pg_url: str, conversation_id: str) -> int:
+    async with connected(pg_url) as conn:
+        return (
+            await conn.execute(
+                text("SELECT count(*) FROM agent_runtime.runs WHERE conversation_id = :cid"),
+                {"cid": conversation_id},
+            )
+        ).scalar_one()
+
+
+async def test_regenerate_replays_the_last_turn(app: FastAPI, pg_url: str) -> None:
+
+    async with make_client(app) as client:
+        await login_as_editor(client, pg_url)
+        conversation_id = await new_conversation(client, AGENT_ID)
+        await _send(client, conversation_id, "prm_r1", "第一问")
+        await settled(client, conversation_id)
+        await _send(client, conversation_id, "prm_r2", "第二问")
+        await settled(client, conversation_id)
+
+        replayed = await client.post(f"/conversations/{conversation_id}/turns/t2:regenerate")
+        assert replayed.status_code == 200, replayed.text
+        assert replayed.json()["promptId"] != "prm_r2"
+        assert replayed.json()["status"] == "running"
+        assert replayed.json()["content"] == [{"type": "text", "text": "第二问"}]
+        await settled(client, conversation_id)
+        page = (await client.get(f"/conversations/{conversation_id}/transcript")).json()
+
+    assert [turn["turnId"] for turn in page["items"]] == ["t1", "t2"]
+    assert [turn["content"] for turn in page["items"]] == [
+        [{"type": "text", "text": "第一问"}],
+        [{"type": "text", "text": "第二问"}],
+    ]
+    assert page["items"][1]["steps"][0]["frames"][0]["text"] == "答：第二问"
+
+    assert await _run_count(pg_url, conversation_id) == 3
+
+
+async def test_regenerate_with_new_content_replays_the_edited_message(
+    app: FastAPI, pg_url: str
+) -> None:
+
+    async with make_client(app) as client:
+        await login_as_editor(client, pg_url)
+        conversation_id = await new_conversation(client, AGENT_ID)
+        await _send(client, conversation_id, "prm_e1", "第一问")
+        await settled(client, conversation_id)
+        await _send(client, conversation_id, "prm_e2", "第二问")
+        await settled(client, conversation_id)
+
+        edited = await client.post(
+            f"/conversations/{conversation_id}/turns/t2:regenerate",
+            json={"content": [{"type": "text", "text": "改口再问"}]},
+        )
+        assert edited.status_code == 200, edited.text
+        assert edited.json()["content"] == [{"type": "text", "text": "改口再问"}]
+        await settled(client, conversation_id)
+        page = (await client.get(f"/conversations/{conversation_id}/transcript")).json()
+
+    assert [turn["turnId"] for turn in page["items"]] == ["t1", "t2"]
+    assert [turn["content"] for turn in page["items"]] == [
+        [{"type": "text", "text": "第一问"}],
+        [{"type": "text", "text": "改口再问"}],
+    ]
+    assert page["items"][1]["steps"][0]["frames"][0]["text"] == "答：改口再问"
+    assert await _run_count(pg_url, conversation_id) == 3
+
+
+async def test_regenerating_twice_with_the_same_prompt_id_returns_the_first(
+    app: FastAPI, pg_url: str, reply_allowed: asyncio.Event
+) -> None:
+    async with make_client(app) as client:
+        await login_as_editor(client, pg_url)
+        conversation_id = await new_conversation(client, AGENT_ID)
+        await _send(client, conversation_id, "prm_t1", "第一问")
+        await settled(client, conversation_id)
+        await _send(client, conversation_id, "prm_t2", "第二问")
+        await settled(client, conversation_id)
+
+        reply_allowed.clear()
+        try:
+            first = await client.post(
+                f"/conversations/{conversation_id}/turns/t2:regenerate",
+                json={"prompt_id": "prm_retry"},
+            )
+            assert first.status_code == 200, first.text
+            assert first.json()["promptId"] == "prm_retry"
+            pending = (await client.get(f"/conversations/{conversation_id}/prompts")).json()
+            assert pending["active"]["promptId"] == "prm_retry"
+            assert pending["queued"] == []
+
+            again = await client.post(
+                f"/conversations/{conversation_id}/turns/t2:regenerate",
+                json={"prompt_id": "prm_retry"},
+            )
+            assert again.status_code == 200, again.text
+            assert again.json()["promptId"] == "prm_retry"
+        finally:
+            reply_allowed.set()
+        await settled(client, conversation_id)
+        page = (await client.get(f"/conversations/{conversation_id}/transcript")).json()
+
+    assert [turn["turnId"] for turn in page["items"]] == ["t1", "t2"]
+    assert await _run_count(pg_url, conversation_id) == 3
+
+
+async def test_regenerate_with_empty_content_is_unprocessable(app: FastAPI, pg_url: str) -> None:
+
+    async with make_client(app) as client:
+        await login_as_editor(client, pg_url)
+        conversation_id = await new_conversation(client, AGENT_ID)
+        await _send(client, conversation_id, "prm_empty", "问")
+        await settled(client, conversation_id)
+
+        empty = await client.post(
+            f"/conversations/{conversation_id}/turns/t1:regenerate", json={"content": []}
+        )
+
+    assert empty.status_code == 422
+
+
+async def test_regenerate_while_busy_is_conflict(
+    app: FastAPI, pg_url: str, reply_allowed: asyncio.Event
+) -> None:
+
+    async with make_client(app) as client:
+        await login_as_editor(client, pg_url)
+        conversation_id = await new_conversation(client, AGENT_ID)
+        reply_allowed.clear()
+        try:
+            await _send(client, conversation_id, "prm_busy1", "问")
+            await _send(client, conversation_id, "prm_busy2", "再问")
+            pending = (await client.get(f"/conversations/{conversation_id}/prompts")).json()
+            assert pending["active"]["promptId"] == "prm_busy1"
+            assert [prompt["promptId"] for prompt in pending["queued"]] == ["prm_busy2"]
+
+            refused_running = await client.post(
+                f"/conversations/{conversation_id}/turns/t1:regenerate"
+            )
+            refused_queued = await client.post(
+                f"/conversations/{conversation_id}/turns/t2:regenerate"
+            )
+            assert refused_running.status_code == 409
+            assert refused_queued.status_code == 409
+        finally:
+            reply_allowed.set()
+        await settled(client, conversation_id)
+
+
+async def test_regenerate_an_older_turn_is_conflict(app: FastAPI, pg_url: str) -> None:
+
+    async with make_client(app) as client:
+        await login_as_editor(client, pg_url)
+        conversation_id = await new_conversation(client, AGENT_ID)
+        await _send(client, conversation_id, "prm_old", "第一问")
+        await settled(client, conversation_id)
+        await _send(client, conversation_id, "prm_new", "第二问")
+        await settled(client, conversation_id)
+
+        refused_older = await client.post(f"/conversations/{conversation_id}/turns/t1:regenerate")
+        refused_beyond = await client.post(f"/conversations/{conversation_id}/turns/t3:regenerate")
+
+    assert refused_older.status_code == 409
+    assert refused_beyond.status_code == 409
+
+
+async def test_regenerate_in_someone_elses_conversation_is_not_found(
+    app: FastAPI, pg_url: str
+) -> None:
+    async with make_client(app) as client:
+        await login_as_editor(client, pg_url)
+        mine = await new_conversation(client, AGENT_ID)
+        await _send(client, mine, "prm_mine", "问")
+        await settled(client, mine)
+
+        async with make_client(app) as other:
+            await register_and_login(other, username="max", email="max@example.com")
+            await set_roles_in_db(pg_url, "max@example.com", ["editor"])
+            crossed = await other.post(f"/conversations/{mine}/turns/t1:regenerate")
+
+    assert crossed.status_code == 404
+
+
+async def test_regenerate_with_a_malformed_turn_id_is_unprocessable(
+    app: FastAPI, pg_url: str
+) -> None:
+
+    async with make_client(app) as client:
+        await login_as_editor(client, pg_url)
+        conversation_id = await new_conversation(client, AGENT_ID)
+        await _send(client, conversation_id, "prm_shape", "问")
+        await settled(client, conversation_id)
+
+        not_a_turn = await client.post(f"/conversations/{conversation_id}/turns/abc:regenerate")
+        zero = await client.post(f"/conversations/{conversation_id}/turns/t0:regenerate")
+
+    assert not_a_turn.status_code == 422
+    assert zero.status_code == 422
+
+
+@dataclass(frozen=True)
+class _Answered:
+    engine: AsyncEngine
+    runner: ConversationRunner
+    step_store: PgStepStore
+    queue: JobQueue
+    store: TranscriptStore
+    conversation_id: str
+
+    def service(
+        self,
+        *,
+        queue: JobQueue | None = None,
+        history: TranscriptHistory | None = None,
+    ) -> TranscriptService:
+        return TranscriptService(
+            store=self.store,
+            history=history or TranscriptHistory(self.step_store, self.queue),
+            queue=queue or self.queue,
+            runner=self.runner,
+        )
+
+    async def snapshot_count(self) -> int:
+        async with self.engine.connect() as conn:
+            return (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM agent_runtime.snapshots WHERE conversation_id = :cid"
+                    ),
+                    {"cid": self.conversation_id},
+                )
+            ).scalar_one()
+
+    async def assert_untouched(self, snapshots: int) -> None:
+        assert await self.snapshot_count() == snapshots
+        turns = (
+            await TranscriptHistory(self.step_store, self.queue).read(self.conversation_id)
+        ).turns
+        assert [prompt_text(turn) for turn in turns] == ["第一问"]
+        answer = turns[0].steps[0].frames[0]
+        assert isinstance(answer, TextFrame)
+        assert answer.text == "答：第一问"
+        epoch = self.store.subscribe_view(self.conversation_id, MAIN_AGENT_ID).epoch
+        journal = self.store.subscribe_view(
+            self.conversation_id, MAIN_AGENT_ID, since=0, epoch=epoch
+        ).batches
+        assert not any(isinstance(op, ItemsRemoveOp) for batch in journal for op in batch.ops)
+
+    async def assert_withdrawn(self, prompt_id: str) -> None:
+        row = await self.queue.get(prompt_id)
+        assert row is not None
+        assert (row.status, row.run_id) == ("aborted", None)
+        assert row.finished_at is not None
+        view = await self.queue.view(self.conversation_id)
+        assert view.active is None
+        assert await self.queue.activities([self.conversation_id]) == {
+            self.conversation_id: ActivityState(busy=False, last_turn_reason="completed")
+        }
+
+
+@pytest.fixture
+async def answered(engine: AsyncEngine) -> AsyncIterator[_Answered]:
+    store = TranscriptStore()
+    runner, step_store, queue = build_runner(engine, says("答：第一问"), store=store)
+    conversation_id = new_conversation_id()
+    await submit_text(runner, queue, conversation_id, "第一问")
+    await drained(queue, conversation_id)
+    yield _Answered(
+        engine=engine,
+        runner=runner,
+        step_store=step_store,
+        queue=queue,
+        store=store,
+        conversation_id=conversation_id,
+    )
+    await runner.shutdown()
+
+
+class _InsertFails(JobQueue):
+    async def submit(
+        self,
+        *,
+        prompt_id: str,
+        conversation_id: str,
+        agent_id: str,
+        owner_user_id: uuid.UUID,
+        user_name: str,
+        content: tuple[PromptContent, ...],
+        now: datetime,
+        locked_by: str,
+    ) -> Submission:
+        raise RuntimeError("插入消息时库断了")
+
+
+class _ViewBeforeTheOtherRun(JobQueue):
+    async def view(self, conversation_id: str) -> JobQueueView:
+        return JobQueueView(active=None, queued=())
+
+
+class _SnapshotsMustNotBeWritten(PgStepStore):
+    async def save_snapshot(self, snapshot: ContinuableSnapshot) -> None:
+        raise AssertionError("复核没过还写了截断快照")
+
+
+class _SnapshotWriteFails(PgStepStore):
+    async def save_snapshot(self, snapshot: ContinuableSnapshot) -> None:
+        raise RuntimeError("写截断快照时库断了")
+
+
+@dataclass(frozen=True, kw_only=True)
+class _Replanned(TranscriptHistory):
+    second: Callable[[TurnRewind], TurnRewind | None]
+    planned: list[TurnRewind | None] = field(default_factory=list[TurnRewind | None])
+
+    async def plan_rewind(self, conversation_id: str, *, ordinal: int) -> TurnRewind | None:
+        plan = await super().plan_rewind(conversation_id, ordinal=ordinal)
+        self.planned.append(plan)
+        if len(self.planned) == 1 or plan is None:
+            return plan
+        return self.second(plan)
+
+
+async def test_a_bad_attachment_is_refused_before_anything_is_written(
+    answered: _Answered,
+) -> None:
+    snapshots = await answered.snapshot_count()
+    with pytest.raises(ValidationFailed):
+        await answered.service().regenerate(
+            conversation_id=answered.conversation_id,
+            turn_id="t1",
+            prompt_id="prm_regen_bad",
+            content=(
+                TextContent(text="配这张图再答"),
+                ImageContent(source=AttachmentSource(kind="file", file_id="f1")),
+            ),
+        )
+
+    assert await answered.queue.get("prm_regen_bad") is None
+    await answered.assert_untouched(snapshots)
+
+
+async def test_a_failed_insert_leaves_the_last_turn_alone(answered: _Answered) -> None:
+
+    snapshots = await answered.snapshot_count()
+    with pytest.raises(RuntimeError, match="插入消息时库断了"):
+        await answered.service(queue=_InsertFails(answered.engine)).regenerate(
+            conversation_id=answered.conversation_id, turn_id="t1", prompt_id="prm_regen_down"
+        )
+
+    assert await answered.queue.get("prm_regen_down") is None
+    await answered.assert_untouched(snapshots)
+
+
+async def test_losing_the_slot_to_another_run_withdraws_the_regeneration(
+    answered: _Answered,
+) -> None:
+    await answered.queue.submit(
+        prompt_id="prm_first",
+        conversation_id=answered.conversation_id,
+        agent_id=AGENT_ID,
+        owner_user_id=OWNER,
+        user_name="logan",
+        content=(TextContent(text="抢先一步"),),
+        now=datetime.now(UTC),
+        locked_by="w-other",
+    )
+    snapshots = await answered.snapshot_count()
+
+    with pytest.raises(Conflict):
+        await answered.service(queue=_ViewBeforeTheOtherRun(answered.engine)).regenerate(
+            conversation_id=answered.conversation_id, turn_id="t1", prompt_id="prm_regen_late"
+        )
+
+    late = await answered.queue.get("prm_regen_late")
+    assert late is not None
+    assert (late.status, late.run_id) == ("aborted", None)
+    first = await answered.queue.get("prm_first")
+    assert first is not None
+    assert (first.status, first.locked_by) == ("running", "w-other")
+    await answered.assert_untouched(snapshots)
+
+
+@pytest.mark.parametrize("change", ["another-turn", "replaced"])
+async def test_a_last_turn_that_changed_before_the_slot_was_taken_is_left_alone(
+    answered: _Answered, change: str
+) -> None:
+    engine = answered.engine
+
+    def second(plan: TurnRewind) -> TurnRewind | None:
+        if change == "another-turn":
+            return None
+        return replace(plan, run_ids=("r-somebody-else",), store=_SnapshotsMustNotBeWritten(engine))
+
+    history = _Replanned(answered.step_store, answered.queue, second=second)
+    snapshots = await answered.snapshot_count()
+
+    with pytest.raises(Conflict):
+        await answered.service(history=history).regenerate(
+            conversation_id=answered.conversation_id, turn_id="t1", prompt_id="prm_regen_stale"
+        )
+
+    assert len(history.planned) == 2
+    await answered.assert_withdrawn("prm_regen_stale")
+    await answered.assert_untouched(snapshots)
+
+
+async def test_a_failed_truncation_withdraws_the_regeneration(answered: _Answered) -> None:
+    engine = answered.engine
+    history = _Replanned(
+        answered.step_store,
+        answered.queue,
+        second=lambda plan: replace(plan, store=_SnapshotWriteFails(engine)),
+    )
+    snapshots = await answered.snapshot_count()
+
+    with pytest.raises(RuntimeError, match="写截断快照时库断了"):
+        await answered.service(history=history).regenerate(
+            conversation_id=answered.conversation_id, turn_id="t1", prompt_id="prm_regen_torn"
+        )
+
+    await answered.assert_withdrawn("prm_regen_torn")
+    await answered.assert_untouched(snapshots)

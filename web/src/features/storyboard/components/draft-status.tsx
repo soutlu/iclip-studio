@@ -1,0 +1,124 @@
+import { Icon } from '@/shared/icons'
+import { Button } from '@/shared/ui/button'
+import {
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+  DialogRoot,
+  DialogSurface,
+} from '@/shared/ui/dialog'
+import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
+import type { SaveState } from '../use-shots-draft'
+
+export function ReaderNotice({ text }: { text: string }) {
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center gap-2 px-6 text-center">
+      <p className="text-body-sm text-on-surface-variant">{text}</p>
+    </div>
+  )
+}
+
+type SaveStatusState =
+  { kind: Exclude<SaveState['kind'], 'error'> } | { kind: 'error'; message: string }
+
+type SaveStatusProps = {
+  state: SaveStatusState
+  hasUnsavedChanges: boolean
+  appliedUpload?: boolean | undefined
+  onRetry: () => void
+}
+
+export function SaveStatus({
+  state,
+  hasUnsavedChanges,
+  appliedUpload = false,
+  onRetry,
+}: SaveStatusProps) {
+  if (state.kind === 'error')
+    return (
+      <>
+        <span className="text-body-sm text-error" role="alert">
+          {appliedUpload && hasUnsavedChanges ? '已上传图片，' : ''}
+          {state.message}
+        </span>
+        <Button onClick={onRetry} size="md" variant="ghost">
+          重试保存
+        </Button>
+      </>
+    )
+  if (state.kind === 'conflict')
+    return <span className="text-body-sm text-on-surface-faint">有版本冲突待处理</span>
+  if (state.kind === 'saving') return <SaveIcon label="保存中…" saving />
+  if (hasUnsavedChanges) return <span className="text-body-sm text-on-surface-faint">待保存</span>
+  if (state.kind === 'saved') return <SaveIcon label="已保存" />
+  return null
+}
+
+function SaveIcon({ label, saving = false }: { label: string; saving?: boolean }) {
+  return (
+    <TooltipRoot>
+      <TooltipTrigger asChild>
+        <span
+          className="inline-grid size-6 shrink-0 place-items-center text-on-surface-faint"
+          role="status"
+        >
+          {saving ? (
+            <Icon className="animate-spin" decorative name="spinner" size="sm" />
+          ) : (
+            <Icon decorative name="check" size="sm" />
+          )}
+          <span className="sr-only">{label}</span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </TooltipRoot>
+  )
+}
+
+export function ConflictDialog({
+  state,
+  resolve,
+}: {
+  state: SaveState
+  resolve: (choice: 'mine' | 'theirs') => void
+}) {
+  const conflicts = state.kind === 'conflict' ? state.shots : []
+  const aspect = state.kind === 'conflict' ? state.aspect : undefined
+  const removed = conflicts.some((conflict) => conflict.theirs === undefined)
+  const changed = [
+    ...(aspect === undefined
+      ? []
+      : [`画幅（当前修改为 ${aspect.mine}，最新版本为 ${aspect.theirs}）`]),
+    ...(conflicts.length === 0 ? [] : [`第 ${conflicts.map((item) => item.index).join('、')} 组`]),
+  ].join('，')
+  return (
+    <DialogRoot
+      onOpenChange={(open) => !open && resolve('theirs')}
+      open={state.kind === 'conflict'}
+    >
+      <DialogSurface aria-label="分镜版本冲突">
+        <DialogHeader closeLabel="关闭（采用最新版本）" title="分镜版本冲突">
+          {changed}在编辑期间已被修改
+        </DialogHeader>
+        <DialogBody>
+          <p className="text-body text-on-surface">
+            {removed
+              ? '原镜头组已被移除，当前修改无法覆盖到其他镜头组。选择「采用最新版本」仅放弃冲突处的修改。'
+              : '选择「保留我的修改」可保留当前修改，选择「采用最新版本」可改用最新版本；无冲突的修改将保留'}
+          </p>
+        </DialogBody>
+        <DialogFooter>
+          <span />
+          <span className="flex gap-2">
+            <Button onClick={() => resolve('theirs')} size="md" variant="ghost">
+              采用最新版本
+            </Button>
+            <Button disabled={removed} onClick={() => resolve('mine')} size="md">
+              保留我的修改
+            </Button>
+          </span>
+        </DialogFooter>
+      </DialogSurface>
+    </DialogRoot>
+  )
+}

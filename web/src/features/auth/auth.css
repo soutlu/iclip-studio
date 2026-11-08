@@ -1,0 +1,60 @@
+/* ===== 登录表单（弹窗内） ===== */
+.cue-auth-error {
+  color: var(--color-danger-text);
+}
+
+.cue-auth-autofill:-webkit-autofill,
+.cue-auth-autofill:-webkit-autofill:hover,
+.cue-auth-autofill:-webkit-autofill:focus,
+.cue-auth-autofill:-webkit-autofill:active {
+  /* 将自动填充背景裁到字形内；!important 用于覆盖浏览器注入的自动填充颜色。 */
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: var(--color-on-surface) !important;
+  background-clip: text !important;
+  caret-color: var(--color-on-surface);
+  transition:
+    background-color 999999s ease-out,
+    color 999999s ease-out,
+    -webkit-text-fill-color 999999s ease-out;
+}
+
+/* 账号密码辅助通道的折叠触发器。 */
+.cue-auth-secondary-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 2px;
+  color: var(--color-on-surface-variant);
+  outline: none;
+  transition: color 160ms ease;
+}
+
+.cue-auth-secondary-toggle:hover,
+.cue-auth-secondary-toggle:focus-visible {
+  color: var(--color-on-background);
+}
+
+.cue-auth-secondary-toggle:focus-visible {
+  outline: var(--state-focus-ring) solid var(--color-focus-ring);
+  outline-offset: var(--state-focus-offset);
+}
+
+.cue-auth-secondary-toggle > svg {
+  transition: transform 200ms ease;
+}
+
+.cue-auth-divider {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-outline) 30%, transparent),
+    transparent
+  );
+}
+
+.cue-auth-divider-label {
+  color: var(--color-on-surface-variant);
+  opacity: 0.78;
+}

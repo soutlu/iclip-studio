@@ -1,0 +1,764 @@
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
+import { useState } from 'react'
+import { describe, expect, it, vi } from 'vitest'
+import { addMockCollection, addMockConversation } from '@/testing/mocks/conversations'
+import { addMockUser, loginAs, mockAuthUser } from '@/testing/mocks/handlers'
+import { server } from '@/testing/mocks/server'
+import { MOCK_STREAM_EPOCH, mockTranscriptPage } from '@/testing/mocks/transcript'
+import { pasteTextIntoComposer } from '@/testing/editor'
+import { renderWithProviders } from '@/testing/render'
+import { Toaster } from '@/shared/ui/toast'
+import { conversationsQueryKeys, type SidebarTopology } from '../conversations.api'
+import { ConversationRoute } from './conversation-route'
+import { type FakeSocket, SERVER_HELLO, sessionEnvelope } from '@/testing/ws'
+
+vi.mock('lottie-web/build/player/lottie_light', () => ({
+  default: {
+    loadAnimation: () => ({
+      addEventListener: () => undefined,
+      destroy: () => undefined,
+      removeEventListener: () => undefined,
+    }),
+  },
+}))
+
+const TAIL_TEXT = '这是第 2 轮的回复。'
+
+const renderConversation = async () =>
+  renderWithProviders(<ConversationRoute conversationId="c1" />)
+
+function RemountableConversation() {
+  const [shown, setShown] = useState(true)
+  return (
+    <>
+      <button onClick={() => setShown(false)} type="button">
+        离开
+      </button>
+      <button onClick={() => setShown(true)} type="button">
+        回来
+      </button>
+      {shown ? <ConversationRoute conversationId="c1" /> : null}
+    </>
+  )
+}
+
+const opsFrame = (ops: unknown[], seq: number) => ({
+  payload: { agent_id: 'main', ops, seq, type: 'transcript.ops' },
+  session_id: 'c1',
+  stream_epoch: MOCK_STREAM_EPOCH,
+  type: 'transcript.ops',
+})
+
+const runningPrompt = (promptId: string) => ({
+  op: 'prompt.upsert',
+  prompt: { createdAt: '2026-08-31T03:00:00Z', promptId, status: 'running' },
+})
+
+const APPROVAL_TURN = {
+  kind: 'turn',
+  ordinal: 3,
+  origin: { kind: 'user' },
+  content: [{ text: '把两张镜头帧拼成封面', type: 'text' }],
+  startedAt: '2026-08-31T02:10:00Z',
+  state: 'running',
+  steps: [
+    {
+      frames: [
+        {
+          approvalId: 'appr_1',
+          display: {
+            content: '# 封面\n\n两张镜头帧拼版，主图在左。',
+            kind: 'file_io',
+            operation: 'write',
+            path: 'shots/cover.md',
+          },
+          frameId: 'ta.1.f1',
+          input: { path: 'shots/cover.md' },
+          kind: 'tool',
+          name: 'write_file',
+          state: 'running',
+          toolCallId: 'call_cover',
+        },
+      ],
+      kind: 'step',
+      ordinal: 1,
+      startedAt: '2026-08-31T02:10:00Z',
+      state: 'running',
+      stepId: 'ta.1',
+      turnId: 'ta',
+    },
+  ],
+  turnId: 'ta',
+}
+
+const serveApprovalPage = (ownerUserId = mockAuthUser.id, deletedAt: string | null = null) => {
+  const page = mockTranscriptPage()
+  server.use(
+    http.get('*/api/conversations/c1/transcript', () =>
+      HttpResponse.json({
+        ...page,
+        deleted_at: deletedAt,
+        owner_user_id: ownerUserId,
+        interactions: [
+          {
+            interactionId: 'appr_1',
+            interactionKind: 'approval',
+            state: 'pending',
+            toolCallId: 'call_cover',
+          },
+        ],
+        items: [...page.items, APPROVAL_TURN],
+        meta: { ...page.meta, activity: 'turn' },
+        pending_interactions: ['appr_1'],
+        prompts: [{ createdAt: '2026-08-31T02:10:00Z', promptId: 'p-cover', status: 'running' }],
+      }),
+    ),
+  )
+}
+
+const queuedPrompt = (promptId: string, text: string) => ({
+  op: 'prompt.upsert',
+  prompt: {
+    content: [{ text, type: 'text' }],
+    createdAt: '2026-08-31T03:00:01Z',
+    promptId,
+    status: 'queued',
+  },
+})
+
+describe('ConversationRoute', () => {
+  it('还有更早的轮次时顶部给「加载更早」：按最早一轮往前取一页，接在前面；失败了改口让人重试', async () => {
+    const user = userEvent.setup()
+    const longId = '0199aaaa-0000-7000-8000-0000000000aa'
+    const asked: (string | null)[] = []
+    let failOnce = true
+    server.use(
+      http.get(`*/api/conversations/${longId}/transcript`, ({ request }) => {
+        const query = new URL(request.url).searchParams
+        const beforeTurn = query.get('before_turn')
+        asked.push(beforeTurn)
+        if (beforeTurn !== null && failOnce) {
+          failOnce = false
+          return HttpResponse.json({ detail: '服务暂时不可用' }, { status: 503 })
+        }
+        return HttpResponse.json(
+          mockTranscriptPage(longId, { beforeTurn, pageSize: Number(query.get('page_size')) }),
+        )
+      }),
+    )
+    await renderWithProviders(<ConversationRoute conversationId={longId} />)
+
+    expect(await screen.findByText('长对话第 14 轮的回复。')).toBeInTheDocument()
+    expect(screen.getByText('长对话第 5 轮的回复。')).toBeInTheDocument()
+    expect(screen.queryByText('长对话第 4 轮的回复。')).not.toBeInTheDocument()
+    expect(asked).toEqual([null])
+
+    await user.click(screen.getByRole('button', { name: '加载更早的消息' }))
+    await user.click(await screen.findByRole('button', { name: '加载失败，请点击重试' }))
+
+    expect(await screen.findByText('长对话第 1 轮的回复。')).toBeInTheDocument()
+    expect(asked).toEqual([null, 't5', 't5'])
+    const replies = screen.getAllByText(/^长对话第 \d+ 轮的回复。$/).map((node) => node.textContent)
+    expect(replies).toHaveLength(14)
+    expect(replies[0]).toBe('长对话第 1 轮的回复。')
+    expect(screen.queryByRole('button', { name: '加载更早的消息' })).not.toBeInTheDocument()
+  })
+
+  it('末轮流式追加时，用户在旧轮选中的文字保持不变', async () => {
+    const { socket } = await renderWithProviders(
+      <ConversationRoute conversationId="c1" onForked={() => undefined} />,
+    )
+    const earlier = await screen.findByText('这是第 1 轮的回复。')
+    const selection = window.getSelection()
+    const range = document.createRange()
+    range.selectNodeContents(earlier)
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    expect(selection?.toString()).toBe('这是第 1 轮的回复。')
+
+    socket.deliver(
+      opsFrame(
+        [
+          {
+            offset: TAIL_TEXT.length,
+            op: 'append',
+            target: { frameId: 't2.1.f3', stepId: 't2.1', turnId: 't2', type: 'frame' },
+            text: '再补一句。',
+          },
+        ],
+        11,
+      ),
+    )
+    await screen.findByText(`${TAIL_TEXT}再补一句。`)
+
+    expect(selection?.toString()).toBe('这是第 1 轮的回复。')
+    selection?.removeAllRanges()
+  })
+
+  it('气泡按 promptId 认领：同样内容但 id 不是它的轮不接替', async () => {
+    const user = userEvent.setup()
+    const { socket } = await renderConversation()
+    await screen.findByText(TAIL_TEXT)
+    server.use(
+      http.post('*/api/conversations/c1/prompts', async ({ request }) => {
+        const body = (await request.json()) as { prompt_id: string }
+        return HttpResponse.json({
+          createdAt: '2026-08-31T03:00:00Z',
+          promptId: body.prompt_id,
+          status: 'running',
+        })
+      }),
+    )
+
+    pasteTextIntoComposer(screen.getByLabelText('输入消息'), '再拆一段')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(screen.getAllByText('再拆一段')).toHaveLength(1))
+
+    socket.deliver(
+      opsFrame(
+        [
+          {
+            op: 'turn.upsert',
+            turn: {
+              kind: 'turn',
+              ordinal: 3,
+              origin: { kind: 'user' },
+              content: [{ text: '再拆一段', type: 'text' }],
+              state: 'running',
+              triggerPromptId: 'prm_someone_else',
+              turnId: 't3',
+            },
+          },
+        ],
+        11,
+      ),
+    )
+
+    await waitFor(() => expect(screen.getAllByText('再拆一段')).toHaveLength(2))
+    expect(screen.getByRole('status')).toHaveTextContent('正在思考…')
+  })
+
+  it('发送失败把字还回输入框', async () => {
+    const user = userEvent.setup()
+    await renderConversation()
+    await screen.findByText(TAIL_TEXT)
+
+    server.use(
+      http.post('*/api/conversations/c1/prompts', () =>
+        HttpResponse.json({ detail: '这段对话不是你的' }, { status: 403 }),
+      ),
+    )
+
+    pasteTextIntoComposer(screen.getByLabelText('输入消息'), '再拆一段')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+
+    const editor = await screen.findByLabelText('输入消息')
+    await waitFor(() => expect(editor).toHaveTextContent('再拆一段'))
+    expect(screen.queryAllByText('再拆一段')).toHaveLength(1)
+  })
+
+  it('发出去后离开再回来，气泡和「正在想」还在：本地发送状态按对话保存，不随页面卸载', async () => {
+    const user = userEvent.setup()
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.post('*/api/conversations/c1/prompts', async ({ request }) => {
+        const body = (await request.json()) as { prompt_id: string }
+        await gate
+        return HttpResponse.json({
+          createdAt: '2026-08-31T03:00:00Z',
+          promptId: body.prompt_id,
+          status: 'running',
+        })
+      }),
+    )
+    await renderWithProviders(<RemountableConversation />)
+    await screen.findByText(TAIL_TEXT)
+
+    pasteTextIntoComposer(screen.getByLabelText('输入消息'), '再拆一段')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(screen.getAllByText('再拆一段')).toHaveLength(1))
+
+    await user.click(screen.getByRole('button', { name: '离开' }))
+    expect(screen.queryByText('再拆一段')).toBeNull()
+    await user.click(screen.getByRole('button', { name: '回来' }))
+    await screen.findByText(TAIL_TEXT)
+
+    expect(screen.getAllByText('再拆一段')).toHaveLength(1)
+    expect(screen.getByRole('status')).toHaveTextContent('正在思考…')
+    release()
+  })
+
+  it('离开期间发送失败：回来时气泡已撤，也不再显示正在想', async () => {
+    const user = userEvent.setup()
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    server.use(
+      http.post('*/api/conversations/c1/prompts', async () => {
+        await gate
+        return HttpResponse.json({ detail: '这段对话不是你的' }, { status: 403 })
+      }),
+    )
+    await renderWithProviders(<RemountableConversation />)
+    await screen.findByText(TAIL_TEXT)
+
+    pasteTextIntoComposer(screen.getByLabelText('输入消息'), '再拆一段')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+    await waitFor(() => expect(screen.getAllByText('再拆一段')).toHaveLength(1))
+
+    await user.click(screen.getByRole('button', { name: '离开' }))
+    await act(async () => {
+      release()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    await user.click(screen.getByRole('button', { name: '回来' }))
+    await screen.findByText(TAIL_TEXT)
+
+    expect(screen.queryByText('再拆一段')).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('往上翻离开底部后出现「回到底部」圆钮，点了滚回底部并收起', async () => {
+    const user = userEvent.setup()
+    await renderConversation()
+    await screen.findByText(TAIL_TEXT)
+    expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull()
+
+    const scroller = screen.getByTestId('chat-scroller')
+    const scrollTo = vi.fn()
+    Object.defineProperties(scroller, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 2000 },
+      scrollTo: { configurable: true, value: scrollTo },
+    })
+    scroller.scrollTop = 0
+    fireEvent.scroll(scroller)
+
+    const button = await screen.findByRole('button', { name: '回到底部' })
+    expect(button).toHaveAttribute('title', '回到底部')
+    await user.click(button)
+
+    expect(scrollTo).toHaveBeenCalledWith({ behavior: 'smooth', top: 2000 })
+    expect(screen.queryByRole('button', { name: '回到底部' })).toBeNull()
+  })
+
+  it('点「重新生成」提交末轮的 :regenerate 请求', async () => {
+    const user = userEvent.setup()
+    await renderConversation()
+    await screen.findByText(TAIL_TEXT)
+
+    let regenerated = ''
+    server.use(
+      http.post('*/api/conversations/c1/turns/*', ({ request }) => {
+        regenerated = decodeURIComponent(new URL(request.url).pathname.split('/').pop() ?? '')
+        return HttpResponse.json({
+          createdAt: '2026-08-31T03:02:00Z',
+          promptId: 'prm_regen_1',
+          status: 'running',
+        })
+      }),
+    )
+
+    await user.click(
+      within(screen.getByLabelText('第 2 轮')).getByRole('button', { name: '重新生成' }),
+    )
+
+    await waitFor(() => {
+      expect(regenerated).toBe('t2:regenerate')
+    })
+  })
+
+  it('修改态点「取消」：提示条收起，输入框清空', async () => {
+    const user = userEvent.setup()
+    await renderConversation()
+    await screen.findByText(TAIL_TEXT)
+
+    await user.click(within(screen.getByLabelText('第 2 轮')).getByRole('button', { name: '修改' }))
+    expect(screen.getByLabelText('输入消息')).toHaveTextContent('第 2 个问题')
+
+    await user.click(screen.getByRole('button', { name: '取消' }))
+
+    expect(screen.queryByText('正在修改上一条消息')).toBeNull()
+    expect(screen.getByLabelText('输入消息')).toHaveTextContent('')
+  })
+
+  it('对话在忙时「修改」和「重新生成」都不可用', async () => {
+    const { socket } = await renderConversation()
+    await screen.findByText(TAIL_TEXT)
+
+    const latestTurn = within(screen.getByLabelText('第 2 轮'))
+    const regenerate = latestTurn.getByRole('button', {
+      name: '重新生成',
+    })
+    const edit = latestTurn.getByRole('button', { name: '修改' })
+    expect(regenerate).not.toHaveAttribute('aria-disabled')
+    expect(edit).not.toHaveAttribute('aria-disabled')
+
+    socket.deliver(opsFrame([runningPrompt('p-run')], 11))
+
+    await waitFor(() => {
+      expect(regenerate).toHaveAttribute('aria-disabled', 'true')
+      expect(edit).toHaveAttribute('aria-disabled', 'true')
+    })
+  })
+
+  it('重新生成被服务端拒了（409）时把它给的中文文案弹出来', async () => {
+    const user = userEvent.setup()
+    await renderWithProviders(
+      <>
+        <ConversationRoute conversationId="c1" />
+        <Toaster />
+      </>,
+    )
+    await screen.findByText(TAIL_TEXT)
+
+    server.use(
+      http.post('*/api/conversations/c1/turns/*', () =>
+        HttpResponse.json({ detail: '这段对话还在忙，等它收完尾再重新生成' }, { status: 409 }),
+      ),
+    )
+
+    await user.click(
+      within(screen.getByLabelText('第 2 轮')).getByRole('button', { name: '重新生成' }),
+    )
+
+    expect(
+      await screen.findByText('重新生成失败：这段对话还在忙，等它收完尾再重新生成'),
+    ).toBeInTheDocument()
+  })
+
+  it('正文里夹的 HTML 会渲染，脚本与事件属性被摘掉', async () => {
+    const { socket } = await renderConversation()
+    await screen.findByText(TAIL_TEXT)
+
+    socket.deliver(
+      opsFrame(
+        [
+          {
+            op: 'frame.upsert',
+            frame: {
+              frameId: 't2.1.f7',
+              kind: 'text',
+              role: 'assistant',
+              text: [
+                '<details><summary>展开看设定</summary>',
+                '<p id="html-body">这段是 <b>HTML</b></p></details>',
+                '<script>window.__pwned = true</script>',
+                '<p onclick="window.__pwned = true" id="html-click">点我</p>',
+              ].join('\n'),
+            },
+            stepId: 't2.1',
+            turnId: 't2',
+          },
+        ],
+        11,
+      ),
+    )
+
+    expect(await screen.findByText('展开看设定')).toBeInTheDocument()
+    expect(screen.getByText('HTML')).toBeInTheDocument()
+    expect(document.querySelector('script')).toBeNull()
+    expect(screen.getByText('点我')).not.toHaveAttribute('onclick')
+  })
+
+  it('等审批时贴出审批卡，点「同意」打 interactions 端点', async () => {
+    const user = userEvent.setup()
+    serveApprovalPage()
+    let decided: { body: unknown; path: string } | null = null
+    server.use(
+      http.post('*/api/conversations/c1/interactions/:interactionId', async ({ request }) => {
+        decided = { body: await request.json(), path: new URL(request.url).pathname }
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    await renderConversation()
+
+    const card = await screen.findByRole('region', { name: '等待审批' })
+    expect(within(card).getByText('写入文件')).toBeInTheDocument()
+    expect(within(card).getByRole('region', { name: '改动预览' })).toHaveTextContent(
+      '两张镜头帧拼版，主图在左。',
+    )
+
+    await user.click(within(card).getByRole('button', { name: /同意/ }))
+
+    await waitFor(() => {
+      expect(decided).toEqual({
+        body: { approved: true },
+        path: '/api/conversations/c1/interactions/appr_1',
+      })
+    })
+    expect(await within(card).findByText('已同意')).toBeInTheDocument()
+    expect(within(card).queryByRole('button', { name: /拒绝/ })).toBeNull()
+  })
+
+  it('改主意（409）时说清该步骤已做出决定', async () => {
+    const user = userEvent.setup()
+    serveApprovalPage()
+    server.use(
+      http.post('*/api/conversations/c1/interactions/:interactionId', () =>
+        HttpResponse.json({ detail: '这张卡已经做过决定了' }, { status: 409 }),
+      ),
+    )
+    await renderWithProviders(
+      <>
+        <ConversationRoute conversationId="c1" />
+        <Toaster />
+      </>,
+    )
+
+    const card = await screen.findByRole('region', { name: '等待审批' })
+    await user.click(within(card).getByRole('button', { name: /同意/ }))
+
+    expect(await screen.findByText('该步骤已做出决定，无法再次提交')).toBeInTheDocument()
+    expect(within(card).getByRole('button', { name: /拒绝/ })).toBeInTheDocument()
+  })
+
+  it('等审批时不给追加入口，状态行与输入框都改口说轮到你确认', async () => {
+    serveApprovalPage()
+    const { socket } = await renderConversation()
+    await screen.findByRole('region', { name: '等待审批' })
+    expect(screen.getByRole('status')).toHaveTextContent('等待审批')
+
+    socket.deliver(opsFrame([queuedPrompt('p-queued', '顺便配个音')], 11))
+
+    expect(await screen.findByText('1 条消息等待发送')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '立即发送' })).toBeNull()
+    expect(screen.getByText('请先确认上方的步骤')).toBeInTheDocument()
+  })
+
+  it('治理者看别人的对话是只读：页头标属主，没有输入框、修改与重新生成，审批和队列只展示', async () => {
+    const other = addMockUser('小王')
+    loginAs(mockAuthUser, { permissions: [...mockAuthUser.permissions, 'users:manage'] })
+    let decided = false
+    server.use(
+      http.post('*/api/conversations/c1/interactions/:interactionId', () => {
+        decided = true
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    serveApprovalPage(other.id)
+    const user = userEvent.setup()
+    const { socket } = await renderConversation()
+
+    expect(await screen.findByText('只读 · 小王 的任务')).toBeVisible()
+    expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent('小王')
+    expect(screen.queryByLabelText('输入消息')).toBeNull()
+    expect(screen.queryByRole('button', { name: '重新生成' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '修改' })).toBeNull()
+
+    const card = screen.getByRole('region', { name: '等待审批' })
+    expect(within(card).queryByRole('button', { name: '同意' })).toBeNull()
+    expect(within(card).getByText('等待任务属主决定')).toBeVisible()
+    await user.keyboard('1')
+
+    socket.deliver(opsFrame([queuedPrompt('p-queued', '顺便配个音')], 11))
+    expect(await screen.findByText('1 条消息等待发送')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '立即发送' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '撤回' })).toBeNull()
+    expect(decided).toBe(false)
+  })
+
+  it('分叉不写源对话，所以只读地看着别人的也分得动；点一下把这一轮交给后端并跳到副本', async () => {
+    const other = addMockUser('小王')
+    loginAs(mockAuthUser, { permissions: [...mockAuthUser.permissions, 'users:manage'] })
+    let asked: { turn: number } | null = null
+    let calls = 0
+    const copy = addMockConversation('开场那段（分叉 · 第 2 轮）')
+    server.use(
+      http.post('*/api/conversations/c1:fork', async ({ request }) => {
+        calls += 1
+        asked = (await request.json()) as { turn: number }
+        return HttpResponse.json(
+          { conversation: { ...copy, forkTurn: asked.turn, forkedFrom: crypto.randomUUID() } },
+          { status: 201 },
+        )
+      }),
+    )
+    const forked = vi.fn()
+    const user = userEvent.setup()
+    const page = mockTranscriptPage()
+    server.use(
+      http.get('*/api/conversations/c1/transcript', () =>
+        HttpResponse.json({ ...page, owner_user_id: other.id }),
+      ),
+    )
+    await renderWithProviders(<ConversationRoute conversationId="c1" onForked={forked} />)
+
+    expect(await screen.findByText('只读 · 小王 的任务')).toBeVisible()
+    const buttons = await screen.findAllByRole('button', { name: '从此处另开任务' })
+    const button = buttons[buttons.length - 1] as HTMLElement
+    await user.dblClick(button)
+
+    await waitFor(() => expect(forked).toHaveBeenCalledWith(copy.id))
+    expect(calls).toBe(1)
+    expect(asked).toEqual({ turn: 2 })
+  })
+
+  it('治理者看已删的对话也是只读，页头与说明都标出已删除；自己删的主语写「当前账号」', async () => {
+    const other = addMockUser('小王')
+    loginAs(mockAuthUser, { permissions: [...mockAuthUser.permissions, 'users:manage'] })
+    serveApprovalPage(other.id, '2026-09-04T00:00:00Z')
+    const first = await renderConversation()
+
+    expect(await screen.findByText('已删除 · 小王 的任务')).toBeVisible()
+    expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent(
+      '该任务属于 小王，已删除，仅可查看',
+    )
+    expect(screen.queryByLabelText('输入消息')).toBeNull()
+    first.unmount()
+
+    serveApprovalPage(mockAuthUser.id, '2026-09-04T00:00:00Z')
+    await renderConversation()
+
+    expect(await screen.findByText('已删除 · 自己的任务')).toBeVisible()
+    expect(screen.getByRole('note', { name: '只读说明' })).toHaveTextContent(
+      '该任务属于当前账号，已删除，仅可查看',
+    )
+    expect(screen.queryByLabelText('输入消息')).toBeNull()
+  })
+
+  it('页头的合集标签取自侧栏已拿到的拓扑：最新那份说它在哪个合集就挂哪个，说它没归类就摘掉', async () => {
+    const { queryClient } = await renderConversation()
+    await screen.findByText(TAIL_TEXT)
+    const item = { ...addMockConversation('夜景延时素材生成'), id: 'c1' }
+    const collection = addMockCollection('夏季亚麻系列')
+    const topology = (grouped: boolean): SidebarTopology => ({
+      collections: [
+        {
+          conversationCount: grouped ? 1 : 0,
+          id: collection.id,
+          name: collection.name,
+          page: { items: grouped ? [item] : [], nextCursor: null },
+          updatedAt: collection.updatedAt,
+        },
+      ],
+      ungrouped: { items: grouped ? [] : [item], nextCursor: null },
+      ungroupedCount: grouped ? 0 : 1,
+    })
+    expect(screen.queryByText('夏季亚麻系列')).toBeNull()
+
+    act(() => {
+      queryClient.setQueryData(conversationsQueryKeys.sidebar('all'), topology(true))
+    })
+    expect(screen.getByText('夏季亚麻系列')).toBeVisible()
+
+    act(() => {
+      queryClient.setQueryData(conversationsQueryKeys.sidebar('open'), topology(false), {
+        updatedAt: Date.now() + 1000,
+      })
+    })
+    expect(screen.queryByText('夏季亚麻系列')).toBeNull()
+  })
+
+  it('标题来自基线，服务端起了新名字就当场换掉', async () => {
+    const { socket } = await renderConversation()
+
+    expect(await screen.findByRole('heading', { name: '夜景延时素材生成' })).toBeVisible()
+
+    socket.deliver({
+      ...sessionEnvelope('c1'),
+      type: 'session.meta.updated',
+      session_id: 'c1',
+      payload: { title: '改过的名字' },
+    })
+
+    expect(await screen.findByRole('heading', { name: '改过的名字' })).toBeVisible()
+  })
+
+  it('收到改名后断线重连：补读回来之前页头仍是改过的名字，补读落地后跟上服务端', async () => {
+    const row = addMockConversation('改过的名字', undefined, undefined, ROW_ID)
+    const release = holdRowReads()
+    const { socket } = await renderRowConversation()
+    await screen.findByRole('heading', { name: '夜景延时素材生成' })
+    act(() => socket.deliver(titleFrame('改过的名字')))
+    await screen.findByRole('heading', { name: '改过的名字' })
+
+    await reconnect(socket, () => {
+      row.title = '又改了一次'
+    })
+
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(screen.getByRole('heading', { name: '改过的名字' })).toBeVisible()
+    release()
+    expect(await screen.findByRole('heading', { name: '又改了一次' })).toBeVisible()
+  }, 10_000)
+
+  it('断线期间别处改了名：重连后补读那一行，页头换成新名字', async () => {
+    const row = addMockConversation('夜景延时素材生成', undefined, undefined, ROW_ID)
+    const { socket } = await renderRowConversation()
+    await screen.findByRole('heading', { name: '夜景延时素材生成' })
+
+    await reconnect(socket, () => {
+      row.title = '断线期间改的名字'
+    })
+
+    expect(await screen.findByRole('heading', { name: '断线期间改的名字' })).toBeVisible()
+  }, 10_000)
+
+  it('补读在途时又到了改名帧：帧比读到的新，读回来的旧名字不盖掉它', async () => {
+    const row = addMockConversation('夜景延时素材生成', undefined, undefined, ROW_ID)
+    const release = holdRowReads()
+    const { socket } = await renderRowConversation()
+    await screen.findByRole('heading', { name: '夜景延时素材生成' })
+
+    await reconnect(socket, () => {
+      row.title = '断线期间改的名字'
+    })
+    act(() => socket.deliver(titleFrame('重连后又改的名字')))
+    await screen.findByRole('heading', { name: '重连后又改的名字' })
+    let settled = false
+    server.events.on('response:mocked', ({ request }) => {
+      if (new URL(request.url).pathname === `/api/conversations/${ROW_ID}`) settled = true
+    })
+    release()
+
+    await waitFor(() => expect(settled).toBe(true))
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(screen.getByRole('heading', { name: '重连后又改的名字' })).toBeVisible()
+  }, 10_000)
+})
+
+const ROW_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+
+const renderRowConversation = async () =>
+  renderWithProviders(<ConversationRoute conversationId={ROW_ID} />)
+
+const titleFrame = (title: string) => ({
+  ...sessionEnvelope(ROW_ID),
+  payload: { title },
+  session_id: ROW_ID,
+  type: 'session.meta.updated',
+})
+
+const holdRowReads = () => {
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  server.use(
+    http.get(`*/api/conversations/${ROW_ID}`, async () => {
+      await held
+    }),
+  )
+  return release
+}
+
+const reconnect = async (socket: FakeSocket, duringOutage: () => void) => {
+  const handshake = socket.onmessage
+  act(() => socket.onclose?.())
+  duringOutage()
+  await waitFor(
+    () => {
+      expect(socket.onmessage).not.toBeNull()
+      expect(socket.onmessage).not.toBe(handshake)
+    },
+    { timeout: 3000 },
+  )
+  act(() => socket.deliver(SERVER_HELLO))
+}

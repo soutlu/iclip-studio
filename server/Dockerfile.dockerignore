@@ -1,0 +1,22 @@
+# 后端以仓库根为构建上下文，只发送后端与它依赖的 plugins/video/ 源码；运行时、前端、渲染服务与 .git 都不发送。
+**
+!server/
+!server/**
+!plugins/video/
+!plugins/video/**
+# 本机 venv 是 macOS 的，进了镜像既不能用又撑大上下文。
+**/.venv/
+**/node_modules/
+**/tests/
+**/.pytest_cache/
+**/.ruff_cache/
+**/__pycache__/
+**/*.py[cod]
+**/.python-version
+**/.env*
+# 运行配置由部署挂载，不进镜像；agents/、skills/ 是 agent 配置入库前的旧目录，本机留着也不发送。
+server/configs/
+server/agents/
+server/skills/
+server/Dockerfile
+server/Dockerfile.dockerignore

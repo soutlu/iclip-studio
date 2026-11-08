@@ -1,0 +1,122 @@
+/* 共享视频播放器：控件条是压在画面底部的毛玻璃胶囊（照 Video.js 默认皮肤）。
+   它压在画面上而不是页面上，颜色都从 scrim / on-scrim 派生，明暗主题下一个样。 */
+
+[data-video-player][data-idle] {
+  cursor: none;
+}
+
+.video-player-shade {
+  position: absolute;
+  inset: auto 0 0;
+  height: 96px;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--color-scrim) 45%, transparent),
+    transparent
+  );
+  pointer-events: none;
+  transition: opacity var(--dur-m) var(--ease);
+}
+
+.video-player-bar {
+  /* 焦点环与悬停、按下叠层改由 on-scrim 派生，压在深色画面上才看得见。 */
+  --color-focus-ring: var(--color-on-scrim);
+  --state-focus-ring: 2px;
+  --state-focus-offset: -2px;
+  --color-state-hover: color-mix(in srgb, var(--color-on-scrim) 12%, transparent);
+  --color-state-pressed: color-mix(in srgb, var(--color-on-scrim) 18%, transparent);
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  /* 宽度由左右定位给出，按自身宽度收起次要信息。 */
+  container-type: inline-size;
+  display: flex;
+  height: var(--control-height-lg);
+  align-items: center;
+  gap: 2px;
+  padding: 0 2px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-scrim) 25%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-on-scrim) 10%, transparent),
+    0 1px 3px color-mix(in srgb, var(--color-shadow) 15%, transparent);
+  color: var(--color-on-scrim);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  line-height: var(--text-label-line);
+  transition: opacity var(--dur-m) var(--ease);
+}
+
+[data-video-player][data-idle] .video-player-bar,
+[data-video-player][data-idle] .video-player-shade {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.video-player-time {
+  flex: none;
+  padding: 0 6px;
+}
+.video-player-total {
+  opacity: 0.7;
+}
+/* 画面窄（小视频、手机竖屏）时先收总时长，再收当前时间；按钮与进度条始终在。 */
+@container (max-width: 260px) {
+  .video-player-time {
+    padding: 0 2px;
+  }
+  .video-player-total {
+    display: none;
+  }
+}
+@container (max-width: 200px) {
+  .video-player-time {
+    display: none;
+  }
+}
+
+.video-player-slider {
+  position: relative;
+  display: flex;
+  min-width: 48px;
+  height: var(--control-height-md);
+  flex: 1;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+}
+.video-player-slider[data-disabled] {
+  cursor: default;
+}
+.video-player-track {
+  position: relative;
+  height: 4px;
+  flex: 1;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-on-scrim) 30%, transparent);
+}
+.video-player-range {
+  position: absolute;
+  height: 100%;
+  background: var(--color-on-scrim);
+}
+.video-player-thumb {
+  --state-focus-offset: 2px;
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--color-on-scrim);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-shadow) 30%, transparent);
+  opacity: 0;
+  transition: opacity var(--dur-s) var(--ease);
+}
+.video-player-slider:is(:hover, :active) .video-player-thumb,
+.video-player-thumb:focus-visible {
+  opacity: 1;
+}

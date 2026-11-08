@@ -1,0 +1,101 @@
+<!--
+  测试组件库：字幕样式，按字幕组件的约定写：
+  - <template> 子合成，铺满所在位置；台词来自 window.__hyperframes.getVariables().words
+    （[{ text, start, end, sentence }]，成片秒数），同一 sentence 的连续词为一组，一组一行；
+  - 每组写上 data-hf-id="caption:<sentence>"，编辑器在画面上按它认出点中的是哪一句；
+  - 字体用 var(--font-display, 'Noto Sans SC')，中文字形取组件库里的 Noto Sans SC。
+  按短边等比缩放：短边 1080 对应 100cqmin。
+-->
+<template id="default-caption-template">
+  <div
+    id="default-caption"
+    data-composition-id="default-caption"
+    data-timeline-locked
+    data-start="0"
+  >
+    <link rel="stylesheet" href="../../vendor/fonts/noto-sans-sc.css" />
+    <div id="caption-stage" class="caption-stage" aria-hidden="true"></div>
+    <style>
+      #default-caption {
+        pointer-events: none;
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        background: transparent;
+        container-type: size;
+      }
+
+      #default-caption .caption-stage {
+        --u: calc(100cqmin / 1080);
+        position: absolute;
+        left: 50%;
+        bottom: calc(100 * var(--u));
+        width: calc(100cqw * 1400 / 1920);
+        transform: translateX(-50%);
+        display: flex;
+        justify-content: center;
+      }
+
+      #default-caption .caption-group {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: center;
+        opacity: 0;
+      }
+
+      #default-caption .caption-line {
+        max-width: 100%;
+        text-align: center;
+        line-height: 1.2;
+        color: #ffffff;
+        font-family: var(--font-display, 'Noto Sans SC'), sans-serif;
+        font-weight: 700;
+        font-size: calc(72 * var(--u));
+        -webkit-text-stroke: calc(8 * var(--u)) #000000;
+        paint-order: stroke fill;
+      }
+    </style>
+    <script>
+      ;(function () {
+        var words = window.__hyperframes.getVariables().words
+        var groups = []
+        ;(Array.isArray(words) ? words : []).forEach(function (word) {
+          var start = Number(word.start) || 0
+          var end = Math.max(start, Number(word.end) || 0)
+          var last = groups[groups.length - 1]
+          if (!last || last.sentence !== word.sentence) {
+            last = { sentence: word.sentence, text: '', start: start, end: end }
+            groups.push(last)
+          }
+          var piece = String(word.text || '')
+          // 两侧都是拉丁字母或数字时才加空格
+          if (/[A-Za-z0-9]$/.test(last.text) && /^[A-Za-z0-9]/.test(piece)) last.text += ' '
+          last.text += piece
+          last.end = Math.max(last.end, end)
+        })
+
+        var stage = document.getElementById('caption-stage')
+        var tl = gsap.timeline({ paused: true })
+        groups.forEach(function (group, index) {
+          var groupEl = document.createElement('div')
+          var lineEl = document.createElement('div')
+          groupEl.className = 'caption-group'
+          groupEl.setAttribute('data-hf-id', 'caption:' + group.sentence)
+          lineEl.className = 'caption-line'
+          lineEl.textContent = group.text
+          groupEl.appendChild(lineEl)
+          stage.appendChild(groupEl)
+          var next = groups[index + 1]
+          tl.set(groupEl, { opacity: 1 }, group.start)
+          tl.set(groupEl, { opacity: 0 }, next ? Math.min(group.end, next.start) : group.end)
+        })
+        tl.set({}, {}, groups.length ? groups[groups.length - 1].end : 0)
+        window.__timelines = window.__timelines || {}
+        window.__timelines['default-caption'] = tl
+      })()
+    </script>
+  </div>
+</template>

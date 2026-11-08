@@ -1,0 +1,105 @@
+/* 保持滚动条占位，仅在滚动或悬停时显色，避免正文换行触发滚动循环。 */
+
+.chat-scroller {
+  scrollbar-color: transparent transparent;
+  scrollbar-width: thin;
+}
+.chat-scroller:hover,
+.chat-scroller[data-scrolling='true'] {
+  scrollbar-color: var(--color-chat-scrollbar-thumb) transparent;
+}
+.chat-scroller::-webkit-scrollbar {
+  display: block;
+  height: 6px;
+  width: 6px;
+}
+.chat-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chat-scroller::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: var(--radius-full);
+}
+.chat-scroller:hover::-webkit-scrollbar-thumb,
+.chat-scroller[data-scrolling='true']::-webkit-scrollbar-thumb {
+  background: var(--color-chat-scrollbar-thumb);
+}
+
+/* 用户气泡折叠：十行截断，底部渐隐为展开按钮保留空间。 */
+
+.chat-clamp {
+  mask-image: linear-gradient(to bottom, black calc(100% - 5lh), transparent calc(100% - 1lh));
+  max-height: 10lh;
+  overflow: hidden;
+}
+
+.chat-q-clamp {
+  mask-image: linear-gradient(to bottom, black calc(100% - 1.2lh), transparent calc(100% - 0.2lh));
+  max-height: 3lh;
+  overflow: hidden;
+}
+
+/* 审批卡预览：收起时十二行，末三行渐隐；展开最多二十四行，再长在框内滚动。 */
+
+.chat-preview-clamp {
+  mask-image: linear-gradient(to bottom, black calc(100% - 3lh), transparent);
+  max-height: 12lh;
+  overflow: hidden;
+}
+
+.chat-preview-expanded {
+  max-height: 24lh;
+  overflow-y: auto;
+}
+
+/* 全部对话的行分隔线：两端内缩到行的圆角以内；悬停行上下两条隐去，只留整行底色。
+   断点与行的内边距一一对应：840 以下行向两侧外扩，线就贴满列表宽。 */
+
+.audit-rows > li {
+  position: relative;
+}
+
+.audit-rows > li + li::before {
+  position: absolute;
+  top: 0;
+  right: 12px;
+  left: 12px;
+  height: 1px;
+  background: var(--color-hairline);
+  content: '';
+  opacity: 0.6;
+  transition: opacity var(--dur-s) var(--ease);
+}
+
+@media (max-width: 1279px) {
+  .audit-rows > li + li::before {
+    right: 8px;
+    left: 8px;
+  }
+}
+
+@media (max-width: 839px) {
+  .audit-rows > li + li::before {
+    right: 0;
+    left: 0;
+  }
+}
+
+@media (hover: hover) {
+  .audit-rows > li:has(> a:hover)::before,
+  .audit-rows > li:has(> a:hover) + li::before {
+    opacity: 0;
+  }
+}
+
+/* 侧栏原位编辑：整行浮起的输入面（top-layer 底、描边与阴影）承担焦点指示，内层 input 移除焦点环；
+   匿名层规则才能覆盖全局兜底。 */
+.sidebar-row-input:focus-visible {
+  outline: none;
+}
+
+/* 选区用中性墨色淡底，不引入浏览器默认的蓝色。 */
+.sidebar-row-input::selection {
+  background: color-mix(in srgb, var(--color-on-surface) 16%, transparent);
+  color: var(--color-on-surface);
+}

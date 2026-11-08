@@ -1,0 +1,315 @@
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react'
+import { Icon } from '@/shared/icons'
+import { cn } from '@/shared/lib/utils'
+import { IconButton } from '@/shared/ui/button'
+import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
+import { Switch } from '@/shared/ui/switch'
+import {
+  fontLabel,
+  fontOptions,
+  isLightColor,
+  swatchColors,
+  variableValue,
+  type CatalogItem,
+  type CatalogVariable,
+  type ComponentCatalog,
+  type FontOption,
+  type VariableValue,
+} from './component-catalog'
+import { ComponentThumb } from './components-panel'
+import type { ComponentVariables } from './editing/draft'
+
+const UNIT_TEXT: Record<string, string> = { s: '秒', px: '像素', '%': '%', deg: '°' }
+
+const SEGMENTED_MAX = 4
+
+type ComponentPopoverProps = {
+  catalog: ComponentCatalog
+  item: CatalogItem
+  values: ComponentVariables
+  onChange: (values: ComponentVariables) => void
+  onRemove: () => void
+}
+
+export function ComponentPopover({
+  catalog,
+  item,
+  values,
+  onChange,
+  onRemove,
+}: ComponentPopoverProps) {
+  const fonts = fontOptions(catalog)
+  const set = (id: string, value: VariableValue | undefined) => {
+    if (values[id] === value) return
+    onChange(
+      value === undefined
+        ? Object.fromEntries(Object.entries(values).filter(([key]) => key !== id))
+        : { ...values, [id]: value },
+    )
+  }
+  return (
+    <div className="wf-pop">
+      <div className="wf-pop-head">
+        <ComponentThumb catalog={catalog} className="wf-pop-thumb" iconSize="xs" item={item} />
+        <b>{item.title}</b>
+        <IconButton
+          className="wf-pop-remove"
+          label="移除"
+          name="delete"
+          onClick={onRemove}
+          size="sm"
+        />
+      </div>
+      {item.variables.map((variable) => (
+        <VariableField
+          fonts={fonts}
+          key={variable.id}
+          onChange={(value) => set(variable.id, value)}
+          values={values}
+          variable={variable}
+        />
+      ))}
+    </div>
+  )
+}
+
+type FieldProps = {
+  variable: CatalogVariable
+  values: ComponentVariables
+  fonts: readonly FontOption[]
+  onChange: (value: VariableValue | undefined) => void
+}
+
+function VariableField({ variable, values, fonts, onChange }: FieldProps) {
+  const id = useId()
+  const labelId = `${id}-label`
+  const stored = values[variable.id]
+  const value = variableValue(variable, values)
+  let labelFor: string | undefined = id
+  let input: ReactNode
+  switch (variable.type) {
+    case 'font': {
+      const current = String(value)
+      input = (
+        <MenuRoot>
+          <MenuTrigger asChild>
+            <button className="wf-select ui-state ui-focus" id={id} type="button">
+              {fontLabel(fonts, current)}
+              <Icon decorative name="expand" size="xs" />
+            </button>
+          </MenuTrigger>
+          <MenuSurface align="start" side="top">
+            <MenuRadioGroup
+              onValueChange={(next) => onChange(next === variable.default ? undefined : next)}
+              value={current}
+            >
+              {fonts.map((option) => (
+                <MenuRadioItem key={option.value} value={option.value}>
+                  {option.label}
+                </MenuRadioItem>
+              ))}
+            </MenuRadioGroup>
+          </MenuSurface>
+        </MenuRoot>
+      )
+      break
+    }
+    case 'string':
+      input = (
+        <CommitInput
+          id={id}
+          key={String(stored)}
+          onCommit={(text) => onChange(text.trim() === '' ? undefined : text)}
+          placeholder={String(variable.default)}
+          type="text"
+          value={stored === undefined ? '' : String(stored)}
+        />
+      )
+      break
+    case 'number':
+      input = (
+        <span className="wf-field-number">
+          <CommitInput
+            id={id}
+            key={String(value)}
+            max={variable.max}
+            min={variable.min}
+            onCommit={(text) => {
+              const number = Number(text)
+              if (text.trim() !== '' && Number.isFinite(number)) onChange(number)
+            }}
+            step={variable.step}
+            type="number"
+            value={String(value)}
+          />
+          {variable.unit === undefined ? null : (UNIT_TEXT[variable.unit] ?? variable.unit)}
+        </span>
+      )
+      break
+    case 'enum': {
+      const options = variable.options ?? []
+      if (options.length <= SEGMENTED_MAX) {
+        labelFor = undefined
+        input = (
+          <span aria-labelledby={labelId} className="wf-segments" role="group">
+            {options.map((option) => (
+              <button
+                aria-pressed={option.value === value}
+                className="ui-focus"
+                key={option.value}
+                onClick={() => onChange(option.value)}
+                title={option.label}
+                type="button"
+              >
+                {option.label}
+              </button>
+            ))}
+          </span>
+        )
+        break
+      }
+      const current = options.find((option) => option.value === value) ?? options[0]
+      input = (
+        <MenuRoot>
+          <MenuTrigger asChild>
+            <button className="wf-select ui-state ui-focus" id={id} type="button">
+              {current?.label ?? String(value)}
+              <Icon decorative name="expand" size="xs" />
+            </button>
+          </MenuTrigger>
+          <MenuSurface align="start" side="top">
+            <MenuRadioGroup onValueChange={onChange} value={String(value)}>
+              {options.map((option) => (
+                <MenuRadioItem key={option.value} value={option.value}>
+                  {option.label}
+                </MenuRadioItem>
+              ))}
+            </MenuRadioGroup>
+          </MenuSurface>
+        </MenuRoot>
+      )
+      break
+    }
+    case 'color': {
+      const current = String(value)
+      labelFor = undefined
+      input = (
+        <span aria-labelledby={labelId} className="wf-swatches" role="group">
+          {swatchColors(String(variable.default), current).map((color) => {
+            const pressed = color.toLowerCase() === current.toLowerCase()
+            return (
+              <button
+                aria-label={color}
+                aria-pressed={pressed}
+                className={cn('wf-swatch ui-focus', isLightColor(color) && 'is-light')}
+                key={color}
+                onClick={() => onChange(color)}
+                style={{ '--wf-swatch': color } as CSSProperties}
+                type="button"
+              >
+                {pressed ? <Icon decorative name="check" size="xs" /> : null}
+              </button>
+            )
+          })}
+          <ColorInput onCommit={onChange} value={current} />
+        </span>
+      )
+      break
+    }
+    case 'boolean':
+      input = (
+        <span>
+          <Switch checked={value === true} id={id} onCheckedChange={onChange} />
+        </span>
+      )
+      break
+    case 'image':
+      labelFor = undefined
+      input = <span className="wf-field-static">默认图片</span>
+      break
+  }
+  return (
+    <div className="wf-field">
+      {labelFor === undefined ? (
+        <span id={labelId} title={variable.label}>
+          {variable.label}
+        </span>
+      ) : (
+        <label htmlFor={labelFor} id={labelId} title={variable.label}>
+          {variable.label}
+        </label>
+      )}
+      {input}
+    </div>
+  )
+}
+
+function ColorInput({ value, onCommit }: { value: string; onCommit: (color: string) => void }) {
+  const ref = useRef<HTMLInputElement>(null)
+  const commitRef = useRef(onCommit)
+  useLayoutEffect(() => {
+    commitRef.current = onCommit
+  })
+  useEffect(() => {
+    const element = ref.current
+    if (element === null) return
+    const onChange = () => commitRef.current(element.value)
+    element.addEventListener('change', onChange)
+    return () => element.removeEventListener('change', onChange)
+  }, [])
+  return (
+    <input
+      aria-label="其他颜色"
+      className="wf-color ui-focus"
+      defaultValue={/^#[0-9a-f]{6}$/i.test(value) ? value : undefined}
+      key={value}
+      ref={ref}
+      title="其他颜色"
+      type="color"
+    />
+  )
+}
+
+type CommitInputProps = {
+  id: string
+  type: 'text' | 'number'
+  value: string
+  placeholder?: string
+  min?: number | undefined
+  max?: number | undefined
+  step?: number | undefined
+  onCommit: (text: string) => void
+}
+
+function CommitInput({ id, type, value, placeholder, min, max, step, onCommit }: CommitInputProps) {
+  const [text, setText] = useState(value)
+  const commit = () => {
+    if (text !== value) onCommit(text)
+  }
+  return (
+    <input
+      className="wf-input ui-focus ui-focus-inline"
+      id={id}
+      max={max}
+      min={min}
+      onBlur={commit}
+      onChange={(event) => setText(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') commit()
+        if (event.key === 'Escape') setText(value)
+      }}
+      placeholder={placeholder}
+      step={step}
+      type={type}
+      value={text}
+    />
+  )
+}

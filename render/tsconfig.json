@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+
+    // 合成构建（web/src/features/storyboard/whole-film/composition/）与后端合同的 zod 生成物一起打包进来：
+    // 合成构建只从 @/shared/api/generated 导入类型，指到类型文件；生成的 zod 引用 zod，用本包装的那份。
+    "paths": {
+      "@/shared/api/generated": ["../web/src/shared/api/generated/types.gen.ts"],
+      "zod": ["./node_modules/zod"]
+    }
+  },
+  "include": ["src", "scripts/*.ts", "vitest.config.ts"]
+}

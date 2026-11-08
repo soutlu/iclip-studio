@@ -1,0 +1,95 @@
+import { QueryClientProvider } from '@tanstack/react-query'
+import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router'
+import { render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
+import { routeTree } from '@/routeTree.gen'
+import { queryClient } from '@/shared/api/query-client'
+import { TranscriptProvider } from '@/shared/transcript/transcript-provider'
+import { TooltipProvider } from '@/shared/ui/tooltip'
+import { addMockConversation, addMockUser, loginAs, mockAuthUser } from '@/testing/mocks/handlers'
+import { FakeSocket } from '@/testing/ws'
+
+const renderAt = async (initialPath: string) => {
+  const router = createRouter({
+    history: createMemoryHistory({ initialEntries: [initialPath] }),
+    routeTree,
+  })
+  await router.load()
+
+  render(
+    <QueryClientProvider client={queryClient}>
+      <TranscriptProvider createSocket={() => new FakeSocket() as unknown as WebSocket}>
+        <TooltipProvider>
+          <RouterProvider router={router} />
+        </TooltipProvider>
+      </TranscriptProvider>
+    </QueryClientProvider>,
+  )
+
+  return router
+}
+
+afterEach(() => {
+  queryClient.clear()
+})
+
+describe('整页要登录的那几页', () => {
+  it('未登录直接访问 /tasks 时挡回首页', async () => {
+    const router = await renderAt('/tasks')
+
+    expect(router.state.location.pathname).toBe('/')
+    expect(await screen.findByLabelText('输入消息')).toBeVisible()
+  })
+
+  it('已登录时正常进入需求单页', async () => {
+    loginAs(mockAuthUser)
+
+    const router = await renderAt('/tasks')
+
+    expect(router.state.location.pathname).toBe('/tasks')
+    expect(await screen.findByRole('heading', { name: '需求单' })).toBeVisible()
+  })
+
+  it('未登录直接访问会话页时挡回首页', async () => {
+    const router = await renderAt('/c/11111111-1111-4111-8111-111111111111')
+
+    expect(router.state.location.pathname).toBe('/')
+    expect(await screen.findByLabelText('输入消息')).toBeVisible()
+  })
+
+  it.each(['/audit', '/conversations'])(
+    '%s 只放治理者进：没登录或没有 users:manage 都回首页',
+    async (path) => {
+      const anonymous = await renderAt(path)
+      expect(anonymous.state.location.pathname).toBe('/')
+
+      queryClient.clear()
+      loginAs(mockAuthUser)
+      const plain = await renderAt(path)
+      expect(plain.state.location.pathname).toBe('/')
+    },
+  )
+
+  it('治理者进全部对话页，看到别人的对话与属主名', async () => {
+    loginAs(mockAuthUser, { permissions: [...mockAuthUser.permissions, 'users:manage'] })
+    const other = addMockUser('小王')
+    addMockConversation('小王的秋季片').ownerUserId = other.id
+
+    const router = await renderAt('/conversations')
+
+    expect(router.state.location.pathname).toBe('/conversations')
+    expect(await screen.findByRole('main', { name: '全部任务' })).toBeVisible()
+    expect(await screen.findByRole('link', { name: /小王的秋季片/ })).toBeVisible()
+    expect(screen.getByText('小王')).toBeVisible()
+  })
+
+  it('治理者进审计页，看到总览', async () => {
+    loginAs(mockAuthUser, { permissions: [...mockAuthUser.permissions, 'users:manage'] })
+
+    const router = await renderAt('/audit')
+
+    expect(router.state.location.pathname).toBe('/audit')
+    expect(await screen.findByRole('main', { name: '审计' })).toBeVisible()
+    expect(await screen.findByRole('article', { name: '出片件数' })).toBeVisible()
+  })
+})

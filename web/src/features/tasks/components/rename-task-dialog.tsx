@@ -1,0 +1,117 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
+import { errorMessageOf } from '@/shared/api/client'
+import { cn } from '@/shared/lib/utils'
+import { Button } from '@/shared/ui/button'
+import {
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+  DialogRoot,
+  DialogSurface,
+} from '@/shared/ui/dialog'
+import { Input } from '@/shared/ui/field'
+import { toast } from '@/shared/ui/toast'
+import { MAX_TITLE_CHARS } from '../task-limits'
+import { getTask, saveTask, tasksQueryKeys, type Task } from '../tasks.api'
+
+type RenameTaskDialogProps = {
+  onOpenChange: (open: boolean) => void
+  open: boolean
+  task?: Task | undefined
+}
+
+export function RenameTaskDialog({ onOpenChange, open, task }: RenameTaskDialogProps) {
+  return (
+    <DialogRoot open={open} onOpenChange={onOpenChange}>
+      <DialogSurface aria-label="重命名需求单">
+        <DialogHeader
+          className="h-(--layout-dialog-header-height) items-center border-b-0 px-6 py-0"
+          closeLabel="关闭"
+          title="重命名需求单"
+        />
+        {open && task ? <RenameForm key={task.id} onOpenChange={onOpenChange} task={task} /> : null}
+      </DialogSurface>
+    </DialogRoot>
+  )
+}
+
+function RenameForm({ onOpenChange, task }: { onOpenChange: (open: boolean) => void; task: Task }) {
+  const queryClient = useQueryClient()
+  const [name, setName] = useState(task.title)
+
+  const renameMutation = useMutation({
+    mutationFn: async (title: string) => {
+      const fresh = await getTask(task.id)
+      return saveTask(task.id, {
+        inputs: fresh.inputs,
+        deadline: fresh.deadline,
+        priority: fresh.priority,
+        title,
+      })
+    },
+    onError: (error) => {
+      toast.error(errorMessageOf(error, '重命名失败，请重试'))
+    },
+    onSuccess: () => {
+      toast.success('已保存')
+      void queryClient.invalidateQueries({ queryKey: tasksQueryKeys.all })
+      onOpenChange(false)
+    },
+  })
+
+  const trimmed = name.trim()
+  const atLimit = name.length >= MAX_TITLE_CHARS
+  const submit = () => {
+    if (trimmed && trimmed !== task.title) {
+      renameMutation.mutate(trimmed)
+    }
+  }
+
+  return (
+    <>
+      <DialogBody className="flex flex-col gap-3 px-6 pt-2.5 pb-6">
+        <p className="text-body-sm text-on-surface-variant">
+          原名称：<span className="font-medium break-all text-on-surface">{task.title}</span>
+        </p>
+        <div className="flex flex-col gap-1">
+          <Input
+            aria-label="新的需求单名称"
+            className="h-(--control-height-sm) rounded-sm border-border"
+            maxLength={MAX_TITLE_CHARS}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submit()
+            }}
+            placeholder="输入新的需求单名称"
+            value={name}
+          />
+          <span
+            className={cn(
+              'self-end text-caption',
+              atLimit ? 'text-error' : 'text-on-surface-variant',
+            )}
+          >
+            {name.length}/{MAX_TITLE_CHARS}
+          </span>
+        </div>
+      </DialogBody>
+      <DialogFooter>
+        <span />
+        <div className="flex gap-2">
+          <Button className="min-w-[74px]" onClick={() => onOpenChange(false)} variant="outlined">
+            取消
+          </Button>
+          <Button
+            className="min-w-[74px]"
+            disabled={!trimmed || trimmed === task.title}
+            loading={renameMutation.isPending}
+            onClick={submit}
+          >
+            保存
+          </Button>
+        </div>
+      </DialogFooter>
+    </>
+  )
+}

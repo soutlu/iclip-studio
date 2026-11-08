@@ -1,0 +1,40 @@
+import { expect, test } from '@playwright/test'
+
+test('未登录进首页看到游客态外壳，点登录弹窗登录后就地变成已登录', async ({ page }) => {
+  await page.goto('/')
+
+  await expect(page.getByText('登录后可查看任务')).toBeVisible()
+  await expect(page.getByRole('button', { name: '用户菜单' })).toBeHidden()
+
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+
+  const dialog = page.getByRole('dialog', { name: '登录 iClip' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByLabel('用户名', { exact: true }).fill('tester')
+  await dialog.getByLabel('密码', { exact: true }).fill('secret')
+  await dialog.getByRole('button', { name: '登录', exact: true }).click()
+
+  await expect(dialog).toBeHidden()
+  await expect(page).toHaveURL('/')
+  const avatar = page.getByRole('button', { name: '用户菜单' })
+  const box = await avatar.boundingBox()
+  if (!box) throw new Error('头像没有可测量的位置')
+  await avatar.click()
+  await expect(page.getByRole('menu')).toContainText('测试用户')
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+  await expect(page.getByRole('menu')).toBeHidden()
+})
+
+test('点侧栏登录打开弹窗，Esc 关闭后焦点回到登录按钮', async ({ page }) => {
+  await page.goto('/')
+
+  const trigger = page.getByRole('button', { name: '登录', exact: true })
+  await trigger.click()
+  const dialog = page.getByRole('dialog', { name: '登录 iClip' })
+  await expect(dialog.getByLabel('用户名', { exact: true })).toBeFocused()
+
+  await page.keyboard.press('Escape')
+
+  await expect(dialog).toBeHidden()
+  await expect(trigger).toBeFocused()
+})

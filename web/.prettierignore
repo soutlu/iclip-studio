@@ -1,0 +1,12 @@
+dist/
+dist-mock/
+coverage/
+pnpm-lock.yaml
+src/routeTree.gen.ts
+docs/
+public/lottie/
+# pnpm hf:registry 组装的 HyperFrames 组件库，不入库。
+public/hyperframes/
+# 外部合同与照抄的上游源码保持原文，见各目录 README。
+src/shared/transcript/vendor/
+src/features/storyboard/whole-film/vendor/hyperframes-studio/

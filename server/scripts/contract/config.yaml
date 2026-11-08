@@ -1,0 +1,78 @@
+# 合同导出（scripts/dump_openapi.py）用的占位配置：各可选段全开，路由才齐；真实配置不进仓库。
+app:
+  name: iclip-studio
+
+db:
+  schema: iclip
+
+security:
+  session_lifetime_seconds: 604800
+  cookie_secure: false
+  cors_allow_origins: []
+
+sso:
+  # SSO_BASE_URL 为空时不挂载 /auth/sso/*。
+  app_name: iclip
+
+media_generation:
+  # VIDEO_SUBMIT_URL 为空时关闭生成路由与后台队列；启用后须提供生成接口与对象存储凭证。
+  video:
+    model: vendor-b-seedance-2-5 # 默认模型，显式指定 vendor-b 前缀以固定供应商
+    # 只是允许表。哪个模型能做视频编辑、怎么触发，前端按模型名自己认，这里不声明。
+    allowed_models:
+      - vendor-b-seedance-2-0
+      - vendor-b-seedance-2-5
+      - wan3.0-video-prime
+    # 写出这一段并设 VIDEO_ENHANCE_SUBMIT_URL 即开通高清版（超分）；查询地址与 key 同出片。
+    enhance:
+      model: video-enhance
+      resolutions: [1080p, 720p] # 能提到的档，从高到低；上游只收 720p 与 1080p
+      fps: 30 # 目标帧率 15–60；不写就不插帧
+  image:
+    env: prod # 网关按调用方标识与这一项一起判这次调用合不合法
+    # 两条任务路由拼在每家的地址后面：无参考图打文生图，有参考图打图像编辑。
+    text_to_image_task: text-to-image
+    image_edit_task: image-edit
+    default: nano_banana_pro # 请求省略 model 时用哪家
+    # 键名即落库的 provider 名；route 拼在 IMAGE_API_BASE 后面。
+    # concurrency 是这家同时最多挂几个提交，一家一条队列，互不占用。
+    models:
+      nano_banana_pro:
+        route: nano-banana-pro
+        concurrency: 40
+      seedream_v5_pro:
+        route: seedrance5.0pro # 上游路由拼写沿用它公开契约里的 seedrance
+        concurrency: 40
+      gpt-image-2.5:
+        route: openai/gpt-image-2.5-flare-developer
+        concurrency: 10
+        # 这家的两条任务路由与别家不同名，写在它自己这里。
+        text_to_image_task: text-to-image
+        image_edit_task: edit
+  poll_interval_seconds: 5 # 状态查询间隔，固定轮询
+  job_timeout_seconds: 3600 # 提交后等待终态的上限
+  # 本地合成每个进程的并发；不写时按启动探测选中的编解码取：硬件 4，软件 2
+  # compose_concurrency: 4
+  subtitle:
+    # 写出这一段并设千问AI平台的 API Key（QWEN_API_KEY）即开通素材片字幕识别；模型固定 qwen-audio-3.1-asr-flash，不在这里配。
+    url: https://placeholder.invalid/api/v1/services/aigc/multimodal-generation/generation
+    concurrency: 4 # 识别队列每个进程同时跑几条
+    timeout_seconds: 120 # 一次识别请求等结果的上限
+  music:
+    # 写出这一段并设千问AI平台的 API Key（QWEN_API_KEY）即开通生成背景音乐；模型固定 qwen-audio-3.1-tts-next，不在这里配。
+    url: https://placeholder.invalid/api/v1/services/audio/tts/SpeechSynthesizer
+    concurrency: 2 # 生成队列每个进程同时跑几条
+    timeout_seconds: 300 # 一次生成请求等结果的上限
+
+# 写出这一段即启用视频拆解（video_breakdown 与参考视频的后台拆解）与资料库打标；须在 PATH 上有 ffmpeg。模型写定在代码里，
+# 经运行时调，配置页的火山方舟里要启用它。
+# breakdown_concurrency 是参考视频后台拆解每个进程的并发，多进程时总并发乘以进程数；不写时按启动探测选中的编解码取：
+# 硬件 4，软件 2。
+iclip_studio: {}
+
+# 写出这一段即给运行时的 shot_video 插件挂取帧与出图的内部接口；须同时启用媒体生成与对象存储，并在 PATH 上有
+# ffmpeg。出图的重试策略在运行时配置的 plugins.config.shot_video。
+shot_video: {}
+
+ops:
+  log_level: INFO

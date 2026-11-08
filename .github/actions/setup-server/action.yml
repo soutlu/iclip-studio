@@ -1,0 +1,33 @@
+name: setup-server
+description: 按 runtime.ref 把运行时项目 Cue 检出到 runtime/，再安装 uv 并按锁文件同步一个 Python 项目（server 或 plugins/video）的依赖。
+
+inputs:
+  working-directory:
+    description: 要同步的项目目录
+    required: false
+    default: server
+  cue-deploy-key:
+    description: 运行时项目 Cue 的只读部署私钥
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # 两个项目都以路径依赖装运行时，锁文件按 runtime/ 的项目文件解析。要在仓库自身的检出之后执行，
+    # 否则那次检出的清理会删掉 runtime/。
+    - name: Read runtime version
+      id: runtime-ref
+      shell: bash
+      run: echo "ref=$(tr -d '[:space:]' < runtime.ref)" >> "$GITHUB_OUTPUT"
+    - uses: actions/checkout@v7
+      with:
+        repository: soutlu/Cue
+        ref: ${{ steps.runtime-ref.outputs.ref }}
+        ssh-key: ${{ inputs.cue-deploy-key }}
+        path: runtime
+        persist-credentials: false
+    # setup-uv 不提供浮动大版本标签。
+    - uses: astral-sh/setup-uv@v10.0.1
+    - run: uv sync --locked
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}

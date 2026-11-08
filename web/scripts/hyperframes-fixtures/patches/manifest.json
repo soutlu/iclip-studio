@@ -1,0 +1,9 @@
+{
+  "files": {
+    "compositions/fixtures/default-caption.html": { "replaces": null },
+    "compositions/fixtures/fixture-scene.html": { "replaces": null },
+    "compositions/fixtures/fixture-overlay.html": { "replaces": null },
+    "compositions/fixtures/fixture-fields.html": { "replaces": null },
+    "compositions/fixtures/fixture-brand-card.html": { "replaces": null }
+  }
+}

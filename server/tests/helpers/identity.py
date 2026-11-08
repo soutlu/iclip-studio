@@ -1,0 +1,134 @@
+from __future__ import annotations
+
+import uuid
+from dataclasses import replace
+from datetime import UTC, datetime
+
+from iclip.common.errors import NotFound
+from iclip.domains.identity.models import ApiKeyRecord, Principal, UserAccount
+
+
+def make_account(
+    *,
+    user_id: uuid.UUID | None = None,
+    roles: tuple[str, ...] = ("editor",),
+    direct_permissions: frozenset[str] = frozenset(),
+    is_active: bool = True,
+    username: str | None = "logan",
+    email: str = "logan@example.com",
+) -> UserAccount:
+    return UserAccount(
+        id=user_id or uuid.uuid4(),
+        email=email,
+        username=username,
+        display_name="Logan",
+        avatar_url="",
+        roles=roles,
+        direct_permissions=direct_permissions,
+        is_active=is_active,
+        city="",
+        job_title="",
+        departments=(),
+        created_at=datetime.now(UTC),
+        last_login_at=None,
+    )
+
+
+class FakePrincipals:
+    def __init__(self, *principals: Principal) -> None:
+        self._principals = {principal.user_id: principal for principal in principals}
+        self.asked: list[uuid.UUID] = []
+
+    async def __call__(self, user_id: uuid.UUID) -> Principal:
+        self.asked.append(user_id)
+        principal = self._principals.get(user_id)
+        if principal is None:
+            raise NotFound("用户不存在")
+        return principal
+
+
+class InMemoryUserRepository:
+    def __init__(self, accounts: list[UserAccount] | None = None) -> None:
+        self.accounts: dict[uuid.UUID, UserAccount] = {
+            account.id: account for account in accounts or []
+        }
+
+    async def get(self, user_id: uuid.UUID) -> UserAccount | None:
+        return self.accounts.get(user_id)
+
+    async def list_page(self, *, offset: int, limit: int) -> tuple[tuple[UserAccount, ...], int]:
+        ordered = sorted(self.accounts.values(), key=lambda a: a.created_at or datetime.now(UTC))
+        return tuple(ordered[offset : offset + limit]), len(ordered)
+
+    async def update_access_fields(
+        self,
+        user_id: uuid.UUID,
+        *,
+        roles: tuple[str, ...] | None,
+        direct_permissions: frozenset[str] | None,
+        is_active: bool | None,
+    ) -> UserAccount | None:
+        account = self.accounts.get(user_id)
+        if account is None:
+            return None
+        if roles is not None:
+            account = replace(account, roles=roles)
+        if direct_permissions is not None:
+            account = replace(account, direct_permissions=direct_permissions)
+        if is_active is not None:
+            account = replace(account, is_active=is_active)
+        self.accounts[user_id] = account
+        return account
+
+    async def ensure_role(self, user_id: uuid.UUID, role: str) -> None:
+        account = self.accounts.get(user_id)
+        if account is not None and role not in account.roles:
+            self.accounts[user_id] = replace(account, roles=(*account.roles, role))
+
+    async def touch_last_login(self, user_id: uuid.UUID, at: datetime) -> None:
+        pass
+
+    async def ensure_by_name(self, username: str, *, email: str) -> uuid.UUID:
+        for account in self.accounts.values():
+            if account.username == username:
+                return account.id
+        placeholder = make_account(username=username, email=email, roles=())
+        self.accounts[placeholder.id] = placeholder
+        return placeholder.id
+
+    async def sync_sso_profile(self, user_id: uuid.UUID, **_: object) -> None:
+        pass
+
+
+class InMemoryApiKeyRepository:
+    def __init__(self) -> None:
+        self.records: dict[uuid.UUID, ApiKeyRecord] = {}
+        self.hashes: dict[str, uuid.UUID] = {}
+
+    async def add(self, record: ApiKeyRecord, *, token_hash: str) -> None:
+        stored = replace(record, created_at=datetime.now(UTC))
+        self.records[record.id] = stored
+        self.hashes[token_hash] = record.id
+
+    async def get(self, key_id: uuid.UUID) -> ApiKeyRecord | None:
+        return self.records.get(key_id)
+
+    async def get_by_hash(self, token_hash: str) -> ApiKeyRecord | None:
+        key_id = self.hashes.get(token_hash)
+        return self.records.get(key_id) if key_id else None
+
+    async def list_for_owner(self, owner: uuid.UUID | None) -> tuple[ApiKeyRecord, ...]:
+        records = self.records.values()
+        if owner is not None:
+            records = [r for r in records if r.owner_user_id == owner]
+        return tuple(records)
+
+    async def revoke(self, key_id: uuid.UUID, at: datetime) -> None:
+        record = self.records.get(key_id)
+        if record is not None and record.revoked_at is None:
+            self.records[key_id] = replace(record, revoked_at=at)
+
+    async def touch_last_used(self, key_id: uuid.UUID, at: datetime) -> None:
+        record = self.records.get(key_id)
+        if record is not None:
+            self.records[key_id] = replace(record, last_used_at=at)

@@ -1,0 +1,129 @@
+import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
+import { type RefObject, useEffect, useRef, useState } from 'react'
+import { errorMessageOf } from '@/shared/api/client'
+import { DialogBody, DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
+import { Input } from '@/shared/ui/field'
+import { conversationsQueryKeys, searchConversations } from '../conversations.api'
+import { conversationRowsOf, useConversationRows } from '../conversation-rows'
+
+type ConversationSearchDialogProps = {
+  onOpenChange: (open: boolean) => void
+  open: boolean
+}
+
+export function ConversationSearchDialog({ onOpenChange, open }: ConversationSearchDialogProps) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  return (
+    <DialogRoot open={open} onOpenChange={onOpenChange}>
+      <DialogSurface
+        aria-label="搜索任务"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          inputRef.current?.focus()
+        }}
+      >
+        <DialogHeader
+          className="h-(--layout-dialog-header-height) items-center border-b-0 px-6 py-0"
+          closeLabel="关闭"
+          title="搜索任务"
+        />
+        {open ? <SearchPanel inputRef={inputRef} onNavigate={() => onOpenChange(false)} /> : null}
+      </DialogSurface>
+    </DialogRoot>
+  )
+}
+
+function SearchPanel({
+  inputRef,
+  onNavigate,
+}: {
+  inputRef: RefObject<HTMLInputElement | null>
+  onNavigate: () => void
+}) {
+  const [keyword, setKeyword] = useState('')
+  const [submitted, setSubmitted] = useState('')
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSubmitted(keyword.trim()), 250)
+    return () => clearTimeout(timer)
+  }, [keyword])
+
+  const results = useQuery({
+    enabled: submitted.length > 0,
+    queryFn: ({ client, signal }) => {
+      const rows = conversationRowsOf(client)
+      return rows.track(
+        () => searchConversations(submitted, signal),
+        (found, book) => rows.mergeRows(found, book),
+      )
+    },
+    queryKey: conversationsQueryKeys.search(submitted),
+  })
+
+  return (
+    <>
+      <div className="shrink-0 px-6 pb-3">
+        <Input
+          aria-label="搜索任务"
+          leadingIcon="search"
+          onChange={(event) => setKeyword(event.target.value)}
+          placeholder="搜索任务标题"
+          ref={inputRef}
+          value={keyword}
+        />
+      </div>
+      <DialogBody className="flex min-h-30 flex-col gap-0.5 pt-0">
+        <SearchResults keyword={submitted} onNavigate={onNavigate} query={results} />
+      </DialogBody>
+    </>
+  )
+}
+
+type SearchResultsProps = {
+  keyword: string
+  onNavigate: () => void
+  query: ReturnType<typeof useQuery<Awaited<ReturnType<typeof searchConversations>>>>
+}
+
+function SearchResults({ keyword, onNavigate, query }: SearchResultsProps) {
+  if (!keyword) return <Hint>输入关键词可搜索任务</Hint>
+  if (query.isPending) return <Hint>搜索中…</Hint>
+  if (query.isError) {
+    return <Hint>{errorMessageOf(query.error, '搜索任务失败')}</Hint>
+  }
+  return <SearchRows onNavigate={onNavigate} rows={query.data} />
+}
+
+function SearchRows({
+  onNavigate,
+  rows,
+}: {
+  onNavigate: () => void
+  rows: Awaited<ReturnType<typeof searchConversations>>
+}) {
+  const shown = useConversationRows(rows)
+  if (shown.length === 0) return <Hint>暂无匹配的任务</Hint>
+
+  return (
+    <ul aria-label="搜索结果" className="flex flex-col gap-0.5">
+      {shown.map((conversation) => (
+        <li key={conversation.id}>
+          <Link
+            className="block ui-state truncate rounded-sm px-2 py-2 text-body text-on-surface ui-focus"
+            onClick={onNavigate}
+            params={{ conversationId: conversation.id }}
+            to="/c/$conversationId"
+          >
+            {conversation.title}
+          </Link>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function Hint({ children }: { children: string }) {
+  return <p className="px-2 py-2 text-body-sm text-on-surface-variant">{children}</p>
+}

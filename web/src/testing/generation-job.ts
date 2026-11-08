@@ -1,0 +1,25 @@
+import type { GenerationJob } from '@/features/storyboard/storyboard.api'
+
+export const makeGenerationJob = (overrides: Partial<GenerationJob> = {}): GenerationJob => ({
+  id: crypto.randomUUID(),
+  kind: 'video',
+  operation: 'generate',
+  status: 'completed',
+  createdAt: '2026-09-16T10:00:00Z',
+  finishedAt: null,
+  errorMessage: null,
+  metadata: null,
+  outputUrl: null,
+  request: {},
+  taskId: null,
+  shotIndex: null,
+  rootJobId: null,
+  sourceJobId: null,
+  sourceUrl: null,
+  rangeStartMs: null,
+  rangeEndMs: null,
+  clipStage: null,
+  durationMs: null,
+  watermarkOutputUrl: null,
+  ...overrides,
+})

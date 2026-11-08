@@ -1,0 +1,223 @@
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from typing import TYPE_CHECKING, Annotated, Any, Final, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic.alias_generators import to_camel
+
+from iclip.common.errors import ValidationFailed
+from iclip.common.urls import is_http_url
+
+if TYPE_CHECKING:
+    from iclip.domains.tasks.models import Task
+
+MAX_TITLE_CHARS: Final = 200
+MAX_SHORT_TEXT_CHARS: Final = 200
+MAX_DESCRIPTION_CHARS: Final = 4000
+MAX_REFERENCE_URLS: Final = 16
+MAX_STYLE_NO_CHARS: Final = 64
+MAX_PRODUCTS: Final = 20
+MIN_DURATION_SECONDS: Final = 3
+MAX_DURATION_SECONDS: Final = 50
+
+TaskStatus = Literal["draft", "published", "confirmed", "withdrawn"]
+
+TaskRatio = Literal["1:1", "3:4", "4:3", "9:16", "16:9", "21:9"]
+
+
+class CamelModel(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, extra="forbid", frozen=True
+    )
+
+
+ShortText = Annotated[str, Field(max_length=MAX_SHORT_TEXT_CHARS)]
+Description = Annotated[str, Field(max_length=MAX_DESCRIPTION_CHARS)]
+ReferenceUrls = Annotated[list[str], Field(max_length=MAX_REFERENCE_URLS)]
+StyleNo = Annotated[str, Field(min_length=1, max_length=MAX_STYLE_NO_CHARS)]
+
+
+def _http_only(urls: list[str]) -> list[str]:
+    for index, url in enumerate(urls):
+        if not is_http_url(url):
+            raise ValueError(f"[{index}] 必须是 http:// 或 https:// 地址")
+    return urls
+
+
+class InputsModel(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid", frozen=True, json_schema_serialization_defaults_required=True
+    )
+
+
+class TaskVideoSpec(InputsModel):
+    """视频创作规格；草稿允许尚未确定的参数留空。"""
+
+    platform: ShortText = ""
+    video_type: ShortText = ""
+    content_type: ShortText = ""
+    resolution: ShortText = ""
+    aspect_ratio: TaskRatio | None = None
+    duration_seconds: Annotated[
+        int | None, Field(ge=MIN_DURATION_SECONDS, le=MAX_DURATION_SECONDS)
+    ] = None
+
+
+class TaskProduct(InputsModel):
+    """需求单里的一款商品，由调用方明确提供名称、属性和素材。"""
+
+    style_no: StyleNo
+    name: ShortText = ""
+    brand: ShortText = ""
+    category: ShortText = ""
+    color_name: ShortText = ""
+    image_oss_urls: ReferenceUrls = Field(default_factory=list)
+
+    _check_images = field_validator("image_oss_urls")(_http_only)
+
+    @field_validator("style_no")
+    @classmethod
+    def nonblank_style_no(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("商品款号不能为空")
+        return value
+
+
+class TaskReferenceImages(InputsModel):
+    """按用途分类的参考图片，不推断素材所属类别。"""
+
+    model: ReferenceUrls = Field(default_factory=list)
+    outfit: ReferenceUrls = Field(default_factory=list)
+    prop: ReferenceUrls = Field(default_factory=list)
+
+    _check_images = field_validator("model", "outfit", "prop")(_http_only)
+
+
+class TaskInputs(InputsModel):
+    """唯一的创作需求结构，HTTP 与 JSONB 均使用 snake_case。"""
+
+    video_spec: TaskVideoSpec = Field(default_factory=TaskVideoSpec)
+    products: Annotated[list[TaskProduct], Field(min_length=1, max_length=MAX_PRODUCTS)]
+    reference_image_oss_urls: TaskReferenceImages = Field(default_factory=TaskReferenceImages)
+    reference_video_oss_url: str | None = None
+    creative_requirement: Description = ""
+
+    @field_validator("products")
+    @classmethod
+    def unique_style_nos(cls, products: list[TaskProduct]) -> list[TaskProduct]:
+        style_nos = [product.style_no.strip() for product in products]
+        if len(set(style_nos)) != len(style_nos):
+            raise ValueError("同一张需求单里的商品款号不能重复")
+        return products
+
+    @field_validator("reference_video_oss_url")
+    @classmethod
+    def check_video(cls, value: str | None) -> str | None:
+        if value is not None:
+            _http_only([value])
+        return value
+
+
+def inputs_to_payload(inputs: TaskInputs) -> dict[str, Any]:
+    return inputs.model_dump()
+
+
+def inputs_from_payload(payload: dict[str, Any]) -> TaskInputs:
+    try:
+        return TaskInputs.model_validate(payload)
+    except ValidationError as exc:
+        raise ValidationFailed(f"需求单的 inputs 形状非法：{exc}") from exc
+
+
+class TaskIn(CamelModel):
+    """建一张需求单，或整体覆盖一张已有的。
+
+    创建与更新用同一个形状：更新就是整体覆盖（PUT），不做字段级的局部合并——局部合并
+    在「哪些字段发布后冻结」这种规则面前很难说清楚「没传」到底是不改还是清空。
+    """
+
+    title: Annotated[str, Field(min_length=1, max_length=MAX_TITLE_CHARS)]
+    priority: Annotated[int, Field(ge=0, le=100)] = 0
+    deadline: datetime | None = None
+    inputs: TaskInputs
+
+
+class TaskCreateIn(TaskIn):
+    """创建需求单；输入形状与整体更新一致，另可指定 id 与落单状态。
+
+    ``id`` 由调用方铸：机器链路要在服务端答复之前就用这个 id 把自己的记录串起来，
+    重发同一个 id 不会多出第二张单。``status`` 只在创建时可选，之后按状态机流转
+    （见 ``TaskService``）；两项都只属于创建，整体覆盖的 PUT 不接受它们。
+    """
+
+    id: uuid.UUID | None = None
+    status: Literal["draft", "published"] = "draft"
+    user_name: str | None = None
+
+
+class TaskOut(CamelModel):
+    id: uuid.UUID
+    title: str
+    status: TaskStatus
+    priority: int
+    deadline: datetime | None
+    creator_user_id: uuid.UUID
+    inputs: TaskInputs
+    assignee_user_ids: list[uuid.UUID] = []
+    created_at: datetime
+    updated_at: datetime
+
+
+class TaskEnvelope(CamelModel):
+    task: TaskOut
+
+
+class TasksPageOut(CamelModel):
+    """一页需求单。``nextCursor`` 为空即没有更多了；``total`` 是当前筛选下一共几张，不随翻页变。"""
+
+    items: list[TaskOut]
+    next_cursor: str | None
+    total: int
+
+
+def task_out(task: Task) -> TaskOut:
+    return TaskOut(
+        id=task.id,
+        title=task.title,
+        status=task.status,
+        priority=task.priority,
+        deadline=task.deadline,
+        creator_user_id=task.creator_user_id,
+        inputs=task.inputs,
+        assignee_user_ids=list(task.assignee_user_ids),
+        created_at=task.created_at,
+        updated_at=task.updated_at,
+    )
+
+
+__all__ = [
+    "MAX_DESCRIPTION_CHARS",
+    "MAX_DURATION_SECONDS",
+    "MAX_PRODUCTS",
+    "MAX_REFERENCE_URLS",
+    "MAX_SHORT_TEXT_CHARS",
+    "MAX_STYLE_NO_CHARS",
+    "MAX_TITLE_CHARS",
+    "MIN_DURATION_SECONDS",
+    "TaskCreateIn",
+    "TaskEnvelope",
+    "TaskIn",
+    "TaskInputs",
+    "TaskOut",
+    "TaskProduct",
+    "TaskRatio",
+    "TaskReferenceImages",
+    "TaskStatus",
+    "TaskVideoSpec",
+    "TasksPageOut",
+    "inputs_from_payload",
+    "inputs_to_payload",
+    "task_out",
+]

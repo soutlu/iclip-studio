@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+import uuid
+from typing import Annotated
+
+from fastapi import APIRouter, Query, Response
+
+from iclip.domains.identity.public import ActAs, Principal, require_permission
+from iclip.domains.tasks.models import TaskStatus
+from iclip.domains.tasks.schemas import (
+    TaskCreateIn,
+    TaskEnvelope,
+    TaskIn,
+    TasksPageOut,
+    task_out,
+)
+from iclip.domains.tasks.service import TaskService
+from iclip.platform.paging import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
+
+
+def create_tasks_router(service: TaskService, *, act_as: ActAs) -> APIRouter:
+    router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+    @router.post("", response_model=TaskEnvelope, status_code=201)
+    async def create_task(
+        body: TaskCreateIn,
+        principal: Annotated[Principal, require_permission("tasks:write")],
+        response: Response,
+    ) -> TaskEnvelope:
+        """建一张需求单。带 ``id`` 重发时不新建，答复已有那一张并把状态码降为 200。"""
+
+        principal = await act_as(principal, body.user_name)
+        task, created = await service.create(principal, body)
+        if not created:
+            response.status_code = 200
+        return TaskEnvelope(task=task_out(task))
+
+    @router.get("", response_model=TasksPageOut)
+    async def list_tasks(
+        principal: Annotated[Principal, require_permission("tasks:read")],
+        status: TaskStatus | None = None,
+        ids: Annotated[list[uuid.UUID] | None, Query()] = None,
+        limit: Annotated[int, Query(ge=1, le=MAX_LIST_LIMIT)] = DEFAULT_LIST_LIMIT,
+        cursor: str | None = None,
+        claimed_by: Annotated[str | None, Query(alias="claimedBy", pattern="^me$")] = None,
+    ) -> TasksPageOut:
+        """按建立时间倒序翻页。``ids`` 可重复给，按 id 集合批量读取，一次最多 100 个。"""
+
+        assignee = principal.user_id if claimed_by == "me" else None
+        page = await service.list_recent(
+            status=status, assignee_user_id=assignee, ids=ids, limit=limit, cursor=cursor
+        )
+        return TasksPageOut(
+            items=[task_out(task) for task in page.items],
+            next_cursor=page.next_cursor,
+            total=page.total,
+        )
+
+    @router.get("/{task_id}", response_model=TaskEnvelope)
+    async def get_task(
+        task_id: uuid.UUID,
+        _: Annotated[Principal, require_permission("tasks:read")],
+    ) -> TaskEnvelope:
+        return TaskEnvelope(task=task_out(await service.get(task_id)))
+
+    @router.put("/{task_id}", response_model=TaskEnvelope)
+    async def save_task(
+        task_id: uuid.UUID,
+        body: TaskIn,
+        principal: Annotated[Principal, require_permission("tasks:write")],
+    ) -> TaskEnvelope:
+        task = await service.update(principal, task_id, body)
+        return TaskEnvelope(task=task_out(task))
+
+    @router.post("/{task_id}/publish", response_model=TaskEnvelope)
+    async def publish_task(
+        task_id: uuid.UUID,
+        principal: Annotated[Principal, require_permission("tasks:write")],
+    ) -> TaskEnvelope:
+        task = await service.publish(principal, task_id)
+        return TaskEnvelope(task=task_out(task))
+
+    @router.post("/{task_id}/confirm", response_model=TaskEnvelope)
+    async def confirm_task(
+        task_id: uuid.UUID,
+        principal: Annotated[Principal, require_permission("tasks:write")],
+    ) -> TaskEnvelope:
+        return TaskEnvelope(task=task_out(await service.confirm(principal, task_id)))
+
+    @router.post("/{task_id}/withdraw", response_model=TaskEnvelope)
+    async def withdraw_task(
+        task_id: uuid.UUID,
+        _: Annotated[Principal, require_permission("tasks:write")],
+    ) -> TaskEnvelope:
+        return TaskEnvelope(task=task_out(await service.withdraw(task_id)))
+
+    @router.delete("/{task_id}", status_code=204)
+    async def delete_task(
+        task_id: uuid.UUID,
+        principal: Annotated[Principal, require_permission("tasks:write")],
+    ) -> Response:
+        await service.delete(principal, task_id)
+        return Response(status_code=204)
+
+    return router
+
+
+__all__ = ["create_tasks_router"]

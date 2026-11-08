@@ -1,0 +1,781 @@
+from __future__ import annotations
+
+import json
+import uuid
+from collections.abc import Callable, Mapping
+from dataclasses import replace
+from typing import get_args
+
+import httpx
+import pytest
+
+from iclip.domains.generation.gpt_image import GPT_IMAGE_2_5
+from iclip.domains.generation.image_upstream import (
+    GatewayImageModel,
+    GatewayImageProvider,
+    GatewayImageSettings,
+)
+from iclip.domains.generation.models import GenerationJob, GenerationOutput
+from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
+from iclip.domains.generation.processing import FfmpegComposeProvider
+from iclip.domains.generation.provider import GenerationProvider, ProviderError
+from iclip.domains.generation.schemas import (
+    IMAGE_ASPECT_RATIOS,
+    ClipStage,
+    ImageGenerationIn,
+    VideoEnhanceRequest,
+)
+from iclip.domains.generation.seedream import SEEDREAM_V5_PRO
+from iclip.domains.generation.video import HttpVideoProvider, VideoProviderSettings
+from iclip.platform.media.codec import SOFTWARE
+from iclip.platform.object_store.layout import MEDIA_PATHS
+from tests.helpers.fetch_url import as_is
+from tests.helpers.generation import (
+    SHOT_IMAGE_URLS,
+    SHOT_PROMPT,
+    MemoryObjectStore,
+    compose_request,
+    image_request,
+    make_enhancement,
+    make_job,
+    video_request,
+    video_shot,
+    whole_film_request,
+)
+
+VIDEO_SETTINGS = VideoProviderSettings(
+    submit_url="https://video.test/generate",
+    status_base_url="https://video.test/tasks",
+    api_key="secret-key",
+)
+IMAGE_API_BASE = "https://image.test/nano-banana-pro"
+IMAGE_TEXT_TO_IMAGE_URL = f"{IMAGE_API_BASE}/text-to-image"
+IMAGE_EDIT_URL = f"{IMAGE_API_BASE}/image-edit"
+IMAGE_SETTINGS = GatewayImageSettings(
+    api_base=IMAGE_API_BASE,
+    env="test",
+    text_to_image_task="text-to-image",
+    image_edit_task="image-edit",
+)
+
+SEEDREAM_API_BASE = "https://image.test/seedrance5.0pro"
+SEEDREAM_TEXT_TO_IMAGE_URL = f"{SEEDREAM_API_BASE}/text-to-image"
+SEEDREAM_EDIT_URL = f"{SEEDREAM_API_BASE}/image-edit"
+SEEDREAM_SETTINGS = GatewayImageSettings(
+    api_base=SEEDREAM_API_BASE,
+    env="test",
+    text_to_image_task="text-to-image",
+    image_edit_task="image-edit",
+)
+
+
+def nano_provider(
+    handler: object, *, store: MemoryObjectStore | None = None
+) -> GatewayImageProvider:
+    assert callable(handler)
+    return GatewayImageProvider(
+        NANO_BANANA_PRO,
+        IMAGE_SETTINGS,
+        object_store=store or MemoryObjectStore(),
+        transport=httpx.MockTransport(handler),  # type: ignore[arg-type]
+    )
+
+
+def seedream_provider(handler: object, *, store: MemoryObjectStore) -> GatewayImageProvider:
+    assert callable(handler)
+    return GatewayImageProvider(
+        SEEDREAM_V5_PRO,
+        SEEDREAM_SETTINGS,
+        object_store=store,
+        transport=httpx.MockTransport(handler),  # type: ignore[arg-type]
+    )
+
+
+def seedream_ok(request: httpx.Request) -> httpx.Response:
+    if str(request.url) in (SEEDREAM_TEXT_TO_IMAGE_URL, SEEDREAM_EDIT_URL):
+        return httpx.Response(200, json={"success": True, "output_str": "https://image.test/o.jpg"})
+    return httpx.Response(200, content=b"JPGDATA", headers={"content-type": "image/jpeg"})
+
+
+def video_provider(handler: object) -> HttpVideoProvider:
+    assert callable(handler)
+    return HttpVideoProvider(
+        VIDEO_SETTINGS,
+        transport=httpx.MockTransport(handler),  # type: ignore[arg-type]
+    )
+
+
+SUCCEEDED_RESULT = {
+    "output_url": "https://cdn.test/v.mp4",
+    "watermark_output_url": "https://cdn.test/v-wm.mp4",
+}
+
+
+@pytest.mark.parametrize("generate_audio", [True, False, None])
+@pytest.mark.parametrize("model", ["vendor-a-seedance-2-5", "wan3.0-video"])
+async def test_video_submit_sends_protocol_payload_and_key(
+    generate_audio: bool | None, model: str
+) -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["key"] = request.headers.get("x-api-key")
+        seen["body"] = httpx.Response(200, content=request.content).json()
+        return httpx.Response(200, json={"task_id": "t-1"})
+
+    job = make_job(
+        video_request(
+            model=model,
+            reference_image_urls=["https://example.test/first.png"],
+            reference_video_urls=["https://example.test/reference.mp4"],
+            reference_audio_urls=["https://example.test/reference.wav"],
+            generate_audio=generate_audio,
+            conversation_id=uuid.uuid4(),
+            metadata={"path": "video_shot.json", "shot": 2},
+            task_id=uuid.uuid4(),
+        )
+    )
+    submission = await video_provider(handler).submit(job)
+
+    assert submission.provider_task_id == "t-1"
+    assert submission.output_url is None, "异步接口这一步不该有结果"
+    assert seen["key"] == "secret-key"
+    expected_payload = {
+        "model": model,
+        "prompt": "一只猫跳上窗台",
+        "user_name": "logan",
+        "reference_image_urls": ["https://example.test/first.png"],
+        "reference_video_urls": ["https://example.test/reference.mp4"],
+        "reference_audio_urls": ["https://example.test/reference.wav"],
+        "aspect_ratio": "16:9",
+        "seconds": 5,
+    }
+    if generate_audio is not None:
+        expected_payload["generate_audio"] = generate_audio
+    assert seen["body"] == expected_payload, "请求原样转发：没给的不发，归属字段不发"
+
+
+async def test_video_submit_forwards_the_assembled_prompt_but_not_the_shot() -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = httpx.Response(200, content=request.content).json()
+        return httpx.Response(200, json={"task_id": "t-2"})
+
+    job = make_job(
+        video_request(
+            prompt=None, shot=video_shot(), reference_image_urls=SHOT_IMAGE_URLS, seconds=6
+        )
+    )
+    await video_provider(handler).submit(job)
+
+    assert seen["body"] == {
+        "model": "vendor-a-seedance-2-5",
+        "prompt": SHOT_PROMPT,
+        "user_name": "logan",
+        "reference_image_urls": SHOT_IMAGE_URLS,
+        "reference_video_urls": [],
+        "reference_audio_urls": [],
+        "aspect_ratio": "16:9",
+        "seconds": 6,
+    }, "上游只认正文：shot 拼进 prompt 后不再出现在请求里"
+
+
+async def test_video_submit_passes_provider_options_and_resolution_through() -> None:
+    sent: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.update(httpx.Response(200, content=request.content).json())
+        return httpx.Response(200, json={"task_id": "t-1"})
+
+    await video_provider(handler).submit(
+        make_job(
+            video_request(
+                resolution="1440p-SR", seconds=-1, provider_options={"output_format": "mov"}
+            )
+        )
+    )
+    assert (sent["resolution"], sent["seconds"]) == ("1440p-SR", -1)
+    assert sent["provider_options"] == {"output_format": "mov"}
+
+
+async def test_video_submit_tells_unreachable_from_result_unknown() -> None:
+    def refused(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    def hung(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    with pytest.raises(ProviderError) as unreachable:
+        await video_provider(refused).submit(make_job())
+    assert (unreachable.value.code, unreachable.value.retryable) == ("PROVIDER_UNREACHABLE", True)
+
+    with pytest.raises(ProviderError) as unknown:
+        await video_provider(hung).submit(make_job())
+    assert (unknown.value.code, unknown.value.retryable) == ("PROVIDER_RESULT_UNKNOWN", False)
+
+    with pytest.raises(ProviderError) as polling:
+        await video_provider(hung).poll(make_job(provider_task_id="t-1"))
+    assert (polling.value.code, polling.value.retryable) == ("PROVIDER_UNREACHABLE", True)
+
+
+async def test_video_poll_asks_with_the_requests_user_name() -> None:
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json={"status": "running"})
+
+    await video_provider(handler).poll(
+        make_job(video_request(user_name="designer-zhang"), provider_task_id="t/1")
+    )
+    assert seen["url"] == "https://video.test/tasks/t%2F1?user_name=designer-zhang"
+
+
+async def test_video_poll_maps_terminal_and_running_states() -> None:
+    fetched: list[str] = []
+
+    def succeeded(request: httpx.Request) -> httpx.Response:
+        fetched.append(request.url.host)
+        return httpx.Response(200, json={"status": "succeeded", "result": SUCCEEDED_RESULT})
+
+    def running(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "running"})
+
+    def failed(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"status": "failed", "error": {"code": "NSFW", "message": "被拦了"}}
+        )
+
+    job = make_job(provider_task_id="t-1")
+    done = await video_provider(succeeded).poll(job)
+    assert (done.output_url, done.watermark_output_url) == (
+        SUCCEEDED_RESULT["output_url"],
+        SUCCEEDED_RESULT["watermark_output_url"],
+    ), "上游发布好的地址直接存，不转存"
+    assert fetched == ["video.test"], "只问了状态，没去下载产物"
+    assert (await video_provider(running).poll(job)).outcome == "running"
+    rejected = await video_provider(failed).poll(job)
+    assert (rejected.outcome, rejected.error_code) == ("failed", "NSFW")
+    assert rejected.error_message == "被拦了"
+
+
+def succeeded_with(result: Mapping[str, object]) -> HttpVideoProvider:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "succeeded", "result": dict(result)})
+
+    return video_provider(handler)
+
+
+async def test_video_poll_takes_the_measured_output_duration() -> None:
+    provider = succeeded_with(
+        SUCCEEDED_RESULT | {"output_duration_seconds": 10.041667, "duration_ms": 45000}
+    )
+    progress = await provider.poll(make_job(provider_task_id="t-1"))
+    assert progress.duration_ms == 10042
+
+
+async def test_video_poll_without_output_duration_leaves_it_empty() -> None:
+    provider = succeeded_with(SUCCEEDED_RESULT | {"duration_ms": 45000})
+    progress = await provider.poll(make_job(video_request(seconds=10), provider_task_id="t-1"))
+    assert (progress.outcome, progress.duration_ms) == ("succeeded", None)
+
+
+@pytest.mark.parametrize("seconds", [0, -1.5, "10", True, None, 1e306, 10**400])
+async def test_video_poll_with_unusable_output_duration_still_succeeds(seconds: object) -> None:
+    provider = succeeded_with(SUCCEEDED_RESULT | {"output_duration_seconds": seconds})
+    progress = await provider.poll(make_job(provider_task_id="t-1"))
+    assert (progress.outcome, progress.duration_ms) == ("succeeded", None)
+    assert progress.output_url == SUCCEEDED_RESULT["output_url"]
+
+
+async def test_video_poll_preserves_upstream_error_message() -> None:
+    upstream_error = {
+        "code": "PROVIDER_ERROR",
+        "upstream_status": 422,
+        "upstream_code": "InvalidParameter.ReferenceVideo",
+        "upstream_message": "Reference video duration exceeds the limit.\n最大时长为 15 秒。",
+    }
+
+    def failed(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "failed", "error": upstream_error})
+
+    progress = await video_provider(failed).poll(make_job(provider_task_id="t-1"))
+
+    assert progress.outcome == "failed"
+    assert progress.error_code == "PROVIDER_ERROR"
+    assert progress.error_message == upstream_error["upstream_message"]
+
+
+async def test_video_poll_rejects_unknown_status() -> None:
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "moderating"})
+
+    with pytest.raises(ProviderError, match="没见过的视频生成状态"):
+        await video_provider(handler).poll(make_job(provider_task_id="t-1"))
+
+
+@pytest.mark.parametrize(
+    ("result", "missing"),
+    [
+        ({}, "result.output_url / result.watermark_output_url"),
+        ({"output_url": "https://cdn.test/v.mp4"}, "result.watermark_output_url"),
+        ({"watermark_output_url": "https://cdn.test/v-wm.mp4"}, "result.output_url"),
+        (
+            {"output_url": "http://", "watermark_output_url": "https://cdn.test/v-wm.mp4"},
+            "result.output_url",
+        ),
+    ],
+)
+async def test_video_poll_rejects_success_without_both_outputs(
+    result: dict[str, str], missing: str
+) -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "succeeded", "result": result})
+
+    with pytest.raises(ProviderError) as error:
+        await video_provider(handler).poll(make_job(provider_task_id="t-1"))
+    assert error.value.code == "PROVIDER_OUTPUT_MISSING"
+    assert missing in str(error.value)
+
+
+async def test_video_server_error_is_retryable_but_client_error_is_not() -> None:
+    def server_error(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="down")
+
+    def bad_request(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, text="bad prompt")
+
+    with pytest.raises(ProviderError) as retryable:
+        await video_provider(server_error).submit(make_job())
+    assert retryable.value.retryable is True
+
+    with pytest.raises(ProviderError) as permanent:
+        await video_provider(bad_request).submit(make_job())
+    assert permanent.value.retryable is False
+
+
+async def test_image_generation_rehosts_result_and_returns_stable_url() -> None:
+
+    store = MemoryObjectStore()
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        if str(request.url) == IMAGE_TEXT_TO_IMAGE_URL:
+            return httpx.Response(
+                200,
+                json={"success": True, "output_sign_str": "https://image.test/tmp.png?sig=1"},
+            )
+        return httpx.Response(200, content=b"PNGDATA", headers={"content-type": "image/png"})
+
+    job = make_job(image_request(channel="dev"))
+    submission = await nano_provider(handler, store=store).submit(job)
+
+    key = MEDIA_PATHS.generated_image(job_id=job.id, ext="png")
+    assert submission.output_url == f"{store.base}/{key}"
+    assert store.objects[key] == (b"PNGDATA", "image/png")
+    assert submission.provider_status == "succeeded", "同步接口提交完就已经是终态"
+
+
+async def test_image_never_retries_and_never_switches_channel() -> None:
+    attempts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(request.url.path)
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    with pytest.raises(ProviderError) as error:
+        await nano_provider(handler).submit(make_job(image_request(channel="dev")))
+    assert error.value.code == "PROVIDER_RESULT_UNKNOWN"
+    assert error.value.retryable is False
+    assert len(attempts) == 1, "只调一次，不换渠道再来"
+
+
+async def test_image_response_without_a_downloadable_url_is_output_missing() -> None:
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "output_sign_str": "https:///tmp.png",
+                "output_str": "file:///etc/passwd",
+            },
+        )
+
+    with pytest.raises(ProviderError) as error:
+        await nano_provider(handler).submit(make_job(image_request(channel="dev")))
+    assert error.value.code == "PROVIDER_OUTPUT_MISSING"
+
+
+@pytest.mark.parametrize("model", [NANO_BANANA_PRO, SEEDREAM_V5_PRO], ids=lambda m: m.name)
+async def test_image_has_no_polling_phase(model: GatewayImageModel) -> None:
+    provider = GatewayImageProvider(
+        model,
+        IMAGE_SETTINGS,
+        object_store=MemoryObjectStore(),
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={})),
+    )
+    with pytest.raises(ProviderError, match="没有轮询阶段") as error:
+        await provider.poll(make_job(image_request()))
+    assert (error.value.code, error.value.retryable) == ("PROVIDER_POLL_UNSUPPORTED", False)
+
+
+@pytest.mark.parametrize("channel", ["dev", "pro"])
+async def test_image_sends_the_channel_from_the_request(channel: str) -> None:
+
+    sent: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) in (IMAGE_TEXT_TO_IMAGE_URL, IMAGE_EDIT_URL):
+            sent.update(httpx.Response(200, content=request.content).json())
+            return httpx.Response(
+                200, json={"success": True, "output_str": "https://cdn.test/out.png"}
+            )
+        return httpx.Response(200, content=b"PNG", headers={"content-type": "image/png"})
+
+    await nano_provider(handler).submit(make_job(image_request(channel=channel)))
+
+    assert sent["channel"] == channel
+
+
+async def test_image_edit_sends_the_urls_in_the_order_the_caller_gave() -> None:
+    request = image_request(
+        channel="dev",
+        prompt="把【输入图片 2 中的标注 1】的杯子换成红色",
+        reference_image_urls=["https://cdn.test/frame.png", "https://cdn.test/annotated.png"],
+        metadata={"path": "video_shot.json", "shot": 3, "frame": 2},
+    )
+    sent: dict[str, object] = {}
+
+    def handler(http_request: httpx.Request) -> httpx.Response:
+        if str(http_request.url) == IMAGE_EDIT_URL:
+            sent.update(httpx.Response(200, content=http_request.content).json())
+            return httpx.Response(
+                200, json={"success": True, "output_str": "https://cdn.test/out.png"}
+            )
+        return httpx.Response(200, content=b"PNG", headers={"content-type": "image/png"})
+
+    await nano_provider(handler).submit(make_job(request))
+    assert sent["input_str_list"] == request.reference_image_urls
+    assert sent["prompt"] == request.prompt
+    assert sent["user_name"] == "logan", "对账的名字来自请求，不再是配置里写死的"
+    assert set(sent) == {
+        "data_id",
+        "user_name",
+        "prompt",
+        "task_source",
+        "env",
+        "aspect_ratio",
+        "resolution",
+        "channel",
+        "input_str_list",
+    }
+    assert (sent["task_source"], sent["env"]) == ("iclip_agent", "test")
+
+
+async def test_seedream_sends_a_pixel_size_and_no_channel() -> None:
+    sent: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == SEEDREAM_TEXT_TO_IMAGE_URL:
+            sent.append(json.loads(request.content))
+        return seedream_ok(request)
+
+    store = MemoryObjectStore()
+    job = make_job(image_request(aspect_ratio="9:16", resolution="2k"))
+    submission = await seedream_provider(handler, store=store).submit(job)
+
+    assert set(sent[0]) == {
+        "data_id",
+        "user_name",
+        "prompt",
+        "task_source",
+        "env",
+        "size",
+        "output_format",
+    }, "键集变了就是上游合同变了"
+    assert (sent[0]["task_source"], sent[0]["env"]) == ("iclip_agent", "test")
+    assert sent[0]["size"] == "1584*2816"
+    assert submission.provider_task_id == str(job.id), "上游不回任务 id，用 data_id 对账"
+
+    key = MEDIA_PATHS.generated_image(job_id=job.id, ext="jpg")
+    assert submission.output_url == f"{store.base}/{key}"
+
+
+async def test_seedream_with_references_uses_the_edit_endpoint_in_order() -> None:
+    urls: list[str] = []
+    sent: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        urls.append(str(request.url))
+        if str(request.url) == SEEDREAM_EDIT_URL:
+            sent.append(json.loads(request.content))
+        return seedream_ok(request)
+
+    references = ["https://cdn.test/a.png", "https://cdn.test/b.png"]
+    await seedream_provider(handler, store=MemoryObjectStore()).submit(
+        make_job(image_request(reference_image_urls=references))
+    )
+
+    assert urls[0] == SEEDREAM_EDIT_URL, "有参考图要走编辑那个地址"
+    assert sent[0]["input_str_list"] == references, "顺序即 prompt 里 image 1 / image 2 的编号"
+
+
+def upstream_down(_request: httpx.Request) -> httpx.Response:
+    return httpx.Response(500)
+
+
+async def test_nano_refuses_to_send_a_null_channel() -> None:
+    provider = nano_provider(upstream_down)
+    with pytest.raises(ProviderError, match="没有渠道"):
+        await provider.submit(make_job(image_request(channel=None)))
+
+
+async def _report_stage(_job_id: uuid.UUID, _stage: ClipStage) -> bool:
+    return True
+
+
+@pytest.mark.parametrize(
+    ("provider", "job"),
+    [
+        (video_provider(upstream_down), make_job(image_request())),
+        (nano_provider(upstream_down), make_job(video_request())),
+        (
+            seedream_provider(upstream_down, store=MemoryObjectStore()),
+            make_job(compose_request()),
+        ),
+        (
+            FfmpegComposeProvider(
+                object_store=MemoryObjectStore(),
+                report_stage=_report_stage,
+                codec=SOFTWARE,
+                fetch_url=as_is,
+            ),
+            make_job(video_request()),
+        ),
+    ],
+    ids=["video", "nano", "seedream", "clip"],
+)
+async def test_every_provider_reports_a_misrouted_job_with_one_code(
+    provider: GenerationProvider, job: GenerationJob
+) -> None:
+    with pytest.raises(ProviderError) as error:
+        await provider.submit(job)
+    assert (error.value.code, error.value.retryable) == ("PROVIDER_KIND_MISMATCH", False)
+    assert provider.name in str(error.value)
+
+
+GPT_IMAGE_API_BASE = "https://image.test/openai/gpt-image-2.5-flare-developer"
+GPT_IMAGE_SETTINGS = GatewayImageSettings(
+    api_base=GPT_IMAGE_API_BASE,
+    env="test",
+    text_to_image_task="text-to-image",
+    image_edit_task="edit",
+)
+
+
+async def gpt_image_sent(job_request: ImageGenerationIn) -> tuple[str, dict[str, object]]:
+    sent: list[tuple[str, dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            sent.append((str(request.url), json.loads(request.content)))
+            return httpx.Response(
+                200, json={"success": True, "output_str": "https://image.test/o.png"}
+            )
+        return httpx.Response(200, content=b"PNG", headers={"content-type": "image/png"})
+
+    provider = GatewayImageProvider(
+        GPT_IMAGE_2_5,
+        GPT_IMAGE_SETTINGS,
+        object_store=MemoryObjectStore(),
+        transport=httpx.MockTransport(handler),
+    )
+    await provider.submit(make_job(job_request))
+    return sent[0]
+
+
+async def test_gpt_image_sends_a_pixel_size_and_auto_quality() -> None:
+    url, payload = await gpt_image_sent(image_request(aspect_ratio="9:16", resolution="2k"))
+
+    assert url == f"{GPT_IMAGE_API_BASE}/text-to-image"
+    assert set(payload) == {
+        "data_id",
+        "user_name",
+        "prompt",
+        "task_source",
+        "env",
+        "size",
+        "quality",
+    }, "键集变了就是上游合同变了"
+    assert (payload["size"], payload["quality"]) == ("1152x2048", "auto")
+
+
+async def test_gpt_image_with_references_uses_its_edit_route() -> None:
+    references = ["https://image.test/person.png", "https://image.test/shoe.png"]
+
+    url, payload = await gpt_image_sent(
+        image_request(aspect_ratio="3:4", resolution="2k", reference_image_urls=references)
+    )
+
+    assert url == f"{GPT_IMAGE_API_BASE}/edit"
+    assert payload["input_str_list"] == references
+    assert payload["size"] == "1536x2048"
+
+
+@pytest.mark.parametrize("aspect_ratio", get_args(IMAGE_ASPECT_RATIOS))
+async def test_every_gpt_image_size_follows_the_upstream_rule(aspect_ratio: str) -> None:
+    _, payload = await gpt_image_sent(image_request(aspect_ratio=aspect_ratio, resolution="2k"))
+
+    size = payload["size"]
+    assert isinstance(size, str)
+    width, height = (int(part) for part in size.split("x"))
+    wide, tall = (int(part) for part in aspect_ratio.split(":"))
+    assert width % 16 == 0 and height % 16 == 0
+    assert abs(width / height - wide / tall) < 0.01 * wide / tall
+    assert max(width, height) <= 3840 and min(width, height) <= 2160
+
+
+async def test_gpt_image_refuses_a_tier_it_does_not_declare() -> None:
+    provider = GatewayImageProvider(
+        GPT_IMAGE_2_5,
+        GPT_IMAGE_SETTINGS,
+        object_store=MemoryObjectStore(),
+        transport=httpx.MockTransport(lambda _: httpx.Response(500)),
+    )
+
+    with pytest.raises(ProviderError) as raised:
+        await provider.submit(make_job(image_request(aspect_ratio="9:16", resolution="1k")))
+
+    assert raised.value.code == "PROVIDER_SIZE_UNSUPPORTED"
+
+
+ENHANCE_URL = "https://video.test/videos/enhance/async"
+ENHANCE_SETTINGS = replace(VIDEO_SETTINGS, enhance_submit_url=ENHANCE_URL)
+
+
+def enhance_provider(
+    handler: object, *, settings: VideoProviderSettings = ENHANCE_SETTINGS
+) -> HttpVideoProvider:
+    assert callable(handler)
+    return HttpVideoProvider(settings, transport=httpx.MockTransport(handler))  # type: ignore[arg-type]
+
+
+def finished_take() -> GenerationJob:
+    return make_job(
+        video_request(resolution="720p"),
+        status="completed",
+        output=GenerationOutput(
+            url="https://cdn.test/take.mp4", watermark_url="https://cdn.test/take-wm.mp4"
+        ),
+    )
+
+
+def finished_film() -> GenerationJob:
+    return make_job(
+        whole_film_request(uuid.uuid4()),
+        status="completed",
+        output=GenerationOutput(url="https://cdn.test/film.mp4"),
+    )
+
+
+@pytest.mark.parametrize("source", [finished_take, finished_film], ids=["video", "whole_film"])
+async def test_an_enhancement_goes_to_its_own_address_with_the_upstream_body(
+    source: Callable[[], GenerationJob],
+) -> None:
+    seen: list[tuple[str, str | None, dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            (str(request.url), request.headers.get("x-api-key"), json.loads(request.content))
+        )
+        return httpx.Response(200, json={"task_id": "e-1"})
+
+    origin = source()
+    submission = await enhance_provider(handler).submit(make_enhancement(origin, "1080p"))
+
+    assert submission.provider_task_id == "e-1"
+    assert seen == [
+        (
+            ENHANCE_URL,
+            "secret-key",
+            {
+                "model": "video-enhance",
+                "resolution": "1080p",
+                "fps": 30,
+                "video_url": origin.output.url,
+                "user_name": "logan",
+            },
+        )
+    ]
+
+
+async def test_an_enhancement_without_a_frame_rate_does_not_send_one() -> None:
+    sent: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"task_id": "e-1"})
+
+    job = make_enhancement(finished_take())
+    assert isinstance(job.request, VideoEnhanceRequest)
+    unframed = replace(job, request=job.request.model_copy(update={"fps": None}))
+    await enhance_provider(handler).submit(unframed)
+
+    assert sent == [
+        {
+            "model": "video-enhance",
+            "resolution": "1080p",
+            "video_url": "https://cdn.test/take.mp4",
+            "user_name": "logan",
+        }
+    ]
+
+
+async def test_takes_still_go_to_the_generation_address_when_enhance_is_on() -> None:
+    urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        urls.append(str(request.url))
+        return httpx.Response(200, json={"task_id": "t-1"})
+
+    await enhance_provider(handler).submit(make_job(video_request()))
+
+    assert urls == [VIDEO_SETTINGS.submit_url]
+
+
+async def test_an_enhancement_is_polled_like_a_take() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, json={"status": "succeeded", "result": SUCCEEDED_RESULT})
+
+    job = replace(make_enhancement(finished_film()), provider_task_id="e/1")
+    done = await enhance_provider(handler).poll(job)
+
+    assert seen == ["https://video.test/tasks/e%2F1?user_name=logan"]
+    assert (done.outcome, done.output_url, done.watermark_output_url) == (
+        "succeeded",
+        SUCCEEDED_RESULT["output_url"],
+        SUCCEEDED_RESULT["watermark_output_url"],
+    )
+
+
+async def test_an_enhancement_without_an_address_fails_for_good_without_calling_out() -> None:
+    called: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        called.append(str(request.url))
+        return httpx.Response(200, json={"task_id": "e-1"})
+
+    provider = enhance_provider(handler, settings=VIDEO_SETTINGS)
+    with pytest.raises(ProviderError) as raised:
+        await provider.submit(make_enhancement(finished_take()))
+
+    assert (raised.value.code, raised.value.retryable) == ("ENHANCE_NOT_CONFIGURED", False)
+    assert called == []

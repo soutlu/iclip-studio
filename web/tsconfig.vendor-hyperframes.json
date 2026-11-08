@@ -1,0 +1,24 @@
+{
+  // 照抄来的 HyperFrames Studio 纯逻辑（src/features/storyboard/whole-film/vendor/hyperframes-studio，
+  // 见该目录的 README）。做法同 tsconfig.vendor.json：单独的 composite 项目，只出类型声明，
+  // 引用方看到的是 .d.ts，下面放宽的几项不会漏进本仓自己的代码。
+  //
+  // 上游只开 `strict`，这里只放宽上游源码实际触发的两项：`exactOptionalPropertyTypes`（修剪函数
+  // 返回 `playbackStart: undefined`）与 `noUncheckedIndexedAccess`（timelineGaps 的 `following[0]`、
+  // timelineLayout 的 `trackOrder[0]`，前面都已判过长度）。改代码去迁就它们会让这份拷贝没法再跟
+  // 上游对 diff。
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.vendor-hyperframes.tsbuildinfo",
+    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": false,
+    "composite": true,
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rootDir": "./src/features/storyboard/whole-film/vendor/hyperframes-studio",
+    "outDir": "./node_modules/.tmp/vendor-hyperframes-types"
+  },
+  "include": ["src/features/storyboard/whole-film/vendor/hyperframes-studio"],
+  "exclude": ["src/features/storyboard/whole-film/vendor/hyperframes-studio/**/*.test.ts"]
+}

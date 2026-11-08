@@ -1,0 +1,41 @@
+import { isValidElement, type ReactNode } from 'react'
+import { IconButton } from '@/shared/ui/button'
+import { useCopyFeedback } from '@/shared/ui/copy-feedback'
+
+const textOf = (node: ReactNode): string => {
+  if (node === null || node === undefined || typeof node === 'boolean') return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(textOf).join('')
+  if (isValidElement<{ children?: ReactNode }>(node)) return textOf(node.props.children)
+  return ''
+}
+
+const readCode = (node: ReactNode): { language: string | undefined; text: string } => {
+  if (!isValidElement<{ className?: string; children?: ReactNode }>(node)) {
+    return { language: undefined, text: '' }
+  }
+  const language = /language-(\w+)/.exec(node.props.className ?? '')?.[1]
+  return { language, text: textOf(node.props.children) }
+}
+
+export function CodeBlock({ children }: { children?: ReactNode }) {
+  const { language, text } = readCode(children)
+  const { copied, copy } = useCopyFeedback()
+
+  return (
+    <div className="overflow-hidden rounded-sm border-[0.5px] border-chat-hairline bg-chat-code-block-bg shadow-[var(--shadow-xs)]">
+      <div className="flex items-center justify-between border-b-[0.5px] border-chat-hairline bg-chat-chip-bg py-1 pr-1 pl-3">
+        <span className="text-body-sm text-chat-muted-text">{language ?? 'text'}</span>
+        <IconButton
+          label="复制代码"
+          name={copied ? 'check' : 'copy'}
+          onClick={() => void copy(text)}
+          size="xs"
+        />
+      </div>
+      <pre className="max-h-[500px] overflow-auto px-3.5 py-3 font-mono text-body-sm whitespace-pre text-chat-message-text">
+        {text}
+      </pre>
+    </div>
+  )
+}

@@ -1,0 +1,231 @@
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+
+import pytest
+from fastapi import FastAPI
+from sqlalchemy import text
+
+from tests.helpers.agents import AgentSeed
+from tests.helpers.app import make_client, new_conversation, settled
+from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
+from tests.helpers.pg import connected
+
+AGENT_ID = "storyboard"
+
+
+@pytest.fixture
+def agent_seeds() -> tuple[AgentSeed, ...]:
+    return (AgentSeed(AGENT_ID),)
+
+
+async def test_anonymous_cannot_send(app: FastAPI) -> None:
+
+    async with make_client(app) as client:
+        sent = await client.post(
+            "/conversations/00000000-0000-0000-0000-000000000000/prompts",
+            json={"prompt_id": "prm_anon", "content": [{"type": "text", "text": "走"}]},
+        )
+    assert sent.status_code == 401
+
+
+async def test_sending_to_someone_elses_conversation_is_not_found(
+    app: FastAPI, pg_url: str
+) -> None:
+
+    async with make_client(app) as client:
+        await login_as_editor(client, pg_url)
+        sent = await client.post(
+            "/conversations/00000000-0000-0000-0000-000000000000/prompts",
+            json={"prompt_id": "prm_other", "content": [{"type": "text", "text": "走"}]},
+        )
+    assert sent.status_code == 404
+
+
+async def test_a_dashless_conversation_id_can_send_a_prompt(app: FastAPI, pg_url: str) -> None:
+    dashless = uuid.uuid4().hex
+    async with make_client(app) as client:
+        await login_as_editor(client, pg_url)
+        created = await client.post("/conversations", json={"id": dashless, "agentId": AGENT_ID})
+        assert created.status_code == 201, created.text
+        assert created.json()["conversation"]["id"] == str(uuid.UUID(dashless))
+        sent = await client.post(
+            f"/conversations/{dashless}/prompts",
+            json={"prompt_id": "prm_dashless", "content": [{"type": "text", "text": "走"}]},
+        )
+        assert sent.status_code == 200, sent.text
+
+        await settled(client, dashless)
+        page = (await client.get(f"/conversations/{dashless}/transcript")).json()
+
+    assert [turn["turnId"] for turn in page["items"]] == ["t1"]
+    assert page["items"][0]["content"] == [{"type": "text", "text": "走"}]
+
+
+async def test_a_conversation_id_that_is_not_a_uuid_is_rejected(app: FastAPI, pg_url: str) -> None:
+    async with make_client(app) as client:
+        await login_as_editor(client, pg_url)
+        status = await client.get("/conversations/not-a-uuid/status")
+
+    assert status.status_code == 422, status.text
+
+
+async def test_api_key_caller_must_say_who_the_message_is_for(app: FastAPI, pg_url: str) -> None:
+    async with make_client(app) as owner:
+        await register_and_login(owner)
+        await set_roles_in_db(pg_url, "logan@example.com", ["root"])
+        conversation_id = await new_conversation(owner, AGENT_ID)
+        issued = await owner.post(
+            "/api-keys", json={"name": "relay", "permissions": ["agent:run", "agent:read"]}
+        )
+        assert issued.status_code == 201, issued.text
+
+    async with make_client(app) as machine:
+        machine.headers["Authorization"] = f"Bearer {issued.json()['apiKey']['token']}"
+        nameless = await machine.post(
+            f"/conversations/{conversation_id}/prompts",
+            json={"prompt_id": "prm_key_nameless", "content": [{"type": "text", "text": "走"}]},
+        )
+        named = await machine.post(
+            f"/conversations/{conversation_id}/prompts",
+            json={
+                "prompt_id": "prm_key_named",
+                "content": [{"type": "text", "text": "走"}],
+                "user_name": "designer-zhang",
+            },
+        )
+        assert nameless.status_code == 422, nameless.text
+        assert "user_name" in nameless.json()["detail"]
+        assert named.status_code == 200, named.text
+        await settled(machine, conversation_id)
+
+
+async def test_second_prompt_queues_while_the_first_runs(app: FastAPI, pg_url: str) -> None:
+
+    async with make_client(app) as client:
+        await login_as_editor(client, pg_url)
+        conversation_id = await new_conversation(client, AGENT_ID)
+        first = await client.post(
+            f"/conversations/{conversation_id}/prompts",
+            json={"prompt_id": "prm_q1", "content": [{"type": "text", "text": "一"}]},
+        )
+        second = await client.post(
+            f"/conversations/{conversation_id}/prompts",
+            json={"prompt_id": "prm_q2", "content": [{"type": "text", "text": "二"}]},
+        )
+        assert first.json()["status"] == "running"
+        assert second.json()["status"] == "queued"
+        await settled(client, conversation_id)
+
+
+@pytest.mark.parametrize("url", ["file:///etc/passwd", "https:///a.png"])
+async def test_an_attachment_that_is_not_http_is_refused(
+    app: FastAPI, pg_url: str, url: str
+) -> None:
+    async with make_client(app) as client:
+        await login_as_editor(client, pg_url)
+        conversation_id = await new_conversation(client, AGENT_ID)
+        sent = await client.post(
+            f"/conversations/{conversation_id}/prompts",
+            json={
+                "prompt_id": "prm_bad",
+                "content": [{"type": "image", "source": {"kind": "url", "url": url}}],
+            },
+        )
+
+    assert sent.status_code == 422
+
+
+async def test_catchup_reports_whether_it_got_everything(app: FastAPI, pg_url: str) -> None:
+
+    async with make_client(app) as client:
+        await login_as_editor(client, pg_url)
+        conversation_id = await new_conversation(client, AGENT_ID)
+        await client.post(
+            f"/conversations/{conversation_id}/prompts",
+            json={"prompt_id": "prm_catch", "content": [{"type": "text", "text": "走"}]},
+        )
+        await settled(client, conversation_id)
+
+        caught = (
+            await client.get(
+                f"/conversations/{conversation_id}/transcript/ops", params={"since_seq": 0}
+            )
+        ).json()
+        stale = (
+            await client.get(
+                f"/conversations/{conversation_id}/transcript/ops", params={"since_seq": 99999}
+            )
+        ).json()
+
+    assert caught["complete"] is True
+    assert [batch["seq"] for batch in caught["batches"]] == list(
+        range(1, len(caught["batches"]) + 1)
+    )
+    assert stale["complete"] is False
+
+
+async def test_status_answers_an_api_key_holder(app: FastAPI, pg_url: str) -> None:
+    async with make_client(app) as client:
+        await register_and_login(client)
+        await set_roles_in_db(pg_url, "logan@example.com", ["root"])
+        async with make_client(app) as owner:
+            await owner.post("/auth/login", data={"username": "logan", "password": "password-123"})
+            conversation_id = await new_conversation(owner, AGENT_ID)
+            await owner.post(
+                f"/conversations/{conversation_id}/prompts",
+                json={"prompt_id": "prm_status", "content": [{"type": "text", "text": "走"}]},
+            )
+            await settled(owner, conversation_id)
+            issued = await owner.post(
+                "/api-keys", json={"name": "ops", "permissions": ["agent:read"]}
+            )
+            blind = await owner.post(
+                "/api-keys", json={"name": "blind", "permissions": ["collections:read"]}
+            )
+
+        token = issued.json()["apiKey"]["token"]
+        async with make_client(app) as machine:
+            got = await machine.get(
+                f"/conversations/{conversation_id}/status",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            denied = await machine.get(
+                f"/conversations/{conversation_id}/status",
+                headers={"Authorization": f"Bearer {blind.json()['apiKey']['token']}"},
+            )
+
+    assert got.status_code == 200, got.text
+    assert got.json() == {"status": "completed"}
+    assert denied.status_code == 403
+
+
+async def _run_of(pg_url: str, prompt_id: str) -> str:
+
+    async with connected(pg_url) as conn:
+        return str(
+            (
+                await conn.execute(
+                    text("SELECT run_id FROM agent_runtime.agent_job_runs WHERE prompt_id = :p"),
+                    {"p": prompt_id},
+                )
+            ).scalar_one()
+        )
+
+
+async def test_a_run_is_recorded_on_the_conversation(app: FastAPI, pg_url: str) -> None:
+    async with make_client(app) as client:
+        await login_as_editor(client, pg_url)
+        created = await client.post("/conversations", json={"agentId": AGENT_ID})
+        opened = created.json()["conversation"]
+        sent = await client.post(
+            f"/conversations/{opened['id']}/prompts",
+            json={"prompt_id": "prm_mark", "content": [{"type": "text", "text": "走"}]},
+        )
+        assert sent.status_code == 200, sent.text
+        await settled(client, opened["id"])
+        (after,) = (await client.get("/conversations/search")).json()["items"]
+
+    assert after["lastRunId"] == await _run_of(pg_url, "prm_mark")
+    assert datetime.fromisoformat(after["updatedAt"]) > datetime.fromisoformat(opened["updatedAt"])

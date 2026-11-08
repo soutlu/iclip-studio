@@ -1,0 +1,70 @@
+{
+  "sourceFont": "web/public/fonts/SourceSerif4-Italic-SemiBold-Latin.woff2",
+  "sourceFontSha256": "ea3e78e835fe6d03d04ecaf1136496928d87b8cde4d5815e61b1930a53f6ee65",
+  "fontSize": 255.0,
+  "unitsPerEm": 1000,
+  "fontAxes": {
+    "opsz": 20.0
+  },
+  "shaper": "HarfBuzz via uharfbuzz 0.57.0",
+  "direction": "ltr",
+  "script": "Latn",
+  "glyphs": [
+    {
+      "glyph": "i",
+      "glyphId": 36,
+      "cluster": 0,
+      "x": 0.0,
+      "y": 0.0,
+      "advance": 83.13,
+      "advanceFontUnits": 326
+    },
+    {
+      "glyph": "C",
+      "glyphId": 4,
+      "cluster": 1,
+      "x": 83.13,
+      "y": 0.0,
+      "advance": 152.235,
+      "advanceFontUnits": 597
+    },
+    {
+      "glyph": "l",
+      "glyphId": 39,
+      "cluster": 2,
+      "x": 235.365,
+      "y": 0.0,
+      "advance": 74.715,
+      "advanceFontUnits": 293
+    },
+    {
+      "glyph": "i",
+      "glyphId": 36,
+      "cluster": 3,
+      "x": 310.08,
+      "y": 0.0,
+      "advance": 79.56,
+      "advanceFontUnits": 312
+    },
+    {
+      "glyph": "p",
+      "glyphId": 43,
+      "cluster": 4,
+      "x": 389.64,
+      "y": 0.0,
+      "advance": 135.66,
+      "advanceFontUnits": 532
+    }
+  ],
+  "advance": 525.3,
+  "contours": 9,
+  "vertices": 163,
+  "textColorBinding": {
+    "sourcePathIds": "0:30-0:35",
+    "propertyKey": 37
+  },
+  "coordinateConversion": "x = font x * 255 / 1000; y = -font y * 255 / 1000; baseline unchanged",
+  "fontAssetEmbedded": false,
+  "sourceSceneSha256": "a9436c13d6c6272302face49e5e20704c535946c038f417971135f2e510fd39f",
+  "motionGraphSha256": "56da480fed795b18ef3e8027b805af762d0841b7b57746ac5ff66d9071763a3a"
+}

@@ -1,0 +1,372 @@
+import { useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { Icon } from '@/shared/icons'
+import { ASPECT_RATIOS } from '@/shared/lib/aspect-ratio'
+import { IconButton } from '@/shared/ui/button'
+import { Input, Textarea } from '@/shared/ui/field'
+import type { Task } from '../tasks.api'
+import {
+  MAX_DESCRIPTION_CHARS,
+  MAX_DURATION_SECONDS,
+  MAX_PRODUCTS,
+  MAX_REFERENCE_URLS,
+  MAX_SHORT_TEXT_CHARS,
+  MAX_STYLE_NO_CHARS,
+  MAX_TITLE_CHARS,
+  MIN_DURATION_SECONDS,
+} from '../task-limits'
+import type { TaskField } from '../task-permissions'
+import { PLATFORM_OPTIONS, VIDEO_TYPE_OPTIONS, CONTENT_TYPE_OPTIONS } from '../task-video-options'
+import { TaskMediaField } from './task-media-field'
+import { TaskSpecPicker } from './task-spec-picker'
+import { emptyProduct, type TaskFormState, type TaskProduct } from './task-form-state'
+
+type TaskInputs = Task['inputs']
+type VideoSpec = TaskInputs['video_spec']
+
+const CONTROL =
+  'task-form-control h-(--control-height-md) min-w-0 rounded-sm border-transparent bg-surface-container-low px-3 ui-focus-inline'
+const PRODUCT_ATTRIBUTES: readonly {
+  label: string
+  placeholder: string
+  value: (product: TaskProduct) => string
+  patch: (value: string) => Partial<TaskProduct>
+}[] = [
+  { label: '品牌', placeholder: '输入品牌', value: (p) => p.brand, patch: (brand) => ({ brand }) },
+  {
+    label: '品类',
+    placeholder: '例如 鞋靴',
+    value: (p) => p.category,
+    patch: (category) => ({ category }),
+  },
+  {
+    label: '颜色',
+    placeholder: '例如 黑色',
+    value: (p) => p.color_name,
+    patch: (color_name) => ({ color_name }),
+  },
+]
+const REFERENCE_FIELDS = [
+  { key: 'model', label: '模特参考图' },
+  { key: 'outfit', label: '穿搭参考图' },
+  { key: 'prop', label: '道具参考图' },
+] as const
+
+type TaskFormFieldsProps = {
+  editable: (field: TaskField) => boolean
+  form: TaskFormState
+  onChange: Dispatch<SetStateAction<TaskFormState>>
+  onUploadingChange: (field: string, busy: boolean) => void
+}
+
+export function TaskFormFields({
+  editable,
+  form,
+  onChange,
+  onUploadingChange,
+}: TaskFormFieldsProps) {
+  const { inputs } = form
+  const [productKeys, setProductKeys] = useState(() => inputs.products.map((_, index) => index))
+  const productRows = inputs.products.map((product, index) => ({
+    key: productKeys[index] ?? index,
+    product,
+  }))
+  const patchInputs = (partial: Partial<TaskInputs>) =>
+    onChange((previous) => ({ ...previous, inputs: { ...previous.inputs, ...partial } }))
+  const patchVideo = (partial: Partial<VideoSpec>) =>
+    onChange((previous) => ({
+      ...previous,
+      inputs: { ...previous.inputs, video_spec: { ...previous.inputs.video_spec, ...partial } },
+    }))
+  const patchProducts = (update: (products: readonly TaskProduct[]) => TaskProduct[]) =>
+    onChange((previous) => ({
+      ...previous,
+      inputs: { ...previous.inputs, products: update(previous.inputs.products) },
+    }))
+  const patchProduct = (index: number, partial: Partial<TaskProduct>) =>
+    patchProducts((products) =>
+      products.map((product, position) =>
+        position === index ? { ...product, ...partial } : product,
+      ),
+    )
+  const addProduct = () => {
+    setProductKeys((keys) => [...keys, Math.max(-1, ...keys) + 1])
+    patchProducts((products) => [...products, emptyProduct()])
+  }
+  const removeProduct = (index: number) => {
+    setProductKeys((keys) => keys.filter((_, position) => position !== index))
+    patchProducts((products) => products.filter((_, position) => position !== index))
+  }
+  const patchReferences = (key: keyof TaskInputs['reference_image_oss_urls'], urls: string[]) =>
+    onChange((previous) => ({
+      ...previous,
+      inputs: {
+        ...previous.inputs,
+        reference_image_oss_urls: { ...previous.inputs.reference_image_oss_urls, [key]: urls },
+      },
+    }))
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="task-form-basics">
+        <Field label="需求单名称" required>
+          <Input
+            aria-label="需求单名称"
+            className={CONTROL}
+            disabled={!editable('title')}
+            maxLength={MAX_TITLE_CHARS}
+            required
+            placeholder="输入需求单名称"
+            onChange={(event) =>
+              onChange((previous) => ({ ...previous, title: event.target.value }))
+            }
+            value={form.title}
+          />
+        </Field>
+        <Field label="截止时间">
+          <Input
+            aria-label="截止时间"
+            className={CONTROL}
+            disabled={!editable('deadline')}
+            onChange={(event) =>
+              onChange((previous) => ({ ...previous, deadline: event.target.value }))
+            }
+            type="datetime-local"
+            value={form.deadline}
+          />
+        </Field>
+      </div>
+
+      <Section title="视频规格">
+        <div className="task-form-specs">
+          <TaskSpecPicker
+            allowCustom
+            label="发布平台"
+            value={inputs.video_spec.platform}
+            disabled={!editable('platform')}
+            placeholder="选择或输入"
+            options={PLATFORM_OPTIONS}
+            onChange={(platform) => patchVideo({ platform })}
+          />
+          <TaskSpecPicker
+            allowCustom
+            label="视频类型"
+            value={inputs.video_spec.video_type}
+            disabled={!editable('video_type')}
+            placeholder="选择或输入"
+            options={VIDEO_TYPE_OPTIONS}
+            onChange={(video_type) => patchVideo({ video_type })}
+          />
+          <TaskSpecPicker
+            allowCustom
+            label="内容类型"
+            value={inputs.video_spec.content_type}
+            disabled={!editable('content_type')}
+            placeholder="选择或输入"
+            options={CONTENT_TYPE_OPTIONS}
+            onChange={(content_type) => patchVideo({ content_type })}
+          />
+          <TaskSpecPicker
+            allowCustom
+            label="分辨率"
+            value={inputs.video_spec.resolution}
+            disabled={!editable('resolution')}
+            placeholder="例如 1080p"
+            options={[{ value: '1080p', label: '1080p' }]}
+            onChange={(resolution) => patchVideo({ resolution })}
+          />
+          <TaskSpecPicker
+            label="比例"
+            disabled={!editable('aspect_ratio')}
+            value={inputs.video_spec.aspect_ratio ?? ''}
+            options={[
+              { value: '', label: '未指定' },
+              ...ASPECT_RATIOS.map((ratio) => ({ value: ratio, label: ratio })),
+            ]}
+            onChange={(value) =>
+              patchVideo({ aspect_ratio: ASPECT_RATIOS.find((ratio) => ratio === value) ?? null })
+            }
+          />
+          <Field label="目标时长（秒）">
+            <Input
+              aria-label="目标时长（秒）"
+              className={CONTROL}
+              disabled={!editable('duration_seconds')}
+              type="number"
+              inputMode="numeric"
+              min={MIN_DURATION_SECONDS}
+              max={MAX_DURATION_SECONDS}
+              step={1}
+              placeholder={`${MIN_DURATION_SECONDS}–${MAX_DURATION_SECONDS} 秒`}
+              value={inputs.video_spec.duration_seconds ?? ''}
+              onChange={(event) =>
+                patchVideo({
+                  duration_seconds: event.target.value === '' ? null : event.target.valueAsNumber,
+                })
+              }
+            />
+          </Field>
+        </div>
+      </Section>
+
+      <Section title="商品信息">
+        {productRows.map(({ key, product }, index) => {
+          const ordinal = `商品 ${index + 1}`
+          return (
+            <div
+              aria-label={ordinal}
+              className="flex min-w-0 flex-col gap-2.5 rounded-lg bg-surface-container-low/50 p-3"
+              key={key}
+              role="group"
+            >
+              <div className="flex h-6 items-center justify-between gap-3">
+                <span className="text-body-sm font-medium text-on-surface">{ordinal}</span>
+                {editable('products') && inputs.products.length > 1 && (
+                  <IconButton
+                    label={`移除${ordinal}`}
+                    name="delete"
+                    onClick={() => removeProduct(index)}
+                    size="xs"
+                  />
+                )}
+              </div>
+              <div className="task-form-product">
+                <Field label="商品款号" required>
+                  <Input
+                    aria-label={`${ordinal} 款号`}
+                    className={CONTROL}
+                    disabled={!editable('style_no')}
+                    required
+                    placeholder="例如 DEMO24001W"
+                    maxLength={MAX_STYLE_NO_CHARS}
+                    value={product.style_no}
+                    onChange={(event) => patchProduct(index, { style_no: event.target.value })}
+                  />
+                </Field>
+                <Field label="商品名称">
+                  <Input
+                    aria-label={`${ordinal} 名称`}
+                    className={CONTROL}
+                    disabled={!editable('product')}
+                    placeholder="输入商品名称"
+                    maxLength={MAX_SHORT_TEXT_CHARS}
+                    value={product.name}
+                    onChange={(event) => patchProduct(index, { name: event.target.value })}
+                  />
+                </Field>
+              </div>
+              <div className="task-form-product-attributes">
+                {PRODUCT_ATTRIBUTES.map((attribute) => (
+                  <Field key={attribute.label} label={attribute.label}>
+                    <Input
+                      aria-label={`${ordinal} ${attribute.label}`}
+                      className={CONTROL}
+                      disabled={!editable('product')}
+                      placeholder={attribute.placeholder}
+                      maxLength={MAX_SHORT_TEXT_CHARS}
+                      value={attribute.value(product)}
+                      onChange={(event) => patchProduct(index, attribute.patch(event.target.value))}
+                    />
+                  </Field>
+                ))}
+              </div>
+              <TaskMediaField
+                label="商品图片"
+                name={`${ordinal} 图片`}
+                kind="image"
+                value={product.image_oss_urls}
+                disabled={!editable('product')}
+                maxFiles={MAX_REFERENCE_URLS}
+                onUploadingChange={(busy) => onUploadingChange(`product-${index}`, busy)}
+                onChange={(image_oss_urls) => patchProduct(index, { image_oss_urls })}
+              />
+            </div>
+          )
+        })}
+        {editable('products') && inputs.products.length < MAX_PRODUCTS && (
+          <button
+            className="flex h-10 w-full ui-state cursor-pointer items-center justify-center gap-2 rounded-sm border border-dashed border-outline-variant bg-surface text-body-sm text-on-surface-variant ui-focus"
+            onClick={addProduct}
+            type="button"
+          >
+            <Icon decorative name="add" size="sm" />
+            添加商品
+          </button>
+        )}
+      </Section>
+
+      <Section title="参考素材">
+        <div className="task-form-references">
+          {REFERENCE_FIELDS.map(({ key, label }) => (
+            <TaskMediaField
+              key={key}
+              compact
+              label={label}
+              kind="image"
+              maxFiles={MAX_REFERENCE_URLS}
+              value={inputs.reference_image_oss_urls[key]}
+              disabled={!editable('references')}
+              onUploadingChange={(busy) => onUploadingChange(key, busy)}
+              onChange={(urls) => patchReferences(key, urls)}
+            />
+          ))}
+        </div>
+      </Section>
+
+      <div className="task-form-story">
+        <TaskMediaField
+          label="参考视频"
+          kind="video"
+          maxFiles={1}
+          value={inputs.reference_video_oss_url ? [inputs.reference_video_oss_url] : []}
+          disabled={!editable('references')}
+          onUploadingChange={(busy) => onUploadingChange('video', busy)}
+          onChange={(urls) => patchInputs({ reference_video_oss_url: urls[0] ?? null })}
+        />
+        <Field label="创作要求">
+          <Textarea
+            aria-label="创作要求"
+            className="task-form-control min-h-48 resize-y rounded-md border-transparent bg-surface-container-low ui-focus-inline"
+            rows={6}
+            disabled={!editable('creative_requirement')}
+            maxLength={MAX_DESCRIPTION_CHARS}
+            placeholder="描述创作目标、风格偏好、目标受众和输出要求"
+            value={inputs.creative_requirement}
+            onChange={(event) => patchInputs({ creative_requirement: event.target.value })}
+          />
+          <span className="self-end text-caption text-on-surface-variant">
+            {inputs.creative_requirement.length}/{MAX_DESCRIPTION_CHARS}
+          </span>
+        </Field>
+      </div>
+    </div>
+  )
+}
+
+function Field({
+  children,
+  label,
+  required = false,
+}: {
+  children: ReactNode
+  label: string
+  required?: boolean
+}) {
+  return (
+    <label className="flex min-w-0 flex-col gap-1">
+      <span className="text-body-sm font-medium text-on-surface-variant">
+        {label}
+        {required && <span className="text-error"> *</span>}
+      </span>
+      {children}
+    </label>
+  )
+}
+
+function Section({ children, title }: { children: ReactNode; title: string }) {
+  return (
+    <section className="flex min-w-0 flex-col gap-3" aria-label={title}>
+      <h3 className="text-title font-semibold text-on-surface">{title}</h3>
+      {children}
+    </section>
+  )
+}

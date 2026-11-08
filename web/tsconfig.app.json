@@ -1,0 +1,43 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "types": ["vite/client"],
+    "skipLibCheck": true,
+
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "esModuleInterop": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src"],
+  // vendor 目录各有一份放宽的 tsconfig（见 tsconfig.vendor.json、tsconfig.vendor-hyperframes.json）。
+  // 引用它们而不是把源码收进来：引用之后这里看到的是它们出的 .d.ts，宽松项不会漏进本仓自己的代码。
+  "exclude": [
+    "src/shared/transcript/vendor",
+    "src/features/storyboard/whole-film/vendor/hyperframes-studio"
+  ],
+  "references": [
+    { "path": "./tsconfig.vendor.json" },
+    { "path": "./tsconfig.vendor-hyperframes.json" }
+  ]
+}

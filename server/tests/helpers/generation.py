@@ -1,0 +1,831 @@
+from __future__ import annotations
+
+import hashlib
+import uuid
+from collections.abc import Collection, Mapping, Sequence
+from datetime import UTC, datetime
+from typing import Any
+
+from procrastinate.testing import InMemoryConnector
+
+from iclip.config import (
+    ImageGenerationSection,
+    ImageModelSection,
+    MediaGenerationSection,
+    RuntimeConfig,
+    VideoGenerationSection,
+)
+from iclip.domains.generation.models import (
+    REFERENCE_TRIAL_KEY,
+    STATUS_COMPLETED,
+    STATUS_FAILED,
+    STATUS_PENDING,
+    STATUS_SUBMITTED,
+    STATUS_SUBMITTING,
+    GenerationJob,
+    GenerationKind,
+    GenerationOperation,
+    GenerationOutput,
+    GenerationStatus,
+    InFlightPhase,
+    Inheritance,
+    inherited_through,
+)
+from iclip.domains.generation.module import ImageModelConfig, build_generation_module
+from iclip.domains.generation.provider import (
+    ProviderError,
+    ProviderProgress,
+    ProviderSubmission,
+)
+from iclip.domains.generation.queue import GenerationQueue, GenerationQueueSettings, ProviderLane
+from iclip.domains.generation.repository import GenerationRepository
+from iclip.domains.generation.schemas import (
+    KIND_AUDIO,
+    KIND_IMAGE,
+    KIND_SUBTITLE,
+    KIND_VIDEO,
+    OPERATION_CUT,
+    OPERATION_GENERATE,
+    OPERATION_UPLOAD,
+    ImageGenerationIn,
+    MusicRequest,
+    SubtitleRequest,
+    SubtitleSentence,
+    VideoComposeRequest,
+    VideoEditRequest,
+    VideoEnhanceRequest,
+    VideoEnhanceResolution,
+    VideoGenerationIn,
+    WholeFilmRequest,
+    WholeFilmVideoSource,
+)
+from iclip.domains.generation.service import GenerationService
+from iclip.domains.generation.stored_requests import GenerationRequest
+from iclip.domains.generation.video import VideoProviderSettings
+from iclip.domains.identity.acting import ActAs
+from iclip.domains.identity.public import Principal
+from iclip.platform.media.codec import SOFTWARE
+from iclip.platform.media.errors import MediaError
+from iclip.platform.object_store.store import StoredObject
+from tests.helpers.app import make_runtime_config
+from tests.helpers.fetch_url import as_is
+from tests.helpers.identity import InMemoryUserRepository
+
+FAKE_VIDEO_PROVIDER = "video_fake"
+FAKE_IMAGE_PROVIDER = "image_fake"
+FAKE_SUBTITLE_PROVIDER = "subtitle_fake"
+FAKE_MUSIC_PROVIDER = "music_fake"
+
+
+def video_request(**overrides: Any) -> VideoGenerationIn:
+    fields: dict[str, Any] = {
+        "model": "vendor-a-seedance-2-5",
+        "prompt": "一只猫跳上窗台",
+        "user_name": "logan",
+        "aspect_ratio": "16:9",
+        "seconds": 5,
+    }
+    fields.update(overrides)
+    return VideoGenerationIn(**fields)
+
+
+def edit_request(**overrides: Any) -> VideoEditRequest:
+    fields: dict[str, Any] = {
+        "model": "vendor-a-seedance-2-5",
+        "prompt": "一只猫跳上窗台",
+        "user_name": "logan",
+        "seconds": -1,
+        "reference_video_urls": ["https://cdn.test/iclip/agent/uploads/clip.mp4"],
+        "range_start_ms": 1000,
+        "range_end_ms": 4000,
+    }
+    fields.update(overrides)
+    return VideoEditRequest(**fields)
+
+
+def compose_request(**overrides: Any) -> VideoComposeRequest:
+    fields: dict[str, Any] = {
+        "segments": [
+            {"url": "https://example.com/base.mp4", "start": 0, "end": 1},
+            {"url": "https://example.com/edited.mp4", "start": 0},
+            {"url": "https://example.com/base.mp4", "start": 4},
+        ],
+        "user_name": "logan",
+    }
+    fields.update(overrides)
+    fields["segments"] = [
+        segment
+        if "source_job_id" in segment or "sourceJobId" in segment
+        else {"source_job_id": uuid.uuid5(uuid.NAMESPACE_URL, segment["url"]), **segment}
+        for segment in fields["segments"]
+    ]
+    return VideoComposeRequest(**fields)
+
+
+SHOT_IMAGE_URLS = ["https://example.com/a.png", "https://example.com/b.png"]
+
+SHOT_PROMPT = "人物保持一致。\n\n镜头：\n0–6秒 走向镜头 @Image1，停下 @Image2。\n不要生成字幕，不要生成背景音乐。"
+
+LEGACY_SHOT_PROMPT = "人物保持一致。\n\n[0–6秒｜镜头1] 走向镜头 @Image1，停下 @Image2。\n不要生成字幕，不要生成背景音乐。"
+
+
+def video_shot(**overrides: Any) -> dict[str, Any]:
+    shot: dict[str, Any] = {
+        "global_settings": "人物保持一致。",
+        "timeline": [
+            {
+                "timestamps": [0, 6],
+                "prompt": "走向镜头 @Image1，停下 @Image2。",
+                "image_indexes": [1, 2],
+            }
+        ],
+    }
+    shot.update(overrides)
+    return shot
+
+
+def image_request(**overrides: Any) -> ImageGenerationIn:
+    fields: dict[str, Any] = {
+        "prompt": "一只猫的正面特写",
+        "user_name": "logan",
+        "aspect_ratio": "1:1",
+        "resolution": "1k",
+    }
+    fields.update(overrides)
+    return ImageGenerationIn(**fields)
+
+
+def make_job(
+    request: GenerationRequest | None = None,
+    *,
+    kind: GenerationKind | None = None,
+    operation: GenerationOperation | None = None,
+    status: GenerationStatus = STATUS_PENDING,
+    provider: str | None = None,
+    provider_task_id: str | None = None,
+    submitted_at: datetime | None = None,
+    created_at: datetime | None = None,
+    finished_at: datetime | None = None,
+    owner_user_id: uuid.UUID | None = None,
+    conversation_id: uuid.UUID | None = None,
+    metadata: dict[str, Any] | None = None,
+    task_id: uuid.UUID | None = None,
+    shot_index: int | None = None,
+    root_job_id: uuid.UUID | None = None,
+    source_job_id: uuid.UUID | None = None,
+    output: GenerationOutput | None = None,
+    error_code: str | None = None,
+    error_message: str | None = None,
+) -> GenerationJob:
+    now = datetime.now(UTC)
+    payload: GenerationRequest | None
+    if kind is None and operation is None:
+        payload = request or video_request()
+        row_kind, row_operation = payload.kind, payload.operation
+    elif request is None and kind is not None and operation is not None:
+        payload, row_kind, row_operation = None, kind, operation
+    else:
+        raise AssertionError("kind 与 operation 只给没有请求的行，且要一起给")
+    default_provider = (
+        None
+        if payload is None
+        else FAKE_VIDEO_PROVIDER
+        if row_kind == KIND_VIDEO
+        else FAKE_SUBTITLE_PROVIDER
+        if row_kind == KIND_SUBTITLE
+        else FAKE_MUSIC_PROVIDER
+        if row_kind == KIND_AUDIO
+        else FAKE_IMAGE_PROVIDER
+    )
+    return GenerationJob(
+        id=uuid.uuid4(),
+        owner_user_id=owner_user_id or uuid.uuid4(),
+        api_key_id=None,
+        conversation_id=conversation_id,
+        metadata=metadata,
+        task_id=task_id,
+        shot_index=shot_index,
+        root_job_id=root_job_id,
+        source_job_id=source_job_id,
+        kind=row_kind,
+        operation=row_operation,
+        provider=provider or default_provider,
+        request=payload,
+        status=status,
+        provider_task_id=provider_task_id,
+        provider_status=None,
+        output=output or GenerationOutput(),
+        error_code=error_code,
+        error_message=error_message,
+        created_at=created_at or now,
+        submitted_at=submitted_at,
+        finished_at=finished_at,
+    )
+
+
+def stored_request(job: GenerationJob) -> GenerationRequest:
+    assert job.request is not None, f"{job.kind} / {job.operation} 没有请求"
+    return job.request
+
+
+def external_base(job: GenerationJob) -> str | None:
+    return job.request.source_url if isinstance(job.request, ImageGenerationIn) else None
+
+
+def edit_range(job: GenerationJob) -> tuple[int | None, int | None]:
+    if isinstance(job.request, VideoEditRequest):
+        return job.request.range_start_ms, job.request.range_end_ms
+    return None, None
+
+
+def make_edit(
+    base: GenerationJob, *, range_start_ms: int = 1000, range_end_ms: int = 4000, **fields: Any
+) -> GenerationJob:
+    fields.setdefault("shot_index", base.shot_index)
+    return make_job(
+        edit_request(range_start_ms=range_start_ms, range_end_ms=range_end_ms),
+        source_job_id=base.id,
+        root_job_id=base.root_job_id or base.id,
+        **fields,
+    )
+
+
+def make_composite(edit: GenerationJob, **fields: Any) -> GenerationJob:
+    assert edit.source_job_id is not None, "只能合成编辑段"
+    base = edit.source_job_id
+    fields.setdefault("provider", "ffmpeg")
+    fields.setdefault("shot_index", edit.shot_index)
+    request = compose_request(
+        segments=[
+            {"source_job_id": base, "url": "https://example.com/base.mp4", "start": 0, "end": 1},
+            {"source_job_id": edit.id, "url": "https://example.com/edited.mp4", "start": 0},
+            {"source_job_id": base, "url": "https://example.com/base.mp4", "start": 4},
+        ]
+    )
+    return make_job(request, source_job_id=base, root_job_id=edit.root_job_id, **fields)
+
+
+def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
+    assert video.output.url is not None, "只识别有地址的素材片"
+    fields.setdefault("owner_user_id", video.owner_user_id)
+    fields.setdefault("conversation_id", video.conversation_id)
+    fields.setdefault("task_id", video.task_id)
+    return make_job(
+        SubtitleRequest(model="qwen-audio-3.1-asr-flash", video_url=video.output.url),
+        source_job_id=video.id,
+        **fields,
+    )
+
+
+def whole_film_request(*sources: uuid.UUID) -> WholeFilmRequest:
+    return WholeFilmRequest(
+        revision=1,
+        document={},
+        videos=[
+            WholeFilmVideoSource(job_id=source, url=f"https://cdn.test/videos/{source}.mp4")
+            for source in sources
+        ],
+        music=None,
+        subtitles=[],
+    )
+
+
+def make_enhancement(
+    source: GenerationJob, resolution: VideoEnhanceResolution = "1080p", **fields: Any
+) -> GenerationJob:
+    assert source.output.url is not None, "只给有地址的来源做高清版"
+    fields.setdefault("shot_index", source.shot_index)
+    return make_job(
+        VideoEnhanceRequest(
+            model="video-enhance",
+            resolution=resolution,
+            fps=30,
+            video_url=source.output.url,
+            user_name="logan",
+        ),
+        source_job_id=source.id,
+        **fields,
+    )
+
+
+MUSIC_PROMPT = "纯音乐，轻快的城市流行节拍，适合鞋款种草短视频的背景音乐"
+
+
+def make_music(**fields: Any) -> GenerationJob:
+    fields.setdefault("conversation_id", uuid.uuid4())
+    return make_job(MusicRequest(model="qwen-audio-3.1-tts-next", prompt=MUSIC_PROMPT), **fields)
+
+
+def make_upload(*, kind: GenerationKind = KIND_IMAGE, **fields: Any) -> GenerationJob:
+    fields.setdefault("status", STATUS_COMPLETED)
+    fields.setdefault("finished_at", datetime.now(UTC))
+    fields.setdefault(
+        "output", GenerationOutput(url=f"https://cdn.test/iclip/agent/uploads/{uuid.uuid4()}.png")
+    )
+    return make_job(kind=kind, operation=OPERATION_UPLOAD, **fields)
+
+
+def make_cut(grid: GenerationJob, **fields: Any) -> GenerationJob:
+    fields.setdefault("status", STATUS_COMPLETED)
+    fields.setdefault("finished_at", datetime.now(UTC))
+    fields.setdefault(
+        "output",
+        GenerationOutput(url=f"https://cdn.test/shot-frames/{grid.id}/out/{uuid.uuid4()}.jpg"),
+    )
+    fields.setdefault("conversation_id", grid.conversation_id)
+    fields.setdefault("owner_user_id", grid.owner_user_id)
+    return make_job(kind=KIND_IMAGE, operation=OPERATION_CUT, source_job_id=grid.id, **fields)
+
+
+class InMemoryGenerationRepository:
+    def __init__(self, jobs: list[GenerationJob] | None = None) -> None:
+        self.jobs: dict[uuid.UUID, GenerationJob] = {job.id: job for job in jobs or []}
+
+    async def create(self, job: GenerationJob) -> GenerationJob:
+        self.jobs[job.id] = job
+        return job
+
+    async def create_settled(self, jobs: Sequence[GenerationJob]) -> tuple[GenerationJob, ...]:
+        from dataclasses import replace
+
+        now = datetime.now(UTC)
+        created: list[GenerationJob] = []
+        for job in jobs:
+            if job.id in self.jobs:
+                continue
+            stored = replace(job, created_at=now, finished_at=now)
+            self.jobs[job.id] = stored
+            created.append(stored)
+        return tuple(created)
+
+    async def find_by_output(
+        self,
+        output_url: str,
+        *,
+        kind: GenerationKind,
+        owner: uuid.UUID | None,
+        conversation_id: uuid.UUID | None,
+        inherited: Inheritance = (),
+        operation: GenerationOperation | None = None,
+    ) -> GenerationJob | None:
+        found = [
+            job
+            for job in self.jobs.values()
+            if job.kind == kind
+            and job.status == STATUS_COMPLETED
+            and job.output.url == output_url
+            and (operation is None or job.operation == operation)
+            and (
+                (
+                    (owner is None or job.owner_user_id == owner)
+                    and job.conversation_id == conversation_id
+                )
+                or inherited_through(job, inherited)
+            )
+        ]
+        return min(found, key=lambda job: (job.created_at, job.id), default=None)
+
+    async def find_video_upload_by_md5(self, content_md5: str) -> GenerationJob | None:
+        found = [
+            job
+            for job in self.jobs.values()
+            if job.output.content_md5 == content_md5
+            and job.kind == KIND_VIDEO
+            and job.operation == OPERATION_UPLOAD
+        ]
+        return min(found, key=lambda job: (job.created_at, job.id), default=None)
+
+    async def latest_reference_trial(
+        self, reference_id: uuid.UUID, *, owner: uuid.UUID | None
+    ) -> GenerationJob | None:
+        found = [
+            job
+            for job in self.jobs.values()
+            if job.metadata is not None
+            and job.metadata.get(REFERENCE_TRIAL_KEY) == str(reference_id)
+            and (owner is None or job.owner_user_id == owner)
+            and job.kind == KIND_VIDEO
+            and job.operation == OPERATION_GENERATE
+        ]
+        return max(found, key=lambda job: (job.created_at, job.id), default=None)
+
+    async def output_urls(self, ids: Collection[uuid.UUID]) -> Mapping[uuid.UUID, str]:
+        urls: dict[uuid.UUID, str] = {}
+        for job_id in ids:
+            job = self.jobs.get(job_id)
+            if job is not None and job.output.url is not None:
+                urls[job_id] = job.output.url
+        return urls
+
+    async def get(
+        self, job_id: uuid.UUID, *, owner: uuid.UUID | None, inherited: Inheritance = ()
+    ) -> GenerationJob:
+        from iclip.common.errors import NotFound
+
+        job = self.jobs.get(job_id)
+        if job is None or not (
+            owner is None or job.owner_user_id == owner or inherited_through(job, inherited)
+        ):
+            raise NotFound(f"没有这次生成: {job_id}")
+        return job
+
+    async def list_for_owner(
+        self,
+        *,
+        owner: uuid.UUID | None,
+        limit: int,
+        conversation_id: uuid.UUID | None = None,
+        kind: GenerationKind | None = None,
+        operation: GenerationOperation | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        task_id: uuid.UUID | None = None,
+        shot_index: int | None = None,
+        root_job_id: uuid.UUID | None = None,
+        source_job_id: uuid.UUID | None = None,
+        before: uuid.UUID | None = None,
+        inherited: Inheritance = (),
+    ) -> tuple[GenerationJob, ...]:
+        assert metadata is None and shot_index is None and root_job_id is None and before is None, (
+            "坐标、镜号、原作与分页筛选由真实 HTTP / Postgres 测试覆盖"
+        )
+        rows = [
+            job
+            for job in self.jobs.values()
+            if (
+                (
+                    (owner is None or job.owner_user_id == owner)
+                    and (conversation_id is None or job.conversation_id == conversation_id)
+                )
+                or inherited_through(job, inherited)
+            )
+            and (task_id is None or job.task_id == task_id)
+            and (source_job_id is None or job.source_job_id == source_job_id)
+        ]
+        rows = [
+            job
+            for job in rows
+            if (kind is None or job.kind == kind)
+            and (operation is None or job.operation == operation)
+        ]
+        rows.sort(key=lambda job: (job.created_at, job.id), reverse=True)
+        return tuple(rows[:limit])
+
+    async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob | None:
+        if self.jobs[job_id].status != STATUS_PENDING:
+            return None
+        return self._replace(job_id, status=STATUS_SUBMITTING)
+
+    async def mark_submitted(
+        self,
+        job_id: uuid.UUID,
+        *,
+        provider_task_id: str,
+        provider_status: str,
+    ) -> GenerationJob:
+        return self._replace(
+            job_id,
+            status=STATUS_SUBMITTED,
+            provider_task_id=provider_task_id,
+            provider_status=provider_status,
+            submitted_at=datetime.now(UTC),
+        )
+
+    async def mark_completed(
+        self,
+        job_id: uuid.UUID,
+        *,
+        output: GenerationOutput,
+        provider_status: str,
+        provider_task_id: str | None = None,
+        only_if_status: GenerationStatus | None = None,
+    ) -> GenerationJob | None:
+        current = self.jobs[job_id]
+        if only_if_status is not None and current.status != only_if_status:
+            return None
+        return self._replace(
+            job_id,
+            status=STATUS_COMPLETED,
+            output=output,
+            provider_status=provider_status,
+            provider_task_id=provider_task_id or current.provider_task_id,
+            submitted_at=current.submitted_at or datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+        )
+
+    async def mark_transcribed(
+        self,
+        job_id: uuid.UUID,
+        *,
+        sentences: tuple[SubtitleSentence, ...],
+        provider_status: str,
+        provider_task_id: str,
+        only_if_status: GenerationStatus | None = None,
+    ) -> GenerationJob | None:
+        current = self.jobs[job_id]
+        if only_if_status is not None and current.status != only_if_status:
+            return None
+        return self._replace(
+            job_id,
+            status=STATUS_COMPLETED,
+            output=GenerationOutput(sentences=sentences),
+            provider_status=provider_status,
+            provider_task_id=provider_task_id,
+            submitted_at=current.submitted_at or datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+        )
+
+    async def mark_failed(
+        self,
+        job_id: uuid.UUID,
+        *,
+        error_code: str,
+        error_message: str,
+        provider_status: str | None = None,
+        only_if_status: GenerationStatus | None = None,
+    ) -> GenerationJob | None:
+        if only_if_status is not None and self.jobs[job_id].status != only_if_status:
+            return None
+        extra: dict[str, Any] = {}
+        if provider_status is not None:
+            extra["provider_status"] = provider_status
+        return self._replace(
+            job_id,
+            status=STATUS_FAILED,
+            error_code=error_code,
+            error_message=error_message,
+            finished_at=datetime.now(UTC),
+            **extra,
+        )
+
+    async def record_progress(
+        self,
+        job_id: uuid.UUID,
+        *,
+        provider_status: str,
+        only_if_status: GenerationStatus | None = None,
+        skip_unchanged: bool = False,
+    ) -> GenerationJob | None:
+        current = self.jobs[job_id]
+        if only_if_status is not None and current.status != only_if_status:
+            return None
+        if skip_unchanged and current.provider_status == provider_status:
+            return None
+        return self._replace(job_id, provider_status=provider_status)
+
+    async def in_flight_by_conversation(
+        self, *, owner: uuid.UUID | None, kind: GenerationKind
+    ) -> Mapping[uuid.UUID, InFlightPhase]:
+        raise AssertionError("unit 层不走在途汇总")
+
+    async def latest_master_by_conversation(
+        self, conversation_ids: Sequence[uuid.UUID]
+    ) -> Mapping[uuid.UUID, str]:
+        raise AssertionError("unit 层不走最新素材片")
+
+    async def enhancements_of(self, source_job_id: uuid.UUID) -> tuple[GenerationJob, ...]:
+        rows = [
+            job
+            for job in self.jobs.values()
+            if job.source_job_id == source_job_id and job.operation == "enhance"
+        ]
+        rows.sort(key=lambda job: (job.created_at, job.id), reverse=True)
+        return tuple(rows)
+
+    def _replace(self, job_id: uuid.UUID, **values: Any) -> GenerationJob:
+        from dataclasses import replace
+
+        updated = replace(self.jobs[job_id], **values)
+        self.jobs[job_id] = updated
+        return updated
+
+
+class ScriptedProvider:
+    def __init__(
+        self,
+        *,
+        name: str = "fake",
+        submission: ProviderSubmission | Exception | None = None,
+        progress: ProviderProgress | Exception | None = None,
+    ) -> None:
+        self.provider_name = name
+        self._submission = submission
+        self._progress = progress
+        self.submit_calls: list[uuid.UUID] = []
+        self.poll_calls: list[uuid.UUID] = []
+
+    @property
+    def name(self) -> str:
+        return self.provider_name
+
+    async def submit(self, job: GenerationJob) -> ProviderSubmission:
+        self.submit_calls.append(job.id)
+        if isinstance(self._submission, Exception):
+            raise self._submission
+        if self._submission is None:
+            raise ProviderError("剧本没写提交", code="NO_SCRIPT", retryable=False)
+        return self._submission
+
+    async def poll(self, job: GenerationJob) -> ProviderProgress:
+        self.poll_calls.append(job.id)
+        if isinstance(self._progress, Exception):
+            raise self._progress
+        if self._progress is None:
+            raise ProviderError("剧本没写轮询", code="NO_SCRIPT", retryable=False)
+        return self._progress
+
+
+QUEUE_SETTINGS = GenerationQueueSettings(
+    poll_interval_seconds=5, error_retry_seconds=30, job_timeout_seconds=3600
+)
+
+
+def build_queue(
+    repo: InMemoryGenerationRepository,
+    *,
+    video: ScriptedProvider | None = None,
+    image: ScriptedProvider | None = None,
+    lanes: tuple[ProviderLane, ...] | None = None,
+    connector: InMemoryConnector | None = None,
+) -> tuple[GenerationQueue, InMemoryConnector]:
+    if lanes is None:
+        video_double = video or ScriptedProvider()
+        video_double.provider_name = FAKE_VIDEO_PROVIDER
+        image_double = image or ScriptedProvider()
+        image_double.provider_name = FAKE_IMAGE_PROVIDER
+        lanes = (ProviderLane(video_double, 1), ProviderLane(image_double, 1))
+    connector = InMemoryConnector() if connector is None else connector
+    queue = GenerationQueue(
+        repo,
+        lanes=lanes,
+        connector=connector,
+        settings=QUEUE_SETTINGS,
+    )
+    return queue, connector
+
+
+MEDIA_ENVS = {
+    "OSS_BUCKET": "iclip-test",
+    "OSS_ENDPOINT": "oss-ap-southeast-1.aliyuncs.com",
+    "OSS_ACCESS_KEY_ID": "ak",
+    "OSS_ACCESS_KEY_SECRET": "sk",
+    "OSS_PUBLIC_URL_BASE": "https://cdn.example.test",
+    "VIDEO_SUBMIT_URL": "https://video.test/submit",
+    "VIDEO_STATUS_BASE_URL": "https://video.test/status",
+    "VIDEO_API_KEY": "vk",
+    "IMAGE_API_BASE": "https://image.test/gateway",
+}
+
+
+def config_with_media() -> RuntimeConfig:
+    return make_runtime_config().model_copy(
+        update={
+            "media_generation": MediaGenerationSection(
+                video=VideoGenerationSection(model="seedance", allowed_models=("seedance",)),
+                image=ImageGenerationSection(
+                    env="test",
+                    text_to_image_task="text-to-image",
+                    image_edit_task="image-edit",
+                    default="nano_banana_pro",
+                    models={
+                        "nano_banana_pro": ImageModelSection(route="nano-banana-pro", concurrency=4)
+                    },
+                ),
+            ),
+        }
+    )
+
+
+async def _keep_completion(_conversation_id: uuid.UUID, _owner: uuid.UUID) -> None:
+    return None
+
+
+def film_image_service(
+    repo: GenerationRepository,
+    lineage: FixedLineage | None = None,
+    *,
+    image_models: Sequence[str] = ("nano_banana_pro", "gpt-image-2.5"),
+) -> GenerationService:
+    return build_generation_module(
+        repo,
+        act_as=ActAs(InMemoryUserRepository()),
+        clear_completion=_keep_completion,
+        lineage=lineage or FixedLineage(),
+        video=VideoProviderSettings(
+            submit_url="https://video.test/generate",
+            status_base_url="https://video.test/tasks",
+            api_key="secret-key",
+        ),
+        video_default_model="vendor-a-seedance-2-5",
+        video_allowed_models=("vendor-a-seedance-2-5",),
+        image_models=[
+            ImageModelConfig(name=name, api_base=f"https://image.test/{name}", concurrency=1)
+            for name in image_models
+        ],
+        image_default_model="nano_banana_pro",
+        image_env="test",
+        image_text_to_image_task="text-to-image",
+        image_edit_task="image-edit",
+        object_store=MemoryObjectStore(),
+        queue_connector=InMemoryConnector(),
+        media_codec=SOFTWARE,
+        fetch_url=as_is,
+    ).service
+
+
+class FixedLineage:
+    def __init__(
+        self,
+        ancestry: Mapping[uuid.UUID, Inheritance] | None = None,
+        *,
+        readable: bool = True,
+    ) -> None:
+        self._ancestry = dict(ancestry or {})
+        self._readable = readable
+
+    async def ancestry(self, conversation_id: uuid.UUID) -> Inheritance:
+        return self._ancestry.get(conversation_id, ())
+
+    async def readable(self, principal: Principal, conversation_id: uuid.UUID) -> bool:
+        return self._readable
+
+
+class FakeMediaProbe:
+    def __init__(self, durations: Mapping[str, int] | None = None) -> None:
+        self._durations = dict(durations or {})
+        self.probed: list[str] = []
+
+    async def duration_ms(self, url: str) -> int:
+        self.probed.append(url)
+        if url not in self._durations:
+            raise MediaError(f"取不到素材: {url}")
+        return self._durations[url]
+
+
+class MemoryObjectStore:
+    def __init__(self, *, base: str = "https://cdn.example.test") -> None:
+        self.base = base
+        self.objects: dict[str, tuple[bytes, str]] = {}
+        self.metadata: dict[str, dict[str, str]] = {}
+
+    async def put_public_object(
+        self,
+        *,
+        object_key: str,
+        content: bytes,
+        content_type: str,
+        metadata: Mapping[str, str] | None = None,
+    ) -> str:
+        self.objects[object_key] = (content, content_type)
+        self.metadata[object_key] = dict(metadata or {})
+        return self.public_url(object_key)
+
+    def sign_put(self, *, object_key: str, headers: Mapping[str, str]) -> str:
+        return f"{self.base}/{object_key}?signed-for={headers['Content-Type']}"
+
+    async def find_object(self, *, prefix: str) -> StoredObject | None:
+        found = [key for key in self.objects if key.startswith(prefix)]
+        if not found:
+            return None
+        content, content_type = self.objects[found[0]]
+        return StoredObject(
+            object_key=found[0],
+            content_type=content_type,
+            size_bytes=len(content),
+            etag=hashlib.md5(content).hexdigest().upper(),
+            object_type="Normal",
+        )
+
+    async def delete_object(self, object_key: str) -> None:
+        self.objects.pop(object_key, None)
+
+    def public_url(self, object_key: str) -> str:
+        return f"{self.base}/{object_key}"
+
+
+__all__ = [
+    "MEDIA_ENVS",
+    "MUSIC_PROMPT",
+    "QUEUE_SETTINGS",
+    "FakeMediaProbe",
+    "FixedLineage",
+    "InMemoryGenerationRepository",
+    "MemoryObjectStore",
+    "ScriptedProvider",
+    "build_queue",
+    "compose_request",
+    "config_with_media",
+    "edit_request",
+    "film_image_service",
+    "image_request",
+    "make_composite",
+    "make_cut",
+    "make_edit",
+    "make_enhancement",
+    "make_job",
+    "make_music",
+    "make_subtitle",
+    "make_upload",
+    "stored_request",
+    "video_request",
+    "whole_film_request",
+]

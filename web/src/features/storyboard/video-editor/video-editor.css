@@ -1,0 +1,136 @@
+.video-editor-view-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-top-layer);
+  box-shadow: 0 0 0 0.5px var(--color-hairline);
+}
+
+.video-editor-view-switch button {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--dur-s) var(--ease),
+    background-color var(--dur-s) var(--ease);
+}
+
+.video-editor-view-switch button:hover {
+  color: var(--color-on-surface);
+}
+
+.video-editor-view-switch button:disabled {
+  opacity: var(--state-disabled-content);
+  cursor: default;
+}
+
+.video-editor-view-switch button[aria-pressed='true'] {
+  background: var(--color-state-active);
+  color: var(--color-on-surface);
+  font-weight: 500;
+}
+
+/* 工具条右端的「合成新版本」：绿色胶囊，不可用时置灰；版本视图的「下载」同尺寸、用深色。 */
+.editor-bar .video-editor-compose {
+  width: auto;
+  height: 30px;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+
+.editor-bar .video-editor-compose:disabled {
+  background-color: var(--color-disabled-container);
+  box-shadow: none;
+  color: color-mix(
+    in srgb,
+    var(--color-on-surface) calc(var(--state-disabled-content) * 100%),
+    transparent
+  );
+  scale: 1;
+}
+
+.editor-bar .video-editor-compose > svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+/* 常驻的失败提醒：红色图标加红字，不加底色；点字回去处理。 */
+.editor-bar-group > .video-editor-fail {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.video-editor-fail-text {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 360px;
+  height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  cursor: pointer;
+}
+
+.video-editor-fail-text > svg {
+  flex: none;
+}
+
+.video-editor-fail-text > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-editor-fail-text:hover > span {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.video-editor-fail-more {
+  flex: none;
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  white-space: nowrap;
+}
+
+.video-editor-fail > button:last-child {
+  flex: none;
+}
+
+/* 选中草稿里一块、或在跑的编辑片段时的小卡：只有卡头一行。 */
+.video-editor-small-card {
+  width: min(440px, calc(100% - 24px));
+}
+
+.video-editor-small-card .video-editor-card-head {
+  padding-bottom: 12px;
+}
+
+.video-editor-small-card-icon {
+  display: grid;
+  width: 30px;
+  height: 40px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-faint);
+}

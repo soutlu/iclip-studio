@@ -1,0 +1,63 @@
+<!doctype html>
+<!--
+  测试组件库：6 秒的画面组件（block），没有可填项。按 1920×1080 设计，渐变底上一个圆点从左滑到右。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <script src="vendor/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        overflow: hidden;
+      }
+      body {
+        width: 1920px;
+        height: 1080px;
+      }
+
+      #root .fs-stage {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, #1d4ed8 0%, #9333ea 100%);
+      }
+      #root .fs-dot {
+        position: absolute;
+        left: 160px;
+        top: 440px;
+        width: 200px;
+        height: 200px;
+        border-radius: 50%;
+        background: #fde047;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="fixture-scene"
+      data-width="1920"
+      data-height="1080"
+      data-start="0"
+      data-duration="6"
+    >
+      <div id="fs-clip" class="clip" data-start="0" data-duration="6" data-track-index="0">
+        <div class="fs-stage">
+          <div id="fs-dot" class="fs-dot"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {}
+      var tl = gsap.timeline({ paused: true })
+      tl.to('#fs-dot', { x: 1400, duration: 6, ease: 'none' }, 0)
+      window.__timelines['fixture-scene'] = tl
+    </script>
+  </body>
+</html>

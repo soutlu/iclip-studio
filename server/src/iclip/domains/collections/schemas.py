@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from typing import Annotated, Final
+
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
+
+from iclip.domains.collections.models import Collection
+
+MAX_NAME_CHARS: Final = 200
+
+
+class CamelModel(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, extra="forbid", frozen=True
+    )
+
+
+Name = Annotated[str, Field(min_length=1, max_length=MAX_NAME_CHARS)]
+
+
+class CollectionIn(CamelModel):
+    """新建或改名。名字必填——没名字的口袋没法认。"""
+
+    name: Name
+
+
+class CollectionOut(CamelModel):
+    id: uuid.UUID
+    owner_user_id: uuid.UUID
+    name: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class CollectionEnvelope(CamelModel):
+    collection: CollectionOut
+
+
+class CollectionsPageOut(CamelModel):
+    items: list[CollectionOut]
+
+
+def collection_out(collection: Collection) -> CollectionOut:
+    return CollectionOut(
+        id=collection.id,
+        owner_user_id=collection.owner_user_id,
+        name=collection.name,
+        created_at=collection.created_at,
+        updated_at=collection.updated_at,
+    )
+
+
+__all__ = [
+    "MAX_NAME_CHARS",
+    "CollectionEnvelope",
+    "CollectionIn",
+    "CollectionOut",
+    "CollectionsPageOut",
+    "collection_out",
+]

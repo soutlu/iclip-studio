@@ -1,0 +1,67 @@
+from __future__ import annotations
+
+import httpx
+
+from tests.helpers.auth import register_and_login
+
+
+async def test_register_login_me_logout_round_trip(client: httpx.AsyncClient) -> None:
+    user_id = await register_and_login(client)
+
+    me = await client.get("/users/me")
+    assert me.status_code == 200
+    user = me.json()["user"]
+    assert user["id"] == user_id
+    assert user["username"] == "logan"
+    assert user["roles"] == ["viewer"]
+    assert user["directPermissions"] == []
+    assert set(user["permissions"]) == {
+        "collections:read",
+        "tasks:read",
+        "inspirations:read",
+        "generation:read",
+        "agent:read",
+    }
+    assert "displayName" in user and "display_name" not in user
+    assert user["departments"] == []
+
+    assert (await client.post("/auth/logout")).status_code == 204
+    assert (await client.get("/users/me")).status_code == 401
+
+
+async def test_login_with_email_identifier(client: httpx.AsyncClient) -> None:
+    await register_and_login(client)
+    await client.post("/auth/logout")
+    ok = await client.post(
+        "/auth/login",
+        data={"username": "logan@example.com", "password": "password-123"},
+    )
+    assert ok.status_code == 204
+    assert (await client.get("/users/me")).status_code == 200
+
+
+async def test_wrong_password_rejected_without_cookie(client: httpx.AsyncClient) -> None:
+    await client.post(
+        "/auth/register",
+        json={"email": "a@example.com", "password": "password-123", "username": "a"},
+    )
+    bad = await client.post("/auth/login", data={"username": "a", "password": "nope-nope"})
+    assert bad.status_code == 400
+    assert (await client.get("/users/me")).status_code == 401
+
+
+async def test_short_password_rejected_at_register(client: httpx.AsyncClient) -> None:
+    bad = await client.post(
+        "/auth/register",
+        json={"email": "b@example.com", "password": "short", "username": "b"},
+    )
+    assert bad.status_code == 400
+
+
+async def test_duplicate_username_rejected(client: httpx.AsyncClient) -> None:
+    await register_and_login(client)
+    dup = await client.post(
+        "/auth/register",
+        json={"email": "other@example.com", "password": "password-123", "username": "logan"},
+    )
+    assert dup.status_code == 400

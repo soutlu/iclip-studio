@@ -1,0 +1,110 @@
+import { expect, test } from '@playwright/test'
+import { login } from './login'
+
+test('治理者从侧栏进「全部对话」，看到别人在跑的对话，点进去是只读', async ({ page }) => {
+  await page.goto('/')
+  await login(page, 'governor')
+
+  await page.getByRole('button', { name: '全部任务' }).click()
+  await expect(page).toHaveURL('/conversations')
+  await expect(page.getByRole('main', { name: '全部任务' })).toBeVisible()
+
+  const running = page.getByRole('link', { name: /小王 · 秋季新品短片/ })
+  await expect(running).toContainText('进行中')
+  await expect(running).toContainText('小王')
+  await expect(
+    page.getByRole('main', { name: '全部任务' }).getByRole('img', { name: /的封面$/ }),
+  ).toHaveCount(11)
+  await expect(running.getByRole('img', { name: /的封面$/ })).toHaveJSProperty('naturalWidth', 512)
+  await expect(page.getByRole('status', { name: '任务总数' })).toContainText('进行中')
+
+  await page.getByRole('button', { name: '用户：用户', exact: true }).click()
+  const search = page.getByRole('combobox', { name: '搜索用户' })
+  await search.fill('小王')
+  await search.press('ArrowDown')
+  await search.press('Enter')
+  await expect(page).toHaveURL(/\/conversations\?ownerUserId=/)
+  const filteredUrl = page.url()
+
+  await running.click()
+  await expect(page).toHaveURL(/\/c\//)
+  await expect(page.getByText('只读 · 小王 的任务')).toBeVisible()
+  await expect(page.getByLabel('输入消息')).toBeHidden()
+
+  await page.getByRole('link', { name: '回到全部任务' }).click()
+  await expect(page).toHaveURL(filteredUrl)
+  await expect(page.getByRole('button', { name: '用户：小王', exact: true })).toBeVisible()
+
+  await running.click()
+  await expect(page).toHaveURL(/\/c\//)
+  await page.goBack()
+  await expect(page).toHaveURL(filteredUrl)
+  await expect(page.getByRole('button', { name: '用户：小王', exact: true })).toBeVisible()
+})
+
+test('不是从全部对话点进来的会话，返回按钮回默认视图', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-13T20:00:00Z'))
+  await page.goto('/')
+  await login(page, 'governor')
+
+  await page.getByRole('button', { name: '审计', exact: true }).click()
+  await page.getByRole('tab', { name: '清单' }).click()
+  const executions = page
+    .getByRole('main', { name: '审计' })
+    .getByRole('table', { name: '按任务执行次数' })
+  await expect(executions).toBeVisible()
+  const row = executions.getByRole('row').filter({ hasText: '小王' }).first()
+  await row.getByRole('link').click()
+  await expect(page).toHaveURL(/\/c\//)
+  await expect(page.getByRole('note', { name: '只读说明' })).toBeVisible()
+
+  await page.getByRole('link', { name: '回到全部任务' }).click()
+  await expect(page).toHaveURL('/conversations')
+})
+
+test('全部对话的筛选在窄屏下可用，关闭后保留键盘焦点', async ({ page }) => {
+  await page.setViewportSize({ width: 1524, height: 1032 })
+  await page.clock.setFixedTime(new Date('2026-09-13T20:00:00Z'))
+  await page.goto('/')
+  await login(page, 'governor')
+  await page.getByRole('button', { name: '全部任务', exact: true }).click()
+  const audit = page.getByRole('main', { name: '全部任务' })
+  await expect(audit.getByRole('link')).toHaveCount(15)
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  const collapse = page.getByRole('button', { name: '折叠侧边栏' })
+  if (await collapse.isVisible()) await collapse.click()
+
+  const userTrigger = page.getByRole('button', { name: '用户：用户', exact: true })
+  await userTrigger.click()
+  const search = page.getByRole('combobox', { name: '搜索用户' })
+  await search.fill('小王')
+  await search.press('ArrowDown')
+  await search.press('Enter')
+  const selectedUser = page.getByRole('button', { name: '用户：小王', exact: true })
+  await expect(selectedUser).toBeFocused()
+  await expect(audit.getByRole('link')).toHaveCount(2)
+  await selectedUser.click()
+  await page.getByRole('option', { name: '小王', exact: true }).click()
+  await expect(audit.getByRole('link')).toHaveCount(15)
+
+  const timeTrigger = page.getByRole('button', { name: '建立时间', exact: true })
+  await timeTrigger.click()
+  await page.getByRole('radio', { name: '自定义', exact: true }).click()
+  await page.getByRole('button', { name: '2026年9月8日', exact: true }).click()
+  await expect(audit.getByRole('link')).toHaveCount(15)
+  await page.getByRole('button', { name: '2026年9月12日', exact: true }).click()
+  const selectedTime = page.getByRole('button', {
+    name: '建立时间：9月8日 — 9月12日',
+    exact: true,
+  })
+  await selectedTime.click()
+  const calendar = page.getByRole('dialog', { name: '选择建立时间范围' })
+  await expect(calendar.getByRole('gridcell', { selected: true })).toHaveCount(5)
+  await page.keyboard.press('Escape')
+  await expect(selectedTime).toBeFocused()
+  await selectedTime.click()
+  await page.getByRole('radio', { name: '自定义', exact: true }).click()
+  await expect(timeTrigger).toBeFocused()
+  await expect(audit.getByRole('link')).toHaveCount(15)
+})

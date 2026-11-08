@@ -1,0 +1,65 @@
+from __future__ import annotations
+
+import datetime as dt
+from collections.abc import Sequence
+from decimal import Decimal
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+_INSERT_VIDEO = text(
+    "INSERT INTO iclip.inspiration_videos"
+    " (video_id, style_raw, style_no, category_id, category_name,"
+    "  brand_code, brand_name, oss_url, posted_date,"
+    "  impressions, views, clicks, orders, revenue)"
+    " VALUES (:video_id, :style_raw, :style_no, :category_id, :category_name,"
+    "         :brand_code, :brand_name, :oss_url, :posted_date,"
+    "         :impressions, :views, :clicks, :orders, :revenue)"
+)
+
+
+async def seed_video(
+    engine: AsyncEngine,
+    *,
+    video_id: str,
+    style_no: str,
+    category_id: int = 901,
+    brand_code: str = "B1",
+    brand_name: str = "DEMO-BRAND",
+    category_name: str = "跑鞋",
+    oss_url: str | None = None,
+    style_raw: str | None = None,
+    posted_date: str = "2026-06-24",
+    impressions: int = 100,
+    views: int = 0,
+    clicks: int = 3,
+    orders: int = 0,
+    revenue: str = "0",
+) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            _INSERT_VIDEO,
+            {
+                "video_id": video_id,
+                "style_raw": style_raw if style_raw is not None else style_no,
+                "style_no": style_no,
+                "category_id": category_id,
+                "category_name": category_name,
+                "brand_code": brand_code,
+                "brand_name": brand_name,
+                "oss_url": oss_url or f"https://bucket.example.com/{video_id}.mp4",
+                "posted_date": dt.date.fromisoformat(posted_date),
+                "impressions": impressions,
+                "views": views,
+                "clicks": clicks,
+                "orders": orders,
+                "revenue": Decimal(revenue),
+            },
+        )
+
+
+def urls_of(video_ids: Sequence[str]) -> list[str]:
+    return [f"https://bucket.example.com/{video_id}.mp4" for video_id in video_ids]
+
+
+__all__ = ["seed_video", "urls_of"]

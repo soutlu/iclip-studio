@@ -1,0 +1,689 @@
+from __future__ import annotations
+
+import asyncio
+import json
+import uuid
+
+import httpx
+import pytest
+from agent_runtime.harness.step_store_pg import PgStepStore
+from fastapi import FastAPI
+from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord, StepEvent
+from sqlalchemy import text
+
+from iclip.common.errors import NotFound
+from iclip.domains.conversations.infra_sql import SqlConversationRepository
+from iclip.domains.conversations.repository import (
+    MISSING_COLLECTION,
+    MISSING_TASK,
+    AuditFilter,
+)
+from iclip.domains.conversations.schemas import DEFAULT_TITLE
+from iclip.platform.db.engine import build_engine
+from tests.helpers.app import make_client
+from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
+from tests.helpers.pg import connected
+
+URL = "/conversations"
+SEARCH = f"{URL}/search"
+AGENT_ID = "storyboard"
+
+
+async def create(client: httpx.AsyncClient, **body: object) -> httpx.Response:
+    return await client.post(URL, json={"agentId": AGENT_ID, **body})
+
+
+async def test_anonymous_is_rejected(client: httpx.AsyncClient) -> None:
+    assert (await create(client)).status_code == 401
+
+
+async def test_viewer_cannot_open_a_conversation(client: httpx.AsyncClient) -> None:
+
+    await register_and_login(client)
+    opened = await create(client)
+    listed = await client.get(SEARCH)
+
+    assert opened.status_code == 403
+    assert (listed.status_code, listed.json()) == (200, {"items": []})
+
+
+async def test_open_list_rename_delete(client: httpx.AsyncClient, pg_url: str) -> None:
+    await login_as_editor(client, pg_url)
+
+    opened = await create(client)
+    assert opened.status_code == 201, opened.text
+    conversation = opened.json()["conversation"]
+    assert conversation["agentId"] == AGENT_ID
+    assert conversation["title"]
+    assert conversation["lastRunId"] is None
+
+    renamed = await client.patch(f"{URL}/{conversation['id']}", json={"title": "开场那段"})
+    assert renamed.status_code == 200
+    assert renamed.json()["conversation"]["title"] == "开场那段"
+
+    listed = await client.get(SEARCH)
+    assert [item["title"] for item in listed.json()["items"]] == ["开场那段"]
+
+    removed = await client.delete(f"{URL}/{conversation['id']}")
+    assert removed.status_code == 204
+    assert (await client.get(SEARCH)).json()["items"] == []
+
+
+async def test_client_minted_id_is_idempotent(client: httpx.AsyncClient, pg_url: str) -> None:
+    await login_as_editor(client, pg_url)
+    minted = str(uuid.uuid4())
+
+    opened = await create(client, id=minted, title="第一幕")
+    assert opened.status_code == 201, opened.text
+    assert opened.json()["conversation"]["id"] == minted
+
+    again = await create(client, id=minted, title="改了标题")
+    assert again.status_code == 200, again.text
+    assert again.json()["conversation"]["title"] == "第一幕"
+
+    listed = await client.get(SEARCH)
+    assert [item["id"] for item in listed.json()["items"]] == [minted]
+
+
+async def test_concurrent_client_minted_id_creates_one_conversation(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    await login_as_editor(client, pg_url)
+    minted = str(uuid.uuid4())
+
+    first, second = await asyncio.gather(
+        create(client, id=minted, title="第一次提交"),
+        create(client, id=minted, title="同时提交"),
+    )
+
+    assert sorted([first.status_code, second.status_code]) == [200, 201], (
+        first.text,
+        second.text,
+    )
+    rows = [response.json()["conversation"] for response in (first, second)]
+    assert rows[0] == rows[1]
+    listed = await client.get(SEARCH)
+    assert [item["id"] for item in listed.json()["items"]] == [minted]
+
+
+async def test_client_minted_id_of_another_owner_is_not_handed_over(
+    app: FastAPI, client: httpx.AsyncClient, pg_url: str
+) -> None:
+    await login_as_editor(client, pg_url)
+    minted = str(uuid.uuid4())
+    assert (await create(client, id=minted)).status_code == 201
+
+    async with make_client(app) as other:
+        await login_as_editor(other, pg_url, username="maya")
+        taken = await create(other, id=minted)
+        assert taken.status_code == 404, taken.text
+        assert (await other.get(SEARCH)).json()["items"] == []
+
+
+async def test_deleted_client_minted_id_cannot_reassign_retained_history(
+    app: FastAPI, client: httpx.AsyncClient, pg_url: str
+) -> None:
+    await login_as_editor(client, pg_url)
+    minted = str(uuid.uuid4())
+    opened = await create(client, id=minted)
+    assert opened.status_code == 201, opened.text
+    run_id = f"storyboard-{uuid.uuid4().hex[:8]}"
+    original_text = "原属主的私有创作要求"
+    engine = build_engine(pg_url)
+    try:
+        store = PgStepStore(engine)
+        await store.register_run(RunRecord(run_id=run_id, conversation_id=minted))
+        await store.append_event(
+            StepEvent(run_id=run_id, conversation_id=minted, kind="run_completed", step_index=1)
+        )
+        await store.save_snapshot(
+            ContinuableSnapshot(
+                run_id=run_id,
+                conversation_id=minted,
+                step_index=1,
+                messages=[
+                    ModelRequest(parts=[UserPromptPart(original_text)], run_id=run_id),
+                    ModelResponse(parts=[TextPart("已记录。")], run_id=run_id),
+                ],
+            )
+        )
+        history = await client.get(f"{URL}/{minted}/transcript")
+        assert history.status_code == 200, history.text
+        assert history.json()["items"][0]["content"] == [{"type": "text", "text": original_text}]
+
+        removed = await client.delete(f"{URL}/{minted}")
+        assert removed.status_code == 204, removed.text
+
+        async with make_client(app) as other:
+            await login_as_editor(other, pg_url, username="maya")
+            for caller in (other, client):
+                recreated = await create(caller, id=minted)
+                assert recreated.status_code == 404, recreated.text
+                hidden = await caller.get(f"{URL}/{minted}/transcript")
+                assert hidden.status_code == 404, hidden.text
+                assert (await caller.get(SEARCH)).json()["items"] == []
+
+        retained = await store.latest_conversation_snapshot(conversation_id=minted)
+        assert retained is not None
+        prompts = [
+            part.content
+            for message in retained.messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, UserPromptPart)
+        ]
+        assert prompts == [original_text]
+    finally:
+        await engine.dispose()
+
+
+async def test_missing_attribution_is_still_reported_as_such(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    await login_as_editor(client, pg_url)
+    missing = str(uuid.uuid4())
+    task_minted = str(uuid.uuid4())
+    collection_minted = str(uuid.uuid4())
+
+    bad_task = await create(client, id=task_minted, taskId=missing)
+    bad_collection = await create(client, id=collection_minted, collectionId=missing)
+
+    assert bad_task.status_code == 422, bad_task.text
+    assert bad_collection.status_code == 422, bad_collection.text
+    assert bad_task.json()["detail"] == MISSING_TASK
+    assert bad_collection.json()["detail"] == MISSING_COLLECTION
+    for minted in (task_minted, collection_minted):
+        corrected = await create(client, id=minted)
+        assert corrected.status_code == 201, corrected.text
+        assert corrected.json()["conversation"]["id"] == minted
+
+
+async def test_list_is_newest_first(client: httpx.AsyncClient, pg_url: str) -> None:
+    await login_as_editor(client, pg_url)
+    first = (await create(client, title="早的")).json()["conversation"]
+    await create(client, title="晚的")
+    await client.patch(f"{URL}/{first['id']}", json={"title": "又动过的"})
+
+    listed = await client.get(SEARCH)
+    assert [item["title"] for item in listed.json()["items"]] == ["晚的", "又动过的"]
+
+
+async def test_list_can_be_searched_by_title(client: httpx.AsyncClient, pg_url: str) -> None:
+    await login_as_editor(client, pg_url)
+    await create(client, title="夏季亚麻系列广告")
+    await create(client, title="通勤背包短视频")
+    await create(client, title="亚麻衬衫二剪")
+
+    hit = await client.get(SEARCH, params={"q": "亚麻"})
+    assert [item["title"] for item in hit.json()["items"]] == ["亚麻衬衫二剪", "夏季亚麻系列广告"]
+    assert (await client.get(SEARCH, params={"q": "%"})).json()["items"] == []
+    assert len((await client.get(SEARCH, params={"q": "  "})).json()["items"]) == 3
+
+
+async def test_search_only_covers_my_own_conversations(
+    app: FastAPI, client: httpx.AsyncClient, pg_url: str
+) -> None:
+    await login_as_editor(client, pg_url, username="logan")
+    await create(client, title="亚麻衬衫二剪")
+
+    async with make_client(app) as other:
+        await login_as_editor(other, pg_url, username="maya")
+        assert (await other.get(SEARCH, params={"q": "亚麻"})).json()["items"] == []
+
+
+async def test_another_users_conversation_is_invisible(
+    app: FastAPI, client: httpx.AsyncClient, pg_url: str
+) -> None:
+    await login_as_editor(client, pg_url)
+    mine = (await create(client)).json()["conversation"]["id"]
+
+    async with make_client(app) as other:
+        await login_as_editor(other, pg_url, username="mallory")
+        listed = await other.get(SEARCH)
+        renamed = await other.patch(f"{URL}/{mine}", json={"title": "归我了"})
+        removed = await other.delete(f"{URL}/{mine}")
+
+    assert listed.json()["items"] == []
+    assert (renamed.status_code, removed.status_code) == (404, 404)
+
+
+async def test_delete_keeps_the_workspace_for_review(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    user_id = await login_as_editor(client, pg_url)
+    doomed = (await create(client, title="要删的")).json()["conversation"]["id"]
+    namespace = f"{user_id}/{doomed}"
+
+    async with connected(pg_url) as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO agent_runtime.workspace_files "
+                "(namespace, path, content, version, created_at, updated_at) "
+                "VALUES (:ns, '分镜.md', '稿子', 1, now(), now())"
+            ),
+            {"ns": namespace},
+        )
+
+    assert (await client.delete(f"{URL}/{doomed}")).status_code == 204
+
+    async with connected(pg_url) as conn:
+        files = (
+            await conn.execute(
+                text("SELECT count(*) FROM agent_runtime.workspace_files WHERE namespace = :ns"),
+                {"ns": namespace},
+            )
+        ).scalar_one()
+
+    assert files == 1
+
+
+async def test_deleted_conversation_is_a_tombstone_only_governor_reads_see(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    owner = uuid.UUID(await login_as_editor(client, pg_url))
+    conversation_id = uuid.UUID((await create(client)).json()["conversation"]["id"])
+    assert (await client.delete(f"{URL}/{conversation_id}")).status_code == 204
+    assert (await client.delete(f"{URL}/{conversation_id}")).status_code == 404
+
+    engine = build_engine(pg_url)
+    try:
+        repo = SqlConversationRepository(engine)
+        for viewer in (owner, None):
+            with pytest.raises(NotFound):
+                await repo.get(conversation_id, owner=viewer)
+        tombstone = await repo.get(conversation_id, owner=None, include_deleted=True)
+        assert tombstone.deleted_at is not None
+        assert await repo.list_for_owner(owner=owner, limit=10) == ()
+        assert await repo.list_ungrouped(owner=owner, limit=10) == ()
+        assert await repo.count_ungrouped(owner=owner) == 0
+
+        live, deleted, everything = (
+            AuditFilter(owner=owner, deleted=choice) for choice in ("live", "deleted", "all")
+        )
+        assert await repo.list_audit(live, limit=10) == ()
+        assert await repo.count_audit(live) == 0
+        assert await repo.list_audit(deleted, limit=10) == (tombstone,)
+        assert await repo.count_audit(deleted) == 1
+        assert await repo.list_audit(everything, limit=10) == (tombstone,)
+        assert await repo.count_audit(everything) == 1
+
+        with pytest.raises(NotFound):
+            await repo.rename(conversation_id, owner=owner, title="改不了")
+        with pytest.raises(NotFound):
+            await repo.set_task(conversation_id, owner=owner, task_id=None)
+        with pytest.raises(NotFound):
+            await repo.touch_run(conversation_id, owner=owner, agent_id=AGENT_ID, run_id="run-1")
+        with pytest.raises(NotFound):
+            await repo.delete(conversation_id, owner=owner)
+        assert await repo.apply_generated_title(conversation_id, title="起不了名") is False
+    finally:
+        await engine.dispose()
+
+
+async def test_one_conversation_can_be_read_by_id_within_the_usual_visibility(
+    app: FastAPI, client: httpx.AsyncClient, pg_url: str
+) -> None:
+    await login_as_editor(client, pg_url)
+    mine = (await create(client, title="这段")).json()["conversation"]
+
+    read = await client.get(f"{URL}/{mine['id']}")
+    assert read.status_code == 200, read.text
+    row = read.json()["conversation"]
+    assert (row["id"], row["title"]) == (mine["id"], "这段")
+
+    async with make_client(app) as stranger:
+        await login_as_editor(stranger, pg_url, username="mallory")
+        assert (await stranger.get(f"{URL}/{mine['id']}")).status_code == 404
+
+    assert (await client.delete(f"{URL}/{mine['id']}")).status_code == 204
+    assert (await client.get(f"{URL}/{mine['id']}")).status_code == 404
+
+    async with make_client(app) as governor:
+        await register_and_login(governor, username="gov", email="gov@example.com")
+        await set_roles_in_db(pg_url, "gov@example.com", ["root"])
+        tombstone = await governor.get(f"{URL}/{mine['id']}")
+        assert tombstone.status_code == 200, tombstone.text
+        assert tombstone.json()["conversation"]["deletedAt"] is not None
+        assert (await governor.get(f"{URL}/{uuid.uuid4()}")).status_code == 404
+
+
+async def test_unknown_conversation_is_404(client: httpx.AsyncClient, pg_url: str) -> None:
+    await login_as_editor(client, pg_url)
+    missing = "00000000-0000-0000-0000-000000000000"
+    assert (await client.delete(f"{URL}/{missing}")).status_code == 404
+    assert (await client.patch(f"{URL}/{missing}", json={"title": "x"})).status_code == 404
+
+
+async def test_malformed_payload_is_422(client: httpx.AsyncClient, pg_url: str) -> None:
+    await login_as_editor(client, pg_url)
+    assert (await client.post(URL, json={"agentId": ""})).status_code == 422
+    assert (await client.post(URL, json={"nope": 1})).status_code == 422
+
+
+async def seed_workspace_files(pg_url: str, namespace: str, files: dict[str, str]) -> None:
+    async with connected(pg_url) as conn:
+        for path, content in files.items():
+            await conn.execute(
+                text(
+                    "INSERT INTO agent_runtime.workspace_files "
+                    "(namespace, path, content, version, created_at, updated_at) "
+                    "VALUES (:ns, :path, :content, 1, now(), now())"
+                ),
+                {"ns": namespace, "path": path, "content": content},
+            )
+
+
+async def test_workspace_files_can_be_listed_and_read(
+    app: FastAPI, client: httpx.AsyncClient, pg_url: str
+) -> None:
+    user_id = await login_as_editor(client, pg_url)
+    mine = (await create(client, title="这段")).json()["conversation"]["id"]
+    other = (await create(client, title="另一段")).json()["conversation"]["id"]
+    await seed_workspace_files(
+        pg_url, f"{user_id}/{mine}", {"分镜/第一集.md": "第一集的稿子", "提纲.md": "三幕"}
+    )
+    await seed_workspace_files(pg_url, f"{user_id}/{other}", {"别的.md": "不该出现"})
+
+    listed = await client.get(f"{URL}/{mine}/workspace/files")
+    assert listed.status_code == 200, listed.text
+    files = listed.json()["files"]
+    assert [item["path"] for item in files] == ["分镜/第一集.md", "提纲.md"]
+    assert {item["version"] for item in files} == {1}
+    assert all(item["sizeBytes"] > 0 and item["updatedAt"] for item in files)
+
+    read = await client.get(f"{URL}/{mine}/workspace/file", params={"path": "分镜/第一集.md"})
+    assert read.status_code == 200, read.text
+    assert read.json() == {
+        "file": {"path": "分镜/第一集.md", "content": "第一集的稿子", "version": 1}
+    }
+
+    other_files = (await client.get(f"{URL}/{other}/workspace/files")).json()["files"]
+    assert [item["path"] for item in other_files] == ["别的.md"]
+    empty = (await create(client, title="空的")).json()["conversation"]["id"]
+    assert (await client.get(f"{URL}/{empty}/workspace/files")).json() == {"files": []}
+
+    missing = await client.get(f"{URL}/{mine}/workspace/file", params={"path": "没有.md"})
+    malformed = await client.get(f"{URL}/{mine}/workspace/file", params={"path": "../越界.md"})
+    assert (missing.status_code, malformed.status_code) == (404, 422)
+
+    async with make_client(app) as stranger:
+        await login_as_editor(stranger, pg_url, username="mallory")
+        listed_by_stranger = await stranger.get(f"{URL}/{mine}/workspace/files")
+        read_by_stranger = await stranger.get(
+            f"{URL}/{mine}/workspace/file", params={"path": "提纲.md"}
+        )
+    assert (listed_by_stranger.status_code, read_by_stranger.status_code) == (404, 404)
+
+
+def shots_document(*, image_url: str, index: int = 1) -> str:
+    return json.dumps(
+        {
+            "aspect_ratio": "9:16",
+            "shots": [
+                {
+                    "index": index,
+                    "prompt": {
+                        "global_settings": "人物与门厅保持一致。",
+                        "timeline": [
+                            {
+                                "timestamps": [0, 1.2],
+                                "prompt": "全景，平视，固定，她走进门厅 @Image1。",
+                                "image_indexes": [1],
+                            },
+                            {
+                                "timestamps": [1.2, 8],
+                                "prompt": "她走到窗边 @Image1。",
+                                "image_indexes": [1],
+                            },
+                        ],
+                    },
+                    "seconds": 8,
+                    "image_urls": [image_url],
+                }
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+
+async def test_workspace_file_can_be_written_back_with_the_version_it_was_read_at(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    user_id = await login_as_editor(client, pg_url)
+    mine = (await create(client, title="这段")).json()["conversation"]["id"]
+    await seed_workspace_files(pg_url, f"{user_id}/{mine}", {"提纲.md": "三幕"})
+
+    written = await client.put(
+        f"{URL}/{mine}/workspace/file",
+        json={"path": "提纲.md", "content": "四幕", "expectedVersion": 1},
+    )
+    assert written.status_code == 200, written.text
+    assert written.json() == {"file": {"path": "提纲.md", "content": "四幕", "version": 2}}
+
+    read = await client.get(f"{URL}/{mine}/workspace/file", params={"path": "提纲.md"})
+    assert read.json()["file"]["content"] == "四幕"
+
+    stale = await client.put(
+        f"{URL}/{mine}/workspace/file",
+        json={"path": "提纲.md", "content": "五幕", "expectedVersion": 1},
+    )
+    assert stale.status_code == 409, stale.text
+
+    absent = await client.put(
+        f"{URL}/{mine}/workspace/file",
+        json={"path": "还没有.md", "content": "x", "expectedVersion": 1},
+    )
+    assert absent.status_code == 409
+
+
+async def test_workspace_file_write_checks_the_document_on_its_path(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    path = "video_shot.json"
+    user_id = await login_as_editor(client, pg_url)
+    mine = (await create(client, title="这段")).json()["conversation"]["id"]
+    frame_url = "https://cdn.test/frames/s1-1.jpg"
+    await seed_workspace_files(
+        pg_url, f"{user_id}/{mine}", {path: shots_document(image_url=frame_url)}
+    )
+
+    swapped = await client.put(
+        f"{URL}/{mine}/workspace/file",
+        json={
+            "path": path,
+            "content": shots_document(image_url="https://cdn.test/另一张.jpg"),
+            "expectedVersion": 1,
+        },
+    )
+    assert swapped.status_code == 200, "用户换帧是从自己的记录里挑的，不再问一遍地址哪来的"
+
+    broken = await client.put(
+        f"{URL}/{mine}/workspace/file",
+        json={
+            "path": path,
+            "content": shots_document(image_url=frame_url, index=2),
+            "expectedVersion": 2,
+        },
+    )
+    assert broken.status_code == 422
+    assert "连续编号" in broken.json()["detail"], "校验器的原话要给到用户"
+
+    mismatched_document = json.loads(swapped.json()["file"]["content"])
+    mismatched_document["shots"][0]["prompt"]["timeline"][0]["image_indexes"] = []
+    mismatched = await client.put(
+        f"{URL}/{mine}/workspace/file",
+        json={
+            "path": path,
+            "content": json.dumps(mismatched_document, ensure_ascii=False),
+            "expectedVersion": 2,
+        },
+    )
+    assert mismatched.status_code == 422
+    assert "image_indexes" in mismatched.json()["detail"]
+
+    sneaky = await client.put(
+        f"{URL}/{mine}/workspace/file",
+        json={
+            "path": f"/{path}",
+            "content": shots_document(image_url=frame_url),
+            "expectedVersion": 2,
+        },
+    )
+    assert sneaky.status_code == 422
+
+    unchanged = await client.get(f"{URL}/{mine}/workspace/file", params={"path": path})
+    assert unchanged.json()["file"] == swapped.json()["file"]
+
+
+async def test_workspace_file_accepts_a_group_without_reference_images(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    user_id = await login_as_editor(client, pg_url)
+    mine = (await create(client, title="无图镜头组")).json()["conversation"]["id"]
+    original = shots_document(image_url="https://cdn.test/frames/s1-1.jpg")
+    await seed_workspace_files(pg_url, f"{user_id}/{mine}", {"video_shot.json": original})
+    document = json.loads(original)
+    shot = document["shots"][0]
+    shot["image_urls"] = []
+    for item in shot["prompt"]["timeline"]:
+        item["prompt"] = item["prompt"].replace(" @Image1", "")
+        item["image_indexes"] = []
+    content = json.dumps(document, ensure_ascii=False)
+
+    written = await client.put(
+        f"{URL}/{mine}/workspace/file",
+        json={"path": "video_shot.json", "content": content, "expectedVersion": 1},
+    )
+
+    assert written.status_code == 200, written.text
+    expected = {"path": "video_shot.json", "content": content, "version": 2}
+    assert written.json()["file"] == expected
+    read = await client.get(f"{URL}/{mine}/workspace/file", params={"path": "video_shot.json"})
+    assert read.json()["file"] == expected
+
+
+async def test_workspace_file_rejects_more_than_thirty_reference_images(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    count = 31
+
+    user_id = await login_as_editor(client, pg_url)
+    mine = (await create(client, title="复刻镜头组")).json()["conversation"]["id"]
+    original = shots_document(image_url="https://cdn.test/frames/s1-1.jpg")
+    await seed_workspace_files(pg_url, f"{user_id}/{mine}", {"video_shot.json": original})
+    document = json.loads(original)
+    shot = document["shots"][0]
+    shot["image_urls"] = [
+        f"https://cdn.test/frames/s1-{index}.jpg" for index in range(1, count + 1)
+    ]
+    content = json.dumps(document, ensure_ascii=False)
+
+    rejected = await client.put(
+        f"{URL}/{mine}/workspace/file",
+        json={"path": "video_shot.json", "content": content, "expectedVersion": 1},
+    )
+
+    assert rejected.status_code == 422, rejected.text
+    assert "image_urls" in rejected.json()["detail"]
+    kept = await client.get(f"{URL}/{mine}/workspace/file", params={"path": "video_shot.json"})
+    assert kept.json()["file"]["content"] == original
+
+
+async def test_workspace_file_write_is_owner_only(
+    app: FastAPI, client: httpx.AsyncClient, pg_url: str
+) -> None:
+
+    user_id = await login_as_editor(client, pg_url)
+    mine = (await create(client, title="这段")).json()["conversation"]["id"]
+    await seed_workspace_files(pg_url, f"{user_id}/{mine}", {"提纲.md": "三幕"})
+    body = {"path": "提纲.md", "content": "我来改", "expectedVersion": 1}
+
+    async with make_client(app) as stranger:
+        await login_as_editor(stranger, pg_url, username="mallory")
+        assert (await stranger.put(f"{URL}/{mine}/workspace/file", json=body)).status_code == 404
+
+    async with make_client(app) as governor:
+        await register_and_login(governor, username="gov", email="gov@example.com")
+        await set_roles_in_db(pg_url, "gov@example.com", ["root"])
+        assert (
+            await governor.get(f"{URL}/{mine}/workspace/file", params={"path": "提纲.md"})
+        ).status_code == 200, "治理者读得到"
+        assert (await governor.put(f"{URL}/{mine}/workspace/file", json=body)).status_code == 403
+
+    unchanged = await client.get(f"{URL}/{mine}/workspace/file", params={"path": "提纲.md"})
+    assert unchanged.json()["file"] == {"path": "提纲.md", "content": "三幕", "version": 1}
+
+
+async def test_workspace_files_require_login(client: httpx.AsyncClient) -> None:
+    some = "00000000-0000-0000-0000-000000000000"
+    assert (await client.get(f"{URL}/{some}/workspace/files")).status_code == 401
+    assert (
+        await client.get(f"{URL}/{some}/workspace/file", params={"path": "x"})
+    ).status_code == 401
+
+
+async def _title_row(pg_url: str, conversation_id: str) -> tuple[str, str]:
+
+    async with connected(pg_url) as conn:
+        row = (
+            await conn.execute(
+                text("SELECT title, title_kind FROM iclip.conversations WHERE id = :id").bindparams(
+                    id=uuid.UUID(conversation_id)
+                )
+            )
+        ).one()
+    return str(row.title), str(row.title_kind)
+
+
+async def test_generated_title_is_written_once(client: httpx.AsyncClient, pg_url: str) -> None:
+
+    await login_as_editor(client, pg_url)
+    conversation_id = (await create(client)).json()["conversation"]["id"]
+    assert await _title_row(pg_url, conversation_id) == (DEFAULT_TITLE, "default")
+
+    engine = build_engine(pg_url)
+    try:
+        repo = SqlConversationRepository(engine)
+        assert (
+            await repo.apply_generated_title(uuid.UUID(conversation_id), title="夜景延时") is True
+        )
+        assert await _title_row(pg_url, conversation_id) == ("夜景延时", "generated")
+
+        assert (
+            await repo.apply_generated_title(uuid.UUID(conversation_id), title="别的名字") is False
+        )
+        assert await _title_row(pg_url, conversation_id) == ("夜景延时", "generated")
+    finally:
+        await engine.dispose()
+
+
+async def test_user_named_conversations_are_left_alone(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+
+    await login_as_editor(client, pg_url)
+    conversation_id = (await create(client)).json()["conversation"]["id"]
+    await client.patch(f"{URL}/{conversation_id}", json={"title": "开场那段"})
+    assert await _title_row(pg_url, conversation_id) == ("开场那段", "custom")
+
+    engine = build_engine(pg_url)
+    try:
+        repo = SqlConversationRepository(engine)
+        assert (
+            await repo.apply_generated_title(uuid.UUID(conversation_id), title="夜景延时") is False
+        )
+    finally:
+        await engine.dispose()
+    assert await _title_row(pg_url, conversation_id) == ("开场那段", "custom")
+
+
+async def test_title_given_at_creation_counts_as_the_users(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+
+    await login_as_editor(client, pg_url)
+    opened = (await create(client, title="第三幕")).json()["conversation"]
+
+    assert opened["title"] == "第三幕"
+    assert await _title_row(pg_url, opened["id"]) == ("第三幕", "custom")

@@ -1,0 +1,135 @@
+import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
+import { afterEach, describe, expect, it } from 'vitest'
+import type { ToolCallFrame } from '@/shared/transcript/vendor'
+import { DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
+import { server } from '@/testing/mocks/server'
+import { renderWithProviders } from '@/testing/render'
+import { ApprovalCard } from './approval-card'
+
+function countDecisions() {
+  const decisions: boolean[] = []
+  server.use(
+    http.post('*/api/conversations/c1/interactions/i1', async ({ request }) => {
+      decisions.push(((await request.json()) as { approved: boolean }).approved)
+      return new HttpResponse(null, { status: 204 })
+    }),
+  )
+  return decisions
+}
+
+const card = (
+  <ApprovalCard
+    conversationId="c1"
+    frame={undefined}
+    interactionId="i1"
+    onRefresh={() => {}}
+    readOnly={false}
+  />
+)
+
+describe('ApprovalCard 数字快捷键', () => {
+  it('卡片在前时按 1 即同意', async () => {
+    const decisions = countDecisions()
+    await renderWithProviders(card)
+
+    await userEvent.keyboard('1')
+
+    expect(await screen.findByText('已同意')).toBeVisible()
+    expect(decisions).toEqual([true])
+  })
+
+  it('弹窗盖着卡片时数字键是打给弹窗的，不替看不见的审批做决定', async () => {
+    const decisions = countDecisions()
+    await renderWithProviders(
+      <>
+        {card}
+        <DialogRoot open>
+          <DialogSurface aria-describedby={undefined}>
+            <DialogHeader closeLabel="关闭" title="编辑图片" />
+          </DialogSurface>
+        </DialogRoot>
+      </>,
+    )
+    await screen.findByRole('dialog', { name: '编辑图片' })
+
+    await userEvent.keyboard('12')
+
+    expect(decisions).toEqual([])
+    expect(screen.getByRole('button', { hidden: true, name: '同意' })).toBeEnabled()
+  })
+})
+
+const fileFrame = (display: Record<string, unknown>): ToolCallFrame => ({
+  approvalId: 'i1',
+  display: { kind: 'file_io', ...display },
+  frameId: 't1.1.f1',
+  kind: 'tool',
+  name: 'write_file',
+  state: 'running',
+  toolCallId: 'call_1',
+})
+
+const cardFor = (frame: ToolCallFrame) => (
+  <ApprovalCard
+    conversationId="c1"
+    frame={frame}
+    interactionId="i1"
+    onRefresh={() => {}}
+    readOnly={false}
+  />
+)
+
+const stubContentHeight = (px: number) => {
+  Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+    configurable: true,
+    get: () => px,
+  })
+}
+
+describe('ApprovalCard 写入预览', () => {
+  afterEach(() => {
+    Reflect.deleteProperty(HTMLElement.prototype, 'scrollHeight')
+  })
+
+  it('超过十二行先收起，展开全部与收起来回切换', async () => {
+    stubContentHeight(40 * 21)
+    await renderWithProviders(
+      cardFor(fileFrame({ content: '很长的一段', operation: 'write', path: 'a.md' })),
+    )
+    const preview = screen.getByRole('region', { name: '改动预览' })
+
+    const expand = screen.getByRole('button', { name: '展开全部' })
+    expect(expand).toHaveAttribute('aria-expanded', 'false')
+    expect(expand).toHaveAttribute('aria-controls', preview.id)
+
+    await userEvent.click(expand)
+    const collapse = screen.getByRole('button', { name: '收起' })
+    expect(collapse).toHaveAttribute('aria-expanded', 'true')
+
+    await userEvent.click(collapse)
+    expect(screen.getByRole('button', { name: '展开全部' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+  })
+
+  it('编辑只列改了的行，相同的首尾行留作上下文', async () => {
+    stubContentHeight(4 * 21)
+    await renderWithProviders(
+      cardFor(
+        fileFrame({
+          after: '镜头 2\n景别：中景\n时长 4 秒',
+          before: '镜头 2\n景别：近景\n时长 4 秒',
+          operation: 'edit',
+          path: 'shots/分镜表.md',
+        }),
+      ),
+    )
+
+    const preview = screen.getByRole('region', { name: '改动预览' })
+    expect(preview).toHaveTextContent(/^镜头 2−删去：景别：近景\+新写：景别：中景时长 4 秒$/)
+    expect(screen.getByText('分镜表.md')).toBeVisible()
+  })
+})

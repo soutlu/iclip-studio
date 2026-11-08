@@ -1,0 +1,75 @@
+/* ===== Z-index Layer Classes ===== */
+.layer-base {
+  z-index: var(--z-base);
+}
+.layer-canvas {
+  z-index: var(--z-canvas);
+} /* position set by component */
+.layer-panel {
+  z-index: var(--z-panel);
+}
+.layer-content {
+  z-index: var(--z-content);
+}
+.layer-sidebar {
+  z-index: var(--z-sidebar);
+} /* position set by component */
+.layer-header {
+  z-index: var(--z-header);
+} /* position set by component */
+.layer-overlay {
+  z-index: var(--z-overlay);
+}
+.layer-popup {
+  z-index: var(--z-popup);
+}
+
+/* 局部 z-index 仅用于 isolate 容器内的兄弟排序。 */
+.layer-local-1 {
+  z-index: var(--z-local-1);
+}
+.layer-local-2 {
+  z-index: var(--z-local-2);
+}
+.layer-local-3 {
+  z-index: var(--z-local-3);
+}
+.layer-canvas-overlay {
+  z-index: var(--z-canvas-overlay);
+} /* focused artifact 遮画布、低于 header */
+
+/* 全局交互动效 */
+:where(header, button, input, textarea) {
+  transition-property: background-color, border-color, color, transform, box-shadow;
+  transition-duration: var(--dur-s);
+  transition-timing-function: var(--ease);
+}
+
+/* ProseMirror 在行尾行内节点后插入的光标占位图；preflight 把 img 设成块级，会把光标挤到下一行。 */
+.ProseMirror img.ProseMirror-separator {
+  display: inline;
+}
+
+/* 伪元素扩展至 ≥48×48 触控热区；调用方提供定位上下文，overflow-hidden 会裁切热区。 */
+.hit-48::after {
+  border-radius: inherit;
+  content: '';
+  height: max(100%, 48px);
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: max(100%, 48px);
+}
+
+/* 无障碍：跟随系统减弱动效偏好，动画/过渡整体降级 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

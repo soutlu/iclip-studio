@@ -1,0 +1,194 @@
+/* ===== 制作页文案列 =====
+   卡片、左轨、镜头条都用分镜页的（storyboard.css 的「文案列」一节），这里只管制作页多出来的几样：
+   一段里几个编辑器上下排、段间与分镜页一样留 6px；全局设定一段一行，称呼与图片芯片浮在左边，字从它们后面接着排、
+   折行回到行首（编辑器不另起格式化上下文，字才绕得过去）；台词单独一行，说话人是固定的小标签，字套在中文引号里，引号画在编辑器的段落上，跟着字折行。
+   收成摘要时（data-clamped）整段正文按行高截断：镜头两行、全局设定三行。 */
+.film-segment-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.storyboard-segment[data-clamped='true'] .film-segment-body {
+  max-height: calc(var(--text-body) * 1.75 * 2);
+  overflow: hidden;
+}
+.storyboard-settings[data-clamped='true'] .film-segment-body {
+  max-height: calc(var(--text-body) * 1.75 * 3);
+}
+/* 段里的编辑器各自不截断，截断交给整段。 */
+.storyboard-segment[data-clamped='true'] .film-segment-body .prompt-editor-content {
+  display: block;
+}
+
+/* 参考图：一块只放芯片（缩略图加 @N），一行放不下在块里折行，第二行与第一枚芯片左对齐，不横向滚动。
+   芯片 22px 高，块上下各留 3px，与同一行里 28px 高的段名、字数、按钮居中对齐；芯片自带左右 2px 外距，列距再加 2px。
+   芯片的按钮排成 flex，小件不按行内基线下沉，高度就是 22px。 */
+.film-frames {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 2px;
+  padding: 3px 0;
+}
+.film-frames > .film-chip {
+  display: flex;
+}
+/* 全局设定卡的标题行：段名、字数、参考图、右端按钮排一行，标题行本身不折行；段名、字数与按钮钉在第一行，
+   各自 28px 高、内容居中，参考图占中间剩下的宽度。 */
+.film-settings-head {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+.film-settings-head > .storyboard-settings-label,
+.film-settings-head > .storyboard-settings-count {
+  display: inline-flex;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  white-space: nowrap;
+}
+.film-settings-head > .film-settings-actions {
+  height: 28px;
+  flex: none;
+}
+/* 这组没有全局设定时，参考图单独一行，前面写「参考图」；左右与段卡的正文对齐。 */
+.film-frames-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 0 12px;
+}
+.film-frames-row > .storyboard-settings-label {
+  height: 28px;
+  flex: none;
+  white-space: nowrap;
+}
+
+.film-setting-label {
+  float: left;
+  margin-right: 2px;
+  color: var(--color-on-surface);
+  font-size: var(--text-body);
+  font-weight: 500;
+  line-height: 1.75;
+}
+/* 没有图的：芯片里画一格虚线空位，表示待补，和有图的一样高；与镜头头部没有图的机位图同一画法（storyboard.css「文案列」）。 */
+.film-chip .frame-chip-pill > .film-chip-empty {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: 1px dashed var(--color-outline-variant);
+  border-radius: var(--radius-xs);
+}
+
+.film-line {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 6px;
+}
+.film-line-role {
+  flex: none;
+  margin-top: 2px;
+  padding: 0 6px;
+  border: 0.5px solid var(--color-hairline);
+  border-radius: var(--radius-xs);
+  background: var(--color-top-layer);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.film-line-words {
+  min-width: 0;
+  flex: 1;
+}
+.film-line-words .prompt-editor-content p::before {
+  content: '“';
+}
+.film-line-words .prompt-editor-content p::after {
+  content: '”';
+}
+
+/* ===== 生成卡 =====
+   舞台上一张还没有图的生成图：深色舞台上居中一张浅色卡（与浮起的段卡同一层底色）。卡是文字不是画面，铺整个舞台、
+   不进画幅框，上下让出舞台顶部工具条的高度（52px），放不下就在卡里滚；叠在舞台暗角之上。
+   描述用小一号的正文、行高给图片芯片留足；按钮上方的缺图提醒用错误色；底部放图片比例、提交失败的原话与按钮，窄时换行。
+   生成好了还没选用时（data-result）卡上放结果的预览：按原比例整张放下，高度让出标题、提醒与按钮（约 160px）。 */
+.film-generate {
+  position: absolute;
+  z-index: var(--z-local-1);
+  inset: 0;
+  display: grid;
+  padding: 52px 16px;
+  container-type: size;
+  place-items: center;
+}
+.film-generate-card {
+  display: flex;
+  width: 100%;
+  max-height: 100%;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  overflow-y: auto;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--color-top-layer);
+  box-shadow: var(--shadow-2);
+  overscroll-behavior: contain;
+}
+.film-generate-title {
+  color: var(--color-on-surface);
+  font-size: var(--text-title);
+  font-weight: 600;
+  line-height: var(--text-title--line-height);
+}
+.film-generate-prompt {
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-body-sm);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.film-generate-preview {
+  align-self: center;
+  border-radius: var(--radius-sm);
+  cursor: zoom-in;
+}
+.film-generate-preview > img {
+  display: block;
+  max-width: 100%;
+  max-height: max(96px, calc(100cqh - 160px));
+  border-radius: var(--radius-sm);
+}
+.film-generate-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--color-error);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+}
+.film-generate-hint > svg {
+  flex: none;
+  margin-top: 3px;
+}
+.film-generate-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-hairline);
+}
+.film-generate-error {
+  min-width: 0;
+  color: var(--color-error);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+}

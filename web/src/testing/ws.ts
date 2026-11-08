@@ -1,0 +1,41 @@
+import { mockSessionEnvelope } from './mocks/conversations'
+
+export class FakeSocket {
+  readyState = 1
+  sent: string[] = []
+  onmessage: ((event: { data: string }) => void) | null = null
+  onclose: (() => void) | null = null
+  onerror: (() => void) | null = null
+
+  send(data: string): void {
+    this.sent.push(data)
+  }
+
+  close(): void {
+    this.readyState = 3
+  }
+
+  deliver(frame: unknown): void {
+    this.onmessage?.({ data: JSON.stringify(frame) })
+  }
+
+  frames(): Array<{ type: string; id?: string; payload?: Record<string, unknown> }> {
+    return this.sent.map((raw) => JSON.parse(raw) as { type: string })
+  }
+}
+
+export const SERVER_HELLO = {
+  payload: {
+    capabilities: { compression: false, event_batching: false },
+    heartbeat_ms: 10_000,
+    protocol_version: 2,
+    ws_connection_id: 'w1',
+  },
+  timestamp: '2026-10-30T08:00:00+00:00',
+  type: 'server_hello',
+}
+
+export const sessionEnvelope = (conversationId: string, ownerUserId?: string) => {
+  const envelope = mockSessionEnvelope(conversationId)
+  return ownerUserId === undefined ? envelope : { ...envelope, owner_user_id: ownerUserId }
+}

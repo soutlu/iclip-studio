@@ -1,0 +1,211 @@
+from __future__ import annotations
+
+import uuid
+from collections.abc import Collection, Mapping, Sequence
+from typing import Any
+
+from iclip.domains.agents.transcript_api import LiveConnections
+from iclip.domains.generation.models import (
+    GenerationJob,
+    GenerationKind,
+    GenerationOperation,
+    GenerationOutput,
+    GenerationStatus,
+    InFlightPhase,
+    Inheritance,
+)
+from iclip.domains.generation.repository import GenerationRepository
+from iclip.domains.generation.schemas import SubtitleSentence
+
+
+class AnnouncingGenerationRepository:
+    def __init__(self, inner: GenerationRepository, live: LiveConnections) -> None:
+        self._inner = inner
+        self._live = live
+
+    async def create(self, job: GenerationJob) -> GenerationJob:
+        return self._announce(await self._inner.create(job))
+
+    async def create_settled(self, jobs: Sequence[GenerationJob]) -> tuple[GenerationJob, ...]:
+        return tuple(self._announce(job) for job in await self._inner.create_settled(jobs))
+
+    async def find_by_output(
+        self,
+        output_url: str,
+        *,
+        kind: GenerationKind,
+        owner: uuid.UUID | None,
+        conversation_id: uuid.UUID | None,
+        inherited: Inheritance = (),
+        operation: GenerationOperation | None = None,
+    ) -> GenerationJob | None:
+        return await self._inner.find_by_output(
+            output_url,
+            kind=kind,
+            owner=owner,
+            conversation_id=conversation_id,
+            inherited=inherited,
+            operation=operation,
+        )
+
+    async def find_video_upload_by_md5(self, content_md5: str) -> GenerationJob | None:
+        return await self._inner.find_video_upload_by_md5(content_md5)
+
+    async def latest_reference_trial(
+        self, reference_id: uuid.UUID, *, owner: uuid.UUID | None
+    ) -> GenerationJob | None:
+        return await self._inner.latest_reference_trial(reference_id, owner=owner)
+
+    async def output_urls(self, ids: Collection[uuid.UUID]) -> Mapping[uuid.UUID, str]:
+        return await self._inner.output_urls(ids)
+
+    async def get(
+        self, job_id: uuid.UUID, *, owner: uuid.UUID | None, inherited: Inheritance = ()
+    ) -> GenerationJob:
+        return await self._inner.get(job_id, owner=owner, inherited=inherited)
+
+    async def list_for_owner(
+        self,
+        *,
+        owner: uuid.UUID | None,
+        limit: int,
+        conversation_id: uuid.UUID | None = None,
+        kind: GenerationKind | None = None,
+        operation: GenerationOperation | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        task_id: uuid.UUID | None = None,
+        shot_index: int | None = None,
+        root_job_id: uuid.UUID | None = None,
+        source_job_id: uuid.UUID | None = None,
+        before: uuid.UUID | None = None,
+        inherited: Inheritance = (),
+    ) -> tuple[GenerationJob, ...]:
+        return await self._inner.list_for_owner(
+            owner=owner,
+            limit=limit,
+            conversation_id=conversation_id,
+            kind=kind,
+            operation=operation,
+            metadata=metadata,
+            task_id=task_id,
+            shot_index=shot_index,
+            root_job_id=root_job_id,
+            source_job_id=source_job_id,
+            before=before,
+            inherited=inherited,
+        )
+
+    async def mark_submitting(self, job_id: uuid.UUID) -> GenerationJob | None:
+        job = await self._inner.mark_submitting(job_id)
+        return None if job is None else self._announce(job)
+
+    async def mark_submitted(
+        self,
+        job_id: uuid.UUID,
+        *,
+        provider_task_id: str,
+        provider_status: str,
+    ) -> GenerationJob:
+        return self._announce(
+            await self._inner.mark_submitted(
+                job_id, provider_task_id=provider_task_id, provider_status=provider_status
+            )
+        )
+
+    async def mark_completed(
+        self,
+        job_id: uuid.UUID,
+        *,
+        output: GenerationOutput,
+        provider_status: str,
+        provider_task_id: str | None = None,
+        only_if_status: GenerationStatus | None = None,
+    ) -> GenerationJob | None:
+        job = await self._inner.mark_completed(
+            job_id,
+            output=output,
+            provider_status=provider_status,
+            provider_task_id=provider_task_id,
+            only_if_status=only_if_status,
+        )
+        return None if job is None else self._announce(job)
+
+    async def mark_transcribed(
+        self,
+        job_id: uuid.UUID,
+        *,
+        sentences: tuple[SubtitleSentence, ...],
+        provider_status: str,
+        provider_task_id: str,
+        only_if_status: GenerationStatus | None = None,
+    ) -> GenerationJob | None:
+        job = await self._inner.mark_transcribed(
+            job_id,
+            sentences=sentences,
+            provider_status=provider_status,
+            provider_task_id=provider_task_id,
+            only_if_status=only_if_status,
+        )
+        return None if job is None else self._announce(job)
+
+    async def mark_failed(
+        self,
+        job_id: uuid.UUID,
+        *,
+        error_code: str,
+        error_message: str,
+        provider_status: str | None = None,
+        only_if_status: GenerationStatus | None = None,
+    ) -> GenerationJob | None:
+        job = await self._inner.mark_failed(
+            job_id,
+            error_code=error_code,
+            error_message=error_message,
+            provider_status=provider_status,
+            only_if_status=only_if_status,
+        )
+        return None if job is None else self._announce(job)
+
+    async def record_progress(
+        self,
+        job_id: uuid.UUID,
+        *,
+        provider_status: str,
+        only_if_status: GenerationStatus | None = None,
+        skip_unchanged: bool = False,
+    ) -> GenerationJob | None:
+        return await self._inner.record_progress(
+            job_id,
+            provider_status=provider_status,
+            only_if_status=only_if_status,
+            skip_unchanged=skip_unchanged,
+        )
+
+    async def in_flight_by_conversation(
+        self, *, owner: uuid.UUID | None, kind: GenerationKind
+    ) -> Mapping[uuid.UUID, InFlightPhase]:
+        return await self._inner.in_flight_by_conversation(owner=owner, kind=kind)
+
+    async def latest_master_by_conversation(
+        self, conversation_ids: Sequence[uuid.UUID]
+    ) -> Mapping[uuid.UUID, str]:
+        return await self._inner.latest_master_by_conversation(conversation_ids)
+
+    async def enhancements_of(self, source_job_id: uuid.UUID) -> tuple[GenerationJob, ...]:
+        return await self._inner.enhancements_of(source_job_id)
+
+    def _announce(self, job: GenerationJob) -> GenerationJob:
+        self._live.announce_generation_changed(
+            job.owner_user_id,
+            job.conversation_id,
+            job_id=job.id,
+            kind=job.kind,
+            operation=job.operation,
+            status=job.status,
+            shot_index=job.shot_index,
+            metadata=job.metadata,
+        )
+        return job
+
+
+__all__ = ["AnnouncingGenerationRepository"]

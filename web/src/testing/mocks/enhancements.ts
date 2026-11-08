@@ -1,0 +1,215 @@
+import { http, HttpResponse } from 'msw'
+import type { z } from 'zod'
+import { zVideoEnhanceIn, type zGenerationOut } from '@/shared/api/generated/zod.gen'
+import { findMockLibraryVersion, mockLibraryWholeFilms } from './library'
+import { findMockWholeFilmExport } from './whole-film'
+import { announceMockGeneration, findMockTake } from './workspace'
+
+type EnhanceRecord = z.output<typeof zGenerationOut>
+type Resolution = z.output<typeof zVideoEnhanceIn>['resolution']
+
+const TIERS: readonly Resolution[] = ['1080p', '720p']
+
+const SHORT_SIDE: Record<string, number> = { '480p': 480, '720p': 720, '1080p': 1080 }
+
+const SUBMITTED_AFTER_MS = 1_000
+const SETTLED_AFTER_MS = 6_000
+
+const FAILING_TIER: Resolution = '720p'
+
+type MockSource = {
+  id: string
+  resolution: string | null
+  shotIndex: number | null
+  url: string
+  durationMs: number | null
+}
+
+const resolutionOf = (request: Record<string, unknown> | null): string | null => {
+  const value = request?.['resolution']
+  return typeof value === 'string' ? value : null
+}
+
+const videoSource = (id: string): MockSource | undefined => {
+  const take = findMockTake(id)
+  if (take !== undefined && take.outputUrl !== null) {
+    return {
+      durationMs: take.durationMs,
+      id,
+      resolution: resolutionOf(take.request),
+      shotIndex: take.shotIndex,
+      url: take.outputUrl,
+    }
+  }
+  const found = findMockLibraryVersion(id)
+  if (found === undefined) return undefined
+  return {
+    durationMs: found.version.durationMs,
+    id,
+    resolution: found.version.take.resolution ?? null,
+    shotIndex: found.shotIndex,
+    url: found.version.outputUrl,
+  }
+}
+
+const filmSource = (id: string, url: string): MockSource => ({
+  durationMs: null,
+  id,
+  resolution: null,
+  shotIndex: null,
+  url,
+})
+
+const sourceOf = (id: string): MockSource | undefined => {
+  const video = videoSource(id)
+  if (video !== undefined) return video
+  const film = mockLibraryWholeFilms()
+    .flatMap((card) => card.versions)
+    .find((version) => version.jobId === id)
+  if (film !== undefined) return filmSource(id, film.outputUrl)
+  const exported = findMockWholeFilmExport(id)
+  return exported === undefined ? undefined : filmSource(id, exported.downloadUrl)
+}
+
+const offeredTiers = (source: MockSource): Resolution[] => {
+  const own = source.resolution === null ? undefined : SHORT_SIDE[source.resolution]
+  return own === undefined ? [...TIERS] : TIERS.filter((tier) => (SHORT_SIDE[tier] ?? 0) > own)
+}
+
+const recordOf = (source: MockSource, resolution: Resolution): EnhanceRecord => ({
+  clipStage: null,
+  createdAt: new Date().toISOString(),
+  durationMs: null,
+  errorMessage: null,
+  finishedAt: null,
+  id: crypto.randomUUID(),
+  kind: 'video',
+  metadata: null,
+  operation: 'enhance',
+  outputUrl: null,
+  rangeEndMs: null,
+  rangeStartMs: null,
+  request: { fps: null, model: 'mock-enhance', resolution, user_name: null, video_url: source.url },
+  rootJobId: null,
+  sentences: null,
+  shotIndex: source.shotIndex,
+  sourceJobId: source.id,
+  sourceUrl: source.url,
+  status: 'pending',
+  taskId: null,
+  watermarkOutputUrl: null,
+})
+
+const COLLEAGUE_SOURCE = '5b2f3071-0b2f-4d30-8d9c-2e3f4a5b6c7d'
+const COLLEAGUE_ID = '33333333-3333-4333-8333-333333333333'
+
+let records: EnhanceRecord[] = []
+let colleagueSeeded = false
+const owners = new Map<string, string>()
+const timers = new Set<ReturnType<typeof setTimeout>>()
+
+const allRecords = (): EnhanceRecord[] => {
+  if (colleagueSeeded) return records
+  const source = videoSource(COLLEAGUE_SOURCE)
+  if (source !== undefined) {
+    colleagueSeeded = true
+    const finishedAt = new Date(Date.now() - 3_600_000).toISOString()
+    const done: EnhanceRecord = {
+      ...recordOf(source, '720p'),
+      createdAt: new Date(Date.now() - 3_700_000).toISOString(),
+      durationMs: source.durationMs,
+      finishedAt,
+      outputUrl: source.url,
+      status: 'completed',
+      watermarkOutputUrl: source.url,
+    }
+    records.unshift(done)
+    owners.set(done.id, COLLEAGUE_ID)
+  }
+  return records
+}
+
+export const resetMockEnhancements = () => {
+  for (const timer of timers) clearTimeout(timer)
+  timers.clear()
+  owners.clear()
+  records = []
+  colleagueSeeded = false
+}
+
+const latestOf = (sourceId: string, resolution: Resolution) =>
+  allRecords().findLast(
+    (record) => record.sourceJobId === sourceId && resolutionOf(record.request) === resolution,
+  )
+
+const later = (ms: number, step: () => void) => {
+  const timer = setTimeout(() => {
+    timers.delete(timer)
+    step()
+  }, ms)
+  timers.add(timer)
+}
+
+const accept = (source: MockSource, resolution: Resolution, owner: string): EnhanceRecord => {
+  const created = recordOf(source, resolution)
+  allRecords().push(created)
+  owners.set(created.id, owner)
+  announceMockGeneration(null, created)
+  later(SUBMITTED_AFTER_MS, () => {
+    created.status = 'submitted'
+    announceMockGeneration(null, created)
+  })
+  later(SETTLED_AFTER_MS, () => {
+    const finishedAt = new Date().toISOString()
+    Object.assign(
+      created,
+      resolution === FAILING_TIER
+        ? { errorMessage: '超分服务没有给出结果', finishedAt, status: 'failed' }
+        : {
+            durationMs: source.durationMs,
+            finishedAt,
+            outputUrl: source.url,
+            status: 'completed',
+            watermarkOutputUrl: source.url,
+          },
+    )
+    announceMockGeneration(null, created)
+  })
+  return created
+}
+
+const notFound = () => HttpResponse.json({ detail: '没有这条记录' }, { status: 404 })
+
+export const enhancementHandlers = (activeUserId: () => string) => [
+  http.get('*/api/generations/:jobId/enhancements', ({ params }) => {
+    const source = sourceOf(String(params['jobId']))
+    if (source === undefined) return notFound()
+    return HttpResponse.json({
+      tiers: offeredTiers(source).map((resolution) => {
+        const job = latestOf(source.id, resolution) ?? null
+        return { job, mine: job !== null && owners.get(job.id) === activeUserId(), resolution }
+      }),
+    })
+  }),
+
+  http.post('*/api/generations/video-enhancements', async ({ request }) => {
+    const parsed = zVideoEnhanceIn.safeParse(await request.json())
+    if (!parsed.success) return HttpResponse.json({ detail: '请求形状不对' }, { status: 422 })
+    const { resolution, sourceJobId } = parsed.data
+    const source = sourceOf(sourceJobId)
+    if (source === undefined) return notFound()
+    if (!offeredTiers(source).includes(resolution))
+      return HttpResponse.json({ detail: `这条视频不能再提到 ${resolution}` }, { status: 422 })
+    const existing = latestOf(sourceJobId, resolution)
+    const generation =
+      existing !== undefined && existing.status !== 'failed'
+        ? existing
+        : accept(source, resolution, activeUserId())
+    return HttpResponse.json({ generation }, { status: 202 })
+  }),
+
+  http.get('*/api/generations/:jobId', ({ params }) => {
+    const found = allRecords().find((record) => record.id === params['jobId'])
+    return found === undefined ? notFound() : HttpResponse.json({ generation: found })
+  }),
+]

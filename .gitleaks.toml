@@ -1,0 +1,17 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "仅用于集成测试的固定签名常量"
+condition = "AND"
+paths = ['''^server/tests/integration_no_llm/conftest\.py$''']
+regexes = ['''^test\-secret\-0123456789\-0123456789\-xyz$''']
+
+[[rules.allowlists]]
+description = "前端 mock 中的抽帧标识，不用于认证"
+condition = "AND"
+paths = ['''^web/src/testing/mocks/workspace\.ts$''']
+regexes = ['''^6339e1aeb441bdbdf7867d8f69bdcaf84b5648b5$''']

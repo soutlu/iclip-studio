@@ -1,0 +1,933 @@
+import { act, createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
+import { useState, type ComponentProps } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Toaster, toast } from '@/shared/ui/toast'
+import { pasteFilesIntoComposer, pasteTextIntoComposer } from '@/testing/editor'
+import { mockAuthUser } from '@/testing/mocks/auth-user'
+import { loginAs } from '@/testing/mocks/handlers'
+import { server } from '@/testing/mocks/server'
+import { renderWithProviders } from '@/testing/render'
+import { makeGenerationJob } from '@/testing/generation-job'
+import type { GenerationJob } from '../storyboard.api'
+import { SUBMIT_HOLD_MS } from '../use-submit-lock'
+import { FrameImageEditor } from './frame-image-editor'
+import { editDraftKey } from './image-edit-draft'
+import type { EditDraftPart, FrameEditDraft, StoryboardFrameTarget } from './image-edit-types'
+
+const target: StoryboardFrameTarget = {
+  conversationId: 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d',
+  shotIndex: 1,
+  frameNumber: 1,
+}
+const BASE = 'https://example.com/original.png'
+const FRAME_2 = 'https://example.com/frame-2.png'
+const RESULT = 'https://example.com/old-result.png'
+const draft: FrameEditDraft = {
+  annotations: [],
+  parts: [{ kind: 'text', text: '将衣服改成蓝色' }],
+}
+const job = (over: Partial<GenerationJob> = {}): GenerationJob =>
+  makeGenerationJob({
+    metadata: { frame: 1, shot: 1 },
+    sourceUrl: BASE,
+    kind: 'image',
+    status: 'pending',
+    createdAt: '2026-09-07T12:00:00Z',
+    request: { prompt: '将衣服改成蓝色', referenceImageUrls: [BASE] },
+    ...over,
+  })
+
+type EditorPageProps = {
+  initialKey?: string
+  target?: StoryboardFrameTarget
+  onApply?: (previousUrl: string | null, url: string | null) => void
+  onClose?: (opened: ReadonlySet<string>) => void
+  regenerate?: ComponentProps<typeof FrameImageEditor>['regenerate']
+}
+
+function EditorPage({
+  initialKey,
+  onApply,
+  onClose,
+  regenerate,
+  target: editTarget = target,
+}: EditorPageProps) {
+  const [open, setOpen] = useState(true)
+  const [frames, setFrames] = useState([BASE, FRAME_2])
+  return (
+    <>
+      {open && (
+        <FrameImageEditor
+          target={editTarget}
+          currentUrl={frames[0]}
+          subtitle={`镜头组 ${editTarget.shotIndex} · 帧 @${editTarget.frameNumber}`}
+          frames={frames.map((url, index) => ({ name: `帧 @${index + 1}`, url }))}
+          aspectRatio="9:16"
+          initialKey={initialKey}
+          regenerate={regenerate}
+          onClose={(opened) => {
+            onClose?.(opened)
+            setOpen(false)
+          }}
+          onApply={async (previous, url) => {
+            onApply?.(previous, url)
+            if (url !== null) setFrames([url, FRAME_2])
+          }}
+        />
+      )}
+      <Toaster />
+    </>
+  )
+}
+
+const UPLOADED = 'https://example.com/uploaded.png'
+const imageFile = () => new File(['image'], '参考.png', { type: 'image/png' })
+
+function stallUpload() {
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  server.use(
+    http.post('*/api/uploads/:uploadId/confirm', async () => {
+      await held
+      return HttpResponse.json({ contentType: 'image/png', sizeBytes: 5, url: UPLOADED })
+    }),
+  )
+  return () => release()
+}
+
+function loadCanvas(editor: HTMLElement) {
+  vi.stubGlobal(
+    'PointerEvent',
+    class extends MouseEvent {
+      readonly pointerId = 1
+    },
+  )
+  const image = within(editor).getByRole('img', { name: '当前编辑帧' })
+  Object.defineProperties(image, { naturalWidth: { value: 400 }, naturalHeight: { value: 800 } })
+  fireEvent.load(image)
+  const canvas = within(editor).getByRole('group', { name: '图片标注画布' })
+  Object.assign(canvas, {
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 800 }),
+    setPointerCapture: () => undefined,
+    hasPointerCapture: () => false,
+    releasePointerCapture: () => undefined,
+  })
+  return canvas
+}
+
+const waitForUploadPermission = (editor: HTMLElement) =>
+  waitFor(() => expect(editor.querySelector('input[type="file"]')).not.toBeNull())
+
+function drawPoint(canvas: HTMLElement) {
+  fireEvent.pointerDown(canvas, { clientX: 400, clientY: 400, button: 0 })
+  fireEvent.pointerUp(canvas, { clientX: 400, clientY: 400, button: 0 })
+}
+
+describe('图片编辑器', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn().mockResolvedValue({ close: vi.fn(), height: 1200, width: 800 }),
+    )
+    sessionStorage.clear()
+    sessionStorage.setItem(editDraftKey(target), JSON.stringify({ [BASE]: draft }))
+  })
+  afterEach(() => {
+    toast.dismiss()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('生成设置里可以切换渠道，换成没有渠道轴的模型后提交不再携带渠道', async () => {
+    const submissions: Record<string, unknown>[] = []
+    server.use(
+      http.post('*/api/generations/image', async ({ request }) => {
+        submissions.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json({ generation: job() }, { status: 202 })
+      }),
+    )
+    await renderWithProviders(<EditorPage />)
+
+    const models = await screen.findByRole('button', { name: '图片模型' })
+    const generate = screen.getByRole('button', { name: '生成图片' })
+    expect(screen.queryByRole('menuitemradio', { name: 'pro' })).not.toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: '更多生成设置' }))
+    const channels = await screen.findByRole('group', { name: '图片生成渠道' })
+    expect(within(channels).getByRole('menuitemradio', { name: 'dev' })).toBeChecked()
+    await userEvent.click(within(channels).getByRole('menuitemradio', { name: 'pro' }))
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    await user.click(generate)
+    await waitFor(() => expect(submissions).toHaveLength(1))
+    expect(submissions[0]?.['channel']).toBe('pro')
+
+    await waitFor(() => expect(models).toBeEnabled())
+    await user.click(models)
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Seedream 5.0 Pro' }))
+    expect(models).toHaveTextContent('Seedream 5.0 Pro')
+
+    expect(screen.queryByRole('button', { name: '更多生成设置' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '图片分辨率' }))
+    const resolutionMenu = await screen.findByRole('menu', { name: '图片分辨率' })
+    const resolutions = within(resolutionMenu).getAllByRole('menuitemradio')
+    expect(resolutions.map((option) => option.textContent)).toEqual(['1K', '2K'])
+    await user.keyboard('{Escape}')
+
+    act(() => {
+      vi.advanceTimersByTime(SUBMIT_HOLD_MS)
+    })
+    await waitFor(() => expect(generate).toHaveAccessibleName('生成图片'))
+    await user.click(generate)
+    await waitFor(() => expect(submissions).toHaveLength(2))
+    expect(submissions[1]?.['model']).toBe('seedream_v5_pro')
+    expect(submissions[1]?.['channel']).toBeUndefined()
+    expect(submissions[1]?.['sourceUrl']).toBe(BASE)
+    expect(submissions[1]?.['metadata']).toEqual({ frame: 1, shot: 1 })
+    vi.useRealTimers()
+  })
+
+  describe('受理后的停留', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    const advance = (ms: number) => {
+      act(() => {
+        vi.advanceTimersByTime(ms)
+      })
+    }
+    const recordSubmissions = () => {
+      const submissions: Record<string, unknown>[] = []
+      server.use(
+        http.post('*/api/generations/image', async ({ request }) => {
+          submissions.push((await request.json()) as Record<string, unknown>)
+          return HttpResponse.json({ generation: job() }, { status: 202 })
+        }),
+      )
+      return submissions
+    }
+    const openRegenerate = async (
+      editor: HTMLElement,
+      user: ReturnType<typeof userEvent.setup>,
+    ) => {
+      const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
+      await user.click(within(strip).getByRole('button', { name: '再生成' }))
+      const send = within(editor)
+        .getAllByRole('button', { name: '再生成' })
+        .find((button) => !strip.contains(button))
+      if (send === undefined) throw new Error('输入卡没有「再生成」按钮')
+      await waitFor(() => expect(send).toBeEnabled())
+      return send
+    }
+    const regeneratePrompt: EditDraftPart[] = [{ kind: 'text', text: '金发女生的脚部特写' }]
+
+    it('改图：受理后按钮和回车都不再提交，停留过后恢复', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const submissions = recordSubmissions()
+      await renderWithProviders(<EditorPage />)
+      const editor = await screen.findByRole('dialog')
+      const generate = within(editor).getByRole('button', { name: '生成图片' })
+      await waitFor(() => expect(generate).toBeEnabled())
+
+      await user.click(generate)
+      expect(await within(editor).findByRole('button', { name: '已提交' })).toBe(generate)
+      expect(generate).toBeDisabled()
+      fireEvent.keyDown(within(editor).getByRole('textbox', { name: '修改要求' }), { key: 'Enter' })
+      await user.click(generate)
+      advance(SUBMIT_HOLD_MS - 500)
+      expect(generate).toHaveAccessibleName('已提交')
+      expect(submissions).toHaveLength(1)
+
+      advance(500)
+      await waitFor(() => expect(generate).toHaveAccessibleName('生成图片'))
+      await waitFor(() => expect(generate).toBeEnabled())
+      await user.click(generate)
+      await waitFor(() => expect(submissions).toHaveLength(2))
+    })
+
+    it('改图：提交失败不打勾，立刻能重试', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      let attempts = 0
+      server.use(
+        http.post('*/api/generations/image', () => {
+          attempts += 1
+          return HttpResponse.json({ detail: '图片额度已用完' }, { status: 422 })
+        }),
+      )
+      await renderWithProviders(<EditorPage />)
+      const editor = await screen.findByRole('dialog')
+      const generate = within(editor).getByRole('button', { name: '生成图片' })
+      await waitFor(() => expect(generate).toBeEnabled())
+
+      await user.click(generate)
+      expect(await within(editor).findByText(/图片额度已用完/)).toBeVisible()
+      await waitFor(() => expect(generate).toBeEnabled())
+      expect(generate).toHaveAccessibleName('生成图片')
+      await user.click(generate)
+      await waitFor(() => expect(attempts).toBe(2))
+    })
+
+    it('再生成：受理后不再提交，停留过后恢复', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const submit = vi.fn(async () => {})
+      await renderWithProviders(<EditorPage regenerate={{ parts: regeneratePrompt, submit }} />)
+      const editor = await screen.findByRole('dialog')
+      const send = await openRegenerate(editor, user)
+
+      await user.click(send)
+      expect(await within(editor).findByRole('button', { name: '已提交' })).toBe(send)
+      fireEvent.keyDown(within(editor).getByRole('textbox', { name: '修改要求' }), { key: 'Enter' })
+      await user.click(send)
+      advance(SUBMIT_HOLD_MS - 500)
+      expect(send).toHaveAccessibleName('已提交')
+      expect(submit).toHaveBeenCalledTimes(1)
+
+      advance(500)
+      await waitFor(() => expect(send).toHaveAccessibleName('再生成'))
+      await waitFor(() => expect(send).toBeEnabled())
+      await user.click(send)
+      await waitFor(() => expect(submit).toHaveBeenCalledTimes(2))
+    })
+
+    it('再生成：提交失败不打勾，立刻能重试', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const submit = vi.fn(async () => {
+        throw new Error('再生成被拒')
+      })
+      await renderWithProviders(<EditorPage regenerate={{ parts: regeneratePrompt, submit }} />)
+      const editor = await screen.findByRole('dialog')
+      const send = await openRegenerate(editor, user)
+
+      await user.click(send)
+      expect(await within(editor).findByText('再生成提交失败')).toBeVisible()
+      await waitFor(() => expect(send).toBeEnabled())
+      expect(send).toHaveAccessibleName('再生成')
+      await user.click(send)
+      await waitFor(() => expect(submit).toHaveBeenCalledTimes(2))
+    })
+
+    it('停留中换底图：输入卡换 key 重挂，锁还在，过后按新底图提交', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const completed = job({ status: 'completed', outputUrl: RESULT })
+      server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [completed] })))
+      const submissions = recordSubmissions()
+      await renderWithProviders(<EditorPage />)
+      const editor = await screen.findByRole('dialog')
+      const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
+      const result = await within(strip).findByRole('button', { name: /^结果 · / })
+      const original = within(editor).getByRole('textbox', { name: '修改要求' })
+      const generate = within(editor).getByRole('button', { name: '生成图片' })
+      await waitFor(() => expect(generate).toBeEnabled())
+
+      await user.click(generate)
+      await within(editor).findByRole('button', { name: '已提交' })
+      await user.click(result)
+      expect(original).not.toBeInTheDocument()
+
+      const textbox = within(editor).getByRole('textbox', { name: '修改要求' })
+      pasteTextIntoComposer(textbox, '换成红色')
+      const held = within(editor).getByRole('button', { name: '已提交' })
+      expect(held).toBeDisabled()
+      fireEvent.keyDown(textbox, { key: 'Enter' })
+      await user.click(held)
+      expect(submissions).toHaveLength(1)
+
+      advance(SUBMIT_HOLD_MS)
+      await waitFor(() => expect(held).toHaveAccessibleName('生成图片'))
+      await waitFor(() => expect(held).toBeEnabled())
+      await user.click(held)
+      await waitFor(() => expect(submissions).toHaveLength(2))
+      expect(submissions[1]?.['sourceUrl']).toBe(RESULT)
+    })
+  })
+
+  it('做不了分镜画幅的模型在菜单里置灰并标不支持', async () => {
+    server.use(
+      http.get('*/api/generations/image-models', () =>
+        HttpResponse.json({
+          default: 'nano_banana_pro',
+          items: [
+            {
+              model: 'nano_banana_pro',
+              label: 'Nano Banana Pro',
+              aspectRatios: ['9:16'],
+              resolutions: ['1k', '2k'],
+              channels: [],
+            },
+            {
+              model: 'square_only',
+              label: 'Square Only',
+              aspectRatios: ['1:1'],
+              resolutions: ['1k'],
+              channels: [],
+            },
+          ],
+        }),
+      ),
+    )
+    await renderWithProviders(<EditorPage />)
+
+    const models = await screen.findByRole('button', { name: '图片模型' })
+    await waitFor(() => expect(models).toBeEnabled())
+    await userEvent.click(models)
+    const menu = await screen.findByRole('menu', { name: '图片模型' })
+    expect(within(menu).getByRole('menuitemradio', { name: 'Nano Banana Pro' })).toBeChecked()
+    const unsupported = within(menu).getByRole('menuitemradio', { name: /^Square Only/ })
+    expect(unsupported).toHaveAccessibleName(/不支持/)
+    expect(unsupported).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('只有当前帧但还有更早的记录：版本条照样显示，末尾一格「更早」', async () => {
+    const applied = Array.from({ length: 20 }, (_, index) =>
+      job({
+        status: 'completed',
+        outputUrl: BASE,
+        createdAt: `2026-09-07T12:${String(index).padStart(2, '0')}:00Z`,
+      }),
+    )
+    server.use(http.get('*/api/generations', () => HttpResponse.json({ items: applied })))
+    await renderWithProviders(<EditorPage />)
+    const editor = await screen.findByRole('dialog')
+
+    const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
+    expect(
+      within(strip)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['当前帧', '更早'])
+  })
+
+  it('提交后舞台不动，新任务占一格并走表，输入不清空；草稿暂存与记录刷新都失败也不挡着', async () => {
+    const completed = job({ status: 'completed', outputUrl: RESULT })
+    const running = job({
+      status: 'submitted',
+      createdAt: new Date(Date.now() - 12_000).toISOString(),
+    })
+    let reads = 0
+    server.use(
+      http.get('*/api/generations', () => {
+        reads += 1
+        return reads === 1
+          ? HttpResponse.json({ items: [completed] })
+          : HttpResponse.json({ detail: '记录刷新失败' }, { status: 503 })
+      }),
+      http.post('*/api/generations/image', () =>
+        HttpResponse.json({ generation: running }, { status: 202 }),
+      ),
+    )
+    await renderWithProviders(<EditorPage />)
+    const editor = await screen.findByRole('dialog')
+    const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
+    await within(strip).findByRole('button', { name: /^结果 · / })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage full', 'QuotaExceededError')
+    })
+    const textbox = within(editor).getByRole('textbox', { name: '修改要求' })
+    pasteTextIntoComposer(textbox, '，领口不变')
+    expect(await screen.findByText('编辑草稿无法暂存，关闭页面前请先提交生成')).toBeVisible()
+
+    await userEvent.click(within(editor).getByRole('button', { name: '生成图片' }))
+
+    const cell = await within(strip).findByRole('button', { name: /^生成中 · / })
+    expect(cell).toHaveTextContent(/0:1\d/)
+    expect(cell).toHaveAttribute('aria-pressed', 'false')
+    expect(within(strip).getByRole('button', { name: '当前帧' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(within(editor).getByRole('img', { name: '当前编辑帧' })).toBeInTheDocument()
+    expect(textbox).toHaveTextContent('将衣服改成蓝色，领口不变')
+    expect(within(editor).getByText('有 1 个任务正在生成或排队，关闭窗口不影响生成')).toBeVisible()
+    expect(await within(editor).findByText(/记录刷新失败/)).toBeVisible()
+  })
+
+  it('按当前格读取历史：打开期间跑完的结果挂绿点，点开即清，舞台不自动切换', async () => {
+    const editTarget = { ...target, shotIndex: 2, frameNumber: 1 }
+    const metadata = { shot: 2, frame: 1 }
+    const older = job({
+      status: 'completed',
+      outputUrl: RESULT,
+      createdAt: '2026-09-07T11:00:00Z',
+      metadata,
+    })
+    const running = job({ status: 'submitted', metadata })
+    const fresh = {
+      ...running,
+      status: 'completed' as const,
+      outputUrl: 'https://example.com/fresh.png',
+    }
+    let landed = false
+    const queries: URLSearchParams[] = []
+    server.use(
+      http.get('*/api/generations', ({ request }) => {
+        queries.push(new URL(request.url).searchParams)
+        return HttpResponse.json({ items: [landed ? fresh : running, older] })
+      }),
+    )
+    const { queryClient } = await renderWithProviders(<EditorPage target={editTarget} />)
+    const editor = await screen.findByRole('dialog')
+    const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
+    await within(strip).findByRole('button', { name: /^生成中 · / })
+    expect(queries[0]?.get('kind')).toBe('image')
+    expect(JSON.parse(queries[0]?.get('metadata') ?? 'null')).toEqual(metadata)
+
+    landed = true
+    await act(() => queryClient.invalidateQueries())
+
+    const result = await within(strip).findByRole('button', { name: /^结果 · .* · 新结果$/ })
+    expect(within(strip).getAllByRole('button', { name: /新结果/ })).toHaveLength(1)
+    expect(within(strip).getByRole('button', { name: '当前帧' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+
+    await userEvent.click(result)
+    expect(result).toHaveAttribute('aria-pressed', 'true')
+    expect(result).not.toHaveAccessibleName(/新结果/)
+    expect(within(editor).getByRole('slider', { name: '对比分割线' })).toBeInTheDocument()
+    await userEvent.click(within(strip).getByRole('button', { name: '当前帧' }))
+    expect(within(strip).queryByRole('button', { name: /新结果/ })).not.toBeInTheDocument()
+  })
+
+  it('从帧上的新结果进来就是对比；替换后出撤销胶囊，撤销以 (applied, previous) 写回', async () => {
+    const completed = job({ status: 'completed', outputUrl: RESULT })
+    server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [completed] })))
+    const onApply = vi.fn()
+    await renderWithProviders(<EditorPage initialKey={completed.id} onApply={onApply} />)
+
+    const editor = await screen.findByRole('dialog')
+    const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
+    await waitFor(() =>
+      expect(within(strip).getByRole('button', { name: /^结果 · / })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      ),
+    )
+    expect(within(editor).getByRole('img', { name: '当前帧' })).toHaveAttribute('src', BASE)
+    expect(within(editor).getByRole('img', { name: '结果' })).toHaveAttribute('src', RESULT)
+    expect(within(editor).getByText('替换仅影响当前帧，替换后可撤销')).toBeVisible()
+
+    await userEvent.click(within(editor).getByRole('button', { name: '替换当前帧' }))
+
+    expect(onApply).toHaveBeenLastCalledWith(BASE, RESULT)
+    expect(await within(editor).findByRole('status')).toHaveTextContent('已替换')
+    expect(within(strip).getByRole('button', { name: '当前帧' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(within(editor).getByRole('img', { name: '当前编辑帧' })).toHaveAttribute('src', RESULT)
+    expect(within(strip).getByRole('button', { name: /^上一版 · / })).toBeInTheDocument()
+    expect(within(editor).queryByRole('button', { name: '替换当前帧' })).not.toBeInTheDocument()
+    const undo = within(editor).getByRole('button', { name: '撤销' })
+    expect(undo).toHaveFocus()
+
+    await userEvent.keyboard('{Enter}')
+
+    expect(onApply).toHaveBeenLastCalledWith(RESULT, BASE)
+    expect(onApply).toHaveBeenCalledTimes(2)
+    expect(within(editor).queryByText('已替换')).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(within(strip).getByRole('button', { name: /^结果 · / })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      ),
+    )
+    expect(within(editor).getByRole('slider', { name: '对比分割线' })).toBeInTheDocument()
+    expect(within(editor).getByRole('button', { name: '替换当前帧' })).toHaveFocus()
+  })
+
+  it('对比滑杆的拖柄用左右键移动，每次 5，到头不再动', async () => {
+    const completed = job({ status: 'completed', outputUrl: RESULT })
+    server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [completed] })))
+    await renderWithProviders(<EditorPage initialKey={completed.id} />)
+
+    const editor = await screen.findByRole('dialog')
+    const slider = await within(editor).findByRole('slider', { name: '对比分割线' })
+    expect(slider).toHaveAttribute('aria-valuenow', '50')
+    act(() => slider.focus())
+    await userEvent.keyboard('{ArrowRight}')
+    expect(slider).toHaveAttribute('aria-valuenow', '55')
+    await userEvent.keyboard('{ArrowLeft}{ArrowLeft}')
+    expect(slider).toHaveAttribute('aria-valuenow', '45')
+    for (let step = 0; step < 12; step += 1) await userEvent.keyboard('{ArrowRight}')
+    expect(slider).toHaveAttribute('aria-valuenow', '100')
+  })
+
+  it.each(['pending', 'submitted'] as const)('任务处于 %s 时仍能提交新的编辑', async (status) => {
+    const existing = job({ status })
+    const submitted = job({ createdAt: '2026-09-07T12:01:00Z' })
+    const submissions: Record<string, unknown>[] = []
+    server.use(
+      http.get('*/api/generations', () =>
+        HttpResponse.json({ items: submissions.length === 0 ? [existing] : [submitted, existing] }),
+      ),
+      http.post('*/api/generations/image', async ({ request }) => {
+        submissions.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json({ generation: submitted }, { status: 202 })
+      }),
+    )
+    await renderWithProviders(<EditorPage initialKey={existing.id} />)
+
+    const editor = await screen.findByRole('dialog')
+    const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
+    const selected = await within(strip).findByRole('button', { name: /^(排队中|生成中) · / })
+    expect(selected).toHaveAttribute('aria-pressed', 'true')
+    expect(within(editor).getByRole('status')).toHaveTextContent(
+      status === 'pending' ? '排队中' : '生成中',
+    )
+    expect(within(editor).getByRole('img', { name: '本次编辑底图' })).toHaveAttribute('src', BASE)
+    expect(within(editor).queryByRole('button', { name: '替换当前帧' })).not.toBeInTheDocument()
+    const generate = within(editor).getByRole('button', { name: '生成图片' })
+    await waitFor(() => expect(generate).toBeEnabled())
+
+    await userEvent.click(generate)
+
+    await waitFor(() => expect(submissions).toHaveLength(1))
+    await waitFor(() =>
+      expect(within(strip).getAllByRole('button', { name: /^(排队中|生成中) · / })).toHaveLength(2),
+    )
+    expect(selected).toHaveAttribute('aria-pressed', 'true')
+    const next = within(strip)
+      .getAllByRole('button', { name: /^排队中 · / })
+      .find((button) => button !== selected)
+    expect(next).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it.each(['图像服务拒绝了请求（400）: {"detail":"invalid reference image"}', null])(
+    '失败格在舞台上标「生成失败」，原因按需就地展开：%s',
+    async (errorMessage) => {
+      const failed = job({ status: 'failed', errorMessage })
+      server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [failed] })))
+      await renderWithProviders(<EditorPage initialKey={failed.id} />)
+
+      const editor = await screen.findByRole('dialog')
+      expect(await within(editor).findByRole('alert')).toHaveTextContent('生成失败')
+      expect(within(editor).getByRole('img', { name: '本次编辑底图' })).toHaveAttribute('src', BASE)
+      expect(within(editor).queryByRole('button', { name: '替换当前帧' })).not.toBeInTheDocument()
+      if (errorMessage === null) {
+        expect(within(editor).queryByRole('button', { name: '查看原因' })).not.toBeInTheDocument()
+        return
+      }
+      const reason = within(editor).getByRole('button', { name: '查看原因' })
+      const error = within(editor).getByText(errorMessage)
+      expect(error).not.toBeVisible()
+      await userEvent.click(reason)
+      expect(reason).toHaveAttribute('aria-expanded', 'true')
+      expect(error).toBeVisible()
+      await userEvent.keyboard('{Escape}')
+      expect(error).not.toBeVisible()
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    },
+  )
+
+  it('上传不锁窗口：传着也能换底图、关窗；没传完的图不进草稿', async () => {
+    loginAs(mockAuthUser)
+    const completed = job({ status: 'completed', outputUrl: RESULT })
+    server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [completed] })))
+    const release = stallUpload()
+    await renderWithProviders(<EditorPage />)
+    const editor = await screen.findByRole('dialog')
+    await waitForUploadPermission(editor)
+    const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
+    const result = await within(strip).findByRole('button', { name: /^结果 · / })
+    const textbox = () => within(editor).getByRole('textbox', { name: '修改要求' })
+
+    pasteFilesIntoComposer(textbox(), [imageFile()])
+    expect(within(textbox()).getByText('参考.png')).toBeInTheDocument()
+    expect(result).toBeEnabled()
+    await userEvent.click(result)
+    expect(result).toHaveAttribute('aria-pressed', 'true')
+    expect(within(textbox()).queryByText('参考.png')).not.toBeInTheDocument()
+    await userEvent.click(within(strip).getByRole('button', { name: '当前帧' }))
+    expect(within(textbox()).queryByText('参考.png')).not.toBeInTheDocument()
+    expect(textbox()).toHaveTextContent('将衣服改成蓝色')
+
+    pasteFilesIntoComposer(textbox(), [imageFile()])
+    await userEvent.click(within(editor).getByRole('button', { name: '关闭图片编辑' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    release()
+    expect(JSON.parse(sessionStorage.getItem(editDraftKey(target)) ?? '{}')).toEqual({
+      [BASE]: draft,
+    })
+  })
+
+  it('+ 弹出本组的帧（含 @1），点一下插到光标处；Enter 生成，同一张图只发一次', async () => {
+    const submissions: Record<string, unknown>[] = []
+    server.use(
+      http.post('*/api/generations/image', async ({ request }) => {
+        submissions.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json({ generation: job() }, { status: 202 })
+      }),
+    )
+    await renderWithProviders(<EditorPage />)
+    const editor = await screen.findByRole('dialog')
+    const textbox = within(editor).getByRole('textbox', { name: '修改要求' })
+    await waitFor(() =>
+      expect(within(editor).getByRole('button', { name: '图片模型' })).toBeEnabled(),
+    )
+
+    const add = within(editor).getByRole('button', { name: '添加参考图' })
+    await userEvent.click(add)
+    const popover = await screen.findByRole('dialog', { name: '添加参考图' })
+    expect(within(popover).queryByRole('button', { name: '从电脑上传' })).not.toBeInTheDocument()
+    await userEvent.click(within(popover).getByRole('button', { name: '插入帧 @2' }))
+    expect(screen.queryByRole('dialog', { name: '添加参考图' })).not.toBeInTheDocument()
+    expect(within(textbox).getByText('帧 @2')).toBeInTheDocument()
+    expect(textbox).toHaveFocus()
+
+    await userEvent.click(add)
+    const again = await screen.findByRole('dialog', { name: '添加参考图' })
+    await userEvent.click(within(again).getByRole('button', { name: '插入帧 @2（已引用）' }))
+    await userEvent.click(add)
+    await userEvent.click(
+      within(await screen.findByRole('dialog', { name: '添加参考图' })).getByRole('button', {
+        name: '插入帧 @1',
+      }),
+    )
+    expect(within(textbox).getByText('帧 @1 · 编辑底图')).toBeInTheDocument()
+
+    fireEvent.keyDown(textbox, { key: 'Enter' })
+    await waitFor(() => expect(submissions).toHaveLength(1))
+    expect(submissions[0]).toMatchObject({
+      prompt: '将衣服改成蓝色@图片2@图片2@图片1',
+      referenceImageUrls: [BASE, FRAME_2],
+      sourceUrl: BASE,
+    })
+  })
+
+  it('@ 引用标注：chip 插在光标处，点它选中画布上的标注；画布上删掉后 chip 失效、提交被拦下', async () => {
+    const submissions: unknown[] = []
+    server.use(
+      http.post('*/api/generations/image', () => {
+        submissions.push(true)
+        return HttpResponse.json({ generation: job() }, { status: 202 })
+      }),
+    )
+    sessionStorage.clear()
+    await renderWithProviders(<EditorPage />)
+    const editor = await screen.findByRole('dialog')
+    const canvas = loadCanvas(editor)
+    drawPoint(canvas)
+    const textbox = within(editor).getByRole('textbox', { name: '修改要求' })
+
+    pasteTextIntoComposer(textbox, '把')
+    act(() => textbox.focus())
+    await userEvent.keyboard('@')
+    const menu = await screen.findByRole('listbox', { name: '引用图片或标注' })
+    expect(
+      within(menu)
+        .getAllByRole('group')
+        .map(
+          (group) =>
+            group.getAttribute('aria-labelledby') &&
+            within(group)
+              .getAllByRole('option')
+              .map((option) => option.textContent),
+        ),
+    ).toEqual([['编辑底图'], ['1标注 1'], ['帧 @1', '帧 @2']])
+    await userEvent.keyboard('标注{Enter}')
+    pasteTextIntoComposer(textbox, '去掉')
+    expect(textbox).toHaveTextContent('把1标注 1去掉')
+
+    const mark = within(editor)
+      .getAllByRole('button', { name: '标注 1' })
+      .find((element) => !textbox.contains(element))
+    expect(mark).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.click(within(textbox).getByRole('button', { name: '标注 1' }))
+    expect(mark).toHaveAttribute('aria-pressed', 'true')
+
+    await userEvent.click(within(editor).getByRole('button', { name: '删除此标注' }))
+    expect(within(textbox).getByText('标注 1 已删除')).toBeInTheDocument()
+    fireEvent.keyDown(textbox, { key: 'Enter' })
+    expect(
+      await within(editor).findByText('修改要求中有已删除的标注，请处理失效引用'),
+    ).toBeVisible()
+    expect(submissions).toHaveLength(0)
+  })
+
+  it('图片到上限：+ 里没引用过的帧置灰，再贴图片不收并在卡内提示', async () => {
+    loginAs(mockAuthUser)
+    const nine = Array.from({ length: 9 }, (_, index) => ({
+      kind: 'image' as const,
+      name: `图${index}.png`,
+      url: `https://example.com/${index}.png`,
+    }))
+    sessionStorage.setItem(
+      editDraftKey(target),
+      JSON.stringify({ [BASE]: { annotations: [], parts: [...draft.parts, ...nine] } }),
+    )
+    await renderWithProviders(<EditorPage />)
+    const editor = await screen.findByRole('dialog')
+    await waitForUploadPermission(editor)
+    const textbox = within(editor).getByRole('textbox', { name: '修改要求' })
+    expect(within(textbox).getByText('图8.png')).toBeInTheDocument()
+
+    await userEvent.click(within(editor).getByRole('button', { name: '添加参考图' }))
+    const popover = await screen.findByRole('dialog', { name: '添加参考图' })
+    expect(within(popover).getByRole('button', { name: '插入帧 @2' })).toBeDisabled()
+    expect(within(popover).getByRole('button', { name: '插入帧 @1' })).toBeEnabled()
+    expect(within(popover).getByRole('button', { name: '从电脑上传' })).toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+
+    pasteFilesIntoComposer(textbox, [imageFile()])
+    expect(within(textbox).queryByText('参考.png')).not.toBeInTheDocument()
+    expect(within(editor).getByText('最多引用 10 张图片，本次有 1 张未添加')).toBeVisible()
+  })
+
+  it('拖进输入卡就地上传，事件带着 defaultPrevented 冒到 window 供聊天遮罩收尾', async () => {
+    loginAs(mockAuthUser)
+    await renderWithProviders(<EditorPage />)
+    const editor = await screen.findByRole('dialog')
+    await waitForUploadPermission(editor)
+    const zone = within(editor).getByRole('button', { name: '生成图片' })
+
+    const seen: { type: string; prevented: boolean }[] = []
+    const record = (event: Event) =>
+      seen.push({ type: event.type, prevented: event.defaultPrevented })
+    for (const type of ['dragenter', 'dragover', 'drop']) window.addEventListener(type, record)
+
+    const file = imageFile()
+    const dataTransfer = {
+      dropEffect: '',
+      files: [file],
+      items: [{ kind: 'file', type: file.type, webkitGetAsEntry: () => null }],
+      types: ['Files'],
+    }
+    fireEvent.dragEnter(zone, { dataTransfer })
+    fireEvent.dragOver(zone, { dataTransfer })
+    expect(dataTransfer.dropEffect).toBe('copy')
+    expect(within(editor).getByTestId('composer-drop-overlay')).toBeInTheDocument()
+    fireEvent.drop(zone, { dataTransfer })
+    for (const type of ['dragenter', 'dragover', 'drop']) window.removeEventListener(type, record)
+
+    expect(seen).toEqual([
+      { type: 'dragenter', prevented: true },
+      { type: 'dragover', prevented: true },
+      { type: 'drop', prevented: true },
+    ])
+    const textbox = within(editor).getByRole('textbox', { name: '修改要求' })
+    expect(within(textbox).getByText('参考.png')).toBeInTheDocument()
+  })
+
+  it('弹窗里输入卡以外的地方对文件一律禁止，也不放给背后的聊天框', async () => {
+    loginAs(mockAuthUser)
+    await renderWithProviders(<EditorPage />)
+    const editor = await screen.findByRole('dialog')
+
+    const dataTransfer = { dropEffect: '', files: [imageFile()], items: [], types: ['Files'] }
+    const stage = within(editor).getByRole('img', { name: '当前编辑帧' })
+    fireEvent.dragOver(stage, { dataTransfer })
+    const drop = createEvent.drop(stage, { dataTransfer })
+    fireEvent(stage, drop)
+
+    expect(dataTransfer.dropEffect).toBe('none')
+    expect(drop.defaultPrevented).toBe(true)
+    expect(within(editor).queryByTestId('composer-drop-overlay')).not.toBeInTheDocument()
+    expect(screen.queryByText('参考.png')).not.toBeInTheDocument()
+  })
+
+  it('从历史菜单恢复输入后回到底图，再次提交保留那次的要求和参考图片', async () => {
+    const references = [BASE, 'https://example.com/reference.png']
+    const prompt = '保留人物，背景参考@图片2换成傍晚的暖光'
+    const completed = job({
+      status: 'completed',
+      outputUrl: RESULT,
+      request: { prompt, referenceImageUrls: references },
+    })
+    const submissions: Record<string, unknown>[] = []
+    server.use(
+      http.get('*/api/generations', () => HttpResponse.json({ items: [completed] })),
+      http.post('*/api/generations/image', async ({ request }) => {
+        submissions.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json({ generation: job() }, { status: 202 })
+      }),
+    )
+    await renderWithProviders(<EditorPage initialKey={completed.id} />)
+
+    const editor = await screen.findByRole('dialog')
+    await within(editor).findByRole('slider', { name: '对比分割线' })
+    expect(screen.queryByRole('menuitem', { name: '恢复本次输入' })).not.toBeInTheDocument()
+    await userEvent.click(within(editor).getByRole('button', { name: '图片历史操作' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '恢复本次输入' }))
+
+    const strip = within(editor).getByRole('group', { name: '该帧的图片' })
+    expect(within(strip).getByRole('button', { name: '当前帧' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    const textbox = within(editor).getByRole('textbox', { name: '修改要求' })
+    expect(textbox).toHaveTextContent('保留人物，背景参考reference.png换成傍晚的暖光')
+    await userEvent.click(within(editor).getByRole('button', { name: '生成图片' }))
+    await waitFor(() => expect(submissions).toHaveLength(1))
+    expect(submissions[0]).toMatchObject({
+      prompt,
+      referenceImageUrls: references,
+      sourceUrl: BASE,
+    })
+  })
+
+  it('空草稿上画一个标注再撤销，重做仍可用并能画回来', async () => {
+    sessionStorage.clear()
+    await renderWithProviders(<EditorPage />)
+    const editor = await screen.findByRole('dialog')
+    drawPoint(loadCanvas(editor))
+    expect(within(editor).getByRole('button', { name: '标注 1' })).toBeInTheDocument()
+
+    await userEvent.click(within(editor).getByRole('button', { name: '撤销标注' }))
+    expect(within(editor).queryByRole('button', { name: '标注 1' })).not.toBeInTheDocument()
+    const redo = within(editor).getByRole('button', { name: '重做标注' })
+    expect(redo).not.toHaveAttribute('aria-disabled')
+    await userEvent.click(redo)
+
+    expect(within(editor).getByRole('button', { name: '标注 1' })).toBeInTheDocument()
+  })
+
+  it('草稿读坏后点重新开始，画过的标注连同撤销记录一起作废', async () => {
+    sessionStorage.setItem(editDraftKey(target), JSON.stringify({ [BASE]: { annotations: 1 } }))
+    await renderWithProviders(<EditorPage />)
+    const editor = await screen.findByRole('dialog')
+    drawPoint(loadCanvas(editor))
+    expect(within(editor).getByRole('button', { name: '标注 1' })).toBeInTheDocument()
+
+    await userEvent.click(within(editor).getByRole('button', { name: '重新开始' }))
+    loadCanvas(editor)
+
+    expect(within(editor).queryByRole('button', { name: '标注 1' })).not.toBeInTheDocument()
+    expect(within(editor).getByRole('button', { name: '撤销标注' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+  })
+
+  it('关窗只交回真正点开看过的任务：没点的结果、失败都不算', async () => {
+    const opened = job({ status: 'completed', outputUrl: RESULT })
+    const skipped = job({
+      status: 'completed',
+      outputUrl: 'https://example.com/skipped.png',
+      createdAt: '2026-09-07T11:00:00Z',
+    })
+    const failed = job({ status: 'failed', createdAt: '2026-09-07T10:00:00Z' })
+    server.use(
+      http.get('*/api/generations', () => HttpResponse.json({ items: [opened, skipped, failed] })),
+    )
+    const onClose = vi.fn()
+    await renderWithProviders(<EditorPage onClose={onClose} />)
+    const editor = await screen.findByRole('dialog')
+    const strip = await within(editor).findByRole('group', { name: '该帧的图片' })
+    const [first] = await within(strip).findAllByRole('button', { name: /^结果 · / })
+    if (first === undefined) throw new Error('缺少结果格')
+    await userEvent.click(first)
+
+    await userEvent.click(within(editor).getByRole('button', { name: '关闭图片编辑' }))
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect([...(onClose.mock.calls[0]?.[0] as ReadonlySet<string>)]).toEqual([opened.id])
+  })
+})

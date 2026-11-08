@@ -1,0 +1,1192 @@
+from __future__ import annotations
+
+import json
+import uuid
+from collections import Counter
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+import pytest
+from iclip_video.shot_prompt import ShotCut, ShotScript, format_shot_prompt
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+
+from iclip.domains.conversations.infra_sql import SqlConversationRepository
+from iclip.domains.generation.infra_sql import SqlGenerationRepository
+from iclip.domains.generation.models import STATUS_COMPLETED, STATUS_FAILED, STATUS_SUBMITTED
+from iclip.domains.generation.render import PROVIDER_NAME as RENDER_PROVIDER
+from iclip.domains.generation.schemas import (
+    KIND_AUDIO,
+    KIND_SUBTITLE,
+    KIND_VIDEO,
+    KIND_WHOLE_FILM,
+    OPERATION_COMPOSE,
+    OPERATION_ENHANCE,
+    OPERATION_GENERATE,
+    OPERATION_RENDER,
+    OPERATION_UPLOAD,
+    VideoEnhanceRequest,
+    request_to_payload,
+)
+from iclip.domains.library.models import Scope, VideoCursor, WholeFilmScope
+from iclip.domains.library.reports_pg import PgLibraryReports
+from iclip.domains.library.schemas import ShotGroupOut
+from tests.helpers.fork_lineage import three_level_fork
+from tests.helpers.generation import whole_film_request
+
+BASE = datetime(2026, 9, 20, 10, 0, tzinfo=UTC)
+NORA = "Nora.Ho"
+LENA = "Lena.Song"
+SARA = "Sara.Hong"
+
+SHOT_ONE: dict[str, Any] = {
+    "global_settings": "浅灰地面与白墙，干净留白。",
+    "timeline": [
+        {"timestamps": [0, 3], "prompt": "空地面停一拍。", "image_indexes": []},
+        {"timestamps": [3, 7], "prompt": "踩入 @Image1 夹趾凉鞋。", "image_indexes": [1]},
+    ],
+}
+SHOT_ONE_PROMPT = format_shot_prompt(
+    ShotScript(
+        global_settings=SHOT_ONE["global_settings"],
+        timeline=tuple(
+            ShotCut(
+                timestamps=(cut["timestamps"][0], cut["timestamps"][1]),
+                prompt=cut["prompt"],
+                image_indexes=tuple(cut["image_indexes"]),
+            )
+            for cut in SHOT_ONE["timeline"]
+        ),
+    )
+)
+SHOT_ONE_CUTS = ["空地面停一拍。", "踩入 @Image1 夹趾凉鞋。"]
+MARKER_PROMPT = (
+    "浅灰地面与白墙。\n\n[0–4秒｜镜头1] 换成编织凉鞋 @Image1。\n[4–8秒｜镜头2] 向前迈一步。\n"
+    "不要生成字幕，不要生成背景音乐。"
+)
+
+
+def at(minutes: float) -> datetime:
+    return BASE + timedelta(minutes=minutes)
+
+
+def url(name: str) -> str:
+    return f"https://oss.example.test/{name}.mp4"
+
+
+def shape(groups: Sequence[ShotGroupOut]) -> list[tuple[int | None, list[uuid.UUID]]]:
+    return [(group.shot_index, [version.job_id for version in group.versions]) for group in groups]
+
+
+class Seed:
+    def __init__(self) -> None:
+        self.nora, self.lena = uuid.uuid4(), uuid.uuid4()
+        self.c1, self.c2, self.c4, self.c5 = (uuid.uuid4() for _ in range(4))
+        self.a, self.b, self.m, self.c, self.d, self.d2 = (uuid.uuid4() for _ in range(6))
+        self.p, self.pc, self.q, self.e, self.e_edit = (uuid.uuid4() for _ in range(5))
+        self.y, self.g, self.h, self.hc, self.k = (uuid.uuid4() for _ in range(5))
+
+    async def plant(self, engine: AsyncEngine) -> None:
+        async with engine.begin() as conn:
+            for user_id, name in ((self.nora, NORA), (self.lena, LENA)):
+                await conn.execute(
+                    text(
+                        "INSERT INTO iclip.users (id, username, email, hashed_password, is_active,"
+                        " is_superuser, is_verified, display_name, avatar_url, roles,"
+                        " direct_permissions, city, job_title, departments)"
+                        " VALUES (:id, :name, :email, 'x', true, false, true, :name, '',"
+                        " '[\"editor\"]'::jsonb, '[]'::jsonb, '', '', '[]'::jsonb)"
+                    ),
+                    {"id": user_id, "name": name, "email": f"{name}@example.test"},
+                )
+            await _conversation(conn, self.c1, owner=self.nora, title="春夏凉鞋合集", created=-60)
+            await _conversation(conn, self.c2, owner=self.lena, title="滑板街拍", created=-60)
+            await _conversation(
+                conn,
+                self.c4,
+                owner=self.lena,
+                title="凉鞋合集（分叉）",
+                created=50,
+                forked_from=self.c1,
+            )
+            await _conversation(
+                conn, self.c5, owner=self.lena, title="空分叉", created=70, forked_from=self.c1
+            )
+
+            nora_c1: dict[str, Any] = {"owner": self.nora, "user_name": NORA}
+            await _video(
+                conn,
+                self.a,
+                self.c1,
+                **nora_c1,
+                shot=1,
+                created=0,
+                finished=5,
+                url_name="a",
+                request={"shot": SHOT_ONE, "prompt": SHOT_ONE_PROMPT},
+            )
+            await _video(
+                conn,
+                self.b,
+                self.c1,
+                **nora_c1,
+                shot=1,
+                created=60,
+                finished=65,
+                url_name="b",
+                request={"prompt": MARKER_PROMPT},
+            )
+            await _composite(
+                conn,
+                self.m,
+                self.c1,
+                **nora_c1,
+                base=self.a,
+                created=90,
+                finished=92,
+                url_name="m",
+                duration_ms=7040,
+            )
+            await _video(
+                conn,
+                self.c,
+                self.c1,
+                **nora_c1,
+                shot=2,
+                created=20,
+                finished=None,
+                url_name="c",
+                status=STATUS_FAILED,
+            )
+            await _video(conn, self.d, self.c1, **nora_c1, shot=2, created=30, finished=50)
+            await _video(conn, self.d2, self.c1, **nora_c1, shot=2, created=40, finished=45)
+            await _video(conn, self.p, self.c1, **nora_c1, shot=None, created=10, finished=12)
+            await _composite(
+                conn, self.pc, self.c1, **nora_c1, base=self.p, created=79, finished=80
+            )
+            await _video(conn, self.q, self.c1, **nora_c1, shot=None, created=11, finished=13)
+
+            await _video(
+                conn,
+                self.e,
+                self.c2,
+                owner=self.lena,
+                user_name=LENA,
+                shot=1,
+                created=40,
+                finished=130,
+                request={"prompt": "滑板 100% 落地。"},
+            )
+            await _edit(
+                conn, self.e_edit, self.c2, owner=self.lena, base=self.e, created=131, finished=132
+            )
+
+            await _composite(
+                conn,
+                self.y,
+                self.c4,
+                owner=self.lena,
+                user_name=SARA,
+                base=self.a,
+                created=100,
+                finished=101,
+                url_name="y",
+                duration_ms=6500,
+            )
+            await _video(
+                conn,
+                self.g,
+                self.c4,
+                owner=self.lena,
+                user_name=LENA,
+                shot=1,
+                created=110,
+                finished=120,
+            )
+
+            await _video(
+                conn,
+                self.h,
+                None,
+                owner=self.nora,
+                user_name=SARA,
+                shot=None,
+                created=10,
+                finished=14,
+                request={"prompt": "一条横版的纯文本描述。", "aspect_ratio": "16:9"},
+            )
+            await _composite(
+                conn,
+                self.hc,
+                None,
+                owner=self.nora,
+                user_name=SARA,
+                base=self.h,
+                created=40,
+                finished=42,
+            )
+            await _video(
+                conn,
+                self.k,
+                None,
+                owner=self.lena,
+                user_name=LENA,
+                shot=None,
+                created=15,
+                finished=16,
+            )
+
+
+async def _conversation(
+    conn: AsyncConnection,
+    conversation_id: uuid.UUID,
+    *,
+    owner: uuid.UUID,
+    title: str,
+    created: float,
+    forked_from: uuid.UUID | None = None,
+) -> None:
+    await conn.execute(
+        text(
+            "INSERT INTO iclip.conversations (id, owner_user_id, agent_id, title, created_at,"
+            " updated_at, forked_from, fork_turn)"
+            " VALUES (:id, :owner, 'storyboard', :title, :at, :at, :forked_from, :fork_turn)"
+        ),
+        {
+            "id": conversation_id,
+            "owner": owner,
+            "title": title,
+            "at": at(created),
+            "forked_from": forked_from,
+            "fork_turn": 1 if forked_from else None,
+        },
+    )
+
+
+async def _video(
+    conn: AsyncConnection,
+    video_id: uuid.UUID,
+    conversation_id: uuid.UUID | None,
+    *,
+    owner: uuid.UUID,
+    user_name: str,
+    shot: int | None,
+    created: float,
+    finished: float | None,
+    url_name: str | None = None,
+    status: str = STATUS_COMPLETED,
+    request: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    name = url_name or str(video_id)
+    body: dict[str, Any] = {
+        "model": "vendor-b-seedance-2-5",
+        "prompt": "占位正文。",
+        "user_name": user_name,
+        "aspect_ratio": "9:16",
+        "seconds": 10,
+        "reference_image_urls": ["https://oss.example.test/frame-1.jpg"],
+        **(request or {}),
+    }
+    await conn.execute(
+        text(
+            "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
+            " operation, provider, request, status, shot_index, output, created_at,"
+            " finished_at, metadata)"
+            " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'test',"
+            " CAST(:request AS jsonb), :status, :shot, CAST(:output AS jsonb), :created_at,"
+            " :finished_at, CAST(:metadata AS jsonb))"
+        ),
+        {
+            "id": video_id,
+            "owner": owner,
+            "conversation_id": conversation_id,
+            "kind": KIND_VIDEO,
+            "operation": OPERATION_GENERATE,
+            "request": json.dumps(body),
+            "metadata": None if metadata is None else json.dumps(metadata),
+            "status": status,
+            "shot": shot,
+            "output": json.dumps({"url": url(name), "watermark_url": url(f"{name}-wm")})
+            if status == STATUS_COMPLETED
+            else None,
+            "created_at": at(created),
+            "finished_at": None if finished is None else at(finished),
+        },
+    )
+
+
+async def _edit(
+    conn: AsyncConnection,
+    edit_id: uuid.UUID,
+    conversation_id: uuid.UUID | None,
+    *,
+    owner: uuid.UUID,
+    base: uuid.UUID,
+    created: float,
+    finished: float,
+) -> None:
+    await conn.execute(
+        text(
+            "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
+            " operation, provider, request, status, shot_index, source_job_id, root_job_id,"
+            " output, created_at, finished_at)"
+            " SELECT :id, :owner, CAST(:conversation_id AS uuid), :kind, :operation, 'test',"
+            " CAST(:request AS jsonb), :status, shot_index, id, COALESCE(root_job_id, id),"
+            " CAST(:output AS jsonb), :created_at, :finished_at"
+            " FROM iclip.generation_jobs WHERE id = :base"
+        ),
+        {
+            "id": edit_id,
+            "owner": owner,
+            "conversation_id": conversation_id,
+            "kind": KIND_VIDEO,
+            "operation": OPERATION_GENERATE,
+            "request": json.dumps(
+                {
+                    "model": "vendor-b-seedance-2-5",
+                    "prompt": "改一段。",
+                    "range_start_ms": 1000,
+                    "range_end_ms": 4000,
+                }
+            ),
+            "status": STATUS_COMPLETED,
+            "base": base,
+            "output": json.dumps({"url": url(f"{edit_id}-edit")}),
+            "created_at": at(created),
+            "finished_at": at(finished),
+        },
+    )
+
+
+async def _composite(
+    conn: AsyncConnection,
+    composite_id: uuid.UUID,
+    conversation_id: uuid.UUID | None,
+    *,
+    owner: uuid.UUID,
+    user_name: str,
+    base: uuid.UUID,
+    created: float,
+    finished: float,
+    url_name: str | None = None,
+    duration_ms: int | None = None,
+) -> None:
+    edit_id = uuid.uuid4()
+    await _edit(
+        conn,
+        edit_id,
+        conversation_id,
+        owner=owner,
+        base=base,
+        created=created - 2,
+        finished=created - 1,
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
+            " operation, provider, request, status, shot_index, source_job_id, root_job_id,"
+            " output, created_at, finished_at)"
+            " SELECT :id, :owner, CAST(:conversation_id AS uuid), :kind, :operation, 'local',"
+            " CAST(:request AS jsonb), :status, shot_index, id, COALESCE(root_job_id, id),"
+            " CAST(:output AS jsonb), :created_at, :finished_at"
+            " FROM iclip.generation_jobs WHERE id = :base"
+        ),
+        {
+            "id": composite_id,
+            "owner": owner,
+            "conversation_id": conversation_id,
+            "kind": KIND_VIDEO,
+            "operation": OPERATION_COMPOSE,
+            "request": json.dumps(
+                {
+                    "segments": [
+                        {
+                            "sourceJobId": str(edit_id),
+                            "url": url(f"{edit_id}-edit"),
+                            "start": 0,
+                            "end": 3,
+                        }
+                    ],
+                    "userName": user_name,
+                }
+            ),
+            "status": STATUS_COMPLETED,
+            "base": base,
+            "output": json.dumps(
+                {"url": url(url_name or str(composite_id))}
+                | ({} if duration_ms is None else {"duration_ms": duration_ms})
+            ),
+            "created_at": at(created),
+            "finished_at": at(finished),
+        },
+    )
+
+
+@pytest.fixture
+async def seed(engine: AsyncEngine) -> Seed:
+    planted = Seed()
+    await planted.plant(engine)
+    return planted
+
+
+@pytest.fixture
+def reports(engine: AsyncEngine) -> PgLibraryReports:
+    return PgLibraryReports(engine)
+
+
+async def ids(reports: PgLibraryReports, scope: Scope) -> list[uuid.UUID]:
+    return [row.video.id for row in await reports.videos(scope, limit=20, after=None)]
+
+
+async def test_library_sees_what_the_generation_repository_sees(
+    engine: AsyncEngine, reports: PgLibraryReports
+) -> None:
+    chain = await three_level_fork(engine)
+    repo = SqlGenerationRepository(engine)
+    inheritance = await SqlConversationRepository(engine).ancestry(chain.child.id)
+    listed = await repo.list_for_owner(
+        owner=None, limit=50, conversation_id=chain.child.id, inherited=inheritance
+    )
+    masters = {
+        job.id for job in listed if job.operation == OPERATION_COMPOSE or job.source_job_id is None
+    }
+
+    child = {v.job_id for g in await reports.groups_of(chain.child.id) for v in g.versions}
+    parent = {v.job_id for g in await reports.groups_of(chain.parent.id) for v in g.versions}
+
+    assert child == masters == {chain.own.id, chain.from_parent.id, chain.from_grand.id}
+    assert parent == {
+        chain.from_parent.id,
+        chain.in_flight.id,
+        chain.parent_after_child.id,
+        chain.from_grand.id,
+    }
+    card = await reports.card_of(chain.child.id)
+    assert card is not None and card.video.version_count == 3
+    assert card.video.face.job_id == chain.own.id
+    assert await reports.card_of(chain.parent.id) is not None
+    assert await reports.card_of(chain.grand.id) is not None
+
+
+async def test_one_card_per_conversation_ordered_by_the_face_finish_time(
+    reports: PgLibraryReports, seed: Seed
+) -> None:
+    rows = await reports.videos(Scope(), limit=20, after=None)
+
+    cards = [
+        (
+            row.video.id,
+            row.video.face.job_id,
+            row.video.face.kind,
+            row.video.group_count,
+            row.video.version_count,
+        )
+        for row in rows
+    ]
+    assert cards == [
+        (seed.c2, seed.e, "take", 1, 1),
+        (seed.c4, seed.g, "take", 4, 7),
+        (seed.c1, seed.m, "composite", 4, 8),
+        (seed.h, seed.hc, "composite", 1, 2),
+        (seed.k, seed.k, "take", 1, 1),
+    ]
+    faces_at = [at(130), at(120), at(92), at(42), at(16)]
+    assert [row.video.face.finished_at for row in rows] == faces_at
+    assert await reports.count(Scope()) == 5
+
+
+async def test_a_fork_card_holds_what_it_inherits_plus_its_own(
+    reports: PgLibraryReports, seed: Seed
+) -> None:
+    groups = await reports.groups_of(seed.c4)
+
+    assert shape(groups) == [
+        (1, [seed.a, seed.y, seed.g]),
+        (2, [seed.d2, seed.d]),
+        (None, [seed.p]),
+        (None, [seed.q]),
+    ]
+    composite = groups[0].versions[1]
+    assert composite.kind == "composite" and composite.take.id == seed.a
+    assert composite.take.script is not None
+    assert [cut.prompt for cut in composite.take.script.timeline] == SHOT_ONE_CUTS
+    assert composite.user_name == LENA, "每一版的作者是它的属主，不看请求里的名字"
+    assert composite.duration_ms == 6500 and composite.watermark_output_url is None
+    inherited = groups[0].versions[0]
+    assert inherited.kind == "take" and inherited.user_name == NORA
+    assert inherited.watermark_output_url == url("a-wm") and inherited.duration_ms is None
+
+    row = await reports.card_of(seed.c4)
+    assert row is not None
+    video = row.video
+    assert (video.id, video.conversation_id, video.title) == (seed.c4, seed.c4, "凉鞋合集（分叉）")
+    assert (video.group_count, video.version_count) == (4, 7)
+    assert video.face.job_id == seed.g and video.user_name == LENA
+    assert row.conversation_owner == seed.lena and not row.conversation_deleted
+
+
+async def test_the_source_card_is_not_touched_by_its_forks(
+    reports: PgLibraryReports, seed: Seed
+) -> None:
+    groups = await reports.groups_of(seed.c1)
+
+    assert shape(groups) == [
+        (1, [seed.a, seed.b, seed.m]),
+        (2, [seed.d2, seed.d]),
+        (None, [seed.p, seed.pc]),
+        (None, [seed.q]),
+    ]
+    parsed = groups[0].versions[1].take.script
+    assert parsed is not None and parsed.global_settings == "浅灰地面与白墙。"
+    assert [(cut.start, cut.end, cut.image_indexes) for cut in parsed.timeline] == [
+        (0, 4, [1]),
+        (4, 8, []),
+    ]
+    assert groups[0].versions[1].take.prompt == MARKER_PROMPT
+
+    row = await reports.card_of(seed.c1)
+    assert row is not None
+    video = row.video
+    assert video.face.kind == "composite" and video.face.job_id == seed.m
+    assert video.face.output_url == url("m") and video.face.watermark_output_url is None
+    assert video.face.duration_ms == 7040 and video.face.finished_at == at(92)
+    assert video.take.id == seed.a and video.take.script is not None
+    assert [cut.prompt for cut in video.take.script.timeline] == SHOT_ONE_CUTS
+    assert (video.group_count, video.version_count) == (4, 8)
+    assert video.user_name == NORA and video.agent_id == "storyboard"
+
+
+async def test_a_fork_with_nothing_of_its_own_has_no_card(
+    reports: PgLibraryReports, seed: Seed
+) -> None:
+    assert await reports.card_of(seed.c5) is None
+    assert await reports.groups_of(seed.c5) == []
+    assert seed.c5 not in await ids(reports, Scope())
+
+
+async def test_a_take_without_a_conversation_is_a_card_with_its_composites(
+    reports: PgLibraryReports, seed: Seed
+) -> None:
+    row = await reports.card_of(seed.h)
+
+    assert row is not None
+    video = row.video
+    assert (video.id, video.conversation_id, video.title) == (seed.h, None, None)
+    assert row.conversation_owner is None and not row.conversation_deleted
+    assert video.face.job_id == seed.hc and video.take.id == seed.h
+    assert video.take.script is None and video.take.aspect_ratio == "16:9"
+    assert video.user_name == NORA
+    groups = await reports.groups_of(seed.h)
+    assert shape(groups) == [(None, [seed.h, seed.hc])]
+    assert [version.user_name for version in groups[0].versions] == [NORA, NORA]
+    assert shape(await reports.groups_of(seed.k)) == [(None, [seed.k])]
+
+
+async def test_ids_that_are_not_cards_find_nothing(reports: PgLibraryReports, seed: Seed) -> None:
+    for outside in (seed.a, seed.c, seed.m, seed.e_edit, uuid.uuid4()):
+        assert await reports.card_of(outside) is None
+        assert await reports.groups_of(outside) == []
+
+
+async def test_filters_look_only_at_the_card_itself(reports: PgLibraryReports, seed: Seed) -> None:
+    assert await ids(reports, Scope(user_name=LENA)) == [seed.c2, seed.c4, seed.k]
+    assert await ids(reports, Scope(user_name=NORA)) == [seed.c1, seed.h]
+    assert await ids(reports, Scope(user_name=SARA)) == [], "作者是属主，不是请求里的名字"
+    assert await ids(reports, Scope(orientation="landscape")) == [seed.h]
+    assert seed.h not in await ids(reports, Scope(orientation="portrait"))
+    assert await ids(reports, Scope(since=at(91), until=at(93))) == [seed.c1]
+    assert await ids(reports, Scope(q="凉鞋合集")) == [seed.c4, seed.c1]
+    assert await ids(reports, Scope(q="夹趾")) == [seed.c1]
+    assert await ids(reports, Scope(q="100%")) == [seed.c2]
+    assert await ids(reports, Scope(q="100_")) == []
+    assert await reports.count(Scope(user_name=NORA)) == 2
+
+
+async def test_authors_count_cards_per_author(reports: PgLibraryReports, seed: Seed) -> None:
+    authors = [(author.user_name, author.count) for author in await reports.authors()]
+
+    assert authors == [(LENA, 3), (NORA, 2)]
+
+
+async def test_keyset_pages_follow_the_face_finish_time(
+    reports: PgLibraryReports, seed: Seed
+) -> None:
+    first = await reports.videos(Scope(), limit=2, after=None)
+    last = first[-1].video
+    second = await reports.videos(
+        Scope(), limit=10, after=VideoCursor(at=last.face.finished_at, video_id=last.id)
+    )
+
+    assert [row.video.id for row in first] == [seed.c2, seed.c4]
+    assert [row.video.id for row in second] == [seed.c1, seed.h, seed.k]
+
+
+async def test_deleting_a_conversation_keeps_every_card(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
+) -> None:
+    before = shape(await reports.groups_of(seed.c4))
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE iclip.conversations SET deleted_at = :at WHERE id = :id"),
+            {"at": at(500), "id": seed.c1},
+        )
+
+    assert await ids(reports, Scope()) == [seed.c2, seed.c4, seed.c1, seed.h, seed.k]
+    assert shape(await reports.groups_of(seed.c4)) == before
+    source = await reports.card_of(seed.c1)
+    fork = await reports.card_of(seed.c4)
+    assert source is not None and source.conversation_deleted
+    assert source.video.title == "春夏凉鞋合集"
+    assert fork is not None and not fork.conversation_deleted
+
+
+async def test_a_dangling_conversation_id_counts_as_no_conversation(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
+) -> None:
+    stray = uuid.uuid4()
+    async with engine.begin() as conn:
+        await _video(
+            conn,
+            stray,
+            uuid.uuid4(),
+            owner=seed.lena,
+            user_name=LENA,
+            shot=1,
+            created=190,
+            finished=200,
+        )
+
+    row = await reports.card_of(stray)
+    assert row is not None
+    assert (row.video.id, row.video.conversation_id, row.video.title) == (stray, None, None)
+    assert (await ids(reports, Scope()))[0] == stray
+
+
+async def test_a_reference_test_video_is_not_a_card(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
+) -> None:
+    before = await ids(reports, Scope())
+    trial, take = uuid.uuid4(), uuid.uuid4()
+    async with engine.begin() as conn:
+        for job_id, metadata in ((trial, {"referenceId": str(uuid.uuid4())}), (take, {"k": 1})):
+            await _video(
+                conn,
+                job_id,
+                None,
+                owner=seed.nora,
+                user_name=NORA,
+                shot=None,
+                created=190,
+                finished=200,
+                metadata=metadata,
+            )
+
+    assert await reports.card_of(trial) is None
+    assert await reports.card_of(take) is not None
+    assert await ids(reports, Scope()) == [take, *before]
+
+
+async def test_a_video_upload_is_not_a_card_or_a_version(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
+) -> None:
+    before = await ids(reports, Scope())
+    before_c1 = shape(await reports.groups_of(seed.c1))
+    upload = uuid.uuid4()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO iclip.generation_jobs (id, owner_user_id, kind, operation,"
+                " status, output, created_at, finished_at)"
+                " VALUES (:id, :owner, :kind, :operation, :status, CAST(:output AS jsonb),"
+                " :at, :at)"
+            ),
+            {
+                "id": upload,
+                "owner": seed.nora,
+                "kind": KIND_VIDEO,
+                "operation": OPERATION_UPLOAD,
+                "status": STATUS_COMPLETED,
+                "output": json.dumps({"url": url("uploaded")}),
+                "at": at(300),
+            },
+        )
+
+    assert await ids(reports, Scope()) == before
+    assert await reports.card_of(upload) is None
+    assert shape(await reports.groups_of(seed.c1)) == before_c1
+
+
+async def test_subtitle_records_are_not_cards_or_versions(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
+) -> None:
+    before = await ids(reports, Scope())
+    before_c1 = shape(await reports.groups_of(seed.c1))
+    subtitles = [uuid.uuid4(), uuid.uuid4()]
+    async with engine.begin() as conn:
+        for subtitle, status, sentences in zip(
+            subtitles, (STATUS_COMPLETED, STATUS_FAILED), ('{"sentences": []}', None), strict=True
+        ):
+            await conn.execute(
+                text(
+                    "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
+                    " operation, provider, request, status, source_job_id, output,"
+                    " created_at, finished_at)"
+                    " VALUES (:id, :owner, :conversation, :kind, :operation, 'qwen_asr',"
+                    " CAST(:request AS jsonb), :status, :source, CAST(:sentences AS jsonb),"
+                    " :at, :at)"
+                ),
+                {
+                    "id": subtitle,
+                    "owner": seed.nora,
+                    "conversation": seed.c1,
+                    "kind": KIND_SUBTITLE,
+                    "operation": OPERATION_GENERATE,
+                    "request": json.dumps({"model": "m", "videoUrl": url("a")}),
+                    "status": status,
+                    "source": seed.a,
+                    "sentences": sentences,
+                    "at": at(500),
+                },
+            )
+
+    assert await ids(reports, Scope()) == before
+    assert all([await reports.card_of(subtitle) is None for subtitle in subtitles])
+    assert shape(await reports.groups_of(seed.c1)) == before_c1
+
+
+async def test_audio_records_are_not_cards_or_versions(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
+) -> None:
+    before = await ids(reports, Scope())
+    before_c1 = shape(await reports.groups_of(seed.c1))
+    generated, uploaded = uuid.uuid4(), uuid.uuid4()
+    async with engine.begin() as conn:
+        for record, conversation, operation, request, duration_ms in (
+            (
+                generated,
+                seed.c1,
+                OPERATION_GENERATE,
+                json.dumps({"model": "m", "prompt": "轻快"}),
+                30_000,
+            ),
+            (uploaded, None, OPERATION_UPLOAD, None, None),
+        ):
+            await conn.execute(
+                text(
+                    "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
+                    " operation, provider, request, status, output,"
+                    " created_at, finished_at)"
+                    " VALUES (:id, :owner, :conversation, :kind, :operation, 'qwen_music',"
+                    " CAST(:request AS jsonb), :status, CAST(:output AS jsonb), :at, :at)"
+                ),
+                {
+                    "id": record,
+                    "owner": seed.nora,
+                    "conversation": conversation,
+                    "kind": KIND_AUDIO,
+                    "operation": operation,
+                    "request": request,
+                    "status": STATUS_COMPLETED,
+                    "output": json.dumps(
+                        {"url": f"https://example.test/{record}.m4a"}
+                        | ({} if duration_ms is None else {"duration_ms": duration_ms})
+                    ),
+                    "at": at(500),
+                },
+            )
+
+    assert await ids(reports, Scope()) == before
+    assert await reports.card_of(generated) is None
+    assert await reports.card_of(uploaded) is None
+    assert shape(await reports.groups_of(seed.c1)) == before_c1
+
+
+async def _whole_film(
+    conn: AsyncConnection,
+    film_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    *,
+    owner: uuid.UUID,
+    finished: float | None,
+    sources: Sequence[uuid.UUID] = (),
+    status: str = STATUS_COMPLETED,
+) -> None:
+    completed = status == STATUS_COMPLETED
+    await conn.execute(
+        text(
+            "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
+            " operation, provider, request, status, output, created_at, finished_at)"
+            " VALUES (:id, :owner, :conversation, :kind, :operation, :provider,"
+            " CAST(:request AS jsonb), :status, CAST(:output AS jsonb), :created_at, :at)"
+        ),
+        {
+            "id": film_id,
+            "owner": owner,
+            "conversation": conversation_id,
+            "kind": KIND_WHOLE_FILM,
+            "operation": OPERATION_RENDER,
+            "provider": RENDER_PROVIDER,
+            "request": json.dumps(request_to_payload(whole_film_request(*sources))),
+            "status": status,
+            "output": json.dumps({"url": url(f"film-{film_id}")}) if completed else None,
+            "created_at": at((finished or 600) - 1),
+            "at": None if finished is None else at(finished),
+        },
+    )
+
+
+async def test_whole_films_are_not_cards_or_versions(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
+) -> None:
+    before = await ids(reports, Scope())
+    before_c1 = shape(await reports.groups_of(seed.c1))
+    in_c1, alone = uuid.uuid4(), uuid.uuid4()
+    async with engine.begin() as conn:
+        for film, conversation in ((in_c1, seed.c1), (alone, seed.c5)):
+            await _whole_film(
+                conn, film, conversation, owner=seed.nora, finished=500, sources=[seed.a]
+            )
+
+    assert await ids(reports, Scope()) == before
+    assert await reports.card_of(alone) is None
+    assert await reports.card_of(seed.c5) is None
+    assert shape(await reports.groups_of(seed.c1)) == before_c1
+
+
+async def test_a_trial_is_never_a_face(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
+) -> None:
+    before = await ids(reports, Scope())
+    only_trials = uuid.uuid4()
+    async with engine.begin() as conn:
+        await _conversation(conn, only_trials, owner=seed.nora, title="只试生成过", created=150)
+        for conversation, owner, name in (
+            (seed.c2, seed.lena, LENA),
+            (only_trials, seed.nora, NORA),
+        ):
+            await _video(
+                conn,
+                uuid.uuid4(),
+                conversation,
+                owner=owner,
+                user_name=name,
+                shot=1,
+                created=190,
+                finished=200,
+                metadata={"referenceId": str(uuid.uuid4())},
+            )
+
+    assert await ids(reports, Scope()) == before
+    assert await reports.count(Scope()) == len(before)
+    card = await reports.card_of(seed.c2)
+    assert card is not None and card.video.face.job_id == seed.e
+    assert (card.video.group_count, card.video.version_count) == (1, 1)
+    assert await reports.card_of(only_trials) is None
+    assert await reports.groups_of(only_trials) == []
+    assert [(author.user_name, author.count) for author in await reports.authors()] == [
+        (LENA, 3),
+        (NORA, 2),
+    ]
+
+
+async def test_unattached_masters_make_one_card_per_take(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
+) -> None:
+    t, tc, u, uc, ac, ghost = (uuid.uuid4() for _ in range(6))
+    before_c1 = shape(await reports.groups_of(seed.c1))
+    nora: dict[str, Any] = {"owner": seed.nora, "user_name": NORA}
+    async with engine.begin() as conn:
+        await _video(
+            conn, t, None, owner=seed.lena, user_name=LENA, shot=None, created=200, finished=210
+        )
+        await _composite(conn, tc, ghost, **nora, base=t, created=230, finished=240)
+        await _video(conn, u, ghost, **nora, shot=3, created=200, finished=205)
+        await _composite(conn, uc, ghost, **nora, base=u, created=220, finished=221)
+        await _composite(
+            conn, ac, None, owner=seed.lena, user_name=LENA, base=seed.a, created=250, finished=251
+        )
+
+    rows = await reports.videos(Scope(), limit=20, after=None)
+
+    assert [
+        (row.video.id, row.video.conversation_id, row.video.face.job_id, row.video.user_name)
+        for row in rows[:3]
+    ] == [(seed.a, None, ac, NORA), (t, None, tc, LENA), (u, None, uc, NORA)]
+    assert [row.video.version_count for row in rows[:3]] == [1, 2, 2]
+    assert [row.video.id for row in rows[3:]] == [seed.c2, seed.c4, seed.c1, seed.h, seed.k]
+    assert shape(await reports.groups_of(t)) == [(None, [t, tc])]
+    assert shape(await reports.groups_of(u)) == [(3, [u, uc])]
+    assert shape(await reports.groups_of(seed.a)) == [(1, [ac])]
+    assert shape(await reports.groups_of(seed.c1)) == before_c1
+    card = await reports.card_of(seed.a)
+    assert card is not None and card.video.take.id == seed.a
+    assert card.conversation_owner is None and not card.conversation_deleted
+    for outside in (tc, uc, ac, ghost):
+        assert await reports.card_of(outside) is None
+        assert await reports.groups_of(outside) == []
+    assert await ids(reports, Scope(user_name=LENA)) == [t, seed.c2, seed.c4, seed.k]
+
+
+@pytest.mark.parametrize(
+    "scope",
+    [
+        Scope(),
+        Scope(user_name=LENA),
+        Scope(user_name=NORA),
+        Scope(since=at(15), until=at(125)),
+        Scope(orientation="portrait"),
+        Scope(orientation="landscape", user_name=NORA),
+        Scope(q="凉鞋"),
+        Scope(q="凉鞋", since=at(100)),
+    ],
+    ids=[
+        "all",
+        "lena",
+        "nora",
+        "time",
+        "portrait",
+        "landscape-nora",
+        "keyword",
+        "keyword-time",
+    ],
+)
+async def test_one_card_pages_walk_the_whole_list_and_match_the_count(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed, scope: Scope
+) -> None:
+    async with engine.begin() as conn:
+        await _video(
+            conn,
+            uuid.uuid4(),
+            uuid.uuid4(),
+            owner=seed.lena,
+            user_name=LENA,
+            shot=None,
+            created=135,
+            finished=140,
+        )
+    listed = await ids(reports, scope)
+
+    walked: list[uuid.UUID] = []
+    after: VideoCursor | None = None
+    while rows := await reports.videos(scope, limit=1, after=after):
+        video = rows[0].video
+        walked.append(video.id)
+        after = VideoCursor(at=video.face.finished_at, video_id=video.id)
+
+    assert listed
+    assert walked == listed
+    assert await reports.count(scope) == len(listed)
+
+
+async def test_authors_match_the_authors_on_the_list(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
+) -> None:
+    async with engine.begin() as conn:
+        await _video(
+            conn,
+            uuid.uuid4(),
+            uuid.uuid4(),
+            owner=seed.nora,
+            user_name=LENA,
+            shot=None,
+            created=135,
+            finished=140,
+        )
+    listed = Counter(
+        row.video.user_name for row in await reports.videos(Scope(), limit=50, after=None)
+    )
+
+    authors = [(author.user_name, author.count) for author in await reports.authors()]
+
+    assert authors == [(LENA, 3), (NORA, 3)]
+    assert dict(authors) == listed
+
+
+class Films:
+    def __init__(self) -> None:
+        self.w0, self.w1, self.w2, self.w4, self.w5 = (uuid.uuid4() for _ in range(5))
+        self.failed, self.running, self.dangling = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+
+    async def plant(self, engine: AsyncEngine, seed: Seed) -> None:
+        async with engine.begin() as conn:
+            await _whole_film(
+                conn, self.w0, seed.c1, owner=seed.nora, finished=45, sources=[seed.a]
+            )
+            await _whole_film(
+                conn, self.w1, seed.c1, owner=seed.nora, finished=200, sources=[seed.a, seed.d]
+            )
+            await _whole_film(
+                conn,
+                self.w2,
+                seed.c1,
+                owner=seed.lena,
+                finished=300,
+                sources=[seed.d, seed.a, seed.b],
+            )
+            await _whole_film(
+                conn,
+                self.failed,
+                seed.c1,
+                owner=seed.nora,
+                finished=400,
+                sources=[seed.a],
+                status=STATUS_FAILED,
+            )
+            await _whole_film(
+                conn,
+                self.running,
+                seed.c1,
+                owner=seed.nora,
+                finished=None,
+                sources=[seed.a],
+                status=STATUS_SUBMITTED,
+            )
+            await _whole_film(
+                conn, self.w4, seed.c4, owner=seed.lena, finished=250, sources=[seed.g]
+            )
+            await _whole_film(conn, self.w5, seed.c2, owner=seed.lena, finished=150)
+            await _whole_film(
+                conn, self.dangling, uuid.uuid4(), owner=seed.lena, finished=500, sources=[seed.k]
+            )
+
+
+@pytest.fixture
+async def films(engine: AsyncEngine, seed: Seed) -> Films:
+    planted = Films()
+    await planted.plant(engine, seed)
+    return planted
+
+
+async def film_cards(
+    reports: PgLibraryReports, scope: WholeFilmScope, *, limit: int = 20
+) -> list[uuid.UUID]:
+    return [
+        row.card.conversation_id
+        for row in await reports.whole_films(scope, limit=limit, after=None)
+    ]
+
+
+async def test_a_whole_film_card_holds_its_conversations_own_exports(
+    reports: PgLibraryReports, seed: Seed, films: Films
+) -> None:
+    rows = await reports.whole_films(WholeFilmScope(), limit=20, after=None)
+
+    assert [
+        (row.card.conversation_id, [version.job_id for version in row.card.versions])
+        for row in rows
+    ] == [
+        (seed.c1, [films.w0, films.w1, films.w2]),
+        (seed.c4, [films.w4]),
+        (seed.c2, [films.w5]),
+    ]
+    assert await reports.count_whole_films(WholeFilmScope()) == 3
+
+    c1 = rows[0]
+    card = c1.card
+    assert card.face == card.versions[-1]
+    assert (card.title, card.user_name) == ("春夏凉鞋合集", NORA)
+    assert [version.user_name for version in card.versions] == [NORA, NORA, LENA]
+    assert [version.finished_at for version in card.versions] == [at(45), at(200), at(300)]
+    assert card.face.output_url == url(f"film-{films.w2}")
+    assert (c1.conversation_owner, c1.conversation_deleted) == (seed.nora, False)
+    assert (rows[1].card.title, rows[1].card.user_name) == ("凉鞋合集（分叉）", LENA)
+
+
+async def test_high_definition_versions_are_neither_takes_nor_exports(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed, films: Films
+) -> None:
+    before = await ids(reports, Scope())
+    before_c1 = shape(await reports.groups_of(seed.c1))
+    before_films = [
+        (row.card.conversation_id, [version.job_id for version in row.card.versions])
+        for row in await reports.whole_films(WholeFilmScope(), limit=20, after=None)
+    ]
+    async with engine.begin() as conn:
+        for source in (seed.a, seed.m, films.w2):
+            request = VideoEnhanceRequest(
+                model="video-enhance",
+                resolution="1080p",
+                fps=30,
+                video_url=url(f"source-{source}"),
+                user_name=NORA,
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
+                    " operation, provider, request, status, output,"
+                    " source_job_id, created_at, finished_at)"
+                    " VALUES (:id, :owner, NULL, :kind, :operation, 'video_api',"
+                    " CAST(:request AS jsonb), :status, CAST(:output AS jsonb), :source,"
+                    " :created_at, :at)"
+                ),
+                {
+                    "id": uuid.uuid4(),
+                    "owner": seed.lena,
+                    "kind": KIND_VIDEO,
+                    "operation": OPERATION_ENHANCE,
+                    "request": json.dumps(request_to_payload(request)),
+                    "status": STATUS_COMPLETED,
+                    "output": json.dumps(
+                        {"url": url(f"hd-{source}"), "watermark_url": url(f"hd-wm-{source}")}
+                    ),
+                    "source": source,
+                    "created_at": at(899),
+                    "at": at(900),
+                },
+            )
+
+    assert await ids(reports, Scope()) == before
+    assert shape(await reports.groups_of(seed.c1)) == before_c1
+    assert [
+        (row.card.conversation_id, [version.job_id for version in row.card.versions])
+        for row in await reports.whole_films(WholeFilmScope(), limit=20, after=None)
+    ] == before_films
+
+
+async def test_whole_film_filters_and_pages_follow_the_face(
+    reports: PgLibraryReports, seed: Seed, films: Films
+) -> None:
+    assert await film_cards(reports, WholeFilmScope(user_name=LENA)) == [seed.c4, seed.c2]
+    assert await film_cards(reports, WholeFilmScope(user_name=NORA)) == [seed.c1]
+    assert await film_cards(reports, WholeFilmScope(since=at(100), until=at(210))) == [seed.c2]
+    assert await film_cards(reports, WholeFilmScope(since=at(250))) == [seed.c1, seed.c4]
+    assert await film_cards(reports, WholeFilmScope(until=at(250))) == [seed.c2]
+    assert await film_cards(reports, WholeFilmScope(q="凉鞋合集")) == [seed.c1, seed.c4]
+    assert await film_cards(reports, WholeFilmScope(q="滑板")) == [seed.c2]
+    assert await reports.count_whole_films(WholeFilmScope(user_name=LENA)) == 2
+
+    first = await reports.whole_films(WholeFilmScope(), limit=2, after=None)
+    last = first[-1].card
+    second = await reports.whole_films(
+        WholeFilmScope(),
+        limit=10,
+        after=VideoCursor(at=last.face.finished_at, video_id=last.conversation_id),
+    )
+    assert [row.card.conversation_id for row in first] == [seed.c1, seed.c4]
+    assert [row.card.conversation_id for row in second] == [seed.c2]
+
+
+async def test_whole_film_authors_count_cards_by_conversation_owner(
+    reports: PgLibraryReports, seed: Seed, films: Films
+) -> None:
+    authors = [(author.user_name, author.count) for author in await reports.whole_film_authors()]
+
+    assert authors == [(LENA, 2), (NORA, 1)]
+
+
+async def test_deleting_a_conversation_keeps_its_whole_film_card(
+    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed, films: Films
+) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE iclip.conversations SET deleted_at = :at WHERE id = :id"),
+            {"at": at(500), "id": seed.c1},
+        )
+
+    rows = await reports.whole_films(WholeFilmScope(), limit=20, after=None)
+
+    assert [row.card.conversation_id for row in rows] == [seed.c1, seed.c4, seed.c2]
+    assert rows[0].conversation_deleted and rows[0].card.title == "春夏凉鞋合集"
+    assert len(rows[0].card.versions) == 3

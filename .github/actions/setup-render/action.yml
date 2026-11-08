@@ -1,0 +1,24 @@
+name: setup-render
+description: 安装 pnpm、Node 与渲染服务（render/）的依赖。
+
+runs:
+  using: composite
+  steps:
+    - name: Install pnpm
+      # 使用 packageManager 指定的完整发布包，避免 npm 引导安装。
+      shell: bash
+      working-directory: render
+      run: |
+        version=$(sed -n 's/.*"packageManager": "pnpm@\(.*\)".*/\1/p' package.json)
+        mkdir -p "$HOME/.pnpm-bin"
+        curl -fsSL "https://github.com/pnpm/pnpm/releases/download/v${version}/pnpm-linux-x64.tar.gz" | tar -xz -C "$HOME/.pnpm-bin"
+        chmod +x "$HOME/.pnpm-bin/pnpm"
+        echo "$HOME/.pnpm-bin" >> "$GITHUB_PATH"
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 22
+        cache: pnpm
+        cache-dependency-path: render/pnpm-lock.yaml
+    - run: pnpm install --frozen-lockfile
+      shell: bash
+      working-directory: render

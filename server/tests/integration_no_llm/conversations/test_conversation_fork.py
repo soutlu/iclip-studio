@@ -1,0 +1,661 @@
+from __future__ import annotations
+
+import uuid
+from collections.abc import AsyncGenerator, Sequence
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import NoReturn
+
+import httpx
+import pytest
+from agent_runtime.harness.step_store_pg import PgStepStore
+from fastapi import FastAPI
+from procrastinate.testing import InMemoryConnector
+from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord, StepEvent
+from sqlalchemy import text
+
+from iclip.app.conversation_same_style import SAME_STYLE
+from iclip.common.errors import Conflict, NotFound
+from iclip.config import VideoGenerationSection
+from iclip.domains.conversations.infra_sql import (
+    SqlAgentPreviewStore,
+    SqlConversationRepository,
+    SqlWholeFilmDraftStore,
+)
+from iclip.domains.conversations.service import ConversationService
+from iclip.domains.generation.infra_sql import SqlGenerationRepository
+from iclip.domains.generation.models import GenerationJob, GenerationOutput
+from iclip.domains.generation.schemas import KIND_VIDEO
+from iclip.domains.identity.public import Principal
+from iclip.platform.db.engine import build_engine
+from iclip.platform.media.codec import SOFTWARE
+from iclip.platform.media.process import ffmpeg_available
+from tests.helpers.agents import AgentSeed, seed_agents
+from tests.helpers.app import make_client, settled
+from tests.helpers.auth import register_and_login, set_roles_in_db
+from tests.helpers.film import UnusedFilmPage
+from tests.helpers.generation import (
+    MEDIA_ENVS,
+    MemoryObjectStore,
+    config_with_media,
+    make_job,
+    make_upload,
+    video_request,
+)
+from tests.helpers.media import synthesize_video
+from tests.helpers.media_server import serving
+from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
+from tests.helpers.pg import connected, reset_database
+from tests.helpers.runtime_backed import build_backed_app, config_services_of
+
+URL = "/conversations"
+AGENT_ID = "storyboard"
+BASE = datetime(2026, 9, 1, tzinfo=UTC)
+INHERITED_DETAIL = "分叉带过来的历史不能重新生成或编辑，只能接着往下聊。"
+
+
+@pytest.fixture
+def agent_seeds() -> tuple[AgentSeed, ...]:
+    return (AgentSeed(AGENT_ID), AgentSeed("assistant"))
+
+
+async def login_as(
+    client: httpx.AsyncClient, pg_url: str, *, username: str, role: str = "editor"
+) -> str:
+    email = f"{username}@example.com"
+    user_id = await register_and_login(client, username=username, email=email)
+    await set_roles_in_db(pg_url, email, [role])
+    return user_id
+
+
+async def open_conversation(client: httpx.AsyncClient, **body: object) -> str:
+    opened = await client.post(URL, json={"agentId": AGENT_ID, **body})
+    assert opened.status_code == 201, opened.text
+    return opened.json()["conversation"]["id"]
+
+
+async def seed_turns(pg_url: str, conversation_id: str, prompts: list[str]) -> list[str]:
+    engine = build_engine(pg_url)
+    run_ids: list[str] = []
+    try:
+        store = PgStepStore(engine)
+        messages: list[ModelRequest | ModelResponse] = []
+        for index, prompt in enumerate(prompts):
+            run_id = f"{AGENT_ID}-{uuid.uuid4().hex[:8]}"
+            run_ids.append(run_id)
+            at = BASE + timedelta(minutes=index)
+            await store.register_run(RunRecord(run_id=run_id, conversation_id=conversation_id))
+            await store.append_event(
+                StepEvent(
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    kind="run_completed",
+                    step_index=1,
+                )
+            )
+            messages.append(
+                ModelRequest(parts=[UserPromptPart(prompt, timestamp=at)], run_id=run_id)
+            )
+            messages.append(
+                ModelResponse(parts=[TextPart(f"收到：{prompt}")], timestamp=at, run_id=run_id)
+            )
+            await store.save_snapshot(
+                ContinuableSnapshot(
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    step_index=1,
+                    messages=list(messages),
+                )
+            )
+    finally:
+        await engine.dispose()
+    return run_ids
+
+
+async def seed_side_data(pg_url: str, namespace: str) -> None:
+    async with connected(pg_url) as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO agent_runtime.workspace_files"
+                " (namespace, path, content, version, created_at, updated_at)"
+                " VALUES (:ns, 'video_shot.json', :content, 3, now(), now())"
+            ),
+            {"ns": namespace, "content": '{"shots": []}'},
+        )
+
+
+async def side_data(pg_url: str, namespace: str) -> list[str]:
+    async with connected(pg_url) as conn:
+        return list(
+            (
+                await conn.execute(
+                    text(
+                        "SELECT path FROM agent_runtime.workspace_files"
+                        " WHERE namespace = :ns ORDER BY path"
+                    ),
+                    {"ns": namespace},
+                )
+            ).scalars()
+        )
+
+
+async def fork(client: httpx.AsyncClient, conversation_id: str, **body: object) -> httpx.Response:
+    return await client.post(f"{URL}/{conversation_id}:fork", json={"turn": 1, **body})
+
+
+async def say(client: httpx.AsyncClient, conversation_id: str, said: str) -> None:
+    sent = await client.post(
+        f"{URL}/{conversation_id}/prompts",
+        json={
+            "prompt_id": f"prm_{uuid.uuid4().hex[:16]}",
+            "content": [{"type": "text", "text": said}],
+        },
+    )
+    assert sent.status_code == 200, sent.text
+    await settled(client, conversation_id)
+
+
+async def prompt_rows(pg_url: str, conversation_id: str) -> int:
+    async with connected(pg_url) as conn:
+        return int(
+            (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM agent_runtime.agent_jobs WHERE conversation_id = :cid"
+                    ),
+                    {"cid": conversation_id},
+                )
+            ).scalar_one()
+        )
+
+
+def _untouched(*_: object, **__: object) -> NoReturn:
+    raise AssertionError("分叉用不到这个端口")
+
+
+class StartMovedUnderUs:
+    def __init__(self) -> None:
+        self.targets: list[uuid.UUID] = []
+
+    async def abort(self, session_id: uuid.UUID) -> None:
+        _untouched()
+
+    async def open(self, session_id: uuid.UUID, *, agent_id: str) -> None:
+        _untouched()
+
+    async def open_preview(
+        self, session_id: uuid.UUID, *, agent_id: str, version_id: uuid.UUID | None
+    ) -> None:
+        _untouched()
+
+    async def fork(
+        self,
+        *,
+        source_id: uuid.UUID,
+        source_user: uuid.UUID,
+        target_id: uuid.UUID,
+        target_user: uuid.UUID,
+        turn: int,
+        agent_id: str | None,
+    ) -> None:
+        self.targets.append(target_id)
+        raise Conflict("这段对话刚刚又跑了一轮，重新挑一个分叉点")
+
+    async def copy_files(
+        self,
+        *,
+        source_id: uuid.UUID,
+        source_user: uuid.UUID,
+        target_id: uuid.UUID,
+        target_user: uuid.UUID,
+        files: Sequence[tuple[str, str]],
+        require_any: frozenset[str],
+    ) -> bool:
+        _untouched()
+
+
+async def test_fork_carries_history_and_workspace_and_leaves_the_source_alone(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    owner = await login_as(client, pg_url, username="logan")
+    source = await open_conversation(client, title="开场那段")
+    await seed_turns(pg_url, source, ["第一句", "第二句", "第三句"])
+    await seed_side_data(pg_url, f"{owner}/{source}")
+
+    forked = await fork(client, source, turn=2)
+    assert forked.status_code == 201, forked.text
+    copy = forked.json()["conversation"]
+    assert copy["forkedFrom"] == source
+    assert copy["forkTurn"] == 2
+    assert copy["ownerUserId"] == owner
+    assert copy["agentId"] == AGENT_ID
+    assert copy["title"] == "开场那段（分叉 · 第 2 轮）"
+    assert copy["taskId"] is None, "挂上源的需求单就等于替别人认领"
+
+    history = await client.get(f"{URL}/{copy['id']}/transcript")
+    assert history.status_code == 200, history.text
+    assert (history.json()["forked_from"], history.json()["fork_turn"]) == (source, 2), (
+        "会话页首屏靠这两项画血缘提示"
+    )
+    turns = history.json()["items"]
+    assert [turn["content"] for turn in turns] == [
+        [{"type": "text", "text": "第一句"}],
+        [{"type": "text", "text": "第二句"}],
+    ], "继承轮要读得出来，而且截在分叉点上"
+    assert [turn["state"] for turn in turns] == ["completed", "completed"], (
+        "终态是拿原 run id 回源查的，副本没存运行记录"
+    )
+
+    assert await side_data(pg_url, f"{owner}/{copy['id']}") == ["video_shot.json"]
+    source_history = await client.get(f"{URL}/{source}/transcript")
+    assert len(source_history.json()["items"]) == 3, "源对话的历史不能被分叉动到"
+    assert await side_data(pg_url, f"{owner}/{source}") == ["video_shot.json"]
+
+
+async def test_fork_copies_the_file_but_not_its_version(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    owner = await login_as(client, pg_url, username="logan")
+    source = await open_conversation(client)
+    await seed_turns(pg_url, source, ["第一句"])
+    await seed_side_data(pg_url, f"{owner}/{source}")
+
+    copy = (await fork(client, source)).json()["conversation"]["id"]
+
+    read = await client.get(f"{URL}/{copy}/workspace/file", params={"path": "video_shot.json"})
+    assert read.status_code == 200, read.text
+    assert read.json()["file"]["version"] == 1
+
+
+async def test_agent_id_can_be_swapped_for_a_side_by_side_run(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    await login_as(client, pg_url, username="logan")
+    source = await open_conversation(client)
+    await seed_turns(pg_url, source, ["第一句"])
+
+    copy = (await fork(client, source, agentId="assistant")).json()["conversation"]
+    assert copy["agentId"] == "assistant"
+
+
+async def test_governor_forks_anyone_including_tombstones(
+    app: FastAPI, client: httpx.AsyncClient, pg_url: str
+) -> None:
+    owner = await login_as(client, pg_url, username="logan")
+    source = await open_conversation(client)
+    await seed_turns(pg_url, source, ["第一句"])
+    await seed_side_data(pg_url, f"{owner}/{source}")
+    assert (await client.delete(f"{URL}/{source}")).status_code == 204
+
+    async with make_client(app) as governor:
+        boss = await login_as(governor, pg_url, username="root", role="root")
+        forked = await fork(governor, source)
+        assert forked.status_code == 201, forked.text
+        copy = forked.json()["conversation"]
+        assert copy["ownerUserId"] == boss
+        assert copy["deletedAt"] is None, "副本是活的，墓碑只是它的来源"
+        assert await side_data(pg_url, f"{boss}/{copy['id']}") == ["video_shot.json"]
+
+    assert (await fork(client, source)).status_code == 404, "属主自己也看不见墓碑"
+
+
+async def test_invisible_source_is_404(
+    app: FastAPI, client: httpx.AsyncClient, pg_url: str
+) -> None:
+    await login_as(client, pg_url, username="logan")
+    source = await open_conversation(client)
+    await seed_turns(pg_url, source, ["第一句"])
+
+    async with make_client(app) as other:
+        await login_as(other, pg_url, username="maya")
+        assert (await fork(other, source)).status_code == 404
+        assert (await fork(other, str(uuid.uuid4()))).status_code == 404
+
+
+@pytest.mark.parametrize("turn", [0, -1])
+async def test_turn_must_be_a_positive_number(
+    client: httpx.AsyncClient, pg_url: str, turn: int
+) -> None:
+    await login_as(client, pg_url, username="logan")
+    source = await open_conversation(client)
+    await seed_turns(pg_url, source, ["第一句"])
+
+    assert (await fork(client, source, turn=turn)).status_code == 422
+
+
+async def test_turn_beyond_the_end_and_conversations_that_never_ran_are_422(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    await login_as(client, pg_url, username="logan")
+    never_ran = await open_conversation(client)
+    assert (await fork(client, never_ran)).status_code == 422
+
+    source = await open_conversation(client)
+    await seed_turns(pg_url, source, ["第一句", "第二句"])
+    assert (await fork(client, source, turn=2)).status_code == 201
+    assert (await fork(client, source, turn=3)).status_code == 422
+
+
+async def test_source_with_an_unfinished_prompt_is_409(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    owner = await login_as(client, pg_url, username="logan")
+    source = await open_conversation(client)
+    await seed_turns(pg_url, source, ["第一句"])
+    async with connected(pg_url) as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO agent_runtime.agent_jobs"
+                " (prompt_id, conversation_id, agent_id, owner_user_id, user_name,"
+                "  content, status, created_at)"
+                " VALUES (:pid, :cid, :agent, :owner, 'logan', '[]', 'queued', now())"
+            ),
+            {
+                "pid": f"prm_{uuid.uuid4().hex[:16]}",
+                "cid": source,
+                "agent": AGENT_ID,
+                "owner": owner,
+            },
+        )
+
+    assert (await fork(client, source)).status_code == 409
+
+
+async def test_start_moving_between_counting_and_seeding_voids_the_fork(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    owner = await login_as(client, pg_url, username="logan")
+    source = await open_conversation(client)
+    start = StartMovedUnderUs()
+    engine = build_engine(pg_url)
+    try:
+        repo = SqlConversationRepository(engine)
+        service = ConversationService(
+            repo,
+            previews=SqlAgentPreviewStore(engine),
+            runtime=start,
+            list_collections=_untouched,
+            claim_task=_untouched,
+            task_exists=_untouched,
+            collection_exists=_untouched,
+            list_derived_files=_untouched,
+            read_derived_file=_untouched,
+            write_derived_file=_untouched,
+            document_validators={},
+            film=UnusedFilmPage(),
+            drafts=SqlWholeFilmDraftStore(engine),
+            draft_references=_untouched,
+            exports=None,
+            generate_title=_untouched,
+            announce_title=_untouched,
+            activities_of=_untouched,
+            busy_conversation_ids=_untouched,
+            latest_master_urls=_untouched,
+            video_progress_of=_untouched,
+            same_style_files=SAME_STYLE,
+            same_style_source=_untouched,
+            announce_row=_untouched,
+            announce_deleted=_untouched,
+        )
+        principal = Principal(
+            kind="user", user_id=uuid.UUID(owner), permissions=frozenset(), audit_label="logan"
+        )
+
+        with pytest.raises(Conflict):
+            await service.fork(principal, uuid.UUID(source), turn=1)
+
+        [target] = start.targets
+        with pytest.raises(NotFound):
+            await repo.get(target, owner=None, include_deleted=True)
+    finally:
+        await engine.dispose()
+
+
+async def test_a_fork_of_a_fork_points_at_its_direct_parent(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    await login_as(client, pg_url, username="logan")
+    source = await open_conversation(client)
+    await seed_turns(pg_url, source, ["第一句", "第二句"])
+
+    first = (await fork(client, source, turn=2)).json()["conversation"]["id"]
+    second = (await fork(client, first, turn=1)).json()["conversation"]
+    assert second["forkedFrom"] == first
+    assert second["forkTurn"] == 1
+
+
+async def test_a_fork_of_a_same_as_conversation_records_no_source(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    await login_as(client, pg_url, username="logan")
+    origin = await open_conversation(client)
+    source = await open_conversation(client)
+    await seed_turns(pg_url, source, ["第一句"])
+    async with connected(pg_url) as conn:
+        await conn.execute(
+            text("UPDATE iclip.conversations SET same_as = :origin WHERE id = :id"),
+            {"origin": origin, "id": source},
+        )
+
+    forked = await fork(client, source, turn=1)
+
+    assert forked.status_code == 201, forked.text
+    async with connected(pg_url) as conn:
+        found = await conn.execute(
+            text("SELECT same_as FROM iclip.conversations WHERE id = :id"),
+            {"id": forked.json()["conversation"]["id"]},
+        )
+        assert found.scalar_one() is None
+
+
+async def test_inherited_turns_cannot_be_regenerated(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    await login_as(client, pg_url, username="logan")
+    source = await open_conversation(client)
+    await say(client, source, "第一句")
+
+    copy = (await fork(client, source)).json()["conversation"]["id"]
+    retried = await client.post(f"{URL}/{copy}/turns/t1:regenerate", json={})
+    assert retried.status_code == 404, retried.text
+    assert retried.json()["detail"] == INHERITED_DETAIL
+    assert await prompt_rows(pg_url, copy) == 0, "副本名下不能冒出一条抄源对话的消息"
+    history = await client.get(f"{URL}/{copy}/transcript")
+    assert [turn["content"] for turn in history.json()["items"]] == [
+        [{"type": "text", "text": "第一句"}]
+    ], "挡在截断之前，继承轮还在"
+
+    await say(client, copy, "接着说")
+    replayed = await client.post(f"{URL}/{copy}/turns/t2:regenerate", json={})
+    assert replayed.status_code == 200, replayed.text
+    await settled(client, copy)
+    history = await client.get(f"{URL}/{copy}/transcript")
+    assert [turn["turnId"] for turn in history.json()["items"]] == ["t1", "t2"]
+    assert await prompt_rows(pg_url, copy) == 2
+
+
+@pytest.fixture
+async def media_app(
+    base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch
+) -> AsyncGenerator[FastAPI]:
+    for name, value in MEDIA_ENVS.items():
+        monkeypatch.setenv(name, value)
+    async with connected(migrated_pg) as conn:
+        await reset_database(conn)
+    config = config_with_media()
+    media_generation = config.media_generation
+    assert media_generation is not None
+    config = config.model_copy(
+        update={
+            "media_generation": media_generation.model_copy(
+                update={
+                    "video": VideoGenerationSection(
+                        model="vendor-a-seedance-2-5",
+                        allowed_models=("vendor-a-seedance-2-5",),
+                    )
+                }
+            )
+        }
+    )
+    engine = build_engine(migrated_pg)
+    try:
+        built = build_backed_app(
+            config,
+            engine=engine,
+            object_store=MemoryObjectStore(),
+            queue_connector=InMemoryConnector(),
+            media_codec=SOFTWARE,
+            credential_probe=KeyCheckingProbe({GOOD_KEY}),
+        )
+        await seed_agents(config_services_of(built), engine, (AgentSeed(AGENT_ID),))
+        yield built
+    finally:
+        await engine.dispose()
+
+
+async def complete(repo: SqlGenerationRepository, job: GenerationJob, name: str) -> GenerationJob:
+    await repo.mark_submitting(job.id)
+    done = await repo.mark_completed(
+        job.id,
+        output=GenerationOutput(url=f"https://example.test/{name}.mp4", duration_ms=4000),
+        provider_status="succeeded",
+    )
+    assert done is not None
+    return done
+
+
+async def generation_count(pg_url: str) -> int:
+    async with connected(pg_url) as conn:
+        return int(
+            (await conn.execute(text("SELECT count(*) FROM iclip.generation_jobs"))).scalar_one()
+        )
+
+
+async def listed_ids(client: httpx.AsyncClient, conversation_id: str) -> set[str]:
+    listed = await client.get("/generations", params={"conversationId": conversation_id})
+    assert listed.status_code == 200, listed.text
+    return {item["id"] for item in listed.json()["items"]}
+
+
+@pytest.mark.skipif(not ffmpeg_available(), reason="受理编辑要探参考片段的时长，本机没有 ffprobe")
+async def test_a_fork_inherits_finished_takes_instead_of_copying_them(
+    media_app: FastAPI, pg_url: str
+) -> None:
+    engine = build_engine(pg_url)
+    repo = SqlGenerationRepository(engine)
+    with TemporaryDirectory(prefix="fork-clip-") as tmp:
+        clip_bytes = synthesize_video(
+            Path(tmp) / "clip.mp4", size="160x120", seconds=4, audio=False
+        )
+    try:
+        async with make_client(media_app) as client, serving({"clip.mp4": clip_bytes}) as media:
+            owner = uuid.UUID(await login_as(client, pg_url, username="logan"))
+            clip_url = media.url("clip.mp4")
+            await repo.create_settled(
+                [
+                    make_upload(
+                        kind=KIND_VIDEO, owner_user_id=owner, output=GenerationOutput(url=clip_url)
+                    )
+                ]
+            )
+            source = await open_conversation(client)
+            await seed_turns(pg_url, source, ["第一句"])
+            take = await complete(
+                repo,
+                await repo.create(
+                    make_job(
+                        video_request(), owner_user_id=owner, conversation_id=uuid.UUID(source)
+                    )
+                ),
+                "take",
+            )
+            in_flight = await repo.create(
+                make_job(video_request(), owner_user_id=owner, conversation_id=uuid.UUID(source))
+            )
+            written = await generation_count(pg_url)
+
+            forked = await fork(client, source)
+            assert forked.status_code == 201, forked.text
+            copy = forked.json()["conversation"]["id"]
+            assert await generation_count(pg_url) == written, "分叉不拷出片记录"
+            await complete(repo, in_flight, "in-flight")
+            after = await complete(
+                repo,
+                await repo.create(
+                    make_job(
+                        video_request(), owner_user_id=owner, conversation_id=uuid.UUID(source)
+                    )
+                ),
+                "after",
+            )
+
+            assert await listed_ids(client, copy) == {str(take.id)}
+
+            async def edit_on(base: uuid.UUID) -> httpx.Response:
+                return await client.post(
+                    "/generations/video-edits",
+                    json={
+                        "source_job_id": str(base),
+                        "range_start_ms": 1000,
+                        "range_end_ms": 3000,
+                        "reference_video_urls": [clip_url],
+                        "model": "vendor-a-seedance-2-5",
+                        "seconds": -1,
+                        "prompt": "换一双鞋",
+                        "conversation_id": copy,
+                    },
+                )
+
+            accepted = await edit_on(take.id)
+            assert accepted.status_code == 202, accepted.text
+            edit = accepted.json()["generation"]
+            assert (edit["sourceJobId"], edit["rootJobId"]) == (str(take.id), str(take.id)), (
+                "来源与原作都指源对话那条"
+            )
+            for outside in (after.id, in_flight.id):
+                refused = await edit_on(outside)
+                assert refused.status_code == 422, refused.text
+            assert await listed_ids(client, copy) == {str(take.id), edit["id"]}
+            assert edit["id"] not in await listed_ids(client, source)
+
+        async with make_client(media_app) as other:
+            await login_as(other, pg_url, username="maya")
+            assert await listed_ids(other, copy) == set()
+    finally:
+        await engine.dispose()
+
+
+async def test_audit_list_carries_only_each_conversations_own_latest_master(
+    media_app: FastAPI, pg_url: str
+) -> None:
+    engine = build_engine(pg_url)
+    repo = SqlGenerationRepository(engine)
+    try:
+        async with make_client(media_app) as client:
+            owner = uuid.UUID(await login_as(client, pg_url, username="logan"))
+            source = await open_conversation(client)
+            await seed_turns(pg_url, source, ["第一句"])
+            take = await complete(
+                repo,
+                await repo.create(
+                    make_job(
+                        video_request(), owner_user_id=owner, conversation_id=uuid.UUID(source)
+                    )
+                ),
+                "take",
+            )
+            forked = await fork(client, source)
+            assert forked.status_code == 201, forked.text
+            copy = forked.json()["conversation"]["id"]
+
+        async with make_client(media_app) as governor:
+            await login_as(governor, pg_url, username="gov", role="root")
+            listed = await governor.get(f"{URL}/audit")
+            assert listed.status_code == 200, listed.text
+            latest = {item["id"]: item["latestMasterUrl"] for item in listed.json()["items"]}
+
+        assert latest == {source: take.output.url, copy: None}
+    finally:
+        await engine.dispose()

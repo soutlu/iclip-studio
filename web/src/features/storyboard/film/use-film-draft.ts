@@ -1,0 +1,269 @@
+import { useQueryClient } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ApiError, errorMessageOf } from '@/shared/api/client'
+import type { FilmTextEditIn } from '@/shared/api/generated/types.gen'
+import { editFilmText, filmQueryKey, type FilmGroup, type FilmView } from './film.api'
+import { toDraftText, toRequestText, toShownText } from './film-draft-text'
+
+const SAVE_DELAY_MS = 800
+
+export type FilmSegmentValue =
+  | { kind: 'text'; text: string }
+  | { kind: 'shot'; parts: readonly string[]; lines: readonly string[] }
+
+export type FilmConflict = { target: string; label: string; theirs: FilmSegmentValue | undefined }
+
+export type FilmSaveState =
+  | { kind: 'idle' }
+  | { kind: 'saving' }
+  | { kind: 'saved' }
+  | { kind: 'error'; message: string }
+  | { kind: 'conflict'; conflicts: readonly FilmConflict[] }
+
+type FilmEdit = { label: string; base: FilmSegmentValue; value: FilmSegmentValue }
+
+const sameValue = (left: FilmSegmentValue | undefined, right: FilmSegmentValue | undefined) =>
+  JSON.stringify(left ?? null) === JSON.stringify(right ?? null)
+
+const mapText = (value: FilmSegmentValue, map: (text: string) => string): FilmSegmentValue =>
+  value.kind === 'text'
+    ? { kind: 'text', text: map(value.text) }
+    : { kind: 'shot', lines: value.lines, parts: value.parts.map(map) }
+
+const segmentValues = (view: FilmView): Map<string, FilmSegmentValue> => {
+  const values = new Map<string, FilmSegmentValue>()
+  for (const group of view.groups) {
+    const draft = (value: FilmSegmentValue) => mapText(value, (text) => toDraftText(text, group))
+    for (const setting of group.settings) {
+      if (setting.target !== null)
+        values.set(setting.target, draft({ kind: 'text', text: setting.text }))
+    }
+    for (const shot of group.shots) {
+      if (shot.target !== null)
+        values.set(
+          shot.target,
+          draft({ kind: 'shot', lines: shot.lines.map((line) => line.text), parts: shot.parts }),
+        )
+    }
+  }
+  return values
+}
+
+const groupOf = (view: FilmView, target: string): FilmGroup | undefined =>
+  view.groups.find(
+    (group) =>
+      group.settings.some((setting) => setting.target === target) ||
+      group.shots.some((shot) => shot.target === target),
+  )
+
+const withEdits = (view: FilmView, edits: ReadonlyMap<string, FilmEdit>): FilmView => {
+  if (edits.size === 0) return view
+  return {
+    ...view,
+    groups: view.groups.map((group) => {
+      const shown = (target: string | null) => {
+        const value = target === null ? undefined : edits.get(target)?.value
+        return value === undefined ? undefined : mapText(value, (text) => toShownText(text, group))
+      }
+      return {
+        ...group,
+        settings: group.settings.map((setting) => {
+          const value = shown(setting.target)
+          return value?.kind === 'text' ? { ...setting, text: value.text } : setting
+        }),
+        shots: group.shots.map((shot) => {
+          const value = shown(shot.target)
+          if (value?.kind !== 'shot') return shot
+          return {
+            ...shot,
+            lines: shot.lines.map((line, index) => ({ ...line, text: value.lines[index] ?? '' })),
+            parts: [...value.parts],
+          }
+        }),
+      }
+    }),
+  }
+}
+
+const editIn = (view: FilmView, target: string, value: FilmSegmentValue): FilmTextEditIn => {
+  const group = groupOf(view, target)
+  const images: string[] = []
+  const sent =
+    group === undefined ? value : mapText(value, (text) => toRequestText(text, group, images))
+  const inserted = images.length === 0 ? {} : { images }
+  if (sent.kind === 'text') return { target, text: sent.text, ...inserted }
+  const shot = group?.shots.find((item) => item.target === target)
+  return {
+    lines: (shot?.lines ?? []).map((line, index) => ({
+      target: line.target,
+      text: sent.lines[index] ?? '',
+    })),
+    parts: [...sent.parts],
+    target,
+    ...inserted,
+  }
+}
+
+const readView = (queryClient: ReturnType<typeof useQueryClient>, conversationId: string) =>
+  queryClient.getQueryData<{ film: FilmView }>(filmQueryKey(conversationId))?.film
+
+export const useFilmDraft = (conversationId: string, server: FilmView | undefined) => {
+  const queryClient = useQueryClient()
+  const [edits, setEdits] = useState<ReadonlyMap<string, FilmEdit>>(() => new Map())
+  const [state, setState] = useState<FilmSaveState>({ kind: 'idle' })
+  const bookRef = useRef({
+    edits: new Map<string, FilmEdit>(),
+    conflicts: null as readonly FilmConflict[] | null,
+    inFlight: null as Promise<boolean> | null,
+    timer: null as ReturnType<typeof setTimeout> | null,
+  })
+
+  const publish = useCallback(() => setEdits(new Map(bookRef.current.edits)), [])
+  const clearTimer = useCallback(() => {
+    const book = bookRef.current
+    if (book.timer !== null) clearTimeout(book.timer)
+    book.timer = null
+  }, [])
+
+  const reconcile = useCallback(
+    (latest: FilmView): FilmConflict[] => {
+      const book = bookRef.current
+      const values = segmentValues(latest)
+      const conflicts: FilmConflict[] = []
+      for (const [target, edit] of book.edits) {
+        const theirs = values.get(target)
+        if (theirs !== undefined && sameValue(theirs, edit.value)) book.edits.delete(target)
+        else if (theirs === undefined || !sameValue(theirs, edit.base))
+          conflicts.push({ label: edit.label, target, theirs })
+      }
+      publish()
+      return conflicts
+    },
+    [publish],
+  )
+
+  const persist = useCallback((): Promise<boolean> => {
+    const book = bookRef.current
+    clearTimer()
+    if (book.inFlight !== null) return book.inFlight
+    if (book.conflicts !== null) return Promise.resolve(false)
+    if (book.edits.size === 0) return Promise.resolve(true)
+
+    const run = async (): Promise<boolean> => {
+      let rebased = false
+      while (book.edits.size > 0) {
+        const view = readView(queryClient, conversationId)
+        if (view === undefined) return false
+        const sending = [...book.edits]
+        setState({ kind: 'saving' })
+        try {
+          const saved = await editFilmText(
+            conversationId,
+            view.filmVersion,
+            sending.map(([target, edit]) => editIn(view, target, edit.value)),
+          )
+          for (const [target, edit] of sending) {
+            const current = book.edits.get(target)
+            if (current === undefined) continue
+            if (sameValue(current.value, edit.value)) book.edits.delete(target)
+            else book.edits.set(target, { ...current, base: edit.value })
+          }
+          publish()
+          queryClient.setQueryData(filmQueryKey(conversationId), { film: saved })
+        } catch (error) {
+          if (!(error instanceof ApiError) || error.status !== 409 || rebased) throw error
+          await queryClient.refetchQueries({ exact: true, queryKey: filmQueryKey(conversationId) })
+          const latest = readView(queryClient, conversationId)
+          if (latest === undefined) throw error
+          const conflicts = reconcile(latest)
+          if (conflicts.length > 0) {
+            book.conflicts = conflicts
+            setState({ conflicts, kind: 'conflict' })
+            return false
+          }
+          rebased = true
+        }
+      }
+      setState({ kind: 'saved' })
+      return true
+    }
+
+    book.inFlight = run()
+      .catch((error: unknown) => {
+        setState({ kind: 'error', message: errorMessageOf(error, '分镜保存失败') })
+        return false
+      })
+      .finally(() => {
+        book.inFlight = null
+      })
+    return book.inFlight
+  }, [clearTimer, conversationId, publish, queryClient, reconcile])
+
+  const saveNow = useCallback(
+    async (): Promise<FilmView | null> =>
+      (await persist()) ? (readView(queryClient, conversationId) ?? null) : null,
+    [conversationId, persist, queryClient],
+  )
+
+  const update = useCallback(
+    (target: string, label: string, shown: FilmSegmentValue) => {
+      const book = bookRef.current
+      const view = readView(queryClient, conversationId)
+      const group = view === undefined ? undefined : groupOf(view, target)
+      const existing = book.edits.get(target)
+      const base =
+        existing?.base ?? (view === undefined ? undefined : segmentValues(view).get(target))
+      if (base === undefined || group === undefined) {
+        setState({ kind: 'error', message: '该段文字已不存在，无法修改；请刷新分镜' })
+        return
+      }
+      const value = mapText(shown, (text) => toDraftText(text, group))
+      if (sameValue(base, value)) book.edits.delete(target)
+      else book.edits.set(target, { base, label, value })
+      publish()
+      clearTimer()
+      if (book.conflicts !== null) return
+      setState(book.inFlight === null ? { kind: 'idle' } : { kind: 'saving' })
+      if (book.edits.size > 0) book.timer = setTimeout(() => void persist(), SAVE_DELAY_MS)
+    },
+    [clearTimer, conversationId, persist, publish, queryClient],
+  )
+
+  const resolveConflict = useCallback(
+    (choice: 'mine' | 'theirs') => {
+      const book = bookRef.current
+      for (const conflict of book.conflicts ?? []) {
+        const edit = book.edits.get(conflict.target)
+        if (choice === 'mine' && edit !== undefined && conflict.theirs !== undefined)
+          book.edits.set(conflict.target, { ...edit, base: conflict.theirs })
+        else book.edits.delete(conflict.target)
+      }
+      book.conflicts = null
+      publish()
+      setState({ kind: 'idle' })
+      if (book.edits.size > 0) void persist()
+    },
+    [persist, publish],
+  )
+
+  useEffect(
+    () => () => {
+      if (bookRef.current.timer !== null) void persist()
+    },
+    [persist],
+  )
+
+  const view = useMemo(
+    () => (server === undefined ? undefined : withEdits(server, edits)),
+    [edits, server],
+  )
+
+  return {
+    hasUnsavedChanges: edits.size > 0,
+    resolveConflict,
+    saveNow,
+    state,
+    update,
+    view,
+  }
+}

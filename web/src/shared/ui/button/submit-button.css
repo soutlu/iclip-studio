@@ -1,0 +1,59 @@
+.submit-button:not([data-phase='idle']) {
+  --color-chat-hairline: color-mix(in srgb, currentcolor 30%, transparent);
+  background-image: none;
+  cursor: default;
+  scale: 1;
+}
+.submit-button[data-variant='primary']:not([data-phase='idle']) {
+  color: var(--color-on-primary);
+}
+.submit-button[data-variant='tonal']:not([data-phase='idle']) {
+  color: var(--color-on-secondary-container);
+}
+
+.submit-button-stack {
+  display: grid;
+  gap: inherit;
+}
+.submit-button-layer {
+  display: flex;
+  grid-area: 1 / 1;
+  align-items: center;
+  justify-content: center;
+  gap: inherit;
+}
+.submit-button-current {
+  width: 0;
+  min-width: 100%;
+}
+.submit-button-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+}
+
+.submit-button-check {
+  stroke-width: 2.4;
+}
+/* 路径实长约 22.6，取 24 让起点也被盖住；lucide 的 path 不带 pathLength。 */
+.submit-button-check path {
+  stroke-dasharray: 24;
+}
+.submit-button-check-draw path {
+  animation: submit-button-check-draw calc(var(--dur-s) * 2) var(--ease-decel) both;
+}
+@keyframes submit-button-check-draw {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .submit-button .animate-spin {
+    animation-duration: 1.8s !important;
+    animation-iteration-count: infinite !important;
+  }
+}

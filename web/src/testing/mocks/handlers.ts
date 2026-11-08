@@ -1,0 +1,504 @@
+import { http, HttpResponse } from 'msw'
+import type { z } from 'zod'
+import {
+  zConversationIn,
+  zTaskCreateIn,
+  zTaskIn,
+  zTaskInputsOutput,
+  type zTaskOut,
+} from '@/shared/api/generated/zod.gen'
+import { PERMISSION } from '@/shared/auth/permissions'
+import { agentConfigHandlers, mockMcpServerUsage, mockModelUsage } from './agent-config'
+import { agentPreviewHandlers } from './agent-previews'
+import { audioHandlers } from './audio'
+import { auditHandlers } from './audit'
+import { enhancementHandlers } from './enhancements'
+import { filmHandlers } from './film'
+import { forgetMockHitCaseTags, hitCaseHandlers, mockHitCaseTagSets } from './hit-cases'
+import { libraryHandlers } from './library'
+import { mcpServerHandlers } from './mcp-servers'
+import { modelProviderHandlers } from './model-providers'
+import { mockAuthUser, mockGovernor } from './auth-user'
+import {
+  addMockCollection,
+  addMockConversation,
+  liveMockConversation,
+  mockAuditRow,
+  mockCollections,
+  mockConversations,
+  mockVideoProgress,
+  resetMockConversations,
+  type MockConversation,
+} from './conversations'
+import { byCreatedDesc, mockCreatedAt, pageByCreated } from './paging'
+import { libraryTagHandlers } from './library-tags'
+import { forgetMockReferenceTags, mockReferenceTagSets, referenceHandlers } from './references'
+import { skillHandlers } from './skills'
+import { transcriptHandlers } from './transcript'
+import { resetMockUploads, uploadHandlers } from './uploads'
+import { wholeFilmHandlers } from './whole-film'
+import { workspaceHandlers } from './workspace'
+
+export {
+  addMockCollection,
+  addMockConversation,
+  liveMockConversation,
+  mockAuthUser,
+  mockCollections,
+  mockConversations,
+  mockGovernor,
+  mockVideoProgress,
+  resetMockConversations,
+}
+
+export type MockUser = typeof mockAuthUser
+
+let currentUser: MockUser | null = null
+
+export const loginAs = (user: MockUser, overrides: Partial<MockUser> = {}): MockUser => {
+  currentUser = { ...user, ...overrides }
+  return currentUser
+}
+
+const activeUserId = () => (currentUser ?? mockAuthUser).id
+
+export const resetMockSession = () => {
+  currentUser = null
+  resetMockUploads()
+}
+
+const SIDEBAR_PER_COLLECTION = 10
+const SIDEBAR_UNGROUPED = 20
+
+const mine = () =>
+  mockConversations.filter((item) => item.ownerUserId === activeUserId() && item.deletedAt === null)
+
+const inState = (item: MockConversation, state: string | null) => {
+  if (state === 'running') return item.activity.busy
+  if (state === 'done') return item.completedAt !== null
+  if (state === 'open') return item.completedAt === null
+  return true
+}
+
+type MockTask = z.output<typeof zTaskOut>
+
+const completeTaskInputs = (inputs: z.output<typeof zTaskCreateIn>['inputs']) =>
+  zTaskInputsOutput.parse({
+    ...inputs,
+    products: inputs.products.map((product) => ({ image_oss_urls: [], ...product })),
+    reference_image_oss_urls: {
+      model: [],
+      outfit: [],
+      prop: [],
+      ...inputs.reference_image_oss_urls,
+    },
+    reference_video_oss_url: inputs.reference_video_oss_url ?? null,
+    video_spec: { aspect_ratio: null, duration_seconds: null, ...inputs.video_spec },
+  })
+
+export const mockTasks: MockTask[] = []
+
+export const addMockTask = (title: string) => {
+  const now = mockCreatedAt()
+  const task: MockTask = {
+    assigneeUserIds: [],
+    inputs: zTaskInputsOutput.parse({
+      video_spec: { aspect_ratio: null, duration_seconds: null },
+      reference_video_oss_url: null,
+      products: [{ style_no: 'DEMO24001W', image_oss_urls: [] }],
+      reference_image_oss_urls: { model: [], outfit: [], prop: [] },
+    }),
+    createdAt: now,
+    creatorUserId: mockAuthUser.id,
+    deadline: null,
+    id: crypto.randomUUID(),
+    priority: 0,
+    status: 'draft',
+    title,
+    updatedAt: now,
+  }
+  mockTasks.push(task)
+  return task
+}
+
+export const resetMockTasks = () => {
+  mockTasks.length = 0
+}
+
+export const mockUsers: MockUser[] = []
+
+export const addMockUser = (displayName: string, id = crypto.randomUUID()) => {
+  const user: MockUser = {
+    ...mockAuthUser,
+    displayName,
+    email: `${id.slice(0, 8)}@example.com`,
+    id,
+    permissions: [PERMISSION.agentRead, PERMISSION.agentRun],
+    roles: ['editor'],
+    username: id.slice(0, 8),
+  }
+  mockUsers.push(user)
+  return user
+}
+
+export const resetMockUsers = () => {
+  mockUsers.length = 0
+}
+
+const auditScope = (query: URLSearchParams) => {
+  const deleted = query.get('deleted') ?? 'live'
+  const owner = query.get('ownerUserId')
+  const taskId = query.get('taskId')
+  const since = query.get('since')
+  const until = query.get('until')
+  return mockConversations.filter(
+    (item) =>
+      (deleted === 'all' || (item.deletedAt !== null) === (deleted === 'deleted')) &&
+      (owner === null || item.ownerUserId === owner) &&
+      (taskId === null || item.taskId === taskId) &&
+      (since === null || Date.parse(item.createdAt) >= Date.parse(since)) &&
+      (until === null || Date.parse(item.createdAt) <= Date.parse(until)),
+  )
+}
+
+export const handlers = [
+  http.get('*/api/users/me', () =>
+    currentUser
+      ? HttpResponse.json({ user: currentUser })
+      : new HttpResponse(null, { status: 401 }),
+  ),
+
+  http.post('*/api/auth/login', async ({ request }) => {
+    const form = new URLSearchParams(await request.text())
+    currentUser = form.get('username') === mockGovernor.username ? mockGovernor : mockAuthUser
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.post('*/api/auth/logout', () => {
+    currentUser = null
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.get('*/api/auth/sso/authorize', () => new HttpResponse(null, { status: 404 })),
+
+  http.get('*/api/users', ({ request }) => {
+    const query = new URL(request.url).searchParams
+    const page = Number(query.get('page') ?? 1)
+    const pageSize = Number(query.get('pageSize') ?? 200)
+    const items = [mockAuthUser, mockGovernor, ...mockUsers]
+    return HttpResponse.json({
+      items: items.slice((page - 1) * pageSize, page * pageSize),
+      page,
+      pageSize,
+      total: items.length,
+    })
+  }),
+
+  http.get('*/api/conversations/audit', ({ request }) => {
+    const query = new URL(request.url).searchParams
+    const scoped = auditScope(query)
+    const rows = scoped.filter((item) => inState(item, query.get('state')))
+    const limit = Number(query.get('limit') ?? 20)
+    return HttpResponse.json({
+      ...pageByCreated(rows.map(mockAuditRow), query.get('cursor'), limit),
+      runningTotal: scoped.filter((item) => item.activity.busy).length,
+      total: rows.length,
+    })
+  }),
+
+  http.get('*/api/conversations/video-progress', () => {
+    const user = currentUser ?? mockAuthUser
+    const everyone = user.permissions.includes(PERMISSION.usersManage)
+    const owners = new Map(mockConversations.map((item) => [item.id, item.ownerUserId]))
+    return HttpResponse.json({
+      conversations: Object.fromEntries(
+        [...mockVideoProgress].filter(
+          ([conversationId]) => everyone || owners.get(conversationId) === user.id,
+        ),
+      ),
+    })
+  }),
+
+  http.get('*/api/conversations/agents', () =>
+    HttpResponse.json({
+      items: [
+        { id: 'storyboard', name: '分镜 Agent' },
+        { id: 'replica', name: '完全复刻' },
+      ],
+      default: 'storyboard',
+    }),
+  ),
+
+  http.get('*/api/conversations/search', ({ request }) => {
+    const keyword = (new URL(request.url).searchParams.get('q') ?? '').trim().toLowerCase()
+    const items = mine()
+      .sort(byCreatedDesc)
+      .filter((item) => !keyword || item.title.toLowerCase().includes(keyword))
+    return HttpResponse.json({ items })
+  }),
+
+  http.get('*/api/conversations/by-task/:taskId', ({ params }) =>
+    HttpResponse.json({
+      items: mine()
+        .filter((item) => item.taskId === params['taskId'])
+        .sort(byCreatedDesc),
+    }),
+  ),
+
+  http.get('*/api/conversations', ({ request }) => {
+    const state = new URL(request.url).searchParams.get('state')
+    const rows = mine().filter((item) => inState(item, state))
+    const ungrouped = rows.filter((item) => item.collectionId === null)
+    return HttpResponse.json({
+      collections: [...mockCollections].sort(byCreatedDesc).map((collection) => {
+        const inside = rows.filter((item) => item.collectionId === collection.id)
+        return {
+          conversationCount: inside.length,
+          id: collection.id,
+          name: collection.name,
+          page: pageByCreated(inside, null, SIDEBAR_PER_COLLECTION),
+          updatedAt: collection.updatedAt,
+        }
+      }),
+      ungrouped: pageByCreated(ungrouped, null, SIDEBAR_UNGROUPED),
+      ungroupedCount: ungrouped.length,
+    })
+  }),
+
+  http.post('*/api/conversations', async ({ request }) => {
+    const body = zConversationIn.parse(await request.json())
+    const existing = mockConversations.find((item) => item.id === body.id)
+    if (existing?.deletedAt) {
+      return HttpResponse.json({ detail: '没有这段对话' }, { status: 404 })
+    }
+    if (existing) return HttpResponse.json({ conversation: existing })
+    const conversation = addMockConversation(body.title ?? '新对话', undefined, activeUserId())
+    if (body.id) conversation.id = body.id
+    conversation.agentId = body.agentId
+    conversation.taskId = body.taskId ?? null
+    conversation.collectionId = body.collectionId ?? null
+    return HttpResponse.json({ conversation }, { status: 201 })
+  }),
+
+  http.get('*/api/conversations/ungrouped', ({ request }) => {
+    const query = new URL(request.url).searchParams
+    const rows = mine().filter(
+      (item) => item.collectionId === null && inState(item, query.get('state')),
+    )
+    return HttpResponse.json(pageByCreated(rows, query.get('cursor'), SIDEBAR_UNGROUPED))
+  }),
+
+  http.get('*/api/conversations/by-collection/:collectionId', ({ params, request }) => {
+    const query = new URL(request.url).searchParams
+    const rows = mine().filter(
+      (item) => item.collectionId === params['collectionId'] && inState(item, query.get('state')),
+    )
+    return HttpResponse.json(pageByCreated(rows, query.get('cursor'), SIDEBAR_PER_COLLECTION))
+  }),
+
+  http.put('*/api/conversations/:conversationId/collection', async ({ params, request }) => {
+    const conversation = liveMockConversation(String(params['conversationId']))
+    if (!conversation) return HttpResponse.json({ detail: '没有这段对话' }, { status: 404 })
+    const body = (await request.json()) as { collectionId: string | null }
+    Object.assign(conversation, {
+      collectionId: body.collectionId,
+      updatedAt: new Date().toISOString(),
+    })
+    return HttpResponse.json({ conversation })
+  }),
+
+  http.put('*/api/conversations/:conversationId/task', async ({ params, request }) => {
+    const conversation = liveMockConversation(String(params['conversationId']))
+    if (!conversation) return HttpResponse.json({ detail: '没有这段对话' }, { status: 404 })
+    const body = (await request.json()) as { taskId: string | null }
+    Object.assign(conversation, { taskId: body.taskId, updatedAt: new Date().toISOString() })
+    return HttpResponse.json({ conversation })
+  }),
+
+  http.put('*/api/conversations/:conversationId/completion', async ({ params, request }) => {
+    const conversation = liveMockConversation(String(params['conversationId']))
+    if (!conversation) return HttpResponse.json({ detail: '没有这段对话' }, { status: 404 })
+    const body = (await request.json()) as { completed: boolean }
+    const now = new Date().toISOString()
+    Object.assign(conversation, {
+      completedAt: body.completed ? now : null,
+      updatedAt: now,
+    })
+    return HttpResponse.json({ conversation })
+  }),
+
+  http.patch('*/api/conversations/:conversationId', async ({ params, request }) => {
+    const conversation = liveMockConversation(String(params['conversationId']))
+    if (!conversation) return HttpResponse.json({ detail: '没有这段对话' }, { status: 404 })
+    const body = (await request.json()) as { title: string }
+    Object.assign(conversation, { title: body.title, updatedAt: new Date().toISOString() })
+    return HttpResponse.json({ conversation })
+  }),
+
+  http.get('*/api/conversations/:conversationId', ({ params }) => {
+    const conversation = liveMockConversation(String(params['conversationId']))
+    if (!conversation) return HttpResponse.json({ detail: '没有这段对话' }, { status: 404 })
+    return HttpResponse.json({ conversation })
+  }),
+
+  http.delete('*/api/conversations/:conversationId', ({ params }) => {
+    const conversation = liveMockConversation(String(params['conversationId']))
+    if (!conversation) return HttpResponse.json({ detail: '没有这段对话' }, { status: 404 })
+    const now = new Date().toISOString()
+    Object.assign(conversation, { deletedAt: now, updatedAt: now })
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.get('*/api/collections', () =>
+    HttpResponse.json({ items: [...mockCollections].sort(byCreatedDesc) }),
+  ),
+
+  http.post('*/api/collections', async ({ request }) => {
+    const body = (await request.json()) as { name: string }
+    return HttpResponse.json({ collection: addMockCollection(body.name) }, { status: 201 })
+  }),
+
+  http.patch('*/api/collections/:collectionId', async ({ params, request }) => {
+    const collection = mockCollections.find((item) => item.id === params['collectionId'])
+    if (!collection) return HttpResponse.json({ detail: '没有这个合集' }, { status: 404 })
+    const body = (await request.json()) as { name: string }
+    Object.assign(collection, { name: body.name, updatedAt: new Date().toISOString() })
+    return HttpResponse.json({ collection })
+  }),
+
+  http.delete('*/api/collections/:collectionId', ({ params }) => {
+    const index = mockCollections.findIndex((item) => item.id === params['collectionId'])
+    if (index < 0) return HttpResponse.json({ detail: '没有这个合集' }, { status: 404 })
+    const [removed] = mockCollections.splice(index, 1)
+    mockConversations.forEach((item) => {
+      if (item.collectionId === removed?.id) item.collectionId = null
+    })
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  http.get('*/api/tasks', ({ request }) => {
+    const url = new URL(request.url)
+    let items: MockTask[] = mockTasks
+    if (url.searchParams.get('claimedBy') === 'me') {
+      items = items.filter((task) => task.assigneeUserIds.includes(activeUserId()))
+    }
+    const status = url.searchParams.get('status')
+    if (status) items = items.filter((task) => task.status === status)
+    const ids = url.searchParams.getAll('ids')
+    if (ids.length > 0) items = items.filter((task) => ids.includes(task.id))
+    const limit = Number(url.searchParams.get('limit') ?? 20)
+    return HttpResponse.json({
+      ...pageByCreated(items, url.searchParams.get('cursor'), limit),
+      total: items.length,
+    })
+  }),
+
+  http.post('*/api/tasks', async ({ request }) => {
+    const parsed = zTaskCreateIn.safeParse(await request.json())
+    if (!parsed.success) return HttpResponse.json({ detail: '需求单参数不合法' }, { status: 422 })
+    const now = mockCreatedAt()
+    const task: MockTask = {
+      ...parsed.data,
+      deadline: parsed.data.deadline ?? null,
+      inputs: completeTaskInputs(parsed.data.inputs),
+      assigneeUserIds: [],
+      createdAt: now,
+      creatorUserId: mockAuthUser.id,
+      id: crypto.randomUUID(),
+      status: 'draft',
+      updatedAt: now,
+    }
+    mockTasks.unshift(task)
+    return HttpResponse.json({ task }, { status: 201 })
+  }),
+
+  http.get('*/api/tasks/:taskId', ({ params }) => {
+    const task = mockTasks.find((item) => item.id === params['taskId'])
+    return task
+      ? HttpResponse.json({ task })
+      : HttpResponse.json({ detail: '没有这张需求单' }, { status: 404 })
+  }),
+
+  http.put('*/api/tasks/:taskId', async ({ params, request }) => {
+    const task = mockTasks.find((item) => item.id === params['taskId'])
+    if (!task) return HttpResponse.json({ detail: '没有这张需求单' }, { status: 404 })
+    const parsed = zTaskIn.safeParse(await request.json())
+    if (!parsed.success) return HttpResponse.json({ detail: '需求单参数不合法' }, { status: 422 })
+    Object.assign(task, parsed.data, {
+      inputs: completeTaskInputs(parsed.data.inputs),
+      updatedAt: new Date().toISOString(),
+    })
+    return HttpResponse.json({ task })
+  }),
+
+  http.post('*/api/tasks/:taskId/publish', ({ params }) => {
+    const task = mockTasks.find((item) => item.id === params['taskId'])
+    if (!task) return HttpResponse.json({ detail: '没有这张需求单' }, { status: 404 })
+    if (task.status !== 'draft') {
+      return HttpResponse.json({ detail: '只有草稿能发布' }, { status: 409 })
+    }
+    Object.assign(task, { status: 'published', updatedAt: new Date().toISOString() })
+    return HttpResponse.json({ task })
+  }),
+
+  http.post('*/api/tasks/:taskId/confirm', ({ params }) => {
+    const task = mockTasks.find((item) => item.id === params['taskId'])
+    if (!task) return HttpResponse.json({ detail: '没有这张需求单' }, { status: 404 })
+    if (task.status !== 'published' && task.status !== 'confirmed') {
+      return HttpResponse.json({ detail: '这张单认领不了' }, { status: 409 })
+    }
+    if (!task.assigneeUserIds.includes(activeUserId())) {
+      task.assigneeUserIds.push(activeUserId())
+    }
+    Object.assign(task, { status: 'confirmed', updatedAt: new Date().toISOString() })
+    return HttpResponse.json({ task })
+  }),
+
+  http.post('*/api/tasks/:taskId/withdraw', ({ params }) => {
+    const task = mockTasks.find((item) => item.id === params['taskId'])
+    if (!task) return HttpResponse.json({ detail: '没有这张需求单' }, { status: 404 })
+    if (task.status !== 'published' && task.status !== 'confirmed') {
+      return HttpResponse.json({ detail: '这张单撤不了' }, { status: 409 })
+    }
+    Object.assign(task, { status: 'withdrawn', updatedAt: new Date().toISOString() })
+    return HttpResponse.json({ task })
+  }),
+
+  ...uploadHandlers,
+
+  http.post('*/api/tracking/events', () => new HttpResponse(null, { status: 204 })),
+
+  ...workspaceHandlers,
+  ...filmHandlers,
+  ...wholeFilmHandlers,
+  ...enhancementHandlers(activeUserId),
+  ...audioHandlers,
+
+  ...transcriptHandlers,
+
+  ...auditHandlers((taskId) => mockTasks.find((task) => task.id === taskId)?.title ?? null),
+
+  ...libraryHandlers,
+
+  ...referenceHandlers(() => (currentUser ?? mockAuthUser).username),
+  ...hitCaseHandlers(() => (currentUser ?? mockAuthUser).username),
+  ...libraryTagHandlers(
+    () => ({ hitCases: mockHitCaseTagSets(), references: mockReferenceTagSets() }),
+    (ids) => {
+      forgetMockReferenceTags(ids)
+      forgetMockHitCaseTags(ids)
+    },
+  ),
+
+  ...agentConfigHandlers(() => {
+    const user = currentUser ?? mockAuthUser
+    return { id: user.id, name: user.displayName }
+  }),
+  ...skillHandlers(() => {
+    const user = currentUser ?? mockAuthUser
+    return { id: user.id, name: user.displayName }
+  }),
+  ...mcpServerHandlers(mockMcpServerUsage),
+  ...agentPreviewHandlers,
+  ...modelProviderHandlers(mockModelUsage),
+]

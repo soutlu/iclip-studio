@@ -1,0 +1,239 @@
+import { z } from 'zod'
+import { UserFacingError } from '@/shared/api/client'
+import { MAX_REFERENCE_IMAGES } from './shots'
+
+const nonblank = z.string().refine((value) => value.trim().length > 0, '请填写内容')
+const timestamp = z.number().nonnegative({ error: '镜头时间不得小于 0 秒' })
+const UNKNOWN_CONTENT = '包含无法识别的内容'
+
+const FALLBACK_ISSUE = { error: () => '格式不正确' }
+const FRAME_REF = /@Image(\d+)/g
+
+export const extractImageIndexes = (prompt: string): number[] => [
+  ...new Set([...prompt.matchAll(FRAME_REF)].map((match) => Number(match[1]))),
+]
+
+const SECONDS_RANGE = '时长须为 4–30 秒的整数'
+
+const timelineItemSchema = z.strictObject(
+  {
+    image_indexes: z.array(z.int().positive({ error: '镜头的图片编号无效' })),
+    prompt: nonblank,
+    timestamps: z.tuple([timestamp, timestamp]),
+  },
+  { error: UNKNOWN_CONTENT },
+)
+
+const shotSchema = z
+  .strictObject(
+    {
+      image_urls: z
+        .array(nonblank)
+        .max(MAX_REFERENCE_IMAGES, { error: `参考图片最多 ${MAX_REFERENCE_IMAGES} 张` }),
+      index: z.int().positive({ error: '镜头组编号无效' }),
+      prompt: z.strictObject(
+        {
+          global_settings: nonblank,
+          timeline: z.array(timelineItemSchema).min(1, { error: '请至少保留 1 个镜头' }),
+        },
+        { error: UNKNOWN_CONTENT },
+      ),
+      seconds: z
+        .int({ error: SECONDS_RANGE })
+        .min(4, { error: SECONDS_RANGE })
+        .max(30, { error: SECONDS_RANGE }),
+    },
+    { error: UNKNOWN_CONTENT },
+  )
+  .superRefine((shot, ctx) => {
+    const checkReferences = (text: string, path: (string | number)[]) => {
+      const invalid = extractImageIndexes(text).find(
+        (number) => number < 1 || number > shot.image_urls.length,
+      )
+      if (invalid !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            shot.image_urls.length === 0
+              ? `本组暂无图片，请添加图片或移除 @Image${invalid} 引用`
+              : `@Image${invalid} 超出本组的 ${shot.image_urls.length} 张图片`,
+          path,
+        })
+      }
+    }
+    checkReferences(shot.prompt.global_settings, ['prompt', 'global_settings'])
+    let previousEnd = 0
+    for (const [position, item] of shot.prompt.timeline.entries()) {
+      const [start, end] = item.timestamps
+      if (end <= start || (position === 0 && start !== 0) || start < previousEnd) {
+        ctx.addIssue({
+          code: 'custom',
+          message: '镜头时间范围或顺序不正确',
+          path: ['prompt', 'timeline', position, 'timestamps'],
+        })
+      }
+      checkReferences(item.prompt, ['prompt', 'timeline', position, 'prompt'])
+      if (
+        item.image_indexes.some((number) => number > shot.image_urls.length) ||
+        new Set(item.image_indexes).size !== item.image_indexes.length
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          message: '镜头的图片编号无效',
+          path: ['prompt', 'timeline', position, 'image_indexes'],
+        })
+      }
+      const expected = extractImageIndexes(item.prompt)
+      if (
+        expected.length !== item.image_indexes.length ||
+        expected.some((number, index) => number !== item.image_indexes[index])
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          message: '图片编号必须与正文中的引用顺序一致',
+          path: ['prompt', 'timeline', position, 'image_indexes'],
+        })
+      }
+      previousEnd = end
+    }
+  })
+
+const shotsDocumentSchema = z
+  .strictObject(
+    {
+      aspect_ratio: z.string().refine((value) => value.trim().length > 0, '请选择画幅'),
+      shots: z.array(shotSchema).min(1, { error: '请至少保留 1 个镜头组' }),
+    },
+    { error: `分镜${UNKNOWN_CONTENT}` },
+  )
+  .superRefine((document, ctx) => {
+    for (const [position, shot] of document.shots.entries()) {
+      if (shot.index !== position + 1) {
+        ctx.addIssue({
+          code: 'custom',
+          message: '镜头组编号必须从 1 连续排列',
+          path: ['shots', position, 'index'],
+        })
+      }
+    }
+  })
+
+export type Shot = z.infer<typeof shotSchema>
+export type ShotsDocument = z.infer<typeof shotsDocumentSchema>
+
+export const parseShotsDocument = (content: string): ShotsDocument | null => {
+  let raw: unknown
+  try {
+    raw = JSON.parse(content)
+  } catch {
+    return null
+  }
+  const result = shotsDocumentSchema.safeParse(raw)
+  return result.success ? result.data : null
+}
+
+export const validateShot = (shot: Shot): string | undefined => {
+  const result = shotSchema.safeParse(shot, FALLBACK_ISSUE)
+  if (result.success) return undefined
+  const issue = result.error.issues[0]
+  if (issue === undefined) return '镜头组格式不正确'
+  const position = issue.path[1] === 'timeline' ? issue.path[2] : undefined
+  const where =
+    typeof position === 'number'
+      ? `镜头组 ${shot.index} 的第 ${position + 1} 镜`
+      : `镜头组 ${shot.index}`
+  return `${where}：${issue.message}`
+}
+
+export const validateShotsDocument = (document: ShotsDocument): string | undefined => {
+  const result = shotsDocumentSchema.safeParse(document, FALLBACK_ISSUE)
+  if (result.success) return undefined
+  const issue = result.error.issues[0]
+  const position = issue?.path[0] === 'shots' ? issue.path[1] : undefined
+  const shot = typeof position === 'number' ? document.shots[position] : undefined
+  return (shot === undefined ? undefined : validateShot(shot)) ?? issue?.message ?? '分镜格式不正确'
+}
+
+export type PromptInsertion = { text: string; start: number; end: number }
+
+export const updateTimelinePrompt = (shot: Shot, position: number, prompt: string): Shot => {
+  if (shot.prompt.timeline[position] === undefined)
+    throw new UserFacingError('该镜头已不存在，请重新选择')
+  return {
+    ...shot,
+    prompt: {
+      ...shot.prompt,
+      timeline: shot.prompt.timeline.map((item, index) =>
+        index === position ? { ...item, prompt, image_indexes: extractImageIndexes(prompt) } : item,
+      ),
+    },
+  }
+}
+
+export const insertReferenceText = (
+  prompt: string,
+  number: number,
+  insertion?: PromptInsertion,
+): string => {
+  const reference = `@Image${number}`
+  if (
+    insertion?.text === prompt &&
+    Number.isInteger(insertion.start) &&
+    Number.isInteger(insertion.end) &&
+    insertion.start >= 0 &&
+    insertion.end >= insertion.start &&
+    insertion.end <= prompt.length
+  ) {
+    return prompt.slice(0, insertion.start) + reference + prompt.slice(insertion.end)
+  }
+  return prompt + (prompt.length === 0 || /\s$/.test(prompt) ? '' : ' ') + reference
+}
+
+const OUTPUT_CONSTRAINT = '不要生成字幕，不要生成背景音乐。'
+const SHOTS_HEADING = '镜头：'
+
+export const formatSeconds = (value: number): string => Number(value.toFixed(3)).toString()
+
+export const formatShotPrompt = (shot: Shot): string => {
+  const lines = shot.prompt.timeline.map(
+    (item) =>
+      `${formatSeconds(item.timestamps[0])}–${formatSeconds(item.timestamps[1])}秒 ${item.prompt}`,
+  )
+  return `${shot.prompt.global_settings}\n\n${SHOTS_HEADING}\n${lines.join('\n')}\n${OUTPUT_CONSTRAINT}`
+}
+
+const SENTENCE_END = /[。；！？!?;]/
+
+export const promptTitle = (prompt: string): string | undefined => {
+  const firstLine = prompt
+    .split('\n')
+    .map((line) =>
+      line
+        .replace(FRAME_REF, '')
+        .replace(/\s+([，。；！？、,.;!?])/g, '$1')
+        .replace(/\s{2,}/g, ' ')
+        .trim(),
+    )
+    .find((line) => line.length > 0)
+  if (firstLine === undefined) return undefined
+  const sentence = firstLine.split(SENTENCE_END)[0]?.trim() ?? ''
+  return sentence.length === 0 ? firstLine : sentence
+}
+
+export const shotName = (shot: Shot): string =>
+  promptTitle(shot.prompt.timeline[0]?.prompt ?? '') ?? `镜头组 ${shot.index}`
+
+export const shotGroupSummary = (shot: Shot, aspectRatio: string) => {
+  const frame =
+    shot.prompt.timeline[0]?.image_indexes.find(
+      (value) => value >= 1 && value <= shot.image_urls.length,
+    ) ?? 1
+  return {
+    aspectRatio,
+    index: shot.index,
+    name: shotName(shot),
+    sceneSeconds: shot.prompt.timeline.map((item) => item.timestamps[1] - item.timestamps[0]),
+    seconds: shot.seconds,
+    thumbnailUrl: shot.image_urls[frame - 1],
+  }
+}

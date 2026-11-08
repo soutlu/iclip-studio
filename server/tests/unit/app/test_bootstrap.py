@@ -1,0 +1,316 @@
+from __future__ import annotations
+
+import httpx
+import pytest
+from pydantic import ValidationError
+from structlog.testing import capture_logs
+from structlog.typing import EventDict
+
+from iclip.app.bootstrap import build_app
+from iclip.config import (
+    AppSection,
+    DbSection,
+    ImageGenerationSection,
+    ImageModelSection,
+    MediaGenerationSection,
+    MusicSection,
+    OpsSection,
+    RuntimeConfig,
+    SecuritySection,
+    SsoSection,
+    SubtitleSection,
+    VideoGenerationSection,
+)
+from iclip.config.models import IclipStudioSection, ShotVideoSection
+from iclip.platform.db.engine import build_engine
+from iclip.platform.media.codec import SOFTWARE, VIDEOTOOLBOX, MediaCodec
+from tests.helpers.generation import MemoryObjectStore
+
+
+def minimal_config() -> RuntimeConfig:
+    return RuntimeConfig(
+        app=AppSection(name="t"),
+        db=DbSection(schema="iclip"),
+        security=SecuritySection(),
+        sso=SsoSection(app_name="iclip"),
+        ops=OpsSection(log_level="WARNING"),
+    )
+
+
+@pytest.fixture
+def base_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://iclip:iclip@localhost:5432/nowhere")
+    monkeypatch.setenv("AUTH_SECRET", "s" * 32)
+    monkeypatch.setenv("RUNTIME_URL", "http://runtime.test")
+    monkeypatch.setenv("RUNTIME_APP_KEY", "r" * 32)
+    monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", "i" * 32)
+    monkeypatch.delenv("SSO_BASE_URL", raising=False)
+    monkeypatch.setenv("OSS_BUCKET", "iclip")
+    monkeypatch.setenv("OSS_ENDPOINT", "https://oss.test")
+    monkeypatch.setenv("OSS_ACCESS_KEY_ID", "ak")
+    monkeypatch.setenv("OSS_ACCESS_KEY_SECRET", "sk")
+    monkeypatch.setenv("OSS_PUBLIC_URL_BASE", "https://cdn.test")
+    for name in (*MEDIA_ENVS, "QWEN_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def engine():
+    return build_engine("postgresql+asyncpg://iclip:iclip@localhost:5432/nowhere")
+
+
+MEDIA_ENVS = {
+    "VIDEO_SUBMIT_URL": "https://video.test/generate",
+    "VIDEO_STATUS_BASE_URL": "https://video.test/tasks",
+    "VIDEO_API_KEY": "vk",
+    "IMAGE_API_BASE": "https://image.test/gateway",
+}
+
+
+def config_with_media() -> RuntimeConfig:
+    return minimal_config().model_copy(
+        update={
+            "media_generation": MediaGenerationSection(
+                video=VideoGenerationSection(model="seedance", allowed_models=("seedance",)),
+                image=ImageGenerationSection(
+                    env="test",
+                    text_to_image_task="text-to-image",
+                    image_edit_task="image-edit",
+                    default="nano_banana_pro",
+                    models={
+                        "nano_banana_pro": ImageModelSection(route="nano-banana-pro", concurrency=4)
+                    },
+                ),
+            ),
+        }
+    )
+
+
+async def test_without_media_generation_the_routes_are_absent(base_env: None) -> None:
+
+    app = build_app(minimal_config(), engine=engine())
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        assert (await client.post("/generations", json={})).status_code == 404
+
+
+@pytest.mark.parametrize("missing", ["RUNTIME_URL", "RUNTIME_APP_KEY", "RUNTIME_INTERNAL_TOKEN"])
+def test_startup_fails_without_the_runtime_service(
+    base_env: None, monkeypatch: pytest.MonkeyPatch, missing: str
+) -> None:
+    monkeypatch.delenv(missing)
+
+    with pytest.raises(ValidationError, match=missing):
+        build_app(minimal_config(), engine=engine())
+
+
+def test_media_generation_without_ffmpeg_fails_at_startup(
+    base_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name, value in MEDIA_ENVS.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr("iclip.app.bootstrap.ffmpeg_available", lambda: False)
+
+    with pytest.raises(RuntimeError, match="ffmpeg"):
+        build_app(config_with_media(), engine=engine(), object_store=MemoryObjectStore())
+
+
+def _keep_logging(_level: str, _fmt: str) -> None: ...
+
+
+@pytest.fixture
+def local_media_env(base_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    for name, value in MEDIA_ENVS.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr("iclip.app.bootstrap.ffmpeg_available", lambda: True)
+    monkeypatch.setattr("iclip.app.bootstrap.configure_logging", _keep_logging)
+
+
+def build_local_media(
+    *,
+    compose: int | None = None,
+    breakdown: int | None = None,
+    media_codec: MediaCodec | None = None,
+) -> list[EventDict]:
+    config = config_with_media()
+    assert config.media_generation is not None
+    config = config.model_copy(
+        update={
+            "media_generation": config.media_generation.model_copy(
+                update={"compose_concurrency": compose}
+            ),
+            "iclip_studio": IclipStudioSection(breakdown_concurrency=breakdown),
+        }
+    )
+    with capture_logs() as logs:
+        build_app(
+            config,
+            engine=engine(),
+            object_store=MemoryObjectStore(),
+            media_codec=media_codec,
+        )
+    return [log for log in logs if log["event"] == "本地视频编解码已选定"]
+
+
+@pytest.mark.parametrize(
+    ("codec", "compose", "breakdown", "expected"),
+    [
+        pytest.param(VIDEOTOOLBOX, None, None, (4, 4), id="hardware-unwritten"),
+        pytest.param(SOFTWARE, None, None, (2, 2), id="software-unwritten"),
+        pytest.param(VIDEOTOOLBOX, 1, 3, (1, 3), id="written-wins"),
+    ],
+)
+def test_local_queues_take_the_written_concurrency_or_the_codec_default(
+    local_media_env: None,
+    codec: MediaCodec,
+    compose: int | None,
+    breakdown: int | None,
+    expected: tuple[int, int],
+) -> None:
+    chosen = build_local_media(compose=compose, breakdown=breakdown, media_codec=codec)
+
+    assert [
+        (log["codec"], log["hardware"], log["compose_concurrency"], log["breakdown_concurrency"])
+        for log in chosen
+    ] == [(codec.name, codec.hardware, *expected)]
+
+
+@pytest.mark.parametrize("configured", [True, False], ids=["开通", "没开通"])
+async def test_startup_says_when_subtitles_are_off_and_the_route_is_mounted_either_way(
+    local_media_env: None, monkeypatch: pytest.MonkeyPatch, configured: bool
+) -> None:
+    config = config_with_media()
+    assert config.media_generation is not None
+    if configured:
+        monkeypatch.setenv("QWEN_API_KEY", "sk-qwen")
+        config = config.model_copy(
+            update={
+                "media_generation": config.media_generation.model_copy(
+                    update={"subtitle": SubtitleSection(url="https://asr.test/generation")}
+                )
+            }
+        )
+    with capture_logs() as logs:
+        app = build_app(
+            config,
+            engine=engine(),
+            object_store=MemoryObjectStore(),
+            media_codec=SOFTWARE,
+        )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post("/generations/subtitles", json={})
+
+    off = [log for log in logs if log["event"] == "字幕识别未启用"]
+    assert len(off) == (0 if configured else 1)
+    assert response.status_code == 401, "入口挂着，没登录先 401"
+
+
+@pytest.mark.parametrize("configured", [True, False], ids=["开通", "没开通"])
+async def test_startup_says_when_music_is_off_and_the_route_is_mounted_either_way(
+    local_media_env: None, monkeypatch: pytest.MonkeyPatch, configured: bool
+) -> None:
+    config = config_with_media()
+    assert config.media_generation is not None
+    if configured:
+        monkeypatch.setenv("QWEN_API_KEY", "sk-qwen")
+        config = config.model_copy(
+            update={
+                "media_generation": config.media_generation.model_copy(
+                    update={"music": MusicSection(url="https://music.test/SpeechSynthesizer")}
+                )
+            }
+        )
+    with capture_logs() as logs:
+        app = build_app(
+            config,
+            engine=engine(),
+            object_store=MemoryObjectStore(),
+            media_codec=SOFTWARE,
+        )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post("/generations/music", json={})
+
+    off = [log for log in logs if log["event"] == "音乐生成未启用"]
+    assert len(off) == (0 if configured else 1)
+    assert response.status_code == 401, "入口挂着，没登录先 401"
+
+
+def config_with(*, media: bool, shot_video: bool, studio: bool) -> RuntimeConfig:
+    config = config_with_media() if media else minimal_config()
+    return config.model_copy(
+        update={
+            "shot_video": ShotVideoSection() if shot_video else None,
+            "iclip_studio": IclipStudioSection() if studio else None,
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("config", "answer"),
+    [
+        pytest.param(
+            config_with(media=True, shot_video=True, studio=True),
+            {"shot_video": {"image_models": ["nano_banana_pro"]}, "video_breakdown": True},
+            id="all",
+        ),
+        pytest.param(
+            config_with(media=True, shot_video=False, studio=True),
+            {"shot_video": None, "video_breakdown": True},
+            id="no-shot-video-section",
+        ),
+        pytest.param(
+            config_with(media=False, shot_video=True, studio=False),
+            {"shot_video": None, "video_breakdown": False},
+            id="shot-video-without-media",
+        ),
+        pytest.param(
+            config_with(media=False, shot_video=False, studio=False),
+            {"shot_video": None, "video_breakdown": False},
+            id="none",
+        ),
+    ],
+)
+async def test_the_plugin_services_answer_follows_the_backend_config(
+    local_media_env: None, config: RuntimeConfig, answer: dict[str, object]
+) -> None:
+    app = build_app(config, engine=engine(), object_store=MemoryObjectStore(), media_codec=SOFTWARE)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/internal/runtime/plugins/services", headers={"Authorization": f"Bearer {'i' * 32}"}
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == answer
+
+
+def test_without_an_injected_codec_the_startup_probe_chooses(
+    local_media_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    probes: list[None] = []
+
+    def probe() -> MediaCodec:
+        probes.append(None)
+        return VIDEOTOOLBOX
+
+    monkeypatch.setattr("iclip.app.bootstrap.detect_codec", probe)
+
+    chosen = build_local_media()
+
+    assert len(probes) == 1
+    assert [(log["codec"], log["compose_concurrency"]) for log in chosen] == [("videotoolbox", 4)]
+
+
+def test_nothing_is_probed_when_no_feature_needs_ffmpeg(
+    base_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def probe() -> MediaCodec:
+        raise AssertionError("不用 ffmpeg 的部署不该跑编解码探测")
+
+    monkeypatch.setattr("iclip.app.bootstrap.detect_codec", probe)
+
+    build_app(minimal_config(), engine=engine())

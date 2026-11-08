@@ -1,0 +1,141 @@
+import { useInfiniteQuery } from '@tanstack/react-query'
+import { act, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { useCallback, useRef } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { stubIntersectionObserver } from '@/testing/intersection-observer'
+import { renderWithProviders } from '@/testing/render'
+import { ListError, NextPageFooter } from './list-state'
+
+type Page = { items: string[]; nextCursor: string | null }
+
+const threePages = (override?: (cursor: string) => Promise<Page | undefined> | undefined) => {
+  const cursors: (string | null)[] = []
+  const fetchPage = async (cursor: string | null): Promise<Page> => {
+    cursors.push(cursor)
+    if (cursor === null) return { items: ['第 1 行'], nextCursor: 'p2' }
+    const replaced = await override?.(cursor)
+    if (replaced !== undefined) return replaced
+    return cursor === 'p2'
+      ? { items: ['第 2 行'], nextCursor: 'p3' }
+      : { items: ['第 3 行'], nextCursor: null }
+  }
+  return { cursors, fetchPage }
+}
+
+function PagedList({
+  fetchPage,
+  counted = true,
+}: {
+  fetchPage: (cursor: string | null) => Promise<Page>
+  counted?: boolean
+}) {
+  const mainRef = useRef<HTMLElement>(null)
+  const getScrollElement = useCallback(() => mainRef.current, [])
+  const query = useInfiniteQuery({
+    queryFn: ({ pageParam }) => fetchPage(pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last: Page) => last.nextCursor,
+    queryKey: ['paged-list'],
+  })
+  const rows = query.data?.pages.flatMap((page) => page.items) ?? []
+  return (
+    <main ref={mainRef}>
+      <ul>
+        {rows.map((row) => (
+          <li key={row}>{row}</li>
+        ))}
+      </ul>
+      {query.isError ? (
+        <ListError message="读取失败" onRetry={() => void query.fetchNextPage()} />
+      ) : null}
+      {query.hasNextPage ? (
+        <NextPageFooter
+          getScrollElement={getScrollElement}
+          query={query}
+          {...(counted ? { shown: rows.length, total: 3 } : {})}
+        />
+      ) : null}
+    </main>
+  )
+}
+
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+
+describe('自动翻页页脚', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('页脚一直在底部一屏以内就接着读，读完最后一页收起、不再多读', async () => {
+    const { cursors, fetchPage } = threePages()
+    stubIntersectionObserver({ inRange: true })
+    await renderWithProviders(<PagedList fetchPage={fetchPage} />)
+
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(3))
+    expect(cursors).toEqual([null, 'p2', 'p3'])
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    await settle()
+    expect(cursors).toHaveLength(3)
+  })
+
+  it('页脚离底部还远时不读，滚进范围才读，页脚上写已显示几条', async () => {
+    const { cursors, fetchPage } = threePages()
+    const viewport = stubIntersectionObserver()
+    await renderWithProviders(<PagedList fetchPage={fetchPage} />)
+
+    expect(await screen.findByText('已显示 1 / 3')).toBeVisible()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    await settle()
+    expect(cursors).toEqual([null])
+
+    await viewport.scroll(true)
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(3))
+    expect(cursors).toEqual([null, 'p2', 'p3'])
+  })
+
+  it('下一页在路上时显示读取中，来回滚也只发一次；没给计数时只有读取状态', async () => {
+    let release = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const { cursors, fetchPage } = threePages(async (cursor) => {
+      if (cursor === 'p2') await held
+      return undefined
+    })
+    const viewport = stubIntersectionObserver({ inRange: true })
+    await renderWithProviders(<PagedList counted={false} fetchPage={fetchPage} />)
+
+    await waitFor(() => expect(cursors).toEqual([null, 'p2']))
+    expect(await screen.findByRole('status')).toHaveTextContent('正在读取…')
+    expect(screen.queryByText(/已显示/)).not.toBeInTheDocument()
+    await viewport.scroll(false)
+    await viewport.scroll(true)
+    await settle()
+    expect(cursors).toEqual([null, 'p2'])
+
+    release()
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(3))
+    expect(cursors).toEqual([null, 'p2', 'p3'])
+  })
+
+  it('翻页出错后停下，页脚在范围内也不再读；重试成功后按当下位置接着读', async () => {
+    let failing = true
+    const { cursors, fetchPage } = threePages(async (cursor) => {
+      if (cursor === 'p2' && failing) throw new Error('读取失败')
+      return undefined
+    })
+    const viewport = stubIntersectionObserver({ inRange: true })
+    const user = userEvent.setup()
+    await renderWithProviders(<PagedList fetchPage={fetchPage} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('读取失败')
+    await viewport.scroll(true)
+    await settle()
+    expect(cursors).toEqual([null, 'p2'])
+    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+
+    failing = false
+    await user.click(screen.getByRole('button', { name: '重新加载' }))
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(3))
+    expect(cursors).toEqual([null, 'p2', 'p2', 'p3'])
+  })
+})
