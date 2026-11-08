@@ -515,7 +515,7 @@ def loads_skill_then_says(delivered: list[bool]) -> FunctionModel:
     return FunctionModel(summarize, stream_function=stream)
 
 
-async def test_a_skill_loaded_before_compaction_stays_loaded_and_shows_its_recorded_load(
+async def test_a_skill_loaded_before_compaction_stays_loaded(
     engine: AsyncEngine, tmp_path: Path
 ) -> None:
     (tmp_path / SKILL).mkdir()
@@ -553,20 +553,15 @@ async def test_a_skill_loaded_before_compaction_stays_loaded_and_shows_its_recor
         for step_id, step in steps.items()
         if any(frame.kind == "notice" for frame in step.frames)
     ] == ["t1.2", "t2.1", "t3.1"]
-    assert [frame.kind for frame in steps["t2.1"].frames] == ["notice", "tool", "text"]
-    assert [frame.kind for frame in steps["t3.1"].frames] == ["notice", "tool", "text"]
+    assert [frame.kind for frame in steps["t2.1"].frames] == ["notice", "text"]
+    assert [frame.kind for frame in steps["t3.1"].frames] == ["notice", "text"]
     cards = [
-        (step_id, frame)
+        (step_id, frame.tool_call_id, frame.state, frame.display)
         for step_id, step in steps.items()
         for frame in step.frames
         if isinstance(frame, ToolFrame) and frame.name == "load_capability"
     ]
-    assert [step_id for step_id, _ in cards] == ["t1.1", "t2.1", "t3.1"]
-    assert cards[0][1].tool_call_id == LOAD_CALL
-    assert len({card.tool_call_id for _, card in cards}) == 3
-    assert {(card.state, card.display) for _, card in cards} == {
-        ("done", GenericDisplay(summary="加载技能", detail=SKILL))
-    }
+    assert cards == [("t1.1", LOAD_CALL, "done", GenericDisplay(summary="加载技能", detail=SKILL))]
 
 
 async def test_regenerating_a_compacting_turn_keeps_the_skill_loaded(
@@ -613,14 +608,13 @@ async def test_regenerating_a_compacting_turn_keeps_the_skill_loaded(
     assert delivered[0] is False
     assert all(delivered[1:])
     cards = [
-        frame
+        (step.step_id, frame.tool_call_id, frame.state)
         for turn in live.items
         for step in turn.steps
         for frame in step.frames
         if isinstance(frame, ToolFrame) and frame.name == "load_capability"
     ]
-    assert cards
-    assert {card.state for card in cards} == {"done"}
+    assert cards == [("t1.1", LOAD_CALL, "done")]
 
 
 BREAKDOWN_CALL = "call_bd"
