@@ -11,7 +11,7 @@ _SPEAKER: Final = re.compile(r"[0-9A-Za-z一-鿿]+")
 _OPENING: Final = re.compile(r"<([^<>\s/]+)>")
 _TAG_LIKE: Final = re.compile(r"<[^<>]*>")
 _COMMENT: Final = re.compile(r"<!--.*?-->", re.S)
-_ENTITY: Final = re.compile(r"&(?:amp|lt|gt|quot|apos|#\d+|#x[0-9A-Fa-f]+);")
+ENTITY: Final = re.compile(r"&(?:amp|lt|gt|quot|apos|#\d+|#x[0-9A-Fa-f]+);")
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,9 +139,9 @@ def _fault(text: str) -> str | None:
         return "剧本里不支持 @{…}"
     if "{" in text or "}" in text:
         return "剧本里不支持花括号"
-    if text.count("&") != len(_ENTITY.findall(text)):
+    if text.count("&") != len(ENTITY.findall(text)):
         return "台词里的 & 要写成 &amp;"
     return None
 
 
-__all__ = ["SEGMENT_NAME", "ScriptLine", "read_script"]
+__all__ = ["ENTITY", "SEGMENT_NAME", "ScriptLine", "read_script"]
