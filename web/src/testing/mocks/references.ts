@@ -488,8 +488,11 @@ export const referenceHandlers = (viewer: () => string) => [
   http.post('*/api/references/:id/test-generations', ({ params }) => {
     const row = find(params['id'])
     if (row === undefined) return NOT_FOUND()
-    if (row.userName !== viewer())
-      return HttpResponse.json({ detail: '仅上传者本人可以试生成' }, { status: 403 })
+    if (!publicOf(row, viewer()).canEdit)
+      return HttpResponse.json(
+        { detail: '只有它的属主或治理者能试生成这条参考视频' },
+        { status: 403 },
+      )
     if (isBusy(row) || row.document === null)
       return HttpResponse.json({ detail: '拆解尚未完成' }, { status: 409 })
     if (row.testVideo?.status === 'running')

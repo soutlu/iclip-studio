@@ -10649,7 +10649,7 @@
       },
       "TestVideoOut": {
         "additionalProperties": false,
-        "description": "属主名下这条参考视频最新的一次试生成；所有读者看到的是同一条。",
+        "description": "这条参考视频最新的一次试生成，不论谁发起；所有读者看到的是同一条。",
         "properties": {
           "createdAt": {
             "format": "date-time",
@@ -22943,7 +22943,7 @@
     },
     "/references/{reference_id}/test-generations": {
       "post": {
-        "description": "属主本人按当前拆解拼一段提示词，生成一条视频与原片对照，答复带上这次试生成的整行。\n\n``userName`` 同媒体生成。只限属主本人，别人的是 ``403``；拆解还没完成、上一次试生成\n还没结束是 ``409``；拆解格式不全拼不出提示词、或拼出来超过字数上限是 ``422``。",
+        "description": "属主或治理者按当前拆解拼一段提示词，生成一条视频与原片对照，记在发起人名下，答复\n带上这次试生成的整行。\n\n``userName`` 同媒体生成。别人的是 ``403``；拆解还没完成、上一次试生成（不论谁发起）\n还没结束是 ``409``；拆解格式不全拼不出提示词、或拼出来超过字数上限是 ``422``。",
         "operationId": "start_reference_test_video_references__reference_id__test_generations_post",
         "parameters": [
           {

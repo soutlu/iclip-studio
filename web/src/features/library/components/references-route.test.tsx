@@ -777,11 +777,26 @@ describe('参考视频详情', () => {
       expect(testWrites(writes)).toEqual([])
     })
 
-    it('能改但不是属主本人（canEdit 为真，如治理者）：没有「试生成」', async () => {
+    it('能改但不是属主本人（canEdit 为真，如治理者）：有「试生成」，能提交', async () => {
+      const writes = recordWrites()
+      const user = userEvent.setup()
       const row = addMockReference({ document: '# 出场元素\n\n第一版拆解', userName: 'Maya.Cheng' })
       server.use(
         http.get('*/api/references/:id', ({ params }) =>
           params['id'] === row.id ? HttpResponse.json({ ...row, canEdit: true }) : undefined,
+        ),
+        http.post('*/api/references/:id/test-generations', () =>
+          HttpResponse.json({
+            ...row,
+            canEdit: true,
+            testVideo: {
+              createdAt: new Date().toISOString(),
+              errorMessage: null,
+              stale: false,
+              status: 'running',
+              url: null,
+            },
+          }),
         ),
       )
       await renderWithProviders(<Harness initialReference={row.id} />)
@@ -789,8 +804,18 @@ describe('参考视频详情', () => {
       await within(dialog).findByText('第一版拆解')
 
       expect(within(dialog).getByRole('button', { name: '编辑拆解' })).toBeVisible()
-      expect(within(dialog).getByText('暂无试生成')).toBeVisible()
-      expect(within(dialog).queryByRole('button', { name: '试生成' })).not.toBeInTheDocument()
+      expect(within(dialog).queryByText('暂无试生成')).not.toBeInTheDocument()
+      loadOriginal(dialog, 720, 1280)
+      await user.click(within(dialog).getByRole('button', { name: '试生成' }))
+
+      expect(await within(dialog).findByRole('status')).toHaveTextContent(/试生成中/)
+      expect(testWrites(writes)).toEqual([
+        {
+          body: { aspectRatio: '9:16' },
+          method: 'POST',
+          path: `/references/${row.id}/test-generations`,
+        },
+      ])
     })
 
     it('别人的、已完成：能看试生成，没有「重新试生成」', async () => {

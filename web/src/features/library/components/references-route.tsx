@@ -141,7 +141,6 @@ export function ReferencesRoute({
             <ReferenceViewer
               key={referenceId}
               listed={listed}
-              myUserName={myUserName}
               onAuthor={filterByAuthor}
               onClose={() => onReferenceChange(null, true)}
               onRestoreFocus={() => focusCardOpener(mainRef.current, referenceId)}

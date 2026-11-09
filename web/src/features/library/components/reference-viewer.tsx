@@ -76,7 +76,6 @@ type ReferenceViewerProps = {
   referenceId: string
   listed: ReferenceItem | undefined
   tags: TagIndex
-  myUserName: string | null
   onClose: () => void
   onAuthor: (userName: string) => void
   onRestoreFocus: () => boolean
@@ -86,7 +85,6 @@ export function ReferenceViewer({
   referenceId,
   listed,
   tags,
-  myUserName,
   onClose,
   onAuthor,
   onRestoreFocus,
@@ -116,7 +114,6 @@ export function ReferenceViewer({
         <ViewerBody
           detail={detail.data}
           mode={mode}
-          myUserName={myUserName}
           onAuthor={onAuthor}
           onClose={onClose}
           onModeChange={setMode}
@@ -134,7 +131,6 @@ type ViewerBodyProps = {
   detail: ReferenceDetail | undefined
   tags: TagIndex
   mode: Mode
-  myUserName: string | null
   onModeChange: (mode: Mode) => void
   onRefresh: () => void
   onClose: () => void
@@ -148,7 +144,6 @@ function ViewerBody({
   detail,
   tags,
   mode,
-  myUserName,
   onModeChange,
   onRefresh,
   onClose,
@@ -332,6 +327,7 @@ function ViewerBody({
                 <CompareOverlay label="原片" />
               </div>
               <TestVideoCell
+                canEdit={reference.canEdit}
                 measured={measuredRatio !== null}
                 onExpand={(url, at) =>
                   setPreview({
@@ -340,7 +336,6 @@ function ViewerBody({
                   })
                 }
                 onStart={submitTest}
-                owner={myUserName !== null && reference.userName === myUserName}
                 playerRef={testPlayerRef}
                 poster={poster}
                 ready={testReady}

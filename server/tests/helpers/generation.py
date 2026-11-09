@@ -395,15 +395,12 @@ class InMemoryGenerationRepository:
         ]
         return min(found, key=lambda job: (job.created_at, job.id), default=None)
 
-    async def latest_reference_trial(
-        self, reference_id: uuid.UUID, *, owner: uuid.UUID | None
-    ) -> GenerationJob | None:
+    async def latest_reference_trial(self, reference_id: uuid.UUID) -> GenerationJob | None:
         found = [
             job
             for job in self.jobs.values()
             if job.metadata is not None
             and job.metadata.get(REFERENCE_TRIAL_KEY) == str(reference_id)
-            and (owner is None or job.owner_user_id == owner)
             and job.kind == KIND_VIDEO
             and job.operation == OPERATION_GENERATE
         ]

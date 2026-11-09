@@ -314,14 +314,11 @@ class SqlGenerationRepository:
             row = (await conn.execute(stmt)).mappings().one_or_none()
         return None if row is None else _job_from_row(row)
 
-    async def latest_reference_trial(
-        self, reference_id: uuid.UUID, *, owner: uuid.UUID | None
-    ) -> GenerationJob | None:
+    async def latest_reference_trial(self, reference_id: uuid.UUID) -> GenerationJob | None:
         stmt = (
             select(generation_jobs_table)
             .where(
                 _json_text(_JOBS.metadata, REFERENCE_TRIAL_KEY) == str(reference_id),
-                *owner_conditions(_JOBS.owner_user_id, owner),
                 _JOBS.kind == KIND_VIDEO,
                 _JOBS.operation == OPERATION_GENERATE,
             )

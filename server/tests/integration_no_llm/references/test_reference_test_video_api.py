@@ -197,7 +197,29 @@ async def test_the_owner_submits_one_wan3_video_from_the_breakdown(
     assert request["user_name"] == "maya"
 
 
-async def test_only_the_owner_themself_may_submit(
+async def test_a_governor_submits_for_someone_elses_in_their_own_name(
+    http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
+) -> None:
+    maya = await login_as(http, pg_url, "maya", "editor")
+    reference_id = await plant_reference(engine, owner=maya, document=FULL)
+
+    ada = await login_as(http, pg_url, "ada", "admin")
+    submitted = await http.post(path(reference_id), json={"aspectRatio": "9:16"})
+    await login_as(http, pg_url, "maya", "editor")
+    seen_by_owner = (await http.get(f"/references/{reference_id}")).json()["testVideo"]
+    by_owner_meanwhile = await http.post(path(reference_id), json={"aspectRatio": "16:9"})
+    await login_as(http, pg_url, "sara", "editor")
+    seen_by_reader = (await http.get(f"/references/{reference_id}")).json()["testVideo"]
+
+    assert submitted.status_code == 200, submitted.text
+    (job,) = await trial_jobs(pg_url, reference_id)
+    assert (job["owner_user_id"], job["request"]["user_name"]) == (ada, "ada")
+    assert seen_by_owner["status"] == "running"
+    assert seen_by_owner == seen_by_reader == submitted.json()["testVideo"]
+    assert by_owner_meanwhile.status_code == 409
+
+
+async def test_others_who_cannot_edit_it_may_not_submit(
     http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
 ) -> None:
     maya = await login_as(http, pg_url, "maya", "editor")
@@ -205,13 +227,47 @@ async def test_only_the_owner_themself_may_submit(
 
     await login_as(http, pg_url, "sara", "editor")
     by_editor = await http.post(path(reference_id), json={"aspectRatio": "9:16"})
-    await login_as(http, pg_url, "root", "root")
-    by_root = await http.post(path(reference_id), json={"aspectRatio": "9:16"})
     await login_as(http, pg_url, "vera", "viewer")
     by_viewer = await http.post(path(reference_id), json={"aspectRatio": "9:16"})
 
-    assert (by_editor.status_code, by_root.status_code, by_viewer.status_code) == (403, 403, 403)
+    assert (by_editor.status_code, by_viewer.status_code) == (403, 403)
+    assert by_editor.json()["detail"] == "只有它的属主或治理者能试生成这条参考视频"
     assert await trial_jobs(pg_url, reference_id) == []
+
+
+async def test_a_key_without_act_as_may_not_submit_for_someone_elses(
+    media_app: FastAPI, http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
+) -> None:
+    maya = await login_as(http, pg_url, "maya", "editor")
+    reference_id = await plant_reference(engine, owner=maya, document=FULL)
+    await login_as(http, pg_url, "logan", "root")
+    token = await issue_key(http, SUBMIT_GRANTS)
+
+    async with machine(media_app, token) as gateway:
+        response = await gateway.post(
+            path(reference_id), json={"aspectRatio": "9:16", "userName": "maya"}
+        )
+
+    assert response.status_code == 403, response.text
+    assert await trial_jobs(pg_url, reference_id) == []
+
+
+async def test_an_act_as_key_submits_in_the_named_owners_name(
+    media_app: FastAPI, http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
+) -> None:
+    maya = await login_as(http, pg_url, "maya", "editor")
+    reference_id = await plant_reference(engine, owner=maya, document=FULL)
+    await login_as(http, pg_url, "logan", "root")
+    token = await issue_key(http, [*SUBMIT_GRANTS, "users:act_as"])
+
+    async with machine(media_app, token) as gateway:
+        response = await gateway.post(
+            path(reference_id), json={"aspectRatio": "9:16", "userName": "maya"}
+        )
+
+    assert response.status_code == 200, response.text
+    (job,) = await trial_jobs(pg_url, reference_id)
+    assert (job["owner_user_id"], job["request"]["user_name"]) == (maya, "maya")
 
 
 async def test_a_key_must_give_a_user_name(
