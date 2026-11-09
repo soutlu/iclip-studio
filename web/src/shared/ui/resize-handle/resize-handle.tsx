@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/shared/lib/utils'
-import { APP_RESIZE_HANDLE_WIDTH, type ResizeInput } from './-app-shell-layout'
 
+const RESIZE_HANDLE_WIDTH = 8
 const KEY_STEP = 16
 
-type AppResizeHandleProps = {
+export type ResizeInput = 'pointer' | 'keyboard'
+
+type ResizeHandleProps = {
   label: string
   position?: number
   value: number
@@ -17,7 +19,7 @@ type AppResizeHandleProps = {
   onReset: () => void
 }
 
-export function AppResizeHandle({
+export function ResizeHandle({
   label,
   position = 0,
   max,
@@ -28,7 +30,7 @@ export function AppResizeHandle({
   onResizeCancel,
   onResizeStart,
   value,
-}: AppResizeHandleProps) {
+}: ResizeHandleProps) {
   const [dragging, setDragging] = useState(false)
   const detachRef = useRef<(() => void) | null>(null)
   useEffect(() => () => detachRef.current?.(), [])
@@ -88,7 +90,7 @@ export function AppResizeHandle({
       onDoubleClick={onReset}
       onKeyDown={nudge}
       onPointerDown={startDrag}
-      style={{ left: position - APP_RESIZE_HANDLE_WIDTH / 2, width: APP_RESIZE_HANDLE_WIDTH }}
+      style={{ left: position - RESIZE_HANDLE_WIDTH / 2, width: RESIZE_HANDLE_WIDTH }}
       title={`${label}（当前 ${value}px，拖动可在 ${min}–${max}px 之间调整，双击可恢复默认）`}
       type="button"
     >

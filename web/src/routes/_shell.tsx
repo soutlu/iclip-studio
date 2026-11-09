@@ -12,9 +12,9 @@ import { z } from 'zod'
 import { LoginDialog } from '@/features/auth'
 import { ShellChromeContext } from '@/shared/shell'
 import { IconButton } from '@/shared/ui/button'
+import { ResizeHandle } from '@/shared/ui/resize-handle'
 import { WorkbenchLayoutProvider } from '@/shared/workbench'
 import { AppContentPane } from './-app-content-pane'
-import { AppResizeHandle } from './-app-resize-handle'
 import { AppRightPanel } from './-app-right-panel'
 import {
   CHAT_MIN,
@@ -176,7 +176,7 @@ function AppShell() {
             }
           />
           {!compact && (
-            <AppResizeHandle
+            <ResizeHandle
               label="调整侧边栏宽度"
               position={sidebarWidth}
               value={sidebarWidth}
@@ -239,7 +239,7 @@ function AppShell() {
               ))}
             </DndContext>
             {hasWorkbench && sideBySide && (
-              <AppResizeHandle
+              <ResizeHandle
                 label="调整工作台宽度"
                 position={state.firstPane === 'chat' ? chatWidth : workbenchWidth}
                 value={workbenchWidth}
