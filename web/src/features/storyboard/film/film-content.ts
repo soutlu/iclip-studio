@@ -96,13 +96,26 @@ export const shotText = (shot: Pick<FilmShot, 'parts' | 'lines'>): string =>
     return text + (line === undefined ? '' : lineText(line)) + part
   }, '')
 
-export const settingSeparator = (setting: Pick<FilmSetting, 'kind'>): string =>
-  setting.kind === 'voice' ? ' ' : '：'
+type FilmSettingSection = { label: string | null; settings: FilmSetting[] }
 
-export const settingText = (setting: Pick<FilmSetting, 'kind' | 'label' | 'text'>): string =>
-  setting.label === null
-    ? setting.text
-    : `${setting.label}${settingSeparator(setting)}${setting.text}`
+/** 后端按槽的先后给设定，同一槽的几条挨着；连着的同一 `label` 合成一节。 */
+export const settingSections = (settings: readonly FilmSetting[]): FilmSettingSection[] =>
+  settings.reduce<FilmSettingSection[]>((sections, setting) => {
+    const last = sections.at(-1)
+    if (last?.label === setting.label) last.settings.push(setting)
+    else sections.push({ label: setting.label, settings: [setting] })
+    return sections
+  }, [])
+
+/** 与发给模型的全局设定逐字一致：每节「标题：」单独一行，下面一条一行，节与节空一行；没标题的节只有各条。 */
+export const globalSettingsText = (settings: readonly FilmSetting[]): string =>
+  settingSections(settings)
+    .map(({ label, settings: items }) =>
+      [...(label === null ? [] : [`${label}：`]), ...items.map((setting) => setting.text)].join(
+        '\n',
+      ),
+    )
+    .join('\n\n')
 
 export const filmGroupSummary = (group: FilmGroup) => {
   const first = group.shots[0]

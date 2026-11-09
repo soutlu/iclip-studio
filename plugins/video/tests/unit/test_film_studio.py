@@ -23,7 +23,12 @@ from iclip_video.iclip_studio.film.studio import (
     missing_references,
     set_aspect_ratio,
 )
-from iclip_video.shot_prompt import OUTPUT_CONSTRAINT, SHOTS_HEADING, format_seconds
+from iclip_video.shot_prompt import (
+    OUTPUT_CONSTRAINT,
+    PROMPT_OPENING,
+    SHOTS_HEADING,
+    format_seconds,
+)
 from iclip_video.shot_rules import MAX_PROMPT_CHARS
 from tests.helpers.film import (
     EXPECTED,
@@ -146,7 +151,17 @@ def golden_prompt(state: str, video: str) -> str:
         for cut in shot["timeline"]
         for start, end in [cut["timestamps"]]
     ]
-    return "\n".join([shot["global_settings"], "", SHOTS_HEADING, *lines, OUTPUT_CONSTRAINT])
+    return "\n".join(
+        [
+            PROMPT_OPENING,
+            "",
+            shot["global_settings"],
+            "",
+            SHOTS_HEADING,
+            *lines,
+            OUTPUT_CONSTRAINT,
+        ]
+    )
 
 
 @pytest.mark.parametrize(

@@ -51,7 +51,7 @@ const assembleShotPrompt = (shot: VideoShotIn): string => {
   const lines = shot.timeline.map(
     (item) => `${item.timestamps[0]}–${item.timestamps[1]}秒 ${item.prompt}`,
   )
-  return `${shot.global_settings}\n\n镜头：\n${lines.join('\n')}\n不要生成字幕，不要生成背景音乐。`
+  return `根据下面的全局设定要求和镜头描述生成一段写实视频。\n\n${shot.global_settings}\n\n镜头：\n${lines.join('\n')}\n不要生成字幕，不要生成背景音乐。`
 }
 
 const HISTORY_SHOT: VideoShotIn = {

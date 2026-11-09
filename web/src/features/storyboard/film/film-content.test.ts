@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { FilmFrame, FilmGroup } from './film.api'
-import { contentOfFrame, segmentFrames } from './film-content'
+import type { FilmFrame, FilmGroup, FilmSetting } from './film.api'
+import { contentOfFrame, globalSettingsText, segmentFrames, settingSections } from './film-content'
 import { regeneratePrompt } from './film-images'
 
 const frame = (node: string, number: number | null, url: string | null): FilmFrame => ({
@@ -98,6 +98,63 @@ describe('segmentFrames', () => {
     }
     expect(segmentFrames(cited, 'scene:1')).toEqual([])
     expect(contentOfFrame(group, 'global', 5)).toBe('scene:4')
+  })
+})
+
+describe('全局设定分节', () => {
+  const setting = (kind: FilmSetting['kind'], label: string | null, text: string): FilmSetting => ({
+    images: [],
+    kind,
+    label,
+    shared: false,
+    target: `value:${text}`,
+    text,
+  })
+
+  const settings = [
+    setting('shooting', '拍摄与剪辑', '摄影：手机实拍质感。\n剪辑：全片硬切。'),
+    setting('element', '人物', '金色短发女生，长相参考 @Image1。'),
+    setting('element', '产品', '黑色包头半拖鞋，外观参考 @Image3。'),
+    setting('element', '产品', '沙色包头半拖鞋，外观参考 @Image4。'),
+    setting('element', '产品', '栗棕色包头半拖鞋，外观参考 @Image5。'),
+    setting('voice', '声音', '旁白：年轻女性的中音。'),
+  ]
+
+  it('连着的同一标题合成一节，标题只写一次，下面一条一行；声音也一样；节与节空一行', () => {
+    expect(settingSections(settings).map((section) => section.label)).toEqual([
+      '拍摄与剪辑',
+      '人物',
+      '产品',
+      '声音',
+    ])
+    expect(globalSettingsText(settings)).toBe(
+      [
+        '拍摄与剪辑：',
+        '摄影：手机实拍质感。',
+        '剪辑：全片硬切。',
+        '',
+        '人物：',
+        '金色短发女生，长相参考 @Image1。',
+        '',
+        '产品：',
+        '黑色包头半拖鞋，外观参考 @Image3。',
+        '沙色包头半拖鞋，外观参考 @Image4。',
+        '栗棕色包头半拖鞋，外观参考 @Image5。',
+        '',
+        '声音：',
+        '旁白：年轻女性的中音。',
+      ].join('\n'),
+    )
+  })
+
+  it('没有标题的那节只列各条，不补标题', () => {
+    const untitled = [
+      setting('shooting', null, '手持拍摄。'),
+      setting('shooting', null, '全片硬切。'),
+      setting('element', '人物', '金发女生。'),
+    ]
+    expect(settingSections(untitled).map((section) => section.label)).toEqual([null, '人物'])
+    expect(globalSettingsText(untitled)).toBe('手持拍摄。\n全片硬切。\n\n人物：\n金发女生。')
   })
 })
 

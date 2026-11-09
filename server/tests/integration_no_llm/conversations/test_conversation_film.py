@@ -3,6 +3,7 @@ from __future__ import annotations
 import httpx
 import pytest
 from fastapi import FastAPI
+from iclip_video.shot_prompt import PROMPT_OPENING
 from sqlalchemy import text
 
 from tests.helpers.app import make_client
@@ -64,7 +65,9 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
         "mmt-seedance-2-5",
     )
     settings = EXPECTED["states"]["both"]["video01"]["shot"]["global_settings"]
-    assert group["prompt"].startswith(f"{settings}\n\n镜头：\n0–6秒 参考@Image8，")
+    assert group["prompt"].startswith(
+        f"{PROMPT_OPENING}\n\n{settings}\n\n镜头：\n0–6秒 参考@Image8，"
+    )
     person = group["frames"][2]
     assert {key: value for key, value in person.items() if key != "prompt"} == {
         "node": "personB",
