@@ -297,7 +297,7 @@ async def test_delivery_rejects_the_same_frame_listed_twice_in_a_group(
 ) -> None:
     repeated = one_shot(index=2, image_urls=[FRAME_URL, OTHER_FRAME_URL, FRAME_URL])
 
-    message = "镜头组 2 的 image_urls 第 3 张和第 1 张是同一个地址"
+    message = "第 2 组的第 3 张图和第 1 张重复了，去掉第 3 张，并修正其它受影响的图片编号。"
     with pytest.raises(ModelRetry, match=message) as rejected:
         await deliver(tools, ctx, [one_shot(), repeated])
     assert FRAME_URL not in str(rejected.value)
@@ -329,7 +329,8 @@ async def test_delivery_counts_the_assembled_prompt_of_each_group(
     assert total > MAX_PROMPT_CHARS
 
     with pytest.raises(
-        ModelRetry, match=f"镜头组 2 拼出的提示词有 {total} 字，超过 {MAX_PROMPT_CHARS} 字"
+        ModelRetry,
+        match=f"第 2 组的提示词有 {total} 字，超过 {MAX_PROMPT_CHARS} 字，请精简这一组的全局设定。",
     ):
         await deliver(tools, ctx, [one_shot(), shot])
     assert await files.read(NAMESPACE, SHOTS_PATH) is None
@@ -359,7 +360,10 @@ def test_saving_a_document_that_lists_a_frame_twice_is_refused() -> None:
     document = json.loads(shots_document())
     document["shots"][0]["image_urls"] = [FRAME_URL, FRAME_URL]
 
-    with pytest.raises(ShotDocumentError, match="镜头组 1 的 image_urls 第 2 张和第 1 张"):
+    with pytest.raises(
+        ShotDocumentError,
+        match="第 1 组的第 2 张图和第 1 张重复了，去掉第 2 张，并修正其它受影响的图片编号。",
+    ):
         validate_shots_document(json.dumps(document, ensure_ascii=False))
 
 
@@ -582,6 +586,6 @@ async def test_quota_failure_preserves_existing_file() -> None:
     messages = await invoke(capability, "write_video_shots", args)
 
     (refused,) = refusals(messages)
-    assert "拼出的提示词" not in refused.model_response_str()
+    assert "把内容拆成几个文件，或者精简一些" in refused.model_response_str()
     assert await files.read(NAMESPACE, SHOTS_PATH) == original
     assert returns(messages) == []

@@ -796,10 +796,10 @@ def test_a_video_takes_at_most_thirty_references() -> None:
     ]
 
 
-def same_address(later: str, earlier: str) -> str:
+def same_address(later: int, later_ref: str, earlier: int, earlier_ref: str) -> str:
     return (
-        f"{{{later}}} 和 {{{earlier}}} 是同一个图片地址；同一个生成节点的参考图不能重复，"
-        "删掉其中一个 Reference 并改正文图号，或换一张图"
+        f"第 {later} 张参考图 {{{later_ref}}} 和第 {earlier} 张 {{{earlier_ref}}} 重复了，"
+        f"去掉第 {later} 张，并修正其它受影响的图片编号"
     )
 
 
@@ -818,7 +818,7 @@ def test_two_given_photos_with_one_address_are_reported_on_the_later_reference()
     )
 
     assert problems(doubled, None) == [
-        at(doubled, "<seedance:Reference image={多图1}/>", same_address("多图1", "多图0"))
+        at(doubled, "<seedance:Reference image={多图1}/>", same_address(12, "多图1", 11, "多图0"))
     ]
 
 
@@ -833,7 +833,7 @@ def test_references_that_share_an_address_only_through_the_run_file_are_reported
         at(
             FILM,
             "<seedance:Reference image={view02.image}/>",
-            same_address("view02.image", "view01.image"),
+            same_address(9, "view02.image", 8, "view01.image"),
         )
     ]
     assert problems(FILM, None) == []
@@ -845,8 +845,8 @@ def test_a_picture_prompt_longer_than_the_model_takes_is_reported() -> None:
     found = problems(long, None)
 
     (only,) = found
-    assert only.startswith(at(long, '<gpt:Image id="view01"', "拼出的提示词有 "))
-    assert only.endswith(f"字，超过 {MAX_PROMPT_CHARS} 字")
+    assert only.startswith(at(long, '<gpt:Image id="view01"', "view01 的提示词有 "))
+    assert only.endswith(f"字，超过 {MAX_PROMPT_CHARS} 字，请精简它的描述")
 
 
 def test_a_video_prompt_is_counted_with_its_shots_and_reported_per_request() -> None:
@@ -858,7 +858,10 @@ def test_a_video_prompt_is_counted_with_its_shots_and_reported_per_request() -> 
         f"film.icml 第 {line_of(long, '<seedance:ReferenceVideo id="video01"')} 行",
         f"film.icml 第 {line_of(long, '<seedance:ReferenceVideo id="video02"')} 行",
     ]
-    assert all("拼出的提示词有 " in problem for problem in found)
+    assert all(
+        "的提示词有 " in problem and f"超过 {MAX_PROMPT_CHARS} 字，请精简它的设定" in problem
+        for problem in found
+    )
 
 
 RUN_FAULTS = [

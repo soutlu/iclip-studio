@@ -438,26 +438,32 @@ def _check_limits(film: Film) -> None:
         assert tag.generation is not None
         if _is_picture(project, node):
             text = render_picture(film, node).text
+            trim = "描述"
         else:
             text = format_shot_prompt(render_video(film, node))
+            trim = "设定"
         count = len(references(project, node))
         limits = tag.generation
         if len(text) > limits.max_prompt_chars:
-            project.error(node, f"拼出的提示词有 {len(text)} 字，超过 {limits.max_prompt_chars} 字")
+            project.error(
+                node,
+                f"{node.attrs['id']} 的提示词有 {len(text)} 字，"
+                f"超过 {limits.max_prompt_chars} 字，请精简它的{trim}",
+            )
         if count > limits.max_references:
             project.error(node, f"参考图有 {count} 张，超过 {limits.max_references} 张")
-        earlier: dict[str, str] = {}
-        for item in references(project, node):
+        earlier: dict[str, tuple[int, str]] = {}
+        for position, item in enumerate(references(project, node), start=1):
             image = item.reference("image")
             url = film.image_url(image)
             if image is None or url is None:
                 continue
-            first = earlier.setdefault(url, image)
-            if first != image:
+            first_position, first = earlier.setdefault(url, (position, image))
+            if first_position != position:
                 project.error(
                     item,
-                    f"{{{image}}} 和 {{{first}}} 是同一个图片地址；同一个生成节点的参考图不能重复，"
-                    "删掉其中一个 Reference 并改正文图号，或换一张图",
+                    f"第 {position} 张参考图 {{{image}}} 和第 {first_position} 张 {{{first}}} 重复了，"
+                    f"去掉第 {position} 张，并修正其它受影响的图片编号",
                 )
 
 
