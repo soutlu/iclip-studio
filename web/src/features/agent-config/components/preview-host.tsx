@@ -85,7 +85,7 @@ export function PreviewHost({
       aria-hidden={hidden ? true : undefined}
       aria-label="Agent 预览"
       className={cn(
-        'absolute inset-y-0 right-0 flex w-1/2 min-w-0 flex-col bg-background max-md:hidden',
+        'absolute inset-y-0 right-0 left-(--agent-config-split) flex min-w-0 flex-col bg-background max-md:hidden',
         hidden && 'invisible',
       )}
       inert={hidden}

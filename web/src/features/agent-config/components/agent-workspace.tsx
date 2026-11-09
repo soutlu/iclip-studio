@@ -190,10 +190,7 @@ export function AgentWorkspace({
     <>
       <section
         aria-label="Agent 配置编辑器"
-        className={cn(
-          'flex min-h-0 min-w-0 flex-col border-hairline md:border-r',
-          panel !== null && 'max-md:hidden',
-        )}
+        className={cn('flex min-h-0 min-w-0 flex-col', panel !== null && 'max-md:hidden')}
       >
         <header className="flex h-15 shrink-0 items-center gap-2 border-b border-hairline pr-4 pl-5">
           <AgentHeader
