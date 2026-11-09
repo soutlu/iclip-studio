@@ -2608,7 +2608,7 @@ export const zTestVideoIn = z.object({
 /**
  * TestVideoOut
  *
- * 属主名下这条参考视频最新的一次试生成；所有读者看到的是同一条。
+ * 这条参考视频最新的一次试生成，不论谁发起；所有读者看到的是同一条。
  */
 export const zTestVideoOut = z.object({
   createdAt: z.iso.datetime(),

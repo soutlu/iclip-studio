@@ -763,7 +763,7 @@ async def test_an_output_with_an_unknown_key_fails_to_read(engine: AsyncEngine) 
         await repo.get(take.id, owner=owner)
 
 
-async def test_the_latest_reference_trial_is_the_owners_newest_video_take_for_it(
+async def test_the_latest_reference_trial_is_the_newest_video_take_for_it_by_anyone(
     engine: AsyncEngine,
 ) -> None:
     repo = SqlGenerationRepository(engine)
@@ -771,8 +771,7 @@ async def test_the_latest_reference_trial_is_the_owners_newest_video_take_for_it
     reference, unrelated = uuid.uuid4(), uuid.uuid4()
     tag = {"referenceId": str(reference)}
     older = await repo.create(make_job(video_request(), owner_user_id=owner, metadata=tag))
-    newer = await repo.create(make_job(video_request(), owner_user_id=owner, metadata=tag))
-    await repo.create(make_job(video_request(), owner_user_id=other, metadata=tag))
+    newest = await repo.create(make_job(video_request(), owner_user_id=other, metadata=tag))
     await repo.create(make_job(image_request(), owner_user_id=owner, metadata=tag))
     await repo.create(
         make_job(video_request(), owner_user_id=owner, metadata={"referenceId": str(unrelated)})
@@ -783,11 +782,10 @@ async def test_the_latest_reference_trial_is_the_owners_newest_video_take_for_it
             {"at": datetime.now(UTC) - timedelta(hours=1), "id": older.id},
         )
 
-    found = await repo.latest_reference_trial(reference, owner=owner)
+    found = await repo.latest_reference_trial(reference)
 
-    assert found is not None and found.id == newer.id
-    assert await repo.latest_reference_trial(reference, owner=None) is not None
-    assert await repo.latest_reference_trial(uuid.uuid4(), owner=owner) is None
+    assert found is not None and found.id == newest.id
+    assert await repo.latest_reference_trial(uuid.uuid4()) is None
 
 
 def _video_upload(owner: uuid.UUID, md5: str) -> GenerationJob:

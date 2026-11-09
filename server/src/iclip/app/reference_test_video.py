@@ -34,8 +34,8 @@ class GenerationTestVideos:
         self._repo = repo
         self._generation = generation
 
-    async def latest(self, owner: uuid.UUID, reference_id: uuid.UUID) -> TestVideoJob | None:
-        job = await self._repo.latest_reference_trial(reference_id, owner=owner)
+    async def latest(self, reference_id: uuid.UUID) -> TestVideoJob | None:
+        job = await self._repo.latest_reference_trial(reference_id)
         if job is None:
             return None
         return TestVideoJob(
