@@ -42,7 +42,6 @@ function useActivityMs(running: boolean, historyMs: number | undefined): number 
 }
 
 const CLAUSE_TONE_CLASS = {
-  danger: 'text-chat-status-error',
   faint: 'text-chat-muted-text',
 } as const
 
@@ -126,9 +125,6 @@ export function ActivityRun({
           open={open}
         />
       </button>
-      {open || failed.length === 0 ? null : (
-        <div className="flex flex-col gap-2 pt-2.5">{failed.map(frameOf)}</div>
-      )}
       <DisclosureBody open={open}>
         <div className="flex flex-col gap-2 pt-2.5">{items.map(frameOf)}</div>
       </DisclosureBody>

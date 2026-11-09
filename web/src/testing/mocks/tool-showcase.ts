@@ -151,7 +151,7 @@ const toolShowcaseTurns = (): (Frame & { turnId: string })[] => [
         operation: 'edit',
         path: 'video_shot.json',
       },
-      error: '参数校验失败：shots[2].duration 需要数字，收到 "4s"',
+      error: '第 2 组的提示词有 4312 字，超过 4000 字，请精简这一组的全局设定。',
       state: 'error',
     }),
     tool('t1', 'f5', 'edit', 'video_shot.json', {

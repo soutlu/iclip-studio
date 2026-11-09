@@ -439,7 +439,8 @@ describe('每次调用按自己的状态画', () => {
     expect(screen.queryByRole('button', { name: /详情/ })).toBeNull()
   })
 
-  it('同样的调用，审批没有被拒绝就是普通失败：红 ×，不能展开，错误原文不上页面', async () => {
+  it('同样的调用，审批没有被拒绝就是普通失败：红 ×，点开这一行才看到失败原因', async () => {
+    const user = userEvent.setup()
     await renderTurn(
       turnWithFrames([
         fileTool('t1.1.f1', 'write', 'shots/cover.md', {
@@ -452,9 +453,15 @@ describe('每次调用按自己的状态画', () => {
 
     expect(screen.getByRole('img', { name: '失败' })).toBeInTheDocument()
     expect(screen.queryByText('已拒绝')).toBeNull()
-    expect(screen.queryByRole('button', { name: /详情/ })).toBeNull()
-    expect(screen.queryByText('错误信息')).toBeNull()
     expect(screen.queryByText('运行中断，这次调用没有结果')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: '展开「写入文件 cover.md」的详情' }))
+
+    expect(screen.getByText('运行中断，这次调用没有结果')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '收起「写入文件 cover.md」的详情' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
   })
 
   it('轮已结束、调用仍是 running：照协议画运行中，不替它改成完成', async () => {
@@ -480,7 +487,7 @@ describe('活动组的开合', () => {
   }
   const doneTurn = turnWithFrames(groupFrames('done'))
 
-  it('运行中自动展开，跑完自动收起；收起后失败的那一行仍露在卡头下面，成功的行收进去', async () => {
+  it('运行中自动展开，跑完自动收起；收起后只剩卡头，失败的行也收进去', async () => {
     const { rerender } = await renderTurn(runningTurn)
 
     const header = screen.getByRole('button', { name: /^进行中：/ })
@@ -494,8 +501,50 @@ describe('活动组的开合', () => {
       'false',
     )
     expect(screen.queryByRole('button', { name: '需求.md' })).toBeNull()
-    expect(screen.getAllByRole('img', { name: '失败' })).toHaveLength(1)
-    expect(screen.getAllByRole('button', { name: 'storyboard.md' })).toHaveLength(1)
+    expect(screen.queryByRole('img', { name: '失败' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'storyboard.md' })).toBeNull()
+  })
+
+  it('卡头摘要只数做成的调用：失败的不计数，也不另写失败条目', async () => {
+    await renderTurn(doneTurn)
+
+    const header = screen.getByRole('button', { name: '有失败：读取 1 个文件 · 编辑 1 处' })
+    expect(header).toHaveTextContent('读取 1 个文件 · 编辑 1 处')
+    expect(header).not.toHaveTextContent('失败')
+  })
+
+  it('卡头摘要不数被拒绝的调用，也不另写已拒绝条目', async () => {
+    await renderTurn(
+      turnWithFrames([
+        fileTool('t1.1.f1', 'read', 'shots/需求.md'),
+        fileTool('t1.1.f2', 'write', 'shots/cover.md', { approvalId: 'appr_1', state: 'error' }),
+        {
+          display: { kind: 'search', query: '开场' },
+          frameId: 't1.1.f3',
+          kind: 'tool',
+          name: 'search',
+          state: 'done',
+          toolCallId: 't1.1.f3',
+        },
+      ]),
+      {
+        interactions: new Map([
+          [
+            'appr_1',
+            {
+              interactionId: 'appr_1',
+              interactionKind: 'approval',
+              state: 'rejected',
+              toolCallId: 't1.1.f2',
+            },
+          ],
+        ]),
+      },
+    )
+
+    const header = screen.getByRole('button', { name: '已完成：读取 1 个文件 · 搜索 1 次' })
+    expect(header).not.toHaveTextContent('写入')
+    expect(header).not.toHaveTextContent('已拒绝')
   })
 
   it('运行中的活动组与工具调用显示各自的运行状态', async () => {

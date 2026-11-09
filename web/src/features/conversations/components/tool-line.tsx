@@ -101,7 +101,9 @@ export function ToolLine({ backgrounded, frame, interactions }: ToolLineProps) {
       {panel === undefined ? null : (
         <DisclosureBody open={open}>
           <Indented>
-            {mounted ? (
+            {!mounted ? null : panel.kind === 'error' ? (
+              <DetailText>{panel.text}</DetailText>
+            ) : (
               <PanelView
                 panel={panel}
                 title={
@@ -110,7 +112,7 @@ export function ToolLine({ backgrounded, frame, interactions }: ToolLineProps) {
                   )
                 }
               />
-            ) : null}
+            )}
           </Indented>
         </DisclosureBody>
       )}
@@ -141,6 +143,14 @@ export function Indented({ children }: { children: ReactNode }) {
       />
       {children}
     </div>
+  )
+}
+
+export function DetailText({ children }: { children: ReactNode }) {
+  return (
+    <p className="text-body-sm leading-5 whitespace-pre-wrap text-chat-secondary-text">
+      {children}
+    </p>
   )
 }
 
@@ -204,7 +214,9 @@ function FileName({
   )
 }
 
-function PanelView({ panel, title = null }: { panel: ToolPanel; title: ReactNode }) {
+type BoxedPanel = Exclude<ToolPanel, { kind: 'error' }>
+
+function PanelView({ panel, title = null }: { panel: BoxedPanel; title: ReactNode }) {
   const copy = panelCopyText(panel)
   return (
     <div className="flex min-w-0 flex-col overflow-clip rounded-sm bg-chat-inline-bg pb-2.5">
@@ -223,7 +235,7 @@ function PanelView({ panel, title = null }: { panel: ToolPanel; title: ReactNode
   )
 }
 
-const panelCopyText = (panel: ToolPanel): string | undefined => {
+const panelCopyText = (panel: BoxedPanel): string | undefined => {
   switch (panel.kind) {
     case 'diff':
       return panel.after
@@ -235,7 +247,7 @@ const panelCopyText = (panel: ToolPanel): string | undefined => {
   }
 }
 
-function PanelBody({ panel }: { panel: ToolPanel }) {
+function PanelBody({ panel }: { panel: BoxedPanel }) {
   switch (panel.kind) {
     case 'file':
       return panel.markdown ? (

@@ -253,8 +253,14 @@ export type ToolPanel =
   | { kind: 'diff'; before: string; after: string }
   | { kind: 'matches'; matches: readonly SearchMatch[]; truncated: boolean }
   | { kind: 'text'; text: string }
+  | { kind: 'error'; text: string }
 
 export const toolPanel = (frame: ToolCallFrame, outcome: ToolOutcome): ToolPanel | undefined => {
+  if (outcome === 'error') {
+    return frame.error === undefined || frame.error === ''
+      ? undefined
+      : { kind: 'error', text: frame.error }
+  }
   if (outcome !== 'done') return undefined
   const parsed = displaySchema.safeParse(frame.display)
   const display = parsed.success ? parsed.data : undefined
