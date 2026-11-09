@@ -64,6 +64,9 @@ def at(source: str, anchor: str, message: str) -> str:
     return f"film.icml 第 {line_of(source, anchor)} 行：{message}"
 
 
+_VIEW03_LINE = line_of(FILM, '<gpt:Image id="view03"')
+
+
 @pytest.mark.parametrize("state", STATES)
 def test_every_state_of_the_example_passes_with_and_without_its_run_file(state: str) -> None:
     assert problems(project_of(state), run_of(state)) == []
@@ -246,7 +249,7 @@ SYNTAX_FAULTS = [
     fault(
         "<gpt:Reference image={view01.image}/>",
         "<gpt:Reference image={view03.image}/>",
-        "{view03.image} 在这之前没有定义",
+        f"{{view03.image}} 写在第 {_VIEW03_LINE} 行，要挪到这里之前",
         id="先用后定义",
     ),
     fault(
@@ -453,7 +456,7 @@ GENERATION_FAULTS = [
     fault(
         "    <gpt:Reference image={shoeSolePhoto}/>\n",
         "    <gpt:Reference image={shoeSidePhoto}/><!-- 又一张 -->\n",
-        "{shoeSidePhoto} 在这个生成节点下列了两次",
+        "第 3 张参考图 {shoeSidePhoto} 和第 2 张重复了，去掉第 3 张，并修正其它受影响的图片编号",
         anchor="<gpt:Reference image={shoeSidePhoto}/><!-- 又一张 -->",
         id="同一张图列两次",
     ),
@@ -482,14 +485,14 @@ NUMBER_FAULTS = [
     fault(
         "纽约红砖街区参考 @Image6。</text:Value>",
         "纽约红砖街区。</text:Value>",
-        "view01 挂了 6 张参考图，用到的文字里的图号要正好是 @Image1–@Image6；没有写 @Image6",
+        "view01 挂了 6 张参考图，提示词里的图号要正好是 @Image1–@Image6；没有写 @Image6",
         anchor='<gpt:Image id="view01"',
         id="少写了一个图号",
     ),
     fault(
         "纽约红砖街区参考 @Image6。</text:Value>",
         "纽约红砖街区参考 @Image7。</text:Value>",
-        "view01 挂了 6 张参考图，用到的文字里的图号要正好是 @Image1–@Image6；没有写 @Image6；"
+        "view01 挂了 6 张参考图，提示词里的图号要正好是 @Image1–@Image6；没有写 @Image6；"
         "@Image7 没有对应的参考图",
         anchor='<gpt:Image id="view01"',
         id="图号超出了列表",
@@ -497,14 +500,14 @@ NUMBER_FAULTS = [
     fault(
         "神情轻松。</text:Value>",
         "神情轻松，参考 @Image1。</text:Value>",
-        "personB 没有挂参考图，用到的文字里不能写图号，写了 @Image1",
+        "personB 没有挂参考图，提示词里不能写图号，写了 @Image1",
         anchor='<gpt:Image id="personB"',
         id="没挂参考图却写了图号",
     ),
     fault(
         ">参考@Image10，硬切",
         ">参考@Image11，硬切",
-        "video01 挂了 10 张参考图，用到的文字里的图号要正好是 @Image1–@Image10；没有写 @Image10；"
+        "video01 挂了 10 张参考图，提示词里的图号要正好是 @Image1–@Image10；没有写 @Image10；"
         "@Image11 没有对应的参考图",
         anchor='<seedance:ReferenceVideo id="video01"',
         id="视频的镜头正文也算",
@@ -712,7 +715,14 @@ def test_lines_must_be_spoken_in_script_order() -> None:
         .replace("看鞋说：{TEMP}", "看鞋说：{reply}")
     )
 
-    assert problems(swapped) == ["film.icml：镜头里台词的先后和剧本里的不一样"]
+    assert problems(swapped) == [
+        at(
+            swapped,
+            '<script id="lines">',
+            "剧本里台词的先后要和镜头里一致，"
+            "镜头里依次是 reply、hook、answer、match、stride、daily、close",
+        )
+    ]
 
 
 def test_comments_between_script_segments_are_allowed() -> None:
@@ -728,9 +738,168 @@ def test_a_model_takes_only_the_durations_it_offers() -> None:
         'duration="31"',
     )
 
-    assert at(long, '<seedance:ReferenceVideo id="video02"', "model sd2.5 的时长是 4–30 秒") in (
-        problems(long)
+    assert at(
+        long,
+        '<seedance:ReferenceVideo id="video02"',
+        "video02 有 31 秒，超出 sd2.5 的 4–30 秒，按段落重新分组",
+    ) in problems(long)
+
+
+def test_the_duration_range_is_checked_against_the_shots_not_the_written_duration() -> None:
+    long = changed(FILM, '<film:Shot start="10.0" end="15.0"', '<film:Shot start="10.0" end="31.0"')
+    video = '<seedance:ReferenceVideo id="video02"'
+
+    assert problems(long) == [
+        at(long, video, "duration 写的是 15，这组镜头是 31 秒"),
+        at(long, video, "video02 有 31 秒，超出 sd2.5 的 4–30 秒，按段落重新分组"),
+    ]
+
+
+MARKUP_FAULTS = [
+    pytest.param(
+        "纽约红砖街区参考 @Image6。",
+        "R&D纽约红砖街区参考 @Image6。",
+        "R&D",
+        "& 要写成 &amp;",
+        id="正文里的与号",
+    ),
+    pytest.param(
+        "https://preview.invalid/uploads/shoeFrontPhoto.jpg",
+        "https://preview.invalid/uploads/shoeFrontPhoto.jpg?a=1&b=2",
+        "&b=2",
+        "& 要写成 &amp;",
+        id="属性值里的与号",
+    ),
+    pytest.param(
+        "纽约红砖街区参考 @Image6。",
+        "纽约红砖街区&nbsp;参考 @Image6。",
+        "&nbsp;",
+        "& 要写成 &amp;",
+        id="XML 不认的实体",
+    ),
+    pytest.param(
+        "纽约红砖街区参考 @Image6。",
+        "纽约红砖街区 < 5 公里参考 @Image6。",
+        "< 5",
+        "正文里的 < 要写成 &lt;",
+        id="正文里的小于号",
+    ),
+    pytest.param(
+        'aspect-ratio="3:4"',
+        "aspect-ratio=3:4",
+        "aspect-ratio=3:4",
+        "属性值要加英文双引号，引用要写成 {名字}",
+        id="属性值没加引号",
+    ),
+]
+
+
+@pytest.mark.parametrize(("old", "new", "anchor", "message"), MARKUP_FAULTS)
+def test_markup_mistakes_are_reported_in_words_on_their_line(
+    old: str, new: str, anchor: str, message: str
+) -> None:
+    broken = changed(FILM, old, new)
+
+    assert problems(broken) == [at(broken, anchor, message)]
+
+
+def test_entities_that_xml_knows_are_allowed() -> None:
+    escaped = changed(
+        FILM, "纽约红砖街区参考 @Image6。", "纽约&amp;红砖&#39;街区&#x41;参考 @Image6。"
     )
+
+    assert problems(escaped) == []
+
+
+def test_an_element_left_open_is_reported_where_it_opens() -> None:
+    broken = changed(FILM, "纽约红砖街区参考 @Image6。</text:Value>", "纽约红砖街区参考 @Image6。")
+
+    assert problems(broken) == [
+        at(
+            broken,
+            '<text:Value id="view01Setting">',
+            f"<text:Value> 没有正确闭合，到第 {line_of(broken, '</icml>')} 行遇到了 </icml>",
+        )
+    ]
+
+
+def test_a_file_that_stops_early_asks_for_the_rest() -> None:
+    cut = FILM[: FILM.index("  <!-- view02")]
+
+    assert problems(cut) == [
+        f"film.icml 第 {cut.count(chr(10)) + 1} 行："
+        "文件到这里就结束了，<icml> 没有闭合；把文件写完整"
+    ]
+
+
+def test_nothing_may_follow_the_root_element() -> None:
+    project = FILM + "多写的一行\n"
+    run = RUN + "<use/>\n"
+
+    assert problems(project) == [
+        f"film.icml 第 {line_of(project, '多写的一行')} 行：</icml> 后面不能再写内容"
+    ]
+    assert check_run_content(run) == [
+        f"film.icrun 第 {run.count(chr(10))} 行：</icrun> 后面不能再写内容"
+    ]
+
+
+def test_a_name_defined_later_is_reported_once_at_its_first_reference() -> None:
+    early = changed(
+        changed(
+            FILM, "<gpt:Reference image={scene.image}/>", "<gpt:Reference image={view03.image}/>"
+        ),
+        "<gpt:Reference image={view01.image}/>",
+        "<gpt:Reference image={view03}/>",
+    )
+
+    assert problems(early) == [
+        at(
+            early,
+            "<gpt:Reference image={view03.image}/>",
+            f"{{view03.image}} 写在第 {_VIEW03_LINE} 行，要挪到这里之前",
+        )
+    ]
+
+
+def test_a_name_defined_nowhere_is_reported_as_missing() -> None:
+    missing = changed(
+        FILM, "<gpt:Reference image={scene.image}/>", "<gpt:Reference image={场景.image}/>"
+    )
+
+    assert problems(missing) == [
+        at(missing, "<gpt:Reference image={场景.image}/>", "没有叫 场景 的节点")
+    ]
+
+
+def lines_with(source: str, needle: str) -> list[int]:
+    return [number for number, line in enumerate(source.splitlines(), start=1) if needle in line]
+
+
+def test_tags_whose_prefix_is_not_imported_are_reported_once_per_tag() -> None:
+    broken = changed(FILM, '  <import as="gpt" from="@iclip/gpt-image@1"/>\n', "")
+    images, references = lines_with(broken, "<gpt:Image "), lines_with(broken, "<gpt:Reference ")
+    assert len(images) > 3 and len(references) > 3
+
+    assert problems(broken) == [
+        f"film.icml 第 {'、'.join(map(str, images[:3]))} 行等：gpt:Image 的前缀 gpt 没有 import",
+        f"film.icml 第 {'、'.join(map(str, references[:3]))} 行等："
+        "gpt:Reference 的前缀 gpt 没有 import",
+    ]
+
+
+@pytest.mark.parametrize("count", [1, 2])
+def test_an_unknown_tag_of_an_imported_prefix_lists_every_line(count: int) -> None:
+    note = "  <text:Note>备注</text:Note>\n"
+    broken = changed(FILM, "  <!-- 二、全片设定 -->\n", note + "  <!-- 二、全片设定 -->\n")
+    if count == 2:
+        broken = changed(broken, "  <!-- view02", note + "  <!-- view02")
+    listed = "、".join(map(str, lines_with(broken, "<text:Note>")))
+
+    assert problems(broken) == [
+        f"film.icml 第 {listed} 行："
+        "不认识的标签 text:Note（没有 import 它的包，或包里没有这个标签）"
+    ]
 
 
 def test_every_video_in_a_file_has_the_same_aspect_ratio() -> None:
@@ -775,7 +944,11 @@ def test_an_image_takes_at_most_ten_references_whether_or_not_they_have_images()
     )
 
     assert problems(crowded, None) == [
-        at(crowded, '<gpt:Image id="view01"', "参考图有 11 张，超过 10 张")
+        at(
+            crowded,
+            '<gpt:Image id="view01"',
+            "view01 的参考图有 11 张，超过 10 张，减到 10 张以内，并修正其它受影响的图片编号",
+        )
     ]
 
 
@@ -792,7 +965,11 @@ def test_a_video_takes_at_most_thirty_references() -> None:
     )
 
     assert problems(crowded, None) == [
-        at(crowded, '<seedance:ReferenceVideo id="video01"', "参考图有 31 张，超过 30 张")
+        at(
+            crowded,
+            '<seedance:ReferenceVideo id="video01"',
+            "video01 的参考图有 31 张，超过 30 张，减到 30 张以内，并修正其它受影响的图片编号",
+        )
     ]
 
 
@@ -868,25 +1045,31 @@ RUN_FAULTS = [
     pytest.param(
         'output="personB.image"',
         'output="personC.image"',
-        "output 要写 film.icml 里生图节点的输出",
+        "film.icml 里没有叫 personC 的生图节点",
         id="选用的节点不存在",
     ),
     pytest.param(
         'output="personB.image"',
         'output="shoeFrontPhoto"',
-        "output 要写 film.icml 里生图节点的输出",
+        "film.icml 里没有叫 shoeFrontPhoto 的生图节点",
         id="选用到用户给的图上",
     ),
     pytest.param(
         'output="personB.image"',
         'output="video01.video"',
-        "output 要写 film.icml 里生图节点的输出",
+        "film.icml 里没有叫 video01 的生图节点",
         id="选用到视频上",
+    ),
+    pytest.param(
+        'output="personB.image"',
+        'output="personB"',
+        "film.icrun 第 15 行：output 要写 personB.image",
+        id="选用没写 .image",
     ),
     pytest.param(
         "image={personB-v1}",
         "image={personB-v3}",
-        "{personB-v3} 在这之前没有定义",
+        "没有叫 personB-v3 的节点",
         id="引用的图没登记",
     ),
     pytest.param(
@@ -903,9 +1086,10 @@ RUN_FAULTS = [
     ),
     pytest.param('id="scene-v1"', 'id="personB-v1"', "名字 personB-v1 重复", id="登记名重复"),
     pytest.param(
-        f'  <media:Image id="personB-v1" src="{GENERATED["personB"]}"/>\n',
-        "",
-        "{personB-v1} 在这之前没有定义",
+        USE_PERSON,
+        USE_PERSON.replace("personB-v1", "personB-v9")
+        + f'\n  <media:Image id="personB-v9" src="{GENERATED["personB"]}"/>',
+        "film.icrun 第 15 行：{personB-v9} 写在第 16 行，要挪到这里之前",
         id="先选用后登记",
     ),
     pytest.param('  <film source="./film.icml"/>\n', "", "第一个标签要写", id="缺 film 一行"),
@@ -1050,13 +1234,14 @@ def test_saving_the_project_file_checks_that_file_alone() -> None:
     assert check_project_content(changed(FILM, 'duration="18"', 'duration="17"')) == [
         at(FILM, '<seedance:ReferenceVideo id="video01"', "duration 写的是 17，这组镜头是 18 秒")
     ]
-    assert "写法错误" in check_project_content('<?icml using="@iclip/markup@1"?>\n<icml>')[0]
+    assert check_project_content('<?icml using="@iclip/markup@1"?>\n<icml>') == [
+        "film.icml 第 2 行：文件到这里就结束了，<icml> 没有闭合；把文件写完整"
+    ]
 
 
 def test_saving_the_run_file_checks_that_file_alone() -> None:
     assert check_run_content(RUN) == []
     assert check_run_content(RUN.replace("personB.image", "不存在的节点.image")) == []
-    assert (
-        "在这之前没有定义"
-        in check_run_content(RUN.replace("image={personB-v1}", "image={没登记}"))[0]
-    )
+    assert check_run_content(RUN.replace("image={personB-v1}", "image={没登记}")) == [
+        "film.icrun 第 15 行：没有叫 没登记 的节点"
+    ]

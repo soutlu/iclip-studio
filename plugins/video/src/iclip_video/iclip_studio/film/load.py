@@ -20,7 +20,7 @@ def image_problems(film: Film, reasons: Mapping[str, str]) -> list[str]:
         reason = reasons.get(node.attrs["src"])
         if reason is None:
             continue
-        document.error(node, f"src 用不了：{reason}；换成能打开的图片地址")
+        document.error(node, f"src {reason}，换成能打开的图片地址")
         if document is not film.project:
             film.errors.append(document.errors[-1])
     return film.errors

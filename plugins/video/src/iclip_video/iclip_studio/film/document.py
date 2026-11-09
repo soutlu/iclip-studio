@@ -28,6 +28,9 @@ class Document:
     nodes: dict[str, Node] = field(default_factory=dict[str, Node])
     errors: list[str] = field(default_factory=list[str])
 
+    defined: dict[str, int] = field(default_factory=dict[str, int], init=False)
+    _moved: set[str] = field(default_factory=set[str], init=False)
+
     def error(self, node: Node, message: str) -> None:
         self.error_at(node.line, message)
 
@@ -63,8 +66,14 @@ class Document:
                 return None
             return TEMPLATE
         target = self.nodes.get(name)
-        if target is None or target.line > at.line:
-            self.error(at, f"{{{reference}}} 在这之前没有定义")
+        if target is None:
+            line = self.defined.get(name)
+            if line is None:
+                self.error(at, f"没有叫 {name} 的节点")
+            elif line >= at.line and name not in self._moved:
+                self._moved.add(name)
+                self.error(at, f"{{{reference}}} 写在第 {line} 行，要挪到这里之前")
+            # 定义在前却没登记，说明那个标签不认识，它自己已经报过
             return None
         output = self.declared(target).output
         if output is None:
@@ -91,9 +100,15 @@ def load(
     if chosen != using or root.tag != root_tag:
         raise MarkupError(1, f"只认 {using} 的 <{root_tag}>")
     document = Document(label, root, {tag.name: tag for tag in builtins}, {})
-    for node in root.children:
-        if node.tag == "import":
-            _import(document, node, packages, kits or {})
+    imports = [node for node in root.children if node.tag == "import"]
+    for node in imports:
+        _import(document, node, packages, kits or {})
+    prefixes = {node.attrs["as"] for node in imports if "as" in node.attrs}
+    for node in root.walk():
+        name = node.attrs.get("id")
+        if name is not None:
+            document.defined.setdefault(name, node.line)
+    unknown: dict[str, tuple[int, list[int]]] = {}
     body_started = False
     for node in root.walk():
         if node is root:
@@ -105,11 +120,23 @@ def load(
         tag = document.tags.get(node.tag)
         body_started = body_started or tag is None or not tag.preamble
         if tag is None:
-            document.error(
-                node, f"不认识的标签 {node.tag}（没有 import 它的包，或包里没有这个标签）"
-            )
+            prefix, colon, _ = node.tag.partition(":")
+            if colon and prefix not in prefixes:
+                message = f"{node.tag} 的前缀 {prefix} 没有 import"
+            else:
+                message = f"不认识的标签 {node.tag}（没有 import 它的包，或包里没有这个标签）"
+            if message not in unknown:
+                unknown[message] = (len(document.errors), [])
+                document.errors.append(message)
+            lines = unknown[message][1]
+            if node.line not in lines:
+                lines.append(node.line)
             continue
         _check_node(document, node, tag)
+    for message, (index, lines) in unknown.items():
+        listed = "、".join(str(line) for line in lines[:3])
+        more = "等" if len(lines) > 3 else ""
+        document.errors[index] = f"{label} 第 {listed} 行{more}：{message}"
     return document
 
 
