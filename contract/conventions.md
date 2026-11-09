@@ -142,7 +142,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 - **自动生成标题**：当后台配置了默认的 `llm` 模型（§18）、且用户在创建对话后没有手动改过标题时，每轮对话开始时服务端会在后台自动生成标题，成功后通过 `session.meta.updated` 帧推送给前端。
 - **保存工作区文件 `PUT /conversations/{id}/workspace/file`**：
   - 只有对话创建者本人可以写入（治理者调用会返回 `403`）。请求体必须带上读取文件时的版本号 `expectedVersion`，如果版本号与数据库不一致（或文件根本不存在），返回 `409`；保存成功后版本号加 1。
-  - 保存 `video_shot.json` 时会校验分镜结构、参考图数量（每组 0～30 张，同一地址不能列两次）及每组拼出的提示词长度（不超过 4000 字）；保存 `film.icml` 或 `film.icrun` 时会校验工程文件语法；`review.md` 为纯文本人工复核清单，不做格式校验。保存时都不检查文件里的地址能否打开，agent 交付镜头组表或检查工程时才查（见 [CONTEXT.md「媒体地址」](../docs/CONTEXT.md#术语)）。
+  - 保存 `video_shot.json` 时会校验分镜结构、参考图数量（每组 0～30 张，url 不能重复）及每组提示词长度（不超过 4000 字）；保存 `film.icml` 或 `film.icrun` 时会校验工程文件语法；`review.md` 为纯文本人工复核清单，不做格式校验。保存时都不检查文件里的地址能否打开，agent 交付镜头组表或检查工程时才查（见 [CONTEXT.md「媒体地址」](../docs/CONTEXT.md#术语)）。
 - **AI 导演制作页接口 `/conversations/{id}/film`**（业务概念见 [CONTEXT.md「导演工程文件与制作页」](../docs/CONTEXT.md#术语)，设计背景见 [ADR-0002](../docs/adr/0002-director-project-files.md)）：
   - **读取制作页** `GET .../film`：如果工作区没有 `film.icml` 返回 `404`。返回两个文件的版本号（`filmVersion` / `runVersion`）、语法检查问题数 `problems`（大于 0 时 `groups` 为空，提示等待 AI 导演修复）、背景音乐提示词 `musicDescription` 以及按视频生成请求分组的 `groups[]`（包含参考图与机位图 `frames`、全局设定 `settings`、以及按台词切分的镜头段落 `shots`）。
   - **修改文案与增删参考图** `PATCH .../film/text`：校验 `filmVersion`，支持修改设定描述、镜头正文和台词文字（不能增删台词句数或调换顺序，多组共用的设定文字里不能插入图片）。如果在某组独占的镜头文字里通过 `images` 新插入了图片（用 `@Image(M+1)` 编号），后端会在写文件前检查一次新进列表的图片（口径同 `PUT .../film/image`，列表里原有的图不查），再追加到该组的参考图列表中，并自动顺延后面机位图的编号；如果删掉了某张元素图的所有引用，也会自动从列表中移除并重排编号。
