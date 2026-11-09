@@ -446,6 +446,19 @@ def _check_limits(film: Film) -> None:
             project.error(node, f"拼出的提示词有 {len(text)} 字，超过 {limits.max_prompt_chars} 字")
         if count > limits.max_references:
             project.error(node, f"参考图有 {count} 张，超过 {limits.max_references} 张")
+        earlier: dict[str, str] = {}
+        for item in references(project, node):
+            image = item.reference("image")
+            url = film.image_url(image)
+            if image is None or url is None:
+                continue
+            first = earlier.setdefault(url, image)
+            if first != image:
+                project.error(
+                    item,
+                    f"{{{image}}} 和 {{{first}}} 是同一个图片地址；同一个生成节点的参考图不能重复，"
+                    "删掉其中一个 Reference 并改正文图号，或换一张图",
+                )
 
 
 def _generation_nodes(project: Document) -> list[Node]:

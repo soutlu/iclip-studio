@@ -8,16 +8,13 @@ from iclip_video.iclip_studio.film.checks import (
     check_run_content,
 )
 from iclip_video.iclip_studio.film.film import Film
-from iclip_video.iclip_studio.film.packages import (
-    GPT_IMAGE_ASPECTS,
-    PROMPT_MAX_CHARS,
-    VIDEO_ASPECTS,
-)
+from iclip_video.iclip_studio.film.packages import GPT_IMAGE_ASPECTS, VIDEO_ASPECTS
 from iclip_video.iclip_studio.film.prompts import (
     render_picture,
     render_video,
     video_row,
 )
+from iclip_video.shot_rules import MAX_PROMPT_CHARS
 from tests.helpers.film import (
     EXPECTED,
     FILM,
@@ -799,6 +796,49 @@ def test_a_video_takes_at_most_thirty_references() -> None:
     ]
 
 
+def same_address(later: str, earlier: str) -> str:
+    return (
+        f"{{{later}}} 和 {{{earlier}}} 是同一个图片地址；同一个生成节点的参考图不能重复，"
+        "删掉其中一个 Reference 并改正文图号，或换一张图"
+    )
+
+
+def test_two_given_photos_with_one_address_are_reported_on_the_later_reference() -> None:
+    doubled, listed = more_photos(FILM, 2, "seedance:Reference")
+    doubled = changed(doubled, "https://cdn.test/more-1.png", "https://cdn.test/more-0.png")
+    doubled = changed(
+        doubled,
+        "    <seedance:Reference image={view03.image}/>\n",
+        "    <seedance:Reference image={view03.image}/>\n" + listed,
+    )
+    doubled = changed(
+        doubled,
+        "纽约红砖街区参考 @Image7。",
+        "纽约红砖街区参考 @Image7；另参考 @Image11、@Image12。",
+    )
+
+    assert problems(doubled, None) == [
+        at(doubled, "<seedance:Reference image={多图1}/>", same_address("多图1", "多图0"))
+    ]
+
+
+def test_references_that_share_an_address_only_through_the_run_file_are_reported_with_it() -> None:
+    run = changed(
+        RUN,
+        '<use output="view02.image" image={view02-v1}/>',
+        '<use output="view02.image" image={view01-v1}/>',
+    )
+
+    assert problems(FILM, run) == [
+        at(
+            FILM,
+            "<seedance:Reference image={view02.image}/>",
+            same_address("view02.image", "view01.image"),
+        )
+    ]
+    assert problems(FILM, None) == []
+
+
 def test_a_picture_prompt_longer_than_the_model_takes_is_reported() -> None:
     long = changed(FILM, "双臂自然下垂。<", "双臂自然下垂" + "。浅灰色" * 1000 + "<")
 
@@ -806,7 +846,7 @@ def test_a_picture_prompt_longer_than_the_model_takes_is_reported() -> None:
 
     (only,) = found
     assert only.startswith(at(long, '<gpt:Image id="view01"', "拼出的提示词有 "))
-    assert only.endswith(f"字，超过 {PROMPT_MAX_CHARS} 字")
+    assert only.endswith(f"字，超过 {MAX_PROMPT_CHARS} 字")
 
 
 def test_a_video_prompt_is_counted_with_its_shots_and_reported_per_request() -> None:
@@ -916,10 +956,10 @@ def test_without_a_run_file_no_generated_node_has_an_image() -> None:
 
 
 def test_a_node_uses_the_registered_image_selected_for_it() -> None:
-    switched = checked(run=RUN.replace("image={personB-v1}", "image={scene-v1}"))
+    switched = checked(run=RUN.replace("image={personB-v1}", "image={view04-v1}"))
 
     assert checked().image_url("personB.image") == GENERATED["personB"]
-    assert switched.image_url("personB.image") == GENERATED["scene"]
+    assert switched.image_url("personB.image") == GENERATED["view04"]
 
 
 @pytest.mark.parametrize("state", STATES)

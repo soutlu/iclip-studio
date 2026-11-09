@@ -29,7 +29,6 @@ from iclip_video.iclip_studio.film.markup import Node
 from iclip_video.iclip_studio.film.packages import (
     IMAGE,
     MEDIA_PACKAGE,
-    PROMPT_MAX_CHARS,
     RUN_MARKUP,
     RUN_ROOT,
     SEEDANCE_VARIANTS,
@@ -49,6 +48,7 @@ from iclip_video.iclip_studio.film.prompts import (
     written_texts,
 )
 from iclip_video.shot_prompt import format_shot_prompt
+from iclip_video.shot_rules import MAX_PROMPT_CHARS
 
 _LINE_SPLIT: Final = re.compile(r"\{[^{}]*\}")
 _SRC: Final = re.compile(r"""(\ssrc\s*=\s*)(["'])(.*?)\2""", re.S)
@@ -211,8 +211,8 @@ def edit_text(
     rewritten = check(updated, run_source)
     problems = rewritten if isinstance(rewritten, list) else rewritten.errors
     if problems:
-        if any(f"超过 {PROMPT_MAX_CHARS} 字" in problem for problem in problems):
-            raise FilmEditRejected(f"改完以后描述超过 {PROMPT_MAX_CHARS} 字了，删短一些再保存")
+        if any(f"超过 {MAX_PROMPT_CHARS} 字" in problem for problem in problems):
+            raise FilmEditRejected(f"改完以后描述超过 {MAX_PROMPT_CHARS} 字了，删短一些再保存")
         if any(f"超过 {VIDEO_MAX_REFERENCES} 张" in problem for problem in problems):
             raise FilmEditRejected(
                 f"插入以后这一组的参考图超过 {VIDEO_MAX_REFERENCES} 张了，删掉几张再保存"
@@ -236,6 +236,8 @@ def choose_image(
     node = project.nodes.get(image)
     if node is None or project.declared(node).output not in (("", IMAGE), ("image", IMAGE)):
         raise FilmEditRejected("找不到这张图，刷新后再换")
+    if url is not None and _repeats_a_reference(film, image, url):
+        raise FilmEditRejected("同一组参考图里已经有这张图了，换一张")
     if _generated(project, image):
         run_updated = _select_in_run(film, run_source, image, url)
         project_updated = _place_view(film, project_source, image, listed=url is not None)
@@ -262,6 +264,19 @@ def choose_image(
     if check_project_content(updated):
         raise RuntimeError(f"给 {image} 换图后工程文件没有通过检查")
     return [(FILM_PATH, updated)]
+
+
+def _repeats_a_reference(film: Film, image: str, url: str) -> bool:
+    project = film.project
+    view = _views(project, project.find("ReferenceVideo")).get(image)
+    joining = None if view is None else view.video
+    for node in project.root.walk():
+        listed = listed_images(film, node)
+        if node is not joining and all(item.image != image for item in listed):
+            continue
+        if any(item.image != image and item.url == url for item in listed):
+            return True
+    return False
 
 
 def set_aspect_ratio(film: Film, project_source: str, aspect: str) -> str | None:

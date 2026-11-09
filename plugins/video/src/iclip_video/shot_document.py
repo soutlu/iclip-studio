@@ -6,7 +6,9 @@ from typing import Annotated, Final
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from iclip_video.shot_prompt import format_shot_prompt
 from iclip_video.shot_rules import (
+    MAX_PROMPT_CHARS,
     MAX_REFERENCE_IMAGES,
     first_unavailable_image,
     image_indexes_of,
@@ -71,14 +73,24 @@ class VideoShotRequest(BaseModel):
     """提交工具接收的一个镜头组。"""
 
     index: Annotated[int, Field(description="镜头组编号，从 1 连续编号。")]
-    prompt: Annotated[VideoShotPrompt, JsonText]
+    prompt: Annotated[
+        VideoShotPrompt,
+        JsonText,
+        Field(
+            description=(
+                "本组提示词。global_settings、每镜的时间段和正文拼在一起，"
+                f"最多 {MAX_PROMPT_CHARS} 字。"
+            )
+        ),
+    ]
     seconds: Annotated[int, Field(description="本组总时长，取整秒，4-30。")]
     image_urls: Annotated[
         list[str],
         Field(
             max_length=MAX_REFERENCE_IMAGES,
             description=(
-                f"本组镜头帧地址，@ImageN 即第 N 张；无图传 []，最多 {MAX_REFERENCE_IMAGES} 张。"
+                f"本组镜头帧地址，@ImageN 即第 N 张；无图传 []，最多 {MAX_REFERENCE_IMAGES} 张，"
+                "同一地址只列一次。"
             ),
         ),
     ]
@@ -129,6 +141,14 @@ def validate_video_shot_requests(
             )
         if any(not url.strip() for url in shot.image_urls):
             raise ShotDocumentError(f"镜头组 {shot.index} 的 image_urls 里有空地址。")
+        first_seen: dict[str, int] = {}
+        for number, url in enumerate(shot.image_urls, start=1):
+            earlier = first_seen.setdefault(url, number)
+            if earlier != number:
+                raise ShotDocumentError(
+                    f"镜头组 {shot.index} 的 image_urls 第 {number} 张和第 {earlier} 张是同一个地址；"
+                    "同一张图只列一次，正文都用它的图号引用，改好后重新交付。"
+                )
         if not shot.prompt.global_settings.strip():
             raise ShotDocumentError(f"镜头组 {shot.index} 的 prompt.global_settings 为空。")
         _validate_image_refs(
@@ -161,6 +181,12 @@ def validate_video_shot_requests(
                     previous_end = end
             _validate_image_refs(
                 item.prompt, where=f"{where}的 prompt", image_count=len(shot.image_urls)
+            )
+        assembled = len(format_shot_prompt(shot.prompt))
+        if assembled > MAX_PROMPT_CHARS:
+            raise ShotDocumentError(
+                f"镜头组 {shot.index} 拼出的提示词有 {assembled} 字，超过 {MAX_PROMPT_CHARS} 字；"
+                "拼出的提示词包括 global_settings、每镜的时间段和正文，精简这一组后重新交付。"
             )
 
 
