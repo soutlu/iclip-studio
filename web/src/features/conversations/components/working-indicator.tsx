@@ -2,8 +2,8 @@ import { useEffect, useRef } from 'react'
 import type { AnimationItem } from 'lottie-web'
 import { cn } from '@/shared/lib/utils'
 
-const CAMERA_VIEW_BOX = '65 70 320 270'
-const ANIMATION_PATH = '/lottie/requesting-camera.json'
+const CLAPPER_VIEW_BOX = '71 65 299 275'
+const ANIMATION_PATH = '/lottie/clapper-thinking.json'
 
 type WorkingIndicatorProps = {
   label: string
@@ -13,7 +13,7 @@ type WorkingIndicatorProps = {
 export function WorkingIndicator({ label, still = false }: WorkingIndicatorProps) {
   return (
     <div className="inline-flex items-center gap-2 text-body-sm text-chat-muted-text" role="status">
-      <CameraMascot still={still} />
+      <ClapperMascot still={still} />
       <span className={cn(!still && 'animate-pulse')}>{label}</span>
     </div>
   )
@@ -21,7 +21,7 @@ export function WorkingIndicator({ label, still = false }: WorkingIndicatorProps
 
 const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-function CameraMascot({ still }: { still: boolean }) {
+function ClapperMascot({ still }: { still: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const animationRef = useRef<AnimationItem | undefined>(undefined)
   const stillRef = useRef(still)
@@ -33,7 +33,7 @@ function CameraMascot({ still }: { still: boolean }) {
     let animation: AnimationItem | undefined
     let cancelled = false
 
-    const crop = () => host.querySelector('svg')?.setAttribute('viewBox', CAMERA_VIEW_BOX)
+    const crop = () => host.querySelector('svg')?.setAttribute('viewBox', CLAPPER_VIEW_BOX)
 
     void import('lottie-web/build/player/lottie_light').then(({ default: lottie }) => {
       if (cancelled) return
