@@ -10,7 +10,7 @@ import { useCopyFeedback } from '@/shared/ui/copy-feedback'
 import { Markdown } from '@/shared/ui/markdown'
 import { DisclosureBody, DisclosureChevron } from './disclosure'
 import { TaskNoticeBubble } from './task-notice-bubble'
-import { Indented, RowIcon, ToolLine } from './tool-line'
+import { DetailText, Indented, RowIcon, ToolLine } from './tool-line'
 import { UserBubble } from './user-bubble'
 
 type TurnFrameProps = {
@@ -131,9 +131,7 @@ function ThinkingBlock({ live, text }: { live: boolean; text: string }) {
       </button>
       <DisclosureBody open={open}>
         <Indented>
-          <p className="text-body-sm leading-5 whitespace-pre-wrap text-chat-secondary-text">
-            {text}
-          </p>
+          <DetailText>{text}</DetailText>
         </Indented>
       </DisclosureBody>
     </div>
