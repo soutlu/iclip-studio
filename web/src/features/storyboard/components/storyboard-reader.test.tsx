@@ -101,6 +101,8 @@ const jobs: GenerationJob[] = [
 ]
 
 const historyPrompt = [
+  '根据下面的全局设定要求和镜头描述生成一段写实视频。',
+  '',
   '历史版参考锁定：人物和产品保持一致。',
   '剪辑形式：硬切。',
   '',
@@ -1072,7 +1074,8 @@ describe('StoryboardReader', () => {
     expect(files.snapshot().shots[0]?.prompt.timeline).toEqual(document.shots[0]?.prompt.timeline)
     await user.click(screen.getByRole('button', { name: '复制完整提示词' }))
     expect(copied).toHaveBeenLastCalledWith(
-      settings +
+      '根据下面的全局设定要求和镜头描述生成一段写实视频。\n\n' +
+        settings +
         '\n\n镜头：\n0–2.5秒   模特走出门厅 @Image2，再看向鞋面 @Image1。\n' +
         '\n3.25–5秒 共用同一帧继续动作 @Image2，再次看向 @Image1。\n' +
         '5–6秒 这里保留旁白，没有图片引用。\n' +

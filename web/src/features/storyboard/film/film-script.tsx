@@ -12,8 +12,8 @@ import {
   SETTINGS_ID,
   filmDuration,
   frameTag,
-  settingSeparator,
-  settingText,
+  globalSettingsText,
+  settingSections,
   shotContentId,
   shotText,
   shotTime,
@@ -85,6 +85,7 @@ export function FilmScript({
   const select = (id: string) => {
     if (id !== selectedId) onSelect(id)
   }
+  const settingsText = globalSettingsText(group.settings)
   const settingsSelected = selectedId === SETTINGS_ID
   const settingsClamped = compact && !settingsSelected
   const chipsOf = (id: string, selected: boolean) => ({
@@ -139,12 +140,10 @@ export function FilmScript({
                 <Icon decorative name="filter" size="xs" />
                 全局设定
               </span>
-              <span className="storyboard-settings-count">
-                {promptLength(group.settings.map(settingText).join('\n'))} 字
-              </span>
+              <span className="storyboard-settings-count">{promptLength(settingsText)} 字</span>
               {strip}
               <span className="film-settings-actions ml-auto flex items-center gap-0.5">
-                {copyButton('全局设定', group.settings.map(settingText).join('\n'), copyBlocked)}
+                {copyButton('全局设定', settingsText, copyBlocked)}
                 {settingsClamped ? (
                   <Button
                     aria-expanded={settingsExpanded}
@@ -161,19 +160,29 @@ export function FilmScript({
               </span>
             </div>
             <FilmFrameChipsProvider value={chipsOf(SETTINGS_ID, settingsSelected)}>
-              <div className="film-segment-body">
-                {group.settings.map((setting) => (
-                  <SettingRow
-                    insert={
-                      !setting.shared && setting.target !== null
-                        ? insertOf(setting.target)
-                        : undefined
-                    }
-                    key={setting.target ?? `${setting.kind}:${setting.label ?? ''}:${setting.text}`}
-                    onEdit={onEdit}
-                    readOnly={readOnly}
-                    setting={setting}
-                  />
+              <div className="film-segment-body film-settings-body">
+                {settingSections(group.settings).map((section, index) => (
+                  <div
+                    className="film-setting-section"
+                    key={`${String(index)}:${section.label ?? ''}`}
+                  >
+                    {section.label === null ? null : (
+                      <p className="film-setting-label">{section.label}：</p>
+                    )}
+                    {section.settings.map((setting) => (
+                      <SettingRow
+                        insert={
+                          !setting.shared && setting.target !== null
+                            ? insertOf(setting.target)
+                            : undefined
+                        }
+                        key={setting.target ?? `${setting.kind}:${setting.text}`}
+                        onEdit={onEdit}
+                        readOnly={readOnly}
+                        setting={setting}
+                      />
+                    ))}
+                  </div>
                 ))}
               </div>
             </FilmFrameChipsProvider>
@@ -311,12 +320,6 @@ function SettingRow({
   const { target } = setting
   return (
     <div className="film-setting">
-      {setting.label === null ? null : (
-        <span className="film-setting-label">
-          {setting.label}
-          {settingSeparator(setting).replace(' ', ' ')}
-        </span>
-      )}
       <FilmTextEditor
         aria-label={name}
         insert={insert}

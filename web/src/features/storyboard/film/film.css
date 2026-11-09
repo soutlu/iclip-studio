@@ -1,7 +1,7 @@
 /* ===== 制作页文案列 =====
    卡片、左轨、镜头条都用分镜页的（storyboard.css 的「文案列」一节），这里只管制作页多出来的几样：
-   一段里几个编辑器上下排、段间与分镜页一样留 6px；全局设定一段一行，称呼与图片芯片浮在左边，字从它们后面接着排、
-   折行回到行首（编辑器不另起格式化上下文，字才绕得过去）；台词单独一行，说话人是固定的小标签，字套在中文引号里，引号画在编辑器的段落上，跟着字折行。
+   一段里几个编辑器上下排、段间与分镜页一样留 6px；全局设定按节排，与发给模型的写法一样：每节标题单独一行，
+   标题紧贴第一条，下面一条一个编辑器、各占一行，条与条之间与编辑器里的段间一样留 6px，节与节之间隔得更宽；台词单独一行，说话人是固定的小标签，字套在中文引号里，引号画在编辑器的段落上，跟着字折行。
    收成摘要时（data-clamped）整段正文按行高截断：镜头两行、全局设定三行。 */
 .film-segment-body {
   display: flex;
@@ -67,9 +67,16 @@
   white-space: nowrap;
 }
 
+.film-settings-body {
+  gap: 16px;
+}
+.film-setting-section {
+  min-width: 0;
+}
+.film-setting + .film-setting {
+  margin-top: 6px;
+}
 .film-setting-label {
-  float: left;
-  margin-right: 2px;
   color: var(--color-on-surface);
   font-size: var(--text-body);
   font-weight: 500;

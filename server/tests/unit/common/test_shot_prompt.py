@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 from iclip_video.shot_prompt import (
+    PROMPT_OPENING,
     ShotCut,
     ShotScript,
     format_seconds,
@@ -33,6 +34,7 @@ def test_timestamps_are_printed_as_given_including_gaps_and_decimals() -> None:
         {"timestamps": [8.5, 9], "prompt": "三。", "image_indexes": []},
     )
     assert format_shot_prompt(shot) == (
+        "根据下面的全局设定要求和镜头描述生成一段写实视频。\n\n"
         "设定。\n\n"
         "镜头：\n"
         "0–3.5秒 一。\n"
@@ -48,6 +50,7 @@ def test_whitespace_inside_the_texts_is_kept() -> None:
         {"timestamps": [0, 2.0], "prompt": "  原文 @Image02。\n", "image_indexes": [2]},
     )
     assert format_shot_prompt(shot) == (
+        f"{PROMPT_OPENING}\n\n"
         "  设定。\n\n\n镜头：\n0–2秒   原文 @Image02。\n\n不要生成字幕，不要生成背景音乐。"
     )
 
@@ -61,6 +64,7 @@ def test_format_seconds(value: float, text: str) -> None:
 
 
 MULTI_CUT = (
+    f"{PROMPT_OPENING}\n\n"
     "设定第一行。\n设定第二行。\n\n"
     "镜头：\n"
     "0–3.5秒 走近 @Image2，再看 @Image1。\n"
@@ -77,8 +81,11 @@ LOOKALIKE_SETTINGS = "0–2秒 这一行是设定，不是镜头。\n镜头语�
     [
         SHOT_PROMPT,
         MULTI_CUT,
+        f"{PROMPT_OPENING}\n\n"
         "  设定。\n\n\n镜头：\n0–2秒   原文 @Image02。\n\n不要生成字幕，不要生成背景音乐。",
+        f"{PROMPT_OPENING}\n\n"
         "\n\n镜头：\n0–2秒 \n2–3秒 一。\n不要生成字幕，不要生成背景音乐。\n不要生成字幕，不要生成背景音乐。",
+        f"{PROMPT_OPENING}\n\n"
         f"{LOOKALIKE_SETTINGS}\n\n镜头：\n0–3秒 一。\n不要生成字幕，不要生成背景音乐。",
     ],
 )
@@ -87,6 +94,34 @@ def test_parsing_then_formatting_gives_back_the_same_text(text: str) -> None:
 
     assert parsed is not None
     assert format_shot_prompt(parsed) == text
+
+
+@pytest.mark.parametrize(
+    "global_settings",
+    [
+        "人物：\n金发女生。\n\n场景：\n石阶。",
+        "\n设定前面空一行。",
+        "",
+        PROMPT_OPENING,
+    ],
+)
+def test_the_opening_sentence_is_not_read_back_as_settings(global_settings: str) -> None:
+    shot = ShotScript(
+        global_settings=global_settings,
+        timeline=(ShotCut(timestamps=(0, 3), prompt="一。", image_indexes=()),),
+    )
+
+    assert parse_shot_prompt(format_shot_prompt(shot)) == shot
+
+
+def test_a_prompt_written_before_the_opening_sentence_still_parses() -> None:
+    old = SHOT_PROMPT.removeprefix(f"{PROMPT_OPENING}\n\n")
+
+    assert not old.startswith(PROMPT_OPENING)
+    assert parse_shot_prompt(old) == parse_shot_prompt(SHOT_PROMPT)
+    assert parse_shot_prompt(MULTI_CUT.removeprefix(f"{PROMPT_OPENING}\n\n")) == parse_shot_prompt(
+        MULTI_CUT
+    )
 
 
 def test_parsing_recovers_the_structure() -> None:

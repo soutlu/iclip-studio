@@ -189,6 +189,7 @@ export const insertReferenceText = (
   return prompt + (prompt.length === 0 || /\s$/.test(prompt) ? '' : ' ') + reference
 }
 
+const PROMPT_OPENING = '根据下面的全局设定要求和镜头描述生成一段写实视频。'
 const OUTPUT_CONSTRAINT = '不要生成字幕，不要生成背景音乐。'
 const SHOTS_HEADING = '镜头：'
 
@@ -199,7 +200,7 @@ export const formatShotPrompt = (shot: Shot): string => {
     (item) =>
       `${formatSeconds(item.timestamps[0])}–${formatSeconds(item.timestamps[1])}秒 ${item.prompt}`,
   )
-  return `${shot.prompt.global_settings}\n\n${SHOTS_HEADING}\n${lines.join('\n')}\n${OUTPUT_CONSTRAINT}`
+  return `${PROMPT_OPENING}\n\n${shot.prompt.global_settings}\n\n${SHOTS_HEADING}\n${lines.join('\n')}\n${OUTPUT_CONSTRAINT}`
 }
 
 const SENTENCE_END = /[。；！？!?;]/

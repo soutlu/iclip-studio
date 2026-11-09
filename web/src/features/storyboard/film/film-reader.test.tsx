@@ -197,6 +197,40 @@ describe('制作页', () => {
     await expect(navigator.clipboard.readText()).resolves.toBe(served.at(-1))
   })
 
+  it('全局设定按节显示：同一标题的几条只写一次标题；「复制全局设定」与发给模型的全局设定逐字一致', async () => {
+    const user = userEvent.setup()
+    await mount({ sharedBody: true })
+    const script = await screen.findByRole('region', { name: '分镜文案' })
+    const settings = within(script).getByRole('group', { name: '全局设定' })
+    expect(within(settings).getAllByText('人物：')).toHaveLength(1)
+    expect(within(settings).getAllByRole('textbox', { name: '人物' })).toHaveLength(2)
+    expect(within(settings).getAllByText('声音：')).toHaveLength(1)
+
+    await user.click(within(settings).getByRole('button', { name: '复制全局设定' }))
+    const copied = [
+      '拍摄与剪辑：',
+      '摄影：手持拍摄，带轻微呼吸感，以低机位仰拍和脚部特写为主。',
+      '剪辑：全片硬切，快节奏。',
+      '',
+      '人物：',
+      '金发女生，二十岁上下的白人女生，脸型偏长，金色齐耳波波头，长相参考@Image1。',
+      '身材高挑匀称，肩宽适中。',
+      '',
+      '产品：',
+      '绒面一脚蹬，浅米色反绒皮的低帮鞋，鞋面参考@Image2，鞋底参考@Image3。',
+      '',
+      '场景：',
+      '户外露天水泥滑板场参考@Image4，坡面和地面喷满街头涂鸦。',
+      '',
+      '声音：',
+      '旁白：年轻女性松弛的中音，普通话，语速偏慢。',
+    ].join('\n')
+    await expect(navigator.clipboard.readText()).resolves.toBe(copied)
+
+    await user.click(screen.getByRole('button', { name: '复制完整提示词' }))
+    await expect(navigator.clipboard.readText()).resolves.toContain(`\n\n${copied}\n\n镜头：\n`)
+  })
+
   it('有没存下的改动时「复制完整提示词」不可用，说明原因；存好后复制的是存好的那一版', async () => {
     const user = userEvent.setup()
     const script = await renderFilm()

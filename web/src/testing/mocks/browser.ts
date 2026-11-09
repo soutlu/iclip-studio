@@ -75,7 +75,7 @@ for (const showcase of [backgroundShowcase, multipleBackgroundShowcase]) {
 }
 
 const film = addMockConversation('穿搭种草 · 12 秒')
-seedMockFilm(film.id)
+seedMockFilm(film.id, { sharedBody: true })
 
 const replica = addMockConversation('乐福鞋 · 完全复刻')
 seedMockReplicaWorkspace(replica.id)
