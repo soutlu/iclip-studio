@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Final, Literal
 
+from iclip_video.shot_rules import MAX_PROMPT_CHARS
+
 ValueType = Literal["文字", "图", "视频", "模板"]
 
 TEXT: Final[ValueType] = "文字"
@@ -69,8 +71,6 @@ PROJECT_ROOT: Final = "icml"
 RUN_ROOT: Final = "icrun"
 
 IMAGE_MAX_REFERENCES: Final = 10
-
-PROMPT_MAX_CHARS: Final = 4000
 
 VIDEO_MAX_REFERENCES: Final = 30
 
@@ -148,7 +148,7 @@ GPT_IMAGE_PACKAGE: Final = Package(
             ),
             {"Reference": (0, None)},
             output=("image", IMAGE),
-            generation=Generation(GPT_IMAGE_MODEL, IMAGE_MAX_REFERENCES, PROMPT_MAX_CHARS),
+            generation=Generation(GPT_IMAGE_MODEL, IMAGE_MAX_REFERENCES, MAX_PROMPT_CHARS),
         ),
         Tag("Reference", (Attr("image", "ref", type=IMAGE),), top=False),
     ),
@@ -169,7 +169,7 @@ SEEDANCE_PACKAGE: Final = Package(
             ),
             {"Reference": (0, None)},
             output=("video", VIDEO),
-            generation=Generation("", VIDEO_MAX_REFERENCES, PROMPT_MAX_CHARS),
+            generation=Generation("", VIDEO_MAX_REFERENCES, MAX_PROMPT_CHARS),
         ),
         Tag("Reference", (Attr("image", "ref", type=IMAGE),), top=False),
     ),
@@ -206,7 +206,6 @@ __all__ = [
     "PROJECT_MARKUP",
     "PROJECT_PACKAGES",
     "PROJECT_ROOT",
-    "PROMPT_MAX_CHARS",
     "RUN_MARKUP",
     "RUN_PACKAGES",
     "RUN_ROOT",
