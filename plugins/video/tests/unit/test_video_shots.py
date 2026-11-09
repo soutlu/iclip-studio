@@ -29,9 +29,12 @@ from structlog.typing import EventDict
 from iclip_video.shot_document import (
     MAX_REFERENCE_IMAGES,
     SHOTS_PATH,
+    ShotDocumentError,
     VideoShotRequest,
     validate_shots_document,
 )
+from iclip_video.shot_prompt import format_shot_prompt
+from iclip_video.shot_rules import MAX_PROMPT_CHARS
 from iclip_video.video_shots.capability import VideoShots, VideoShotsToolset
 from tests.helpers.file_store import FakeFileStore
 from tests.helpers.media_probe import Answer, ScriptedMedia
@@ -289,6 +292,81 @@ async def test_delivery_rejects_the_whole_table(
     assert await files.read(NAMESPACE, SHOTS_PATH) is None
 
 
+async def test_delivery_rejects_the_same_frame_listed_twice_in_a_group(
+    tools: VideoShotsToolset[object], ctx: RunContext[object], files: FakeFileStore
+) -> None:
+    repeated = one_shot(index=2, image_urls=[FRAME_URL, OTHER_FRAME_URL, FRAME_URL])
+
+    message = "第 2 组的第 3 张图和第 1 张重复了，去掉第 3 张，并修正其它受影响的图片编号。"
+    with pytest.raises(ModelRetry, match=message) as rejected:
+        await deliver(tools, ctx, [one_shot(), repeated])
+    assert FRAME_URL not in str(rejected.value)
+    assert await files.read(NAMESPACE, SHOTS_PATH) is None
+
+
+def _assembled_length(shot: VideoShotRequest) -> int:
+    return len(format_shot_prompt(shot.prompt))
+
+
+async def test_delivery_counts_the_assembled_prompt_of_each_group(
+    tools: VideoShotsToolset[object], ctx: RunContext[object], files: FakeFileStore
+) -> None:
+    shot = one_shot(
+        index=2,
+        prompt={
+            "global_settings": "人物与门厅保持一致。" * 300,
+            "timeline": [
+                {"timestamps": [0, 4], "prompt": "她走进门厅 @Image1。" * 100},
+                {"timestamps": [4, 8], "prompt": "她停下脚步。" * 100},
+            ],
+        },
+    )
+    assert all(
+        len(text) < MAX_PROMPT_CHARS
+        for text in (shot.prompt.global_settings, *(item.prompt for item in shot.prompt.timeline))
+    )
+    total = _assembled_length(shot)
+    assert total > MAX_PROMPT_CHARS
+
+    with pytest.raises(
+        ModelRetry,
+        match=f"第 2 组的提示词有 {total} 字，超过 {MAX_PROMPT_CHARS} 字，请精简这一组的全局设定。",
+    ):
+        await deliver(tools, ctx, [one_shot(), shot])
+    assert await files.read(NAMESPACE, SHOTS_PATH) is None
+
+
+async def test_delivery_accepts_an_assembled_prompt_of_exactly_the_limit(
+    tools: VideoShotsToolset[object], ctx: RunContext[object], files: FakeFileStore
+) -> None:
+    base = one_shot()
+    padding = "门" * (MAX_PROMPT_CHARS - _assembled_length(base))
+    shot = one_shot(
+        prompt={
+            "global_settings": base.prompt.global_settings + padding,
+            "timeline": [item.model_dump() for item in base.prompt.timeline],
+        }
+    )
+    assert _assembled_length(shot) == MAX_PROMPT_CHARS
+
+    await deliver(tools, ctx, [shot])
+
+    stored = await files.read(NAMESPACE, SHOTS_PATH)
+    assert stored is not None
+    validate_shots_document(stored.content)
+
+
+def test_saving_a_document_that_lists_a_frame_twice_is_refused() -> None:
+    document = json.loads(shots_document())
+    document["shots"][0]["image_urls"] = [FRAME_URL, FRAME_URL]
+
+    with pytest.raises(
+        ShotDocumentError,
+        match="第 1 组的第 2 张图和第 1 张重复了，去掉第 2 张，并修正其它受影响的图片编号。",
+    ):
+        validate_shots_document(json.dumps(document, ensure_ascii=False))
+
+
 async def test_invalid_later_group_preserves_the_complete_existing_file(
     tools: VideoShotsToolset[object], ctx: RunContext[object], files: FakeFileStore
 ) -> None:
@@ -503,10 +581,11 @@ async def test_quota_failure_preserves_existing_file() -> None:
     assert refusals(first) == []
     original = await files.read(NAMESPACE, SHOTS_PATH)
     assert original is not None
-    args["shots"][0]["prompt"]["global_settings"] += "产品特征。" * 1000
+    args["shots"][0]["prompt"]["global_settings"] += "产品特征。" * 500
 
     messages = await invoke(capability, "write_video_shots", args)
 
-    assert len(refusals(messages)) == 1
+    (refused,) = refusals(messages)
+    assert "把内容拆成几个文件，或者精简一些" in refused.model_response_str()
     assert await files.read(NAMESPACE, SHOTS_PATH) == original
     assert returns(messages) == []

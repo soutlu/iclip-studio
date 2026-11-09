@@ -1,12 +1,21 @@
-import { useLayoutEffect, useRef, useState, type ComponentType } from 'react'
+import { useLayoutEffect, useRef, useState, type ComponentType, type CSSProperties } from 'react'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { cn } from '@/shared/lib/utils'
 import { useShellChrome } from '@/shared/shell'
 import { Button } from '@/shared/ui/button'
 import { ListError, ListPending } from '@/shared/ui/list-state'
+import { ResizeHandle } from '@/shared/ui/resize-handle'
 import { TabsList, TabsRoot, TabsTrigger } from '@/shared/ui/tabs'
 import type { DraftValue } from '../agent-draft'
 import { useAgent, useAgents, useAgentVersions } from '../agents.api'
+import {
+  DEFAULT_SPLIT,
+  resizeSplit,
+  resolveSplitLeft,
+  splitBounds,
+  type SplitLayout,
+} from '../split-layout'
+import { useSplitLayout } from '../use-split-layout'
 import { CreateAgentPage } from './agent-definition-form'
 import { AgentWorkspace } from './agent-workspace'
 import type { Panel } from './panel'
@@ -81,6 +90,29 @@ export function AgentConfigPage({
           ? 'mcp'
           : 'agent'
   const wideRight = panel?.type === 'skills' && panel.view.kind === 'editor'
+  const splitMode = wideRight ? 'wide' : 'normal'
+  const split = useSplitLayout()
+  const gridRef = useRef<HTMLDivElement>(null)
+  const [gridWidth, setGridWidth] = useState(0)
+  useLayoutEffect(() => {
+    const grid = gridRef.current
+    if (!grid) return
+    // ResizeObserver 在开始观察时会先回调一次，首帧绘制前就能拿到宽度。
+    const observer = new ResizeObserver(() => setGridWidth(grid.clientWidth))
+    observer.observe(grid)
+    return () => observer.disconnect()
+  }, [])
+  const splitLeft = resolveSplitLeft(split.layout[splitMode], gridWidth, splitMode)
+  const splitRange = splitBounds(splitMode, gridWidth)
+  const [resizing, setResizing] = useState(false)
+  const resizeOriginRef = useRef<{ layout: SplitLayout; left: number } | null>(null)
+  const endResize = () => {
+    resizeOriginRef.current = null
+    setResizing(false)
+  }
+  const gridVars = {
+    '--agent-config-split': `${gridWidth > 0 ? (splitLeft / gridWidth) * 100 : split.layout[splitMode] * 100}%`,
+  } as CSSProperties
 
   return (
     <main aria-label="Agent 配置" className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
@@ -136,11 +168,11 @@ export function AgentConfigPage({
 
       <div
         className={cn(
-          'relative grid min-h-0 flex-1 grid-cols-1 transition-[grid-template-columns] ui-motion-m motion-reduce:transition-none',
-          wideRight
-            ? 'md:grid-cols-[minmax(420px,2fr)_minmax(0,3fr)]'
-            : 'md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]',
+          'relative grid min-h-0 flex-1 grid-cols-1 transition-[grid-template-columns] ui-motion-m motion-reduce:transition-none md:grid-cols-[minmax(0,var(--agent-config-split))_minmax(0,1fr)]',
+          resizing && 'transition-none',
         )}
+        ref={gridRef}
+        style={gridVars}
       >
         {creating ? (
           <CreateAgentPage onCancel={cancelCreating} onCreated={selectAgent} />
@@ -189,6 +221,46 @@ export function AgentConfigPage({
             panel={panel}
             viewingVersionId={viewingVersionId}
           />
+        )}
+        {creating || currentId === null || !currentDetail.isSuccess ? null : (
+          // 绝对定位的外层不占网格单元，按同一变量与网格列同步过渡；窄屏单栏时连同拖柄一起隐藏。
+          <div
+            className={cn(
+              'absolute inset-y-0 left-(--agent-config-split) transition-[left] ui-motion-m motion-reduce:transition-none max-md:hidden',
+              resizing && 'transition-none',
+            )}
+          >
+            <ResizeHandle
+              label="调整 Agent 配置栏宽度"
+              value={Math.round(splitLeft)}
+              min={splitRange.min}
+              max={Math.round(splitRange.max)}
+              onResizeStart={() => {
+                resizeOriginRef.current = { layout: split.layout, left: splitLeft }
+                setResizing(true)
+              }}
+              onResize={(delta) => {
+                const origin = resizeOriginRef.current
+                if (origin)
+                  split.update(
+                    (current) => resizeSplit(current, splitMode, origin.left + delta, gridWidth),
+                    false,
+                  )
+              }}
+              onResizeEnd={() => {
+                split.persist()
+                endResize()
+              }}
+              onResizeCancel={() => {
+                const origin = resizeOriginRef.current
+                if (origin) split.update(() => origin.layout, false)
+                endResize()
+              }}
+              onReset={() =>
+                split.update((current) => ({ ...current, [splitMode]: DEFAULT_SPLIT[splitMode] }))
+              }
+            />
+          </div>
         )}
         {currentId === null ? null : (
           <PreviewHost

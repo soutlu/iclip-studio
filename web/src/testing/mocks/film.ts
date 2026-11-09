@@ -356,6 +356,8 @@ const videoPrompt = (group: MockGroup): string => {
     return `${seconds(shot.start)}–${seconds(shot.end)}秒 ${text}`
   })
   return [
+    '根据下面的全局设定要求和镜头描述生成一段写实视频。',
+    '',
     sections.map((section) => `${section.label}：\n${section.texts.join('\n')}`).join('\n\n'),
     '',
     '镜头：',

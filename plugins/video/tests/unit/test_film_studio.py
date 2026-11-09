@@ -14,7 +14,6 @@ from iclip_video.film_view import (
 from iclip_video.iclip_studio.film.checks import check
 from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH, Film
 from iclip_video.iclip_studio.film.markup import parse
-from iclip_video.iclip_studio.film.packages import PROMPT_MAX_CHARS
 from iclip_video.iclip_studio.film.prompts import render_picture, render_video
 from iclip_video.iclip_studio.film.studio import (
     FilmEditRejected,
@@ -24,7 +23,13 @@ from iclip_video.iclip_studio.film.studio import (
     missing_references,
     set_aspect_ratio,
 )
-from iclip_video.shot_prompt import OUTPUT_CONSTRAINT, SHOTS_HEADING, format_seconds
+from iclip_video.shot_prompt import (
+    OUTPUT_CONSTRAINT,
+    PROMPT_OPENING,
+    SHOTS_HEADING,
+    format_seconds,
+)
+from iclip_video.shot_rules import MAX_PROMPT_CHARS
 from tests.helpers.film import (
     EXPECTED,
     FILM,
@@ -146,7 +151,17 @@ def golden_prompt(state: str, video: str) -> str:
         for cut in shot["timeline"]
         for start, end in [cut["timestamps"]]
     ]
-    return "\n".join([shot["global_settings"], "", SHOTS_HEADING, *lines, OUTPUT_CONSTRAINT])
+    return "\n".join(
+        [
+            PROMPT_OPENING,
+            "",
+            shot["global_settings"],
+            "",
+            SHOTS_HEADING,
+            *lines,
+            OUTPUT_CONSTRAINT,
+        ]
+    )
 
 
 @pytest.mark.parametrize(
@@ -464,7 +479,7 @@ def test_a_shot_whose_line_has_a_comment_is_not_offered() -> None:
         ),
         (
             [FilmTextEdit("value:view01Framing", text="浅灰色" * 1400)],
-            f"超过 {PROMPT_MAX_CHARS} 字",
+            f"超过 {MAX_PROMPT_CHARS} 字",
         ),
     ],
 )
@@ -739,11 +754,13 @@ def test_inserting_a_generated_image_references_its_node() -> None:
     later = groups(edited.source)[1]
     assert numbered(later)[5:8] == [("scene", 6), ("personB", 7), ("view04", 8)]
     assert later.frames[6].url == GENERATED["personB"]
+    second = "https://preview.invalid/generated/personB-v2.png"
     rechosen = RUN.replace(
         '<use output="personB.image" image={personB-v1}/>',
-        '<use output="personB.image" image={scene-v1}/>',
+        f'<media:Image id="personB-v2" src="{second}"/>\n'
+        '  <use output="personB.image" image={personB-v2}/>',
     )
-    assert groups(edited.source, rechosen)[1].frames[6].url == GENERATED["scene"]
+    assert groups(edited.source, rechosen)[1].frames[6].url == second
 
 
 def test_a_view_image_cannot_be_inserted_into_another_group() -> None:
@@ -836,12 +853,29 @@ def test_choosing_an_image_for_a_generated_node_registers_and_selects_it() -> No
 
 
 def test_an_image_already_registered_is_reused() -> None:
-    ((_, content),) = choose_image(checked(), FILM, RUN, "personB", GENERATED["scene"])
+    ((_, content),) = choose_image(checked(), FILM, RUN, "personB", GENERATED["view04"])
 
     assert changed_lines(RUN, content) == [
         '-  <use output="personB.image" image={personB-v1}/>',
-        '+  <use output="personB.image" image={scene-v1}/>',
+        '+  <use output="personB.image" image={view04-v1}/>',
     ]
+
+
+@pytest.mark.parametrize(
+    ("image", "url"),
+    [
+        pytest.param("personB", GENERATED["scene"], id="生成的图"),
+        pytest.param("shoeFrontPhoto", PHOTOS["shoeSidePhoto"], id="用户给的图"),
+        pytest.param("view04", GENERATED["scene"], id="首次选用的机位图"),
+    ],
+)
+def test_choosing_an_address_already_listed_beside_the_image_is_refused(
+    image: str, url: str
+) -> None:
+    with pytest.raises(FilmEditRejected, match=r"^同一组参考图里已经有这张图了，换一张$"):
+        choose_image(
+            checked(FILM_NO_VIEW04, RUN_NO_VIEW04), FILM_NO_VIEW04, RUN_NO_VIEW04, image, url
+        )
 
 
 def test_clearing_a_choice_removes_its_use_and_leaves_the_image_empty() -> None:

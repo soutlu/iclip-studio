@@ -5,6 +5,8 @@ from typing import Final, Literal
 
 MAX_REFERENCE_IMAGES: Final = 30
 
+MAX_PROMPT_CHARS: Final = 4000
+
 _IMAGE_REFERENCE: Final = re.compile(r"@Image(\d+)")
 
 TimelineFault = Literal["not_after_start", "first_not_at_zero", "overlaps_previous"]
@@ -31,6 +33,7 @@ def timeline_fault(
 
 
 __all__ = [
+    "MAX_PROMPT_CHARS",
     "MAX_REFERENCE_IMAGES",
     "TimelineFault",
     "first_unavailable_image",

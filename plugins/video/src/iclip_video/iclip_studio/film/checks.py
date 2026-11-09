@@ -222,13 +222,17 @@ def _check_generations(project: Document) -> None:
         if not is_kit(project, project.nodes[reference], kit):
             what = "生图" if kit == PICTURE_KIT else "视频"
             project.error(node, f"{what}的 prompt 要写 {kit} 模板的 text:Render")
-        seen: set[str] = set()
-        for item in references(project, node):
+        seen: dict[str, int] = {}
+        for position, item in enumerate(references(project, node), start=1):
             image = item.reference("image")
             assert image is not None
-            if image in seen:
-                project.error(item, f"{{{image}}} 在这个生成节点下列了两次")
-            seen.add(image)
+            first = seen.setdefault(image, position)
+            if first != position:
+                project.error(
+                    item,
+                    f"第 {position} 张参考图 {{{image}}} 和第 {first} 张重复了，"
+                    f"去掉第 {position} 张，并修正其它受影响的图片编号",
+                )
 
 
 def _check_shots(film: Film) -> None:
@@ -287,7 +291,8 @@ def _check_shots(film: Film) -> None:
         if name not in said:
             project.error_at(line.line, f"台词 {name} 没有被任何镜头引用")
     if not film.errors and said != list(film.lines):
-        film.errors.append(f"{FILM_PATH}：镜头里台词的先后和剧本里的不一样")
+        assert script is not None
+        project.error(script, f"剧本里台词的先后要和镜头里一致，镜头里依次是 {'、'.join(said)}")
 
 
 def _check_videos(film: Film) -> None:
@@ -296,12 +301,17 @@ def _check_videos(film: Film) -> None:
     for video in _videos(project):
         shots = project.kids(video_shots(project, video), "Shot")
         seconds = math.ceil(float(shots[-1].attrs["end"]))
-        _, shortest, longest = SEEDANCE_VARIANTS[video.attrs["model"]]
+        model = video.attrs["model"]
+        _, shortest, longest = SEEDANCE_VARIANTS[model]
         duration = int(video.attrs["duration"])
         if duration != seconds:
             project.error(video, f"duration 写的是 {duration}，这组镜头是 {seconds} 秒")
-        if not shortest <= duration <= longest:
-            project.error(video, f"model {video.attrs['model']} 的时长是 {shortest}–{longest} 秒")
+        if not shortest <= seconds <= longest:
+            project.error(
+                video,
+                f"{video.attrs['id']} 有 {seconds} 秒，超出 {model} 的 {shortest}–{longest} 秒，"
+                "按段落重新分组",
+            )
         aspect = video.attrs["aspect-ratio"]
         if first is None:
             first = video
@@ -335,11 +345,9 @@ def _check_numbers(project: Document) -> None:
         name = node.attrs["id"]
         marks = "、".join(f"@Image{number}" for number in sorted(used - expected))
         if count == 0:
-            project.error(node, f"{name} 没有挂参考图，用到的文字里不能写图号，写了 {marks}")
+            project.error(node, f"{name} 没有挂参考图，提示词里不能写图号，写了 {marks}")
             continue
-        problems = [
-            f"{name} 挂了 {count} 张参考图，用到的文字里的图号要正好是 @Image1–@Image{count}"
-        ]
+        problems = [f"{name} 挂了 {count} 张参考图，提示词里的图号要正好是 @Image1–@Image{count}"]
         absent = sorted(expected - used)
         if absent:
             problems.append(f"没有写 {'、'.join(f'@Image{number}' for number in absent)}")
@@ -416,12 +424,10 @@ def _check_run(film: Film, source: str) -> None:
                 film.registered[node.attrs["id"]] = node.attrs["src"]
             elif node.tag == "use":
                 name, _, path = node.attrs["output"].partition(".")
-                if name not in image_nodes or path != "image":
-                    run.error(
-                        node,
-                        f"output 要写 {FILM_PATH} 里生图节点的输出，如 "
-                        f'"view01.image"；「{node.attrs["output"]}」不是',
-                    )
+                if name not in image_nodes:
+                    run.error(node, f"{FILM_PATH} 里没有叫 {name} 的生图节点")
+                elif path != "image":
+                    run.error(node, f"output 要写 {name}.image")
                 elif name in film.selected:
                     run.error(node, f"{name} 选用了两次")
                 else:
@@ -438,14 +444,38 @@ def _check_limits(film: Film) -> None:
         assert tag.generation is not None
         if _is_picture(project, node):
             text = render_picture(film, node).text
+            trim = "描述"
         else:
             text = format_shot_prompt(render_video(film, node))
+            trim = "设定"
         count = len(references(project, node))
         limits = tag.generation
         if len(text) > limits.max_prompt_chars:
-            project.error(node, f"拼出的提示词有 {len(text)} 字，超过 {limits.max_prompt_chars} 字")
+            project.error(
+                node,
+                f"{node.attrs['id']} 的提示词有 {len(text)} 字，"
+                f"超过 {limits.max_prompt_chars} 字，请精简它的{trim}",
+            )
         if count > limits.max_references:
-            project.error(node, f"参考图有 {count} 张，超过 {limits.max_references} 张")
+            most = limits.max_references
+            project.error(
+                node,
+                f"{node.attrs['id']} 的参考图有 {count} 张，超过 {most} 张，"
+                f"减到 {most} 张以内，并修正其它受影响的图片编号",
+            )
+        earlier: dict[str, tuple[int, str]] = {}
+        for position, item in enumerate(references(project, node), start=1):
+            image = item.reference("image")
+            url = film.image_url(image)
+            if image is None or url is None:
+                continue
+            first_position, first = earlier.setdefault(url, (position, image))
+            if first_position != position:
+                project.error(
+                    item,
+                    f"第 {position} 张参考图 {{{image}}} 和第 {first_position} 张 {{{first}}} 重复了，"
+                    f"去掉第 {position} 张，并修正其它受影响的图片编号",
+                )
 
 
 def _generation_nodes(project: Document) -> list[Node]:

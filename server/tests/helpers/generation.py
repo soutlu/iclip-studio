@@ -124,7 +124,7 @@ def compose_request(**overrides: Any) -> VideoComposeRequest:
 
 SHOT_IMAGE_URLS = ["https://example.com/a.png", "https://example.com/b.png"]
 
-SHOT_PROMPT = "人物保持一致。\n\n镜头：\n0–6秒 走向镜头 @Image1，停下 @Image2。\n不要生成字幕，不要生成背景音乐。"
+SHOT_PROMPT = "根据下面的全局设定要求和镜头描述生成一段写实视频。\n\n人物保持一致。\n\n镜头：\n0–6秒 走向镜头 @Image1，停下 @Image2。\n不要生成字幕，不要生成背景音乐。"
 
 LEGACY_SHOT_PROMPT = "人物保持一致。\n\n[0–6秒｜镜头1] 走向镜头 @Image1，停下 @Image2。\n不要生成字幕，不要生成背景音乐。"
 

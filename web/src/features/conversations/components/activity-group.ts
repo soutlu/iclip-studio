@@ -16,7 +16,7 @@ export type ActivityNode =
 
 export type SummaryClause = {
   text: string
-  tone?: 'danger' | 'faint'
+  tone?: 'faint'
   pinned?: boolean
 }
 
@@ -144,27 +144,13 @@ const aggregate = (
   live: boolean,
   interactions: Interactions,
 ): SummaryClause[] => {
-  const buckets = new Map<string, { count: number; errors: number; denied: number }>()
+  const counts = new Map<string, number>()
   for (const frame of tools) {
+    if (toolOutcome(frame, interactions) !== 'done') continue
     const key = bucketKey(frame)
-    const bucket = buckets.get(key) ?? { count: 0, denied: 0, errors: 0 }
-    bucket.count += 1
-    const outcome = toolOutcome(frame, interactions)
-    if (outcome === 'error') bucket.errors += 1
-    if (outcome === 'denied') bucket.denied += 1
-    buckets.set(key, bucket)
+    counts.set(key, (counts.get(key) ?? 0) + 1)
   }
-  const clauses: SummaryClause[] = []
-  for (const [key, bucket] of buckets) {
-    clauses.push({ text: doneClause(key, bucket.count, live) })
-    if (bucket.errors > 0) {
-      clauses.push({ pinned: true, text: `（${bucket.errors} 失败）`, tone: 'danger' })
-    }
-    if (bucket.denied > 0) {
-      clauses.push({ pinned: true, text: `（${bucket.denied} 已拒绝）`, tone: 'faint' })
-    }
-  }
-  return clauses
+  return [...counts].map(([key, count]) => ({ text: doneClause(key, count, live) }))
 }
 
 export const summarizeDone = (

@@ -100,36 +100,40 @@ class IclipStudioToolset(FunctionToolset[AgentDepsT]):
             self.add_function(self.generate_images, name="generate_images")
 
     async def check_film(
-        self, ctx: RunContext[AgentDepsT], show: str | None = None
+        self, ctx: RunContext[AgentDepsT], show: str | list[str] | None = None
     ) -> ToolReturn[str]:
         """检查工程文件 film.icml 和运行文件 film.icrun 是否符合工程规范，包括文件结构、引用关系、
         参数，以及文件里的图片地址能否打开、是否为有效图片。
 
         - 检查分阶段进行，返回本次发现的问题及文件位置，单次最多列出 30 处；修正后需重新检查。
-        - 图片尚未选用不影响工程规范检查；可用 `show` 查看指定节点的最终提示词、参考图和缺图情况。
+        - 图片尚未选用不影响工程规范检查；可用 `show` 查看指定节点的最终提示词、参考图和缺图情况，带 `show` 时会先完整检查，不用先单独调用一次。
 
         Args:
-            show: 填写 film.icml 中图片或视频生成节点的 id，如“镜02机位图”“全片”。工程规范
-                检查通过后，返回该节点的最终提示词、参考图地址及尚未选用的参考图。
+            show: 填写 film.icml 中图片或视频生成节点的 id，可填一个或多个，如 "镜02机位图" 或
+                ["全片", "第1组"]。工程规范检查通过后，返回这些节点的最终提示词、参考图及尚未选用的
+                参考图。
         """
 
         film = await self._load(ctx)
         if isinstance(film, list):
             return _problems(film)
-        problems = await self._image_problems(film)
-        if problems:
-            return _problems(problems)
         project = film.project
         videos = project.find("ReferenceVideo")
-        lines = [
-            f"工程规范检查通过：{len(film.image_nodes())} 个图片生成节点，{len(videos)} 个视频生成节点。"
-        ]
-        if show is not None:
-            node = project.nodes.get(show)
+        shown: list[Node] = []
+        for name in dict.fromkeys([show] if isinstance(show, str) else show or []):
+            node = project.nodes.get(name)
             tag = project.tags.get(node.tag) if node is not None else None
             if node is None or tag is None or tag.generation is None:
                 names = "、".join(n.attrs["id"] for n in [*film.image_nodes(), *videos])
                 raise ModelRetry(f"show 要填某张图或某段视频的 id，可以填：{names}。")
+            shown.append(node)
+        problems = await self._image_problems(film)
+        if problems:
+            return _problems(problems)
+        lines = [
+            f"工程规范检查通过：{len(film.image_nodes())} 个图片生成节点，{len(videos)} 个视频生成节点。"
+        ]
+        for node in shown:
             lines += ["", *_assembled(film, node)]
         return ToolReturn(return_value="\n".join(lines), metadata=tool_note(chip="通过"))
 
@@ -276,7 +280,9 @@ def _assembled(film: Film, node: Node) -> list[str]:
         text, images = format_shot_prompt(group), group.images
     listed = (
         "、".join(
-            f"@Image{n} = {item.url or f'{item.image}（尚未选用图片）'}"
+            f"@Image{n} = {item.image} {item.url}"
+            if item.url
+            else f"@Image{n} = {item.image}（尚未选用图片）"
             for n, item in enumerate(images, start=1)
         )
         or "无"

@@ -223,7 +223,8 @@ describe('structured editing', () => {
     const original = updateTimelinePrompt(shot, 0, '  原文 @Image02。\n')
     const exported = formatShotPrompt(original)
     expect(exported).toBe(
-      `${original.prompt.global_settings}\n\n` +
+      '根据下面的全局设定要求和镜头描述生成一段写实视频。\n\n' +
+        `${original.prompt.global_settings}\n\n` +
         '镜头：\n' +
         '0–3.5秒   原文 @Image02。\n\n' +
         '4.25–8.5秒 走近拍摄鞋面 @Image1。\n' +

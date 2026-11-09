@@ -7,6 +7,8 @@ from typing import Final, Protocol
 
 from iclip_video.shot_rules import image_indexes_of, timeline_fault
 
+PROMPT_OPENING: Final = "根据下面的全局设定要求和镜头描述生成一段写实视频。"
+
 OUTPUT_CONSTRAINT: Final = "不要生成字幕，不要生成背景音乐。"
 
 SHOTS_HEADING: Final = "镜头："
@@ -22,7 +24,7 @@ _Cut = tuple[float, float, list[str]]
 
 class ShotCutLike(Protocol):
     @property
-    def timestamps(self) -> tuple[float, float]: ...
+    def timestamps(self) -> Sequence[float]: ...
 
     @property
     def prompt(self) -> str: ...
@@ -59,12 +61,17 @@ def format_shot_prompt(shot: ShotLike) -> str:
         for item in shot.timeline
     ]
     return (
-        f"{shot.global_settings}\n\n{SHOTS_HEADING}\n" + "\n".join(lines) + f"\n{OUTPUT_CONSTRAINT}"
+        f"{PROMPT_OPENING}\n\n{shot.global_settings}\n\n{SHOTS_HEADING}\n"
+        + "\n".join(lines)
+        + f"\n{OUTPUT_CONSTRAINT}"
     )
 
 
 def parse_shot_prompt(text: str) -> ShotScript | None:
     lines = text.split("\n")
+    # 生成记录里的提示词不一定以这句开头；有就连同后面的空行去掉，剩下的才是全局设定。
+    if lines[0] == PROMPT_OPENING:
+        lines = lines[2:] if len(lines) > 1 and lines[1] == "" else lines[1:]
     split = _split_headed(lines) if SHOTS_HEADING in lines else _split_marked(lines)
     if split is None:
         return None
@@ -130,6 +137,7 @@ def _split_marked(lines: list[str]) -> tuple[list[str], list[_Cut]]:
 
 __all__ = [
     "OUTPUT_CONSTRAINT",
+    "PROMPT_OPENING",
     "SHOTS_HEADING",
     "ShotCut",
     "ShotCutLike",

@@ -23,7 +23,7 @@ depends_on = []
 # 插件包共用、不带工具的模块。
 [[modules]]
 path = "iclip_video.shot_document"
-depends_on = ["iclip_video.shot_rules"]
+depends_on = ["iclip_video.shot_rules", "iclip_video.shot_prompt"]
 
 [[modules]]
 path = "iclip_video.video_document"

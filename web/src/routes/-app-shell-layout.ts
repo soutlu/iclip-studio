@@ -1,11 +1,11 @@
+import type { ResizeInput } from '@/shared/ui/resize-handle'
+
 export const SIDEBAR_WIDTH = { default: 264, min: 200, max: 400, collapsed: 56 } as const
 export const WORKBENCH_WIDTH = { default: 820, min: 560 } as const
 export const CHAT_MIN = 400
 export const CONTENT_RAIL_WIDTH = 40
 export const COMPACT_MAX = 600
-export const APP_RESIZE_HANDLE_WIDTH = 8
 
-export type ResizeInput = 'pointer' | 'keyboard'
 export type ContentPane = 'chat' | 'workbench'
 export type ContentMode = 'split' | ContentPane
 export type ShellLayoutState = {

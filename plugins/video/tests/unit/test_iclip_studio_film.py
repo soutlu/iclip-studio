@@ -160,7 +160,7 @@ async def test_the_run_file_is_checked_together_with_the_project_file(
 
     result = await tools.check_film(ctx)
 
-    assert "film.icrun 第 15 行：output 要写 film.icml 里生图节点的输出" in text_of(result)
+    assert "film.icrun 第 15 行：film.icml 里没有叫 personC 的生图节点" in text_of(result)
 
 
 async def test_addresses_that_do_not_open_are_reported_at_their_nodes_without_echoing_them(
@@ -174,8 +174,8 @@ async def test_addresses_that_do_not_open_are_reported_at_their_nodes_without_ec
 
     assert lines[0] == "工程规范检查未通过，本次发现 2 处问题："
     assert lines[1].startswith("film.icrun 第 ")
-    assert lines[1].endswith("src 用不了：打不开；换成能打开的图片地址")
-    assert lines[2].endswith("src 用不了：不是图片；换成能打开的图片地址")
+    assert lines[1].endswith("src 打不开，换成能打开的图片地址")
+    assert lines[2].endswith("src 不是图片，换成能打开的图片地址")
     assert "preview.invalid" not in "\n".join(lines)
 
 
@@ -188,7 +188,7 @@ async def test_a_video_address_cannot_stand_in_for_an_image(
     result = await tools.check_film(ctx)
 
     line = FILM.count("\n", 0, FILM.index('<media:Image id="shoeFrontPhoto"')) + 1
-    assert f"film.icml 第 {line} 行：src 用不了：不是图片" in text_of(result)
+    assert f"film.icml 第 {line} 行：src 不是图片，换成能打开的图片地址" in text_of(result)
 
 
 @pytest.mark.parametrize("run", [RUN, None], ids=["both-files", "project-only"])
@@ -213,7 +213,7 @@ async def test_an_address_that_does_not_answer_is_reported_at_its_node(
     lines = text_of(await tools.check_film(ctx)).splitlines()
 
     assert lines[0] == "工程规范检查未通过，本次发现 1 处问题："
-    assert lines[1].endswith("src 用不了：打不开；换成能打开的图片地址")
+    assert lines[1].endswith("src 打不开，换成能打开的图片地址")
 
 
 def test_loading_checks_only_the_structure() -> None:
@@ -236,9 +236,12 @@ async def test_show_prints_the_assembled_prompt_of_one_node(
     image = text_of(await tools.check_film(ctx, show="view02"))
     video = text_of(await tools.check_film(ctx, show="video01"))
 
+    names = ("modelAFullBodyPhoto", "shoeSidePhoto", "shoeSolePhoto", "scene", "view01")
     listed = "、".join(
-        f"@Image{n} = {url}"
-        for n, url in enumerate(EXPECTED["images"]["view02"]["input_str_list"], start=1)
+        f"@Image{n} = {name} {url}"
+        for n, (name, url) in enumerate(
+            zip(names, EXPECTED["images"]["view02"]["input_str_list"], strict=True), start=1
+        )
     )
     assert image.splitlines()[2:] == [
         "view02：画幅 16:9，分辨率 2k",
@@ -247,7 +250,7 @@ async def test_show_prints_the_assembled_prompt_of_one_node(
         *EXPECTED["images"]["view02"]["prompt"].splitlines(),
     ]
     assert "video01：18 秒，画幅 16:9" in video
-    assert f"@Image10 = {GENERATED['view03']}" in video
+    assert f"@Image10 = view03 {GENERATED['view03']}" in video
     film = film_of()
     assert format_shot_prompt(render_video(film, film.project.nodes["video01"])) in video
     assert "\n镜头：\n0–6秒 参考@Image8，中景" in video
@@ -264,6 +267,18 @@ async def test_show_names_the_references_that_have_no_image(
     assert "@Image3 = personB（尚未选用图片）" in image
 
 
+async def test_show_takes_several_nodes_and_prints_each_once_in_order(
+    files: FakeFileStore, ctx: RunContext[object]
+) -> None:
+    tools = await workspace(files)
+
+    image = text_of(await tools.check_film(ctx, show="view02"))
+    video = text_of(await tools.check_film(ctx, show="video01"))
+    both = text_of(await tools.check_film(ctx, show=["view02", "video01", "view02"]))
+
+    assert both.splitlines() == [*image.splitlines(), "", *video.splitlines()[2:]]
+
+
 async def test_show_must_name_a_generation_node(
     files: FakeFileStore, ctx: RunContext[object]
 ) -> None:
@@ -271,6 +286,16 @@ async def test_show_must_name_a_generation_node(
 
     with pytest.raises(ModelRetry, match="view06、video01、video02"):
         await tools.check_film(ctx, show="view02Prompt")
+
+
+async def test_a_wrong_show_is_rejected_before_any_address_is_probed(
+    files: FakeFileStore, media: ScriptedMedia, ctx: RunContext[object]
+) -> None:
+    tools = await workspace(files)
+
+    with pytest.raises(ModelRetry, match="show 要填某张图或某段视频的 id"):
+        await tools.check_film(ctx, show=["view02", "view02Prompt"])
+    assert media.asked == []
 
 
 async def test_checking_needs_the_project_file(
