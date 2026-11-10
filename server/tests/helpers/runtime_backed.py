@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Final
 
 import httpx
+import httpx2
 from agent_runtime.assembly.agents import AgentRuntime, ModelBuilder, build_runtime_model
 from agent_runtime.assembly.config_services import ConfigServices
 from agent_runtime.config.model_providers.repository import CredentialProbe
@@ -138,6 +139,7 @@ def build_backed_app(
     credential_probe: CredentialProbe | None = None,
     plugins: PluginRegistry | PluginBinder = standard_plugins,
     skill_cache_dir: Path | None = None,
+    oauth_transport: httpx2.AsyncBaseTransport | None = None,
     **options: Any,
 ) -> FastAPI:
     options.setdefault("media_probe", ScriptedProbe())
@@ -149,6 +151,7 @@ def build_backed_app(
         engine=engine,
         build_model=build_model,
         hook_transport=to_server,
+        oauth_transport=oauth_transport,
     )
     app = bootstrap.build_app(
         config, engine=engine, runtime_transport=OneUpgradeAtATime(runtime), **options

@@ -347,12 +347,13 @@ describe('MCP 服务 挂到 Agent', () => {
     await waitFor(() => expect(puts).toHaveLength(1))
     const tools = (puts[0] as { config: { tools: Body[] } }).config.tools
     expect(tools.filter((tool) => tool['type'] === 'mcp')).toEqual([
-      { server: 'image-search', tools: null, type: 'mcp' },
+      { approval_tools: [], server: 'image-search', tools: null, type: 'mcp' },
     ])
   })
 
   it('已停用且没挂上的服务开关不可用', async () => {
     const stopped: McpServerOut = {
+      authMode: 'shared',
       createdAt: '2026-11-01T00:00:00Z',
       createdBy: mockGovernor.id,
       description: '查询客户跟进记录',
@@ -361,6 +362,15 @@ describe('MCP 服务 挂到 Agent', () => {
       id: 'crm-notes',
       lastCheck: null,
       name: '客户笔记',
+      oauth: {
+        client: 'unknown',
+        connectedUsers: 0,
+        presetClient: null,
+        publishedScopes: null,
+        requestedScopes: null,
+        scopes: null,
+        signInScopes: null,
+      },
       timeoutSeconds: 30,
       tools: null,
       transport: 'streamable_http',
@@ -417,6 +427,7 @@ describe('MCP 服务 选工具', () => {
     await user.click(within(editor()).getByRole('button', { name: '保存草稿' }))
     await waitFor(() => expect(puts).toHaveLength(1))
     expect((puts[0] as { config: { tools: Body[] } }).config.tools).toContainEqual({
+      approval_tools: [],
       server: 'feishu-docs',
       tools: ['search'],
       type: 'mcp',
@@ -427,6 +438,7 @@ describe('MCP 服务 选工具', () => {
     await user.click(within(editor()).getByRole('button', { name: '保存草稿' }))
     await waitFor(() => expect(puts).toHaveLength(2))
     expect((puts[1] as { config: { tools: Body[] } }).config.tools).toContainEqual({
+      approval_tools: [],
       server: 'feishu-docs',
       tools: ['search', 'read', 'folders', 'comments', 'create', 'update'],
       type: 'mcp',

@@ -6084,10 +6084,61 @@
         "title": "LibraryVideosOut",
         "type": "object"
       },
+      "McpAuthorizeOut": {
+        "additionalProperties": false,
+        "description": "让浏览器去的授权地址，5 分钟内回到前端的 ``/mcp/callback`` 完成。",
+        "properties": {
+          "authorizationUrl": {
+            "title": "Authorizationurl",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorizationUrl"
+        ],
+        "title": "McpAuthorizeOut",
+        "type": "object"
+      },
+      "McpCallbackUrlOut": {
+        "additionalProperties": false,
+        "properties": {
+          "callbackUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Callbackurl"
+          }
+        },
+        "required": [
+          "callbackUrl"
+        ],
+        "title": "McpCallbackUrlOut",
+        "type": "object"
+      },
       "McpCheckIn": {
         "additionalProperties": false,
-        "description": "试连一份还没保存的配置，什么都不存。给了 ``serverId`` 时，没给 ``url`` 就用那个已保存的服务的地址，\n没给 ``value`` 的请求头取它里面同名请求头的值；没给 ``serverId`` 时 ``url`` 与每个请求头的 ``value``\n都要给。",
+        "description": "试连一份还没保存的配置，什么都不存。给了 ``serverId`` 时，没给 ``url`` 就用那个已保存的服务的地址，\n没给 ``value`` 的请求头取它里面同名请求头的值，没给 ``authMode`` 就用它的；没给 ``serverId`` 时 ``url``\n与每个请求头的 ``value`` 都要给，``authMode`` 不给是 ``shared``。按用户登录（``per_user``）的配置不能这样\n试连：先保存，再用已保存的服务试连。",
         "properties": {
+          "authMode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "shared",
+                  "per_user"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authmode"
+          },
           "headers": {
             "default": [],
             "items": {
@@ -6185,6 +6236,188 @@
         "title": "McpCheckOut",
         "type": "object"
       },
+      "McpCompleteIn": {
+        "additionalProperties": false,
+        "description": "授权服务器回调到 ``/mcp/callback`` 时带的参数，原样交回；``iss`` 有就给。",
+        "properties": {
+          "code": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "iss": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iss"
+          },
+          "state": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "code"
+        ],
+        "title": "McpCompleteIn",
+        "type": "object"
+      },
+      "McpCompleteOut": {
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverId",
+          "name",
+          "account"
+        ],
+        "title": "McpCompleteOut",
+        "type": "object"
+      },
+      "McpConnectionOut": {
+        "additionalProperties": false,
+        "description": "一个按用户登录的 MCP 服务与当前用户在它上面的连接：``connected`` 已连接，``invalid`` 连接已失效、要\n重新连接，``none`` 未连接。``scopes`` 是授权服务器给的权限范围，``connectedAt`` 是这次连接建立的时间。",
+        "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "connectedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connectedat"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "scopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopes"
+          },
+          "serverId": {
+            "title": "Serverid",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "connected",
+              "invalid",
+              "none"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "serverId",
+          "name",
+          "description",
+          "state",
+          "account",
+          "scopes",
+          "connectedAt"
+        ],
+        "title": "McpConnectionOut",
+        "type": "object"
+      },
+      "McpConnectionsAffectedOut": {
+        "additionalProperties": false,
+        "properties": {
+          "affectedUsers": {
+            "title": "Affectedusers",
+            "type": "integer"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail",
+          "code",
+          "affectedUsers"
+        ],
+        "title": "McpConnectionsAffectedOut",
+        "type": "object"
+      },
+      "McpConnectionsOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/McpConnectionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "McpConnectionsOut",
+        "type": "object"
+      },
       "McpHeaderIn": {
         "additionalProperties": false,
         "description": "一个请求头。改已保存的服务时 ``value`` 可以不给，就是沿用同名请求头原来的值；新建时必须给。",
@@ -6267,9 +6500,168 @@
         "title": "McpLastCheckOut",
         "type": "object"
       },
-      "McpServerCreateIn": {
+      "McpOAuthClientIn": {
+        "additionalProperties": false,
+        "description": "管理员填的客户端，给不能自动注册的服务用。改的时候 ``clientSecret`` 不给，客户端 ID 没变就沿用原来的\n密钥，变了就是没有密钥。",
+        "properties": {
+          "clientId": {
+            "title": "Clientid",
+            "type": "string"
+          },
+          "clientSecret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clientsecret"
+          }
+        },
+        "required": [
+          "clientId"
+        ],
+        "title": "McpOAuthClientIn",
+        "type": "object"
+      },
+      "McpOAuthClientOut": {
         "additionalProperties": false,
         "properties": {
+          "clientId": {
+            "title": "Clientid",
+            "type": "string"
+          },
+          "clientSecret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clientsecret"
+          }
+        },
+        "required": [
+          "clientId",
+          "clientSecret"
+        ],
+        "title": "McpOAuthClientOut",
+        "type": "object"
+      },
+      "McpOAuthOut": {
+        "additionalProperties": false,
+        "description": "按用户登录的设置与现状。\n\n- ``scopes``：管理员挑的权限范围，``null`` 是服务公布的全部。\n- ``publishedScopes`` / ``signInScopes`` / ``requestedScopes``：服务公布的可挑的权限范围、公布了的登录用的\n  几个、登录时实际请求的；还没发现过服务（第一次有人发起登录时发现）时都是 ``null``。\n- ``client``：``unknown`` 还没发现过；``automatic`` 自动注册；``preset`` 用管理员填的；``required`` 服务\n  不能自动注册，要管理员填客户端 ID。\n- ``connectedUsers``：连接有效的用户数。管理员自己的连接见 ``GET /v1/mcp-connections``。",
+        "properties": {
+          "client": {
+            "enum": [
+              "unknown",
+              "automatic",
+              "preset",
+              "required"
+            ],
+            "title": "Client",
+            "type": "string"
+          },
+          "connectedUsers": {
+            "title": "Connectedusers",
+            "type": "integer"
+          },
+          "presetClient": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/McpOAuthClientOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publishedScopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publishedscopes"
+          },
+          "requestedScopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requestedscopes"
+          },
+          "scopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopes"
+          },
+          "signInScopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signinscopes"
+          }
+        },
+        "required": [
+          "scopes",
+          "publishedScopes",
+          "signInScopes",
+          "requestedScopes",
+          "client",
+          "presetClient",
+          "connectedUsers"
+        ],
+        "title": "McpOAuthOut",
+        "type": "object"
+      },
+      "McpServerCreateIn": {
+        "additionalProperties": false,
+        "description": "``authMode`` 为 ``per_user`` 时每个用户用自己的账户登录。``oauthScopes`` 是要请求的权限范围，不给是\n服务公布的全部；登录与保持连接用的几个（``openid``、``email``、``profile``、``offline_access``）服务\n公布了就总会请求。",
+        "properties": {
+          "authMode": {
+            "default": "shared",
+            "enum": [
+              "shared",
+              "per_user"
+            ],
+            "title": "Authmode",
+            "type": "string"
+          },
           "description": {
             "default": "",
             "title": "Description",
@@ -6295,6 +6687,30 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "oauthClient": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/McpOAuthClientIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "oauthScopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauthscopes"
           },
           "timeoutSeconds": {
             "default": 30,
@@ -6326,6 +6742,14 @@
       "McpServerOut": {
         "additionalProperties": false,
         "properties": {
+          "authMode": {
+            "enum": [
+              "shared",
+              "per_user"
+            ],
+            "title": "Authmode",
+            "type": "string"
+          },
           "createdAt": {
             "format": "date-time",
             "title": "Createdat",
@@ -6368,6 +6792,9 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "oauth": {
+            "$ref": "#/components/schemas/McpOAuthOut"
           },
           "timeoutSeconds": {
             "title": "Timeoutseconds",
@@ -6432,15 +6859,37 @@
           "createdBy",
           "updatedBy",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "authMode",
+          "oauth"
         ],
         "title": "McpServerOut",
         "type": "object"
       },
       "McpServerUpdateIn": {
         "additionalProperties": false,
-        "description": "不给或给 ``null`` 的项不动，``url`` 不给就沿用原来的地址。给了 ``headers`` 就整份替换请求头，其中\n没给 ``value`` 的沿用同名请求头原来的值。",
+        "description": "不给或给 ``null`` 的项不动，``url`` 不给就沿用原来的地址。给了 ``headers`` 就整份替换请求头，其中\n没给 ``value`` 的沿用同名请求头原来的值。\n\n``oauthScopes`` 给了就整份替换要请求的权限范围；``oauthClient`` 给了就换掉管理员填的客户端。改地址、关掉\n``per_user`` 会断开全部连接；缩小权限范围会作废拿到了更多权限的连接；换了客户端 ID 会作废令牌发给旧客户端\n的连接（只换密钥不会）。会影响已连接的用户时不带 ``confirmReconnect: true`` 就答 409\n``mcp_connections_affected``，带着受影响的人数。",
         "properties": {
+          "authMode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "shared",
+                  "per_user"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authmode"
+          },
+          "confirmReconnect": {
+            "default": false,
+            "title": "Confirmreconnect",
+            "type": "boolean"
+          },
           "description": {
             "anyOf": [
               {
@@ -6487,6 +6936,30 @@
               }
             ],
             "title": "Name"
+          },
+          "oauthClient": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/McpOAuthClientIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "oauthScopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauthscopes"
           },
           "timeoutSeconds": {
             "anyOf": [
@@ -6548,8 +7021,18 @@
       },
       "McpToolConfig": {
         "additionalProperties": false,
-        "description": "挂一个 MCP 服务：``server`` 是服务的标识，``tools`` 是放给模型的工具（服务自己给的名字），``null``\n是全部。",
+        "description": "挂一个 MCP 服务：``server`` 是服务的标识，``tools`` 是放给模型的工具（服务自己给的名字），``null``\n是全部，空列表是一个都不放。``approval_tools`` 是其中每次调用前要对话用户同意的工具。",
         "properties": {
+          "approval_tools": {
+            "default": [],
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Approval Tools",
+            "type": "array"
+          },
           "server": {
             "maxLength": 200,
             "minLength": 1,
@@ -21196,9 +21679,224 @@
         ]
       }
     },
+    "/mcp-connections": {
+      "get": {
+        "description": "启用的、按用户登录的 MCP 服务与我在各服务上的连接。给了 ``agentId`` 只列这个 agent 的当前版本\n（``draft=true`` 时是草稿，给测试预览用，要 ``agent:manage``）与它的子 agent 挂着的；没有这个\nagent 是 404。",
+        "operationId": "mcp_connections_mcp_connections_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "agentId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agentid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "draft",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Draft",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpConnectionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "summary": "Mcp Connections",
+        "tags": [
+          "mcp-connections"
+        ]
+      }
+    },
+    "/mcp-connections/complete": {
+      "post": {
+        "description": "用回调带回的 ``state`` 与 ``code`` 完成连接，答连上的是哪个服务；替换我原有的连接。要由发起的\n那个人来完成。",
+        "operationId": "complete_mcp_mcp_connections_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpCompleteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpCompleteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "summary": "Complete Mcp",
+        "tags": [
+          "mcp-connections"
+        ]
+      }
+    },
+    "/mcp-connections/{server_id}": {
+      "delete": {
+        "description": "断开我在这个服务上的连接；本来没连也是 204。",
+        "operationId": "disconnect_mcp_mcp_connections__server_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "summary": "Disconnect Mcp",
+        "tags": [
+          "mcp-connections"
+        ]
+      }
+    },
+    "/mcp-connections/{server_id}/authorize": {
+      "post": {
+        "description": "发起连接，返回让浏览器去的授权地址（5 分钟内有效）；授权服务器回调到前端的 ``/mcp/callback``。",
+        "operationId": "authorize_mcp_mcp_connections__server_id__authorize_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_id",
+            "required": true,
+            "schema": {
+              "title": "Server Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpAuthorizeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "summary": "Authorize Mcp",
+        "tags": [
+          "mcp-connections"
+        ]
+      }
+    },
     "/mcp-servers": {
       "get": {
-        "description": "全部 MCP 服务，带打码的请求头、上一次试连、发现的工具与挂着它的 agent。",
+        "description": "全部 MCP 服务，带打码的请求头、上一次试连、发现的工具、挂着它的 agent 与按用户登录的现状。",
         "operationId": "mcp_servers_mcp_servers_get",
         "responses": {
           "200": {
@@ -21338,7 +22036,7 @@
     },
     "/mcp-servers/{server_id}": {
       "delete": {
-        "description": "删一个 MCP 服务；有 agent 挂着时不能删。",
+        "description": "删一个 MCP 服务，连同用户在它上面的连接；有 agent 挂着时不能删。",
         "operationId": "delete_mcp_server_mcp_servers__server_id__delete",
         "parameters": [
           {
@@ -21437,7 +22135,7 @@
         ]
       },
       "patch": {
-        "description": "改给了的项，不连它；有 agent 挂着时不能停用。",
+        "description": "改给了的项，不连它；有 agent 挂着时不能停用。会影响已连接用户而没带 ``confirmReconnect`` 是\n409 ``mcp_connections_affected``，``affectedUsers`` 是受影响的人数，什么都不改。",
         "operationId": "update_mcp_server_mcp_servers__server_id__patch",
         "parameters": [
           {
@@ -21470,6 +22168,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpConnectionsAffectedOut"
+                }
+              }
+            },
+            "description": "会断开或作废已连接用户的连接，要带 confirmReconnect 再发"
           },
           "422": {
             "content": {
@@ -21550,6 +22258,40 @@
           }
         ],
         "summary": "Check Mcp Server",
+        "tags": [
+          "mcp-servers"
+        ]
+      }
+    },
+    "/mcp-servers:callback-url": {
+      "get": {
+        "description": "连接时发给授权服务器的回调地址，管理员在服务那边手工登记客户端时填它；没配 SSO 时为 ``null``。",
+        "operationId": "mcp_callback_url_mcp_servers_callback_url_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpCallbackUrlOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:manage"
+            ]
+          }
+        ],
+        "summary": "Mcp Callback Url",
         "tags": [
           "mcp-servers"
         ]
