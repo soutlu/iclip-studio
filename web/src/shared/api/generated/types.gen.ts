@@ -3332,13 +3332,40 @@ export type LibraryVideosOut = {
 }
 
 /**
+ * McpAuthorizeOut
+ *
+ * 让浏览器去的授权地址，5 分钟内回到前端的 ``/mcp/callback`` 完成。
+ */
+export type McpAuthorizeOut = {
+  /**
+   * Authorizationurl
+   */
+  authorizationUrl: string
+}
+
+/**
+ * McpCallbackUrlOut
+ */
+export type McpCallbackUrlOut = {
+  /**
+   * Callbackurl
+   */
+  callbackUrl: string | null
+}
+
+/**
  * McpCheckIn
  *
  * 试连一份还没保存的配置，什么都不存。给了 ``serverId`` 时，没给 ``url`` 就用那个已保存的服务的地址，
- * 没给 ``value`` 的请求头取它里面同名请求头的值；没给 ``serverId`` 时 ``url`` 与每个请求头的 ``value``
- * 都要给。
+ * 没给 ``value`` 的请求头取它里面同名请求头的值，没给 ``authMode`` 就用它的；没给 ``serverId`` 时 ``url``
+ * 与每个请求头的 ``value`` 都要给，``authMode`` 不给是 ``shared``。按用户登录（``per_user``）的配置不能这样
+ * 试连：先保存，再用已保存的服务试连。
  */
 export type McpCheckIn = {
+  /**
+   * Authmode
+   */
+  authMode?: 'shared' | 'per_user' | null
   /**
    * Headers
    */
@@ -3383,6 +3410,109 @@ export type McpCheckOut = {
    * Tools
    */
   tools: Array<McpToolOut> | null
+}
+
+/**
+ * McpCompleteIn
+ *
+ * 授权服务器回调到 ``/mcp/callback`` 时带的参数，原样交回；``iss`` 有就给。
+ */
+export type McpCompleteIn = {
+  /**
+   * Code
+   */
+  code: string
+  /**
+   * Iss
+   */
+  iss?: string | null
+  /**
+   * State
+   */
+  state: string
+}
+
+/**
+ * McpCompleteOut
+ */
+export type McpCompleteOut = {
+  /**
+   * Account
+   */
+  account: string | null
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Serverid
+   */
+  serverId: string
+}
+
+/**
+ * McpConnectionOut
+ *
+ * 一个按用户登录的 MCP 服务与当前用户在它上面的连接：``connected`` 已连接，``invalid`` 连接已失效、要
+ * 重新连接，``none`` 未连接。``scopes`` 是授权服务器给的权限范围，``connectedAt`` 是这次连接建立的时间。
+ */
+export type McpConnectionOut = {
+  /**
+   * Account
+   */
+  account: string | null
+  /**
+   * Connectedat
+   */
+  connectedAt: string | null
+  /**
+   * Description
+   */
+  description: string
+  /**
+   * Name
+   */
+  name: string
+  /**
+   * Scopes
+   */
+  scopes: Array<string> | null
+  /**
+   * Serverid
+   */
+  serverId: string
+  /**
+   * State
+   */
+  state: 'connected' | 'invalid' | 'none'
+}
+
+/**
+ * McpConnectionsAffectedOut
+ */
+export type McpConnectionsAffectedOut = {
+  /**
+   * Affectedusers
+   */
+  affectedUsers: number
+  /**
+   * Code
+   */
+  code: string
+  /**
+   * Detail
+   */
+  detail: string
+}
+
+/**
+ * McpConnectionsOut
+ */
+export type McpConnectionsOut = {
+  /**
+   * Items
+   */
+  items: Array<McpConnectionOut>
 }
 
 /**
@@ -3438,9 +3568,88 @@ export type McpLastCheckOut = {
 }
 
 /**
+ * McpOAuthClientIn
+ *
+ * 管理员填的客户端，给不能自动注册的服务用。改的时候 ``clientSecret`` 不给，客户端 ID 没变就沿用原来的
+ * 密钥，变了就是没有密钥。
+ */
+export type McpOAuthClientIn = {
+  /**
+   * Clientid
+   */
+  clientId: string
+  /**
+   * Clientsecret
+   */
+  clientSecret?: string | null
+}
+
+/**
+ * McpOAuthClientOut
+ */
+export type McpOAuthClientOut = {
+  /**
+   * Clientid
+   */
+  clientId: string
+  /**
+   * Clientsecret
+   */
+  clientSecret: string | null
+}
+
+/**
+ * McpOAuthOut
+ *
+ * 按用户登录的设置与现状。
+ *
+ * - ``scopes``：管理员挑的权限范围，``null`` 是服务公布的全部。
+ * - ``publishedScopes`` / ``signInScopes`` / ``requestedScopes``：服务公布的可挑的权限范围、公布了的登录用的
+ * 几个、登录时实际请求的；还没发现过服务（第一次有人发起登录时发现）时都是 ``null``。
+ * - ``client``：``unknown`` 还没发现过；``automatic`` 自动注册；``preset`` 用管理员填的；``required`` 服务
+ * 不能自动注册，要管理员填客户端 ID。
+ * - ``connectedUsers``：连接有效的用户数。管理员自己的连接见 ``GET /v1/mcp-connections``。
+ */
+export type McpOAuthOut = {
+  /**
+   * Client
+   */
+  client: 'unknown' | 'automatic' | 'preset' | 'required'
+  /**
+   * Connectedusers
+   */
+  connectedUsers: number
+  presetClient: McpOAuthClientOut | null
+  /**
+   * Publishedscopes
+   */
+  publishedScopes: Array<string> | null
+  /**
+   * Requestedscopes
+   */
+  requestedScopes: Array<string> | null
+  /**
+   * Scopes
+   */
+  scopes: Array<string> | null
+  /**
+   * Signinscopes
+   */
+  signInScopes: Array<string> | null
+}
+
+/**
  * McpServerCreateIn
+ *
+ * ``authMode`` 为 ``per_user`` 时每个用户用自己的账户登录。``oauthScopes`` 是要请求的权限范围，不给是
+ * 服务公布的全部；登录与保持连接用的几个（``openid``、``email``、``profile``、``offline_access``）服务
+ * 公布了就总会请求。
  */
 export type McpServerCreateIn = {
+  /**
+   * Authmode
+   */
+  authMode?: 'shared' | 'per_user'
   /**
    * Description
    */
@@ -3461,6 +3670,11 @@ export type McpServerCreateIn = {
    * Name
    */
   name: string
+  oauthClient?: McpOAuthClientIn | null
+  /**
+   * Oauthscopes
+   */
+  oauthScopes?: Array<string> | null
   /**
    * Timeoutseconds
    */
@@ -3479,6 +3693,10 @@ export type McpServerCreateIn = {
  * McpServerOut
  */
 export type McpServerOut = {
+  /**
+   * Authmode
+   */
+  authMode: 'shared' | 'per_user'
   /**
    * Createdat
    */
@@ -3508,6 +3726,7 @@ export type McpServerOut = {
    * Name
    */
   name: string
+  oauth: McpOAuthOut
   /**
    * Timeoutseconds
    */
@@ -3543,8 +3762,21 @@ export type McpServerOut = {
  *
  * 不给或给 ``null`` 的项不动，``url`` 不给就沿用原来的地址。给了 ``headers`` 就整份替换请求头，其中
  * 没给 ``value`` 的沿用同名请求头原来的值。
+ *
+ * ``oauthScopes`` 给了就整份替换要请求的权限范围；``oauthClient`` 给了就换掉管理员填的客户端。改地址、关掉
+ * ``per_user`` 会断开全部连接；缩小权限范围会作废拿到了更多权限的连接；换了客户端 ID 会作废令牌发给旧客户端
+ * 的连接（只换密钥不会）。会影响已连接的用户时不带 ``confirmReconnect: true`` 就答 409
+ * ``mcp_connections_affected``，带着受影响的人数。
  */
 export type McpServerUpdateIn = {
+  /**
+   * Authmode
+   */
+  authMode?: 'shared' | 'per_user' | null
+  /**
+   * Confirmreconnect
+   */
+  confirmReconnect?: boolean
   /**
    * Description
    */
@@ -3561,6 +3793,11 @@ export type McpServerUpdateIn = {
    * Name
    */
   name?: string | null
+  oauthClient?: McpOAuthClientIn | null
+  /**
+   * Oauthscopes
+   */
+  oauthScopes?: Array<string> | null
   /**
    * Timeoutseconds
    */
@@ -3589,9 +3826,13 @@ export type McpServersOut = {
  * McpToolConfig
  *
  * 挂一个 MCP 服务：``server`` 是服务的标识，``tools`` 是放给模型的工具（服务自己给的名字），``null``
- * 是全部。
+ * 是全部，空列表是一个都不放。``approval_tools`` 是其中每次调用前要对话用户同意的工具。
  */
 export type McpToolConfig = {
+  /**
+   * Approval Tools
+   */
+  approval_tools?: Array<string>
   /**
    * Server
    */
@@ -11094,6 +11335,133 @@ export type WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses = {
 export type WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponse =
   WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses[keyof WholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponses]
 
+export type McpConnectionsMcpConnectionsGetData = {
+  body?: never
+  path?: never
+  query?: {
+    /**
+     * Agentid
+     */
+    agentId?: string | null
+    /**
+     * Draft
+     */
+    draft?: boolean
+  }
+  url: '/mcp-connections'
+}
+
+export type McpConnectionsMcpConnectionsGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type McpConnectionsMcpConnectionsGetError =
+  McpConnectionsMcpConnectionsGetErrors[keyof McpConnectionsMcpConnectionsGetErrors]
+
+export type McpConnectionsMcpConnectionsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: McpConnectionsOut
+}
+
+export type McpConnectionsMcpConnectionsGetResponse =
+  McpConnectionsMcpConnectionsGetResponses[keyof McpConnectionsMcpConnectionsGetResponses]
+
+export type CompleteMcpMcpConnectionsCompletePostData = {
+  body: McpCompleteIn
+  path?: never
+  query?: never
+  url: '/mcp-connections/complete'
+}
+
+export type CompleteMcpMcpConnectionsCompletePostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CompleteMcpMcpConnectionsCompletePostError =
+  CompleteMcpMcpConnectionsCompletePostErrors[keyof CompleteMcpMcpConnectionsCompletePostErrors]
+
+export type CompleteMcpMcpConnectionsCompletePostResponses = {
+  /**
+   * Successful Response
+   */
+  200: McpCompleteOut
+}
+
+export type CompleteMcpMcpConnectionsCompletePostResponse =
+  CompleteMcpMcpConnectionsCompletePostResponses[keyof CompleteMcpMcpConnectionsCompletePostResponses]
+
+export type DisconnectMcpMcpConnectionsServerIdDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Server Id
+     */
+    server_id: string
+  }
+  query?: never
+  url: '/mcp-connections/{server_id}'
+}
+
+export type DisconnectMcpMcpConnectionsServerIdDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type DisconnectMcpMcpConnectionsServerIdDeleteError =
+  DisconnectMcpMcpConnectionsServerIdDeleteErrors[keyof DisconnectMcpMcpConnectionsServerIdDeleteErrors]
+
+export type DisconnectMcpMcpConnectionsServerIdDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  204: void
+}
+
+export type DisconnectMcpMcpConnectionsServerIdDeleteResponse =
+  DisconnectMcpMcpConnectionsServerIdDeleteResponses[keyof DisconnectMcpMcpConnectionsServerIdDeleteResponses]
+
+export type AuthorizeMcpMcpConnectionsServerIdAuthorizePostData = {
+  body?: never
+  path: {
+    /**
+     * Server Id
+     */
+    server_id: string
+  }
+  query?: never
+  url: '/mcp-connections/{server_id}/authorize'
+}
+
+export type AuthorizeMcpMcpConnectionsServerIdAuthorizePostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type AuthorizeMcpMcpConnectionsServerIdAuthorizePostError =
+  AuthorizeMcpMcpConnectionsServerIdAuthorizePostErrors[keyof AuthorizeMcpMcpConnectionsServerIdAuthorizePostErrors]
+
+export type AuthorizeMcpMcpConnectionsServerIdAuthorizePostResponses = {
+  /**
+   * Successful Response
+   */
+  200: McpAuthorizeOut
+}
+
+export type AuthorizeMcpMcpConnectionsServerIdAuthorizePostResponse =
+  AuthorizeMcpMcpConnectionsServerIdAuthorizePostResponses[keyof AuthorizeMcpMcpConnectionsServerIdAuthorizePostResponses]
+
 export type McpServersMcpServersGetData = {
   body?: never
   path?: never
@@ -11243,6 +11611,10 @@ export type UpdateMcpServerMcpServersServerIdPatchData = {
 
 export type UpdateMcpServerMcpServersServerIdPatchErrors = {
   /**
+   * 会断开或作废已连接用户的连接，要带 confirmReconnect 再发
+   */
+  409: McpConnectionsAffectedOut
+  /**
    * Validation Error
    */
   422: HttpValidationError
@@ -11292,6 +11664,23 @@ export type CheckMcpServerMcpServersServerIdCheckPostResponses = {
 
 export type CheckMcpServerMcpServersServerIdCheckPostResponse =
   CheckMcpServerMcpServersServerIdCheckPostResponses[keyof CheckMcpServerMcpServersServerIdCheckPostResponses]
+
+export type McpCallbackUrlMcpServersCallbackUrlGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/mcp-servers:callback-url'
+}
+
+export type McpCallbackUrlMcpServersCallbackUrlGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: McpCallbackUrlOut
+}
+
+export type McpCallbackUrlMcpServersCallbackUrlGetResponse =
+  McpCallbackUrlMcpServersCallbackUrlGetResponses[keyof McpCallbackUrlMcpServersCallbackUrlGetResponses]
 
 export type ModelProvidersModelProvidersGetData = {
   body?: never

@@ -57,6 +57,8 @@ AGENT_RUNTIME_TABLES = (
     "agent_runtime.provider_models",
     "agent_runtime.default_models",
     "agent_runtime.mcp_servers",
+    "agent_runtime.mcp_user_connections",
+    "agent_runtime.mcp_oauth_states",
     "agent_runtime.agents",
     "agent_runtime.agent_drafts",
     "agent_runtime.agent_versions",

@@ -156,7 +156,7 @@ depends_on = ["iclip.domains.identity", "iclip.platform.runtime_admin", "iclip.p
 
 [[modules]]
 path = "iclip.domains.mcp_servers"
-depends_on = ["iclip.domains.identity", "iclip.platform.runtime_admin", "iclip.platform.runtime_api"]
+depends_on = ["iclip.common", "iclip.domains.identity", "iclip.platform.runtime_admin", "iclip.platform.runtime_api"]
 
 [[modules]]
 path = "iclip.domains.skills"

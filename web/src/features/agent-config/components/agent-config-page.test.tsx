@@ -83,6 +83,7 @@ describe('AgentConfigPage 保存草稿', () => {
       mockSkillId('viral-script-remix'),
     ])
     expect(body.config.tools).toContainEqual({
+      approval_tools: [],
       server: 'feishu-docs',
       tools: ['search', 'read'],
       type: 'mcp',

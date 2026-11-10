@@ -15,7 +15,10 @@ export const bindMcp = (config: AgentConfig, serverId: string): AgentConfig =>
   mcpBindingOf(config, serverId) === undefined
     ? {
         ...config,
-        tools: [...(config.tools ?? []), { server: serverId, tools: null, type: 'mcp' }],
+        tools: [
+          ...(config.tools ?? []),
+          { approval_tools: [], server: serverId, tools: null, type: 'mcp' },
+        ],
       }
     : config
 

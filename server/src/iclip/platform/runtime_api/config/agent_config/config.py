@@ -9,6 +9,7 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
+    ValidationInfo,
     field_validator,
 )
 
@@ -45,22 +46,37 @@ class CapToolConfig(_Strict):
 
 class McpToolConfig(_Strict):
     """挂一个 MCP 服务：``server`` 是服务的标识，``tools`` 是放给模型的工具（服务自己给的名字），``null``
-    是全部。"""
+    是全部，空列表是一个都不放。``approval_tools`` 是其中每次调用前要对话用户同意的工具。"""
 
     type: Literal["mcp"]
     server: _Name
     tools: tuple[_Name, ...] | None = None
+    # 没有要审批的工具时不写出这一项：应用手工同步的那份配置不收不认识的字段，没更新的应用照常能读。
+    approval_tools: tuple[_Name, ...] = Field(default=(), exclude_if=lambda names: not names)
 
     @field_validator("tools")
     @classmethod
-    def _some_distinct_tools(cls, tools: tuple[str, ...] | None) -> tuple[str, ...] | None:
-        if tools is None:
-            return None
-        if not tools:
-            raise ValueError("至少选一个工具；要全部工具就写 null")
-        if (index := _first_repeat(tools)) is not None:
+    def _distinct_tools(cls, tools: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        if tools is not None and (index := _first_repeat(tools)) is not None:
             raise ValueError(f"第 {index + 1} 项与前面的重复：工具 {tools[index]} 只能写一次")
         return tools
+
+    @field_validator("approval_tools")
+    @classmethod
+    def _distinct_chosen_approval_tools(
+        cls, names: tuple[str, ...], info: ValidationInfo
+    ) -> tuple[str, ...]:
+        if (index := _first_repeat(names)) is not None:
+            raise ValueError(f"第 {index + 1} 项与前面的重复：工具 {names[index]} 只能写一次")
+        tools = info.data.get("tools")
+        if tools is None:
+            return names
+        for index, name in enumerate(names):
+            if name not in tools:
+                raise ValueError(
+                    f"第 {index + 1} 项的工具 {name} 不在 tools 里：要审批的工具先得放给模型"
+                )
+        return names
 
 
 ToolConfig = Annotated[CapToolConfig | McpToolConfig, Field(discriminator="type")]
