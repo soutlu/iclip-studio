@@ -146,15 +146,12 @@ describe('技能库与添加技能', () => {
     await user.click(within(skillSection()).getByRole('button', { name: '添加技能' }))
     let panel = sidePanel()
     expect(within(panel).getByRole('heading', { name: '添加技能' })).toBeInTheDocument()
-    const replica = await within(panel).findByRole('button', { name: '参考视频复刻' })
-    expect(replica).toHaveAttribute('aria-pressed', 'false')
+    const replica = await within(panel).findByRole('switch', { name: '参考视频复刻' })
+    expect(replica).not.toBeChecked()
     await user.click(replica)
-    expect(replica).toHaveAttribute('aria-pressed', 'true')
-    await user.click(within(panel).getByRole('button', { name: '分镜创作' }))
-    expect(within(panel).getByRole('button', { name: '分镜创作' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    )
+    expect(replica).toBeChecked()
+    await user.click(within(panel).getByRole('switch', { name: '分镜创作' }))
+    expect(within(panel).getByRole('switch', { name: '分镜创作' })).not.toBeChecked()
     expect(skillCards()).toEqual([
       '照参考片做新视频',
       '爆款脚本拆解与二次创作方法论',
@@ -174,9 +171,9 @@ describe('技能库与添加技能', () => {
     await user.click(within(skillSection()).getByRole('button', { name: '编辑技能：参考视频复刻' }))
     await user.click(await within(sidePanel()).findByRole('button', { name: '从当前 Agent 移除' }))
     expect(
-      await within(sidePanel()).findByRole('button', { name: '参考视频复刻' }),
-    ).toHaveAttribute('aria-pressed', 'false')
-    await user.click(within(sidePanel()).getByRole('button', { name: '参考视频复刻' }))
+      await within(sidePanel()).findByRole('switch', { name: '参考视频复刻' }),
+    ).not.toBeChecked()
+    await user.click(within(sidePanel()).getByRole('switch', { name: '参考视频复刻' }))
 
     await user.click(within(editor()).getByRole('button', { name: '保存草稿' }))
     await waitFor(() =>

@@ -237,7 +237,7 @@
         --color-accent-6: #e35d8c;
         --color-accent-7: #2a9fb0;
         --color-accent-8: #5c6bd6;
-        /* 配置资源分类色：只给资源图标与其浅色底块，不表达运行状态或选中态。 */
+        /* 配置资源分类色：只铺资源图标的实色底块，上压白色实心符号；明暗同值，不表达运行状态或选中态。 */
         --color-resource-agent: #5d60b1;
         --color-resource-skill: #8061b2;
         --color-resource-workspace: #a57527;
@@ -245,6 +245,10 @@
         --color-resource-project: #5074ac;
         --color-resource-connection: #2e887d;
         --color-resource-provider: #527b96;
+        --color-on-resource: var(--n100);
+        /* 资源图标实色底块：顶部一层淡高光，一圈极淡内描边加一道轻落影 */
+        --resource-tile-gloss: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 72%);
+        --shadow-resource-tile: inset 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.1);
         /* 代码着色：只用于 JSON 等代码正文的键、字符串、数字与 true / false / null，标点仍用 on-surface-faint；不表达状态，不做底色。三色相避开品牌绿、错误红与警告琥珀；guide 画缩进参考线 */
         --color-code-key: #2e5aa6;
         --color-code-string: #8a4a8f;
@@ -352,6 +356,8 @@
         /* 圆角 */
         --radius-none:0; --radius-xs:4px; --radius-sm:8px; --radius-md:12px; --radius-lg:16px;
         --radius-xl:20px; --radius-2xl:28px; --radius-3xl:32px; --radius-4xl:48px; --radius-full:9999px;
+        --radius-card: 14px; /* 目录卡片（Agent 配置的资源卡与选择面板卡） */
+        --radius-resource-tile: 23%; /* 资源图标实色底块，随边长等比 */
         /* 断点（M3 窗口分级） */
         --breakpoint-sm: 600px;
         --breakpoint-md: 840px;
@@ -502,13 +508,6 @@
         --color-accent-6: #ff8eb1;
         --color-accent-7: #54bfd0;
         --color-accent-8: #a0abff;
-        --color-resource-agent: #b8baff;
-        --color-resource-skill: #c8ace8;
-        --color-resource-workspace: #e6c58f;
-        --color-resource-video: #e9ab98;
-        --color-resource-project: #a6bfe8;
-        --color-resource-connection: #8acec1;
-        --color-resource-provider: #abc7d9;
         --color-code-key: #8fb3ef;
         --color-code-string: #d4a2d7;
         --color-code-literal: #62c3d3;
@@ -649,9 +648,8 @@
             <li>
               <strong>配置资源图标</strong>
               <code>resource-agent / skill / workspace / video / project / connection / provider</code>
-              区分 Agent、技能、文件、视频、工程、连接与供应商；只用于资源图标及 10% 浓度的小底块。图形统一 24px 画布、圆角线条与局部浅填充，文字、卡片与选中态保持中性。参考
-              <a href="https://phosphoricons.com/">Phosphor 的双层图形</a>、
-              <a href="https://lucide.dev/contribute/icons/specification">Lucide 图标规范</a>与
+              区分 Agent、技能、文件、视频、工程、连接与供应商；只用于资源图标的实色底块（<code>--radius-resource-tile</code> 圆角、<code>--resource-tile-gloss</code> 顶部高光、<code>--shadow-resource-tile</code>），明暗主题同值。符号用 <code>on-resource</code> 白色实心图形，占底块边长约 62%，统一 24px 画布、2.8 边距、圆角实心形状，镂空部分透出底色；文字、卡片与选中态保持中性。参考
+              <a href="https://developer.apple.com/design/human-interface-guidelines/app-icons">Apple 设置图标</a>与
               <a href="https://atlassian.design/foundations/color/accents">Atlassian 分类点缀色</a>。
             </li>
           </ul>
@@ -784,6 +782,8 @@
                 <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-3xl)"></i><span>32px</span><code>--radius-3xl</code></div></div>
                 <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-4xl)"></i><span>48px</span><code>--radius-4xl</code></div></div>
                 <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-full)"></i><span>full</span><code>--radius-full</code></div></div>
+                <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-card)"></i><span>14px · 目录卡片</span><code>--radius-card</code></div></div>
+                <div class="radius-item"><div><i class="radius-shape" style="width: 38px; border-radius: var(--radius-resource-tile)"></i><span>23% · 资源图标底块</span><code>--radius-resource-tile</code></div></div>
               </div>
             </div>
 
