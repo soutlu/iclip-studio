@@ -388,6 +388,7 @@
   --color-resource-project: #5074ac;
   --color-resource-connection: #2e887d;
   --color-resource-provider: #527b96;
+  --color-resource-account: var(--nv30);
   --color-on-resource: var(--n100);
   /* 资源图标实色底块：顶部一层淡高光，一圈极淡内描边加一道轻落影 */
   --resource-tile-gloss: linear-gradient(

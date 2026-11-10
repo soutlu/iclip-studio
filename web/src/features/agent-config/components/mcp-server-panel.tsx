@@ -1,152 +1,54 @@
-import { useId, useRef, useState, type ReactNode } from 'react'
+import { useId, useRef, useState } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
-import type { McpHeaderIn } from '@/shared/api/generated/types.gen'
-import { Icon } from '@/shared/icons'
-import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
-import { Input } from '@/shared/ui/field'
 import { ListError, ListPending } from '@/shared/ui/list-state'
 import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
-import { Switch } from '@/shared/ui/switch'
-import { TabsContent, TabsList, TabsRoot, TabsTrigger } from '@/shared/ui/tabs'
+import { PopupAnchor, PopupRoot, PopupSurface } from '@/shared/ui/popup'
 import { toast } from '@/shared/ui/toast'
+import { TooltipContent, TooltipRoot, TooltipTrigger, useTabTooltip } from '@/shared/ui/tooltip'
 import type { AgentConfig } from '../agents.api'
+import { mcpBindingOf, unbindMcp } from '../mcp-draft'
 import {
-  MCP_STATUS_LABEL,
-  mcpBindingOf,
-  selectAllMcpTools,
-  selectedMcpTools,
-  setMcpTool,
-  unbindMcp,
-} from '../mcp-draft'
+  checkBody,
+  createBody,
+  isDirty,
+  scopeRowsOf,
+  showsClient,
+  testOfCheck,
+  testOfServer,
+  updateBody,
+  validate,
+  valuesOf,
+  type Errors,
+  type HeaderRow,
+  type TestState,
+  type Values,
+} from '../mcp-server-form'
 import {
+  affectedUsersOf,
   useCheckMcpConfig,
+  useCheckMcpServer,
   useDeleteMcpServer,
+  useMcpCallbackUrl,
   useMcpServers,
   useSaveMcpServer,
-  type McpCheck,
+  type McpSaveResult,
   type McpServer,
-  type McpTransport,
 } from '../mcp-servers.api'
-import { StatusDot } from './mcp-status'
+import {
+  ClientCard,
+  ConnectionSection,
+  HeadersSection,
+  IdentityForm,
+  IdentityHeader,
+  McpTestStatus,
+  PerUserCard,
+  ScopesSection,
+  type FieldErrors,
+} from './mcp-server-sections'
+import { McpToolsSection } from './mcp-tool-states'
 import type { Panel } from './panel'
 import { PanelShell } from './panel-shell'
-import { CardBadge } from './resource-card'
-import { Segmented } from './segmented'
-
-const ID_PATTERN = /^[a-z][a-z0-9-]{0,39}$/
-const HEADER_NAME_PATTERN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
-const MAX_HEADERS = 20
-
-const TRANSPORTS = [
-  { label: 'Streamable HTTP', value: 'streamable_http' },
-  { label: 'SSE', value: 'sse' },
-] as const satisfies readonly { label: string; value: McpTransport }[]
-
-const LABEL_CLASS = 'text-label font-medium text-on-surface-variant'
-const INPUT_CLASS = 'h-(--control-height-lg) rounded-sm px-3'
-
-type HeaderRow = {
-  key: string
-  name: string
-  savedName: string | null
-  masked: string | null
-  value: string
-}
-
-type Values = {
-  id: string
-  name: string
-  description: string
-  url: string
-  transport: McpTransport
-  timeout: string
-  headers: HeaderRow[]
-}
-
-type TestState =
-  | { kind: 'none' }
-  | { kind: 'testing' }
-  | { kind: 'ok'; elapsedMs: number; fresh: boolean }
-  | { kind: 'failed'; reason: string; fresh: boolean }
-
-type Errors = Partial<Record<string, string>>
-
-const valuesOf = (server: McpServer | undefined): Values => ({
-  description: server?.description ?? '',
-  headers: (server?.headers ?? []).map((header, index) => ({
-    key: `saved-${index}`,
-    masked: header.value,
-    name: header.name,
-    savedName: header.name,
-    value: '',
-  })),
-  id: server?.id ?? '',
-  name: server?.name ?? '',
-  timeout: String(server?.timeoutSeconds ?? 30),
-  transport: server?.transport ?? 'streamable_http',
-  url: server?.url ?? '',
-})
-
-const testOf = (server: McpServer | undefined): TestState => {
-  const check = server?.lastCheck ?? null
-  if (check === null) return { kind: 'none' }
-  return check.ok
-    ? { elapsedMs: check.elapsedMs, fresh: false, kind: 'ok' }
-    : { fresh: false, kind: 'failed', reason: check.reason ?? MCP_STATUS_LABEL.failed }
-}
-
-const testOfCheck = (check: McpCheck, fresh: boolean): TestState =>
-  check.ok
-    ? { elapsedMs: check.elapsedMs, fresh, kind: 'ok' }
-    : { fresh, kind: 'failed', reason: check.reason ?? MCP_STATUS_LABEL.failed }
-
-const keepsSavedValue = (row: HeaderRow) =>
-  row.value === '' &&
-  row.savedName !== null &&
-  row.savedName.toLowerCase() === row.name.trim().toLowerCase()
-
-const headersOf = (rows: readonly HeaderRow[]): McpHeaderIn[] =>
-  rows.map((row) =>
-    keepsSavedValue(row) ? { name: row.name.trim() } : { name: row.name.trim(), value: row.value },
-  )
-
-const isHttpUrl = (text: string): boolean => {
-  try {
-    const url = new URL(text)
-    return ['http:', 'https:'].includes(url.protocol) && url.hostname !== ''
-  } catch {
-    return false
-  }
-}
-
-const validate = (values: Values, creating: boolean): Errors => {
-  const errors: Errors = {}
-  if (values.name.trim() === '') errors['name'] = '请填写服务名称'
-  if (creating) {
-    const id = values.id.trim()
-    if (id === '') errors['id'] = '请填写标识'
-    else if (!ID_PATTERN.test(id))
-      errors['id'] = '标识以小写字母开头，只能用小写字母、数字和连字符，最多 40 个字符'
-  }
-  if (!isHttpUrl(values.url.trim())) errors['url'] = '请填写以 http:// 或 https:// 开头的完整地址'
-  const timeout = Number(values.timeout.trim())
-  if (!/^\d+$/.test(values.timeout.trim()) || timeout < 1 || timeout > 300)
-    errors['timeout'] = '请填写 1 到 300 之间的整数'
-  const seen = new Set<string>()
-  for (const row of values.headers) {
-    const name = row.name.trim()
-    if (name === '') errors[`header-name-${row.key}`] = '请填写请求头名称'
-    else if (!HEADER_NAME_PATTERN.test(name))
-      errors[`header-name-${row.key}`] =
-        "请求头名称只能用英文字母、数字和 ! # $ % & ' * + - . ^ _ ` | ~"
-    else if (seen.has(name.toLowerCase())) errors[`header-name-${row.key}`] = '请求头名称不能重复'
-    seen.add(name.toLowerCase())
-    if (row.value === '' && !keepsSavedValue(row))
-      errors[`header-value-${row.key}`] = '请填写请求头的值'
-  }
-  return errors
-}
 
 type McpServerPanelProps = {
   serverId: string | null
@@ -232,6 +134,24 @@ export function McpServerPanel({
   )
 }
 
+type SaveRequest = Parameters<ReturnType<typeof useSaveMcpServer>['mutateAsync']>[0]
+
+const fieldErrorsOf = (baseId: string, errors: Errors): FieldErrors => ({
+  error: (key) =>
+    errors[key] === undefined ? null : (
+      <span className="text-label text-error" id={`${baseId}-${key}-error`}>
+        {errors[key]}
+      </span>
+    ),
+  has: (key) => errors[key] !== undefined,
+  props: (key) =>
+    errors[key] === undefined
+      ? {}
+      : { 'aria-describedby': `${baseId}-${key}-error`, 'aria-invalid': true as const },
+})
+
+const SAVE_FIRST = '请先点击「保存配置」，再测试连接'
+
 function McpServerForm({
   back,
   checkError,
@@ -255,20 +175,35 @@ function McpServerForm({
   const [errors, setErrors] = useState<Errors>({})
   const [test, setTest] = useState<TestState>(() =>
     checkError === undefined
-      ? testOf(server)
+      ? testOfServer(server)
       : { fresh: false, kind: 'failed', reason: checkError },
   )
   const [formError, setFormError] = useState<string | null>(null)
+  const [editingIdentity, setEditingIdentity] = useState(false)
+  const [confirm, setConfirm] = useState<{ count: number; request: SaveRequest } | null>(null)
   const [deleting, setDeleting] = useState<{ error: string | null } | null>(null)
   const nextHeaderRef = useRef(0)
-  const check = useCheckMcpConfig()
+  const saveRef = useRef<HTMLButtonElement>(null)
+  const testTooltip = useTabTooltip()
+  const checkConfig = useCheckMcpConfig()
+  const checkServer = useCheckMcpServer()
   const save = useSaveMcpServer()
   const remove = useDeleteMcpServer()
 
+  const perUser = values.authMode === 'per_user'
+  const dirty = isDirty(values, server)
+  const clientShown = showsClient(values, server)
+  const callbackUrl = useMcpCallbackUrl(clientShown)
+  const scopeRows = perUser ? scopeRowsOf(values, server) : null
   const binding = server === undefined ? undefined : mcpBindingOf(config, server.id)
-  const tools = server?.tools ?? []
-  const selected = binding === undefined ? [] : selectedMcpTools(binding, server)
-  const canSave = test.kind === 'ok' && test.fresh && !save.isPending
+  const busy = save.isPending || test.kind === 'testing'
+  const testBlocked = perUser && (creating || dirty) ? SAVE_FIRST : undefined
+  const canSave = perUser
+    ? (creating || dirty) && !save.isPending
+    : test.kind === 'ok' && test.fresh && !save.isPending
+  const fieldErrors = fieldErrorsOf(baseId, errors)
+  const identityAsForm =
+    creating || editingIdentity || ['id', 'name', 'url'].some((key) => errors[key] !== undefined)
 
   const change = (changes: Partial<Values>, connection: boolean) => {
     setValues((current) => ({ ...current, ...changes }))
@@ -279,27 +214,66 @@ function McpServerForm({
   const changeHeader = (key: string, changes: Partial<HeaderRow>) =>
     change(
       { headers: values.headers.map((row) => (row.key === key ? { ...row, ...changes } : row)) },
-      true,
+      Object.keys(changes).some((name) => name !== 'editing'),
     )
 
-  const checkInput = () => ({
-    headers: headersOf(values.headers),
-    timeoutSeconds: Number(values.timeout.trim()),
-    transport: values.transport,
-    url: values.url.trim(),
-  })
-
   const runTest = async () => {
+    if (testBlocked !== undefined) return
     const found = validate(values, creating)
     setErrors(found)
     setFormError(null)
     if (Object.keys(found).length > 0) return
     setTest({ kind: 'testing' })
     try {
-      const result = await check.mutateAsync({ ...checkInput(), serverId: server?.id ?? null })
+      const result =
+        perUser && server !== undefined
+          ? await checkServer.mutateAsync(server.id)
+          : await checkConfig.mutateAsync(checkBody(values, server?.id ?? null))
       setTest(testOfCheck(result, true))
     } catch (error) {
       setTest({ fresh: true, kind: 'failed', reason: errorMessageOf(error, '测试连接失败') })
+    }
+  }
+
+  const applySaved = (saved: McpSaveResult) => {
+    const { check: after } = saved
+    if (after.kind === 'error' || (after.kind === 'checked' && !after.result.ok))
+      toast.error('MCP 配置已保存，但测试连接失败，请检查配置后重新测试')
+    else toast.success('MCP 配置已保存')
+    if (creating) {
+      onOpenPanel({
+        back,
+        checkError: after.kind === 'error' ? after.message : undefined,
+        server: saved.server.id,
+        type: 'mcp-server',
+      })
+      return
+    }
+    setValues(valuesOf(saved.server))
+    setEditingIdentity(false)
+    setTest(
+      after.kind === 'error'
+        ? { fresh: false, kind: 'failed', reason: after.message }
+        : after.kind === 'checked'
+          ? testOfCheck(after.result, false)
+          : testOfServer(saved.server),
+    )
+  }
+
+  const send = async (request: SaveRequest) => {
+    setFormError(null)
+    try {
+      applySaved(await save.mutateAsync(request))
+    } catch (error) {
+      const affected = affectedUsersOf(error)
+      if (affected !== null && request.kind === 'update') {
+        setConfirm({ count: affected, request })
+        return
+      }
+      const message = errorMessageOf(error, '保存失败，请重试保存')
+      if (creating && error instanceof ApiError && error.status === 409 && message.includes('标识'))
+        setErrors({ id: message })
+      else setFormError(message)
     }
   }
 
@@ -307,47 +281,23 @@ function McpServerForm({
     const found = validate(values, creating)
     setErrors(found)
     if (Object.keys(found).length > 0 || !canSave) return
-    setFormError(null)
-    const { url, ...connection } = checkInput()
-    const fields = {
-      ...connection,
-      description: values.description.trim(),
-      name: values.name.trim(),
-    }
-    try {
-      const saved = await save.mutateAsync(
-        server === undefined
-          ? { body: { ...fields, id: values.id.trim(), url }, kind: 'create' }
-          : {
-              body: url === server.url ? fields : { ...fields, url },
-              id: server.id,
-              kind: 'update',
-            },
-      )
-      const { check: after } = saved
-      if (after.kind === 'checked' && after.result.ok) toast.success('MCP 配置已保存')
-      else toast.error('MCP 配置已保存，但测试连接失败，请检查配置后重新测试')
-      if (creating) {
-        onOpenPanel({
-          back,
-          checkError: after.kind === 'error' ? after.message : undefined,
-          server: saved.server.id,
-          type: 'mcp-server',
-        })
-        return
-      }
-      setValues(valuesOf(saved.server))
-      setTest(
-        after.kind === 'error'
-          ? { fresh: false, kind: 'failed', reason: after.message }
-          : testOfCheck(after.result, false),
-      )
-    } catch (error) {
-      const message = errorMessageOf(error, '保存失败，请重试保存')
-      if (creating && error instanceof ApiError && error.status === 409 && message.includes('标识'))
-        setErrors({ id: message })
-      else setFormError(message)
-    }
+    await send(
+      server === undefined
+        ? { body: createBody(values), check: !perUser, kind: 'create' }
+        : { body: updateBody(values, server), check: !perUser, id: server.id, kind: 'update' },
+    )
+  }
+
+  const closeConfirm = () => {
+    setConfirm(null)
+    saveRef.current?.focus()
+  }
+
+  const confirmSave = async () => {
+    if (confirm === null || confirm.request.kind !== 'update') return
+    const { request } = confirm
+    closeConfirm()
+    await send({ ...request, body: { ...request.body, confirmReconnect: true } })
   }
 
   const runDelete = async () => {
@@ -361,17 +311,6 @@ function McpServerForm({
       setDeleting({ error: errorMessageOf(error, '删除失败，请重试删除') })
     }
   }
-
-  const fieldProps = (key: string) =>
-    errors[key] === undefined
-      ? {}
-      : { 'aria-describedby': `${baseId}-${key}-error`, 'aria-invalid': true as const }
-  const fieldError = (key: string) =>
-    errors[key] === undefined ? null : (
-      <span className="text-label text-error" id={`${baseId}-${key}-error`}>
-        {errors[key]}
-      </span>
-    )
 
   const actions =
     server === undefined ? undefined : (
@@ -400,22 +339,89 @@ function McpServerForm({
       </div>
     )
 
-  const toolsBlocked =
-    binding === undefined ? '当前 Agent 还没有挂这个服务，请先在「管理 MCP 服务」里添加' : undefined
+  const footer = (
+    <>
+      <div className="mr-auto flex min-w-0 flex-1 items-center">
+        {formError !== null ? (
+          <p className="line-clamp-2 min-w-0 text-body-sm text-error" role="alert">
+            {formError}
+          </p>
+        ) : identityAsForm ? (
+          <McpTestStatus test={test} />
+        ) : null}
+      </div>
+      <TooltipRoot {...testTooltip.rootProps} open={testTooltip.rootProps.open && !!testBlocked}>
+        <TooltipTrigger asChild {...testTooltip.triggerProps}>
+          <Button
+            aria-disabled={testBlocked === undefined ? undefined : true}
+            disabled={busy}
+            onClick={() => void runTest()}
+            size="md"
+            variant="outlined"
+          >
+            测试连接
+          </Button>
+        </TooltipTrigger>
+        {testBlocked === undefined ? null : <TooltipContent>{testBlocked}</TooltipContent>}
+      </TooltipRoot>
+      <PopupRoot
+        onOpenChange={(open) => {
+          if (!open) closeConfirm()
+        }}
+        open={confirm !== null}
+      >
+        <PopupAnchor asChild>
+          <Button
+            disabled={!canSave}
+            loading={save.isPending}
+            onClick={() => void runSave()}
+            ref={saveRef}
+            size="md"
+          >
+            保存配置
+          </Button>
+        </PopupAnchor>
+        <PopupSurface
+          align="end"
+          aria-label="保存确认"
+          className="flex w-67 flex-col gap-3 p-3"
+          onEscapeKeyDown={(event) => {
+            event.preventDefault()
+            closeConfirm()
+          }}
+          role="dialog"
+          side="top"
+          sideOffset={8}
+        >
+          <p className="text-body-sm text-on-surface">
+            保存后，已连接的 {confirm?.count ?? 0} 人需要重新连接
+          </p>
+          <div className="flex items-center justify-end gap-2">
+            <Button onClick={closeConfirm} size="md" variant="ghost">
+              取消
+            </Button>
+            <Button onClick={() => void confirmSave()} size="md">
+              保存
+            </Button>
+          </div>
+        </PopupSurface>
+      </PopupRoot>
+    </>
+  )
 
   return (
     <PanelShell
       actions={actions}
-      footer={false}
+      footer={footer}
       onClose={onClose}
       title={creating ? '添加 MCP 服务' : '配置 MCP'}
     >
-      <div className="flex min-w-0 flex-col gap-4">
+      <div className="flex min-w-0 flex-col">
         {deleting === null || server === undefined ? null : (
           <div
-            className="flex flex-wrap items-center gap-3 rounded-md bg-surface-container-low px-4 py-3"
-            role={deleting.error === null ? 'group' : undefined}
             aria-label={deleting.error === null ? '删除确认' : undefined}
+            className="mb-4 flex flex-wrap items-center gap-3 rounded-md bg-surface-container-low px-4 py-3"
+            role={deleting.error === null ? 'group' : undefined}
           >
             {deleting.error === null ? (
               <p className="min-w-0 flex-1 text-body-sm text-on-surface">
@@ -449,328 +455,71 @@ function McpServerForm({
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-4 @min-[440px]:grid-cols-2">
-          <Field label="服务名称" htmlFor={`${baseId}-name`}>
-            <Input
-              autoComplete="off"
-              className={INPUT_CLASS}
-              id={`${baseId}-name`}
-              maxLength={100}
-              onChange={(event) => change({ name: event.currentTarget.value }, false)}
-              value={values.name}
-              {...fieldProps('name')}
+        {identityAsForm ? (
+          <IdentityForm
+            baseId={baseId}
+            creating={creating}
+            errors={fieldErrors}
+            onChange={change}
+            values={values}
+          />
+        ) : (
+          <IdentityHeader onEdit={() => setEditingIdentity(true)} test={test} values={values} />
+        )}
+
+        <ConnectionSection onChange={change} values={values} />
+
+        <HeadersSection
+          errors={fieldErrors}
+          onAdd={() => {
+            nextHeaderRef.current += 1
+            change(
+              {
+                headers: [
+                  ...values.headers,
+                  {
+                    editing: true,
+                    key: `new-${nextHeaderRef.current}`,
+                    masked: null,
+                    name: '',
+                    savedName: null,
+                    value: '',
+                  },
+                ],
+              },
+              true,
+            )
+          }}
+          onChangeRow={changeHeader}
+          onRemove={(key) =>
+            change({ headers: values.headers.filter((row) => row.key !== key) }, true)
+          }
+          rows={values.headers}
+        />
+
+        <section className="mt-7">
+          <PerUserCard
+            checked={perUser}
+            onCheckedChange={(on) => change({ authMode: on ? 'per_user' : 'shared' }, false)}
+          />
+          {clientShown && server !== undefined ? (
+            <ClientCard
+              baseId={baseId}
+              callbackUrl={callbackUrl.data ?? null}
+              maskedSecret={server.oauth.presetClient?.clientSecret ?? null}
+              onChange={(changes) => change(changes, false)}
+              required={server.oauth.client === 'required'}
+              values={values}
             />
-            {fieldError('name')}
-          </Field>
-          {creating ? (
-            <Field label="标识" htmlFor={`${baseId}-id`}>
-              <Input
-                autoCapitalize="none"
-                autoComplete="off"
-                className={cn(INPUT_CLASS, 'tabular-nums')}
-                id={`${baseId}-id`}
-                maxLength={40}
-                onChange={(event) => change({ id: event.currentTarget.value }, false)}
-                placeholder="team-docs"
-                spellCheck={false}
-                value={values.id}
-                {...fieldProps('id')}
-              />
-              {fieldError('id')}
-            </Field>
           ) : null}
-          <Field
-            className={creating ? '@min-[440px]:col-span-2' : undefined}
-            htmlFor={`${baseId}-description`}
-            label="说明"
-          >
-            <Input
-              autoComplete="off"
-              className={INPUT_CLASS}
-              id={`${baseId}-description`}
-              onChange={(event) => change({ description: event.currentTarget.value }, false)}
-              value={values.description}
-            />
-          </Field>
-        </div>
+        </section>
 
-        <TabsRoot className="flex min-w-0 flex-col gap-4" defaultValue="connection">
-          <TabsList aria-label="MCP 配置类别" className="-ml-2 h-10 border-b border-hairline">
-            <TabsTrigger value="connection">连接</TabsTrigger>
-            <TabsTrigger
-              aria-label={`工具，已启用 ${selected.length} / ${tools.length} 个`}
-              value="tools"
-            >
-              <span className="inline-flex items-center gap-1.5">
-                工具
-                <CardBadge>
-                  {selected.length}/{tools.length}
-                </CardBadge>
-              </span>
-            </TabsTrigger>
-          </TabsList>
+        {scopeRows === null ? null : (
+          <ScopesSection onChange={(scopes) => change({ scopes }, false)} rows={scopeRows} />
+        )}
 
-          <TabsContent className="flex min-w-0 flex-col gap-4" value="connection">
-            <Field htmlFor={`${baseId}-url`} label="服务地址">
-              <Input
-                autoComplete="off"
-                className={cn(INPUT_CLASS, 'tabular-nums')}
-                id={`${baseId}-url`}
-                onChange={(event) => change({ url: event.currentTarget.value }, true)}
-                placeholder="https://"
-                spellCheck={false}
-                type="url"
-                value={values.url}
-                {...fieldProps('url')}
-              />
-              {fieldError('url')}
-            </Field>
-            <div className="grid grid-cols-1 gap-4 @min-[440px]:grid-cols-2">
-              <div className="flex min-w-0 flex-col gap-1.5">
-                <span className={LABEL_CLASS}>传输方式</span>
-                <Segmented
-                  block
-                  label="传输方式"
-                  onValueChange={(transport) => change({ transport }, true)}
-                  options={TRANSPORTS}
-                  value={values.transport}
-                />
-              </div>
-              <Field htmlFor={`${baseId}-timeout`} label="超时（秒）">
-                <Input
-                  className={cn(INPUT_CLASS, 'tabular-nums')}
-                  id={`${baseId}-timeout`}
-                  inputMode="numeric"
-                  onChange={(event) => change({ timeout: event.currentTarget.value }, true)}
-                  value={values.timeout}
-                  {...fieldProps('timeout')}
-                />
-                {fieldError('timeout')}
-              </Field>
-            </div>
-
-            <div className="flex min-w-0 flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <span className={LABEL_CLASS}>请求头</span>
-                <IconButton
-                  disabled={values.headers.length >= MAX_HEADERS}
-                  label="添加请求头"
-                  name="add"
-                  onClick={() => {
-                    nextHeaderRef.current += 1
-                    change(
-                      {
-                        headers: [
-                          ...values.headers,
-                          {
-                            key: `new-${nextHeaderRef.current}`,
-                            masked: null,
-                            name: '',
-                            savedName: null,
-                            value: '',
-                          },
-                        ],
-                      },
-                      true,
-                    )
-                  }}
-                  size="xs"
-                  tooltip={
-                    values.headers.length >= MAX_HEADERS
-                      ? `请求头最多 ${MAX_HEADERS} 个`
-                      : undefined
-                  }
-                />
-              </div>
-              {values.headers.map((row, index) => (
-                <div className="flex min-w-0 flex-col gap-1" key={row.key}>
-                  <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)_auto] items-center gap-2">
-                    <Input
-                      aria-label={`请求头名称 ${index + 1}`}
-                      autoComplete="off"
-                      className={cn(INPUT_CLASS, 'tabular-nums')}
-                      onChange={(event) =>
-                        changeHeader(row.key, { name: event.currentTarget.value })
-                      }
-                      placeholder="Authorization"
-                      spellCheck={false}
-                      value={row.name}
-                      {...fieldProps(`header-name-${row.key}`)}
-                    />
-                    <Input
-                      aria-label={`请求头的值 ${index + 1}`}
-                      autoComplete="off"
-                      className={cn(INPUT_CLASS, 'tabular-nums')}
-                      onChange={(event) =>
-                        changeHeader(row.key, { value: event.currentTarget.value })
-                      }
-                      placeholder={row.masked ?? '值'}
-                      title={row.masked === null ? undefined : '留空就沿用原值，填写新值会替换它'}
-                      type="password"
-                      value={row.value}
-                      {...fieldProps(`header-value-${row.key}`)}
-                    />
-                    <IconButton
-                      label={`移除请求头 ${index + 1}`}
-                      name="close"
-                      onClick={() =>
-                        change(
-                          { headers: values.headers.filter((item) => item.key !== row.key) },
-                          true,
-                        )
-                      }
-                      size="sm"
-                    />
-                  </div>
-                  {fieldError(`header-name-${row.key}`)}
-                  {fieldError(`header-value-${row.key}`)}
-                </div>
-              ))}
-            </div>
-
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <TestStatus test={test} />
-              <Button
-                disabled={save.isPending || test.kind === 'testing'}
-                onClick={() => void runTest()}
-                size="md"
-                variant="outlined"
-              >
-                测试连接
-              </Button>
-              <Button
-                disabled={!canSave}
-                loading={save.isPending}
-                onClick={() => void runSave()}
-                size="md"
-              >
-                保存配置
-              </Button>
-            </div>
-            {formError === null ? null : (
-              <p className="text-body-sm text-error" role="alert">
-                {formError}
-              </p>
-            )}
-          </TabsContent>
-
-          <TabsContent className="flex min-w-0 flex-col gap-0.5" value="tools">
-            {server !== undefined &&
-            binding !== undefined &&
-            tools.length > 0 &&
-            selected.length < tools.length ? (
-              <div className="-mt-1 mb-1 flex justify-end">
-                <Button
-                  onClick={() => onChange(selectAllMcpTools(config, server))}
-                  size="md"
-                  variant="ghost"
-                >
-                  全选
-                </Button>
-              </div>
-            ) : null}
-            {tools.map((tool) => {
-              const on = selected.includes(tool.name)
-              const id = `${baseId}-tool-${tool.name}`
-              const lastOne = on && selected.length === 1
-              return (
-                <div
-                  className="flex min-h-13 min-w-0 items-center gap-3 rounded-md px-2.5 py-2"
-                  key={tool.name}
-                >
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="flex min-w-0 items-baseline gap-2">
-                      <span className="truncate font-medium text-on-surface" id={`${id}-name`}>
-                        {tool.title ?? tool.name}
-                      </span>
-                      {tool.title === null ? null : (
-                        <span className="shrink-0 text-label text-on-surface-faint">
-                          {tool.name}
-                        </span>
-                      )}
-                    </span>
-                    {tool.description === null || tool.description === '' ? null : (
-                      <span
-                        className="truncate text-label text-on-surface-faint"
-                        id={`${id}-description`}
-                      >
-                        {tool.description}
-                      </span>
-                    )}
-                  </span>
-                  <Switch
-                    aria-labelledby={`${id}-name`}
-                    blockedReason={
-                      toolsBlocked ??
-                      (lastOne
-                        ? '至少保留一个工具；不需要这个服务时请点击「从当前 Agent 移除」'
-                        : undefined)
-                    }
-                    checked={on}
-                    onCheckedChange={(next) => {
-                      if (server !== undefined)
-                        onChange(setMcpTool(config, server, tool.name, next))
-                    }}
-                  />
-                </div>
-              )
-            })}
-            {tools.length === 0 ? (
-              <p className="py-8 text-center text-on-surface-faint">
-                {creating ? '暂无工具，测试连接通过并保存后列出' : '暂无工具，请先测试连接并保存'}
-              </p>
-            ) : null}
-          </TabsContent>
-        </TabsRoot>
+        <McpToolsSection config={config} creating={creating} onChange={onChange} server={server} />
       </div>
     </PanelShell>
-  )
-}
-
-function Field({
-  children,
-  className,
-  htmlFor,
-  label,
-}: {
-  label: string
-  htmlFor: string
-  className?: string | undefined
-  children: ReactNode
-}) {
-  return (
-    <div className={cn('flex min-w-0 flex-col gap-1.5', className)}>
-      <label className={LABEL_CLASS} htmlFor={htmlFor}>
-        {label}
-      </label>
-      {children}
-    </div>
-  )
-}
-
-function TestStatus({ test }: { test: TestState }) {
-  return (
-    <span
-      aria-live="polite"
-      className="mr-auto inline-flex min-w-0 items-center gap-1.5 text-label text-on-surface-variant tabular-nums"
-      role="status"
-    >
-      {test.kind === 'testing' ? (
-        <>
-          <Icon className="animate-spin" decorative name="loading" size="sm" />
-          正在测试连接
-        </>
-      ) : test.kind === 'ok' ? (
-        <>
-          <StatusDot status="connected" />
-          {test.elapsedMs} ms
-        </>
-      ) : test.kind === 'failed' ? (
-        <>
-          <StatusDot status="failed" />
-          <span className="min-w-0 text-error">{test.reason}</span>
-        </>
-      ) : null}
-    </span>
   )
 }
