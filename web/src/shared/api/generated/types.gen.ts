@@ -11340,6 +11340,10 @@ export type McpConnectionsMcpConnectionsGetData = {
   path?: never
   query?: {
     /**
+     * Conversationid
+     */
+    conversationId?: string | null
+    /**
      * Agentid
      */
     agentId?: string | null

@@ -578,10 +578,6 @@ def build_app(
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
     skills = build_skills_module(runtime_client, identity.users.display_names)
     model_providers = build_model_providers_module(runtime_client)
-    mcp_servers = build_mcp_servers_module(
-        runtime_client,
-        sso_redirect_url=settings.sso.redirect_url if settings.sso is not None else None,
-    )
     agent_config = build_agent_config_module(runtime_client, identity.users.display_names)
 
     audit = build_audit_module(PgAuditReports(active_engine, RuntimeStats(runtime_client)))
@@ -633,6 +629,11 @@ def build_app(
         video_progress_of=video_progress_of,
         same_style_files=SAME_STYLE,
         same_style_source=LibrarySameStyleSource(library_reports),
+    )
+    mcp_servers = build_mcp_servers_module(
+        runtime_client,
+        conversations.service,
+        sso_redirect_url=settings.sso.redirect_url if settings.sso is not None else None,
     )
     uploads: UploadsModule | None = None
     if public_objects is not None:

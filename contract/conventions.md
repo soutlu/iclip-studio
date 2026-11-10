@@ -326,7 +326,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 供管理员在发布前试聊 Agent 草稿或指定版本的接口（概念见 [CONTEXT.md「测试预览」](../docs/CONTEXT.md#术语)）：
 - **开启预览** `POST /agents/{id}/previews`：传入可选的 `{ versionId }`（不传则代表实时预览草稿），返回 `201 { id, agentId, versionId, createdAt }`。每个管理员在每个 Agent 下同时只有一段有效预览：调用该接口会先开启一段新预览会话，并自动撤回和中断该管理员在该 Agent 下的旧预览（旧预览的 `id` 随即失效，再次访问返回 `404`）。
-- **复用聊天接口与严格私有**：拿到返回的预览 `id` 后，可直接当作对话 ID 调用 §5 的发消息、读聊天记录、停止、审批、WebSocket 订阅接口，以及 §6 的工作区文件只读接口（调用其他正式对话接口均返回 `404`）。**一段预览只有创建者本人（且当前仍持有 `agent:manage` 权限）可以访问**，其他任何人（包括治理者）访问一律返回 `404`。
+- **复用聊天接口与严格私有**：拿到返回的预览 `id` 后，可直接当作对话 ID 调用 §5 的发消息、读聊天记录、停止、审批、WebSocket 订阅接口，以及 §6 的工作区文件只读接口，也可作为 §22 `GET /mcp-connections` 的 `conversationId`（调用其他正式对话接口均返回 `404`）。**一段预览只有创建者本人（且当前仍持有 `agent:manage` 权限）可以访问**，其他任何人（包括治理者）访问一律返回 `404`。
 
 ---
 
@@ -371,13 +371,17 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 ### 用户的连接
 
 路径在 `/mcp-connections` 下，只要登录、不要 `agent:manage`，代的总是当前登录的这个人：
-- **列出** `GET /mcp-connections`：启用的、使用自有账户的服务与我在各服务上的连接，`state` 为 `connected`（已连接）、`invalid`（连接已失效）或 `none`（未连接）。给 `agentId` 只列这个 Agent 当前版本与它的子 Agent 挂着的服务（对话页据此提示「X 未连接」，Agent 不存在是 `404`）；再加 `draft=true` 列草稿挂着的，给测试预览用，要 `agent:manage`（否则 `403`）。
+- **列出** `GET /mcp-connections`：启用的、使用自有账户的服务与我在各服务上的连接，`state` 为 `connected`（已连接）、`invalid`（连接已失效）或 `none`（未连接）。不带参数列全部；带下面任一个参数时只列运行会连的服务，即这份配置与其子 Agent 当前版本挂着、且有工具放给模型的（一个工具都不放的不算；子 Agent 不放要求审批的工具），对话页据此提示「X 未连接」：
+  - 已有的对话（含测试预览）给 `conversationId`：按这段对话锁定的版本算（测试预览按它跑的那份），管理员后来发布的版本不影响它。对话要是我能发消息的那段（我自己的、未删除的对话，或我自己的测试预览且我仍有 `agent:manage`），否则 `404`，能只读查看的别人的对话也是 `404`；对话没有能跑的版本答 `409 agent_unavailable`。
+  - 还没建的对话给 `agentId`：按这个 Agent 的当前版本算，Agent 不存在是 `404`；再加 `draft=true` 按草稿算，要 `agent:manage`（否则 `403`）。
+  - `conversationId` 与 `agentId` 或 `draft=true` 一起给答 `422`。
 - **连接** `POST /mcp-connections/{serverId}/authorize`：答 `{ authorizationUrl }`，浏览器跳过去，5 分钟内有效。授权服务器回调到前端的 `/mcp/callback?state=…&code=…`（可能带 `iss`），前端把这几个参数原样交给 `POST /mcp-connections/complete`，答 `{ serverId, name, account }`，替换我在这个服务上原有的连接。回调地址由后端用 `SSO_REDIRECT_URL` 的源加 `/mcp/callback` 拼出，不取自请求；没配 SSO 时答 `409 mcp_callback_unconfigured`。
 - **断开** `DELETE /mcp-connections/{serverId}`：答 `204`，本来没连也是 `204`。
 - **错误码**：都是 `409`，按 `code` 区分：
 
 | `code` | 含义 |
 |---|---|
+| `agent_unavailable` | 按 `conversationId` 列出时，这段对话没有能跑的 Agent 版本 |
 | `mcp_callback_unconfigured` | 后端没配 SSO，拼不出回调地址 |
 | `mcp_client_required` | 服务不能自动注册客户端，要管理员先填客户端 ID |
 | `mcp_oauth_unsupported` | 服务没有公布 OAuth 授权服务器 |

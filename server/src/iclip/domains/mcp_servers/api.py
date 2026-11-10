@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Annotated, Final
+import uuid
+from typing import Annotated, Final, Protocol
 
 from fastapi import APIRouter, Depends, Query, Response
 
-from iclip.common.errors import Conflict, PermissionDenied
+from iclip.common.errors import Conflict, PermissionDenied, ValidationFailed
 from iclip.domains.identity.public import Principal, require_authenticated, require_permission
 from iclip.domains.mcp_servers.schemas import (
     McpAuthorizeOut,
@@ -38,6 +39,12 @@ SignedIn = Annotated[Principal, Depends(require_authenticated)]
 
 class McpCallbackUnconfigured(Conflict):
     code = "mcp_callback_unconfigured"
+
+
+class Conversations(Protocol):
+    async def agent_of(
+        self, principal: Principal, conversation_id: str, *, writing: bool
+    ) -> str: ...
 
 
 def create_mcp_servers_router(runtime: RuntimeClient, *, callback_url: str | None) -> APIRouter:
@@ -142,7 +149,9 @@ def create_mcp_servers_router(runtime: RuntimeClient, *, callback_url: str | Non
     return router
 
 
-def create_mcp_connections_router(runtime: RuntimeClient, *, callback_url: str | None) -> APIRouter:
+def create_mcp_connections_router(
+    runtime: RuntimeClient, conversations: Conversations, *, callback_url: str | None
+) -> APIRouter:
     """当前登录用户在按用户登录的 MCP 服务上的连接，代的总是登录的这个人。
 
     ``callback_url`` 是授权服务器回调的前端地址，由服务端配置定下、不取自请求；没有时不能发起登录。运行时
@@ -154,19 +163,28 @@ def create_mcp_connections_router(runtime: RuntimeClient, *, callback_url: str |
     @router.get("", response_model=McpConnectionsOut)
     async def mcp_connections(
         principal: SignedIn,
+        conversation_id: Annotated[uuid.UUID | None, Query(alias="conversationId")] = None,
         agent_id: Annotated[
             str | None, Query(alias="agentId", min_length=1, max_length=MAX_AGENT_ID_CHARS)
         ] = None,
         draft: bool = False,
     ) -> McpConnectionsOut:
-        """启用的、按用户登录的 MCP 服务与我在各服务上的连接。给了 ``agentId`` 只列这个 agent 的当前版本
-        （``draft=true`` 时是草稿，给测试预览用，要 ``agent:manage``）与它的子 agent 挂着的；没有这个
-        agent 是 404。"""
+        """启用的、按用户登录的 MCP 服务与我在各服务上的连接。不给参数列全部；给了只列运行会连的：这份配置与
+        它的子 agent 的当前版本挂着、且有工具放给模型的。
 
-        if draft and not principal.has(_MANAGE):
+        已有的对话给 ``conversationId``：按这段对话锁定的版本（测试预览按它跑的那份）算；要是我能发消息的
+        对话或我的测试预览，否则 404；对话没有能跑的版本是 409 ``agent_unavailable``。还没建的对话给
+        ``agentId``：按这个 agent 的当前版本（``draft=true`` 时是草稿，要 ``agent:manage``）算；没有这个
+        agent 是 404。``conversationId`` 与 ``agentId`` 或 ``draft=true`` 一起给是 422。"""
+
+        if conversation_id is not None:
+            if agent_id is not None or draft:
+                raise ValidationFailed("conversationId 不能与 agentId 或 draft 一起给")
+            await conversations.agent_of(principal, str(conversation_id), writing=True)
+        elif draft and not principal.has(_MANAGE):
             raise PermissionDenied(f"需要 {_MANAGE} 权限")
         found = await runtime.mcp_connections(
-            user=principal.user_id, agent_id=agent_id, draft=draft
+            user=principal.user_id, agent_id=agent_id, draft=draft, session_id=conversation_id
         )
         return McpConnectionsOut(
             items=[
@@ -217,4 +235,9 @@ def create_mcp_connections_router(runtime: RuntimeClient, *, callback_url: str |
     return router
 
 
-__all__ = ["McpCallbackUnconfigured", "create_mcp_connections_router", "create_mcp_servers_router"]
+__all__ = [
+    "Conversations",
+    "McpCallbackUnconfigured",
+    "create_mcp_connections_router",
+    "create_mcp_servers_router",
+]
