@@ -18,7 +18,6 @@ from agent_runtime.config.model_providers.schemas import (
     ModelUpdateIn,
 )
 from agent_runtime.config.skills.schemas import DraftFileWriteIn, SkillPublishIn, SkillUpdateIn
-from agent_runtime.errors import AgentUnavailable
 from agent_runtime.harness.step_store_pg import PgStepStore
 from agent_runtime.harness.transcript.store import TranscriptStore
 from fastapi import FastAPI
@@ -41,7 +40,7 @@ from tests.helpers.agents import (
     seed_agents,
 )
 from tests.helpers.app import TEST_MODEL_NAME, make_client, make_runtime_config, settled
-from tests.helpers.auth import login_as_editor
+from tests.helpers.auth import login_as_editor, set_direct_permissions_in_db
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected
 from tests.helpers.plugins import FixedPlugin
@@ -497,8 +496,8 @@ async def test_publishing_an_agent_is_picked_up_by_new_conversations_without_a_r
     assert [words for _model, words in heard] == ["旧", "新"]
 
 
-async def test_the_draft_entry_assembles_the_unpublished_draft(
-    app: FastAPI, engine: AsyncEngine, heard: list[tuple[str, str]]
+async def test_a_draft_preview_assembles_the_unpublished_draft(
+    app: FastAPI, engine: AsyncEngine, pg_url: str, heard: list[tuple[str, str]]
 ) -> None:
     seeded = await seed(app, engine, AgentSeed(AGENT_ID, instructions="已发布"))
     services = services_of(app)
@@ -513,13 +512,19 @@ async def test_the_draft_entry_assembles_the_unpublished_draft(
         by=seeded.author,
     )
 
-    store = PgStepStore(engine)
-    resolved = await agent_runtime_of(app).for_draft(AGENT_ID)
-    async with resolved.agent.run_stream_events(
-        "试试", conversation_id="draft-1", run_id="draft-run-1"
-    ) as events:
-        async for _event in events:
-            pass
+    async with make_client(app) as client:
+        await login_as_editor(client, pg_url)
+        await set_direct_permissions_in_db(pg_url, "logan@example.com", ["agent:manage"])
+        opened = await client.post(f"/agents/{AGENT_ID}/previews")
+        assert opened.status_code == 201, opened.text
+
+        store = PgStepStore(engine)
+        resolved = await agent_runtime_of(app).for_conversation(str(opened.json()["id"]), AGENT_ID)
+        async with resolved.agent.run_stream_events(
+            "试试", conversation_id="draft-1", run_id="draft-run-1"
+        ) as events:
+            async for _event in events:
+                pass
 
     assert heard == [(TEST_MODEL_NAME, "还在改")]
     (run,) = [one for one in await store.list_runs() if one.run_id == "draft-run-1"]
@@ -527,8 +532,6 @@ async def test_the_draft_entry_assembles_the_unpublished_draft(
     assert run.metadata["agent_draft_lock_version"] == str(saved.draft.lock_version)
     assert "agent_version_id" not in run.metadata
     assert (await services.agent_config.detail(AGENT_ID)).active_version is not None
-    with pytest.raises(AgentUnavailable):
-        await agent_runtime_of(app).for_draft("nobody")
 
 
 @pytest.mark.parametrize("with_default", [True, False], ids=["设了默认模型", "没设"])

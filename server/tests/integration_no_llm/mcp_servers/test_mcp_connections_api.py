@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import uuid
+from collections.abc import AsyncIterator, Mapping
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 from fastapi import FastAPI
+from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from tests.helpers.app import make_client, make_runtime_config
+from tests.helpers.agents import TEST_PROVIDER, AgentSeed, model_builder, seed_agents
+from tests.helpers.app import TEST_MODEL_NAME, make_client, make_runtime_config, new_conversation
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.mcp_oauth import (
     ISSUER,
@@ -19,11 +22,14 @@ from tests.helpers.mcp_oauth import (
     FakeAuthServer,
     authorization_query,
 )
-from tests.helpers.runtime_backed import build_backed_app
+from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
+from tests.helpers.runtime_backed import build_backed_app, config_services_of
 
 APP_ORIGIN = "https://app.test"
 
 CALLBACK = f"{APP_ORIGIN}/mcp/callback"
+
+WRITER = "writer"
 
 
 @pytest.fixture
@@ -43,6 +49,7 @@ def app(
     engine: AsyncEngine,
     auth_server: FakeAuthServer,
     sso_on: bool,
+    models: Mapping[str, Model],
     tmp_path: Path,
 ) -> FastAPI:
     if sso_on:
@@ -51,6 +58,8 @@ def app(
     return build_backed_app(
         make_runtime_config(),
         engine=engine,
+        build_model=model_builder(models),
+        credential_probe=KeyCheckingProbe({GOOD_KEY}),
         skill_cache_dir=tmp_path / "skills",
         oauth_transport=auth_server.transport,
     )
@@ -245,15 +254,96 @@ async def test_agent_filter_and_the_draft_listing_for_managers(
     assert saved.status_code == 200, saved.text
     assert saved.json()["draft"]["config"]["tools"] == tools
 
-    assert await states(client, agentId="director", draft="true") == {
-        "calc": "none",
-        "other": "none",
-    }
+    assert await states(client, agentId="director", draft="true") == {"other": "none"}
     assert await states(member, agentId="director") == {}
     assert (
         await member.get("/mcp-connections", params={"agentId": "director", "draft": "true"})
     ).status_code == 403
     assert (await member.get("/mcp-connections", params={"agentId": "nobody"})).status_code == 404
+
+
+async def seed_writer(app: FastAPI, engine: AsyncEngine) -> None:
+    await seed_agents(config_services_of(app), engine, (AgentSeed(WRITER),))
+
+
+async def open_preview(client: httpx.AsyncClient) -> str:
+    opened = await client.post(f"/agents/{WRITER}/previews")
+    assert opened.status_code == 201, opened.text
+    return str(opened.json()["id"])
+
+
+async def test_a_conversation_lists_what_its_own_runs_connect(
+    app: FastAPI,
+    engine: AsyncEngine,
+    client: httpx.AsyncClient,
+    member: httpx.AsyncClient,
+    migrated_pg: str,
+) -> None:
+    await login_as_root(client, migrated_pg)
+    await create(client, per_user("calc"))
+    await create(client, per_user("other"))
+    await seed_writer(app, engine)
+    mine = await new_conversation(member, WRITER)
+    detail = await client.get(f"/agents/{WRITER}")
+    tools = [
+        {"type": "mcp", "server": "calc", "tools": []},
+        {"type": "mcp", "server": "other", "tools": ["add"]},
+    ]
+    saved = await client.put(
+        f"/agents/{WRITER}/draft",
+        json={
+            "config": {
+                "schema_version": 1,
+                "model": {"provider": TEST_PROVIDER, "name": TEST_MODEL_NAME},
+                "tools": tools,
+            },
+            "skillIds": [],
+            "lockVersion": detail.json()["draft"]["lockVersion"],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    preview = await open_preview(client)
+
+    assert await states(member) == {"calc": "none", "other": "none"}
+    assert await states(member, conversationId=mine) == {}
+    assert await states(client, conversationId=preview) == {"other": "none"}
+    assert await states(client, agentId=WRITER) == {}
+
+
+async def test_other_peoples_conversations_are_not_found(
+    app: FastAPI,
+    engine: AsyncEngine,
+    client: httpx.AsyncClient,
+    member: httpx.AsyncClient,
+    migrated_pg: str,
+) -> None:
+    await login_as_root(client, migrated_pg)
+    await create(client, per_user("calc"))
+    await seed_writer(app, engine)
+    theirs = await new_conversation(member, WRITER)
+    preview = await open_preview(client)
+    assert (await client.get(f"/conversations/{theirs}")).status_code == 200
+
+    for asker, conversation_id in (
+        (client, theirs),
+        (member, preview),
+        (member, str(uuid.uuid4())),
+    ):
+        refused = await asker.get("/mcp-connections", params={"conversationId": conversation_id})
+        assert refused.status_code == 404, refused.text
+
+
+@pytest.mark.parametrize(
+    "extra", [{"agentId": WRITER}, {"draft": "true"}], ids=["agent-id", "draft"]
+)
+async def test_a_conversation_id_goes_alone(
+    member: httpx.AsyncClient, extra: dict[str, str]
+) -> None:
+    refused = await member.get(
+        "/mcp-connections", params={"conversationId": str(uuid.uuid4()), **extra}
+    )
+
+    assert refused.status_code == 422, refused.text
 
 
 async def test_refusals_reach_the_web_with_their_codes(

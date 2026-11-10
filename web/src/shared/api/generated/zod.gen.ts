@@ -4970,6 +4970,7 @@ export const zWholeFilmsLibraryWholeFilmsGetResponse = zWholeFilmCardsOut
 export const zWholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponse = zLibraryAuthorsOut
 
 export const zMcpConnectionsMcpConnectionsGetQuery = z.object({
+  conversationId: z.uuid().nullish(),
   agentId: z.string().min(1).max(128).nullish(),
   draft: z.boolean().optional().default(false),
 })

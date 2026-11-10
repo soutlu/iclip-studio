@@ -21681,9 +21681,26 @@
     },
     "/mcp-connections": {
       "get": {
-        "description": "启用的、按用户登录的 MCP 服务与我在各服务上的连接。给了 ``agentId`` 只列这个 agent 的当前版本\n（``draft=true`` 时是草稿，给测试预览用，要 ``agent:manage``）与它的子 agent 挂着的；没有这个\nagent 是 404。",
+        "description": "启用的、按用户登录的 MCP 服务与我在各服务上的连接。不给参数列全部；给了只列运行会连的：这份配置与\n它的子 agent 的当前版本挂着、且有工具放给模型的。\n\n已有的对话给 ``conversationId``：按这段对话锁定的版本（测试预览按它跑的那份）算；要是我能发消息的\n对话或我的测试预览，否则 404；对话没有能跑的版本是 409 ``agent_unavailable``。还没建的对话给\n``agentId``：按这个 agent 的当前版本（``draft=true`` 时是草稿，要 ``agent:manage``）算；没有这个\nagent 是 404。``conversationId`` 与 ``agentId`` 或 ``draft=true`` 一起给是 422。",
         "operationId": "mcp_connections_mcp_connections_get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "conversationId",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Conversationid"
+            }
+          },
           {
             "in": "query",
             "name": "agentId",

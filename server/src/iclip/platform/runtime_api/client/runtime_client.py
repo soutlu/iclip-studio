@@ -295,9 +295,16 @@ class RuntimeClient:
         return _parse(response, TitleOut.model_validate_json)
 
     async def mcp_connections(
-        self, *, user: uuid.UUID, agent_id: str | None = None, draft: bool = False
+        self,
+        *,
+        user: uuid.UUID,
+        agent_id: str | None = None,
+        draft: bool = False,
+        session_id: uuid.UUID | None = None,
     ) -> McpConnectionsOut:
         params: dict[str, str] = {}
+        if session_id is not None:
+            params["session_id"] = str(session_id)
         if agent_id is not None:
             params["agent_id"] = agent_id
             if draft:
