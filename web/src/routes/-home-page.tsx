@@ -232,6 +232,7 @@ export function HomePage() {
           )
         }
         attachmentsEnabled={hasPermission(user, PERMISSION.uploadsWrite)}
+        connections={user && canRun && validAgent && agentId !== null ? { agentId } : undefined}
         collectionPicker={
           <CollectionPicker
             disabled={!canReadCollections || start.isPending}

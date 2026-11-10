@@ -85,6 +85,7 @@ export function ConversationRoute({
         )}
       </header>
       <ConversationTimeline
+        connections={{ conversationId }}
         conversationId={conversationId}
         onForked={onForked}
         readOnly={readOnly ? { backLink, note: readOnlyNote } : undefined}

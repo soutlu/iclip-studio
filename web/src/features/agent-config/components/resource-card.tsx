@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
+import { ResourceTile } from '@/shared/ui/resource-tile'
 import { TooltipContent, TooltipRoot, TooltipTrigger, useTabTooltip } from '@/shared/ui/tooltip'
 
 export const DIRECTORY_GRID = 'grid grid-cols-1 gap-3.5 @min-[480px]:grid-cols-2'
@@ -40,18 +41,7 @@ export function CardGlyph({ name, className }: { name: IconName; className?: str
         <Icon decorative name={name} size="md" />
       </span>
     )
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        'grid size-8 shrink-0 place-items-center rounded-resource-tile bg-current bg-(image:--resource-tile-gloss) shadow-(--shadow-resource-tile)',
-        resource.className,
-        className,
-      )}
-    >
-      <Icon className="size-[62%] text-on-resource" decorative name={resource.icon} />
-    </span>
-  )
+  return <ResourceTile className={className} icon={resource.icon} tone={resource.className} />
 }
 
 export function DirectoryCardBody({

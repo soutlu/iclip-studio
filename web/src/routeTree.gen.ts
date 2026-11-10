@@ -16,6 +16,7 @@ import { Route as ShellAuditRouteImport } from './routes/_shell/audit'
 import { Route as ShellConversationsRouteImport } from './routes/_shell/conversations'
 import { Route as ShellLibraryRouteImport } from './routes/_shell/library'
 import { Route as ShellTasksRouteImport } from './routes/_shell/tasks'
+import { Route as McpCallbackRouteImport } from './routes/mcp.callback'
 import { Route as ShellCConversationIdRouteImport } from './routes/_shell/c.$conversationId'
 import { Route as AuthSsoLandingRouteImport } from './routes/auth.sso.landing'
 
@@ -53,6 +54,11 @@ const ShellTasksRoute = ShellTasksRouteImport.update({
   path: '/tasks',
   getParentRoute: () => ShellRoute,
 } as any)
+const McpCallbackRoute = McpCallbackRouteImport.update({
+  id: '/mcp/callback',
+  path: '/mcp/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ShellCConversationIdRoute = ShellCConversationIdRouteImport.update({
   id: '/c/$conversationId',
   path: '/c/$conversationId',
@@ -71,6 +77,7 @@ export interface FileRoutesByFullPath {
   '/conversations': typeof ShellConversationsRoute
   '/library': typeof ShellLibraryRoute
   '/tasks': typeof ShellTasksRoute
+  '/mcp/callback': typeof McpCallbackRoute
   '/c/$conversationId': typeof ShellCConversationIdRoute
   '/auth/sso/landing': typeof AuthSsoLandingRoute
 }
@@ -80,6 +87,7 @@ export interface FileRoutesByTo {
   '/conversations': typeof ShellConversationsRoute
   '/library': typeof ShellLibraryRoute
   '/tasks': typeof ShellTasksRoute
+  '/mcp/callback': typeof McpCallbackRoute
   '/': typeof ShellIndexRoute
   '/c/$conversationId': typeof ShellCConversationIdRoute
   '/auth/sso/landing': typeof AuthSsoLandingRoute
@@ -92,6 +100,7 @@ export interface FileRoutesById {
   '/_shell/conversations': typeof ShellConversationsRoute
   '/_shell/library': typeof ShellLibraryRoute
   '/_shell/tasks': typeof ShellTasksRoute
+  '/mcp/callback': typeof McpCallbackRoute
   '/_shell/': typeof ShellIndexRoute
   '/_shell/c/$conversationId': typeof ShellCConversationIdRoute
   '/auth/sso/landing': typeof AuthSsoLandingRoute
@@ -105,6 +114,7 @@ export interface FileRouteTypes {
     | '/conversations'
     | '/library'
     | '/tasks'
+    | '/mcp/callback'
     | '/c/$conversationId'
     | '/auth/sso/landing'
   fileRoutesByTo: FileRoutesByTo
@@ -114,6 +124,7 @@ export interface FileRouteTypes {
     | '/conversations'
     | '/library'
     | '/tasks'
+    | '/mcp/callback'
     | '/'
     | '/c/$conversationId'
     | '/auth/sso/landing'
@@ -125,6 +136,7 @@ export interface FileRouteTypes {
     | '/_shell/conversations'
     | '/_shell/library'
     | '/_shell/tasks'
+    | '/mcp/callback'
     | '/_shell/'
     | '/_shell/c/$conversationId'
     | '/auth/sso/landing'
@@ -132,6 +144,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   ShellRoute: typeof ShellRouteWithChildren
+  McpCallbackRoute: typeof McpCallbackRoute
   AuthSsoLandingRoute: typeof AuthSsoLandingRoute
 }
 
@@ -186,6 +199,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellTasksRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/mcp/callback': {
+      id: '/mcp/callback'
+      path: '/mcp/callback'
+      fullPath: '/mcp/callback'
+      preLoaderRoute: typeof McpCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_shell/c/$conversationId': {
       id: '/_shell/c/$conversationId'
       path: '/c/$conversationId'
@@ -227,6 +247,7 @@ const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   ShellRoute: ShellRouteWithChildren,
+  McpCallbackRoute: McpCallbackRoute,
   AuthSsoLandingRoute: AuthSsoLandingRoute,
 }
 export const routeTree = rootRouteImport
