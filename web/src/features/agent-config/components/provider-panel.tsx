@@ -25,25 +25,16 @@ import {
   type ProviderCredential,
   type ProviderModel,
 } from '../model-providers.api'
+import { MODEL_KIND_LABEL } from '../model-kinds'
 import { DefaultModels } from './default-models'
 import { PanelShell } from './panel-shell'
 import { CredentialForm, ModelForm, ProviderCreateForm } from './provider-forms'
-import { CardBadge, ResourceCard } from './resource-card'
+import { CardBadge, CardGlyph, DIRECTORY_GRID, DirectoryCard } from './resource-card'
+import { SectionHeading } from './section-heading'
 import { TestStatus, type Test } from './test-status'
 import { UsageAvatars } from './usage-avatars'
 
 const IDLE: Test = { kind: 'idle' }
-
-function SectionHeading({ action, id, title }: { id: string; title: string; action?: ReactNode }) {
-  return (
-    <div className="mb-1 flex min-h-8 items-center justify-between gap-3">
-      <h3 className="text-body font-semibold text-on-surface" id={id}>
-        {title}
-      </h3>
-      {action === undefined ? null : <div className="-mr-1 flex items-center">{action}</div>}
-    </div>
-  )
-}
 
 function StateGlyph({ label, name }: { label: string; name: 'locked' | 'link' }) {
   return (
@@ -60,7 +51,7 @@ function StateGlyph({ label, name }: { label: string; name: 'locked' | 'link' })
 
 function RowAlert({ message }: { message: string }) {
   return (
-    <p className="px-2.5 pb-2 text-body-sm text-error" role="alert">
+    <p className="pb-2 text-body-sm text-error" role="alert">
       {message}
     </p>
   )
@@ -77,10 +68,8 @@ function Row({
 }) {
   return (
     <li className="group flex flex-col border-t border-hairline first:border-t-0">
-      <div className="flex min-h-12 min-w-0 items-center gap-2 rounded-sm pr-1 pl-2.5">
-        {children}
-      </div>
-      {status === undefined ? null : <div className="flex px-2.5 pb-2">{status}</div>}
+      <div className="flex min-h-13 min-w-0 items-center gap-2">{children}</div>
+      {status === undefined ? null : <div className="flex pb-2">{status}</div>}
       {error === undefined ? null : <RowAlert message={error} />}
     </li>
   )
@@ -196,7 +185,8 @@ function ProviderDetail({
 
   return (
     <>
-      <div className="mt-5 flex min-w-0 items-center gap-1 border-b border-hairline pb-5">
+      <div className="mt-7 flex min-w-0 items-center gap-1">
+        <CardGlyph className="mr-3 size-11" name="provider" />
         <div className="-ml-2 flex min-w-0 flex-1 flex-col gap-0.5">
           <input
             aria-label="供应商显示名"
@@ -266,6 +256,7 @@ function ProviderDetail({
             ) : undefined
           }
           id={`${baseId}-models`}
+          note="这个供应商下可以选用的模型"
           title="模型"
         />
         <ul className="flex flex-col">
@@ -276,7 +267,7 @@ function ProviderDetail({
               model.usedBy.length > 0
                 ? `${usageNames(model.usedBy)}正在使用`
                 : isDefault
-                  ? `它是 ${model.type} 的默认模型`
+                  ? `它是默认的${MODEL_KIND_LABEL[model.type]}模型`
                   : undefined
             const saving =
               updateModel.isPending &&
@@ -291,7 +282,7 @@ function ProviderDetail({
               >
                 <span
                   className={cn(
-                    'min-w-0 truncate text-label text-on-surface tabular-nums',
+                    'min-w-0 truncate text-body text-on-surface tabular-nums',
                     !model.enabled && 'text-disabled-text',
                   )}
                 >
@@ -300,7 +291,9 @@ function ProviderDetail({
                 {model.contextSize === null ? null : (
                   <CardBadge>{formatContextSize(model.contextSize)}</CardBadge>
                 )}
-                {model.type === 'llm' ? null : <CardBadge>{model.type}</CardBadge>}
+                {model.type === 'llm' ? null : (
+                  <CardBadge>{MODEL_KIND_LABEL[model.type]}</CardBadge>
+                )}
                 {model.source === 'declared' ? <StateGlyph label="内置模型" name="locked" /> : null}
                 <span className="flex-1" />
                 <UsageAvatars users={model.usedBy} />
@@ -391,10 +384,11 @@ function ProviderDetail({
             />
           }
           id={`${baseId}-credentials`}
+          note="调用这个供应商时使用的密钥"
           title="密钥"
         />
         {provider.credentials.length === 0 ? (
-          <p className="px-2.5 py-3 text-body-sm text-on-surface-faint">
+          <p className="py-3 text-body-sm text-on-surface-faint">
             暂无密钥，请点击「添加密钥」接入
           </p>
         ) : null}
@@ -515,31 +509,30 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
                 />
               }
               id={titleId}
+              note="接入模型的服务商"
               title="供应商"
             />
-            <div className="mt-1.5 grid grid-cols-1 gap-2 @min-[440px]:grid-cols-2">
-              {list.map((provider) => (
-                <ResourceCard
-                  active={!creating && provider.id === selected?.id}
-                  icon="provider"
-                  key={provider.id}
-                  label={`供应商：${provider.label}`}
-                  muted={!provider.enabled}
-                  name={provider.label}
-                  onOpen={() => {
-                    setCreating(false)
-                    setAddKeyFor(null)
-                    setSelectedId(provider.id)
-                  }}
-                  tip={`${provider.label}：${provider.models.length} 个模型，${provider.credentials.length} 把密钥${provider.enabled ? '' : '，已停用'}`}
-                  trailing={
-                    <>
-                      <CardBadge icon="model">{provider.models.length}</CardBadge>
-                      <CardBadge icon="credential">{provider.credentials.length}</CardBadge>
-                    </>
-                  }
-                />
-              ))}
+            <div className={cn(DIRECTORY_GRID, 'mt-1.5')}>
+              {list.map((provider) => {
+                const counts = `${provider.models.length} 个模型 · ${provider.credentials.length} 个密钥`
+                return (
+                  <DirectoryCard
+                    active={!creating && provider.id === selected?.id}
+                    description={counts}
+                    dimmed={!provider.enabled}
+                    icon="provider"
+                    key={provider.id}
+                    label={`供应商：${provider.label}`}
+                    name={provider.label}
+                    onOpen={() => {
+                      setCreating(false)
+                      setAddKeyFor(null)
+                      setSelectedId(provider.id)
+                    }}
+                    tip={`${provider.label}：${counts}${provider.enabled ? '' : '，已停用'}`}
+                  />
+                )
+              })}
             </div>
           </section>
 
