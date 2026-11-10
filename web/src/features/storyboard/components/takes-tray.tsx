@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Icon } from '@/shared/icons'
 import { takeCardSize, type Take } from '../takes'
 import { TakeCard } from './take-card'
+import { useHorizontalWheel } from './use-horizontal-wheel'
 import { useScrollFade } from './use-scroll-fade'
 import { workbenchControl } from './workbench-control'
 
@@ -31,6 +32,7 @@ export function TakesTray({ error, takes, ...selection }: TakesTrayProps) {
 function TakesRail({ onSelect, selectedId, takes }: TakeSelection & { takes: readonly Take[] }) {
   const railRef = useRef<HTMLDivElement | null>(null)
   const { fade, width } = useScrollFade(railRef)
+  useHorizontalWheel(railRef)
   const [now] = useState(() => new Date())
   const newest = takes[0]?.job.id
   useEffect(() => {

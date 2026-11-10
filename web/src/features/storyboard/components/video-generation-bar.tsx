@@ -18,6 +18,7 @@ import {
 import { supportsAspectRatio } from '../video-model-support'
 import { AspectGlyph } from './aspect-glyph'
 import { GenerationPicker, type GenerationPickerOption } from './generation-picker'
+import { useHorizontalWheel } from './use-horizontal-wheel'
 import { useScrollFade } from './use-scroll-fade'
 
 type AspectControl = {
@@ -54,6 +55,7 @@ export function VideoGenerationBar({
     value.model ?? (models.status === 'ready' ? '' : MODELS_PENDING_TEXT[models.status])
   const paramsRef = useRef<HTMLDivElement | null>(null)
   const { fade } = useScrollFade(paramsRef)
+  useHorizontalWheel(paramsRef)
   const statusId = useId()
   const hiddenReasonId = useId()
   const { hiddenReason, line: status } = generationStatusOf(blocker, notice)
