@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
+import type { McpServerOut } from '@/shared/api/generated/types.gen'
 import { loginAs, mockGovernor } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
@@ -327,15 +328,12 @@ describe('MCP 服务 挂到 Agent', () => {
     await user.click(within(mcpSection()).getByRole('button', { name: '管理 MCP 服务' }))
     const panel = sidePanel()
     expect(within(panel).getByRole('heading', { name: '管理 MCP 服务' })).toBeVisible()
-    expect(await within(panel).findByRole('button', { name: '飞书文档' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    const gallery = within(panel).getByRole('button', { name: '图库检索' })
-    expect(gallery).toHaveAttribute('aria-pressed', 'false')
+    expect(await within(panel).findByRole('switch', { name: '飞书文档' })).toBeChecked()
+    const gallery = within(panel).getByRole('switch', { name: '图库检索' })
+    expect(gallery).not.toBeChecked()
     await user.click(gallery)
-    expect(gallery).toHaveAttribute('aria-pressed', 'true')
-    await user.click(within(panel).getByRole('button', { name: '飞书文档' }))
+    expect(gallery).toBeChecked()
+    await user.click(within(panel).getByRole('switch', { name: '飞书文档' }))
     await user.click(within(panel).getByRole('button', { name: '完成' }))
 
     const card = within(mcpSection()).getByRole('button', { name: '配置 MCP 服务：图库检索' })
@@ -351,6 +349,32 @@ describe('MCP 服务 挂到 Agent', () => {
     expect(tools.filter((tool) => tool['type'] === 'mcp')).toEqual([
       { server: 'image-search', tools: null, type: 'mcp' },
     ])
+  })
+
+  it('已停用且没挂上的服务开关不可用', async () => {
+    const stopped: McpServerOut = {
+      createdAt: '2026-11-01T00:00:00Z',
+      createdBy: mockGovernor.id,
+      description: '查询客户跟进记录',
+      enabled: false,
+      headers: [],
+      id: 'crm-notes',
+      lastCheck: null,
+      name: '客户笔记',
+      timeoutSeconds: 30,
+      tools: null,
+      transport: 'streamable_http',
+      updatedAt: '2026-11-01T00:00:00Z',
+      updatedBy: mockGovernor.id,
+      url: 'https://crm.example/mcp',
+      usedBy: [],
+    }
+    server.use(http.get('*/api/mcp-servers', () => HttpResponse.json({ items: [stopped] })))
+    const user = await renderPage()
+    await user.click(within(mcpSection()).getByRole('button', { name: '管理 MCP 服务' }))
+    const toggle = await within(sidePanel()).findByRole('switch', { name: '客户笔记' })
+    expect(toggle).toBeDisabled()
+    expect(toggle).not.toBeChecked()
   })
 
   it('从当前 Agent 移除：卡片收起，回到管理列表', async () => {
@@ -452,8 +476,9 @@ describe('MCP 服务 发布', () => {
     const user = await renderPage()
     const posts = recordBodies('POST', /\/agents\/director\/versions$/)
     await user.click(within(mcpSection()).getByRole('button', { name: '管理 MCP 服务' }))
-    const notes = await within(sidePanel()).findByRole('button', { name: '客户笔记' })
-    expect(within(notes).getByRole('img', { name: '未测试连接' })).toBeInTheDocument()
+    const notes = await within(sidePanel()).findByRole('switch', { name: '客户笔记' })
+    const card = notes.closest('li') as HTMLElement
+    expect(within(card).getByRole('img', { name: '未测试连接' })).toBeInTheDocument()
     await user.click(notes)
     await user.click(within(sidePanel()).getByRole('button', { name: '完成' }))
 

@@ -3,9 +3,14 @@ import { MCP_STATUS_LABEL, mcpBindings, mcpStatusOf, selectedMcpTools } from '..
 import { useMcpServers } from '../mcp-servers.api'
 import { StatusDot } from './mcp-status'
 import type { Panel } from './panel'
-import { AddCard, AlertGlyph, CardBadge, EmptyDash, ResourceCard } from './resource-card'
-
-const GRID = 'grid grid-cols-2 gap-2 @min-[600px]:grid-cols-3 @max-[360px]:grid-cols-1'
+import {
+  AddCard,
+  AlertGlyph,
+  CardBadge,
+  DIRECTORY_GRID,
+  DirectoryCard,
+  EmptyDash,
+} from './resource-card'
 
 export function McpCards({
   config,
@@ -24,12 +29,12 @@ export function McpCards({
     return readOnly ? (
       <EmptyDash />
     ) : (
-      <div className={GRID}>
+      <div className={DIRECTORY_GRID}>
         <AddCard label="添加 MCP 服务" onClick={() => onOpenPanel({ type: 'mcp-select' })} />
       </div>
     )
   return (
-    <div className={GRID}>
+    <div className={DIRECTORY_GRID}>
       {bindings.map((binding) => {
         const server = servers.data?.find((item) => item.id === binding.server)
         const name = server?.name ?? binding.server
@@ -39,7 +44,7 @@ export function McpCards({
         const active = panel?.type === 'mcp-server' && panel.server === binding.server
         if (server === undefined)
           return (
-            <ResourceCard
+            <DirectoryCard
               active={active}
               icon="mcp-server"
               key={binding.server}
@@ -54,22 +59,21 @@ export function McpCards({
         const total = server.tools?.length ?? 0
         const selected = selectedMcpTools(binding, server).length
         return (
-          <ResourceCard
+          <DirectoryCard
             active={active}
+            badges={
+              <CardBadge>
+                {selected}/{total}
+              </CardBadge>
+            }
+            description={server.description}
             icon="mcp-server"
             key={binding.server}
             label={`配置 MCP 服务：${name}`}
             name={name}
             onOpen={open}
             tip={`${name}\n${server.description}\n已启用 ${selected} / ${total} 个工具，${MCP_STATUS_LABEL[status]}`}
-            trailing={
-              <>
-                <CardBadge>
-                  {selected}/{total}
-                </CardBadge>
-                <StatusDot className="mx-0.5" status={status} />
-              </>
-            }
+            trailing={<StatusDot className="mx-0.5" status={status} />}
           />
         )
       })}
