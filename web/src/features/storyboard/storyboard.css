@@ -895,7 +895,7 @@
 /* ===== 素材片区 =====
    文案列底部一行横滑的出片卡。左右排时左边贴齐文案列起点、右边出血到工作台右边缘（抵掉主体的 16px 内距），
    卡片在工作台边缘被切开，正文区自己滚、素材片区钉在列底常驻可见；上下排时两侧都出血，排在正文之后随主体滚动。
-   行高 176，卡宽由 takeCardSize 算好写在元素上，同一行底边对齐；箭头只在工作台 ≥ 776 且放不下时出现。
+   行高 176，卡宽由 takeCardSize 算好写在元素上，同一行底边对齐；箭头只在放不下时出现。
    整张卡是按钮，选中那张套一圈中性描边；滚动行四周留 4px 给描边，负边距抵掉，卡的起点仍贴齐文案列。 */
 .storyboard-takes {
   --storyboard-fade: 40px;
@@ -928,7 +928,6 @@
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scroll-padding-inline: 4px 16px;
-  scroll-snap-type: x proximity;
   scrollbar-width: none;
 }
 .storyboard-takes-list {
@@ -943,7 +942,6 @@
   flex: none;
   flex-direction: column;
   gap: 4px;
-  scroll-snap-align: start;
 }
 .storyboard-take-time {
   color: var(--color-on-surface-muted);
@@ -1042,11 +1040,6 @@
 .storyboard-take-duration {
   right: 8px;
   bottom: 8px;
-}
-@container storyboard-workbench (width < 776px) {
-  .storyboard-takes-pager {
-    display: none;
-  }
 }
 @container storyboard-workbench (width < 640px) {
   /* 上下排：两侧出血，排在正文之后跟着主体一起滚；舞台已吸顶，再钉住素材片区正文就没地方了。 */
