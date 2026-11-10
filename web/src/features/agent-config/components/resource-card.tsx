@@ -3,9 +3,6 @@ import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { TooltipContent, TooltipRoot, TooltipTrigger, useTabTooltip } from '@/shared/ui/tooltip'
 
-const CARD_CLASS =
-  'flex h-12 min-w-0 items-center gap-2.5 rounded-md bg-surface-container-low px-2.5 text-left text-body text-on-surface'
-
 export const DIRECTORY_GRID = 'grid grid-cols-1 gap-3.5 @min-[480px]:grid-cols-2'
 
 export const DIRECTORY_CARD =
@@ -111,6 +108,7 @@ type DirectoryCardProps = {
   trailing?: ReactNode
   onOpen?: (() => void) | undefined
   active?: boolean
+  dimmed?: boolean
   label?: string
 }
 
@@ -118,6 +116,7 @@ export function DirectoryCard({
   active = false,
   badges,
   description,
+  dimmed = false,
   icon,
   label,
   name,
@@ -135,6 +134,7 @@ export function DirectoryCard({
     <DirectoryCardBody
       badges={badges}
       description={description}
+      dimmed={dimmed}
       icon={icon}
       name={name}
       trailing={trailing}
@@ -180,64 +180,6 @@ export function AlertGlyph({ reason }: { reason: string }) {
         </span>
       </TooltipTrigger>
       <TooltipContent>{reason}</TooltipContent>
-    </TooltipRoot>
-  )
-}
-
-type ResourceCardProps = {
-  icon: IconName
-  name: string
-  tip: string
-  trailing?: ReactNode
-  onOpen?: (() => void) | undefined
-  active?: boolean
-  muted?: boolean
-  label?: string
-}
-
-export function ResourceCard({
-  active = false,
-  icon,
-  label,
-  muted = false,
-  name,
-  onOpen,
-  tip,
-  trailing,
-}: ResourceCardProps) {
-  const { rootProps, triggerProps } = useTabTooltip()
-  const fade = muted ? 'opacity-(--state-disabled-content)' : undefined
-  const body = (
-    <>
-      <CardGlyph className={fade} name={icon} />
-      <span className={cn('min-w-0 flex-1 truncate', active && 'font-medium', fade)}>{name}</span>
-      {trailing === undefined ? null : (
-        <span className="flex shrink-0 items-center gap-1">{trailing}</span>
-      )}
-    </>
-  )
-  return (
-    <TooltipRoot {...rootProps}>
-      <TooltipTrigger asChild {...triggerProps}>
-        {onOpen === undefined ? (
-          <div className={CARD_CLASS}>{body}</div>
-        ) : (
-          <button
-            aria-current={active ? 'true' : undefined}
-            aria-label={label}
-            className={cn(
-              CARD_CLASS,
-              'ui-state cursor-pointer ui-focus',
-              active && 'bg-surface-container-high',
-            )}
-            onClick={onOpen}
-            type="button"
-          >
-            {body}
-          </button>
-        )}
-      </TooltipTrigger>
-      <TooltipContent className="whitespace-pre-line">{tip}</TooltipContent>
     </TooltipRoot>
   )
 }
