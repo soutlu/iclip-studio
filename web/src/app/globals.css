@@ -233,6 +233,7 @@
   --color-resource-project: var(--color-resource-project);
   --color-resource-connection: var(--color-resource-connection);
   --color-resource-provider: var(--color-resource-provider);
+  --color-resource-account: var(--color-resource-account);
   --color-on-resource: var(--color-on-resource);
   --color-code-key: var(--color-code-key);
   --color-code-string: var(--color-code-string);

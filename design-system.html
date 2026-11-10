@@ -245,6 +245,7 @@
         --color-resource-project: #5074ac;
         --color-resource-connection: #2e887d;
         --color-resource-provider: #527b96;
+        --color-resource-account: var(--nv30);
         --color-on-resource: var(--n100);
         /* 资源图标实色底块：顶部一层淡高光，一圈极淡内描边加一道轻落影 */
         --resource-tile-gloss: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 72%);
@@ -647,8 +648,8 @@
             </li>
             <li>
               <strong>配置资源图标</strong>
-              <code>resource-agent / skill / workspace / video / project / connection / provider</code>
-              区分 Agent、技能、文件、视频、工程、连接与供应商；只用于资源图标的实色底块（<code>--radius-resource-tile</code> 圆角、<code>--resource-tile-gloss</code> 顶部高光、<code>--shadow-resource-tile</code>），明暗主题同值。符号用 <code>on-resource</code> 白色实心图形，占底块边长约 62%，统一 24px 画布、2.8 边距、圆角实心形状，镂空部分透出底色；文字、卡片与选中态保持中性。参考
+              <code>resource-agent / skill / workspace / video / project / connection / provider / account</code>
+              区分 Agent、技能、文件、视频、工程、连接、供应商与账户（中性灰）；只用于资源图标的实色底块（<code>--radius-resource-tile</code> 圆角、<code>--resource-tile-gloss</code> 顶部高光、<code>--shadow-resource-tile</code>），明暗主题同值。符号用 <code>on-resource</code> 白色实心图形，占底块边长约 62%，统一 24px 画布、2.8 边距、圆角实心形状，镂空部分透出底色；文字、卡片与选中态保持中性。参考
               <a href="https://developer.apple.com/design/human-interface-guidelines/app-icons">Apple 设置图标</a>与
               <a href="https://atlassian.design/foundations/color/accents">Atlassian 分类点缀色</a>。
             </li>

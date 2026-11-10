@@ -17,7 +17,7 @@ export const bindMcp = (config: AgentConfig, serverId: string): AgentConfig =>
         ...config,
         tools: [
           ...(config.tools ?? []),
-          { approval_tools: [], server: serverId, tools: null, type: 'mcp' },
+          { approval_tools: [], server: serverId, tools: [], type: 'mcp' },
         ],
       }
     : config
@@ -36,35 +36,44 @@ export const selectedMcpTools = (binding: McpBinding, server: McpServer | undefi
   return names.filter((name) => binding.tools?.includes(name))
 }
 
-export const setMcpTool = (
+/** 工具在这个 Agent 上的三种状态：允许、要求审批（调用前要用户同意）、关闭。 */
+export type McpToolState = 'allow' | 'ask' | 'off'
+
+export const mcpToolStateOf = (binding: McpBinding, tool: string): McpToolState => {
+  const given =
+    binding.tools === null || binding.tools === undefined || binding.tools.includes(tool)
+  if (!given) return 'off'
+  return (binding.approval_tools ?? []).includes(tool) ? 'ask' : 'allow'
+}
+
+/**
+ * 把 `tools` 里的工具都设成 `state`，其余工具不变。`tools: null`（全部工具）在第一次改动时
+ * 写成已发现工具的完整名单；名单里已不在服务上的工具原样保留。
+ */
+export const setMcpToolStates = (
   config: AgentConfig,
   server: McpServer,
-  tool: string,
-  on: boolean,
+  tools: readonly string[],
+  state: McpToolState,
 ): AgentConfig => {
   const binding = mcpBindingOf(config, server.id)
   if (binding === undefined) return config
   const names = discovered(server)
-  const current = selectedMcpTools(binding, server)
-  const next = on ? [...current, tool] : current.filter((name) => name !== tool)
+  const stateOf = (name: string) => (tools.includes(name) ? state : mcpToolStateOf(binding, name))
   const stale = (binding.tools ?? []).filter((name) => !names.includes(name))
-  return writeTools(config, server.id, [...names.filter((name) => next.includes(name)), ...stale])
+  const given = [...names.filter((name) => stateOf(name) !== 'off'), ...stale]
+  const approvals = given.filter((name) =>
+    names.includes(name) ? stateOf(name) === 'ask' : (binding.approval_tools ?? []).includes(name),
+  )
+  return {
+    ...config,
+    tools: (config.tools ?? []).map((tool) =>
+      isMcp(tool) && tool.server === server.id
+        ? { ...tool, approval_tools: approvals, tools: given }
+        : tool,
+    ),
+  }
 }
-
-export const selectAllMcpTools = (config: AgentConfig, server: McpServer): AgentConfig => {
-  const binding = mcpBindingOf(config, server.id)
-  if (binding === undefined) return config
-  const names = discovered(server)
-  const stale = (binding.tools ?? []).filter((name) => !names.includes(name))
-  return writeTools(config, server.id, [...names, ...stale])
-}
-
-const writeTools = (config: AgentConfig, serverId: string, tools: string[]): AgentConfig => ({
-  ...config,
-  tools: (config.tools ?? []).map((tool) =>
-    isMcp(tool) && tool.server === serverId ? { ...tool, tools } : tool,
-  ),
-})
 
 export type McpStatus = 'connected' | 'failed' | 'unchecked'
 

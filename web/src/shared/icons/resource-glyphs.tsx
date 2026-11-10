@@ -154,6 +154,26 @@ export function ResourceUnderstandingGlyph(props: ResourceGlyphProps) {
   )
 }
 
+export function ResourcePersonGlyph(props: ResourceGlyphProps) {
+  return (
+    <ResourceGlyph {...props}>
+      <circle cx={12} cy={8} r={3.7} />
+      <path d="M4.6 19.4c0-3.7 3.3-6.2 7.4-6.2s7.4 2.5 7.4 6.2c0 .7-.5 1.2-1.2 1.2H5.8c-.7 0-1.2-.5-1.2-1.2Z" />
+    </ResourceGlyph>
+  )
+}
+
+export function ResourcePeopleGlyph(props: ResourceGlyphProps) {
+  return (
+    <ResourceGlyph {...props}>
+      <circle cx={9} cy={8.4} r={3.2} />
+      <path d="M2.6 19.1c0-3.3 2.8-5.6 6.4-5.6s6.4 2.3 6.4 5.6c0 .6-.5 1.1-1.1 1.1H3.7c-.6 0-1.1-.5-1.1-1.1Z" />
+      <circle cx={17} cy={9.3} r={2.6} />
+      <path d="M16.5 13.9h.6c2.6 0 4.6 1.8 4.6 4.6 0 .6-.5 1-1 1h-3.7c.1-.3.2-.7.2-1.1 0-1.7-.6-3.2-1.6-4.3.3-.1.6-.2.9-.2Z" />
+    </ResourceGlyph>
+  )
+}
+
 export function ResourceFrameGlyph(props: ResourceGlyphProps) {
   return (
     <ResourceGlyph {...props}>
