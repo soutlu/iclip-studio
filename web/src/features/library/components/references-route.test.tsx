@@ -705,6 +705,9 @@ describe('参考视频详情', () => {
     const loadOriginal = (dialog: HTMLElement, width: number, height: number) => {
       vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(width)
       vi.spyOn(HTMLVideoElement.prototype, 'videoHeight', 'get').mockReturnValue(height)
+      vi.spyOn(HTMLMediaElement.prototype, 'readyState', 'get').mockReturnValue(
+        HTMLMediaElement.HAVE_ENOUGH_DATA,
+      )
       fireEvent.loadedMetadata(within(dialog).getByLabelText('原片', { selector: 'video' }))
     }
 

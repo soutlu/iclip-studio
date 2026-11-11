@@ -14,6 +14,7 @@ import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { DialogRoot, DialogSurface, DialogTitle } from '@/shared/ui/dialog'
+import { MediaBuffering } from '@/shared/ui/media-buffering'
 import { MediaFallback } from '@/shared/ui/media-fallback'
 import { StageBackdrop } from '../components/stage-backdrop'
 import { framePosition } from './frame-seek'
@@ -428,6 +429,7 @@ export function EditorPreview({
           key={switches}
         />
       )}
+      {playing && buffering ? <MediaBuffering /> : null}
       {segments === undefined ? <PreviewMessage>正在读取视频信息…</PreviewMessage> : null}
       {failed ? (
         <div className="editor-preview-message" role="alert">

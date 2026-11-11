@@ -12,11 +12,11 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { errorMessageOf } from '@/shared/api/client'
 import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
-import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { Button } from '@/shared/ui/button'
 import { DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
 import { InlineAlert } from '@/shared/ui/inline-alert'
+import { MediaBuffering } from '@/shared/ui/media-buffering'
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from '@/shared/ui/tabs'
 import { toast } from '@/shared/ui/toast'
 import { groupConversationVideos } from '../conversation-videos/video-groups'
@@ -817,17 +817,7 @@ function EditorBody({
             sentenceText={sentenceText}
             snap={snap}
           />
-          {buffering ? (
-            <div
-              aria-label="正在缓冲"
-              className="pointer-events-none absolute inset-0 z-(--z-local-2) grid place-items-center text-on-scrim"
-              role="status"
-            >
-              <span className="rounded-full bg-scrim/32 p-2">
-                <Icon className="animate-spin" decorative name="spinner" size="xl" />
-              </span>
-            </div>
-          ) : null}
+          {buffering ? <MediaBuffering /> : null}
         </PreviewPlayer>
         {viewedMaterial === undefined || materialView === null ? null : (
           <MaterialPreview
