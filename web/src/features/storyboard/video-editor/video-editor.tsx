@@ -46,6 +46,7 @@ import {
   draftLineOf,
   isPicked,
   keepPlace,
+  moveBefore,
   outputOf,
   pickPart,
   previewPick,
@@ -534,6 +535,21 @@ function Editor({
     else if (next !== undefined) setSeekRequest(next.seek)
   }
 
+  const moveItem = (id: string, before: string | undefined) => {
+    if (draft === undefined) return
+    const next = moveBefore(draft, id, before)
+    const after = next === draft ? undefined : changeDraft(next)
+    if (after === undefined) return
+    setSelection({ kind: 'draft', id })
+    if (sourcePreview) showDraft(keepPlace(items, after, draftClock))
+  }
+
+  const stepItem = (id: string, direction: -1 | 1) => {
+    const rest = items.filter((item) => item.id !== id)
+    const slot = items.findIndex((item) => item.id === id) + direction
+    if (slot >= 0 && slot <= rest.length) moveItem(id, rest[slot]?.id)
+  }
+
   const removeItem = (id: string) => {
     const item = items.find((candidate) => candidate.id === id)
     if (item === undefined) return
@@ -744,6 +760,7 @@ function Editor({
         clockOn={sourcePreview ? 'source' : 'draft'}
         items={items}
         onClickPart={clickPart}
+        onMoveDraft={moveItem}
         onScrub={collapseCard}
         onSeek={seekDraft}
         onSelectDraft={(id) => selectDraft(id)}
@@ -755,6 +772,7 @@ function Editor({
         onTrimPreview={followTrim}
         onTrimRun={trimRun}
         peaksOf={peaksOf}
+        previewMove={(id, before) => draftItemsOf(source, moveBefore(draft, id, before))}
         previewPick={(editId, seg) => previewPick(source, draft, editId, seg)}
         previewTrim={(trimChange) => draftItemsOf(source, trimmedDraft(trimChange) ?? draft)}
         rootUrl={mediaUrl}
@@ -949,6 +967,24 @@ function Editor({
           ) {
             event.preventDefault()
             removeItem(selectedItem.id)
+            return
+          }
+          if (
+            (event.key === 'ArrowLeft' || event.key === 'ArrowRight') &&
+            event.altKey &&
+            selectedItem !== undefined &&
+            !event.defaultPrevented &&
+            isShortcutTarget(event)
+          ) {
+            event.preventDefault()
+            const dialog = event.currentTarget
+            const { id } = selectedItem
+            stepItem(id, event.key === 'ArrowLeft' ? -1 : 1)
+            requestAnimationFrame(() =>
+              dialog
+                .querySelector<HTMLElement>(`[data-draft-id="${CSS.escape(id)}"] button`)
+                ?.focus({ preventScroll: true }),
+            )
             return
           }
           if (

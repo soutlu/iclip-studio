@@ -1467,6 +1467,42 @@ describe('草稿与编辑轨', () => {
     expect(draftNames()).toEqual(shotsOnly([1, 2, 3, 4, 5, 6, 7, 8]))
   })
 
+  it('选中草稿里一块按 Alt+方向键挪一格：选中、焦点和播放头都跟着它，到头不再动；合成按新的先后提交', async () => {
+    serveChain([])
+    let segments: unknown
+    server.use(
+      http.post('*/api/generations/video-composites', async ({ request }) => {
+        segments = ((await request.clone().json()) as { segments: unknown }).segments
+      }),
+    )
+    const user = userEvent.setup()
+    await renderEditor()
+    await originalTrack()
+    const shot2 = () => within(draftTrack()).getByRole('button', { name: '镜头 2 · 1.0 秒 · 原片' })
+    await user.click(shot2())
+    expect(composeButton()).toBeDisabled()
+
+    await user.keyboard('{Alt>}{ArrowRight}{/Alt}')
+    expect(draftNames()).toEqual(shotsOnly([1, 3, 2, 4, 5, 6, 7, 8]))
+    expect(shot2()).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() => expect(shot2()).toHaveFocus())
+    await waitFor(() => expect(playhead()).toHaveValue('2'))
+    expect(controls()).toHaveTextContent('共 8.0 秒')
+
+    await user.keyboard('{Alt>}{ArrowLeft}{ArrowLeft}{ArrowLeft}{/Alt}')
+    expect(draftNames()).toEqual(shotsOnly([2, 1, 3, 4, 5, 6, 7, 8]))
+    await waitFor(() => expect(shot2()).toHaveFocus())
+
+    await user.click(composeButton())
+    await waitFor(() =>
+      expect(segments).toEqual([
+        { sourceJobId: ROOT_ID, start: 1, end: 2 },
+        { sourceJobId: ROOT_ID, start: 0, end: 1 },
+        { sourceJobId: ROOT_ID, start: 2, end: 8 },
+      ]),
+    )
+  })
+
   it('拖草稿块的左、右把手：拖动中草稿不存，松手或丢失捕获都只保存一次并更新总长', async () => {
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
       DOMRect.fromRect({ x: 0, y: 0, width: 800, height: 200 }),
