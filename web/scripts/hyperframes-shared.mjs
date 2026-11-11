@@ -486,6 +486,7 @@ export function fontFaceDescriptors(text) {
 }
 
 export async function cjkTwinFaces(family, descriptors, notoDir) {
+  if (family) return ''
   const pkg = fontPackage(CJK_FONT.family)
   const metadata = JSON.parse(await readFile(join(notoDir, 'metadata.json'), 'utf8'))
   const unicode = JSON.parse(await readFile(join(notoDir, 'unicode.json'), 'utf8'))

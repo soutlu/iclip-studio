@@ -172,7 +172,7 @@ async function assemble(temp, catalog, lock) {
     CJK_FONT.css,
     [{ family: CJK_FONT.family, faces: cjkFaces }],
     'block',
-    () => true,
+    isLatinSubset,
   )
 
   const require = createRequire(import.meta.url)
