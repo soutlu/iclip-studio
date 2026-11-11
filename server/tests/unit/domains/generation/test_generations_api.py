@@ -748,9 +748,9 @@ async def test_failing_to_enqueue_fails_the_row_instead_of_leaving_it_pending() 
     ],
 )
 async def test_video_task_reports_upstream_status_words_while_in_flight(
-    status: str, expected: str
+    status: GenerationStatus, expected: str
 ) -> None:
-    job = make_job(video_request(), status=status)  # type: ignore[arg-type]
+    job = make_job(video_request(), status=status)
     repo = InMemoryGenerationRepository([job])
     owner = principal("generation:read", user_id=job.owner_user_id)
     async with client(build_test_app(repo, granted=owner)) as http:

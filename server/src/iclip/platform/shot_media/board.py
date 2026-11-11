@@ -99,13 +99,20 @@ def compose_board(
     return buffer.getvalue()
 
 
-def _draw_label(draw: ImageDraw.ImageDraw, *, x: int, y: int, text: str, font: object) -> None:
-    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)  # type: ignore[arg-type]
+def _draw_label(
+    draw: ImageDraw.ImageDraw,
+    *,
+    x: int,
+    y: int,
+    text: str,
+    font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
+) -> None:
+    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
     pad = max(4, getattr(font, "size", _MIN_LABEL_PT) // 3)
     draw.rectangle(
         (x, y, x + (right - left) + pad * 2, y + (bottom - top) + pad * 2), fill=_PLATE_RGBA
     )
-    draw.text((x + pad - left, y + pad - top), text, font=font, fill=_TEXT_RGBA)  # type: ignore[arg-type]
+    draw.text((x + pad - left, y + pad - top), text, font=font, fill=_TEXT_RGBA)
 
 
 __all__ = [
