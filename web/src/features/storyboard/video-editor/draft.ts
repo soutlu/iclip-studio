@@ -10,7 +10,6 @@ const SNAP_PX = 8
 
 export type ReadyEdit = {
   id: string
-  order: number
   from: number
   to: number
   mediaUrl: string
@@ -19,12 +18,11 @@ export type ReadyEdit = {
 }
 
 export const readyEditsOf = (blocks: readonly EditBlock[]): ReadyEdit[] =>
-  blocks.flatMap((block, order): ReadyEdit[] =>
+  blocks.flatMap((block): ReadyEdit[] =>
     block.state.kind === 'ready' && block.job.outputUrl !== null
       ? [
           {
             id: block.id,
-            order,
             from: block.from,
             to: block.to,
             mediaUrl: block.job.outputUrl,
@@ -43,42 +41,31 @@ export type DraftSource = {
   edits: readonly ReadyEdit[]
 }
 
-export type UsedPart = { editId: string; seg: number; t0: number; t1: number; seq: number }
-export type ShotToggle = { no: number; on: false } | { no: number; on: true; seq: number }
-export type Cut = { no: number; t0: number; t1: number }
+export type DraftEntry =
+  | { kind: 'shot'; no: number; t0: number; t1: number }
+  | { kind: 'edit'; editId: string; seg: number; t0: number; t1: number }
 
 export type Draft = {
-  picks: readonly UsedPart[]
-  toggles: readonly ShotToggle[]
-  cuts: readonly Cut[]
-  seq: number
+  entries: readonly DraftEntry[]
+  closed: readonly number[]
 }
 
-export const EMPTY_DRAFT: Draft = { picks: [], toggles: [], cuts: [], seq: 0 }
-
 const zTime = z.number().nonnegative()
+const zNumber = z.number().int().positive()
 export const zDraft = z.object({
-  picks: z.array(
-    z.object({
-      editId: z.string().min(1),
-      seg: z.number().int().positive(),
-      t0: zTime,
-      t1: zTime,
-      seq: z.number().int().nonnegative(),
-    }),
-  ),
-  toggles: z.array(
-    z.discriminatedUnion('on', [
-      z.object({ no: z.number().int().positive(), on: z.literal(false) }),
+  entries: z.array(
+    z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('shot'), no: zNumber, t0: zTime, t1: zTime }),
       z.object({
-        no: z.number().int().positive(),
-        on: z.literal(true),
-        seq: z.number().int().nonnegative(),
+        kind: z.literal('edit'),
+        editId: z.string().min(1),
+        seg: zNumber,
+        t0: zTime,
+        t1: zTime,
       }),
     ]),
   ),
-  cuts: z.array(z.object({ no: z.number().int().positive(), t0: zTime, t1: zTime })),
-  seq: z.number().int().nonnegative(),
+  closed: z.array(zNumber),
 })
 
 const near = (left: number, right: number) => Math.abs(left - right) < EPSILON
@@ -87,55 +74,120 @@ const overlap = (a0: number, a1: number, b0: number, b1: number) =>
 
 export const shotItemId = (no: number) => `shot-${no}`
 
+const entryId = (entry: DraftEntry) =>
+  entry.kind === 'shot' ? shotItemId(entry.no) : partItemId(entry.editId, entry.seg)
+
+const wholeShot = (shot: Shot): DraftEntry => ({
+  kind: 'shot',
+  no: shot.no,
+  t0: shot.start,
+  t1: shot.end,
+})
+const wholePart = (edit: ReadyEdit, part: EditPart): DraftEntry => ({
+  kind: 'edit',
+  editId: edit.id,
+  seg: part.seg,
+  t0: part.b0,
+  t1: part.b1,
+})
+
+export const defaultDraft = (source: DraftSource): Draft => ({
+  entries: source.shots.map(wholeShot),
+  closed: [],
+})
+
 const editOf = (source: DraftSource, id: string) => source.edits.find((edit) => edit.id === id)
 const partOf = (edit: ReadyEdit, seg: number) => edit.parts.find((part) => part.seg === seg)
 const covers = (edit: { from: number; to: number }, no: number) => edit.from <= no && no <= edit.to
-const hasPick = (draft: Draft, editId: string) => draft.picks.some((pick) => pick.editId === editId)
+const isShot = (entry: DraftEntry, no: number) => entry.kind === 'shot' && entry.no === no
+const isPart = (entry: DraftEntry, editId: string, seg: number) =>
+  entry.kind === 'edit' && entry.editId === editId && entry.seg === seg
+const hasPick = (draft: Draft, editId: string) =>
+  draft.entries.some((entry) => entry.kind === 'edit' && entry.editId === editId)
 
-export const shotOn = (source: DraftSource, draft: Draft, no: number): boolean => {
-  const toggle = draft.toggles.find((item) => item.no === no)
-  if (toggle !== undefined) return toggle.on
-  return !source.edits.some((edit) => covers(edit, no) && hasPick(draft, edit.id))
-}
-
-const pruneCuts = (source: DraftSource, draft: Draft): Draft => ({
-  ...draft,
-  cuts: draft.cuts.filter((cut) => shotOn(source, draft, cut.no)),
-})
-
-export const putShot = (source: DraftSource, draft: Draft, no: number, on: boolean): Draft => {
-  const seq = on ? draft.seq + 1 : draft.seq
-  const toggle: ShotToggle = on ? { no, on, seq } : { no, on }
-  return pruneCuts(source, {
-    ...draft,
-    toggles: [...draft.toggles.filter((item) => item.no !== no), toggle],
-    seq,
-  })
-}
+export const shotOn = (draft: Draft, no: number): boolean =>
+  draft.entries.some((entry) => isShot(entry, no))
 
 export const isPicked = (draft: Draft, editId: string, seg: number) =>
-  draft.picks.some((pick) => pick.editId === editId && pick.seg === seg)
+  draft.entries.some((entry) => isPart(entry, editId, seg))
+
+const shotOfPart = (edit: ReadyEdit, seg: number) => Math.min(edit.from + seg - 1, edit.to)
+
+const placeOf = (source: DraftSource, entry: DraftEntry): number | undefined => {
+  if (entry.kind === 'shot') return entry.no
+  const edit = editOf(source, entry.editId)
+  return edit === undefined ? undefined : shotOfPart(edit, entry.seg)
+}
+
+const enter = (
+  source: DraftSource,
+  entries: readonly DraftEntry[],
+  joiner: DraftEntry,
+  place: number,
+): DraftEntry[] => {
+  let after = -1
+  let nearest = -Infinity
+  entries.forEach((entry, index) => {
+    const at = placeOf(source, entry)
+    if (at === undefined || at > place || at < nearest) return
+    nearest = at
+    after = index
+  })
+  return [...entries.slice(0, after + 1), joiner, ...entries.slice(after + 1)]
+}
+
+export const putShot = (source: DraftSource, draft: Draft, no: number, on: boolean): Draft => {
+  const shot = source.shots.find((item) => item.no === no)
+  if (shot === undefined) return draft
+  const closed = draft.closed.filter((item) => item !== no)
+  if (!on)
+    return { entries: draft.entries.filter((entry) => !isShot(entry, no)), closed: [...closed, no] }
+  if (shotOn(draft, no)) return draft
+  return { entries: enter(source, draft.entries, wholeShot(shot), no), closed }
+}
 
 export const pickPart = (source: DraftSource, draft: Draft, editId: string, seg: number): Draft => {
   const edit = editOf(source, editId)
   const part = edit === undefined ? undefined : partOf(edit, seg)
   if (edit === undefined || part === undefined || isPicked(draft, editId, seg)) return draft
-  const toggles = hasPick(draft, editId)
-    ? draft.toggles
-    : draft.toggles.filter((toggle) => !(toggle.on && covers(edit, toggle.no)))
-  const seq = draft.seq + 1
-  return pruneCuts(source, {
+  const entries = enter(source, draft.entries, wholePart(edit, part), shotOfPart(edit, seg))
+  return {
     ...draft,
-    toggles,
-    picks: [...draft.picks, { editId, seg, t0: part.b0, t1: part.b1, seq }],
-    seq,
-  })
+    entries: hasPick(draft, editId)
+      ? entries
+      : entries.filter((entry) => !(entry.kind === 'shot' && covers(edit, entry.no))),
+  }
 }
 
-export const unpickPart = (draft: Draft, editId: string, seg: number): Draft => ({
-  ...draft,
-  picks: draft.picks.filter((pick) => !(pick.editId === editId && pick.seg === seg)),
-})
+const coveredByPick = (source: DraftSource, draft: Draft, no: number) =>
+  source.edits.some((edit) => covers(edit, no) && hasPick(draft, edit.id))
+
+export const unpickPart = (
+  source: DraftSource,
+  draft: Draft,
+  editId: string,
+  seg: number,
+): Draft => {
+  if (!isPicked(draft, editId, seg)) return draft
+  const left: Draft = {
+    ...draft,
+    entries: draft.entries.filter((entry) => !isPart(entry, editId, seg)),
+  }
+  const edit = editOf(source, editId)
+  if (edit === undefined || hasPick(left, editId)) return left
+  const back = source.shots.filter(
+    (shot) =>
+      covers(edit, shot.no) &&
+      !draft.closed.includes(shot.no) &&
+      !shotOn(draft, shot.no) &&
+      !coveredByPick(source, left, shot.no),
+  )
+  const entries = back.reduce(
+    (next, shot) => enter(source, next, wholeShot(shot), shot.no),
+    draft.entries,
+  )
+  return { ...draft, entries: entries.filter((entry) => !isPart(entry, editId, seg)) }
+}
 
 type ItemFields = {
   id: string
@@ -145,76 +197,55 @@ type ItemFields = {
   t1: number
   b0: number
   b1: number
-  seq: number
 } & ({ kind: 'shot'; no: number } | { kind: 'edit'; edit: ReadyEdit; seg: number })
 
 export type DraftItem = ItemFields & { at: number; d: number }
 
-type Probe =
-  | { kind: 'shot'; no: number; seq: number }
-  | { kind: 'edit'; edit: ReadyEdit; seg: number; seq: number }
-
-const shotOfPart = (edit: ReadyEdit, seg: number) => Math.min(edit.from + seg - 1, edit.to)
-
-const rankOf = (probe: Probe): readonly number[] =>
-  probe.kind === 'edit'
-    ? [shotOfPart(probe.edit, probe.seg), probe.seq, 0, probe.edit.order, probe.seg]
-    : [probe.no, probe.seq, 1, 0, 0]
-
-const compareRank = (left: Probe, right: Probe) => {
-  const [a, b] = [rankOf(left), rankOf(right)]
-  for (let at = 0; at < a.length; at += 1) {
-    const x = a[at] ?? 0
-    const y = b[at] ?? 0
-    if (x !== y) return x < y ? -1 : 1
+const fieldsOf = (source: DraftSource, entry: DraftEntry): ItemFields | undefined => {
+  const { t0, t1 } = entry
+  if (entry.kind === 'shot') {
+    const shot = source.shots.find((item) => item.no === entry.no)
+    return shot === undefined
+      ? undefined
+      : {
+          kind: 'shot',
+          id: entryId(entry),
+          no: shot.no,
+          sourceJobId: source.rootId,
+          mediaUrl: source.rootUrl,
+          t0,
+          t1,
+          b0: shot.start,
+          b1: shot.end,
+        }
   }
-  return 0
+  const edit = editOf(source, entry.editId)
+  const part = edit === undefined ? undefined : partOf(edit, entry.seg)
+  return edit === undefined || part === undefined
+    ? undefined
+    : {
+        kind: 'edit',
+        id: entryId(entry),
+        edit,
+        seg: part.seg,
+        sourceJobId: edit.id,
+        mediaUrl: edit.mediaUrl,
+        t0,
+        t1,
+        b0: part.b0,
+        b1: part.b1,
+      }
 }
 
 export const draftItemsOf = (source: DraftSource, draft: Draft): DraftItem[] => {
-  const items: ItemFields[] = []
-  for (const shot of source.shots) {
-    if (!shotOn(source, draft, shot.no)) continue
-    const cut = draft.cuts.find((item) => item.no === shot.no)
-    const toggle = draft.toggles.find((item) => item.no === shot.no)
-    items.push({
-      kind: 'shot',
-      id: shotItemId(shot.no),
-      no: shot.no,
-      sourceJobId: source.rootId,
-      mediaUrl: source.rootUrl,
-      t0: cut?.t0 ?? shot.start,
-      t1: cut?.t1 ?? shot.end,
-      b0: shot.start,
-      b1: shot.end,
-      seq: toggle?.on === true ? toggle.seq : 0,
-    })
-  }
-  for (const pick of draft.picks) {
-    const edit = editOf(source, pick.editId)
-    const part = edit === undefined ? undefined : partOf(edit, pick.seg)
-    if (edit === undefined || part === undefined) continue
-    items.push({
-      kind: 'edit',
-      id: partItemId(edit.id, pick.seg),
-      edit,
-      seg: pick.seg,
-      sourceJobId: edit.id,
-      mediaUrl: edit.mediaUrl,
-      t0: pick.t0,
-      t1: pick.t1,
-      b0: part.b0,
-      b1: part.b1,
-      seq: pick.seq,
-    })
-  }
-  items.sort(compareRank)
   let at = 0
-  return items.map((item) => {
-    const d = roundToMs(item.t1 - item.t0)
-    const placed = { ...item, at, d }
+  return draft.entries.flatMap((entry): DraftItem[] => {
+    const fields = fieldsOf(source, entry)
+    if (fields === undefined) return []
+    const d = roundToMs(fields.t1 - fields.t0)
+    const placed = { ...fields, at, d }
     at = roundToMs(at + d)
-    return placed
+    return [placed]
   })
 }
 
@@ -224,16 +255,11 @@ export const previewPick = (
   editId: string,
   seg: number,
 ): DraftItem[] | undefined => {
-  const picked = pickPart(source, draft, editId, seg)
-  if (picked === draft) return undefined
-  const kept = draftItemsOf(source, draft).flatMap((item): ShotToggle[] =>
-    item.kind === 'shot' ? [{ no: item.no, on: true, seq: item.seq }] : [],
-  )
-  const toggles = [
-    ...picked.toggles.filter((toggle) => !kept.some((item) => item.no === toggle.no)),
-    ...kept,
-  ]
-  return draftItemsOf(source, { ...picked, toggles, cuts: draft.cuts })
+  const edit = editOf(source, editId)
+  const part = edit === undefined ? undefined : partOf(edit, seg)
+  if (edit === undefined || part === undefined || isPicked(draft, editId, seg)) return undefined
+  const entries = enter(source, draft.entries, wholePart(edit, part), shotOfPart(edit, seg))
+  return draftItemsOf(source, { ...draft, entries })
 }
 
 export const totalOf = (items: readonly { d: number }[]) =>
@@ -353,40 +379,28 @@ export const trimItem = (
   draft: Draft,
   item: DraftItem,
   { t0, t1 }: { t0: number; t1: number },
-): Draft => {
-  if (item.kind === 'edit')
-    return {
-      ...draft,
-      picks: draft.picks.map((pick) =>
-        pick.editId === item.edit.id && pick.seg === item.seg ? { ...pick, t0, t1 } : pick,
-      ),
-    }
-  const cuts = draft.cuts.filter((cut) => cut.no !== item.no)
-  const whole = near(t0, item.b0) && near(t1, item.b1)
-  return { ...draft, cuts: whole ? cuts : [...cuts, { no: item.no, t0, t1 }] }
-}
+): Draft => ({
+  ...draft,
+  entries: draft.entries.map((entry) =>
+    entryId(entry) === item.id ? { ...entry, t0, t1 } : entry,
+  ),
+})
 
-export const isUsableDraft = (source: DraftSource, draft: Draft): boolean => {
-  const shotOf = (no: number) => source.shots.find((shot) => shot.no === no)
-  const within = (t0: number, t1: number, b0: number, b1: number) =>
-    t0 >= b0 - EPSILON && t1 <= b1 + EPSILON && t1 - t0 > EPSILON
-  const unique = (keys: readonly string[]) => new Set(keys).size === keys.length
-  return (
-    draft.picks.every((pick) => {
-      const edit = editOf(source, pick.editId)
-      const part = edit === undefined ? undefined : partOf(edit, pick.seg)
-      return part !== undefined && within(pick.t0, pick.t1, part.b0, part.b1)
-    }) &&
-    unique(draft.picks.map((pick) => partItemId(pick.editId, pick.seg))) &&
-    draft.toggles.every((toggle) => shotOf(toggle.no) !== undefined) &&
-    unique(draft.toggles.map((toggle) => String(toggle.no))) &&
-    draft.cuts.every((cut) => {
-      const shot = shotOf(cut.no)
-      return shot !== undefined && within(cut.t0, cut.t1, shot.start, shot.end)
-    }) &&
-    unique(draft.cuts.map((cut) => String(cut.no)))
-  )
-}
+const unique = (keys: readonly (string | number)[]) => new Set(keys).size === keys.length
+
+export const isUsableDraft = (source: DraftSource, draft: Draft): boolean =>
+  draft.entries.every((entry) => {
+    const fields = fieldsOf(source, entry)
+    return (
+      fields !== undefined &&
+      entry.t0 >= fields.b0 - EPSILON &&
+      entry.t1 <= fields.b1 + EPSILON &&
+      entry.t1 - entry.t0 > EPSILON
+    )
+  }) &&
+  unique(draft.entries.map(entryId)) &&
+  draft.closed.every((no) => source.shots.some((shot) => shot.no === no) && !shotOn(draft, no)) &&
+  unique(draft.closed)
 
 export type Segment = { sourceJobId: string; start: number; end: number }
 
@@ -452,53 +466,33 @@ export const restoreDraft = (
 ): Draft | undefined => {
   const spans = normalize(source, segments)
   if (spans === undefined) return undefined
-  const shown = new Map<number, { t0: number; t1: number; seq: number }>()
-  const picks: UsedPart[] = []
-  let failed = false
-  segments.forEach(({ sourceJobId, start, end }, at) => {
-    const seq = at + 1
+  const entries = segments.flatMap(({ sourceJobId, start, end }): DraftEntry[] => {
     const until = Math.min(end, lengthIn(source, sourceJobId) ?? 0)
-    if (sourceJobId === source.rootId) {
-      for (const shot of source.shots) {
-        if (!overlap(start, until, shot.start, shot.end)) continue
-        if (shown.has(shot.no)) failed = true
-        shown.set(shot.no, {
-          t0: Math.max(start, shot.start),
-          t1: Math.min(until, shot.end),
-          seq,
-        })
-      }
-      return
-    }
-    const edit = editOf(source, sourceJobId)
-    for (const part of edit?.parts ?? []) {
-      if (!overlap(start, until, part.b0, part.b1)) continue
-      if (picks.some((pick) => pick.editId === sourceJobId && pick.seg === part.seg)) failed = true
-      picks.push({
+    const used = (b0: number, b1: number) => ({
+      t0: start > b0 + EPSILON ? roundToMs(start) : b0,
+      t1: until < b1 - EPSILON ? roundToMs(until) : b1,
+    })
+    if (sourceJobId === source.rootId)
+      return source.shots
+        .filter((shot) => overlap(start, until, shot.start, shot.end))
+        .map((shot) => ({ kind: 'shot', no: shot.no, ...used(shot.start, shot.end) }))
+    return (editOf(source, sourceJobId)?.parts ?? [])
+      .filter((part) => overlap(start, until, part.b0, part.b1))
+      .map((part) => ({
+        kind: 'edit',
         editId: sourceJobId,
         seg: part.seg,
-        t0: roundToMs(Math.max(start, part.b0)),
-        t1: roundToMs(Math.min(until, part.b1)),
-        seq,
-      })
-    }
+        ...used(part.b0, part.b1),
+      }))
   })
-  if (failed) return undefined
-  const picked: Draft = { ...EMPTY_DRAFT, picks, seq: segments.length }
-  const toggles: ShotToggle[] = []
-  const cuts: Cut[] = []
-  for (const shot of source.shots) {
-    const use = shown.get(shot.no)
-    const byDefault = shotOn(source, picked, shot.no)
-    if (use === undefined) {
-      if (byDefault) toggles.push({ no: shot.no, on: false })
-      continue
-    }
-    if (!byDefault) toggles.push({ no: shot.no, on: true, seq: use.seq })
-    if (!near(use.t0, shot.start) || !near(use.t1, shot.end))
-      cuts.push({ no: shot.no, t0: roundToMs(use.t0), t1: roundToMs(use.t1) })
+  if (!unique(entries.map(entryId))) return undefined
+  const picked: Draft = { entries, closed: [] }
+  const draft: Draft = {
+    entries,
+    closed: source.shots
+      .filter((shot) => !shotOn(picked, shot.no) && !coveredByPick(source, picked, shot.no))
+      .map((shot) => shot.no),
   }
-  const draft: Draft = { ...picked, toggles, cuts }
   return sameSpans(outputOf(draftItemsOf(source, draft)), spans) ? draft : undefined
 }
 
