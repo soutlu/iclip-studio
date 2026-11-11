@@ -66,6 +66,8 @@ reportUnknownArgumentType = false
 reportUnknownVariableType = false
 reportUnknownParameterType = false
 reportMissingTypeStubs = false
+# 已经不需要的豁免注释要删掉，与 ruff 的 RUF100 一致。
+reportUnnecessaryTypeIgnoreComment = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

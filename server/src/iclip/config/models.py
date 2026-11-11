@@ -305,7 +305,7 @@ class RuntimeConfig(BaseSettings):
     def _no_sections_moved_to_the_runtime(cls, data: Any) -> Any:
         if not isinstance(data, Mapping):
             return data
-        sections: Mapping[str, Any] = data  # pyright: ignore[reportUnknownVariableType]
+        sections: Mapping[str, Any] = data
         for name, moved_to in _MOVED_TO_RUNTIME.items():
             if name in sections:
                 raise ValueError(
@@ -474,7 +474,7 @@ class ResolvedSettings:
 
 
 def _from_env[EnvT: EnvSettings](cls: type[EnvT]) -> EnvT:
-    return cls()  # pyright: ignore[reportCallIssue]
+    return cls()
 
 
 def _switched_on(env_name: str) -> bool:

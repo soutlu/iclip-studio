@@ -21,7 +21,7 @@ def scope_to_owner[S: Select[Any]](
     column: ColumnElement[uuid.UUID] | QueryableAttribute[uuid.UUID],
     owner: uuid.UUID | None,
 ) -> S:
-    return stmt.where(*owner_conditions(column, owner))  # type: ignore[return-value]
+    return stmt.where(*owner_conditions(column, owner))
 
 
 __all__ = ["owner_conditions", "scope_to_owner"]
