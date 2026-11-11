@@ -4,6 +4,7 @@ import type { PercentCrop } from 'react-image-crop'
 import { errorMessageOf } from '@/shared/api/client'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
+import type { TimeSpan } from '@/shared/lib/time-spans'
 import { Button } from '@/shared/ui/button'
 import type {
   ComposerAttachmentPreviewOf,
@@ -233,6 +234,7 @@ function Editor({
   const [cardOpen, setCardOpen] = useState(true)
   const [trimPreview, setTrimPreview] = useState<TrimPreview>()
   const [videoSettled, setVideoSettled] = useState(false)
+  const [buffered, setBuffered] = useState<readonly TimeSpan[]>([])
   const [submission, setSubmission] = useState<Submission>()
   const [generateError, setGenerateError] = useState<string | null>(null)
   const busy = submission !== undefined
@@ -735,6 +737,7 @@ function Editor({
     ) : clipsView && source !== undefined && draft !== undefined ? (
       <ClipsTimeline
         blocks={blocks}
+        buffered={buffered}
         clock={currentTime}
         duration={duration}
         isPicked={(editId, seg) => isPicked(draft, editId, seg)}
@@ -762,6 +765,7 @@ function Editor({
       />
     ) : !clipsView ? (
       <VersionsTimeline
+        buffered={buffered}
         composing={composing === undefined ? undefined : { duration: composingLength }}
         currentTime={currentTime}
         onScrub={() => {}}
@@ -1018,6 +1022,7 @@ function Editor({
             currentTime={currentTime}
             shownTime={trimPreview?.shown}
             shownDuration={trimPreview?.kind === 'draft' ? total : undefined}
+            onBuffered={setBuffered}
             onDownloadSettled={() => setVideoSettled(true)}
             onPlay={collapseCard}
             onTime={setCurrentTime}

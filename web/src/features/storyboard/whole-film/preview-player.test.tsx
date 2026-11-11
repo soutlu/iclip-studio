@@ -41,6 +41,7 @@ const playerOf = () => {
 
 const handlers = () => ({
   control: createRef<PreviewControl>() as { current: PreviewControl | null },
+  onBuffered: vi.fn<(spans: readonly { start: number; end: number }[]) => void>(),
   onBuffering: vi.fn<(buffering: boolean) => void>(),
   onFrame: vi.fn<(iframe: HTMLIFrameElement | null) => void>(),
   onMediaSettled: vi.fn<() => void>(),
@@ -53,6 +54,7 @@ const preview = (srcdoc: string, on: ReturnType<typeof handlers>) => (
     controlRef={on.control}
     height={320}
     message={undefined}
+    onBuffered={on.onBuffered}
     onBuffering={on.onBuffering}
     onFrame={on.onFrame}
     onMediaSettled={on.onMediaSettled}
@@ -532,6 +534,38 @@ describe('当前片段加载失败', () => {
 
     act(() => failVideo(FIRST))
     expect(screen.getByRole('alert')).toBeVisible()
+  })
+})
+
+describe('报出已缓冲的区间', () => {
+  it('各视频片段已缓冲的部分换算成成片时间；没变化不重复报，换页后重新报', async () => {
+    bufferedVideos.set(FIRST, [[0, 1]])
+    const { onBuffered, showPage } = await openPreview()
+    expect(onBuffered).toHaveBeenLastCalledWith([{ start: 0, end: 1 }])
+
+    bufferedVideos.set(SECOND, [[0.5, 2.5]])
+    act(() => emitFrom(SECOND, 'progress'))
+    expect(onBuffered).toHaveBeenLastCalledWith([
+      { start: 0, end: 1 },
+      { start: 2.5, end: 4 },
+    ])
+
+    const reports = onBuffered.mock.calls.length
+    act(() => emitFrom(SECOND, 'progress'))
+    expect(onBuffered).toHaveBeenCalledTimes(reports)
+
+    showPage(page('<p></p>'))
+    await waitFor(() => expect(onBuffered.mock.calls.length).toBeGreaterThan(reports))
+    expect(onBuffered).toHaveBeenLastCalledWith([
+      { start: 0, end: 1 },
+      { start: 2.5, end: 4 },
+    ])
+  })
+
+  it('片段从素材中间开始时按素材起点换算，片段以外的缓冲不算', async () => {
+    bufferedVideos.set(FIRST, [[0, 5]])
+    const { onBuffered } = await openPreview(LONG_CLIP)
+    expect(onBuffered).toHaveBeenLastCalledWith([{ start: 0, end: 4 }])
   })
 })
 

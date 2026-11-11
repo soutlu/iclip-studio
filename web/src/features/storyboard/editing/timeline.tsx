@@ -12,6 +12,7 @@ import {
 import { createPortal } from 'react-dom'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
+import type { TimeSpan } from '@/shared/lib/time-spans'
 import { cn } from '@/shared/lib/utils'
 import { bubbleAlign } from './bubble-align'
 import type { PeaksState } from './media-analysis'
@@ -28,6 +29,7 @@ type TimelineRulerProps = {
   tickScale?: number | undefined
   total: number
   currentTime: number
+  buffered?: readonly TimeSpan[] | undefined
   viewportRef: RefObject<HTMLDivElement | null>
   disabled?: boolean | undefined
   clockAt: (clientX: number) => number
@@ -40,6 +42,7 @@ export function TimelineRuler({
   tickScale = scale,
   total,
   currentTime,
+  buffered = [],
   viewportRef,
   disabled = false,
   clockAt,
@@ -114,6 +117,18 @@ export function TimelineRuler({
           >
             {roundSeconds(time)}s
           </span>
+        ))}
+        {buffered.map(({ start, end }) => (
+          <span
+            aria-hidden="true"
+            className="timeline-buffered"
+            data-testid="timeline-buffered"
+            key={start}
+            style={{
+              left: `${(start / scale) * 100}%`,
+              width: `${((Math.min(end, total) - start) / scale) * 100}%`,
+            }}
+          />
         ))}
         <input
           aria-label="时间线播放位置"
