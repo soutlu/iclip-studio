@@ -489,7 +489,7 @@ function Editor({
 
   const toggleShot = (no: number) => {
     if (source !== undefined && draft !== undefined)
-      changeDraft(putShot(source, draft, no, !shotOn(source, draft, no)))
+      changeDraft(putShot(source, draft, no, !shotOn(draft, no)))
   }
 
   const togglePart = (editId: string, seg: number) => {
@@ -497,7 +497,7 @@ function Editor({
     if (isPicked(draft, editId, seg)) {
       if (selection?.kind === 'draft' && selection.id === partItemId(editId, seg))
         setSelection(undefined)
-      return changeDraft(unpickPart(draft, editId, seg))
+      return changeDraft(unpickPart(source, draft, editId, seg))
     }
     return changeDraft(pickPart(source, draft, editId, seg))
   }
@@ -760,7 +760,7 @@ function Editor({
         rootUrl={mediaUrl}
         selection={selection}
         selectionBoxRef={selectionBoxRef}
-        shotOn={(no) => shotOn(source, draft, no)}
+        shotOn={(no) => shotOn(draft, no)}
         shots={source.shots}
       />
     ) : !clipsView ? (

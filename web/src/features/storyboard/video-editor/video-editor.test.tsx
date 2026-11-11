@@ -211,16 +211,12 @@ const storeWholeEdit = () =>
   window.localStorage.setItem(
     draftStorageKey(CONVERSATION, ROOT_ID),
     JSON.stringify({
-      picks: [0, 1, 2].map((at) => ({
-        editId: EDIT_ID,
-        seg: at + 1,
-        t0: at,
-        t1: at + 1,
-        seq: at + 1,
-      })),
-      toggles: [],
-      cuts: [],
-      seq: 3,
+      entries: [
+        ...[1, 2].map((no) => ({ kind: 'shot', no, t0: no - 1, t1: no })),
+        ...[1, 2, 3].map((seg) => ({ kind: 'edit', editId: EDIT_ID, seg, t0: seg - 1, t1: seg })),
+        ...[5, 6, 7, 8].map((no) => ({ kind: 'shot', no, t0: no - 1, t1: no })),
+      ],
+      closed: [],
     }),
   )
 const draftTrack = () => screen.getByRole('group', { name: '草稿' })
@@ -1334,8 +1330,16 @@ describe('草稿与编辑轨', () => {
     expect(screen.getByRole('slider', { name: '裁剪结尾' })).toBeVisible()
     const stored = JSON.parse(
       window.localStorage.getItem(draftStorageKey(CONVERSATION, ROOT_ID)) ?? '{}',
-    ) as { picks: unknown[] }
-    expect(stored.picks).toHaveLength(1)
+    ) as { entries: { kind: string }[] }
+    expect(stored.entries.map((entry) => entry.kind)).toEqual([
+      'shot',
+      'shot',
+      'edit',
+      'shot',
+      'shot',
+      'shot',
+      'shot',
+    ])
 
     await user.click(block(PART_1))
     expect(draftNames()).toEqual(shotsOnly([1, 2, 3, 4, 5, 6, 7, 8]))
@@ -1620,10 +1624,8 @@ describe('草稿与编辑轨', () => {
     window.localStorage.setItem(
       draftStorageKey(CONVERSATION, ROOT_ID),
       JSON.stringify({
-        picks: [{ editId: 'gone', seg: 1, t0: 0, t1: 1, seq: 1 }],
-        toggles: [],
-        cuts: [],
-        seq: 1,
+        entries: [{ kind: 'edit', editId: 'gone', seg: 1, t0: 0, t1: 1 }],
+        closed: [],
       }),
     )
     serveChain([
