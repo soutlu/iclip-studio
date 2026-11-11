@@ -5,6 +5,7 @@ import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/field'
 import { Switch } from '@/shared/ui/switch'
 import type { Skill } from '../agents.api'
+import { skillIcon } from '../skill-icons'
 import { PanelShell } from './panel-shell'
 import {
   CARD_SWITCH_HIT,
@@ -69,7 +70,7 @@ export function SkillListPanel({
               badges={draftOnly ? <CardBadge>草稿</CardBadge> : undefined}
               description={skill.description}
               descriptionId={`${id}-description`}
-              icon="skill"
+              icon={skillIcon(skill.name)}
               name={skill.displayName}
               nameId={`${id}-name`}
               trailing={trailing}

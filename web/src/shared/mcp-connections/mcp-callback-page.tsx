@@ -186,7 +186,7 @@ function LinkMark({ outcome }: { outcome: Outcome['kind'] }) {
           />
         </span>
       </span>
-      <ResourceTile className="size-12" icon="resource-mcp" tone="text-resource-connection" />
+      <ResourceTile className="size-12" icon="resource-mcp" />
     </div>
   )
 }
