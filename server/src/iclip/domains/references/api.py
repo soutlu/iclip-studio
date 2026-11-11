@@ -167,9 +167,10 @@ def create_references_router(
             reference_id: uuid.UUID,
             body: TestVideoIn,
         ) -> ReferenceVideoOut:
-            """属主本人按当前拆解拼一段提示词，生成一条视频与原片对照，答复带上这次试生成的整行。
+            """属主或治理者按当前拆解拼一段提示词，生成一条视频与原片对照，记在发起人名下，答复
+            带上这次试生成的整行。
 
-            ``userName`` 同媒体生成。只限属主本人，别人的是 ``403``；拆解还没完成、上一次试生成
+            ``userName`` 同媒体生成。别人的是 ``403``；拆解还没完成、上一次试生成（不论谁发起）
             还没结束是 ``409``；拆解格式不全拼不出提示词、或拼出来超过字数上限是 ``422``。"""
 
             user_name = resolve_user_name(principal, body.user_name)

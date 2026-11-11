@@ -1400,6 +1400,74 @@ export const zLibraryTagUpdateIn = z.object({
 })
 
 /**
+ * McpAuthorizeOut
+ *
+ * 让浏览器去的授权地址，5 分钟内回到前端的 ``/mcp/callback`` 完成。
+ */
+export const zMcpAuthorizeOut = z.object({
+  authorizationUrl: z.string(),
+})
+
+/**
+ * McpCallbackUrlOut
+ */
+export const zMcpCallbackUrlOut = z.object({
+  callbackUrl: z.string().nullable(),
+})
+
+/**
+ * McpCompleteIn
+ *
+ * 授权服务器回调到 ``/mcp/callback`` 时带的参数，原样交回；``iss`` 有就给。
+ */
+export const zMcpCompleteIn = z.object({
+  code: z.string().min(1).max(4096),
+  iss: z.string().nullish(),
+  state: z.string().min(1).max(512),
+})
+
+/**
+ * McpCompleteOut
+ */
+export const zMcpCompleteOut = z.object({
+  account: z.string().nullable(),
+  name: z.string(),
+  serverId: z.string(),
+})
+
+/**
+ * McpConnectionOut
+ *
+ * 一个按用户登录的 MCP 服务与当前用户在它上面的连接：``connected`` 已连接，``invalid`` 连接已失效、要
+ * 重新连接，``none`` 未连接。``scopes`` 是授权服务器给的权限范围，``connectedAt`` 是这次连接建立的时间。
+ */
+export const zMcpConnectionOut = z.object({
+  account: z.string().nullable(),
+  connectedAt: z.iso.datetime().nullable(),
+  description: z.string(),
+  name: z.string(),
+  scopes: z.array(z.string()).nullable(),
+  serverId: z.string(),
+  state: z.enum(['connected', 'invalid', 'none']),
+})
+
+/**
+ * McpConnectionsAffectedOut
+ */
+export const zMcpConnectionsAffectedOut = z.object({
+  affectedUsers: z.int(),
+  code: z.string(),
+  detail: z.string(),
+})
+
+/**
+ * McpConnectionsOut
+ */
+export const zMcpConnectionsOut = z.object({
+  items: z.array(zMcpConnectionOut),
+})
+
+/**
  * McpHeaderIn
  *
  * 一个请求头。改已保存的服务时 ``value`` 可以不给，就是沿用同名请求头原来的值；新建时必须给。
@@ -1413,10 +1481,12 @@ export const zMcpHeaderIn = z.object({
  * McpCheckIn
  *
  * 试连一份还没保存的配置，什么都不存。给了 ``serverId`` 时，没给 ``url`` 就用那个已保存的服务的地址，
- * 没给 ``value`` 的请求头取它里面同名请求头的值；没给 ``serverId`` 时 ``url`` 与每个请求头的 ``value``
- * 都要给。
+ * 没给 ``value`` 的请求头取它里面同名请求头的值，没给 ``authMode`` 就用它的；没给 ``serverId`` 时 ``url``
+ * 与每个请求头的 ``value`` 都要给，``authMode`` 不给是 ``shared``。按用户登录（``per_user``）的配置不能这样
+ * 试连：先保存，再用已保存的服务试连。
  */
 export const zMcpCheckIn = z.object({
+  authMode: z.enum(['shared', 'per_user']).nullish(),
   headers: z.array(zMcpHeaderIn).optional().default([]),
   serverId: z.string().nullish(),
   timeoutSeconds: z.int().optional().default(30),
@@ -1443,14 +1513,62 @@ export const zMcpLastCheckOut = z.object({
 })
 
 /**
+ * McpOAuthClientIn
+ *
+ * 管理员填的客户端，给不能自动注册的服务用。改的时候 ``clientSecret`` 不给，客户端 ID 没变就沿用原来的
+ * 密钥，变了就是没有密钥。
+ */
+export const zMcpOAuthClientIn = z.object({
+  clientId: z.string(),
+  clientSecret: z.string().nullish(),
+})
+
+/**
+ * McpOAuthClientOut
+ */
+export const zMcpOAuthClientOut = z.object({
+  clientId: z.string(),
+  clientSecret: z.string().nullable(),
+})
+
+/**
+ * McpOAuthOut
+ *
+ * 按用户登录的设置与现状。
+ *
+ * - ``scopes``：管理员挑的权限范围，``null`` 是服务公布的全部。
+ * - ``publishedScopes`` / ``signInScopes`` / ``requestedScopes``：服务公布的可挑的权限范围、公布了的登录用的
+ * 几个、登录时实际请求的；还没发现过服务（第一次有人发起登录时发现）时都是 ``null``。
+ * - ``client``：``unknown`` 还没发现过；``automatic`` 自动注册；``preset`` 用管理员填的；``required`` 服务
+ * 不能自动注册，要管理员填客户端 ID。
+ * - ``connectedUsers``：连接有效的用户数。管理员自己的连接见 ``GET /v1/mcp-connections``。
+ */
+export const zMcpOAuthOut = z.object({
+  client: z.enum(['unknown', 'automatic', 'preset', 'required']),
+  connectedUsers: z.int(),
+  presetClient: zMcpOAuthClientOut.nullable(),
+  publishedScopes: z.array(z.string()).nullable(),
+  requestedScopes: z.array(z.string()).nullable(),
+  scopes: z.array(z.string()).nullable(),
+  signInScopes: z.array(z.string()).nullable(),
+})
+
+/**
  * McpServerCreateIn
+ *
+ * ``authMode`` 为 ``per_user`` 时每个用户用自己的账户登录。``oauthScopes`` 是要请求的权限范围，不给是
+ * 服务公布的全部；登录与保持连接用的几个（``openid``、``email``、``profile``、``offline_access``）服务
+ * 公布了就总会请求。
  */
 export const zMcpServerCreateIn = z.object({
+  authMode: z.enum(['shared', 'per_user']).optional().default('shared'),
   description: z.string().optional().default(''),
   enabled: z.boolean().optional().default(true),
   headers: z.array(zMcpHeaderIn).optional().default([]),
   id: z.string(),
   name: z.string(),
+  oauthClient: zMcpOAuthClientIn.nullish(),
+  oauthScopes: z.array(z.string()).nullish(),
   timeoutSeconds: z.int().optional().default(30),
   transport: z.enum(['streamable_http', 'sse']),
   url: z.string(),
@@ -1461,12 +1579,21 @@ export const zMcpServerCreateIn = z.object({
  *
  * 不给或给 ``null`` 的项不动，``url`` 不给就沿用原来的地址。给了 ``headers`` 就整份替换请求头，其中
  * 没给 ``value`` 的沿用同名请求头原来的值。
+ *
+ * ``oauthScopes`` 给了就整份替换要请求的权限范围；``oauthClient`` 给了就换掉管理员填的客户端。改地址、关掉
+ * ``per_user`` 会断开全部连接；缩小权限范围会作废拿到了更多权限的连接；换了客户端 ID 会作废令牌发给旧客户端
+ * 的连接（只换密钥不会）。会影响已连接的用户时不带 ``confirmReconnect: true`` 就答 409
+ * ``mcp_connections_affected``，带着受影响的人数。
  */
 export const zMcpServerUpdateIn = z.object({
+  authMode: z.enum(['shared', 'per_user']).nullish(),
+  confirmReconnect: z.boolean().optional().default(false),
   description: z.string().nullish(),
   enabled: z.boolean().nullish(),
   headers: z.array(zMcpHeaderIn).nullish(),
   name: z.string().nullish(),
+  oauthClient: zMcpOAuthClientIn.nullish(),
+  oauthScopes: z.array(z.string()).nullish(),
   timeoutSeconds: z.int().nullish(),
   transport: z.enum(['streamable_http', 'sse']).nullish(),
   url: z.string().nullish(),
@@ -1476,9 +1603,10 @@ export const zMcpServerUpdateIn = z.object({
  * McpToolConfig
  *
  * 挂一个 MCP 服务：``server`` 是服务的标识，``tools`` 是放给模型的工具（服务自己给的名字），``null``
- * 是全部。
+ * 是全部，空列表是一个都不放。``approval_tools`` 是其中每次调用前要对话用户同意的工具。
  */
 export const zMcpToolConfig = z.object({
+  approval_tools: z.array(z.string().min(1).max(200)).optional().default([]),
   server: z.string().min(1).max(200),
   tools: z.array(z.string().min(1).max(200)).nullish(),
   type: z.literal('mcp'),
@@ -1509,6 +1637,7 @@ export const zMcpCheckOut = z.object({
  * McpServerOut
  */
 export const zMcpServerOut = z.object({
+  authMode: z.enum(['shared', 'per_user']),
   createdAt: z.iso.datetime(),
   createdBy: z.uuid(),
   description: z.string(),
@@ -1517,6 +1646,7 @@ export const zMcpServerOut = z.object({
   id: z.string(),
   lastCheck: zMcpLastCheckOut.nullable(),
   name: z.string(),
+  oauth: zMcpOAuthOut,
   timeoutSeconds: z.int(),
   tools: z.array(zMcpToolOut).nullable(),
   transport: z.enum(['streamable_http', 'sse']),
@@ -2608,7 +2738,7 @@ export const zTestVideoIn = z.object({
 /**
  * TestVideoOut
  *
- * 属主名下这条参考视频最新的一次试生成；所有读者看到的是同一条。
+ * 这条参考视频最新的一次试生成，不论谁发起；所有读者看到的是同一条。
  */
 export const zTestVideoOut = z.object({
   createdAt: z.iso.datetime(),
@@ -4839,6 +4969,42 @@ export const zWholeFilmsLibraryWholeFilmsGetResponse = zWholeFilmCardsOut
  */
 export const zWholeFilmAuthorsLibraryWholeFilmsAuthorsGetResponse = zLibraryAuthorsOut
 
+export const zMcpConnectionsMcpConnectionsGetQuery = z.object({
+  conversationId: z.uuid().nullish(),
+  agentId: z.string().min(1).max(128).nullish(),
+  draft: z.boolean().optional().default(false),
+})
+
+/**
+ * Successful Response
+ */
+export const zMcpConnectionsMcpConnectionsGetResponse = zMcpConnectionsOut
+
+export const zCompleteMcpMcpConnectionsCompletePostBody = zMcpCompleteIn
+
+/**
+ * Successful Response
+ */
+export const zCompleteMcpMcpConnectionsCompletePostResponse = zMcpCompleteOut
+
+export const zDisconnectMcpMcpConnectionsServerIdDeletePath = z.object({
+  server_id: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zDisconnectMcpMcpConnectionsServerIdDeleteResponse = z.void()
+
+export const zAuthorizeMcpMcpConnectionsServerIdAuthorizePostPath = z.object({
+  server_id: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zAuthorizeMcpMcpConnectionsServerIdAuthorizePostResponse = zMcpAuthorizeOut
+
 /**
  * Successful Response
  */
@@ -4895,6 +5061,11 @@ export const zCheckMcpServerMcpServersServerIdCheckPostPath = z.object({
  * Successful Response
  */
 export const zCheckMcpServerMcpServersServerIdCheckPostResponse = zMcpCheckOut
+
+/**
+ * Successful Response
+ */
+export const zMcpCallbackUrlMcpServersCallbackUrlGetResponse = zMcpCallbackUrlOut
 
 /**
  * Successful Response

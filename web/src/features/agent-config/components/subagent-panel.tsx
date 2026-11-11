@@ -8,7 +8,13 @@ import type { Agent, AgentConfig } from '../agents.api'
 
 type SubagentConfig = NonNullable<AgentConfig['subagents']>[number]
 import { PanelShell } from './panel-shell'
-import { AlertGlyph, CardGlyph } from './resource-card'
+import {
+  AlertGlyph,
+  CARD_SWITCH_HIT,
+  DIRECTORY_CARD,
+  DIRECTORY_GRID,
+  DirectoryCardBody,
+} from './resource-card'
 
 type Current = { id: string; isSubagent: boolean }
 
@@ -39,77 +45,80 @@ export function SubagentPanel({
 
   return (
     <PanelShell onClose={onClose} title="子 Agent">
-      <ul className="flex flex-col gap-1">
+      <ul className={DIRECTORY_GRID}>
         {candidates.map((candidate) => {
           const binding = bindings.find((item) => item.agent === candidate.id)
           const selected = binding !== undefined
           const open = selected && expanded === candidate.id
           const reason = subagentBlockReason(candidate, current)
           const id = `${baseId}-${candidate.id}`
+          const toggle = (
+            <Switch
+              aria-describedby={`${id}-description`}
+              aria-labelledby={`${id}-name`}
+              blockedReason={selected ? undefined : reason}
+              checked={selected}
+              // 没加上的卡片只有开关一个操作，点卡片任意处都切换；加上后卡片本身用来展开调用限制。
+              className={selected ? undefined : CARD_SWITCH_HIT}
+              onCheckedChange={(on) => {
+                if (on) {
+                  setBindings([...bindings, { agent: candidate.id }])
+                  setExpanded(candidate.id)
+                } else {
+                  setBindings(bindings.filter((item) => item.agent !== candidate.id))
+                }
+              }}
+            />
+          )
+          const body = (
+            <DirectoryCardBody
+              badges={
+                selected ? (
+                  <>
+                    <Icon
+                      className={cn(
+                        'shrink-0 text-on-surface-faint transition-transform ui-motion-s',
+                        open && 'rotate-180',
+                      )}
+                      decorative
+                      name="expand"
+                      size="sm"
+                    />
+                    {reason === undefined ? null : <AlertGlyph reason={reason} />}
+                  </>
+                ) : undefined
+              }
+              description={candidate.description}
+              descriptionId={`${id}-description`}
+              dimmed={!selected && reason !== undefined}
+              icon="agent"
+              name={candidate.name}
+              nameId={`${id}-name`}
+            />
+          )
           return (
-            <li className={cn('rounded-md', open && 'bg-surface-container-low')} key={candidate.id}>
-              <div className="flex items-center gap-3 pr-3">
+            <li
+              className={cn(
+                DIRECTORY_CARD,
+                'flex-wrap bg-background',
+                open && '@min-[480px]:col-span-2',
+              )}
+              key={candidate.id}
+            >
+              {selected ? (
                 <button
-                  aria-controls={selected ? `${id}-fields` : undefined}
-                  aria-expanded={selected ? open : undefined}
-                  className={cn(
-                    'flex min-h-15 min-w-0 flex-1 items-center gap-3 rounded-md p-2.5 text-left ui-focus',
-                    selected ? 'ui-state cursor-pointer' : 'cursor-default',
-                  )}
-                  disabled={!selected}
+                  aria-controls={`${id}-fields`}
+                  aria-expanded={open}
+                  className="-m-1.5 flex min-w-0 flex-1 ui-state cursor-pointer items-center gap-3.5 rounded-md p-1.5 text-left ui-focus"
                   onClick={() => setExpanded(open ? null : candidate.id)}
                   type="button"
                 >
-                  <CardGlyph
-                    className={cn('size-9', !selected && reason !== undefined && 'opacity-55')}
-                    name="agent"
-                  />
-                  <span
-                    className={cn(
-                      'flex min-w-0 flex-1 flex-col',
-                      !selected && reason !== undefined && 'opacity-55',
-                    )}
-                  >
-                    <span className="flex min-w-0 items-center gap-1.5 font-medium text-on-surface">
-                      <span className="truncate" id={`${id}-name`}>
-                        {candidate.name}
-                      </span>
-                      {selected ? (
-                        <Icon
-                          className={cn(
-                            'shrink-0 text-on-surface-faint transition-transform ui-motion-s',
-                            open && 'rotate-180',
-                          )}
-                          decorative
-                          name="expand"
-                          size="sm"
-                        />
-                      ) : null}
-                      {selected && reason !== undefined ? <AlertGlyph reason={reason} /> : null}
-                    </span>
-                    <span
-                      className="truncate text-label text-on-surface-faint"
-                      id={`${id}-description`}
-                    >
-                      {candidate.description}
-                    </span>
-                  </span>
+                  {body}
                 </button>
-                <Switch
-                  aria-describedby={`${id}-description`}
-                  aria-labelledby={`${id}-name`}
-                  blockedReason={selected ? undefined : reason}
-                  checked={selected}
-                  onCheckedChange={(on) => {
-                    if (on) {
-                      setBindings([...bindings, { agent: candidate.id }])
-                      setExpanded(candidate.id)
-                    } else {
-                      setBindings(bindings.filter((item) => item.agent !== candidate.id))
-                    }
-                  }}
-                />
-              </div>
+              ) : (
+                body
+              )}
+              {toggle}
               {open ? (
                 <BindingFields
                   binding={binding}
@@ -157,7 +166,7 @@ function BindingFields({
   const baseId = useId()
   return (
     <div
-      className="grid grid-cols-2 gap-3 px-3 pt-1 pb-3.5 @min-[520px]:grid-cols-[8rem_8rem_minmax(0,1fr)] @min-[520px]:pl-14.5"
+      className="grid basis-full grid-cols-2 gap-3 @min-[520px]:grid-cols-[8rem_8rem_minmax(0,1fr)] @min-[520px]:pl-14.5"
       id={id}
     >
       <LimitField

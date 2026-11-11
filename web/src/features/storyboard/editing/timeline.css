@@ -30,6 +30,15 @@
   translate: -100% 0;
 }
 
+.timeline-buffered {
+  position: absolute;
+  top: calc(100% + 2px);
+  height: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-outline);
+  pointer-events: none;
+}
+
 .timeline-seek {
   position: absolute;
   inset: 0;

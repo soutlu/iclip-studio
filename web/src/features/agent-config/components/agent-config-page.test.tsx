@@ -83,6 +83,7 @@ describe('AgentConfigPage 保存草稿', () => {
       mockSkillId('viral-script-remix'),
     ])
     expect(body.config.tools).toContainEqual({
+      approval_tools: [],
       server: 'feishu-docs',
       tools: ['search', 'read'],
       type: 'mcp',
@@ -378,7 +379,10 @@ describe('AgentConfigPage 子 Agent', () => {
     await user.click(unpublished)
     expect(unpublished).not.toBeChecked()
 
-    await user.click(within(panel).getByRole('switch', { name: '分镜助手' }))
+    const storyboard = within(panel).getByRole('switch', { name: '分镜助手' })
+    storyboard.focus()
+    await user.keyboard(' ')
+    expect(within(panel).getByRole('switch', { name: '分镜助手' })).toHaveFocus()
     const timeout = within(panel).getByRole('textbox', { name: '分镜助手的调用时限（秒）' })
     expect(timeout).toHaveValue('')
     await user.type(timeout, '0')

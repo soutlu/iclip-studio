@@ -1,16 +1,23 @@
-import { useState } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/field'
 import { ListError, ListPending } from '@/shared/ui/list-state'
+import { Switch } from '@/shared/ui/switch'
 import type { AgentConfig } from '../agents.api'
 import { bindMcp, mcpBindings, mcpStatusOf, unbindMcp } from '../mcp-draft'
 import { useMcpServers } from '../mcp-servers.api'
 import { StatusDot } from './mcp-status'
 import type { Panel } from './panel'
 import { PanelShell } from './panel-shell'
-import { CardBadge, CardGlyph } from './resource-card'
+import {
+  CARD_SWITCH_HIT,
+  CardBadge,
+  DIRECTORY_CARD,
+  DIRECTORY_GRID,
+  DirectoryCardBody,
+} from './resource-card'
 
 type Mode = 'mcp-library' | 'mcp-select'
 
@@ -29,6 +36,7 @@ export function McpListPanel({
 }) {
   const servers = useMcpServers()
   const [query, setQuery] = useState('')
+  const baseId = useId()
   const library = mode === 'mcp-library'
   const bound = mcpBindings(config).map((binding) => binding.server)
   const keyword = query.trim().toLowerCase()
@@ -63,50 +71,70 @@ export function McpListPanel({
         <ListError message={servers.error.message} onRetry={() => void servers.refetch()} />
       ) : (
         <>
-          <ul className="grid grid-cols-1 gap-x-3 gap-y-1 @min-[560px]:grid-cols-2">
+          <ul className={DIRECTORY_GRID}>
             {matches.map((server) => {
               const on = bound.includes(server.id)
               const disabled = !server.enabled
               const blocked = !library && !on && disabled
+              const id = `${baseId}-${server.id}`
+              const body = (trailing: ReactNode) => (
+                <DirectoryCardBody
+                  badges={
+                    <>
+                      <StatusDot status={mcpStatusOf(server)} />
+                      {disabled ? <CardBadge>已停用</CardBadge> : null}
+                    </>
+                  }
+                  description={server.description}
+                  descriptionId={`${id}-description`}
+                  dimmed={blocked}
+                  icon="mcp-server"
+                  name={server.name}
+                  nameId={`${id}-name`}
+                  trailing={trailing}
+                />
+              )
               return (
-                <li className="min-w-0" key={server.id}>
-                  <button
-                    aria-disabled={blocked ? true : undefined}
-                    aria-label={library ? `编辑 MCP 服务：${server.name}` : server.name}
-                    aria-pressed={library ? undefined : on}
-                    className={cn(
-                      'flex min-h-15 w-full min-w-0 ui-state cursor-pointer items-center gap-3 rounded-md p-2.5 text-left ui-focus',
-                      blocked && 'cursor-not-allowed',
-                    )}
-                    onClick={() => {
-                      if (library)
-                        onOpenPanel({ back: mode, server: server.id, type: 'mcp-server' })
-                      else if (on) onChange(unbindMcp(config, server.id))
-                      else if (!blocked) onChange(bindMcp(config, server.id))
-                    }}
-                    type="button"
-                  >
-                    <CardGlyph className="size-9" name="mcp-server" />
-                    <span className={cn('flex min-w-0 flex-1 flex-col', blocked && 'opacity-55')}>
-                      <span className="flex min-w-0 items-center gap-1.5 font-medium text-on-surface">
-                        <span className="truncate">{server.name}</span>
-                        <StatusDot status={mcpStatusOf(server)} />
-                        {disabled ? <CardBadge>已停用</CardBadge> : null}
-                      </span>
-                      <span className="truncate text-label text-on-surface-faint">
-                        {server.description}
-                      </span>
-                    </span>
-                    <Icon
+                <li className="flex min-w-0" key={server.id}>
+                  {library ? (
+                    <button
+                      aria-label={`编辑 MCP 服务：${server.name}`}
                       className={cn(
-                        'shrink-0',
-                        !library && on ? 'text-on-surface' : 'text-on-surface-faint',
+                        DIRECTORY_CARD,
+                        'flex-1 ui-state cursor-pointer bg-background ui-focus',
                       )}
-                      decorative
-                      name={library ? 'disclosure' : on ? 'check' : 'add'}
-                      size="md"
-                    />
-                  </button>
+                      onClick={() =>
+                        onOpenPanel({ back: mode, server: server.id, type: 'mcp-server' })
+                      }
+                      type="button"
+                    >
+                      {body(
+                        <Icon
+                          className="text-on-surface-faint"
+                          decorative
+                          name="disclosure"
+                          size="sm"
+                        />,
+                      )}
+                    </button>
+                  ) : (
+                    <div className={cn(DIRECTORY_CARD, 'flex-1 bg-background')}>
+                      {body(
+                        <Switch
+                          aria-describedby={`${id}-description`}
+                          aria-labelledby={`${id}-name`}
+                          checked={on}
+                          className={CARD_SWITCH_HIT}
+                          disabled={blocked}
+                          onCheckedChange={(next) =>
+                            onChange(
+                              next ? bindMcp(config, server.id) : unbindMcp(config, server.id),
+                            )
+                          }
+                        />,
+                      )}
+                    </div>
+                  )}
                 </li>
               )
             })}

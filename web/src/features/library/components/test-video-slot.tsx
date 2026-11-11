@@ -34,7 +34,7 @@ export function CompareOverlay({ label, meta, action, note }: CompareOverlayProp
 
 type TestVideoCellProps = {
   testVideo: TestVideo | null | undefined
-  owner: boolean
+  canEdit: boolean
   ready: boolean
   measured: boolean
   starting: boolean
@@ -46,7 +46,7 @@ type TestVideoCellProps = {
 
 export function TestVideoCell({
   testVideo,
-  owner,
+  canEdit,
   ready,
   measured,
   starting,
@@ -73,7 +73,7 @@ export function TestVideoCell({
         />
         <CompareOverlay
           action={
-            owner ? (
+            canEdit ? (
               <GlassRetry compact disabled={!canRetry} onClick={onStart} starting={starting} />
             ) : undefined
           }
@@ -113,7 +113,7 @@ export function TestVideoCell({
         </SlotIcon>
         <SlotTitle>试生成失败</SlotTitle>
         {reason === '' ? null : <SlotNote>{reason}</SlotNote>}
-        {owner ? (
+        {canEdit ? (
           <div className="mt-3">
             <GlassRetry
               compact={false}
@@ -127,7 +127,7 @@ export function TestVideoCell({
     )
   }
 
-  if (!owner)
+  if (!canEdit)
     return (
       <SlotFrame poster={poster}>
         <SlotIcon>

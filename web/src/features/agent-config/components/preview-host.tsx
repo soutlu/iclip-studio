@@ -7,6 +7,9 @@ import { openPreview } from '../agent-previews.api'
 export type PreviewView = 'chat' | 'trace'
 
 export type PreviewConversationProps = {
+  agentId: string
+  /** 测的是草稿（没有选定某个已发布版本）。 */
+  draft: boolean
   previewId: string | null
   openPreview: () => Promise<string>
   placeholder: string
@@ -121,6 +124,8 @@ export function PreviewHost({
               key={`${slot.agentId}#${slot.generation}`}
             >
               <Conversation
+                agentId={slot.agentId}
+                draft={slot.versionId === null}
                 openPreview={async () => {
                   const id = await openPreview(slot.agentId, slot.versionId)
                   update(slot, { previewId: id })

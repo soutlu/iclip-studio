@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import type { ComposerHandle, ComposerPart, ComposerSubmission } from '@/shared/ui/composer'
+import { ComposerConnectorsButton, type McpConnectionsScope } from '@/shared/mcp-connections'
 import { Composer } from '@/shared/ui/composer'
 import { toast } from '@/shared/ui/toast'
 import { ContextUsageIndicator } from './context-usage-indicator'
@@ -21,6 +22,8 @@ type ConversationComposerProps = {
   onCancelEdit?: (() => void) | undefined
   placeholder?: string | undefined
   onSendError?: ((error: unknown) => void) | undefined
+  /** 给了就在「+」旁放连接器按钮，列这段对话运行会连的、使用自有账户的服务。 */
+  connections?: McpConnectionsScope | undefined
 }
 
 const submissionOf = (parts: readonly ComposerPart[]): ComposerSubmission => ({
@@ -37,6 +40,7 @@ export function ConversationComposer({
   maxContextTokens,
   onCancelEdit,
   onSend,
+  connections,
   onSendError,
   onStop,
   placeholder = '继续输入…',
@@ -88,6 +92,9 @@ export function ConversationComposer({
         attachmentsEnabled={hasPermission(user, PERMISSION.uploadsWrite)}
         busy={busy}
         dense
+        leading={
+          connections === undefined ? undefined : <ComposerConnectorsButton scope={connections} />
+        }
         onStop={onStop}
         onSubmit={(submission) => void send(submission)}
         placeholder={awaitingApproval ? '请先确认上方的步骤' : placeholder}

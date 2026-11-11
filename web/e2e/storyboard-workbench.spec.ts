@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { canvasPng, openConversation, openStoryboardShot } from './helpers'
 
 test.use({ viewport: { height: 900, width: 1600 } })
@@ -79,6 +79,30 @@ test('短桌面中舞台贴着画面在左、文案列在右，画面完整可�
   await expect(open).toBeFocused()
 })
 
+const appendTakes = async (page: Page, count: number) => {
+  const conversationId = new URL(page.url()).pathname.split('/').at(-1)
+  for (let index = 0; index < count; index += 1) {
+    const status = await page.evaluate(async (id) => {
+      const response = await fetch('/api/generations/video', {
+        body: JSON.stringify({
+          aspect_ratio: '9:16',
+          conversation_id: id,
+          model: 'vendor-a-seedance-2-5',
+          prompt: '再出一条',
+          reference_image_urls: [],
+          resolution: '720p',
+          seconds: 6,
+          shot_index: 2,
+        }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      })
+      return response.status
+    }, conversationId)
+    expect(status).toBe(202)
+  }
+}
+
 for (const width of [1335, 390]) {
   test(`素材片区 ${width}px：没出过片的组不占位；有片的组从新到旧排列，新结果可直接查看`, async ({
     page,
@@ -101,27 +125,7 @@ for (const width of [1335, 390]) {
     if (width === 390) {
       await group.evaluate((element) => element.scrollTo({ top: element.scrollHeight }))
       await expect(takes).toBeInViewport({ ratio: 1 })
-      const conversationId = new URL(page.url()).pathname.split('/').at(-1)
-      const submit = async () => {
-        const status = await page.evaluate(async (id) => {
-          const response = await fetch('/api/generations/video', {
-            body: JSON.stringify({
-              aspect_ratio: '9:16',
-              conversation_id: id,
-              model: 'vendor-a-seedance-2-5',
-              prompt: '再出一条',
-              reference_image_urls: [],
-              resolution: '720p',
-              seconds: 6,
-              shot_index: 2,
-            }),
-            headers: { 'Content-Type': 'application/json' },
-            method: 'POST',
-          })
-          return response.status
-        }, conversationId)
-        expect(status).toBe(202)
-      }
+      const submit = () => appendTakes(page, 1)
       await submit()
       await submit()
       await expect(cards).toHaveCount(5)
@@ -191,6 +195,94 @@ for (const width of [1335, 390]) {
     await expect(group.getByRole('img', { name: '镜头组 2 第 2 帧' })).toBeVisible()
   })
 }
+
+/** 打开镜头组 2 并追加到 9 张素材片，横滑行放不下。 */
+const openOverflowingTakes = async (page: Page, width: 1335 | 390) => {
+  await page.setViewportSize({ width, height: width === 390 ? 844 : 880 })
+  const panel = await openConversation(page, '夜景延时素材生成', { mobile: width === 390 })
+  await openStoryboardShot(panel, 2)
+  const group = panel.getByRole('region', { name: '镜头组 2' })
+  const takes = group.getByRole('region', { name: '本组素材片', exact: true })
+  const cards = takes.getByRole('listitem')
+  await expect(cards).toHaveCount(3)
+  await appendTakes(page, 6)
+  await expect(cards).toHaveCount(9)
+  return { cards, group, takes }
+}
+
+// 横滑行与出片参数行都是隐藏了滚动条的滚动容器，没有可访问名，从里面的列表或单选组取父元素。
+const parentScrollLeft = (child: Locator) =>
+  child.evaluate((element) => Math.round(element.parentElement?.scrollLeft ?? Number.NaN))
+
+test('素材片区 1335px：工作台不到 776 宽、行放不下时也显示翻页箭头，点了能滚', async ({ page }) => {
+  const { takes } = await openOverflowingTakes(page, 1335)
+  const list = takes.getByRole('list')
+  const backward = takes.getByRole('button', { name: '向前滚动', exact: true })
+  const forward = takes.getByRole('button', { name: '向后滚动', exact: true })
+  await expect(forward).toBeVisible()
+  await expect(forward).toBeEnabled()
+  await expect(backward).toBeVisible()
+  await expect(backward).toBeDisabled()
+
+  await forward.click()
+  await expect.poll(() => parentScrollLeft(list)).toBeGreaterThan(0)
+  await expect(backward).toBeEnabled()
+})
+
+test('素材片区 1335px：鼠标竖向滚轮按像素横滑素材片行，小步也不被吸回；横向滚轮照常', async ({
+  page,
+}) => {
+  const { cards, takes } = await openOverflowingTakes(page, 1335)
+  const list = takes.getByRole('list')
+  await cards.first().hover()
+  expect(await parentScrollLeft(list)).toBe(0)
+
+  for (let step = 0; step < 3; step += 1) await page.mouse.wheel(0, 30)
+  await expect.poll(() => parentScrollLeft(list)).toBe(90)
+  await page.mouse.wheel(0, -30)
+  await expect.poll(() => parentScrollLeft(list)).toBe(60)
+
+  await page.mouse.wheel(60, 0)
+  await expect.poll(() => parentScrollLeft(list)).toBeGreaterThan(60)
+})
+
+test('素材片区 390px：上下排时竖向滚轮留给主体翻页，箭头照样显示、点了能滚', async ({ page }) => {
+  const { cards, group, takes } = await openOverflowingTakes(page, 390)
+  const list = takes.getByRole('list')
+  // 主体滚到素材片区露出、离底还差一点，竖向滚轮往下还有地方滚。
+  await group.evaluate((element) =>
+    element.scrollTo({
+      behavior: 'instant',
+      top: element.scrollHeight - element.clientHeight - 40,
+    }),
+  )
+  await cards.first().hover()
+  const top = await group.evaluate((element) => element.scrollTop)
+  const left = await parentScrollLeft(list)
+  await page.mouse.wheel(0, 30)
+  await expect.poll(() => group.evaluate((element) => element.scrollTop)).toBeGreaterThan(top)
+  expect(await parentScrollLeft(list)).toBe(left)
+
+  const backward = takes.getByRole('button', { name: '向前滚动', exact: true })
+  const forward = takes.getByRole('button', { name: '向后滚动', exact: true })
+  await expect(backward).toBeVisible()
+  await expect(backward).toBeDisabled()
+  await forward.click()
+  await expect.poll(() => parentScrollLeft(list)).toBeGreaterThan(0)
+  await expect(backward).toBeEnabled()
+})
+
+test('出片工具栏 390px：参数行放不下时，鼠标竖向滚轮横向滚动参数行', async ({ page }) => {
+  await page.setViewportSize({ height: 844, width: 390 })
+  const panel = await openConversation(page, '夜景延时素材生成', { mobile: true })
+  const bar = panel.getByRole('group', { name: '出片工具栏' })
+  const resolution = bar.getByRole('radiogroup', { name: '分辨率' })
+  await bar.getByRole('button', { name: '画幅' }).hover()
+  expect(await parentScrollLeft(resolution)).toBe(0)
+
+  await page.mouse.wheel(0, 30)
+  await expect.poll(() => parentScrollLeft(resolution)).toBe(30)
+})
 
 test.describe('移动触屏分镜', () => {
   test.use({ hasTouch: true, isMobile: true })

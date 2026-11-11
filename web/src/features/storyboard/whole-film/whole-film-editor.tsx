@@ -12,11 +12,12 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { errorMessageOf } from '@/shared/api/client'
 import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
-import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
+import { mergeSpans, type TimeSpan } from '@/shared/lib/time-spans'
 import { Button } from '@/shared/ui/button'
 import { DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
 import { InlineAlert } from '@/shared/ui/inline-alert'
+import { MediaBuffering } from '@/shared/ui/media-buffering'
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from '@/shared/ui/tabs'
 import { toast } from '@/shared/ui/toast'
 import { groupConversationVideos } from '../conversation-videos/video-groups'
@@ -321,6 +322,7 @@ function EditorBody({
   const [previewFrame, setPreviewFrame] = useState<HTMLIFrameElement | null>(null)
   const [mediaSettled, setMediaSettled] = useState(false)
   const [buffering, setBuffering] = useState(false)
+  const [mediaBuffered, setMediaBuffered] = useState<readonly TimeSpan[]>([])
   const [sideTab, setSideTab] = useState<SideTab>('materials')
   const [sideChips, setSideChips] = useState<SideChips>({ brand: undefined, general: undefined })
   const [snap, setSnap] = useState(true)
@@ -782,6 +784,7 @@ function EditorBody({
           controlRef={previewRef}
           height={canvas.height}
           message={playBlocked}
+          onBuffered={setMediaBuffered}
           onBuffering={setBuffering}
           onFrame={setPreviewFrame}
           onMediaSettled={() => setMediaSettled(true)}
@@ -817,17 +820,7 @@ function EditorBody({
             sentenceText={sentenceText}
             snap={snap}
           />
-          {buffering ? (
-            <div
-              aria-label="正在缓冲"
-              className="pointer-events-none absolute inset-0 z-(--z-local-2) grid place-items-center text-on-scrim"
-              role="status"
-            >
-              <span className="rounded-full bg-scrim/32 p-2">
-                <Icon className="animate-spin" decorative name="spinner" size="xl" />
-              </span>
-            </div>
-          ) : null}
+          {buffering ? <MediaBuffering /> : null}
         </PreviewPlayer>
         {viewedMaterial === undefined || materialView === null ? null : (
           <MaterialPreview
@@ -887,6 +880,18 @@ function EditorBody({
           <FilmTracks
             apply={apply}
             beats={musicKnown ? filmBeats(draft, context) : []}
+            buffered={
+              preview.kind === 'ready'
+                ? mergeSpans([
+                    ...mediaBuffered,
+                    ...draft.layer0.flatMap((clip) =>
+                      clip.type === 'video'
+                        ? []
+                        : [{ start: clip.start / 1000, end: (clip.start + clip.duration) / 1000 }],
+                    ),
+                  ])
+                : []
+            }
             captionControls={
               <CaptionControls
                 catalog={catalog}

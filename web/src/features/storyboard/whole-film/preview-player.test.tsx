@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -41,6 +41,7 @@ const playerOf = () => {
 
 const handlers = () => ({
   control: createRef<PreviewControl>() as { current: PreviewControl | null },
+  onBuffered: vi.fn<(spans: readonly { start: number; end: number }[]) => void>(),
   onBuffering: vi.fn<(buffering: boolean) => void>(),
   onFrame: vi.fn<(iframe: HTMLIFrameElement | null) => void>(),
   onMediaSettled: vi.fn<() => void>(),
@@ -53,6 +54,7 @@ const preview = (srcdoc: string, on: ReturnType<typeof handlers>) => (
     controlRef={on.control}
     height={320}
     message={undefined}
+    onBuffered={on.onBuffered}
     onBuffering={on.onBuffering}
     onFrame={on.onFrame}
     onMediaSettled={on.onMediaSettled}
@@ -63,10 +65,13 @@ const preview = (srcdoc: string, on: ReturnType<typeof handlers>) => (
   />
 )
 
+const firstPlayerUp = (on: ReturnType<typeof handlers>) =>
+  waitFor(() => expect(on.onFrame).toHaveBeenCalledWith(expect.any(HTMLIFrameElement)))
+
 const openPreview = async (srcdoc = page()) => {
   const on = handlers()
   const view = render(preview(srcdoc, on))
-  await waitFor(() => expect(on.control.current).not.toBeNull())
+  await firstPlayerUp(on)
   const control = () => {
     if (on.control.current === null) throw new Error('播放器没接上')
     return on.control.current
@@ -258,6 +263,77 @@ describe('时钟跟着画面走', () => {
   })
 })
 
+describe('第一个播放器装好之前', () => {
+  const blocked = (on: ReturnType<typeof handlers>) => (
+    <PreviewPlayer
+      backdrop={undefined}
+      controlRef={on.control}
+      height={320}
+      message="合成不了"
+      onBuffering={on.onBuffering}
+      onFrame={on.onFrame}
+      onPlaying={on.onPlaying}
+      onTime={() => {}}
+      srcdoc={undefined}
+      width={180}
+    />
+  )
+
+  it('点播放先记下：按钮算在放并转圈，装好后自动开始放、不再转圈', async () => {
+    const on = handlers()
+    render(preview(page(), on))
+    expect(on.onFrame).not.toHaveBeenCalled()
+
+    act(() => on.control.current?.play())
+    expect(on.onPlaying).toHaveBeenLastCalledWith(true)
+    expect(on.onBuffering).toHaveBeenLastCalledWith(true)
+
+    await firstPlayerUp(on)
+    expect(playerOf().paused).toBe(false)
+    expect(on.onPlaying).toHaveBeenLastCalledWith(true)
+    expect(on.onBuffering).toHaveBeenLastCalledWith(false)
+  })
+
+  it('记下播放后又暂停：装好后停着', async () => {
+    const on = handlers()
+    render(preview(page(), on))
+    act(() => on.control.current?.play())
+    act(() => on.control.current?.pause())
+    expect(on.onPlaying).toHaveBeenLastCalledWith(false)
+    expect(on.onBuffering).toHaveBeenLastCalledWith(false)
+
+    await firstPlayerUp(on)
+    expect(playerOf().paused).toBe(true)
+  })
+
+  it('定位也先记下：第一个播放器停在那个位置', async () => {
+    const on = handlers()
+    render(preview(page(), on))
+    act(() => on.control.current?.seek(1500))
+
+    await firstPlayerUp(on)
+    expect(playerOf().currentTime).toBeCloseTo(1.5, 5)
+    expect(playerOf().paused).toBe(true)
+  })
+
+  it('记下了播放但合成不了：按钮回到播放，不再转圈', () => {
+    const on = handlers()
+    const view = render(preview(page(), on))
+    act(() => on.control.current?.play())
+
+    view.rerender(blocked(on))
+    expect(on.onPlaying).toHaveBeenLastCalledWith(false)
+    expect(on.onBuffering).toHaveBeenLastCalledWith(false)
+    expect(on.control.current).toBeNull()
+  })
+
+  it('一开始就合成不了：点播放没有效果', () => {
+    const on = handlers()
+    render(blocked(on))
+    expect(on.control.current).toBeNull()
+  })
+})
+
 describe('换页', () => {
   it('在放时换页：新页接着放', async () => {
     const { control, showPage, onPlaying } = await openPreview()
@@ -307,7 +383,7 @@ describe('换页', () => {
   it('合成不了时：不再放，也不再转圈', async () => {
     const on = handlers()
     const view = render(preview(page(), on))
-    await waitFor(() => expect(on.control.current).not.toBeNull())
+    await firstPlayerUp(on)
     starvedVideos.add(FIRST)
     act(() => on.control.current?.play())
     const shown = playerOf()
@@ -425,6 +501,71 @@ describe('缓冲够了才继续', () => {
     await waitAt(2)
     act(() => stopVideoDownload(FIRST))
     expect(playerOf().paused).toBe(true)
+  })
+})
+
+describe('当前片段加载失败', () => {
+  it('舞台显示失败提示，提示跟着播放头所在的片段走', async () => {
+    await openPreview()
+    act(() => failVideo(SECOND))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    act(() => playerOf().seek(2.5))
+    expect(screen.getByRole('alert')).toHaveTextContent('视频加载失败')
+
+    act(() => playerOf().seek(0.5))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('点重试重新加载这个片段并收起提示，再失败时提示重新出现', async () => {
+    await openPreview()
+    act(() => failVideo(FIRST))
+    const video = playerOf().iframeElement.contentDocument?.querySelector('video')
+    if (video === null || video === undefined) throw new Error('合成页里没有视频')
+    const load = vi.spyOn(video, 'load').mockImplementation(() => {
+      clearFailedVideos()
+      emitFrom(FIRST, 'emptied')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    expect(load).toHaveBeenCalledOnce()
+    expect(video.preload).toBe('auto')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    act(() => failVideo(FIRST))
+    expect(screen.getByRole('alert')).toBeVisible()
+  })
+})
+
+describe('报出已缓冲的区间', () => {
+  it('各视频片段已缓冲的部分换算成成片时间；没变化不重复报，换页后重新报', async () => {
+    bufferedVideos.set(FIRST, [[0, 1]])
+    const { onBuffered, showPage } = await openPreview()
+    expect(onBuffered).toHaveBeenLastCalledWith([{ start: 0, end: 1 }])
+
+    bufferedVideos.set(SECOND, [[0.5, 2.5]])
+    act(() => emitFrom(SECOND, 'progress'))
+    expect(onBuffered).toHaveBeenLastCalledWith([
+      { start: 0, end: 1 },
+      { start: 2.5, end: 4 },
+    ])
+
+    const reports = onBuffered.mock.calls.length
+    act(() => emitFrom(SECOND, 'progress'))
+    expect(onBuffered).toHaveBeenCalledTimes(reports)
+
+    showPage(page('<p></p>'))
+    await waitFor(() => expect(onBuffered.mock.calls.length).toBeGreaterThan(reports))
+    expect(onBuffered).toHaveBeenLastCalledWith([
+      { start: 0, end: 1 },
+      { start: 2.5, end: 4 },
+    ])
+  })
+
+  it('片段从素材中间开始时按素材起点换算，片段以外的缓冲不算', async () => {
+    bufferedVideos.set(FIRST, [[0, 5]])
+    const { onBuffered } = await openPreview(LONG_CLIP)
+    expect(onBuffered).toHaveBeenLastCalledWith([{ start: 0, end: 4 }])
   })
 })
 

@@ -103,13 +103,68 @@ describe('视频下载', () => {
     expect(settled).toHaveBeenCalledTimes(1)
   })
 
+  it('两个视频槽已缓冲的部分换算到时间线上报出去，没变化不重复报', () => {
+    const onBuffered = vi.fn()
+    renderWithTooltip(
+      <EditorPreview
+        current={layoutPlay([
+          { mediaUrl: 'https://example.com/a.mp4', start: 5, end: 9 },
+          { mediaUrl: 'https://example.com/b.mp4', start: 0, end: 2 },
+        ])}
+        currentTime={0}
+        contentKey="draft"
+        poster={undefined}
+        backdrop={undefined}
+        onBuffered={onBuffered}
+        onTime={() => {}}
+        onPlay={() => {}}
+        overlay={null}
+        readout={null}
+        timeline={null}
+        barStart={null}
+        barNotice={null}
+        barTools={null}
+        barEnd={null}
+        ref={null}
+      />,
+    )
+    const { active, hidden } = videos()
+    const reportBuffered = (
+      video: HTMLVideoElement,
+      spans: readonly (readonly [number, number])[],
+    ) =>
+      Object.defineProperty(video, 'buffered', {
+        configurable: true,
+        value: {
+          length: spans.length,
+          start: (at: number) => spans[at]?.[0],
+          end: (at: number) => spans[at]?.[1],
+        },
+      })
+    expect(onBuffered).not.toHaveBeenCalled()
+
+    reportBuffered(active, [[4, 7]])
+    fireEvent.progress(active)
+    expect(onBuffered).toHaveBeenLastCalledWith([{ start: 0, end: 2 }])
+
+    reportBuffered(hidden, [[0, 1]])
+    fireEvent.progress(hidden)
+    expect(onBuffered).toHaveBeenLastCalledWith([
+      { start: 0, end: 2 },
+      { start: 4, end: 5 },
+    ])
+
+    fireEvent.progress(hidden)
+    expect(onBuffered).toHaveBeenCalledTimes(2)
+  })
+
   it('没有内容可加载时直接通知；内容还在读取时不通知', () => {
     expect(renderPreview(layoutPlay([]))).toHaveBeenCalledTimes(1)
     expect(renderPreview(undefined)).not.toHaveBeenCalled()
   })
 })
 
-it('当前视频缓冲/seek时停外部混音，恢复时从同一完整时钟继续；预载槽事件不影响播放', async () => {
+it('当前视频缓冲/seek时停外部混音并显示正在缓冲，恢复时从同一完整时钟继续；预载槽事件不影响播放', async () => {
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
   vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
   vi.spyOn(HTMLMediaElement.prototype, 'readyState', 'get').mockReturnValue(4)
@@ -141,12 +196,15 @@ it('当前视频缓冲/seek时停外部混音，恢复时从同一完整时钟�
   active.currentTime = 6.25
   await user.click(screen.getByRole('button', { name: '播放' }))
   await waitFor(() => expect(playback).toHaveBeenLastCalledWith({ playing: true, muted: true }))
+  expect(screen.queryByRole('status', { name: '正在缓冲' })).not.toBeInTheDocument()
   fireEvent.waiting(active)
   expect(time).toHaveBeenLastCalledWith(1.25)
   expect(playback).toHaveBeenLastCalledWith({ playing: false, muted: true })
   expect(screen.getByRole('button', { name: '暂停' })).toBeVisible()
+  expect(screen.getByRole('status', { name: '正在缓冲' })).toBeVisible()
   fireEvent.playing(active)
   expect(playback).toHaveBeenLastCalledWith({ playing: true, muted: true })
+  expect(screen.queryByRole('status', { name: '正在缓冲' })).not.toBeInTheDocument()
   fireEvent.seeking(active)
   expect(playback).toHaveBeenLastCalledWith({ playing: false, muted: true })
   fireEvent.seeked(active)

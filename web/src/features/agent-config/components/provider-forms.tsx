@@ -1,12 +1,11 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
-import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/field'
-import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { THINKING_LEVELS, type ThinkingLevel } from '@/shared/ui/thinking-level'
 import { formatContextSize } from '../agent-draft'
+import { MODEL_KIND_LABEL, MODEL_KINDS } from '../model-kinds'
 import {
   testCredential,
   useAddModel,
@@ -96,7 +95,7 @@ function InlineForm({
   return (
     <form
       aria-label={title}
-      className="mt-3 flex flex-col gap-4 rounded-md bg-surface-container-low p-4"
+      className="mt-3 flex flex-col gap-4 rounded-card bg-surface-container-low p-4"
       noValidate
       ref={formRef}
       onSubmit={(event) => {
@@ -235,7 +234,6 @@ export function ProviderCreateForm({
   const baseId = useId()
   const createProvider = useCreateProvider()
   const [declarationName, setDeclarationName] = useState(declarations[0]?.name ?? '')
-  const chosen = declarations.find((item) => item.name === declarationName)
   const [label, setLabel] = useState('')
   const [name, setName] = useState('')
   const [errors, setErrors] = useState<Errors>({})
@@ -251,7 +249,7 @@ export function ProviderCreateForm({
     const next: Errors = {}
     if (label.trim() === '') next['label'] = '请填写显示名'
     if (!PROVIDER_NAME.test(name.trim()))
-      next['name'] = '引用名只能用小写字母、数字和连字符，最多 64 个字符'
+      next['name'] = '标识只能用小写字母、数字和连字符，最多 64 个字符'
     setErrors(next)
     setFormError(null)
     if (Object.keys(next).length > 0) return
@@ -283,28 +281,16 @@ export function ProviderCreateForm({
       onSubmit={() => void save()}
       title="添加供应商"
     >
-      <div className="flex min-w-0 flex-col items-start gap-1.5">
+      <div className="flex min-w-0 flex-col gap-1.5">
         <span className={LABEL_CLASS}>接入方式</span>
-        <MenuRoot>
-          <MenuTrigger
-            aria-label={`接入方式：${chosen?.label ?? '未选择'}`}
-            className="inline-flex h-(--control-height-md) max-w-72 min-w-0 ui-state cursor-pointer items-center gap-1.5 rounded-sm px-2.5 text-body-sm text-on-surface ring-1 ring-border ui-focus ring-inset data-[state=open]:bg-state-active"
-            disabled={busy}
-          >
-            <Icon className="text-on-surface-faint" decorative name="provider" size="sm" />
-            <span className="min-w-0 truncate">{chosen?.label ?? '未选择'}</span>
-            <Icon className="text-on-surface-faint" decorative name="expand" size="sm" />
-          </MenuTrigger>
-          <MenuSurface align="start" className="max-w-80 min-w-60">
-            <MenuRadioGroup onValueChange={setDeclarationName} value={declarationName}>
-              {declarations.map((item) => (
-                <MenuRadioItem key={item.name} value={item.name}>
-                  {item.label}
-                </MenuRadioItem>
-              ))}
-            </MenuRadioGroup>
-          </MenuSurface>
-        </MenuRoot>
+        <Segmented
+          disabled={busy}
+          label="接入方式"
+          onValueChange={setDeclarationName}
+          options={declarations.map((item) => ({ label: item.label, value: item.name }))}
+          value={declarationName}
+          wrap
+        />
       </div>
       <div className={GRID_CLASS}>
         <Field error={errors['label']} id={`${baseId}-label`} label="显示名">
@@ -323,7 +309,7 @@ export function ProviderCreateForm({
             {...errorProps(`${baseId}-label`, errors['label'])}
           />
         </Field>
-        <Field error={errors['name']} id={`${baseId}-name`} label="引用名">
+        <Field error={errors['name']} id={`${baseId}-name`} label="标识">
           <Input
             autoCapitalize="none"
             autoComplete="off"
@@ -399,7 +385,7 @@ export function CredentialForm({
       setTest(
         result.ok
           ? { elapsedMs: result.elapsedMs, kind: 'ok' }
-          : { kind: 'failed', reason: result.reason ?? '试连没通过' },
+          : { kind: 'failed', reason: result.reason ?? '测试连接没通过' },
       )
     } catch (error) {
       const refused = refusalOf(error)
@@ -408,7 +394,7 @@ export function CredentialForm({
         return
       }
       setTest(IDLE)
-      setFormError(errorMessageOf(error, '试连失败，请重试'))
+      setFormError(errorMessageOf(error, '测试连接失败，请重试'))
     }
   }
 
@@ -452,7 +438,7 @@ export function CredentialForm({
             size="md"
             variant="outlined"
           >
-            试连
+            测试连接
           </Button>
           <Button disabled={!canSave} loading={saving} size="md" type="submit">
             保存
@@ -461,7 +447,7 @@ export function CredentialForm({
       }
       error={formError}
       onSubmit={() => void save()}
-      status={<TestStatus action="试连" className="mr-auto" test={test} />}
+      status={<TestStatus action="测试连接" className="mr-auto" test={test} />}
       title={editing ? '编辑密钥' : '添加密钥'}
     >
       <div className={GRID_CLASS}>
@@ -499,7 +485,6 @@ export function CredentialForm({
   )
 }
 
-const MODEL_TYPES: readonly ModelType[] = ['llm', 'embedding', 'rerank']
 type ModelApi = Declaration['apis'][number]
 
 const parseContextSize = (text: string): number | null | undefined => {
@@ -617,7 +602,7 @@ export function ModelForm({
             disabled={editing || pending}
             label="模型类型"
             onValueChange={setType}
-            options={MODEL_TYPES.map((value) => ({ label: value, value }))}
+            options={MODEL_KINDS.map((value) => ({ label: MODEL_KIND_LABEL[value], value }))}
             value={type}
           />
         </div>

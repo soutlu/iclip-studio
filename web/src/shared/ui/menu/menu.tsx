@@ -9,6 +9,9 @@ export const MenuRoot = DropdownMenu.Root
 export const MenuTrigger = DropdownMenu.Trigger
 export const MenuRadioGroup = DropdownMenu.RadioGroup
 
+/** 本身没有外观的菜单项：配合 `asChild` 把一个按钮放进菜单的方向键导航。 */
+export const MenuBareItem = DropdownMenu.Item
+
 const ITEM_CLASS =
   // design-allow -- Radix 用 .focus() 移动高亮，浏览器默认框会和 ui-focus 的焦点环叠一起
   'ui-state ui-focus flex h-(--control-height-sm) cursor-pointer items-center gap-2 rounded-sm px-2 text-body outline-none select-none'

@@ -1,11 +1,18 @@
 import { useId, useState } from 'react'
+import { cn } from '@/shared/lib/utils'
 import { Input } from '@/shared/ui/field'
 import { Switch } from '@/shared/ui/switch'
 import { enabledPluginNames, missingRequiresReason, setPluginEnabled } from '../agent-draft'
 import type { AgentConfig, AgentPlugin } from '../agents.api'
 import { pluginIcon } from '../plugin-icons'
 import { PanelShell } from './panel-shell'
-import { AlertGlyph, CardGlyph } from './resource-card'
+import {
+  AlertGlyph,
+  CARD_SWITCH_HIT,
+  DIRECTORY_CARD,
+  DIRECTORY_GRID,
+  DirectoryCardBody,
+} from './resource-card'
 
 export function PluginPanel({
   config,
@@ -37,37 +44,30 @@ export function PluginPanel({
         value={query}
         wrapperClassName="mb-4 h-(--control-height-md) rounded-sm border-transparent bg-surface-container-low focus-within:border-transparent"
       />
-      <ul className="grid grid-cols-1 gap-x-3 gap-y-1 @min-[560px]:grid-cols-2">
+      <ul className={DIRECTORY_GRID}>
         {matches.map((plugin) => {
           const on = enabled.includes(plugin.name)
           const missing = on ? missingRequiresReason(plugin, enabled, plugins) : undefined
           const id = `${baseId}-${plugin.name}`
           return (
-            <li
-              className="flex min-h-15 min-w-0 items-center gap-3 rounded-md p-2.5"
-              key={plugin.name}
-            >
-              <CardGlyph className="size-9" name={pluginIcon(plugin.name)} />
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="flex min-w-0 items-center gap-1.5 font-medium text-on-surface">
-                  <span className="truncate" id={`${id}-name`}>
-                    {plugin.label}
-                  </span>
-                  {missing === undefined ? null : <AlertGlyph reason={missing} />}
-                </span>
-                <span
-                  className="truncate text-label text-on-surface-faint"
-                  id={`${id}-description`}
-                >
-                  {plugin.description}
-                </span>
-              </span>
-              <Switch
-                aria-describedby={`${id}-description`}
-                aria-labelledby={`${id}-name`}
-                checked={on}
-                onCheckedChange={(next) =>
-                  onChange(setPluginEnabled(config, plugin.name, next, registry))
+            <li className={cn(DIRECTORY_CARD, 'bg-background')} key={plugin.name}>
+              <DirectoryCardBody
+                badges={missing === undefined ? undefined : <AlertGlyph reason={missing} />}
+                description={plugin.description}
+                descriptionId={`${id}-description`}
+                icon={pluginIcon(plugin.name)}
+                name={plugin.label}
+                nameId={`${id}-name`}
+                trailing={
+                  <Switch
+                    aria-describedby={`${id}-description`}
+                    aria-labelledby={`${id}-name`}
+                    checked={on}
+                    className={CARD_SWITCH_HIT}
+                    onCheckedChange={(next) =>
+                      onChange(setPluginEnabled(config, plugin.name, next, registry))
+                    }
+                  />
                 }
               />
             </li>

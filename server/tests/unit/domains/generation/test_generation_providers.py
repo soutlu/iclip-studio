@@ -69,25 +69,26 @@ SEEDREAM_SETTINGS = GatewayImageSettings(
 )
 
 
+Handler = Callable[[httpx.Request], httpx.Response]
+
+
 def nano_provider(
-    handler: object, *, store: MemoryObjectStore | None = None
+    handler: Handler, *, store: MemoryObjectStore | None = None
 ) -> GatewayImageProvider:
-    assert callable(handler)
     return GatewayImageProvider(
         NANO_BANANA_PRO,
         IMAGE_SETTINGS,
         object_store=store or MemoryObjectStore(),
-        transport=httpx.MockTransport(handler),  # type: ignore[arg-type]
+        transport=httpx.MockTransport(handler),
     )
 
 
-def seedream_provider(handler: object, *, store: MemoryObjectStore) -> GatewayImageProvider:
-    assert callable(handler)
+def seedream_provider(handler: Handler, *, store: MemoryObjectStore) -> GatewayImageProvider:
     return GatewayImageProvider(
         SEEDREAM_V5_PRO,
         SEEDREAM_SETTINGS,
         object_store=store,
-        transport=httpx.MockTransport(handler),  # type: ignore[arg-type]
+        transport=httpx.MockTransport(handler),
     )
 
 
@@ -97,11 +98,10 @@ def seedream_ok(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, content=b"JPGDATA", headers={"content-type": "image/jpeg"})
 
 
-def video_provider(handler: object) -> HttpVideoProvider:
-    assert callable(handler)
+def video_provider(handler: Handler) -> HttpVideoProvider:
     return HttpVideoProvider(
         VIDEO_SETTINGS,
-        transport=httpx.MockTransport(handler),  # type: ignore[arg-type]
+        transport=httpx.MockTransport(handler),
     )
 
 
@@ -659,10 +659,9 @@ ENHANCE_SETTINGS = replace(VIDEO_SETTINGS, enhance_submit_url=ENHANCE_URL)
 
 
 def enhance_provider(
-    handler: object, *, settings: VideoProviderSettings = ENHANCE_SETTINGS
+    handler: Handler, *, settings: VideoProviderSettings = ENHANCE_SETTINGS
 ) -> HttpVideoProvider:
-    assert callable(handler)
-    return HttpVideoProvider(settings, transport=httpx.MockTransport(handler))  # type: ignore[arg-type]
+    return HttpVideoProvider(settings, transport=httpx.MockTransport(handler))
 
 
 def finished_take() -> GenerationJob:

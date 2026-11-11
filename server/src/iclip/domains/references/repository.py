@@ -80,7 +80,7 @@ class BreakdownQueue(Protocol):
 
 
 class TestVideos(Protocol):
-    async def latest(self, owner: uuid.UUID, reference_id: uuid.UUID) -> TestVideoJob | None: ...
+    async def latest(self, reference_id: uuid.UUID) -> TestVideoJob | None: ...
 
     async def submit(
         self,

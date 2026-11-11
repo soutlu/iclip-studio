@@ -11,9 +11,11 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '@/shared/icons'
+import { mergeSpans, sameSpans, spansOf, windowSpans, type TimeSpan } from '@/shared/lib/time-spans'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { DialogRoot, DialogSurface, DialogTitle } from '@/shared/ui/dialog'
+import { MediaBuffering } from '@/shared/ui/media-buffering'
 import { MediaFallback } from '@/shared/ui/media-fallback'
 import { StageBackdrop } from '../components/stage-backdrop'
 import { framePosition } from './frame-seek'
@@ -77,6 +79,7 @@ type Props = {
   onPlay: () => void
   onPlaybackChange?: ((playback: PreviewPlayback) => void) | undefined
   onDownloadSettled?: (() => void) | undefined
+  onBuffered?: ((spans: readonly TimeSpan[]) => void) | undefined
   externalAudio?: { blocked: string | undefined } | undefined
   aspectRatio?: number | undefined
   overlay: ReactNode
@@ -101,6 +104,7 @@ export function EditorPreview({
   onPlay,
   onPlaybackChange,
   onDownloadSettled,
+  onBuffered,
   externalAudio,
   aspectRatio,
   overlay,
@@ -176,6 +180,23 @@ export function EditorPreview({
   }
   const settleFromEffect = useEffectEvent(settleIfIdle)
   useEffect(() => settleFromEffect(), [segments])
+  const reportedBufferRef = useRef<readonly TimeSpan[]>([])
+  const reportBuffered = () => {
+    const spans = mergeSpans(
+      (segments ?? []).flatMap((segment) =>
+        elementsRef.current.flatMap((element) =>
+          element?.dataset['src'] === segment.mediaUrl
+            ? windowSpans(spansOf(element.buffered), segment.start, segment.end, segment.at)
+            : [],
+        ),
+      ),
+    )
+    if (sameSpans(reportedBufferRef.current, spans)) return
+    reportedBufferRef.current = spans
+    onBuffered?.(spans)
+  }
+  const reportBufferedFromEffect = useEffectEvent(reportBuffered)
+  useEffect(() => reportBufferedFromEffect(), [segments])
   const lastShowingRef = useRef(showing)
   const resumeClock = useEffectEvent(() => currentTime)
 
@@ -402,8 +423,14 @@ export function EditorPreview({
             }
             settleIfIdle()
           }}
-          onSuspend={settleIfIdle}
+          onSuspend={() => {
+            settleIfIdle()
+            reportBuffered()
+          }}
+          onEmptied={reportBuffered}
+          onProgress={reportBuffered}
           onLoadedMetadata={(event) => {
+            reportBuffered()
             const media = event.currentTarget
             if (slot === active && media.videoWidth > 0 && media.videoHeight > 0) {
               setAspect(media.videoWidth / media.videoHeight)
@@ -428,6 +455,7 @@ export function EditorPreview({
           key={switches}
         />
       )}
+      {playing && buffering ? <MediaBuffering /> : null}
       {segments === undefined ? <PreviewMessage>正在读取视频信息…</PreviewMessage> : null}
       {failed ? (
         <div className="editor-preview-message" role="alert">

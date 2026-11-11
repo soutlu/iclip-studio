@@ -83,6 +83,13 @@ type UseComposerEditorOptions = {
 
 let nodeViewSeq = 0
 
+// 键按视图发而不按附件发：合并段落时 ProseMirror 先建新视图、再销毁旧视图，
+// 按 attId 注销会把刚登记的新视图一起删掉，pill 只剩空壳。
+const nextHostKey = () => {
+  nodeViewSeq += 1
+  return `node-${nodeViewSeq}`
+}
+
 export const useComposerEditor = ({
   admitFiles,
   admitPasted,
@@ -348,8 +355,7 @@ export const useComposerEditor = ({
             const span = document.createElement('span')
             span.className = 'composer-node'
             span.dataset['composerNode'] = spec.name
-            nodeViewSeq += 1
-            const key = `node-${nodeViewSeq}`
+            const key = nextHostKey()
             registerHost({ el: span, key, node: composerNodeOf(node), type: 'node' })
             return {
               destroy: () => unregisterHost(key),
@@ -419,10 +425,11 @@ export const useComposerEditor = ({
             span.dataset['attachmentId'] = attId
             span.dataset['attachmentKind'] = kind
             span.dataset['attachmentName'] = name
-            registerHost({ attId, el: span, key: attId, kind, name, type: 'attachment' })
+            const key = nextHostKey()
+            registerHost({ attId, el: span, key, kind, name, type: 'attachment' })
             return {
               destroy() {
-                unregisterHost(attId)
+                unregisterHost(key)
               },
               dom: span,
               update: (next) => next.attrs['attId'] === attId,

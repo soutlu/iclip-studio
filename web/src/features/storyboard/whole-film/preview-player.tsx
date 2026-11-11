@@ -1,12 +1,16 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type ReactNode,
   type RefObject,
 } from 'react'
+import { mergeSpans, sameSpans, spansOf, windowSpans, type TimeSpan } from '@/shared/lib/time-spans'
+import { MediaFallback } from '@/shared/ui/media-fallback'
 import { StageBackdrop } from '../components/stage-backdrop'
 import { secondsToFrame, STUDIO_PREVIEW_FPS } from './vendor/hyperframes-studio/player/lib/time'
 
@@ -46,6 +50,7 @@ type PreviewPlayerProps = {
   onFrame: (iframe: HTMLIFrameElement | null) => void
   onMediaSettled?: (() => void) | undefined
   onBuffering?: ((buffering: boolean) => void) | undefined
+  onBuffered?: ((spans: readonly TimeSpan[]) => void) | undefined
   children?: ReactNode
 }
 
@@ -75,6 +80,22 @@ const hasResumeBuffer = (video: HTMLVideoElement) => {
 // 媒体事件不冒泡，要在 iframe 文档上捕获
 const MEDIA_EVENTS = ['suspend', 'error', 'progress', 'canplay', 'seeked']
 
+const FAILURE_EVENTS = ['error', 'emptied']
+
+const playsAt = (video: HTMLVideoElement, seconds: number) => {
+  const start = Number(video.dataset['start'])
+  return start <= seconds && seconds < start + Number(video.dataset['duration'])
+}
+
+const failedClipOf = (player: PlayerElement | null) => {
+  const page = player?.iframeElement.contentDocument
+  if (player === null || page === null || page === undefined) return null
+  const clip = [...page.querySelectorAll<HTMLVideoElement>('video[data-start]')].find((video) =>
+    playsAt(video, player.currentTime),
+  )
+  return clip !== undefined && clip.error !== null ? clip : null
+}
+
 export function PreviewPlayer({
   srcdoc,
   message,
@@ -87,18 +108,27 @@ export function PreviewPlayer({
   onFrame,
   onMediaSettled,
   onBuffering,
+  onBuffered,
   children,
 }: PreviewPlayerProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const [loaded, setLoaded] = useState(false)
   const [active, setActive] = useState<PlayerElement | null>(null)
   const activeRef = useRef<PlayerElement | null>(null)
-  const callbacksRef = useRef({ onTime, onPlaying, onFrame, onMediaSettled, onBuffering })
+  const callbacksRef = useRef({
+    onTime,
+    onPlaying,
+    onFrame,
+    onMediaSettled,
+    onBuffering,
+    onBuffered,
+  })
   const sizeRef = useRef({ width, height })
   const wantsPlayRef = useRef(false)
   const swappingRef = useRef(false)
+  const startAtRef = useRef(0)
   useLayoutEffect(() => {
-    callbacksRef.current = { onTime, onPlaying, onFrame, onMediaSettled, onBuffering }
+    callbacksRef.current = { onTime, onPlaying, onFrame, onMediaSettled, onBuffering, onBuffered }
     sizeRef.current = { width, height }
   })
 
@@ -124,15 +154,13 @@ export function PreviewPlayer({
     if (active === null || page === null || page === undefined) return
     swappingRef.current = false
     let buffering = false
+    let reported: readonly TimeSpan[] | undefined
     const atEnd = () => active.currentTime >= active.duration
     const syncMedia = () => {
       const wantsPlay = wantsPlayRef.current && !swappingRef.current
       const videos = [...page.querySelectorAll<HTMLVideoElement>('video[data-start]')]
       const seconds = active.currentTime
-      const clip = videos.find((video) => {
-        const start = Number(video.dataset['start'])
-        return start <= seconds && seconds < start + Number(video.dataset['duration'])
-      })
+      const clip = videos.find((video) => playsAt(video, seconds))
       const clipReady =
         clip === undefined ||
         clip.error !== null ||
@@ -150,6 +178,21 @@ export function PreviewPlayer({
         videos.every((video) => video.networkState !== HTMLMediaElement.NETWORK_LOADING)
       )
         callbacksRef.current.onMediaSettled?.()
+      const spans = mergeSpans(
+        videos.flatMap((video) => {
+          const mediaStart = Number(video.dataset['mediaStart'] ?? 0)
+          return windowSpans(
+            spansOf(video.buffered),
+            mediaStart,
+            mediaStart + Number(video.dataset['duration']),
+            Number(video.dataset['start']),
+          )
+        }),
+      )
+      if (reported === undefined || !sameSpans(reported, spans)) {
+        reported = spans
+        callbacksRef.current.onBuffered?.(spans)
+      }
     }
     const setWantsPlay = (wantsPlay: boolean) => {
       wantsPlayRef.current = wantsPlay
@@ -188,6 +231,45 @@ export function PreviewPlayer({
     }
   }, [active, controlRef])
 
+  const watchFailure = useCallback(
+    (notify: () => void) => {
+      const page = active?.iframeElement.contentDocument
+      if (active === null || page === null || page === undefined) return () => {}
+      active.addEventListener('timeupdate', notify)
+      for (const type of FAILURE_EVENTS) page.addEventListener(type, notify, true)
+      return () => {
+        active.removeEventListener('timeupdate', notify)
+        for (const type of FAILURE_EVENTS) page.removeEventListener(type, notify, true)
+      }
+    },
+    [active],
+  )
+  const clipFailed = useSyncExternalStore(watchFailure, () => failedClipOf(active) !== null)
+
+  const awaitingFirst = active === null && srcdoc !== undefined
+  useEffect(() => {
+    if (!awaitingFirst) return
+    const setWantsPlay = (wantsPlay: boolean) => {
+      wantsPlayRef.current = wantsPlay
+      callbacksRef.current.onPlaying(wantsPlay)
+      callbacksRef.current.onBuffering?.(wantsPlay)
+    }
+    controlRef.current = {
+      play: () => setWantsPlay(true),
+      pause: () => setWantsPlay(false),
+      seek: (ms) => {
+        setWantsPlay(false)
+        startAtRef.current = frameSeconds(ms)
+      },
+    }
+    return () => {
+      controlRef.current = null
+      if (!wantsPlayRef.current) return
+      if (activeRef.current === null) setWantsPlay(false)
+      else callbacksRef.current.onBuffering?.(false)
+    }
+  }, [awaitingFirst, controlRef])
+
   useEffect(() => {
     if (active === null) return
     active.setAttribute('width', String(width))
@@ -208,7 +290,7 @@ export function PreviewPlayer({
       const old = activeRef.current
       swappingRef.current = true
       old?.pause()
-      const resumeAt = old?.currentTime ?? 0
+      const resumeAt = old?.currentTime ?? startAtRef.current
       const next = document.createElement('hyperframes-player') as PlayerElement
       // 播放器给每段视频在父页面另建不跨域的副本，每个文件下载两遍。没有公开开关，版本锁定，升级要复查
       next._media._createEntry = () => null
@@ -246,10 +328,24 @@ export function PreviewPlayer({
       <div className="editor-hero-wrap">
         <div
           className="wf-player-host editor-preview stage-picture"
+          data-failed={clipFailed ? '' : undefined}
           hidden={srcdoc === undefined}
           style={{ '--preview-ratio': width / height } as CSSProperties}
         >
           <div className="wf-player-slot" ref={hostRef} />
+          {clipFailed ? (
+            <div className="editor-preview-message" role="alert">
+              <MediaFallback
+                kind="video"
+                onRetry={() => {
+                  const clip = failedClipOf(activeRef.current)
+                  if (clip === null) return
+                  clip.preload = 'auto'
+                  clip.load()
+                }}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
       {children}

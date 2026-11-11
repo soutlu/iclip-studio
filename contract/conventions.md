@@ -274,7 +274,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
   - `model_failed`：模型拒绝请求或等待超时。
   - `model_unavailable`：后台未启用拆解模型，需联系管理员开启。
   - `timeout`：拆解执行超过 20 分钟未结束。
-- **编辑拆解、重拆与试生成**（仅创建者本人、治理者或代办 Key 可修改；**试生成仅限创建者本人**）：
+- **编辑拆解、重拆与试生成**（仅创建者本人、治理者或代办 Key 可修改）：
   - `PATCH /references/{id}`：带上版本号 `version` 修改拆解 Markdown 正文（正在排队或拆解中时返回 `409`）。
   - `POST .../breakdowns`（重新拆解，成功后会覆盖人工改过的正文并自动触发重新打标）与 `POST .../tagging`（按当前拆解报告重新打标）。
   - `POST .../test-generations`：仅根据当前拆解报告的文字拼出提示词，生成一条 wan3 480p 测试视频，用来对照检验拆解报告写得全不全（拆解未完成或上一次试生成还在跑时返回 `409`；如果之后又修改了拆解报告，详情里的 `testVideo.stale` 会变为 `true` 提示已过时）。
@@ -315,7 +315,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 ## 19. Agent 配置 (Agents)
 
 管理后台的 Agent 配置接口（路径在 `/agents` 下，概念见 [CONTEXT.md「Agent 标识、草稿与版本」](../docs/CONTEXT.md#术语)）：
-- **配置文档格式（`snake_case`）**：草稿、历史版本与 YAML 导出包中的 `config` 使用相同的结构：`schema_version: 1`、`instructions`、`model: { provider, name, credential_id?, settings: { thinking? } }`、`tools`（`type: "cap"` 代码插件或 `type: "mcp"` 远程服务）以及 `subagents`。绑定的技能列表通过同级的 `skillIds` 数组按先后顺序传入。
+- **配置文档格式（`snake_case`）**：草稿、历史版本与 YAML 导出包中的 `config` 使用相同的结构：`schema_version: 1`、`instructions`、`model: { provider, name, credential_id?, settings: { thinking? } }`、`tools`（`type: "cap"` 代码插件或 `type: "mcp"` 远程服务）以及 `subagents`。MCP 挂载项是 `{ type: "mcp", server, tools, approval_tools? }`，对应工具的三种状态（见 [CONTEXT.md「MCP 服务」](../docs/CONTEXT.md#术语)）：在 `tools` 里是允许；同时在 `tools` 与 `approval_tools` 里是要求审批；不在 `tools` 里是关闭。新挂的服务写 `tools: []`；`tools: null` 表示全部工具（包括服务以后新加的）；`approval_tools` 必须是 `tools` 的子集（`tools` 为 `null` 时不限），为空时配置里不写出这一项。绑定的技能列表通过同级的 `skillIds` 数组按先后顺序传入。
 - **乐观锁与发布编译检查**：
   - 保存草稿（`PUT /agents/{id}/draft`）、发布新版本（`POST .../versions`）和恢复历史版本（`POST .../restore`）都必须传入当前草稿的 `lockVersion`（不一致返回 `409`）。保存草稿只检查 JSON 格式，允许还没选模型等未完成状态。
   - **发布检查**：点击发布时如果配置不完整或引用的资源不可用，返回 `422 { detail, problems: [{ path, message }] }`，前端可根据 `path`（如 `model.provider`、`tools[1].server`、`skills[0]`）直接高亮对应的表单项；如果草稿与当前版本毫无差异，返回 `422`「没有可发布的改动」。
@@ -326,7 +326,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 供管理员在发布前试聊 Agent 草稿或指定版本的接口（概念见 [CONTEXT.md「测试预览」](../docs/CONTEXT.md#术语)）：
 - **开启预览** `POST /agents/{id}/previews`：传入可选的 `{ versionId }`（不传则代表实时预览草稿），返回 `201 { id, agentId, versionId, createdAt }`。每个管理员在每个 Agent 下同时只有一段有效预览：调用该接口会先开启一段新预览会话，并自动撤回和中断该管理员在该 Agent 下的旧预览（旧预览的 `id` 随即失效，再次访问返回 `404`）。
-- **复用聊天接口与严格私有**：拿到返回的预览 `id` 后，可直接当作对话 ID 调用 §5 的发消息、读聊天记录、停止、审批、WebSocket 订阅接口，以及 §6 的工作区文件只读接口（调用其他正式对话接口均返回 `404`）。**一段预览只有创建者本人（且当前仍持有 `agent:manage` 权限）可以访问**，其他任何人（包括治理者）访问一律返回 `404`。
+- **复用聊天接口与严格私有**：拿到返回的预览 `id` 后，可直接当作对话 ID 调用 §5 的发消息、读聊天记录、停止、审批、WebSocket 订阅接口，以及 §6 的工作区文件只读接口，也可作为 §22 `GET /mcp-connections` 的 `conversationId`（调用其他正式对话接口均返回 `404`）。**一段预览只有创建者本人（且当前仍持有 `agent:manage` 权限）可以访问**，其他任何人（包括治理者）访问一律返回 `404`。
 
 ---
 
@@ -363,5 +363,31 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 管理后台的远程 MCP 工具服务接口（路径在 `/mcp-servers` 下，概念见 [CONTEXT.md「MCP 服务」](../docs/CONTEXT.md#术语)）：
 - **唯一性与加密存储**：服务标识 `id`（格式同 Agent ID，创建后不可修改）、名称 `name` 和服务地址 `url` 均不能与已有服务重复（冲突返回 `409`）。连接方式 `transport` 必须明确指定为 `streamable_http` 或 `sse`（不支持本地子进程 `stdio`），超时时间 `timeoutSeconds` 为 1～300 秒（默认 30 秒）。`url` 和自定义请求头 `headers` 的值均使用 `CREDENTIAL_ENCRYPTION_KEYS` 加密存储：管理接口会返回完整 `url`，但所有 `headers` 的值一律只返回打码值（`PATCH` 更新时，如果不传 `url` 或某个请求头不传 `value`，会自动保留原值）。
-- **测试连接与拉取工具列表**：调用 `POST /mcp-servers/{id}/check` 测试已保存的服务（测试成功后会更新服务上保存的 `lastCheck` 状态和发现的工具列表 `tools`），或调用 `POST /mcp-servers/check` 在保存前测试表单配置（不落库）。一旦修改了服务的 `url` 或 `transport`，原有的 `lastCheck` 和 `tools` 会自动清空，需重新测试连接后才能被 Agent 发布引用。
+- **测试连接与拉取工具列表**：调用 `POST /mcp-servers/{id}/check` 测试已保存的服务（测试成功后会更新服务上保存的 `lastCheck` 状态和发现的工具列表 `tools`），或调用 `POST /mcp-servers/check` 在保存前测试表单配置（不落库）。一旦修改了服务的 `url` 或 `transport`，原有的 `lastCheck` 和 `tools` 会自动清空，需重新测试连接后才能被 Agent 发布引用。使用自有账户的服务要先保存再测试：`POST /mcp-servers/check` 带 `authMode: "per_user"`（或 `serverId` 指向这样的服务而没给 `authMode`）答 `422`；`POST /mcp-servers/{id}/check` 用当前管理员自己的连接，他未连接答 `409 mcp_not_connected`，连接已失效答 `409 mcp_reconnect_required`，一时续不上答 `409 mcp_oauth_unavailable`，都不记结果，前端引导他连接后再测；测试通过时一并重读服务公布的权限范围。
 - **工具命名与前端卡片展示**：挂载后暴露给大模型的工具名格式为 `mcp_<服务标识>_<原工具名>`（总长不超过 64 字符且仅含字母、数字、下划线和连字符）。在前端聊天记录的工具卡片上，标题（`display.summary`）显示为「MCP 服务名称 · 工具显示名（`title`）」，副标题（`display.detail`）自动提取本次调用参数中第一个非空字符串的首行内容。
+- **使用自有账户**：`authMode: "per_user"`（界面上的「使用自有账户」开关；默认 `shared`）。`oauthScopes` 是要请求的权限范围，`null` 表示服务公布的全部；`oauthClient: { clientId, clientSecret? }` 是管理员填的客户端，给不能自动注册的服务用，它要在服务那边登记回调地址 `<前端源>/mcp/callback`：`GET /mcp-servers:callback-url`（要 `agent:manage`）答 `{ callbackUrl }`，就是连接时后端发给授权服务器的那个地址，没配 SSO 时为 `null`。`PATCH` 里这两项给 `null` 等于不改。答复里的 `oauth` 是按用户登录的现状：`client` 为 `required` 时要管理员填客户端 ID，`presetClient.clientSecret` 只返回打码值，`connectedUsers` 是已连接的人数。
+- **影响已连接用户的修改（`409 mcp_connections_affected`）**：`PATCH /mcp-servers/{id}` 会断开或作废已连接用户的连接时，不带 `confirmReconnect: true` 就答 `409 { detail, code: "mcp_connections_affected", affectedUsers }`，什么都不改；向管理员确认后带上 `confirmReconnect: true` 重发。
+
+### 用户的连接
+
+路径在 `/mcp-connections` 下，只要登录、不要 `agent:manage`，代的总是当前登录的这个人：
+- **列出** `GET /mcp-connections`：启用的、使用自有账户的服务与我在各服务上的连接，`state` 为 `connected`（已连接）、`invalid`（连接已失效）或 `none`（未连接）。不带参数列全部；带下面任一个参数时只列运行会连的服务，即这份配置与其子 Agent 当前版本挂着、且有工具放给模型的（一个工具都不放的不算；子 Agent 不放要求审批的工具），对话页据此提示「X 未连接」：
+  - 已有的对话（含测试预览）给 `conversationId`：按这段对话锁定的版本算（测试预览按它跑的那份），管理员后来发布的版本不影响它。对话要是我能发消息的那段（我自己的、未删除的对话，或我自己的测试预览且我仍有 `agent:manage`），否则 `404`，能只读查看的别人的对话也是 `404`；对话没有能跑的版本答 `409 agent_unavailable`。
+  - 还没建的对话给 `agentId`：按这个 Agent 的当前版本算，Agent 不存在是 `404`；再加 `draft=true` 按草稿算，要 `agent:manage`（否则 `403`）。
+  - `conversationId` 与 `agentId` 或 `draft=true` 一起给答 `422`。
+- **连接** `POST /mcp-connections/{serverId}/authorize`：答 `{ authorizationUrl }`，浏览器跳过去，5 分钟内有效。授权服务器回调到前端的 `/mcp/callback?state=…&code=…`（可能带 `iss`），前端把这几个参数原样交给 `POST /mcp-connections/complete`，答 `{ serverId, name, account }`，替换我在这个服务上原有的连接。回调地址由后端用 `SSO_REDIRECT_URL` 的源加 `/mcp/callback` 拼出，不取自请求；没配 SSO 时答 `409 mcp_callback_unconfigured`。
+- **断开** `DELETE /mcp-connections/{serverId}`：答 `204`，本来没连也是 `204`。
+- **错误码**：都是 `409`，按 `code` 区分：
+
+| `code` | 含义 |
+|---|---|
+| `agent_unavailable` | 按 `conversationId` 列出时，这段对话没有能跑的 Agent 版本 |
+| `mcp_callback_unconfigured` | 后端没配 SSO，拼不出回调地址 |
+| `mcp_client_required` | 服务不能自动注册客户端，要管理员先填客户端 ID |
+| `mcp_oauth_unsupported` | 服务没有公布 OAuth 授权服务器 |
+| `mcp_oauth_unavailable` | 一时连不上服务或它的授权服务器，可以重试 |
+| `mcp_oauth_rejected` | 授权服务器拒绝了 |
+| `mcp_sign_in_expired` | 这次登录不存在、已用过、过期或服务设置已变，要重新连接 |
+| `mcp_sign_in_foreign` | 这次登录是别人发起的 |
+| `mcp_not_connected` | 测试连接时，当前管理员还没有连接这个服务 |
+| `mcp_reconnect_required` | 测试连接时，当前管理员的连接已失效，要重新连接 |

@@ -10,8 +10,11 @@ import {
   type Ref,
   type VideoHTMLAttributes,
 } from 'react'
+import { sameSpans, spansOf, type TimeSpan } from '@/shared/lib/time-spans'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
+import { MediaBuffering } from '@/shared/ui/media-buffering'
+import { MediaFallback } from '@/shared/ui/media-fallback'
 
 export const VIDEO_PLAYER_SELECTOR = '[data-video-player]'
 
@@ -24,7 +27,7 @@ const BAR_BUTTON = 'size-(--control-height-md) rounded-full text-on-scrim [&_svg
 
 type VideoPlayerProps = Pick<
   VideoHTMLAttributes<HTMLVideoElement>,
-  'onError' | 'onLoadedMetadata' | 'onTimeUpdate'
+  'onLoadedMetadata' | 'onTimeUpdate'
 > & {
   src: string
   label: string
@@ -36,15 +39,40 @@ type VideoPlayerProps = Pick<
   className?: string | undefined
   style?: CSSProperties | undefined
   videoClassName?: string | undefined
-  hidden?: boolean | undefined
   ref?: Ref<HTMLVideoElement> | undefined
 }
 
-type Playback = { paused: boolean; muted: boolean; time: number; duration: number }
+type Playback = {
+  paused: boolean
+  muted: boolean
+  time: number
+  duration: number
+  waiting: boolean
+  failed: boolean
+  buffered: readonly TimeSpan[]
+}
+
+const INITIAL: Playback = {
+  paused: true,
+  muted: false,
+  time: 0,
+  duration: 0,
+  waiting: false,
+  failed: false,
+  buffered: [],
+}
 
 const formatClock = (seconds: number) => {
   const total = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
+
+const startsOnLoad = (video: HTMLVideoElement) => video.autoplay && video.played.length === 0
+
+const waitingOf = (video: HTMLVideoElement) => {
+  if (video.error !== null || video.ended) return false
+  if (!video.paused) return video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA
+  return startsOnLoad(video) && video.readyState < HTMLMediaElement.HAVE_ENOUGH_DATA
 }
 
 const playbackOf = (video: HTMLVideoElement): Playback => ({
@@ -52,7 +80,19 @@ const playbackOf = (video: HTMLVideoElement): Playback => ({
   muted: video.muted,
   time: video.currentTime,
   duration: Number.isFinite(video.duration) ? video.duration : 0,
+  waiting: waitingOf(video),
+  failed: video.error !== null,
+  buffered: spansOf(video.buffered),
 })
+
+const samePlayback = (left: Playback, right: Playback) =>
+  left.paused === right.paused &&
+  left.muted === right.muted &&
+  left.time === right.time &&
+  left.duration === right.duration &&
+  left.waiting === right.waiting &&
+  left.failed === right.failed &&
+  sameSpans(left.buffered, right.buffered)
 
 export function VideoPlayer({
   src,
@@ -65,9 +105,7 @@ export function VideoPlayer({
   className,
   style,
   videoClassName,
-  hidden,
   ref,
-  onError,
   onLoadedMetadata,
   onTimeUpdate,
 }: VideoPlayerProps) {
@@ -76,12 +114,8 @@ export function VideoPlayer({
   const idleTimerRef = useRef<number | undefined>(undefined)
   const pointerTypeRef = useRef('')
   const lastTapRef = useRef<{ at: number; x: number; y: number } | null>(null)
-  const [playback, setPlayback] = useState<Playback>({
-    paused: true,
-    muted: false,
-    time: 0,
-    duration: 0,
-  })
+  const resumeRef = useRef<{ src: string; at: number } | null>(null)
+  const [playback, setPlayback] = useState(INITIAL)
   const [idle, setIdle] = useState(false)
 
   const attachVideo = useCallback(
@@ -108,7 +142,11 @@ export function VideoPlayer({
     }, IDLE_MS)
   }
 
-  const sync = (video: HTMLVideoElement) => setPlayback(playbackOf(video))
+  const sync = (video: HTMLVideoElement) =>
+    setPlayback((previous) => {
+      const next = playbackOf(video)
+      return samePlayback(previous, next) ? previous : next
+    })
 
   const toggle = () => {
     const video = videoRef.current
@@ -130,6 +168,14 @@ export function VideoPlayer({
   const toggleMute = () => {
     const video = videoRef.current
     if (video !== null) video.muted = !video.muted
+  }
+
+  const retry = () => {
+    const video = videoRef.current
+    if (video === null) return
+    const at = video.currentTime
+    resumeRef.current = at > 0 ? { src: video.currentSrc, at } : null
+    video.load()
   }
 
   const expand = () => {
@@ -164,7 +210,7 @@ export function VideoPlayer({
     wake()
     if (event.altKey || event.ctrlKey || event.metaKey) return
     const video = videoRef.current
-    if (video === null) return
+    if (video === null || video.error !== null) return
     const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
     if (key === ' ' && event.target instanceof HTMLButtonElement) return
     if (key === ' ' || key === 'k') toggle()
@@ -177,17 +223,17 @@ export function VideoPlayer({
     event.preventDefault()
   }
 
-  const { paused, muted, time, duration } = playback
+  const { paused, muted, time, duration, waiting, failed, buffered } = playback
+  const percent = (seconds: number) => `${duration > 0 ? (seconds / duration) * 100 : 0}%`
   return (
     <div
       aria-label={`播放器：${label}`}
       className={cn(
-        'relative touch-manipulation overflow-hidden rounded-md bg-scrim select-none',
+        'relative isolate touch-manipulation overflow-hidden rounded-md bg-scrim select-none',
         className,
       )}
-      data-idle={idle ? '' : undefined}
+      data-idle={idle && !failed ? '' : undefined}
       data-video-player=""
-      hidden={hidden}
       onFocus={wake}
       onKeyDownCapture={onKeyDownCapture}
       onPointerLeave={(event) => {
@@ -207,12 +253,18 @@ export function VideoPlayer({
         className={cn('block size-full object-contain', videoClassName)}
         disablePictureInPicture
         loop={loop}
+        onCanPlay={(event) => sync(event.currentTarget)}
+        onCanPlayThrough={(event) => sync(event.currentTarget)}
         onClick={onPictureClick}
         onDurationChange={(event) => sync(event.currentTarget)}
         onEmptied={(event) => sync(event.currentTarget)}
-        onError={onError}
+        onError={(event) => sync(event.currentTarget)}
+        onLoadStart={(event) => sync(event.currentTarget)}
         onLoadedMetadata={(event) => {
-          if (startAt !== undefined && startAt > 0) event.currentTarget.currentTime = startAt
+          const resume = resumeRef.current
+          resumeRef.current = null
+          const at = resume?.src === event.currentTarget.currentSrc ? resume.at : startAt
+          if (at !== undefined && at > 0) event.currentTarget.currentTime = at
           sync(event.currentTarget)
           onLoadedMetadata?.(event)
         }}
@@ -225,61 +277,93 @@ export function VideoPlayer({
           sync(event.currentTarget)
           wake()
         }}
+        onPlaying={(event) => sync(event.currentTarget)}
         onPointerDown={(event) => {
           pointerTypeRef.current = event.pointerType
         }}
+        onProgress={(event) => sync(event.currentTarget)}
+        onSeeked={(event) => sync(event.currentTarget)}
+        onSuspend={(event) => sync(event.currentTarget)}
         onTimeUpdate={(event) => {
           sync(event.currentTarget)
           onTimeUpdate?.(event)
         }}
         onVolumeChange={(event) => sync(event.currentTarget)}
+        onWaiting={(event) => sync(event.currentTarget)}
         playsInline
         poster={poster}
         preload="metadata"
         ref={attachVideo}
         src={src}
       />
-      <div aria-hidden className="video-player-shade" />
-      <div className="video-player-bar" ref={barRef}>
-        <IconButton
-          className={BAR_BUTTON}
-          label={paused ? '播放' : '暂停'}
-          name={paused ? 'play' : 'pause'}
-          onClick={toggle}
-          size="sm"
-        />
-        <IconButton
-          className={BAR_BUTTON}
-          label={muted ? '开启声音' : '静音'}
-          name={muted ? 'audio-off' : 'audio'}
-          onClick={toggleMute}
-          size="sm"
-        />
-        <span className="video-player-time">{formatClock(time)}</span>
-        <Slider.Root
-          className="video-player-slider"
-          disabled={duration <= 0}
-          max={duration > 0 ? duration : 1}
-          onValueChange={([at]) => {
-            if (at !== undefined) seekTo(at)
-          }}
-          step={0.1}
-          value={[Math.min(time, duration)]}
+      {waiting ? <MediaBuffering /> : null}
+      {failed ? (
+        <div
+          className="absolute inset-0 grid place-items-center bg-surface-container p-4"
+          role="alert"
         >
-          <Slider.Track className="video-player-track">
-            <Slider.Range className="video-player-range" />
-          </Slider.Track>
-          <Slider.Thumb
-            aria-label="播放进度"
-            aria-valuetext={`${formatClock(time)} / ${formatClock(duration)}`}
-            className="video-player-thumb"
-          />
-        </Slider.Root>
-        <span className="video-player-time video-player-total">{formatClock(duration)}</span>
-        {onExpand === undefined ? null : (
-          <IconButton className={BAR_BUTTON} label="放大" name="zoom" onClick={expand} size="sm" />
-        )}
-      </div>
+          <MediaFallback kind="video" onRetry={retry} />
+        </div>
+      ) : (
+        <>
+          <div aria-hidden className="video-player-shade" />
+          <div className="video-player-bar" ref={barRef}>
+            <IconButton
+              className={BAR_BUTTON}
+              label={paused ? '播放' : '暂停'}
+              name={paused ? 'play' : 'pause'}
+              onClick={toggle}
+              size="sm"
+            />
+            <IconButton
+              className={BAR_BUTTON}
+              label={muted ? '开启声音' : '静音'}
+              name={muted ? 'audio-off' : 'audio'}
+              onClick={toggleMute}
+              size="sm"
+            />
+            <span className="video-player-time">{formatClock(time)}</span>
+            <Slider.Root
+              className="video-player-slider"
+              disabled={duration <= 0}
+              max={duration > 0 ? duration : 1}
+              onValueChange={([at]) => {
+                if (at !== undefined) seekTo(at)
+              }}
+              step={0.1}
+              value={[Math.min(time, duration)]}
+            >
+              <Slider.Track className="video-player-track">
+                {buffered.map(({ start, end }) => (
+                  <span
+                    aria-hidden
+                    className="video-player-buffered"
+                    data-testid="video-buffered"
+                    key={start}
+                    style={{ left: percent(start), width: percent(end - start) }}
+                  />
+                ))}
+                <Slider.Range className="video-player-range" />
+              </Slider.Track>
+              <Slider.Thumb
+                aria-label="播放进度"
+                aria-valuetext={`${formatClock(time)} / ${formatClock(duration)}`}
+                className="video-player-thumb"
+              />
+            </Slider.Root>
+            <span className="video-player-time video-player-total">{formatClock(duration)}</span>
+            {onExpand === undefined ? null : (
+              <IconButton
+                className={BAR_BUTTON}
+                label="放大"
+                name="zoom"
+                onClick={expand}
+                size="sm"
+              />
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }

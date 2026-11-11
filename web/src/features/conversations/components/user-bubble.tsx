@@ -72,10 +72,10 @@ export function UserBubble({ className, content, editDisabled = false, onEdit }:
             <div ref={ref} className={cn(clampable && !expanded && 'chat-clamp')}>
               {content.map((part, index) =>
                 part.type === 'text' ? (
-                  // eslint-disable-next-line @eslint-react/no-array-index-key
+                  // eslint-disable-next-line @eslint-react/no-array-index-key -- 片段没有唯一标识且可能重复，子项也不持有绑定某个片段的状态
                   <span key={index}>{part.text}</span>
                 ) : (
-                  // eslint-disable-next-line @eslint-react/no-array-index-key
+                  // eslint-disable-next-line @eslint-react/no-array-index-key -- 片段没有唯一标识且可能重复，子项也不持有绑定某个片段的状态
                   <MediaChip key={index} onOpen={setViewing} part={part} />
                 ),
               )}

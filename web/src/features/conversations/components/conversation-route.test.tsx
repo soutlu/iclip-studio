@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { addMockCollection, addMockConversation } from '@/testing/mocks/conversations'
 import { addMockUser, loginAs, mockAuthUser } from '@/testing/mocks/handlers'
+import { mockMcpConnectionQueries, setMockMcpConnections } from '@/testing/mocks/mcp-connections'
 import { server } from '@/testing/mocks/server'
 import { MOCK_STREAM_EPOCH, mockTranscriptPage } from '@/testing/mocks/transcript'
 import { pasteTextIntoComposer } from '@/testing/editor'
@@ -129,6 +130,20 @@ const queuedPrompt = (promptId: string, text: string) => ({
 })
 
 describe('ConversationRoute', () => {
+  it('输入框的连接器按这段对话问服务，不带 Agent', async () => {
+    const conversation = addMockConversation('首帧吸引力调研')
+    conversation.agentId = 'replica'
+    setMockMcpConnections({ agents: { replica: ['pickfu'] } })
+    const user = userEvent.setup()
+    await renderWithProviders(<ConversationRoute conversationId={conversation.id} />)
+
+    await user.click(await screen.findByRole('button', { name: '连接器' }))
+    expect(
+      within(await screen.findByRole('menu')).getByRole('menuitem', { name: '连接 PickFu' }),
+    ).toBeInTheDocument()
+    expect(mockMcpConnectionQueries()).toEqual([`?conversationId=${conversation.id}`])
+  })
+
   it('还有更早的轮次时顶部给「加载更早」：按最早一轮往前取一页，接在前面；失败了改口让人重试', async () => {
     const user = userEvent.setup()
     const longId = '0199aaaa-0000-7000-8000-0000000000aa'

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Any, Final, Self
+from typing import Annotated, Any, Final, Literal, Self
 
 from pydantic import Field, model_validator
 
@@ -119,6 +119,53 @@ class TitleIn(Envelope):
 
 class TitleOut(Envelope):
     title: str | None
+
+
+McpConnectionStateWire = Literal["connected", "invalid", "none"]
+
+
+class McpConnectionOut(Envelope):
+    """一个按用户登录的 MCP 服务与 ``X-End-User`` 在它上面的连接：``connected`` 能用，``invalid`` 已失效要
+    重新连接，``none`` 没连。``scopes`` 是授权服务器给的权限范围，``connected_at`` 是这次连接建立的时间。"""
+
+    server_id: str
+    name: str
+    description: str
+    state: McpConnectionStateWire
+    account: str | None
+    scopes: tuple[str, ...] | None
+    connected_at: datetime | None
+
+
+class McpConnectionsOut(Envelope):
+    items: tuple[McpConnectionOut, ...]
+
+
+class McpAuthorizeIn(Envelope):
+    """``redirect_uri`` 是应用自己接授权回调的地址，回调带回的 ``state`` 与 ``code`` 原样交给
+    ``POST /v1/mcp-connections:complete``。"""
+
+    redirect_uri: Annotated[str, Field(min_length=1, max_length=2000)]
+
+
+class McpAuthorizeOut(Envelope):
+    """让用户去的授权地址，5 分钟内回来完成。"""
+
+    authorization_url: str
+
+
+class McpCompleteIn(Envelope):
+    """授权回调带回的参数；``iss`` 有就给（RFC 9207）。"""
+
+    state: Annotated[str, Field(min_length=1, max_length=512)]
+    code: Annotated[str, Field(min_length=1, max_length=4096)]
+    iss: str | None = None
+
+
+class McpCompleteOut(Envelope):
+    server_id: str
+    name: str
+    account: str | None
 
 
 MODEL_CALL_TIMEOUT_SECONDS: Final = 900.0
@@ -241,6 +288,13 @@ __all__ = [
     "FilesCopyIn",
     "FilesCopyOut",
     "FilesOut",
+    "McpAuthorizeIn",
+    "McpAuthorizeOut",
+    "McpCompleteIn",
+    "McpCompleteOut",
+    "McpConnectionOut",
+    "McpConnectionStateWire",
+    "McpConnectionsOut",
     "ModelCallIn",
     "PreviewTargetIn",
     "PromptStatOut",

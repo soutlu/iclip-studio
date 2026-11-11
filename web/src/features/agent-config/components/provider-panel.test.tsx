@@ -68,14 +68,14 @@ const createProviderFor = async (
   await user.click(within(panel()).getByRole('button', { name: '添加供应商' }))
   const form = formNamed('添加供应商')
   expect(form.queryByLabelText('API Key')).toBeNull()
-  expect(form.getByRole('button', { name: '接入方式：阿里云百炼' })).toBeVisible()
+  const kinds = within(form.getByRole('radiogroup', { name: '接入方式' }))
+  expect(kinds.getByRole('radio', { name: '阿里云百炼' })).toBeChecked()
   if (declaration !== null) {
-    await user.click(form.getByRole('button', { name: /^接入方式：/ }))
-    await user.click(await screen.findByRole('menuitemradio', { name: declaration }))
-    expect(form.getByRole('button', { name: `接入方式：${declaration}` })).toBeVisible()
+    await user.click(kinds.getByRole('radio', { name: declaration }))
+    expect(kinds.getByRole('radio', { name: declaration })).toBeChecked()
   }
   await user.type(form.getByLabelText('显示名'), label)
-  await user.type(form.getByLabelText('引用名'), name)
+  await user.type(form.getByLabelText('标识'), name)
   await user.click(form.getByRole('button', { name: '添加' }))
   return within(await within(panel()).findByRole('form', { name: '添加密钥' }))
 }
@@ -115,12 +115,19 @@ describe('模型与供应商 入口', () => {
 describe('添加供应商', () => {
   const createProvider = (user: User) => createProviderFor(user, null, '海外模型服务', 'overseas')
 
-  const keyCount = (label: string) =>
-    within(card(label))
-      .getAllByText(/^\d+$/)
-      .map((node) => node.textContent)
+  it('接入方式不用下拉，所有方式都直接列出来选', async () => {
+    const user = await renderPage()
+    await openProviders(user)
+    await user.click(within(panel()).getByRole('button', { name: '添加供应商' }))
+    const kinds = formNamed('添加供应商').getByRole('radiogroup', { name: '接入方式' })
+    expect(
+      within(kinds)
+        .getAllByRole('radio')
+        .map((node) => node.textContent),
+    ).toEqual(['阿里云百炼', 'Google Gemini', 'OpenAI 兼容', 'OpenRouter', '火山方舟'])
+  })
 
-  it('建好供应商后选中它，直接展开「添加密钥」并聚焦第一个字段；试连通过后存上第一把密钥', async () => {
+  it('建好供应商后选中它，直接展开「添加密钥」并聚焦第一个字段；测试连接通过后存上第一把密钥', async () => {
     const user = await renderPage()
     await openProviders(user)
     const sent = recordWrites()
@@ -137,12 +144,12 @@ describe('添加供应商', () => {
     expect(within(panel()).getByRole('textbox', { name: '供应商显示名' })).toHaveValue(
       '海外模型服务',
     )
-    expect(keyCount('海外模型服务')).toEqual(['2', '0'])
+    expect(within(card('海外模型服务')).getByText('2 个模型 · 0 个密钥')).toBeVisible()
     expect(keyForm.getByLabelText('名称')).toHaveFocus()
 
     await user.type(keyForm.getByLabelText('名称'), '海外账号')
     await user.type(keyForm.getByLabelText('API Key'), 'sk-overseas-1234')
-    await user.click(keyForm.getByRole('button', { name: '试连' }))
+    await user.click(keyForm.getByRole('button', { name: '测试连接' }))
     expect(await keyForm.findByText('236 ms')).toBeVisible()
     await user.click(keyForm.getByRole('button', { name: '保存' }))
 
@@ -163,21 +170,21 @@ describe('添加供应商', () => {
     expect(rowOf(key).getByText('默认')).toBeVisible()
   })
 
-  it('新供应商的密钥试连没通过只是提示，照样能保存；取消后供应商留在列表里，没有密钥', async () => {
+  it('新供应商的密钥测试连接没通过只是提示，照样能保存；取消后供应商留在列表里，没有密钥', async () => {
     const user = await renderPage()
     await openProviders(user)
     const sent = recordWrites()
     const keyForm = await createProvider(user)
     await user.type(keyForm.getByLabelText('名称'), '海外账号')
     await user.type(keyForm.getByLabelText('API Key'), 'sk-invalid-9999')
-    await user.click(keyForm.getByRole('button', { name: '试连' }))
+    await user.click(keyForm.getByRole('button', { name: '测试连接' }))
     expect(await keyForm.findByText('接口返回 401，API Key 无效')).toBeVisible()
     expect(keyForm.getByRole('button', { name: '保存' })).toBeEnabled()
 
     await user.click(keyForm.getByRole('button', { name: '取消' }))
     expect(within(panel()).queryByRole('form')).toBeNull()
     expect(card('海外模型服务')).toHaveAttribute('aria-current', 'true')
-    expect(keyCount('海外模型服务')).toEqual(['2', '0'])
+    expect(within(card('海外模型服务')).getByText('2 个模型 · 0 个密钥')).toBeVisible()
     expect(within(panel()).getByText('暂无密钥，请点击「添加密钥」接入')).toBeVisible()
     expect(sent.map(({ method, path }) => `${method} ${path}`)).toEqual([
       'POST /api/model-providers',
@@ -187,7 +194,7 @@ describe('添加供应商', () => {
 })
 
 describe('密钥', () => {
-  it('试连没通过时写出原因，不拦保存；保存时不试连', async () => {
+  it('测试连接没通过时写出原因，不拦保存；保存时不测试连接', async () => {
     const user = await renderPage()
     await openProviders(user)
     const sent = recordWrites()
@@ -195,7 +202,7 @@ describe('密钥', () => {
     const form = formNamed('添加密钥')
     await user.type(form.getByLabelText('名称'), '备用账号')
     await user.type(form.getByLabelText('API Key'), 'sk-invalid-0000')
-    await user.click(form.getByRole('button', { name: '试连' }))
+    await user.click(form.getByRole('button', { name: '测试连接' }))
 
     expect(await form.findByText('接口返回 401，API Key 无效')).toBeVisible()
     await user.type(form.getByLabelText('API Key'), '1')
@@ -210,7 +217,7 @@ describe('密钥', () => {
     expect(rowOf(within(panel()).getByText('备用账号')).getByText('••••0001')).toBeVisible()
   })
 
-  it('修改时机密字段留空就是不改：只改名不带字段；改了接口地址只提交这一项，不用先试连', async () => {
+  it('修改时机密字段留空就是不改：只改名不带字段；改了接口地址只提交这一项，不用先测试连接', async () => {
     const user = await renderPage()
     await openProviders(user)
     const sent = recordWrites()
@@ -288,17 +295,40 @@ describe('模型', () => {
     expect(within(apis).getByRole('radio', { name: 'responses' })).toBeChecked()
   })
 
-  it('Gemini 只有一种接口：不给选，添加的模型走 gemini；没模型时试连提示先加模型', async () => {
+  it('模型类型写成对话、向量、重排，发给接口的仍是原值', async () => {
+    const user = await renderPage()
+    await openProviders(user)
+    const embedding = within(panel()).getByRole('switch', { name: '启用模型 text-embedding-v4' })
+    expect(rowOf(embedding).getByText('向量')).toBeVisible()
+    const sent = recordWrites()
+    await user.click(within(panel()).getByRole('button', { name: '添加模型' }))
+    const form = formNamed('添加模型')
+    const kinds = form.getByRole('radiogroup', { name: '模型类型' })
+    expect(
+      within(kinds)
+        .getAllByRole('radio')
+        .map((node) => node.textContent),
+    ).toEqual(['对话', '向量', '重排'])
+    expect(within(kinds).getByRole('radio', { name: '对话' })).toBeChecked()
+
+    await user.type(form.getByLabelText('模型名'), 'qwen3.8-rerank')
+    await user.click(within(kinds).getByRole('radio', { name: '重排' }))
+    await user.click(form.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0]?.body).toMatchObject({ name: 'qwen3.8-rerank', type: 'rerank' })
+  })
+
+  it('Gemini 只有一种接口：不给选，添加的模型走 gemini；没模型时测试连接提示先加模型', async () => {
     const user = await renderPage()
     await openProviders(user)
     const keyForm = await createProviderFor(user, 'Google Gemini', '谷歌', 'google-main')
     expect(keyForm.getByLabelText('接口地址')).toHaveValue('')
     await user.type(keyForm.getByLabelText('名称'), '主账号')
     await user.type(keyForm.getByLabelText('API Key'), 'AIza-mock-0001')
-    await user.click(keyForm.getByRole('button', { name: '试连' }))
+    await user.click(keyForm.getByRole('button', { name: '测试连接' }))
     const status = keyForm.getByRole('status')
     expect(await within(status).findByText('先添加一个模型再试连')).toBeVisible()
-    expect(within(status).getByRole('img', { name: '试连没通过' })).toBeVisible()
+    expect(within(status).getByRole('img', { name: '测试连接没通过' })).toBeVisible()
     expect(keyForm.queryByRole('alert')).toBeNull()
     await user.click(keyForm.getByRole('button', { name: '保存' }))
     await waitFor(() => expect(within(panel()).queryByRole('form')).toBeNull())
@@ -470,18 +500,18 @@ describe('删除供应商', () => {
 })
 
 describe('默认模型', () => {
-  it('从启用的模型里换 llm 的默认模型', async () => {
+  it('从启用的模型里换对话的默认模型', async () => {
     const user = await renderPage()
     await openProviders(user)
     const sent = recordWrites()
     await user.click(
-      within(panel()).getByRole('button', { name: /^llm 默认模型：阿里云百炼 qwen3.8-flash$/ }),
+      within(panel()).getByRole('button', { name: '对话默认模型：阿里云百炼 qwen3.8-flash' }),
     )
     await user.click(await screen.findByRole('menuitemradio', { name: /^studio-chat-long/ }))
 
     expect(
       await within(panel()).findByRole('button', {
-        name: 'llm 默认模型：团队模型服务 studio-chat-long',
+        name: '对话默认模型：团队模型服务 studio-chat-long',
       }),
     ).toBeVisible()
     expect(sent).toEqual([
@@ -491,6 +521,6 @@ describe('默认模型', () => {
         path: '/api/default-models/llm',
       },
     ])
-    expect(within(panel()).getByRole('button', { name: 'rerank 默认模型：未设置' })).toBeVisible()
+    expect(within(panel()).getByRole('button', { name: '重排默认模型：未设置' })).toBeVisible()
   })
 })

@@ -10,6 +10,7 @@ import {
   type Ref,
 } from 'react'
 import { Icon } from '@/shared/icons'
+import type { TimeSpan } from '@/shared/lib/time-spans'
 import { cn } from '@/shared/lib/utils'
 import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import type { SecondsRange } from '../editing/clip'
@@ -118,6 +119,7 @@ type ClipsTimelineProps = {
   selection: Selection
   clock: number
   clockOn: 'draft' | 'source'
+  buffered: readonly TimeSpan[]
   peaksOf: (url: string) => PeaksState
   onSeek: (clock: number) => void
   onScrub: () => void
@@ -273,6 +275,7 @@ export function ClipsTimeline({
   selection,
   clock,
   clockOn,
+  buffered,
   peaksOf,
   onSeek,
   onScrub,
@@ -756,6 +759,7 @@ export function ClipsTimeline({
           style={{ '--duration': duration, '--content': content } as CSSProperties}
         >
           <TimelineRuler
+            buffered={buffered}
             clockAt={(clientX) => clockIn(lanesRef.current, content, clientX)}
             currentTime={playheadAt}
             onScrub={onScrub}
@@ -1249,6 +1253,7 @@ type VersionsTimelineProps = {
   composing: { duration: number | undefined } | undefined
   viewedId: string
   currentTime: number
+  buffered: readonly TimeSpan[]
   peaksOf: (url: string) => PeaksState
   onSelect: (jobId: string) => void
   onSeek: (clock: number) => void
@@ -1260,6 +1265,7 @@ export function VersionsTimeline({
   composing,
   viewedId,
   currentTime,
+  buffered,
   peaksOf,
   onSelect,
   onSeek,
@@ -1304,6 +1310,7 @@ export function VersionsTimeline({
             {scale === 0 ? null : (
               <>
                 <TimelineRuler
+                  buffered={buffered}
                   clockAt={(clientX) => clockIn(rulerRef.current, scale, clientX)}
                   currentTime={bounded}
                   disabled={total === undefined}

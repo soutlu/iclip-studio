@@ -23,6 +23,7 @@
   --radius-3xl: 32px;
   --radius-4xl: 48px;
   --radius-full: 9999px;
+  --radius-card: 14px; /* 目录卡片 */
 }
 
 /* 断点：sm 600、md 840、lg 1280；手写媒体查询应与对应断点保持一致。 */
@@ -224,13 +225,6 @@
   --color-accent-6: var(--color-accent-6);
   --color-accent-7: var(--color-accent-7);
   --color-accent-8: var(--color-accent-8);
-  --color-resource-agent: var(--color-resource-agent);
-  --color-resource-skill: var(--color-resource-skill);
-  --color-resource-workspace: var(--color-resource-workspace);
-  --color-resource-video: var(--color-resource-video);
-  --color-resource-project: var(--color-resource-project);
-  --color-resource-connection: var(--color-resource-connection);
-  --color-resource-provider: var(--color-resource-provider);
   --color-code-key: var(--color-code-key);
   --color-code-string: var(--color-code-string);
   --color-code-literal: var(--color-code-literal);

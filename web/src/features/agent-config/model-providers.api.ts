@@ -122,7 +122,7 @@ export const useDeleteProvider = () =>
 export const testCredential = (providerId: string, body: CredentialTestIn) =>
   apiFetch(`${providerPath(providerId)}/credentials/test`, zProbeOut, {
     body,
-    fallbackErrorMessage: '试连失败，请重试',
+    fallbackErrorMessage: '测试连接失败，请重试',
     method: 'POST',
   })
 

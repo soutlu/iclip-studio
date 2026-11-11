@@ -13,6 +13,7 @@ import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
 import { type ComposerPart, composerParts } from '@/shared/ui/composer'
+import type { McpConnectionsScope } from '@/shared/mcp-connections'
 import { conversationStatusLabel } from '@/shared/ui/status-badge'
 import { toast } from '@/shared/ui/toast'
 import { sameContent } from '@/shared/transcript/claims'
@@ -80,6 +81,7 @@ export type ConversationTimelineProps = {
   overlay?: ReactNode
   inlineSendError?: boolean | undefined
   workbench?: boolean | undefined
+  connections?: McpConnectionsScope | undefined
 }
 
 type EditingTurn = {
@@ -88,6 +90,7 @@ type EditingTurn = {
 }
 
 export function ConversationTimeline({
+  connections,
   conversationId,
   inlineSendError = false,
   onForked,
@@ -395,6 +398,7 @@ export function ConversationTimeline({
               <ConversationComposer
                 awaitingApproval={awaitingApproval}
                 busy={running !== undefined}
+                connections={connections}
                 contextTokens={view.contextTokens}
                 editing={editing === null ? undefined : { parts: composerParts(editing.content) }}
                 maxContextTokens={view.maxContextTokens}

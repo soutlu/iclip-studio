@@ -13,12 +13,17 @@ import {
 } from '../agent-draft'
 import type { Agent, AgentPlugin, Skill } from '../agents.api'
 import { pluginIcon } from '../plugin-icons'
+import { skillIcon } from '../skill-icons'
 import { McpCards } from './mcp-cards'
 import type { Panel } from './panel'
-import { AddCard, AlertGlyph, CardBadge, EmptyDash, ResourceCard } from './resource-card'
-
-const GRID = 'grid grid-cols-2 gap-2 @min-[600px]:grid-cols-3 @max-[360px]:grid-cols-1'
-const WIDE_GRID = 'grid grid-cols-2 gap-2 @max-[360px]:grid-cols-1'
+import {
+  AddCard,
+  AlertGlyph,
+  CardBadge,
+  DIRECTORY_GRID,
+  DirectoryCard,
+  EmptyDash,
+} from './resource-card'
 
 export type SectionProblems = Partial<Record<EditorSection, string[]>>
 
@@ -149,7 +154,7 @@ export function AgentEditorPane({
             readOnly ? undefined : (
               <IconButton
                 label="添加技能"
-                name="add"
+                name="manage"
                 onClick={() => onOpenPanel({ type: 'skills', view: { kind: 'catalog' } })}
                 size="sm"
               />
@@ -163,7 +168,7 @@ export function AgentEditorPane({
             readOnly ? (
               <EmptyDash />
             ) : (
-              <div className={GRID}>
+              <div className={DIRECTORY_GRID}>
                 <AddCard
                   label="添加技能"
                   onClick={() => onOpenPanel({ type: 'skills', view: { kind: 'catalog' } })}
@@ -171,18 +176,24 @@ export function AgentEditorPane({
               </div>
             )
           ) : (
-            <div className={GRID}>
+            <div className={DIRECTORY_GRID}>
               {value.skillIds.map((id) => {
                 const skill = skills.find((item) => item.id === id)
                 const name = skill?.displayName ?? id
                 return (
-                  <ResourceCard
+                  <DirectoryCard
                     active={
                       panel?.type === 'skills' &&
                       panel.view.kind === 'editor' &&
                       panel.view.skillId === id
                     }
-                    icon="skill"
+                    badges={
+                      skill?.latestVersion === null || skill === undefined ? undefined : (
+                        <CardBadge>v{skill.latestVersion}</CardBadge>
+                      )
+                    }
+                    description={skill?.description}
+                    icon={skillIcon(skill?.name)}
                     key={id}
                     label={`编辑技能：${name}`}
                     name={name}
@@ -191,11 +202,6 @@ export function AgentEditorPane({
                       view: { back: null, kind: 'editor', skillId: id },
                     })}
                     tip={skill === undefined ? name : `${name}\n${skill.description}`}
-                    trailing={
-                      skill?.latestVersion === null || skill === undefined ? undefined : (
-                        <CardBadge>v{skill.latestVersion}</CardBadge>
-                      )
-                    }
                   />
                 )
               })}
@@ -222,19 +228,20 @@ export function AgentEditorPane({
             readOnly ? (
               <EmptyDash />
             ) : (
-              <div className={GRID}>
+              <div className={DIRECTORY_GRID}>
                 <AddCard label="启用插件" onClick={() => onOpenPanel({ type: 'plugins' })} />
               </div>
             )
           ) : (
-            <div className={GRID}>
+            <div className={DIRECTORY_GRID}>
               {enabled.map((name) => {
                 const plugin = plugins.find((item) => item.name === name)
                 const label = plugin?.label ?? name
                 const missing =
                   plugin === undefined ? undefined : missingRequiresReason(plugin, enabled, plugins)
                 return (
-                  <ResourceCard
+                  <DirectoryCard
+                    description={plugin?.description}
                     icon={pluginIcon(name)}
                     key={name}
                     name={label}
@@ -271,7 +278,7 @@ export function AgentEditorPane({
               <IconButton
                 disabled={addSubagentBlocked !== undefined}
                 label="添加子 Agent"
-                name="add"
+                name="manage"
                 onClick={() => onOpenPanel({ focus: undefined, type: 'subagents' })}
                 size="sm"
                 tooltip={addSubagentBlocked}
@@ -286,7 +293,7 @@ export function AgentEditorPane({
             readOnly ? (
               <EmptyDash />
             ) : (
-              <div className={WIDE_GRID}>
+              <div className={DIRECTORY_GRID}>
                 <AddCard
                   blockedReason={addSubagentBlocked}
                   label="添加子 Agent"
@@ -295,23 +302,16 @@ export function AgentEditorPane({
               </div>
             )
           ) : (
-            <div className={WIDE_GRID}>
+            <div className={DIRECTORY_GRID}>
               {subagents.map((binding) => {
                 const child = agents.find((agent) => agent.id === binding.agent)
                 const name = child?.name ?? binding.agent
                 const reason = child === undefined ? undefined : subagentBlockReason(child, current)
                 return (
-                  <ResourceCard
+                  <DirectoryCard
                     active={panel?.type === 'subagents' && panel.focus === binding.agent}
-                    icon="agent"
-                    key={binding.agent}
-                    label={`配置子 Agent：${name}`}
-                    name={name}
-                    onOpen={open({ focus: binding.agent, type: 'subagents' })}
-                    tip={child === undefined ? name : `${name}\n${child.description}`}
-                    trailing={
+                    badges={
                       <>
-                        {reason === undefined ? null : <AlertGlyph reason={reason} />}
                         {binding.timeout_seconds === null ||
                         binding.timeout_seconds === undefined ? null : (
                           <CardBadge icon="timeout">{binding.timeout_seconds}s</CardBadge>
@@ -321,6 +321,14 @@ export function AgentEditorPane({
                         )}
                       </>
                     }
+                    description={child?.description}
+                    icon="agent"
+                    key={binding.agent}
+                    label={`配置子 Agent：${name}`}
+                    name={name}
+                    onOpen={open({ focus: binding.agent, type: 'subagents' })}
+                    tip={child === undefined ? name : `${name}\n${child.description}`}
+                    trailing={reason === undefined ? undefined : <AlertGlyph reason={reason} />}
                   />
                 )
               })}
@@ -405,8 +413,8 @@ function PromptCard({
 }) {
   const empty = markdown.trim() === ''
   const className = cn(
-    'group relative block w-full rounded-md bg-surface-container-low py-3.5 pr-11 pl-4 text-left text-on-surface-variant',
-    active && 'bg-surface-container-high',
+    'group relative block w-full rounded-md border border-border py-3.5 pr-11 pl-4 text-left text-on-surface-variant',
+    active ? 'bg-surface-container-low' : 'bg-background',
   )
   const preview = empty ? (
     <span className="text-on-surface-faint">{onOpen === undefined ? '—' : '添加系统提示词'}</span>

@@ -26,6 +26,11 @@ from iclip.platform.runtime_api.app_wire import (
     FilesCopyOut,
     FilesOut,
     FileWriteIn,
+    McpAuthorizeIn,
+    McpAuthorizeOut,
+    McpCompleteIn,
+    McpCompleteOut,
+    McpConnectionsOut,
     ModelCallIn,
     PromptStatsOut,
     RunStatsOut,
@@ -288,6 +293,39 @@ class RuntimeClient:
     async def generate_title(self, body: TitleIn) -> TitleOut:
         response = await self._call("POST", "/v1/titles", body=body)
         return _parse(response, TitleOut.model_validate_json)
+
+    async def mcp_connections(
+        self,
+        *,
+        user: uuid.UUID,
+        agent_id: str | None = None,
+        draft: bool = False,
+        session_id: uuid.UUID | None = None,
+    ) -> McpConnectionsOut:
+        params: dict[str, str] = {}
+        if session_id is not None:
+            params["session_id"] = str(session_id)
+        if agent_id is not None:
+            params["agent_id"] = agent_id
+            if draft:
+                params["draft"] = "true"
+        response = await self._call("GET", "/v1/mcp-connections", owner=user, params=params)
+        return _parse(response, McpConnectionsOut.model_validate_json)
+
+    async def authorize_mcp(
+        self, server_id: str, body: McpAuthorizeIn, *, user: uuid.UUID
+    ) -> McpAuthorizeOut:
+        response = await self._call(
+            "POST", f"/v1/mcp-connections/{_segment(server_id)}:authorize", owner=user, body=body
+        )
+        return _parse(response, McpAuthorizeOut.model_validate_json)
+
+    async def complete_mcp(self, body: McpCompleteIn, *, user: uuid.UUID) -> McpCompleteOut:
+        response = await self._call("POST", "/v1/mcp-connections:complete", owner=user, body=body)
+        return _parse(response, McpCompleteOut.model_validate_json)
+
+    async def disconnect_mcp(self, server_id: str, *, user: uuid.UUID) -> None:
+        await self._call("DELETE", f"/v1/mcp-connections/{_segment(server_id)}", owner=user)
 
     async def model_call(self, body: ModelCallIn, *, timeout: httpx.Timeout) -> ModelCallResponse:
         headers = self._auth_headers(None)

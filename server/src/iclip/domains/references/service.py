@@ -275,11 +275,11 @@ class ReferenceService:
         self, principal: Principal, reference_id: uuid.UUID, body: TestVideoIn, *, user_name: str
     ) -> ReferenceVideoOut:
         row = await self._listed(reference_id)
-        if principal.user_id != row.owner_user_id:
-            raise PermissionDenied("只有它的属主本人能试生成这条参考视频")
+        if not _can_edit(principal, row):
+            raise PermissionDenied("只有它的属主或治理者能试生成这条参考视频")
         if row.breakdown_status in _BUSY or row.document is None:
             raise Conflict("拆解尚未完成，无法试生成")
-        latest = await self._test_videos.latest(row.owner_user_id, reference_id)
+        latest = await self._test_videos.latest(reference_id)
         if latest is not None and latest.status == TEST_VIDEO_RUNNING:
             raise Conflict("试生成进行中，无法重复提交")
         prompt = build_test_prompt(row.document)
@@ -346,7 +346,7 @@ class ReferenceService:
         return self._queue
 
     async def _detail(self, principal: Principal, row: ReferenceVideo) -> ReferenceVideoOut:
-        job = await self._test_videos.latest(row.owner_user_id, row.id)
+        job = await self._test_videos.latest(row.id)
         return ReferenceVideoOut.model_validate(
             {
                 **_item_fields(principal, row),

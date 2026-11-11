@@ -90,6 +90,8 @@ reportUnknownParameterType = false
 reportMissingTypeStubs = false
 # FastAPI 路由处理器是装饰器注册的闭包，无法被静态分析识别为已使用。
 reportUnusedFunction = false
+# 已经不需要的豁免注释要删掉，与 ruff 的 RUF100 一致。
+reportUnnecessaryTypeIgnoreComment = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

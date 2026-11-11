@@ -1,11 +1,19 @@
-import { useState } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/field'
+import { Switch } from '@/shared/ui/switch'
 import type { Skill } from '../agents.api'
+import { skillIcon } from '../skill-icons'
 import { PanelShell } from './panel-shell'
-import { CardBadge, CardGlyph } from './resource-card'
+import {
+  CARD_SWITCH_HIT,
+  CardBadge,
+  DIRECTORY_CARD,
+  DIRECTORY_GRID,
+  DirectoryCardBody,
+} from './resource-card'
 
 type SkillListPanelProps = {
   mode: 'library' | 'catalog'
@@ -27,6 +35,7 @@ export function SkillListPanel({
   skills,
 }: SkillListPanelProps) {
   const [query, setQuery] = useState('')
+  const baseId = useId()
   const keyword = query.trim().toLowerCase()
   const listed = skills.filter(
     (skill) => skill.status === 'active' || (mode === 'catalog' && boundIds.includes(skill.id)),
@@ -50,42 +59,59 @@ export function SkillListPanel({
           新建技能
         </Button>
       </div>
-      <ul className="grid grid-cols-1 gap-x-3 gap-y-1 @min-[560px]:grid-cols-2">
+      <ul className={DIRECTORY_GRID}>
         {matches.map((skill) => {
           const draftOnly = skill.latestVersion === null
           const bound = boundIds.includes(skill.id)
           const opens = mode === 'library' || (draftOnly && !bound)
+          const id = `${baseId}-${skill.id}`
+          const body = (trailing: ReactNode) => (
+            <DirectoryCardBody
+              badges={draftOnly ? <CardBadge>草稿</CardBadge> : undefined}
+              description={skill.description}
+              descriptionId={`${id}-description`}
+              icon={skillIcon(skill.name)}
+              name={skill.displayName}
+              nameId={`${id}-name`}
+              trailing={trailing}
+            />
+          )
           return (
-            <li className="min-w-0" key={skill.id}>
-              <button
-                aria-label={opens ? `编辑技能：${skill.displayName}` : skill.displayName}
-                aria-pressed={opens ? undefined : bound}
-                className="flex min-h-15 w-full min-w-0 ui-state cursor-pointer items-center gap-3 rounded-md p-2.5 text-left ui-focus"
-                onClick={() => (opens ? onOpen(skill) : onToggle(skill))}
-                type="button"
-              >
-                <CardGlyph className="size-9" name="skill" />
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate font-medium text-on-surface">{skill.displayName}</span>
-                  <span className="truncate text-label text-on-surface-faint">
-                    {skill.description}
-                  </span>
-                </span>
-                <span
+            <li className="flex min-w-0" key={skill.id}>
+              {opens ? (
+                <button
+                  aria-label={`编辑技能：${skill.displayName}`}
                   className={cn(
-                    'grid min-w-6 shrink-0 place-items-center text-on-surface-faint',
-                    bound && 'text-on-surface',
+                    DIRECTORY_CARD,
+                    'flex-1 ui-state cursor-pointer bg-background ui-focus',
                   )}
+                  onClick={() => onOpen(skill)}
+                  type="button"
                 >
-                  {draftOnly ? (
-                    <CardBadge>草稿</CardBadge>
-                  ) : mode === 'library' ? (
-                    <Icon decorative name="disclosure" size="sm" />
-                  ) : (
-                    <Icon decorative name={bound ? 'check' : 'add'} size="sm" />
+                  {body(
+                    mode === 'library' ? (
+                      <Icon
+                        className="text-on-surface-faint"
+                        decorative
+                        name="disclosure"
+                        size="sm"
+                      />
+                    ) : null,
                   )}
-                </span>
-              </button>
+                </button>
+              ) : (
+                <div className={cn(DIRECTORY_CARD, 'flex-1 bg-background')}>
+                  {body(
+                    <Switch
+                      aria-describedby={`${id}-description`}
+                      aria-labelledby={`${id}-name`}
+                      checked={bound}
+                      className={CARD_SWITCH_HIT}
+                      onCheckedChange={() => onToggle(skill)}
+                    />,
+                  )}
+                </div>
+              )}
             </li>
           )
         })}
