@@ -1,11 +1,21 @@
 import catalogJson from '../../web/scripts/hyperframes-fixtures/catalog.json'
-import type { ComponentCatalog } from '../../web/src/features/storyboard/whole-film/composition/catalog'
+import type {
+  CatalogItem,
+  ComponentCatalog,
+} from '../../web/src/features/storyboard/whole-film/composition/catalog'
 import type { ExportWorker, RenderedFile, UploadTarget } from './jobs'
 import { createLogger, type Logger } from './log'
 
+// 源目录里没有组装时才生成的内容：分片表留空，条目补上空的 chars
+const source = catalogJson as Omit<ComponentCatalog, 'version' | 'cjk' | 'items'> & {
+  items: Omit<CatalogItem, 'chars'>[]
+}
+
 export const catalog: ComponentCatalog = {
-  ...(catalogJson as Omit<ComponentCatalog, 'version'>),
+  ...source,
   version: 'test-fixtures',
+  cjk: { family: 'Noto Sans SC', slices: [] },
+  items: source.items.map((item) => ({ ...item, chars: '' })),
 }
 
 export const SOURCE_JOB = '6f1b5c3e-2a4d-4e8f-9b1c-0d2e3f4a5b6c'

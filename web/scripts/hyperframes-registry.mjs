@@ -14,7 +14,7 @@ import {
   SyncError,
   WEB_ROOT,
   checkCatalogFonts,
-  cjkTwinFaces,
+  cjkSlices,
   compositionTarget,
   fontFaceDescriptors,
   fontFaces,
@@ -31,6 +31,8 @@ import {
   registryItems,
   sha256,
   sourceTree,
+  twinDescriptors,
+  withoutCjkStylesheet,
   writeAtomic,
 } from './hyperframes-shared.mjs'
 
@@ -167,13 +169,13 @@ async function assemble(temp, catalog, lock) {
   for (const [cssPath, fonts] of fontCss) {
     await writeFonts(cssPath, fonts.families, fonts.display, isLatinSubset)
   }
-  const cjkFaces = CJK_FONT.weights.map((weight) => ({ style: 'normal', weight: String(weight) }))
-  await writeFonts(
-    CJK_FONT.css,
-    [{ family: CJK_FONT.family, faces: cjkFaces }],
-    'block',
-    () => true,
-  )
+  const notoPackage = fontPackage(CJK_FONT.family)
+  const notoDir = await openPackage(notoPackage.name, notoPackage.version)
+  const cjk = await cjkSlices(notoDir, notoPackage)
+  for (const file of cjk.files) {
+    await copyFromPackage(notoPackage.name, notoPackage.version, notoDir, file)
+  }
+  await copyLicense(notoPackage.name, notoPackage.version, notoDir)
 
   const require = createRequire(import.meta.url)
   const corePackage = require.resolve('@hyperframes/core/package.json')
@@ -220,12 +222,13 @@ async function assemble(temp, catalog, lock) {
   }
   const registryFaces = []
   for (const path of await listFiles(temp)) {
-    if (/\.(html?|css)$/i.test(path) && !path.startsWith('vendor/npm/')) {
-      registryFaces.push(...fontFaceDescriptors(await readFile(join(temp, path), 'utf8')))
-    }
+    if (!/\.(html?|css)$/i.test(path) || path.startsWith('vendor/npm/')) continue
+    const text = await readFile(join(temp, path), 'utf8')
+    const kept = withoutCjkStylesheet(text)
+    if (kept !== text) await writeFile(join(temp, path), kept)
+    registryFaces.push(...fontFaceDescriptors(kept))
   }
-  const notoPackage = fontPackage(CJK_FONT.family)
-  const notoDir = await openPackage(notoPackage.name, notoPackage.version)
+  const twins = {}
   for (const [family, { css: cssPath, faces: localFaces }] of Object.entries(catalog.fonts)) {
     if (localFaces !== undefined) {
       const css = await localFontFaces({
@@ -259,9 +262,10 @@ async function assemble(temp, catalog, lock) {
       (face) => face.family.toLowerCase() === family.toLowerCase(),
     )
     if (descriptors.length === 0) throw new SyncError(`组件库里没有字体「${family}」的 @font-face`)
-    const cjk = await cjkTwinFaces(family, descriptors, notoDir)
-    await writeOut(cssPath, `${[latin, cjk].filter(Boolean).join('\n')}\n`)
+    twins[family] = twinDescriptors(descriptors)
+    await writeOut(cssPath, `${latin}\n`)
   }
+  await writeOut(CJK_FONT.faces, `${JSON.stringify({ slices: cjk.slices, twins })}\n`)
 
   const thumbnailsDir = join(libraryDir, 'thumbnails')
   if (existsSync(thumbnailsDir)) {

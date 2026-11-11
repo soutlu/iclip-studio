@@ -3,7 +3,13 @@ import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/pr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { FIXTURES_DIR, WEB_ROOT, libraryVersion, publishedCatalog } from './hyperframes-shared.mjs'
+import {
+  CJK_FONT,
+  FIXTURES_DIR,
+  WEB_ROOT,
+  libraryVersion,
+  publishedCatalog,
+} from './hyperframes-shared.mjs'
 
 let work
 let library
@@ -60,6 +66,11 @@ describe('hf:registry', () => {
     await cp(join(library, 'patches', 'compositions'), join(out, version, 'compositions'), {
       recursive: true,
     })
+    await mkdir(join(out, version, 'vendor', 'fonts'), { recursive: true })
+    await writeFile(
+      join(out, version, CJK_FONT.faces),
+      JSON.stringify({ slices: [], twins: { 'Playfair Display': [] } }),
+    )
     await writeFile(join(out, version, 'marker'), '')
 
     const result = spawnSync(
@@ -85,7 +96,10 @@ describe('hf:registry', () => {
       ['fixture-fields', ''],
       ['fixture-brand-card', 'Playfair Display'],
     ])
-    expect((await readdir(join(out, version))).sort()).toEqual(['compositions', 'marker'])
+    expect(published.cjk).toEqual({ family: 'Noto Sans SC', slices: [] })
+    expect(published.fonts['Playfair Display'].cjk).toEqual([])
+    expect(published.items.find((item) => item.name === 'fixture-fields').chars).not.toBe('')
+    expect((await readdir(join(out, version))).sort()).toEqual(['compositions', 'marker', 'vendor'])
     expect((await readdir(out)).sort()).toEqual(['catalog.json', version].sort())
   })
 })

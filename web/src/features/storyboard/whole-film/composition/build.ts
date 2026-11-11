@@ -2,13 +2,12 @@
 import type { WholeFilmDocument, WholeFilmOverlay } from '@/shared/api/generated'
 import type { CatalogItem, ComponentCatalog, VariableValue } from './catalog'
 import { captionWords, placeCaptions, type SubtitleRecord } from './captions'
+import { cjkFontFaces } from './fonts'
 import { escapeAttribute, jsonAttribute, seconds } from './html'
 
 type ComponentVariables = WholeFilmOverlay['variables']
 
 export const DEFAULT_CANVAS = { width: 1080, height: 1920 } as const
-
-const CJK_FAMILY = 'Noto Sans SC'
 
 export interface CompositionMedia {
   videos: Readonly<Record<string, { url: string }>>
@@ -78,8 +77,8 @@ function componentValues(
   }
 }
 
-function fontVariables(family: string): string {
-  const value = `'${family}', '${CJK_FAMILY}', sans-serif`
+function fontVariables(family: string, cjkFamily: string): string {
+  const value = `'${family}', '${cjkFamily}', sans-serif`
   return `--font-display:${value};--font-body:${value}`
 }
 
@@ -95,6 +94,7 @@ interface HostOptions {
   z: number
   variables: Record<string, unknown>
   font: string
+  cjkFamily: string
   canvas: { width: number; height: number }
 }
 
@@ -127,7 +127,7 @@ function placed(options: HostOptions, placement: Placement, inner: string): stri
 
 function componentHost(options: HostOptions): string {
   const { id, item, canvas, size, placement } = { ...options, size: options.item.size }
-  const fonts = options.font === '' ? '' : fontVariables(options.font)
+  const fonts = options.font === '' ? '' : fontVariables(options.font, options.cjkFamily)
   const host = (extra: string, z = '') => {
     const style = [z, fonts].filter(Boolean).join(';')
     return (
@@ -164,6 +164,7 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
   }
   const canvas = draft.canvas ?? DEFAULT_CANVAS
   const { width, height } = canvas
+  const cjkFamily = catalog.cjk.family
   const totalMs = Math.max(
     ...[...draft.layer0, ...draft.overlays].map((clip) => clip.start + clip.duration),
   )
@@ -198,6 +199,7 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
         track: TRACK.layer0,
         z: Z.layer0,
         ...valuesOf(item, clip.variables),
+        cjkFamily,
         canvas,
       })
     }
@@ -227,6 +229,7 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
       track: TRACK.overlay,
       z: overlay.zIndex,
       ...valuesOf(item, overlay.variables),
+      cjkFamily,
       canvas,
     })
   })
@@ -252,6 +255,7 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
       z: Z.captions,
       variables: { ...values.variables, words },
       font: values.font,
+      cjkFamily,
       canvas,
     })
   }
@@ -267,9 +271,15 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
   }
 
   const families = [...new Set([...[...used].flatMap((item) => item.fonts), ...chosenFonts])].sort()
-  const fontLinks = [catalog.runtime.cjkFont, ...families.map((family) => fontCss(catalog, family))]
-    .map((href) => `<link rel="stylesheet" href="${escapeAttribute(href)}">`)
-    .join('\n')
+  const body = [...layer0, overlayLayer, captions, music].filter(Boolean).join('\n')
+  // 0.9.31 起运行时会把声明的字体全部加载完才跑组件脚本，所以只声明成片和所用组件里出现的字
+  const shown = body + [...used].map((item) => item.chars).join('')
+  const cjkFaces = cjkFontFaces(catalog, shown, families)
+  const fontLinks = families
+    .map(
+      (family) => `<link rel="stylesheet" href="${escapeAttribute(fontCss(catalog, family))}">\n`,
+    )
+    .join('')
 
   const total = seconds(totalMs)
   const html = `<!doctype html>
@@ -277,11 +287,10 @@ export function buildComposition({ draft, media, catalog }: CompositionInput): C
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=${width}, height=${height}">
-${fontLinks}
-<script src="${escapeAttribute(catalog.runtime.gsap)}"></script>
+${fontLinks}<script src="${escapeAttribute(catalog.runtime.gsap)}"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:${width}px;height:${height}px;overflow:hidden;background:black;font-family:'${CJK_FAMILY}',sans-serif}
+html,body{width:${width}px;height:${height}px;overflow:hidden;background:black;font-family:'${cjkFamily}',sans-serif}
 #stage{position:relative;width:${width}px;height:${height}px;overflow:hidden;background:black}
 #stage .layer0{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:${Z.layer0}}
 #stage .fill{position:absolute;inset:0;width:100%!important;height:100%!important}
@@ -289,10 +298,13 @@ html,body{width:${width}px;height:${height}px;overflow:hidden;background:black;f
 #stage .place{position:absolute;inset:0}
 #stage .overlays{position:absolute;inset:0;z-index:${Z.overlay}}
 </style>
+<style>
+${cjkFaces}
+</style>
 </head>
 <body>
 <div id="stage" data-composition-id="main" data-start="0" data-duration="${total}" data-width="${width}" data-height="${height}">
-${[...layer0, overlayLayer, captions, music].filter(Boolean).join('\n')}
+${body}
 </div>
 <script>
 window.__timelines = window.__timelines || {};

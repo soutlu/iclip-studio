@@ -147,9 +147,16 @@ export const contextOf = (
 export const spans = (draft: WholeFilmDraft) =>
   draft.layer0.map((clip) => [clip.id, clip.start, clip.start + clip.duration] as const)
 
+// 源目录里没有组装时才生成的内容：分片表留空，条目补上空的 chars
+const fixtureSource = fixtureCatalogJson as Omit<ComponentCatalog, 'version' | 'cjk' | 'items'> & {
+  items: Omit<CatalogItem, 'chars'>[]
+}
+
 export const fixtureCatalog: ComponentCatalog = {
-  ...(fixtureCatalogJson as Omit<ComponentCatalog, 'version'>),
+  ...fixtureSource,
   version: 'test-fixtures',
+  cjk: { family: 'Noto Sans SC', slices: [] },
+  items: fixtureSource.items.map((item) => ({ ...item, chars: '' })),
 }
 
 export const fixtureItem = (name: string): CatalogItem => {
