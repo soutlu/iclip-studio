@@ -380,24 +380,6 @@
   --color-accent-7: #2a9fb0; /* 青 */
   --color-accent-8: #5c6bd6; /* 靛蓝 */
 
-  /* 配置资源分类色：只铺资源图标的实色底块，上压白色实心符号；明暗同值，不表达运行状态或选中态。 */
-  --color-resource-agent: #5d60b1;
-  --color-resource-skill: #8061b2;
-  --color-resource-workspace: #a57527;
-  --color-resource-video: #b65e47;
-  --color-resource-project: #5074ac;
-  --color-resource-connection: #2e887d;
-  --color-resource-provider: #527b96;
-  --color-resource-account: var(--nv30);
-  --color-on-resource: var(--n100);
-  /* 资源图标实色底块：顶部一层淡高光，一圈极淡内描边加一道轻落影 */
-  --resource-tile-gloss: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.22),
-    rgba(255, 255, 255, 0) 72%
-  );
-  --shadow-resource-tile: inset 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.1);
-
   /* 代码着色：只用于 JSON 等代码正文的键、字符串、数字与 true / false / null，标点仍用 on-surface-faint；不表达状态，不做底色。
      三色相避开品牌绿、错误红与警告琥珀；guide 画缩进参考线。 */
   --color-code-key: #2e5aa6;

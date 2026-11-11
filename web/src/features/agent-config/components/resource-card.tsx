@@ -12,20 +12,23 @@ export const DIRECTORY_CARD =
 // 开关的点击区铺满整张卡片（点卡片任意处都切换）；卡片里的 AlertGlyph 因此抬高一层，悬停仍能看到原因。
 export const CARD_SWITCH_HIT = 'after:absolute after:inset-0 after:rounded-card'
 
-const RESOURCE_GLYPHS: Partial<Record<IconName, { icon: IconName; className: string }>> = {
-  agent: { icon: 'resource-agent', className: 'text-resource-agent' },
-  skill: { icon: 'resource-skill', className: 'text-resource-skill' },
-  folder: { icon: 'resource-workspace', className: 'text-resource-workspace' },
-  film: { icon: 'resource-video', className: 'text-resource-video' },
-  layers: { icon: 'resource-project', className: 'text-resource-project' },
-  'mcp-server': { icon: 'resource-mcp', className: 'text-resource-connection' },
-  provider: { icon: 'resource-provider', className: 'text-resource-provider' },
-  plugin: { icon: 'resource-plugin', className: 'text-resource-connection' },
-  'shot-list': { icon: 'resource-shots', className: 'text-resource-project' },
-  'video-understanding': { icon: 'resource-understanding', className: 'text-resource-video' },
-  'video-type': { icon: 'resource-frame', className: 'text-resource-video' },
-  'resource-people': { icon: 'resource-people', className: 'text-resource-account' },
-  'resource-person': { icon: 'resource-person', className: 'text-resource-account' },
+const RESOURCE_GLYPHS: Partial<Record<IconName, IconName>> = {
+  agent: 'resource-agent',
+  skill: 'resource-skill',
+  'resource-reference-video': 'resource-reference-video',
+  'resource-storyboard': 'resource-storyboard',
+  'resource-script-breakdown': 'resource-script-breakdown',
+  folder: 'resource-workspace',
+  film: 'resource-video',
+  layers: 'resource-project',
+  'mcp-server': 'resource-mcp',
+  provider: 'resource-provider',
+  plugin: 'resource-plugin',
+  'shot-list': 'resource-shots',
+  'video-understanding': 'resource-understanding',
+  'video-type': 'resource-frame',
+  'resource-people': 'resource-people',
+  'resource-person': 'resource-person',
 }
 
 export function CardGlyph({ name, className }: { name: IconName; className?: string | undefined }) {
@@ -42,7 +45,7 @@ export function CardGlyph({ name, className }: { name: IconName; className?: str
         <Icon decorative name={name} size="md" />
       </span>
     )
-  return <ResourceTile className={className} icon={resource.icon} tone={resource.className} />
+  return <ResourceTile className={className} icon={resource} />
 }
 
 export function DirectoryCardBody({

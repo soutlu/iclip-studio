@@ -13,6 +13,7 @@ import {
 } from '../agent-draft'
 import type { Agent, AgentPlugin, Skill } from '../agents.api'
 import { pluginIcon } from '../plugin-icons'
+import { skillIcon } from '../skill-icons'
 import { McpCards } from './mcp-cards'
 import type { Panel } from './panel'
 import {
@@ -192,7 +193,7 @@ export function AgentEditorPane({
                       )
                     }
                     description={skill?.description}
-                    icon="skill"
+                    icon={skillIcon(skill?.name)}
                     key={id}
                     label={`编辑技能：${name}`}
                     name={name}

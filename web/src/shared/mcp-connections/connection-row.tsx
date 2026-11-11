@@ -80,7 +80,7 @@ export function McpConnectionRow({ connection }: { connection: McpConnection }) 
 
   return (
     <div className="flex min-h-13 min-w-0 items-center gap-3 rounded-sm px-2 py-1.5">
-      <ResourceTile icon="resource-mcp" tone="text-resource-connection" />
+      <ResourceTile icon="resource-mcp" />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-body font-medium text-on-surface" title={name}>
           {name}
