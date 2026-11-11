@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -499,6 +499,39 @@ describe('缓冲够了才继续', () => {
     await waitAt(2)
     act(() => stopVideoDownload(FIRST))
     expect(playerOf().paused).toBe(true)
+  })
+})
+
+describe('当前片段加载失败', () => {
+  it('舞台显示失败提示，提示跟着播放头所在的片段走', async () => {
+    await openPreview()
+    act(() => failVideo(SECOND))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    act(() => playerOf().seek(2.5))
+    expect(screen.getByRole('alert')).toHaveTextContent('视频加载失败')
+
+    act(() => playerOf().seek(0.5))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('点重试重新加载这个片段并收起提示，再失败时提示重新出现', async () => {
+    await openPreview()
+    act(() => failVideo(FIRST))
+    const video = playerOf().iframeElement.contentDocument?.querySelector('video')
+    if (video === null || video === undefined) throw new Error('合成页里没有视频')
+    const load = vi.spyOn(video, 'load').mockImplementation(() => {
+      clearFailedVideos()
+      emitFrom(FIRST, 'emptied')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    expect(load).toHaveBeenCalledOnce()
+    expect(video.preload).toBe('auto')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    act(() => failVideo(FIRST))
+    expect(screen.getByRole('alert')).toBeVisible()
   })
 })
 

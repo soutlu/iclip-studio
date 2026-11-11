@@ -359,6 +359,11 @@
   display: none;
 }
 
+/* 失败提示里有「重试」按钮，要压过铺满预览卡片的画面点选层 */
+.wf-player-host[data-failed] {
+  z-index: var(--z-local-1);
+}
+
 .wf-player-slot {
   position: absolute;
   inset: 0;
