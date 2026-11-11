@@ -133,11 +133,11 @@ rsync -a <本机输出目录>/catalog.json <服务器>:<部署目录>/components
 
 ### 升级
 
-> **只能从 v0.16.3 或之后的版本直接升级**。后端的迁移基线就是 v0.16.3 的迁移头，更早的库执行 `alembic upgrade head` 会报 `Can't locate revision` 并停下，不改任何表。这样的库先把 `IMAGE_TAG` 改成 `v0.16.3` 按 v0.16.3 自带的本文档升上去，再回到本节。
+> **只能从 v0.16.3 或之后的版本直接升级**。后端的迁移基线是 v0.16.3 的迁移头。更早的库先按 v0.16.3 的部署文档迁移到该版本，再执行本节的升级步骤。
 
 应用和运行时各有一条发布线（见[发版与镜像发布](release.md)），分开升级，互不重启。两边谁先升见[跨版本兼容](../contract/conventions.md#跨版本兼容)。
 
-升级用部署目录里的 `upgrade.sh`（[deploy/upgrade.sh](../deploy/upgrade.sh)），在部署目录执行。脚本先用新版本号拉镜像，拉取成功才把新版本号写进 `.env`，拉取失败时 `.env` 不变。之后任何一步失败，脚本停下并打印回滚提示：把 `.env` 里的版本号改回提示中的旧值，再执行提示中的重启命令；数据库迁移不会自动回退。升级成功后脚本打印新旧版本号，并清掉没有标签的悬空镜像，带标签的旧版本保留，回滚时要用。出问题时可以按下面列出的顺序手工接着做。
+升级用部署目录里的 `upgrade.sh`（[deploy/upgrade.sh](../deploy/upgrade.sh)），在部署目录执行。脚本先拉取目标镜像，再用目标镜像只读核对 Alembic 版本。数据库已在目标版本时直接切换镜像，适用于已通过 DMS 完成迁移的环境。仍需迁移时，脚本先在目标镜像里完成迁移，再写入 `.env`。拉取、核对或迁移失败时，`.env` 不变。写入版本后重启或健康检查失败时，脚本会打印旧版本和重启命令。需要回退数据库时，另行处理对应迁移。升级成功后脚本打印新旧版本号，并清掉没有标签的悬空镜像，带标签的旧版本可用于回退。
 
 `.env` 要同时写明 `IMAGE_TAG` 和 `RUNTIME_IMAGE_TAG`：两者缺省都是 `latest`，没写的一边下次拉取时会被带到最新版本。升级应用时 `.env` 里还没有 `RUNTIME_IMAGE_TAG`，脚本会读出运行时容器当前在用的镜像标签，补进 `.env` 并打印出来；运行时容器没在运行、读不出标签或标签是 `latest` 时，脚本报错退出，需要手动在 `.env` 里写上：运行时单独发版之前的运行时镜像用应用版本号做标签，也就是当时 `IMAGE_TAG` 的值。
 
@@ -151,11 +151,11 @@ rsync -a <本机输出目录>/catalog.json <服务器>:<部署目录>/components
 
 脚本依次执行：
 
-1. `.env` 里没有 `RUNTIME_IMAGE_TAG` 时，按上面说的补上。
-2. `IMAGE_TAG=vX.Y.Z docker compose pull server web render` 拉取新镜像，成功后把 `.env` 的 `IMAGE_TAG` 改成 `vX.Y.Z`。
-3. 执行后端的迁移：`docker compose run --rm server alembic upgrade head`。
-4. 用新镜像重启：`docker compose up -d server web render`。
-5. 等 `server`、`render` 的健康检查通过（最长 180 秒），并确认 `web` 在运行。
+1. `.env` 里没有 `RUNTIME_IMAGE_TAG` 时，读取运行时容器当前的镜像标签。
+2. 用 `IMAGE_TAG=vX.Y.Z docker compose pull server web render` 拉取目标镜像。
+3. 核对 `iclip.alembic_version`。仍需迁移时，执行 `IMAGE_TAG=vX.Y.Z docker compose run --rm --no-deps -T server alembic upgrade head`。
+4. 把目标 `IMAGE_TAG` 写入 `.env`，并按需补上第 1 步读出的 `RUNTIME_IMAGE_TAG`。
+5. 用 `docker compose up -d server web render` 重启，等 `server`、`render` 健康（最长 180 秒），并确认 `web` 在运行。
 
 #### 升级运行时
 
@@ -167,13 +167,12 @@ rsync -a <本机输出目录>/catalog.json <服务器>:<部署目录>/components
 
 已有的库第一次升到运行时自己管迁移的版本时，命令末尾加 `--stamp-baseline`，先打基线标记，此后的升级不加。基线标记只写版本表，不动表结构；库里没有运行时的表或已经打过标记时报错退出。漏加时迁移会报表已存在并回滚，加上 `--stamp-baseline` 重新执行即可。
 
-脚本依次执行如下步骤。第 2 至 4 步的命令都带 `--no-deps`：`compose.yaml` 里运行时依赖后端健康，后端又整份加载 `.env`，不加会把后端拉起来或连后端一起重建。
+脚本依次执行如下步骤。核对、迁移和重启运行时都带 `--no-deps`，以便单独操作运行时容器。
 
-1. `RUNTIME_IMAGE_TAG=runtime-vX.Y.Z docker compose pull runtime` 拉取新镜像，成功后把 `.env` 的 `RUNTIME_IMAGE_TAG` 改成 `runtime-vX.Y.Z`。
-2. 带 `--stamp-baseline` 时打基线标记：`docker compose run --rm --no-deps runtime python -m agent_runtime.admin stamp-baseline`。
-3. 执行运行时的迁移：`docker compose run --rm --no-deps runtime python -m agent_runtime.admin migrate`。
-4. 用新镜像重启运行时：`docker compose up -d --no-deps runtime`。
-5. 等 `runtime` 的健康检查通过（最长 180 秒）。
+1. 用 `RUNTIME_IMAGE_TAG=runtime-vX.Y.Z docker compose pull runtime` 拉取目标镜像。
+2. 核对 `agent_runtime.alembic_version`。仍需迁移时，在目标镜像运行 `python -m agent_runtime.admin migrate`。带 `--stamp-baseline` 时，先在目标镜像运行 `python -m agent_runtime.admin stamp-baseline`。
+3. 把目标 `RUNTIME_IMAGE_TAG` 写入 `.env`。
+4. 用 `docker compose up -d --no-deps runtime` 重启，等 `runtime` 健康（最长 180 秒）。
 
 ### 修改线上配置
 
