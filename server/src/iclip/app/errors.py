@@ -74,7 +74,7 @@ def _install_domain_error_handlers(app: FastAPI) -> None:
             content={"detail": validation_error_detail(exc.errors())},
         )
 
-    app.openapi = _openapi_with_string_validation_error(app)  # type: ignore[method-assign]
+    app.openapi = _openapi_with_string_validation_error(app)
 
 
 def _openapi_with_string_validation_error(app: FastAPI) -> Callable[[], dict[str, Any]]:
