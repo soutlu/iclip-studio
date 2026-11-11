@@ -14,7 +14,7 @@
 
 | 命令 | 用途 |
 |---|---|
-| `make setup` | 先执行 `make runtime`，再安装后端、视频插件与前端依赖 |
+| `make setup` | 先执行 `make runtime`，再安装后端、视频插件、前端与渲染服务依赖 |
 | `make runtime` | 按 `runtime.ref` 把运行时项目 Cue 检出到 `runtime/`，需要能读私有仓库 `soutlu/Cue`；`runtime/` 已存在但不是 Git 检出时报错退出，需先手动移走 |
 | `make dev` | 启动视频后端与 Agent 运行时服务（环境准备见[本地启动](docs/deploy.md#本地启动)） |
 | `make db-upgrade` | 执行后端与运行时两边的 Alembic 数据库迁移（服务启动时不会自动建表） |
