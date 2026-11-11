@@ -15,6 +15,7 @@ from iclip_video.shot_video.ports import (
     ImageJob,
     ImageRequest,
     InvalidImageRequest,
+    JobStatus,
 )
 
 from iclip.app.shot_media import FrameBoardsAdapter, GridCutsAdapter
@@ -28,7 +29,7 @@ _RESOLUTIONS: frozenset[str] = frozenset(get_args(IMAGE_RESOLUTIONS))
 
 @dataclass(frozen=True, slots=True)
 class Outcome:
-    status: str = "completed"
+    status: JobStatus = "completed"
     output_url: str | None = "https://cdn.test/out.png"
     error_code: str | None = None
     error_message: str | None = None
@@ -64,7 +65,7 @@ class FakeGenerations:
         channel, outcome = self.jobs[job_id]
         return ImageJob(
             job_id=job_id,
-            status=outcome.status,  # type: ignore[arg-type]
+            status=outcome.status,
             channel=channel,
             output_url=outcome.output_url if outcome.status == "completed" else None,
             error_code=outcome.error_code,

@@ -15,6 +15,7 @@ from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_SUBMITTING,
+    GenerationJob,
 )
 from iclip.domains.generation.provider import ProviderSubmission
 from iclip.domains.generation.queue import (
@@ -224,8 +225,8 @@ async def test_a_restart_mid_submit_fails_the_row_honestly(
     entered = asyncio.Event()
 
     class Hanging(ScriptedProvider):
-        async def submit(self, job_arg):  # type: ignore[no-untyped-def]
-            self.submit_calls.append(job_arg.id)
+        async def submit(self, job: GenerationJob) -> ProviderSubmission:
+            self.submit_calls.append(job.id)
             entered.set()
             await asyncio.sleep(3600)
             raise AssertionError("不该走到这里")
