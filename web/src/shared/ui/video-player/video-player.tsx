@@ -229,7 +229,7 @@ export function VideoPlayer({
     <div
       aria-label={`播放器：${label}`}
       className={cn(
-        'relative touch-manipulation overflow-hidden rounded-md bg-scrim select-none',
+        'relative isolate touch-manipulation overflow-hidden rounded-md bg-scrim select-none',
         className,
       )}
       data-idle={idle && !failed ? '' : undefined}
