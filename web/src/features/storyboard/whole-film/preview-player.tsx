@@ -296,6 +296,8 @@ export function PreviewPlayer({
       next._media._createEntry = () => null
       pending = next
       next.setAttribute('disable-click-to-play', '')
+      // 加载和缓冲的提示由编辑器自己画，播放器自带的那套不显示
+      next.setAttribute('assets-loading-ui', 'none')
       next.setAttribute('width', String(sizeRef.current.width))
       next.setAttribute('height', String(sizeRef.current.height))
       next.className = 'wf-player is-pending'

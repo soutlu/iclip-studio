@@ -11,13 +11,13 @@ allowBuilds:
 
 # 指定版本豁免 minimumReleaseAge 安装等待期。
 minimumReleaseAgeExclude:
-  - '@hyperframes/core@0.8.168'
-  - '@hyperframes/engine@0.8.168'
-  - '@hyperframes/lint@0.8.168'
-  - '@hyperframes/parsers@0.8.168'
-  - '@hyperframes/player@0.8.168'
-  - '@hyperframes/producer@0.8.168'
-  - '@hyperframes/studio-server@0.8.168'
+  - '@hyperframes/core@0.9.31'
+  - '@hyperframes/engine@0.9.31'
+  - '@hyperframes/lint@0.9.31'
+  - '@hyperframes/parsers@0.9.31'
+  - '@hyperframes/player@0.9.31'
+  - '@hyperframes/producer@0.9.31'
+  - '@hyperframes/studio-server@0.9.31'
   - '@vitest/mocker@5.0.0'
   - '@vitest/spy@5.0.0'
   - vitest@5.0.0

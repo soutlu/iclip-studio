@@ -26,7 +26,7 @@ const item = (spec: Partial<CatalogItem> & Pick<CatalogItem, 'name'>): CatalogIt
 const FONT: CatalogVariable = { id: 'font', type: 'font', label: '字体', default: '' }
 
 const CATALOG: ComponentCatalog = {
-  version: '0.8.168',
+  version: '0.9.31',
   runtime: {
     hyperframes: 'vendor/hf/runtime.js',
     gsap: 'vendor/gsap/gsap.min.js',
