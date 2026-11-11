@@ -19,6 +19,9 @@ const SIGN_IN_WINDOW_MS = 5 * 60_000
 const CLOSED_POLL_MS = 500
 const POPUP_FEATURES = 'popup,width=520,height=680'
 
+/** `explain`：发起失败时直接给出后端的说明（管理员在配置页连接时用）。 */
+type ConnectOptions = { explain?: boolean }
+
 type Flow = {
   service: McpService
   popup: Window
@@ -51,7 +54,7 @@ class McpConnectStore {
   isConnecting = (serverId: string) => this.flows.has(serverId)
 
   /** 须在点击处理里同步调用：先开窗口（异步再开会被浏览器拦截），再要授权地址。 */
-  connect = (service: McpService) => {
+  connect = (service: McpService, options: ConnectOptions = {}) => {
     const running = this.flows.get(service.serverId)
     if (running !== undefined) {
       running.popup.focus()
@@ -60,7 +63,11 @@ class McpConnectStore {
     this.dismissFailure(service.serverId)
     const popup = window.open('about:blank', `iclip-connect-${service.serverId}`, POPUP_FEATURES)
     if (popup === null) {
-      this.fail(service, `浏览器拦截了新窗口，无法连接 ${service.name}；请允许弹出窗口后重试`)
+      this.fail(
+        service,
+        options,
+        `浏览器拦截了新窗口，无法连接 ${service.name}；请允许弹出窗口后重试`,
+      )
       return
     }
     this.listen()
@@ -85,7 +92,7 @@ class McpConnectStore {
         if (this.flows.get(service.serverId) !== flow) return
         popup.close()
         this.end(service.serverId)
-        this.fail(service, connectFailureText(error, service.name))
+        this.fail(service, options, connectFailureText(error, service.name, options.explain))
       },
     )
   }
@@ -95,12 +102,12 @@ class McpConnectStore {
     this.end(serverId)
   }
 
-  private fail(service: McpService, message: string) {
+  private fail(service: McpService, options: ConnectOptions, message: string) {
     // 要用户处理的失败不自动消失：常驻到关闭或重试。
     this.failureToasts.set(
       service.serverId,
       toast.error(message, {
-        action: { label: '重试', onClick: () => this.connect(service) },
+        action: { label: '重试', onClick: () => this.connect(service, options) },
         closeButton: true,
         duration: Number.POSITIVE_INFINITY,
       }),

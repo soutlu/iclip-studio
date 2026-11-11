@@ -16,6 +16,7 @@ import {
   zMcpServerOut,
   zMcpServersOut,
 } from '@/shared/api/generated/zod.gen'
+import { MCP_CONNECTIONS_KEY } from '@/shared/mcp-connections'
 
 export type McpServer = z.infer<typeof zMcpServerOut>
 export type McpCheck = z.infer<typeof zMcpCheckOut>
@@ -70,11 +71,15 @@ const checkSaved = (id: string) =>
     method: 'POST',
   })
 
-/** 测试已保存的服务（使用自有账户的服务用当前管理员自己的连接），通过后服务上的工具与权限范围随之更新。 */
+/**
+ * 测试已保存的服务（使用自有账户的服务用当前管理员自己的连接），通过后服务上的工具与权限范围随之更新。
+ * 没测成时重读我的连接：可能是它未连接或已失效。
+ */
 export const useCheckMcpServer = () => {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: checkSaved,
+    onError: () => queryClient.invalidateQueries({ queryKey: MCP_CONNECTIONS_KEY }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: mcpQueryKeys.list }),
   })
 }
@@ -88,6 +93,13 @@ export type McpSaveResult = {
   check:
     { kind: 'checked'; result: McpCheck } | { kind: 'error'; message: string } | { kind: 'skipped' }
 }
+
+// 服务的名称、是否使用自有账户、地址与权限都会改变各人的连接，保存或删除后一并重读。
+const rereadServers = (queryClient: ReturnType<typeof useQueryClient>) =>
+  Promise.all([
+    queryClient.invalidateQueries({ queryKey: mcpQueryKeys.list }),
+    queryClient.invalidateQueries({ queryKey: MCP_CONNECTIONS_KEY }),
+  ])
 
 /** 保存服务；`check` 为真时保存后接着测试一次已保存的服务。 */
 export const useSaveMcpServer = () => {
@@ -116,7 +128,7 @@ export const useSaveMcpServer = () => {
         }
       }
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: mcpQueryKeys.list }),
+    onSuccess: () => rereadServers(queryClient),
   })
 }
 
@@ -137,6 +149,6 @@ export const useDeleteMcpServer = () => {
         fallbackErrorMessage: '删除失败',
         method: 'DELETE',
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: mcpQueryKeys.list }),
+    onSuccess: () => rereadServers(queryClient),
   })
 }

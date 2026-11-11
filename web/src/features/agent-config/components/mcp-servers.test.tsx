@@ -2,10 +2,14 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import type { McpServerOut } from '@/shared/api/generated/types.gen'
+import { announceSignInResult, recallSignIn } from '@/shared/mcp-connections/sign-in-handoff'
+import { Toaster, toast } from '@/shared/ui/toast'
 import { loginAs, mockGovernor } from '@/testing/mocks/handlers'
+import { mockMcpConnectionQueries, setMockMcpConnections } from '@/testing/mocks/mcp-connections'
 import { server } from '@/testing/mocks/server'
+import { stubWindowOpen } from '@/testing/popup-window'
 import { renderWithProviders } from '@/testing/render'
 import { AgentPreviewConversation } from '@/routes/-agent-preview-conversation'
 import { AgentConfigPage } from './agent-config-page'
@@ -27,9 +31,28 @@ function Harness() {
 const renderPage = async () => {
   loginAs(mockGovernor)
   const user = userEvent.setup()
-  await renderWithProviders(<Harness />)
+  await renderWithProviders(
+    <>
+      <Toaster />
+      <Harness />
+    </>,
+  )
   await screen.findByRole('button', { name: /^切换 Agent，当前：/ })
   return user
+}
+
+afterEach(() => {
+  toast.dismiss()
+})
+
+/** 已经答复的请求的路径，按先后。 */
+const recordPaths = (method: 'DELETE' | 'GET' | 'POST', path: RegExp) => {
+  const paths: string[] = []
+  server.events.on('response:mocked', ({ request }) => {
+    const { pathname } = new URL(request.url)
+    if (request.method === method && path.test(pathname)) paths.push(pathname)
+  })
+  return paths
 }
 
 const recordBodies = (method: 'PUT' | 'POST' | 'PATCH', path: RegExp) => {
@@ -72,6 +95,21 @@ const openCard = async (user: User, name: string) => {
     await within(mcpSection()).findByRole('button', { name: `配置 MCP 服务：${name}` }),
   )
   return sidePanel()
+}
+
+const myAccount = (panel: HTMLElement) => within(panel).queryByRole('group', { name: '我的账户' })
+
+/** 新窗口里的登录走完：服务端记下这个人的连接，回调页把结果发回发起连接的标签页。 */
+const finishSignIn = async (popup: { location: { href: string } } | undefined, name: string) => {
+  await waitFor(() => expect(popup?.location.href).toContain('/mcp/callback?state='))
+  const state = new URL(popup?.location.href ?? '').searchParams.get('state') ?? ''
+  const done = await fetch('http://localhost/api/mcp-connections/complete', {
+    body: JSON.stringify({ code: 'mock-code', state }),
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+  })
+  const { serverId } = (await done.json()) as { serverId: string }
+  announceSignInResult({ name, ok: true, serverId, tabId: recallSignIn(state)?.tabId ?? null })
 }
 
 const field = (panel: HTMLElement, name: string) => within(panel).getByRole('textbox', { name })
@@ -180,8 +218,10 @@ describe('MCP 服务 添加', () => {
     )
   })
 
-  it('使用自有账户：不用测试就能保存，保存前不发试连；保存后才能测试，未连接时显示原因', async () => {
+  it('使用自有账户：不用测试就能保存，保存前不发试连；保存后点测试连接，先在新窗口登录', async () => {
+    const { open } = stubWindowOpen()
     const user = await renderPage()
+    const savedChecks = recordPaths('POST', /\/api\/mcp-servers\/survey\/check$/)
     const checks = recordBodies('POST', /\/api\/mcp-servers\/check$/)
     const creates = recordBodies('POST', /\/api\/mcp-servers$/)
     await user.click(within(await openLibrary(user)).getByRole('button', { name: '添加服务' }))
@@ -206,11 +246,16 @@ describe('MCP 服务 添加', () => {
     expect(status(panel)).toHaveTextContent('')
     expect(button(panel, '保存配置')).toBeDisabled()
 
+    expect(open).not.toHaveBeenCalled()
+    await waitFor(() => expect(button(panel, '测试连接')).toBeEnabled())
     await user.click(button(panel, '测试连接'))
-    await waitFor(() =>
-      expect(status(panel)).toHaveTextContent('你还没有连接 问卷平台，请先连接再测试'),
+    expect(open).toHaveBeenCalledTimes(1)
+    expect(await within(panel).findByRole('group', { name: '我的账户' })).toHaveTextContent(
+      '正在连接，请在新窗口中完成',
     )
+    expect(status(panel)).toHaveTextContent('')
     expect(checks).toHaveLength(0)
+    expect(savedChecks).toHaveLength(0)
   })
 })
 
@@ -272,7 +317,7 @@ describe('MCP 服务 测试连接', () => {
     expect(save).toBeEnabled()
   })
 
-  it('使用自有账户的服务：连接已失效时显示服务给的原因', async () => {
+  it('使用自有账户的服务：测试时服务答连接已失效，显示它给的原因并重读我的连接', async () => {
     server.use(
       http.post('*/api/mcp-servers/:serverId/check', () =>
         HttpResponse.json(
@@ -283,9 +328,16 @@ describe('MCP 服务 测试连接', () => {
     )
     const user = await renderPage()
     const panel = await openFromLibrary(user, 'PickFu')
+    await waitFor(() => expect(button(panel, '测试连接')).toBeEnabled())
+    const readsBefore = mockMcpConnectionQueries().filter((query) => query === '').length
     await user.click(button(panel, '测试连接'))
     await waitFor(() =>
       expect(status(panel)).toHaveTextContent('你在 PickFu 的连接已失效，请重新连接'),
+    )
+    await waitFor(() =>
+      expect(mockMcpConnectionQueries().filter((query) => query === '')).toHaveLength(
+        readsBefore + 1,
+      ),
     )
   })
 })
@@ -537,6 +589,105 @@ describe('MCP 服务 权限', () => {
     })
     await waitFor(() => expect(button(panel, '保存配置')).toBeDisabled())
     expect(screen.queryByRole('dialog', { name: '保存确认' })).toBeNull()
+
+    await waitFor(() =>
+      expect(within(panel).getByRole('button', { name: '重新连接' })).toBeVisible(),
+    )
+    expect(within(panel).getByText('这个连接带有已关闭的权限，请重新连接')).toBeVisible()
+  })
+})
+
+describe('MCP 服务 我的账户', () => {
+  it('已连接：写着账户与服务给的权限；断开后卡片消失', async () => {
+    const user = await renderPage()
+    const disconnects = recordPaths('DELETE', /\/api\/mcp-connections\//)
+    const panel = await openFromLibrary(user, 'PickFu')
+    const account = await within(panel).findByRole('group', { name: '我的账户' })
+    expect(account).toHaveTextContent('demo@example.com')
+    expect(account).toHaveTextContent('openid email profile offline_access read write spend')
+    expect(within(panel).queryByRole('alert')).toBeNull()
+
+    await user.click(within(account).getByRole('button', { name: '断开' }))
+    expect(await screen.findByText('PickFu 已断开')).toBeVisible()
+    expect(disconnects).toEqual(['/api/mcp-connections/pickfu'])
+    await waitFor(() => expect(myAccount(panel)).toBeNull())
+  })
+
+  it('未连接：没有账户卡片；点测试连接先在新窗口登录、不发测试，连上后自动测试并显示账户', async () => {
+    setMockMcpConnections({ users: {} })
+    const { open, windows } = stubWindowOpen()
+    const user = await renderPage()
+    const checks = recordPaths('POST', /\/api\/mcp-servers\/pickfu\/check$/)
+    const panel = await openFromLibrary(user, 'PickFu')
+    await waitFor(() => expect(button(panel, '测试连接')).toBeEnabled())
+    expect(myAccount(panel)).toBeNull()
+
+    await user.click(button(panel, '测试连接'))
+    expect(open).toHaveBeenCalledTimes(1)
+    const account = await within(panel).findByRole('group', { name: '我的账户' })
+    expect(account).toHaveTextContent('正在连接，请在新窗口中完成')
+    expect(within(account).getByRole('button', { name: '取消' })).toBeVisible()
+    expect(checks).toHaveLength(0)
+
+    await finishSignIn(windows[0], 'PickFu')
+    expect(await screen.findByText('PickFu 已连接')).toBeVisible()
+    await waitFor(() => expect(checks).toHaveLength(1))
+    await waitFor(() => expect(status(panel)).toHaveTextContent(/\d+ ms/))
+    expect(myAccount(panel)).toHaveTextContent('demo@example.com')
+    expect(within(panel).getByRole('button', { name: '断开' })).toBeVisible()
+    expect(open).toHaveBeenCalledTimes(1)
+  })
+
+  it('连接中点取消：关掉窗口，卡片收起，不测试', async () => {
+    setMockMcpConnections({ users: {} })
+    const { windows } = stubWindowOpen()
+    const user = await renderPage()
+    const checks = recordPaths('POST', /\/api\/mcp-servers\/pickfu\/check$/)
+    const panel = await openFromLibrary(user, 'PickFu')
+    await waitFor(() => expect(button(panel, '测试连接')).toBeEnabled())
+    await user.click(button(panel, '测试连接'))
+
+    await user.click(await within(panel).findByRole('button', { name: '取消' }))
+    expect(windows[0]?.close).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(myAccount(panel)).toBeNull())
+    expect(checks).toHaveLength(0)
+  })
+
+  it('连接已失效：写明原因，重新连接在新窗口登录，连上后自动测试', async () => {
+    setMockMcpConnections({
+      users: { governor: { pickfu: { account: 'demo@example.com', state: 'invalid' } } },
+    })
+    const { open, windows } = stubWindowOpen()
+    const user = await renderPage()
+    const checks = recordPaths('POST', /\/api\/mcp-servers\/pickfu\/check$/)
+    const panel = await openFromLibrary(user, 'PickFu')
+    const account = await within(panel).findByRole('group', { name: '我的账户' })
+    expect(account).toHaveTextContent('demo@example.com')
+    expect(within(panel).getByRole('alert')).toHaveTextContent('连接已失效，请重新连接')
+
+    await user.click(within(account).getByRole('button', { name: '重新连接' }))
+    expect(open).toHaveBeenCalledTimes(1)
+    await finishSignIn(windows[0], 'PickFu')
+    await waitFor(() => expect(checks).toHaveLength(1))
+    await waitFor(() => expect(within(panel).getByRole('button', { name: '断开' })).toBeVisible())
+    expect(within(panel).queryByRole('alert')).toBeNull()
+  })
+
+  it('服务要求填客户端：登录发起不了，提示写着后端给的原因，并重读服务', async () => {
+    const { windows } = stubWindowOpen()
+    const user = await renderPage()
+    const panel = await openFromLibrary(user, '用户洞察')
+    await waitFor(() => expect(button(panel, '测试连接')).toBeEnabled())
+    const reads = recordPaths('GET', /\/api\/mcp-servers$/)
+
+    await user.click(button(panel, '测试连接'))
+    expect(
+      await screen.findByText('连接失败：该服务不支持自动注册客户端，需要管理员先填写客户端 ID'),
+    ).toBeVisible()
+    expect(windows[0]?.close).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(reads).toHaveLength(1))
+    expect(myAccount(panel)).toBeNull()
+    expect(status(panel)).toHaveTextContent('')
   })
 })
 

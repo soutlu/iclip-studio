@@ -205,7 +205,7 @@ describe('Agent 配置页的测试预览', () => {
   })
 
   it('连接器：预览开出来前按 Agent 草稿问，开出来后按这段预览问', async () => {
-    setMockMcpConnections({ drafts: { director: ['pickfu'] } })
+    setMockMcpConnections({ drafts: { director: ['pickfu'] }, users: {} })
     const backend = setup()
     const user = await renderPage(backend.fake)
 
