@@ -19,7 +19,7 @@ const catalogOf = (fonts: Record<string, CatalogFont> = {}): ComponentCatalog =>
       { range: 'U+20000-20002', files: files('7') },
       { range: 'U+9f98', files: { '400': 'vendor/npm/noto/files/noto-8-400-normal.woff2' } },
       { range: 'U+2014, U+4e2d', files: files('9') },
-      { range: 'U+0000-00ff', files: files('latin') },
+      { range: 'U+0000-00ff, U+2014', files: files('latin') },
     ],
   },
   fonts,
@@ -85,8 +85,20 @@ describe('cjkFontFaces · 中文字体自己的规则', () => {
     expect(rangeOf('—中', '9')).toBe('U+2014,U+4e2d')
   })
 
-  it('几个分片都有的字只带声明最靠后的那个：浏览器用的就是它', () => {
-    expect(slicesIn(cjkFontFaces(catalogOf(), 'ABC', []))).toEqual(['latin'])
+  it('西文基本字符只带声明最靠后的那个分片，前面也含它们的分片不带；换行这类控制字符不写进范围', () => {
+    const css = cjkFontFaces(catalogOf(), 'ABC\n\tabc', [])
+    expect(slicesIn(css)).toEqual(['latin'])
+    expect(parseRules(css)[0]?.range).toBe('U+20-7e')
+  })
+
+  it('别的字落在几个分片里时全都带上、保持声明顺序：靠后的文件里没有字形时浏览器要退到靠前的', () => {
+    const rules = parseRules(cjkFontFaces(catalogOf(), '—', [])).filter(
+      (rule) => rule.weight === '400',
+    )
+    expect(rules.map((rule) => [rule.src, rule.range])).toEqual([
+      ['9-400-normal.woff2', 'U+2014'],
+      ['latin-400-normal.woff2', 'U+20-7e,U+2014'],
+    ])
   })
 
   it('U+20000 以上的字按码位找分片，不按 UTF-16 的两半找', () => {

@@ -48,20 +48,24 @@ function unicodeRange(codes: readonly number[]): string {
   return parts.join(',')
 }
 
-// 每次改动都会重拼成片，分片表只解析一次。
-// 码位由哪个分片画：分片之间有重叠，重叠处靠后声明的规则生效，所以只记最后一个含它的分片。
-const sliceOfCode = new WeakMap<CjkFont, Map<number, number>>()
+// 每次改动都会重拼成片，分片表只解析一次
+const holdersOfCode = new WeakMap<CjkFont, Map<number, number[]>>()
 
-function sliceIndex(cjk: CjkFont): Map<number, number> {
-  const cached = sliceOfCode.get(cjk)
+/** 每个码位落在哪些分片里，按声明顺序。 */
+function sliceIndex(cjk: CjkFont): Map<number, number[]> {
+  const cached = holdersOfCode.get(cjk)
   if (cached) return cached
-  const index = new Map<number, number>()
+  const index = new Map<number, number[]>()
   cjk.slices.forEach(({ range }, at) => {
     for (const [from, to] of parseRanges(range)) {
-      for (let code = from; code <= to; code++) index.set(code, at)
+      for (let code = from; code <= to; code++) {
+        const holders = index.get(code)
+        if (holders) holders.push(at)
+        else index.set(code, [at])
+      }
     }
   })
-  sliceOfCode.set(cjk, index)
+  holdersOfCode.set(cjk, index)
   return index
 }
 
@@ -81,14 +85,20 @@ export function cjkFontFaces(
   const index = sliceIndex(catalog.cjk)
   const codes = new Set<number>()
   for (let code = ALWAYS[0]; code <= ALWAYS[1]; code++) codes.add(code)
-  for (const char of text) codes.add(char.codePointAt(0) ?? 0)
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0
+    if (code > ALWAYS[1]) codes.add(code)
+  }
+  // 分片之间有重叠：靠后声明的规则先生效，它的文件里没有这个字形时浏览器才退到靠前的，所以含这个字的
+  // 分片都要带上。西文基本字符例外：最后的 latin 分片里都有，前面那些分片不用为了它们带上。
   const codesIn = new Map<number, number[]>()
   for (const code of [...codes].sort((a, b) => a - b)) {
-    const at = index.get(code)
-    if (at === undefined) continue
-    const held = codesIn.get(at)
-    if (held) held.push(code)
-    else codesIn.set(at, [code])
+    const holders = index.get(code) ?? []
+    for (const at of code <= ALWAYS[1] ? holders.slice(-1) : holders) {
+      const held = codesIn.get(at)
+      if (held) held.push(code)
+      else codesIn.set(at, [code])
+    }
   }
   const used = catalog.cjk.slices.flatMap(({ files }, at) => {
     const held = codesIn.get(at)
