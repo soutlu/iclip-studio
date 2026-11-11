@@ -9,13 +9,14 @@ import {
 } from '@/shared/api/generated/zod.gen'
 import { PERMISSION } from '@/shared/auth/permissions'
 import { agentConfigHandlers, mockMcpServerUsage, mockModelUsage } from './agent-config'
-import { agentPreviewHandlers } from './agent-previews'
+import { agentPreviewHandlers, mockAgentPreview } from './agent-previews'
 import { audioHandlers } from './audio'
 import { auditHandlers } from './audit'
 import { enhancementHandlers } from './enhancements'
 import { filmHandlers } from './film'
 import { forgetMockHitCaseTags, hitCaseHandlers, mockHitCaseTagSets } from './hit-cases'
 import { libraryHandlers } from './library'
+import { mcpConnectionHandlers } from './mcp-connections'
 import { mcpServerHandlers } from './mcp-servers'
 import { modelProviderHandlers } from './model-providers'
 import { mockAuthUser, mockGovernor } from './auth-user'
@@ -61,6 +62,21 @@ export const loginAs = (user: MockUser, overrides: Partial<MockUser> = {}): Mock
 }
 
 const activeUserId = () => (currentUser ?? mockAuthUser).id
+
+const SHARED_SESSION_KEY = 'cue.mock.session'
+let sharedSession: Storage | null = null
+
+/**
+ * dev:mock 的登录只在页面内存里；把登录的用户名记进 `storage`，`adopt` 为真的页面（本页打开的弹窗，如
+ * 服务登录后回到的 /mcp/callback）沿用它。整页刷新的主窗口不沿用，照旧回到未登录。
+ */
+export const shareMockSession = (storage: Storage, adopt: boolean) => {
+  sharedSession = storage
+  if (!adopt) return
+  const username = storage.getItem(SHARED_SESSION_KEY)
+  if (username === mockGovernor.username) currentUser = mockGovernor
+  else if (username === mockAuthUser.username) currentUser = mockAuthUser
+}
 
 export const resetMockSession = () => {
   currentUser = null
@@ -171,11 +187,13 @@ export const handlers = [
   http.post('*/api/auth/login', async ({ request }) => {
     const form = new URLSearchParams(await request.text())
     currentUser = form.get('username') === mockGovernor.username ? mockGovernor : mockAuthUser
+    sharedSession?.setItem(SHARED_SESSION_KEY, currentUser.username)
     return new HttpResponse(null, { status: 204 })
   }),
 
   http.post('*/api/auth/logout', () => {
     currentUser = null
+    sharedSession?.removeItem(SHARED_SESSION_KEY)
     return new HttpResponse(null, { status: 204 })
   }),
 
@@ -499,6 +517,20 @@ export const handlers = [
     return { id: user.id, name: user.displayName }
   }),
   ...mcpServerHandlers(mockMcpServerUsage),
+  ...mcpConnectionHandlers(
+    () => (currentUser ?? mockAuthUser).username,
+    (conversationId) => {
+      const conversation = liveMockConversation(conversationId)
+      if (conversation !== undefined)
+        return conversation.ownerUserId === activeUserId()
+          ? { agentId: conversation.agentId, draft: false }
+          : undefined
+      const preview = mockAgentPreview(conversationId)
+      return preview === undefined
+        ? undefined
+        : { agentId: preview.agentId, draft: preview.versionId === null }
+    },
+  ),
   ...agentPreviewHandlers,
   ...modelProviderHandlers(mockModelUsage),
 ]

@@ -9,7 +9,9 @@ import {
   addMockUser,
   handlers,
   mockGovernor,
+  shareMockSession,
 } from './handlers'
+import { mcpExpiredShowcase, seedMockMcpConnections } from './mcp-connections'
 import { seedDemoTasks } from './demo-tasks'
 import { seedMockFilm } from './film'
 import { backgroundShowcase, multipleBackgroundShowcase } from './background-showcase'
@@ -73,6 +75,13 @@ markMockShowcase(toolShowcaseConversation.id, toolShowcase)
 for (const showcase of [backgroundShowcase, multipleBackgroundShowcase]) {
   markMockShowcase(addMockConversation(showcase.title).id, showcase)
 }
+
+seedMockMcpConnections(window.localStorage)
+shareMockSession(window.localStorage, window.opener !== null)
+const mcpShowcaseConversation = addMockConversation(mcpExpiredShowcase.title)
+seedMockWorkspace(mcpShowcaseConversation.id, { httpFrames: true })
+markMockShowcase(mcpShowcaseConversation.id, mcpExpiredShowcase)
+addMockConversation('爆款脚本复刻').agentId = 'replica'
 
 const film = addMockConversation('穿搭种草 · 12 秒')
 seedMockFilm(film.id, { sharedBody: true })

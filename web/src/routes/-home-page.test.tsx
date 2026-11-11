@@ -13,6 +13,7 @@ import {
   mockGovernor,
 } from '@/testing/mocks/handlers'
 import { mockLibraryVideos } from '@/testing/mocks/library'
+import { mockMcpConnectionQueries, setMockMcpConnections } from '@/testing/mocks/mcp-connections'
 import { addMockReference } from '@/testing/mocks/references'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
@@ -45,6 +46,18 @@ const promptReceipt = (promptId: string) =>
   HttpResponse.json({ createdAt: new Date().toISOString(), promptId, status: 'queued' })
 
 describe('首页真实数据流程', () => {
+  it('输入框的连接器按所选 Agent 问服务', async () => {
+    loginAs(mockAuthUser)
+    setMockMcpConnections({ agents: { storyboard: ['pickfu'] } })
+    const { user } = await renderHome()
+
+    await user.click(await screen.findByRole('button', { name: '连接器' }))
+    expect(
+      within(await screen.findByRole('menu')).getByRole('menuitem', { name: '连接 PickFu' }),
+    ).toBeInTheDocument()
+    expect(mockMcpConnectionQueries()).toEqual(['?agentId=storyboard'])
+  })
+
   it.each([
     ['自己的合集', true, '关联合集：夏季亚麻系列'],
     ['不在自己合集里的 id', false, '关联合集：未关联合集'],

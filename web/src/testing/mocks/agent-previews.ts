@@ -107,6 +107,14 @@ const previewRun: MockScript = ({ turnId }) => {
   ]
 }
 
+const previews = new Map<string, AgentPreviewOut>()
+
+export const mockAgentPreview = (previewId: string) => previews.get(previewId)
+
+export const resetMockAgentPreviews = () => {
+  previews.clear()
+}
+
 export const agentPreviewHandlers = [
   http.post('*/api/agents/:agentId/previews', async ({ params, request }) => {
     const raw = await request.text()
@@ -117,6 +125,7 @@ export const agentPreviewHandlers = [
       id: crypto.randomUUID(),
       versionId: body.versionId ?? null,
     }
+    previews.set(preview.id, preview)
     markMockShowcase(preview.id, { title: PREVIEW_TITLE, turns: () => [] })
     markMockScript(preview.id, previewRun)
     return HttpResponse.json(preview, { status: 201 })

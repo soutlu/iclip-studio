@@ -2,6 +2,8 @@ import type { PreviewConversationProps } from '@/features/agent-config'
 import { ConversationTimeline, RunTrace } from '@/features/conversations'
 
 export function AgentPreviewConversation({
+  agentId,
+  draft,
   openPreview,
   placeholder,
   previewId,
@@ -9,6 +11,7 @@ export function AgentPreviewConversation({
 }: PreviewConversationProps) {
   return (
     <ConversationTimeline
+      connections={previewId === null ? { agentId, draft } : { conversationId: previewId }}
       conversationId={previewId}
       inlineSendError
       openConversation={openPreview}

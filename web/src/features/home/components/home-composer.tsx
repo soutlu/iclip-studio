@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { ComposerHandle, ComposerPart, ComposerSubmission } from '@/shared/ui/composer'
 import { Composer, readyAttachment } from '@/shared/ui/composer'
+import { ComposerConnectorsButton, type McpConnectionsScope } from '@/shared/mcp-connections'
 
 const PLACEHOLDER = '例如：给这双白色帆布鞋写一份 15 秒的产品分镜'
 const SAME_STYLE_PLACEHOLDER = '参照该视频做同款，请输入要替换的内容'
@@ -15,6 +16,8 @@ export type HomeComposerProps = {
   agentPicker?: ReactNode
   attachmentsEnabled?: boolean | undefined
   collectionPicker?: ReactNode
+  /** 给了就在「+」旁放连接器按钮，列所选 Agent 使用自有账户的服务。 */
+  connections?: McpConnectionsScope | undefined
   draftParts?: readonly ComposerPart[] | undefined
   onDraftChange?: ((parts: readonly ComposerPart[]) => void) | undefined
   focusRequested?: boolean | undefined
@@ -30,6 +33,7 @@ export function HomeComposer({
   agentPicker,
   attachmentsEnabled = false,
   collectionPicker,
+  connections,
   draftParts,
   focusRequested = false,
   onDraftChange,
@@ -111,23 +115,26 @@ export function HomeComposer({
       <Composer
         attachmentsEnabled={attachmentsEnabled}
         leading={
-          sameStyle ? (
-            <div className="flex flex-wrap items-center gap-1.5 pl-1">
-              {SAME_STYLE_PHRASES.map((phrase) => (
-                <button
-                  className="inline-flex h-(--control-height-xs) ui-state cursor-pointer items-center rounded-full border-[0.5px] border-chat-hairline px-2.5 text-body-sm whitespace-nowrap text-on-surface-variant ui-focus"
-                  key={phrase.label}
-                  onClick={() => {
-                    composerRef.current?.insert([{ kind: 'text', text: phrase.text }])
-                    composerRef.current?.focus()
-                  }}
-                  type="button"
-                >
-                  {phrase.label}
-                </button>
-              ))}
-            </div>
-          ) : undefined
+          <>
+            {connections === undefined ? null : <ComposerConnectorsButton scope={connections} />}
+            {sameStyle ? (
+              <div className="flex flex-wrap items-center gap-1.5 pl-1">
+                {SAME_STYLE_PHRASES.map((phrase) => (
+                  <button
+                    className="inline-flex h-(--control-height-xs) ui-state cursor-pointer items-center rounded-full border-[0.5px] border-chat-hairline px-2.5 text-body-sm whitespace-nowrap text-on-surface-variant ui-focus"
+                    key={phrase.label}
+                    onClick={() => {
+                      composerRef.current?.insert([{ kind: 'text', text: phrase.text }])
+                      composerRef.current?.focus()
+                    }}
+                    type="button"
+                  >
+                    {phrase.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </>
         }
         onChange={changeDraft}
         onSubmit={(submission) => {

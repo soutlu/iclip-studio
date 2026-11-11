@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { AgentConfigPage } from '@/features/agent-config'
 import { pasteTextIntoComposer } from '@/testing/editor'
 import { loginAs, mockGovernor } from '@/testing/mocks/handlers'
+import { mockMcpConnectionQueries, setMockMcpConnections } from '@/testing/mocks/mcp-connections'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { FakeTranscriptServer } from '@/testing/transcript-server'
@@ -201,6 +202,27 @@ describe('Agent 配置页的测试预览', () => {
     await waitFor(() => expect(backend.prompts).toHaveLength(2))
     expect(backend.prompts[1]?.conversationId).toBe(backend.opened[0]?.id)
     expect(backend.opened).toHaveLength(1)
+  })
+
+  it('连接器：预览开出来前按 Agent 草稿问，开出来后按这段预览问', async () => {
+    setMockMcpConnections({ drafts: { director: ['pickfu'] } })
+    const backend = setup()
+    const user = await renderPage(backend.fake)
+
+    await user.click(await within(preview()).findByRole('button', { name: '连接器' }))
+    expect(
+      within(await screen.findByRole('menu')).getByRole('menuitem', { name: '连接 PickFu' }),
+    ).toBeInTheDocument()
+    expect(mockMcpConnectionQueries()).toEqual(['?agentId=director&draft=true'])
+    await user.keyboard('{Escape}')
+
+    await send(user, '为网面跑鞋做一条 15 秒竖版短片')
+    await waitFor(() => expect(backend.opened).toHaveLength(1))
+    await waitFor(() =>
+      expect(mockMcpConnectionQueries().at(-1)).toBe(
+        `?conversationId=${backend.opened[0]?.id ?? ''}`,
+      ),
+    )
   })
 
   it('看历史版本时试的是那一版：占位写版本号，开预览带版本 id；换了要试的就是一段没开的新试聊', async () => {
