@@ -1,13 +1,10 @@
 import type { ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import { CONNECT_PILL, type McpConnection } from '@/shared/mcp-connections'
+import { CONNECT_PILL } from '@/shared/mcp-connections'
 import { Button } from '@/shared/ui/button'
 import type { McpAccount } from '../mcp-account'
 import { CardGlyph, DIRECTORY_CARD } from './resource-card'
-
-const carriesClosedScope = (connection: McpConnection, requested: readonly string[] | null) =>
-  requested !== null && (connection.scopes ?? []).some((scope) => !requested.includes(scope))
 
 /**
  * 「使用自有账户」下面我自己的账户：账户名与服务给的权限，行尾断开；连接已失效时改成重新连接，卡片下写原因。
@@ -15,11 +12,11 @@ const carriesClosedScope = (connection: McpConnection, requested: readonly strin
  */
 export function AccountCard({
   account,
-  requestedScopes,
+  closedScopes,
 }: {
   account: McpAccount
-  /** 服务现在让用户连接时申请的权限；还不知道时为 `null`。 */
-  requestedScopes: readonly string[] | null
+  /** 「权限」一栏里现在关着的那几项。 */
+  closedScopes: readonly string[]
 }) {
   const { connecting, connection } = account
   if (connecting)
@@ -78,7 +75,7 @@ export function AccountCard({
       />
       {invalid ? (
         <p className="mt-2 text-body-sm text-error" role="alert">
-          {carriesClosedScope(connection, requestedScopes)
+          {(connection.scopes ?? []).some((scope) => closedScopes.includes(scope))
             ? '这个连接带有已关闭的权限，请重新连接'
             : '连接已失效，请重新连接'}
         </p>

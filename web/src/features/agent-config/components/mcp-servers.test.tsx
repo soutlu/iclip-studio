@@ -673,6 +673,42 @@ describe('MCP 服务 我的账户', () => {
     expect(within(panel).queryByRole('alert')).toBeNull()
   })
 
+  it('连接已失效且带着服务多给的权限：不算已关闭的权限，只写连接已失效', async () => {
+    const user = await renderPage()
+    const panel = await openFromLibrary(user, 'PickFu')
+    await user.click(button(panel, '测试连接'))
+    await within(panel).findByRole('region', { name: '权限' })
+
+    setMockMcpConnections({
+      users: {
+        governor: {
+          pickfu: { account: 'demo@example.com', scopes: ['read', 'basic'], state: 'invalid' },
+        },
+      },
+    })
+    await user.click(button(panel, '测试连接'))
+    expect(await within(panel).findByRole('button', { name: '重新连接' })).toBeVisible()
+    expect(within(panel).getByRole('alert')).toHaveTextContent('连接已失效，请重新连接')
+  })
+
+  it('表单里关掉了开关还没保存：连上后不自动测试', async () => {
+    setMockMcpConnections({
+      users: { governor: { pickfu: { account: 'demo@example.com', state: 'invalid' } } },
+    })
+    const { windows } = stubWindowOpen()
+    const user = await renderPage()
+    const checks = recordPaths('POST', /\/api\/mcp-servers\/(pickfu\/)?check$/)
+    const panel = await openFromLibrary(user, 'PickFu')
+    await user.click(await within(panel).findByRole('button', { name: '重新连接' }))
+    await user.click(within(panel).getByRole('switch', { name: '使用自有账户' }))
+
+    await finishSignIn(windows[0], 'PickFu')
+    expect(await screen.findByText('PickFu 已连接')).toBeVisible()
+    await user.click(within(panel).getByRole('switch', { name: '使用自有账户' }))
+    expect(await within(panel).findByRole('button', { name: '断开' })).toBeVisible()
+    expect(checks).toHaveLength(0)
+  })
+
   it('服务要求填客户端：登录发起不了，提示写着后端给的原因，并重读服务', async () => {
     const { windows } = stubWindowOpen()
     const user = await renderPage()
