@@ -20,20 +20,40 @@ const item = (spec: Partial<CatalogItem> & Pick<CatalogItem, 'name'>): CatalogIt
   variables: [],
   thumbnail: null,
   fonts: [],
+  chars: '',
   ...spec,
 })
 
 const FONT: CatalogVariable = { id: 'font', type: 'font', label: '字体', default: '' }
 
+const slice = (name: string, range: string) => ({
+  range,
+  files: {
+    '400': `vendor/npm/noto/files/noto-${name}-400-normal.woff2`,
+    '700': `vendor/npm/noto/files/noto-${name}-700-normal.woff2`,
+  },
+})
+
 const CATALOG: ComponentCatalog = {
-  version: '0.8.168',
+  version: '0.9.31',
   runtime: {
     hyperframes: 'vendor/hf/runtime.js',
     gsap: 'vendor/gsap/gsap.min.js',
-    cjkFont: 'vendor/fonts/noto-sans-sc.css',
+  },
+  cjk: {
+    family: 'Noto Sans SC',
+    slices: [
+      slice('hello', 'U+4f60,U+597d,U+3002'),
+      slice('title', 'U+6807,U+9898'),
+      slice('brand', 'U+54c1,U+724c,U+540d'),
+      slice('fresh', 'U+65b0'),
+      slice('own', 'U+8ba2,U+9605'),
+      slice('rare', 'U+9f98'),
+      slice('latin', 'U+0000-00ff'),
+    ],
   },
   fonts: {
-    Inter: { css: 'vendor/fonts/families/inter.css' },
+    Inter: { css: 'vendor/fonts/families/inter.css', cjk: [{ weight: '400', style: 'normal' }] },
     Anton: { css: 'vendor/fonts/families/anton.css' },
     'DM Sans': { css: 'vendor/fonts/families/dm-sans.css' },
     'Brand Serif': { css: 'vendor/fonts/families/brand-serif.css', brand: 'BR' },
@@ -60,7 +80,7 @@ const CATALOG: ComponentCatalog = {
         FONT,
       ],
     }),
-    item({ name: 'end-card' }),
+    item({ name: 'end-card', chars: '订阅' }),
     item({
       name: 'lower-third',
       variables: [{ id: 'title', type: 'string', label: '标题', default: '标题' }, FONT],
@@ -172,6 +192,14 @@ const build = (spec: Partial<WholeFilmDraft> = {}) =>
   buildComposition({ draft: draft(spec), media: MEDIA, catalog: CATALOG })
 const variablesOf = (element: Element | null): unknown =>
   JSON.parse(element?.getAttribute('data-variable-values') ?? 'null')
+const cjkSlices = (html: string) =>
+  [
+    ...new Set(
+      [...html.matchAll(/font-family:'Noto Sans SC';[^}]*noto-([a-z]+)-\d+-normal/g)].map(
+        ([, name]) => name,
+      ),
+    ),
+  ].sort()
 
 describe('buildComposition', () => {
   it('第 0 层每段画面是一个 video：成片时间、素材入点与音量写成 HyperFrames 属性', () => {
@@ -357,8 +385,8 @@ describe('buildComposition', () => {
     const hidden = parse(build({ captions: { ...captions, hidden: true } }).html)
     expect(hidden.querySelector('#captions')).toBeNull()
     expect(hidden.querySelector('[data-composition-id="default-caption"]')).toBeNull()
-    const links = [...hidden.querySelectorAll('link')].map((node) => node.getAttribute('href'))
-    expect(links).toEqual(['vendor/fonts/noto-sans-sc.css'])
+    expect(hidden.querySelectorAll('link')).toHaveLength(0)
+    expect(cjkSlices(hidden.documentElement.outerHTML)).toEqual(['latin'])
 
     const shown = build({ captions: { ...captions, hidden: false } }).html
     expect(parse(shown).querySelector('#captions')).not.toBeNull()
@@ -469,7 +497,6 @@ describe('buildComposition', () => {
       node.getAttribute('href'),
     )
     expect(links).toEqual([
-      'vendor/fonts/noto-sans-sc.css',
       'vendor/fonts/families/anton.css',
       'vendor/fonts/families/dm-sans.css',
       'vendor/fonts/families/inter.css',
@@ -483,10 +510,41 @@ describe('buildComposition', () => {
       media: { ...MEDIA, subtitles: {} },
       catalog: CATALOG,
     })
-    const silentLinks = [...parse(silent.html).querySelectorAll('link')].map((node) =>
-      node.getAttribute('href'),
-    )
-    expect(silentLinks).toEqual(['vendor/fonts/noto-sans-sc.css'])
+    expect(parse(silent.html).querySelectorAll('link')).toHaveLength(0)
+  })
+
+  it('中文字体只声明成片里写出的字和所用组件文件里的字所在的分片', () => {
+    const silent = buildComposition({
+      draft: draft(),
+      media: { ...MEDIA, subtitles: {} },
+      catalog: CATALOG,
+    })
+    expect(cjkSlices(silent.html)).toEqual(['latin'])
+    expect(cjkSlices(build().html)).toEqual(['hello', 'latin'])
+
+    const byDefault = build({ overlays: [ov('o', 'lower-third', 0, 1000)] }).html
+    expect(cjkSlices(byDefault)).toEqual(['hello', 'latin', 'title'])
+    const filled = build({
+      overlays: [ov('o', 'lower-third', 0, 1000, { variables: { title: '新品' } })],
+    }).html
+    expect(cjkSlices(filled)).toEqual(['brand', 'fresh', 'hello', 'latin'])
+
+    const ownText = build({ layer0: [comp('c', 0, 1000, 'end-card')] }).html
+    expect(cjkSlices(ownText)).toEqual(['latin', 'own'])
+  })
+
+  it('用到的西文字体族按目录里的描述带一组中文孪生规则，品牌字体没有描述就不带', () => {
+    const twinsOf = (html: string, family: string) =>
+      [...html.matchAll(/@font-face\{font-family:'([^']+)';[^}]*noto-([a-z]+)-(\d+)-normal/g)]
+        .filter(([, name]) => name === family)
+        .map(([, , name, weight]) => `${name}-${weight}`)
+
+    const html = build({ overlays: [ov('o', 'lower-third', 0, 1000)] }).html
+    expect(twinsOf(html, 'Inter')).toEqual(['hello-400', 'title-400'])
+
+    const branded = build({ overlays: [ov('o', 'brand-close', 0, 1000)] }).html
+    expect(branded).toContain('vendor/fonts/families/brand-serif.css')
+    expect(twinsOf(branded, 'Brand Serif')).toEqual([])
   })
 
   it('组件目录给组件列了字体却没有对应的 CSS 时报错', () => {

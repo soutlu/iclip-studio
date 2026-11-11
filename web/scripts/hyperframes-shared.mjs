@@ -8,10 +8,10 @@ import { promisify } from 'node:util'
 
 const run = promisify(execFile)
 
-export const HF_VERSION = '0.8.168'
+export const HF_VERSION = '0.9.31'
 export const TARBALL = {
   url: `https://codeload.github.com/heygen-com/hyperframes/tar.gz/refs/tags/v${HF_VERSION}`,
-  sha256: '6e0c38c6059c76410309d6b15914b416e6d9aec74faff96f55d16497345d20d3',
+  sha256: '2a237209ea7b5bcf106b05eec368c87e0bb0981ed66e7ddd0f572fa764f788ed',
   root: `hyperframes-${HF_VERSION}`,
 }
 
@@ -46,14 +46,14 @@ export async function libraryVersion(library) {
 
 export const CJK_FONT = {
   family: 'Noto Sans SC',
-  css: 'vendor/fonts/noto-sans-sc.css',
   weights: [400, 700],
+  // 组装时写下的分片表和各字体族的中文孪生描述，发布组件目录时读它
+  faces: 'vendor/fonts/cjk.json',
 }
 
 export const RUNTIME = {
   hyperframes: 'vendor/hyperframes/hyperframe.runtime.iife.js',
   gsap: 'vendor/npm/gsap@3.14.2/dist/gsap.min.js',
-  cjkFont: CJK_FONT.css,
 }
 
 export const sha256 = (data) => createHash('sha256').update(data).digest('hex')
@@ -426,40 +426,23 @@ export async function fontFaces(
 
 export const isLatinSubset = (subset) => subset === 'latin' || subset === 'latin-ext'
 
-const CJK_BLOCKS = [
-  [0x2e80, 0x2fdf],
-  [0x3000, 0x30ff],
-  [0x3100, 0x31ff],
-  [0x3200, 0x33ff],
-  [0x3400, 0x4dbf],
-  [0x4e00, 0x9fff],
-  [0xf900, 0xfaff],
-  [0xfe10, 0xfe1f],
-  [0xfe30, 0xfe4f],
-  [0xff00, 0xffef],
-  [0x20000, 0x3134f],
-]
-
-function parseRanges(value) {
-  return value.split(',').map((part) => {
-    const [from, to] = part.trim().replace(/^U\+/i, '').split('-')
-    return [parseInt(from, 16), parseInt(to ?? from, 16)]
-  })
-}
-
-export function cjkUnicodeRange(value) {
-  const parts = []
-  for (const [from, to] of parseRanges(value)) {
-    for (const [blockFrom, blockTo] of CJK_BLOCKS) {
-      const start = Math.max(from, blockFrom)
-      const end = Math.min(to, blockTo)
-      if (start <= end) {
-        const hex = (code) => code.toString(16)
-        parts.push(start === end ? `U+${hex(start)}` : `U+${hex(start)}-${hex(end)}`)
-      }
+export async function cjkSlices(packageDir, pkg) {
+  const metadata = JSON.parse(await readFile(join(packageDir, 'metadata.json'), 'utf8'))
+  const unicode = JSON.parse(await readFile(join(packageDir, 'unicode.json'), 'utf8'))
+  const slices = []
+  const files = []
+  for (const [subset, range] of Object.entries(unicode)) {
+    const slice = subset.replace(/^\[(\d+)\]$/, '$1')
+    const byWeight = {}
+    for (const weight of CJK_FONT.weights) {
+      const file = `files/${metadata.id}-${slice}-${weight}-normal.woff2`
+      if (!existsSync(join(packageDir, file))) continue
+      files.push(file)
+      byWeight[weight] = npmPath(pkg.name, pkg.version, file)
     }
+    if (Object.keys(byWeight).length > 0) slices.push({ range, files: byWeight })
   }
-  return parts.length > 0 ? parts.join(',') : null
+  return { slices, files }
 }
 
 const KEYWORD_WEIGHTS = { normal: '400', bold: '700' }
@@ -485,31 +468,28 @@ export function fontFaceDescriptors(text) {
   return result
 }
 
-export async function cjkTwinFaces(family, descriptors, notoDir) {
-  const pkg = fontPackage(CJK_FONT.family)
-  const metadata = JSON.parse(await readFile(join(notoDir, 'metadata.json'), 'utf8'))
-  const unicode = JSON.parse(await readFile(join(notoDir, 'unicode.json'), 'utf8'))
-  const slices = Object.entries(unicode).flatMap(([subset, value]) => {
-    const slice = /^\[(\d+)\]$/.exec(subset)?.[1]
-    const unicodeRange = slice === undefined ? null : cjkUnicodeRange(value)
-    return unicodeRange ? [{ slice, unicodeRange }] : []
-  })
-  const rules = []
+export function twinDescriptors(descriptors) {
   const seen = new Set()
+  const result = []
   for (const { weight, style } of descriptors) {
     const key = `${weight}/${style}`
     if (seen.has(key)) continue
     seen.add(key)
-    const notoWeight = Number.parseInt(weight, 10) < 550 ? 400 : 700
-    for (const { slice, unicodeRange } of slices) {
-      const file = `files/${metadata.id}-${slice}-${notoWeight}-normal.woff2`
-      rules.push(
-        `@font-face{font-family:'${family}';font-style:${style};font-display:block;font-weight:${weight};` +
-          `src:url(../../npm/${pkg.name}@${pkg.version}/${file}) format('woff2');unicode-range:${unicodeRange}}`,
-      )
-    }
+    result.push({ weight, style })
   }
-  return rules.join('\n')
+  return result
+}
+
+// 中文字体由成片按用到的字声明；组件文件里链整份中文字体的那一行在组装时去掉
+const CJK_STYLESHEET_LINK =
+  /[ \t]*<link\b[^>]*\bhref="[^"]*vendor\/fonts\/noto-sans-sc\.css"[^>]*>\n?/g
+export const withoutCjkStylesheet = (html) => html.replace(CJK_STYLESHEET_LINK, '')
+
+const HTML_COMMENT = /<!--[\s\S]*?-->/g
+const NON_ASCII = /[\u0080-\u{10ffff}]/gu
+export function componentChars(text) {
+  const chars = new Set(text.replace(HTML_COMMENT, '').match(NON_ASCII))
+  return [...chars].sort((a, b) => a.codePointAt(0) - b.codePointAt(0)).join('')
 }
 
 export const FONT_VARIABLE = { id: 'font', type: 'font', label: '字体', default: '' }
@@ -527,20 +507,28 @@ export function checkCatalogFonts(fonts) {
   }
 }
 
-export async function publishedCatalog(catalog, version, compositionText) {
+export async function publishedCatalog(catalog, version, libraryText) {
   const items = []
   for (const item of catalog.items) {
+    const text = await libraryText(item.src)
     const declared = item.variables.some((variable) => variable.id === FONT_VARIABLE.id)
-    items.push(
-      !declared && READS_FONT_VARIABLE.test(await compositionText(item.src))
-        ? { ...item, variables: [...item.variables, FONT_VARIABLE] }
-        : item,
-    )
+    items.push({
+      ...item,
+      variables:
+        !declared && READS_FONT_VARIABLE.test(text)
+          ? [...item.variables, FONT_VARIABLE]
+          : item.variables,
+      chars: componentChars(text),
+    })
   }
+  const { slices, twins } = JSON.parse(await libraryText(CJK_FONT.faces))
   const fonts = Object.fromEntries(
-    Object.entries(catalog.fonts).map(([family, { faces: _faces, ...font }]) => [family, font]),
+    Object.entries(catalog.fonts).map(([family, { faces: _faces, ...font }]) => [
+      family,
+      Object.hasOwn(twins, family) ? { ...font, cjk: twins[family] } : font,
+    ]),
   )
-  return { version, ...catalog, fonts, items }
+  return { version, ...catalog, cjk: { family: CJK_FONT.family, slices }, fonts, items }
 }
 
 const FONT_FORMATS = { woff2: 'woff2', woff: 'woff', ttf: 'truetype', otf: 'opentype' }

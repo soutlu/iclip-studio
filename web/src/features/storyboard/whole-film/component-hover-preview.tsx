@@ -19,6 +19,7 @@ export function ComponentHoverPreview({ srcdoc }: { srcdoc: string }) {
       if (cancelled || host === null) return
       player = document.createElement('hyperframes-player') as PlayerElement
       player.setAttribute('disable-click-to-play', '')
+      player.setAttribute('assets-loading-ui', 'none')
       player.setAttribute('muted', '')
       player.setAttribute('loop', '')
       player.setAttribute('width', String(HOVER_CANVAS.width))

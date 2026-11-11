@@ -1,8 +1,7 @@
 {
   "runtime": {
     "hyperframes": "vendor/hyperframes/hyperframe.runtime.iife.js",
-    "gsap": "vendor/npm/gsap@3.14.2/dist/gsap.min.js",
-    "cjkFont": "vendor/fonts/noto-sans-sc.css"
+    "gsap": "vendor/npm/gsap@3.14.2/dist/gsap.min.js"
   },
   "fonts": {
     "Playfair Display": {
