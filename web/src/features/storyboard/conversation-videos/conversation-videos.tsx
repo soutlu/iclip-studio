@@ -1,8 +1,7 @@
-import { useRef, useState, type RefObject } from 'react'
+import { useRef, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
-import { MediaFallback } from '@/shared/ui/media-fallback'
 import { MediaLightbox, type LightboxMedia } from '@/shared/ui/media-lightbox'
 import { VideoDownload } from '@/shared/ui/video-download'
 import { VideoPlayer } from '@/shared/ui/video-player'
@@ -121,15 +120,16 @@ function VideoGroup({ group, onBeforeExpand }: VideoGroupProps) {
           ))}
         </div>
       ) : null}
-      <GroupPlayer
+      <VideoPlayer
+        className="h-60 rounded-sm"
         key={selected.id}
-        label={group.label}
+        label={`${group.label}视频`}
         onExpand={(at) => {
           onBeforeExpand()
           setExpanded({ kind: 'video', name: group.label, startAt: at, url: selected.outputUrl })
         }}
         ref={videoRef}
-        url={selected.outputUrl}
+        src={selected.outputUrl}
       />
       <MediaLightbox
         media={expanded}
@@ -139,44 +139,5 @@ function VideoGroup({ group, onBeforeExpand }: VideoGroupProps) {
         }}
       />
     </section>
-  )
-}
-
-type GroupPlayerProps = {
-  label: string
-  onExpand: (currentTime: number) => void
-  ref: RefObject<HTMLVideoElement | null>
-  url: string
-}
-
-function GroupPlayer({ label, onExpand, ref, url }: GroupPlayerProps) {
-  const [failed, setFailed] = useState(false)
-
-  return (
-    <div className="relative h-60">
-      <VideoPlayer
-        className="size-full rounded-sm"
-        hidden={failed}
-        label={`${label}视频`}
-        onError={() => setFailed(true)}
-        onExpand={onExpand}
-        ref={ref}
-        src={url}
-      />
-      {failed ? (
-        <div
-          className="absolute inset-0 grid place-items-center rounded-sm bg-surface-container p-4"
-          role="alert"
-        >
-          <MediaFallback
-            kind="video"
-            onRetry={() => {
-              setFailed(false)
-              ref.current?.load()
-            }}
-          />
-        </div>
-      ) : null}
-    </div>
   )
 }

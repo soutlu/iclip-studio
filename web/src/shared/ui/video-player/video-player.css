@@ -100,6 +100,11 @@
   border-radius: var(--radius-full);
   background: color-mix(in srgb, var(--color-on-scrim) 30%, transparent);
 }
+.video-player-buffered {
+  position: absolute;
+  height: 100%;
+  background: color-mix(in srgb, var(--color-on-scrim) 35%, transparent);
+}
 .video-player-range {
   position: absolute;
   height: 100%;

@@ -120,27 +120,6 @@ describe('ConversationVideos', () => {
     expect(pause.mock.instances).toContain(second)
   })
 
-  it('媒体加载失败有重试入口，重试重新加载原地址，切版不保留上一版的错误', async () => {
-    const load = vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {})
-    server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [job(1), job(2)] })))
-    await renderWithProviders(<ConversationVideos conversationId={conversationId} />)
-    const video = await screen.findByLabelText('镜头组 1视频')
-
-    fireEvent.error(video)
-
-    expect(screen.getByRole('alert')).toBeVisible()
-    expect(video).not.toBeVisible()
-    await userEvent.click(screen.getByRole('button', { name: '重试' }))
-    expect(load).toHaveBeenCalledOnce()
-    expect(load.mock.instances[0]).toBe(video)
-    expect(video).toHaveAttribute('src', job(2).outputUrl)
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-    fireEvent.error(video)
-    await userEvent.click(screen.getByRole('button', { name: '镜头组 1 V1' }))
-    expect(screen.getByLabelText('镜头组 1视频')).toBeVisible()
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-  })
-
   it('有在途记录时每五秒兜底发现新结果并默认选择最新版本，全部结束后停止轮询', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     let reads = 0

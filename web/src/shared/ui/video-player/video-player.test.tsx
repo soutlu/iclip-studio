@@ -152,4 +152,106 @@ describe('VideoPlayer', () => {
     await user.keyboard(' ')
     expect(playback.play).toHaveBeenCalledTimes(2)
   })
+
+  const report = (
+    video: HTMLVideoElement,
+    name: 'readyState' | 'error' | 'buffered',
+    value: unknown,
+  ) => Object.defineProperty(video, name, { configurable: true, value })
+  const buffering = () => screen.queryByRole('status', { name: '正在缓冲' })
+
+  it('点了播放但数据还没到：显示正在缓冲，能放了或暂停后收起', async () => {
+    const user = userEvent.setup()
+    renderWithTooltip(<VideoPlayer label="成片" src={SRC} />)
+    const video = videoOf()
+    fireEvent.loadStart(video)
+    expect(buffering()).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '播放' }))
+    expect(buffering()).toBeVisible()
+    expect(screen.getByRole('button', { name: '暂停' })).toBeVisible()
+
+    report(video, 'readyState', HTMLMediaElement.HAVE_ENOUGH_DATA)
+    fireEvent.playing(video)
+    expect(buffering()).not.toBeInTheDocument()
+
+    report(video, 'readyState', HTMLMediaElement.HAVE_CURRENT_DATA)
+    fireEvent.waiting(video)
+    expect(buffering()).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '暂停' }))
+    expect(buffering()).not.toBeInTheDocument()
+  })
+
+  it('自动播放的播放器在开播前的加载期间也显示正在缓冲', () => {
+    renderWithTooltip(<VideoPlayer autoPlay label="成片" src={SRC} />)
+    const video = videoOf()
+
+    fireEvent.loadStart(video)
+    expect(buffering()).toBeVisible()
+
+    report(video, 'readyState', HTMLMediaElement.HAVE_FUTURE_DATA)
+    fireEvent.canPlay(video)
+    expect(buffering()).toBeVisible()
+
+    report(video, 'readyState', HTMLMediaElement.HAVE_ENOUGH_DATA)
+    fireEvent.canPlayThrough(video)
+    expect(buffering()).not.toBeInTheDocument()
+  })
+
+  it('进度条照实画出已缓冲的每一段', () => {
+    renderWithTooltip(<VideoPlayer label="成片" src={SRC} />)
+    const video = videoOf()
+    loadMetadata(video, 10)
+    expect(screen.queryByTestId('video-buffered')).not.toBeInTheDocument()
+
+    const spans = [
+      [0, 2.5],
+      [6, 8],
+    ] as const
+    report(video, 'buffered', {
+      length: spans.length,
+      start: (at: number) => spans[at]?.[0],
+      end: (at: number) => spans[at]?.[1],
+    })
+    fireEvent.progress(video)
+
+    const [first, second] = screen.getAllByTestId('video-buffered')
+    expect(first).toHaveStyle({ left: '0%', width: '25%' })
+    expect(second).toHaveStyle({ left: '60%', width: '20%' })
+  })
+
+  it('加载失败：显示失败提示和重试，重试重新加载并回到失败前的位置', async () => {
+    const user = userEvent.setup()
+    const load = vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(function (
+      this: HTMLMediaElement,
+    ) {
+      report(this as HTMLVideoElement, 'error', null)
+      this.currentTime = 0
+      this.dispatchEvent(new Event('emptied'))
+    })
+    renderWithTooltip(<VideoPlayer label="成片" src={SRC} />)
+    const video = videoOf()
+    loadMetadata(video, 10)
+    video.currentTime = 6
+
+    report(video, 'error', { code: 2 })
+    fireEvent.error(video)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('视频加载失败')
+    expect(screen.queryByRole('button', { name: '播放' })).not.toBeInTheDocument()
+    expect(buffering()).not.toBeInTheDocument()
+    act(() => rootOf().focus())
+    expect(fireEvent.keyDown(rootOf(), { key: 'k' })).toBe(true)
+    expect(playback.play).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: '重试' }))
+    expect(load).toHaveBeenCalledOnce()
+    expect(load.mock.instances[0]).toBe(video)
+    expect(video).toHaveAttribute('src', SRC)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '播放' })).toBeVisible()
+
+    loadMetadata(video, 10)
+    expect(video.currentTime).toBe(6)
+  })
 })

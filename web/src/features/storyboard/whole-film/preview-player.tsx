@@ -97,6 +97,7 @@ export function PreviewPlayer({
   const sizeRef = useRef({ width, height })
   const wantsPlayRef = useRef(false)
   const swappingRef = useRef(false)
+  const startAtRef = useRef(0)
   useLayoutEffect(() => {
     callbacksRef.current = { onTime, onPlaying, onFrame, onMediaSettled, onBuffering }
     sizeRef.current = { width, height }
@@ -188,6 +189,30 @@ export function PreviewPlayer({
     }
   }, [active, controlRef])
 
+  const awaitingFirst = active === null && srcdoc !== undefined
+  useEffect(() => {
+    if (!awaitingFirst) return
+    const setWantsPlay = (wantsPlay: boolean) => {
+      wantsPlayRef.current = wantsPlay
+      callbacksRef.current.onPlaying(wantsPlay)
+      callbacksRef.current.onBuffering?.(wantsPlay)
+    }
+    controlRef.current = {
+      play: () => setWantsPlay(true),
+      pause: () => setWantsPlay(false),
+      seek: (ms) => {
+        setWantsPlay(false)
+        startAtRef.current = frameSeconds(ms)
+      },
+    }
+    return () => {
+      controlRef.current = null
+      if (!wantsPlayRef.current) return
+      if (activeRef.current === null) setWantsPlay(false)
+      else callbacksRef.current.onBuffering?.(false)
+    }
+  }, [awaitingFirst, controlRef])
+
   useEffect(() => {
     if (active === null) return
     active.setAttribute('width', String(width))
@@ -208,7 +233,7 @@ export function PreviewPlayer({
       const old = activeRef.current
       swappingRef.current = true
       old?.pause()
-      const resumeAt = old?.currentTime ?? 0
+      const resumeAt = old?.currentTime ?? startAtRef.current
       const next = document.createElement('hyperframes-player') as PlayerElement
       // 播放器给每段视频在父页面另建不跨域的副本，每个文件下载两遍。没有公开开关，版本锁定，升级要复查
       next._media._createEntry = () => null

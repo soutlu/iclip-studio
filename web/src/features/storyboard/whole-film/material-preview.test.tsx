@@ -1,4 +1,4 @@
-import { act, render } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { createRef, type ComponentProps } from 'react'
 import { expect, it, vi } from 'vitest'
 import { MaterialPreview, type MaterialPreviewControl, type MaterialView } from './material-preview'
@@ -48,4 +48,19 @@ it('停在出点时播放从选区开头往后 0.001 秒重播', () => {
   expect(video.currentTime).toBeCloseTo(2.499, 6)
   act(() => controlRef.current?.toggle())
   expect(video.currentTime).toBeCloseTo(1.001, 6)
+})
+
+it('播放中等数据时显示正在缓冲，能放了或暂停后收起', () => {
+  const { video } = setup({ range, show: 'start' })
+  const buffering = () => screen.queryByRole('status', { name: '正在缓冲' })
+  expect(buffering()).not.toBeInTheDocument()
+
+  fireEvent.waiting(video)
+  expect(buffering()).toBeVisible()
+  fireEvent.playing(video)
+  expect(buffering()).not.toBeInTheDocument()
+
+  fireEvent.waiting(video)
+  fireEvent.pause(video)
+  expect(buffering()).not.toBeInTheDocument()
 })

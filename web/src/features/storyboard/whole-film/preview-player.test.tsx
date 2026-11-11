@@ -63,10 +63,13 @@ const preview = (srcdoc: string, on: ReturnType<typeof handlers>) => (
   />
 )
 
+const firstPlayerUp = (on: ReturnType<typeof handlers>) =>
+  waitFor(() => expect(on.onFrame).toHaveBeenCalledWith(expect.any(HTMLIFrameElement)))
+
 const openPreview = async (srcdoc = page()) => {
   const on = handlers()
   const view = render(preview(srcdoc, on))
-  await waitFor(() => expect(on.control.current).not.toBeNull())
+  await firstPlayerUp(on)
   const control = () => {
     if (on.control.current === null) throw new Error('播放器没接上')
     return on.control.current
@@ -258,6 +261,77 @@ describe('时钟跟着画面走', () => {
   })
 })
 
+describe('第一个播放器装好之前', () => {
+  const blocked = (on: ReturnType<typeof handlers>) => (
+    <PreviewPlayer
+      backdrop={undefined}
+      controlRef={on.control}
+      height={320}
+      message="合成不了"
+      onBuffering={on.onBuffering}
+      onFrame={on.onFrame}
+      onPlaying={on.onPlaying}
+      onTime={() => {}}
+      srcdoc={undefined}
+      width={180}
+    />
+  )
+
+  it('点播放先记下：按钮算在放并转圈，装好后自动开始放、不再转圈', async () => {
+    const on = handlers()
+    render(preview(page(), on))
+    expect(on.onFrame).not.toHaveBeenCalled()
+
+    act(() => on.control.current?.play())
+    expect(on.onPlaying).toHaveBeenLastCalledWith(true)
+    expect(on.onBuffering).toHaveBeenLastCalledWith(true)
+
+    await firstPlayerUp(on)
+    expect(playerOf().paused).toBe(false)
+    expect(on.onPlaying).toHaveBeenLastCalledWith(true)
+    expect(on.onBuffering).toHaveBeenLastCalledWith(false)
+  })
+
+  it('记下播放后又暂停：装好后停着', async () => {
+    const on = handlers()
+    render(preview(page(), on))
+    act(() => on.control.current?.play())
+    act(() => on.control.current?.pause())
+    expect(on.onPlaying).toHaveBeenLastCalledWith(false)
+    expect(on.onBuffering).toHaveBeenLastCalledWith(false)
+
+    await firstPlayerUp(on)
+    expect(playerOf().paused).toBe(true)
+  })
+
+  it('定位也先记下：第一个播放器停在那个位置', async () => {
+    const on = handlers()
+    render(preview(page(), on))
+    act(() => on.control.current?.seek(1500))
+
+    await firstPlayerUp(on)
+    expect(playerOf().currentTime).toBeCloseTo(1.5, 5)
+    expect(playerOf().paused).toBe(true)
+  })
+
+  it('记下了播放但合成不了：按钮回到播放，不再转圈', () => {
+    const on = handlers()
+    const view = render(preview(page(), on))
+    act(() => on.control.current?.play())
+
+    view.rerender(blocked(on))
+    expect(on.onPlaying).toHaveBeenLastCalledWith(false)
+    expect(on.onBuffering).toHaveBeenLastCalledWith(false)
+    expect(on.control.current).toBeNull()
+  })
+
+  it('一开始就合成不了：点播放没有效果', () => {
+    const on = handlers()
+    render(blocked(on))
+    expect(on.control.current).toBeNull()
+  })
+})
+
 describe('换页', () => {
   it('在放时换页：新页接着放', async () => {
     const { control, showPage, onPlaying } = await openPreview()
@@ -307,7 +381,7 @@ describe('换页', () => {
   it('合成不了时：不再放，也不再转圈', async () => {
     const on = handlers()
     const view = render(preview(page(), on))
-    await waitFor(() => expect(on.control.current).not.toBeNull())
+    await firstPlayerUp(on)
     starvedVideos.add(FIRST)
     act(() => on.control.current?.play())
     const shown = playerOf()

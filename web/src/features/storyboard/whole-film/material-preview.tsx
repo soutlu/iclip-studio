@@ -7,6 +7,7 @@ import {
   type RefObject,
 } from 'react'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
+import { MediaBuffering } from '@/shared/ui/media-buffering'
 import { StageBackdrop } from '../components/stage-backdrop'
 import { framePosition } from '../editing/frame-seek'
 import { StageLabel } from '../editing/stage-label'
@@ -43,6 +44,7 @@ export function MaterialPreview({
 }: MaterialPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [size, setSize] = useState<{ url: string; ratio: number }>()
+  const [waiting, setWaiting] = useState(false)
   const report = useEffectEvent(onTime)
   const playing = useEffectEvent(onPlaying)
   const failed = useEffectEvent(() => onNotice('这段素材播放失败，请稍后重试'))
@@ -118,8 +120,14 @@ export function MaterialPreview({
           onLoadedMetadata={({ currentTarget: video }) =>
             setSize({ url, ratio: video.videoWidth / video.videoHeight })
           }
-          onPause={() => onPlaying(false)}
+          onCanPlay={() => setWaiting(false)}
+          onPause={() => {
+            setWaiting(false)
+            onPlaying(false)
+          }}
           onPlay={() => onPlaying(true)}
+          onPlaying={() => setWaiting(false)}
+          onWaiting={() => setWaiting(true)}
           playsInline
           preload="auto"
           ref={videoRef}
@@ -132,6 +140,7 @@ export function MaterialPreview({
           }
         />
       </div>
+      {waiting ? <MediaBuffering /> : null}
       <StageLabel
         label={label}
         range={{ start: view.range.startMs / 1000, end: view.range.endMs / 1000 }}
