@@ -298,6 +298,128 @@ test('拖放：编辑段拖到草稿上出落点占位、松手选用；草稿�
   await expect(controls(dialog)).toContainText('共 6.0 秒')
 })
 
+test('调先后：草稿里按住一块左右拖，落点出占位、别的块让开，Escape 放回原位；松手排到那里并选中，拖歪一点或拖过左边缘也只是挪动；合成按新的先后提交', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1335, height: 880 })
+  const dialog = await openEditor(page)
+  await waitForShots(dialog)
+  const block = (no: number) =>
+    draft(dialog).getByRole('button', { name: new RegExp(`^镜头 ${no} ·`) })
+  const order = () =>
+    draft(dialog)
+      .getByRole('button')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => /^镜头 (\d+)/.exec(node.getAttribute('aria-label') ?? '')?.[1]),
+      )
+  const leftOf = async (no: number) => (await block(no).boundingBox())?.x
+  const placeholder = dialog.getByRole('status').filter({ hasText: '移到 1.0 秒' })
+  const dragOver = async () => {
+    const from = await centerOf(block(5))
+    const target = await centerOf(block(2))
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    await page.mouse.move(target.x - 10, target.y, { steps: 8 })
+  }
+
+  const home = await leftOf(2)
+  await dragOver()
+  await expect(placeholder).toBeVisible()
+  await expect.poll(() => leftOf(2)).toBeGreaterThan((home ?? 0) + 20)
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await expect(placeholder).toBeHidden()
+  await expect(dialog).toBeVisible()
+  await expect.poll(order).toEqual(['1', '2', '3', '4', '5', '6'])
+  await expect(composeButton(dialog)).toBeDisabled()
+
+  await dragOver()
+  await expect(placeholder).toBeVisible()
+  await page.mouse.up()
+  await expect.poll(order).toEqual(['1', '5', '2', '3', '4', '6'])
+  await expect(block(5)).toHaveAttribute('aria-pressed', 'true')
+  await expect(shotEye(dialog, 5)).toHaveAccessibleName('关闭镜头 5')
+  await expect(controls(dialog)).toContainText('共 6.0 秒')
+
+  const viewport = await timelineOf(dialog)
+    .getByRole('region', { name: '时间线轨道，可横向滚动' })
+    .boundingBox()
+  if (viewport === null) throw new Error('时间线尚未布局')
+  const last = await centerOf(block(6))
+  await page.mouse.move(last.x, last.y)
+  await page.mouse.down()
+  await page.mouse.move(viewport.x - 30, last.y + 28, { steps: 8 })
+  await expect(dialog.getByRole('status').filter({ hasText: '移到 0.0 秒' })).toBeVisible()
+  await page.mouse.up()
+  await expect.poll(order).toEqual(['6', '1', '5', '2', '3', '4'])
+  await expect(shotEye(dialog, 6)).toHaveAccessibleName('关闭镜头 6')
+  await expect(controls(dialog)).toContainText('共 6.0 秒')
+
+  const baseJobId = new URL(page.url()).searchParams.get('video')
+  const request = page.waitForRequest(
+    (sent) => sent.url().endsWith('/api/generations/video-composites') && sent.method() === 'POST',
+  )
+  await composeButton(dialog).click()
+  expect(((await request).postDataJSON() as { segments: unknown }).segments).toEqual([
+    { sourceJobId: baseJobId, start: 5, end: 6 },
+    { sourceJobId: baseJobId, start: 0, end: 1 },
+    { sourceJobId: baseJobId, start: 4, end: 5 },
+    { sourceJobId: baseJobId, start: 1, end: 4 },
+  ])
+})
+
+test('草稿能横向滚动时，把一块拖到右边缘：自动滚动到头，松手排到最后', async ({ page }) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const dialog = await openEditor(page)
+  await waitForShots(dialog)
+  await requestBox(dialog).fill('换成黄昏的暖光')
+  await expect(generateButton(dialog)).toBeEnabled()
+  await submitEdit(page, dialog)
+  const partName = (seg: number) => `镜头 1 的编辑片段 · 第 ${seg} 段 · 1.0 秒`
+  await expect(partEye(dialog, partName(3))).toBeVisible({ timeout: STEP_TIMEOUT })
+  for (const seg of [1, 2, 3]) await partEye(dialog, partName(seg)).click()
+  await expect(controls(dialog)).toContainText('共 8.0 秒 · 比原片长 2.0 秒')
+  await page.keyboard.press('Escape')
+
+  const viewport = timelineOf(dialog).getByRole('region', { name: '时间线轨道，可横向滚动' })
+  await viewport.evaluate((element) => {
+    element.scrollLeft = 0
+  })
+  const box = await viewport.boundingBox()
+  if (box === null) throw new Error('时间线尚未布局')
+  const first = draft(dialog).getByRole('button', { name: `${partName(1)} · 已选用` })
+  const from = await centerOf(first)
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width - 10, from.y, { steps: 8 })
+  const scrollLeft = () => viewport.evaluate((element) => element.scrollLeft)
+  await expect.poll(scrollLeft).toBeGreaterThan(40)
+  let last = -1
+  await expect
+    .poll(
+      async () => {
+        const now = await scrollLeft()
+        const settled = now === last
+        last = now
+        return settled
+      },
+      { intervals: [250] },
+    )
+    .toBe(true)
+  await expect(dialog.getByRole('status').filter({ hasText: '移到 7.0 秒' })).toBeVisible()
+  await page.mouse.up()
+  await expect
+    .poll(() =>
+      draft(dialog)
+        .getByRole('button')
+        .evaluateAll((nodes) => nodes.at(-1)?.getAttribute('aria-label')),
+    )
+    .toBe(`${partName(1)} · 已选用`)
+  await expect(controls(dialog)).toContainText('共 8.0 秒')
+})
+
 test('图生和编辑按模型分别校验时长，图生 1 张图作首帧时补上描述生成', async ({ page }) => {
   const dialog = await openEditor(page, false, 2, false)
   await waitForShots(dialog)

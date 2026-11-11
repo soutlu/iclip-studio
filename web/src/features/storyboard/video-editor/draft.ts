@@ -189,6 +189,15 @@ export const unpickPart = (
   return { ...draft, entries: entries.filter((entry) => !isPart(entry, editId, seg)) }
 }
 
+export const moveBefore = (draft: Draft, id: string, before: string | undefined): Draft => {
+  const entry = draft.entries.find((item) => entryId(item) === id)
+  if (entry === undefined) return draft
+  const rest = draft.entries.filter((item) => item !== entry)
+  const at = before === undefined ? rest.length : rest.findIndex((item) => entryId(item) === before)
+  if (at < 0 || draft.entries[at] === entry) return draft
+  return { ...draft, entries: [...rest.slice(0, at), entry, ...rest.slice(at)] }
+}
+
 type ItemFields = {
   id: string
   sourceJobId: string

@@ -17,6 +17,7 @@ import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { PopupAnchor, PopupRoot, PopupSurface } from '@/shared/ui/popup'
 import { bubbleAlign } from '../editing/bubble-align'
 import { useEdgeScroll } from '../editing/edge-scroll'
+import { insertionIndex } from '../editing/insertion-index'
 import type { PeaksState } from '../editing/media-analysis'
 import { trimSpans, usePreviewGesture, type GesturePreview } from '../editing/preview-gesture'
 import {
@@ -525,28 +526,11 @@ export function FilmTracks({
             carry.attempt?.ok === true
           ? insertIndexAt(draft.layer0, carry.point.timeMs)
           : undefined
-    const existingStart =
-      existing === undefined
-        ? 0
-        : items.slice(0, existing).reduce((sum, clip) => sum + clip.duration, 0)
-    let index = items.length
-    if (
-      existing !== undefined &&
-      point >= existingStart - 70 &&
-      point <= existingStart + duration + 70
+    const index = insertionIndex(
+      items.map((clip) => clip.duration),
+      point,
+      existing === undefined ? undefined : { index: existing, lengthMs: duration },
     )
-      index = existing
-    else {
-      let start = 0
-      for (const [i, item] of items.entries()) {
-        const shifted = start + (existing !== undefined && i >= existing ? duration : 0)
-        if (point < shifted + item.duration / 2) {
-          index = i
-          break
-        }
-        start += item.duration
-      }
-    }
     return lifted !== undefined && index > lifted.from ? index + lifted.clipIds.length : index
   }
 

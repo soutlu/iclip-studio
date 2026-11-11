@@ -14,6 +14,8 @@ import type { TimeSpan } from '@/shared/lib/time-spans'
 import { cn } from '@/shared/lib/utils'
 import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import type { SecondsRange } from '../editing/clip'
+import { useEdgeScroll } from '../editing/edge-scroll'
+import { insertionIndex } from '../editing/insertion-index'
 import type { PeaksState } from '../editing/media-analysis'
 import { trimSpans, usePreviewGesture, type TrimTarget } from '../editing/preview-gesture'
 import { shiftSelect, stepSelect } from '../editing/range-select'
@@ -130,6 +132,8 @@ type ClipsTimelineProps = {
   onToggleShot: (no: number) => void
   onClickPart: (editId: string, seg: number) => void
   onTogglePart: (editId: string, seg: number) => void
+  onMoveDraft: (id: string, before: string | undefined) => void
+  previewMove: (id: string, before: string | undefined) => readonly DraftItem[]
   onTrim: (change: TrimChange) => void
   previewTrim: (change: TrimChange) => readonly DraftItem[]
   onTrimPreview: (preview: TrimPreview | undefined) => void
@@ -159,6 +163,7 @@ type Carry = {
   y: number
   moved: boolean
   over: boolean
+  slot: number | undefined
   origin: InsertionBox
   pps: number
   height: number
@@ -197,6 +202,8 @@ type Pressed = {
 }
 
 const RUN_HANDLES = 'run'
+
+const LIFT_SLOP_PX = 16
 
 const EDGE_EPSILON = 0.001
 
@@ -286,6 +293,8 @@ export function ClipsTimeline({
   onToggleShot,
   onClickPart,
   onTogglePart,
+  onMoveDraft,
+  previewMove,
   onTrim,
   previewTrim,
   onTrimPreview,
@@ -297,6 +306,7 @@ export function ClipsTimeline({
   const dropRef = useRef<HTMLDivElement>(null)
   const connectorRef = useRef<SVGSVGElement>(null)
   const pointerRef = useRef<{ x: number; y: number }>(undefined)
+  const carryPointRef = useRef<{ clientX: number; clientY: number }>(null)
   const ghostRef = useRef<InsertionGhostHandle>(null)
   const previewRef = useRef<InsertionPreviewHandle>(null)
   const baseId = useId()
@@ -338,15 +348,26 @@ export function ClipsTimeline({
   const carryPart = carry?.from === 'part' ? partOf(carry.id) : undefined
   const carryPicked =
     carryPart?.part !== undefined && isPicked(carryPart.block.id, carryPart.part.seg)
-  const projection =
-    carrying?.over === true && carryPart?.part !== undefined && !carryPicked
-      ? previewPick(carryPart.block.id, carryPart.part.seg)
+  const homeSlot = (id: string) => items.findIndex((item) => item.id === id)
+  const beforeOf = (id: string, slot: number) => items.filter((item) => item.id !== id)[slot]?.id
+  const lifting =
+    carrying?.from === 'draft' && carrying.over && carrying.slot !== undefined
+      ? { id: carrying.id, slot: carrying.slot }
       : undefined
-  const landing = projection?.find((item) => item.id === carryPart?.id)
+  const moved =
+    lifting === undefined ? undefined : previewMove(lifting.id, beforeOf(lifting.id, lifting.slot))
+  const projection =
+    moved ??
+    (carrying?.over === true && carryPart?.part !== undefined && !carryPicked
+      ? previewPick(carryPart.block.id, carryPart.part.seg)
+      : undefined)
+  const landing = projection?.find((item) => item.id === (lifting?.id ?? carryPart?.id))
   const shown =
     projection === undefined || landing === undefined
       ? items
-      : projection.filter((item) => item.id !== landing.id)
+      : moved === undefined
+        ? projection.filter((item) => item.id !== landing.id)
+        : items.map((item) => moved.find((next) => next.id === item.id) ?? item)
   const playheadAt =
     draftTrim === undefined
       ? bounded
@@ -502,7 +523,7 @@ export function ClipsTimeline({
 
   const runningPart = selection?.kind === 'running' ? partOf(selection.id) : undefined
   const keptSpan =
-    selectedItem === undefined
+    selectedItem === undefined || selectedItem.id === lifting?.id
       ? undefined
       : (draftTrim?.kept ?? { at: selectedItem.at, len: selectedItem.d })
   const ring =
@@ -587,17 +608,13 @@ export function ClipsTimeline({
     block.state.kind === 'ready' && block.state.parts.length > 1
       ? `${editTitleOf(block)} · 第 ${seg} 段`
       : editTitleOf(block)
-  const overDraft = (x: number, y: number) => {
+  const overDraft = (from: Carry['from'], x: number, y: number) => {
     const view = scrollRef.current?.getBoundingClientRect()
     const track = dropRef.current?.getBoundingClientRect()
-    return (
-      view !== undefined &&
-      track !== undefined &&
-      x >= view.left &&
-      x <= view.right &&
-      y >= track.top &&
-      y <= track.bottom
-    )
+    if (view === undefined || track === undefined) return false
+    return from === 'draft'
+      ? y >= track.top - LIFT_SLOP_PX && y <= track.bottom + LIFT_SLOP_PX
+      : x >= view.left && x <= view.right && y >= track.top && y <= track.bottom
   }
   const pressCarry = (
     event: PointerEvent<HTMLButtonElement>,
@@ -620,50 +637,93 @@ export function ClipsTimeline({
       y: event.clientY,
       moved: false,
       over: from === 'draft',
+      slot: from === 'draft' ? homeSlot(id) : undefined,
       origin: { left: box.left, top: box.top, width: box.width, height: box.height },
       pps: ppsNow(),
       height: dropRef.current?.getBoundingClientRect().height ?? 0,
       returning: false,
     })
   }
+  const slotAt = (current: Carry, x: number) => {
+    const lanes = lanesRef.current?.getBoundingClientRect()
+    const lifted = items.find((item) => item.id === current.id)
+    if (lanes === undefined || lifted === undefined) return undefined
+    return insertionIndex(
+      items.filter((item) => item !== lifted).map((item) => item.d * 1000),
+      ((x - lanes.left) / current.pps) * 1000,
+      current.slot === undefined ? undefined : { index: current.slot, lengthMs: lifted.d * 1000 },
+    )
+  }
+  const carriedTo = (current: Carry, x: number, y: number): Carry => {
+    const over = overDraft(current.from, x, y)
+    const slot =
+      current.from === 'part' ? undefined : over ? slotAt(current, x) : homeSlot(current.id)
+    return { ...current, moved: true, over, slot, x, y }
+  }
   const moveCarry = (event: PointerEvent<HTMLButtonElement>) => {
     if (carry === undefined || carry.pointerId !== event.pointerId || carry.returning) return
     const { clientX: x, clientY: y } = event
     if (!carry.moved && Math.hypot(x - carry.x0, y - carry.y0) <= DRAG_THRESHOLD) return
+    carryPointRef.current = { clientX: x, clientY: y }
     ghostRef.current?.follow(x, y)
-    const over = overDraft(x, y)
     if (!carry.moved) {
       setHover(undefined)
       reflow.cancel()
     }
-    if (!carry.moved || over !== carry.over) setCarry({ ...carry, moved: true, over, x, y })
+    const next = carriedTo(carry, x, y)
+    if (!carry.moved || next.over !== carry.over || next.slot !== carry.slot) setCarry(next)
+  }
+  useEdgeScroll({
+    viewportRef: scrollRef,
+    active: lifting !== undefined,
+    pointer: () => carryPointRef.current,
+    onScroll: () => {
+      const point = carryPointRef.current
+      if (point !== null)
+        setCarry((current) =>
+          current === undefined || !current.moved || current.returning
+            ? current
+            : carriedTo(current, point.clientX, point.clientY),
+        )
+    },
+  })
+  const landCarry = (current: Carry): InsertionBox => {
+    const pose = previewRef.current?.snapshot()?.value
+    const track = dropRef.current?.getBoundingClientRect()
+    if (pose?.x !== undefined && pose.width !== undefined)
+      reflow.land(current.id, { left: pose.x, width: pose.width })
+    return pose === undefined || track === undefined
+      ? current.origin
+      : {
+          left: track.left + (pose.x ?? 0),
+          top: track.top + (pose.y ?? 0),
+          width: pose.width ?? 0,
+          height: pose.height ?? 0,
+        }
   }
   const dropCarry = (current: Carry): InsertionBox | undefined => {
     if (current.from === 'part') {
       const part = partOf(current.id)
       if (!current.over || part?.part === undefined || carryPicked) return current.origin
-      const pose = previewRef.current?.snapshot()?.value
-      const track = dropRef.current?.getBoundingClientRect()
-      if (pose?.x !== undefined && pose.width !== undefined)
-        reflow.land(current.id, { left: pose.x, width: pose.width })
+      const destination = landCarry(current)
       onTogglePart(part.block.id, part.part.seg)
-      return pose === undefined || track === undefined
-        ? current.origin
-        : {
-            left: track.left + (pose.x ?? 0),
-            top: track.top + (pose.y ?? 0),
-            width: pose.width ?? 0,
-            height: pose.height ?? 0,
-          }
+      return destination
     }
     const item = items.find((candidate) => candidate.id === current.id)
-    if (current.over || item === undefined) return current.origin
+    if (item === undefined) return current.origin
+    if (current.over) {
+      if (current.slot === undefined || current.slot === homeSlot(item.id)) return current.origin
+      const destination = landCarry(current)
+      onMoveDraft(item.id, beforeOf(item.id, current.slot))
+      return destination
+    }
     if (item.kind === 'shot') onToggleShot(item.no)
     else onTogglePart(item.edit.id, item.seg)
     return undefined
   }
   const endCarry = (event: PointerEvent<HTMLButtonElement>) => {
     if (carry === undefined || carry.pointerId !== event.pointerId) return
+    carryPointRef.current = null
     releasePointer(event)
     if (carry.returning) return
     if (!carry.moved) {
@@ -675,6 +735,7 @@ export function ClipsTimeline({
     setCarry(destination === undefined ? undefined : { ...carry, returning: true, destination })
   }
   const returnCarry = () => {
+    carryPointRef.current = null
     clicks.swallow()
     setCarry((current) =>
       current === undefined || current.returning
@@ -711,7 +772,10 @@ export function ClipsTimeline({
           y: 0,
           width: Math.max(6, landing.d * carrying.pps - 2),
           height: carrying.height,
-          text: `插入 ${secondsText(landing.at)} 秒 · ${secondsText(landing.d)} 秒`,
+          text:
+            lifting === undefined
+              ? `插入 ${secondsText(landing.at)} 秒 · ${secondsText(landing.d)} 秒`
+              : `移到 ${secondsText(landing.at)} 秒`,
           blocked: false,
           alignEnd: (content - landing.at) * carrying.pps < 160,
         }
@@ -778,6 +842,7 @@ export function ClipsTimeline({
                   className={cn(
                     'video-editor-timeline-block is-draft',
                     face !== item && 'is-trimming',
+                    item.id === lifting?.id && 'is-lifted',
                   )}
                   data-draft-id={item.id}
                   data-hover-id={item.id}
@@ -788,6 +853,7 @@ export function ClipsTimeline({
                   style={placed(face.at, face.d)}
                 >
                   <button
+                    aria-keyshortcuts="Delete Alt+ArrowLeft Alt+ArrowRight"
                     aria-label={draftName(item)}
                     aria-pressed={selectedItem?.id === item.id}
                     className="video-editor-timeline-face ui-focus ui-focus-inline"
@@ -1045,7 +1111,7 @@ export function ClipsTimeline({
       </div>
       {carry?.moved === true ? (
         <InsertionGhost
-          blocked={carry.from === 'part' ? !carry.over || carryPicked : carry.over}
+          blocked={carry.from === 'part' && (!carry.over || carryPicked)}
           clientX={carry.x}
           clientY={carry.y}
           destination={carry.returning ? carry.destination : undefined}

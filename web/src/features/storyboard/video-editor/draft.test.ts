@@ -8,6 +8,7 @@ import {
   draftItemsOf,
   isUsableDraft,
   keepPlace,
+  moveBefore,
   outputOf,
   pickPart,
   previewPick,
@@ -100,6 +101,38 @@ describe('排序', () => {
       [4.2, 1.3],
       [5.5, 1],
     ])
+  })
+})
+
+describe('挪动草稿里的块', () => {
+  it('挪到指定那块前面，不指定就挪到末尾', () => {
+    expect(names(moveBefore(START, 'shot-5', 'shot-2'))).toEqual(['1', '5', '2', '3', '4', '6'])
+    expect(names(moveBefore(START, 'shot-2', undefined))).toEqual(['1', '3', '4', '5', '6', '2'])
+    const picked = pickAll(START, A)
+    expect(names(moveBefore(picked, 'a#2', 'shot-1'))).toEqual(['A2', '1', '2', '3', 'A1', '6'])
+  })
+
+  it('位置没变、块不在草稿里、要排到自己前面时草稿原样不动', () => {
+    expect(moveBefore(START, 'shot-2', 'shot-3')).toBe(START)
+    expect(moveBefore(START, 'shot-6', undefined)).toBe(START)
+    expect(moveBefore(START, 'shot-9', 'shot-1')).toBe(START)
+    expect(moveBefore(START, 'shot-2', 'shot-2')).toBe(START)
+  })
+
+  it('合成按挪过的先后拼，只调了先后也能合成，换浏览器能照这次合成还原', () => {
+    const draft = moveBefore(START, 'shot-5', 'shot-2')
+    const pieces = outputOf(draftItemsOf(source, draft))
+    const segments = composeSegmentsOf(pieces)
+    expect(segments).toEqual([
+      { sourceJobId: 'root', start: 0, end: 1 },
+      { sourceJobId: 'root', start: 4, end: 5 },
+      { sourceJobId: 'root', start: 1, end: 4 },
+      { sourceJobId: 'root', start: 5, end: 6 },
+    ])
+    expect(canCompose({ source, pieces, latest: undefined, composing: false, busy: false })).toBe(
+      true,
+    )
+    expect(names(restoreDraft(source, segments) ?? START)).toEqual(names(draft))
   })
 })
 
