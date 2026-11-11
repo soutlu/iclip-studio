@@ -300,6 +300,29 @@ describe('Composer', () => {
     expect(sendButton()).toBeDisabled()
   })
 
+  it('行首退格把带 pill 的一段并入上一段：pill 照旧显示文件名', async () => {
+    await renderWithProviders(<Composer attachmentsEnabled onSubmit={vi.fn()} />)
+
+    act(() => editor().focus())
+    pasteTextIntoComposer(editor(), '产品鞋参考\n鞋子的外侧面')
+    pasteFilesIntoComposer(editor(), [imageFile()])
+    await waitFor(() => expect(sendButton()).toBeEnabled())
+    const paragraphs = editor().querySelectorAll('p')
+    expect(paragraphs).toHaveLength(2)
+    const secondLine = paragraphs[1]?.firstChild
+    if (secondLine == null) throw new Error('第二段应当有文字')
+
+    act(() => {
+      document.getSelection()?.collapse(secondLine, 0)
+      fireEvent(document, new Event('selectionchange'))
+    })
+    fireEvent.keyDown(editor(), { key: 'Backspace', keyCode: 8 })
+
+    expect(editor().querySelectorAll('p')).toHaveLength(1)
+    expect(editor().textContent).toContain('产品鞋参考鞋子的外侧面')
+    expect(await within(editor()).findByText('截图.png')).toBeInTheDocument()
+  })
+
   it('图片传好后撤销再重做：pill 带着条目回来，发送可用，提交带上这张图', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn()
