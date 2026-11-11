@@ -1,8 +1,9 @@
 import { http, HttpResponse } from 'msw'
 import { zMcpCompleteIn } from '@/shared/api/generated/zod.gen'
+import type { MockMcpUserServer } from './mcp-servers'
 import type { MockShowcase } from './transcript'
 
-// 「用户的连接」的 Mock（contract/conventions.md §22）。服务清单暂时独立于 mcp-servers.ts，后续合并。
+// 「用户的连接」的 Mock（contract/conventions.md §22）。有哪些服务出自 mcp-servers.ts，这里只管各人的连接。
 //
 // dev:mock 下连接状态存在 localStorage 的 `cue.mock.mcp-connections`，登录弹窗与发起页共用同一份；
 // 想看某个状态时直接改这项，例如 {"tester":{"pickfu":{"state":"invalid","account":null}}} 后刷新。
@@ -10,23 +11,29 @@ import type { MockShowcase } from './transcript'
 
 type ConnectionState = 'connected' | 'invalid' | 'none'
 
-type Connection = { state: ConnectionState; account: string | null }
+type Connection = { state: ConnectionState; account: string | null; scopes?: readonly string[] }
 
 type Book = Record<string, Record<string, Connection>>
-
-const SERVICES = [
-  { description: '消费者调研', name: 'PickFu', serverId: 'pickfu' },
-  { description: '查阅团队文档与创作资料', name: '飞书文档', serverId: 'feishu-docs' },
-  { description: '品牌规范、Logo 与产品图', name: '品牌资产库', serverId: 'brand-assets' },
-] as const
 
 const STORAGE_KEY = 'cue.mock.mcp-connections'
 const CONNECTED_AT = '2026-11-09T08:00:00Z'
 const DEMO_ACCOUNT = 'demo@example.com'
+const SIGN_IN_SCOPES = ['openid', 'email', 'profile', 'offline_access']
+
+// 治理者（配置页的管理员）已经连着 PickFu，配置页打开就能测试连接。
+const seedBook = (): Book => ({
+  governor: {
+    pickfu: {
+      account: DEMO_ACCOUNT,
+      scopes: [...SIGN_IN_SCOPES, 'read', 'write', 'spend'],
+      state: 'connected',
+    },
+  },
+})
 
 let attached: Record<string, readonly string[]> = {}
 let attachedDraft: Record<string, readonly string[]> = {}
-let book: Book = {}
+let book: Book = seedBook()
 let listQueries: string[] = []
 let storage: Storage | null = null
 
@@ -54,6 +61,32 @@ const setConnection = (username: string, serverId: string, connection: Connectio
   save({ ...current, [username]: { ...current[username], [serverId]: connection } })
 }
 
+/** 这个人在这个服务上的连接状态。 */
+export const mockMcpConnectionState = (username: string, serverId: string): ConnectionState =>
+  connectionOf(username, serverId).state
+
+const rewrite = (serverId: string, next: (connection: Connection) => Connection | null) => {
+  const current = load()
+  save(
+    Object.fromEntries(
+      Object.entries(current).map(([username, connections]) => {
+        const { [serverId]: mine, ...others } = connections
+        const changed = mine === undefined ? null : next(mine)
+        return [username, changed === null ? others : { ...others, [serverId]: changed }]
+      }),
+    ),
+  )
+}
+
+/** 所有人在这个服务上的连接都没了。 */
+export const endMockMcpConnections = (serverId: string) => rewrite(serverId, () => null)
+
+/** 所有连着这个服务的人都要重新连接。 */
+export const invalidateMockMcpConnections = (serverId: string) =>
+  rewrite(serverId, (connection) =>
+    connection.state === 'connected' ? { ...connection, state: 'invalid' } : connection,
+  )
+
 const conflict = (code: string, detail: string) =>
   HttpResponse.json({ code, detail }, { status: 409 })
 
@@ -64,34 +97,30 @@ export const resetMockMcpConnections = () => {
   listQueries = []
   attached = {}
   attachedDraft = {}
-  book = {}
+  book = seedBook()
   storage = null
 }
 
-/** 设定各 Agent（当前版本与草稿）挂着的服务与各用户的连接。 */
+/** 设定各 Agent（当前版本与草稿）挂着的服务与各用户的连接；没给的那项保持原样。 */
 export const setMockMcpConnections = ({
-  agents = {},
-  drafts = {},
-  users = {},
+  agents,
+  drafts,
+  users,
 }: {
   agents?: Record<string, readonly string[]>
   drafts?: Record<string, readonly string[]>
   users?: Book
 }) => {
-  attached = agents
-  attachedDraft = drafts
-  book = users
+  if (agents !== undefined) attached = agents
+  if (drafts !== undefined) attachedDraft = drafts
+  if (users !== undefined) book = users
 }
 
 /** dev:mock 的演示数据；`persistIn` 让登录弹窗与发起连接的页面看到同一份连接状态。 */
 export const seedMockMcpConnections = (persistIn: Storage) => {
   setMockMcpConnections({
-    agents: { replica: ['pickfu', 'feishu-docs', 'brand-assets'], storyboard: ['pickfu'] },
+    agents: { replica: ['pickfu', 'user-insights'], storyboard: ['pickfu'] },
     drafts: { director: ['pickfu'] },
-    users: {
-      governor: { 'feishu-docs': { account: 'governor@example.com', state: 'connected' } },
-      tester: { 'brand-assets': { account: DEMO_ACCOUNT, state: 'connected' } },
-    },
   })
   storage = persistIn
 }
@@ -152,6 +181,7 @@ const servicesOf = (agentId: string, draft: boolean) => (draft ? attachedDraft :
 export const mcpConnectionHandlers = (
   username: () => string,
   conversationScope: ConversationScope,
+  services: () => readonly MockMcpUserServer[],
 ) => [
   http.get('*/api/mcp-connections', ({ request }) => {
     const url = new URL(request.url)
@@ -160,7 +190,7 @@ export const mcpConnectionHandlers = (
     const conversationId = query.get('conversationId')
     const agentId = query.get('agentId')
     const draft = query.get('draft') === 'true'
-    let ids: readonly string[] | undefined
+    let ids: readonly string[] | null
     if (conversationId !== null) {
       if (agentId !== null || draft)
         return HttpResponse.json(
@@ -171,21 +201,27 @@ export const mcpConnectionHandlers = (
       if (scope === undefined) return HttpResponse.json({ detail: '没有这段对话' }, { status: 404 })
       ids = servicesOf(scope.agentId, scope.draft) ?? []
     } else if (agentId !== null) {
-      ids = servicesOf(agentId, draft)
-      if (ids === undefined) return HttpResponse.json({ detail: '没有这个 Agent' }, { status: 404 })
+      const found = servicesOf(agentId, draft)
+      if (found === undefined)
+        return HttpResponse.json({ detail: '没有这个 Agent' }, { status: 404 })
+      ids = found
     } else {
-      ids = SERVICES.map((service) => service.serverId)
+      ids = null
     }
-    const items = SERVICES.filter((service) => ids.includes(service.serverId)).map((service) => {
-      const { account, state } = connectionOf(username(), service.serverId)
-      return {
-        ...service,
-        account,
-        connectedAt: state === 'none' ? null : CONNECTED_AT,
-        scopes: state === 'none' ? null : ['read', 'write'],
-        state,
-      }
-    })
+    const items = services()
+      .filter((service) => ids === null || ids.includes(service.id))
+      .map((service) => {
+        const { account, scopes, state } = connectionOf(username(), service.id)
+        return {
+          account,
+          connectedAt: state === 'none' ? null : CONNECTED_AT,
+          description: service.description,
+          name: service.name,
+          scopes: state === 'none' ? null : (scopes ?? null),
+          serverId: service.id,
+          state,
+        }
+      })
     return HttpResponse.json({ items })
   }),
 
@@ -195,20 +231,25 @@ export const mcpConnectionHandlers = (
       return conflict('mcp_sign_in_foreign', '这次登录是别人发起的')
     if (body.state.includes('expired')) return conflict('mcp_sign_in_expired', '这次登录已失效')
     if (body.state.includes('fail')) return conflict('mcp_oauth_rejected', '授权服务器拒绝了')
-    const service = SERVICES.find((item) => body.state.startsWith(`mock.${item.serverId}.`))
+    const service = services().find((item) => body.state.startsWith(`mock.${item.id}.`))
     if (service === undefined) return conflict('mcp_sign_in_expired', '这次登录已失效')
-    setConnection(username(), service.serverId, { account: DEMO_ACCOUNT, state: 'connected' })
-    return HttpResponse.json({
+    setConnection(username(), service.id, {
       account: DEMO_ACCOUNT,
-      name: service.name,
-      serverId: service.serverId,
+      scopes: service.oauth.requestedScopes ?? SIGN_IN_SCOPES,
+      state: 'connected',
     })
+    return HttpResponse.json({ account: DEMO_ACCOUNT, name: service.name, serverId: service.id })
   }),
 
   http.post('*/api/mcp-connections/:serverId/authorize', ({ params, request }) => {
     const serverId = String(params['serverId'])
-    if (!SERVICES.some((service) => service.serverId === serverId))
-      return HttpResponse.json({ detail: '没有这个服务' }, { status: 404 })
+    const service = services().find((item) => item.id === serverId)
+    if (service === undefined) return HttpResponse.json({ detail: '没有这个服务' }, { status: 404 })
+    if (service.oauth.client === 'required')
+      return conflict(
+        'mcp_client_required',
+        '该服务不支持自动注册客户端，需要管理员先填写客户端 ID',
+      )
     const origin = new URL(request.url).origin
     const state = `mock.${serverId}.${crypto.randomUUID()}`
     return HttpResponse.json({

@@ -13,8 +13,16 @@ type Tool = { name: string; title: string | null; description: string | null }
 
 type MockServer = Omit<McpServerOut, 'headers' | 'usedBy'> & {
   headers: { name: string; value: string }[]
-  /** 当前管理员在这个使用自有账户的服务上有没有连接（测试已保存的服务时用）。 */
-  adminConnected: boolean
+}
+
+/** 各人在使用自有账户的服务上的连接（mcp-connections.ts 管着），服务这边读它、改它。 */
+type Connections = {
+  /** 当前登录的人在这个服务上的连接。 */
+  stateOf: (serverId: string) => 'connected' | 'invalid' | 'none'
+  /** 服务换了地址、不再使用自有账户或被删除：所有人的连接作废。 */
+  end: (serverId: string) => void
+  /** 关掉了权限或换了客户端：已连接的人都要重新连接。 */
+  invalidate: (serverId: string) => void
 }
 
 const SIGN_IN_SCOPES = ['openid', 'email', 'profile', 'offline_access']
@@ -57,7 +65,6 @@ const server = (
   tools: Tool[] | null,
 ): MockServer => ({
   ...fields,
-  adminConnected: false,
   authMode: 'shared',
   createdAt: ago(60 * 24 * 20),
   createdBy: ADMIN,
@@ -150,7 +157,6 @@ const seed = (): MockServer[] => [
       null,
       null,
     ),
-    adminConnected: true,
     authMode: 'per_user',
     oauth: {
       client: 'automatic',
@@ -198,6 +204,12 @@ export const mockMcpServer = (
   id: string,
 ): Pick<McpServerOut, 'enabled' | 'id' | 'name' | 'tools'> | undefined =>
   servers.find((item) => item.id === id)
+
+export type MockMcpUserServer = Pick<McpServerOut, 'description' | 'id' | 'name' | 'oauth'>
+
+/** 启用的、使用自有账户的服务：用户能连接的就是这些。 */
+export const mockMcpUserServers = (): readonly MockMcpUserServer[] =>
+  servers.filter((item) => item.enabled && item.authMode === 'per_user')
 
 const mask = (value: string) => (value.length < 8 ? '••••' : `••••${value.slice(-4)}`)
 
@@ -288,8 +300,11 @@ const inUseMessage = (item: MockServer, usages: AgentUsageOut[]) =>
     )
     .join('、')}；先在它们的草稿与当前版本里去掉再操作`
 
-export const mcpServerHandlers = (usage: (serverId: string) => AgentUsageOut[]) => {
-  const toOut = ({ adminConnected: _adminConnected, ...item }: MockServer): McpServerOut => ({
+export const mcpServerHandlers = (
+  usage: (serverId: string) => AgentUsageOut[],
+  connections: Connections,
+) => {
+  const toOut = (item: MockServer): McpServerOut => ({
     ...item,
     headers: item.headers.map((header) => ({ name: header.name, value: mask(header.value) })),
     usedBy: usage(item.id),
@@ -390,16 +405,15 @@ export const mcpServerHandlers = (usage: (serverId: string) => AgentUsageOut[]) 
           : cleanScopes(body.oauthScopes)
       const preset = item.oauth.presetClient
       const client = body.oauthClient ?? null
-      const ending = moved || (item.authMode === 'per_user' && authMode === 'shared')
+      const wasPerUser = item.authMode === 'per_user'
+      const ending = moved || (wasPerUser && authMode === 'shared')
       const narrowed =
         item.oauth.publishedScopes !== null &&
         scopes !== null &&
         chosenScopes(item).some((scope) => !scopes.includes(scope))
       const orphaned = client !== null && preset !== null && client.clientId !== preset.clientId
       const affected =
-        item.authMode === 'per_user' && (ending || narrowed || orphaned)
-          ? item.oauth.connectedUsers
-          : 0
+        wasPerUser && (ending || narrowed || orphaned) ? item.oauth.connectedUsers : 0
       if (affected > 0 && body.confirmReconnect !== true)
         return HttpResponse.json(
           {
@@ -440,7 +454,8 @@ export const mcpServerHandlers = (usage: (serverId: string) => AgentUsageOut[]) 
           requestedScopes: null,
           signInScopes: null,
         }
-      if (ending) item.adminConnected = false
+      if (ending) connections.end(item.id)
+      else if (wasPerUser && (narrowed || orphaned)) connections.invalidate(item.id)
       if (affected > 0) item.oauth = { ...item.oauth, connectedUsers: 0 }
       item.name = body.name ?? item.name
       item.description = body.description ?? item.description
@@ -463,15 +478,22 @@ export const mcpServerHandlers = (usage: (serverId: string) => AgentUsageOut[]) 
       if (users.length > 0)
         return HttpResponse.json({ detail: inUseMessage(item, users) }, { status: 409 })
       servers = servers.filter((other) => other.id !== item.id)
+      connections.end(item.id)
       return new HttpResponse(null, { status: 204 })
     }),
 
     http.post('*/api/mcp-servers/:serverId/check', ({ params }) => {
       const item = find(params['serverId'])
       if (item === undefined) return notFound()
-      if (item.authMode === 'per_user' && !item.adminConnected)
+      const mine = item.authMode === 'per_user' ? connections.stateOf(item.id) : 'connected'
+      if (mine === 'none')
         return HttpResponse.json(
           { code: 'mcp_not_connected', detail: `你还没有连接 ${item.name}，请先连接再测试` },
+          { status: 409 },
+        )
+      if (mine === 'invalid')
+        return HttpResponse.json(
+          { code: 'mcp_reconnect_required', detail: `你在 ${item.name} 的连接已失效，请重新连接` },
           { status: 409 },
         )
       const result = probe(item.url, item)

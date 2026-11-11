@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { z } from 'zod'
-import { ApiError, apiFetch } from '@/shared/api/client'
+import { ApiError, apiFetch, errorMessageOf } from '@/shared/api/client'
 import {
   zAuthorizeMcpMcpConnectionsServerIdAuthorizePostResponse,
   zCompleteMcpMcpConnectionsCompletePostResponse,
@@ -34,18 +34,28 @@ const scopeQuery = (scope: McpConnectionsScope) =>
     ? { conversationId: scope.conversationId }
     : { agentId: scope.agentId, ...(scope.draft === true ? { draft: 'true' } : {}) }
 
+const readConnections = (query: Record<string, string>, signal: AbortSignal) => {
+  const search = new URLSearchParams(query).toString()
+  return apiFetch(`/mcp-connections${search === '' ? '' : `?${search}`}`, connectionsSchema, {
+    cache: 'no-store',
+    fallbackErrorMessage: '读取连接失败',
+    signal,
+  })
+}
+
 /** 当前登录用户在这段对话会连的服务上的连接。页面打开时读一次，连接完成或断开后重读，不轮询。 */
 export const useMcpConnections = (scope: McpConnectionsScope) =>
   useQuery({
     queryKey: [...MCP_CONNECTIONS_KEY, scopeQuery(scope)],
-    queryFn: ({ signal }) => {
-      const query = new URLSearchParams(scopeQuery(scope))
-      return apiFetch(`/mcp-connections?${query.toString()}`, connectionsSchema, {
-        cache: 'no-store',
-        fallbackErrorMessage: '读取连接失败',
-        signal,
-      })
-    },
+    queryFn: ({ signal }) => readConnections(scopeQuery(scope), signal),
+  })
+
+/** 当前登录用户在全部启用的、使用自有账户的服务上的连接，不按对话筛（配置服务的页面用）。 */
+export const useAllMcpConnections = (enabled: boolean) =>
+  useQuery({
+    enabled,
+    queryKey: [...MCP_CONNECTIONS_KEY, 'all'],
+    queryFn: ({ signal }) => readConnections({}, signal),
   })
 
 export const authorizeMcp = (serverId: string) =>
@@ -77,11 +87,14 @@ const NEEDS_ADMIN = new Set([
   'mcp_oauth_unsupported',
 ])
 
-/** 发起连接失败时给用户看的一句话。 */
-export const connectFailureText = (error: unknown, name: string): string =>
-  NEEDS_ADMIN.has(connectionErrorCode(error) ?? '')
+/** 发起连接失败时给用户看的一句话；`explain` 为真时是给管理员看的，直接用后端的说明。 */
+export const connectFailureText = (error: unknown, name: string, explain = false): string => {
+  const retry = `${name} 连接失败，请重试`
+  if (explain) return errorMessageOf(error, retry)
+  return NEEDS_ADMIN.has(connectionErrorCode(error) ?? '')
     ? `${name} 尚未配置完成，无法连接；请联系管理员`
-    : `${name} 连接失败，请重试`
+    : retry
+}
 
 /** 断开一个服务：立即生效，用 Toast 确认，并重读连接。 */
 export const useDisconnectMcp = () => {

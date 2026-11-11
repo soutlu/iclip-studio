@@ -7,6 +7,7 @@ import { PopupAnchor, PopupRoot, PopupSurface } from '@/shared/ui/popup'
 import { toast } from '@/shared/ui/toast'
 import { TooltipContent, TooltipRoot, TooltipTrigger, useTabTooltip } from '@/shared/ui/tooltip'
 import type { AgentConfig } from '../agents.api'
+import { useMcpAccount, useOnMcpConnected } from '../mcp-account'
 import { mcpBindingOf, unbindMcp } from '../mcp-draft'
 import {
   checkBody,
@@ -35,6 +36,7 @@ import {
   type McpSaveResult,
   type McpServer,
 } from '../mcp-servers.api'
+import { AccountCard } from './mcp-account-card'
 import {
   ClientCard,
   ConnectionSection,
@@ -205,6 +207,8 @@ function McpServerForm({
   const identityAsForm =
     creating || editingIdentity || ['id', 'name', 'url'].some((key) => errors[key] !== undefined)
 
+  const account = useMcpAccount(server)
+
   const change = (changes: Partial<Values>, connection: boolean) => {
     setValues((current) => ({ ...current, ...changes }))
     setErrors({})
@@ -223,6 +227,11 @@ function McpServerForm({
     setErrors(found)
     setFormError(null)
     if (Object.keys(found).length > 0) return
+    // 还没连接或连接已失效：先在新窗口里登录，连上后再测（见下面的 useOnMcpConnected）。
+    if (perUser && account.connection !== undefined && account.connection.state !== 'connected') {
+      account.signIn()
+      return
+    }
     setTest({ kind: 'testing' })
     try {
       const result =
@@ -234,6 +243,8 @@ function McpServerForm({
       setTest({ fresh: true, kind: 'failed', reason: errorMessageOf(error, '测试连接失败') })
     }
   }
+
+  useOnMcpConnected(account, () => void runTest())
 
   const applySaved = (saved: McpSaveResult) => {
     const { check: after } = saved
@@ -354,7 +365,8 @@ function McpServerForm({
         <TooltipTrigger asChild {...testTooltip.triggerProps}>
           <Button
             aria-disabled={testBlocked === undefined ? undefined : true}
-            disabled={busy}
+            // 我的连接还在读时先不让点：读到了才知道是直接测试还是先登录。
+            disabled={busy || (perUser && account.reading)}
             onClick={() => void runTest()}
             size="md"
             variant="outlined"
@@ -502,6 +514,9 @@ function McpServerForm({
             checked={perUser}
             onCheckedChange={(on) => change({ authMode: on ? 'per_user' : 'shared' }, false)}
           />
+          {perUser && server?.authMode === 'per_user' ? (
+            <AccountCard account={account} requestedScopes={server.oauth.requestedScopes} />
+          ) : null}
           {clientShown && server !== undefined ? (
             <ClientCard
               baseId={baseId}

@@ -16,8 +16,13 @@ import { enhancementHandlers } from './enhancements'
 import { filmHandlers } from './film'
 import { forgetMockHitCaseTags, hitCaseHandlers, mockHitCaseTagSets } from './hit-cases'
 import { libraryHandlers } from './library'
-import { mcpConnectionHandlers } from './mcp-connections'
-import { mcpServerHandlers } from './mcp-servers'
+import {
+  endMockMcpConnections,
+  invalidateMockMcpConnections,
+  mcpConnectionHandlers,
+  mockMcpConnectionState,
+} from './mcp-connections'
+import { mcpServerHandlers, mockMcpUserServers } from './mcp-servers'
 import { modelProviderHandlers } from './model-providers'
 import { mockAuthUser, mockGovernor } from './auth-user'
 import {
@@ -516,7 +521,11 @@ export const handlers = [
     const user = currentUser ?? mockAuthUser
     return { id: user.id, name: user.displayName }
   }),
-  ...mcpServerHandlers(mockMcpServerUsage),
+  ...mcpServerHandlers(mockMcpServerUsage, {
+    end: endMockMcpConnections,
+    invalidate: invalidateMockMcpConnections,
+    stateOf: (serverId) => mockMcpConnectionState((currentUser ?? mockAuthUser).username, serverId),
+  }),
   ...mcpConnectionHandlers(
     () => (currentUser ?? mockAuthUser).username,
     (conversationId) => {
@@ -530,6 +539,7 @@ export const handlers = [
         ? undefined
         : { agentId: preview.agentId, draft: preview.versionId === null }
     },
+    mockMcpUserServers,
   ),
   ...agentPreviewHandlers,
   ...modelProviderHandlers(mockModelUsage),

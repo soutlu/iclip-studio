@@ -25,6 +25,7 @@ const RESOURCE_GLYPHS: Partial<Record<IconName, { icon: IconName; className: str
   'video-understanding': { icon: 'resource-understanding', className: 'text-resource-video' },
   'video-type': { icon: 'resource-frame', className: 'text-resource-video' },
   'resource-people': { icon: 'resource-people', className: 'text-resource-account' },
+  'resource-person': { icon: 'resource-person', className: 'text-resource-account' },
 }
 
 export function CardGlyph({ name, className }: { name: IconName; className?: string | undefined }) {

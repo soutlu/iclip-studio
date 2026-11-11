@@ -7,7 +7,8 @@ import { ResourceTile } from '@/shared/ui/resource-tile'
 import { type McpConnection, useDisconnectMcp } from './mcp-connections.api'
 import { useMcpConnect } from './use-mcp-connect'
 
-const PILL =
+/** 「连接 / 重新连接」的深色小按钮。 */
+export const CONNECT_PILL =
   'inline-flex h-7 shrink-0 ui-state cursor-pointer items-center gap-1 rounded-full bg-inverse-surface px-2.5 text-body-sm font-medium text-inverse-on-surface ui-focus'
 
 function StatusDot({ ok }: { ok: boolean }) {
@@ -70,7 +71,7 @@ export function McpConnectionRow({ connection }: { connection: McpConnection }) 
     )
     action = (
       <Action label={`${verb} ${name}`} onSelect={() => connect({ name, serverId })}>
-        <button className={PILL} type="button">
+        <button className={CONNECT_PILL} type="button">
           {verb}
         </button>
       </Action>

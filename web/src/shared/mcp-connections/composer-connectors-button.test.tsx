@@ -6,14 +6,13 @@ import { Composer } from '@/shared/ui/composer'
 import { Toaster, toast } from '@/shared/ui/toast'
 import { setMockMcpConnections } from '@/testing/mocks/mcp-connections'
 import { server } from '@/testing/mocks/server'
+import { stubWindowOpen } from '@/testing/popup-window'
 import { renderWithProviders } from '@/testing/render'
 import { ComposerConnectorsButton } from './composer-connectors-button'
 import type { McpConnectionsScope } from './mcp-connections.api'
 import { announceSignInResult, recallSignIn } from './sign-in-handoff'
 
 type State = 'connected' | 'invalid' | 'none'
-
-const ALL_SERVICES = ['pickfu', 'feishu-docs', 'brand-assets']
 
 const connection = (serverId: string, name: string, state: State, account: string | null) => ({
   account,
@@ -67,30 +66,6 @@ const connectPickFu = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(within(menu).getByRole('menuitem', { name: '连接 PickFu' }))
 }
 
-type FakeWindow = {
-  closed: boolean
-  close: () => void
-  focus: () => void
-  location: { href: string }
-}
-
-const stubWindowOpen = () => {
-  const windows: FakeWindow[] = []
-  const open = vi.spyOn(window, 'open').mockImplementation(() => {
-    const popup: FakeWindow = {
-      close: vi.fn(() => {
-        popup.closed = true
-      }),
-      closed: false,
-      focus: vi.fn(),
-      location: { href: 'about:blank' },
-    }
-    windows.push(popup)
-    return popup as unknown as Window
-  })
-  return { open, windows }
-}
-
 /** 等被关掉的 Toast 走完退场并卸载，留下的才是用户接着看到的。 */
 const settleToasts = () =>
   act(async () => {
@@ -141,7 +116,7 @@ describe('连接器按钮', () => {
   })
 
   it('按对话问到 404（不是我能发消息的对话）时没有连接器按钮', async () => {
-    setMockMcpConnections({ agents: { replica: ALL_SERVICES } })
+    setMockMcpConnections({ agents: { replica: ['pickfu'] } })
     const reads = recordListReads()
     const conversationId = crypto.randomUUID()
     await renderComposer({ scope: { conversationId } })
@@ -212,10 +187,11 @@ describe('连接器按钮', () => {
   })
 
   it('键盘：Tab 到按钮，Enter 打开并落在第一个操作上，方向键换操作、Enter 执行，Esc 关闭后焦点回到按钮', async () => {
-    setMockMcpConnections({
-      agents: { replica: ALL_SERVICES },
-      users: { tester: { 'brand-assets': { account: 'demo@example.com', state: 'connected' } } },
-    })
+    serveConnections([
+      connection('pickfu', 'PickFu', 'none', null),
+      connection('feishu-docs', '飞书文档', 'none', null),
+      connection('brand-assets', '品牌资产库', 'connected', 'demo@example.com'),
+    ])
     const disconnected: string[] = []
     server.events.on('response:mocked', ({ request }) => {
       if (request.method === 'DELETE') disconnected.push(new URL(request.url).pathname)
