@@ -26,6 +26,17 @@ import { resetMockWorkspace } from './mocks/workspace'
 
 vi.mock('@hyperframes/player', () => import('./hyperframes-player'))
 
+// 用例里开的 BroadcastChannel 用例结束就关掉：留着的监听会收到后面用例发的广播，
+// 例如前面用例的页面会把后面用例的「已连接」再提示一遍。
+const openChannels = new Set<BroadcastChannel>()
+class TrackedBroadcastChannel extends BroadcastChannel {
+  constructor(name: string) {
+    super(name)
+    openChannels.add(this)
+  }
+}
+globalThis.BroadcastChannel = TrackedBroadcastChannel
+
 if (!window.matchMedia) {
   window.matchMedia = (query: string) => ({
     matches: false,
@@ -135,6 +146,8 @@ afterEach(() => {
   resetMockWholeFilm()
   resetMockWorkspace()
   cleanup()
+  for (const channel of openChannels) channel.close()
+  openChannels.clear()
   if (unhandledRequests.length > 0) {
     const requests = unhandledRequests.splice(0)
     throw new Error(`用例发出了未声明 handler 的请求：\n${requests.join('\n')}`)

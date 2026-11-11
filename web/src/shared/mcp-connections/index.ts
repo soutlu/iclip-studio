@@ -5,7 +5,6 @@ export {
   MCP_CONNECTIONS_KEY,
   useAllMcpConnections,
   useDisconnectMcp,
-  type McpConnection,
   type McpConnectionsScope,
 } from './mcp-connections.api'
 export { useMcpConnect } from './use-mcp-connect'

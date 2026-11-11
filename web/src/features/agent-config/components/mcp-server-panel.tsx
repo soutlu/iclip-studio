@@ -13,6 +13,7 @@ import {
   checkBody,
   createBody,
   isDirty,
+  savedScopeRows,
   scopeRowsOf,
   showsClient,
   testOfCheck,
@@ -244,7 +245,9 @@ function McpServerForm({
     }
   }
 
-  useOnMcpConnected(account, () => void runTest())
+  useOnMcpConnected(account, () => {
+    if (perUser) void runTest()
+  })
 
   const applySaved = (saved: McpSaveResult) => {
     const { check: after } = saved
@@ -515,7 +518,12 @@ function McpServerForm({
             onCheckedChange={(on) => change({ authMode: on ? 'per_user' : 'shared' }, false)}
           />
           {perUser && server?.authMode === 'per_user' ? (
-            <AccountCard account={account} requestedScopes={server.oauth.requestedScopes} />
+            <AccountCard
+              account={account}
+              closedScopes={(savedScopeRows(server) ?? [])
+                .filter((row) => !row.on)
+                .map((row) => row.name)}
+            />
           ) : null}
           {clientShown && server !== undefined ? (
             <ClientCard
