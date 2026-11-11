@@ -1,12 +1,15 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type ReactNode,
   type RefObject,
 } from 'react'
+import { MediaFallback } from '@/shared/ui/media-fallback'
 import { StageBackdrop } from '../components/stage-backdrop'
 import { secondsToFrame, STUDIO_PREVIEW_FPS } from './vendor/hyperframes-studio/player/lib/time'
 
@@ -75,6 +78,22 @@ const hasResumeBuffer = (video: HTMLVideoElement) => {
 // 媒体事件不冒泡，要在 iframe 文档上捕获
 const MEDIA_EVENTS = ['suspend', 'error', 'progress', 'canplay', 'seeked']
 
+const FAILURE_EVENTS = ['error', 'emptied']
+
+const playsAt = (video: HTMLVideoElement, seconds: number) => {
+  const start = Number(video.dataset['start'])
+  return start <= seconds && seconds < start + Number(video.dataset['duration'])
+}
+
+const failedClipOf = (player: PlayerElement | null) => {
+  const page = player?.iframeElement.contentDocument
+  if (player === null || page === null || page === undefined) return null
+  const clip = [...page.querySelectorAll<HTMLVideoElement>('video[data-start]')].find((video) =>
+    playsAt(video, player.currentTime),
+  )
+  return clip !== undefined && clip.error !== null ? clip : null
+}
+
 export function PreviewPlayer({
   srcdoc,
   message,
@@ -130,10 +149,7 @@ export function PreviewPlayer({
       const wantsPlay = wantsPlayRef.current && !swappingRef.current
       const videos = [...page.querySelectorAll<HTMLVideoElement>('video[data-start]')]
       const seconds = active.currentTime
-      const clip = videos.find((video) => {
-        const start = Number(video.dataset['start'])
-        return start <= seconds && seconds < start + Number(video.dataset['duration'])
-      })
+      const clip = videos.find((video) => playsAt(video, seconds))
       const clipReady =
         clip === undefined ||
         clip.error !== null ||
@@ -188,6 +204,21 @@ export function PreviewPlayer({
       controlRef.current = null
     }
   }, [active, controlRef])
+
+  const watchFailure = useCallback(
+    (notify: () => void) => {
+      const page = active?.iframeElement.contentDocument
+      if (active === null || page === null || page === undefined) return () => {}
+      active.addEventListener('timeupdate', notify)
+      for (const type of FAILURE_EVENTS) page.addEventListener(type, notify, true)
+      return () => {
+        active.removeEventListener('timeupdate', notify)
+        for (const type of FAILURE_EVENTS) page.removeEventListener(type, notify, true)
+      }
+    },
+    [active],
+  )
+  const clipFailed = useSyncExternalStore(watchFailure, () => failedClipOf(active) !== null)
 
   const awaitingFirst = active === null && srcdoc !== undefined
   useEffect(() => {
@@ -271,10 +302,24 @@ export function PreviewPlayer({
       <div className="editor-hero-wrap">
         <div
           className="wf-player-host editor-preview stage-picture"
+          data-failed={clipFailed ? '' : undefined}
           hidden={srcdoc === undefined}
           style={{ '--preview-ratio': width / height } as CSSProperties}
         >
           <div className="wf-player-slot" ref={hostRef} />
+          {clipFailed ? (
+            <div className="editor-preview-message" role="alert">
+              <MediaFallback
+                kind="video"
+                onRetry={() => {
+                  const clip = failedClipOf(activeRef.current)
+                  if (clip === null) return
+                  clip.preload = 'auto'
+                  clip.load()
+                }}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
       {children}
