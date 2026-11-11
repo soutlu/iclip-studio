@@ -6,6 +6,7 @@ import type { SubtitleIn, WholeFilmDocument } from '@/shared/api/generated/types
 import { Toaster } from '@/shared/ui/toast'
 import { makeGenerationJob } from '@/testing/generation-job'
 import {
+  bufferedVideos,
   downloadingVideos,
   finishBuffering,
   starvedVideos,
@@ -176,11 +177,31 @@ describe('成片编辑器 · 波形最后加载', () => {
     await openEditor()
     expect((await waveMarks()).length).toBeGreaterThan(0)
     expect(audioReads).toEqual([URL_A])
+    expect(screen.queryByTestId('timeline-buffered')).not.toBeInTheDocument()
   })
 })
 
 describe('成片编辑器 · 缓冲', () => {
-  afterEach(() => starvedVideos.clear())
+  afterEach(() => {
+    starvedVideos.clear()
+    bufferedVideos.clear()
+  })
+
+  it('时间尺画出已缓冲的部分：组件片段不用下载直接算好，视频片段随下载接上', async () => {
+    putMockWholeFilmDraft(
+      CONVERSATION,
+      draftOf([
+        video('v1', TAKE_A, 0, 2_000),
+        card('c1', 1_000, { component: 'fixture-fields', variables: { text: '通用' } }),
+      ]),
+    )
+    bufferedVideos.set(URL_A, [[0, 1]])
+    await openEditor()
+    await waitFor(() => expect(screen.getAllByTestId('timeline-buffered')).toHaveLength(2))
+
+    act(() => finishBuffering(URL_A))
+    expect(screen.getAllByTestId('timeline-buffered')).toHaveLength(1)
+  })
 
   it('当前片段数据不够时舞台转圈，播放按钮是「暂停」；够了转圈消失', async () => {
     putMockWholeFilmDraft(CONVERSATION, twoClips())

@@ -9,6 +9,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react'
+import { mergeSpans, sameSpans, spansOf, windowSpans, type TimeSpan } from '@/shared/lib/time-spans'
 import { MediaFallback } from '@/shared/ui/media-fallback'
 import { StageBackdrop } from '../components/stage-backdrop'
 import { secondsToFrame, STUDIO_PREVIEW_FPS } from './vendor/hyperframes-studio/player/lib/time'
@@ -49,6 +50,7 @@ type PreviewPlayerProps = {
   onFrame: (iframe: HTMLIFrameElement | null) => void
   onMediaSettled?: (() => void) | undefined
   onBuffering?: ((buffering: boolean) => void) | undefined
+  onBuffered?: ((spans: readonly TimeSpan[]) => void) | undefined
   children?: ReactNode
 }
 
@@ -106,19 +108,27 @@ export function PreviewPlayer({
   onFrame,
   onMediaSettled,
   onBuffering,
+  onBuffered,
   children,
 }: PreviewPlayerProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const [loaded, setLoaded] = useState(false)
   const [active, setActive] = useState<PlayerElement | null>(null)
   const activeRef = useRef<PlayerElement | null>(null)
-  const callbacksRef = useRef({ onTime, onPlaying, onFrame, onMediaSettled, onBuffering })
+  const callbacksRef = useRef({
+    onTime,
+    onPlaying,
+    onFrame,
+    onMediaSettled,
+    onBuffering,
+    onBuffered,
+  })
   const sizeRef = useRef({ width, height })
   const wantsPlayRef = useRef(false)
   const swappingRef = useRef(false)
   const startAtRef = useRef(0)
   useLayoutEffect(() => {
-    callbacksRef.current = { onTime, onPlaying, onFrame, onMediaSettled, onBuffering }
+    callbacksRef.current = { onTime, onPlaying, onFrame, onMediaSettled, onBuffering, onBuffered }
     sizeRef.current = { width, height }
   })
 
@@ -144,6 +154,7 @@ export function PreviewPlayer({
     if (active === null || page === null || page === undefined) return
     swappingRef.current = false
     let buffering = false
+    let reported: readonly TimeSpan[] | undefined
     const atEnd = () => active.currentTime >= active.duration
     const syncMedia = () => {
       const wantsPlay = wantsPlayRef.current && !swappingRef.current
@@ -167,6 +178,21 @@ export function PreviewPlayer({
         videos.every((video) => video.networkState !== HTMLMediaElement.NETWORK_LOADING)
       )
         callbacksRef.current.onMediaSettled?.()
+      const spans = mergeSpans(
+        videos.flatMap((video) => {
+          const mediaStart = Number(video.dataset['mediaStart'] ?? 0)
+          return windowSpans(
+            spansOf(video.buffered),
+            mediaStart,
+            mediaStart + Number(video.dataset['duration']),
+            Number(video.dataset['start']),
+          )
+        }),
+      )
+      if (reported === undefined || !sameSpans(reported, spans)) {
+        reported = spans
+        callbacksRef.current.onBuffered?.(spans)
+      }
     }
     const setWantsPlay = (wantsPlay: boolean) => {
       wantsPlayRef.current = wantsPlay

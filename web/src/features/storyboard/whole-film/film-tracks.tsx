@@ -11,6 +11,7 @@ import {
   type RefObject,
 } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
+import type { TimeSpan } from '@/shared/lib/time-spans'
 import { cn } from '@/shared/lib/utils'
 import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { PopupAnchor, PopupRoot, PopupSurface } from '@/shared/ui/popup'
@@ -123,6 +124,7 @@ type FilmTracksProps = {
   onClipClick: (clip: Layer0Clip, extend: boolean) => void
   snap: boolean
   beats: readonly MusicBeat[]
+  buffered: readonly TimeSpan[]
   clipLabel: (clip: VideoClip) => string
   componentFace: (name: string) => ComponentFace
   urlOf: (sourceJobId: string) => string | undefined
@@ -377,6 +379,7 @@ export function FilmTracks({
   onClipClick,
   snap,
   beats,
+  buffered,
   clipLabel,
   componentFace,
   urlOf,
@@ -1231,6 +1234,7 @@ export function FilmTracks({
       <div className="wf-track-scroll" ref={scrollRef}>
         <div className="wf-track-content" ref={contentRef} style={{ width: `${previewWidth}px` }}>
           <TimelineRuler
+            buffered={buffered}
             clockAt={(clientX) => timeAt(clientX) / 1000}
             currentTime={playheadMs / 1000}
             onScrub={() => {}}
