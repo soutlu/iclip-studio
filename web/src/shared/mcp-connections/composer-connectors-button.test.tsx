@@ -91,6 +91,12 @@ const stubWindowOpen = () => {
   return { open, windows }
 }
 
+/** 等被关掉的 Toast 走完退场并卸载，留下的才是用户接着看到的。 */
+const settleToasts = () =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 400))
+  })
+
 afterEach(() => {
   toast.dismiss()
 })
@@ -314,27 +320,32 @@ describe('连接与断开', () => {
     ['mcp_callback_unconfigured', 'PickFu 尚未配置完成，无法连接；请联系管理员'],
     ['mcp_oauth_unsupported', 'PickFu 尚未配置完成，无法连接；请联系管理员'],
     ['mcp_oauth_unavailable', 'PickFu 连接失败，请重试'],
-  ])('要连接地址失败（%s）：关掉窗口，留一条带「重试」的错误提示', async (code, message) => {
-    setMockMcpConnections({ agents: { replica: ['pickfu'] } })
-    server.use(
-      http.post('*/api/mcp-connections/:serverId/authorize', () =>
-        HttpResponse.json({ code, detail: '服务端原因' }, { status: 409 }),
-      ),
-    )
-    const { open, windows } = stubWindowOpen()
-    const { user } = await renderComposer()
+  ])(
+    '要连接地址失败（%s）：关掉窗口，留一条带「重试」的错误提示；重试再失败仍有提示',
+    async (code, message) => {
+      setMockMcpConnections({ agents: { replica: ['pickfu'] } })
+      server.use(
+        http.post('*/api/mcp-connections/:serverId/authorize', () =>
+          HttpResponse.json({ code, detail: '服务端原因' }, { status: 409 }),
+        ),
+      )
+      const { open, windows } = stubWindowOpen()
+      const { user } = await renderComposer()
 
-    await connectPickFu(user)
-    expect(await screen.findByText(message)).toBeVisible()
-    expect(windows[0]?.close).toHaveBeenCalledTimes(1)
-    expect(screen.queryByText('服务端原因')).not.toBeInTheDocument()
+      await connectPickFu(user)
+      expect(await screen.findByText(message)).toBeVisible()
+      expect(windows[0]?.close).toHaveBeenCalledTimes(1)
+      expect(screen.queryByText('服务端原因')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '重试' }))
-    expect(open).toHaveBeenCalledTimes(2)
-    await waitFor(() => expect(windows[1]?.close).toHaveBeenCalledTimes(1))
-  })
+      await user.click(screen.getByRole('button', { name: '重试' }))
+      expect(open).toHaveBeenCalledTimes(2)
+      await waitFor(() => expect(windows[1]?.close).toHaveBeenCalledTimes(1))
+      await settleToasts()
+      expect(screen.getByText(message)).toBeVisible()
+    },
+  )
 
-  it('浏览器拦截新窗口：不要连接地址，错误提示常驻并可重试', async () => {
+  it('浏览器拦截新窗口：不要连接地址，错误提示常驻并可重试；重试仍被拦截时提示还在', async () => {
     setMockMcpConnections({ agents: { replica: ['pickfu'] } })
     const authorized: string[] = []
     server.events.on('request:start', ({ request }) => {
@@ -355,6 +366,8 @@ describe('连接与断开', () => {
 
     await user.click(screen.getByRole('button', { name: '重试' }))
     expect(open).toHaveBeenCalledTimes(2)
+    await settleToasts()
+    expect(screen.getByText(message)).toBeVisible()
   }, 10_000)
 
   it('断开：发 DELETE，提示「X 已断开」，重读后这一行变回未连接，列表留着', async () => {

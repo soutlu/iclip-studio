@@ -26,10 +26,10 @@ type Flow = {
   deadline: ReturnType<typeof setTimeout>
 }
 
-const failureToastId = (serverId: string) => `mcp-connect:${serverId}`
-
 class McpConnectStore {
   private readonly flows = new Map<string, Flow>()
+  // 每条失败提示各用一个新 id：sonner 关掉一个 id 后还会延后移除它，这期间用同一个 id 再建的提示会被一并移除。
+  private readonly failureToasts = new Map<string, string | number>()
   private readonly listeners = new Set<() => void>()
   private channel: BroadcastChannel | null = null
   private version = 0
@@ -57,7 +57,7 @@ class McpConnectStore {
       running.popup.focus()
       return
     }
-    toast.dismiss(failureToastId(service.serverId))
+    this.dismissFailure(service.serverId)
     const popup = window.open('about:blank', `iclip-connect-${service.serverId}`, POPUP_FEATURES)
     if (popup === null) {
       this.fail(service, `浏览器拦截了新窗口，无法连接 ${service.name}；请允许弹出窗口后重试`)
@@ -97,12 +97,21 @@ class McpConnectStore {
 
   private fail(service: McpService, message: string) {
     // 要用户处理的失败不自动消失：常驻到关闭或重试。
-    toast.error(message, {
-      action: { label: '重试', onClick: () => this.connect(service) },
-      closeButton: true,
-      duration: Number.POSITIVE_INFINITY,
-      id: failureToastId(service.serverId),
-    })
+    this.failureToasts.set(
+      service.serverId,
+      toast.error(message, {
+        action: { label: '重试', onClick: () => this.connect(service) },
+        closeButton: true,
+        duration: Number.POSITIVE_INFINITY,
+      }),
+    )
+  }
+
+  private dismissFailure(serverId: string) {
+    const id = this.failureToasts.get(serverId)
+    if (id === undefined) return
+    this.failureToasts.delete(serverId)
+    toast.dismiss(id)
   }
 
   private listen() {
@@ -117,7 +126,7 @@ class McpConnectStore {
   private receive(result: SignInResult) {
     if (result.ok) void this.queryClient.invalidateQueries({ queryKey: MCP_CONNECTIONS_KEY })
     if (result.tabId !== TAB_ID) return
-    if (result.ok) toast.success(`${result.name} 已连接`, { id: failureToastId(result.serverId) })
+    if (result.ok) toast.success(`${result.name} 已连接`)
     this.end(result.serverId)
   }
 

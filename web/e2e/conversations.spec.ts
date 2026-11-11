@@ -69,7 +69,7 @@ test('全部对话的筛选在窄屏下可用，关闭后保留键盘焦点', as
   await login(page, 'governor')
   await page.getByRole('button', { name: '全部任务', exact: true }).click()
   const audit = page.getByRole('main', { name: '全部任务' })
-  await expect(audit.getByRole('link')).toHaveCount(15)
+  await expect(audit.getByRole('link')).toHaveCount(17)
 
   await page.setViewportSize({ width: 390, height: 844 })
   const collapse = page.getByRole('button', { name: '折叠侧边栏' })
@@ -86,13 +86,13 @@ test('全部对话的筛选在窄屏下可用，关闭后保留键盘焦点', as
   await expect(audit.getByRole('link')).toHaveCount(2)
   await selectedUser.click()
   await page.getByRole('option', { name: '小王', exact: true }).click()
-  await expect(audit.getByRole('link')).toHaveCount(15)
+  await expect(audit.getByRole('link')).toHaveCount(17)
 
   const timeTrigger = page.getByRole('button', { name: '建立时间', exact: true })
   await timeTrigger.click()
   await page.getByRole('radio', { name: '自定义', exact: true }).click()
   await page.getByRole('button', { name: '2026年9月8日', exact: true }).click()
-  await expect(audit.getByRole('link')).toHaveCount(15)
+  await expect(audit.getByRole('link')).toHaveCount(17)
   await page.getByRole('button', { name: '2026年9月12日', exact: true }).click()
   const selectedTime = page.getByRole('button', {
     name: '建立时间：9月8日 — 9月12日',
@@ -106,5 +106,5 @@ test('全部对话的筛选在窄屏下可用，关闭后保留键盘焦点', as
   await selectedTime.click()
   await page.getByRole('radio', { name: '自定义', exact: true }).click()
   await expect(timeTrigger).toBeFocused()
-  await expect(audit.getByRole('link')).toHaveCount(15)
+  await expect(audit.getByRole('link')).toHaveCount(17)
 })
