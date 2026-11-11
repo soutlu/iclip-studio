@@ -15,16 +15,6 @@ import { conversationsQueryKeys, type SidebarTopology } from '../conversations.a
 import { ConversationRoute } from './conversation-route'
 import { type FakeSocket, SERVER_HELLO, sessionEnvelope } from '@/testing/ws'
 
-vi.mock('lottie-web/build/player/lottie_light', () => ({
-  default: {
-    loadAnimation: () => ({
-      addEventListener: () => undefined,
-      destroy: () => undefined,
-      removeEventListener: () => undefined,
-    }),
-  },
-}))
-
 const TAIL_TEXT = '这是第 2 轮的回复。'
 
 const renderConversation = async () =>
