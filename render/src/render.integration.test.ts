@@ -323,4 +323,52 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(full.loudness - quiet.loudness).toBeGreaterThan(9)
     expect(full.loudness - quiet.loudness).toBeLessThan(15)
   }, 600_000)
+
+  it('两个画面块同时出现在两行上：叠放顺序大的在上面，一样大时文件里写在后面的在上面', async () => {
+    const { logger } = memoryLogger()
+    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
+    const [clip, gray] = [`${origin}/clip.mp4`, `${origin}/gray.mp4`]
+    /** 彩色那条写在前面、放第一行，灰色那条写在后面、放第二行，两条都占 0–2 秒。 */
+    const frameWith = async (id: string, clipZ: number, grayZ: number) => {
+      const rendered = await worker.render(
+        {
+          id,
+          registryDir: (library as ComponentLibrary).dir,
+          mediaUrls: [clip, gray],
+          compose: (paths) =>
+            writeFilm(
+              {
+                canvas: FRAME,
+                blocks: [
+                  picture({ src: paths[clip] ?? clip, duration: 2000, z: clipZ }),
+                  picture({
+                    id: 'clip-2',
+                    jobId: GRAY_JOB,
+                    src: paths[gray] ?? gray,
+                    duration: 2000,
+                    track: 1,
+                    z: grayZ,
+                  }),
+                ],
+              },
+              (library as ComponentLibrary).catalog,
+            ),
+        },
+        { signal: new AbortController().signal, onProgress: () => {} },
+      )
+      try {
+        return await frameAt(rendered.file, 1)
+      } finally {
+        await rendered.cleanup()
+      }
+    }
+    const clipOnTop = await frameWith('stack-clip', 2, 1)
+    const grayOnTop = await frameWith('stack-gray', 1, 2)
+    const sameOrder = await frameWith('stack-same', 0, 0)
+
+    const grayFrame = Buffer.alloc(clipOnTop.length, 0x20)
+    expect(meanDifference(clipOnTop, grayFrame)).toBeGreaterThan(30)
+    expect(meanDifference(grayOnTop, grayFrame)).toBeLessThan(6)
+    expect(meanDifference(sameOrder, grayFrame)).toBeLessThan(6)
+  }, 900_000)
 })

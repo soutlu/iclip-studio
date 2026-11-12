@@ -34,7 +34,7 @@ import {
   type GapClosing,
   type Timing,
 } from './block-edit'
-import type { PictureBlock } from './composition/film'
+import { MAX_FILM_MS, type PictureBlock } from './composition/film'
 import { rowsOf, type Landing } from './placement'
 import {
   msToPx,
@@ -45,7 +45,10 @@ import {
   type TimelineScale,
 } from './timeline-scale'
 
-export type TimelinePoint = { track: number; timeMs: number }
+/** 块要去的行：已有的行给行号，`'new'` 是最下面那条空行（落下去新开一行）。 */
+export type RowTarget = number | 'new'
+
+export type TimelinePoint = { track: RowTarget; timeMs: number }
 
 export type TimelineHandle = {
   /** 屏幕上的这个点在哪一行、对应成片的第几毫秒；不在任何一行上时是 null。 */
@@ -69,6 +72,8 @@ type FilmTimelineProps = {
   sourceMs: (src: string) => number | undefined
   onSelect: (id: string | null) => void
   onRetime: (id: string, timing: Timing) => void
+  /** 把块换到另一行（或最下面的空行）的 `start` 处。 */
+  onMove: (id: string, row: RowTarget, start: number) => void
   /** 把几个块各自挪到新的起点（合拢空档用）。 */
   onRestart: (starts: ReadonlyMap<string, number>) => void
   onRemove: (id: string) => void
@@ -94,10 +99,16 @@ type Gesture = {
   pointerId: number
   kind: 'move' | Edge
   originX: number
+  originY: number
   /** 按下的地方离块的开头多远（毫秒），挪的时候块跟着指针走而不是跳到指针处。 */
   grabMs: number
   timing: Timing | null
+  /** 挪的时候指针在哪一行上：行号，或者最下面那条空行。 */
+  row: RowTarget | null
 }
+
+/** 拖动中的块按这个画：时间、正在拖的是哪一部分、比原来的行往下偏了多少像素。 */
+type Preview = { timing: Timing; kind: Gesture['kind']; offsetY: number }
 
 type TimelineBlockProps = {
   block: PictureBlock
@@ -114,10 +125,15 @@ type TimelineBlockProps = {
   onGuide: (ms: number | null) => void
   onSelect: (id: string | null) => void
   onRetime: (id: string, timing: Timing) => void
+  /** 把块换到另一行的 `start` 处。 */
+  onMove: (id: string, row: RowTarget, start: number) => void
   onRemove: (id: string) => void
 }
 
-/** 时间线上的一个块：点一下选中，拖着在这一行里挪，选中后拖两端的把手裁剪；松手才写进成片。 */
+/**
+ * 时间线上的一个块：点一下选中，拖着挪动（在这一行里，或者拖到别的行、最下面的空行上），
+ * 选中后拖两端的把手裁剪；松手才写进成片。
+ */
 function TimelineBlock({
   block,
   pictures,
@@ -131,11 +147,12 @@ function TimelineBlock({
   onGuide,
   onSelect,
   onRetime,
+  onMove,
   onRemove,
 }: TimelineBlockProps) {
   const gestureRef = useRef<Gesture | null>(null)
   const clickAfterDrag = useClickAfterDrag()
-  const [preview, setPreview] = useState<{ timing: Timing; kind: Gesture['kind'] }>()
+  const [preview, setPreview] = useState<Preview>()
   const timing = preview?.timing ?? block
   const name = `${block.label}，${seconds(timing.duration)} 秒`
   const part = {
@@ -157,8 +174,10 @@ function TimelineBlock({
       pointerId: event.pointerId,
       kind,
       originX: event.clientX,
+      originY: event.clientY,
       grabMs: box === undefined ? 0 : pxToMs(event.clientX - box.left, pps),
       timing: null,
+      row: null,
     }
   }
 
@@ -169,8 +188,12 @@ function TimelineBlock({
   const drag = (event: PointerEvent<HTMLElement>) => {
     const gesture = gestureRef.current
     if (gesture === null || gesture.pointerId !== event.pointerId) return
-    if (gesture.timing === null && Math.abs(event.clientX - gesture.originX) <= DRAG_THRESHOLD)
-      return
+    // 挪动可以往上下拖去别的行；裁剪只看左右
+    const moved =
+      gesture.kind === 'move'
+        ? Math.hypot(event.clientX - gesture.originX, event.clientY - gesture.originY)
+        : Math.abs(event.clientX - gesture.originX)
+    if (gesture.timing === null && moved <= DRAG_THRESHOLD) return
     const at = timeAt(event.clientX)
     const { kind } = gesture
     // 开着吸附时：别的块的两端和播放头是能吸上去的点
@@ -180,14 +203,36 @@ function TimelineBlock({
           playheadMs,
         )
       : null
+    let offsetY = 0
     if (kind === 'move') {
       const wanted = Math.max(0, at - gesture.grabMs)
       const snapped =
         targets === null
           ? { ms: wanted, guideMs: null }
           : snapSpanStartMs(wanted, block.duration, targets, pps)
-      const start = movedStart(block, pictures, snapped.ms)
+      // 指针在哪一行上，块就去哪一行；不在任何一行上就留在原来的行
+      const lanes = [...(contentRef.current?.querySelectorAll<HTMLElement>('[data-track]') ?? [])]
+      const own = lanes.find((lane) => lane.dataset['track'] === String(block.track))
+      const hit =
+        lanes.find((lane) => {
+          const { top, bottom } = lane.getBoundingClientRect()
+          return event.clientY >= top - ROW_REACH_PX && event.clientY <= bottom + ROW_REACH_PX
+        }) ?? own
+      const row: RowTarget =
+        hit === undefined || hit === own
+          ? block.track
+          : hit.dataset['track'] === 'new'
+            ? 'new'
+            : Number(hit.dataset['track'])
+      if (hit !== undefined && own !== undefined)
+        offsetY = hit.getBoundingClientRect().top - own.getBoundingClientRect().top
+      // 新开的一行上没有别的块，放在哪里都不会重叠
+      const start =
+        row === 'new'
+          ? Math.min(snapped.ms, MAX_FILM_MS - block.duration)
+          : movedStart(block, pictures, snapped.ms, row)
       gesture.timing = { start, duration: block.duration, mediaStart: block.mediaStart }
+      gesture.row = row
       // 吸上去的位置被别的块占了、又挪开了，就不画吸附线
       onGuide(start === snapped.ms ? snapped.guideMs : null)
     } else {
@@ -197,7 +242,7 @@ function TimelineBlock({
       const edgeMs = kind === 'start' ? next.start : next.start + next.duration
       onGuide(edgeMs === snapped.ms ? snapped.guideMs : null)
     }
-    setPreview({ timing: gesture.timing, kind })
+    setPreview({ timing: gesture.timing, kind, offsetY })
   }
 
   const release = (event: PointerEvent<HTMLElement>) => {
@@ -210,7 +255,9 @@ function TimelineBlock({
     if (gesture.timing === null) return
     // 拖完松手也会来一次点击，那一次不算选中
     clickAfterDrag.swallow()
-    if (!sameTiming(gesture.timing, block)) onRetime(block.id, gesture.timing)
+    if (gesture.row !== null && gesture.row !== block.track)
+      onMove(block.id, gesture.row, gesture.timing.start)
+    else if (!sameTiming(gesture.timing, block)) onRetime(block.id, gesture.timing)
   }
 
   const cancel = () => {
@@ -237,10 +284,11 @@ function TimelineBlock({
   return (
     <div
       aria-label={name}
-      className={cn('wf-clip', selected && 'is-selected')}
+      className={cn('wf-clip', selected && 'is-selected', preview?.kind === 'move' && 'is-lifted')}
       data-block-id={block.id}
       role="group"
       style={{
+        translate: preview === undefined ? undefined : `0 ${preview.offsetY}px`,
         left: msToPx(timing.start, pps),
         width: Math.max(2, msToPx(timing.duration, pps) - 2),
       }}
@@ -317,6 +365,7 @@ export function FilmTimeline({
   sourceMs,
   onSelect,
   onRetime,
+  onMove,
   onRestart,
   onRemove,
   onSeek,
@@ -362,7 +411,11 @@ export function FilmTimeline({
           return clientY >= top - ROW_REACH_PX && clientY <= bottom + ROW_REACH_PX
         })
         if (lane === undefined) return null
-        return { track: Number(lane.dataset['track']), timeMs: Math.max(0, timeAt(clientX)) }
+        const track = lane.dataset['track']
+        return {
+          track: track === 'new' ? 'new' : Number(track),
+          timeMs: Math.max(0, timeAt(clientX)),
+        }
       },
     }
     return () => {
@@ -426,6 +479,7 @@ export function FilmTimeline({
                         contentRef={contentRef}
                         key={block.id}
                         onGuide={setBlockGuideMs}
+                        onMove={onMove}
                         onRemove={onRemove}
                         onRetime={onRetime}
                         onSelect={onSelect}
@@ -474,6 +528,23 @@ export function FilmTimeline({
                 </ContextMenuSurface>
               </ContextMenuRoot>
             ))}
+            {pictures.length === 0 ? null : (
+              <div aria-label="新的一行" className="wf-lane is-new" data-track="new" role="group">
+                {ghost !== null && !rows.some((row) => row.track === ghost.track) ? (
+                  <span
+                    aria-hidden="true"
+                    className="wf-drop-ghost"
+                    data-testid="drop-ghost"
+                    style={{
+                      left: msToPx(ghost.start, pps),
+                      width: Math.max(2, msToPx(ghost.duration, pps) - 2),
+                    }}
+                  />
+                ) : (
+                  <span className="wf-lane-hint">拖到这里，新开一行</span>
+                )}
+              </div>
+            )}
           </div>
           {guideMs === null ? null : (
             <span

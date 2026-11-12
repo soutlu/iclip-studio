@@ -18,7 +18,12 @@ export interface Canvas {
   height: number
 }
 
-/** 画面块：一段素材片。时间都是毫秒；`src` 是素材片记录上的地址。 */
+/**
+ * 画面块：一段素材片。时间都是毫秒；`src` 是素材片记录上的地址。
+ *
+ * `track` 是它在时间线的第几行，只管显示。两个块同时出现时谁盖住谁看 `z`（叠放顺序）：
+ * 大的在上面，一样大时文件里写在后面的在上面。`z` 是 0 时文件里不写。
+ */
 export interface PictureBlock {
   id: string
   label: string
@@ -29,6 +34,7 @@ export interface PictureBlock {
   mediaStart: number
   track: number
   volume: number
+  z: number
 }
 
 export interface FilmVariable {
@@ -62,8 +68,10 @@ export function filmVariables(film: Film): FilmVariable[] {
 
 export function pictureBlock(block: PictureBlock): string {
   const id = escapeAttribute(block.id)
+  // 块上唯一能带的样式是叠放顺序，写法和 SDK 存出来的一样
+  const style = block.z > 0 ? ` style="z-index: ${block.z}"` : ''
   return (
-    `<video id="${id}" data-hf-id="${id}" class="${PICTURE_CLASS}"` +
+    `<video${style} id="${id}" data-hf-id="${id}" class="${PICTURE_CLASS}"` +
     ` data-label="${escapeAttribute(block.label)}" src="${escapeAttribute(block.src)}"` +
     ` data-var-src="${escapeAttribute(sourceVariableId(block.jobId))}"` +
     ` data-start="${seconds(block.start)}" data-duration="${seconds(block.duration)}"` +
@@ -74,10 +82,14 @@ export function pictureBlock(block: PictureBlock): string {
 
 const SECONDS = /^\d+(\.\d+)?$/
 
-/** 从块的属性读回画面块；不是 `pictureBlock` 写出来的那种块时返回 undefined。 */
+/**
+ * 从块的属性读回画面块；不是 `pictureBlock` 写出来的那种块时返回 undefined。
+ * `zIndex` 是块的行内样式里的叠放顺序（SDK 的元素快照把样式和属性分开给）。
+ */
 export function pictureFromAttributes(
   id: string,
   attributes: Readonly<Record<string, string>>,
+  zIndex?: string,
 ): PictureBlock | undefined {
   const jobId = attributes['data-var-src']?.replace(/^src-/, '')
   const { src } = attributes
@@ -104,6 +116,7 @@ export function pictureFromAttributes(
     mediaStart,
     track: Number(attributes['data-track-index'] ?? 0),
     volume: Number(attributes['data-volume'] ?? 1),
+    z: zIndex === undefined || !/^\d+$/.test(zIndex) ? 0 : Number(zIndex),
   }
 }
 

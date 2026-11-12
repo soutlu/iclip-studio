@@ -413,13 +413,14 @@ test('把镜头拖进时间线：落在指针的位置；压在别的块上时�
   const range = groupOf(materials, 1).getByRole('group', { name: /^选中的范围/ })
   const lane = await row.boundingBox()
   if (lane === null) throw new Error('时间线尚未布局')
-  const laneY = lane.y + lane.height / 2
+  // 有了块以后下面多出一条空行，这一行会往上挪：每次拖之前重新量它在哪
   const carryTo = async (x: number) => {
     const from = await centerOf(range)
+    const { y } = await centerOf(row)
     await page.mouse.move(from.x, from.y)
     await page.mouse.down()
     await page.mouse.move(from.x + 10, from.y - 10, { steps: 3 })
-    await page.mouse.move(x, laneY, { steps: 8 })
+    await page.mouse.move(x, y, { steps: 8 })
   }
   const blockBox = async (at: number) => {
     const box = await row.locator('[data-block-id]').nth(at).boundingBox()
@@ -563,4 +564,57 @@ test('吸附：拖到别的块旁边会贴上去并画出吸附线，关掉就�
   // 没有空档了：再点右键不出菜单
   await page.mouse.click(gapX + 200, rowBox.y + rowBox.height / 2, { button: 'right' })
   await expect(page.getByRole('menu')).toHaveCount(0)
+})
+
+test('换行：把块拖到最下面的空行新开一行，再拖回去；镜头也能直接拖进新的一行', async ({ page }) => {
+  const { dialog, materials } = await openWith(page, [1])
+  const firstRow = dialog.getByRole('group', { name: '第 1 行' })
+  const secondRow = dialog.getByRole('group', { name: '第 2 行' })
+  const newRow = dialog.getByRole('group', { name: '新的一行' })
+  for (const [at, shot] of [1, 3].entries()) {
+    await shotOf(materials, 1, 'A', shot).click()
+    await page.keyboard.press('Enter')
+    await expect.poll(() => savedBlocks(page)).toHaveLength(at + 1)
+  }
+  await readyPlayer(dialog)
+  /** 存下来的成片里每个块在第几行，按文件里的先后。 */
+  const savedRows = () =>
+    page.evaluate(async (conversationId) => {
+      const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
+      const { html } = (await response.json()) as { html: string | null }
+      return [...(html ?? '').matchAll(/<video [^>]*data-track-index="(\d+)"/g)].map(([, track]) =>
+        Number(track),
+      )
+    }, conversationIdOf(page))
+  const middleY = async (locator: Locator) => (await centerOf(locator)).y
+  const dragTo = async (from: Locator, y: number) => {
+    const { x, y: fromY } = await centerOf(from)
+    await page.mouse.move(x, fromY)
+    await page.mouse.down()
+    await page.mouse.move(x, y, { steps: 8 })
+    await page.mouse.up()
+  }
+
+  await expect(secondRow).toHaveCount(0)
+  await dragTo(firstRow.locator('[data-block-id]').nth(1), await middleY(newRow))
+  await expect.poll(savedRows).toEqual([0, 1])
+  await expect(secondRow.locator('[data-block-id]')).toHaveCount(1)
+  await expect(firstRow.locator('[data-block-id]')).toHaveCount(1)
+
+  await dragTo(secondRow.locator('[data-block-id]'), await middleY(firstRow))
+  await expect.poll(savedRows).toEqual([0, 0])
+  await expect(secondRow).toHaveCount(0)
+
+  await shotOf(materials, 1, 'A', 4).click()
+  const range = groupOf(materials, 1).getByRole('group', { name: /^选中的范围/ })
+  const from = await centerOf(range)
+  const target = await centerOf(newRow)
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 10, from.y - 10, { steps: 3 })
+  await page.mouse.move(target.x, target.y, { steps: 8 })
+  await expect(newRow.getByTestId('drop-ghost')).toBeVisible()
+  await page.mouse.up()
+  await expect.poll(async () => (await savedRows()).toSorted()).toEqual([0, 0, 1])
+  await expect(secondRow.locator('[data-block-id]')).toHaveCount(1)
 })

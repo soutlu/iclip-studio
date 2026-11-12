@@ -16,6 +16,7 @@ import {
   type PictureBlock,
 } from './composition/film'
 import type { Landing } from './placement'
+import { insertionOf } from './stacking'
 import { readWholeFilmDraft, saveWholeFilmDraft } from './whole-film.api'
 
 export type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'failed'; message: string }
@@ -42,14 +43,24 @@ export const FILM_LIMIT_TEXT = '成片最长 2 分钟，这段放不下了'
 
 const PICTURE_TRACK = 0
 
-const viewOf = (engine: Composition): FilmView => {
-  const elements = engine.getElements()
-  const root = elements.find((element) => element.id === FILM_ID)
-  const pictures = elements.flatMap((element) => {
+/** 成片里的画面块，按它们在文件里的先后。只读块，不存出文件，一批操作中间也能用。 */
+const picturesOf = (engine: Composition): PictureBlock[] =>
+  engine.getElements().flatMap((element) => {
     if (!element.classNames.includes('picture')) return []
-    const block = pictureFromAttributes(element.id, element.attributes)
+    const block = pictureFromAttributes(
+      element.id,
+      element.attributes,
+      element.inlineStyles['zIndex'],
+    )
     return block === undefined ? [] : [block]
   })
+
+const durationOf = (pictures: readonly PictureBlock[]) =>
+  Math.max(0, ...pictures.map((block) => block.start + block.duration))
+
+const viewOf = (engine: Composition): FilmView => {
+  const root = engine.getElements().find((element) => element.id === FILM_ID)
+  const pictures = picturesOf(engine)
   return {
     html: engine.serialize(),
     canvas: {
@@ -57,7 +68,7 @@ const viewOf = (engine: Composition): FilmView => {
       height: Number(root?.attributes['data-height'] ?? 0),
     },
     pictures,
-    durationMs: Math.max(0, ...pictures.map((block) => block.start + block.duration)),
+    durationMs: durationOf(pictures),
     canUndo: engine.canUndo(),
     canRedo: engine.canRedo(),
   }
@@ -221,23 +232,22 @@ export function useFilmSession(
         return false
       }
       const declared = new Set(engine.listVariables().map((variable) => variable.id))
+      // 文件里现在的先后；每加一个块就按它写进去的位置插进来，下一个块照着新的先后算
+      const written = [...current.pictures]
       engine.batch(() => {
-        pictures.forEach((picture, offset) => {
+        for (const picture of pictures) {
           const variable = sourceVariable(picture.jobId, picture.src)
           if (!declared.has(variable.id)) {
             engine.declareVariable(variable)
             declared.add(variable.id)
           }
-          const block = {
-            ...picture,
-            id: newBlockId(),
-            start: end,
-            track,
-            volume: 1,
-          }
-          engine.addElement(FILM_ID, current.pictures.length + offset, pictureBlock(block))
+          const placed = { ...picture, id: newBlockId(), start: end, track, volume: 1, z: 0 }
+          const { index, z } = insertionOf(written, placed)
+          const block = { ...placed, z }
+          engine.addElement(FILM_ID, index, pictureBlock(block))
+          written.splice(index, 0, block)
           end += picture.duration
-        })
+        }
         engine.dispatch({
           type: 'setCompositionMetadata',
           duration: Math.max(current.durationMs, end) / 1000,
@@ -258,7 +268,7 @@ export function useFilmSession(
         change(engine)
         engine.dispatch({
           type: 'setCompositionMetadata',
-          duration: viewOf(engine).durationMs / 1000,
+          duration: durationOf(picturesOf(engine)) / 1000,
         })
       })
       show(engine)
@@ -276,6 +286,27 @@ export function useFilmSession(
     [edit],
   )
 
+  /**
+   * 把一个块换到另一行的某个时间。谁盖住谁要跟着行走（上面的行盖住下面的行），别的块又不能动，
+   * 所以是把它从文件里取出来，再像新加的块那样按新位置写回去。
+   */
+  const moveBlock = useCallback(
+    (id: string, at: Landing) =>
+      edit((engine) => {
+        const pictures = picturesOf(engine)
+        const block = pictures.find((other) => other.id === id)
+        if (block === undefined) return
+        const placed = { ...block, track: at.track, start: at.start }
+        const { index, z } = insertionOf(
+          pictures.filter((other) => other.id !== id),
+          placed,
+        )
+        engine.removeElement(id)
+        engine.addElement(FILM_ID, index, pictureBlock({ ...placed, z }))
+      }),
+    [edit],
+  )
+
   /** 把几个块各自挪到新的起点，一起算一步撤销。 */
   const restart = useCallback(
     (starts: ReadonlyMap<string, number>) =>
@@ -289,7 +320,7 @@ export function useFilmSession(
   const removeBlocks = useCallback(
     (ids: readonly string[], ripple: boolean) =>
       edit((engine) => {
-        const before = viewOf(engine).pictures
+        const before = picturesOf(engine)
         const gone = new Set(ids)
         for (const id of gone) engine.removeElement(id)
         if (ripple)
@@ -318,6 +349,7 @@ export function useFilmSession(
     opening,
     addPictures,
     retime,
+    moveBlock,
     restart,
     removeBlocks,
     undo: () => step('undo'),

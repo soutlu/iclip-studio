@@ -62,15 +62,19 @@ export const trimmed = (
   return { start: at, duration: block.duration - delta, mediaStart: block.mediaStart + delta }
 }
 
-/** 把块在它这一行里挪到 `startMs` 附近：不和同一行的块重叠，也不超出成片最长的长度。 */
+/**
+ * 把块挪到 `track` 这一行（不给就是它现在这一行）的 `startMs` 附近：
+ * 不和那一行的块重叠，也不超出成片最长的长度。
+ */
 export const movedStart = (
   block: PictureBlock,
   pictures: readonly PictureBlock[],
   startMs: number,
+  track = block.track,
 ): number =>
   landingOn(
     pictures.filter((other) => other.id !== block.id),
-    block.track,
+    track,
     Math.min(startMs, MAX_FILM_MS - block.duration),
     block.duration,
   ).start

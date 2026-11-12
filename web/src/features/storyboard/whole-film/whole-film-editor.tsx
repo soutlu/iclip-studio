@@ -234,6 +234,8 @@ function EditorBody({
   const selected = pictures.find((block) => block.id === selectedId)
   const [ripple, setRipple] = useState(true)
   const [snap, setSnap] = useState(true)
+  // 落在最下面那条空行上时新开的一行：排在现有的行后面
+  const newTrack = Math.max(-1, ...pictures.map((block) => block.track)) + 1
   /** 拖着的素材会落在哪：开着吸附时先吸到别的块的两端或播放头上，再避开同一行的块。 */
   const landingAt = (clientX: number, clientY: number, dragged: MaterialRange) => {
     const point = timelineRef.current?.locate(clientX, clientY) ?? null
@@ -242,7 +244,12 @@ function EditorBody({
     const snapped = snap
       ? snapSpanStartMs(point.timeMs, duration, snapTargets(pictures, playhead), scale.pps)
       : { ms: point.timeMs, guideMs: null }
-    const landing = landingOn(pictures, point.track, snapped.ms, duration)
+    const landing = landingOn(
+      pictures,
+      point.track === 'new' ? newTrack : point.track,
+      snapped.ms,
+      duration,
+    )
     return {
       ...landing,
       duration,
@@ -437,6 +444,10 @@ function EditorBody({
             pictures={pictures}
             playheadMs={playhead}
             scale={scale}
+            onMove={(id, row, start) => {
+              leaveMaterial()
+              session.moveBlock(id, { track: row === 'new' ? newTrack : row, start })
+            }}
             onRestart={(starts) => {
               leaveMaterial()
               session.restart(starts)
