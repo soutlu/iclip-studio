@@ -314,6 +314,46 @@ describe('useFilmSession', () => {
     ])
   })
 
+  const hiddenIds = (result: Session) =>
+    result.current.film?.pictures.filter((block) => block.hidden).map((block) => block.id)
+
+  it('把几个块一起隐藏：算一步撤销，存出的文件带着隐藏标记，成片总长不变；再显示回来标记去掉', async () => {
+    const saves = recordSaves()
+    const { result } = await openThree()
+    act(() => result.current.setHidden(['a', 'b'], true))
+    expect(hiddenIds(result)).toEqual(['a', 'b'])
+    expect(result.current.film?.durationMs).toBe(4_500)
+    await waitFor(() => expect(saves).toHaveLength(1))
+    expect(saves[0]?.html.match(/<video data-hidden=""/g)).toHaveLength(2)
+    await settled(result)
+
+    act(() => result.current.undo())
+    expect(hiddenIds(result)).toEqual([])
+    expect(result.current.film?.canUndo).toBe(false)
+    act(() => result.current.redo())
+    expect(hiddenIds(result)).toEqual(['a', 'b'])
+
+    act(() => result.current.setHidden(['a', 'b'], false))
+    expect(hiddenIds(result)).toEqual([])
+    expect(result.current.film?.html).not.toContain('data-hidden')
+  })
+
+  it('显示还是隐藏跟着行走：放进隐藏着的行的镜头也隐藏，换到显示着的行就显示回来', async () => {
+    const { result } = await openThree()
+    act(() => result.current.moveBlock('c', { track: 1, start: 0 }))
+    act(() => result.current.setHidden(['c'], true))
+    await act(() =>
+      result.current.addPictures(CANVAS, [piece({ duration: 1_000 })], { track: 1, start: 5_000 }),
+    )
+    const added = result.current.film?.pictures.find((block) => block.start === 5_000)
+    expect(added?.hidden).toBe(true)
+
+    act(() => result.current.moveBlock('c', { track: 0, start: 3_000 }))
+    expect(hiddenIds(result)).toEqual([added?.id])
+    act(() => result.current.moveBlock('a', { track: 1, start: 0 }))
+    expect(hiddenIds(result)?.toSorted()).toEqual([added?.id, 'a'].toSorted())
+  })
+
   it('把块全删掉：成片还在，只是没有画面', async () => {
     const { result } = await openThree()
     act(() => result.current.removeBlocks(['a', 'b', 'c'], true))

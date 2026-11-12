@@ -270,6 +270,28 @@ describe('成片编辑器 · 时间线', () => {
     expect(screen.queryByLabelText(/个块$/)).toBeNull()
   })
 
+  it('点行头的眼睛：这一行的块一起隐藏，存出的文件带着隐藏标记；再点显示回来', async () => {
+    putMockWholeFilmDraft(CONVERSATION, twoPictures())
+    const user = userEvent.setup()
+    await openEditor()
+    await user.click(screen.getByRole('button', { name: '隐藏第 1 行' }))
+    expect(
+      within(timeline())
+        .getAllByRole('group')
+        .map((block) => block.getAttribute('aria-label')),
+    ).toEqual(['A · 镜头 1，2.0 秒，已隐藏', 'A · 镜头 1，1.5 秒，已隐藏'])
+    await waitSaved(() => expect(savedFilm().match(/data-hidden=""/g)).toHaveLength(2))
+
+    const eye = screen.getByRole('button', { name: '显示第 1 行' })
+    expect(eye).toHaveAttribute('aria-pressed', 'false')
+    await user.click(eye)
+    await waitSaved(() => expect(savedFilm()).not.toContain('data-hidden'))
+    expect(screen.getByRole('button', { name: '隐藏第 1 行' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
   const block = (name: RegExp) => within(timeline()).getByRole('button', { name })
 
   it('点一个块选中它，按 Delete 删掉：开着波纹编辑，后面的块往前补上，成片变短', async () => {

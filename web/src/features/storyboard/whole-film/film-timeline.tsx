@@ -8,6 +8,7 @@ import {
   type PointerEvent,
   type RefObject,
 } from 'react'
+import { Icon } from '@/shared/icons'
 import type { TimeSpan } from '@/shared/lib/time-spans'
 import { cn } from '@/shared/lib/utils'
 import { useAudioPeaks, type PeaksState } from '../editing/media-analysis'
@@ -35,7 +36,7 @@ import {
   type Timing,
 } from './block-edit'
 import { MAX_FILM_MS, type PictureBlock } from './composition/film'
-import { rowsOf, type Landing } from './placement'
+import { rowHidden, rowsOf, type Landing } from './placement'
 import {
   msToPx,
   pxToMs,
@@ -79,6 +80,8 @@ type FilmTimelineProps = {
   /** 把几个块各自挪到新的起点（合拢空档用）。 */
   onRestart: (starts: ReadonlyMap<string, number>) => void
   onRemove: (id: string) => void
+  /** 把 `track` 这一行的块一起隐藏（`hidden` 为真）或显示回来。 */
+  onHide: (track: number, hidden: boolean) => void
   onSeek: (ms: number) => void
   onViewportWidth: (width: number) => void
   handleRef: RefObject<TimelineHandle | null>
@@ -156,7 +159,7 @@ function TimelineBlock({
   const clickAfterDrag = useClickAfterDrag()
   const [preview, setPreview] = useState<Preview>()
   const timing = preview?.timing ?? block
-  const name = `${block.label}，${seconds(timing.duration)} 秒`
+  const name = `${block.label}，${seconds(timing.duration)} 秒${block.hidden ? '，已隐藏' : ''}`
   const part = {
     mediaUrl: block.src,
     start: timing.mediaStart / 1000,
@@ -286,7 +289,12 @@ function TimelineBlock({
   return (
     <div
       aria-label={name}
-      className={cn('wf-clip', selected && 'is-selected', preview?.kind === 'move' && 'is-lifted')}
+      className={cn(
+        'wf-clip',
+        selected && 'is-selected',
+        block.hidden && 'is-hidden',
+        preview?.kind === 'move' && 'is-lifted',
+      )}
       data-block-id={block.id}
       role="group"
       style={{
@@ -354,6 +362,30 @@ function TimelineBlock({
   )
 }
 
+/** 行头的眼睛：把这一行的块一起隐藏或显示回来。`row` 是界面上的第几行。 */
+function RowEye({
+  row,
+  hidden,
+  onHide,
+}: {
+  row: number
+  hidden: boolean
+  onHide: (hidden: boolean) => void
+}) {
+  return (
+    <button
+      aria-label={hidden ? `显示第 ${row} 行` : `隐藏第 ${row} 行`}
+      aria-pressed={!hidden}
+      className="wf-head-eye ui-state ui-focus"
+      onClick={() => onHide(!hidden)}
+      title={hidden ? '显示这一行' : '隐藏这一行'}
+      type="button"
+    >
+      <Icon decorative name={hidden ? 'excluded' : 'included'} size="sm" />
+    </button>
+  )
+}
+
 /** 时间线：成片里的块按行排开，可以选中、在一行里挪动、裁两端；上面是时间尺和播放头。 */
 export function FilmTimeline({
   pictures,
@@ -371,6 +403,7 @@ export function FilmTimeline({
   onMove,
   onRestart,
   onRemove,
+  onHide,
   onSeek,
   onViewportWidth,
   handleRef,
@@ -441,13 +474,20 @@ export function FilmTimeline({
   return (
     <div className={cn('wf-tracks', !thumbnails && 'is-plain')}>
       <div className="wf-track-heads">
-        {shown.map(({ track, blocks }) => (
+        {shown.map(({ track, blocks }, at) => (
           <span className="wf-track-head" key={track}>
             <span className="wf-head-name">{blocks[0]?.label}</span>
             {blocks.length > 1 ? (
               <span aria-label={`${blocks.length} 个块`} className="wf-head-count">
                 {blocks.length}
               </span>
+            ) : null}
+            {blocks.length > 0 ? (
+              <RowEye
+                hidden={rowHidden(pictures, track)}
+                onHide={(hidden) => onHide(track, hidden)}
+                row={at + 1}
+              />
             ) : null}
           </span>
         ))}

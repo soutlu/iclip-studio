@@ -23,6 +23,7 @@ const picture = (overrides: Partial<PictureBlock> = {}): PictureBlock => ({
   track: 0,
   volume: 1,
   z: 0,
+  hidden: false,
   ...overrides,
 })
 
@@ -64,6 +65,17 @@ describe('checkFilm', () => {
     const checked = await checkFilm(written, catalog)
     expect(checked.film).toEqual(film(below, above))
     expect(checked.html).toBe(written)
+  })
+
+  it('隐藏的块：隐藏标记读回来，重写后一字不差，时长照算；没隐藏时文件里不写', async () => {
+    const hidden = second({ hidden: true, z: 2 })
+    const written = html(picture(), hidden)
+    expect(written).toContain('<video data-hidden="" style="z-index: 2" id="clip-2"')
+    expect(written).toContain('<video id="clip-1"')
+    const checked = await checkFilm(written, catalog)
+    expect(checked.film).toEqual(film(picture(), hidden))
+    expect(checked.html).toBe(written)
+    expect(checked.durationMs).toBe(5000)
   })
 
   it('还没有块的成片也能通过', async () => {
@@ -225,6 +237,17 @@ describe('checkFilm', () => {
       )
     })
 
+    it('隐藏一个块再显示回来（SDK 加、去隐藏标记）：隐藏时读回来带着标记，显示回来和原来一字不差', async () => {
+      const stored = (await checkFilm(html(picture(), second()), catalog)).html
+      const session = await openComposition(stored)
+      session.setAttribute('clip-2', 'data-hidden', '')
+      expect((await checkFilm(session.serialize(), catalog)).film).toEqual(
+        film(picture(), second({ hidden: true })),
+      )
+      session.setAttribute('clip-2', 'data-hidden', null)
+      expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
+    })
+
     it('把块全删掉：剩下一份没有画面的成片，照样通过', async () => {
       const session = await openComposition(html(picture()))
       session.batch(() => {
@@ -307,6 +330,11 @@ describe('readFilm 拒收写法之外的东西', () => {
       '叠放顺序太大',
       (source) => source.replace('<video id="clip-1"', '<video style="z-index: 10000" id="clip-1"'),
       /叠放顺序/,
+    ],
+    [
+      '隐藏标记带了值',
+      (source) => source.replace('<video id="clip-1"', '<video data-hidden="false" id="clip-1"'),
+      /data-hidden/,
     ],
     ['带时间线脚本的根', (source) => source.replace(' data-no-timeline', ''), /data-no-timeline/],
   ]

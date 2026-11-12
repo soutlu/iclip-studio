@@ -1262,6 +1262,24 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 行头最右边的眼睛：隐藏或显示这一行 */
+.wf-head-eye {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  border-radius: var(--radius-full);
+  color: var(--color-on-surface-muted);
+}
+
+/* 隐藏的块留在时间线上，内容画淡一些；选中框和把手不变淡 */
+.wf-clip.is-hidden > .wf-block-body {
+  opacity: 0.4;
+}
+
 /* 四条轨头同一套几何：图标在同一列，轨名起点相同；尾部操作钮右缘离列边 6px */
 .wf-track-head {
   display: flex;

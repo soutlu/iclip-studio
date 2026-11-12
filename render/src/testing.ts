@@ -48,6 +48,7 @@ export function picture(overrides: Partial<PictureBlock> = {}): PictureBlock {
     track: 0,
     volume: 1,
     z: 0,
+    hidden: false,
     ...overrides,
   }
 }
