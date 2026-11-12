@@ -521,14 +521,6 @@ function EditorBody({
             scale={scale}
             onMove={(id, row, start) => {
               const { track, renumber } = trackFor(row, id)
-              const block = pictures.find((other) => other.id === id)
-              // 只有它一个块的行，拖到自己这一行的上下缝里：等于没动
-              if (
-                block?.track === track &&
-                block.start === start &&
-                (renumber === undefined || renumber.size === 0)
-              )
-                return
               leaveMaterial()
               session.moveBlock(id, { track, start }, renumber)
             }}

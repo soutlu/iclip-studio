@@ -819,7 +819,26 @@ test('在两行之间、最上面新开一行：块拖到两行中间的缝里�
   await expect.poll(savedTracks).toEqual(['A · 镜头 1@0', 'A · 镜头 3@1', 'A · 镜头 4@2'])
   await expect(row(3).locator('[data-block-id]')).toHaveCount(1)
 
-  // 镜头拖到第一行上面：新开的一行排在最上面，别的行都往后排一号
+  // 独占一行的块在自己这一行上面的缝里横着挪：还是这一行，不让出空行，隐藏着的也照旧隐藏
+  await dialog.getByRole('button', { name: '隐藏第 2 行' }).click()
+  const lone = row(2).locator('[data-block-id]')
+  await expect(lone).toHaveAccessibleName(/已隐藏$/)
+  const before = (await savedBlocks(page)).find((saved) => saved.startsWith('A · 镜头 3'))
+  const grab = await centerOf(lone)
+  const upper = await boxOf(row(1))
+  const seam = (upper.y + upper.height + (await boxOf(row(2))).y) / 2
+  await page.mouse.move(grab.x, grab.y)
+  await page.mouse.down()
+  await page.mouse.move(grab.x + 160, seam, { steps: 8 })
+  await expect(opening).toHaveCount(0)
+  await page.mouse.up()
+  await expect
+    .poll(async () => (await savedBlocks(page)).find((saved) => saved.startsWith('A · 镜头 3')))
+    .not.toBe(before)
+  expect(await savedTracks()).toEqual(['A · 镜头 1@0', 'A · 镜头 3@1', 'A · 镜头 4@2'])
+  await expect(row(2).locator('[data-block-id]')).toHaveAccessibleName(/已隐藏$/)
+
+  // 镜头拖到第一行上面（指针停在时间尺上也算）：新开的一行排在最上面，别的行都往后排一号
   await shotOf(materials, 1, 'A', 2).click()
   const range = groupOf(materials, 1).getByRole('group', { name: /^选中的范围/ })
   const from = await centerOf(range)
@@ -827,7 +846,7 @@ test('在两行之间、最上面新开一行：块拖到两行中间的缝里�
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
   await page.mouse.move(from.x + 10, from.y - 10, { steps: 3 })
-  await page.mouse.move(top.x + 200, top.y - 2, { steps: 8 })
+  await page.mouse.move(top.x + 200, top.y - 12, { steps: 8 })
   await expect(opening.getByTestId('drop-ghost')).toBeVisible()
   await page.mouse.up()
   await expect

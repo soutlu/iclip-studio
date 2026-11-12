@@ -37,7 +37,7 @@ import {
   type Timing,
 } from './block-edit'
 import { MAX_FILM_MS, type PictureBlock } from './composition/film'
-import { rowHidden, rowsOf } from './placement'
+import { opensOwnRow, rowHidden, rowsOf } from './placement'
 import {
   msToPx,
   pxToMs,
@@ -249,7 +249,12 @@ function TimelineBlock({
           ? { ms: wanted, guideMs: null }
           : snapSpanStartMs(wanted, block.duration, targets, pps)
       // 指针在哪一行上，块就去哪一行；在两行之间就在那里新开一行；都不是就留在原来的行
-      const row = rowAt(event.clientY, true) ?? block.track
+      const aimed = rowAt(event.clientY, true) ?? block.track
+      // 独占一行的块拖到自己这一行上下的缝里：新开的还是这一行，就当在本行里挪
+      const row =
+        typeof aimed !== 'number' && opensOwnRow(pictures, aimed.insertAt, block.id)
+          ? block.track
+          : aimed
       // 新开的一行上没有别的块，放在哪里都不会重叠
       const start =
         typeof row === 'number'
@@ -474,11 +479,19 @@ export function FilmTimeline({
     const viewport = scrollRef.current
     const rulerBar = rulerBarRef.current
     if (viewport === null || rulerBar === null) return undefined
-    const bottom = viewport.getBoundingClientRect().top + viewport.clientTop + viewport.clientHeight
-    if (clientY < rulerBar.getBoundingClientRect().bottom || clientY > bottom) return undefined
+    const top = viewport.getBoundingClientRect().top + viewport.clientTop
+    if (clientY < top || clientY > top + viewport.clientHeight) return undefined
     const lanes = [...(contentRef.current?.querySelectorAll<HTMLElement>('.wf-lane') ?? [])].map(
       (lane) => ({ lane, box: lane.getBoundingClientRect() }),
     )
+    // 指针在时间尺上：第一行露着（没滚到时间尺底下）就算在最上面新开一行，不然哪一行都不算
+    const rulerBottom = rulerBar.getBoundingClientRect().bottom
+    if (clientY < rulerBottom) {
+      const first = lanes.find(({ lane }) => lane.dataset['track'] !== undefined)?.box
+      return rows.length > 0 && first !== undefined && first.top >= rulerBottom
+        ? { insertAt: 0 }
+        : undefined
+    }
     // 待新开的那一行（已经让出来的空行、最下面那条空行）：指针还在它上面就还是它
     const waiting = lanes.find(
       ({ lane, box }) =>

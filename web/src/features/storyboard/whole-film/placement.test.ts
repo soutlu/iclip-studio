@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { picture } from '@/testing/whole-film'
 import type { PictureBlock } from './composition/film'
-import { landingOn, rowOpening, rowsOf } from './placement'
+import { landingOn, opensOwnRow, rowOpening, rowsOf } from './placement'
 
 const first = picture({ id: 'a', start: 0, duration: 2_000 })
 const later = picture({ id: 'b', start: 5_000, duration: 1_000 })
@@ -92,5 +92,21 @@ describe('新开一行', () => {
 
   it('搬进新行的块原来那一行还有别的块：那一行照常算', () => {
     expect(opened(blocks, 1, 'b')).toEqual({ track: 1, renumber: [['c', 2]] })
+  })
+
+  it('独占一行的块在自己这一行的上面或下面新开一行：等于没换行；行号有空着的也按时间线上的位置算', () => {
+    expect([0, 1, 2].map((insertAt) => opensOwnRow(blocks, insertAt, 'c'))).toEqual([
+      false,
+      true,
+      true,
+    ])
+    // a 那一行还有 b：在它上面、下面新开一行都是真的换行
+    expect([0, 1].map((insertAt) => opensOwnRow(blocks, insertAt, 'a'))).toEqual([false, false])
+    const gapped = [picture({ id: 'a', track: 2 }), picture({ id: 'c', track: 7 })]
+    expect([0, 1, 2].map((insertAt) => opensOwnRow(gapped, insertAt, 'c'))).toEqual([
+      false,
+      true,
+      true,
+    ])
   })
 })

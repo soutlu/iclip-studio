@@ -50,6 +50,20 @@ export const rowOpening = (
   return { track, renumber }
 }
 
+/**
+ * 在第 `insertAt` 行的位置为 `movedId` 新开一行，是不是等于没换行：
+ * 它本来就独占一行，新开的位置又紧挨着这一行的上面或下面。
+ */
+export const opensOwnRow = (
+  pictures: readonly PictureBlock[],
+  insertAt: number,
+  movedId: string,
+): boolean => {
+  const rows = rowsOf(pictures)
+  const at = rows.findIndex((row) => row.blocks.some((block) => block.id === movedId))
+  return rows[at]?.blocks.length === 1 && (insertAt === at || insertAt === at + 1)
+}
+
 export type Landing = { track: number; start: number }
 
 /**
