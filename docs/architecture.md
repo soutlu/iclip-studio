@@ -15,7 +15,7 @@
 | **运行时服务**（端口 `7790`） | 运行时项目 Cue，按 `runtime.ref` 检出到 `runtime/`（`agent_runtime`） | 负责所有跟 Agent 相关的事：管理配置（技能库、模型供应商、MCP 服务、Agent 版本）、维护会话与消息队列、驱动大模型运行、推送聊天流（Transcript）、读写工作区文件、统计 Token 用量。数据存于 `agent_runtime` schema |
 | **视频插件包**（装入运行时镜像） | [plugins/video/](../plugins/video/pyproject.toml)（`iclip_video`） | 为 Agent 提供视频领域的专属工具集（如视频理解、视频拆解、生成分镜图、校验工程文件）。需要调用视频后端能力时，通过 HTTP 调用后端的内部接口 |
 | **视频后端**（端口 `7788`） | [server/](../server/pyproject.toml)（`iclip`） | 浏览器唯一访问的入口（BFF）：负责用户登录与权限校验、管理业务侧的对话列表、处理视频生成/参考视频拆解/资料库/成片草稿等业务逻辑。数据存于 `iclip` schema |
-| **成片渲染服务**（内网 `8080`） | [render/](../render/package.json)（Node.js） | 接收成片草稿，在无头浏览器中通过 HyperFrames 合成视频、特效、音乐与字幕，渲染成 MP4 并上传到对象存储 |
+| **成片渲染服务**（内网 `8080`） | [render/](../render/package.json)（Node.js） | 保存成片草稿时按写法检查并重写成片文件；导出时接收成片文件，在无头浏览器中渲染成 MP4 并上传到对象存储 |
 
 **依赖方向与隔离原则：**
 - **单向代码依赖**：`视频插件包` 的插件依赖 `运行时`（装插件包的可选依赖 `runtime`）；`运行时` 不依赖任何业务包。`视频后端` 只用 `视频插件包` 里的视频格式代码，不装可选依赖 `runtime`，生产环境不安装运行时：调运行时的客户端与接口形状由后端自己留一份（见[客户端库](#客户端库)），两边只通过 HTTP 通信。
@@ -102,8 +102,9 @@
 
 ### 成片渲染服务
 
-- **后端排队与调度（[generation/render.py](../server/src/iclip/domains/generation/render.py)）**：用户在前端点击导出成片后，对话模块会将当时的成片草稿、用到的视频与音乐地址以及最新字幕打包存为一条 `whole_film` 生成任务，放入异步队列的专属通道（lane）。队列任务通过内网 HTTP（`WHOLE_FILM_RENDER_URL`）将渲染任务和预签名的 OSS 上传地址发给渲染服务，并轮询进度（总超时与上传签名有效期均为 6 小时）。
-- **独立 Node 渲染服务（[render/](../render/package.json)）**：运行在内网（无鉴权），构建时直接把前端的成片合成代码（`web/src/features/storyboard/whole-film/composition/`）打包进来，并挂载与前端相同的成片组件库目录（`RENDER_REGISTRY_ROOT`）。收到任务后在内存队列中按先进先出顺序单任务执行：先把素材下载到本地临时目录 → 启动无头浏览器用 HyperFrames 按 30 fps 渲染出 MP4（期间拦截除素材白名单域名以外的一切外网请求）→ 通过预签名地址上传到 OSS。如果渲染服务重启，内存中正在进行的任务会丢失，后端轮询发现后会将其标记为 `RENDER_LOST` 失败，提示用户重新导出。
+- **保存时的检查（[app/whole_film_files.py](../server/src/iclip/app/whole_film_files.py)）**：成片文件的写法只有渲染服务读得懂。保存草稿与发起导出时，后端把文件交给渲染服务的 `POST /films/check`，拿回按写法重写后的文件、总时长和用到的素材（记录 id 与文件里写的地址），再自己核对这些素材是这段对话的素材片、地址和记录上的一致。文件会在打开它的人的页面里运行，所以这一步也是挡住脚本的安全边界。
+- **后端排队与调度（[generation/render.py](../server/src/iclip/domains/generation/render.py)）**：用户在前端点击导出成片后，对话模块把草稿的版本号和用到的素材存为一条 `whole_film` 生成任务，放入异步队列的专属通道（lane）。队列任务按版本号取草稿里的成片文件，通过内网 HTTP（`WHOLE_FILM_RENDER_URL`）把它连同「文件里的素材地址 → 下载地址」的对应表和预签名的 OSS 上传地址发给渲染服务，并轮询进度（总超时与上传签名有效期均为 6 小时）。
+- **独立 Node 渲染服务（[render/](../render/package.json)）**：运行在内网（无鉴权），构建时直接把前端的成片文件写法（`web/src/features/storyboard/whole-film/composition/`）打包进来，并挂载与前端相同的成片组件库目录（`RENDER_REGISTRY_ROOT`）。收到导出任务先再检查一遍文件，然后在内存队列中按先进先出顺序单任务执行：先把素材下载到本地临时目录、把文件里的素材地址换成本地路径 → 启动无头浏览器按 30 fps 渲染出 MP4（期间拦截除素材白名单域名以外的一切外网请求）→ 通过预签名地址上传到 OSS。如果渲染服务重启，内存中正在进行的任务会丢失，后端轮询发现后会将其标记为 `RENDER_LOST` 失败，提示用户重新导出。
 
 ### 后端的持久化与迁移
 

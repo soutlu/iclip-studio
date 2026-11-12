@@ -27,9 +27,9 @@
   min-height: 0;
   flex: 1;
   grid-template-areas:
-    'side preview'
-    'timeline timeline';
-  grid-template-columns: minmax(300px, 390px) minmax(0, 1fr);
+    'preview'
+    'timeline';
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(220px, 1fr) auto;
   gap: 12px;
   padding: 0 24px 16px;
@@ -1972,12 +1972,7 @@
 
 @media (max-width: 640px) {
   .wf-workspace {
-    grid-template-areas:
-      'preview'
-      'side'
-      'timeline';
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 200px minmax(200px, auto) auto;
+    grid-template-rows: 200px auto;
     padding: 0 12px 12px;
   }
 

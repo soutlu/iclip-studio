@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Final, Literal, Protocol
+from typing import Final, Literal, Protocol
 
 from iclip.domains.conversations.models import AgentPreview, Conversation, WholeFilmDraft
 
@@ -137,7 +136,7 @@ class WholeFilmDraftStore(Protocol):
         self,
         conversation_id: uuid.UUID,
         *,
-        document: Mapping[str, Any],
+        html: str,
         revision: int,
         updated_by: uuid.UUID,
     ) -> WholeFilmDraft | None: ...

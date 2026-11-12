@@ -469,14 +469,13 @@ def create_conversations_router(
         principal: Annotated[Principal, require_permission("agent:read")],
     ) -> WholeFilmDraftOut:
         """读这段对话的成片草稿；可见范围同读工作区文件。还没存过答复 ``revision`` 0、
-        ``document`` 与 ``updatedAt`` 为 null。"""
+        ``html`` 与 ``updatedAt`` 为 null。"""
 
-        found = await service.whole_film_draft(principal, conversation_id)
-        if found is None:
-            return WholeFilmDraftOut(revision=0, document=None, updated_at=None)
-        draft, document = found
+        draft = await service.whole_film_draft(principal, conversation_id)
+        if draft is None:
+            return WholeFilmDraftOut(revision=0, html=None, updated_at=None)
         return WholeFilmDraftOut(
-            revision=draft.revision, document=document, updated_at=draft.updated_at
+            revision=draft.revision, html=draft.html, updated_at=draft.updated_at
         )
 
     @router.put("/{conversation_id}/whole-film/draft", response_model=WholeFilmDraftSavedOut)
@@ -485,12 +484,14 @@ def create_conversations_router(
         body: WholeFilmDraftIn,
         principal: Annotated[Principal, require_permission("agent:run")],
     ) -> WholeFilmDraftSavedOut:
-        """整份保存成片草稿，答复新的版本号。只有属主能存；``revision`` 不是当前那一版（还没有
-        草稿是 0）是 409；文档不合规矩、引用的记录不是这段对话的是 422。"""
+        """整份保存成片文件，答复新的版本号；存下的是按写法重写后的那一份。只有属主能存；
+        ``revision`` 不是当前那一版（还没有草稿是 0）是 409；文件不合写法、用到的素材不是这段对话的、
+        没开通都是 422；渲染服务不可用 502。"""
 
-        saved = await service.save_whole_film_draft(
-            principal, conversation_id, revision=body.revision, document=body.document
-        )
+        with _render_unavailable_as_502():
+            saved = await service.save_whole_film_draft(
+                principal, conversation_id, revision=body.revision, html=body.html
+            )
         return WholeFilmDraftSavedOut(revision=saved.revision, updated_at=saved.updated_at)
 
     @router.post(
@@ -504,12 +505,14 @@ def create_conversations_router(
         principal: Annotated[Principal, require_permission("agent:run")],
     ) -> WholeFilmExportStartedOut:
         """按当前草稿导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；
-        ``revision`` 不是存着的那一版 409；画面轨没有内容、用到的记录没有产物地址、没开通都是 422。
-        渲染服务不收这份草稿不在这里答，那条记录记为失败（``RENDER_REJECTED``）。"""
+        ``revision`` 不是存着的那一版 409；成片里还没有画面、用到的素材不再是这段对话的、没开通
+        都是 422；渲染服务不可用 502。草稿在交给渲染服务之前又改过不在这里答，那条记录记为失败
+        （``FILM_CHANGED``）。"""
 
-        export_id = await service.export_whole_film(
-            principal, conversation_id, revision=body.revision
-        )
+        with _render_unavailable_as_502():
+            export_id = await service.export_whole_film(
+                principal, conversation_id, revision=body.revision
+            )
         return WholeFilmExportStartedOut(export_id=export_id)
 
     @router.get(

@@ -118,7 +118,7 @@ def build(*, task_present: bool = True, collection_present: bool = True) -> Conv
         document_validators={},
         film=UnusedFilmPage(),
         drafts=cast("WholeFilmDraftStore", object()),
-        draft_references=_untouched,
+        films=None,
         exports=None,
         generate_title=_untouched,
         announce_title=_untouched,

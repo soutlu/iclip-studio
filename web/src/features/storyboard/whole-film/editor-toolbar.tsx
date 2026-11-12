@@ -1,16 +1,14 @@
-import { useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { timeLabel } from '../editing/time-label'
-import { FADER_MAX, FADER_MIN, faderToGain, gainText, gainToFader, stepGain } from './volume-fader'
 
 type ToolProps = {
   icon: IconName
   label: string
   tip: ReactNode
   blocked?: string | undefined
-  pressed?: boolean
   onClick: () => void
   showLabel?: boolean
   shortcuts?: string
@@ -22,7 +20,6 @@ function Tool({
   label,
   tip,
   blocked,
-  pressed,
   onClick,
   showLabel = false,
   shortcuts,
@@ -43,13 +40,7 @@ function Tool({
           aria-disabled={blocked === undefined ? undefined : true}
           aria-keyshortcuts={shortcuts}
           aria-label={showLabel ? undefined : label}
-          aria-pressed={pressed}
-          className={cn(
-            'wf-tool ui-state ui-focus',
-            showLabel && 'has-label',
-            pressed === true && 'is-pressed',
-            className,
-          )}
+          className={cn('wf-tool ui-state ui-focus', showLabel && 'has-label', className)}
           onClick={() => {
             if (blocked === undefined) onClick()
           }}
@@ -78,21 +69,8 @@ type EditorToolbarProps = {
   canRedo: boolean
   onUndo: () => void
   onRedo: () => void
-  splitBlocked: string | undefined
-  onSplit: () => void
-  deleteBlocked: string | undefined
-  onDelete: () => void
-  snap: boolean
-  onSnap: () => void
-  beatBlocked: string | undefined
-  onBeatSync: () => void
-  onZoom: (direction: 'in' | 'out') => void
-  onFit: () => void
-  clipVolume: number | undefined
-  clipBlocked: string
-  onClipVolume: (value: number) => void
-  musicVolume: number | undefined
-  onMusicVolume: (value: number) => void
+  insertBlocked: string | undefined
+  onInsert: () => void
 }
 
 export function EditorToolbar({
@@ -105,21 +83,8 @@ export function EditorToolbar({
   canRedo,
   onUndo,
   onRedo,
-  splitBlocked,
-  onSplit,
-  deleteBlocked,
-  onDelete,
-  snap,
-  onSnap,
-  beatBlocked,
-  onBeatSync,
-  onZoom,
-  onFit,
-  clipVolume,
-  clipBlocked,
-  onClipVolume,
-  musicVolume,
-  onMusicVolume,
+  insertBlocked,
+  onInsert,
 }: EditorToolbarProps) {
   const playLabel = playing ? '暂停' : '播放'
   return (
@@ -171,136 +136,20 @@ export function EditorToolbar({
         />
         <span aria-hidden="true" className="wf-divider" />
         <Tool
-          blocked={splitBlocked}
-          icon="split"
-          label="拆分"
-          onClick={onSplit}
-          showLabel
-          tip="在播放头处拆开"
-        />
-        <Tool
-          blocked={deleteBlocked}
-          icon="delete"
-          label="删除"
-          onClick={onDelete}
-          shortcuts="Delete Backspace"
+          blocked={insertBlocked}
+          icon="insert"
+          label="加入成片"
+          onClick={onInsert}
+          shortcuts="Enter"
           showLabel
           tip={
             <>
-              删除选中的片段
-              <Keys>⌫</Keys>
+              把选中的范围接在成片末尾
+              <Keys>↵</Keys>
             </>
           }
         />
-        <span aria-hidden="true" className="wf-divider" />
-        <Tool
-          icon="snap"
-          label="吸附"
-          onClick={onSnap}
-          pressed={snap}
-          showLabel
-          tip="拖动时吸附到拍点、播放头和片段边界"
-        />
-        <Tool
-          blocked={beatBlocked}
-          icon="waveform"
-          label="自动卡点"
-          onClick={onBeatSync}
-          showLabel
-          tip="把切点挪到最近的拍点上，音乐不动"
-        />
       </div>
-      <div aria-label="声音" className="wf-toolbar-group wf-toolbar-sound" role="group">
-        <VolumeFader
-          blocked={clipVolume === undefined ? clipBlocked : undefined}
-          label="原声"
-          onCommit={onClipVolume}
-          value={clipVolume ?? 1}
-        />
-        <VolumeFader
-          blocked={musicVolume === undefined ? '还没有选用音乐' : undefined}
-          label="配乐"
-          onCommit={onMusicVolume}
-          value={musicVolume ?? 1}
-        />
-        <span aria-hidden="true" className="wf-divider" />
-      </div>
-      <div className="wf-toolbar-group">
-        <Tool icon="zoom-out" label="缩小时间线" onClick={() => onZoom('out')} tip="缩小时间线" />
-        <Tool icon="zoom" label="放大时间线" onClick={() => onZoom('in')} tip="放大时间线" />
-        <Tool icon="fit" label="适应宽度" onClick={onFit} tip="适应宽度" />
-      </div>
-    </div>
-  )
-}
-
-type VolumeFaderProps = {
-  label: string
-  value: number
-  blocked?: string | undefined
-  onCommit: (value: number) => void
-}
-
-function VolumeFader({ label, value, blocked, onCommit }: VolumeFaderProps) {
-  const [live, setLive] = useState<number | null>(null)
-  const [beforeMute, setBeforeMute] = useState(1)
-  const shown = live ?? value
-  const disabled = blocked !== undefined
-  const commit = (gain: number) => {
-    setLive(null)
-    if (gain !== value) onCommit(gain)
-  }
-  const step = (event: KeyboardEvent<HTMLInputElement>) => {
-    const sign = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0
-    if (sign === 0) return
-    event.preventDefault()
-    commit(stepGain(shown, sign * (event.shiftKey ? 3 : 0.5)))
-  }
-  const muted = shown === 0
-  return (
-    <div className={cn('wf-volume', disabled && 'is-blocked')} title={blocked}>
-      <button
-        aria-label={muted ? `取消静音${label}` : `静音${label}`}
-        className="wf-mute ui-state ui-focus"
-        disabled={disabled}
-        onClick={() => {
-          if (muted) commit(beforeMute)
-          else {
-            setBeforeMute(shown)
-            commit(0)
-          }
-        }}
-        type="button"
-      >
-        <Icon decorative name={muted ? 'audio-off' : 'audio'} size="sm" />
-      </button>
-      <label className="wf-volume-label">
-        <span>{label}</span>
-        <span className="wf-fader">
-          <input
-            aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight"
-            aria-valuetext={gainText(shown)}
-            disabled={disabled}
-            max={FADER_MAX}
-            min={FADER_MIN}
-            onBlur={() => {
-              if (live !== null) commit(live)
-            }}
-            onChange={(event) => setLive(faderToGain(Number(event.target.value)))}
-            onDoubleClick={() => commit(1)}
-            onKeyDown={step}
-            onPointerUp={() => {
-              if (live !== null) commit(live)
-            }}
-            step={0.1}
-            title="双击回到 0 dB"
-            type="range"
-            value={gainToFader(shown)}
-          />
-          <i aria-hidden="true" className="wf-fader-unity" />
-        </span>
-      </label>
-      <output className="wf-volume-value">{gainText(shown)}</output>
     </div>
   )
 }

@@ -3,10 +3,14 @@ import type {
   CatalogItem,
   ComponentCatalog,
 } from '../../web/src/features/storyboard/whole-film/composition/catalog'
+import {
+  writeFilm,
+  type PictureBlock,
+} from '../../web/src/features/storyboard/whole-film/composition/film'
 import type { ExportWorker, RenderedFile, UploadTarget } from './jobs'
 import { createLogger, type Logger } from './log'
 
-// 源目录里没有组装时才生成的内容：分片表留空，条目补上空的 chars
+// 源目录里没有组装时才生成的内容：分片表只给西文基本字符那一片，条目补上空的 chars
 const source = catalogJson as Omit<ComponentCatalog, 'version' | 'cjk' | 'items'> & {
   items: Omit<CatalogItem, 'chars'>[]
 }
@@ -14,13 +18,45 @@ const source = catalogJson as Omit<ComponentCatalog, 'version' | 'cjk' | 'items'
 export const catalog: ComponentCatalog = {
   ...source,
   version: 'test-fixtures',
-  cjk: { family: 'Noto Sans SC', slices: [] },
+  cjk: {
+    family: 'Noto Sans SC',
+    slices: [
+      {
+        range: 'U+0020-007E',
+        files: {
+          '400': 'vendor/fonts/noto-sans-sc-latin-400.woff2',
+          '700': 'vendor/fonts/noto-sans-sc-latin-700.woff2',
+        },
+      },
+    ],
+  },
   items: source.items.map((item) => ({ ...item, chars: '' })),
 }
 
 export const SOURCE_JOB = '6f1b5c3e-2a4d-4e8f-9b1c-0d2e3f4a5b6c'
-export const SUBTITLE_JOB = '7a2c6d4f-3b5e-4f9a-8c2d-1e3f4a5b6c7d'
-export const MUSIC_JOB = '8b3d7e5a-4c6f-4a0b-9d3e-2f4a5b6c7d8e'
+export const CLIP_URL = 'https://media.iclip.test/videos/clip.mp4'
+
+export function picture(overrides: Partial<PictureBlock> = {}): PictureBlock {
+  return {
+    id: 'clip-1',
+    label: '镜头 1',
+    jobId: SOURCE_JOB,
+    src: CLIP_URL,
+    start: 0,
+    duration: 2000,
+    mediaStart: 0,
+    track: 0,
+    volume: 1,
+    ...overrides,
+  }
+}
+
+export function filmFile(
+  blocks: PictureBlock[] = [picture()],
+  canvas = { width: 720, height: 1280 },
+): string {
+  return writeFilm({ canvas, blocks }, catalog)
+}
 
 export function exportRequest(
   overrides: { id?: string; mediaHost?: string } = {},
@@ -29,52 +65,8 @@ export function exportRequest(
   return {
     id: overrides.id ?? '11111111-2222-4333-8444-555555555555',
     conversationId: '99999999-8888-4777-8666-555555555555',
-    document: {
-      canvas: { width: 720, height: 1280 },
-      layer0: [
-        {
-          id: 'a',
-          type: 'video',
-          start: 0,
-          duration: 2000,
-          playbackStart: 0,
-          sourceJobId: SOURCE_JOB,
-          volume: 1,
-        },
-      ],
-      captions: { component: 'default-caption', edits: [] },
-      music: { jobId: MUSIC_JOB, offset: 0, volume: 0.5 },
-      overlays: [
-        {
-          id: 'o',
-          component: 'fixture-overlay',
-          start: 0,
-          duration: 1000,
-          playbackStart: 0,
-          track: 0,
-          zIndex: 1,
-          variables: {},
-        },
-      ],
-    },
-    media: {
-      videos: { [SOURCE_JOB]: { url: `https://${host}/clip.mp4?sig=1` } },
-      music: { url: `https://${host}/music.mp3` },
-      subtitles: {
-        [SOURCE_JOB]: {
-          subtitleJobId: SUBTITLE_JOB,
-          sentences: [
-            {
-              startMs: 0,
-              endMs: 800,
-              text: '你好。',
-              speaker: null,
-              words: [{ startMs: 0, endMs: 800, text: '你好', punctuation: '。' }],
-            },
-          ],
-        },
-      },
-    },
+    film: filmFile(),
+    media: { [CLIP_URL]: { url: `https://${host}/clip.mp4?sig=1` } },
     upload: {
       url: 'https://upload.example.com/exports/a.mp4?Signature=x',
       headers: { 'Content-Type': 'video/mp4', 'x-oss-object-acl': 'private' },
@@ -101,6 +93,7 @@ export function manualWorker() {
   const renders: {
     id: string
     registryDir: string
+    compose: (paths: Readonly<Record<string, string>>) => string
     signal: AbortSignal
     onProgress: (progress: number) => void
     pending: Pending<RenderedFile>
@@ -119,6 +112,7 @@ export function manualWorker() {
         renders.push({
           id: job.id,
           registryDir: job.registryDir,
+          compose: job.compose,
           signal,
           onProgress,
           pending: { resolve, reject },

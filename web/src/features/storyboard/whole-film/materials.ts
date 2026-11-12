@@ -2,8 +2,10 @@ import { versionNameOf, type ConversationVideoGroup } from '../conversation-vide
 import type { SecondsRange } from '../editing/clip'
 import type { Edge } from '../editing/timeline-drag'
 import { shiftSelect } from '../editing/range-select'
-import { MIN_CLIP_MS, type Layer0Clip } from './editing/draft'
-import type { MaterialPiece } from './editing/layer0'
+import { MIN_BLOCK_MS, type PictureBlock } from './composition/film'
+
+/** 选中范围里的一段：从素材的哪里开始放、放多长（毫秒）。一个镜头一段。 */
+export type MaterialPiece = { mediaStart: number; duration: number }
 
 export type Material = {
   jobId: string
@@ -56,8 +58,8 @@ export const trimLimits = (
 ): { min: number; max: number } => {
   const cuts = cutsOf(range)
   return edge === 'start'
-    ? { min: 0, max: (cuts[0] ?? range.endMs) - MIN_CLIP_MS }
-    : { min: (cuts.at(-1) ?? range.startMs) + MIN_CLIP_MS, max: durationMs }
+    ? { min: 0, max: (cuts[0] ?? range.endMs) - MIN_BLOCK_MS }
+    : { min: (cuts.at(-1) ?? range.startMs) + MIN_BLOCK_MS, max: durationMs }
 }
 
 export const trimRange = (
@@ -75,7 +77,7 @@ export const rangePieces = (range: MaterialRange): MaterialPiece[] =>
   range.shots.map((shot, at) => {
     const start = at === 0 ? range.startMs : shot.startMs
     const end = at === range.shots.length - 1 ? range.endMs : shot.endMs
-    return { playbackStart: start, duration: end - start }
+    return { mediaStart: start, duration: end - start }
   })
 
 export const shiftShot = (
@@ -99,11 +101,11 @@ export const shiftShot = (
     ...next,
     startMs: Math.min(
       first.startMs === range.shots[0]?.startMs ? range.startMs : first.startMs,
-      (cuts[0] ?? Infinity) - MIN_CLIP_MS,
+      (cuts[0] ?? Infinity) - MIN_BLOCK_MS,
     ),
     endMs: Math.max(
       last.endMs === range.shots.at(-1)?.endMs ? range.endMs : last.endMs,
-      (cuts.at(-1) ?? -Infinity) + MIN_CLIP_MS,
+      (cuts.at(-1) ?? -Infinity) + MIN_BLOCK_MS,
     ),
   }
 }
@@ -111,17 +113,16 @@ export const shiftShot = (
 export type UsedSpan = { clipId: string; startMs: number; endMs: number }
 
 export const usedSpans = (
-  layer0: readonly Layer0Clip[],
+  pictures: readonly PictureBlock[],
 ): ReadonlyMap<string, readonly UsedSpan[]> => {
   const used = new Map<string, UsedSpan[]>()
-  for (const clip of layer0) {
-    if (clip.type !== 'video') continue
+  for (const block of pictures) {
     const span = {
-      clipId: clip.id,
-      startMs: clip.playbackStart,
-      endMs: clip.playbackStart + clip.duration,
+      clipId: block.id,
+      startMs: block.mediaStart,
+      endMs: block.mediaStart + block.duration,
     }
-    used.set(clip.sourceJobId, [...(used.get(clip.sourceJobId) ?? []), span])
+    used.set(block.jobId, [...(used.get(block.jobId) ?? []), span])
   }
   return used
 }

@@ -246,7 +246,7 @@ def build(
         document_validators={},
         film=UnusedFilmPage(),
         drafts=cast("WholeFilmDraftStore", object()),
-        draft_references=_untouched,
+        films=None,
         exports=None,
         generate_title=generate_title,
         announce_title=announced.title,

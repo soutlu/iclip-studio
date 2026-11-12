@@ -1,119 +1,46 @@
 from __future__ import annotations
 
-import uuid
-from collections.abc import Sequence
-from typing import Any
+import pytest
+from fastapi import FastAPI
+from procrastinate.testing import InMemoryConnector
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from iclip.platform.media.codec import SOFTWARE
+from tests.helpers.agents import CONVERSABLE_SEEDS, seed_agents
+from tests.helpers.generation import MEDIA_ENVS, config_with_media
+from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
+from tests.helpers.render import StubRender
+from tests.helpers.runtime_backed import build_backed_app, config_services_of
+
+RENDER_ENVS = {
+    **MEDIA_ENVS,
+    "OSS_INTERNAL_ENDPOINT": "https://oss-ap-southeast-1-internal.aliyuncs.com",
+}
 
 
-def video_clip(
-    clip_id: str,
+async def build_whole_film_app(
+    monkeypatch: pytest.MonkeyPatch,
+    engine: AsyncEngine,
+    render: StubRender,
     *,
-    start: int,
-    duration: int,
-    source_job_id: uuid.UUID,
-    playback_start: int = 0,
-    volume: float = 1,
-) -> dict[str, Any]:
-    return {
-        "id": clip_id,
-        "type": "video",
-        "start": start,
-        "duration": duration,
-        "playbackStart": playback_start,
-        "sourceJobId": str(source_job_id),
-        "volume": volume,
-    }
+    render_url: str | None = "http://render:8080",
+) -> FastAPI:
+    for name, value in RENDER_ENVS.items():
+        monkeypatch.setenv(name, value)
+    if render_url is None:
+        monkeypatch.delenv("WHOLE_FILM_RENDER_URL", raising=False)
+    else:
+        monkeypatch.setenv("WHOLE_FILM_RENDER_URL", render_url)
+    built = build_backed_app(
+        config_with_media(),
+        engine=engine,
+        queue_connector=InMemoryConnector(),
+        media_codec=SOFTWARE,
+        whole_film_render_transport=render.transport(),
+        credential_probe=KeyCheckingProbe({GOOD_KEY}),
+    )
+    await seed_agents(config_services_of(built), engine, CONVERSABLE_SEEDS)
+    return built
 
 
-def component_clip(
-    clip_id: str, *, start: int, duration: int, playback_start: int = 0
-) -> dict[str, Any]:
-    return {
-        "id": clip_id,
-        "type": "component",
-        "start": start,
-        "duration": duration,
-        "playbackStart": playback_start,
-        "component": "brand-intro",
-        "variables": {"brand": "鞋款", "showLogo": True, "scale": 1.5},
-    }
-
-
-def overlay(
-    clip_id: str,
-    *,
-    start: int,
-    duration: int,
-    track: int = 0,
-    z_index: int = 1,
-    playback_start: int = 0,
-    x: int = 0,
-    y: int = 0,
-    scale: float = 1,
-    rotation: float = 0,
-    pivot: tuple[int, int] = (0, 0),
-) -> dict[str, Any]:
-    return {
-        "id": clip_id,
-        "component": "sticker",
-        "start": start,
-        "duration": duration,
-        "playbackStart": playback_start,
-        "track": track,
-        "zIndex": z_index,
-        "variables": {},
-        "x": x,
-        "y": y,
-        **_transform(scale, rotation, pivot),
-    }
-
-
-def _transform(scale: float, rotation: float, pivot: tuple[int, int]) -> dict[str, Any]:
-    return {"scale": scale, "rotation": rotation, "pivotX": pivot[0], "pivotY": pivot[1]}
-
-
-def butted(clips: Sequence[tuple[str, int]], *, source_job_id: uuid.UUID) -> list[dict[str, Any]]:
-    layer: list[dict[str, Any]] = []
-    start = 0
-    for clip_id, duration in clips:
-        layer.append(
-            video_clip(clip_id, start=start, duration=duration, source_job_id=source_job_id)
-        )
-        start += duration
-    return layer
-
-
-def draft_document(
-    *,
-    source_job_id: uuid.UUID | None = None,
-    layer0: list[dict[str, Any]] | None = None,
-    edits: list[dict[str, Any]] | None = None,
-    captions_variables: dict[str, Any] | None = None,
-    captions_hidden: bool = False,
-    captions_at: tuple[int, int] = (0, 0),
-    captions_scale: float = 1,
-    captions_rotation: float = 0,
-    captions_pivot: tuple[int, int] = (0, 0),
-    music: dict[str, Any] | None = None,
-    overlays: list[dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    source = source_job_id or uuid.uuid4()
-    default_layer = butted([("a", 3000), ("b", 2000)], source_job_id=source)
-    return {
-        "canvas": {"width": 1080, "height": 1920},
-        "layer0": layer0 if layer0 is not None else default_layer,
-        "captions": {
-            "component": "captions-basic",
-            "edits": edits or [],
-            "variables": captions_variables or {},
-            "hidden": captions_hidden,
-            "x": captions_at[0],
-            "y": captions_at[1],
-            **_transform(captions_scale, captions_rotation, captions_pivot),
-        },
-        "music": music,
-        "overlays": overlays or [],
-    }
-
-
-__all__ = ["butted", "component_clip", "draft_document", "overlay", "video_clip"]
+__all__ = ["RENDER_ENVS", "build_whole_film_app"]

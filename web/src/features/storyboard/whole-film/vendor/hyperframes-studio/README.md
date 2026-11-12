@@ -23,4 +23,4 @@
 ## 工具链与维护边界
 
 - **独立类型检查**：本目录通过独立的 [tsconfig.vendor-hyperframes.json](../../../../../../tsconfig.vendor-hyperframes.json) 进行类型检查（配合上游源码放宽了 `exactOptionalPropertyTypes` 与 `noUncheckedIndexedAccess`），并在 ESLint、Prettier 与 knip 中排除。
-- **不在本目录写业务逻辑**：本项目自有的成片编辑规则统一写在[外层 `editing/` 目录](../../editing/)中并配有单测，不要直接修改本 `vendor/` 目录下的算法文件。升级上游版本时，请对照上表逐个文件同步并保留头部说明，切勿整目录直接覆盖。
+- **不在本目录写业务逻辑**：本项目自有的成片编辑规则写在外层目录中并配有单测，不要直接修改本 `vendor/` 目录下的算法文件。升级上游版本时，请对照上表逐个文件同步并保留头部说明，切勿整目录直接覆盖。

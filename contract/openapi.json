@@ -13836,158 +13836,6 @@
         "title": "VideoTaskResult",
         "type": "object"
       },
-      "WholeFilmCanvas": {
-        "additionalProperties": false,
-        "properties": {
-          "height": {
-            "maximum": 4096.0,
-            "minimum": 1.0,
-            "title": "Height",
-            "type": "integer"
-          },
-          "width": {
-            "maximum": 4096.0,
-            "minimum": 1.0,
-            "title": "Width",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "width",
-          "height"
-        ],
-        "title": "WholeFilmCanvas",
-        "type": "object"
-      },
-      "WholeFilmCaptionEdit": {
-        "additionalProperties": false,
-        "description": "用户改过字的一句：第 ``sentenceIndex`` 句（从 0 数）换成 ``text``。",
-        "properties": {
-          "sentenceIndex": {
-            "minimum": 0.0,
-            "title": "Sentenceindex",
-            "type": "integer"
-          },
-          "subtitleJobId": {
-            "format": "uuid",
-            "title": "Subtitlejobid",
-            "type": "string"
-          },
-          "text": {
-            "maxLength": 500,
-            "minLength": 1,
-            "title": "Text",
-            "type": "string"
-          }
-        },
-        "required": [
-          "subtitleJobId",
-          "sentenceIndex",
-          "text"
-        ],
-        "title": "WholeFilmCaptionEdit",
-        "type": "object"
-      },
-      "WholeFilmCaptions": {
-        "additionalProperties": false,
-        "description": "字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。\n``x``、``y``、``scale``、``rotation`` 是字幕在画面上挪开的位置、缩放与旋转，所有字幕共用一套；\n``pivotX``、``pivotY`` 是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，\n编辑器在第一次离开原大、不转时写下。``variables`` 是字幕样式的可填项，同特效块；换样式时照样\n保留，合成时只取当前样式声明过的项。",
-        "properties": {
-          "component": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Component",
-            "type": "string"
-          },
-          "edits": {
-            "items": {
-              "$ref": "#/components/schemas/WholeFilmCaptionEdit"
-            },
-            "maxItems": 1000,
-            "title": "Edits",
-            "type": "array"
-          },
-          "hidden": {
-            "default": false,
-            "title": "Hidden",
-            "type": "boolean"
-          },
-          "pivotX": {
-            "default": 0,
-            "maximum": 4096.0,
-            "minimum": -4096.0,
-            "title": "Pivotx",
-            "type": "integer"
-          },
-          "pivotY": {
-            "default": 0,
-            "maximum": 4096.0,
-            "minimum": -4096.0,
-            "title": "Pivoty",
-            "type": "integer"
-          },
-          "rotation": {
-            "default": 0,
-            "exclusiveMinimum": -180.0,
-            "maximum": 180.0,
-            "title": "Rotation",
-            "type": "number"
-          },
-          "scale": {
-            "default": 1,
-            "maximum": 10.0,
-            "minimum": 0.1,
-            "title": "Scale",
-            "type": "number"
-          },
-          "variables": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "number"
-                },
-                {
-                  "maxLength": 500,
-                  "type": "string"
-                }
-              ]
-            },
-            "default": {},
-            "maxProperties": 50,
-            "propertyNames": {
-              "maxLength": 64,
-              "minLength": 1
-            },
-            "title": "Variables",
-            "type": "object"
-          },
-          "x": {
-            "default": 0,
-            "maximum": 4096.0,
-            "minimum": -4096.0,
-            "title": "X",
-            "type": "integer"
-          },
-          "y": {
-            "default": 0,
-            "maximum": 4096.0,
-            "minimum": -4096.0,
-            "title": "Y",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "component",
-          "edits"
-        ],
-        "title": "WholeFilmCaptions",
-        "type": "object"
-      },
       "WholeFilmCardOut": {
         "additionalProperties": false,
         "description": "资料库「成片」的一张卡：一段对话自己的全部导出，不含继承来的。成片没有脚本，不能做同款。",
@@ -14086,155 +13934,15 @@
         "title": "WholeFilmCardsOut",
         "type": "object"
       },
-      "WholeFilmComponentClip": {
-        "additionalProperties": false,
-        "description": "画面轨上的一段组件，与视频段同等占时间；从组件自己时间里的 ``playbackStart`` 起播。",
-        "properties": {
-          "component": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Component",
-            "type": "string"
-          },
-          "duration": {
-            "minimum": 100.0,
-            "title": "Duration",
-            "type": "integer"
-          },
-          "id": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          },
-          "playbackStart": {
-            "minimum": 0.0,
-            "title": "Playbackstart",
-            "type": "integer"
-          },
-          "start": {
-            "minimum": 0.0,
-            "title": "Start",
-            "type": "integer"
-          },
-          "type": {
-            "const": "component",
-            "title": "Type",
-            "type": "string"
-          },
-          "variables": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "number"
-                },
-                {
-                  "maxLength": 500,
-                  "type": "string"
-                }
-              ]
-            },
-            "maxProperties": 50,
-            "propertyNames": {
-              "maxLength": 64,
-              "minLength": 1
-            },
-            "title": "Variables",
-            "type": "object"
-          }
-        },
-        "required": [
-          "id",
-          "type",
-          "start",
-          "duration",
-          "playbackStart",
-          "component",
-          "variables"
-        ],
-        "title": "WholeFilmComponentClip",
-        "type": "object"
-      },
-      "WholeFilmDocument": {
-        "additionalProperties": false,
-        "description": "一段对话的成片草稿。",
-        "properties": {
-          "canvas": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WholeFilmCanvas"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "captions": {
-            "$ref": "#/components/schemas/WholeFilmCaptions"
-          },
-          "layer0": {
-            "items": {
-              "discriminator": {
-                "mapping": {
-                  "component": "#/components/schemas/WholeFilmComponentClip",
-                  "video": "#/components/schemas/WholeFilmVideoClip"
-                },
-                "propertyName": "type"
-              },
-              "oneOf": [
-                {
-                  "$ref": "#/components/schemas/WholeFilmVideoClip"
-                },
-                {
-                  "$ref": "#/components/schemas/WholeFilmComponentClip"
-                }
-              ]
-            },
-            "maxItems": 1200,
-            "title": "Layer0",
-            "type": "array"
-          },
-          "music": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WholeFilmMusic"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "overlays": {
-            "items": {
-              "$ref": "#/components/schemas/WholeFilmOverlay"
-            },
-            "maxItems": 1200,
-            "title": "Overlays",
-            "type": "array"
-          }
-        },
-        "required": [
-          "canvas",
-          "layer0",
-          "captions",
-          "music",
-          "overlays"
-        ],
-        "title": "WholeFilmDocument",
-        "type": "object"
-      },
       "WholeFilmDraftIn": {
         "additionalProperties": false,
-        "description": "整份保存草稿。``revision`` 是读到的那一版，还没有草稿时是 0。",
+        "description": "整份保存成片文件。``revision`` 是读到的那一版，还没有草稿时是 0。",
         "properties": {
-          "document": {
-            "$ref": "#/components/schemas/WholeFilmDocument"
+          "html": {
+            "maxLength": 1000000,
+            "minLength": 1,
+            "title": "Html",
+            "type": "string"
           },
           "revision": {
             "minimum": 0.0,
@@ -14244,24 +13952,25 @@
         },
         "required": [
           "revision",
-          "document"
+          "html"
         ],
         "title": "WholeFilmDraftIn",
         "type": "object"
       },
       "WholeFilmDraftOut": {
         "additionalProperties": false,
-        "description": "当前的草稿；还没存过时 ``revision`` 是 0，``document`` 与 ``updatedAt`` 为 null。",
+        "description": "当前的成片文件；还没存过时 ``revision`` 是 0，``html`` 与 ``updatedAt`` 为 null。",
         "properties": {
-          "document": {
+          "html": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/WholeFilmDocument"
+                "type": "string"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Html"
           },
           "revision": {
             "title": "Revision",
@@ -14282,7 +13991,7 @@
         },
         "required": [
           "revision",
-          "document",
+          "html",
           "updatedAt"
         ],
         "title": "WholeFilmDraftOut",
@@ -14457,158 +14166,6 @@
         "title": "WholeFilmExportStartedOut",
         "type": "object"
       },
-      "WholeFilmMusic": {
-        "additionalProperties": false,
-        "description": "背景音乐从头铺到尾：``offset`` 是音乐文件里与成片 0 毫秒对齐的那一刻。",
-        "properties": {
-          "jobId": {
-            "format": "uuid",
-            "title": "Jobid",
-            "type": "string"
-          },
-          "offset": {
-            "minimum": 0.0,
-            "title": "Offset",
-            "type": "integer"
-          },
-          "volume": {
-            "maximum": 3.981072,
-            "minimum": 0.0,
-            "title": "Volume",
-            "type": "number"
-          }
-        },
-        "required": [
-          "jobId",
-          "offset",
-          "volume"
-        ],
-        "title": "WholeFilmMusic",
-        "type": "object"
-      },
-      "WholeFilmOverlay": {
-        "additionalProperties": false,
-        "description": "特效轨上的一个组件，按成片时间放在 ``[start, start + duration)``，从组件自己时间里的\n``playbackStart`` 起播。\n\n同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块\n之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。\n``x``、``y``、``scale``、``rotation`` 是它在画面上挪开的位置、缩放与旋转；``pivotX``、``pivotY``\n是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，编辑器在第一次离开原大、\n不转时写下。",
-        "properties": {
-          "component": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Component",
-            "type": "string"
-          },
-          "duration": {
-            "minimum": 100.0,
-            "title": "Duration",
-            "type": "integer"
-          },
-          "id": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          },
-          "pivotX": {
-            "default": 0,
-            "maximum": 4096.0,
-            "minimum": -4096.0,
-            "title": "Pivotx",
-            "type": "integer"
-          },
-          "pivotY": {
-            "default": 0,
-            "maximum": 4096.0,
-            "minimum": -4096.0,
-            "title": "Pivoty",
-            "type": "integer"
-          },
-          "playbackStart": {
-            "minimum": 0.0,
-            "title": "Playbackstart",
-            "type": "integer"
-          },
-          "rotation": {
-            "default": 0,
-            "exclusiveMinimum": -180.0,
-            "maximum": 180.0,
-            "title": "Rotation",
-            "type": "number"
-          },
-          "scale": {
-            "default": 1,
-            "maximum": 10.0,
-            "minimum": 0.1,
-            "title": "Scale",
-            "type": "number"
-          },
-          "start": {
-            "minimum": 0.0,
-            "title": "Start",
-            "type": "integer"
-          },
-          "track": {
-            "minimum": 0.0,
-            "title": "Track",
-            "type": "integer"
-          },
-          "variables": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "number"
-                },
-                {
-                  "maxLength": 500,
-                  "type": "string"
-                }
-              ]
-            },
-            "maxProperties": 50,
-            "propertyNames": {
-              "maxLength": 64,
-              "minLength": 1
-            },
-            "title": "Variables",
-            "type": "object"
-          },
-          "x": {
-            "default": 0,
-            "maximum": 4096.0,
-            "minimum": -4096.0,
-            "title": "X",
-            "type": "integer"
-          },
-          "y": {
-            "default": 0,
-            "maximum": 4096.0,
-            "minimum": -4096.0,
-            "title": "Y",
-            "type": "integer"
-          },
-          "zIndex": {
-            "minimum": 0.0,
-            "title": "Zindex",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "id",
-          "component",
-          "start",
-          "duration",
-          "playbackStart",
-          "track",
-          "zIndex",
-          "variables"
-        ],
-        "title": "WholeFilmOverlay",
-        "type": "object"
-      },
       "WholeFilmVersionOut": {
         "additionalProperties": false,
         "description": "成片卡里的一版：这段对话的一次已完成导出。",
@@ -14646,60 +14203,6 @@
           "userName"
         ],
         "title": "WholeFilmVersionOut",
-        "type": "object"
-      },
-      "WholeFilmVideoClip": {
-        "additionalProperties": false,
-        "description": "画面轨上的一段素材片：取它自己媒体时间里从 ``playbackStart`` 起的 ``duration``。",
-        "properties": {
-          "duration": {
-            "minimum": 100.0,
-            "title": "Duration",
-            "type": "integer"
-          },
-          "id": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          },
-          "playbackStart": {
-            "minimum": 0.0,
-            "title": "Playbackstart",
-            "type": "integer"
-          },
-          "sourceJobId": {
-            "format": "uuid",
-            "title": "Sourcejobid",
-            "type": "string"
-          },
-          "start": {
-            "minimum": 0.0,
-            "title": "Start",
-            "type": "integer"
-          },
-          "type": {
-            "const": "video",
-            "title": "Type",
-            "type": "string"
-          },
-          "volume": {
-            "maximum": 3.981072,
-            "minimum": 0.0,
-            "title": "Volume",
-            "type": "number"
-          }
-        },
-        "required": [
-          "id",
-          "type",
-          "start",
-          "duration",
-          "playbackStart",
-          "sourceJobId",
-          "volume"
-        ],
-        "title": "WholeFilmVideoClip",
         "type": "object"
       }
     },
@@ -19000,7 +18503,7 @@
     },
     "/conversations/{conversation_id}/whole-film/draft": {
       "get": {
-        "description": "读这段对话的成片草稿；可见范围同读工作区文件。还没存过答复 ``revision`` 0、\n``document`` 与 ``updatedAt`` 为 null。",
+        "description": "读这段对话的成片草稿；可见范围同读工作区文件。还没存过答复 ``revision`` 0、\n``html`` 与 ``updatedAt`` 为 null。",
         "operationId": "read_whole_film_draft_conversations__conversation_id__whole_film_draft_get",
         "parameters": [
           {
@@ -19054,7 +18557,7 @@
         ]
       },
       "put": {
-        "description": "整份保存成片草稿，答复新的版本号。只有属主能存；``revision`` 不是当前那一版（还没有\n草稿是 0）是 409；文档不合规矩、引用的记录不是这段对话的是 422。",
+        "description": "整份保存成片文件，答复新的版本号；存下的是按写法重写后的那一份。只有属主能存；\n``revision`` 不是当前那一版（还没有草稿是 0）是 409；文件不合写法、用到的素材不是这段对话的、\n没开通都是 422；渲染服务不可用 502。",
         "operationId": "save_whole_film_draft_conversations__conversation_id__whole_film_draft_put",
         "parameters": [
           {
@@ -19120,7 +18623,7 @@
     },
     "/conversations/{conversation_id}/whole-film/exports": {
       "post": {
-        "description": "按当前草稿导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；\n``revision`` 不是存着的那一版 409；画面轨没有内容、用到的记录没有产物地址、没开通都是 422。\n渲染服务不收这份草稿不在这里答，那条记录记为失败（``RENDER_REJECTED``）。",
+        "description": "按当前草稿导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；\n``revision`` 不是存着的那一版 409；成片里还没有画面、用到的素材不再是这段对话的、没开通\n都是 422；渲染服务不可用 502。草稿在交给渲染服务之前又改过不在这里答，那条记录记为失败\n（``FILM_CHANGED``）。",
         "operationId": "export_whole_film_conversations__conversation_id__whole_film_exports_post",
         "parameters": [
           {

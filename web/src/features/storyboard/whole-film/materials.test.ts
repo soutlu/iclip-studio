@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { card, video } from '@/testing/whole-film'
+import { picture } from '@/testing/whole-film'
 import {
   rangePieces,
   shiftShot,
@@ -93,15 +93,15 @@ describe('trimRange：挪选区的一端', () => {
 describe('rangePieces：加入成片时拆成的段', () => {
   it('一个镜头一段；拉过镜头边界也不拆', () => {
     expect(rangePieces({ ...range(2_000, 3_000), startMs: 1_500, endMs: 4_500 })).toEqual([
-      { playbackStart: 1_500, duration: 3_000 },
+      { mediaStart: 1_500, duration: 3_000 },
     ])
   })
 
   it('几个镜头按镜头拆，第一段、最后一段带两端的修剪', () => {
     expect(rangePieces(shots(2, 4, { startMs: 1_200, endMs: 3_400 }))).toEqual([
-      { playbackStart: 1_200, duration: 800 },
-      { playbackStart: 2_000, duration: 1_000 },
-      { playbackStart: 3_000, duration: 400 },
+      { mediaStart: 1_200, duration: 800 },
+      { mediaStart: 2_000, duration: 1_000 },
+      { mediaStart: 3_000, duration: 400 },
     ])
   })
 })
@@ -140,13 +140,12 @@ describe('shiftShot：Shift 点镜头', () => {
   })
 })
 
-describe('usedSpans：画面轨上每版素材片用了哪些段', () => {
-  it('按版本分开，同一版用了几段就记几段；组件段不算', () => {
+describe('usedSpans：成片里每版素材片用了哪些段', () => {
+  it('按版本分开，同一版用了几段就记几段', () => {
     const used = usedSpans([
-      video('v1', 'a', 1_000, 2_000),
-      card('c1', 2_000),
-      video('v2', 'b', 0, 500),
-      video('v3', 'a', 4_000, 1_000),
+      picture({ id: 'v1', jobId: 'a', mediaStart: 1_000, duration: 2_000 }),
+      picture({ id: 'v2', jobId: 'b', mediaStart: 0, duration: 500 }),
+      picture({ id: 'v3', jobId: 'a', mediaStart: 4_000, duration: 1_000 }),
     ])
     expect(Object.fromEntries(used)).toEqual({
       a: [
@@ -157,8 +156,8 @@ describe('usedSpans：画面轨上每版素材片用了哪些段', () => {
     })
   })
 
-  it('画面轨上没有视频时什么都没用', () => {
-    expect(usedSpans([card('c1', 2_000)]).size).toBe(0)
+  it('成片里没有画面时什么都没用', () => {
+    expect(usedSpans([]).size).toBe(0)
   })
 })
 

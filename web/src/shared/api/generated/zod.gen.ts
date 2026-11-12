@@ -3660,62 +3660,24 @@ export const zVideoTaskOut = z.object({
 })
 
 /**
- * WholeFilmCanvas
+ * WholeFilmDraftIn
+ *
+ * 整份保存成片文件。``revision`` 是读到的那一版，还没有草稿时是 0。
  */
-export const zWholeFilmCanvas = z.object({
-  height: z.int().gte(1).lte(4096),
-  width: z.int().gte(1).lte(4096),
+export const zWholeFilmDraftIn = z.object({
+  html: z.string().min(1).max(1000000),
+  revision: z.int().gte(0),
 })
 
 /**
- * WholeFilmCaptionEdit
+ * WholeFilmDraftOut
  *
- * 用户改过字的一句：第 ``sentenceIndex`` 句（从 0 数）换成 ``text``。
+ * 当前的成片文件；还没存过时 ``revision`` 是 0，``html`` 与 ``updatedAt`` 为 null。
  */
-export const zWholeFilmCaptionEdit = z.object({
-  sentenceIndex: z.int().gte(0),
-  subtitleJobId: z.uuid(),
-  text: z.string().min(1).max(500),
-})
-
-/**
- * WholeFilmCaptions
- *
- * 字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。
- * ``x``、``y``、``scale``、``rotation`` 是字幕在画面上挪开的位置、缩放与旋转，所有字幕共用一套；
- * ``pivotX``、``pivotY`` 是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，
- * 编辑器在第一次离开原大、不转时写下。``variables`` 是字幕样式的可填项，同特效块；换样式时照样
- * 保留，合成时只取当前样式声明过的项。
- */
-export const zWholeFilmCaptions = z.object({
-  component: z.string().min(1).max(200),
-  edits: z.array(zWholeFilmCaptionEdit).max(1000),
-  hidden: z.boolean().optional().default(false),
-  pivotX: z.int().gte(-4096).lte(4096).optional().default(0),
-  pivotY: z.int().gte(-4096).lte(4096).optional().default(0),
-  rotation: z.number().gt(-180).lte(180).optional().default(0),
-  scale: z.number().gte(0.1).lte(10).optional().default(1),
-  variables: z
-    .record(z.string(), z.union([z.boolean(), z.int(), z.number(), z.string().max(500)]))
-    .optional()
-    .default({}),
-  x: z.int().gte(-4096).lte(4096).optional().default(0),
-  y: z.int().gte(-4096).lte(4096).optional().default(0),
-})
-
-/**
- * WholeFilmComponentClip
- *
- * 画面轨上的一段组件，与视频段同等占时间；从组件自己时间里的 ``playbackStart`` 起播。
- */
-export const zWholeFilmComponentClip = z.object({
-  component: z.string().min(1).max(200),
-  duration: z.int().gte(100),
-  id: z.string().min(1).max(64),
-  playbackStart: z.int().gte(0),
-  start: z.int().gte(0),
-  type: z.literal('component'),
-  variables: z.record(z.string(), z.union([z.boolean(), z.int(), z.number(), z.string().max(500)])),
+export const zWholeFilmDraftOut = z.object({
+  html: z.string().nullable(),
+  revision: z.int(),
+  updatedAt: z.iso.datetime().nullable(),
 })
 
 /**
@@ -3778,46 +3740,6 @@ export const zWholeFilmExportStartedOut = z.object({
 })
 
 /**
- * WholeFilmMusic
- *
- * 背景音乐从头铺到尾：``offset`` 是音乐文件里与成片 0 毫秒对齐的那一刻。
- */
-export const zWholeFilmMusic = z.object({
-  jobId: z.uuid(),
-  offset: z.int().gte(0),
-  volume: z.number().gte(0).lte(3.981072),
-})
-
-/**
- * WholeFilmOverlay
- *
- * 特效轨上的一个组件，按成片时间放在 ``[start, start + duration)``，从组件自己时间里的
- * ``playbackStart`` 起播。
- *
- * 同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块
- * 之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。
- * ``x``、``y``、``scale``、``rotation`` 是它在画面上挪开的位置、缩放与旋转；``pivotX``、``pivotY``
- * 是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，编辑器在第一次离开原大、
- * 不转时写下。
- */
-export const zWholeFilmOverlay = z.object({
-  component: z.string().min(1).max(200),
-  duration: z.int().gte(100),
-  id: z.string().min(1).max(64),
-  pivotX: z.int().gte(-4096).lte(4096).optional().default(0),
-  pivotY: z.int().gte(-4096).lte(4096).optional().default(0),
-  playbackStart: z.int().gte(0),
-  rotation: z.number().gt(-180).lte(180).optional().default(0),
-  scale: z.number().gte(0.1).lte(10).optional().default(1),
-  start: z.int().gte(0),
-  track: z.int().gte(0),
-  variables: z.record(z.string(), z.union([z.boolean(), z.int(), z.number(), z.string().max(500)])),
-  x: z.int().gte(-4096).lte(4096).optional().default(0),
-  y: z.int().gte(-4096).lte(4096).optional().default(0),
-  zIndex: z.int().gte(0),
-})
-
-/**
  * WholeFilmVersionOut
  *
  * 成片卡里的一版：这段对话的一次已完成导出。
@@ -3850,55 +3772,6 @@ export const zWholeFilmCardsOut = z.object({
   items: z.array(zWholeFilmCardOut),
   nextCursor: z.string().nullable(),
   total: z.int().nullable(),
-})
-
-/**
- * WholeFilmVideoClip
- *
- * 画面轨上的一段素材片：取它自己媒体时间里从 ``playbackStart`` 起的 ``duration``。
- */
-export const zWholeFilmVideoClip = z.object({
-  duration: z.int().gte(100),
-  id: z.string().min(1).max(64),
-  playbackStart: z.int().gte(0),
-  sourceJobId: z.uuid(),
-  start: z.int().gte(0),
-  type: z.literal('video'),
-  volume: z.number().gte(0).lte(3.981072),
-})
-
-/**
- * WholeFilmDocument
- *
- * 一段对话的成片草稿。
- */
-export const zWholeFilmDocument = z.object({
-  canvas: zWholeFilmCanvas.nullable(),
-  captions: zWholeFilmCaptions,
-  layer0: z.array(z.union([zWholeFilmVideoClip, zWholeFilmComponentClip])).max(1200),
-  music: zWholeFilmMusic.nullable(),
-  overlays: z.array(zWholeFilmOverlay).max(1200),
-})
-
-/**
- * WholeFilmDraftIn
- *
- * 整份保存草稿。``revision`` 是读到的那一版，还没有草稿时是 0。
- */
-export const zWholeFilmDraftIn = z.object({
-  document: zWholeFilmDocument,
-  revision: z.int().gte(0),
-})
-
-/**
- * WholeFilmDraftOut
- *
- * 当前的草稿；还没存过时 ``revision`` 是 0，``document`` 与 ``updatedAt`` 为 null。
- */
-export const zWholeFilmDraftOut = z.object({
-  document: zWholeFilmDocument.nullable(),
-  revision: z.int(),
-  updatedAt: z.iso.datetime().nullable(),
 })
 
 /**

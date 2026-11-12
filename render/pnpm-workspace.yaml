@@ -17,6 +17,7 @@ minimumReleaseAgeExclude:
   - '@hyperframes/parsers@0.9.31'
   - '@hyperframes/player@0.9.31'
   - '@hyperframes/producer@0.9.31'
+  - '@hyperframes/sdk@0.9.31'
   - '@hyperframes/studio-server@0.9.31'
   - '@vitest/mocker@5.0.0'
   - '@vitest/spy@5.0.0'

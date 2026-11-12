@@ -280,13 +280,11 @@ def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
 def whole_film_request(*sources: uuid.UUID) -> WholeFilmRequest:
     return WholeFilmRequest(
         revision=1,
-        document={},
         videos=[
             WholeFilmVideoSource(job_id=source, url=f"https://cdn.test/videos/{source}.mp4")
             for source in sources
         ],
         music=None,
-        subtitles=[],
     )
 
 

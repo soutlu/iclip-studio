@@ -9,12 +9,12 @@ import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import { resolveHeadlessShellPath } from '@hyperframes/engine'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { buildComposition } from '../../web/src/features/storyboard/whole-film/composition/build'
+import { writeFilm } from '../../web/src/features/storyboard/whole-film/composition/film'
 import { ExportQueue } from './jobs'
 import { loadLibrary, type ComponentLibrary } from './library'
 import { createProducerWorker } from './renderer'
 import { createExportServer } from './server'
-import { memoryLogger, SOURCE_JOB, SUBTITLE_JOB, MUSIC_JOB } from './testing'
+import { memoryLogger, picture } from './testing'
 
 const run = promisify(execFile)
 const REGISTRY_ROOT =
@@ -22,8 +22,6 @@ const REGISTRY_ROOT =
 const library: ComponentLibrary | null = existsSync(join(REGISTRY_ROOT, 'catalog.json'))
   ? await loadLibrary(REGISTRY_ROOT)
   : null
-const catalog = library?.catalog as ComponentLibrary['catalog']
-const REGISTRY = library?.dir ?? ''
 
 function skipReason(): string | null {
   let chrome: string | undefined
@@ -45,7 +43,7 @@ function skipReason(): string | null {
 const reason = skipReason()
 
 const FRAME = { width: 640, height: 360 }
-const TEXT_AREA = { x: 60, y: 258, width: 260, height: 38 }
+const GRAY_JOB = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
 
 async function frameAt(file: string, at: number): Promise<Buffer> {
   const { stdout } = await run(
@@ -70,47 +68,33 @@ async function frameAt(file: string, at: number): Promise<Buffer> {
   return stdout
 }
 
-interface Region {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-function eachPixel(region: Region, visit: (offset: number) => void) {
-  for (let y = region.y; y < region.y + region.height; y += 1) {
-    for (let x = region.x; x < region.x + region.width; x += 1) visit((y * FRAME.width + x) * 3)
-  }
-}
-
-function meanDifference(a: Buffer, b: Buffer, region: Region): number {
+function meanDifference(a: Buffer, b: Buffer): number {
   let sum = 0
-  eachPixel(region, (offset) => {
-    for (let channel = 0; channel < 3; channel += 1) {
-      sum += Math.abs((a[offset + channel] ?? 0) - (b[offset + channel] ?? 0))
-    }
-  })
-  return sum / (region.width * region.height * 3)
+  for (let offset = 0; offset < a.length; offset += 1) {
+    sum += Math.abs((a[offset] ?? 0) - (b[offset] ?? 0))
+  }
+  return sum / a.length
 }
 
-function bluePixels(frame: Buffer): number {
-  let count = 0
-  eachPixel({ x: 0, y: 0, ...FRAME }, (offset) => {
-    const [r, g, b] = [frame[offset] ?? 0, frame[offset + 1] ?? 0, frame[offset + 2] ?? 0]
-    if (b > 150 && b - r > 80 && b - g > 40) count += 1
-  })
-  return count
-}
-
-function meanColor(frame: Buffer, region: Region): [number, number, number] {
-  let [r, g, b] = [0, 0, 0]
-  eachPixel(region, (offset) => {
-    r += frame[offset] ?? 0
-    g += frame[offset + 1] ?? 0
-    b += frame[offset + 2] ?? 0
-  })
-  const count = region.width * region.height
-  return [r / count, g / count, b / count]
+/** 一段声音的平均响度（dB）。 */
+async function meanVolume(file: string, from: number, length: number): Promise<number> {
+  const { stderr } = await run('ffmpeg', [
+    '-v',
+    'info',
+    '-ss',
+    String(from),
+    '-t',
+    String(length),
+    '-i',
+    file,
+    '-vn',
+    '-af',
+    'volumedetect',
+    '-f',
+    'null',
+    '-',
+  ])
+  return Number(/mean_volume: (-?[\d.]+) dB/.exec(stderr)?.[1])
 }
 
 async function startServer(dir: string): Promise<{ server: Server; origin: string }> {
@@ -180,21 +164,11 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       '-f',
       'lavfi',
       '-i',
-      'sine=frequency=550:duration=4',
-      join(dir, 'music.mp3'),
-    ])
-    await run('ffmpeg', [
-      '-v',
-      'error',
-      '-y',
-      '-f',
-      'lavfi',
-      '-i',
       'color=c=0x202020:s=640x360:r=30:d=7',
       '-f',
       'lavfi',
       '-i',
-      'anullsrc=r=44100:cl=stereo',
+      'sine=frequency=550:duration=7',
       '-c:v',
       'libx264',
       '-pix_fmt',
@@ -233,47 +207,15 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     await new Promise<void>((resolve) => service.listen(0, '127.0.0.1', resolve))
     const api = `http://127.0.0.1:${(service.address() as AddressInfo).port}`
     const exportId = '33333333-2222-4333-8444-555555555555'
+    const clip = `${origin}/clip.mp4`
     const body = {
       id: exportId,
       conversationId: '99999999-8888-4777-8666-555555555555',
-      document: {
-        canvas: { width: 640, height: 360 },
-        layer0: [
-          {
-            id: 'a',
-            type: 'video',
-            start: 0,
-            duration: 2000,
-            playbackStart: 500,
-            sourceJobId: SOURCE_JOB,
-            volume: 1,
-          },
-        ],
-        captions: { component: 'default-caption', edits: [] },
-        music: { jobId: MUSIC_JOB, offset: 0, volume: 0.5 },
-        overlays: [],
-      },
-      media: {
-        videos: { [SOURCE_JOB]: { url: `${origin}/clip.mp4` } },
-        music: { url: `${origin}/music.mp3` },
-        subtitles: {
-          [SOURCE_JOB]: {
-            subtitleJobId: SUBTITLE_JOB,
-            sentences: [
-              {
-                startMs: 600,
-                endMs: 2000,
-                text: '渲染测试。',
-                speaker: null,
-                words: [
-                  { startMs: 600, endMs: 1200, text: '渲染', punctuation: '' },
-                  { startMs: 1200, endMs: 2000, text: '测试', punctuation: '。' },
-                ],
-              },
-            ],
-          },
-        },
-      },
+      film: writeFilm(
+        { canvas: FRAME, blocks: [picture({ src: clip, duration: 2000, mediaStart: 500 })] },
+        (library as ComponentLibrary).catalog,
+      ),
+      media: { [clip]: { url: clip } },
       upload: { url: `${origin}/upload.mp4`, headers: { 'Content-Type': 'video/mp4' } },
     }
     try {
@@ -315,474 +257,70 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(probe.streams.some((stream) => stream.codec_type === 'audio')).toBe(true)
   }, 300_000)
 
-  it('组件可填项在画面上生效：同一组件两处各显示自己的文字，底色经 CSS 变量生效', async () => {
+  it('两个画面块首尾相接：各在自己的时间段里上画面，音量按块上写的生效', async () => {
     const { logger } = memoryLogger()
-    const worker = createProducerWorker({
-      workDir: join(dir, 'work'),
-      gpuEncode: false,
-      logger,
-    })
-    const gray = `${origin}/gray.mp4`
-    const film = (values: boolean, video: string) =>
-      buildComposition({
-        draft: {
-          canvas: FRAME,
-          layer0: [
-            {
-              id: 'g',
-              type: 'video',
-              start: 0,
-              duration: 6000,
-              playbackStart: 0,
-              sourceJobId: SOURCE_JOB,
-              volume: 1,
-            },
-          ],
-          captions: { component: 'default-caption', edits: [] },
-          music: null,
-          overlays: [
-            {
-              id: 'h',
-              component: 'fixture-fields',
-              start: 0,
-              duration: 2000,
-              playbackStart: 0,
-              track: 0,
-              zIndex: 1,
-              variables: values ? { accent: '#e5484d' } : {},
-            },
-            {
-              id: 'n1',
-              component: 'fixture-fields',
-              start: 2000,
-              duration: 2000,
-              playbackStart: 0,
-              track: 0,
-              zIndex: 2,
-              variables: values ? { text: '秋冬新款上市' } : {},
-            },
-            {
-              id: 'n2',
-              component: 'fixture-fields',
-              start: 4000,
-              duration: 2000,
-              playbackStart: 0,
-              track: 0,
-              zIndex: 3,
-              variables: values ? { text: '第二处文字' } : {},
-            },
-          ],
-        },
-        media: { videos: { [SOURCE_JOB]: { url: video } }, music: null, subtitles: {} },
-        catalog,
-      }).html
-    const frames = async (values: boolean) => {
-      const rendered = await worker.render(
+    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
+    const [clip, gray] = [`${origin}/clip.mp4`, `${origin}/gray.mp4`]
+    const film = (paths: Readonly<Record<string, string>>, grayVolume: number) =>
+      writeFilm(
         {
-          id: values ? 'values' : 'defaults',
-          registryDir: REGISTRY,
-          mediaUrls: [gray],
-          compose: (paths) => film(values, paths[gray] ?? gray),
-        },
-        { signal: new AbortController().signal, onProgress: () => {} },
-      )
-      try {
-        return {
-          headline: await frameAt(rendered.file, 1),
-          first: await frameAt(rendered.file, 3.3),
-          second: await frameAt(rendered.file, 5.3),
-        }
-      } finally {
-        await rendered.cleanup()
-      }
-    }
-    const withValues = await frames(true)
-    const withDefaults = await frames(false)
-
-    expect(meanDifference(withDefaults.first, withDefaults.second, TEXT_AREA)).toBeLessThan(3)
-    expect(meanDifference(withValues.first, withDefaults.first, TEXT_AREA)).toBeGreaterThan(6)
-    expect(meanDifference(withValues.second, withDefaults.second, TEXT_AREA)).toBeGreaterThan(6)
-    expect(meanDifference(withValues.first, withValues.second, TEXT_AREA)).toBeGreaterThan(6)
-    expect(bluePixels(withDefaults.headline)).toBeGreaterThan(100)
-    expect(bluePixels(withValues.headline)).toBeLessThan(10)
-  }, 600_000)
-
-  it('字幕选了品牌字体：外层设的字体变量传进字幕组件，字形与默认字体明显不同', async () => {
-    const { logger } = memoryLogger()
-    const worker = createProducerWorker({
-      workDir: join(dir, 'work'),
-      gpuEncode: false,
-      logger,
-    })
-    const gray = `${origin}/gray.mp4`
-    const brandFont = Object.entries(catalog.fonts).find(([, font]) => font.brand)?.[0]
-    expect(brandFont).toBeDefined()
-    const film = (variables: Record<string, string>, video: string) =>
-      buildComposition({
-        draft: {
           canvas: FRAME,
-          layer0: [
-            {
-              id: 'g',
-              type: 'video',
-              start: 0,
+          blocks: [
+            picture({ src: paths[clip] ?? clip, duration: 2000 }),
+            picture({
+              id: 'clip-2',
+              jobId: GRAY_JOB,
+              src: paths[gray] ?? gray,
+              start: 2000,
               duration: 3000,
-              playbackStart: 0,
-              sourceJobId: SOURCE_JOB,
-              volume: 1,
-            },
+              mediaStart: 1000,
+              volume: grayVolume,
+            }),
           ],
-          captions: { component: 'default-caption', edits: [], variables },
-          music: null,
-          overlays: [],
         },
-        media: {
-          videos: { [SOURCE_JOB]: { url: video } },
-          music: null,
-          subtitles: {
-            [SOURCE_JOB]: {
-              subtitleJobId: SUBTITLE_JOB,
-              sentences: [
-                {
-                  startMs: 0,
-                  endMs: 1500,
-                  text: 'Graphic Type',
-                  speaker: null,
-                  words: [
-                    { startMs: 0, endMs: 700, text: 'Graphic', punctuation: '' },
-                    { startMs: 700, endMs: 1500, text: 'Type', punctuation: '' },
-                  ],
-                },
-              ],
-            },
-          },
-        },
-        catalog,
-      }).html
-    const frames = async (id: string, variables: Record<string, string>) => {
+        (library as ComponentLibrary).catalog,
+      )
+    const render = async (id: string, grayVolume: number) => {
       const rendered = await worker.render(
         {
           id,
-          registryDir: REGISTRY,
-          mediaUrls: [gray],
-          compose: (paths) => film(variables, paths[gray] ?? gray),
+          registryDir: (library as ComponentLibrary).dir,
+          mediaUrls: [clip, gray],
+          compose: (paths) => film(paths, grayVolume),
         },
         { signal: new AbortController().signal, onProgress: () => {} },
       )
       try {
+        const { stdout } = await run('ffprobe', [
+          '-v',
+          'error',
+          '-show_entries',
+          'format=duration',
+          '-of',
+          'json',
+          rendered.file,
+        ])
         return {
-          caption: await frameAt(rendered.file, 1),
-          blank: await frameAt(rendered.file, 2.5),
+          duration: Number(
+            (JSON.parse(stdout) as { format: { duration: string } }).format.duration,
+          ),
+          first: await frameAt(rendered.file, 1),
+          second: await frameAt(rendered.file, 3.5),
+          loudness: await meanVolume(rendered.file, 2.5, 2),
         }
       } finally {
         await rendered.cleanup()
       }
     }
-    const own = await frames('caption-own-font', {})
-    const brand = await frames('caption-brand-font', { font: brandFont ?? '' })
+    const full = await render('two-blocks', 1)
+    const quiet = await render('two-blocks-quiet', 0.25)
 
-    const area = { x: 100, y: 280, width: 440, height: 56 }
-    expect(meanDifference(own.caption, own.blank, area)).toBeGreaterThan(6)
-    expect(meanDifference(brand.caption, brand.blank, area)).toBeGreaterThan(6)
-    expect(meanDifference(own.caption, brand.caption, area)).toBeGreaterThan(6)
-  }, 600_000)
-
-  it('两段视频中间夹一个组件段，加一个超出画面轨结尾的特效块与字幕：组件段、特效块都上画面，成片随特效块变长', async () => {
-    const { logger } = memoryLogger()
-    const worker = createProducerWorker({
-      workDir: join(dir, 'work'),
-      gpuEncode: false,
-      logger,
-    })
-    const clip = `${origin}/clip.mp4`
-    const gray = `${origin}/gray.mp4`
-    const GRAY_JOB = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
-    const rendered = await worker.render(
-      {
-        id: 'model-b',
-        registryDir: REGISTRY,
-        mediaUrls: [clip, gray],
-        compose: (paths) =>
-          buildComposition({
-            draft: modelBDraft(GRAY_JOB),
-            media: {
-              videos: {
-                [SOURCE_JOB]: { url: paths[clip] ?? clip },
-                [GRAY_JOB]: { url: paths[gray] ?? gray },
-              },
-              music: null,
-              subtitles: {
-                [SOURCE_JOB]: {
-                  subtitleJobId: SUBTITLE_JOB,
-                  sentences: [
-                    {
-                      startMs: 200,
-                      endMs: 1800,
-                      text: '组件段在中间。',
-                      speaker: null,
-                      words: [
-                        { startMs: 200, endMs: 1000, text: '组件段', punctuation: '' },
-                        { startMs: 1000, endMs: 1800, text: '在中间', punctuation: '。' },
-                      ],
-                    },
-                  ],
-                },
-              },
-            },
-            catalog,
-          }).html,
-      },
-      { signal: new AbortController().signal, onProgress: () => {} },
-    )
-    try {
-      const { stdout } = await run('ffprobe', [
-        '-v',
-        'error',
-        '-show_entries',
-        'format=duration',
-        '-of',
-        'json',
-        rendered.file,
-      ])
-      const duration = Number(
-        (JSON.parse(stdout) as { format: { duration: string } }).format.duration,
-      )
-      expect(duration).toBeGreaterThan(6.9)
-      expect(duration).toBeLessThan(7.15)
-
-      const whole = { x: 0, y: 0, ...FRAME }
-      const [testCard, segment, grayBefore, overlayOnGray, overlayPastEnd] = await Promise.all(
-        [1, 3, 4.3, 5.8, 6.6].map((at) => frameAt(rendered.file, at)),
-      )
-      expect(meanDifference(segment!, testCard!, whole)).toBeGreaterThan(10)
-      expect(meanDifference(segment!, grayBefore!, whole)).toBeGreaterThan(3)
-      expect(meanDifference(segment!, Buffer.alloc(segment!.length), whole)).toBeGreaterThan(3)
-      expect(meanDifference(overlayOnGray!, grayBefore!, TEXT_AREA)).toBeGreaterThan(6)
-      expect(
-        meanDifference(overlayPastEnd!, Buffer.alloc(overlayPastEnd!.length), TEXT_AREA),
-      ).toBeGreaterThan(6)
-    } finally {
-      await rendered.cleanup()
-    }
-  }, 600_000)
-
-  it('在画面上挪过位置的特效块（固定尺寸组件）导出在挪到的地方，原处只剩底下的画面', async () => {
-    const { logger } = memoryLogger()
-    const worker = createProducerWorker({
-      workDir: join(dir, 'work'),
-      gpuEncode: false,
-      logger,
-    })
-    const gray = `${origin}/gray.mp4`
-    const shifted = { x: 300, y: -150 }
-    const block = (id: string, start: number, at: { x: number; y: number }) => ({
-      id,
-      component: 'fixture-fields',
-      start,
-      duration: 2500,
-      playbackStart: 0,
-      track: 0,
-      zIndex: 1,
-      variables: {},
-      ...at,
-    })
-    const rendered = await worker.render(
-      {
-        id: 'moved',
-        registryDir: REGISTRY,
-        mediaUrls: [gray],
-        compose: (paths) =>
-          buildComposition({
-            draft: {
-              canvas: FRAME,
-              layer0: [
-                {
-                  id: 'g',
-                  type: 'video',
-                  start: 0,
-                  duration: 5000,
-                  playbackStart: 0,
-                  sourceJobId: SOURCE_JOB,
-                  volume: 1,
-                },
-              ],
-              captions: { component: 'default-caption', edits: [] },
-              music: null,
-              overlays: [block('still', 0, { x: 0, y: 0 }), block('moved', 2500, shifted)],
-            },
-            media: {
-              videos: { [SOURCE_JOB]: { url: paths[gray] ?? gray } },
-              music: null,
-              subtitles: {},
-            },
-            catalog,
-          }).html,
-      },
-      { signal: new AbortController().signal, onProgress: () => {} },
-    )
-    try {
-      const [still, moved] = await Promise.all([1.5, 4].map((at) => frameAt(rendered.file, at)))
-      const home = { x: 42, y: 270, width: 7, height: 30 }
-      const away = { ...home, x: home.x + shifted.x, y: home.y + shifted.y }
-      const isBlue = ([r, , b]: [number, number, number]) => b > 180 && b - r > 100
-      const isGray = (color: [number, number, number]) =>
-        color.every((channel) => Math.abs(channel - 0x20) < 12)
-      expect(meanColor(still!, home)).toSatisfy(isBlue)
-      expect(meanColor(still!, away)).toSatisfy(isGray)
-      expect(meanColor(moved!, home)).toSatisfy(isGray)
-      expect(meanColor(moved!, away)).toSatisfy(isBlue)
-    } finally {
-      await rendered.cleanup()
-    }
-  }, 600_000)
-
-  it('挪过位置又缩放、旋转过的特效块：绕挪开之前的转轴缩放旋转，再整块挪开', async () => {
-    const { logger } = memoryLogger()
-    const worker = createProducerWorker({
-      workDir: join(dir, 'work'),
-      gpuEncode: false,
-      logger,
-    })
-    const gray = `${origin}/gray.mp4`
-    const shift = { x: 120, y: -160 }
-    const turn = { scale: 1.2, rotation: 20, pivotX: 50, pivotY: 250 }
-    const block = (id: string, start: number, placement: object) => ({
-      id,
-      component: 'fixture-fields',
-      start,
-      duration: 2500,
-      playbackStart: 0,
-      track: 0,
-      zIndex: 1,
-      variables: {},
-      ...placement,
-    })
-    const rendered = await worker.render(
-      {
-        id: 'turned',
-        registryDir: REGISTRY,
-        mediaUrls: [gray],
-        compose: (paths) =>
-          buildComposition({
-            draft: {
-              canvas: FRAME,
-              layer0: [
-                {
-                  id: 'g',
-                  type: 'video',
-                  start: 0,
-                  duration: 5000,
-                  playbackStart: 0,
-                  sourceJobId: SOURCE_JOB,
-                  volume: 1,
-                },
-              ],
-              captions: { component: 'default-caption', edits: [] },
-              music: null,
-              overlays: [block('still', 0, {}), block('turned', 2500, { ...shift, ...turn })],
-            },
-            media: {
-              videos: { [SOURCE_JOB]: { url: paths[gray] ?? gray } },
-              music: null,
-              subtitles: {},
-            },
-            catalog,
-          }).html,
-      },
-      { signal: new AbortController().signal, onProgress: () => {} },
-    )
-    try {
-      const [still, turned] = await Promise.all([1.5, 4].map((at) => frameAt(rendered.file, at)))
-      const before = blueBox(still!)
-      const after = blueBox(turned!)
-      const center = { x: (before.left + before.right) / 2, y: (before.top + before.bottom) / 2 }
-      const width = before.right - before.left
-      const height = before.bottom - before.top
-      const angle = (turn.rotation * Math.PI) / 180
-      const [cos, sin] = [Math.cos(angle), Math.sin(angle)]
-      const [dx, dy] = [center.x - turn.pivotX, center.y - turn.pivotY]
-      const expected = {
-        x: turn.pivotX + shift.x + turn.scale * (dx * cos - dy * sin),
-        y: turn.pivotY + shift.y + turn.scale * (dx * sin + dy * cos),
-        width: turn.scale * (width * cos + height * sin),
-        height: turn.scale * (width * sin + height * cos),
-      }
-      expect(after.left).toBeGreaterThan(0)
-      expect(after.top).toBeGreaterThan(0)
-      expect(after.right).toBeLessThan(FRAME.width - 1)
-      expect(after.bottom).toBeLessThan(FRAME.height - 1)
-      expect(Math.abs((after.left + after.right) / 2 - expected.x)).toBeLessThan(4)
-      expect(Math.abs((after.top + after.bottom) / 2 - expected.y)).toBeLessThan(4)
-      expect(Math.abs(after.right - after.left - expected.width)).toBeLessThan(6)
-      expect(Math.abs(after.bottom - after.top - expected.height)).toBeLessThan(6)
-    } finally {
-      await rendered.cleanup()
-    }
+    expect(full.duration).toBeGreaterThan(4.9)
+    expect(full.duration).toBeLessThan(5.15)
+    const grayFrame = Buffer.alloc(full.second.length, 0x20)
+    expect(meanDifference(full.second, grayFrame)).toBeLessThan(6)
+    expect(meanDifference(full.first, grayFrame)).toBeGreaterThan(30)
+    expect(full.loudness - quiet.loudness).toBeGreaterThan(9)
+    expect(full.loudness - quiet.loudness).toBeLessThan(15)
   }, 600_000)
 })
-
-function blueBox(frame: Buffer): { left: number; top: number; right: number; bottom: number } {
-  let [left, top, right, bottom] = [Infinity, Infinity, -Infinity, -Infinity]
-  for (let y = 0; y < FRAME.height; y += 1) {
-    for (let x = 0; x < FRAME.width; x += 1) {
-      const offset = (y * FRAME.width + x) * 3
-      const [r, b] = [frame[offset] ?? 0, frame[offset + 2] ?? 0]
-      if (!(b > 180 && b - r > 100)) continue
-      left = Math.min(left, x)
-      top = Math.min(top, y)
-      right = Math.max(right, x + 1)
-      bottom = Math.max(bottom, y + 1)
-    }
-  }
-  if (!(right > left)) throw new Error('画面上没有色块')
-  return { left, top, right, bottom }
-}
-
-function modelBDraft(grayJob: string) {
-  return {
-    canvas: FRAME,
-    layer0: [
-      {
-        id: 'a',
-        type: 'video' as const,
-        start: 0,
-        duration: 2000,
-        playbackStart: 0,
-        sourceJobId: SOURCE_JOB,
-        volume: 1,
-      },
-      {
-        id: 'c',
-        type: 'component' as const,
-        start: 2000,
-        duration: 2000,
-        playbackStart: 0,
-        component: 'fixture-scene',
-        variables: {},
-      },
-      {
-        id: 'b',
-        type: 'video' as const,
-        start: 4000,
-        duration: 2000,
-        playbackStart: 0,
-        sourceJobId: grayJob,
-        volume: 1,
-      },
-    ],
-    captions: { component: 'default-caption', edits: [] },
-    music: null,
-    overlays: [
-      {
-        id: 'o',
-        component: 'fixture-fields',
-        start: 4500,
-        duration: 2500,
-        playbackStart: 0,
-        track: 0,
-        zIndex: 1,
-        variables: { text: '秋冬新款上市' },
-      },
-    ],
-  }
-}
