@@ -15,7 +15,7 @@ import {
   type Canvas,
   type PictureBlock,
 } from './composition/film'
-import { rowHidden, topTrack, type Landing, type Renumbering } from './placement'
+import { topTrack, type Landing, type Renumbering } from './placement'
 import { insertionOf } from './stacking'
 import { readWholeFilmDraft, saveWholeFilmDraft } from './whole-film.api'
 
@@ -242,8 +242,6 @@ export function useFilmSession(
         noticeRef.current(FILM_LIMIT_TEXT)
         return false
       }
-      // 放进隐藏着的行，新块也跟着隐藏
-      const hidden = rowHidden(others, track)
       const declared = new Set(engine.listVariables().map((variable) => variable.id))
       // 文件里现在的先后；每加一个块就按它写进去的位置插进来，下一个块照着新的先后算
       const written = [...others]
@@ -262,7 +260,7 @@ export function useFilmSession(
             track,
             volume: 1,
             z: 0,
-            hidden,
+            hidden: false,
           }
           const { index, z } = insertionOf(written, placed)
           const block = { ...placed, z }
@@ -321,13 +319,7 @@ export function useFilmSession(
         const block = pictures.find((other) => other.id === id)
         if (block === undefined) return
         const others = pictures.filter((other) => other.id !== id)
-        // 显示还是隐藏跟着它去的那一行
-        const placed = {
-          ...block,
-          track: at.track,
-          start: at.start,
-          hidden: rowHidden(others, at.track),
-        }
+        const placed = { ...block, track: at.track, start: at.start }
         const { index, z } = insertionOf(others, placed)
         engine.removeElement(id)
         engine.addElement(FILM_ID, index, pictureBlock({ ...placed, z }))

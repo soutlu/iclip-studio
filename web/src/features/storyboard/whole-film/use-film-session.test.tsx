@@ -338,7 +338,7 @@ describe('useFilmSession', () => {
     expect(result.current.film?.html).not.toContain('data-hidden')
   })
 
-  it('显示还是隐藏跟着行走：放进隐藏着的行的镜头也隐藏，换到显示着的行就显示回来', async () => {
+  it('隐藏标记跟着块走，不跟着行：放进隐藏着的行的镜头照常显示，隐藏的块换到别的行仍然隐藏', async () => {
     const { result } = await openThree()
     act(() => result.current.moveBlock('c', { track: 1, start: 0 }))
     act(() => result.current.setHidden(['c'], true))
@@ -346,12 +346,12 @@ describe('useFilmSession', () => {
       result.current.addPictures(CANVAS, [piece({ duration: 1_000 })], { track: 1, start: 5_000 }),
     )
     const added = result.current.film?.pictures.find((block) => block.start === 5_000)
-    expect(added?.hidden).toBe(true)
+    expect(added?.hidden).toBe(false)
 
+    act(() => result.current.moveBlock('a', { track: 1, start: 2_000 }))
+    expect(hiddenIds(result)).toEqual(['c'])
     act(() => result.current.moveBlock('c', { track: 0, start: 3_000 }))
-    expect(hiddenIds(result)).toEqual([added?.id])
-    act(() => result.current.moveBlock('a', { track: 1, start: 0 }))
-    expect(hiddenIds(result)?.toSorted()).toEqual([added?.id, 'a'].toSorted())
+    expect(hiddenIds(result)).toEqual(['c'])
   })
 
   it('把块搬进最上面新开的一行：别的块换成新的行号，它写在最后盖住它们；一步撤销', async () => {
