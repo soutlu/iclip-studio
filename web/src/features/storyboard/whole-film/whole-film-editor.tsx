@@ -49,14 +49,7 @@ import { landingOn, type Landing } from './placement'
 import { previewDocument } from './preview-document'
 import { PreviewPlayer, type PreviewControl } from './preview-player'
 import { PreviewTransport } from './preview-transport'
-import {
-  FIT_ZOOM,
-  nextZoom,
-  snapSpanStartMs,
-  snapTargets,
-  timelineScale,
-  type Zoom,
-} from './timeline-scale'
+import { FIT_ZOOM, snapSpanStartMs, snapTargets, timelineScale, type Zoom } from './timeline-scale'
 import { useFilmSession } from './use-film-session'
 import { useWholeFilmExport } from './use-whole-film-export'
 import { useWholeFilmDraftQuery } from './whole-film.api'
@@ -233,6 +226,7 @@ function EditorBody({
   // 选中的块被撤销或删掉以后就不算选中了
   const selected = pictures.find((block) => block.id === selectedId)
   const [ripple, setRipple] = useState(true)
+  const [thumbnails, setThumbnails] = useState(true)
   const [snap, setSnap] = useState(true)
   // 落在最下面那条空行上时新开的一行：排在现有的行后面
   const newTrack = Math.max(-1, ...pictures.map((block) => block.track)) + 1
@@ -408,9 +402,7 @@ function EditorBody({
           <EditorToolbar
             canRedo={history.canRedo}
             canUndo={history.canUndo}
-            insertBlocked={range === null ? PICK_FIRST_TEXT : undefined}
-            onFit={() => setZoom(FIT_ZOOM)}
-            onInsert={insert}
+            fitPps={scale.fitPps}
             onRedo={() => {
               leaveMaterial()
               session.redo()
@@ -421,9 +413,12 @@ function EditorBody({
             }}
             onRipple={() => setRipple((on) => !on)}
             onSnap={() => setSnap((on) => !on)}
-            onZoom={(direction) => setZoom(nextZoom(direction, zoom, scale.fitPps))}
+            onThumbnails={() => setThumbnails((on) => !on)}
+            onZoom={setZoom}
             ripple={ripple}
             snap={snap}
+            thumbnails={thumbnails}
+            zoom={zoom}
           />
           <FilmTimeline
             buffered={buffered}
@@ -454,6 +449,7 @@ function EditorBody({
             }}
             selectedId={selected?.id ?? null}
             snap={snap}
+            thumbnails={thumbnails}
             sourceMs={(src) => {
               const state = keyframes.get(src)
               return state?.kind === 'ready' ? Math.round(state.index.duration * 1000) : undefined

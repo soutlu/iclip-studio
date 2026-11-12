@@ -1092,6 +1092,48 @@
   background: var(--color-hairline);
 }
 
+/* 时间线缩放的滑杆和读数 */
+.wf-zoom {
+  position: relative;
+  display: flex;
+  width: 84px;
+  height: 16px;
+  flex: none;
+  align-items: center;
+  margin: 0 4px;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+.wf-zoom-track {
+  position: relative;
+  height: 2px;
+  flex: 1;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-on-surface) 16%, transparent);
+}
+
+.wf-zoom-thumb {
+  --state-focus-offset: 2px;
+
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface);
+}
+
+.wf-zoom-readout {
+  min-width: 40px;
+  padding: 0 4px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
 /* 原声、配乐两个推子在工具条里，紧挨缩放钮，之间一条分隔线 */
 .wf-toolbar-sound {
   gap: 12px;
@@ -1668,6 +1710,11 @@
   height: 30px;
   flex: none;
   overflow: hidden;
+}
+
+/* 关掉缩略图：块上只剩名字和声音 */
+.wf-tracks.is-plain .wf-clip-frames {
+  display: none;
 }
 
 .wf-clip-frames.is-component {

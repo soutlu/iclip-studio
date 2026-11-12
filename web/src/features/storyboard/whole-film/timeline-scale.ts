@@ -13,6 +13,9 @@ import {
 import {
   getNextTimelineZoomPercent,
   getTimelinePixelsPerSecond,
+  getTimelineZoomPercent,
+  timelineSliderToZoomPercent,
+  timelineZoomPercentToSlider,
 } from './vendor/hyperframes-studio/player/components/timelineZoom'
 import type { ZoomMode } from './vendor/hyperframes-studio/player/store/playerStore'
 
@@ -55,6 +58,19 @@ export const nextZoom = (direction: 'in' | 'out', zoom: Zoom, fitPps: number): Z
   mode: 'manual',
   percent: getNextTimelineZoomPercent(direction, zoom.mode, zoom.percent, fitPps),
 })
+
+/** 现在的缩放在滑杆上的位置（0–100）。滑杆按对数走，小的那一头不会挤成一小截。 */
+export const zoomToSlider = (zoom: Zoom, fitPps: number): number =>
+  timelineZoomPercentToSlider(getTimelineZoomPercent(zoom.mode, zoom.percent, fitPps), fitPps)
+
+export const sliderToZoom = (slider: number, fitPps: number): Zoom => ({
+  mode: 'manual',
+  percent: timelineSliderToZoomPercent(slider, fitPps),
+})
+
+/** 工具条上写的缩放：适应宽度时写「适应」，否则是相对适应宽度的百分比。 */
+export const zoomLabel = (zoom: Zoom, fitPps: number): string =>
+  zoom.mode === 'fit' ? '适应' : `${getTimelineZoomPercent(zoom.mode, zoom.percent, fitPps)}%`
 
 export const msToPx = (ms: number, pps: number) => (ms / 1000) * pps
 

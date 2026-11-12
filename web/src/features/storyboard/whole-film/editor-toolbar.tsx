@@ -1,7 +1,16 @@
+import { Slider } from 'radix-ui'
 import { useState, type ReactNode } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
+import {
+  FIT_ZOOM,
+  nextZoom,
+  sliderToZoom,
+  zoomLabel,
+  zoomToSlider,
+  type Zoom,
+} from './timeline-scale'
 
 type ToolProps = {
   icon: IconName
@@ -72,14 +81,17 @@ type EditorToolbarProps = {
   canRedo: boolean
   onUndo: () => void
   onRedo: () => void
-  insertBlocked: string | undefined
-  onInsert: () => void
   snap: boolean
   onSnap: () => void
   ripple: boolean
   onRipple: () => void
-  onZoom: (direction: 'in' | 'out') => void
-  onFit: () => void
+  /** 块上要不要显示画面缩略图。 */
+  thumbnails: boolean
+  onThumbnails: () => void
+  zoom: Zoom
+  /** 「适应宽度」时一秒画多少像素，缩放的档位和滑杆都以它为准。 */
+  fitPps: number
+  onZoom: (zoom: Zoom) => void
 }
 
 export function EditorToolbar({
@@ -87,14 +99,15 @@ export function EditorToolbar({
   canRedo,
   onUndo,
   onRedo,
-  insertBlocked,
-  onInsert,
   snap,
   onSnap,
   ripple,
   onRipple,
+  thumbnails,
+  onThumbnails,
+  zoom,
+  fitPps,
   onZoom,
-  onFit,
 }: EditorToolbarProps) {
   return (
     <div aria-label="剪辑工具" className="wf-toolbar" role="toolbar">
@@ -127,21 +140,6 @@ export function EditorToolbar({
         />
         <span aria-hidden="true" className="wf-divider" />
         <Tool
-          blocked={insertBlocked}
-          icon="insert"
-          label="加入成片"
-          onClick={onInsert}
-          shortcuts="Enter"
-          showLabel
-          tip={
-            <>
-              把选中的范围接在成片末尾
-              <Keys>↵</Keys>
-            </>
-          }
-        />
-        <span aria-hidden="true" className="wf-divider" />
-        <Tool
           icon="snap"
           label="吸附"
           onClick={onSnap}
@@ -165,9 +163,44 @@ export function EditorToolbar({
         />
       </div>
       <div className="wf-toolbar-group">
-        <Tool icon="zoom-out" label="缩小时间线" onClick={() => onZoom('out')} tip="缩小时间线" />
-        <Tool icon="zoom" label="放大时间线" onClick={() => onZoom('in')} tip="放大时间线" />
-        <Tool icon="fit" label="适应宽度" onClick={onFit} tip="适应宽度" />
+        <Tool
+          icon="image"
+          label="显示缩略图"
+          onClick={onThumbnails}
+          pressed={thumbnails}
+          tip={thumbnails ? '缩略图开着：块上显示画面' : '缩略图关着：块上只有名字和声音'}
+        />
+        <span aria-hidden="true" className="wf-divider" />
+        <Tool icon="fit" label="适应宽度" onClick={() => onZoom(FIT_ZOOM)} tip="适应宽度" />
+        <Tool
+          icon="zoom-out"
+          label="缩小时间线"
+          onClick={() => onZoom(nextZoom('out', zoom, fitPps))}
+          tip="缩小时间线"
+        />
+        <Slider.Root
+          className="wf-zoom"
+          max={100}
+          onValueChange={([at]) => {
+            if (at !== undefined) onZoom(sliderToZoom(at, fitPps))
+          }}
+          step={1}
+          value={[zoomToSlider(zoom, fitPps)]}
+        >
+          <Slider.Track className="wf-zoom-track" />
+          <Slider.Thumb
+            aria-label="时间线缩放"
+            aria-valuetext={zoomLabel(zoom, fitPps)}
+            className="wf-zoom-thumb ui-focus"
+          />
+        </Slider.Root>
+        <Tool
+          icon="zoom"
+          label="放大时间线"
+          onClick={() => onZoom(nextZoom('in', zoom, fitPps))}
+          tip="放大时间线"
+        />
+        <span className="wf-zoom-readout">{zoomLabel(zoom, fitPps)}</span>
       </div>
     </div>
   )

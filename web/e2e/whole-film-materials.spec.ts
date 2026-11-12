@@ -282,7 +282,6 @@ test('Shift 选连着的几个镜头：不播放；在选区上单击只选那�
   const { dialog, materials } = await openWith(page, [1])
   const group = groupOf(materials, 1)
   const range = group.getByRole('group', { name: /^选中的范围/ })
-  const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
   const transport = dialog.getByRole('group', { name: '播放控制' })
   const clickAt = async (locator: Locator, shift = false) => {
     const { x, y } = await centerOf(locator)
@@ -324,7 +323,7 @@ test('Shift 选连着的几个镜头：不播放；在选区上单击只选那�
   for (let step = 0; step < 4; step += 1) await page.keyboard.press('ArrowRight')
   await expect(end).toHaveAttribute('aria-valuenow', '3.5')
 
-  await toolbar.getByRole('button', { name: '加入成片' }).click()
+  await page.keyboard.press('Enter')
   await expect
     .poll(() => savedBlocks(page))
     .toEqual([
