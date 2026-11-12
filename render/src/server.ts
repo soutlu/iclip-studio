@@ -1,12 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import {
-  buildComposition,
-  CompositionError,
-} from '../../web/src/features/storyboard/whole-film/composition/build'
+import type * as z from 'zod'
+import { checkFilm, FilmProblem, localizedFilm, type CheckedFilm } from './film'
 import type { ExportQueue } from './jobs'
 import type { ComponentLibrary } from './library'
 import type { Logger } from './log'
-import { disallowedMediaHosts, parseExportRequest } from './request'
+import { disallowedMediaHosts, parseRequest, zCheckRequest, zExportRequest } from './request'
 
 export interface ServerContext {
   queue: ExportQueue
@@ -47,62 +45,91 @@ function send(res: ServerResponse, status: number, body?: unknown): void {
 const fail = (res: ServerResponse, status: number, code: string, message: string) =>
   send(res, status, { code, message })
 
-async function createExport(req: IncomingMessage, res: ServerResponse, context: ServerContext) {
+/** 读请求体并按 `schema` 校验；不合格时已经答复了 400，返回 null。 */
+async function readRequest<T>(
+  req: IncomingMessage,
+  res: ServerResponse,
+  schema: z.ZodType<T>,
+): Promise<T | null> {
   let body: unknown
   try {
     body = JSON.parse(await readBody(req))
   } catch (error) {
     const message = error instanceof BodyTooLarge ? '请求体超过 16 MB' : '请求体不是 JSON'
     fail(res, 400, 'invalid-request', message)
-    return
+    return null
   }
-  const parsed = parseExportRequest(body)
+  const parsed = parseRequest(schema, body)
   if (!parsed.ok) {
     fail(res, 400, 'invalid-request', parsed.message)
+    return null
+  }
+  return parsed.request
+}
+
+/** 检查成片文件；不合写法时已经答复了 400，返回 null。 */
+async function checked(
+  res: ServerResponse,
+  film: string,
+  library: ComponentLibrary,
+  logger: Logger,
+): Promise<CheckedFilm | null> {
+  try {
+    return await checkFilm(film, library.catalog)
+  } catch (error) {
+    if (!(error instanceof FilmProblem)) throw error
+    logger.warn('成片文件没通过检查', { message: error.message, detail: error.detail })
+    fail(res, 400, 'invalid-film', error.message)
+    return null
+  }
+}
+
+async function checkFilmFile(req: IncomingMessage, res: ServerResponse, context: ServerContext) {
+  const request = await readRequest(req, res, zCheckRequest)
+  if (!request) return
+  const found = await checked(res, request.film, await context.library(), context.logger)
+  if (!found) return
+  send(res, 200, { html: found.html, durationMs: found.durationMs, sources: found.sources })
+}
+
+async function createExport(req: IncomingMessage, res: ServerResponse, context: ServerContext) {
+  const request = await readRequest(req, res, zExportRequest)
+  if (!request) return
+  const library = await context.library()
+  const found = await checked(res, request.film, library, context.logger)
+  if (!found) return
+  if (found.film.blocks.length === 0) {
+    fail(res, 400, 'invalid-film', '成片里还没有画面')
     return
   }
-  const { request } = parsed
-  const rejected = disallowedMediaHosts(request, context.allowedHosts)
+  const downloads = new Map<string, string>()
+  for (const { url } of found.sources) {
+    const download = request.media[url]?.url
+    if (download === undefined) {
+      fail(res, 400, 'missing-media', `素材「${url}」没有给下载地址`)
+      return
+    }
+    downloads.set(url, download)
+  }
+  const rejected = disallowedMediaHosts([...downloads.values()], context.allowedHosts)
   if (rejected.length > 0) {
     fail(res, 400, 'media-host-not-allowed', `素材地址的主机不在允许范围：${rejected.join('、')}`)
     return
   }
-  const library = await context.library()
   const compose = (paths: Readonly<Record<string, string>>) => {
-    const local = (url: string) => paths[url] ?? url
-    return buildComposition({
-      draft: request.document,
-      media: {
-        videos: Object.fromEntries(
-          Object.entries(request.media.videos).map(([id, video]) => [
-            id,
-            { url: local(video.url) },
-          ]),
-        ),
-        music: request.media.music ? { url: local(request.media.music.url) } : null,
-        subtitles: request.media.subtitles,
-      },
-      catalog: library.catalog,
-    }).html
+    const local = Object.fromEntries(
+      [...downloads].flatMap(([url, download]) => {
+        const path = paths[download]
+        return path === undefined ? [] : [[url, path]]
+      }),
+    )
+    return localizedFilm(found.film, local, library.catalog)
   }
-  try {
-    compose({})
-  } catch (error) {
-    if (error instanceof CompositionError) {
-      fail(res, 400, error.code, error.message)
-      return
-    }
-    throw error
-  }
-  const videoUrls = request.document.layer0.flatMap((clip) =>
-    clip.type === 'video' ? [request.media.videos[clip.sourceJobId]?.url ?? ''] : [],
-  )
-  const musicUrl = request.document.music && request.media.music ? [request.media.music.url] : []
   const accepted = context.queue.submit({
     id: request.id,
     conversationId: request.conversationId,
     registryDir: library.dir,
-    mediaUrls: [...new Set([...videoUrls, ...musicUrl])],
+    mediaUrls: [...new Set(downloads.values())],
     compose,
     upload: request.upload,
   })
@@ -122,6 +149,10 @@ export async function handle(
   const exportId = /^\/exports\/([^/]+)$/.exec(pathname)?.[1]
   if (req.method === 'POST' && pathname === '/exports') {
     await createExport(req, res, context)
+    return
+  }
+  if (req.method === 'POST' && pathname === '/films/check') {
+    await checkFilmFile(req, res, context)
     return
   }
   if (exportId && req.method === 'GET') {

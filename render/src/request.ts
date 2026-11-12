@@ -1,29 +1,29 @@
 import * as z from 'zod'
-import { zSubtitleSentence, zWholeFilmDocument } from '../../web/src/shared/api/generated/zod.gen'
 
 const zHttpUrl = z.url({ protocol: /^https?$/ })
+
+const MAX_FILM_CHARS = 1_000_000
+
+const zFilm = z.string().min(1).max(MAX_FILM_CHARS)
+
+export const zCheckRequest = z.object({ film: zFilm })
 
 export const zExportRequest = z.object({
   id: z.uuid(),
   conversationId: z.uuid(),
-  document: zWholeFilmDocument,
-  media: z.object({
-    videos: z.record(z.string(), z.object({ url: zHttpUrl })),
-    music: z.object({ url: zHttpUrl }).nullable(),
-    subtitles: z.record(
-      z.string(),
-      z.object({ subtitleJobId: z.string().min(1), sentences: z.array(zSubtitleSentence) }),
-    ),
-  }),
+  film: zFilm,
+  /** 成片文件里写的素材地址 → 渲染服务去下载的地址。 */
+  media: z.record(z.string(), z.object({ url: zHttpUrl })),
   upload: z.object({ url: zHttpUrl, headers: z.record(z.string(), z.string()) }),
 })
 
 export type ExportRequest = z.infer<typeof zExportRequest>
 
-export function parseExportRequest(
+export function parseRequest<T>(
+  schema: z.ZodType<T>,
   body: unknown,
-): { ok: true; request: ExportRequest } | { ok: false; message: string } {
-  const result = zExportRequest.safeParse(body)
+): { ok: true; request: T } | { ok: false; message: string } {
+  const result = schema.safeParse(body)
   if (result.success) return { ok: true, request: result.data }
   const issue = result.error.issues[0]
   const path = issue?.path.join('.') || '（请求体）'
@@ -39,11 +39,7 @@ export function parseAllowedHosts(value: string | undefined): Set<string> {
   )
 }
 
-export function disallowedMediaHosts(request: ExportRequest, allowed: Set<string>): string[] {
-  const urls = [
-    ...Object.values(request.media.videos).map((video) => video.url),
-    ...(request.media.music ? [request.media.music.url] : []),
-  ]
+export function disallowedMediaHosts(urls: readonly string[], allowed: Set<string>): string[] {
   const rejected = urls
     .map((url) => new URL(url).host.toLowerCase())
     .filter((host) => !allowed.has(host))

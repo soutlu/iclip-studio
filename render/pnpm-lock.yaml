@@ -8,12 +8,18 @@ importers:
 
   .:
     dependencies:
+      '@hyperframes/core':
+        specifier: 0.9.31
+        version: 0.9.31(@types/node@22.20.1)
       '@hyperframes/engine':
         specifier: 0.9.31
         version: 0.9.31(@types/node@22.20.1)
       '@hyperframes/producer':
         specifier: 0.9.31
         version: 0.9.31(@types/node@22.20.1)
+      parse5:
+        specifier: 8.0.1
+        version: 8.0.1
       zod:
         specifier: 4.5.4
         version: 4.5.4
@@ -22,6 +28,9 @@ importers:
         specifier: 10.0.1
         version: 10.0.1(eslint@10.9.1)
       '@hyperframes/player':
+        specifier: 0.9.31
+        version: 0.9.31(@types/node@22.20.1)
+      '@hyperframes/sdk':
         specifier: 0.9.31
         version: 0.9.31(@types/node@22.20.1)
       '@playwright/test':
@@ -473,6 +482,9 @@ packages:
   '@hyperframes/producer@0.9.31':
     resolution: {integrity: sha512-0gP7ltHo2tAs+tGcYCIKoxg9Pkr+eJxsiXPt2g1CR43UJ58zvFooS6fJqvbmgVG+aJ1yDqk02Mz4jvO+dVnbhA==}
     engines: {node: '>=22'}
+
+  '@hyperframes/sdk@0.9.31':
+    resolution: {integrity: sha512-GfZQ7xoN2lb8Mf9IgGUQ2UCVyxQTW1NihCyq+eVXm7jWGHSDDUz4qCltT6l1CiYlPtBm2d6/jSXfLuKusyxu/g==}
 
   '@hyperframes/studio-server@0.9.31':
     resolution: {integrity: sha512-Zre6C97obv5DkIHT8lyb7xd8XurM4RTWc0Zhp0w7Pu1aSuA7MrNF9fE0mgueOEkkBO5Nt907WD61KpgSIFSirA==}
@@ -1349,6 +1361,9 @@ packages:
     resolution: {integrity: sha512-LaNjtRWUBY++zB5nE/NwcaoMylSPk+S+ZHNB1TzdbMJMny6dynpAGt7X/tl/QYq3TIeE6nxHppbo2LGymrG5Pw==}
     engines: {node: '>=10'}
 
+  parse5@8.0.1:
+    resolution: {integrity: sha512-z1e/HMG90obSGeidlli3hj7cbocou0/wa5HacvI3ASx34PecNjNQeaHNo5WIZpWofN9kgkqV1q5YvXe3F0FoPw==}
+
   path-exists@4.0.0:
     resolution: {integrity: sha512-ak9Qy5Q7jYb2Wwcey5Fpvg2KoAc/ZIhLSLOSBmRmygPsGwkVVt0fZa0qrtMz+m6tJTAHfZQ8FnmB4MG4LWy7/w==}
     engines: {node: '>=8'}
@@ -1994,6 +2009,15 @@ snapshots:
       - proxy-agent
       - utf-8-validate
       - yauzl
+
+  '@hyperframes/sdk@0.9.31(@types/node@22.20.1)':
+    dependencies:
+      '@hyperframes/core': 0.9.31(@types/node@22.20.1)
+      '@hyperframes/parsers': 0.9.31
+      linkedom: 0.18.13
+    transitivePeerDependencies:
+      - '@types/node'
+      - canvas
 
   '@hyperframes/studio-server@0.9.31(@types/node@22.20.1)':
     dependencies:
@@ -2766,6 +2790,10 @@ snapshots:
   p-locate@5.0.0:
     dependencies:
       p-limit: 3.1.0
+
+  parse5@8.0.1:
+    dependencies:
+      entities: 8.1.0
 
   path-exists@4.0.0: {}
 

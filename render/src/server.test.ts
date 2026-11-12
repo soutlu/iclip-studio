@@ -3,7 +3,17 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ExportQueue } from './jobs'
 import type { ComponentLibrary } from './library'
 import { createExportServer } from './server'
-import { catalog, exportRequest, flush, manualWorker, memoryLogger } from './testing'
+import {
+  catalog,
+  CLIP_URL,
+  exportRequest,
+  filmFile,
+  flush,
+  manualWorker,
+  memoryLogger,
+  picture,
+  SOURCE_JOB,
+} from './testing'
 
 let base: string
 let close: () => Promise<void>
@@ -32,12 +42,15 @@ afterEach(async () => {
   await close()
 })
 
-const post = (body: unknown) =>
-  fetch(`${base}/exports`, {
+const send = (path: string, body: unknown) =>
+  fetch(`${base}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: typeof body === 'string' ? body : JSON.stringify(body),
   })
+
+const post = (body: unknown) => send('/exports', body)
+const check = (body: unknown) => send('/films/check', body)
 
 describe('渲染服务接口', () => {
   it('POST /exports 合法时答 202，可以查询任务的渲染状态', async () => {
@@ -59,58 +72,23 @@ describe('渲染服务接口', () => {
   })
 
   it('每次受理都读当前的组件库：发布新的一版后不用重启，任务用受理时那一版的目录', async () => {
-    const renamed = (component: string) => {
-      const body = exportRequest({ id: crypto.randomUUID() })
-      const document = body['document'] as { overlays: { component: string }[] }
-      document.overlays[0]!.component = component
-      return body
-    }
-    expect((await post(renamed('fixture-overlay-v2'))).status).toBe(400)
-
-    const overlay = catalog.items.find((item) => item.name === 'fixture-overlay')!
-    current = {
-      catalog: {
-        ...catalog,
-        version: 'next',
-        items: [...catalog.items, { ...overlay, name: 'fixture-overlay-v2' }],
-      },
-      dir: '/registry/next',
-    }
-    expect((await post(renamed('fixture-overlay-v2'))).status).toBe(202)
+    expect((await post(exportRequest({ id: crypto.randomUUID() }))).status).toBe(202)
+    current = { catalog: { ...catalog, version: 'next' }, dir: '/registry/next' }
+    expect((await post(exportRequest({ id: crypto.randomUUID() }))).status).toBe(202)
     await flush()
-    expect(renders.map((render) => render.registryDir)).toEqual(['/registry/next'])
+    await renders[0]?.pending.reject(new Error('stop'))
+    await flush()
+    expect(renders.map((render) => render.registryDir)).toEqual([
+      '/registry/test-fixtures',
+      '/registry/next',
+    ])
   })
 
-  it('画面轨上只有组件段、没有视频也没有画布：照样受理并开始渲染', async () => {
-    const body = exportRequest()
-    body['document'] = {
-      ...(body['document'] as Record<string, unknown>),
-      canvas: null,
-      layer0: [
-        {
-          id: 'c',
-          type: 'component',
-          start: 0,
-          duration: 2000,
-          playbackStart: 0,
-          component: 'fixture-scene',
-          variables: {},
-        },
-      ],
-    }
-    body['media'] = {
-      videos: {},
-      music: { url: 'https://oss.example.com/music.mp3' },
-      subtitles: {},
-    }
-    const response = await post(body)
-    expect(response.status).toBe(202)
+  it('渲染用的那一份：文件里的素材地址换成下载到本地的路径，别的不变', async () => {
+    expect((await post(exportRequest())).status).toBe(202)
     await flush()
-    const { id } = (await response.json()) as { id: string }
-    expect(await (await fetch(`${base}/exports/${id}`)).json()).toMatchObject({
-      status: 'rendering',
-      error: null,
-    })
+    const local = renders[0]!.compose({ 'https://oss.example.com/clip.mp4?sig=1': 'media/a.mp4' })
+    expect(local).toBe(filmFile().replaceAll(CLIP_URL, 'media/a.mp4'))
   })
 
   it.each<[string, unknown, string]>([
@@ -121,36 +99,16 @@ describe('渲染服务接口', () => {
       exportRequest({ mediaHost: 'evil.example.net' }),
       'media-host-not-allowed',
     ],
+    ['文件里的素材没有给下载地址', { ...exportRequest(), media: {} }, 'missing-media'],
     [
-      '组件不在目录里',
-      (() => {
-        const body = exportRequest()
-        const document = body['document'] as { overlays: { component: string }[] }
-        document.overlays[0]!.component = 'no-such-component'
-        return body
-      })(),
-      'unknown-component',
+      '成片文件里有脚本',
+      {
+        ...exportRequest(),
+        film: filmFile().replace('</div>', '<script>alert(1)</script></div>'),
+      },
+      'invalid-film',
     ],
-    [
-      '素材片没有给地址',
-      (() => {
-        const body = exportRequest()
-        ;(body['media'] as { videos: Record<string, unknown> }).videos = {}
-        return body
-      })(),
-      'missing-media',
-    ],
-    [
-      '草稿没有画面',
-      (() => {
-        const body = exportRequest()
-        const document = body['document'] as Record<string, unknown>
-        document['layer0'] = []
-        document['canvas'] = null
-        return body
-      })(),
-      'invalid-draft',
-    ],
+    ['成片里还没有画面', { ...exportRequest(), film: filmFile([]), media: {} }, 'invalid-film'],
   ])('%s时答 400（%s）', async (_, body, code) => {
     const response = await post(body)
     expect(response.status).toBe(400)
@@ -178,6 +136,30 @@ describe('渲染服务接口', () => {
     expect(((await (await fetch(url)).json()) as { status: string }).status).toBe('cancelled')
     expect((await fetch(url, { method: 'DELETE' })).status).toBe(204)
     expect((await fetch(`${base}/exports/missing`, { method: 'DELETE' })).status).toBe(404)
+  })
+
+  it('POST /films/check 合写法时答 200：重写后的文件、总时长和用到的素材', async () => {
+    const second = picture({ id: 'clip-2', start: 2000, duration: 1500, mediaStart: 3000 })
+    const response = await check({ film: filmFile([picture(), second]) })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      html: filmFile([picture(), second]),
+      durationMs: 3500,
+      sources: [{ jobId: SOURCE_JOB, url: CLIP_URL }],
+    })
+  })
+
+  it.each<[string, unknown, string]>([
+    ['没有成片文件', {}, 'invalid-request'],
+    [
+      '文件不合写法',
+      { film: filmFile().replace('<video ', '<video onerror="alert(1)" ') },
+      'invalid-film',
+    ],
+  ])('POST /films/check %s时答 400（%s）', async (_, body, code) => {
+    const response = await check(body)
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ code })
   })
 
   it('GET /health 报告浏览器渲染方式、Chrome 版本与队列', async () => {
