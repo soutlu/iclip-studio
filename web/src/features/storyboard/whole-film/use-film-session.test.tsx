@@ -27,10 +27,14 @@ const recordSaves = (slow = 0) => {
 
 const NO_DRAFT: WholeFilmDraftOut = { revision: 0, html: null, updatedAt: null }
 
-const open = async (initial: WholeFilmDraftOut = NO_DRAFT, debounceMs = 10) => {
+const open = async (
+  initial: WholeFilmDraftOut = NO_DRAFT,
+  debounceMs = 10,
+  conversation = CONVERSATION,
+) => {
   const onNotice = vi.fn<(message: string) => void>()
   const hook = renderHook(() =>
-    useFilmSession(CONVERSATION, initial, fixtureCatalog, { debounceMs, onNotice }),
+    useFilmSession(conversation, initial, fixtureCatalog, { debounceMs, onNotice }),
   )
   await waitFor(() => expect(hook.result.current.opening).toBe(false))
   return { ...hook, onNotice }
@@ -148,19 +152,23 @@ describe('useFilmSession', () => {
     expect(saves[0]?.html).toContain('data-duration="5.5"')
   })
 
-  const threeBlocks = () =>
-    putMockWholeFilmDraft(
-      CONVERSATION,
+  // 每次用一段新的对话：上一个用例收尾时的保存晚到，也改不到这一个用例存着的成片
+  const openThree = () => {
+    const conversation = crypto.randomUUID()
+    const stored = putMockWholeFilmDraft(
+      conversation,
       filmFile([
         picture({ id: 'a', duration: 2_000 }),
         picture({ id: 'b', jobId: OTHER_JOB, start: 2_000, duration: 1_000 }),
         picture({ id: 'c', start: 3_000, duration: 1_500 }),
       ]),
     )
+    return open(stored, 10, conversation)
+  }
 
   it('改一个块的起止和入点：一步撤销，成片总长跟着变，存出的文件写着新的时间', async () => {
     const saves = recordSaves()
-    const { result } = await open(threeBlocks())
+    const { result } = await openThree()
     act(() => result.current.retime('c', { start: 3_400, duration: 2_000, mediaStart: 400 }))
     expect(result.current.film?.pictures.at(-1)).toMatchObject({
       start: 3_400,
@@ -180,7 +188,7 @@ describe('useFilmSession', () => {
 
   it('删掉一个块、开着波纹编辑：后面的块往前补上，用不到的素材变量一起去掉', async () => {
     const saves = recordSaves()
-    const { result } = await open(threeBlocks())
+    const { result } = await openThree()
     act(() => result.current.removeBlocks(['b'], true))
     expect(spans(result)).toEqual([
       [picture().jobId, 0, 2_000],
@@ -196,7 +204,7 @@ describe('useFilmSession', () => {
   })
 
   it('删掉一个块、关着波纹编辑：留下空档', async () => {
-    const { result } = await open(threeBlocks())
+    const { result } = await openThree()
     act(() => result.current.removeBlocks(['b'], false))
     expect(spans(result)).toEqual([
       [picture().jobId, 0, 2_000],
@@ -205,7 +213,7 @@ describe('useFilmSession', () => {
   })
 
   it('把几个块一起挪到新的起点（合拢空档）：算一步撤销，成片总长跟着变', async () => {
-    const { result } = await open(threeBlocks())
+    const { result } = await openThree()
     act(() => result.current.removeBlocks(['b'], false))
     act(() => result.current.restart(new Map([['c', 2_000]])))
     expect(spans(result)).toEqual([
@@ -219,8 +227,54 @@ describe('useFilmSession', () => {
     expect(result.current.film?.durationMs).toBe(4_500)
   })
 
+  const layout = (result: Session) =>
+    result.current.film?.pictures.map((block) => [block.id, block.track, block.start, block.z])
+
+  it('把块换到下面一行、和上面那行的块重叠：在文件里写到那个块前面，被它盖住；一步撤销', async () => {
+    const saves = recordSaves()
+    const { result } = await openThree()
+    act(() => result.current.moveBlock('c', { track: 1, start: 500 }))
+    expect(layout(result)).toEqual([
+      ['c', 1, 500, 0],
+      ['a', 0, 0, 0],
+      ['b', 0, 2_000, 0],
+    ])
+    expect(result.current.film?.durationMs).toBe(3_000)
+    await waitFor(() => expect(saves).toHaveLength(1))
+    expect(saves[0]?.html).toMatch(/id="c"[^>]*data-start="0.5"[^>]*data-track-index="1"/)
+
+    act(() => result.current.undo())
+    expect(layout(result)).toEqual([
+      ['a', 0, 0, 0],
+      ['b', 0, 2_000, 0],
+      ['c', 0, 3_000, 0],
+    ])
+    expect(result.current.film?.canUndo).toBe(false)
+  })
+
+  it('再把它换回上面一行、压在下面那行的块上：写到最后，盖住它', async () => {
+    const { result } = await openThree()
+    act(() => result.current.moveBlock('a', { track: 1, start: 0 }))
+    act(() => result.current.moveBlock('c', { track: 0, start: 500 }))
+    expect(layout(result)).toEqual([
+      ['b', 0, 2_000, 0],
+      ['a', 1, 0, 0],
+      ['c', 0, 500, 0],
+    ])
+  })
+
+  it('把镜头加到下面一行、和上面那行的块重叠：写在那个块前面', async () => {
+    const { result } = await openThree()
+    await act(() =>
+      result.current.addPictures(CANVAS, [piece({ duration: 1_000 })], { track: 1, start: 2_500 }),
+    )
+    const added = result.current.film?.pictures.find((block) => block.track === 1)
+    expect(layout(result)?.map(([id]) => id)).toEqual(['a', added?.id, 'b', 'c'])
+    expect(added).toMatchObject({ start: 2_500, z: 0 })
+  })
+
   it('把块全删掉：成片还在，只是没有画面', async () => {
-    const { result } = await open(threeBlocks())
+    const { result } = await openThree()
     act(() => result.current.removeBlocks(['a', 'b', 'c'], true))
     expect(spans(result)).toEqual([])
     expect(result.current.film?.durationMs).toBe(0)

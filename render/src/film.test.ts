@@ -22,6 +22,7 @@ const picture = (overrides: Partial<PictureBlock> = {}): PictureBlock => ({
   mediaStart: 500,
   track: 0,
   volume: 1,
+  z: 0,
   ...overrides,
 })
 
@@ -52,6 +53,17 @@ describe('checkFilm', () => {
       { jobId: SOURCE_JOB, url: 'https://media.iclip.test/videos/a.mp4?sig=1&v=2' },
       { jobId: OTHER_JOB, url: 'https://media.iclip.test/videos/b.mp4' },
     ])
+  })
+
+  it('两行上同时出现的块：行号和叠放顺序都读回来，重写后一字不差；叠放顺序是 0 时文件里不写', async () => {
+    const below = picture({ track: 1 })
+    const above = second({ start: 500, track: 0, z: 3 })
+    const written = html(below, above)
+    expect(written).toContain('<video style="z-index: 3" id="clip-2"')
+    expect(written).toContain('<video id="clip-1"')
+    const checked = await checkFilm(written, catalog)
+    expect(checked.film).toEqual(film(below, above))
+    expect(checked.html).toBe(written)
   })
 
   it('还没有块的成片也能通过', async () => {
@@ -185,6 +197,34 @@ describe('checkFilm', () => {
       expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
     })
 
+    it('把块换到另一行（取出来再按新位置写回去，带着叠放顺序）：读回来是新的先后、行号和叠放顺序；撤销回到原样', async () => {
+      const stored = (await checkFilm(html(picture(), second()), catalog)).html
+      const session = await openComposition(stored)
+      const moved = second({ start: 500, track: 1, z: 1 })
+      session.batch(() => {
+        session.removeElement('clip-2')
+        session.addElement('film', 0, pictureBlock(moved))
+        session.dispatch({ type: 'setCompositionMetadata', duration: 3.5 })
+      })
+      const checked = await checkFilm(session.serialize(), catalog)
+      expect(checked.film).toEqual(film(moved, picture()))
+      expect(checked.durationMs).toBe(3500)
+      session.undo()
+      expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
+    })
+
+    it('SDK 自己的调叠放顺序和换行操作存出来的文件也认', async () => {
+      const session = await openComposition(html(picture(), second()))
+      session.batch(() => {
+        session.setTiming('clip-2', { start: 0.5, trackIndex: 1 })
+        session.dispatch({ type: 'reorderElements', entries: [{ target: 'clip-2', zIndex: 2 }] })
+        session.dispatch({ type: 'setCompositionMetadata', duration: 3.5 })
+      })
+      expect((await checkFilm(session.serialize(), catalog)).film).toEqual(
+        film(picture(), second({ start: 500, track: 1, z: 2 })),
+      )
+    })
+
     it('把块全删掉：剩下一份没有画面的成片，照样通过', async () => {
       const session = await openComposition(html(picture()))
       session.batch(() => {
@@ -250,6 +290,23 @@ describe('readFilm 拒收写法之外的东西', () => {
       '根上别的样式',
       (source) => source.replace('<div id="film"', '<div style="color:red" id="film"'),
       /样式/,
+    ],
+    [
+      '块上叠放顺序之外的样式',
+      (source) =>
+        source.replace('<video id="clip-1"', '<video style="position: fixed" id="clip-1"'),
+      /叠放顺序/,
+    ],
+    [
+      '块上叠放顺序后面还跟着别的样式',
+      (source) =>
+        source.replace('<video id="clip-1"', '<video style="z-index: 2; opacity: 0" id="clip-1"'),
+      /叠放顺序/,
+    ],
+    [
+      '叠放顺序太大',
+      (source) => source.replace('<video id="clip-1"', '<video style="z-index: 10000" id="clip-1"'),
+      /叠放顺序/,
     ],
     ['带时间线脚本的根', (source) => source.replace(' data-no-timeline', ''), /data-no-timeline/],
   ]

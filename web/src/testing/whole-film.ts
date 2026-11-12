@@ -31,6 +31,7 @@ export const picture = (overrides: Partial<PictureBlock> = {}): PictureBlock => 
   mediaStart: 0,
   track: 0,
   volume: 1,
+  z: 0,
   ...overrides,
 })
 

@@ -45,6 +45,15 @@ const MAX_LABEL_CHARS = 200
 const MAX_CANVAS_EDGE = 4096
 const MAX_VOLUME = 3.981072
 const MAX_TRACK = 99
+const MAX_STACKING = 9999
+const STACKING_STYLE = /^z-index:\s*(\d+);?$/
+
+/** 从块的 `style` 读叠放顺序：没写是 0；写了叠放顺序之外的样式返回 undefined。 */
+function stackingOf(style: string | undefined): number | undefined {
+  if (style === undefined || style.trim() === '') return 0
+  const z = STACKING_STYLE.exec(style.trim())?.[1]
+  return z === undefined ? undefined : Number(z)
+}
 const BLOCK_ID = /^[a-z][a-z0-9-]{0,63}$/
 const SOURCE_VARIABLE = /^src-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/
 const DECIMAL = /^\d+(\.\d+)?$/
@@ -128,8 +137,13 @@ function readPicture(element: Element): PictureBlock {
   const id = element.attrs.find((attr) => attr.name === 'id')?.value ?? ''
   if (!BLOCK_ID.test(id) || id === FILM_ID) fail(`画面块的编号不合规矩：${id}`)
   const where = `画面块「${id}」`
-  const get = attributes(element, where, PICTURE_ATTRIBUTES)
+  const get = attributes(element, where, [...PICTURE_ATTRIBUTES, 'style'])
   elementsOf(element, where, [])
+  // 块上的样式只认叠放顺序这一种，没写就是 0
+  const z = stackingOf(element.attrs.find((attr) => attr.name === 'style')?.value)
+  if (z === undefined || z > MAX_STACKING) {
+    fail(`${where}的样式只能是 0 到 ${MAX_STACKING} 的叠放顺序`)
+  }
   fixed(get('data-hf-id'), id, `${where}的 data-hf-id`)
   fixed(get('class'), PICTURE_CLASS, `${where}的 class`)
   fixed(get('data-has-audio'), 'true', `${where}的 data-has-audio`)
@@ -157,6 +171,7 @@ function readPicture(element: Element): PictureBlock {
     mediaStart: milliseconds(get('data-media-start'), `${where}的入点`),
     track: integer(get('data-track-index'), `${where}所在的行`, MAX_TRACK),
     volume: Number(volume),
+    z: z as number,
   }
 }
 
