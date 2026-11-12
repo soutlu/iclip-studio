@@ -10,7 +10,7 @@
 |---|---|---|
 | `utils/rounding.ts`、`player/lib/time.ts` | 全文引入 | 时间与数值舍入基础工具 |
 | `player/components/timelineSnapping.ts` | 全文引入 | 时间线拖拽吸附计算（对齐播放头、片段边界、音乐拍点与时间刻度） |
-| `player/components/timelineZoom.ts` | 全文引入 | 时间线缩放档位与滑杆换算 |
+| `player/components/timelineZoom.ts` | 全文引入 | 时间线缩放档位与滑杆换算；缩放到选中的块（`positiveClipSpan`、`zoomToSelectedClips` 及其常量与类型）逐字取自 `v0.9.31`（提交 `cf900546`） |
 | `player/components/timelineLayout.ts`、`automationLaneHeight.ts` | 全文引入 | 时间与像素坐标互转、轨道行高计算 |
 | `player/components/timelineGaps.ts` | 全文引入 | 画面轨自动收紧空隙（`resolveAllTrackGaps`） |
 | `player/components/timelineEditing.ts` | 部分摘录 | 仅保留 `resolveTimelineMove`（移除 z-index 分支）、`resolveTimelineResize` 及两个数值格式化函数 |

@@ -14,8 +14,10 @@ import {
   getNextTimelineZoomPercent,
   getTimelinePixelsPerSecond,
   getTimelineZoomPercent,
+  TIMELINE_RANGE_MARGIN_PX,
   timelineSliderToZoomPercent,
   timelineZoomPercentToSlider,
+  zoomToSelectedClips,
 } from './vendor/hyperframes-studio/player/components/timelineZoom'
 import type { ZoomMode } from './vendor/hyperframes-studio/player/store/playerStore'
 
@@ -67,6 +69,33 @@ export const sliderToZoom = (slider: number, fitPps: number): Zoom => ({
   mode: 'manual',
   percent: timelineSliderToZoomPercent(slider, fitPps),
 })
+
+/**
+ * 缩放到这几个块：它们合起来的那一段两边各留 24 像素，正好铺满能排时间的宽度（`viewportWidth`）。
+ * `scrollLeft` 是时间线要横向滚到的位置，让这一段的起点离时间区左边 24 像素。
+ * 没有长度大于 0 的块、或者还没量出宽度时是 null。
+ */
+export const zoomToBlocks = (
+  blocks: readonly Pick<Span, 'start' | 'duration'>[],
+  viewportWidth: number,
+  fitPps: number,
+): { zoom: Zoom; scrollLeft: number } | null => {
+  const fitted = zoomToSelectedClips({
+    clips: blocks.map((block) => ({
+      start: block.start / 1000,
+      end: (block.start + block.duration) / 1000,
+    })),
+    viewportWidth,
+    contentOrigin: 0,
+    fitPixelsPerSecond: fitPps,
+  })
+  if (fitted === null) return null
+  const pps = getTimelinePixelsPerSecond(fitPps, 'manual', fitted.zoomPercent)
+  return {
+    zoom: { mode: 'manual', percent: fitted.zoomPercent },
+    scrollLeft: Math.max(0, fitted.start * pps - TIMELINE_RANGE_MARGIN_PX),
+  }
+}
 
 /** 工具条上写的缩放：适应宽度时写「适应」，否则是相对适应宽度的百分比。 */
 export const zoomLabel = (zoom: Zoom, fitPps: number): string =>

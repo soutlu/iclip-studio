@@ -50,7 +50,15 @@ import { landingOn, rowOpening } from './placement'
 import { previewDocument } from './preview-document'
 import { PreviewPlayer, type PlaybackSettings, type PreviewControl } from './preview-player'
 import { PreviewTransport } from './preview-transport'
-import { FIT_ZOOM, snapSpanStartMs, snapTargets, timelineScale, type Zoom } from './timeline-scale'
+import { aroundPlayhead } from './selection'
+import {
+  FIT_ZOOM,
+  snapSpanStartMs,
+  snapTargets,
+  timelineScale,
+  zoomToBlocks,
+  type Zoom,
+} from './timeline-scale'
 import { useFilmSession } from './use-film-session'
 import { useWholeFilmExport } from './use-whole-film-export'
 import { useWholeFilmDraftQuery } from './whole-film.api'
@@ -250,15 +258,33 @@ function EditorBody({
   const scale = timelineScale(viewportWidth, total, zoom)
   const timelineRef = useRef<TimelineHandle | null>(null)
   const [ghost, setGhost] = useState<DropGhost | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set())
   // 选中的块被撤销或删掉以后就不算选中了
-  const selected = pictures.find((block) => block.id === selectedId)
+  const selectedBlocks = pictures.filter((block) => selectedIds.has(block.id))
+  const selected = new Set(selectedBlocks.map((block) => block.id))
+  const clearSelection = () => setSelectedIds(new Set())
+  // 框选中途的 Esc 归时间线（只取消那次框选），这里先让开
+  const [framing, setFraming] = useState(false)
   // Esc 先退全屏（浏览器多半自己退，按键还是传到页面时才轮到这里），再取消选中；都没有才关编辑器
-  useEscapeAheadOfDialog(fullscreen || selected !== undefined, () => {
+  useEscapeAheadOfDialog(fullscreen || (!framing && selected.size > 0), () => {
     if (fullscreen) exitFullscreen()
-    else setSelectedId(null)
+    else clearSelection()
   })
+  const selectAround = (side: 'left' | 'right') =>
+    setSelectedIds(new Set(aroundPlayhead(pictures, playhead, side)))
+  const [scrollRequest, setScrollRequest] = useState<{ left: number } | null>(null)
+  const zoomToSelection = () => {
+    const target = zoomToBlocks(selectedBlocks, viewportWidth, scale.fitPps)
+    if (target === null) return
+    setZoom(target.zoom)
+    setScrollRequest({ left: target.scrollLeft })
+  }
   const [ripple, setRipple] = useState(true)
+  const removeSelected = () => {
+    leaveMaterial()
+    clearSelection()
+    session.removeBlocks([...selected], ripple)
+  }
   const [thumbnails, setThumbnails] = useState(true)
   const [snap, setSnap] = useState(true)
   /** 拖着的素材会落在哪：开着吸附时先吸到别的块的两端或播放头上，再避开同一行的块。 */
@@ -353,6 +379,21 @@ function EditorBody({
     if (toggle !== undefined) {
       event.preventDefault()
       if (!event.repeat) toggle()
+      return
+    }
+    if ((key === 'Delete' || key === 'Backspace') && selected.size > 0) {
+      event.preventDefault()
+      removeSelected()
+      return
+    }
+    if ((key === '[' || key === ']') && !event.altKey) {
+      event.preventDefault()
+      selectAround(key === '[' ? 'left' : 'right')
+      return
+    }
+    if (letter === 'z' && !event.shiftKey) {
+      event.preventDefault()
+      if (!event.repeat) zoomToSelection()
       return
     }
     if (key !== 'ArrowLeft' && key !== 'ArrowRight') return
@@ -484,6 +525,9 @@ function EditorBody({
               leaveMaterial()
               session.undo()
             }}
+            hasSelection={selected.size > 0}
+            onSelectAround={selectAround}
+            onZoomToSelection={zoomToSelection}
             onRipple={() => setRipple((on) => !on)}
             onSnap={() => setSnap((on) => !on)}
             onThumbnails={() => setThumbnails((on) => !on)}
@@ -497,11 +541,6 @@ function EditorBody({
             buffered={buffered}
             ghost={ghost}
             handleRef={timelineRef}
-            onRemove={(id) => {
-              leaveMaterial()
-              setSelectedId(null)
-              session.removeBlocks([id], ripple)
-            }}
             onHide={(track, hidden) => {
               leaveMaterial()
               session.setHidden(
@@ -513,8 +552,9 @@ function EditorBody({
               leaveMaterial()
               session.retime(id, timing)
             }}
+            onFraming={setFraming}
             onSeek={seek}
-            onSelect={setSelectedId}
+            onSelect={setSelectedIds}
             onViewportWidth={setViewportWidth}
             pictures={pictures}
             playheadMs={playhead}
@@ -528,7 +568,8 @@ function EditorBody({
               leaveMaterial()
               session.restart(starts)
             }}
-            selectedId={selected?.id ?? null}
+            scrollRequest={scrollRequest}
+            selected={selected}
             snap={snap}
             thumbnails={thumbnails}
             sourceMs={(src) => {

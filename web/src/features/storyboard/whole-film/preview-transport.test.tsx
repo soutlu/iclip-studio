@@ -129,6 +129,9 @@ describe('播放条右边的设置', () => {
       ['静音或开启声音', 'M'],
       ['打开或关闭循环播放', '⇧L'],
       ['全屏或退出全屏', 'F'],
+      ['选中播放头左边的块', '['],
+      ['选中播放头右边的块', ']'],
+      ['缩放到选中的块', 'Z'],
     ] as const)
       expect(within(panel).getByText(action).parentElement).toHaveTextContent(key)
   })
