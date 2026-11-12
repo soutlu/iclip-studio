@@ -85,7 +85,7 @@ const openWith = async (page: Page, shots: readonly number[]) => {
   await dialog.evaluate((element) =>
     Promise.all(element.getAnimations().map((animation) => animation.finished)),
   )
-  return { dialog, materials }
+  return { dialog, materials, panel }
 }
 
 const groupOf = (materials: Locator, index: number) =>
@@ -653,4 +653,111 @@ test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来�
   await eye.click()
   await expect.poll(savedHidden).toBe(0)
   await expect(picture).not.toHaveCSS('display', 'none')
+})
+
+test('行多了只有轨道区上下滚：素材区留在面板底部，行头跟着各行走，看不见的行落不上去', async ({
+  page,
+}) => {
+  const ROWS = 10
+  const { dialog, materials, panel } = await openWith(page, [1])
+  await shotOf(materials, 1, 'A', 1).click()
+  await page.keyboard.press('Enter')
+  await expect.poll(() => savedBlocks(page)).toHaveLength(1)
+  await dialog.getByRole('button', { name: '关闭成片编辑' }).click()
+  await expect(dialog).toBeHidden()
+  // 把这一块复制到每一行上，直接存成草稿
+  await page.evaluate(
+    async ({ conversationId, rows }) => {
+      const path = `/api/conversations/${conversationId}/whole-film/draft`
+      const { revision, html } = (await (await fetch(path)).json()) as {
+        revision: number
+        html: string
+      }
+      const video = /<video [^>]*><\/video>/.exec(html)?.[0] ?? ''
+      const id = /\sid="([^"]+)"/.exec(video)?.[1] ?? ''
+      const copies = Array.from({ length: rows }, (_, row) =>
+        video
+          .replaceAll(`"${id}"`, `"${id}-${row}"`)
+          .replace('data-track-index="0"', `data-track-index="${row}"`),
+      )
+      const response = await fetch(path, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ revision, html: html.replace(video, copies.join('\n')) }),
+      })
+      if (!response.ok) throw new Error(`存草稿失败：${response.status}`)
+    },
+    { conversationId: conversationIdOf(page), rows: ROWS },
+  )
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await panel.getByRole('button', { name: '成片', exact: true }).click()
+  await expect(dialog.getByRole('group', { name: `第 ${ROWS} 行` })).toHaveCount(1)
+  await readyPlayer(dialog)
+
+  const boxOf = async (locator: Locator) => {
+    const box = await locator.boundingBox()
+    if (box === null) throw new Error('元素尚未布局')
+    return box
+  }
+  const tracks = dialog.locator('.wf-tracks')
+  const workspace = dialog.getByRole('group', { name: '成片编辑器', exact: true })
+  expect(await workspace.evaluate((element) => element.scrollHeight - element.clientHeight)).toBe(0)
+  expect((await boxOf(dialog.getByRole('region', { name: '预览' }))).height).toBeGreaterThanOrEqual(
+    220,
+  )
+  const materialsBox = await boxOf(materials)
+  expect(materialsBox.y + materialsBox.height).toBeLessThanOrEqual(900)
+  expect(await tracks.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true)
+
+  const tops = (locator: Locator) =>
+    locator.evaluateAll((elements) =>
+      elements.map((element) => Math.round(element.getBoundingClientRect().top)),
+    )
+  for (const share of [0.5, 1]) {
+    await tracks.evaluate((element, share) => {
+      element.scrollTop = Math.round((element.scrollHeight - element.clientHeight) * share)
+    }, share)
+    // 时间尺留在顶上，每个行头和它那一行对齐
+    const tracksBox = await boxOf(tracks)
+    const rulerBox = await boxOf(tracks.locator('.timeline-ruler'))
+    expect(Math.abs(rulerBox.y - tracksBox.y)).toBeLessThan(1)
+    expect(await tops(tracks.locator('.wf-track-head'))).toEqual(
+      await tops(tracks.locator('.wf-lane:not(.is-new)')),
+    )
+  }
+  const newRow = dialog.getByRole('group', { name: '新的一行' })
+  const newRowBox = await boxOf(newRow)
+  const tracksBox = await boxOf(tracks)
+  expect(newRowBox.y + newRowBox.height).toBeLessThanOrEqual(tracksBox.y + tracksBox.height)
+
+  // 滚回顶上：最下面几行被裁在素材区那一截里，镜头在素材区里拖着不会落到看不见的行上
+  await tracks.evaluate((element) => {
+    element.scrollTop = 0
+  })
+  await shotOf(materials, 1, 'A', 3).click()
+  const range = groupOf(materials, 1).getByRole('group', { name: /^选中的范围/ })
+  const from = await centerOf(range)
+  // 拖到的地方底下确实压着一条被裁掉的行
+  const behind = await tracks.locator('[data-track]').evaluateAll(
+    (lanes, y) =>
+      lanes.some((lane) => {
+        const { top, bottom } = lane.getBoundingClientRect()
+        return y - 4 >= top && y - 4 <= bottom
+      }),
+    from.y,
+  )
+  expect(behind).toBe(true)
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 40, from.y - 4, { steps: 4 })
+  await expect(dialog.getByTestId('drop-ghost')).toHaveCount(0)
+  // 滚到底再拖进最下面那条空行：新开第 ROWS + 1 行
+  await tracks.evaluate((element) => {
+    element.scrollTop = element.scrollHeight
+  })
+  const target = await centerOf(newRow)
+  await page.mouse.move(target.x, target.y, { steps: 8 })
+  await expect(newRow.getByTestId('drop-ghost')).toBeVisible()
+  await page.mouse.up()
+  await expect(dialog.getByRole('group', { name: `第 ${ROWS + 1} 行` })).toHaveCount(1)
 })
