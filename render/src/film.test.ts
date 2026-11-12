@@ -237,6 +237,22 @@ describe('checkFilm', () => {
       )
     })
 
+    it('把块搬进最上面新开的一行（别的块先改行号，再把它取出来写回去）：读回来是新的行号和先后；撤销回到原样', async () => {
+      const stored = (await checkFilm(html(picture(), second()), catalog)).html
+      const session = await openComposition(stored)
+      const moved = second({ start: 500, track: 0 })
+      session.batch(() => {
+        session.setTiming('clip-1', { trackIndex: 1 })
+        session.removeElement('clip-2')
+        session.addElement('film', 1, pictureBlock(moved))
+        session.dispatch({ type: 'setCompositionMetadata', duration: 3.5 })
+      })
+      const checked = await checkFilm(session.serialize(), catalog)
+      expect(checked.film).toEqual(film(picture({ track: 1 }), moved))
+      session.undo()
+      expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
+    })
+
     it('隐藏一个块再显示回来（SDK 加、去隐藏标记）：隐藏时读回来带着标记，显示回来和原来一字不差', async () => {
       const stored = (await checkFilm(html(picture(), second()), catalog)).html
       const session = await openComposition(stored)

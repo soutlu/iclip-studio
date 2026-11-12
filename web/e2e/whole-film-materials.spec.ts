@@ -767,3 +767,71 @@ test('行多了只有轨道区上下滚：素材区留在面板底部，行头�
   await page.mouse.up()
   await expect(dialog.getByRole('group', { name: `第 ${ROWS + 1} 行` })).toHaveCount(1)
 })
+
+test('在两行之间、最上面新开一行：块拖到两行中间的缝里，镜头拖到第一行上面，别的行跟着改行号', async ({
+  page,
+}) => {
+  const { dialog, materials } = await openWith(page, [1])
+  const row = (number: number) => dialog.getByRole('group', { name: `第 ${number} 行` })
+  const newRow = dialog.getByRole('group', { name: '新的一行' })
+  const opening = dialog.locator('.wf-lane.is-opening')
+  for (const [at, shot] of [1, 3, 4].entries()) {
+    await shotOf(materials, 1, 'A', shot).click()
+    await page.keyboard.press('Enter')
+    await expect.poll(() => savedBlocks(page)).toHaveLength(at + 1)
+  }
+  await readyPlayer(dialog)
+  /** 存下来的成片里每个块在第几行，写成「名字@行号」，按名字排。 */
+  const savedTracks = () =>
+    page.evaluate(async (conversationId) => {
+      const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
+      const { html } = (await response.json()) as { html: string | null }
+      return [
+        ...(html ?? '').matchAll(/<video [^>]*data-label="([^"]*)"[^>]*data-track-index="(\d+)"/g),
+      ]
+        .map(([, label, track]) => `${label}@${track}`)
+        .toSorted()
+    }, conversationIdOf(page))
+  const boxOf = async (locator: Locator) => {
+    const box = await locator.boundingBox()
+    if (box === null) throw new Error('元素尚未布局')
+    return box
+  }
+  const dragTo = async (from: Locator, y: number) => {
+    const start = await centerOf(from)
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(start.x, y, { steps: 8 })
+  }
+
+  // 先把第三个块拖到最下面的空行，成两行
+  await dragTo(row(1).locator('[data-block-id]').nth(2), (await centerOf(newRow)).y)
+  await page.mouse.up()
+  await expect.poll(savedTracks).toEqual(['A · 镜头 1@0', 'A · 镜头 3@0', 'A · 镜头 4@1'])
+
+  // 第二个块拖到两行中间的缝里：那里先让出一行，松手后它自己占第 2 行，原来的第 2 行排到第 3 行
+  const first = await boxOf(row(1))
+  const second = await boxOf(row(2))
+  await dragTo(row(1).locator('[data-block-id]').nth(1), (first.y + first.height + second.y) / 2)
+  await expect(opening).toHaveCount(1)
+  await page.mouse.up()
+  await expect(opening).toHaveCount(0)
+  await expect.poll(savedTracks).toEqual(['A · 镜头 1@0', 'A · 镜头 3@1', 'A · 镜头 4@2'])
+  await expect(row(3).locator('[data-block-id]')).toHaveCount(1)
+
+  // 镜头拖到第一行上面：新开的一行排在最上面，别的行都往后排一号
+  await shotOf(materials, 1, 'A', 2).click()
+  const range = groupOf(materials, 1).getByRole('group', { name: /^选中的范围/ })
+  const from = await centerOf(range)
+  const top = await boxOf(row(1))
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 10, from.y - 10, { steps: 3 })
+  await page.mouse.move(top.x + 200, top.y - 2, { steps: 8 })
+  await expect(opening.getByTestId('drop-ghost')).toBeVisible()
+  await page.mouse.up()
+  await expect
+    .poll(savedTracks)
+    .toEqual(['A · 镜头 1@1', 'A · 镜头 2@0', 'A · 镜头 3@2', 'A · 镜头 4@3'])
+  await expect(row(4).locator('[data-block-id]')).toHaveCount(1)
+})

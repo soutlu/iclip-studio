@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -36,7 +37,7 @@ import {
   type Timing,
 } from './block-edit'
 import { MAX_FILM_MS, type PictureBlock } from './composition/film'
-import { rowHidden, rowsOf, type Landing } from './placement'
+import { rowHidden, rowsOf } from './placement'
 import {
   msToPx,
   pxToMs,
@@ -46,10 +47,13 @@ import {
   type TimelineScale,
 } from './timeline-scale'
 
-/** 块要去的行：已有的行给行号，`'new'` 是最下面那条空行（落下去新开一行）。 */
-export type RowTarget = number | 'new'
+/**
+ * 块要去的行：已有的行给行号；`insertAt` 是在时间线上第几行的位置新开一行
+ * （0 是最上面，等于现有行数是最下面那条空行）。
+ */
+export type RowTarget = number | { insertAt: number }
 
-export type TimelinePoint = { track: RowTarget; timeMs: number }
+export type TimelinePoint = { row: RowTarget; timeMs: number }
 
 export type TimelineHandle = {
   /** 屏幕上的这个点在哪一行、对应成片的第几毫秒；不在任何一行上时是 null。 */
@@ -57,7 +61,12 @@ export type TimelineHandle = {
 }
 
 /** 拖着的素材会落在哪里：`duration` 是它的总长（毫秒），`guideMs` 是它吸上的时间点。 */
-export type DropGhost = Landing & { duration: number; guideMs: number | null }
+export type DropGhost = { row: RowTarget; start: number; duration: number; guideMs: number | null }
+
+const sameRow = (left: RowTarget, right: RowTarget) =>
+  typeof left === 'number' || typeof right === 'number'
+    ? left === right
+    : left.insertAt === right.insertAt
 
 type FilmTimelineProps = {
   pictures: readonly PictureBlock[]
@@ -75,7 +84,7 @@ type FilmTimelineProps = {
   sourceMs: (src: string) => number | undefined
   onSelect: (id: string | null) => void
   onRetime: (id: string, timing: Timing) => void
-  /** 把块换到另一行（或最下面的空行）的 `start` 处。 */
+  /** 把块换到另一行（或新开的一行）的 `start` 处。 */
   onMove: (id: string, row: RowTarget, start: number) => void
   /** 把几个块各自挪到新的起点（合拢空档用）。 */
   onRestart: (starts: ReadonlyMap<string, number>) => void
@@ -89,15 +98,17 @@ type FilmTimelineProps = {
 
 const seconds = (ms: number) => (ms / 1000).toFixed(1)
 
-// 指针离一行的上下边这么近也算在这一行上
+// 指针离一条空行（待新开的那一行）的上下边这么近也算在它上面
 const ROW_REACH_PX = 3
 
 // 时间区左右留的空（whole-film.css 里 .wf-track-content 的 margin：左 8、右 16），不算进能排时间的宽度
 const INSET_PX = 24
 
-const lanesIn = (content: HTMLElement | null) => [
-  ...(content?.querySelectorAll<HTMLElement>('[data-track]') ?? []),
-]
+/** `row` 在页面上是哪一条：已有的行，或者待新开的那一行（让出来的空行、最下面那条空行）。 */
+const laneOf = (content: HTMLElement | null, row: RowTarget) =>
+  content?.querySelector<HTMLElement>(
+    typeof row === 'number' ? `[data-track="${row}"]` : `[data-insert-at="${row.insertAt}"]`,
+  ) ?? null
 
 const sameTiming = (left: Timing, right: Timing) =>
   left.start === right.start &&
@@ -112,12 +123,12 @@ type Gesture = {
   /** 按下的地方离块的开头多远（毫秒），挪的时候块跟着指针走而不是跳到指针处。 */
   grabMs: number
   timing: Timing | null
-  /** 挪的时候指针在哪一行上：行号，或者最下面那条空行。 */
+  /** 挪的时候指针在哪一行上：行号，或者要新开的那一行。 */
   row: RowTarget | null
 }
 
-/** 拖动中的块按这个画：时间、正在拖的是哪一部分、比原来的行往下偏了多少像素。 */
-type Preview = { timing: Timing; kind: Gesture['kind']; offsetY: number }
+/** 拖动中的块按这个画：时间、正在拖的是哪一部分、要去哪一行（裁剪时是 null）。 */
+type Preview = { timing: Timing; kind: Gesture['kind']; row: RowTarget | null }
 
 type TimelineBlockProps = {
   block: PictureBlock
@@ -126,8 +137,10 @@ type TimelineBlockProps = {
   pps: number
   /** 时间线内容区，用它把屏幕上的横坐标换成成片的时间。 */
   contentRef: RefObject<HTMLDivElement | null>
-  /** 指针在哪一行上（只算轨道区里露出来的部分）；不在任何一行上时是 undefined。 */
-  laneAt: (clientY: number) => HTMLElement | undefined
+  /** 指针在哪一行上，`between` 为真时两行之间也算（在那里新开一行）；都不是时是 undefined。 */
+  rowAt: (clientY: number, between: boolean) => RowTarget | undefined
+  /** 拖动中要在第几行的位置新开一行，那里先让出一行；不新开、松手后是 null。 */
+  onOpening: (insertAt: number | null) => void
   sourceMs: number | undefined
   peaks: PeaksState
   snap: boolean
@@ -151,7 +164,8 @@ function TimelineBlock({
   selected,
   pps,
   contentRef,
-  laneAt,
+  rowAt,
+  onOpening,
   sourceMs,
   peaks,
   snap,
@@ -162,9 +176,22 @@ function TimelineBlock({
   onMove,
   onRemove,
 }: TimelineBlockProps) {
+  const rootRef = useRef<HTMLDivElement>(null)
   const gestureRef = useRef<Gesture | null>(null)
   const clickAfterDrag = useClickAfterDrag()
   const [preview, setPreview] = useState<Preview>()
+  const aimed = preview?.row ?? null
+  // 拖去别的行时把块画到那一行上。那一行可能是这一次才让出来的，要等排好版再量它在哪
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    if (root === null) return
+    const own = root.parentElement
+    const target = aimed === null ? null : laneOf(contentRef.current, aimed)
+    root.style.translate =
+      own === null || target === null
+        ? ''
+        : `0 ${target.getBoundingClientRect().top - own.getBoundingClientRect().top}px`
+  })
   const timing = preview?.timing ?? block
   const name = `${block.label}，${seconds(timing.duration)} 秒${block.hidden ? '，已隐藏' : ''}`
   const part = {
@@ -215,33 +242,22 @@ function TimelineBlock({
           playheadMs,
         )
       : null
-    let offsetY = 0
     if (kind === 'move') {
       const wanted = Math.max(0, at - gesture.grabMs)
       const snapped =
         targets === null
           ? { ms: wanted, guideMs: null }
           : snapSpanStartMs(wanted, block.duration, targets, pps)
-      // 指针在哪一行上，块就去哪一行；不在任何一行上就留在原来的行
-      const own = lanesIn(contentRef.current).find(
-        (lane) => lane.dataset['track'] === String(block.track),
-      )
-      const hit = laneAt(event.clientY) ?? own
-      const row: RowTarget =
-        hit === undefined || hit === own
-          ? block.track
-          : hit.dataset['track'] === 'new'
-            ? 'new'
-            : Number(hit.dataset['track'])
-      if (hit !== undefined && own !== undefined)
-        offsetY = hit.getBoundingClientRect().top - own.getBoundingClientRect().top
+      // 指针在哪一行上，块就去哪一行；在两行之间就在那里新开一行；都不是就留在原来的行
+      const row = rowAt(event.clientY, true) ?? block.track
       // 新开的一行上没有别的块，放在哪里都不会重叠
       const start =
-        row === 'new'
-          ? Math.min(snapped.ms, MAX_FILM_MS - block.duration)
-          : movedStart(block, pictures, snapped.ms, row)
+        typeof row === 'number'
+          ? movedStart(block, pictures, snapped.ms, row)
+          : Math.min(snapped.ms, MAX_FILM_MS - block.duration)
       gesture.timing = { start, duration: block.duration, mediaStart: block.mediaStart }
       gesture.row = row
+      onOpening(typeof row === 'number' ? null : row.insertAt)
       // 吸上去的位置被别的块占了、又挪开了，就不画吸附线
       onGuide(start === snapped.ms ? snapped.guideMs : null)
     } else {
@@ -251,7 +267,7 @@ function TimelineBlock({
       const edgeMs = kind === 'start' ? next.start : next.start + next.duration
       onGuide(edgeMs === snapped.ms ? snapped.guideMs : null)
     }
-    setPreview({ timing: gesture.timing, kind, offsetY })
+    setPreview({ timing: gesture.timing, kind, row: gesture.row })
   }
 
   const release = (event: PointerEvent<HTMLElement>) => {
@@ -261,10 +277,11 @@ function TimelineBlock({
     gestureRef.current = null
     setPreview(undefined)
     onGuide(null)
+    onOpening(null)
     if (gesture.timing === null) return
     // 拖完松手也会来一次点击，那一次不算选中
     clickAfterDrag.swallow()
-    if (gesture.row !== null && gesture.row !== block.track)
+    if (gesture.row !== null && !sameRow(gesture.row, block.track))
       onMove(block.id, gesture.row, gesture.timing.start)
     else if (!sameTiming(gesture.timing, block)) onRetime(block.id, gesture.timing)
   }
@@ -273,6 +290,7 @@ function TimelineBlock({
     gestureRef.current = null
     setPreview(undefined)
     onGuide(null)
+    onOpening(null)
   }
 
   const nudge = (event: KeyboardEvent<HTMLElement>, edge: Edge) => {
@@ -300,9 +318,9 @@ function TimelineBlock({
         preview?.kind === 'move' && 'is-lifted',
       )}
       data-block-id={block.id}
+      ref={rootRef}
       role="group"
       style={{
-        translate: preview === undefined ? undefined : `0 ${preview.offsetY}px`,
         left: msToPx(timing.start, pps),
         width: Math.max(2, msToPx(timing.duration, pps) - 2),
       }}
@@ -416,12 +434,18 @@ export function FilmTimeline({
   // 拖动块时吸上的时间点；拖素材进来时吸上的点由 `ghost` 带着
   const [blockGuideMs, setBlockGuideMs] = useState<number | null>(null)
   const guideMs = blockGuideMs ?? ghost?.guideMs ?? null
+  // 拖着块要在第几行的位置新开一行；拖素材进来时同样由 `ghost` 带着
+  const [blockOpening, setBlockOpening] = useState<number | null>(null)
+  const opening =
+    blockOpening ?? (ghost === null || typeof ghost.row === 'number' ? null : ghost.row.insertAt)
   // 在一行的空处点右键时，两种合拢各自要挪哪些块
   const [closing, setClosing] = useState<GapClosing>()
   const { pps, contentWidth } = scale
   const rows = rowsOf(pictures)
   // 还没有块时也留一行，素材拖得进来
   const shown = rows.length === 0 ? [{ track: 0, blocks: [] }] : rows
+  // 要在别的位置新开一行时，最下面那条空行挪到那里去：总高度不变，上面的行不动、下面的行往下让
+  const openedAt = opening !== null && opening < rows.length ? opening : null
   const peaks = useAudioPeaks(useStableValue([...new Set(pictures.map((block) => block.src))]))
 
   useLayoutEffect(() => {
@@ -441,17 +465,45 @@ export function FilmTimeline({
   const timeAt = (clientX: number) =>
     pxToMs(clientX - (contentRef.current?.getBoundingClientRect().left ?? 0), pps)
 
-  // 只认轨道区里露出来的行：滚到时间尺底下、滚出轨道区的行，指针看不见也落不上去
-  const laneAt = (clientY: number) => {
+  /**
+   * 指针在哪一行上。只认轨道区里露出来的部分：滚到时间尺底下、滚出轨道区的行，指针看不见也落不上去。
+   * 两行之间的缝（含第一行上面、最后一行下面）：`between` 为真时算在那里新开一行；
+   * 为假时只有第一行上面算新开一行，别的缝归离得近的那一行。
+   */
+  const rowAt = (clientY: number, between: boolean): RowTarget | undefined => {
     const viewport = scrollRef.current
     const rulerBar = rulerBarRef.current
     if (viewport === null || rulerBar === null) return undefined
     const bottom = viewport.getBoundingClientRect().top + viewport.clientTop + viewport.clientHeight
     if (clientY < rulerBar.getBoundingClientRect().bottom || clientY > bottom) return undefined
-    return lanesIn(contentRef.current).find((lane) => {
-      const { top, bottom } = lane.getBoundingClientRect()
-      return clientY >= top - ROW_REACH_PX && clientY <= bottom + ROW_REACH_PX
-    })
+    const lanes = [...(contentRef.current?.querySelectorAll<HTMLElement>('.wf-lane') ?? [])].map(
+      (lane) => ({ lane, box: lane.getBoundingClientRect() }),
+    )
+    // 待新开的那一行（已经让出来的空行、最下面那条空行）：指针还在它上面就还是它
+    const waiting = lanes.find(
+      ({ lane, box }) =>
+        lane.dataset['insertAt'] !== undefined &&
+        clientY >= box.top - ROW_REACH_PX &&
+        clientY <= box.bottom + ROW_REACH_PX,
+    )
+    if (waiting !== undefined) return { insertAt: Number(waiting.lane.dataset['insertAt']) }
+    const existing = lanes.filter(({ lane }) => lane.dataset['track'] !== undefined)
+    const trackOf = (at: number) => Number(existing[at]?.lane.dataset['track'])
+    const on = existing.findIndex(({ box }) => clientY >= box.top && clientY <= box.bottom)
+    if (on !== -1) return trackOf(on)
+    // 还没有块时只有一条空行，没有可新开的地方
+    if (rows.length === 0) return undefined
+    // 指针在第几行的上面那道缝里；比最后一行还靠下时只认紧挨着它的那道缝
+    const under = existing.findIndex(({ box }) => clientY < box.top)
+    const seam = under === -1 ? existing.length : under
+    const above = existing[seam - 1]?.box
+    const below = existing[seam]?.box
+    if (below === undefined && (above === undefined || clientY > above.bottom + 2 * ROW_REACH_PX))
+      return undefined
+    if (between || above === undefined) return { insertAt: seam }
+    return below === undefined || clientY - above.bottom <= below.top - clientY
+      ? trackOf(seam - 1)
+      : trackOf(seam)
   }
 
   useEffect(() => {
@@ -463,19 +515,28 @@ export function FilmTimeline({
         const right =
           viewport.getBoundingClientRect().left + viewport.clientLeft + viewport.clientWidth
         if (clientX < heads.getBoundingClientRect().right || clientX > right) return null
-        const lane = laneAt(clientY)
-        if (lane === undefined) return null
-        const track = lane.dataset['track']
-        return {
-          track: track === 'new' ? 'new' : Number(track),
-          timeMs: Math.max(0, timeAt(clientX)),
-        }
+        const row = rowAt(clientY, false)
+        return row === undefined ? null : { row, timeMs: Math.max(0, timeAt(clientX)) }
       },
     }
     return () => {
       handleRef.current = null
     }
   })
+
+  /** 拖着的素材会落在 `row` 这一行时，画出它会占的位置；不落在这一行是 null。 */
+  const dropGhost = (row: RowTarget) =>
+    ghost !== null && sameRow(ghost.row, row) ? (
+      <span
+        aria-hidden="true"
+        className="wf-drop-ghost"
+        data-testid="drop-ghost"
+        style={{
+          left: msToPx(ghost.start, pps),
+          width: Math.max(2, msToPx(ghost.duration, pps) - 2),
+        }}
+      />
+    ) : null
 
   // 点在块上，或者这一行没有可合拢的空档：不开菜单
   const openGapMenu = (event: MouseEvent<HTMLElement>, track: number) => {
@@ -495,21 +556,26 @@ export function FilmTimeline({
         <div className="wf-track-heads" ref={headsRef}>
           <span aria-hidden="true" className="wf-track-corner" />
           {shown.map(({ track, blocks }, at) => (
-            <span className="wf-track-head" key={track}>
-              <span className="wf-head-name">{blocks[0]?.label}</span>
-              {blocks.length > 1 ? (
-                <span aria-label={`${blocks.length} 个块`} className="wf-head-count">
-                  {blocks.length}
-                </span>
+            <Fragment key={track}>
+              {openedAt === at ? (
+                <span aria-hidden="true" className="wf-track-head is-opening" />
               ) : null}
-              {blocks.length > 0 ? (
-                <RowEye
-                  hidden={rowHidden(pictures, track)}
-                  onHide={(hidden) => onHide(track, hidden)}
-                  row={at + 1}
-                />
-              ) : null}
-            </span>
+              <span className="wf-track-head">
+                <span className="wf-head-name">{blocks[0]?.label}</span>
+                {blocks.length > 1 ? (
+                  <span aria-label={`${blocks.length} 个块`} className="wf-head-count">
+                    {blocks.length}
+                  </span>
+                ) : null}
+                {blocks.length > 0 ? (
+                  <RowEye
+                    hidden={rowHidden(pictures, track)}
+                    onHide={(hidden) => onHide(track, hidden)}
+                    row={at + 1}
+                  />
+                ) : null}
+              </span>
+            </Fragment>
           ))}
         </div>
         <div className="wf-track-content" ref={contentRef} style={{ width: contentWidth }}>
@@ -529,84 +595,77 @@ export function FilmTimeline({
           </div>
           <div className="wf-lanes">
             {shown.map(({ track, blocks }, at) => (
-              <ContextMenuRoot key={track}>
-                <ContextMenuTrigger asChild>
-                  <div
-                    aria-label={`第 ${at + 1} 行`}
-                    className="wf-lane"
-                    data-track={track}
-                    onContextMenu={(event) => openGapMenu(event, track)}
-                    role="group"
-                  >
-                    {blocks.map((block) => (
-                      <TimelineBlock
-                        block={block}
-                        contentRef={contentRef}
-                        key={block.id}
-                        laneAt={laneAt}
-                        onGuide={setBlockGuideMs}
-                        onMove={onMove}
-                        onRemove={onRemove}
-                        onRetime={onRetime}
-                        onSelect={onSelect}
-                        peaks={peaks.get(block.src) ?? { kind: 'loading' }}
-                        pictures={pictures}
-                        playheadMs={playheadMs}
-                        pps={pps}
-                        selected={selectedId === block.id}
-                        snap={snap}
-                        sourceMs={sourceMs(block.src)}
-                      />
-                    ))}
-                    {ghost?.track === track ? (
-                      <span
-                        aria-hidden="true"
-                        className="wf-drop-ghost"
-                        data-testid="drop-ghost"
-                        style={{
-                          left: msToPx(ghost.start, pps),
-                          width: Math.max(2, msToPx(ghost.duration, pps) - 2),
-                        }}
-                      />
-                    ) : null}
-                    {pictures.length === 0 && ghost === null ? (
-                      <span className="wf-lane-hint">把下面的镜头拖到这里</span>
-                    ) : null}
+              <Fragment key={track}>
+                {openedAt === at ? (
+                  <div aria-hidden="true" className="wf-lane is-new is-opening" data-insert-at={at}>
+                    {dropGhost({ insertAt: at }) ?? <span className="wf-lane-hint">新开一行</span>}
                   </div>
-                </ContextMenuTrigger>
-                <ContextMenuSurface aria-label="空档">
-                  <ContextMenuItem
-                    disabled={closing === undefined || closing.one.size === 0}
-                    onSelect={() => {
-                      if (closing !== undefined) onRestart(closing.one)
-                    }}
-                  >
-                    合拢这个空档
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    disabled={closing === undefined || closing.all.size === 0}
-                    onSelect={() => {
-                      if (closing !== undefined) onRestart(closing.all)
-                    }}
-                  >
-                    合拢这一行的所有空档
-                  </ContextMenuItem>
-                </ContextMenuSurface>
-              </ContextMenuRoot>
+                ) : null}
+                <ContextMenuRoot>
+                  <ContextMenuTrigger asChild>
+                    <div
+                      aria-label={`第 ${at + 1} 行`}
+                      className="wf-lane"
+                      data-track={track}
+                      onContextMenu={(event) => openGapMenu(event, track)}
+                      role="group"
+                    >
+                      {blocks.map((block) => (
+                        <TimelineBlock
+                          block={block}
+                          contentRef={contentRef}
+                          key={block.id}
+                          onGuide={setBlockGuideMs}
+                          onMove={onMove}
+                          onOpening={setBlockOpening}
+                          onRemove={onRemove}
+                          onRetime={onRetime}
+                          onSelect={onSelect}
+                          peaks={peaks.get(block.src) ?? { kind: 'loading' }}
+                          pictures={pictures}
+                          playheadMs={playheadMs}
+                          pps={pps}
+                          rowAt={rowAt}
+                          selected={selectedId === block.id}
+                          snap={snap}
+                          sourceMs={sourceMs(block.src)}
+                        />
+                      ))}
+                      {dropGhost(track)}
+                      {pictures.length === 0 && ghost === null ? (
+                        <span className="wf-lane-hint">把下面的镜头拖到这里</span>
+                      ) : null}
+                    </div>
+                  </ContextMenuTrigger>
+                  <ContextMenuSurface aria-label="空档">
+                    <ContextMenuItem
+                      disabled={closing === undefined || closing.one.size === 0}
+                      onSelect={() => {
+                        if (closing !== undefined) onRestart(closing.one)
+                      }}
+                    >
+                      合拢这个空档
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      disabled={closing === undefined || closing.all.size === 0}
+                      onSelect={() => {
+                        if (closing !== undefined) onRestart(closing.all)
+                      }}
+                    >
+                      合拢这一行的所有空档
+                    </ContextMenuItem>
+                  </ContextMenuSurface>
+                </ContextMenuRoot>
+              </Fragment>
             ))}
-            {pictures.length === 0 ? null : (
-              <div aria-label="新的一行" className="wf-lane is-new" data-track="new" role="group">
-                {ghost !== null && !rows.some((row) => row.track === ghost.track) ? (
-                  <span
-                    aria-hidden="true"
-                    className="wf-drop-ghost"
-                    data-testid="drop-ghost"
-                    style={{
-                      left: msToPx(ghost.start, pps),
-                      width: Math.max(2, msToPx(ghost.duration, pps) - 2),
-                    }}
-                  />
-                ) : (
+            {pictures.length === 0 || openedAt !== null ? null : (
+              <div
+                aria-label="新的一行"
+                className="wf-lane is-new"
+                data-insert-at={rows.length}
+                role="group"
+              >
+                {dropGhost({ insertAt: rows.length }) ?? (
                   <span className="wf-lane-hint">拖到这里，新开一行</span>
                 )}
               </div>

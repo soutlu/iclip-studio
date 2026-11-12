@@ -1709,11 +1709,16 @@
   isolation: isolate;
 }
 
-/* 最下面那条空行：把块或镜头拖进来就新开一行；比放着块的行矮 */
+/* 最下面那条空行：把块或镜头拖进来就新开一行；比放着块的行矮。拖到两行之间时它挪到那里去 */
 .wf-lane.is-new {
   height: 28px;
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--color-hairline);
+}
+
+/* 空行挪到两行之间时，行头那一列在同一处空出一样高的一格，下面的行头才对得齐 */
+.wf-track-head.is-opening {
+  height: 28px;
 }
 
 /* 拖到别的行去的块浮在各行上面 */
