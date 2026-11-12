@@ -19,6 +19,12 @@ export const rowsOf = (pictures: readonly PictureBlock[]): Row[] => {
 export const topTrack = (pictures: readonly PictureBlock[]): number =>
   pictures.length === 0 ? 0 : Math.min(...pictures.map((block) => block.track))
 
+/** 这一行是不是隐藏着：行里有块，而且每个块都隐藏了。 */
+export const rowHidden = (pictures: readonly PictureBlock[], track: number): boolean => {
+  const row = pictures.filter((block) => block.track === track)
+  return row.length > 0 && row.every((block) => block.hidden)
+}
+
 export type Landing = { track: number; start: number }
 
 /**

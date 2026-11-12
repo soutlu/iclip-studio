@@ -137,8 +137,10 @@ function readPicture(element: Element): PictureBlock {
   const id = element.attrs.find((attr) => attr.name === 'id')?.value ?? ''
   if (!BLOCK_ID.test(id) || id === FILM_ID) fail(`画面块的编号不合规矩：${id}`)
   const where = `画面块「${id}」`
-  const get = attributes(element, where, [...PICTURE_ATTRIBUTES, 'style'])
+  const get = attributes(element, where, [...PICTURE_ATTRIBUTES, 'style', 'data-hidden'])
   elementsOf(element, where, [])
+  const hidden = element.attrs.find((attr) => attr.name === 'data-hidden')?.value
+  if (hidden !== undefined) fixed(hidden, '', `${where}的 data-hidden`)
   // 块上的样式只认叠放顺序这一种，没写就是 0
   const z = stackingOf(element.attrs.find((attr) => attr.name === 'style')?.value)
   if (z === undefined || z > MAX_STACKING) {
@@ -172,6 +174,7 @@ function readPicture(element: Element): PictureBlock {
     track: integer(get('data-track-index'), `${where}所在的行`, MAX_TRACK),
     volume: Number(volume),
     z: z as number,
+    hidden: hidden !== undefined,
   }
 }
 

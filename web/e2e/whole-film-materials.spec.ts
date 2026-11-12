@@ -618,3 +618,39 @@ test('换行：把块拖到最下面的空行新开一行，再拖回去；镜�
   await expect.poll(savedRows).toEqual([1, 0, 0])
   await expect(secondRow.locator('[data-block-id]')).toHaveCount(1)
 })
+
+test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来的成片带着隐藏标记；再点显示回来', async ({
+  page,
+}) => {
+  const { dialog, materials } = await openWith(page, [1])
+  await shotOf(materials, 1, 'A', 1).click()
+  await page.keyboard.press('Enter')
+  await expect.poll(() => savedBlocks(page)).toHaveLength(1)
+  await readyPlayer(dialog)
+  // 改动成片后预览会换一个播放器，换的那一下新旧两个都在：看后来的那个
+  const picture = dialog
+    .getByRole('region', { name: '预览' })
+    .locator('hyperframes-player')
+    .last()
+    .frameLocator('iframe')
+    .locator('video.picture')
+  /** 存下来的成片里有几个隐藏的块。 */
+  const savedHidden = () =>
+    page.evaluate(async (conversationId) => {
+      const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
+      const { html } = (await response.json()) as { html: string | null }
+      return (html ?? '').match(/<video data-hidden=""/g)?.length ?? 0
+    }, conversationIdOf(page))
+  await expect(picture).toBeVisible()
+
+  await dialog.getByRole('button', { name: '隐藏第 1 行' }).click()
+  await expect.poll(savedHidden).toBe(1)
+  await expect(picture).toBeHidden()
+  await expect(dialog.getByRole('group', { name: /，已隐藏$/ })).toHaveCount(1)
+
+  const eye = dialog.getByRole('button', { name: '显示第 1 行' })
+  await expect(eye).toHaveAttribute('aria-pressed', 'false')
+  await eye.click()
+  await expect.poll(savedHidden).toBe(0)
+  await expect(picture).toBeVisible()
+})

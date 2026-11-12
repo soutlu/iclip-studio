@@ -195,8 +195,9 @@ function EditorBody({
   const total = film?.durationMs ?? 0
   const playhead = Math.min(playheadMs, total)
   const frameMs = Math.min(playhead, Math.max(0, total - 1))
-  const shown = pictures.find(
-    (block) => block.start <= frameMs && frameMs < block.start + block.duration,
+  // 垫在预览后面的那一帧取最上面显示着的块：文件里写在后面的在上面
+  const shown = pictures.findLast(
+    (block) => !block.hidden && block.start <= frameMs && frameMs < block.start + block.duration,
   )
   const seek = (ms: number) => {
     leaveMaterial()
@@ -428,6 +429,13 @@ function EditorBody({
               leaveMaterial()
               setSelectedId(null)
               session.removeBlocks([id], ripple)
+            }}
+            onHide={(track, hidden) => {
+              leaveMaterial()
+              session.setHidden(
+                pictures.filter((block) => block.track === track).map((block) => block.id),
+                hidden,
+              )
             }}
             onRetime={(id, timing) => {
               leaveMaterial()

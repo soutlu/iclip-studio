@@ -23,6 +23,8 @@ export interface Canvas {
  *
  * `track` 是它在时间线的第几行，只管显示。两个块同时出现时谁盖住谁看 `z`（叠放顺序）：
  * 大的在上面，一样大时文件里写在后面的在上面。`z` 是 0 时文件里不写。
+ *
+ * `hidden` 的块留在时间线上，预览和导出里都不出现、不出声；没隐藏时文件里不写。
  */
 export interface PictureBlock {
   id: string
@@ -35,6 +37,7 @@ export interface PictureBlock {
   track: number
   volume: number
   z: number
+  hidden: boolean
 }
 
 export interface FilmVariable {
@@ -68,10 +71,11 @@ export function filmVariables(film: Film): FilmVariable[] {
 
 export function pictureBlock(block: PictureBlock): string {
   const id = escapeAttribute(block.id)
-  // 块上唯一能带的样式是叠放顺序，写法和 SDK 存出来的一样
+  // 隐藏标记和叠放顺序（块上唯一能带的样式）的写法都和 SDK 存出来的一样
+  const hidden = block.hidden ? ' data-hidden=""' : ''
   const style = block.z > 0 ? ` style="z-index: ${block.z}"` : ''
   return (
-    `<video${style} id="${id}" data-hf-id="${id}" class="${PICTURE_CLASS}"` +
+    `<video${hidden}${style} id="${id}" data-hf-id="${id}" class="${PICTURE_CLASS}"` +
     ` data-label="${escapeAttribute(block.label)}" src="${escapeAttribute(block.src)}"` +
     ` data-var-src="${escapeAttribute(sourceVariableId(block.jobId))}"` +
     ` data-start="${seconds(block.start)}" data-duration="${seconds(block.duration)}"` +
@@ -117,6 +121,7 @@ export function pictureFromAttributes(
     track: Number(attributes['data-track-index'] ?? 0),
     volume: Number(attributes['data-volume'] ?? 1),
     z: zIndex === undefined || !/^\d+$/.test(zIndex) ? 0 : Number(zIndex),
+    hidden: attributes['data-hidden'] !== undefined,
   }
 }
 
