@@ -222,6 +222,10 @@ function EditorBody({
   const scale = timelineScale(viewportWidth, total, zoom)
   const timelineRef = useRef<TimelineHandle | null>(null)
   const [ghost, setGhost] = useState<DropGhost | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  // 选中的块被撤销或删掉以后就不算选中了
+  const selected = pictures.find((block) => block.id === selectedId)
+  const [ripple, setRipple] = useState(true)
   const landingAt = (clientX: number, clientY: number, dragged: MaterialRange) => {
     const point = timelineRef.current?.locate(clientX, clientY) ?? null
     if (point === null) return null
@@ -390,17 +394,34 @@ function EditorBody({
               leaveMaterial()
               session.undo()
             }}
+            onRipple={() => setRipple((on) => !on)}
             onZoom={(direction) => setZoom(nextZoom(direction, zoom, scale.fitPps))}
+            ripple={ripple}
           />
           <FilmTimeline
             buffered={buffered}
             ghost={ghost}
             handleRef={timelineRef}
+            onRemove={(id) => {
+              leaveMaterial()
+              setSelectedId(null)
+              session.removeBlocks([id], ripple)
+            }}
+            onRetime={(id, timing) => {
+              leaveMaterial()
+              session.retime(id, timing)
+            }}
             onSeek={seek}
+            onSelect={setSelectedId}
             onViewportWidth={setViewportWidth}
             pictures={pictures}
             playheadMs={playhead}
             scale={scale}
+            selectedId={selected?.id ?? null}
+            sourceMs={(src) => {
+              const state = keyframes.get(src)
+              return state?.kind === 'ready' ? Math.round(state.index.duration * 1000) : undefined
+            }}
             totalMs={total}
           />
           {session.save.kind === 'failed' ? (

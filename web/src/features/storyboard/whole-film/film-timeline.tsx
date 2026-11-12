@@ -1,8 +1,25 @@
-import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+  type RefObject,
+} from 'react'
 import type { TimeSpan } from '@/shared/lib/time-spans'
-import { useAudioPeaks } from '../editing/media-analysis'
-import { Frames, TimelinePlayhead, TimelineRuler, Wave } from '../editing/timeline'
+import { cn } from '@/shared/lib/utils'
+import { useAudioPeaks, type PeaksState } from '../editing/media-analysis'
+import { Frames, TimelinePlayhead, TimelineRuler, TrimHandle, Wave } from '../editing/timeline'
+import {
+  arrowStep,
+  DRAG_THRESHOLD,
+  releasePointer,
+  useClickAfterDrag,
+  type Edge,
+} from '../editing/timeline-drag'
 import { useStableValue } from '../editing/use-stable-value'
+import { movedStart, trimBounds, trimmed, type Timing } from './block-edit'
 import type { PictureBlock } from './composition/film'
 import { rowsOf, type Landing } from './placement'
 import { msToPx, pxToMs, type TimelineScale } from './timeline-scale'
@@ -24,6 +41,12 @@ type FilmTimelineProps = {
   buffered: readonly TimeSpan[]
   scale: TimelineScale
   ghost: DropGhost | null
+  selectedId: string | null
+  /** 素材片的总长（毫秒）；还没读到时是 undefined。 */
+  sourceMs: (src: string) => number | undefined
+  onSelect: (id: string | null) => void
+  onRetime: (id: string, timing: Timing) => void
+  onRemove: (id: string) => void
   onSeek: (ms: number) => void
   onViewportWidth: (width: number) => void
   handleRef: RefObject<TimelineHandle | null>
@@ -37,7 +60,201 @@ const ROW_REACH_PX = 3
 // 时间区左右留的空（whole-film.css 里 .wf-track-content 的 margin：左 8、右 16），不算进能排时间的宽度
 const INSET_PX = 24
 
-/** 时间线：成片里的块按行排开，上面是时间尺和播放头。 */
+const sameTiming = (left: Timing, right: Timing) =>
+  left.start === right.start &&
+  left.duration === right.duration &&
+  left.mediaStart === right.mediaStart
+
+type Gesture = {
+  pointerId: number
+  kind: 'move' | Edge
+  originX: number
+  /** 按下的地方离块的开头多远（毫秒），挪的时候块跟着指针走而不是跳到指针处。 */
+  grabMs: number
+  timing: Timing | null
+}
+
+type TimelineBlockProps = {
+  block: PictureBlock
+  pictures: readonly PictureBlock[]
+  selected: boolean
+  pps: number
+  /** 时间线内容区，用它把屏幕上的横坐标换成成片的时间。 */
+  contentRef: RefObject<HTMLDivElement | null>
+  sourceMs: number | undefined
+  peaks: PeaksState
+  onSelect: (id: string | null) => void
+  onRetime: (id: string, timing: Timing) => void
+  onRemove: (id: string) => void
+}
+
+/** 时间线上的一个块：点一下选中，拖着在这一行里挪，选中后拖两端的把手裁剪；松手才写进成片。 */
+function TimelineBlock({
+  block,
+  pictures,
+  selected,
+  pps,
+  contentRef,
+  sourceMs,
+  peaks,
+  onSelect,
+  onRetime,
+  onRemove,
+}: TimelineBlockProps) {
+  const gestureRef = useRef<Gesture | null>(null)
+  const clickAfterDrag = useClickAfterDrag()
+  const [preview, setPreview] = useState<{ timing: Timing; kind: Gesture['kind'] }>()
+  const timing = preview?.timing ?? block
+  const name = `${block.label}，${seconds(timing.duration)} 秒`
+  const part = {
+    mediaUrl: block.src,
+    start: timing.mediaStart / 1000,
+    end: (timing.mediaStart + timing.duration) / 1000,
+  }
+
+  const timeAt = (clientX: number) =>
+    pxToMs(clientX - (contentRef.current?.getBoundingClientRect().left ?? 0), pps)
+
+  const press = (event: PointerEvent<HTMLElement>, kind: Gesture['kind']) => {
+    if (event.button !== 0) return
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    clickAfterDrag.reset()
+    const box = event.currentTarget.closest('[data-block-id]')?.getBoundingClientRect()
+    gestureRef.current = {
+      pointerId: event.pointerId,
+      kind,
+      originX: event.clientX,
+      grabMs: box === undefined ? 0 : pxToMs(event.clientX - box.left, pps),
+      timing: null,
+    }
+  }
+
+  // 把手是哪一端从它自己身上读（TrimHandle 给开头那个加 is-start），这样两个把手共用一个处理函数
+  const pressEdge = (event: PointerEvent<HTMLElement>) =>
+    press(event, event.currentTarget.classList.contains('is-start') ? 'start' : 'end')
+
+  const drag = (event: PointerEvent<HTMLElement>) => {
+    const gesture = gestureRef.current
+    if (gesture === null || gesture.pointerId !== event.pointerId) return
+    if (gesture.timing === null && Math.abs(event.clientX - gesture.originX) <= DRAG_THRESHOLD)
+      return
+    const at = timeAt(event.clientX)
+    const { kind } = gesture
+    gesture.timing =
+      kind === 'move'
+        ? {
+            start: movedStart(block, pictures, Math.max(0, at - gesture.grabMs)),
+            duration: block.duration,
+            mediaStart: block.mediaStart,
+          }
+        : trimmed(block, kind, at, trimBounds(block, kind, pictures, sourceMs))
+    setPreview({ timing: gesture.timing, kind })
+  }
+
+  const release = (event: PointerEvent<HTMLElement>) => {
+    const gesture = gestureRef.current
+    if (gesture === null || gesture.pointerId !== event.pointerId) return
+    releasePointer(event)
+    gestureRef.current = null
+    setPreview(undefined)
+    if (gesture.timing === null) return
+    // 拖完松手也会来一次点击，那一次不算选中
+    clickAfterDrag.swallow()
+    if (!sameTiming(gesture.timing, block)) onRetime(block.id, gesture.timing)
+  }
+
+  const cancel = () => {
+    gestureRef.current = null
+    setPreview(undefined)
+  }
+
+  const nudge = (event: KeyboardEvent<HTMLElement>, edge: Edge) => {
+    const step = arrowStep(event)
+    if (step === undefined) return
+    event.preventDefault()
+    event.stopPropagation()
+    const edgeMs = edge === 'start' ? block.start : block.start + block.duration
+    const next = trimmed(
+      block,
+      edge,
+      edgeMs + Math.round(step * 1000),
+      trimBounds(block, edge, pictures, sourceMs),
+    )
+    if (!sameTiming(next, block)) onRetime(block.id, next)
+  }
+
+  return (
+    <div
+      aria-label={name}
+      className={cn('wf-clip', selected && 'is-selected')}
+      data-block-id={block.id}
+      role="group"
+      style={{
+        left: msToPx(timing.start, pps),
+        width: Math.max(2, msToPx(timing.duration, pps) - 2),
+      }}
+    >
+      <button
+        aria-keyshortcuts="Delete"
+        aria-label={`选中：${name}`}
+        aria-pressed={selected}
+        className="wf-block-body ui-focus"
+        onClick={() => {
+          if (!clickAfterDrag.take()) onSelect(block.id)
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Delete' || event.key === 'Backspace') {
+            event.preventDefault()
+            onRemove(block.id)
+          } else if (event.key === 'Escape' && selected) {
+            event.stopPropagation()
+            onSelect(null)
+          }
+        }}
+        onPointerCancel={cancel}
+        onPointerDown={(event) => press(event, 'move')}
+        onPointerMove={drag}
+        onPointerUp={release}
+        type="button"
+      >
+        <span className="wf-clip-label">{block.label}</span>
+        <span className="wf-clip-media">
+          <span className="wf-clip-frames">
+            <Frames part={part} />
+          </span>
+          <span className="wf-clip-wave">
+            <Wave part={part} state={peaks} />
+          </span>
+        </span>
+      </button>
+      {selected
+        ? (['start', 'end'] as const).map((edge) => {
+            const bounds = trimBounds(block, edge, pictures, sourceMs)
+            const edgeMs = edge === 'start' ? timing.start : timing.start + timing.duration
+            return (
+              <TrimHandle
+                bounds={{ min: bounds.min / 1000, max: bounds.max / 1000 }}
+                edge={edge}
+                key={edge}
+                onKeyDown={(event) => nudge(event, edge)}
+                onPointerCancel={cancel}
+                onPointerDown={pressEdge}
+                onPointerMove={drag}
+                onPointerUp={release}
+                pressed={preview?.kind === edge}
+                style={{ left: edge === 'start' ? 0 : '100%' }}
+                value={edgeMs / 1000}
+                valueText={`${seconds(edgeMs)} 秒`}
+              />
+            )
+          })
+        : null}
+    </div>
+  )
+}
+
+/** 时间线：成片里的块按行排开，可以选中、在一行里挪动、裁两端；上面是时间尺和播放头。 */
 export function FilmTimeline({
   pictures,
   totalMs,
@@ -45,6 +262,11 @@ export function FilmTimeline({
   buffered,
   scale,
   ghost,
+  selectedId,
+  sourceMs,
+  onSelect,
+  onRetime,
+  onRemove,
   onSeek,
   onViewportWidth,
   handleRef,
@@ -127,36 +349,21 @@ export function FilmTimeline({
                 key={track}
                 role="group"
               >
-                {blocks.map((block) => {
-                  const part = {
-                    mediaUrl: block.src,
-                    start: block.mediaStart / 1000,
-                    end: (block.mediaStart + block.duration) / 1000,
-                  }
-                  return (
-                    <div
-                      aria-label={`${block.label}，${seconds(block.duration)} 秒`}
-                      className="wf-clip"
-                      data-block-id={block.id}
-                      key={block.id}
-                      role="group"
-                      style={{
-                        left: msToPx(block.start, pps),
-                        width: Math.max(2, msToPx(block.duration, pps) - 2),
-                      }}
-                    >
-                      <span className="wf-clip-label">{block.label}</span>
-                      <span className="wf-clip-media">
-                        <span className="wf-clip-frames">
-                          <Frames part={part} />
-                        </span>
-                        <span className="wf-clip-wave">
-                          <Wave part={part} state={peaks.get(block.src) ?? { kind: 'loading' }} />
-                        </span>
-                      </span>
-                    </div>
-                  )
-                })}
+                {blocks.map((block) => (
+                  <TimelineBlock
+                    block={block}
+                    contentRef={contentRef}
+                    key={block.id}
+                    onRemove={onRemove}
+                    onRetime={onRetime}
+                    onSelect={onSelect}
+                    peaks={peaks.get(block.src) ?? { kind: 'loading' }}
+                    pictures={pictures}
+                    pps={pps}
+                    selected={selectedId === block.id}
+                    sourceMs={sourceMs(block.src)}
+                  />
+                ))}
                 {ghost?.track === track ? (
                   <span
                     aria-hidden="true"

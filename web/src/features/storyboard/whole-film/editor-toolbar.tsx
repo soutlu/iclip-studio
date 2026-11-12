@@ -8,6 +8,8 @@ type ToolProps = {
   label: string
   tip: ReactNode
   blocked?: string | undefined
+  /** 开关类按钮现在是开还是关；不是开关就不给。 */
+  pressed?: boolean
   onClick: () => void
   showLabel?: boolean
   shortcuts?: string
@@ -19,6 +21,7 @@ export function Tool({
   label,
   tip,
   blocked,
+  pressed,
   onClick,
   showLabel = false,
   shortcuts,
@@ -39,7 +42,13 @@ export function Tool({
           aria-disabled={blocked === undefined ? undefined : true}
           aria-keyshortcuts={shortcuts}
           aria-label={showLabel ? undefined : label}
-          className={cn('wf-tool ui-state ui-focus', showLabel && 'has-label', className)}
+          aria-pressed={pressed}
+          className={cn(
+            'wf-tool ui-state ui-focus',
+            showLabel && 'has-label',
+            pressed === true && 'is-pressed',
+            className,
+          )}
           onClick={() => {
             if (blocked === undefined) onClick()
           }}
@@ -65,6 +74,8 @@ type EditorToolbarProps = {
   onRedo: () => void
   insertBlocked: string | undefined
   onInsert: () => void
+  ripple: boolean
+  onRipple: () => void
   onZoom: (direction: 'in' | 'out') => void
   onFit: () => void
 }
@@ -76,6 +87,8 @@ export function EditorToolbar({
   onRedo,
   insertBlocked,
   onInsert,
+  ripple,
+  onRipple,
   onZoom,
   onFit,
 }: EditorToolbarProps) {
@@ -121,6 +134,18 @@ export function EditorToolbar({
               把选中的范围接在成片末尾
               <Keys>↵</Keys>
             </>
+          }
+        />
+        <span aria-hidden="true" className="wf-divider" />
+        <Tool
+          icon="ripple"
+          label="波纹编辑"
+          onClick={onRipple}
+          pressed={ripple}
+          tip={
+            ripple
+              ? '波纹编辑开着：删掉第一行的块，后面的自动往前补上'
+              : '波纹编辑关着：删掉块以后留下空档'
           }
         />
       </div>

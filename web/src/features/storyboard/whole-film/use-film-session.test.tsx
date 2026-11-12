@@ -148,6 +148,70 @@ describe('useFilmSession', () => {
     expect(saves[0]?.html).toContain('data-duration="5.5"')
   })
 
+  const threeBlocks = () =>
+    putMockWholeFilmDraft(
+      CONVERSATION,
+      filmFile([
+        picture({ id: 'a', duration: 2_000 }),
+        picture({ id: 'b', jobId: OTHER_JOB, start: 2_000, duration: 1_000 }),
+        picture({ id: 'c', start: 3_000, duration: 1_500 }),
+      ]),
+    )
+
+  it('改一个块的起止和入点：一步撤销，成片总长跟着变，存出的文件写着新的时间', async () => {
+    const saves = recordSaves()
+    const { result } = await open(threeBlocks())
+    act(() => result.current.retime('c', { start: 3_400, duration: 2_000, mediaStart: 400 }))
+    expect(result.current.film?.pictures.at(-1)).toMatchObject({
+      start: 3_400,
+      duration: 2_000,
+      mediaStart: 400,
+    })
+    expect(result.current.film?.durationMs).toBe(5_400)
+    await waitFor(() => expect(saves).toHaveLength(1))
+    expect(saves[0]?.html).toContain('data-start="3.4" data-duration="2" data-media-start="0.4"')
+    expect(saves[0]?.html).toMatch(/id="film"[^>]*data-duration="5.4"/)
+
+    act(() => result.current.undo())
+    expect(spans(result)?.at(-1)).toEqual([picture().jobId, 3_000, 1_500])
+    expect(result.current.film?.durationMs).toBe(4_500)
+    expect(result.current.film?.canUndo).toBe(false)
+  })
+
+  it('删掉一个块、开着波纹编辑：后面的块往前补上，用不到的素材变量一起去掉', async () => {
+    const saves = recordSaves()
+    const { result } = await open(threeBlocks())
+    act(() => result.current.removeBlocks(['b'], true))
+    expect(spans(result)).toEqual([
+      [picture().jobId, 0, 2_000],
+      [picture().jobId, 2_000, 1_500],
+    ])
+    expect(result.current.film?.durationMs).toBe(3_500)
+    await waitFor(() => expect(saves).toHaveLength(1))
+    expect(saves[0]?.html).not.toContain(OTHER_JOB)
+
+    act(() => result.current.undo())
+    expect(spans(result)).toHaveLength(3)
+    expect(result.current.film?.html).toContain(`src-${OTHER_JOB}`)
+  })
+
+  it('删掉一个块、关着波纹编辑：留下空档', async () => {
+    const { result } = await open(threeBlocks())
+    act(() => result.current.removeBlocks(['b'], false))
+    expect(spans(result)).toEqual([
+      [picture().jobId, 0, 2_000],
+      [picture().jobId, 3_000, 1_500],
+    ])
+  })
+
+  it('把块全删掉：成片还在，只是没有画面', async () => {
+    const { result } = await open(threeBlocks())
+    act(() => result.current.removeBlocks(['a', 'b', 'c'], true))
+    expect(spans(result)).toEqual([])
+    expect(result.current.film?.durationMs).toBe(0)
+    expect(result.current.film?.html).not.toContain('data-composition-variables')
+  })
+
   it('加进去会超过两分钟：不动成片，并告诉用户', async () => {
     const saves = recordSaves()
     const { result, onNotice } = await open()

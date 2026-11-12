@@ -138,6 +138,64 @@ describe('checkFilm', () => {
     })
   })
 
+  describe('编辑器挪动、裁剪、删除后存出来的文件', () => {
+    type Session = Awaited<ReturnType<typeof openComposition>>
+
+    /** 和编辑器改一个块时发的操作一样：起止、入点和成片总长算一步。 */
+    const retime = (
+      session: Session,
+      id: string,
+      timing: Pick<PictureBlock, 'start' | 'duration' | 'mediaStart'>,
+      total: number,
+    ) =>
+      session.batch(() => {
+        session.setTiming(id, { start: timing.start / 1000, duration: timing.duration / 1000 })
+        session.setAttribute(id, 'data-media-start', String(timing.mediaStart / 1000))
+        session.dispatch({ type: 'setCompositionMetadata', duration: total / 1000 })
+      })
+
+    it('裁开头再挪走：起止和入点都按新的读回来，成片总长跟着变；撤销回到原样', async () => {
+      const stored = (await checkFilm(html(picture(), second()), catalog)).html
+      const session = await openComposition(stored)
+      const moved = { start: 2600, duration: 2400, mediaStart: 1600 }
+      retime(session, 'clip-2', moved, 5000)
+      const later = { ...moved, start: 4000 }
+      retime(session, 'clip-2', later, 6400)
+      const checked = await checkFilm(session.serialize(), catalog)
+      expect(checked.film).toEqual(film(picture(), second(later)))
+      expect(checked.durationMs).toBe(6400)
+      session.undo()
+      session.undo()
+      expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
+    })
+
+    it('删掉一块、后面的往前补，用不到的素材变量一起去掉；撤销后两块和变量都回来', async () => {
+      const stored = (await checkFilm(html(picture(), second()), catalog)).html
+      const session = await openComposition(stored)
+      session.batch(() => {
+        session.removeElement('clip-1')
+        session.setTiming('clip-2', { start: 0 })
+        session.removeVariableDeclaration(sourceVariable(SOURCE_JOB, picture().src).id)
+        session.dispatch({ type: 'setCompositionMetadata', duration: 3 })
+      })
+      const checked = await checkFilm(session.serialize(), catalog)
+      expect(checked.film).toEqual(film(second({ start: 0 })))
+      expect(checked.sources.map((source) => source.jobId)).toEqual([OTHER_JOB])
+      session.undo()
+      expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
+    })
+
+    it('把块全删掉：剩下一份没有画面的成片，照样通过', async () => {
+      const session = await openComposition(html(picture()))
+      session.batch(() => {
+        session.removeElement('clip-1')
+        session.removeVariableDeclaration(sourceVariable(SOURCE_JOB, picture().src).id)
+        session.dispatch({ type: 'setCompositionMetadata', duration: 0 })
+      })
+      expect((await checkFilm(session.serialize(), catalog)).film.blocks).toEqual([])
+    })
+  })
+
   it('合写法却过不了渲染前的检查（组件库里没有用到的字体）：拒收，原因只进排障信息', async () => {
     const fontless = { ...catalog, cjk: { ...catalog.cjk, slices: [] } }
     const problem = await checkFilm(html(picture()), fontless).catch((error: unknown) => error)
