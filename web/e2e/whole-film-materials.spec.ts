@@ -406,3 +406,51 @@ test('每条原作可以换版本；换了之后这条轨上的选区收起', as
   await expect(picker).toHaveAccessibleName('生成 A的版本：V1 原片')
   await expect(groupOf(materials, 1).getByRole('slider')).toHaveCount(0)
 })
+
+test('把镜头拖进时间线：落在指针的位置；压在别的块上时挪到它后面', async ({ page }) => {
+  const { dialog, materials } = await openWith(page, [1])
+  const row = dialog.getByRole('group', { name: '第 1 行' })
+  const range = groupOf(materials, 1).getByRole('group', { name: /^选中的范围/ })
+  const lane = await row.boundingBox()
+  if (lane === null) throw new Error('时间线尚未布局')
+  const laneY = lane.y + lane.height / 2
+  const carryTo = async (x: number) => {
+    const from = await centerOf(range)
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    await page.mouse.move(from.x + 10, from.y - 10, { steps: 3 })
+    await page.mouse.move(x, laneY, { steps: 8 })
+  }
+  const blockBox = async (at: number) => {
+    const box = await row.locator('[data-block-id]').nth(at).boundingBox()
+    if (box === null) throw new Error('块尚未布局')
+    return box
+  }
+
+  await shotOf(materials, 1, 'A', 2).click()
+  const dropX = lane.x + lane.width * 0.3
+  await carryTo(dropX)
+  await expect(row.getByTestId('drop-ghost')).toBeVisible()
+  await page.mouse.up()
+  await expect(row.getByTestId('drop-ghost')).toHaveCount(0)
+  await expect.poll(() => savedBlocks(page)).toHaveLength(1)
+  const first = await blockBox(0)
+  expect(Math.abs(first.x - dropX)).toBeLessThan(3)
+
+  await shotOf(materials, 1, 'A', 4).click()
+  await carryTo(first.x + first.width / 2)
+  await page.mouse.up()
+  await expect.poll(() => savedBlocks(page)).toHaveLength(2)
+  const second = await blockBox(1)
+  expect(Math.abs(second.x - (first.x + first.width))).toBeLessThan(4)
+
+  await shotOf(materials, 1, 'A', 5).click()
+  const outside = await centerOf(dialog.getByRole('region', { name: '预览' }))
+  const from = await centerOf(range)
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(outside.x, outside.y, { steps: 8 })
+  await page.mouse.up()
+  await page.waitForTimeout(300)
+  expect(await savedBlocks(page)).toHaveLength(2)
+})

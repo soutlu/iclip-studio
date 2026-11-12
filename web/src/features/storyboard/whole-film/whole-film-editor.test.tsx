@@ -207,6 +207,70 @@ describe('成片编辑器 · 加入素材', () => {
   })
 })
 
+describe('成片编辑器 · 时间线', () => {
+  const timeline = () => screen.getByRole('group', { name: '第 1 行' })
+
+  it('还没有成片：留一行空的，提示把镜头拖进来', async () => {
+    await openEditor()
+    expect(within(timeline()).getByText('把下面的镜头拖到这里')).toBeVisible()
+    expect(screen.queryByRole('group', { name: '第 2 行' })).toBeNull()
+  })
+
+  it('成片里的块排在一行里，行头是第一个块的名字和块数', async () => {
+    putMockWholeFilmDraft(
+      CONVERSATION,
+      filmFile(
+        [
+          picture({ label: 'A · 镜头 2', jobId: TAKE_A, src: URL_A, duration: 2_000 }),
+          picture({
+            id: 'clip-2',
+            label: 'B · 镜头 1',
+            jobId: TAKE_B,
+            src: URL_B,
+            start: 2_000,
+            duration: 1_500,
+          }),
+        ],
+        { width: 720, height: 1280 },
+      ),
+    )
+    await openEditor()
+    const blocks = within(timeline()).getAllByRole('group')
+    expect(blocks.map((block) => block.getAttribute('aria-label'))).toEqual([
+      'A · 镜头 2，2.0 秒',
+      'B · 镜头 1，1.5 秒',
+    ])
+    const head = screen.getByLabelText('2 个块').parentElement
+    expect(head).toHaveTextContent('A · 镜头 2')
+    expect(screen.getByRole('slider', { name: '时间线播放位置' })).toBeEnabled()
+  })
+
+  it('两行的成片：行号小的在上面，一个块的行不显示块数', async () => {
+    putMockWholeFilmDraft(
+      CONVERSATION,
+      filmFile(
+        [
+          picture({ label: 'A · 镜头 2', jobId: TAKE_A, src: URL_A, duration: 2_000, track: 1 }),
+          picture({
+            id: 'clip-2',
+            label: 'B · 镜头 1',
+            jobId: TAKE_B,
+            src: URL_B,
+            duration: 1_500,
+          }),
+        ],
+        { width: 720, height: 1280 },
+      ),
+    )
+    await openEditor()
+    expect(within(timeline()).getByRole('group')).toHaveAccessibleName('B · 镜头 1，1.5 秒')
+    expect(
+      within(screen.getByRole('group', { name: '第 2 行' })).getByRole('group'),
+    ).toHaveAccessibleName('A · 镜头 2，2.0 秒')
+    expect(screen.queryByLabelText(/个块$/)).toBeNull()
+  })
+})
+
 describe('成片编辑器 · 播放', () => {
   afterEach(() => {
     starvedVideos.clear()

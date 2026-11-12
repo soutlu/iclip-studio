@@ -27,6 +27,7 @@ import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
 import type { Canvas } from './composition/film'
 import { EditorToolbar } from './editor-toolbar'
 import { ExportControl } from './export-control'
+import { FilmTimeline, type DropGhost, type TimelineHandle } from './film-timeline'
 import { MaterialArea } from './material-area'
 import {
   useKeyframeIndexes,
@@ -44,9 +45,11 @@ import {
   type MaterialRange,
   type MaterialTake,
 } from './materials'
+import { landingOn, type Landing } from './placement'
 import { previewDocument } from './preview-document'
 import { PreviewPlayer, type PreviewControl } from './preview-player'
 import { PreviewTransport } from './preview-transport'
+import { FIT_ZOOM, nextZoom, timelineScale, type Zoom } from './timeline-scale'
 import { useFilmSession } from './use-film-session'
 import { useWholeFilmExport } from './use-whole-film-export'
 import { useWholeFilmDraftQuery } from './whole-film.api'
@@ -214,13 +217,22 @@ function EditorBody({
   const size = useVideoSize(sizeUrl)
   const queryClient = useQueryClient()
 
-  const insert = () => {
-    if (range === null || rangeMaterial === undefined) {
-      notice(PICK_FIRST_TEXT)
-      return
-    }
-    const material = rangeMaterial
-    const picked = rangePieces(range).map((piece) => {
+  const [viewportWidth, setViewportWidth] = useState(0)
+  const [zoom, setZoom] = useState<Zoom>(FIT_ZOOM)
+  const scale = timelineScale(viewportWidth, total, zoom)
+  const timelineRef = useRef<TimelineHandle | null>(null)
+  const [ghost, setGhost] = useState<DropGhost | null>(null)
+  const landingAt = (clientX: number, clientY: number, dragged: MaterialRange) => {
+    const point = timelineRef.current?.locate(clientX, clientY) ?? null
+    if (point === null) return null
+    return landingOn(pictures, point.track, point.timeMs, dragged.endMs - dragged.startMs)
+  }
+
+  /** 把素材里的一段放进成片：给了 `at` 放在那里，没给就接在第一行的末尾。 */
+  const place = (chosen: MaterialRange, at?: Landing) => {
+    const material = materials.byJob.get(chosen.jobId)
+    if (material === undefined) return
+    const picked = rangePieces(chosen).map((piece) => {
       const shot = shotNumberOf(piece.mediaStart, material.url, keyframes)
       return {
         ...piece,
@@ -230,7 +242,7 @@ function EditorBody({
       }
     })
     const add = async (canvas: Canvas) => {
-      if (await session.addPictures(canvas, picked)) leaveMaterial()
+      if (await session.addPictures(canvas, picked, at)) leaveMaterial()
     }
     if (film !== null) void add(film.canvas)
     else if (size.data !== undefined) void add(size.data)
@@ -240,6 +252,10 @@ function EditorBody({
         .then(add, (error: unknown) =>
           notice(errorMessageOf(error, '画面尺寸读取失败，无法加入成片')),
         )
+  }
+  const insert = () => {
+    if (range === null || rangeMaterial === undefined) notice(PICK_FIRST_TEXT)
+    else place(range)
   }
 
   const history = {
@@ -364,6 +380,7 @@ function EditorBody({
             canRedo={history.canRedo}
             canUndo={history.canUndo}
             insertBlocked={range === null ? PICK_FIRST_TEXT : undefined}
+            onFit={() => setZoom(FIT_ZOOM)}
             onInsert={insert}
             onRedo={() => {
               leaveMaterial()
@@ -373,6 +390,18 @@ function EditorBody({
               leaveMaterial()
               session.undo()
             }}
+            onZoom={(direction) => setZoom(nextZoom(direction, zoom, scale.fitPps))}
+          />
+          <FilmTimeline
+            buffered={buffered}
+            ghost={ghost}
+            handleRef={timelineRef}
+            onSeek={seek}
+            onViewportWidth={setViewportWidth}
+            pictures={pictures}
+            playheadMs={playhead}
+            scale={scale}
+            totalMs={total}
           />
           {session.save.kind === 'failed' ? (
             <InlineAlert
@@ -383,8 +412,22 @@ function EditorBody({
           <MaterialArea
             groups={materials.groups}
             keyframes={keyframes}
-            onCarry={() => undefined}
-            onDrop={() => false}
+            onCarry={(carry) => {
+              const at =
+                carry === null ? null : landingAt(carry.clientX, carry.clientY, carry.range)
+              setGhost(
+                carry === null || at === null
+                  ? null
+                  : { ...at, duration: carry.range.endMs - carry.range.startMs },
+              )
+            }}
+            onDrop={(clientX, clientY, dropped) => {
+              const at = landingAt(clientX, clientY, dropped)
+              setGhost(null)
+              if (at === null) return false
+              place(dropped, at)
+              return true
+            }}
             onInsert={insert}
             onClear={() => {
               setRange(null)

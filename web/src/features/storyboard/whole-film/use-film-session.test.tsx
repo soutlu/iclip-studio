@@ -124,6 +124,30 @@ describe('useFilmSession', () => {
     await settled(result)
   })
 
+  it('指定了落点：从那一行的那个时间放起，几段一段接一段；成片总长跟着变', async () => {
+    const saves = recordSaves()
+    const { result } = await open({
+      revision: 1,
+      html: filmFile([picture({ duration: 2_000 })]),
+      updatedAt: null,
+    })
+    await act(() =>
+      result.current.addPictures(
+        CANVAS,
+        [piece({ jobId: OTHER_JOB, duration: 1_000 }), piece({ jobId: OTHER_JOB, duration: 500 })],
+        { track: 0, start: 4_000 },
+      ),
+    )
+    expect(spans(result)).toEqual([
+      [picture().jobId, 0, 2_000],
+      [OTHER_JOB, 4_000, 1_000],
+      [OTHER_JOB, 5_000, 500],
+    ])
+    expect(result.current.film?.durationMs).toBe(5_500)
+    await waitFor(() => expect(saves).toHaveLength(1))
+    expect(saves[0]?.html).toContain('data-duration="5.5"')
+  })
+
   it('加进去会超过两分钟：不动成片，并告诉用户', async () => {
     const saves = recordSaves()
     const { result, onNotice } = await open()

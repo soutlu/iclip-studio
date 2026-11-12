@@ -65,6 +65,8 @@ type EditorToolbarProps = {
   onRedo: () => void
   insertBlocked: string | undefined
   onInsert: () => void
+  onZoom: (direction: 'in' | 'out') => void
+  onFit: () => void
 }
 
 export function EditorToolbar({
@@ -74,6 +76,8 @@ export function EditorToolbar({
   onRedo,
   insertBlocked,
   onInsert,
+  onZoom,
+  onFit,
 }: EditorToolbarProps) {
   return (
     <div aria-label="剪辑工具" className="wf-toolbar" role="toolbar">
@@ -119,6 +123,11 @@ export function EditorToolbar({
             </>
           }
         />
+      </div>
+      <div className="wf-toolbar-group">
+        <Tool icon="zoom-out" label="缩小时间线" onClick={() => onZoom('out')} tip="缩小时间线" />
+        <Tool icon="zoom" label="放大时间线" onClick={() => onZoom('in')} tip="放大时间线" />
+        <Tool icon="fit" label="适应宽度" onClick={onFit} tip="适应宽度" />
       </div>
     </div>
   )

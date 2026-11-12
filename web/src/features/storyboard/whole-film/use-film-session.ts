@@ -13,6 +13,7 @@ import {
   type Canvas,
   type PictureBlock,
 } from './composition/film'
+import type { Landing } from './placement'
 import { readWholeFilmDraft, saveWholeFilmDraft } from './whole-film.api'
 
 export type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'failed'; message: string }
@@ -200,14 +201,18 @@ export function useFilmSession(
     [adopt, catalog],
   )
 
-  /** 把几段素材接在画面那一行的末尾；还没有成片时先按 `canvas` 建一份。放不下时不动成片。 */
+  /**
+   * 把几段素材一段接一段放进成片：给了 `at` 就从那一行的那个时间放起（调用方保证那里空着），
+   * 没给就接在第一行的末尾。还没有成片时先按 `canvas` 建一份。放不下时不动成片。
+   */
   const addPictures = useCallback(
-    async (canvas: Canvas, pictures: readonly NewPicture[]): Promise<boolean> => {
+    async (canvas: Canvas, pictures: readonly NewPicture[], at?: Landing): Promise<boolean> => {
       const engine = await engineFor(canvas)
       if (engine === null) return false
       const current = viewOf(engine)
-      const row = current.pictures.filter((block) => block.track === PICTURE_TRACK)
-      let end = Math.max(0, ...row.map((block) => block.start + block.duration))
+      const track = at?.track ?? PICTURE_TRACK
+      const row = current.pictures.filter((block) => block.track === track)
+      let end = at?.start ?? Math.max(0, ...row.map((block) => block.start + block.duration))
       const total = pictures.reduce((sum, picture) => sum + picture.duration, end)
       if (total > MAX_FILM_MS) {
         noticeRef.current(FILM_LIMIT_TEXT)
@@ -225,7 +230,7 @@ export function useFilmSession(
             ...picture,
             id: newBlockId(),
             start: end,
-            track: PICTURE_TRACK,
+            track,
             volume: 1,
           }
           engine.addElement(FILM_ID, current.pictures.length + offset, pictureBlock(block))
