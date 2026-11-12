@@ -641,16 +641,16 @@ test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来�
       const { html } = (await response.json()) as { html: string | null }
       return (html ?? '').match(/<video data-hidden=""/g)?.length ?? 0
     }, conversationIdOf(page))
-  await expect(picture).toBeVisible()
+  await expect(picture).not.toHaveCSS('display', 'none')
 
   await dialog.getByRole('button', { name: '隐藏第 1 行' }).click()
   await expect.poll(savedHidden).toBe(1)
-  await expect(picture).toBeHidden()
+  await expect(picture).toHaveCSS('display', 'none')
   await expect(dialog.getByRole('group', { name: /，已隐藏$/ })).toHaveCount(1)
 
   const eye = dialog.getByRole('button', { name: '显示第 1 行' })
   await expect(eye).toHaveAttribute('aria-pressed', 'false')
   await eye.click()
   await expect.poll(savedHidden).toBe(0)
-  await expect(picture).toBeVisible()
+  await expect(picture).not.toHaveCSS('display', 'none')
 })

@@ -423,4 +423,48 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(meanDifference(hidden.second, grayFrame)).toBeLessThan(6)
     expect(shown.loudness - hidden.loudness).toBeGreaterThan(30)
   }, 600_000)
+
+  it('成片里的块全隐藏了：照样导出，是一段同样长的黑片，没有音轨', async () => {
+    const { logger } = memoryLogger()
+    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
+    const clip = `${origin}/clip.mp4`
+    const rendered = await worker.render(
+      {
+        id: 'all-hidden',
+        registryDir: (library as ComponentLibrary).dir,
+        mediaUrls: [clip],
+        compose: (paths) =>
+          writeFilm(
+            {
+              canvas: FRAME,
+              blocks: [picture({ src: paths[clip] ?? clip, duration: 2000, hidden: true })],
+            },
+            (library as ComponentLibrary).catalog,
+          ),
+      },
+      { signal: new AbortController().signal, onProgress: () => {} },
+    )
+    try {
+      const { stdout } = await run('ffprobe', [
+        '-v',
+        'error',
+        '-show_entries',
+        'format=duration:stream=codec_type',
+        '-of',
+        'json',
+        rendered.file,
+      ])
+      const probe = JSON.parse(stdout) as {
+        format: { duration: string }
+        streams: { codec_type: string }[]
+      }
+      expect(probe.streams.map((stream) => stream.codec_type).toSorted()).toEqual(['video'])
+      expect(Number(probe.format.duration)).toBeGreaterThan(1.9)
+      expect(Number(probe.format.duration)).toBeLessThan(2.15)
+      const frame = await frameAt(rendered.file, 1)
+      expect(meanDifference(frame, Buffer.alloc(frame.length, 0))).toBeLessThan(6)
+    } finally {
+      await rendered.cleanup()
+    }
+  }, 300_000)
 })

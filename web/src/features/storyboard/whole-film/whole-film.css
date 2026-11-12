@@ -1275,8 +1275,8 @@
   color: var(--color-on-surface-muted);
 }
 
-/* 隐藏的块留在时间线上，画淡一些 */
-.wf-clip.is-hidden {
+/* 隐藏的块留在时间线上，内容画淡一些；选中框和把手不变淡 */
+.wf-clip.is-hidden > .wf-block-body {
   opacity: 0.4;
 }
 
