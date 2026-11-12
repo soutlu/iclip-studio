@@ -37,7 +37,7 @@
   - 如果改了 HTTP 接口，额外运行 `make contract`；
   - 如果改了模块间的导入关系，额外运行 `make tach`；
   - 如果改了 Python 依赖包，额外运行 `make lock-check`。
-- **修改成片渲染服务（`render/`，或其引用的前端合成代码、组件目录、生成合同）**：在 `render/` 目录下执行 `pnpm lint`、`pnpm typecheck` 和 `pnpm test`（若本机未安装 `chrome-headless-shell`，真实渲染集成测试会自动跳过，需在汇报中说明）。
+- **修改成片渲染服务（`render/`，或其引用的前端成片文件写法、组件目录）**：在 `render/` 目录下执行 `pnpm lint`、`pnpm typecheck` 和 `pnpm test`（若本机未安装 `chrome-headless-shell`，真实渲染集成测试会自动跳过，需在汇报中说明）。
 - **纯文档修改**：运行 `make docs-check`；若修改了 `web/` 目录下的 Markdown，还需在 `web/` 下运行 `pnpm format:check`。
 - **修改 SSO / PMS 登录接入**：必须在本地完整走通一次真实的登录回调流程。
 - **数据库测试安全**：测试只能连接一次性测试库或临时 Schema，`TEST_DATABASE_URL` 严禁指向真实业务数据库（详见[测试规范](docs/test-design.md)）。

@@ -12,7 +12,7 @@ import {
   useClickAfterDrag,
   type Edge,
 } from '../editing/timeline-drag'
-import type { KeyframeStates } from './edit-context'
+import type { KeyframeStates } from './material-media'
 import {
   shiftShot,
   shotRange,
@@ -375,7 +375,7 @@ function TakeRow({
             ))}
         {shown !== null && durationMs !== undefined ? (
           <div
-            aria-label={`选中的范围 ${seconds(shown.startMs)}–${seconds(shown.endMs)} 秒，${shown.shots.length} 个镜头，拖到画面轨上可加入，按 Enter 插到播放头处`}
+            aria-label={`选中的范围 ${seconds(shown.startMs)}–${seconds(shown.endMs)} 秒，${shown.shots.length} 个镜头，按 Enter 加入成片`}
             className={cn('wf-range', lifting && 'is-lifting')}
             onPointerCancel={cancel}
             onPointerDown={(event) => press(event, 'body')}

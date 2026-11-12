@@ -29,7 +29,7 @@
 | `src/app/`                            | 全局 Provider、路由实例、主题切换与工作台面板注册                                                                                       |
 | `src/routes/`                         | TanStack Router 文件路由与应用外框（`_shell.tsx`）：只负责路由装配、权限守卫、URL 参数解析与跨模块组合，具体业务逻辑放在 `features/` 中 |
 | `src/features/`                       | 各业务功能模块（登录、首页、合集、对话、需求单、审计报表、工作区文件、分镜与制作页、成片编辑器、管理后台配置等）                        |
-| `src/features/storyboard/whole-film/` | 成片时间线编辑器；其中 `composition/` 目录下的合成代码会同时被打包进后端的独立渲染服务 `../render/`                                     |
+| `src/features/storyboard/whole-film/` | 成片编辑器；其中 `composition/` 目录下是成片文件的写法，会同时被打包进后端的独立渲染服务 `../render/`                                   |
 | `src/shared/api/`                     | 统一 REST 请求客户端（`apiFetch`）与根据后端 OpenAPI 自动生成的类型和 Zod Schema（`generated/`）                                        |
 | `src/shared/auth/`                    | 登录状态管理与权限判断                                                                                                                  |
 | `src/shared/shell/`                   | 应用外框向子页面暴露的布局状态上下文（`ShellChromeContext`）                                                                            |
@@ -45,7 +45,7 @@
 - **统一使用 `apiFetch` 调接口**：所有后端 REST 请求必须使用 `@/shared/api/client` 的 `apiFetch`（需要读取响应头或状态码时用 `apiFetchWithResponse`），自动享受同源代理、登录态复核与 Zod 校验。原生的 `fetch` 或 `XMLHttpRequest` 仅允许用于 OSS 预签名文件直传、外部素材下载以及读取组件库目录 `/hyperframes/catalog.json`。
 - **直接消费生成的合同 Schema**：接口请求与响应直接使用 `src/shared/api/generated/` 下的生成物（严禁手改生成文件）；如果后端某个字段返回 `null` 或缺省，保留其空值语义，不要在前端擅自编造业务默认值。
 - **权限控制只看 `user.permissions`**：页面守卫（见[前端实现规范](docs/frontend-implementation.md#登录与守卫)）与按钮显隐统一根据后端返回的 `user.permissions` 权限数组判断，严禁在代码里写死用户名白名单。
-- **成片合成代码（`composition/`）跨环境约束**：由于 `src/features/storyboard/whole-film/composition/` 会同时在浏览器和 Node.js 渲染服务（`../render/`）中运行，该目录下严禁直接操作浏览器 DOM 或 `window` API，且对仓内其他模块只能做 `import type`（引用生成的合同类型）。修改该目录或生成合同后，需同时按[根开发约定](../AGENTS.md#1-命令与验证)跑一遍 `render/` 目录下的检查。
+- **成片文件写法（`composition/`）跨环境约束**：由于 `src/features/storyboard/whole-film/composition/` 会同时在浏览器和 Node.js 渲染服务（`../render/`）中运行，该目录下严禁直接操作浏览器 DOM 或 `window` API，也不导入仓内其他模块。修改该目录后，需同时按[根开发约定](../AGENTS.md#1-命令与验证)跑一遍 `render/` 目录下的检查。
 - **静态门禁工具**：模块导入边界与语法规范由 [ESLint](eslint.config.js) 自动检查，未使用的死代码由 [knip](knip.json) 检查，基础视觉 Token 定义在根目录 [design-system.html](../design-system.html) 中。
 
 ---

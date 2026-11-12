@@ -20,6 +20,7 @@ const FAILURE_TEXT: Record<string, string> = {
   RENDER_LOST: '渲染服务重启过，请重新导出',
   PROVIDER_TIMEOUT: '排队太久，请重新导出',
   RENDER_UNAVAILABLE: '渲染服务连不上，请稍后重新导出',
+  FILM_CHANGED: '成片在排队时又改过，请重新导出',
 }
 
 export type ExportView =

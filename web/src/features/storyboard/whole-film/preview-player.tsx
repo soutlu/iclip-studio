@@ -47,7 +47,7 @@ type PreviewPlayerProps = {
   onTime: (ms: number) => void
   onPlaying: (playing: boolean) => void
   controlRef: RefObject<PreviewControl | null>
-  onFrame: (iframe: HTMLIFrameElement | null) => void
+  onFrame?: ((iframe: HTMLIFrameElement | null) => void) | undefined
   onMediaSettled?: (() => void) | undefined
   onBuffering?: ((buffering: boolean) => void) | undefined
   onBuffered?: ((spans: readonly TimeSpan[]) => void) | undefined
@@ -135,8 +135,8 @@ export function PreviewPlayer({
   const shown = srcdoc === undefined ? null : active
   useEffect(() => {
     if (shown === null) return
-    callbacksRef.current.onFrame(shown.iframeElement)
-    return () => callbacksRef.current.onFrame(null)
+    callbacksRef.current.onFrame?.(shown.iframeElement)
+    return () => callbacksRef.current.onFrame?.(null)
   }, [shown])
 
   useEffect(() => {

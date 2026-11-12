@@ -7345,94 +7345,6 @@ export type VideoTaskResult = {
 }
 
 /**
- * WholeFilmCanvas
- */
-export type WholeFilmCanvas = {
-  /**
-   * Height
-   */
-  height: number
-  /**
-   * Width
-   */
-  width: number
-}
-
-/**
- * WholeFilmCaptionEdit
- *
- * 用户改过字的一句：第 ``sentenceIndex`` 句（从 0 数）换成 ``text``。
- */
-export type WholeFilmCaptionEdit = {
-  /**
-   * Sentenceindex
-   */
-  sentenceIndex: number
-  /**
-   * Subtitlejobid
-   */
-  subtitleJobId: string
-  /**
-   * Text
-   */
-  text: string
-}
-
-/**
- * WholeFilmCaptions
- *
- * 字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。
- * ``x``、``y``、``scale``、``rotation`` 是字幕在画面上挪开的位置、缩放与旋转，所有字幕共用一套；
- * ``pivotX``、``pivotY`` 是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，
- * 编辑器在第一次离开原大、不转时写下。``variables`` 是字幕样式的可填项，同特效块；换样式时照样
- * 保留，合成时只取当前样式声明过的项。
- */
-export type WholeFilmCaptions = {
-  /**
-   * Component
-   */
-  component: string
-  /**
-   * Edits
-   */
-  edits: Array<WholeFilmCaptionEdit>
-  /**
-   * Hidden
-   */
-  hidden?: boolean
-  /**
-   * Pivotx
-   */
-  pivotX?: number
-  /**
-   * Pivoty
-   */
-  pivotY?: number
-  /**
-   * Rotation
-   */
-  rotation?: number
-  /**
-   * Scale
-   */
-  scale?: number
-  /**
-   * Variables
-   */
-  variables?: {
-    [key: string]: boolean | number | number | string
-  }
-  /**
-   * X
-   */
-  x?: number
-  /**
-   * Y
-   */
-  y?: number
-}
-
-/**
  * WholeFilmCardOut
  *
  * 资料库「成片」的一张卡：一段对话自己的全部导出，不含继承来的。成片没有脚本，不能做同款。
@@ -7480,69 +7392,15 @@ export type WholeFilmCardsOut = {
 }
 
 /**
- * WholeFilmComponentClip
- *
- * 画面轨上的一段组件，与视频段同等占时间；从组件自己时间里的 ``playbackStart`` 起播。
- */
-export type WholeFilmComponentClip = {
-  /**
-   * Component
-   */
-  component: string
-  /**
-   * Duration
-   */
-  duration: number
-  /**
-   * Id
-   */
-  id: string
-  /**
-   * Playbackstart
-   */
-  playbackStart: number
-  /**
-   * Start
-   */
-  start: number
-  /**
-   * Type
-   */
-  type: 'component'
-  /**
-   * Variables
-   */
-  variables: {
-    [key: string]: boolean | number | number | string
-  }
-}
-
-/**
- * WholeFilmDocument
- *
- * 一段对话的成片草稿。
- */
-export type WholeFilmDocument = {
-  canvas: WholeFilmCanvas | null
-  captions: WholeFilmCaptions
-  /**
-   * Layer0
-   */
-  layer0: Array<WholeFilmVideoClip | WholeFilmComponentClip>
-  music: WholeFilmMusic | null
-  /**
-   * Overlays
-   */
-  overlays: Array<WholeFilmOverlay>
-}
-
-/**
  * WholeFilmDraftIn
  *
- * 整份保存草稿。``revision`` 是读到的那一版，还没有草稿时是 0。
+ * 整份保存成片文件。``revision`` 是读到的那一版，还没有草稿时是 0。
  */
 export type WholeFilmDraftIn = {
-  document: WholeFilmDocument
+  /**
+   * Html
+   */
+  html: string
   /**
    * Revision
    */
@@ -7552,10 +7410,13 @@ export type WholeFilmDraftIn = {
 /**
  * WholeFilmDraftOut
  *
- * 当前的草稿；还没存过时 ``revision`` 是 0，``document`` 与 ``updatedAt`` 为 null。
+ * 当前的成片文件；还没存过时 ``revision`` 是 0，``html`` 与 ``updatedAt`` 为 null。
  */
 export type WholeFilmDraftOut = {
-  document: WholeFilmDocument | null
+  /**
+   * Html
+   */
+  html: string | null
   /**
    * Revision
    */
@@ -7659,99 +7520,6 @@ export type WholeFilmExportStartedOut = {
 }
 
 /**
- * WholeFilmMusic
- *
- * 背景音乐从头铺到尾：``offset`` 是音乐文件里与成片 0 毫秒对齐的那一刻。
- */
-export type WholeFilmMusic = {
-  /**
-   * Jobid
-   */
-  jobId: string
-  /**
-   * Offset
-   */
-  offset: number
-  /**
-   * Volume
-   */
-  volume: number
-}
-
-/**
- * WholeFilmOverlay
- *
- * 特效轨上的一个组件，按成片时间放在 ``[start, start + duration)``，从组件自己时间里的
- * ``playbackStart`` 起播。
- *
- * 同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块
- * 之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。
- * ``x``、``y``、``scale``、``rotation`` 是它在画面上挪开的位置、缩放与旋转；``pivotX``、``pivotY``
- * 是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，编辑器在第一次离开原大、
- * 不转时写下。
- */
-export type WholeFilmOverlay = {
-  /**
-   * Component
-   */
-  component: string
-  /**
-   * Duration
-   */
-  duration: number
-  /**
-   * Id
-   */
-  id: string
-  /**
-   * Pivotx
-   */
-  pivotX?: number
-  /**
-   * Pivoty
-   */
-  pivotY?: number
-  /**
-   * Playbackstart
-   */
-  playbackStart: number
-  /**
-   * Rotation
-   */
-  rotation?: number
-  /**
-   * Scale
-   */
-  scale?: number
-  /**
-   * Start
-   */
-  start: number
-  /**
-   * Track
-   */
-  track: number
-  /**
-   * Variables
-   */
-  variables: {
-    [key: string]: boolean | number | number | string
-  }
-  /**
-   * X
-   */
-  x?: number
-  /**
-   * Y
-   */
-  y?: number
-  /**
-   * Zindex
-   */
-  zIndex: number
-}
-
-/**
  * WholeFilmVersionOut
  *
  * 成片卡里的一版：这段对话的一次已完成导出。
@@ -7773,42 +7541,6 @@ export type WholeFilmVersionOut = {
    * Username
    */
   userName: string | null
-}
-
-/**
- * WholeFilmVideoClip
- *
- * 画面轨上的一段素材片：取它自己媒体时间里从 ``playbackStart`` 起的 ``duration``。
- */
-export type WholeFilmVideoClip = {
-  /**
-   * Duration
-   */
-  duration: number
-  /**
-   * Id
-   */
-  id: string
-  /**
-   * Playbackstart
-   */
-  playbackStart: number
-  /**
-   * Sourcejobid
-   */
-  sourceJobId: string
-  /**
-   * Start
-   */
-  start: number
-  /**
-   * Type
-   */
-  type: 'video'
-  /**
-   * Volume
-   */
-  volume: number
 }
 
 export type ListAgentsAgentsGetData = {

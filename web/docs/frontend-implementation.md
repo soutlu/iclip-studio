@@ -44,10 +44,18 @@
 
 成片动态组件目录的数据结构见 [catalog.ts](../src/features/storyboard/whole-film/composition/catalog.ts)，组件库源目录的打包规则见[组装脚本](../scripts/hyperframes-registry.mjs)文件头说明：
 
-- **组件字体 CSS 变量机制**：组件内部标题统一读取 `var(--font-display, <组件默认字体>)`，正文读取 `var(--font-body, <组件默认字体>)`。当用户在编辑器中为组件选择了某个品牌字体时，合成页面会在该组件的宿主容器行内样式上注入这两个 CSS 变量（所选字体名后接 `Noto Sans SC, sans-serif` 作为中文和系统兜底），并自动加载对应字体的 CSS 文件。
-- **中文字体只声明用到的字**：HyperFrames 运行时会把成片声明的字体全部加载完才运行组件脚本，所以合成页面只为出现的字声明 Noto Sans SC 的分片——成片里写出的文字、所用组件文件里的非 ASCII 字符（组件目录每个条目的 `chars`），西文基本字符总是带上；用到的西文字体族按组件目录里的 `cjk` 描述各带一组指向同样分片的规则。组件文件不要自己链接整份中文字体样式，组装时会去掉这样的链接。
-- **组件的字体配置项**：只要组件源码中使用了上述字体变量，打包脚本会自动为它补充一个 `{ "id": "font", "type": "font", "label": "字体", "default": "" }` 可填项；界面上渲染为字体下拉框（包含「默认」及所有带有品牌名称的字体）。
-- **全局字幕样式与字体**：成片草稿中的全部字幕共用一套 `captions.variables` 配置；切换字幕模板时保留已填变量，渲染时只读取当前模板声明过的配置项。
+- **组件字体 CSS 变量机制**：组件内部标题统一读取 `var(--font-display, <组件默认字体>)`，正文读取 `var(--font-body, <组件默认字体>)`。
+- **中文字体只声明用到的字**：播放运行时会把成片声明的字体全部加载完才运行组件脚本，所以成片文件的 `<head>` 只为出现的字声明 Noto Sans SC 的分片（[fonts.ts](../src/features/storyboard/whole-film/composition/fonts.ts)）——成片里写出的文字、所用组件文件里的非 ASCII 字符（组件目录每个条目的 `chars`），西文基本字符总是带上；用到的西文字体族按组件目录里的 `cjk` 描述各带一组指向同样分片的规则。组件文件不要自己链接整份中文字体样式，组装时会去掉这样的链接。
+- **组件的字体配置项**：只要组件源码中使用了上述字体变量，打包脚本会自动为它补充一个 `{ "id": "font", "type": "font", "label": "字体", "default": "" }` 可填项。
+
+## 成片文件
+
+成片草稿是一份 HTML（业务规则见 [CONTEXT.md「成片草稿」](../../docs/CONTEXT.md#术语)），写法在 [composition/film.ts](../src/features/storyboard/whole-film/composition/film.ts)：
+
+- **只经 SDK 改文件**：编辑器用 SDK 打开成片文件，每个编辑动作是一次 SDK 操作，撤销重做用 SDK 自带的；不直接拼改 HTML 字符串。SDK 的编辑引擎按需加载，不进主包。
+- **新块用写法里的函数写**：往成片里加块时，用 `film.ts` 里对应的函数写出标签（如 `pictureBlock`），素材地址的变量用 `sourceVariable` 声明，保证和渲染服务检查时读的是同一种写法。
+- **保存交给会话**：[use-film-session.ts](../src/features/storyboard/whole-film/use-film-session.ts) 在停下后整份保存并带上版本号；`409` 时换成服务端最新的一版。渲染服务会按写法重写文件，所以存下的文本可以和提交的不同。
+- **预览不改存着的文件**：预览只在交给播放器前加上组件库的基准地址和预览专用的媒体加载方式（[preview-document.ts](../src/features/storyboard/whole-film/preview-document.ts)）。
 
 ## 测试
 

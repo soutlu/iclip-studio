@@ -22,7 +22,7 @@
   | `RUNTIME_URL` | 必填 | 运行时服务地址，本地开发填 `http://localhost:7790`（见[调运行时](architecture.md#调运行时)） |
   | `RUNTIME_APP_KEY` | 必填 | 视频后端访问运行时的密钥（不少于 32 个字符，与 `runtime.yaml` 中 `apps.video.key_env` 对应） |
   | `RUNTIME_INTERNAL_TOKEN` | 必填 | 运行时回调后端、以及视频插件调用后端内部接口共用的令牌（不少于 32 个字符） |
-  | `WHOLE_FILM_RENDER_URL` | 可选 | 本地需要调试「成片导出」功能时，设为 `http://localhost:8080` |
+  | `WHOLE_FILM_RENDER_URL` | 可选 | 本地需要调试成片（保存草稿和导出都要渲染服务）时，设为 `http://localhost:8080` |
 
 - 准备两份本地配置文件（均不入 Git 仓库，修改后需重启服务）：
   1. `server/configs/config.yaml`：视频后端运行配置。
@@ -73,7 +73,7 @@ CREATE DATABASE iclip OWNER iclip;
   - **重要提醒**：请将 `CREDENTIAL_ENCRYPTION_KEYS` 与数据库备份分开妥善保管；一旦丢失，数据库里已保存的所有模型 API Key 和 MCP 配置都将无法解密，只能重新录入。
   - 如果服务器是与 OSS 同地域的阿里云 ECS，建议配置 `OSS_INTERNAL_ENDPOINT` 走内网高速读写；
   - 如需开启视频超分（高清版），配置 `VIDEO_ENHANCE_SUBMIT_URL` 并在 `config.yaml` 中配置 `media_generation.video.enhance`；
-  - 如需开启成片导出，配置 `WHOLE_FILM_RENDER_URL=http://render:8080` 以及 `RENDER_ALLOWED_MEDIA_HOSTS`（填入本系统 OSS 域名和上游视频生成域名，多个域名用逗号分隔）。
+  - 如需开启成片（保存草稿和导出都经渲染服务），配置 `WHOLE_FILM_RENDER_URL=http://render:8080` 以及 `RENDER_ALLOWED_MEDIA_HOSTS`（填入本系统 OSS 域名和上游视频生成域名，多个域名用逗号分隔）。
 - `configs/config.yaml` 与 `configs/runtime.yaml`：从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制生成 `runtime.yaml`，回调地址保持 `http://server:7788`（插件启用条件见[内部接口与视频插件包](architecture.md#内部接口与视频插件包)，接入其他系统见运行时项目的 `docs/apps.md`）。
 - `components/`：成片动态组件库挂载目录（镜像内不包含组件库，需按下方[发布组件库](#发布组件库)步骤上传）。
 

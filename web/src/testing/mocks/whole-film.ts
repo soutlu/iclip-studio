@@ -1,8 +1,7 @@
 import { http, HttpResponse } from 'msw'
-import type { WholeFilmDocument } from '@/shared/api/generated/types.gen'
 import { zWholeFilmDraftIn, zWholeFilmExportIn } from '@/shared/api/generated/zod.gen'
 
-type StoredDraft = { revision: number; document: WholeFilmDocument; updatedAt: string }
+type StoredDraft = { revision: number; html: string; updatedAt: string }
 
 const drafts = new Map<string, StoredDraft>()
 
@@ -58,9 +57,9 @@ export const findMockWholeFilmExport = (exportId: string): { downloadUrl: string
 export const mockWholeFilmDraft = (conversationId: string): StoredDraft | undefined =>
   drafts.get(conversationId)
 
-export const putMockWholeFilmDraft = (conversationId: string, document: WholeFilmDocument) => {
+export const putMockWholeFilmDraft = (conversationId: string, html: string) => {
   const revision = (drafts.get(conversationId)?.revision ?? 0) + 1
-  const stored = { revision, document, updatedAt: new Date().toISOString() }
+  const stored = { revision, html, updatedAt: new Date().toISOString() }
   drafts.set(conversationId, stored)
   return stored
 }
@@ -68,17 +67,17 @@ export const putMockWholeFilmDraft = (conversationId: string, document: WholeFil
 export const wholeFilmHandlers = [
   http.get('*/api/conversations/:conversationId/whole-film/draft', ({ params }) => {
     const stored = drafts.get(String(params['conversationId']))
-    return HttpResponse.json(stored ?? { revision: 0, document: null, updatedAt: null })
+    return HttpResponse.json(stored ?? { revision: 0, html: null, updatedAt: null })
   }),
 
   http.put('*/api/conversations/:conversationId/whole-film/draft', async ({ params, request }) => {
     const conversationId = String(params['conversationId'])
     const parsed = zWholeFilmDraftIn.safeParse(await request.json())
-    if (!parsed.success) return HttpResponse.json({ detail: 'document: 形状不对' }, { status: 422 })
+    if (!parsed.success) return HttpResponse.json({ detail: 'html: 形状不对' }, { status: 422 })
     const current = drafts.get(conversationId)?.revision ?? 0
     if (parsed.data.revision !== current)
       return HttpResponse.json({ detail: STALE_DRAFT_DETAIL }, { status: 409 })
-    const stored = putMockWholeFilmDraft(conversationId, parsed.data.document)
+    const stored = putMockWholeFilmDraft(conversationId, parsed.data.html)
     return HttpResponse.json({ revision: stored.revision, updatedAt: stored.updatedAt })
   }),
 
@@ -92,8 +91,8 @@ export const wholeFilmHandlers = [
       const stored = drafts.get(conversationId)
       if (parsed.data.revision !== (stored?.revision ?? 0))
         return HttpResponse.json({ detail: STALE_EXPORT_DETAIL }, { status: 409 })
-      if (!stored?.document.layer0.some((clip) => clip.type === 'video'))
-        return HttpResponse.json({ detail: '画面轨里还没有视频，无法导出' }, { status: 422 })
+      if (!stored?.html.includes('<video '))
+        return HttpResponse.json({ detail: '成片里还没有画面，导不出成片' }, { status: 422 })
       const exportId = crypto.randomUUID()
       latestExports.set(conversationId, { id: exportId, reads: 0, cancelled: false })
       return HttpResponse.json({ exportId }, { status: 202 })

@@ -9,20 +9,12 @@ const openWholeFilm = async (page: Page, panel: Locator) => {
   return dialog
 }
 
-const seek = async (page: Page, dialog: Locator, seconds: number) => {
-  const ruler = dialog.getByRole('slider', { name: '时间线播放位置' })
-  const box = await ruler.boundingBox()
-  if (box === null) throw new Error('时间线尚未布局')
-  const scale = Number(await ruler.getAttribute('max'))
-  await page.mouse.click(box.x + (seconds / scale) * box.width, box.y + box.height / 2)
-}
-
-const draftSaved = (page: Page) =>
-  page.waitForResponse(
-    (response) =>
-      response.url().includes('/whole-film/draft') &&
-      response.request().method() === 'PUT' &&
-      response.ok(),
+const draftSaved = (page: Page, blocks: number) =>
+  page.waitForRequest(
+    (request) =>
+      request.method() === 'PUT' &&
+      request.url().includes('/whole-film/draft') &&
+      ((request.postDataJSON() as { html: string }).html.match(/<video /g) ?? []).length === blocks,
   )
 
 const readyPlayer = async (dialog: Locator) => {
@@ -38,132 +30,53 @@ const readyPlayer = async (dialog: Locator) => {
   return player
 }
 
-test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关掉再开草稿还在', async ({ page }) => {
+test('成片编辑器：选镜头加入成片、播放、撤销、导出下载，关掉再开成片还在', async ({ page }) => {
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
   const dialog = await openWholeFilm(page, panel)
+  const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
+  await expect(dialog.getByText('成片里还没有画面；加入素材片后可以在这里预览')).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '导出', exact: true })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  )
 
   const materials = dialog
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
+  const first = draftSaved(page, 1)
   await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
+  await toolbar.getByRole('button', { name: '加入成片' }).click()
+  const { html } = (await first).postDataJSON() as { html: string }
+  expect(html).toContain('data-no-timeline')
+  expect(html).not.toContain('<script')
+  expect(html).toMatch(/<video [^>]*src="[^"]+" data-var-src="src-[0-9a-f-]{36}"/)
+
+  const player = await readyPlayer(dialog)
+  const second = draftSaved(page, 2)
+  await materials.getByRole('button', { name: /^生成 A 镜头 3，/ }).click()
   await page.keyboard.press('Enter')
-  const film = dialog.getByRole('group', { name: '画面轨', exact: true })
-  const first = film.getByRole('group', { name: /^第 1 段/ })
-  await expect(first).toBeVisible()
-
+  await second
   await readyPlayer(dialog)
-  await film.getByRole('button', { name: /^选中：第 1 段/ }).click()
-  const before = await first.getAttribute('aria-label')
-  await film.getByRole('slider', { name: '裁剪结尾' }).focus()
-  await page.keyboard.press('ArrowLeft')
-  await expect(first).not.toHaveAttribute('aria-label', before ?? '')
+  const total = await toolbar.locator('.wf-clock span').innerText()
+  expect(total).not.toBe('/ 00:00.00')
 
-  const total = Number(
-    await film.getByRole('slider', { name: '裁剪结尾' }).getAttribute('aria-valuenow'),
-  )
-  await seek(page, dialog, total / 2)
-  await dialog.getByRole('button', { name: '拆分' }).click()
-  await expect(film.getByRole('group', { name: /^第 2 段/ })).toBeVisible()
-
-  const songs = dialog.getByRole('list', { name: '这段对话的音乐' })
-  await expect(songs.getByRole('listitem')).toHaveCount(2)
-  const saved = draftSaved(page)
-  await songs.getByRole('button', { name: /^选用：轻快原声吉他/ }).click()
-  await expect(dialog.getByRole('group', { name: /^音乐 · 音乐 2，/ })).toBeVisible()
-  await saved
-  for (const shot of [3, 4]) {
-    await materials.getByRole('button', { name: new RegExp(`^生成 A 镜头 ${shot}，`) }).click()
-    await page.keyboard.press('Enter')
-  }
-  await expect(film.getByRole('group', { name: /^第 4 段/ })).toBeVisible()
-
-  const beatSync = dialog.getByRole('button', { name: '自动卡点' })
-  await expect(beatSync).not.toHaveAttribute('aria-disabled', 'true', { timeout: 15_000 })
-  await beatSync.click()
-  await expect(page.getByText(/^已卡点 \d+ 处，保留 \d+ 处$/)).toBeVisible()
-
-  await dialog.getByRole('tab', { name: '通用' }).click()
-  const categories = dialog.getByRole('radiogroup', { name: '分类' })
-  await categories.getByRole('radio', { name: /^文字效果/ }).click()
-  const components = dialog.getByRole('list', { name: '组件' })
-  const overlays = dialog.getByRole('group', { name: '特效轨' })
-  await components.getByRole('button', { name: /^测试可填项，特效轨/ }).click()
-  await expect(overlays.getByRole('group', { name: /^特效 · 测试可填项/ })).toBeVisible()
-  const fields = page.getByRole('dialog', { name: '特效 · 测试可填项' })
-  await expect(fields.getByLabel('文字')).toHaveAttribute('placeholder', '示例文字')
-  const textSaved = page.waitForRequest(
-    (request) =>
-      request.method() === 'PUT' &&
-      request.url().includes('/whole-film/draft') &&
-      (request.postData() ?? '').includes('秋冬上新'),
-  )
-  await fields.getByLabel('文字').fill('秋冬上新')
-  await fields.getByLabel('文字').press('Enter')
-  await textSaved
-  await readyPlayer(dialog)
-  await page.keyboard.press('Escape')
-  await expect(fields).toBeHidden()
-
-  await seek(page, dialog, 0)
-  await categories.getByRole('radio', { name: /^场景/ }).click()
-  await components.getByRole('button', { name: /^测试画面，画面轨/ }).click()
-  await expect(film.getByRole('group', { name: /^第 1 段 · 组件 · 测试画面/ })).toBeVisible()
-
-  await seek(page, dialog, 1)
-  await categories.getByRole('radio', { name: /^效果/ }).click()
-  await components.getByRole('button', { name: /^测试叠加，特效轨/ }).click()
-  await expect(dialog.getByRole('group', { name: /^特效 · 测试叠加/ })).toBeVisible()
-
-  const captionStyle = dialog.getByRole('button', { name: /^字幕样式：/ })
-  await expect(captionStyle).toHaveText('测试字幕')
-  await captionStyle.click()
-  const style = page.getByRole('menuitemradio', { name: '测试字幕', exact: true })
-  await expect(style).toBeChecked()
-  await expect(style.locator('img')).toHaveAttribute(
-    'src',
-    /^\/hyperframes\/[0-9a-f]{12}\/thumbnails\/default-caption\.svg$/,
-  )
+  await toolbar.getByRole('button', { name: '播放' }).click()
+  await expect(toolbar.getByRole('button', { name: '暂停' })).toBeVisible()
   await expect
-    .poll(() => style.locator('img').evaluate((image: HTMLImageElement) => image.naturalWidth))
+    .poll(() =>
+      player.evaluate((element: HTMLElement & { currentTime: number }) => element.currentTime),
+    )
     .toBeGreaterThan(0)
-  await page.keyboard.press('Escape')
-  await expect(captionStyle).toHaveAccessibleName('字幕样式：测试字幕')
+  await toolbar.getByRole('button', { name: '暂停' }).click()
 
-  const turnOff = dialog.getByRole('button', { name: '关闭字幕', exact: true })
-  const turnOn = dialog.getByRole('button', { name: '打开字幕', exact: true })
-  const hiddenSaved = page.waitForRequest(
-    (request) =>
-      request.method() === 'PUT' &&
-      request.url().includes('/whole-film/draft') &&
-      (request.postData() ?? '').includes('"hidden":true'),
-  )
-  await expect(turnOff).toHaveAttribute('aria-pressed', 'true')
-  await turnOff.click()
-  await expect(turnOn).toHaveAttribute('aria-pressed', 'false')
-  await hiddenSaved
-  await dialog.getByRole('button', { name: '撤销' }).click()
-  await expect(turnOff).toHaveAttribute('aria-pressed', 'true')
-  await turnOff.click()
-  await expect(turnOn).toBeVisible()
-
-  const captions = dialog.getByRole('group', { name: '字幕轨' })
-  await captions
-    .getByRole('button', { name: /^字幕：/ })
-    .first()
-    .click()
-  const captionInput = captions.getByRole('textbox')
-  await expect(captionInput).toHaveValue('夜色里，城市慢慢亮起来')
-  const captionSaved = page.waitForRequest(
-    (request) =>
-      request.method() === 'PUT' &&
-      request.url().includes('/whole-film/draft') &&
-      (request.postData() ?? '').includes('夜色里，整座城亮了'),
-  )
-  await captionInput.fill('夜色里，整座城亮了')
-  await captionInput.press('Enter')
-  await captionSaved
+  const undone = draftSaved(page, 1)
+  await toolbar.getByRole('button', { name: '撤销' }).click()
+  await undone
+  const redone = draftSaved(page, 2)
+  await toolbar.getByRole('button', { name: '重做' }).click()
+  await redone
 
   const exported = page.waitForResponse(
     (response) => response.url().includes('/whole-film/exports') && response.status() === 202,
@@ -191,13 +104,13 @@ test('成片编辑器：选段加入成片、修剪、拆分、用音乐，关�
   await expect(dialog).toBeHidden()
   const reopened = await openWholeFilm(page, panel)
   await expect(reopened.getByRole('button', { name: '下载成片' })).toBeVisible()
-  const reopenedFilm = reopened.getByRole('group', { name: '画面轨', exact: true })
-  await expect(reopenedFilm.getByRole('group', { name: /^第 2 段/ })).toBeVisible()
-  await expect(reopened.getByRole('group', { name: /^音乐 · 音乐 2，/ })).toBeVisible()
-  await expect(reopened.getByRole('button', { name: '撤销' })).toHaveAttribute(
+  const reopenedToolbar = reopened.getByRole('toolbar', { name: '剪辑工具' })
+  await expect(reopenedToolbar.locator('.wf-clock span')).toHaveText(total)
+  await expect(reopenedToolbar.getByRole('button', { name: '撤销' })).toHaveAttribute(
     'aria-disabled',
     'true',
   )
+  await readyPlayer(reopened)
 })
 
 test('成片编辑器在窄屏上纵向排开', async ({ page }) => {
