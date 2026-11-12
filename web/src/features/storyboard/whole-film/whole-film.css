@@ -617,6 +617,107 @@
   justify-self: start;
 }
 
+.wf-transport-tools {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-self: end;
+  gap: 2px;
+}
+
+/* 倍速按钮写着当前倍速，宽度按最长的「0.25×」留，换档时旁边的按钮不挪 */
+.wf-tool.wf-rate {
+  width: auto;
+  min-width: 44px;
+  padding: 0 6px;
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-label--line-height);
+}
+
+.wf-tool.wf-rate[data-state='open'] {
+  background: var(--color-state-active);
+}
+
+/* 预览和播放条包在一起，全屏时整块进全屏；里面仍按 preview 这一格叠放 */
+.wf-stage {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-area: preview;
+  grid-template-areas: 'preview';
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.wf-stage:fullscreen {
+  background: var(--color-surface-container-low);
+}
+
+.wf-stage:fullscreen > .wf-preview,
+.wf-stage:fullscreen > .wf-material-preview {
+  border-radius: var(--radius-none);
+}
+
+/* 快捷键面板：说明在左，按键在右 */
+.wf-shortcuts {
+  width: 272px;
+  padding: 10px 12px 12px;
+}
+
+.wf-shortcuts-title {
+  margin-bottom: 6px;
+  color: var(--color-on-surface);
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  line-height: var(--text-body-sm--line-height);
+}
+
+.wf-shortcuts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wf-shortcuts-row {
+  display: flex;
+  min-height: 26px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+
+.wf-shortcuts-row dd {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.wf-shortcuts-key {
+  display: inline-grid;
+  min-width: 22px;
+  height: 20px;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  /* 面板底色半透明，按键底色跟着文字色调，深浅两种主题都看得出 */
+  background: color-mix(in srgb, var(--color-on-surface) 8%, transparent);
+  color: var(--color-on-surface);
+  font: inherit;
+  font-size: var(--text-caption);
+  line-height: 20px;
+}
+
+/* 窄屏多是触屏、没有键盘，右边放不下全部按钮时收起「快捷键」 */
+@media (max-width: 640px) {
+  .wf-tool.wf-transport-shortcuts {
+    display: none;
+  }
+}
+
 .wf-preview-note {
   position: relative;
   max-width: 320px;

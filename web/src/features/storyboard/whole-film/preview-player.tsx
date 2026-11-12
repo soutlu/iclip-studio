@@ -26,6 +26,14 @@ export type PreviewControl = {
   seek: (ms: number) => void
 }
 
+/** 编辑时怎么听、怎么放：只管预览，不写进成片文件。 */
+export type PlaybackSettings = {
+  rate: number
+  muted: boolean
+  /** 成片播到结尾从头接着播。 */
+  loop: boolean
+}
+
 type PlayerElement = HTMLElement & {
   readonly iframeElement: HTMLIFrameElement
   play: () => void
@@ -35,7 +43,16 @@ type PlayerElement = HTMLElement & {
   readonly duration: number
   readonly paused: boolean
   readonly painted: boolean
+  playbackRate: number
+  muted: boolean
+  loop: boolean
   readonly _media: { _createEntry: () => null }
+}
+
+const applyPlayback = (player: PlayerElement, { rate, muted, loop }: PlaybackSettings) => {
+  player.playbackRate = rate
+  player.muted = muted
+  player.loop = loop
 }
 
 type PreviewPlayerProps = {
@@ -44,6 +61,7 @@ type PreviewPlayerProps = {
   backdrop: string | undefined
   width: number
   height: number
+  playback: PlaybackSettings
   onTime: (ms: number) => void
   onPlaying: (playing: boolean) => void
   controlRef: RefObject<PreviewControl | null>
@@ -102,6 +120,7 @@ export function PreviewPlayer({
   backdrop,
   width,
   height,
+  playback,
   onTime,
   onPlaying,
   controlRef,
@@ -124,13 +143,20 @@ export function PreviewPlayer({
     onBuffered,
   })
   const sizeRef = useRef({ width, height })
+  const playbackRef = useRef(playback)
   const wantsPlayRef = useRef(false)
   const swappingRef = useRef(false)
   const startAtRef = useRef(0)
   useLayoutEffect(() => {
     callbacksRef.current = { onTime, onPlaying, onFrame, onMediaSettled, onBuffering, onBuffered }
     sizeRef.current = { width, height }
+    playbackRef.current = playback
   })
+
+  const { rate, muted, loop } = playback
+  useEffect(() => {
+    if (active !== null) applyPlayback(active, { rate, muted, loop })
+  }, [active, rate, muted, loop])
 
   const shown = srcdoc === undefined ? null : active
   useEffect(() => {
@@ -300,6 +326,8 @@ export function PreviewPlayer({
       next.setAttribute('assets-loading-ui', 'none')
       next.setAttribute('width', String(sizeRef.current.width))
       next.setAttribute('height', String(sizeRef.current.height))
+      // 加载成片前就带上，换播放器时倍速、静音、循环不会先回到默认再变
+      applyPlayback(next, playbackRef.current)
       next.className = 'wf-player is-pending'
       host.append(next)
       void (async () => {

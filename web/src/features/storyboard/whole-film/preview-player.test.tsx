@@ -12,7 +12,7 @@ import {
   stopVideoDownload,
   type FakeParentMedia,
 } from '@/testing/hyperframes-player'
-import { PreviewPlayer, type PreviewControl } from './preview-player'
+import { PreviewPlayer, type PlaybackSettings, type PreviewControl } from './preview-player'
 
 const FIRST = 'https://oss/first.mp4'
 const SECOND = 'https://oss/second.mp4'
@@ -48,7 +48,13 @@ const handlers = () => ({
   onPlaying: vi.fn<(playing: boolean) => void>(),
 })
 
-const preview = (srcdoc: string, on: ReturnType<typeof handlers>) => (
+const PLAYBACK: PlaybackSettings = { rate: 1, muted: false, loop: false }
+
+const preview = (
+  srcdoc: string,
+  on: ReturnType<typeof handlers>,
+  playback: PlaybackSettings = PLAYBACK,
+) => (
   <PreviewPlayer
     backdrop={undefined}
     controlRef={on.control}
@@ -60,6 +66,7 @@ const preview = (srcdoc: string, on: ReturnType<typeof handlers>) => (
     onMediaSettled={on.onMediaSettled}
     onPlaying={on.onPlaying}
     onTime={() => {}}
+    playback={playback}
     srcdoc={srcdoc}
     width={180}
   />
@@ -100,6 +107,22 @@ describe('每个文件只下载一份', () => {
     showPage(page('<p></p>'))
     await waitFor(() => expect(playerOf()).not.toBe(old))
     expect(playerOf()._media.entries).toEqual([])
+  })
+})
+
+describe('倍速、静音、循环', () => {
+  it('改了交给播放器；换页后的新播放器照旧', async () => {
+    const on = handlers()
+    const view = render(preview(page(), on))
+    await firstPlayerUp(on)
+    const changed = { rate: 2, muted: true, loop: true }
+    view.rerender(preview(page(), on, changed))
+    expect(playerOf()).toMatchObject({ playbackRate: 2, muted: true, loop: true })
+
+    const old = playerOf()
+    view.rerender(preview(page('<p></p>'), on, changed))
+    await waitFor(() => expect(playerOf()).not.toBe(old))
+    expect(playerOf()).toMatchObject({ playbackRate: 2, muted: true, loop: true })
   })
 })
 
@@ -274,6 +297,7 @@ describe('第一个播放器装好之前', () => {
       onFrame={on.onFrame}
       onPlaying={on.onPlaying}
       onTime={() => {}}
+      playback={PLAYBACK}
       srcdoc={undefined}
       width={180}
     />
@@ -398,6 +422,7 @@ describe('换页', () => {
         onFrame={on.onFrame}
         onPlaying={on.onPlaying}
         onTime={() => {}}
+        playback={PLAYBACK}
         srcdoc={undefined}
         width={180}
       />,

@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
@@ -13,7 +14,7 @@ import { errorMessageOf } from '@/shared/api/client'
 import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import type { TimeSpan } from '@/shared/lib/time-spans'
-import { DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
+import { DialogHeader, DialogRoot, DialogSurface, useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MediaBuffering } from '@/shared/ui/media-buffering'
 import { toast } from '@/shared/ui/toast'
@@ -47,7 +48,7 @@ import {
 } from './materials'
 import { landingOn, type Landing } from './placement'
 import { previewDocument } from './preview-document'
-import { PreviewPlayer, type PreviewControl } from './preview-player'
+import { PreviewPlayer, type PlaybackSettings, type PreviewControl } from './preview-player'
 import { PreviewTransport } from './preview-transport'
 import { FIT_ZOOM, snapSpanStartMs, snapTargets, timelineScale, type Zoom } from './timeline-scale'
 import { useFilmSession } from './use-film-session'
@@ -63,6 +64,14 @@ type Props = {
 
 const EMPTY_TEXT = '成片里还没有画面；加入素材片后可以在这里预览'
 const PICK_FIRST_TEXT = '先在下方点一个镜头选中范围'
+const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏'
+
+const watchFullscreen = (notify: () => void) => {
+  document.addEventListener('fullscreenchange', notify)
+  return () => document.removeEventListener('fullscreenchange', notify)
+}
+
+const fullscreenElementOf = () => document.fullscreenElement ?? null
 
 function EditorHeader({ actions, title }: { actions: ReactNode; title: string }) {
   return (
@@ -191,6 +200,24 @@ function EditorBody({
   const [buffered, setBuffered] = useState<readonly TimeSpan[]>([])
   const previewRef = useRef<PreviewControl | null>(null)
   const [range, setRange] = useState<MaterialRange | null>(null)
+  const [playback, setPlayback] = useState<PlaybackSettings>({ rate: 1, muted: false, loop: false })
+  const toggleMute = () => setPlayback((current) => ({ ...current, muted: !current.muted }))
+  const toggleLoop = () => setPlayback((current) => ({ ...current, loop: !current.loop }))
+
+  // 预览和播放条一起全屏；全屏时提示、菜单、面板要挂进这个元素才看得见
+  const [stage, setStage] = useState<HTMLDivElement | null>(null)
+  const fullscreenElement = useSyncExternalStore(watchFullscreen, fullscreenElementOf)
+  const fullscreen = stage !== null && fullscreenElement === stage
+  const fullscreenBlocked = document.fullscreenEnabled ? undefined : NO_FULLSCREEN_TEXT
+  const exitFullscreen = () => {
+    if (fullscreenElementOf() === null) return
+    document.exitFullscreen().catch(() => notice('退出全屏失败，请按 Esc 退出'))
+  }
+  const toggleFullscreen = () => {
+    if (fullscreen) exitFullscreen()
+    else if (fullscreenBlocked !== undefined) notice(fullscreenBlocked)
+    else stage?.requestFullscreen().catch(() => notice('全屏打开失败，请重试'))
+  }
 
   const total = film?.durationMs ?? 0
   const playhead = Math.min(playheadMs, total)
@@ -226,6 +253,11 @@ function EditorBody({
   const [selectedId, setSelectedId] = useState<string | null>(null)
   // 选中的块被撤销或删掉以后就不算选中了
   const selected = pictures.find((block) => block.id === selectedId)
+  // Esc 先退全屏（浏览器多半自己退，按键还是传到页面时才轮到这里），再取消选中；都没有才关编辑器
+  useEscapeAheadOfDialog(fullscreen || selected !== undefined, () => {
+    if (fullscreen) exitFullscreen()
+    else setSelectedId(null)
+  })
   const [ripple, setRipple] = useState(true)
   const [thumbnails, setThumbnails] = useState(true)
   const [snap, setSnap] = useState(true)
@@ -290,10 +322,26 @@ function EditorBody({
   }
   const shortcut = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || !isShortcutTarget(event)) return
+    // 全屏时菜单挂在编辑器里面，菜单里按的键归菜单
+    if (event.target instanceof Element && event.target.closest('[role="menu"]') !== null) return
     const { key } = event
     if (key === ' ') {
       event.preventDefault()
       togglePlay()
+      return
+    }
+    const letter = event.altKey ? '' : key.toLowerCase()
+    const toggle =
+      letter === 'm' && !event.shiftKey
+        ? toggleMute
+        : letter === 'l' && event.shiftKey
+          ? toggleLoop
+          : letter === 'f' && !event.shiftKey
+            ? toggleFullscreen
+            : undefined
+    if (toggle !== undefined) {
+      event.preventDefault()
+      if (!event.repeat) toggle()
       return
     }
     if (key !== 'ArrowLeft' && key !== 'ArrowRight') return
@@ -364,41 +412,54 @@ function EditorBody({
         }
       />
       <div aria-label="成片编辑器" className="wf-workspace" role="group">
-        <PreviewPlayer
-          backdrop={shown === undefined ? undefined : videoSnapshotUrl(shown.src, 320)}
-          controlRef={previewRef}
-          height={film?.canvas.height ?? 1920}
-          message={playBlocked}
-          onBuffered={setBuffered}
-          onBuffering={setBuffering}
-          onPlaying={setPlaying}
-          onTime={setPlayheadMs}
-          srcdoc={srcdoc}
-          width={film?.canvas.width ?? 1080}
-        >
-          {buffering ? <MediaBuffering /> : null}
-        </PreviewPlayer>
-        {viewedMaterial === undefined || materialView === null ? null : (
-          <MaterialPreview
-            controlRef={materialPreviewRef}
-            label={materialLabel(viewedMaterial, materialView.range)}
-            onNotice={notice}
-            onPlaying={setMaterialPlaying}
-            onTime={setMaterialMs}
-            timeMs={materialMs}
-            url={viewedMaterial.url}
-            view={materialView}
+        <div className="wf-stage" ref={setStage}>
+          <PreviewPlayer
+            backdrop={shown === undefined ? undefined : videoSnapshotUrl(shown.src, 320)}
+            controlRef={previewRef}
+            height={film?.canvas.height ?? 1920}
+            message={playBlocked}
+            onBuffered={setBuffered}
+            onBuffering={setBuffering}
+            onPlaying={setPlaying}
+            onTime={setPlayheadMs}
+            playback={playback}
+            srcdoc={srcdoc}
+            width={film?.canvas.width ?? 1080}
+          >
+            {buffering ? <MediaBuffering /> : null}
+          </PreviewPlayer>
+          {viewedMaterial === undefined || materialView === null ? null : (
+            <MaterialPreview
+              controlRef={materialPreviewRef}
+              label={materialLabel(viewedMaterial, materialView.range)}
+              muted={playback.muted}
+              onNotice={notice}
+              onPlaying={setMaterialPlaying}
+              onTime={setMaterialMs}
+              rate={playback.rate}
+              timeMs={materialMs}
+              url={viewedMaterial.url}
+              view={materialView}
+            />
+          )}
+          <PreviewTransport
+            buffered={buffered}
+            fullscreen={fullscreen}
+            fullscreenBlocked={fullscreenBlocked}
+            layer={fullscreen ? stage : null}
+            onFullscreen={toggleFullscreen}
+            onLoop={toggleLoop}
+            onMute={toggleMute}
+            onPlay={togglePlay}
+            onRate={(rate) => setPlayback((current) => ({ ...current, rate }))}
+            onSeek={seek}
+            playBlocked={materialView === null ? playBlocked : undefined}
+            playback={playback}
+            playheadMs={playhead}
+            playing={materialView === null ? playing : materialPlaying}
+            totalMs={total}
           />
-        )}
-        <PreviewTransport
-          buffered={buffered}
-          onPlay={togglePlay}
-          onSeek={seek}
-          playBlocked={materialView === null ? playBlocked : undefined}
-          playheadMs={playhead}
-          playing={materialView === null ? playing : materialPlaying}
-          totalMs={total}
-        />
+        </div>
         <div className="wf-timeline">
           <EditorToolbar
             canRedo={history.canRedo}
