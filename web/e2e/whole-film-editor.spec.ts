@@ -48,7 +48,7 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
     .getByRole('group', { name: '镜头组 2' })
   const first = draftSaved(page, 1)
   await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
-  await toolbar.getByRole('button', { name: '加入成片' }).click()
+  await page.keyboard.press('Enter')
   const { html } = (await first).postDataJSON() as { html: string }
   expect(html).toContain('data-no-timeline')
   expect(html).not.toContain('<script')
@@ -74,6 +74,29 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   await page.keyboard.press('Home')
   await expect(transport.locator('.wf-clock')).toContainText('00:00.00 /')
   await expect.poll(playerTime).toBeLessThan(0.1)
+
+  // 缩放：放大一档块变宽一倍，读数从「适应」变成百分比；点「适应宽度」回去
+  const block = dialog.getByRole('group', { name: '第 1 行' }).locator('[data-block-id]').first()
+  const widthOf = async () => (await block.boundingBox())?.width ?? 0
+  const fitted = await widthOf()
+  await expect(toolbar.getByText('适应', { exact: true })).toBeVisible()
+  await toolbar.getByRole('button', { name: '放大时间线' }).click()
+  await expect(toolbar.getByText('200%')).toBeVisible()
+  expect((await widthOf()) / fitted).toBeGreaterThan(1.9)
+  await toolbar.getByRole('slider', { name: '时间线缩放' }).focus()
+  await page.keyboard.press('Home')
+  await expect(toolbar.getByText('10%')).toBeVisible()
+  await toolbar.getByRole('button', { name: '适应宽度' }).click()
+  await expect(toolbar.getByText('适应', { exact: true })).toBeVisible()
+  expect(Math.abs((await widthOf()) - fitted)).toBeLessThan(1)
+
+  // 关掉缩略图：块上不画画面，只剩名字和声音
+  await expect(block.locator('.wf-clip-frames')).toBeVisible()
+  await toolbar.getByRole('button', { name: '显示缩略图' }).click()
+  await expect(block.locator('.wf-clip-frames')).toBeHidden()
+  await expect(block.locator('.wf-clip-label')).toBeVisible()
+  await toolbar.getByRole('button', { name: '显示缩略图' }).click()
+  await expect(block.locator('.wf-clip-frames')).toBeVisible()
 
   const undone = draftSaved(page, 1)
   await toolbar.getByRole('button', { name: '撤销' }).click()

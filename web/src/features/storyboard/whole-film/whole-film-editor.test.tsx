@@ -96,7 +96,7 @@ const twoPictures = () =>
   )
 
 describe('成片编辑器 · 加入素材', () => {
-  it('还没有成片：播放、进度条、导出、加入成片置灰并说明原因，打开不保存', async () => {
+  it('还没有成片：播放、进度条、导出置灰并说明原因，没选镜头时按 Enter 提示先选，打开不保存', async () => {
     const user = userEvent.setup()
     await openEditor()
     expect(screen.getByText('成片里还没有画面；加入素材片后可以在这里预览')).toBeVisible()
@@ -105,10 +105,10 @@ describe('成片编辑器 · 加入素材', () => {
       'true',
     )
     expect(progress()).toHaveAttribute('data-disabled')
-    expect(within(toolbar()).getByRole('button', { name: '加入成片' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    )
+    expect(within(toolbar()).queryByRole('button', { name: '加入成片' })).toBeNull()
+    screen.getByRole('dialog').focus()
+    await user.keyboard('{Enter}')
+    expect(await screen.findByText('先在下方点一个镜头选中范围')).toBeVisible()
     const exportButton = screen.getByRole('button', { name: '导出' })
     expect(exportButton).toHaveAttribute('aria-disabled', 'true')
     await user.click(exportButton)
@@ -119,11 +119,11 @@ describe('成片编辑器 · 加入素材', () => {
     expect(mockWholeFilmDraft(CONVERSATION)).toBeUndefined()
   })
 
-  it('选一个镜头点「加入成片」：按素材的画幅建成片，块上写素材片的地址并绑到它的变量', async () => {
+  it('选一个镜头按 Enter：按素材的画幅建成片，块上写素材片的地址并绑到它的变量', async () => {
     const user = userEvent.setup()
     await openEditor()
     await user.click(await shot(/^生成 A 镜头 2，/))
-    await user.click(within(toolbar()).getByRole('button', { name: '加入成片' }))
+    await user.keyboard('{Enter}')
 
     await waitSaved(() => expect(savedBlocks()).toHaveLength(1))
     expect(savedFilm()).toContain('data-width="720" data-height="1280"')
@@ -156,7 +156,7 @@ describe('成片编辑器 · 加入素材', () => {
     putMockWholeFilmDraft(CONVERSATION, twoPictures())
     await openEditor()
     await user.click(await shot(/^生成 B 镜头 1，/))
-    await user.click(within(toolbar()).getByRole('button', { name: '加入成片' }))
+    await user.keyboard('{Enter}')
     await waitSaved(() => expect(savedBlocks()).toHaveLength(3))
 
     await user.click(within(toolbar()).getByRole('button', { name: '撤销' }))
@@ -364,7 +364,7 @@ describe('成片编辑器 · 播放', () => {
     expect(progress()).toHaveAttribute('aria-valuetext', '00:01.20 / 00:03.50')
 
     await user.click(await shot(/^生成 B 镜头 1，/))
-    await user.click(within(toolbar()).getByRole('button', { name: '加入成片' }))
+    await user.keyboard('{Enter}')
     await waitSaved(() => expect(savedBlocks()).toHaveLength(3))
     expect(within(transport()).getByText('00:01.20')).toBeVisible()
     await user.click(within(toolbar()).getByRole('button', { name: '撤销' }))

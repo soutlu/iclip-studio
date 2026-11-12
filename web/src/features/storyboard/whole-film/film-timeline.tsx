@@ -68,6 +68,8 @@ type FilmTimelineProps = {
   selectedId: string | null
   /** 拖动和裁剪时要不要吸到别的块的两端和播放头上。 */
   snap: boolean
+  /** 块上要不要显示画面缩略图；关掉只剩名字和声音。 */
+  thumbnails: boolean
   /** 素材片的总长（毫秒）；还没读到时是 undefined。 */
   sourceMs: (src: string) => number | undefined
   onSelect: (id: string | null) => void
@@ -362,6 +364,7 @@ export function FilmTimeline({
   ghost,
   selectedId,
   snap,
+  thumbnails,
   sourceMs,
   onSelect,
   onRetime,
@@ -436,7 +439,7 @@ export function FilmTimeline({
   }
 
   return (
-    <div className="wf-tracks">
+    <div className={cn('wf-tracks', !thumbnails && 'is-plain')}>
       <div className="wf-track-heads">
         {shown.map(({ track, blocks }) => (
           <span className="wf-track-head" key={track}>
