@@ -454,3 +454,47 @@ test('把镜头拖进时间线：落在指针的位置；压在别的块上时�
   await page.waitForTimeout(300)
   expect(await savedBlocks(page)).toHaveLength(2)
 })
+
+test('时间线上的块：拖着挪动、拖把手裁剪、按 Delete 删掉，都能撤销', async ({ page }) => {
+  const { dialog, materials } = await openWith(page, [1])
+  const row = dialog.getByRole('group', { name: '第 1 行' })
+  for (const [at, shot] of [1, 3].entries()) {
+    await shotOf(materials, 1, 'A', shot).click()
+    await page.keyboard.press('Enter')
+    await expect.poll(() => savedBlocks(page)).toHaveLength(at + 1)
+  }
+  await readyPlayer(dialog)
+  const second = row.locator('[data-block-id]').nth(1)
+  const timingOf = async (at: number) => {
+    const saved = (await savedBlocks(page))[at] ?? ''
+    const [, start, duration] = /，([\d.]+) 秒起，([\d.]+) 秒$/.exec(saved) ?? []
+    return { start: Number(start), duration: Number(duration) }
+  }
+  const dragBy = async (locator: Locator, dx: number) => {
+    const { x, y } = await centerOf(locator)
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + dx, y, { steps: 6 })
+    await page.mouse.up()
+  }
+
+  await dragBy(second, 200)
+  await expect.poll(async () => (await timingOf(1)).start).toBeGreaterThan(2)
+  expect(await timingOf(1)).toMatchObject({ duration: 1 })
+  expect(await timingOf(0)).toEqual({ start: 0, duration: 1 })
+  const movedTo = (await timingOf(1)).start
+
+  await second.getByRole('button').click()
+  await dragBy(row.getByRole('slider', { name: '裁剪开头' }), 20)
+  await expect.poll(async () => (await timingOf(1)).duration).toBeLessThan(1)
+  const trimmed = await timingOf(1)
+  expect(trimmed.start + trimmed.duration).toBeCloseTo(movedTo + 1, 2)
+
+  await second.getByRole('button').click()
+  await page.keyboard.press('Delete')
+  await expect.poll(() => savedBlocks(page)).toEqual(['A · 镜头 1，0 秒起，1 秒'])
+
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(() => savedBlocks(page)).toHaveLength(2)
+  expect(await timingOf(1)).toEqual(trimmed)
+})

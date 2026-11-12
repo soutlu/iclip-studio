@@ -269,6 +269,71 @@ describe('成片编辑器 · 时间线', () => {
     ).toHaveAccessibleName('A · 镜头 2，2.0 秒')
     expect(screen.queryByLabelText(/个块$/)).toBeNull()
   })
+
+  const block = (name: RegExp) => within(timeline()).getByRole('button', { name })
+
+  it('点一个块选中它，按 Delete 删掉：开着波纹编辑，后面的块往前补上，成片变短', async () => {
+    putMockWholeFilmDraft(CONVERSATION, twoPictures())
+    const user = userEvent.setup()
+    await openEditor()
+    await user.click(block(/2\.0 秒$/))
+    expect(block(/2\.0 秒$/)).toHaveAttribute('aria-pressed', 'true')
+    expect(within(timeline()).getAllByRole('slider')).toHaveLength(2)
+
+    await user.keyboard('{Delete}')
+    await waitSaved(() => expect(savedBlocks()).toHaveLength(1))
+    expect(savedBlocks()[0]).toContain('data-start="0" data-duration="1.5"')
+    expect(within(transport()).getByText('/ 00:01.50')).toBeVisible()
+    expect(within(timeline()).queryAllByRole('slider')).toHaveLength(0)
+  })
+
+  it('关掉波纹编辑再删：后面的块留在原处', async () => {
+    putMockWholeFilmDraft(CONVERSATION, twoPictures())
+    const user = userEvent.setup()
+    await openEditor()
+    await user.click(within(toolbar()).getByRole('button', { name: '波纹编辑' }))
+    expect(within(toolbar()).getByRole('button', { name: '波纹编辑' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    await user.click(block(/2\.0 秒$/))
+    await user.keyboard('{Delete}')
+    await waitSaved(() => expect(savedBlocks()).toHaveLength(1))
+    expect(savedBlocks()[0]).toContain('data-start="2" data-duration="1.5"')
+  })
+
+  it('选中以后在把手上按方向键裁剪：裁结尾只改长度，裁开头起点和入点一起动；不超出素材', async () => {
+    putMockWholeFilmDraft(CONVERSATION, twoPictures())
+    const user = userEvent.setup()
+    await openEditor()
+    await user.click(block(/1\.5 秒$/))
+    const end = within(timeline()).getByRole('slider', { name: '裁剪结尾' })
+    end.focus()
+    await user.keyboard('{ArrowLeft}')
+    await waitSaved(() =>
+      expect(savedBlocks()[1]).toContain('data-start="2" data-duration="1.4" data-media-start="0"'),
+    )
+    // 素材 B 一共 3 秒：再怎么往外拉也只到 3 秒
+    await user.keyboard('{Shift>}{ArrowRight}{ArrowRight}{/Shift}')
+    await waitSaved(() =>
+      expect(savedBlocks()[1]).toContain('data-start="2" data-duration="3" data-media-start="0"'),
+    )
+
+    const start = within(timeline()).getByRole('slider', { name: '裁剪开头' })
+    start.focus()
+    await user.keyboard('{ArrowRight}')
+    await waitSaved(() =>
+      expect(savedBlocks()[1]).toContain(
+        'data-start="2.1" data-duration="2.9" data-media-start="0.1"',
+      ),
+    )
+    // 往前裁不能压到前一个块
+    await user.keyboard('{Shift>}{ArrowLeft}{/Shift}')
+    await waitSaved(() =>
+      expect(savedBlocks()[1]).toContain('data-start="2" data-duration="3" data-media-start="0"'),
+    )
+    expect(within(transport()).getByText('/ 00:05.00')).toBeVisible()
+  })
 })
 
 describe('成片编辑器 · 播放', () => {

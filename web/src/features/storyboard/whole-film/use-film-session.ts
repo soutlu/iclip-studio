@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { Composition } from '@hyperframes/sdk'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
+import { rippleStarts, type Timing } from './block-edit'
 import type { ComponentCatalog } from './composition/catalog'
 import {
   FILM_ID,
@@ -9,6 +10,7 @@ import {
   pictureBlock,
   pictureFromAttributes,
   sourceVariable,
+  sourceVariableId,
   writeFilm,
   type Canvas,
   type PictureBlock,
@@ -247,6 +249,54 @@ export function useFilmSession(
     [engineFor, show],
   )
 
+  /** 改成片里已有的东西：`change` 里的几步和成片总长一起算一步撤销。 */
+  const edit = useCallback(
+    (change: (engine: Composition) => void) => {
+      const engine = engineRef.current
+      if (engine === null) return
+      engine.batch(() => {
+        change(engine)
+        engine.dispatch({
+          type: 'setCompositionMetadata',
+          duration: viewOf(engine).durationMs / 1000,
+        })
+      })
+      show(engine)
+    },
+    [show],
+  )
+
+  /** 改一个块的起止和入点。 */
+  const retime = useCallback(
+    (id: string, timing: Timing) =>
+      edit((engine) => {
+        engine.setTiming(id, { start: timing.start / 1000, duration: timing.duration / 1000 })
+        engine.setAttribute(id, 'data-media-start', String(timing.mediaStart / 1000))
+      }),
+    [edit],
+  )
+
+  /** 删掉几个块；`ripple` 为真时第一行里后面的块往前补上。用不到的素材变量一起去掉。 */
+  const removeBlocks = useCallback(
+    (ids: readonly string[], ripple: boolean) =>
+      edit((engine) => {
+        const before = viewOf(engine).pictures
+        const gone = new Set(ids)
+        for (const id of gone) engine.removeElement(id)
+        if (ripple)
+          for (const [id, start] of rippleStarts(before, gone))
+            engine.setTiming(id, { start: start / 1000 })
+        const used = new Set(
+          before
+            .filter((block) => !gone.has(block.id))
+            .map((block) => sourceVariableId(block.jobId)),
+        )
+        for (const variable of engine.listVariables())
+          if (!used.has(variable.id)) engine.removeVariableDeclaration(variable.id)
+      }),
+    [edit],
+  )
+
   const step = (direction: 'undo' | 'redo') => {
     const engine = engineRef.current
     if (engine === null) return
@@ -258,6 +308,8 @@ export function useFilmSession(
     film,
     opening,
     addPictures,
+    retime,
+    removeBlocks,
     undo: () => step('undo'),
     redo: () => step('redo'),
     save,
