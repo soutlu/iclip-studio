@@ -22,6 +22,7 @@ import {
   type Edge,
 } from '../editing/timeline-drag'
 import { useStableValue } from '../editing/use-stable-value'
+import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import {
   ContextMenuItem,
   ContextMenuRoot,
@@ -38,6 +39,7 @@ import {
 } from './block-edit'
 import { MAX_FILM_MS, type PictureBlock } from './composition/film'
 import { opensOwnRow, rowHidden, rowsOf } from './placement'
+import { boxBetween, marqueeMode, marqueeSelection, type Box } from './selection'
 import {
   msToPx,
   pxToMs,
@@ -75,20 +77,25 @@ type FilmTimelineProps = {
   buffered: readonly TimeSpan[]
   scale: TimelineScale
   ghost: DropGhost | null
-  selectedId: string | null
+  /** 选中的块。 */
+  selected: ReadonlySet<string>
   /** 拖动和裁剪时要不要吸到别的块的两端和播放头上。 */
   snap: boolean
   /** 块上要不要显示画面缩略图；关掉只剩名字和声音。 */
   thumbnails: boolean
   /** 素材片的总长（毫秒）；还没读到时是 undefined。 */
   sourceMs: (src: string) => number | undefined
-  onSelect: (id: string | null) => void
+  /** 换成这些选中的块（空的就是全部取消）。 */
+  onSelect: (ids: ReadonlySet<string>) => void
+  /** 开始或结束框选；框选中途按 Esc 由时间线自己取消。 */
+  onFraming: (framing: boolean) => void
+  /** 给了就把时间线横向滚到 `left`（像素）；每次给新的对象才滚。 */
+  scrollRequest: { left: number } | null
   onRetime: (id: string, timing: Timing) => void
   /** 把块换到另一行（或新开的一行）的 `start` 处。 */
   onMove: (id: string, row: RowTarget, start: number) => void
   /** 把几个块各自挪到新的起点（合拢空档用）。 */
   onRestart: (starts: ReadonlyMap<string, number>) => void
-  onRemove: (id: string) => void
   /** 把 `track` 这一行的块一起隐藏（`hidden` 为真）或显示回来。 */
   onHide: (track: number, hidden: boolean) => void
   onSeek: (ms: number) => void
@@ -109,6 +116,27 @@ const laneOf = (content: HTMLElement | null, row: RowTarget) =>
   content?.querySelector<HTMLElement>(
     typeof row === 'number' ? `[data-track="${row}"]` : `[data-insert-at="${row.insertAt}"]`,
   ) ?? null
+
+/** 按着 Shift、⌘ 或 Ctrl 点块是逐个加减选中。 */
+const togglesSelection = (event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) =>
+  event.shiftKey || event.metaKey || event.ctrlKey
+
+/** 在行的空白处按下：拖过一点就是框选，没拖就是点空白处。 */
+type Framing = {
+  pointerId: number
+  /** 按下的点，按时间区左上角算，框选中途滚动也不跑。 */
+  origin: { x: number; y: number }
+  /** 按下时带着 ⌘ 或 Ctrl：框住的加进原有选中。 */
+  adding: boolean
+  /** 按下时的选中，框选在它上面换、加或减。 */
+  base: ReadonlySet<string>
+  /** 触摸按下只算点一下，拖动留给滚动。 */
+  canFrame: boolean
+  started: boolean
+}
+
+/** 正在框选：框在哪（按时间区左上角算），松手的话会选中哪些块。 */
+type Marquee = { box: Box; ids: ReadonlySet<string> }
 
 const sameTiming = (left: Timing, right: Timing) =>
   left.start === right.start &&
@@ -147,16 +175,16 @@ type TimelineBlockProps = {
   playheadMs: number
   /** 拖动中吸上了哪个时间点（毫秒），画一条线；没吸上或松手后是 null。 */
   onGuide: (ms: number | null) => void
-  onSelect: (id: string | null) => void
+  /** 点了这个块：`toggle` 为真时是把它加进选中或移出去，否则只选它。 */
+  onSelect: (id: string, toggle: boolean) => void
   onRetime: (id: string, timing: Timing) => void
   /** 把块换到另一行的 `start` 处。 */
   onMove: (id: string, row: RowTarget, start: number) => void
-  onRemove: (id: string) => void
 }
 
 /**
- * 时间线上的一个块：点一下选中，拖着挪动（在这一行里，或者拖到别的行、最下面的空行上），
- * 选中后拖两端的把手裁剪；松手才写进成片。
+ * 时间线上的一个块：点一下选中（带 Shift、⌘ 或 Ctrl 是加减选中），拖着挪动（在这一行里，
+ * 或者拖到别的行、最下面的空行上），选中后拖两端的把手裁剪；松手才写进成片。
  */
 function TimelineBlock({
   block,
@@ -174,7 +202,6 @@ function TimelineBlock({
   onSelect,
   onRetime,
   onMove,
-  onRemove,
 }: TimelineBlockProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const gestureRef = useRef<Gesture | null>(null)
@@ -206,8 +233,10 @@ function TimelineBlock({
   const press = (event: PointerEvent<HTMLElement>, kind: Gesture['kind']) => {
     if (event.button !== 0) return
     event.stopPropagation()
-    event.currentTarget.setPointerCapture(event.pointerId)
     clickAfterDrag.reset()
+    // 带着加减选中的键按下只算点选，不开始拖
+    if (togglesSelection(event)) return
+    event.currentTarget.setPointerCapture(event.pointerId)
     const box = event.currentTarget.closest('[data-block-id]')?.getBoundingClientRect()
     gestureRef.current = {
       pointerId: event.pointerId,
@@ -331,18 +360,11 @@ function TimelineBlock({
       }}
     >
       <button
-        aria-keyshortcuts="Delete"
         aria-label={`选中：${name}`}
         aria-pressed={selected}
         className="wf-block-body ui-focus"
-        onClick={() => {
-          if (!clickAfterDrag.take()) onSelect(block.id)
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Delete' || event.key === 'Backspace') {
-            event.preventDefault()
-            onRemove(block.id)
-          }
+        onClick={(event) => {
+          if (!clickAfterDrag.take()) onSelect(block.id, togglesSelection(event))
         }}
         onPointerCancel={cancel}
         onPointerDown={(event) => press(event, 'move')}
@@ -410,7 +432,10 @@ function RowEye({
   )
 }
 
-/** 时间线：成片里的块按行排开，可以选中、在一行里挪动、裁两端；上面是时间尺和播放头。 */
+/**
+ * 时间线：成片里的块按行排开，可以选中一个或几个（在空白处拖出框来框选）、挪动、裁两端；
+ * 上面是时间尺和播放头。
+ */
 export function FilmTimeline({
   pictures,
   totalMs,
@@ -418,15 +443,16 @@ export function FilmTimeline({
   buffered,
   scale,
   ghost,
-  selectedId,
+  selected,
   snap,
   thumbnails,
   sourceMs,
   onSelect,
+  onFraming,
+  scrollRequest,
   onRetime,
   onMove,
   onRestart,
-  onRemove,
   onHide,
   onSeek,
   onViewportWidth,
@@ -563,6 +589,97 @@ export function FilmTimeline({
     setClosing(next)
   }
 
+  // 带着 Shift、⌘ 或 Ctrl 点块：逐个加进选中或移出去；直接点：只选这一个
+  const pick = (id: string, toggle: boolean) => {
+    if (!toggle) {
+      onSelect(new Set([id]))
+      return
+    }
+    const next = new Set(selected)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    onSelect(next)
+  }
+
+  // 缩放到选中：等新的宽度排好再横向滚过去，不然会被原来的宽度挡住
+  useLayoutEffect(() => {
+    const viewport = scrollRef.current
+    if (scrollRequest !== null && viewport !== null) viewport.scrollLeft = scrollRequest.left
+  }, [scrollRequest])
+
+  const framingRef = useRef<Framing | null>(null)
+  const [marquee, setMarquee] = useState<Marquee | null>(null)
+  const shownSelection = marquee?.ids ?? selected
+
+  const pointIn = (clientX: number, clientY: number) => {
+    const origin = contentRef.current?.getBoundingClientRect()
+    return { x: clientX - (origin?.left ?? 0), y: clientY - (origin?.top ?? 0) }
+  }
+
+  const framed = (framing: Framing, event: PointerEvent<HTMLElement>): Marquee => {
+    const box = boxBetween(framing.origin, pointIn(event.clientX, event.clientY))
+    const blocks = [
+      ...(contentRef.current?.querySelectorAll<HTMLElement>('[data-block-id]') ?? []),
+    ].map((element) => {
+      const { left, top, width, height } = element.getBoundingClientRect()
+      const at = pointIn(left, top)
+      return { id: element.dataset['blockId'] ?? '', box: { left: at.x, top: at.y, width, height } }
+    })
+    return {
+      box,
+      ids: marqueeSelection(blocks, box, framing.base, marqueeMode(framing.adding, event)),
+    }
+  }
+
+  const dropFraming = () => {
+    if (framingRef.current === null && marquee === null) return
+    framingRef.current = null
+    setMarquee(null)
+    onFraming(false)
+  }
+  // 框选中途按 Esc：只取消这次框选，原来的选中不变
+  useEscapeAheadOfDialog(marquee !== null, dropFraming)
+
+  const pressLanes = (event: PointerEvent<HTMLDivElement>) => {
+    const { target } = event
+    // 行的右键菜单挂在别处，但它的事件也会沿着组件树传到这里
+    if (event.button !== 0 || !(target instanceof Element) || !event.currentTarget.contains(target))
+      return
+    if (target.closest('[data-block-id]') !== null) return
+    const canFrame = event.pointerType !== 'touch'
+    if (canFrame) event.currentTarget.setPointerCapture(event.pointerId)
+    framingRef.current = {
+      pointerId: event.pointerId,
+      origin: pointIn(event.clientX, event.clientY),
+      adding: event.metaKey || event.ctrlKey,
+      base: selected,
+      canFrame,
+      started: false,
+    }
+  }
+
+  const dragLanes = (event: PointerEvent<HTMLDivElement>) => {
+    const framing = framingRef.current
+    if (framing === null || framing.pointerId !== event.pointerId || !framing.canFrame) return
+    if (!framing.started) {
+      const at = pointIn(event.clientX, event.clientY)
+      const moved = Math.max(Math.abs(at.x - framing.origin.x), Math.abs(at.y - framing.origin.y))
+      if (moved <= DRAG_THRESHOLD) return
+      framing.started = true
+      onFraming(true)
+    }
+    setMarquee(framed(framing, event))
+  }
+
+  const releaseLanes = (event: PointerEvent<HTMLDivElement>) => {
+    const framing = framingRef.current
+    if (framing === null || framing.pointerId !== event.pointerId) return
+    releasePointer(event)
+    // 没拖就是点了空白处：取消全部选中
+    onSelect(framing.started ? framed(framing, event).ids : new Set())
+    dropFraming()
+  }
+
   return (
     <div className={cn('wf-tracks', !thumbnails && 'is-plain')} ref={scrollRef}>
       <div className="wf-track-inner">
@@ -606,7 +723,13 @@ export function FilmTimeline({
             />
             <TimelinePlayhead style={{ left: msToPx(Math.min(playheadMs, totalMs), pps) }} />
           </div>
-          <div className="wf-lanes">
+          <div
+            className="wf-lanes"
+            onPointerCancel={dropFraming}
+            onPointerDown={pressLanes}
+            onPointerMove={dragLanes}
+            onPointerUp={releaseLanes}
+          >
             {shown.map(({ track, blocks }, at) => (
               <Fragment key={track}>
                 {openedAt === at ? (
@@ -631,15 +754,14 @@ export function FilmTimeline({
                           onGuide={setBlockGuideMs}
                           onMove={onMove}
                           onOpening={setBlockOpening}
-                          onRemove={onRemove}
                           onRetime={onRetime}
-                          onSelect={onSelect}
+                          onSelect={pick}
                           peaks={peaks.get(block.src) ?? { kind: 'loading' }}
                           pictures={pictures}
                           playheadMs={playheadMs}
                           pps={pps}
                           rowAt={rowAt}
-                          selected={selectedId === block.id}
+                          selected={shownSelection.has(block.id)}
                           snap={snap}
                           sourceMs={sourceMs(block.src)}
                         />
@@ -690,6 +812,14 @@ export function FilmTimeline({
               className="wf-snap-guide"
               data-testid="snap-guide"
               style={{ left: msToPx(guideMs, pps) }}
+            />
+          )}
+          {marquee === null ? null : (
+            <span
+              aria-hidden="true"
+              className="wf-marquee"
+              data-testid="marquee"
+              style={marquee.box}
             />
           )}
         </div>

@@ -854,3 +854,114 @@ test('在两行之间、最上面新开一行：块拖到两行中间的缝里�
     .toEqual(['A · 镜头 1@1', 'A · 镜头 2@0', 'A · 镜头 3@2', 'A · 镜头 4@3'])
   await expect(row(4).locator('[data-block-id]')).toHaveCount(1)
 })
+
+test('多选：Shift 点选两个块一起删掉再撤销回来；框选跨两行；点空白处取消；] 选中播放头右边的块；缩放到选中', async ({
+  page,
+}) => {
+  const { dialog, materials } = await openWith(page, [1])
+  const firstRow = dialog.getByRole('group', { name: '第 1 行' })
+  const secondRow = dialog.getByRole('group', { name: '第 2 行' })
+  const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
+  for (const [at, shot] of [1, 3, 4].entries()) {
+    await shotOf(materials, 1, 'A', shot).click()
+    await page.keyboard.press('Enter')
+    await expect.poll(() => savedBlocks(page)).toHaveLength(at + 1)
+  }
+  await readyPlayer(dialog)
+  const blockOf = (shot: number) =>
+    dialog.getByRole('button', { name: new RegExp(`^选中：A · 镜头 ${shot}，`) })
+  /** 选中着的块是哪几个镜头，按行、再按时间先后。 */
+  const selectedShots = () =>
+    dialog
+      .getByRole('button', { name: /^选中：/, pressed: true })
+      .evaluateAll((buttons) =>
+        buttons.map((button) => Number(/镜头 (\d+)，/.exec(button.ariaLabel ?? '')?.[1])),
+      )
+  const boxOf = async (locator: Locator) => {
+    const box = await locator.boundingBox()
+    if (box === null) throw new Error('元素尚未布局')
+    return box
+  }
+
+  // Shift 点选两个块，按 Delete 一起删掉；撤销一步两个都回来
+  const before = await savedBlocks(page)
+  await blockOf(1).click()
+  await blockOf(4).click({ modifiers: ['Shift'] })
+  await expect.poll(selectedShots).toEqual([1, 4])
+  await page.keyboard.press('Delete')
+  await expect.poll(() => savedBlocks(page)).toEqual(['A · 镜头 3，0 秒起，1 秒'])
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(() => savedBlocks(page)).toEqual(before)
+
+  // 镜头 4 挪到新的一行，时间不变
+  const four = await centerOf(blockOf(4))
+  await page.mouse.move(four.x, four.y)
+  await page.mouse.down()
+  await page.mouse.move(
+    four.x,
+    (await centerOf(dialog.getByRole('group', { name: '新的一行' }))).y,
+    {
+      steps: 8,
+    },
+  )
+  await page.mouse.up()
+  await expect(secondRow.getByRole('button', { name: /^选中：A · 镜头 4，/ })).toHaveCount(1)
+
+  // 从第一行右边的空白处往左下拖到第二行：框住镜头 3 的后半段和第二行的镜头 4，拖着时就显示选中
+  const rowBox = await boxOf(firstRow)
+  const from = { x: rowBox.x + rowBox.width - 30, y: rowBox.y + rowBox.height / 2 }
+  const to = { x: (await centerOf(blockOf(3))).x, y: (await centerOf(secondRow)).y }
+  const frameFromTo = async () => {
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    await page.mouse.move(to.x, to.y, { steps: 8 })
+    await expect(dialog.getByTestId('marquee')).toBeVisible()
+  }
+  // 框选中途按 Esc：只取消这次框选，原来的选中不变，编辑器还开着
+  await blockOf(1).click()
+  await frameFromTo()
+  await expect.poll(selectedShots).toEqual([3, 4])
+  await page.keyboard.press('Escape')
+  await expect(dialog.getByTestId('marquee')).toHaveCount(0)
+  await page.mouse.up()
+  await expect.poll(selectedShots).toEqual([1])
+  await expect(dialog).toBeVisible()
+
+  await frameFromTo()
+  await expect.poll(selectedShots).toEqual([3, 4])
+  await page.mouse.up()
+  await expect(dialog.getByTestId('marquee')).toHaveCount(0)
+  await expect.poll(selectedShots).toEqual([3, 4])
+
+  // 点空白处：全部取消
+  await page.mouse.click(from.x, from.y)
+  await expect.poll(selectedShots).toEqual([])
+
+  // 框选完焦点不在块上，Delete 照样删掉选中的块
+  await frameFromTo()
+  await page.mouse.up()
+  await expect.poll(selectedShots).toEqual([3, 4])
+  await page.keyboard.press('Delete')
+  await expect.poll(() => savedBlocks(page)).toEqual(['A · 镜头 1，0 秒起，1 秒'])
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(async () => (await savedBlocks(page)).sort()).toEqual([...before].sort())
+
+  // 点时间尺只挪播放头、不动选中；] 选中播放头右边的块，跨着播放头的镜头 3 也算
+  await blockOf(1).click()
+  const ruler = dialog.getByRole('slider', { name: '时间线播放位置' })
+  const rulerBox = await boxOf(ruler)
+  await page.mouse.click(to.x, rulerBox.y + rulerBox.height / 2)
+  await expect.poll(selectedShots).toEqual([1])
+  await page.keyboard.press(']')
+  await expect.poll(selectedShots).toEqual([3, 4])
+
+  // 缩放到选中：读数变成百分比；镜头 3 到镜头 4 这一段完整露出，起点离时间区左边 24 像素
+  await expect(toolbar.getByText('适应', { exact: true })).toBeVisible()
+  const fitted = await boxOf(firstRow)
+  await toolbar.getByRole('button', { name: '缩放到选中的块' }).click()
+  await expect(toolbar.getByText(/^\d+%$/)).toBeVisible()
+  const start = await boxOf(blockOf(3))
+  const end = await boxOf(blockOf(4))
+  expect(Math.abs(start.x - fitted.x - 24)).toBeLessThan(1.5)
+  expect(end.x + end.width).toBeLessThan(fitted.x + fitted.width - 16)
+})

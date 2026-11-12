@@ -2,6 +2,14 @@ import { Slider } from 'radix-ui'
 import { useState, type ReactNode } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
+import {
+  MenuItem,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuRoot,
+  MenuSurface,
+  MenuTrigger,
+} from '@/shared/ui/menu'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import {
   FIT_ZOOM,
@@ -79,11 +87,61 @@ export function Tool({
 
 export const Keys = ({ children }: { children: string }) => <kbd className="wf-kbd">{children}</kbd>
 
+/** 选择工具的下拉：现在只有「选择」一个工具；另两项是一次性的命令，点完工具不变。 */
+function ToolPicker({ onSelectAround }: { onSelectAround: (side: 'left' | 'right') => void }) {
+  const [open, setOpen] = useState(false)
+  const [hint, setHint] = useState(false)
+  return (
+    <MenuRoot
+      onOpenChange={(next) => {
+        setOpen(next)
+        setHint(false)
+      }}
+      open={open}
+    >
+      {/* 点开后指针还停在按钮上，提示会重新出现、压在向上弹出的菜单底下 */}
+      <TooltipRoot onOpenChange={setHint} open={hint && !open}>
+        <MenuTrigger asChild>
+          <TooltipTrigger asChild>
+            <button
+              aria-label="选择工具：选择"
+              className="wf-tool wf-tool-picker ui-state ui-focus"
+              type="button"
+            >
+              <Icon decorative name="select-tool" size="sm" />
+              <Icon decorative name="expand" size="xs" />
+            </button>
+          </TooltipTrigger>
+        </MenuTrigger>
+        <TooltipContent className="wf-tip" side="top">
+          选择工具
+        </TooltipContent>
+      </TooltipRoot>
+      <MenuSurface align="start" side="top">
+        <MenuRadioGroup value="select">
+          <MenuRadioItem value="select">选择</MenuRadioItem>
+        </MenuRadioGroup>
+        <MenuItem onSelect={() => onSelectAround('left')} shortcut={['[']}>
+          选中播放头左边的块
+        </MenuItem>
+        <MenuItem onSelect={() => onSelectAround('right')} shortcut={[']']}>
+          选中播放头右边的块
+        </MenuItem>
+      </MenuSurface>
+    </MenuRoot>
+  )
+}
+
 type EditorToolbarProps = {
   canUndo: boolean
   canRedo: boolean
   onUndo: () => void
   onRedo: () => void
+  /** 选中播放头左边或右边的块，替换原有选中。 */
+  onSelectAround: (side: 'left' | 'right') => void
+  /** 有没有选中的块；没有时「缩放到选中的块」置灰。 */
+  hasSelection: boolean
+  onZoomToSelection: () => void
   snap: boolean
   onSnap: () => void
   ripple: boolean
@@ -102,6 +160,9 @@ export function EditorToolbar({
   canRedo,
   onUndo,
   onRedo,
+  onSelectAround,
+  hasSelection,
+  onZoomToSelection,
   snap,
   onSnap,
   ripple,
@@ -142,6 +203,8 @@ export function EditorToolbar({
           }
         />
         <span aria-hidden="true" className="wf-divider" />
+        <ToolPicker onSelectAround={onSelectAround} />
+        <span aria-hidden="true" className="wf-divider" />
         <Tool
           icon="snap"
           label="吸附"
@@ -172,6 +235,19 @@ export function EditorToolbar({
           onClick={onThumbnails}
           pressed={thumbnails}
           tip={thumbnails ? '缩略图开着：块上显示画面' : '缩略图关着：块上只有名字和声音'}
+        />
+        <Tool
+          blocked={hasSelection ? undefined : '先选中一个块'}
+          icon="zoom-selection"
+          label="缩放到选中的块"
+          onClick={onZoomToSelection}
+          shortcuts="Z"
+          tip={
+            <>
+              缩放到选中的块
+              <Keys>Z</Keys>
+            </>
+          }
         />
         <span aria-hidden="true" className="wf-divider" />
         <Tool icon="fit" label="适应宽度" onClick={() => onZoom(FIT_ZOOM)} tip="适应宽度" />

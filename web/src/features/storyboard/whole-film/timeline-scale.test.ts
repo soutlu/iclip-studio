@@ -7,6 +7,7 @@ import {
   snapSpanStartMs,
   snapTargets,
   zoomLabel,
+  zoomToBlocks,
   zoomToSlider,
 } from './timeline-scale'
 
@@ -39,6 +40,43 @@ describe('时间线缩放', () => {
     expect(sliderToZoom(100, FIT_PPS).percent).toBeGreaterThan(1_000)
     expect(zoomToSlider(FIT_ZOOM, FIT_PPS)).toBeGreaterThan(0)
     expect(zoomToSlider(FIT_ZOOM, FIT_PPS)).toBeLessThan(100)
+  })
+})
+
+describe('缩放到选中的块', () => {
+  const FIT_PPS = 50
+  // 能排时间的宽度 1000 像素，两边各留 24，这一段铺满 952 像素
+  const WIDTH = 1_000
+
+  it('选中的块合起来从 2 秒到 6 秒：每秒 238 像素，滚到起点左边 24 像素', () => {
+    const target = zoomToBlocks(
+      [
+        { start: 3_000, duration: 3_000 },
+        { start: 2_000, duration: 2_000 },
+      ],
+      WIDTH,
+      FIT_PPS,
+    )
+    // 952 ÷ 4 秒 = 238 像素一秒，是适应宽度（50）的 476%
+    expect(target).toEqual({ zoom: { mode: 'manual', percent: 476 }, scrollLeft: 2 * 238 - 24 })
+    expect(zoomLabel(target?.zoom ?? FIT_ZOOM, FIT_PPS)).toBe('476%')
+  })
+
+  it('百分比取整，最小 10%、最大放到一帧 48 像素；从 0 秒开始的不往左滚', () => {
+    expect(zoomToBlocks([{ start: 0, duration: 3_000 }], WIDTH, FIT_PPS)).toEqual({
+      zoom: { mode: 'manual', percent: 635 },
+      scrollLeft: 0,
+    })
+    expect(zoomToBlocks([{ start: 0, duration: 1_000_000 }], WIDTH, FIT_PPS)?.zoom.percent).toBe(10)
+    // 30 帧一秒、一帧 48 像素是每秒 1440 像素，是 50 的 2880%
+    const tiny = zoomToBlocks([{ start: 1_000, duration: 10 }], WIDTH, FIT_PPS)
+    expect(tiny).toEqual({ zoom: { mode: 'manual', percent: 2_880 }, scrollLeft: 1_440 - 24 })
+  })
+
+  it('没有选中的块、块没有长度、还没量出宽度时不缩放', () => {
+    expect(zoomToBlocks([], WIDTH, FIT_PPS)).toBeNull()
+    expect(zoomToBlocks([{ start: 1_000, duration: 0 }], WIDTH, FIT_PPS)).toBeNull()
+    expect(zoomToBlocks([{ start: 1_000, duration: 500 }], 0, FIT_PPS)).toBeNull()
   })
 })
 

@@ -124,6 +124,8 @@ import {
   Maximize,
   Minimize,
   Keyboard,
+  MousePointer2,
+  Scan,
 } from 'lucide-react'
 import type { LucideProps } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
@@ -354,6 +356,8 @@ const ICONS = {
   fullscreen: Maximize,
   'exit-fullscreen': Minimize,
   shortcuts: Keyboard,
+  'select-tool': MousePointer2,
+  'zoom-selection': Scan,
 } as const
 
 export type IconName = keyof typeof ICONS

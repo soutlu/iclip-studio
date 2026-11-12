@@ -369,6 +369,149 @@ describe('成片编辑器 · 时间线', () => {
   })
 })
 
+describe('成片编辑器 · 多选', () => {
+  // 一行三个块：A 镜头 1 在 0–2 秒，B 镜头 1 在 2–3.5 秒，A 镜头 2 在 3.5–5 秒
+  const threePictures = () =>
+    filmFile(
+      [
+        picture({ label: 'A · 镜头 1', jobId: TAKE_A, src: URL_A, duration: 2_000 }),
+        picture({
+          id: 'clip-2',
+          label: 'B · 镜头 1',
+          jobId: TAKE_B,
+          src: URL_B,
+          start: 2_000,
+          duration: 1_500,
+        }),
+        picture({
+          id: 'clip-3',
+          label: 'A · 镜头 2',
+          jobId: TAKE_A,
+          src: URL_A,
+          start: 3_500,
+          duration: 1_500,
+          mediaStart: 2_000,
+        }),
+      ],
+      { width: 720, height: 1280 },
+    )
+  const row = () => screen.getByRole('group', { name: '第 1 行' })
+  const NAMES = ['A · 镜头 1', 'B · 镜头 1', 'A · 镜头 2'] as const
+  const block = (label: (typeof NAMES)[number]) =>
+    within(row()).getByRole('button', { name: new RegExp(`^选中：${label}，`) })
+  /** 选中着的块，按时间线上的先后。 */
+  const pressed = () =>
+    NAMES.filter((label) => block(label).getAttribute('aria-pressed') === 'true')
+
+  const openThree = async () => {
+    putMockWholeFilmDraft(CONVERSATION, threePictures())
+    const user = userEvent.setup()
+    await openEditor()
+    return user
+  }
+
+  it('Shift、⌘ 点块逐个加减选中，每个选中的块都有两端的把手；直接点收成只选这一个', async () => {
+    const user = await openThree()
+    await user.click(block('A · 镜头 1'))
+    await user.keyboard('{Shift>}')
+    await user.click(block('A · 镜头 2'))
+    await user.keyboard('{/Shift}')
+    expect(pressed()).toEqual(['A · 镜头 1', 'A · 镜头 2'])
+    expect(within(row()).getAllByRole('slider', { name: /^裁剪/ })).toHaveLength(4)
+
+    await user.keyboard('{Meta>}')
+    await user.click(block('A · 镜头 1'))
+    await user.click(block('B · 镜头 1'))
+    await user.keyboard('{/Meta}')
+    expect(pressed()).toEqual(['B · 镜头 1', 'A · 镜头 2'])
+
+    await user.click(block('A · 镜头 1'))
+    expect(pressed()).toEqual(['A · 镜头 1'])
+  })
+
+  it('点行里的空白处取消全部选中；按 Esc 也全部取消，编辑器还开着', async () => {
+    const user = await openThree()
+    await user.click(block('A · 镜头 1'))
+    await user.keyboard('{Shift>}')
+    await user.click(block('B · 镜头 1'))
+    await user.keyboard('{/Shift}')
+    await user.click(row())
+    expect(pressed()).toEqual([])
+
+    await user.click(block('B · 镜头 1'))
+    await user.keyboard('{Shift>}')
+    await user.click(block('A · 镜头 2'))
+    await user.keyboard('{/Shift}{Escape}')
+    expect(pressed()).toEqual([])
+    expect(screen.getByRole('group', { name: '成片编辑器' })).toBeVisible()
+  })
+
+  it('[ 选中播放头左边的块、] 选中右边的块，替换原有选中；正好从播放头开始或结束的只算一边', async () => {
+    const user = await openThree()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 500)))
+    await user.click(block('A · 镜头 2'))
+    // 播放头挪到 2 秒：A 镜头 1 正好在这里结束，B 镜头 1 正好从这里开始
+    screen.getByRole('dialog').focus()
+    await user.keyboard('{Shift>}{ArrowRight}{ArrowRight}{/Shift}')
+    expect(within(transport()).getByText('00:02.00')).toBeVisible()
+
+    await user.keyboard('[[')
+    expect(pressed()).toEqual(['A · 镜头 1'])
+    await user.keyboard(']')
+    expect(pressed()).toEqual(['B · 镜头 1', 'A · 镜头 2'])
+  })
+
+  it('选两个块按 Delete 一起删掉，开着波纹编辑剩下的往前补；撤销一步两个都回来', async () => {
+    const user = await openThree()
+    await user.click(block('A · 镜头 1'))
+    await user.keyboard('{Shift>}')
+    await user.click(block('A · 镜头 2'))
+    await user.keyboard('{/Shift}{Delete}')
+    await waitSaved(() => expect(savedBlocks()).toHaveLength(1))
+    expect(savedBlocks()[0]).toContain('data-label="B · 镜头 1"')
+    expect(savedBlocks()[0]).toContain('data-start="0" data-duration="1.5"')
+    expect(within(row()).queryAllByRole('slider', { name: /^裁剪/ })).toHaveLength(0)
+
+    await user.keyboard('{Meta>}z{/Meta}')
+    await waitSaved(() => expect(savedBlocks()).toHaveLength(3))
+    expect(savedBlocks().map((saved) => /data-start="([\d.]+)"/.exec(saved)?.[1])).toEqual([
+      '0',
+      '2',
+      '3.5',
+    ])
+    // 删掉的块撤销回来以后不再是选中的
+    expect(pressed()).toEqual([])
+  })
+
+  it('工具条：选择工具的菜单有三项，点「选中播放头右边的块」选中；没选中时「缩放到选中的块」置灰并说明原因', async () => {
+    const user = await openThree()
+    const zoomTo = within(toolbar()).getByRole('button', { name: '缩放到选中的块' })
+    expect(zoomTo).toHaveAttribute('aria-disabled', 'true')
+    await user.click(zoomTo)
+    expect((await screen.findAllByText('先选中一个块')).length).toBeGreaterThan(0)
+
+    await user.click(within(toolbar()).getByRole('button', { name: '选择工具：选择' }))
+    const menu = await screen.findByRole('menu', { name: '选择工具：选择' })
+    expect(menu).toHaveAttribute('data-side', 'top')
+    expect(within(menu).getByRole('menuitemradio', { name: '选择' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    expect(within(menu).getByRole('menuitem', { name: /^选中播放头左边的块/ })).toHaveTextContent(
+      '[',
+    )
+    const right = within(menu).getByRole('menuitem', { name: /^选中播放头右边的块/ })
+    expect(right).toHaveTextContent(']')
+    expect(within(menu).getAllByRole('menuitemradio')).toHaveLength(1)
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(2)
+
+    await user.click(right)
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(pressed()).toEqual(['A · 镜头 1', 'B · 镜头 1', 'A · 镜头 2'])
+    expect(zoomTo).not.toHaveAttribute('aria-disabled')
+  })
+})
+
 describe('成片编辑器 · 播放', () => {
   afterEach(() => {
     starvedVideos.clear()
