@@ -276,6 +276,15 @@ export function useFilmSession(
     [edit],
   )
 
+  /** 把几个块各自挪到新的起点，一起算一步撤销。 */
+  const restart = useCallback(
+    (starts: ReadonlyMap<string, number>) =>
+      edit((engine) => {
+        for (const [id, start] of starts) engine.setTiming(id, { start: start / 1000 })
+      }),
+    [edit],
+  )
+
   /** 删掉几个块；`ripple` 为真时第一行里后面的块往前补上。用不到的素材变量一起去掉。 */
   const removeBlocks = useCallback(
     (ids: readonly string[], ripple: boolean) =>
@@ -309,6 +318,7 @@ export function useFilmSession(
     opening,
     addPictures,
     retime,
+    restart,
     removeBlocks,
     undo: () => step('undo'),
     redo: () => step('redo'),

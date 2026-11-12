@@ -4,6 +4,13 @@ import {
   getTimelineFitPps,
 } from './vendor/hyperframes-studio/player/components/timelineLayout'
 import {
+  collectTimelineSnapTargets,
+  snapMoveToTargets,
+  snapTimelineTime,
+  TIMELINE_SNAP_PX,
+  type TimelineSnapTarget,
+} from './vendor/hyperframes-studio/player/components/timelineSnapping'
+import {
   getNextTimelineZoomPercent,
   getTimelinePixelsPerSecond,
 } from './vendor/hyperframes-studio/player/components/timelineZoom'
@@ -52,3 +59,50 @@ export const nextZoom = (direction: 'in' | 'out', zoom: Zoom, fitPps: number): Z
 export const msToPx = (ms: number, pps: number) => (ms / 1000) * pps
 
 export const pxToMs = (px: number, pps: number) => Math.round((px / Math.max(pps, 1)) * 1000)
+
+type Span = { id: string; start: number; duration: number }
+
+export type SnapTargets = readonly TimelineSnapTarget[]
+
+/** 能吸上去的时间点：别的块的两端和播放头。`spans` 里不要带正在拖的那个块。 */
+export const snapTargets = (spans: readonly Span[], playheadMs: number): SnapTargets =>
+  collectTimelineSnapTargets({
+    elements: spans.map((span) => ({
+      id: span.id,
+      start: span.start / 1000,
+      duration: span.duration / 1000,
+    })),
+    playheadTime: playheadMs / 1000,
+    beatTimes: [],
+  })
+
+/** 吸附之后的时间；`guideMs` 是吸上去的那个点，没吸上是 null。 */
+export type Snapped = { ms: number; guideMs: number | null }
+
+/** 一个时间点（比如裁剪时的一端）离某个点够近就吸上去。 */
+export const snapMs = (ms: number, targets: SnapTargets, pps: number): Snapped => {
+  const snapped = snapTimelineTime(ms / 1000, targets, TIMELINE_SNAP_PX / Math.max(pps, 1))
+  if (snapped.target === null) return { ms, guideMs: null }
+  const at = Math.round(snapped.time * 1000)
+  return { ms: at, guideMs: at }
+}
+
+/** 挪一个块时，它的开头或结尾哪一端离某个点近就让那一端吸上去；返回的是块的开头。 */
+export const snapSpanStartMs = (
+  startMs: number,
+  durationMs: number,
+  targets: SnapTargets,
+  pps: number,
+): Snapped => {
+  const snapped = snapMoveToTargets(
+    startMs / 1000,
+    durationMs / 1000,
+    targets,
+    pps,
+    Number.POSITIVE_INFINITY,
+  )
+  return {
+    ms: Math.round(snapped.start * 1000),
+    guideMs: snapped.snapTime === null ? null : Math.round(snapped.snapTime * 1000),
+  }
+}

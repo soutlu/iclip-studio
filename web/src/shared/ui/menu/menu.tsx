@@ -1,4 +1,4 @@
-import { DropdownMenu } from 'radix-ui'
+import { ContextMenu, DropdownMenu } from 'radix-ui'
 import type { ComponentProps, ComponentPropsWithoutRef, ReactNode } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -84,6 +84,43 @@ export function MenuItem({
         </span>
       ) : null}
     </DropdownMenu.Item>
+  )
+}
+
+/** 右键菜单：样子和下拉菜单一样，在点右键的地方打开。把触发它的元素包在 `ContextMenuTrigger asChild` 里。 */
+export const ContextMenuRoot = ContextMenu.Root
+export const ContextMenuTrigger = ContextMenu.Trigger
+
+export function ContextMenuSurface({
+  className,
+  ...props
+}: ComponentPropsWithoutRef<typeof ContextMenu.Content>) {
+  return (
+    <ContextMenu.Portal>
+      <ContextMenu.Content
+        className={cn(POPUP_SURFACE_CLASS, 'flex min-w-36 flex-col gap-0.5 p-1', className)}
+        {...props}
+      />
+    </ContextMenu.Portal>
+  )
+}
+
+export function ContextMenuItem({
+  children,
+  className,
+  ...props
+}: ComponentPropsWithoutRef<typeof ContextMenu.Item>) {
+  return (
+    <ContextMenu.Item
+      className={cn(
+        ITEM_CLASS,
+        'text-on-surface data-[disabled]:cursor-default data-[disabled]:opacity-(--state-disabled-content)',
+        className,
+      )}
+      {...props}
+    >
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+    </ContextMenu.Item>
   )
 }
 

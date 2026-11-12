@@ -49,7 +49,14 @@ import { landingOn, type Landing } from './placement'
 import { previewDocument } from './preview-document'
 import { PreviewPlayer, type PreviewControl } from './preview-player'
 import { PreviewTransport } from './preview-transport'
-import { FIT_ZOOM, nextZoom, timelineScale, type Zoom } from './timeline-scale'
+import {
+  FIT_ZOOM,
+  nextZoom,
+  snapSpanStartMs,
+  snapTargets,
+  timelineScale,
+  type Zoom,
+} from './timeline-scale'
 import { useFilmSession } from './use-film-session'
 import { useWholeFilmExport } from './use-whole-film-export'
 import { useWholeFilmDraftQuery } from './whole-film.api'
@@ -226,10 +233,21 @@ function EditorBody({
   // 选中的块被撤销或删掉以后就不算选中了
   const selected = pictures.find((block) => block.id === selectedId)
   const [ripple, setRipple] = useState(true)
+  const [snap, setSnap] = useState(true)
+  /** 拖着的素材会落在哪：开着吸附时先吸到别的块的两端或播放头上，再避开同一行的块。 */
   const landingAt = (clientX: number, clientY: number, dragged: MaterialRange) => {
     const point = timelineRef.current?.locate(clientX, clientY) ?? null
     if (point === null) return null
-    return landingOn(pictures, point.track, point.timeMs, dragged.endMs - dragged.startMs)
+    const duration = dragged.endMs - dragged.startMs
+    const snapped = snap
+      ? snapSpanStartMs(point.timeMs, duration, snapTargets(pictures, playhead), scale.pps)
+      : { ms: point.timeMs, guideMs: null }
+    const landing = landingOn(pictures, point.track, snapped.ms, duration)
+    return {
+      ...landing,
+      duration,
+      guideMs: landing.start === snapped.ms ? snapped.guideMs : null,
+    }
   }
 
   /** 把素材里的一段放进成片：给了 `at` 放在那里，没给就接在第一行的末尾。 */
@@ -395,8 +413,10 @@ function EditorBody({
               session.undo()
             }}
             onRipple={() => setRipple((on) => !on)}
+            onSnap={() => setSnap((on) => !on)}
             onZoom={(direction) => setZoom(nextZoom(direction, zoom, scale.fitPps))}
             ripple={ripple}
+            snap={snap}
           />
           <FilmTimeline
             buffered={buffered}
@@ -417,7 +437,12 @@ function EditorBody({
             pictures={pictures}
             playheadMs={playhead}
             scale={scale}
+            onRestart={(starts) => {
+              leaveMaterial()
+              session.restart(starts)
+            }}
             selectedId={selected?.id ?? null}
+            snap={snap}
             sourceMs={(src) => {
               const state = keyframes.get(src)
               return state?.kind === 'ready' ? Math.round(state.index.duration * 1000) : undefined
@@ -433,20 +458,14 @@ function EditorBody({
           <MaterialArea
             groups={materials.groups}
             keyframes={keyframes}
-            onCarry={(carry) => {
-              const at =
-                carry === null ? null : landingAt(carry.clientX, carry.clientY, carry.range)
-              setGhost(
-                carry === null || at === null
-                  ? null
-                  : { ...at, duration: carry.range.endMs - carry.range.startMs },
-              )
-            }}
+            onCarry={(carry) =>
+              setGhost(carry === null ? null : landingAt(carry.clientX, carry.clientY, carry.range))
+            }
             onDrop={(clientX, clientY, dropped) => {
               const at = landingAt(clientX, clientY, dropped)
               setGhost(null)
               if (at === null) return false
-              place(dropped, at)
+              place(dropped, { track: at.track, start: at.start })
               return true
             }}
             onInsert={insert}

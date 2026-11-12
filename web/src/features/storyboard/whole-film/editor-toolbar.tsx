@@ -74,6 +74,8 @@ type EditorToolbarProps = {
   onRedo: () => void
   insertBlocked: string | undefined
   onInsert: () => void
+  snap: boolean
+  onSnap: () => void
   ripple: boolean
   onRipple: () => void
   onZoom: (direction: 'in' | 'out') => void
@@ -87,6 +89,8 @@ export function EditorToolbar({
   onRedo,
   insertBlocked,
   onInsert,
+  snap,
+  onSnap,
   ripple,
   onRipple,
   onZoom,
@@ -137,6 +141,17 @@ export function EditorToolbar({
           }
         />
         <span aria-hidden="true" className="wf-divider" />
+        <Tool
+          icon="snap"
+          label="吸附"
+          onClick={onSnap}
+          pressed={snap}
+          tip={
+            snap
+              ? '吸附开着：拖动和裁剪时会吸到别的块的两端和播放头上'
+              : '吸附关着：拖到哪里就是哪里'
+          }
+        />
         <Tool
           icon="ripple"
           label="波纹编辑"
