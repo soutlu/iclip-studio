@@ -883,6 +883,15 @@ test('多选：Shift 点选两个块一起删掉再撤销回来；框选跨两�
     return box
   }
 
+  // 选中着块、又开着选择工具的菜单时按 Esc：先关菜单，选中不变
+  await blockOf(3).click()
+  await toolbar.getByRole('button', { name: /^选择工具/ }).click()
+  await expect(page.getByRole('menu')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await expect.poll(selectedShots).toEqual([3])
+  await expect(dialog).toBeVisible()
+
   // Shift 点选两个块，按 Delete 一起删掉；撤销一步两个都回来
   const before = await savedBlocks(page)
   await blockOf(1).click()

@@ -533,6 +533,22 @@ describe('成片编辑器 · 多选', () => {
     expect(pressed()).toEqual(['A · 镜头 1', 'B · 镜头 1', 'A · 镜头 2'])
     expect(zoomTo).not.toHaveAttribute('aria-disabled')
   })
+
+  it('开着菜单又有选中的块：第一下 Esc 只关菜单、选中不变，第二下才取消选中，编辑器一直开着', async () => {
+    const user = await openThree()
+    await user.click(block('A · 镜头 1'))
+    await user.click(within(toolbar()).getByRole('button', { name: '选择工具：选择' }))
+    await screen.findByRole('menu', { name: '选择工具：选择' })
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    expect(pressed()).toEqual(['A · 镜头 1'])
+    expect(screen.getByRole('group', { name: '成片编辑器' })).toBeVisible()
+
+    await user.keyboard('{Escape}')
+    expect(pressed()).toEqual([])
+    expect(screen.getByRole('group', { name: '成片编辑器' })).toBeVisible()
+  })
 })
 
 describe('成片编辑器 · 播放', () => {
