@@ -201,7 +201,8 @@ describe('MCP 服务 添加', () => {
     await user.click(button(saved, '返回'))
     const row = await within(sidePanel()).findByRole('button', { name: '编辑 MCP 服务：素材检索' })
     expect(within(row).getByRole('img', { name: '已连接' })).toBeInTheDocument()
-  })
+    // 文件里第一条，带着整页第一次加载的开销，流程又最长：CI 上贴着默认的 5 秒，放宽到 10 秒
+  }, 10_000)
 
   it('标识已被占用：原因写在标识下面', async () => {
     const user = await renderPage()
