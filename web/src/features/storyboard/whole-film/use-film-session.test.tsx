@@ -354,6 +354,69 @@ describe('useFilmSession', () => {
     expect(hiddenIds(result)?.toSorted()).toEqual([added?.id, 'a'].toSorted())
   })
 
+  it('把块搬进最上面新开的一行：别的块换成新的行号，它写在最后盖住它们；一步撤销', async () => {
+    const saves = recordSaves()
+    const { result } = await openThree()
+    act(() =>
+      result.current.moveBlock(
+        'c',
+        { track: 0, start: 500 },
+        new Map([
+          ['a', 1],
+          ['b', 1],
+        ]),
+      ),
+    )
+    expect(layout(result)).toEqual([
+      ['a', 1, 0, 0],
+      ['b', 1, 2_000, 0],
+      ['c', 0, 500, 0],
+    ])
+    await waitFor(() => expect(saves).toHaveLength(1))
+    expect(saves[0]?.html).toMatch(/id="a"[^>]*data-track-index="1"/)
+    expect(saves[0]?.html).toMatch(/id="c"[^>]*data-start="0.5"[^>]*data-track-index="0"/)
+
+    act(() => result.current.undo())
+    expect(layout(result)).toEqual([
+      ['a', 0, 0, 0],
+      ['b', 0, 2_000, 0],
+      ['c', 0, 3_000, 0],
+    ])
+    expect(result.current.film?.canUndo).toBe(false)
+  })
+
+  it('把镜头加进两行之间新开的一行：下面的行往后排一号，新块写在上面那一行的块前面', async () => {
+    const conversation = crypto.randomUUID()
+    const stored = putMockWholeFilmDraft(
+      conversation,
+      filmFile([
+        picture({ id: 'low', track: 1, duration: 5_000 }),
+        picture({ id: 'a', duration: 2_000 }),
+      ]),
+    )
+    const { result } = await open(stored, 10, conversation)
+    await act(() =>
+      result.current.addPictures(
+        CANVAS,
+        [piece({ duration: 1_000 })],
+        { track: 1, start: 500 },
+        new Map([['low', 2]]),
+      ),
+    )
+    const added = result.current.film?.pictures.find((block) => block.track === 1)
+    expect(layout(result)).toEqual([
+      ['low', 2, 0, 0],
+      [added?.id, 1, 500, 0],
+      ['a', 0, 0, 0],
+    ])
+
+    act(() => result.current.undo())
+    expect(layout(result)).toEqual([
+      ['low', 1, 0, 0],
+      ['a', 0, 0, 0],
+    ])
+  })
+
   it('把块全删掉：成片还在，只是没有画面', async () => {
     const { result } = await openThree()
     act(() => result.current.removeBlocks(['a', 'b', 'c'], true))

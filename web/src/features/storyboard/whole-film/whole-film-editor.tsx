@@ -25,10 +25,10 @@ import { handleUndoShortcut } from '../editing/undo-shortcut'
 import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
 import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
-import type { Canvas } from './composition/film'
+import { MAX_FILM_MS, type Canvas } from './composition/film'
 import { EditorToolbar } from './editor-toolbar'
 import { ExportControl } from './export-control'
-import { FilmTimeline, type DropGhost, type TimelineHandle } from './film-timeline'
+import { FilmTimeline, type DropGhost, type RowTarget, type TimelineHandle } from './film-timeline'
 import { MaterialArea } from './material-area'
 import {
   useKeyframeIndexes,
@@ -46,7 +46,7 @@ import {
   type MaterialRange,
   type MaterialTake,
 } from './materials'
-import { landingOn, type Landing } from './placement'
+import { landingOn, rowOpening } from './placement'
 import { previewDocument } from './preview-document'
 import { PreviewPlayer, type PlaybackSettings, type PreviewControl } from './preview-player'
 import { PreviewTransport } from './preview-transport'
@@ -261,8 +261,6 @@ function EditorBody({
   const [ripple, setRipple] = useState(true)
   const [thumbnails, setThumbnails] = useState(true)
   const [snap, setSnap] = useState(true)
-  // 落在最下面那条空行上时新开的一行：排在现有的行后面
-  const newTrack = Math.max(-1, ...pictures.map((block) => block.track)) + 1
   /** 拖着的素材会落在哪：开着吸附时先吸到别的块的两端或播放头上，再避开同一行的块。 */
   const landingAt = (clientX: number, clientY: number, dragged: MaterialRange) => {
     const point = timelineRef.current?.locate(clientX, clientY) ?? null
@@ -271,21 +269,27 @@ function EditorBody({
     const snapped = snap
       ? snapSpanStartMs(point.timeMs, duration, snapTargets(pictures, playhead), scale.pps)
       : { ms: point.timeMs, guideMs: null }
-    const landing = landingOn(
-      pictures,
-      point.track === 'new' ? newTrack : point.track,
-      snapped.ms,
-      duration,
-    )
+    // 新开的一行上没有别的块，放在哪里都不会重叠
+    const start =
+      typeof point.row === 'number'
+        ? landingOn(pictures, point.row, snapped.ms, duration).start
+        : Math.min(snapped.ms, MAX_FILM_MS - duration)
     return {
-      ...landing,
+      row: point.row,
+      start,
       duration,
-      guideMs: landing.start === snapped.ms ? snapped.guideMs : null,
+      guideMs: start === snapped.ms ? snapped.guideMs : null,
     }
   }
 
+  /** `row` 这一行是几号；要新开一行时，连同别的块要换成的行号。`movedId` 是要搬过去的那个块。 */
+  const trackFor = (row: RowTarget, movedId?: string) =>
+    typeof row === 'number'
+      ? { track: row, renumber: undefined }
+      : rowOpening(pictures, row.insertAt, movedId)
+
   /** 把素材里的一段放进成片：给了 `at` 放在那里，没给就接在第一行的末尾。 */
-  const place = (chosen: MaterialRange, at?: Landing) => {
+  const place = (chosen: MaterialRange, at?: { row: RowTarget; start: number }) => {
     const material = materials.byJob.get(chosen.jobId)
     if (material === undefined) return
     const picked = rangePieces(chosen).map((piece) => {
@@ -298,7 +302,14 @@ function EditorBody({
       }
     })
     const add = async (canvas: Canvas) => {
-      if (await session.addPictures(canvas, picked, at)) leaveMaterial()
+      const spot = at === undefined ? undefined : trackFor(at.row)
+      const added = await session.addPictures(
+        canvas,
+        picked,
+        spot === undefined || at === undefined ? undefined : { track: spot.track, start: at.start },
+        spot?.renumber,
+      )
+      if (added) leaveMaterial()
     }
     if (film !== null) void add(film.canvas)
     else if (size.data !== undefined) void add(size.data)
@@ -509,8 +520,9 @@ function EditorBody({
             playheadMs={playhead}
             scale={scale}
             onMove={(id, row, start) => {
+              const { track, renumber } = trackFor(row, id)
               leaveMaterial()
-              session.moveBlock(id, { track: row === 'new' ? newTrack : row, start })
+              session.moveBlock(id, { track, start }, renumber)
             }}
             onRestart={(starts) => {
               leaveMaterial()
@@ -541,7 +553,7 @@ function EditorBody({
               const at = landingAt(clientX, clientY, dropped)
               setGhost(null)
               if (at === null) return false
-              place(dropped, { track: at.track, start: at.start })
+              place(dropped, { row: at.row, start: at.start })
               return true
             }}
             onInsert={insert}

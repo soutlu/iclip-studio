@@ -15,7 +15,7 @@ import {
   type Canvas,
   type PictureBlock,
 } from './composition/film'
-import { rowHidden, topTrack, type Landing } from './placement'
+import { rowHidden, topTrack, type Landing, type Renumbering } from './placement'
 import { insertionOf } from './stacking'
 import { readWholeFilmDraft, saveWholeFilmDraft } from './whole-film.api'
 
@@ -40,6 +40,8 @@ const openComposition = async (html: string): Promise<Composition> =>
 
 const STALE_NOTICE = '成片草稿已在别处改过，已换成最新的一版；刚才没保存的改动已放弃'
 export const FILM_LIMIT_TEXT = '成片最长 2 分钟，这段放不下了'
+
+const NO_RENUMBERING: Renumbering = new Map()
 
 /** 成片里的画面块，按它们在文件里的先后。只读块，不存出文件，一批操作中间也能用。 */
 const picturesOf = (engine: Composition): PictureBlock[] =>
@@ -214,15 +216,26 @@ export function useFilmSession(
 
   /**
    * 把几段素材一段接一段放进成片：给了 `at` 就从那一行的那个时间放起（调用方保证那里空着），
-   * 没给就接在第一行的末尾。还没有成片时先按 `canvas` 建一份。放不下时不动成片。
+   * 没给就接在第一行的末尾。`renumber` 是为它新开一行时别的块要换成的行号。
+   * 还没有成片时先按 `canvas` 建一份。放不下时不动成片。
    */
   const addPictures = useCallback(
-    async (canvas: Canvas, pictures: readonly NewPicture[], at?: Landing): Promise<boolean> => {
+    async (
+      canvas: Canvas,
+      pictures: readonly NewPicture[],
+      at?: Landing,
+      renumber: Renumbering = NO_RENUMBERING,
+    ): Promise<boolean> => {
       const engine = await engineFor(canvas)
       if (engine === null) return false
       const current = viewOf(engine)
-      const track = at?.track ?? topTrack(current.pictures)
-      const row = current.pictures.filter((block) => block.track === track)
+      // 别的块先换成新的行号，后面都按换完的样子算
+      const others = current.pictures.map((block) => ({
+        ...block,
+        track: renumber.get(block.id) ?? block.track,
+      }))
+      const track = at?.track ?? topTrack(others)
+      const row = others.filter((block) => block.track === track)
       let end = at?.start ?? Math.max(0, ...row.map((block) => block.start + block.duration))
       const total = pictures.reduce((sum, picture) => sum + picture.duration, end)
       if (total > MAX_FILM_MS) {
@@ -230,11 +243,12 @@ export function useFilmSession(
         return false
       }
       // 放进隐藏着的行，新块也跟着隐藏
-      const hidden = rowHidden(current.pictures, track)
+      const hidden = rowHidden(others, track)
       const declared = new Set(engine.listVariables().map((variable) => variable.id))
       // 文件里现在的先后；每加一个块就按它写进去的位置插进来，下一个块照着新的先后算
-      const written = [...current.pictures]
+      const written = [...others]
       engine.batch(() => {
+        for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
         for (const picture of pictures) {
           const variable = sourceVariable(picture.jobId, picture.src)
           if (!declared.has(variable.id)) {
@@ -297,10 +311,12 @@ export function useFilmSession(
   /**
    * 把一个块换到另一行的某个时间。谁盖住谁要跟着行走（上面的行盖住下面的行），别的块又不能动，
    * 所以是把它从文件里取出来，再像新加的块那样按新位置写回去。
+   * `renumber` 是为它新开一行时别的块要换成的行号。
    */
   const moveBlock = useCallback(
-    (id: string, at: Landing) =>
+    (id: string, at: Landing, renumber: Renumbering = NO_RENUMBERING) =>
       edit((engine) => {
+        for (const [other, next] of renumber) engine.setTiming(other, { trackIndex: next })
         const pictures = picturesOf(engine)
         const block = pictures.find((other) => other.id === id)
         if (block === undefined) return
