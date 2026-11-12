@@ -965,3 +965,197 @@ test('多选：Shift 点选两个块一起删掉再撤销回来；框选跨两�
   expect(Math.abs(start.x - fitted.x - 24)).toBeLessThan(1.5)
   expect(end.x + end.width).toBeLessThan(fitted.x + fitted.width - 16)
 })
+
+test('成组挪动、成组裁剪：选中的块挪同一个时间差，挡住时整组停下，一起裁同一端；没选中的块只挪它自己；Esc 取消拖动', async ({
+  page,
+}) => {
+  const { dialog, materials } = await openWith(page, [1])
+  const secondRow = dialog.getByRole('group', { name: '第 2 行' })
+  for (const [at, shot] of [1, 3, 4].entries()) {
+    await shotOf(materials, 1, 'A', shot).click()
+    await page.keyboard.press('Enter')
+    await expect.poll(() => savedBlocks(page)).toHaveLength(at + 1)
+  }
+  await readyPlayer(dialog)
+  const blockName = (shot: number) => new RegExp(`^选中：A · 镜头 ${shot}，`)
+  const blockOf = (shot: number) => dialog.getByRole('button', { name: blockName(shot) })
+  // 块的外框（含两端的把手），里面是选中它的按钮
+  const clipOf = (shot: number) =>
+    dialog
+      .locator('[data-block-id]')
+      .filter({ has: page.getByRole('button', { name: blockName(shot) }) })
+  const selectedShots = () =>
+    dialog
+      .getByRole('button', { name: /^选中：/, pressed: true })
+      .evaluateAll((buttons) =>
+        buttons.map((button) => Number(/镜头 (\d+)，/.exec(button.ariaLabel ?? '')?.[1])),
+      )
+  const boxOf = async (locator: Locator) => {
+    const box = await locator.boundingBox()
+    if (box === null) throw new Error('元素尚未布局')
+    return box
+  }
+  type Placed = { start: number; duration: number; track: number }
+  /** 存下来的成片里每个镜头在哪：键是镜头号，时间按秒。 */
+  const savedLayout = () =>
+    page.evaluate(async (conversationId) => {
+      const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
+      const { html } = (await response.json()) as { html: string | null }
+      const read = (tag: string, name: string) =>
+        new RegExp(`${name}="([^"]*)"`).exec(tag)?.[1] ?? ''
+      return Object.fromEntries(
+        [...(html ?? '').matchAll(/<video [^>]*>/g)].map(([tag]) => [
+          Number(/镜头 (\d+)/.exec(read(tag, 'data-label'))?.[1]),
+          {
+            start: Number(read(tag, 'data-start')),
+            duration: Number(read(tag, 'data-duration')),
+            track: Number(read(tag, 'data-track-index')),
+          },
+        ]),
+      )
+    }, conversationIdOf(page))
+  const placedOf = (layout: Record<number, Placed>, shot: number) => {
+    const placed = layout[shot]
+    if (placed === undefined) throw new Error(`成片里没有镜头 ${shot}`)
+    return placed
+  }
+  /** 存下来的成片里同一行的块没有在时间上重叠的。 */
+  const expectNoOverlap = async () => {
+    const blocks = Object.values(await savedLayout())
+    for (const block of blocks)
+      for (const other of blocks) {
+        if (other === block || other.track !== block.track) continue
+        const overlapping =
+          block.start < other.start + other.duration && other.start < block.start + block.duration
+        expect(overlapping).toBe(false)
+      }
+  }
+  const dragBy = async (locator: Locator, dx: number, dy = 0) => {
+    const { x, y } = await centerOf(locator)
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + dx, y + dy, { steps: 6 })
+    await page.mouse.up()
+  }
+
+  // 镜头 4 挪到新的一行，时间不变：第一行是 1、3，第二行是 4
+  await dragBy(
+    blockOf(4),
+    0,
+    (await centerOf(dialog.getByRole('group', { name: '新的一行' }))).y -
+      (await centerOf(blockOf(4))).y,
+  )
+  await expect(secondRow.getByRole('button', { name: /^选中：A · 镜头 4，/ })).toHaveCount(1)
+  await expect.poll(async () => placedOf(await savedLayout(), 4).track).toBe(1)
+  // 一秒长的块画出来比一秒的宽度少 2 像素
+  const pps = (await boxOf(clipOf(1))).width + 2
+
+  // 选中不同行的 3 和 4，拖 4 往后一秒：两个挪一样的量，各自留在原来的行；撤销一步都回来
+  const before = await savedLayout()
+  await blockOf(3).click()
+  await blockOf(4).click({ modifiers: ['Shift'] })
+  await dragBy(blockOf(4), pps)
+  await expect
+    .poll(async () => placedOf(await savedLayout(), 4).start)
+    .toBeGreaterThan(placedOf(before, 4).start + 0.5)
+  const moved = await savedLayout()
+  const delta = placedOf(moved, 4).start - placedOf(before, 4).start
+  expect(placedOf(moved, 3).start - placedOf(before, 3).start).toBeCloseTo(delta, 3)
+  expect(placedOf(moved, 3).track).toBe(placedOf(before, 3).track)
+  expect(placedOf(moved, 4).track).toBe(placedOf(before, 4).track)
+  expect(placedOf(moved, 1)).toEqual(placedOf(before, 1))
+  expect(await selectedShots()).toEqual([3, 4])
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(savedLayout).toEqual(before)
+
+  // 拖 4 到第一行上面、往后半秒：4 新开最上面一行，3 留在原来那一行（行号跟着往后排）挪一样的量；撤销一步都回来
+  const topRow = await boxOf(dialog.getByRole('group', { name: '第 1 行' }))
+  const lifted = await centerOf(blockOf(4))
+  await page.mouse.move(lifted.x, lifted.y)
+  await page.mouse.down()
+  await page.mouse.move(lifted.x + pps / 2, topRow.y - 12, { steps: 8 })
+  await page.mouse.up()
+  await expect.poll(async () => placedOf(await savedLayout(), 4).track).toBe(0)
+  const opened = await savedLayout()
+  const raised = placedOf(opened, 4).start - placedOf(before, 4).start
+  expect(raised).toBeGreaterThan(0.3)
+  expect(placedOf(opened, 3).start - placedOf(before, 3).start).toBeCloseTo(raised, 3)
+  expect(placedOf(opened, 3).track).toBe(1)
+  expect(placedOf(opened, 1)).toEqual({ ...placedOf(before, 1), track: 1 })
+  await expectNoOverlap()
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(savedLayout).toEqual(before)
+
+  // 拖动中按 Esc：块回到原处，什么都不写，选中不变，编辑器还开着
+  const resting = await boxOf(clipOf(3))
+  const grab = await centerOf(blockOf(4))
+  const count = await dialog.locator('[data-block-id]').count()
+  await page.mouse.move(grab.x, grab.y)
+  await page.mouse.down()
+  await page.mouse.move(grab.x + pps, grab.y, { steps: 6 })
+  await expect.poll(async () => (await boxOf(clipOf(3))).x).toBeGreaterThan(resting.x + pps / 2)
+  // 拖动中按 Delete、撤销都不生效：成片这时被改，松手会按改之前算好的位置写回去
+  await page.keyboard.press('Delete')
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(dialog.locator('[data-block-id]')).toHaveCount(count)
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  expect((await boxOf(clipOf(3))).x).toBeCloseTo(resting.x, 0)
+  await expect.poll(selectedShots).toEqual([3, 4])
+  await expect(dialog).toBeVisible()
+  expect(await savedLayout()).toEqual(before)
+
+  // 选中 1 和 4，拖没选中的 3 往后半秒：只挪它自己，选中不变
+  await blockOf(1).click()
+  await blockOf(4).click({ modifiers: ['Shift'] })
+  await dragBy(blockOf(3), pps / 2)
+  await expect
+    .poll(async () => placedOf(await savedLayout(), 3).start)
+    .toBeGreaterThan(placedOf(before, 3).start + 0.3)
+  const lone = await savedLayout()
+  expect(placedOf(lone, 1)).toEqual(placedOf(before, 1))
+  expect(placedOf(lone, 4)).toEqual(placedOf(before, 4))
+  expect(await selectedShots()).toEqual([1, 4])
+
+  // 再拖 4 往后 0.9 秒：1 会压到 3，整组停在 1 贴着 3 的地方
+  await dragBy(blockOf(4), pps * 0.9)
+  await expect
+    .poll(async () => placedOf(await savedLayout(), 4).start)
+    .not.toBe(placedOf(lone, 4).start)
+  const stopped = await savedLayout()
+  const shift = placedOf(stopped, 1).start - placedOf(lone, 1).start
+  expect(placedOf(stopped, 4).start - placedOf(lone, 4).start).toBeCloseTo(shift, 3)
+  expect(shift).toBeLessThan(0.8)
+  expect(placedOf(stopped, 1).start + placedOf(stopped, 1).duration).toBeCloseTo(
+    placedOf(stopped, 3).start,
+    1,
+  )
+  await expectNoOverlap()
+
+  // 选中同一行相邻的 1 和 3，拖 3 的结尾把手往前 0.3 秒：两个一起收短一样的量
+  await blockOf(1).click()
+  await blockOf(3).click({ modifiers: ['Shift'] })
+  await dragBy(clipOf(3).getByRole('slider', { name: '裁剪结尾' }), -pps * 0.3)
+  await expect
+    .poll(async () => placedOf(await savedLayout(), 3).duration)
+    .toBeLessThan(placedOf(stopped, 3).duration - 0.1)
+  const shortened = await savedLayout()
+  const cut = placedOf(stopped, 3).duration - placedOf(shortened, 3).duration
+  expect(placedOf(stopped, 1).duration - placedOf(shortened, 1).duration).toBeCloseTo(cut, 3)
+  expect(placedOf(shortened, 1).start).toBe(placedOf(stopped, 1).start)
+  expect(placedOf(shortened, 3).start).toBe(placedOf(stopped, 3).start)
+
+  // 再往后拉一秒：1 的结尾被 3 挡住，两个只一起拉长到 1 贴着 3
+  await dragBy(clipOf(3).getByRole('slider', { name: '裁剪结尾' }), pps)
+  await expect
+    .poll(async () => placedOf(await savedLayout(), 3).duration)
+    .toBeGreaterThan(placedOf(shortened, 3).duration)
+  const stretched = await savedLayout()
+  const grown = placedOf(stretched, 3).duration - placedOf(shortened, 3).duration
+  expect(placedOf(stretched, 1).duration - placedOf(shortened, 1).duration).toBeCloseTo(grown, 3)
+  expect(placedOf(stretched, 1).start + placedOf(stretched, 1).duration).toBeCloseTo(
+    placedOf(stretched, 3).start,
+    1,
+  )
+  await expectNoOverlap()
+})

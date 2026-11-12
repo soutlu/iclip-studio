@@ -263,10 +263,10 @@ function EditorBody({
   const selectedBlocks = pictures.filter((block) => selectedIds.has(block.id))
   const selected = new Set(selectedBlocks.map((block) => block.id))
   const clearSelection = () => setSelectedIds(new Set())
-  // 框选中途的 Esc 归时间线（只取消那次框选），这里先让开
-  const [framing, setFraming] = useState(false)
+  // 框选、拖块中途的 Esc 归时间线（只取消那一次），这里先让开
+  const [gesturing, setGesturing] = useState(false)
   // Esc 先退全屏（浏览器多半自己退，按键还是传到页面时才轮到这里），再取消选中；都没有才关编辑器
-  useEscapeAheadOfDialog(fullscreen || (!framing && selected.size > 0), () => {
+  useEscapeAheadOfDialog(fullscreen || (!gesturing && selected.size > 0), () => {
     if (fullscreen) exitFullscreen()
     else clearSelection()
   })
@@ -404,6 +404,8 @@ function EditorBody({
   }
   useEffect(() => {
     keysRef.current = (event) => {
+      // 拖块、框选进行中不接快捷键：这时撤销或删块，松手会按改之前算好的位置写回去
+      if (gesturing) return
       handleUndoShortcut(event, history, leaveMaterial)
       if (event.key === 'Enter' && event.target === event.currentTarget) {
         event.preventDefault()
@@ -548,21 +550,21 @@ function EditorBody({
                 hidden,
               )
             }}
-            onRetime={(id, timing) => {
+            onRetime={(timings) => {
               leaveMaterial()
-              session.retime(id, timing)
+              session.retime(timings)
             }}
-            onFraming={setFraming}
+            onGesture={setGesturing}
             onSeek={seek}
             onSelect={setSelectedIds}
             onViewportWidth={setViewportWidth}
             pictures={pictures}
             playheadMs={playhead}
             scale={scale}
-            onMove={(id, row, start) => {
+            onMove={(id, row, start, starts) => {
               const { track, renumber } = trackFor(row, id)
               leaveMaterial()
-              session.moveBlock(id, { track, start }, renumber)
+              session.moveBlock(id, { track, start }, renumber, starts)
             }}
             onRestart={(starts) => {
               leaveMaterial()
