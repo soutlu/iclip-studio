@@ -15,6 +15,7 @@ from iclip.common.errors import Conflict, NotFound, PermissionDenied, Validation
 from iclip.domains.conversations.models import (
     IDLE_ACTIVITY,
     AgentPreview,
+    CheckedWholeFilm,
     Conversation,
     ConversationActivity,
     PreviewHeader,
@@ -34,7 +35,6 @@ from iclip.domains.conversations.repository import (
     WholeFilmDraftStore,
 )
 from iclip.domains.conversations.schemas import DEFAULT_TITLE, MAX_TITLE_CHARS, conversation_out
-from iclip.domains.conversations.whole_film_schemas import WholeFilmDocument
 from iclip.domains.identity.public import (
     AGENT_MANAGE_PERMISSION,
     MANAGE_PERMISSION,
@@ -232,14 +232,20 @@ class ConversationFilm(Protocol):
     ) -> uuid.UUID: ...
 
 
-class WholeFilmDraftReferences(Protocol):
-    async def __call__(
-        self, principal: Principal, conversation_id: uuid.UUID, document: WholeFilmDocument
-    ) -> None: ...
-
-
 class WholeFilmRenderUnavailable(Exception):
     pass
+
+
+class WholeFilmFiles(Protocol):
+    async def check(
+        self, principal: Principal, conversation_id: uuid.UUID, html: str
+    ) -> CheckedWholeFilm:
+        """查一份成片文件，答复按写法重写后的文件和它用到的素材。
+
+        不合写法、用到的素材不是这段对话的抛 ``ValidationFailed``；渲染服务连不上抛
+        ``WholeFilmRenderUnavailable``。
+        """
+        ...
 
 
 class WholeFilmExports(Protocol):
@@ -249,7 +255,7 @@ class WholeFilmExports(Protocol):
         *,
         conversation_id: uuid.UUID,
         revision: int,
-        document: WholeFilmDocument,
+        film: CheckedWholeFilm,
     ) -> uuid.UUID: ...
 
     async def latest(
@@ -262,6 +268,8 @@ class WholeFilmExports(Protocol):
 
 
 _EXPORTS_OFF = "成片导出没有开通"
+_FILMS_OFF = "成片没有开通"
+_NO_PICTURE = "成片里还没有画面，导不出成片"
 
 
 class WorkspaceDocumentValidator(Protocol):
@@ -350,7 +358,7 @@ class ConversationService:
         document_validators: Mapping[str, WorkspaceDocumentValidator],
         film: ConversationFilm,
         drafts: WholeFilmDraftStore,
-        draft_references: WholeFilmDraftReferences,
+        films: WholeFilmFiles | None,
         exports: WholeFilmExports | None,
         generate_title: GenerateTitle,
         announce_title: AnnounceTitle,
@@ -367,7 +375,7 @@ class ConversationService:
         self._previews = previews
         self._runtime = runtime
         self._drafts = drafts
-        self._draft_references = draft_references
+        self._films = films
         self._exports = exports
         self._same_style_files = same_style_files
         self._same_style_source = same_style_source
@@ -588,28 +596,17 @@ class ConversationService:
 
     async def whole_film_draft(
         self, principal: Principal, conversation_id: uuid.UUID
-    ) -> tuple[WholeFilmDraft, WholeFilmDocument] | None:
+    ) -> WholeFilmDraft | None:
         conversation = await self._readable(principal, conversation_id)
-        found = await self._drafts.get(conversation.id)
-        if found is None:
-            return None
-        return found, WholeFilmDocument.model_validate(found.document)
+        return await self._drafts.get(conversation.id)
 
     async def save_whole_film_draft(
-        self,
-        principal: Principal,
-        conversation_id: uuid.UUID,
-        *,
-        revision: int,
-        document: WholeFilmDocument,
+        self, principal: Principal, conversation_id: uuid.UUID, *, revision: int, html: str
     ) -> WholeFilmDraft:
         conversation = await self._workspace_writable(principal, conversation_id)
-        await self._draft_references(principal, conversation.id, document)
+        checked = await self._require_films().check(principal, conversation.id, html)
         saved = await self._drafts.save(
-            conversation.id,
-            document=document.model_dump(mode="json", by_alias=True),
-            revision=revision,
-            updated_by=principal.user_id,
+            conversation.id, html=checked.html, revision=revision, updated_by=principal.user_id
         )
         if saved is None:
             raise Conflict("成片草稿已经有更新的一版，重新读取后再改")
@@ -620,14 +617,17 @@ class ConversationService:
     ) -> uuid.UUID:
         conversation = await self._workspace_writable(principal, conversation_id)
         exports = self._require_exports()
+        films = self._require_films()
         found = await self._drafts.get(conversation.id)
         if (found.revision if found is not None else 0) != revision:
             raise Conflict("成片草稿已经有更新的一版，重新读取后再导出")
-        document = None if found is None else WholeFilmDocument.model_validate(found.document)
-        if document is None or not document.layer0:
-            raise ValidationFailed("画面轨里还没有内容，导不出成片")
+        if found is None:
+            raise ValidationFailed(_NO_PICTURE)
+        film = await films.check(principal, conversation.id, found.html)
+        if not film.sources:
+            raise ValidationFailed(_NO_PICTURE)
         return await exports.start(
-            principal, conversation_id=conversation.id, revision=revision, document=document
+            principal, conversation_id=conversation.id, revision=revision, film=film
         )
 
     async def latest_whole_film_export(
@@ -652,6 +652,11 @@ class ConversationService:
         if self._exports is None:
             raise ValidationFailed(_EXPORTS_OFF)
         return self._exports
+
+    def _require_films(self) -> WholeFilmFiles:
+        if self._films is None:
+            raise ValidationFailed(_FILMS_OFF)
+        return self._films
 
     async def workspace_writable(
         self, principal: Principal, conversation_id: uuid.UUID
@@ -1074,8 +1079,8 @@ __all__ = [
     "SidebarGroup",
     "TaskExists",
     "VideoProgressOf",
-    "WholeFilmDraftReferences",
     "WholeFilmExports",
+    "WholeFilmFiles",
     "WholeFilmRenderUnavailable",
     "WorkspaceDocumentValidator",
     "WriteDerivedFile",

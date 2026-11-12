@@ -51,8 +51,8 @@ from iclip.app.runtime_internal import (
 from iclip.app.runtime_ports import RuntimeServicePorts
 from iclip.app.runtime_workspace import RuntimeFiles
 from iclip.app.shot_media import CutRecordsAdapter, FrameBoardsAdapter, GridCutsAdapter
-from iclip.app.whole_film_drafts import GenerationDraftReferences
 from iclip.app.whole_film_exports import WholeFilmExportAdapter
+from iclip.app.whole_film_files import WholeFilmFileChecker, draft_film_at
 from iclip.common.errors import NotFound
 from iclip.config import (
     QWEN_API_KEY_ENV,
@@ -419,6 +419,7 @@ def build_app(
         return await conversations.service.readable(principal, conversation_id)
 
     conversation_repo = SqlConversationRepository(active_engine)
+    whole_film_drafts = SqlWholeFilmDraftStore(active_engine)
 
     generation_repo = AnnouncingGenerationRepository(
         SqlGenerationRepository(active_engine), live_connections
@@ -448,7 +449,10 @@ def build_app(
             if server_uploads is None:
                 raise RuntimeError("成片导出已启用却没有上传签名；注入的测试桶不支持成片导出")
             render = RenderSetup(
-                client=render_client, uploads=server_uploads, public_url=public_objects.public_url
+                client=render_client,
+                uploads=server_uploads,
+                public_url=public_objects.public_url,
+                film_at=draft_film_at(whole_film_drafts),
             )
         generation = _generation_module(
             settings.media_generation,
@@ -610,9 +614,11 @@ def build_app(
             probe=media_probe if media_probe is not None else public_fetcher.probe,
             generation=generation.service if generation is not None else None,
         ),
-        drafts=SqlWholeFilmDraftStore(active_engine),
-        draft_references=GenerationDraftReferences(
-            generations=generation_repo, conversations=conversation_repo
+        drafts=whole_film_drafts,
+        films=None
+        if render_client is None
+        else WholeFilmFileChecker(
+            render=render_client, generations=generation_repo, conversations=conversation_repo
         ),
         exports=None
         if render_client is None or generation is None

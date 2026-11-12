@@ -152,15 +152,18 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 ### 成片草稿
 
-业务规则见 [CONTEXT.md「成片草稿」](../docs/CONTEXT.md#术语)，数据结构以 OpenAPI 中的 `WholeFilmDocument` 为准：
-- **读取草稿** `GET /conversations/{id}/whole-film/draft`：如果还没保存过草稿，正常返回 `{ revision: 0, document: null, updatedAt: null }`。
-- **保存草稿** `PUT .../whole-film/draft`：仅对话创建者可保存，传入读取时的版本号 `revision`（首次保存传 `0`）；版本冲突返回 `409`，保存成功后 `revision` 加 1。
-- **草稿校验规则（违反返回 `422`）**：画面轨必须从 0 毫秒开始首尾相接、总时长不能超过 2 分钟上限、同一行（`track`）上的特效块不能时间重叠、所有片段 ID 不能重复；画面轨引用的 `sourceJobId` 必须是本对话（或分叉继承）已完成的素材片，`music.jobId` 必须是本对话已完成的音频记录，`captions.edits[].subtitleJobId` 必须是本对话（或继承）素材片的字幕记录。
+业务规则见 [CONTEXT.md「成片草稿」](../docs/CONTEXT.md#术语)。草稿是一份成片文件（HTML 字符串 `html`），写法由 [composition/film.ts](../web/src/features/storyboard/whole-film/composition/film.ts) 定义：
+- **读取草稿** `GET /conversations/{id}/whole-film/draft`：如果还没保存过草稿，正常返回 `{ revision: 0, html: null, updatedAt: null }`。
+- **保存草稿** `PUT .../whole-film/draft`：仅对话创建者可保存，传入读取时的版本号 `revision`（首次保存传 `0`）与整份 `html`；版本冲突返回 `409`，保存成功后 `revision` 加 1。存下的是渲染服务按写法重写后的那一份（`<head>`、根上的属性和变量声明都按块重新算出），所以读回来的文本可以和提交的不一样。
+- **草稿校验规则（违反返回 `422`）**：
+  - 写法由渲染服务检查：只能有写法规定的标签和属性（不能有脚本、事件属性、注释和别的标签）；块的编号不能重复、同一行（`data-track-index`）上的块不能时间重叠、每块不短于 100 毫秒、总时长不能超过 2 分钟；素材地址变量的声明要和块一一对应、默认值等于块上的地址；重写后还要通过渲染前的检查。
+  - 素材由后端检查：画面块绑的变量 `src-<记录 id>` 指向的记录必须是本对话（或分叉继承）已完成的素材片，块上的地址必须等于这条记录的产物地址。
+  - 服务器未配置渲染服务时保存返回 `422`，渲染服务连不上返回 `502`。
 
 ### 成片导出
 
 业务规则见 [CONTEXT.md「成片导出」](../docs/CONTEXT.md#术语)。以下三个接口仅限对话创建者本人调用（服务器未配置渲染服务时统一返回 `422`）：
-- **发起导出** `POST /conversations/{id}/whole-film/exports`：传入当前草稿版本号 `{ revision }`（与数据库最新草稿版本不一致返回 `409`，画面轨为空返回 `422`）。受理后创建一条 `whole_film` 生成记录排入渲染队列，返回 `202 { exportId }`。每条视频片段固定取它最新一条已完成的字幕记录。
+- **发起导出** `POST /conversations/{id}/whole-film/exports`：传入当前草稿版本号 `{ revision }`（与数据库最新草稿版本不一致返回 `409`，成片里还没有画面返回 `422`，渲染服务连不上返回 `502`）。受理后创建一条 `whole_film` 生成记录排入渲染队列，返回 `202 { exportId }`；记录里只存版本号和用到的素材，交给渲染服务时按版本号取草稿里的成片文件，草稿这时已经不是那一版就把记录记为失败（`FILM_CHANGED`）。
 - **查询最新导出进度** `GET .../whole-film/exports/latest`：返回该对话下最新一次导出的状态 `{ export: { id, status, progress, queuePosition, error, downloadUrl } }`（从未导出过则 `export` 为 `null`；`status` 取值为 `queued | rendering | uploading | done | failed | cancelled`）。
 - **取消导出** `DELETE .../whole-film/exports/{exportId}`：取消排队中或正在渲染的导出任务（返回 `204`；如果刚好卡在向渲染服务提交的那一瞬间返回 `409`；如果渲染服务连不上返回 `502`）。
 

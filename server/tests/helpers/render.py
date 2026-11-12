@@ -1,10 +1,31 @@
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+
+_REWRITTEN = "<!doctype html>"
+
+
+def film_file(*sources: tuple[uuid.UUID, str], duration_ms: int = 5000) -> str:
+    """测试里的成片文件。后端不读文件内容，只看渲染服务的检查结果；``StubRender`` 按这里写下的
+    素材和时长答复。"""
+
+    return json.dumps(
+        {
+            "sources": [{"jobId": str(job_id), "url": url} for job_id, url in sources],
+            "durationMs": duration_ms,
+        }
+    )
+
+
+def rewritten(film: str) -> str:
+    """``StubRender`` 检查后答复的那一份，对应真实渲染服务按写法重写后的文件。"""
+
+    return film if film.startswith(_REWRITTEN) else _REWRITTEN + film
 
 
 @dataclass
@@ -28,6 +49,15 @@ class StubRender:
         if self.server_error:
             return httpx.Response(500, text="boom")
         path = request.url.path
+        if request.method == "POST" and path == "/films/check":
+            film = json.loads(request.content)["film"]
+            try:
+                found = json.loads(film.removeprefix(_REWRITTEN))
+            except ValueError:
+                return httpx.Response(
+                    400, json={"code": "invalid-film", "message": "成片文件不合写法"}
+                )
+            return httpx.Response(200, json={"html": rewritten(film), **found})
         if request.method == "POST" and path == "/exports":
             payload = json.loads(request.content)
             if self.reject is not None:

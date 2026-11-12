@@ -386,7 +386,7 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
             document_validators={},
             film=UnusedFilmPage(),
             drafts=SqlWholeFilmDraftStore(engine),
-            draft_references=_untouched,
+            films=None,
             exports=None,
             generate_title=_untouched,
             announce_title=_untouched,

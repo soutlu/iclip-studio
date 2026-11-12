@@ -461,21 +461,16 @@ class WholeFilmMusicSource(CamelModel):
     url: DownloadUrl
 
 
-class WholeFilmSubtitles(CamelModel):
-    source_job_id: uuid.UUID
-    subtitle_job_id: uuid.UUID
-    sentences: tuple[SubtitleSentence, ...]
-
-
 class WholeFilmRequest(CamelModel):
+    """导出一条成片：成片草稿的哪一版、它用到的素材。成片文件本身不存在这里，交给渲染服务时
+    按 ``revision`` 从草稿里取。"""
+
     kind: ClassVar[GenerationKind] = KIND_WHOLE_FILM
     operation: ClassVar[GenerationOperation] = OPERATION_RENDER
 
     revision: int
-    document: dict[str, Any]
     videos: list[WholeFilmVideoSource]
     music: WholeFilmMusicSource | None
-    subtitles: list[WholeFilmSubtitles]
 
 
 class VideoEnhanceIn(CamelModel):
@@ -789,7 +784,6 @@ __all__ = [
     "VideoTaskStatus",
     "WholeFilmMusicSource",
     "WholeFilmRequest",
-    "WholeFilmSubtitles",
     "WholeFilmVideoSource",
     "generation_out",
     "nonblank",

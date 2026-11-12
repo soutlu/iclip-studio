@@ -5,14 +5,14 @@ from typing import Final
 
 import structlog
 
-from iclip.common.errors import NotFound, ValidationFailed
+from iclip.common.errors import NotFound
 from iclip.domains.conversations.models import (
+    CheckedWholeFilm,
     WholeFilmExport,
     WholeFilmExportError,
     WholeFilmExportStatus,
 )
 from iclip.domains.conversations.service import WholeFilmRenderUnavailable
-from iclip.domains.conversations.whole_film_schemas import WholeFilmDocument
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_FAILED,
@@ -29,19 +29,14 @@ from iclip.domains.generation.render import (
 )
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import (
-    KIND_SUBTITLE,
     KIND_WHOLE_FILM,
-    WholeFilmMusicSource,
     WholeFilmRequest,
-    WholeFilmSubtitles,
     WholeFilmVideoSource,
 )
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.public import Principal
 
 _logger = structlog.stdlib.get_logger(__name__)
-
-SUBTITLE_SCAN_LIMIT: Final = 50
 
 _NOT_THIS_EXPORT: Final = "没有这次导出"
 
@@ -64,52 +59,20 @@ class WholeFilmExportAdapter:
         *,
         conversation_id: uuid.UUID,
         revision: int,
-        document: WholeFilmDocument,
+        film: CheckedWholeFilm,
     ) -> uuid.UUID:
-        sources = document.video_sources()
-        music_id = None if document.music is None else document.music.job_id
-        wanted = (*sources, *(() if music_id is None else (music_id,)))
-        urls = await self._generations.output_urls(set(wanted))
-        for job_id in wanted:
-            if job_id not in urls:
-                raise ValidationFailed(f"记录 {job_id} 没有产物地址，导不出成片")
         request = WholeFilmRequest(
             revision=revision,
-            document=document.model_dump(mode="json", by_alias=True),
-            videos=[WholeFilmVideoSource(job_id=source, url=urls[source]) for source in sources],
-            music=None
-            if music_id is None
-            else WholeFilmMusicSource(job_id=music_id, url=urls[music_id]),
-            subtitles=await self._subtitles(sources),
+            videos=[
+                WholeFilmVideoSource(job_id=source.job_id, url=source.url)
+                for source in film.sources
+            ],
+            music=None,
         )
         job = await self._generation.submit_whole_film(
             principal, conversation_id=conversation_id, request=request
         )
         return job.id
-
-    async def _subtitles(self, sources: tuple[uuid.UUID, ...]) -> list[WholeFilmSubtitles]:
-        found: list[WholeFilmSubtitles] = []
-        for source in sources:
-            records = await self._generations.list_for_owner(
-                owner=None, limit=SUBTITLE_SCAN_LIMIT, kind=KIND_SUBTITLE, source_job_id=source
-            )
-            latest = next(
-                (
-                    record
-                    for record in records
-                    if record.status == STATUS_COMPLETED and record.output.sentences is not None
-                ),
-                None,
-            )
-            if latest is not None and latest.output.sentences is not None:
-                found.append(
-                    WholeFilmSubtitles(
-                        source_job_id=source,
-                        subtitle_job_id=latest.id,
-                        sentences=latest.output.sentences,
-                    )
-                )
-        return found
 
     async def latest(
         self, *, conversation_id: uuid.UUID, owner_user_id: uuid.UUID
@@ -185,4 +148,4 @@ def _recorded_stage(provider_status: str | None) -> RenderStage:
     return "queued"
 
 
-__all__ = ["SUBTITLE_SCAN_LIMIT", "WholeFilmExportAdapter"]
+__all__ = ["WholeFilmExportAdapter"]

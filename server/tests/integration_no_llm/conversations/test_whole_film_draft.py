@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 
 import httpx
 import pytest
@@ -12,29 +11,46 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
+from iclip.domains.conversations.whole_film_schemas import MAX_FILM_CHARS
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
-from iclip.domains.generation.models import GenerationJob, GenerationOutput
-from iclip.domains.generation.schemas import KIND_AUDIO
+from iclip.domains.generation.models import GenerationJob
 from tests.helpers.app import make_client
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.fork_lineage import complete, finished, open_conversation
-from tests.helpers.generation import (
-    make_edit,
-    make_job,
-    make_music,
-    make_subtitle,
-    make_upload,
-    video_request,
-)
-from tests.helpers.whole_film import component_clip, draft_document, overlay, video_clip
+from tests.helpers.generation import make_edit, make_job, video_request
+from tests.helpers.render import StubRender, film_file, rewritten
+from tests.helpers.whole_film import build_whole_film_app
 
 URL = "/conversations"
 
-NO_DRAFT = {"revision": 0, "document": None, "updatedAt": None}
+NO_DRAFT = {"revision": 0, "html": None, "updatedAt": None}
 
 
 def draft_url(conversation_id: uuid.UUID | str) -> str:
     return f"{URL}/{conversation_id}/whole-film/draft"
+
+
+@pytest.fixture
+def render() -> StubRender:
+    return StubRender()
+
+
+@pytest.fixture
+async def film_app(
+    base_env: None, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch, render: StubRender
+) -> FastAPI:
+    return await build_whole_film_app(monkeypatch, engine, render)
+
+
+@pytest.fixture
+async def client(film_app: FastAPI) -> AsyncGenerator[httpx.AsyncClient]:
+    async with make_client(film_app) as http:
+        yield http
+
+
+@pytest.fixture
+def generations(engine: AsyncEngine) -> SqlGenerationRepository:
+    return SqlGenerationRepository(engine)
 
 
 async def new_conversation(client: httpx.AsyncClient) -> uuid.UUID:
@@ -44,44 +60,23 @@ async def new_conversation(client: httpx.AsyncClient) -> uuid.UUID:
 
 
 async def save(
-    client: httpx.AsyncClient, conversation_id: uuid.UUID, revision: int, document: dict[str, Any]
+    client: httpx.AsyncClient, conversation_id: uuid.UUID, revision: int, html: str
 ) -> httpx.Response:
-    return await client.put(
-        draft_url(conversation_id), json={"revision": revision, "document": document}
-    )
+    return await client.put(draft_url(conversation_id), json={"revision": revision, "html": html})
 
 
-@pytest.fixture
-def generations(engine: AsyncEngine) -> SqlGenerationRepository:
-    return SqlGenerationRepository(engine)
+def film_of(*takes: GenerationJob, duration_ms: int = 5000) -> str:
+    return film_file(*((take.id, take.output.url or "") for take in takes), duration_ms=duration_ms)
 
 
-async def test_the_owner_saves_by_revision_and_reads_the_draft_back(
+async def test_the_owner_saves_by_revision_and_reads_the_rewritten_file_back(
     client: httpx.AsyncClient, pg_url: str, generations: SqlGenerationRepository
 ) -> None:
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     mine = await new_conversation(client)
     take = await finished(generations, owner, mine, "take")
-    subtitle = await generations.create(make_subtitle(take))
-    music = await generations.create(make_music(owner_user_id=owner, conversation_id=mine))
-    await generations.mark_completed(
-        music.id,
-        output=GenerationOutput(url="https://example.test/music.m4a", duration_ms=30_000),
-        provider_status="succeeded",
-    )
-    first = draft_document(
-        layer0=[
-            video_clip("a", start=0, duration=3000, source_job_id=take.id),
-            component_clip("c", start=3000, duration=2000, playback_start=500),
-            video_clip("b", start=5000, duration=2000, source_job_id=take.id),
-        ],
-        edits=[{"subtitleJobId": str(subtitle.id), "sentenceIndex": 0, "text": "改过的字"}],
-        music={"jobId": str(music.id), "offset": 0, "volume": 0.8},
-        overlays=[
-            overlay("o1", start=1000, duration=9000, track=1, z_index=1),
-            overlay("o2", start=0, duration=2000, track=0, z_index=2),
-        ],
-    )
+    another = await finished(generations, owner, mine, "another")
+    first = film_of(take, another)
 
     empty = await client.get(draft_url(mine))
     assert (empty.status_code, empty.json()) == (200, NO_DRAFT)
@@ -94,12 +89,11 @@ async def test_the_owner_saves_by_revision_and_reads_the_draft_back(
     assert read.status_code == 200, read.text
     assert read.json() == {
         "revision": 1,
-        "document": first,
+        "html": rewritten(first),
         "updatedAt": created.json()["updatedAt"],
-    }
+    }, "存下的是渲染服务重写后的那一份"
 
-    second = draft_document(source_job_id=take.id)
-    second["layer0"].pop()
+    second = film_of(take, duration_ms=3000)
     updated = await save(client, mine, 1, second)
     assert updated.status_code == 200, updated.text
     assert updated.json()["revision"] == 2
@@ -109,28 +103,34 @@ async def test_the_owner_saves_by_revision_and_reads_the_draft_back(
 
     for stale in (0, 1, 3):
         assert (await save(client, mine, stale, first)).status_code == 409
-    assert (await client.get(draft_url(mine))).json()["document"] == second
+    assert (await client.get(draft_url(mine))).json()["html"] == rewritten(second)
+
+    cleared = await save(client, mine, 2, film_of())
+    assert cleared.status_code == 200, "一个块都没有的成片也能存"
 
 
 async def test_only_the_owner_writes_while_readers_of_the_conversation_read(
-    app: FastAPI, client: httpx.AsyncClient, pg_url: str, generations: SqlGenerationRepository
+    film_app: FastAPI,
+    client: httpx.AsyncClient,
+    pg_url: str,
+    generations: SqlGenerationRepository,
 ) -> None:
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     mine = await new_conversation(client)
     take = await finished(generations, owner, mine, "take")
-    document = draft_document(source_job_id=take.id)
-    assert (await save(client, mine, 0, document)).status_code == 200
+    film = film_of(take)
+    assert (await save(client, mine, 0, film)).status_code == 200
 
-    async with make_client(app) as governor, make_client(app) as stranger:
+    async with make_client(film_app) as governor, make_client(film_app) as stranger:
         await register_and_login(governor, username="gov", email="gov@example.com")
         await set_roles_in_db(pg_url, "gov@example.com", ["root"])
         await login_as_editor(stranger, pg_url, username="mallory")
 
         read = await governor.get(draft_url(mine))
-        assert (read.status_code, read.json()["document"]) == (200, document)
-        assert (await save(governor, mine, 1, document)).status_code == 403
+        assert (read.status_code, read.json()["html"]) == (200, rewritten(film))
+        assert (await save(governor, mine, 1, film)).status_code == 403
         assert (await stranger.get(draft_url(mine))).status_code == 404
-        assert (await save(stranger, mine, 1, document)).status_code == 404
+        assert (await save(stranger, mine, 1, film)).status_code == 404
     assert (await client.get(draft_url(mine))).json()["revision"] == 1
 
 
@@ -141,28 +141,70 @@ async def test_a_deleted_conversation_keeps_its_draft_read_only(
     await set_roles_in_db(pg_url, "gov@example.com", ["root"])
     mine = await new_conversation(client)
     take = await finished(generations, owner, mine, "take")
-    document = draft_document(source_job_id=take.id)
-    assert (await save(client, mine, 0, document)).status_code == 200
+    film = film_of(take)
+    assert (await save(client, mine, 0, film)).status_code == 200
     assert (await client.delete(f"{URL}/{mine}")).status_code == 204
 
-    assert (await client.get(draft_url(mine))).json()["document"] == document
-    assert (await save(client, mine, 1, document)).status_code == 403
+    assert (await client.get(draft_url(mine))).json()["html"] == rewritten(film)
+    assert (await save(client, mine, 1, film)).status_code == 403
 
 
-async def test_an_invalid_document_is_rejected_with_its_reason(
-    client: httpx.AsyncClient, pg_url: str
+@pytest.mark.parametrize(
+    ("html", "reason"),
+    [
+        pytest.param("<html><script>alert(1)</script></html>", "成片文件不合写法", id="不合写法"),
+        pytest.param("", "html", id="空文件"),
+        pytest.param("x" * (MAX_FILM_CHARS + 1), "html", id="超过长度上限"),
+    ],
+)
+async def test_a_file_the_render_service_refuses_is_rejected_with_its_reason(
+    client: httpx.AsyncClient, pg_url: str, html: str, reason: str
 ) -> None:
     await login_as_editor(client, pg_url)
     mine = await new_conversation(client)
-    document = draft_document(
-        layer0=[video_clip("a", start=500, duration=1000, source_job_id=uuid.uuid4())]
-    )
 
-    rejected = await save(client, mine, 0, document)
+    rejected = await save(client, mine, 0, html)
 
     assert rejected.status_code == 422
-    assert rejected.json()["detail"].startswith("document")
+    assert reason in rejected.json()["detail"]
     assert (await client.get(draft_url(mine))).json() == NO_DRAFT
+
+
+async def test_a_render_outage_is_a_502_and_keeps_the_stored_draft(
+    client: httpx.AsyncClient,
+    pg_url: str,
+    generations: SqlGenerationRepository,
+    render: StubRender,
+) -> None:
+    owner = uuid.UUID(await login_as_editor(client, pg_url))
+    mine = await new_conversation(client)
+    take = await finished(generations, owner, mine, "take")
+    assert (await save(client, mine, 0, film_of(take))).status_code == 200
+
+    render.down = True
+    unreachable = await save(client, mine, 1, film_of(take, duration_ms=3000))
+
+    assert unreachable.status_code == 502, unreachable.text
+    read = (await client.get(draft_url(mine))).json()
+    assert (read["revision"], read["html"]) == (1, rewritten(film_of(take)))
+
+
+async def test_drafts_cannot_be_saved_without_a_render_service(
+    base_env: None,
+    engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+    render: StubRender,
+    pg_url: str,
+) -> None:
+    unrendered = await build_whole_film_app(monkeypatch, engine, render, render_url=None)
+    async with make_client(unrendered) as http:
+        await login_as_editor(http, pg_url)
+        mine = await new_conversation(http)
+        saved = await save(http, mine, 0, film_of())
+        read = await http.get(draft_url(mine))
+
+    assert (saved.status_code, saved.json()) == (422, {"detail": "成片没有开通"})
+    assert (read.status_code, read.json()) == (200, NO_DRAFT)
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,122 +233,46 @@ async def _scene(
     return Scene(owner, mine, other, take, inherited, generations)
 
 
-async def _completed_music(scene: Scene, conversation_id: uuid.UUID) -> uuid.UUID:
-    music = await scene.repo.create(
-        make_music(owner_user_id=scene.owner, conversation_id=conversation_id)
-    )
-    await scene.repo.mark_completed(
-        music.id,
-        output=GenerationOutput(url=f"https://example.test/{music.id}.m4a", duration_ms=30_000),
-        provider_status="succeeded",
-    )
-    return music.id
+Case = Callable[[Scene], Awaitable[str]]
 
 
-Case = Callable[[Scene], Awaitable[dict[str, Any]]]
+async def own_take(scene: Scene) -> str:
+    return film_of(scene.take)
 
 
-async def own_take(scene: Scene) -> dict[str, Any]:
-    return draft_document(source_job_id=scene.take.id)
+async def inherited_take(scene: Scene) -> str:
+    return film_of(scene.inherited)
 
 
-async def inherited_take(scene: Scene) -> dict[str, Any]:
-    return draft_document(source_job_id=scene.inherited.id)
+async def own_and_inherited_takes(scene: Scene) -> str:
+    return film_of(scene.take, scene.inherited)
 
 
-async def other_conversations_take(scene: Scene) -> dict[str, Any]:
+async def other_conversations_take(scene: Scene) -> str:
     theirs = await finished(scene.repo, scene.owner, scene.other, "elsewhere")
-    return draft_document(source_job_id=theirs.id)
+    return film_of(theirs)
 
 
-async def unknown_take(_scene: Scene) -> dict[str, Any]:
-    return draft_document(source_job_id=uuid.uuid4())
+async def unknown_take(scene: Scene) -> str:
+    return film_file((uuid.uuid4(), scene.take.output.url or ""))
 
 
-async def unfinished_take(scene: Scene) -> dict[str, Any]:
+async def unfinished_take(scene: Scene) -> str:
     pending = await scene.repo.create(
         make_job(video_request(), owner_user_id=scene.owner, conversation_id=scene.mine)
     )
-    return draft_document(source_job_id=pending.id)
+    return film_file((pending.id, "https://example.test/pending.mp4"))
 
 
-async def edit_segment(scene: Scene) -> dict[str, Any]:
+async def edit_segment(scene: Scene) -> str:
     edit = await scene.repo.create(
         make_edit(scene.take, owner_user_id=scene.owner, conversation_id=scene.mine)
     )
-    await complete(scene.repo, edit, "https://example.test/edit.mp4")
-    return draft_document(source_job_id=edit.id)
+    return film_of(await complete(scene.repo, edit, "https://example.test/edit.mp4"))
 
 
-async def generated_music(scene: Scene) -> dict[str, Any]:
-    music = await _completed_music(scene, scene.mine)
-    return draft_document(
-        source_job_id=scene.take.id, music={"jobId": str(music), "offset": 0, "volume": 1}
-    )
-
-
-async def uploaded_music(scene: Scene) -> dict[str, Any]:
-    upload = await scene.repo.create_settled(
-        [make_upload(kind=KIND_AUDIO, owner_user_id=scene.owner, conversation_id=scene.mine)]
-    )
-    return draft_document(
-        source_job_id=scene.take.id,
-        music={"jobId": str(upload[0].id), "offset": 0, "volume": 1},
-    )
-
-
-async def other_conversations_music(scene: Scene) -> dict[str, Any]:
-    music = await _completed_music(scene, scene.other)
-    return draft_document(
-        source_job_id=scene.take.id, music={"jobId": str(music), "offset": 0, "volume": 1}
-    )
-
-
-async def unfinished_music(scene: Scene) -> dict[str, Any]:
-    music = await scene.repo.create(
-        make_music(owner_user_id=scene.owner, conversation_id=scene.mine)
-    )
-    return draft_document(
-        source_job_id=scene.take.id, music={"jobId": str(music.id), "offset": 0, "volume": 1}
-    )
-
-
-async def video_as_music(scene: Scene) -> dict[str, Any]:
-    return draft_document(
-        source_job_id=scene.take.id, music={"jobId": str(scene.take.id), "offset": 0, "volume": 1}
-    )
-
-
-def _edited(scene: Scene, subtitle_id: uuid.UUID, *, source: uuid.UUID) -> dict[str, Any]:
-    return draft_document(
-        source_job_id=source,
-        edits=[{"subtitleJobId": str(subtitle_id), "sentenceIndex": 0, "text": "改过的字"}],
-    )
-
-
-async def subtitle_of_inherited_take(scene: Scene) -> dict[str, Any]:
-    subtitle = await scene.repo.create(make_subtitle(scene.inherited))
-    return _edited(scene, subtitle.id, source=scene.inherited.id)
-
-
-async def subtitle_of_a_take_off_the_track(scene: Scene) -> dict[str, Any]:
-    another = await finished(scene.repo, scene.owner, scene.mine, "another")
-    subtitle = await scene.repo.create(make_subtitle(another))
-    return _edited(scene, subtitle.id, source=scene.take.id)
-
-
-async def subtitle_of_other_conversations_take(scene: Scene) -> dict[str, Any]:
-    theirs = await finished(scene.repo, scene.owner, scene.other, "elsewhere")
-    subtitle = await scene.repo.create(make_subtitle(theirs))
-    return _edited(scene, subtitle.id, source=scene.take.id)
-
-
-async def unknown_subtitle(scene: Scene) -> dict[str, Any]:
-    return _edited(scene, uuid.uuid4(), source=scene.take.id)
-
-
-async def video_as_subtitle(scene: Scene) -> dict[str, Any]:
-    return _edited(scene, scene.take.id, source=scene.take.id)
+async def take_with_another_address(scene: Scene) -> str:
+    return film_file((scene.take.id, "https://elsewhere.test/take.mp4"))
 
 
 @pytest.mark.parametrize(
@@ -314,23 +280,15 @@ async def video_as_subtitle(scene: Scene) -> dict[str, Any]:
     [
         pytest.param(own_take, True, id="自己的出片"),
         pytest.param(inherited_take, True, id="继承来的出片"),
+        pytest.param(own_and_inherited_takes, True, id="自己的和继承来的一起用"),
         pytest.param(other_conversations_take, False, id="别的对话的出片"),
         pytest.param(unknown_take, False, id="没有这条"),
         pytest.param(unfinished_take, False, id="还没出完的出片"),
         pytest.param(edit_segment, False, id="编辑段不是素材片"),
-        pytest.param(generated_music, True, id="生成的音乐"),
-        pytest.param(uploaded_music, True, id="挂到这段对话的上传音乐"),
-        pytest.param(other_conversations_music, False, id="别的对话的音乐"),
-        pytest.param(unfinished_music, False, id="还没生成完的音乐"),
-        pytest.param(video_as_music, False, id="视频当音乐"),
-        pytest.param(subtitle_of_inherited_take, True, id="继承来的出片的字幕"),
-        pytest.param(subtitle_of_a_take_off_the_track, True, id="不在画面轨里的出片的字幕"),
-        pytest.param(subtitle_of_other_conversations_take, False, id="别的对话的出片的字幕"),
-        pytest.param(unknown_subtitle, False, id="没有这条字幕"),
-        pytest.param(video_as_subtitle, False, id="视频当字幕"),
+        pytest.param(take_with_another_address, False, id="地址不是记录上的那个"),
     ],
 )
-async def test_references_must_be_records_of_this_conversation(
+async def test_sources_must_be_takes_of_this_conversation_at_their_own_address(
     client: httpx.AsyncClient,
     pg_url: str,
     engine: AsyncEngine,
@@ -339,9 +297,9 @@ async def test_references_must_be_records_of_this_conversation(
     accepted: bool,
 ) -> None:
     scene = await _scene(client, pg_url, engine, generations)
-    document = await case(scene)
+    film = await case(scene)
 
-    saved = await save(client, scene.mine, 0, document)
+    saved = await save(client, scene.mine, 0, film)
 
     if accepted:
         assert saved.status_code == 200, saved.text

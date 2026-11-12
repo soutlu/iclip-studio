@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Final, Literal
 
@@ -71,11 +71,37 @@ class RenderExport(_CamelModel):
     error: RenderProblem | None
 
 
+class RenderFilmSource(_CamelModel):
+    job_id: uuid.UUID
+    url: str
+
+
+class RenderCheckedFilm(_CamelModel):
+    html: str
+    duration_ms: int
+    sources: tuple[RenderFilmSource, ...]
+
+
+FilmAt = Callable[[uuid.UUID, int], Awaitable[str | None]]
+"""某段对话的成片草稿在指定版本的文件；草稿已经不是这一版时是 None。"""
+
+
 class RenderClient:
     def __init__(self, base_url: str, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self._client = httpx.AsyncClient(
             base_url=base_url, timeout=REQUEST_TIMEOUT_SECONDS, transport=transport
         )
+
+    async def check(self, html: str) -> RenderCheckedFilm:
+        """查一份成片文件；不合写法抛 ``RenderRejected``。"""
+
+        response = await self._send("POST", "/films/check", json={"film": html})
+        if response.status_code == 200:
+            return _parse(RenderCheckedFilm, response)
+        if response.status_code == 400:
+            problem = _parse(RenderProblem, response)
+            raise RenderRejected(problem.code, problem.message)
+        raise _unexpected(response)
 
     async def submit(self, payload: Mapping[str, Any]) -> None:
         response = await self._send("POST", "/exports", json=payload)
@@ -134,6 +160,7 @@ class RenderSetup:
     client: RenderClient
     uploads: ServerUploadSigner
     public_url: Callable[[str], str]
+    film_at: FilmAt
 
 
 class RenderProvider:
@@ -141,6 +168,7 @@ class RenderProvider:
         self._client = setup.client
         self._uploads = setup.uploads
         self._public_url = setup.public_url
+        self._film_at = setup.film_at
         self._fetch_url = fetch_url
 
     @property
@@ -155,34 +183,24 @@ class RenderProvider:
                 code="PROVIDER_CONVERSATION_MISSING",
                 retryable=False,
             )
+        film = await self._film_at(job.conversation_id, request.revision)
+        if film is None:
+            raise ProviderError(
+                "成片在交给渲染服务之前又改过，请重新导出",
+                code="FILM_CHANGED",
+                retryable=False,
+            )
         upload = self._uploads.sign_server_upload(
             object_key=MEDIA_PATHS.whole_film(job_id=job.id),
             content_type=EXPORT_CONTENT_TYPE,
             expires_seconds=RENDER_TIMEOUT_SECONDS,
         )
+        sources = (*request.videos, *(() if request.music is None else (request.music,)))
         payload = {
             "id": str(job.id),
             "conversationId": str(job.conversation_id),
-            "document": request.document,
-            "media": {
-                "videos": {
-                    str(video.job_id): {"url": self._fetch_url(video.url)}
-                    for video in request.videos
-                },
-                "music": None
-                if request.music is None
-                else {"url": self._fetch_url(request.music.url)},
-                "subtitles": {
-                    str(found.source_job_id): {
-                        "subtitleJobId": str(found.subtitle_job_id),
-                        "sentences": [
-                            sentence.model_dump(mode="json", by_alias=True)
-                            for sentence in found.sentences
-                        ],
-                    }
-                    for found in request.subtitles
-                },
-            },
+            "film": film,
+            "media": {source.url: {"url": self._fetch_url(source.url)} for source in sources},
             "upload": {"url": upload.url, "headers": dict(upload.headers)},
         }
         try:
@@ -237,8 +255,11 @@ __all__ = [
     "RENDER_SUBMIT_CONCURRENCY",
     "RENDER_TIMEOUT_SECONDS",
     "REQUEST_TIMEOUT_SECONDS",
+    "FilmAt",
+    "RenderCheckedFilm",
     "RenderClient",
     "RenderExport",
+    "RenderFilmSource",
     "RenderProblem",
     "RenderProvider",
     "RenderRejected",

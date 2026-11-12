@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 TitleKind = Literal["default", "generated", "custom"]
 
@@ -65,10 +64,27 @@ VideoPhase = Literal["queued", "running"]
 @dataclass(frozen=True, slots=True)
 class WholeFilmDraft:
     conversation_id: uuid.UUID
-    document: Mapping[str, Any]
+    html: str
     revision: int
     updated_by: uuid.UUID
     updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class WholeFilmSource:
+    """成片文件里用到的一条素材：它出自哪条生成记录、文件里写的地址。"""
+
+    job_id: uuid.UUID
+    url: str
+
+
+@dataclass(frozen=True, slots=True)
+class CheckedWholeFilm:
+    """查过的成片文件：``html`` 是按写法重写后的那一份。"""
+
+    html: str
+    duration_ms: int
+    sources: tuple[WholeFilmSource, ...]
 
 
 WholeFilmExportStatus = Literal["queued", "rendering", "uploading", "done", "failed", "cancelled"]
@@ -94,6 +110,7 @@ __all__ = [
     "IDLE_ACTIVITY",
     "PREVIEW_TITLE",
     "AgentPreview",
+    "CheckedWholeFilm",
     "Conversation",
     "ConversationActivity",
     "PreviewHeader",
@@ -103,4 +120,5 @@ __all__ = [
     "WholeFilmExport",
     "WholeFilmExportError",
     "WholeFilmExportStatus",
+    "WholeFilmSource",
 ]

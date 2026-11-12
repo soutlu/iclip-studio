@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping
 from datetime import datetime
-from typing import Any, Final
+from typing import Final
 
 from sqlalchemy import (
     CheckConstraint,
@@ -26,7 +25,6 @@ from sqlalchemy import (
     select,
     update,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine.row import RowMapping
 from sqlalchemy.exc import IntegrityError
@@ -136,7 +134,7 @@ whole_film_drafts_table = Table(
         ForeignKey(f"{DB_SCHEMA}.conversations.id", name="fk_whole_film_drafts_conversation"),
         primary_key=True,
     ),
-    Column("document", JSONB, nullable=False),
+    Column("html", Text, nullable=False),
     Column("revision", Integer, nullable=False),
     Column(
         "updated_by",
@@ -146,7 +144,6 @@ whole_film_drafts_table = Table(
     ),
     Column("updated_at", DateTime(timezone=True), nullable=False),
     CheckConstraint("revision >= 1", name="ck_whole_film_drafts_revision"),
-    CheckConstraint("jsonb_typeof(document) = 'object'", name="ck_whole_film_drafts_document"),
 )
 
 _DRAFTS = whole_film_drafts_table.c
@@ -578,7 +575,7 @@ class SqlConversationRepository:
 def _draft(mapping: RowMapping) -> WholeFilmDraft:
     return WholeFilmDraft(
         conversation_id=mapping["conversation_id"],
-        document=mapping["document"],
+        html=mapping["html"],
         revision=mapping["revision"],
         updated_by=mapping["updated_by"],
         updated_at=mapping["updated_at"],
@@ -601,7 +598,7 @@ class SqlWholeFilmDraftStore:
         self,
         conversation_id: uuid.UUID,
         *,
-        document: Mapping[str, Any],
+        html: str,
         revision: int,
         updated_by: uuid.UUID,
     ) -> WholeFilmDraft | None:
@@ -610,7 +607,7 @@ class SqlWholeFilmDraftStore:
                 pg_insert(whole_film_drafts_table)
                 .values(
                     conversation_id=conversation_id,
-                    document=dict(document),
+                    html=html,
                     revision=1,
                     updated_by=updated_by,
                     updated_at=func.now(),
@@ -623,7 +620,7 @@ class SqlWholeFilmDraftStore:
                 update(whole_film_drafts_table)
                 .where(_DRAFTS.conversation_id == conversation_id, _DRAFTS.revision == revision)
                 .values(
-                    document=dict(document),
+                    html=html,
                     revision=_DRAFTS.revision + 1,
                     updated_by=updated_by,
                     updated_at=func.now(),

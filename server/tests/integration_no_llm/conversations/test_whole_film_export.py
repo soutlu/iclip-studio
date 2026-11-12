@@ -9,7 +9,6 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 import pytest
 from fastapi import FastAPI
-from procrastinate.testing import InMemoryConnector
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -20,7 +19,6 @@ from iclip.domains.generation.models import (
     STATUS_FAILED,
     STATUS_SUBMITTED,
     GenerationJob,
-    GenerationOutput,
 )
 from iclip.domains.generation.queue import GenerationQueue, StillRunning
 from iclip.domains.generation.render import PROVIDER_NAME
@@ -29,28 +27,16 @@ from iclip.domains.generation.schemas import (
     KIND_WHOLE_FILM,
     OPERATION_ENHANCE,
     OPERATION_RENDER,
-    SubtitleSentence,
-    SubtitleWord,
     WholeFilmRequest,
+    WholeFilmVideoSource,
 )
 from iclip.domains.generation.video import PROVIDER_NAME as VIDEO_PROVIDER_NAME
-from iclip.platform.media.codec import SOFTWARE
-from tests.helpers.agents import CONVERSABLE_SEEDS, seed_agents
 from tests.helpers.app import make_client
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.fork_lineage import complete, finished, make_user, open_conversation
-from tests.helpers.generation import (
-    MEDIA_ENVS,
-    config_with_media,
-    make_enhancement,
-    make_job,
-    make_music,
-    make_subtitle,
-)
-from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
-from tests.helpers.render import StubRender
-from tests.helpers.runtime_backed import build_backed_app, config_services_of
-from tests.helpers.whole_film import component_clip, draft_document, video_clip
+from tests.helpers.generation import make_enhancement, make_job, video_request
+from tests.helpers.render import StubRender, film_file, rewritten
+from tests.helpers.whole_film import build_whole_film_app
 
 URL = "/conversations"
 
@@ -58,47 +44,17 @@ PUBLIC = "https://cdn.example.test"
 
 INTERNAL_HOST = "iclip-test.oss-ap-southeast-1-internal.aliyuncs.com"
 
-RENDER_ENVS = {
-    **MEDIA_ENVS,
-    "OSS_INTERNAL_ENDPOINT": "https://oss-ap-southeast-1-internal.aliyuncs.com",
-}
-
 
 @pytest.fixture
 def render() -> StubRender:
     return StubRender()
 
 
-async def _app(
-    monkeypatch: pytest.MonkeyPatch,
-    engine: AsyncEngine,
-    render: StubRender,
-    *,
-    render_url: str | None,
-) -> FastAPI:
-    for name, value in RENDER_ENVS.items():
-        monkeypatch.setenv(name, value)
-    if render_url is None:
-        monkeypatch.delenv("WHOLE_FILM_RENDER_URL", raising=False)
-    else:
-        monkeypatch.setenv("WHOLE_FILM_RENDER_URL", render_url)
-    built = build_backed_app(
-        config_with_media(),
-        engine=engine,
-        queue_connector=InMemoryConnector(),
-        media_codec=SOFTWARE,
-        whole_film_render_transport=render.transport(),
-        credential_probe=KeyCheckingProbe({GOOD_KEY}),
-    )
-    await seed_agents(config_services_of(built), engine, CONVERSABLE_SEEDS)
-    return built
-
-
 @pytest.fixture
 async def export_app(
     base_env: None, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch, render: StubRender
 ) -> FastAPI:
-    return await _app(monkeypatch, engine, render, render_url="http://render:8080")
+    return await build_whole_film_app(monkeypatch, engine, render)
 
 
 @pytest.fixture
@@ -129,14 +85,17 @@ async def new_conversation(http: httpx.AsyncClient) -> uuid.UUID:
 
 
 async def save_draft(
-    http: httpx.AsyncClient, conversation_id: uuid.UUID, document: dict[str, Any], revision: int = 0
+    http: httpx.AsyncClient, conversation_id: uuid.UUID, html: str, revision: int = 0
 ) -> int:
     saved = await http.put(
-        f"{URL}/{conversation_id}/whole-film/draft",
-        json={"revision": revision, "document": document},
+        f"{URL}/{conversation_id}/whole-film/draft", json={"revision": revision, "html": html}
     )
     assert saved.status_code == 200, saved.text
     return int(saved.json()["revision"])
+
+
+def film_of(*takes: GenerationJob) -> str:
+    return film_file(*((take.id, take.output.url or "") for take in takes))
 
 
 async def latest(http: httpx.AsyncClient, conversation_id: uuid.UUID) -> dict[str, Any] | None:
@@ -150,7 +109,7 @@ async def started_export(
 ) -> tuple[uuid.UUID, str, uuid.UUID]:
     conversation = await new_conversation(http)
     take = await finished(generations, owner, conversation, f"take-{uuid.uuid4()}")
-    revision = await save_draft(http, conversation, draft_document(source_job_id=take.id))
+    revision = await save_draft(http, conversation, film_of(take))
     started = await http.post(exports_url(conversation), json={"revision": revision})
     assert started.status_code == 202, started.text
     return conversation, started.json()["exportId"], take.id
@@ -171,37 +130,7 @@ async def submitted_hours_ago(engine: AsyncEngine, job_id: uuid.UUID, hours: int
         )
 
 
-SENTENCE = SubtitleSentence(
-    start_ms=0,
-    end_ms=900,
-    text="真轻",
-    speaker=None,
-    words=(
-        SubtitleWord(start_ms=0, end_ms=400, text="真"),
-        SubtitleWord(start_ms=400, end_ms=900, text="轻", punctuation="。"),
-    ),
-)
-
-MUSIC_URL = f"{PUBLIC}/iclip/agent/generated-music/m.m4a"
-
-
-async def _transcribed(repo: SqlGenerationRepository, take: GenerationJob) -> GenerationJob:
-    subtitle = await repo.create(make_subtitle(take))
-    done = await repo.mark_transcribed(
-        subtitle.id, sentences=(SENTENCE,), provider_status="succeeded", provider_task_id="asr"
-    )
-    assert done is not None
-    return done
-
-
-async def _music(repo: SqlGenerationRepository, owner: uuid.UUID, conversation: uuid.UUID) -> str:
-    music = await repo.create(make_music(owner_user_id=owner, conversation_id=conversation))
-    await repo.mark_completed(
-        music.id,
-        output=GenerationOutput(url=MUSIC_URL, duration_ms=30_000),
-        provider_status="succeeded",
-    )
-    return str(music.id)
+OWN_BUCKET_URL = f"{PUBLIC}/iclip/agent/videos/composed.mp4"
 
 
 async def test_an_export_becomes_a_record_rendered_through_the_queue_and_kept_public(
@@ -214,19 +143,15 @@ async def test_an_export_becomes_a_record_rendered_through_the_queue_and_kept_pu
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     mine = await new_conversation(client)
     first = await finished(generations, owner, mine, "first")
-    second = await finished(generations, owner, mine, "second")
-    subtitle = await _transcribed(generations, first)
-    await generations.create(make_subtitle(first))
-    music = await _music(generations, owner, mine)
-    document = draft_document(
-        layer0=[
-            video_clip("a", start=0, duration=2000, source_job_id=second.id),
-            video_clip("b", start=2000, duration=1000, source_job_id=first.id),
-            video_clip("c", start=3000, duration=1000, source_job_id=second.id),
-        ],
-        music={"jobId": music, "offset": 0, "volume": 0.8},
+    second = await complete(
+        generations,
+        await generations.create(
+            make_job(video_request(), owner_user_id=owner, conversation_id=mine)
+        ),
+        OWN_BUCKET_URL,
     )
-    revision = await save_draft(client, mine, document)
+    film = film_of(second, first)
+    revision = await save_draft(client, mine, film)
     marked = await client.put(f"{URL}/{mine}/completion", json={"completed": True})
     assert marked.status_code == 200, marked.text
 
@@ -235,7 +160,6 @@ async def test_an_export_becomes_a_record_rendered_through_the_queue_and_kept_pu
     assert started.status_code == 202, started.text
     export_id = started.json()["exportId"]
     assert started.json() == {"exportId": export_id}
-    sources = [str(second.id), str(first.id)]
     pending = await record(generations, export_id)
     assert (pending.kind, pending.operation, pending.provider) == (
         KIND_WHOLE_FILM,
@@ -243,8 +167,14 @@ async def test_an_export_becomes_a_record_rendered_through_the_queue_and_kept_pu
         PROVIDER_NAME,
     )
     assert (pending.owner_user_id, pending.conversation_id) == (owner, mine)
-    assert isinstance(pending.request, WholeFilmRequest)
-    assert (pending.request.revision, pending.request.document) == (revision, document)
+    assert pending.request == WholeFilmRequest(
+        revision=revision,
+        videos=[
+            WholeFilmVideoSource(job_id=second.id, url=OWN_BUCKET_URL),
+            WholeFilmVideoSource(job_id=first.id, url="https://example.test/first.mp4"),
+        ],
+        music=None,
+    ), "记录里只有版本号和用到的素材，没有成片文件"
     conversation = (await client.get(f"{URL}/{mine}")).json()["conversation"]
     assert conversation["completedAt"] is not None, "导出不是动手创作，不抹收尾标记"
     assert await latest(client, mine) == {
@@ -261,25 +191,15 @@ async def test_an_export_becomes_a_record_rendered_through_the_queue_and_kept_pu
 
     (payload,) = render.submitted
     key = f"iclip/agent/whole-films/{export_id}.mp4"
-    assert (payload["id"], payload["conversationId"], payload["document"]) == (
+    assert (payload["id"], payload["conversationId"], payload["film"]) == (
         export_id,
         str(mine),
-        document,
-    )
-    assert list(payload["media"]["videos"]) == sources
-    assert payload["media"]["videos"] == {
-        str(second.id): {"url": "https://example.test/second.mp4"},
-        str(first.id): {"url": "https://example.test/first.mp4"},
-    }, "上游发布的出片地址原样"
-    assert payload["media"]["music"] == {
-        "url": f"https://{INTERNAL_HOST}/iclip/agent/generated-music/m.m4a"
-    }, "本桶对象换成内网地址"
-    assert payload["media"]["subtitles"] == {
-        str(first.id): {
-            "subtitleJobId": str(subtitle.id),
-            "sentences": [SENTENCE.model_dump(mode="json", by_alias=True)],
-        }
-    }, "没完成的字幕记录不算，没字幕的素材片不在里面"
+        rewritten(film),
+    ), "交给渲染服务的是存着的那份成片文件"
+    assert payload["media"] == {
+        OWN_BUCKET_URL: {"url": f"https://{INTERNAL_HOST}/iclip/agent/videos/composed.mp4"},
+        "https://example.test/first.mp4": {"url": "https://example.test/first.mp4"},
+    }, "文件里的地址对到下载地址：本桶对象换成内网地址，别处的原样"
     upload = urlsplit(payload["upload"]["url"])
     assert (upload.netloc, upload.path) == (INTERNAL_HOST, f"/{key}")
     expires = datetime.fromtimestamp(int(parse_qs(upload.query)["Expires"][0]), UTC)
@@ -354,7 +274,7 @@ async def test_a_refusal_or_an_outage_at_submit_fails_the_record_not_the_request
     queue: GenerationQueue,
 ) -> None:
     owner = uuid.UUID(await login_as_editor(client, pg_url))
-    render.reject = ("unknown-component", "组件 brand-intro 不在组件库里")
+    render.reject = ("media-host-not-allowed", "素材地址的主机不在允许范围")
     refused_in, refused_id, _ = await started_export(client, generations, owner)
     await queue.run_submit(refused_id)
 
@@ -362,22 +282,65 @@ async def test_a_refusal_or_an_outage_at_submit_fails_the_record_not_the_request
     assert (refused.status, refused.error_code, refused.error_message) == (
         STATUS_FAILED,
         "RENDER_REJECTED",
-        "组件 brand-intro 不在组件库里",
+        "素材地址的主机不在允许范围",
     )
     shown = await latest(client, refused_in)
     assert shown is not None
     assert shown["error"] == {
         "code": "RENDER_REJECTED",
-        "message": "组件 brand-intro 不在组件库里",
+        "message": "素材地址的主机不在允许范围",
     }
 
-    render.reject, render.down = None, True
+    render.reject = None
     _, down_id, _ = await started_export(client, generations, owner)
+    render.down = True
     await queue.run_submit(down_id)
 
     down = await record(generations, down_id)
     assert (down.status, down.error_code) == (STATUS_FAILED, "RENDER_UNAVAILABLE")
     assert render.submitted == []
+
+
+async def test_a_draft_changed_before_the_handover_fails_the_record(
+    client: httpx.AsyncClient,
+    pg_url: str,
+    generations: SqlGenerationRepository,
+    render: StubRender,
+    queue: GenerationQueue,
+) -> None:
+    owner = uuid.UUID(await login_as_editor(client, pg_url))
+    mine = await new_conversation(client)
+    take = await finished(generations, owner, mine, "take")
+    revision = await save_draft(client, mine, film_of(take))
+    started = await client.post(exports_url(mine), json={"revision": revision})
+    assert started.status_code == 202, started.text
+    export_id = started.json()["exportId"]
+
+    await save_draft(client, mine, film_file((take.id, take.output.url or "")), revision)
+    await queue.run_submit(export_id)
+
+    changed = await record(generations, export_id)
+    assert (changed.status, changed.error_code) == (STATUS_FAILED, "FILM_CHANGED")
+    assert render.submitted == [], "不拿新的一版顶替导出时的那一版"
+
+
+async def test_a_render_outage_at_export_time_is_a_502_and_leaves_no_record(
+    client: httpx.AsyncClient,
+    pg_url: str,
+    generations: SqlGenerationRepository,
+    render: StubRender,
+) -> None:
+    owner = uuid.UUID(await login_as_editor(client, pg_url))
+    mine = await new_conversation(client)
+    take = await finished(generations, owner, mine, "take")
+    revision = await save_draft(client, mine, film_of(take))
+
+    render.down = True
+    unreachable = await client.post(exports_url(mine), json={"revision": revision})
+    render.down = False
+
+    assert unreachable.status_code == 502, unreachable.text
+    assert await latest(client, mine) is None
 
 
 async def test_cancel_follows_where_the_record_is(
@@ -469,9 +432,7 @@ async def test_the_render_lane_waits_six_hours_while_other_lanes_keep_the_defaul
 
 def _whole_film(owner: uuid.UUID, conversation: uuid.UUID) -> GenerationJob:
     return make_job(
-        WholeFilmRequest(
-            revision=1, document=draft_document(), videos=[], music=None, subtitles=[]
-        ),
+        WholeFilmRequest(revision=1, videos=[], music=None),
         owner_user_id=owner,
         conversation_id=conversation,
         provider=PROVIDER_NAME,
@@ -555,12 +516,10 @@ async def test_exports_belong_to_the_owner_and_to_their_conversation(
     assert (await record(generations, export_id)).error_code is None
 
 
-async def test_only_the_saved_revision_with_something_on_layer0_is_exported(
+async def test_only_the_saved_revision_with_a_picture_in_it_is_exported(
     client: httpx.AsyncClient,
     pg_url: str,
     generations: SqlGenerationRepository,
-    render: StubRender,
-    queue: GenerationQueue,
 ) -> None:
     owner = uuid.UUID(await login_as_editor(client, pg_url))
     mine = await new_conversation(client)
@@ -570,29 +529,24 @@ async def test_only_the_saved_revision_with_something_on_layer0_is_exported(
     assert nothing.status_code == 422, nothing.text
 
     take = await finished(generations, owner, mine, "take")
-    revision = await save_draft(client, mine, draft_document(source_job_id=take.id))
+    revision = await save_draft(client, mine, film_of(take))
     for stale in (0, revision + 1):
         assert (await client.post(exports_url(mine), json={"revision": stale})).status_code == 409
 
-    revision = await save_draft(client, mine, draft_document(layer0=[]), revision)
+    revision = await save_draft(client, mine, film_of(), revision)
     empty = await client.post(exports_url(mine), json={"revision": revision})
-    assert empty.status_code == 422, empty.text
+    assert (empty.status_code, empty.json()) == (
+        422,
+        {"detail": "成片里还没有画面，导不出成片"},
+    )
     assert await latest(client, mine) is None
-
-    components_only = draft_document(layer0=[component_clip("c", start=0, duration=2000)])
-    revision = await save_draft(client, mine, components_only, revision)
-    started = await client.post(exports_url(mine), json={"revision": revision})
-    assert started.status_code == 202, started.text
-    await queue.run_submit(started.json()["exportId"])
-    (payload,) = render.submitted
-    assert (payload["document"], payload["media"]["videos"]) == (components_only, {})
 
 
 @pytest.fixture
 async def unrendered_app(
     base_env: None, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch, render: StubRender
 ) -> FastAPI:
-    return await _app(monkeypatch, engine, render, render_url=None)
+    return await build_whole_film_app(monkeypatch, engine, render, render_url=None)
 
 
 async def test_exports_are_unavailable_without_a_render_service(
