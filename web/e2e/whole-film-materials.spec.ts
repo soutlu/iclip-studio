@@ -1177,3 +1177,46 @@ test('成组挪动、成组裁剪：选中的块挪同一个时间差，挡住�
   )
   await expectNoOverlap()
 })
+
+test('拖到一半成片被换掉：这次拖动取消，松手不按换之前算好的位置写回去', async ({ page }) => {
+  const { dialog, materials } = await openWith(page, [1])
+  for (const [at, shot] of [1, 3].entries()) {
+    await shotOf(materials, 1, 'A', shot).click()
+    await page.keyboard.press('Enter')
+    await expect.poll(() => savedBlocks(page)).toHaveLength(at + 1)
+  }
+  await readyPlayer(dialog)
+  const original = await savedBlocks(page)
+  const third = dialog
+    .locator('[data-block-id]')
+    .filter({ has: page.getByRole('button', { name: /^选中：A · 镜头 3，/ }) })
+  const leftOf = async (locator: Locator) => {
+    const box = await locator.boundingBox()
+    if (box === null) throw new Error('元素尚未布局')
+    return box.x
+  }
+  /** 按住块往后拖一段，先不松手。 */
+  const hold = async () => {
+    const { x, y } = await centerOf(third)
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 200, y, { steps: 6 })
+  }
+
+  // 先把镜头 3 往后挪一段，留一步可以撤销
+  const resting = await leftOf(third)
+  await hold()
+  await page.mouse.up()
+  await expect.poll(() => savedBlocks(page)).not.toEqual(original)
+
+  // 再按住它往后拖，拖到一半成片被换回去（指针按着，撤销按钮用事件点）：块回到成片里的位置
+  await hold()
+  await dialog.getByRole('button', { name: '撤销' }).dispatchEvent('click')
+  await expect.poll(() => leftOf(third)).toBeCloseTo(resting, 0)
+  await page.mouse.up()
+
+  // 松手不写回去，也不算点了这个块
+  await expect.poll(() => savedBlocks(page)).toEqual(original)
+  expect(await leftOf(third)).toBeCloseTo(resting, 0)
+  await expect(third.getByRole('button')).toHaveAttribute('aria-pressed', 'false')
+})

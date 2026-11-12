@@ -443,6 +443,15 @@ function TimelineBlock({
   })
   useEffect(() => () => abandon(), [])
 
+  // 拖动中成片被换掉（撤销了，或者别处存了更新的一版）：松手会按换之前算好的位置写回去，
+  // 所以取消这次拖动，之后松手带来的那次点击也不算选中
+  const dropStale = useEffectEvent(() => {
+    if ((gestureRef.current?.group ?? null) === null) return
+    clickAfterDrag.swallow()
+    finish()
+  })
+  useEffect(() => dropStale(), [pictures])
+
   const nudge = (event: KeyboardEvent<HTMLElement>, edge: Edge) => {
     const step = arrowStep(event)
     if (step === undefined) return
