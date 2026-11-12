@@ -1,6 +1,7 @@
 import {
   Fragment,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useRef,
   useState,
@@ -31,15 +32,15 @@ import {
 } from '@/shared/ui/menu'
 import {
   gapClosing,
-  movedStart,
-  trimBounds,
-  trimmed,
+  groupShift,
+  groupTrimmed,
+  groupTrimRange,
   type GapClosing,
   type Timing,
 } from './block-edit'
-import { MAX_FILM_MS, type PictureBlock } from './composition/film'
+import type { PictureBlock } from './composition/film'
 import { opensOwnRow, rowHidden, rowsOf } from './placement'
-import { boxBetween, marqueeMode, marqueeSelection, type Box } from './selection'
+import { boxBetween, marqueeMode, marqueeSelection, movingWith, type Box } from './selection'
 import {
   msToPx,
   pxToMs,
@@ -87,13 +88,17 @@ type FilmTimelineProps = {
   sourceMs: (src: string) => number | undefined
   /** 换成这些选中的块（空的就是全部取消）。 */
   onSelect: (ids: ReadonlySet<string>) => void
-  /** 开始或结束框选；框选中途按 Esc 由时间线自己取消。 */
-  onFraming: (framing: boolean) => void
+  /** 开始或结束框选、拖块；中途按 Esc 由时间线自己取消。 */
+  onGesture: (active: boolean) => void
   /** 给了就把时间线横向滚到 `left`（像素）；每次给新的对象才滚。 */
   scrollRequest: { left: number } | null
-  onRetime: (id: string, timing: Timing) => void
-  /** 把块换到另一行（或新开的一行）的 `start` 处。 */
-  onMove: (id: string, row: RowTarget, start: number) => void
+  /** 改几个块各自的起止和入点（在行里挪、裁剪），一起算一步。 */
+  onRetime: (timings: ReadonlyMap<string, Timing>) => void
+  /**
+   * 把块换到另一行（或新开的一行）的 `start` 处；`starts` 是和它一起挪的块各自的新起点，
+   * 它们留在原来的行。
+   */
+  onMove: (id: string, row: RowTarget, start: number, starts: ReadonlyMap<string, number>) => void
   /** 把几个块各自挪到新的起点（合拢空档用）。 */
   onRestart: (starts: ReadonlyMap<string, number>) => void
   /** 把 `track` 这一行的块一起隐藏（`hidden` 为真）或显示回来。 */
@@ -150,18 +155,82 @@ type Gesture = {
   originY: number
   /** 按下的地方离块的开头多远（毫秒），挪的时候块跟着指针走而不是跳到指针处。 */
   grabMs: number
+  /** 一起动的块（含它自己）：开始拖的那一刻定下来，中途选中变了也不换；还没开始拖时是 null。 */
+  group: ReadonlySet<string> | null
   timing: Timing | null
   /** 挪的时候指针在哪一行上：行号，或者要新开的那一行。 */
   row: RowTarget | null
+  /** 跟着一起动的别的块各自的时间。 */
+  followers: ReadonlyMap<string, Timing>
 }
 
 /** 拖动中的块按这个画：时间、正在拖的是哪一部分、要去哪一行（裁剪时是 null）。 */
 type Preview = { timing: Timing; kind: Gesture['kind']; row: RowTarget | null }
 
+/** 成组拖动中跟着动的块按这个画：拖的是哪一部分，各自的时间。 */
+type Following = { kind: Gesture['kind']; timings: ReadonlyMap<string, Timing> }
+
+/** 一个块这一端在成片里的时间（毫秒）。 */
+const edgeAt = (block: Timing, edge: Edge) =>
+  edge === 'start' ? block.start : block.start + block.duration
+
+/** `timings` 里和成片里现在不一样的那些。 */
+const changedTimings = (
+  pictures: readonly PictureBlock[],
+  timings: ReadonlyMap<string, Timing>,
+): Map<string, Timing> =>
+  new Map(
+    [...timings].filter(([id, timing]) => {
+      const block = pictures.find((other) => other.id === id)
+      return block !== undefined && !sameTiming(timing, block)
+    }),
+  )
+
+/** 挪动的落点：被抓的块去哪一行、从哪里起，跟着走的块各自的新时间。 */
+type MovePlan = { row: RowTarget; start: number; followers: Map<string, Timing> }
+
+/**
+ * 被抓的 `block` 想从 `startMs` 起、去 `row` 这一行时，它和一起挪的块（`group`，含它自己）落在哪里。
+ * 一起挪的块挪同一个时间差，跟着走的块留在各自的行；被抓的块换不过去就留在自己那一行。
+ * 只挪一个块也走这里，它自己就是一组。
+ */
+const movePlan = (
+  pictures: readonly PictureBlock[],
+  block: PictureBlock,
+  group: ReadonlySet<string>,
+  startMs: number,
+  row: RowTarget,
+): MovePlan => {
+  const shift = groupShift(
+    block,
+    group,
+    pictures,
+    startMs - block.start,
+    typeof row === 'number' ? row : null,
+  )
+  const followers = new Map(
+    pictures
+      .filter((other) => group.has(other.id) && other.id !== block.id)
+      .map((other) => [
+        other.id,
+        {
+          start: other.start + shift.delta,
+          duration: other.duration,
+          mediaStart: other.mediaStart,
+        },
+      ]),
+  )
+  return { row: shift.track ?? row, start: block.start + shift.delta, followers }
+}
+
 type TimelineBlockProps = {
   block: PictureBlock
   pictures: readonly PictureBlock[]
   selected: boolean
+  /** 拖这个块（挪动或裁剪）时一起动的块，含它自己。 */
+  group: ReadonlySet<string>
+  /** 别的块正带着一组块拖动时，跟着动的块的样子；没有时是 null。 */
+  following: Following | null
   pps: number
   /** 时间线内容区，用它把屏幕上的横坐标换成成片的时间。 */
   contentRef: RefObject<HTMLDivElement | null>
@@ -169,36 +238,58 @@ type TimelineBlockProps = {
   rowAt: (clientY: number, between: boolean) => RowTarget | undefined
   /** 拖动中要在第几行的位置新开一行，那里先让出一行；不新开、松手后是 null。 */
   onOpening: (insertAt: number | null) => void
-  sourceMs: number | undefined
+  /** `group` 里的块一起裁 `edge` 这一端时，`block` 这一端能到的范围（成片的毫秒）。 */
+  trimRange: (
+    block: PictureBlock,
+    group: ReadonlySet<string>,
+    edge: Edge,
+  ) => { min: number; max: number }
+  /** `group` 里的块一起裁 `edge` 这一端、`block` 这一端拖到 `edgeMs` 时，各自的起止和入点。 */
+  trimTo: (
+    block: PictureBlock,
+    group: ReadonlySet<string>,
+    edge: Edge,
+    edgeMs: number,
+  ) => ReadonlyMap<string, Timing>
   peaks: PeaksState
   snap: boolean
   playheadMs: number
   /** 拖动中吸上了哪个时间点（毫秒），画一条线；没吸上或松手后是 null。 */
   onGuide: (ms: number | null) => void
+  /** 成组拖动中跟着动的块怎么画；不是成组、松手后是 null。 */
+  onFollow: (following: Following | null) => void
+  /** 开始或结束拖动。 */
+  onGesture: (active: boolean) => void
   /** 点了这个块：`toggle` 为真时是把它加进选中或移出去，否则只选它。 */
   onSelect: (id: string, toggle: boolean) => void
-  onRetime: (id: string, timing: Timing) => void
-  /** 把块换到另一行的 `start` 处。 */
-  onMove: (id: string, row: RowTarget, start: number) => void
+  onRetime: (timings: ReadonlyMap<string, Timing>) => void
+  /** 把块换到另一行的 `start` 处，`starts` 是一起挪的块各自的新起点。 */
+  onMove: (id: string, row: RowTarget, start: number, starts: ReadonlyMap<string, number>) => void
 }
 
 /**
  * 时间线上的一个块：点一下选中（带 Shift、⌘ 或 Ctrl 是加减选中），拖着挪动（在这一行里，
- * 或者拖到别的行、最下面的空行上），选中后拖两端的把手裁剪；松手才写进成片。
+ * 或者拖到别的行、最下面的空行上），选中后拖两端的把手裁剪；在不止一个块的选中里时，
+ * 选中的块一起挪、一起裁。松手才写进成片，拖动中按 Esc 什么都不写。
  */
 function TimelineBlock({
   block,
   pictures,
   selected,
+  group,
+  following,
   pps,
   contentRef,
   rowAt,
   onOpening,
-  sourceMs,
+  trimRange,
+  trimTo,
   peaks,
   snap,
   playheadMs,
   onGuide,
+  onFollow,
+  onGesture,
   onSelect,
   onRetime,
   onMove,
@@ -219,7 +310,7 @@ function TimelineBlock({
         ? ''
         : `0 ${target.getBoundingClientRect().top - own.getBoundingClientRect().top}px`
   })
-  const timing = preview?.timing ?? block
+  const timing = preview?.timing ?? following?.timings.get(block.id) ?? block
   const name = `${block.label}，${seconds(timing.duration)} 秒${block.hidden ? '，已隐藏' : ''}`
   const part = {
     mediaUrl: block.src,
@@ -244,8 +335,10 @@ function TimelineBlock({
       originX: event.clientX,
       originY: event.clientY,
       grabMs: box === undefined ? 0 : pxToMs(event.clientX - box.left, pps),
+      group: null,
       timing: null,
       row: null,
+      followers: new Map(),
     }
   }
 
@@ -262,12 +355,16 @@ function TimelineBlock({
         ? Math.hypot(event.clientX - gesture.originX, event.clientY - gesture.originY)
         : Math.abs(event.clientX - gesture.originX)
     if (gesture.timing === null && moved <= DRAG_THRESHOLD) return
+    if (gesture.group === null) onGesture(true)
+    // 开始拖的那一刻定下一起动的块
+    gesture.group ??= group
+    const members = gesture.group
     const at = timeAt(event.clientX)
     const { kind } = gesture
-    // 开着吸附时：别的块的两端和播放头是能吸上去的点
+    // 开着吸附时：没在动的块的两端和播放头是能吸上去的点（一起动的块拖动前的边不算）
     const targets = snap
       ? snapTargets(
-          pictures.filter((other) => other.id !== block.id),
+          pictures.filter((other) => !members.has(other.id)),
           playheadMs,
         )
       : null
@@ -284,62 +381,78 @@ function TimelineBlock({
         typeof aimed !== 'number' && opensOwnRow(pictures, aimed.insertAt, block.id)
           ? block.track
           : aimed
-      // 新开的一行上没有别的块，放在哪里都不会重叠
-      const start =
-        typeof row === 'number'
-          ? movedStart(block, pictures, snapped.ms, row)
-          : Math.min(snapped.ms, MAX_FILM_MS - block.duration)
-      gesture.timing = { start, duration: block.duration, mediaStart: block.mediaStart }
-      gesture.row = row
-      onOpening(typeof row === 'number' ? null : row.insertAt)
+      const plan = movePlan(pictures, block, members, snapped.ms, row)
+      gesture.timing = { start: plan.start, duration: block.duration, mediaStart: block.mediaStart }
+      gesture.row = plan.row
+      gesture.followers = plan.followers
+      onOpening(typeof plan.row === 'number' ? null : plan.row.insertAt)
       // 吸上去的位置被别的块占了、又挪开了，就不画吸附线
-      onGuide(start === snapped.ms ? snapped.guideMs : null)
+      onGuide(plan.start === snapped.ms ? snapped.guideMs : null)
     } else {
       const snapped = targets === null ? { ms: at, guideMs: null } : snapMs(at, targets, pps)
-      const next = trimmed(block, kind, snapped.ms, trimBounds(block, kind, pictures, sourceMs))
+      const timings = trimTo(block, members, kind, snapped.ms)
+      const next = timings.get(block.id) ?? block
       gesture.timing = next
-      const edgeMs = kind === 'start' ? next.start : next.start + next.duration
-      onGuide(edgeMs === snapped.ms ? snapped.guideMs : null)
+      gesture.followers = new Map([...timings].filter(([id]) => id !== block.id))
+      onGuide(edgeAt(next, kind) === snapped.ms ? snapped.guideMs : null)
     }
     setPreview({ timing: gesture.timing, kind, row: gesture.row })
+    onFollow(gesture.followers.size === 0 ? null : { kind, timings: gesture.followers })
+  }
+
+  /** 收起这次拖动的样子；拖动已经开始的才算结束一次拖动。 */
+  const finish = () => {
+    const started = (gestureRef.current?.group ?? null) !== null
+    gestureRef.current = null
+    setPreview(undefined)
+    onGuide(null)
+    onOpening(null)
+    onFollow(null)
+    if (started) onGesture(false)
   }
 
   const release = (event: PointerEvent<HTMLElement>) => {
     const gesture = gestureRef.current
     if (gesture === null || gesture.pointerId !== event.pointerId) return
     releasePointer(event)
-    gestureRef.current = null
-    setPreview(undefined)
-    onGuide(null)
-    onOpening(null)
+    finish()
     if (gesture.timing === null) return
     // 拖完松手也会来一次点击，那一次不算选中
     clickAfterDrag.swallow()
-    if (gesture.row !== null && !sameRow(gesture.row, block.track))
-      onMove(block.id, gesture.row, gesture.timing.start)
-    else if (!sameTiming(gesture.timing, block)) onRetime(block.id, gesture.timing)
+    if (gesture.row !== null && !sameRow(gesture.row, block.track)) {
+      const starts = new Map([...gesture.followers].map(([id, timing]) => [id, timing.start]))
+      onMove(block.id, gesture.row, gesture.timing.start, starts)
+      return
+    }
+    const changed = changedTimings(
+      pictures,
+      new Map([[block.id, gesture.timing], ...gesture.followers]),
+    )
+    if (changed.size > 0) onRetime(changed)
   }
 
-  const cancel = () => {
-    gestureRef.current = null
-    setPreview(undefined)
-    onGuide(null)
-    onOpening(null)
-  }
+  // 拖动中按 Esc：取消这次拖动，什么都不写；之后松手带来的那次点击也不算选中
+  useEscapeAheadOfDialog(preview !== undefined, () => {
+    clickAfterDrag.swallow()
+    finish()
+  })
+
+  // 拖着的块中途被删掉或撤销掉：它留在时间线和编辑器里的拖动状态一起收起
+  const abandon = useEffectEvent(() => {
+    if ((gestureRef.current?.group ?? null) !== null) finish()
+  })
+  useEffect(() => () => abandon(), [])
 
   const nudge = (event: KeyboardEvent<HTMLElement>, edge: Edge) => {
     const step = arrowStep(event)
     if (step === undefined) return
     event.preventDefault()
     event.stopPropagation()
-    const edgeMs = edge === 'start' ? block.start : block.start + block.duration
-    const next = trimmed(
-      block,
-      edge,
-      edgeMs + Math.round(step * 1000),
-      trimBounds(block, edge, pictures, sourceMs),
+    const changed = changedTimings(
+      pictures,
+      trimTo(block, group, edge, edgeAt(block, edge) + Math.round(step * 1000)),
     )
-    if (!sameTiming(next, block)) onRetime(block.id, next)
+    if (changed.size > 0) onRetime(changed)
   }
 
   return (
@@ -366,7 +479,7 @@ function TimelineBlock({
         onClick={(event) => {
           if (!clickAfterDrag.take()) onSelect(block.id, togglesSelection(event))
         }}
-        onPointerCancel={cancel}
+        onPointerCancel={finish}
         onPointerDown={(event) => press(event, 'move')}
         onPointerMove={drag}
         onPointerUp={release}
@@ -384,15 +497,15 @@ function TimelineBlock({
       </button>
       {selected
         ? (['start', 'end'] as const).map((edge) => {
-            const bounds = trimBounds(block, edge, pictures, sourceMs)
-            const edgeMs = edge === 'start' ? timing.start : timing.start + timing.duration
+            const bounds = trimRange(block, group, edge)
+            const edgeMs = edgeAt(timing, edge)
             return (
               <TrimHandle
                 bounds={{ min: bounds.min / 1000, max: bounds.max / 1000 }}
                 edge={edge}
                 key={edge}
                 onKeyDown={(event) => nudge(event, edge)}
-                onPointerCancel={cancel}
+                onPointerCancel={finish}
                 onPointerDown={pressEdge}
                 onPointerMove={drag}
                 onPointerUp={release}
@@ -448,7 +561,7 @@ export function FilmTimeline({
   thumbnails,
   sourceMs,
   onSelect,
-  onFraming,
+  onGesture,
   scrollRequest,
   onRetime,
   onMove,
@@ -471,6 +584,15 @@ export function FilmTimeline({
     blockOpening ?? (ghost === null || typeof ghost.row === 'number' ? null : ghost.row.insertAt)
   // 在一行的空处点右键时，两种合拢各自要挪哪些块
   const [closing, setClosing] = useState<GapClosing>()
+  // 成组拖动中跟着动的块；每个块只知道自己素材的总长，一起裁到哪里在这一层算
+  const [following, setFollowing] = useState<Following | null>(null)
+  const membersOf = (group: ReadonlySet<string>) => pictures.filter((block) => group.has(block.id))
+  const trimRange = (block: PictureBlock, group: ReadonlySet<string>, edge: Edge) => {
+    const range = groupTrimRange(membersOf(group), edge, pictures, sourceMs)
+    return { min: edgeAt(block, edge) + range.min, max: edgeAt(block, edge) + range.max }
+  }
+  const trimTo = (block: PictureBlock, group: ReadonlySet<string>, edge: Edge, edgeMs: number) =>
+    groupTrimmed(membersOf(group), edge, edgeMs - edgeAt(block, edge), pictures, sourceMs)
   const { pps, contentWidth } = scale
   const rows = rowsOf(pictures)
   // 还没有块时也留一行，素材拖得进来
@@ -635,7 +757,7 @@ export function FilmTimeline({
     if (framingRef.current === null && marquee === null) return
     framingRef.current = null
     setMarquee(null)
-    onFraming(false)
+    onGesture(false)
   }
   // 框选中途按 Esc：只取消这次框选，原来的选中不变
   useEscapeAheadOfDialog(marquee !== null, dropFraming)
@@ -666,7 +788,7 @@ export function FilmTimeline({
       const moved = Math.max(Math.abs(at.x - framing.origin.x), Math.abs(at.y - framing.origin.y))
       if (moved <= DRAG_THRESHOLD) return
       framing.started = true
-      onFraming(true)
+      onGesture(true)
     }
     setMarquee(framed(framing, event))
   }
@@ -750,7 +872,11 @@ export function FilmTimeline({
                         <TimelineBlock
                           block={block}
                           contentRef={contentRef}
+                          following={following}
+                          group={movingWith(selected, block.id)}
                           key={block.id}
+                          onFollow={setFollowing}
+                          onGesture={onGesture}
                           onGuide={setBlockGuideMs}
                           onMove={onMove}
                           onOpening={setBlockOpening}
@@ -763,7 +889,8 @@ export function FilmTimeline({
                           rowAt={rowAt}
                           selected={shownSelection.has(block.id)}
                           snap={snap}
-                          sourceMs={sourceMs(block.src)}
+                          trimRange={trimRange}
+                          trimTo={trimTo}
                         />
                       ))}
                       {dropGhost(track)}

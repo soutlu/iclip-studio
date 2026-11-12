@@ -166,22 +166,32 @@ describe('useFilmSession', () => {
     return open(stored, 10, conversation)
   }
 
-  it('改一个块的起止和入点：一步撤销，成片总长跟着变，存出的文件写着新的时间', async () => {
+  it('改几个块的起止和入点：算一步撤销，成片总长跟着变，存出的文件写着新的时间', async () => {
     const saves = recordSaves()
     const { result } = await openThree()
-    act(() => result.current.retime('c', { start: 3_400, duration: 2_000, mediaStart: 400 }))
-    expect(result.current.film?.pictures.at(-1)).toMatchObject({
-      start: 3_400,
-      duration: 2_000,
-      mediaStart: 400,
-    })
+    act(() =>
+      result.current.retime(
+        new Map([
+          ['b', { start: 2_000, duration: 600, mediaStart: 0 }],
+          ['c', { start: 3_400, duration: 2_000, mediaStart: 400 }],
+        ]),
+      ),
+    )
+    expect(spans(result)?.slice(1)).toEqual([
+      [OTHER_JOB, 2_000, 600],
+      [picture().jobId, 3_400, 2_000],
+    ])
+    expect(result.current.film?.pictures.at(-1)).toMatchObject({ mediaStart: 400 })
     expect(result.current.film?.durationMs).toBe(5_400)
     await waitFor(() => expect(saves).toHaveLength(1))
     expect(saves[0]?.html).toContain('data-start="3.4" data-duration="2" data-media-start="0.4"')
     expect(saves[0]?.html).toMatch(/id="film"[^>]*data-duration="5.4"/)
 
     act(() => result.current.undo())
-    expect(spans(result)?.at(-1)).toEqual([picture().jobId, 3_000, 1_500])
+    expect(spans(result)?.slice(1)).toEqual([
+      [OTHER_JOB, 2_000, 1_000],
+      [picture().jobId, 3_000, 1_500],
+    ])
     expect(result.current.film?.durationMs).toBe(4_500)
     expect(result.current.film?.canUndo).toBe(false)
   })
@@ -280,7 +290,9 @@ describe('useFilmSession', () => {
     )
     const added = result.current.film?.pictures.find((block) => block.track === 1)
     if (added === undefined) throw new Error('镜头没有加进去')
-    act(() => result.current.retime(added.id, { start: 500, duration: 1_000, mediaStart: 0 }))
+    act(() =>
+      result.current.retime(new Map([[added.id, { start: 500, duration: 1_000, mediaStart: 0 }]])),
+    )
     expect(layout(result)).toEqual([
       [added.id, 1, 500, 0],
       ['a', 0, 0, 0],
@@ -381,6 +393,67 @@ describe('useFilmSession', () => {
       ['a', 0, 0, 0],
       ['b', 0, 2_000, 0],
       ['c', 0, 3_000, 0],
+    ])
+    expect(result.current.film?.canUndo).toBe(false)
+  })
+
+  it('成组挪动、被抓的块搬进最上面新开的一行：跟着的块留在原来那一行（行号跟着改）只挪时间；一步撤销', async () => {
+    const saves = recordSaves()
+    const { result } = await openThree()
+    act(() =>
+      result.current.moveBlock(
+        'b',
+        { track: 0, start: 2_500 },
+        new Map([
+          ['a', 1],
+          ['c', 1],
+        ]),
+        new Map([['a', 500]]),
+      ),
+    )
+    expect(layout(result)).toEqual([
+      ['a', 1, 500, 0],
+      ['c', 1, 3_000, 0],
+      ['b', 0, 2_500, 0],
+    ])
+    await waitFor(() => expect(saves).toHaveLength(1))
+    expect(saves[0]?.html).toMatch(/id="a"[^>]*data-start="0.5"[^>]*data-track-index="1"/)
+    expect(saves[0]?.html).toMatch(/id="b"[^>]*data-start="2.5"[^>]*data-track-index="0"/)
+
+    act(() => result.current.undo())
+    expect(layout(result)).toEqual([
+      ['a', 0, 0, 0],
+      ['b', 0, 2_000, 0],
+      ['c', 0, 3_000, 0],
+    ])
+    expect(result.current.film?.canUndo).toBe(false)
+  })
+
+  it('成组挪动、被抓的块换到已有的另一行：跟着的块只挪时间；一步撤销', async () => {
+    const conversation = crypto.randomUUID()
+    const stored = putMockWholeFilmDraft(
+      conversation,
+      filmFile([
+        picture({ id: 'z', start: 1_500, duration: 1_000, track: 1 }),
+        picture({ id: 'x', duration: 1_000 }),
+        picture({ id: 'y', start: 3_000, duration: 1_000 }),
+      ]),
+    )
+    const { result } = await open(stored, 10, conversation)
+    act(() =>
+      result.current.moveBlock('z', { track: 0, start: 1_700 }, undefined, new Map([['x', 200]])),
+    )
+    expect(layout(result)).toEqual([
+      ['x', 0, 200, 0],
+      ['y', 0, 3_000, 0],
+      ['z', 0, 1_700, 0],
+    ])
+
+    act(() => result.current.undo())
+    expect(layout(result)).toEqual([
+      ['z', 1, 1_500, 0],
+      ['x', 0, 0, 0],
+      ['y', 0, 3_000, 0],
     ])
     expect(result.current.film?.canUndo).toBe(false)
   })

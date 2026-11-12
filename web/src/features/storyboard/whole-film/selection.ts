@@ -45,6 +45,10 @@ export const marqueeSelection = (
   return next
 }
 
+/** 拖 `id` 这个块（挪动或裁剪）时一起动的块，含它自己：它在不止一个块的选中里就是整个选中，不然只有它。 */
+export const movingWith = (selected: ReadonlySet<string>, id: string): ReadonlySet<string> =>
+  selected.size > 1 && selected.has(id) ? selected : new Set([id])
+
 /**
  * 播放头左边或右边的块，所有行一起：左边是起点早于播放头的，右边是结尾晚于播放头的；
  * 跨着播放头的两边都算，正好从播放头开始的不算左边、正好在播放头结束的不算右边。

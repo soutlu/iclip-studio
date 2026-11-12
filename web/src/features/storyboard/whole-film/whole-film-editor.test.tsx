@@ -483,6 +483,29 @@ describe('成片编辑器 · 多选', () => {
     expect(pressed()).toEqual([])
   })
 
+  it('选中相邻的两个块，在一个的结尾把手上按方向键：两个一起裁，往外拉按被挡住的那个收住', async () => {
+    const user = await openThree()
+    await user.click(block('B · 镜头 1'))
+    await user.keyboard('{Shift>}')
+    await user.click(block('A · 镜头 2'))
+    await user.keyboard('{/Shift}')
+    const end = within(row()).getAllByRole('slider', { name: '裁剪结尾' }).at(-1)
+    if (end === undefined) throw new Error('没有结尾把手')
+    end.focus()
+    await user.keyboard('{ArrowLeft}')
+    await waitSaved(() => {
+      expect(savedBlocks()[1]).toContain('data-start="2" data-duration="1.4"')
+      expect(savedBlocks()[2]).toContain('data-start="3.5" data-duration="1.4"')
+    })
+    // B · 镜头 1 再拉长 0.1 秒就碰到 A · 镜头 2：一起裁时把手最多到 5 秒（A · 镜头 2 自己能到 7.5 秒）
+    await waitFor(() => expect(end).toHaveAttribute('aria-valuemax', '5'))
+    await user.keyboard('{Shift>}{ArrowRight}{/Shift}')
+    await waitSaved(() => {
+      expect(savedBlocks()[1]).toContain('data-start="2" data-duration="1.5"')
+      expect(savedBlocks()[2]).toContain('data-start="3.5" data-duration="1.5"')
+    })
+  })
+
   it('工具条：选择工具的菜单有三项，点「选中播放头右边的块」选中；没选中时「缩放到选中的块」置灰并说明原因', async () => {
     const user = await openThree()
     const zoomTo = within(toolbar()).getByRole('button', { name: '缩放到选中的块' })

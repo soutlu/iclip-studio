@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aroundPlayhead, boxBetween, marqueeMode, marqueeSelection } from './selection'
+import { aroundPlayhead, boxBetween, marqueeMode, marqueeSelection, movingWith } from './selection'
 
 describe('框选', () => {
   // 两行：第一行 a、b，第二行 c；每个块 40 像素高
@@ -61,5 +61,17 @@ describe('选中播放头左边、右边的块', () => {
 
   it('右边是结尾晚于播放头的：正好在播放头结束的不算', () => {
     expect(aroundPlayhead(blocks, 2_000, 'right')).toEqual(['across', 'at-start', 'after'])
+  })
+})
+
+describe('拖一个块时谁跟着一起动', () => {
+  it('抓的块在不止一个的选中里：整个选中一起动', () => {
+    expect([...movingWith(new Set(['a', 'b']), 'b')]).toEqual(['a', 'b'])
+  })
+
+  it('抓的块不在选中里，或者只选中了它：只动它自己', () => {
+    expect([...movingWith(new Set(['a', 'b']), 'c')]).toEqual(['c'])
+    expect([...movingWith(new Set(['a']), 'a')]).toEqual(['a'])
+    expect([...movingWith(new Set(), 'a')]).toEqual(['a'])
   })
 })

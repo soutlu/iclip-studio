@@ -42,6 +42,7 @@ const STALE_NOTICE = '成片草稿已在别处改过，已换成最新的一版�
 export const FILM_LIMIT_TEXT = '成片最长 2 分钟，这段放不下了'
 
 const NO_RENUMBERING: Renumbering = new Map()
+const NO_STARTS: ReadonlyMap<string, number> = new Map()
 
 /** 成片里的画面块，按它们在文件里的先后。只读块，不存出文件，一批操作中间也能用。 */
 const picturesOf = (engine: Composition): PictureBlock[] =>
@@ -296,12 +297,14 @@ export function useFilmSession(
     [show],
   )
 
-  /** 改一个块的起止和入点。 */
+  /** 改几个块各自的起止和入点，一起算一步撤销。 */
   const retime = useCallback(
-    (id: string, timing: Timing) =>
+    (timings: ReadonlyMap<string, Timing>) =>
       edit((engine) => {
-        engine.setTiming(id, { start: timing.start / 1000, duration: timing.duration / 1000 })
-        engine.setAttribute(id, 'data-media-start', String(timing.mediaStart / 1000))
+        for (const [id, timing] of timings) {
+          engine.setTiming(id, { start: timing.start / 1000, duration: timing.duration / 1000 })
+          engine.setAttribute(id, 'data-media-start', String(timing.mediaStart / 1000))
+        }
       }),
     [edit],
   )
@@ -309,12 +312,20 @@ export function useFilmSession(
   /**
    * 把一个块换到另一行的某个时间。谁盖住谁要跟着行走（上面的行盖住下面的行），别的块又不能动，
    * 所以是把它从文件里取出来，再像新加的块那样按新位置写回去。
-   * `renumber` 是为它新开一行时别的块要换成的行号。
+   * `renumber` 是为它新开一行时别的块要换成的行号；`starts` 是和它一起挪的块各自的新起点，
+   * 它们留在原来的行。都和它算一步撤销。
    */
   const moveBlock = useCallback(
-    (id: string, at: Landing, renumber: Renumbering = NO_RENUMBERING) =>
+    (
+      id: string,
+      at: Landing,
+      renumber: Renumbering = NO_RENUMBERING,
+      starts: ReadonlyMap<string, number> = NO_STARTS,
+    ) =>
       edit((engine) => {
         for (const [other, next] of renumber) engine.setTiming(other, { trackIndex: next })
+        // 一起挪的块先挪好，它写回去的位置和叠放顺序按挪完的样子算
+        for (const [other, start] of starts) engine.setTiming(other, { start: start / 1000 })
         const pictures = picturesOf(engine)
         const block = pictures.find((other) => other.id === id)
         if (block === undefined) return

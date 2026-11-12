@@ -253,6 +253,29 @@ describe('checkFilm', () => {
       expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
     })
 
+    it('成组挪动、被抓的块搬进最上面新开的一行（别的块先改行号，跟着的块挪好起点，再把它取出来写回去）：读回来是新的行号和时间；撤销回到原样', async () => {
+      const third = picture({ id: 'clip-3', start: 5000, duration: 1000 })
+      const stored = (await checkFilm(html(picture(), second(), third), catalog)).html
+      const session = await openComposition(stored)
+      // clip-2 搬到最上面新开的一行、往后挪 0.5 秒；选中的 clip-1 跟着挪 0.5 秒，留在原来那一行
+      const moved = second({ start: 2500, track: 0 })
+      session.batch(() => {
+        session.setTiming('clip-1', { trackIndex: 1 })
+        session.setTiming('clip-3', { trackIndex: 1 })
+        session.setTiming('clip-1', { start: 0.5 })
+        session.removeElement('clip-2')
+        session.addElement('film', 2, pictureBlock(moved))
+        session.dispatch({ type: 'setCompositionMetadata', duration: 6 })
+      })
+      const checked = await checkFilm(session.serialize(), catalog)
+      expect(checked.film).toEqual(
+        film(picture({ start: 500, track: 1 }), picture({ ...third, track: 1 }), moved),
+      )
+      expect(checked.durationMs).toBe(6000)
+      session.undo()
+      expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
+    })
+
     it('隐藏一个块再显示回来（SDK 加、去隐藏标记）：隐藏时读回来带着标记，显示回来和原来一字不差', async () => {
       const stored = (await checkFilm(html(picture(), second()), catalog)).html
       const session = await openComposition(stored)
