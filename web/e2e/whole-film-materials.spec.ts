@@ -964,6 +964,15 @@ test('多选：Shift 点选两个块一起删掉再撤销回来；框选跨两�
   const end = await boxOf(blockOf(4))
   expect(Math.abs(start.x - fitted.x - 24)).toBeLessThan(1.5)
   expect(end.x + end.width).toBeLessThan(fitted.x + fitted.width - 16)
+  // 放大以后时间尺的刻度跟着变密：这一屏里至少看得见两个刻度数字
+  const shownTicks = await dialog.locator('.wf-tracks').evaluate((tracks) => {
+    const view = tracks.getBoundingClientRect()
+    return [...tracks.querySelectorAll('.timeline-tick')].filter((tick) => {
+      const { left, right } = tick.getBoundingClientRect()
+      return left >= view.left && right <= view.right
+    }).length
+  })
+  expect(shownTicks).toBeGreaterThanOrEqual(2)
 })
 
 test('成组挪动、成组裁剪：选中的块挪同一个时间差，挡住时整组停下，一起裁同一端；没选中的块只挪它自己；Esc 取消拖动', async ({

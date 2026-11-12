@@ -34,6 +34,8 @@ export type TimelineScale = {
   /** 「适应宽度」时一秒画多少像素。 */
   fitPps: number
   contentWidth: number
+  /** 时间区里一屏看得见多长的时间（秒）；时间尺按它定隔多久画一个刻度，放大以后刻度跟着变密。 */
+  viewSeconds: number
 }
 
 export const timelineScale = (
@@ -53,6 +55,8 @@ export const timelineScale = (
       contentOrigin: 0,
       pps,
     }),
+    // 还没量到宽度时先按整条算
+    viewSeconds: viewportWidth > 0 && pps > 0 ? viewportWidth / pps : seconds,
   }
 }
 

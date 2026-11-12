@@ -840,6 +840,7 @@ export function FilmTimeline({
               onScrub={() => {}}
               onSeek={(clock) => onSeek(Math.round(clock * 1000))}
               scale={contentWidth / pps}
+              tickScale={scale.viewSeconds}
               total={totalMs / 1000}
               viewportRef={scrollRef}
             />

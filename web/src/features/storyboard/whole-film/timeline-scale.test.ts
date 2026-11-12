@@ -6,6 +6,7 @@ import {
   snapMs,
   snapSpanStartMs,
   snapTargets,
+  timelineScale,
   zoomLabel,
   zoomToBlocks,
   zoomToSlider,
@@ -29,6 +30,15 @@ describe('时间线缩放', () => {
     expect(zoomLabel(FIT_ZOOM, FIT_PPS)).toBe('适应')
     expect(zoomLabel(nextZoom('in', FIT_ZOOM, FIT_PPS), FIT_PPS)).toBe('200%')
     expect(zoomLabel(nextZoom('out', FIT_ZOOM, FIT_PPS), FIT_PPS)).toBe('50%')
+  })
+
+  it('一屏看得见多长的时间：适应宽度时是整条，放大四倍就只剩四分之一；还没量到宽度时按整条算', () => {
+    const fit = timelineScale(1_000, 10_000, FIT_ZOOM)
+    expect(fit.viewSeconds).toBeCloseTo(1_000 / fit.pps)
+    const zoomed = timelineScale(1_000, 10_000, { mode: 'manual', percent: 400 })
+    expect(zoomed.viewSeconds).toBeCloseTo(fit.viewSeconds / 4)
+    const unmeasured = timelineScale(0, 10_000, FIT_ZOOM).viewSeconds
+    expect(Number.isFinite(unmeasured) && unmeasured > 0).toBe(true)
   })
 
   it('滑杆和缩放来回换算对得上；最左是最小，最右是放到最大', () => {
