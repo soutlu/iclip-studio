@@ -257,20 +257,61 @@ describe('useFilmSession', () => {
     act(() => result.current.moveBlock('a', { track: 1, start: 0 }))
     act(() => result.current.moveBlock('c', { track: 0, start: 500 }))
     expect(layout(result)).toEqual([
-      ['b', 0, 2_000, 0],
       ['a', 1, 0, 0],
+      ['b', 0, 2_000, 0],
       ['c', 0, 500, 0],
     ])
   })
 
-  it('把镜头加到下面一行、和上面那行的块重叠：写在那个块前面', async () => {
+  it('把镜头加到下面一行：写在上面那一行所有块的前面', async () => {
     const { result } = await openThree()
     await act(() =>
       result.current.addPictures(CANVAS, [piece({ duration: 1_000 })], { track: 1, start: 2_500 }),
     )
     const added = result.current.film?.pictures.find((block) => block.track === 1)
-    expect(layout(result)?.map(([id]) => id)).toEqual(['a', added?.id, 'b', 'c'])
+    expect(layout(result)?.map(([id]) => id)).toEqual([added?.id, 'a', 'b', 'c'])
     expect(added).toMatchObject({ start: 2_500, z: 0 })
+  })
+
+  it('下面一行的块先放在空处、再横着挪到上面那行的块底下：文件里仍在它前面，被它盖住', async () => {
+    const { result } = await openThree()
+    await act(() =>
+      result.current.addPictures(CANVAS, [piece({ duration: 1_000 })], { track: 1, start: 6_000 }),
+    )
+    const added = result.current.film?.pictures.find((block) => block.track === 1)
+    if (added === undefined) throw new Error('镜头没有加进去')
+    act(() => result.current.retime(added.id, { start: 500, duration: 1_000, mediaStart: 0 }))
+    expect(layout(result)).toEqual([
+      [added.id, 1, 500, 0],
+      ['a', 0, 0, 0],
+      ['b', 0, 2_000, 0],
+      ['c', 0, 3_000, 0],
+    ])
+  })
+
+  it('第 0 行没有块时，最上面那一行就是第一行：没给落点的镜头接在它末尾，波纹编辑补的也是它', async () => {
+    const conversation = crypto.randomUUID()
+    const stored = putMockWholeFilmDraft(
+      conversation,
+      filmFile([
+        picture({ id: 'low', track: 2, duration: 5_000 }),
+        picture({ id: 'a', track: 1, duration: 2_000 }),
+        picture({ id: 'b', track: 1, start: 2_000, duration: 1_000 }),
+      ]),
+    )
+    const { result } = await open(stored, 10, conversation)
+    await add(result, piece({ duration: 1_500 }))
+    const added = result.current.film?.pictures.find(
+      (block) => !['low', 'a', 'b'].includes(block.id),
+    )
+    expect(added).toMatchObject({ track: 1, start: 3_000 })
+
+    act(() => result.current.removeBlocks(['a'], true))
+    expect(layout(result)).toEqual([
+      ['low', 2, 0, 0],
+      ['b', 1, 0, 0],
+      [added?.id, 1, 1_000, 0],
+    ])
   })
 
   it('把块全删掉：成片还在，只是没有画面', async () => {

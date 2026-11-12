@@ -15,7 +15,7 @@ import {
   type Canvas,
   type PictureBlock,
 } from './composition/film'
-import type { Landing } from './placement'
+import { topTrack, type Landing } from './placement'
 import { insertionOf } from './stacking'
 import { readWholeFilmDraft, saveWholeFilmDraft } from './whole-film.api'
 
@@ -40,8 +40,6 @@ const openComposition = async (html: string): Promise<Composition> =>
 
 const STALE_NOTICE = '成片草稿已在别处改过，已换成最新的一版；刚才没保存的改动已放弃'
 export const FILM_LIMIT_TEXT = '成片最长 2 分钟，这段放不下了'
-
-const PICTURE_TRACK = 0
 
 /** 成片里的画面块，按它们在文件里的先后。只读块，不存出文件，一批操作中间也能用。 */
 const picturesOf = (engine: Composition): PictureBlock[] =>
@@ -223,7 +221,7 @@ export function useFilmSession(
       const engine = await engineFor(canvas)
       if (engine === null) return false
       const current = viewOf(engine)
-      const track = at?.track ?? PICTURE_TRACK
+      const track = at?.track ?? topTrack(current.pictures)
       const row = current.pictures.filter((block) => block.track === track)
       let end = at?.start ?? Math.max(0, ...row.map((block) => block.start + block.duration))
       const total = pictures.reduce((sum, picture) => sum + picture.duration, end)

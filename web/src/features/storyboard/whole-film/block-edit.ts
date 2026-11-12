@@ -1,6 +1,6 @@
 import type { Edge } from '../editing/timeline-drag'
 import { MAX_FILM_MS, MIN_BLOCK_MS, type PictureBlock } from './composition/film'
-import { landingOn } from './placement'
+import { landingOn, topTrack } from './placement'
 import {
   resolveAllTrackGaps,
   resolveCloseGapShifts,
@@ -9,9 +9,6 @@ import {
 
 /** 一个块在成片里的起止和它从素材的哪里开始放（毫秒）。 */
 export type Timing = Pick<PictureBlock, 'start' | 'duration' | 'mediaStart'>
-
-// 开着波纹编辑时只有这一行删了块会往前补
-const MAIN_TRACK = 0
 
 const endOf = (block: Pick<PictureBlock, 'start' | 'duration'>) => block.start + block.duration
 
@@ -118,7 +115,8 @@ export const rippleStarts = (
   pictures: readonly PictureBlock[],
   removed: ReadonlySet<string>,
 ): Map<string, number> => {
-  const main = pictures.filter((block) => block.track === MAIN_TRACK)
+  const top = topTrack(pictures)
+  const main = pictures.filter((block) => block.track === top)
   const gone = main.filter((block) => removed.has(block.id))
   const starts = new Map<string, number>()
   for (const block of main) {
