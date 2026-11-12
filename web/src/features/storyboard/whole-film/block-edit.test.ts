@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { picture } from '@/testing/whole-film'
-import { movedStart, rippleStarts, trimBounds, trimmed } from './block-edit'
+import { gapClosing, movedStart, rippleStarts, trimBounds, trimmed } from './block-edit'
 import { MAX_FILM_MS } from './composition/film'
 
 const first = picture({ id: 'a', start: 0, duration: 2_000 })
@@ -59,6 +59,31 @@ describe('在一行里挪一个块', () => {
 
   it('不超出成片最长的长度', () => {
     expect(movedStart(last, film, MAX_FILM_MS)).toBe(MAX_FILM_MS - 1_000)
+  })
+})
+
+describe('合拢空档', () => {
+  it('点在两个块之间的空档上：它后面这一行的块都往前挪这个空档的宽度', () => {
+    const closing = gapClosing(film, 0, 2_500)
+    expect([...closing.one]).toEqual([
+      ['b', 2_000],
+      ['c', 5_000],
+    ])
+    expect([...closing.all]).toEqual([
+      ['b', 2_000],
+      ['c', 4_000],
+    ])
+  })
+
+  it('点在块上，或者点在最后一个块后面：没有这一个空档可合拢', () => {
+    expect(gapClosing(film, 0, 1_000).one.size).toBe(0)
+    expect(gapClosing(film, 0, 9_000).one.size).toBe(0)
+  })
+
+  it('这一行没有空档：两种都没有可挪的；开头的空也算空档', () => {
+    const tight = [first, picture({ id: 'e', start: 2_000, duration: 1_000 })]
+    expect(gapClosing(tight, 0, 5_000).all.size).toBe(0)
+    expect([...gapClosing(film, 1, 500).one]).toEqual([['d', 0]])
   })
 })
 

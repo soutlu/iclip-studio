@@ -1,6 +1,11 @@
 import type { Edge } from '../editing/timeline-drag'
 import { MAX_FILM_MS, MIN_BLOCK_MS, type PictureBlock } from './composition/film'
 import { landingOn } from './placement'
+import {
+  resolveAllTrackGaps,
+  resolveCloseGapShifts,
+  resolveTrackGapAt,
+} from './vendor/hyperframes-studio/player/components/timelineGaps'
 
 /** 一个块在成片里的起止和它从素材的哪里开始放（毫秒）。 */
 export type Timing = Pick<PictureBlock, 'start' | 'duration' | 'mediaStart'>
@@ -69,6 +74,37 @@ export const movedStart = (
     Math.min(startMs, MAX_FILM_MS - block.duration),
     block.duration,
   ).start
+
+/** 合拢空档之后要挪的块各自的新起点（毫秒）；没有可合拢的是空表。 */
+export type GapClosing = {
+  /** 只合拢指针所在的这一个空档：它后面这一行的块都往前挪这个空档的宽度。 */
+  one: ReadonlyMap<string, number>
+  /** 合拢这一行所有的空档：块从 0 起一个接一个。 */
+  all: ReadonlyMap<string, number>
+}
+
+/** 在 `track` 这一行的 `timeMs` 处点右键时，两种合拢各自要挪哪些块。 */
+export const gapClosing = (
+  pictures: readonly PictureBlock[],
+  track: number,
+  timeMs: number,
+): GapClosing => {
+  const row = pictures
+    .filter((block) => block.track === track)
+    .map((block) => ({
+      id: block.id,
+      start: block.start / 1000,
+      duration: block.duration / 1000,
+      track,
+    }))
+  const starts = (shifts: readonly { key: string; newStart: number }[]) =>
+    new Map(shifts.map((shift) => [shift.key, Math.round(shift.newStart * 1000)]))
+  const gap = resolveTrackGapAt(row, timeMs / 1000)
+  return {
+    one: starts(gap === null ? [] : resolveCloseGapShifts(row, gap)),
+    all: starts(resolveAllTrackGaps(row)),
+  }
+}
 
 /**
  * 开着波纹编辑时删掉 `removed` 这些块之后，第一行里剩下的块各自往前挪到哪里：

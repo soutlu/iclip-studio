@@ -1506,7 +1506,6 @@
   margin-right: -8px;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--color-on-surface) 3%, transparent);
-  pointer-events: none;
 }
 
 .wf-lane.is-film {

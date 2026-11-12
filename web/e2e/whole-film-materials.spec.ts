@@ -498,3 +498,69 @@ test('时间线上的块：拖着挪动、拖把手裁剪、按 Delete 删掉，
   await expect.poll(() => savedBlocks(page)).toHaveLength(2)
   expect(await timingOf(1)).toEqual(trimmed)
 })
+
+test('吸附：拖到别的块旁边会贴上去并画出吸附线，关掉就不贴；空档上点右键可以合拢', async ({
+  page,
+}) => {
+  const { dialog, materials } = await openWith(page, [1])
+  const row = dialog.getByRole('group', { name: '第 1 行' })
+  const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
+  for (const [at, shot] of [1, 3].entries()) {
+    await shotOf(materials, 1, 'A', shot).click()
+    await page.keyboard.press('Enter')
+    await expect.poll(() => savedBlocks(page)).toHaveLength(at + 1)
+  }
+  await readyPlayer(dialog)
+  const first = row.locator('[data-block-id]').nth(0)
+  const second = row.locator('[data-block-id]').nth(1)
+  const boxOf = async (locator: Locator) => {
+    const box = await locator.boundingBox()
+    if (box === null) throw new Error('块尚未布局')
+    return box
+  }
+  const secondStart = async () => {
+    const saved = (await savedBlocks(page))[1] ?? ''
+    return Number(/，([\d.]+) 秒起，/.exec(saved)?.[1])
+  }
+  /** 拖着第二个块，让它的左边停在 `left` 这个横坐标上；`settle` 在松手前执行。 */
+  const dragSecondTo = async (left: number, settle?: () => Promise<void>) => {
+    const box = await boxOf(second)
+    const y = box.y + box.height / 2
+    await page.mouse.move(box.x + 10, y)
+    await page.mouse.down()
+    await page.mouse.move(left + 10, y, { steps: 8 })
+    await settle?.()
+    await page.mouse.up()
+  }
+  // 一秒长的块画出来比一秒的宽度少 2 像素，所以第一个块的结尾在它右边再加 2
+  const firstEnd = async () => {
+    const box = await boxOf(first)
+    return box.x + box.width + 2
+  }
+
+  await dragSecondTo((await firstEnd()) + 300)
+  await expect.poll(secondStart).toBeGreaterThan(2)
+
+  await dragSecondTo((await firstEnd()) + 5, () =>
+    expect(dialog.getByTestId('snap-guide')).toBeVisible(),
+  )
+  await expect.poll(secondStart).toBe(1)
+  await expect(dialog.getByTestId('snap-guide')).toHaveCount(0)
+
+  await toolbar.getByRole('button', { name: '吸附' }).click()
+  await dragSecondTo((await firstEnd()) + 5)
+  await expect.poll(secondStart).toBeGreaterThan(1)
+  expect(await secondStart()).toBeLessThan(1.3)
+
+  await dragSecondTo((await firstEnd()) + 300)
+  await expect.poll(secondStart).toBeGreaterThan(2)
+  const gapX = (await firstEnd()) + 150
+  const rowBox = await boxOf(row)
+  await page.mouse.click(gapX, rowBox.y + rowBox.height / 2, { button: 'right' })
+  await page.getByRole('menuitem', { name: '合拢这个空档' }).click()
+  await expect.poll(secondStart).toBe(1)
+
+  // 没有空档了：再点右键不出菜单
+  await page.mouse.click(gapX + 200, rowBox.y + rowBox.height / 2, { button: 'right' })
+  await expect(page.getByRole('menu')).toHaveCount(0)
+})

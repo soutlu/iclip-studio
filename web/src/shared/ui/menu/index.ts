@@ -1,4 +1,8 @@
 export {
+  ContextMenuItem,
+  ContextMenuRoot,
+  ContextMenuSurface,
+  ContextMenuTrigger,
   MenuBareItem,
   MenuIconRadioItem,
   MenuItem,

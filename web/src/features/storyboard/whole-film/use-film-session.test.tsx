@@ -204,6 +204,21 @@ describe('useFilmSession', () => {
     ])
   })
 
+  it('把几个块一起挪到新的起点（合拢空档）：算一步撤销，成片总长跟着变', async () => {
+    const { result } = await open(threeBlocks())
+    act(() => result.current.removeBlocks(['b'], false))
+    act(() => result.current.restart(new Map([['c', 2_000]])))
+    expect(spans(result)).toEqual([
+      [picture().jobId, 0, 2_000],
+      [picture().jobId, 2_000, 1_500],
+    ])
+    expect(result.current.film?.durationMs).toBe(3_500)
+
+    act(() => result.current.undo())
+    expect(spans(result)?.at(-1)).toEqual([picture().jobId, 3_000, 1_500])
+    expect(result.current.film?.durationMs).toBe(4_500)
+  })
+
   it('把块全删掉：成片还在，只是没有画面', async () => {
     const { result } = await open(threeBlocks())
     act(() => result.current.removeBlocks(['a', 'b', 'c'], true))

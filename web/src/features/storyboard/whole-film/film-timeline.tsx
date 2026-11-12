@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type MouseEvent,
   type PointerEvent,
   type RefObject,
 } from 'react'
@@ -19,10 +20,30 @@ import {
   type Edge,
 } from '../editing/timeline-drag'
 import { useStableValue } from '../editing/use-stable-value'
-import { movedStart, trimBounds, trimmed, type Timing } from './block-edit'
+import {
+  ContextMenuItem,
+  ContextMenuRoot,
+  ContextMenuSurface,
+  ContextMenuTrigger,
+} from '@/shared/ui/menu'
+import {
+  gapClosing,
+  movedStart,
+  trimBounds,
+  trimmed,
+  type GapClosing,
+  type Timing,
+} from './block-edit'
 import type { PictureBlock } from './composition/film'
 import { rowsOf, type Landing } from './placement'
-import { msToPx, pxToMs, type TimelineScale } from './timeline-scale'
+import {
+  msToPx,
+  pxToMs,
+  snapMs,
+  snapSpanStartMs,
+  snapTargets,
+  type TimelineScale,
+} from './timeline-scale'
 
 export type TimelinePoint = { track: number; timeMs: number }
 
@@ -31,8 +52,8 @@ export type TimelineHandle = {
   locate: (clientX: number, clientY: number) => TimelinePoint | null
 }
 
-/** 拖着的素材会落在哪里：`duration` 是它的总长（毫秒）。 */
-export type DropGhost = Landing & { duration: number }
+/** 拖着的素材会落在哪里：`duration` 是它的总长（毫秒），`guideMs` 是它吸上的时间点。 */
+export type DropGhost = Landing & { duration: number; guideMs: number | null }
 
 type FilmTimelineProps = {
   pictures: readonly PictureBlock[]
@@ -42,10 +63,14 @@ type FilmTimelineProps = {
   scale: TimelineScale
   ghost: DropGhost | null
   selectedId: string | null
+  /** 拖动和裁剪时要不要吸到别的块的两端和播放头上。 */
+  snap: boolean
   /** 素材片的总长（毫秒）；还没读到时是 undefined。 */
   sourceMs: (src: string) => number | undefined
   onSelect: (id: string | null) => void
   onRetime: (id: string, timing: Timing) => void
+  /** 把几个块各自挪到新的起点（合拢空档用）。 */
+  onRestart: (starts: ReadonlyMap<string, number>) => void
   onRemove: (id: string) => void
   onSeek: (ms: number) => void
   onViewportWidth: (width: number) => void
@@ -83,6 +108,10 @@ type TimelineBlockProps = {
   contentRef: RefObject<HTMLDivElement | null>
   sourceMs: number | undefined
   peaks: PeaksState
+  snap: boolean
+  playheadMs: number
+  /** 拖动中吸上了哪个时间点（毫秒），画一条线；没吸上或松手后是 null。 */
+  onGuide: (ms: number | null) => void
   onSelect: (id: string | null) => void
   onRetime: (id: string, timing: Timing) => void
   onRemove: (id: string) => void
@@ -97,6 +126,9 @@ function TimelineBlock({
   contentRef,
   sourceMs,
   peaks,
+  snap,
+  playheadMs,
+  onGuide,
   onSelect,
   onRetime,
   onRemove,
@@ -141,14 +173,30 @@ function TimelineBlock({
       return
     const at = timeAt(event.clientX)
     const { kind } = gesture
-    gesture.timing =
-      kind === 'move'
-        ? {
-            start: movedStart(block, pictures, Math.max(0, at - gesture.grabMs)),
-            duration: block.duration,
-            mediaStart: block.mediaStart,
-          }
-        : trimmed(block, kind, at, trimBounds(block, kind, pictures, sourceMs))
+    // 开着吸附时：别的块的两端和播放头是能吸上去的点
+    const targets = snap
+      ? snapTargets(
+          pictures.filter((other) => other.id !== block.id),
+          playheadMs,
+        )
+      : null
+    if (kind === 'move') {
+      const wanted = Math.max(0, at - gesture.grabMs)
+      const snapped =
+        targets === null
+          ? { ms: wanted, guideMs: null }
+          : snapSpanStartMs(wanted, block.duration, targets, pps)
+      const start = movedStart(block, pictures, snapped.ms)
+      gesture.timing = { start, duration: block.duration, mediaStart: block.mediaStart }
+      // 吸上去的位置被别的块占了、又挪开了，就不画吸附线
+      onGuide(start === snapped.ms ? snapped.guideMs : null)
+    } else {
+      const snapped = targets === null ? { ms: at, guideMs: null } : snapMs(at, targets, pps)
+      const next = trimmed(block, kind, snapped.ms, trimBounds(block, kind, pictures, sourceMs))
+      gesture.timing = next
+      const edgeMs = kind === 'start' ? next.start : next.start + next.duration
+      onGuide(edgeMs === snapped.ms ? snapped.guideMs : null)
+    }
     setPreview({ timing: gesture.timing, kind })
   }
 
@@ -158,6 +206,7 @@ function TimelineBlock({
     releasePointer(event)
     gestureRef.current = null
     setPreview(undefined)
+    onGuide(null)
     if (gesture.timing === null) return
     // 拖完松手也会来一次点击，那一次不算选中
     clickAfterDrag.swallow()
@@ -167,6 +216,7 @@ function TimelineBlock({
   const cancel = () => {
     gestureRef.current = null
     setPreview(undefined)
+    onGuide(null)
   }
 
   const nudge = (event: KeyboardEvent<HTMLElement>, edge: Edge) => {
@@ -263,9 +313,11 @@ export function FilmTimeline({
   scale,
   ghost,
   selectedId,
+  snap,
   sourceMs,
   onSelect,
   onRetime,
+  onRestart,
   onRemove,
   onSeek,
   onViewportWidth,
@@ -273,6 +325,11 @@ export function FilmTimeline({
 }: FilmTimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  // 拖动块时吸上的时间点；拖素材进来时吸上的点由 `ghost` 带着
+  const [blockGuideMs, setBlockGuideMs] = useState<number | null>(null)
+  const guideMs = blockGuideMs ?? ghost?.guideMs ?? null
+  // 在一行的空处点右键时，两种合拢各自要挪哪些块
+  const [closing, setClosing] = useState<GapClosing>()
   const { pps, contentWidth } = scale
   const rows = rowsOf(pictures)
   // 还没有块时也留一行，素材拖得进来
@@ -313,6 +370,18 @@ export function FilmTimeline({
     }
   })
 
+  // 点在块上，或者这一行没有可合拢的空档：不开菜单
+  const openGapMenu = (event: MouseEvent<HTMLElement>, track: number) => {
+    const onBlock =
+      event.target instanceof Element && event.target.closest('[data-block-id]') !== null
+    const next = onBlock ? undefined : gapClosing(pictures, track, timeAt(event.clientX))
+    if (next === undefined || (next.one.size === 0 && next.all.size === 0)) {
+      event.preventDefault()
+      return
+    }
+    setClosing(next)
+  }
+
   return (
     <div className="wf-tracks">
       <div className="wf-track-heads">
@@ -342,45 +411,78 @@ export function FilmTimeline({
           />
           <div className="wf-lanes">
             {shown.map(({ track, blocks }, at) => (
-              <div
-                aria-label={`第 ${at + 1} 行`}
-                className="wf-lane"
-                data-track={track}
-                key={track}
-                role="group"
-              >
-                {blocks.map((block) => (
-                  <TimelineBlock
-                    block={block}
-                    contentRef={contentRef}
-                    key={block.id}
-                    onRemove={onRemove}
-                    onRetime={onRetime}
-                    onSelect={onSelect}
-                    peaks={peaks.get(block.src) ?? { kind: 'loading' }}
-                    pictures={pictures}
-                    pps={pps}
-                    selected={selectedId === block.id}
-                    sourceMs={sourceMs(block.src)}
-                  />
-                ))}
-                {ghost?.track === track ? (
-                  <span
-                    aria-hidden="true"
-                    className="wf-drop-ghost"
-                    data-testid="drop-ghost"
-                    style={{
-                      left: msToPx(ghost.start, pps),
-                      width: Math.max(2, msToPx(ghost.duration, pps) - 2),
+              <ContextMenuRoot key={track}>
+                <ContextMenuTrigger asChild>
+                  <div
+                    aria-label={`第 ${at + 1} 行`}
+                    className="wf-lane"
+                    data-track={track}
+                    onContextMenu={(event) => openGapMenu(event, track)}
+                    role="group"
+                  >
+                    {blocks.map((block) => (
+                      <TimelineBlock
+                        block={block}
+                        contentRef={contentRef}
+                        key={block.id}
+                        onGuide={setBlockGuideMs}
+                        onRemove={onRemove}
+                        onRetime={onRetime}
+                        onSelect={onSelect}
+                        peaks={peaks.get(block.src) ?? { kind: 'loading' }}
+                        pictures={pictures}
+                        playheadMs={playheadMs}
+                        pps={pps}
+                        selected={selectedId === block.id}
+                        snap={snap}
+                        sourceMs={sourceMs(block.src)}
+                      />
+                    ))}
+                    {ghost?.track === track ? (
+                      <span
+                        aria-hidden="true"
+                        className="wf-drop-ghost"
+                        data-testid="drop-ghost"
+                        style={{
+                          left: msToPx(ghost.start, pps),
+                          width: Math.max(2, msToPx(ghost.duration, pps) - 2),
+                        }}
+                      />
+                    ) : null}
+                    {pictures.length === 0 && ghost === null ? (
+                      <span className="wf-lane-hint">把下面的镜头拖到这里</span>
+                    ) : null}
+                  </div>
+                </ContextMenuTrigger>
+                <ContextMenuSurface aria-label="空档">
+                  <ContextMenuItem
+                    disabled={closing === undefined || closing.one.size === 0}
+                    onSelect={() => {
+                      if (closing !== undefined) onRestart(closing.one)
                     }}
-                  />
-                ) : null}
-                {pictures.length === 0 && ghost === null ? (
-                  <span className="wf-lane-hint">把下面的镜头拖到这里</span>
-                ) : null}
-              </div>
+                  >
+                    合拢这个空档
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    disabled={closing === undefined || closing.all.size === 0}
+                    onSelect={() => {
+                      if (closing !== undefined) onRestart(closing.all)
+                    }}
+                  >
+                    合拢这一行的所有空档
+                  </ContextMenuItem>
+                </ContextMenuSurface>
+              </ContextMenuRoot>
             ))}
           </div>
+          {guideMs === null ? null : (
+            <span
+              aria-hidden="true"
+              className="wf-snap-guide"
+              data-testid="snap-guide"
+              style={{ left: msToPx(guideMs, pps) }}
+            />
+          )}
           <TimelinePlayhead style={{ left: msToPx(Math.min(playheadMs, totalMs), pps) }} />
         </div>
       </div>
