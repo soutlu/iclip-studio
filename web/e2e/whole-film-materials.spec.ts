@@ -152,11 +152,11 @@ test('点镜头只选中、预览停在开头不播放；素材暂停续播与�
   page,
 }) => {
   const { dialog, materials } = await openWith(page, [1])
-  const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
+  const transport = dialog.getByRole('group', { name: '播放控制' })
   const video = dialog.locator('video')
   const mediaTime = () => video.evaluate((element: HTMLVideoElement) => element.currentTime)
   const mediaPaused = () => video.evaluate((element: HTMLVideoElement) => element.paused)
-  const play = toolbar.getByRole('button', { name: '播放', exact: true })
+  const play = transport.getByRole('button', { name: '播放', exact: true })
 
   await shotOf(materials, 1, 'A', 2).click()
   await expect.poll(() => previewVideo(dialog)).toEqual({ paused: true, time: 1 })
@@ -167,7 +167,7 @@ test('点镜头只选中、预览停在开头不播放；素材暂停续播与�
   await play.click()
   expect(await mediaTime()).toBeGreaterThanOrEqual(1)
   await expect.poll(mediaTime).toBeGreaterThan(1.05)
-  const pause = toolbar.getByRole('button', { name: '暂停', exact: true })
+  const pause = transport.getByRole('button', { name: '暂停', exact: true })
   await expect(pause).not.toHaveAttribute('aria-disabled', 'true')
   await pause.click()
   await expect(video).toBeVisible()
@@ -175,11 +175,11 @@ test('点镜头只选中、预览停在开头不播放；素材暂停续播与�
   const pausedAt = await mediaTime()
   await page.waitForTimeout(250)
   expect(await mediaTime()).toBeCloseTo(pausedAt, 2)
-  await toolbar.getByRole('button', { name: '播放', exact: true }).click()
+  await transport.getByRole('button', { name: '播放', exact: true }).click()
   expect(await mediaTime()).toBeGreaterThanOrEqual(pausedAt)
   await expect.poll(mediaTime).toBeGreaterThan(pausedAt + 0.05)
   await expect.poll(() => previewVideo(dialog)).toEqual({ paused: true, time: 2 })
-  await toolbar.getByRole('button', { name: '播放', exact: true }).click()
+  await transport.getByRole('button', { name: '播放', exact: true }).click()
   await expect.poll(mediaPaused).toBe(false)
   const restarted = await mediaTime()
   expect(restarted).toBeGreaterThanOrEqual(1)
@@ -246,7 +246,7 @@ test('选区两端拖动、←/→ 微调 0.1 秒、⇧ 1 秒；调的时候预�
 
 test('选区里的播放头只在素材播放时出现：点镜头、暂停、拖抓手松手后都没有', async ({ page }) => {
   const { dialog, materials } = await openWith(page, [1])
-  const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
+  const transport = dialog.getByRole('group', { name: '播放控制' })
   const playhead = groupOf(materials, 1).getByTestId('material-playhead')
   const end = groupOf(materials, 1).getByRole('slider', { name: '裁剪结尾' })
 
@@ -258,9 +258,9 @@ test('选区里的播放头只在素材播放时出现：点镜头、暂停、�
   await page.keyboard.press('Shift+ArrowRight')
   await page.keyboard.press('Shift+ArrowRight')
   await expect(end).toHaveAttribute('aria-valuetext', '4.0 秒')
-  await toolbar.getByRole('button', { name: '播放', exact: true }).click()
+  await transport.getByRole('button', { name: '播放', exact: true }).click()
   await expect(playhead).toBeVisible()
-  await toolbar.getByRole('button', { name: '暂停', exact: true }).click()
+  await transport.getByRole('button', { name: '暂停', exact: true }).click()
   await expect(playhead).toHaveCount(0)
 
   const third = await centerOf(shotOf(materials, 1, 'A', 3))
@@ -283,6 +283,7 @@ test('Shift 选连着的几个镜头：不播放；在选区上单击只选那�
   const group = groupOf(materials, 1)
   const range = group.getByRole('group', { name: /^选中的范围/ })
   const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
+  const transport = dialog.getByRole('group', { name: '播放控制' })
   const clickAt = async (locator: Locator, shift = false) => {
     const { x, y } = await centerOf(locator)
     if (shift) await page.keyboard.down('Shift')
@@ -295,7 +296,7 @@ test('Shift 选连着的几个镜头：不播放；在选区上单击只选那�
   await shotOf(materials, 1, 'A', 4).click({ modifiers: ['Shift'] })
   await expect(range).toHaveAccessibleName(/^选中的范围 1\.0–4\.0 秒，3 个镜头/)
   await expect.poll(() => previewVideo(dialog)).toEqual({ paused: true, time: 1 })
-  await expect(toolbar.getByRole('button', { name: '播放', exact: true })).toBeVisible()
+  await expect(transport.getByRole('button', { name: '播放', exact: true })).toBeVisible()
 
   await clickAt(shotOf(materials, 1, 'A', 3))
   await expect(range).toHaveAccessibleName(/^选中的范围 2\.0–3\.0 秒，1 个镜头/)

@@ -77,6 +77,8 @@ const openEditor = async (records: GenerationJob[] = takes) => {
 }
 
 const toolbar = () => screen.getByRole('toolbar', { name: '剪辑工具' })
+const transport = () => screen.getByRole('group', { name: '播放控制' })
+const progress = () => within(transport()).getByRole('slider', { name: '播放进度' })
 const materials = () => screen.getByRole('region', { name: '视频素材区' })
 const shot = (name: RegExp) => within(materials()).findByRole('button', { name })
 
@@ -94,16 +96,19 @@ const twoPictures = () =>
   )
 
 describe('成片编辑器 · 加入素材', () => {
-  it('还没有成片：播放、导出、加入成片置灰并说明原因，打开不保存', async () => {
+  it('还没有成片：播放、进度条、导出、加入成片置灰并说明原因，打开不保存', async () => {
     const user = userEvent.setup()
     await openEditor()
     expect(screen.getByText('成片里还没有画面；加入素材片后可以在这里预览')).toBeVisible()
-    for (const name of ['播放', '加入成片']) {
-      expect(within(toolbar()).getByRole('button', { name })).toHaveAttribute(
-        'aria-disabled',
-        'true',
-      )
-    }
+    expect(within(transport()).getByRole('button', { name: '播放' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(progress()).toHaveAttribute('data-disabled')
+    expect(within(toolbar()).getByRole('button', { name: '加入成片' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
     const exportButton = screen.getByRole('button', { name: '导出' })
     expect(exportButton).toHaveAttribute('aria-disabled', 'true')
     await user.click(exportButton)
@@ -127,7 +132,7 @@ describe('成片编辑器 · 加入素材', () => {
     expect(block).toContain(`data-var-src="src-${TAKE_A}"`)
     expect(block).toContain('data-start="0" data-duration="2.5" data-media-start="2"')
     expect(block).toContain('data-label="A · 镜头 2"')
-    expect(within(toolbar()).getByText('/ 00:02.50')).toBeVisible()
+    expect(within(transport()).getByText('/ 00:02.50')).toBeVisible()
   })
 
   it('再选别的镜头按 Enter：接在末尾；选几个镜头一次加入时一个镜头一块', async () => {
@@ -210,12 +215,33 @@ describe('成片编辑器 · 播放', () => {
   it('打开存着的成片：显示总时长，可以播放', async () => {
     putMockWholeFilmDraft(CONVERSATION, twoPictures())
     await openEditor()
-    expect(within(toolbar()).getByText('/ 00:03.50')).toBeVisible()
-    expect(within(toolbar()).getByRole('button', { name: '播放' })).not.toHaveAttribute(
+    expect(within(transport()).getByText('/ 00:03.50')).toBeVisible()
+    expect(within(transport()).getByRole('button', { name: '播放' })).not.toHaveAttribute(
       'aria-disabled',
     )
     await new Promise((resolve) => setTimeout(resolve, 100))
     expect(mockWholeFilmDraft(CONVERSATION)?.revision).toBe(1)
+  })
+
+  it('在进度条上按方向键跳到别的位置；加素材、撤销之后停在原处', async () => {
+    putMockWholeFilmDraft(CONVERSATION, twoPictures())
+    const user = userEvent.setup()
+    await openEditor()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 500)))
+
+    progress().focus()
+    await user.keyboard('{ArrowRight}{ArrowRight}{Shift>}{ArrowRight}{/Shift}')
+    expect(within(transport()).getByText('00:01.20')).toBeVisible()
+    expect(progress()).toHaveAttribute('aria-valuetext', '00:01.20 / 00:03.50')
+
+    await user.click(await shot(/^生成 B 镜头 1，/))
+    await user.click(within(toolbar()).getByRole('button', { name: '加入成片' }))
+    await waitSaved(() => expect(savedBlocks()).toHaveLength(3))
+    expect(within(transport()).getByText('00:01.20')).toBeVisible()
+    await user.click(within(toolbar()).getByRole('button', { name: '撤销' }))
+    await waitSaved(() => expect(savedBlocks()).toHaveLength(2))
+    expect(within(transport()).getByText('00:01.20')).toBeVisible()
+    expect(within(transport()).getByText('/ 00:03.50')).toBeVisible()
   })
 
   it('当前片段数据不够时舞台转圈，播放按钮是「暂停」', async () => {
@@ -225,9 +251,9 @@ describe('成片编辑器 · 播放', () => {
     await openEditor()
     await act(() => new Promise((resolve) => setTimeout(resolve, 500)))
 
-    await user.click(within(toolbar()).getByRole('button', { name: '播放' }))
+    await user.click(within(transport()).getByRole('button', { name: '播放' }))
     expect(screen.getByRole('status', { name: '正在缓冲' })).toBeVisible()
-    expect(within(toolbar()).getByRole('button', { name: '暂停' })).toBeVisible()
+    expect(within(transport()).getByRole('button', { name: '暂停' })).toBeVisible()
   })
 })
 

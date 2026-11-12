@@ -539,6 +539,83 @@
   pointer-events: none;
 }
 
+/* ---- 播放条：贴在预览底部，成片和素材两种预览共用 ---- */
+
+.wf-preview > .editor-hero-wrap,
+.wf-material-preview > .editor-hero-wrap {
+  bottom: 60px;
+}
+
+.wf-transport {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-self: end;
+  grid-area: preview;
+  padding: 0 14px 6px;
+}
+
+.wf-seek {
+  position: relative;
+  display: flex;
+  height: 16px;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+.wf-seek[data-disabled] {
+  cursor: default;
+}
+
+.wf-seek-track {
+  position: relative;
+  height: 3px;
+  flex: 1;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-on-surface) 12%, transparent);
+}
+
+.wf-seek-buffered {
+  position: absolute;
+  height: 100%;
+  background: color-mix(in srgb, var(--color-on-surface) 22%, transparent);
+}
+
+.wf-seek-range {
+  position: absolute;
+  height: 100%;
+  background: var(--color-on-surface);
+}
+
+.wf-seek-thumb {
+  --state-focus-offset: 2px;
+
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface);
+}
+
+.wf-seek[data-disabled] .wf-seek-thumb {
+  display: none;
+}
+
+.wf-transport-row {
+  display: grid;
+  align-items: center;
+  grid-template-columns: 1fr auto 1fr;
+}
+
+.wf-transport-row > .wf-clock {
+  padding-left: 4px;
+  justify-self: start;
+}
+
 .wf-preview-note {
   position: relative;
   max-width: 320px;
@@ -1972,7 +2049,7 @@
 
 @media (max-width: 640px) {
   .wf-workspace {
-    grid-template-rows: 200px auto;
+    grid-template-rows: 248px auto;
     padding: 0 12px 12px;
   }
 
