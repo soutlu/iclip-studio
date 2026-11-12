@@ -12,6 +12,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { errorMessageOf } from '@/shared/api/client'
 import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
+import type { TimeSpan } from '@/shared/lib/time-spans'
 import { DialogHeader, DialogRoot, DialogSurface } from '@/shared/ui/dialog'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MediaBuffering } from '@/shared/ui/media-buffering'
@@ -45,6 +46,7 @@ import {
 } from './materials'
 import { previewDocument } from './preview-document'
 import { PreviewPlayer, type PreviewControl } from './preview-player'
+import { PreviewTransport } from './preview-transport'
 import { useFilmSession } from './use-film-session'
 import { useWholeFilmExport } from './use-whole-film-export'
 import { useWholeFilmDraftQuery } from './whole-film.api'
@@ -183,6 +185,7 @@ function EditorBody({
   const [playheadMs, setPlayheadMs] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [buffering, setBuffering] = useState(false)
+  const [buffered, setBuffered] = useState<readonly TimeSpan[]>([])
   const previewRef = useRef<PreviewControl | null>(null)
   const [range, setRange] = useState<MaterialRange | null>(null)
 
@@ -326,6 +329,7 @@ function EditorBody({
           controlRef={previewRef}
           height={film?.canvas.height ?? 1920}
           message={playBlocked}
+          onBuffered={setBuffered}
           onBuffering={setBuffering}
           onPlaying={setPlaying}
           onTime={setPlayheadMs}
@@ -346,13 +350,21 @@ function EditorBody({
             view={materialView}
           />
         )}
+        <PreviewTransport
+          buffered={buffered}
+          onPlay={togglePlay}
+          onSeek={seek}
+          playBlocked={materialView === null ? playBlocked : undefined}
+          playheadMs={playhead}
+          playing={materialView === null ? playing : materialPlaying}
+          totalMs={total}
+        />
         <div className="wf-timeline">
           <EditorToolbar
             canRedo={history.canRedo}
             canUndo={history.canUndo}
             insertBlocked={range === null ? PICK_FIRST_TEXT : undefined}
             onInsert={insert}
-            onPlay={togglePlay}
             onRedo={() => {
               leaveMaterial()
               session.redo()
@@ -361,10 +373,6 @@ function EditorBody({
               leaveMaterial()
               session.undo()
             }}
-            playBlocked={materialView === null ? playBlocked : undefined}
-            playheadMs={playhead}
-            playing={materialView === null ? playing : materialPlaying}
-            totalMs={total}
           />
           {session.save.kind === 'failed' ? (
             <InlineAlert

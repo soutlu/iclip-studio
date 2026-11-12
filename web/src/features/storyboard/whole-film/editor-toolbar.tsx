@@ -2,7 +2,6 @@ import { useState, type ReactNode } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
-import { timeLabel } from '../editing/time-label'
 
 type ToolProps = {
   icon: IconName
@@ -15,7 +14,7 @@ type ToolProps = {
   className?: string
 }
 
-function Tool({
+export function Tool({
   icon,
   label,
   tip,
@@ -57,14 +56,9 @@ function Tool({
   )
 }
 
-const Keys = ({ children }: { children: string }) => <kbd className="wf-kbd">{children}</kbd>
+export const Keys = ({ children }: { children: string }) => <kbd className="wf-kbd">{children}</kbd>
 
 type EditorToolbarProps = {
-  playheadMs: number
-  totalMs: number
-  playBlocked: string | undefined
-  playing: boolean
-  onPlay: () => void
   canUndo: boolean
   canRedo: boolean
   onUndo: () => void
@@ -74,11 +68,6 @@ type EditorToolbarProps = {
 }
 
 export function EditorToolbar({
-  playheadMs,
-  totalMs,
-  playBlocked,
-  playing,
-  onPlay,
   canUndo,
   canRedo,
   onUndo,
@@ -86,28 +75,9 @@ export function EditorToolbar({
   insertBlocked,
   onInsert,
 }: EditorToolbarProps) {
-  const playLabel = playing ? '暂停' : '播放'
   return (
     <div aria-label="剪辑工具" className="wf-toolbar" role="toolbar">
       <div className="wf-toolbar-group">
-        <Tool
-          blocked={playBlocked}
-          className="wf-play"
-          icon={playing ? 'pause' : 'play'}
-          label={playLabel}
-          onClick={onPlay}
-          shortcuts="Space"
-          tip={
-            <>
-              {playLabel}
-              <Keys>空格</Keys>
-            </>
-          }
-        />
-        <span className="wf-clock">
-          {timeLabel(playheadMs / 1000)} <span>/ {timeLabel(totalMs / 1000)}</span>
-        </span>
-        <span aria-hidden="true" className="wf-divider" />
         <Tool
           blocked={canUndo ? undefined : '没有可撤销的操作'}
           icon="undo"

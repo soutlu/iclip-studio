@@ -36,6 +36,7 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   const panel = await openConversation(page, '夜景延时素材生成')
   const dialog = await openWholeFilm(page, panel)
   const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
+  const transport = dialog.getByRole('group', { name: '播放控制' })
   await expect(dialog.getByText('成片里还没有画面；加入素材片后可以在这里预览')).toBeVisible()
   await expect(dialog.getByRole('button', { name: '导出', exact: true })).toHaveAttribute(
     'aria-disabled',
@@ -59,17 +60,20 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   await page.keyboard.press('Enter')
   await second
   await readyPlayer(dialog)
-  const total = await toolbar.locator('.wf-clock span').innerText()
+  const total = await transport.locator('.wf-clock span').innerText()
   expect(total).not.toBe('/ 00:00.00')
 
-  await toolbar.getByRole('button', { name: '播放' }).click()
-  await expect(toolbar.getByRole('button', { name: '暂停' })).toBeVisible()
-  await expect
-    .poll(() =>
-      player.evaluate((element: HTMLElement & { currentTime: number }) => element.currentTime),
-    )
-    .toBeGreaterThan(0)
-  await toolbar.getByRole('button', { name: '暂停' }).click()
+  const playerTime = () =>
+    player.evaluate((element: HTMLElement & { currentTime: number }) => element.currentTime)
+  await transport.getByRole('button', { name: '播放' }).click()
+  await expect(transport.getByRole('button', { name: '暂停' })).toBeVisible()
+  await expect.poll(playerTime).toBeGreaterThan(0.2)
+  await transport.getByRole('button', { name: '暂停' }).click()
+
+  await transport.getByRole('slider', { name: '播放进度' }).focus()
+  await page.keyboard.press('Home')
+  await expect(transport.locator('.wf-clock')).toContainText('00:00.00 /')
+  await expect.poll(playerTime).toBeLessThan(0.1)
 
   const undone = draftSaved(page, 1)
   await toolbar.getByRole('button', { name: '撤销' }).click()
@@ -105,7 +109,9 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   const reopened = await openWholeFilm(page, panel)
   await expect(reopened.getByRole('button', { name: '下载成片' })).toBeVisible()
   const reopenedToolbar = reopened.getByRole('toolbar', { name: '剪辑工具' })
-  await expect(reopenedToolbar.locator('.wf-clock span')).toHaveText(total)
+  await expect(
+    reopened.getByRole('group', { name: '播放控制' }).locator('.wf-clock span'),
+  ).toHaveText(total)
   await expect(reopenedToolbar.getByRole('button', { name: '撤销' })).toHaveAttribute(
     'aria-disabled',
     'true',
