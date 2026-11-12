@@ -95,6 +95,10 @@ const ROW_REACH_PX = 3
 // 时间区左右留的空（whole-film.css 里 .wf-track-content 的 margin：左 8、右 16），不算进能排时间的宽度
 const INSET_PX = 24
 
+const lanesIn = (content: HTMLElement | null) => [
+  ...(content?.querySelectorAll<HTMLElement>('[data-track]') ?? []),
+]
+
 const sameTiming = (left: Timing, right: Timing) =>
   left.start === right.start &&
   left.duration === right.duration &&
@@ -122,6 +126,8 @@ type TimelineBlockProps = {
   pps: number
   /** 时间线内容区，用它把屏幕上的横坐标换成成片的时间。 */
   contentRef: RefObject<HTMLDivElement | null>
+  /** 指针在哪一行上（只算轨道区里露出来的部分）；不在任何一行上时是 undefined。 */
+  laneAt: (clientY: number) => HTMLElement | undefined
   sourceMs: number | undefined
   peaks: PeaksState
   snap: boolean
@@ -145,6 +151,7 @@ function TimelineBlock({
   selected,
   pps,
   contentRef,
+  laneAt,
   sourceMs,
   peaks,
   snap,
@@ -216,13 +223,10 @@ function TimelineBlock({
           ? { ms: wanted, guideMs: null }
           : snapSpanStartMs(wanted, block.duration, targets, pps)
       // 指针在哪一行上，块就去哪一行；不在任何一行上就留在原来的行
-      const lanes = [...(contentRef.current?.querySelectorAll<HTMLElement>('[data-track]') ?? [])]
-      const own = lanes.find((lane) => lane.dataset['track'] === String(block.track))
-      const hit =
-        lanes.find((lane) => {
-          const { top, bottom } = lane.getBoundingClientRect()
-          return event.clientY >= top - ROW_REACH_PX && event.clientY <= bottom + ROW_REACH_PX
-        }) ?? own
+      const own = lanesIn(contentRef.current).find(
+        (lane) => lane.dataset['track'] === String(block.track),
+      )
+      const hit = laneAt(event.clientY) ?? own
       const row: RowTarget =
         hit === undefined || hit === own
           ? block.track
@@ -409,7 +413,9 @@ export function FilmTimeline({
   handleRef,
 }: FilmTimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const headsRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  const rulerBarRef = useRef<HTMLDivElement>(null)
   // 拖动块时吸上的时间点；拖素材进来时吸上的点由 `ghost` 带着
   const [blockGuideMs, setBlockGuideMs] = useState<number | null>(null)
   const guideMs = blockGuideMs ?? ghost?.guideMs ?? null
@@ -423,29 +429,44 @@ export function FilmTimeline({
 
   useLayoutEffect(() => {
     const viewport = scrollRef.current
-    if (viewport === null) return
-    const report = () => onViewportWidth(Math.max(0, viewport.clientWidth - INSET_PX))
+    const heads = headsRef.current
+    if (viewport === null || heads === null) return
+    // 行头那一列和时间区在同一个滚动容器里，排时间的宽度要把它去掉
+    const report = () =>
+      onViewportWidth(Math.max(0, viewport.clientWidth - heads.offsetWidth - INSET_PX))
     report()
     const observer = new ResizeObserver(report)
     observer.observe(viewport)
+    observer.observe(heads)
     return () => observer.disconnect()
   }, [onViewportWidth])
 
   const timeAt = (clientX: number) =>
     pxToMs(clientX - (contentRef.current?.getBoundingClientRect().left ?? 0), pps)
 
+  // 只认轨道区里露出来的行：滚到时间尺底下、滚出轨道区的行，指针看不见也落不上去
+  const laneAt = (clientY: number) => {
+    const viewport = scrollRef.current
+    const rulerBar = rulerBarRef.current
+    if (viewport === null || rulerBar === null) return undefined
+    const bottom = viewport.getBoundingClientRect().top + viewport.clientTop + viewport.clientHeight
+    if (clientY < rulerBar.getBoundingClientRect().bottom || clientY > bottom) return undefined
+    return lanesIn(contentRef.current).find((lane) => {
+      const { top, bottom } = lane.getBoundingClientRect()
+      return clientY >= top - ROW_REACH_PX && clientY <= bottom + ROW_REACH_PX
+    })
+  }
+
   useEffect(() => {
     handleRef.current = {
       locate: (clientX, clientY) => {
-        const viewport = scrollRef.current?.getBoundingClientRect()
-        if (viewport === undefined || clientX < viewport.left || clientX > viewport.right)
-          return null
-        const lane = [
-          ...(contentRef.current?.querySelectorAll<HTMLElement>('[data-track]') ?? []),
-        ].find((element) => {
-          const { top, bottom } = element.getBoundingClientRect()
-          return clientY >= top - ROW_REACH_PX && clientY <= bottom + ROW_REACH_PX
-        })
+        const viewport = scrollRef.current
+        const heads = headsRef.current
+        if (viewport === null || heads === null) return null
+        const right =
+          viewport.getBoundingClientRect().left + viewport.clientLeft + viewport.clientWidth
+        if (clientX < heads.getBoundingClientRect().right || clientX > right) return null
+        const lane = laneAt(clientY)
         if (lane === undefined) return null
         const track = lane.dataset['track']
         return {
@@ -472,39 +493,43 @@ export function FilmTimeline({
   }
 
   return (
-    <div className={cn('wf-tracks', !thumbnails && 'is-plain')}>
-      <div className="wf-track-heads">
-        {shown.map(({ track, blocks }, at) => (
-          <span className="wf-track-head" key={track}>
-            <span className="wf-head-name">{blocks[0]?.label}</span>
-            {blocks.length > 1 ? (
-              <span aria-label={`${blocks.length} 个块`} className="wf-head-count">
-                {blocks.length}
-              </span>
-            ) : null}
-            {blocks.length > 0 ? (
-              <RowEye
-                hidden={rowHidden(pictures, track)}
-                onHide={(hidden) => onHide(track, hidden)}
-                row={at + 1}
-              />
-            ) : null}
-          </span>
-        ))}
-      </div>
-      <div className="wf-track-scroll" ref={scrollRef}>
+    <div className={cn('wf-tracks', !thumbnails && 'is-plain')} ref={scrollRef}>
+      <div className="wf-track-inner">
+        <div className="wf-track-heads" ref={headsRef}>
+          <span aria-hidden="true" className="wf-track-corner" />
+          {shown.map(({ track, blocks }, at) => (
+            <span className="wf-track-head" key={track}>
+              <span className="wf-head-name">{blocks[0]?.label}</span>
+              {blocks.length > 1 ? (
+                <span aria-label={`${blocks.length} 个块`} className="wf-head-count">
+                  {blocks.length}
+                </span>
+              ) : null}
+              {blocks.length > 0 ? (
+                <RowEye
+                  hidden={rowHidden(pictures, track)}
+                  onHide={(hidden) => onHide(track, hidden)}
+                  row={at + 1}
+                />
+              ) : null}
+            </span>
+          ))}
+        </div>
         <div className="wf-track-content" ref={contentRef} style={{ width: contentWidth }}>
-          <TimelineRuler
-            buffered={buffered}
-            clockAt={(clientX) => timeAt(clientX) / 1000}
-            currentTime={playheadMs / 1000}
-            disabled={totalMs <= 0}
-            onScrub={() => {}}
-            onSeek={(clock) => onSeek(Math.round(clock * 1000))}
-            scale={contentWidth / pps}
-            total={totalMs / 1000}
-            viewportRef={scrollRef}
-          />
+          <div className="wf-track-top" ref={rulerBarRef}>
+            <TimelineRuler
+              buffered={buffered}
+              clockAt={(clientX) => timeAt(clientX) / 1000}
+              currentTime={playheadMs / 1000}
+              disabled={totalMs <= 0}
+              onScrub={() => {}}
+              onSeek={(clock) => onSeek(Math.round(clock * 1000))}
+              scale={contentWidth / pps}
+              total={totalMs / 1000}
+              viewportRef={scrollRef}
+            />
+            <TimelinePlayhead style={{ left: msToPx(Math.min(playheadMs, totalMs), pps) }} />
+          </div>
           <div className="wf-lanes">
             {shown.map(({ track, blocks }, at) => (
               <ContextMenuRoot key={track}>
@@ -521,6 +546,7 @@ export function FilmTimeline({
                         block={block}
                         contentRef={contentRef}
                         key={block.id}
+                        laneAt={laneAt}
                         onGuide={setBlockGuideMs}
                         onMove={onMove}
                         onRemove={onRemove}
@@ -597,7 +623,6 @@ export function FilmTimeline({
               style={{ left: msToPx(guideMs, pps) }}
             />
           )}
-          <TimelinePlayhead style={{ left: msToPx(Math.min(playheadMs, totalMs), pps) }} />
         </div>
       </div>
     </div>

@@ -30,7 +30,8 @@
     'preview'
     'timeline';
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(220px, 1fr) auto;
+  /* 时间线面板按内容高，最多占到预览留够最小高度之后剩下的地方 */
+  grid-template-rows: minmax(220px, 1fr) minmax(0, max-content);
   gap: 12px;
   padding: 0 24px 16px;
   overflow-y: auto;
@@ -986,12 +987,22 @@
 .wf-timeline {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex-direction: column;
   gap: 4px;
   grid-area: timeline;
   padding: 8px 12px 10px;
   border-radius: var(--radius-xl);
   background: var(--color-surface-container-low);
+}
+
+/* 面板放不下时只压缩轨道区，工具条、提示和素材区保持原高 */
+.wf-timeline > * {
+  flex: none;
+}
+
+.wf-timeline > .wf-tracks {
+  flex: 0 1 auto;
 }
 
 .wf-toolbar {
@@ -1224,19 +1235,54 @@
   --timeline-playhead-bottom: 0;
   /* 每一行同高，不随里面放的是什么变 */
   --wf-film-height: 46px;
+  --wf-head-width: 152px;
 
-  display: grid;
-  grid-template-columns: 152px minmax(0, 1fr);
+  /* 行头和各行在同一个滚动容器里，上下一起滚 */
+  overflow: auto;
+  /* 聚焦的块不停在吸住的时间尺和行头底下 */
+  scroll-padding: var(--timeline-ruler-height) 0 0 var(--wf-head-width);
+  scrollbar-width: thin;
   user-select: none;
 }
 
-/* 行头与各行同高：刻度尺 18px 加 4px 之后是第一行 */
+/* 放不下所有行时，至少露出时间尺、第一行和最下面那条空行 */
+.wf-tracks:has(.wf-lane.is-new) {
+  min-height: calc(var(--timeline-ruler-height) + 4px + var(--wf-film-height) + 6px + 28px + 2px);
+}
+
+/* 和内容一样宽：吸在左边的行头一直横向滚到底都不会被带走 */
+.wf-track-inner {
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  isolation: isolate;
+}
+
+/* 行头那一列吸在左边，横向滚动时块从它底下过去 */
 .wf-track-heads {
-  display: grid;
-  align-content: start;
-  grid-auto-rows: var(--wf-film-height);
-  row-gap: 6px;
-  padding-top: calc(var(--timeline-ruler-height) + 4px);
+  position: sticky;
+  left: 0;
+  z-index: var(--z-local-1);
+  display: flex;
+  width: var(--wf-head-width);
+  flex: none;
+  flex-direction: column;
+  background: var(--color-surface-container-low);
+}
+
+/* 左上角吸在顶上，盖住往上滚的行头；与各行之间同样隔 4px */
+.wf-track-corner {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-local-1);
+  height: var(--timeline-ruler-height);
+  flex: none;
+  margin-bottom: 4px;
+  background: var(--color-surface-container-low);
+}
+
+.wf-track-head + .wf-track-head {
+  margin-top: 6px;
 }
 
 /* 行头显示这一行第一个块的名字，不止一个块时后面跟块数 */
@@ -1284,6 +1330,8 @@
 .wf-track-head {
   display: flex;
   min-width: 0;
+  height: var(--wf-film-height);
+  flex: none;
   align-items: center;
   gap: 6px;
   padding: 0 6px 0 4px;
@@ -1359,21 +1407,30 @@
   color: var(--color-on-surface);
 }
 
-.wf-track-scroll {
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-
-/* 时间区左留 8px，播放头的头完整露出；右留 16px。与 film-tracks.tsx 的 INSET_START_PX、INSET_END_PX 一致 */
+/* 时间区左留 8px，播放头的头完整露出；右留 16px。与 film-timeline.tsx 的 INSET_PX 一致 */
 .wf-track-content {
   position: relative;
+  flex: none;
   margin: 0 16px 0 8px;
   padding-bottom: 2px;
+  /* 播放头和悬停线从时间尺往下伸得比内容长（见 .wf-track-top），到内容底边裁掉，不撑出滚动 */
+  overflow-y: clip;
+  isolation: isolate;
 }
 
-.wf-track-content > .timeline-ruler {
-  position: relative;
+/* 时间尺吸在顶上，各行从它底下滚过去。播放头和悬停线跟时间尺放在一起：头留在顶上，线往下伸过露出来的各行 */
+.wf-track-top {
+  --timeline-playhead-bottom: -100vh;
+
+  position: sticky;
+  top: 0;
+  z-index: var(--z-local-3);
+  height: var(--timeline-ruler-height);
+  background: var(--color-surface-container-low);
+  /* 各行往右多伸 8px、块开头的把手往左伸出时间区，滚上来时两边留的空也要盖住 */
+  box-shadow:
+    -8px 0 0 var(--color-surface-container-low),
+    8px 0 0 var(--color-surface-container-low);
 }
 
 /* 拍点刻度：刻度尺下方每拍一根，透明度随拍点强度连续变化 */
@@ -1542,11 +1599,13 @@
   font-size: var(--text-label);
 }
 
+/* 块的叠放只在各行里比，拖起来的块也压不过吸在顶上的时间尺和播放头 */
 .wf-lanes {
   display: grid;
   grid-auto-rows: auto;
   row-gap: 6px;
   margin-top: 4px;
+  isolation: isolate;
 }
 
 /* 最下面那条空行：把块或镜头拖进来就新开一行；比放着块的行矮 */
@@ -2164,13 +2223,14 @@
 }
 
 @media (max-width: 640px) {
+  /* 窄屏预览定高，时间线面板占满下面剩下的地方 */
   .wf-workspace {
-    grid-template-rows: 248px auto;
+    grid-template-rows: 248px minmax(0, 1fr);
     padding: 0 12px 12px;
   }
 
   .wf-tracks {
-    grid-template-columns: 72px minmax(0, 1fr);
+    --wf-head-width: 72px;
   }
 
   /* 窄屏工具条折行，缩放钮另起一行，推子后面的分隔线不留在行尾 */
