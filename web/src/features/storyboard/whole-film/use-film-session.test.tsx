@@ -139,6 +139,23 @@ describe('useFilmSession', () => {
     await settled(result)
   })
 
+  it('还没有成片时连着加两次：只建一份成片，两次加的都在', async () => {
+    const saves = recordSaves()
+    const { result } = await open()
+    await act(async () => {
+      await Promise.all([
+        result.current.addPictures(CANVAS, [piece()]),
+        result.current.addPictures(CANVAS, [piece({ mediaStart: 3_000 })]),
+      ])
+    })
+    expect(spans(result)).toEqual([
+      [picture().jobId, 0, 2_000],
+      [picture().jobId, 2_000, 2_000],
+    ])
+    await waitFor(() => expect(saves.at(-1)?.html.match(/<video /g)).toHaveLength(2))
+    await settled(result)
+  })
+
   it('同一时刻只有一次保存在途，回来后再存最新的一版', async () => {
     const saves = recordSaves(80)
     const { result } = await open()

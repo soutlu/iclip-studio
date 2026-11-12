@@ -91,6 +91,53 @@ describe('checkFilm', () => {
     expect(moved.durationMs).toBe(5500)
   })
 
+  describe('编辑器加素材、撤销、重做后存出来的文件', () => {
+    type Session = Awaited<ReturnType<typeof openComposition>>
+
+    /** 和编辑器加素材时发的操作一样：没声明过的素材先声明变量，再加块、改总时长。 */
+    const add = (session: Session, block: PictureBlock, index: number) => {
+      const declared = session.listVariables().map((variable) => variable.id)
+      const variable = sourceVariable(block.jobId, block.src)
+      session.batch(() => {
+        if (!declared.includes(variable.id)) session.declareVariable(variable)
+        session.addElement('film', index, pictureBlock(block))
+        session.dispatch({
+          type: 'setCompositionMetadata',
+          duration: (block.start + block.duration) / 1000,
+        })
+      })
+    }
+
+    it('从空成片加第一条素材再撤销：回到没有块的成片；重做后素材回来', async () => {
+      const session = await openComposition(html())
+      add(session, picture(), 0)
+      session.undo()
+      expect((await checkFilm(session.serialize(), catalog)).film.blocks).toEqual([])
+      session.redo()
+      expect((await checkFilm(session.serialize(), catalog)).film).toEqual(film(picture()))
+    })
+
+    it('打开存着的成片，加一条新素材再撤销：和存着的一样；重做后两条都在', async () => {
+      const stored = (await checkFilm(html(picture()), catalog)).html
+      const session = await openComposition(stored)
+      add(session, second(), 1)
+      session.undo()
+      expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
+      session.redo()
+      expect((await checkFilm(session.serialize(), catalog)).film).toEqual(
+        film(picture(), second()),
+      )
+    })
+
+    it('同一条素材加两次再撤销一次：变量还在，剩下的那一块照样通过', async () => {
+      const session = await openComposition(html())
+      add(session, picture(), 0)
+      add(session, picture({ id: 'clip-2', start: 2000, mediaStart: 3000 }), 1)
+      session.undo()
+      expect((await checkFilm(session.serialize(), catalog)).film).toEqual(film(picture()))
+    })
+  })
+
   it('合写法却过不了渲染前的检查（组件库里没有用到的字体）：拒收，原因只进排障信息', async () => {
     const fontless = { ...catalog, cjk: { ...catalog.cjk, slices: [] } }
     const problem = await checkFilm(html(picture()), fontless).catch((error: unknown) => error)

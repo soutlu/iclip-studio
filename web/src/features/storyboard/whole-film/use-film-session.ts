@@ -77,6 +77,7 @@ export function useFilmSession(
   const [opening, setOpening] = useState(initial.html !== null)
   const [save, setSave] = useState<SaveState>({ kind: 'idle' })
   const engineRef = useRef<Composition | null>(null)
+  const creatingRef = useRef<Promise<Composition | null> | null>(null)
   const revisionRef = useRef(initial.revision)
   const savedRef = useRef<string | null>(null)
   const presentRef = useRef<string | null>(null)
@@ -185,11 +186,24 @@ export function useFilmSession(
 
   useEffect(() => () => engineRef.current?.dispose(), [])
 
+  /** 还没有成片时按 `canvas` 建一份；连着加两次素材也只建一份，后一次等前一次建好。 */
+  const engineFor = useCallback(
+    async (canvas: Canvas): Promise<Composition | null> => {
+      if (engineRef.current !== null) return engineRef.current
+      creatingRef.current ??= adopt(writeFilm({ canvas, blocks: [] }, catalog), false).finally(
+        () => {
+          creatingRef.current = null
+        },
+      )
+      return creatingRef.current
+    },
+    [adopt, catalog],
+  )
+
   /** 把几段素材接在画面那一行的末尾；还没有成片时先按 `canvas` 建一份。放不下时不动成片。 */
   const addPictures = useCallback(
     async (canvas: Canvas, pictures: readonly NewPicture[]): Promise<boolean> => {
-      const engine =
-        engineRef.current ?? (await adopt(writeFilm({ canvas, blocks: [] }, catalog), false))
+      const engine = await engineFor(canvas)
       if (engine === null) return false
       const current = viewOf(engine)
       const row = current.pictures.filter((block) => block.track === PICTURE_TRACK)
@@ -225,7 +239,7 @@ export function useFilmSession(
       show(engine)
       return true
     },
-    [adopt, catalog, show],
+    [engineFor, show],
   )
 
   const step = (direction: 'undo' | 'redo') => {
