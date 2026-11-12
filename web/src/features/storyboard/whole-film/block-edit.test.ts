@@ -102,4 +102,13 @@ describe('波纹编辑', () => {
   it('删的不是第一行的块：谁都不动', () => {
     expect(rippleStarts(film, new Set(['d'])).size).toBe(0)
   })
+
+  it('第一行是最上面那一行，行号不一定是 0', () => {
+    const lowered = film.map((block) => ({ ...block, track: block.track + 3 }))
+    expect([...rippleStarts(lowered, new Set(['a']))]).toEqual([
+      ['b', 1_000],
+      ['c', 4_000],
+    ])
+    expect(rippleStarts(lowered, new Set(['d'])).size).toBe(0)
+  })
 })

@@ -34,8 +34,13 @@ describe('放进成片的块写在哪、叠放顺序是多少', () => {
     expect(insertionOf([top], moved)).toEqual({ index: 0, z: 0 })
   })
 
-  it('和谁都不重叠：写在最后', () => {
+  it('和上面那行的块时间上不重叠：也写在它前面，以后横着挪到它底下照样被它盖住', () => {
     const added = picture({ id: 'new', start: 20_000, duration: 1_000, track: 1 })
-    expect(insertionOf([top, below], added)).toEqual({ index: 2, z: 0 })
+    expect(insertionOf([below, top], added)).toEqual({ index: 1, z: 0 })
+  })
+
+  it('上面没有别的行：写在最后', () => {
+    const added = picture({ id: 'new', start: 20_000, duration: 1_000, track: 0 })
+    expect(insertionOf([below, top], added)).toEqual({ index: 2, z: 0 })
   })
 })

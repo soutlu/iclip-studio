@@ -596,7 +596,8 @@ test('换行：把块拖到最下面的空行新开一行，再拖回去；镜�
 
   await expect(secondRow).toHaveCount(0)
   await dragTo(firstRow.locator('[data-block-id]').nth(1), await middleY(newRow))
-  await expect.poll(savedRows).toEqual([0, 1])
+  // 下面一行的块在文件里写在前面，上面的行才盖得住它
+  await expect.poll(savedRows).toEqual([1, 0])
   await expect(secondRow.locator('[data-block-id]')).toHaveCount(1)
   await expect(firstRow.locator('[data-block-id]')).toHaveCount(1)
 
@@ -614,6 +615,6 @@ test('换行：把块拖到最下面的空行新开一行，再拖回去；镜�
   await page.mouse.move(target.x, target.y, { steps: 8 })
   await expect(newRow.getByTestId('drop-ghost')).toBeVisible()
   await page.mouse.up()
-  await expect.poll(async () => (await savedRows()).toSorted()).toEqual([0, 0, 1])
+  await expect.poll(savedRows).toEqual([1, 0, 0])
   await expect(secondRow.locator('[data-block-id]')).toHaveCount(1)
 })

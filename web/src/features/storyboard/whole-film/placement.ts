@@ -15,6 +15,10 @@ export const rowsOf = (pictures: readonly PictureBlock[]): Row[] => {
     }))
 }
 
+/** 第一行（时间线最上面那一行）的行号：行号不一定从 0 开始；还没有块时是 0。 */
+export const topTrack = (pictures: readonly PictureBlock[]): number =>
+  pictures.length === 0 ? 0 : Math.min(...pictures.map((block) => block.track))
+
 export type Landing = { track: number; start: number }
 
 /**
