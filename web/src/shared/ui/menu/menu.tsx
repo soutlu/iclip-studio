@@ -25,13 +25,19 @@ export function MenuSeparator({
   )
 }
 
+type MenuSurfaceProps = ComponentPropsWithoutRef<typeof DropdownMenu.Content> & {
+  /** 菜单挂到哪个元素里；不给就挂到 body。全屏时要挂进全屏的元素才看得见。 */
+  container?: HTMLElement | null
+}
+
 export function MenuSurface({
   className,
+  container = null,
   sideOffset = 4,
   ...props
-}: ComponentPropsWithoutRef<typeof DropdownMenu.Content>) {
+}: MenuSurfaceProps) {
   return (
-    <DropdownMenu.Portal>
+    <DropdownMenu.Portal container={container}>
       <DropdownMenu.Content
         className={cn(POPUP_SURFACE_CLASS, 'flex min-w-36 flex-col gap-0.5 p-1', className)}
         sideOffset={sideOffset}

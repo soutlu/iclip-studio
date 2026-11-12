@@ -121,6 +121,9 @@ import {
   List,
   ListOrdered,
   ListTree,
+  Maximize,
+  Minimize,
+  Keyboard,
 } from 'lucide-react'
 import type { LucideProps } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
@@ -347,6 +350,10 @@ const ICONS = {
   italic: Italic,
   'bullet-list': List,
   'ordered-list': ListOrdered,
+  loop: Repeat,
+  fullscreen: Maximize,
+  'exit-fullscreen': Minimize,
+  shortcuts: Keyboard,
 } as const
 
 export type IconName = keyof typeof ICONS

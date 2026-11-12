@@ -55,6 +55,9 @@ class FakeHyperframesPlayer extends HTMLElement {
   duration = Number.POSITIVE_INFINITY
   paused = true
   painted = false
+  playbackRate = 1
+  muted = false
+  loop = false
 
   connectedCallback() {
     this.append(this.iframeElement)

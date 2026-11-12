@@ -319,9 +319,6 @@ function TimelineBlock({
           if (event.key === 'Delete' || event.key === 'Backspace') {
             event.preventDefault()
             onRemove(block.id)
-          } else if (event.key === 'Escape' && selected) {
-            event.stopPropagation()
-            onSelect(null)
           }
         }}
         onPointerCancel={cancel}

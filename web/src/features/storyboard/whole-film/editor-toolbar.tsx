@@ -23,6 +23,8 @@ type ToolProps = {
   showLabel?: boolean
   shortcuts?: string
   className?: string
+  /** 提示挂到哪个元素里，见 `TooltipContent` 的 `container`。 */
+  tipContainer?: HTMLElement | null
 }
 
 export function Tool({
@@ -35,6 +37,7 @@ export function Tool({
   showLabel = false,
   shortcuts,
   className,
+  tipContainer = null,
 }: ToolProps) {
   const [hint, setHint] = useState(false)
   return (
@@ -67,7 +70,7 @@ export function Tool({
           {showLabel ? <span>{label}</span> : null}
         </button>
       </TooltipTrigger>
-      <TooltipContent className="wf-tip" side="top">
+      <TooltipContent className="wf-tip" container={tipContainer} side="top">
         {blocked ?? tip}
       </TooltipContent>
     </TooltipRoot>

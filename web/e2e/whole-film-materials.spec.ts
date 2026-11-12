@@ -490,6 +490,12 @@ test('时间线上的块：拖着挪动、拖把手裁剪、按 Delete 删掉，
   const trimmed = await timingOf(1)
   expect(trimmed.start + trimmed.duration).toBeCloseTo(movedTo + 1, 2)
 
+  // 选中着按 Esc 只取消选中，不关编辑器
+  await expect(second.getByRole('button')).toHaveAttribute('aria-pressed', 'true')
+  await page.keyboard.press('Escape')
+  await expect(second.getByRole('button')).toHaveAttribute('aria-pressed', 'false')
+  await expect(dialog).toBeVisible()
+
   await second.getByRole('button').click()
   await page.keyboard.press('Delete')
   await expect.poll(() => savedBlocks(page)).toEqual(['A · 镜头 1，0 秒起，1 秒'])

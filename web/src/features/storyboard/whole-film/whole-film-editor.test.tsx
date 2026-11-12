@@ -1,7 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Toaster } from '@/shared/ui/toast'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { starvedVideos } from '@/testing/hyperframes-player'
@@ -324,6 +324,17 @@ describe('成片编辑器 · 时间线', () => {
     expect(savedBlocks()[0]).toContain('data-start="2" data-duration="1.5"')
   })
 
+  it('选中一个块按 Esc：只取消选中，编辑器还开着', async () => {
+    putMockWholeFilmDraft(CONVERSATION, twoPictures())
+    const user = userEvent.setup()
+    await openEditor()
+    await user.click(block(/2\.0 秒$/))
+    expect(block(/2\.0 秒$/)).toHaveAttribute('aria-pressed', 'true')
+    await user.keyboard('{Escape}')
+    expect(block(/2\.0 秒$/)).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('group', { name: '成片编辑器' })).toBeVisible()
+  })
+
   it('选中以后在把手上按方向键裁剪：裁结尾只改长度，裁开头起点和入点一起动；不超出素材', async () => {
     putMockWholeFilmDraft(CONVERSATION, twoPictures())
     const user = userEvent.setup()
@@ -405,6 +416,133 @@ describe('成片编辑器 · 播放', () => {
     await user.click(within(transport()).getByRole('button', { name: '播放' }))
     expect(screen.getByRole('status', { name: '正在缓冲' })).toBeVisible()
     expect(within(transport()).getByRole('button', { name: '暂停' })).toBeVisible()
+  })
+})
+
+describe('成片编辑器 · 播放条设置', () => {
+  type Player = HTMLElement & { playbackRate: number; muted: boolean; loop: boolean }
+  const player = () => {
+    const found = screen.getByRole('region', { name: '预览' }).querySelector('hyperframes-player')
+    if (found === null) throw new Error('没有播放器')
+    return found as Player
+  }
+  const playerUp = () => act(() => new Promise((resolve) => setTimeout(resolve, 500)))
+
+  it('M 静音、再按恢复，⇧L 开关循环：交给播放器，成片不保存、不进撤销', async () => {
+    putMockWholeFilmDraft(CONVERSATION, twoPictures())
+    const user = userEvent.setup()
+    await openEditor()
+    await playerUp()
+    screen.getByRole('dialog').focus()
+
+    await user.keyboard('m')
+    expect(within(transport()).getByRole('button', { name: '开启声音' })).toBeVisible()
+    expect(player().muted).toBe(true)
+    await user.keyboard('m')
+    expect(within(transport()).getByRole('button', { name: '静音' })).toBeVisible()
+    expect(player().muted).toBe(false)
+
+    await user.keyboard('{Shift>}L{/Shift}')
+    expect(within(transport()).getByRole('button', { name: '循环播放' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(player().loop).toBe(true)
+    // 不按 Shift 的 L 不是快捷键
+    await user.keyboard('l')
+    expect(player().loop).toBe(true)
+
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(mockWholeFilmDraft(CONVERSATION)?.revision).toBe(1)
+    expect(within(toolbar()).getByRole('button', { name: '撤销' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+  })
+
+  it('选 2×：素材预览和成片预览都是 2×，改动成片换了播放器还是 2×', async () => {
+    putMockWholeFilmDraft(CONVERSATION, twoPictures())
+    const user = userEvent.setup()
+    await openEditor()
+    await playerUp()
+
+    await user.click(within(transport()).getByRole('button', { name: '播放速度 1×' }))
+    await user.click(await screen.findByRole('menuitemradio', { name: '2×' }))
+    expect(within(transport()).getByRole('button', { name: '播放速度 2×' })).toBeVisible()
+    expect(player().playbackRate).toBe(2)
+
+    // 播放器的片段都在 iframe 里，页面上的 video 只有素材预览这一个
+    await user.click(await shot(/^生成 B 镜头 1，/))
+    expect(document.querySelector('video')?.playbackRate).toBe(2)
+    const old = player()
+    await user.keyboard('{Enter}')
+    await waitSaved(() => expect(savedBlocks()).toHaveLength(3))
+    await waitFor(() => expect(player()).not.toBe(old))
+    expect(player().playbackRate).toBe(2)
+  })
+
+  describe('全屏', () => {
+    const fullscreen: { element: Element | null } = { element: null }
+    const announce = (element: Element | null) => {
+      fullscreen.element = element
+      document.dispatchEvent(new Event('fullscreenchange'))
+      return Promise.resolve()
+    }
+    const requestFullscreen = vi.fn(function (this: Element) {
+      return announce(this)
+    })
+    const exitFullscreen = vi.fn(() => announce(null))
+
+    beforeEach(() => {
+      fullscreen.element = null
+      Object.defineProperties(document, {
+        fullscreenEnabled: { configurable: true, value: true },
+        fullscreenElement: { configurable: true, get: () => fullscreen.element },
+        exitFullscreen: { configurable: true, value: exitFullscreen },
+      })
+      Object.defineProperty(Element.prototype, 'requestFullscreen', {
+        configurable: true,
+        value: requestFullscreen,
+      })
+    })
+
+    afterEach(() => {
+      for (const name of ['fullscreenEnabled', 'fullscreenElement', 'exitFullscreen'])
+        Reflect.deleteProperty(document, name)
+      Reflect.deleteProperty(Element.prototype, 'requestFullscreen')
+      requestFullscreen.mockClear()
+      exitFullscreen.mockClear()
+    })
+
+    it('F 把预览连同播放条一起全屏，菜单挂在全屏的元素里；Esc 退出全屏，编辑器还开着', async () => {
+      putMockWholeFilmDraft(CONVERSATION, twoPictures())
+      const user = userEvent.setup()
+      await openEditor()
+      await playerUp()
+      screen.getByRole('dialog').focus()
+
+      await user.keyboard('f')
+      const stage = fullscreen.element
+      expect(stage).toContainElement(screen.getByRole('region', { name: '预览' }))
+      expect(stage).toContainElement(transport())
+      expect(within(transport()).getByRole('button', { name: '退出全屏' })).toBeVisible()
+
+      await user.click(within(transport()).getByRole('button', { name: '播放速度 1×' }))
+      const menu = await screen.findByRole('menu')
+      expect(stage).toContainElement(menu)
+      // 菜单里按的键不是编辑器的快捷键：不静音、不挪播放头
+      await user.keyboard('m{ArrowRight}')
+      expect(screen.getByRole('menu')).toBeVisible()
+      await user.click(within(menu).getByRole('menuitemradio', { name: '1×' }))
+      expect(within(transport()).getByRole('button', { name: '静音' })).toBeVisible()
+      expect(within(transport()).getByText('00:00.00')).toBeVisible()
+
+      screen.getByRole('dialog').focus()
+      await user.keyboard('{Escape}')
+      expect(exitFullscreen).toHaveBeenCalledTimes(1)
+      expect(within(transport()).getByRole('button', { name: '全屏' })).toBeVisible()
+      expect(screen.getByRole('group', { name: '成片编辑器' })).toBeVisible()
+    })
   })
 })
 

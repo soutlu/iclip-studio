@@ -23,6 +23,8 @@ const setup = (view: MaterialView) => {
     view,
     label: '素材 · 镜头组 1 · 生成 A · 镜头 2',
     timeMs: view.show === 'end' ? range.endMs : range.startMs,
+    rate: 1,
+    muted: false,
     onTime: time,
     onPlaying: () => {},
     onNotice: () => {},
@@ -48,6 +50,16 @@ it('停在出点时播放从选区开头往后 0.001 秒重播', () => {
   expect(video.currentTime).toBeCloseTo(2.499, 6)
   act(() => controlRef.current?.toggle())
   expect(video.currentTime).toBeCloseTo(1.001, 6)
+})
+
+it('倍速和静音跟着设置走', () => {
+  const { video, props, rerender } = setup({ range, show: 'start' })
+  expect(video.playbackRate).toBe(1)
+  expect(video.muted).toBe(false)
+
+  rerender(<MaterialPreview {...props} muted rate={2} />)
+  expect(video.playbackRate).toBe(2)
+  expect(video.muted).toBe(true)
 })
 
 it('播放中等数据时显示正在缓冲，能放了或暂停后收起', () => {

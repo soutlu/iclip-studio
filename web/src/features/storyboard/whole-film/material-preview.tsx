@@ -27,6 +27,8 @@ type MaterialPreviewProps = {
   view: MaterialView
   label: string
   timeMs: number
+  rate: number
+  muted: boolean
   onTime: (ms: number) => void
   onPlaying: (playing: boolean) => void
   onNotice: (message: string) => void
@@ -38,11 +40,21 @@ export function MaterialPreview({
   view,
   label,
   timeMs,
+  rate,
+  muted,
   onTime,
   onPlaying,
   onNotice,
 }: MaterialPreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (video === null) return
+    // 换地址重新加载时 playbackRate 会回到 defaultPlaybackRate，两个一起设
+    video.defaultPlaybackRate = rate
+    video.playbackRate = rate
+  }, [rate, url])
   const [size, setSize] = useState<{ url: string; ratio: number }>()
   const [waiting, setWaiting] = useState(false)
   const report = useEffectEvent(onTime)
@@ -117,6 +129,7 @@ export function MaterialPreview({
         {/* eslint-disable-next-line jsx-a11y-x/media-has-caption -- 生成视频无字幕轨 */}
         <video
           className="wf-material-video editor-preview stage-picture"
+          muted={muted}
           onLoadedMetadata={({ currentTarget: video }) =>
             setSize({ url, ratio: video.videoWidth / video.videoHeight })
           }
