@@ -54,6 +54,10 @@ export const topTrack = (blocks: readonly FilmBlock[]): number => {
   return tracks.length === 0 ? 0 : Math.min(...tracks)
 }
 
+/** `row` 这一行从 `start` 起长 `duration` 毫秒的这段时间里有没有块。 */
+export const rowBusy = (row: Pick<Row, 'blocks'>, start: number, duration: number): boolean =>
+  row.blocks.some((block) => block.start < start + duration && start < block.start + block.duration)
+
 /** 这一行是不是隐藏着（声音区的行就是静音）：行里有块，而且每个块都隐藏了。 */
 export const rowHidden = (blocks: readonly FilmBlock[], row: RowKey): boolean => {
   const members = blocks.filter((block) => onRow(block, row))

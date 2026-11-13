@@ -25,6 +25,8 @@ import { isShortcutTarget } from '../editing/shortcut-target'
 import { handleUndoShortcut } from '../editing/undo-shortcut'
 import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
+import { audioPlayheadSpot } from './audio'
+import { AudioTab } from './audio-tab'
 import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
 import { componentDurationMs, playheadSpot } from './components'
 import { ComponentsTab } from './components-tab'
@@ -50,7 +52,7 @@ import {
   type MaterialRange,
   type MaterialTake,
 } from './materials'
-import { landingOn, onRow, rowOpening, type RowTarget } from './placement'
+import { landingOn, onRow, rowOpening, type RowTarget, type Zone } from './placement'
 import { previewDocument } from './preview-document'
 import { PreviewPlayer, type PlaybackSettings, type PreviewControl } from './preview-player'
 import { PreviewTransport } from './preview-transport'
@@ -65,7 +67,7 @@ import {
   zoomToBlocks,
   type Zoom,
 } from './timeline-scale'
-import { useFilmSession } from './use-film-session'
+import { useFilmSession, type NewAudio } from './use-film-session'
 import { useWholeFilmExport } from './use-whole-film-export'
 import { useWholeFilmDraftQuery } from './whole-film.api'
 import './whole-film.css'
@@ -80,6 +82,7 @@ const EMPTY_TEXT = '成片还是空的；加入内容后可以在这里预览'
 const PICK_FIRST_TEXT = '先在下方点一个镜头选中范围'
 const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏'
 const ADDING_COMPONENT_TEXT = '上一个组件正在加入成片，请稍后再加'
+const ADDING_AUDIO_TEXT = '上一条音频正在加入成片，请稍后再加'
 // 还没有成片时先放组件：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 
@@ -305,11 +308,11 @@ function EditorBody({
   const [thumbnails, setThumbnails] = useState(true)
   const [snap, setSnap] = useState(true)
   /**
-   * 拖着的素材或组件（长 `duration` 毫秒）会落在哪：开着吸附时先吸到别的块的两端或播放头上，
-   * 再避开同一行的块。
+   * 拖着的素材、组件或音频（长 `duration` 毫秒，放进 `zone` 区）会落在哪：
+   * 开着吸附时先吸到别的块的两端或播放头上，再避开同一行的块。
    */
-  const landingAt = (clientX: number, clientY: number, duration: number) => {
-    const point = timelineRef.current?.locate(clientX, clientY) ?? null
+  const landingAt = (clientX: number, clientY: number, duration: number, zone: Zone = 'visual') => {
+    const point = timelineRef.current?.locate(clientX, clientY, zone) ?? null
     if (point === null) return null
     const snapped = snap
       ? snapSpanStartMs(point.timeMs, duration, snapTargets(blocks, playhead), scale.pps)
@@ -395,6 +398,35 @@ function EditorBody({
   }
   const addAtPlayhead = (item: CatalogItem) =>
     placeComponent(item, playheadSpot(blocks, item, playhead, componentDurationMs(item, blocks)))
+
+  // 和组件一样：上一条音频还没加完时不接下一条
+  const addingAudioRef = useRef(false)
+  /** 把一整条音频放进成片的 `at`；还没有成片时按默认画布建一份。 */
+  const placeAudio = (audio: NewAudio, at: { row: RowTarget; start: number }) => {
+    if (addingAudioRef.current) {
+      notice(ADDING_AUDIO_TEXT)
+      return
+    }
+    addingAudioRef.current = true
+    const spot = trackFor(at.row)
+    void session
+      .addAudio(
+        film?.canvas ?? DEFAULT_CANVAS,
+        audio,
+        { track: spot.track, start: at.start },
+        spot.renumber,
+      )
+      .then((added) => {
+        if (added) leaveMaterial()
+      })
+      .finally(() => {
+        addingAudioRef.current = false
+      })
+  }
+  const revealBlock = (id: string) => {
+    setSelectedIds(new Set([id]))
+    timelineRef.current?.reveal(id)
+  }
 
   const history = {
     canUndo: film?.canUndo ?? false,
@@ -519,6 +551,7 @@ function EditorBody({
           <TabsRoot className="wf-side-panel" defaultValue="components">
             <TabsList aria-label="组件栏页签" className="wf-side-tabs">
               <TabsTrigger value="components">组件</TabsTrigger>
+              <TabsTrigger value="audio">音频</TabsTrigger>
             </TabsList>
             <TabsContent className="wf-side-body is-components" value="components">
               <ComponentsTab
@@ -541,6 +574,29 @@ function EditorBody({
                   if (at !== null) placeComponent(item, { row: at.row, start: at.start })
                 }}
                 origin={window.location.origin}
+              />
+            </TabsContent>
+            <TabsContent className="wf-side-body is-audio" value="audio">
+              <AudioTab
+                blocks={blocks}
+                conversationId={conversationId}
+                onAdd={(audio) =>
+                  placeAudio(audio, audioPlayheadSpot(blocks, playhead, audio.duration))
+                }
+                onCarry={(audio, point) =>
+                  setGhost(
+                    point === null
+                      ? null
+                      : landingAt(point.clientX, point.clientY, audio.duration, 'audio'),
+                  )
+                }
+                onDrop={(audio, point) => {
+                  const at = landingAt(point.clientX, point.clientY, audio.duration, 'audio')
+                  setGhost(null)
+                  if (at !== null) placeAudio(audio, { row: at.row, start: at.start })
+                }}
+                onNotice={notice}
+                onReveal={revealBlock}
               />
             </TabsContent>
           </TabsRoot>

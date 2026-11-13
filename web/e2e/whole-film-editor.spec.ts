@@ -405,6 +405,128 @@ test('组件栏：搜到组件点「加到播放头」、拖一个到时间线�
   await undone
 })
 
+/** 存下来的成片里的音频块，写成「名字@行号 起点 时长」，按起点排。 */
+const savedAudio = (html: string) =>
+  [...html.matchAll(/<audio [^>]*>/g)]
+    .map(([tag]) => {
+      const attribute = (name: string) => new RegExp(` ${name}="([^"]*)"`).exec(tag)?.[1]
+      return {
+        label: attribute('data-label'),
+        start: Number(attribute('data-start')),
+        duration: Number(attribute('data-duration')),
+        track: Number(attribute('data-track-index')),
+      }
+    })
+    .toSorted((left, right) => left.start - right.start)
+
+test('音频栏：试听只播一条，右键加到播放头新开声音行、成片变长，拖一条到声音行的空处，生成一条音乐，撤销回去', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const dialog = await openWholeFilm(page, panel)
+  const first = draftSaved(page, 1)
+  await dialog
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  const { html: withPicture } = (await first).postDataJSON() as { html: string }
+  const pictureSeconds = Number(/<video [^>]*data-duration="([^"]+)"/.exec(withPicture)?.[1])
+  const progress = dialog
+    .getByRole('group', { name: '播放控制' })
+    .getByRole('slider', { name: '播放进度' })
+  await expect(progress).toHaveAttribute('aria-valuetext', /^00:00\.00 \/ 00:0\d\.\d\d$/)
+
+  const side = dialog.getByRole('complementary', { name: '组件栏' })
+  await side.getByRole('tab', { name: '音频' }).click()
+  const list = side.getByRole('list', { name: '音频' })
+  const guitar = list.getByRole('listitem').filter({ hasText: '轻快原声吉他，适合秋季穿搭' })
+  const uploaded = list.getByRole('listitem').filter({ hasText: /^上传的音乐 · / })
+  await expect(guitar).toContainText('00:30')
+  // 上传的音频记录上没有时长，读完文件才显示
+  await expect(uploaded).toContainText('00:30')
+
+  await guitar.getByRole('button', { name: /^试听：/ }).click()
+  await expect(guitar.getByRole('button', { name: /^暂停试听：/ })).toBeVisible()
+  await uploaded.getByRole('button', { name: /^试听：/ }).click()
+  await expect(uploaded.getByRole('button', { name: /^暂停试听：/ })).toBeVisible()
+  await expect(guitar.getByRole('button', { name: /^试听：/ })).toBeVisible()
+  await uploaded.getByRole('button', { name: /^暂停试听：/ }).click()
+  await expect(list.getByRole('button', { name: /^暂停试听：/ })).toHaveCount(0)
+
+  // 播放头挪到 1 秒；还没有声音行，加进来的音频在画面行下面新开一行
+  await dialog.evaluate((element: HTMLElement) => element.focus())
+  await page.keyboard.press('Shift+ArrowRight')
+  await expect(progress).toHaveAttribute('aria-valuetext', /^00:01\.00 \//)
+  const added = draftSavedWith(page, (html) => savedAudio(html).length === 1)
+  await guitar
+    .getByRole('button', { name: '轻快原声吉他，适合秋季穿搭', exact: true })
+    .click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '加到播放头' }).click()
+  expect(savedAudio(((await added).postDataJSON() as { html: string }).html)).toEqual([
+    { label: '轻快原声吉他，适合秋季穿搭', start: 1, duration: 30, track: 0 },
+  ])
+  const soundRow = dialog.getByRole('group', { name: '第 2 行' })
+  const music = soundRow.getByRole('group', { name: '轻快原声吉他，适合秋季穿搭，30.0 秒' })
+  await expect(music).toBeVisible()
+  await expect(guitar).toContainText('00:30 · 已使用')
+  await expect(progress).toHaveAttribute('aria-valuetext', '00:01.00 / 00:31.00')
+  expect(pictureSeconds).toBeLessThan(31)
+
+  // 点「已使用」的那一行：选中它对应的块
+  await guitar.getByRole('button', { name: '轻快原声吉他，适合秋季穿搭，已使用' }).click()
+  await expect(music.getByRole('button', { name: /^选中：/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+
+  // 拖上传的那条到声音行里这一块后面的空处：吸到它的结尾
+  const box = await music.boundingBox()
+  const lane = await soundRow.boundingBox()
+  const from = await uploaded.boundingBox()
+  if (box === null || lane === null || from === null) throw new Error('尚未布局')
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(from.x + from.width / 2 + 10, from.y + from.height / 2 + 10, { steps: 3 })
+  await page.mouse.move(box.x + box.width + 4, lane.y + lane.height / 2, { steps: 8 })
+  await expect(soundRow.getByTestId('drop-ghost')).toBeVisible()
+  const dropped = draftSavedWith(page, (html) => savedAudio(html).length === 2)
+  await page.mouse.up()
+  const both = savedAudio(((await dropped).postDataJSON() as { html: string }).html)
+  expect(both.map(({ start, duration, track }) => ({ start, duration, track }))).toEqual([
+    { start: 1, duration: 30, track: 0 },
+    { start: 31, duration: 30, track: 0 },
+  ])
+  expect(both[1]?.label).toMatch(/^上传的音乐 · /)
+  await expect(dialog.getByRole('group', { name: '第 3 行' })).toHaveCount(0)
+  await expect(progress).toHaveAttribute('aria-valuetext', '00:01.00 / 01:01.00')
+
+  // 生成一条音乐：先是生成中，生成完能试听
+  await side.getByRole('button', { name: '生成音乐' }).click()
+  const popover = page.getByRole('dialog', { name: '生成音乐' })
+  await popover.getByRole('textbox', { name: '音乐描述' }).fill('雨夜爵士钢琴')
+  await popover.getByRole('button', { name: '生成音乐' }).click()
+  await expect(popover).toBeHidden()
+  const jazz = list.getByRole('listitem').filter({ hasText: '雨夜爵士钢琴' })
+  await expect(jazz.getByRole('img', { name: '生成中' })).toBeVisible()
+  await expect(jazz.getByRole('button', { name: '试听：雨夜爵士钢琴' })).toBeVisible({
+    timeout: 15_000,
+  })
+
+  const undone = draftSavedWith(page, (html) => savedAudio(html).length === 1)
+  await dialog
+    .getByRole('toolbar', { name: '剪辑工具' })
+    .getByRole('button', { name: '撤销' })
+    .click()
+  expect(savedAudio(((await undone).postDataJSON() as { html: string }).html)).toEqual([
+    { label: '轻快原声吉他，适合秋季穿搭', start: 1, duration: 30, track: 0 },
+  ])
+  await expect(uploaded).not.toContainText('已使用')
+})
+
 test('成片编辑器在窄屏上纵向排开', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const panel = await openConversation(page, '夜景延时素材生成', { mobile: true })
