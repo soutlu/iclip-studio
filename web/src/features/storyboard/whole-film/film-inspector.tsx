@@ -67,7 +67,7 @@ export function FilmInspector({ selected, ...rest }: Props) {
         <div className="wf-inspector-empty">
           <Icon decorative name="select-tool" size="lg" />
           <h3 className="wf-inspector-empty-title">没有选中</h3>
-          <p>在时间线上点一个块，在这里改它。</p>
+          <p>在时间线上点一个块，在这里改它</p>
         </div>
       ) : selected.length > 1 ? (
         <div className="wf-inspector-multi">
@@ -348,16 +348,30 @@ function ContentFields({
   }, [])
   useEffect(() => flush, [flush])
 
+  // 输入法还在拼字时不计时：拼音没上屏就写进块，会多存一次、预览多刷一次
+  const composingRef = useRef(false)
+  const schedule = () => {
+    if (timerRef.current !== null) clearTimeout(timerRef.current)
+    timerRef.current = composingRef.current ? null : setTimeout(flush, COMMIT_DELAY_MS)
+  }
   const change = (id: string, value: VariableValue) => {
     pendingRef.current = { ...pendingRef.current, [id]: value }
     setPending(pendingRef.current)
-    if (timerRef.current !== null) clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(flush, COMMIT_DELAY_MS)
+    schedule()
+  }
+  const compose = (composing: boolean) => {
+    composingRef.current = composing
+    schedule()
   }
 
   if (variables.length === 0) return <p className="wf-inspector-note">这个组件没有可以填的内容</p>
   return (
-    <div className="wf-inspector-rows" onBlur={flush}>
+    <div
+      className="wf-inspector-rows"
+      onBlur={flush}
+      onCompositionEnd={() => compose(false)}
+      onCompositionStart={() => compose(true)}
+    >
       {variables.map((variable) => (
         <VariableRow
           current={pending[variable.id] ?? block.values[variable.id] ?? variable.default}

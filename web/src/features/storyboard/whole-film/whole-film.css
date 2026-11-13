@@ -2804,9 +2804,10 @@
   cursor: grabbing;
 }
 
-@media (max-width: 640px) {
-  /* 窄屏纵向排开：预览定高，时间线面板照旧紧跟在下面；右侧栏接在时间线下面、按内容高，在时间线上
-     点了块就在紧下面改它；组件栏定高接在最后。放不下时整个编辑区上下滚动 */
+/* 左右两栏一共要 608px，窗口不够宽时中间的预览会被挤没：改成纵向排开。预览定高，时间线面板照旧紧跟在
+   下面；右侧栏接在时间线下面、按内容高，在时间线上点了块就在紧下面改它；组件栏定高接在最后。
+   放不下时整个编辑区上下滚动 */
+@media (max-width: 1000px) {
   .wf-workspace {
     grid-template-areas:
       'preview'
@@ -2815,6 +2816,16 @@
       'side';
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 248px minmax(max-content, 1fr) max-content 360px;
+  }
+
+  /* 组件栏变成通栏，卡片按栏宽多排几列，不跟着拉大 */
+  .wf-component-grid {
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .wf-workspace {
     padding: 0 12px 12px;
   }
 

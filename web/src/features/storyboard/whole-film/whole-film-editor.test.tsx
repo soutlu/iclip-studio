@@ -1052,7 +1052,7 @@ describe('成片编辑器 · 右侧栏', () => {
       picture({ id: 'clip-2', label: 'B · 镜头 1', jobId: TAKE_B, src: URL_B, start: 2_000 }),
     ])
     expect(within(inspector()).getByRole('heading', { name: '没有选中' })).toBeVisible()
-    expect(within(inspector()).getByText('在时间线上点一个块，在这里改它。')).toBeVisible()
+    expect(within(inspector()).getByText('在时间线上点一个块，在这里改它')).toBeVisible()
 
     await pick(user, '测试可填项')
     await user.keyboard('{Shift>}')
@@ -1176,6 +1176,19 @@ describe('成片编辑器 · 右侧栏', () => {
     await user.click(undoButton())
     await waitSaved(() => expect(savedValues('title-1')).toEqual({}))
     expect(within(inspector()).getByRole('textbox', { name: '文字' })).toHaveValue('示例文字')
+  })
+
+  it('输入法还在拼字时不写进块，上屏以后才写', async () => {
+    const user = await openWith([component()])
+    await pick(user, '测试可填项')
+    const text = within(inspector()).getByRole('textbox', { name: '文字' })
+    fireEvent.compositionStart(text)
+    fireEvent.change(text, { target: { value: 'xin' } })
+    await pastDelay()
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.change(text, { target: { value: '新' } })
+    fireEvent.compositionEnd(text)
+    await waitSaved(() => expect(savedValues('title-1')).toEqual({ text: '新' }))
   })
 
   it('300 毫秒里改了几项：合成一次写进块，几项都在', async () => {
