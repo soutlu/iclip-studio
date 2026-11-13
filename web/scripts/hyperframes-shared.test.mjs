@@ -14,6 +14,7 @@ import {
   localFontFaces,
   publishedCatalog,
   twinDescriptors,
+  withAnimationLibrary,
   withoutCjkStylesheet,
 } from './hyperframes-shared.mjs'
 
@@ -133,6 +134,44 @@ describe('withoutCjkStylesheet', () => {
         '</div>',
       ].join('\n'),
     )
+  })
+})
+
+describe('withAnimationLibrary', () => {
+  const TAG = '<script src="vendor/npm/gsap@3.14.2/dist/gsap.min.js"></script>'
+
+  it('用到动画库却没引用它的组件文件：在第一段脚本前补上引用，缩进跟着那一行', () => {
+    const html = [
+      '<template>',
+      '  <!-- 注释里的不算：<script src="vendor/npm/gsap@3.14.2/dist/gsap.min.js"></script> -->',
+      '  <div class="stage"></div>',
+      '  <script>',
+      '    var tl = gsap.timeline({ paused: true })',
+      '  </script>',
+      '</template>',
+    ].join('\n')
+    expect(withAnimationLibrary(html).split('\n')).toEqual([
+      '<template>',
+      '  <!-- 注释里的不算：<script src="vendor/npm/gsap@3.14.2/dist/gsap.min.js"></script> -->',
+      '  <div class="stage"></div>',
+      `  ${TAG}`,
+      '  <script>',
+      '    var tl = gsap.timeline({ paused: true })',
+      '  </script>',
+      '</template>',
+    ])
+    expect(withAnimationLibrary('<div></div><script>gsap.set("#a", {})</script>')).toBe(
+      `<div></div>${TAG}<script>gsap.set("#a", {})</script>`,
+    )
+  })
+
+  it('已经引用了动画库、或者根本没用到它的文件原样不动', () => {
+    const referenced = `<div></div>\n${TAG}\n<script>gsap.to("#a", {})</script>`
+    expect(withAnimationLibrary(referenced)).toBe(referenced)
+    const plain = '<div></div>\n<script>document.title = "x"</script>'
+    expect(withAnimationLibrary(plain)).toBe(plain)
+    const commented = '<div></div>\n<!-- gsap.to() 以前在这里 -->\n<script>void 0</script>'
+    expect(withAnimationLibrary(commented)).toBe(commented)
   })
 })
 
