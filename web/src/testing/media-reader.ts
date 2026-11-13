@@ -1,6 +1,6 @@
 export const createMediaReaderMock = (
   files: ReadonlyMap<string, { keyframes: readonly number[]; duration: number }>,
-  openAudioTrack: (url: string) => Promise<null> = () => Promise.resolve(null),
+  openAudioTrack: (url: string) => Promise<object | null> = () => Promise.resolve(null),
 ) => {
   class UrlSource {
     readonly url: string

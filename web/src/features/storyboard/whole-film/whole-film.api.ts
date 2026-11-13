@@ -1,13 +1,21 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/shared/api/client'
-import type { WholeFilmDraftIn } from '@/shared/api/generated/types.gen'
+import type { MusicIn, WholeFilmDraftIn } from '@/shared/api/generated/types.gen'
 import {
   zCancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponse as zExportCancelled,
+  zConversationEnvelope,
+  zGenerationEnvelope,
   zLatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetResponse as zLatestExport,
   zWholeFilmDraftOut,
   zWholeFilmDraftSavedOut,
   zWholeFilmExportStartedOut,
 } from '@/shared/api/generated/zod.gen'
+import {
+  generationsRefetchInterval,
+  readAllGenerations,
+  storyboardQueryKeys,
+  type GenerationJob,
+} from '../storyboard.api'
 
 const draftPath = (conversationId: string) =>
   `/conversations/${encodeURIComponent(conversationId)}/whole-film/draft`
@@ -16,6 +24,10 @@ export const wholeFilmQueryKeys = {
   draft: (conversationId: string) => ['whole-film', 'draft', conversationId] as const,
   latestExport: (conversationId: string) =>
     ['whole-film', 'export', 'latest', conversationId] as const,
+  // 挂在对话的生成记录下面：生成记录有变化时跟着刷新
+  music: (conversationId: string) =>
+    [...storyboardQueryKeys.conversation(conversationId), 'audio'] as const,
+  task: (conversationId: string) => ['whole-film', 'task', conversationId] as const,
 }
 
 export const readWholeFilmDraft = (conversationId: string, signal?: AbortSignal) =>
@@ -63,3 +75,50 @@ export const cancelWholeFilmExport = (conversationId: string, exportId: string) 
     fallbackErrorMessage: '取消导出失败',
     method: 'DELETE',
   })
+
+/** 这段对话的音频记录（生成的音乐和上传的音频），新的在前；有没生成完的就隔一会儿再读。 */
+export const useConversationMusic = (conversationId: string) =>
+  useQuery({
+    queryKey: wholeFilmQueryKeys.music(conversationId),
+    queryFn: ({ signal }) =>
+      readAllGenerations({ conversationId, kind: 'audio' }, signal, '读取音频失败'),
+    refetchInterval: ({ state }) => generationsRefetchInterval(state.data ?? []),
+  })
+
+export const useConversationTaskId = (conversationId: string) =>
+  useQuery({
+    queryKey: wholeFilmQueryKeys.task(conversationId),
+    queryFn: async ({ signal }) =>
+      (
+        await apiFetch(
+          `/conversations/${encodeURIComponent(conversationId)}`,
+          zConversationEnvelope,
+          { fallbackErrorMessage: '读取对话失败', signal },
+        )
+      ).conversation.taskId,
+    staleTime: Infinity,
+  })
+
+export const submitMusic = async (body: MusicIn): Promise<GenerationJob> =>
+  (
+    await apiFetch('/generations/music', zGenerationEnvelope, {
+      body,
+      fallbackErrorMessage: '音乐生成提交失败',
+      method: 'POST',
+    })
+  ).generation
+
+/** 重新读这段对话的音频；给了 `job` 先把它放到列表最前面，不用等读回来就看得到。 */
+export const refreshConversationMusic = (
+  queryClient: QueryClient,
+  conversationId: string,
+  job?: GenerationJob,
+) => {
+  const key = wholeFilmQueryKeys.music(conversationId)
+  if (job !== undefined)
+    queryClient.setQueryData<GenerationJob[]>(key, (previous) => [
+      job,
+      ...(previous ?? []).filter((item) => item.id !== job.id),
+    ])
+  return queryClient.invalidateQueries({ queryKey: key })
+}

@@ -132,6 +132,9 @@ describe('块只落在自己的区', () => {
       insertAt: 2,
     })
     expect(targetIn(visualOnly, { at: 0 }, 'audio')).toEqual({ zone: 'audio', insertAt: 2 })
+    // 音频拖到画面行之间的缝、最下面那条空行，也是新开声音区的第一行
+    expect(targetIn(visualOnly, { insertAt: 1 }, 'audio')).toEqual({ zone: 'audio', insertAt: 2 })
+    expect(targetIn(visualOnly, { insertAt: 2 }, 'audio')).toEqual({ zone: 'audio', insertAt: 2 })
   })
 })
 

@@ -1,6 +1,6 @@
 import type { CatalogItem, ComponentCatalog } from './composition/catalog'
 import type { FilmBlock } from './composition/film'
-import { rowsOf, type RowTarget } from './placement'
+import { rowBusy, rowsOf, type RowTarget } from './placement'
 
 /** 组件栏的一个分类：「全部」「品牌」，或者组件库目录里的一类。 */
 export type ComponentChip = {
@@ -70,11 +70,10 @@ export const playheadSpot = (
   const [top] = visual
   if (item.kind === 'component' || top === undefined)
     return { row: { zone: 'visual', insertAt: visual.length }, start: startMs }
-  const busy = top.blocks.some(
-    (block) => block.start < startMs + durationMs && startMs < block.start + block.duration,
-  )
   return {
-    row: busy ? { zone: 'visual', insertAt: 1 } : { zone: 'visual', track: top.track },
+    row: rowBusy(top, startMs, durationMs)
+      ? { zone: 'visual', insertAt: 1 }
+      : { zone: 'visual', track: top.track },
     start: startMs,
   }
 }

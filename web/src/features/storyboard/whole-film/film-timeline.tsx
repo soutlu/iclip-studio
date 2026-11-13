@@ -64,14 +64,19 @@ import {
   type TimelineScale,
 } from './timeline-scale'
 
-/** 镜头拖进来时落在哪：画面区的哪一行（或新开的一行）、成片的第几毫秒。 */
+/** 素材拖进来时落在哪：哪一行（或新开的一行）、成片的第几毫秒。 */
 export type TimelinePoint = { row: RowTarget; timeMs: number }
 
 export type TimelineHandle = {
-  /** 屏幕上的这个点给镜头落在哪一行、对应成片的第几毫秒；不在任何一行上时是 null。 */
-  locate: (clientX: number, clientY: number) => TimelinePoint | null
+  /**
+   * 屏幕上的这个点给 `zone` 区的素材落在哪一行、对应成片的第几毫秒；不在任何一行上时是 null。
+   * 画面区的素材对着两行之间的缝时归离得近的那一行，声音区的素材和拖块一样在缝里新开一行。
+   */
+  locate: (clientX: number, clientY: number, zone: Zone) => TimelinePoint | null
   /** 时间线现在横向滚到的位置（像素）。 */
   scrollLeft: () => number
+  /** 把这个块滚到看得见的地方。 */
+  reveal: (id: string) => void
 }
 
 /** 拖着的素材会落在哪里：`duration` 是它的总长（毫秒），`guideMs` 是它吸上的时间点。 */
@@ -779,18 +784,21 @@ export function FilmTimeline({
 
   useEffect(() => {
     handleRef.current = {
-      locate: (clientX, clientY) => {
+      locate: (clientX, clientY, zone) => {
         const viewport = scrollRef.current
         const heads = headsRef.current
         if (viewport === null || heads === null) return null
         const right =
           viewport.getBoundingClientRect().left + viewport.clientLeft + viewport.clientWidth
         if (clientX < heads.getBoundingClientRect().right || clientX > right) return null
-        // 镜头只落在画面区
-        const row = rowAt(clientY, false, 'visual')
+        const row = rowAt(clientY, zone === 'audio', zone)
         return row === undefined ? null : { row, timeMs: Math.max(0, timeAt(clientX)) }
       },
       scrollLeft: () => scrollRef.current?.scrollLeft ?? 0,
+      reveal: (id) =>
+        [...(contentRef.current?.querySelectorAll<HTMLElement>('[data-block-id]') ?? [])]
+          .find((element) => element.dataset['blockId'] === id)
+          ?.scrollIntoView({ block: 'nearest', inline: 'nearest' }),
     }
     return () => {
       handleRef.current = null
