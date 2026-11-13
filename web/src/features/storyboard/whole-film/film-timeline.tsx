@@ -61,6 +61,8 @@ export type TimelinePoint = { row: RowTarget; timeMs: number }
 export type TimelineHandle = {
   /** 屏幕上的这个点在哪一行、对应成片的第几毫秒；不在任何一行上时是 null。 */
   locate: (clientX: number, clientY: number) => TimelinePoint | null
+  /** 时间线现在横向滚到的位置（像素）。 */
+  scrollLeft: () => number
 }
 
 /** 拖着的素材会落在哪里：`duration` 是它的总长（毫秒），`guideMs` 是它吸上的时间点。 */
@@ -688,6 +690,7 @@ export function FilmTimeline({
         const row = rowAt(clientY, false)
         return row === undefined ? null : { row, timeMs: Math.max(0, timeAt(clientX)) }
       },
+      scrollLeft: () => scrollRef.current?.scrollLeft ?? 0,
     }
     return () => {
       handleRef.current = null
@@ -732,7 +735,7 @@ export function FilmTimeline({
     onSelect(next)
   }
 
-  // 缩放到选中：等新的宽度排好再横向滚过去，不然会被原来的宽度挡住
+  // 缩放以后：等新的宽度排好再横向滚过去，不然会被原来的宽度挡住
   useLayoutEffect(() => {
     const viewport = scrollRef.current
     if (scrollRequest !== null && viewport !== null) viewport.scrollLeft = scrollRequest.left
