@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -10,15 +11,19 @@ import httpx
 _REWRITTEN = "<!doctype html>"
 
 
-def film_file(*sources: tuple[uuid.UUID, str], duration_ms: int = 5000) -> str:
+def film_file(
+    *videos: tuple[uuid.UUID, str],
+    audios: Sequence[tuple[uuid.UUID, str]] = (),
+    duration_ms: int = 5000,
+) -> str:
     """测试里的成片文件。后端不读文件内容，只看渲染服务的检查结果；``StubRender`` 按这里写下的
-    素材和时长答复。"""
+    素材（画面块的视频、音频块的音频）和时长答复。"""
+
+    def sources(kind: str, found: Sequence[tuple[uuid.UUID, str]]) -> list[dict[str, str]]:
+        return [{"jobId": str(job_id), "url": url, "kind": kind} for job_id, url in found]
 
     return json.dumps(
-        {
-            "sources": [{"jobId": str(job_id), "url": url} for job_id, url in sources],
-            "durationMs": duration_ms,
-        }
+        {"sources": sources("video", videos) + sources("audio", audios), "durationMs": duration_ms}
     )
 
 

@@ -27,6 +27,7 @@ from iclip.domains.generation.schemas import (
     KIND_WHOLE_FILM,
     OPERATION_ENHANCE,
     OPERATION_RENDER,
+    WholeFilmAudioSource,
     WholeFilmRequest,
     WholeFilmVideoSource,
 )
@@ -34,7 +35,7 @@ from iclip.domains.generation.video import PROVIDER_NAME as VIDEO_PROVIDER_NAME
 from tests.helpers.app import make_client
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.fork_lineage import complete, finished, make_user, open_conversation
-from tests.helpers.generation import make_enhancement, make_job, video_request
+from tests.helpers.generation import make_enhancement, make_job, make_music, video_request
 from tests.helpers.render import StubRender, film_file, rewritten
 from tests.helpers.whole_film import build_whole_film_app
 
@@ -132,6 +133,8 @@ async def submitted_hours_ago(engine: AsyncEngine, job_id: uuid.UUID, hours: int
 
 OWN_BUCKET_URL = f"{PUBLIC}/iclip/agent/videos/composed.mp4"
 
+MUSIC_URL = "https://example.test/music.wav"
+
 
 async def test_an_export_becomes_a_record_rendered_through_the_queue_and_kept_public(
     client: httpx.AsyncClient,
@@ -150,7 +153,16 @@ async def test_an_export_becomes_a_record_rendered_through_the_queue_and_kept_pu
         ),
         OWN_BUCKET_URL,
     )
-    film = film_of(second, first)
+    music = await complete(
+        generations,
+        await generations.create(make_music(owner_user_id=owner, conversation_id=mine)),
+        MUSIC_URL,
+    )
+    film = film_file(
+        (second.id, OWN_BUCKET_URL),
+        (first.id, "https://example.test/first.mp4"),
+        audios=[(music.id, MUSIC_URL)],
+    )
     revision = await save_draft(client, mine, film)
     marked = await client.put(f"{URL}/{mine}/completion", json={"completed": True})
     assert marked.status_code == 200, marked.text
@@ -173,7 +185,7 @@ async def test_an_export_becomes_a_record_rendered_through_the_queue_and_kept_pu
             WholeFilmVideoSource(job_id=second.id, url=OWN_BUCKET_URL),
             WholeFilmVideoSource(job_id=first.id, url="https://example.test/first.mp4"),
         ],
-        music=None,
+        audios=[WholeFilmAudioSource(job_id=music.id, url=MUSIC_URL)],
     ), "记录里只有版本号和用到的素材，没有成片文件"
     conversation = (await client.get(f"{URL}/{mine}")).json()["conversation"]
     assert conversation["completedAt"] is not None, "导出不是动手创作，不抹收尾标记"
@@ -199,7 +211,8 @@ async def test_an_export_becomes_a_record_rendered_through_the_queue_and_kept_pu
     assert payload["media"] == {
         OWN_BUCKET_URL: {"url": f"https://{INTERNAL_HOST}/iclip/agent/videos/composed.mp4"},
         "https://example.test/first.mp4": {"url": "https://example.test/first.mp4"},
-    }, "文件里的地址对到下载地址：本桶对象换成内网地址，别处的原样"
+        MUSIC_URL: {"url": MUSIC_URL},
+    }, "文件里的地址（视频和音频）对到下载地址：本桶对象换成内网地址，别处的原样"
     upload = urlsplit(payload["upload"]["url"])
     assert (upload.netloc, upload.path) == (INTERNAL_HOST, f"/{key}")
     expires = datetime.fromtimestamp(int(parse_qs(upload.query)["Expires"][0]), UTC)
@@ -432,7 +445,7 @@ async def test_the_render_lane_waits_six_hours_while_other_lanes_keep_the_defaul
 
 def _whole_film(owner: uuid.UUID, conversation: uuid.UUID) -> GenerationJob:
     return make_job(
-        WholeFilmRequest(revision=1, videos=[], music=None),
+        WholeFilmRequest(revision=1, videos=[], audios=[]),
         owner_user_id=owner,
         conversation_id=conversation,
         provider=PROVIDER_NAME,

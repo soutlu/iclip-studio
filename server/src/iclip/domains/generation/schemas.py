@@ -456,21 +456,21 @@ class WholeFilmVideoSource(CamelModel):
     url: DownloadUrl
 
 
-class WholeFilmMusicSource(CamelModel):
+class WholeFilmAudioSource(CamelModel):
     job_id: uuid.UUID
     url: DownloadUrl
 
 
 class WholeFilmRequest(CamelModel):
-    """导出一条成片：成片草稿的哪一版、它用到的素材。成片文件本身不存在这里，交给渲染服务时
-    按 ``revision`` 从草稿里取。"""
+    """导出一条成片：成片草稿的哪一版、它用到的素材（画面块的素材片、音频块的音频）。成片文件
+    本身不存在这里，交给渲染服务时按 ``revision`` 从草稿里取。"""
 
     kind: ClassVar[GenerationKind] = KIND_WHOLE_FILM
     operation: ClassVar[GenerationOperation] = OPERATION_RENDER
 
     revision: int
     videos: list[WholeFilmVideoSource]
-    music: WholeFilmMusicSource | None
+    audios: list[WholeFilmAudioSource]
 
 
 class VideoEnhanceIn(CamelModel):
@@ -782,7 +782,7 @@ __all__ = [
     "VideoTaskOut",
     "VideoTaskResult",
     "VideoTaskStatus",
-    "WholeFilmMusicSource",
+    "WholeFilmAudioSource",
     "WholeFilmRequest",
     "WholeFilmVideoSource",
     "generation_out",

@@ -10,7 +10,6 @@ import {
   pictureBlock,
   pictureFromAttributes,
   sourceVariable,
-  sourceVariableId,
   writeFilm,
   type Canvas,
   type PictureBlock,
@@ -256,6 +255,7 @@ export function useFilmSession(
           }
           const placed = {
             ...picture,
+            kind: 'picture' as const,
             id: newBlockId(),
             start: end,
             track,
@@ -356,7 +356,7 @@ export function useFilmSession(
     [edit],
   )
 
-  /** 删掉几个块；`ripple` 为真时第一行里后面的块往前补上。用不到的素材变量一起去掉。 */
+  /** 删掉几个块；`ripple` 为真时第一行里后面的块往前补上。没有块再用的素材变量一起去掉。 */
   const removeBlocks = useCallback(
     (ids: readonly string[], ripple: boolean) =>
       edit((engine) => {
@@ -366,10 +366,9 @@ export function useFilmSession(
         if (ripple)
           for (const [id, start] of rippleStarts(before, gone))
             engine.setTiming(id, { start: start / 1000 })
+        // 文件里别的块（比如音频块）也绑着素材变量，按剩下的所有块算
         const used = new Set(
-          before
-            .filter((block) => !gone.has(block.id))
-            .map((block) => sourceVariableId(block.jobId)),
+          engine.getElements().flatMap((element) => element.attributes['data-var-src'] ?? []),
         )
         for (const variable of engine.listVariables())
           if (!used.has(variable.id)) engine.removeVariableDeclaration(variable.id)

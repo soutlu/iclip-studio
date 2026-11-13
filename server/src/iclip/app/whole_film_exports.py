@@ -30,6 +30,7 @@ from iclip.domains.generation.render import (
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import (
     KIND_WHOLE_FILM,
+    WholeFilmAudioSource,
     WholeFilmRequest,
     WholeFilmVideoSource,
 )
@@ -66,8 +67,13 @@ class WholeFilmExportAdapter:
             videos=[
                 WholeFilmVideoSource(job_id=source.job_id, url=source.url)
                 for source in film.sources
+                if source.kind == "video"
             ],
-            music=None,
+            audios=[
+                WholeFilmAudioSource(job_id=source.job_id, url=source.url)
+                for source in film.sources
+                if source.kind == "audio"
+            ],
         )
         job = await self._generation.submit_whole_film(
             principal, conversation_id=conversation_id, request=request

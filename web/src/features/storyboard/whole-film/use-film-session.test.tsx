@@ -4,7 +4,14 @@ import { describe, expect, it, vi } from 'vitest'
 import type { WholeFilmDraftIn, WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
 import { server } from '@/testing/mocks/server'
 import { mockWholeFilmDraft, putMockWholeFilmDraft } from '@/testing/mocks/whole-film'
-import { filmFile, fixtureCatalog, picture } from '@/testing/whole-film'
+import {
+  audio,
+  AUDIO_JOB,
+  component,
+  filmFile,
+  fixtureCatalog,
+  picture,
+} from '@/testing/whole-film'
 import { MAX_FILM_MS } from './composition/film'
 import { FILM_LIMIT_TEXT, useFilmSession, type NewPicture } from './use-film-session'
 
@@ -211,6 +218,27 @@ describe('useFilmSession', () => {
     act(() => result.current.undo())
     expect(spans(result)).toHaveLength(3)
     expect(result.current.film?.html).toContain(`src-${OTHER_JOB}`)
+  })
+
+  it('文件里还有组件块和音频块：删掉画面块后它们和音频的素材变量都留着', async () => {
+    const saves = recordSaves()
+    const conversation = crypto.randomUUID()
+    const stored = putMockWholeFilmDraft(
+      conversation,
+      filmFile([picture({ id: 'a' }), component({ track: 1 }), audio()]),
+    )
+    const { result } = await open(stored, 10, conversation)
+    act(() => result.current.removeBlocks(['a'], true))
+    await waitFor(() => expect(saves).toHaveLength(1))
+    const saved = new DOMParser().parseFromString(saves[0]?.html ?? '', 'text/html')
+    expect([...saved.querySelectorAll('#film > *')].map((block) => block.id)).toEqual([
+      'title-1',
+      'music-1',
+    ])
+    const declared = JSON.parse(
+      saved.documentElement.getAttribute('data-composition-variables') ?? '[]',
+    ) as { id: string }[]
+    expect(declared.map((variable) => variable.id)).toEqual([`src-${AUDIO_JOB}`])
   })
 
   it('删掉一个块、关着波纹编辑：留下空档', async () => {
