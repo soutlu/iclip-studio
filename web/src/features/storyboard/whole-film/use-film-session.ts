@@ -446,6 +446,19 @@ export function useFilmSession(
     [edit],
   )
 
+  /**
+   * 把组件块 `id` 的可填项取值整个换成 `values`，算一步撤销。
+   * 块已经不在成片里（比如改完还没提交就删掉了）时不动成片。
+   */
+  const setValues = useCallback(
+    (id: string, values: Readonly<Record<string, VariableValue>>) => {
+      const engine = engineRef.current
+      if (engine === null || !blocksOf(engine).some((block) => block.id === id)) return
+      edit((current) => current.setAttribute(id, 'data-variable-values', JSON.stringify(values)))
+    },
+    [edit],
+  )
+
   /** 删掉几个块；`ripple` 为真时主轨里后面的块往前补上。没有块再用的素材变量一起去掉。 */
   const removeBlocks = useCallback(
     (ids: readonly string[], ripple: boolean) =>
@@ -482,6 +495,7 @@ export function useFilmSession(
     moveBlock,
     restart,
     setHidden,
+    setValues,
     removeBlocks,
     undo: () => step('undo'),
     redo: () => step('redo'),

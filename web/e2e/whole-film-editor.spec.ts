@@ -291,6 +291,9 @@ const savedComponent = (html: string, title: string) => {
     start: Number(attribute('data-start')),
     duration: Number(attribute('data-duration')),
     track: Number(attribute('data-track-index')),
+    values: JSON.parse(
+      (attribute('data-variable-values') ?? '{}').replaceAll('&quot;', '"'),
+    ) as Record<string, unknown>,
   }
 }
 
@@ -398,6 +401,80 @@ test('组件栏：搜到组件点「加到播放头」、拖一个到时间线�
     (html) =>
       savedComponent(html, '测试叠加') === null && savedComponent(html, '测试画面') !== null,
   )
+  await dialog
+    .getByRole('toolbar', { name: '剪辑工具' })
+    .getByRole('button', { name: '撤销' })
+    .click()
+  await undone
+})
+
+test('右侧栏：选中组件块改文字可填项，存下来、预览里看得到；在「时间」里改开始；点空白处回到没有选中，撤销回去', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const dialog = await openWholeFilm(page, panel)
+  const inspector = dialog.getByRole('complementary', { name: '属性' })
+  await expect(inspector.getByRole('heading', { name: '没有选中' })).toBeVisible()
+
+  const side = dialog.getByRole('complementary', { name: '组件和音频' })
+  await side.getByRole('searchbox', { name: '搜索组件' }).fill('可填项')
+  const card = side.getByRole('group', { name: '测试可填项，5 秒' })
+  const added = draftSavedWith(page, (html) => savedComponent(html, '测试可填项') !== null)
+  await card.hover()
+  await card.getByRole('button', { name: '加到播放头' }).click()
+  const placed = savedComponent(
+    ((await added).postDataJSON() as { html: string }).html,
+    '测试可填项',
+  )
+  expect(placed).toMatchObject({ component: 'fixture-fields', start: 0, values: {} })
+
+  const row = dialog.getByRole('group', { name: '第 1 行' })
+  await row.getByRole('button', { name: /^选中：测试可填项，/ }).click()
+  await expect(inspector.getByRole('heading', { name: '测试可填项' })).toBeVisible()
+  await expect(inspector.getByRole('button', { name: '内容' })).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  )
+  const text = inspector.getByRole('textbox', { name: '文字' })
+  await expect(text).toHaveValue('示例文字')
+
+  // 分两下输入，中间停过提交的时间：预览换了一份，焦点还在框里
+  await text.fill('新的')
+  await page.waitForTimeout(600)
+  const renamed = draftSavedWith(
+    page,
+    (html) => savedComponent(html, '测试可填项')?.values['text'] === '新的标题',
+  )
+  await text.pressSequentially('标题')
+  await renamed
+  await expect(text).toBeFocused()
+  const player = await readyPlayer(dialog)
+  await expect
+    .poll(() =>
+      player.evaluate((element: HTMLElement & { iframeElement: HTMLIFrameElement }, id) => {
+        const host = element.iframeElement.contentDocument?.getElementById(id)
+        return host?.querySelector('.ff-text')?.textContent ?? null
+      }, placed?.id ?? ''),
+    )
+    .toBe('新的标题')
+
+  await inspector.getByRole('button', { name: /^时间/ }).click()
+  const start = inspector.getByRole('textbox', { name: '开始' })
+  await expect(start).toHaveValue('0.00')
+  const moved = draftSavedWith(page, (html) => savedComponent(html, '测试可填项')?.start === 2)
+  await start.fill('2')
+  await start.press('Enter')
+  await moved
+  await expect(start).toHaveValue('2.00')
+
+  const lane = await row.boundingBox()
+  if (lane === null) throw new Error('时间线尚未布局')
+  await page.mouse.click(lane.x + 6, lane.y + lane.height / 2)
+  await expect(inspector.getByRole('heading', { name: '没有选中' })).toBeVisible()
+
+  const undone = draftSavedWith(page, (html) => savedComponent(html, '测试可填项')?.start === 0)
   await dialog
     .getByRole('toolbar', { name: '剪辑工具' })
     .getByRole('button', { name: '撤销' })
@@ -532,4 +609,9 @@ test('成片编辑器在窄屏上纵向排开', async ({ page }) => {
   const panel = await openConversation(page, '夜景延时素材生成', { mobile: true })
   const dialog = await openWholeFilm(page, panel)
   await expect(dialog.getByRole('region', { name: '视频素材区' })).toBeVisible()
+  // 右侧栏接在时间线下面，按内容高，不被挤成看不见
+  const inspector = dialog.getByRole('complementary', { name: '属性' })
+  await inspector.scrollIntoViewIfNeeded()
+  await expect(inspector.getByRole('heading', { name: '没有选中' })).toBeVisible()
+  expect((await inspector.boundingBox())?.height ?? 0).toBeGreaterThan(80)
 })

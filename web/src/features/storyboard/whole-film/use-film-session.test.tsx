@@ -983,6 +983,32 @@ describe('useFilmSession', () => {
       expect(result.current.film?.html).not.toContain('data-hidden')
     })
 
+    it('改组件块的可填项：文件里的取值整串换成新的，算一步撤销；块已经删掉时不动成片', async () => {
+      const saves = recordSaves()
+      const { result } = await openWith(stacked())
+      act(() => result.current.setValues('k', { text: '新的标题', size: 120, shadow: true }))
+      expect(result.current.film?.blocks[0]).toMatchObject({
+        id: 'k',
+        values: { text: '新的标题', size: 120, shadow: true },
+      })
+      await waitFor(() => expect(saves).toHaveLength(1))
+      expect(tagOf(saves[0]?.html, 'k')).toContain(
+        'data-variable-values="{&quot;text&quot;:&quot;新的标题&quot;,&quot;size&quot;:120,&quot;shadow&quot;:true}"',
+      )
+
+      act(() => result.current.undo())
+      expect(result.current.film?.blocks).toEqual(stacked())
+      expect(result.current.film?.canUndo).toBe(false)
+
+      act(() => result.current.removeBlocks(['k'], false))
+      const removed = result.current.film?.html
+      act(() => result.current.setValues('k', { text: '晚到的改动' }))
+      expect(result.current.film?.html).toBe(removed)
+      // 也不留一步空的撤销：撤销一次就是撤销删除
+      act(() => result.current.undo())
+      expect(result.current.film?.blocks).toEqual(stacked())
+    })
+
     it('删掉音频块：成片总长按剩下的块算，音频的变量一起去掉；撤销回来', async () => {
       const saves = recordSaves()
       const { result } = await openWith(stacked())

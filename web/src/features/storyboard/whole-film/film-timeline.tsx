@@ -41,7 +41,7 @@ import {
   type Timing,
 } from './block-edit'
 import { thumbnailUrl, type ComponentCatalog } from './component-catalog'
-import { isMediaBlock, type FilmBlock, type PictureBlock } from './composition/film'
+import { isMediaBlock, type FilmBlock } from './composition/film'
 import {
   rowHidden,
   rowsOf,
@@ -98,8 +98,8 @@ type FilmTimelineProps = {
   snap: boolean
   /** 块上要不要显示画面缩略图；关掉只剩名字和声音。 */
   thumbnails: boolean
-  /** 画面块素材的总长（毫秒），还没读到时是 undefined。音频块的总长取读波形时读到的时长。 */
-  pictureSourceMs: (block: PictureBlock) => number | undefined
+  /** 画面块、音频块素材的总长（毫秒），还没读到时是 undefined；裁结尾时不超出它。 */
+  sourceMs: SourceLength
   /** 换成这些选中的块（空的就是全部取消）。 */
   onSelect: (ids: ReadonlySet<string>) => void
   /** 开始或结束框选、拖块；中途按 Esc 由时间线自己取消。 */
@@ -651,7 +651,7 @@ export function FilmTimeline({
   selected,
   snap,
   thumbnails,
-  pictureSourceMs,
+  sourceMs,
   onSelect,
   onGesture,
   scrollRequest,
@@ -681,11 +681,6 @@ export function FilmTimeline({
   const peaks = useAudioPeaks(
     useStableValue([...new Set(blocks.filter(isMediaBlock).map((block) => block.src))]),
   )
-  const sourceMs: SourceLength = (block) => {
-    if (block.kind === 'picture') return pictureSourceMs(block)
-    const state = block.kind === 'audio' ? peaks.get(block.src) : undefined
-    return state?.kind === 'ready' ? Math.round(state.peaks.duration * 1000) : undefined
-  }
   const membersOf = (group: ReadonlySet<string>) => blocks.filter((block) => group.has(block.id))
   const trimRange = (block: FilmBlock, group: ReadonlySet<string>, edge: Edge) => {
     const range = groupTrimRange(membersOf(group), edge, blocks, sourceMs)

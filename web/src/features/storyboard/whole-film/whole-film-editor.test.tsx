@@ -9,7 +9,7 @@ import { addMockConversation } from '@/testing/mocks/conversations'
 import { server } from '@/testing/mocks/server'
 import { mockWholeFilmDraft, putMockWholeFilmDraft } from '@/testing/mocks/whole-film'
 import { renderWithProviders } from '@/testing/render'
-import { component, filmFile, picture } from '@/testing/whole-film'
+import { audio, component, filmFile, fixtureCatalog, picture } from '@/testing/whole-film'
 import type { GenerationJob } from '../storyboard.api'
 import { WholeFilmEditor } from './whole-film-editor'
 
@@ -1000,5 +1000,388 @@ describe('成片编辑器 · 组件栏', () => {
     await new Promise((resolve) => setTimeout(resolve, 1000))
     expect(savedComponents()).toHaveLength(1)
     expect(screen.getByText('上一个组件正在加入成片，请稍后再加')).toBeVisible()
+  })
+})
+
+describe('成片编辑器 · 右侧栏', () => {
+  const inspector = () => screen.getByRole('complementary', { name: '属性' })
+  const row = () => screen.getByRole('group', { name: '第 1 行' })
+  const pick = (user: ReturnType<typeof userEvent.setup>, label: string) =>
+    user.click(screen.getByRole('button', { name: new RegExp(`^选中：${label}，`) }))
+  const groupButton = (title: string) =>
+    within(inspector()).getByRole('button', { name: new RegExp(`^${title}`) })
+  const undoButton = () => within(toolbar()).getByRole('button', { name: '撤销' })
+  const savedTag = (id: string) =>
+    new RegExp(`<[a-z]+ [^>]*\\bid="${id}"[^>]*>`).exec(savedFilm())?.[0] ?? ''
+  /** 存下来的块上的可填项取值。 */
+  const savedValues = (id: string) =>
+    JSON.parse(
+      (/data-variable-values="([^"]*)"/.exec(savedTag(id))?.[1] ?? '{}').replaceAll('&quot;', '"'),
+    ) as Record<string, unknown>
+  /** 等过提交可填项的 300 毫秒。 */
+  const pastDelay = () => new Promise((resolve) => setTimeout(resolve, 400))
+
+  const brand = () =>
+    component({
+      id: 'brand-1',
+      label: '示例品牌 片尾',
+      component: 'fixture-brand-card',
+      src: 'compositions/fixtures/fixture-brand-card.html',
+      start: 2_000,
+      duration: 3_000,
+    })
+  const overlay = () =>
+    component({
+      id: 'overlay-1',
+      label: '测试叠加',
+      component: 'fixture-overlay',
+      src: 'compositions/fixtures/fixture-overlay.html',
+      start: 5_000,
+    })
+
+  const openWith = async (blocks: Parameters<typeof filmFile>[0]) => {
+    putMockWholeFilmDraft(CONVERSATION, filmFile(blocks, { width: 720, height: 1280 }))
+    const user = userEvent.setup()
+    await openEditor()
+    return user
+  }
+
+  it('没选中时说明怎么用；选中多个时列出名字、不显示字段；点空白处回到没有选中', async () => {
+    const user = await openWith([
+      component({ duration: 2_000 }),
+      picture({ id: 'clip-2', label: 'B · 镜头 1', jobId: TAKE_B, src: URL_B, start: 2_000 }),
+    ])
+    expect(within(inspector()).getByRole('heading', { name: '没有选中' })).toBeVisible()
+    expect(within(inspector()).getByText('在时间线上点一个块，在这里改它')).toBeVisible()
+
+    await pick(user, '测试可填项')
+    await user.keyboard('{Shift>}')
+    await pick(user, 'B · 镜头 1')
+    await user.keyboard('{/Shift}')
+    expect(within(inspector()).getByRole('heading', { name: '选中了 2 个块' })).toBeVisible()
+    const names = within(within(inspector()).getByRole('list', { name: '选中的块' }))
+      .getAllByRole('listitem')
+      .map((item) => item.textContent)
+    expect(names).toEqual(['测试可填项组件', 'B · 镜头 1视频'])
+    expect(within(inspector()).queryByRole('textbox')).toBeNull()
+    expect(within(inspector()).queryByRole('button', { name: /^时间/ })).toBeNull()
+
+    await user.click(row())
+    expect(within(inspector()).getByRole('heading', { name: '没有选中' })).toBeVisible()
+  })
+
+  it('组件块：头部是名字和种类，先展开「内容」；分组一次只展开一个，收起的写摘要，再点展开着的就全收起', async () => {
+    const user = await openWith([component({ start: 1_000, duration: 3_500 })])
+    await pick(user, '测试可填项')
+    expect(within(inspector()).getByRole('heading', { name: '测试可填项' })).toBeVisible()
+    expect(within(inspector()).getByText('组件')).toBeVisible()
+    expect(groupButton('内容')).toHaveAttribute('aria-expanded', 'true')
+    expect(groupButton('内容')).toHaveAccessibleName('内容')
+    expect(groupButton('时间')).toHaveAttribute('aria-expanded', 'false')
+    expect(groupButton('时间')).toHaveAccessibleName('时间 1.00 – 4.50 秒')
+    expect(within(inspector()).getByRole('textbox', { name: '文字' })).toBeVisible()
+
+    await user.click(groupButton('时间'))
+    expect(groupButton('时间')).toHaveAttribute('aria-expanded', 'true')
+    expect(groupButton('内容')).toHaveAttribute('aria-expanded', 'false')
+    expect(groupButton('内容')).toHaveAccessibleName('内容 示例文字')
+    expect(within(inspector()).queryByRole('textbox', { name: '文字' })).toBeNull()
+    expect(within(inspector()).getByRole('textbox', { name: '开始' })).toHaveValue('1.00')
+
+    await user.click(groupButton('时间'))
+    expect(groupButton('时间')).toHaveAttribute('aria-expanded', 'false')
+    expect(groupButton('内容')).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('画面块、音频块只有「时间」，默认展开；音频块的隐藏叫静音', async () => {
+    const user = await openWith([
+      picture({ jobId: TAKE_A, src: URL_A, duration: 2_000 }),
+      audio({ duration: 4_000 }),
+    ])
+    await pick(user, 'A · 镜头 1')
+    expect(within(inspector()).getByText('视频')).toBeVisible()
+    expect(within(inspector()).getAllByRole('button', { expanded: true })).toEqual([
+      groupButton('时间'),
+    ])
+    expect(within(inspector()).queryByRole('button', { name: /^内容/ })).toBeNull()
+    expect(within(inspector()).getByRole('button', { name: '隐藏' })).toBeVisible()
+
+    await pick(user, '配乐')
+    expect(within(inspector()).getByText('音频')).toBeVisible()
+    expect(groupButton('时间')).toHaveAttribute('aria-expanded', 'true')
+    expect(within(inspector()).queryByRole('button', { name: /^内容/ })).toBeNull()
+    await user.click(within(inspector()).getByRole('button', { name: '静音' }))
+    await waitSaved(() => expect(savedTag('music-1')).toMatch(/^<audio data-hidden=""/))
+    expect(within(inspector()).getByRole('button', { name: '取消静音' })).toBeVisible()
+  })
+
+  it('头部的隐藏、删除：隐藏写进文件、再点显示回来；删除和按 Delete 一样，后面的块往前补，回到没有选中', async () => {
+    const user = await openWith([
+      picture({ jobId: TAKE_A, src: URL_A, duration: 2_000 }),
+      picture({ id: 'clip-2', label: 'B · 镜头 1', jobId: TAKE_B, src: URL_B, start: 2_000 }),
+    ])
+    await pick(user, 'A · 镜头 1')
+    await user.click(within(inspector()).getByRole('button', { name: '隐藏' }))
+    expect(within(row()).getByRole('group', { name: 'A · 镜头 1，2.0 秒，已隐藏' })).toBeVisible()
+    await waitSaved(() => expect(savedTag('clip-1')).toMatch(/^<video data-hidden=""/))
+    await user.click(within(inspector()).getByRole('button', { name: '显示' }))
+    await waitSaved(() => expect(savedTag('clip-1')).not.toContain('data-hidden'))
+
+    await user.click(within(inspector()).getByRole('button', { name: '删除' }))
+    await waitSaved(() => expect(savedBlocks()).toHaveLength(1))
+    expect(savedTag('clip-2')).toContain('data-start="0"')
+    expect(within(inspector()).getByRole('heading', { name: '没有选中' })).toBeVisible()
+  })
+
+  it('内容：每项按类型用对应的控件，没填过的显示默认值', async () => {
+    const user = await openWith([component()])
+    await pick(user, '测试可填项')
+    const panel = within(inspector())
+    expect(panel.getByRole('textbox', { name: '文字' })).toHaveValue('示例文字')
+    const weight = panel.getByRole('combobox', { name: '字体粗细' })
+    expect(weight).toHaveValue('400')
+    expect(
+      within(weight)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['常规', '加粗'])
+    expect(panel.getByRole('textbox', { name: '底色' })).toHaveValue('#2756ff')
+    expect(panel.getByLabelText('底色取色')).toHaveValue('#2756ff')
+    expect(panel.getByRole('spinbutton', { name: '字号' })).toHaveValue(96)
+    const size = panel.getByRole('slider', { name: '字号' })
+    expect(size).toHaveValue('96')
+    expect(size).toHaveAttribute('min', '48')
+    expect(size).toHaveAttribute('max', '144')
+    expect(panel.getByText('px')).toBeVisible()
+    expect(panel.getByRole('switch', { name: '阴影' })).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('改文字：停下 300 毫秒才写进块，算一步撤销，预览跟着变', async () => {
+    const user = await openWith([component()])
+    await pick(user, '测试可填项')
+    const text = within(inspector()).getByRole('textbox', { name: '文字' })
+    await user.clear(text)
+    await user.type(text, '新的标题')
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+    await waitFor(() => expect(undoButton()).not.toHaveAttribute('aria-disabled'))
+    await waitSaved(() => expect(savedValues('title-1')).toEqual({ text: '新的标题' }))
+    expect(
+      screen
+        .getByRole('region', { name: '预览' })
+        .querySelector('hyperframes-player')
+        ?.getAttribute('srcdoc'),
+    ).toContain('{&quot;text&quot;:&quot;新的标题&quot;}')
+    expect(text).toHaveValue('新的标题')
+
+    await user.click(undoButton())
+    await waitSaved(() => expect(savedValues('title-1')).toEqual({}))
+    expect(within(inspector()).getByRole('textbox', { name: '文字' })).toHaveValue('示例文字')
+  })
+
+  it('输入法还在拼字时不写进块，上屏以后才写', async () => {
+    const user = await openWith([component()])
+    await pick(user, '测试可填项')
+    const text = within(inspector()).getByRole('textbox', { name: '文字' })
+    fireEvent.compositionStart(text)
+    fireEvent.change(text, { target: { value: 'xin' } })
+    await pastDelay()
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.change(text, { target: { value: '新' } })
+    fireEvent.compositionEnd(text)
+    await waitSaved(() => expect(savedValues('title-1')).toEqual({ text: '新' }))
+  })
+
+  it('300 毫秒里改了几项：合成一次写进块，几项都在', async () => {
+    const user = await openWith([component({ values: { text: '原来的字' } })])
+    await pick(user, '测试可填项')
+    const panel = within(inspector())
+    // 焦点不动，两项都还没写进块
+    fireEvent.change(panel.getByRole('combobox', { name: '字体粗细' }), {
+      target: { value: '700' },
+    })
+    fireEvent.click(panel.getByRole('switch', { name: '阴影' }))
+    await waitSaved(() =>
+      expect(savedValues('title-1')).toEqual({ text: '原来的字', weight: '700', shadow: true }),
+    )
+    expect(panel.getByRole('switch', { name: '阴影' })).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('数字：数字框写数字，滑杆拖到哪写到哪；框清空时不提交', async () => {
+    const user = await openWith([component()])
+    await pick(user, '测试可填项')
+    const panel = within(inspector())
+    const box = panel.getByRole('spinbutton', { name: '字号' })
+    await user.clear(box)
+    await pastDelay()
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+    await user.type(box, '120')
+    await waitSaved(() => expect(savedValues('title-1')).toEqual({ size: 120 }))
+
+    fireEvent.change(panel.getByRole('slider', { name: '字号' }), { target: { value: '60' } })
+    await waitSaved(() => expect(savedValues('title-1')).toEqual({ size: 60 }))
+    expect(box).toHaveValue(60)
+  })
+
+  it('颜色：取色和十六进制文字都写进块', async () => {
+    const user = await openWith([component()])
+    await pick(user, '测试可填项')
+    const panel = within(inspector())
+    const hex = panel.getByRole('textbox', { name: '底色' })
+    await user.clear(hex)
+    await user.type(hex, '#ff0000')
+    await waitSaved(() => expect(savedValues('title-1')).toEqual({ accent: '#ff0000' }))
+    fireEvent.input(panel.getByLabelText('底色取色'), { target: { value: '#00ff00' } })
+    await waitSaved(() => expect(savedValues('title-1')).toEqual({ accent: '#00ff00' }))
+    expect(hex).toHaveValue('#00ff00')
+  })
+
+  it('字体：下拉里是「默认」和组件库里有的字体；没填时显示条目的默认字体，选「默认」写空', async () => {
+    const user = await openWith([brand()])
+    await pick(user, '示例品牌 片尾')
+    const font = within(inspector()).getByRole('combobox', { name: '字体' })
+    expect(
+      within(font)
+        .getAllByRole('option')
+        .map((option) => [option.getAttribute('value'), option.textContent]),
+    ).toEqual([
+      ['', '默认'],
+      ['Playfair Display', 'Playfair Display'],
+    ])
+    expect(font).toHaveValue('Playfair Display')
+    await user.selectOptions(font, '')
+    await waitSaved(() => expect(savedValues('brand-1')).toEqual({ font: '' }))
+  })
+
+  it('条目没有可填项时说明没有；图片类可填项只读，说明暂不支持', async () => {
+    server.use(
+      http.get('/hyperframes/catalog.json', () =>
+        HttpResponse.json({
+          ...fixtureCatalog,
+          items: fixtureCatalog.items.map((item) =>
+            item.name === 'fixture-scene'
+              ? {
+                  ...item,
+                  variables: [{ id: 'logo', type: 'image', label: '标志', default: '' }],
+                }
+              : item,
+          ),
+        }),
+      ),
+    )
+    const user = await openWith([
+      overlay(),
+      component({
+        id: 'scene-1',
+        label: '测试画面',
+        component: 'fixture-scene',
+        src: 'compositions/fixtures/fixture-scene.html',
+      }),
+    ])
+    await pick(user, '测试叠加')
+    expect(within(inspector()).getByText('这个组件没有可以填的内容')).toBeVisible()
+    await pick(user, '测试画面')
+    expect(within(inspector()).getByText('标志')).toBeVisible()
+    expect(within(inspector()).getByText('图片暂不支持在这里修改')).toBeVisible()
+    expect(within(inspector()).queryByRole('textbox')).toBeNull()
+  })
+
+  describe('时间', () => {
+    // 一行两个块：A 镜头 1 在 0–2 秒；B 镜头 1 在 5–6.5 秒，素材 3 秒长
+    const twoApart = () => [
+      picture({ jobId: TAKE_A, src: URL_A, duration: 2_000 }),
+      picture({
+        id: 'clip-2',
+        label: 'B · 镜头 1',
+        jobId: TAKE_B,
+        src: URL_B,
+        start: 5_000,
+        duration: 1_500,
+      }),
+    ]
+    const field = (name: string) => within(inspector()).getByRole('textbox', { name })
+    const enter = async (user: ReturnType<typeof userEvent.setup>, name: string, value: string) => {
+      await user.clear(field(name))
+      await user.type(field(name), `${value}{Enter}`)
+    }
+
+    it('改开始是在本行里挪过去：放不下时落到最近的空处，框里显示实际的值；一步撤销', async () => {
+      const user = await openWith(twoApart())
+      await pick(user, 'B · 镜头 1')
+      expect(field('开始')).toHaveValue('5.00')
+      expect(field('结束')).toHaveValue('6.50')
+      expect(field('时长')).toHaveValue('1.50')
+      await enter(user, '开始', '1')
+      expect(field('开始')).toHaveValue('2.00')
+      expect(field('结束')).toHaveValue('3.50')
+      await waitSaved(() => expect(savedTag('clip-2')).toContain('data-start="2"'))
+
+      await user.click(undoButton())
+      await waitSaved(() => expect(savedTag('clip-2')).toContain('data-start="5"'))
+      expect(field('开始')).toHaveValue('5.00')
+    })
+
+    it('改结束、时长是裁结尾：不压到后面的块，不超出素材的长度', async () => {
+      const user = await openWith(twoApart())
+      await shot(/^生成 B 镜头 1，/)
+      await pick(user, 'A · 镜头 1')
+      await enter(user, '结束', '4')
+      await waitSaved(() => expect(savedTag('clip-1')).toContain('data-duration="4"'))
+      await enter(user, '结束', '9')
+      expect(field('结束')).toHaveValue('5.00')
+      await waitSaved(() => expect(savedTag('clip-1')).toContain('data-duration="5"'))
+
+      await pick(user, 'B · 镜头 1')
+      await enter(user, '时长', '10')
+      expect(field('时长')).toHaveValue('3.00')
+      expect(field('结束')).toHaveValue('8.00')
+      await waitSaved(() => expect(savedTag('clip-2')).toContain('data-duration="3"'))
+    })
+
+    it('失焦也提交；Esc 放弃刚输入的，块还选中着、编辑器还开着；不是数字时不提交、显示回原来的值', async () => {
+      const user = await openWith(twoApart())
+      await pick(user, 'B · 镜头 1')
+      await user.clear(field('开始'))
+      await user.type(field('开始'), '3{Escape}')
+      expect(field('开始')).toHaveValue('5.00')
+      expect(field('开始')).not.toHaveFocus()
+      expect(within(row()).getByRole('button', { name: /^选中：B · 镜头 1，/ })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      expect(screen.getByRole('group', { name: '成片编辑器' })).toBeVisible()
+
+      await enter(user, '时长', '很长')
+      expect(field('时长')).toHaveValue('1.50')
+      await pastDelay()
+      expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+
+      await user.clear(field('开始'))
+      await user.type(field('开始'), '5.5')
+      await user.tab()
+      await waitSaved(() => expect(savedTag('clip-2')).toContain('data-start="5.5"'))
+    })
+  })
+
+  it('右侧栏的控件上按快捷键不动时间线：删除、退格、M、[ 都归控件，空格拨开关', async () => {
+    const user = await openWith([component()])
+    await pick(user, '测试可填项')
+    const panel = within(inspector())
+    const blockButton = () => within(row()).queryByRole('button', { name: /^选中：测试可填项，/ })
+
+    panel.getByRole('textbox', { name: '文字' }).focus()
+    await user.keyboard('{Backspace}{Delete}')
+    panel.getByRole('combobox', { name: '字体粗细' }).focus()
+    await user.keyboard('{Delete}{Backspace}m[[')
+    panel.getByRole('slider', { name: '字号' }).focus()
+    await user.keyboard('{Delete}{Backspace}m')
+    const shadow = panel.getByRole('switch', { name: '阴影' })
+    shadow.focus()
+    await user.keyboard('{Delete} ')
+
+    expect(shadow).toHaveAttribute('aria-checked', 'true')
+    expect(blockButton()).toHaveAttribute('aria-pressed', 'true')
+    expect(within(transport()).getByRole('button', { name: '静音' })).toBeVisible()
+    await waitSaved(() => expect(savedValues('title-1')).toEqual({ text: '示例文', shadow: true }))
+    expect(savedTag('title-1')).not.toBe('')
   })
 })

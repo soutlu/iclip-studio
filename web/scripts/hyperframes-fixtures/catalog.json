@@ -83,7 +83,18 @@
             { "value": "700", "label": "加粗" }
           ]
         },
-        { "id": "accent", "type": "color", "label": "底色", "default": "#2756ff" }
+        { "id": "accent", "type": "color", "label": "底色", "default": "#2756ff" },
+        {
+          "id": "size",
+          "type": "number",
+          "label": "字号",
+          "default": 96,
+          "min": 48,
+          "max": 144,
+          "step": 4,
+          "unit": "px"
+        },
+        { "id": "shadow", "type": "boolean", "label": "阴影", "default": false }
       ],
       "thumbnail": "fixture-fields.svg",
       "fonts": []
