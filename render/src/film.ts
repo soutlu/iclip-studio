@@ -191,7 +191,8 @@ function readBlock(element: Element, catalog: ComponentCatalog): FilmBlock {
   elementsOf(element, where, [])
   const values: Record<string, string> = {}
   for (const { name, value } of element.attrs) {
-    const rule = rules[name] ?? fail(`${where}不能带 ${name}`)
+    const rule =
+      (Object.hasOwn(rules, name) ? rules[name] : undefined) ?? fail(`${where}不能带 ${name}`)
     if (rule.fixed !== undefined) fixed(value, rule.fixed, `${where}的 ${name}`)
     CHECKS[name as BlockAttribute](value, where)
     values[name] = value

@@ -119,6 +119,21 @@ describe('checkFilm', () => {
     ])
   })
 
+  it('画面块和音频块绑同一条记录：算两个素材，一个视频一个音频', async () => {
+    // 时间错开：同一个地址同时出声，渲染引擎自带的检查会拒收
+    const same = audio({ jobId: SOURCE_JOB, src: picture().src, start: 2000 })
+    const checked = await checkFilm(html(picture(), same), catalog)
+    expect(checked.sources.map((source) => [source.jobId, source.kind])).toEqual([
+      [SOURCE_JOB, 'video'],
+      [SOURCE_JOB, 'audio'],
+    ])
+  })
+
+  it('音频块和组件块的结尾可以过 2 分钟', async () => {
+    const long = [picture(), audio({ duration: 150_000 }), component({ start: 130_000 })]
+    expect((await checkFilm(html(...long), catalog)).durationMs).toBe(150_000)
+  })
+
   it('成片总长算到最晚结尾的块，音频块和组件块也算', async () => {
     expect((await checkFilm(html(picture(), audio({ duration: 6000 })), catalog)).durationMs).toBe(
       6000,
@@ -502,6 +517,16 @@ describe('readFilm 拒收写法之外的东西', () => {
       /JSON 对象/,
     ],
     ['循环写了 true 以外的值', (source) => source.replace('loop="true"', 'loop=""'), /loop/],
+    [
+      '块上带对象自带的属性名',
+      (source) => source.replace('<video id="clip-1"', '<video constructor="x" id="clip-1"'),
+      /不能带 constructor/,
+    ],
+    [
+      '块上带 __proto__',
+      (source) => source.replace('<audio id="music-1"', '<audio __proto__="x" id="music-1"'),
+      /不能带 __proto__/,
+    ],
     [
       '音频块带样式',
       (source) => source.replace('<audio id="music-1"', '<audio style="z-index: 1" id="music-1"'),
