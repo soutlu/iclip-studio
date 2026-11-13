@@ -1,4 +1,4 @@
-/* 成片编辑器：上面左边是素材 / 组件栏、右边是预览，下面是剪辑工具、时间线四条轨与视频素材区。
+/* 成片编辑器：上面从左到右是组件 / 音频栏、预览、右侧栏，下面是剪辑工具、时间线与视频素材区。
    外框沿用 editing/editor.css 的 .editor-dialog / .editor-header。 */
 
 .wf-dialog {
@@ -27,9 +27,9 @@
   min-height: 0;
   flex: 1;
   grid-template-areas:
-    'side preview'
-    'timeline timeline';
-  grid-template-columns: 288px minmax(0, 1fr);
+    'side preview inspector'
+    'timeline timeline timeline';
+  grid-template-columns: 288px minmax(0, 1fr) 320px;
   /* 时间线面板按内容高，最多占到预览留够最小高度之后剩下的地方 */
   grid-template-rows: minmax(220px, 1fr) minmax(0, max-content);
   gap: 12px;
@@ -399,6 +399,278 @@
 
 .wf-generate .composer-placeholder-overlay {
   top: 10px;
+}
+
+/* ---- 右侧栏：选中的块的名字、种类和分组，一次只展开一个分组 ---- */
+
+.wf-inspector {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  grid-area: inspector;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-container-low);
+}
+
+.wf-inspector-head {
+  display: flex;
+  height: 42px;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--color-hairline);
+}
+
+.wf-inspector-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-body);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-inspector-kind {
+  flex: none;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+}
+
+.wf-inspector-actions {
+  display: flex;
+  flex: none;
+  margin-left: auto;
+}
+
+.wf-inspector-body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.wf-inspector-group {
+  border-bottom: 1px solid var(--color-hairline);
+}
+
+.wf-inspector-group-title {
+  display: flex;
+  width: 100%;
+  height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 14px;
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 600;
+  text-align: left;
+}
+
+.wf-inspector-summary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-inspector-group-title > svg {
+  flex: none;
+  margin-left: auto;
+  color: var(--color-on-surface-faint);
+}
+
+.wf-inspector-fields {
+  padding: 2px 14px 14px;
+}
+
+.wf-inspector-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 两个类压过输入框、下拉框自带的高度、圆角、边框和底色：构建后工具类与这里同层，单个类比不过加载顺序 */
+.wf-inspector .wf-inspector-input {
+  width: 100%;
+  height: 28px;
+  min-width: 0;
+  padding: 0 9px;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-high);
+  font-size: var(--text-label);
+}
+
+/* 聚焦时 1px 边框转墨色，同设计系统的输入框 */
+.wf-inspector .wf-inspector-input:focus {
+  border-color: var(--color-on-surface);
+}
+
+.wf-inspector .wf-field-number .wf-inspector-input {
+  width: 72px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 下拉框去掉原生箭头，换成右边的一个图标，同设计稿 */
+.wf-inspector-select {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.wf-inspector .wf-inspector-select .wf-inspector-input {
+  padding-right: 28px;
+  appearance: none;
+}
+
+.wf-inspector-select > svg {
+  position: absolute;
+  right: 9px;
+  color: var(--color-on-surface-faint);
+  pointer-events: none;
+}
+
+.wf-inspector-range {
+  min-width: 0;
+  flex: 1;
+  accent-color: var(--color-on-surface);
+  cursor: pointer;
+}
+
+.wf-inspector-unit {
+  flex: none;
+  color: var(--color-on-surface-muted);
+}
+
+.wf-inspector-color {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.wf-inspector-color .wf-color {
+  flex: none;
+}
+
+.wf-inspector-static {
+  color: var(--color-on-surface-muted);
+}
+
+/* 「时间」：开始、结束、时长三格并排，名字在上，框后面写单位 */
+.wf-inspector-time {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.wf-inspector-cell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+}
+
+.wf-inspector-seconds {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.wf-inspector .wf-inspector-seconds .wf-inspector-input {
+  font-variant-numeric: tabular-nums;
+}
+
+.wf-inspector-note {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+
+/* 没有选中：图标、一句标题、一句说明，在栏里居中 */
+.wf-inspector-empty {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 28px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  text-align: center;
+}
+
+.wf-inspector-empty > svg {
+  color: var(--color-on-surface-faint);
+}
+
+.wf-inspector-empty-title {
+  color: var(--color-on-surface);
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+/* 选中了几个块：标题、块的名字，不显示字段 */
+.wf-inspector-multi {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 14px;
+  scrollbar-width: thin;
+}
+
+.wf-inspector-multi-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+.wf-inspector-multi-head > svg {
+  flex: none;
+  color: var(--color-on-surface-faint);
+}
+
+.wf-inspector-multi-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wf-inspector-multi-list > li {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-high);
+  font-size: var(--text-label);
+}
+
+.wf-inspector-multi-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---- 预览 ---- */
@@ -2533,14 +2805,16 @@
 }
 
 @media (max-width: 640px) {
-  /* 窄屏纵向排开：预览定高，时间线面板照旧紧跟在下面，组件栏定高接在最后；放不下时整个编辑区上下滚动 */
+  /* 窄屏纵向排开：预览定高，时间线面板照旧紧跟在下面；右侧栏接在时间线下面、按内容高，在时间线上
+     点了块就在紧下面改它；组件栏定高接在最后。放不下时整个编辑区上下滚动 */
   .wf-workspace {
     grid-template-areas:
       'preview'
       'timeline'
+      'inspector'
       'side';
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 248px minmax(max-content, 1fr) 360px;
+    grid-template-rows: 248px minmax(max-content, 1fr) max-content 360px;
     padding: 0 12px 12px;
   }
 

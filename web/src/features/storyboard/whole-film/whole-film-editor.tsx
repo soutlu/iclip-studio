@@ -21,12 +21,14 @@ import { TabsContent, TabsList, TabsRoot, TabsTrigger } from '@/shared/ui/tabs'
 import { toast } from '@/shared/ui/toast'
 import { groupConversationVideos } from '../conversation-videos/video-groups'
 import { keyframeRanges } from '../editing/keyframe-segments'
+import { useAudioPeaks } from '../editing/media-analysis'
 import { isShortcutTarget } from '../editing/shortcut-target'
 import { handleUndoShortcut } from '../editing/undo-shortcut'
 import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
 import { audioPlayheadSpot } from './audio'
 import { AudioTab } from './audio-tab'
+import type { SourceLength } from './block-edit'
 import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
 import { componentDurationMs, playheadSpot } from './components'
 import { ComponentsTab } from './components-tab'
@@ -34,6 +36,7 @@ import type { CatalogItem } from './composition/catalog'
 import { writeFilm, type Canvas } from './composition/film'
 import { EditorToolbar } from './editor-toolbar'
 import { ExportControl } from './export-control'
+import { FilmInspector } from './film-inspector'
 import { FilmTimeline, type DropGhost, type TimelineHandle } from './film-timeline'
 import { MaterialArea } from './material-area'
 import {
@@ -278,10 +281,12 @@ function EditorBody({
   const clearSelection = () => setSelectedIds(new Set())
   // 框选、拖块中途的 Esc 归时间线（只取消那一次），这里先让开
   const [gesturing, setGesturing] = useState(false)
+  // 右侧栏「时间」里的框正在输入：这时的 Esc 归那个框（放弃刚输入的），不取消选中、不关编辑器
+  const [timeEditing, setTimeEditing] = useState(false)
   // Esc 先退全屏（浏览器多半自己退，按键还是传到页面时才轮到这里），再取消选中；都没有才关编辑器
-  useEscapeAheadOfDialog(fullscreen || (!gesturing && selected.size > 0), () => {
+  useEscapeAheadOfDialog(fullscreen || timeEditing || (!gesturing && selected.size > 0), () => {
     if (fullscreen) exitFullscreen()
-    else clearSelection()
+    else if (!timeEditing) clearSelection()
   })
   const selectAround = (side: 'left' | 'right') =>
     setSelectedIds(new Set(aroundPlayhead(blocks, playhead, side)))
@@ -298,6 +303,22 @@ function EditorBody({
     if (target === null) return
     setZoom(target.zoom)
     setScrollRequest({ left: target.scrollLeft })
+  }
+  // 画面块、音频块素材的总长：时间线上拖着裁和右侧栏里输入时间都按它收住结尾
+  const audioPeaks = useAudioPeaks(
+    useStableValue(
+      [
+        ...new Set(blocks.filter((block) => block.kind === 'audio').map((block) => block.src)),
+      ].sort(),
+    ),
+  )
+  const sourceMs: SourceLength = (block) => {
+    if (block.kind === 'picture') {
+      const state = keyframes.get(block.src)
+      return state?.kind === 'ready' ? Math.round(state.index.duration * 1000) : undefined
+    }
+    const state = block.kind === 'audio' ? audioPeaks.get(block.src) : undefined
+    return state?.kind === 'ready' ? Math.round(state.peaks.duration * 1000) : undefined
   }
   const [ripple, setRipple] = useState(true)
   const removeSelected = () => {
@@ -436,8 +457,15 @@ function EditorBody({
   }
   const shortcut = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || !isShortcutTarget(event)) return
-    // 全屏时菜单挂在编辑器里面，菜单里按的键归菜单
-    if (event.target instanceof Element && event.target.closest('[role="menu"]') !== null) return
+    // 全屏时菜单挂在编辑器里面，菜单里按的键归菜单；右侧栏里的滑杆、下拉框、开关上按的键也归控件
+    // 自己，照参照的工作台。时间尺上的播放位置也是滑杆，点过它以后快捷键照常用
+    if (
+      event.target instanceof Element &&
+      event.target.closest(
+        '[role="menu"], [data-inspector] :is(input, select, [role="switch"])',
+      ) !== null
+    )
+      return
     const { key } = event
     if (key === ' ') {
       event.preventDefault()
@@ -649,6 +677,30 @@ function EditorBody({
             totalMs={total}
           />
         </div>
+        <FilmInspector
+          blocks={blocks}
+          catalog={catalog}
+          onHide={(id, hidden) => {
+            leaveMaterial()
+            session.setHidden([id], hidden)
+          }}
+          onRemove={removeSelected}
+          onRestart={(starts) => {
+            leaveMaterial()
+            session.restart(starts)
+          }}
+          onRetime={(timings) => {
+            leaveMaterial()
+            session.retime(timings)
+          }}
+          onTimeEditing={setTimeEditing}
+          onValues={(id, values) => {
+            leaveMaterial()
+            session.setValues(id, values)
+          }}
+          selected={selectedBlocks}
+          sourceMs={sourceMs}
+        />
         <div className="wf-timeline">
           <EditorToolbar
             canRedo={history.canRedo}
@@ -716,10 +768,7 @@ function EditorBody({
             selected={selected}
             snap={snap}
             thumbnails={thumbnails}
-            pictureSourceMs={(block) => {
-              const state = keyframes.get(block.src)
-              return state?.kind === 'ready' ? Math.round(state.index.duration * 1000) : undefined
-            }}
+            sourceMs={sourceMs}
             totalMs={total}
           />
           {session.save.kind === 'failed' ? (

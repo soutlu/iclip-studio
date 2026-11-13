@@ -8,12 +8,13 @@ import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import { resolveHeadlessShellPath } from '@hyperframes/engine'
+import { openComposition } from '@hyperframes/sdk'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   writeFilm,
   type AudioBlock,
 } from '../../web/src/features/storyboard/whole-film/composition/film'
-import { localizedFilm } from './film'
+import { checkFilm, localizedFilm } from './film'
 import { ExportQueue } from './jobs'
 import { loadLibrary, type ComponentLibrary } from './library'
 import { createProducerWorker } from './renderer'
@@ -591,6 +592,45 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const again = await words('component-font-again', { font: 'Playfair Display' })
     expect(meanDifference(chosen, again)).toBeLessThan(2)
     expect(meanDifference(plain, chosen)).toBeGreaterThan(8)
+  }, 600_000)
+
+  it('在编辑器里改了组件的文字可填项：导出里画的是新的文字，和默认文字时不一样', async () => {
+    const { logger } = memoryLogger()
+    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
+    const catalog = (library as ComponentLibrary).catalog
+    const canvas = { width: 1920, height: 1080 }
+    const stored = writeFilm(
+      { canvas, blocks: [component({ values: { accent: '#ff0000' } })] },
+      catalog,
+    )
+    // 和编辑器右侧栏改值一样：用 SDK 把块上的取值整串换掉，存出来的文件再过渲染前的检查
+    const session = await openComposition(stored)
+    session.setAttribute(
+      'title-1',
+      'data-variable-values',
+      JSON.stringify({ accent: '#ff0000', text: '新的标题' }),
+    )
+    const edited = (await checkFilm(session.serialize(), catalog)).html
+    const words = async (id: string, html: string) => {
+      const rendered = await worker.render(
+        {
+          id,
+          registryDir: (library as ComponentLibrary).dir,
+          mediaUrls: [],
+          compose: () => html,
+        },
+        { signal: new AbortController().signal, onProgress: () => {} },
+      )
+      try {
+        return await frameAt(rendered.file, 1, { x: 170, y: 760, width: 380, height: 140 })
+      } finally {
+        await rendered.cleanup()
+      }
+    }
+    const plain = await words('component-text-default', stored)
+    const changed = await words('component-text-edited', edited)
+    expect(edited).toContain('&quot;text&quot;:&quot;新的标题&quot;')
+    expect(meanDifference(plain, changed)).toBeGreaterThan(8)
   }, 600_000)
 
   it('音频块：有声音，音量调低后更轻，循环时音频比块短也一直有声，隐藏后没有声音', async () => {

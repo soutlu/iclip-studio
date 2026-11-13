@@ -251,6 +251,21 @@ describe('checkFilm', () => {
     expect(checked.html).toBe(html(picture(), placed, moved))
   })
 
+  it('用 SDK 把组件块的可填项整串换掉（编辑器右侧栏改值），存出来的文件通过检查，读回来是新的取值', async () => {
+    const placed = component({ ...titled, track: 1 })
+    const stored = (await checkFilm(html(picture(), placed), catalog)).html
+    const session = await openComposition(stored)
+    const values = { ...titled.values, text: 'New title', size: 120, shadow: true }
+    session.batch(() => {
+      session.setAttribute('title-1', 'data-variable-values', JSON.stringify(values))
+      session.dispatch({ type: 'setCompositionMetadata', duration: 2 })
+    })
+    const checked = await checkFilm(session.serialize(), catalog)
+    const changed = { ...placed, values }
+    expect(checked.film).toEqual(film(picture(), changed))
+    expect(checked.html).toBe(html(picture(), changed))
+  })
+
   it('用 SDK 加块、存出来的文件通过检查，重写后 SDK 再开再存仍然通过且内容不变', async () => {
     const session = await openComposition(html())
     const add = (block: PictureBlock, index: number) =>
