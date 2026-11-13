@@ -492,6 +492,27 @@ export function componentChars(text) {
   return [...chars].sort((a, b) => a.codePointAt(0) - b.codePointAt(0)).join('')
 }
 
+const ANIMATION_LIBRARY_TAG = /<script\b[^>]*\bsrc="[^"]*\/gsap[^"]*"/i
+const USES_ANIMATION_LIBRARY = /\bgsap\./
+
+/**
+ * 组件文件用到动画库、自己却没引用它时，在它的第一段脚本前补上引用。
+ * 成片文件不带脚本，组件单独放进成片时要靠自带的引用，不然它的脚本一运行就报错。
+ */
+export function withAnimationLibrary(html) {
+  // 注释换成等长的空白：注释里的脚本不算，位置也不变
+  const code = html.replace(HTML_COMMENT, (comment) => ' '.repeat(comment.length))
+  if (!USES_ANIMATION_LIBRARY.test(code) || ANIMATION_LIBRARY_TAG.test(code)) return html
+  const at = code.search(/<script\b/)
+  if (at === -1) return html
+  const tag = `<script src="${RUNTIME.gsap}"></script>`
+  const lineStart = html.lastIndexOf('\n', at - 1) + 1
+  const indent = html.slice(lineStart, at)
+  return /^[ \t]*$/.test(indent)
+    ? `${html.slice(0, lineStart)}${indent}${tag}\n${html.slice(lineStart)}`
+    : `${html.slice(0, at)}${tag}${html.slice(at)}`
+}
+
 export const FONT_VARIABLE = { id: 'font', type: 'font', label: '字体', default: '' }
 
 const READS_FONT_VARIABLE = /var\(\s*--font-(?:display|body)\b/

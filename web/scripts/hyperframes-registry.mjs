@@ -32,6 +32,7 @@ import {
   sha256,
   sourceTree,
   twinDescriptors,
+  withAnimationLibrary,
   withoutCjkStylesheet,
   writeAtomic,
 } from './hyperframes-shared.mjs'
@@ -202,15 +203,17 @@ async function assemble(temp, catalog, lock) {
     await writeOut(target, patched.get(target))
   }
 
-  const componentFiles = smokeDir
-    ? items.filter(({ kind }) => kind === 'component').map(({ item }) => compositionTarget(item))
-    : catalog.items.filter((item) => item.kind === 'component').map((item) => item.src)
-  for (const target of componentFiles) {
+  const itemFiles = smokeDir
+    ? items.map(({ kind, item }) => ({ kind, target: compositionTarget(item) }))
+    : catalog.items.map((item) => ({ kind: item.kind, target: item.src }))
+  for (const { kind, target } of itemFiles) {
     const path = join(temp, target)
     if (!existsSync(path)) throw new SyncError(`组件目录里的 ${target} 不存在`)
     const text = await readFile(path, 'utf8')
-    const transparent = text.replace(COMPONENT_BACKGROUND, 'background: transparent;')
-    if (transparent !== text) await writeFile(path, transparent)
+    const transparent =
+      kind === 'component' ? text.replace(COMPONENT_BACKGROUND, 'background: transparent;') : text
+    const rewritten = withAnimationLibrary(transparent)
+    if (rewritten !== text) await writeFile(path, rewritten)
   }
 
   const googleFaces = new Map()
