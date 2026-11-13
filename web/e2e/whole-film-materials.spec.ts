@@ -3,6 +3,9 @@ import { openConversation } from './helpers'
 
 const CONVERSATION = '无图分镜草稿'
 
+// 这个文件里的用例各走一整段编辑流程，每次保存都要等一轮防抖；CI 上最长的几条会超过默认的 30 秒
+test.describe.configure({ timeout: 60_000 })
+
 const conversationIdOf = (page: Page) => new URL(page.url()).pathname.split('/').at(-1) ?? ''
 
 const addTakes = async (page: Page, shots: readonly number[]) => {
