@@ -145,7 +145,8 @@ describe('成片编辑器 · 加入素材', () => {
     await user.keyboard('{/Shift}{Enter}')
 
     await waitSaved(() => expect(savedBlocks()).toHaveLength(4))
-    const [, , third, fourth] = savedBlocks()
+    // 新加的块写在根下第一个：后加的在前面
+    const [fourth, third] = savedBlocks()
     expect(third).toContain('data-start="3.5" data-duration="2" data-media-start="0"')
     expect(fourth).toContain('data-start="5.5" data-duration="2.5" data-media-start="2"')
     expect(savedFilm().match(/&quot;id&quot;:&quot;src-/g)).toHaveLength(2)

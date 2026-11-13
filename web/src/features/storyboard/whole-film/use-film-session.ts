@@ -5,16 +5,19 @@ import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
 import { rippleStarts, type Timing } from './block-edit'
 import type { ComponentCatalog } from './composition/catalog'
 import {
+  blockFromAttributes,
+  blockKindOfTag,
   FILM_ID,
   pictureBlock,
-  pictureFromAttributes,
   sourceVariable,
   writeFilm,
   type Canvas,
+  type FilmBlock,
   type PictureBlock,
 } from './composition/film'
 import { topTrack, type Landing, type Renumbering } from './placement'
-import { insertionOf } from './stacking'
+import { newBlockZ, restackedZ } from './stacking'
+import type { StackingDirection } from './vendor/hyperframes-studio/player/components/timelineStackingSync'
 import { readWholeFilmDraft, saveWholeFilmDraft } from './whole-film.api'
 
 export type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'failed'; message: string }
@@ -41,17 +44,27 @@ const STALE_NOTICE = '成片草稿已在别处改过，已换成最新的一版�
 const NO_RENUMBERING: Renumbering = new Map()
 const NO_STARTS: ReadonlyMap<string, number> = new Map()
 
-/** 成片里的画面块，按它们在文件里的先后。只读块，不存出文件，一批操作中间也能用。 */
+/** 成片里所有的块，按它们在文件里的先后。只读块，不存出文件，一批操作中间也能用。 */
+const blocksOf = (engine: Composition): FilmBlock[] =>
+  (engine.getElements().find((element) => element.id === FILM_ID)?.children ?? []).flatMap(
+    (element) => {
+      const kind = blockKindOfTag(element.tag)
+      const block =
+        kind === undefined
+          ? undefined
+          : blockFromAttributes(
+              kind,
+              element.id,
+              element.attributes,
+              element.inlineStyles['zIndex'],
+            )
+      return block === undefined ? [] : [block]
+    },
+  )
+
+/** 成片里的画面块，按它们在文件里的先后。 */
 const picturesOf = (engine: Composition): PictureBlock[] =>
-  engine.getElements().flatMap((element) => {
-    if (!element.classNames.includes('picture')) return []
-    const block = pictureFromAttributes(
-      element.id,
-      element.attributes,
-      element.inlineStyles['zIndex'],
-    )
-    return block === undefined ? [] : [block]
-  })
+  blocksOf(engine).filter((block) => block.kind === 'picture')
 
 const durationOf = (pictures: readonly PictureBlock[]) =>
   Math.max(0, ...pictures.map((block) => block.start + block.duration))
@@ -215,7 +228,7 @@ export function useFilmSession(
   /**
    * 把几段素材一段接一段放进成片：给了 `at` 就从那一行的那个时间放起（调用方保证那里空着），
    * 没给就接在第一行的末尾。`renumber` 是为它新开一行时别的块要换成的行号。
-   * 还没有成片时先按 `canvas` 建一份。放不下时不动成片。
+   * 每段都叠在最上面，写在根下第一个。还没有成片时先按 `canvas` 建一份。放不下时不动成片。
    */
   const addPictures = useCallback(
     async (
@@ -236,30 +249,26 @@ export function useFilmSession(
       const row = others.filter((block) => block.track === track)
       let end = at?.start ?? Math.max(0, ...row.map((block) => block.start + block.duration))
       const declared = new Set(engine.listVariables().map((variable) => variable.id))
-      // 文件里现在的先后；每加一个块就按它写进去的位置插进来，下一个块照着新的先后算
-      const written = [...others]
+      const existing = blocksOf(engine)
       engine.batch(() => {
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
-        for (const picture of pictures) {
+        for (const [placed, picture] of pictures.entries()) {
           const variable = sourceVariable(picture.jobId, picture.src)
           if (!declared.has(variable.id)) {
             engine.declareVariable(variable)
             declared.add(variable.id)
           }
-          const placed = {
+          const block = {
             ...picture,
             kind: 'picture' as const,
             id: newBlockId(),
             start: end,
             track,
             volume: 1,
-            z: 0,
+            z: newBlockZ(existing, placed),
             hidden: false,
           }
-          const { index, z } = insertionOf(written, placed)
-          const block = { ...placed, z }
-          engine.addElement(FILM_ID, index, pictureBlock(block))
-          written.splice(index, 0, block)
+          engine.addElement(FILM_ID, 0, pictureBlock(block))
           end += picture.duration
         }
         engine.dispatch({
@@ -303,8 +312,8 @@ export function useFilmSession(
   )
 
   /**
-   * 把一个块换到另一行的某个时间。谁盖住谁要跟着行走（上面的行盖住下面的行），别的块又不能动，
-   * 所以是把它从文件里取出来，再像新加的块那样按新位置写回去。
+   * 把一个块换到另一行的某个时间。`direction` 是它往上还是往下挪（null 时不调叠放顺序）：
+   * 只重排它自己，别的块的叠放顺序和文件里的先后都不动。
    * `renumber` 是为它新开一行时别的块要换成的行号；`starts` 是和它一起挪的块各自的新起点，
    * 它们留在原来的行。都和它算一步撤销。
    */
@@ -312,21 +321,18 @@ export function useFilmSession(
     (
       id: string,
       at: Landing,
+      direction: StackingDirection | null,
       renumber: Renumbering = NO_RENUMBERING,
       starts: ReadonlyMap<string, number> = NO_STARTS,
     ) =>
       edit((engine) => {
         for (const [other, next] of renumber) engine.setTiming(other, { trackIndex: next })
-        // 一起挪的块先挪好，它写回去的位置和叠放顺序按挪完的样子算
         for (const [other, start] of starts) engine.setTiming(other, { start: start / 1000 })
-        const pictures = picturesOf(engine)
-        const block = pictures.find((other) => other.id === id)
-        if (block === undefined) return
-        const others = pictures.filter((other) => other.id !== id)
-        const placed = { ...block, track: at.track, start: at.start }
-        const { index, z } = insertionOf(others, placed)
-        engine.removeElement(id)
-        engine.addElement(FILM_ID, index, pictureBlock({ ...placed, z }))
+        engine.setTiming(id, { start: at.start / 1000, trackIndex: at.track })
+        if (direction === null) return
+        // 按挪完的样子算：一起挪的块的新起点、别的块的新行号都已写进去
+        const z = restackedZ(blocksOf(engine), id, direction)
+        if (z !== undefined) engine.setStyle(id, { zIndex: z > 0 ? String(z) : null })
       }),
     [edit],
   )

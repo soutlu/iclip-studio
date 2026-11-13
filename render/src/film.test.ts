@@ -233,13 +233,13 @@ describe('checkFilm', () => {
   describe('编辑器加素材、撤销、重做后存出来的文件', () => {
     type Session = Awaited<ReturnType<typeof openComposition>>
 
-    /** 和编辑器加素材时发的操作一样：没声明过的素材先声明变量，再加块、改总时长。 */
-    const add = (session: Session, block: PictureBlock, index: number) => {
+    /** 和编辑器加素材时发的操作一样：没声明过的素材先声明变量，再把块写在根下第一个、改总时长。 */
+    const add = (session: Session, block: PictureBlock) => {
       const declared = session.listVariables().map((variable) => variable.id)
       const variable = sourceVariable(block.jobId, block.src)
       session.batch(() => {
         if (!declared.includes(variable.id)) session.declareVariable(variable)
-        session.addElement('film', index, pictureBlock(block))
+        session.addElement('film', 0, pictureBlock(block))
         session.dispatch({
           type: 'setCompositionMetadata',
           duration: (block.start + block.duration) / 1000,
@@ -249,31 +249,31 @@ describe('checkFilm', () => {
 
     it('从空成片加第一条素材再撤销：回到没有块的成片；重做后素材回来', async () => {
       const session = await openComposition(html())
-      add(session, picture(), 0)
+      add(session, picture({ z: 1 }))
       session.undo()
       expect((await checkFilm(session.serialize(), catalog)).film.blocks).toEqual([])
       session.redo()
-      expect((await checkFilm(session.serialize(), catalog)).film).toEqual(film(picture()))
+      expect((await checkFilm(session.serialize(), catalog)).film).toEqual(film(picture({ z: 1 })))
     })
 
-    it('打开存着的成片，加一条新素材再撤销：和存着的一样；重做后两条都在', async () => {
+    it('打开存着的成片，加一条新素材再撤销：和存着的一样；重做后新的一条写在最前面', async () => {
       const stored = (await checkFilm(html(picture()), catalog)).html
       const session = await openComposition(stored)
-      add(session, second(), 1)
+      add(session, second({ z: 2 }))
       session.undo()
       expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
       session.redo()
-      expect((await checkFilm(session.serialize(), catalog)).film).toEqual(
-        film(picture(), second()),
-      )
+      const checked = await checkFilm(session.serialize(), catalog)
+      expect(checked.film).toEqual(film(second({ z: 2 }), picture()))
+      expect(checked.html).toBe(html(second({ z: 2 }), picture()))
     })
 
     it('同一条素材加两次再撤销一次：变量还在，剩下的那一块照样通过', async () => {
       const session = await openComposition(html())
-      add(session, picture(), 0)
-      add(session, picture({ id: 'clip-2', start: 2000, mediaStart: 3000 }), 1)
+      add(session, picture({ z: 1 }))
+      add(session, picture({ id: 'clip-2', start: 2000, mediaStart: 3000, z: 2 }))
       session.undo()
-      expect((await checkFilm(session.serialize(), catalog)).film).toEqual(film(picture()))
+      expect((await checkFilm(session.serialize(), catalog)).film).toEqual(film(picture({ z: 1 })))
     })
   })
 
@@ -324,18 +324,43 @@ describe('checkFilm', () => {
       expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
     })
 
-    it('把块换到另一行（取出来再按新位置写回去，带着叠放顺序）：读回来是新的先后、行号和叠放顺序；撤销回到原样', async () => {
-      const stored = (await checkFilm(html(picture(), second()), catalog)).html
-      const session = await openComposition(stored)
-      const moved = second({ start: 500, track: 1, z: 1 })
+    /** 和编辑器换行时发的操作一样：改行号和起点、需要时改它的叠放顺序（0 时去掉样式），和成片总长算一步。 */
+    const changeRow = (
+      session: Session,
+      id: string,
+      at: Pick<PictureBlock, 'start' | 'track'>,
+      z: number | undefined,
+      total: number,
+    ) =>
       session.batch(() => {
-        session.removeElement('clip-2')
-        session.addElement('film', 0, pictureBlock(moved))
-        session.dispatch({ type: 'setCompositionMetadata', duration: 3.5 })
+        session.setTiming(id, { start: at.start / 1000, trackIndex: at.track })
+        if (z !== undefined) session.setStyle(id, { zIndex: z > 0 ? String(z) : null })
+        session.dispatch({ type: 'setCompositionMetadata', duration: total / 1000 })
       })
+
+    it('把块换到上面一行、调高叠放顺序：读回来是新的行号、起点和叠放顺序，文件里的先后不变；撤销回到原样', async () => {
+      const stored = (await checkFilm(html(second({ track: 2 }), picture({ track: 1 })), catalog))
+        .html
+      const session = await openComposition(stored)
+      changeRow(session, 'clip-2', { start: 500, track: 0 }, 3, 3500)
+      const moved = second({ start: 500, track: 0, z: 3 })
       const checked = await checkFilm(session.serialize(), catalog)
-      expect(checked.film).toEqual(film(moved, picture()))
+      expect(checked.film).toEqual(film(moved, picture({ track: 1 })))
+      expect(checked.html).toBe(html(moved, picture({ track: 1 })))
       expect(checked.durationMs).toBe(3500)
+      session.undo()
+      expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
+    })
+
+    it('把块换到下面一行、叠放顺序降到 0：块上不再带样式，重写后一字不差；撤销回到原样', async () => {
+      const stored = (await checkFilm(html(second({ z: 2 }), picture({ z: 1 })), catalog)).html
+      const session = await openComposition(stored)
+      changeRow(session, 'clip-2', { start: 500, track: 1 }, 0, 3500)
+      const saved = session.serialize()
+      expect(saved).toContain('<video id="clip-2"')
+      const checked = await checkFilm(saved, catalog)
+      expect(checked.film).toEqual(film(second({ start: 500, track: 1 }), picture({ z: 1 })))
+      expect(checked.html).toBe(html(second({ start: 500, track: 1 }), picture({ z: 1 })))
       session.undo()
       expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
     })
@@ -352,39 +377,42 @@ describe('checkFilm', () => {
       )
     })
 
-    it('把块搬进最上面新开的一行（别的块先改行号，再把它取出来写回去）：读回来是新的行号和先后；撤销回到原样', async () => {
+    it('把块搬进最上面新开的一行（别的块先改行号，再改它的行号、起点和叠放顺序）：读回来是新的行号，文件里的先后不变；撤销回到原样', async () => {
       const stored = (await checkFilm(html(picture(), second()), catalog)).html
       const session = await openComposition(stored)
-      const moved = second({ start: 500, track: 0 })
       session.batch(() => {
         session.setTiming('clip-1', { trackIndex: 1 })
-        session.removeElement('clip-2')
-        session.addElement('film', 1, pictureBlock(moved))
+        session.setTiming('clip-2', { start: 0.5, trackIndex: 0 })
+        session.setStyle('clip-2', { zIndex: '1' })
         session.dispatch({ type: 'setCompositionMetadata', duration: 3.5 })
       })
       const checked = await checkFilm(session.serialize(), catalog)
-      expect(checked.film).toEqual(film(picture({ track: 1 }), moved))
+      expect(checked.film).toEqual(
+        film(picture({ track: 1 }), second({ start: 500, track: 0, z: 1 })),
+      )
       session.undo()
       expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
     })
 
-    it('成组挪动、被抓的块搬进最上面新开的一行（别的块先改行号，跟着的块挪好起点，再把它取出来写回去）：读回来是新的行号和时间；撤销回到原样', async () => {
+    it('成组挪动、被抓的块搬进最上面新开的一行（别的块先改行号，跟着的块挪好起点，再改它自己）：读回来是新的行号和时间；撤销回到原样', async () => {
       const third = picture({ id: 'clip-3', start: 5000, duration: 1000 })
       const stored = (await checkFilm(html(picture(), second(), third), catalog)).html
       const session = await openComposition(stored)
       // clip-2 搬到最上面新开的一行、往后挪 0.5 秒；选中的 clip-1 跟着挪 0.5 秒，留在原来那一行
-      const moved = second({ start: 2500, track: 0 })
       session.batch(() => {
         session.setTiming('clip-1', { trackIndex: 1 })
         session.setTiming('clip-3', { trackIndex: 1 })
         session.setTiming('clip-1', { start: 0.5 })
-        session.removeElement('clip-2')
-        session.addElement('film', 2, pictureBlock(moved))
+        session.setTiming('clip-2', { start: 2.5, trackIndex: 0 })
         session.dispatch({ type: 'setCompositionMetadata', duration: 6 })
       })
       const checked = await checkFilm(session.serialize(), catalog)
       expect(checked.film).toEqual(
-        film(picture({ start: 500, track: 1 }), picture({ ...third, track: 1 }), moved),
+        film(
+          picture({ start: 500, track: 1 }),
+          second({ start: 2500, track: 0 }),
+          picture({ ...third, track: 1 }),
+        ),
       )
       expect(checked.durationMs).toBe(6000)
       session.undo()
