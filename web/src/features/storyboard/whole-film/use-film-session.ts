@@ -6,7 +6,6 @@ import { rippleStarts, type Timing } from './block-edit'
 import type { ComponentCatalog } from './composition/catalog'
 import {
   FILM_ID,
-  MAX_FILM_MS,
   pictureBlock,
   pictureFromAttributes,
   sourceVariable,
@@ -38,7 +37,6 @@ const openComposition = async (html: string): Promise<Composition> =>
   (await import('@hyperframes/sdk')).openComposition(html)
 
 const STALE_NOTICE = '成片草稿已在别处改过，已换成最新的一版；刚才没保存的改动已放弃'
-export const FILM_LIMIT_TEXT = '成片最长 2 分钟，这段放不下了'
 
 const NO_RENUMBERING: Renumbering = new Map()
 const NO_STARTS: ReadonlyMap<string, number> = new Map()
@@ -237,11 +235,6 @@ export function useFilmSession(
       const track = at?.track ?? topTrack(others)
       const row = others.filter((block) => block.track === track)
       let end = at?.start ?? Math.max(0, ...row.map((block) => block.start + block.duration))
-      const total = pictures.reduce((sum, picture) => sum + picture.duration, end)
-      if (total > MAX_FILM_MS) {
-        noticeRef.current(FILM_LIMIT_TEXT)
-        return false
-      }
       const declared = new Set(engine.listVariables().map((variable) => variable.id))
       // 文件里现在的先后；每加一个块就按它写进去的位置插进来，下一个块照着新的先后算
       const written = [...others]

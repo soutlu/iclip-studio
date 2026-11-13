@@ -12,8 +12,7 @@ import {
   fixtureCatalog,
   picture,
 } from '@/testing/whole-film'
-import { MAX_FILM_MS } from './composition/film'
-import { FILM_LIMIT_TEXT, useFilmSession, type NewPicture } from './use-film-session'
+import { useFilmSession, type NewPicture } from './use-film-session'
 
 const CONVERSATION = '6b0f3a4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b'
 const OTHER_JOB = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
@@ -526,17 +525,16 @@ describe('useFilmSession', () => {
     expect(result.current.film?.html).not.toContain('data-composition-variables')
   })
 
-  it('加进去会超过两分钟：不动成片，并告诉用户', async () => {
+  it('成片没有时长上限：两分钟以后还能接着加', async () => {
     const saves = recordSaves()
     const { result, onNotice } = await open()
-    await add(result, piece({ duration: MAX_FILM_MS - 1_000 }))
+    await add(result, piece({ duration: 119_000 }))
     await waitFor(() => expect(saves).toHaveLength(1))
     await settled(result)
-    await add(result, piece({ duration: 1_001 }))
-    expect(spans(result)).toHaveLength(1)
-    expect(onNotice).toHaveBeenCalledWith(FILM_LIMIT_TEXT)
-    await add(result, piece({ duration: 1_000 }))
+    await add(result, piece({ duration: 5_000 }))
     expect(spans(result)).toHaveLength(2)
+    expect(result.current.film?.durationMs).toBe(124_000)
+    expect(onNotice).not.toHaveBeenCalled()
     await waitFor(() => expect(saves).toHaveLength(2))
     await settled(result)
   })

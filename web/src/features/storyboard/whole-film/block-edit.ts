@@ -1,5 +1,5 @@
 import type { Edge } from '../editing/timeline-drag'
-import { MAX_FILM_MS, MIN_BLOCK_MS, type PictureBlock } from './composition/film'
+import { MIN_BLOCK_MS, type PictureBlock } from './composition/film'
 import { topTrack } from './placement'
 import { resolveNearestFreeStart } from './vendor/hyperframes-studio/player/components/timelineCollision'
 import {
@@ -34,8 +34,8 @@ export const trimBounds = (
       max: endOf(block) - MIN_BLOCK_MS,
     }
   }
+  // 后面没有块时是无穷大：只受素材长度限制
   const nextStart = Math.min(
-    MAX_FILM_MS,
     ...row.filter((other) => other.start >= endOf(block)).map((other) => other.start),
   )
   const sourceEnd =
@@ -111,7 +111,7 @@ export type GroupShift = { delta: number; track: number | null }
 /**
  * 挪动（一个块也是一组）：`group` 里的块（含被抓的 `grabbed`）挪同一个时间差，取离 `wantedDelta` 最近的，
  * 一样近取靠后的。被抓的块去 `track` 这一行（null 是新开的一行，上面没有别的块），别的块留在各自的行。
- * 整组不早于 0、不超出成片最长的长度；每个块都不和它那一行上没在挪的块重叠，同组的块互不挡路。
+ * 整组不早于 0；每个块都不和它那一行上没在挪的块重叠，同组的块互不挡路。
  * `track` 上有和被抓的块时间重叠的同组块（挪同一个时间差也分不开），或者在那里找不到时间差时，
  * 被抓的块留在自己那一行重新找。
  */
@@ -123,11 +123,10 @@ export const groupShift = (
   track: number | null,
 ): GroupShift => {
   const members = pictures.filter((block) => group.has(block.id))
-  // 都按被抓的块的起点算：整组能挪到的最早、最晚的位置
+  // 按被抓的块的起点算：整组能挪到的最早的位置
   const lowest = grabbed.start - Math.min(...members.map((member) => member.start))
-  const highest = grabbed.start + Math.min(...members.map((member) => MAX_FILM_MS - endOf(member)))
-  const wanted = Math.min(highest, Math.max(lowest, grabbed.start + wantedDelta))
-  const shiftOn = (row: number | null): number | undefined => {
+  const wanted = Math.max(lowest, grabbed.start + wantedDelta)
+  const shiftOn = (row: number | null): number => {
     // 某个块压到它那一行上一个没在挪的块时，被抓的块的起点有一段不能去；
     // 把这些段当成一行上的块，被抓的块当成长度为 0 的块，找离想要的位置最近的空处
     const busy = members.flatMap((member) => {
@@ -142,13 +141,8 @@ export const groupShift = (
           track: 0,
         }))
     })
-    const nearest = (spans: typeof busy) =>
-      Math.round(resolveNearestFreeStart(spans, 0, wanted / 1000, 0, null, lowest / 1000) * 1000)
-    // 最近的空处超出了上限，就在上限之前再找一次
-    let start = nearest(busy)
-    if (start > highest)
-      start = nearest([...busy, { id: '', start: highest / 1000, duration: Infinity, track: 0 }])
-    return Number.isFinite(start) ? start - grabbed.start : undefined
+    const start = resolveNearestFreeStart(busy, 0, wanted / 1000, 0, null, lowest / 1000)
+    return Math.round(start * 1000) - grabbed.start
   }
   const overlapsGrabbed = (member: PictureBlock) =>
     member.start < endOf(grabbed) && grabbed.start < endOf(member)
@@ -158,11 +152,9 @@ export const groupShift = (
     members.some(
       (member) => member.id !== grabbed.id && member.track === track && overlapsGrabbed(member),
     )
-  const aimed = blocked ? undefined : shiftOn(track)
-  if (aimed !== undefined) return { delta: aimed, track }
-  // 原来的位置一定放得下；按 10 毫秒取整找空处时可能一处也找不到，那就不挪
-  const own = track === grabbed.track ? undefined : shiftOn(grabbed.track)
-  return { delta: own ?? 0, track: grabbed.track }
+  return blocked
+    ? { delta: shiftOn(grabbed.track), track: grabbed.track }
+    : { delta: shiftOn(track), track }
 }
 
 /** 合拢空档之后要挪的块各自的新起点（毫秒）；没有可合拢的是空表。 */
