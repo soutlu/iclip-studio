@@ -101,7 +101,7 @@ export const readAudioTrack = async <T>(
 export const readAudioPeaks = (url: string): Promise<AudioPeaks | null> =>
   readAudioTrack(
     url,
-    async ({ samples }) => {
+    async ({ samples, duration }) => {
       const collector = peakCollector()
       for await (const sample of samples) {
         const plane = new Float32Array(sample.numberOfFrames)
@@ -110,7 +110,7 @@ export const readAudioPeaks = (url: string): Promise<AudioPeaks | null> =>
           collector.add(plane, sample.timestamp, sample.sampleRate)
         }
       }
-      return collector.result()
+      return collector.result(await duration())
     },
     { failure: '原声读取失败，请稍后重试' },
   )

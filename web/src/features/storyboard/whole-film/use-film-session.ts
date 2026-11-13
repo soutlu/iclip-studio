@@ -11,7 +11,6 @@ import {
   blockKindOfTag,
   componentBlock,
   FILM_ID,
-  isMediaBlock,
   pictureBlock,
   sourceVariable,
   writeFilm,
@@ -389,19 +388,20 @@ export function useFilmSession(
     [show],
   )
 
-  /** 改几个块各自的起止和入点，一起算一步撤销。组件块没有入点，只改起止。 */
+  /**
+   * 改几个块各自的起止和入点，一起算一步撤销。组件块的入点写成从第几秒开始播，是 0 时去掉这个属性。
+   */
   const retime = useCallback(
     (timings: ReadonlyMap<string, Timing>) =>
       edit((engine) => {
-        const media = new Set(
-          blocksOf(engine)
-            .filter(isMediaBlock)
-            .map((block) => block.id),
-        )
+        const kinds = new Map(blocksOf(engine).map((block) => [block.id, block.kind]))
         for (const [id, timing] of timings) {
           engine.setTiming(id, { start: timing.start / 1000, duration: timing.duration / 1000 })
-          if (media.has(id))
-            engine.setAttribute(id, 'data-media-start', String(timing.mediaStart / 1000))
+          const kind = kinds.get(id)
+          const inPoint = String(timing.mediaStart / 1000)
+          if (kind === 'component')
+            engine.setAttribute(id, 'data-playback-start', timing.mediaStart > 0 ? inPoint : null)
+          else if (kind !== undefined) engine.setAttribute(id, 'data-media-start', inPoint)
         }
       }),
     [edit],

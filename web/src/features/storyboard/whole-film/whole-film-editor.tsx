@@ -589,9 +589,7 @@ function EditorBody({
             selected={selected}
             snap={snap}
             thumbnails={thumbnails}
-            sourceMs={(block) => {
-              // 组件块和音频块这一版不按素材长度限制结尾
-              if (block.kind !== 'picture') return Infinity
+            pictureSourceMs={(block) => {
               const state = keyframes.get(block.src)
               return state?.kind === 'ready' ? Math.round(state.index.duration * 1000) : undefined
             }}

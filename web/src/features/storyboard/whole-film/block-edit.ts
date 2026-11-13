@@ -9,15 +9,15 @@ import {
 } from './vendor/hyperframes-studio/player/components/timelineGaps'
 
 /**
- * 一个块在成片里的起止和它从素材的哪里开始放（毫秒）。
- * 组件块不带入点（这里是 0）：裁开头只改起止。
+ * 一个块在成片里的起止和它的入点（毫秒）。入点是从素材的哪里开始放，
+ * 组件块是从组件自己的第几毫秒开始播（`playbackStart`）。
  */
 export type Timing = { start: number; duration: number; mediaStart: number }
 
 export const timingOf = (block: FilmBlock): Timing => ({
   start: block.start,
   duration: block.duration,
-  mediaStart: isMediaBlock(block) ? block.mediaStart : 0,
+  mediaStart: isMediaBlock(block) ? block.mediaStart : block.playbackStart,
 })
 
 const endOf = (block: Pick<FilmBlock, 'start' | 'duration'>) => block.start + block.duration
@@ -25,8 +25,9 @@ const endOf = (block: Pick<FilmBlock, 'start' | 'duration'>) => block.start + bl
 const rowKeyOf = (block: FilmBlock): RowKey => ({ zone: zoneOf(block), track: block.track })
 
 /**
- * 裁 `edge` 这一端时，这一端能到的范围（成片的毫秒）：不压到同一行的邻居，不超出素材本身，
- * 块不短于最短长度。`sourceMs` 是素材的总长：还不知道时结尾不许往外拉，没有上限时给无穷大。
+ * 裁 `edge` 这一端时，这一端能到的范围（成片的毫秒）：不压到同一行的邻居，块不短于最短长度；
+ * 开头往前不早于入点 0，结尾往后不超出素材剩下的长度（音频开着循环也一样）。
+ * `sourceMs` 是画面块、音频块素材的总长，还不知道时结尾不许往外拉；组件块不看它，结尾不设上限。
  */
 export const trimBounds = (
   block: FilmBlock,
@@ -35,15 +36,14 @@ export const trimBounds = (
   sourceMs: number | undefined,
 ): { min: number; max: number } => {
   const row = blocks.filter((other) => onRow(other, rowKeyOf(block)) && other.id !== block.id)
+  const { mediaStart } = timingOf(block)
   if (edge === 'start') {
     const previousEnd = Math.max(
       0,
       ...row.filter((other) => endOf(other) <= block.start).map(endOf),
     )
     return {
-      min: isMediaBlock(block)
-        ? Math.max(previousEnd, block.start - block.mediaStart)
-        : previousEnd,
+      min: Math.max(previousEnd, block.start - mediaStart),
       max: endOf(block) - MIN_BLOCK_MS,
     }
   }
@@ -51,15 +51,19 @@ export const trimBounds = (
   const nextStart = Math.min(
     ...row.filter((other) => other.start >= endOf(block)).map((other) => other.start),
   )
-  const sourceEnd =
-    sourceMs === undefined ? endOf(block) : block.start + sourceMs - timingOf(block).mediaStart
+  // 组件的长度属于组件自己的时间线，不拿来卡裁剪
+  const sourceEnd = !isMediaBlock(block)
+    ? Infinity
+    : sourceMs === undefined
+      ? endOf(block)
+      : block.start + sourceMs - mediaStart
   return {
     min: block.start + MIN_BLOCK_MS,
     max: Math.max(endOf(block), Math.min(nextStart, sourceEnd)),
   }
 }
 
-/** 把 `edge` 这一端裁到 `timeMs`（先收进 `bounds`）之后，块的起止和入点。 */
+/** 把 `edge` 这一端裁到 `timeMs`（先收进 `bounds`）之后，块的起止和入点；裁开头时入点跟着动。 */
 export const trimmed = (
   block: FilmBlock,
   edge: Edge,
@@ -70,16 +74,12 @@ export const trimmed = (
   const { mediaStart } = timingOf(block)
   if (edge === 'end') return { start: block.start, duration: at - block.start, mediaStart }
   const delta = at - block.start
-  return {
-    start: at,
-    duration: block.duration - delta,
-    mediaStart: isMediaBlock(block) ? mediaStart + delta : 0,
-  }
+  return { start: at, duration: block.duration - delta, mediaStart: mediaStart + delta }
 }
 
 const edgeOf = (block: FilmBlock, edge: Edge) => (edge === 'start' ? block.start : endOf(block))
 
-/** 每个块的素材总长（毫秒）：还不知道时是 undefined，没有上限时是无穷大。 */
+/** 画面块、音频块素材的总长（毫秒）：还不知道时是 undefined。组件块不看它。 */
 export type SourceLength = (block: FilmBlock) => number | undefined
 
 /**

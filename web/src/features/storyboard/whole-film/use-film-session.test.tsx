@@ -853,10 +853,42 @@ describe('useFilmSession', () => {
       expect(result.current.film?.durationMs).toBe(7_000)
       await waitFor(() => expect(saves).toHaveLength(1))
       expect(tagOf(saves[0]?.html, 'k')).not.toContain('data-media-start')
+      expect(tagOf(saves[0]?.html, 'k')).not.toContain('data-playback-start')
       expect(tagOf(saves[0]?.html, 'm')).toContain('data-media-start="2"')
 
       act(() => result.current.undo())
       expect(result.current.film?.blocks).toEqual(stacked())
+    })
+
+    it('组件块裁开头：文件里写上从第几秒开始播，和起止算一步撤销；拉回 0 时去掉这个属性', async () => {
+      const saves = recordSaves()
+      const { result } = await openWith(stacked())
+      const original = result.current.film?.html
+      act(() =>
+        result.current.retime(
+          new Map([['k', { start: 1_500, duration: 1_500, mediaStart: 1_500 }]]),
+        ),
+      )
+      expect(result.current.film?.blocks[0]).toMatchObject({
+        id: 'k',
+        start: 1_500,
+        duration: 1_500,
+        playbackStart: 1_500,
+      })
+      await waitFor(() => expect(saves).toHaveLength(1))
+      expect(tagOf(saves[0]?.html, 'k')).toContain('data-start="1.5" data-duration="1.5"')
+      expect(tagOf(saves[0]?.html, 'k')).toContain('data-playback-start="1.5"')
+
+      act(() => result.current.undo())
+      expect(result.current.film?.html).toBe(original)
+
+      act(() => result.current.redo())
+      act(() =>
+        result.current.retime(new Map([['k', { start: 0, duration: 3_000, mediaStart: 0 }]])),
+      )
+      expect(result.current.film?.blocks[0]).toMatchObject({ start: 0, playbackStart: 0 })
+      await waitFor(() => expect(saves).toHaveLength(2))
+      expect(tagOf(saves[1]?.html, 'k')).not.toContain('data-playback-start')
     })
 
     /** 文件里的块，按文件里的先后，写成「id、行号、起点、叠放顺序」（音频块没有叠放顺序）。 */

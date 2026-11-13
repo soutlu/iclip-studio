@@ -83,25 +83,50 @@ describe('裁组件块和音频块', () => {
   const music = audio({ id: 'm', start: 2_500, duration: 1_500, mediaStart: 1_000 })
   const mixed = [first, title, music]
 
-  it('组件块没有入点：开头往前一直能拉到前一个块，裁开头只改起止', () => {
-    const bounds = trimBounds(title, 'start', mixed, Infinity)
-    expect(bounds).toEqual({ min: 2_000, max: 4_900 })
-    expect(trimmed(title, 'start', 2_000, bounds)).toEqual({
-      start: 2_000,
-      duration: 3_000,
-      mediaStart: 0,
+  it('组件块裁开头：往后裁多少，从第几秒开始播就加多少', () => {
+    const bounds = trimBounds(title, 'start', mixed, undefined)
+    expect(trimmed(title, 'start', 3_400, bounds)).toEqual({
+      start: 3_400,
+      duration: 1_600,
+      mediaStart: 400,
     })
   })
 
-  it('没有素材长度的块：结尾往后不设上限，只被同一行后面的块挡住', () => {
-    expect(trimBounds(title, 'end', mixed, Infinity).max).toBe(Infinity)
-    expect(trimBounds(music, 'end', mixed, Infinity).max).toBe(Infinity)
+  it('组件块开头往前拉：从第几秒开始播跟着减，减到 0 为止；也不压到前一个块', () => {
+    // 从头播的组件块开头不能往前拉
+    expect(trimBounds(title, 'start', mixed, undefined)).toEqual({ min: 3_000, max: 4_900 })
+    const late = { ...title, playbackStart: 600 }
+    const bounds = trimBounds(late, 'start', mixed, undefined)
+    expect(bounds).toEqual({ min: 2_400, max: 4_900 })
+    expect(trimmed(late, 'start', 2_000, bounds)).toEqual({
+      start: 2_400,
+      duration: 2_600,
+      mediaStart: 0,
+    })
+    const later = { ...title, playbackStart: 1_500 }
+    expect(trimBounds(later, 'start', mixed, undefined).min).toBe(2_000)
+  })
+
+  it('组件块结尾没有上限：给了长度、长度没读到都不看，只被同一行后面的块挡住', () => {
+    expect(trimBounds(title, 'end', mixed, 1_000).max).toBe(Infinity)
+    expect(trimBounds(title, 'end', mixed, undefined).max).toBe(Infinity)
     const next = component({ id: 'n', start: 8_000 })
-    expect(trimBounds(title, 'end', [...mixed, next], Infinity).max).toBe(8_000)
+    expect(trimBounds(title, 'end', [...mixed, next], undefined).max).toBe(8_000)
+  })
+
+  it('音频块结尾最多拉到音频剩下的长度：从入点算起；开着循环也一样', () => {
+    // 3 秒的音频从第 1 秒放起，还剩 2 秒：结尾最多到 2.5 + 2 = 4.5 秒
+    expect(trimBounds(music, 'end', mixed, 3_000)).toEqual({ min: 2_600, max: 4_500 })
+    expect(trimBounds({ ...music, loop: true }, 'end', mixed, 3_000).max).toBe(4_500)
+    expect(trimBounds({ ...music, mediaStart: 0 }, 'end', mixed, 3_000).max).toBe(5_500)
+  })
+
+  it('音频的时长还没读到：结尾只能往里收', () => {
+    expect(trimBounds(music, 'end', mixed, undefined)).toEqual({ min: 2_600, max: 4_000 })
   })
 
   it('音频块裁开头：不早于音频的开头，入点跟着动；别的区同号的行上的块不挡路', () => {
-    const bounds = trimBounds(music, 'start', mixed, Infinity)
+    const bounds = trimBounds(music, 'start', mixed, 3_000)
     expect(bounds).toEqual({ min: 1_500, max: 3_900 })
     expect(trimmed(music, 'start', 1_500, bounds)).toEqual({
       start: 1_500,
@@ -334,6 +359,49 @@ describe('成组裁剪', () => {
     expect(trimmedGroup([right, upper], 'end', -500, unread)).toEqual({
       r: { start: 2_000, duration: 1_500, mediaStart: 0 },
       u: { start: 1_000, duration: 1_500, mediaStart: 1_000 },
+    })
+  })
+
+  it('三种块一起裁：同一个量，按最受限的那个收住；组件块从第几秒开始播跟着动，结尾不受长度限制', () => {
+    // 画面区第 0 行：画面块 p（1–3 秒，入点 0.5 秒，素材 4 秒）；第 1 行：组件块 k（1–3 秒，从第 0.3 秒播）；
+    // 声音区第 0 行：音频块 a（2–3 秒，入点 1 秒，音频 2.5 秒）
+    const shot = picture({ id: 'p', start: 1_000, duration: 2_000, mediaStart: 500, src: 'p.mp4' })
+    const title = component({
+      id: 'k',
+      start: 1_000,
+      duration: 2_000,
+      playbackStart: 300,
+      track: 1,
+    })
+    const music = audio({ id: 'a', start: 2_000, duration: 1_000, mediaStart: 1_000, src: 'a.mp3' })
+    const blocks = [shot, title, music]
+    const lengths = new Map([
+      ['p.mp4', 4_000],
+      ['a.mp3', 2_500],
+    ])
+    const lengthOf = (block: FilmBlock) => lengths.get(block.src)
+    const together = (edge: 'start' | 'end', delta: number) => {
+      const timings = groupTrimmed(blocks, edge, delta, blocks, lengthOf)
+      expectValidFilm(blocks.map((block) => ({ ...block, ...timings.get(block.id) })))
+      return Object.fromEntries(timings) as Record<string, Timing>
+    }
+    // 开头往前拉 1 秒：组件块只能往前 0.3 秒（画面块 0.5 秒、音频块 1 秒）
+    expect(together('start', -1_000)).toEqual({
+      p: { start: 700, duration: 2_300, mediaStart: 200 },
+      k: { start: 700, duration: 2_300, mediaStart: 0 },
+      a: { start: 1_700, duration: 1_300, mediaStart: 700 },
+    })
+    // 开头往后裁 0.5 秒：三个的入点都加 0.5 秒
+    expect(together('start', 500)).toEqual({
+      p: { start: 1_500, duration: 1_500, mediaStart: 1_000 },
+      k: { start: 1_500, duration: 1_500, mediaStart: 800 },
+      a: { start: 2_500, duration: 500, mediaStart: 1_500 },
+    })
+    // 结尾往后拉 5 秒：音频只剩 0.5 秒（画面块还能拉 1.5 秒，组件块不限）
+    expect(together('end', 5_000)).toEqual({
+      p: { start: 1_000, duration: 2_500, mediaStart: 500 },
+      k: { start: 1_000, duration: 2_500, mediaStart: 300 },
+      a: { start: 2_000, duration: 1_500, mediaStart: 1_000 },
     })
   })
 
