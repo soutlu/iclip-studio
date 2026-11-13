@@ -526,6 +526,73 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(meanDifference(hidden.panel, Buffer.alloc(hidden.panel.length, 0))).toBeLessThan(6)
   }, 600_000)
 
+  it('固定尺寸的组件放进竖版画面：按原比例缩小、居中，不铺满也不出画', async () => {
+    const { logger } = memoryLogger()
+    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
+    const catalog = (library as ComponentLibrary).catalog
+    // 测试组件按 1920×1080 设计，色底在 x 120–1020、y 720–940。放进 720×1280：缩成 0.375 倍、
+    // 上下居中（顶边 437.5），色底落在 x 45–382.5、y 707.5–790
+    const canvas = { width: 720, height: 1280 }
+    const rendered = await worker.render(
+      {
+        id: 'component-fit',
+        registryDir: (library as ComponentLibrary).dir,
+        mediaUrls: [],
+        compose: () =>
+          writeFilm(
+            { canvas, blocks: [component({ values: { text: '', accent: '#ff0000' } })] },
+            catalog,
+          ),
+      },
+      { signal: new AbortController().signal, onProgress: () => {} },
+    )
+    try {
+      // 缩小后的色底左段：不缩时这里在色底左边（x 120 以左），是黑的
+      const left = await frameAt(rendered.file, 1, { x: 55, y: 715, width: 50, height: 60 })
+      // 不缩时色底会盖到这里；缩小后在色底右边、下边，是黑的
+      const beyond = await frameAt(rendered.file, 1, { x: 420, y: 800, width: 260, height: 120 })
+      expect(meanDifference(left, solid(left.length, [255, 0, 0]))).toBeLessThan(10)
+      expect(meanDifference(beyond, Buffer.alloc(beyond.length, 0))).toBeLessThan(6)
+    } finally {
+      await rendered.cleanup()
+    }
+  }, 600_000)
+
+  it('组件的字体可填项换成组件库里的字体：字体变量生效，字的样子跟着变', async () => {
+    const { logger } = memoryLogger()
+    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
+    const catalog = (library as ComponentLibrary).catalog
+    const canvas = { width: 1920, height: 1080 }
+    const words = async (id: string, values: Record<string, string>) => {
+      const rendered = await worker.render(
+        {
+          id,
+          registryDir: (library as ComponentLibrary).dir,
+          mediaUrls: [],
+          compose: () =>
+            writeFilm(
+              {
+                canvas,
+                blocks: [component({ values: { text: 'Sample', accent: '#ff0000', ...values } })],
+              },
+              catalog,
+            ),
+        },
+        { signal: new AbortController().signal, onProgress: () => {} },
+      )
+      try {
+        return await frameAt(rendered.file, 1, { x: 170, y: 760, width: 380, height: 140 })
+      } finally {
+        await rendered.cleanup()
+      }
+    }
+    const plain = await words('component-font-plain', {})
+    const chosen = await words('component-font-chosen', { font: 'Playfair Display' })
+    const again = await words('component-font-again', { font: 'Playfair Display' })
+    expect(meanDifference(chosen, again)).toBeLessThan(2)
+    expect(meanDifference(plain, chosen)).toBeGreaterThan(8)
+  }, 600_000)
+
   it('音频块：有声音，音量调低后更轻，循环时音频比块短也一直有声，隐藏后没有声音', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })

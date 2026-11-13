@@ -278,6 +278,133 @@ test('播放条：倍速和静音对素材、成片都生效且换播放器后�
   await expect.poll(async () => [await boxOf(preview), await boxOf(transport)]).toEqual(before)
 })
 
+/** 存下来的成片里名字是 `title` 的组件块的属性；没有时是 null。 */
+const savedComponent = (html: string, title: string) => {
+  const tag = new RegExp(`<div [^>]*class="clip component"[^>]*data-label="${title}"[^>]*>`).exec(
+    html,
+  )?.[0]
+  if (tag === undefined) return null
+  const attribute = (name: string) => new RegExp(` ${name}="([^"]*)"`).exec(tag)?.[1]
+  return {
+    id: attribute('id'),
+    component: attribute('data-composition-id'),
+    start: Number(attribute('data-start')),
+    duration: Number(attribute('data-duration')),
+    track: Number(attribute('data-track-index')),
+  }
+}
+
+const draftSavedWith = (page: Page, check: (html: string) => boolean) =>
+  page.waitForRequest(
+    (request) =>
+      request.method() === 'PUT' &&
+      request.url().includes('/whole-film/draft') &&
+      check((request.postDataJSON() as { html: string }).html),
+  )
+
+test('组件栏：搜到组件点「加到播放头」、拖一个到时间线上，预览里画出来，撤销回去', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const dialog = await openWholeFilm(page, panel)
+  const first = draftSaved(page, 1)
+  await dialog
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  const { html: withPicture } = (await first).postDataJSON() as { html: string }
+  const pictureSeconds = Number(/<video [^>]*data-duration="([^"]+)"/.exec(withPicture)?.[1])
+
+  const side = dialog.getByRole('complementary', { name: '组件栏' })
+  await side.getByRole('searchbox', { name: '搜索组件' }).fill('渐变')
+  const cards = side.getByRole('list', { name: '组件' }).getByRole('group')
+  await expect(cards).toHaveCount(1)
+  const scene = cards.first()
+  await expect(scene).toHaveAccessibleName('测试画面，6 秒')
+  const add = scene.getByRole('button', { name: '加到播放头' })
+  await expect(add).toHaveCSS('opacity', '0')
+  await scene.hover()
+  await expect(add).toHaveCSS('opacity', '1')
+
+  // 播放头在 0：第一行这时有画面块，组件放进它下面新开的一行
+  const added = draftSavedWith(page, (html) => savedComponent(html, '测试画面') !== null)
+  await add.click()
+  const placed = savedComponent(((await added).postDataJSON() as { html: string }).html, '测试画面')
+  expect(placed).toMatchObject({ component: 'fixture-scene', start: 0, duration: 6, track: 1 })
+  await expect(
+    dialog.getByRole('group', { name: '第 2 行' }).getByRole('group', { name: '测试画面，6.0 秒' }),
+  ).toBeVisible()
+
+  // 预览里画出了组件，按原比例缩进画面、居中
+  const player = await readyPlayer(dialog)
+  await expect
+    .poll(() =>
+      player.evaluate((element: HTMLElement & { iframeElement: HTMLIFrameElement }, id) => {
+        const page = element.iframeElement.contentDocument
+        const root = page?.getElementById('film')
+        const host = page?.getElementById(id)
+        if (!root || !host || host.querySelector('.fs-dot') === null) return null
+        const width = Number(root.dataset['width'])
+        const height = Number(root.dataset['height'])
+        const scale = Math.min(width / 1920, height / 1080)
+        const outer = root.getBoundingClientRect()
+        const inner = host.getBoundingClientRect()
+        const near = (actual: number, expected: number) => Math.abs(actual - expected) < 0.01
+        return {
+          width: near(inner.width / outer.width, (1920 * scale) / width),
+          height: near(inner.height / outer.height, (1080 * scale) / height),
+          centered: Math.abs(inner.top - outer.top - (outer.bottom - inner.bottom)) < 1,
+        }
+      }, placed?.id ?? ''),
+    )
+    .toEqual({ width: true, height: true, centered: true })
+
+  // 拖一个组件到第一行画面块后面的空处（离各个吸附点都远）：落在指针的位置
+  await side.getByRole('searchbox', { name: '搜索组件' }).fill('')
+  const overlay = side.getByRole('group', { name: '测试叠加，4 秒' })
+  const row = dialog.getByRole('group', { name: '第 1 行' })
+  // 6 秒长、从 0 开始的那个块量出每秒多少像素
+  const sceneBox = await dialog
+    .getByRole('group', { name: '第 2 行' })
+    .locator('[data-block-id]')
+    .first()
+    .boundingBox()
+  const lane = await row.boundingBox()
+  if (sceneBox === null || lane === null) throw new Error('时间线尚未布局')
+  const target = pictureSeconds + 2.5
+  const dropX = sceneBox.x + (sceneBox.width / 6) * target
+  const from = await overlay.boundingBox()
+  if (from === null) throw new Error('卡片尚未布局')
+  await page.mouse.move(from.x + from.width / 2, from.y + 10)
+  await page.mouse.down()
+  await page.mouse.move(from.x + from.width / 2 + 10, from.y + 20, { steps: 3 })
+  await page.mouse.move(dropX, lane.y + lane.height / 2, { steps: 8 })
+  await expect(row.getByTestId('drop-ghost')).toBeVisible()
+  const dropped = draftSavedWith(page, (html) => savedComponent(html, '测试叠加') !== null)
+  await page.mouse.up()
+  const carried = savedComponent(
+    ((await dropped).postDataJSON() as { html: string }).html,
+    '测试叠加',
+  )
+  expect(carried).toMatchObject({ component: 'fixture-overlay', duration: 4, track: 0 })
+  expect(Math.abs((carried?.start ?? 0) - target)).toBeLessThan(0.1)
+
+  const undone = draftSavedWith(
+    page,
+    (html) =>
+      savedComponent(html, '测试叠加') === null && savedComponent(html, '测试画面') !== null,
+  )
+  await dialog
+    .getByRole('toolbar', { name: '剪辑工具' })
+    .getByRole('button', { name: '撤销' })
+    .click()
+  await undone
+})
+
 test('成片编辑器在窄屏上纵向排开', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const panel = await openConversation(page, '夜景延时素材生成', { mobile: true })

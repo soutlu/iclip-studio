@@ -3,6 +3,7 @@ import type { Composition } from '@hyperframes/sdk'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
 import { rippleStarts, type Timing } from './block-edit'
+import { componentDurationMs } from './components'
 import type { CatalogItem, ComponentCatalog, VariableValue } from './composition/catalog'
 import {
   AUDIO_SOURCE_LABEL,
@@ -108,9 +109,6 @@ const declareSource = (engine: Composition, jobId: string, src: string, label?: 
 }
 
 const newBlockId = () => `clip-${crypto.randomUUID().slice(0, 8)}`
-
-// 组件库条目没写时长时的默认时长：和参照的工作台一样，取 10 秒和成片现有总长里大的那个
-const DEFAULT_COMPONENT_MS = 10_000
 
 type Options = {
   debounceMs?: number
@@ -313,10 +311,7 @@ export function useFilmSession(
       const engine = await engineFor(canvas)
       if (engine === null) return false
       const existing = blocksOf(engine)
-      const duration =
-        item.duration === null
-          ? Math.max(DEFAULT_COMPONENT_MS, durationOf(existing))
-          : Math.round(item.duration * 1000)
+      const duration = componentDurationMs(item, existing)
       applyTo(engine, () => {
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
         const block = {

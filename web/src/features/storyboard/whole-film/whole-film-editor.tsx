@@ -17,6 +17,7 @@ import type { TimeSpan } from '@/shared/lib/time-spans'
 import { DialogHeader, DialogRoot, DialogSurface, useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MediaBuffering } from '@/shared/ui/media-buffering'
+import { TabsContent, TabsList, TabsRoot, TabsTrigger } from '@/shared/ui/tabs'
 import { toast } from '@/shared/ui/toast'
 import { groupConversationVideos } from '../conversation-videos/video-groups'
 import { keyframeRanges } from '../editing/keyframe-segments'
@@ -25,7 +26,10 @@ import { handleUndoShortcut } from '../editing/undo-shortcut'
 import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
 import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
-import type { Canvas } from './composition/film'
+import { componentDurationMs, playheadSpot } from './components'
+import { ComponentsTab } from './components-tab'
+import type { CatalogItem } from './composition/catalog'
+import { writeFilm, type Canvas } from './composition/film'
 import { EditorToolbar } from './editor-toolbar'
 import { ExportControl } from './export-control'
 import { FilmTimeline, type DropGhost, type TimelineHandle } from './film-timeline'
@@ -75,6 +79,9 @@ type Props = {
 const EMPTY_TEXT = '成片还是空的；加入内容后可以在这里预览'
 const PICK_FIRST_TEXT = '先在下方点一个镜头选中范围'
 const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏'
+const ADDING_COMPONENT_TEXT = '上一个组件正在加入成片，请稍后再加'
+// 还没有成片时先放组件：和 #41 之前的编辑器一样按竖版建
+const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 
 const watchFullscreen = (notify: () => void) => {
   document.addEventListener('fullscreenchange', notify)
@@ -297,11 +304,13 @@ function EditorBody({
   }
   const [thumbnails, setThumbnails] = useState(true)
   const [snap, setSnap] = useState(true)
-  /** 拖着的素材会落在哪：开着吸附时先吸到别的块的两端或播放头上，再避开同一行的块。 */
-  const landingAt = (clientX: number, clientY: number, dragged: MaterialRange) => {
+  /**
+   * 拖着的素材或组件（长 `duration` 毫秒）会落在哪：开着吸附时先吸到别的块的两端或播放头上，
+   * 再避开同一行的块。
+   */
+  const landingAt = (clientX: number, clientY: number, duration: number) => {
     const point = timelineRef.current?.locate(clientX, clientY) ?? null
     if (point === null) return null
-    const duration = dragged.endMs - dragged.startMs
     const snapped = snap
       ? snapSpanStartMs(point.timeMs, duration, snapTargets(blocks, playhead), scale.pps)
       : { ms: point.timeMs, guideMs: null }
@@ -358,6 +367,34 @@ function EditorBody({
     if (range === null || rangeMaterial === undefined) notice(PICK_FIRST_TEXT)
     else place(range)
   }
+
+  // 照参照的工作台：上一个组件还没加完时不接下一个，免得两次都按加之前的样子算落点
+  const addingComponentRef = useRef(false)
+  /** 把组件库的一个条目放进成片的 `at`；还没有成片时按默认画布建一份。 */
+  const placeComponent = (item: CatalogItem, at: { row: RowTarget; start: number }) => {
+    if (addingComponentRef.current) {
+      notice(ADDING_COMPONENT_TEXT)
+      return
+    }
+    addingComponentRef.current = true
+    const spot = trackFor(at.row)
+    void session
+      .addComponent(
+        film?.canvas ?? DEFAULT_CANVAS,
+        item,
+        {},
+        { track: spot.track, start: at.start },
+        spot.renumber,
+      )
+      .then((added) => {
+        if (added) leaveMaterial()
+      })
+      .finally(() => {
+        addingComponentRef.current = false
+      })
+  }
+  const addAtPlayhead = (item: CatalogItem) =>
+    placeComponent(item, playheadSpot(blocks, item, playhead, componentDurationMs(item, blocks)))
 
   const history = {
     canUndo: film?.canUndo ?? false,
@@ -427,11 +464,16 @@ function EditorBody({
     }
   })
 
+  // 编辑时 SDK 不改 <head>：按块重新写出整份（和渲染服务存下的一样）再交给预览
   const srcdoc = useMemo(
     () =>
       film === null || blocks.length === 0
         ? undefined
-        : previewDocument(film.html, catalog, window.location.origin),
+        : previewDocument(
+            writeFilm({ canvas: film.canvas, blocks: [...blocks] }, catalog),
+            catalog,
+            window.location.origin,
+          ),
     [film, blocks, catalog],
   )
   const playBlocked = srcdoc === undefined ? EMPTY_TEXT : undefined
@@ -473,11 +515,41 @@ function EditorBody({
         }
       />
       <div aria-label="成片编辑器" className="wf-workspace" role="group">
+        <aside aria-label="组件栏" className="wf-side">
+          <TabsRoot className="wf-side-panel" defaultValue="components">
+            <TabsList aria-label="组件栏页签" className="wf-side-tabs">
+              <TabsTrigger value="components">组件</TabsTrigger>
+            </TabsList>
+            <TabsContent className="wf-side-body is-components" value="components">
+              <ComponentsTab
+                catalog={catalog}
+                onAdd={addAtPlayhead}
+                onCarry={(item, point) =>
+                  setGhost(
+                    point === null
+                      ? null
+                      : landingAt(point.clientX, point.clientY, componentDurationMs(item, blocks)),
+                  )
+                }
+                onDrop={(item, point) => {
+                  const at = landingAt(
+                    point.clientX,
+                    point.clientY,
+                    componentDurationMs(item, blocks),
+                  )
+                  setGhost(null)
+                  if (at !== null) placeComponent(item, { row: at.row, start: at.start })
+                }}
+                origin={window.location.origin}
+              />
+            </TabsContent>
+          </TabsRoot>
+        </aside>
         <div className="wf-stage" ref={setStage}>
           <PreviewPlayer
             backdrop={shown === undefined ? undefined : videoSnapshotUrl(shown.src, 320)}
             controlRef={previewRef}
-            height={film?.canvas.height ?? 1920}
+            height={film?.canvas.height ?? DEFAULT_CANVAS.height}
             message={playBlocked}
             onBuffered={setBuffered}
             onBuffering={setBuffering}
@@ -485,7 +557,7 @@ function EditorBody({
             onTime={setPlayheadMs}
             playback={playback}
             srcdoc={srcdoc}
-            width={film?.canvas.width ?? 1080}
+            width={film?.canvas.width ?? DEFAULT_CANVAS.width}
           >
             {buffering ? <MediaBuffering /> : null}
           </PreviewPlayer>
@@ -604,10 +676,18 @@ function EditorBody({
             groups={materials.groups}
             keyframes={keyframes}
             onCarry={(carry) =>
-              setGhost(carry === null ? null : landingAt(carry.clientX, carry.clientY, carry.range))
+              setGhost(
+                carry === null
+                  ? null
+                  : landingAt(
+                      carry.clientX,
+                      carry.clientY,
+                      carry.range.endMs - carry.range.startMs,
+                    ),
+              )
             }
             onDrop={(clientX, clientY, dropped) => {
-              const at = landingAt(clientX, clientY, dropped)
+              const at = landingAt(clientX, clientY, dropped.endMs - dropped.startMs)
               setGhost(null)
               if (at === null) return false
               place(dropped, { row: at.row, start: at.start })

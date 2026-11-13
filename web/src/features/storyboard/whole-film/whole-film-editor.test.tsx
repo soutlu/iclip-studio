@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -925,5 +925,80 @@ describe('成片编辑器 · 导出', () => {
     putMockWholeFilmDraft(CONVERSATION, twoPictures())
     await openEditor()
     expect(await screen.findByText(/素材地址的主机不在允许范围$/)).toHaveAttribute('role', 'status')
+  })
+})
+
+describe('成片编辑器 · 组件栏', () => {
+  const componentCard = (name: RegExp) =>
+    within(screen.getByRole('list', { name: '组件' })).getByRole('group', { name })
+  const addAtPlayhead = (user: ReturnType<typeof userEvent.setup>, name: RegExp) =>
+    user.click(within(componentCard(name)).getByRole('button', { name: '加到播放头' }))
+  const savedComponents = () => savedFilm().match(/<div [^>]*class="clip component"[^>]*>/g) ?? []
+  const previewHtml = () =>
+    screen
+      .getByRole('region', { name: '预览' })
+      .querySelector('hyperframes-player')
+      ?.getAttribute('srcdoc') ?? ''
+  const playerUp = () => act(() => new Promise((resolve) => setTimeout(resolve, 500)))
+
+  it('block 类加到播放头：第一行那段时间有块，就在它下面新开一行；预览里固定尺寸的组件缩进画面', async () => {
+    putMockWholeFilmDraft(CONVERSATION, twoPictures())
+    const user = userEvent.setup()
+    await openEditor()
+    await addAtPlayhead(user, /^测试画面/)
+
+    await waitSaved(() => expect(savedComponents()).toHaveLength(1))
+    const [block] = savedComponents()
+    expect(block).toContain('data-label="测试画面"')
+    expect(block).toContain('data-composition-id="fixture-scene"')
+    expect(block).toContain('data-start="0" data-duration="6" data-track-index="1"')
+    expect(block).toContain('data-variable-values="{}"')
+    expect(
+      within(screen.getByRole('group', { name: '第 2 行' })).getByRole('group'),
+    ).toHaveAccessibleName('测试画面，6.0 秒')
+
+    await playerUp()
+    const id = /id="([^"]+)"/.exec(block ?? '')?.[1] ?? ''
+    expect(previewHtml()).toContain(
+      `#film #${id}{left:50%;top:50%;width:1920px;height:1080px;translate:-50% -50%;scale:0.375}`,
+    )
+  })
+
+  it('component 类加到播放头：第一行空着也放在画面区最下面新开的一行，从播放头开始；撤销回去', async () => {
+    putMockWholeFilmDraft(CONVERSATION, twoPictures())
+    const user = userEvent.setup()
+    await openEditor()
+    progress().focus()
+    await user.keyboard('{End}')
+    expect(within(transport()).getByText('00:03.50')).toBeVisible()
+    await addAtPlayhead(user, /^测试叠加/)
+
+    await waitSaved(() => expect(savedComponents()).toHaveLength(1))
+    expect(savedComponents()[0]).toContain(
+      'data-start="3.5" data-duration="4" data-track-index="1"',
+    )
+    await user.click(within(toolbar()).getByRole('button', { name: '撤销' }))
+    await waitSaved(() => expect(savedComponents()).toHaveLength(0))
+    expect(savedBlocks()).toHaveLength(2)
+  })
+
+  it('还没有成片时加组件：按竖版 1080×1920 建一份', async () => {
+    const user = userEvent.setup()
+    await openEditor()
+    await addAtPlayhead(user, /^测试叠加/)
+    await waitSaved(() => expect(savedComponents()).toHaveLength(1))
+    expect(savedFilm()).toContain('data-width="1080" data-height="1920"')
+    expect(savedComponents()[0]).toContain('data-start="0" data-duration="4" data-track-index="0"')
+  })
+
+  it('上一个组件还没加完又点「加到播放头」：只加一个，提示稍后再加', async () => {
+    await openEditor()
+    const add = within(componentCard(/^测试叠加/)).getByRole('button', { name: '加到播放头' })
+    fireEvent.click(add)
+    fireEvent.click(add)
+    await waitSaved(() => expect(savedComponents()).toHaveLength(1))
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    expect(savedComponents()).toHaveLength(1)
+    expect(screen.getByText('上一个组件正在加入成片，请稍后再加')).toBeVisible()
   })
 })

@@ -1,4 +1,4 @@
-import type { ComponentCatalog, VariableValue } from './catalog'
+import type { CatalogItem, CatalogVariable, ComponentCatalog, VariableValue } from './catalog'
 import { cjkFontFaces } from './fonts'
 import { escapeAttribute, jsonAttribute, seconds } from './html'
 
@@ -55,7 +55,8 @@ export interface PictureBlock extends BlockBase {
 }
 
 /**
- * 组件块：组件库里的一个条目，铺满画面。`component` 是条目的名字，`src` 是条目的文件。
+ * 组件块：组件库里的一个条目。`component` 是条目的名字，`src` 是条目的文件。
+ * 条目没写尺寸或和画面一样大时铺满画面；写了别的尺寸时按原比例缩到放得下、居中（写在 `<head>` 里）。
  * `playbackStart` 是从组件自己的第几毫秒开始播，`values` 是它的可填项取值；叠放顺序同画面块。
  * `playbackStart` 是 0 时文件里不写。
  */
@@ -432,8 +433,24 @@ export function variableValuesOf(
   return values
 }
 
+const itemOf = (block: ComponentBlock, catalog: ComponentCatalog): CatalogItem | undefined =>
+  catalog.items.find((candidate) => candidate.name === block.component)
+
 /**
- * 成片要声明的字体：用到的条目自带的字体族，加上字体类可填项取到的字体族（没填就是默认值）；
+ * 字体类可填项取到的字体族：块上填了用填的，没填用默认值。取到的是空的、或者组件库里没有这个字体族时
+ * 是 undefined——取值是用户写的字符串，只认组件库里的名字才能写进样式。
+ */
+function fontOf(
+  block: ComponentBlock,
+  variable: CatalogVariable,
+  catalog: ComponentCatalog,
+): string | undefined {
+  const value = block.values[variable.id] ?? variable.default
+  return typeof value === 'string' && Object.hasOwn(catalog.fonts, value) ? value : undefined
+}
+
+/**
+ * 成片要声明的字体：用到的条目自带的字体族，加上字体类可填项取到的字体族；
  * 中文字体按组件值里的文字和条目里出现的字声明。组件库里没有的字体族不声明。
  */
 function fontsOf(film: Film, catalog: ComponentCatalog): { families: string[]; text: string } {
@@ -445,7 +462,7 @@ function fontsOf(film: Film, catalog: ComponentCatalog): { families: string[]; t
     text += Object.values(block.values)
       .filter((value) => typeof value === 'string')
       .join('')
-    const item = catalog.items.find((candidate) => candidate.name === block.component)
+    const item = itemOf(block, catalog)
     if (item === undefined) continue
     if (!used.has(item.name)) {
       used.add(item.name)
@@ -454,14 +471,47 @@ function fontsOf(film: Film, catalog: ComponentCatalog): { families: string[]; t
     }
     for (const variable of item.variables) {
       if (variable.type !== 'font') continue
-      const value = block.values[variable.id] ?? variable.default
-      if (typeof value === 'string' && value !== '') families.add(value)
+      const family = fontOf(block, variable, catalog)
+      if (family !== undefined) families.add(family)
     }
   }
   return {
     families: [...families].filter((family) => Object.hasOwn(catalog.fonts, family)).sort(),
     text,
   }
+}
+
+const round4 = (value: number) => String(Math.round(value * 10_000) / 10_000)
+
+/**
+ * 一个组件块在 `<head>` 里的规则；不用写时返回 undefined。块上的样式只能是叠放顺序，所以写在这里、按块的编号认。
+ * - 条目有尺寸、和画面不一样大：按原比例缩到放得下，居中。
+ * - 第一个字体类可填项取到了字体：标题和正文的字体变量都换成它，中文字形退到组件库的中文字体。
+ */
+function componentRule(
+  block: ComponentBlock,
+  canvas: Canvas,
+  catalog: ComponentCatalog,
+): string | undefined {
+  const item = itemOf(block, catalog)
+  if (item === undefined) return undefined
+  const declarations: string[] = []
+  const { size } = item
+  if (size !== null && (size.width !== canvas.width || size.height !== canvas.height)) {
+    const scale = Math.min(canvas.width / size.width, canvas.height / size.height)
+    declarations.push(
+      `left:50%;top:50%;width:${size.width}px;height:${size.height}px;translate:-50% -50%;scale:${round4(scale)}`,
+    )
+  }
+  const variable = item.variables.find((candidate) => candidate.type === 'font')
+  const family = variable === undefined ? undefined : fontOf(block, variable, catalog)
+  if (family !== undefined) {
+    const value = `'${family}', '${catalog.cjk.family}', sans-serif`
+    declarations.push(`--font-display:${value};--font-body:${value}`)
+  }
+  return declarations.length === 0
+    ? undefined
+    : `#${FILM_ID} #${block.id}{${declarations.join(';')}}`
 }
 
 /** 写出成片文件。`durationMs` 是根上写的总时长，默认按块算。 */
@@ -483,6 +533,12 @@ export function writeFilm(
         `<link rel="stylesheet" href="${escapeAttribute(catalog.fonts[family]?.css ?? '')}">\n`,
     )
     .join('')
+  const componentRules = film.blocks
+    .flatMap((block) =>
+      block.kind === 'component' ? (componentRule(block, film.canvas, catalog) ?? []) : [],
+    )
+    .map((rule) => `${rule}\n`)
+    .join('')
   return `<!doctype html>
 <html${declared}>
 <head>
@@ -494,7 +550,7 @@ html,body{width:${width}px;height:${height}px;overflow:hidden;background:black;f
 #${FILM_ID}{position:relative;width:${width}px;height:${height}px;overflow:hidden;background:black}
 #${FILM_ID} .picture{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
 #${FILM_ID} .component{position:absolute;left:0;top:0;width:${width}px;height:${height}px}
-</style>
+${componentRules}</style>
 <style>
 ${cjkFontFaces(catalog, text, families)}
 </style>
