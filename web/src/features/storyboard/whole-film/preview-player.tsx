@@ -316,7 +316,8 @@ export function PreviewPlayer({
       const old = activeRef.current
       swappingRef.current = true
       old?.pause()
-      const resumeAt = old?.currentTime ?? startAtRef.current
+      // 每次用到时再读：新页加载、等它稳定的这段时间里还可能挪过位置（挪的是旧播放器或记下的起点）
+      const resumeAt = () => activeRef.current?.currentTime ?? startAtRef.current
       const next = document.createElement('hyperframes-player') as PlayerElement
       // 播放器给每段视频在父页面另建不跨域的副本，每个文件下载两遍。没有公开开关，版本锁定，升级要复查
       next._media._createEntry = () => null
@@ -336,9 +337,11 @@ export function PreviewPlayer({
         await ready
         if (!next.painted) await once(next, 'painted')
         if (cancelled) return
-        next.seek(resumeAt)
+        const settledAt = resumeAt()
+        next.seek(settledAt)
         for (let frame = 0; frame < SETTLE_FRAMES; frame++) await nextFrame()
         if (cancelled) return
+        if (resumeAt() !== settledAt) next.seek(resumeAt())
         pending = null
         next.classList.remove('is-pending')
         activeRef.current = next

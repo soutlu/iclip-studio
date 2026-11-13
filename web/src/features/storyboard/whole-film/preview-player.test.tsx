@@ -378,6 +378,23 @@ describe('换页', () => {
     expect(playerOf().paused).toBe(true)
   })
 
+  it('新页还没换上来时挪了位置：换上来的新页停在挪到的地方', async () => {
+    const { control, showPage } = await openPreview()
+    const old = playerOf()
+    // 新页装好后要等几帧才换上来；先把这几帧拦住，在这期间挪位置
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
+      frames.push(callback),
+    )
+    showPage(page('<p></p>'))
+    await waitFor(() => expect(frames).toHaveLength(1))
+    act(() => control().seek(1500))
+    vi.unstubAllGlobals()
+    act(() => frames[0]?.(0))
+    await waitFor(() => expect(playerOf()).not.toBe(old))
+    expect(playerOf().currentTime).toBeCloseTo(1.5, 5)
+  })
+
   it('缓冲中换页：不再转圈，新页接着放', async () => {
     const { control, onBuffering, showPage } = await openPreview()
     starvedVideos.add(FIRST)
