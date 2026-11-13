@@ -38,5 +38,5 @@ export const createMediaReaderMock = (
       return timestamp === undefined ? null : { timestamp }
     }
   }
-  return { EncodedPacketSink, Input, MP4: {}, QTFF: {}, UrlSource }
+  return { EncodedPacketSink, Input, MP3: {}, MP4: {}, QTFF: {}, UrlSource, WAVE: {} }
 }

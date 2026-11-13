@@ -28,7 +28,7 @@ import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
 import type { Canvas } from './composition/film'
 import { EditorToolbar } from './editor-toolbar'
 import { ExportControl } from './export-control'
-import { FilmTimeline, type DropGhost, type RowTarget, type TimelineHandle } from './film-timeline'
+import { FilmTimeline, type DropGhost, type TimelineHandle } from './film-timeline'
 import { MaterialArea } from './material-area'
 import {
   useKeyframeIndexes,
@@ -46,7 +46,7 @@ import {
   type MaterialRange,
   type MaterialTake,
 } from './materials'
-import { landingOn, rowOpening } from './placement'
+import { landingOn, onRow, rowOpening, type RowTarget } from './placement'
 import { previewDocument } from './preview-document'
 import { PreviewPlayer, type PlaybackSettings, type PreviewControl } from './preview-player'
 import { PreviewTransport } from './preview-transport'
@@ -177,7 +177,8 @@ function EditorBody({
   const notice = useCallback((message: string) => toast.info(message), [])
   const session = useFilmSession(conversationId, initial, catalog, { onNotice: notice })
   const { film } = session
-  const pictures = useMemo(() => film?.pictures ?? [], [film])
+  const blocks = useMemo(() => film?.blocks ?? [], [film])
+  const pictures = useMemo(() => blocks.filter((block) => block.kind === 'picture'), [blocks])
   const [materialView, setMaterialView] = useState<MaterialView | null>(null)
   const [materialMs, setMaterialMs] = useState(0)
   const [materialPlaying, setMaterialPlaying] = useState(false)
@@ -262,7 +263,7 @@ function EditorBody({
   const [ghost, setGhost] = useState<DropGhost | null>(null)
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set())
   // 选中的块被撤销或删掉以后就不算选中了
-  const selectedBlocks = pictures.filter((block) => selectedIds.has(block.id))
+  const selectedBlocks = blocks.filter((block) => selectedIds.has(block.id))
   const selected = new Set(selectedBlocks.map((block) => block.id))
   const clearSelection = () => setSelectedIds(new Set())
   // 框选、拖块中途的 Esc 归时间线（只取消那一次），这里先让开
@@ -273,7 +274,7 @@ function EditorBody({
     else clearSelection()
   })
   const selectAround = (side: 'left' | 'right') =>
-    setSelectedIds(new Set(aroundPlayhead(pictures, playhead, side)))
+    setSelectedIds(new Set(aroundPlayhead(blocks, playhead, side)))
   const [scrollRequest, setScrollRequest] = useState<{ left: number } | null>(null)
   // 工具条上的缩放：播放头留在屏幕上原来的地方，看不见它时把它放到中间
   const zoomTo = (next: Zoom) => {
@@ -302,13 +303,11 @@ function EditorBody({
     if (point === null) return null
     const duration = dragged.endMs - dragged.startMs
     const snapped = snap
-      ? snapSpanStartMs(point.timeMs, duration, snapTargets(pictures, playhead), scale.pps)
+      ? snapSpanStartMs(point.timeMs, duration, snapTargets(blocks, playhead), scale.pps)
       : { ms: point.timeMs, guideMs: null }
     // 新开的一行上没有别的块，放在哪里都不会重叠
     const start =
-      typeof point.row === 'number'
-        ? landingOn(pictures, point.row, snapped.ms, duration).start
-        : snapped.ms
+      'track' in point.row ? landingOn(blocks, point.row, snapped.ms, duration).start : snapped.ms
     return {
       row: point.row,
       start,
@@ -319,11 +318,11 @@ function EditorBody({
 
   /** `row` 这一行是几号；要新开一行时，连同别的块要换成的行号。`movedId` 是要搬过去的那个块。 */
   const trackFor = (row: RowTarget, movedId?: string) =>
-    typeof row === 'number'
-      ? { track: row, renumber: undefined }
-      : rowOpening(pictures, row.insertAt, movedId)
+    'track' in row
+      ? { track: row.track, renumber: undefined }
+      : rowOpening(blocks, row.zone, row.insertAt, movedId)
 
-  /** 把素材里的一段放进成片：给了 `at` 放在那里，没给就接在第一行的末尾。 */
+  /** 把素材里的一段放进成片：给了 `at` 放在那里，没给就接在主轨的末尾。 */
   const place = (chosen: MaterialRange, at?: { row: RowTarget; start: number }) => {
     const material = materials.byJob.get(chosen.jobId)
     if (material === undefined) return
@@ -430,10 +429,10 @@ function EditorBody({
 
   const srcdoc = useMemo(
     () =>
-      film === null || film.pictures.length === 0
+      film === null || pictures.length === 0
         ? undefined
         : previewDocument(film.html, catalog, window.location.origin),
-    [film, catalog],
+    [film, pictures, catalog],
   )
   const playBlocked = srcdoc === undefined ? EMPTY_TEXT : undefined
 
@@ -549,13 +548,15 @@ function EditorBody({
             zoom={zoom}
           />
           <FilmTimeline
+            blocks={blocks}
             buffered={buffered}
+            catalog={catalog}
             ghost={ghost}
             handleRef={timelineRef}
-            onHide={(track, hidden) => {
+            onHide={(row, hidden) => {
               leaveMaterial()
               session.setHidden(
-                pictures.filter((block) => block.track === track).map((block) => block.id),
+                blocks.filter((block) => onRow(block, row)).map((block) => block.id),
                 hidden,
               )
             }}
@@ -567,7 +568,6 @@ function EditorBody({
             onSeek={seek}
             onSelect={setSelectedIds}
             onViewportWidth={setViewportWidth}
-            pictures={pictures}
             playheadMs={playhead}
             scale={scale}
             onMove={(id, row, start, starts) => {
@@ -576,7 +576,7 @@ function EditorBody({
               session.moveBlock(
                 id,
                 { track, start },
-                rowMoveDirection(pictures, id, row),
+                rowMoveDirection(blocks, id, row),
                 renumber,
                 starts,
               )
@@ -589,8 +589,10 @@ function EditorBody({
             selected={selected}
             snap={snap}
             thumbnails={thumbnails}
-            sourceMs={(src) => {
-              const state = keyframes.get(src)
+            sourceMs={(block) => {
+              // 组件块和音频块这一版不按素材长度限制结尾
+              if (block.kind !== 'picture') return Infinity
+              const state = keyframes.get(block.src)
               return state?.kind === 'ready' ? Math.round(state.index.duration * 1000) : undefined
             }}
             totalMs={total}

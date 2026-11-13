@@ -15,7 +15,7 @@
 | `player/components/timelineGaps.ts` | 全文引入 | 画面轨自动收紧空隙（`resolveAllTrackGaps`） |
 | `player/components/timelineEditing.ts` | 部分摘录 | 仅保留 `resolveTimelineMove`（移除 z-index 分支）、`resolveTimelineResize` 及两个数值格式化函数 |
 | `player/components/timelineGroupEditing.ts` | 部分摘录 | 保留前 175 行，移除多选分组修剪接线，内联 `clampPlaybackRate` 并导出 `DEFAULT_TIMELINE_MIN_DURATION` |
-| `player/components/timelineCollision.ts` | 部分摘录 | 仅保留特效块同行就近落位（`resolveNearestFreeStart`）、跨行新建轨道（`resolveInsertRow`）与区间重叠判断（`timeRangesOverlap`） |
+| `player/components/timelineCollision.ts` | 全文引入 | 取自 `v0.9.31`（提交 `cf900546`）：同行就近落位（`resolveNearestFreeStart`）、块只落在自己的区（`resolveZoneDropPlacement`、`clampTrackToZone`、`isInsertAllowedForZone`）与区间重叠判断；注释里加了一行 `design-allow`，免得设计检查把上游的问题编号当成色值 |
 | `player/components/timelineStackingSync.ts` | 全文引入 | 特效块跨行移动后重算叠放顺序（`computeStackingPatches`） |
 | `components/editor/snapEngine.ts` | 全文引入 | 预览画布上拖拽元素的中心线与四边吸附参考线计算 |
 | `player/store/playerStore.ts`、`player/lib/timelineClipIndex.ts` | 本地最小类型替身 | 仅声明上述算法文件依赖的最小 TypeScript 类型（`ZoomMode`、`TimelineTimeRange`、`TimelineElement`） |

@@ -10,10 +10,12 @@ const withBaseHref = (html: string, baseHref: string): string => {
 
 // 只改预览，存着的成片文件不动。preload 写 none 时运行时按播放位置调 load()，一次只加载用得到的片段；
 // 写 metadata 会一开始就下载，运行时之后设成 none 也停不下来，几个文件会一起抢带宽。
+// 音频块在文件里不写 preload，这里补上。
 const withPreviewMedia = (html: string): string =>
   html
     .replaceAll('<video ', '<video crossorigin="anonymous" ')
     .replaceAll('preload="auto"', 'preload="none"')
+    .replaceAll('<audio ', '<audio crossorigin="anonymous" preload="none" ')
     .replace(/<head[^>]*>/i, '$&\n<meta name="hyperframes-studio-preview" content="1">')
 
 /** 预览用的那一份：成片文件加上组件库的基准地址和预览专用的媒体加载方式。 */

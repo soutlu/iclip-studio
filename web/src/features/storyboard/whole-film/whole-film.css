@@ -1930,6 +1930,39 @@
   background: var(--color-surface-container);
 }
 
+/* 组件块和音频块：浅色块身，上面是名字；组件块左下角一张小封面，音频块下面整块波形 */
+.wf-clip.is-component > .wf-block-body,
+.wf-clip.is-audio > .wf-block-body {
+  background: color-mix(in srgb, var(--color-on-surface) 9%, var(--color-top-layer));
+}
+
+.wf-clip-cover {
+  position: absolute;
+  bottom: 5px;
+  left: 6px;
+  height: 16px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-xs);
+  object-fit: cover;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.wf-clip-sound {
+  /* 带单位：波形的高度按 calc(100% - 2 * 它) 算，不带单位的 0 会让整条式子失效 */
+  --timeline-wave-inset: 0px;
+
+  position: absolute;
+  inset: 20px 4px 3px;
+  display: flex;
+}
+
+/* 声音区行头最前面的音符 */
+.wf-head-icon {
+  flex: none;
+  color: var(--color-on-surface-faint);
+}
+
 .wf-clip-foot {
   flex: 1;
   overflow: hidden;

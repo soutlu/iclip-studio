@@ -12,8 +12,8 @@ import {
   fixtureCatalog,
   picture,
 } from '@/testing/whole-film'
-import type { FilmBlock } from './composition/film'
-import { useFilmSession, type NewPicture } from './use-film-session'
+import type { FilmBlock, PictureBlock } from './composition/film'
+import { useFilmSession, type NewAudio, type NewPicture } from './use-film-session'
 
 const CONVERSATION = '6b0f3a4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b'
 const OTHER_JOB = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
@@ -61,9 +61,13 @@ const piece = (overrides: Partial<NewPicture> = {}): NewPicture => ({
 const add = (result: Session, ...pictures: NewPicture[]) =>
   act(() => result.current.addPictures(CANVAS, pictures))
 
+/** 成片里的画面块，按它们在文件里的先后。 */
+const picturesOf = (result: Session): PictureBlock[] =>
+  (result.current.film?.blocks ?? []).filter((block) => block.kind === 'picture')
+
 /** 成片里的画面块按起点排，写成「记录、起点、时长」。 */
 const spans = (result: Session) =>
-  result.current.film?.pictures
+  picturesOf(result)
     .toSorted((left, right) => left.start - right.start)
     .map((block) => [block.jobId, block.start, block.duration])
 
@@ -85,7 +89,7 @@ describe('useFilmSession', () => {
     const { result } = await open(stored)
     expect(result.current.film).toMatchObject({
       canvas: CANVAS,
-      pictures: [picture(), second],
+      blocks: [picture(), second],
       durationMs: 4_000,
       canUndo: false,
     })
@@ -191,7 +195,7 @@ describe('useFilmSession', () => {
       [OTHER_JOB, 2_000, 600],
       [picture().jobId, 3_400, 2_000],
     ])
-    expect(result.current.film?.pictures.at(-1)).toMatchObject({ mediaStart: 400 })
+    expect(picturesOf(result).at(-1)).toMatchObject({ mediaStart: 400 })
     expect(result.current.film?.durationMs).toBe(5_400)
     await waitFor(() => expect(saves).toHaveLength(1))
     expect(saves[0]?.html).toContain('data-start="3.4" data-duration="2" data-media-start="0.4"')
@@ -269,7 +273,7 @@ describe('useFilmSession', () => {
   })
 
   const layout = (result: Session) =>
-    result.current.film?.pictures.map((block) => [block.id, block.track, block.start, block.z])
+    picturesOf(result).map((block) => [block.id, block.track, block.start, block.z])
 
   const openWith = (blocks: FilmBlock[]) => {
     const conversation = crypto.randomUUID()
@@ -295,7 +299,7 @@ describe('useFilmSession', () => {
         start: 500,
       }),
     )
-    const [second, first] = result.current.film?.pictures ?? []
+    const [second, first] = picturesOf(result) ?? []
     expect(layout(result)).toEqual([
       [second?.id, 2, 1_500, 5],
       [first?.id, 2, 500, 4],
@@ -311,7 +315,7 @@ describe('useFilmSession', () => {
     await act(() =>
       result.current.addPictures(CANVAS, [piece({ duration: 1_000 })], { track: 1, start: 6_000 }),
     )
-    const added = result.current.film?.pictures.find((block) => block.track === 1)
+    const added = picturesOf(result).find((block) => block.track === 1)
     if (added === undefined) throw new Error('镜头没有加进去')
     act(() =>
       result.current.retime(new Map([[added.id, { start: 500, duration: 1_000, mediaStart: 0 }]])),
@@ -415,9 +419,7 @@ describe('useFilmSession', () => {
     )
     const { result } = await open(stored, 10, conversation)
     await add(result, piece({ duration: 1_500 }))
-    const added = result.current.film?.pictures.find(
-      (block) => !['low', 'a', 'b'].includes(block.id),
-    )
+    const added = picturesOf(result).find((block) => !['low', 'a', 'b'].includes(block.id))
     expect(added).toMatchObject({ track: 1, start: 3_000 })
 
     act(() => result.current.removeBlocks(['a'], true))
@@ -429,7 +431,9 @@ describe('useFilmSession', () => {
   })
 
   const hiddenIds = (result: Session) =>
-    result.current.film?.pictures.filter((block) => block.hidden).map((block) => block.id)
+    picturesOf(result)
+      .filter((block) => block.hidden)
+      .map((block) => block.id)
 
   it('把几个块一起隐藏：算一步撤销，存出的文件带着隐藏标记，成片总长不变；再显示回来标记去掉', async () => {
     const saves = recordSaves()
@@ -459,7 +463,7 @@ describe('useFilmSession', () => {
     await act(() =>
       result.current.addPictures(CANVAS, [piece({ duration: 1_000 })], { track: 1, start: 5_000 }),
     )
-    const added = result.current.film?.pictures.find((block) => block.start === 5_000)
+    const added = picturesOf(result).find((block) => block.start === 5_000)
     expect(added?.hidden).toBe(false)
 
     act(() => result.current.moveBlock('a', { track: 1, start: 2_000 }, 'down'))
@@ -587,7 +591,7 @@ describe('useFilmSession', () => {
         new Map([['low', 2]]),
       ),
     )
-    const added = result.current.film?.pictures.find((block) => block.track === 1)
+    const added = picturesOf(result).find((block) => block.track === 1)
     expect(layout(result)).toEqual([
       [added?.id, 1, 500, 3],
       ['low', 2, 0, 0],
@@ -660,7 +664,7 @@ describe('useFilmSession', () => {
     putMockWholeFilmDraft(CONVERSATION, filmFile([newer], CANVAS))
     const { result, onNotice } = await open(stored)
     await add(result, piece({ mediaStart: 6_000 }))
-    await waitFor(() => expect(result.current.film?.pictures).toEqual([newer]))
+    await waitFor(() => expect(picturesOf(result)).toEqual([newer]))
     expect(result.current.film?.canUndo).toBe(false)
     expect(onNotice).toHaveBeenCalledWith(
       '成片草稿已在别处改过，已换成最新的一版；刚才没保存的改动已放弃',
@@ -697,5 +701,294 @@ describe('useFilmSession', () => {
     })
     expect(revision).toBe(1)
     expect(mockWholeFilmDraft(CONVERSATION)?.html).toBe(result.current.film?.html)
+  })
+
+  describe('组件块和音频块', () => {
+    const OTHER_AUDIO = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d'
+    const catalogItem = (name: string) => {
+      const item = fixtureCatalog.items.find((candidate) => candidate.name === name)
+      if (item === undefined) throw new Error(`测试组件库里没有 ${name}`)
+      return item
+    }
+    const sound = (overrides: Partial<NewAudio> = {}): NewAudio => ({
+      label: '新配乐',
+      jobId: OTHER_AUDIO,
+      src: 'https://media.test/audio/new.mp3',
+      mediaStart: 0,
+      duration: 3_000,
+      ...overrides,
+    })
+    /** 文件里的块，按文件里的先后，写成「id、种类、行号、起点、时长」。 */
+    const kinds = (result: Session) =>
+      result.current.film?.blocks.map((block) => [
+        block.id,
+        block.kind,
+        block.track,
+        block.start,
+        block.duration,
+      ])
+    /** 存出的文件里某个块的开始标签。 */
+    const tagOf = (html: string | undefined, id: string) =>
+      new RegExp(`<[a-z]+ [^>]*\\bid="${id}"[^>]*>`).exec(html ?? '')?.[0]
+    /** 存出的文件里声明的变量。 */
+    const declaredIn = (html: string | undefined) =>
+      JSON.parse(
+        new DOMParser()
+          .parseFromString(html ?? '', 'text/html')
+          .documentElement.getAttribute('data-composition-variables') ?? '[]',
+      ) as { id: string; label: string }[]
+
+    // 画面区第 0 行是组件块，第 1 行是画面块；声音区第 0 行的音频块最长
+    const stacked = () => [
+      component({ id: 'k', duration: 3_000, z: 1 }),
+      picture({ id: 'p', track: 1, duration: 2_000 }),
+      audio({ id: 'm', duration: 8_000 }),
+    ]
+
+    it('打开带三种块的成片：三种块都读出来，成片总长算到音频块的结尾', async () => {
+      const { result } = await openWith(stacked())
+      expect(result.current.film?.blocks).toEqual(stacked())
+      expect(result.current.film?.durationMs).toBe(8_000)
+    })
+
+    it('加一个组件块：写在根下第一个、叠在最上面，名字、文件和时长取自组件库的条目，可填项取给的值', async () => {
+      const saves = recordSaves()
+      const { result } = await openWith(stacked())
+      await act(() =>
+        result.current.addComponent(
+          CANVAS,
+          catalogItem('fixture-fields'),
+          { text: '新品上市' },
+          { track: 2, start: 7_000 },
+        ),
+      )
+      const [added] = result.current.film?.blocks ?? []
+      expect(added).toMatchObject({
+        kind: 'component',
+        label: '测试可填项',
+        component: 'fixture-fields',
+        src: 'compositions/fixtures/fixture-fields.html',
+        track: 2,
+        start: 7_000,
+        duration: 5_000,
+        playbackStart: 0,
+        values: { text: '新品上市' },
+        z: 4,
+      })
+      expect(result.current.film?.durationMs).toBe(12_000)
+      await waitFor(() => expect(saves).toHaveLength(1))
+      expect(savedOrder(saves[0]?.html)).toEqual([added?.id, 'k', 'p', 'm'])
+      expect(tagOf(saves[0]?.html, added?.id ?? '')).toContain(
+        'data-composition-id="fixture-fields" data-composition-src="compositions/fixtures/fixture-fields.html"',
+      )
+      expect(saves[0]?.html).toMatch(/id="film"[^>]*data-duration="12"/)
+
+      act(() => result.current.undo())
+      expect(result.current.film?.blocks).toEqual(stacked())
+    })
+
+    it('组件库的条目没写时长：取 10 秒和成片现有总长里大的那个', async () => {
+      const { result } = await openWith(stacked())
+      const caption = catalogItem('default-caption')
+      await act(() => result.current.addComponent(CANVAS, caption, {}, { track: 2, start: 0 }))
+      expect(result.current.film?.blocks[0]?.duration).toBe(10_000)
+      act(() =>
+        result.current.retime(new Map([['m', { start: 0, duration: 15_000, mediaStart: 0 }]])),
+      )
+      await act(() => result.current.addComponent(CANVAS, caption, {}, { track: 3, start: 0 }))
+      expect(result.current.film?.blocks[0]?.duration).toBe(15_000)
+    })
+
+    it('加一段音频：写在根下第一个、不带叠放顺序，声明名字是「音频」的变量，成片总长跟着变', async () => {
+      const saves = recordSaves()
+      const { result } = await openWith(stacked())
+      await act(() =>
+        result.current.addAudio(CANVAS, sound({ mediaStart: 1_000 }), { track: 1, start: 7_000 }),
+      )
+      const [added] = result.current.film?.blocks ?? []
+      expect(added).toEqual({
+        kind: 'audio',
+        id: added?.id,
+        label: '新配乐',
+        jobId: OTHER_AUDIO,
+        src: 'https://media.test/audio/new.mp3',
+        start: 7_000,
+        duration: 3_000,
+        mediaStart: 1_000,
+        track: 1,
+        volume: 1,
+        fadeIn: 0,
+        fadeOut: 0,
+        loop: false,
+        hidden: false,
+      })
+      expect(result.current.film?.durationMs).toBe(10_000)
+      await waitFor(() => expect(saves).toHaveLength(1))
+      expect(savedOrder(saves[0]?.html)).toEqual([added?.id, 'k', 'p', 'm'])
+      expect(tagOf(saves[0]?.html, added?.id ?? '')).not.toContain('style=')
+      expect(declaredIn(saves[0]?.html)).toContainEqual({
+        id: `src-${OTHER_AUDIO}`,
+        type: 'string',
+        label: '音频',
+        default: 'https://media.test/audio/new.mp3',
+      })
+    })
+
+    it('在行里挪组件块和音频块：组件块不写入点，音频块写；一步撤销', async () => {
+      const saves = recordSaves()
+      const { result } = await openWith(stacked())
+      act(() =>
+        result.current.retime(
+          new Map([
+            ['k', { start: 500, duration: 2_000, mediaStart: 0 }],
+            ['m', { start: 1_000, duration: 6_000, mediaStart: 2_000 }],
+          ]),
+        ),
+      )
+      expect(kinds(result)).toEqual([
+        ['k', 'component', 0, 500, 2_000],
+        ['p', 'picture', 1, 0, 2_000],
+        ['m', 'audio', 0, 1_000, 6_000],
+      ])
+      expect(result.current.film?.durationMs).toBe(7_000)
+      await waitFor(() => expect(saves).toHaveLength(1))
+      expect(tagOf(saves[0]?.html, 'k')).not.toContain('data-media-start')
+      expect(tagOf(saves[0]?.html, 'm')).toContain('data-media-start="2"')
+
+      act(() => result.current.undo())
+      expect(result.current.film?.blocks).toEqual(stacked())
+    })
+
+    /** 文件里的块，按文件里的先后，写成「id、行号、起点、叠放顺序」（音频块没有叠放顺序）。 */
+    const stacking = (result: Session) =>
+      result.current.film?.blocks.map((block) => [
+        block.id,
+        block.track,
+        block.start,
+        block.kind === 'audio' ? null : block.z,
+      ])
+
+    it('把音频块换到声音区的另一行：只改行号和起点，不带叠放顺序；一步撤销', async () => {
+      const saves = recordSaves()
+      const blocks = [...stacked(), audio({ id: 'n', track: 1, start: 9_000 })]
+      const { result } = await openWith(blocks)
+      act(() => result.current.moveBlock('m', { track: 1, start: 0 }, 'down'))
+      expect(stacking(result)).toEqual([
+        ['k', 0, 0, 1],
+        ['p', 1, 0, 0],
+        ['m', 1, 0, null],
+        ['n', 1, 9_000, null],
+      ])
+      await waitFor(() => expect(saves).toHaveLength(1))
+      expect(tagOf(saves[0]?.html, 'm')).toMatch(/^<audio id="m"[^>]* data-track-index="1"/)
+      expect(tagOf(saves[0]?.html, 'm')).not.toContain('style=')
+
+      act(() => result.current.undo())
+      expect(result.current.film?.blocks).toEqual(blocks)
+    })
+
+    it('把组件块换到下面新开的一行：按叠放规则降到盖着它的块之下（降到 0 时去掉样式）；一步撤销', async () => {
+      const saves = recordSaves()
+      const { result } = await openWith(stacked())
+      // 组件块搬到画面块那一行下面：画面块排到 0 号，组件块是 1 号，降到时间上压着它的画面块之下
+      act(() => result.current.moveBlock('k', { track: 1, start: 0 }, 'down', new Map([['p', 0]])))
+      expect(stacking(result)).toEqual([
+        ['k', 1, 0, 0],
+        ['p', 0, 0, 0],
+        ['m', 0, 0, null],
+      ])
+      await waitFor(() => expect(saves).toHaveLength(1))
+      expect(tagOf(saves[0]?.html, 'k')).toMatch(/^<div id="k"[^>]* data-track-index="1"/)
+
+      act(() => result.current.undo())
+      expect(result.current.film?.blocks).toEqual(stacked())
+    })
+
+    it('把画面块搬进组件那一行上面新开的一行：组件块排到 1 号，画面块抬到它压着的组件块之上；一步撤销', async () => {
+      const { result } = await openWith(stacked())
+      act(() => result.current.moveBlock('p', { track: 0, start: 500 }, 'up', new Map([['k', 1]])))
+      expect(stacking(result)).toEqual([
+        ['k', 1, 0, 1],
+        ['p', 0, 500, 2],
+        ['m', 0, 0, null],
+      ])
+      act(() => result.current.undo())
+      expect(result.current.film?.blocks).toEqual(stacked())
+    })
+
+    it('删掉组件块：组件块从文件里去掉，素材变量不动；撤销回来', async () => {
+      const saves = recordSaves()
+      const { result } = await openWith(stacked())
+      act(() => result.current.removeBlocks(['k'], false))
+      expect(kinds(result)).toEqual([
+        ['p', 'picture', 1, 0, 2_000],
+        ['m', 'audio', 0, 0, 8_000],
+      ])
+      await waitFor(() => expect(saves).toHaveLength(1))
+      expect(saves[0]?.html).not.toContain('data-composition-id="fixture-fields"')
+      expect(declaredIn(saves[0]?.html).map((variable) => variable.id)).toEqual([
+        `src-${picture().jobId}`,
+        `src-${AUDIO_JOB}`,
+      ])
+
+      act(() => result.current.undo())
+      expect(result.current.film?.blocks).toEqual(stacked())
+    })
+
+    it('隐藏组件块和音频块：存出的文件带着隐藏标记（音频块就是静音），成片总长不变；撤销去掉', async () => {
+      const saves = recordSaves()
+      const { result } = await openWith(stacked())
+      act(() => result.current.setHidden(['k', 'm'], true))
+      expect(
+        result.current.film?.blocks.filter((block) => block.hidden).map((block) => block.id),
+      ).toEqual(['k', 'm'])
+      expect(result.current.film?.durationMs).toBe(8_000)
+      await waitFor(() => expect(saves).toHaveLength(1))
+      expect(tagOf(saves[0]?.html, 'm')).toMatch(/^<audio data-hidden=""/)
+      expect(tagOf(saves[0]?.html, 'k')).toMatch(/^<div data-hidden=""/)
+
+      act(() => result.current.undo())
+      expect(result.current.film?.html).not.toContain('data-hidden')
+    })
+
+    it('删掉音频块：成片总长按剩下的块算，音频的变量一起去掉；撤销回来', async () => {
+      const saves = recordSaves()
+      const { result } = await openWith(stacked())
+      act(() => result.current.removeBlocks(['m'], true))
+      expect(kinds(result)).toEqual([
+        ['k', 'component', 0, 0, 3_000],
+        ['p', 'picture', 1, 0, 2_000],
+      ])
+      expect(result.current.film?.durationMs).toBe(3_000)
+      await waitFor(() => expect(saves).toHaveLength(1))
+      expect(declaredIn(saves[0]?.html).map((variable) => variable.id)).toEqual([
+        `src-${picture().jobId}`,
+      ])
+
+      act(() => result.current.undo())
+      expect(result.current.film?.blocks).toEqual(stacked())
+      expect(result.current.film?.html).toContain(`src-${AUDIO_JOB}`)
+    })
+
+    it('有组件行在画面行上面：没给落点的镜头接在画面区第一行（组件那一行）末尾，波纹删除补的也是它', async () => {
+      const { result } = await openWith([
+        ...stacked(),
+        audio({ id: 'q', start: 8_000, duration: 1_000 }),
+        component({ id: 'j', start: 3_000, duration: 1_000 }),
+      ])
+      await add(result, piece({ duration: 1_500 }))
+      const added = picturesOf(result).find((block) => block.id !== 'p')
+      expect(added).toMatchObject({ track: 0, start: 4_000 })
+
+      // 声音区第 0 行的音频块不跟着补
+      act(() => result.current.removeBlocks(['k'], true))
+      expect(kinds(result)).toEqual([
+        [added?.id, 'picture', 0, 1_000, 1_500],
+        ['p', 'picture', 1, 0, 2_000],
+        ['m', 'audio', 0, 0, 8_000],
+        ['q', 'audio', 0, 8_000, 1_000],
+        ['j', 'component', 0, 0, 1_000],
+      ])
+    })
   })
 })

@@ -351,6 +351,7 @@ export function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) 
 type TrimHandleProps = {
   edge: Edge
   value: number
+  /** 这一端能拖到的范围（秒）；往后没有上限时 `max` 是无穷大，这时不写最大值。 */
   bounds: { min: number; max: number }
   valueText: string
   pressed: boolean
@@ -378,7 +379,7 @@ export function TrimHandle({
   return (
     <button
       aria-label={edge === 'start' ? '裁剪开头' : '裁剪结尾'}
-      aria-valuemax={roundSeconds(bounds.max)}
+      aria-valuemax={Number.isFinite(bounds.max) ? roundSeconds(bounds.max) : undefined}
       aria-valuemin={roundSeconds(bounds.min)}
       aria-valuenow={roundSeconds(value)}
       aria-valuetext={valueText}

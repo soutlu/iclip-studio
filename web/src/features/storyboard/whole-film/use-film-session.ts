@@ -3,19 +3,24 @@ import type { Composition } from '@hyperframes/sdk'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
 import { rippleStarts, type Timing } from './block-edit'
-import type { ComponentCatalog } from './composition/catalog'
+import type { CatalogItem, ComponentCatalog, VariableValue } from './composition/catalog'
 import {
+  AUDIO_SOURCE_LABEL,
+  audioBlock,
   blockFromAttributes,
   blockKindOfTag,
+  componentBlock,
   FILM_ID,
+  isMediaBlock,
   pictureBlock,
   sourceVariable,
   writeFilm,
+  type AudioBlock,
   type Canvas,
   type FilmBlock,
   type PictureBlock,
 } from './composition/film'
-import { topTrack, type Landing, type Renumbering } from './placement'
+import { onRow, topTrack, type Landing, type Renumbering } from './placement'
 import { newBlockZ, restackedZ } from './stacking'
 import type { StackingDirection } from './vendor/hyperframes-studio/player/components/timelineStackingSync'
 import { readWholeFilmDraft, saveWholeFilmDraft } from './whole-film.api'
@@ -26,7 +31,8 @@ export type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'failed'
 export type FilmView = {
   html: string
   canvas: Canvas
-  pictures: readonly PictureBlock[]
+  /** 文件里所有的块（三种），按它们在文件里的先后。 */
+  blocks: readonly FilmBlock[]
   durationMs: number
   canUndo: boolean
   canRedo: boolean
@@ -34,6 +40,9 @@ export type FilmView = {
 
 /** 要放进成片的一段素材；起点由成片现有内容决定，接在画面那一行的末尾。 */
 export type NewPicture = Pick<PictureBlock, 'label' | 'jobId' | 'src' | 'mediaStart' | 'duration'>
+
+/** 要放进成片的一段音频：一条音频记录从 `mediaStart` 起的 `duration` 毫秒。 */
+export type NewAudio = Pick<AudioBlock, 'label' | 'jobId' | 'src' | 'mediaStart' | 'duration'>
 
 // SDK 的编辑引擎只在打开成片编辑器时才用得到，单独成块按需加载。
 const openComposition = async (html: string): Promise<Composition> =>
@@ -62,30 +71,47 @@ const blocksOf = (engine: Composition): FilmBlock[] =>
     },
   )
 
-/** 成片里的画面块，按它们在文件里的先后。 */
-const picturesOf = (engine: Composition): PictureBlock[] =>
-  blocksOf(engine).filter((block) => block.kind === 'picture')
-
-const durationOf = (pictures: readonly PictureBlock[]) =>
-  Math.max(0, ...pictures.map((block) => block.start + block.duration))
+/** 成片总长：所有块里最晚的结尾。 */
+const durationOf = (blocks: readonly FilmBlock[]) =>
+  Math.max(0, ...blocks.map((block) => block.start + block.duration))
 
 const viewOf = (engine: Composition): FilmView => {
   const root = engine.getElements().find((element) => element.id === FILM_ID)
-  const pictures = picturesOf(engine)
+  const blocks = blocksOf(engine)
   return {
     html: engine.serialize(),
     canvas: {
       width: Number(root?.attributes['data-width'] ?? 0),
       height: Number(root?.attributes['data-height'] ?? 0),
     },
-    pictures,
-    durationMs: durationOf(pictures),
+    blocks,
+    durationMs: durationOf(blocks),
     canUndo: engine.canUndo(),
     canRedo: engine.canRedo(),
   }
 }
 
+/** 在一批操作里做完 `change`，再按改完的所有块写根上的总长：一起算一步撤销。 */
+const applyTo = (engine: Composition, change: () => void) =>
+  engine.batch(() => {
+    change()
+    engine.dispatch({
+      type: 'setCompositionMetadata',
+      duration: durationOf(blocksOf(engine)) / 1000,
+    })
+  })
+
+/** 素材地址的变量没声明过就声明。 */
+const declareSource = (engine: Composition, jobId: string, src: string, label?: string) => {
+  const variable = sourceVariable(jobId, src, label)
+  if (!engine.listVariables().some((declared) => declared.id === variable.id))
+    engine.declareVariable(variable)
+}
+
 const newBlockId = () => `clip-${crypto.randomUUID().slice(0, 8)}`
+
+// 组件库条目没写时长时的默认时长：和参照的工作台一样，取 10 秒和成片现有总长里大的那个
+const DEFAULT_COMPONENT_MS = 10_000
 
 type Options = {
   debounceMs?: number
@@ -226,8 +252,8 @@ export function useFilmSession(
   )
 
   /**
-   * 把几段素材一段接一段放进成片：给了 `at` 就从那一行的那个时间放起（调用方保证那里空着），
-   * 没给就接在第一行的末尾。`renumber` 是为它新开一行时别的块要换成的行号。
+   * 把几段素材一段接一段放进成片的画面区：给了 `at` 就从那一行的那个时间放起（调用方保证那里空着），
+   * 没给就接在主轨（画面区最上面那一行）的末尾。`renumber` 是为它新开一行时别的块要换成的行号。
    * 每段都叠在最上面，写在根下第一个。还没有成片时先按 `canvas` 建一份。放不下时不动成片。
    */
   const addPictures = useCallback(
@@ -239,25 +265,19 @@ export function useFilmSession(
     ): Promise<boolean> => {
       const engine = await engineFor(canvas)
       if (engine === null) return false
-      const current = viewOf(engine)
+      const existing = blocksOf(engine)
       // 别的块先换成新的行号，后面都按换完的样子算
-      const others = current.pictures.map((block) => ({
+      const others = existing.map((block) => ({
         ...block,
         track: renumber.get(block.id) ?? block.track,
       }))
       const track = at?.track ?? topTrack(others)
-      const row = others.filter((block) => block.track === track)
+      const row = others.filter((block) => onRow(block, { zone: 'visual', track }))
       let end = at?.start ?? Math.max(0, ...row.map((block) => block.start + block.duration))
-      const declared = new Set(engine.listVariables().map((variable) => variable.id))
-      const existing = blocksOf(engine)
-      engine.batch(() => {
+      applyTo(engine, () => {
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
         for (const [placed, picture] of pictures.entries()) {
-          const variable = sourceVariable(picture.jobId, picture.src)
-          if (!declared.has(variable.id)) {
-            engine.declareVariable(variable)
-            declared.add(variable.id)
-          }
+          declareSource(engine, picture.jobId, picture.src)
           const block = {
             ...picture,
             kind: 'picture' as const,
@@ -271,10 +291,86 @@ export function useFilmSession(
           engine.addElement(FILM_ID, 0, pictureBlock(block))
           end += picture.duration
         }
-        engine.dispatch({
-          type: 'setCompositionMetadata',
-          duration: Math.max(current.durationMs, end) / 1000,
-        })
+      })
+      show(engine)
+      return true
+    },
+    [engineFor, show],
+  )
+
+  /**
+   * 把组件库的一个条目放进成片：从 `at` 那一行的那个时间放起（调用方保证那里空着），
+   * 可填项取 `values`，时长取条目的时长。`renumber` 同 `addPictures`。
+   * 叠在最上面，写在根下第一个。还没有成片时先按 `canvas` 建一份。
+   */
+  const addComponent = useCallback(
+    async (
+      canvas: Canvas,
+      item: CatalogItem,
+      values: Readonly<Record<string, VariableValue>>,
+      at: Landing,
+      renumber: Renumbering = NO_RENUMBERING,
+    ): Promise<boolean> => {
+      const engine = await engineFor(canvas)
+      if (engine === null) return false
+      const existing = blocksOf(engine)
+      const duration =
+        item.duration === null
+          ? Math.max(DEFAULT_COMPONENT_MS, durationOf(existing))
+          : Math.round(item.duration * 1000)
+      applyTo(engine, () => {
+        for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
+        const block = {
+          kind: 'component' as const,
+          id: newBlockId(),
+          label: item.title,
+          component: item.name,
+          src: item.src,
+          start: at.start,
+          duration,
+          playbackStart: 0,
+          track: at.track,
+          values: { ...values },
+          z: newBlockZ(existing, 0),
+          hidden: false,
+        }
+        engine.addElement(FILM_ID, 0, componentBlock(block))
+      })
+      show(engine)
+      return true
+    },
+    [engineFor, show],
+  )
+
+  /**
+   * 把一段音频放进成片的声音区：从 `at` 那一行的那个时间放起（调用方保证那里空着）。
+   * 写在根下第一个，不带叠放顺序。`renumber` 同 `addPictures`。还没有成片时先按 `canvas` 建一份。
+   */
+  const addAudio = useCallback(
+    async (
+      canvas: Canvas,
+      audio: NewAudio,
+      at: Landing,
+      renumber: Renumbering = NO_RENUMBERING,
+    ): Promise<boolean> => {
+      const engine = await engineFor(canvas)
+      if (engine === null) return false
+      applyTo(engine, () => {
+        for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
+        declareSource(engine, audio.jobId, audio.src, AUDIO_SOURCE_LABEL)
+        const block = {
+          ...audio,
+          kind: 'audio' as const,
+          id: newBlockId(),
+          start: at.start,
+          track: at.track,
+          volume: 1,
+          fadeIn: 0,
+          fadeOut: 0,
+          loop: false,
+          hidden: false,
+        }
+        engine.addElement(FILM_ID, 0, audioBlock(block))
       })
       show(engine)
       return true
@@ -287,25 +383,25 @@ export function useFilmSession(
     (change: (engine: Composition) => void) => {
       const engine = engineRef.current
       if (engine === null) return
-      engine.batch(() => {
-        change(engine)
-        engine.dispatch({
-          type: 'setCompositionMetadata',
-          duration: durationOf(picturesOf(engine)) / 1000,
-        })
-      })
+      applyTo(engine, () => change(engine))
       show(engine)
     },
     [show],
   )
 
-  /** 改几个块各自的起止和入点，一起算一步撤销。 */
+  /** 改几个块各自的起止和入点，一起算一步撤销。组件块没有入点，只改起止。 */
   const retime = useCallback(
     (timings: ReadonlyMap<string, Timing>) =>
       edit((engine) => {
+        const media = new Set(
+          blocksOf(engine)
+            .filter(isMediaBlock)
+            .map((block) => block.id),
+        )
         for (const [id, timing] of timings) {
           engine.setTiming(id, { start: timing.start / 1000, duration: timing.duration / 1000 })
-          engine.setAttribute(id, 'data-media-start', String(timing.mediaStart / 1000))
+          if (media.has(id))
+            engine.setAttribute(id, 'data-media-start', String(timing.mediaStart / 1000))
         }
       }),
     [edit],
@@ -355,17 +451,16 @@ export function useFilmSession(
     [edit],
   )
 
-  /** 删掉几个块；`ripple` 为真时第一行里后面的块往前补上。没有块再用的素材变量一起去掉。 */
+  /** 删掉几个块；`ripple` 为真时主轨里后面的块往前补上。没有块再用的素材变量一起去掉。 */
   const removeBlocks = useCallback(
     (ids: readonly string[], ripple: boolean) =>
       edit((engine) => {
-        const before = picturesOf(engine)
+        const before = blocksOf(engine)
         const gone = new Set(ids)
         for (const id of gone) engine.removeElement(id)
         if (ripple)
           for (const [id, start] of rippleStarts(before, gone))
             engine.setTiming(id, { start: start / 1000 })
-        // 文件里别的块（比如音频块）也绑着素材变量，按剩下的所有块算
         const used = new Set(
           engine.getElements().flatMap((element) => element.attributes['data-var-src'] ?? []),
         )
@@ -386,6 +481,8 @@ export function useFilmSession(
     film,
     opening,
     addPictures,
+    addComponent,
+    addAudio,
     retime,
     moveBlock,
     restart,

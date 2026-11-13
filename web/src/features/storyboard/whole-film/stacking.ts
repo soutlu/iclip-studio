@@ -1,5 +1,5 @@
-import type { FilmBlock, PictureBlock } from './composition/film'
-import { rowsOf } from './placement'
+import type { FilmBlock } from './composition/film'
+import { rowsOf, type RowTarget } from './placement'
 import {
   computeStackingPatches,
   type StackingDirection,
@@ -13,18 +13,21 @@ export const newBlockZ = (existing: readonly FilmBlock[], placed: number): numbe
   Math.max(1, existing.length + placed + 1)
 
 /**
- * 把块 `id` 换到 `row` 时它往上还是往下挪：`row` 是已有的行号，或 `{ insertAt }` 在时间线上
- * 第几行的位置新开一行（0 是最上面）。都按挪之前时间线上的第几行比；
- * 在自己这一行的位置新开（紧挨着这一行的上面）时返回 null，不调叠放顺序。
+ * 把块 `id` 换到 `row` 时它往上还是往下挪：`row` 是已有的一行，或在时间线上第几行的位置新开一行
+ * （0 是最上面）。都按挪之前时间线上的第几行比；在自己这一行的位置新开（紧挨着这一行的上面）时
+ * 返回 null，不调叠放顺序。
  */
 export const rowMoveDirection = (
-  pictures: readonly PictureBlock[],
+  blocks: readonly FilmBlock[],
   id: string,
-  row: number | { insertAt: number },
+  row: RowTarget,
 ): StackingDirection | null => {
-  const tracks = rowsOf(pictures).map((lane) => lane.track)
-  const current = tracks.indexOf(pictures.find((block) => block.id === id)?.track ?? Number.NaN)
-  const aimed = typeof row === 'number' ? tracks.indexOf(row) : row.insertAt
+  const rows = rowsOf(blocks)
+  const current = rows.findIndex((lane) => lane.blocks.some((block) => block.id === id))
+  const aimed =
+    'insertAt' in row
+      ? row.insertAt
+      : rows.findIndex((lane) => lane.zone === row.zone && lane.track === row.track)
   return aimed < current ? 'up' : aimed > current ? 'down' : null
 }
 

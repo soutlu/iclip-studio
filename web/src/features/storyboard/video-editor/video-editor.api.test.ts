@@ -152,6 +152,7 @@ vi.mock('mediabunny', () => {
     canEncodeVideo: () => Promise.resolve(true),
     EncodedPacketSink,
     Input,
+    MP3: {},
     MP4: {},
     Mp4OutputFormat,
     Output,
@@ -160,6 +161,7 @@ vi.mock('mediabunny', () => {
     UrlSource,
     VideoSampleSink,
     VideoSampleSource,
+    WAVE: {},
   }
 })
 
