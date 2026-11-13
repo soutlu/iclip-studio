@@ -71,7 +71,7 @@ describe('组件栏 · 列出和筛选', () => {
     const user = userEvent.setup()
     await renderTab()
     const search = screen.getByRole('searchbox', { name: '搜索组件' })
-    expect(search).toHaveAttribute('placeholder', '搜索名字、分类或标签')
+    expect(search).toHaveAttribute('placeholder', '搜索名字或分类')
     await user.type(search, '圆环')
     expect(cardNames()).toEqual(['测试叠加，4 秒'])
     await user.clear(search)

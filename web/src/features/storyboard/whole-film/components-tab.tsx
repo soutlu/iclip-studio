@@ -54,7 +54,7 @@ export function ComponentsTab({ catalog, origin, onAdd, onCarry, onDrop }: Compo
         aria-label="搜索组件"
         leadingIcon="search"
         onChange={(event) => setQuery(event.currentTarget.value)}
-        placeholder="搜索名字、分类或标签"
+        placeholder="搜索名字或分类"
         type="search"
         value={query}
         wrapperClassName="wf-component-search"
