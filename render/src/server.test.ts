@@ -113,7 +113,7 @@ describe('渲染服务接口', () => {
       },
       'invalid-film',
     ],
-    ['成片里还没有画面', { ...exportRequest(), film: filmFile([]), media: {} }, 'invalid-film'],
+    ['成片还是空的', { ...exportRequest(), film: filmFile([]), media: {} }, 'invalid-film'],
   ])('%s时答 400（%s）', async (_, body, code) => {
     const response = await post(body)
     expect(response.status).toBe(400)

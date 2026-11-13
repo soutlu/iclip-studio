@@ -269,7 +269,7 @@ class WholeFilmExports(Protocol):
 
 _EXPORTS_OFF = "成片导出没有开通"
 _FILMS_OFF = "成片没有开通"
-_NO_PICTURE = "成片里还没有画面，导不出成片"
+_EMPTY_FILM = "成片还是空的，导不出成片"
 
 
 class WorkspaceDocumentValidator(Protocol):
@@ -622,10 +622,11 @@ class ConversationService:
         if (found.revision if found is not None else 0) != revision:
             raise Conflict("成片草稿已经有更新的一版，重新读取后再导出")
         if found is None:
-            raise ValidationFailed(_NO_PICTURE)
+            raise ValidationFailed(_EMPTY_FILM)
         film = await films.check(principal, conversation.id, found.html)
-        if not film.sources:
-            raise ValidationFailed(_NO_PICTURE)
+        # 只有组件块的成片没有素材也能导出；一个块都没有时总长是 0
+        if film.duration_ms == 0:
+            raise ValidationFailed(_EMPTY_FILM)
         return await exports.start(
             principal, conversation_id=conversation.id, revision=revision, film=film
         )

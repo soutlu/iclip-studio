@@ -45,10 +45,10 @@ describe('预览下面的播放条', () => {
     const user = userEvent.setup()
     const onPlay = vi.fn()
     await renderWithProviders(
-      <PreviewTransport {...base()} onPlay={onPlay} playBlocked="成片里还没有画面" totalMs={0} />,
+      <PreviewTransport {...base()} onPlay={onPlay} playBlocked="成片还是空的" totalMs={0} />,
     )
     await user.click(screen.getByRole('button', { name: '播放' }))
-    expect(await screen.findAllByText('成片里还没有画面')).not.toHaveLength(0)
+    expect(await screen.findAllByText('成片还是空的')).not.toHaveLength(0)
     expect(onPlay).not.toHaveBeenCalled()
     expect(screen.queryByTestId('preview-buffered')).toBeNull()
   })
