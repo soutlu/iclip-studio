@@ -529,7 +529,7 @@ async def test_exports_belong_to_the_owner_and_to_their_conversation(
     assert (await record(generations, export_id)).error_code is None
 
 
-async def test_only_the_saved_revision_with_a_picture_in_it_is_exported(
+async def test_only_the_saved_revision_of_a_film_that_is_not_empty_is_exported(
     client: httpx.AsyncClient,
     pg_url: str,
     generations: SqlGenerationRepository,
@@ -546,13 +546,19 @@ async def test_only_the_saved_revision_with_a_picture_in_it_is_exported(
     for stale in (0, revision + 1):
         assert (await client.post(exports_url(mine), json={"revision": stale})).status_code == 409
 
-    revision = await save_draft(client, mine, film_of(), revision)
+    revision = await save_draft(client, mine, film_file(duration_ms=0), revision)
     empty = await client.post(exports_url(mine), json={"revision": revision})
     assert (empty.status_code, empty.json()) == (
         422,
-        {"detail": "成片里还没有画面，导不出成片"},
+        {"detail": "成片还是空的，导不出成片"},
     )
     assert await latest(client, mine) is None
+
+    # 只有组件块的成片没有素材，照样能导出
+    revision = await save_draft(client, mine, film_file(duration_ms=3000), revision)
+    started = await client.post(exports_url(mine), json={"revision": revision})
+    assert started.status_code == 202, started.text
+    assert (await latest(client, mine) or {}).get("id") == started.json()["exportId"]
 
 
 @pytest.fixture

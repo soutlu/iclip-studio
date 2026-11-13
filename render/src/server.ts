@@ -99,7 +99,7 @@ async function createExport(req: IncomingMessage, res: ServerResponse, context: 
   const found = await checked(res, request.film, library, context.logger)
   if (!found) return
   if (found.film.blocks.length === 0) {
-    fail(res, 400, 'invalid-film', '成片里还没有画面')
+    fail(res, 400, 'invalid-film', '成片还是空的')
     return
   }
   const downloads = new Map<string, string>()

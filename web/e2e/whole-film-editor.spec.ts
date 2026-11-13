@@ -37,7 +37,7 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   const dialog = await openWholeFilm(page, panel)
   const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
   const transport = dialog.getByRole('group', { name: '播放控制' })
-  await expect(dialog.getByText('成片里还没有画面；加入素材片后可以在这里预览')).toBeVisible()
+  await expect(dialog.getByText('成片还是空的；加入内容后可以在这里预览')).toBeVisible()
   await expect(dialog.getByRole('button', { name: '导出', exact: true })).toHaveAttribute(
     'aria-disabled',
     'true',

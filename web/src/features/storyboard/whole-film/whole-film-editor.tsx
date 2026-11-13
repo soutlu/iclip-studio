@@ -72,7 +72,7 @@ type Props = {
   onClose: () => void
 }
 
-const EMPTY_TEXT = '成片里还没有画面；加入素材片后可以在这里预览'
+const EMPTY_TEXT = '成片还是空的；加入内容后可以在这里预览'
 const PICK_FIRST_TEXT = '先在下方点一个镜头选中范围'
 const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏'
 
@@ -429,16 +429,15 @@ function EditorBody({
 
   const srcdoc = useMemo(
     () =>
-      film === null || pictures.length === 0
+      film === null || blocks.length === 0
         ? undefined
         : previewDocument(film.html, catalog, window.location.origin),
-    [film, pictures, catalog],
+    [film, blocks, catalog],
   )
   const playBlocked = srcdoc === undefined ? EMPTY_TEXT : undefined
 
   const exporting = useWholeFilmExport(conversationId, session.settle)
-  const exportBlocked =
-    pictures.length === 0 ? '成片里还没有画面，无法导出；请先加入素材片' : undefined
+  const exportBlocked = blocks.length === 0 ? '成片还是空的，无法导出；请先加入内容' : undefined
 
   const viewedMaterial =
     materialView === null ? undefined : materials.byJob.get(materialView.range.jobId)

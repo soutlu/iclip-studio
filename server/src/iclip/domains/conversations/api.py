@@ -505,7 +505,7 @@ def create_conversations_router(
         principal: Annotated[Principal, require_permission("agent:run")],
     ) -> WholeFilmExportStartedOut:
         """按当前草稿导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；
-        ``revision`` 不是存着的那一版 409；成片里还没有画面、用到的素材不再是这段对话的、没开通
+        ``revision`` 不是存着的那一版 409；成片还是空的、用到的素材不再是这段对话的、没开通
         都是 422；渲染服务不可用 502。草稿在交给渲染服务之前又改过不在这里答，那条记录记为失败
         （``FILM_CHANGED``）。"""
 

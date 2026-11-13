@@ -9,7 +9,7 @@ import { addMockConversation } from '@/testing/mocks/conversations'
 import { server } from '@/testing/mocks/server'
 import { mockWholeFilmDraft, putMockWholeFilmDraft } from '@/testing/mocks/whole-film'
 import { renderWithProviders } from '@/testing/render'
-import { filmFile, picture } from '@/testing/whole-film'
+import { component, filmFile, picture } from '@/testing/whole-film'
 import type { GenerationJob } from '../storyboard.api'
 import { WholeFilmEditor } from './whole-film-editor'
 
@@ -99,7 +99,7 @@ describe('成片编辑器 · 加入素材', () => {
   it('还没有成片：播放、进度条、导出置灰并说明原因，没选镜头时按 Enter 提示先选，打开不保存', async () => {
     const user = userEvent.setup()
     await openEditor()
-    expect(screen.getByText('成片里还没有画面；加入素材片后可以在这里预览')).toBeVisible()
+    expect(screen.getByText('成片还是空的；加入内容后可以在这里预览')).toBeVisible()
     expect(within(transport()).getByRole('button', { name: '播放' })).toHaveAttribute(
       'aria-disabled',
       'true',
@@ -113,7 +113,7 @@ describe('成片编辑器 · 加入素材', () => {
     expect(exportButton).toHaveAttribute('aria-disabled', 'true')
     await user.click(exportButton)
     expect(
-      (await screen.findAllByText('成片里还没有画面，无法导出；请先加入素材片')).length,
+      (await screen.findAllByText('成片还是空的，无法导出；请先加入内容')).length,
     ).toBeGreaterThan(0)
     await new Promise((resolve) => setTimeout(resolve, 100))
     expect(mockWholeFilmDraft(CONVERSATION)).toBeUndefined()
@@ -210,6 +210,20 @@ describe('成片编辑器 · 加入素材', () => {
 
 describe('成片编辑器 · 时间线', () => {
   const timeline = () => screen.getByRole('group', { name: '第 1 行' })
+
+  it('成片里只有组件块、没有画面块：照样能播放、能导出', async () => {
+    putMockWholeFilmDraft(CONVERSATION, filmFile([component()], { width: 720, height: 1280 }))
+    await openEditor()
+    expect(screen.queryByText('成片还是空的；加入内容后可以在这里预览')).toBeNull()
+    expect(within(transport()).getByRole('button', { name: '播放' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(screen.getByRole('button', { name: '导出' })).not.toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+  })
 
   it('还没有成片：留一行空的，提示把镜头拖进来', async () => {
     await openEditor()
