@@ -1,18 +1,23 @@
 import { openComposition } from '@hyperframes/sdk'
 import { describe, expect, it } from 'vitest'
 import {
+  AUDIO_SOURCE_LABEL,
+  audioBlock,
+  componentBlock,
   pictureBlock,
   sourceVariable,
   writeFilm,
   type Film,
+  type FilmBlock,
   type PictureBlock,
 } from '../../web/src/features/storyboard/whole-film/composition/film'
 import { checkFilm, FilmProblem, localizedFilm, readFilm } from './film'
-import { catalog, SOURCE_JOB } from './testing'
+import { AUDIO_JOB, AUDIO_URL, audio, catalog, component, SOURCE_JOB } from './testing'
 
 const OTHER_JOB = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
 
 const picture = (overrides: Partial<PictureBlock> = {}): PictureBlock => ({
+  kind: 'picture',
   id: 'clip-1',
   label: '镜头 1',
   jobId: SOURCE_JOB,
@@ -40,8 +45,18 @@ const second = (overrides: Partial<PictureBlock> = {}): PictureBlock =>
     ...overrides,
   })
 
-const film = (...blocks: PictureBlock[]): Film => ({ canvas: { width: 720, height: 1280 }, blocks })
-const html = (...blocks: PictureBlock[]) => writeFilm(film(...blocks), catalog)
+const film = (...blocks: FilmBlock[]): Film => ({ canvas: { width: 720, height: 1280 }, blocks })
+const html = (...blocks: FilmBlock[]) => writeFilm(film(...blocks), catalog)
+
+/** 一个三种块都有的成片：画面块、组件块和音频块同是第 0 行，时间也重叠。 */
+const titled = component({
+  start: 500,
+  duration: 1500,
+  playbackStart: 1000,
+  values: { text: '新品上市', accent: '#ff0000', weight: '700' },
+  z: 2,
+})
+const music = audio({ duration: 5000, volume: 0.5, fadeIn: 1000, fadeOut: 500, loop: true })
 
 describe('checkFilm', () => {
   it('写出来的成片读回来是同一份，重写后一字不差', async () => {
@@ -51,8 +66,8 @@ describe('checkFilm', () => {
     expect(checked.html).toBe(written)
     expect(checked.durationMs).toBe(5000)
     expect(checked.sources).toEqual([
-      { jobId: SOURCE_JOB, url: 'https://media.iclip.test/videos/a.mp4?sig=1&v=2' },
-      { jobId: OTHER_JOB, url: 'https://media.iclip.test/videos/b.mp4' },
+      { jobId: SOURCE_JOB, url: 'https://media.iclip.test/videos/a.mp4?sig=1&v=2', kind: 'video' },
+      { jobId: OTHER_JOB, url: 'https://media.iclip.test/videos/b.mp4', kind: 'video' },
     ])
   })
 
@@ -89,6 +104,86 @@ describe('checkFilm', () => {
     const again = picture({ id: 'clip-2', start: 2000, mediaStart: 3000 })
     const checked = await checkFilm(html(picture(), again), catalog)
     expect(checked.sources).toHaveLength(1)
+  })
+
+  it('三种块写出来读回来是同一份，重写后一字不差；画面块和音频块同是第 0 行也行；素材分视频和音频', async () => {
+    const blocks = [picture(), second(), component({ ...titled, track: 1 }), music]
+    const written = html(...blocks)
+    const checked = await checkFilm(written, catalog)
+    expect(checked.film).toEqual(film(...blocks))
+    expect(checked.html).toBe(written)
+    expect(checked.sources).toEqual([
+      { jobId: SOURCE_JOB, url: 'https://media.iclip.test/videos/a.mp4?sig=1&v=2', kind: 'video' },
+      { jobId: OTHER_JOB, url: 'https://media.iclip.test/videos/b.mp4', kind: 'video' },
+      { jobId: AUDIO_JOB, url: AUDIO_URL, kind: 'audio' },
+    ])
+  })
+
+  it('成片总长算到最晚结尾的块，音频块和组件块也算', async () => {
+    expect((await checkFilm(html(picture(), audio({ duration: 6000 })), catalog)).durationMs).toBe(
+      6000,
+    )
+    const late = component({ start: 3000, duration: 4000 })
+    expect((await checkFilm(html(picture(), late), catalog)).durationMs).toBe(7000)
+  })
+
+  it('可选属性取默认值时不写：组件从头播、不淡入淡出、不循环、没隐藏、叠放顺序 0', async () => {
+    const written = html(component(), audio())
+    expect(written).toContain('<div id="title-1" data-hf-id="title-1" class="clip component"')
+    expect(written).toContain('<audio id="music-1" data-hf-id="music-1" class="clip audio"')
+    for (const name of ['data-playback-start', 'data-fade-in', 'data-fade-out', 'loop', 'style']) {
+      expect(written).not.toContain(` ${name}=`)
+    }
+    const shown = html(
+      component({ playbackStart: 500, z: 1, hidden: true }),
+      audio({ fadeIn: 200, fadeOut: 300, loop: true, hidden: true }),
+    )
+    expect(shown).toContain('<div data-hidden="" style="z-index: 1" id="title-1"')
+    expect(shown).toContain(' data-playback-start="0.5"')
+    expect(shown).toContain('<audio data-hidden="" id="music-1"')
+    expect(shown).toContain(' data-fade-in="0.2" data-fade-out="0.3" loop="true"></audio>')
+    expect((await checkFilm(shown, catalog)).html).toBe(shown)
+  })
+
+  it('音频地址也绑按记录编号取名的变量，变量的名字是「音频」', async () => {
+    const written = html(audio())
+    expect(written).toContain(` data-var-src="src-${AUDIO_JOB}"`)
+    const declared = /data-composition-variables="([^"]*)"/.exec(written)?.[1] ?? ''
+    expect(JSON.parse(declared.replaceAll('&quot;', '"'))).toEqual([
+      sourceVariable(AUDIO_JOB, AUDIO_URL, AUDIO_SOURCE_LABEL),
+    ])
+  })
+
+  it('用到带字体的条目：<head> 里链上它的字体，照样过渲染前的检查', async () => {
+    const brand = component({
+      component: 'fixture-brand-card',
+      src: 'compositions/fixtures/fixture-brand-card.html',
+    })
+    const checked = await checkFilm(html(brand), catalog)
+    expect(checked.html).toContain(
+      '<link rel="stylesheet" href="vendor/fonts/families/playfair-display.css">',
+    )
+  })
+
+  it('用 SDK 加组件块和音频块、改音频的起止，存出来的文件通过检查，读回来是改完的样子', async () => {
+    const stored = (await checkFilm(html(picture()), catalog)).html
+    const session = await openComposition(stored)
+    const placed = component({ ...titled, track: 1 })
+    session.batch(() => {
+      session.addElement('film', 1, componentBlock(placed))
+      session.declareVariable(sourceVariable(AUDIO_JOB, AUDIO_URL, AUDIO_SOURCE_LABEL))
+      session.addElement('film', 2, audioBlock(music))
+      session.dispatch({ type: 'setCompositionMetadata', duration: 5 })
+    })
+    session.batch(() => {
+      session.setTiming('music-1', { start: 1, duration: 3 })
+      session.dispatch({ type: 'setCompositionMetadata', duration: 4 })
+    })
+    const checked = await checkFilm(session.serialize(), catalog)
+    const moved = { ...music, start: 1000, duration: 3000 }
+    expect(checked.film).toEqual(film(picture(), placed, moved))
+    expect(checked.durationMs).toBe(4000)
+    expect(checked.html).toBe(html(picture(), placed, moved))
   })
 
   it('用 SDK 加块、存出来的文件通过检查，重写后 SDK 再开再存仍然通过且内容不变', async () => {
@@ -381,19 +476,85 @@ describe('readFilm 拒收写法之外的东西', () => {
   it.each(cases)('%s', (_name, tamper, message) => {
     const tampered = tamper(base)
     expect(tampered).not.toBe(base)
-    expect(() => readFilm(tampered)).toThrow(FilmProblem)
-    expect(() => readFilm(tampered)).toThrow(message)
+    expect(() => readFilm(tampered, catalog)).toThrow(FilmProblem)
+    expect(() => readFilm(tampered, catalog)).toThrow(message)
   })
 
-  it.each<[string, PictureBlock[], RegExp]>([
+  const mixed = html(picture(), component({ ...titled, track: 1 }), music)
+  const mixedCases: [string, (source: string) => string, RegExp][] = [
+    [
+      '可填项取值不是 JSON 对象',
+      (source) => source.replace(/data-variable-values="[^"]*"/, 'data-variable-values="[1]"'),
+      /JSON 对象/,
+    ],
+    [
+      '可填项取值里有对象',
+      (source) =>
+        source.replace(
+          /data-variable-values="[^"]*"/,
+          'data-variable-values="{&quot;text&quot;:{&quot;a&quot;:1}}"',
+        ),
+      /JSON 对象/,
+    ],
+    [
+      '可填项取值不是 JSON',
+      (source) => source.replace(/data-variable-values="[^"]*"/, 'data-variable-values="{oops"'),
+      /JSON 对象/,
+    ],
+    ['循环写了 true 以外的值', (source) => source.replace('loop="true"', 'loop=""'), /loop/],
+    [
+      '音频块带样式',
+      (source) => source.replace('<audio id="music-1"', '<audio style="z-index: 1" id="music-1"'),
+      /不能带 style/,
+    ],
+    ['淡入不是秒数', (source) => source.replace('data-fade-in="1"', 'data-fade-in="1s"'), /淡入/],
+    [
+      '组件块缺可填项取值',
+      (source) => source.replace(/ data-variable-values="[^"]*"/, ''),
+      /缺少 data-variable-values/,
+    ],
+    [
+      '组件块里有子标签',
+      (source) => source.replace('></div>\n<audio', '><span></span></div>\n<audio'),
+      /<span>/,
+    ],
+  ]
+
+  it.each(mixedCases)('%s', (_name, tamper, message) => {
+    const tampered = tamper(mixed)
+    expect(tampered).not.toBe(mixed)
+    expect(() => readFilm(tampered, catalog)).toThrow(FilmProblem)
+    expect(() => readFilm(tampered, catalog)).toThrow(message)
+  })
+
+  it.each<[string, FilmBlock[], RegExp]>([
     ['同一行的两块重叠', [picture(), second({ start: 1500 })], /重叠/],
+    ['画面区同一行上画面块和组件块重叠', [picture(), component({ start: 1000 })], /重叠/],
+    ['声音区同一行上两个音频块重叠', [audio(), audio({ id: 'music-2', start: 1500 })], /重叠/],
     ['超过两分钟', [picture({ duration: 120_001 })], /上限/],
     ['短于 100 毫秒', [picture({ duration: 99 })], /短于/],
+    ['音频短于 100 毫秒', [audio({ duration: 99 })], /短于/],
     ['编号重复', [picture(), second({ id: 'clip-1' })], /重复/],
+    ['不同种的块编号重复', [picture(), audio({ id: 'clip-1' })], /重复/],
     ['音量超出范围', [picture({ volume: 4 })], /音量/],
+    ['音频音量超出范围', [audio({ volume: 4 })], /音量/],
     ['同一条素材片两个地址', [picture(), second({ jobId: SOURCE_JOB })], /两个地址|默认值/],
+    ['不在组件库里的组件', [component({ component: 'nope' })], /不在组件库/],
+    [
+      '组件名和组件库里的文件对不上',
+      [component({ src: 'compositions/fixtures/fixture-overlay.html' })],
+      /不在组件库/,
+    ],
   ])('%s', (_name, blocks, message) => {
-    expect(() => readFilm(html(...blocks))).toThrow(message)
+    expect(() => readFilm(html(...blocks), catalog)).toThrow(message)
+  })
+
+  it.each<[string, FilmBlock[]]>([
+    ['画面块和音频块同是第 0 行、时间重叠', [picture(), audio()]],
+    ['组件块和音频块同是第 0 行、时间重叠', [component(), audio()]],
+    ['画面块和组件块在画面区的两行上', [picture(), component({ track: 1 })]],
+  ])('%s：能过', (_name, blocks) => {
+    expect(readFilm(html(...blocks), catalog).blocks).toEqual(blocks)
   })
 
   it('SDK 在根上写的变量自定义属性可以带着，重写时不保留', async () => {
@@ -413,8 +574,21 @@ describe('localizedFilm', () => {
       catalog,
     )
     expect(
-      readFilm(local.replaceAll('media/b.mp4', 'https://local.test/media/b.mp4')).blocks,
+      readFilm(local.replaceAll('media/b.mp4', 'https://local.test/media/b.mp4'), catalog).blocks,
     ).toEqual([picture(), second({ src: 'https://local.test/media/b.mp4' })])
     expect(local).not.toContain('https://media.iclip.test/videos/b.mp4')
+  })
+
+  it('音频块的地址也换成本地路径，组件块不动', () => {
+    const titledAbove = component({ ...titled, track: 1 })
+    const local = localizedFilm(
+      film(picture(), titledAbove, music),
+      { [AUDIO_URL]: 'media/music.mp3' },
+      catalog,
+    )
+    expect(local).not.toContain(AUDIO_URL)
+    expect(
+      readFilm(local.replaceAll('media/music.mp3', 'https://local.test/music.mp3'), catalog).blocks,
+    ).toEqual([picture(), titledAbove, { ...music, src: 'https://local.test/music.mp3' }])
   })
 })

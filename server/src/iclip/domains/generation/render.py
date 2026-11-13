@@ -74,6 +74,7 @@ class RenderExport(_CamelModel):
 class RenderFilmSource(_CamelModel):
     job_id: uuid.UUID
     url: str
+    kind: Literal["video", "audio"]
 
 
 class RenderCheckedFilm(_CamelModel):
@@ -195,7 +196,7 @@ class RenderProvider:
             content_type=EXPORT_CONTENT_TYPE,
             expires_seconds=RENDER_TIMEOUT_SECONDS,
         )
-        sources = (*request.videos, *(() if request.music is None else (request.music,)))
+        sources = (*request.videos, *request.audios)
         payload = {
             "id": str(job.id),
             "conversationId": str(job.conversation_id),

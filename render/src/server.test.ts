@@ -1,11 +1,16 @@
 import type { AddressInfo } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { writeFilm } from '../../web/src/features/storyboard/whole-film/composition/film'
 import { ExportQueue } from './jobs'
 import type { ComponentLibrary } from './library'
 import { createExportServer } from './server'
 import {
+  audio,
+  AUDIO_JOB,
+  AUDIO_URL,
   catalog,
   CLIP_URL,
+  component,
   exportRequest,
   filmFile,
   flush,
@@ -138,15 +143,65 @@ describe('渲染服务接口', () => {
     expect((await fetch(`${base}/exports/missing`, { method: 'DELETE' })).status).toBe(404)
   })
 
-  it('POST /films/check 合写法时答 200：重写后的文件、总时长和用到的素材', async () => {
+  it('POST /films/check 合写法时答 200：重写后的文件、总时长和用到的素材（分视频和音频）', async () => {
     const second = picture({ id: 'clip-2', start: 2000, duration: 1500, mediaStart: 3000 })
-    const response = await check({ film: filmFile([picture(), second]) })
+    const blocks = [picture(), second, component({ track: 1 }), audio({ duration: 4000 })]
+    const response = await check({ film: filmFile(blocks) })
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
-      html: filmFile([picture(), second]),
-      durationMs: 3500,
-      sources: [{ jobId: SOURCE_JOB, url: CLIP_URL }],
+      html: filmFile(blocks),
+      durationMs: 4000,
+      sources: [
+        { jobId: SOURCE_JOB, url: CLIP_URL, kind: 'video' },
+        { jobId: AUDIO_JOB, url: AUDIO_URL, kind: 'audio' },
+      ],
     })
+  })
+
+  it('POST /exports 成片里有音频块：音频也要给下载地址，渲染用的那一份里换成本地路径', async () => {
+    const film = filmFile([picture(), audio()])
+    const missing = await post({ ...exportRequest(), film })
+    expect(missing.status).toBe(400)
+    expect(await missing.json()).toMatchObject({ code: 'missing-media' })
+
+    const audioDownload = 'https://oss.example.com/music.mp3?sig=2'
+    const request = exportRequest()
+    const media = { ...(request['media'] as object), [AUDIO_URL]: { url: audioDownload } }
+    expect((await post({ ...request, film, media })).status).toBe(202)
+    await flush()
+    const local = renders[0]!.compose({
+      'https://oss.example.com/clip.mp4?sig=1': 'media/a.mp4',
+      [audioDownload]: 'media/m.mp3',
+    })
+    expect(local).toBe(
+      film.replaceAll(CLIP_URL, 'media/a.mp4').replaceAll(AUDIO_URL, 'media/m.mp3'),
+    )
+  })
+
+  it('隐藏的音频块：检查照常带着它和它的素材，渲染用的那一份里没有它，总时长不变', async () => {
+    const film = filmFile([picture(), audio({ duration: 5000, hidden: true })])
+    const checked = (await (await check({ film })).json()) as {
+      html: string
+      sources: { kind: string }[]
+    }
+    expect(checked.html).toBe(film)
+    expect(checked.sources.map((source) => source.kind)).toEqual(['video', 'audio'])
+
+    const request = exportRequest()
+    const media = {
+      ...(request['media'] as object),
+      [AUDIO_URL]: { url: 'https://oss.example.com/music.mp3' },
+    }
+    expect((await post({ ...request, film, media })).status).toBe(202)
+    await flush()
+    const local = renders[0]!.compose({ 'https://oss.example.com/clip.mp4?sig=1': 'media/a.mp4' })
+    expect(local).toBe(
+      writeFilm(
+        { canvas: { width: 720, height: 1280 }, blocks: [picture({ src: 'media/a.mp4' })] },
+        catalog,
+        5000,
+      ),
+    )
   })
 
   it.each<[string, unknown, string]>([

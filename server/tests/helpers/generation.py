@@ -284,7 +284,7 @@ def whole_film_request(*sources: uuid.UUID) -> WholeFilmRequest:
             WholeFilmVideoSource(job_id=source, url=f"https://cdn.test/videos/{source}.mp4")
             for source in sources
         ],
-        music=None,
+        audios=[],
     )
 
 

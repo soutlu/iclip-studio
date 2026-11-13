@@ -9,12 +9,16 @@ import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import { resolveHeadlessShellPath } from '@hyperframes/engine'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { writeFilm } from '../../web/src/features/storyboard/whole-film/composition/film'
+import {
+  writeFilm,
+  type AudioBlock,
+} from '../../web/src/features/storyboard/whole-film/composition/film'
+import { localizedFilm } from './film'
 import { ExportQueue } from './jobs'
 import { loadLibrary, type ComponentLibrary } from './library'
 import { createProducerWorker } from './renderer'
 import { createExportServer } from './server'
-import { memoryLogger, picture } from './testing'
+import { audio, component, memoryLogger, picture } from './testing'
 
 const run = promisify(execFile)
 const REGISTRY_ROOT =
@@ -45,7 +49,16 @@ const reason = skipReason()
 const FRAME = { width: 640, height: 360 }
 const GRAY_JOB = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
 
-async function frameAt(file: string, at: number): Promise<Buffer> {
+interface Area {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** 第 `at` 秒那一帧的 RGB；给了 `area` 只取这一块。 */
+async function frameAt(file: string, at: number, area?: Area): Promise<Buffer> {
+  const size = area ?? FRAME
   const { stdout } = await run(
     'ffmpeg',
     [
@@ -55,6 +68,7 @@ async function frameAt(file: string, at: number): Promise<Buffer> {
       String(at),
       '-i',
       file,
+      ...(area ? ['-vf', `crop=${area.width}:${area.height}:${area.x}:${area.y}`] : []),
       '-frames:v',
       '1',
       '-f',
@@ -63,9 +77,42 @@ async function frameAt(file: string, at: number): Promise<Buffer> {
       'rgb24',
       '-',
     ],
-    { encoding: 'buffer', maxBuffer: FRAME.width * FRAME.height * 3 * 2 },
+    { encoding: 'buffer', maxBuffer: size.width * size.height * 3 * 2 },
   )
   return stdout
+}
+
+const solid = (length: number, [r, g, b]: [number, number, number]) => {
+  const pixels = Buffer.alloc(length)
+  for (let offset = 0; offset < length; offset += 3) pixels.set([r, g, b], offset)
+  return pixels
+}
+
+/** `css` 里有没有一条这个字体族的 @font-face，它的 unicode-range 盖住 `char`。 */
+function declaresGlyph(css: string, family: string, char: string): boolean {
+  const code = char.codePointAt(0) ?? 0
+  return [...css.matchAll(/@font-face\{([^}]*)\}/g)].some(([, rule = '']) => {
+    if (!rule.includes(`font-family:'${family}'`)) return false
+    const ranges = /unicode-range:([^;}]+)/.exec(rule)?.[1] ?? ''
+    return ranges.split(',').some((part) => {
+      const [from = '', to = from] = part.trim().replace(/^U\+/i, '').split('-')
+      return parseInt(from, 16) <= code && code <= parseInt(to, 16)
+    })
+  })
+}
+
+async function streamsOf(file: string): Promise<string[]> {
+  const { stdout } = await run('ffprobe', [
+    '-v',
+    'error',
+    '-show_entries',
+    'stream=codec_type',
+    '-of',
+    'json',
+    file,
+  ])
+  const probe = JSON.parse(stdout) as { streams: { codec_type: string }[] }
+  return probe.streams.map((stream) => stream.codec_type).toSorted()
 }
 
 function meanDifference(a: Buffer, b: Buffer): number {
@@ -177,6 +224,18 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       'aac',
       '-shortest',
       join(dir, 'gray.mp4'),
+    ])
+    await run('ffmpeg', [
+      '-v',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=440:duration=1.5',
+      '-c:a',
+      'aac',
+      join(dir, 'tone.m4a'),
     ])
     ;({ server, origin } = await startServer(dir))
   })
@@ -422,6 +481,109 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(meanDifference(hidden.first, black)).toBeLessThan(6)
     expect(meanDifference(hidden.second, grayFrame)).toBeLessThan(6)
     expect(shown.loudness - hidden.loudness).toBeGreaterThan(30)
+  }, 600_000)
+
+  it('组件块：组件按可填项画出来，组件文字用到的中文字形在 <head> 里声明了', async () => {
+    const { logger } = memoryLogger()
+    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
+    const catalog = (library as ComponentLibrary).catalog
+    // 测试组件按 1920×1080 设计：左下角 x 120–1020、y 720–940 一块色底，色底里左边一行字
+    const canvas = { width: 1920, height: 1080 }
+    const title = '成片标题'
+    let composed = ''
+    const render = async (id: string, hidden: boolean) => {
+      const rendered = await worker.render(
+        {
+          id,
+          registryDir: (library as ComponentLibrary).dir,
+          mediaUrls: [],
+          compose: () => {
+            const values = { text: title, accent: '#ff0000' }
+            composed = writeFilm({ canvas, blocks: [component({ values, hidden })] }, catalog)
+            return composed
+          },
+        },
+        { signal: new AbortController().signal, onProgress: () => {} },
+      )
+      try {
+        return {
+          panel: await frameAt(rendered.file, 1, { x: 700, y: 740, width: 300, height: 180 }),
+          words: await frameAt(rendered.file, 1, { x: 170, y: 760, width: 380, height: 140 }),
+          outside: await frameAt(rendered.file, 1, { x: 1200, y: 100, width: 600, height: 500 }),
+        }
+      } finally {
+        await rendered.cleanup()
+      }
+    }
+    const shown = await render('component', false)
+    for (const char of title) expect(declaresGlyph(composed, catalog.cjk.family, char)).toBe(true)
+    const hidden = await render('component-hidden', true)
+
+    const red = solid(shown.panel.length, [255, 0, 0])
+    expect(meanDifference(shown.panel, red)).toBeLessThan(10)
+    expect(meanDifference(shown.words, solid(shown.words.length, [255, 0, 0]))).toBeGreaterThan(20)
+    expect(meanDifference(shown.outside, Buffer.alloc(shown.outside.length, 0))).toBeLessThan(6)
+    expect(meanDifference(hidden.panel, Buffer.alloc(hidden.panel.length, 0))).toBeLessThan(6)
+  }, 600_000)
+
+  it('音频块：有声音，音量调低后更轻，循环时音频比块短也一直有声，隐藏后没有声音', async () => {
+    const { logger } = memoryLogger()
+    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
+    const tone = `${origin}/tone.m4a`
+    /** 1.5 秒的音频放进 0–3 秒的块；和导出时一样，交给渲染的是 `localizedFilm` 那一份。 */
+    const render = async (id: string, overrides: Partial<AudioBlock>) => {
+      const rendered = await worker.render(
+        {
+          id,
+          registryDir: (library as ComponentLibrary).dir,
+          mediaUrls: [tone],
+          compose: (paths) =>
+            localizedFilm(
+              { canvas: FRAME, blocks: [audio({ src: tone, duration: 3000, ...overrides })] },
+              paths,
+              (library as ComponentLibrary).catalog,
+            ),
+        },
+        { signal: new AbortController().signal, onProgress: () => {} },
+      )
+      try {
+        const { stdout } = await run('ffprobe', [
+          '-v',
+          'error',
+          '-show_entries',
+          'format=duration',
+          '-of',
+          'json',
+          rendered.file,
+        ])
+        const duration = Number(
+          (JSON.parse(stdout) as { format: { duration: string } }).format.duration,
+        )
+        const streams = await streamsOf(rendered.file)
+        if (!streams.includes('audio')) return { duration, streams, early: NaN, late: NaN }
+        return {
+          duration,
+          streams,
+          early: await meanVolume(rendered.file, 0.3, 0.9),
+          late: await meanVolume(rendered.file, 1.8, 1),
+        }
+      } finally {
+        await rendered.cleanup()
+      }
+    }
+    const full = await render('audio-full', {})
+    const half = await render('audio-half', { volume: 0.5 })
+    const looped = await render('audio-loop', { loop: true })
+    const hidden = await render('audio-hidden', { hidden: true })
+
+    expect(full.streams).toEqual(['audio', 'video'])
+    expect(full.early).toBeGreaterThan(-30)
+    expect(full.early - half.early).toBeGreaterThan(4)
+    expect(full.early - half.early).toBeLessThan(8)
+    expect(looped.late - full.late).toBeGreaterThan(30)
+    expect(hidden.streams).toEqual(['video'])
+    expect(hidden.duration).toBeGreaterThan(2.9)
+    expect(hidden.duration).toBeLessThan(3.15)
   }, 600_000)
 
   it('成片里的块全隐藏了：照样导出，是一段同样长的黑片，没有音轨', async () => {

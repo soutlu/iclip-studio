@@ -13,11 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.conversations.whole_film_schemas import MAX_FILM_CHARS
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
-from iclip.domains.generation.models import GenerationJob
+from iclip.domains.generation.models import GenerationJob, GenerationOutput
+from iclip.domains.generation.schemas import KIND_AUDIO
 from tests.helpers.app import make_client
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.fork_lineage import complete, finished, open_conversation
-from tests.helpers.generation import make_edit, make_job, video_request
+from tests.helpers.generation import make_edit, make_job, make_music, make_upload, video_request
 from tests.helpers.render import StubRender, film_file, rewritten
 from tests.helpers.whole_film import build_whole_film_app
 
@@ -214,6 +215,7 @@ class Scene:
     other: uuid.UUID
     take: GenerationJob
     inherited: GenerationJob
+    inherited_music: GenerationJob
     repo: SqlGenerationRepository
 
 
@@ -227,10 +229,15 @@ async def _scene(
     conversations = SqlConversationRepository(engine)
     parent = (await open_conversation(conversations, owner)).id
     inherited = await finished(generations, owner, parent, "before-fork")
+    inherited_music = await complete(
+        generations,
+        await generations.create(make_music(owner_user_id=owner, conversation_id=parent)),
+        "https://example.test/before-fork-music.wav",
+    )
     mine = (await open_conversation(conversations, owner, forked_from=parent)).id
     other = await new_conversation(client)
     take = await finished(generations, owner, mine, "take")
-    return Scene(owner, mine, other, take, inherited, generations)
+    return Scene(owner, mine, other, take, inherited, inherited_music, generations)
 
 
 Case = Callable[[Scene], Awaitable[str]]
@@ -273,6 +280,104 @@ async def edit_segment(scene: Scene) -> str:
 
 async def take_with_another_address(scene: Scene) -> str:
     return film_file((scene.take.id, "https://elsewhere.test/take.mp4"))
+
+
+async def _music(scene: Scene, conversation: uuid.UUID, name: str) -> GenerationJob:
+    job = await scene.repo.create(
+        make_music(owner_user_id=scene.owner, conversation_id=conversation)
+    )
+    return await complete(scene.repo, job, f"https://example.test/{name}.wav")
+
+
+def with_audio(scene: Scene, audio: GenerationJob, url: str | None = None) -> str:
+    return film_file(
+        (scene.take.id, scene.take.output.url or ""),
+        audios=[(audio.id, url if url is not None else audio.output.url or "")],
+    )
+
+
+async def own_audio(scene: Scene) -> str:
+    return with_audio(scene, await _music(scene, scene.mine, "music"))
+
+
+async def inherited_audio(scene: Scene) -> str:
+    return with_audio(scene, scene.inherited_music)
+
+
+async def own_audio_upload(scene: Scene) -> str:
+    upload = await scene.repo.create(
+        make_upload(
+            kind=KIND_AUDIO,
+            owner_user_id=scene.owner,
+            conversation_id=scene.mine,
+            output=GenerationOutput(url="https://example.test/uploaded.mp3"),
+        )
+    )
+    return with_audio(scene, upload)
+
+
+async def other_conversations_audio(scene: Scene) -> str:
+    return with_audio(scene, await _music(scene, scene.other, "elsewhere-music"))
+
+
+async def unfinished_audio(scene: Scene) -> str:
+    # 带着地址，只有「还没完成」这一条不合
+    pending = await scene.repo.create(
+        make_music(
+            owner_user_id=scene.owner,
+            conversation_id=scene.mine,
+            output=GenerationOutput(url="https://example.test/pending.wav"),
+        )
+    )
+    return with_audio(scene, pending)
+
+
+async def take_used_as_audio(scene: Scene) -> str:
+    return with_audio(scene, scene.take)
+
+
+async def audio_with_another_address(scene: Scene) -> str:
+    return with_audio(
+        scene, await _music(scene, scene.mine, "music"), "https://elsewhere.test/music.wav"
+    )
+
+
+async def audio_used_as_take(scene: Scene) -> str:
+    music = await _music(scene, scene.mine, "music")
+    return film_file((music.id, music.output.url or ""))
+
+
+@pytest.mark.parametrize(
+    ("case", "accepted"),
+    [
+        pytest.param(own_audio, True, id="自己的配乐"),
+        pytest.param(inherited_audio, True, id="继承来的配乐"),
+        pytest.param(own_audio_upload, True, id="关联到这段对话的音频上传"),
+        pytest.param(other_conversations_audio, False, id="别的对话的配乐"),
+        pytest.param(unfinished_audio, False, id="还没生成完的配乐"),
+        pytest.param(take_used_as_audio, False, id="素材片当音频用"),
+        pytest.param(audio_with_another_address, False, id="音频地址不是记录上的那个"),
+        pytest.param(audio_used_as_take, False, id="音频当素材片用"),
+    ],
+)
+async def test_audio_sources_must_be_finished_audio_of_this_conversation_at_their_own_address(
+    client: httpx.AsyncClient,
+    pg_url: str,
+    engine: AsyncEngine,
+    generations: SqlGenerationRepository,
+    case: Case,
+    accepted: bool,
+) -> None:
+    scene = await _scene(client, pg_url, engine, generations)
+    film = await case(scene)
+
+    saved = await save(client, scene.mine, 0, film)
+
+    if accepted:
+        assert saved.status_code == 200, saved.text
+    else:
+        assert saved.status_code == 422, saved.text
+        assert (await client.get(draft_url(scene.mine))).json() == NO_DRAFT
 
 
 @pytest.mark.parametrize(
