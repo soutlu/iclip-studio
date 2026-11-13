@@ -852,7 +852,8 @@ test('在两行之间、最上面新开一行：块拖到两行中间的缝里�
   await expect.poll(savedTracks).toEqual(['A · 镜头 1@0', 'A · 镜头 3@1', 'A · 镜头 4@2'])
   await expect(row(3).locator('[data-block-id]')).toHaveCount(1)
 
-  // 独占一行的块在自己这一行上面的缝里横着挪：还是这一行，不让出空行，隐藏着的也照旧隐藏
+  // 独占一行的块拖到自己这一行上面的缝里横着挪：那里照常让出一行；松手后它还是这一行，
+  // 行号都不变，隐藏着的也照旧隐藏
   await dialog.getByRole('button', { name: '隐藏第 2 行' }).click()
   const lone = row(2).locator('[data-block-id]')
   await expect(lone).toHaveAccessibleName(/已隐藏$/)
@@ -863,8 +864,9 @@ test('在两行之间、最上面新开一行：块拖到两行中间的缝里�
   await page.mouse.move(grab.x, grab.y)
   await page.mouse.down()
   await page.mouse.move(grab.x + 160, seam, { steps: 8 })
-  await expect(opening).toHaveCount(0)
+  await expect(opening).toHaveCount(1)
   await page.mouse.up()
+  await expect(opening).toHaveCount(0)
   await expect
     .poll(async () => (await savedBlocks(page)).find((saved) => saved.startsWith('A · 镜头 3')))
     .not.toBe(before)
@@ -1309,4 +1311,264 @@ test('缩放时播放头留在屏幕上原来的地方；滚到看不见它以�
   await expect
     .poll(async () => Math.abs((await playheadX()) - (row.x + row.width / 2)))
     .toBeLessThan(16)
+})
+
+const AUDIO_JOB = '0c9a8b7d-6e5f-4a3b-8c2d-1e0f9a8b7c6d'
+
+/**
+ * 打开成片编辑器，存一份三种块都有的成片再打开：画面区第 0 行是组件块「标题」（0–2 秒），
+ * 第 1 行是镜头 1（0–1 秒）；声音区第 0 行是「配乐 1」（0–4 秒）和「配乐 2」（5–6 秒）。
+ * 界面上还没有加组件和音频的入口，成片直接经接口存进去。
+ */
+const openWithKinds = async (page: Page) => {
+  const { dialog, materials, panel } = await openWith(page, [1])
+  await shotOf(materials, 1, 'A', 1).click()
+  await page.keyboard.press('Enter')
+  await expect.poll(() => savedBlocks(page)).toHaveLength(1)
+  await dialog.getByRole('button', { name: '关闭成片编辑' }).click()
+  await expect(dialog).toBeHidden()
+  // mock 环境把这个地址转到仓库里的测试音频
+  const audioUrl = await page.evaluate(async () => (await fetch('/mock-audio/sample.mp3')).url)
+  await page.evaluate(
+    async ({ conversationId, audioUrl, audioJob }) => {
+      const path = `/api/conversations/${conversationId}/whole-film/draft`
+      const { revision, html } = (await (await fetch(path)).json()) as {
+        revision: number
+        html: string
+      }
+      const doc = new DOMParser().parseFromString(html, 'text/html')
+      const root = doc.getElementById('film')
+      if (root === null) throw new Error('成片文件里没有根')
+      root.querySelector('video')?.setAttribute('data-track-index', '1')
+      root.setAttribute('data-duration', '6')
+      const values = JSON.stringify({ text: '新品上市' }).replaceAll('"', '&quot;')
+      const sound = (id: string, label: string, start: number, duration: number) =>
+        `<audio id="${id}" data-hf-id="${id}" class="clip audio" data-label="${label}" src="${audioUrl}" data-var-src="src-${audioJob}" data-start="${start}" data-duration="${duration}" data-media-start="0" data-track-index="0" data-volume="1"></audio>`
+      root.insertAdjacentHTML(
+        'afterbegin',
+        [
+          `<div style="z-index: 2" id="title-1" data-hf-id="title-1" class="clip component" data-label="标题" data-composition-id="fixture-fields" data-composition-src="compositions/fixtures/fixture-fields.html" data-start="0" data-duration="2" data-track-index="0" data-variable-values="${values}"></div>`,
+          sound('music-1', '配乐 1', 0, 4),
+          sound('music-2', '配乐 2', 5, 1),
+        ].join('\n'),
+      )
+      const variables = JSON.parse(
+        doc.documentElement.getAttribute('data-composition-variables') ?? '[]',
+      ) as unknown[]
+      variables.push({ id: `src-${audioJob}`, type: 'string', label: '音频', default: audioUrl })
+      doc.documentElement.setAttribute('data-composition-variables', JSON.stringify(variables))
+      const response = await fetch(path, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          revision,
+          html: `<!doctype html>\n${doc.documentElement.outerHTML}`,
+        }),
+      })
+      if (!response.ok) throw new Error(`存草稿失败：${response.status}`)
+    },
+    { conversationId: conversationIdOf(page), audioUrl, audioJob: AUDIO_JOB },
+  )
+  await panel.getByRole('button', { name: '成片', exact: true }).click()
+  await expect(dialog.getByRole('group', { name: /^配乐 2，/ })).toBeVisible()
+  await readyPlayer(dialog)
+  return { dialog, materials }
+}
+
+/**
+ * 存下来的成片里每个块，按名字排，写成「名字@区行号 起点」，隐藏的后面写「隐藏」。
+ * 区写成「画面」或「声音」。
+ */
+const savedKinds = (page: Page) =>
+  page.evaluate(async (conversationId) => {
+    const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
+    const { html } = (await response.json()) as { html: string | null }
+    const doc = new DOMParser().parseFromString(html ?? '', 'text/html')
+    return [...doc.querySelectorAll('#film > *')]
+      .map((block) => {
+        const zone = block.tagName === 'AUDIO' ? '声音' : '画面'
+        const hidden = block.hasAttribute('data-hidden') ? ' 隐藏' : ''
+        return `${block.getAttribute('data-label')}@${zone}${block.getAttribute('data-track-index')} ${block.getAttribute('data-start')}${hidden}`
+      })
+      .toSorted()
+  }, conversationIdOf(page))
+
+test('三种块：组件块、画面块、音频块各在各的行，声音行在画面行下面，最下面是新开一行的空行；组件块和音频块能挪、能换行、能删、能撤销', async ({
+  page,
+}) => {
+  const { dialog } = await openWithKinds(page)
+  const row = (number: number) => dialog.getByRole('group', { name: `第 ${number} 行` })
+  const newRow = dialog.getByRole('group', { name: '新的一行' })
+  const blockNamed = (name: string) => dialog.getByRole('group', { name: new RegExp(`^${name}，`) })
+  const title = blockNamed('标题')
+  const second = blockNamed('配乐 2')
+  const original = ['A · 镜头 1@画面1 0', '标题@画面0 0', '配乐 1@声音0 0', '配乐 2@声音0 5']
+  expect(await savedKinds(page)).toEqual(original)
+
+  await expect(row(1).getByRole('group', { name: /^标题，/ })).toHaveCount(1)
+  await expect(row(2).getByRole('group', { name: /^A · 镜头 1，/ })).toHaveCount(1)
+  await expect(row(3).getByRole('group', { name: /^配乐 \d，/ })).toHaveCount(2)
+  await expect(row(4)).toHaveCount(0)
+  const tops = await Promise.all(
+    [row(1), row(2), row(3), newRow].map(async (lane) => (await lane.boundingBox())?.y ?? 0),
+  )
+  expect(tops).toEqual(tops.toSorted((left, right) => left - right))
+  // 画面区的行头是眼睛，声音区的行头是喇叭；音频块上画着它的波形
+  await expect(dialog.getByRole('button', { name: '隐藏第 2 行' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '静音第 3 行' })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '隐藏第 3 行' })).toHaveCount(0)
+  await expect(second.getByTestId('timeline-wave')).toBeVisible()
+
+  const dragTo = async (from: Locator, to: { x: number; y: number }) => {
+    const start = await centerOf(from)
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(to.x, to.y, { steps: 8 })
+    await page.mouse.up()
+  }
+
+  // 组件块在自己那一行里往后挪；撤销回到原样
+  const titleAt = await centerOf(title)
+  await dragTo(title, { x: titleAt.x + 120, y: titleAt.y })
+  await expect
+    .poll(async () => (await savedKinds(page)).find((saved) => saved.startsWith('标题')))
+    .toMatch(/^标题@画面0 (?!0$)[\d.]+$/)
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(() => savedKinds(page)).toEqual(original)
+
+  // 配乐 2 拖到最下面的空行：声音区新开一行
+  const secondAt = await centerOf(second)
+  await dragTo(second, { x: secondAt.x, y: (await centerOf(newRow)).y })
+  const lowered = ['A · 镜头 1@画面1 0', '标题@画面0 0', '配乐 1@声音0 0', '配乐 2@声音1 5']
+  await expect.poll(() => savedKinds(page)).toEqual(lowered)
+  await expect(row(4).getByRole('group', { name: /^配乐 2，/ })).toHaveCount(1)
+
+  // 再把它往上拖到镜头那一行：拖不进画面区，落在声音区最上面那一行；撤销这一步，回到下面那一行
+  const back = await centerOf(second)
+  await dragTo(second, { x: back.x, y: (await centerOf(row(2))).y })
+  await expect.poll(() => savedKinds(page)).toEqual(original)
+  await expect(row(2).getByRole('group', { name: /^配乐/ })).toHaveCount(0)
+  await expect(row(3).getByRole('group', { name: /^配乐 \d，/ })).toHaveCount(2)
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(() => savedKinds(page)).toEqual(lowered)
+
+  // 组件块拖到最下面的空行：只能在画面区新开一行，让出来的是声音行上面那一行；拖着左右挪也一直是它
+  const opening = dialog.locator('.wf-lane.is-opening')
+  const from = await centerOf(title)
+  const bottom = (await centerOf(newRow)).y
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x, bottom, { steps: 8 })
+  for (const dx of [30, -20, 10, 0]) {
+    await page.mouse.move(from.x + dx, bottom, { steps: 3 })
+    await expect(opening).toHaveCount(1)
+    const [openingBox, soundBox] = await Promise.all([opening.boundingBox(), row(3).boundingBox()])
+    expect(openingBox?.y ?? Infinity).toBeLessThan(soundBox?.y ?? 0)
+  }
+  await page.mouse.up()
+  await expect
+    .poll(() => savedKinds(page))
+    .toEqual(['A · 镜头 1@画面0 0', '标题@画面1 0', '配乐 1@声音0 0', '配乐 2@声音1 5'])
+  await expect(row(2).getByRole('group', { name: /^标题，/ })).toHaveCount(1)
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(() => savedKinds(page)).toEqual(lowered)
+
+  // 删掉组件块、删掉音频块，各自撤销回来
+  await title.getByRole('button').click()
+  await page.keyboard.press('Delete')
+  await expect
+    .poll(() => savedKinds(page))
+    .toEqual(['A · 镜头 1@画面1 0', '配乐 1@声音0 0', '配乐 2@声音1 5'])
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(() => savedKinds(page)).toEqual(lowered)
+  await blockNamed('配乐 1').getByRole('button').click()
+  await page.keyboard.press('Delete')
+  await expect
+    .poll(() => savedKinds(page))
+    .toEqual(['A · 镜头 1@画面1 0', '标题@画面0 0', '配乐 2@声音1 5'])
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(() => savedKinds(page)).toEqual(lowered)
+
+  // 配乐 2 那一行后面没有块：结尾往后一直能拉长
+  await second.getByRole('button').click()
+  const end = second.getByRole('slider', { name: '裁剪结尾' })
+  await expect(end).not.toHaveAttribute('aria-valuemax')
+  await end.focus()
+  await page.keyboard.press('Shift+ArrowRight')
+  await page.keyboard.press('Shift+ArrowRight')
+  await expect(end).toHaveAttribute('aria-valuenow', '8')
+  await expect(blockNamed('配乐 2')).toHaveAccessibleName(/^配乐 2，3\.0 秒/)
+})
+
+test('声音行的喇叭：静音以后存下来的成片里这一行的音频块都带隐藏标记，再点取消静音', async ({
+  page,
+}) => {
+  const { dialog } = await openWithKinds(page)
+  await dialog.getByRole('button', { name: '静音第 3 行' }).click()
+  await expect
+    .poll(() => savedKinds(page))
+    .toEqual(['A · 镜头 1@画面1 0', '标题@画面0 0', '配乐 1@声音0 0 隐藏', '配乐 2@声音0 5 隐藏'])
+  await expect(dialog.getByRole('group', { name: /^配乐 \d，.*，已隐藏$/ })).toHaveCount(2)
+  const speaker = dialog.getByRole('button', { name: '取消静音第 3 行' })
+  await expect(speaker).toHaveAttribute('aria-pressed', 'false')
+  await speaker.click()
+  await expect
+    .poll(() => savedKinds(page))
+    .toEqual(['A · 镜头 1@画面1 0', '标题@画面0 0', '配乐 1@声音0 0', '配乐 2@声音0 5'])
+})
+
+test('组件那一行在画面行上面：Enter 接的镜头落在画面区第一行，波纹删除补位的也是它；预览里的音频读得出来', async ({
+  page,
+}) => {
+  const { dialog, materials } = await openWithKinds(page)
+  await shotOf(materials, 1, 'A', 3).click()
+  await page.keyboard.press('Enter')
+  await expect.poll(() => savedKinds(page)).toContain('A · 镜头 3@画面0 2')
+  await expect(
+    dialog.getByRole('group', { name: '第 1 行' }).getByRole('group', { name: /^A · 镜头 3，/ }),
+  ).toHaveCount(1)
+
+  // 删掉组件块（波纹编辑默认开着）：画面区第一行后面的镜头往前补，别的行不动
+  await dialog.getByRole('button', { name: /^选中：标题，/ }).click()
+  await page.keyboard.press('Delete')
+  await expect
+    .poll(() => savedKinds(page))
+    .toEqual(['A · 镜头 1@画面1 0', 'A · 镜头 3@画面0 0', '配乐 1@声音0 0', '配乐 2@声音0 5'])
+
+  // 镜头拖到声音行下面那条空行：只能落在画面区，在画面区的最下面新开一行；左右挪着也一直是它
+  await shotOf(materials, 1, 'A', 2).click()
+  const range = groupOf(materials, 1).getByRole('group', { name: /^选中的范围/ })
+  const from = await centerOf(range)
+  const target = await centerOf(dialog.getByRole('group', { name: '新的一行' }))
+  const ghost = dialog.locator('.wf-lane.is-opening').getByTestId('drop-ghost')
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 10, from.y - 10, { steps: 3 })
+  await page.mouse.move(target.x, target.y, { steps: 8 })
+  await expect(ghost).toBeVisible()
+  await page.mouse.move(target.x + 30, target.y, { steps: 3 })
+  await expect(ghost).toBeVisible()
+  await page.mouse.up()
+  await expect
+    .poll(async () => (await savedKinds(page)).filter((saved) => saved.startsWith('A · 镜头 2')))
+    .toEqual([expect.stringMatching(/^A · 镜头 2@画面2 [\d.]+$/)])
+  await expect(
+    dialog.getByRole('group', { name: '第 3 行' }).getByRole('group', { name: /^A · 镜头 2，/ }),
+  ).toHaveCount(1)
+
+  // 预览里的音频块按预览的方式加载，播放以后读得出来
+  const transport = dialog.getByRole('group', { name: '播放控制' })
+  await transport.getByRole('button', { name: '播放', exact: true }).click()
+  const sound = dialog
+    .getByRole('region', { name: '预览' })
+    .locator('hyperframes-player')
+    .last()
+    .frameLocator('iframe')
+    .locator('audio#music-1')
+  await expect(sound).toHaveAttribute('crossorigin', 'anonymous')
+  await expect
+    .poll(() =>
+      sound.evaluate((audio: HTMLAudioElement) => audio.error === null && audio.readyState > 0),
+    )
+    .toBe(true)
 })

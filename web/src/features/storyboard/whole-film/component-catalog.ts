@@ -15,3 +15,9 @@ const catalogQuery = queryOptions({
 })
 
 export const useComponentCatalog = () => useQuery(catalogQuery)
+
+/** 组件库里名字是 `name` 的条目的封面地址；没有这个条目或它没有封面时是 null。 */
+export const thumbnailUrl = (catalog: ComponentCatalog, name: string): string | null => {
+  const thumbnail = catalog.items.find((item) => item.name === name)?.thumbnail ?? null
+  return thumbnail === null ? null : `/hyperframes/${catalog.version}/thumbnails/${thumbnail}`
+}

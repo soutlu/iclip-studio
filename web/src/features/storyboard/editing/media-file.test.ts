@@ -51,7 +51,16 @@ vi.mock('mediabunny', () => {
       return timestamp === undefined ? null : { timestamp }
     }
   }
-  return { AudioSampleSink, EncodedPacketSink, Input, MP4: {}, QTFF: {}, UrlSource }
+  return {
+    AudioSampleSink,
+    EncodedPacketSink,
+    Input,
+    MP3: {},
+    MP4: {},
+    QTFF: {},
+    UrlSource,
+    WAVE: {},
+  }
 })
 
 describe('readKeyframes', () => {

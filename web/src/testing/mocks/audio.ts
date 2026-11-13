@@ -1,4 +1,6 @@
 import { http, HttpResponse } from 'msw'
+// ?no-inline 阻止 Vite 将小体积媒体资源内联为 data URI。
+import sampleAudioUrl from '../fixtures/sample-audio.mp3?no-inline'
 
 export const MOCK_MUSIC_SECONDS = 30
 const MOCK_MUSIC_BPM = 120
@@ -57,4 +59,8 @@ export const audioHandlers = [
     generated ??= beatTrackWav(MOCK_MUSIC_SECONDS, MOCK_MUSIC_BPM)
     return new HttpResponse(generated.slice(0), { headers: { 'Content-Type': 'audio/wav' } })
   }),
+  // 一段 6 秒的测试音频：转到仓库里的文件本身，拿到的就是一个真实的音频地址，预览的画面里也读得到
+  http.get('*/mock-audio/sample.mp3', ({ request }) =>
+    HttpResponse.redirect(new URL(sampleAudioUrl, request.url).href, 302),
+  ),
 ]

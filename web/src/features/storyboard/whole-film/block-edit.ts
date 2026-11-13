@@ -1,6 +1,6 @@
 import type { Edge } from '../editing/timeline-drag'
-import { MIN_BLOCK_MS, type PictureBlock } from './composition/film'
-import { topTrack } from './placement'
+import { isMediaBlock, MIN_BLOCK_MS, type FilmBlock } from './composition/film'
+import { onRow, topTrack, zoneOf, type RowKey } from './placement'
 import { resolveNearestFreeStart } from './vendor/hyperframes-studio/player/components/timelineCollision'
 import {
   resolveAllTrackGaps,
@@ -8,29 +8,42 @@ import {
   resolveTrackGapAt,
 } from './vendor/hyperframes-studio/player/components/timelineGaps'
 
-/** 一个块在成片里的起止和它从素材的哪里开始放（毫秒）。 */
-export type Timing = Pick<PictureBlock, 'start' | 'duration' | 'mediaStart'>
+/**
+ * 一个块在成片里的起止和它从素材的哪里开始放（毫秒）。
+ * 组件块不带入点（这里是 0）：裁开头只改起止。
+ */
+export type Timing = { start: number; duration: number; mediaStart: number }
 
-const endOf = (block: Pick<PictureBlock, 'start' | 'duration'>) => block.start + block.duration
+export const timingOf = (block: FilmBlock): Timing => ({
+  start: block.start,
+  duration: block.duration,
+  mediaStart: isMediaBlock(block) ? block.mediaStart : 0,
+})
+
+const endOf = (block: Pick<FilmBlock, 'start' | 'duration'>) => block.start + block.duration
+
+const rowKeyOf = (block: FilmBlock): RowKey => ({ zone: zoneOf(block), track: block.track })
 
 /**
  * 裁 `edge` 这一端时，这一端能到的范围（成片的毫秒）：不压到同一行的邻居，不超出素材本身，
- * 块不短于最短长度。`sourceMs` 是素材片的总长，还不知道时结尾不许往外拉。
+ * 块不短于最短长度。`sourceMs` 是素材的总长：还不知道时结尾不许往外拉，没有上限时给无穷大。
  */
 export const trimBounds = (
-  block: PictureBlock,
+  block: FilmBlock,
   edge: Edge,
-  pictures: readonly PictureBlock[],
+  blocks: readonly FilmBlock[],
   sourceMs: number | undefined,
 ): { min: number; max: number } => {
-  const row = pictures.filter((other) => other.track === block.track && other.id !== block.id)
+  const row = blocks.filter((other) => onRow(other, rowKeyOf(block)) && other.id !== block.id)
   if (edge === 'start') {
     const previousEnd = Math.max(
       0,
       ...row.filter((other) => endOf(other) <= block.start).map(endOf),
     )
     return {
-      min: Math.max(previousEnd, block.start - block.mediaStart),
+      min: isMediaBlock(block)
+        ? Math.max(previousEnd, block.start - block.mediaStart)
+        : previousEnd,
       max: endOf(block) - MIN_BLOCK_MS,
     }
   }
@@ -39,7 +52,7 @@ export const trimBounds = (
     ...row.filter((other) => other.start >= endOf(block)).map((other) => other.start),
   )
   const sourceEnd =
-    sourceMs === undefined ? endOf(block) : block.start + sourceMs - block.mediaStart
+    sourceMs === undefined ? endOf(block) : block.start + sourceMs - timingOf(block).mediaStart
   return {
     min: block.start + MIN_BLOCK_MS,
     max: Math.max(endOf(block), Math.min(nextStart, sourceEnd)),
@@ -48,32 +61,39 @@ export const trimBounds = (
 
 /** 把 `edge` 这一端裁到 `timeMs`（先收进 `bounds`）之后，块的起止和入点。 */
 export const trimmed = (
-  block: PictureBlock,
+  block: FilmBlock,
   edge: Edge,
   timeMs: number,
   bounds: { min: number; max: number },
 ): Timing => {
   const at = Math.min(bounds.max, Math.max(bounds.min, timeMs))
-  if (edge === 'end')
-    return { start: block.start, duration: at - block.start, mediaStart: block.mediaStart }
+  const { mediaStart } = timingOf(block)
+  if (edge === 'end') return { start: block.start, duration: at - block.start, mediaStart }
   const delta = at - block.start
-  return { start: at, duration: block.duration - delta, mediaStart: block.mediaStart + delta }
+  return {
+    start: at,
+    duration: block.duration - delta,
+    mediaStart: isMediaBlock(block) ? mediaStart + delta : 0,
+  }
 }
 
-const edgeOf = (block: PictureBlock, edge: Edge) => (edge === 'start' ? block.start : endOf(block))
+const edgeOf = (block: FilmBlock, edge: Edge) => (edge === 'start' ? block.start : endOf(block))
+
+/** 每个块的素材总长（毫秒）：还不知道时是 undefined，没有上限时是无穷大。 */
+export type SourceLength = (block: FilmBlock) => number | undefined
 
 /**
  * 几个块一起裁 `edge` 这一端、挪同一个量时，这个量能取的范围（毫秒）：
- * 每个块这一端按 `trimBounds` 能到哪里，取最受限的那个。`sourceMs` 给出每段素材片的总长。
+ * 每个块这一端按 `trimBounds` 能到哪里，取最受限的那个。
  */
 export const groupTrimRange = (
-  members: readonly PictureBlock[],
+  members: readonly FilmBlock[],
   edge: Edge,
-  pictures: readonly PictureBlock[],
-  sourceMs: (src: string) => number | undefined,
+  blocks: readonly FilmBlock[],
+  sourceMs: SourceLength,
 ): { min: number; max: number } => {
   const ranges = members.map((member) => {
-    const bounds = trimBounds(member, edge, pictures, sourceMs(member.src))
+    const bounds = trimBounds(member, edge, blocks, sourceMs(member))
     return { min: bounds.min - edgeOf(member, edge), max: bounds.max - edgeOf(member, edge) }
   })
   return {
@@ -84,13 +104,13 @@ export const groupTrimRange = (
 
 /** 几个块一起把 `edge` 这一端挪 `delta` 毫秒（先收进 `groupTrimRange`）之后，各自的起止和入点。 */
 export const groupTrimmed = (
-  members: readonly PictureBlock[],
+  members: readonly FilmBlock[],
   edge: Edge,
   delta: number,
-  pictures: readonly PictureBlock[],
-  sourceMs: (src: string) => number | undefined,
+  blocks: readonly FilmBlock[],
+  sourceMs: SourceLength,
 ): Map<string, Timing> => {
-  const range = groupTrimRange(members, edge, pictures, sourceMs)
+  const range = groupTrimRange(members, edge, blocks, sourceMs)
   const shift = Math.min(range.max, Math.max(range.min, delta))
   return new Map(
     members.map((member) => [
@@ -99,30 +119,31 @@ export const groupTrimmed = (
         member,
         edge,
         edgeOf(member, edge) + shift,
-        trimBounds(member, edge, pictures, sourceMs(member.src)),
+        trimBounds(member, edge, blocks, sourceMs(member)),
       ),
     ]),
   )
 }
 
-/** 挪动的结果：一起挪的块共用的时间差（毫秒），被抓的块最后在哪一行（null 是新开的一行）。 */
+/** 挪动的结果：一起挪的块共用的时间差（毫秒），被抓的块最后在它那个区的哪一行（null 是新开的一行）。 */
 export type GroupShift = { delta: number; track: number | null }
 
 /**
  * 挪动（一个块也是一组）：`group` 里的块（含被抓的 `grabbed`）挪同一个时间差，取离 `wantedDelta` 最近的，
- * 一样近取靠后的。被抓的块去 `track` 这一行（null 是新开的一行，上面没有别的块），别的块留在各自的行。
- * 整组不早于 0；每个块都不和它那一行上没在挪的块重叠，同组的块互不挡路。
+ * 一样近取靠后的。被抓的块去它那个区的 `track` 这一行（null 是新开的一行，上面没有别的块），
+ * 别的块留在各自的行。整组不早于 0；每个块都不和它那一行上没在挪的块重叠，同组的块互不挡路。
  * `track` 上有和被抓的块时间重叠的同组块（挪同一个时间差也分不开），或者在那里找不到时间差时，
  * 被抓的块留在自己那一行重新找。
  */
 export const groupShift = (
-  grabbed: PictureBlock,
+  grabbed: FilmBlock,
   group: ReadonlySet<string>,
-  pictures: readonly PictureBlock[],
+  blocks: readonly FilmBlock[],
   wantedDelta: number,
   track: number | null,
 ): GroupShift => {
-  const members = pictures.filter((block) => group.has(block.id))
+  const members = blocks.filter((block) => group.has(block.id))
+  const zone = zoneOf(grabbed)
   // 按被抓的块的起点算：整组能挪到的最早的位置
   const lowest = grabbed.start - Math.min(...members.map((member) => member.start))
   const wanted = Math.max(lowest, grabbed.start + wantedDelta)
@@ -130,10 +151,11 @@ export const groupShift = (
     // 某个块压到它那一行上一个没在挪的块时，被抓的块的起点有一段不能去；
     // 把这些段当成一行上的块，被抓的块当成长度为 0 的块，找离想要的位置最近的空处
     const busy = members.flatMap((member) => {
-      const on = member.id === grabbed.id ? row : member.track
+      const on: RowKey | null =
+        member.id === grabbed.id ? (row === null ? null : { zone, track: row }) : rowKeyOf(member)
       const offset = member.start - grabbed.start
-      return pictures
-        .filter((other) => on !== null && other.track === on && !group.has(other.id))
+      return blocks
+        .filter((other) => on !== null && onRow(other, on) && !group.has(other.id))
         .map((other) => ({
           id: `${member.id}:${other.id}`,
           start: (other.start - offset - member.duration) / 1000,
@@ -144,13 +166,14 @@ export const groupShift = (
     const start = resolveNearestFreeStart(busy, 0, wanted / 1000, 0, null, lowest / 1000)
     return Math.round(start * 1000) - grabbed.start
   }
-  const overlapsGrabbed = (member: PictureBlock) =>
+  const overlapsGrabbed = (member: FilmBlock) =>
     member.start < endOf(grabbed) && grabbed.start < endOf(member)
   const blocked =
     track !== null &&
     track !== grabbed.track &&
     members.some(
-      (member) => member.id !== grabbed.id && member.track === track && overlapsGrabbed(member),
+      (member) =>
+        member.id !== grabbed.id && onRow(member, { zone, track }) && overlapsGrabbed(member),
     )
   return blocked
     ? { delta: shiftOn(grabbed.track), track: grabbed.track }
@@ -165,39 +188,38 @@ export type GapClosing = {
   all: ReadonlyMap<string, number>
 }
 
-/** 在 `track` 这一行的 `timeMs` 处点右键时，两种合拢各自要挪哪些块。 */
+/** 在 `row` 这一行的 `timeMs` 处点右键时，两种合拢各自要挪哪些块。 */
 export const gapClosing = (
-  pictures: readonly PictureBlock[],
-  track: number,
+  blocks: readonly FilmBlock[],
+  row: RowKey,
   timeMs: number,
 ): GapClosing => {
-  const row = pictures
-    .filter((block) => block.track === track)
+  const members = blocks
+    .filter((block) => onRow(block, row))
     .map((block) => ({
       id: block.id,
       start: block.start / 1000,
       duration: block.duration / 1000,
-      track,
+      track: row.track,
     }))
   const starts = (shifts: readonly { key: string; newStart: number }[]) =>
     new Map(shifts.map((shift) => [shift.key, Math.round(shift.newStart * 1000)]))
-  const gap = resolveTrackGapAt(row, timeMs / 1000)
+  const gap = resolveTrackGapAt(members, timeMs / 1000)
   return {
-    one: starts(gap === null ? [] : resolveCloseGapShifts(row, gap)),
-    all: starts(resolveAllTrackGaps(row)),
+    one: starts(gap === null ? [] : resolveCloseGapShifts(members, gap)),
+    all: starts(resolveAllTrackGaps(members)),
   }
 }
 
 /**
- * 开着波纹编辑时删掉 `removed` 这些块之后，第一行里剩下的块各自往前挪到哪里：
- * 每个块挪的是它前面被删掉的第一行的块的总长。别的行不动。
+ * 开着波纹编辑时删掉 `removed` 这些块之后，主轨（画面区最上面那一行）里剩下的块各自往前挪到哪里：
+ * 每个块挪的是它前面被删掉的主轨上的块的总长。别的行不动。
  */
 export const rippleStarts = (
-  pictures: readonly PictureBlock[],
+  blocks: readonly FilmBlock[],
   removed: ReadonlySet<string>,
 ): Map<string, number> => {
-  const top = topTrack(pictures)
-  const main = pictures.filter((block) => block.track === top)
+  const main = blocks.filter((block) => onRow(block, { zone: 'visual', track: topTrack(blocks) }))
   const gone = main.filter((block) => removed.has(block.id))
   const starts = new Map<string, number>()
   for (const block of main) {

@@ -73,18 +73,33 @@ describe('换行的方向', () => {
     picture({ id: 'd', track: 5 }),
   ]
 
+  const visual = (track: number) => ({ zone: 'visual', track }) as const
+  const opening = (insertAt: number) => ({ zone: 'visual', insertAt }) as const
+
   it('换到已有的行：在上面是往上，在下面是往下（按第几行比，行号不连着也一样）', () => {
-    expect(rowMoveDirection(pictures, 'b', 0)).toBe('up')
-    expect(rowMoveDirection(pictures, 'b', 5)).toBe('down')
+    expect(rowMoveDirection(pictures, 'b', visual(0))).toBe('up')
+    expect(rowMoveDirection(pictures, 'b', visual(5))).toBe('down')
   })
 
   it('新开一行：开在它这一行之上是往上，之下是往下', () => {
-    expect(rowMoveDirection(pictures, 'b', { insertAt: 0 })).toBe('up')
-    expect(rowMoveDirection(pictures, 'b', { insertAt: 2 })).toBe('down')
-    expect(rowMoveDirection(pictures, 'b', { insertAt: 3 })).toBe('down')
+    expect(rowMoveDirection(pictures, 'b', opening(0))).toBe('up')
+    expect(rowMoveDirection(pictures, 'b', opening(2))).toBe('down')
+    expect(rowMoveDirection(pictures, 'b', opening(3))).toBe('down')
   })
 
   it('在它这一行紧上面新开一行：不调叠放顺序', () => {
-    expect(rowMoveDirection(pictures, 'b', { insertAt: 1 })).toBeNull()
+    expect(rowMoveDirection(pictures, 'b', opening(1))).toBeNull()
+  })
+
+  it('独占一行的块拖到自己上下的缝里：行号不变，紧上面不调叠放顺序，紧下面照往下挪算', () => {
+    expect(rowMoveDirection(pictures, 'd', opening(2))).toBeNull()
+    expect(rowMoveDirection(pictures, 'd', opening(3))).toBe('down')
+  })
+
+  it('按时间线上的第几行比：声音区的行排在画面区下面，同号也分得开', () => {
+    const film = [...pictures, audio({ id: 'm', track: 0 }), audio({ id: 'n', track: 1 })]
+    expect(rowMoveDirection(film, 'm', { zone: 'audio', track: 1 })).toBe('down')
+    expect(rowMoveDirection(film, 'n', { zone: 'audio', track: 0 })).toBe('up')
+    expect(rowMoveDirection(film, 'n', { zone: 'audio', insertAt: 4 })).toBeNull()
   })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { picture } from '@/testing/whole-film'
+import { audio, component, picture } from '@/testing/whole-film'
 import {
   gapClosing,
   groupShift,
@@ -10,7 +10,8 @@ import {
   trimmed,
   type Timing,
 } from './block-edit'
-import type { PictureBlock } from './composition/film'
+import type { FilmBlock } from './composition/film'
+import { zoneOf } from './placement'
 
 const first = picture({ id: 'a', start: 0, duration: 2_000 })
 const middle = picture({ id: 'b', start: 3_000, duration: 2_000, mediaStart: 1_500 })
@@ -18,12 +19,15 @@ const last = picture({ id: 'c', start: 6_000, duration: 1_000 })
 const above = picture({ id: 'd', start: 2_000, duration: 5_000, track: 1 })
 const film = [first, middle, last, above]
 
-/** 每次改完都要满足的两条：同一行的块不重叠，起点不为负。 */
-const expectValidFilm = (pictures: readonly PictureBlock[]) => {
+const VISUAL_0 = { zone: 'visual', track: 0 } as const
+
+/** 每次改完都要满足的两条：同一行（同一个区、同一个行号）的块不重叠，起点不为负。 */
+const expectValidFilm = (pictures: readonly FilmBlock[]) => {
   for (const block of pictures) {
     expect(block.start, `${block.id} 的起点`).toBeGreaterThanOrEqual(0)
     for (const other of pictures) {
-      if (other === block || other.track !== block.track) continue
+      if (other === block || other.track !== block.track || zoneOf(other) !== zoneOf(block))
+        continue
       const overlapping =
         block.start < other.start + other.duration && other.start < block.start + block.duration
       expect(overlapping, `${block.id} 和 ${other.id} 重叠`).toBe(false)
@@ -73,13 +77,47 @@ describe('裁剪一个块', () => {
   })
 })
 
+describe('裁组件块和音频块', () => {
+  // 画面区第 0 行：画面块 a（0–2 秒）、组件块 k（3–5 秒）；声音区第 0 行：音频块 m（2.5–4 秒）
+  const title = component({ id: 'k', start: 3_000, duration: 2_000 })
+  const music = audio({ id: 'm', start: 2_500, duration: 1_500, mediaStart: 1_000 })
+  const mixed = [first, title, music]
+
+  it('组件块没有入点：开头往前一直能拉到前一个块，裁开头只改起止', () => {
+    const bounds = trimBounds(title, 'start', mixed, Infinity)
+    expect(bounds).toEqual({ min: 2_000, max: 4_900 })
+    expect(trimmed(title, 'start', 2_000, bounds)).toEqual({
+      start: 2_000,
+      duration: 3_000,
+      mediaStart: 0,
+    })
+  })
+
+  it('没有素材长度的块：结尾往后不设上限，只被同一行后面的块挡住', () => {
+    expect(trimBounds(title, 'end', mixed, Infinity).max).toBe(Infinity)
+    expect(trimBounds(music, 'end', mixed, Infinity).max).toBe(Infinity)
+    const next = component({ id: 'n', start: 8_000 })
+    expect(trimBounds(title, 'end', [...mixed, next], Infinity).max).toBe(8_000)
+  })
+
+  it('音频块裁开头：不早于音频的开头，入点跟着动；别的区同号的行上的块不挡路', () => {
+    const bounds = trimBounds(music, 'start', mixed, Infinity)
+    expect(bounds).toEqual({ min: 1_500, max: 3_900 })
+    expect(trimmed(music, 'start', 1_500, bounds)).toEqual({
+      start: 1_500,
+      duration: 2_500,
+      mediaStart: 0,
+    })
+  })
+})
+
 // 新开的一行在测试里记成这个行号
 const NEW_ROW = 99
 
 /** 按 groupShift 的结果挪完以后的成片，连同结果本身。 */
 const shifted = (
-  pictures: readonly PictureBlock[],
-  grabbed: PictureBlock,
+  pictures: readonly FilmBlock[],
+  grabbed: FilmBlock,
   ids: readonly string[],
   wantedDelta: number,
   track: number | null,
@@ -109,7 +147,7 @@ describe('挪一个块（只有它自己的一组）', () => {
   const spare = picture({ id: 'k', start: 0, duration: 1_000, track: 5 })
   const table = [...film, offGrid, nearOffGrid, packed, tail, lone, short, spare]
   // 每条：块、想要的起点、要去的行、最后的起点
-  const cases: [string, PictureBlock, number, number, number][] = [
+  const cases: [string, FilmBlock, number, number, number][] = [
     ['挪到空处', middle, 2_200, 0, 2_200],
     ['落点被占：落到最近的空位', middle, 5_200, 0, 4_000],
     ['自己原来的位置不算占用', middle, 3_500, 0, 3_500],
@@ -188,6 +226,27 @@ describe('成组挪动', () => {
     expect(shifted([late, early], late, ['e'], -3_000, 1)).toEqual({ delta: -800, track: 1 })
   })
 
+  it('同伴是音频块：它只避让声音区同号那一行上的块，画面区同号的行不挡它', () => {
+    // f 在画面区第 0 行；选中的音频块 s 在声音区第 0 行，后面有没选中的音频块 q
+    const sound = audio({ id: 's', start: 0, duration: 1_000 })
+    const queued = audio({ id: 'q', start: 2_500, duration: 1_000 })
+    const film = [...pictures, sound, queued]
+    // 挪 1 秒：s 到 1–2 秒，不碰 q；画面区第 0 行的 o（3–5 秒）不挡 s
+    expect(shifted(film, grabbed, ['s'], 1_000, 1)).toEqual({ delta: 1_000, track: 1 })
+    // 想挪 2 秒：s 会压到 q，整组退到 s 刚好接在 q 前面
+    expect(shifted(film, grabbed, ['s'], 2_000, 1)).toEqual({ delta: 1_500, track: 1 })
+  })
+
+  it('被抓的音频块换到声音区的另一行：只看那一行的音频块，画面区同号的行不挡路', () => {
+    const sound = audio({ id: 's', start: 0, duration: 1_000 })
+    const other = audio({ id: 'q', start: 4_000, duration: 1_000, track: 1 })
+    // 声音区第 1 行只有 q（4–5 秒）；画面区第 1 行的 g（1–2 秒）不挡
+    expect(shifted([...pictures, sound, other], sound, [], 1_000, 1)).toEqual({
+      delta: 1_000,
+      track: 1,
+    })
+  })
+
   it('整组往后挪：成片多长都行', () => {
     const end = picture({ id: 'l', start: 110_000, duration: 5_000, track: 1 })
     const head = picture({ id: 'e', start: 100_000, duration: 1_000, track: 2 })
@@ -215,11 +274,11 @@ describe('成组裁剪', () => {
     ['n.mp4', 10_000],
     ['u.mp4', 5_000],
   ])
-  const known = (src: string) => sources.get(src)
+  const known = (block: FilmBlock) => sources.get(block.src)
 
   /** 一起裁完以后的成片；先检查三条，再按块给出各自的起止和入点。 */
   const trimmedGroup = (
-    members: readonly PictureBlock[],
+    members: readonly FilmBlock[],
     edge: 'start' | 'end',
     delta: number,
     sourceMs = known,
@@ -267,7 +326,7 @@ describe('成组裁剪', () => {
   })
 
   it('有一个块的素材总长还没读到：结尾不能往外拉，往里收照样可以', () => {
-    const unread = (src: string) => (src === 'u.mp4' ? undefined : known(src))
+    const unread = (block: FilmBlock) => (block.src === 'u.mp4' ? undefined : known(block))
     expect(trimmedGroup([right, upper], 'end', 1_000, unread)).toEqual({
       r: { start: 2_000, duration: 2_000, mediaStart: 0 },
       u: { start: 1_000, duration: 2_000, mediaStart: 1_000 },
@@ -287,7 +346,7 @@ describe('成组裁剪', () => {
     ] as const) {
       const edgeMs = edge === 'start' ? upper.start : upper.start + upper.duration
       expect(trimmedGroup([upper], edge, timeMs - edgeMs)['u']).toEqual(
-        trimmed(upper, edge, timeMs, trimBounds(upper, edge, pictures, known(upper.src))),
+        trimmed(upper, edge, timeMs, trimBounds(upper, edge, pictures, known(upper))),
       )
     }
   })
@@ -295,7 +354,7 @@ describe('成组裁剪', () => {
 
 describe('合拢空档', () => {
   it('点在两个块之间的空档上：它后面这一行的块都往前挪这个空档的宽度', () => {
-    const closing = gapClosing(film, 0, 2_500)
+    const closing = gapClosing(film, VISUAL_0, 2_500)
     expect([...closing.one]).toEqual([
       ['b', 2_000],
       ['c', 5_000],
@@ -307,14 +366,25 @@ describe('合拢空档', () => {
   })
 
   it('点在块上，或者点在最后一个块后面：没有这一个空档可合拢', () => {
-    expect(gapClosing(film, 0, 1_000).one.size).toBe(0)
-    expect(gapClosing(film, 0, 9_000).one.size).toBe(0)
+    expect(gapClosing(film, VISUAL_0, 1_000).one.size).toBe(0)
+    expect(gapClosing(film, VISUAL_0, 9_000).one.size).toBe(0)
   })
 
   it('这一行没有空档：两种都没有可挪的；开头的空也算空档', () => {
     const tight = [first, picture({ id: 'e', start: 2_000, duration: 1_000 })]
-    expect(gapClosing(tight, 0, 5_000).all.size).toBe(0)
-    expect([...gapClosing(film, 1, 500).one]).toEqual([['d', 0]])
+    expect(gapClosing(tight, VISUAL_0, 5_000).all.size).toBe(0)
+    expect([...gapClosing(film, { zone: 'visual', track: 1 }, 500).one]).toEqual([['d', 0]])
+  })
+
+  it('只合拢这个区这一行的块：声音区第 0 行和画面区第 0 行各算各的', () => {
+    const music = audio({ id: 'm', start: 4_000, duration: 1_000 })
+    expect([...gapClosing([...film, music], { zone: 'audio', track: 0 }, 1_000).one]).toEqual([
+      ['m', 0],
+    ])
+    expect([...gapClosing([...film, music], VISUAL_0, 2_500).all]).toEqual([
+      ['b', 2_000],
+      ['c', 4_000],
+    ])
   })
 })
 
@@ -341,5 +411,17 @@ describe('波纹编辑', () => {
       ['c', 4_000],
     ])
     expect(rippleStarts(lowered, new Set(['d'])).size).toBe(0)
+  })
+
+  it('主轨是画面区最上面那一行：组件块在那一行就跟着补；音频块行号再小也不算', () => {
+    const title = component({ id: 'k', start: 7_000, duration: 1_000, track: 2 })
+    const raised = [...film.map((block) => ({ ...block, track: block.track + 2 })), title]
+    const music = audio({ id: 'm', start: 3_000, duration: 1_000, track: 0 })
+    expect([...rippleStarts([...raised, music], new Set(['a']))]).toEqual([
+      ['b', 1_000],
+      ['c', 4_000],
+      ['k', 5_000],
+    ])
+    expect(rippleStarts([...raised, music], new Set(['m'])).size).toBe(0)
   })
 })

@@ -439,6 +439,58 @@ describe('checkFilm', () => {
       })
       expect((await checkFilm(session.serialize(), catalog)).film.blocks).toEqual([])
     })
+
+    it('加组件块、加音频块（都写在根下第一个）、在行里挪、换行、隐藏：存出来的文件通过检查，读回来是改完的样子；撤销一步步回去', async () => {
+      const stored = (await checkFilm(html(picture({ z: 1 })), catalog)).html
+      const session = await openComposition(stored)
+      const steps: string[] = [stored]
+      const step = (change: () => void) => {
+        session.batch(change)
+        steps.push(session.serialize())
+      }
+      // 和编辑器加块时发的操作一样：组件块叠在最上面；音频块先声明变量，不带叠放顺序
+      step(() => {
+        session.addElement('film', 0, componentBlock(component({ start: 500, track: 1, z: 2 })))
+        session.dispatch({ type: 'setCompositionMetadata', duration: 2.5 })
+      })
+      step(() => {
+        session.declareVariable(sourceVariable(AUDIO_JOB, AUDIO_URL, AUDIO_SOURCE_LABEL))
+        session.addElement('film', 0, audioBlock(audio({ duration: 3000 })))
+        session.dispatch({ type: 'setCompositionMetadata', duration: 3 })
+      })
+      // 在行里挪：组件块只改起止，音频块连入点一起改
+      step(() => {
+        session.setTiming('title-1', { start: 0.2, duration: 1.8 })
+        session.setTiming('music-1', { start: 0.5, duration: 2.5 })
+        session.setAttribute('music-1', 'data-media-start', '0.5')
+        session.dispatch({ type: 'setCompositionMetadata', duration: 3 })
+      })
+      // 换行：组件块换到画面块那一行、接在它后面，降叠放顺序；音频块换到声音区的另一行
+      step(() => {
+        session.setTiming('title-1', { start: 2, trackIndex: 0 })
+        session.setStyle('title-1', { zIndex: '1' })
+        session.setTiming('music-1', { start: 0.5, trackIndex: 1 })
+        session.dispatch({ type: 'setCompositionMetadata', duration: 3.8 })
+      })
+      step(() => {
+        session.setAttribute('title-1', 'data-hidden', '')
+        session.setAttribute('music-1', 'data-hidden', '')
+        session.dispatch({ type: 'setCompositionMetadata', duration: 3.8 })
+      })
+      const expected = [
+        audio({ start: 500, duration: 2500, mediaStart: 500, track: 1, hidden: true }),
+        component({ start: 2000, duration: 1800, z: 1, hidden: true }),
+        picture({ z: 1 }),
+      ]
+      const checked = await checkFilm(session.serialize(), catalog)
+      expect(checked.film).toEqual(film(...expected))
+      expect(checked.html).toBe(html(...expected))
+      expect(checked.durationMs).toBe(3800)
+      // 每一步存出来的文件都通过检查；撤销到底回到存着的那一份
+      for (const saved of steps) await checkFilm(saved, catalog)
+      while (session.canUndo()) session.undo()
+      expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
+    })
   })
 
   it('合写法却过不了渲染前的检查（组件库里没有用到的字体）：拒收，原因只进排障信息', async () => {

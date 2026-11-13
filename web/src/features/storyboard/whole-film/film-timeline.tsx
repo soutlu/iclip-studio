@@ -35,11 +35,25 @@ import {
   groupShift,
   groupTrimmed,
   groupTrimRange,
+  timingOf,
   type GapClosing,
+  type SourceLength,
   type Timing,
 } from './block-edit'
-import type { PictureBlock } from './composition/film'
-import { opensOwnRow, rowHidden, rowsOf } from './placement'
+import { thumbnailUrl, type ComponentCatalog } from './component-catalog'
+import { isMediaBlock, type FilmBlock } from './composition/film'
+import {
+  rowHidden,
+  rowsOf,
+  sameRow,
+  targetIn,
+  zoneOf,
+  type Aim,
+  type Row,
+  type RowKey,
+  type RowTarget,
+  type Zone,
+} from './placement'
 import { boxBetween, marqueeMode, marqueeSelection, movingWith, type Box } from './selection'
 import {
   msToPx,
@@ -50,16 +64,11 @@ import {
   type TimelineScale,
 } from './timeline-scale'
 
-/**
- * 块要去的行：已有的行给行号；`insertAt` 是在时间线上第几行的位置新开一行
- * （0 是最上面，等于现有行数是最下面那条空行）。
- */
-export type RowTarget = number | { insertAt: number }
-
+/** 镜头拖进来时落在哪：画面区的哪一行（或新开的一行）、成片的第几毫秒。 */
 export type TimelinePoint = { row: RowTarget; timeMs: number }
 
 export type TimelineHandle = {
-  /** 屏幕上的这个点在哪一行、对应成片的第几毫秒；不在任何一行上时是 null。 */
+  /** 屏幕上的这个点给镜头落在哪一行、对应成片的第几毫秒；不在任何一行上时是 null。 */
   locate: (clientX: number, clientY: number) => TimelinePoint | null
   /** 时间线现在横向滚到的位置（像素）。 */
   scrollLeft: () => number
@@ -68,13 +77,11 @@ export type TimelineHandle = {
 /** 拖着的素材会落在哪里：`duration` 是它的总长（毫秒），`guideMs` 是它吸上的时间点。 */
 export type DropGhost = { row: RowTarget; start: number; duration: number; guideMs: number | null }
 
-const sameRow = (left: RowTarget, right: RowTarget) =>
-  typeof left === 'number' || typeof right === 'number'
-    ? left === right
-    : left.insertAt === right.insertAt
-
 type FilmTimelineProps = {
-  pictures: readonly PictureBlock[]
+  /** 成片里所有的块。 */
+  blocks: readonly FilmBlock[]
+  /** 组件库：组件块上的小封面取自它。 */
+  catalog: ComponentCatalog
   totalMs: number
   playheadMs: number
   buffered: readonly TimeSpan[]
@@ -86,8 +93,8 @@ type FilmTimelineProps = {
   snap: boolean
   /** 块上要不要显示画面缩略图；关掉只剩名字和声音。 */
   thumbnails: boolean
-  /** 素材片的总长（毫秒）；还没读到时是 undefined。 */
-  sourceMs: (src: string) => number | undefined
+  /** 每个块的素材总长（毫秒）。 */
+  sourceMs: SourceLength
   /** 换成这些选中的块（空的就是全部取消）。 */
   onSelect: (ids: ReadonlySet<string>) => void
   /** 开始或结束框选、拖块；中途按 Esc 由时间线自己取消。 */
@@ -103,8 +110,8 @@ type FilmTimelineProps = {
   onMove: (id: string, row: RowTarget, start: number, starts: ReadonlyMap<string, number>) => void
   /** 把几个块各自挪到新的起点（合拢空档用）。 */
   onRestart: (starts: ReadonlyMap<string, number>) => void
-  /** 把 `track` 这一行的块一起隐藏（`hidden` 为真）或显示回来。 */
-  onHide: (track: number, hidden: boolean) => void
+  /** 把 `row` 这一行的块一起隐藏（`hidden` 为真，声音区的行就是静音）或显示回来。 */
+  onHide: (row: RowKey, hidden: boolean) => void
   onSeek: (ms: number) => void
   onViewportWidth: (width: number) => void
   handleRef: RefObject<TimelineHandle | null>
@@ -118,10 +125,38 @@ const ROW_REACH_PX = 3
 // 时间区左右留的空（whole-film.css 里 .wf-track-content 的 margin：左 8、右 16），不算进能排时间的宽度
 const INSET_PX = 24
 
+const rowKeyOf = (block: FilmBlock): RowKey => ({ zone: zoneOf(block), track: block.track })
+
+/** 一条行在屏幕上的上下边；`insertAt` 是待新开的那一行在第几行的位置，已有的行是 null。 */
+type Lane = { top: number; bottom: number; insertAt: number | null }
+
+/**
+ * 别处让出了一行（`opened`）时，各行按没让出来的样子摆回去：它下面的行往上挪回它占的高度，
+ * 最下面那条空行（让行时收起来了）回到最后一行下面。块只能在自己的区里新开一行，让出来的这一行
+ * 常常不在指针下面；按让完的样子量，指针下面换成了别的行，又会把这一行收回去，来回跳。
+ */
+const withoutOpening = (lanes: readonly Lane[], opened: Lane): Lane[] => {
+  const rest = lanes.filter((lane) => lane !== opened)
+  const after = rest.find((lane) => lane.top > opened.top)
+  const shift = after === undefined ? 0 : after.top - opened.top
+  const restored = rest.map((lane) =>
+    lane.top > opened.top ? { ...lane, top: lane.top - shift, bottom: lane.bottom - shift } : lane,
+  )
+  const last = restored.at(-1)
+  if (last === undefined) return restored
+  const height = opened.bottom - opened.top
+  return [
+    ...restored,
+    { top: last.bottom + shift - height, bottom: last.bottom + shift, insertAt: restored.length },
+  ]
+}
+
 /** `row` 在页面上是哪一条：已有的行，或者待新开的那一行（让出来的空行、最下面那条空行）。 */
 const laneOf = (content: HTMLElement | null, row: RowTarget) =>
   content?.querySelector<HTMLElement>(
-    typeof row === 'number' ? `[data-track="${row}"]` : `[data-insert-at="${row.insertAt}"]`,
+    'track' in row
+      ? `[data-zone="${row.zone}"][data-track="${row.track}"]`
+      : `[data-insert-at="${row.insertAt}"]`,
   ) ?? null
 
 /** 按着 Shift、⌘ 或 Ctrl 点块是逐个加减选中。 */
@@ -160,7 +195,7 @@ type Gesture = {
   /** 一起动的块（含它自己）：开始拖的那一刻定下来，中途选中变了也不换；还没开始拖时是 null。 */
   group: ReadonlySet<string> | null
   timing: Timing | null
-  /** 挪的时候指针在哪一行上：行号，或者要新开的那一行。 */
+  /** 挪的时候块要去哪一行：已有的行，或者要新开的那一行。 */
   row: RowTarget | null
   /** 跟着一起动的别的块各自的时间。 */
   followers: ReadonlyMap<string, Timing>
@@ -178,13 +213,13 @@ const edgeAt = (block: Timing, edge: Edge) =>
 
 /** `timings` 里和成片里现在不一样的那些。 */
 const changedTimings = (
-  pictures: readonly PictureBlock[],
+  blocks: readonly FilmBlock[],
   timings: ReadonlyMap<string, Timing>,
 ): Map<string, Timing> =>
   new Map(
     [...timings].filter(([id, timing]) => {
-      const block = pictures.find((other) => other.id === id)
-      return block !== undefined && !sameTiming(timing, block)
+      const block = blocks.find((other) => other.id === id)
+      return block !== undefined && !sameTiming(timing, timingOf(block))
     }),
   )
 
@@ -197,8 +232,8 @@ type MovePlan = { row: RowTarget; start: number; followers: Map<string, Timing> 
  * 只挪一个块也走这里，它自己就是一组。
  */
 const movePlan = (
-  pictures: readonly PictureBlock[],
-  block: PictureBlock,
+  blocks: readonly FilmBlock[],
+  block: FilmBlock,
   group: ReadonlySet<string>,
   startMs: number,
   row: RowTarget,
@@ -206,28 +241,65 @@ const movePlan = (
   const shift = groupShift(
     block,
     group,
-    pictures,
+    blocks,
     startMs - block.start,
-    typeof row === 'number' ? row : null,
+    'track' in row ? row.track : null,
   )
   const followers = new Map(
-    pictures
+    blocks
       .filter((other) => group.has(other.id) && other.id !== block.id)
-      .map((other) => [
-        other.id,
-        {
-          start: other.start + shift.delta,
-          duration: other.duration,
-          mediaStart: other.mediaStart,
-        },
-      ]),
+      .map((other) => {
+        const timing = timingOf(other)
+        return [other.id, { ...timing, start: timing.start + shift.delta }]
+      }),
   )
-  return { row: shift.track ?? row, start: block.start + shift.delta, followers }
+  return {
+    row: shift.track === null ? row : { zone: zoneOf(block), track: shift.track },
+    start: block.start + shift.delta,
+    followers,
+  }
+}
+
+/** 块身里画什么：画面块是画面和原声，组件块是小封面，音频块是整块波形。 */
+function BlockContent({
+  block,
+  timing,
+  cover,
+  peaks,
+}: {
+  block: FilmBlock
+  timing: Timing
+  cover: string | null
+  peaks: PeaksState
+}) {
+  if (block.kind === 'component')
+    return cover === null ? null : <img alt="" className="wf-clip-cover" src={cover} />
+  const part = {
+    mediaUrl: block.src,
+    start: timing.mediaStart / 1000,
+    end: (timing.mediaStart + timing.duration) / 1000,
+  }
+  if (block.kind === 'audio')
+    return (
+      <span className="wf-clip-sound">
+        <Wave part={part} state={peaks} />
+      </span>
+    )
+  return (
+    <span className="wf-clip-media">
+      <span className="wf-clip-frames">
+        <Frames part={part} />
+      </span>
+      <span className="wf-clip-wave">
+        <Wave part={part} state={peaks} />
+      </span>
+    </span>
+  )
 }
 
 type TimelineBlockProps = {
-  block: PictureBlock
-  pictures: readonly PictureBlock[]
+  block: FilmBlock
+  blocks: readonly FilmBlock[]
   selected: boolean
   /** 拖这个块（挪动或裁剪）时一起动的块，含它自己。 */
   group: ReadonlySet<string>
@@ -236,23 +308,28 @@ type TimelineBlockProps = {
   pps: number
   /** 时间线内容区，用它把屏幕上的横坐标换成成片的时间。 */
   contentRef: RefObject<HTMLDivElement | null>
-  /** 指针在哪一行上，`between` 为真时两行之间也算（在那里新开一行）；都不是时是 undefined。 */
-  rowAt: (clientY: number, between: boolean) => RowTarget | undefined
+  /**
+   * `zone` 区的块拖到这个高度时落在哪一行，`between` 为真时两行之间也算（在那里新开一行）；
+   * 不在任何一行上时是 undefined。
+   */
+  rowAt: (clientY: number, between: boolean, zone: Zone) => RowTarget | undefined
   /** 拖动中要在第几行的位置新开一行，那里先让出一行；不新开、松手后是 null。 */
   onOpening: (insertAt: number | null) => void
   /** `group` 里的块一起裁 `edge` 这一端时，`block` 这一端能到的范围（成片的毫秒）。 */
   trimRange: (
-    block: PictureBlock,
+    block: FilmBlock,
     group: ReadonlySet<string>,
     edge: Edge,
   ) => { min: number; max: number }
   /** `group` 里的块一起裁 `edge` 这一端、`block` 这一端拖到 `edgeMs` 时，各自的起止和入点。 */
   trimTo: (
-    block: PictureBlock,
+    block: FilmBlock,
     group: ReadonlySet<string>,
     edge: Edge,
     edgeMs: number,
   ) => ReadonlyMap<string, Timing>
+  /** 组件块上的小封面；没有时是 null。 */
+  cover: string | null
   peaks: PeaksState
   snap: boolean
   playheadMs: number
@@ -271,12 +348,12 @@ type TimelineBlockProps = {
 
 /**
  * 时间线上的一个块：点一下选中（带 Shift、⌘ 或 Ctrl 是加减选中），拖着挪动（在这一行里，
- * 或者拖到别的行、最下面的空行上），选中后拖两端的把手裁剪；在不止一个块的选中里时，
+ * 或者拖到自己的区里别的行、新开的一行上），选中后拖两端的把手裁剪；在不止一个块的选中里时，
  * 选中的块一起挪、一起裁。松手才写进成片，拖动中按 Esc 什么都不写。
  */
 function TimelineBlock({
   block,
-  pictures,
+  blocks,
   selected,
   group,
   following,
@@ -286,6 +363,7 @@ function TimelineBlock({
   onOpening,
   trimRange,
   trimTo,
+  cover,
   peaks,
   snap,
   playheadMs,
@@ -312,13 +390,8 @@ function TimelineBlock({
         ? ''
         : `0 ${target.getBoundingClientRect().top - own.getBoundingClientRect().top}px`
   })
-  const timing = preview?.timing ?? following?.timings.get(block.id) ?? block
+  const timing = preview?.timing ?? following?.timings.get(block.id) ?? timingOf(block)
   const name = `${block.label}，${seconds(timing.duration)} 秒${block.hidden ? '，已隐藏' : ''}`
-  const part = {
-    mediaUrl: block.src,
-    start: timing.mediaStart / 1000,
-    end: (timing.mediaStart + timing.duration) / 1000,
-  }
 
   const timeAt = (clientX: number) =>
     pxToMs(clientX - (contentRef.current?.getBoundingClientRect().left ?? 0), pps)
@@ -366,7 +439,7 @@ function TimelineBlock({
     // 开着吸附时：没在动的块的两端和播放头是能吸上去的点（一起动的块拖动前的边不算）
     const targets = snap
       ? snapTargets(
-          pictures.filter((other) => !members.has(other.id)),
+          blocks.filter((other) => !members.has(other.id)),
           playheadMs,
         )
       : null
@@ -376,24 +449,19 @@ function TimelineBlock({
         targets === null
           ? { ms: wanted, guideMs: null }
           : snapSpanStartMs(wanted, block.duration, targets, pps)
-      // 指针在哪一行上，块就去哪一行；在两行之间就在那里新开一行；都不是就留在原来的行
-      const aimed = rowAt(event.clientY, true) ?? block.track
-      // 独占一行的块拖到自己这一行上下的缝里：新开的还是这一行，就当在本行里挪
-      const row =
-        typeof aimed !== 'number' && opensOwnRow(pictures, aimed.insertAt, block.id)
-          ? block.track
-          : aimed
-      const plan = movePlan(pictures, block, members, snapped.ms, row)
-      gesture.timing = { start: plan.start, duration: block.duration, mediaStart: block.mediaStart }
+      // 指针在哪一行上，块就去它自己的区里对着的那一行；在两行之间就在那里新开一行；都不是就留在原来的行
+      const row = rowAt(event.clientY, true, zoneOf(block)) ?? rowKeyOf(block)
+      const plan = movePlan(blocks, block, members, snapped.ms, row)
+      gesture.timing = { ...timingOf(block), start: plan.start }
       gesture.row = plan.row
       gesture.followers = plan.followers
-      onOpening(typeof plan.row === 'number' ? null : plan.row.insertAt)
+      onOpening('insertAt' in plan.row ? plan.row.insertAt : null)
       // 吸上去的位置被别的块占了、又挪开了，就不画吸附线
       onGuide(plan.start === snapped.ms ? snapped.guideMs : null)
     } else {
       const snapped = targets === null ? { ms: at, guideMs: null } : snapMs(at, targets, pps)
       const timings = trimTo(block, members, kind, snapped.ms)
-      const next = timings.get(block.id) ?? block
+      const next = timings.get(block.id) ?? timingOf(block)
       gesture.timing = next
       gesture.followers = new Map([...timings].filter(([id]) => id !== block.id))
       onGuide(edgeAt(next, kind) === snapped.ms ? snapped.guideMs : null)
@@ -421,13 +489,13 @@ function TimelineBlock({
     if (gesture.timing === null) return
     // 拖完松手也会来一次点击，那一次不算选中
     clickAfterDrag.swallow()
-    if (gesture.row !== null && !sameRow(gesture.row, block.track)) {
+    if (gesture.row !== null && !sameRow(gesture.row, rowKeyOf(block))) {
       const starts = new Map([...gesture.followers].map(([id, timing]) => [id, timing.start]))
       onMove(block.id, gesture.row, gesture.timing.start, starts)
       return
     }
     const changed = changedTimings(
-      pictures,
+      blocks,
       new Map([[block.id, gesture.timing], ...gesture.followers]),
     )
     if (changed.size > 0) onRetime(changed)
@@ -452,7 +520,7 @@ function TimelineBlock({
     clickAfterDrag.swallow()
     finish()
   })
-  useEffect(() => dropStale(), [pictures])
+  useEffect(() => dropStale(), [blocks])
 
   const nudge = (event: KeyboardEvent<HTMLElement>, edge: Edge) => {
     const step = arrowStep(event)
@@ -460,8 +528,8 @@ function TimelineBlock({
     event.preventDefault()
     event.stopPropagation()
     const changed = changedTimings(
-      pictures,
-      trimTo(block, group, edge, edgeAt(block, edge) + Math.round(step * 1000)),
+      blocks,
+      trimTo(block, group, edge, edgeAt(timingOf(block), edge) + Math.round(step * 1000)),
     )
     if (changed.size > 0) onRetime(changed)
   }
@@ -471,6 +539,7 @@ function TimelineBlock({
       aria-label={name}
       className={cn(
         'wf-clip',
+        `is-${block.kind}`,
         selected && 'is-selected',
         block.hidden && 'is-hidden',
         preview?.kind === 'move' && 'is-lifted',
@@ -497,14 +566,7 @@ function TimelineBlock({
         type="button"
       >
         <span className="wf-clip-label">{block.label}</span>
-        <span className="wf-clip-media">
-          <span className="wf-clip-frames">
-            <Frames part={part} />
-          </span>
-          <span className="wf-clip-wave">
-            <Wave part={part} state={peaks} />
-          </span>
-        </span>
+        <BlockContent block={block} cover={cover} peaks={peaks} timing={timing} />
       </button>
       {selected
         ? (['start', 'end'] as const).map((edge) => {
@@ -532,36 +594,50 @@ function TimelineBlock({
   )
 }
 
-/** 行头的眼睛：把这一行的块一起隐藏或显示回来。`row` 是界面上的第几行。 */
-function RowEye({
+/**
+ * 行头最右边的开关：把这一行的块一起隐藏或显示回来。画面区的行画成眼睛；声音区的行画成喇叭，
+ * 隐藏就是静音。`row` 是界面上的第几行。
+ */
+function RowToggle({
   row,
+  zone,
   hidden,
   onHide,
 }: {
   row: number
+  zone: Zone
   hidden: boolean
   onHide: (hidden: boolean) => void
 }) {
+  const sound = zone === 'audio'
+  const [hide, show] = sound ? ['静音', '取消静音'] : ['隐藏', '显示']
   return (
     <button
-      aria-label={hidden ? `显示第 ${row} 行` : `隐藏第 ${row} 行`}
+      aria-label={`${hidden ? show : hide}第 ${row} 行`}
       aria-pressed={!hidden}
       className="wf-head-eye ui-state ui-focus"
       onClick={() => onHide(!hidden)}
-      title={hidden ? '显示这一行' : '隐藏这一行'}
+      title={`${hidden ? show : hide}这一行`}
       type="button"
     >
-      <Icon decorative name={hidden ? 'excluded' : 'included'} size="sm" />
+      <Icon
+        decorative
+        name={sound ? (hidden ? 'audio-off' : 'audio') : hidden ? 'excluded' : 'included'}
+        size="sm"
+      />
     </button>
   )
 }
 
+const keyOf = (row: RowKey) => `${row.zone}-${row.track}`
+
 /**
- * 时间线：成片里的块按行排开，可以选中一个或几个（在空白处拖出框来框选）、挪动、裁两端；
- * 上面是时间尺和播放头。
+ * 时间线：成片里的块按行排开，画面区的行在上、声音区的行在下，最下面是一条可以新开一行的空行。
+ * 块可以选中一个或几个（在空白处拖出框来框选）、在自己的区里挪动、裁两端；上面是时间尺和播放头。
  */
 export function FilmTimeline({
-  pictures,
+  blocks,
+  catalog,
   totalMs,
   playheadMs,
   buffered,
@@ -592,25 +668,29 @@ export function FilmTimeline({
   // 拖着块要在第几行的位置新开一行；拖素材进来时同样由 `ghost` 带着
   const [blockOpening, setBlockOpening] = useState<number | null>(null)
   const opening =
-    blockOpening ?? (ghost === null || typeof ghost.row === 'number' ? null : ghost.row.insertAt)
+    blockOpening ?? (ghost === null || 'track' in ghost.row ? null : ghost.row.insertAt)
   // 在一行的空处点右键时，两种合拢各自要挪哪些块
   const [closing, setClosing] = useState<GapClosing>()
   // 成组拖动中跟着动的块；每个块只知道自己素材的总长，一起裁到哪里在这一层算
   const [following, setFollowing] = useState<Following | null>(null)
-  const membersOf = (group: ReadonlySet<string>) => pictures.filter((block) => group.has(block.id))
-  const trimRange = (block: PictureBlock, group: ReadonlySet<string>, edge: Edge) => {
-    const range = groupTrimRange(membersOf(group), edge, pictures, sourceMs)
-    return { min: edgeAt(block, edge) + range.min, max: edgeAt(block, edge) + range.max }
+  const membersOf = (group: ReadonlySet<string>) => blocks.filter((block) => group.has(block.id))
+  const trimRange = (block: FilmBlock, group: ReadonlySet<string>, edge: Edge) => {
+    const range = groupTrimRange(membersOf(group), edge, blocks, sourceMs)
+    const edgeMs = edgeAt(timingOf(block), edge)
+    return { min: edgeMs + range.min, max: edgeMs + range.max }
   }
-  const trimTo = (block: PictureBlock, group: ReadonlySet<string>, edge: Edge, edgeMs: number) =>
-    groupTrimmed(membersOf(group), edge, edgeMs - edgeAt(block, edge), pictures, sourceMs)
+  const trimTo = (block: FilmBlock, group: ReadonlySet<string>, edge: Edge, edgeMs: number) =>
+    groupTrimmed(membersOf(group), edge, edgeMs - edgeAt(timingOf(block), edge), blocks, sourceMs)
   const { pps, contentWidth } = scale
-  const rows = rowsOf(pictures)
-  // 还没有块时也留一行，素材拖得进来
-  const shown = rows.length === 0 ? [{ track: 0, blocks: [] }] : rows
+  const rows = rowsOf(blocks)
+  // 还没有块时也留一行（画面区的第 0 行），镜头拖得进来
+  const shown: readonly Row[] =
+    rows.length === 0 ? [{ zone: 'visual', track: 0, blocks: [] }] : rows
   // 要在别的位置新开一行时，最下面那条空行挪到那里去：总高度不变，上面的行不动、下面的行往下让
   const openedAt = opening !== null && opening < rows.length ? opening : null
-  const peaks = useAudioPeaks(useStableValue([...new Set(pictures.map((block) => block.src))]))
+  const peaks = useAudioPeaks(
+    useStableValue([...new Set(blocks.filter(isMediaBlock).map((block) => block.src))]),
+  )
 
   useLayoutEffect(() => {
     const viewport = scrollRef.current
@@ -630,52 +710,66 @@ export function FilmTimeline({
     pxToMs(clientX - (contentRef.current?.getBoundingClientRect().left ?? 0), pps)
 
   /**
-   * 指针在哪一行上。只认轨道区里露出来的部分：滚到时间尺底下、滚出轨道区的行，指针看不见也落不上去。
+   * 指针对着哪里：时间线上的第几行，或者在第几行的位置新开一行。只认轨道区里露出来的部分：
+   * 滚到时间尺底下、滚出轨道区的行，指针看不见也落不上去。
    * 两行之间的缝（含第一行上面、最后一行下面）：`between` 为真时算在那里新开一行；
    * 为假时只有第一行上面算新开一行，别的缝归离得近的那一行。
    */
-  const rowAt = (clientY: number, between: boolean): RowTarget | undefined => {
+  const aimAt = (clientY: number, between: boolean): Aim | undefined => {
     const viewport = scrollRef.current
     const rulerBar = rulerBarRef.current
     if (viewport === null || rulerBar === null) return undefined
     const top = viewport.getBoundingClientRect().top + viewport.clientTop
     if (clientY < top || clientY > top + viewport.clientHeight) return undefined
-    const lanes = [...(contentRef.current?.querySelectorAll<HTMLElement>('.wf-lane') ?? [])].map(
-      (lane) => ({ lane, box: lane.getBoundingClientRect() }),
-    )
+    const measured: Lane[] = [
+      ...(contentRef.current?.querySelectorAll<HTMLElement>('.wf-lane') ?? []),
+    ].map((lane) => {
+      const { top, bottom } = lane.getBoundingClientRect()
+      const insertAt = lane.dataset['insertAt']
+      return { top, bottom, insertAt: insertAt === undefined ? null : Number(insertAt) }
+    })
     // 指针在时间尺上：第一行露着（没滚到时间尺底下）就算在最上面新开一行，不然哪一行都不算
     const rulerBottom = rulerBar.getBoundingClientRect().bottom
     if (clientY < rulerBottom) {
-      const first = lanes.find(({ lane }) => lane.dataset['track'] !== undefined)?.box
+      const first = measured.find((lane) => lane.insertAt === null)
       return rows.length > 0 && first !== undefined && first.top >= rulerBottom
         ? { insertAt: 0 }
         : undefined
     }
-    // 待新开的那一行（已经让出来的空行、最下面那条空行）：指针还在它上面就还是它
-    const waiting = lanes.find(
-      ({ lane, box }) =>
-        lane.dataset['insertAt'] !== undefined &&
-        clientY >= box.top - ROW_REACH_PX &&
-        clientY <= box.bottom + ROW_REACH_PX,
-    )
-    if (waiting !== undefined) return { insertAt: Number(waiting.lane.dataset['insertAt']) }
-    const existing = lanes.filter(({ lane }) => lane.dataset['track'] !== undefined)
-    const trackOf = (at: number) => Number(existing[at]?.lane.dataset['track'])
-    const on = existing.findIndex(({ box }) => clientY >= box.top && clientY <= box.bottom)
-    if (on !== -1) return trackOf(on)
+    const near = (lane: Lane) =>
+      clientY >= lane.top - ROW_REACH_PX && clientY <= lane.bottom + ROW_REACH_PX
+    // 已经让出来的那一行：指针还在它上面就还是它
+    const opened = measured.find((lane) => lane.insertAt !== null && lane.insertAt < rows.length)
+    if (opened?.insertAt != null && near(opened)) return { insertAt: opened.insertAt }
+    const lanes = opened === undefined ? measured : withoutOpening(measured, opened)
+    // 最下面那条空行：指针在它上面就在那里新开一行
+    const waiting = lanes.find((lane) => lane.insertAt !== null && near(lane))
+    if (waiting?.insertAt != null) return { insertAt: waiting.insertAt }
+    const existing = lanes.filter((lane) => lane.insertAt === null)
+    const on = existing.findIndex((lane) => clientY >= lane.top && clientY <= lane.bottom)
+    if (on !== -1) return { at: on }
     // 还没有块时只有一条空行，没有可新开的地方
     if (rows.length === 0) return undefined
     // 指针在第几行的上面那道缝里；比最后一行还靠下时只认紧挨着它的那道缝
-    const under = existing.findIndex(({ box }) => clientY < box.top)
+    const under = existing.findIndex((lane) => clientY < lane.top)
     const seam = under === -1 ? existing.length : under
-    const above = existing[seam - 1]?.box
-    const below = existing[seam]?.box
+    const above = existing[seam - 1]
+    const below = existing[seam]
     if (below === undefined && (above === undefined || clientY > above.bottom + 2 * ROW_REACH_PX))
       return undefined
     if (between || above === undefined) return { insertAt: seam }
     return below === undefined || clientY - above.bottom <= below.top - clientY
-      ? trackOf(seam - 1)
-      : trackOf(seam)
+      ? { at: seam - 1 }
+      : { at: seam }
+  }
+
+  /** `zone` 区的块对着这个高度时落在哪一行：块只待在自己的区里。 */
+  const rowAt = (clientY: number, between: boolean, zone: Zone): RowTarget | undefined => {
+    const aim = aimAt(clientY, between)
+    if (aim === undefined) return undefined
+    // 还没有块时只有画面区那一条空行
+    if (rows.length === 0) return { zone: 'visual', track: 0 }
+    return targetIn(rows, aim, zone)
   }
 
   useEffect(() => {
@@ -687,7 +781,8 @@ export function FilmTimeline({
         const right =
           viewport.getBoundingClientRect().left + viewport.clientLeft + viewport.clientWidth
         if (clientX < heads.getBoundingClientRect().right || clientX > right) return null
-        const row = rowAt(clientY, false)
+        // 镜头只落在画面区
+        const row = rowAt(clientY, false, 'visual')
         return row === undefined ? null : { row, timeMs: Math.max(0, timeAt(clientX)) }
       },
       scrollLeft: () => scrollRef.current?.scrollLeft ?? 0,
@@ -711,11 +806,17 @@ export function FilmTimeline({
       />
     ) : null
 
+  /** 拖着的素材会落进在第 `insertAt` 行的位置新开的那一行时，画出它会占的位置。 */
+  const newRowGhost = (insertAt: number) =>
+    ghost !== null && 'insertAt' in ghost.row && ghost.row.insertAt === insertAt
+      ? dropGhost(ghost.row)
+      : null
+
   // 点在块上，或者这一行没有可合拢的空档：不开菜单
-  const openGapMenu = (event: MouseEvent<HTMLElement>, track: number) => {
+  const openGapMenu = (event: MouseEvent<HTMLElement>, row: RowKey) => {
     const onBlock =
       event.target instanceof Element && event.target.closest('[data-block-id]') !== null
-    const next = onBlock ? undefined : gapClosing(pictures, track, timeAt(event.clientX))
+    const next = onBlock ? undefined : gapClosing(blocks, row, timeAt(event.clientX))
     if (next === undefined || (next.one.size === 0 && next.all.size === 0)) {
       event.preventDefault()
       return
@@ -752,7 +853,7 @@ export function FilmTimeline({
 
   const framed = (framing: Framing, event: PointerEvent<HTMLElement>): Marquee => {
     const box = boxBetween(framing.origin, pointIn(event.clientX, event.clientY))
-    const blocks = [
+    const found = [
       ...(contentRef.current?.querySelectorAll<HTMLElement>('[data-block-id]') ?? []),
     ].map((element) => {
       const { left, top, width, height } = element.getBoundingClientRect()
@@ -761,7 +862,7 @@ export function FilmTimeline({
     })
     return {
       box,
-      ids: marqueeSelection(blocks, box, framing.base, marqueeMode(framing.adding, event)),
+      ids: marqueeSelection(found, box, framing.base, marqueeMode(framing.adding, event)),
     }
   }
 
@@ -819,23 +920,27 @@ export function FilmTimeline({
       <div className="wf-track-inner">
         <div className="wf-track-heads" ref={headsRef}>
           <span aria-hidden="true" className="wf-track-corner" />
-          {shown.map(({ track, blocks }, at) => (
-            <Fragment key={track}>
+          {shown.map((row, at) => (
+            <Fragment key={keyOf(row)}>
               {openedAt === at ? (
                 <span aria-hidden="true" className="wf-track-head is-opening" />
               ) : null}
               <span className="wf-track-head">
-                <span className="wf-head-name">{blocks[0]?.label}</span>
-                {blocks.length > 1 ? (
-                  <span aria-label={`${blocks.length} 个块`} className="wf-head-count">
-                    {blocks.length}
+                {row.zone === 'audio' ? (
+                  <Icon className="wf-head-icon" decorative name="music" size="xs" />
+                ) : null}
+                <span className="wf-head-name">{row.blocks[0]?.label}</span>
+                {row.blocks.length > 1 ? (
+                  <span aria-label={`${row.blocks.length} 个块`} className="wf-head-count">
+                    {row.blocks.length}
                   </span>
                 ) : null}
-                {blocks.length > 0 ? (
-                  <RowEye
-                    hidden={rowHidden(pictures, track)}
-                    onHide={(hidden) => onHide(track, hidden)}
+                {row.blocks.length > 0 ? (
+                  <RowToggle
+                    hidden={rowHidden(blocks, row)}
+                    onHide={(hidden) => onHide({ zone: row.zone, track: row.track }, hidden)}
                     row={at + 1}
+                    zone={row.zone}
                   />
                 ) : null}
               </span>
@@ -865,11 +970,11 @@ export function FilmTimeline({
             onPointerMove={dragLanes}
             onPointerUp={releaseLanes}
           >
-            {shown.map(({ track, blocks }, at) => (
-              <Fragment key={track}>
+            {shown.map((row, at) => (
+              <Fragment key={keyOf(row)}>
                 {openedAt === at ? (
                   <div aria-hidden="true" className="wf-lane is-new is-opening" data-insert-at={at}>
-                    {dropGhost({ insertAt: at }) ?? <span className="wf-lane-hint">新开一行</span>}
+                    {newRowGhost(at) ?? <span className="wf-lane-hint">新开一行</span>}
                   </div>
                 ) : null}
                 <ContextMenuRoot>
@@ -877,14 +982,21 @@ export function FilmTimeline({
                     <div
                       aria-label={`第 ${at + 1} 行`}
                       className="wf-lane"
-                      data-track={track}
-                      onContextMenu={(event) => openGapMenu(event, track)}
+                      data-track={row.track}
+                      data-zone={row.zone}
+                      onContextMenu={(event) => openGapMenu(event, row)}
                       role="group"
                     >
-                      {blocks.map((block) => (
+                      {row.blocks.map((block) => (
                         <TimelineBlock
                           block={block}
+                          blocks={blocks}
                           contentRef={contentRef}
+                          cover={
+                            block.kind === 'component'
+                              ? thumbnailUrl(catalog, block.component)
+                              : null
+                          }
                           following={following}
                           group={movingWith(selected, block.id)}
                           key={block.id}
@@ -895,8 +1007,11 @@ export function FilmTimeline({
                           onOpening={setBlockOpening}
                           onRetime={onRetime}
                           onSelect={pick}
-                          peaks={peaks.get(block.src) ?? { kind: 'loading' }}
-                          pictures={pictures}
+                          peaks={
+                            isMediaBlock(block)
+                              ? (peaks.get(block.src) ?? { kind: 'loading' })
+                              : { kind: 'silent' }
+                          }
                           playheadMs={playheadMs}
                           pps={pps}
                           rowAt={rowAt}
@@ -906,8 +1021,8 @@ export function FilmTimeline({
                           trimTo={trimTo}
                         />
                       ))}
-                      {dropGhost(track)}
-                      {pictures.length === 0 && ghost === null ? (
+                      {dropGhost(row)}
+                      {blocks.length === 0 && ghost === null ? (
                         <span className="wf-lane-hint">把下面的镜头拖到这里</span>
                       ) : null}
                     </div>
@@ -933,14 +1048,14 @@ export function FilmTimeline({
                 </ContextMenuRoot>
               </Fragment>
             ))}
-            {pictures.length === 0 || openedAt !== null ? null : (
+            {blocks.length === 0 || openedAt !== null ? null : (
               <div
                 aria-label="新的一行"
                 className="wf-lane is-new"
                 data-insert-at={rows.length}
                 role="group"
               >
-                {dropGhost({ insertAt: rows.length }) ?? (
+                {newRowGhost(rows.length) ?? (
                   <span className="wf-lane-hint">拖到这里，新开一行</span>
                 )}
               </div>
