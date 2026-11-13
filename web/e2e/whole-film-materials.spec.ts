@@ -96,7 +96,7 @@ const shotOf = (materials: Locator, group: number, take: string, shot: number) =
     name: new RegExp(`^生成 ${take} 镜头 ${shot}，`),
   })
 
-/** 存下来的成片里的画面块，写成「名字，从几秒起，多长」。 */
+/** 存下来的成片里的画面块，按起点排，写成「名字，从几秒起，多长」。 */
 const savedBlocks = (page: Page) =>
   page.evaluate(async (conversationId) => {
     const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
@@ -104,9 +104,9 @@ const savedBlocks = (page: Page) =>
     const blocks = (html ?? '').matchAll(
       /<video [^>]*data-label="([^"]*)"[^>]*data-start="([^"]*)" data-duration="([^"]*)"/g,
     )
-    return [...blocks].map(
-      ([, label, start, duration]) => `${label}，${start} 秒起，${duration} 秒`,
-    )
+    return [...blocks]
+      .toSorted(([, , left], [, , right]) => Number(left) - Number(right))
+      .map(([, label, start, duration]) => `${label}，${start} 秒起，${duration} 秒`)
   }, conversationIdOf(page))
 
 const readyPlayer = async (dialog: Locator) => {
@@ -582,33 +582,66 @@ test('换行：把块拖到最下面的空行新开一行，再拖回去；镜�
     await expect.poll(() => savedBlocks(page)).toHaveLength(at + 1)
   }
   await readyPlayer(dialog)
-  /** 存下来的成片里每个块在第几行，按文件里的先后。 */
-  const savedRows = () =>
+  /** 存下来的成片里每个块，按文件里的先后，写成「名字@行号 z叠放顺序」。 */
+  const savedLayout = () =>
     page.evaluate(async (conversationId) => {
       const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
       const { html } = (await response.json()) as { html: string | null }
-      return [...(html ?? '').matchAll(/<video [^>]*data-track-index="(\d+)"/g)].map(([, track]) =>
-        Number(track),
-      )
+      return [...(html ?? '').matchAll(/<video [^>]*>/g)].map(([tag]) => {
+        const label = /data-label="([^"]*)"/.exec(tag)?.[1]
+        const track = /data-track-index="(\d+)"/.exec(tag)?.[1]
+        const z = /z-index: (\d+)/.exec(tag)?.[1] ?? '0'
+        return `${label}@${track} z${z}`
+      })
     }, conversationIdOf(page))
+  /**
+   * 预览画面正中看得见的块，从最上面一层往下，写成「名字@行号」。
+   * 改动成片后预览会换一个播放器，看后来的那个；带上行号才认得出它已经换成新的成片。
+   */
+  const previewStack = () =>
+    dialog
+      .getByRole('region', { name: '预览' })
+      .locator('hyperframes-player')
+      .last()
+      .frameLocator('iframe')
+      .locator('body')
+      .evaluate(() =>
+        document
+          .elementsFromPoint(window.innerWidth / 2, window.innerHeight / 2)
+          .filter((element) => element.tagName === 'VIDEO')
+          .map(
+            (video) =>
+              `${video.getAttribute('data-label')}@${video.getAttribute('data-track-index')}`,
+          ),
+      )
   const middleY = async (locator: Locator) => (await centerOf(locator)).y
-  const dragTo = async (from: Locator, y: number) => {
+  const dragTo = async (from: Locator, y: number, dx = 0) => {
     const { x, y: fromY } = await centerOf(from)
     await page.mouse.move(x, fromY)
     await page.mouse.down()
-    await page.mouse.move(x, y, { steps: 8 })
+    await page.mouse.move(x + dx, y, { steps: 8 })
     await page.mouse.up()
   }
+  // 新加的块写在根下第一个、叠在最上面
+  await expect.poll(savedLayout).toEqual(['A · 镜头 3@0 z2', 'A · 镜头 1@0 z1'])
 
   await expect(secondRow).toHaveCount(0)
-  await dragTo(firstRow.locator('[data-block-id]').nth(1), await middleY(newRow))
-  // 下面一行的块在文件里写在前面，上面的行才盖得住它
-  await expect.poll(savedRows).toEqual([1, 0])
+  // 第二个块拖到下面新开的一行、往左挪到和第一个块重叠：它降到第一个块之下，文件里的先后不变
+  const second = firstRow.locator('[data-block-id]').nth(1)
+  const firstBox = await firstRow.locator('[data-block-id]').nth(0).boundingBox()
+  const secondBox = await second.boundingBox()
+  if (firstBox === null || secondBox === null) throw new Error('块尚未布局')
+  await dragTo(second, await middleY(newRow), firstBox.x - secondBox.x)
+  await expect.poll(savedLayout).toEqual(['A · 镜头 3@1 z0', 'A · 镜头 1@0 z1'])
   await expect(secondRow.locator('[data-block-id]')).toHaveCount(1)
   await expect(firstRow.locator('[data-block-id]')).toHaveCount(1)
+  const ruler = await dialog.getByRole('slider', { name: '时间线播放位置' }).boundingBox()
+  if (ruler === null) throw new Error('时间尺尚未布局')
+  await page.mouse.click(firstBox.x + 10, ruler.y + ruler.height / 2)
+  await expect.poll(previewStack).toEqual(['A · 镜头 1@0', 'A · 镜头 3@1'])
 
   await dragTo(secondRow.locator('[data-block-id]'), await middleY(firstRow))
-  await expect.poll(savedRows).toEqual([0, 0])
+  await expect.poll(savedLayout).toEqual(['A · 镜头 3@0 z0', 'A · 镜头 1@0 z1'])
   await expect(secondRow).toHaveCount(0)
 
   await shotOf(materials, 1, 'A', 4).click()
@@ -621,7 +654,7 @@ test('换行：把块拖到最下面的空行新开一行，再拖回去；镜�
   await page.mouse.move(target.x, target.y, { steps: 8 })
   await expect(newRow.getByTestId('drop-ghost')).toBeVisible()
   await page.mouse.up()
-  await expect.poll(savedRows).toEqual([1, 0, 0])
+  await expect.poll(savedLayout).toEqual(['A · 镜头 4@1 z3', 'A · 镜头 3@0 z0', 'A · 镜头 1@0 z1'])
   await expect(secondRow.locator('[data-block-id]')).toHaveCount(1)
 })
 

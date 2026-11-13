@@ -1,46 +1,90 @@
 import { describe, expect, it } from 'vitest'
-import { picture } from '@/testing/whole-film'
-import { insertionOf } from './stacking'
+import { audio, component, picture } from '@/testing/whole-film'
+import { newBlockZ, restackedZ, rowMoveDirection } from './stacking'
 
-describe('放进成片的块写在哪、叠放顺序是多少', () => {
-  const top = picture({ id: 'top', start: 0, duration: 4_000, track: 0 })
-  const below = picture({ id: 'below', start: 0, duration: 4_000, track: 2 })
-
-  it('放在最上面一行：写在最后，盖住下面的块', () => {
-    const added = picture({ id: 'new', start: 1_500, duration: 1_000, track: 0 })
-    expect(insertionOf([below], added)).toEqual({ index: 1, z: 0 })
+describe('新加的块的叠放顺序', () => {
+  it('空成片里加第一个块：1', () => {
+    expect(newBlockZ([], 0)).toBe(1)
   })
 
-  it('放在下面一行、和上面的块重叠：写在那个块前面，被它盖住', () => {
-    const added = picture({ id: 'new', start: 3_500, duration: 1_000, track: 1 })
-    expect(insertionOf([top], added)).toEqual({ index: 0, z: 0 })
+  it('按文件里所有的块数算，组件块和音频块也算；一次加几个时每个各算各的', () => {
+    const existing = [picture({ id: 'a' }), component(), audio()]
+    expect(newBlockZ(existing, 0)).toBe(4)
+    expect(newBlockZ(existing, 1)).toBe(5)
+    expect(newBlockZ(existing, 2)).toBe(6)
+  })
+})
+
+describe('换行以后被挪的块的叠放顺序', () => {
+  it('往上挪：抬到它压着的、时间上重叠的块之上', () => {
+    const moved = picture({ id: 'moved', start: 500, track: 0 })
+    const under = picture({ id: 'under', track: 1, z: 2 })
+    expect(restackedZ([moved, under], 'moved', 'up')).toBe(3)
   })
 
-  it('夹在中间一行：写在上面的块之前；这样还盖不住下面的块时把叠放顺序调高', () => {
-    const added = picture({ id: 'new', start: 500, duration: 1_000, track: 1 })
-    // 文件里 below 在前、top 在后：写在两者之间，不用调
-    expect(insertionOf([below, top], added)).toEqual({ index: 1, z: 0 })
-    // 文件里 top 在前、below 在后：写在 top 前面就排到 below 前面了，得调高才盖得住它
-    expect(insertionOf([top, below], added)).toEqual({ index: 0, z: 1 })
+  it('往上挪、本来就盖着它压着的块：不改', () => {
+    const under = picture({ id: 'under', track: 1 })
+    const moved = picture({ id: 'moved', start: 500, track: 0 })
+    expect(restackedZ([under, moved], 'moved', 'up')).toBeUndefined()
   })
 
-  it('下面的块自己带着叠放顺序：调到比它高 1', () => {
-    const added = picture({ id: 'new', start: 500, duration: 1_000, track: 0 })
-    expect(insertionOf([{ ...below, z: 4 }], added)).toEqual({ index: 1, z: 5 })
+  it('往上挪：组件块也算，音频块不算', () => {
+    const moved = picture({ id: 'moved', start: 500, track: 0 })
+    const title = component({ track: 1, z: 4 })
+    const music = audio({ track: 1 })
+    expect(restackedZ([moved, title, music], 'moved', 'up')).toBe(5)
+    expect(restackedZ([moved, music], 'moved', 'up')).toBeUndefined()
   })
 
-  it('原来带着的叠放顺序不保留，按新位置重新算', () => {
-    const moved = picture({ id: 'new', start: 500, duration: 1_000, track: 1, z: 7 })
-    expect(insertionOf([top], moved)).toEqual({ index: 0, z: 0 })
+  it('往下挪：降到盖着它的、时间上重叠的块之下', () => {
+    const over = picture({ id: 'over', track: 0, z: 4 })
+    const moved = picture({ id: 'moved', start: 500, track: 1, z: 6 })
+    expect(restackedZ([over, moved], 'moved', 'down')).toBe(3)
   })
 
-  it('和上面那行的块时间上不重叠：也写在它前面，以后横着挪到它底下照样被它盖住', () => {
-    const added = picture({ id: 'new', start: 20_000, duration: 1_000, track: 1 })
-    expect(insertionOf([below, top], added)).toEqual({ index: 1, z: 0 })
+  it('往下挪：最低降到 0', () => {
+    const over = picture({ id: 'over', track: 0, z: 1 })
+    const moved = picture({ id: 'moved', start: 500, track: 1, z: 3 })
+    expect(restackedZ([moved, over], 'moved', 'down')).toBe(0)
   })
 
-  it('上面没有别的行：写在最后', () => {
-    const added = picture({ id: 'new', start: 20_000, duration: 1_000, track: 0 })
-    expect(insertionOf([below, top], added)).toEqual({ index: 2, z: 0 })
+  it('往下挪、叠放顺序全是 0、它写在后面：降不下去，不改', () => {
+    const over = picture({ id: 'over', track: 0 })
+    const moved = picture({ id: 'moved', start: 500, track: 1 })
+    expect(restackedZ([over, moved], 'moved', 'down')).toBeUndefined()
+  })
+
+  it('时间上不重叠的块不算：首尾相接也不算重叠', () => {
+    const moved = picture({ id: 'moved', start: 2_000, track: 0 })
+    const before = picture({ id: 'before', start: 0, duration: 2_000, track: 1, z: 7 })
+    const later = picture({ id: 'later', start: 9_000, track: 1, z: 9 })
+    const under = picture({ id: 'under', start: 3_000, track: 1, z: 2 })
+    expect(restackedZ([moved, before, later], 'moved', 'up')).toBeUndefined()
+    expect(restackedZ([moved, before, later, under], 'moved', 'up')).toBe(3)
+  })
+})
+
+describe('换行的方向', () => {
+  // 行号 0、3、5 三行，b 在 3 号行
+  const pictures = [
+    picture({ id: 'a', track: 0 }),
+    picture({ id: 'b', track: 3 }),
+    picture({ id: 'c', start: 4_000, track: 3 }),
+    picture({ id: 'd', track: 5 }),
+  ]
+
+  it('换到已有的行：在上面是往上，在下面是往下（按第几行比，行号不连着也一样）', () => {
+    expect(rowMoveDirection(pictures, 'b', 0)).toBe('up')
+    expect(rowMoveDirection(pictures, 'b', 5)).toBe('down')
+  })
+
+  it('新开一行：开在它这一行之上是往上，之下是往下', () => {
+    expect(rowMoveDirection(pictures, 'b', { insertAt: 0 })).toBe('up')
+    expect(rowMoveDirection(pictures, 'b', { insertAt: 2 })).toBe('down')
+    expect(rowMoveDirection(pictures, 'b', { insertAt: 3 })).toBe('down')
+  })
+
+  it('在它这一行紧上面新开一行：不调叠放顺序', () => {
+    expect(rowMoveDirection(pictures, 'b', { insertAt: 1 })).toBeNull()
   })
 })

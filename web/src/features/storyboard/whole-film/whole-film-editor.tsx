@@ -51,6 +51,7 @@ import { previewDocument } from './preview-document'
 import { PreviewPlayer, type PlaybackSettings, type PreviewControl } from './preview-player'
 import { PreviewTransport } from './preview-transport'
 import { aroundPlayhead } from './selection'
+import { rowMoveDirection } from './stacking'
 import {
   FIT_ZOOM,
   snapSpanStartMs,
@@ -572,7 +573,13 @@ function EditorBody({
             onMove={(id, row, start, starts) => {
               const { track, renumber } = trackFor(row, id)
               leaveMaterial()
-              session.moveBlock(id, { track, start }, renumber, starts)
+              session.moveBlock(
+                id,
+                { track, start },
+                rowMoveDirection(pictures, id, row),
+                renumber,
+                starts,
+              )
             }}
             onRestart={(starts) => {
               leaveMaterial()
