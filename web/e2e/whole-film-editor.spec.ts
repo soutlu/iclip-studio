@@ -319,7 +319,7 @@ test('组件栏：搜到组件点「加到播放头」、拖一个到时间线�
   const { html: withPicture } = (await first).postDataJSON() as { html: string }
   const pictureSeconds = Number(/<video [^>]*data-duration="([^"]+)"/.exec(withPicture)?.[1])
 
-  const side = dialog.getByRole('complementary', { name: '组件栏' })
+  const side = dialog.getByRole('complementary', { name: '组件和音频' })
   await side.getByRole('searchbox', { name: '搜索组件' }).fill('渐变')
   const cards = side.getByRole('list', { name: '组件' }).getByRole('group')
   await expect(cards).toHaveCount(1)
@@ -440,7 +440,7 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、�
     .getByRole('slider', { name: '播放进度' })
   await expect(progress).toHaveAttribute('aria-valuetext', /^00:00\.00 \/ 00:0\d\.\d\d$/)
 
-  const side = dialog.getByRole('complementary', { name: '组件栏' })
+  const side = dialog.getByRole('complementary', { name: '组件和音频' })
   await side.getByRole('tab', { name: '音频' }).click()
   const list = side.getByRole('list', { name: '音频' })
   const guitar = list.getByRole('listitem').filter({ hasText: '轻快原声吉他，适合秋季穿搭' })

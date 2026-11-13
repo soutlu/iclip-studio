@@ -547,9 +547,9 @@ function EditorBody({
         }
       />
       <div aria-label="成片编辑器" className="wf-workspace" role="group">
-        <aside aria-label="组件栏" className="wf-side">
+        <aside aria-label="组件和音频" className="wf-side">
           <TabsRoot className="wf-side-panel" defaultValue="components">
-            <TabsList aria-label="组件栏页签" className="wf-side-tabs">
+            <TabsList aria-label="组件和音频页签" className="wf-side-tabs">
               <TabsTrigger value="components">组件</TabsTrigger>
               <TabsTrigger value="audio">音频</TabsTrigger>
             </TabsList>
