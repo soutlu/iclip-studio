@@ -97,7 +97,7 @@
 }
 
 .wf-audio.is-over {
-  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
+  background: var(--color-state-hover);
 }
 
 /* 两个类压过输入框自带的高度、圆角和底色：构建后工具类与这里同层，单个类比不过加载顺序 */
@@ -179,8 +179,6 @@
   gap: 8px;
   padding: 0 8px;
   border-radius: var(--radius-sm);
-  touch-action: none;
-  user-select: none;
 }
 
 .wf-song.is-used {
@@ -199,6 +197,8 @@
   border-radius: inherit;
   background: transparent;
   cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
 .wf-song.is-lifting .wf-song-select {

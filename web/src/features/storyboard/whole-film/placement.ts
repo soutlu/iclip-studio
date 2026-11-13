@@ -103,6 +103,9 @@ export type Aim = { at: number } | { insertAt: number }
  * 对着最上面、最下面而那里不归自己的区时，在自己的区的边上新开一行。
  */
 export const targetIn = (rows: readonly RowKey[], aim: Aim, zone: Zone): RowTarget => {
+  // 参照的算法认不出还没有行的声音区，会让音频在画面行之间新开一行：声音区的第一行总在最下面
+  if (zone === 'audio' && rows.every((row) => row.zone !== 'audio'))
+    return { zone, insertAt: rows.length }
   // 参照的算法只认一串行号：这里用的是时间线上的第几行，各区的行号不进去
   const order = rows.map((_, at) => at)
   const audioRows = new Set(order.filter((at) => rows[at]?.zone === 'audio'))
