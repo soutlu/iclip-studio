@@ -129,9 +129,14 @@ describe('checkFilm', () => {
     ])
   })
 
-  it('音频块和组件块的结尾可以过 2 分钟', async () => {
-    const long = [picture(), audio({ duration: 150_000 }), component({ start: 130_000 })]
-    expect((await checkFilm(html(...long), catalog)).durationMs).toBe(150_000)
+  it('成片没有时长上限：三种块的结尾都可以过 2 分钟', async () => {
+    const long = [
+      picture({ duration: 200_000 }),
+      audio({ duration: 150_000 }),
+      component({ start: 210_000 }),
+    ]
+    const checked = await checkFilm(html(...long), catalog)
+    expect(checked.durationMs).toBeGreaterThan(210_000)
   })
 
   it('成片总长算到最晚结尾的块，音频块和组件块也算', async () => {
@@ -556,7 +561,6 @@ describe('readFilm 拒收写法之外的东西', () => {
     ['同一行的两块重叠', [picture(), second({ start: 1500 })], /重叠/],
     ['画面区同一行上画面块和组件块重叠', [picture(), component({ start: 1000 })], /重叠/],
     ['声音区同一行上两个音频块重叠', [audio(), audio({ id: 'music-2', start: 1500 })], /重叠/],
-    ['超过两分钟', [picture({ duration: 120_001 })], /上限/],
     ['短于 100 毫秒', [picture({ duration: 99 })], /短于/],
     ['音频短于 100 毫秒', [audio({ duration: 99 })], /短于/],
     ['编号重复', [picture(), second({ id: 'clip-1' })], /重复/],

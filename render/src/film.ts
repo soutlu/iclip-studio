@@ -8,7 +8,6 @@ import {
   FILM_ID,
   filmDurationMs,
   isMediaBlock,
-  MAX_FILM_MS,
   MIN_BLOCK_MS,
   sourceVariableId,
   variableValuesOf,
@@ -248,7 +247,7 @@ function checkVariables(json: string | undefined, blocks: FilmBlock[]): Set<stri
   return seen
 }
 
-/** 编号不重复、同一条记录只有一个地址、画面块不超过总长上限；同一个区的同一行上块不能重叠。 */
+/** 编号不重复、同一条记录只有一个地址；同一个区的同一行上块不能重叠。 */
 function checkTimeline(blocks: FilmBlock[]): void {
   const ids = new Set<string>()
   const sources = new Map<string, string>()
@@ -261,9 +260,6 @@ function checkTimeline(blocks: FilmBlock[]): void {
         fail(`同一条记录写了两个地址：${block.jobId}`)
       }
       sources.set(block.jobId, block.src)
-    }
-    if (block.kind === 'picture' && block.start + block.duration > MAX_FILM_MS) {
-      fail(`成片超过了 ${MAX_FILM_MS / 1000} 秒的上限`)
     }
   }
   // 画面块和组件块在画面区、音频块在声音区，两个区的行号各算各的

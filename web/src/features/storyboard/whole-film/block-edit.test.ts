@@ -10,7 +10,7 @@ import {
   trimmed,
   type Timing,
 } from './block-edit'
-import { MAX_FILM_MS, type PictureBlock } from './composition/film'
+import type { PictureBlock } from './composition/film'
 
 const first = picture({ id: 'a', start: 0, duration: 2_000 })
 const middle = picture({ id: 'b', start: 3_000, duration: 2_000, mediaStart: 1_500 })
@@ -18,11 +18,10 @@ const last = picture({ id: 'c', start: 6_000, duration: 1_000 })
 const above = picture({ id: 'd', start: 2_000, duration: 5_000, track: 1 })
 const film = [first, middle, last, above]
 
-/** 每次改完都要满足的三条：同一行的块不重叠，起点不为负，不超出成片最长的长度。 */
+/** 每次改完都要满足的两条：同一行的块不重叠，起点不为负。 */
 const expectValidFilm = (pictures: readonly PictureBlock[]) => {
   for (const block of pictures) {
     expect(block.start, `${block.id} 的起点`).toBeGreaterThanOrEqual(0)
-    expect(block.start + block.duration, `${block.id} 的结尾`).toBeLessThanOrEqual(MAX_FILM_MS)
     for (const other of pictures) {
       if (other === block || other.track !== block.track) continue
       const overlapping =
@@ -42,7 +41,8 @@ describe('裁剪一个块', () => {
   it('结尾：往后不压到后一个块，也不超出素材的结尾；别的行不挡路', () => {
     expect(trimBounds(middle, 'end', film, 10_000)).toEqual({ min: 3_100, max: 6_000 })
     expect(trimBounds(middle, 'end', film, 4_000).max).toBe(5_500)
-    expect(trimBounds(last, 'end', film, 200_000).max).toBe(MAX_FILM_MS)
+    // 后面没有块：只受素材长度限制，成片多长都行
+    expect(trimBounds(last, 'end', film, 200_000).max).toBe(206_000)
   })
 
   it('素材总长还不知道：结尾只能往里收', () => {
@@ -114,13 +114,13 @@ describe('挪一个块（只有它自己的一组）', () => {
     ['落点被占：落到最近的空位', middle, 5_200, 0, 4_000],
     ['自己原来的位置不算占用', middle, 3_500, 0, 3_500],
     ['空位不够长：接在这一行最后一个块后面', above, 2_500, 0, 7_000],
-    ['拖过了上限：停在上限', last, MAX_FILM_MS, 0, 119_000],
+    ['拖到很后面：成片多长都行', last, 500_000, 0, 500_000],
     ['别的行不挡路', first, 0, 1, 0],
     ['换到别的行、落点被占：落到最近的空位', first, 3_000, 1, 0],
     ['两边一样近：取靠后的', spare, 1_000, 4, 2_000],
     ['长度不在 10 毫秒上', offGrid, 1_900, 0, 7_000],
     ['邻居的边不在 10 毫秒上', nearOffGrid, 1_000, 2, 1_240],
-    ['挤到上限附近的一行里还有放得下的空位', short, 117_000, 3, 117_500],
+    ['两个块中间有放得下的空位', short, 117_000, 3, 117_500],
   ]
 
   it.each(cases)('%s', (_, block, wantedStart, track, start) => {
@@ -129,15 +129,15 @@ describe('挪一个块（只有它自己的一组）', () => {
     expect(result.track).toBe(track)
   })
 
-  it('要去的行在成片最长的长度以内放不下：留在自己那一行，不排到上限外面', () => {
+  it('要去的行中间的空放不下：接在那一行最后一个块后面', () => {
     // 第四行从 0 排到 117.5 秒、118 到 120 秒，中间只有半秒的空：1 秒长的块放不进去
-    expect(shifted(table, last, [], 111_000, 3)).toEqual({ delta: 111_000, track: 0 })
+    expect(shifted(table, last, [], 111_000, 3)).toEqual({ delta: 114_000, track: 3 })
   })
 
-  it('新开一行：只收在上限以内', () => {
-    for (const wantedStart of [500, MAX_FILM_MS]) {
+  it('新开一行：想放在哪就放在哪', () => {
+    for (const wantedStart of [500, 500_000]) {
       const result = shifted(table, last, [], wantedStart - last.start, null)
-      expect(last.start + result.delta).toBe(Math.min(wantedStart, MAX_FILM_MS - last.duration))
+      expect(last.start + result.delta).toBe(wantedStart)
       expect(result.track).toBeNull()
     }
   })
@@ -174,9 +174,12 @@ describe('成组挪动', () => {
     expect(shifted(pictures, grabbed, ['f'], 1_500, null)).toEqual({ delta: 1_000, track: null })
   })
 
-  it('被抓的块要去的行在上限以内放不下：留在自己那一行挪', () => {
-    const full = picture({ id: 'w', start: 0, duration: MAX_FILM_MS - 500, track: 3 })
-    expect(shifted([...pictures, full], grabbed, ['f'], 500, 3)).toEqual({ delta: 500, track: 1 })
+  it('被抓的块要去的行前面都占满了：整组挪到它能接在那一行最后一个块后面的地方', () => {
+    const full = picture({ id: 'w', start: 0, duration: 119_500, track: 3 })
+    expect(shifted([...pictures, full], grabbed, ['f'], 500, 3)).toEqual({
+      delta: 118_500,
+      track: 3,
+    })
   })
 
   it('整组往前顶到 0：最靠前的块停在 0', () => {
@@ -185,18 +188,10 @@ describe('成组挪动', () => {
     expect(shifted([late, early], late, ['e'], -3_000, 1)).toEqual({ delta: -800, track: 1 })
   })
 
-  it('整组往后顶到上限：最靠后的块的结尾停在上限', () => {
+  it('整组往后挪：成片多长都行', () => {
     const end = picture({ id: 'l', start: 110_000, duration: 5_000, track: 1 })
     const head = picture({ id: 'e', start: 100_000, duration: 1_000, track: 2 })
-    expect(shifted([end, head], head, ['l'], 20_000, 2)).toEqual({ delta: 5_000, track: 2 })
-  })
-
-  it('原来的位置按 10 毫秒取整后哪里都放不下：不挪', () => {
-    // 被抓的块两边都贴着不在 10 毫秒上的邻居，后面一直排到上限
-    const before = picture({ id: 'b', start: 0, duration: 2_005 })
-    const stuck = picture({ id: 's', start: 2_005, duration: 1_000 })
-    const after = picture({ id: 'a', start: 3_005, duration: MAX_FILM_MS - 3_005 })
-    expect(shifted([before, stuck, after], stuck, [], 500, 0)).toEqual({ delta: 0, track: 0 })
+    expect(shifted([end, head], head, ['l'], 20_000, 2)).toEqual({ delta: 20_000, track: 2 })
   })
 })
 

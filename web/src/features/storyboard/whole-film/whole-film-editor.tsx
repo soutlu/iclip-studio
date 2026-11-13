@@ -25,7 +25,7 @@ import { handleUndoShortcut } from '../editing/undo-shortcut'
 import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
 import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
-import { MAX_FILM_MS, type Canvas } from './composition/film'
+import type { Canvas } from './composition/film'
 import { EditorToolbar } from './editor-toolbar'
 import { ExportControl } from './export-control'
 import { FilmTimeline, type DropGhost, type RowTarget, type TimelineHandle } from './film-timeline'
@@ -307,7 +307,7 @@ function EditorBody({
     const start =
       typeof point.row === 'number'
         ? landingOn(pictures, point.row, snapped.ms, duration).start
-        : Math.min(snapped.ms, MAX_FILM_MS - duration)
+        : snapped.ms
     return {
       row: point.row,
       start,

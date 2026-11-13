@@ -94,7 +94,6 @@ export interface FilmVariable {
 }
 
 export const FILM_ID = 'film'
-export const MAX_FILM_MS = 120_000
 export const MIN_BLOCK_MS = 100
 export const SOURCE_LABEL = '素材片'
 export const AUDIO_SOURCE_LABEL = '音频'
