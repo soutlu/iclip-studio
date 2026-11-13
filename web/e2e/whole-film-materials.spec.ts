@@ -1488,16 +1488,62 @@ test('三种块：组件块、画面块、音频块各在各的行，声音行�
     .toEqual(['A · 镜头 1@画面1 0', '标题@画面0 0', '配乐 2@声音1 5'])
   await page.keyboard.press('ControlOrMeta+z')
   await expect.poll(() => savedKinds(page)).toEqual(lowered)
+})
 
-  // 配乐 2 那一行后面没有块：结尾往后一直能拉长
+/** 存下来的成片里名字是 `label` 的块，写成「起点 时长 从第几秒开始播」（没写的是 -）。 */
+const savedTiming = (page: Page, label: string) =>
+  page.evaluate(
+    async ({ conversationId, label }) => {
+      const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
+      const { html } = (await response.json()) as { html: string | null }
+      const doc = new DOMParser().parseFromString(html ?? '', 'text/html')
+      const block = [...doc.querySelectorAll('#film > *')].find(
+        (candidate) => candidate.getAttribute('data-label') === label,
+      )
+      return ['data-start', 'data-duration', 'data-playback-start']
+        .map((name) => block?.getAttribute(name) ?? '-')
+        .join(' ')
+    },
+    { conversationId: conversationIdOf(page), label },
+  )
+
+test('裁组件块和音频块：音频块的结尾拖到音频文件的长度就停；组件块的开头往后裁，从第几秒开始播跟着加', async ({
+  page,
+}) => {
+  const { dialog } = await openWithKinds(page)
+  const blockNamed = (name: string) => dialog.getByRole('group', { name: new RegExp(`^${name}，`) })
+  /** 拖着 `handle` 横着挪到 `x`。 */
+  const dragHandle = async (handle: Locator, x: number) => {
+    const from = await centerOf(handle)
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    await page.mouse.move(x, from.y, { steps: 8 })
+    await page.mouse.up()
+  }
+
+  // 配乐 2（5–6 秒）从头放；这个 MP3 读到的音频时长是 6.034 秒（按整帧算）：
+  // 结尾最多到 11.034 秒，往后拖到 13 秒那里也停在那里
+  const second = blockNamed('配乐 2')
   await second.getByRole('button').click()
   const end = second.getByRole('slider', { name: '裁剪结尾' })
-  await expect(end).not.toHaveAttribute('aria-valuemax')
-  await end.focus()
-  await page.keyboard.press('Shift+ArrowRight')
-  await page.keyboard.press('Shift+ArrowRight')
-  await expect(end).toHaveAttribute('aria-valuenow', '8')
-  await expect(blockNamed('配乐 2')).toHaveAccessibleName(/^配乐 2，3\.0 秒/)
+  await expect(end).toHaveAttribute('aria-valuemax', '11.03')
+  const sound = await second.boundingBox()
+  if (sound === null) throw new Error('量不到配乐 2')
+  // 块画的宽度比它的时长少 2 像素
+  const pps = sound.width + 2
+  await dragHandle(end, sound.x + 8 * pps)
+  await expect.poll(() => savedTiming(page, '配乐 2')).toBe('5 6.034 -')
+
+  // 标题（0–2 秒）的开头往后裁到 1 秒（吸在镜头 1 的结尾上）：从组件的第 1 秒开始播
+  const title = blockNamed('标题')
+  await title.getByRole('button').click()
+  const head = await title.boundingBox()
+  if (head === null) throw new Error('量不到标题')
+  await dragHandle(
+    title.getByRole('slider', { name: '裁剪开头' }),
+    head.x + (head.width + 2) / 2 + 3,
+  )
+  await expect.poll(() => savedTiming(page, '标题')).toBe('1 1 1')
 })
 
 test('声音行的喇叭：静音以后存下来的成片里这一行的音频块都带隐藏标记，再点取消静音', async ({

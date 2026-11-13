@@ -440,6 +440,30 @@ describe('checkFilm', () => {
       expect((await checkFilm(session.serialize(), catalog)).film.blocks).toEqual([])
     })
 
+    it('组件块裁开头（SDK 改起止、加从第几秒开始播）：存出来的文件通过检查，读回来带着它；拉回 0 去掉这个属性，和原来一字不差', async () => {
+      const stored = (await checkFilm(html(picture({ track: 1 }), component()), catalog)).html
+      const session = await openComposition(stored)
+      // 和编辑器裁开头时发的操作一样：起止和从第几秒开始播在同一批里改
+      session.batch(() => {
+        session.setTiming('title-1', { start: 0.5, duration: 1.5 })
+        session.setAttribute('title-1', 'data-playback-start', '0.5')
+        session.dispatch({ type: 'setCompositionMetadata', duration: 2 })
+      })
+      const trimmed = component({ start: 500, duration: 1500, playbackStart: 500 })
+      const checked = await checkFilm(session.serialize(), catalog)
+      expect(checked.film).toEqual(film(picture({ track: 1 }), trimmed))
+      expect(checked.html).toBe(html(picture({ track: 1 }), trimmed))
+
+      session.batch(() => {
+        session.setTiming('title-1', { start: 0, duration: 2 })
+        session.setAttribute('title-1', 'data-playback-start', null)
+        session.dispatch({ type: 'setCompositionMetadata', duration: 2 })
+      })
+      const restored = await checkFilm(session.serialize(), catalog)
+      expect(restored.html).toBe(stored)
+      expect(session.serialize()).not.toContain('data-playback-start')
+    })
+
     it('加组件块、加音频块（都写在根下第一个）、在行里挪、换行、隐藏：存出来的文件通过检查，读回来是改完的样子；撤销一步步回去', async () => {
       const stored = (await checkFilm(html(picture({ z: 1 })), catalog)).html
       const session = await openComposition(stored)

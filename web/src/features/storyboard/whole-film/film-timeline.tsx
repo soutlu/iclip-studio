@@ -41,7 +41,7 @@ import {
   type Timing,
 } from './block-edit'
 import { thumbnailUrl, type ComponentCatalog } from './component-catalog'
-import { isMediaBlock, type FilmBlock } from './composition/film'
+import { isMediaBlock, type FilmBlock, type PictureBlock } from './composition/film'
 import {
   rowHidden,
   rowsOf,
@@ -93,8 +93,8 @@ type FilmTimelineProps = {
   snap: boolean
   /** 块上要不要显示画面缩略图；关掉只剩名字和声音。 */
   thumbnails: boolean
-  /** 每个块的素材总长（毫秒）。 */
-  sourceMs: SourceLength
+  /** 画面块素材的总长（毫秒），还没读到时是 undefined。音频块的总长取读波形时读到的时长。 */
+  pictureSourceMs: (block: PictureBlock) => number | undefined
   /** 换成这些选中的块（空的就是全部取消）。 */
   onSelect: (ids: ReadonlySet<string>) => void
   /** 开始或结束框选、拖块；中途按 Esc 由时间线自己取消。 */
@@ -646,7 +646,7 @@ export function FilmTimeline({
   selected,
   snap,
   thumbnails,
-  sourceMs,
+  pictureSourceMs,
   onSelect,
   onGesture,
   scrollRequest,
@@ -673,6 +673,14 @@ export function FilmTimeline({
   const [closing, setClosing] = useState<GapClosing>()
   // 成组拖动中跟着动的块；每个块只知道自己素材的总长，一起裁到哪里在这一层算
   const [following, setFollowing] = useState<Following | null>(null)
+  const peaks = useAudioPeaks(
+    useStableValue([...new Set(blocks.filter(isMediaBlock).map((block) => block.src))]),
+  )
+  const sourceMs: SourceLength = (block) => {
+    if (block.kind === 'picture') return pictureSourceMs(block)
+    const state = block.kind === 'audio' ? peaks.get(block.src) : undefined
+    return state?.kind === 'ready' ? Math.round(state.peaks.duration * 1000) : undefined
+  }
   const membersOf = (group: ReadonlySet<string>) => blocks.filter((block) => group.has(block.id))
   const trimRange = (block: FilmBlock, group: ReadonlySet<string>, edge: Edge) => {
     const range = groupTrimRange(membersOf(group), edge, blocks, sourceMs)
@@ -688,9 +696,6 @@ export function FilmTimeline({
     rows.length === 0 ? [{ zone: 'visual', track: 0, blocks: [] }] : rows
   // 要在别的位置新开一行时，最下面那条空行挪到那里去：总高度不变，上面的行不动、下面的行往下让
   const openedAt = opening !== null && opening < rows.length ? opening : null
-  const peaks = useAudioPeaks(
-    useStableValue([...new Set(blocks.filter(isMediaBlock).map((block) => block.src))]),
-  )
 
   useLayoutEffect(() => {
     const viewport = scrollRef.current
