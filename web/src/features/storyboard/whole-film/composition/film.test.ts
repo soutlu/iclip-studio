@@ -90,6 +90,55 @@ describe('成片文件的写法', () => {
     expect(filmDurationMs(film())).toBe(0)
   })
 
+  it('固定尺寸的组件放进不一样大的画面：按块的编号写一条规则，按原比例缩到放得下、居中', () => {
+    const scene = component({
+      id: 'scene-1',
+      component: 'fixture-scene',
+      src: 'compositions/fixtures/fixture-scene.html',
+    })
+    const html = writeFilm(film(scene), fixtureCatalog)
+    expect(html).toContain(
+      '#film #scene-1{left:50%;top:50%;width:1920px;height:1080px;translate:-50% -50%;scale:0.5625}\n',
+    )
+    const wide = writeFilm(
+      { canvas: { width: 1280, height: 540 }, blocks: [scene] },
+      fixtureCatalog,
+    )
+    expect(wide).toContain(
+      '#film #scene-1{left:50%;top:50%;width:1920px;height:1080px;translate:-50% -50%;scale:0.5}\n',
+    )
+  })
+
+  it('固定尺寸和画面一样大、或者没写尺寸（铺满）的组件：不写规则', () => {
+    const scene = component({
+      id: 'scene-1',
+      component: 'fixture-scene',
+      src: 'compositions/fixtures/fixture-scene.html',
+    })
+    const overlay = component({
+      id: 'overlay-1',
+      component: 'fixture-overlay',
+      src: 'compositions/fixtures/fixture-overlay.html',
+    })
+    const same = writeFilm(
+      { canvas: { width: 1920, height: 1080 }, blocks: [scene] },
+      fixtureCatalog,
+    )
+    expect(same).not.toContain('#film #scene-1')
+    expect(writeFilm(film(overlay), fixtureCatalog)).not.toContain('#film #overlay-1')
+  })
+
+  it('带默认字体的固定尺寸组件：缩放和字体变量写在同一条规则里', () => {
+    const brand = component({
+      id: 'brand-1',
+      component: 'fixture-brand-card',
+      src: 'compositions/fixtures/fixture-brand-card.html',
+    })
+    expect(writeFilm(film(brand), fixtureCatalog)).toContain(
+      "#film #brand-1{left:50%;top:50%;width:1920px;height:1080px;translate:-50% -50%;scale:0.5625;--font-display:'Playfair Display', 'Noto Sans SC', sans-serif;--font-body:'Playfair Display', 'Noto Sans SC', sans-serif}\n",
+    )
+  })
+
   it('素材地址变量：画面块和音频块一条记录一个，组件块没有', () => {
     expect(filmVariables(film(picture(), picture({ id: 'clip-2' }), titled, music))).toEqual([
       { id: `src-${picture().jobId}`, type: 'string', label: SOURCE_LABEL, default: picture().src },
@@ -165,6 +214,23 @@ describe('成片声明的字体', () => {
     expect(html.split(LINK)).toHaveLength(2)
     expect(covers(html, 'Playfair Display', '新')).toBe(true)
     expect(writeFilm(film(component({ values: { text: '新品' } })), catalog)).not.toContain(LINK)
+  })
+
+  it('字体类可填项选了组件库里的字体：按块的编号写字体变量，中文字形退到组件库的中文字体', () => {
+    const chosen = component({ values: { font: 'Playfair Display' } })
+    const html = writeFilm({ canvas: { width: 1920, height: 1080 }, blocks: [chosen] }, catalog)
+    expect(html).toContain(
+      "#film #title-1{--font-display:'Playfair Display', 'Noto Sans SC', sans-serif;--font-body:'Playfair Display', 'Noto Sans SC', sans-serif}\n",
+    )
+  })
+
+  it('字体类可填项没填、默认值是空的，或者填的不是组件库里的字体：不写字体变量', () => {
+    const canvas = { width: 1920, height: 1080 }
+    for (const values of [{}, { font: 'Comic Sans' }, { font: "x'}</style><script>alert(1)" }]) {
+      const html = writeFilm({ canvas, blocks: [component({ values })] }, catalog)
+      expect(html).not.toContain('#film #title-1')
+      expect(html).not.toContain('<script')
+    }
   })
 
   it('条目自带的字体族也链上；同一个字体只链一次', () => {

@@ -27,9 +27,9 @@
   min-height: 0;
   flex: 1;
   grid-template-areas:
-    'preview'
-    'timeline';
-  grid-template-columns: minmax(0, 1fr);
+    'side preview'
+    'timeline timeline';
+  grid-template-columns: 288px minmax(0, 1fr);
   /* 时间线面板按内容高，最多占到预览留够最小高度之后剩下的地方 */
   grid-template-rows: minmax(220px, 1fr) minmax(0, max-content);
   gap: 12px;
@@ -50,6 +50,13 @@
   grid-area: side;
   border-radius: var(--radius-xl);
   background: var(--color-surface-container-low);
+}
+
+.wf-side-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
 }
 
 .wf-side-tabs {
@@ -743,6 +750,30 @@
   flex-direction: column;
 }
 
+/* 两个类压过输入框自带的高度、圆角和底色：构建后工具类与这里同层，单个类比不过加载顺序 */
+.wf-components .wf-component-search {
+  height: 30px;
+  flex: none;
+  gap: 6px;
+  width: auto;
+  margin: 10px 12px 0;
+  padding: 0 9px;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-high);
+  font-size: var(--text-label);
+}
+
+.wf-components .wf-component-search svg {
+  width: 14px;
+  height: 14px;
+  color: var(--color-on-surface-faint);
+}
+
+.wf-components .wf-component-search input {
+  font-size: var(--text-label);
+}
+
 /* 两个类压过 ChipGroup 自带的 flex-wrap：构建后工具类与这里同层，单个类比不过加载顺序 */
 .wf-components .wf-chips {
   flex: none;
@@ -761,10 +792,10 @@
   font-size: var(--text-label);
 }
 
-.wf-chip span {
-  color: var(--color-on-surface-faint);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
+/* 选中的分类反色，和设计稿一致 */
+.wf-chips .wf-chip[data-state='on'] {
+  background: var(--color-on-surface);
+  color: var(--color-top-layer);
 }
 
 .wf-components-empty {
@@ -774,14 +805,14 @@
   line-height: var(--text-label--line-height);
 }
 
-/* 卡片网格：卡片只有预览图和名字，说明在悬停提示里；正在用的字幕样式描墨色框并打勾 */
+/* 两列卡片：封面、右上角时长、名字、分类 */
 .wf-component-grid {
   display: grid;
   min-height: 0;
   flex: 1;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: start;
-  gap: 12px 8px;
+  gap: 12px 10px;
   overflow-y: auto;
   padding: 4px 12px 12px;
   scrollbar-width: thin;
@@ -852,6 +883,54 @@
   box-shadow: 0 0 0 1.5px var(--color-on-surface-faint);
 }
 
+.wf-component-duration {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--color-scrim) 55%, transparent);
+  color: var(--color-on-scrim);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  pointer-events: none;
+}
+
+/* 悬停才出：指针停在卡片上、焦点在按钮上时显示，触屏一直显示；拖着卡片时不显示 */
+.wf-component-add {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  gap: 3px;
+  padding: 0 10px 0 7px;
+  border-radius: var(--radius-full);
+  background: var(--color-top-layer);
+  box-shadow: var(--shadow-2);
+  color: var(--color-on-surface);
+  cursor: pointer;
+  font-size: var(--text-label);
+  font-weight: 500;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity var(--dur-s) var(--ease);
+  white-space: nowrap;
+}
+
+.wf-component:hover:not(.is-lifting) .wf-component-add,
+.wf-component-add:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .wf-component-add {
+    opacity: 1;
+  }
+}
+
 .wf-component-name {
   overflow: hidden;
   color: var(--color-on-surface-variant);
@@ -859,6 +938,25 @@
   line-height: 15px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.wf-component-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: -3px;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  line-height: 13px;
+}
+
+.wf-component-meta::before {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: var(--radius-full);
+  background: currentcolor;
+  content: '';
 }
 
 /* ---- 组件浮层 ---- */
@@ -2383,9 +2481,14 @@
 }
 
 @media (max-width: 640px) {
-  /* 窄屏预览定高，时间线面板占满下面剩下的地方 */
+  /* 窄屏纵向排开：预览定高，时间线面板照旧紧跟在下面，组件栏定高接在最后；放不下时整个编辑区上下滚动 */
   .wf-workspace {
-    grid-template-rows: 248px minmax(0, 1fr);
+    grid-template-areas:
+      'preview'
+      'timeline'
+      'side';
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 248px minmax(max-content, 1fr) 360px;
     padding: 0 12px 12px;
   }
 

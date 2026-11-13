@@ -185,6 +185,51 @@ describe('checkFilm', () => {
     )
   })
 
+  it('固定尺寸、带默认字体的组件放进不一样大的画面：缩放和字体变量写进 <head>，照样过渲染前的检查', async () => {
+    const brand = component({
+      component: 'fixture-brand-card',
+      src: 'compositions/fixtures/fixture-brand-card.html',
+    })
+    const checked = await checkFilm(html(brand), catalog)
+    expect(checked.html).toContain(
+      "#film #title-1{left:50%;top:50%;width:1920px;height:1080px;translate:-50% -50%;scale:0.375;--font-display:'Playfair Display', 'Noto Sans SC', sans-serif;--font-body:'Playfair Display', 'Noto Sans SC', sans-serif}\n",
+    )
+  })
+
+  it('SDK 存出来的文件 <head> 里没有组件的规则：重写时按块补上', async () => {
+    const session = await openComposition(html())
+    session.addElement(
+      'film',
+      0,
+      componentBlock(
+        component({
+          id: 'scene-1',
+          component: 'fixture-scene',
+          src: 'compositions/fixtures/fixture-scene.html',
+        }),
+      ),
+    )
+    const saved = session.serialize()
+    expect(saved).not.toContain('#film #scene-1')
+    expect((await checkFilm(saved, catalog)).html).toContain(
+      '#film #scene-1{left:50%;top:50%;width:1920px;height:1080px;translate:-50% -50%;scale:0.375}\n',
+    )
+  })
+
+  it('字体可填项填的不是组件库里的字体（哪怕带着标签）：不写进样式，照样过检查', async () => {
+    const hostile = component({
+      component: 'fixture-brand-card',
+      src: 'compositions/fixtures/fixture-brand-card.html',
+      values: { font: "x'}</style><script>alert(1)</script>" },
+    })
+    const checked = await checkFilm(html(hostile), catalog)
+    expect(checked.html).not.toContain('<script')
+    expect(checked.html).not.toContain('--font-display')
+    expect(checked.html).toContain(
+      '#film #title-1{left:50%;top:50%;width:1920px;height:1080px;translate:-50% -50%;scale:0.375}\n',
+    )
+  })
+
   it('用 SDK 加组件块和音频块、改音频的起止，存出来的文件通过检查，读回来是改完的样子', async () => {
     const stored = (await checkFilm(html(picture()), catalog)).html
     const session = await openComposition(stored)

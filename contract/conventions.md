@@ -154,7 +154,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 业务规则见 [CONTEXT.md「成片草稿」](../docs/CONTEXT.md#术语)。草稿是一份成片文件（HTML 字符串 `html`），写法由 [composition/film.ts](../web/src/features/storyboard/whole-film/composition/film.ts) 定义：
 - **读取草稿** `GET /conversations/{id}/whole-film/draft`：如果还没保存过草稿，正常返回 `{ revision: 0, html: null, updatedAt: null }`。
-- **保存草稿** `PUT .../whole-film/draft`：仅对话创建者可保存，传入读取时的版本号 `revision`（首次保存传 `0`）与整份 `html`；版本冲突返回 `409`，保存成功后 `revision` 加 1。存下的是渲染服务按写法重写后的那一份（`<head>`、根上的属性和变量声明都按块重新算出），所以读回来的文本可以和提交的不一样。
+- **保存草稿** `PUT .../whole-film/draft`：仅对话创建者可保存，传入读取时的版本号 `revision`（首次保存传 `0`）与整份 `html`；版本冲突返回 `409`，保存成功后 `revision` 加 1。存下的是渲染服务按写法重写后的那一份（`<head>`、根上的属性和变量声明都按块重新算出），所以读回来的文本可以和提交的不一样。组件块的摆放和字体也由 `<head>` 按块的编号给出（块上不另带样式）：组件库目录里条目的 `size` 和画面不一样大时，块定成这个尺寸、居中，按 `min(画面宽 / 组件宽, 画面高 / 组件高)` 缩放；第一个字体类可填项取到组件库 `fonts` 里的字体族时（块上没填就取默认值），`--font-display` 和 `--font-body` 都设成 `'<字体族>', '<中文字体族>', sans-serif`，取到别的值不写。
 - **草稿校验规则（违反返回 `422`）**：
   - 写法由渲染服务检查：根下面只能有三种块——画面块 `<video class="clip picture">`、组件块 `<div class="clip component">`、音频块 `<audio class="clip audio">`，每种块只能带写法规定的属性（不能有脚本、事件属性、注释和别的标签）；块的编号不能重复、每块不短于 100 毫秒；同一个区同一行上的块不能时间重叠（画面块和组件块在画面区，音频块在声音区，两个区的 `data-track-index` 各算各的）；画面块和组件块上的样式只能是叠放顺序（`style="z-index: N"`，N 为 0 到 9999 的整数），音频块不能带样式；隐藏的块带不写值的 `data-hidden`；组件块的 `data-composition-id` 和 `data-composition-src` 要是组件库目录里同一个条目的名字和文件，`data-variable-values` 要是一个 JSON 对象、值是字符串、数字或布尔；音频块循环时写 `loop="true"`；素材地址变量的声明要和画面块、音频块一一对应，默认值等于块上的地址；重写后还要通过渲染前的检查。
   - 素材由后端检查：画面块绑的变量 `src-<记录 id>` 指向的记录必须是本对话（或分叉继承）已完成的素材片，音频块绑的变量指向的记录必须是本对话（或分叉继承）已完成的音频记录（`kind` 为 `audio`）；块上的地址都必须等于这条记录的产物地址。
