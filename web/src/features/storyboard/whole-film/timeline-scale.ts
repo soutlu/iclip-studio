@@ -101,6 +101,22 @@ export const zoomToBlocks = (
   }
 }
 
+/**
+ * 缩放以后时间线要横向滚到的位置：播放头原来看得见，就让它留在屏幕上原来的地方；
+ * 看不见，就把它放到时间区中间。`viewportWidth` 是能排时间的宽度，`scrollLeft` 是缩放前滚到的位置。
+ */
+export const zoomScrollLeft = (
+  playheadMs: number,
+  scrollLeft: number,
+  fromPps: number,
+  toPps: number,
+  viewportWidth: number,
+): number => {
+  const shownAt = msToPx(playheadMs, fromPps) - scrollLeft
+  const keptAt = shownAt >= 0 && shownAt <= viewportWidth ? shownAt : viewportWidth / 2
+  return Math.max(0, msToPx(playheadMs, toPps) - keptAt)
+}
+
 /** 工具条上写的缩放：适应宽度时写「适应」，否则是相对适应宽度的百分比。 */
 export const zoomLabel = (zoom: Zoom, fitPps: number): string =>
   zoom.mode === 'fit' ? '适应' : `${getTimelineZoomPercent(zoom.mode, zoom.percent, fitPps)}%`

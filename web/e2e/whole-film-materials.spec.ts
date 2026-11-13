@@ -1220,3 +1220,60 @@ test('拖到一半成片被换掉：这次拖动取消，松手不按换之前�
   expect(await leftOf(third)).toBeCloseTo(resting, 0)
   await expect(third.getByRole('button')).toHaveAttribute('aria-pressed', 'false')
 })
+
+test('缩放时播放头留在屏幕上原来的地方；滚到看不见它以后再缩小，它回到时间区中间', async ({
+  page,
+}) => {
+  const { dialog, materials } = await openWith(page, [1])
+  // 成片排到 8 秒：播放头要能放到时间区中间偏左，放大以后两边都还有内容
+  for (const [at, shot] of [1, 2, 3, 4, 1, 2, 3, 4].entries()) {
+    await shotOf(materials, 1, 'A', shot).click()
+    await page.keyboard.press('Enter')
+    await expect.poll(() => savedBlocks(page)).toHaveLength(at + 1)
+  }
+  await readyPlayer(dialog)
+  const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
+  const tracks = dialog.locator('.wf-tracks')
+  const boxOf = async (locator: Locator) => {
+    const box = await locator.boundingBox()
+    if (box === null) throw new Error('元素尚未布局')
+    return box
+  }
+  const playheadX = async () => (await boxOf(tracks.locator('.timeline-playhead'))).x
+
+  // 播放头放在时间区靠左三成的地方
+  const row = await boxOf(dialog.getByRole('group', { name: '第 1 行' }))
+  const ruler = await boxOf(dialog.getByRole('slider', { name: '时间线播放位置' }))
+  await page.mouse.click(row.x + row.width * 0.3, ruler.y + ruler.height / 2)
+  const resting = await playheadX()
+  expect(Math.abs(resting - (row.x + row.width * 0.3))).toBeLessThan(2)
+
+  // 放大两档、再缩小一档：播放头在屏幕上不动
+  await toolbar.getByRole('button', { name: '放大时间线' }).click()
+  await expect(toolbar.getByText('200%')).toBeVisible()
+  await expect.poll(playheadX).toBeCloseTo(resting, 0)
+  await toolbar.getByRole('button', { name: '放大时间线' }).click()
+  await expect(toolbar.getByText('400%')).toBeVisible()
+  await expect.poll(playheadX).toBeCloseTo(resting, 0)
+  await toolbar.getByRole('button', { name: '缩小时间线' }).click()
+  await expect(toolbar.getByText('200%')).toBeVisible()
+  await expect.poll(playheadX).toBeCloseTo(resting, 0)
+
+  // 横向滚到最右边，播放头滚出去了；再缩小一档，它回到时间区中间
+  await tracks.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth
+  })
+  expect(await playheadX()).toBeLessThan(row.x)
+  await toolbar.getByRole('button', { name: '缩小时间线' }).click()
+  await expect(toolbar.getByText('100%')).toBeVisible()
+  await expect.poll(async () => Math.abs((await playheadX()) - resting)).toBeLessThan(2)
+  await toolbar.getByRole('button', { name: '放大时间线' }).click()
+  await tracks.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth
+  })
+  await toolbar.getByRole('button', { name: '放大时间线' }).click()
+  await expect(toolbar.getByText('400%')).toBeVisible()
+  await expect
+    .poll(async () => Math.abs((await playheadX()) - (row.x + row.width / 2)))
+    .toBeLessThan(16)
+})

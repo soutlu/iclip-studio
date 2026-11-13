@@ -56,6 +56,7 @@ import {
   snapSpanStartMs,
   snapTargets,
   timelineScale,
+  zoomScrollLeft,
   zoomToBlocks,
   type Zoom,
 } from './timeline-scale'
@@ -273,6 +274,13 @@ function EditorBody({
   const selectAround = (side: 'left' | 'right') =>
     setSelectedIds(new Set(aroundPlayhead(pictures, playhead, side)))
   const [scrollRequest, setScrollRequest] = useState<{ left: number } | null>(null)
+  // 工具条上的缩放：播放头留在屏幕上原来的地方，看不见它时把它放到中间
+  const zoomTo = (next: Zoom) => {
+    const left = timelineRef.current?.scrollLeft() ?? 0
+    const { pps } = timelineScale(viewportWidth, total, next)
+    setZoom(next)
+    setScrollRequest({ left: zoomScrollLeft(playhead, left, scale.pps, pps, viewportWidth) })
+  }
   const zoomToSelection = () => {
     const target = zoomToBlocks(selectedBlocks, viewportWidth, scale.fitPps)
     if (target === null) return
@@ -533,7 +541,7 @@ function EditorBody({
             onRipple={() => setRipple((on) => !on)}
             onSnap={() => setSnap((on) => !on)}
             onThumbnails={() => setThumbnails((on) => !on)}
-            onZoom={setZoom}
+            onZoom={zoomTo}
             ripple={ripple}
             snap={snap}
             thumbnails={thumbnails}

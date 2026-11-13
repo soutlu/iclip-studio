@@ -8,6 +8,7 @@ import {
   snapTargets,
   timelineScale,
   zoomLabel,
+  zoomScrollLeft,
   zoomToBlocks,
   zoomToSlider,
 } from './timeline-scale'
@@ -50,6 +51,19 @@ describe('时间线缩放', () => {
     expect(sliderToZoom(100, FIT_PPS).percent).toBeGreaterThan(1_000)
     expect(zoomToSlider(FIT_ZOOM, FIT_PPS)).toBeGreaterThan(0)
     expect(zoomToSlider(FIT_ZOOM, FIT_PPS)).toBeLessThan(100)
+  })
+
+  it('缩放时播放头留在屏幕上原来的地方；看不见它时把它放到时间区中间', () => {
+    // 播放头在第 4 秒，一秒 50 像素、已经滚了 100 像素：它在屏幕上离时间区左边 100 像素
+    expect(zoomScrollLeft(4_000, 100, 50, 100, 1_000)).toBe(300)
+    expect(zoomScrollLeft(4_000, 300, 100, 50, 1_000)).toBe(100)
+    // 缩小以后内容比原来滚到的位置还短：不会滚成负数
+    expect(zoomScrollLeft(1_000, 0, 100, 25, 1_000)).toBe(0)
+    // 播放头在第 30 秒，滚在最左边时它在屏幕右边外面（1500 像素处）：放到中间
+    expect(zoomScrollLeft(30_000, 0, 50, 100, 1_000)).toBe(2_500)
+    // 播放头在已经滚过去的左边：也放到中间
+    expect(zoomScrollLeft(2_000, 1_000, 100, 200, 1_000)).toBe(0)
+    expect(zoomScrollLeft(10_000, 1_500, 100, 200, 1_000)).toBe(1_500)
   })
 })
 
