@@ -13,14 +13,18 @@ import {
 import type { ExportWorker, RenderedFile, UploadTarget } from './jobs'
 import { createLogger, type Logger } from './log'
 
-// 源目录里没有组装时才生成的内容：分片表只给西文基本字符那一片，条目补上空的 chars
-const source = catalogJson as Omit<ComponentCatalog, 'version' | 'cjk' | 'items'> & {
+// 源目录里没有组装时才生成的内容：运行库路径照组装结果写，分片表只给西文基本字符那一片，条目补上空的 chars
+const source = catalogJson as Omit<ComponentCatalog, 'version' | 'runtime' | 'cjk' | 'items'> & {
   items: Omit<CatalogItem, 'chars'>[]
 }
 
 export const catalog: ComponentCatalog = {
   ...source,
   version: 'test-fixtures',
+  runtime: {
+    hyperframes: 'vendor/hyperframes/0.9.31/hyperframe.runtime.iife.js',
+    gsap: 'vendor/npm/gsap@3.14.2/dist/gsap.min.js',
+  },
   cjk: {
     family: 'Noto Sans SC',
     slices: [

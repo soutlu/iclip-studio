@@ -1,18 +1,25 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, readlink, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { dirname, join } from 'node:path'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
-  CJK_FONT,
+  FONT_TABLE,
   FONT_VARIABLE,
+  HF_VERSION,
+  RUNTIME,
   SyncError,
   WEB_ROOT,
   checkCatalogFonts,
+  checkRelocated,
   cjkSlices,
   componentChars,
   fontFaceDescriptors,
+  installVersion,
   localFontFaces,
   publishedCatalog,
+  relocate,
+  sha256,
   twinDescriptors,
   withAnimationLibrary,
   withoutCjkStylesheet,
@@ -189,10 +196,15 @@ describe('componentChars', () => {
 describe('publishedCatalog', () => {
   const entry = (name, variables = []) => ({ name, src: `compositions/${name}.html`, variables })
   const slices = [{ range: 'U+4e00-4e10', files: { 400: 'vendor/npm/noto/4-400.woff2' } }]
+  const css = {
+    Inter: 'vendor/fonts/families/inter-0123456789ab.css',
+    Brand: 'vendor/fonts/families/brand-ba9876543210.css',
+  }
   const files = {
-    [CJK_FONT.faces]: JSON.stringify({
+    [FONT_TABLE]: JSON.stringify({
       slices,
       twins: { Inter: [{ weight: '400', style: 'normal' }] },
+      css,
     }),
     'compositions/title.html':
       '<p>标题</p>.t { font-family: var(--font-display, Inter), sans-serif }',
@@ -222,7 +234,7 @@ describe('publishedCatalog', () => {
     excluded: [],
   }
 
-  it('读了 --font-display 或 --font-body 的条目在最后加上字体项，自己写了的原样；字体去掉 faces', async () => {
+  it('读了 --font-display 或 --font-body 的条目在最后加上字体项，自己写了的原样；字体去掉 faces，样式表路径按字体表写', async () => {
     const published = await publishedCatalog(source, 'v1', async (path) => files[path])
     expect(published.version).toBe('v1')
     expect(Object.fromEntries(published.items.map((item) => [item.name, item.variables]))).toEqual({
@@ -233,9 +245,18 @@ describe('publishedCatalog', () => {
       own: source.items[4].variables,
     })
     expect(published.fonts).toEqual({
-      Inter: { css: 'vendor/fonts/families/inter.css', cjk: [{ weight: '400', style: 'normal' }] },
-      Brand: { css: 'vendor/fonts/families/brand.css', brand: 'BR' },
+      Inter: { css: css.Inter, cjk: [{ weight: '400', style: 'normal' }] },
+      Brand: { css: css.Brand, brand: 'BR' },
     })
+  })
+
+  it('字体表里缺少某个字体的样式表：报错', async () => {
+    const table = JSON.stringify({ slices, twins: {}, css: { Inter: css.Inter } })
+    await expect(
+      publishedCatalog(source, 'v1', async (path) =>
+        path === FONT_TABLE ? table : (files[path] ?? ''),
+      ),
+    ).rejects.toThrow(SyncError)
   })
 
   it('带上组装时写下的中文分片表和各字体族的孪生描述，每个条目写上组件文件里的非 ASCII 字符', async () => {
@@ -250,13 +271,16 @@ describe('publishedCatalog', () => {
     })
   })
 
-  it('源目录里还留着的 runtime 原样带过去，不因为多出的键报错', async () => {
-    const legacy = {
-      ...source,
-      runtime: { gsap: 'g.js', cjkFont: 'vendor/fonts/noto-sans-sc.css' },
-    }
-    const published = await publishedCatalog(legacy, 'v1', async (path) => files[path])
-    expect(published.runtime).toEqual(legacy.runtime)
+  it('runtime 写组装结果里运行库与动画库的位置，源目录里写的 runtime 不采用', async () => {
+    expect((await publishedCatalog(source, 'v1', async (path) => files[path])).runtime).toEqual(
+      RUNTIME,
+    )
+    const declared = { ...source, runtime: { hyperframes: 'vendor/hyperframes/old.js' } }
+    expect((await publishedCatalog(declared, 'v1', async (path) => files[path])).runtime).toEqual(
+      RUNTIME,
+    )
+    // vendor/ 里的运行库路径带引擎版本，换版本就换路径
+    expect(RUNTIME.hyperframes).toContain(`/${HF_VERSION}/`)
   })
 })
 
@@ -335,5 +359,199 @@ describe('localFontFaces', () => {
         outDir,
       }),
     ).rejects.toThrow(SyncError)
+  })
+})
+
+describe('组装目录整理与发布', () => {
+  let work
+  beforeEach(async () => {
+    work = await mkdtemp(join(tmpdir(), 'hf-relocate-'))
+  })
+  afterEach(() => rm(work, { recursive: true, force: true }))
+
+  const put = async (root, files) => {
+    for (const [path, data] of Object.entries(files)) {
+      await mkdir(dirname(join(root, path)), { recursive: true })
+      await writeFile(join(root, path), data)
+    }
+  }
+  const text = (root, path) => readFile(join(root, path), 'utf8')
+
+  const SCENE = [
+    '<img src="assets/icons/a.png">',
+    '<div style="background: url(\'assets/bg.jpg\')"></div>',
+    '<div style="background: url(assets/bg.jpg)"></div>',
+    '<link rel="stylesheet" href="../vendor/fonts/families/brand.css">',
+    '<link rel="stylesheet" href="../vendor/fonts/0123456789ab.css">',
+    '<script>load("models/m.glb"); lottie({ path: assetUrl("assets/mascot.json") })</script>',
+    '<p data-placeholder="assets/shot-1.png,assets/shot-2.png"></p>',
+  ].join('\n')
+  const BRAND_CSS = "@font-face{font-family:'Brand';src:url(../../../fonts/brand/b.ttf)}"
+  const LIBRARY = {
+    'compositions/scene.html': SCENE,
+    'compositions/components/deep.html': '<img src="../../assets/icons/a.png">',
+    'assets/icons/a.png': 'png',
+    'assets/bg.jpg': 'jpg',
+    'models/m.glb': 'glb',
+    'fonts/brand/b.ttf': 'ttf',
+    'vendor/fonts/families/brand.css': BRAND_CSS,
+    'vendor/fonts/0123456789ab.css': '@font-face{src:url(../npm/x@1.0.0/files/x.woff2)}',
+    'vendor/npm/x@1.0.0/files/x.woff2': 'woff2',
+    'vendor/npm/x@1.0.0/lib.js': 'var example = "assets/icons/a.png"',
+  }
+
+  it('组件自带的目录整体挪到 vendor/files/<目录>-<内容摘要>/，三种写法的地址都改到新位置', async () => {
+    const root = join(work, 'root')
+    await put(root, LIBRARY)
+    const { moved } = await relocate(root)
+
+    const assets = moved.get('assets/icons/a.png').split('/')[2]
+    const models = moved.get('models/m.glb').split('/')[2]
+    const fonts = moved.get('fonts/brand/b.ttf').split('/')[2]
+    expect([assets, models, fonts]).toEqual([
+      expect.stringMatching(/^assets-[0-9a-f]{12}$/),
+      expect.stringMatching(/^models-[0-9a-f]{12}$/),
+      expect.stringMatching(/^fonts-[0-9a-f]{12}$/),
+    ])
+    expect(await text(root, `vendor/files/${assets}/icons/a.png`)).toBe('png')
+    expect(await text(root, `vendor/files/${models}/m.glb`)).toBe('glb')
+    for (const dir of ['assets', 'models', 'fonts']) expect(existsSync(join(root, dir))).toBe(false)
+
+    const scene = (await text(root, 'compositions/scene.html')).split('\n')
+    expect(scene.slice(0, 3)).toEqual([
+      `<img src="vendor/files/${assets}/icons/a.png">`,
+      `<div style="background: url('vendor/files/${assets}/bg.jpg')"></div>`,
+      `<div style="background: url(vendor/files/${assets}/bg.jpg)"></div>`,
+    ])
+    expect(scene[5]).toBe(
+      `<script>load("vendor/files/${models}/m.glb"); lottie({ path: assetUrl("assets/mascot.json") })</script>`,
+    )
+    // 指向组件库里不存在的文件（比如留给工程自己的素材）原样不动
+    expect(scene[6]).toBe(LIBRARY['compositions/scene.html'].split('\n')[6])
+    expect(await text(root, 'compositions/components/deep.html')).toBe(
+      `<img src="../../vendor/files/${assets}/icons/a.png">`,
+    )
+    // 第三方包的文件原样
+    expect(await text(root, 'vendor/npm/x@1.0.0/lib.js')).toBe(LIBRARY['vendor/npm/x@1.0.0/lib.js'])
+  })
+
+  it('字体样式表按改写后的内容摘要命名，引用它们的地址随之改写', async () => {
+    const root = join(work, 'root')
+    await put(root, LIBRARY)
+    const { moved, renamed } = await relocate(root)
+
+    const fonts = moved.get('fonts/brand/b.ttf').split('/')[2]
+    const brandCss = `@font-face{font-family:'Brand';src:url(../../files/${fonts}/brand/b.ttf)}`
+    const googleCss = LIBRARY['vendor/fonts/0123456789ab.css']
+    const brandPath = `vendor/fonts/families/brand-${sha256(brandCss).slice(0, 12)}.css`
+    const googlePath = `vendor/fonts/${sha256(googleCss).slice(0, 12)}.css`
+    expect(Object.fromEntries(renamed)).toEqual({
+      'vendor/fonts/families/brand.css': brandPath,
+      'vendor/fonts/0123456789ab.css': googlePath,
+    })
+    expect(await text(root, brandPath)).toBe(brandCss)
+    expect(await text(root, googlePath)).toBe(googleCss)
+    const scene = (await text(root, 'compositions/scene.html')).split('\n')
+    expect(scene.slice(3, 5)).toEqual([
+      `<link rel="stylesheet" href="../${brandPath}">`,
+      `<link rel="stylesheet" href="../${googlePath}">`,
+    ])
+  })
+
+  it('同样的内容得到同样的路径；内容一变，路径就变', async () => {
+    const paths = async (name, files) => {
+      const root = join(work, name)
+      await put(root, files)
+      const { moved, renamed } = await relocate(root)
+      return [...moved.values(), ...renamed.values()]
+    }
+    const first = await paths('a', LIBRARY)
+    expect(await paths('b', LIBRARY)).toEqual(first)
+    const changed = await paths('c', { ...LIBRARY, 'fonts/brand/b.ttf': 'ttf v2' })
+    expect(changed.filter((path) => path.startsWith('vendor/files/assets-'))).toEqual(
+      first.filter((path) => path.startsWith('vendor/files/assets-')),
+    )
+    expect(changed.find((path) => path.startsWith('vendor/files/fonts-'))).not.toBe(
+      first.find((path) => path.startsWith('vendor/files/fonts-')),
+    )
+    expect(changed.find((path) => path.startsWith('vendor/fonts/families/'))).not.toBe(
+      first.find((path) => path.startsWith('vendor/fonts/families/')),
+    )
+  })
+
+  it('查漏：整理后没有遗漏时通过', async () => {
+    const root = join(work, 'root')
+    await put(root, LIBRARY)
+    const { moved } = await relocate(root)
+    await expect(checkRelocated(root, moved)).resolves.toBeUndefined()
+  })
+
+  it('查漏：仍有地址指向挪走文件的旧位置时报错，写出文件、行号与地址', async () => {
+    const root = join(work, 'root')
+    await put(root, {
+      'compositions/left.html': '<div>\n  <i data-image="assets/icons/a.png"></i>\n</div>',
+      'compositions/own/assets/icons/a.png': 'png',
+      'compositions/own.html': '<img src="compositions/own/assets/icons/a.png">',
+    })
+    const moved = new Map([['assets/icons/a.png', 'vendor/files/assets-0123456789ab/icons/a.png']])
+    const error = await checkRelocated(root, moved).catch((caught) => caught)
+    expect(error).toBeInstanceOf(SyncError)
+    expect(error.message).toContain('compositions/left.html:2 → assets/icons/a.png')
+    expect(error.message).not.toContain('compositions/own.html')
+  })
+
+  it('查漏：vendor/ 里的样式表引用 vendor/ 以外的文件时报错', async () => {
+    const root = join(work, 'root')
+    await put(root, {
+      'vendor/fonts/families/brand.css': '@font-face{src:url(../../../fonts/brand/b.ttf)}',
+    })
+    await expect(checkRelocated(root, new Map())).rejects.toThrow(
+      'vendor/fonts/families/brand.css → ../../../fonts/brand/b.ttf',
+    )
+  })
+
+  describe('installVersion', () => {
+    const OUT_VENDOR = { 'vendor/keep/old.txt': 'old', 'vendor/npm/x/a.js': 'a' }
+    const ASSEMBLED = {
+      'compositions/a.html': '<p></p>',
+      'vendor/npm/x/a.js': 'a',
+      'vendor/fonts/n.css': 'n',
+    }
+
+    it('vendor/ 只增：新文件并入，已有的文件不删、内容相同的不重写；版本目录里的 vendor 是指向 ../vendor 的软链接', async () => {
+      const out = join(work, 'out')
+      const root = join(out, '.assemble')
+      await put(out, OUT_VENDOR)
+      await put(root, ASSEMBLED)
+      const before = await stat(join(out, 'vendor/npm/x/a.js'))
+
+      await installVersion(root, out, 'v1')
+
+      expect(existsSync(root)).toBe(false)
+      expect(await readlink(join(out, 'v1/vendor'))).toBe('../vendor')
+      expect(await text(out, 'v1/vendor/fonts/n.css')).toBe('n')
+      expect(await text(out, 'vendor/fonts/n.css')).toBe('n')
+      expect(await text(out, 'v1/compositions/a.html')).toBe('<p></p>')
+      expect(await text(out, 'vendor/keep/old.txt')).toBe('old')
+      const after = await stat(join(out, 'vendor/npm/x/a.js'))
+      expect([after.ino, after.mtimeMs]).toEqual([before.ino, before.mtimeMs])
+    })
+
+    it('vendor/ 已有同一路径、内容不同的文件：报错，输出目录不受改动', async () => {
+      const out = join(work, 'out')
+      const root = join(out, '.assemble')
+      await put(out, { ...OUT_VENDOR, 'vendor/npm/x/a.js': 'a changed' })
+      await put(root, ASSEMBLED)
+
+      await expect(installVersion(root, out, 'v1')).rejects.toThrow(
+        expect.objectContaining({
+          constructor: SyncError,
+          message: expect.stringContaining('vendor/npm/x/a.js'),
+        }),
+      )
+      expect(existsSync(join(out, 'v1'))).toBe(false)
+      expect(existsSync(join(out, 'vendor/fonts/n.css'))).toBe(false)
+      expect(await text(out, 'vendor/npm/x/a.js')).toBe('a changed')
+    })
   })
 })

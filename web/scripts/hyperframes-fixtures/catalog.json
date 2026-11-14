@@ -1,8 +1,4 @@
 {
-  "runtime": {
-    "hyperframes": "vendor/hyperframes/hyperframe.runtime.iife.js",
-    "gsap": "vendor/npm/gsap@3.14.2/dist/gsap.min.js"
-  },
   "fonts": {
     "Playfair Display": {
       "css": "vendor/fonts/families/playfair-display.css",

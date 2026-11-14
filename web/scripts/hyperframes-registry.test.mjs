@@ -4,8 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
-  CJK_FONT,
   FIXTURES_DIR,
+  FONT_TABLE,
+  RUNTIME,
   WEB_ROOT,
   libraryVersion,
   publishedCatalog,
@@ -66,10 +67,14 @@ describe('hf:registry', () => {
     await cp(join(library, 'patches', 'compositions'), join(out, version, 'compositions'), {
       recursive: true,
     })
-    await mkdir(join(out, version, 'vendor', 'fonts'), { recursive: true })
+    const css = 'vendor/fonts/families/playfair-display-0123456789ab.css'
     await writeFile(
-      join(out, version, CJK_FONT.faces),
-      JSON.stringify({ slices: [], twins: { 'Playfair Display': [] } }),
+      join(out, version, FONT_TABLE),
+      JSON.stringify({
+        slices: [],
+        twins: { 'Playfair Display': [] },
+        css: { 'Playfair Display': css },
+      }),
     )
     await writeFile(join(out, version, 'marker'), '')
 
@@ -96,10 +101,15 @@ describe('hf:registry', () => {
       ['fixture-fields', ''],
       ['fixture-brand-card', 'Playfair Display'],
     ])
+    expect(published.runtime).toEqual(RUNTIME)
     expect(published.cjk).toEqual({ family: 'Noto Sans SC', slices: [] })
-    expect(published.fonts['Playfair Display'].cjk).toEqual([])
+    expect(published.fonts['Playfair Display']).toEqual({ css, brand: '示例品牌', cjk: [] })
     expect(published.items.find((item) => item.name === 'fixture-fields').chars).not.toBe('')
-    expect((await readdir(join(out, version))).sort()).toEqual(['compositions', 'marker', 'vendor'])
+    expect((await readdir(join(out, version))).sort()).toEqual([
+      'compositions',
+      FONT_TABLE,
+      'marker',
+    ])
     expect((await readdir(out)).sort()).toEqual(['catalog.json', version].sort())
   })
 })

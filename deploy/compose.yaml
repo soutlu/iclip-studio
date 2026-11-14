@@ -6,8 +6,8 @@
 # （都缺省 latest，两边分开升级，步骤见 docs/deploy.md「升级」）、WEB_PORT 对外端口（缺省 80，改了
 # SSO_REDIRECT_URL 的端口要跟着改）、RENDER_ALLOWED_MEDIA_HOSTS 渲染服务允许取素材的主机，以及运行时服务那几项（见 runtime 段）。后端的应用变量见 server/src/iclip/config/models.py。
 # 运行配置不进镜像也不进仓库：同目录的 configs/ 只读挂进后端（config.yaml）与运行时服务（runtime.yaml，样例是
-# deploy/runtime.example.yaml），改了要 up -d。模型、agent 与技能存在数据库里，在配置页里改。成片的组件库也不进镜像：同目录的 components/（catalog.json 与
-# <版本号>/）只读挂给 web 与 render，发布新组件库不用重启，步骤见 docs/deploy.md「发布组件库」。
+# deploy/runtime.example.yaml），改了要 up -d。模型、agent 与技能存在数据库里，在配置页里改。成片的组件库也不进镜像：同目录的 components/（catalog.json、
+# <版本号>/ 与各版本共用的 vendor/）只读挂给 web 与 render，发布新组件库不用重启，步骤见 docs/deploy.md「发布组件库」。
 
 services:
   server:
