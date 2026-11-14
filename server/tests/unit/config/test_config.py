@@ -34,6 +34,7 @@ MANIFEST = (
     "QWEN_API_KEY",
     "T_QWEN_KEY",
     "WHOLE_FILM_RENDER_URL",
+    "WHOLE_FILM_PREVIEW_ORIGIN",
     "RUNTIME_INTERNAL_TOKEN",
     "RUNTIME_URL",
     "RUNTIME_APP_KEY",
@@ -455,6 +456,46 @@ def test_whole_film_render_url_must_be_http(
     _media_env(monkeypatch)
     monkeypatch.setenv("WHOLE_FILM_RENDER_URL", bad)
     with pytest.raises(ValidationError, match="WHOLE_FILM_RENDER_URL"):
+        resolve_settings(config)
+
+
+@pytest.mark.parametrize(
+    ("given", "resolved"),
+    [
+        ("https://preview.app.example.com", "https://preview.app.example.com"),
+        (" http://preview.localhost:3014/ ", "http://preview.localhost:3014"),
+    ],
+)
+def test_whole_film_preview_origin_is_read_as_a_bare_origin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, given: str, resolved: str
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID))
+    _core(monkeypatch)
+    assert resolve_settings(config).whole_film_preview_origin is None
+
+    monkeypatch.setenv("WHOLE_FILM_PREVIEW_ORIGIN", given)
+    assert resolve_settings(config).whole_film_preview_origin == resolved
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "preview.app.example.com",
+        "ftp://preview.app.example.com",
+        "https://preview.app.example.com/api",
+        "https://preview.app.example.com?x=1",
+        "https://user@preview.app.example.com",
+        "https://preview.app.example.com:port",
+        "null",
+    ],
+)
+def test_whole_film_preview_origin_must_be_http_host_and_port_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad: str
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID))
+    _core(monkeypatch)
+    monkeypatch.setenv("WHOLE_FILM_PREVIEW_ORIGIN", bad)
+    with pytest.raises(ValidationError, match="WHOLE_FILM_PREVIEW_ORIGIN"):
         resolve_settings(config)
 
 

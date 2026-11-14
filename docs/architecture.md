@@ -96,7 +96,8 @@
 
 ### 身份与模块协作
 
-- **统一鉴权与代指定用户操作（`ActAs`）**：所有 HTTP 和 WebSocket 请求由 `PrincipalMiddleware` 统一解析登录 Cookie 或 API Key（`/internal/runtime/` 内部接口除外），接口所需权限通过 FastAPI `Security` 直接声明在路由上。对于支持 `users:act_as` 的 6 个写接口（建对话、建需求单、发消息、提交生成、参考视频试生成、确认上传），在拿到请求体后会调用 [identity/acting.py](../server/src/iclip/domains/identity/acting.py) 的 `ActAs` 完成归属用户切换。
+- **按主机名划分预览域名（[app/preview_host.py](../server/src/iclip/app/preview_host.py)）**：最外层的中间件按 `Host` 区分应用域名与成片预览域名，预览域名上只放行成片预览地址，别的主机上预览地址一律 `404`，不依赖各路由自己声明（规则见 [conventions「成片工程与预览域名」](../contract/conventions.md#成片工程与预览域名)）。
+- **统一鉴权与代指定用户操作（`ActAs`）**：所有 HTTP 和 WebSocket 请求由 `PrincipalMiddleware` 统一解析登录 Cookie 或 API Key（`/internal/runtime/` 内部接口与凭令牌访问的 `/whole-film/preview/` 预览地址除外），接口所需权限通过 FastAPI `Security` 直接声明在路由上。对于支持 `users:act_as` 的 6 个写接口（建对话、建需求单、发消息、提交生成、参考视频试生成、确认上传），在拿到请求体后会调用 [identity/acting.py](../server/src/iclip/domains/identity/acting.py) 的 `ActAs` 完成归属用户切换。
 - **模块间解耦**：`domains/` 下的各个业务模块互不直接导入对方的内部实现，需要跨模块协作时（例如发消息时自动把外部图片附件转存为上传记录、查询分叉对话的祖先出片记录、做同款时复制制作文件），一律由模块声明接口协议（Protocol），再由 `app/` 组合根注入适配器将两边接起来。
 - **出网下载与地址检查**：组合根建好只连公网的出网下载器与客户端（lifespan 结束时关闭）。发消息时转存外部图片附件，以及制作页在插入、选用图片与按文件生图、出片时检查图片地址（[app/conversation_film.py](../server/src/iclip/app/conversation_film.py)），都经出网下载器发起。取帧拼板（[app/shot_media.py](../server/src/iclip/app/shot_media.py)）与参考视频拆解要下载的视频地址可能是模型给的：本系统 OSS 桶里的对象换成内网地址、经普通的共用 HTTP 客户端下载，其他地址经只连公网的客户端原样下载。拆解遇到这类外部地址时先下载到本地、再在本地文件上探时长，不把远程地址交给 ffprobe（它会自己跟随跳转）。
 

@@ -18,6 +18,9 @@ PUBLIC = {
     ("post", "/auth/register"),
     ("get", "/auth/sso/authorize"),
     ("get", "/auth/sso/callback"),
+    # 成片预览：只在预览域名上开放，不看登录态，凭地址里的令牌取。
+    ("get", "/whole-film/preview/{token}/host"),
+    ("get", "/whole-film/preview/{token}/files/{path}"),
 }
 
 HTTP_METHODS = {"get", "put", "post", "delete", "patch", "options", "head", "trace"}

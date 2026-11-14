@@ -4,7 +4,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from iclip.domains.conversations.api import create_conversations_router, create_previews_router
+from iclip.domains.conversations.api import (
+    create_conversations_router,
+    create_previews_router,
+    create_whole_film_preview_router,
+    create_whole_film_project_router,
+)
 from iclip.domains.conversations.repository import (
     AgentPreviewStore,
     ConversationRepository,
@@ -36,6 +41,7 @@ from iclip.domains.conversations.service import (
     WorkspaceDocumentValidator,
     WriteDerivedFile,
 )
+from iclip.domains.conversations.whole_film_project import PreviewTokens, WholeFilmProject
 from iclip.domains.identity.public import ActAs
 
 
@@ -75,6 +81,8 @@ def build_conversations_module(
     same_style_source: SameStyleSource,
     announce_row: AnnounceConversationRow,
     announce_deleted: AnnounceConversationDeleted,
+    preview_origin: str | None,
+    preview_tokens: PreviewTokens,
 ) -> ConversationsModule:
     service = ConversationService(
         repo,
@@ -103,10 +111,19 @@ def build_conversations_module(
         announce_row=announce_row,
         announce_deleted=announce_deleted,
     )
+    project = WholeFilmProject(
+        service,
+        read_file=read_derived_file,
+        write_file=write_derived_file,
+        preview_origin=preview_origin,
+        tokens=preview_tokens,
+    )
     return ConversationsModule(
         routers=(
             create_conversations_router(service, agents=list_agents, act_as=act_as),
             create_previews_router(service),
+            create_whole_film_project_router(project),
+            create_whole_film_preview_router(project),
         ),
         service=service,
     )

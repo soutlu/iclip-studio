@@ -3740,6 +3740,47 @@ export const zWholeFilmExportStartedOut = z.object({
 })
 
 /**
+ * WholeFilmFileCreatedOut
+ *
+ * 新建的文件：``path`` 与请求里的相同（相对工程根），工作区里的路径是 ``whole-film/`` 加上它；
+ * ``version`` 是工作区文件的版本号，之后用 ``PUT /conversations/{id}/workspace/file`` 修改。
+ */
+export const zWholeFilmFileCreatedOut = z.object({
+  path: z.string(),
+  version: z.int(),
+})
+
+/**
+ * WholeFilmFileIn
+ *
+ * 在成片工程里新建一个文件。``path`` 相对工程根，如 ``index.html``。
+ */
+export const zWholeFilmFileIn = z.object({
+  content: z.string(),
+  path: z.string().min(1),
+})
+
+/**
+ * WholeFilmPreviewHostOut
+ *
+ * 发令牌时请求的 ``Origin``：预览页只接受来自这个来源的消息。
+ */
+export const zWholeFilmPreviewHostOut = z.object({
+  appOrigin: z.string(),
+})
+
+/**
+ * WholeFilmPreviewOut
+ *
+ * 预览令牌。预览页的地址由前端拼成 ``<origin>/api/whole-film/preview/<token>/…``。
+ */
+export const zWholeFilmPreviewOut = z.object({
+  expiresAt: z.iso.datetime(),
+  origin: z.string(),
+  token: z.string(),
+})
+
+/**
  * WholeFilmVersionOut
  *
  * 成片卡里的一版：这段对话的一次已完成导出。
@@ -4502,6 +4543,29 @@ export const zCancelWholeFilmExportConversationsConversationIdWholeFilmExportsEx
  */
 export const zCancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponse =
   z.void()
+
+export const zCreateWholeFilmFileConversationsConversationIdWholeFilmFilesPostBody =
+  zWholeFilmFileIn
+
+export const zCreateWholeFilmFileConversationsConversationIdWholeFilmFilesPostPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zCreateWholeFilmFileConversationsConversationIdWholeFilmFilesPostResponse =
+  zWholeFilmFileCreatedOut
+
+export const zOpenWholeFilmPreviewConversationsConversationIdWholeFilmPreviewPostPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zOpenWholeFilmPreviewConversationsConversationIdWholeFilmPreviewPostResponse =
+  zWholeFilmPreviewOut
 
 export const zReadConversationFileConversationsConversationIdWorkspaceFileGetPath = z.object({
   conversation_id: z.uuid(),
@@ -5479,3 +5543,23 @@ export const zPatchUserUsersUserIdPatchPath = z.object({
  * Successful Response
  */
 export const zPatchUserUsersUserIdPatchResponse = zUserEnvelope
+
+export const zReadWholeFilmPreviewFileWholeFilmPreviewTokenFilesPathGetPath = z.object({
+  token: z.string(),
+  path: z.string(),
+})
+
+/**
+ * 工程文件的原文，类型按扩展名给出
+ */
+export const zReadWholeFilmPreviewFileWholeFilmPreviewTokenFilesPathGetResponse = z.string()
+
+export const zReadWholeFilmPreviewHostWholeFilmPreviewTokenHostGetPath = z.object({
+  token: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zReadWholeFilmPreviewHostWholeFilmPreviewTokenHostGetResponse =
+  zWholeFilmPreviewHostOut

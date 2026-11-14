@@ -14166,6 +14166,88 @@
         "title": "WholeFilmExportStartedOut",
         "type": "object"
       },
+      "WholeFilmFileCreatedOut": {
+        "additionalProperties": false,
+        "description": "新建的文件：``path`` 与请求里的相同（相对工程根），工作区里的路径是 ``whole-film/`` 加上它；\n``version`` 是工作区文件的版本号，之后用 ``PUT /conversations/{id}/workspace/file`` 修改。",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "version"
+        ],
+        "title": "WholeFilmFileCreatedOut",
+        "type": "object"
+      },
+      "WholeFilmFileIn": {
+        "additionalProperties": false,
+        "description": "在成片工程里新建一个文件。``path`` 相对工程根，如 ``index.html``。",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "path": {
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "title": "WholeFilmFileIn",
+        "type": "object"
+      },
+      "WholeFilmPreviewHostOut": {
+        "additionalProperties": false,
+        "description": "发令牌时请求的 ``Origin``：预览页只接受来自这个来源的消息。",
+        "properties": {
+          "appOrigin": {
+            "title": "Apporigin",
+            "type": "string"
+          }
+        },
+        "required": [
+          "appOrigin"
+        ],
+        "title": "WholeFilmPreviewHostOut",
+        "type": "object"
+      },
+      "WholeFilmPreviewOut": {
+        "additionalProperties": false,
+        "description": "预览令牌。预览页的地址由前端拼成 ``<origin>/api/whole-film/preview/<token>/…``。",
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "origin",
+          "token",
+          "expiresAt"
+        ],
+        "title": "WholeFilmPreviewOut",
+        "type": "object"
+      },
       "WholeFilmVersionOut": {
         "additionalProperties": false,
         "description": "成片卡里的一版：这段对话的一次已完成导出。",
@@ -18797,6 +18879,128 @@
           }
         ],
         "summary": "Cancel Whole Film Export",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/whole-film/files": {
+      "post": {
+        "description": "在成片工程里新建一个文件，写进工作区的 ``whole-film/<path>``。只有属主能建：看不见这段\n对话 404，看得见但不是属主、或看得见已删除的对话（治理者）403；路径不合规 422；文件已存在\n409，不覆盖。",
+        "operationId": "create_whole_film_file_conversations__conversation_id__whole_film_files_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WholeFilmFileIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WholeFilmFileCreatedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:run"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:run"
+            ]
+          }
+        ],
+        "summary": "Create Whole Film File",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/whole-film/preview": {
+      "post": {
+        "description": "给能读这段对话的人发一张 1 小时的成片预览令牌；可见范围同读工作区文件。\n\n令牌里签进对话的属主、对话、失效时刻与这次请求的 ``Origin``。看不见这段对话 404；\n没配置预览域名、请求没带合规的 ``Origin`` 都是 422。",
+        "operationId": "open_whole_film_preview_conversations__conversation_id__whole_film_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WholeFilmPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:read"
+            ]
+          }
+        ],
+        "summary": "Open Whole Film Preview",
         "tags": [
           "conversations"
         ]
@@ -25158,6 +25362,100 @@
           }
         ],
         "summary": "Patch User"
+      }
+    },
+    "/whole-film/preview/{token}/files/{path}": {
+      "get": {
+        "description": "取成片工程里的一个文件：``vendor/`` 开头的 307 转到同主机的 ``/hyperframes/vendor/…``，\n其余原文给出工作区的 ``whole-film/<path>``。路径带 ``..``、以 ``/`` 开头、带反斜杠或文件不存在\n都是 404。",
+        "operationId": "read_whole_film_preview_file_whole_film_preview__token__files__path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {}
+            },
+            "description": "工程文件的原文，类型按扩展名给出"
+          },
+          "307": {
+            "description": "公共库的文件，转到同主机的 /hyperframes/vendor/…"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Whole Film Preview File",
+        "tags": [
+          "whole-film-preview"
+        ]
+      }
+    },
+    "/whole-film/preview/{token}/host": {
+      "get": {
+        "description": "发令牌时请求的 ``Origin``，预览页只接受来自这个来源的消息。",
+        "operationId": "read_whole_film_preview_host_whole_film_preview__token__host_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WholeFilmPreviewHostOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Whole Film Preview Host",
+        "tags": [
+          "whole-film-preview"
+        ]
       }
     }
   }

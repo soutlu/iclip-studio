@@ -7520,6 +7520,71 @@ export type WholeFilmExportStartedOut = {
 }
 
 /**
+ * WholeFilmFileCreatedOut
+ *
+ * 新建的文件：``path`` 与请求里的相同（相对工程根），工作区里的路径是 ``whole-film/`` 加上它；
+ * ``version`` 是工作区文件的版本号，之后用 ``PUT /conversations/{id}/workspace/file`` 修改。
+ */
+export type WholeFilmFileCreatedOut = {
+  /**
+   * Path
+   */
+  path: string
+  /**
+   * Version
+   */
+  version: number
+}
+
+/**
+ * WholeFilmFileIn
+ *
+ * 在成片工程里新建一个文件。``path`` 相对工程根，如 ``index.html``。
+ */
+export type WholeFilmFileIn = {
+  /**
+   * Content
+   */
+  content: string
+  /**
+   * Path
+   */
+  path: string
+}
+
+/**
+ * WholeFilmPreviewHostOut
+ *
+ * 发令牌时请求的 ``Origin``：预览页只接受来自这个来源的消息。
+ */
+export type WholeFilmPreviewHostOut = {
+  /**
+   * Apporigin
+   */
+  appOrigin: string
+}
+
+/**
+ * WholeFilmPreviewOut
+ *
+ * 预览令牌。预览页的地址由前端拼成 ``<origin>/api/whole-film/preview/<token>/…``。
+ */
+export type WholeFilmPreviewOut = {
+  /**
+   * Expiresat
+   */
+  expiresAt: string
+  /**
+   * Origin
+   */
+  origin: string
+  /**
+   * Token
+   */
+  token: string
+}
+
+/**
  * WholeFilmVersionOut
  *
  * 成片卡里的一版：这段对话的一次已完成导出。
@@ -9899,6 +9964,70 @@ export type CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExpo
 
 export type CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponse =
   CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponses[keyof CancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponses]
+
+export type CreateWholeFilmFileConversationsConversationIdWholeFilmFilesPostData = {
+  body: WholeFilmFileIn
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/whole-film/files'
+}
+
+export type CreateWholeFilmFileConversationsConversationIdWholeFilmFilesPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateWholeFilmFileConversationsConversationIdWholeFilmFilesPostError =
+  CreateWholeFilmFileConversationsConversationIdWholeFilmFilesPostErrors[keyof CreateWholeFilmFileConversationsConversationIdWholeFilmFilesPostErrors]
+
+export type CreateWholeFilmFileConversationsConversationIdWholeFilmFilesPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: WholeFilmFileCreatedOut
+}
+
+export type CreateWholeFilmFileConversationsConversationIdWholeFilmFilesPostResponse =
+  CreateWholeFilmFileConversationsConversationIdWholeFilmFilesPostResponses[keyof CreateWholeFilmFileConversationsConversationIdWholeFilmFilesPostResponses]
+
+export type OpenWholeFilmPreviewConversationsConversationIdWholeFilmPreviewPostData = {
+  body?: never
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/whole-film/preview'
+}
+
+export type OpenWholeFilmPreviewConversationsConversationIdWholeFilmPreviewPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type OpenWholeFilmPreviewConversationsConversationIdWholeFilmPreviewPostError =
+  OpenWholeFilmPreviewConversationsConversationIdWholeFilmPreviewPostErrors[keyof OpenWholeFilmPreviewConversationsConversationIdWholeFilmPreviewPostErrors]
+
+export type OpenWholeFilmPreviewConversationsConversationIdWholeFilmPreviewPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: WholeFilmPreviewOut
+}
+
+export type OpenWholeFilmPreviewConversationsConversationIdWholeFilmPreviewPostResponse =
+  OpenWholeFilmPreviewConversationsConversationIdWholeFilmPreviewPostResponses[keyof OpenWholeFilmPreviewConversationsConversationIdWholeFilmPreviewPostResponses]
 
 export type ReadConversationFileConversationsConversationIdWorkspaceFileGetData = {
   body?: never
@@ -13149,3 +13278,71 @@ export type PatchUserUsersUserIdPatchResponses = {
 
 export type PatchUserUsersUserIdPatchResponse =
   PatchUserUsersUserIdPatchResponses[keyof PatchUserUsersUserIdPatchResponses]
+
+export type ReadWholeFilmPreviewFileWholeFilmPreviewTokenFilesPathGetData = {
+  body?: never
+  path: {
+    /**
+     * Token
+     */
+    token: string
+    /**
+     * Path
+     */
+    path: string
+  }
+  query?: never
+  url: '/whole-film/preview/{token}/files/{path}'
+}
+
+export type ReadWholeFilmPreviewFileWholeFilmPreviewTokenFilesPathGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReadWholeFilmPreviewFileWholeFilmPreviewTokenFilesPathGetError =
+  ReadWholeFilmPreviewFileWholeFilmPreviewTokenFilesPathGetErrors[keyof ReadWholeFilmPreviewFileWholeFilmPreviewTokenFilesPathGetErrors]
+
+export type ReadWholeFilmPreviewFileWholeFilmPreviewTokenFilesPathGetResponses = {
+  /**
+   * 工程文件的原文，类型按扩展名给出
+   */
+  200: Blob | File
+}
+
+export type ReadWholeFilmPreviewFileWholeFilmPreviewTokenFilesPathGetResponse =
+  ReadWholeFilmPreviewFileWholeFilmPreviewTokenFilesPathGetResponses[keyof ReadWholeFilmPreviewFileWholeFilmPreviewTokenFilesPathGetResponses]
+
+export type ReadWholeFilmPreviewHostWholeFilmPreviewTokenHostGetData = {
+  body?: never
+  path: {
+    /**
+     * Token
+     */
+    token: string
+  }
+  query?: never
+  url: '/whole-film/preview/{token}/host'
+}
+
+export type ReadWholeFilmPreviewHostWholeFilmPreviewTokenHostGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReadWholeFilmPreviewHostWholeFilmPreviewTokenHostGetError =
+  ReadWholeFilmPreviewHostWholeFilmPreviewTokenHostGetErrors[keyof ReadWholeFilmPreviewHostWholeFilmPreviewTokenHostGetErrors]
+
+export type ReadWholeFilmPreviewHostWholeFilmPreviewTokenHostGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: WholeFilmPreviewHostOut
+}
+
+export type ReadWholeFilmPreviewHostWholeFilmPreviewTokenHostGetResponse =
+  ReadWholeFilmPreviewHostWholeFilmPreviewTokenHostGetResponses[keyof ReadWholeFilmPreviewHostWholeFilmPreviewTokenHostGetResponses]

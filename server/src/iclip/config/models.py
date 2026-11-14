@@ -23,6 +23,7 @@ from pydantic_settings import (
 )
 
 from iclip.common.generation_vocab import VideoEnhanceResolution
+from iclip.common.urls import is_http_origin
 
 _MIN_SECRET_LENGTH = 32
 
@@ -45,6 +46,8 @@ QWEN_API_KEY_ENV: Final = "QWEN_API_KEY"
 PRODUCT_CATALOG_DATABASE_URL_ENV: Final = "PRODUCT_CATALOG_DATABASE_URL"
 
 WHOLE_FILM_RENDER_URL_ENV: Final = "WHOLE_FILM_RENDER_URL"
+
+WHOLE_FILM_PREVIEW_ORIGIN_ENV: Final = "WHOLE_FILM_PREVIEW_ORIGIN"
 
 RUNTIME_INTERNAL_TOKEN_ENV: Final = "RUNTIME_INTERNAL_TOKEN"
 
@@ -132,6 +135,20 @@ class WholeFilmRenderEnv(EnvSettings):
         if parts.scheme not in {"http", "https"} or not parts.netloc:
             raise ValueError(f"{WHOLE_FILM_RENDER_URL_ENV} 必须是 http:// 或 https:// 地址")
         return value.rstrip("/")
+
+
+class WholeFilmPreviewEnv(EnvSettings):
+    origin: RequiredEnv = Field(validation_alias=WHOLE_FILM_PREVIEW_ORIGIN_ENV)
+
+    @field_validator("origin")
+    @classmethod
+    def _http_origin(cls, value: str) -> str:
+        origin = value.removesuffix("/")
+        if not is_http_origin(origin):
+            raise ValueError(
+                f"{WHOLE_FILM_PREVIEW_ORIGIN_ENV} 必须是 http(s)://主机[:端口]，不带路径"
+            )
+        return origin
 
 
 class RuntimeInternalEnv(EnvSettings):
@@ -442,6 +459,7 @@ class ResolvedSettings:
     iclip_studio: ResolvedIclipStudio | None
     product_catalog: ResolvedProductCatalog | None
     whole_film_render: ResolvedWholeFilmRender | None
+    whole_film_preview_origin: str | None
     runtime_internal_token: str
     runtime_service: ResolvedRuntimeService
     log_level: str
@@ -588,6 +606,12 @@ def _resolve_whole_film_render(
     return ResolvedWholeFilmRender(url=_from_env(WholeFilmRenderEnv).url)
 
 
+def _resolve_whole_film_preview_origin() -> str | None:
+    if not _switched_on(WHOLE_FILM_PREVIEW_ORIGIN_ENV):
+        return None
+    return _from_env(WholeFilmPreviewEnv).origin
+
+
 def _resolve_runtime_service() -> ResolvedRuntimeService:
     env = _from_env(RuntimeServiceEnv)
     return ResolvedRuntimeService(url=env.url, app_key=env.app_key)
@@ -632,6 +656,7 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
             object_store_on=object_store is not None,
             media_generation_on=media_generation is not None,
         ),
+        whole_film_preview_origin=_resolve_whole_film_preview_origin(),
         runtime_internal_token=_from_env(RuntimeInternalEnv).token,
         runtime_service=_resolve_runtime_service(),
         log_level=config.ops.log_level,

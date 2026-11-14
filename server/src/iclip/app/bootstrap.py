@@ -4,6 +4,7 @@ import uuid
 from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import Final
+from urllib.parse import urlsplit
 
 import httpx
 import procrastinate
@@ -37,6 +38,7 @@ from iclip.app.library_tagging import (
     build_library_tagger,
 )
 from iclip.app.logging import configure_logging
+from iclip.app.preview_host import PreviewHostSplit
 from iclip.app.prompt_attachments import PromptAttachmentImporter
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter, build_reference_breakdown
 from iclip.app.reference_test_video import GenerationTestVideos
@@ -85,6 +87,10 @@ from iclip.domains.conversations.module import build_conversations_module
 from iclip.domains.conversations.service import (
     CollectionInfo,
     ConversationActivity,
+)
+from iclip.domains.conversations.whole_film_project import (
+    WHOLE_FILM_PREVIEW_PREFIX,
+    PreviewTokens,
 )
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import InFlightPhase
@@ -635,6 +641,8 @@ def build_app(
         video_progress_of=video_progress_of,
         same_style_files=SAME_STYLE,
         same_style_source=LibrarySameStyleSource(library_reports),
+        preview_origin=settings.whole_film_preview_origin,
+        preview_tokens=PreviewTokens(settings.security.secret),
     )
     mcp_servers = build_mcp_servers_module(
         runtime_client,
@@ -790,7 +798,7 @@ def build_app(
     app.add_middleware(
         PrincipalMiddleware,
         resolver=identity.resolver,
-        anonymous_prefixes=(f"{RUNTIME_INTERNAL_PREFIX}/",),
+        anonymous_prefixes=(f"{RUNTIME_INTERNAL_PREFIX}/", f"{WHOLE_FILM_PREVIEW_PREFIX}/"),
     )
     if settings.security.cors_allow_origins:
         app.add_middleware(
@@ -800,6 +808,13 @@ def build_app(
             allow_methods=["*"],
             allow_headers=["*"],
         )
+    # 按主机名的划分是成片预览的安全边界，必须在 CORS 与登录态解析之外，最后注册。
+    preview_origin = settings.whole_film_preview_origin
+    app.add_middleware(
+        PreviewHostSplit,
+        preview_host=None if preview_origin is None else urlsplit(preview_origin).netloc,
+        preview_prefix=WHOLE_FILM_PREVIEW_PREFIX,
+    )
 
     app.state.generation = generation
     return app
