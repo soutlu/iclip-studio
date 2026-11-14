@@ -4,9 +4,10 @@ import uuid
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Final
 
-from fastapi import APIRouter, HTTPException, Path, Query, Response
+from fastapi import APIRouter, HTTPException, Path, Query, Request, Response
+from fastapi.responses import RedirectResponse
 
 from iclip.domains.conversations.models import Conversation, ConversationActivity
 from iclip.domains.conversations.schemas import (
@@ -56,6 +57,11 @@ from iclip.domains.conversations.service import (
     ListState,
     WholeFilmRenderUnavailable,
 )
+from iclip.domains.conversations.whole_film_project import (
+    WHOLE_FILM_PREVIEW_PREFIX,
+    PreviewRedirect,
+    WholeFilmProject,
+)
 from iclip.domains.conversations.whole_film_schemas import (
     WholeFilmDraftIn,
     WholeFilmDraftOut,
@@ -63,6 +69,10 @@ from iclip.domains.conversations.whole_film_schemas import (
     WholeFilmExportIn,
     WholeFilmExportLatestOut,
     WholeFilmExportStartedOut,
+    WholeFilmFileCreatedOut,
+    WholeFilmFileIn,
+    WholeFilmPreviewHostOut,
+    WholeFilmPreviewOut,
     whole_film_export_out,
 )
 from iclip.domains.identity.public import (
@@ -635,4 +645,119 @@ def create_previews_router(service: ConversationService) -> APIRouter:
     return router
 
 
-__all__ = ["create_conversations_router", "create_previews_router"]
+_PREVIEW_CONTENT_TYPES: Final = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".mjs": "text/javascript; charset=utf-8",
+    ".json": "application/json",
+    ".svg": "image/svg+xml",
+    ".txt": "text/plain; charset=utf-8",
+}
+
+_OCTET_STREAM: Final = "application/octet-stream"
+
+_PREVIEW_FILE_HEADERS: Final = {
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+}
+
+
+def _preview_content_type(path: str) -> str:
+    name = path.rsplit("/", 1)[-1]
+    _, dot, extension = name.rpartition(".")
+    if not dot:
+        return _OCTET_STREAM
+    return _PREVIEW_CONTENT_TYPES.get(f".{extension.lower()}", _OCTET_STREAM)
+
+
+def create_whole_film_project_router(project: WholeFilmProject) -> APIRouter:
+    """应用域名上的两个接口：发成片预览令牌、在成片工程里新建文件。"""
+
+    router = APIRouter(prefix="/conversations", tags=["conversations"])
+
+    @router.post("/{conversation_id}/whole-film/preview", response_model=WholeFilmPreviewOut)
+    async def open_whole_film_preview(
+        conversation_id: uuid.UUID,
+        request: Request,
+        principal: Annotated[Principal, require_permission("agent:read")],
+    ) -> WholeFilmPreviewOut:
+        """给能读这段对话的人发一张 1 小时的成片预览令牌；可见范围同读工作区文件。
+
+        令牌里签进对话的属主、对话、失效时刻与这次请求的 ``Origin``。看不见这段对话 404；
+        没配置预览域名、请求没带合规的 ``Origin`` 都是 422。"""
+
+        ticket = await project.open_preview(
+            principal, conversation_id, app_origin=request.headers.get("origin")
+        )
+        return WholeFilmPreviewOut(
+            origin=ticket.origin, token=ticket.token, expires_at=ticket.expires_at
+        )
+
+    @router.post(
+        "/{conversation_id}/whole-film/files",
+        response_model=WholeFilmFileCreatedOut,
+        status_code=201,
+    )
+    async def create_whole_film_file(
+        conversation_id: uuid.UUID,
+        body: WholeFilmFileIn,
+        principal: Annotated[Principal, require_permission("agent:run")],
+    ) -> WholeFilmFileCreatedOut:
+        """在成片工程里新建一个文件，写进工作区的 ``whole-film/<path>``。只有属主能建：看不见这段
+        对话 404，看得见但不是属主、或看得见已删除的对话（治理者）403；路径不合规 422；文件已存在
+        409，不覆盖。"""
+
+        created = await project.create_file(
+            principal, conversation_id, path=body.path, content=body.content
+        )
+        return WholeFilmFileCreatedOut(path=body.path, version=created.version)
+
+    return router
+
+
+def create_whole_film_preview_router(project: WholeFilmProject) -> APIRouter:
+    """预览域名上的地址：不看登录态，只认地址里的令牌；令牌不对或过期 403。"""
+
+    router = APIRouter(prefix=WHOLE_FILM_PREVIEW_PREFIX, tags=["whole-film-preview"])
+
+    @router.get("/{token}/host", response_model=WholeFilmPreviewHostOut)
+    async def read_whole_film_preview_host(token: str) -> WholeFilmPreviewHostOut:
+        """发令牌时请求的 ``Origin``，预览页只接受来自这个来源的消息。"""
+
+        return WholeFilmPreviewHostOut(app_origin=project.app_origin(token))
+
+    @router.get(
+        "/{token}/files/{path:path}",
+        response_class=Response,
+        responses={
+            200: {
+                "description": "工程文件的原文，类型按扩展名给出",
+                "content": {_OCTET_STREAM: {}},
+            },
+            307: {"description": "公共库的文件，转到同主机的 /hyperframes/vendor/…"},
+        },
+    )
+    async def read_whole_film_preview_file(token: str, path: str) -> Response:
+        """取成片工程里的一个文件：``vendor/`` 开头的 307 转到同主机的 ``/hyperframes/vendor/…``，
+        其余原文给出工作区的 ``whole-film/<path>``。路径带 ``..``、以 ``/`` 开头、带反斜杠或文件不存在
+        都是 404。"""
+
+        found = await project.preview_file(token, path)
+        if isinstance(found, PreviewRedirect):
+            return RedirectResponse(found.location, status_code=307)
+        return Response(
+            content=found.content.encode(),
+            headers={**_PREVIEW_FILE_HEADERS, "Content-Type": _preview_content_type(path)},
+        )
+
+    return router
+
+
+__all__ = [
+    "create_conversations_router",
+    "create_previews_router",
+    "create_whole_film_preview_router",
+    "create_whole_film_project_router",
+]

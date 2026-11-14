@@ -167,6 +167,16 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 - **查询最新导出进度** `GET .../whole-film/exports/latest`：返回该对话下最新一次导出的状态 `{ export: { id, status, progress, queuePosition, error, downloadUrl } }`（从未导出过则 `export` 为 `null`；`status` 取值为 `queued | rendering | uploading | done | failed | cancelled`）。
 - **取消导出** `DELETE .../whole-film/exports/{exportId}`：取消排队中或正在渲染的导出任务（返回 `204`；如果刚好卡在向渲染服务提交的那一瞬间返回 `409`；如果渲染服务连不上返回 `502`）。
 
+### 成片工程与预览域名
+
+成片工程是对话工作区里的 `whole-film/` 目录。工程里的脚本不可信，所以预览放在应用域名下的一个子域名（预览域名，配置项 `WHOLE_FILM_PREVIEW_ORIGIN`，见 [deploy.md](../docs/deploy.md)）里运行。登录 Cookie 不设 `Domain`，预览域名拿不到它，取工程文件靠地址里的令牌。
+- **按主机名划分**：后端按请求的 `Host` 区分两个域名，在所有路由之前生效（反向代理须原样转发 `Host`，见 §1）。`Host` 是预览域名时只开放下面两个预览地址，其余接口（包括登录）一律 `404`，WebSocket 握手直接拒绝；`Host` 是别的主机时预览地址一律 `404`。没配置预览域名时，任何主机上的预览地址都是 `404`。
+- **发令牌** `POST /conversations/{id}/whole-film/preview`（应用域名，登录态）：可见范围同读工作区文件，治理者也能发；看不见这段对话返回 `404`。返回 `{ origin, token, expiresAt }`：`origin` 是预览域名，令牌 1 小时有效。令牌签进对话的创建者、对话、失效时刻和这次请求的 `Origin` 请求头，不落库，到期前不能吊销。没配置预览域名、请求没带 `Origin` 或它不是 `http(s)://主机[:端口]` 都返回 `422`。前端自己拼出预览地址 `<origin>/api/whole-film/preview/<token>/…`。
+- **预览地址**（预览域名，不看登录态）：令牌不对或已过期返回 `403`。
+  - `GET /whole-film/preview/{token}/host` 返回 `{ appOrigin }`，即发令牌时请求的 `Origin`。预览页据此确认自己在预览域名上，并只接受来自这个来源的消息。
+  - `GET /whole-film/preview/{token}/files/{path}`：`path` 相对工程根，带 `.` 或 `..` 段、空段、以 `/` 开头或结尾、带反斜杠都返回 `404`。以 `vendor/` 开头的返回 `307`，转到同主机的 `/hyperframes/vendor/<其余部分>`（公共库的文件，由前端的静态文件提供）；其余原文返回工作区里的 `whole-film/<path>`，没有就返回 `404`，不到别处找。类型按扩展名给出：`.html`、`.css`、`.js` / `.mjs`、`.json`、`.svg`、`.txt` 各用对应类型（文本类带 `charset=utf-8`），其余为 `application/octet-stream`。响应头带 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff` 与 `Referrer-Policy: no-referrer`。
+- **新建工程文件** `POST /conversations/{id}/whole-film/files`（应用域名，登录态）：请求体 `{ path, content }`，`path` 相对工程根，规则同上，不合规返回 `422`；写进工作区的 `whole-film/<path>`。只有对话创建者能建：看不见这段对话返回 `404`（包括创建者自己删掉的对话），看得见但不是创建者、或看得见的是已删除的对话（治理者）返回 `403`。文件已存在返回 `409`，不覆盖；成功返回 `201 { path, version }`，`path` 与请求里的相同。之后修改这个文件走 `PUT /conversations/{id}/workspace/file`，路径写 `whole-film/<path>`。
+
 ### 分叉
 
 `POST /conversations/{id}:fork` 从指定对话的第 `turn` 轮分叉出一段归属于当前调用者的新对话（需具备 `agent:run` 权限且能看到源对话，**治理者也可以从已删除的对话分叉**）：

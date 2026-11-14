@@ -165,7 +165,10 @@ ListDerivedFiles = Callable[[uuid.UUID, uuid.UUID], Awaitable[Sequence[DerivedFi
 
 ReadDerivedFile = Callable[[uuid.UUID, uuid.UUID, str], Awaitable[DerivedFileContent | None]]
 
-WriteDerivedFile = Callable[[uuid.UUID, uuid.UUID, str, str, int], Awaitable[DerivedFileContent]]
+# 最后一项是期望的版本号；None 表示不比版本、直接写入。
+WriteDerivedFile = Callable[
+    [uuid.UUID, uuid.UUID, str, str, int | None], Awaitable[DerivedFileContent]
+]
 
 
 class ConversationFilm(Protocol):
