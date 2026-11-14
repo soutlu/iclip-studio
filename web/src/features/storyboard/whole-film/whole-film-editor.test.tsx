@@ -996,11 +996,11 @@ describe('成片编辑器 · 导出', () => {
 })
 
 describe('成片编辑器 · 组件栏', () => {
-  const componentCard = (name: RegExp) =>
+  const itemCard = (name: RegExp) =>
     within(screen.getByRole('list', { name: '组件' })).getByRole('group', { name })
   const addAtPlayhead = (user: ReturnType<typeof userEvent.setup>, name: RegExp) =>
-    user.click(within(componentCard(name)).getByRole('button', { name: '加到播放头' }))
-  const savedComponents = () => savedFilm().match(/<div [^>]*class="clip component"[^>]*>/g) ?? []
+    user.click(within(itemCard(name)).getByRole('button', { name: '加到播放头' }))
+  const savedItems = () => savedFilm().match(/<div [^>]*class="clip component"[^>]*>/g) ?? []
   const previewHtml = () =>
     screen
       .getByRole('region', { name: '预览' })
@@ -1014,8 +1014,8 @@ describe('成片编辑器 · 组件栏', () => {
     await openEditor()
     await addAtPlayhead(user, /^测试画面/)
 
-    await waitSaved(() => expect(savedComponents()).toHaveLength(1))
-    const [clip] = savedComponents()
+    await waitSaved(() => expect(savedItems()).toHaveLength(1))
+    const [clip] = savedItems()
     expect(clip).toContain('data-label="测试画面"')
     expect(clip).toContain('data-composition-id="fixture-scene"')
     expect(clip).toContain('data-start="0" data-duration="6" data-track-index="1"')
@@ -1040,12 +1040,10 @@ describe('成片编辑器 · 组件栏', () => {
     expect(within(transport()).getByText('00:03.50')).toBeVisible()
     await addAtPlayhead(user, /^测试叠加/)
 
-    await waitSaved(() => expect(savedComponents()).toHaveLength(1))
-    expect(savedComponents()[0]).toContain(
-      'data-start="3.5" data-duration="4" data-track-index="1"',
-    )
+    await waitSaved(() => expect(savedItems()).toHaveLength(1))
+    expect(savedItems()[0]).toContain('data-start="3.5" data-duration="4" data-track-index="1"')
     await user.click(within(toolbar()).getByRole('button', { name: '撤销' }))
-    await waitSaved(() => expect(savedComponents()).toHaveLength(0))
+    await waitSaved(() => expect(savedItems()).toHaveLength(0))
     expect(savedClips()).toHaveLength(2)
   })
 
@@ -1053,19 +1051,19 @@ describe('成片编辑器 · 组件栏', () => {
     const user = userEvent.setup()
     await openEditor()
     await addAtPlayhead(user, /^测试叠加/)
-    await waitSaved(() => expect(savedComponents()).toHaveLength(1))
+    await waitSaved(() => expect(savedItems()).toHaveLength(1))
     expect(savedFilm()).toContain('data-width="1080" data-height="1920"')
-    expect(savedComponents()[0]).toContain('data-start="0" data-duration="4" data-track-index="0"')
+    expect(savedItems()[0]).toContain('data-start="0" data-duration="4" data-track-index="0"')
   })
 
   it('上一个组件还没加完又点「加到播放头」：只加一个，提示稍后再加', async () => {
     await openEditor()
-    const add = within(componentCard(/^测试叠加/)).getByRole('button', { name: '加到播放头' })
+    const add = within(itemCard(/^测试叠加/)).getByRole('button', { name: '加到播放头' })
     fireEvent.click(add)
     fireEvent.click(add)
-    await waitSaved(() => expect(savedComponents()).toHaveLength(1))
+    await waitSaved(() => expect(savedItems()).toHaveLength(1))
     await new Promise((resolve) => setTimeout(resolve, 1000))
-    expect(savedComponents()).toHaveLength(1)
+    expect(savedItems()).toHaveLength(1)
     expect(screen.getByText('上一个组件正在加入成片，请稍后再试')).toBeVisible()
   })
 })
@@ -1092,7 +1090,7 @@ describe('成片编辑器 · 右侧栏', () => {
     host({
       id: 'brand-1',
       label: '示例品牌 片尾',
-      component: 'fixture-brand-card',
+      item: 'fixture-brand-card',
       src: 'compositions/fixtures/fixture-brand-card.html',
       start: 2_000,
       duration: 3_000,
@@ -1101,7 +1099,7 @@ describe('成片编辑器 · 右侧栏', () => {
     host({
       id: 'overlay-1',
       label: '测试叠加',
-      component: 'fixture-overlay',
+      item: 'fixture-overlay',
       src: 'compositions/fixtures/fixture-overlay.html',
       start: 5_000,
     })
@@ -1342,7 +1340,7 @@ describe('成片编辑器 · 右侧栏', () => {
       host({
         id: 'scene-1',
         label: '测试画面',
-        component: 'fixture-scene',
+        item: 'fixture-scene',
         src: 'compositions/fixtures/fixture-scene.html',
       }),
     ])

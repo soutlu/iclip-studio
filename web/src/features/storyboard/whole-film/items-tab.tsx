@@ -6,17 +6,17 @@ import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { Input } from '@/shared/ui/field'
 import { DRAG_THRESHOLD, releasePointer } from '../editing/timeline-drag'
 import { thumbnailUrl } from './component-catalog'
-import { ComponentHoverPreview } from './component-hover-preview'
-import { categoryLabel, componentChips, filterComponents } from './components'
 import type { CatalogItem, ComponentCatalog } from './composition/catalog'
 import { hoverPreviewOf } from './hover-preview'
+import { ItemHoverPreview } from './item-hover-preview'
+import { categoryLabel, filterItems, itemChips } from './items'
 
 /** 照参照的工作台：指针停够这么久才在卡片里播预览，划过时不播。 */
 export const HOVER_PREVIEW_DELAY_MS = 300
 
 export type CarryPoint = { clientX: number; clientY: number }
 
-type ComponentsTabProps = {
+type ItemsTabProps = {
   catalog: ComponentCatalog
   /** 页面的源，悬停预览按它找组件库的文件。 */
   origin: string
@@ -28,12 +28,12 @@ type ComponentsTabProps = {
   onDrop: (item: CatalogItem, point: CarryPoint) => void
 }
 
-export function ComponentsTab({ catalog, origin, onAdd, onCarry, onDrop }: ComponentsTabProps) {
-  const chips = componentChips(catalog)
+export function ItemsTab({ catalog, origin, onAdd, onCarry, onDrop }: ItemsTabProps) {
+  const chips = itemChips(catalog)
   const [chipValue, setChipValue] = useState('all')
   const [query, setQuery] = useState('')
   const chip = chips.find((candidate) => candidate.value === chipValue) ?? chips[0]
-  const items = chip === undefined ? [] : filterComponents(catalog, chip, query)
+  const items = chip === undefined ? [] : filterItems(catalog, chip, query)
 
   // 预览只在停着的那一张卡上跑
   const [previewed, setPreviewed] = useState<string | null>(null)
@@ -49,7 +49,7 @@ export function ComponentsTab({ catalog, origin, onAdd, onCarry, onDrop }: Compo
   }
 
   return (
-    <div className="wf-components">
+    <div className="wf-items">
       <Input
         aria-label="搜索组件"
         leadingIcon="search"
@@ -57,7 +57,7 @@ export function ComponentsTab({ catalog, origin, onAdd, onCarry, onDrop }: Compo
         placeholder="搜索名字或分类"
         type="search"
         value={query}
-        wrapperClassName="wf-component-search"
+        wrapperClassName="wf-item-search"
       />
       <ChipGroup
         aria-label="组件分类"
@@ -75,14 +75,14 @@ export function ComponentsTab({ catalog, origin, onAdd, onCarry, onDrop }: Compo
         ))}
       </ChipGroup>
       {items.length === 0 ? (
-        <p className="wf-components-empty" role="status">
+        <p className="wf-items-empty" role="status">
           暂无符合条件的组件，请更换关键词或分类
         </p>
       ) : (
-        <ul aria-label="组件" className="wf-component-grid">
+        <ul aria-label="组件" className="wf-item-grid">
           {items.map((item) => (
             <li key={item.name}>
-              <ComponentCard
+              <ItemCard
                 catalog={catalog}
                 item={item}
                 onAdd={() => onAdd(item)}
@@ -117,7 +117,7 @@ type Press = { pointerId: number; originX: number; originY: number; moved: boole
 
 const durationText = (seconds: number) => `${seconds}s`
 
-function ComponentCard({
+function ItemCard({
   catalog,
   item,
   preview,
@@ -174,7 +174,7 @@ function ComponentCard({
       aria-label={
         item.duration === null ? item.title : `${item.title}，${String(item.duration)} 秒`
       }
-      className={cn('wf-component', lifting && 'is-lifting')}
+      className={cn('wf-item', lifting && 'is-lifting')}
       onPointerCancel={cancel}
       onPointerDown={press}
       onPointerEnter={(event) => {
@@ -185,28 +185,28 @@ function ComponentCard({
       onPointerUp={release}
       role="group"
     >
-      <span className="wf-component-frame">
-        <span className="wf-component-thumb">
+      <span className="wf-item-frame">
+        <span className="wf-item-thumb">
           {thumbnail === null ? (
             <Icon decorative name="grid" size="md" />
           ) : (
             <img alt="" draggable={false} loading="lazy" src={thumbnail} />
           )}
         </span>
-        {preview === undefined ? null : <ComponentHoverPreview srcdoc={preview} />}
+        {preview === undefined ? null : <ItemHoverPreview srcdoc={preview} />}
         {item.duration === null ? null : (
-          <span aria-hidden="true" className="wf-component-duration">
+          <span aria-hidden="true" className="wf-item-duration">
             {durationText(item.duration)}
           </span>
         )}
         {/* 和别处悬停才出的操作一样：指针停在卡片上、焦点在按钮上或触屏时显示 */}
-        <button className="wf-component-add ui-focus" onClick={onAdd} type="button">
+        <button className="wf-item-add ui-focus" onClick={onAdd} type="button">
           <Icon decorative name="add" size="xs" />
           加到播放头
         </button>
       </span>
-      <span className="wf-component-name">{item.title}</span>
-      <span className="wf-component-meta">{categoryLabel(catalog, item)}</span>
+      <span className="wf-item-name">{item.title}</span>
+      <span className="wf-item-meta">{categoryLabel(catalog, item)}</span>
     </div>
   )
 }

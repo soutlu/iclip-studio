@@ -1153,13 +1153,13 @@
 
 /* ---- 组件栏 ---- */
 
-.wf-side-body.is-components {
+.wf-side-body.is-items {
   display: flex;
   flex-direction: column;
   padding: 0;
 }
 
-.wf-components {
+.wf-items {
   display: flex;
   min-height: 0;
   flex: 1;
@@ -1167,7 +1167,7 @@
 }
 
 /* 两个类压过输入框自带的高度、圆角和底色：构建后工具类与这里同层，单个类比不过加载顺序 */
-.wf-components .wf-component-search {
+.wf-items .wf-item-search {
   height: 30px;
   flex: none;
   gap: 6px;
@@ -1180,18 +1180,18 @@
   font-size: var(--text-label);
 }
 
-.wf-components .wf-component-search svg {
+.wf-items .wf-item-search svg {
   width: 14px;
   height: 14px;
   color: var(--color-on-surface-faint);
 }
 
-.wf-components .wf-component-search input {
+.wf-items .wf-item-search input {
   font-size: var(--text-label);
 }
 
 /* 两个类压过 ChipGroup 自带的 flex-wrap：构建后工具类与这里同层，单个类比不过加载顺序 */
-.wf-components .wf-chips {
+.wf-items .wf-chips {
   flex: none;
   flex-wrap: nowrap;
   gap: 4px;
@@ -1214,7 +1214,7 @@
   color: var(--color-top-layer);
 }
 
-.wf-components-empty {
+.wf-items-empty {
   padding: 12px 14px;
   color: var(--color-on-surface-muted);
   font-size: var(--text-label);
@@ -1222,7 +1222,7 @@
 }
 
 /* 两列卡片：封面、右上角时长、名字、分类 */
-.wf-component-grid {
+.wf-item-grid {
   display: grid;
   min-height: 0;
   flex: 1;
@@ -1234,7 +1234,7 @@
   scrollbar-width: thin;
 }
 
-.wf-component {
+.wf-item {
   display: flex;
   width: 100%;
   min-width: 0;
@@ -1247,17 +1247,17 @@
   user-select: none;
 }
 
-.wf-component.is-lifting {
+.wf-item.is-lifting {
   opacity: 0.4;
   cursor: grabbing;
 }
 
-.wf-component-frame {
+.wf-item-frame {
   position: relative;
   display: block;
 }
 
-.wf-component-thumb {
+.wf-item-thumb {
   display: grid;
   width: 100%;
   aspect-ratio: 16 / 9;
@@ -1269,7 +1269,7 @@
   color: var(--color-on-surface-faint);
 }
 
-.wf-component-thumb img {
+.wf-item-thumb img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -1295,11 +1295,11 @@
   opacity: 0;
 }
 
-.wf-component:hover:not(.is-lifting) .wf-component-thumb {
+.wf-item:hover:not(.is-lifting) .wf-item-thumb {
   box-shadow: 0 0 0 1.5px var(--color-on-surface-faint);
 }
 
-.wf-component-duration {
+.wf-item-duration {
   position: absolute;
   top: 4px;
   right: 4px;
@@ -1314,7 +1314,7 @@
 }
 
 /* 悬停才出：指针停在卡片上、焦点在按钮上时显示，触屏一直显示；拖着卡片时不显示 */
-.wf-component-add {
+.wf-item-add {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -1336,18 +1336,18 @@
   white-space: nowrap;
 }
 
-.wf-component:hover:not(.is-lifting) .wf-component-add,
-.wf-component-add:focus-visible {
+.wf-item:hover:not(.is-lifting) .wf-item-add,
+.wf-item-add:focus-visible {
   opacity: 1;
 }
 
 @media (hover: none) {
-  .wf-component-add {
+  .wf-item-add {
     opacity: 1;
   }
 }
 
-.wf-component-name {
+.wf-item-name {
   overflow: hidden;
   color: var(--color-on-surface-variant);
   font-size: var(--text-caption);
@@ -1356,7 +1356,7 @@
   white-space: nowrap;
 }
 
-.wf-component-meta {
+.wf-item-meta {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1366,7 +1366,7 @@
   line-height: 13px;
 }
 
-.wf-component-meta::before {
+.wf-item-meta::before {
   width: 5px;
   height: 5px;
   flex: none;
@@ -2137,7 +2137,7 @@
   gap: 10px;
 }
 
-/* 菜单里的样式预览图；排在 .wf-component-thumb 之后，固定尺寸与内描边以这里为准 */
+/* 菜单里的样式预览图；排在 .wf-item-thumb 之后，固定尺寸与内描边以这里为准 */
 .wf-caption-style-thumb {
   width: 48px;
   height: 27px;
@@ -2703,7 +2703,7 @@
 }
 
 /* 组件缩略图放进插入缩影与占位时，跟着缩略框的圆角，不再叠阴影。 */
-.timeline-insertion-thumb .wf-component-thumb {
+.timeline-insertion-thumb .wf-item-thumb {
   border-radius: inherit;
   box-shadow: none;
 }
@@ -2911,7 +2911,7 @@
   }
 
   /* 组件栏变成通栏，卡片按栏宽多排几列，不跟着拉大 */
-  .wf-component-grid {
+  .wf-item-grid {
     grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
   }
 }

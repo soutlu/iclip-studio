@@ -219,9 +219,9 @@ function readClip(element: Element, catalog: ComponentCatalog): FilmClip {
   if (clip.duration < MIN_CLIP_MS) fail(`${where}短于 ${MIN_CLIP_MS} 毫秒`)
   if (
     clip.kind === 'host' &&
-    !catalog.items.some((item) => item.name === clip.component && item.src === clip.src)
+    !catalog.items.some((item) => item.name === clip.item && item.src === clip.src)
   ) {
-    fail(`${where}使用的组件不在组件库中：${clip.component}`)
+    fail(`${where}使用的组件不在组件库中：${clip.item}`)
   }
   return clip
 }

@@ -69,7 +69,7 @@ export function host(overrides: Partial<HostClip> = {}): HostClip {
     kind: 'host',
     id: 'title-1',
     label: '测试可填项',
-    component: 'fixture-fields',
+    item: 'fixture-fields',
     src: 'compositions/fixtures/fixture-fields.html',
     start: 0,
     duration: 2000,

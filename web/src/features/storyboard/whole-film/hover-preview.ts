@@ -16,7 +16,7 @@ export const hoverPreviewOf = (
     kind: 'host' as const,
     id: 'hover',
     label: item.title,
-    component: item.name,
+    item: item.name,
     src: item.src,
     start: 0,
     duration: Math.round(item.duration * 1000),

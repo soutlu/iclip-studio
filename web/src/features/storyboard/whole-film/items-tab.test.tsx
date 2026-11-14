@@ -4,8 +4,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/testing/render'
 import { fixtureCatalog } from '@/testing/whole-film'
 import { DRAG_THRESHOLD } from '../editing/timeline-drag'
-import { ComponentsTab, HOVER_PREVIEW_DELAY_MS } from './components-tab'
 import type { CatalogItem } from './composition/catalog'
+import { HOVER_PREVIEW_DELAY_MS, ItemsTab } from './items-tab'
 
 const ORIGIN = 'https://studio.example.com'
 
@@ -14,7 +14,7 @@ const renderTab = async () => {
   const onCarry = vi.fn()
   const onDrop = vi.fn()
   await renderWithProviders(
-    <ComponentsTab
+    <ItemsTab
       catalog={fixtureCatalog}
       onAdd={onAdd}
       onCarry={onCarry}

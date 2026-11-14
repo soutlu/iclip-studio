@@ -30,14 +30,14 @@ import { audioPlayheadSpot } from './audio'
 import { AudioTab } from './audio-tab'
 import type { SourceLength } from './clip-edit'
 import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
-import { componentDurationMs, playheadSpot } from './components'
-import { ComponentsTab } from './components-tab'
 import type { CatalogItem } from './composition/catalog'
 import { writeFilm, type Canvas } from './composition/film'
 import { EditorToolbar } from './editor-toolbar'
 import { ExportControl } from './export-control'
 import { FilmInspector } from './film-inspector'
 import { FilmTimeline, type DropGhost, type TimelineHandle } from './film-timeline'
+import { itemDurationMs, playheadSpot } from './items'
+import { ItemsTab } from './items-tab'
 import { MaterialArea } from './material-area'
 import {
   useKeyframeIndexes,
@@ -86,7 +86,7 @@ type Props = {
 const EMPTY_TEXT = '暂无成片内容，加入内容后可在此预览'
 const PICK_FIRST_TEXT = '尚未选中镜头，无法加入成片；请先在下方选中镜头范围'
 const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏，无法进入全屏'
-const ADDING_COMPONENT_TEXT = '上一个组件正在加入成片，请稍后再试'
+const ADDING_ITEM_TEXT = '上一个组件正在加入成片，请稍后再试'
 const ADDING_AUDIO_TEXT = '上一条音频正在加入成片，请稍后再试'
 // 还没有成片时先放组件：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
@@ -404,17 +404,17 @@ function EditorBody({
   }
 
   // 照参照的工作台：上一个组件还没加完时不接下一个，免得两次都按加之前的样子算落点
-  const addingComponentRef = useRef(false)
+  const addingItemRef = useRef(false)
   /** 把组件库的一个条目放进成片的 `at`；还没有成片时按默认画布建一份。 */
-  const placeComponent = (item: CatalogItem, at: { row: RowTarget; start: number }) => {
-    if (addingComponentRef.current) {
-      notice(ADDING_COMPONENT_TEXT)
+  const placeItem = (item: CatalogItem, at: { row: RowTarget; start: number }) => {
+    if (addingItemRef.current) {
+      notice(ADDING_ITEM_TEXT)
       return
     }
-    addingComponentRef.current = true
+    addingItemRef.current = true
     const spot = trackFor(at.row)
     void session
-      .addComponent(
+      .addItem(
         film?.canvas ?? DEFAULT_CANVAS,
         item,
         {},
@@ -425,11 +425,11 @@ function EditorBody({
         if (added) leaveMaterial()
       })
       .finally(() => {
-        addingComponentRef.current = false
+        addingItemRef.current = false
       })
   }
   const addAtPlayhead = (item: CatalogItem) =>
-    placeComponent(item, playheadSpot(clips, item, playhead, componentDurationMs(item, clips)))
+    placeItem(item, playheadSpot(clips, item, playhead, itemDurationMs(item, clips)))
 
   // 和组件一样：上一条音频还没加完时不接下一条
   const addingAudioRef = useRef(false)
@@ -592,25 +592,21 @@ function EditorBody({
               <TabsTrigger value="components">组件</TabsTrigger>
               <TabsTrigger value="audio">音频</TabsTrigger>
             </TabsList>
-            <TabsContent className="wf-side-body is-components" value="components">
-              <ComponentsTab
+            <TabsContent className="wf-side-body is-items" value="components">
+              <ItemsTab
                 catalog={catalog}
                 onAdd={addAtPlayhead}
                 onCarry={(item, point) =>
                   setGhost(
                     point === null
                       ? null
-                      : landingAt(point.clientX, point.clientY, componentDurationMs(item, clips)),
+                      : landingAt(point.clientX, point.clientY, itemDurationMs(item, clips)),
                   )
                 }
                 onDrop={(item, point) => {
-                  const at = landingAt(
-                    point.clientX,
-                    point.clientY,
-                    componentDurationMs(item, clips),
-                  )
+                  const at = landingAt(point.clientX, point.clientY, itemDurationMs(item, clips))
                   setGhost(null)
-                  if (at !== null) placeComponent(item, { row: at.row, start: at.start })
+                  if (at !== null) placeItem(item, { row: at.row, start: at.start })
                 }}
                 origin={window.location.origin}
               />

@@ -151,7 +151,7 @@ function ClipInspector({
 }: Omit<Props, 'selected'> & { clip: FilmClip }) {
   const groups: Group[] = []
   if (clip.kind === 'host') {
-    const variables = catalog.items.find((item) => item.name === clip.component)?.variables ?? []
+    const variables = catalog.items.find((item) => item.name === clip.item)?.variables ?? []
     const text = variables.find((variable) => variable.type === 'string')
     groups.push({
       id: 'content',

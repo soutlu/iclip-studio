@@ -119,7 +119,7 @@ describe('成片文件的写法', () => {
   it('固定尺寸的组件放进不一样大的画面：按片段的编号写一条规则，按原比例缩到放得下、居中', () => {
     const scene = host({
       id: 'scene-1',
-      component: 'fixture-scene',
+      item: 'fixture-scene',
       src: 'compositions/fixtures/fixture-scene.html',
     })
     const html = writeFilm(film(scene), fixtureCatalog)
@@ -135,12 +135,12 @@ describe('成片文件的写法', () => {
   it('固定尺寸和画面一样大、或者没写尺寸（铺满）的组件：不写规则', () => {
     const scene = host({
       id: 'scene-1',
-      component: 'fixture-scene',
+      item: 'fixture-scene',
       src: 'compositions/fixtures/fixture-scene.html',
     })
     const overlay = host({
       id: 'overlay-1',
-      component: 'fixture-overlay',
+      item: 'fixture-overlay',
       src: 'compositions/fixtures/fixture-overlay.html',
     })
     const same = writeFilm(
@@ -154,7 +154,7 @@ describe('成片文件的写法', () => {
   it('带默认字体的固定尺寸组件：缩放和字体变量写在同一条规则里', () => {
     const brand = host({
       id: 'brand-1',
-      component: 'fixture-brand-card',
+      item: 'fixture-brand-card',
       src: 'compositions/fixtures/fixture-brand-card.html',
     })
     expect(writeFilm(film(brand), fixtureCatalog)).toContain(
@@ -259,7 +259,7 @@ describe('成片声明的字体', () => {
   it('条目自带的字体族也链上；同一个字体只链一次', () => {
     const brand = host({
       id: 'brand-1',
-      component: 'fixture-brand-card',
+      item: 'fixture-brand-card',
       src: 'compositions/fixtures/fixture-brand-card.html',
       track: 2,
     })

@@ -3,7 +3,7 @@ import type { FilmClip } from './composition/film'
 import { rowBusy, rowsOf, type RowTarget } from './placement'
 
 /** 组件栏的一个分类：「全部」「品牌」，或者组件库目录里的一类。 */
-export type ComponentChip = {
+export type ItemChip = {
   value: string
   label: string
   includes: (item: CatalogItem) => boolean
@@ -15,7 +15,7 @@ const CAPTIONS = 'captions'
 const listed = (item: CatalogItem) => item.category !== CAPTIONS
 
 /** 组件栏上的分类，按显示的先后：全部、品牌、目录里除字幕以外的各类。 */
-export const componentChips = (catalog: ComponentCatalog): ComponentChip[] => [
+export const itemChips = (catalog: ComponentCatalog): ItemChip[] => [
   { value: 'all', label: '全部', includes: listed },
   { value: 'brand', label: '品牌', includes: (item) => listed(item) && item.brand !== undefined },
   ...catalog.categories
@@ -31,9 +31,9 @@ export const categoryLabel = (catalog: ComponentCatalog, item: CatalogItem): str
   catalog.categories.find((category) => category.id === item.category)?.label ?? ''
 
 /** 分类里名字、说明或分类名含有 `query`（不分大小写，去掉两头空白）的条目，按目录里的先后。 */
-export const filterComponents = (
+export const filterItems = (
   catalog: ComponentCatalog,
-  chip: ComponentChip,
+  chip: ItemChip,
   query: string,
 ): CatalogItem[] => {
   const keyword = query.trim().toLowerCase()
@@ -47,12 +47,12 @@ export const filterComponents = (
 }
 
 // 和参照的工作台一样：条目没写时长时取 10 秒和成片现有总长里大的那个
-const DEFAULT_COMPONENT_MS = 10_000
+const DEFAULT_ITEM_MS = 10_000
 
 /** 条目放进成片时的时长（毫秒）；`clips` 是成片里现有的片段。 */
-export const componentDurationMs = (item: CatalogItem, clips: readonly FilmClip[]): number =>
+export const itemDurationMs = (item: CatalogItem, clips: readonly FilmClip[]): number =>
   item.duration === null
-    ? Math.max(DEFAULT_COMPONENT_MS, ...clips.map((clip) => clip.start + clip.duration))
+    ? Math.max(DEFAULT_ITEM_MS, ...clips.map((clip) => clip.start + clip.duration))
     : Math.round(item.duration * 1000)
 
 /**

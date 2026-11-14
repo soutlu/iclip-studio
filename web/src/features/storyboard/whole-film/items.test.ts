@@ -1,16 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { audio, fixtureCatalog, host, video } from '@/testing/whole-film'
-import {
-  componentChips,
-  componentDurationMs,
-  filterComponents,
-  playheadSpot,
-  type ComponentChip,
-} from './components'
 import type { CatalogItem } from './composition/catalog'
+import { filterItems, itemChips, itemDurationMs, playheadSpot, type ItemChip } from './items'
 
-const chips = componentChips(fixtureCatalog)
-const chip = (label: string): ComponentChip => {
+const chips = itemChips(fixtureCatalog)
+const chip = (label: string): ItemChip => {
   const found = chips.find((candidate) => candidate.label === label)
   if (found === undefined) throw new Error(`没有分类「${label}」`)
   return found
@@ -37,7 +31,7 @@ describe('组件栏的分类和搜索', () => {
   })
 
   it('「全部」是字幕以外的全部条目，按目录里的先后', () => {
-    expect(titles(filterComponents(fixtureCatalog, chip('全部'), ''))).toEqual([
+    expect(titles(filterItems(fixtureCatalog, chip('全部'), ''))).toEqual([
       '测试画面',
       '测试叠加',
       '测试可填项',
@@ -46,26 +40,24 @@ describe('组件栏的分类和搜索', () => {
   })
 
   it('「品牌」是带品牌的条目；目录里的一类是这一类的条目；没有条目的类是空的', () => {
-    expect(titles(filterComponents(fixtureCatalog, chip('品牌'), ''))).toEqual(['示例品牌 片尾'])
-    expect(titles(filterComponents(fixtureCatalog, chip('场景'), ''))).toEqual([
+    expect(titles(filterItems(fixtureCatalog, chip('品牌'), ''))).toEqual(['示例品牌 片尾'])
+    expect(titles(filterItems(fixtureCatalog, chip('场景'), ''))).toEqual([
       '测试画面',
       '示例品牌 片尾',
     ])
-    expect(filterComponents(fixtureCatalog, chip('转场'), '')).toEqual([])
+    expect(filterItems(fixtureCatalog, chip('转场'), '')).toEqual([])
   })
 
   it('搜索匹配名字、说明和分类名，去掉两头空白；只在选中的分类里找', () => {
-    expect(titles(filterComponents(fixtureCatalog, chip('全部'), '叠加'))).toEqual(['测试叠加'])
-    expect(titles(filterComponents(fixtureCatalog, chip('全部'), '圆环'))).toEqual(['测试叠加'])
-    expect(titles(filterComponents(fixtureCatalog, chip('全部'), ' 文字效果 '))).toEqual([
-      '测试可填项',
-    ])
-    expect(titles(filterComponents(fixtureCatalog, chip('全部'), '画面'))).toEqual([
+    expect(titles(filterItems(fixtureCatalog, chip('全部'), '叠加'))).toEqual(['测试叠加'])
+    expect(titles(filterItems(fixtureCatalog, chip('全部'), '圆环'))).toEqual(['测试叠加'])
+    expect(titles(filterItems(fixtureCatalog, chip('全部'), ' 文字效果 '))).toEqual(['测试可填项'])
+    expect(titles(filterItems(fixtureCatalog, chip('全部'), '画面'))).toEqual([
       '测试画面',
       '测试叠加',
     ])
-    expect(titles(filterComponents(fixtureCatalog, chip('效果'), '画面'))).toEqual(['测试叠加'])
-    expect(filterComponents(fixtureCatalog, chip('全部'), '没有这个')).toEqual([])
+    expect(titles(filterItems(fixtureCatalog, chip('效果'), '画面'))).toEqual(['测试叠加'])
+    expect(filterItems(fixtureCatalog, chip('全部'), '没有这个')).toEqual([])
   })
 
   it('搜索西文不分大小写', () => {
@@ -75,22 +67,22 @@ describe('组件栏的分类和搜索', () => {
         entry.name === 'fixture-scene' ? { ...entry, title: 'Glow Title' } : entry,
       ),
     }
-    expect(
-      titles(filterComponents(catalog, componentChips(catalog)[0] as ComponentChip, 'glow')),
-    ).toEqual(['Glow Title'])
+    expect(titles(filterItems(catalog, itemChips(catalog)[0] as ItemChip, 'glow'))).toEqual([
+      'Glow Title',
+    ])
   })
 
   it('字幕搜不出来', () => {
-    expect(filterComponents(fixtureCatalog, chip('全部'), '字幕')).toEqual([])
+    expect(filterItems(fixtureCatalog, chip('全部'), '字幕')).toEqual([])
   })
 })
 
 describe('组件放进成片的时长', () => {
   it('条目写了时长就用它；没写时取 10 秒和成片现有总长里大的那个', () => {
-    expect(componentDurationMs(item('fixture-scene'), [])).toBe(6000)
+    expect(itemDurationMs(item('fixture-scene'), [])).toBe(6000)
     const timeless = { ...item('fixture-scene'), duration: null }
-    expect(componentDurationMs(timeless, [video({ duration: 4000 })])).toBe(10_000)
-    expect(componentDurationMs(timeless, [audio({ start: 9000, duration: 3500 })])).toBe(12_500)
+    expect(itemDurationMs(timeless, [video({ duration: 4000 })])).toBe(10_000)
+    expect(itemDurationMs(timeless, [audio({ start: 9000, duration: 3500 })])).toBe(12_500)
   })
 })
 

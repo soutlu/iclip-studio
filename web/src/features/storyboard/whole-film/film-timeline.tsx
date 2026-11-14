@@ -1000,9 +1000,7 @@ export function FilmTimeline({
                           clip={clip}
                           clips={clips}
                           contentRef={contentRef}
-                          cover={
-                            clip.kind === 'host' ? thumbnailUrl(catalog, clip.component) : null
-                          }
+                          cover={clip.kind === 'host' ? thumbnailUrl(catalog, clip.item) : null}
                           following={following}
                           group={movingWith(selected, clip.id)}
                           key={clip.id}

@@ -279,7 +279,7 @@ test('播放条：倍速和静音对素材、成片都生效且换播放器后�
 })
 
 /** 存下来的成片里名字是 `title` 的组件或块的片段的属性；没有时是 null。 */
-const savedComponent = (html: string, title: string) => {
+const savedItem = (html: string, title: string) => {
   const tag = new RegExp(`<div [^>]*class="clip component"[^>]*data-label="${title}"[^>]*>`).exec(
     html,
   )?.[0]
@@ -287,7 +287,7 @@ const savedComponent = (html: string, title: string) => {
   const attribute = (name: string) => new RegExp(` ${name}="([^"]*)"`).exec(tag)?.[1]
   return {
     id: attribute('id'),
-    component: attribute('data-composition-id'),
+    item: attribute('data-composition-id'),
     start: Number(attribute('data-start')),
     duration: Number(attribute('data-duration')),
     track: Number(attribute('data-track-index')),
@@ -334,10 +334,10 @@ test('组件栏：搜到组件点「加到播放头」、拖一个到时间线�
   await expect(add).toHaveCSS('opacity', '1')
 
   // 播放头在 0：第一行这时有视频片段，组件放进它下面新开的一行
-  const added = draftSavedWith(page, (html) => savedComponent(html, '测试画面') !== null)
+  const added = draftSavedWith(page, (html) => savedItem(html, '测试画面') !== null)
   await add.click()
-  const placed = savedComponent(((await added).postDataJSON() as { html: string }).html, '测试画面')
-  expect(placed).toMatchObject({ component: 'fixture-scene', start: 0, duration: 6, track: 1 })
+  const placed = savedItem(((await added).postDataJSON() as { html: string }).html, '测试画面')
+  expect(placed).toMatchObject({ item: 'fixture-scene', start: 0, duration: 6, track: 1 })
   await expect(
     dialog.getByRole('group', { name: '第 2 行' }).getByRole('group', { name: '测试画面，6.0 秒' }),
   ).toBeVisible()
@@ -387,19 +387,15 @@ test('组件栏：搜到组件点「加到播放头」、拖一个到时间线�
   await page.mouse.move(from.x + from.width / 2 + 10, from.y + 20, { steps: 3 })
   await page.mouse.move(dropX, lane.y + lane.height / 2, { steps: 8 })
   await expect(row.getByTestId('drop-ghost')).toBeVisible()
-  const dropped = draftSavedWith(page, (html) => savedComponent(html, '测试叠加') !== null)
+  const dropped = draftSavedWith(page, (html) => savedItem(html, '测试叠加') !== null)
   await page.mouse.up()
-  const carried = savedComponent(
-    ((await dropped).postDataJSON() as { html: string }).html,
-    '测试叠加',
-  )
-  expect(carried).toMatchObject({ component: 'fixture-overlay', duration: 4, track: 0 })
+  const carried = savedItem(((await dropped).postDataJSON() as { html: string }).html, '测试叠加')
+  expect(carried).toMatchObject({ item: 'fixture-overlay', duration: 4, track: 0 })
   expect(Math.abs((carried?.start ?? 0) - target)).toBeLessThan(0.1)
 
   const undone = draftSavedWith(
     page,
-    (html) =>
-      savedComponent(html, '测试叠加') === null && savedComponent(html, '测试画面') !== null,
+    (html) => savedItem(html, '测试叠加') === null && savedItem(html, '测试画面') !== null,
   )
   await dialog
     .getByRole('toolbar', { name: '剪辑工具' })
@@ -421,14 +417,11 @@ test('右侧栏：选中组件或块的片段改文字可填项，存下来、�
   const side = dialog.getByRole('complementary', { name: '组件和音频' })
   await side.getByRole('searchbox', { name: '搜索组件' }).fill('可填项')
   const card = side.getByRole('group', { name: '测试可填项，5 秒' })
-  const added = draftSavedWith(page, (html) => savedComponent(html, '测试可填项') !== null)
+  const added = draftSavedWith(page, (html) => savedItem(html, '测试可填项') !== null)
   await card.hover()
   await card.getByRole('button', { name: '加到播放头' }).click()
-  const placed = savedComponent(
-    ((await added).postDataJSON() as { html: string }).html,
-    '测试可填项',
-  )
-  expect(placed).toMatchObject({ component: 'fixture-fields', start: 0, values: {} })
+  const placed = savedItem(((await added).postDataJSON() as { html: string }).html, '测试可填项')
+  expect(placed).toMatchObject({ item: 'fixture-fields', start: 0, values: {} })
 
   const row = dialog.getByRole('group', { name: '第 1 行' })
   await row.getByRole('button', { name: /^选中：测试可填项，/ }).click()
@@ -445,7 +438,7 @@ test('右侧栏：选中组件或块的片段改文字可填项，存下来、�
   await page.waitForTimeout(600)
   const renamed = draftSavedWith(
     page,
-    (html) => savedComponent(html, '测试可填项')?.values['text'] === '新的标题',
+    (html) => savedItem(html, '测试可填项')?.values['text'] === '新的标题',
   )
   await text.pressSequentially('标题')
   await renamed
@@ -463,7 +456,7 @@ test('右侧栏：选中组件或块的片段改文字可填项，存下来、�
   await inspector.getByRole('button', { name: /^时间/ }).click()
   const start = inspector.getByRole('textbox', { name: '开始' })
   await expect(start).toHaveValue('0.00')
-  const moved = draftSavedWith(page, (html) => savedComponent(html, '测试可填项')?.start === 2)
+  const moved = draftSavedWith(page, (html) => savedItem(html, '测试可填项')?.start === 2)
   await start.fill('2')
   await start.press('Enter')
   await moved
@@ -474,7 +467,7 @@ test('右侧栏：选中组件或块的片段改文字可填项，存下来、�
   await page.mouse.click(lane.x + 6, lane.y + lane.height / 2)
   await expect(inspector.getByRole('heading', { name: '尚未选中片段' })).toBeVisible()
 
-  const undone = draftSavedWith(page, (html) => savedComponent(html, '测试可填项')?.start === 0)
+  const undone = draftSavedWith(page, (html) => savedItem(html, '测试可填项')?.start === 0)
   await dialog
     .getByRole('toolbar', { name: '剪辑工具' })
     .getByRole('button', { name: '撤销' })

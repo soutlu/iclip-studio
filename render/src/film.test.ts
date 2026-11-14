@@ -226,7 +226,7 @@ describe('checkFilm', () => {
 
   it('用到带字体的条目：<head> 里链上它的字体，照样过渲染前的检查', async () => {
     const brand = host({
-      component: 'fixture-brand-card',
+      item: 'fixture-brand-card',
       src: 'compositions/fixtures/fixture-brand-card.html',
     })
     const checked = await checkFilm(html(brand), catalog)
@@ -237,7 +237,7 @@ describe('checkFilm', () => {
 
   it('固定尺寸、带默认字体的组件放进不一样大的画面：缩放和字体变量写进 <head>，照样过渲染前的检查', async () => {
     const brand = host({
-      component: 'fixture-brand-card',
+      item: 'fixture-brand-card',
       src: 'compositions/fixtures/fixture-brand-card.html',
     })
     const checked = await checkFilm(html(brand), catalog)
@@ -254,7 +254,7 @@ describe('checkFilm', () => {
       hostClip(
         host({
           id: 'scene-1',
-          component: 'fixture-scene',
+          item: 'fixture-scene',
           src: 'compositions/fixtures/fixture-scene.html',
         }),
       ),
@@ -268,7 +268,7 @@ describe('checkFilm', () => {
 
   it('字体可填项填的不是组件库里的字体（哪怕带着标签）：不写进样式，照样过检查', async () => {
     const hostile = host({
-      component: 'fixture-brand-card',
+      item: 'fixture-brand-card',
       src: 'compositions/fixtures/fixture-brand-card.html',
       values: { font: "x'}</style><script>alert(1)</script>" },
     })
@@ -805,7 +805,7 @@ describe('readFilm 拒收写法之外的东西', () => {
     ['视频片段速度高于 10 倍', [video({ playbackRate: 10.5 })], /速度/],
     ['音频片段速度高于 10 倍', [audio({ playbackRate: 12 })], /速度/],
     ['同一条素材片两个地址', [video(), second({ jobId: SOURCE_JOB })], /两个地址|默认值/],
-    ['不在组件库里的组件', [host({ component: 'nope' })], /不在组件库/],
+    ['不在组件库里的组件', [host({ item: 'nope' })], /不在组件库/],
     [
       '组件名和组件库里的文件对不上',
       [host({ src: 'compositions/fixtures/fixture-overlay.html' })],
