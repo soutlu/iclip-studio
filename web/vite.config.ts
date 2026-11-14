@@ -7,6 +7,7 @@ import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
 import { createSameOriginApiProxy } from './vite/api-proxy.ts'
 import { resolveDevServerProfile } from './vite/dev-server-profile.ts'
+import { mockPreviewHostPlugin } from './vite/mock-preview-host.ts'
 
 // dev/preview 同源代理：去掉 /api 前缀后转发到后端（后端路由挂根路径）。
 // 生产环境反代（nginx）必须保持同一 rewrite 语义，见 ../contract/conventions.md。
@@ -60,12 +61,23 @@ export default defineConfig(({ mode }) => {
   const useBrowserMocks = profile.browserMocks !== 'disabled'
 
   return {
-    // mock 构建只供 e2e 的 preview 使用，与生产产物分目录，互不覆盖。
-    build: useBrowserMocks ? { outDir: 'dist-mock' } : {},
+    build: {
+      // mock 构建只供 e2e 的 preview 使用，与生产产物分目录，互不覆盖。
+      ...(useBrowserMocks ? { outDir: 'dist-mock' } : {}),
+      // 第二个页面是成片的预览页，在预览域名下打开（见 ../contract/conventions.md「成片工程与预览域名」）
+      rolldownOptions: {
+        input: {
+          main: path.resolve(import.meta.dirname, 'index.html'),
+          wholeFilmPreview: path.resolve(import.meta.dirname, 'whole-film-preview.html'),
+        },
+      },
+    },
     // 依赖预构建缓存的指纹含 mode 与插件名，各 mode 共用一个目录时切换一次就重建一次。
     cacheDir: `node_modules/.vite/${mode}`,
     plugins: [
-      ...(useBrowserMocks ? [developmentApplicationEntryPlugin(), mockServiceWorkerPlugin()] : []),
+      ...(useBrowserMocks
+        ? [developmentApplicationEntryPlugin(), mockServiceWorkerPlugin(), mockPreviewHostPlugin()]
+        : []),
       // tanstackRouter 必须在 react 插件之前
       tanstackRouter({ autoCodeSplitting: true, target: 'react' }),
       react(),

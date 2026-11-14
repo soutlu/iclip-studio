@@ -1,687 +1,320 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { servePreviewPages } from '@/testing/preview-page'
 import {
-  bufferedVideos,
-  clearFailedVideos,
-  downloadingVideos,
-  emitFrom,
-  failVideo,
-  finishBuffering,
-  starvedVideos,
-  stopVideoDownload,
-  type FakeParentMedia,
-} from '@/testing/hyperframes-player'
-import { PreviewPlayer, type PlaybackSettings, type PreviewControl } from './preview-player'
+  PreviewPlayer,
+  type PlaybackSettings,
+  type PreviewControl,
+  type PreviewFilm,
+  type PreviewPageAddress,
+} from './preview-player'
 
-const RUNTIME = 'https://studio.example.com/hyperframes/v1/vendor/runtime.js'
-
-const FIRST = 'https://oss/first.mp4'
-const SECOND = 'https://oss/second.mp4'
-
-const page = (suffix = '') =>
-  `<!doctype html><html><head></head><body>${suffix}` +
-  `<video src="${FIRST}" data-start="0" data-duration="2"></video>` +
-  `<video src="${SECOND}" data-start="2" data-duration="2"></video></body></html>`
-
-const LONG_CLIP = `<!doctype html><html><head></head><body><video src="${FIRST}" data-start="0" data-duration="8" data-media-start="1"></video></body></html>`
-
-type Player = HTMLElement & {
-  paused: boolean
-  currentTime: number
-  duration: number
-  seek: (seconds: number) => void
-  iframeElement: HTMLIFrameElement
-  _media: FakeParentMedia
-  loadedRuntimeSrc: string | null
+const ORIGIN = 'https://preview.example.com'
+const TOKEN = 'token/1'
+const PAGE: PreviewPageAddress = { kind: 'ready', origin: ORIGIN, token: TOKEN }
+const FILM: PreviewFilm = {
+  html: '<!doctype html><html><head></head><body></body></html>',
+  runtimeSrc: `${ORIGIN}/hyperframes/v1/vendor/runtime.js`,
 }
-
-const playerOf = () => {
-  const player = screen.getByRole('region', { name: '预览' }).querySelector('hyperframes-player')
-  if (player === null) throw new Error('没有播放器')
-  return player as Player
-}
+const EDITED: PreviewFilm = { ...FILM, html: FILM.html.replace('<body>', '<body><p></p>') }
+const PLAYBACK: PlaybackSettings = { rate: 1, muted: false, loop: false }
 
 const handlers = () => ({
   control: createRef<PreviewControl>() as { current: PreviewControl | null },
   onBuffered: vi.fn<(spans: readonly { start: number; end: number }[]) => void>(),
   onBuffering: vi.fn<(buffering: boolean) => void>(),
-  onFrame: vi.fn<(iframe: HTMLIFrameElement | null) => void>(),
   onMediaSettled: vi.fn<() => void>(),
   onPlaying: vi.fn<(playing: boolean) => void>(),
+  onTime: vi.fn<(ms: number) => void>(),
 })
 
-const PLAYBACK: PlaybackSettings = { rate: 1, muted: false, loop: false }
+type Props = {
+  page?: PreviewPageAddress
+  film?: PreviewFilm | undefined
+  playback?: PlaybackSettings
+  width?: number
+}
 
-const preview = (
-  srcdoc: string,
-  on: ReturnType<typeof handlers>,
-  playback: PlaybackSettings = PLAYBACK,
-) => (
+const preview = (on: ReturnType<typeof handlers>, props: Props = {}) => (
   <PreviewPlayer
     backdrop={undefined}
     controlRef={on.control}
+    film={'film' in props ? props.film : FILM}
     height={320}
-    message={undefined}
+    message="暂无成片内容"
     onBuffered={on.onBuffered}
     onBuffering={on.onBuffering}
-    onFrame={on.onFrame}
     onMediaSettled={on.onMediaSettled}
     onPlaying={on.onPlaying}
-    onTime={() => {}}
-    playback={playback}
-    runtimeSrc={RUNTIME}
-    srcdoc={srcdoc}
-    width={180}
+    onTime={on.onTime}
+    page={props.page ?? PAGE}
+    playback={props.playback ?? PLAYBACK}
+    width={props.width ?? 180}
   />
 )
 
-const firstPlayerUp = (on: ReturnType<typeof handlers>) =>
-  waitFor(() => expect(on.onFrame).toHaveBeenCalledWith(expect.any(HTMLIFrameElement)))
+let served: ReturnType<typeof servePreviewPages>
 
-const openPreview = async (srcdoc = page()) => {
-  const on = handlers()
-  const view = render(preview(srcdoc, on))
-  await firstPlayerUp(on)
-  const control = () => {
-    if (on.control.current === null) throw new Error('播放器没接上')
-    return on.control.current
-  }
-  const showPage = (next: string) => view.rerender(preview(next, on))
-  return { ...on, view, control, showPage }
+const serve = (ready = true) => {
+  served = servePreviewPages({ run: false, ready })
 }
 
-afterEach(() => {
-  vi.unstubAllGlobals()
-  starvedVideos.clear()
-  downloadingVideos.clear()
-  bufferedVideos.clear()
-  clearFailedVideos()
-})
+beforeEach(() => serve())
 
-describe('每个文件只下载一份', () => {
-  it('播放器不建父页面副本', async () => {
+afterEach(() => served.stop())
+
+const commandTypes = () => served.latest().commands.map((command) => command.type)
+
+/** 以预览页的身份发一条消息，等编辑器收到。 */
+const report = (data: unknown) =>
+  act(async () => {
+    served.latest().post(data)
+    await new Promise((resolve) => setTimeout(resolve))
+  })
+
+/** 嵌好预览页、等它就绪后发完首批命令。 */
+const openPreview = async (props: Props = {}) => {
+  const on = handlers()
+  const view = render(preview(on, props))
+  await waitFor(() => expect(commandTypes()).toContain('load'))
+  const control = () => {
+    if (on.control.current === null) throw new Error('预览没接上')
+    return on.control.current
+  }
+  return { ...on, view, control }
+}
+
+describe('嵌进预览页', () => {
+  it('预览域名下的预览页，令牌在 # 后面；只给脚本和同源权限，可以自动播放', async () => {
     await openPreview()
-    expect(playerOf()._media.entries).toEqual([])
+    const frame = screen.getByTitle('成片预览')
+    expect(frame).toHaveAttribute(
+      'src',
+      `${ORIGIN}/whole-film-preview.html#${encodeURIComponent(TOKEN)}`,
+    )
+    expect(frame).toHaveAttribute('sandbox', 'allow-scripts allow-same-origin')
+    expect(frame).toHaveAttribute('allow', 'autoplay')
+    expect(served.latest().token).toBe(TOKEN)
   })
 
-  it('换页后的新播放器同样不建', async () => {
-    const { showPage } = await openPreview()
-    const old = playerOf()
-    showPage(page('<p></p>'))
-    await waitFor(() => expect(playerOf()).not.toBe(old))
-    expect(playerOf()._media.entries).toEqual([])
-  })
-})
-
-describe('运行库从给定的地址加载', () => {
-  it('加载成片时播放器已带着运行库地址；换页后的新播放器同样带着', async () => {
-    const { showPage } = await openPreview()
-    expect(playerOf().loadedRuntimeSrc).toBe(RUNTIME)
-
-    const old = playerOf()
-    showPage(page('<p></p>'))
-    await waitFor(() => expect(playerOf()).not.toBe(old))
-    expect(playerOf().loadedRuntimeSrc).toBe(RUNTIME)
-  })
-})
-
-describe('倍速、静音、循环', () => {
-  it('改了交给播放器；换页后的新播放器照旧', async () => {
+  it('令牌还在取时不嵌预览页，也不能控制', () => {
     const on = handlers()
-    const view = render(preview(page(), on))
-    await firstPlayerUp(on)
-    const changed = { rate: 2, muted: true, loop: true }
-    view.rerender(preview(page(), on, changed))
-    expect(playerOf()).toMatchObject({ playbackRate: 2, muted: true, loop: true })
+    render(preview(on, { page: { kind: 'pending' } }))
+    expect(screen.queryByTitle('成片预览')).not.toBeInTheDocument()
+    expect(on.control.current).toBeNull()
+  })
 
-    const old = playerOf()
-    view.rerender(preview(page('<p></p>'), on, changed))
-    await waitFor(() => expect(playerOf()).not.toBe(old))
-    expect(playerOf()).toMatchObject({ playbackRate: 2, muted: true, loop: true })
+  it('取不到令牌：预览区写出原因，点「重试」重新取', async () => {
+    const onRetry = vi.fn<() => void>()
+    const user = userEvent.setup()
+    render(
+      preview(handlers(), {
+        page: { kind: 'failed', message: '预览加载失败：没有配置预览域名', onRetry },
+      }),
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent('预览加载失败：没有配置预览域名')
+    expect(screen.queryByTitle('成片预览')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '重试' }))
+    expect(onRetry).toHaveBeenCalledOnce()
   })
 })
 
-describe('时钟跟着画面走', () => {
-  it('数据足够时直接放，不转圈', async () => {
-    const { control, onBuffering, onPlaying } = await openPreview()
-    act(() => control().play())
-    expect(playerOf().paused).toBe(false)
-    expect(onBuffering).not.toHaveBeenCalled()
-    expect(onPlaying).toHaveBeenLastCalledWith(true)
+describe('发给预览页', () => {
+  it('就绪后发播放设置、画布尺寸，再发成片；之后改了哪项发哪项', async () => {
+    const on = handlers()
+    const view = render(preview(on))
+    await waitFor(() => expect(commandTypes()).toEqual(['playback', 'size', 'load']))
+    expect(served.latest().commands).toEqual([
+      { type: 'playback', ...PLAYBACK },
+      { type: 'size', width: 180, height: 320 },
+      { type: 'load', ...FILM },
+    ])
+
+    view.rerender(preview(on, { film: EDITED }))
+    await waitFor(() =>
+      expect(served.latest().commands.at(-1)).toEqual({ type: 'load', ...EDITED }),
+    )
+    view.rerender(preview(on, { film: EDITED, playback: { rate: 2, muted: true, loop: true } }))
+    await waitFor(() =>
+      expect(served.latest().commands.at(-1)).toEqual({
+        type: 'playback',
+        rate: 2,
+        muted: true,
+        loop: true,
+      }),
+    )
+    view.rerender(preview(on, { film: EDITED, width: 1080 }))
+    await waitFor(() =>
+      expect(served.latest().commands.at(-1)).toEqual({ type: 'size', width: 1080, height: 320 }),
+    )
   })
 
-  it('还在下载、缓冲不多但够往下放时不停：要等 3 秒的只有已经停下等待的时候', async () => {
-    const { control, onBuffering } = await openPreview()
-    downloadingVideos.add(FIRST)
-    bufferedVideos.set(FIRST, [[0, 0.5]])
-    act(() => control().play())
-    act(() => playerOf().seek(0.1))
-    expect(playerOf().paused).toBe(false)
-    expect(onBuffering).not.toHaveBeenCalled()
-  })
-
-  it('点播放时当前片段数据不够：时间线不走，按钮算在放；够了自动继续', async () => {
-    const { control, onBuffering, onPlaying } = await openPreview()
-    starvedVideos.add(FIRST)
-    act(() => control().play())
-    expect(playerOf().paused).toBe(true)
-    expect(onBuffering).toHaveBeenLastCalledWith(true)
-    expect(onPlaying).toHaveBeenLastCalledWith(true)
-
-    act(() => finishBuffering(FIRST))
-    expect(playerOf().paused).toBe(false)
-    expect(onBuffering).toHaveBeenLastCalledWith(false)
-    expect(onPlaying).not.toHaveBeenCalledWith(false)
-  })
-
-  it('播放中走进数据不够的片段：时间线停下，够了自动继续，onPlaying 不收到 false', async () => {
-    const { control, onBuffering, onPlaying } = await openPreview()
-    act(() => control().play())
-    starvedVideos.add(SECOND)
-    act(() => playerOf().seek(2.5))
-    expect(playerOf().paused).toBe(true)
-    expect(onBuffering).toHaveBeenLastCalledWith(true)
-
-    act(() => finishBuffering(SECOND))
-    expect(playerOf().paused).toBe(false)
-    expect(onBuffering).toHaveBeenLastCalledWith(false)
-    expect(onPlaying).not.toHaveBeenCalledWith(false)
-  })
-
-  it('状态不变时不重复报缓冲', async () => {
-    const { control, onBuffering } = await openPreview()
-    starvedVideos.add(FIRST)
-    act(() => control().play())
-    act(() => emitFrom(FIRST, 'progress'))
-    act(() => emitFrom(FIRST, 'progress'))
-    expect(onBuffering).toHaveBeenCalledTimes(1)
-  })
-
-  it('只看当前片段：别的片段数据不够不停', async () => {
-    const { control, onBuffering } = await openPreview()
-    starvedVideos.add(SECOND)
-    act(() => control().play())
-    act(() => playerOf().seek(1))
-    expect(playerOf().paused).toBe(false)
-    expect(onBuffering).not.toHaveBeenCalled()
-  })
-
-  it('当前时刻没有视频片段（组件段）时不停', async () => {
-    const { control, onBuffering } = await openPreview()
-    starvedVideos.add(FIRST).add(SECOND)
-    act(() => playerOf().seek(5))
-    act(() => control().play())
-    expect(playerOf().paused).toBe(false)
-    expect(onBuffering).not.toHaveBeenCalled()
-  })
-
-  it('出错的片段不卡住：等待中出错接着放，之后不再为它转圈', async () => {
-    const { control, onBuffering } = await openPreview()
-    starvedVideos.add(FIRST)
-    act(() => control().play())
-    act(() => failVideo(FIRST))
-    expect(playerOf().paused).toBe(false)
-    expect(onBuffering).toHaveBeenLastCalledWith(false)
-
-    act(() => playerOf().seek(0.5))
-    expect(playerOf().paused).toBe(false)
-    expect(onBuffering).toHaveBeenCalledTimes(2)
-  })
-
-  it('播放中点暂停：时间线停下，按钮回到播放', async () => {
-    const { control, onPlaying } = await openPreview()
-    act(() => control().play())
-    act(() => control().pause())
-    expect(playerOf().paused).toBe(true)
-    expect(onPlaying).toHaveBeenLastCalledWith(false)
-  })
-
-  it('缓冲中用户暂停：不再转圈，按钮回到播放，够了也不恢复', async () => {
-    const { control, onBuffering, onPlaying } = await openPreview()
-    starvedVideos.add(FIRST)
-    act(() => control().play())
-    act(() => control().pause())
-    expect(onBuffering).toHaveBeenLastCalledWith(false)
-    expect(onPlaying).toHaveBeenLastCalledWith(false)
-
-    act(() => finishBuffering(FIRST))
-    expect(playerOf().paused).toBe(true)
-  })
-
-  it('缓冲中拖动：不再转圈，够了也不恢复', async () => {
-    const { control, onBuffering, onPlaying } = await openPreview()
-    starvedVideos.add(FIRST)
-    act(() => control().play())
-    act(() => control().seek(500))
-    expect(onBuffering).toHaveBeenLastCalledWith(false)
-    expect(onPlaying).toHaveBeenLastCalledWith(false)
-
-    act(() => finishBuffering(FIRST))
-    expect(playerOf().paused).toBe(true)
-  })
-
-  it('播放中拖动：停在拖到的地方', async () => {
+  it('播放、暂停、跳转发给预览页，跳转按次编号', async () => {
     const { control } = await openPreview()
     act(() => control().play())
-    act(() => control().seek(1000))
-    expect(playerOf().paused).toBe(true)
+    act(() => control().pause())
+    act(() => control().seek(1500))
+    act(() => control().seek(2000))
+    await waitFor(() =>
+      expect(served.latest().commands.slice(-4)).toEqual([
+        { type: 'play' },
+        { type: 'pause' },
+        { type: 'seek', ms: 1500, seq: 1 },
+        { type: 'seek', ms: 2000, seq: 2 },
+      ]),
+    )
   })
 
-  it('放到结尾：停在结尾不跳回开头，按钮回到播放，之后的事件不会重新放起来', async () => {
-    const { control, onPlaying } = await openPreview()
-    act(() => control().play())
-    const player = playerOf()
-    player.duration = 4
-    // 真播放器到结尾时先停下、报出时刻，ended 随后才来
-    act(() => {
-      player.paused = true
-      player.seek(4)
-    })
-    expect(player.paused).toBe(true)
-    expect(player.currentTime).toBe(4)
-
-    act(() => {
-      player.dispatchEvent(new Event('ended'))
-    })
-    expect(onPlaying).toHaveBeenLastCalledWith(false)
-
-    act(() => emitFrom(FIRST, 'progress'))
-    expect(player.paused).toBe(true)
-    expect(player.currentTime).toBe(4)
+  it('预览页再报一次就绪（重新加载了）：设置和成片重发一遍', async () => {
+    await openPreview()
+    const before = served.latest().commands.length
+    await report({ type: 'ready' })
+    await waitFor(() => expect(commandTypes().slice(before)).toEqual(['playback', 'size', 'load']))
   })
 
-  it('在结尾点播放：从头放', async () => {
-    const { control } = await openPreview()
-    const player = playerOf()
-    player.duration = 4
-    act(() => control().seek(4000))
-    act(() => control().play())
-    expect(player.currentTime).toBe(0)
-    expect(player.paused).toBe(false)
+  it('成片没了：让预览页停下；换上过成片以后仍能控制它', async () => {
+    const on = handlers()
+    const view = render(preview(on))
+    await waitFor(() => expect(commandTypes()).toContain('load'))
+    await report({ type: 'loaded', duration: 4 })
+    await waitFor(() => expect(on.control.current).not.toBeNull())
+
+    view.rerender(preview(on, { film: undefined }))
+    await waitFor(() => expect(commandTypes().at(-1)).toBe('unload'))
+    expect(on.control.current).not.toBeNull()
+    expect(screen.getByText('暂无成片内容')).toBeVisible()
+  })
+
+  it('一开始就没有成片：不能控制', async () => {
+    const on = handlers()
+    render(preview(on, { film: undefined }))
+    await waitFor(() => expect(commandTypes()).toContain('unload'))
+    expect(on.control.current).toBeNull()
   })
 })
 
-describe('第一个播放器装好之前', () => {
-  const blocked = (on: ReturnType<typeof handlers>) => (
-    <PreviewPlayer
-      backdrop={undefined}
-      controlRef={on.control}
-      height={320}
-      message="合成不了"
-      onBuffering={on.onBuffering}
-      onFrame={on.onFrame}
-      onPlaying={on.onPlaying}
-      onTime={() => {}}
-      playback={PLAYBACK}
-      runtimeSrc={RUNTIME}
-      srcdoc={undefined}
-      width={180}
-    />
-  )
+describe('预览页就绪之前', () => {
+  beforeEach(() => {
+    served.stop()
+    serve(false)
+  })
 
-  it('点播放先记下：按钮算在放并转圈，装好后自动开始放、不再转圈', async () => {
+  it('点播放先记下：按钮算在放并转圈；就绪后先把记下的命令发过去', async () => {
     const on = handlers()
-    render(preview(page(), on))
-    expect(on.onFrame).not.toHaveBeenCalled()
-
+    render(preview(on))
+    await waitFor(() => expect(served.pages).toHaveLength(1))
     act(() => on.control.current?.play())
     expect(on.onPlaying).toHaveBeenLastCalledWith(true)
     expect(on.onBuffering).toHaveBeenLastCalledWith(true)
-
-    await firstPlayerUp(on)
-    expect(playerOf().paused).toBe(false)
-    expect(on.onPlaying).toHaveBeenLastCalledWith(true)
-    expect(on.onBuffering).toHaveBeenLastCalledWith(false)
-  })
-
-  it('记下播放后又暂停：装好后停着', async () => {
-    const on = handlers()
-    render(preview(page(), on))
-    act(() => on.control.current?.play())
-    act(() => on.control.current?.pause())
-    expect(on.onPlaying).toHaveBeenLastCalledWith(false)
-    expect(on.onBuffering).toHaveBeenLastCalledWith(false)
-
-    await firstPlayerUp(on)
-    expect(playerOf().paused).toBe(true)
-  })
-
-  it('定位也先记下：第一个播放器停在那个位置', async () => {
-    const on = handlers()
-    render(preview(page(), on))
     act(() => on.control.current?.seek(1500))
+    expect(on.onPlaying).toHaveBeenLastCalledWith(false)
+    expect(on.onBuffering).toHaveBeenLastCalledWith(false)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(served.latest().commands).toEqual([])
 
-    await firstPlayerUp(on)
-    expect(playerOf().currentTime).toBeCloseTo(1.5, 5)
-    expect(playerOf().paused).toBe(true)
+    await report({ type: 'ready' })
+    await waitFor(() =>
+      expect(commandTypes()).toEqual(['play', 'seek', 'playback', 'size', 'load']),
+    )
+    expect(served.latest().commands[1]).toEqual({ type: 'seek', ms: 1500, seq: 1 })
   })
 
-  it('记下了播放但合成不了：按钮回到播放，不再转圈', () => {
+  it('记下了播放但成片没了：按钮回到播放、不再转圈，记下的命令作废，也不能控制', async () => {
     const on = handlers()
-    const view = render(preview(page(), on))
+    const view = render(preview(on))
+    await waitFor(() => expect(served.pages).toHaveLength(1))
     act(() => on.control.current?.play())
 
-    view.rerender(blocked(on))
+    view.rerender(preview(on, { film: undefined }))
     expect(on.onPlaying).toHaveBeenLastCalledWith(false)
     expect(on.onBuffering).toHaveBeenLastCalledWith(false)
     expect(on.control.current).toBeNull()
-  })
 
-  it('一开始就合成不了：点播放没有效果', () => {
-    const on = handlers()
-    render(blocked(on))
-    expect(on.control.current).toBeNull()
+    await report({ type: 'ready' })
+    await waitFor(() => expect(commandTypes()).toEqual(['playback', 'size', 'unload']))
   })
 })
 
-describe('换页', () => {
-  it('在放时换页：新页接着放', async () => {
-    const { control, showPage, onPlaying } = await openPreview()
-    act(() => control().play())
-    const old = playerOf()
-    showPage(page('<p></p>'))
-    await waitFor(() => expect(playerOf()).not.toBe(old))
-    await waitFor(() => expect(playerOf().paused).toBe(false))
-    expect(onPlaying).not.toHaveBeenCalledWith(false)
-  })
-
-  it('停着时换页：新页也停着', async () => {
-    const { showPage } = await openPreview()
-    const old = playerOf()
-    showPage(page('<p></p>'))
-    await waitFor(() => expect(playerOf()).not.toBe(old))
-    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
-    expect(playerOf().paused).toBe(true)
-  })
-
-  it('新页还没换上来时挪了位置：换上来的新页停在挪到的地方', async () => {
-    const { control, showPage } = await openPreview()
-    const old = playerOf()
-    // 新页装好后要等几帧才换上来；先把这几帧拦住，在这期间挪位置
-    const frames: FrameRequestCallback[] = []
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) =>
-      frames.push(callback),
-    )
-    showPage(page('<p></p>'))
-    await waitFor(() => expect(frames).toHaveLength(1))
-    act(() => control().seek(1500))
-    vi.unstubAllGlobals()
-    act(() => frames[0]?.(0))
-    await waitFor(() => expect(playerOf()).not.toBe(old))
-    expect(playerOf().currentTime).toBeCloseTo(1.5, 5)
-  })
-
-  it('缓冲中换页：不再转圈，新页接着放', async () => {
-    const { control, onBuffering, showPage } = await openPreview()
-    starvedVideos.add(FIRST)
-    act(() => control().play())
-    const old = playerOf()
-
-    starvedVideos.clear()
-    showPage(page('<p></p>'))
-    await waitFor(() => expect(playerOf()).not.toBe(old))
-    await waitFor(() => expect(playerOf().paused).toBe(false))
-    expect(onBuffering).toHaveBeenLastCalledWith(false)
-  })
-
-  it('新页加载期间旧播放器停着：媒体事件不会把它放起来', async () => {
-    const { control, showPage } = await openPreview()
-    act(() => control().play())
-    const old = playerOf()
-    vi.stubGlobal('requestAnimationFrame', () => 0)
-    showPage(page('<p></p>'))
-    await waitFor(() => expect(document.querySelectorAll('hyperframes-player')).toHaveLength(2))
-    await waitFor(() => expect(old.paused).toBe(true))
-
-    act(() => emitFrom(FIRST, 'progress'))
-    expect(old.paused).toBe(true)
-  })
-
-  it('合成不了时：不再放，也不再转圈', async () => {
-    const on = handlers()
-    const view = render(preview(page(), on))
-    await firstPlayerUp(on)
-    starvedVideos.add(FIRST)
-    act(() => on.control.current?.play())
-    const shown = playerOf()
-
-    view.rerender(
-      <PreviewPlayer
-        backdrop={undefined}
-        controlRef={on.control}
-        height={320}
-        message="合成不了"
-        onBuffering={on.onBuffering}
-        onFrame={on.onFrame}
-        onPlaying={on.onPlaying}
-        onTime={() => {}}
-        playback={PLAYBACK}
-        runtimeSrc={RUNTIME}
-        srcdoc={undefined}
-        width={180}
-      />,
-    )
-    expect(on.onBuffering).toHaveBeenLastCalledWith(false)
-    expect(on.onPlaying).toHaveBeenLastCalledWith(false)
-    act(() => finishBuffering(FIRST))
-    expect(shown.paused).toBe(true)
-  })
-})
-
-describe('缓冲够了才继续', () => {
-  const waitAt = async (at: number) => {
-    const opened = await openPreview(LONG_CLIP)
-    const video = playerOf().iframeElement.contentDocument?.querySelector('video')
-    if (video === null || video === undefined) throw new Error('合成页里没有视频')
-    video.currentTime = at
-    starvedVideos.add(FIRST)
-    downloadingVideos.add(FIRST)
-    act(() => opened.control().play())
+describe('预览页报回来的', () => {
+  it('时刻、播放状态、缓冲、已缓冲的区间、视频都停止下载，交给对应的回调', async () => {
+    const opened = await openPreview()
+    await report({ type: 'time', ms: 1500, seq: 0 })
+    await report({ type: 'playing', playing: true })
+    await report({ type: 'buffering', buffering: true })
+    await report({ type: 'buffered', spans: [{ start: 0, end: 1.5 }] })
+    await report({ type: 'mediaSettled' })
+    expect(opened.onTime).toHaveBeenLastCalledWith(1500)
+    expect(opened.onPlaying).toHaveBeenLastCalledWith(true)
     expect(opened.onBuffering).toHaveBeenLastCalledWith(true)
-    return opened
-  }
-  const report = (ranges: readonly (readonly [number, number])[], event = 'progress') => {
-    starvedVideos.delete(FIRST)
-    bufferedVideos.set(FIRST, ranges)
-    act(() => emitFrom(FIRST, event))
-  }
-
-  it('当前位置往后不足 3 秒不继续，够 3 秒就继续', async () => {
-    const { onBuffering } = await waitAt(2)
-    report([[1, 4.9]])
-    expect(playerOf().paused).toBe(true)
-    expect(onBuffering).toHaveBeenLastCalledWith(true)
-
-    report([[1, 5]])
-    expect(playerOf().paused).toBe(false)
-    expect(onBuffering).toHaveBeenLastCalledWith(false)
+    expect(opened.onBuffered).toHaveBeenLastCalledWith([{ start: 0, end: 1.5 }])
+    expect(opened.onMediaSettled).toHaveBeenCalledOnce()
   })
 
-  it.each(['progress', 'canplay', 'seeked'])('%s 时检查缓冲', async (event) => {
-    await waitAt(2)
-    report([[2, 6]], event)
-    expect(playerOf().paused).toBe(false)
+  it('跳转之前报出、还在路上的时刻丢掉，处理过这次跳转以后报的才用', async () => {
+    const { control, onTime } = await openPreview()
+    act(() => control().seek(1200))
+    await waitFor(() => expect(commandTypes().at(-1)).toBe('seek'))
+    await report({ type: 'time', ms: 200, seq: 0 })
+    expect(onTime).not.toHaveBeenCalled()
+
+    await report({ type: 'time', ms: 1200, seq: 1 })
+    expect(onTime).toHaveBeenLastCalledWith(1200)
   })
 
-  it('片段剩下不足 3 秒时，缓冲到片段结束就继续；片段结束按素材起点算', async () => {
-    await waitAt(7.5)
-    report([[7, 8.9]])
-    expect(playerOf().paused).toBe(true)
-
-    report([[7, 9]])
-    expect(playerOf().paused).toBe(false)
-  })
-
-  it('当前位置已过片段结束时，到不了当前位置的缓冲段不算', async () => {
-    await waitAt(9.5)
-    report([[1, 9.2]])
-    expect(playerOf().paused).toBe(true)
-  })
-
-  it('不覆盖当前位置的缓冲段不算', async () => {
-    await waitAt(2)
-    report([
-      [0, 1],
-      [2.5, 8],
-    ])
-    expect(playerOf().paused).toBe(true)
-
-    report([
-      [0, 1],
-      [2.04, 8],
-    ])
-    expect(playerOf().paused).toBe(false)
-  })
-
-  it('缓冲段够了但视频还没到能往下放的状态，不继续', async () => {
-    await waitAt(2)
-    bufferedVideos.set(FIRST, [[1, 8]])
-    act(() => emitFrom(FIRST, 'progress'))
-    expect(playerOf().paused).toBe(true)
-  })
-
-  it('一旦进入等待，刚够播放还不算，要等到缓冲够', async () => {
-    await waitAt(2)
-    starvedVideos.delete(FIRST)
-    bufferedVideos.set(FIRST, [[2, 2.5]])
-    act(() => emitFrom(FIRST, 'canplay'))
-    expect(playerOf().paused).toBe(true)
-  })
-
-  it('下载已停时不等缓冲段：下完的文件 buffered 可能够不到结尾，不会再有新数据', async () => {
-    await waitAt(7.5)
-    starvedVideos.delete(FIRST)
-    bufferedVideos.set(FIRST, [[7, 8.6]])
-    act(() => stopVideoDownload(FIRST))
-    expect(playerOf().paused).toBe(false)
-  })
-
-  it('下载已停但视频还不能往下放时不继续', async () => {
-    await waitAt(2)
-    act(() => stopVideoDownload(FIRST))
-    expect(playerOf().paused).toBe(true)
-  })
-})
-
-describe('当前片段加载失败', () => {
-  it('舞台显示失败提示，提示跟着播放头所在的片段走', async () => {
+  it('当前片段加载失败：舞台显示失败提示，点「重试」让预览页重新加载；好了以后提示收起', async () => {
+    const user = userEvent.setup()
     await openPreview()
-    act(() => failVideo(SECOND))
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-
-    act(() => playerOf().seek(2.5))
+    await report({ type: 'clipFailed', failed: true })
     expect(screen.getByRole('alert')).toHaveTextContent('视频加载失败')
 
-    act(() => playerOf().seek(0.5))
+    await user.click(screen.getByRole('button', { name: '重试' }))
+    await waitFor(() => expect(commandTypes().at(-1)).toBe('retry'))
+    await report({ type: 'clipFailed', failed: false })
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('点重试重新加载这个片段并收起提示，再失败时提示重新出现', async () => {
-    await openPreview()
-    act(() => failVideo(FIRST))
-    const video = playerOf().iframeElement.contentDocument?.querySelector('video')
-    if (video === null || video === undefined) throw new Error('合成页里没有视频')
-    const load = vi.spyOn(video, 'load').mockImplementation(() => {
-      clearFailedVideos()
-      emitFrom(FIRST, 'emptied')
+  it('不合规的消息、别的来源或别的窗口发来的消息都丢掉', async () => {
+    const opened = await openPreview()
+    const page = served.latest()
+    const other = document.createElement('iframe')
+    document.body.append(other)
+    const time = { type: 'time', ms: 1500, seq: 0 }
+    await act(async () => {
+      page.post(time, { origin: 'https://elsewhere.example.com' })
+      page.post(time, { source: other.contentWindow })
+      page.post(time, { source: null })
+      page.post({ ...time, ms: '1500' })
+      page.post({ ...time, ms: -1 })
+      page.post({ ...time, label: '<img src=x>' })
+      page.post({ type: 'clipFailed', failed: 'yes' })
+      page.post({ type: 'buffered', spans: [{ start: 0 }] })
+      page.post({ type: 'run', code: 'alert(1)' })
+      page.post('time')
+      await new Promise((resolve) => setTimeout(resolve, 20))
     })
-
-    fireEvent.click(screen.getByRole('button', { name: '重试' }))
-    expect(load).toHaveBeenCalledOnce()
-    expect(video.preload).toBe('auto')
+    other.remove()
+    expect(opened.onTime).not.toHaveBeenCalled()
+    expect(opened.onBuffered).not.toHaveBeenCalled()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 
-    act(() => failVideo(FIRST))
-    expect(screen.getByRole('alert')).toBeVisible()
-  })
-})
-
-describe('报出已缓冲的区间', () => {
-  it('各视频片段已缓冲的部分换算成成片时间；没变化不重复报，换页后重新报', async () => {
-    bufferedVideos.set(FIRST, [[0, 1]])
-    const { onBuffered, showPage } = await openPreview()
-    expect(onBuffered).toHaveBeenLastCalledWith([{ start: 0, end: 1 }])
-
-    bufferedVideos.set(SECOND, [[0.5, 2.5]])
-    act(() => emitFrom(SECOND, 'progress'))
-    expect(onBuffered).toHaveBeenLastCalledWith([
-      { start: 0, end: 1 },
-      { start: 2.5, end: 4 },
-    ])
-
-    const reports = onBuffered.mock.calls.length
-    act(() => emitFrom(SECOND, 'progress'))
-    expect(onBuffered).toHaveBeenCalledTimes(reports)
-
-    showPage(page('<p></p>'))
-    await waitFor(() => expect(onBuffered.mock.calls.length).toBeGreaterThan(reports))
-    expect(onBuffered).toHaveBeenLastCalledWith([
-      { start: 0, end: 1 },
-      { start: 2.5, end: 4 },
-    ])
+    // 合规的同一条照常收到：上面没收到不是因为消息没送到
+    await report(time)
+    expect(opened.onTime).toHaveBeenCalledExactlyOnceWith(1500)
   })
 
-  it('片段从素材中间开始时按素材起点换算，片段以外的缓冲不算', async () => {
-    bufferedVideos.set(FIRST, [[0, 5]])
-    const { onBuffered } = await openPreview(LONG_CLIP)
-    expect(onBuffered).toHaveBeenLastCalledWith([{ start: 0, end: 4 }])
-  })
-})
-
-describe('波形等视频都停止下载', () => {
-  it('挂上时都没在下载：立即通知', async () => {
-    const { onMediaSettled } = await openPreview()
-    expect(onMediaSettled).toHaveBeenCalled()
-  })
-
-  it('还有视频在下载时不通知，全部停下才通知', async () => {
-    downloadingVideos.add(FIRST).add(SECOND)
-    const { onMediaSettled } = await openPreview()
-    expect(onMediaSettled).not.toHaveBeenCalled()
-
-    act(() => stopVideoDownload(FIRST))
-    expect(onMediaSettled).not.toHaveBeenCalled()
-
-    act(() => stopVideoDownload(SECOND))
-    expect(onMediaSettled).toHaveBeenCalled()
-  })
-
-  it('视频出错算不再下载', async () => {
-    downloadingVideos.add(FIRST)
-    const { onMediaSettled } = await openPreview()
-    downloadingVideos.delete(FIRST)
-    act(() => failVideo(FIRST))
-    expect(onMediaSettled).toHaveBeenCalled()
-  })
-
-  it('页里没有视频时不通知', async () => {
-    const { onMediaSettled } = await openPreview('<!doctype html><html><body></body></html>')
-    expect(onMediaSettled).not.toHaveBeenCalled()
-  })
-})
-
-describe('卸载', () => {
-  it('卸载后事件不再有回调，也不再放', async () => {
-    const { control, view, onBuffering, onMediaSettled, onPlaying } = await openPreview()
-    starvedVideos.add(FIRST)
-    act(() => control().play())
-    const player = playerOf()
-    const video = player.iframeElement.contentDocument?.querySelector('video')
-    if (video === null || video === undefined) throw new Error('合成页里没有视频')
+  it('卸载时还在缓冲：报出不再缓冲，之后的消息不再有回调', async () => {
+    const { onBuffering, onTime, view } = await openPreview()
+    await report({ type: 'buffering', buffering: true })
+    const page = served.latest()
     view.unmount()
     expect(onBuffering).toHaveBeenLastCalledWith(false)
-    const calls = [onBuffering, onMediaSettled, onPlaying].map((fn) => fn.mock.calls.length)
 
-    starvedVideos.delete(FIRST)
-    video.dispatchEvent(new Event('progress'))
-    video.dispatchEvent(new Event('suspend'))
-    player.dispatchEvent(new CustomEvent('timeupdate', { detail: { currentTime: 1 } }))
-    player.dispatchEvent(new Event('ended'))
-
-    expect(player.paused).toBe(true)
-    expect([onBuffering, onMediaSettled, onPlaying].map((fn) => fn.mock.calls.length)).toEqual(
-      calls,
-    )
+    await act(async () => {
+      page.post({ type: 'time', ms: 1000, seq: 0 })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(onTime).not.toHaveBeenCalled()
   })
 })

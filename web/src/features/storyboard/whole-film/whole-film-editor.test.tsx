@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Toaster } from '@/shared/ui/toast'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { starvedVideos } from '@/testing/hyperframes-player'
+import { servePreviewPages } from '@/testing/preview-page'
 import { addMockConversation } from '@/testing/mocks/conversations'
 import { server } from '@/testing/mocks/server'
 import { mockWholeFilmDraft, putMockWholeFilmDraft } from '@/testing/mocks/whole-film'
@@ -118,6 +119,33 @@ const openEditor = async (records: GenerationJob[] = takes) => {
   await screen.findByRole('group', { name: '成片编辑器' })
   return { close: () => rendered.rerender(<Toaster />) }
 }
+
+// 预览页换成跑着真逻辑的替身（播放器是测试替身），编辑器经消息和它来往
+let previewPages: ReturnType<typeof servePreviewPages>
+
+beforeEach(() => {
+  previewPages = servePreviewPages({ run: true })
+})
+
+afterEach(() => previewPages.stop())
+
+type PreviewPlayerElement = HTMLElement & { playbackRate: number; muted: boolean; loop: boolean }
+
+/** 预览页里换上来的那个播放器；新的还在底下加载时也只认已经换上来的。 */
+const previewPlayer = () => {
+  const found = previewPages
+    .latest()
+    .mount?.querySelector<PreviewPlayerElement>('hyperframes-player:not(.is-pending)')
+  if (found === null || found === undefined) throw new Error('预览页里还没有换上来的播放器')
+  return found
+}
+
+/** 等预览页换上一份成片、新加载的都换了上来。 */
+const previewSettled = () =>
+  waitFor(() => {
+    expect(previewPages.latest().mount?.querySelectorAll('hyperframes-player')).toHaveLength(1)
+    expect(previewPlayer()).toBeDefined()
+  })
 
 const toolbar = () => screen.getByRole('toolbar', { name: '剪辑工具' })
 const transport = () => screen.getByRole('group', { name: '播放控制' })
@@ -678,22 +706,41 @@ describe('成片编辑器 · 播放', () => {
     const user = userEvent.setup()
     starvedVideos.add(URL_A)
     await openEditor()
-    await act(() => new Promise((resolve) => setTimeout(resolve, 500)))
+    await previewSettled()
 
     await user.click(within(transport()).getByRole('button', { name: '播放' }))
-    expect(screen.getByRole('status', { name: '正在缓冲' })).toBeVisible()
+    expect(await screen.findByRole('status', { name: '正在缓冲' })).toBeVisible()
     expect(within(transport()).getByRole('button', { name: '暂停' })).toBeVisible()
+    expect(previewPlayer()).toHaveProperty('paused', true)
+  })
+
+  it('取不到预览令牌：预览区说明原因，点「重试」重新取到后加载预览', async () => {
+    putMockWholeFilmDraft(CONVERSATION, twoVideos())
+    let refused = true
+    server.use(
+      http.post('*/api/conversations/:conversationId/whole-film/preview', () =>
+        refused ? HttpResponse.json({ detail: '没有配置预览域名' }, { status: 422 }) : undefined,
+      ),
+    )
+    const user = userEvent.setup()
+    await openEditor()
+    const preview = screen.getByRole('region', { name: '预览' })
+    expect(await within(preview).findByRole('alert')).toHaveTextContent(
+      '预览加载失败：没有配置预览域名',
+    )
+    expect(within(preview).queryByTitle('成片预览')).not.toBeInTheDocument()
+
+    refused = false
+    await user.click(within(preview).getByRole('button', { name: '重试' }))
+    expect(await within(preview).findByTitle('成片预览')).toBeInTheDocument()
+    expect(within(preview).queryByRole('alert')).not.toBeInTheDocument()
+    await previewSettled()
   })
 })
 
 describe('成片编辑器 · 播放条设置', () => {
-  type Player = HTMLElement & { playbackRate: number; muted: boolean; loop: boolean }
-  const player = () => {
-    const found = screen.getByRole('region', { name: '预览' }).querySelector('hyperframes-player')
-    if (found === null) throw new Error('没有播放器')
-    return found as Player
-  }
-  const playerUp = () => act(() => new Promise((resolve) => setTimeout(resolve, 500)))
+  const player = previewPlayer
+  const playerUp = previewSettled
 
   it('M 静音、再按恢复，⇧L 开关循环：交给播放器，成片不保存、不进撤销', async () => {
     putMockWholeFilmDraft(CONVERSATION, twoVideos())
@@ -704,19 +751,20 @@ describe('成片编辑器 · 播放条设置', () => {
 
     await user.keyboard('m')
     expect(within(transport()).getByRole('button', { name: '开启声音' })).toBeVisible()
-    expect(player().muted).toBe(true)
+    await waitFor(() => expect(player().muted).toBe(true))
     await user.keyboard('m')
     expect(within(transport()).getByRole('button', { name: '静音' })).toBeVisible()
-    expect(player().muted).toBe(false)
+    await waitFor(() => expect(player().muted).toBe(false))
 
     await user.keyboard('{Shift>}L{/Shift}')
     expect(within(transport()).getByRole('button', { name: '循环播放' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
-    expect(player().loop).toBe(true)
+    await waitFor(() => expect(player().loop).toBe(true))
     // 不按 Shift 的 L 不是快捷键
     await user.keyboard('l')
+    await new Promise((resolve) => setTimeout(resolve, 20))
     expect(player().loop).toBe(true)
 
     await new Promise((resolve) => setTimeout(resolve, 100))
@@ -736,7 +784,7 @@ describe('成片编辑器 · 播放条设置', () => {
     await user.click(within(transport()).getByRole('button', { name: '播放速度 1×' }))
     await user.click(await screen.findByRole('menuitemradio', { name: '2×' }))
     expect(within(transport()).getByRole('button', { name: '播放速度 2×' })).toBeVisible()
-    expect(player().playbackRate).toBe(2)
+    await waitFor(() => expect(player().playbackRate).toBe(2))
 
     // 播放器的片段都在 iframe 里，页面上的 video 只有素材预览这一个
     await user.click(await shot(/^生成 B 镜头 1，/))
@@ -1011,12 +1059,8 @@ describe('成片编辑器 · 组件、块页签', () => {
   const addAtPlayhead = (user: ReturnType<typeof userEvent.setup>, name: RegExp) =>
     user.click(within(itemCard(name)).getByRole('button', { name: '加到播放头' }))
   const savedItems = () => savedFilm().match(/<div [^>]*class="clip component"[^>]*>/g) ?? []
-  const previewHtml = () =>
-    screen
-      .getByRole('region', { name: '预览' })
-      .querySelector('hyperframes-player')
-      ?.getAttribute('srcdoc') ?? ''
-  const playerUp = () => act(() => new Promise((resolve) => setTimeout(resolve, 500)))
+  const previewHtml = () => previewPlayer().getAttribute('srcdoc') ?? ''
+  const playerUp = previewSettled
 
   it('左侧栏三个页签：组件、块、音频，默认打开组件；组件、块各记着自己的搜索词和分类，切走再回来还在', async () => {
     const user = userEvent.setup()
@@ -1300,12 +1344,11 @@ describe('成片编辑器 · 右侧栏', () => {
     expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
     await waitFor(() => expect(undoButton()).not.toHaveAttribute('aria-disabled'))
     await waitSaved(() => expect(savedValues('title-1')).toEqual({ text: '新的标题' }))
-    expect(
-      screen
-        .getByRole('region', { name: '预览' })
-        .querySelector('hyperframes-player')
-        ?.getAttribute('srcdoc'),
-    ).toContain('{&quot;text&quot;:&quot;新的标题&quot;}')
+    await waitFor(() =>
+      expect(previewPlayer().getAttribute('srcdoc')).toContain(
+        '{&quot;text&quot;:&quot;新的标题&quot;}',
+      ),
+    )
     expect(text).toHaveValue('新的标题')
 
     await user.click(undoButton())

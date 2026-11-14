@@ -241,6 +241,17 @@ export default tseslint.config(
     },
   },
 
+  // ── 成片预览的 iframe：嵌的是预览域名下的预览页，和应用不同源 ─────────────
+  // 这条规则防的是被嵌页面和外层同源时自己拆掉 sandbox；预览页在另一个域名下，拆不掉。
+  // allow-same-origin 不能去：预览页要保留自己的来源才能取文件、让播放器读到成片。
+  // sandbox 本身也不能去：没有它，成片里的脚本能把整个应用页面带到别的网站。
+  {
+    files: ['src/features/storyboard/whole-film/preview-player.tsx'],
+    rules: {
+      '@eslint-react/dom-no-unsafe-iframe-sandbox': 'off',
+    },
+  },
+
   // ── Node 环境文件（构建配置、vite/ 下的配置助手、Playwright e2e） ────────
   {
     files: ['vite/**/*.ts', 'e2e/**/*.ts', '*.config.{js,ts}'],

@@ -52,7 +52,8 @@ class FakeHyperframesPlayer extends HTMLElement {
   readonly iframeElement = document.createElement('iframe')
   readonly _media = new FakeParentMedia()
   currentTime = 0
-  duration = Number.POSITIVE_INFINITY
+  // 足够长、放不到结尾；要测放到结尾的用例自己改短
+  duration = 3600
   paused = true
   painted = false
   playbackRate = 1

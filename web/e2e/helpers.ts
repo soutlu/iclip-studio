@@ -11,6 +11,10 @@ export const openConversation = async (page: Page, title: string, { mobile = fal
   return page.getByRole('complementary', { name: '工作台' })
 }
 
+/** 成片编辑器里嵌着的预览页（预览域名下），播放器和成片都在它里面。 */
+export const wholeFilmPreviewPage = (dialog: Locator) =>
+  dialog.getByRole('region', { name: '预览' }).locator('iframe').contentFrame()
+
 export const openStoryboardShot = async (panel: Locator, index: number) => {
   await panel.getByRole('button', { name: /展开镜头组列表/ }).click()
   const list = panel.page().getByRole('menu', { name: '镜头组列表', exact: true })

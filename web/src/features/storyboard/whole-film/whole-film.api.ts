@@ -9,6 +9,7 @@ import {
   zWholeFilmDraftOut,
   zWholeFilmDraftSavedOut,
   zWholeFilmExportStartedOut,
+  zWholeFilmPreviewOut,
 } from '@/shared/api/generated/zod.gen'
 import {
   generationsRefetchInterval,
@@ -27,6 +28,7 @@ export const wholeFilmQueryKeys = {
   // 挂在对话的生成记录下面：生成记录有变化时跟着刷新
   music: (conversationId: string) =>
     [...storyboardQueryKeys.conversation(conversationId), 'audio'] as const,
+  preview: (conversationId: string) => ['whole-film', 'preview', conversationId] as const,
   task: (conversationId: string) => ['whole-film', 'task', conversationId] as const,
 }
 
@@ -50,6 +52,24 @@ export const saveWholeFilmDraft = (conversationId: string, body: WholeFilmDraftI
     body,
     fallbackErrorMessage: '成片草稿保存失败',
     method: 'PUT',
+  })
+
+/**
+ * 编辑器打开时取一次预览令牌：预览页在预览域名 `origin` 下，凭 `token` 运行。
+ * 编辑器开着时不再重取，换了令牌预览页就要重新加载。
+ */
+export const useWholeFilmPreviewQuery = (conversationId: string) =>
+  useQuery({
+    queryKey: wholeFilmQueryKeys.preview(conversationId),
+    queryFn: ({ signal }) =>
+      apiFetch(
+        `/conversations/${encodeURIComponent(conversationId)}/whole-film/preview`,
+        zWholeFilmPreviewOut,
+        { fallbackErrorMessage: '预览加载失败', method: 'POST', signal },
+      ),
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
   })
 
 const exportsPath = (conversationId: string) =>

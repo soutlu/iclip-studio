@@ -56,6 +56,7 @@
 - **新片段用写法里的函数写**：往成片里加片段时，用 `film.ts` 里对应的函数写出标签（如 `videoClip`），素材地址的变量用 `sourceVariable` 声明，保证和渲染服务检查时读的是同一种写法。
 - **保存交给会话**：[use-film-session.ts](../src/features/storyboard/whole-film/use-film-session.ts) 在停下后整份保存并带上版本号；`409` 时换成服务端最新的一版。渲染服务会按写法重写文件，所以存下的文本可以和提交的不同。
 - **预览按片段重写整份、不改存着的文件**：SDK 编辑时不改 `<head>`，所以预览把当前的片段用 `writeFilm` 重新写出整份（和渲染服务存下的一样），再加上组件库的基准地址和预览专用的媒体加载方式（[preview-document.ts](../src/features/storyboard/whole-film/preview-document.ts)）。
+- **预览在预览域名下运行**：成片里的脚本不能拿到应用的登录态，所以播放器和成片都放在预览域名下的预览页（[preview-page.ts](../src/features/storyboard/whole-film/preview-page.ts)）里，编辑器只嵌入它、靠消息控制它（协议见 [preview-protocol.ts](../src/features/storyboard/whole-film/preview-protocol.ts)）。缓冲、素材失败等要读成片页面的判断都在预览页里做，结果用消息报回；编辑器收到的每条消息先按协议校验，只当数据用。成片文档里的组件库和运行库地址用预览域名。
 
 ## 测试
 
