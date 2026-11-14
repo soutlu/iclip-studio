@@ -127,6 +127,9 @@ const shot = (name: RegExp) => within(materials()).findByRole('button', { name }
 
 const savedFilm = () => mockWholeFilmDraft(CONVERSATION)?.html ?? ''
 const savedClips = () => savedFilm().match(/<video [^>]*>/g) ?? []
+// 保存是真实的 800 毫秒延迟；一条用例里存四五次就接近默认的 5 秒上限，CI 上会超时
+vi.setConfig({ testTimeout: 15_000 })
+
 const waitSaved = (check: () => void) => waitFor(check, { timeout: 4000 })
 
 const twoVideos = () =>
