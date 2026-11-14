@@ -822,6 +822,41 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(normal.late - fast.late).toBeGreaterThan(30)
   }, 600_000)
 
+  it('素材没有音轨：画面块写成静音照常导出、画面正常；标成有声音时导出失败，说清哪里不对', async () => {
+    const { logger } = memoryLogger()
+    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
+    // 色块片生成时就没有音轨
+    const steps = `${origin}/steps.mp4`
+    const render = (id: string, muted: boolean) =>
+      worker.render(
+        {
+          id,
+          registryDir: (library as ComponentLibrary).dir,
+          mediaUrls: [steps],
+          compose: (paths) =>
+            localizedFilm(
+              { canvas: FRAME, blocks: [picture({ src: steps, duration: 3000, muted })] },
+              paths,
+              (library as ComponentLibrary).catalog,
+            ),
+        },
+        { signal: new AbortController().signal, onProgress: () => {} },
+      )
+
+    const rendered = await render('silent-muted', true)
+    try {
+      // 第 1 秒放的是素材的第 1 秒（红）
+      const frame = await frameAt(rendered.file, 1)
+      expect(meanDifference(frame, solid(frame.length, [255, 0, 0]))).toBeLessThan(20)
+    } finally {
+      await rendered.cleanup()
+    }
+    await expect(render('silent-sounding', false)).rejects.toMatchObject({
+      code: 'render-failed',
+      message: '有镜头标了有声音，但素材文件里没有声音；把这个镜头设成静音后再导出',
+    })
+  }, 600_000)
+
   it('成片里的块全隐藏了：照样导出，是一段同样长的黑片，没有音轨', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })

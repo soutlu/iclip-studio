@@ -41,7 +41,9 @@ import { FilmTimeline, type DropGhost, type TimelineHandle } from './film-timeli
 import { MaterialArea } from './material-area'
 import {
   useKeyframeIndexes,
+  useVideoAudio,
   useVideoSize,
+  videoAudioQuery,
   videoSizeQuery,
   type KeyframeStates,
 } from './material-media'
@@ -217,6 +219,10 @@ function EditorBody({
     ].sort(),
   )
   const keyframes = useKeyframeIndexes(shownUrls)
+  // 素材区的镜头和成片里画面块的素材有没有声音，和镜头一起先读好：加进成片时不用再等
+  const audioTracks = useVideoAudio(
+    useStableValue([...new Set([...shownUrls, ...pictures.map((block) => block.src)])].sort()),
+  )
 
   const [playheadMs, setPlayheadMs] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -359,7 +365,13 @@ function EditorBody({
   const place = (chosen: MaterialRange, at?: { row: RowTarget; start: number }) => {
     const material = materials.byJob.get(chosen.jobId)
     if (material === undefined) return
-    const picked = rangePieces(chosen).map((piece) => {
+    // 照参照的工作台：确认素材有声音才写成有声音，没有声音、读不出来都按静音写。
+    // 素材区读镜头时已经一起读过，这里多半直接拿到
+    const audible = queryClient.fetchQuery(videoAudioQuery(material.url)).then(
+      (found) => found,
+      () => false,
+    )
+    const pieces = rangePieces(chosen).map((piece) => {
       const shot = shotNumberOf(piece.mediaStart, material.url, keyframes)
       return {
         ...piece,
@@ -369,10 +381,11 @@ function EditorBody({
       }
     })
     const add = async (canvas: Canvas) => {
+      const muted = !(await audible)
       const spot = at === undefined ? undefined : trackFor(at.row)
       const added = await session.addPictures(
         canvas,
-        picked,
+        pieces.map((piece) => ({ ...piece, muted })),
         spot === undefined || at === undefined ? undefined : { track: spot.track, start: at.start },
         spot?.renumber,
       )
@@ -703,6 +716,7 @@ function EditorBody({
             session.setAttributes(id, changes)
           }}
           selected={selectedBlocks}
+          silentSource={(src) => audioTracks.get(src) === false}
           sourceMs={sourceMs}
         />
         <div className="wf-timeline">

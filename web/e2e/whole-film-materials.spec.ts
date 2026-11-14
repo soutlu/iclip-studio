@@ -8,10 +8,11 @@ test.describe.configure({ timeout: 60_000 })
 
 const conversationIdOf = (page: Page) => new URL(page.url()).pathname.split('/').at(-1) ?? ''
 
-const addTakes = async (page: Page, shots: readonly number[]) => {
+/** 给这几组各出一条片；`sound` 为 false 时出的片没有音轨。 */
+const addTakes = async (page: Page, shots: readonly number[], sound = true) => {
   const conversationId = conversationIdOf(page)
   const ids = await page.evaluate(
-    async ({ conversationId, shots }) => {
+    async ({ conversationId, shots, sound }) => {
       const created: string[] = []
       for (const shot of shots) {
         const response = await fetch('/api/generations/video', {
@@ -21,6 +22,7 @@ const addTakes = async (page: Page, shots: readonly number[]) => {
             conversation_id: conversationId,
             shot_index: shot,
             prompt: `第 ${shot} 组`,
+            generate_audio: sound,
           }),
         })
         if (!response.ok) throw new Error(`出片失败：${response.status}`)
@@ -28,7 +30,7 @@ const addTakes = async (page: Page, shots: readonly number[]) => {
       }
       return created
     },
-    { conversationId, shots },
+    { conversationId, shots, sound },
   )
   await waitCompleted(page, ids)
   return ids
@@ -74,10 +76,16 @@ const waitCompleted = (page: Page, ids: readonly string[]) =>
     )
     .toBe(ids.length)
 
-const openWith = async (page: Page, shots: readonly number[]) => {
+/** 打开成片编辑器，素材区里是给 `shots` 各组出的片，再接着 `silentShots` 各组出的没有音轨的片。 */
+const openWith = async (
+  page: Page,
+  shots: readonly number[],
+  silentShots: readonly number[] = [],
+) => {
   await page.setViewportSize({ width: 1449, height: 982 })
   const panel = await openConversation(page, CONVERSATION)
   await addTakes(page, shots)
+  if (silentShots.length > 0) await addTakes(page, silentShots, false)
   await panel.getByRole('button', { name: '成片', exact: true }).click()
   const dialog = page
     .getByRole('dialog')
@@ -385,6 +393,33 @@ test('Enter 把选区接在成片末尾：焦点在镜头、选区两端或不�
   await dialog.evaluate((element: HTMLElement) => element.focus())
   await page.keyboard.press('Enter')
   await expect.poll(() => savedBlocks(page)).toHaveLength(3)
+})
+
+test('没有音轨的素材片接进成片写成静音，有音轨的标着有声音', async ({ page }) => {
+  const { materials } = await openWith(page, [1], [1])
+  await shotOf(materials, 1, 'A', 1).click()
+  await page.keyboard.press('Enter')
+  await expect.poll(() => savedBlocks(page)).toHaveLength(1)
+  await shotOf(materials, 1, 'B', 1).click()
+  await page.keyboard.press('Enter')
+  await expect.poll(() => savedBlocks(page)).toHaveLength(2)
+
+  // 存下来的成片里每个画面块的名字和声音的写法
+  const sound = await page.evaluate(async (conversationId) => {
+    const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
+    const { html } = (await response.json()) as { html: string | null }
+    const document = new DOMParser().parseFromString(html ?? '', 'text/html')
+    return Object.fromEntries(
+      [...document.querySelectorAll('video')].map((video) => [
+        video.dataset['label'] ?? '',
+        { hasAudio: video.getAttribute('data-has-audio'), muted: video.getAttribute('muted') },
+      ]),
+    )
+  }, conversationIdOf(page))
+  expect(sound).toEqual({
+    'A · 镜头 1': { hasAudio: 'true', muted: null },
+    'B · 镜头 1': { hasAudio: null, muted: 'true' },
+  })
 })
 
 test('每条原作可以换版本；换了之后这条轨上的选区收起', async ({ page }) => {
