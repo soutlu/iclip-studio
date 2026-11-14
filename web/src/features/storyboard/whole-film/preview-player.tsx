@@ -57,6 +57,8 @@ const applyPlayback = (player: PlayerElement, { rate, muted, loop }: PlaybackSet
 
 type PreviewPlayerProps = {
   srcdoc: string | undefined
+  /** 播放器往预览页里装的运行库地址，见 `previewRuntimeSrc`。 */
+  runtimeSrc: string
   message: string | undefined
   backdrop: string | undefined
   width: number
@@ -116,6 +118,7 @@ const failedClipOf = (player: PlayerElement | null) => {
 
 export function PreviewPlayer({
   srcdoc,
+  runtimeSrc,
   message,
   backdrop,
   width,
@@ -325,6 +328,8 @@ export function PreviewPlayer({
       next.setAttribute('disable-click-to-play', '')
       // 加载和缓冲的提示由编辑器自己画，播放器自带的那套不显示
       next.setAttribute('assets-loading-ui', 'none')
+      // 收到 srcdoc 时按它把运行库写进预览页，不给就去外网 CDN 取
+      next.setAttribute('runtime-src', runtimeSrc)
       next.setAttribute('width', String(sizeRef.current.width))
       next.setAttribute('height', String(sizeRef.current.height))
       // 加载成片前就带上，换播放器时倍速、静音、循环不会先回到默认再变
@@ -353,7 +358,7 @@ export function PreviewPlayer({
       clearTimeout(timer)
       pending?.remove()
     }
-  }, [loaded, srcdoc, controlRef])
+  }, [loaded, srcdoc, runtimeSrc, controlRef])
 
   return (
     <div aria-label="预览" className="wf-preview" role="region">

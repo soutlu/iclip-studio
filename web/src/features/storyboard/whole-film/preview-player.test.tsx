@@ -14,6 +14,8 @@ import {
 } from '@/testing/hyperframes-player'
 import { PreviewPlayer, type PlaybackSettings, type PreviewControl } from './preview-player'
 
+const RUNTIME = 'https://studio.example.com/hyperframes/v1/vendor/runtime.js'
+
 const FIRST = 'https://oss/first.mp4'
 const SECOND = 'https://oss/second.mp4'
 
@@ -31,6 +33,7 @@ type Player = HTMLElement & {
   seek: (seconds: number) => void
   iframeElement: HTMLIFrameElement
   _media: FakeParentMedia
+  loadedRuntimeSrc: string | null
 }
 
 const playerOf = () => {
@@ -67,6 +70,7 @@ const preview = (
     onPlaying={on.onPlaying}
     onTime={() => {}}
     playback={playback}
+    runtimeSrc={RUNTIME}
     srcdoc={srcdoc}
     width={180}
   />
@@ -107,6 +111,18 @@ describe('每个文件只下载一份', () => {
     showPage(page('<p></p>'))
     await waitFor(() => expect(playerOf()).not.toBe(old))
     expect(playerOf()._media.entries).toEqual([])
+  })
+})
+
+describe('运行库从给定的地址加载', () => {
+  it('加载成片时播放器已带着运行库地址；换页后的新播放器同样带着', async () => {
+    const { showPage } = await openPreview()
+    expect(playerOf().loadedRuntimeSrc).toBe(RUNTIME)
+
+    const old = playerOf()
+    showPage(page('<p></p>'))
+    await waitFor(() => expect(playerOf()).not.toBe(old))
+    expect(playerOf().loadedRuntimeSrc).toBe(RUNTIME)
   })
 })
 
@@ -298,6 +314,7 @@ describe('第一个播放器装好之前', () => {
       onPlaying={on.onPlaying}
       onTime={() => {}}
       playback={PLAYBACK}
+      runtimeSrc={RUNTIME}
       srcdoc={undefined}
       width={180}
     />
@@ -440,6 +457,7 @@ describe('换页', () => {
         onPlaying={on.onPlaying}
         onTime={() => {}}
         playback={PLAYBACK}
+        runtimeSrc={RUNTIME}
         srcdoc={undefined}
         width={180}
       />,

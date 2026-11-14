@@ -3,8 +3,8 @@ import { HOVER_CANVAS } from './hover-preview'
 
 type PlayerElement = HTMLElement & { play: () => void }
 
-/** 盖在卡片封面上的播放器：静音、循环，第一帧画出来之前透明。 */
-export function ItemHoverPreview({ srcdoc }: { srcdoc: string }) {
+/** 盖在卡片封面上的播放器：静音、循环，第一帧画出来之前透明。`runtimeSrc` 见 `previewRuntimeSrc`。 */
+export function ItemHoverPreview({ srcdoc, runtimeSrc }: { srcdoc: string; runtimeSrc: string }) {
   const hostRef = useRef<HTMLSpanElement>(null)
 
   useEffect(() => {
@@ -21,6 +21,7 @@ export function ItemHoverPreview({ srcdoc }: { srcdoc: string }) {
       player = document.createElement('hyperframes-player') as PlayerElement
       player.setAttribute('disable-click-to-play', '')
       player.setAttribute('assets-loading-ui', 'none')
+      player.setAttribute('runtime-src', runtimeSrc)
       player.setAttribute('muted', '')
       player.setAttribute('loop', '')
       player.setAttribute('width', String(HOVER_CANVAS.width))
@@ -35,7 +36,7 @@ export function ItemHoverPreview({ srcdoc }: { srcdoc: string }) {
       player?.removeEventListener('painted', reveal)
       player?.remove()
     }
-  }, [srcdoc])
+  }, [srcdoc, runtimeSrc])
 
   return <span aria-hidden className="wf-hover-slot" inert ref={hostRef} />
 }

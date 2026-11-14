@@ -58,6 +58,8 @@ class FakeHyperframesPlayer extends HTMLElement {
   playbackRate = 1
   muted = false
   loop = false
+  /** 收到 srcdoc 那一刻的 `runtime-src`：真播放器这时按它把运行库写进预览页。 */
+  loadedRuntimeSrc: string | null = null
 
   connectedCallback() {
     this.append(this.iframeElement)
@@ -65,6 +67,7 @@ class FakeHyperframesPlayer extends HTMLElement {
 
   attributeChangedCallback(name: string, _old: string | null, srcdoc: string | null) {
     if (name !== 'srcdoc') return
+    this.loadedRuntimeSrc = this.getAttribute('runtime-src')
     this.painted = false
     this.#showVideos(srcdoc ?? '')
     queueMicrotask(() => {

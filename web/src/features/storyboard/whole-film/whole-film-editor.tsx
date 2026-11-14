@@ -66,7 +66,7 @@ import {
   type MaterialTake,
 } from './materials'
 import { landingOn, onRow, rowOpening, type RowTarget, type Zone } from './placement'
-import { previewDocument } from './preview-document'
+import { previewDocument, previewRuntimeSrc } from './preview-document'
 import { PreviewPlayer, type PlaybackSettings, type PreviewControl } from './preview-player'
 import { PreviewTransport } from './preview-transport'
 import { aroundPlayhead } from './selection'
@@ -670,6 +670,7 @@ function EditorBody({
             onPlaying={setPlaying}
             onTime={setPlayheadMs}
             playback={playback}
+            runtimeSrc={previewRuntimeSrc(catalog, window.location.origin)}
             srcdoc={srcdoc}
             width={film?.canvas.width ?? DEFAULT_CANVAS.width}
           >
