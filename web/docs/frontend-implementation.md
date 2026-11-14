@@ -53,9 +53,9 @@
 成片草稿是一份 HTML（业务规则见 [CONTEXT.md「成片草稿」](../../docs/CONTEXT.md#术语)），写法在 [composition/film.ts](../src/features/storyboard/whole-film/composition/film.ts)：
 
 - **只经 SDK 改文件**：编辑器用 SDK 打开成片文件，每个编辑动作是一次 SDK 操作，撤销重做用 SDK 自带的；不直接拼改 HTML 字符串。SDK 的编辑引擎按需加载，不进主包。
-- **新块用写法里的函数写**：往成片里加块时，用 `film.ts` 里对应的函数写出标签（如 `pictureBlock`），素材地址的变量用 `sourceVariable` 声明，保证和渲染服务检查时读的是同一种写法。
+- **新片段用写法里的函数写**：往成片里加片段时，用 `film.ts` 里对应的函数写出标签（如 `videoClip`），素材地址的变量用 `sourceVariable` 声明，保证和渲染服务检查时读的是同一种写法。
 - **保存交给会话**：[use-film-session.ts](../src/features/storyboard/whole-film/use-film-session.ts) 在停下后整份保存并带上版本号；`409` 时换成服务端最新的一版。渲染服务会按写法重写文件，所以存下的文本可以和提交的不同。
-- **预览按块重写整份、不改存着的文件**：SDK 编辑时不改 `<head>`，所以预览把当前的块用 `writeFilm` 重新写出整份（和渲染服务存下的一样），再加上组件库的基准地址和预览专用的媒体加载方式（[preview-document.ts](../src/features/storyboard/whole-film/preview-document.ts)）。
+- **预览按片段重写整份、不改存着的文件**：SDK 编辑时不改 `<head>`，所以预览把当前的片段用 `writeFilm` 重新写出整份（和渲染服务存下的一样），再加上组件库的基准地址和预览专用的媒体加载方式（[preview-document.ts](../src/features/storyboard/whole-film/preview-document.ts)）。
 
 ## 测试
 

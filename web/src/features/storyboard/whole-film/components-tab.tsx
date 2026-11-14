@@ -76,7 +76,7 @@ export function ComponentsTab({ catalog, origin, onAdd, onCarry, onDrop }: Compo
       </ChipGroup>
       {items.length === 0 ? (
         <p className="wf-components-empty" role="status">
-          暂无符合条件的组件，请换个关键词或分类
+          暂无符合条件的组件，请更换关键词或分类
         </p>
       ) : (
         <ul aria-label="组件" className="wf-component-grid">

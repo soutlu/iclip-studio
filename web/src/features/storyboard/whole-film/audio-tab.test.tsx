@@ -13,7 +13,7 @@ import { audio } from '@/testing/whole-film'
 import { DRAG_THRESHOLD } from '../editing/timeline-drag'
 import type { GenerationJob } from '../storyboard.api'
 import { AudioTab, GenerateMusic } from './audio-tab'
-import type { FilmBlock } from './composition/film'
+import type { FilmClip } from './composition/film'
 
 const durations = vi.hoisted(() => new Map<string, number>())
 
@@ -63,7 +63,7 @@ const night = musicJob({
   durationMs: 168_000,
 })
 
-const openTab = async (records: GenerationJob[], blocks: FilmBlock[] = []) => {
+const openTab = async (records: GenerationJob[], clips: FilmClip[] = []) => {
   const conversation = addMockConversation('音频页签')
   server.use(http.get('*/api/generations', () => HttpResponse.json({ items: records })))
   const props = {
@@ -73,9 +73,7 @@ const openTab = async (records: GenerationJob[], blocks: FilmBlock[] = []) => {
     onReveal: vi.fn(),
     onNotice: vi.fn(),
   }
-  await renderWithProviders(
-    <AudioTab blocks={blocks} conversationId={conversation.id} {...props} />,
-  )
+  await renderWithProviders(<AudioTab clips={clips} conversationId={conversation.id} {...props} />)
   if (records.length > 0) await screen.findByRole('list', { name: '音频' })
   return { ...props, conversation }
 }
@@ -107,20 +105,20 @@ describe('音频栏 · 列表', () => {
     expect(within(list()).getByText('城市夜景氛围')).toBeInTheDocument()
     await user.type(search, '钢琴')
     expect(screen.queryByRole('list', { name: '音频' })).toBeNull()
-    expect(screen.getByRole('status')).toHaveTextContent('暂无符合条件的音频，请换个关键词')
+    expect(screen.getByRole('status')).toHaveTextContent('暂无符合条件的音频，请更换关键词')
   })
 
   it('这段对话还没有音频：说明怎么加', async () => {
     await openTab([])
     expect(await screen.findByRole('status')).toHaveTextContent(
-      '暂无音频，请点「生成音乐」或「导入音频」',
+      '暂无音频，请点击「生成音乐」或「导入音频」',
     )
   })
 
   it.each([
-    ['pending', '排队中', '音乐还没生成完，无法加入成片'],
-    ['submitting', '生成中', '音乐还没生成完，无法加入成片'],
-    ['submitted', '生成中', '音乐还没生成完，无法加入成片'],
+    ['pending', '排队中', '音乐尚未生成完成，无法加入成片；请等待生成完成'],
+    ['submitting', '生成中', '音乐尚未生成完成，无法加入成片；请等待生成完成'],
+    ['submitted', '生成中', '音乐尚未生成完成，无法加入成片；请等待生成完成'],
     ['failed', '生成失败', '音乐生成失败，无法加入成片；请重新生成'],
   ] as const)('%s 显示「%s」，不能试听，按 Enter、右键都加不进成片', async (status, label, why) => {
     const user = userEvent.setup()
@@ -191,13 +189,13 @@ describe('音频栏 · 试听', () => {
 })
 
 describe('音频栏 · 已使用', () => {
-  it('成片里用着的那条标「已使用」，点这一行选中它最早的那个块；没用到的点了什么也不做', async () => {
+  it('成片里用着的那条标「已使用」，点这一行选中它最早的那个片段；没用到的点了什么也不做', async () => {
     const user = userEvent.setup()
-    const blocks = [
+    const clips = [
       audio({ id: 'late', jobId: guitar.id, start: 8000 }),
       audio({ id: 'early', jobId: guitar.id, start: 1000, track: 1 }),
     ]
-    const { onReveal, onAdd } = await openTab([guitar, night], blocks)
+    const { onReveal, onAdd } = await openTab([guitar, night], clips)
     expect(within(rowOf('轻快原声吉他')).getByText('00:30 · 已使用')).toBeInTheDocument()
     expect(within(rowOf('城市夜景氛围')).queryByText(/已使用/)).toBeNull()
 
@@ -359,7 +357,7 @@ describe('音频栏 · 生成音乐', () => {
     )
     await renderWithProviders(
       <AudioTab
-        blocks={[]}
+        clips={[]}
         conversationId={conversation.id}
         onAdd={vi.fn()}
         onCarry={vi.fn()}
@@ -381,7 +379,7 @@ describe('音频栏 · 生成音乐', () => {
       '轻快的原声吉他',
     )
     await waitFor(() => expect(submit).toBeEnabled())
-    expect(popover).toHaveAccessibleDescription('生成后出现在「音频」页签的列表里')
+    expect(popover).toHaveAccessibleDescription('生成后可在「音频」页签的列表中查看')
     await user.click(submit)
 
     await waitFor(() => expect(popover).not.toBeInTheDocument())

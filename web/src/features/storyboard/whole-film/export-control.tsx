@@ -22,8 +22,8 @@ const exportStatus = (view: ExportView): Status | undefined => {
       return {
         text:
           view.ahead === null || view.ahead === 0
-            ? '排队中，马上开始'
-            : `排队中，前面还有 ${view.ahead} 个`,
+            ? '排队中，即将开始'
+            : `排队中，前方还有 ${view.ahead} 个导出`,
         tone: 'normal',
       }
     case 'rendering':

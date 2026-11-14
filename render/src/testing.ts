@@ -5,10 +5,10 @@ import type {
 } from '../../web/src/features/storyboard/whole-film/composition/catalog'
 import {
   writeFilm,
-  type AudioBlock,
-  type ComponentBlock,
-  type FilmBlock,
-  type PictureBlock,
+  type AudioClip,
+  type FilmClip,
+  type HostClip,
+  type VideoClip,
 } from '../../web/src/features/storyboard/whole-film/composition/film'
 import type { ExportWorker, RenderedFile, UploadTarget } from './jobs'
 import { createLogger, type Logger } from './log'
@@ -41,9 +41,9 @@ export const CLIP_URL = 'https://media.iclip.test/videos/clip.mp4'
 export const AUDIO_JOB = '0c9a8b7d-6e5f-4a3b-8c2d-1e0f9a8b7c6d'
 export const AUDIO_URL = 'https://media.iclip.test/audio/music.mp3'
 
-export function picture(overrides: Partial<PictureBlock> = {}): PictureBlock {
+export function video(overrides: Partial<VideoClip> = {}): VideoClip {
   return {
-    kind: 'picture',
+    kind: 'video',
     id: 'clip-1',
     label: '镜头 1',
     jobId: SOURCE_JOB,
@@ -64,9 +64,9 @@ export function picture(overrides: Partial<PictureBlock> = {}): PictureBlock {
 }
 
 /** 测试组件库里带可填项的那个条目。 */
-export function component(overrides: Partial<ComponentBlock> = {}): ComponentBlock {
+export function host(overrides: Partial<HostClip> = {}): HostClip {
   return {
-    kind: 'component',
+    kind: 'host',
     id: 'title-1',
     label: '测试可填项',
     component: 'fixture-fields',
@@ -82,7 +82,7 @@ export function component(overrides: Partial<ComponentBlock> = {}): ComponentBlo
   }
 }
 
-export function audio(overrides: Partial<AudioBlock> = {}): AudioBlock {
+export function audio(overrides: Partial<AudioClip> = {}): AudioClip {
   return {
     kind: 'audio',
     id: 'music-1',
@@ -104,10 +104,10 @@ export function audio(overrides: Partial<AudioBlock> = {}): AudioBlock {
 }
 
 export function filmFile(
-  blocks: FilmBlock[] = [picture()],
+  clips: FilmClip[] = [video()],
   canvas = { width: 720, height: 1280 },
 ): string {
-  return writeFilm({ canvas, blocks }, catalog)
+  return writeFilm({ canvas, clips }, catalog)
 }
 
 export function exportRequest(

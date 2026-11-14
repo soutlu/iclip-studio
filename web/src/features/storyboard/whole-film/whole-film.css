@@ -401,7 +401,7 @@
   top: 10px;
 }
 
-/* ---- 右侧栏：选中的块的名字、种类和分组，一次只展开一个分组 ---- */
+/* ---- 右侧栏：选中的片段的名字、种类和分组，一次只展开一个分组 ---- */
 
 .wf-inspector {
   display: flex;
@@ -715,7 +715,7 @@
   font-weight: 600;
 }
 
-/* 选中了几个块：标题、块的名字，不显示字段 */
+/* 选中了几个片段：标题、片段的名字，不显示字段 */
 .wf-inspector-multi {
   display: flex;
   min-height: 0;
@@ -1865,7 +1865,7 @@
 
   /* 行头和各行在同一个滚动容器里，上下一起滚 */
   overflow: auto;
-  /* 聚焦的块不停在吸住的时间尺和行头底下 */
+  /* 聚焦的片段不停在吸住的时间尺和行头底下 */
   scroll-padding: var(--timeline-ruler-height) 0 0 var(--wf-head-width);
   scrollbar-width: thin;
   user-select: none;
@@ -1884,7 +1884,7 @@
   isolation: isolate;
 }
 
-/* 行头那一列吸在左边，横向滚动时块从它底下过去 */
+/* 行头那一列吸在左边，横向滚动时片段从它底下过去 */
 .wf-track-heads {
   position: sticky;
   left: 0;
@@ -1911,7 +1911,7 @@
   margin-top: 6px;
 }
 
-/* 行头显示这一行第一个块的名字，不止一个块时后面跟块数 */
+/* 行头显示这一行第一个片段的名字，不止一个片段时后面跟片段数 */
 .wf-head-name {
   min-width: 0;
   overflow: hidden;
@@ -1947,8 +1947,8 @@
   color: var(--color-on-surface-muted);
 }
 
-/* 隐藏的块留在时间线上，内容画淡一些；选中框和把手不变淡 */
-.wf-clip.is-hidden > .wf-block-body {
+/* 隐藏的片段留在时间线上，内容画淡一些；选中框和把手不变淡 */
+.wf-clip.is-hidden > .wf-clip-body {
   opacity: 0.4;
 }
 
@@ -2053,7 +2053,7 @@
   z-index: var(--z-local-3);
   height: var(--timeline-ruler-height);
   background: var(--color-surface-container-low);
-  /* 各行往右多伸 8px、块开头的把手往左伸出时间区，滚上来时两边留的空也要盖住 */
+  /* 各行往右多伸 8px、片段开头的把手往左伸出时间区，滚上来时两边留的空也要盖住 */
   box-shadow:
     -8px 0 0 var(--color-surface-container-low),
     8px 0 0 var(--color-surface-container-low);
@@ -2225,7 +2225,7 @@
   font-size: var(--text-label);
 }
 
-/* 块的叠放只在各行里比，拖起来的块也压不过吸在顶上的时间尺和播放头 */
+/* 片段的叠放只在各行里比，拖起来的片段也压不过吸在顶上的时间尺和播放头 */
 .wf-lanes {
   display: grid;
   grid-auto-rows: auto;
@@ -2234,7 +2234,7 @@
   isolation: isolate;
 }
 
-/* 最下面那条空行：把块或镜头拖进来就新开一行；比放着块的行矮。拖到两行之间时它挪到那里去 */
+/* 最下面那条空行：把片段或镜头拖进来就新开一行；比放着片段的行矮。拖到两行之间时它挪到那里去 */
 .wf-lane.is-new {
   height: 28px;
   background: transparent;
@@ -2246,7 +2246,7 @@
   height: 28px;
 }
 
-/* 拖到别的行去的块浮在各行上面 */
+/* 拖到别的行去的片段浮在各行上面 */
 .wf-clip.is-lifted {
   z-index: var(--z-local-3);
 }
@@ -2316,7 +2316,7 @@
   box-shadow: inset 0 0 0 0.5px var(--color-hairline);
 }
 
-/* 选中的框画在块的内容上面，不被画面和波形盖住 */
+/* 选中的框画在片段的内容上面，不被画面和波形盖住 */
 .wf-clip.is-selected::after {
   content: '';
   position: absolute;
@@ -2332,7 +2332,7 @@
   box-shadow: inset 0 0 0 0.5px var(--color-hairline);
 }
 
-.wf-block-body {
+.wf-clip-body {
   position: absolute;
   inset: 0;
   display: flex;
@@ -2345,7 +2345,7 @@
   touch-action: none;
 }
 
-.wf-clip .wf-block-body {
+.wf-clip .wf-clip-body {
   cursor: pointer;
 }
 
@@ -2420,7 +2420,7 @@
   overflow: hidden;
 }
 
-/* 关掉缩略图：块上只剩名字和声音 */
+/* 关掉缩略图：片段上只剩名字和声音 */
 .wf-tracks.is-plain .wf-clip-frames {
   display: none;
 }
@@ -2444,9 +2444,9 @@
   background: var(--color-surface-container);
 }
 
-/* 组件块和音频块：浅色块身，上面是名字；组件块左下角一张小封面，音频块下面整块波形 */
-.wf-clip.is-component > .wf-block-body,
-.wf-clip.is-audio > .wf-block-body {
+/* 组件或块的片段和音频片段：片段浅色，上面是名字；组件或块的片段左下角一张小封面，音频片段下面整段波形 */
+.wf-clip.is-host > .wf-clip-body,
+.wf-clip.is-audio > .wf-clip-body {
   background: color-mix(in srgb, var(--color-on-surface) 9%, var(--color-top-layer));
 }
 
@@ -2516,7 +2516,7 @@
   font-size: var(--text-caption);
 }
 
-.wf-overlay .wf-block-body {
+.wf-overlay .wf-clip-body {
   flex-direction: row;
   align-items: center;
   gap: 5px;
@@ -2535,7 +2535,7 @@
   box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--color-scrim) 45%, transparent);
 }
 
-.wf-overlay.is-moving .wf-block-body {
+.wf-overlay.is-moving .wf-clip-body {
   cursor: grabbing;
 }
 
@@ -2897,7 +2897,7 @@
 }
 
 /* 左右两栏一共要 608px，窗口不够宽时中间的预览会被挤没：改成纵向排开。预览定高，时间线面板照旧紧跟在
-   下面；右侧栏接在时间线下面、按内容高，在时间线上点了块就在紧下面改它；组件栏定高接在最后。
+   下面；右侧栏接在时间线下面、按内容高，在时间线上点了片段就在紧下面改它；组件栏定高接在最后。
    放不下时整个编辑区上下滚动 */
 @media (max-width: 1000px) {
   .wf-workspace {

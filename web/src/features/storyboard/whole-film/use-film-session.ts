@@ -2,27 +2,27 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { Composition } from '@hyperframes/sdk'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
-import { rippleStarts, type Timing } from './block-edit'
+import { rippleStarts, type Timing } from './clip-edit'
 import { componentDurationMs } from './components'
 import type { CatalogItem, ComponentCatalog, VariableValue } from './composition/catalog'
 import {
   AUDIO_SOURCE_LABEL,
-  audioBlock,
-  blockFromAttributes,
-  blockKindOfTag,
-  componentBlock,
+  audioClip,
+  clipFromAttributes,
+  clipKindOfTag,
   FILM_ID,
-  pictureBlock,
+  hostClip,
   sourceVariable,
+  videoClip,
   writeFilm,
-  type AudioBlock,
-  type BlockAttribute,
+  type AudioClip,
   type Canvas,
-  type FilmBlock,
-  type PictureBlock,
+  type ClipAttribute,
+  type FilmClip,
+  type VideoClip,
 } from './composition/film'
 import { onRow, topTrack, type Landing, type Renumbering } from './placement'
-import { newBlockZ, restackedZ } from './stacking'
+import { newClipZ, restackedZ } from './stacking'
 import type { StackingDirection } from './vendor/hyperframes-studio/player/components/timelineStackingSync'
 import { readWholeFilmDraft, saveWholeFilmDraft } from './whole-film.api'
 
@@ -32,76 +32,71 @@ export type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'failed'
 export type FilmView = {
   html: string
   canvas: Canvas
-  /** 文件里所有的块（三种），按它们在文件里的先后。 */
-  blocks: readonly FilmBlock[]
+  /** 文件里所有的片段（三种），按它们在文件里的先后。 */
+  clips: readonly FilmClip[]
   durationMs: number
   canUndo: boolean
   canRedo: boolean
 }
 
 /** 要放进成片的一段素材；起点由成片现有内容决定，接在画面那一行的末尾。 */
-export type NewPicture = Pick<
-  PictureBlock,
+export type NewVideo = Pick<
+  VideoClip,
   'label' | 'jobId' | 'src' | 'mediaStart' | 'duration' | 'muted'
 >
 
 /** 要放进成片的一段音频：一条音频记录从 `mediaStart` 起的 `duration` 毫秒。 */
-export type NewAudio = Pick<AudioBlock, 'label' | 'jobId' | 'src' | 'mediaStart' | 'duration'>
+export type NewAudio = Pick<AudioClip, 'label' | 'jobId' | 'src' | 'mediaStart' | 'duration'>
 
 // SDK 的编辑引擎只在打开成片编辑器时才用得到，单独成块按需加载。
 const openComposition = async (html: string): Promise<Composition> =>
   (await import('@hyperframes/sdk')).openComposition(html)
 
-const STALE_NOTICE = '成片草稿已在别处改过，已换成最新的一版；刚才没保存的改动已放弃'
+const STALE_NOTICE = '成片草稿已在别处修改，已切换到最新版本；未保存的改动已放弃'
 
 const NO_RENUMBERING: Renumbering = new Map()
 const NO_STARTS: ReadonlyMap<string, number> = new Map()
 
-/** 成片里所有的块，按它们在文件里的先后。只读块，不存出文件，一批操作中间也能用。 */
-const blocksOf = (engine: Composition): FilmBlock[] =>
+/** 成片里所有的片段，按它们在文件里的先后。只读出片段，不存出文件，一批操作中间也能用。 */
+const clipsOf = (engine: Composition): FilmClip[] =>
   (engine.getElements().find((element) => element.id === FILM_ID)?.children ?? []).flatMap(
     (element) => {
-      const kind = blockKindOfTag(element.tag)
-      const block =
+      const kind = clipKindOfTag(element.tag)
+      const clip =
         kind === undefined
           ? undefined
-          : blockFromAttributes(
-              kind,
-              element.id,
-              element.attributes,
-              element.inlineStyles['zIndex'],
-            )
-      return block === undefined ? [] : [block]
+          : clipFromAttributes(kind, element.id, element.attributes, element.inlineStyles['zIndex'])
+      return clip === undefined ? [] : [clip]
     },
   )
 
-/** 成片总长：所有块里最晚的结尾。 */
-const durationOf = (blocks: readonly FilmBlock[]) =>
-  Math.max(0, ...blocks.map((block) => block.start + block.duration))
+/** 成片总长：所有片段里最晚的结尾。 */
+const durationOf = (clips: readonly FilmClip[]) =>
+  Math.max(0, ...clips.map((clip) => clip.start + clip.duration))
 
 const viewOf = (engine: Composition): FilmView => {
   const root = engine.getElements().find((element) => element.id === FILM_ID)
-  const blocks = blocksOf(engine)
+  const clips = clipsOf(engine)
   return {
     html: engine.serialize(),
     canvas: {
       width: Number(root?.attributes['data-width'] ?? 0),
       height: Number(root?.attributes['data-height'] ?? 0),
     },
-    blocks,
-    durationMs: durationOf(blocks),
+    clips,
+    durationMs: durationOf(clips),
     canUndo: engine.canUndo(),
     canRedo: engine.canRedo(),
   }
 }
 
-/** 在一批操作里做完 `change`，再按改完的所有块写根上的总长：一起算一步撤销。 */
+/** 在一批操作里做完 `change`，再按改完的所有片段写根上的总长：一起算一步撤销。 */
 const applyTo = (engine: Composition, change: () => void) =>
   engine.batch(() => {
     change()
     engine.dispatch({
       type: 'setCompositionMetadata',
-      duration: durationOf(blocksOf(engine)) / 1000,
+      duration: durationOf(clipsOf(engine)) / 1000,
     })
   })
 
@@ -112,7 +107,7 @@ const declareSource = (engine: Composition, jobId: string, src: string, label?: 
     engine.declareVariable(variable)
 }
 
-const newBlockId = () => `clip-${crypto.randomUUID().slice(0, 8)}`
+const newClipId = () => `clip-${crypto.randomUUID().slice(0, 8)}`
 
 type Options = {
   debounceMs?: number
@@ -242,7 +237,7 @@ export function useFilmSession(
   const engineFor = useCallback(
     async (canvas: Canvas): Promise<Composition | null> => {
       if (engineRef.current !== null) return engineRef.current
-      creatingRef.current ??= adopt(writeFilm({ canvas, blocks: [] }, catalog), false).finally(
+      creatingRef.current ??= adopt(writeFilm({ canvas, clips: [] }, catalog), false).finally(
         () => {
           creatingRef.current = null
         },
@@ -254,46 +249,46 @@ export function useFilmSession(
 
   /**
    * 把几段素材一段接一段放进成片的画面区：给了 `at` 就从那一行的那个时间放起（调用方保证那里空着），
-   * 没给就接在主轨（画面区最上面那一行）的末尾。`renumber` 是为它新开一行时别的块要换成的行号。
+   * 没给就接在主轨（画面区最上面那一行）的末尾。`renumber` 是为它新开一行时别的片段要换成的行号。
    * 每段都叠在最上面，写在根下第一个。还没有成片时先按 `canvas` 建一份。放不下时不动成片。
    */
-  const addPictures = useCallback(
+  const addVideos = useCallback(
     async (
       canvas: Canvas,
-      pictures: readonly NewPicture[],
+      videos: readonly NewVideo[],
       at?: Landing,
       renumber: Renumbering = NO_RENUMBERING,
     ): Promise<boolean> => {
       const engine = await engineFor(canvas)
       if (engine === null) return false
-      const existing = blocksOf(engine)
-      // 别的块先换成新的行号，后面都按换完的样子算
-      const others = existing.map((block) => ({
-        ...block,
-        track: renumber.get(block.id) ?? block.track,
+      const existing = clipsOf(engine)
+      // 别的片段先换成新的行号，后面都按换完的样子算
+      const others = existing.map((clip) => ({
+        ...clip,
+        track: renumber.get(clip.id) ?? clip.track,
       }))
       const track = at?.track ?? topTrack(others)
-      const row = others.filter((block) => onRow(block, { zone: 'visual', track }))
-      let end = at?.start ?? Math.max(0, ...row.map((block) => block.start + block.duration))
+      const row = others.filter((clip) => onRow(clip, { zone: 'visual', track }))
+      let end = at?.start ?? Math.max(0, ...row.map((clip) => clip.start + clip.duration))
       applyTo(engine, () => {
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
-        for (const [placed, picture] of pictures.entries()) {
-          declareSource(engine, picture.jobId, picture.src)
-          const block = {
-            ...picture,
-            kind: 'picture' as const,
-            id: newBlockId(),
+        for (const [placed, video] of videos.entries()) {
+          declareSource(engine, video.jobId, video.src)
+          const clip = {
+            ...video,
+            kind: 'video' as const,
+            id: newClipId(),
             start: end,
             track,
             volume: 1,
             playbackRate: 1,
             fadeIn: 0,
             fadeOut: 0,
-            z: newBlockZ(existing, placed),
+            z: newClipZ(existing, placed),
             hidden: false,
           }
-          engine.addElement(FILM_ID, 0, pictureBlock(block))
-          end += picture.duration
+          engine.addElement(FILM_ID, 0, videoClip(clip))
+          end += video.duration
         }
       })
       show(engine)
@@ -304,7 +299,7 @@ export function useFilmSession(
 
   /**
    * 把组件库的一个条目放进成片：从 `at` 那一行的那个时间放起（调用方保证那里空着），
-   * 可填项取 `values`，时长取条目的时长。`renumber` 同 `addPictures`。
+   * 可填项取 `values`，时长取条目的时长。`renumber` 同 `addVideos`。
    * 叠在最上面，写在根下第一个。还没有成片时先按 `canvas` 建一份。
    */
   const addComponent = useCallback(
@@ -317,13 +312,13 @@ export function useFilmSession(
     ): Promise<boolean> => {
       const engine = await engineFor(canvas)
       if (engine === null) return false
-      const existing = blocksOf(engine)
+      const existing = clipsOf(engine)
       const duration = componentDurationMs(item, existing)
       applyTo(engine, () => {
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
-        const block = {
-          kind: 'component' as const,
-          id: newBlockId(),
+        const clip = {
+          kind: 'host' as const,
+          id: newClipId(),
           label: item.title,
           component: item.name,
           src: item.src,
@@ -332,10 +327,10 @@ export function useFilmSession(
           playbackStart: 0,
           track: at.track,
           values: { ...values },
-          z: newBlockZ(existing, 0),
+          z: newClipZ(existing, 0),
           hidden: false,
         }
-        engine.addElement(FILM_ID, 0, componentBlock(block))
+        engine.addElement(FILM_ID, 0, hostClip(clip))
       })
       show(engine)
       return true
@@ -345,7 +340,7 @@ export function useFilmSession(
 
   /**
    * 把一段音频放进成片的声音区：从 `at` 那一行的那个时间放起（调用方保证那里空着）。
-   * 写在根下第一个，不带叠放顺序。`renumber` 同 `addPictures`。还没有成片时先按 `canvas` 建一份。
+   * 写在根下第一个，不带叠放顺序。`renumber` 同 `addVideos`。还没有成片时先按 `canvas` 建一份。
    */
   const addAudio = useCallback(
     async (
@@ -359,10 +354,10 @@ export function useFilmSession(
       applyTo(engine, () => {
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
         declareSource(engine, audio.jobId, audio.src, AUDIO_SOURCE_LABEL)
-        const block = {
+        const clip = {
           ...audio,
           kind: 'audio' as const,
-          id: newBlockId(),
+          id: newClipId(),
           start: at.start,
           track: at.track,
           volume: 1,
@@ -372,7 +367,7 @@ export function useFilmSession(
           loop: false,
           hidden: false,
         }
-        engine.addElement(FILM_ID, 0, audioBlock(block))
+        engine.addElement(FILM_ID, 0, audioClip(clip))
       })
       show(engine)
       return true
@@ -392,17 +387,17 @@ export function useFilmSession(
   )
 
   /**
-   * 改几个块各自的起止和入点，一起算一步撤销。组件块的入点写成从第几秒开始播，是 0 时去掉这个属性。
+   * 改几个片段各自的起止和入点，一起算一步撤销。组件或块的片段的入点写成从第几秒开始播，是 0 时去掉这个属性。
    */
   const retime = useCallback(
     (timings: ReadonlyMap<string, Timing>) =>
       edit((engine) => {
-        const kinds = new Map(blocksOf(engine).map((block) => [block.id, block.kind]))
+        const kinds = new Map(clipsOf(engine).map((clip) => [clip.id, clip.kind]))
         for (const [id, timing] of timings) {
           engine.setTiming(id, { start: timing.start / 1000, duration: timing.duration / 1000 })
           const kind = kinds.get(id)
           const inPoint = String(timing.mediaStart / 1000)
-          if (kind === 'component')
+          if (kind === 'host')
             engine.setAttribute(id, 'data-playback-start', timing.mediaStart > 0 ? inPoint : null)
           else if (kind !== undefined) engine.setAttribute(id, 'data-media-start', inPoint)
         }
@@ -411,12 +406,12 @@ export function useFilmSession(
   )
 
   /**
-   * 把一个块换到另一行的某个时间。`direction` 是它往上还是往下挪（null 时不调叠放顺序）：
-   * 只重排它自己，别的块的叠放顺序和文件里的先后都不动。
-   * `renumber` 是为它新开一行时别的块要换成的行号；`starts` 是和它一起挪的块各自的新起点，
+   * 把一个片段换到另一行的某个时间。`direction` 是它往上还是往下挪（null 时不调叠放顺序）：
+   * 只重排它自己，别的片段的叠放顺序和文件里的先后都不动。
+   * `renumber` 是为它新开一行时别的片段要换成的行号；`starts` 是和它一起挪的片段各自的新起点，
    * 它们留在原来的行。都和它算一步撤销。
    */
-  const moveBlock = useCallback(
+  const moveClip = useCallback(
     (
       id: string,
       at: Landing,
@@ -429,14 +424,14 @@ export function useFilmSession(
         for (const [other, start] of starts) engine.setTiming(other, { start: start / 1000 })
         engine.setTiming(id, { start: at.start / 1000, trackIndex: at.track })
         if (direction === null) return
-        // 按挪完的样子算：一起挪的块的新起点、别的块的新行号都已写进去
-        const z = restackedZ(blocksOf(engine), id, direction)
+        // 按挪完的样子算：一起挪的片段的新起点、别的片段的新行号都已写进去
+        const z = restackedZ(clipsOf(engine), id, direction)
         if (z !== undefined) engine.setStyle(id, { zIndex: z > 0 ? String(z) : null })
       }),
     [edit],
   )
 
-  /** 把几个块各自挪到新的起点，一起算一步撤销。 */
+  /** 把几个片段各自挪到新的起点，一起算一步撤销。 */
   const restart = useCallback(
     (starts: ReadonlyMap<string, number>) =>
       edit((engine) => {
@@ -445,7 +440,7 @@ export function useFilmSession(
     [edit],
   )
 
-  /** 把几个块一起隐藏或显示回来，算一步撤销。 */
+  /** 把几个片段一起隐藏或显示回来，算一步撤销。 */
   const setHidden = useCallback(
     (ids: readonly string[], hidden: boolean) =>
       edit((engine) => {
@@ -455,24 +450,24 @@ export function useFilmSession(
   )
 
   /**
-   * 把组件块 `id` 的可填项取值整个换成 `values`，算一步撤销。
-   * 块已经不在成片里（比如改完还没提交就删掉了）时不动成片。
+   * 把组件或块的片段 `id` 的可填项取值整个换成 `values`，算一步撤销。
+   * 片段已经不在成片里（比如改完还没提交就删掉了）时不动成片。
    */
   const setValues = useCallback(
     (id: string, values: Readonly<Record<string, VariableValue>>) => {
       const engine = engineRef.current
-      if (engine === null || !blocksOf(engine).some((block) => block.id === id)) return
+      if (engine === null || !clipsOf(engine).some((clip) => clip.id === id)) return
       edit((current) => current.setAttribute(id, 'data-variable-values', JSON.stringify(values)))
     },
     [edit],
   )
 
   /**
-   * 改块 `id` 上的几个属性（null 是去掉），算一步撤销。块已经不在成片里、或者属性都已经是这些值时
+   * 改片段 `id` 上的几个属性（null 是去掉），算一步撤销。片段已经不在成片里、或者属性都已经是这些值时
    * 不动成片。
    */
   const setAttributes = useCallback(
-    (id: string, changes: Readonly<Partial<Record<BlockAttribute, string | null>>>) => {
+    (id: string, changes: Readonly<Partial<Record<ClipAttribute, string | null>>>) => {
       const engine = engineRef.current
       const element = engine?.getElements().find((candidate) => candidate.id === id)
       if (engine === null || element === undefined) return
@@ -487,11 +482,11 @@ export function useFilmSession(
     [edit],
   )
 
-  /** 删掉几个块；`ripple` 为真时主轨里后面的块往前补上。没有块再用的素材变量一起去掉。 */
-  const removeBlocks = useCallback(
+  /** 删掉几个片段；`ripple` 为真时主轨里后面的片段往前补上。没有片段再用的素材变量一起去掉。 */
+  const removeClips = useCallback(
     (ids: readonly string[], ripple: boolean) =>
       edit((engine) => {
-        const before = blocksOf(engine)
+        const before = clipsOf(engine)
         const gone = new Set(ids)
         for (const id of gone) engine.removeElement(id)
         if (ripple)
@@ -516,16 +511,16 @@ export function useFilmSession(
   return {
     film,
     opening,
-    addPictures,
+    addVideos,
     addComponent,
     addAudio,
     retime,
-    moveBlock,
+    moveClip,
     restart,
     setHidden,
     setValues,
     setAttributes,
-    removeBlocks,
+    removeClips,
     undo: () => step('undo'),
     redo: () => step('redo'),
     save,

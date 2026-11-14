@@ -5,11 +5,11 @@ import type {
 } from '@/features/storyboard/whole-film/composition/catalog'
 import {
   writeFilm,
-  type AudioBlock,
+  type AudioClip,
   type Canvas,
-  type ComponentBlock,
-  type FilmBlock,
-  type PictureBlock,
+  type FilmClip,
+  type HostClip,
+  type VideoClip,
 } from '@/features/storyboard/whole-film/composition/film'
 
 // 源目录里没有组装时才生成的内容：分片表留空，条目补上空的 chars
@@ -24,8 +24,8 @@ export const fixtureCatalog: ComponentCatalog = {
   items: fixtureSource.items.map((item) => ({ ...item, chars: '' })),
 }
 
-export const picture = (overrides: Partial<PictureBlock> = {}): PictureBlock => ({
-  kind: 'picture',
+export const video = (overrides: Partial<VideoClip> = {}): VideoClip => ({
+  kind: 'video',
   id: 'clip-1',
   label: 'A · 镜头 1',
   jobId: '6f1b5c3e-2a4d-4e8f-9b1c-0d2e3f4a5b6c',
@@ -47,8 +47,8 @@ export const picture = (overrides: Partial<PictureBlock> = {}): PictureBlock => 
 export const AUDIO_JOB = '0c9a8b7d-6e5f-4a3b-8c2d-1e0f9a8b7c6d'
 
 /** 测试组件库里带可填项的那个条目。 */
-export const component = (overrides: Partial<ComponentBlock> = {}): ComponentBlock => ({
-  kind: 'component',
+export const host = (overrides: Partial<HostClip> = {}): HostClip => ({
+  kind: 'host',
   id: 'title-1',
   label: '测试可填项',
   component: 'fixture-fields',
@@ -63,7 +63,7 @@ export const component = (overrides: Partial<ComponentBlock> = {}): ComponentBlo
   ...overrides,
 })
 
-export const audio = (overrides: Partial<AudioBlock> = {}): AudioBlock => ({
+export const audio = (overrides: Partial<AudioClip> = {}): AudioClip => ({
   kind: 'audio',
   id: 'music-1',
   label: '配乐',
@@ -83,6 +83,6 @@ export const audio = (overrides: Partial<AudioBlock> = {}): AudioBlock => ({
 })
 
 export const filmFile = (
-  blocks: FilmBlock[] = [picture()],
+  clips: FilmClip[] = [video()],
   canvas: Canvas = { width: 1080, height: 1920 },
-): string => writeFilm({ canvas, blocks }, fixtureCatalog)
+): string => writeFilm({ canvas, clips }, fixtureCatalog)

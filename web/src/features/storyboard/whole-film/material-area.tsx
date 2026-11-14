@@ -84,9 +84,7 @@ export function MaterialArea({
       <div className="wf-materials-body">
         {placeholder ??
           (groups.length === 0 ? (
-            <p className="wf-materials-empty">
-              这段对话还没有素材片，出片完成后可在这里挑选片段加入成片
-            </p>
+            <p className="wf-materials-empty">暂无素材片，出片完成后可在此挑选镜头加入成片</p>
           ) : (
             groups.map((group) => (
               <div
@@ -375,7 +373,7 @@ function TakeRow({
             ))}
         {shown !== null && durationMs !== undefined ? (
           <div
-            aria-label={`选中的范围 ${seconds(shown.startMs)}–${seconds(shown.endMs)} 秒，${shown.shots.length} 个镜头，按 Enter 加入成片`}
+            aria-label={`选中的范围 ${seconds(shown.startMs)}–${seconds(shown.endMs)} 秒，${shown.shots.length} 个镜头，按 Enter 可加入成片`}
             className={cn('wf-range', lifting && 'is-lifting')}
             onPointerCancel={cancel}
             onPointerDown={(event) => press(event, 'body')}

@@ -28,7 +28,7 @@ import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
 import { audioPlayheadSpot } from './audio'
 import { AudioTab } from './audio-tab'
-import type { SourceLength } from './block-edit'
+import type { SourceLength } from './clip-edit'
 import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
 import { componentDurationMs, playheadSpot } from './components'
 import { ComponentsTab } from './components-tab'
@@ -69,7 +69,7 @@ import {
   snapTargets,
   timelineScale,
   zoomScrollLeft,
-  zoomToBlocks,
+  zoomToClips,
   type Zoom,
 } from './timeline-scale'
 import { useFilmSession, type NewAudio } from './use-film-session'
@@ -83,11 +83,11 @@ type Props = {
   onClose: () => void
 }
 
-const EMPTY_TEXT = '成片还是空的；加入内容后可以在这里预览'
-const PICK_FIRST_TEXT = '先在下方点一个镜头选中范围'
-const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏'
-const ADDING_COMPONENT_TEXT = '上一个组件正在加入成片，请稍后再加'
-const ADDING_AUDIO_TEXT = '上一条音频正在加入成片，请稍后再加'
+const EMPTY_TEXT = '暂无成片内容，加入内容后可在此预览'
+const PICK_FIRST_TEXT = '尚未选中镜头，无法加入成片；请先在下方选中镜头范围'
+const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏，无法进入全屏'
+const ADDING_COMPONENT_TEXT = '上一个组件正在加入成片，请稍后再试'
+const ADDING_AUDIO_TEXT = '上一条音频正在加入成片，请稍后再试'
 // 还没有成片时先放组件：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 
@@ -192,8 +192,8 @@ function EditorBody({
   const notice = useCallback((message: string) => toast.info(message), [])
   const session = useFilmSession(conversationId, initial, catalog, { onNotice: notice })
   const { film } = session
-  const blocks = useMemo(() => film?.blocks ?? [], [film])
-  const pictures = useMemo(() => blocks.filter((block) => block.kind === 'picture'), [blocks])
+  const clips = useMemo(() => film?.clips ?? [], [film])
+  const videoClips = useMemo(() => clips.filter((clip) => clip.kind === 'video'), [clips])
   const [materialView, setMaterialView] = useState<MaterialView | null>(null)
   const [materialMs, setMaterialMs] = useState(0)
   const [materialPlaying, setMaterialPlaying] = useState(false)
@@ -219,9 +219,9 @@ function EditorBody({
     ].sort(),
   )
   const keyframes = useKeyframeIndexes(shownUrls)
-  // 素材区的镜头和成片里画面块的素材有没有声音，和镜头一起先读好：加进成片时不用再等
+  // 素材区的镜头和成片里视频片段的素材有没有声音，和镜头一起先读好：加进成片时不用再等
   const audioTracks = useVideoAudio(
-    useStableValue([...new Set([...shownUrls, ...pictures.map((block) => block.src)])].sort()),
+    useStableValue([...new Set([...shownUrls, ...videoClips.map((clip) => clip.src)])].sort()),
   )
 
   const [playheadMs, setPlayheadMs] = useState(0)
@@ -246,15 +246,15 @@ function EditorBody({
   const toggleFullscreen = () => {
     if (fullscreen) exitFullscreen()
     else if (fullscreenBlocked !== undefined) notice(fullscreenBlocked)
-    else stage?.requestFullscreen().catch(() => notice('全屏打开失败，请重试'))
+    else stage?.requestFullscreen().catch(() => notice('打开全屏失败，请重试'))
   }
 
   const total = film?.durationMs ?? 0
   const playhead = Math.min(playheadMs, total)
   const frameMs = Math.min(playhead, Math.max(0, total - 1))
-  // 垫在预览后面的那一帧取最上面显示着的块：文件里写在后面的在上面
-  const shown = pictures.findLast(
-    (block) => !block.hidden && block.start <= frameMs && frameMs < block.start + block.duration,
+  // 垫在预览后面的那一帧取最上面显示着的片段：文件里写在后面的在上面
+  const shown = videoClips.findLast(
+    (clip) => !clip.hidden && clip.start <= frameMs && frameMs < clip.start + clip.duration,
   )
   const seek = (ms: number) => {
     leaveMaterial()
@@ -281,11 +281,11 @@ function EditorBody({
   const timelineRef = useRef<TimelineHandle | null>(null)
   const [ghost, setGhost] = useState<DropGhost | null>(null)
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set())
-  // 选中的块被撤销或删掉以后就不算选中了
-  const selectedBlocks = blocks.filter((block) => selectedIds.has(block.id))
-  const selected = new Set(selectedBlocks.map((block) => block.id))
+  // 选中的片段被撤销或删掉以后就不算选中了
+  const selectedClips = clips.filter((clip) => selectedIds.has(clip.id))
+  const selected = new Set(selectedClips.map((clip) => clip.id))
   const clearSelection = () => setSelectedIds(new Set())
-  // 框选、拖块中途的 Esc 归时间线（只取消那一次），这里先让开
+  // 框选、拖片段中途的 Esc 归时间线（只取消那一次），这里先让开
   const [gesturing, setGesturing] = useState(false)
   // 右侧栏里输数值的框正在输入：这时的 Esc 归那个框（放弃刚输入的），不取消选中、不关编辑器
   const [textEditing, setTextEditing] = useState(false)
@@ -295,7 +295,7 @@ function EditorBody({
     else if (!textEditing) clearSelection()
   })
   const selectAround = (side: 'left' | 'right') =>
-    setSelectedIds(new Set(aroundPlayhead(blocks, playhead, side)))
+    setSelectedIds(new Set(aroundPlayhead(clips, playhead, side)))
   const [scrollRequest, setScrollRequest] = useState<{ left: number } | null>(null)
   // 工具条上的缩放：播放头留在屏幕上原来的地方，看不见它时把它放到中间
   const zoomTo = (next: Zoom) => {
@@ -305,48 +305,46 @@ function EditorBody({
     setScrollRequest({ left: zoomScrollLeft(playhead, left, scale.pps, pps, viewportWidth) })
   }
   const zoomToSelection = () => {
-    const target = zoomToBlocks(selectedBlocks, viewportWidth, scale.fitPps)
+    const target = zoomToClips(selectedClips, viewportWidth, scale.fitPps)
     if (target === null) return
     setZoom(target.zoom)
     setScrollRequest({ left: target.scrollLeft })
   }
-  // 画面块、音频块素材的总长：时间线上拖着裁和右侧栏里输入时间都按它收住结尾
+  // 视频片段、音频片段素材的总长：时间线上拖着裁和右侧栏里输入时间都按它收住结尾
   const audioPeaks = useAudioPeaks(
     useStableValue(
-      [
-        ...new Set(blocks.filter((block) => block.kind === 'audio').map((block) => block.src)),
-      ].sort(),
+      [...new Set(clips.filter((clip) => clip.kind === 'audio').map((clip) => clip.src))].sort(),
     ),
   )
-  const sourceMs: SourceLength = (block) => {
-    if (block.kind === 'picture') {
-      const state = keyframes.get(block.src)
+  const sourceMs: SourceLength = (clip) => {
+    if (clip.kind === 'video') {
+      const state = keyframes.get(clip.src)
       return state?.kind === 'ready' ? Math.round(state.index.duration * 1000) : undefined
     }
-    const state = block.kind === 'audio' ? audioPeaks.get(block.src) : undefined
+    const state = clip.kind === 'audio' ? audioPeaks.get(clip.src) : undefined
     return state?.kind === 'ready' ? Math.round(state.peaks.duration * 1000) : undefined
   }
   const [ripple, setRipple] = useState(true)
   const removeSelected = () => {
     leaveMaterial()
     clearSelection()
-    session.removeBlocks([...selected], ripple)
+    session.removeClips([...selected], ripple)
   }
   const [thumbnails, setThumbnails] = useState(true)
   const [snap, setSnap] = useState(true)
   /**
    * 拖着的素材、组件或音频（长 `duration` 毫秒，放进 `zone` 区）会落在哪：
-   * 开着吸附时先吸到别的块的两端或播放头上，再避开同一行的块。
+   * 开着吸附时先吸到别的片段的两端或播放头上，再避开同一行的片段。
    */
   const landingAt = (clientX: number, clientY: number, duration: number, zone: Zone = 'visual') => {
     const point = timelineRef.current?.locate(clientX, clientY, zone) ?? null
     if (point === null) return null
     const snapped = snap
-      ? snapSpanStartMs(point.timeMs, duration, snapTargets(blocks, playhead), scale.pps)
+      ? snapSpanStartMs(point.timeMs, duration, snapTargets(clips, playhead), scale.pps)
       : { ms: point.timeMs, guideMs: null }
-    // 新开的一行上没有别的块，放在哪里都不会重叠
+    // 新开的一行上没有别的片段，放在哪里都不会重叠
     const start =
-      'track' in point.row ? landingOn(blocks, point.row, snapped.ms, duration).start : snapped.ms
+      'track' in point.row ? landingOn(clips, point.row, snapped.ms, duration).start : snapped.ms
     return {
       row: point.row,
       start,
@@ -355,11 +353,11 @@ function EditorBody({
     }
   }
 
-  /** `row` 这一行是几号；要新开一行时，连同别的块要换成的行号。`movedId` 是要搬过去的那个块。 */
+  /** `row` 这一行是几号；要新开一行时，连同别的片段要换成的行号。`movedId` 是要搬过去的那个片段。 */
   const trackFor = (row: RowTarget, movedId?: string) =>
     'track' in row
       ? { track: row.track, renumber: undefined }
-      : rowOpening(blocks, row.zone, row.insertAt, movedId)
+      : rowOpening(clips, row.zone, row.insertAt, movedId)
 
   /** 把素材里的一段放进成片：给了 `at` 放在那里，没给就接在主轨的末尾。 */
   const place = (chosen: MaterialRange, at?: { row: RowTarget; start: number }) => {
@@ -383,7 +381,7 @@ function EditorBody({
     const add = async (canvas: Canvas) => {
       const muted = !(await audible)
       const spot = at === undefined ? undefined : trackFor(at.row)
-      const added = await session.addPictures(
+      const added = await session.addVideos(
         canvas,
         pieces.map((piece) => ({ ...piece, muted })),
         spot === undefined || at === undefined ? undefined : { track: spot.track, start: at.start },
@@ -431,7 +429,7 @@ function EditorBody({
       })
   }
   const addAtPlayhead = (item: CatalogItem) =>
-    placeComponent(item, playheadSpot(blocks, item, playhead, componentDurationMs(item, blocks)))
+    placeComponent(item, playheadSpot(clips, item, playhead, componentDurationMs(item, clips)))
 
   // 和组件一样：上一条音频还没加完时不接下一条
   const addingAudioRef = useRef(false)
@@ -457,7 +455,7 @@ function EditorBody({
         addingAudioRef.current = false
       })
   }
-  const revealBlock = (id: string) => {
+  const revealClip = (id: string) => {
     setSelectedIds(new Set([id]))
     timelineRef.current?.reveal(id)
   }
@@ -522,7 +520,7 @@ function EditorBody({
   }
   useEffect(() => {
     keysRef.current = (event) => {
-      // 拖块、框选进行中不接快捷键：这时撤销或删块，松手会按改之前算好的位置写回去
+      // 拖片段、框选进行中不接快捷键：这时撤销或删片段，松手会按改之前算好的位置写回去
       if (gesturing) return
       handleUndoShortcut(event, history, leaveMaterial)
       if (event.key === 'Enter' && event.target === event.currentTarget) {
@@ -537,22 +535,22 @@ function EditorBody({
     }
   })
 
-  // 编辑时 SDK 不改 <head>：按块重新写出整份（和渲染服务存下的一样）再交给预览
+  // 编辑时 SDK 不改 <head>：按片段重新写出整份（和渲染服务存下的一样）再交给预览
   const srcdoc = useMemo(
     () =>
-      film === null || blocks.length === 0
+      film === null || clips.length === 0
         ? undefined
         : previewDocument(
-            writeFilm({ canvas: film.canvas, blocks: [...blocks] }, catalog),
+            writeFilm({ canvas: film.canvas, clips: [...clips] }, catalog),
             catalog,
             window.location.origin,
           ),
-    [film, blocks, catalog],
+    [film, clips, catalog],
   )
   const playBlocked = srcdoc === undefined ? EMPTY_TEXT : undefined
 
   const exporting = useWholeFilmExport(conversationId, session.settle)
-  const exportBlocked = blocks.length === 0 ? '成片还是空的，无法导出；请先加入内容' : undefined
+  const exportBlocked = clips.length === 0 ? '成片暂无内容，无法导出；请先加入内容' : undefined
 
   const viewedMaterial =
     materialView === null ? undefined : materials.byJob.get(materialView.range.jobId)
@@ -602,14 +600,14 @@ function EditorBody({
                   setGhost(
                     point === null
                       ? null
-                      : landingAt(point.clientX, point.clientY, componentDurationMs(item, blocks)),
+                      : landingAt(point.clientX, point.clientY, componentDurationMs(item, clips)),
                   )
                 }
                 onDrop={(item, point) => {
                   const at = landingAt(
                     point.clientX,
                     point.clientY,
-                    componentDurationMs(item, blocks),
+                    componentDurationMs(item, clips),
                   )
                   setGhost(null)
                   if (at !== null) placeComponent(item, { row: at.row, start: at.start })
@@ -619,10 +617,10 @@ function EditorBody({
             </TabsContent>
             <TabsContent className="wf-side-body is-audio" value="audio">
               <AudioTab
-                blocks={blocks}
+                clips={clips}
                 conversationId={conversationId}
                 onAdd={(audio) =>
-                  placeAudio(audio, audioPlayheadSpot(blocks, playhead, audio.duration))
+                  placeAudio(audio, audioPlayheadSpot(clips, playhead, audio.duration))
                 }
                 onCarry={(audio, point) =>
                   setGhost(
@@ -637,7 +635,7 @@ function EditorBody({
                   if (at !== null) placeAudio(audio, { row: at.row, start: at.start })
                 }}
                 onNotice={notice}
-                onReveal={revealBlock}
+                onReveal={revealClip}
               />
             </TabsContent>
           </TabsRoot>
@@ -691,7 +689,7 @@ function EditorBody({
           />
         </div>
         <FilmInspector
-          blocks={blocks}
+          clips={clips}
           catalog={catalog}
           onHide={(id, hidden) => {
             leaveMaterial()
@@ -715,7 +713,7 @@ function EditorBody({
             leaveMaterial()
             session.setAttributes(id, changes)
           }}
-          selected={selectedBlocks}
+          selected={selectedClips}
           silentSource={(src) => audioTracks.get(src) === false}
           sourceMs={sourceMs}
         />
@@ -745,7 +743,7 @@ function EditorBody({
             zoom={zoom}
           />
           <FilmTimeline
-            blocks={blocks}
+            clips={clips}
             buffered={buffered}
             catalog={catalog}
             ghost={ghost}
@@ -753,7 +751,7 @@ function EditorBody({
             onHide={(row, hidden) => {
               leaveMaterial()
               session.setHidden(
-                blocks.filter((block) => onRow(block, row)).map((block) => block.id),
+                clips.filter((clip) => onRow(clip, row)).map((clip) => clip.id),
                 hidden,
               )
             }}
@@ -770,10 +768,10 @@ function EditorBody({
             onMove={(id, row, start, starts) => {
               const { track, renumber } = trackFor(row, id)
               leaveMaterial()
-              session.moveBlock(
+              session.moveClip(
                 id,
                 { track, start },
-                rowMoveDirection(blocks, id, row),
+                rowMoveDirection(clips, id, row),
                 renumber,
                 starts,
               )
@@ -844,7 +842,7 @@ function EditorBody({
             }
             playingMs={materialPlaying ? materialMs : undefined}
             range={range}
-            used={usedSpans(pictures)}
+            used={usedSpans(videoClips)}
             versionOf={versionOf}
           />
         </div>

@@ -3,14 +3,14 @@ import { cjkFontFaces } from './fonts'
 import { escapeAttribute, jsonAttribute, seconds } from './html'
 
 /**
- * 成片文件：一份 HTML，时间线上每个块是根下面的一个标签。
+ * 成片文件：一份 HTML，时间线上每个片段是根下面的一个标签。
  *
  * 文件不带脚本（根上标 `data-no-timeline`）。`<head>`、根上的属性和 `<html>` 上的变量声明都由
- * 这里按块算出来，不单独保存。
+ * 这里按片段算出来，不单独保存。
  */
 export interface Film {
   canvas: Canvas
-  blocks: FilmBlock[]
+  clips: FilmClip[]
 }
 
 export interface Canvas {
@@ -18,19 +18,19 @@ export interface Canvas {
   height: number
 }
 
-export type FilmBlock = PictureBlock | ComponentBlock | AudioBlock
-export type BlockKind = FilmBlock['kind']
-/** 用素材地址的块：地址写在块上，并绑到按记录编号取名的变量。 */
-export type MediaBlock = PictureBlock | AudioBlock
+export type FilmClip = VideoClip | HostClip | AudioClip
+export type ClipKind = FilmClip['kind']
+/** 用素材地址的片段：地址写在片段上，并绑到按记录编号取名的变量。 */
+export type MediaClip = VideoClip | AudioClip
 
 /**
- * 三种块共有的部分。时间都是毫秒。
+ * 三种片段共有的部分。时间都是毫秒。
  *
- * `track` 是它在自己那个区的第几行，只管显示：画面块和组件块在画面区，音频块在声音区，
+ * `track` 是它在自己那个区的第几行，只管显示：视频片段和组件或块的片段在画面区，音频片段在声音区，
  * 两个区的行号各算各的。
- * `hidden` 的块留在时间线上、占着它的时间，预览和导出里都不出现、不出声；没隐藏时文件里不写。
+ * `hidden` 的片段留在时间线上、占着它的时间，预览和导出里都不出现、不出声；没隐藏时文件里不写。
  */
-interface BlockBase {
+interface ClipBase {
   id: string
   label: string
   start: number
@@ -40,11 +40,11 @@ interface BlockBase {
 }
 
 /**
- * 画面块、音频块共有的声音和播放：`mediaStart` 是从素材的第几毫秒开始放，`volume` 是增益的倍数
- * （0.5 比 1 低 6 dB），`playbackRate` 是速度的倍数（块在成片里占的时长不跟着变，用掉的素材是
+ * 视频片段、音频片段共有的声音和播放：`mediaStart` 是从素材的第几毫秒开始放，`volume` 是增益的倍数
+ * （0.5 比 1 低 6 dB），`playbackRate` 是速度的倍数（片段在成片里占的时长不跟着变，用掉的素材是
  * 时长 × 速度），`fadeIn` / `fadeOut` 是声音淡入淡出的毫秒数。速度是 1、淡入淡出是 0 时文件里不写。
  */
-interface MediaBase extends BlockBase {
+interface MediaBase extends ClipBase {
   jobId: string
   src: string
   mediaStart: number
@@ -55,25 +55,25 @@ interface MediaBase extends BlockBase {
 }
 
 /**
- * 画面块：一段素材片，`src` 是素材片记录上的地址。`muted` 时不出声。
+ * 视频片段：一段素材片，`src` 是素材片记录上的地址。`muted` 时不出声。
  *
- * 两个画面区的块同时出现时谁盖住谁看 `z`（叠放顺序）：大的在上面，一样大时文件里写在后面的在上面。
+ * 两个画面区的片段同时出现时谁盖住谁看 `z`（叠放顺序）：大的在上面，一样大时文件里写在后面的在上面。
  * `z` 是 0 时文件里不写。
  */
-export interface PictureBlock extends MediaBase {
-  kind: 'picture'
+export interface VideoClip extends MediaBase {
+  kind: 'video'
   muted: boolean
   z: number
 }
 
 /**
- * 组件块：组件库里的一个条目。`component` 是条目的名字，`src` 是条目的文件。
+ * 组件或块的片段：组件库里的一个条目。`component` 是条目的名字，`src` 是条目的文件。
  * 条目没写尺寸或和画面一样大时铺满画面；写了别的尺寸时按原比例缩到放得下、居中（写在 `<head>` 里）。
- * `playbackStart` 是从组件自己的第几毫秒开始播，`values` 是它的可填项取值；叠放顺序同画面块。
+ * `playbackStart` 是从组件自己的第几毫秒开始播，`values` 是它的可填项取值；叠放顺序同视频片段。
  * `playbackStart` 是 0 时文件里不写。
  */
-export interface ComponentBlock extends BlockBase {
-  kind: 'component'
+export interface HostClip extends ClipBase {
+  kind: 'host'
   component: string
   src: string
   playbackStart: number
@@ -82,15 +82,15 @@ export interface ComponentBlock extends BlockBase {
 }
 
 /**
- * 音频块：一条音频记录，`src` 是记录上的地址。`loop` 时音频比块短也一直重复着播，不循环时文件里不写。
- * 隐藏的音频块不出声。
+ * 音频片段：一条音频记录，`src` 是记录上的地址。`loop` 时音频比片段短也一直重复着播，不循环时文件里不写。
+ * 隐藏的音频片段不出声。
  */
-export interface AudioBlock extends MediaBase {
+export interface AudioClip extends MediaBase {
   kind: 'audio'
   loop: boolean
 }
 
-export const isMediaBlock = (block: FilmBlock): block is MediaBlock => block.kind !== 'component'
+export const isMediaClip = (clip: FilmClip): clip is MediaClip => clip.kind !== 'host'
 
 export interface FilmVariable {
   id: string
@@ -100,12 +100,12 @@ export interface FilmVariable {
 }
 
 export const FILM_ID = 'film'
-export const MIN_BLOCK_MS = 100
+export const MIN_CLIP_MS = 100
 export const SOURCE_LABEL = '素材片'
 export const AUDIO_SOURCE_LABEL = '音频'
 
 /**
- * 块上的一个属性。默认是必须写的；`optional` 的取默认值时不写；`fixed` 的只能是这个值
+ * 片段上的一个属性。默认是必须写的；`optional` 的取默认值时不写；`fixed` 的只能是这个值
  * （可选又固定的，写就是写这个值）。
  */
 export interface AttributeRule {
@@ -115,14 +115,14 @@ export interface AttributeRule {
 
 const REQUIRED: AttributeRule = {}
 const OPTIONAL: AttributeRule = { optional: true }
-// 隐藏标记和叠放顺序（块上唯一能带的样式）写在最前面，和 SDK 存出来的一样
+// 隐藏标记和叠放顺序（片段上唯一能带的样式）写在最前面，和 SDK 存出来的一样
 const HIDDEN: AttributeRule = { optional: true, fixed: '' }
 
 /**
- * 三种块的写法：标签和能带的属性（按写出的先后）。写出、读回和渲染服务的检查都按这张表。
+ * 三种片段的写法：标签和能带的属性（按写出的先后）。写出、读回和渲染服务的检查都按这张表。
  */
-export const BLOCK_SHAPES = {
-  picture: {
+export const CLIP_SHAPES = {
+  video: {
     tag: 'video',
     attributes: {
       'data-hidden': HIDDEN,
@@ -148,7 +148,7 @@ export const BLOCK_SHAPES = {
       preload: { fixed: 'auto' },
     },
   },
-  component: {
+  host: {
     tag: 'div',
     attributes: {
       'data-hidden': HIDDEN,
@@ -188,55 +188,55 @@ export const BLOCK_SHAPES = {
     },
   },
 } as const satisfies Record<
-  BlockKind,
+  ClipKind,
   { tag: string; attributes: Readonly<Record<string, AttributeRule>> }
 >
 
-export type BlockAttribute = {
-  [Kind in BlockKind]: keyof (typeof BLOCK_SHAPES)[Kind]['attributes']
-}[BlockKind]
+export type ClipAttribute = {
+  [Kind in ClipKind]: keyof (typeof CLIP_SHAPES)[Kind]['attributes']
+}[ClipKind]
 
-/** 一个块要写的属性值；可选属性是 undefined 时不写。 */
-type Attributes = Partial<Record<BlockAttribute, string | undefined>>
+/** 一个片段要写的属性值；可选属性是 undefined 时不写。 */
+type Attributes = Partial<Record<ClipAttribute, string | undefined>>
 
-/** 按标签认块：成片的根下面每种标签只对应一种块。 */
-export function blockKindOfTag(tag: string): BlockKind | undefined {
-  const kinds = Object.keys(BLOCK_SHAPES) as BlockKind[]
-  return kinds.find((kind) => BLOCK_SHAPES[kind].tag === tag)
+/** 按标签认片段：成片的根下面每种标签只对应一种片段。 */
+export function clipKindOfTag(tag: string): ClipKind | undefined {
+  const kinds = Object.keys(CLIP_SHAPES) as ClipKind[]
+  return kinds.find((kind) => CLIP_SHAPES[kind].tag === tag)
 }
 
 export const sourceVariableId = (jobId: string): string => `src-${jobId}`
 
-/** 素材地址的变量：一条记录一个，默认值就是块上写的地址。 */
+/** 素材地址的变量：一条记录一个，默认值就是片段上写的地址。 */
 export function sourceVariable(jobId: string, src: string, label = SOURCE_LABEL): FilmVariable {
   return { id: sourceVariableId(jobId), type: 'string', label, default: src }
 }
 
 export function filmDurationMs(film: Film): number {
-  return Math.max(0, ...film.blocks.map((block) => block.start + block.duration))
+  return Math.max(0, ...film.clips.map((clip) => clip.start + clip.duration))
 }
 
 export function filmVariables(film: Film): FilmVariable[] {
   const bySource = new Map(
-    film.blocks
-      .filter(isMediaBlock)
-      .map((block) => [
-        block.jobId,
+    film.clips
+      .filter(isMediaClip)
+      .map((clip) => [
+        clip.jobId,
         sourceVariable(
-          block.jobId,
-          block.src,
-          block.kind === 'audio' ? AUDIO_SOURCE_LABEL : SOURCE_LABEL,
+          clip.jobId,
+          clip.src,
+          clip.kind === 'audio' ? AUDIO_SOURCE_LABEL : SOURCE_LABEL,
         ),
       ]),
   )
   return [...bySource.values()]
 }
 
-/** 按表里的先后写出一个块；可选属性没给值就不写，固定的空值只写属性名。 */
-function blockElement(kind: BlockKind, values: Attributes): string {
-  const { tag, attributes } = BLOCK_SHAPES[kind]
+/** 按表里的先后写出一个片段；可选属性没给值就不写，固定的空值只写属性名。 */
+function clipElement(kind: ClipKind, values: Attributes): string {
+  const { tag, attributes } = CLIP_SHAPES[kind]
   const written = Object.entries(attributes).flatMap(([name, rule]: [string, AttributeRule]) => {
-    const given = values[name as BlockAttribute]
+    const given = values[name as ClipAttribute]
     const value = rule.optional ? given : (rule.fixed ?? given)
     if (value === undefined) return []
     if (value === '' && rule.fixed === '' && !rule.optional) return [` ${name}`]
@@ -245,66 +245,66 @@ function blockElement(kind: BlockKind, values: Attributes): string {
   return `<${tag}${written.join('')}></${tag}>`
 }
 
-const commonValues = (block: FilmBlock): Attributes => ({
-  'data-hidden': block.hidden ? '' : undefined,
-  id: block.id,
-  'data-hf-id': block.id,
-  'data-label': block.label,
-  'data-start': seconds(block.start),
-  'data-duration': seconds(block.duration),
-  'data-track-index': String(block.track),
+const commonValues = (clip: FilmClip): Attributes => ({
+  'data-hidden': clip.hidden ? '' : undefined,
+  id: clip.id,
+  'data-hf-id': clip.id,
+  'data-label': clip.label,
+  'data-start': seconds(clip.start),
+  'data-duration': seconds(clip.duration),
+  'data-track-index': String(clip.track),
 })
 
 const stacking = (z: number) => (z > 0 ? `z-index: ${z}` : undefined)
 const unlessZero = (ms: number) => (ms > 0 ? seconds(ms) : undefined)
 
-const mediaValues = (block: MediaBlock): Attributes => ({
-  src: block.src,
-  'data-var-src': sourceVariableId(block.jobId),
-  'data-media-start': seconds(block.mediaStart),
-  'data-volume': String(block.volume),
-  'data-playback-rate': block.playbackRate === 1 ? undefined : String(block.playbackRate),
-  'data-fade-in': unlessZero(block.fadeIn),
-  'data-fade-out': unlessZero(block.fadeOut),
+const mediaValues = (clip: MediaClip): Attributes => ({
+  src: clip.src,
+  'data-var-src': sourceVariableId(clip.jobId),
+  'data-media-start': seconds(clip.mediaStart),
+  'data-volume': String(clip.volume),
+  'data-playback-rate': clip.playbackRate === 1 ? undefined : String(clip.playbackRate),
+  'data-fade-in': unlessZero(clip.fadeIn),
+  'data-fade-out': unlessZero(clip.fadeOut),
 })
 
-export function pictureBlock(block: PictureBlock): string {
-  return blockElement('picture', {
-    ...commonValues(block),
-    style: stacking(block.z),
-    ...mediaValues(block),
-    'data-has-audio': block.muted ? undefined : 'true',
-    muted: block.muted ? 'true' : undefined,
+export function videoClip(clip: VideoClip): string {
+  return clipElement('video', {
+    ...commonValues(clip),
+    style: stacking(clip.z),
+    ...mediaValues(clip),
+    'data-has-audio': clip.muted ? undefined : 'true',
+    muted: clip.muted ? 'true' : undefined,
   })
 }
 
-export function componentBlock(block: ComponentBlock): string {
-  return blockElement('component', {
-    ...commonValues(block),
-    style: stacking(block.z),
-    'data-composition-id': block.component,
-    'data-composition-src': block.src,
-    'data-playback-start': unlessZero(block.playbackStart),
-    'data-variable-values': JSON.stringify(block.values),
+export function hostClip(clip: HostClip): string {
+  return clipElement('host', {
+    ...commonValues(clip),
+    style: stacking(clip.z),
+    'data-composition-id': clip.component,
+    'data-composition-src': clip.src,
+    'data-playback-start': unlessZero(clip.playbackStart),
+    'data-variable-values': JSON.stringify(clip.values),
   })
 }
 
-export function audioBlock(block: AudioBlock): string {
-  return blockElement('audio', {
-    ...commonValues(block),
-    ...mediaValues(block),
-    loop: block.loop ? 'true' : undefined,
+export function audioClip(clip: AudioClip): string {
+  return clipElement('audio', {
+    ...commonValues(clip),
+    ...mediaValues(clip),
+    loop: clip.loop ? 'true' : undefined,
   })
 }
 
-export function writeBlock(block: FilmBlock): string {
-  switch (block.kind) {
-    case 'picture':
-      return pictureBlock(block)
-    case 'component':
-      return componentBlock(block)
+export function writeClip(clip: FilmClip): string {
+  switch (clip.kind) {
+    case 'video':
+      return videoClip(clip)
+    case 'host':
+      return hostClip(clip)
     case 'audio':
-      return audioBlock(block)
+      return audioClip(clip)
   }
 }
 
@@ -316,7 +316,7 @@ type AttributeSource = Readonly<Record<string, string>>
 const millisecondsOf = (value: string | undefined): number | undefined =>
   value !== undefined && SECONDS.test(value) ? Math.round(Number(value) * 1000) : undefined
 
-/** 三种块共有的部分；起点、时长没写或不是秒数时返回 undefined。 */
+/** 三种片段共有的部分；起点、时长没写或不是秒数时返回 undefined。 */
 function commonOf(id: string, attributes: AttributeSource) {
   const start = millisecondsOf(attributes['data-start'])
   const duration = millisecondsOf(attributes['data-duration'])
@@ -334,7 +334,7 @@ function commonOf(id: string, attributes: AttributeSource) {
 const stackingOf = (zIndex: string | undefined) =>
   zIndex === undefined || !INTEGER.test(zIndex) ? 0 : Number(zIndex)
 
-/** 素材块的地址、入点和声音、播放；没写全时返回 undefined。 */
+/** 视频片段和音频片段的地址、入点和声音、播放；没写全时返回 undefined。 */
 function mediaOf(attributes: AttributeSource) {
   const jobId = attributes['data-var-src']?.replace(/^src-/, '')
   const { src } = attributes
@@ -361,19 +361,19 @@ function mediaOf(attributes: AttributeSource) {
 }
 
 /**
- * 从块的属性读回画面块；不是 `pictureBlock` 写出来的那种块时返回 undefined。
- * `zIndex` 是块的行内样式里的叠放顺序（SDK 的元素快照把样式和属性分开给）。
+ * 从片段的属性读回视频片段；不是 `videoClip` 写出来的那种片段时返回 undefined。
+ * `zIndex` 是片段的行内样式里的叠放顺序（SDK 的元素快照把样式和属性分开给）。
  */
-export function pictureFromAttributes(
+export function videoFromAttributes(
   id: string,
   attributes: AttributeSource,
   zIndex?: string,
-): PictureBlock | undefined {
+): VideoClip | undefined {
   const common = commonOf(id, attributes)
   const media = mediaOf(attributes)
   if (common === undefined || media === undefined) return undefined
   return {
-    kind: 'picture',
+    kind: 'video',
     ...common,
     ...media,
     muted: attributes['muted'] !== undefined,
@@ -381,12 +381,12 @@ export function pictureFromAttributes(
   }
 }
 
-/** 从块的属性读回组件块；不是 `componentBlock` 写出来的那种块时返回 undefined。`zIndex` 同画面块。 */
-export function componentFromAttributes(
+/** 从片段的属性读回组件或块的片段；不是 `hostClip` 写出来的那种片段时返回 undefined。`zIndex` 同视频片段。 */
+export function hostFromAttributes(
   id: string,
   attributes: AttributeSource,
   zIndex?: string,
-): ComponentBlock | undefined {
+): HostClip | undefined {
   const common = commonOf(id, attributes)
   const component = attributes['data-composition-id']
   const src = attributes['data-composition-src']
@@ -401,7 +401,7 @@ export function componentFromAttributes(
   )
     return undefined
   return {
-    kind: 'component',
+    kind: 'host',
     ...common,
     component,
     src,
@@ -411,28 +411,28 @@ export function componentFromAttributes(
   }
 }
 
-/** 从块的属性读回音频块；不是 `audioBlock` 写出来的那种块时返回 undefined。 */
+/** 从片段的属性读回音频片段；不是 `audioClip` 写出来的那种片段时返回 undefined。 */
 export function audioFromAttributes(
   id: string,
   attributes: AttributeSource,
-): AudioBlock | undefined {
+): AudioClip | undefined {
   const common = commonOf(id, attributes)
   const media = mediaOf(attributes)
   if (common === undefined || media === undefined) return undefined
   return { kind: 'audio', ...common, ...media, loop: attributes['loop'] !== undefined }
 }
 
-export function blockFromAttributes(
-  kind: BlockKind,
+export function clipFromAttributes(
+  kind: ClipKind,
   id: string,
   attributes: AttributeSource,
   zIndex?: string,
-): FilmBlock | undefined {
+): FilmClip | undefined {
   switch (kind) {
-    case 'picture':
-      return pictureFromAttributes(id, attributes, zIndex)
-    case 'component':
-      return componentFromAttributes(id, attributes, zIndex)
+    case 'video':
+      return videoFromAttributes(id, attributes, zIndex)
+    case 'host':
+      return hostFromAttributes(id, attributes, zIndex)
     case 'audio':
       return audioFromAttributes(id, attributes)
   }
@@ -461,19 +461,19 @@ export function variableValuesOf(
   return values
 }
 
-const itemOf = (block: ComponentBlock, catalog: ComponentCatalog): CatalogItem | undefined =>
-  catalog.items.find((candidate) => candidate.name === block.component)
+const itemOf = (clip: HostClip, catalog: ComponentCatalog): CatalogItem | undefined =>
+  catalog.items.find((candidate) => candidate.name === clip.component)
 
 /**
- * 字体类可填项取到的字体族：块上填了用填的，没填用默认值。取到的是空的、或者组件库里没有这个字体族时
+ * 字体类可填项取到的字体族：片段上填了用填的，没填用默认值。取到的是空的、或者组件库里没有这个字体族时
  * 是 undefined——取值是用户写的字符串，只认组件库里的名字才能写进样式。
  */
 function fontOf(
-  block: ComponentBlock,
+  clip: HostClip,
   variable: CatalogVariable,
   catalog: ComponentCatalog,
 ): string | undefined {
-  const value = block.values[variable.id] ?? variable.default
+  const value = clip.values[variable.id] ?? variable.default
   return typeof value === 'string' && Object.hasOwn(catalog.fonts, value) ? value : undefined
 }
 
@@ -485,12 +485,12 @@ function fontsOf(film: Film, catalog: ComponentCatalog): { families: string[]; t
   const families = new Set<string>()
   let text = ''
   const used = new Set<string>()
-  for (const block of film.blocks) {
-    if (block.kind !== 'component') continue
-    text += Object.values(block.values)
+  for (const clip of film.clips) {
+    if (clip.kind !== 'host') continue
+    text += Object.values(clip.values)
       .filter((value) => typeof value === 'string')
       .join('')
-    const item = itemOf(block, catalog)
+    const item = itemOf(clip, catalog)
     if (item === undefined) continue
     if (!used.has(item.name)) {
       used.add(item.name)
@@ -499,7 +499,7 @@ function fontsOf(film: Film, catalog: ComponentCatalog): { families: string[]; t
     }
     for (const variable of item.variables) {
       if (variable.type !== 'font') continue
-      const family = fontOf(block, variable, catalog)
+      const family = fontOf(clip, variable, catalog)
       if (family !== undefined) families.add(family)
     }
   }
@@ -512,16 +512,16 @@ function fontsOf(film: Film, catalog: ComponentCatalog): { families: string[]; t
 const round4 = (value: number) => String(Math.round(value * 10_000) / 10_000)
 
 /**
- * 一个组件块在 `<head>` 里的规则；不用写时返回 undefined。块上的样式只能是叠放顺序，所以写在这里、按块的编号认。
+ * 一个组件或块的片段在 `<head>` 里的规则；不用写时返回 undefined。片段上的样式只能是叠放顺序，所以写在这里、按片段的编号认。
  * - 条目有尺寸、和画面不一样大：按原比例缩到放得下，居中。
  * - 第一个字体类可填项取到了字体：标题和正文的字体变量都换成它，中文字形退到组件库的中文字体。
  */
 function componentRule(
-  block: ComponentBlock,
+  clip: HostClip,
   canvas: Canvas,
   catalog: ComponentCatalog,
 ): string | undefined {
-  const item = itemOf(block, catalog)
+  const item = itemOf(clip, catalog)
   if (item === undefined) return undefined
   const declarations: string[] = []
   const { size } = item
@@ -532,17 +532,17 @@ function componentRule(
     )
   }
   const variable = item.variables.find((candidate) => candidate.type === 'font')
-  const family = variable === undefined ? undefined : fontOf(block, variable, catalog)
+  const family = variable === undefined ? undefined : fontOf(clip, variable, catalog)
   if (family !== undefined) {
     const value = `'${family}', '${catalog.cjk.family}', sans-serif`
     declarations.push(`--font-display:${value};--font-body:${value}`)
   }
   return declarations.length === 0
     ? undefined
-    : `#${FILM_ID} #${block.id}{${declarations.join(';')}}`
+    : `#${FILM_ID} #${clip.id}{${declarations.join(';')}}`
 }
 
-/** 写出成片文件。`durationMs` 是根上写的总时长，默认按块算。 */
+/** 写出成片文件。`durationMs` 是根上写的总时长，默认按片段算。 */
 export function writeFilm(
   film: Film,
   catalog: ComponentCatalog,
@@ -552,7 +552,7 @@ export function writeFilm(
   const variables = filmVariables(film)
   const declared =
     variables.length === 0 ? '' : ` data-composition-variables="${jsonAttribute(variables)}"`
-  const body = film.blocks.map(writeBlock).join('\n')
+  const body = film.clips.map(writeClip).join('\n')
   const { families, text } = fontsOf(film, catalog)
   // 渲染服务按 <head> 里这种写法的链接找到字体文件
   const fontLinks = families
@@ -561,9 +561,9 @@ export function writeFilm(
         `<link rel="stylesheet" href="${escapeAttribute(catalog.fonts[family]?.css ?? '')}">\n`,
     )
     .join('')
-  const componentRules = film.blocks
-    .flatMap((block) =>
-      block.kind === 'component' ? (componentRule(block, film.canvas, catalog) ?? []) : [],
+  const componentRules = film.clips
+    .flatMap((clip) =>
+      clip.kind === 'host' ? (componentRule(clip, film.canvas, catalog) ?? []) : [],
     )
     .map((rule) => `${rule}\n`)
     .join('')

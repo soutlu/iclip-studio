@@ -19,7 +19,7 @@ import type { KeyframeIndex } from './keyframe-segments'
 
 const METADATA_ONLY = { metadataOnly: true } as const
 
-// 音频记录除了 M4A 还有 MP3、WAV（生成的配乐、上传的音乐），成片的音频块要读得出它们的波形
+// 音频记录除了 M4A 还有 MP3、WAV（生成的配乐、上传的音乐），成片的音频片段要读得出它们的波形
 export const openInput = (url: string) =>
   new Input({ source: new UrlSource(url), formats: [MP4, QTFF, MP3, WAVE] })
 

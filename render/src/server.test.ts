@@ -10,14 +10,14 @@ import {
   AUDIO_URL,
   catalog,
   CLIP_URL,
-  component,
   exportRequest,
   filmFile,
   flush,
+  host,
   manualWorker,
   memoryLogger,
-  picture,
   SOURCE_JOB,
+  video,
 } from './testing'
 
 let base: string
@@ -144,12 +144,12 @@ describe('渲染服务接口', () => {
   })
 
   it('POST /films/check 合写法时答 200：重写后的文件、总时长和用到的素材（分视频和音频）', async () => {
-    const second = picture({ id: 'clip-2', start: 2000, duration: 1500, mediaStart: 3000 })
-    const blocks = [picture(), second, component({ track: 1 }), audio({ duration: 4000 })]
-    const response = await check({ film: filmFile(blocks) })
+    const second = video({ id: 'clip-2', start: 2000, duration: 1500, mediaStart: 3000 })
+    const clips = [video(), second, host({ track: 1 }), audio({ duration: 4000 })]
+    const response = await check({ film: filmFile(clips) })
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
-      html: filmFile(blocks),
+      html: filmFile(clips),
       durationMs: 4000,
       sources: [
         { jobId: SOURCE_JOB, url: CLIP_URL, kind: 'video' },
@@ -158,8 +158,8 @@ describe('渲染服务接口', () => {
     })
   })
 
-  it('POST /exports 成片里有音频块：音频也要给下载地址，渲染用的那一份里换成本地路径', async () => {
-    const film = filmFile([picture(), audio()])
+  it('POST /exports 成片里有音频片段：音频也要给下载地址，渲染用的那一份里换成本地路径', async () => {
+    const film = filmFile([video(), audio()])
     const missing = await post({ ...exportRequest(), film })
     expect(missing.status).toBe(400)
     expect(await missing.json()).toMatchObject({ code: 'missing-media' })
@@ -178,8 +178,8 @@ describe('渲染服务接口', () => {
     )
   })
 
-  it('隐藏的音频块：检查照常带着它和它的素材，渲染用的那一份里没有它，总时长不变', async () => {
-    const film = filmFile([picture(), audio({ duration: 5000, hidden: true })])
+  it('隐藏的音频片段：检查照常带着它和它的素材，渲染用的那一份里没有它，总时长不变', async () => {
+    const film = filmFile([video(), audio({ duration: 5000, hidden: true })])
     const checked = (await (await check({ film })).json()) as {
       html: string
       sources: { kind: string }[]
@@ -197,7 +197,7 @@ describe('渲染服务接口', () => {
     const local = renders[0]!.compose({ 'https://oss.example.com/clip.mp4?sig=1': 'media/a.mp4' })
     expect(local).toBe(
       writeFilm(
-        { canvas: { width: 720, height: 1280 }, blocks: [picture({ src: 'media/a.mp4' })] },
+        { canvas: { width: 720, height: 1280 }, clips: [video({ src: 'media/a.mp4' })] },
         catalog,
         5000,
       ),

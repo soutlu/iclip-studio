@@ -107,15 +107,15 @@ const shotOf = (materials: Locator, group: number, take: string, shot: number) =
     name: new RegExp(`^生成 ${take} 镜头 ${shot}，`),
   })
 
-/** 存下来的成片里的画面块，按起点排，写成「名字，从几秒起，多长」。 */
-const savedBlocks = (page: Page) =>
+/** 存下来的成片里的视频片段，按起点排，写成「名字，从几秒起，多长」。 */
+const savedClips = (page: Page) =>
   page.evaluate(async (conversationId) => {
     const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
     const { html } = (await response.json()) as { html: string | null }
-    const blocks = (html ?? '').matchAll(
+    const clips = (html ?? '').matchAll(
       /<video [^>]*data-label="([^"]*)"[^>]*data-start="([^"]*)" data-duration="([^"]*)"/g,
     )
-    return [...blocks]
+    return [...clips]
       .toSorted(([, , left], [, , right]) => Number(left) - Number(right))
       .map(([, label, start, duration]) => `${label}，${start} 秒起，${duration} 秒`)
   }, conversationIdOf(page))
@@ -202,7 +202,7 @@ test('点镜头只选中、预览停在开头不播放；素材暂停续播与�
   await page.keyboard.press('Shift+ArrowRight')
   await page.keyboard.press('Enter')
   await expect(video).toHaveCount(0)
-  await expect.poll(() => savedBlocks(page)).toEqual(['A · 镜头 2，0 秒起，3 秒'])
+  await expect.poll(() => savedClips(page)).toEqual(['A · 镜头 2，0 秒起，3 秒'])
   await readyPlayer(dialog)
 
   await groupOf(materials, 1)
@@ -287,7 +287,7 @@ test('选区里的播放头只在素材播放时出现：点镜头、暂停、�
   await expect(playhead).toHaveCount(0)
 })
 
-test('Shift 选连着的几个镜头：不播放；在选区上单击只选那个镜头、Shift 点去掉一端；两端抓手不越过镜头边界，加入成片时一个镜头一块', async ({
+test('Shift 选连着的几个镜头：不播放；在选区上单击只选那个镜头、Shift 点去掉一端；两端抓手不越过镜头边界，加入成片时一个镜头一个片段', async ({
   page,
 }) => {
   const { dialog, materials } = await openWith(page, [1])
@@ -336,7 +336,7 @@ test('Shift 选连着的几个镜头：不播放；在选区上单击只选那�
 
   await page.keyboard.press('Enter')
   await expect
-    .poll(() => savedBlocks(page))
+    .poll(() => savedClips(page))
     .toEqual([
       'A · 镜头 1，0 秒起，1.1 秒',
       'A · 镜头 3，1.1 秒起，1 秒',
@@ -349,25 +349,25 @@ test('撤销、重做也是成片编辑：预览回到成片', async ({ page }) 
   const label = dialog.getByText(/^素材 · 镜头组/)
   await shotOf(materials, 1, 'A', 1).click()
   await page.keyboard.press('Enter')
-  await expect.poll(() => savedBlocks(page)).toHaveLength(1)
+  await expect.poll(() => savedClips(page)).toHaveLength(1)
 
   await shotOf(materials, 1, 'B', 2).click()
   await expect(label).toBeVisible()
   await dialog.getByRole('button', { name: '撤销' }).click()
   await expect(label).toHaveCount(0)
-  await expect.poll(() => savedBlocks(page)).toHaveLength(0)
+  await expect.poll(() => savedClips(page)).toHaveLength(0)
 
   await shotOf(materials, 1, 'B', 4).click()
   await expect(label).toBeVisible()
   await dialog.getByRole('button', { name: '重做' }).click()
   await expect(label).toHaveCount(0)
-  await expect.poll(() => savedBlocks(page)).toHaveLength(1)
+  await expect.poll(() => savedClips(page)).toHaveLength(1)
 
   await shotOf(materials, 1, 'B', 3).click()
   await expect(label).toBeVisible()
   await page.keyboard.press('ControlOrMeta+z')
   await expect(label).toHaveCount(0)
-  await expect.poll(() => savedBlocks(page)).toHaveLength(0)
+  await expect.poll(() => savedClips(page)).toHaveLength(0)
 })
 
 test('Enter 把选区接在成片末尾：焦点在镜头、选区两端或不在任何控件上时', async ({ page }) => {
@@ -375,36 +375,36 @@ test('Enter 把选区接在成片末尾：焦点在镜头、选区两端或不�
 
   await shotOf(materials, 1, 'A', 1).focus()
   await page.keyboard.press('Enter')
-  await expect(page.getByText('先在下方点一个镜头选中范围')).toBeVisible()
-  expect(await savedBlocks(page)).toEqual([])
+  await expect(page.getByText('尚未选中镜头，无法加入成片；请先在下方选中镜头范围')).toBeVisible()
+  expect(await savedClips(page)).toEqual([])
 
   await shotOf(materials, 1, 'A', 1).click()
   await page.keyboard.press('Enter')
-  await expect.poll(() => savedBlocks(page)).toEqual(['A · 镜头 1，0 秒起，1 秒'])
+  await expect.poll(() => savedClips(page)).toEqual(['A · 镜头 1，0 秒起，1 秒'])
   await expect(page.getByText(/画面尺寸/)).toHaveCount(0)
 
   await shotOf(materials, 1, 'B', 4).click()
   await groupOf(materials, 1).getByRole('slider', { name: '裁剪结尾' }).focus()
   await page.keyboard.press('Enter')
   await expect
-    .poll(() => savedBlocks(page))
+    .poll(() => savedClips(page))
     .toEqual(['A · 镜头 1，0 秒起，1 秒', 'B · 镜头 4，1 秒起，1 秒'])
 
   await dialog.evaluate((element: HTMLElement) => element.focus())
   await page.keyboard.press('Enter')
-  await expect.poll(() => savedBlocks(page)).toHaveLength(3)
+  await expect.poll(() => savedClips(page)).toHaveLength(3)
 })
 
 test('没有音轨的素材片接进成片写成静音，有音轨的标着有声音', async ({ page }) => {
   const { materials } = await openWith(page, [1], [1])
   await shotOf(materials, 1, 'A', 1).click()
   await page.keyboard.press('Enter')
-  await expect.poll(() => savedBlocks(page)).toHaveLength(1)
+  await expect.poll(() => savedClips(page)).toHaveLength(1)
   await shotOf(materials, 1, 'B', 1).click()
   await page.keyboard.press('Enter')
-  await expect.poll(() => savedBlocks(page)).toHaveLength(2)
+  await expect.poll(() => savedClips(page)).toHaveLength(2)
 
-  // 存下来的成片里每个画面块的名字和声音的写法
+  // 存下来的成片里每个视频片段的名字和声音的写法
   const sound = await page.evaluate(async (conversationId) => {
     const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
     const { html } = (await response.json()) as { html: string | null }
@@ -444,13 +444,13 @@ test('每条原作可以换版本；换了之后这条轨上的选区收起', as
   await expect(groupOf(materials, 1).getByRole('slider')).toHaveCount(0)
 })
 
-test('把镜头拖进时间线：落在指针的位置；压在别的块上时挪到它后面', async ({ page }) => {
+test('把镜头拖进时间线：落在指针的位置；压在别的片段上时挪到它后面', async ({ page }) => {
   const { dialog, materials } = await openWith(page, [1])
   const row = dialog.getByRole('group', { name: '第 1 行' })
   const range = groupOf(materials, 1).getByRole('group', { name: /^选中的范围/ })
   const lane = await row.boundingBox()
   if (lane === null) throw new Error('时间线尚未布局')
-  // 有了块以后下面多出一条空行，这一行会往上挪：每次拖之前重新量它在哪
+  // 有了片段以后下面多出一条空行，这一行会往上挪：每次拖之前重新量它在哪
   const carryTo = async (x: number) => {
     const from = await centerOf(range)
     const { y } = await centerOf(row)
@@ -459,9 +459,9 @@ test('把镜头拖进时间线：落在指针的位置；压在别的块上时�
     await page.mouse.move(from.x + 10, from.y - 10, { steps: 3 })
     await page.mouse.move(x, y, { steps: 8 })
   }
-  const blockBox = async (at: number) => {
-    const box = await row.locator('[data-block-id]').nth(at).boundingBox()
-    if (box === null) throw new Error('块尚未布局')
+  const clipBox = async (at: number) => {
+    const box = await row.locator('[data-clip-id]').nth(at).boundingBox()
+    if (box === null) throw new Error('片段尚未布局')
     return box
   }
 
@@ -471,15 +471,15 @@ test('把镜头拖进时间线：落在指针的位置；压在别的块上时�
   await expect(row.getByTestId('drop-ghost')).toBeVisible()
   await page.mouse.up()
   await expect(row.getByTestId('drop-ghost')).toHaveCount(0)
-  await expect.poll(() => savedBlocks(page)).toHaveLength(1)
-  const first = await blockBox(0)
+  await expect.poll(() => savedClips(page)).toHaveLength(1)
+  const first = await clipBox(0)
   expect(Math.abs(first.x - dropX)).toBeLessThan(3)
 
   await shotOf(materials, 1, 'A', 4).click()
   await carryTo(first.x + first.width / 2)
   await page.mouse.up()
-  await expect.poll(() => savedBlocks(page)).toHaveLength(2)
-  const second = await blockBox(1)
+  await expect.poll(() => savedClips(page)).toHaveLength(2)
+  const second = await clipBox(1)
   expect(Math.abs(second.x - (first.x + first.width))).toBeLessThan(4)
 
   await shotOf(materials, 1, 'A', 5).click()
@@ -490,21 +490,21 @@ test('把镜头拖进时间线：落在指针的位置；压在别的块上时�
   await page.mouse.move(outside.x, outside.y, { steps: 8 })
   await page.mouse.up()
   await page.waitForTimeout(300)
-  expect(await savedBlocks(page)).toHaveLength(2)
+  expect(await savedClips(page)).toHaveLength(2)
 })
 
-test('时间线上的块：拖着挪动、拖把手裁剪、按 Delete 删掉，都能撤销', async ({ page }) => {
+test('时间线上的片段：拖着挪动、拖把手裁剪、按 Delete 删掉，都能撤销', async ({ page }) => {
   const { dialog, materials } = await openWith(page, [1])
   const row = dialog.getByRole('group', { name: '第 1 行' })
   for (const [at, shot] of [1, 3].entries()) {
     await shotOf(materials, 1, 'A', shot).click()
     await page.keyboard.press('Enter')
-    await expect.poll(() => savedBlocks(page)).toHaveLength(at + 1)
+    await expect.poll(() => savedClips(page)).toHaveLength(at + 1)
   }
   await readyPlayer(dialog)
-  const second = row.locator('[data-block-id]').nth(1)
+  const second = row.locator('[data-clip-id]').nth(1)
   const timingOf = async (at: number) => {
-    const saved = (await savedBlocks(page))[at] ?? ''
+    const saved = (await savedClips(page))[at] ?? ''
     const [, start, duration] = /，([\d.]+) 秒起，([\d.]+) 秒$/.exec(saved) ?? []
     return { start: Number(start), duration: Number(duration) }
   }
@@ -536,14 +536,14 @@ test('时间线上的块：拖着挪动、拖把手裁剪、按 Delete 删掉，
 
   await second.getByRole('button').click()
   await page.keyboard.press('Delete')
-  await expect.poll(() => savedBlocks(page)).toEqual(['A · 镜头 1，0 秒起，1 秒'])
+  await expect.poll(() => savedClips(page)).toEqual(['A · 镜头 1，0 秒起，1 秒'])
 
   await page.keyboard.press('ControlOrMeta+z')
-  await expect.poll(() => savedBlocks(page)).toHaveLength(2)
+  await expect.poll(() => savedClips(page)).toHaveLength(2)
   expect(await timingOf(1)).toEqual(trimmed)
 })
 
-test('吸附：拖到别的块旁边会贴上去并画出吸附线，关掉就不贴；空档上点右键可以合拢', async ({
+test('吸附：拖到别的片段旁边会贴上去并画出吸附线，关掉就不贴；空档上点右键可以合拢', async ({
   page,
 }) => {
   const { dialog, materials } = await openWith(page, [1])
@@ -552,21 +552,21 @@ test('吸附：拖到别的块旁边会贴上去并画出吸附线，关掉就�
   for (const [at, shot] of [1, 3].entries()) {
     await shotOf(materials, 1, 'A', shot).click()
     await page.keyboard.press('Enter')
-    await expect.poll(() => savedBlocks(page)).toHaveLength(at + 1)
+    await expect.poll(() => savedClips(page)).toHaveLength(at + 1)
   }
   await readyPlayer(dialog)
-  const first = row.locator('[data-block-id]').nth(0)
-  const second = row.locator('[data-block-id]').nth(1)
+  const first = row.locator('[data-clip-id]').nth(0)
+  const second = row.locator('[data-clip-id]').nth(1)
   const boxOf = async (locator: Locator) => {
     const box = await locator.boundingBox()
-    if (box === null) throw new Error('块尚未布局')
+    if (box === null) throw new Error('片段尚未布局')
     return box
   }
   const secondStart = async () => {
-    const saved = (await savedBlocks(page))[1] ?? ''
+    const saved = (await savedClips(page))[1] ?? ''
     return Number(/，([\d.]+) 秒起，/.exec(saved)?.[1])
   }
-  /** 拖着第二个块，让它的左边停在 `left` 这个横坐标上；`settle` 在松手前执行。 */
+  /** 拖着第二个片段，让它的左边停在 `left` 这个横坐标上；`settle` 在松手前执行。 */
   const dragSecondTo = async (left: number, settle?: () => Promise<void>) => {
     const box = await boxOf(second)
     const y = box.y + box.height / 2
@@ -576,7 +576,7 @@ test('吸附：拖到别的块旁边会贴上去并画出吸附线，关掉就�
     await settle?.()
     await page.mouse.up()
   }
-  // 一秒长的块画出来比一秒的宽度少 2 像素，所以第一个块的结尾在它右边再加 2
+  // 一秒长的片段画出来比一秒的宽度少 2 像素，所以第一个片段的结尾在它右边再加 2
   const firstEnd = async () => {
     const box = await boxOf(first)
     return box.x + box.width + 2
@@ -601,7 +601,7 @@ test('吸附：拖到别的块旁边会贴上去并画出吸附线，关掉就�
   const gapX = (await firstEnd()) + 150
   const rowBox = await boxOf(row)
   await page.mouse.click(gapX, rowBox.y + rowBox.height / 2, { button: 'right' })
-  await page.getByRole('menuitem', { name: '合拢这个空档' }).click()
+  await page.getByRole('menuitem', { name: '合拢此空档' }).click()
   await expect.poll(secondStart).toBe(1)
 
   // 没有空档了：再点右键不出菜单
@@ -609,7 +609,9 @@ test('吸附：拖到别的块旁边会贴上去并画出吸附线，关掉就�
   await expect(page.getByRole('menu')).toHaveCount(0)
 })
 
-test('换行：把块拖到最下面的空行新开一行，再拖回去；镜头也能直接拖进新的一行', async ({ page }) => {
+test('换行：把片段拖到最下面的空行新开一行，再拖回去；镜头也能直接拖进新的一行', async ({
+  page,
+}) => {
   const { dialog, materials } = await openWith(page, [1])
   const firstRow = dialog.getByRole('group', { name: '第 1 行' })
   const secondRow = dialog.getByRole('group', { name: '第 2 行' })
@@ -617,10 +619,10 @@ test('换行：把块拖到最下面的空行新开一行，再拖回去；镜�
   for (const [at, shot] of [1, 3].entries()) {
     await shotOf(materials, 1, 'A', shot).click()
     await page.keyboard.press('Enter')
-    await expect.poll(() => savedBlocks(page)).toHaveLength(at + 1)
+    await expect.poll(() => savedClips(page)).toHaveLength(at + 1)
   }
   await readyPlayer(dialog)
-  /** 存下来的成片里每个块，按文件里的先后，写成「名字@行号 z叠放顺序」。 */
+  /** 存下来的成片里每个片段，按文件里的先后，写成「名字@行号 z叠放顺序」。 */
   const savedLayout = () =>
     page.evaluate(async (conversationId) => {
       const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
@@ -633,7 +635,7 @@ test('换行：把块拖到最下面的空行新开一行，再拖回去；镜�
       })
     }, conversationIdOf(page))
   /**
-   * 预览画面正中看得见的块，从最上面一层往下，写成「名字@行号」。
+   * 预览画面正中看得见的片段，从最上面一层往下，写成「名字@行号」。
    * 改动成片后预览会换一个播放器，看后来的那个；带上行号才认得出它已经换成新的成片。
    */
   const previewStack = () =>
@@ -660,25 +662,25 @@ test('换行：把块拖到最下面的空行新开一行，再拖回去；镜�
     await page.mouse.move(x + dx, y, { steps: 8 })
     await page.mouse.up()
   }
-  // 新加的块写在根下第一个、叠在最上面
+  // 新加的片段写在根下第一个、叠在最上面
   await expect.poll(savedLayout).toEqual(['A · 镜头 3@0 z2', 'A · 镜头 1@0 z1'])
 
   await expect(secondRow).toHaveCount(0)
-  // 第二个块拖到下面新开的一行、往左挪到和第一个块重叠：它降到第一个块之下，文件里的先后不变
-  const second = firstRow.locator('[data-block-id]').nth(1)
-  const firstBox = await firstRow.locator('[data-block-id]').nth(0).boundingBox()
+  // 第二个片段拖到下面新开的一行、往左挪到和第一个片段重叠：它降到第一个片段之下，文件里的先后不变
+  const second = firstRow.locator('[data-clip-id]').nth(1)
+  const firstBox = await firstRow.locator('[data-clip-id]').nth(0).boundingBox()
   const secondBox = await second.boundingBox()
-  if (firstBox === null || secondBox === null) throw new Error('块尚未布局')
+  if (firstBox === null || secondBox === null) throw new Error('片段尚未布局')
   await dragTo(second, await middleY(newRow), firstBox.x - secondBox.x)
   await expect.poll(savedLayout).toEqual(['A · 镜头 3@1 z0', 'A · 镜头 1@0 z1'])
-  await expect(secondRow.locator('[data-block-id]')).toHaveCount(1)
-  await expect(firstRow.locator('[data-block-id]')).toHaveCount(1)
+  await expect(secondRow.locator('[data-clip-id]')).toHaveCount(1)
+  await expect(firstRow.locator('[data-clip-id]')).toHaveCount(1)
   const ruler = await dialog.getByRole('slider', { name: '时间线播放位置' }).boundingBox()
   if (ruler === null) throw new Error('时间尺尚未布局')
   await page.mouse.click(firstBox.x + 10, ruler.y + ruler.height / 2)
   await expect.poll(previewStack).toEqual(['A · 镜头 1@0', 'A · 镜头 3@1'])
 
-  await dragTo(secondRow.locator('[data-block-id]'), await middleY(firstRow))
+  await dragTo(secondRow.locator('[data-clip-id]'), await middleY(firstRow))
   await expect.poll(savedLayout).toEqual(['A · 镜头 3@0 z0', 'A · 镜头 1@0 z1'])
   await expect(secondRow).toHaveCount(0)
 
@@ -693,7 +695,7 @@ test('换行：把块拖到最下面的空行新开一行，再拖回去；镜�
   await expect(newRow.getByTestId('drop-ghost')).toBeVisible()
   await page.mouse.up()
   await expect.poll(savedLayout).toEqual(['A · 镜头 4@1 z3', 'A · 镜头 3@0 z0', 'A · 镜头 1@0 z1'])
-  await expect(secondRow.locator('[data-block-id]')).toHaveCount(1)
+  await expect(secondRow.locator('[data-clip-id]')).toHaveCount(1)
 })
 
 test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来的成片带着隐藏标记；再点显示回来', async ({
@@ -702,7 +704,7 @@ test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来�
   const { dialog, materials } = await openWith(page, [1])
   await shotOf(materials, 1, 'A', 1).click()
   await page.keyboard.press('Enter')
-  await expect.poll(() => savedBlocks(page)).toHaveLength(1)
+  await expect.poll(() => savedClips(page)).toHaveLength(1)
   await readyPlayer(dialog)
   // 改动成片后预览会换一个播放器，换的那一下新旧两个都在：看后来的那个
   const picture = dialog
@@ -711,7 +713,7 @@ test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来�
     .last()
     .frameLocator('iframe')
     .locator('video.picture')
-  /** 存下来的成片里有几个隐藏的块。 */
+  /** 存下来的成片里有几个隐藏的片段。 */
   const savedHidden = () =>
     page.evaluate(async (conversationId) => {
       const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
@@ -739,10 +741,10 @@ test('行多了只有轨道区上下滚：素材区留在面板底部，行头�
   const { dialog, materials, panel } = await openWith(page, [1])
   await shotOf(materials, 1, 'A', 1).click()
   await page.keyboard.press('Enter')
-  await expect.poll(() => savedBlocks(page)).toHaveLength(1)
+  await expect.poll(() => savedClips(page)).toHaveLength(1)
   await dialog.getByRole('button', { name: '关闭成片编辑' }).click()
   await expect(dialog).toBeHidden()
-  // 把这一块复制到每一行上，直接存成草稿
+  // 把这个片段复制到每一行上，直接存成草稿
   await page.evaluate(
     async ({ conversationId, rows }) => {
       const path = `/api/conversations/${conversationId}/whole-film/draft`
@@ -839,7 +841,7 @@ test('行多了只有轨道区上下滚：素材区留在面板底部，行头�
   await expect(dialog.getByRole('group', { name: `第 ${ROWS + 1} 行` })).toHaveCount(1)
 })
 
-test('在两行之间、最上面新开一行：块拖到两行中间的缝里，镜头拖到第一行上面，别的行跟着改行号', async ({
+test('在两行之间、最上面新开一行：片段拖到两行中间的缝里，镜头拖到第一行上面，别的行跟着改行号', async ({
   page,
 }) => {
   const { dialog, materials } = await openWith(page, [1])
@@ -849,10 +851,10 @@ test('在两行之间、最上面新开一行：块拖到两行中间的缝里�
   for (const [at, shot] of [1, 3, 4].entries()) {
     await shotOf(materials, 1, 'A', shot).click()
     await page.keyboard.press('Enter')
-    await expect.poll(() => savedBlocks(page)).toHaveLength(at + 1)
+    await expect.poll(() => savedClips(page)).toHaveLength(at + 1)
   }
   await readyPlayer(dialog)
-  /** 存下来的成片里每个块在第几行，写成「名字@行号」，按名字排。 */
+  /** 存下来的成片里每个片段在第几行，写成「名字@行号」，按名字排。 */
   const savedTracks = () =>
     page.evaluate(async (conversationId) => {
       const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
@@ -875,27 +877,27 @@ test('在两行之间、最上面新开一行：块拖到两行中间的缝里�
     await page.mouse.move(start.x, y, { steps: 8 })
   }
 
-  // 先把第三个块拖到最下面的空行，成两行
-  await dragTo(row(1).locator('[data-block-id]').nth(2), (await centerOf(newRow)).y)
+  // 先把第三个片段拖到最下面的空行，成两行
+  await dragTo(row(1).locator('[data-clip-id]').nth(2), (await centerOf(newRow)).y)
   await page.mouse.up()
   await expect.poll(savedTracks).toEqual(['A · 镜头 1@0', 'A · 镜头 3@0', 'A · 镜头 4@1'])
 
-  // 第二个块拖到两行中间的缝里：那里先让出一行，松手后它自己占第 2 行，原来的第 2 行排到第 3 行
+  // 第二个片段拖到两行中间的缝里：那里先让出一行，松手后它自己占第 2 行，原来的第 2 行排到第 3 行
   const first = await boxOf(row(1))
   const second = await boxOf(row(2))
-  await dragTo(row(1).locator('[data-block-id]').nth(1), (first.y + first.height + second.y) / 2)
+  await dragTo(row(1).locator('[data-clip-id]').nth(1), (first.y + first.height + second.y) / 2)
   await expect(opening).toHaveCount(1)
   await page.mouse.up()
   await expect(opening).toHaveCount(0)
   await expect.poll(savedTracks).toEqual(['A · 镜头 1@0', 'A · 镜头 3@1', 'A · 镜头 4@2'])
-  await expect(row(3).locator('[data-block-id]')).toHaveCount(1)
+  await expect(row(3).locator('[data-clip-id]')).toHaveCount(1)
 
-  // 独占一行的块拖到自己这一行上面的缝里横着挪：那里照常让出一行；松手后它还是这一行，
+  // 独占一行的片段拖到自己这一行上面的缝里横着挪：那里照常让出一行；松手后它还是这一行，
   // 行号都不变，隐藏着的也照旧隐藏
   await dialog.getByRole('button', { name: '隐藏第 2 行' }).click()
-  const lone = row(2).locator('[data-block-id]')
+  const lone = row(2).locator('[data-clip-id]')
   await expect(lone).toHaveAccessibleName(/已隐藏$/)
-  const before = (await savedBlocks(page)).find((saved) => saved.startsWith('A · 镜头 3'))
+  const before = (await savedClips(page)).find((saved) => saved.startsWith('A · 镜头 3'))
   const grab = await centerOf(lone)
   const upper = await boxOf(row(1))
   const seam = (upper.y + upper.height + (await boxOf(row(2))).y) / 2
@@ -906,10 +908,10 @@ test('在两行之间、最上面新开一行：块拖到两行中间的缝里�
   await page.mouse.up()
   await expect(opening).toHaveCount(0)
   await expect
-    .poll(async () => (await savedBlocks(page)).find((saved) => saved.startsWith('A · 镜头 3')))
+    .poll(async () => (await savedClips(page)).find((saved) => saved.startsWith('A · 镜头 3')))
     .not.toBe(before)
   expect(await savedTracks()).toEqual(['A · 镜头 1@0', 'A · 镜头 3@1', 'A · 镜头 4@2'])
-  await expect(row(2).locator('[data-block-id]')).toHaveAccessibleName(/已隐藏$/)
+  await expect(row(2).locator('[data-clip-id]')).toHaveAccessibleName(/已隐藏$/)
 
   // 镜头拖到第一行上面（指针停在时间尺上也算）：新开的一行排在最上面，别的行都往后排一号
   await shotOf(materials, 1, 'A', 2).click()
@@ -925,10 +927,10 @@ test('在两行之间、最上面新开一行：块拖到两行中间的缝里�
   await expect
     .poll(savedTracks)
     .toEqual(['A · 镜头 1@1', 'A · 镜头 2@0', 'A · 镜头 3@2', 'A · 镜头 4@3'])
-  await expect(row(4).locator('[data-block-id]')).toHaveCount(1)
+  await expect(row(4).locator('[data-clip-id]')).toHaveCount(1)
 })
 
-test('多选：Shift 点选两个块一起删掉再撤销回来；框选跨两行；点空白处取消；] 选中播放头右边的块；缩放到选中', async ({
+test('多选：Shift 点选两个片段一起删掉再撤销回来；框选跨两行；点空白处取消；] 选中播放头右边的片段；缩放到选中', async ({
   page,
 }) => {
   const { dialog, materials } = await openWith(page, [1])
@@ -938,12 +940,12 @@ test('多选：Shift 点选两个块一起删掉再撤销回来；框选跨两�
   for (const [at, shot] of [1, 3, 4].entries()) {
     await shotOf(materials, 1, 'A', shot).click()
     await page.keyboard.press('Enter')
-    await expect.poll(() => savedBlocks(page)).toHaveLength(at + 1)
+    await expect.poll(() => savedClips(page)).toHaveLength(at + 1)
   }
   await readyPlayer(dialog)
-  const blockOf = (shot: number) =>
+  const clipOf = (shot: number) =>
     dialog.getByRole('button', { name: new RegExp(`^选中：A · 镜头 ${shot}，`) })
-  /** 选中着的块是哪几个镜头，按行、再按时间先后。 */
+  /** 选中着的片段是哪几个镜头，按行、再按时间先后。 */
   const selectedShots = () =>
     dialog
       .getByRole('button', { name: /^选中：/, pressed: true })
@@ -956,8 +958,8 @@ test('多选：Shift 点选两个块一起删掉再撤销回来；框选跨两�
     return box
   }
 
-  // 选中着块、又开着选择工具的菜单时按 Esc：先关菜单，选中不变
-  await blockOf(3).click()
+  // 选中着片段、又开着选择工具的菜单时按 Esc：先关菜单，选中不变
+  await clipOf(3).click()
   await toolbar.getByRole('button', { name: /^选择工具/ }).click()
   await expect(page.getByRole('menu')).toBeVisible()
   await page.keyboard.press('Escape')
@@ -965,18 +967,18 @@ test('多选：Shift 点选两个块一起删掉再撤销回来；框选跨两�
   await expect.poll(selectedShots).toEqual([3])
   await expect(dialog).toBeVisible()
 
-  // Shift 点选两个块，按 Delete 一起删掉；撤销一步两个都回来
-  const before = await savedBlocks(page)
-  await blockOf(1).click()
-  await blockOf(4).click({ modifiers: ['Shift'] })
+  // Shift 点选两个片段，按 Delete 一起删掉；撤销一步两个都回来
+  const before = await savedClips(page)
+  await clipOf(1).click()
+  await clipOf(4).click({ modifiers: ['Shift'] })
   await expect.poll(selectedShots).toEqual([1, 4])
   await page.keyboard.press('Delete')
-  await expect.poll(() => savedBlocks(page)).toEqual(['A · 镜头 3，0 秒起，1 秒'])
+  await expect.poll(() => savedClips(page)).toEqual(['A · 镜头 3，0 秒起，1 秒'])
   await page.keyboard.press('ControlOrMeta+z')
-  await expect.poll(() => savedBlocks(page)).toEqual(before)
+  await expect.poll(() => savedClips(page)).toEqual(before)
 
   // 镜头 4 挪到新的一行，时间不变
-  const four = await centerOf(blockOf(4))
+  const four = await centerOf(clipOf(4))
   await page.mouse.move(four.x, four.y)
   await page.mouse.down()
   await page.mouse.move(
@@ -992,7 +994,7 @@ test('多选：Shift 点选两个块一起删掉再撤销回来；框选跨两�
   // 从第一行右边的空白处往左下拖到第二行：框住镜头 3 的后半段和第二行的镜头 4，拖着时就显示选中
   const rowBox = await boxOf(firstRow)
   const from = { x: rowBox.x + rowBox.width - 30, y: rowBox.y + rowBox.height / 2 }
-  const to = { x: (await centerOf(blockOf(3))).x, y: (await centerOf(secondRow)).y }
+  const to = { x: (await centerOf(clipOf(3))).x, y: (await centerOf(secondRow)).y }
   const frameFromTo = async () => {
     await page.mouse.move(from.x, from.y)
     await page.mouse.down()
@@ -1000,7 +1002,7 @@ test('多选：Shift 点选两个块一起删掉再撤销回来；框选跨两�
     await expect(dialog.getByTestId('marquee')).toBeVisible()
   }
   // 框选中途按 Esc：只取消这次框选，原来的选中不变，编辑器还开着
-  await blockOf(1).click()
+  await clipOf(1).click()
   await frameFromTo()
   await expect.poll(selectedShots).toEqual([3, 4])
   await page.keyboard.press('Escape')
@@ -1019,17 +1021,17 @@ test('多选：Shift 点选两个块一起删掉再撤销回来；框选跨两�
   await page.mouse.click(from.x, from.y)
   await expect.poll(selectedShots).toEqual([])
 
-  // 框选完焦点不在块上，Delete 照样删掉选中的块
+  // 框选完焦点不在片段上，Delete 照样删掉选中的片段
   await frameFromTo()
   await page.mouse.up()
   await expect.poll(selectedShots).toEqual([3, 4])
   await page.keyboard.press('Delete')
-  await expect.poll(() => savedBlocks(page)).toEqual(['A · 镜头 1，0 秒起，1 秒'])
+  await expect.poll(() => savedClips(page)).toEqual(['A · 镜头 1，0 秒起，1 秒'])
   await page.keyboard.press('ControlOrMeta+z')
-  await expect.poll(async () => (await savedBlocks(page)).sort()).toEqual([...before].sort())
+  await expect.poll(async () => (await savedClips(page)).sort()).toEqual([...before].sort())
 
-  // 点时间尺只挪播放头、不动选中；] 选中播放头右边的块，跨着播放头的镜头 3 也算
-  await blockOf(1).click()
+  // 点时间尺只挪播放头、不动选中；] 选中播放头右边的片段，跨着播放头的镜头 3 也算
+  await clipOf(1).click()
   const ruler = dialog.getByRole('slider', { name: '时间线播放位置' })
   const rulerBox = await boxOf(ruler)
   await page.mouse.click(to.x, rulerBox.y + rulerBox.height / 2)
@@ -1040,10 +1042,10 @@ test('多选：Shift 点选两个块一起删掉再撤销回来；框选跨两�
   // 缩放到选中：读数变成百分比；镜头 3 到镜头 4 这一段完整露出，起点离时间区左边 24 像素
   await expect(toolbar.getByText('适应', { exact: true })).toBeVisible()
   const fitted = await boxOf(firstRow)
-  await toolbar.getByRole('button', { name: '缩放到选中的块' }).click()
+  await toolbar.getByRole('button', { name: '缩放到选中的片段' }).click()
   await expect(toolbar.getByText(/^\d+%$/)).toBeVisible()
-  const start = await boxOf(blockOf(3))
-  const end = await boxOf(blockOf(4))
+  const start = await boxOf(clipOf(3))
+  const end = await boxOf(clipOf(4))
   expect(Math.abs(start.x - fitted.x - 24)).toBeLessThan(1.5)
   expect(end.x + end.width).toBeLessThan(fitted.x + fitted.width - 16)
   // 放大以后时间尺的刻度跟着变密：这一屏里至少看得见两个刻度数字
@@ -1057,7 +1059,7 @@ test('多选：Shift 点选两个块一起删掉再撤销回来；框选跨两�
   expect(shownTicks).toBeGreaterThanOrEqual(2)
 })
 
-test('成组挪动、成组裁剪：选中的块挪同一个时间差，挡住时整组停下，一起裁同一端；没选中的块只挪它自己；Esc 取消拖动', async ({
+test('成组挪动、成组裁剪：选中的片段挪同一个时间差，挡住时整组停下，一起裁同一端；没选中的片段只挪它自己；Esc 取消拖动', async ({
   page,
 }) => {
   const { dialog, materials } = await openWith(page, [1])
@@ -1065,16 +1067,16 @@ test('成组挪动、成组裁剪：选中的块挪同一个时间差，挡住�
   for (const [at, shot] of [1, 3, 4].entries()) {
     await shotOf(materials, 1, 'A', shot).click()
     await page.keyboard.press('Enter')
-    await expect.poll(() => savedBlocks(page)).toHaveLength(at + 1)
+    await expect.poll(() => savedClips(page)).toHaveLength(at + 1)
   }
   await readyPlayer(dialog)
-  const blockName = (shot: number) => new RegExp(`^选中：A · 镜头 ${shot}，`)
-  const blockOf = (shot: number) => dialog.getByRole('button', { name: blockName(shot) })
-  // 块的外框（含两端的把手），里面是选中它的按钮
-  const clipOf = (shot: number) =>
+  const clipName = (shot: number) => new RegExp(`^选中：A · 镜头 ${shot}，`)
+  const clipOf = (shot: number) => dialog.getByRole('button', { name: clipName(shot) })
+  // 片段的外框（含两端的把手），里面是选中它的按钮
+  const clipFrameOf = (shot: number) =>
     dialog
-      .locator('[data-block-id]')
-      .filter({ has: page.getByRole('button', { name: blockName(shot) }) })
+      .locator('[data-clip-id]')
+      .filter({ has: page.getByRole('button', { name: clipName(shot) }) })
   const selectedShots = () =>
     dialog
       .getByRole('button', { name: /^选中：/, pressed: true })
@@ -1110,14 +1112,14 @@ test('成组挪动、成组裁剪：选中的块挪同一个时间差，挡住�
     if (placed === undefined) throw new Error(`成片里没有镜头 ${shot}`)
     return placed
   }
-  /** 存下来的成片里同一行的块没有在时间上重叠的。 */
+  /** 存下来的成片里同一行的片段没有在时间上重叠的。 */
   const expectNoOverlap = async () => {
-    const blocks = Object.values(await savedLayout())
-    for (const block of blocks)
-      for (const other of blocks) {
-        if (other === block || other.track !== block.track) continue
+    const clips = Object.values(await savedLayout())
+    for (const clip of clips)
+      for (const other of clips) {
+        if (other === clip || other.track !== clip.track) continue
         const overlapping =
-          block.start < other.start + other.duration && other.start < block.start + block.duration
+          clip.start < other.start + other.duration && other.start < clip.start + clip.duration
         expect(overlapping).toBe(false)
       }
   }
@@ -1131,21 +1133,21 @@ test('成组挪动、成组裁剪：选中的块挪同一个时间差，挡住�
 
   // 镜头 4 挪到新的一行，时间不变：第一行是 1、3，第二行是 4
   await dragBy(
-    blockOf(4),
+    clipOf(4),
     0,
     (await centerOf(dialog.getByRole('group', { name: '新的一行' }))).y -
-      (await centerOf(blockOf(4))).y,
+      (await centerOf(clipOf(4))).y,
   )
   await expect(secondRow.getByRole('button', { name: /^选中：A · 镜头 4，/ })).toHaveCount(1)
   await expect.poll(async () => placedOf(await savedLayout(), 4).track).toBe(1)
-  // 一秒长的块画出来比一秒的宽度少 2 像素
-  const pps = (await boxOf(clipOf(1))).width + 2
+  // 一秒长的片段画出来比一秒的宽度少 2 像素
+  const pps = (await boxOf(clipFrameOf(1))).width + 2
 
   // 选中不同行的 3 和 4，拖 4 往后一秒：两个挪一样的量，各自留在原来的行；撤销一步都回来
   const before = await savedLayout()
-  await blockOf(3).click()
-  await blockOf(4).click({ modifiers: ['Shift'] })
-  await dragBy(blockOf(4), pps)
+  await clipOf(3).click()
+  await clipOf(4).click({ modifiers: ['Shift'] })
+  await dragBy(clipOf(4), pps)
   await expect
     .poll(async () => placedOf(await savedLayout(), 4).start)
     .toBeGreaterThan(placedOf(before, 4).start + 0.5)
@@ -1161,7 +1163,7 @@ test('成组挪动、成组裁剪：选中的块挪同一个时间差，挡住�
 
   // 拖 4 到第一行上面、往后半秒：4 新开最上面一行，3 留在原来那一行（行号跟着往后排）挪一样的量；撤销一步都回来
   const topRow = await boxOf(dialog.getByRole('group', { name: '第 1 行' }))
-  const lifted = await centerOf(blockOf(4))
+  const lifted = await centerOf(clipOf(4))
   await page.mouse.move(lifted.x, lifted.y)
   await page.mouse.down()
   await page.mouse.move(lifted.x + pps / 2, topRow.y - 12, { steps: 8 })
@@ -1177,29 +1179,31 @@ test('成组挪动、成组裁剪：选中的块挪同一个时间差，挡住�
   await page.keyboard.press('ControlOrMeta+z')
   await expect.poll(savedLayout).toEqual(before)
 
-  // 拖动中按 Esc：块回到原处，什么都不写，选中不变，编辑器还开着
-  const resting = await boxOf(clipOf(3))
-  const grab = await centerOf(blockOf(4))
-  const count = await dialog.locator('[data-block-id]').count()
+  // 拖动中按 Esc：片段回到原处，什么都不写，选中不变，编辑器还开着
+  const resting = await boxOf(clipFrameOf(3))
+  const grab = await centerOf(clipOf(4))
+  const count = await dialog.locator('[data-clip-id]').count()
   await page.mouse.move(grab.x, grab.y)
   await page.mouse.down()
   await page.mouse.move(grab.x + pps, grab.y, { steps: 6 })
-  await expect.poll(async () => (await boxOf(clipOf(3))).x).toBeGreaterThan(resting.x + pps / 2)
+  await expect
+    .poll(async () => (await boxOf(clipFrameOf(3))).x)
+    .toBeGreaterThan(resting.x + pps / 2)
   // 拖动中按 Delete、撤销都不生效：成片这时被改，松手会按改之前算好的位置写回去
   await page.keyboard.press('Delete')
   await page.keyboard.press('ControlOrMeta+z')
-  await expect(dialog.locator('[data-block-id]')).toHaveCount(count)
+  await expect(dialog.locator('[data-clip-id]')).toHaveCount(count)
   await page.keyboard.press('Escape')
   await page.mouse.up()
-  expect((await boxOf(clipOf(3))).x).toBeCloseTo(resting.x, 0)
+  expect((await boxOf(clipFrameOf(3))).x).toBeCloseTo(resting.x, 0)
   await expect.poll(selectedShots).toEqual([3, 4])
   await expect(dialog).toBeVisible()
   expect(await savedLayout()).toEqual(before)
 
   // 选中 1 和 4，拖没选中的 3 往后半秒：只挪它自己，选中不变
-  await blockOf(1).click()
-  await blockOf(4).click({ modifiers: ['Shift'] })
-  await dragBy(blockOf(3), pps / 2)
+  await clipOf(1).click()
+  await clipOf(4).click({ modifiers: ['Shift'] })
+  await dragBy(clipOf(3), pps / 2)
   await expect
     .poll(async () => placedOf(await savedLayout(), 3).start)
     .toBeGreaterThan(placedOf(before, 3).start + 0.3)
@@ -1209,7 +1213,7 @@ test('成组挪动、成组裁剪：选中的块挪同一个时间差，挡住�
   expect(await selectedShots()).toEqual([1, 4])
 
   // 再拖 4 往后 0.9 秒：1 会压到 3，整组停在 1 贴着 3 的地方
-  await dragBy(blockOf(4), pps * 0.9)
+  await dragBy(clipOf(4), pps * 0.9)
   await expect
     .poll(async () => placedOf(await savedLayout(), 4).start)
     .not.toBe(placedOf(lone, 4).start)
@@ -1224,9 +1228,9 @@ test('成组挪动、成组裁剪：选中的块挪同一个时间差，挡住�
   await expectNoOverlap()
 
   // 选中同一行相邻的 1 和 3，拖 3 的结尾把手往前 0.3 秒：两个一起收短一样的量
-  await blockOf(1).click()
-  await blockOf(3).click({ modifiers: ['Shift'] })
-  await dragBy(clipOf(3).getByRole('slider', { name: '裁剪结尾' }), -pps * 0.3)
+  await clipOf(1).click()
+  await clipOf(3).click({ modifiers: ['Shift'] })
+  await dragBy(clipFrameOf(3).getByRole('slider', { name: '裁剪结尾' }), -pps * 0.3)
   await expect
     .poll(async () => placedOf(await savedLayout(), 3).duration)
     .toBeLessThan(placedOf(stopped, 3).duration - 0.1)
@@ -1237,7 +1241,7 @@ test('成组挪动、成组裁剪：选中的块挪同一个时间差，挡住�
   expect(placedOf(shortened, 3).start).toBe(placedOf(stopped, 3).start)
 
   // 再往后拉一秒：1 的结尾被 3 挡住，两个只一起拉长到 1 贴着 3
-  await dragBy(clipOf(3).getByRole('slider', { name: '裁剪结尾' }), pps)
+  await dragBy(clipFrameOf(3).getByRole('slider', { name: '裁剪结尾' }), pps)
   await expect
     .poll(async () => placedOf(await savedLayout(), 3).duration)
     .toBeGreaterThan(placedOf(shortened, 3).duration)
@@ -1256,19 +1260,19 @@ test('拖到一半成片被换掉：这次拖动取消，松手不按换之前�
   for (const [at, shot] of [1, 3].entries()) {
     await shotOf(materials, 1, 'A', shot).click()
     await page.keyboard.press('Enter')
-    await expect.poll(() => savedBlocks(page)).toHaveLength(at + 1)
+    await expect.poll(() => savedClips(page)).toHaveLength(at + 1)
   }
   await readyPlayer(dialog)
-  const original = await savedBlocks(page)
+  const original = await savedClips(page)
   const third = dialog
-    .locator('[data-block-id]')
+    .locator('[data-clip-id]')
     .filter({ has: page.getByRole('button', { name: /^选中：A · 镜头 3，/ }) })
   const leftOf = async (locator: Locator) => {
     const box = await locator.boundingBox()
     if (box === null) throw new Error('元素尚未布局')
     return box.x
   }
-  /** 按住块往后拖一段，先不松手。 */
+  /** 按住片段往后拖一段，先不松手。 */
   const hold = async () => {
     const { x, y } = await centerOf(third)
     await page.mouse.move(x, y)
@@ -1280,16 +1284,16 @@ test('拖到一半成片被换掉：这次拖动取消，松手不按换之前�
   const resting = await leftOf(third)
   await hold()
   await page.mouse.up()
-  await expect.poll(() => savedBlocks(page)).not.toEqual(original)
+  await expect.poll(() => savedClips(page)).not.toEqual(original)
 
-  // 再按住它往后拖，拖到一半成片被换回去（指针按着，撤销按钮用事件点）：块回到成片里的位置
+  // 再按住它往后拖，拖到一半成片被换回去（指针按着，撤销按钮用事件点）：片段回到成片里的位置
   await hold()
   await dialog.getByRole('button', { name: '撤销' }).dispatchEvent('click')
   await expect.poll(() => leftOf(third)).toBeCloseTo(resting, 0)
   await page.mouse.up()
 
-  // 松手不写回去，也不算点了这个块
-  await expect.poll(() => savedBlocks(page)).toEqual(original)
+  // 松手不写回去，也不算点了这个片段
+  await expect.poll(() => savedClips(page)).toEqual(original)
   expect(await leftOf(third)).toBeCloseTo(resting, 0)
   await expect(third.getByRole('button')).toHaveAttribute('aria-pressed', 'false')
 })
@@ -1302,7 +1306,7 @@ test('缩放时播放头留在屏幕上原来的地方；滚到看不见它以�
   for (const [at, shot] of [1, 2, 3, 4, 1, 2, 3, 4].entries()) {
     await shotOf(materials, 1, 'A', shot).click()
     await page.keyboard.press('Enter')
-    await expect.poll(() => savedBlocks(page)).toHaveLength(at + 1)
+    await expect.poll(() => savedClips(page)).toHaveLength(at + 1)
   }
   await readyPlayer(dialog)
   const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
@@ -1354,7 +1358,7 @@ test('缩放时播放头留在屏幕上原来的地方；滚到看不见它以�
 const AUDIO_JOB = '0c9a8b7d-6e5f-4a3b-8c2d-1e0f9a8b7c6d'
 
 /**
- * 打开成片编辑器，存一份三种块都有的成片再打开：画面区第 0 行是组件块「标题」（0–2 秒），
+ * 打开成片编辑器，存一份三种片段都有的成片再打开：画面区第 0 行是组件或块的片段「标题」（0–2 秒），
  * 第 1 行是镜头 1（0–1 秒）；声音区第 0 行是「配乐 1」（0–4 秒）和「配乐 2」（5–6 秒）。
  * 界面上还没有加组件和音频的入口，成片直接经接口存进去。
  */
@@ -1362,7 +1366,7 @@ const openWithKinds = async (page: Page) => {
   const { dialog, materials, panel } = await openWith(page, [1])
   await shotOf(materials, 1, 'A', 1).click()
   await page.keyboard.press('Enter')
-  await expect.poll(() => savedBlocks(page)).toHaveLength(1)
+  await expect.poll(() => savedClips(page)).toHaveLength(1)
   await dialog.getByRole('button', { name: '关闭成片编辑' }).click()
   await expect(dialog).toBeHidden()
   // mock 环境把这个地址转到仓库里的测试音频
@@ -1414,7 +1418,7 @@ const openWithKinds = async (page: Page) => {
 }
 
 /**
- * 存下来的成片里每个块，按名字排，写成「名字@区行号 起点」，隐藏的后面写「隐藏」。
+ * 存下来的成片里每个片段，按名字排，写成「名字@区行号 起点」，隐藏的后面写「隐藏」。
  * 区写成「画面」或「声音」。
  */
 const savedKinds = (page: Page) =>
@@ -1423,23 +1427,23 @@ const savedKinds = (page: Page) =>
     const { html } = (await response.json()) as { html: string | null }
     const doc = new DOMParser().parseFromString(html ?? '', 'text/html')
     return [...doc.querySelectorAll('#film > *')]
-      .map((block) => {
-        const zone = block.tagName === 'AUDIO' ? '声音' : '画面'
-        const hidden = block.hasAttribute('data-hidden') ? ' 隐藏' : ''
-        return `${block.getAttribute('data-label')}@${zone}${block.getAttribute('data-track-index')} ${block.getAttribute('data-start')}${hidden}`
+      .map((clip) => {
+        const zone = clip.tagName === 'AUDIO' ? '声音' : '画面'
+        const hidden = clip.hasAttribute('data-hidden') ? ' 隐藏' : ''
+        return `${clip.getAttribute('data-label')}@${zone}${clip.getAttribute('data-track-index')} ${clip.getAttribute('data-start')}${hidden}`
       })
       .toSorted()
   }, conversationIdOf(page))
 
-test('三种块：组件块、画面块、音频块各在各的行，声音行在画面行下面，最下面是新开一行的空行；组件块和音频块能挪、能换行、能删、能撤销', async ({
+test('三种片段：组件或块的片段、视频片段、音频片段各在各的行，声音行在画面行下面，最下面是新开一行的空行；组件或块的片段和音频片段能挪、能换行、能删、能撤销', async ({
   page,
 }) => {
   const { dialog } = await openWithKinds(page)
   const row = (number: number) => dialog.getByRole('group', { name: `第 ${number} 行` })
   const newRow = dialog.getByRole('group', { name: '新的一行' })
-  const blockNamed = (name: string) => dialog.getByRole('group', { name: new RegExp(`^${name}，`) })
-  const title = blockNamed('标题')
-  const second = blockNamed('配乐 2')
+  const clipNamed = (name: string) => dialog.getByRole('group', { name: new RegExp(`^${name}，`) })
+  const title = clipNamed('标题')
+  const second = clipNamed('配乐 2')
   const original = ['A · 镜头 1@画面1 0', '标题@画面0 0', '配乐 1@声音0 0', '配乐 2@声音0 5']
   expect(await savedKinds(page)).toEqual(original)
 
@@ -1451,7 +1455,7 @@ test('三种块：组件块、画面块、音频块各在各的行，声音行�
     [row(1), row(2), row(3), newRow].map(async (lane) => (await lane.boundingBox())?.y ?? 0),
   )
   expect(tops).toEqual(tops.toSorted((left, right) => left - right))
-  // 画面区的行头是眼睛，声音区的行头是喇叭；音频块上画着它的波形
+  // 画面区的行头是眼睛，声音区的行头是喇叭；音频片段上画着它的波形
   await expect(dialog.getByRole('button', { name: '隐藏第 2 行' })).toBeVisible()
   await expect(dialog.getByRole('button', { name: '静音第 3 行' })).toBeVisible()
   await expect(dialog.getByRole('button', { name: '隐藏第 3 行' })).toHaveCount(0)
@@ -1465,7 +1469,7 @@ test('三种块：组件块、画面块、音频块各在各的行，声音行�
     await page.mouse.up()
   }
 
-  // 组件块在自己那一行里往后挪；撤销回到原样
+  // 组件或块的片段在自己那一行里往后挪；撤销回到原样
   const titleAt = await centerOf(title)
   await dragTo(title, { x: titleAt.x + 120, y: titleAt.y })
   await expect
@@ -1490,7 +1494,7 @@ test('三种块：组件块、画面块、音频块各在各的行，声音行�
   await page.keyboard.press('ControlOrMeta+z')
   await expect.poll(() => savedKinds(page)).toEqual(lowered)
 
-  // 组件块拖到最下面的空行：只能在画面区新开一行，让出来的是声音行上面那一行；拖着左右挪也一直是它
+  // 组件或块的片段拖到最下面的空行：只能在画面区新开一行，让出来的是声音行上面那一行；拖着左右挪也一直是它
   const opening = dialog.locator('.wf-lane.is-opening')
   const from = await centerOf(title)
   const bottom = (await centerOf(newRow)).y
@@ -1511,7 +1515,7 @@ test('三种块：组件块、画面块、音频块各在各的行，声音行�
   await page.keyboard.press('ControlOrMeta+z')
   await expect.poll(() => savedKinds(page)).toEqual(lowered)
 
-  // 删掉组件块、删掉音频块，各自撤销回来
+  // 删掉组件或块的片段、删掉音频片段，各自撤销回来
   await title.getByRole('button').click()
   await page.keyboard.press('Delete')
   await expect
@@ -1519,7 +1523,7 @@ test('三种块：组件块、画面块、音频块各在各的行，声音行�
     .toEqual(['A · 镜头 1@画面1 0', '配乐 1@声音0 0', '配乐 2@声音1 5'])
   await page.keyboard.press('ControlOrMeta+z')
   await expect.poll(() => savedKinds(page)).toEqual(lowered)
-  await blockNamed('配乐 1').getByRole('button').click()
+  await clipNamed('配乐 1').getByRole('button').click()
   await page.keyboard.press('Delete')
   await expect
     .poll(() => savedKinds(page))
@@ -1528,28 +1532,28 @@ test('三种块：组件块、画面块、音频块各在各的行，声音行�
   await expect.poll(() => savedKinds(page)).toEqual(lowered)
 })
 
-/** 存下来的成片里名字是 `label` 的块，写成「起点 时长 从第几秒开始播」（没写的是 -）。 */
+/** 存下来的成片里名字是 `label` 的片段，写成「起点 时长 从第几秒开始播」（没写的是 -）。 */
 const savedTiming = (page: Page, label: string) =>
   page.evaluate(
     async ({ conversationId, label }) => {
       const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
       const { html } = (await response.json()) as { html: string | null }
       const doc = new DOMParser().parseFromString(html ?? '', 'text/html')
-      const block = [...doc.querySelectorAll('#film > *')].find(
+      const clip = [...doc.querySelectorAll('#film > *')].find(
         (candidate) => candidate.getAttribute('data-label') === label,
       )
       return ['data-start', 'data-duration', 'data-playback-start']
-        .map((name) => block?.getAttribute(name) ?? '-')
+        .map((name) => clip?.getAttribute(name) ?? '-')
         .join(' ')
     },
     { conversationId: conversationIdOf(page), label },
   )
 
-test('裁组件块和音频块：音频块的结尾拖到音频文件的长度就停；组件块的开头往后裁，从第几秒开始播跟着加', async ({
+test('裁组件或块的片段和音频片段：音频片段的结尾拖到音频文件的长度就停；组件或块的片段的开头往后裁，从第几秒开始播跟着加', async ({
   page,
 }) => {
   const { dialog } = await openWithKinds(page)
-  const blockNamed = (name: string) => dialog.getByRole('group', { name: new RegExp(`^${name}，`) })
+  const clipNamed = (name: string) => dialog.getByRole('group', { name: new RegExp(`^${name}，`) })
   /** 拖着 `handle` 横着挪到 `x`。 */
   const dragHandle = async (handle: Locator, x: number) => {
     const from = await centerOf(handle)
@@ -1561,19 +1565,19 @@ test('裁组件块和音频块：音频块的结尾拖到音频文件的长度�
 
   // 配乐 2（5–6 秒）从头放；这个 MP3 读到的音频时长是 6.034 秒（按整帧算）：
   // 结尾最多到 11.034 秒，往后拖到 13 秒那里也停在那里
-  const second = blockNamed('配乐 2')
+  const second = clipNamed('配乐 2')
   await second.getByRole('button').click()
   const end = second.getByRole('slider', { name: '裁剪结尾' })
   await expect(end).toHaveAttribute('aria-valuemax', '11.03')
   const sound = await second.boundingBox()
   if (sound === null) throw new Error('量不到配乐 2')
-  // 块画的宽度比它的时长少 2 像素
+  // 片段画的宽度比它的时长少 2 像素
   const pps = sound.width + 2
   await dragHandle(end, sound.x + 8 * pps)
   await expect.poll(() => savedTiming(page, '配乐 2')).toBe('5 6.034 -')
 
   // 标题（0–2 秒）的开头往后裁到 1 秒（吸在镜头 1 的结尾上）：从组件的第 1 秒开始播
-  const title = blockNamed('标题')
+  const title = clipNamed('标题')
   await title.getByRole('button').click()
   const head = await title.boundingBox()
   if (head === null) throw new Error('量不到标题')
@@ -1584,7 +1588,7 @@ test('裁组件块和音频块：音频块的结尾拖到音频文件的长度�
   await expect.poll(() => savedTiming(page, '标题')).toBe('1 1 1')
 })
 
-test('声音行的喇叭：静音以后存下来的成片里这一行的音频块都带隐藏标记，再点取消静音', async ({
+test('声音行的喇叭：静音以后存下来的成片里这一行的音频片段都带隐藏标记，再点取消静音', async ({
   page,
 }) => {
   const { dialog } = await openWithKinds(page)
@@ -1612,7 +1616,7 @@ test('组件那一行在画面行上面：Enter 接的镜头落在画面区第�
     dialog.getByRole('group', { name: '第 1 行' }).getByRole('group', { name: /^A · 镜头 3，/ }),
   ).toHaveCount(1)
 
-  // 删掉组件块（波纹编辑默认开着）：画面区第一行后面的镜头往前补，别的行不动
+  // 删掉组件或块的片段（波纹编辑默认开着）：画面区第一行后面的镜头往前补，别的行不动
   await dialog.getByRole('button', { name: /^选中：标题，/ }).click()
   await page.keyboard.press('Delete')
   await expect
@@ -1640,7 +1644,7 @@ test('组件那一行在画面行上面：Enter 接的镜头落在画面区第�
     dialog.getByRole('group', { name: '第 3 行' }).getByRole('group', { name: /^A · 镜头 2，/ }),
   ).toHaveCount(1)
 
-  // 预览里的音频块按预览的方式加载，播放以后读得出来
+  // 预览里的音频片段按预览的方式加载，播放以后读得出来
   const transport = dialog.getByRole('group', { name: '播放控制' })
   await transport.getByRole('button', { name: '播放', exact: true }).click()
   const sound = dialog

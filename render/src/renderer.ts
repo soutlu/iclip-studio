@@ -22,7 +22,8 @@ export interface RendererOptions {
   mediaTimeoutMs?: number
 }
 
-const SILENT_SOURCE_TEXT = '有镜头标了有声音，但素材文件里没有声音；把这个镜头设成静音后再导出'
+const SILENT_SOURCE_TEXT =
+  '有视频片段标记为有声音，但素材文件没有声音，无法导出；请将该视频片段设为静音后重新导出'
 
 const describeUrl = (url: string) => {
   const parsed = new URL(url)
@@ -47,7 +48,7 @@ async function downloadMedia(
         await response.body?.cancel()
         throw new ExportFailure(
           'media-unreachable',
-          `素材取不到：${describeUrl(url)}（${response.status}）`,
+          `素材下载失败：${describeUrl(url)}（${response.status}）`,
         )
       }
       await pipeline(
@@ -58,7 +59,7 @@ async function downloadMedia(
       if (signal.aborted || error instanceof ExportFailure) throw error
       throw new ExportFailure(
         'media-unreachable',
-        `素材取不到：${describeUrl(url)}（${error instanceof Error ? error.message : String(error)}）`,
+        `素材下载失败：${describeUrl(url)}（${error instanceof Error ? error.message : String(error)}）`,
       )
     }
     paths[url] = `media/${name}`
@@ -111,7 +112,7 @@ export function createProducerWorker(options: RendererOptions): ExportWorker {
       } catch (error) {
         await cleanup()
         if (signal.aborted || error instanceof ExportFailure) throw error
-        // 渲染前逐个探测素材文件：标了有声音的画面块，素材里却没有音轨
+        // 渲染前逐个探测素材文件：标了有声音的视频片段，素材里却没有音轨
         if (extractSafeRenderErrorCode(error) === 'ASSET_MEDIA_TYPE_MISMATCH')
           throw new ExportFailure('media-mismatch', SILENT_SOURCE_TEXT)
         throw new ExportFailure(

@@ -12,15 +12,15 @@ import { openComposition } from '@hyperframes/sdk'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   writeFilm,
-  type AudioBlock,
-  type PictureBlock,
+  type AudioClip,
+  type VideoClip,
 } from '../../web/src/features/storyboard/whole-film/composition/film'
 import { checkFilm, localizedFilm } from './film'
 import { ExportQueue } from './jobs'
 import { loadLibrary, type ComponentLibrary } from './library'
 import { createProducerWorker } from './renderer'
 import { createExportServer } from './server'
-import { audio, component, memoryLogger, picture } from './testing'
+import { audio, host, memoryLogger, video } from './testing'
 
 const run = promisify(execFile)
 const REGISTRY_ROOT =
@@ -300,7 +300,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       id: exportId,
       conversationId: '99999999-8888-4777-8666-555555555555',
       film: writeFilm(
-        { canvas: FRAME, blocks: [picture({ src: clip, duration: 2000, mediaStart: 500 })] },
+        { canvas: FRAME, clips: [video({ src: clip, duration: 2000, mediaStart: 500 })] },
         (library as ComponentLibrary).catalog,
       ),
       media: { [clip]: { url: clip } },
@@ -340,12 +340,12 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     }
     expect(Number(probe.format.duration)).toBeGreaterThan(1.9)
     expect(Number(probe.format.duration)).toBeLessThan(2.15)
-    const video = probe.streams.find((stream) => stream.codec_type === 'video')
-    expect(video).toMatchObject({ width: 640, height: 360 })
+    const videoStream = probe.streams.find((stream) => stream.codec_type === 'video')
+    expect(videoStream).toMatchObject({ width: 640, height: 360 })
     expect(probe.streams.some((stream) => stream.codec_type === 'audio')).toBe(true)
   }, 300_000)
 
-  it('两个画面块首尾相接：各在自己的时间段里上画面，音量按块上写的生效', async () => {
+  it('两个视频片段首尾相接：各在自己的时间段里上画面，音量按片段上写的生效', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const [clip, gray] = [`${origin}/clip.mp4`, `${origin}/gray.mp4`]
@@ -353,9 +353,9 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       writeFilm(
         {
           canvas: FRAME,
-          blocks: [
-            picture({ src: paths[clip] ?? clip, duration: 2000 }),
-            picture({
+          clips: [
+            video({ src: paths[clip] ?? clip, duration: 2000 }),
+            video({
               id: 'clip-2',
               jobId: GRAY_JOB,
               src: paths[gray] ?? gray,
@@ -400,8 +400,8 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
         await rendered.cleanup()
       }
     }
-    const full = await render('two-blocks', 1)
-    const quiet = await render('two-blocks-quiet', 0.25)
+    const full = await render('two-clips', 1)
+    const quiet = await render('two-clips-quiet', 0.25)
 
     expect(full.duration).toBeGreaterThan(4.9)
     expect(full.duration).toBeLessThan(5.15)
@@ -412,7 +412,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(full.loudness - quiet.loudness).toBeLessThan(15)
   }, 600_000)
 
-  it('两个画面块同时出现在两行上：叠放顺序大的在上面，一样大时文件里写在后面的在上面', async () => {
+  it('两个视频片段同时出现在两行上：叠放顺序大的在上面，一样大时文件里写在后面的在上面', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const [clip, gray] = [`${origin}/clip.mp4`, `${origin}/gray.mp4`]
@@ -427,9 +427,9 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
             writeFilm(
               {
                 canvas: FRAME,
-                blocks: [
-                  picture({ src: paths[clip] ?? clip, duration: 2000, z: clipZ }),
-                  picture({
+                clips: [
+                  video({ src: paths[clip] ?? clip, duration: 2000, z: clipZ }),
+                  video({
                     id: 'clip-2',
                     jobId: GRAY_JOB,
                     src: paths[gray] ?? gray,
@@ -460,7 +460,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(meanDifference(sameOrder, grayFrame)).toBeLessThan(6)
   }, 900_000)
 
-  it('隐藏的画面块：导出里不出现也不出声，它占的时间照算', async () => {
+  it('隐藏的视频片段：导出里不出现也不出声，它占的时间照算', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const [clip, gray] = [`${origin}/clip.mp4`, `${origin}/gray.mp4`]
@@ -475,9 +475,9 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
             writeFilm(
               {
                 canvas: FRAME,
-                blocks: [
-                  picture({ src: paths[clip] ?? clip, duration: 2000, hidden: clipHidden }),
-                  picture({
+                clips: [
+                  video({ src: paths[clip] ?? clip, duration: 2000, hidden: clipHidden }),
+                  video({
                     id: 'clip-2',
                     jobId: GRAY_JOB,
                     src: paths[gray] ?? gray,
@@ -512,7 +512,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(shown.loudness - hidden.loudness).toBeGreaterThan(30)
   }, 600_000)
 
-  it('组件块：组件按可填项画出来，组件文字用到的中文字形在 <head> 里声明了', async () => {
+  it('组件或块的片段：组件按可填项画出来，组件文字用到的中文字形在 <head> 里声明了', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const catalog = (library as ComponentLibrary).catalog
@@ -528,7 +528,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
           mediaUrls: [],
           compose: () => {
             const values = { text: title, accent: '#ff0000' }
-            composed = writeFilm({ canvas, blocks: [component({ values, hidden })] }, catalog)
+            composed = writeFilm({ canvas, clips: [host({ values, hidden })] }, catalog)
             return composed
           },
         },
@@ -569,7 +569,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
         mediaUrls: [],
         compose: () =>
           writeFilm(
-            { canvas, blocks: [component({ values: { text: '', accent: '#ff0000' } })] },
+            { canvas, clips: [host({ values: { text: '', accent: '#ff0000' } })] },
             catalog,
           ),
       },
@@ -602,7 +602,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
             writeFilm(
               {
                 canvas,
-                blocks: [component({ values: { text: 'Sample', accent: '#ff0000', ...values } })],
+                clips: [host({ values: { text: 'Sample', accent: '#ff0000', ...values } })],
               },
               catalog,
             ),
@@ -627,11 +627,8 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const catalog = (library as ComponentLibrary).catalog
     const canvas = { width: 1920, height: 1080 }
-    const stored = writeFilm(
-      { canvas, blocks: [component({ values: { accent: '#ff0000' } })] },
-      catalog,
-    )
-    // 和编辑器右侧栏改值一样：用 SDK 把块上的取值整串换掉，存出来的文件再过渲染前的检查
+    const stored = writeFilm({ canvas, clips: [host({ values: { accent: '#ff0000' } })] }, catalog)
+    // 和编辑器右侧栏改值一样：用 SDK 把片段上的取值整串换掉，存出来的文件再过渲染前的检查
     const session = await openComposition(stored)
     session.setAttribute(
       'title-1',
@@ -661,12 +658,12 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(meanDifference(plain, changed)).toBeGreaterThan(8)
   }, 600_000)
 
-  it('音频块：有声音，音量调低后更轻，循环时音频比块短也一直有声，隐藏后没有声音', async () => {
+  it('音频片段：有声音，音量调低后更轻，循环时音频比片段短也一直有声，隐藏后没有声音', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const tone = `${origin}/tone.m4a`
-    /** 1.5 秒的音频放进 0–3 秒的块；和导出时一样，交给渲染的是 `localizedFilm` 那一份。 */
-    const render = async (id: string, overrides: Partial<AudioBlock>) => {
+    /** 1.5 秒的音频放进 0–3 秒的片段；和导出时一样，交给渲染的是 `localizedFilm` 那一份。 */
+    const render = async (id: string, overrides: Partial<AudioClip>) => {
       const rendered = await worker.render(
         {
           id,
@@ -674,7 +671,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
           mediaUrls: [tone],
           compose: (paths) =>
             localizedFilm(
-              { canvas: FRAME, blocks: [audio({ src: tone, duration: 3000, ...overrides })] },
+              { canvas: FRAME, clips: [audio({ src: tone, duration: 3000, ...overrides })] },
               paths,
               (library as ComponentLibrary).catalog,
             ),
@@ -709,7 +706,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const full = await render('audio-full', {})
     const half = await render('audio-half', { volume: 0.5 })
     const looped = await render('audio-loop', { loop: true })
-    // 编辑器里块不会比素材长，循环只在把放满的块调快以后才用得上
+    // 编辑器里片段不会比素材长，循环只在把放满的片段调快以后才用得上
     const loopedFast = await render('audio-loop-fast', { loop: true, playbackRate: 2 })
     const hidden = await render('audio-hidden', { hidden: true })
 
@@ -724,12 +721,12 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(hidden.duration).toBeLessThan(3.15)
   }, 600_000)
 
-  it('画面块的声音：增益大于 0 dB 更响，淡入淡出时头尾更轻，静音后没有声音', async () => {
+  it('视频片段的声音：增益大于 0 dB 更响，淡入淡出时头尾更轻，静音后没有声音', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const gray = `${origin}/gray.mp4`
-    /** 7 秒的灰片放进 0–6 秒的块；量开头、中间、结尾各 0.8 秒的响度，没有音轨时是 null。 */
-    const render = async (id: string, overrides: Partial<PictureBlock>) => {
+    /** 7 秒的灰片放进 0–6 秒的片段；量开头、中间、结尾各 0.8 秒的响度，没有音轨时是 null。 */
+    const render = async (id: string, overrides: Partial<VideoClip>) => {
       const rendered = await worker.render(
         {
           id,
@@ -739,7 +736,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
             localizedFilm(
               {
                 canvas: FRAME,
-                blocks: [picture({ jobId: GRAY_JOB, src: gray, duration: 6000, ...overrides })],
+                clips: [video({ jobId: GRAY_JOB, src: gray, duration: 6000, ...overrides })],
               },
               paths,
               (library as ComponentLibrary).catalog,
@@ -774,11 +771,11 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(muted === null ? Infinity : plain.middle - muted.middle).toBeGreaterThan(30)
   }, 900_000)
 
-  it('速度：2 倍的画面块放的是素材后面的画面，2 倍的音频块提前放完', async () => {
+  it('速度：2 倍的视频片段放的是素材后面的画面，2 倍的音频片段提前放完', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const [steps, tone] = [`${origin}/steps.mp4`, `${origin}/tone.m4a`]
-    /** 6 秒的色块片放进 0–3 秒的画面块，1.5 秒的音频放进 0–3 秒的音频块，两个块用同一个速度。 */
+    /** 6 秒的色块片放进 0–3 秒的视频片段，1.5 秒的音频放进 0–3 秒的音频片段，两个片段用同一个速度。 */
     const render = async (id: string, playbackRate: number) => {
       const rendered = await worker.render(
         {
@@ -789,8 +786,8 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
             localizedFilm(
               {
                 canvas: FRAME,
-                blocks: [
-                  picture({ src: steps, duration: 3000, muted: true, playbackRate }),
+                clips: [
+                  video({ src: steps, duration: 3000, muted: true, playbackRate }),
                   audio({ src: tone, duration: 3000, playbackRate }),
                 ],
               },
@@ -822,7 +819,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(normal.late - fast.late).toBeGreaterThan(30)
   }, 600_000)
 
-  it('素材没有音轨：画面块写成静音照常导出、画面正常；标成有声音时导出失败，说清哪里不对', async () => {
+  it('素材没有音轨：视频片段写成静音照常导出、画面正常；标成有声音时导出失败，说清哪里不对', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     // 色块片生成时就没有音轨
@@ -835,7 +832,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
           mediaUrls: [steps],
           compose: (paths) =>
             localizedFilm(
-              { canvas: FRAME, blocks: [picture({ src: steps, duration: 3000, muted })] },
+              { canvas: FRAME, clips: [video({ src: steps, duration: 3000, muted })] },
               paths,
               (library as ComponentLibrary).catalog,
             ),
@@ -853,11 +850,12 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     }
     await expect(render('silent-sounding', false)).rejects.toMatchObject({
       code: 'media-mismatch',
-      message: '有镜头标了有声音，但素材文件里没有声音；把这个镜头设成静音后再导出',
+      message:
+        '有视频片段标记为有声音，但素材文件没有声音，无法导出；请将该视频片段设为静音后重新导出',
     })
   }, 600_000)
 
-  it('成片里的块全隐藏了：照样导出，是一段同样长的黑片，没有音轨', async () => {
+  it('成片里的片段全隐藏了：照样导出，是一段同样长的黑片，没有音轨', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const clip = `${origin}/clip.mp4`
@@ -870,7 +868,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
           writeFilm(
             {
               canvas: FRAME,
-              blocks: [picture({ src: paths[clip] ?? clip, duration: 2000, hidden: true })],
+              clips: [video({ src: paths[clip] ?? clip, duration: 2000, hidden: true })],
             },
             (library as ComponentLibrary).catalog,
           ),

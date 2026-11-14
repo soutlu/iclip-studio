@@ -624,7 +624,7 @@ class ConversationService:
         if found is None:
             raise ValidationFailed(_EMPTY_FILM)
         film = await films.check(principal, conversation.id, found.html)
-        # 只有组件块的成片没有素材也能导出；一个块都没有时总长是 0
+        # 只有组件或块的片段的成片没有素材也能导出；一个片段都没有时总长是 0
         if film.duration_ms == 0:
             raise ValidationFailed(_EMPTY_FILM)
         return await exports.start(

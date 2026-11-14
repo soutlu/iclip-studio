@@ -20,15 +20,15 @@ import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Input, Select } from '@/shared/ui/field'
 import { Switch } from '@/shared/ui/switch'
-import { groupShift, trimBounds, trimmed, type SourceLength, type Timing } from './block-edit'
+import { groupShift, trimBounds, trimmed, type SourceLength, type Timing } from './clip-edit'
 import type { CatalogVariable, ComponentCatalog, VariableValue } from './composition/catalog'
 import {
-  isMediaBlock,
-  type BlockAttribute,
-  type BlockKind,
-  type ComponentBlock,
-  type FilmBlock,
-  type MediaBlock,
+  isMediaClip,
+  type ClipAttribute,
+  type ClipKind,
+  type FilmClip,
+  type HostClip,
+  type MediaClip,
 } from './composition/film'
 import { Keys, Tool } from './editor-toolbar'
 import {
@@ -45,37 +45,37 @@ import {
 type Values = Readonly<Record<string, VariableValue>>
 
 type Props = {
-  /** 时间线上选中的块。 */
-  selected: readonly FilmBlock[]
-  /** 成片里所有的块：改时间时按它们算落在哪。 */
-  blocks: readonly FilmBlock[]
+  /** 时间线上选中的片段。 */
+  selected: readonly FilmClip[]
+  /** 成片里所有的片段：改时间时按它们算落在哪。 */
+  clips: readonly FilmClip[]
   catalog: ComponentCatalog
   sourceMs: SourceLength
   /** 这个地址的素材确认没有声音；有声音、还不知道时是 false。 */
   silentSource: (src: string) => boolean
   onHide: (id: string, hidden: boolean) => void
-  /** 删掉选中的块，和按 Delete 一样。 */
+  /** 删掉选中的片段，和按 Delete 一样。 */
   onRemove: () => void
   onRestart: (starts: ReadonlyMap<string, number>) => void
   onRetime: (timings: ReadonlyMap<string, Timing>) => void
-  /** 把组件块 `id` 的可填项取值整个换成 `values`。 */
+  /** 把组件或块的片段 `id` 的可填项取值整个换成 `values`。 */
   onValues: (id: string, values: Values) => void
-  /** 改块 `id` 上的几个属性（null 是去掉），算一步撤销。 */
+  /** 改片段 `id` 上的几个属性（null 是去掉），算一步撤销。 */
   onAttributes: (id: string, changes: AttributeChanges) => void
   /** 焦点进出「时间」「媒体」里输数值的框：在里面时 Esc 归输入框，放弃刚输入的。 */
   onTextEditing: (editing: boolean) => void
 }
 
-type AttributeChanges = Readonly<Partial<Record<BlockAttribute, string | null>>>
+type AttributeChanges = Readonly<Partial<Record<ClipAttribute, string | null>>>
 
-const KIND_LABEL: Record<BlockKind, string> = { picture: '视频', component: '组件', audio: '音频' }
+const KIND_LABEL: Record<ClipKind, string> = { video: '视频', host: '组件', audio: '音频' }
 
 // 照参照的工作台：改可填项停下 300 毫秒再写进成片
 const COMMIT_DELAY_MS = 300
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i
 
-const SILENT_SOURCE_TEXT = '这段素材没有声音'
+const SILENT_SOURCE_TEXT = '该素材没有声音，无法取消静音'
 
 const formatSeconds = (ms: number) => (ms / 1000).toFixed(2)
 
@@ -91,7 +91,7 @@ const parseSeconds = (text: string): number | null => {
 }
 
 /**
- * 右侧栏：选中一个块时显示它的名字、种类和可以改的分组；没选中、选中多个时各有一个说明。
+ * 右侧栏：选中一个片段时显示它的名字、种类和可以改的分组；没选中、选中多个时各有一个说明。
  */
 export function FilmInspector({ selected, ...rest }: Props) {
   const [only] = selected
@@ -101,27 +101,27 @@ export function FilmInspector({ selected, ...rest }: Props) {
       {only === undefined ? (
         <div className="wf-inspector-empty">
           <Icon decorative name="select-tool" size="lg" />
-          <h3 className="wf-inspector-empty-title">没有选中</h3>
-          <p>在时间线上点一个块，在这里改它</p>
+          <h3 className="wf-inspector-empty-title">尚未选中片段</h3>
+          <p>在时间线上选中片段后可在此修改</p>
         </div>
       ) : selected.length > 1 ? (
         <div className="wf-inspector-multi">
           <div className="wf-inspector-multi-head">
             <Icon decorative name="layers" size="sm" />
-            <h3>选中了 {selected.length} 个块</h3>
+            <h3>已选中 {selected.length} 个片段</h3>
           </div>
-          <ul aria-label="选中的块" className="wf-inspector-multi-list">
-            {selected.map((block) => (
-              <li key={block.id}>
-                <span className="wf-inspector-multi-name">{block.label}</span>
-                <span className="wf-inspector-kind">{KIND_LABEL[block.kind]}</span>
+          <ul aria-label="选中的片段" className="wf-inspector-multi-list">
+            {selected.map((clip) => (
+              <li key={clip.id}>
+                <span className="wf-inspector-multi-name">{clip.label}</span>
+                <span className="wf-inspector-kind">{KIND_LABEL[clip.kind]}</span>
               </li>
             ))}
           </ul>
-          <p className="wf-inspector-note">只选中一个块时，才能在这里改它</p>
+          <p className="wf-inspector-note">已选中多个片段，无法在此修改；请只选中一个片段</p>
         </div>
       ) : (
-        <BlockInspector block={only} key={only.id} {...rest} />
+        <ClipInspector clip={only} key={only.id} {...rest} />
       )}
     </aside>
   )
@@ -134,10 +134,10 @@ type Group = {
   content: ReactNode
 }
 
-/** 选中一个块：头部是名字、种类和隐藏、删除；下面的分组一次只展开一个，收起的在标题旁写摘要。 */
-function BlockInspector({
-  block,
-  blocks,
+/** 选中一个片段：头部是名字、种类和隐藏、删除；下面的分组一次只展开一个，收起的在标题旁写摘要。 */
+function ClipInspector({
+  clip,
+  clips,
   catalog,
   sourceMs,
   silentSource,
@@ -148,18 +148,18 @@ function BlockInspector({
   onValues,
   onAttributes,
   onTextEditing,
-}: Omit<Props, 'selected'> & { block: FilmBlock }) {
+}: Omit<Props, 'selected'> & { clip: FilmClip }) {
   const groups: Group[] = []
-  if (block.kind === 'component') {
-    const variables = catalog.items.find((item) => item.name === block.component)?.variables ?? []
+  if (clip.kind === 'host') {
+    const variables = catalog.items.find((item) => item.name === clip.component)?.variables ?? []
     const text = variables.find((variable) => variable.type === 'string')
     groups.push({
       id: 'content',
       title: '内容',
-      summary: text === undefined ? '' : String(block.values[text.id] ?? text.default),
+      summary: text === undefined ? '' : String(clip.values[text.id] ?? text.default),
       content: (
         <ContentFields
-          block={block}
+          clip={clip}
           fonts={Object.keys(catalog.fonts).toSorted()}
           onValues={onValues}
           variables={variables}
@@ -170,11 +170,11 @@ function BlockInspector({
   groups.push({
     id: 'time',
     title: '时间',
-    summary: `${formatSeconds(block.start)} – ${formatSeconds(block.start + block.duration)} 秒`,
+    summary: `${formatSeconds(clip.start)} – ${formatSeconds(clip.start + clip.duration)} 秒`,
     content: (
       <TimeFields
-        block={block}
-        blocks={blocks}
+        clip={clip}
+        clips={clips}
         onEditing={onTextEditing}
         onRestart={onRestart}
         onRetime={onRetime}
@@ -182,45 +182,39 @@ function BlockInspector({
       />
     ),
   })
-  if (isMediaBlock(block))
+  if (isMediaClip(clip))
     groups.push({
       id: 'media',
       title: '媒体',
       summary: '',
       content: (
         <MediaFields
-          block={block}
-          onChange={(changes) => onAttributes(block.id, changes)}
+          clip={clip}
+          onChange={(changes) => onAttributes(clip.id, changes)}
           onEditing={onTextEditing}
-          silent={block.kind === 'picture' && silentSource(block.src)}
-          sourceMs={sourceMs(block)}
+          silent={clip.kind === 'video' && silentSource(clip.src)}
+          sourceMs={sourceMs(clip)}
         />
       ),
     })
-  // 照参照的工作台：组件块先展开「内容」，别的块展开第一个分组；再点展开着的分组就全收起
+  // 照参照的工作台：组件或块的片段先展开「内容」，别的片段展开第一个分组；再点展开着的分组就全收起
   const [open, setOpen] = useState<Group['id'] | null>(groups[0]?.id ?? null)
-  const sound = block.kind === 'audio'
-  const hideLabel = sound ? (block.hidden ? '取消静音' : '静音') : block.hidden ? '显示' : '隐藏'
+  const sound = clip.kind === 'audio'
+  const hideLabel = sound ? (clip.hidden ? '取消静音' : '静音') : clip.hidden ? '显示' : '隐藏'
   const baseId = useId()
 
   return (
     <>
       <header className="wf-inspector-head">
-        <h3 className="wf-inspector-name">{block.label}</h3>
-        <span className="wf-inspector-kind">{KIND_LABEL[block.kind]}</span>
+        <h3 className="wf-inspector-name">{clip.label}</h3>
+        <span className="wf-inspector-kind">{KIND_LABEL[clip.kind]}</span>
         <span className="wf-inspector-actions">
           <Tool
             icon={
-              sound
-                ? block.hidden
-                  ? 'audio-off'
-                  : 'audio'
-                : block.hidden
-                  ? 'excluded'
-                  : 'included'
+              sound ? (clip.hidden ? 'audio-off' : 'audio') : clip.hidden ? 'excluded' : 'included'
             }
             label={hideLabel}
-            onClick={() => onHide(block.id, !block.hidden)}
+            onClick={() => onHide(clip.id, !clip.hidden)}
             tip={hideLabel}
           />
           <Tool
@@ -279,15 +273,15 @@ function BlockInspector({
  * 都按拖动时的规则落位，放不下时落到规则允许的最近处。
  */
 function TimeFields({
-  block,
-  blocks,
+  clip,
+  clips,
   sourceMs,
   onRestart,
   onRetime,
   onEditing,
 }: {
-  block: FilmBlock
-  blocks: readonly FilmBlock[]
+  clip: FilmClip
+  clips: readonly FilmClip[]
   sourceMs: SourceLength
   onRestart: (starts: ReadonlyMap<string, number>) => void
   onRetime: (timings: ReadonlyMap<string, Timing>) => void
@@ -295,23 +289,23 @@ function TimeFields({
 }) {
   // 框还聚焦着就被卸掉（成片被换成别处存的一版）时收不到失焦，这里补一下
   useEffect(() => () => onEditing(false), [onEditing])
-  const end = block.start + block.duration
+  const end = clip.start + clip.duration
   const startAt = (ms: number) => {
-    const { delta } = groupShift(block, new Set([block.id]), blocks, ms - block.start, block.track)
-    if (delta !== 0) onRestart(new Map([[block.id, block.start + delta]]))
+    const { delta } = groupShift(clip, new Set([clip.id]), clips, ms - clip.start, clip.track)
+    if (delta !== 0) onRestart(new Map([[clip.id, clip.start + delta]]))
   }
   const endAt = (ms: number) => {
-    const timing = trimmed(block, 'end', ms, trimBounds(block, 'end', blocks, sourceMs(block)))
-    if (timing.duration !== block.duration) onRetime(new Map([[block.id, timing]]))
+    const timing = trimmed(clip, 'end', ms, trimBounds(clip, 'end', clips, sourceMs(clip)))
+    if (timing.duration !== clip.duration) onRetime(new Map([[clip.id, timing]]))
   }
   return (
     <div className="wf-inspector-time">
-      <SecondsField label="开始" ms={block.start} onCommit={startAt} onEditing={onEditing} />
+      <SecondsField label="开始" ms={clip.start} onCommit={startAt} onEditing={onEditing} />
       <SecondsField label="结束" ms={end} onCommit={endAt} onEditing={onEditing} />
       <SecondsField
         label="时长"
-        ms={block.duration}
-        onCommit={(ms) => endAt(block.start + ms)}
+        ms={clip.duration}
+        onCommit={(ms) => endAt(clip.start + ms)}
         onEditing={onEditing}
       />
     </div>
@@ -388,33 +382,33 @@ const fadeAttribute = (ms: number) => {
 }
 
 /**
- * 「媒体」：文件、增益、速度、起始位置、淡入、淡出，音频块另有循环，画面块另有静音。
+ * 「媒体」：文件、增益、速度、起始位置、淡入、淡出，音频片段另有循环，视频片段另有静音。
  * 换算和上下限照参照的工作台；拖滑杆时只动这里，松手（或按一下方向键）才写进成片，一次算一步撤销。
- * 改速度不改块在成片里的时长，用掉的素材跟着变长或变短。
+ * 改速度不改片段在成片里的时长，用掉的素材跟着变长或变短。
  */
 function MediaFields({
-  block,
+  clip,
   sourceMs,
   silent,
   onChange,
   onEditing,
 }: {
-  block: MediaBlock
+  clip: MediaClip
   /** 素材的总长；还不知道时是 undefined。 */
   sourceMs: number | undefined
-  /** 画面块的素材确认没有声音。 */
+  /** 视频片段的素材确认没有声音。 */
   silent: boolean
   onChange: (changes: AttributeChanges) => void
   onEditing: (editing: boolean) => void
 }) {
-  const { volume, playbackRate, mediaStart, duration, fadeIn, fadeOut } = block
-  // 起始位置最多到「素材长 − 块长 × 速度」；素材长还不知道时只能往前调，同裁剪
+  const { volume, playbackRate, mediaStart, duration, fadeIn, fadeOut } = clip
+  // 起始位置最多到「素材长 − 片段长 × 速度」；素材长还不知道时只能往前调，同裁剪
   const mediaStartMax =
     sourceMs === undefined
       ? mediaStart
       : Math.max(0, Math.floor(sourceMs - duration * playbackRate))
-  // 照参照的工作台：画面块静音以后不再有声音可以淡入淡出
-  const audible = block.kind === 'audio' || !block.muted
+  // 照参照的工作台：视频片段静音以后不再有声音可以淡入淡出
+  const audible = clip.kind === 'audio' || !clip.muted
   const rateText = (rate: number) => `${formatNumericValue(rate)}x`
   const rateAt = (position: number) => fromUnit(RATE_RANGE, position / RATE_STEPS)
   const setGain = (gain: number) => onChange({ 'data-volume': formatAudioGain(gain) })
@@ -425,7 +419,7 @@ function MediaFields({
   const setMediaStart = (ms: number) =>
     onChange({ 'data-media-start': String(Math.min(mediaStartMax, Math.max(0, ms)) / 1000) })
   const fade = (name: 'data-fade-in' | 'data-fade-out', ms: number, other: number) => {
-    // 照参照的工作台：一端最多到块长减去另一端
+    // 照参照的工作台：一端最多到片段长减去另一端
     const max = Math.max(0, duration - other)
     return (
       <MediaSlider
@@ -450,8 +444,8 @@ function MediaFields({
     <div className="wf-inspector-rows">
       <div className="wf-field">
         <span>文件</span>
-        <span className="wf-inspector-static wf-media-file" title={block.label}>
-          {block.label}
+        <span className="wf-inspector-static wf-media-file" title={clip.label}>
+          {clip.label}
         </span>
       </div>
       <MediaSlider
@@ -510,17 +504,17 @@ function MediaFields({
           {fade('data-fade-out', fadeOut, fadeIn)}
         </>
       ) : null}
-      {block.kind === 'audio' ? (
+      {clip.kind === 'audio' ? (
         <MediaSwitch
-          checked={block.loop}
+          checked={clip.loop}
           label="循环"
           onChange={(loop) => onChange({ loop: loop ? 'true' : null })}
         />
       ) : (
         <MediaSwitch
-          // 素材没有声音时不让取消静音：标成有声音的画面块导出必定失败
-          blockedReason={silent && block.muted ? SILENT_SOURCE_TEXT : undefined}
-          checked={block.muted}
+          // 素材没有声音时不让取消静音：标成有声音的视频片段导出必定失败
+          blockedReason={silent && clip.muted ? SILENT_SOURCE_TEXT : undefined}
+          checked={clip.muted}
           label="静音"
           // 照参照的工作台：静音写 muted、去掉有声音的标记，取消静音反过来，两个不同时写
           onChange={(muted) =>
@@ -657,12 +651,12 @@ function Readout({
     inputRef.current?.focus()
     inputRef.current?.select()
   }, [editing])
-  // 框还聚焦着就被卸掉（换了选中的块）时收不到失焦，这里补一下
+  // 框还聚焦着就被卸掉（换了选中的片段）时收不到失焦，这里补一下
   useEffect(() => () => onEditing(false), [onEditing])
   if (typing === null)
     return (
       <button
-        aria-label={`${label} ${text}，点一下直接输入`}
+        aria-label={`${label} ${text}，点击可直接输入`}
         className="wf-media-readout ui-state ui-focus"
         onClick={() => {
           typedRef.current = text
@@ -714,16 +708,16 @@ function Readout({
 }
 
 /**
- * 「内容」：组件条目的可填项，一项一行。改了先留在这里，停下 300 毫秒再整串写进块；
- * 几项一起改时合成一次写。失焦、换选中的块时把没写的立刻写进去。
+ * 「内容」：组件条目的可填项，一项一行。改了先留在这里，停下 300 毫秒再整串写进片段；
+ * 几项一起改时合成一次写。失焦、换选中的片段时把没写的立刻写进去。
  */
 function ContentFields({
-  block,
+  clip,
   variables,
   fonts,
   onValues,
 }: {
-  block: ComponentBlock
+  clip: HostClip
   variables: readonly CatalogVariable[]
   fonts: readonly string[]
   onValues: (id: string, values: Values) => void
@@ -731,9 +725,9 @@ function ContentFields({
   const [pending, setPending] = useState<Values>({})
   const pendingRef = useRef<Values>({})
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const latestRef = useRef({ id: block.id, values: block.values, onValues })
+  const latestRef = useRef({ id: clip.id, values: clip.values, onValues })
   useLayoutEffect(() => {
-    latestRef.current = { id: block.id, values: block.values, onValues }
+    latestRef.current = { id: clip.id, values: clip.values, onValues }
   })
 
   const flush = useCallback(() => {
@@ -748,7 +742,7 @@ function ContentFields({
   }, [])
   useEffect(() => flush, [flush])
 
-  // 输入法还在拼字时不计时：拼音没上屏就写进块，会多存一次、预览多刷一次
+  // 输入法还在拼字时不计时：拼音没上屏就写进片段，会多存一次、预览多刷一次
   const composingRef = useRef(false)
   const schedule = () => {
     if (timerRef.current !== null) clearTimeout(timerRef.current)
@@ -764,7 +758,7 @@ function ContentFields({
     schedule()
   }
 
-  if (variables.length === 0) return <p className="wf-inspector-note">这个组件没有可以填的内容</p>
+  if (variables.length === 0) return <p className="wf-inspector-note">暂无可填项</p>
   return (
     <div
       className="wf-inspector-rows"
@@ -774,7 +768,7 @@ function ContentFields({
     >
       {variables.map((variable) => (
         <VariableRow
-          current={pending[variable.id] ?? block.values[variable.id] ?? variable.default}
+          current={pending[variable.id] ?? clip.values[variable.id] ?? variable.default}
           fonts={fonts}
           key={variable.id}
           onChange={(value) => change(variable.id, value)}
@@ -881,7 +875,7 @@ function VariableControl({
     case 'number':
       return <NumberControl current={current} id={id} onChange={onChange} variable={variable} />
     case 'image':
-      return <span className="wf-inspector-static">图片暂不支持在这里修改</span>
+      return <span className="wf-inspector-static">暂不支持在此修改图片</span>
     case 'string':
       return (
         <Input

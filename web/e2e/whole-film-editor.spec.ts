@@ -9,12 +9,12 @@ const openWholeFilm = async (page: Page, panel: Locator) => {
   return dialog
 }
 
-const draftSaved = (page: Page, blocks: number) =>
+const draftSaved = (page: Page, clips: number) =>
   page.waitForRequest(
     (request) =>
       request.method() === 'PUT' &&
       request.url().includes('/whole-film/draft') &&
-      ((request.postDataJSON() as { html: string }).html.match(/<video /g) ?? []).length === blocks,
+      ((request.postDataJSON() as { html: string }).html.match(/<video /g) ?? []).length === clips,
   )
 
 const readyPlayer = async (dialog: Locator) => {
@@ -37,7 +37,7 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   const dialog = await openWholeFilm(page, panel)
   const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
   const transport = dialog.getByRole('group', { name: '播放控制' })
-  await expect(dialog.getByText('成片还是空的；加入内容后可以在这里预览')).toBeVisible()
+  await expect(dialog.getByText('暂无成片内容，加入内容后可在此预览')).toBeVisible()
   await expect(dialog.getByRole('button', { name: '导出', exact: true })).toHaveAttribute(
     'aria-disabled',
     'true',
@@ -75,9 +75,9 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   await expect(transport.locator('.wf-clock')).toContainText('00:00.00 /')
   await expect.poll(playerTime).toBeLessThan(0.1)
 
-  // 缩放：放大一档块变宽一倍，读数从「适应」变成百分比；点「适应宽度」回去
-  const block = dialog.getByRole('group', { name: '第 1 行' }).locator('[data-block-id]').first()
-  const widthOf = async () => (await block.boundingBox())?.width ?? 0
+  // 缩放：放大一档片段变宽一倍，读数从「适应」变成百分比；点「适应宽度」回去
+  const clip = dialog.getByRole('group', { name: '第 1 行' }).locator('[data-clip-id]').first()
+  const widthOf = async () => (await clip.boundingBox())?.width ?? 0
   const fitted = await widthOf()
   await expect(toolbar.getByText('适应', { exact: true })).toBeVisible()
   await toolbar.getByRole('button', { name: '放大时间线' }).click()
@@ -90,13 +90,13 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   await expect(toolbar.getByText('适应', { exact: true })).toBeVisible()
   expect(Math.abs((await widthOf()) - fitted)).toBeLessThan(1)
 
-  // 关掉缩略图：块上不画画面，只剩名字和声音
-  await expect(block.locator('.wf-clip-frames')).toBeVisible()
+  // 关掉缩略图：片段上不画画面，只剩名字和声音
+  await expect(clip.locator('.wf-clip-frames')).toBeVisible()
   await toolbar.getByRole('button', { name: '显示缩略图' }).click()
-  await expect(block.locator('.wf-clip-frames')).toBeHidden()
-  await expect(block.locator('.wf-clip-label')).toBeVisible()
+  await expect(clip.locator('.wf-clip-frames')).toBeHidden()
+  await expect(clip.locator('.wf-clip-label')).toBeVisible()
   await toolbar.getByRole('button', { name: '显示缩略图' }).click()
-  await expect(block.locator('.wf-clip-frames')).toBeVisible()
+  await expect(clip.locator('.wf-clip-frames')).toBeVisible()
 
   const undone = draftSaved(page, 1)
   await toolbar.getByRole('button', { name: '撤销' }).click()
@@ -238,7 +238,7 @@ test('播放条：倍速和静音对素材、成片都生效且换播放器后�
   await shortcuts.click()
   const sheet = page.getByRole('dialog', { name: '快捷键' })
   await expect(sheet).toBeVisible()
-  await expect(sheet.getByText('打开或关闭循环播放')).toBeVisible()
+  await expect(sheet.getByText('开启或关闭循环播放')).toBeVisible()
   await expect(sheet.getByText('全屏或退出全屏')).toBeVisible()
   const sheetBox = await boxOf(sheet)
   expect(sheetBox.y + sheetBox.height).toBeLessThanOrEqual(shortcutsTop)
@@ -278,7 +278,7 @@ test('播放条：倍速和静音对素材、成片都生效且换播放器后�
   await expect.poll(async () => [await boxOf(preview), await boxOf(transport)]).toEqual(before)
 })
 
-/** 存下来的成片里名字是 `title` 的组件块的属性；没有时是 null。 */
+/** 存下来的成片里名字是 `title` 的组件或块的片段的属性；没有时是 null。 */
 const savedComponent = (html: string, title: string) => {
   const tag = new RegExp(`<div [^>]*class="clip component"[^>]*data-label="${title}"[^>]*>`).exec(
     html,
@@ -319,8 +319,8 @@ test('组件栏：搜到组件点「加到播放头」、拖一个到时间线�
     .getByRole('button', { name: /^生成 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
-  const { html: withPicture } = (await first).postDataJSON() as { html: string }
-  const pictureSeconds = Number(/<video [^>]*data-duration="([^"]+)"/.exec(withPicture)?.[1])
+  const { html: withVideo } = (await first).postDataJSON() as { html: string }
+  const videoSeconds = Number(/<video [^>]*data-duration="([^"]+)"/.exec(withVideo)?.[1])
 
   const side = dialog.getByRole('complementary', { name: '组件和音频' })
   await side.getByRole('searchbox', { name: '搜索组件' }).fill('渐变')
@@ -333,7 +333,7 @@ test('组件栏：搜到组件点「加到播放头」、拖一个到时间线�
   await scene.hover()
   await expect(add).toHaveCSS('opacity', '1')
 
-  // 播放头在 0：第一行这时有画面块，组件放进它下面新开的一行
+  // 播放头在 0：第一行这时有视频片段，组件放进它下面新开的一行
   const added = draftSavedWith(page, (html) => savedComponent(html, '测试画面') !== null)
   await add.click()
   const placed = savedComponent(((await added).postDataJSON() as { html: string }).html, '测试画面')
@@ -366,19 +366,19 @@ test('组件栏：搜到组件点「加到播放头」、拖一个到时间线�
     )
     .toEqual({ width: true, height: true, centered: true })
 
-  // 拖一个组件到第一行画面块后面的空处（离各个吸附点都远）：落在指针的位置
+  // 拖一个组件到第一行视频片段后面的空处（离各个吸附点都远）：落在指针的位置
   await side.getByRole('searchbox', { name: '搜索组件' }).fill('')
   const overlay = side.getByRole('group', { name: '测试叠加，4 秒' })
   const row = dialog.getByRole('group', { name: '第 1 行' })
-  // 6 秒长、从 0 开始的那个块量出每秒多少像素
+  // 6 秒长、从 0 开始的那个片段量出每秒多少像素
   const sceneBox = await dialog
     .getByRole('group', { name: '第 2 行' })
-    .locator('[data-block-id]')
+    .locator('[data-clip-id]')
     .first()
     .boundingBox()
   const lane = await row.boundingBox()
   if (sceneBox === null || lane === null) throw new Error('时间线尚未布局')
-  const target = pictureSeconds + 2.5
+  const target = videoSeconds + 2.5
   const dropX = sceneBox.x + (sceneBox.width / 6) * target
   const from = await overlay.boundingBox()
   if (from === null) throw new Error('卡片尚未布局')
@@ -408,7 +408,7 @@ test('组件栏：搜到组件点「加到播放头」、拖一个到时间线�
   await undone
 })
 
-test('右侧栏：选中组件块改文字可填项，存下来、预览里看得到；在「时间」里改开始；点空白处回到没有选中，撤销回去', async ({
+test('右侧栏：选中组件或块的片段改文字可填项，存下来、预览里看得到；在「时间」里改开始；点空白处回到没有选中，撤销回去', async ({
   page,
 }) => {
   test.setTimeout(60_000)
@@ -416,7 +416,7 @@ test('右侧栏：选中组件块改文字可填项，存下来、预览里看�
   const panel = await openConversation(page, '夜景延时素材生成')
   const dialog = await openWholeFilm(page, panel)
   const inspector = dialog.getByRole('complementary', { name: '属性' })
-  await expect(inspector.getByRole('heading', { name: '没有选中' })).toBeVisible()
+  await expect(inspector.getByRole('heading', { name: '尚未选中片段' })).toBeVisible()
 
   const side = dialog.getByRole('complementary', { name: '组件和音频' })
   await side.getByRole('searchbox', { name: '搜索组件' }).fill('可填项')
@@ -472,7 +472,7 @@ test('右侧栏：选中组件块改文字可填项，存下来、预览里看�
   const lane = await row.boundingBox()
   if (lane === null) throw new Error('时间线尚未布局')
   await page.mouse.click(lane.x + 6, lane.y + lane.height / 2)
-  await expect(inspector.getByRole('heading', { name: '没有选中' })).toBeVisible()
+  await expect(inspector.getByRole('heading', { name: '尚未选中片段' })).toBeVisible()
 
   const undone = draftSavedWith(page, (html) => savedComponent(html, '测试可填项')?.start === 0)
   await dialog
@@ -482,7 +482,7 @@ test('右侧栏：选中组件块改文字可填项，存下来、预览里看�
   await undone
 })
 
-/** 存下来的成片里的音频块，写成「名字@行号 起点 时长」，按起点排。 */
+/** 存下来的成片里的音频片段，写成「名字@行号 起点 时长」，按起点排。 */
 const savedAudio = (html: string) =>
   [...html.matchAll(/<audio [^>]*>/g)]
     .map(([tag]) => {
@@ -510,8 +510,8 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、�
     .getByRole('button', { name: /^生成 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
-  const { html: withPicture } = (await first).postDataJSON() as { html: string }
-  const pictureSeconds = Number(/<video [^>]*data-duration="([^"]+)"/.exec(withPicture)?.[1])
+  const { html: withVideo } = (await first).postDataJSON() as { html: string }
+  const videoSeconds = Number(/<video [^>]*data-duration="([^"]+)"/.exec(withVideo)?.[1])
   const progress = dialog
     .getByRole('group', { name: '播放控制' })
     .getByRole('slider', { name: '播放进度' })
@@ -551,16 +551,16 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、�
   await expect(music).toBeVisible()
   await expect(guitar).toContainText('00:30 · 已使用')
   await expect(progress).toHaveAttribute('aria-valuetext', '00:01.00 / 00:31.00')
-  expect(pictureSeconds).toBeLessThan(31)
+  expect(videoSeconds).toBeLessThan(31)
 
-  // 点「已使用」的那一行：选中它对应的块
+  // 点「已使用」的那一行：选中它对应的片段
   await guitar.getByRole('button', { name: '轻快原声吉他，适合秋季穿搭，已使用' }).click()
   await expect(music.getByRole('button', { name: /^选中：/ })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
 
-  // 拖上传的那条到声音行里这一块后面的空处：吸到它的结尾
+  // 拖上传的那条到声音行里这个片段后面的空处：吸到它的结尾
   const box = await music.boundingBox()
   const lane = await soundRow.boundingBox()
   const from = await uploaded.boundingBox()
@@ -604,14 +604,14 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、�
   await expect(uploaded).not.toContainText('已使用')
 })
 
-/** 存下来的成片里第一个 `tag` 块上的属性 `name`；不写值的属性是空串，没有这个属性时是 undefined。 */
+/** 存下来的成片里第一个 `tag` 片段上的属性 `name`；不写值的属性是空串，没有这个属性时是 undefined。 */
 const savedAttribute = (html: string, tag: 'video' | 'audio', name: string) => {
   const element = new RegExp(`<${tag} [^>]*>`).exec(html)?.[0] ?? ''
   const found = new RegExp(` ${name}(?:="([^"]*)")?(?=[ >])`).exec(element)
   return found === null ? undefined : (found[1] ?? '')
 }
 
-test('右侧栏「媒体」：音频块拉满增益、打开循环写进文件；画面块调成 2 倍速，块长不变、能拉到的最长减半', async ({
+test('右侧栏「媒体」：音频片段拉满增益、打开循环写进文件；视频片段调成 2 倍速，片段长不变、能拉到的最长减半', async ({
   page,
 }) => {
   test.setTimeout(60_000)
@@ -658,7 +658,7 @@ test('右侧栏「媒体」：音频块拉满增益、打开循环写进文件�
   await inspector.getByRole('switch', { name: '循环' }).click()
   await looped
 
-  // 画面块（选中后展开的是「时间」）：先把时长拉到素材能放的最长
+  // 视频片段（选中后展开的是「时间」）：先把时长拉到素材能放的最长
   await dialog
     .getByRole('group', { name: '第 1 行' })
     .getByRole('button', { name: /^选中：A · / })
@@ -699,6 +699,6 @@ test('成片编辑器在窄屏上纵向排开', async ({ page }) => {
   // 右侧栏接在时间线下面，按内容高，不被挤成看不见
   const inspector = dialog.getByRole('complementary', { name: '属性' })
   await inspector.scrollIntoViewIfNeeded()
-  await expect(inspector.getByRole('heading', { name: '没有选中' })).toBeVisible()
+  await expect(inspector.getByRole('heading', { name: '尚未选中片段' })).toBeVisible()
   expect((await inspector.boundingBox())?.height ?? 0).toBeGreaterThan(80)
 })
