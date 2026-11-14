@@ -67,7 +67,12 @@ import {
 } from './materials'
 import { landingOn, onRow, rowOpening, type RowTarget, type Zone } from './placement'
 import { previewDocument, previewRuntimeSrc } from './preview-document'
-import { PreviewPlayer, type PlaybackSettings, type PreviewControl } from './preview-player'
+import {
+  PreviewPlayer,
+  type PlaybackSettings,
+  type PreviewControl,
+  type PreviewPageAddress,
+} from './preview-player'
 import { PreviewTransport } from './preview-transport'
 import { aroundPlayhead } from './selection'
 import { rowMoveDirection } from './stacking'
@@ -82,7 +87,7 @@ import {
 } from './timeline-scale'
 import { useFilmSession, type NewAudio } from './use-film-session'
 import { useWholeFilmExport } from './use-whole-film-export'
-import { useWholeFilmDraftQuery } from './whole-film.api'
+import { useWholeFilmDraftQuery, useWholeFilmPreviewQuery } from './whole-film.api'
 import './whole-film.css'
 
 type Props = {
@@ -547,19 +552,34 @@ function EditorBody({
     }
   })
 
-  // 编辑时 SDK 不改 <head>：按片段重新写出整份（和渲染服务存下的一样）再交给预览
-  const srcdoc = useMemo(
+  const previewQuery = useWholeFilmPreviewQuery(conversationId)
+  const previewPage: PreviewPageAddress = previewQuery.isError
+    ? {
+        kind: 'failed',
+        message: errorMessageOf(previewQuery.error, '预览加载失败'),
+        onRetry: () => void previewQuery.refetch(),
+      }
+    : previewQuery.data === undefined
+      ? { kind: 'pending' }
+      : { kind: 'ready', origin: previewQuery.data.origin, token: previewQuery.data.token }
+  const previewOrigin = previewQuery.data?.origin
+  // 编辑时 SDK 不改 <head>：按片段重新写出整份（和渲染服务存下的一样）再交给预览。
+  // 成片在预览页里运行，组件库和运行库都从预览域名取，和它同源
+  const previewFilm = useMemo(
     () =>
-      film === null || clips.length === 0
+      film === null || clips.length === 0 || previewOrigin === undefined
         ? undefined
-        : previewDocument(
-            writeFilm({ canvas: film.canvas, clips: [...clips] }, catalog),
-            catalog,
-            window.location.origin,
-          ),
-    [film, clips, catalog],
+        : {
+            html: previewDocument(
+              writeFilm({ canvas: film.canvas, clips: [...clips] }, catalog),
+              catalog,
+              previewOrigin,
+            ),
+            runtimeSrc: previewRuntimeSrc(catalog, previewOrigin),
+          },
+    [film, clips, catalog, previewOrigin],
   )
-  const playBlocked = srcdoc === undefined ? EMPTY_TEXT : undefined
+  const playBlocked = film === null || clips.length === 0 ? EMPTY_TEXT : undefined
 
   const exporting = useWholeFilmExport(conversationId, session.settle)
   const exportBlocked = clips.length === 0 ? '成片暂无内容，无法导出；请先加入内容' : undefined
@@ -663,15 +683,15 @@ function EditorBody({
           <PreviewPlayer
             backdrop={shown === undefined ? undefined : videoSnapshotUrl(shown.src, 320)}
             controlRef={previewRef}
+            film={previewFilm}
             height={film?.canvas.height ?? DEFAULT_CANVAS.height}
             message={playBlocked}
             onBuffered={setBuffered}
             onBuffering={setBuffering}
             onPlaying={setPlaying}
             onTime={setPlayheadMs}
+            page={previewPage}
             playback={playback}
-            runtimeSrc={previewRuntimeSrc(catalog, window.location.origin)}
-            srcdoc={srcdoc}
             width={film?.canvas.width ?? DEFAULT_CANVAS.width}
           >
             {buffering ? <MediaBuffering /> : null}

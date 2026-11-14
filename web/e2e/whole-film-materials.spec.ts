@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { openConversation } from './helpers'
+import { openConversation, wholeFilmPreviewPage } from './helpers'
 
 const CONVERSATION = '无图分镜草稿'
 
@@ -121,7 +121,7 @@ const savedClips = (page: Page) =>
   }, conversationIdOf(page))
 
 const readyPlayer = async (dialog: Locator) => {
-  const player = dialog.getByRole('region', { name: '预览' }).locator('hyperframes-player')
+  const player = wholeFilmPreviewPage(dialog).locator('hyperframes-player')
   await expect
     .poll(() =>
       player.evaluateAll(
@@ -639,8 +639,7 @@ test('换行：把片段拖到最下面的空行新开一行，再拖回去；�
    * 改动成片后预览会换一个播放器，看后来的那个；带上行号才认得出它已经换成新的成片。
    */
   const previewStack = () =>
-    dialog
-      .getByRole('region', { name: '预览' })
+    wholeFilmPreviewPage(dialog)
       .locator('hyperframes-player')
       .last()
       .frameLocator('iframe')
@@ -707,8 +706,7 @@ test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来�
   await expect.poll(() => savedClips(page)).toHaveLength(1)
   await readyPlayer(dialog)
   // 改动成片后预览会换一个播放器，换的那一下新旧两个都在：看后来的那个
-  const picture = dialog
-    .getByRole('region', { name: '预览' })
+  const picture = wholeFilmPreviewPage(dialog)
     .locator('hyperframes-player')
     .last()
     .frameLocator('iframe')
@@ -1647,8 +1645,7 @@ test('组件那一行在画面行上面：Enter 接的镜头落在画面区第�
   // 预览里的音频片段按预览的方式加载，播放以后读得出来
   const transport = dialog.getByRole('group', { name: '播放控制' })
   await transport.getByRole('button', { name: '播放', exact: true }).click()
-  const sound = dialog
-    .getByRole('region', { name: '预览' })
+  const sound = wholeFilmPreviewPage(dialog)
     .locator('hyperframes-player')
     .last()
     .frameLocator('iframe')

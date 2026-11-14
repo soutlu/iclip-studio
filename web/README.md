@@ -17,6 +17,13 @@
 HOST=127.0.0.1 PORT=3015 VITE_BACKEND_PROXY_TARGET=http://127.0.0.1:7789 pnpm dev
 ```
 
+### 成片预览的预览域名
+
+成片编辑器的预览在预览域名下的预览页（`/whole-film-preview.html`）里运行（规则见 [conventions「成片工程与预览域名」](../contract/conventions.md#成片工程与预览域名)）。本机用 `localhost` 和 `127.0.0.1` 当作两个站点，端口相同，开发服务器在两个主机名下都能访问：
+
+- **`pnpm dev`**：用哪个主机名打开应用，就把根目录 `.env` 里的 `WHOLE_FILM_PREVIEW_ORIGIN` 设成另一个，例如在 `http://localhost:3013` 打开时设成 `http://127.0.0.1:3013`。不配置时成片编辑器的预览无法加载。
+- **`pnpm dev:mock`**：不用配置。预览页自动放在另一个主机名下，预览页取应用来源的地址由 mock 模式的开发服务器回答。
+
 ### 成片组件库与 Mock 模式
 
 - **指定正式组件库**：`pnpm dev` 启动前默认会把仓库自带的测试组件库打包到 `public/hyperframes/`；如果需要加载本地的正式成片组件库，可指定 `HYPERFRAMES_LIBRARY=<组件库源目录> pnpm dev`。

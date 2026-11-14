@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { openConversation } from './helpers'
+import { openConversation, wholeFilmPreviewPage } from './helpers'
 
 const openWholeFilm = async (page: Page, panel: Locator) => {
   await panel.getByRole('button', { name: '成片', exact: true }).click()
@@ -18,7 +18,7 @@ const draftSaved = (page: Page, clips: number) =>
   )
 
 const readyPlayer = async (dialog: Locator) => {
-  const player = dialog.getByRole('region', { name: '预览' }).locator('hyperframes-player')
+  const player = wholeFilmPreviewPage(dialog).locator('hyperframes-player')
   await expect
     .poll(() =>
       player.evaluateAll(
@@ -80,11 +80,19 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   await previewRuntime
   expect(cdnRequests).toEqual([])
   const player = await readyPlayer(dialog)
-  const origin = new URL(page.url()).origin.replaceAll('.', '\\.')
-  const local = new RegExp(`^${origin}/hyperframes/[^/]+/`)
+  // 预览在另一个来源（预览域名）下的预览页里，运行库从那里的组件库目录取
+  const appOrigin = new URL(page.url()).origin
+  const previewSrc = await dialog
+    .getByRole('region', { name: '预览' })
+    .locator('iframe')
+    .getAttribute('src')
+  const previewOrigin = new URL(previewSrc ?? '').origin
+  expect(previewOrigin).not.toBe(appOrigin)
+  const libraryOf = (origin: string) =>
+    new RegExp(`^${origin.replaceAll('.', '\\.')}/hyperframes/[^/]+/`)
   const scripts = await runtimeScripts(player)
   expect(scripts).not.toHaveLength(0)
-  for (const src of scripts) expect(src).toMatch(local)
+  for (const src of scripts) expect(src).toMatch(libraryOf(previewOrigin))
 
   const card = dialog
     .getByRole('complementary', { name: '组件、块和音频' })
@@ -104,7 +112,8 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
     .toBe(true)
   const hoverScripts = await runtimeScripts(hoverPlayer)
   expect(hoverScripts).not.toHaveLength(0)
-  for (const src of hoverScripts) expect(src).toMatch(local)
+  // 悬停预览放的是公共组件库里的组件，仍在应用页面里
+  for (const src of hoverScripts) expect(src).toMatch(libraryOf(appOrigin))
   await page.mouse.move(0, 0)
   await expect(hoverPlayer).toHaveCount(0)
 
@@ -122,6 +131,13 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   await expect(transport.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
   await expect.poll(playerTime).toBeGreaterThan(0.2)
   await transport.getByRole('button', { name: '暂停', exact: true }).click()
+
+  // 点在预览画面上以后焦点仍在编辑器里（不进预览页）：空格照常播放、暂停
+  await dialog.getByRole('region', { name: '预览' }).click()
+  await page.keyboard.press(' ')
+  await expect(transport.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
+  await page.keyboard.press(' ')
+  await expect(transport.getByRole('button', { name: '播放', exact: true })).toBeVisible()
 
   await transport.getByRole('slider', { name: '播放进度' }).focus()
   await page.keyboard.press('Home')

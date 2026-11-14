@@ -4,21 +4,15 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  useSyncExternalStore,
   type CSSProperties,
   type ReactNode,
   type RefObject,
 } from 'react'
-import { mergeSpans, sameSpans, spansOf, windowSpans, type TimeSpan } from '@/shared/lib/time-spans'
+import type { TimeSpan } from '@/shared/lib/time-spans'
+import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MediaFallback } from '@/shared/ui/media-fallback'
 import { StageBackdrop } from '../components/stage-backdrop'
-import { secondsToFrame, STUDIO_PREVIEW_FPS } from './vendor/hyperframes-studio/player/lib/time'
-
-const RELOAD_DELAY_MS = 250
-
-const SETTLE_FRAMES = 3
-
-const frameSeconds = (ms: number) => (secondsToFrame(ms / 1000) + 0.5) / STUDIO_PREVIEW_FPS
+import { previewPageUrl, zPreviewEvent, type PreviewCommand } from './preview-protocol'
 
 export type PreviewControl = {
   play: () => void
@@ -34,31 +28,19 @@ export type PlaybackSettings = {
   loop: boolean
 }
 
-type PlayerElement = HTMLElement & {
-  readonly iframeElement: HTMLIFrameElement
-  play: () => void
-  pause: () => void
-  seek: (seconds: number) => void
-  readonly currentTime: number
-  readonly duration: number
-  readonly paused: boolean
-  readonly painted: boolean
-  playbackRate: number
-  muted: boolean
-  loop: boolean
-  readonly _media: { _createEntry: () => null }
-}
+/** 预览页在哪：令牌还在取时是 `pending`；取不到时是 `failed`，带着给人看的原因。 */
+export type PreviewPageAddress =
+  | { kind: 'pending' }
+  | { kind: 'ready'; origin: string; token: string }
+  | { kind: 'failed'; message: string; onRetry: () => void }
 
-const applyPlayback = (player: PlayerElement, { rate, muted, loop }: PlaybackSettings) => {
-  player.playbackRate = rate
-  player.muted = muted
-  player.loop = loop
-}
+/** 交给预览页的一份成片：整份预览文档，和预览域名下的运行库地址（见 `previewRuntimeSrc`）。 */
+export type PreviewFilm = { html: string; runtimeSrc: string }
 
 type PreviewPlayerProps = {
-  srcdoc: string | undefined
-  /** 播放器往预览页里装的运行库地址，见 `previewRuntimeSrc`。 */
-  runtimeSrc: string
+  page: PreviewPageAddress
+  /** 成片没有内容时是 undefined。 */
+  film: PreviewFilm | undefined
   message: string | undefined
   backdrop: string | undefined
   width: number
@@ -67,58 +49,25 @@ type PreviewPlayerProps = {
   onTime: (ms: number) => void
   onPlaying: (playing: boolean) => void
   controlRef: RefObject<PreviewControl | null>
-  onFrame?: ((iframe: HTMLIFrameElement | null) => void) | undefined
   onMediaSettled?: (() => void) | undefined
   onBuffering?: ((buffering: boolean) => void) | undefined
   onBuffered?: ((spans: readonly TimeSpan[]) => void) | undefined
   children?: ReactNode
 }
 
-const once = (target: EventTarget, type: string) =>
-  new Promise<void>((resolve) => target.addEventListener(type, () => resolve(), { once: true }))
+/** 预览页报「就绪」时的那个页面：重新报一次就是新的一份，要把状态重发一遍。 */
+type Link = { src: string; target: Window; origin: string }
 
-const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+/** 要发的命令；跳转是第几次，发出去的时候才编号。 */
+type Outgoing = Exclude<PreviewCommand, { type: 'seek' }> | { type: 'seek'; ms: number }
 
-const RESUME_BUFFER_SECONDS = 3
-
-const BUFFER_START_TOLERANCE_SECONDS = 0.05
-
-const hasResumeBuffer = (video: HTMLVideoElement) => {
-  if (video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) return false
-  // 下完的文件 buffered 也可能够不到结尾，不再下载就不会有新数据，等下去是永远转圈
-  if (video.networkState !== HTMLMediaElement.NETWORK_LOADING) return true
-  const { buffered, currentTime } = video
-  const clipEnd = Number(video.dataset['mediaStart'] ?? 0) + Number(video.dataset['duration'])
-  const needed = Math.max(0, Math.min(RESUME_BUFFER_SECONDS, clipEnd - currentTime))
-  return Array.from({ length: buffered.length }).some(
-    (_, at) =>
-      buffered.start(at) <= currentTime + BUFFER_START_TOLERANCE_SECONDS &&
-      buffered.end(at) - currentTime >= needed,
-  )
-}
-
-// 媒体事件不冒泡，要在 iframe 文档上捕获
-const MEDIA_EVENTS = ['suspend', 'error', 'progress', 'canplay', 'seeked']
-
-const FAILURE_EVENTS = ['error', 'emptied']
-
-const playsAt = (video: HTMLVideoElement, seconds: number) => {
-  const start = Number(video.dataset['start'])
-  return start <= seconds && seconds < start + Number(video.dataset['duration'])
-}
-
-const failedClipOf = (player: PlayerElement | null) => {
-  const page = player?.iframeElement.contentDocument
-  if (player === null || page === null || page === undefined) return null
-  const clip = [...page.querySelectorAll<HTMLVideoElement>('video[data-start]')].find((video) =>
-    playsAt(video, player.currentTime),
-  )
-  return clip !== undefined && clip.error !== null ? clip : null
-}
-
+/**
+ * 成片预览：把预览域名下的预览页嵌进来，按消息协议（preview-protocol.ts）让它加载、播放，
+ * 再把它报回来的时间、播放状态、缓冲和失败交给编辑器。
+ */
 export function PreviewPlayer({
-  srcdoc,
-  runtimeSrc,
+  page,
+  film,
   message,
   backdrop,
   width,
@@ -127,267 +76,196 @@ export function PreviewPlayer({
   onTime,
   onPlaying,
   controlRef,
-  onFrame,
   onMediaSettled,
   onBuffering,
   onBuffered,
   children,
 }: PreviewPlayerProps) {
-  const hostRef = useRef<HTMLDivElement>(null)
-  const [loaded, setLoaded] = useState(false)
-  const [active, setActive] = useState<PlayerElement | null>(null)
-  const activeRef = useRef<PlayerElement | null>(null)
-  const callbacksRef = useRef({
-    onTime,
-    onPlaying,
-    onFrame,
-    onMediaSettled,
-    onBuffering,
-    onBuffered,
-  })
-  const sizeRef = useRef({ width, height })
-  const playbackRef = useRef(playback)
-  const wantsPlayRef = useRef(false)
-  const swappingRef = useRef(false)
-  const startAtRef = useRef(0)
+  const frameRef = useRef<HTMLIFrameElement>(null)
+  const callbacksRef = useRef({ onTime, onPlaying, onMediaSettled, onBuffering, onBuffered })
   useLayoutEffect(() => {
-    callbacksRef.current = { onTime, onPlaying, onFrame, onMediaSettled, onBuffering, onBuffered }
-    sizeRef.current = { width, height }
-    playbackRef.current = playback
+    callbacksRef.current = { onTime, onPlaying, onMediaSettled, onBuffering, onBuffered }
   })
+
+  const origin = page.kind === 'ready' ? page.origin : undefined
+  const src = page.kind === 'ready' ? previewPageUrl(page.origin, page.token) : undefined
+  const [readyLink, setReadyLink] = useState<Link | null>(null)
+  const link = readyLink !== null && readyLink.src === src ? readyLink : null
+  // 预览页换上过成片的那个地址：换上过以后，成片没了也还能控制它（让它停下）
+  const [shownAt, setShownAt] = useState<string | null>(null)
+  const [clipFailed, setClipFailed] = useState(false)
+
+  // 预览页就绪之前的命令先排着，就绪后按顺序发出；`seq` 是发给这个预览页的跳转数
+  const outboxRef = useRef<{ target: Link | null; queue: Outgoing[]; seq: number }>({
+    target: null,
+    queue: [],
+    seq: 0,
+  })
+  const bufferingRef = useRef(false)
+  // 就绪之前记下了「在放」：按钮先算在放、舞台先转圈，和第一份成片装好之前一样
+  const earlyPlayRef = useRef(false)
+
+  const post = useCallback((command: Outgoing) => {
+    const outbox = outboxRef.current
+    if (outbox.target === null) {
+      outbox.queue.push(command)
+      return
+    }
+    const sent: PreviewCommand =
+      command.type === 'seek' ? { ...command, seq: (outbox.seq += 1) } : command
+    outbox.target.target.postMessage(sent, outbox.target.origin)
+  }, [])
+  const reportBuffering = useCallback((buffering: boolean) => {
+    bufferingRef.current = buffering
+    callbacksRef.current.onBuffering?.(buffering)
+  }, [])
+  const playEarly = useCallback(
+    (wantsPlay: boolean) => {
+      earlyPlayRef.current = wantsPlay
+      callbacksRef.current.onPlaying(wantsPlay)
+      reportBuffering(wantsPlay)
+    },
+    [reportBuffering],
+  )
+
+  useEffect(() => {
+    if (src === undefined || origin === undefined) return
+    outboxRef.current = { target: null, queue: [], seq: 0 }
+    const receive = (event: MessageEvent) => {
+      const target = frameRef.current?.contentWindow
+      if (event.origin !== origin || target === null || target === undefined) return
+      if (event.source !== target) return
+      const parsed = zPreviewEvent.safeParse(event.data)
+      if (!parsed.success) return
+      const on = callbacksRef.current
+      const received = parsed.data
+      switch (received.type) {
+        case 'ready': {
+          const next = { src, target, origin }
+          const { queue } = outboxRef.current
+          // 报一次就绪就是新加载的一份预览页，跳转从头数
+          outboxRef.current = { target: next, queue: [], seq: 0 }
+          earlyPlayRef.current = false
+          for (const command of queue) post(command)
+          setReadyLink(next)
+          return
+        }
+        case 'loaded':
+          setShownAt(src)
+          return
+        case 'time':
+          if (received.seq === outboxRef.current.seq) on.onTime(received.ms)
+          return
+        case 'playing':
+          on.onPlaying(received.playing)
+          return
+        case 'buffering':
+          reportBuffering(received.buffering)
+          return
+        case 'buffered':
+          on.onBuffered?.(received.spans)
+          return
+        case 'mediaSettled':
+          on.onMediaSettled?.()
+          return
+        case 'clipFailed':
+          setClipFailed(received.failed)
+          return
+      }
+    }
+    window.addEventListener('message', receive)
+    return () => {
+      window.removeEventListener('message', receive)
+      outboxRef.current = { target: null, queue: [], seq: 0 }
+      if (bufferingRef.current) reportBuffering(false)
+    }
+  }, [src, origin, post, reportBuffering])
 
   const { rate, muted, loop } = playback
   useEffect(() => {
-    if (active !== null) applyPlayback(active, { rate, muted, loop })
-  }, [active, rate, muted, loop])
-
-  const shown = srcdoc === undefined ? null : active
-  useEffect(() => {
-    if (shown === null) return
-    callbacksRef.current.onFrame?.(shown.iframeElement)
-    return () => callbacksRef.current.onFrame?.(null)
-  }, [shown])
+    if (link !== null) post({ type: 'playback', rate, muted, loop })
+  }, [link, rate, muted, loop, post])
 
   useEffect(() => {
-    let cancelled = false
-    void import('@hyperframes/player').then(() => {
-      if (!cancelled) setLoaded(true)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    if (link !== null) post({ type: 'size', width, height })
+  }, [link, width, height, post])
 
   useEffect(() => {
-    const page = active?.iframeElement.contentDocument
-    if (active === null || page === null || page === undefined) return
-    swappingRef.current = false
-    let buffering = false
-    let reported: readonly TimeSpan[] | undefined
-    const atEnd = () => active.currentTime >= active.duration
-    const syncMedia = () => {
-      const wantsPlay = wantsPlayRef.current && !swappingRef.current
-      const videos = [...page.querySelectorAll<HTMLVideoElement>('video[data-start]')]
-      const seconds = active.currentTime
-      const clip = videos.find((video) => playsAt(video, seconds))
-      const clipReady =
-        clip === undefined ||
-        clip.error !== null ||
-        (buffering ? hasResumeBuffer(clip) : clip.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA)
-      if (buffering !== (wantsPlay && !clipReady)) {
-        buffering = !buffering
-        callbacksRef.current.onBuffering?.(buffering)
-      }
-      const running = wantsPlay && !buffering
-      // 放到结尾时播放器已停、ended 还没来；这时 play() 会跳回开头重放
-      if (running && active.paused && !atEnd()) active.play()
-      if (!running && !active.paused) active.pause()
-      if (
-        videos.length > 0 &&
-        videos.every((video) => video.networkState !== HTMLMediaElement.NETWORK_LOADING)
-      )
-        callbacksRef.current.onMediaSettled?.()
-      const spans = mergeSpans(
-        videos.flatMap((video) => {
-          const mediaStart = Number(video.dataset['mediaStart'] ?? 0)
-          return windowSpans(
-            spansOf(video.buffered),
-            mediaStart,
-            mediaStart + Number(video.dataset['duration']),
-            Number(video.dataset['start']),
-          )
-        }),
-      )
-      if (reported === undefined || !sameSpans(reported, spans)) {
-        reported = spans
-        callbacksRef.current.onBuffered?.(spans)
-      }
-    }
-    const setWantsPlay = (wantsPlay: boolean) => {
-      wantsPlayRef.current = wantsPlay
-      callbacksRef.current.onPlaying(wantsPlay)
-      syncMedia()
-    }
-    const onTimeUpdate = (event: Event) => {
-      const seconds = (event as CustomEvent<{ currentTime: number }>).detail.currentTime
-      callbacksRef.current.onTime(Math.round(seconds * 1000))
-      syncMedia()
-    }
-    const onEnded = () => setWantsPlay(false)
-    active.addEventListener('timeupdate', onTimeUpdate)
-    active.addEventListener('ended', onEnded)
-    for (const type of MEDIA_EVENTS) page.addEventListener(type, syncMedia, true)
-    controlRef.current = {
-      play: () => {
-        if (atEnd()) active.seek(0)
-        setWantsPlay(true)
-      },
-      pause: () => setWantsPlay(false),
-      seek: (ms) => {
-        setWantsPlay(false)
-        active.seek(frameSeconds(ms))
-      },
-    }
-    // 换上来之前的媒体事件已经错过，小文件这时不会再有事件
-    syncMedia()
-    return () => {
-      if (buffering) callbacksRef.current.onBuffering?.(false)
-      active.removeEventListener('timeupdate', onTimeUpdate)
-      active.removeEventListener('ended', onEnded)
-      for (const type of MEDIA_EVENTS) page.removeEventListener(type, syncMedia, true)
-      active.remove()
-      controlRef.current = null
-    }
-  }, [active, controlRef])
-
-  const watchFailure = useCallback(
-    (notify: () => void) => {
-      const page = active?.iframeElement.contentDocument
-      if (active === null || page === null || page === undefined) return () => {}
-      active.addEventListener('timeupdate', notify)
-      for (const type of FAILURE_EVENTS) page.addEventListener(type, notify, true)
-      return () => {
-        active.removeEventListener('timeupdate', notify)
-        for (const type of FAILURE_EVENTS) page.removeEventListener(type, notify, true)
-      }
-    },
-    [active],
-  )
-  const clipFailed = useSyncExternalStore(watchFailure, () => failedClipOf(active) !== null)
-
-  const awaitingFirst = active === null && srcdoc !== undefined
-  useEffect(() => {
-    if (!awaitingFirst) return
-    const setWantsPlay = (wantsPlay: boolean) => {
-      wantsPlayRef.current = wantsPlay
-      callbacksRef.current.onPlaying(wantsPlay)
-      callbacksRef.current.onBuffering?.(wantsPlay)
-    }
-    controlRef.current = {
-      play: () => setWantsPlay(true),
-      pause: () => setWantsPlay(false),
-      seek: (ms) => {
-        setWantsPlay(false)
-        startAtRef.current = frameSeconds(ms)
-      },
-    }
-    return () => {
-      controlRef.current = null
-      if (!wantsPlayRef.current) return
-      if (activeRef.current === null) setWantsPlay(false)
-      else callbacksRef.current.onBuffering?.(false)
-    }
-  }, [awaitingFirst, controlRef])
-
-  useEffect(() => {
-    if (active === null) return
-    active.setAttribute('width', String(width))
-    active.setAttribute('height', String(height))
-  }, [active, width, height])
-
-  useEffect(() => {
-    if (!loaded) return
-    if (srcdoc === undefined) {
-      controlRef.current?.pause()
+    if (film !== undefined) {
+      if (link !== null) post({ type: 'load', html: film.html, runtimeSrc: film.runtimeSrc })
       return
     }
-    let cancelled = false
-    let pending: PlayerElement | null = null
-    const timer = setTimeout(() => {
-      const host = hostRef.current
-      if (host === null) return
-      const old = activeRef.current
-      swappingRef.current = true
-      old?.pause()
-      // 每次用到时再读：新页加载、等它稳定的这段时间里还可能挪过位置（挪的是旧播放器或记下的起点）
-      const resumeAt = () => activeRef.current?.currentTime ?? startAtRef.current
-      const next = document.createElement('hyperframes-player') as PlayerElement
-      // 播放器给每段视频在父页面另建不跨域的副本，每个文件下载两遍。没有公开开关，版本锁定，升级要复查
-      next._media._createEntry = () => null
-      pending = next
-      next.setAttribute('disable-click-to-play', '')
-      // 加载和缓冲的提示由编辑器自己画，播放器自带的那套不显示
-      next.setAttribute('assets-loading-ui', 'none')
-      // 收到 srcdoc 时按它把运行库写进预览页，不给就去外网 CDN 取
-      next.setAttribute('runtime-src', runtimeSrc)
-      next.setAttribute('width', String(sizeRef.current.width))
-      next.setAttribute('height', String(sizeRef.current.height))
-      // 加载成片前就带上，换播放器时倍速、静音、循环不会先回到默认再变
-      applyPlayback(next, playbackRef.current)
-      next.className = 'wf-player is-pending'
-      host.append(next)
-      void (async () => {
-        const ready = once(next, 'ready')
-        next.setAttribute('srcdoc', srcdoc)
-        await ready
-        if (!next.painted) await once(next, 'painted')
-        if (cancelled) return
-        const settledAt = resumeAt()
-        next.seek(settledAt)
-        for (let frame = 0; frame < SETTLE_FRAMES; frame++) await nextFrame()
-        if (cancelled) return
-        if (resumeAt() !== settledAt) next.seek(resumeAt())
-        pending = null
-        next.classList.remove('is-pending')
-        activeRef.current = next
-        setActive(next)
-      })()
-    }, RELOAD_DELAY_MS)
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-      pending?.remove()
+    if (link !== null) {
+      post({ type: 'unload' })
+      return
     }
-  }, [loaded, srcdoc, runtimeSrc, controlRef])
+    // 预览页还没就绪：排着的命令作废，记下的「在放」收回
+    outboxRef.current.queue = []
+    if (earlyPlayRef.current) playEarly(false)
+  }, [link, film, post, playEarly])
 
+  const shown = src !== undefined && shownAt === src
+  const controllable = src !== undefined && (film !== undefined || shown)
+  useEffect(() => {
+    if (!controllable) return
+    const early = (wantsPlay: boolean) => {
+      if (outboxRef.current.target === null) playEarly(wantsPlay)
+    }
+    controlRef.current = {
+      play: () => {
+        early(true)
+        post({ type: 'play' })
+      },
+      pause: () => {
+        early(false)
+        post({ type: 'pause' })
+      },
+      seek: (ms) => {
+        early(false)
+        post({ type: 'seek', ms })
+      },
+    }
+    return () => {
+      controlRef.current = null
+    }
+  }, [controllable, controlRef, post, playEarly])
+
+  const failed = link !== null && clipFailed
   return (
     <div aria-label="预览" className="wf-preview" role="region">
-      <StageBackdrop url={srcdoc === undefined ? undefined : backdrop} />
+      <StageBackdrop url={film === undefined ? undefined : backdrop} />
       <div className="editor-hero-wrap">
         <div
           className="wf-player-host editor-preview stage-picture"
-          data-failed={clipFailed ? '' : undefined}
-          hidden={srcdoc === undefined}
+          data-failed={failed ? '' : undefined}
+          hidden={film === undefined}
           style={{ '--preview-ratio': width / height } as CSSProperties}
         >
-          <div className="wf-player-slot" ref={hostRef} />
-          {clipFailed ? (
-            <div className="editor-preview-message" role="alert">
-              <MediaFallback
-                kind="video"
-                onRetry={() => {
-                  const clip = failedClipOf(activeRef.current)
-                  if (clip === null) return
-                  clip.preload = 'auto'
-                  clip.load()
-                }}
+          <div className="wf-player-slot">
+            {src === undefined ? null : (
+              <iframe
+                allow="autoplay"
+                className="wf-preview-frame"
+                ref={frameRef}
+                sandbox="allow-scripts allow-same-origin"
+                src={src}
+                title="成片预览"
               />
+            )}
+          </div>
+          {failed ? (
+            <div className="editor-preview-message" role="alert">
+              <MediaFallback kind="video" onRetry={() => post({ type: 'retry' })} />
             </div>
           ) : null}
         </div>
       </div>
       {children}
-      {srcdoc === undefined && message !== undefined ? (
+      {page.kind === 'failed' ? (
+        <div className="wf-preview-note">
+          <InlineAlert action={{ label: '重试', onClick: page.onRetry }} message={page.message} />
+        </div>
+      ) : film === undefined && message !== undefined ? (
         <p className="wf-preview-note">{message}</p>
       ) : null}
     </div>
