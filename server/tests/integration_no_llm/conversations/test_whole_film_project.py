@@ -19,13 +19,13 @@ from iclip.domains.conversations.whole_film_project import PreviewGrant, Preview
 from iclip.platform.db.engine import build_engine
 from tests.helpers.app import make_client
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
-from tests.helpers.ws import sign_in_as
+from tests.helpers.ws import SESSION_COOKIE, sign_in_as
 
 URL = "/conversations"
 AGENT_ID = "storyboard"
-APP_ORIGIN = "http://localhost:3013"
+# 与 make_client 的地址同源：发令牌是写请求，来源要是应用自己。
+APP_ORIGIN = "http://test"
 PREVIEW_ORIGIN = "http://preview.test"
-SESSION_COOKIE = "iclip_session"
 
 
 def server_tokens() -> PreviewTokens:
@@ -124,6 +124,24 @@ async def test_preview_host_serves_only_preview_addresses(
     assert (await client.get(f"/whole-film/preview/{token}/host")).status_code == 404
 
 
+async def test_writes_from_the_preview_origin_are_refused_on_the_app_host(
+    client: httpx.AsyncClient, pg_url: str
+) -> None:
+    await login_as_editor(client, pg_url)
+    mine = await open_conversation(client)
+
+    forged = await client.post(
+        f"{URL}/{mine}/whole-film/files",
+        json={"path": "index.html", "content": "预览页里的脚本写的"},
+        headers={"origin": PREVIEW_ORIGIN},
+    )
+
+    assert forged.status_code == 403, forged.text
+    assert "detail" in forged.json()
+    files = (await client.get(f"{URL}/{mine}/workspace/files")).json()["files"]
+    assert files == [], "被拒的写请求什么都没写进去"
+
+
 def test_preview_host_refuses_websocket_upgrades(ws_agent_app: FastAPI, pg_url: str) -> None:
     with TestClient(ws_agent_app) as tc:
         session = sign_in_as(tc, pg_url, username="logan", roles=("editor",))
@@ -157,9 +175,12 @@ async def test_token_goes_to_readers_and_carries_the_request_origin(
     assert host.status_code == 200, host.text
     assert host.json() == {"appOrigin": APP_ORIGIN}
 
-    for origin in (None, "null", "http://localhost:3013/path"):
+    for origin in (None, f"{APP_ORIGIN}/path"):
         refused = await open_preview(client, mine, origin=origin)
         assert refused.status_code == 422, f"Origin {origin!r} 不能签发"
+    assert (await open_preview(client, mine, origin="null")).status_code == 403, (
+        "Origin: null 在来源检查就被拒"
+    )
 
     async with make_client(app) as stranger:
         await login_as_editor(stranger, pg_url, username="mallory")

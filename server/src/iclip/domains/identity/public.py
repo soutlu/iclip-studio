@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.middleware import (
+    origin_allowed,
     require_authenticated,
     require_permission,
-    websocket_origin_allowed,
     websocket_principal,
 )
 from iclip.domains.identity.models import Principal, UserAccount
@@ -29,11 +29,11 @@ __all__ = [
     "Principal",
     "UserAccount",
     "effective_permissions",
+    "origin_allowed",
     "require_authenticated",
     "require_permission",
     "resolve_user_name",
     "visible_owner",
     "visible_owner_incl_act_as",
-    "websocket_origin_allowed",
     "websocket_principal",
 ]

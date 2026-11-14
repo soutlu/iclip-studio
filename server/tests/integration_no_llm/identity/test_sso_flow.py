@@ -72,7 +72,7 @@ async def test_first_login_creates_editor_with_pms_profile(sso_app: FastAPI) -> 
     async with make_client(sso_app) as client:
         callback = await client.get("/auth/sso/callback", params={"jwt": "sso-jwt"})
         assert callback.status_code == 204, callback.text
-        assert "iclip_session" in callback.headers.get("set-cookie", "")
+        assert callback.headers.get("set-cookie", "").startswith("iclip_session=")
 
         me = await client.get("/users/me")
     assert me.status_code == 200

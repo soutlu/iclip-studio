@@ -25,7 +25,7 @@ from iclip.domains.identity.infra_sql import (
     User,
     get_user_row_by_username,
 )
-from iclip.domains.identity.middleware import SESSION_COOKIE, SESSION_COOKIE_NAME
+from iclip.domains.identity.middleware import session_cookie_scheme
 
 _MIN_PASSWORD_LENGTH = 8
 
@@ -104,13 +104,17 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
 
 def build_cookie_transport(auth: CookieAuthSettings) -> CookieTransport:
+    # 登出经 transport.scheme 读 Cookie，与设置用同一个名字；Path=/、不设 Domain 是 __Host- 前缀的要求。
+    scheme = session_cookie_scheme(secure=auth.cookie_secure)
     transport = CookieTransport(
-        cookie_name=SESSION_COOKIE_NAME,
+        cookie_name=scheme.model.name,
         cookie_max_age=auth.lifetime_seconds,
+        cookie_path="/",
+        cookie_domain=None,
         cookie_secure=auth.cookie_secure,
         cookie_samesite="lax",
     )
-    transport.scheme = SESSION_COOKIE
+    transport.scheme = scheme
     return transport
 
 

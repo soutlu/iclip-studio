@@ -110,7 +110,11 @@ from iclip.domains.generation.service import ClearCompletion, SettledRecords, Vi
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.accounts import CookieAuthSettings
 from iclip.domains.identity.infra_sql import DB_SCHEMA
-from iclip.domains.identity.middleware import PrincipalMiddleware
+from iclip.domains.identity.middleware import (
+    PrincipalMiddleware,
+    WriteOriginCheck,
+    document_session_cookie,
+)
 from iclip.domains.identity.module import SsoRuntime, build_identity_module
 from iclip.domains.identity.pms import PmsUserClient
 from iclip.domains.identity.public import ActAs, Principal
@@ -703,6 +707,7 @@ def build_app(
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
     install_error_handlers(app)
+    document_session_cookie(app, secure=settings.security.cookie_secure)
     app.state.turn_naming = turn_naming
     app.state.runtime_events = runtime_events
 
@@ -808,7 +813,10 @@ def build_app(
             allow_methods=["*"],
             allow_headers=["*"],
         )
-    # 按主机名的划分是成片预览的安全边界，必须在 CORS 与登录态解析之外，最后注册。
+    # 写请求的来源检查在 CORS 与登录态解析之外：来源不对的直接 403，不必先查凭证；预检请求是 OPTIONS，
+    # 不经它检查，仍由 CORS 直接答。它在按主机名的划分之内，预览域名上除预览地址外一律 404 的规则不受影响。
+    app.add_middleware(WriteOriginCheck, allowed_origins=settings.security.cors_allow_origins)
+    # 按主机名的划分是成片预览的安全边界，必须在 CORS、来源检查与登录态解析之外，最后注册。
     preview_origin = settings.whole_film_preview_origin
     app.add_middleware(
         PreviewHostSplit,
