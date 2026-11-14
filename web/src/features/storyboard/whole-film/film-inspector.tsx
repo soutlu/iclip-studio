@@ -51,6 +51,8 @@ type Props = {
   blocks: readonly FilmBlock[]
   catalog: ComponentCatalog
   sourceMs: SourceLength
+  /** 这个地址的素材确认没有声音；有声音、还不知道时是 false。 */
+  silentSource: (src: string) => boolean
   onHide: (id: string, hidden: boolean) => void
   /** 删掉选中的块，和按 Delete 一样。 */
   onRemove: () => void
@@ -72,6 +74,8 @@ const KIND_LABEL: Record<BlockKind, string> = { picture: '视频', component: '�
 const COMMIT_DELAY_MS = 300
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i
+
+const SILENT_SOURCE_TEXT = '这段素材没有声音'
 
 const formatSeconds = (ms: number) => (ms / 1000).toFixed(2)
 
@@ -136,6 +140,7 @@ function BlockInspector({
   blocks,
   catalog,
   sourceMs,
+  silentSource,
   onHide,
   onRemove,
   onRestart,
@@ -187,6 +192,7 @@ function BlockInspector({
           block={block}
           onChange={(changes) => onAttributes(block.id, changes)}
           onEditing={onTextEditing}
+          silent={block.kind === 'picture' && silentSource(block.src)}
           sourceMs={sourceMs(block)}
         />
       ),
@@ -389,12 +395,15 @@ const fadeAttribute = (ms: number) => {
 function MediaFields({
   block,
   sourceMs,
+  silent,
   onChange,
   onEditing,
 }: {
   block: MediaBlock
   /** 素材的总长；还不知道时是 undefined。 */
   sourceMs: number | undefined
+  /** 画面块的素材确认没有声音。 */
+  silent: boolean
   onChange: (changes: AttributeChanges) => void
   onEditing: (editing: boolean) => void
 }) {
@@ -509,6 +518,8 @@ function MediaFields({
         />
       ) : (
         <MediaSwitch
+          // 素材没有声音时不让取消静音：标成有声音的画面块导出必定失败
+          blockedReason={silent && block.muted ? SILENT_SOURCE_TEXT : undefined}
           checked={block.muted}
           label="静音"
           // 照参照的工作台：静音写 muted、去掉有声音的标记，取消静音反过来，两个不同时写
@@ -528,17 +539,20 @@ function MediaFields({
 function MediaSwitch({
   label,
   checked,
+  blockedReason,
   onChange,
 }: {
   label: string
   checked: boolean
+  /** 不能拨的原因，悬停或聚焦时提示；能拨时不给。 */
+  blockedReason?: string | undefined
   onChange: (checked: boolean) => void
 }) {
   const id = useId()
   return (
     <div className="wf-field">
       <label htmlFor={id}>{label}</label>
-      <Switch checked={checked} id={id} onCheckedChange={onChange} />
+      <Switch blockedReason={blockedReason} checked={checked} id={id} onCheckedChange={onChange} />
     </div>
   )
 }

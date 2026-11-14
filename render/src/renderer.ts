@@ -5,7 +5,11 @@ import { extname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { resolveConfig } from '@hyperframes/engine'
-import { createRenderJob, executeRenderJob } from '@hyperframes/producer'
+import {
+  createRenderJob,
+  executeRenderJob,
+  extractSafeRenderErrorCode,
+} from '@hyperframes/producer'
 import { declareLinkedFonts } from './fonts'
 import { ExportFailure, type ExportWorker, type RenderedFile } from './jobs'
 import { producerLogger, type Logger } from './log'
@@ -17,6 +21,8 @@ export interface RendererOptions {
   logger: Logger
   mediaTimeoutMs?: number
 }
+
+const SILENT_SOURCE_TEXT = '有镜头标了有声音，但素材文件里没有声音；把这个镜头设成静音后再导出'
 
 const describeUrl = (url: string) => {
   const parsed = new URL(url)
@@ -105,6 +111,9 @@ export function createProducerWorker(options: RendererOptions): ExportWorker {
       } catch (error) {
         await cleanup()
         if (signal.aborted || error instanceof ExportFailure) throw error
+        // 渲染前逐个探测素材文件：标了有声音的画面块，素材里却没有音轨
+        if (extractSafeRenderErrorCode(error) === 'ASSET_MEDIA_TYPE_MISMATCH')
+          throw new ExportFailure('media-mismatch', SILENT_SOURCE_TEXT)
         throw new ExportFailure(
           'render-failed',
           error instanceof Error ? (error.message.split('\n')[0] ?? error.message) : String(error),

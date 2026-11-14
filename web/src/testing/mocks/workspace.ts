@@ -918,9 +918,10 @@ export const workspaceHandlers = [
       conversationId: body.conversation_id ?? null,
       metadata: body.metadata ?? null,
       shotIndex: body.shot_index ?? null,
-      outputUrl: VIDEO_URL,
-      watermarkOutputUrl: VIDEO_URL,
-      durationMs: VIDEO_MS,
+      // 不生成声音时出的片没有音轨：借用编辑结果那个没有音轨的样片
+      ...(body.generate_audio === false
+        ? { outputUrl: EDITED_URL, watermarkOutputUrl: EDITED_URL, durationMs: EDITED_MS }
+        : { outputUrl: VIDEO_URL, watermarkOutputUrl: VIDEO_URL, durationMs: VIDEO_MS }),
     })
     return HttpResponse.json({ task_id: created.id }, { status: 202 })
   }),

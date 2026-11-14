@@ -31,6 +31,35 @@ export const videoSizeQuery = (url: string | undefined) =>
 
 export const useVideoSize = (url: string | undefined) => useQuery(videoSizeQuery(url))
 
+/** 这个地址的视频有没有音轨。读不出来时查询失败，当作不知道。 */
+export const videoAudioQuery = (url: string) =>
+  queryOptions({
+    queryKey: ['whole-film', 'video-audio', url],
+    queryFn: async () => {
+      const input = (await loadReader()).openInput(url)
+      try {
+        return (await input.getPrimaryAudioTrack()) !== null
+      } finally {
+        input.dispose()
+      }
+    },
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+  })
+
+/** 几条视频各自有没有音轨：读出来的才在表里，还在读、读不出来的不在。 */
+export const useVideoAudio = (urls: readonly string[]): ReadonlyMap<string, boolean> =>
+  useQueries({
+    queries: urls.map((url) => videoAudioQuery(url)),
+    combine: (results) =>
+      new Map(
+        results.flatMap((result, at): [string, boolean][] =>
+          result.data === undefined ? [] : [[urls[at] ?? '', result.data]],
+        ),
+      ),
+  })
+
 export type KeyframeState =
   | { kind: 'loading' }
   | { kind: 'ready'; index: KeyframeIndex }

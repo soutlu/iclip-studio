@@ -40,7 +40,10 @@ export type FilmView = {
 }
 
 /** 要放进成片的一段素材；起点由成片现有内容决定，接在画面那一行的末尾。 */
-export type NewPicture = Pick<PictureBlock, 'label' | 'jobId' | 'src' | 'mediaStart' | 'duration'>
+export type NewPicture = Pick<
+  PictureBlock,
+  'label' | 'jobId' | 'src' | 'mediaStart' | 'duration' | 'muted'
+>
 
 /** 要放进成片的一段音频：一条音频记录从 `mediaStart` 起的 `duration` 毫秒。 */
 export type NewAudio = Pick<AudioBlock, 'label' | 'jobId' | 'src' | 'mediaStart' | 'duration'>
@@ -286,7 +289,6 @@ export function useFilmSession(
             playbackRate: 1,
             fadeIn: 0,
             fadeOut: 0,
-            muted: false,
             z: newBlockZ(existing, placed),
             hidden: false,
           }

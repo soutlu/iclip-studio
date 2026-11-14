@@ -14,21 +14,46 @@ import type { GenerationJob } from '../storyboard.api'
 import { WholeFilmEditor } from './whole-film-editor'
 
 const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: number }>())
+// 素材有没有音轨：在 `sounds` 里的有，在 `unreadable` 里的读音轨时出错，别的没有
+const sounds = vi.hoisted(() => new Set<string>())
+const unreadable = vi.hoisted(() => new Set<string>())
 
 vi.mock('mediabunny', async () => {
   const { createMediaReaderMock } = await import('@/testing/media-reader')
-  class AudioSampleSink {}
-  return { ...createMediaReaderMock(files, () => Promise.resolve(null)), AudioSampleSink }
+  class AudioSampleSink {
+    async *samples() {}
+  }
+  return {
+    ...createMediaReaderMock(files, (url) =>
+      unreadable.has(url)
+        ? Promise.reject(new Error('读不出音轨'))
+        : Promise.resolve(
+            sounds.has(url)
+              ? { canDecode: () => Promise.resolve(true), getNumberOfChannels: () => 1 }
+              : null,
+          ),
+    ),
+    AudioSampleSink,
+  }
 })
 
 const CONVERSATION = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d'
 const URL_A = 'https://media.test/take-a.mp4'
 const URL_B = 'https://media.test/take-b.mp4'
+const URL_SILENT = 'https://media.test/take-silent.mp4'
+const URL_UNREADABLE = 'https://media.test/take-unreadable.mp4'
 const TAKE_A = '11111111-2222-4333-8444-555555555555'
 const TAKE_B = '66666666-7777-4888-8999-aaaaaaaaaaaa'
+const TAKE_SILENT = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff'
+const TAKE_UNREADABLE = 'cccccccc-dddd-4eee-8fff-000000000000'
 
 files.set(URL_A, { keyframes: [0, 2, 4.5], duration: 6 })
 files.set(URL_B, { keyframes: [0, 1.5], duration: 3 })
+files.set(URL_SILENT, { keyframes: [0, 1], duration: 2 })
+files.set(URL_UNREADABLE, { keyframes: [0, 1], duration: 2 })
+sounds.add(URL_A)
+sounds.add(URL_B)
+unreadable.add(URL_UNREADABLE)
 
 const takes = [
   makeGenerationJob({
@@ -44,6 +69,24 @@ const takes = [
     outputUrl: URL_B,
     shotIndex: 1,
     durationMs: 3000,
+  }),
+]
+
+/** 同一组的另外两条素材片：一条没有音轨，一条读不出有没有音轨。 */
+const quietTakes = [
+  makeGenerationJob({
+    id: TAKE_SILENT,
+    createdAt: '2026-09-01T10:10:00Z',
+    outputUrl: URL_SILENT,
+    shotIndex: 1,
+    durationMs: 2000,
+  }),
+  makeGenerationJob({
+    id: TAKE_UNREADABLE,
+    createdAt: '2026-09-01T10:15:00Z',
+    outputUrl: URL_UNREADABLE,
+    shotIndex: 1,
+    durationMs: 2000,
   }),
 ]
 
@@ -150,6 +193,27 @@ describe('成片编辑器 · 加入素材', () => {
     expect(third).toContain('data-start="3.5" data-duration="2" data-media-start="0"')
     expect(fourth).toContain('data-start="5.5" data-duration="2.5" data-media-start="2"')
     expect(savedFilm().match(/&quot;id&quot;:&quot;src-/g)).toHaveLength(2)
+  })
+
+  it('素材确认有声音才写成有声音：没有音轨、读不出有没有音轨时都写成静音', async () => {
+    const user = userEvent.setup()
+    await openEditor([...takes, ...quietTakes])
+    for (const [count, take] of [
+      [1, 'A'],
+      [2, 'C'],
+      [3, 'D'],
+    ] as const) {
+      await user.click(await shot(new RegExp(`^生成 ${take} 镜头 1，`)))
+      await user.keyboard('{Enter}')
+      await waitSaved(() => expect(savedBlocks()).toHaveLength(count))
+    }
+    const blockOf = (url: string) => savedBlocks().find((block) => block.includes(`src="${url}"`))
+    expect(blockOf(URL_A)).toContain(' data-has-audio="true"')
+    expect(blockOf(URL_A)).not.toContain('muted')
+    for (const url of [URL_SILENT, URL_UNREADABLE]) {
+      expect(blockOf(url)).toContain(' muted="true"')
+      expect(blockOf(url)).not.toContain('data-has-audio')
+    }
   })
 
   it('撤销退回加之前，重做再加回来；⌘Z 也可以', async () => {
@@ -1541,6 +1605,33 @@ describe('成片编辑器 · 右侧栏', () => {
       await user.click(toggle('静音'))
       await waitSaved(() => expect(savedAttribute('clip-1', 'data-has-audio')).toBe('true'))
       expect(savedTag('clip-1')).not.toContain('muted')
+    })
+
+    it('画面块的素材没有声音：静音开着、不能取消，悬停说明原因；读不出有没有声音时照常能拨', async () => {
+      const user = await openWith([
+        picture({ jobId: TAKE_SILENT, src: URL_SILENT, label: '无声', muted: true }),
+        picture({
+          id: 'clip-2',
+          jobId: TAKE_UNREADABLE,
+          src: URL_UNREADABLE,
+          label: '读不出',
+          start: 2_000,
+          muted: true,
+        }),
+      ])
+      await openMedia(user, '无声')
+      await waitFor(() => expect(toggle('静音')).toHaveAttribute('aria-disabled', 'true'))
+      expect(toggle('静音')).toHaveAttribute('aria-checked', 'true')
+      await user.hover(toggle('静音'))
+      expect(await screen.findByRole('tooltip')).toHaveTextContent('这段素材没有声音')
+      await user.click(toggle('静音'))
+      expect(toggle('静音')).toHaveAttribute('aria-checked', 'true')
+      expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+
+      await openMedia(user, '读不出')
+      expect(toggle('静音')).not.toHaveAttribute('aria-disabled')
+      await user.click(toggle('静音'))
+      await waitSaved(() => expect(savedAttribute('clip-2', 'data-has-audio')).toBe('true'))
     })
   })
 

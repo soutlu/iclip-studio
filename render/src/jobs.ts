@@ -2,7 +2,8 @@ import type { Logger } from './log'
 
 export type ExportStatus = 'queued' | 'rendering' | 'uploading' | 'done' | 'failed' | 'cancelled'
 
-export type FailureCode = 'render-failed' | 'upload-failed' | 'media-unreachable' | 'timeout'
+export type FailureCode =
+  'render-failed' | 'upload-failed' | 'media-unreachable' | 'media-mismatch' | 'timeout'
 
 export class ExportFailure extends Error {
   readonly code: FailureCode

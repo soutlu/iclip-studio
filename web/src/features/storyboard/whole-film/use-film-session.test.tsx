@@ -55,6 +55,7 @@ const piece = (overrides: Partial<NewPicture> = {}): NewPicture => ({
   src: picture().src,
   mediaStart: 0,
   duration: 2_000,
+  muted: false,
   ...overrides,
 })
 
@@ -118,6 +119,19 @@ describe('useFilmSession', () => {
     expect(saves[1]?.revision).toBe(1)
     await settled(result)
     expect(mockWholeFilmDraft(CONVERSATION)?.revision).toBe(2)
+  })
+
+  it('静音的素材写 muted、不写有声音的标记，有声音的反过来', async () => {
+    const saves = recordSaves()
+    const { result } = await open()
+    await add(result, piece({ muted: true }), piece({ mediaStart: 3_000, duration: 1_000 }))
+    await waitFor(() => expect(saves).toHaveLength(1))
+    const tagAt = (start: number) =>
+      new RegExp(`<video [^>]*data-start="${start}"[^>]*>`).exec(saves[0]?.html ?? '')?.[0]
+    expect(tagAt(0)).toContain(' muted="true"')
+    expect(tagAt(0)).not.toContain('data-has-audio')
+    expect(tagAt(2)).toContain(' data-has-audio="true"')
+    expect(tagAt(2)).not.toContain('muted')
   })
 
   it('撤销退回加之前的样子，重做再加回来，两次都会保存', async () => {
