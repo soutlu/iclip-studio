@@ -7,14 +7,16 @@
 ## 1. 部署与路由路径
 
 - **同源反向代理**：前端代码只请求同域名的 `/api/*`（本地开发由 Vite Proxy 转发，线上由 Nginx/Ingress 将开头的 `/api` 去掉后转发给后端根路径）。禁止使用 `3xx` 跨域名重定向；登录 Cookie 不设置 `Domain`，登录与接口调用必须使用同一个主机名（不要混用 `localhost` 和 `127.0.0.1`）。
-- **WebSocket 代理**：反向代理需支持 `/api/ws` 的协议升级（Upgrade），并原样保留浏览器的 `Origin` 和 `Host` 请求头（后端会校验同源，不能通过删掉 `Origin` 头来绕过检查）。
+- **WebSocket 代理**：反向代理需支持 `/api/ws` 的协议升级（Upgrade）。
+- **保留 `Origin` 与 `Host`**：反向代理对所有请求原样保留浏览器的 `Origin` 和 `Host` 请求头。后端按两者核对写请求与 WebSocket 握手的来源（规则见 §2），不能通过删掉 `Origin` 头来绕过检查。
 
 ## 2. 双主体认证 (Dual Principals)
 
 系统同时支持「浏览器用户」和「API Key 机器调用方」，两者使用同一套权限体系：
 
-- **浏览器登录态（`SessionCookie`）**：后端通过 HttpOnly Cookie `iclip_session` 维护会话，前端 JS 不读写该 Cookie，也不保存 API Key。企业 SSO 登录跳回前端时，落地页读取 URL 上的 `jwt_token`（兼容 `jwt`）调用 `GET /auth/sso/callback?jwt=...` 换取 Cookie，随后立即用 `replace` 清除地址栏里的票据参数。前端判断当前是否已登录，唯一以 `GET /users/me` 的结果为准（返回 `401` 即未登录）。
+- **浏览器登录态（`SessionCookie`）**：后端通过 HttpOnly Cookie 维护会话，前端 JS 不读写该 Cookie，也不保存 API Key。配置开启 `cookie_secure` 时 Cookie 名为 `__Host-iclip_session`（带 `Secure`、`Path=/`、不设 `Domain`，浏览器不允许子域名写同名 Cookie），未开启时（http 访问）名为 `iclip_session`；后端只认当前配置对应的那一个名字。企业 SSO 登录跳回前端时，落地页读取 URL 上的 `jwt_token`（兼容 `jwt`）调用 `GET /auth/sso/callback?jwt=...` 换取 Cookie，随后立即用 `replace` 清除地址栏里的票据参数。前端判断当前是否已登录，唯一以 `GET /users/me` 的结果为准（返回 `401` 即未登录）。
 - **机器调用方（`BearerToken`）**：在请求头携带 `Authorization: Bearer <token>`（明文仅在创建时返回一次）。**凭证优先级**：只要请求头里带了 `Authorization: Bearer`，后端就只按 API Key 验证；如果 Key 无效直接返回 `401`，不会回退去看浏览器 Cookie（WebSocket 握手同理）。
+- **请求来源检查**：`POST`、`PUT`、`PATCH`、`DELETE` 请求与 WebSocket 握手带了 `Origin` 头时，它的主机和端口必须等于请求的 `Host`，或者它在配置 `security.cors_allow_origins` 里；否则写请求返回 `403`（`{ detail }`），在所有路由之前生效，WebSocket 握手以 `1008` 关闭。`Origin: null` 与同站的其他子域名（包括预览域名）都不放行；不带 `Origin` 的请求（非浏览器的调用方，如 API Key 调用方与运行时的内部回调）不受影响。
 - **接口权限声明**：每个接口需要什么权限，直接看 `openapi.json` 中该接口的 `security` 字段（数组各项之间为「或」关系，内部的 scopes 为必须同时具备的权限名；空数组代表只需登录；无 `security` 代表公开接口；`POST /auth/logout` 仅限浏览器 Cookie 调用）。
 - **修改用户时的防越权检查**：调用 `PATCH /users/{id}` 修改他人账号（包括仅启停账号）时，如果对方现有的权限、或修改后的权限里包含当前操作者自己没有的权限，接口会返回 `403`。尝试修改自己的权限或停用自己会返回 `400`。
 - **代指定用户操作（`users:act_as`）**：持有 `users:act_as` 权限的 API Key，在调用以下 6 个写接口时传入目标用户名，即可将数据直接记在该用户名下：
@@ -171,7 +173,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 成片工程是对话工作区里的 `whole-film/` 目录。工程里的脚本不可信，所以预览放在应用域名下的一个子域名（预览域名，配置项 `WHOLE_FILM_PREVIEW_ORIGIN`，见 [deploy.md](../docs/deploy.md)）里运行。登录 Cookie 不设 `Domain`，预览域名拿不到它，取工程文件靠地址里的令牌。
 - **按主机名划分**：后端按请求的 `Host` 区分两个域名，在所有路由之前生效（反向代理须原样转发 `Host`，见 §1）。`Host` 是预览域名时只开放下面两个预览地址，其余接口（包括登录）一律 `404`，WebSocket 握手直接拒绝；`Host` 是别的主机时预览地址一律 `404`。没配置预览域名时，任何主机上的预览地址都是 `404`。
-- **发令牌** `POST /conversations/{id}/whole-film/preview`（应用域名，登录态）：可见范围同读工作区文件，治理者也能发；看不见这段对话返回 `404`。返回 `{ origin, token, expiresAt }`：`origin` 是预览域名，令牌 1 小时有效。令牌签进对话的创建者、对话、失效时刻和这次请求的 `Origin` 请求头，不落库，到期前不能吊销。没配置预览域名、请求没带 `Origin` 或它不是 `http(s)://主机[:端口]` 都返回 `422`。前端自己拼出预览地址 `<origin>/api/whole-film/preview/<token>/…`。
+- **发令牌** `POST /conversations/{id}/whole-film/preview`（应用域名，登录态）：可见范围同读工作区文件，治理者也能发；看不见这段对话返回 `404`。返回 `{ origin, token, expiresAt }`：`origin` 是预览域名，令牌 1 小时有效。令牌签进对话的创建者、对话、失效时刻和这次请求的 `Origin` 请求头，不落库，到期前不能吊销。没配置预览域名、请求没带 `Origin` 或它不是 `http(s)://主机[:端口]` 都返回 `422`；来源不被放行的（见 §2「请求来源检查」）先返回 `403`。前端自己拼出预览地址 `<origin>/api/whole-film/preview/<token>/…`。
 - **预览地址**（预览域名，不看登录态）：令牌不对或已过期返回 `403`。
   - `GET /whole-film/preview/{token}/host` 返回 `{ appOrigin }`，即发令牌时请求的 `Origin`。预览页据此确认自己在预览域名上，并只接受来自这个来源的消息。
   - `GET /whole-film/preview/{token}/files/{path}`：`path` 相对工程根，带 `.` 或 `..` 段、空段、以 `/` 开头或结尾、带反斜杠都返回 `404`。以 `vendor/` 开头的返回 `307`，转到同主机的 `/hyperframes/vendor/<其余部分>`（公共库的文件，由前端的静态文件提供）；其余原文返回工作区里的 `whole-film/<path>`，没有就返回 `404`，不到别处找。类型按扩展名给出：`.html`、`.css`、`.js` / `.mjs`、`.json`、`.svg`、`.txt` 各用对应类型（文本类带 `charset=utf-8`），其余为 `application/octet-stream`。响应头带 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff` 与 `Referrer-Policy: no-referrer`。

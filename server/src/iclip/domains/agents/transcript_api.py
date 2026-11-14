@@ -18,9 +18,9 @@ from iclip.domains.identity.public import (
     MANAGE_PERMISSION,
     ActAs,
     Principal,
+    origin_allowed,
     require_permission,
     resolve_user_name,
-    websocket_origin_allowed,
     websocket_principal,
 )
 from iclip.platform.live.frames import (
@@ -448,7 +448,7 @@ def create_transcript_router(
 
     @outer.websocket("/ws")
     async def subscribe(websocket: WebSocket) -> None:
-        if not websocket_origin_allowed(websocket, allowed_origins):
+        if not origin_allowed(websocket.headers, allowed_origins):
             _logger.info(
                 "订阅连接被拒：Origin 不同源",
                 origin=websocket.headers.get("origin"),
