@@ -193,7 +193,7 @@ describe('组件、块页签 · 悬停预览', () => {
     // 运行库用组件库里带的那份，收到 srcdoc 时就已经带着
     expect(player).toHaveProperty(
       'loadedRuntimeSrc',
-      `${ORIGIN}/hyperframes/test-fixtures/vendor/hyperframes/hyperframe.runtime.iife.js`,
+      `${ORIGIN}/hyperframes/test-fixtures/vendor/hyperframes/0.9.31/hyperframe.runtime.iife.js`,
     )
     const srcdoc = player?.getAttribute('srcdoc') ?? ''
     expect(srcdoc).toContain(`<base href="${ORIGIN}/hyperframes/test-fixtures/">`)

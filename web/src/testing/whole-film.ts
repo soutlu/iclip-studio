@@ -12,14 +12,21 @@ import {
   type VideoClip,
 } from '@/features/storyboard/whole-film/composition/film'
 
-// 源目录里没有组装时才生成的内容：分片表留空，条目补上空的 chars
-const fixtureSource = fixtureCatalogJson as Omit<ComponentCatalog, 'version' | 'cjk' | 'items'> & {
+// 源目录里没有组装时才生成的内容：运行库路径照组装结果写，分片表留空，条目补上空的 chars
+const fixtureSource = fixtureCatalogJson as Omit<
+  ComponentCatalog,
+  'version' | 'runtime' | 'cjk' | 'items'
+> & {
   items: Omit<CatalogItem, 'chars'>[]
 }
 
 export const fixtureCatalog: ComponentCatalog = {
   ...fixtureSource,
   version: 'test-fixtures',
+  runtime: {
+    hyperframes: 'vendor/hyperframes/0.9.31/hyperframe.runtime.iife.js',
+    gsap: 'vendor/npm/gsap@3.14.2/dist/gsap.min.js',
+  },
   cjk: { family: 'Noto Sans SC', slices: [] },
   items: fixtureSource.items.map((item) => ({ ...item, chars: '' })),
 }

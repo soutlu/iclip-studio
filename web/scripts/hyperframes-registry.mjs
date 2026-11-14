@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join, relative, resolve } from 'node:path'
 import {
@@ -8,17 +8,20 @@ import {
   CJK_FONT,
   DEFAULT_OUT,
   FIXTURES_DIR,
+  FONT_TABLE,
   HF_VERSION,
   IntegrityError,
   RUNTIME,
   SyncError,
   WEB_ROOT,
   checkCatalogFonts,
+  checkRelocated,
   cjkSlices,
   compositionTarget,
   fontFaceDescriptors,
   fontFaces,
   fontPackage,
+  installVersion,
   installedFiles,
   isLatinSubset,
   libraryVersion,
@@ -29,6 +32,7 @@ import {
   npmPackage,
   publishedCatalog,
   registryItems,
+  relocate,
   sha256,
   sourceTree,
   twinDescriptors,
@@ -268,7 +272,6 @@ async function assemble(temp, catalog, lock) {
     twins[family] = twinDescriptors(descriptors)
     await writeOut(cssPath, `${latin}\n`)
   }
-  await writeOut(CJK_FONT.faces, `${JSON.stringify({ slices: cjk.slices, twins })}\n`)
 
   const thumbnailsDir = join(libraryDir, 'thumbnails')
   if (existsSync(thumbnailsDir)) {
@@ -276,6 +279,13 @@ async function assemble(temp, catalog, lock) {
       await writeOut(`thumbnails/${file}`, await readFile(join(thumbnailsDir, file)))
     }
   }
+
+  const { moved, renamed } = await relocate(temp)
+  const css = Object.fromEntries(
+    Object.entries(catalog.fonts).map(([family, font]) => [family, renamed.get(font.css)]),
+  )
+  await writeOut(FONT_TABLE, `${JSON.stringify({ slices: cjk.slices, twins, css })}\n`)
+  await checkRelocated(temp, moved)
 
   const files = await listFiles(temp)
   const leftovers = []
@@ -308,17 +318,20 @@ async function assemble(temp, catalog, lock) {
 
 const readJson = async (path) => JSON.parse(await readFile(path, 'utf8'))
 
-async function assembleInto(target, catalog, lock) {
-  const temp = `${target}.${process.pid}.tmp`
+/**
+ * 在输出目录里的临时目录组装，交给 `install(temp, result)` 发布；无论成败，最后删掉临时目录。
+ * 临时目录与输出目录在同一文件系统，发布时 vendor/ 的文件靠改名并入。
+ */
+async function assembleThen(catalog, lock, install) {
+  const temp = join(outDir, `.assemble.${process.pid}`)
   await rm(temp, { recursive: true, force: true })
   await mkdir(temp, { recursive: true })
   try {
     const result = await assemble(temp, catalog, lock)
-    await rename(temp, target)
+    await install(temp, result)
     return result
-  } catch (error) {
+  } finally {
     await rm(temp, { recursive: true, force: true })
-    throw error
   }
 }
 
@@ -339,16 +352,16 @@ async function main() {
   await mkdir(outDir, { recursive: true })
 
   if (updateLock) {
-    const scratch = join(outDir, `.update-lock.${process.pid}`)
-    const { npmLock } = await assembleInto(scratch, catalog, null)
-    const sorted = Object.fromEntries(
-      Object.entries(npmLock).sort(([a], [b]) => a.localeCompare(b)),
-    )
-    await writeFile(lockPath, `${JSON.stringify({ npm: sorted }, null, 2)}\n`)
-    console.log(`锁文件已更新：${displayPath(lockPath)}`)
-    const version = await libraryVersion(libraryDir)
-    if (existsSync(join(outDir, version))) await rm(scratch, { recursive: true, force: true })
-    else await rename(scratch, join(outDir, version))
+    let version
+    await assembleThen(catalog, null, async (temp, { npmLock }) => {
+      const sorted = Object.fromEntries(
+        Object.entries(npmLock).sort(([a], [b]) => a.localeCompare(b)),
+      )
+      await writeFile(lockPath, `${JSON.stringify({ npm: sorted }, null, 2)}\n`)
+      console.log(`锁文件已更新：${displayPath(lockPath)}`)
+      version = await libraryVersion(libraryDir)
+      if (!existsSync(join(outDir, version))) await installVersion(temp, outDir, version)
+    })
     await publishCatalog(catalog, version)
     return
   }
@@ -359,7 +372,9 @@ async function main() {
   if (existsSync(versionDir)) {
     console.log(`组件库 ${version} 已组装过，跳过：${displayPath(versionDir)}`)
   } else {
-    const { files } = await assembleInto(versionDir, catalog, await readJson(lockPath))
+    const { files } = await assembleThen(catalog, await readJson(lockPath), (temp) =>
+      installVersion(temp, outDir, version),
+    )
     console.log(`组件库已组装：${displayPath(versionDir)}（${files.length} 个文件）`)
   }
   await publishCatalog(catalog, version)
