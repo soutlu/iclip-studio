@@ -32,7 +32,7 @@ export type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'failed'
 export type FilmView = {
   html: string
   canvas: Canvas
-  /** 文件里所有的块（三种），按它们在文件里的先后。 */
+  /** 文件里所有的片段（三种），按它们在文件里的先后。 */
   blocks: readonly FilmBlock[]
   durationMs: number
   canUndo: boolean
@@ -57,7 +57,7 @@ const STALE_NOTICE = '成片草稿已在别处改过，已换成最新的一版�
 const NO_RENUMBERING: Renumbering = new Map()
 const NO_STARTS: ReadonlyMap<string, number> = new Map()
 
-/** 成片里所有的块，按它们在文件里的先后。只读块，不存出文件，一批操作中间也能用。 */
+/** 成片里所有的片段，按它们在文件里的先后。只读出片段，不存出文件，一批操作中间也能用。 */
 const blocksOf = (engine: Composition): FilmBlock[] =>
   (engine.getElements().find((element) => element.id === FILM_ID)?.children ?? []).flatMap(
     (element) => {
@@ -75,7 +75,7 @@ const blocksOf = (engine: Composition): FilmBlock[] =>
     },
   )
 
-/** 成片总长：所有块里最晚的结尾。 */
+/** 成片总长：所有片段里最晚的结尾。 */
 const durationOf = (blocks: readonly FilmBlock[]) =>
   Math.max(0, ...blocks.map((block) => block.start + block.duration))
 
@@ -95,7 +95,7 @@ const viewOf = (engine: Composition): FilmView => {
   }
 }
 
-/** 在一批操作里做完 `change`，再按改完的所有块写根上的总长：一起算一步撤销。 */
+/** 在一批操作里做完 `change`，再按改完的所有片段写根上的总长：一起算一步撤销。 */
 const applyTo = (engine: Composition, change: () => void) =>
   engine.batch(() => {
     change()
@@ -254,7 +254,7 @@ export function useFilmSession(
 
   /**
    * 把几段素材一段接一段放进成片的画面区：给了 `at` 就从那一行的那个时间放起（调用方保证那里空着），
-   * 没给就接在主轨（画面区最上面那一行）的末尾。`renumber` 是为它新开一行时别的块要换成的行号。
+   * 没给就接在主轨（画面区最上面那一行）的末尾。`renumber` 是为它新开一行时别的片段要换成的行号。
    * 每段都叠在最上面，写在根下第一个。还没有成片时先按 `canvas` 建一份。放不下时不动成片。
    */
   const addPictures = useCallback(
@@ -267,7 +267,7 @@ export function useFilmSession(
       const engine = await engineFor(canvas)
       if (engine === null) return false
       const existing = blocksOf(engine)
-      // 别的块先换成新的行号，后面都按换完的样子算
+      // 别的片段先换成新的行号，后面都按换完的样子算
       const others = existing.map((block) => ({
         ...block,
         track: renumber.get(block.id) ?? block.track,
@@ -392,7 +392,7 @@ export function useFilmSession(
   )
 
   /**
-   * 改几个块各自的起止和入点，一起算一步撤销。组件块的入点写成从第几秒开始播，是 0 时去掉这个属性。
+   * 改几个片段各自的起止和入点，一起算一步撤销。组件或块的片段的入点写成从第几秒开始播，是 0 时去掉这个属性。
    */
   const retime = useCallback(
     (timings: ReadonlyMap<string, Timing>) =>
@@ -411,9 +411,9 @@ export function useFilmSession(
   )
 
   /**
-   * 把一个块换到另一行的某个时间。`direction` 是它往上还是往下挪（null 时不调叠放顺序）：
-   * 只重排它自己，别的块的叠放顺序和文件里的先后都不动。
-   * `renumber` 是为它新开一行时别的块要换成的行号；`starts` 是和它一起挪的块各自的新起点，
+   * 把一个片段换到另一行的某个时间。`direction` 是它往上还是往下挪（null 时不调叠放顺序）：
+   * 只重排它自己，别的片段的叠放顺序和文件里的先后都不动。
+   * `renumber` 是为它新开一行时别的片段要换成的行号；`starts` 是和它一起挪的片段各自的新起点，
    * 它们留在原来的行。都和它算一步撤销。
    */
   const moveBlock = useCallback(
@@ -429,14 +429,14 @@ export function useFilmSession(
         for (const [other, start] of starts) engine.setTiming(other, { start: start / 1000 })
         engine.setTiming(id, { start: at.start / 1000, trackIndex: at.track })
         if (direction === null) return
-        // 按挪完的样子算：一起挪的块的新起点、别的块的新行号都已写进去
+        // 按挪完的样子算：一起挪的片段的新起点、别的片段的新行号都已写进去
         const z = restackedZ(blocksOf(engine), id, direction)
         if (z !== undefined) engine.setStyle(id, { zIndex: z > 0 ? String(z) : null })
       }),
     [edit],
   )
 
-  /** 把几个块各自挪到新的起点，一起算一步撤销。 */
+  /** 把几个片段各自挪到新的起点，一起算一步撤销。 */
   const restart = useCallback(
     (starts: ReadonlyMap<string, number>) =>
       edit((engine) => {
@@ -445,7 +445,7 @@ export function useFilmSession(
     [edit],
   )
 
-  /** 把几个块一起隐藏或显示回来，算一步撤销。 */
+  /** 把几个片段一起隐藏或显示回来，算一步撤销。 */
   const setHidden = useCallback(
     (ids: readonly string[], hidden: boolean) =>
       edit((engine) => {
@@ -455,8 +455,8 @@ export function useFilmSession(
   )
 
   /**
-   * 把组件块 `id` 的可填项取值整个换成 `values`，算一步撤销。
-   * 块已经不在成片里（比如改完还没提交就删掉了）时不动成片。
+   * 把组件或块的片段 `id` 的可填项取值整个换成 `values`，算一步撤销。
+   * 片段已经不在成片里（比如改完还没提交就删掉了）时不动成片。
    */
   const setValues = useCallback(
     (id: string, values: Readonly<Record<string, VariableValue>>) => {
@@ -468,7 +468,7 @@ export function useFilmSession(
   )
 
   /**
-   * 改块 `id` 上的几个属性（null 是去掉），算一步撤销。块已经不在成片里、或者属性都已经是这些值时
+   * 改片段 `id` 上的几个属性（null 是去掉），算一步撤销。片段已经不在成片里、或者属性都已经是这些值时
    * 不动成片。
    */
   const setAttributes = useCallback(
@@ -487,7 +487,7 @@ export function useFilmSession(
     [edit],
   )
 
-  /** 删掉几个块；`ripple` 为真时主轨里后面的块往前补上。没有块再用的素材变量一起去掉。 */
+  /** 删掉几个片段；`ripple` 为真时主轨里后面的片段往前补上。没有片段再用的素材变量一起去掉。 */
   const removeBlocks = useCallback(
     (ids: readonly string[], ripple: boolean) =>
       edit((engine) => {

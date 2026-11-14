@@ -75,8 +75,8 @@ WholeFilmSourceKind = Literal["video", "audio"]
 
 @dataclass(frozen=True, slots=True)
 class WholeFilmSource:
-    """成片文件里用到的一条素材：它出自哪条生成记录、文件里写的地址、是画面块用的视频还是
-    音频块用的音频。"""
+    """成片文件里用到的一条素材：它出自哪条生成记录、文件里写的地址、是视频片段用的视频还是
+    音频片段用的音频。"""
 
     job_id: uuid.UUID
     url: str

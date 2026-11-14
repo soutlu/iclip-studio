@@ -62,11 +62,11 @@ const piece = (overrides: Partial<NewPicture> = {}): NewPicture => ({
 const add = (result: Session, ...pictures: NewPicture[]) =>
   act(() => result.current.addPictures(CANVAS, pictures))
 
-/** 成片里的画面块，按它们在文件里的先后。 */
+/** 成片里的视频片段，按它们在文件里的先后。 */
 const picturesOf = (result: Session): PictureBlock[] =>
   (result.current.film?.blocks ?? []).filter((block) => block.kind === 'picture')
 
-/** 成片里的画面块按起点排，写成「记录、起点、时长」。 */
+/** 成片里的视频片段按起点排，写成「记录、起点、时长」。 */
 const spans = (result: Session) =>
   picturesOf(result)
     .toSorted((left, right) => left.start - right.start)
@@ -83,7 +83,7 @@ describe('useFilmSession', () => {
     expect(saves).toEqual([])
   })
 
-  it('打开存着的成片：读出画面块和画幅，不改就不保存', async () => {
+  it('打开存着的成片：读出视频片段和画幅，不改就不保存', async () => {
     const saves = recordSaves()
     const second = picture({ id: 'clip-2', jobId: OTHER_JOB, start: 2_000, mediaStart: 500 })
     const stored = putMockWholeFilmDraft(CONVERSATION, filmFile([picture(), second], CANVAS))
@@ -194,7 +194,7 @@ describe('useFilmSession', () => {
     return open(stored, 10, conversation)
   }
 
-  it('改几个块的起止和入点：算一步撤销，成片总长跟着变，存出的文件写着新的时间', async () => {
+  it('改几个片段的起止和入点：算一步撤销，成片总长跟着变，存出的文件写着新的时间', async () => {
     const saves = recordSaves()
     const { result } = await openThree()
     act(() =>
@@ -224,7 +224,7 @@ describe('useFilmSession', () => {
     expect(result.current.film?.canUndo).toBe(false)
   })
 
-  it('删掉一个块、开着波纹编辑：后面的块往前补上，用不到的素材变量一起去掉', async () => {
+  it('删掉一个片段、开着波纹编辑：后面的片段往前补上，用不到的素材变量一起去掉', async () => {
     const saves = recordSaves()
     const { result } = await openThree()
     act(() => result.current.removeBlocks(['b'], true))
@@ -241,7 +241,7 @@ describe('useFilmSession', () => {
     expect(result.current.film?.html).toContain(`src-${OTHER_JOB}`)
   })
 
-  it('文件里还有组件块和音频块：删掉画面块后它们和音频的素材变量都留着', async () => {
+  it('文件里还有组件或块的片段和音频片段：删掉视频片段后它们和音频的素材变量都留着', async () => {
     const saves = recordSaves()
     const conversation = crypto.randomUUID()
     const stored = putMockWholeFilmDraft(
@@ -262,7 +262,7 @@ describe('useFilmSession', () => {
     expect(declared.map((variable) => variable.id)).toEqual([`src-${AUDIO_JOB}`])
   })
 
-  it('删掉一个块、关着波纹编辑：留下空档', async () => {
+  it('删掉一个片段、关着波纹编辑：留下空档', async () => {
     const { result } = await openThree()
     act(() => result.current.removeBlocks(['b'], false))
     expect(spans(result)).toEqual([
@@ -271,7 +271,7 @@ describe('useFilmSession', () => {
     ])
   })
 
-  it('把几个块一起挪到新的起点（合拢空档）：算一步撤销，成片总长跟着变', async () => {
+  it('把几个片段一起挪到新的起点（合拢空档）：算一步撤销，成片总长跟着变', async () => {
     const { result } = await openThree()
     act(() => result.current.removeBlocks(['b'], false))
     act(() => result.current.restart(new Map([['c', 2_000]])))
@@ -294,13 +294,13 @@ describe('useFilmSession', () => {
     return open(putMockWholeFilmDraft(conversation, filmFile(blocks)), 10, conversation)
   }
 
-  /** 存出的文件里根下的块，按文件里的先后。 */
+  /** 存出的文件里根下的片段，按文件里的先后。 */
   const savedOrder = (html: string | undefined) =>
     [...new DOMParser().parseFromString(html ?? '', 'text/html').querySelectorAll('#film > *')].map(
       (block) => block.id,
     )
 
-  it('加进去的块写在根下第一个、叠在最上面：叠放顺序按文件里所有的块数算，组件块和音频块也算', async () => {
+  it('加进去的片段写在根下第一个、叠在最上面：叠放顺序按文件里所有的片段数算，组件或块的片段和音频片段也算', async () => {
     const saves = recordSaves()
     const { result } = await openWith([
       picture({ id: 'a', duration: 2_000 }),
@@ -342,7 +342,7 @@ describe('useFilmSession', () => {
     ])
   })
 
-  it('把块换到上面一行：抬到它压着的、时间上重叠的块之上，别的块和文件里的先后不动；一步撤销', async () => {
+  it('把片段换到上面一行：抬到它压着的、时间上重叠的片段之上，别的片段和文件里的先后不动；一步撤销', async () => {
     const saves = recordSaves()
     const { result } = await openWith([
       picture({ id: 'x', duration: 2_000 }),
@@ -370,7 +370,7 @@ describe('useFilmSession', () => {
     expect(result.current.film?.canUndo).toBe(false)
   })
 
-  it('把块换到下面一行：降到盖着它的、时间上重叠的块之下，降到 0 时去掉样式；一步撤销', async () => {
+  it('把片段换到下面一行：降到盖着它的、时间上重叠的片段之下，降到 0 时去掉样式；一步撤销', async () => {
     const saves = recordSaves()
     const { result } = await openWith([
       picture({ id: 'a', duration: 2_000, z: 1 }),
@@ -397,7 +397,7 @@ describe('useFilmSession', () => {
     expect(result.current.film?.canUndo).toBe(false)
   })
 
-  it('把块换到下面一行、叠放顺序都是 0：降不下去，只改行号和起点', async () => {
+  it('把片段换到下面一行、叠放顺序都是 0：降不下去，只改行号和起点', async () => {
     const { result } = await openThree()
     act(() => result.current.moveBlock('c', { track: 1, start: 500 }, 'down'))
     expect(layout(result)).toEqual([
@@ -421,7 +421,7 @@ describe('useFilmSession', () => {
     ])
   })
 
-  it('第 0 行没有块时，最上面那一行就是第一行：没给落点的镜头接在它末尾，波纹编辑补的也是它', async () => {
+  it('第 0 行没有片段时，最上面那一行就是第一行：没给落点的镜头接在它末尾，波纹编辑补的也是它', async () => {
     const conversation = crypto.randomUUID()
     const stored = putMockWholeFilmDraft(
       conversation,
@@ -449,7 +449,7 @@ describe('useFilmSession', () => {
       .filter((block) => block.hidden)
       .map((block) => block.id)
 
-  it('把几个块一起隐藏：算一步撤销，存出的文件带着隐藏标记，成片总长不变；再显示回来标记去掉', async () => {
+  it('把几个片段一起隐藏：算一步撤销，存出的文件带着隐藏标记，成片总长不变；再显示回来标记去掉', async () => {
     const saves = recordSaves()
     const { result } = await openThree()
     act(() => result.current.setHidden(['a', 'b'], true))
@@ -470,7 +470,7 @@ describe('useFilmSession', () => {
     expect(result.current.film?.html).not.toContain('data-hidden')
   })
 
-  it('隐藏标记跟着块走，不跟着行：放进隐藏着的行的镜头照常显示，隐藏的块换到别的行仍然隐藏', async () => {
+  it('隐藏标记跟着片段走，不跟着行：放进隐藏着的行的镜头照常显示，隐藏的片段换到别的行仍然隐藏', async () => {
     const { result } = await openThree()
     act(() => result.current.moveBlock('c', { track: 1, start: 0 }, 'down'))
     act(() => result.current.setHidden(['c'], true))
@@ -486,7 +486,7 @@ describe('useFilmSession', () => {
     expect(hiddenIds(result)).toEqual(['c'])
   })
 
-  it('把块搬进最上面新开的一行：别的块换成新的行号，按换完的行算叠放顺序；一步撤销', async () => {
+  it('把片段搬进最上面新开的一行：别的片段换成新的行号，按换完的行算叠放顺序；一步撤销', async () => {
     const saves = recordSaves()
     const { result } = await openWith([
       picture({ id: 'a', duration: 2_000, z: 2 }),
@@ -522,7 +522,7 @@ describe('useFilmSession', () => {
     expect(result.current.film?.canUndo).toBe(false)
   })
 
-  it('成组挪动、被抓的块搬进最上面新开的一行：跟着的块留在原来那一行（行号跟着改）只挪时间；一步撤销', async () => {
+  it('成组挪动、被抓的片段搬进最上面新开的一行：跟着的片段留在原来那一行（行号跟着改）只挪时间；一步撤销', async () => {
     const saves = recordSaves()
     const { result } = await openThree()
     act(() =>
@@ -556,7 +556,7 @@ describe('useFilmSession', () => {
     expect(result.current.film?.canUndo).toBe(false)
   })
 
-  it('成组挪动、被抓的块换到已有的另一行：跟着的块只挪时间，叠放顺序按它们挪完的时间算；一步撤销', async () => {
+  it('成组挪动、被抓的片段换到已有的另一行：跟着的片段只挪时间，叠放顺序按它们挪完的时间算；一步撤销', async () => {
     const { result } = await openWith([
       picture({ id: 'x', duration: 2_000 }),
       picture({ id: 'm', duration: 1_000, track: 1 }),
@@ -587,7 +587,7 @@ describe('useFilmSession', () => {
     expect(result.current.film?.canUndo).toBe(false)
   })
 
-  it('把镜头加进两行之间新开的一行：下面的行往后排一号，新块写在根下第一个、叠在最上面', async () => {
+  it('把镜头加进两行之间新开的一行：下面的行往后排一号，新片段写在根下第一个、叠在最上面', async () => {
     const conversation = crypto.randomUUID()
     const stored = putMockWholeFilmDraft(
       conversation,
@@ -619,7 +619,7 @@ describe('useFilmSession', () => {
     ])
   })
 
-  it('把块全删掉：成片还在，只是没有画面', async () => {
+  it('把片段全删掉：成片还在，只是没有画面', async () => {
     const { result } = await openThree()
     act(() => result.current.removeBlocks(['a', 'b', 'c'], true))
     expect(spans(result)).toEqual([])
@@ -717,7 +717,7 @@ describe('useFilmSession', () => {
     expect(mockWholeFilmDraft(CONVERSATION)?.html).toBe(result.current.film?.html)
   })
 
-  describe('组件块和音频块', () => {
+  describe('组件或块的片段和音频片段', () => {
     const OTHER_AUDIO = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d'
     const catalogItem = (name: string) => {
       const item = fixtureCatalog.items.find((candidate) => candidate.name === name)
@@ -732,7 +732,7 @@ describe('useFilmSession', () => {
       duration: 3_000,
       ...overrides,
     })
-    /** 文件里的块，按文件里的先后，写成「id、种类、行号、起点、时长」。 */
+    /** 文件里的片段，按文件里的先后，写成「id、种类、行号、起点、时长」。 */
     const kinds = (result: Session) =>
       result.current.film?.blocks.map((block) => [
         block.id,
@@ -741,7 +741,7 @@ describe('useFilmSession', () => {
         block.start,
         block.duration,
       ])
-    /** 存出的文件里某个块的开始标签。 */
+    /** 存出的文件里某个片段的开始标签。 */
     const tagOf = (html: string | undefined, id: string) =>
       new RegExp(`<[a-z]+ [^>]*\\bid="${id}"[^>]*>`).exec(html ?? '')?.[0]
     /** 存出的文件里声明的变量。 */
@@ -752,20 +752,20 @@ describe('useFilmSession', () => {
           .documentElement.getAttribute('data-composition-variables') ?? '[]',
       ) as { id: string; label: string }[]
 
-    // 画面区第 0 行是组件块，第 1 行是画面块；声音区第 0 行的音频块最长
+    // 画面区第 0 行是组件或块的片段，第 1 行是视频片段；声音区第 0 行的音频片段最长
     const stacked = () => [
       component({ id: 'k', duration: 3_000, z: 1 }),
       picture({ id: 'p', track: 1, duration: 2_000 }),
       audio({ id: 'm', duration: 8_000 }),
     ]
 
-    it('打开带三种块的成片：三种块都读出来，成片总长算到音频块的结尾', async () => {
+    it('打开带三种片段的成片：三种片段都读出来，成片总长算到音频片段的结尾', async () => {
       const { result } = await openWith(stacked())
       expect(result.current.film?.blocks).toEqual(stacked())
       expect(result.current.film?.durationMs).toBe(8_000)
     })
 
-    it('加一个组件块：写在根下第一个、叠在最上面，名字、文件和时长取自组件库的条目，可填项取给的值', async () => {
+    it('加一个组件或块的片段：写在根下第一个、叠在最上面，名字、文件和时长取自组件库的条目，可填项取给的值', async () => {
       const saves = recordSaves()
       const { result } = await openWith(stacked())
       await act(() =>
@@ -849,7 +849,7 @@ describe('useFilmSession', () => {
       })
     })
 
-    it('在行里挪组件块和音频块：组件块不写入点，音频块写；一步撤销', async () => {
+    it('在行里挪组件或块的片段和音频片段：组件或块的片段不写入点，音频片段写；一步撤销', async () => {
       const saves = recordSaves()
       const { result } = await openWith(stacked())
       act(() =>
@@ -875,7 +875,7 @@ describe('useFilmSession', () => {
       expect(result.current.film?.blocks).toEqual(stacked())
     })
 
-    it('组件块裁开头：文件里写上从第几秒开始播，和起止算一步撤销；拉回 0 时去掉这个属性', async () => {
+    it('组件或块的片段裁开头：文件里写上从第几秒开始播，和起止算一步撤销；拉回 0 时去掉这个属性', async () => {
       const saves = recordSaves()
       const { result } = await openWith(stacked())
       const original = result.current.film?.html
@@ -906,7 +906,7 @@ describe('useFilmSession', () => {
       expect(tagOf(saves[1]?.html, 'k')).not.toContain('data-playback-start')
     })
 
-    /** 文件里的块，按文件里的先后，写成「id、行号、起点、叠放顺序」（音频块没有叠放顺序）。 */
+    /** 文件里的片段，按文件里的先后，写成「id、行号、起点、叠放顺序」（音频片段没有叠放顺序）。 */
     const stacking = (result: Session) =>
       result.current.film?.blocks.map((block) => [
         block.id,
@@ -915,7 +915,7 @@ describe('useFilmSession', () => {
         block.kind === 'audio' ? null : block.z,
       ])
 
-    it('把音频块换到声音区的另一行：只改行号和起点，不带叠放顺序；一步撤销', async () => {
+    it('把音频片段换到声音区的另一行：只改行号和起点，不带叠放顺序；一步撤销', async () => {
       const saves = recordSaves()
       const blocks = [...stacked(), audio({ id: 'n', track: 1, start: 9_000 })]
       const { result } = await openWith(blocks)
@@ -934,10 +934,10 @@ describe('useFilmSession', () => {
       expect(result.current.film?.blocks).toEqual(blocks)
     })
 
-    it('把组件块换到下面新开的一行：按叠放规则降到盖着它的块之下（降到 0 时去掉样式）；一步撤销', async () => {
+    it('把组件或块的片段换到下面新开的一行：按叠放规则降到盖着它的片段之下（降到 0 时去掉样式）；一步撤销', async () => {
       const saves = recordSaves()
       const { result } = await openWith(stacked())
-      // 组件块搬到画面块那一行下面：画面块排到 0 号，组件块是 1 号，降到时间上压着它的画面块之下
+      // 组件或块的片段搬到视频片段那一行下面：视频片段排到 0 号，组件或块的片段是 1 号，降到时间上压着它的视频片段之下
       act(() => result.current.moveBlock('k', { track: 1, start: 0 }, 'down', new Map([['p', 0]])))
       expect(stacking(result)).toEqual([
         ['k', 1, 0, 0],
@@ -951,7 +951,7 @@ describe('useFilmSession', () => {
       expect(result.current.film?.blocks).toEqual(stacked())
     })
 
-    it('把画面块搬进组件那一行上面新开的一行：组件块排到 1 号，画面块抬到它压着的组件块之上；一步撤销', async () => {
+    it('把视频片段搬进组件那一行上面新开的一行：组件或块的片段排到 1 号，视频片段抬到它压着的组件或块的片段之上；一步撤销', async () => {
       const { result } = await openWith(stacked())
       act(() => result.current.moveBlock('p', { track: 0, start: 500 }, 'up', new Map([['k', 1]])))
       expect(stacking(result)).toEqual([
@@ -963,7 +963,7 @@ describe('useFilmSession', () => {
       expect(result.current.film?.blocks).toEqual(stacked())
     })
 
-    it('删掉组件块：组件块从文件里去掉，素材变量不动；撤销回来', async () => {
+    it('删掉组件或块的片段：组件或块的片段从文件里去掉，素材变量不动；撤销回来', async () => {
       const saves = recordSaves()
       const { result } = await openWith(stacked())
       act(() => result.current.removeBlocks(['k'], false))
@@ -982,7 +982,7 @@ describe('useFilmSession', () => {
       expect(result.current.film?.blocks).toEqual(stacked())
     })
 
-    it('隐藏组件块和音频块：存出的文件带着隐藏标记（音频块就是静音），成片总长不变；撤销去掉', async () => {
+    it('隐藏组件或块的片段和音频片段：存出的文件带着隐藏标记（音频片段就是静音），成片总长不变；撤销去掉', async () => {
       const saves = recordSaves()
       const { result } = await openWith(stacked())
       act(() => result.current.setHidden(['k', 'm'], true))
@@ -998,7 +998,7 @@ describe('useFilmSession', () => {
       expect(result.current.film?.html).not.toContain('data-hidden')
     })
 
-    it('改组件块的可填项：文件里的取值整串换成新的，算一步撤销；块已经删掉时不动成片', async () => {
+    it('改组件或块的片段的可填项：文件里的取值整串换成新的，算一步撤销；片段已经删掉时不动成片', async () => {
       const saves = recordSaves()
       const { result } = await openWith(stacked())
       act(() => result.current.setValues('k', { text: '新的标题', size: 120, shadow: true }))
@@ -1024,7 +1024,7 @@ describe('useFilmSession', () => {
       expect(result.current.film?.blocks).toEqual(stacked())
     })
 
-    it('改画面块、音频块上的属性：几项一起写进文件、读回来是新的值，算一步撤销；值没变、块已经删掉时不动成片', async () => {
+    it('改视频片段、音频片段上的属性：几项一起写进文件、读回来是新的值，算一步撤销；值没变、片段已经删掉时不动成片', async () => {
       const saves = recordSaves()
       const { result } = await openWith(stacked())
       act(() =>
@@ -1059,7 +1059,7 @@ describe('useFilmSession', () => {
       expect(result.current.film?.canUndo).toBe(false)
     })
 
-    it('删掉音频块：成片总长按剩下的块算，音频的变量一起去掉；撤销回来', async () => {
+    it('删掉音频片段：成片总长按剩下的片段算，音频的变量一起去掉；撤销回来', async () => {
       const saves = recordSaves()
       const { result } = await openWith(stacked())
       act(() => result.current.removeBlocks(['m'], true))
@@ -1088,7 +1088,7 @@ describe('useFilmSession', () => {
       const added = picturesOf(result).find((block) => block.id !== 'p')
       expect(added).toMatchObject({ track: 0, start: 4_000 })
 
-      // 声音区第 0 行的音频块不跟着补
+      // 声音区第 0 行的音频片段不跟着补
       act(() => result.current.removeBlocks(['k'], true))
       expect(kinds(result)).toEqual([
         [added?.id, 'picture', 0, 1_000, 1_500],

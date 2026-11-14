@@ -3,10 +3,10 @@ import { cjkFontFaces } from './fonts'
 import { escapeAttribute, jsonAttribute, seconds } from './html'
 
 /**
- * 成片文件：一份 HTML，时间线上每个块是根下面的一个标签。
+ * 成片文件：一份 HTML，时间线上每个片段是根下面的一个标签。
  *
  * 文件不带脚本（根上标 `data-no-timeline`）。`<head>`、根上的属性和 `<html>` 上的变量声明都由
- * 这里按块算出来，不单独保存。
+ * 这里按片段算出来，不单独保存。
  */
 export interface Film {
   canvas: Canvas
@@ -20,15 +20,15 @@ export interface Canvas {
 
 export type FilmBlock = PictureBlock | ComponentBlock | AudioBlock
 export type BlockKind = FilmBlock['kind']
-/** 用素材地址的块：地址写在块上，并绑到按记录编号取名的变量。 */
+/** 用素材地址的片段：地址写在片段上，并绑到按记录编号取名的变量。 */
 export type MediaBlock = PictureBlock | AudioBlock
 
 /**
- * 三种块共有的部分。时间都是毫秒。
+ * 三种片段共有的部分。时间都是毫秒。
  *
- * `track` 是它在自己那个区的第几行，只管显示：画面块和组件块在画面区，音频块在声音区，
+ * `track` 是它在自己那个区的第几行，只管显示：视频片段和组件或块的片段在画面区，音频片段在声音区，
  * 两个区的行号各算各的。
- * `hidden` 的块留在时间线上、占着它的时间，预览和导出里都不出现、不出声；没隐藏时文件里不写。
+ * `hidden` 的片段留在时间线上、占着它的时间，预览和导出里都不出现、不出声；没隐藏时文件里不写。
  */
 interface BlockBase {
   id: string
@@ -40,8 +40,8 @@ interface BlockBase {
 }
 
 /**
- * 画面块、音频块共有的声音和播放：`mediaStart` 是从素材的第几毫秒开始放，`volume` 是增益的倍数
- * （0.5 比 1 低 6 dB），`playbackRate` 是速度的倍数（块在成片里占的时长不跟着变，用掉的素材是
+ * 视频片段、音频片段共有的声音和播放：`mediaStart` 是从素材的第几毫秒开始放，`volume` 是增益的倍数
+ * （0.5 比 1 低 6 dB），`playbackRate` 是速度的倍数（片段在成片里占的时长不跟着变，用掉的素材是
  * 时长 × 速度），`fadeIn` / `fadeOut` 是声音淡入淡出的毫秒数。速度是 1、淡入淡出是 0 时文件里不写。
  */
 interface MediaBase extends BlockBase {
@@ -55,9 +55,9 @@ interface MediaBase extends BlockBase {
 }
 
 /**
- * 画面块：一段素材片，`src` 是素材片记录上的地址。`muted` 时不出声。
+ * 视频片段：一段素材片，`src` 是素材片记录上的地址。`muted` 时不出声。
  *
- * 两个画面区的块同时出现时谁盖住谁看 `z`（叠放顺序）：大的在上面，一样大时文件里写在后面的在上面。
+ * 两个画面区的片段同时出现时谁盖住谁看 `z`（叠放顺序）：大的在上面，一样大时文件里写在后面的在上面。
  * `z` 是 0 时文件里不写。
  */
 export interface PictureBlock extends MediaBase {
@@ -67,9 +67,9 @@ export interface PictureBlock extends MediaBase {
 }
 
 /**
- * 组件块：组件库里的一个条目。`component` 是条目的名字，`src` 是条目的文件。
+ * 组件或块的片段：组件库里的一个条目。`component` 是条目的名字，`src` 是条目的文件。
  * 条目没写尺寸或和画面一样大时铺满画面；写了别的尺寸时按原比例缩到放得下、居中（写在 `<head>` 里）。
- * `playbackStart` 是从组件自己的第几毫秒开始播，`values` 是它的可填项取值；叠放顺序同画面块。
+ * `playbackStart` 是从组件自己的第几毫秒开始播，`values` 是它的可填项取值；叠放顺序同视频片段。
  * `playbackStart` 是 0 时文件里不写。
  */
 export interface ComponentBlock extends BlockBase {
@@ -82,8 +82,8 @@ export interface ComponentBlock extends BlockBase {
 }
 
 /**
- * 音频块：一条音频记录，`src` 是记录上的地址。`loop` 时音频比块短也一直重复着播，不循环时文件里不写。
- * 隐藏的音频块不出声。
+ * 音频片段：一条音频记录，`src` 是记录上的地址。`loop` 时音频比片段短也一直重复着播，不循环时文件里不写。
+ * 隐藏的音频片段不出声。
  */
 export interface AudioBlock extends MediaBase {
   kind: 'audio'
@@ -105,7 +105,7 @@ export const SOURCE_LABEL = '素材片'
 export const AUDIO_SOURCE_LABEL = '音频'
 
 /**
- * 块上的一个属性。默认是必须写的；`optional` 的取默认值时不写；`fixed` 的只能是这个值
+ * 片段上的一个属性。默认是必须写的；`optional` 的取默认值时不写；`fixed` 的只能是这个值
  * （可选又固定的，写就是写这个值）。
  */
 export interface AttributeRule {
@@ -115,11 +115,11 @@ export interface AttributeRule {
 
 const REQUIRED: AttributeRule = {}
 const OPTIONAL: AttributeRule = { optional: true }
-// 隐藏标记和叠放顺序（块上唯一能带的样式）写在最前面，和 SDK 存出来的一样
+// 隐藏标记和叠放顺序（片段上唯一能带的样式）写在最前面，和 SDK 存出来的一样
 const HIDDEN: AttributeRule = { optional: true, fixed: '' }
 
 /**
- * 三种块的写法：标签和能带的属性（按写出的先后）。写出、读回和渲染服务的检查都按这张表。
+ * 三种片段的写法：标签和能带的属性（按写出的先后）。写出、读回和渲染服务的检查都按这张表。
  */
 export const BLOCK_SHAPES = {
   picture: {
@@ -196,10 +196,10 @@ export type BlockAttribute = {
   [Kind in BlockKind]: keyof (typeof BLOCK_SHAPES)[Kind]['attributes']
 }[BlockKind]
 
-/** 一个块要写的属性值；可选属性是 undefined 时不写。 */
+/** 一个片段要写的属性值；可选属性是 undefined 时不写。 */
 type Attributes = Partial<Record<BlockAttribute, string | undefined>>
 
-/** 按标签认块：成片的根下面每种标签只对应一种块。 */
+/** 按标签认片段：成片的根下面每种标签只对应一种片段。 */
 export function blockKindOfTag(tag: string): BlockKind | undefined {
   const kinds = Object.keys(BLOCK_SHAPES) as BlockKind[]
   return kinds.find((kind) => BLOCK_SHAPES[kind].tag === tag)
@@ -207,7 +207,7 @@ export function blockKindOfTag(tag: string): BlockKind | undefined {
 
 export const sourceVariableId = (jobId: string): string => `src-${jobId}`
 
-/** 素材地址的变量：一条记录一个，默认值就是块上写的地址。 */
+/** 素材地址的变量：一条记录一个，默认值就是片段上写的地址。 */
 export function sourceVariable(jobId: string, src: string, label = SOURCE_LABEL): FilmVariable {
   return { id: sourceVariableId(jobId), type: 'string', label, default: src }
 }
@@ -232,7 +232,7 @@ export function filmVariables(film: Film): FilmVariable[] {
   return [...bySource.values()]
 }
 
-/** 按表里的先后写出一个块；可选属性没给值就不写，固定的空值只写属性名。 */
+/** 按表里的先后写出一个片段；可选属性没给值就不写，固定的空值只写属性名。 */
 function blockElement(kind: BlockKind, values: Attributes): string {
   const { tag, attributes } = BLOCK_SHAPES[kind]
   const written = Object.entries(attributes).flatMap(([name, rule]: [string, AttributeRule]) => {
@@ -316,7 +316,7 @@ type AttributeSource = Readonly<Record<string, string>>
 const millisecondsOf = (value: string | undefined): number | undefined =>
   value !== undefined && SECONDS.test(value) ? Math.round(Number(value) * 1000) : undefined
 
-/** 三种块共有的部分；起点、时长没写或不是秒数时返回 undefined。 */
+/** 三种片段共有的部分；起点、时长没写或不是秒数时返回 undefined。 */
 function commonOf(id: string, attributes: AttributeSource) {
   const start = millisecondsOf(attributes['data-start'])
   const duration = millisecondsOf(attributes['data-duration'])
@@ -334,7 +334,7 @@ function commonOf(id: string, attributes: AttributeSource) {
 const stackingOf = (zIndex: string | undefined) =>
   zIndex === undefined || !INTEGER.test(zIndex) ? 0 : Number(zIndex)
 
-/** 素材块的地址、入点和声音、播放；没写全时返回 undefined。 */
+/** 视频片段和音频片段的地址、入点和声音、播放；没写全时返回 undefined。 */
 function mediaOf(attributes: AttributeSource) {
   const jobId = attributes['data-var-src']?.replace(/^src-/, '')
   const { src } = attributes
@@ -361,8 +361,8 @@ function mediaOf(attributes: AttributeSource) {
 }
 
 /**
- * 从块的属性读回画面块；不是 `pictureBlock` 写出来的那种块时返回 undefined。
- * `zIndex` 是块的行内样式里的叠放顺序（SDK 的元素快照把样式和属性分开给）。
+ * 从片段的属性读回视频片段；不是 `pictureBlock` 写出来的那种片段时返回 undefined。
+ * `zIndex` 是片段的行内样式里的叠放顺序（SDK 的元素快照把样式和属性分开给）。
  */
 export function pictureFromAttributes(
   id: string,
@@ -381,7 +381,7 @@ export function pictureFromAttributes(
   }
 }
 
-/** 从块的属性读回组件块；不是 `componentBlock` 写出来的那种块时返回 undefined。`zIndex` 同画面块。 */
+/** 从片段的属性读回组件或块的片段；不是 `componentBlock` 写出来的那种片段时返回 undefined。`zIndex` 同视频片段。 */
 export function componentFromAttributes(
   id: string,
   attributes: AttributeSource,
@@ -411,7 +411,7 @@ export function componentFromAttributes(
   }
 }
 
-/** 从块的属性读回音频块；不是 `audioBlock` 写出来的那种块时返回 undefined。 */
+/** 从片段的属性读回音频片段；不是 `audioBlock` 写出来的那种片段时返回 undefined。 */
 export function audioFromAttributes(
   id: string,
   attributes: AttributeSource,
@@ -465,7 +465,7 @@ const itemOf = (block: ComponentBlock, catalog: ComponentCatalog): CatalogItem |
   catalog.items.find((candidate) => candidate.name === block.component)
 
 /**
- * 字体类可填项取到的字体族：块上填了用填的，没填用默认值。取到的是空的、或者组件库里没有这个字体族时
+ * 字体类可填项取到的字体族：片段上填了用填的，没填用默认值。取到的是空的、或者组件库里没有这个字体族时
  * 是 undefined——取值是用户写的字符串，只认组件库里的名字才能写进样式。
  */
 function fontOf(
@@ -512,7 +512,7 @@ function fontsOf(film: Film, catalog: ComponentCatalog): { families: string[]; t
 const round4 = (value: number) => String(Math.round(value * 10_000) / 10_000)
 
 /**
- * 一个组件块在 `<head>` 里的规则；不用写时返回 undefined。块上的样式只能是叠放顺序，所以写在这里、按块的编号认。
+ * 一个组件或块的片段在 `<head>` 里的规则；不用写时返回 undefined。片段上的样式只能是叠放顺序，所以写在这里、按片段的编号认。
  * - 条目有尺寸、和画面不一样大：按原比例缩到放得下，居中。
  * - 第一个字体类可填项取到了字体：标题和正文的字体变量都换成它，中文字形退到组件库的中文字体。
  */
@@ -542,7 +542,7 @@ function componentRule(
     : `#${FILM_ID} #${block.id}{${declarations.join(';')}}`
 }
 
-/** 写出成片文件。`durationMs` 是根上写的总时长，默认按块算。 */
+/** 写出成片文件。`durationMs` 是根上写的总时长，默认按片段算。 */
 export function writeFilm(
   film: Film,
   catalog: ComponentCatalog,

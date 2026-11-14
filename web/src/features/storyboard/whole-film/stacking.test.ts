@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { audio, component, picture } from '@/testing/whole-film'
 import { newBlockZ, restackedZ, rowMoveDirection } from './stacking'
 
-describe('新加的块的叠放顺序', () => {
-  it('空成片里加第一个块：1', () => {
+describe('新加的片段的叠放顺序', () => {
+  it('空成片里加第一个片段：1', () => {
     expect(newBlockZ([], 0)).toBe(1)
   })
 
-  it('按文件里所有的块数算，组件块和音频块也算；一次加几个时每个各算各的', () => {
+  it('按文件里所有的片段数算，组件或块的片段和音频片段也算；一次加几个时每个各算各的', () => {
     const existing = [picture({ id: 'a' }), component(), audio()]
     expect(newBlockZ(existing, 0)).toBe(4)
     expect(newBlockZ(existing, 1)).toBe(5)
@@ -15,20 +15,20 @@ describe('新加的块的叠放顺序', () => {
   })
 })
 
-describe('换行以后被挪的块的叠放顺序', () => {
-  it('往上挪：抬到它压着的、时间上重叠的块之上', () => {
+describe('换行以后被挪的片段的叠放顺序', () => {
+  it('往上挪：抬到它压着的、时间上重叠的片段之上', () => {
     const moved = picture({ id: 'moved', start: 500, track: 0 })
     const under = picture({ id: 'under', track: 1, z: 2 })
     expect(restackedZ([moved, under], 'moved', 'up')).toBe(3)
   })
 
-  it('往上挪、本来就盖着它压着的块：不改', () => {
+  it('往上挪、本来就盖着它压着的片段：不改', () => {
     const under = picture({ id: 'under', track: 1 })
     const moved = picture({ id: 'moved', start: 500, track: 0 })
     expect(restackedZ([under, moved], 'moved', 'up')).toBeUndefined()
   })
 
-  it('往上挪：组件块也算，音频块不算', () => {
+  it('往上挪：组件或块的片段也算，音频片段不算', () => {
     const moved = picture({ id: 'moved', start: 500, track: 0 })
     const title = component({ track: 1, z: 4 })
     const music = audio({ track: 1 })
@@ -36,7 +36,7 @@ describe('换行以后被挪的块的叠放顺序', () => {
     expect(restackedZ([moved, music], 'moved', 'up')).toBeUndefined()
   })
 
-  it('往下挪：降到盖着它的、时间上重叠的块之下', () => {
+  it('往下挪：降到盖着它的、时间上重叠的片段之下', () => {
     const over = picture({ id: 'over', track: 0, z: 4 })
     const moved = picture({ id: 'moved', start: 500, track: 1, z: 6 })
     expect(restackedZ([over, moved], 'moved', 'down')).toBe(3)
@@ -54,7 +54,7 @@ describe('换行以后被挪的块的叠放顺序', () => {
     expect(restackedZ([over, moved], 'moved', 'down')).toBeUndefined()
   })
 
-  it('时间上不重叠的块不算：首尾相接也不算重叠', () => {
+  it('时间上不重叠的片段不算：首尾相接也不算重叠', () => {
     const moved = picture({ id: 'moved', start: 2_000, track: 0 })
     const before = picture({ id: 'before', start: 0, duration: 2_000, track: 1, z: 7 })
     const later = picture({ id: 'later', start: 9_000, track: 1, z: 9 })
@@ -91,7 +91,7 @@ describe('换行的方向', () => {
     expect(rowMoveDirection(pictures, 'b', opening(1))).toBeNull()
   })
 
-  it('独占一行的块拖到自己上下的缝里：行号不变，紧上面不调叠放顺序，紧下面照往下挪算', () => {
+  it('独占一行的片段拖到自己上下的缝里：行号不变，紧上面不调叠放顺序，紧下面照往下挪算', () => {
     expect(rowMoveDirection(pictures, 'd', opening(2))).toBeNull()
     expect(rowMoveDirection(pictures, 'd', opening(3))).toBe('down')
   })

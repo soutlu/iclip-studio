@@ -28,7 +28,7 @@ export const marqueeMode = (
   keys: { shiftKey: boolean; altKey: boolean },
 ): MarqueeMode => (keys.altKey ? 'subtract' : keys.shiftKey || adding ? 'add' : 'replace')
 
-/** 框选之后选中哪些块：和框相交的块按 `mode` 换掉、加进或去掉 `base` 里的。 */
+/** 框选之后选中哪些片段：和框相交的片段按 `mode` 换掉、加进或去掉 `base` 里的。 */
 export const marqueeSelection = (
   blocks: readonly { id: string; box: Box }[],
   marquee: Box,
@@ -45,12 +45,12 @@ export const marqueeSelection = (
   return next
 }
 
-/** 拖 `id` 这个块（挪动或裁剪）时一起动的块，含它自己：它在不止一个块的选中里就是整个选中，不然只有它。 */
+/** 拖 `id` 这个片段（挪动或裁剪）时一起动的片段，含它自己：它在不止一个片段的选中里就是整个选中，不然只有它。 */
 export const movingWith = (selected: ReadonlySet<string>, id: string): ReadonlySet<string> =>
   selected.size > 1 && selected.has(id) ? selected : new Set([id])
 
 /**
- * 播放头左边或右边的块，所有行一起：左边是起点早于播放头的，右边是结尾晚于播放头的；
+ * 播放头左边或右边的片段，所有行一起：左边是起点早于播放头的，右边是结尾晚于播放头的；
  * 跨着播放头的两边都算，正好从播放头开始的不算左边、正好在播放头结束的不算右边。
  */
 export const aroundPlayhead = (

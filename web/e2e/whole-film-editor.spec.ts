@@ -75,7 +75,7 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   await expect(transport.locator('.wf-clock')).toContainText('00:00.00 /')
   await expect.poll(playerTime).toBeLessThan(0.1)
 
-  // 缩放：放大一档块变宽一倍，读数从「适应」变成百分比；点「适应宽度」回去
+  // 缩放：放大一档片段变宽一倍，读数从「适应」变成百分比；点「适应宽度」回去
   const block = dialog.getByRole('group', { name: '第 1 行' }).locator('[data-block-id]').first()
   const widthOf = async () => (await block.boundingBox())?.width ?? 0
   const fitted = await widthOf()
@@ -90,7 +90,7 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   await expect(toolbar.getByText('适应', { exact: true })).toBeVisible()
   expect(Math.abs((await widthOf()) - fitted)).toBeLessThan(1)
 
-  // 关掉缩略图：块上不画画面，只剩名字和声音
+  // 关掉缩略图：片段上不画画面，只剩名字和声音
   await expect(block.locator('.wf-clip-frames')).toBeVisible()
   await toolbar.getByRole('button', { name: '显示缩略图' }).click()
   await expect(block.locator('.wf-clip-frames')).toBeHidden()
@@ -278,7 +278,7 @@ test('播放条：倍速和静音对素材、成片都生效且换播放器后�
   await expect.poll(async () => [await boxOf(preview), await boxOf(transport)]).toEqual(before)
 })
 
-/** 存下来的成片里名字是 `title` 的组件块的属性；没有时是 null。 */
+/** 存下来的成片里名字是 `title` 的组件或块的片段的属性；没有时是 null。 */
 const savedComponent = (html: string, title: string) => {
   const tag = new RegExp(`<div [^>]*class="clip component"[^>]*data-label="${title}"[^>]*>`).exec(
     html,
@@ -333,7 +333,7 @@ test('组件栏：搜到组件点「加到播放头」、拖一个到时间线�
   await scene.hover()
   await expect(add).toHaveCSS('opacity', '1')
 
-  // 播放头在 0：第一行这时有画面块，组件放进它下面新开的一行
+  // 播放头在 0：第一行这时有视频片段，组件放进它下面新开的一行
   const added = draftSavedWith(page, (html) => savedComponent(html, '测试画面') !== null)
   await add.click()
   const placed = savedComponent(((await added).postDataJSON() as { html: string }).html, '测试画面')
@@ -366,11 +366,11 @@ test('组件栏：搜到组件点「加到播放头」、拖一个到时间线�
     )
     .toEqual({ width: true, height: true, centered: true })
 
-  // 拖一个组件到第一行画面块后面的空处（离各个吸附点都远）：落在指针的位置
+  // 拖一个组件到第一行视频片段后面的空处（离各个吸附点都远）：落在指针的位置
   await side.getByRole('searchbox', { name: '搜索组件' }).fill('')
   const overlay = side.getByRole('group', { name: '测试叠加，4 秒' })
   const row = dialog.getByRole('group', { name: '第 1 行' })
-  // 6 秒长、从 0 开始的那个块量出每秒多少像素
+  // 6 秒长、从 0 开始的那个片段量出每秒多少像素
   const sceneBox = await dialog
     .getByRole('group', { name: '第 2 行' })
     .locator('[data-block-id]')
@@ -408,7 +408,7 @@ test('组件栏：搜到组件点「加到播放头」、拖一个到时间线�
   await undone
 })
 
-test('右侧栏：选中组件块改文字可填项，存下来、预览里看得到；在「时间」里改开始；点空白处回到没有选中，撤销回去', async ({
+test('右侧栏：选中组件或块的片段改文字可填项，存下来、预览里看得到；在「时间」里改开始；点空白处回到没有选中，撤销回去', async ({
   page,
 }) => {
   test.setTimeout(60_000)
@@ -482,7 +482,7 @@ test('右侧栏：选中组件块改文字可填项，存下来、预览里看�
   await undone
 })
 
-/** 存下来的成片里的音频块，写成「名字@行号 起点 时长」，按起点排。 */
+/** 存下来的成片里的音频片段，写成「名字@行号 起点 时长」，按起点排。 */
 const savedAudio = (html: string) =>
   [...html.matchAll(/<audio [^>]*>/g)]
     .map(([tag]) => {
@@ -553,14 +553,14 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、�
   await expect(progress).toHaveAttribute('aria-valuetext', '00:01.00 / 00:31.00')
   expect(pictureSeconds).toBeLessThan(31)
 
-  // 点「已使用」的那一行：选中它对应的块
+  // 点「已使用」的那一行：选中它对应的片段
   await guitar.getByRole('button', { name: '轻快原声吉他，适合秋季穿搭，已使用' }).click()
   await expect(music.getByRole('button', { name: /^选中：/ })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
 
-  // 拖上传的那条到声音行里这一块后面的空处：吸到它的结尾
+  // 拖上传的那条到声音行里这个片段后面的空处：吸到它的结尾
   const box = await music.boundingBox()
   const lane = await soundRow.boundingBox()
   const from = await uploaded.boundingBox()
@@ -604,14 +604,14 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、�
   await expect(uploaded).not.toContainText('已使用')
 })
 
-/** 存下来的成片里第一个 `tag` 块上的属性 `name`；不写值的属性是空串，没有这个属性时是 undefined。 */
+/** 存下来的成片里第一个 `tag` 片段上的属性 `name`；不写值的属性是空串，没有这个属性时是 undefined。 */
 const savedAttribute = (html: string, tag: 'video' | 'audio', name: string) => {
   const element = new RegExp(`<${tag} [^>]*>`).exec(html)?.[0] ?? ''
   const found = new RegExp(` ${name}(?:="([^"]*)")?(?=[ >])`).exec(element)
   return found === null ? undefined : (found[1] ?? '')
 }
 
-test('右侧栏「媒体」：音频块拉满增益、打开循环写进文件；画面块调成 2 倍速，块长不变、能拉到的最长减半', async ({
+test('右侧栏「媒体」：音频片段拉满增益、打开循环写进文件；视频片段调成 2 倍速，片段长不变、能拉到的最长减半', async ({
   page,
 }) => {
   test.setTimeout(60_000)
@@ -658,7 +658,7 @@ test('右侧栏「媒体」：音频块拉满增益、打开循环写进文件�
   await inspector.getByRole('switch', { name: '循环' }).click()
   await looped
 
-  // 画面块（选中后展开的是「时间」）：先把时长拉到素材能放的最长
+  // 视频片段（选中后展开的是「时间」）：先把时长拉到素材能放的最长
   await dialog
     .getByRole('group', { name: '第 1 行' })
     .getByRole('button', { name: /^选中：A · / })

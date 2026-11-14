@@ -191,7 +191,7 @@ describe('音频栏 · 试听', () => {
 })
 
 describe('音频栏 · 已使用', () => {
-  it('成片里用着的那条标「已使用」，点这一行选中它最早的那个块；没用到的点了什么也不做', async () => {
+  it('成片里用着的那条标「已使用」，点这一行选中它最早的那个片段；没用到的点了什么也不做', async () => {
     const user = userEvent.setup()
     const blocks = [
       audio({ id: 'late', jobId: guitar.id, start: 8000 }),

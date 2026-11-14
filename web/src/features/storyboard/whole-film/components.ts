@@ -49,16 +49,16 @@ export const filterComponents = (
 // 和参照的工作台一样：条目没写时长时取 10 秒和成片现有总长里大的那个
 const DEFAULT_COMPONENT_MS = 10_000
 
-/** 条目放进成片时的时长（毫秒）；`blocks` 是成片里现有的块。 */
+/** 条目放进成片时的时长（毫秒）；`blocks` 是成片里现有的片段。 */
 export const componentDurationMs = (item: CatalogItem, blocks: readonly FilmBlock[]): number =>
   item.duration === null
     ? Math.max(DEFAULT_COMPONENT_MS, ...blocks.map((block) => block.start + block.duration))
     : Math.round(item.duration * 1000)
 
 /**
- * 点「加到播放头」时组件块放在哪：从 `startMs` 起、长 `durationMs`。
+ * 点「加到播放头」时组件或块的片段放在哪：从 `startMs` 起、长 `durationMs`。
  * 照参照的工作台：`block` 类的条目放画面区第一行，`component` 类的放画面区最下面新开的一行；
- * 第一行在这段时间已经有块时，在它下面紧挨着新开一行。
+ * 第一行在这段时间已经有片段时，在它下面紧挨着新开一行。
  */
 export const playheadSpot = (
   blocks: readonly FilmBlock[],

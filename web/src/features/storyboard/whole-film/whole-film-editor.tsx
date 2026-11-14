@@ -219,7 +219,7 @@ function EditorBody({
     ].sort(),
   )
   const keyframes = useKeyframeIndexes(shownUrls)
-  // 素材区的镜头和成片里画面块的素材有没有声音，和镜头一起先读好：加进成片时不用再等
+  // 素材区的镜头和成片里视频片段的素材有没有声音，和镜头一起先读好：加进成片时不用再等
   const audioTracks = useVideoAudio(
     useStableValue([...new Set([...shownUrls, ...pictures.map((block) => block.src)])].sort()),
   )
@@ -252,7 +252,7 @@ function EditorBody({
   const total = film?.durationMs ?? 0
   const playhead = Math.min(playheadMs, total)
   const frameMs = Math.min(playhead, Math.max(0, total - 1))
-  // 垫在预览后面的那一帧取最上面显示着的块：文件里写在后面的在上面
+  // 垫在预览后面的那一帧取最上面显示着的片段：文件里写在后面的在上面
   const shown = pictures.findLast(
     (block) => !block.hidden && block.start <= frameMs && frameMs < block.start + block.duration,
   )
@@ -281,11 +281,11 @@ function EditorBody({
   const timelineRef = useRef<TimelineHandle | null>(null)
   const [ghost, setGhost] = useState<DropGhost | null>(null)
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set())
-  // 选中的块被撤销或删掉以后就不算选中了
+  // 选中的片段被撤销或删掉以后就不算选中了
   const selectedBlocks = blocks.filter((block) => selectedIds.has(block.id))
   const selected = new Set(selectedBlocks.map((block) => block.id))
   const clearSelection = () => setSelectedIds(new Set())
-  // 框选、拖块中途的 Esc 归时间线（只取消那一次），这里先让开
+  // 框选、拖片段中途的 Esc 归时间线（只取消那一次），这里先让开
   const [gesturing, setGesturing] = useState(false)
   // 右侧栏里输数值的框正在输入：这时的 Esc 归那个框（放弃刚输入的），不取消选中、不关编辑器
   const [textEditing, setTextEditing] = useState(false)
@@ -310,7 +310,7 @@ function EditorBody({
     setZoom(target.zoom)
     setScrollRequest({ left: target.scrollLeft })
   }
-  // 画面块、音频块素材的总长：时间线上拖着裁和右侧栏里输入时间都按它收住结尾
+  // 视频片段、音频片段素材的总长：时间线上拖着裁和右侧栏里输入时间都按它收住结尾
   const audioPeaks = useAudioPeaks(
     useStableValue(
       [
@@ -336,7 +336,7 @@ function EditorBody({
   const [snap, setSnap] = useState(true)
   /**
    * 拖着的素材、组件或音频（长 `duration` 毫秒，放进 `zone` 区）会落在哪：
-   * 开着吸附时先吸到别的块的两端或播放头上，再避开同一行的块。
+   * 开着吸附时先吸到别的片段的两端或播放头上，再避开同一行的片段。
    */
   const landingAt = (clientX: number, clientY: number, duration: number, zone: Zone = 'visual') => {
     const point = timelineRef.current?.locate(clientX, clientY, zone) ?? null
@@ -344,7 +344,7 @@ function EditorBody({
     const snapped = snap
       ? snapSpanStartMs(point.timeMs, duration, snapTargets(blocks, playhead), scale.pps)
       : { ms: point.timeMs, guideMs: null }
-    // 新开的一行上没有别的块，放在哪里都不会重叠
+    // 新开的一行上没有别的片段，放在哪里都不会重叠
     const start =
       'track' in point.row ? landingOn(blocks, point.row, snapped.ms, duration).start : snapped.ms
     return {
@@ -355,7 +355,7 @@ function EditorBody({
     }
   }
 
-  /** `row` 这一行是几号；要新开一行时，连同别的块要换成的行号。`movedId` 是要搬过去的那个块。 */
+  /** `row` 这一行是几号；要新开一行时，连同别的片段要换成的行号。`movedId` 是要搬过去的那个片段。 */
   const trackFor = (row: RowTarget, movedId?: string) =>
     'track' in row
       ? { track: row.track, renumber: undefined }
@@ -522,7 +522,7 @@ function EditorBody({
   }
   useEffect(() => {
     keysRef.current = (event) => {
-      // 拖块、框选进行中不接快捷键：这时撤销或删块，松手会按改之前算好的位置写回去
+      // 拖片段、框选进行中不接快捷键：这时撤销或删片段，松手会按改之前算好的位置写回去
       if (gesturing) return
       handleUndoShortcut(event, history, leaveMaterial)
       if (event.key === 'Enter' && event.target === event.currentTarget) {
@@ -537,7 +537,7 @@ function EditorBody({
     }
   })
 
-  // 编辑时 SDK 不改 <head>：按块重新写出整份（和渲染服务存下的一样）再交给预览
+  // 编辑时 SDK 不改 <head>：按片段重新写出整份（和渲染服务存下的一样）再交给预览
   const srcdoc = useMemo(
     () =>
       film === null || blocks.length === 0

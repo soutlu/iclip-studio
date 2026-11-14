@@ -46,7 +46,7 @@ const MAX_PROMPT_CHARS = 3000
 
 type AudioTabProps = {
   conversationId: string
-  /** 成片里现有的块：看哪条音频用着、用在哪个块上。 */
+  /** 成片里现有的片段：看哪条音频用着、用在哪个片段上。 */
   blocks: readonly FilmBlock[]
   /** 右键「加到播放头」或按 Enter。 */
   onAdd: (audio: NewAudio) => void
@@ -54,7 +54,7 @@ type AudioTabProps = {
   onCarry: (audio: NewAudio, point: CarryPoint | null) => void
   /** 拖着一行松手。 */
   onDrop: (audio: NewAudio, point: CarryPoint) => void
-  /** 点成片里用着的那一行：选中它对应的块。 */
+  /** 点成片里用着的那一行：选中它对应的片段。 */
   onReveal: (blockId: string) => void
   onNotice: (message: string) => void
 }

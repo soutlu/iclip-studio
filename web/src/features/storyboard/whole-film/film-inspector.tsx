@@ -45,22 +45,22 @@ import {
 type Values = Readonly<Record<string, VariableValue>>
 
 type Props = {
-  /** 时间线上选中的块。 */
+  /** 时间线上选中的片段。 */
   selected: readonly FilmBlock[]
-  /** 成片里所有的块：改时间时按它们算落在哪。 */
+  /** 成片里所有的片段：改时间时按它们算落在哪。 */
   blocks: readonly FilmBlock[]
   catalog: ComponentCatalog
   sourceMs: SourceLength
   /** 这个地址的素材确认没有声音；有声音、还不知道时是 false。 */
   silentSource: (src: string) => boolean
   onHide: (id: string, hidden: boolean) => void
-  /** 删掉选中的块，和按 Delete 一样。 */
+  /** 删掉选中的片段，和按 Delete 一样。 */
   onRemove: () => void
   onRestart: (starts: ReadonlyMap<string, number>) => void
   onRetime: (timings: ReadonlyMap<string, Timing>) => void
-  /** 把组件块 `id` 的可填项取值整个换成 `values`。 */
+  /** 把组件或块的片段 `id` 的可填项取值整个换成 `values`。 */
   onValues: (id: string, values: Values) => void
-  /** 改块 `id` 上的几个属性（null 是去掉），算一步撤销。 */
+  /** 改片段 `id` 上的几个属性（null 是去掉），算一步撤销。 */
   onAttributes: (id: string, changes: AttributeChanges) => void
   /** 焦点进出「时间」「媒体」里输数值的框：在里面时 Esc 归输入框，放弃刚输入的。 */
   onTextEditing: (editing: boolean) => void
@@ -91,7 +91,7 @@ const parseSeconds = (text: string): number | null => {
 }
 
 /**
- * 右侧栏：选中一个块时显示它的名字、种类和可以改的分组；没选中、选中多个时各有一个说明。
+ * 右侧栏：选中一个片段时显示它的名字、种类和可以改的分组；没选中、选中多个时各有一个说明。
  */
 export function FilmInspector({ selected, ...rest }: Props) {
   const [only] = selected
@@ -102,15 +102,15 @@ export function FilmInspector({ selected, ...rest }: Props) {
         <div className="wf-inspector-empty">
           <Icon decorative name="select-tool" size="lg" />
           <h3 className="wf-inspector-empty-title">没有选中</h3>
-          <p>在时间线上点一个块，在这里改它</p>
+          <p>在时间线上点一个片段，在这里改它</p>
         </div>
       ) : selected.length > 1 ? (
         <div className="wf-inspector-multi">
           <div className="wf-inspector-multi-head">
             <Icon decorative name="layers" size="sm" />
-            <h3>选中了 {selected.length} 个块</h3>
+            <h3>选中了 {selected.length} 个片段</h3>
           </div>
-          <ul aria-label="选中的块" className="wf-inspector-multi-list">
+          <ul aria-label="选中的片段" className="wf-inspector-multi-list">
             {selected.map((block) => (
               <li key={block.id}>
                 <span className="wf-inspector-multi-name">{block.label}</span>
@@ -118,7 +118,7 @@ export function FilmInspector({ selected, ...rest }: Props) {
               </li>
             ))}
           </ul>
-          <p className="wf-inspector-note">只选中一个块时，才能在这里改它</p>
+          <p className="wf-inspector-note">只选中一个片段时，才能在这里改它</p>
         </div>
       ) : (
         <BlockInspector block={only} key={only.id} {...rest} />
@@ -134,7 +134,7 @@ type Group = {
   content: ReactNode
 }
 
-/** 选中一个块：头部是名字、种类和隐藏、删除；下面的分组一次只展开一个，收起的在标题旁写摘要。 */
+/** 选中一个片段：头部是名字、种类和隐藏、删除；下面的分组一次只展开一个，收起的在标题旁写摘要。 */
 function BlockInspector({
   block,
   blocks,
@@ -197,7 +197,7 @@ function BlockInspector({
         />
       ),
     })
-  // 照参照的工作台：组件块先展开「内容」，别的块展开第一个分组；再点展开着的分组就全收起
+  // 照参照的工作台：组件或块的片段先展开「内容」，别的片段展开第一个分组；再点展开着的分组就全收起
   const [open, setOpen] = useState<Group['id'] | null>(groups[0]?.id ?? null)
   const sound = block.kind === 'audio'
   const hideLabel = sound ? (block.hidden ? '取消静音' : '静音') : block.hidden ? '显示' : '隐藏'
@@ -388,9 +388,9 @@ const fadeAttribute = (ms: number) => {
 }
 
 /**
- * 「媒体」：文件、增益、速度、起始位置、淡入、淡出，音频块另有循环，画面块另有静音。
+ * 「媒体」：文件、增益、速度、起始位置、淡入、淡出，音频片段另有循环，视频片段另有静音。
  * 换算和上下限照参照的工作台；拖滑杆时只动这里，松手（或按一下方向键）才写进成片，一次算一步撤销。
- * 改速度不改块在成片里的时长，用掉的素材跟着变长或变短。
+ * 改速度不改片段在成片里的时长，用掉的素材跟着变长或变短。
  */
 function MediaFields({
   block,
@@ -402,18 +402,18 @@ function MediaFields({
   block: MediaBlock
   /** 素材的总长；还不知道时是 undefined。 */
   sourceMs: number | undefined
-  /** 画面块的素材确认没有声音。 */
+  /** 视频片段的素材确认没有声音。 */
   silent: boolean
   onChange: (changes: AttributeChanges) => void
   onEditing: (editing: boolean) => void
 }) {
   const { volume, playbackRate, mediaStart, duration, fadeIn, fadeOut } = block
-  // 起始位置最多到「素材长 − 块长 × 速度」；素材长还不知道时只能往前调，同裁剪
+  // 起始位置最多到「素材长 − 片段长 × 速度」；素材长还不知道时只能往前调，同裁剪
   const mediaStartMax =
     sourceMs === undefined
       ? mediaStart
       : Math.max(0, Math.floor(sourceMs - duration * playbackRate))
-  // 照参照的工作台：画面块静音以后不再有声音可以淡入淡出
+  // 照参照的工作台：视频片段静音以后不再有声音可以淡入淡出
   const audible = block.kind === 'audio' || !block.muted
   const rateText = (rate: number) => `${formatNumericValue(rate)}x`
   const rateAt = (position: number) => fromUnit(RATE_RANGE, position / RATE_STEPS)
@@ -425,7 +425,7 @@ function MediaFields({
   const setMediaStart = (ms: number) =>
     onChange({ 'data-media-start': String(Math.min(mediaStartMax, Math.max(0, ms)) / 1000) })
   const fade = (name: 'data-fade-in' | 'data-fade-out', ms: number, other: number) => {
-    // 照参照的工作台：一端最多到块长减去另一端
+    // 照参照的工作台：一端最多到片段长减去另一端
     const max = Math.max(0, duration - other)
     return (
       <MediaSlider
@@ -518,7 +518,7 @@ function MediaFields({
         />
       ) : (
         <MediaSwitch
-          // 素材没有声音时不让取消静音：标成有声音的画面块导出必定失败
+          // 素材没有声音时不让取消静音：标成有声音的视频片段导出必定失败
           blockedReason={silent && block.muted ? SILENT_SOURCE_TEXT : undefined}
           checked={block.muted}
           label="静音"
@@ -657,7 +657,7 @@ function Readout({
     inputRef.current?.focus()
     inputRef.current?.select()
   }, [editing])
-  // 框还聚焦着就被卸掉（换了选中的块）时收不到失焦，这里补一下
+  // 框还聚焦着就被卸掉（换了选中的片段）时收不到失焦，这里补一下
   useEffect(() => () => onEditing(false), [onEditing])
   if (typing === null)
     return (
@@ -714,8 +714,8 @@ function Readout({
 }
 
 /**
- * 「内容」：组件条目的可填项，一项一行。改了先留在这里，停下 300 毫秒再整串写进块；
- * 几项一起改时合成一次写。失焦、换选中的块时把没写的立刻写进去。
+ * 「内容」：组件条目的可填项，一项一行。改了先留在这里，停下 300 毫秒再整串写进片段；
+ * 几项一起改时合成一次写。失焦、换选中的片段时把没写的立刻写进去。
  */
 function ContentFields({
   block,
@@ -748,7 +748,7 @@ function ContentFields({
   }, [])
   useEffect(() => flush, [flush])
 
-  // 输入法还在拼字时不计时：拼音没上屏就写进块，会多存一次、预览多刷一次
+  // 输入法还在拼字时不计时：拼音没上屏就写进片段，会多存一次、预览多刷一次
   const composingRef = useRef(false)
   const schedule = () => {
     if (timerRef.current !== null) clearTimeout(timerRef.current)

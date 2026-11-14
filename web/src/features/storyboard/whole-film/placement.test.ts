@@ -17,7 +17,7 @@ const later = picture({ id: 'b', start: 5_000, duration: 1_000 })
 const below = picture({ id: 'c', start: 1_000, duration: 1_000, track: 1 })
 const blocks = [first, later, below]
 
-/** 画面区两行（组件一行、镜头一行），声音区两行；画面块和音频块都有第 0 行。 */
+/** 画面区两行（组件一行、镜头一行），声音区两行；视频片段和音频片段都有第 0 行。 */
 const title = component({ id: 't', start: 500, duration: 1_000, track: 0 })
 const shot = picture({ id: 'p', start: 0, duration: 3_000, track: 1 })
 const music = audio({ id: 'm', start: 0, duration: 4_000, track: 0 })
@@ -28,7 +28,7 @@ const layout = (film: readonly FilmBlock[]) =>
   rowsOf(film).map((row) => [row.zone, row.track, row.blocks.map((block) => block.id)])
 
 describe('时间线上的行', () => {
-  it('按行分块：行号小的在前，行里按开始时间排', () => {
+  it('按行分好片段：行号小的在前，行里按开始时间排', () => {
     expect(layout([later, below, first])).toEqual([
       ['visual', 0, ['a', 'b']],
       ['visual', 1, ['c']],
@@ -44,13 +44,13 @@ describe('时间线上的行', () => {
     ])
   })
 
-  it('主轨是画面区最上面那一行：音频块的行号再小也不算', () => {
+  it('主轨是画面区最上面那一行：音频片段的行号再小也不算', () => {
     expect(topTrack([shot, audio({ id: 'm', track: 0 })])).toBe(1)
     expect(topTrack(mixed)).toBe(0)
     expect(topTrack([music])).toBe(0)
   })
 
-  it('一行隐藏着：只看这个区这一行的块', () => {
+  it('一行隐藏着：只看这个区这一行的片段', () => {
     const muted = [{ ...music, hidden: true }, picture({ id: 'q', track: 0 })]
     expect(rowHidden(muted, { zone: 'audio', track: 0 })).toBe(true)
     expect(rowHidden(muted, { zone: 'visual', track: 0 })).toBe(false)
@@ -66,23 +66,23 @@ describe('落在一行的哪个时间', () => {
     })
   })
 
-  it('指针压在别的块上：挪到最近的空位', () => {
+  it('指针压在别的片段上：挪到最近的空位', () => {
     expect(landingOn(blocks, { zone: 'visual', track: 0 }, 1_800, 1_000).start).toBe(2_000)
     expect(landingOn(blocks, { zone: 'visual', track: 0 }, 4_600, 1_000).start).toBe(4_000)
   })
 
-  it('空位不够长：接在这一行最后一个块后面', () => {
+  it('空位不够长：接在这一行最后一个片段后面', () => {
     expect(landingOn(blocks, { zone: 'visual', track: 0 }, 2_500, 4_000).start).toBe(6_000)
   })
 
-  it('别的行、别的区同号的行上的块不挡路', () => {
+  it('别的行、别的区同号的行上的片段不挡路', () => {
     expect(landingOn(blocks, { zone: 'visual', track: 1 }, 0, 1_000).start).toBe(0)
     expect(landingOn(mixed, { zone: 'visual', track: 0 }, 0, 400).start).toBe(0)
     expect(landingOn(mixed, { zone: 'audio', track: 0 }, 0, 400).start).toBe(4_000)
   })
 })
 
-describe('块只落在自己的区', () => {
+describe('片段只落在自己的区', () => {
   const rows = rowsOf(mixed)
   const aimed = (aim: Aim, zone: Zone) => targetIn(rows, aim, zone)
 
@@ -91,13 +91,13 @@ describe('块只落在自己的区', () => {
     expect(aimed({ at: 3 }, 'audio')).toEqual({ zone: 'audio', track: 1 })
   })
 
-  it('画面区的块对着声音区的行：落在画面区最下面那一行；音频块对着画面区的行：落在声音区最上面那一行', () => {
+  it('画面区的片段对着声音区的行：落在画面区最下面那一行；音频片段对着画面区的行：落在声音区最上面那一行', () => {
     expect(aimed({ at: 2 }, 'visual')).toEqual({ zone: 'visual', track: 1 })
     expect(aimed({ at: 3 }, 'visual')).toEqual({ zone: 'visual', track: 1 })
     expect(aimed({ at: 1 }, 'audio')).toEqual({ zone: 'audio', track: 0 })
   })
 
-  it('两个区之间的缝：两种块都能在那里新开一行', () => {
+  it('两个区之间的缝：两种片段都能在那里新开一行', () => {
     expect(aimed({ insertAt: 2 }, 'visual')).toEqual({ zone: 'visual', insertAt: 2 })
     expect(aimed({ insertAt: 2 }, 'audio')).toEqual({ zone: 'audio', insertAt: 2 })
   })
@@ -109,12 +109,12 @@ describe('块只落在自己的区', () => {
     expect(aimed({ insertAt: 3 }, 'audio')).toEqual({ zone: 'audio', insertAt: 3 })
   })
 
-  it('最下面那条空行：音频块在那里新开一行；画面区的块在画面区的最下面新开一行', () => {
+  it('最下面那条空行：音频片段在那里新开一行；画面区的片段在画面区的最下面新开一行', () => {
     expect(aimed({ insertAt: 4 }, 'audio')).toEqual({ zone: 'audio', insertAt: 4 })
     expect(aimed({ insertAt: 4 }, 'visual')).toEqual({ zone: 'visual', insertAt: 2 })
   })
 
-  it('最上面（指针在时间尺上也算）：画面区的块在那里新开一行；音频块在声音区的最上面新开一行', () => {
+  it('最上面（指针在时间尺上也算）：画面区的片段在那里新开一行；音频片段在声音区的最上面新开一行', () => {
     expect(aimed({ insertAt: 0 }, 'visual')).toEqual({ zone: 'visual', insertAt: 0 })
     expect(aimed({ insertAt: 0 }, 'audio')).toEqual({ zone: 'audio', insertAt: 2 })
   })
@@ -125,7 +125,7 @@ describe('块只落在自己的区', () => {
     expect(targetIn(audioOnly, { insertAt: 2 }, 'visual')).toEqual({ zone: 'visual', insertAt: 0 })
   })
 
-  it('声音区还没有行：画面区的块哪里都能新开，音频块对着画面区的行时在最下面新开声音区的第一行', () => {
+  it('声音区还没有行：画面区的片段哪里都能新开，音频片段对着画面区的行时在最下面新开声音区的第一行', () => {
     const visualOnly = rowsOf([title, shot])
     expect(targetIn(visualOnly, { insertAt: 2 }, 'visual')).toEqual({
       zone: 'visual',
@@ -194,7 +194,7 @@ describe('新开一行', () => {
     expect(opened(mixed, 'visual', 2)).toEqual({ track: 2, renumber: [] })
   })
 
-  it('搬进新行的块原来那一行只剩它：那一行不再算，位置按挪之前时间线上的第几行', () => {
+  it('搬进新行的片段原来那一行只剩它：那一行不再算，位置按挪之前时间线上的第几行', () => {
     // c 自己占着第 2 行，搬到最上面：a、b 那一行排到 1 号，c 原来那一行空出来
     expect(opened(blocks, 'visual', 0, 'c')).toEqual({
       track: 0,
@@ -203,15 +203,15 @@ describe('新开一行', () => {
         ['b', 1],
       ],
     })
-    // 搬到自己这一行的上面或下面那道缝：还是原来的号，别的块也不用动
+    // 搬到自己这一行的上面或下面那道缝：还是原来的号，别的片段也不用动
     expect(opened(blocks, 'visual', 1, 'c')).toEqual({ track: 1, renumber: [] })
     expect(opened(blocks, 'visual', 2, 'c')).toEqual({ track: 1, renumber: [] })
-    // 声音区独占一行的音频块搬到自己上下的缝里也一样
+    // 声音区独占一行的音频片段搬到自己上下的缝里也一样
     expect(opened(mixed, 'audio', 3, 'v')).toEqual({ track: 1, renumber: [] })
     expect(opened(mixed, 'audio', 4, 'v')).toEqual({ track: 1, renumber: [] })
   })
 
-  it('搬进新行的块原来那一行还有别的块：那一行照常算', () => {
+  it('搬进新行的片段原来那一行还有别的片段：那一行照常算', () => {
     expect(opened(blocks, 'visual', 1, 'b')).toEqual({ track: 1, renumber: [['c', 2]] })
   })
 })

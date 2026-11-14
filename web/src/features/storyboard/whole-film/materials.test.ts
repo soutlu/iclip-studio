@@ -156,7 +156,7 @@ describe('usedSpans：成片里每版素材片用了哪些段', () => {
     })
   })
 
-  it('调了速度的块：用掉的是块长 × 速度那么长的一段', () => {
+  it('调了速度的片段：用掉的是片段长 × 速度那么长的一段', () => {
     const used = usedSpans([
       picture({ id: 'v1', jobId: 'a', mediaStart: 1_000, duration: 2_000, playbackRate: 2 }),
       picture({ id: 'v2', jobId: 'a', mediaStart: 6_000, duration: 2_000, playbackRate: 0.5 }),

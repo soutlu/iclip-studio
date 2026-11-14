@@ -158,7 +158,7 @@ describe('渲染服务接口', () => {
     })
   })
 
-  it('POST /exports 成片里有音频块：音频也要给下载地址，渲染用的那一份里换成本地路径', async () => {
+  it('POST /exports 成片里有音频片段：音频也要给下载地址，渲染用的那一份里换成本地路径', async () => {
     const film = filmFile([picture(), audio()])
     const missing = await post({ ...exportRequest(), film })
     expect(missing.status).toBe(400)
@@ -178,7 +178,7 @@ describe('渲染服务接口', () => {
     )
   })
 
-  it('隐藏的音频块：检查照常带着它和它的素材，渲染用的那一份里没有它，总时长不变', async () => {
+  it('隐藏的音频片段：检查照常带着它和它的素材，渲染用的那一份里没有它，总时长不变', async () => {
     const film = filmFile([picture(), audio({ duration: 5000, hidden: true })])
     const checked = (await (await check({ film })).json()) as {
       html: string

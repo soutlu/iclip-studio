@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { aroundPlayhead, boxBetween, marqueeMode, marqueeSelection, movingWith } from './selection'
 
 describe('框选', () => {
-  // 两行：第一行 a、b，第二行 c；每个块 40 像素高
+  // 两行：第一行 a、b，第二行 c；每个片段 40 像素高
   const blocks = [
     { id: 'a', box: { left: 0, top: 0, width: 100, height: 40 } },
     { id: 'b', box: { left: 120, top: 0, width: 100, height: 40 } },
@@ -19,7 +19,7 @@ describe('框选', () => {
     })
   })
 
-  it('和框相交的块都选中，可以跨行；只碰到边不算', () => {
+  it('和框相交的片段都选中，可以跨行；只碰到边不算', () => {
     const marquee = boxBetween({ x: 90, y: 20 }, { x: 130, y: 60 })
     expect([...marqueeSelection(blocks, marquee, none, 'replace')]).toEqual(['a', 'b', 'c'])
     // 框的右边正好是 b 的左边、下边正好是 c 的上边
@@ -45,7 +45,7 @@ describe('框选', () => {
   })
 })
 
-describe('选中播放头左边、右边的块', () => {
+describe('选中播放头左边、右边的片段', () => {
   // 播放头在 2 秒：before 在它前面结束、at-start 从它开始、at-end 在它结束、across 跨着它、after 在它后面
   const blocks = [
     { id: 'before', start: 0, duration: 1_000 },
@@ -64,12 +64,12 @@ describe('选中播放头左边、右边的块', () => {
   })
 })
 
-describe('拖一个块时谁跟着一起动', () => {
-  it('抓的块在不止一个的选中里：整个选中一起动', () => {
+describe('拖一个片段时谁跟着一起动', () => {
+  it('抓的片段在不止一个的选中里：整个选中一起动', () => {
     expect([...movingWith(new Set(['a', 'b']), 'b')]).toEqual(['a', 'b'])
   })
 
-  it('抓的块不在选中里，或者只选中了它：只动它自己', () => {
+  it('抓的片段不在选中里，或者只选中了它：只动它自己', () => {
     expect([...movingWith(new Set(['a', 'b']), 'c')]).toEqual(['c'])
     expect([...movingWith(new Set(['a']), 'a')]).toEqual(['a'])
     expect([...movingWith(new Set(), 'a')]).toEqual(['a'])

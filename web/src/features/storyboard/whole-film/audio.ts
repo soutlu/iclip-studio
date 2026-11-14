@@ -7,7 +7,7 @@ import { rowBusy, rowsOf, type RowTarget } from './placement'
 const promptOf = (job: GenerationJob): string | undefined =>
   z.object({ prompt: z.string().min(1) }).safeParse(job.request).data?.prompt
 
-/** 音频在列表里的名字，加进成片的音频块也叫这个：生成的取描述，上传的写上传时间。 */
+/** 音频在列表里的名字，加进成片的音频片段也叫这个：生成的取描述，上传的写上传时间。 */
 export const audioTitleOf = (job: GenerationJob): string =>
   job.operation === 'upload'
     ? `上传的音乐 · ${formatDateTime(job.createdAt)}`
@@ -25,7 +25,7 @@ export const durationLabel = (ms: number): string => {
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-/** 成片里用着记录 `jobId` 的音频块里开始得最早的那个；没用到时是 undefined。 */
+/** 成片里用着记录 `jobId` 的音频片段里开始得最早的那个；没用到时是 undefined。 */
 export const firstAudioBlockOf = (
   blocks: readonly FilmBlock[],
   jobId: string,
@@ -39,8 +39,8 @@ export const firstAudioBlockOf = (
     )
 
 /**
- * 点「加到播放头」时音频块放在哪：从 `startMs` 起、长 `durationMs`。
- * 放在声音区第一行；第一行在这段时间已经有块时，在它下面紧挨着新开一行；还没有声音行时新开第一条。
+ * 点「加到播放头」时音频片段放在哪：从 `startMs` 起、长 `durationMs`。
+ * 放在声音区第一行；第一行在这段时间已经有片段时，在它下面紧挨着新开一行；还没有声音行时新开第一条。
  */
 export const audioPlayheadSpot = (
   blocks: readonly FilmBlock[],

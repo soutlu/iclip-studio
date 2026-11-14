@@ -345,7 +345,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(probe.streams.some((stream) => stream.codec_type === 'audio')).toBe(true)
   }, 300_000)
 
-  it('两个画面块首尾相接：各在自己的时间段里上画面，音量按块上写的生效', async () => {
+  it('两个视频片段首尾相接：各在自己的时间段里上画面，音量按片段上写的生效', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const [clip, gray] = [`${origin}/clip.mp4`, `${origin}/gray.mp4`]
@@ -412,7 +412,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(full.loudness - quiet.loudness).toBeLessThan(15)
   }, 600_000)
 
-  it('两个画面块同时出现在两行上：叠放顺序大的在上面，一样大时文件里写在后面的在上面', async () => {
+  it('两个视频片段同时出现在两行上：叠放顺序大的在上面，一样大时文件里写在后面的在上面', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const [clip, gray] = [`${origin}/clip.mp4`, `${origin}/gray.mp4`]
@@ -460,7 +460,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(meanDifference(sameOrder, grayFrame)).toBeLessThan(6)
   }, 900_000)
 
-  it('隐藏的画面块：导出里不出现也不出声，它占的时间照算', async () => {
+  it('隐藏的视频片段：导出里不出现也不出声，它占的时间照算', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const [clip, gray] = [`${origin}/clip.mp4`, `${origin}/gray.mp4`]
@@ -512,7 +512,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(shown.loudness - hidden.loudness).toBeGreaterThan(30)
   }, 600_000)
 
-  it('组件块：组件按可填项画出来，组件文字用到的中文字形在 <head> 里声明了', async () => {
+  it('组件或块的片段：组件按可填项画出来，组件文字用到的中文字形在 <head> 里声明了', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const catalog = (library as ComponentLibrary).catalog
@@ -631,7 +631,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       { canvas, blocks: [component({ values: { accent: '#ff0000' } })] },
       catalog,
     )
-    // 和编辑器右侧栏改值一样：用 SDK 把块上的取值整串换掉，存出来的文件再过渲染前的检查
+    // 和编辑器右侧栏改值一样：用 SDK 把片段上的取值整串换掉，存出来的文件再过渲染前的检查
     const session = await openComposition(stored)
     session.setAttribute(
       'title-1',
@@ -661,11 +661,11 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(meanDifference(plain, changed)).toBeGreaterThan(8)
   }, 600_000)
 
-  it('音频块：有声音，音量调低后更轻，循环时音频比块短也一直有声，隐藏后没有声音', async () => {
+  it('音频片段：有声音，音量调低后更轻，循环时音频比片段短也一直有声，隐藏后没有声音', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const tone = `${origin}/tone.m4a`
-    /** 1.5 秒的音频放进 0–3 秒的块；和导出时一样，交给渲染的是 `localizedFilm` 那一份。 */
+    /** 1.5 秒的音频放进 0–3 秒的片段；和导出时一样，交给渲染的是 `localizedFilm` 那一份。 */
     const render = async (id: string, overrides: Partial<AudioBlock>) => {
       const rendered = await worker.render(
         {
@@ -709,7 +709,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const full = await render('audio-full', {})
     const half = await render('audio-half', { volume: 0.5 })
     const looped = await render('audio-loop', { loop: true })
-    // 编辑器里块不会比素材长，循环只在把放满的块调快以后才用得上
+    // 编辑器里片段不会比素材长，循环只在把放满的片段调快以后才用得上
     const loopedFast = await render('audio-loop-fast', { loop: true, playbackRate: 2 })
     const hidden = await render('audio-hidden', { hidden: true })
 
@@ -724,11 +724,11 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(hidden.duration).toBeLessThan(3.15)
   }, 600_000)
 
-  it('画面块的声音：增益大于 0 dB 更响，淡入淡出时头尾更轻，静音后没有声音', async () => {
+  it('视频片段的声音：增益大于 0 dB 更响，淡入淡出时头尾更轻，静音后没有声音', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const gray = `${origin}/gray.mp4`
-    /** 7 秒的灰片放进 0–6 秒的块；量开头、中间、结尾各 0.8 秒的响度，没有音轨时是 null。 */
+    /** 7 秒的灰片放进 0–6 秒的片段；量开头、中间、结尾各 0.8 秒的响度，没有音轨时是 null。 */
     const render = async (id: string, overrides: Partial<PictureBlock>) => {
       const rendered = await worker.render(
         {
@@ -774,11 +774,11 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(muted === null ? Infinity : plain.middle - muted.middle).toBeGreaterThan(30)
   }, 900_000)
 
-  it('速度：2 倍的画面块放的是素材后面的画面，2 倍的音频块提前放完', async () => {
+  it('速度：2 倍的视频片段放的是素材后面的画面，2 倍的音频片段提前放完', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const [steps, tone] = [`${origin}/steps.mp4`, `${origin}/tone.m4a`]
-    /** 6 秒的色块片放进 0–3 秒的画面块，1.5 秒的音频放进 0–3 秒的音频块，两个块用同一个速度。 */
+    /** 6 秒的色块片放进 0–3 秒的视频片段，1.5 秒的音频放进 0–3 秒的音频片段，两个片段用同一个速度。 */
     const render = async (id: string, playbackRate: number) => {
       const rendered = await worker.render(
         {
@@ -822,7 +822,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(normal.late - fast.late).toBeGreaterThan(30)
   }, 600_000)
 
-  it('素材没有音轨：画面块写成静音照常导出、画面正常；标成有声音时导出失败，说清哪里不对', async () => {
+  it('素材没有音轨：视频片段写成静音照常导出、画面正常；标成有声音时导出失败，说清哪里不对', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     // 色块片生成时就没有音轨
@@ -857,7 +857,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     })
   }, 600_000)
 
-  it('成片里的块全隐藏了：照样导出，是一段同样长的黑片，没有音轨', async () => {
+  it('成片里的片段全隐藏了：照样导出，是一段同样长的黑片，没有音轨', async () => {
     const { logger } = memoryLogger()
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const clip = `${origin}/clip.mp4`

@@ -6,14 +6,14 @@ import {
 } from './vendor/hyperframes-studio/player/components/timelineStackingSync'
 
 /**
- * 新加的块的叠放顺序：叠在最上面。`existing` 是加之前文件里所有的块（三种都算），
- * `placed` 是这一次已经放下的块数。
+ * 新加的片段的叠放顺序：叠在最上面。`existing` 是加之前文件里所有的片段（三种都算），
+ * `placed` 是这一次已经放下的片段数。
  */
 export const newBlockZ = (existing: readonly FilmBlock[], placed: number): number =>
   Math.max(1, existing.length + placed + 1)
 
 /**
- * 把块 `id` 换到 `row` 时它往上还是往下挪：`row` 是已有的一行，或在时间线上第几行的位置新开一行
+ * 把片段 `id` 换到 `row` 时它往上还是往下挪：`row` 是已有的一行，或在时间线上第几行的位置新开一行
  * （0 是最上面）。都按挪之前时间线上的第几行比；在自己这一行的位置新开（紧挨着这一行的上面）时
  * 返回 null，不调叠放顺序。
  */
@@ -32,11 +32,11 @@ export const rowMoveDirection = (
 }
 
 /**
- * 换行以后被挪的块 `id` 的叠放顺序；不用改时返回 undefined。别的块一律不动。
+ * 换行以后被挪的片段 `id` 的叠放顺序；不用改时返回 undefined。别的片段一律不动。
  *
- * `blocks` 是文件里所有的块，按文件里的先后，行号和起止都是换完之后的。
- * 往上挪：抬到它现在压着的、时间上重叠的块之上；往下挪：降到盖着它的、时间上重叠的块之下，
- * 但不低于 0。音频块不参与。
+ * `blocks` 是文件里所有的片段，按文件里的先后，行号和起止都是换完之后的。
+ * 往上挪：抬到它现在压着的、时间上重叠的片段之上；往下挪：降到盖着它的、时间上重叠的片段之下，
+ * 但不低于 0。音频片段不参与。
  */
 export const restackedZ = (
   blocks: readonly FilmBlock[],

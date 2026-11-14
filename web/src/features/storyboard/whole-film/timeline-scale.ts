@@ -25,7 +25,7 @@ export type Zoom = { mode: ZoomMode; percent: number }
 
 export const FIT_ZOOM: Zoom = { mode: 'fit', percent: 100 }
 
-// 成片再短，时间线也按这么多秒排，块不会被拉得很宽
+// 成片再短，时间线也按这么多秒排，片段不会被拉得很宽
 const MIN_SPAN_S = 20
 
 export type TimelineScale = {
@@ -75,9 +75,9 @@ export const sliderToZoom = (slider: number, fitPps: number): Zoom => ({
 })
 
 /**
- * 缩放到这几个块：它们合起来的那一段两边各留 24 像素，正好铺满能排时间的宽度（`viewportWidth`）。
+ * 缩放到这几个片段：它们合起来的那一段两边各留 24 像素，正好铺满能排时间的宽度（`viewportWidth`）。
  * `scrollLeft` 是时间线要横向滚到的位置，让这一段的起点离时间区左边 24 像素。
- * 没有长度大于 0 的块、或者还没量出宽度时是 null。
+ * 没有长度大于 0 的片段、或者还没量出宽度时是 null。
  */
 export const zoomToBlocks = (
   blocks: readonly Pick<Span, 'start' | 'duration'>[],
@@ -129,7 +129,7 @@ type Span = { id: string; start: number; duration: number }
 
 export type SnapTargets = readonly TimelineSnapTarget[]
 
-/** 能吸上去的时间点：别的块的两端和播放头。`spans` 里不要带正在拖的那个块。 */
+/** 能吸上去的时间点：别的片段的两端和播放头。`spans` 里不要带正在拖的那个片段。 */
 export const snapTargets = (spans: readonly Span[], playheadMs: number): SnapTargets =>
   collectTimelineSnapTargets({
     elements: spans.map((span) => ({
@@ -152,7 +152,7 @@ export const snapMs = (ms: number, targets: SnapTargets, pps: number): Snapped =
   return { ms: at, guideMs: at }
 }
 
-/** 挪一个块时，它的开头或结尾哪一端离某个点近就让那一端吸上去；返回的是块的开头。 */
+/** 挪一个片段时，它的开头或结尾哪一端离某个点近就让那一端吸上去；返回的是片段的开头。 */
 export const snapSpanStartMs = (
   startMs: number,
   durationMs: number,

@@ -17,7 +17,7 @@ def film_file(
     duration_ms: int = 5000,
 ) -> str:
     """测试里的成片文件。后端不读文件内容，只看渲染服务的检查结果；``StubRender`` 按这里写下的
-    素材（画面块的视频、音频块的音频）和时长答复。"""
+    素材（视频片段的视频、音频片段的音频）和时长答复。"""
 
     def sources(kind: str, found: Sequence[tuple[uuid.UUID, str]]) -> list[dict[str, str]]:
         return [{"jobId": str(job_id), "url": url, "kind": kind} for job_id, url in found]

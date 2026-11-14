@@ -52,7 +52,7 @@ const second = (overrides: Partial<PictureBlock> = {}): PictureBlock =>
 const film = (...blocks: FilmBlock[]): Film => ({ canvas: { width: 720, height: 1280 }, blocks })
 const html = (...blocks: FilmBlock[]) => writeFilm(film(...blocks), catalog)
 
-/** 一个三种块都有的成片：画面块、组件块和音频块同是第 0 行，时间也重叠。 */
+/** 一个三种片段都有的成片：视频片段、组件或块的片段和音频片段同是第 0 行，时间也重叠。 */
 const titled = component({
   start: 500,
   duration: 1500,
@@ -75,7 +75,7 @@ describe('checkFilm', () => {
     ])
   })
 
-  it('两行上同时出现的块：行号和叠放顺序都读回来，重写后一字不差；叠放顺序是 0 时文件里不写', async () => {
+  it('两行上同时出现的片段：行号和叠放顺序都读回来，重写后一字不差；叠放顺序是 0 时文件里不写', async () => {
     const below = picture({ track: 1 })
     const above = second({ start: 500, track: 0, z: 3 })
     const written = html(below, above)
@@ -86,7 +86,7 @@ describe('checkFilm', () => {
     expect(checked.html).toBe(written)
   })
 
-  it('隐藏的块：隐藏标记读回来，重写后一字不差，时长照算；没隐藏时文件里不写', async () => {
+  it('隐藏的片段：隐藏标记读回来，重写后一字不差，时长照算；没隐藏时文件里不写', async () => {
     const hidden = second({ hidden: true, z: 2 })
     const written = html(picture(), hidden)
     expect(written).toContain('<video data-hidden="" style="z-index: 2" id="clip-2"')
@@ -97,7 +97,7 @@ describe('checkFilm', () => {
     expect(checked.durationMs).toBe(5000)
   })
 
-  it('还没有块的成片也能通过', async () => {
+  it('还没有片段的成片也能通过', async () => {
     const checked = await checkFilm(html(), catalog)
     expect(checked.film.blocks).toEqual([])
     expect(checked.durationMs).toBe(0)
@@ -110,7 +110,7 @@ describe('checkFilm', () => {
     expect(checked.sources).toHaveLength(1)
   })
 
-  it('三种块写出来读回来是同一份，重写后一字不差；画面块和音频块同是第 0 行也行；素材分视频和音频', async () => {
+  it('三种片段写出来读回来是同一份，重写后一字不差；视频片段和音频片段同是第 0 行也行；素材分视频和音频', async () => {
     const blocks = [picture(), second(), component({ ...titled, track: 1 }), music]
     const written = html(...blocks)
     const checked = await checkFilm(written, catalog)
@@ -123,7 +123,7 @@ describe('checkFilm', () => {
     ])
   })
 
-  it('画面块和音频块绑同一条记录：算两个素材，一个视频一个音频', async () => {
+  it('视频片段和音频片段绑同一条记录：算两个素材，一个视频一个音频', async () => {
     // 时间错开：同一个地址同时出声，渲染引擎自带的检查会拒收
     const same = audio({ jobId: SOURCE_JOB, src: picture().src, start: 2000 })
     const checked = await checkFilm(html(picture(), same), catalog)
@@ -133,7 +133,7 @@ describe('checkFilm', () => {
     ])
   })
 
-  it('成片没有时长上限：三种块的结尾都可以过 2 分钟', async () => {
+  it('成片没有时长上限：三种片段的结尾都可以过 2 分钟', async () => {
     const long = [
       picture({ duration: 200_000 }),
       audio({ duration: 150_000 }),
@@ -143,7 +143,7 @@ describe('checkFilm', () => {
     expect(checked.durationMs).toBeGreaterThan(210_000)
   })
 
-  it('成片总长算到最晚结尾的块，音频块和组件块也算', async () => {
+  it('成片总长算到最晚结尾的片段，音频片段和组件或块的片段也算', async () => {
     expect((await checkFilm(html(picture(), audio({ duration: 6000 })), catalog)).durationMs).toBe(
       6000,
     )
@@ -174,7 +174,7 @@ describe('checkFilm', () => {
     expect((await checkFilm(shown, catalog)).html).toBe(shown)
   })
 
-  it('画面块的增益、速度、淡入淡出、静音，音频块的速度：读回来是同一份，重写后一字不差，过渲染前的检查', async () => {
+  it('视频片段的增益、速度、淡入淡出、静音，音频片段的速度：读回来是同一份，重写后一字不差，过渲染前的检查', async () => {
     const quiet = picture({
       volume: 3.981072,
       playbackRate: 0.25,
@@ -192,7 +192,7 @@ describe('checkFilm', () => {
     expect(checked.html).toBe(written)
   })
 
-  it('用 SDK 改画面块的速度、淡入淡出和静音，改音频块的循环（编辑器右侧栏）：存出来的文件通过检查，读回来是改完的样子', async () => {
+  it('用 SDK 改视频片段的速度、淡入淡出和静音，改音频片段的循环（编辑器右侧栏）：存出来的文件通过检查，读回来是改完的样子', async () => {
     const stored = (await checkFilm(html(picture(), audio({ start: 2000 })), catalog)).html
     const session = await openComposition(stored)
     session.batch(() => {
@@ -246,7 +246,7 @@ describe('checkFilm', () => {
     )
   })
 
-  it('SDK 存出来的文件 <head> 里没有组件的规则：重写时按块补上', async () => {
+  it('SDK 存出来的文件 <head> 里没有组件的规则：重写时按片段补上', async () => {
     const session = await openComposition(html())
     session.addElement(
       'film',
@@ -280,7 +280,7 @@ describe('checkFilm', () => {
     )
   })
 
-  it('用 SDK 加组件块和音频块、改音频的起止，存出来的文件通过检查，读回来是改完的样子', async () => {
+  it('用 SDK 加组件或块的片段和音频片段、改音频的起止，存出来的文件通过检查，读回来是改完的样子', async () => {
     const stored = (await checkFilm(html(picture()), catalog)).html
     const session = await openComposition(stored)
     const placed = component({ ...titled, track: 1 })
@@ -301,7 +301,7 @@ describe('checkFilm', () => {
     expect(checked.html).toBe(html(picture(), placed, moved))
   })
 
-  it('用 SDK 把组件块的可填项整串换掉（编辑器右侧栏改值），存出来的文件通过检查，读回来是新的取值', async () => {
+  it('用 SDK 把组件或块的片段的可填项整串换掉（编辑器右侧栏改值），存出来的文件通过检查，读回来是新的取值', async () => {
     const placed = component({ ...titled, track: 1 })
     const stored = (await checkFilm(html(picture(), placed), catalog)).html
     const session = await openComposition(stored)
@@ -316,7 +316,7 @@ describe('checkFilm', () => {
     expect(checked.html).toBe(html(picture(), changed))
   })
 
-  it('用 SDK 加块、存出来的文件通过检查，重写后 SDK 再开再存仍然通过且内容不变', async () => {
+  it('用 SDK 加片段、存出来的文件通过检查，重写后 SDK 再开再存仍然通过且内容不变', async () => {
     const session = await openComposition(html())
     const add = (block: PictureBlock, index: number) =>
       session.batch(() => {
@@ -343,7 +343,7 @@ describe('checkFilm', () => {
   describe('编辑器加素材、撤销、重做后存出来的文件', () => {
     type Session = Awaited<ReturnType<typeof openComposition>>
 
-    /** 和编辑器加素材时发的操作一样：没声明过的素材先声明变量，再把块写在根下第一个、改总时长。 */
+    /** 和编辑器加素材时发的操作一样：没声明过的素材先声明变量，再把片段写在根下第一个、改总时长。 */
     const add = (session: Session, block: PictureBlock) => {
       const declared = session.listVariables().map((variable) => variable.id)
       const variable = sourceVariable(block.jobId, block.src)
@@ -357,7 +357,7 @@ describe('checkFilm', () => {
       })
     }
 
-    it('从空成片加第一条素材再撤销：回到没有块的成片；重做后素材回来', async () => {
+    it('从空成片加第一条素材再撤销：回到没有片段的成片；重做后素材回来', async () => {
       const session = await openComposition(html())
       add(session, picture({ z: 1 }))
       session.undo()
@@ -378,7 +378,7 @@ describe('checkFilm', () => {
       expect(checked.html).toBe(html(second({ z: 2 }), picture()))
     })
 
-    it('同一条素材加两次再撤销一次：变量还在，剩下的那一块照样通过', async () => {
+    it('同一条素材加两次再撤销一次：变量还在，剩下的那一个片段照样通过', async () => {
       const session = await openComposition(html())
       add(session, picture({ z: 1 }))
       add(session, picture({ id: 'clip-2', start: 2000, mediaStart: 3000, z: 2 }))
@@ -390,7 +390,7 @@ describe('checkFilm', () => {
   describe('编辑器挪动、裁剪、删除后存出来的文件', () => {
     type Session = Awaited<ReturnType<typeof openComposition>>
 
-    /** 和编辑器改一个块时发的操作一样：起止、入点和成片总长算一步。 */
+    /** 和编辑器改一个片段时发的操作一样：起止、入点和成片总长算一步。 */
     const retime = (
       session: Session,
       id: string,
@@ -418,7 +418,7 @@ describe('checkFilm', () => {
       expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
     })
 
-    it('删掉一块、后面的往前补，用不到的素材变量一起去掉；撤销后两块和变量都回来', async () => {
+    it('删掉一个片段、后面的往前补，用不到的素材变量一起去掉；撤销后两个片段和变量都回来', async () => {
       const stored = (await checkFilm(html(picture(), second()), catalog)).html
       const session = await openComposition(stored)
       session.batch(() => {
@@ -448,7 +448,7 @@ describe('checkFilm', () => {
         session.dispatch({ type: 'setCompositionMetadata', duration: total / 1000 })
       })
 
-    it('把块换到上面一行、调高叠放顺序：读回来是新的行号、起点和叠放顺序，文件里的先后不变；撤销回到原样', async () => {
+    it('把片段换到上面一行、调高叠放顺序：读回来是新的行号、起点和叠放顺序，文件里的先后不变；撤销回到原样', async () => {
       const stored = (await checkFilm(html(second({ track: 2 }), picture({ track: 1 })), catalog))
         .html
       const session = await openComposition(stored)
@@ -462,7 +462,7 @@ describe('checkFilm', () => {
       expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
     })
 
-    it('把块换到下面一行、叠放顺序降到 0：块上不再带样式，重写后一字不差；撤销回到原样', async () => {
+    it('把片段换到下面一行、叠放顺序降到 0：片段上不再带样式，重写后一字不差；撤销回到原样', async () => {
       const stored = (await checkFilm(html(second({ z: 2 }), picture({ z: 1 })), catalog)).html
       const session = await openComposition(stored)
       changeRow(session, 'clip-2', { start: 500, track: 1 }, 0, 3500)
@@ -487,7 +487,7 @@ describe('checkFilm', () => {
       )
     })
 
-    it('把块搬进最上面新开的一行（别的块先改行号，再改它的行号、起点和叠放顺序）：读回来是新的行号，文件里的先后不变；撤销回到原样', async () => {
+    it('把片段搬进最上面新开的一行（别的片段先改行号，再改它的行号、起点和叠放顺序）：读回来是新的行号，文件里的先后不变；撤销回到原样', async () => {
       const stored = (await checkFilm(html(picture(), second()), catalog)).html
       const session = await openComposition(stored)
       session.batch(() => {
@@ -504,7 +504,7 @@ describe('checkFilm', () => {
       expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
     })
 
-    it('成组挪动、被抓的块搬进最上面新开的一行（别的块先改行号，跟着的块挪好起点，再改它自己）：读回来是新的行号和时间；撤销回到原样', async () => {
+    it('成组挪动、被抓的片段搬进最上面新开的一行（别的片段先改行号，跟着的片段挪好起点，再改它自己）：读回来是新的行号和时间；撤销回到原样', async () => {
       const third = picture({ id: 'clip-3', start: 5000, duration: 1000 })
       const stored = (await checkFilm(html(picture(), second(), third), catalog)).html
       const session = await openComposition(stored)
@@ -529,7 +529,7 @@ describe('checkFilm', () => {
       expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
     })
 
-    it('隐藏一个块再显示回来（SDK 加、去隐藏标记）：隐藏时读回来带着标记，显示回来和原来一字不差', async () => {
+    it('隐藏一个片段再显示回来（SDK 加、去隐藏标记）：隐藏时读回来带着标记，显示回来和原来一字不差', async () => {
       const stored = (await checkFilm(html(picture(), second()), catalog)).html
       const session = await openComposition(stored)
       session.setAttribute('clip-2', 'data-hidden', '')
@@ -540,7 +540,7 @@ describe('checkFilm', () => {
       expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
     })
 
-    it('把块全删掉：剩下一份没有画面的成片，照样通过', async () => {
+    it('把片段全删掉：剩下一份没有画面的成片，照样通过', async () => {
       const session = await openComposition(html(picture()))
       session.batch(() => {
         session.removeElement('clip-1')
@@ -550,7 +550,7 @@ describe('checkFilm', () => {
       expect((await checkFilm(session.serialize(), catalog)).film.blocks).toEqual([])
     })
 
-    it('组件块裁开头（SDK 改起止、加从第几秒开始播）：存出来的文件通过检查，读回来带着它；拉回 0 去掉这个属性，和原来一字不差', async () => {
+    it('组件或块的片段裁开头（SDK 改起止、加从第几秒开始播）：存出来的文件通过检查，读回来带着它；拉回 0 去掉这个属性，和原来一字不差', async () => {
       const stored = (await checkFilm(html(picture({ track: 1 }), component()), catalog)).html
       const session = await openComposition(stored)
       // 和编辑器裁开头时发的操作一样：起止和从第几秒开始播在同一批里改
@@ -574,7 +574,7 @@ describe('checkFilm', () => {
       expect(session.serialize()).not.toContain('data-playback-start')
     })
 
-    it('加组件块、加音频块（都写在根下第一个）、在行里挪、换行、隐藏：存出来的文件通过检查，读回来是改完的样子；撤销一步步回去', async () => {
+    it('加组件或块的片段、加音频片段（都写在根下第一个）、在行里挪、换行、隐藏：存出来的文件通过检查，读回来是改完的样子；撤销一步步回去', async () => {
       const stored = (await checkFilm(html(picture({ z: 1 })), catalog)).html
       const session = await openComposition(stored)
       const steps: string[] = [stored]
@@ -582,7 +582,7 @@ describe('checkFilm', () => {
         session.batch(change)
         steps.push(session.serialize())
       }
-      // 和编辑器加块时发的操作一样：组件块叠在最上面；音频块先声明变量，不带叠放顺序
+      // 和编辑器加片段时发的操作一样：组件或块的片段叠在最上面；音频片段先声明变量，不带叠放顺序
       step(() => {
         session.addElement('film', 0, componentBlock(component({ start: 500, track: 1, z: 2 })))
         session.dispatch({ type: 'setCompositionMetadata', duration: 2.5 })
@@ -592,14 +592,14 @@ describe('checkFilm', () => {
         session.addElement('film', 0, audioBlock(audio({ duration: 3000 })))
         session.dispatch({ type: 'setCompositionMetadata', duration: 3 })
       })
-      // 在行里挪：组件块只改起止，音频块连入点一起改
+      // 在行里挪：组件或块的片段只改起止，音频片段连入点一起改
       step(() => {
         session.setTiming('title-1', { start: 0.2, duration: 1.8 })
         session.setTiming('music-1', { start: 0.5, duration: 2.5 })
         session.setAttribute('music-1', 'data-media-start', '0.5')
         session.dispatch({ type: 'setCompositionMetadata', duration: 3 })
       })
-      // 换行：组件块换到画面块那一行、接在它后面，降叠放顺序；音频块换到声音区的另一行
+      // 换行：组件或块的片段换到视频片段那一行、接在它后面，降叠放顺序；音频片段换到声音区的另一行
       step(() => {
         session.setTiming('title-1', { start: 2, trackIndex: 0 })
         session.setStyle('title-1', { zIndex: '1' })
@@ -647,9 +647,9 @@ describe('readFilm 拒收写法之外的东西', () => {
     ],
     ['根外面的标签', (source) => source.replace('</body>', '<iframe></iframe></body>'), /<iframe>/],
     ['注释', (source) => source.replace('</div>', '<!-- x --></div>'), /注释/],
-    ['块之间的文字', (source) => source.replace('</div>', 'hello</div>'), /文字/],
+    ['片段之间的文字', (source) => source.replace('</div>', 'hello</div>'), /文字/],
     [
-      '块里的子标签',
+      '片段里的子标签',
       (source) => source.replace('></video>', '><source src="x"></video>'),
       /<source>/,
     ],
@@ -664,7 +664,7 @@ describe('readFilm 拒收写法之外的东西', () => {
       /声明/,
     ],
     [
-      '默认值和块上的地址不一样',
+      '默认值和片段上的地址不一样',
       (source) => source.replace('b.mp4&quot;', 'c.mp4&quot;'),
       /默认值/,
     ],
@@ -675,7 +675,7 @@ describe('readFilm 拒收写法之外的东西', () => {
           'data-composition-variables="[',
           'data-composition-variables="[{&quot;id&quot;:&quot;x&quot;,&quot;type&quot;:&quot;string&quot;,&quot;default&quot;:&quot;&quot;},',
         ),
-      /没有块在用/,
+      /没有片段在用/,
     ],
     [
       '根上别的样式',
@@ -683,13 +683,13 @@ describe('readFilm 拒收写法之外的东西', () => {
       /样式/,
     ],
     [
-      '块上叠放顺序之外的样式',
+      '片段上叠放顺序之外的样式',
       (source) =>
         source.replace('<video id="clip-1"', '<video style="position: fixed" id="clip-1"'),
       /叠放顺序/,
     ],
     [
-      '块上叠放顺序后面还跟着别的样式',
+      '片段上叠放顺序后面还跟着别的样式',
       (source) =>
         source.replace('<video id="clip-1"', '<video style="z-index: 2; opacity: 0" id="clip-1"'),
       /叠放顺序/,
@@ -737,7 +737,7 @@ describe('readFilm 拒收写法之外的东西', () => {
     ],
     ['循环写了 true 以外的值', (source) => source.replace('loop="true"', 'loop=""'), /loop/],
     [
-      '画面块同时带静音和有声音的标记',
+      '视频片段同时带静音和有声音的标记',
       (source) => source.replace(' data-has-audio="true"', ' data-has-audio="true" muted="true"'),
       /不能同时带 muted 和 data-has-audio/,
     ],
@@ -752,33 +752,33 @@ describe('readFilm 拒收写法之外的东西', () => {
       /速度/,
     ],
     [
-      '音频块带静音（导出不认）',
+      '音频片段带静音（导出不认）',
       (source) => source.replace('<audio id="music-1"', '<audio muted="true" id="music-1"'),
       /不能带 muted/,
     ],
     [
-      '块上带对象自带的属性名',
+      '片段上带对象自带的属性名',
       (source) => source.replace('<video id="clip-1"', '<video constructor="x" id="clip-1"'),
       /不能带 constructor/,
     ],
     [
-      '块上带 __proto__',
+      '片段上带 __proto__',
       (source) => source.replace('<audio id="music-1"', '<audio __proto__="x" id="music-1"'),
       /不能带 __proto__/,
     ],
     [
-      '音频块带样式',
+      '音频片段带样式',
       (source) => source.replace('<audio id="music-1"', '<audio style="z-index: 1" id="music-1"'),
       /不能带 style/,
     ],
     ['淡入不是秒数', (source) => source.replace('data-fade-in="1"', 'data-fade-in="1s"'), /淡入/],
     [
-      '组件块缺可填项取值',
+      '组件或块的片段缺可填项取值',
       (source) => source.replace(/ data-variable-values="[^"]*"/, ''),
       /缺少 data-variable-values/,
     ],
     [
-      '组件块里有子标签',
+      '组件或块的片段里有子标签',
       (source) => source.replace('></div>\n<audio', '><span></span></div>\n<audio'),
       /<span>/,
     ],
@@ -792,18 +792,18 @@ describe('readFilm 拒收写法之外的东西', () => {
   })
 
   it.each<[string, FilmBlock[], RegExp]>([
-    ['同一行的两块重叠', [picture(), second({ start: 1500 })], /重叠/],
-    ['画面区同一行上画面块和组件块重叠', [picture(), component({ start: 1000 })], /重叠/],
-    ['声音区同一行上两个音频块重叠', [audio(), audio({ id: 'music-2', start: 1500 })], /重叠/],
+    ['同一行的两个片段重叠', [picture(), second({ start: 1500 })], /重叠/],
+    ['画面区同一行上视频片段和组件或块的片段重叠', [picture(), component({ start: 1000 })], /重叠/],
+    ['声音区同一行上两个音频片段重叠', [audio(), audio({ id: 'music-2', start: 1500 })], /重叠/],
     ['短于 100 毫秒', [picture({ duration: 99 })], /短于/],
     ['音频短于 100 毫秒', [audio({ duration: 99 })], /短于/],
     ['编号重复', [picture(), second({ id: 'clip-1' })], /重复/],
-    ['不同种的块编号重复', [picture(), audio({ id: 'clip-1' })], /重复/],
+    ['不同种的片段编号重复', [picture(), audio({ id: 'clip-1' })], /重复/],
     ['音量超出范围', [picture({ volume: 4 })], /音量/],
     ['音频音量超出范围', [audio({ volume: 4 })], /音量/],
-    ['画面块速度低于 0.1 倍', [picture({ playbackRate: 0.05 })], /速度/],
-    ['画面块速度高于 10 倍', [picture({ playbackRate: 10.5 })], /速度/],
-    ['音频块速度高于 10 倍', [audio({ playbackRate: 12 })], /速度/],
+    ['视频片段速度低于 0.1 倍', [picture({ playbackRate: 0.05 })], /速度/],
+    ['视频片段速度高于 10 倍', [picture({ playbackRate: 10.5 })], /速度/],
+    ['音频片段速度高于 10 倍', [audio({ playbackRate: 12 })], /速度/],
     ['同一条素材片两个地址', [picture(), second({ jobId: SOURCE_JOB })], /两个地址|默认值/],
     ['不在组件库里的组件', [component({ component: 'nope' })], /不在组件库/],
     [
@@ -816,9 +816,9 @@ describe('readFilm 拒收写法之外的东西', () => {
   })
 
   it.each<[string, FilmBlock[]]>([
-    ['画面块和音频块同是第 0 行、时间重叠', [picture(), audio()]],
-    ['组件块和音频块同是第 0 行、时间重叠', [component(), audio()]],
-    ['画面块和组件块在画面区的两行上', [picture(), component({ track: 1 })]],
+    ['视频片段和音频片段同是第 0 行、时间重叠', [picture(), audio()]],
+    ['组件或块的片段和音频片段同是第 0 行、时间重叠', [component(), audio()]],
+    ['视频片段和组件或块的片段在画面区的两行上', [picture(), component({ track: 1 })]],
   ])('%s：能过', (_name, blocks) => {
     expect(readFilm(html(...blocks), catalog).blocks).toEqual(blocks)
   })
@@ -833,7 +833,7 @@ describe('readFilm 拒收写法之外的东西', () => {
 })
 
 describe('localizedFilm', () => {
-  it('块上的地址和变量的默认值一起换成本地路径', () => {
+  it('片段上的地址和变量的默认值一起换成本地路径', () => {
     const local = localizedFilm(
       film(picture(), second()),
       { 'https://media.iclip.test/videos/b.mp4': 'media/b.mp4' },
@@ -845,7 +845,7 @@ describe('localizedFilm', () => {
     expect(local).not.toContain('https://media.iclip.test/videos/b.mp4')
   })
 
-  it('音频块的地址也换成本地路径，组件块不动', () => {
+  it('音频片段的地址也换成本地路径，组件或块的片段不动', () => {
     const titledAbove = component({ ...titled, track: 1 })
     const local = localizedFilm(
       film(picture(), titledAbove, music),

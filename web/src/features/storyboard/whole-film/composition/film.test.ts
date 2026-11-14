@@ -17,7 +17,7 @@ import {
 const CANVAS = { width: 1080, height: 1920 }
 const film = (...blocks: FilmBlock[]): Film => ({ canvas: CANVAS, blocks })
 
-/** 像编辑器那样读回块：SDK 的元素快照把叠放顺序从样式里单独给。 */
+/** 像编辑器那样读回片段：SDK 的元素快照把叠放顺序从样式里单独给。 */
 const readBack = (html: string): (FilmBlock | undefined)[] => {
   const page = new DOMParser().parseFromString(html, 'text/html')
   return [...page.querySelectorAll<HTMLElement>('#film > *')].map((element) => {
@@ -51,7 +51,7 @@ const music = audio({
 })
 
 describe('成片文件的写法', () => {
-  it('三种块写出来再按属性读回，和原来一样', () => {
+  it('三种片段写出来再按属性读回，和原来一样', () => {
     const blocks = [picture({ z: 1 }), titled, music]
     expect(readBack(writeFilm(film(...blocks), fixtureCatalog))).toEqual(blocks)
   })
@@ -65,7 +65,7 @@ describe('成片文件的写法', () => {
     expect(readBack(writeFilm(film(...plain), fixtureCatalog))).toEqual(plain)
   })
 
-  it('组件块的写法：组件名、组件文件、可填项取值都写在块上', () => {
+  it('组件或块的片段的写法：组件名、组件文件、可填项取值都写在片段上', () => {
     expect(writeBlock(component({ values: { text: '<标题>' } }))).toBe(
       '<div id="title-1" data-hf-id="title-1" class="clip component" data-label="测试可填项"' +
         ' data-composition-id="fixture-fields"' +
@@ -75,7 +75,7 @@ describe('成片文件的写法', () => {
     )
   })
 
-  it('音频块的写法：地址绑按记录编号取名的变量，淡入淡出是秒数，循环写 loop="true"', () => {
+  it('音频片段的写法：地址绑按记录编号取名的变量，淡入淡出是秒数，循环写 loop="true"', () => {
     expect(writeBlock(audio({ fadeIn: 1500, loop: true }))).toBe(
       '<audio id="music-1" data-hf-id="music-1" class="clip audio" data-label="配乐"' +
         ` src="https://media.test/audio/music.mp3" data-var-src="src-${AUDIO_JOB}"` +
@@ -84,7 +84,7 @@ describe('成片文件的写法', () => {
     )
   })
 
-  it('画面块、音频块的增益、速度、淡入淡出和画面块的静音：写出来再读回，和原来一样', () => {
+  it('视频片段、音频片段的增益、速度、淡入淡出和视频片段的静音：写出来再读回，和原来一样', () => {
     const blocks = [
       picture({ volume: 1.995262, playbackRate: 0.5, fadeIn: 1200, fadeOut: 300, muted: true }),
       audio({ start: 2000, volume: 0.031623, playbackRate: 2.5, loop: true }),
@@ -98,7 +98,7 @@ describe('成片文件的写法', () => {
     expect(readBack(written)).toEqual(blocks)
   })
 
-  it('速度是 1、不淡入淡出时不写；画面块有声音写 data-has-audio，静音时只写 muted，两个不同时出现', () => {
+  it('速度是 1、不淡入淡出时不写；视频片段有声音写 data-has-audio，静音时只写 muted，两个不同时出现', () => {
     const [sound, mute] = [picture(), picture({ muted: true })].map(writeBlock)
     for (const name of ['data-playback-rate', 'data-fade-in', 'data-fade-out', 'muted']) {
       expect(sound).not.toContain(` ${name}=`)
@@ -110,13 +110,13 @@ describe('成片文件的写法', () => {
     expect(readBack(writeFilm(film(picture()), fixtureCatalog))).toEqual([picture()])
   })
 
-  it('成片总长是所有块里最晚的结尾，三种块都算', () => {
+  it('成片总长是所有片段里最晚的结尾，三种片段都算', () => {
     expect(filmDurationMs(film(picture({ duration: 2000 }), music))).toBe(7000)
     expect(filmDurationMs(film(picture(), component({ start: 1000, duration: 3000 })))).toBe(4000)
     expect(filmDurationMs(film())).toBe(0)
   })
 
-  it('固定尺寸的组件放进不一样大的画面：按块的编号写一条规则，按原比例缩到放得下、居中', () => {
+  it('固定尺寸的组件放进不一样大的画面：按片段的编号写一条规则，按原比例缩到放得下、居中', () => {
     const scene = component({
       id: 'scene-1',
       component: 'fixture-scene',
@@ -165,7 +165,7 @@ describe('成片文件的写法', () => {
     )
   })
 
-  it('素材地址变量：画面块和音频块一条记录一个，组件块没有', () => {
+  it('素材地址变量：视频片段和音频片段一条记录一个，组件或块的片段没有', () => {
     expect(filmVariables(film(picture(), picture({ id: 'clip-2' }), titled, music))).toEqual([
       { id: `src-${picture().jobId}`, type: 'string', label: SOURCE_LABEL, default: picture().src },
       { id: `src-${AUDIO_JOB}`, type: 'string', label: AUDIO_SOURCE_LABEL, default: music.src },
@@ -227,7 +227,7 @@ describe('成片声明的字体', () => {
     expect(covers(html, 'Noto Sans SC', '上')).toBe(false)
   })
 
-  it('没有组件块时只声明西文基本字符', () => {
+  it('没有组件或块的片段时只声明西文基本字符', () => {
     const html = writeFilm(film(picture({ label: '新品' })), catalog)
     expect(covers(html, 'Noto Sans SC', 'A')).toBe(true)
     expect(covers(html, 'Noto Sans SC', '新')).toBe(false)
@@ -242,7 +242,7 @@ describe('成片声明的字体', () => {
     expect(writeFilm(film(component({ values: { text: '新品' } })), catalog)).not.toContain(LINK)
   })
 
-  it('字体类可填项选了组件库里的字体：按块的编号写字体变量，中文字形退到组件库的中文字体', () => {
+  it('字体类可填项选了组件库里的字体：按片段的编号写字体变量，中文字形退到组件库的中文字体', () => {
     const chosen = component({ values: { font: 'Playfair Display' } })
     const html = writeFilm({ canvas: { width: 1920, height: 1080 }, blocks: [chosen] }, catalog)
     expect(html).toContain(

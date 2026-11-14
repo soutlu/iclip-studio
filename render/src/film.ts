@@ -33,7 +33,7 @@ export class FilmProblem extends Error {
   }
 }
 
-/** 成片用到的一条素材：出自哪条记录、文件里写的地址、是画面块用的视频还是音频块用的音频。 */
+/** 成片用到的一条素材：出自哪条记录、文件里写的地址、是视频片段用的视频还是音频片段用的音频。 */
 export interface FilmSource {
   jobId: string
   url: string
@@ -42,7 +42,7 @@ export interface FilmSource {
 
 export interface CheckedFilm {
   film: Film
-  /** 按写法重新写出来的文件：`<head>`、根上的属性和变量声明都是按块算出来的。 */
+  /** 按写法重新写出来的文件：`<head>`、根上的属性和变量声明都是按片段算出来的。 */
   html: string
   durationMs: number
   sources: FilmSource[]
@@ -64,12 +64,12 @@ const INTEGER = /^\d+$/
 const CUSTOM_PROPERTY = /^--([^\s:]+)\s*:/
 
 const BLOCK_NAMES: Record<BlockKind, string> = {
-  picture: '画面块',
-  component: '组件块',
-  audio: '音频块',
+  picture: '视频片段',
+  component: '组件或块的片段',
+  audio: '音频片段',
 }
 
-/** 从块的 `style` 读叠放顺序：没写是 0；写了叠放顺序之外的样式返回 undefined。 */
+/** 从片段的 `style` 读叠放顺序：没写是 0；写了叠放顺序之外的样式返回 undefined。 */
 function stackingOf(style: string | undefined): number | undefined {
   if (style === undefined || style.trim() === '') return 0
   const z = STACKING_STYLE.exec(style.trim())?.[1]
@@ -143,7 +143,7 @@ const CHECKS: Record<BlockAttribute, Check> = {
   id: (value, where) => {
     if (!BLOCK_ID.test(value) || value === FILM_ID) fail(`${where}的编号不合规矩`)
   },
-  // 和 id 一样，读完整个块再比
+  // 和 id 一样，读完整个片段再比
   'data-hf-id': () => {},
   style: (value, where) => {
     const z = stackingOf(value)
@@ -180,7 +180,7 @@ const CHECKS: Record<BlockAttribute, Check> = {
       fail(`${where}的速度要在 ${MIN_PLAYBACK_RATE} 到 ${MAX_PLAYBACK_RATE} 倍之间`)
     }
   },
-  // 和组件库目录比，读完整个块再查
+  // 和组件库目录比，读完整个片段再查
   'data-composition-id': () => {},
   'data-composition-src': () => {},
   'data-variable-values': (value, where) => {
@@ -190,7 +190,7 @@ const CHECKS: Record<BlockAttribute, Check> = {
   },
 }
 
-/** 按表读一个块：只能带表里这种块的属性，必须写的都写了，每个值都合规矩。 */
+/** 按表读一个片段：只能带表里这种片段的属性，必须写的都写了，每个值都合规矩。 */
 function readBlock(element: Element, catalog: ComponentCatalog): FilmBlock {
   const kind = blockKindOfTag(element.tagName) ?? fail(`成片的根里不能有 <${element.tagName}>`)
   const rules: Readonly<Record<string, AttributeRule>> = BLOCK_SHAPES[kind].attributes
@@ -249,9 +249,9 @@ function checkVariables(json: string | undefined, blocks: FilmBlock[]): Set<stri
   for (const entry of declared as unknown[]) {
     const { id, type, default: value } = (entry ?? {}) as Record<string, unknown>
     if (typeof id !== 'string' || seen.has(id)) return fail('变量声明里有重复或没有名字的变量')
-    if (!expected.has(id)) fail(`变量「${id}」没有块在用`)
+    if (!expected.has(id)) fail(`变量「${id}」没有片段在用`)
     if (type !== 'string' || value !== expected.get(id)) {
-      fail(`变量「${id}」的默认值要等于块上写的地址`)
+      fail(`变量「${id}」的默认值要等于片段上写的地址`)
     }
     seen.add(id)
   }
@@ -259,12 +259,12 @@ function checkVariables(json: string | undefined, blocks: FilmBlock[]): Set<stri
   return seen
 }
 
-/** 编号不重复、同一条记录只有一个地址；同一个区的同一行上块不能重叠。 */
+/** 编号不重复、同一条记录只有一个地址；同一个区的同一行上片段不能重叠。 */
 function checkTimeline(blocks: FilmBlock[]): void {
   const ids = new Set<string>()
   const sources = new Map<string, string>()
   for (const block of blocks) {
-    if (ids.has(block.id)) fail(`块的编号重复：${block.id}`)
+    if (ids.has(block.id)) fail(`片段的编号重复：${block.id}`)
     ids.add(block.id)
     if (isMediaBlock(block)) {
       const known = sources.get(block.jobId)
@@ -274,7 +274,7 @@ function checkTimeline(blocks: FilmBlock[]): void {
       sources.set(block.jobId, block.src)
     }
   }
-  // 画面块和组件块在画面区、音频块在声音区，两个区的行号各算各的
+  // 视频片段和组件或块的片段在画面区、音频片段在声音区，两个区的行号各算各的
   const rowOf = (block: FilmBlock) =>
     `${block.kind === 'audio' ? 'sound' : 'picture'}:${block.track}`
   const ordered = blocks.toSorted((a, b) => rowOf(a).localeCompare(rowOf(b)) || a.start - b.start)
@@ -285,7 +285,7 @@ function checkTimeline(blocks: FilmBlock[]): void {
       rowOf(previous) === rowOf(block) &&
       previous.start + previous.duration > block.start
     ) {
-      fail(`同一行的块「${previous.id}」和「${block.id}」在时间上重叠`)
+      fail(`同一行的片段「${previous.id}」和「${block.id}」在时间上重叠`)
     }
   })
 }
@@ -342,7 +342,7 @@ export function readFilm(html: string, catalog: ComponentCatalog): Film {
   return { canvas, blocks }
 }
 
-/** 用到的素材，同一条记录在同一种块上只算一次。 */
+/** 用到的素材，同一条记录在同一种片段上只算一次。 */
 function sourcesOf(film: Film): FilmSource[] {
   const sources = new Map<string, FilmSource>()
   for (const block of film.blocks.filter(isMediaBlock)) {
@@ -365,10 +365,10 @@ export async function checkFilm(html: string, catalog: ComponentCatalog): Promis
 }
 
 /**
- * 导出用的那一份：画面块和音频块的地址换成下载到本地的路径；隐藏的音频块不写进去，总时长照旧。
+ * 导出用的那一份：视频片段和音频片段的地址换成下载到本地的路径；隐藏的音频片段不写进去，总时长照旧。
  *
  * 渲染引擎导出时会把页面里的 `<audio>` 再收一遍、按 `data-volume` 混音，不看 `data-hidden`，
- * 隐藏的音频块留在文件里就会出声。
+ * 隐藏的音频片段留在文件里就会出声。
  */
 export function localizedFilm(
   film: Film,

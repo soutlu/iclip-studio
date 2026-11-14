@@ -43,7 +43,7 @@ describe('音频的名字和筛选', () => {
 })
 
 describe('成片里用着的音频', () => {
-  it('用着这条音频的块里开始得最早的那个；别的记录、画面块不算', () => {
+  it('用着这条音频的片段里开始得最早的那个；别的记录、视频片段不算', () => {
     const blocks = [
       audio({ id: 'late', start: 5000 }),
       picture({ jobId: 'other' }),
@@ -80,7 +80,7 @@ describe('音频点「加到播放头」时放在哪', () => {
     })
   })
 
-  it('声音区第一行在这段时间有块：在它下面紧挨着新开一行，下面的声音行往后顺延', () => {
+  it('声音区第一行在这段时间有片段：在它下面紧挨着新开一行，下面的声音行往后顺延', () => {
     const blocks = [
       picture({ duration: 9000 }),
       component({ track: 1 }),
@@ -92,7 +92,7 @@ describe('音频点「加到播放头」时放在哪', () => {
     const opened = rowOpening(blocks, 'audio', 3)
     expect(opened.track).toBe(1)
     expect(opened.renumber).toEqual(new Map([['b', 2]]))
-    // 正好接在第一行的块后面不算占着
+    // 正好接在第一行的片段后面不算占着
     expect(audioPlayheadSpot(blocks, 1000, 5000).row).toEqual({ zone: 'audio', track: 0 })
   })
 })

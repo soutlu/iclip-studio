@@ -98,7 +98,7 @@ describe('点「加到播放头」时放在哪', () => {
   const scene = item('fixture-scene')
   const overlay = item('fixture-overlay')
 
-  it('还没有块：都放在画面区新开的第一行，从播放头开始', () => {
+  it('还没有片段：都放在画面区新开的第一行，从播放头开始', () => {
     expect(playheadSpot([], scene, 1500, 6000)).toEqual({
       row: { zone: 'visual', insertAt: 0 },
       start: 1500,
@@ -109,7 +109,7 @@ describe('点「加到播放头」时放在哪', () => {
     })
   })
 
-  it('只有声音区的块：都放在画面区新开的一行（在声音区上面）', () => {
+  it('只有声音区的片段：都放在画面区新开的一行（在声音区上面）', () => {
     const music = [audio({ duration: 8000 })]
     expect(playheadSpot(music, scene, 0, 6000)).toEqual({
       row: { zone: 'visual', insertAt: 0 },
@@ -133,7 +133,7 @@ describe('点「加到播放头」时放在哪', () => {
     })
   })
 
-  it('block 类：第一行在这段时间有块，就在它下面紧挨着新开一行', () => {
+  it('block 类：第一行在这段时间有片段，就在它下面紧挨着新开一行', () => {
     const blocks = [
       picture({ start: 0, duration: 1000 }),
       picture({ id: 'clip-2', start: 6500, duration: 1000 }),

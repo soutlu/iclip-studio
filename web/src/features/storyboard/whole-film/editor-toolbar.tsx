@@ -122,10 +122,10 @@ function ToolPicker({ onSelectAround }: { onSelectAround: (side: 'left' | 'right
           <MenuRadioItem value="select">选择</MenuRadioItem>
         </MenuRadioGroup>
         <MenuItem onSelect={() => onSelectAround('left')} shortcut={['[']}>
-          选中播放头左边的块
+          选中播放头左边的片段
         </MenuItem>
         <MenuItem onSelect={() => onSelectAround('right')} shortcut={[']']}>
-          选中播放头右边的块
+          选中播放头右边的片段
         </MenuItem>
       </MenuSurface>
     </MenuRoot>
@@ -137,16 +137,16 @@ type EditorToolbarProps = {
   canRedo: boolean
   onUndo: () => void
   onRedo: () => void
-  /** 选中播放头左边或右边的块，替换原有选中。 */
+  /** 选中播放头左边或右边的片段，替换原有选中。 */
   onSelectAround: (side: 'left' | 'right') => void
-  /** 有没有选中的块；没有时「缩放到选中的块」置灰。 */
+  /** 有没有选中的片段；没有时「缩放到选中的片段」置灰。 */
   hasSelection: boolean
   onZoomToSelection: () => void
   snap: boolean
   onSnap: () => void
   ripple: boolean
   onRipple: () => void
-  /** 块上要不要显示画面缩略图。 */
+  /** 片段上要不要显示画面缩略图。 */
   thumbnails: boolean
   onThumbnails: () => void
   zoom: Zoom
@@ -212,7 +212,7 @@ export function EditorToolbar({
           pressed={snap}
           tip={
             snap
-              ? '吸附开着：拖动和裁剪时会吸到别的块的两端和播放头上'
+              ? '吸附开着：拖动和裁剪时会吸到别的片段的两端和播放头上'
               : '吸附关着：拖到哪里就是哪里'
           }
         />
@@ -223,8 +223,8 @@ export function EditorToolbar({
           pressed={ripple}
           tip={
             ripple
-              ? '波纹编辑开着：删掉第一行的块，后面的自动往前补上'
-              : '波纹编辑关着：删掉块以后留下空档'
+              ? '波纹编辑开着：删掉第一行的片段，后面的自动往前补上'
+              : '波纹编辑关着：删掉片段以后留下空档'
           }
         />
       </div>
@@ -234,17 +234,17 @@ export function EditorToolbar({
           label="显示缩略图"
           onClick={onThumbnails}
           pressed={thumbnails}
-          tip={thumbnails ? '缩略图开着：块上显示画面' : '缩略图关着：块上只有名字和声音'}
+          tip={thumbnails ? '缩略图开着：片段上显示画面' : '缩略图关着：片段上只有名字和声音'}
         />
         <Tool
-          blocked={hasSelection ? undefined : '先选中一个块'}
+          blocked={hasSelection ? undefined : '先选中一个片段'}
           icon="zoom-selection"
-          label="缩放到选中的块"
+          label="缩放到选中的片段"
           onClick={onZoomToSelection}
           shortcuts="Z"
           tip={
             <>
-              缩放到选中的块
+              缩放到选中的片段
               <Keys>Z</Keys>
             </>
           }

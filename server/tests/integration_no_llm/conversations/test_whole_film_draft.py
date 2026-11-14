@@ -107,7 +107,7 @@ async def test_the_owner_saves_by_revision_and_reads_the_rewritten_file_back(
     assert (await client.get(draft_url(mine))).json()["html"] == rewritten(second)
 
     cleared = await save(client, mine, 2, film_of())
-    assert cleared.status_code == 200, "一个块都没有的成片也能存"
+    assert cleared.status_code == 200, "一个片段都没有的成片也能存"
 
 
 async def test_only_the_owner_writes_while_readers_of_the_conversation_read(

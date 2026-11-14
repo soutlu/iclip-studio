@@ -554,7 +554,7 @@ async def test_only_the_saved_revision_of_a_film_that_is_not_empty_is_exported(
     )
     assert await latest(client, mine) is None
 
-    # 只有组件块的成片没有素材，照样能导出
+    # 只有组件或块的片段的成片没有素材，照样能导出
     revision = await save_draft(client, mine, film_file(duration_ms=3000), revision)
     started = await client.post(exports_url(mine), json={"revision": revision})
     assert started.status_code == 202, started.text
