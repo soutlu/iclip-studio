@@ -593,6 +593,58 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 「媒体」：一项一行，名字、滑杆、右边的数值；点数值就地变成输入框 */
+.wf-media-control {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 增益、速度的正中是不增不减：滑杆中间一道刻度 */
+.wf-media-control.is-centered::before {
+  position: absolute;
+  top: 50%;
+  left: calc((100% - 72px) / 2);
+  width: 1px;
+  height: 8px;
+  background: var(--color-outline);
+  content: '';
+  pointer-events: none;
+  translate: 0 -50%;
+}
+
+.wf-media-readout {
+  width: 64px;
+  height: 24px;
+  flex: none;
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  color: var(--color-on-surface);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.wf-inspector .wf-media-control .wf-media-input {
+  width: 64px;
+  height: 24px;
+  flex: none;
+  padding: 0 4px;
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.wf-media-file {
+  overflow: hidden;
+  color: var(--color-on-surface);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .wf-inspector-note {
   color: var(--color-on-surface-muted);
   font-size: var(--text-label);

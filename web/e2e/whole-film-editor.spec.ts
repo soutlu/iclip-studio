@@ -604,6 +604,93 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、�
   await expect(uploaded).not.toContainText('已使用')
 })
 
+/** 存下来的成片里第一个 `tag` 块上的属性 `name`；不写值的属性是空串，没有这个属性时是 undefined。 */
+const savedAttribute = (html: string, tag: 'video' | 'audio', name: string) => {
+  const element = new RegExp(`<${tag} [^>]*>`).exec(html)?.[0] ?? ''
+  const found = new RegExp(` ${name}(?:="([^"]*)")?(?=[ >])`).exec(element)
+  return found === null ? undefined : (found[1] ?? '')
+}
+
+test('右侧栏「媒体」：音频块拉满增益、打开循环写进文件；画面块调成 2 倍速，块长不变、能拉到的最长减半', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const dialog = await openWholeFilm(page, panel)
+  const inspector = dialog.getByRole('complementary', { name: '属性' })
+  const first = draftSaved(page, 1)
+  const materials = dialog
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+  await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
+  await page.keyboard.press('Enter')
+  await first
+
+  // 音频加到播放头（0 秒），在画面行下面新开一行
+  const side = dialog.getByRole('complementary', { name: '组件和音频' })
+  await side.getByRole('tab', { name: '音频' }).click()
+  const added = draftSavedWith(page, (html) => savedAudio(html).length === 1)
+  await side
+    .getByRole('list', { name: '音频' })
+    .getByRole('button', { name: '轻快原声吉他，适合秋季穿搭', exact: true })
+    .click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '加到播放头' }).click()
+  await added
+
+  await dialog
+    .getByRole('group', { name: '第 2 行' })
+    .getByRole('button', { name: /^选中：轻快原声吉他/ })
+    .click()
+  await inspector.getByRole('button', { name: /^媒体/ }).click()
+  await expect(inspector.getByText('轻快原声吉他，适合秋季穿搭', { exact: true })).toHaveCount(2)
+  const louder = draftSavedWith(
+    page,
+    (html) => savedAttribute(html, 'audio', 'data-volume') === '3.981072',
+  )
+  await inspector.getByRole('slider', { name: '增益' }).press('End')
+  await louder
+  await expect(inspector.getByRole('slider', { name: '增益' })).toHaveAttribute(
+    'aria-valuetext',
+    '+12.0 dB',
+  )
+  const looped = draftSavedWith(page, (html) => savedAttribute(html, 'audio', 'loop') === 'true')
+  await inspector.getByRole('switch', { name: '循环' }).click()
+  await looped
+
+  // 画面块（选中后展开的是「时间」）：先把时长拉到素材能放的最长
+  await dialog
+    .getByRole('group', { name: '第 1 行' })
+    .getByRole('button', { name: /^选中：A · / })
+    .click()
+  const length = inspector.getByRole('textbox', { name: '时长' })
+  const setLength = async (seconds: string) => {
+    await length.fill(seconds)
+    await length.press('Enter')
+  }
+  await setLength('999')
+  const longest = Number(await length.inputValue())
+  expect(longest).toBeGreaterThan(1)
+
+  await inspector.getByRole('button', { name: /^媒体/ }).click()
+  const faster = draftSavedWith(
+    page,
+    (html) => savedAttribute(html, 'video', 'data-playback-rate') === '2',
+  )
+  await inspector.getByRole('button', { name: /^速度 1x/ }).click()
+  await inspector.getByRole('textbox', { name: '速度' }).fill('2')
+  await inspector.getByRole('textbox', { name: '速度' }).press('Enter')
+  const html = ((await faster).postDataJSON() as { html: string }).html
+  expect(Number(savedAttribute(html, 'video', 'data-duration'))).toBeCloseTo(longest, 2)
+
+  // 收短再拉长：2 倍速时素材剩下的那段只够放原来的一半
+  await inspector.getByRole('button', { name: /^时间/ }).click()
+  await setLength('1')
+  await expect(length).toHaveValue('1.00')
+  await setLength('999')
+  await expect.poll(async () => Number(await length.inputValue())).toBeCloseTo(longest / 2, 1)
+})
+
 test('成片编辑器在窄屏上纵向排开', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const panel = await openConversation(page, '夜景延时素材生成', { mobile: true })

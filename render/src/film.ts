@@ -52,6 +52,8 @@ const MAX_URL_CHARS = 2000
 const MAX_LABEL_CHARS = 200
 const MAX_CANVAS_EDGE = 4096
 const MAX_VOLUME = 3.981072
+const MIN_PLAYBACK_RATE = 0.1
+const MAX_PLAYBACK_RATE = 10
 const MAX_TRACK = 99
 const MAX_STACKING = 9999
 const STACKING_STYLE = /^z-index:\s*(\d+);?$/
@@ -134,6 +136,7 @@ const CHECKS: Record<BlockAttribute, Check> = {
   'data-hidden': FIXED,
   class: FIXED,
   'data-has-audio': FIXED,
+  muted: FIXED,
   playsinline: FIXED,
   preload: FIXED,
   loop: FIXED,
@@ -171,6 +174,12 @@ const CHECKS: Record<BlockAttribute, Check> = {
   'data-volume': (value, where) => {
     if (!DECIMAL.test(value) || Number(value) > MAX_VOLUME) fail(`${where}的音量超出范围`)
   },
+  'data-playback-rate': (value, where) => {
+    const rate = Number(value)
+    if (!DECIMAL.test(value) || rate < MIN_PLAYBACK_RATE || rate > MAX_PLAYBACK_RATE) {
+      fail(`${where}的速度要在 ${MIN_PLAYBACK_RATE} 到 ${MAX_PLAYBACK_RATE} 倍之间`)
+    }
+  },
   // 和组件库目录比，读完整个块再查
   'data-composition-id': () => {},
   'data-composition-src': () => {},
@@ -200,6 +209,9 @@ function readBlock(element: Element, catalog: ComponentCatalog): FilmBlock {
     if (!rule.optional && values[name] === undefined) fail(`${where}缺少 ${name}`)
   }
   fixed(values['data-hf-id'] ?? '', id, `${where}的 data-hf-id`)
+  if (values['muted'] !== undefined && values['data-has-audio'] !== undefined) {
+    fail(`${where}不能同时带 muted 和 data-has-audio`)
+  }
   const block =
     blockFromAttributes(kind, id, values, String(stackingOf(values['style']))) ??
     fail(`${where}不合写法`)

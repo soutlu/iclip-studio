@@ -75,6 +75,31 @@ describe('裁剪一个块', () => {
       mediaStart: 1_500,
     })
   })
+
+  it('2 倍速：结尾最多到（素材长 − 入点）÷ 2；开头往前最多拉回入点 ÷ 2，往后裁时入点动两倍', () => {
+    // 第 3 秒起、素材从 1.5 秒放起；素材 6 秒，剩下 4.5 秒，2 倍速在成片里能放 2.25 秒
+    const fast = { ...middle, playbackRate: 2 }
+    const lone = [fast]
+    expect(trimBounds(fast, 'end', lone, 6_000).max).toBe(5_250)
+    expect(trimBounds({ ...middle, playbackRate: 0.5 }, 'end', lone, 6_000).max).toBe(12_000)
+    const head = trimBounds(fast, 'start', lone, 6_000)
+    expect(head.min).toBe(2_250)
+    expect(trimmed(fast, 'start', 3_400, head)).toEqual({
+      start: 3_400,
+      duration: 1_600,
+      mediaStart: 2_300,
+    })
+    expect(trimmed(fast, 'start', 0, head)).toEqual({
+      start: 2_250,
+      duration: 2_750,
+      mediaStart: 0,
+    })
+  })
+
+  it('音频块按它的速度算：0.5 倍速时剩下的音频在成片里放两倍长', () => {
+    const slow = audio({ start: 1_000, duration: 1_000, mediaStart: 500, playbackRate: 0.5 })
+    expect(trimBounds(slow, 'end', [slow], 2_000).max).toBe(4_000)
+  })
 })
 
 describe('裁组件块和音频块', () => {

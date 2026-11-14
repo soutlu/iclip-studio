@@ -18,6 +18,9 @@
 | `player/components/timelineCollision.ts` | 全文引入 | 取自 `v0.9.31`（提交 `cf900546`）：同行就近落位（`resolveNearestFreeStart`）、块只落在自己的区（`resolveZoneDropPlacement`、`clampTrackToZone`、`isInsertAllowedForZone`）与区间重叠判断；注释里加了一行 `design-allow`，免得设计检查把上游的问题编号当成色值 |
 | `player/components/timelineStackingSync.ts` | 全文引入 | 特效块跨行移动后重算叠放顺序（`computeStackingPatches`） |
 | `components/editor/snapEngine.ts` | 全文引入 | 预览画布上拖拽元素的中心线与四边吸附参考线计算 |
+| `components/editor/audioInspectorInput.ts` | 全文引入 | 取自 `v0.9.31`（提交 `cf900546`）：右侧栏「媒体」里直接输入的增益、速度、秒数怎么读 |
+| `components/editor/propertyPanelHelpers.ts` | 部分摘录 | 取自 `v0.9.31`（提交 `cf900546`）：只保留 `formatNumericValue`（速度的显示和写法，两位小数） |
+| `player/components/automationLaneGeometry.ts` | 部分摘录 | 取自 `v0.9.31`（提交 `cf900546`）：只保留 `toUnit`、`fromUnit`（速度滑杆按对数走的换算） |
 | `player/store/playerStore.ts`、`player/lib/timelineClipIndex.ts` | 本地最小类型替身 | 仅声明上述算法文件依赖的最小 TypeScript 类型（`ZoomMode`、`TimelineTimeRange`、`TimelineElement`） |
 
 ## 工具链与维护边界

@@ -7,13 +7,40 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { RATE_RANGE } from '@hyperframes/core/audio-automation'
+import {
+  AUDIO_GAIN_FADER_MAX,
+  AUDIO_GAIN_FADER_MIN,
+  audioFaderPositionToGain,
+  audioGainToFaderPosition,
+  audioGainToText,
+  formatAudioGain,
+} from '@hyperframes/core/audio-gain'
 import { Icon } from '@/shared/icons'
+import { cn } from '@/shared/lib/utils'
 import { Input, Select } from '@/shared/ui/field'
 import { Switch } from '@/shared/ui/switch'
 import { groupShift, trimBounds, trimmed, type SourceLength, type Timing } from './block-edit'
 import type { CatalogVariable, ComponentCatalog, VariableValue } from './composition/catalog'
-import type { BlockKind, ComponentBlock, FilmBlock } from './composition/film'
+import {
+  isMediaBlock,
+  type BlockAttribute,
+  type BlockKind,
+  type ComponentBlock,
+  type FilmBlock,
+  type MediaBlock,
+} from './composition/film'
 import { Keys, Tool } from './editor-toolbar'
+import {
+  parseGainInput,
+  parseRateInput,
+  parseSecondsInput,
+} from './vendor/hyperframes-studio/components/editor/audioInspectorInput'
+import { formatNumericValue } from './vendor/hyperframes-studio/components/editor/propertyPanelHelpers'
+import {
+  fromUnit,
+  toUnit,
+} from './vendor/hyperframes-studio/player/components/automationLaneGeometry'
 
 type Values = Readonly<Record<string, VariableValue>>
 
@@ -31,9 +58,13 @@ type Props = {
   onRetime: (timings: ReadonlyMap<string, Timing>) => void
   /** 把组件块 `id` 的可填项取值整个换成 `values`。 */
   onValues: (id: string, values: Values) => void
-  /** 焦点进出「时间」里的输入框：在里面时 Esc 归输入框，放弃刚输入的。 */
-  onTimeEditing: (editing: boolean) => void
+  /** 改块 `id` 上的几个属性（null 是去掉），算一步撤销。 */
+  onAttributes: (id: string, changes: AttributeChanges) => void
+  /** 焦点进出「时间」「媒体」里输数值的框：在里面时 Esc 归输入框，放弃刚输入的。 */
+  onTextEditing: (editing: boolean) => void
 }
+
+type AttributeChanges = Readonly<Partial<Record<BlockAttribute, string | null>>>
 
 const KIND_LABEL: Record<BlockKind, string> = { picture: '视频', component: '组件', audio: '音频' }
 
@@ -92,7 +123,12 @@ export function FilmInspector({ selected, ...rest }: Props) {
   )
 }
 
-type Group = { id: 'content' | 'time'; title: string; summary: string; content: ReactNode }
+type Group = {
+  id: 'content' | 'time' | 'media'
+  title: string
+  summary: string
+  content: ReactNode
+}
 
 /** 选中一个块：头部是名字、种类和隐藏、删除；下面的分组一次只展开一个，收起的在标题旁写摘要。 */
 function BlockInspector({
@@ -105,7 +141,8 @@ function BlockInspector({
   onRestart,
   onRetime,
   onValues,
-  onTimeEditing,
+  onAttributes,
+  onTextEditing,
 }: Omit<Props, 'selected'> & { block: FilmBlock }) {
   const groups: Group[] = []
   if (block.kind === 'component') {
@@ -133,13 +170,27 @@ function BlockInspector({
       <TimeFields
         block={block}
         blocks={blocks}
-        onEditing={onTimeEditing}
+        onEditing={onTextEditing}
         onRestart={onRestart}
         onRetime={onRetime}
         sourceMs={sourceMs}
       />
     ),
   })
+  if (isMediaBlock(block))
+    groups.push({
+      id: 'media',
+      title: '媒体',
+      summary: '',
+      content: (
+        <MediaFields
+          block={block}
+          onChange={(changes) => onAttributes(block.id, changes)}
+          onEditing={onTextEditing}
+          sourceMs={sourceMs(block)}
+        />
+      ),
+    })
   // 照参照的工作台：组件块先展开「内容」，别的块展开第一个分组；再点展开着的分组就全收起
   const [open, setOpen] = useState<Group['id'] | null>(groups[0]?.id ?? null)
   const sound = block.kind === 'audio'
@@ -310,6 +361,338 @@ function SecondsField({
         <span aria-hidden="true">秒</span>
       </span>
     </div>
+  )
+}
+
+// 速度滑杆的格数：照参照的工作台，0.1–10 倍按对数铺满 1000 格，正中是 1 倍
+const RATE_STEPS = 1000
+
+const secondsText = (ms: number) => `${formatSeconds(ms)} 秒`
+
+/** 输入框里的秒数（后面的「秒」可带可不带）按参照的工作台读成毫秒；读不出时是 null。 */
+const parseSecondsText = (text: string): number | null => {
+  const seconds = parseSecondsInput(text.trim().replace(/秒$/, ''))
+  return seconds === null ? null : Math.round(seconds * 1000)
+}
+
+/** 写进文件的秒数：淡入淡出照参照的工作台留两位小数，0 时去掉。 */
+const fadeAttribute = (ms: number) => {
+  const rounded = Math.round(ms / 10) * 10
+  return rounded > 0 ? String(rounded / 1000) : null
+}
+
+/**
+ * 「媒体」：文件、增益、速度、起始位置、淡入、淡出，音频块另有循环，画面块另有静音。
+ * 换算和上下限照参照的工作台；拖滑杆时只动这里，松手（或按一下方向键）才写进成片，一次算一步撤销。
+ * 改速度不改块在成片里的时长，用掉的素材跟着变长或变短。
+ */
+function MediaFields({
+  block,
+  sourceMs,
+  onChange,
+  onEditing,
+}: {
+  block: MediaBlock
+  /** 素材的总长；还不知道时是 undefined。 */
+  sourceMs: number | undefined
+  onChange: (changes: AttributeChanges) => void
+  onEditing: (editing: boolean) => void
+}) {
+  const { volume, playbackRate, mediaStart, duration, fadeIn, fadeOut } = block
+  // 起始位置最多到「素材长 − 块长 × 速度」；素材长还不知道时只能往前调，同裁剪
+  const mediaStartMax =
+    sourceMs === undefined
+      ? mediaStart
+      : Math.max(0, Math.floor(sourceMs - duration * playbackRate))
+  // 照参照的工作台：画面块静音以后不再有声音可以淡入淡出
+  const audible = block.kind === 'audio' || !block.muted
+  const rateText = (rate: number) => `${formatNumericValue(rate)}x`
+  const rateAt = (position: number) => fromUnit(RATE_RANGE, position / RATE_STEPS)
+  const setGain = (gain: number) => onChange({ 'data-volume': formatAudioGain(gain) })
+  const setRate = (rate: number) => {
+    const written = formatNumericValue(rate)
+    onChange({ 'data-playback-rate': written === '1' ? null : written })
+  }
+  const setMediaStart = (ms: number) =>
+    onChange({ 'data-media-start': String(Math.min(mediaStartMax, Math.max(0, ms)) / 1000) })
+  const fade = (name: 'data-fade-in' | 'data-fade-out', ms: number, other: number) => {
+    // 照参照的工作台：一端最多到块长减去另一端
+    const max = Math.max(0, duration - other)
+    return (
+      <MediaSlider
+        format={(position) => secondsText(position * 10)}
+        label={name === 'data-fade-in' ? '淡入' : '淡出'}
+        max={Math.round(max / 10)}
+        min={0}
+        onCommit={(position) => onChange({ [name]: fadeAttribute(position * 10) })}
+        onEditing={onEditing}
+        onText={(text) => {
+          const typed = parseSecondsText(text)
+          if (typed === null) return false
+          onChange({ [name]: fadeAttribute(Math.min(typed, max)) })
+          return true
+        }}
+        position={Math.round(ms / 10)}
+        text={secondsText(ms)}
+      />
+    )
+  }
+  return (
+    <div className="wf-inspector-rows">
+      <div className="wf-field">
+        <span>文件</span>
+        <span className="wf-inspector-static wf-media-file" title={block.label}>
+          {block.label}
+        </span>
+      </div>
+      <MediaSlider
+        centered
+        format={(position) => audioGainToText(audioFaderPositionToGain(position))}
+        label="增益"
+        max={AUDIO_GAIN_FADER_MAX}
+        min={AUDIO_GAIN_FADER_MIN}
+        onCommit={(position) => setGain(audioFaderPositionToGain(position))}
+        onEditing={onEditing}
+        onText={(text) => {
+          const gain = parseGainInput(text)
+          if (gain === null) return false
+          setGain(gain)
+          return true
+        }}
+        position={audioGainToFaderPosition(volume)}
+        text={audioGainToText(volume)}
+      />
+      <MediaSlider
+        centered
+        format={(position) => rateText(rateAt(position))}
+        label="速度"
+        max={RATE_STEPS}
+        min={0}
+        onCommit={(position) => setRate(rateAt(position))}
+        onEditing={onEditing}
+        onText={(text) => {
+          const rate = parseRateInput(text)
+          if (rate === null) return false
+          setRate(rate)
+          return true
+        }}
+        position={Math.round(toUnit(RATE_RANGE, playbackRate) * RATE_STEPS)}
+        text={rateText(playbackRate)}
+      />
+      <MediaSlider
+        format={(position) => secondsText(position * 10)}
+        label="起始位置"
+        max={Math.floor(mediaStartMax / 10)}
+        min={0}
+        onCommit={(position) => setMediaStart(position * 10)}
+        onEditing={onEditing}
+        onText={(text) => {
+          const typed = parseSecondsText(text)
+          if (typed === null) return false
+          setMediaStart(typed)
+          return true
+        }}
+        position={Math.round(mediaStart / 10)}
+        text={secondsText(mediaStart)}
+      />
+      {audible ? (
+        <>
+          {fade('data-fade-in', fadeIn, fadeOut)}
+          {fade('data-fade-out', fadeOut, fadeIn)}
+        </>
+      ) : null}
+      {block.kind === 'audio' ? (
+        <MediaSwitch
+          checked={block.loop}
+          label="循环"
+          onChange={(loop) => onChange({ loop: loop ? 'true' : null })}
+        />
+      ) : (
+        <MediaSwitch
+          checked={block.muted}
+          label="静音"
+          // 照参照的工作台：静音写 muted、去掉有声音的标记，取消静音反过来，两个不同时写
+          onChange={(muted) =>
+            onChange(
+              muted
+                ? { muted: 'true', 'data-has-audio': null }
+                : { muted: null, 'data-has-audio': 'true' },
+            )
+          }
+        />
+      )}
+    </div>
+  )
+}
+
+function MediaSwitch({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+}) {
+  const id = useId()
+  return (
+    <div className="wf-field">
+      <label htmlFor={id}>{label}</label>
+      <Switch checked={checked} id={id} onCheckedChange={onChange} />
+    </div>
+  )
+}
+
+/**
+ * 「媒体」里的一行：名字、滑杆、右边的数值。滑杆按格走（`position` 是格数），拖的时候数值跟着变，
+ * 松手才交给 `onCommit`。点数值可以直接输入：回车或失焦交给 `onText`，它返回 false 表示读不出——
+ * 回车时框留着、标成不对，失焦时放弃；Esc 放弃。照参照的工作台。
+ */
+function MediaSlider({
+  label,
+  min,
+  max,
+  position,
+  text,
+  format,
+  centered = false,
+  onCommit,
+  onText,
+  onEditing,
+}: {
+  label: string
+  min: number
+  max: number
+  position: number
+  /** 现在的取值怎么显示。 */
+  text: string
+  /** 拖到 `position` 这一格时怎么显示。 */
+  format: (position: number) => string
+  /** 正中是不增不减（增益、速度），画一道刻度。 */
+  centered?: boolean
+  onCommit: (position: number) => void
+  onText: (text: string) => boolean
+  onEditing: (editing: boolean) => void
+}) {
+  const id = useId()
+  const rangeRef = useRef<HTMLInputElement>(null)
+  const [draft, setDraft] = useState<number | null>(null)
+  const commitRef = useRef(onCommit)
+  useLayoutEffect(() => {
+    commitRef.current = onCommit
+  })
+  // 浏览器在松手、按一下方向键时发 change，拖动中只发 input（React 的 onChange 收的是 input）
+  useEffect(() => {
+    const range = rangeRef.current
+    if (range === null) return
+    const commit = () => {
+      setDraft(null)
+      commitRef.current(Number(range.value))
+    }
+    range.addEventListener('change', commit)
+    return () => range.removeEventListener('change', commit)
+  }, [])
+  const shown = draft === null ? text : format(draft)
+  return (
+    <div className="wf-field">
+      <label htmlFor={id}>{label}</label>
+      <span className={cn('wf-media-control', centered && 'is-centered')}>
+        <input
+          aria-valuetext={shown}
+          className="wf-inspector-range"
+          id={id}
+          max={max}
+          min={min}
+          onChange={(event) => {
+            // change 已经在上面交出去了，这里只跟着拖动
+            if (event.nativeEvent.type !== 'change') setDraft(Number(event.target.value))
+          }}
+          ref={rangeRef}
+          step={1}
+          type="range"
+          value={draft ?? Math.min(max, Math.max(min, position))}
+        />
+        <Readout label={label} onEditing={onEditing} onText={onText} text={shown} />
+      </span>
+    </div>
+  )
+}
+
+/** 滑杆右边的数值：点一下变成输入框。 */
+function Readout({
+  label,
+  text,
+  onText,
+  onEditing,
+}: {
+  label: string
+  text: string
+  onText: (text: string) => boolean
+  onEditing: (editing: boolean) => void
+}) {
+  const [typing, setTyping] = useState<{ text: string; invalid: boolean } | null>(null)
+  // 回车、Esc 时先定下结果再失焦，失焦的处理读这里，不等重新渲染；null 是不用再交
+  const typedRef = useRef<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const editing = typing !== null
+  useEffect(() => {
+    if (!editing) return
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [editing])
+  // 框还聚焦着就被卸掉（换了选中的块）时收不到失焦，这里补一下
+  useEffect(() => () => onEditing(false), [onEditing])
+  if (typing === null)
+    return (
+      <button
+        aria-label={`${label} ${text}，点一下直接输入`}
+        className="wf-media-readout ui-state ui-focus"
+        onClick={() => {
+          typedRef.current = text
+          setTyping({ text, invalid: false })
+        }}
+        type="button"
+      >
+        {text}
+      </button>
+    )
+  return (
+    <Input
+      aria-invalid={typing.invalid || undefined}
+      aria-label={label}
+      autoComplete="off"
+      className="wf-inspector-input wf-media-input"
+      onBlur={() => {
+        onEditing(false)
+        const typed = typedRef.current
+        typedRef.current = null
+        setTyping(null)
+        if (typed !== null) onText(typed.trim())
+      }}
+      onChange={(event) => {
+        typedRef.current = event.target.value
+        setTyping({ text: event.target.value, invalid: false })
+      }}
+      onFocus={() => onEditing(true)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          if (!onText(typing.text.trim())) {
+            setTyping({ ...typing, invalid: true })
+            event.currentTarget.select()
+            return
+          }
+          typedRef.current = null
+          event.currentTarget.blur()
+        } else if (event.key === 'Escape') {
+          typedRef.current = null
+          event.currentTarget.blur()
+        }
+      }}
+      ref={inputRef}
+      spellCheck={false}
+      value={typing.text}
+    />
   )
 }
 

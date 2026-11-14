@@ -120,7 +120,7 @@ export const usedSpans = (
     const span = {
       clipId: block.id,
       startMs: block.mediaStart,
-      endMs: block.mediaStart + block.duration,
+      endMs: block.mediaStart + block.duration * block.playbackRate,
     }
     used.set(block.jobId, [...(used.get(block.jobId) ?? []), span])
   }

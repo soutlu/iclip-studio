@@ -40,17 +40,29 @@ interface BlockBase {
 }
 
 /**
- * 画面块：一段素材片，`src` 是素材片记录上的地址。
- *
- * 两个画面区的块同时出现时谁盖住谁看 `z`（叠放顺序）：大的在上面，一样大时文件里写在后面的在上面。
- * `z` 是 0 时文件里不写。
+ * 画面块、音频块共有的声音和播放：`mediaStart` 是从素材的第几毫秒开始放，`volume` 是增益的倍数
+ * （0.5 比 1 低 6 dB），`playbackRate` 是速度的倍数（块在成片里占的时长不跟着变，用掉的素材是
+ * 时长 × 速度），`fadeIn` / `fadeOut` 是声音淡入淡出的毫秒数。速度是 1、淡入淡出是 0 时文件里不写。
  */
-export interface PictureBlock extends BlockBase {
-  kind: 'picture'
+interface MediaBase extends BlockBase {
   jobId: string
   src: string
   mediaStart: number
   volume: number
+  playbackRate: number
+  fadeIn: number
+  fadeOut: number
+}
+
+/**
+ * 画面块：一段素材片，`src` 是素材片记录上的地址。`muted` 时不出声。
+ *
+ * 两个画面区的块同时出现时谁盖住谁看 `z`（叠放顺序）：大的在上面，一样大时文件里写在后面的在上面。
+ * `z` 是 0 时文件里不写。
+ */
+export interface PictureBlock extends MediaBase {
+  kind: 'picture'
+  muted: boolean
   z: number
 }
 
@@ -70,18 +82,11 @@ export interface ComponentBlock extends BlockBase {
 }
 
 /**
- * 音频块：一条音频记录，`src` 是记录上的地址。`volume` 是倍数（0.5 比 1 低 6 dB），
- * `fadeIn` / `fadeOut` 是淡入淡出的毫秒数，`loop` 时音频比块短也一直重复着播。
- * 淡入淡出是 0、不循环时文件里不写。隐藏的音频块不出声。
+ * 音频块：一条音频记录，`src` 是记录上的地址。`loop` 时音频比块短也一直重复着播，不循环时文件里不写。
+ * 隐藏的音频块不出声。
  */
-export interface AudioBlock extends BlockBase {
+export interface AudioBlock extends MediaBase {
   kind: 'audio'
-  jobId: string
-  src: string
-  mediaStart: number
-  volume: number
-  fadeIn: number
-  fadeOut: number
   loop: boolean
 }
 
@@ -133,7 +138,12 @@ export const BLOCK_SHAPES = {
       'data-media-start': REQUIRED,
       'data-track-index': REQUIRED,
       'data-volume': REQUIRED,
-      'data-has-audio': { fixed: 'true' },
+      'data-playback-rate': OPTIONAL,
+      'data-fade-in': OPTIONAL,
+      'data-fade-out': OPTIONAL,
+      // 有声音时写 data-has-audio，静音时换成 muted，两个不同时写
+      'data-has-audio': { optional: true, fixed: 'true' },
+      muted: { optional: true, fixed: 'true' },
       playsinline: { fixed: '' },
       preload: { fixed: 'auto' },
     },
@@ -171,6 +181,7 @@ export const BLOCK_SHAPES = {
       'data-media-start': REQUIRED,
       'data-track-index': REQUIRED,
       'data-volume': REQUIRED,
+      'data-playback-rate': OPTIONAL,
       'data-fade-in': OPTIONAL,
       'data-fade-out': OPTIONAL,
       loop: { optional: true, fixed: 'true' },
@@ -247,14 +258,23 @@ const commonValues = (block: FilmBlock): Attributes => ({
 const stacking = (z: number) => (z > 0 ? `z-index: ${z}` : undefined)
 const unlessZero = (ms: number) => (ms > 0 ? seconds(ms) : undefined)
 
+const mediaValues = (block: MediaBlock): Attributes => ({
+  src: block.src,
+  'data-var-src': sourceVariableId(block.jobId),
+  'data-media-start': seconds(block.mediaStart),
+  'data-volume': String(block.volume),
+  'data-playback-rate': block.playbackRate === 1 ? undefined : String(block.playbackRate),
+  'data-fade-in': unlessZero(block.fadeIn),
+  'data-fade-out': unlessZero(block.fadeOut),
+})
+
 export function pictureBlock(block: PictureBlock): string {
   return blockElement('picture', {
     ...commonValues(block),
     style: stacking(block.z),
-    src: block.src,
-    'data-var-src': sourceVariableId(block.jobId),
-    'data-media-start': seconds(block.mediaStart),
-    'data-volume': String(block.volume),
+    ...mediaValues(block),
+    'data-has-audio': block.muted ? undefined : 'true',
+    muted: block.muted ? 'true' : undefined,
   })
 }
 
@@ -272,12 +292,7 @@ export function componentBlock(block: ComponentBlock): string {
 export function audioBlock(block: AudioBlock): string {
   return blockElement('audio', {
     ...commonValues(block),
-    src: block.src,
-    'data-var-src': sourceVariableId(block.jobId),
-    'data-media-start': seconds(block.mediaStart),
-    'data-volume': String(block.volume),
-    'data-fade-in': unlessZero(block.fadeIn),
-    'data-fade-out': unlessZero(block.fadeOut),
+    ...mediaValues(block),
     loop: block.loop ? 'true' : undefined,
   })
 }
@@ -319,13 +334,30 @@ function commonOf(id: string, attributes: AttributeSource) {
 const stackingOf = (zIndex: string | undefined) =>
   zIndex === undefined || !INTEGER.test(zIndex) ? 0 : Number(zIndex)
 
-/** 素材块的地址和入点；没写全时返回 undefined。 */
+/** 素材块的地址、入点和声音、播放；没写全时返回 undefined。 */
 function mediaOf(attributes: AttributeSource) {
   const jobId = attributes['data-var-src']?.replace(/^src-/, '')
   const { src } = attributes
   const mediaStart = millisecondsOf(attributes['data-media-start'])
-  if (jobId === undefined || src === undefined || mediaStart === undefined) return undefined
-  return { jobId, src, mediaStart, volume: Number(attributes['data-volume'] ?? 1) }
+  const fadeIn = millisecondsOf(attributes['data-fade-in'] ?? '0')
+  const fadeOut = millisecondsOf(attributes['data-fade-out'] ?? '0')
+  if (
+    jobId === undefined ||
+    src === undefined ||
+    mediaStart === undefined ||
+    fadeIn === undefined ||
+    fadeOut === undefined
+  )
+    return undefined
+  return {
+    jobId,
+    src,
+    mediaStart,
+    volume: Number(attributes['data-volume'] ?? 1),
+    playbackRate: Number(attributes['data-playback-rate'] ?? 1),
+    fadeIn,
+    fadeOut,
+  }
 }
 
 /**
@@ -340,7 +372,13 @@ export function pictureFromAttributes(
   const common = commonOf(id, attributes)
   const media = mediaOf(attributes)
   if (common === undefined || media === undefined) return undefined
-  return { kind: 'picture', ...common, ...media, z: stackingOf(zIndex) }
+  return {
+    kind: 'picture',
+    ...common,
+    ...media,
+    muted: attributes['muted'] !== undefined,
+    z: stackingOf(zIndex),
+  }
 }
 
 /** 从块的属性读回组件块；不是 `componentBlock` 写出来的那种块时返回 undefined。`zIndex` 同画面块。 */
@@ -380,18 +418,8 @@ export function audioFromAttributes(
 ): AudioBlock | undefined {
   const common = commonOf(id, attributes)
   const media = mediaOf(attributes)
-  const fadeIn = millisecondsOf(attributes['data-fade-in'] ?? '0')
-  const fadeOut = millisecondsOf(attributes['data-fade-out'] ?? '0')
-  if (common === undefined || media === undefined || fadeIn === undefined || fadeOut === undefined)
-    return undefined
-  return {
-    kind: 'audio',
-    ...common,
-    ...media,
-    fadeIn,
-    fadeOut,
-    loop: attributes['loop'] !== undefined,
-  }
+  if (common === undefined || media === undefined) return undefined
+  return { kind: 'audio', ...common, ...media, loop: attributes['loop'] !== undefined }
 }
 
 export function blockFromAttributes(

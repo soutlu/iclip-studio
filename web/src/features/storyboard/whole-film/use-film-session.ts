@@ -16,6 +16,7 @@ import {
   sourceVariable,
   writeFilm,
   type AudioBlock,
+  type BlockAttribute,
   type Canvas,
   type FilmBlock,
   type PictureBlock,
@@ -282,6 +283,10 @@ export function useFilmSession(
             start: end,
             track,
             volume: 1,
+            playbackRate: 1,
+            fadeIn: 0,
+            fadeOut: 0,
+            muted: false,
             z: newBlockZ(existing, placed),
             hidden: false,
           }
@@ -359,6 +364,7 @@ export function useFilmSession(
           start: at.start,
           track: at.track,
           volume: 1,
+          playbackRate: 1,
           fadeIn: 0,
           fadeOut: 0,
           loop: false,
@@ -459,6 +465,26 @@ export function useFilmSession(
     [edit],
   )
 
+  /**
+   * 改块 `id` 上的几个属性（null 是去掉），算一步撤销。块已经不在成片里、或者属性都已经是这些值时
+   * 不动成片。
+   */
+  const setAttributes = useCallback(
+    (id: string, changes: Readonly<Partial<Record<BlockAttribute, string | null>>>) => {
+      const engine = engineRef.current
+      const element = engine?.getElements().find((candidate) => candidate.id === id)
+      if (engine === null || element === undefined) return
+      const changed = Object.entries(changes).filter(
+        ([name, value]) => (element.attributes[name] ?? null) !== value,
+      )
+      if (changed.length === 0) return
+      edit((current) => {
+        for (const [name, value] of changed) current.setAttribute(id, name, value ?? null)
+      })
+    },
+    [edit],
+  )
+
   /** 删掉几个块；`ripple` 为真时主轨里后面的块往前补上。没有块再用的素材变量一起去掉。 */
   const removeBlocks = useCallback(
     (ids: readonly string[], ripple: boolean) =>
@@ -496,6 +522,7 @@ export function useFilmSession(
     restart,
     setHidden,
     setValues,
+    setAttributes,
     removeBlocks,
     undo: () => step('undo'),
     redo: () => step('redo'),

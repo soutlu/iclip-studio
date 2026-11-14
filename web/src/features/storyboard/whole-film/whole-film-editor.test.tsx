@@ -1079,6 +1079,7 @@ describe('成片编辑器 · 右侧栏', () => {
     expect(groupButton('内容')).toHaveAccessibleName('内容')
     expect(groupButton('时间')).toHaveAttribute('aria-expanded', 'false')
     expect(groupButton('时间')).toHaveAccessibleName('时间 1.00 – 4.50 秒')
+    expect(within(inspector()).queryByRole('button', { name: /^媒体/ })).toBeNull()
     expect(within(inspector()).getByRole('textbox', { name: '文字' })).toBeVisible()
 
     await user.click(groupButton('时间'))
@@ -1093,7 +1094,7 @@ describe('成片编辑器 · 右侧栏', () => {
     expect(groupButton('内容')).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('画面块、音频块只有「时间」，默认展开；音频块的隐藏叫静音', async () => {
+  it('画面块、音频块有「时间」和「媒体」，默认展开「时间」；音频块的隐藏叫静音', async () => {
     const user = await openWith([
       picture({ jobId: TAKE_A, src: URL_A, duration: 2_000 }),
       audio({ duration: 4_000 }),
@@ -1103,6 +1104,7 @@ describe('成片编辑器 · 右侧栏', () => {
     expect(within(inspector()).getAllByRole('button', { expanded: true })).toEqual([
       groupButton('时间'),
     ])
+    expect(groupButton('媒体')).toHaveAttribute('aria-expanded', 'false')
     expect(within(inspector()).queryByRole('button', { name: /^内容/ })).toBeNull()
     expect(within(inspector()).getByRole('button', { name: '隐藏' })).toBeVisible()
 
@@ -1359,6 +1361,182 @@ describe('成片编辑器 · 右侧栏', () => {
       await user.type(field('开始'), '5.5')
       await user.tab()
       await waitSaved(() => expect(savedTag('clip-2')).toContain('data-start="5.5"'))
+    })
+  })
+
+  describe('媒体', () => {
+    const slider = (name: string) => within(inspector()).getByRole('slider', { name })
+    /** 滑杆右边的数值，点一下可以直接输入。 */
+    const readout = (name: string) =>
+      within(inspector()).getByRole('button', { name: new RegExp(`^${name} .*，点一下直接输入$`) })
+    const toggle = (name: string) => within(inspector()).getByRole('switch', { name })
+    /** 拖到第 `position` 格再松手。 */
+    const drag = (name: string, position: number) => {
+      fireEvent.input(slider(name), { target: { value: String(position) } })
+      fireEvent.change(slider(name), { target: { value: String(position) } })
+    }
+    const type = async (user: ReturnType<typeof userEvent.setup>, name: string, text: string) => {
+      await user.click(readout(name))
+      const box = within(inspector()).getByRole('textbox', { name })
+      await user.clear(box)
+      await user.type(box, text)
+      return box
+    }
+    const openMedia = async (user: ReturnType<typeof userEvent.setup>, label: string) => {
+      await pick(user, label)
+      await user.click(groupButton('媒体'))
+    }
+    const savedAttribute = (id: string, name: string) =>
+      new RegExp(` ${name}(?:="([^"]*)")?[ >]`).exec(savedTag(id))?.[1]
+
+    it('音频块：文件、增益、速度、起始位置、淡入、淡出、循环，没有静音；数值照参照的换算显示', async () => {
+      const user = await openWith([
+        audio({
+          duration: 4_000,
+          mediaStart: 1_500,
+          volume: 0.5,
+          playbackRate: 2,
+          fadeIn: 1_000,
+          loop: true,
+        }),
+      ])
+      await openMedia(user, '配乐')
+      const labels = within(inspector())
+        .getAllByText(/^(文件|增益|速度|起始位置|淡入|淡出|循环|静音)$/)
+        .map((label) => label.textContent)
+      expect(labels).toEqual(['文件', '增益', '速度', '起始位置', '淡入', '淡出', '循环'])
+      expect(within(inspector()).getAllByText('配乐')).toHaveLength(2)
+      expect(slider('增益')).toHaveAttribute('aria-valuetext', '-6.0 dB')
+      expect(slider('增益')).toHaveAttribute('min', '-100')
+      expect(slider('增益')).toHaveAttribute('max', '100')
+      expect(readout('增益')).toHaveTextContent('-6.0 dB')
+      expect(slider('速度')).toHaveAttribute('aria-valuetext', '2x')
+      expect(slider('速度')).toHaveValue('651')
+      expect(readout('起始位置')).toHaveTextContent('1.50 秒')
+      expect(readout('淡入')).toHaveTextContent('1.00 秒')
+      expect(readout('淡出')).toHaveTextContent('0.00 秒')
+      expect(toggle('循环')).toHaveAttribute('aria-checked', 'true')
+      expect(within(inspector()).queryByRole('switch', { name: '静音' })).toBeNull()
+    })
+
+    it('增益：拖动中只改数值，松手写进成片，算一步撤销；正中不增不减，最左无声，最右 +12 dB', async () => {
+      const user = await openWith([audio({ duration: 4_000 })])
+      await openMedia(user, '配乐')
+      expect(slider('增益')).toHaveValue('0')
+      expect(readout('增益')).toHaveTextContent('0.0 dB')
+
+      fireEvent.input(slider('增益'), { target: { value: '50' } })
+      expect(readout('增益')).toHaveTextContent('+6.0 dB')
+      await pastDelay()
+      expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+      fireEvent.change(slider('增益'), { target: { value: '50' } })
+      await waitSaved(() => expect(savedAttribute('music-1', 'data-volume')).toBe('1.995262'))
+      expect(readout('增益')).toHaveTextContent('+6.0 dB')
+
+      drag('增益', 100)
+      await waitSaved(() => expect(savedAttribute('music-1', 'data-volume')).toBe('3.981072'))
+      drag('增益', -100)
+      await waitSaved(() => expect(savedAttribute('music-1', 'data-volume')).toBe('0'))
+      expect(readout('增益')).toHaveTextContent('-∞ dB')
+
+      await user.click(undoButton())
+      await waitSaved(() => expect(savedAttribute('music-1', 'data-volume')).toBe('3.981072'))
+    })
+
+    it('增益直接输入：按 dB 读；读不出时回车框留着、标成不对，Esc 放弃，块还选中着', async () => {
+      const user = await openWith([audio({ duration: 4_000 })])
+      await openMedia(user, '配乐')
+      await type(user, '增益', '-6{Enter}')
+      await waitSaved(() => expect(savedAttribute('music-1', 'data-volume')).toBe('0.501187'))
+      expect(readout('增益')).toHaveTextContent('-6.0 dB')
+
+      const box = await type(user, '增益', '很响{Enter}')
+      expect(box).toHaveAttribute('aria-invalid', 'true')
+      expect(box).toHaveFocus()
+      await user.keyboard('{Escape}')
+      expect(readout('增益')).toHaveTextContent('-6.0 dB')
+      expect(within(row()).getByRole('button', { name: /^选中：配乐，/ })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      expect(savedAttribute('music-1', 'data-volume')).toBe('0.501187')
+    })
+
+    it('速度：滑杆按对数走，正中 1 倍、两头 0.1 倍和 10 倍；1 倍时不写；块的时长不变，结尾最多到（素材长 − 入点）÷ 速度', async () => {
+      const user = await openWith([picture({ jobId: TAKE_A, src: URL_A, duration: 2_000 })])
+      await shot(/^生成 A 镜头 1，/)
+      await openMedia(user, 'A · 镜头 1')
+      expect(slider('速度')).toHaveValue('500')
+      expect(readout('速度')).toHaveTextContent('1x')
+      drag('速度', 1000)
+      await waitSaved(() => expect(savedAttribute('clip-1', 'data-playback-rate')).toBe('10'))
+      drag('速度', 0)
+      await waitSaved(() => expect(savedAttribute('clip-1', 'data-playback-rate')).toBe('0.1'))
+      drag('速度', 500)
+      await waitSaved(() => expect(savedTag('clip-1')).not.toContain('data-playback-rate'))
+
+      await type(user, '速度', '2x{Enter}')
+      await waitSaved(() => expect(savedAttribute('clip-1', 'data-playback-rate')).toBe('2'))
+      expect(savedAttribute('clip-1', 'data-duration')).toBe('2')
+      // 素材 6 秒、从 0 放起，2 倍速时块最长 3 秒
+      await user.click(groupButton('时间'))
+      const length = within(inspector()).getByRole('textbox', { name: '时长' })
+      await user.clear(length)
+      await user.type(length, '9{Enter}')
+      expect(length).toHaveValue('3.00')
+      await waitSaved(() => expect(savedAttribute('clip-1', 'data-duration')).toBe('3'))
+    })
+
+    it('起始位置：最多到「素材长 − 块长 × 速度」，输入超出时收到上限；写进入点', async () => {
+      const user = await openWith([
+        picture({ jobId: TAKE_A, src: URL_A, duration: 2_000, playbackRate: 2 }),
+      ])
+      await shot(/^生成 A 镜头 1，/)
+      await openMedia(user, 'A · 镜头 1')
+      // 素材 6 秒，块 2 秒 × 2 倍用掉 4 秒：入点最多 2 秒
+      expect(slider('起始位置')).toHaveAttribute('max', '200')
+      drag('起始位置', 150)
+      await waitSaved(() => expect(savedAttribute('clip-1', 'data-media-start')).toBe('1.5'))
+      expect(readout('起始位置')).toHaveTextContent('1.50 秒')
+      await type(user, '起始位置', '5 秒{Enter}')
+      await waitSaved(() => expect(savedAttribute('clip-1', 'data-media-start')).toBe('2'))
+      expect(savedAttribute('clip-1', 'data-duration')).toBe('2')
+    })
+
+    it('淡入淡出：一端最多到块长减去另一端，0 时不写', async () => {
+      const user = await openWith([audio({ duration: 4_000, fadeOut: 1_000 })])
+      await openMedia(user, '配乐')
+      expect(slider('淡入')).toHaveAttribute('max', '300')
+      expect(slider('淡出')).toHaveAttribute('max', '400')
+      await type(user, '淡入', '10{Enter}')
+      await waitSaved(() => expect(savedAttribute('music-1', 'data-fade-in')).toBe('3'))
+      expect(slider('淡出')).toHaveAttribute('max', '100')
+      drag('淡出', 0)
+      await waitSaved(() => expect(savedTag('music-1')).not.toContain('data-fade-out'))
+      expect(slider('淡入')).toHaveAttribute('max', '400')
+    })
+
+    it('循环、静音：开关写进文件；画面块静音时写 muted、不写有声音的标记，也不再显示淡入淡出', async () => {
+      const user = await openWith([
+        picture({ jobId: TAKE_A, src: URL_A, duration: 2_000 }),
+        audio({ duration: 4_000 }),
+      ])
+      await openMedia(user, '配乐')
+      await user.click(toggle('循环'))
+      await waitSaved(() => expect(savedAttribute('music-1', 'loop')).toBe('true'))
+
+      await openMedia(user, 'A · 镜头 1')
+      expect(within(inspector()).queryByRole('switch', { name: '循环' })).toBeNull()
+      expect(slider('淡入')).toBeVisible()
+      await user.click(toggle('静音'))
+      await waitSaved(() => expect(savedAttribute('clip-1', 'muted')).toBe('true'))
+      expect(savedTag('clip-1')).not.toContain('data-has-audio')
+      expect(within(inspector()).queryByRole('slider', { name: '淡入' })).toBeNull()
+      expect(within(inspector()).queryByRole('slider', { name: '淡出' })).toBeNull()
+
+      await user.click(toggle('静音'))
+      await waitSaved(() => expect(savedAttribute('clip-1', 'data-has-audio')).toBe('true'))
+      expect(savedTag('clip-1')).not.toContain('muted')
     })
   })
 

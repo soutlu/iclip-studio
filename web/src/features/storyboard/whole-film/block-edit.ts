@@ -24,9 +24,13 @@ const endOf = (block: Pick<FilmBlock, 'start' | 'duration'>) => block.start + bl
 
 const rowKeyOf = (block: FilmBlock): RowKey => ({ zone: zoneOf(block), track: block.track })
 
+/** 块的速度：成片里的 1 毫秒用掉素材的几毫秒。组件块是 1。 */
+export const rateOf = (block: FilmBlock): number => (isMediaBlock(block) ? block.playbackRate : 1)
+
 /**
  * 裁 `edge` 这一端时，这一端能到的范围（成片的毫秒）：不压到同一行的邻居，块不短于最短长度；
- * 开头往前不早于入点 0，结尾往后不超出素材剩下的长度（音频开着循环也一样）。
+ * 开头往前不早于入点 0，结尾往后不超出素材剩下的长度（音频开着循环也一样）。素材按块的速度用，
+ * 照参照的工作台：剩下的素材在成片里能放（素材长 − 入点）÷ 速度。
  * `sourceMs` 是画面块、音频块素材的总长，还不知道时结尾不许往外拉；组件块不看它，结尾不设上限。
  */
 export const trimBounds = (
@@ -37,13 +41,14 @@ export const trimBounds = (
 ): { min: number; max: number } => {
   const row = blocks.filter((other) => onRow(other, rowKeyOf(block)) && other.id !== block.id)
   const { mediaStart } = timingOf(block)
+  const rate = rateOf(block)
   if (edge === 'start') {
     const previousEnd = Math.max(
       0,
       ...row.filter((other) => endOf(other) <= block.start).map(endOf),
     )
     return {
-      min: Math.max(previousEnd, block.start - mediaStart),
+      min: Math.max(previousEnd, Math.ceil(block.start - mediaStart / rate)),
       max: endOf(block) - MIN_BLOCK_MS,
     }
   }
@@ -56,14 +61,17 @@ export const trimBounds = (
     ? Infinity
     : sourceMs === undefined
       ? endOf(block)
-      : block.start + sourceMs - mediaStart
+      : Math.floor(block.start + (sourceMs - mediaStart) / rate)
   return {
     min: block.start + MIN_BLOCK_MS,
     max: Math.max(endOf(block), Math.min(nextStart, sourceEnd)),
   }
 }
 
-/** 把 `edge` 这一端裁到 `timeMs`（先收进 `bounds`）之后，块的起止和入点；裁开头时入点跟着动。 */
+/**
+ * 把 `edge` 这一端裁到 `timeMs`（先收进 `bounds`）之后，块的起止和入点；裁开头时入点跟着动，
+ * 动的是挪过的时间 × 速度（取整到毫秒，不小于 0）。
+ */
 export const trimmed = (
   block: FilmBlock,
   edge: Edge,
@@ -74,7 +82,11 @@ export const trimmed = (
   const { mediaStart } = timingOf(block)
   if (edge === 'end') return { start: block.start, duration: at - block.start, mediaStart }
   const delta = at - block.start
-  return { start: at, duration: block.duration - delta, mediaStart: mediaStart + delta }
+  return {
+    start: at,
+    duration: block.duration - delta,
+    mediaStart: Math.max(0, Math.round(mediaStart + delta * rateOf(block))),
+  }
 }
 
 const edgeOf = (block: FilmBlock, edge: Edge) => (edge === 'start' ? block.start : endOf(block))

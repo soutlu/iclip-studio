@@ -817,6 +817,7 @@ describe('useFilmSession', () => {
         mediaStart: 1_000,
         track: 1,
         volume: 1,
+        playbackRate: 1,
         fadeIn: 0,
         fadeOut: 0,
         loop: false,
@@ -1007,6 +1008,41 @@ describe('useFilmSession', () => {
       // 也不留一步空的撤销：撤销一次就是撤销删除
       act(() => result.current.undo())
       expect(result.current.film?.blocks).toEqual(stacked())
+    })
+
+    it('改画面块、音频块上的属性：几项一起写进文件、读回来是新的值，算一步撤销；值没变、块已经删掉时不动成片', async () => {
+      const saves = recordSaves()
+      const { result } = await openWith(stacked())
+      act(() =>
+        result.current.setAttributes('p', {
+          'data-playback-rate': '2',
+          'data-fade-in': '0.5',
+          muted: 'true',
+          'data-has-audio': null,
+        }),
+      )
+      expect(result.current.film?.blocks[1]).toEqual(
+        picture({ id: 'p', track: 1, duration: 2_000, playbackRate: 2, fadeIn: 500, muted: true }),
+      )
+      await waitFor(() => expect(saves).toHaveLength(1))
+      const tag = tagOf(saves[0]?.html, 'p')
+      expect(tag).toContain(' data-playback-rate="2"')
+      expect(tag).toContain(' muted="true"')
+      expect(tag).not.toContain('data-has-audio')
+
+      act(() => result.current.setAttributes('m', { loop: 'true', 'data-volume': '1.995262' }))
+      expect(result.current.film?.blocks[2]).toMatchObject({ loop: true, volume: 1.995262 })
+      act(() => result.current.undo())
+      expect(result.current.film?.blocks[2]).toEqual(audio({ id: 'm', duration: 8_000 }))
+      act(() => result.current.undo())
+      expect(result.current.film?.blocks).toEqual(stacked())
+      expect(result.current.film?.canUndo).toBe(false)
+
+      const before = result.current.film?.html
+      act(() => result.current.setAttributes('m', { 'data-volume': '1', loop: null }))
+      act(() => result.current.setAttributes('gone', { 'data-volume': '0.5' }))
+      expect(result.current.film?.html).toBe(before)
+      expect(result.current.film?.canUndo).toBe(false)
     })
 
     it('删掉音频块：成片总长按剩下的块算，音频的变量一起去掉；撤销回来', async () => {
