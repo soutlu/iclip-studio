@@ -67,14 +67,14 @@ export interface VideoClip extends MediaBase {
 }
 
 /**
- * 组件或块的片段：组件库里的一个条目。`component` 是条目的名字，`src` 是条目的文件。
+ * 组件或块的片段：组件库里的一个条目。`item` 是条目的名字，`src` 是条目的文件。
  * 条目没写尺寸或和画面一样大时铺满画面；写了别的尺寸时按原比例缩到放得下、居中（写在 `<head>` 里）。
- * `playbackStart` 是从组件自己的第几毫秒开始播，`values` 是它的可填项取值；叠放顺序同视频片段。
+ * `playbackStart` 是从条目自己的第几毫秒开始播，`values` 是它的可填项取值；叠放顺序同视频片段。
  * `playbackStart` 是 0 时文件里不写。
  */
 export interface HostClip extends ClipBase {
   kind: 'host'
-  component: string
+  item: string
   src: string
   playbackStart: number
   values: Record<string, VariableValue>
@@ -282,7 +282,7 @@ export function hostClip(clip: HostClip): string {
   return clipElement('host', {
     ...commonValues(clip),
     style: stacking(clip.z),
-    'data-composition-id': clip.component,
+    'data-composition-id': clip.item,
     'data-composition-src': clip.src,
     'data-playback-start': unlessZero(clip.playbackStart),
     'data-variable-values': JSON.stringify(clip.values),
@@ -388,13 +388,13 @@ export function hostFromAttributes(
   zIndex?: string,
 ): HostClip | undefined {
   const common = commonOf(id, attributes)
-  const component = attributes['data-composition-id']
+  const item = attributes['data-composition-id']
   const src = attributes['data-composition-src']
   const playbackStart = millisecondsOf(attributes['data-playback-start'] ?? '0')
   const values = variableValuesOf(attributes['data-variable-values'])
   if (
     common === undefined ||
-    component === undefined ||
+    item === undefined ||
     src === undefined ||
     playbackStart === undefined ||
     values === undefined
@@ -403,7 +403,7 @@ export function hostFromAttributes(
   return {
     kind: 'host',
     ...common,
-    component,
+    item,
     src,
     playbackStart,
     values,
@@ -462,7 +462,7 @@ export function variableValuesOf(
 }
 
 const itemOf = (clip: HostClip, catalog: ComponentCatalog): CatalogItem | undefined =>
-  catalog.items.find((candidate) => candidate.name === clip.component)
+  catalog.items.find((candidate) => candidate.name === clip.item)
 
 /**
  * 字体类可填项取到的字体族：片段上填了用填的，没填用默认值。取到的是空的、或者组件库里没有这个字体族时
@@ -516,11 +516,7 @@ const round4 = (value: number) => String(Math.round(value * 10_000) / 10_000)
  * - 条目有尺寸、和画面不一样大：按原比例缩到放得下，居中。
  * - 第一个字体类可填项取到了字体：标题和正文的字体变量都换成它，中文字形退到组件库的中文字体。
  */
-function componentRule(
-  clip: HostClip,
-  canvas: Canvas,
-  catalog: ComponentCatalog,
-): string | undefined {
+function itemRule(clip: HostClip, canvas: Canvas, catalog: ComponentCatalog): string | undefined {
   const item = itemOf(clip, catalog)
   if (item === undefined) return undefined
   const declarations: string[] = []
@@ -561,10 +557,8 @@ export function writeFilm(
         `<link rel="stylesheet" href="${escapeAttribute(catalog.fonts[family]?.css ?? '')}">\n`,
     )
     .join('')
-  const componentRules = film.clips
-    .flatMap((clip) =>
-      clip.kind === 'host' ? (componentRule(clip, film.canvas, catalog) ?? []) : [],
-    )
+  const itemRules = film.clips
+    .flatMap((clip) => (clip.kind === 'host' ? (itemRule(clip, film.canvas, catalog) ?? []) : []))
     .map((rule) => `${rule}\n`)
     .join('')
   return `<!doctype html>
@@ -578,7 +572,7 @@ html,body{width:${width}px;height:${height}px;overflow:hidden;background:black;f
 #${FILM_ID}{position:relative;width:${width}px;height:${height}px;overflow:hidden;background:black}
 #${FILM_ID} .picture{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
 #${FILM_ID} .component{position:absolute;left:0;top:0;width:${width}px;height:${height}px}
-${componentRules}</style>
+${itemRules}</style>
 <style>
 ${cjkFontFaces(catalog, text, families)}
 </style>

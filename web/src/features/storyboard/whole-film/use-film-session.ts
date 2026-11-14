@@ -3,7 +3,6 @@ import type { Composition } from '@hyperframes/sdk'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
 import { rippleStarts, type Timing } from './clip-edit'
-import { componentDurationMs } from './components'
 import type { CatalogItem, ComponentCatalog, VariableValue } from './composition/catalog'
 import {
   AUDIO_SOURCE_LABEL,
@@ -21,6 +20,7 @@ import {
   type FilmClip,
   type VideoClip,
 } from './composition/film'
+import { itemDurationMs } from './items'
 import { onRow, topTrack, type Landing, type Renumbering } from './placement'
 import { newClipZ, restackedZ } from './stacking'
 import type { StackingDirection } from './vendor/hyperframes-studio/player/components/timelineStackingSync'
@@ -302,7 +302,7 @@ export function useFilmSession(
    * 可填项取 `values`，时长取条目的时长。`renumber` 同 `addVideos`。
    * 叠在最上面，写在根下第一个。还没有成片时先按 `canvas` 建一份。
    */
-  const addComponent = useCallback(
+  const addItem = useCallback(
     async (
       canvas: Canvas,
       item: CatalogItem,
@@ -313,14 +313,14 @@ export function useFilmSession(
       const engine = await engineFor(canvas)
       if (engine === null) return false
       const existing = clipsOf(engine)
-      const duration = componentDurationMs(item, existing)
+      const duration = itemDurationMs(item, existing)
       applyTo(engine, () => {
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
         const clip = {
           kind: 'host' as const,
           id: newClipId(),
           label: item.title,
-          component: item.name,
+          item: item.name,
           src: item.src,
           start: at.start,
           duration,
@@ -512,7 +512,7 @@ export function useFilmSession(
     film,
     opening,
     addVideos,
-    addComponent,
+    addItem,
     addAudio,
     retime,
     moveClip,

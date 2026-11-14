@@ -760,7 +760,7 @@ describe('useFilmSession', () => {
       const saves = recordSaves()
       const { result } = await openWith(stacked())
       await act(() =>
-        result.current.addComponent(
+        result.current.addItem(
           CANVAS,
           catalogItem('fixture-fields'),
           { text: '新品上市' },
@@ -771,7 +771,7 @@ describe('useFilmSession', () => {
       expect(added).toMatchObject({
         kind: 'host',
         label: '测试可填项',
-        component: 'fixture-fields',
+        item: 'fixture-fields',
         src: 'compositions/fixtures/fixture-fields.html',
         track: 2,
         start: 7_000,
@@ -795,12 +795,12 @@ describe('useFilmSession', () => {
     it('组件库的条目没写时长：取 10 秒和成片现有总长里大的那个', async () => {
       const { result } = await openWith(stacked())
       const caption = catalogItem('default-caption')
-      await act(() => result.current.addComponent(CANVAS, caption, {}, { track: 2, start: 0 }))
+      await act(() => result.current.addItem(CANVAS, caption, {}, { track: 2, start: 0 }))
       expect(result.current.film?.clips[0]?.duration).toBe(10_000)
       act(() =>
         result.current.retime(new Map([['m', { start: 0, duration: 15_000, mediaStart: 0 }]])),
       )
-      await act(() => result.current.addComponent(CANVAS, caption, {}, { track: 3, start: 0 }))
+      await act(() => result.current.addItem(CANVAS, caption, {}, { track: 3, start: 0 }))
       expect(result.current.film?.clips[0]?.duration).toBe(15_000)
     })
 

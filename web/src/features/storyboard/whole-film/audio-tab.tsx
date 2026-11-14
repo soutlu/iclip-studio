@@ -32,7 +32,7 @@ import { filmViewQuery } from '../film/film.api'
 import { isRunningStatus } from '../shots'
 import type { GenerationJob } from '../storyboard.api'
 import { audioTitleOf, durationLabel, filterAudio, firstAudioClipOf } from './audio'
-import type { CarryPoint } from './components-tab'
+import type { CarryPoint } from './items-tab'
 import type { FilmClip } from './composition/film'
 import type { NewAudio } from './use-film-session'
 import {

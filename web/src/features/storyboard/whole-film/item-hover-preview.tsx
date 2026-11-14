@@ -4,7 +4,7 @@ import { HOVER_CANVAS } from './hover-preview'
 type PlayerElement = HTMLElement & { play: () => void }
 
 /** 盖在卡片封面上的播放器：静音、循环，第一帧画出来之前透明。 */
-export function ComponentHoverPreview({ srcdoc }: { srcdoc: string }) {
+export function ItemHoverPreview({ srcdoc }: { srcdoc: string }) {
   const hostRef = useRef<HTMLSpanElement>(null)
 
   useEffect(() => {

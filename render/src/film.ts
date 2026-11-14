@@ -166,7 +166,7 @@ const CHECKS: Record<ClipAttribute, Check> = {
   'data-start': seconds('起点'),
   'data-duration': seconds('时长'),
   'data-media-start': seconds('入点'),
-  'data-playback-start': seconds('组件里的起点'),
+  'data-playback-start': seconds('条目里的起点'),
   'data-fade-in': seconds('淡入'),
   'data-fade-out': seconds('淡出'),
   'data-track-index': (value, where) => {
@@ -219,9 +219,9 @@ function readClip(element: Element, catalog: ComponentCatalog): FilmClip {
   if (clip.duration < MIN_CLIP_MS) fail(`${where}短于 ${MIN_CLIP_MS} 毫秒`)
   if (
     clip.kind === 'host' &&
-    !catalog.items.some((item) => item.name === clip.component && item.src === clip.src)
+    !catalog.items.some((item) => item.name === clip.item && item.src === clip.src)
   ) {
-    fail(`${where}使用的组件不在组件库中：${clip.component}`)
+    fail(`${where}使用的组件或块不在组件库中：${clip.item}`)
   }
   return clip
 }
@@ -301,7 +301,7 @@ const ROOT_ATTRIBUTES = [
   'data-height',
 ] as const
 
-/** 按写法读出成片；有任何写法之外的东西、或者组件不在 `catalog` 里，就抛 `FilmProblem`。 */
+/** 按写法读出成片；有任何写法之外的东西、或者条目不在 `catalog` 里，就抛 `FilmProblem`。 */
 export function readFilm(html: string, catalog: ComponentCatalog): Film {
   const document = parse(html)
   const page = document.childNodes.filter((node) => node.nodeName !== '#documentType')
