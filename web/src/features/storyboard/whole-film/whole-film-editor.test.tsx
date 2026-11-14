@@ -995,9 +995,16 @@ describe('成片编辑器 · 导出', () => {
   })
 })
 
-describe('成片编辑器 · 组件栏', () => {
+describe('成片编辑器 · 组件、块页签', () => {
+  const side = () => screen.getByRole('complementary', { name: '组件、块和音频' })
+  const openTab = (user: ReturnType<typeof userEvent.setup>, name: string) =>
+    user.click(within(side()).getByRole('tab', { name }))
   const itemCard = (name: RegExp) =>
-    within(screen.getByRole('list', { name: '组件' })).getByRole('group', { name })
+    within(within(side()).getByRole('list')).getByRole('group', { name })
+  const cardNames = () =>
+    within(within(side()).getByRole('list'))
+      .getAllByRole('group')
+      .map((element) => element.getAttribute('aria-label'))
   const addAtPlayhead = (user: ReturnType<typeof userEvent.setup>, name: RegExp) =>
     user.click(within(itemCard(name)).getByRole('button', { name: '加到播放头' }))
   const savedItems = () => savedFilm().match(/<div [^>]*class="clip component"[^>]*>/g) ?? []
@@ -1008,10 +1015,45 @@ describe('成片编辑器 · 组件栏', () => {
       ?.getAttribute('srcdoc') ?? ''
   const playerUp = () => act(() => new Promise((resolve) => setTimeout(resolve, 500)))
 
-  it('block 类加到播放头：第一行那段时间有片段，就在它下面新开一行；预览里固定尺寸的组件缩进画面', async () => {
+  it('左侧栏三个页签：组件、块、音频，默认打开组件；组件、块各记着自己的搜索词和分类，切走再回来还在', async () => {
+    const user = userEvent.setup()
+    await openEditor()
+    expect(
+      within(side())
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent),
+    ).toEqual(['组件', '块', '音频'])
+    expect(within(side()).getByRole('tab', { name: '组件' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    expect(within(side()).getByRole('list', { name: '组件' })).toBeVisible()
+    await user.type(within(side()).getByRole('searchbox', { name: '搜索组件' }), '圆环')
+    expect(cardNames()).toEqual(['测试叠加，4 秒'])
+
+    await openTab(user, '块')
+    expect(within(side()).getByRole('searchbox', { name: '搜索块' })).toHaveValue('')
+    const blockChips = () => within(side()).getByRole('radiogroup', { name: '块分类' })
+    await user.click(within(blockChips()).getByRole('radio', { name: '品牌' }))
+    expect(cardNames()).toEqual(['示例品牌 片尾，3 秒'])
+
+    await openTab(user, '音频')
+    await openTab(user, '组件')
+    expect(within(side()).getByRole('searchbox', { name: '搜索组件' })).toHaveValue('圆环')
+    expect(cardNames()).toEqual(['测试叠加，4 秒'])
+    await openTab(user, '块')
+    expect(within(blockChips()).getByRole('radio', { name: '品牌' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    expect(cardNames()).toEqual(['示例品牌 片尾，3 秒'])
+  })
+
+  it('块页签里加到播放头：第一行那段时间有片段，就在它下面新开一行；预览里固定尺寸的块缩进画面', async () => {
     putMockWholeFilmDraft(CONVERSATION, twoVideos())
     const user = userEvent.setup()
     await openEditor()
+    await openTab(user, '块')
     await addAtPlayhead(user, /^测试画面/)
 
     await waitSaved(() => expect(savedItems()).toHaveLength(1))
@@ -1031,7 +1073,7 @@ describe('成片编辑器 · 组件栏', () => {
     )
   })
 
-  it('component 类加到播放头：第一行空着也放在画面区最下面新开的一行，从播放头开始；撤销回去', async () => {
+  it('组件页签里加到播放头：第一行空着也放在画面区最下面新开的一行，从播放头开始；撤销回去', async () => {
     putMockWholeFilmDraft(CONVERSATION, twoVideos())
     const user = userEvent.setup()
     await openEditor()
@@ -1056,7 +1098,7 @@ describe('成片编辑器 · 组件栏', () => {
     expect(savedItems()[0]).toContain('data-start="0" data-duration="4" data-track-index="0"')
   })
 
-  it('上一个组件还没加完又点「加到播放头」：只加一个，提示稍后再加', async () => {
+  it('上一个还没加完又点「加到播放头」：只加一个，提示稍后再加', async () => {
     await openEditor()
     const add = within(itemCard(/^测试叠加/)).getByRole('button', { name: '加到播放头' })
     fireEvent.click(add)
@@ -1064,7 +1106,7 @@ describe('成片编辑器 · 组件栏', () => {
     await waitSaved(() => expect(savedItems()).toHaveLength(1))
     await new Promise((resolve) => setTimeout(resolve, 1000))
     expect(savedItems()).toHaveLength(1)
-    expect(screen.getByText('上一个组件正在加入成片，请稍后再试')).toBeVisible()
+    expect(screen.getByText('上一个组件或块正在加入成片，请稍后再试')).toBeVisible()
   })
 })
 
@@ -1157,6 +1199,29 @@ describe('成片编辑器 · 右侧栏', () => {
     await user.click(groupButton('时间'))
     expect(groupButton('时间')).toHaveAttribute('aria-expanded', 'false')
     expect(groupButton('内容')).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('头部名字后面的种类按条目在组件库里的种类写：块写「块」，组件库里没有的条目不写', async () => {
+    const user = await openWith([
+      brand(),
+      host({
+        id: 'gone-1',
+        label: '已下架',
+        item: 'fixture-gone',
+        src: 'compositions/fixtures/fixture-gone.html',
+        start: 5_000,
+      }),
+    ])
+    const head = () => within(inspector()).getByRole('banner')
+    await pick(user, '示例品牌 片尾')
+    expect(within(head()).getByRole('heading', { name: '示例品牌 片尾' })).toBeVisible()
+    expect(within(head()).getByText('块')).toBeVisible()
+    expect(within(head()).queryByText('组件')).toBeNull()
+
+    await pick(user, '已下架')
+    expect(within(head()).getByRole('heading', { name: '已下架' })).toBeVisible()
+    expect(within(head()).queryByText('块')).toBeNull()
+    expect(within(head()).queryByText('组件')).toBeNull()
   })
 
   it('视频片段、音频片段有「时间」和「媒体」，默认展开「时间」；音频片段的隐藏叫静音', async () => {

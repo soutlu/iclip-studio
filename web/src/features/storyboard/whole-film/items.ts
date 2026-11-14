@@ -2,30 +2,46 @@ import type { CatalogItem, ComponentCatalog } from './composition/catalog'
 import type { FilmClip } from './composition/film'
 import { rowBusy, rowsOf, type RowTarget } from './placement'
 
-/** 组件栏的一个分类：「全部」「品牌」，或者组件库目录里的一类。 */
+export type ItemKind = CatalogItem['kind']
+
+/** 左侧栏里条目页签的先后。 */
+export const ITEM_KINDS: readonly ItemKind[] = ['component', 'block']
+
+/** 两种条目在界面上的叫法。 */
+export const ITEM_KIND_LABEL: Record<ItemKind, string> = { component: '组件', block: '块' }
+
+/** 条目页签的一个分类：「全部」「品牌」，或者组件库目录里的一类。 */
 export type ItemChip = {
   value: string
   label: string
   includes: (item: CatalogItem) => boolean
 }
 
-// 组装脚本把这一类的条目标成字幕；字幕在后面的步骤里另做，组件栏不列
+/** 条目页签上的搜索词和选中的分类（`ItemChip.value`）。 */
+export type ItemFilter = { query: string; chip: string }
+
+export const NO_FILTER: ItemFilter = { query: '', chip: 'all' }
+
+// 组装脚本把这一类的条目标成字幕；字幕在后面的步骤里另做，条目页签不列
 const CAPTIONS = 'captions'
 
-const listed = (item: CatalogItem) => item.category !== CAPTIONS
-
-/** 组件栏上的分类，按显示的先后：全部、品牌、目录里除字幕以外的各类。 */
-export const itemChips = (catalog: ComponentCatalog): ItemChip[] => [
-  { value: 'all', label: '全部', includes: listed },
-  { value: 'brand', label: '品牌', includes: (item) => listed(item) && item.brand !== undefined },
-  ...catalog.categories
-    .filter((category) => category.id !== CAPTIONS)
-    .map((category) => ({
+/**
+ * `kind` 这种条目的页签上的分类，按显示的先后：全部、品牌、目录里除字幕以外的各类。
+ * 「全部」总在；别的分类在这种条目里一个都没有时不列。
+ */
+export const itemChips = (catalog: ComponentCatalog, kind: ItemKind): ItemChip[] => {
+  const listed = (item: CatalogItem) => item.kind === kind && item.category !== CAPTIONS
+  const chips: ItemChip[] = [
+    { value: 'all', label: '全部', includes: listed },
+    { value: 'brand', label: '品牌', includes: (item) => listed(item) && item.brand !== undefined },
+    ...catalog.categories.map((category) => ({
       value: `category:${category.id}`,
       label: category.label,
-      includes: (item: CatalogItem) => item.category === category.id,
+      includes: (item: CatalogItem) => listed(item) && item.category === category.id,
     })),
-]
+  ]
+  return chips.filter((chip) => chip.value === 'all' || catalog.items.some(chip.includes))
+}
 
 export const categoryLabel = (catalog: ComponentCatalog, item: CatalogItem): string =>
   catalog.categories.find((category) => category.id === item.category)?.label ?? ''

@@ -1,14 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import { audio, fixtureCatalog, host, video } from '@/testing/whole-film'
 import type { CatalogItem } from './composition/catalog'
-import { filterItems, itemChips, itemDurationMs, playheadSpot, type ItemChip } from './items'
+import {
+  filterItems,
+  itemChips,
+  itemDurationMs,
+  playheadSpot,
+  type ItemChip,
+  type ItemKind,
+} from './items'
 
-const chips = itemChips(fixtureCatalog)
-const chip = (label: string): ItemChip => {
-  const found = chips.find((candidate) => candidate.label === label)
+const chip = (kind: ItemKind, label: string): ItemChip => {
+  const found = itemChips(fixtureCatalog, kind).find((candidate) => candidate.label === label)
   if (found === undefined) throw new Error(`没有分类「${label}」`)
   return found
 }
+const labels = (chips: ItemChip[]) => chips.map((candidate) => candidate.label)
 const titles = (items: CatalogItem[]) => items.map((item) => item.title)
 const item = (name: string): CatalogItem => {
   const found = fixtureCatalog.items.find((candidate) => candidate.name === name)
@@ -16,48 +23,72 @@ const item = (name: string): CatalogItem => {
   return found
 }
 
-describe('组件栏的分类和搜索', () => {
-  it('分类一排：全部、品牌，再是目录里除字幕以外的各类', () => {
-    expect(chips.map((candidate) => candidate.label)).toEqual([
-      '全部',
-      '品牌',
-      '视觉特效',
-      '转场',
-      '效果',
-      '文字效果',
-      '社交',
-      '场景',
-    ])
+describe('组件、块页签的分类和搜索', () => {
+  it('分类一排：全部、品牌，再是目录里除字幕以外的各类，只列这种条目里有的', () => {
+    expect(labels(itemChips(fixtureCatalog, 'component'))).toEqual(['全部', '效果', '文字效果'])
+    expect(labels(itemChips(fixtureCatalog, 'block'))).toEqual(['全部', '品牌', '场景'])
   })
 
-  it('「全部」是字幕以外的全部条目，按目录里的先后', () => {
-    expect(titles(filterItems(fixtureCatalog, chip('全部'), ''))).toEqual([
-      '测试画面',
+  it('一类里两种条目都有：每个页签的这一类和「品牌」只列自己这种', () => {
+    const catalog = {
+      ...fixtureCatalog,
+      items: fixtureCatalog.items.map((entry) =>
+        entry.name === 'fixture-overlay'
+          ? { ...entry, category: 'scenes', brand: '示例品牌' }
+          : entry,
+      ),
+    }
+    const listed = (kind: ItemKind, label: string) => {
+      const found = itemChips(catalog, kind).find((candidate) => candidate.label === label)
+      return found === undefined ? [] : titles(filterItems(catalog, found, ''))
+    }
+    expect(listed('component', '场景')).toEqual(['测试叠加'])
+    expect(listed('component', '品牌')).toEqual(['测试叠加'])
+    expect(listed('block', '场景')).toEqual(['测试画面', '示例品牌 片尾'])
+    expect(listed('block', '品牌')).toEqual(['示例品牌 片尾'])
+  })
+
+  it('这种条目一个都没有：只有「全部」，里面是空的', () => {
+    const catalog = {
+      ...fixtureCatalog,
+      items: fixtureCatalog.items.filter((entry) => entry.kind === 'component'),
+    }
+    const chips = itemChips(catalog, 'block')
+    expect(labels(chips)).toEqual(['全部'])
+    expect(filterItems(catalog, chips[0] as ItemChip, '')).toEqual([])
+  })
+
+  it('「全部」是这种条目里字幕以外的全部，按目录里的先后', () => {
+    expect(titles(filterItems(fixtureCatalog, chip('component', '全部'), ''))).toEqual([
       '测试叠加',
       '测试可填项',
+    ])
+    expect(titles(filterItems(fixtureCatalog, chip('block', '全部'), ''))).toEqual([
+      '测试画面',
       '示例品牌 片尾',
     ])
   })
 
-  it('「品牌」是带品牌的条目；目录里的一类是这一类的条目；没有条目的类是空的', () => {
-    expect(titles(filterItems(fixtureCatalog, chip('品牌'), ''))).toEqual(['示例品牌 片尾'])
-    expect(titles(filterItems(fixtureCatalog, chip('场景'), ''))).toEqual([
+  it('「品牌」是带品牌的条目；目录里的一类是这一类里这种条目', () => {
+    expect(titles(filterItems(fixtureCatalog, chip('block', '品牌'), ''))).toEqual([
+      '示例品牌 片尾',
+    ])
+    expect(titles(filterItems(fixtureCatalog, chip('block', '场景'), ''))).toEqual([
       '测试画面',
       '示例品牌 片尾',
     ])
-    expect(filterItems(fixtureCatalog, chip('转场'), '')).toEqual([])
+    expect(titles(filterItems(fixtureCatalog, chip('component', '效果'), ''))).toEqual(['测试叠加'])
   })
 
   it('搜索匹配名字、说明和分类名，去掉两头空白；只在选中的分类里找', () => {
-    expect(titles(filterItems(fixtureCatalog, chip('全部'), '叠加'))).toEqual(['测试叠加'])
-    expect(titles(filterItems(fixtureCatalog, chip('全部'), '圆环'))).toEqual(['测试叠加'])
-    expect(titles(filterItems(fixtureCatalog, chip('全部'), ' 文字效果 '))).toEqual(['测试可填项'])
-    expect(titles(filterItems(fixtureCatalog, chip('全部'), '画面'))).toEqual([
-      '测试画面',
-      '测试叠加',
-    ])
-    expect(titles(filterItems(fixtureCatalog, chip('效果'), '画面'))).toEqual(['测试叠加'])
-    expect(filterItems(fixtureCatalog, chip('全部'), '没有这个')).toEqual([])
+    const all = chip('component', '全部')
+    expect(titles(filterItems(fixtureCatalog, all, '叠加'))).toEqual(['测试叠加'])
+    expect(titles(filterItems(fixtureCatalog, all, '圆环'))).toEqual(['测试叠加'])
+    expect(titles(filterItems(fixtureCatalog, all, ' 文字效果 '))).toEqual(['测试可填项'])
+    expect(titles(filterItems(fixtureCatalog, all, '画面'))).toEqual(['测试叠加'])
+    expect(titles(filterItems(fixtureCatalog, chip('block', '全部'), '画面'))).toEqual(['测试画面'])
+    expect(filterItems(fixtureCatalog, chip('component', '文字效果'), '画面')).toEqual([])
+    expect(filterItems(fixtureCatalog, all, '没有这个')).toEqual([])
   })
 
   it('搜索西文不分大小写', () => {
@@ -67,17 +98,16 @@ describe('组件栏的分类和搜索', () => {
         entry.name === 'fixture-scene' ? { ...entry, title: 'Glow Title' } : entry,
       ),
     }
-    expect(titles(filterItems(catalog, itemChips(catalog)[0] as ItemChip, 'glow'))).toEqual([
-      'Glow Title',
-    ])
+    const [all] = itemChips(catalog, 'block')
+    expect(titles(filterItems(catalog, all as ItemChip, 'glow'))).toEqual(['Glow Title'])
   })
 
   it('字幕搜不出来', () => {
-    expect(filterItems(fixtureCatalog, chip('全部'), '字幕')).toEqual([])
+    expect(filterItems(fixtureCatalog, chip('component', '全部'), '字幕')).toEqual([])
   })
 })
 
-describe('组件放进成片的时长', () => {
+describe('条目放进成片的时长', () => {
   it('条目写了时长就用它；没写时取 10 秒和成片现有总长里大的那个', () => {
     expect(itemDurationMs(item('fixture-scene'), [])).toBe(6000)
     const timeless = { ...item('fixture-scene'), duration: null }

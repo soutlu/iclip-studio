@@ -36,7 +36,15 @@ import { EditorToolbar } from './editor-toolbar'
 import { ExportControl } from './export-control'
 import { FilmInspector } from './film-inspector'
 import { FilmTimeline, type DropGhost, type TimelineHandle } from './film-timeline'
-import { itemDurationMs, playheadSpot } from './items'
+import {
+  ITEM_KIND_LABEL,
+  ITEM_KINDS,
+  itemDurationMs,
+  NO_FILTER,
+  playheadSpot,
+  type ItemFilter,
+  type ItemKind,
+} from './items'
 import { ItemsTab } from './items-tab'
 import { MaterialArea } from './material-area'
 import {
@@ -86,9 +94,9 @@ type Props = {
 const EMPTY_TEXT = '暂无成片内容，加入内容后可在此预览'
 const PICK_FIRST_TEXT = '尚未选中镜头，无法加入成片；请先在下方选中镜头范围'
 const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏，无法进入全屏'
-const ADDING_ITEM_TEXT = '上一个组件正在加入成片，请稍后再试'
+const ADDING_ITEM_TEXT = '上一个组件或块正在加入成片，请稍后再试'
 const ADDING_AUDIO_TEXT = '上一条音频正在加入成片，请稍后再试'
-// 还没有成片时先放组件：和 #41 之前的编辑器一样按竖版建
+// 还没有成片时先放组件或块：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 
 const watchFullscreen = (notify: () => void) => {
@@ -194,6 +202,10 @@ function EditorBody({
   const { film } = session
   const clips = useMemo(() => film?.clips ?? [], [film])
   const videoClips = useMemo(() => clips.filter((clip) => clip.kind === 'video'), [clips])
+  const [itemFilters, setItemFilters] = useState<Readonly<Record<ItemKind, ItemFilter>>>({
+    component: NO_FILTER,
+    block: NO_FILTER,
+  })
   const [materialView, setMaterialView] = useState<MaterialView | null>(null)
   const [materialMs, setMaterialMs] = useState(0)
   const [materialPlaying, setMaterialPlaying] = useState(false)
@@ -333,7 +345,7 @@ function EditorBody({
   const [thumbnails, setThumbnails] = useState(true)
   const [snap, setSnap] = useState(true)
   /**
-   * 拖着的素材、组件或音频（长 `duration` 毫秒，放进 `zone` 区）会落在哪：
+   * 拖着的素材、组件、块或音频（长 `duration` 毫秒，放进 `zone` 区）会落在哪：
    * 开着吸附时先吸到别的片段的两端或播放头上，再避开同一行的片段。
    */
   const landingAt = (clientX: number, clientY: number, duration: number, zone: Zone = 'visual') => {
@@ -403,7 +415,7 @@ function EditorBody({
     else place(range)
   }
 
-  // 照参照的工作台：上一个组件还没加完时不接下一个，免得两次都按加之前的样子算落点
+  // 照参照的工作台：上一个条目还没加完时不接下一个，免得两次都按加之前的样子算落点
   const addingItemRef = useRef(false)
   /** 把组件库的一个条目放进成片的 `at`；还没有成片时按默认画布建一份。 */
   const placeItem = (item: CatalogItem, at: { row: RowTarget; start: number }) => {
@@ -431,7 +443,7 @@ function EditorBody({
   const addAtPlayhead = (item: CatalogItem) =>
     placeItem(item, playheadSpot(clips, item, playhead, itemDurationMs(item, clips)))
 
-  // 和组件一样：上一条音频还没加完时不接下一条
+  // 和组件、块一样：上一条音频还没加完时不接下一条
   const addingAudioRef = useRef(false)
   /** 把一整条音频放进成片的 `at`；还没有成片时按默认画布建一份。 */
   const placeAudio = (audio: NewAudio, at: { row: RowTarget; start: number }) => {
@@ -586,31 +598,42 @@ function EditorBody({
         }
       />
       <div aria-label="成片编辑器" className="wf-workspace" role="group">
-        <aside aria-label="组件和音频" className="wf-side">
-          <TabsRoot className="wf-side-panel" defaultValue="components">
-            <TabsList aria-label="组件和音频页签" className="wf-side-tabs">
-              <TabsTrigger value="components">组件</TabsTrigger>
+        <aside aria-label="组件、块和音频" className="wf-side">
+          <TabsRoot className="wf-side-panel" defaultValue="component">
+            <TabsList aria-label="组件、块和音频页签" className="wf-side-tabs">
+              {ITEM_KINDS.map((kind) => (
+                <TabsTrigger key={kind} value={kind}>
+                  {ITEM_KIND_LABEL[kind]}
+                </TabsTrigger>
+              ))}
               <TabsTrigger value="audio">音频</TabsTrigger>
             </TabsList>
-            <TabsContent className="wf-side-body is-items" value="components">
-              <ItemsTab
-                catalog={catalog}
-                onAdd={addAtPlayhead}
-                onCarry={(item, point) =>
-                  setGhost(
-                    point === null
-                      ? null
-                      : landingAt(point.clientX, point.clientY, itemDurationMs(item, clips)),
-                  )
-                }
-                onDrop={(item, point) => {
-                  const at = landingAt(point.clientX, point.clientY, itemDurationMs(item, clips))
-                  setGhost(null)
-                  if (at !== null) placeItem(item, { row: at.row, start: at.start })
-                }}
-                origin={window.location.origin}
-              />
-            </TabsContent>
+            {ITEM_KINDS.map((kind) => (
+              <TabsContent className="wf-side-body is-items" key={kind} value={kind}>
+                <ItemsTab
+                  catalog={catalog}
+                  filter={itemFilters[kind]}
+                  kind={kind}
+                  onAdd={addAtPlayhead}
+                  onCarry={(item, point) =>
+                    setGhost(
+                      point === null
+                        ? null
+                        : landingAt(point.clientX, point.clientY, itemDurationMs(item, clips)),
+                    )
+                  }
+                  onDrop={(item, point) => {
+                    const at = landingAt(point.clientX, point.clientY, itemDurationMs(item, clips))
+                    setGhost(null)
+                    if (at !== null) placeItem(item, { row: at.row, start: at.start })
+                  }}
+                  onFilterChange={(filter) =>
+                    setItemFilters((current) => ({ ...current, [kind]: filter }))
+                  }
+                  origin={window.location.origin}
+                />
+              </TabsContent>
+            ))}
             <TabsContent className="wf-side-body is-audio" value="audio">
               <AudioTab
                 clips={clips}

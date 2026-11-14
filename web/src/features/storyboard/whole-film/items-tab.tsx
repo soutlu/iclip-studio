@@ -9,7 +9,14 @@ import { thumbnailUrl } from './component-catalog'
 import type { CatalogItem, ComponentCatalog } from './composition/catalog'
 import { hoverPreviewOf } from './hover-preview'
 import { ItemHoverPreview } from './item-hover-preview'
-import { categoryLabel, filterItems, itemChips } from './items'
+import {
+  categoryLabel,
+  filterItems,
+  ITEM_KIND_LABEL,
+  itemChips,
+  type ItemFilter,
+  type ItemKind,
+} from './items'
 
 /** 照参照的工作台：指针停够这么久才在卡片里播预览，划过时不播。 */
 export const HOVER_PREVIEW_DELAY_MS = 300
@@ -17,7 +24,12 @@ export const HOVER_PREVIEW_DELAY_MS = 300
 export type CarryPoint = { clientX: number; clientY: number }
 
 type ItemsTabProps = {
+  /** 列哪一种条目。 */
+  kind: ItemKind
   catalog: ComponentCatalog
+  /** 搜索词和选中的分类，由外面记着：页签切走时这里会卸掉，切回来还要在。 */
+  filter: ItemFilter
+  onFilterChange: (filter: ItemFilter) => void
   /** 页面的源，悬停预览按它找组件库的文件。 */
   origin: string
   /** 点「加到播放头」。 */
@@ -28,12 +40,20 @@ type ItemsTabProps = {
   onDrop: (item: CatalogItem, point: CarryPoint) => void
 }
 
-export function ItemsTab({ catalog, origin, onAdd, onCarry, onDrop }: ItemsTabProps) {
-  const chips = itemChips(catalog)
-  const [chipValue, setChipValue] = useState('all')
-  const [query, setQuery] = useState('')
-  const chip = chips.find((candidate) => candidate.value === chipValue) ?? chips[0]
-  const items = chip === undefined ? [] : filterItems(catalog, chip, query)
+export function ItemsTab({
+  kind,
+  catalog,
+  filter,
+  onFilterChange,
+  origin,
+  onAdd,
+  onCarry,
+  onDrop,
+}: ItemsTabProps) {
+  const label = ITEM_KIND_LABEL[kind]
+  const chips = itemChips(catalog, kind)
+  const chip = chips.find((candidate) => candidate.value === filter.chip) ?? chips[0]
+  const items = chip === undefined ? [] : filterItems(catalog, chip, filter.query)
 
   // 预览只在停着的那一张卡上跑
   const [previewed, setPreviewed] = useState<string | null>(null)
@@ -51,19 +71,19 @@ export function ItemsTab({ catalog, origin, onAdd, onCarry, onDrop }: ItemsTabPr
   return (
     <div className="wf-items">
       <Input
-        aria-label="搜索组件"
+        aria-label={`搜索${label}`}
         leadingIcon="search"
-        onChange={(event) => setQuery(event.currentTarget.value)}
-        placeholder="搜索名字或分类"
+        onChange={(event) => onFilterChange({ ...filter, query: event.currentTarget.value })}
+        placeholder="搜索名称或分类"
         type="search"
-        value={query}
+        value={filter.query}
         wrapperClassName="wf-item-search"
       />
       <ChipGroup
-        aria-label="组件分类"
+        aria-label={`${label}分类`}
         className="wf-chips"
         onValueChange={(value) => {
-          if (value !== '') setChipValue(value)
+          if (value !== '') onFilterChange({ ...filter, chip: value })
         }}
         type="single"
         value={chip?.value ?? ''}
@@ -76,10 +96,10 @@ export function ItemsTab({ catalog, origin, onAdd, onCarry, onDrop }: ItemsTabPr
       </ChipGroup>
       {items.length === 0 ? (
         <p className="wf-items-empty" role="status">
-          暂无符合条件的组件，请更换关键词或分类
+          暂无符合条件的{label}，请更换关键词或分类
         </p>
       ) : (
-        <ul aria-label="组件" className="wf-item-grid">
+        <ul aria-label={label} className="wf-item-grid">
           {items.map((item) => (
             <li key={item.name}>
               <ItemCard

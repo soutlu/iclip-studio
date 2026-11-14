@@ -1,4 +1,4 @@
-/* 成片编辑器：上面从左到右是组件 / 音频栏、预览、右侧栏，下面是剪辑工具、时间线与视频素材区。
+/* 成片编辑器：上面从左到右是组件 / 块 / 音频栏、预览、右侧栏，下面是剪辑工具、时间线与视频素材区。
    外框沿用 editing/editor.css 的 .editor-dialog / .editor-header。 */
 
 .wf-dialog {
@@ -40,7 +40,7 @@
   scrollbar-width: thin;
 }
 
-/* ---- 左栏：素材 / 组件 ---- */
+/* ---- 左栏：组件 / 块 / 音频 ---- */
 
 .wf-side {
   display: flex;
@@ -1151,7 +1151,7 @@
   text-align: center;
 }
 
-/* ---- 组件栏 ---- */
+/* ---- 组件栏、块栏 ---- */
 
 .wf-side-body.is-items {
   display: flex;
@@ -2897,7 +2897,7 @@
 }
 
 /* 左右两栏一共要 608px，窗口不够宽时中间的预览会被挤没：改成纵向排开。预览定高，时间线面板照旧紧跟在
-   下面；右侧栏接在时间线下面、按内容高，在时间线上点了片段就在紧下面改它；组件栏定高接在最后。
+   下面；右侧栏接在时间线下面、按内容高，在时间线上点了片段就在紧下面改它；左栏定高接在最后。
    放不下时整个编辑区上下滚动 */
 @media (max-width: 1000px) {
   .wf-workspace {
@@ -2910,7 +2910,7 @@
     grid-template-rows: 248px minmax(max-content, 1fr) max-content 360px;
   }
 
-  /* 组件栏变成通栏，卡片按栏宽多排几列，不跟着拉大 */
+  /* 左栏变成通栏，卡片按栏宽多排几列，不跟着拉大 */
   .wf-item-grid {
     grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
   }

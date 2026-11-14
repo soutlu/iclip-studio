@@ -25,12 +25,12 @@ import type { CatalogVariable, ComponentCatalog, VariableValue } from './composi
 import {
   isMediaClip,
   type ClipAttribute,
-  type ClipKind,
   type FilmClip,
   type HostClip,
   type MediaClip,
 } from './composition/film'
 import { Keys, Tool } from './editor-toolbar'
+import { ITEM_KIND_LABEL } from './items'
 import {
   parseGainInput,
   parseRateInput,
@@ -68,7 +68,18 @@ type Props = {
 
 type AttributeChanges = Readonly<Partial<Record<ClipAttribute, string | null>>>
 
-const KIND_LABEL: Record<ClipKind, string> = { video: '视频', host: '组件', audio: '音频' }
+/** 片段的种类；组件或块的片段按条目在组件库里的种类写，组件库里没有这个条目时不写。 */
+const kindLabel = (clip: FilmClip, catalog: ComponentCatalog): string | undefined => {
+  if (clip.kind === 'video') return '视频'
+  if (clip.kind === 'audio') return '音频'
+  const kind = catalog.items.find((item) => item.name === clip.item)?.kind
+  return kind === undefined ? undefined : ITEM_KIND_LABEL[kind]
+}
+
+function KindLabel({ clip, catalog }: { clip: FilmClip; catalog: ComponentCatalog }) {
+  const label = kindLabel(clip, catalog)
+  return label === undefined ? null : <span className="wf-inspector-kind">{label}</span>
+}
 
 // 照参照的工作台：改可填项停下 300 毫秒再写进成片
 const COMMIT_DELAY_MS = 300
@@ -114,7 +125,7 @@ export function FilmInspector({ selected, ...rest }: Props) {
             {selected.map((clip) => (
               <li key={clip.id}>
                 <span className="wf-inspector-multi-name">{clip.label}</span>
-                <span className="wf-inspector-kind">{KIND_LABEL[clip.kind]}</span>
+                <KindLabel catalog={rest.catalog} clip={clip} />
               </li>
             ))}
           </ul>
@@ -207,7 +218,7 @@ function ClipInspector({
     <>
       <header className="wf-inspector-head">
         <h3 className="wf-inspector-name">{clip.label}</h3>
-        <span className="wf-inspector-kind">{KIND_LABEL[clip.kind]}</span>
+        <KindLabel catalog={catalog} clip={clip} />
         <span className="wf-inspector-actions">
           <Tool
             icon={
@@ -708,7 +719,7 @@ function Readout({
 }
 
 /**
- * 「内容」：组件条目的可填项，一项一行。改了先留在这里，停下 300 毫秒再整串写进片段；
+ * 「内容」：条目的可填项，一项一行。改了先留在这里，停下 300 毫秒再整串写进片段；
  * 几项一起改时合成一次写。失焦、换选中的片段时把没写的立刻写进去。
  */
 function ContentFields({
