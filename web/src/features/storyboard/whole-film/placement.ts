@@ -1,4 +1,4 @@
-import type { FilmBlock } from './composition/film'
+import type { FilmClip } from './composition/film'
 import {
   resolveNearestFreeStart,
   resolveZoneDropPlacement,
@@ -7,16 +7,16 @@ import {
 /** 时间线上的区：画面区（视频片段和组件或块的片段）在上，声音区（音频片段）在下。 */
 export type Zone = 'visual' | 'audio'
 
-export const zoneOf = (block: Pick<FilmBlock, 'kind'>): Zone =>
-  block.kind === 'audio' ? 'audio' : 'visual'
+export const zoneOf = (clip: Pick<FilmClip, 'kind'>): Zone =>
+  clip.kind === 'audio' ? 'audio' : 'visual'
 
 /** 一行：哪个区的第几号。两个区的行号各算各的。 */
 export type RowKey = { zone: Zone; track: number }
 
-export type Row = RowKey & { blocks: readonly FilmBlock[] }
+export type Row = RowKey & { clips: readonly FilmClip[] }
 
-export const onRow = (block: FilmBlock, row: RowKey): boolean =>
-  zoneOf(block) === row.zone && block.track === row.track
+export const onRow = (clip: FilmClip, row: RowKey): boolean =>
+  zoneOf(clip) === row.zone && clip.track === row.track
 
 /**
  * 片段要去的行：已有的一行，或者在时间线上第 `insertAt` 行的位置为 `zone` 新开一行
@@ -31,17 +31,17 @@ export const sameRow = (left: RowTarget, right: RowTarget): boolean =>
     : 'insertAt' in left && 'insertAt' in right && left.insertAt === right.insertAt)
 
 /** 按行分好的片段，按时间线上从上往下：画面区各行、声音区各行，区里行号小的在上面；行里按开始时间排。 */
-export const rowsOf = (blocks: readonly FilmBlock[]): Row[] =>
+export const rowsOf = (clips: readonly FilmClip[]): Row[] =>
   (['visual', 'audio'] as const).flatMap((zone) => {
-    const rows = new Map<number, FilmBlock[]>()
-    for (const block of blocks)
-      if (zoneOf(block) === zone) rows.set(block.track, [...(rows.get(block.track) ?? []), block])
+    const rows = new Map<number, FilmClip[]>()
+    for (const clip of clips)
+      if (zoneOf(clip) === zone) rows.set(clip.track, [...(rows.get(clip.track) ?? []), clip])
     return [...rows.entries()]
       .sort(([left], [right]) => left - right)
       .map(([track, row]) => ({
         zone,
         track,
-        blocks: row.toSorted((left, right) => left.start - right.start),
+        clips: row.toSorted((left, right) => left.start - right.start),
       }))
   })
 
@@ -49,19 +49,19 @@ export const rowsOf = (blocks: readonly FilmBlock[]): Row[] =>
  * 主轨的行号：画面区最上面那一行（行号不一定从 0 开始）；画面区还没有片段时是 0。
  * 波纹编辑补位、没给落点的镜头接在末尾，都认它。
  */
-export const topTrack = (blocks: readonly FilmBlock[]): number => {
-  const tracks = blocks.filter((block) => zoneOf(block) === 'visual').map((block) => block.track)
+export const topTrack = (clips: readonly FilmClip[]): number => {
+  const tracks = clips.filter((clip) => zoneOf(clip) === 'visual').map((clip) => clip.track)
   return tracks.length === 0 ? 0 : Math.min(...tracks)
 }
 
 /** `row` 这一行从 `start` 起长 `duration` 毫秒的这段时间里有没有片段。 */
-export const rowBusy = (row: Pick<Row, 'blocks'>, start: number, duration: number): boolean =>
-  row.blocks.some((block) => block.start < start + duration && start < block.start + block.duration)
+export const rowBusy = (row: Pick<Row, 'clips'>, start: number, duration: number): boolean =>
+  row.clips.some((clip) => clip.start < start + duration && start < clip.start + clip.duration)
 
 /** 这一行是不是隐藏着（声音区的行就是静音）：行里有片段，而且每个片段都隐藏了。 */
-export const rowHidden = (blocks: readonly FilmBlock[], row: RowKey): boolean => {
-  const members = blocks.filter((block) => onRow(block, row))
-  return members.length > 0 && members.every((block) => block.hidden)
+export const rowHidden = (clips: readonly FilmClip[], row: RowKey): boolean => {
+  const members = clips.filter((clip) => onRow(clip, row))
+  return members.length > 0 && members.every((clip) => clip.hidden)
 }
 
 /** 新开一行时别的片段要换成的行号；行号没变的不列。 */
@@ -74,19 +74,19 @@ export type Renumbering = ReadonlyMap<string, number>
  * `movedId` 是要搬进新行的那个片段：它原来那一行只剩它时，那一行就不再算。
  */
 export const rowOpening = (
-  blocks: readonly FilmBlock[],
+  clips: readonly FilmClip[],
   zone: Zone,
   insertAt: number,
   movedId?: string,
 ): { track: number; renumber: Renumbering } => {
-  const kept = rowsOf(blocks)
-    .map((row, at) => ({ ...row, at, blocks: row.blocks.filter((block) => block.id !== movedId) }))
-    .filter((row) => row.zone === zone && row.blocks.length > 0)
+  const kept = rowsOf(clips)
+    .map((row, at) => ({ ...row, at, clips: row.clips.filter((clip) => clip.id !== movedId) }))
+    .filter((row) => row.zone === zone && row.clips.length > 0)
   const track = kept.filter((row) => row.at < insertAt).length
   const renumber = new Map<string, number>()
   kept.forEach((row, index) => {
     const next = index < track ? index : index + 1
-    for (const block of row.blocks) if (block.track !== next) renumber.set(block.id, next)
+    for (const clip of row.clips) if (clip.track !== next) renumber.set(clip.id, next)
   })
   return { track, renumber }
 }
@@ -134,19 +134,19 @@ export type Landing = { track: number; start: number }
  * 同一行的片段不能重叠，放在离指针最近的空位；没有够长的空位时接在这一行最后一个片段后面。
  */
 export const landingOn = (
-  blocks: readonly FilmBlock[],
+  clips: readonly FilmClip[],
   row: RowKey,
   timeMs: number,
   duration: number,
 ): Landing => {
   const start = resolveNearestFreeStart(
-    blocks
-      .filter((block) => onRow(block, row))
-      .map((block) => ({
-        id: block.id,
-        start: block.start / 1000,
-        duration: block.duration / 1000,
-        track: block.track,
+    clips
+      .filter((clip) => onRow(clip, row))
+      .map((clip) => ({
+        id: clip.id,
+        start: clip.start / 1000,
+        duration: clip.duration / 1000,
+        track: clip.track,
       })),
     row.track,
     Math.max(0, timeMs) / 1000,

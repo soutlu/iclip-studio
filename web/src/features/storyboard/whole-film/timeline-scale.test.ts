@@ -9,7 +9,7 @@ import {
   timelineScale,
   zoomLabel,
   zoomScrollLeft,
-  zoomToBlocks,
+  zoomToClips,
   zoomToSlider,
 } from './timeline-scale'
 
@@ -73,7 +73,7 @@ describe('缩放到选中的片段', () => {
   const WIDTH = 1_000
 
   it('选中的片段合起来从 2 秒到 6 秒：每秒 238 像素，滚到起点左边 24 像素', () => {
-    const target = zoomToBlocks(
+    const target = zoomToClips(
       [
         { start: 3_000, duration: 3_000 },
         { start: 2_000, duration: 2_000 },
@@ -87,20 +87,20 @@ describe('缩放到选中的片段', () => {
   })
 
   it('百分比取整，最小 10%、最大放到一帧 48 像素；从 0 秒开始的不往左滚', () => {
-    expect(zoomToBlocks([{ start: 0, duration: 3_000 }], WIDTH, FIT_PPS)).toEqual({
+    expect(zoomToClips([{ start: 0, duration: 3_000 }], WIDTH, FIT_PPS)).toEqual({
       zoom: { mode: 'manual', percent: 635 },
       scrollLeft: 0,
     })
-    expect(zoomToBlocks([{ start: 0, duration: 1_000_000 }], WIDTH, FIT_PPS)?.zoom.percent).toBe(10)
+    expect(zoomToClips([{ start: 0, duration: 1_000_000 }], WIDTH, FIT_PPS)?.zoom.percent).toBe(10)
     // 30 帧一秒、一帧 48 像素是每秒 1440 像素，是 50 的 2880%
-    const tiny = zoomToBlocks([{ start: 1_000, duration: 10 }], WIDTH, FIT_PPS)
+    const tiny = zoomToClips([{ start: 1_000, duration: 10 }], WIDTH, FIT_PPS)
     expect(tiny).toEqual({ zoom: { mode: 'manual', percent: 2_880 }, scrollLeft: 1_440 - 24 })
   })
 
   it('没有选中的片段、片段没有长度、还没量出宽度时不缩放', () => {
-    expect(zoomToBlocks([], WIDTH, FIT_PPS)).toBeNull()
-    expect(zoomToBlocks([{ start: 1_000, duration: 0 }], WIDTH, FIT_PPS)).toBeNull()
-    expect(zoomToBlocks([{ start: 1_000, duration: 500 }], 0, FIT_PPS)).toBeNull()
+    expect(zoomToClips([], WIDTH, FIT_PPS)).toBeNull()
+    expect(zoomToClips([{ start: 1_000, duration: 0 }], WIDTH, FIT_PPS)).toBeNull()
+    expect(zoomToClips([{ start: 1_000, duration: 500 }], 0, FIT_PPS)).toBeNull()
   })
 })
 

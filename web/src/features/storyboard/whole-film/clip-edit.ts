@@ -1,5 +1,5 @@
 import type { Edge } from '../editing/timeline-drag'
-import { isMediaBlock, MIN_BLOCK_MS, type FilmBlock } from './composition/film'
+import { isMediaClip, MIN_CLIP_MS, type FilmClip } from './composition/film'
 import { onRow, topTrack, zoneOf, type RowKey } from './placement'
 import { resolveNearestFreeStart } from './vendor/hyperframes-studio/player/components/timelineCollision'
 import {
@@ -14,18 +14,18 @@ import {
  */
 export type Timing = { start: number; duration: number; mediaStart: number }
 
-export const timingOf = (block: FilmBlock): Timing => ({
-  start: block.start,
-  duration: block.duration,
-  mediaStart: isMediaBlock(block) ? block.mediaStart : block.playbackStart,
+export const timingOf = (clip: FilmClip): Timing => ({
+  start: clip.start,
+  duration: clip.duration,
+  mediaStart: isMediaClip(clip) ? clip.mediaStart : clip.playbackStart,
 })
 
-const endOf = (block: Pick<FilmBlock, 'start' | 'duration'>) => block.start + block.duration
+const endOf = (clip: Pick<FilmClip, 'start' | 'duration'>) => clip.start + clip.duration
 
-const rowKeyOf = (block: FilmBlock): RowKey => ({ zone: zoneOf(block), track: block.track })
+const rowKeyOf = (clip: FilmClip): RowKey => ({ zone: zoneOf(clip), track: clip.track })
 
 /** 片段的速度：成片里的 1 毫秒用掉素材的几毫秒。组件或块的片段是 1。 */
-export const rateOf = (block: FilmBlock): number => (isMediaBlock(block) ? block.playbackRate : 1)
+export const rateOf = (clip: FilmClip): number => (isMediaClip(clip) ? clip.playbackRate : 1)
 
 /**
  * 裁 `edge` 这一端时，这一端能到的范围（成片的毫秒）：不压到同一行的邻居，片段不短于最短长度；
@@ -34,37 +34,34 @@ export const rateOf = (block: FilmBlock): number => (isMediaBlock(block) ? block
  * `sourceMs` 是视频片段、音频片段素材的总长，还不知道时结尾不许往外拉；组件或块的片段不看它，结尾不设上限。
  */
 export const trimBounds = (
-  block: FilmBlock,
+  clip: FilmClip,
   edge: Edge,
-  blocks: readonly FilmBlock[],
+  clips: readonly FilmClip[],
   sourceMs: number | undefined,
 ): { min: number; max: number } => {
-  const row = blocks.filter((other) => onRow(other, rowKeyOf(block)) && other.id !== block.id)
-  const { mediaStart } = timingOf(block)
-  const rate = rateOf(block)
+  const row = clips.filter((other) => onRow(other, rowKeyOf(clip)) && other.id !== clip.id)
+  const { mediaStart } = timingOf(clip)
+  const rate = rateOf(clip)
   if (edge === 'start') {
-    const previousEnd = Math.max(
-      0,
-      ...row.filter((other) => endOf(other) <= block.start).map(endOf),
-    )
+    const previousEnd = Math.max(0, ...row.filter((other) => endOf(other) <= clip.start).map(endOf))
     return {
-      min: Math.max(previousEnd, Math.ceil(block.start - mediaStart / rate)),
-      max: endOf(block) - MIN_BLOCK_MS,
+      min: Math.max(previousEnd, Math.ceil(clip.start - mediaStart / rate)),
+      max: endOf(clip) - MIN_CLIP_MS,
     }
   }
   // 后面没有片段时是无穷大：只受素材长度限制
   const nextStart = Math.min(
-    ...row.filter((other) => other.start >= endOf(block)).map((other) => other.start),
+    ...row.filter((other) => other.start >= endOf(clip)).map((other) => other.start),
   )
   // 组件的长度属于组件自己的时间线，不拿来卡裁剪
-  const sourceEnd = !isMediaBlock(block)
+  const sourceEnd = !isMediaClip(clip)
     ? Infinity
     : sourceMs === undefined
-      ? endOf(block)
-      : Math.floor(block.start + (sourceMs - mediaStart) / rate)
+      ? endOf(clip)
+      : Math.floor(clip.start + (sourceMs - mediaStart) / rate)
   return {
-    min: block.start + MIN_BLOCK_MS,
-    max: Math.max(endOf(block), Math.min(nextStart, sourceEnd)),
+    min: clip.start + MIN_CLIP_MS,
+    max: Math.max(endOf(clip), Math.min(nextStart, sourceEnd)),
   }
 }
 
@@ -73,39 +70,39 @@ export const trimBounds = (
  * 动的是挪过的时间 × 速度（取整到毫秒，不小于 0）。
  */
 export const trimmed = (
-  block: FilmBlock,
+  clip: FilmClip,
   edge: Edge,
   timeMs: number,
   bounds: { min: number; max: number },
 ): Timing => {
   const at = Math.min(bounds.max, Math.max(bounds.min, timeMs))
-  const { mediaStart } = timingOf(block)
-  if (edge === 'end') return { start: block.start, duration: at - block.start, mediaStart }
-  const delta = at - block.start
+  const { mediaStart } = timingOf(clip)
+  if (edge === 'end') return { start: clip.start, duration: at - clip.start, mediaStart }
+  const delta = at - clip.start
   return {
     start: at,
-    duration: block.duration - delta,
-    mediaStart: Math.max(0, Math.round(mediaStart + delta * rateOf(block))),
+    duration: clip.duration - delta,
+    mediaStart: Math.max(0, Math.round(mediaStart + delta * rateOf(clip))),
   }
 }
 
-const edgeOf = (block: FilmBlock, edge: Edge) => (edge === 'start' ? block.start : endOf(block))
+const edgeOf = (clip: FilmClip, edge: Edge) => (edge === 'start' ? clip.start : endOf(clip))
 
 /** 视频片段、音频片段素材的总长（毫秒）：还不知道时是 undefined。组件或块的片段不看它。 */
-export type SourceLength = (block: FilmBlock) => number | undefined
+export type SourceLength = (clip: FilmClip) => number | undefined
 
 /**
  * 几个片段一起裁 `edge` 这一端、挪同一个量时，这个量能取的范围（毫秒）：
  * 每个片段这一端按 `trimBounds` 能到哪里，取最受限的那个。
  */
 export const groupTrimRange = (
-  members: readonly FilmBlock[],
+  members: readonly FilmClip[],
   edge: Edge,
-  blocks: readonly FilmBlock[],
+  clips: readonly FilmClip[],
   sourceMs: SourceLength,
 ): { min: number; max: number } => {
   const ranges = members.map((member) => {
-    const bounds = trimBounds(member, edge, blocks, sourceMs(member))
+    const bounds = trimBounds(member, edge, clips, sourceMs(member))
     return { min: bounds.min - edgeOf(member, edge), max: bounds.max - edgeOf(member, edge) }
   })
   return {
@@ -116,13 +113,13 @@ export const groupTrimRange = (
 
 /** 几个片段一起把 `edge` 这一端挪 `delta` 毫秒（先收进 `groupTrimRange`）之后，各自的起止和入点。 */
 export const groupTrimmed = (
-  members: readonly FilmBlock[],
+  members: readonly FilmClip[],
   edge: Edge,
   delta: number,
-  blocks: readonly FilmBlock[],
+  clips: readonly FilmClip[],
   sourceMs: SourceLength,
 ): Map<string, Timing> => {
-  const range = groupTrimRange(members, edge, blocks, sourceMs)
+  const range = groupTrimRange(members, edge, clips, sourceMs)
   const shift = Math.min(range.max, Math.max(range.min, delta))
   return new Map(
     members.map((member) => [
@@ -131,7 +128,7 @@ export const groupTrimmed = (
         member,
         edge,
         edgeOf(member, edge) + shift,
-        trimBounds(member, edge, blocks, sourceMs(member)),
+        trimBounds(member, edge, clips, sourceMs(member)),
       ),
     ]),
   )
@@ -148,13 +145,13 @@ export type GroupShift = { delta: number; track: number | null }
  * 被抓的片段留在自己那一行重新找。
  */
 export const groupShift = (
-  grabbed: FilmBlock,
+  grabbed: FilmClip,
   group: ReadonlySet<string>,
-  blocks: readonly FilmBlock[],
+  clips: readonly FilmClip[],
   wantedDelta: number,
   track: number | null,
 ): GroupShift => {
-  const members = blocks.filter((block) => group.has(block.id))
+  const members = clips.filter((clip) => group.has(clip.id))
   const zone = zoneOf(grabbed)
   // 按被抓的片段的起点算：整组能挪到的最早的位置
   const lowest = grabbed.start - Math.min(...members.map((member) => member.start))
@@ -166,7 +163,7 @@ export const groupShift = (
       const on: RowKey | null =
         member.id === grabbed.id ? (row === null ? null : { zone, track: row }) : rowKeyOf(member)
       const offset = member.start - grabbed.start
-      return blocks
+      return clips
         .filter((other) => on !== null && onRow(other, on) && !group.has(other.id))
         .map((other) => ({
           id: `${member.id}:${other.id}`,
@@ -178,7 +175,7 @@ export const groupShift = (
     const start = resolveNearestFreeStart(busy, 0, wanted / 1000, 0, null, lowest / 1000)
     return Math.round(start * 1000) - grabbed.start
   }
-  const overlapsGrabbed = (member: FilmBlock) =>
+  const overlapsGrabbed = (member: FilmClip) =>
     member.start < endOf(grabbed) && grabbed.start < endOf(member)
   const blocked =
     track !== null &&
@@ -201,17 +198,13 @@ export type GapClosing = {
 }
 
 /** 在 `row` 这一行的 `timeMs` 处点右键时，两种合拢各自要挪哪些片段。 */
-export const gapClosing = (
-  blocks: readonly FilmBlock[],
-  row: RowKey,
-  timeMs: number,
-): GapClosing => {
-  const members = blocks
-    .filter((block) => onRow(block, row))
-    .map((block) => ({
-      id: block.id,
-      start: block.start / 1000,
-      duration: block.duration / 1000,
+export const gapClosing = (clips: readonly FilmClip[], row: RowKey, timeMs: number): GapClosing => {
+  const members = clips
+    .filter((clip) => onRow(clip, row))
+    .map((clip) => ({
+      id: clip.id,
+      start: clip.start / 1000,
+      duration: clip.duration / 1000,
       track: row.track,
     }))
   const starts = (shifts: readonly { key: string; newStart: number }[]) =>
@@ -228,18 +221,18 @@ export const gapClosing = (
  * 每个片段挪的是它前面被删掉的主轨上的片段的总长。别的行不动。
  */
 export const rippleStarts = (
-  blocks: readonly FilmBlock[],
+  clips: readonly FilmClip[],
   removed: ReadonlySet<string>,
 ): Map<string, number> => {
-  const main = blocks.filter((block) => onRow(block, { zone: 'visual', track: topTrack(blocks) }))
-  const gone = main.filter((block) => removed.has(block.id))
+  const main = clips.filter((clip) => onRow(clip, { zone: 'visual', track: topTrack(clips) }))
+  const gone = main.filter((clip) => removed.has(clip.id))
   const starts = new Map<string, number>()
-  for (const block of main) {
-    if (removed.has(block.id)) continue
+  for (const clip of main) {
+    if (removed.has(clip.id)) continue
     const shift = gone
-      .filter((deleted) => deleted.start < block.start)
+      .filter((deleted) => deleted.start < clip.start)
       .reduce((sum, deleted) => sum + deleted.duration, 0)
-    if (shift > 0) starts.set(block.id, block.start - shift)
+    if (shift > 0) starts.set(clip.id, clip.start - shift)
   }
   return starts
 }

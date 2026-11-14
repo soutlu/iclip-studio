@@ -79,15 +79,15 @@ export const sliderToZoom = (slider: number, fitPps: number): Zoom => ({
  * `scrollLeft` 是时间线要横向滚到的位置，让这一段的起点离时间区左边 24 像素。
  * 没有长度大于 0 的片段、或者还没量出宽度时是 null。
  */
-export const zoomToBlocks = (
-  blocks: readonly Pick<Span, 'start' | 'duration'>[],
+export const zoomToClips = (
+  clips: readonly Pick<Span, 'start' | 'duration'>[],
   viewportWidth: number,
   fitPps: number,
 ): { zoom: Zoom; scrollLeft: number } | null => {
   const fitted = zoomToSelectedClips({
-    clips: blocks.map((block) => ({
-      start: block.start / 1000,
-      end: (block.start + block.duration) / 1000,
+    clips: clips.map((clip) => ({
+      start: clip.start / 1000,
+      end: (clip.start + clip.duration) / 1000,
     })),
     viewportWidth,
     contentOrigin: 0,

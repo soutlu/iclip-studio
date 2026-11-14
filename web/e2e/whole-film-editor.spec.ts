@@ -9,12 +9,12 @@ const openWholeFilm = async (page: Page, panel: Locator) => {
   return dialog
 }
 
-const draftSaved = (page: Page, blocks: number) =>
+const draftSaved = (page: Page, clips: number) =>
   page.waitForRequest(
     (request) =>
       request.method() === 'PUT' &&
       request.url().includes('/whole-film/draft') &&
-      ((request.postDataJSON() as { html: string }).html.match(/<video /g) ?? []).length === blocks,
+      ((request.postDataJSON() as { html: string }).html.match(/<video /g) ?? []).length === clips,
   )
 
 const readyPlayer = async (dialog: Locator) => {
@@ -76,8 +76,8 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   await expect.poll(playerTime).toBeLessThan(0.1)
 
   // 缩放：放大一档片段变宽一倍，读数从「适应」变成百分比；点「适应宽度」回去
-  const block = dialog.getByRole('group', { name: '第 1 行' }).locator('[data-block-id]').first()
-  const widthOf = async () => (await block.boundingBox())?.width ?? 0
+  const clip = dialog.getByRole('group', { name: '第 1 行' }).locator('[data-clip-id]').first()
+  const widthOf = async () => (await clip.boundingBox())?.width ?? 0
   const fitted = await widthOf()
   await expect(toolbar.getByText('适应', { exact: true })).toBeVisible()
   await toolbar.getByRole('button', { name: '放大时间线' }).click()
@@ -91,12 +91,12 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   expect(Math.abs((await widthOf()) - fitted)).toBeLessThan(1)
 
   // 关掉缩略图：片段上不画画面，只剩名字和声音
-  await expect(block.locator('.wf-clip-frames')).toBeVisible()
+  await expect(clip.locator('.wf-clip-frames')).toBeVisible()
   await toolbar.getByRole('button', { name: '显示缩略图' }).click()
-  await expect(block.locator('.wf-clip-frames')).toBeHidden()
-  await expect(block.locator('.wf-clip-label')).toBeVisible()
+  await expect(clip.locator('.wf-clip-frames')).toBeHidden()
+  await expect(clip.locator('.wf-clip-label')).toBeVisible()
   await toolbar.getByRole('button', { name: '显示缩略图' }).click()
-  await expect(block.locator('.wf-clip-frames')).toBeVisible()
+  await expect(clip.locator('.wf-clip-frames')).toBeVisible()
 
   const undone = draftSaved(page, 1)
   await toolbar.getByRole('button', { name: '撤销' }).click()
@@ -319,8 +319,8 @@ test('组件栏：搜到组件点「加到播放头」、拖一个到时间线�
     .getByRole('button', { name: /^生成 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
-  const { html: withPicture } = (await first).postDataJSON() as { html: string }
-  const pictureSeconds = Number(/<video [^>]*data-duration="([^"]+)"/.exec(withPicture)?.[1])
+  const { html: withVideo } = (await first).postDataJSON() as { html: string }
+  const videoSeconds = Number(/<video [^>]*data-duration="([^"]+)"/.exec(withVideo)?.[1])
 
   const side = dialog.getByRole('complementary', { name: '组件和音频' })
   await side.getByRole('searchbox', { name: '搜索组件' }).fill('渐变')
@@ -373,12 +373,12 @@ test('组件栏：搜到组件点「加到播放头」、拖一个到时间线�
   // 6 秒长、从 0 开始的那个片段量出每秒多少像素
   const sceneBox = await dialog
     .getByRole('group', { name: '第 2 行' })
-    .locator('[data-block-id]')
+    .locator('[data-clip-id]')
     .first()
     .boundingBox()
   const lane = await row.boundingBox()
   if (sceneBox === null || lane === null) throw new Error('时间线尚未布局')
-  const target = pictureSeconds + 2.5
+  const target = videoSeconds + 2.5
   const dropX = sceneBox.x + (sceneBox.width / 6) * target
   const from = await overlay.boundingBox()
   if (from === null) throw new Error('卡片尚未布局')
@@ -510,8 +510,8 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、�
     .getByRole('button', { name: /^生成 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
-  const { html: withPicture } = (await first).postDataJSON() as { html: string }
-  const pictureSeconds = Number(/<video [^>]*data-duration="([^"]+)"/.exec(withPicture)?.[1])
+  const { html: withVideo } = (await first).postDataJSON() as { html: string }
+  const videoSeconds = Number(/<video [^>]*data-duration="([^"]+)"/.exec(withVideo)?.[1])
   const progress = dialog
     .getByRole('group', { name: '播放控制' })
     .getByRole('slider', { name: '播放进度' })
@@ -551,7 +551,7 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、�
   await expect(music).toBeVisible()
   await expect(guitar).toContainText('00:30 · 已使用')
   await expect(progress).toHaveAttribute('aria-valuetext', '00:01.00 / 00:31.00')
-  expect(pictureSeconds).toBeLessThan(31)
+  expect(videoSeconds).toBeLessThan(31)
 
   // 点「已使用」的那一行：选中它对应的片段
   await guitar.getByRole('button', { name: '轻快原声吉他，适合秋季穿搭，已使用' }).click()

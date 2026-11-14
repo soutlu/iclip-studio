@@ -1,4 +1,4 @@
-import type { FilmBlock } from './composition/film'
+import type { FilmClip } from './composition/film'
 import { rowsOf, type RowTarget } from './placement'
 import {
   computeStackingPatches,
@@ -9,7 +9,7 @@ import {
  * 新加的片段的叠放顺序：叠在最上面。`existing` 是加之前文件里所有的片段（三种都算），
  * `placed` 是这一次已经放下的片段数。
  */
-export const newBlockZ = (existing: readonly FilmBlock[], placed: number): number =>
+export const newClipZ = (existing: readonly FilmClip[], placed: number): number =>
   Math.max(1, existing.length + placed + 1)
 
 /**
@@ -18,12 +18,12 @@ export const newBlockZ = (existing: readonly FilmBlock[], placed: number): numbe
  * 返回 null，不调叠放顺序。
  */
 export const rowMoveDirection = (
-  blocks: readonly FilmBlock[],
+  clips: readonly FilmClip[],
   id: string,
   row: RowTarget,
 ): StackingDirection | null => {
-  const rows = rowsOf(blocks)
-  const current = rows.findIndex((lane) => lane.blocks.some((block) => block.id === id))
+  const rows = rowsOf(clips)
+  const current = rows.findIndex((lane) => lane.clips.some((clip) => clip.id === id))
   const aimed =
     'insertAt' in row
       ? row.insertAt
@@ -34,22 +34,22 @@ export const rowMoveDirection = (
 /**
  * 换行以后被挪的片段 `id` 的叠放顺序；不用改时返回 undefined。别的片段一律不动。
  *
- * `blocks` 是文件里所有的片段，按文件里的先后，行号和起止都是换完之后的。
+ * `clips` 是文件里所有的片段，按文件里的先后，行号和起止都是换完之后的。
  * 往上挪：抬到它现在压着的、时间上重叠的片段之上；往下挪：降到盖着它的、时间上重叠的片段之下，
  * 但不低于 0。音频片段不参与。
  */
 export const restackedZ = (
-  blocks: readonly FilmBlock[],
+  clips: readonly FilmClip[],
   id: string,
   direction: StackingDirection,
 ): number | undefined => {
-  const elements = blocks.map((block, domIndex) => ({
-    key: block.id,
-    start: block.start / 1000,
-    duration: block.duration / 1000,
-    track: block.track,
-    zIndex: block.kind === 'audio' ? 0 : block.z,
-    isAudio: block.kind === 'audio',
+  const elements = clips.map((clip, domIndex) => ({
+    key: clip.id,
+    start: clip.start / 1000,
+    duration: clip.duration / 1000,
+    track: clip.track,
+    zIndex: clip.kind === 'audio' ? 0 : clip.z,
+    isAudio: clip.kind === 'audio',
     domIndex,
   }))
   return computeStackingPatches(elements, [id], direction)[0]?.zIndex

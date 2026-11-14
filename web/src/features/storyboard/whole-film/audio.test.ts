@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
-import { audio, component, picture } from '@/testing/whole-film'
+import { audio, host, video } from '@/testing/whole-film'
 import {
   audioPlayheadSpot,
   audioTitleOf,
   durationLabel,
   filterAudio,
-  firstAudioBlockOf,
+  firstAudioClipOf,
 } from './audio'
 import { rowOpening } from './placement'
 
@@ -44,14 +44,14 @@ describe('音频的名字和筛选', () => {
 
 describe('成片里用着的音频', () => {
   it('用着这条音频的片段里开始得最早的那个；别的记录、视频片段不算', () => {
-    const blocks = [
+    const clips = [
       audio({ id: 'late', start: 5000 }),
-      picture({ jobId: 'other' }),
+      video({ jobId: 'other' }),
       audio({ id: 'early', start: 1000, track: 1 }),
       audio({ id: 'else', jobId: 'other-audio', start: 0 }),
     ]
-    expect(firstAudioBlockOf(blocks, audio().jobId)?.id).toBe('early')
-    expect(firstAudioBlockOf(blocks, 'missing')).toBeUndefined()
+    expect(firstAudioClipOf(clips, audio().jobId)?.id).toBe('early')
+    expect(firstAudioClipOf(clips, 'missing')).toBeUndefined()
   })
 })
 
@@ -61,38 +61,38 @@ describe('音频点「加到播放头」时放在哪', () => {
       row: { zone: 'audio', insertAt: 0 },
       start: 1500,
     })
-    const visual = [picture(), component({ track: 1 })]
+    const visual = [video(), host({ track: 1 })]
     const spot = audioPlayheadSpot(visual, 1500, 30_000)
     expect(spot).toEqual({ row: { zone: 'audio', insertAt: 2 }, start: 1500 })
     expect(rowOpening(visual, 'audio', 2).track).toBe(0)
   })
 
   it('声音区第一行在这段时间空着：放进这一行（行号按它自己的）', () => {
-    const blocks = [
-      picture({ duration: 9000 }),
+    const clips = [
+      video({ duration: 9000 }),
       audio({ id: 'a', track: 2, start: 0, duration: 1000 }),
       audio({ id: 'b', track: 2, start: 9000, duration: 1000 }),
       audio({ id: 'c', track: 3, start: 1000, duration: 6000 }),
     ]
-    expect(audioPlayheadSpot(blocks, 1000, 8000)).toEqual({
+    expect(audioPlayheadSpot(clips, 1000, 8000)).toEqual({
       row: { zone: 'audio', track: 2 },
       start: 1000,
     })
   })
 
   it('声音区第一行在这段时间有片段：在它下面紧挨着新开一行，下面的声音行往后顺延', () => {
-    const blocks = [
-      picture({ duration: 9000 }),
-      component({ track: 1 }),
+    const clips = [
+      video({ duration: 9000 }),
+      host({ track: 1 }),
       audio({ id: 'a', track: 0, start: 0, duration: 1000 }),
       audio({ id: 'b', track: 1, start: 0, duration: 9000 }),
     ]
-    const spot = audioPlayheadSpot(blocks, 999, 5000)
+    const spot = audioPlayheadSpot(clips, 999, 5000)
     expect(spot).toEqual({ row: { zone: 'audio', insertAt: 3 }, start: 999 })
-    const opened = rowOpening(blocks, 'audio', 3)
+    const opened = rowOpening(clips, 'audio', 3)
     expect(opened.track).toBe(1)
     expect(opened.renumber).toEqual(new Map([['b', 2]]))
     // 正好接在第一行的片段后面不算占着
-    expect(audioPlayheadSpot(blocks, 1000, 5000).row).toEqual({ zone: 'audio', track: 0 })
+    expect(audioPlayheadSpot(clips, 1000, 5000).row).toEqual({ zone: 'audio', track: 0 })
   })
 })

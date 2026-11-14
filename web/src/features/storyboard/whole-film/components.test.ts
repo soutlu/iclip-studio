@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { audio, component, fixtureCatalog, picture } from '@/testing/whole-film'
+import { audio, fixtureCatalog, host, video } from '@/testing/whole-film'
 import {
   componentChips,
   componentDurationMs,
@@ -89,7 +89,7 @@ describe('组件放进成片的时长', () => {
   it('条目写了时长就用它；没写时取 10 秒和成片现有总长里大的那个', () => {
     expect(componentDurationMs(item('fixture-scene'), [])).toBe(6000)
     const timeless = { ...item('fixture-scene'), duration: null }
-    expect(componentDurationMs(timeless, [picture({ duration: 4000 })])).toBe(10_000)
+    expect(componentDurationMs(timeless, [video({ duration: 4000 })])).toBe(10_000)
     expect(componentDurationMs(timeless, [audio({ start: 9000, duration: 3500 })])).toBe(12_500)
   })
 })
@@ -122,40 +122,40 @@ describe('点「加到播放头」时放在哪', () => {
   })
 
   it('block 类：第一行在这段时间空着就放进第一行（行号按它自己的）', () => {
-    const blocks = [
-      picture({ track: 2, start: 0, duration: 1000 }),
-      picture({ id: 'clip-2', track: 2, start: 8000, duration: 1000 }),
-      picture({ id: 'clip-3', track: 3, start: 1000, duration: 6000 }),
+    const clips = [
+      video({ track: 2, start: 0, duration: 1000 }),
+      video({ id: 'clip-2', track: 2, start: 8000, duration: 1000 }),
+      video({ id: 'clip-3', track: 3, start: 1000, duration: 6000 }),
     ]
-    expect(playheadSpot(blocks, scene, 1000, 6000)).toEqual({
+    expect(playheadSpot(clips, scene, 1000, 6000)).toEqual({
       row: { zone: 'visual', track: 2 },
       start: 1000,
     })
   })
 
   it('block 类：第一行在这段时间有片段，就在它下面紧挨着新开一行', () => {
-    const blocks = [
-      picture({ start: 0, duration: 1000 }),
-      picture({ id: 'clip-2', start: 6500, duration: 1000 }),
-      picture({ id: 'clip-3', track: 1, duration: 9000 }),
+    const clips = [
+      video({ start: 0, duration: 1000 }),
+      video({ id: 'clip-2', start: 6500, duration: 1000 }),
+      video({ id: 'clip-3', track: 1, duration: 9000 }),
     ]
-    expect(playheadSpot(blocks, scene, 999, 6000)).toEqual({
+    expect(playheadSpot(clips, scene, 999, 6000)).toEqual({
       row: { zone: 'visual', insertAt: 1 },
       start: 999,
     })
-    expect(playheadSpot(blocks, scene, 1000, 6000)).toEqual({
+    expect(playheadSpot(clips, scene, 1000, 6000)).toEqual({
       row: { zone: 'visual', insertAt: 1 },
       start: 1000,
     })
   })
 
   it('component 类：放在画面区最下面新开的一行，哪怕别的行空着；声音区的行不算', () => {
-    const blocks = [
-      picture({ start: 0, duration: 1000 }),
-      component({ track: 1, start: 0, duration: 1000 }),
+    const clips = [
+      video({ start: 0, duration: 1000 }),
+      host({ track: 1, start: 0, duration: 1000 }),
       audio(),
     ]
-    expect(playheadSpot(blocks, overlay, 5000, 4000)).toEqual({
+    expect(playheadSpot(clips, overlay, 5000, 4000)).toEqual({
       row: { zone: 'visual', insertAt: 2 },
       start: 5000,
     })

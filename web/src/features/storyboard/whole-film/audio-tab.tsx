@@ -31,9 +31,9 @@ import { useStableValue } from '../editing/use-stable-value'
 import { filmViewQuery } from '../film/film.api'
 import { isRunningStatus } from '../shots'
 import type { GenerationJob } from '../storyboard.api'
-import { audioTitleOf, durationLabel, filterAudio, firstAudioBlockOf } from './audio'
+import { audioTitleOf, durationLabel, filterAudio, firstAudioClipOf } from './audio'
 import type { CarryPoint } from './components-tab'
-import type { FilmBlock } from './composition/film'
+import type { FilmClip } from './composition/film'
 import type { NewAudio } from './use-film-session'
 import {
   refreshConversationMusic,
@@ -47,7 +47,7 @@ const MAX_PROMPT_CHARS = 3000
 type AudioTabProps = {
   conversationId: string
   /** 成片里现有的片段：看哪条音频用着、用在哪个片段上。 */
-  blocks: readonly FilmBlock[]
+  clips: readonly FilmClip[]
   /** 右键「加到播放头」或按 Enter。 */
   onAdd: (audio: NewAudio) => void
   /** 拖着一行移动；null 是拖动取消了。 */
@@ -55,7 +55,7 @@ type AudioTabProps = {
   /** 拖着一行松手。 */
   onDrop: (audio: NewAudio, point: CarryPoint) => void
   /** 点成片里用着的那一行：选中它对应的片段。 */
-  onReveal: (blockId: string) => void
+  onReveal: (clipId: string) => void
   onNotice: (message: string) => void
 }
 
@@ -94,7 +94,7 @@ const isReady = (job: GenerationJob): job is GenerationJob & { outputUrl: string
 
 export function AudioTab({
   conversationId,
-  blocks,
+  clips,
   onAdd,
   onCarry,
   onDrop,
@@ -242,7 +242,7 @@ export function AudioTab({
       ) : (
         <ul aria-label="音频" className="wf-audio-list">
           {shown.map((job) => {
-            const used = firstAudioBlockOf(blocks, job.id)
+            const used = firstAudioClipOf(clips, job.id)
             const ready = addable(job)
             return (
               <AudioRow

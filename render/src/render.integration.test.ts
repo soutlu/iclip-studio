@@ -12,15 +12,15 @@ import { openComposition } from '@hyperframes/sdk'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   writeFilm,
-  type AudioBlock,
-  type PictureBlock,
+  type AudioClip,
+  type VideoClip,
 } from '../../web/src/features/storyboard/whole-film/composition/film'
 import { checkFilm, localizedFilm } from './film'
 import { ExportQueue } from './jobs'
 import { loadLibrary, type ComponentLibrary } from './library'
 import { createProducerWorker } from './renderer'
 import { createExportServer } from './server'
-import { audio, component, memoryLogger, picture } from './testing'
+import { audio, host, memoryLogger, video } from './testing'
 
 const run = promisify(execFile)
 const REGISTRY_ROOT =
@@ -300,7 +300,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       id: exportId,
       conversationId: '99999999-8888-4777-8666-555555555555',
       film: writeFilm(
-        { canvas: FRAME, blocks: [picture({ src: clip, duration: 2000, mediaStart: 500 })] },
+        { canvas: FRAME, clips: [video({ src: clip, duration: 2000, mediaStart: 500 })] },
         (library as ComponentLibrary).catalog,
       ),
       media: { [clip]: { url: clip } },
@@ -340,8 +340,8 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     }
     expect(Number(probe.format.duration)).toBeGreaterThan(1.9)
     expect(Number(probe.format.duration)).toBeLessThan(2.15)
-    const video = probe.streams.find((stream) => stream.codec_type === 'video')
-    expect(video).toMatchObject({ width: 640, height: 360 })
+    const videoStream = probe.streams.find((stream) => stream.codec_type === 'video')
+    expect(videoStream).toMatchObject({ width: 640, height: 360 })
     expect(probe.streams.some((stream) => stream.codec_type === 'audio')).toBe(true)
   }, 300_000)
 
@@ -353,9 +353,9 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       writeFilm(
         {
           canvas: FRAME,
-          blocks: [
-            picture({ src: paths[clip] ?? clip, duration: 2000 }),
-            picture({
+          clips: [
+            video({ src: paths[clip] ?? clip, duration: 2000 }),
+            video({
               id: 'clip-2',
               jobId: GRAY_JOB,
               src: paths[gray] ?? gray,
@@ -400,8 +400,8 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
         await rendered.cleanup()
       }
     }
-    const full = await render('two-blocks', 1)
-    const quiet = await render('two-blocks-quiet', 0.25)
+    const full = await render('two-clips', 1)
+    const quiet = await render('two-clips-quiet', 0.25)
 
     expect(full.duration).toBeGreaterThan(4.9)
     expect(full.duration).toBeLessThan(5.15)
@@ -427,9 +427,9 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
             writeFilm(
               {
                 canvas: FRAME,
-                blocks: [
-                  picture({ src: paths[clip] ?? clip, duration: 2000, z: clipZ }),
-                  picture({
+                clips: [
+                  video({ src: paths[clip] ?? clip, duration: 2000, z: clipZ }),
+                  video({
                     id: 'clip-2',
                     jobId: GRAY_JOB,
                     src: paths[gray] ?? gray,
@@ -475,9 +475,9 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
             writeFilm(
               {
                 canvas: FRAME,
-                blocks: [
-                  picture({ src: paths[clip] ?? clip, duration: 2000, hidden: clipHidden }),
-                  picture({
+                clips: [
+                  video({ src: paths[clip] ?? clip, duration: 2000, hidden: clipHidden }),
+                  video({
                     id: 'clip-2',
                     jobId: GRAY_JOB,
                     src: paths[gray] ?? gray,
@@ -528,7 +528,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
           mediaUrls: [],
           compose: () => {
             const values = { text: title, accent: '#ff0000' }
-            composed = writeFilm({ canvas, blocks: [component({ values, hidden })] }, catalog)
+            composed = writeFilm({ canvas, clips: [host({ values, hidden })] }, catalog)
             return composed
           },
         },
@@ -569,7 +569,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
         mediaUrls: [],
         compose: () =>
           writeFilm(
-            { canvas, blocks: [component({ values: { text: '', accent: '#ff0000' } })] },
+            { canvas, clips: [host({ values: { text: '', accent: '#ff0000' } })] },
             catalog,
           ),
       },
@@ -602,7 +602,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
             writeFilm(
               {
                 canvas,
-                blocks: [component({ values: { text: 'Sample', accent: '#ff0000', ...values } })],
+                clips: [host({ values: { text: 'Sample', accent: '#ff0000', ...values } })],
               },
               catalog,
             ),
@@ -627,10 +627,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const catalog = (library as ComponentLibrary).catalog
     const canvas = { width: 1920, height: 1080 }
-    const stored = writeFilm(
-      { canvas, blocks: [component({ values: { accent: '#ff0000' } })] },
-      catalog,
-    )
+    const stored = writeFilm({ canvas, clips: [host({ values: { accent: '#ff0000' } })] }, catalog)
     // 和编辑器右侧栏改值一样：用 SDK 把片段上的取值整串换掉，存出来的文件再过渲染前的检查
     const session = await openComposition(stored)
     session.setAttribute(
@@ -666,7 +663,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const tone = `${origin}/tone.m4a`
     /** 1.5 秒的音频放进 0–3 秒的片段；和导出时一样，交给渲染的是 `localizedFilm` 那一份。 */
-    const render = async (id: string, overrides: Partial<AudioBlock>) => {
+    const render = async (id: string, overrides: Partial<AudioClip>) => {
       const rendered = await worker.render(
         {
           id,
@@ -674,7 +671,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
           mediaUrls: [tone],
           compose: (paths) =>
             localizedFilm(
-              { canvas: FRAME, blocks: [audio({ src: tone, duration: 3000, ...overrides })] },
+              { canvas: FRAME, clips: [audio({ src: tone, duration: 3000, ...overrides })] },
               paths,
               (library as ComponentLibrary).catalog,
             ),
@@ -729,7 +726,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const gray = `${origin}/gray.mp4`
     /** 7 秒的灰片放进 0–6 秒的片段；量开头、中间、结尾各 0.8 秒的响度，没有音轨时是 null。 */
-    const render = async (id: string, overrides: Partial<PictureBlock>) => {
+    const render = async (id: string, overrides: Partial<VideoClip>) => {
       const rendered = await worker.render(
         {
           id,
@@ -739,7 +736,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
             localizedFilm(
               {
                 canvas: FRAME,
-                blocks: [picture({ jobId: GRAY_JOB, src: gray, duration: 6000, ...overrides })],
+                clips: [video({ jobId: GRAY_JOB, src: gray, duration: 6000, ...overrides })],
               },
               paths,
               (library as ComponentLibrary).catalog,
@@ -789,8 +786,8 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
             localizedFilm(
               {
                 canvas: FRAME,
-                blocks: [
-                  picture({ src: steps, duration: 3000, muted: true, playbackRate }),
+                clips: [
+                  video({ src: steps, duration: 3000, muted: true, playbackRate }),
                   audio({ src: tone, duration: 3000, playbackRate }),
                 ],
               },
@@ -835,7 +832,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
           mediaUrls: [steps],
           compose: (paths) =>
             localizedFilm(
-              { canvas: FRAME, blocks: [picture({ src: steps, duration: 3000, muted })] },
+              { canvas: FRAME, clips: [video({ src: steps, duration: 3000, muted })] },
               paths,
               (library as ComponentLibrary).catalog,
             ),
@@ -870,7 +867,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
           writeFilm(
             {
               canvas: FRAME,
-              blocks: [picture({ src: paths[clip] ?? clip, duration: 2000, hidden: true })],
+              clips: [video({ src: paths[clip] ?? clip, duration: 2000, hidden: true })],
             },
             (library as ComponentLibrary).catalog,
           ),

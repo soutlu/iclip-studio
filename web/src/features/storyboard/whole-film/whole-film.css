@@ -1948,7 +1948,7 @@
 }
 
 /* 隐藏的片段留在时间线上，内容画淡一些；选中框和把手不变淡 */
-.wf-clip.is-hidden > .wf-block-body {
+.wf-clip.is-hidden > .wf-clip-body {
   opacity: 0.4;
 }
 
@@ -2332,7 +2332,7 @@
   box-shadow: inset 0 0 0 0.5px var(--color-hairline);
 }
 
-.wf-block-body {
+.wf-clip-body {
   position: absolute;
   inset: 0;
   display: flex;
@@ -2345,7 +2345,7 @@
   touch-action: none;
 }
 
-.wf-clip .wf-block-body {
+.wf-clip .wf-clip-body {
   cursor: pointer;
 }
 
@@ -2445,8 +2445,8 @@
 }
 
 /* 组件或块的片段和音频片段：片段浅色，上面是名字；组件或块的片段左下角一张小封面，音频片段下面整段波形 */
-.wf-clip.is-component > .wf-block-body,
-.wf-clip.is-audio > .wf-block-body {
+.wf-clip.is-host > .wf-clip-body,
+.wf-clip.is-audio > .wf-clip-body {
   background: color-mix(in srgb, var(--color-on-surface) 9%, var(--color-top-layer));
 }
 
@@ -2516,7 +2516,7 @@
   font-size: var(--text-caption);
 }
 
-.wf-overlay .wf-block-body {
+.wf-overlay .wf-clip-body {
   flex-direction: row;
   align-items: center;
   gap: 5px;
@@ -2535,7 +2535,7 @@
   box-shadow: 0 6px 14px -6px color-mix(in srgb, var(--color-scrim) 45%, transparent);
 }
 
-.wf-overlay.is-moving .wf-block-body {
+.wf-overlay.is-moving .wf-clip-body {
   cursor: grabbing;
 }
 

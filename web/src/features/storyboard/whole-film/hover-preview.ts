@@ -12,8 +12,8 @@ export const hoverPreviewOf = (
   origin: string,
 ): string | undefined => {
   if (item.duration === null) return undefined
-  const block = {
-    kind: 'component' as const,
+  const clip = {
+    kind: 'host' as const,
     id: 'hover',
     label: item.title,
     component: item.name,
@@ -27,7 +27,7 @@ export const hoverPreviewOf = (
     hidden: false,
   }
   return previewDocument(
-    writeFilm({ canvas: HOVER_CANVAS, blocks: [block] }, catalog),
+    writeFilm({ canvas: HOVER_CANVAS, clips: [clip] }, catalog),
     catalog,
     origin,
   )

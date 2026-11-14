@@ -2,21 +2,21 @@ import { lintHyperframeHtml } from '@hyperframes/core/lint'
 import { parse, type DefaultTreeAdapterTypes } from 'parse5'
 import type { ComponentCatalog } from '../../web/src/features/storyboard/whole-film/composition/catalog'
 import {
-  BLOCK_SHAPES,
-  blockFromAttributes,
-  blockKindOfTag,
+  CLIP_SHAPES,
+  clipFromAttributes,
+  clipKindOfTag,
   FILM_ID,
   filmDurationMs,
-  isMediaBlock,
-  MIN_BLOCK_MS,
+  isMediaClip,
+  MIN_CLIP_MS,
   sourceVariableId,
   variableValuesOf,
   writeFilm,
   type AttributeRule,
-  type BlockAttribute,
-  type BlockKind,
+  type ClipAttribute,
+  type ClipKind,
   type Film,
-  type FilmBlock,
+  type FilmClip,
 } from '../../web/src/features/storyboard/whole-film/composition/film'
 
 type Node = DefaultTreeAdapterTypes.ChildNode
@@ -57,15 +57,15 @@ const MAX_PLAYBACK_RATE = 10
 const MAX_TRACK = 99
 const MAX_STACKING = 9999
 const STACKING_STYLE = /^z-index:\s*(\d+);?$/
-const BLOCK_ID = /^[a-z][a-z0-9-]{0,63}$/
+const CLIP_ID = /^[a-z][a-z0-9-]{0,63}$/
 const SOURCE_VARIABLE = /^src-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const DECIMAL = /^\d+(\.\d+)?$/
 const INTEGER = /^\d+$/
 const CUSTOM_PROPERTY = /^--([^\s:]+)\s*:/
 
-const BLOCK_NAMES: Record<BlockKind, string> = {
-  picture: '视频片段',
-  component: '组件或块的片段',
+const CLIP_NAMES: Record<ClipKind, string> = {
+  video: '视频片段',
+  host: '组件或块的片段',
   audio: '音频片段',
 }
 
@@ -132,7 +132,7 @@ const seconds =
 const FIXED: Check = () => {}
 
 /** 每个属性的值怎么查；表里登记的属性都要在这里有一项，漏了编译不过。 */
-const CHECKS: Record<BlockAttribute, Check> = {
+const CHECKS: Record<ClipAttribute, Check> = {
   'data-hidden': FIXED,
   class: FIXED,
   'data-has-audio': FIXED,
@@ -141,7 +141,7 @@ const CHECKS: Record<BlockAttribute, Check> = {
   preload: FIXED,
   loop: FIXED,
   id: (value, where) => {
-    if (!BLOCK_ID.test(value) || value === FILM_ID) fail(`${where}的编号不合规矩`)
+    if (!CLIP_ID.test(value) || value === FILM_ID) fail(`${where}的编号不合规矩`)
   },
   // 和 id 一样，读完整个片段再比
   'data-hf-id': () => {},
@@ -191,18 +191,18 @@ const CHECKS: Record<BlockAttribute, Check> = {
 }
 
 /** 按表读一个片段：只能带表里这种片段的属性，必须写的都写了，每个值都合规矩。 */
-function readBlock(element: Element, catalog: ComponentCatalog): FilmBlock {
-  const kind = blockKindOfTag(element.tagName) ?? fail(`成片的根里不能有 <${element.tagName}>`)
-  const rules: Readonly<Record<string, AttributeRule>> = BLOCK_SHAPES[kind].attributes
+function readClip(element: Element, catalog: ComponentCatalog): FilmClip {
+  const kind = clipKindOfTag(element.tagName) ?? fail(`成片的根里不能有 <${element.tagName}>`)
+  const rules: Readonly<Record<string, AttributeRule>> = CLIP_SHAPES[kind].attributes
   const id = element.attrs.find((attr) => attr.name === 'id')?.value ?? ''
-  const where = `${BLOCK_NAMES[kind]}「${id}」`
+  const where = `${CLIP_NAMES[kind]}「${id}」`
   elementsOf(element, where, [])
   const values: Record<string, string> = {}
   for (const { name, value } of element.attrs) {
     const rule =
       (Object.hasOwn(rules, name) ? rules[name] : undefined) ?? fail(`${where}不能带 ${name}`)
     if (rule.fixed !== undefined) fixed(value, rule.fixed, `${where}的 ${name}`)
-    CHECKS[name as BlockAttribute](value, where)
+    CHECKS[name as ClipAttribute](value, where)
     values[name] = value
   }
   for (const [name, rule] of Object.entries(rules)) {
@@ -212,17 +212,17 @@ function readBlock(element: Element, catalog: ComponentCatalog): FilmBlock {
   if (values['muted'] !== undefined && values['data-has-audio'] !== undefined) {
     fail(`${where}不能同时带 muted 和 data-has-audio`)
   }
-  const block =
-    blockFromAttributes(kind, id, values, String(stackingOf(values['style']))) ??
+  const clip =
+    clipFromAttributes(kind, id, values, String(stackingOf(values['style']))) ??
     fail(`${where}不合写法`)
-  if (block.duration < MIN_BLOCK_MS) fail(`${where}短于 ${MIN_BLOCK_MS} 毫秒`)
+  if (clip.duration < MIN_CLIP_MS) fail(`${where}短于 ${MIN_CLIP_MS} 毫秒`)
   if (
-    block.kind === 'component' &&
-    !catalog.items.some((item) => item.name === block.component && item.src === block.src)
+    clip.kind === 'host' &&
+    !catalog.items.some((item) => item.name === clip.component && item.src === clip.src)
   ) {
-    fail(`${where}用的组件不在组件库里：${block.component}`)
+    fail(`${where}用的组件不在组件库里：${clip.component}`)
   }
-  return block
+  return clip
 }
 
 /** SDK 声明变量时会在根上写一份同名的 CSS 自定义属性；只认这一种样式，重写时不保留。 */
@@ -234,7 +234,7 @@ function checkRootStyle(style: string, declared: ReadonlySet<string>): void {
   }
 }
 
-function checkVariables(json: string | undefined, blocks: FilmBlock[]): Set<string> {
+function checkVariables(json: string | undefined, clips: FilmClip[]): Set<string> {
   let declared: unknown
   try {
     declared = JSON.parse(json ?? '[]')
@@ -243,7 +243,7 @@ function checkVariables(json: string | undefined, blocks: FilmBlock[]): Set<stri
   }
   if (!Array.isArray(declared)) return fail('变量声明要是一个数组')
   const expected = new Map(
-    blocks.filter(isMediaBlock).map((block) => [sourceVariableId(block.jobId), block.src]),
+    clips.filter(isMediaClip).map((clip) => [sourceVariableId(clip.jobId), clip.src]),
   )
   const seen = new Set<string>()
   for (const entry of declared as unknown[]) {
@@ -260,32 +260,31 @@ function checkVariables(json: string | undefined, blocks: FilmBlock[]): Set<stri
 }
 
 /** 编号不重复、同一条记录只有一个地址；同一个区的同一行上片段不能重叠。 */
-function checkTimeline(blocks: FilmBlock[]): void {
+function checkTimeline(clips: FilmClip[]): void {
   const ids = new Set<string>()
   const sources = new Map<string, string>()
-  for (const block of blocks) {
-    if (ids.has(block.id)) fail(`片段的编号重复：${block.id}`)
-    ids.add(block.id)
-    if (isMediaBlock(block)) {
-      const known = sources.get(block.jobId)
-      if (known !== undefined && known !== block.src) {
-        fail(`同一条记录写了两个地址：${block.jobId}`)
+  for (const clip of clips) {
+    if (ids.has(clip.id)) fail(`片段的编号重复：${clip.id}`)
+    ids.add(clip.id)
+    if (isMediaClip(clip)) {
+      const known = sources.get(clip.jobId)
+      if (known !== undefined && known !== clip.src) {
+        fail(`同一条记录写了两个地址：${clip.jobId}`)
       }
-      sources.set(block.jobId, block.src)
+      sources.set(clip.jobId, clip.src)
     }
   }
   // 视频片段和组件或块的片段在画面区、音频片段在声音区，两个区的行号各算各的
-  const rowOf = (block: FilmBlock) =>
-    `${block.kind === 'audio' ? 'sound' : 'picture'}:${block.track}`
-  const ordered = blocks.toSorted((a, b) => rowOf(a).localeCompare(rowOf(b)) || a.start - b.start)
-  ordered.forEach((block, index) => {
+  const rowOf = (clip: FilmClip) => `${clip.kind === 'audio' ? 'sound' : 'picture'}:${clip.track}`
+  const ordered = clips.toSorted((a, b) => rowOf(a).localeCompare(rowOf(b)) || a.start - b.start)
+  ordered.forEach((clip, index) => {
     const previous = ordered[index - 1]
     if (
       previous &&
-      rowOf(previous) === rowOf(block) &&
-      previous.start + previous.duration > block.start
+      rowOf(previous) === rowOf(clip) &&
+      previous.start + previous.duration > clip.start
     ) {
-      fail(`同一行的片段「${previous.id}」和「${block.id}」在时间上重叠`)
+      fail(`同一行的片段「${previous.id}」和「${clip.id}」在时间上重叠`)
     }
   })
 }
@@ -328,26 +327,26 @@ export function readFilm(html: string, catalog: ComponentCatalog): Film {
     height: integer(get('data-height'), '画面的高', MAX_CANVAS_EDGE),
   }
   if (canvas.width === 0 || canvas.height === 0) fail('画面的宽高不能是 0')
-  const tags = Object.values(BLOCK_SHAPES).map((shape) => shape.tag)
-  const blocks = elementsOf(stage, '成片的根', tags).map((element) => readBlock(element, catalog))
-  checkTimeline(blocks)
+  const tags = Object.values(CLIP_SHAPES).map((shape) => shape.tag)
+  const clips = elementsOf(stage, '成片的根', tags).map((element) => readClip(element, catalog))
+  checkTimeline(clips)
   const declared = checkVariables(
     root.attrs.some((attr) => attr.name === 'data-composition-variables')
       ? variables('data-composition-variables')
       : undefined,
-    blocks,
+    clips,
   )
   const style = stage.attrs.find((attr) => attr.name === 'style')?.value
   if (style !== undefined) checkRootStyle(style, declared)
-  return { canvas, blocks }
+  return { canvas, clips }
 }
 
 /** 用到的素材，同一条记录在同一种片段上只算一次。 */
 function sourcesOf(film: Film): FilmSource[] {
   const sources = new Map<string, FilmSource>()
-  for (const block of film.blocks.filter(isMediaBlock)) {
-    const kind = block.kind === 'audio' ? 'audio' : 'video'
-    sources.set(`${kind}:${block.jobId}`, { jobId: block.jobId, url: block.src, kind })
+  for (const clip of film.clips.filter(isMediaClip)) {
+    const kind = clip.kind === 'audio' ? 'audio' : 'video'
+    sources.set(`${kind}:${clip.jobId}`, { jobId: clip.jobId, url: clip.src, kind })
   }
   return [...sources.values()]
 }
@@ -375,9 +374,9 @@ export function localizedFilm(
   paths: Readonly<Record<string, string>>,
   catalog: ComponentCatalog,
 ): string {
-  const blocks = film.blocks.flatMap((block) => {
-    if (block.kind === 'audio' && block.hidden) return []
-    return [isMediaBlock(block) ? { ...block, src: paths[block.src] ?? block.src } : block]
+  const clips = film.clips.flatMap((clip) => {
+    if (clip.kind === 'audio' && clip.hidden) return []
+    return [isMediaClip(clip) ? { ...clip, src: paths[clip.src] ?? clip.src } : clip]
   })
-  return writeFilm({ ...film, blocks }, catalog, filmDurationMs(film))
+  return writeFilm({ ...film, clips }, catalog, filmDurationMs(film))
 }

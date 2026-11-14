@@ -2,7 +2,7 @@ import { versionNameOf, type ConversationVideoGroup } from '../conversation-vide
 import type { SecondsRange } from '../editing/clip'
 import type { Edge } from '../editing/timeline-drag'
 import { shiftSelect } from '../editing/range-select'
-import { MIN_BLOCK_MS, type PictureBlock } from './composition/film'
+import { MIN_CLIP_MS, type VideoClip } from './composition/film'
 
 /** 选中范围里的一段：从素材的哪里开始放、放多长（毫秒）。一个镜头一段。 */
 export type MaterialPiece = { mediaStart: number; duration: number }
@@ -58,8 +58,8 @@ export const trimLimits = (
 ): { min: number; max: number } => {
   const cuts = cutsOf(range)
   return edge === 'start'
-    ? { min: 0, max: (cuts[0] ?? range.endMs) - MIN_BLOCK_MS }
-    : { min: (cuts.at(-1) ?? range.startMs) + MIN_BLOCK_MS, max: durationMs }
+    ? { min: 0, max: (cuts[0] ?? range.endMs) - MIN_CLIP_MS }
+    : { min: (cuts.at(-1) ?? range.startMs) + MIN_CLIP_MS, max: durationMs }
 }
 
 export const trimRange = (
@@ -101,11 +101,11 @@ export const shiftShot = (
     ...next,
     startMs: Math.min(
       first.startMs === range.shots[0]?.startMs ? range.startMs : first.startMs,
-      (cuts[0] ?? Infinity) - MIN_BLOCK_MS,
+      (cuts[0] ?? Infinity) - MIN_CLIP_MS,
     ),
     endMs: Math.max(
       last.endMs === range.shots.at(-1)?.endMs ? range.endMs : last.endMs,
-      (cuts.at(-1) ?? -Infinity) + MIN_BLOCK_MS,
+      (cuts.at(-1) ?? -Infinity) + MIN_CLIP_MS,
     ),
   }
 }
@@ -113,16 +113,16 @@ export const shiftShot = (
 export type UsedSpan = { clipId: string; startMs: number; endMs: number }
 
 export const usedSpans = (
-  pictures: readonly PictureBlock[],
+  videos: readonly VideoClip[],
 ): ReadonlyMap<string, readonly UsedSpan[]> => {
   const used = new Map<string, UsedSpan[]>()
-  for (const block of pictures) {
+  for (const clip of videos) {
     const span = {
-      clipId: block.id,
-      startMs: block.mediaStart,
-      endMs: block.mediaStart + block.duration * block.playbackRate,
+      clipId: clip.id,
+      startMs: clip.mediaStart,
+      endMs: clip.mediaStart + clip.duration * clip.playbackRate,
     }
-    used.set(block.jobId, [...(used.get(block.jobId) ?? []), span])
+    used.set(clip.jobId, [...(used.get(clip.jobId) ?? []), span])
   }
   return used
 }

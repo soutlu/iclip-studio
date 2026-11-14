@@ -98,7 +98,7 @@ async function createExport(req: IncomingMessage, res: ServerResponse, context: 
   const library = await context.library()
   const found = await checked(res, request.film, library, context.logger)
   if (!found) return
-  if (found.film.blocks.length === 0) {
+  if (found.film.clips.length === 0) {
     fail(res, 400, 'invalid-film', '成片还是空的')
     return
   }

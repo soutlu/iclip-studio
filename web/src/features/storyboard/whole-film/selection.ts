@@ -30,12 +30,12 @@ export const marqueeMode = (
 
 /** 框选之后选中哪些片段：和框相交的片段按 `mode` 换掉、加进或去掉 `base` 里的。 */
 export const marqueeSelection = (
-  blocks: readonly { id: string; box: Box }[],
+  clips: readonly { id: string; box: Box }[],
   marquee: Box,
   base: ReadonlySet<string>,
   mode: MarqueeMode,
 ): ReadonlySet<string> => {
-  const hits = blocks.filter(({ box }) => overlaps(box, marquee)).map(({ id }) => id)
+  const hits = clips.filter(({ box }) => overlaps(box, marquee)).map(({ id }) => id)
   if (mode === 'replace') return new Set(hits)
   const next = new Set(base)
   for (const id of hits) {
@@ -54,12 +54,12 @@ export const movingWith = (selected: ReadonlySet<string>, id: string): ReadonlyS
  * 跨着播放头的两边都算，正好从播放头开始的不算左边、正好在播放头结束的不算右边。
  */
 export const aroundPlayhead = (
-  blocks: readonly { id: string; start: number; duration: number }[],
+  clips: readonly { id: string; start: number; duration: number }[],
   playheadMs: number,
   side: 'left' | 'right',
 ): string[] =>
-  blocks
-    .filter((block) =>
-      side === 'left' ? block.start < playheadMs : block.start + block.duration > playheadMs,
+  clips
+    .filter((clip) =>
+      side === 'left' ? clip.start < playheadMs : clip.start + clip.duration > playheadMs,
     )
-    .map((block) => block.id)
+    .map((clip) => clip.id)

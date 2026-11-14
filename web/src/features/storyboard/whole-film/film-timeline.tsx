@@ -39,9 +39,9 @@ import {
   type GapClosing,
   type SourceLength,
   type Timing,
-} from './block-edit'
+} from './clip-edit'
 import { thumbnailUrl, type ComponentCatalog } from './component-catalog'
-import { isMediaBlock, type FilmBlock } from './composition/film'
+import { isMediaClip, type FilmClip } from './composition/film'
 import {
   rowHidden,
   rowsOf,
@@ -84,7 +84,7 @@ export type DropGhost = { row: RowTarget; start: number; duration: number; guide
 
 type FilmTimelineProps = {
   /** 成片里所有的片段。 */
-  blocks: readonly FilmBlock[]
+  clips: readonly FilmClip[]
   /** 组件库：组件或块的片段上的小封面取自它。 */
   catalog: ComponentCatalog
   totalMs: number
@@ -130,7 +130,7 @@ const ROW_REACH_PX = 3
 // 时间区左右留的空（whole-film.css 里 .wf-track-content 的 margin：左 8、右 16），不算进能排时间的宽度
 const INSET_PX = 24
 
-const rowKeyOf = (block: FilmBlock): RowKey => ({ zone: zoneOf(block), track: block.track })
+const rowKeyOf = (clip: FilmClip): RowKey => ({ zone: zoneOf(clip), track: clip.track })
 
 /** 一条行在屏幕上的上下边；`insertAt` 是待新开的那一行在第几行的位置，已有的行是 null。 */
 type Lane = { top: number; bottom: number; insertAt: number | null }
@@ -213,18 +213,18 @@ type Preview = { timing: Timing; kind: Gesture['kind']; row: RowTarget | null }
 type Following = { kind: Gesture['kind']; timings: ReadonlyMap<string, Timing> }
 
 /** 一个片段这一端在成片里的时间（毫秒）。 */
-const edgeAt = (block: Timing, edge: Edge) =>
-  edge === 'start' ? block.start : block.start + block.duration
+const edgeAt = (clip: Timing, edge: Edge) =>
+  edge === 'start' ? clip.start : clip.start + clip.duration
 
 /** `timings` 里和成片里现在不一样的那些。 */
 const changedTimings = (
-  blocks: readonly FilmBlock[],
+  clips: readonly FilmClip[],
   timings: ReadonlyMap<string, Timing>,
 ): Map<string, Timing> =>
   new Map(
     [...timings].filter(([id, timing]) => {
-      const block = blocks.find((other) => other.id === id)
-      return block !== undefined && !sameTiming(timing, timingOf(block))
+      const clip = clips.find((other) => other.id === id)
+      return clip !== undefined && !sameTiming(timing, timingOf(clip))
     }),
   )
 
@@ -232,60 +232,60 @@ const changedTimings = (
 type MovePlan = { row: RowTarget; start: number; followers: Map<string, Timing> }
 
 /**
- * 被抓的 `block` 想从 `startMs` 起、去 `row` 这一行时，它和一起挪的片段（`group`，含它自己）落在哪里。
+ * 被抓的 `clip` 想从 `startMs` 起、去 `row` 这一行时，它和一起挪的片段（`group`，含它自己）落在哪里。
  * 一起挪的片段挪同一个时间差，跟着走的片段留在各自的行；被抓的片段换不过去就留在自己那一行。
  * 只挪一个片段也走这里，它自己就是一组。
  */
 const movePlan = (
-  blocks: readonly FilmBlock[],
-  block: FilmBlock,
+  clips: readonly FilmClip[],
+  clip: FilmClip,
   group: ReadonlySet<string>,
   startMs: number,
   row: RowTarget,
 ): MovePlan => {
   const shift = groupShift(
-    block,
+    clip,
     group,
-    blocks,
-    startMs - block.start,
+    clips,
+    startMs - clip.start,
     'track' in row ? row.track : null,
   )
   const followers = new Map(
-    blocks
-      .filter((other) => group.has(other.id) && other.id !== block.id)
+    clips
+      .filter((other) => group.has(other.id) && other.id !== clip.id)
       .map((other) => {
         const timing = timingOf(other)
         return [other.id, { ...timing, start: timing.start + shift.delta }]
       }),
   )
   return {
-    row: shift.track === null ? row : { zone: zoneOf(block), track: shift.track },
-    start: block.start + shift.delta,
+    row: shift.track === null ? row : { zone: zoneOf(clip), track: shift.track },
+    start: clip.start + shift.delta,
     followers,
   }
 }
 
 /** 片段里画什么：视频片段是画面和原声，组件或块的片段是小封面，音频片段是整段波形。 */
-function BlockContent({
-  block,
+function ClipContent({
+  clip,
   timing,
   cover,
   peaks,
 }: {
-  block: FilmBlock
+  clip: FilmClip
   timing: Timing
   cover: string | null
   peaks: PeaksState
 }) {
-  if (block.kind === 'component')
+  if (clip.kind === 'host')
     return cover === null ? null : <img alt="" className="wf-clip-cover" src={cover} />
   // 片段上画的是它用掉的那段素材：成片里的时长 × 速度
   const part = {
-    mediaUrl: block.src,
+    mediaUrl: clip.src,
     start: timing.mediaStart / 1000,
-    end: (timing.mediaStart + timing.duration * block.playbackRate) / 1000,
+    end: (timing.mediaStart + timing.duration * clip.playbackRate) / 1000,
   }
-  if (block.kind === 'audio')
+  if (clip.kind === 'audio')
     return (
       <span className="wf-clip-sound">
         <Wave part={part} state={peaks} />
@@ -303,9 +303,9 @@ function BlockContent({
   )
 }
 
-type TimelineBlockProps = {
-  block: FilmBlock
-  blocks: readonly FilmBlock[]
+type TimelineClipProps = {
+  clip: FilmClip
+  clips: readonly FilmClip[]
   selected: boolean
   /** 拖这个片段（挪动或裁剪）时一起动的片段，含它自己。 */
   group: ReadonlySet<string>
@@ -321,15 +321,15 @@ type TimelineBlockProps = {
   rowAt: (clientY: number, between: boolean, zone: Zone) => RowTarget | undefined
   /** 拖动中要在第几行的位置新开一行，那里先让出一行；不新开、松手后是 null。 */
   onOpening: (insertAt: number | null) => void
-  /** `group` 里的片段一起裁 `edge` 这一端时，`block` 这一端能到的范围（成片的毫秒）。 */
+  /** `group` 里的片段一起裁 `edge` 这一端时，`clip` 这一端能到的范围（成片的毫秒）。 */
   trimRange: (
-    block: FilmBlock,
+    clip: FilmClip,
     group: ReadonlySet<string>,
     edge: Edge,
   ) => { min: number; max: number }
-  /** `group` 里的片段一起裁 `edge` 这一端、`block` 这一端拖到 `edgeMs` 时，各自的起止和入点。 */
+  /** `group` 里的片段一起裁 `edge` 这一端、`clip` 这一端拖到 `edgeMs` 时，各自的起止和入点。 */
   trimTo: (
-    block: FilmBlock,
+    clip: FilmClip,
     group: ReadonlySet<string>,
     edge: Edge,
     edgeMs: number,
@@ -357,9 +357,9 @@ type TimelineBlockProps = {
  * 或者拖到自己的区里别的行、新开的一行上），选中后拖两端的把手裁剪；在不止一个片段的选中里时，
  * 选中的片段一起挪、一起裁。松手才写进成片，拖动中按 Esc 什么都不写。
  */
-function TimelineBlock({
-  block,
-  blocks,
+function TimelineClip({
+  clip,
+  clips,
   selected,
   group,
   following,
@@ -379,7 +379,7 @@ function TimelineBlock({
   onSelect,
   onRetime,
   onMove,
-}: TimelineBlockProps) {
+}: TimelineClipProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const gestureRef = useRef<Gesture | null>(null)
   const clickAfterDrag = useClickAfterDrag()
@@ -396,8 +396,8 @@ function TimelineBlock({
         ? ''
         : `0 ${target.getBoundingClientRect().top - own.getBoundingClientRect().top}px`
   })
-  const timing = preview?.timing ?? following?.timings.get(block.id) ?? timingOf(block)
-  const name = `${block.label}，${seconds(timing.duration)} 秒${block.hidden ? '，已隐藏' : ''}`
+  const timing = preview?.timing ?? following?.timings.get(clip.id) ?? timingOf(clip)
+  const name = `${clip.label}，${seconds(timing.duration)} 秒${clip.hidden ? '，已隐藏' : ''}`
 
   const timeAt = (clientX: number) =>
     pxToMs(clientX - (contentRef.current?.getBoundingClientRect().left ?? 0), pps)
@@ -409,7 +409,7 @@ function TimelineBlock({
     // 带着加减选中的键按下只算点选，不开始拖
     if (togglesSelection(event)) return
     event.currentTarget.setPointerCapture(event.pointerId)
-    const box = event.currentTarget.closest('[data-block-id]')?.getBoundingClientRect()
+    const box = event.currentTarget.closest('[data-clip-id]')?.getBoundingClientRect()
     gestureRef.current = {
       pointerId: event.pointerId,
       kind,
@@ -445,7 +445,7 @@ function TimelineBlock({
     // 开着吸附时：没在动的片段的两端和播放头是能吸上去的点（一起动的片段拖动前的边不算）
     const targets = snap
       ? snapTargets(
-          blocks.filter((other) => !members.has(other.id)),
+          clips.filter((other) => !members.has(other.id)),
           playheadMs,
         )
       : null
@@ -454,11 +454,11 @@ function TimelineBlock({
       const snapped =
         targets === null
           ? { ms: wanted, guideMs: null }
-          : snapSpanStartMs(wanted, block.duration, targets, pps)
+          : snapSpanStartMs(wanted, clip.duration, targets, pps)
       // 指针在哪一行上，片段就去它自己的区里对着的那一行；在两行之间就在那里新开一行；都不是就留在原来的行
-      const row = rowAt(event.clientY, true, zoneOf(block)) ?? rowKeyOf(block)
-      const plan = movePlan(blocks, block, members, snapped.ms, row)
-      gesture.timing = { ...timingOf(block), start: plan.start }
+      const row = rowAt(event.clientY, true, zoneOf(clip)) ?? rowKeyOf(clip)
+      const plan = movePlan(clips, clip, members, snapped.ms, row)
+      gesture.timing = { ...timingOf(clip), start: plan.start }
       gesture.row = plan.row
       gesture.followers = plan.followers
       onOpening('insertAt' in plan.row ? plan.row.insertAt : null)
@@ -466,10 +466,10 @@ function TimelineBlock({
       onGuide(plan.start === snapped.ms ? snapped.guideMs : null)
     } else {
       const snapped = targets === null ? { ms: at, guideMs: null } : snapMs(at, targets, pps)
-      const timings = trimTo(block, members, kind, snapped.ms)
-      const next = timings.get(block.id) ?? timingOf(block)
+      const timings = trimTo(clip, members, kind, snapped.ms)
+      const next = timings.get(clip.id) ?? timingOf(clip)
       gesture.timing = next
-      gesture.followers = new Map([...timings].filter(([id]) => id !== block.id))
+      gesture.followers = new Map([...timings].filter(([id]) => id !== clip.id))
       onGuide(edgeAt(next, kind) === snapped.ms ? snapped.guideMs : null)
     }
     setPreview({ timing: gesture.timing, kind, row: gesture.row })
@@ -495,14 +495,14 @@ function TimelineBlock({
     if (gesture.timing === null) return
     // 拖完松手也会来一次点击，那一次不算选中
     clickAfterDrag.swallow()
-    if (gesture.row !== null && !sameRow(gesture.row, rowKeyOf(block))) {
+    if (gesture.row !== null && !sameRow(gesture.row, rowKeyOf(clip))) {
       const starts = new Map([...gesture.followers].map(([id, timing]) => [id, timing.start]))
-      onMove(block.id, gesture.row, gesture.timing.start, starts)
+      onMove(clip.id, gesture.row, gesture.timing.start, starts)
       return
     }
     const changed = changedTimings(
-      blocks,
-      new Map([[block.id, gesture.timing], ...gesture.followers]),
+      clips,
+      new Map([[clip.id, gesture.timing], ...gesture.followers]),
     )
     if (changed.size > 0) onRetime(changed)
   }
@@ -526,7 +526,7 @@ function TimelineBlock({
     clickAfterDrag.swallow()
     finish()
   })
-  useEffect(() => dropStale(), [blocks])
+  useEffect(() => dropStale(), [clips])
 
   const nudge = (event: KeyboardEvent<HTMLElement>, edge: Edge) => {
     const step = arrowStep(event)
@@ -534,8 +534,8 @@ function TimelineBlock({
     event.preventDefault()
     event.stopPropagation()
     const changed = changedTimings(
-      blocks,
-      trimTo(block, group, edge, edgeAt(timingOf(block), edge) + Math.round(step * 1000)),
+      clips,
+      trimTo(clip, group, edge, edgeAt(timingOf(clip), edge) + Math.round(step * 1000)),
     )
     if (changed.size > 0) onRetime(changed)
   }
@@ -545,12 +545,12 @@ function TimelineBlock({
       aria-label={name}
       className={cn(
         'wf-clip',
-        `is-${block.kind}`,
+        `is-${clip.kind}`,
         selected && 'is-selected',
-        block.hidden && 'is-hidden',
+        clip.hidden && 'is-hidden',
         preview?.kind === 'move' && 'is-lifted',
       )}
-      data-block-id={block.id}
+      data-clip-id={clip.id}
       ref={rootRef}
       role="group"
       style={{
@@ -561,9 +561,9 @@ function TimelineBlock({
       <button
         aria-label={`选中：${name}`}
         aria-pressed={selected}
-        className="wf-block-body ui-focus"
+        className="wf-clip-body ui-focus"
         onClick={(event) => {
-          if (!clickAfterDrag.take()) onSelect(block.id, togglesSelection(event))
+          if (!clickAfterDrag.take()) onSelect(clip.id, togglesSelection(event))
         }}
         onPointerCancel={finish}
         onPointerDown={(event) => press(event, 'move')}
@@ -571,12 +571,12 @@ function TimelineBlock({
         onPointerUp={release}
         type="button"
       >
-        <span className="wf-clip-label">{block.label}</span>
-        <BlockContent block={block} cover={cover} peaks={peaks} timing={timing} />
+        <span className="wf-clip-label">{clip.label}</span>
+        <ClipContent clip={clip} cover={cover} peaks={peaks} timing={timing} />
       </button>
       {selected
         ? (['start', 'end'] as const).map((edge) => {
-            const bounds = trimRange(block, group, edge)
+            const bounds = trimRange(clip, group, edge)
             const edgeMs = edgeAt(timing, edge)
             return (
               <TrimHandle
@@ -642,7 +642,7 @@ const keyOf = (row: RowKey) => `${row.zone}-${row.track}`
  * 片段可以选中一个或几个（在空白处拖出框来框选）、在自己的区里挪动、裁两端；上面是时间尺和播放头。
  */
 export function FilmTimeline({
-  blocks,
+  clips,
   catalog,
   totalMs,
   playheadMs,
@@ -669,32 +669,31 @@ export function FilmTimeline({
   const contentRef = useRef<HTMLDivElement>(null)
   const rulerBarRef = useRef<HTMLDivElement>(null)
   // 拖动片段时吸上的时间点；拖素材进来时吸上的点由 `ghost` 带着
-  const [blockGuideMs, setBlockGuideMs] = useState<number | null>(null)
-  const guideMs = blockGuideMs ?? ghost?.guideMs ?? null
+  const [clipGuideMs, setClipGuideMs] = useState<number | null>(null)
+  const guideMs = clipGuideMs ?? ghost?.guideMs ?? null
   // 拖着片段要在第几行的位置新开一行；拖素材进来时同样由 `ghost` 带着
-  const [blockOpening, setBlockOpening] = useState<number | null>(null)
+  const [clipOpening, setClipOpening] = useState<number | null>(null)
   const opening =
-    blockOpening ?? (ghost === null || 'track' in ghost.row ? null : ghost.row.insertAt)
+    clipOpening ?? (ghost === null || 'track' in ghost.row ? null : ghost.row.insertAt)
   // 在一行的空处点右键时，两种合拢各自要挪哪些片段
   const [closing, setClosing] = useState<GapClosing>()
   // 成组拖动中跟着动的片段；每个片段只知道自己素材的总长，一起裁到哪里在这一层算
   const [following, setFollowing] = useState<Following | null>(null)
   const peaks = useAudioPeaks(
-    useStableValue([...new Set(blocks.filter(isMediaBlock).map((block) => block.src))]),
+    useStableValue([...new Set(clips.filter(isMediaClip).map((clip) => clip.src))]),
   )
-  const membersOf = (group: ReadonlySet<string>) => blocks.filter((block) => group.has(block.id))
-  const trimRange = (block: FilmBlock, group: ReadonlySet<string>, edge: Edge) => {
-    const range = groupTrimRange(membersOf(group), edge, blocks, sourceMs)
-    const edgeMs = edgeAt(timingOf(block), edge)
+  const membersOf = (group: ReadonlySet<string>) => clips.filter((clip) => group.has(clip.id))
+  const trimRange = (clip: FilmClip, group: ReadonlySet<string>, edge: Edge) => {
+    const range = groupTrimRange(membersOf(group), edge, clips, sourceMs)
+    const edgeMs = edgeAt(timingOf(clip), edge)
     return { min: edgeMs + range.min, max: edgeMs + range.max }
   }
-  const trimTo = (block: FilmBlock, group: ReadonlySet<string>, edge: Edge, edgeMs: number) =>
-    groupTrimmed(membersOf(group), edge, edgeMs - edgeAt(timingOf(block), edge), blocks, sourceMs)
+  const trimTo = (clip: FilmClip, group: ReadonlySet<string>, edge: Edge, edgeMs: number) =>
+    groupTrimmed(membersOf(group), edge, edgeMs - edgeAt(timingOf(clip), edge), clips, sourceMs)
   const { pps, contentWidth } = scale
-  const rows = rowsOf(blocks)
+  const rows = rowsOf(clips)
   // 还没有片段时也留一行（画面区的第 0 行），镜头拖得进来
-  const shown: readonly Row[] =
-    rows.length === 0 ? [{ zone: 'visual', track: 0, blocks: [] }] : rows
+  const shown: readonly Row[] = rows.length === 0 ? [{ zone: 'visual', track: 0, clips: [] }] : rows
   // 要在别的位置新开一行时，最下面那条空行挪到那里去：总高度不变，上面的行不动、下面的行往下让
   const openedAt = opening !== null && opening < rows.length ? opening : null
 
@@ -792,8 +791,8 @@ export function FilmTimeline({
       },
       scrollLeft: () => scrollRef.current?.scrollLeft ?? 0,
       reveal: (id) =>
-        [...(contentRef.current?.querySelectorAll<HTMLElement>('[data-block-id]') ?? [])]
-          .find((element) => element.dataset['blockId'] === id)
+        [...(contentRef.current?.querySelectorAll<HTMLElement>('[data-clip-id]') ?? [])]
+          .find((element) => element.dataset['clipId'] === id)
           ?.scrollIntoView({ block: 'nearest', inline: 'nearest' }),
     }
     return () => {
@@ -823,9 +822,9 @@ export function FilmTimeline({
 
   // 点在片段上，或者这一行没有可合拢的空档：不开菜单
   const openGapMenu = (event: MouseEvent<HTMLElement>, row: RowKey) => {
-    const onBlock =
-      event.target instanceof Element && event.target.closest('[data-block-id]') !== null
-    const next = onBlock ? undefined : gapClosing(blocks, row, timeAt(event.clientX))
+    const onClip =
+      event.target instanceof Element && event.target.closest('[data-clip-id]') !== null
+    const next = onClip ? undefined : gapClosing(clips, row, timeAt(event.clientX))
     if (next === undefined || (next.one.size === 0 && next.all.size === 0)) {
       event.preventDefault()
       return
@@ -863,11 +862,11 @@ export function FilmTimeline({
   const framed = (framing: Framing, event: PointerEvent<HTMLElement>): Marquee => {
     const box = boxBetween(framing.origin, pointIn(event.clientX, event.clientY))
     const found = [
-      ...(contentRef.current?.querySelectorAll<HTMLElement>('[data-block-id]') ?? []),
+      ...(contentRef.current?.querySelectorAll<HTMLElement>('[data-clip-id]') ?? []),
     ].map((element) => {
       const { left, top, width, height } = element.getBoundingClientRect()
       const at = pointIn(left, top)
-      return { id: element.dataset['blockId'] ?? '', box: { left: at.x, top: at.y, width, height } }
+      return { id: element.dataset['clipId'] ?? '', box: { left: at.x, top: at.y, width, height } }
     })
     return {
       box,
@@ -889,7 +888,7 @@ export function FilmTimeline({
     // 行的右键菜单挂在别处，但它的事件也会沿着组件树传到这里
     if (event.button !== 0 || !(target instanceof Element) || !event.currentTarget.contains(target))
       return
-    if (target.closest('[data-block-id]') !== null) return
+    if (target.closest('[data-clip-id]') !== null) return
     const canFrame = event.pointerType !== 'touch'
     if (canFrame) event.currentTarget.setPointerCapture(event.pointerId)
     framingRef.current = {
@@ -938,15 +937,15 @@ export function FilmTimeline({
                 {row.zone === 'audio' ? (
                   <Icon className="wf-head-icon" decorative name="music" size="xs" />
                 ) : null}
-                <span className="wf-head-name">{row.blocks[0]?.label}</span>
-                {row.blocks.length > 1 ? (
-                  <span aria-label={`${row.blocks.length} 个片段`} className="wf-head-count">
-                    {row.blocks.length}
+                <span className="wf-head-name">{row.clips[0]?.label}</span>
+                {row.clips.length > 1 ? (
+                  <span aria-label={`${row.clips.length} 个片段`} className="wf-head-count">
+                    {row.clips.length}
                   </span>
                 ) : null}
-                {row.blocks.length > 0 ? (
+                {row.clips.length > 0 ? (
                   <RowToggle
-                    hidden={rowHidden(blocks, row)}
+                    hidden={rowHidden(clips, row)}
                     onHide={(hidden) => onHide({ zone: row.zone, track: row.track }, hidden)}
                     row={at + 1}
                     zone={row.zone}
@@ -996,42 +995,40 @@ export function FilmTimeline({
                       onContextMenu={(event) => openGapMenu(event, row)}
                       role="group"
                     >
-                      {row.blocks.map((block) => (
-                        <TimelineBlock
-                          block={block}
-                          blocks={blocks}
+                      {row.clips.map((clip) => (
+                        <TimelineClip
+                          clip={clip}
+                          clips={clips}
                           contentRef={contentRef}
                           cover={
-                            block.kind === 'component'
-                              ? thumbnailUrl(catalog, block.component)
-                              : null
+                            clip.kind === 'host' ? thumbnailUrl(catalog, clip.component) : null
                           }
                           following={following}
-                          group={movingWith(selected, block.id)}
-                          key={block.id}
+                          group={movingWith(selected, clip.id)}
+                          key={clip.id}
                           onFollow={setFollowing}
                           onGesture={onGesture}
-                          onGuide={setBlockGuideMs}
+                          onGuide={setClipGuideMs}
                           onMove={onMove}
-                          onOpening={setBlockOpening}
+                          onOpening={setClipOpening}
                           onRetime={onRetime}
                           onSelect={pick}
                           peaks={
-                            isMediaBlock(block)
-                              ? (peaks.get(block.src) ?? { kind: 'loading' })
+                            isMediaClip(clip)
+                              ? (peaks.get(clip.src) ?? { kind: 'loading' })
                               : { kind: 'silent' }
                           }
                           playheadMs={playheadMs}
                           pps={pps}
                           rowAt={rowAt}
-                          selected={shownSelection.has(block.id)}
+                          selected={shownSelection.has(clip.id)}
                           snap={snap}
                           trimRange={trimRange}
                           trimTo={trimTo}
                         />
                       ))}
                       {dropGhost(row)}
-                      {blocks.length === 0 && ghost === null ? (
+                      {clips.length === 0 && ghost === null ? (
                         <span className="wf-lane-hint">把下面的镜头拖到这里</span>
                       ) : null}
                     </div>
@@ -1057,7 +1054,7 @@ export function FilmTimeline({
                 </ContextMenuRoot>
               </Fragment>
             ))}
-            {blocks.length === 0 || openedAt !== null ? null : (
+            {clips.length === 0 || openedAt !== null ? null : (
               <div
                 aria-label="新的一行"
                 className="wf-lane is-new"

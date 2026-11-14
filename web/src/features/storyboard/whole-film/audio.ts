@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { formatDateTime } from '@/shared/lib/date-time'
 import type { GenerationJob } from '../storyboard.api'
-import type { AudioBlock, FilmBlock } from './composition/film'
+import type { AudioClip, FilmClip } from './composition/film'
 import { rowBusy, rowsOf, type RowTarget } from './placement'
 
 const promptOf = (job: GenerationJob): string | undefined =>
@@ -26,15 +26,14 @@ export const durationLabel = (ms: number): string => {
 }
 
 /** 成片里用着记录 `jobId` 的音频片段里开始得最早的那个；没用到时是 undefined。 */
-export const firstAudioBlockOf = (
-  blocks: readonly FilmBlock[],
+export const firstAudioClipOf = (
+  clips: readonly FilmClip[],
   jobId: string,
-): AudioBlock | undefined =>
-  blocks
-    .filter((block): block is AudioBlock => block.kind === 'audio' && block.jobId === jobId)
-    .reduce<AudioBlock | undefined>(
-      (earliest, block) =>
-        earliest === undefined || block.start < earliest.start ? block : earliest,
+): AudioClip | undefined =>
+  clips
+    .filter((clip): clip is AudioClip => clip.kind === 'audio' && clip.jobId === jobId)
+    .reduce<AudioClip | undefined>(
+      (earliest, clip) => (earliest === undefined || clip.start < earliest.start ? clip : earliest),
       undefined,
     )
 
@@ -43,11 +42,11 @@ export const firstAudioBlockOf = (
  * 放在声音区第一行；第一行在这段时间已经有片段时，在它下面紧挨着新开一行；还没有声音行时新开第一条。
  */
 export const audioPlayheadSpot = (
-  blocks: readonly FilmBlock[],
+  clips: readonly FilmClip[],
   startMs: number,
   durationMs: number,
 ): { row: RowTarget; start: number } => {
-  const rows = rowsOf(blocks)
+  const rows = rowsOf(clips)
   // insertAt 数的是时间线上从上往下的第几行，画面区的行也算在里面
   const at = rows.findIndex((row) => row.zone === 'audio')
   const top = rows[at]
