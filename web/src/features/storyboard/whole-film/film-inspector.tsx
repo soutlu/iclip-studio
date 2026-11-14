@@ -576,7 +576,9 @@ function MediaSlider({
 }) {
   const id = useId()
   const rangeRef = useRef<HTMLInputElement>(null)
-  const [draft, setDraft] = useState<number | null>(null)
+  // 拖到的格数，连同开始拖时的取值：松手停在原处时浏览器不发 change，取值被撤销、输入改掉以后不再用它
+  const [dragged, setDragged] = useState<{ from: number; to: number } | null>(null)
+  const draft = dragged !== null && dragged.from === position ? dragged.to : null
   const commitRef = useRef(onCommit)
   useLayoutEffect(() => {
     commitRef.current = onCommit
@@ -586,7 +588,7 @@ function MediaSlider({
     const range = rangeRef.current
     if (range === null) return
     const commit = () => {
-      setDraft(null)
+      setDragged(null)
       commitRef.current(Number(range.value))
     }
     range.addEventListener('change', commit)
@@ -605,7 +607,8 @@ function MediaSlider({
           min={min}
           onChange={(event) => {
             // change 已经在上面交出去了，这里只跟着拖动
-            if (event.nativeEvent.type !== 'change') setDraft(Number(event.target.value))
+            if (event.nativeEvent.type !== 'change')
+              setDragged({ from: position, to: Number(event.target.value) })
           }}
           ref={rangeRef}
           step={1}

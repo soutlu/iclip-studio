@@ -709,6 +709,8 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const full = await render('audio-full', {})
     const half = await render('audio-half', { volume: 0.5 })
     const looped = await render('audio-loop', { loop: true })
+    // 编辑器里块不会比素材长，循环只在把放满的块调快以后才用得上
+    const loopedFast = await render('audio-loop-fast', { loop: true, playbackRate: 2 })
     const hidden = await render('audio-hidden', { hidden: true })
 
     expect(full.streams).toEqual(['audio', 'video'])
@@ -716,6 +718,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(full.early - half.early).toBeGreaterThan(4)
     expect(full.early - half.early).toBeLessThan(8)
     expect(looped.late - full.late).toBeGreaterThan(30)
+    expect(loopedFast.late - full.late).toBeGreaterThan(30)
     expect(hidden.streams).toEqual(['video'])
     expect(hidden.duration).toBeGreaterThan(2.9)
     expect(hidden.duration).toBeLessThan(3.15)

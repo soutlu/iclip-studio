@@ -1446,9 +1446,13 @@ describe('成片编辑器 · 右侧栏', () => {
     it('增益直接输入：按 dB 读；读不出时回车框留着、标成不对，Esc 放弃，块还选中着', async () => {
       const user = await openWith([audio({ duration: 4_000 })])
       await openMedia(user, '配乐')
+      // 拖出去又拖回原处松手：浏览器不发 change，滑杆照样跟着后来输入的值
+      fireEvent.input(slider('增益'), { target: { value: '50' } })
+      fireEvent.input(slider('增益'), { target: { value: '0' } })
       await type(user, '增益', '-6{Enter}')
       await waitSaved(() => expect(savedAttribute('music-1', 'data-volume')).toBe('0.501187'))
       expect(readout('增益')).toHaveTextContent('-6.0 dB')
+      expect(slider('增益')).toHaveAttribute('aria-valuetext', '-6.0 dB')
 
       const box = await type(user, '增益', '很响{Enter}')
       expect(box).toHaveAttribute('aria-invalid', 'true')
