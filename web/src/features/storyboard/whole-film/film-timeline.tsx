@@ -279,10 +279,11 @@ function BlockContent({
 }) {
   if (block.kind === 'component')
     return cover === null ? null : <img alt="" className="wf-clip-cover" src={cover} />
+  // 块上画的是它用掉的那段素材：成片里的时长 × 速度
   const part = {
     mediaUrl: block.src,
     start: timing.mediaStart / 1000,
-    end: (timing.mediaStart + timing.duration) / 1000,
+    end: (timing.mediaStart + timing.duration * block.playbackRate) / 1000,
   }
   if (block.kind === 'audio')
     return (

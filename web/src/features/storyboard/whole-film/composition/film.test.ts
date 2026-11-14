@@ -84,6 +84,32 @@ describe('成片文件的写法', () => {
     )
   })
 
+  it('画面块、音频块的增益、速度、淡入淡出和画面块的静音：写出来再读回，和原来一样', () => {
+    const blocks = [
+      picture({ volume: 1.995262, playbackRate: 0.5, fadeIn: 1200, fadeOut: 300, muted: true }),
+      audio({ start: 2000, volume: 0.031623, playbackRate: 2.5, loop: true }),
+    ]
+    const written = writeFilm(film(...blocks), fixtureCatalog)
+    expect(written).toContain(
+      ' data-volume="1.995262" data-playback-rate="0.5" data-fade-in="1.2" data-fade-out="0.3"' +
+        ' muted="true" playsinline',
+    )
+    expect(written).toContain(' data-volume="0.031623" data-playback-rate="2.5" loop="true"')
+    expect(readBack(written)).toEqual(blocks)
+  })
+
+  it('速度是 1、不淡入淡出时不写；画面块有声音写 data-has-audio，静音时只写 muted，两个不同时出现', () => {
+    const [sound, mute] = [picture(), picture({ muted: true })].map(writeBlock)
+    for (const name of ['data-playback-rate', 'data-fade-in', 'data-fade-out', 'muted']) {
+      expect(sound).not.toContain(` ${name}=`)
+    }
+    expect(sound).toContain(' data-has-audio="true"')
+    expect(mute).toContain(' muted="true"')
+    expect(mute).not.toContain('data-has-audio')
+    expect(writeBlock(audio())).not.toContain('data-playback-rate')
+    expect(readBack(writeFilm(film(picture()), fixtureCatalog))).toEqual([picture()])
+  })
+
   it('成片总长是所有块里最晚的结尾，三种块都算', () => {
     expect(filmDurationMs(film(picture({ duration: 2000 }), music))).toBe(7000)
     expect(filmDurationMs(film(picture(), component({ start: 1000, duration: 3000 })))).toBe(4000)

@@ -27,6 +27,10 @@ const picture = (overrides: Partial<PictureBlock> = {}): PictureBlock => ({
   mediaStart: 500,
   track: 0,
   volume: 1,
+  playbackRate: 1,
+  fadeIn: 0,
+  fadeOut: 0,
+  muted: false,
   z: 0,
   hidden: false,
   ...overrides,
@@ -154,6 +158,11 @@ describe('checkFilm', () => {
     for (const name of ['data-playback-start', 'data-fade-in', 'data-fade-out', 'loop', 'style']) {
       expect(written).not.toContain(` ${name}=`)
     }
+    const still = html(picture(), audio({ start: 2000 }))
+    for (const name of ['data-playback-rate', 'data-fade-in', 'data-fade-out', 'muted']) {
+      expect(still).not.toContain(` ${name}=`)
+    }
+    expect(still).toContain(' data-has-audio="true"')
     const shown = html(
       component({ playbackStart: 500, z: 1, hidden: true }),
       audio({ fadeIn: 200, fadeOut: 300, loop: true, hidden: true }),
@@ -163,6 +172,47 @@ describe('checkFilm', () => {
     expect(shown).toContain('<audio data-hidden="" id="music-1"')
     expect(shown).toContain(' data-fade-in="0.2" data-fade-out="0.3" loop="true"></audio>')
     expect((await checkFilm(shown, catalog)).html).toBe(shown)
+  })
+
+  it('画面块的增益、速度、淡入淡出、静音，音频块的速度：读回来是同一份，重写后一字不差，过渲染前的检查', async () => {
+    const quiet = picture({
+      volume: 3.981072,
+      playbackRate: 0.25,
+      fadeIn: 500,
+      fadeOut: 1500,
+      muted: true,
+    })
+    const fast = audio({ start: 2000, volume: 0.001, playbackRate: 10, fadeIn: 100 })
+    const written = html(quiet, fast)
+    expect(written).toMatch(/<video [^>]* data-playback-rate="0.25" [^>]*muted="true"/)
+    expect(written).not.toContain('data-has-audio')
+    expect(written).toContain(' data-volume="0.001" data-playback-rate="10" data-fade-in="0.1"')
+    const checked = await checkFilm(written, catalog)
+    expect(checked.film).toEqual(film(quiet, fast))
+    expect(checked.html).toBe(written)
+  })
+
+  it('用 SDK 改画面块的速度、淡入淡出和静音，改音频块的循环（编辑器右侧栏）：存出来的文件通过检查，读回来是改完的样子', async () => {
+    const stored = (await checkFilm(html(picture(), audio({ start: 2000 })), catalog)).html
+    const session = await openComposition(stored)
+    session.batch(() => {
+      session.setAttribute('clip-1', 'data-playback-rate', '2')
+      session.setAttribute('clip-1', 'data-fade-in', '0.5')
+      session.setAttribute('clip-1', 'data-volume', '1.995262')
+      session.setAttribute('clip-1', 'muted', 'true')
+      session.setAttribute('clip-1', 'data-has-audio', null)
+      session.setAttribute('music-1', 'loop', 'true')
+      session.setAttribute('music-1', 'data-playback-rate', '0.5')
+    })
+    const checked = await checkFilm(session.serialize(), catalog)
+    const changed = [
+      picture({ playbackRate: 2, fadeIn: 500, volume: 1.995262, muted: true }),
+      audio({ start: 2000, loop: true, playbackRate: 0.5 }),
+    ]
+    expect(checked.film).toEqual(film(...changed))
+    expect(checked.html).toBe(html(...changed))
+    session.undo()
+    expect((await checkFilm(session.serialize(), catalog)).html).toBe(stored)
   })
 
   it('音频地址也绑按记录编号取名的变量，变量的名字是「音频」', async () => {
@@ -687,6 +737,26 @@ describe('readFilm 拒收写法之外的东西', () => {
     ],
     ['循环写了 true 以外的值', (source) => source.replace('loop="true"', 'loop=""'), /loop/],
     [
+      '画面块同时带静音和有声音的标记',
+      (source) => source.replace(' data-has-audio="true"', ' data-has-audio="true" muted="true"'),
+      /不能同时带 muted 和 data-has-audio/,
+    ],
+    [
+      '静音写了 true 以外的值',
+      (source) => source.replace(' data-has-audio="true"', ' muted=""'),
+      /muted/,
+    ],
+    [
+      '速度不是数字',
+      (source) => source.replace(' data-volume="1"', ' data-volume="1" data-playback-rate="2x"'),
+      /速度/,
+    ],
+    [
+      '音频块带静音（导出不认）',
+      (source) => source.replace('<audio id="music-1"', '<audio muted="true" id="music-1"'),
+      /不能带 muted/,
+    ],
+    [
       '块上带对象自带的属性名',
       (source) => source.replace('<video id="clip-1"', '<video constructor="x" id="clip-1"'),
       /不能带 constructor/,
@@ -731,6 +801,9 @@ describe('readFilm 拒收写法之外的东西', () => {
     ['不同种的块编号重复', [picture(), audio({ id: 'clip-1' })], /重复/],
     ['音量超出范围', [picture({ volume: 4 })], /音量/],
     ['音频音量超出范围', [audio({ volume: 4 })], /音量/],
+    ['画面块速度低于 0.1 倍', [picture({ playbackRate: 0.05 })], /速度/],
+    ['画面块速度高于 10 倍', [picture({ playbackRate: 10.5 })], /速度/],
+    ['音频块速度高于 10 倍', [audio({ playbackRate: 12 })], /速度/],
     ['同一条素材片两个地址', [picture(), second({ jobId: SOURCE_JOB })], /两个地址|默认值/],
     ['不在组件库里的组件', [component({ component: 'nope' })], /不在组件库/],
     [

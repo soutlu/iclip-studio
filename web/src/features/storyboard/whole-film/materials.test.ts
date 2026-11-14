@@ -156,6 +156,17 @@ describe('usedSpans：成片里每版素材片用了哪些段', () => {
     })
   })
 
+  it('调了速度的块：用掉的是块长 × 速度那么长的一段', () => {
+    const used = usedSpans([
+      picture({ id: 'v1', jobId: 'a', mediaStart: 1_000, duration: 2_000, playbackRate: 2 }),
+      picture({ id: 'v2', jobId: 'a', mediaStart: 6_000, duration: 2_000, playbackRate: 0.5 }),
+    ])
+    expect(used.get('a')).toEqual([
+      { clipId: 'v1', startMs: 1_000, endMs: 5_000 },
+      { clipId: 'v2', startMs: 6_000, endMs: 7_000 },
+    ])
+  })
+
   it('成片里没有画面时什么都没用', () => {
     expect(usedSpans([]).size).toBe(0)
   })

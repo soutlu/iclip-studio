@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
   writeFilm,
   type AudioBlock,
+  type PictureBlock,
 } from '../../web/src/features/storyboard/whole-film/composition/film'
 import { checkFilm, localizedFilm } from './film'
 import { ExportQueue } from './jobs'
@@ -237,6 +238,33 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       '-c:a',
       'aac',
       join(dir, 'tone.m4a'),
+    ])
+    // 6 秒：0–2 秒红、2–4 秒绿、4–6 秒蓝，看画面是素材的第几秒
+    await run('ffmpeg', [
+      '-v',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      'color=c=red:s=640x360:r=30:d=2',
+      '-f',
+      'lavfi',
+      '-i',
+      'color=c=lime:s=640x360:r=30:d=2',
+      '-f',
+      'lavfi',
+      '-i',
+      'color=c=blue:s=640x360:r=30:d=2',
+      '-filter_complex',
+      '[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]',
+      '-map',
+      '[v]',
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+      join(dir, 'steps.mp4'),
     ])
     ;({ server, origin } = await startServer(dir))
   })
@@ -681,6 +709,8 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const full = await render('audio-full', {})
     const half = await render('audio-half', { volume: 0.5 })
     const looped = await render('audio-loop', { loop: true })
+    // 编辑器里块不会比素材长，循环只在把放满的块调快以后才用得上
+    const loopedFast = await render('audio-loop-fast', { loop: true, playbackRate: 2 })
     const hidden = await render('audio-hidden', { hidden: true })
 
     expect(full.streams).toEqual(['audio', 'video'])
@@ -688,9 +718,108 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(full.early - half.early).toBeGreaterThan(4)
     expect(full.early - half.early).toBeLessThan(8)
     expect(looped.late - full.late).toBeGreaterThan(30)
+    expect(loopedFast.late - full.late).toBeGreaterThan(30)
     expect(hidden.streams).toEqual(['video'])
     expect(hidden.duration).toBeGreaterThan(2.9)
     expect(hidden.duration).toBeLessThan(3.15)
+  }, 600_000)
+
+  it('画面块的声音：增益大于 0 dB 更响，淡入淡出时头尾更轻，静音后没有声音', async () => {
+    const { logger } = memoryLogger()
+    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
+    const gray = `${origin}/gray.mp4`
+    /** 7 秒的灰片放进 0–6 秒的块；量开头、中间、结尾各 0.8 秒的响度，没有音轨时是 null。 */
+    const render = async (id: string, overrides: Partial<PictureBlock>) => {
+      const rendered = await worker.render(
+        {
+          id,
+          registryDir: (library as ComponentLibrary).dir,
+          mediaUrls: [gray],
+          compose: (paths) =>
+            localizedFilm(
+              {
+                canvas: FRAME,
+                blocks: [picture({ jobId: GRAY_JOB, src: gray, duration: 6000, ...overrides })],
+              },
+              paths,
+              (library as ComponentLibrary).catalog,
+            ),
+        },
+        { signal: new AbortController().signal, onProgress: () => {} },
+      )
+      try {
+        if (!(await streamsOf(rendered.file)).includes('audio')) return null
+        return {
+          head: await meanVolume(rendered.file, 0.1, 0.8),
+          middle: await meanVolume(rendered.file, 2.6, 0.8),
+          tail: await meanVolume(rendered.file, 5.1, 0.8),
+        }
+      } finally {
+        await rendered.cleanup()
+      }
+    }
+    const plain = await render('picture-sound', {})
+    const boosted = await render('picture-boost', { volume: 1.995262 })
+    const faded = await render('picture-fade', { fadeIn: 2000, fadeOut: 2000 })
+    const muted = await render('picture-muted', { muted: true })
+
+    if (plain === null || boosted === null || faded === null) throw new Error('导出里没有声音')
+    expect(plain.middle).toBeGreaterThan(-30)
+    expect(boosted.middle - plain.middle).toBeGreaterThan(4)
+    expect(boosted.middle - plain.middle).toBeLessThan(8)
+    expect(Math.abs(faded.middle - plain.middle)).toBeLessThan(1.5)
+    expect(plain.head - faded.head).toBeGreaterThan(6)
+    expect(plain.tail - faded.tail).toBeGreaterThan(6)
+    // 静音后整段没有声音，导出可能就不带音轨
+    expect(muted === null ? Infinity : plain.middle - muted.middle).toBeGreaterThan(30)
+  }, 900_000)
+
+  it('速度：2 倍的画面块放的是素材后面的画面，2 倍的音频块提前放完', async () => {
+    const { logger } = memoryLogger()
+    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
+    const [steps, tone] = [`${origin}/steps.mp4`, `${origin}/tone.m4a`]
+    /** 6 秒的色块片放进 0–3 秒的画面块，1.5 秒的音频放进 0–3 秒的音频块，两个块用同一个速度。 */
+    const render = async (id: string, playbackRate: number) => {
+      const rendered = await worker.render(
+        {
+          id,
+          registryDir: (library as ComponentLibrary).dir,
+          mediaUrls: [steps, tone],
+          compose: (paths) =>
+            localizedFilm(
+              {
+                canvas: FRAME,
+                blocks: [
+                  picture({ src: steps, duration: 3000, muted: true, playbackRate }),
+                  audio({ src: tone, duration: 3000, playbackRate }),
+                ],
+              },
+              paths,
+              (library as ComponentLibrary).catalog,
+            ),
+        },
+        { signal: new AbortController().signal, onProgress: () => {} },
+      )
+      try {
+        return {
+          frame: await frameAt(rendered.file, 2.5),
+          early: await meanVolume(rendered.file, 0.1, 0.5),
+          late: await meanVolume(rendered.file, 0.95, 0.4),
+        }
+      } finally {
+        await rendered.cleanup()
+      }
+    }
+    const normal = await render('speed-normal', 1)
+    const fast = await render('speed-double', 2)
+
+    // 第 2.5 秒：1 倍放到素材的 2.5 秒（绿），2 倍放到素材的 5 秒（蓝）
+    expect(meanDifference(normal.frame, solid(normal.frame.length, [0, 255, 0]))).toBeLessThan(20)
+    expect(meanDifference(fast.frame, solid(fast.frame.length, [0, 0, 255]))).toBeLessThan(20)
+    // 1.5 秒的音频：1 倍时 0.95–1.35 秒还在响，2 倍时 0.75 秒就放完了
+    expect(fast.early).toBeGreaterThan(-30)
+    expect(normal.late).toBeGreaterThan(-30)
+    expect(normal.late - fast.late).toBeGreaterThan(30)
   }, 600_000)
 
   it('成片里的块全隐藏了：照样导出，是一段同样长的黑片，没有音轨', async () => {

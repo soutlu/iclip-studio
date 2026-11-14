@@ -281,12 +281,12 @@ function EditorBody({
   const clearSelection = () => setSelectedIds(new Set())
   // 框选、拖块中途的 Esc 归时间线（只取消那一次），这里先让开
   const [gesturing, setGesturing] = useState(false)
-  // 右侧栏「时间」里的框正在输入：这时的 Esc 归那个框（放弃刚输入的），不取消选中、不关编辑器
-  const [timeEditing, setTimeEditing] = useState(false)
+  // 右侧栏里输数值的框正在输入：这时的 Esc 归那个框（放弃刚输入的），不取消选中、不关编辑器
+  const [textEditing, setTextEditing] = useState(false)
   // Esc 先退全屏（浏览器多半自己退，按键还是传到页面时才轮到这里），再取消选中；都没有才关编辑器
-  useEscapeAheadOfDialog(fullscreen || timeEditing || (!gesturing && selected.size > 0), () => {
+  useEscapeAheadOfDialog(fullscreen || textEditing || (!gesturing && selected.size > 0), () => {
     if (fullscreen) exitFullscreen()
-    else if (!timeEditing) clearSelection()
+    else if (!textEditing) clearSelection()
   })
   const selectAround = (side: 'left' | 'right') =>
     setSelectedIds(new Set(aroundPlayhead(blocks, playhead, side)))
@@ -693,10 +693,14 @@ function EditorBody({
             leaveMaterial()
             session.retime(timings)
           }}
-          onTimeEditing={setTimeEditing}
+          onTextEditing={setTextEditing}
           onValues={(id, values) => {
             leaveMaterial()
             session.setValues(id, values)
+          }}
+          onAttributes={(id, changes) => {
+            leaveMaterial()
+            session.setAttributes(id, changes)
           }}
           selected={selectedBlocks}
           sourceMs={sourceMs}
