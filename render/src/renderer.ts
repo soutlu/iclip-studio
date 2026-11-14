@@ -113,7 +113,7 @@ export function createProducerWorker(options: RendererOptions): ExportWorker {
         if (signal.aborted || error instanceof ExportFailure) throw error
         // 渲染前逐个探测素材文件：标了有声音的画面块，素材里却没有音轨
         if (extractSafeRenderErrorCode(error) === 'ASSET_MEDIA_TYPE_MISMATCH')
-          throw new ExportFailure('render-failed', SILENT_SOURCE_TEXT)
+          throw new ExportFailure('media-mismatch', SILENT_SOURCE_TEXT)
         throw new ExportFailure(
           'render-failed',
           error instanceof Error ? (error.message.split('\n')[0] ?? error.message) : String(error),

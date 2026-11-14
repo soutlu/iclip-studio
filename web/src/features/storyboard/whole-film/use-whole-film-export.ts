@@ -16,6 +16,7 @@ const FAILURE_TEXT: Record<string, string> = {
   'render-failed': '成片渲染失败，请重新导出',
   'upload-failed': '成片上传失败，请重新导出',
   'media-unreachable': '有素材读不到，请稍后重新导出',
+  'media-mismatch': '有镜头标了有声音，但素材里没有声音；把它设成静音后重新导出',
   timeout: '成片渲染超时，请重新导出',
   RENDER_LOST: '渲染服务重启过，请重新导出',
   PROVIDER_TIMEOUT: '排队太久，请重新导出',
