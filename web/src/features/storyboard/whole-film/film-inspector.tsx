@@ -599,7 +599,7 @@ function MediaSlider({
       <span className={cn('wf-media-control', centered && 'is-centered')}>
         <input
           aria-valuetext={shown}
-          className="wf-inspector-range"
+          className="wf-media-range ui-focus"
           id={id}
           max={max}
           min={min}

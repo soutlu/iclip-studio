@@ -599,16 +599,56 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
-/* 增益、速度的正中是不增不减：滑杆中间一道刻度 */
+/* 同设计稿：2px 的细轨道加一个 10px 的圆点，不画已走过的那段 */
+/* 定位后画在中间刻度上面，圆点压住刻度 */
+.wf-media-range {
+  position: relative;
+  height: 20px;
+  min-width: 0;
+  flex: 1;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.wf-media-range::-webkit-slider-runnable-track {
+  height: 2px;
+  background: color-mix(in srgb, var(--color-on-surface) 22%, transparent);
+}
+
+.wf-media-range::-moz-range-track {
+  height: 2px;
+  background: color-mix(in srgb, var(--color-on-surface) 22%, transparent);
+}
+
+.wf-media-range::-webkit-slider-thumb {
+  width: 10px;
+  height: 10px;
+  margin-top: -4px;
+  border: 0;
+  border-radius: 50%;
+  appearance: none;
+  background: var(--color-on-surface);
+}
+
+.wf-media-range::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-on-surface);
+}
+
+/* 增益、速度的正中是不增不减：滑杆中间一道刻度（滑杆宽是整行减去数值和间距） */
 .wf-media-control.is-centered::before {
   position: absolute;
   top: 50%;
-  left: calc((100% - 72px) / 2);
+  left: calc((100% - 62px) / 2);
   width: 1px;
-  height: 8px;
+  height: 6px;
   background: var(--color-outline);
   content: '';
   pointer-events: none;
@@ -616,7 +656,7 @@
 }
 
 .wf-media-readout {
-  width: 64px;
+  width: 52px;
   height: 24px;
   flex: none;
   padding: 0 4px;
@@ -629,7 +669,7 @@
 }
 
 .wf-inspector .wf-media-control .wf-media-input {
-  width: 64px;
+  width: 52px;
   height: 24px;
   flex: none;
   padding: 0 4px;
@@ -640,7 +680,7 @@
 
 .wf-media-file {
   overflow: hidden;
-  color: var(--color-on-surface);
+  color: var(--color-on-surface-variant);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
