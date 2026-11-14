@@ -9,6 +9,7 @@ import { thumbnailUrl } from './component-catalog'
 import type { CatalogItem, ComponentCatalog } from './composition/catalog'
 import { hoverPreviewOf } from './hover-preview'
 import { ItemHoverPreview } from './item-hover-preview'
+import { previewRuntimeSrc } from './preview-document'
 import {
   categoryLabel,
   filterItems,
@@ -54,6 +55,7 @@ export function ItemsTab({
   const chips = itemChips(catalog, kind)
   const chip = chips.find((candidate) => candidate.value === filter.chip) ?? chips[0]
   const items = chip === undefined ? [] : filterItems(catalog, chip, filter.query)
+  const runtimeSrc = previewRuntimeSrc(catalog, origin)
 
   // 预览只在停着的那一张卡上跑
   const [previewed, setPreviewed] = useState<string | null>(null)
@@ -113,6 +115,7 @@ export function ItemsTab({
                 preview={
                   item.name === previewed ? hoverPreviewOf(item, catalog, origin) : undefined
                 }
+                runtimeSrc={runtimeSrc}
               />
             </li>
           ))}
@@ -126,6 +129,7 @@ type CardProps = {
   catalog: ComponentCatalog
   item: CatalogItem
   preview: string | undefined
+  runtimeSrc: string
   onAdd: () => void
   onCarry: (point: CarryPoint | null) => void
   onDrop: (point: CarryPoint) => void
@@ -141,6 +145,7 @@ function ItemCard({
   catalog,
   item,
   preview,
+  runtimeSrc,
   onAdd,
   onCarry,
   onDrop,
@@ -213,7 +218,9 @@ function ItemCard({
             <img alt="" draggable={false} loading="lazy" src={thumbnail} />
           )}
         </span>
-        {preview === undefined ? null : <ItemHoverPreview srcdoc={preview} />}
+        {preview === undefined ? null : (
+          <ItemHoverPreview runtimeSrc={runtimeSrc} srcdoc={preview} />
+        )}
         {item.duration === null ? null : (
           <span aria-hidden="true" className="wf-item-duration">
             {durationText(item.duration)}

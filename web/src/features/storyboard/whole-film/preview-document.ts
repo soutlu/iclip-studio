@@ -18,6 +18,16 @@ const withPreviewMedia = (html: string): string =>
     .replaceAll('<audio ', '<audio crossorigin="anonymous" preload="none" ')
     .replace(/<head[^>]*>/i, '$&\n<meta name="hyperframes-studio-preview" content="1">')
 
+const catalogBase = (catalog: ComponentCatalog, origin: string) =>
+  `${origin}/hyperframes/${catalog.version}/`
+
 /** 预览用的那一份：成片文件加上组件库的基准地址和预览专用的媒体加载方式。 */
 export const previewDocument = (html: string, catalog: ComponentCatalog, origin: string): string =>
-  withBaseHref(withPreviewMedia(html), `${origin}/hyperframes/${catalog.version}/`)
+  withBaseHref(withPreviewMedia(html), catalogBase(catalog, origin))
+
+/**
+ * 交给预览播放器 `runtime-src` 的运行库地址：组件库里带的那一份。
+ * 播放器只认同源（或本机）的绝对地址，别的地址和不给一样，会去外网 CDN 取。
+ */
+export const previewRuntimeSrc = (catalog: ComponentCatalog, origin: string): string =>
+  `${catalogBase(catalog, origin)}${catalog.runtime.hyperframes}`

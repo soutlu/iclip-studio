@@ -190,6 +190,11 @@ describe('组件、块页签 · 悬停预览', () => {
     expect(card(/^测试画面/)).toContainElement(player as HTMLElement)
     expect(player).toHaveAttribute('muted')
     expect(player).toHaveAttribute('loop')
+    // 运行库用组件库里带的那份，收到 srcdoc 时就已经带着
+    expect(player).toHaveProperty(
+      'loadedRuntimeSrc',
+      `${ORIGIN}/hyperframes/test-fixtures/vendor/hyperframes/hyperframe.runtime.iife.js`,
+    )
     const srcdoc = player?.getAttribute('srcdoc') ?? ''
     expect(srcdoc).toContain(`<base href="${ORIGIN}/hyperframes/test-fixtures/">`)
     expect(srcdoc).toContain('data-width="1920" data-height="1080"')

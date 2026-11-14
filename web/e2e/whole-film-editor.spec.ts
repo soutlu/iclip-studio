@@ -30,8 +30,29 @@ const readyPlayer = async (dialog: Locator) => {
   return player
 }
 
+const RUNTIME_FILE = '/hyperframe.runtime.iife.js'
+
+/** 播放器预览页里装的运行库脚本地址。 */
+const runtimeScripts = (player: Locator) =>
+  player.evaluate(
+    (element: HTMLElement & { iframeElement: HTMLIFrameElement }, file) =>
+      [
+        ...(element.iframeElement.contentDocument?.querySelectorAll<HTMLScriptElement>(
+          `script[src$="${file}"]`,
+        ) ?? []),
+      ].map((script) => script.src),
+    RUNTIME_FILE,
+  )
+
 test('成片编辑器：选镜头加入成片、播放、撤销、导出下载，关掉再开成片还在', async ({ page }) => {
   test.setTimeout(60_000)
+  // 预览和悬停预览的运行库都从组件库加载，整个过程不访问外网 CDN
+  const cdnRequests: string[] = []
+  page.on('request', (request) => {
+    if (new URL(request.url()).host === 'cdn.jsdelivr.net') cdnRequests.push(request.url())
+  })
+  const runtimeRequested = () =>
+    page.waitForRequest((request) => new URL(request.url()).pathname.endsWith(RUNTIME_FILE))
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
   const dialog = await openWholeFilm(page, panel)
@@ -47,6 +68,7 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
   const first = draftSaved(page, 1)
+  const previewRuntime = runtimeRequested()
   await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
   await page.keyboard.press('Enter')
   const { html } = (await first).postDataJSON() as { html: string }
@@ -54,7 +76,38 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   expect(html).not.toContain('<script')
   expect(html).toMatch(/<video [^>]*src="[^"]+" data-var-src="src-[0-9a-f-]{36}"/)
 
+  // 请求一发出就查：CDN 取不到时预览画不出来，等不到下面的断言
+  await previewRuntime
+  expect(cdnRequests).toEqual([])
   const player = await readyPlayer(dialog)
+  const origin = new URL(page.url()).origin.replaceAll('.', '\\.')
+  const local = new RegExp(`^${origin}/hyperframes/[^/]+/`)
+  const scripts = await runtimeScripts(player)
+  expect(scripts).not.toHaveLength(0)
+  for (const src of scripts) expect(src).toMatch(local)
+
+  const card = dialog
+    .getByRole('complementary', { name: '组件、块和音频' })
+    .getByRole('list')
+    .getByRole('group', { name: /秒$/ })
+    .first()
+  const hoverRuntime = runtimeRequested()
+  await card.hover()
+  await hoverRuntime
+  expect(cdnRequests).toEqual([])
+  const hoverPlayer = card.locator('hyperframes-player')
+  await expect(hoverPlayer).toHaveCount(1)
+  await expect
+    .poll(() =>
+      hoverPlayer.evaluate((element: HTMLElement & { painted: boolean }) => element.painted),
+    )
+    .toBe(true)
+  const hoverScripts = await runtimeScripts(hoverPlayer)
+  expect(hoverScripts).not.toHaveLength(0)
+  for (const src of hoverScripts) expect(src).toMatch(local)
+  await page.mouse.move(0, 0)
+  await expect(hoverPlayer).toHaveCount(0)
+
   const second = draftSaved(page, 2)
   await materials.getByRole('button', { name: /^生成 A 镜头 3，/ }).click()
   await page.keyboard.press('Enter')
@@ -140,6 +193,7 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
     'true',
   )
   await readyPlayer(reopened)
+  expect(cdnRequests).toEqual([])
 })
 
 const boxOf = async (locator: Locator) => {
