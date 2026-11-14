@@ -105,20 +105,20 @@ describe('音频栏 · 列表', () => {
     expect(within(list()).getByText('城市夜景氛围')).toBeInTheDocument()
     await user.type(search, '钢琴')
     expect(screen.queryByRole('list', { name: '音频' })).toBeNull()
-    expect(screen.getByRole('status')).toHaveTextContent('暂无符合条件的音频，请换个关键词')
+    expect(screen.getByRole('status')).toHaveTextContent('暂无符合条件的音频，请更换关键词')
   })
 
   it('这段对话还没有音频：说明怎么加', async () => {
     await openTab([])
     expect(await screen.findByRole('status')).toHaveTextContent(
-      '暂无音频，请点「生成音乐」或「导入音频」',
+      '暂无音频，请点击「生成音乐」或「导入音频」',
     )
   })
 
   it.each([
-    ['pending', '排队中', '音乐还没生成完，无法加入成片'],
-    ['submitting', '生成中', '音乐还没生成完，无法加入成片'],
-    ['submitted', '生成中', '音乐还没生成完，无法加入成片'],
+    ['pending', '排队中', '音乐尚未生成完成，无法加入成片；请等待生成完成'],
+    ['submitting', '生成中', '音乐尚未生成完成，无法加入成片；请等待生成完成'],
+    ['submitted', '生成中', '音乐尚未生成完成，无法加入成片；请等待生成完成'],
     ['failed', '生成失败', '音乐生成失败，无法加入成片；请重新生成'],
   ] as const)('%s 显示「%s」，不能试听，按 Enter、右键都加不进成片', async (status, label, why) => {
     const user = userEvent.setup()
@@ -379,7 +379,7 @@ describe('音频栏 · 生成音乐', () => {
       '轻快的原声吉他',
     )
     await waitFor(() => expect(submit).toBeEnabled())
-    expect(popover).toHaveAccessibleDescription('生成后出现在「音频」页签的列表里')
+    expect(popover).toHaveAccessibleDescription('生成后可在「音频」页签的列表中查看')
     await user.click(submit)
 
     await waitFor(() => expect(popover).not.toBeInTheDocument())

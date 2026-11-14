@@ -87,12 +87,12 @@ function elementsOf(parent: { childNodes: Node[] }, where: string, allowed: stri
   const found: Element[] = []
   for (const node of parent.childNodes) {
     if (isElement(node)) {
-      if (!allowed.includes(node.tagName)) fail(`${where}里不能有 <${node.tagName}>`)
+      if (!allowed.includes(node.tagName)) fail(`${where}中不允许出现 <${node.tagName}>`)
       found.push(node)
     } else if (node.nodeName === '#text') {
-      if (node.value.trim() !== '') fail(`${where}里不能直接写文字`)
+      if (node.value.trim() !== '') fail(`${where}中不允许直接写文字`)
     } else {
-      fail(`${where}里不能有注释`)
+      fail(`${where}中不允许出现注释`)
     }
   }
   return found
@@ -101,7 +101,7 @@ function elementsOf(parent: { childNodes: Node[] }, where: string, allowed: stri
 function attributes(element: Element, where: string, allowed: readonly string[]) {
   const values = new Map<string, string>()
   for (const { name, value } of element.attrs) {
-    if (!allowed.includes(name)) fail(`${where}不能带 ${name}`)
+    if (!allowed.includes(name)) fail(`${where}不允许带 ${name}`)
     values.set(name, value)
   }
   return (name: string): string => values.get(name) ?? fail(`${where}缺少 ${name}`)
@@ -113,7 +113,8 @@ function milliseconds(value: string, where: string): number {
 }
 
 function integer(value: string, where: string, max: number): number {
-  if (!INTEGER.test(value) || Number(value) > max) fail(`${where}要是 0 到 ${max} 的整数：${value}`)
+  if (!INTEGER.test(value) || Number(value) > max)
+    fail(`${where}必须是 0 到 ${max} 的整数：${value}`)
   return Number(value)
 }
 
@@ -141,7 +142,7 @@ const CHECKS: Record<ClipAttribute, Check> = {
   preload: FIXED,
   loop: FIXED,
   id: (value, where) => {
-    if (!CLIP_ID.test(value) || value === FILM_ID) fail(`${where}的编号不合规矩`)
+    if (!CLIP_ID.test(value) || value === FILM_ID) fail(`${where}的编号不符合规范`)
   },
   // 和 id 一样，读完整个片段再比
   'data-hf-id': () => {},
@@ -152,7 +153,7 @@ const CHECKS: Record<ClipAttribute, Check> = {
     }
   },
   'data-label': (value, where) => {
-    if (value.length > MAX_LABEL_CHARS) fail(`${where}的名字超过 ${MAX_LABEL_CHARS} 个字`)
+    if (value.length > MAX_LABEL_CHARS) fail(`${where}的名称超过 ${MAX_LABEL_CHARS} 个字`)
   },
   src: (value, where) => {
     if (value.length > MAX_URL_CHARS || !/^https?:$/.test(URL.parse(value)?.protocol ?? '')) {
@@ -160,7 +161,7 @@ const CHECKS: Record<ClipAttribute, Check> = {
     }
   },
   'data-var-src': (value, where) => {
-    if (!SOURCE_VARIABLE.test(value)) fail(`${where}绑的变量不是按记录编号取名的地址变量`)
+    if (!SOURCE_VARIABLE.test(value)) fail(`${where}绑定的变量不是按记录编号命名的地址变量`)
   },
   'data-start': seconds('起点'),
   'data-duration': seconds('时长'),
@@ -177,7 +178,7 @@ const CHECKS: Record<ClipAttribute, Check> = {
   'data-playback-rate': (value, where) => {
     const rate = Number(value)
     if (!DECIMAL.test(value) || rate < MIN_PLAYBACK_RATE || rate > MAX_PLAYBACK_RATE) {
-      fail(`${where}的速度要在 ${MIN_PLAYBACK_RATE} 到 ${MAX_PLAYBACK_RATE} 倍之间`)
+      fail(`${where}的速度必须在 ${MIN_PLAYBACK_RATE} 到 ${MAX_PLAYBACK_RATE} 倍之间`)
     }
   },
   // 和组件库目录比，读完整个片段再查
@@ -185,14 +186,14 @@ const CHECKS: Record<ClipAttribute, Check> = {
   'data-composition-src': () => {},
   'data-variable-values': (value, where) => {
     if (variableValuesOf(value) === undefined) {
-      fail(`${where}的可填项取值要是一个 JSON 对象，值是字符串、数字或布尔`)
+      fail(`${where}的可填项取值必须是 JSON 对象，值为字符串、数字或布尔值`)
     }
   },
 }
 
 /** 按表读一个片段：只能带表里这种片段的属性，必须写的都写了，每个值都合规矩。 */
 function readClip(element: Element, catalog: ComponentCatalog): FilmClip {
-  const kind = clipKindOfTag(element.tagName) ?? fail(`成片的根里不能有 <${element.tagName}>`)
+  const kind = clipKindOfTag(element.tagName) ?? fail(`成片的根中不允许出现 <${element.tagName}>`)
   const rules: Readonly<Record<string, AttributeRule>> = CLIP_SHAPES[kind].attributes
   const id = element.attrs.find((attr) => attr.name === 'id')?.value ?? ''
   const where = `${CLIP_NAMES[kind]}「${id}」`
@@ -200,7 +201,7 @@ function readClip(element: Element, catalog: ComponentCatalog): FilmClip {
   const values: Record<string, string> = {}
   for (const { name, value } of element.attrs) {
     const rule =
-      (Object.hasOwn(rules, name) ? rules[name] : undefined) ?? fail(`${where}不能带 ${name}`)
+      (Object.hasOwn(rules, name) ? rules[name] : undefined) ?? fail(`${where}不允许带 ${name}`)
     if (rule.fixed !== undefined) fixed(value, rule.fixed, `${where}的 ${name}`)
     CHECKS[name as ClipAttribute](value, where)
     values[name] = value
@@ -210,17 +211,17 @@ function readClip(element: Element, catalog: ComponentCatalog): FilmClip {
   }
   fixed(values['data-hf-id'] ?? '', id, `${where}的 data-hf-id`)
   if (values['muted'] !== undefined && values['data-has-audio'] !== undefined) {
-    fail(`${where}不能同时带 muted 和 data-has-audio`)
+    fail(`${where}不允许同时带 muted 和 data-has-audio`)
   }
   const clip =
     clipFromAttributes(kind, id, values, String(stackingOf(values['style']))) ??
-    fail(`${where}不合写法`)
+    fail(`${where}不符合写法`)
   if (clip.duration < MIN_CLIP_MS) fail(`${where}短于 ${MIN_CLIP_MS} 毫秒`)
   if (
     clip.kind === 'host' &&
     !catalog.items.some((item) => item.name === clip.component && item.src === clip.src)
   ) {
-    fail(`${where}用的组件不在组件库里：${clip.component}`)
+    fail(`${where}使用的组件不在组件库中：${clip.component}`)
   }
   return clip
 }
@@ -241,21 +242,21 @@ function checkVariables(json: string | undefined, clips: FilmClip[]): Set<string
   } catch {
     return fail('变量声明不是 JSON')
   }
-  if (!Array.isArray(declared)) return fail('变量声明要是一个数组')
+  if (!Array.isArray(declared)) return fail('变量声明必须是数组')
   const expected = new Map(
     clips.filter(isMediaClip).map((clip) => [sourceVariableId(clip.jobId), clip.src]),
   )
   const seen = new Set<string>()
   for (const entry of declared as unknown[]) {
     const { id, type, default: value } = (entry ?? {}) as Record<string, unknown>
-    if (typeof id !== 'string' || seen.has(id)) return fail('变量声明里有重复或没有名字的变量')
-    if (!expected.has(id)) fail(`变量「${id}」没有片段在用`)
+    if (typeof id !== 'string' || seen.has(id)) return fail('变量声明中有重复或未命名的变量')
+    if (!expected.has(id)) fail(`变量「${id}」未被任何片段使用`)
     if (type !== 'string' || value !== expected.get(id)) {
-      fail(`变量「${id}」的默认值要等于片段上写的地址`)
+      fail(`变量「${id}」的默认值必须等于片段上的地址`)
     }
     seen.add(id)
   }
-  for (const id of expected.keys()) if (!seen.has(id)) fail(`变量「${id}」没有声明`)
+  for (const id of expected.keys()) if (!seen.has(id)) fail(`变量「${id}」未声明`)
   return seen
 }
 
@@ -306,15 +307,15 @@ export function readFilm(html: string, catalog: ComponentCatalog): Film {
   const page = document.childNodes.filter((node) => node.nodeName !== '#documentType')
   const root = page[0]
   if (page.length !== 1 || !root || !isElement(root) || root.tagName !== 'html') {
-    return fail('成片文件要是一份完整的 HTML')
+    return fail('成片文件必须是完整的 HTML')
   }
   const variables = attributes(root, '<html>', ['data-composition-variables'])
   const [, body] = elementsOf(root, '<html>', ['head', 'body'])
   if (!body || body.tagName !== 'body' || body.attrs.length > 0) {
-    return fail('<body> 不能带属性')
+    return fail('<body> 不允许带属性')
   }
   const [stage, ...others] = elementsOf(body, '<body>', ['div'])
-  if (!stage || others.length > 0) return fail('<body> 里只能有成片的根')
+  if (!stage || others.length > 0) return fail('<body> 中只能有成片的根')
   const get = attributes(stage, '成片的根', [...ROOT_ATTRIBUTES, 'style'])
   for (const name of ['id', 'data-hf-id', 'data-composition-id'] as const) {
     fixed(get(name), FILM_ID, `成片的根的 ${name}`)
@@ -326,7 +327,7 @@ export function readFilm(html: string, catalog: ComponentCatalog): Film {
     width: integer(get('data-width'), '画面的宽', MAX_CANVAS_EDGE),
     height: integer(get('data-height'), '画面的高', MAX_CANVAS_EDGE),
   }
-  if (canvas.width === 0 || canvas.height === 0) fail('画面的宽高不能是 0')
+  if (canvas.width === 0 || canvas.height === 0) fail('画面的宽高不允许为 0')
   const tags = Object.values(CLIP_SHAPES).map((shape) => shape.tag)
   const clips = elementsOf(stage, '成片的根', tags).map((element) => readClip(element, catalog))
   checkTimeline(clips)
@@ -358,7 +359,7 @@ export async function checkFilm(html: string, catalog: ComponentCatalog): Promis
   const { findings } = await lintHyperframeHtml(written, { filePath: 'index.html', host: 'studio' })
   const error = findings.find((finding) => finding.severity === 'error')
   if (error) {
-    throw new FilmProblem('成片文件没通过渲染前的检查', `${error.code}: ${error.message}`)
+    throw new FilmProblem('成片文件未通过渲染前的检查', `${error.code}: ${error.message}`)
   }
   return { film, html: written, durationMs: filmDurationMs(film), sources: sourcesOf(film) }
 }

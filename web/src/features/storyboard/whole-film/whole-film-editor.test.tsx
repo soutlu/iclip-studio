@@ -142,7 +142,7 @@ describe('成片编辑器 · 加入素材', () => {
   it('还没有成片：播放、进度条、导出置灰并说明原因，没选镜头时按 Enter 提示先选，打开不保存', async () => {
     const user = userEvent.setup()
     await openEditor()
-    expect(screen.getByText('成片还是空的；加入内容后可以在这里预览')).toBeVisible()
+    expect(screen.getByText('暂无成片内容，加入内容后可在此预览')).toBeVisible()
     expect(within(transport()).getByRole('button', { name: '播放' })).toHaveAttribute(
       'aria-disabled',
       'true',
@@ -151,12 +151,14 @@ describe('成片编辑器 · 加入素材', () => {
     expect(within(toolbar()).queryByRole('button', { name: '加入成片' })).toBeNull()
     screen.getByRole('dialog').focus()
     await user.keyboard('{Enter}')
-    expect(await screen.findByText('先在下方点一个镜头选中范围')).toBeVisible()
+    expect(
+      await screen.findByText('尚未选中镜头，无法加入成片；请先在下方选中镜头范围'),
+    ).toBeVisible()
     const exportButton = screen.getByRole('button', { name: '导出' })
     expect(exportButton).toHaveAttribute('aria-disabled', 'true')
     await user.click(exportButton)
     expect(
-      (await screen.findAllByText('成片还是空的，无法导出；请先加入内容')).length,
+      (await screen.findAllByText('成片暂无内容，无法导出；请先加入内容')).length,
     ).toBeGreaterThan(0)
     await new Promise((resolve) => setTimeout(resolve, 100))
     expect(mockWholeFilmDraft(CONVERSATION)).toBeUndefined()
@@ -278,7 +280,7 @@ describe('成片编辑器 · 时间线', () => {
   it('成片里只有组件或块的片段、没有视频片段：照样能播放、能导出', async () => {
     putMockWholeFilmDraft(CONVERSATION, filmFile([host()], { width: 720, height: 1280 }))
     await openEditor()
-    expect(screen.queryByText('成片还是空的；加入内容后可以在这里预览')).toBeNull()
+    expect(screen.queryByText('暂无成片内容，加入内容后可在此预览')).toBeNull()
     expect(within(transport()).getByRole('button', { name: '播放' })).not.toHaveAttribute(
       'aria-disabled',
       'true',
@@ -291,7 +293,7 @@ describe('成片编辑器 · 时间线', () => {
 
   it('还没有成片：留一行空的，提示把镜头拖进来', async () => {
     await openEditor()
-    expect(within(timeline()).getByText('把下面的镜头拖到这里')).toBeVisible()
+    expect(within(timeline()).getByText('将下方的镜头拖到此处可加入成片')).toBeVisible()
     expect(screen.queryByRole('group', { name: '第 2 行' })).toBeNull()
   })
 
@@ -589,7 +591,9 @@ describe('成片编辑器 · 多选', () => {
     const zoomTo = within(toolbar()).getByRole('button', { name: '缩放到选中的片段' })
     expect(zoomTo).toHaveAttribute('aria-disabled', 'true')
     await user.click(zoomTo)
-    expect((await screen.findAllByText('先选中一个片段')).length).toBeGreaterThan(0)
+    expect(
+      (await screen.findAllByText('尚未选中片段，无法缩放；请先选中一个片段')).length,
+    ).toBeGreaterThan(0)
 
     await user.click(within(toolbar()).getByRole('button', { name: '选择工具：选择' }))
     const menu = await screen.findByRole('menu', { name: '选择工具：选择' })
@@ -965,11 +969,11 @@ describe('成片编辑器 · 导出', () => {
   })
 
   it.each([
-    ['渲染服务报的原因', 'media-unreachable', 'ECONNRESET', '有素材读不到，请稍后重新导出'],
-    ['渲染服务重启过', 'RENDER_LOST', 'render service restarted', '渲染服务重启过，请重新导出'],
-    ['交出去太久没结束', 'PROVIDER_TIMEOUT', 'no end after 6 h', '排队太久，请重新导出'],
-    ['渲染服务连不上', 'RENDER_UNAVAILABLE', 'connect refused', '渲染服务连不上，请稍后重新导出'],
-    ['排队时成片又改过', 'FILM_CHANGED', 'draft moved on', '成片在排队时又改过，请重新导出'],
+    ['渲染服务报的原因', 'media-unreachable', 'ECONNRESET', '部分素材读取失败，请稍后重新导出'],
+    ['渲染服务重启过', 'RENDER_LOST', 'render service restarted', '渲染服务已重启，请重新导出'],
+    ['交出去太久没结束', 'PROVIDER_TIMEOUT', 'no end after 6 h', '导出等待超时，请重新导出'],
+    ['渲染服务连不上', 'RENDER_UNAVAILABLE', 'connect refused', '渲染服务无法连接，请稍后重新导出'],
+    ['排队时成片又改过', 'FILM_CHANGED', 'draft moved on', '成片在排队期间已被修改，请重新导出'],
     ['没见过的错误码', 'SUBMIT_INTERRUPTED', 'worker restarted', '成片导出失败，请重新导出'],
   ])('导出失败（%s）：按原因说一句话，不露给开发看的原文', async (_, code, message, text) => {
     serveLatest({ status: 'failed', error: { code, message } })
@@ -1062,7 +1066,7 @@ describe('成片编辑器 · 组件栏', () => {
     await waitSaved(() => expect(savedComponents()).toHaveLength(1))
     await new Promise((resolve) => setTimeout(resolve, 1000))
     expect(savedComponents()).toHaveLength(1)
-    expect(screen.getByText('上一个组件正在加入成片，请稍后再加')).toBeVisible()
+    expect(screen.getByText('上一个组件正在加入成片，请稍后再试')).toBeVisible()
   })
 })
 
@@ -1114,14 +1118,14 @@ describe('成片编辑器 · 右侧栏', () => {
       host({ duration: 2_000 }),
       video({ id: 'clip-2', label: 'B · 镜头 1', jobId: TAKE_B, src: URL_B, start: 2_000 }),
     ])
-    expect(within(inspector()).getByRole('heading', { name: '没有选中' })).toBeVisible()
-    expect(within(inspector()).getByText('在时间线上点一个片段，在这里改它')).toBeVisible()
+    expect(within(inspector()).getByRole('heading', { name: '尚未选中片段' })).toBeVisible()
+    expect(within(inspector()).getByText('在时间线上选中片段后可在此修改')).toBeVisible()
 
     await pick(user, '测试可填项')
     await user.keyboard('{Shift>}')
     await pick(user, 'B · 镜头 1')
     await user.keyboard('{/Shift}')
-    expect(within(inspector()).getByRole('heading', { name: '选中了 2 个片段' })).toBeVisible()
+    expect(within(inspector()).getByRole('heading', { name: '已选中 2 个片段' })).toBeVisible()
     const names = within(within(inspector()).getByRole('list', { name: '选中的片段' }))
       .getAllByRole('listitem')
       .map((item) => item.textContent)
@@ -1130,7 +1134,7 @@ describe('成片编辑器 · 右侧栏', () => {
     expect(within(inspector()).queryByRole('button', { name: /^时间/ })).toBeNull()
 
     await user.click(row())
-    expect(within(inspector()).getByRole('heading', { name: '没有选中' })).toBeVisible()
+    expect(within(inspector()).getByRole('heading', { name: '尚未选中片段' })).toBeVisible()
   })
 
   it('组件或块的片段：头部是名字和种类，先展开「内容」；分组一次只展开一个，收起的写摘要，再点展开着的就全收起', async () => {
@@ -1195,7 +1199,7 @@ describe('成片编辑器 · 右侧栏', () => {
     await user.click(within(inspector()).getByRole('button', { name: '删除' }))
     await waitSaved(() => expect(savedClips()).toHaveLength(1))
     expect(savedTag('clip-2')).toContain('data-start="0"')
-    expect(within(inspector()).getByRole('heading', { name: '没有选中' })).toBeVisible()
+    expect(within(inspector()).getByRole('heading', { name: '尚未选中片段' })).toBeVisible()
   })
 
   it('内容：每项按类型用对应的控件，没填过的显示默认值', async () => {
@@ -1343,10 +1347,10 @@ describe('成片编辑器 · 右侧栏', () => {
       }),
     ])
     await pick(user, '测试叠加')
-    expect(within(inspector()).getByText('这个组件没有可以填的内容')).toBeVisible()
+    expect(within(inspector()).getByText('暂无可填项')).toBeVisible()
     await pick(user, '测试画面')
     expect(within(inspector()).getByText('标志')).toBeVisible()
-    expect(within(inspector()).getByText('图片暂不支持在这里修改')).toBeVisible()
+    expect(within(inspector()).getByText('暂不支持在此修改图片')).toBeVisible()
     expect(within(inspector()).queryByRole('textbox')).toBeNull()
   })
 
@@ -1431,7 +1435,7 @@ describe('成片编辑器 · 右侧栏', () => {
     const slider = (name: string) => within(inspector()).getByRole('slider', { name })
     /** 滑杆右边的数值，点一下可以直接输入。 */
     const readout = (name: string) =>
-      within(inspector()).getByRole('button', { name: new RegExp(`^${name} .*，点一下直接输入$`) })
+      within(inspector()).getByRole('button', { name: new RegExp(`^${name} .*，点击可直接输入$`) })
     const toggle = (name: string) => within(inspector()).getByRole('switch', { name })
     /** 拖到第 `position` 格再松手。 */
     const drag = (name: string, position: number) => {
@@ -1622,7 +1626,7 @@ describe('成片编辑器 · 右侧栏', () => {
       await waitFor(() => expect(toggle('静音')).toHaveAttribute('aria-disabled', 'true'))
       expect(toggle('静音')).toHaveAttribute('aria-checked', 'true')
       await user.hover(toggle('静音'))
-      expect(await screen.findByRole('tooltip')).toHaveTextContent('这段素材没有声音')
+      expect(await screen.findByRole('tooltip')).toHaveTextContent('该素材没有声音，无法取消静音')
       await user.click(toggle('静音'))
       expect(toggle('静音')).toHaveAttribute('aria-checked', 'true')
       expect(undoButton()).toHaveAttribute('aria-disabled', 'true')

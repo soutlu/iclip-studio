@@ -75,7 +75,7 @@ const COMMIT_DELAY_MS = 300
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i
 
-const SILENT_SOURCE_TEXT = '这段素材没有声音'
+const SILENT_SOURCE_TEXT = '该素材没有声音，无法取消静音'
 
 const formatSeconds = (ms: number) => (ms / 1000).toFixed(2)
 
@@ -101,14 +101,14 @@ export function FilmInspector({ selected, ...rest }: Props) {
       {only === undefined ? (
         <div className="wf-inspector-empty">
           <Icon decorative name="select-tool" size="lg" />
-          <h3 className="wf-inspector-empty-title">没有选中</h3>
-          <p>在时间线上点一个片段，在这里改它</p>
+          <h3 className="wf-inspector-empty-title">尚未选中片段</h3>
+          <p>在时间线上选中片段后可在此修改</p>
         </div>
       ) : selected.length > 1 ? (
         <div className="wf-inspector-multi">
           <div className="wf-inspector-multi-head">
             <Icon decorative name="layers" size="sm" />
-            <h3>选中了 {selected.length} 个片段</h3>
+            <h3>已选中 {selected.length} 个片段</h3>
           </div>
           <ul aria-label="选中的片段" className="wf-inspector-multi-list">
             {selected.map((clip) => (
@@ -118,7 +118,7 @@ export function FilmInspector({ selected, ...rest }: Props) {
               </li>
             ))}
           </ul>
-          <p className="wf-inspector-note">只选中一个片段时，才能在这里改它</p>
+          <p className="wf-inspector-note">已选中多个片段，无法在此修改；请只选中一个片段</p>
         </div>
       ) : (
         <ClipInspector clip={only} key={only.id} {...rest} />
@@ -656,7 +656,7 @@ function Readout({
   if (typing === null)
     return (
       <button
-        aria-label={`${label} ${text}，点一下直接输入`}
+        aria-label={`${label} ${text}，点击可直接输入`}
         className="wf-media-readout ui-state ui-focus"
         onClick={() => {
           typedRef.current = text
@@ -758,7 +758,7 @@ function ContentFields({
     schedule()
   }
 
-  if (variables.length === 0) return <p className="wf-inspector-note">这个组件没有可以填的内容</p>
+  if (variables.length === 0) return <p className="wf-inspector-note">暂无可填项</p>
   return (
     <div
       className="wf-inspector-rows"
@@ -875,7 +875,7 @@ function VariableControl({
     case 'number':
       return <NumberControl current={current} id={id} onChange={onChange} variable={variable} />
     case 'image':
-      return <span className="wf-inspector-static">图片暂不支持在这里修改</span>
+      return <span className="wf-inspector-static">暂不支持在此修改图片</span>
     case 'string':
       return (
         <Input

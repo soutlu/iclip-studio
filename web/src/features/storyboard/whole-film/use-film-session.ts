@@ -52,7 +52,7 @@ export type NewAudio = Pick<AudioClip, 'label' | 'jobId' | 'src' | 'mediaStart' 
 const openComposition = async (html: string): Promise<Composition> =>
   (await import('@hyperframes/sdk')).openComposition(html)
 
-const STALE_NOTICE = '成片草稿已在别处改过，已换成最新的一版；刚才没保存的改动已放弃'
+const STALE_NOTICE = '成片草稿已在别处修改，已切换到最新版本；未保存的改动已放弃'
 
 const NO_RENUMBERING: Renumbering = new Map()
 const NO_STARTS: ReadonlyMap<string, number> = new Map()

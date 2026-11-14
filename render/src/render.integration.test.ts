@@ -850,7 +850,8 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     }
     await expect(render('silent-sounding', false)).rejects.toMatchObject({
       code: 'media-mismatch',
-      message: '有镜头标了有声音，但素材文件里没有声音；把这个镜头设成静音后再导出',
+      message:
+        '有视频片段标记为有声音，但素材文件没有声音，无法导出；请将该视频片段设为静音后重新导出',
     })
   }, 600_000)
 

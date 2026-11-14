@@ -38,18 +38,18 @@ const rateLabel = (rate: number) => `${rate}×`
 // 逐条对应编辑器里真有的按键：改了按键处理要同步改这里
 const SHORTCUTS: readonly { keys: readonly string[]; action: string }[] = [
   { keys: ['空格'], action: '播放或暂停' },
-  { keys: ['←', '→'], action: '播放头往前、往后移 0.1 秒' },
-  { keys: ['⇧←', '⇧→'], action: '播放头往前、往后移 1 秒' },
+  { keys: ['←', '→'], action: '播放头前移或后移 0.1 秒' },
+  { keys: ['⇧←', '⇧→'], action: '播放头前移或后移 1 秒' },
   { keys: ['⌘Z'], action: '撤销' },
   { keys: ['⇧⌘Z'], action: '重做' },
-  { keys: ['Delete'], action: '删掉选中的片段' },
+  { keys: ['Delete'], action: '删除选中的片段' },
   { keys: ['['], action: '选中播放头左边的片段' },
   { keys: [']'], action: '选中播放头右边的片段' },
   { keys: ['Z'], action: '缩放到选中的片段' },
-  { keys: ['Enter'], action: '把选中的镜头加入成片' },
-  { keys: ['Esc'], action: '退出全屏、取消选中；都没有时关闭成片编辑' },
+  { keys: ['Enter'], action: '将选中的镜头加入成片' },
+  { keys: ['Esc'], action: '退出全屏、取消选中；两者均无时关闭成片编辑' },
   { keys: ['M'], action: '静音或开启声音' },
-  { keys: ['⇧L'], action: '打开或关闭循环播放' },
+  { keys: ['⇧L'], action: '开启或关闭循环播放' },
   { keys: ['F'], action: '全屏或退出全屏' },
 ]
 
@@ -151,7 +151,9 @@ export function PreviewTransport({
             shortcuts="Shift+L"
             tip={
               <>
-                {playback.loop ? '循环播放开着：播到结尾从头接着播' : '循环播放关着：播到结尾停下'}
+                {playback.loop
+                  ? '循环播放已开启：播放到结尾后从头继续'
+                  : '循环播放已关闭：播放到结尾后停止'}
                 <Keys>⇧L</Keys>
               </>
             }

@@ -27,7 +27,7 @@ export function parseRequest<T>(
   if (result.success) return { ok: true, request: result.data }
   const issue = result.error.issues[0]
   const path = issue?.path.join('.') || '（请求体）'
-  return { ok: false, message: `${path}：${issue?.message ?? '格式不对'}` }
+  return { ok: false, message: `${path}：${issue?.message ?? '格式不正确'}` }
 }
 
 export function parseAllowedHosts(value: string | undefined): Set<string> {

@@ -672,7 +672,7 @@ describe('useFilmSession', () => {
     await waitFor(() => expect(videosOf(result)).toEqual([newer]))
     expect(result.current.film?.canUndo).toBe(false)
     expect(onNotice).toHaveBeenCalledWith(
-      '成片草稿已在别处改过，已换成最新的一版；刚才没保存的改动已放弃',
+      '成片草稿已在别处修改，已切换到最新版本；未保存的改动已放弃',
     )
     await settled(result)
     expect(mockWholeFilmDraft(CONVERSATION)?.revision).toBe(2)

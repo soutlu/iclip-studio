@@ -375,7 +375,7 @@ test('Enter 把选区接在成片末尾：焦点在镜头、选区两端或不�
 
   await shotOf(materials, 1, 'A', 1).focus()
   await page.keyboard.press('Enter')
-  await expect(page.getByText('先在下方点一个镜头选中范围')).toBeVisible()
+  await expect(page.getByText('尚未选中镜头，无法加入成片；请先在下方选中镜头范围')).toBeVisible()
   expect(await savedClips(page)).toEqual([])
 
   await shotOf(materials, 1, 'A', 1).click()
@@ -601,7 +601,7 @@ test('吸附：拖到别的片段旁边会贴上去并画出吸附线，关掉�
   const gapX = (await firstEnd()) + 150
   const rowBox = await boxOf(row)
   await page.mouse.click(gapX, rowBox.y + rowBox.height / 2, { button: 'right' })
-  await page.getByRole('menuitem', { name: '合拢这个空档' }).click()
+  await page.getByRole('menuitem', { name: '合拢此空档' }).click()
   await expect.poll(secondStart).toBe(1)
 
   // 没有空档了：再点右键不出菜单

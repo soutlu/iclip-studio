@@ -117,14 +117,14 @@ export function AudioTab({
     if (!isReady(job))
       return job.status === 'failed'
         ? '音乐生成失败，无法加入成片；请重新生成'
-        : '音乐还没生成完，无法加入成片'
+        : '音乐尚未生成完成，无法加入成片；请等待生成完成'
     const state = job.durationMs === null ? peaks.get(job.outputUrl) : undefined
     const duration =
       job.durationMs ??
       (state?.kind === 'ready' ? Math.round(state.peaks.duration * 1000) : undefined)
     if (duration === undefined)
       return state === undefined || state.kind === 'loading'
-        ? '正在读取音频时长，请稍后再加'
+        ? '正在读取音频时长，请稍后加入成片'
         : '音频时长读取失败，无法加入成片'
     return { label: audioTitleOf(job), jobId: job.id, src: job.outputUrl, mediaStart: 0, duration }
   }
@@ -153,7 +153,7 @@ export function AudioTab({
     setPlaying(job.id)
     audio.play().catch(() => {
       setPlaying(null)
-      onNotice('这条音频播放失败，请重试')
+      onNotice('音频试听失败，请重试')
     })
   }
 
@@ -174,7 +174,7 @@ export function AudioTab({
   const drop = useFileDropTarget({
     blocked: uploading,
     onFiles: (files) => void upload(files),
-    onDirectory: () => onNotice('不能导入文件夹，请拖入音频文件'),
+    onDirectory: () => onNotice('拖入的是文件夹，无法导入；请拖入音频文件'),
   })
 
   return (
@@ -233,11 +233,11 @@ export function AudioTab({
         </p>
       ) : jobs.length === 0 ? (
         <p className="wf-audio-note" role="status">
-          暂无音频，请点「生成音乐」或「导入音频」
+          暂无音频，请点击「生成音乐」或「导入音频」
         </p>
       ) : shown.length === 0 ? (
         <p className="wf-audio-note" role="status">
-          暂无符合条件的音频，请换个关键词
+          暂无符合条件的音频，请更换关键词
         </p>
       ) : (
         <ul aria-label="音频" className="wf-audio-list">
@@ -357,7 +357,7 @@ function AudioRow({
   return (
     <li
       className={cn('wf-song', used && 'is-used', lifting && 'is-lifting')}
-      title={ready ? '拖到时间线上；右键：加到播放头' : undefined}
+      title={ready ? '拖到时间线上可加入成片，右键可选择「加到播放头」' : undefined}
     >
       <ContextMenuRoot>
         <ContextMenuTrigger asChild>
@@ -478,7 +478,7 @@ export function GenerateMusic({
     : task.isError
       ? '对话信息读取失败，无法生成；请关闭后重新打开成片编辑器'
       : task.data === undefined
-        ? '正在读取对话信息，稍后再试'
+        ? '正在读取对话信息，请稍后再试'
         : text === ''
           ? '尚未填写音乐描述，无法生成；请用一句话描述想要的音乐'
           : text.length > MAX_PROMPT_CHARS
@@ -490,7 +490,7 @@ export function GenerateMusic({
       ? '已填入上次的描述，可直接修改'
       : initialPrompt === undefined && text === musicDescription.trim()
         ? '已填入工程文件里的配乐描述，可直接修改'
-        : '生成后出现在「音频」页签的列表里')
+        : '生成后可在「音频」页签的列表中查看')
 
   const fill = useEffectEvent((target: ComposerHandle) =>
     target.restore({ media: [], parts: text === '' ? [] : [{ kind: 'text', text }], text: '' }),

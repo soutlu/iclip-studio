@@ -79,7 +79,7 @@ describe('组件栏 · 列出和筛选', () => {
     expect(cardNames()).toEqual(['测试画面，6 秒', '示例品牌 片尾，3 秒'])
     await user.type(search, '没有')
     expect(screen.queryByRole('list', { name: '组件' })).toBeNull()
-    expect(screen.getByRole('status')).toHaveTextContent('暂无符合条件的组件，请换个关键词或分类')
+    expect(screen.getByRole('status')).toHaveTextContent('暂无符合条件的组件，请更换关键词或分类')
   })
 })
 

@@ -22,7 +22,8 @@ export interface RendererOptions {
   mediaTimeoutMs?: number
 }
 
-const SILENT_SOURCE_TEXT = '有镜头标了有声音，但素材文件里没有声音；把这个镜头设成静音后再导出'
+const SILENT_SOURCE_TEXT =
+  '有视频片段标记为有声音，但素材文件没有声音，无法导出；请将该视频片段设为静音后重新导出'
 
 const describeUrl = (url: string) => {
   const parsed = new URL(url)
@@ -47,7 +48,7 @@ async function downloadMedia(
         await response.body?.cancel()
         throw new ExportFailure(
           'media-unreachable',
-          `素材取不到：${describeUrl(url)}（${response.status}）`,
+          `素材下载失败：${describeUrl(url)}（${response.status}）`,
         )
       }
       await pipeline(
@@ -58,7 +59,7 @@ async function downloadMedia(
       if (signal.aborted || error instanceof ExportFailure) throw error
       throw new ExportFailure(
         'media-unreachable',
-        `素材取不到：${describeUrl(url)}（${error instanceof Error ? error.message : String(error)}）`,
+        `素材下载失败：${describeUrl(url)}（${error instanceof Error ? error.message : String(error)}）`,
       )
     }
     paths[url] = `media/${name}`

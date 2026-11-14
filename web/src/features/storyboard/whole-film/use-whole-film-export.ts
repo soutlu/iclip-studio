@@ -15,13 +15,14 @@ const POLL_MS = 1_500
 const FAILURE_TEXT: Record<string, string> = {
   'render-failed': '成片渲染失败，请重新导出',
   'upload-failed': '成片上传失败，请重新导出',
-  'media-unreachable': '有素材读不到，请稍后重新导出',
-  'media-mismatch': '有镜头标了有声音，但素材里没有声音；把它设成静音后重新导出',
+  'media-unreachable': '部分素材读取失败，请稍后重新导出',
+  'media-mismatch':
+    '有视频片段标记为有声音，但素材没有声音，无法导出；请将该视频片段设为静音后重新导出',
   timeout: '成片渲染超时，请重新导出',
-  RENDER_LOST: '渲染服务重启过，请重新导出',
-  PROVIDER_TIMEOUT: '排队太久，请重新导出',
-  RENDER_UNAVAILABLE: '渲染服务连不上，请稍后重新导出',
-  FILM_CHANGED: '成片在排队时又改过，请重新导出',
+  RENDER_LOST: '渲染服务已重启，请重新导出',
+  PROVIDER_TIMEOUT: '导出等待超时，请重新导出',
+  RENDER_UNAVAILABLE: '渲染服务无法连接，请稍后重新导出',
+  FILM_CHANGED: '成片在排队期间已被修改，请重新导出',
 }
 
 export type ExportView =
@@ -52,7 +53,7 @@ const viewOf = (state: WholeFilmExportOut): ExportView => {
       return { kind: 'uploading' }
     case 'done':
       return state.downloadUrl === null
-        ? { kind: 'failed', message: '导出完成了却没拿到下载地址，请重新导出' }
+        ? { kind: 'failed', message: '导出已完成，但未获取到下载地址；请重新导出' }
         : { kind: 'done', exportId: state.id, downloadUrl: state.downloadUrl }
     case 'failed':
       return { kind: 'failed', message: failureText(state.error) }

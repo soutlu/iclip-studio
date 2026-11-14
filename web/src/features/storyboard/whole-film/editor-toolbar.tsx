@@ -177,7 +177,7 @@ export function EditorToolbar({
     <div aria-label="剪辑工具" className="wf-toolbar" role="toolbar">
       <div className="wf-toolbar-group">
         <Tool
-          blocked={canUndo ? undefined : '没有可撤销的操作'}
+          blocked={canUndo ? undefined : '暂无可撤销的操作'}
           icon="undo"
           label="撤销"
           onClick={onUndo}
@@ -190,7 +190,7 @@ export function EditorToolbar({
           }
         />
         <Tool
-          blocked={canRedo ? undefined : '没有可重做的操作'}
+          blocked={canRedo ? undefined : '暂无可重做的操作'}
           icon="redo"
           label="重做"
           onClick={onRedo}
@@ -212,8 +212,8 @@ export function EditorToolbar({
           pressed={snap}
           tip={
             snap
-              ? '吸附开着：拖动和裁剪时会吸到别的片段的两端和播放头上'
-              : '吸附关着：拖到哪里就是哪里'
+              ? '吸附已开启：拖动和裁剪时贴靠其他片段的两端和播放头'
+              : '吸附已关闭：片段停在拖到的位置'
           }
         />
         <Tool
@@ -223,8 +223,8 @@ export function EditorToolbar({
           pressed={ripple}
           tip={
             ripple
-              ? '波纹编辑开着：删掉第一行的片段，后面的自动往前补上'
-              : '波纹编辑关着：删掉片段以后留下空档'
+              ? '波纹编辑已开启：删除第一行的片段后，后面的片段自动前移补位'
+              : '波纹编辑已关闭：删除片段后保留空档'
           }
         />
       </div>
@@ -234,10 +234,10 @@ export function EditorToolbar({
           label="显示缩略图"
           onClick={onThumbnails}
           pressed={thumbnails}
-          tip={thumbnails ? '缩略图开着：片段上显示画面' : '缩略图关着：片段上只有名字和声音'}
+          tip={thumbnails ? '缩略图已开启：片段上显示画面' : '缩略图已关闭：片段上仅显示名称和声音'}
         />
         <Tool
-          blocked={hasSelection ? undefined : '先选中一个片段'}
+          blocked={hasSelection ? undefined : '尚未选中片段，无法缩放；请先选中一个片段'}
           icon="zoom-selection"
           label="缩放到选中的片段"
           onClick={onZoomToSelection}

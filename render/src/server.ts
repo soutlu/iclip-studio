@@ -99,14 +99,14 @@ async function createExport(req: IncomingMessage, res: ServerResponse, context: 
   const found = await checked(res, request.film, library, context.logger)
   if (!found) return
   if (found.film.clips.length === 0) {
-    fail(res, 400, 'invalid-film', '成片还是空的')
+    fail(res, 400, 'invalid-film', '成片暂无内容，无法导出；请先加入内容')
     return
   }
   const downloads = new Map<string, string>()
   for (const { url } of found.sources) {
     const download = request.media[url]?.url
     if (download === undefined) {
-      fail(res, 400, 'missing-media', `素材「${url}」没有给下载地址`)
+      fail(res, 400, 'missing-media', `素材「${url}」缺少下载地址`)
       return
     }
     downloads.set(url, download)
@@ -158,19 +158,19 @@ export async function handle(
   if (exportId && req.method === 'GET') {
     const view = context.queue.get(decodeURIComponent(exportId))
     if (view) send(res, 200, view)
-    else fail(res, 404, 'not-found', '没有这个导出')
+    else fail(res, 404, 'not-found', '该导出不存在')
     return
   }
   if (exportId && req.method === 'DELETE') {
     if (context.queue.cancel(decodeURIComponent(exportId))) send(res, 204)
-    else fail(res, 404, 'not-found', '没有这个导出')
+    else fail(res, 404, 'not-found', '该导出不存在')
     return
   }
   if (req.method === 'GET' && pathname === '/health') {
     send(res, 200, { status: 'ok', ...context.health(), queue: context.queue.stats() })
     return
   }
-  fail(res, 404, 'not-found', '没有这个接口')
+  fail(res, 404, 'not-found', '该接口不存在')
 }
 
 export function createExportServer(context: ServerContext) {

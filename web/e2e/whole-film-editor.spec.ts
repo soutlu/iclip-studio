@@ -37,7 +37,7 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   const dialog = await openWholeFilm(page, panel)
   const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
   const transport = dialog.getByRole('group', { name: '播放控制' })
-  await expect(dialog.getByText('成片还是空的；加入内容后可以在这里预览')).toBeVisible()
+  await expect(dialog.getByText('暂无成片内容，加入内容后可在此预览')).toBeVisible()
   await expect(dialog.getByRole('button', { name: '导出', exact: true })).toHaveAttribute(
     'aria-disabled',
     'true',
@@ -238,7 +238,7 @@ test('播放条：倍速和静音对素材、成片都生效且换播放器后�
   await shortcuts.click()
   const sheet = page.getByRole('dialog', { name: '快捷键' })
   await expect(sheet).toBeVisible()
-  await expect(sheet.getByText('打开或关闭循环播放')).toBeVisible()
+  await expect(sheet.getByText('开启或关闭循环播放')).toBeVisible()
   await expect(sheet.getByText('全屏或退出全屏')).toBeVisible()
   const sheetBox = await boxOf(sheet)
   expect(sheetBox.y + sheetBox.height).toBeLessThanOrEqual(shortcutsTop)
@@ -416,7 +416,7 @@ test('右侧栏：选中组件或块的片段改文字可填项，存下来、�
   const panel = await openConversation(page, '夜景延时素材生成')
   const dialog = await openWholeFilm(page, panel)
   const inspector = dialog.getByRole('complementary', { name: '属性' })
-  await expect(inspector.getByRole('heading', { name: '没有选中' })).toBeVisible()
+  await expect(inspector.getByRole('heading', { name: '尚未选中片段' })).toBeVisible()
 
   const side = dialog.getByRole('complementary', { name: '组件和音频' })
   await side.getByRole('searchbox', { name: '搜索组件' }).fill('可填项')
@@ -472,7 +472,7 @@ test('右侧栏：选中组件或块的片段改文字可填项，存下来、�
   const lane = await row.boundingBox()
   if (lane === null) throw new Error('时间线尚未布局')
   await page.mouse.click(lane.x + 6, lane.y + lane.height / 2)
-  await expect(inspector.getByRole('heading', { name: '没有选中' })).toBeVisible()
+  await expect(inspector.getByRole('heading', { name: '尚未选中片段' })).toBeVisible()
 
   const undone = draftSavedWith(page, (html) => savedComponent(html, '测试可填项')?.start === 0)
   await dialog
@@ -699,6 +699,6 @@ test('成片编辑器在窄屏上纵向排开', async ({ page }) => {
   // 右侧栏接在时间线下面，按内容高，不被挤成看不见
   const inspector = dialog.getByRole('complementary', { name: '属性' })
   await inspector.scrollIntoViewIfNeeded()
-  await expect(inspector.getByRole('heading', { name: '没有选中' })).toBeVisible()
+  await expect(inspector.getByRole('heading', { name: '尚未选中片段' })).toBeVisible()
   expect((await inspector.boundingBox())?.height ?? 0).toBeGreaterThan(80)
 })

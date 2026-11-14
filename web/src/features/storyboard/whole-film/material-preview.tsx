@@ -59,7 +59,7 @@ export function MaterialPreview({
   const [waiting, setWaiting] = useState(false)
   const report = useEffectEvent(onTime)
   const playing = useEffectEvent(onPlaying)
-  const failed = useEffectEvent(() => onNotice('这段素材播放失败，请稍后重试'))
+  const failed = useEffectEvent(() => onNotice('素材播放失败，请稍后重试'))
 
   useEffect(() => {
     const video = videoRef.current

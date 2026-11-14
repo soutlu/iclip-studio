@@ -623,7 +623,7 @@ function RowToggle({
       aria-pressed={!hidden}
       className="wf-head-eye ui-state ui-focus"
       onClick={() => onHide(!hidden)}
-      title={`${hidden ? show : hide}这一行`}
+      title={`${hidden ? show : hide}该行`}
       type="button"
     >
       <Icon
@@ -1029,7 +1029,7 @@ export function FilmTimeline({
                       ))}
                       {dropGhost(row)}
                       {clips.length === 0 && ghost === null ? (
-                        <span className="wf-lane-hint">把下面的镜头拖到这里</span>
+                        <span className="wf-lane-hint">将下方的镜头拖到此处可加入成片</span>
                       ) : null}
                     </div>
                   </ContextMenuTrigger>
@@ -1040,7 +1040,7 @@ export function FilmTimeline({
                         if (closing !== undefined) onRestart(closing.one)
                       }}
                     >
-                      合拢这个空档
+                      合拢此空档
                     </ContextMenuItem>
                     <ContextMenuItem
                       disabled={closing === undefined || closing.all.size === 0}
@@ -1048,7 +1048,7 @@ export function FilmTimeline({
                         if (closing !== undefined) onRestart(closing.all)
                       }}
                     >
-                      合拢这一行的所有空档
+                      合拢该行的所有空档
                     </ContextMenuItem>
                   </ContextMenuSurface>
                 </ContextMenuRoot>
@@ -1062,7 +1062,7 @@ export function FilmTimeline({
                 role="group"
               >
                 {newRowGhost(rows.length) ?? (
-                  <span className="wf-lane-hint">拖到这里，新开一行</span>
+                  <span className="wf-lane-hint">拖到此处可新开一行</span>
                 )}
               </div>
             )}

@@ -631,7 +631,7 @@ describe('checkFilm', () => {
     const fontless = { ...catalog, cjk: { ...catalog.cjk, slices: [] } }
     const problem = await checkFilm(html(video()), fontless).catch((error: unknown) => error)
     expect(problem).toBeInstanceOf(FilmProblem)
-    expect((problem as FilmProblem).message).toBe('成片文件没通过渲染前的检查')
+    expect((problem as FilmProblem).message).toBe('成片文件未通过渲染前的检查')
     expect((problem as FilmProblem).detail).toMatch(/^font_family_without_font_face: /)
   })
 })
@@ -675,7 +675,7 @@ describe('readFilm 拒收写法之外的东西', () => {
           'data-composition-variables="[',
           'data-composition-variables="[{&quot;id&quot;:&quot;x&quot;,&quot;type&quot;:&quot;string&quot;,&quot;default&quot;:&quot;&quot;},',
         ),
-      /没有片段在用/,
+      /未被任何片段使用/,
     ],
     [
       '根上别的样式',
@@ -739,7 +739,7 @@ describe('readFilm 拒收写法之外的东西', () => {
     [
       '视频片段同时带静音和有声音的标记',
       (source) => source.replace(' data-has-audio="true"', ' data-has-audio="true" muted="true"'),
-      /不能同时带 muted 和 data-has-audio/,
+      /不允许同时带 muted 和 data-has-audio/,
     ],
     [
       '静音写了 true 以外的值',
@@ -754,22 +754,22 @@ describe('readFilm 拒收写法之外的东西', () => {
     [
       '音频片段带静音（导出不认）',
       (source) => source.replace('<audio id="music-1"', '<audio muted="true" id="music-1"'),
-      /不能带 muted/,
+      /不允许带 muted/,
     ],
     [
       '片段上带对象自带的属性名',
       (source) => source.replace('<video id="clip-1"', '<video constructor="x" id="clip-1"'),
-      /不能带 constructor/,
+      /不允许带 constructor/,
     ],
     [
       '片段上带 __proto__',
       (source) => source.replace('<audio id="music-1"', '<audio __proto__="x" id="music-1"'),
-      /不能带 __proto__/,
+      /不允许带 __proto__/,
     ],
     [
       '音频片段带样式',
       (source) => source.replace('<audio id="music-1"', '<audio style="z-index: 1" id="music-1"'),
-      /不能带 style/,
+      /不允许带 style/,
     ],
     ['淡入不是秒数', (source) => source.replace('data-fade-in="1"', 'data-fade-in="1s"'), /淡入/],
     [

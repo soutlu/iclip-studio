@@ -83,11 +83,11 @@ type Props = {
   onClose: () => void
 }
 
-const EMPTY_TEXT = '成片还是空的；加入内容后可以在这里预览'
-const PICK_FIRST_TEXT = '先在下方点一个镜头选中范围'
-const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏'
-const ADDING_COMPONENT_TEXT = '上一个组件正在加入成片，请稍后再加'
-const ADDING_AUDIO_TEXT = '上一条音频正在加入成片，请稍后再加'
+const EMPTY_TEXT = '暂无成片内容，加入内容后可在此预览'
+const PICK_FIRST_TEXT = '尚未选中镜头，无法加入成片；请先在下方选中镜头范围'
+const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏，无法进入全屏'
+const ADDING_COMPONENT_TEXT = '上一个组件正在加入成片，请稍后再试'
+const ADDING_AUDIO_TEXT = '上一条音频正在加入成片，请稍后再试'
 // 还没有成片时先放组件：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 
@@ -246,7 +246,7 @@ function EditorBody({
   const toggleFullscreen = () => {
     if (fullscreen) exitFullscreen()
     else if (fullscreenBlocked !== undefined) notice(fullscreenBlocked)
-    else stage?.requestFullscreen().catch(() => notice('全屏打开失败，请重试'))
+    else stage?.requestFullscreen().catch(() => notice('打开全屏失败，请重试'))
   }
 
   const total = film?.durationMs ?? 0
@@ -550,7 +550,7 @@ function EditorBody({
   const playBlocked = srcdoc === undefined ? EMPTY_TEXT : undefined
 
   const exporting = useWholeFilmExport(conversationId, session.settle)
-  const exportBlocked = clips.length === 0 ? '成片还是空的，无法导出；请先加入内容' : undefined
+  const exportBlocked = clips.length === 0 ? '成片暂无内容，无法导出；请先加入内容' : undefined
 
   const viewedMaterial =
     materialView === null ? undefined : materials.byJob.get(materialView.range.jobId)
