@@ -221,7 +221,8 @@ async def test_expired_tampered_and_swapped_tokens_are_refused(
 
     first_body, _, first_signature = first_token.partition(".")
     second_body, _, _ = second_token.partition(".")
-    flipped = first_signature[:-1] + ("A" if first_signature[-1] != "A" else "B")
+    # 改第一个字符：最后一个字符有两位是填充位，只动到填充位时解出来的签名不变，令牌仍然有效
+    flipped = ("A" if first_signature[0] != "A" else "B") + first_signature[1:]
     for bad in (
         minted(now - timedelta(seconds=1)),
         f"{second_body}.{first_signature}",
