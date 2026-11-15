@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Final
@@ -43,9 +43,6 @@ def _provider_of(job: GenerationJob) -> str:
 def queue_dsn(database_url: str) -> str:
     scheme, _, rest = database_url.partition("://")
     return f"{scheme.split('+')[0]}://{rest}"
-
-
-OnCompleted = Callable[[GenerationJob], Awaitable[None]]
 
 
 class StillRunning(Exception):
@@ -111,11 +108,9 @@ class GenerationQueue:
         lanes: Sequence[ProviderLane],
         connector: procrastinate.BaseConnector,
         settings: GenerationQueueSettings | None = None,
-        on_completed: OnCompleted | None = None,
     ) -> None:
 
         self._repo = repo
-        self._on_completed = on_completed
         self._lanes: Mapping[str, ProviderLane] = _by_name(lanes)
         self._settings = settings or GenerationQueueSettings()
         self._app = procrastinate.App(connector=connector)
@@ -204,7 +199,7 @@ class GenerationQueue:
             return
 
         if submission.output_url is not None:
-            await self._completed(
+            self._settled(
                 job,
                 await self._repo.mark_completed(
                     job.id,
@@ -270,7 +265,7 @@ class GenerationQueue:
             return
 
         if progress.outcome == "succeeded" and progress.output_url is not None:
-            await self._completed(
+            self._settled(
                 job,
                 await self._repo.mark_completed(
                     job.id,
@@ -391,16 +386,6 @@ class GenerationQueue:
             return
         _logger.warning("生成任务提交中断，已判失败", job_id=job.id)
 
-    async def _completed(self, job: GenerationJob, written: GenerationJob | None) -> None:
-
-        self._settled(job, written)
-        if written is None or self._on_completed is None:
-            return
-        try:
-            await self._on_completed(written)
-        except Exception:
-            _logger.exception("生成任务完成后的后续动作失败", job_id=written.id)
-
     def _settled(self, job: GenerationJob, written: GenerationJob | None) -> None:
         if written is None:
             _logger.info("生成任务在收尾之前已有结论，不改它", job_id=job.id)
@@ -421,7 +406,6 @@ __all__ = [
     "QUEUE_POLL",
     "GenerationQueue",
     "GenerationQueueSettings",
-    "OnCompleted",
     "ProviderLane",
     "StillRunning",
     "queue_dsn",

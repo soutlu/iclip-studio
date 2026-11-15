@@ -9,23 +9,17 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
-from structlog.testing import capture_logs
 
 from iclip.domains.generation.api import create_generations_router
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_FAILED,
-    STATUS_PENDING,
     STATUS_SUBMITTED,
     GenerationJob,
     GenerationOutput,
 )
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
-from iclip.domains.generation.provider import (
-    ProviderError,
-    ProviderProgress,
-    ProviderSubmission,
-)
+from iclip.domains.generation.provider import ProviderError, ProviderSubmission
 from iclip.domains.generation.queue import GenerationQueue, ProviderLane, submit_queue
 from iclip.domains.generation.schemas import SubtitleRequest, SubtitleSentence, SubtitleWord
 from iclip.domains.generation.service import GenerationService, ProviderTarget
@@ -45,7 +39,6 @@ from tests.helpers.generation import (
     image_request,
     make_composite,
     make_edit,
-    make_enhancement,
     make_job,
     make_subtitle,
     video_request,
@@ -71,13 +64,6 @@ SENTENCES = (
     ),
     SubtitleSentence(start_ms=2000, end_ms=3000, text="第二句。", speaker=None),
 )
-
-
-class _CreateFailsForSubtitles(InMemoryGenerationRepository):
-    async def create(self, job: GenerationJob) -> GenerationJob:
-        if job.kind == "subtitle":
-            raise RuntimeError("数据库连接断了")
-        return await super().create(job)
 
 
 class _ClearedCompletions:
@@ -113,33 +99,23 @@ def build_world(
     jobs: list[GenerationJob],
     *,
     subtitles: ProviderTarget | None = SUBTITLES,
-    repo: InMemoryGenerationRepository | None = None,
-    video_progress: ProviderProgress | None = None,
-    compose_submission: ProviderSubmission | None = None,
-    image_submission: ProviderSubmission | None = None,
     asr_submission: ProviderSubmission | Exception | None = None,
     lineage: FixedLineage | None = None,
 ) -> World:
-    store = repo if repo is not None else InMemoryGenerationRepository()
+    store = InMemoryGenerationRepository()
     for job in jobs:
         store.jobs[job.id] = job
-    video = ScriptedProvider(name=FAKE_VIDEO_PROVIDER, progress=video_progress)
-    compose = ScriptedProvider(name="ffmpeg", submission=compose_submission)
-    image = ScriptedProvider(name=FAKE_IMAGE_PROVIDER, submission=image_submission)
+    video = ScriptedProvider(name=FAKE_VIDEO_PROVIDER)
+    compose = ScriptedProvider(name="ffmpeg")
+    image = ScriptedProvider(name=FAKE_IMAGE_PROVIDER)
     asr = ScriptedProvider(name=FAKE_SUBTITLE_PROVIDER, submission=asr_submission)
     connector = InMemoryConnector()
     cleared = _ClearedCompletions()
-    holder: dict[str, GenerationService] = {}
-
-    async def on_completed(job: GenerationJob) -> None:
-        await holder["service"].transcribe_completed(job)
-
     queue = GenerationQueue(
         store,
         lanes=tuple(ProviderLane(provider, 1) for provider in (video, compose, image, asr)),
         connector=connector,
         settings=QUEUE_SETTINGS,
-        on_completed=on_completed,
     )
     service = GenerationService(
         store,
@@ -155,171 +131,13 @@ def build_world(
         media_probe=FakeMediaProbe(),
         subtitles=subtitles,
     )
-    holder["service"] = service
     return World(store, queue, connector, service, asr, cleared)
-
-
-def submitted_take(**fields: Any) -> GenerationJob:
-    return make_job(
-        video_request(),
-        status=STATUS_SUBMITTED,
-        provider_task_id="up-1",
-        submitted_at=datetime.now(UTC),
-        **fields,
-    )
 
 
 def completed_take(**fields: Any) -> GenerationJob:
     fields.setdefault("output", GenerationOutput(url=TAKE_URL, watermark_url=TAKE_WATERMARK_URL))
     fields.setdefault("finished_at", datetime.now(UTC))
     return make_job(video_request(), status=STATUS_COMPLETED, **fields)
-
-
-TAKE_SUCCEEDED = ProviderProgress(
-    outcome="succeeded",
-    provider_status="succeeded",
-    output_url=TAKE_URL,
-    watermark_output_url=TAKE_WATERMARK_URL,
-)
-
-
-async def test_a_completed_take_queues_one_subtitle_record_that_keeps_its_attribution() -> None:
-    take = replace(
-        submitted_take(conversation_id=uuid.uuid4(), task_id=uuid.uuid4(), shot_index=2),
-        api_key_id=uuid.uuid4(),
-    )
-    world = build_world([take], video_progress=TAKE_SUCCEEDED)
-
-    await world.queue.run_poll(str(take.id))
-
-    assert world.repo.jobs[take.id].status == STATUS_COMPLETED
-    (subtitle,) = world.subtitles()
-    assert (subtitle.status, subtitle.operation, subtitle.provider) == (
-        STATUS_PENDING,
-        "generate",
-        FAKE_SUBTITLE_PROVIDER,
-    )
-    assert subtitle.source_job_id == take.id
-    assert (
-        subtitle.owner_user_id,
-        subtitle.api_key_id,
-        subtitle.conversation_id,
-        subtitle.task_id,
-    ) == (take.owner_user_id, take.api_key_id, take.conversation_id, take.task_id)
-    assert (subtitle.shot_index, subtitle.root_job_id, subtitle.output.url) == (None, None, None)
-    assert subtitle.request == SubtitleRequest(model=MODEL, video_url=TAKE_URL), "原片，不是水印版"
-    assert [row["args"]["job_id"] for row in world.submits_to(FAKE_SUBTITLE_PROVIDER)] == [
-        str(subtitle.id)
-    ]
-    assert world.cleared.calls == [], "后台识别不是人在对话里动手，不动收尾标记"
-
-
-async def test_a_completed_composite_queues_a_subtitle_record_too() -> None:
-    take = completed_take()
-    composite = make_composite(make_edit(take), conversation_id=uuid.uuid4())
-    world = build_world(
-        [take, composite],
-        compose_submission=ProviderSubmission(
-            provider_task_id=str(composite.id),
-            provider_status="completed",
-            output_url=COMPOSITE_URL,
-        ),
-    )
-
-    await world.queue.run_submit(str(composite.id))
-
-    assert world.repo.jobs[composite.id].status == STATUS_COMPLETED
-    (subtitle,) = world.subtitles()
-    assert subtitle.source_job_id == composite.id
-    assert subtitle.request == SubtitleRequest(model=MODEL, video_url=COMPOSITE_URL)
-    assert subtitle.conversation_id == composite.conversation_id
-
-
-async def test_a_completed_edit_segment_is_not_transcribed() -> None:
-    edit = replace(
-        make_edit(completed_take()),
-        status=STATUS_SUBMITTED,
-        provider_task_id="up-2",
-        submitted_at=datetime.now(UTC),
-    )
-    world = build_world([edit], video_progress=TAKE_SUCCEEDED)
-
-    await world.queue.run_poll(str(edit.id))
-
-    assert world.repo.jobs[edit.id].status == STATUS_COMPLETED
-    assert world.subtitles() == []
-
-
-async def test_a_completed_enhancement_is_not_transcribed() -> None:
-    enhancement = replace(
-        make_enhancement(completed_take()),
-        status=STATUS_SUBMITTED,
-        provider_task_id="up-3",
-        submitted_at=datetime.now(UTC),
-    )
-    world = build_world([enhancement], video_progress=TAKE_SUCCEEDED)
-
-    await world.queue.run_poll(str(enhancement.id))
-
-    assert world.repo.jobs[enhancement.id].status == STATUS_COMPLETED
-    assert world.subtitles() == []
-
-
-async def test_a_completed_image_is_not_transcribed() -> None:
-    image = make_job(image_request())
-    world = build_world(
-        [image],
-        image_submission=ProviderSubmission(
-            provider_task_id="img-1",
-            provider_status="succeeded",
-            output_url="https://cdn.test/a.png",
-        ),
-    )
-
-    await world.queue.run_submit(str(image.id))
-
-    assert world.repo.jobs[image.id].status == STATUS_COMPLETED
-    assert world.subtitles() == []
-
-
-async def test_a_failed_take_is_not_transcribed() -> None:
-    take = submitted_take()
-    world = build_world(
-        [take],
-        video_progress=ProviderProgress(
-            outcome="failed", provider_status="failed", error_code="BOOM", error_message="坏了"
-        ),
-    )
-
-    await world.queue.run_poll(str(take.id))
-
-    assert world.repo.jobs[take.id].status == STATUS_FAILED
-    assert world.subtitles() == []
-
-
-async def test_nothing_is_transcribed_when_subtitles_are_not_configured() -> None:
-    take = submitted_take()
-    world = build_world([take], subtitles=None, video_progress=TAKE_SUCCEEDED)
-
-    await world.queue.run_poll(str(take.id))
-
-    assert world.repo.jobs[take.id].status == STATUS_COMPLETED
-    assert world.subtitles() == []
-
-
-async def test_failing_to_create_the_subtitle_record_leaves_the_take_completed() -> None:
-    take = submitted_take()
-    world = build_world([take], repo=_CreateFailsForSubtitles(), video_progress=TAKE_SUCCEEDED)
-
-    with capture_logs() as logs:
-        await world.queue.run_poll(str(take.id))
-
-    assert world.repo.jobs[take.id].status == STATUS_COMPLETED
-    assert world.subtitles() == []
-    errors = [entry for entry in logs if entry["log_level"] == "error"]
-    assert [(entry["event"], entry["job_id"]) for entry in errors] == [
-        ("生成任务完成后的后续动作失败", take.id)
-    ], "只由队列记一条，不重复记"
 
 
 async def test_a_recognized_subtitle_record_completes_with_its_sentences_and_no_address() -> None:
@@ -342,7 +160,6 @@ async def test_a_recognized_subtitle_record_completes_with_its_sentences_and_no_
     assert stored.provider_task_id == "req-1"
     polls = [row for row in world.connector.jobs.values() if row["task_name"] == "generation.poll"]
     assert polls == [], "同步出结果，没有轮询"
-    assert world.subtitles() == [stored], "字幕记录完成不会再排字幕"
 
 
 async def test_no_voice_over_completes_with_an_empty_sentence_list() -> None:
@@ -457,6 +274,29 @@ async def test_transcribing_ones_own_take_takes_attribution_from_the_request() -
     assert subtitle.request == SubtitleRequest(model=MODEL, video_url=TAKE_URL)
     assert len(world.submits_to(FAKE_SUBTITLE_PROVIDER)) == 1
     assert world.cleared.calls == [], "识别不是在对话里动手，不动收尾标记"
+
+
+async def test_a_completed_composite_can_be_transcribed_from_its_own_address() -> None:
+    me, conversation = uuid.uuid4(), uuid.uuid4()
+    take = completed_take(owner_user_id=me, conversation_id=conversation)
+    composite = make_composite(
+        make_edit(take),
+        owner_user_id=me,
+        conversation_id=conversation,
+        status=STATUS_COMPLETED,
+        output=GenerationOutput(url=COMPOSITE_URL),
+    )
+    world = build_world([take, composite])
+    async with client(build_app(world, principal("generation:submit", user_id=me))) as http:
+        response = await http.post(
+            "/generations/subtitles",
+            json={"sourceJobId": str(composite.id), "conversationId": str(conversation)},
+        )
+
+    assert response.status_code == 202, response.text
+    (subtitle,) = world.subtitles()
+    assert subtitle.source_job_id == composite.id
+    assert subtitle.request == SubtitleRequest(model=MODEL, video_url=COMPOSITE_URL)
 
 
 @pytest.mark.parametrize("readable", [True, False], ids=["读得到副本", "读不到副本"])

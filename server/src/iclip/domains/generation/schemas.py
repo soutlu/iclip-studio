@@ -362,7 +362,7 @@ class VideoComposeRequest(CamelModel):
 
 
 class SubtitleIn(CamelModel):
-    """手动识别一条素材片的受理输入：补识别旧视频，或识别失败后另起一次。
+    """按需识别一条素材片的受理输入；识别失败后可以另起一次。
 
     归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别
     服务不收它，不进 ``request``。"""

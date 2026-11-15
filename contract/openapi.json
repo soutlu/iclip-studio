@@ -10258,7 +10258,7 @@
       },
       "SubtitleIn": {
         "additionalProperties": false,
-        "description": "手动识别一条素材片的受理输入：补识别旧视频，或识别失败后另起一次。\n\n归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别\n服务不收它，不进 ``request``。",
+        "description": "按需识别一条素材片的受理输入；识别失败后可以另起一次。\n\n归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别\n服务不收它，不进 ``request``。",
         "properties": {
           "conversationId": {
             "anyOf": [
@@ -19612,7 +19612,7 @@
     },
     "/generations/subtitles": {
       "post": {
-        "description": "手动识别一条素材片的口播，另起一条字幕记录（种类 ``subtitle``）；素材片完成时后台已自动识别\n一次，这里用来补识别旧视频或识别失败后重来。结果在记录的 ``sentences`` 里。\n\n``sourceJobId`` 要是这段对话（``conversationId``）自己的或继承来的一条视频，读不到 404；读得到\n却不是素材片（已完成的出片或合成）422。字幕识别没开通 422。新记录的对话、需求单与 ``metadata``\n取请求；``userName`` 的规则同出片，只用来替人办事，不进 ``request``。",
+        "description": "按需识别一条素材片的口播，另起一条字幕记录（种类 ``subtitle``）；素材片完成时不会识别，\n只有调这个接口才识别。结果在记录的 ``sentences`` 里。\n\n``sourceJobId`` 要是这段对话（``conversationId``）自己的或继承来的一条视频，读不到 404；读得到\n却不是素材片（已完成的出片或合成）422。字幕识别没开通 422。新记录的对话、需求单与 ``metadata``\n取请求；``userName`` 的规则同出片，只用来替人办事，不进 ``request``。",
         "operationId": "submit_subtitle_generations_subtitles_post",
         "requestBody": {
           "content": {

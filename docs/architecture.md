@@ -127,7 +127,7 @@
    - **宫格切图与文件上传**：同步处理完直接写入数据库（状态即 `completed`），不进异步队列。
    - **视频生成（出片、局部编辑段、超分高清版）**：异步提交给上游视频网关并轮询结果；不同视频模型族的参数拼装规则集中在 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py)。
    - **视频剪辑合成（`compose`）**：在本地调用 ffmpeg 将多段视频裁剪、重编码拼接后上传 OSS。
-   - **字幕识别（`subtitle`）与背景音乐生成（`audio`）**：各自拥有独立的队列通道。当一条素材片生成完成时，会自动触发回调排入一条字幕识别任务（抽取音频调用千问 ASR `qwen-audio-3.1-asr-flash`）；背景音乐则调用千问 TTS `qwen-audio-3.1-tts-next`，下载音频后用 ffmpeg 切除首尾静音、统一响度并转存为 m4a。
+   - **字幕识别（`subtitle`）与背景音乐生成（`audio`）**：各自拥有独立的队列通道。素材片生成完成时不会识别字幕，只有调用 `POST /generations/subtitles` 才排入一条字幕识别任务（抽取音频调用千问 ASR `qwen-audio-3.1-asr-flash`）；背景音乐则调用千问 TTS `qwen-audio-3.1-tts-next`，下载音频后用 ffmpeg 切除首尾静音、统一响度并转存为 m4a。
    - **成片导出（`whole_film`）**：独立通道，转发给成片渲染服务处理（见[成片渲染服务](#成片渲染服务)）。
 2. **参考视频拆解队列（`domains/references/`，队列名 `references`）**：
    - 调用 `BreakdownRunner`（60 秒以内的视频在本地按每秒 10 帧抽帧并提取音轨，超过 60 秒的视频直接传 URL 让上游抽帧），然后通过运行时的 `/v1/model-calls/responses` 接口调用火山方舟模型生成拆解报告。
