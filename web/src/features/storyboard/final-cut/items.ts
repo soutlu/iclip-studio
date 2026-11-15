@@ -4,7 +4,7 @@ import { rowBusy, rowsOf, type RowTarget } from './placement'
 
 export type ItemKind = CatalogItem['kind']
 
-/** 左侧栏里条目页签的先后。 */
+/** 侧栏里条目页签的先后。 */
 export const ITEM_KINDS: readonly ItemKind[] = ['component', 'block']
 
 /** 两种条目在界面上的叫法。 */

@@ -40,6 +40,10 @@
 - **普通接口返回 401 / 403 时的处理**：业务接口返回 `401` 或 `403` 时，前端不会立刻当成已退登，而是触发一次 `/users/me` 重新核对当前登录状态并重算路由守卫。
 - **账号切换时自动重置 WebSocket 连接**：由于 WebSocket 的订阅身份是在握手那一刻确定的（见[跨端合同 §5](../../contract/conventions.md#5-agent-对话-transcript)），一旦检测到登录用户发生变化（退出、重新登录或切换了账号），`src/app/` 下的 `IdentityTranscriptProvider` 会自动让 `TranscriptProvider` 重建一套新的 WebSocket 连接与本地读取池，同时保持外层页面 DOM 树不重新挂载（侧边栏展开状态、输入框里正在打的字不会丢失）。
 
+## 成片编辑器
+
+- **不做小屏适配**：任何宽度下都是同一种摆法，宽度不够时内容被所在的卡片裁掉，不换行、不折叠，也不出现横向滚动条。
+
 ## 成片组件
 
 成片动态组件目录的数据结构见 [catalog.ts](../src/features/storyboard/final-cut/composition/catalog.ts)，组件库源目录的打包规则见[组装脚本](../scripts/hyperframes-registry.mjs)文件头说明：

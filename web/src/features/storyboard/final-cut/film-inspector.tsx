@@ -102,19 +102,15 @@ const parseSeconds = (text: string): number | null => {
 }
 
 /**
- * 右侧栏：选中一个片段时显示它的名字、种类和可以改的分组；没选中、选中多个时各有一个说明。
+ * 侧栏「属性」页签的内容：选中一个片段时显示它的名字、种类和可以改的分组；没选中、选中多个时各有一句说明。
  */
 export function FilmInspector({ selected, ...rest }: Props) {
   const [only] = selected
   return (
-    // data-inspector：编辑器按它认出右侧栏里的控件，那里按的键不当快捷键
-    <aside aria-label="属性" className="wf-inspector" data-inspector>
+    // data-inspector：编辑器按它认出「属性」里的控件，那里按的键不当快捷键
+    <div className="wf-inspector" data-inspector>
       {only === undefined ? (
-        <div className="wf-inspector-empty">
-          <Icon decorative name="select-tool" size="lg" />
-          <h3 className="wf-inspector-empty-title">尚未选中片段</h3>
-          <p>在时间线上选中片段后可在此修改</p>
-        </div>
+        <p className="wf-inspector-empty">选中时间线上的片段后，可在此调整</p>
       ) : selected.length > 1 ? (
         <div className="wf-inspector-multi">
           <div className="wf-inspector-multi-head">
@@ -134,7 +130,7 @@ export function FilmInspector({ selected, ...rest }: Props) {
       ) : (
         <ClipInspector clip={only} key={only.id} {...rest} />
       )}
-    </aside>
+    </div>
   )
 }
 
