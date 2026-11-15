@@ -129,7 +129,7 @@ export function AudioTab({
       return state === undefined || state.kind === 'loading'
         ? '正在读取音频时长，请稍后加入成片'
         : '音频时长读取失败，无法加入成片'
-    return { label: audioTitleOf(job), jobId: job.id, src: job.outputUrl, mediaStart: 0, duration }
+    return { label: audioTitleOf(job), src: job.outputUrl, mediaStart: 0, duration }
   }
 
   // 同一时间只播一条：所有行共用一个播放器
@@ -254,7 +254,7 @@ export function AudioTab({
       ) : (
         <ul aria-label="音频" className="wf-audio-list">
           {shown.map((job) => {
-            const used = firstAudioClipOf(clips, job.id)
+            const used = job.outputUrl === null ? undefined : firstAudioClipOf(clips, job.outputUrl)
             const ready = addable(job)
             return (
               <AudioRow

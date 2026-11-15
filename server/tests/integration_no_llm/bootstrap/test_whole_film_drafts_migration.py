@@ -3,15 +3,12 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-import pytest
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
@@ -26,11 +23,14 @@ SERVER_DIR = Path(__file__).resolve().parents[3]
 
 BASELINE = "aacc58dec9ab"
 
-_INSERT_DRAFT = text(
-    "INSERT INTO iclip.whole_film_drafts"
-    " (conversation_id, html, revision, updated_by, updated_at)"
-    " VALUES (:conversation_id, :html, :revision, :updated_by, now())"
-)
+BEFORE_DROP = "e257badecd70"
+
+
+def _alembic(url: str) -> AlembicConfig:
+    config = AlembicConfig(str(SERVER_DIR / "alembic.ini"))
+    config.set_main_option("script_location", str(SERVER_DIR / "migrations"))
+    config.attributes["sqlalchemy_url"] = url
+    return config
 
 
 async def _owner_and_conversation(engine: AsyncEngine) -> tuple[uuid.UUID, uuid.UUID]:
@@ -39,43 +39,26 @@ async def _owner_and_conversation(engine: AsyncEngine) -> tuple[uuid.UUID, uuid.
     return owner, conversation.id
 
 
-@pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("overrides", "accepted"),
-    [
-        ({}, True),
-        ({"revision": 0}, False),
-        ({"html": None}, False),
-        ({"conversation_id": uuid.uuid4()}, False),
-        ({"updated_by": uuid.uuid4()}, False),
-    ],
-    ids=["合规矩", "版本 0", "没有文件", "没有这段对话", "没有这个人"],
-)
-async def test_the_draft_table_constraints(
-    engine: AsyncEngine, overrides: Mapping[str, Any], accepted: bool
-) -> None:
-    owner, conversation = await _owner_and_conversation(engine)
-    row = {
-        "conversation_id": conversation,
-        "html": "<!doctype html>",
-        "revision": 1,
-        "updated_by": owner,
-        **overrides,
-    }
-    if accepted:
-        async with engine.begin() as conn:
-            await conn.execute(_INSERT_DRAFT, row)
-        return
-    with pytest.raises(IntegrityError):
-        async with engine.begin() as conn:
-            await conn.execute(_INSERT_DRAFT, row)
+async def _reset(url: str) -> None:
+    """在最新的表结构上清空数据：旧版本里还有草稿表，它引用着用户表，那时清不了。"""
+
+    async with connected(url) as conn:
+        await reset_database(conn)
+
+
+async def _drafts_table_exists(url: str) -> bool:
+    engine = build_engine(url)
+    try:
+        async with engine.connect() as conn:
+            found = await conn.execute(text("SELECT to_regclass('iclip.whole_film_drafts')"))
+            return found.scalar_one() is not None
+    finally:
+        await engine.dispose()
 
 
 async def _plant_before_the_migration(url: str, source: uuid.UUID) -> uuid.UUID:
     """在基线上种一条旧草稿和一条旧形状的成片记录，返回成片记录的 id。"""
 
-    async with connected(url) as conn:
-        await reset_database(conn)
     engine = build_engine(url)
     try:
         owner, conversation = await _owner_and_conversation(engine)
@@ -109,24 +92,18 @@ async def _plant_before_the_migration(url: str, source: uuid.UUID) -> uuid.UUID:
         await engine.dispose()
 
 
-async def _after_the_migration(url: str, export_id: uuid.UUID) -> tuple[Any, int]:
+async def _request_of(url: str, export_id: uuid.UUID) -> Any:
     engine = build_engine(url)
     try:
-        export = await SqlGenerationRepository(engine).get(export_id, owner=None)
-        async with engine.connect() as conn:
-            drafts = (
-                await conn.execute(text("SELECT count(*) FROM iclip.whole_film_drafts"))
-            ).scalar_one()
-        return export.request, drafts
+        return (await SqlGenerationRepository(engine).get(export_id, owner=None)).request
     finally:
         await engine.dispose()
 
 
-def test_old_export_records_still_load_and_old_drafts_are_cleared(migrated_pg: str) -> None:
-    config = AlembicConfig(str(SERVER_DIR / "alembic.ini"))
-    config.set_main_option("script_location", str(SERVER_DIR / "migrations"))
-    config.attributes["sqlalchemy_url"] = migrated_pg
+def test_old_export_records_still_load_and_the_draft_table_is_gone(migrated_pg: str) -> None:
+    config = _alembic(migrated_pg)
     source = uuid.uuid4()
+    asyncio.run(_reset(migrated_pg))
 
     command.downgrade(config, BASELINE)
     try:
@@ -134,6 +111,40 @@ def test_old_export_records_still_load_and_old_drafts_are_cleared(migrated_pg: s
     finally:
         command.upgrade(config, "head")
 
-    request, drafts = asyncio.run(_after_the_migration(migrated_pg, export_id))
-    assert request == whole_film_request(source), "请求里只剩版本号和用到的素材，照新形状读得出来"
-    assert drafts == 0
+    assert asyncio.run(_request_of(migrated_pg, export_id)) == whole_film_request(source), (
+        "请求里只剩版本号和用到的素材，照新形状读得出来"
+    )
+    assert not asyncio.run(_drafts_table_exists(migrated_pg)), "草稿表连同旧草稿一起删掉"
+
+
+async def _plant_draft(url: str) -> None:
+    engine = build_engine(url)
+    try:
+        owner, conversation = await _owner_and_conversation(engine)
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO iclip.whole_film_drafts"
+                    " (conversation_id, html, revision, updated_by, updated_at)"
+                    " VALUES (:conversation, '<!doctype html>', 1, :owner, now())"
+                ),
+                {"conversation": conversation, "owner": owner},
+            )
+    finally:
+        await engine.dispose()
+
+
+def test_the_draft_table_is_dropped_and_a_downgrade_brings_back_an_empty_one(
+    migrated_pg: str,
+) -> None:
+    config = _alembic(migrated_pg)
+    assert not asyncio.run(_drafts_table_exists(migrated_pg))
+
+    command.downgrade(config, BEFORE_DROP)
+    try:
+        assert asyncio.run(_drafts_table_exists(migrated_pg))
+        asyncio.run(_plant_draft(migrated_pg))
+    finally:
+        command.upgrade(config, "head")
+
+    assert not asyncio.run(_drafts_table_exists(migrated_pg))

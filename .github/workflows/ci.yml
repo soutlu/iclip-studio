@@ -220,7 +220,6 @@ jobs:
           - group: conversations
             tests: >-
               tests/integration_no_llm/conversations
-              --ignore=tests/integration_no_llm/conversations/test_whole_film_draft.py
               --ignore=tests/integration_no_llm/conversations/test_whole_film_export.py
           - group: services
             tests: >-
@@ -233,7 +232,6 @@ jobs:
               tests/integration_no_llm/references
           - group: media
             tests: >-
-              tests/integration_no_llm/conversations/test_whole_film_draft.py
               tests/integration_no_llm/conversations/test_whole_film_export.py
               tests/integration_no_llm/uploads
               tests/integration_no_llm/platform

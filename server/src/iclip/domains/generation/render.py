@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Final, Literal
 
@@ -15,11 +15,8 @@ from iclip.domains.generation.provider import (
     ProviderError,
     ProviderProgress,
     ProviderSubmission,
-    request_of,
 )
-from iclip.domains.generation.schemas import WholeFilmRequest
 from iclip.platform.object_store.layout import MEDIA_PATHS
-from iclip.platform.object_store.store import ServerUploadSigner
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -31,11 +28,13 @@ RENDER_SUBMIT_CONCURRENCY: Final = 2
 
 REQUEST_TIMEOUT_SECONDS: Final = 10.0
 
-EXPORT_CONTENT_TYPE: Final = "video/mp4"
-
 CANCELLED: Final = "CANCELLED"
 
 CANCELLED_MESSAGE: Final = "导出已取消"
+
+EXPORT_PAUSED: Final = "EXPORT_PAUSED"
+
+EXPORT_PAUSED_MESSAGE: Final = "导出功能正在调整，无法导出；请稍后再试"
 
 RenderStatus = Literal["queued", "rendering", "uploading", "done", "failed", "cancelled"]
 
@@ -46,12 +45,6 @@ RENDER_STAGES: Final[tuple[RenderStage, ...]] = ("queued", "rendering", "uploadi
 
 class RenderUnavailable(Exception):
     pass
-
-
-class RenderRejected(Exception):
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
 
 
 class _CamelModel(BaseModel):
@@ -71,48 +64,13 @@ class RenderExport(_CamelModel):
     error: RenderProblem | None
 
 
-class RenderFilmSource(_CamelModel):
-    job_id: uuid.UUID
-    url: str
-    kind: Literal["video", "audio"]
-
-
-class RenderCheckedFilm(_CamelModel):
-    html: str
-    duration_ms: int
-    sources: tuple[RenderFilmSource, ...]
-
-
-FilmAt = Callable[[uuid.UUID, int], Awaitable[str | None]]
-"""某段对话的成片草稿在指定版本的文件；草稿已经不是这一版时是 None。"""
-
-
 class RenderClient:
+    """渲染服务的查进度与取消。发起导出暂停着，后端这一侧不向渲染服务提交导出。"""
+
     def __init__(self, base_url: str, *, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self._client = httpx.AsyncClient(
             base_url=base_url, timeout=REQUEST_TIMEOUT_SECONDS, transport=transport
         )
-
-    async def check(self, html: str) -> RenderCheckedFilm:
-        """查一份成片文件；不合写法抛 ``RenderRejected``。"""
-
-        response = await self._send("POST", "/films/check", json={"film": html})
-        if response.status_code == 200:
-            return _parse(RenderCheckedFilm, response)
-        if response.status_code == 400:
-            problem = _parse(RenderProblem, response)
-            raise RenderRejected(problem.code, problem.message)
-        raise _unexpected(response)
-
-    async def submit(self, payload: Mapping[str, Any]) -> None:
-        response = await self._send("POST", "/exports", json=payload)
-        if response.status_code == 202:
-            return
-        if response.status_code == 400:
-            problem = _parse(RenderProblem, response)
-            _logger.info("渲染服务不收这次导出", code=problem.code, message=problem.message)
-            raise RenderRejected(problem.code, problem.message)
-        raise _unexpected(response)
 
     async def get(self, export_id: uuid.UUID) -> RenderExport | None:
         response = await self._send("GET", f"/exports/{export_id}")
@@ -159,58 +117,23 @@ def _unexpected(response: httpx.Response) -> RenderUnavailable:
 @dataclass(frozen=True, slots=True)
 class RenderSetup:
     client: RenderClient
-    uploads: ServerUploadSigner
     public_url: Callable[[str], str]
-    film_at: FilmAt
 
 
 class RenderProvider:
-    def __init__(self, setup: RenderSetup, *, fetch_url: Callable[[str], str]) -> None:
+    def __init__(self, setup: RenderSetup) -> None:
         self._client = setup.client
-        self._uploads = setup.uploads
         self._public_url = setup.public_url
-        self._film_at = setup.film_at
-        self._fetch_url = fetch_url
 
     @property
     def name(self) -> str:
         return PROVIDER_NAME
 
     async def submit(self, job: GenerationJob) -> ProviderSubmission:
-        request = request_of(job, WholeFilmRequest, provider=PROVIDER_NAME)
-        if job.conversation_id is None:
-            raise ProviderError(
-                "成片导出记录没有对话",
-                code="PROVIDER_CONVERSATION_MISSING",
-                retryable=False,
-            )
-        film = await self._film_at(job.conversation_id, request.revision)
-        if film is None:
-            raise ProviderError(
-                "成片在交给渲染服务之前又改过，请重新导出",
-                code="FILM_CHANGED",
-                retryable=False,
-            )
-        upload = self._uploads.sign_server_upload(
-            object_key=MEDIA_PATHS.whole_film(job_id=job.id),
-            content_type=EXPORT_CONTENT_TYPE,
-            expires_seconds=RENDER_TIMEOUT_SECONDS,
-        )
-        sources = (*request.videos, *request.audios)
-        payload = {
-            "id": str(job.id),
-            "conversationId": str(job.conversation_id),
-            "film": film,
-            "media": {source.url: {"url": self._fetch_url(source.url)} for source in sources},
-            "upload": {"url": upload.url, "headers": dict(upload.headers)},
-        }
-        try:
-            await self._client.submit(payload)
-        except RenderRejected as exc:
-            raise ProviderError(str(exc), code="RENDER_REJECTED", retryable=False) from exc
-        except RenderUnavailable as exc:
-            raise ProviderError(str(exc), code="RENDER_UNAVAILABLE", retryable=True) from exc
-        return ProviderSubmission(provider_task_id=str(job.id), provider_status="queued")
+        """发起导出暂停着：还没交给渲染服务的成片记录一律记为失败，不重试。"""
+
+        _logger.info("发起导出暂停中，成片记录不交给渲染服务", job_id=job.id)
+        raise ProviderError(EXPORT_PAUSED_MESSAGE, code=EXPORT_PAUSED, retryable=False)
 
     async def poll(self, job: GenerationJob) -> ProviderProgress:
         try:
@@ -250,20 +173,17 @@ class RenderProvider:
 __all__ = [
     "CANCELLED",
     "CANCELLED_MESSAGE",
-    "EXPORT_CONTENT_TYPE",
+    "EXPORT_PAUSED",
+    "EXPORT_PAUSED_MESSAGE",
     "PROVIDER_NAME",
     "RENDER_STAGES",
     "RENDER_SUBMIT_CONCURRENCY",
     "RENDER_TIMEOUT_SECONDS",
     "REQUEST_TIMEOUT_SECONDS",
-    "FilmAt",
-    "RenderCheckedFilm",
     "RenderClient",
     "RenderExport",
-    "RenderFilmSource",
     "RenderProblem",
     "RenderProvider",
-    "RenderRejected",
     "RenderSetup",
     "RenderStage",
     "RenderStatus",

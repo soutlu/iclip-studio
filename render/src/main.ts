@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 import {
   detectGpuEncoder,
@@ -8,7 +10,6 @@ import {
 } from '@hyperframes/engine'
 import { ConfigError, loadConfig } from './config'
 import { ExportQueue } from './jobs'
-import { loadLibrary } from './library'
 import { createLogger } from './log'
 import { restrictFetch } from './network'
 import { createProducerWorker } from './renderer'
@@ -50,6 +51,12 @@ async function main(): Promise<void> {
   })
   if (gpu === 'software') logger.warn('浏览器使用软件渲染', { reason: '探测不到可用的 GPU' })
 
+  const vendorDir = join(config.registryRoot, 'vendor')
+  if (!existsSync(vendorDir)) {
+    logger.error('组件库里没有公共目录', { vendorDir, hint: '检查 RENDER_REGISTRY_ROOT 的挂载' })
+    process.exit(1)
+  }
+
   await rm(config.workDir, { recursive: true, force: true })
   const queue = new ExportQueue({
     worker: createProducerWorker({
@@ -65,7 +72,7 @@ async function main(): Promise<void> {
 
   const server = createExportServer({
     queue,
-    library: () => loadLibrary(config.registryRoot),
+    vendorDir,
     allowedHosts: config.allowedHosts,
     logger,
     health: () => ({ gpu, chrome }),

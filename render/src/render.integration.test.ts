@@ -1,6 +1,6 @@
 import { execFile, spawnSync } from 'node:child_process'
-import { createReadStream, createWriteStream, existsSync } from 'node:fs'
-import { mkdtemp, rm, stat } from 'node:fs/promises'
+import { createReadStream, createWriteStream, existsSync, readFileSync } from 'node:fs'
+import { mkdtemp, readdir, rm, stat } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -10,24 +10,30 @@ import { promisify } from 'node:util'
 import { resolveHeadlessShellPath } from '@hyperframes/engine'
 import { openComposition } from '@hyperframes/sdk'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import type { ComponentCatalog } from '../../web/src/features/storyboard/final-cut/composition/catalog'
 import {
-  writeFilm,
+  clipOf,
+  itemNamed,
+  withFontBlock,
   type AudioClip,
+  type Canvas,
+  type FilmClip,
   type VideoClip,
 } from '../../web/src/features/storyboard/final-cut/composition/film'
-import { checkFilm, localizedFilm } from './film'
 import { ExportQueue } from './jobs'
-import { loadLibrary, type ComponentLibrary } from './library'
+import type { ProjectFile } from './project'
 import { createProducerWorker } from './renderer'
 import { createExportServer } from './server'
-import { audio, host, memoryLogger, video } from './testing'
+import { audio, host, mainFile, memoryLogger, video } from './testing'
 
 const run = promisify(execFile)
 const REGISTRY_ROOT =
   process.env['RENDER_REGISTRY_ROOT'] ?? join(import.meta.dirname, '../../web/public/hyperframes')
-const library: ComponentLibrary | null = existsSync(join(REGISTRY_ROOT, 'catalog.json'))
-  ? await loadLibrary(REGISTRY_ROOT)
+const VENDOR_DIR = join(REGISTRY_ROOT, 'vendor')
+const library: ComponentCatalog | null = existsSync(join(REGISTRY_ROOT, 'catalog.json'))
+  ? (JSON.parse(readFileSync(join(REGISTRY_ROOT, 'catalog.json'), 'utf8')) as ComponentCatalog)
   : null
+const versionDir = library === null ? '' : join(REGISTRY_ROOT, library.version)
 
 function skipReason(): string | null {
   let chrome: string | undefined
@@ -40,7 +46,7 @@ function skipReason(): string | null {
   for (const tool of ['ffmpeg', 'ffprobe']) {
     if (spawnSync(tool, ['-version']).status !== 0) return `找不到 ${tool}`
   }
-  if (library === null || !existsSync(join(library.dir, library.catalog.runtime.hyperframes))) {
+  if (library === null || !existsSync(join(versionDir, library.runtime.hyperframes))) {
     return `组件库没有组装（${REGISTRY_ROOT}；在 web/ 运行 pnpm hf:registry）`
   }
   return null
@@ -49,7 +55,6 @@ function skipReason(): string | null {
 const reason = skipReason()
 
 const FRAME = { width: 640, height: 360 }
-const GRAY_JOB = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
 
 interface Area {
   x: number
@@ -117,6 +122,19 @@ async function streamsOf(file: string): Promise<string[]> {
   return probe.streams.map((stream) => stream.codec_type).toSorted()
 }
 
+async function durationOf(file: string): Promise<number> {
+  const { stdout } = await run('ffprobe', [
+    '-v',
+    'error',
+    '-show_entries',
+    'format=duration',
+    '-of',
+    'json',
+    file,
+  ])
+  return Number((JSON.parse(stdout) as { format: { duration: string } }).format.duration)
+}
+
 function meanDifference(a: Buffer, b: Buffer): number {
   let sum = 0
   for (let offset = 0; offset < a.length; offset += 1) {
@@ -177,6 +195,31 @@ async function startServer(dir: string): Promise<{ server: Server; origin: strin
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   return { server, origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}` }
 }
+
+/** 和编辑器加条目时一样：条目的 `files` 从组件库版本目录按原路径原样拷进工程。 */
+function itemFiles(clips: readonly FilmClip[]): ProjectFile[] {
+  const catalog = library as ComponentCatalog
+  const paths = new Set(
+    clips.flatMap((clip) =>
+      clip.kind === 'host' ? (itemNamed(catalog, clip.item)?.files ?? []) : [],
+    ),
+  )
+  return [...paths].map((path) => ({
+    path,
+    content: readFileSync(join(versionDir, path), 'utf8'),
+  }))
+}
+
+/** 一份工程：主文件按 `clips` 写（用真的组件库目录），加上用到的条目文件。 */
+function project(clips: FilmClip[], canvas: Canvas = FRAME): ProjectFile[] {
+  return [
+    { path: 'index.html', content: mainFile(clips, canvas, library as ComponentCatalog) },
+    ...itemFiles(clips),
+  ]
+}
+
+/** 主文件里写的素材地址就是测试服务器上的地址，下载地址和它一样。 */
+const mediaOf = (urls: readonly string[]) => new Map(urls.map((url) => [url, url]))
 
 describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}）` : ''}`, () => {
   let dir: string
@@ -274,20 +317,28 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     if (dir) await rm(dir, { recursive: true, force: true })
   })
 
-  it('渲染 2 秒的成片并上传：时长 2 秒、画布尺寸、有音轨', async () => {
+  const workerIn = (workDir: string) => {
+    const { logger } = memoryLogger()
+    return createProducerWorker({ workDir, gpuEncode: false, logger })
+  }
+
+  /** 渲染一份工程；`media` 是主文件里的素材地址，下载地址和它一样。 */
+  const renderProject = (id: string, files: ProjectFile[], media: readonly string[] = []) =>
+    workerIn(join(dir, 'work')).render(
+      { id, files, media: mediaOf(media), vendorDir: VENDOR_DIR },
+      { signal: new AbortController().signal, onProgress: () => {} },
+    )
+
+  it('经接口导出一份 2 秒的工程并上传：时长 2 秒、画布尺寸、有音轨', async () => {
     const { logger } = memoryLogger()
     const queue = new ExportQueue({
-      worker: createProducerWorker({
-        workDir: join(dir, 'work'),
-        gpuEncode: false,
-        logger,
-      }),
+      worker: createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger }),
       logger,
       timeoutMs: 5 * 60_000,
     })
     const service = createExportServer({
       queue,
-      library: () => loadLibrary(REGISTRY_ROOT),
+      vendorDir: VENDOR_DIR,
       allowedHosts: new Set([new URL(origin).host]),
       logger,
       health: () => ({ gpu: 'software', chrome: 'test' }),
@@ -299,10 +350,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const body = {
       id: exportId,
       conversationId: '99999999-8888-4777-8666-555555555555',
-      film: writeFilm(
-        { canvas: FRAME, clips: [video({ src: clip, duration: 2000, mediaStart: 500 })] },
-        (library as ComponentLibrary).catalog,
-      ),
+      files: project([video({ src: clip, duration: 2000, mediaStart: 500 })]),
       media: { [clip]: { url: clip } },
       upload: { url: `${origin}/upload.mp4`, headers: { 'Content-Type': 'video/mp4' } },
     }
@@ -345,53 +393,77 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(probe.streams.some((stream) => stream.codec_type === 'audio')).toBe(true)
   }, 300_000)
 
-  it('两个视频片段首尾相接：各在自己的时间段里上画面，音量按片段上写的生效', async () => {
-    const { logger } = memoryLogger()
-    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
-    const [clip, gray] = [`${origin}/clip.mp4`, `${origin}/gray.mp4`]
-    const film = (paths: Readonly<Record<string, string>>, grayVolume: number) =>
-      writeFilm(
+  it('渲染完、失败了都删掉临时目录', async () => {
+    const workDir = join(dir, 'work-cleanup')
+    const worker = workerIn(workDir)
+    const clip = `${origin}/clip.mp4`
+    const rendered = await worker.render(
+      {
+        id: 'cleanup-ok',
+        files: project([video({ src: clip, duration: 1000 })]),
+        media: mediaOf([clip]),
+        vendorDir: VENDOR_DIR,
+      },
+      { signal: new AbortController().signal, onProgress: () => {} },
+    )
+    expect(await readdir(workDir)).toHaveLength(1)
+    await rendered.cleanup()
+    expect(await readdir(workDir)).toEqual([])
+    await expect(
+      worker.render(
         {
-          canvas: FRAME,
-          clips: [
-            video({ src: paths[clip] ?? clip, duration: 2000 }),
-            video({
-              id: 'clip-2',
-              jobId: GRAY_JOB,
-              src: paths[gray] ?? gray,
-              start: 2000,
-              duration: 3000,
-              mediaStart: 1000,
-              volume: grayVolume,
-            }),
-          ],
-        },
-        (library as ComponentLibrary).catalog,
-      )
-    const render = async (id: string, grayVolume: number) => {
-      const rendered = await worker.render(
-        {
-          id,
-          registryDir: (library as ComponentLibrary).dir,
-          mediaUrls: [clip, gray],
-          compose: (paths) => film(paths, grayVolume),
+          id: 'cleanup-failed',
+          files: project([video({ src: `${origin}/missing.mp4`, duration: 1000 })]),
+          media: mediaOf([`${origin}/missing.mp4`]),
+          vendorDir: VENDOR_DIR,
         },
         { signal: new AbortController().signal, onProgress: () => {} },
+      ),
+    ).rejects.toMatchObject({ code: 'media-unreachable' })
+    expect(await readdir(workDir)).toEqual([])
+  }, 300_000)
+
+  it('工程文件的路径跳出工程目录时不写、不渲染', async () => {
+    const workDir = join(dir, 'work-escape')
+    await expect(
+      workerIn(workDir).render(
+        {
+          id: 'escape',
+          files: [
+            { path: 'index.html', content: mainFile([], FRAME, library as ComponentCatalog) },
+            { path: '../escape.html', content: 'x' },
+          ],
+          media: new Map(),
+          vendorDir: VENDOR_DIR,
+        },
+        { signal: new AbortController().signal, onProgress: () => {} },
+      ),
+    ).rejects.toMatchObject({ code: 'render-failed' })
+    expect(existsSync(join(workDir, 'escape.html'))).toBe(false)
+    expect(await readdir(workDir)).toEqual([])
+  }, 60_000)
+
+  it('两个视频片段首尾相接：各在自己的时间段里上画面，音量按片段上写的生效', async () => {
+    const [clip, gray] = [`${origin}/clip.mp4`, `${origin}/gray.mp4`]
+    const render = async (id: string, grayVolume: number) => {
+      const rendered = await renderProject(
+        id,
+        project([
+          video({ src: clip, duration: 2000 }),
+          video({
+            id: 'clip-2',
+            src: gray,
+            start: 2000,
+            duration: 3000,
+            mediaStart: 1000,
+            volume: grayVolume,
+          }),
+        ]),
+        [clip, gray],
       )
       try {
-        const { stdout } = await run('ffprobe', [
-          '-v',
-          'error',
-          '-show_entries',
-          'format=duration',
-          '-of',
-          'json',
-          rendered.file,
-        ])
         return {
-          duration: Number(
-            (JSON.parse(stdout) as { format: { duration: string } }).format.duration,
-          ),
+          duration: await durationOf(rendered.file),
           first: await frameAt(rendered.file, 1),
           second: await frameAt(rendered.file, 3.5),
           loudness: await meanVolume(rendered.file, 2.5, 2),
@@ -413,36 +485,16 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
   }, 600_000)
 
   it('两个视频片段同时出现在两行上：叠放顺序大的在上面，一样大时文件里写在后面的在上面', async () => {
-    const { logger } = memoryLogger()
-    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const [clip, gray] = [`${origin}/clip.mp4`, `${origin}/gray.mp4`]
     /** 彩色那条写在前面、放第一行，灰色那条写在后面、放第二行，两条都占 0–2 秒。 */
     const frameWith = async (id: string, clipZ: number, grayZ: number) => {
-      const rendered = await worker.render(
-        {
-          id,
-          registryDir: (library as ComponentLibrary).dir,
-          mediaUrls: [clip, gray],
-          compose: (paths) =>
-            writeFilm(
-              {
-                canvas: FRAME,
-                clips: [
-                  video({ src: paths[clip] ?? clip, duration: 2000, z: clipZ }),
-                  video({
-                    id: 'clip-2',
-                    jobId: GRAY_JOB,
-                    src: paths[gray] ?? gray,
-                    duration: 2000,
-                    track: 1,
-                    z: grayZ,
-                  }),
-                ],
-              },
-              (library as ComponentLibrary).catalog,
-            ),
-        },
-        { signal: new AbortController().signal, onProgress: () => {} },
+      const rendered = await renderProject(
+        id,
+        project([
+          video({ src: clip, duration: 2000, z: clipZ }),
+          video({ id: 'clip-2', src: gray, duration: 2000, track: 1, z: grayZ }),
+        ]),
+        [clip, gray],
       )
       try {
         return await frameAt(rendered.file, 1)
@@ -461,35 +513,16 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
   }, 900_000)
 
   it('隐藏的视频片段：导出里不出现也不出声，它占的时间照算', async () => {
-    const { logger } = memoryLogger()
-    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const [clip, gray] = [`${origin}/clip.mp4`, `${origin}/gray.mp4`]
     /** 彩色那条占 0–2 秒，灰色那条接在后面占 2–4 秒。 */
     const render = async (id: string, clipHidden: boolean) => {
-      const rendered = await worker.render(
-        {
-          id,
-          registryDir: (library as ComponentLibrary).dir,
-          mediaUrls: [clip, gray],
-          compose: (paths) =>
-            writeFilm(
-              {
-                canvas: FRAME,
-                clips: [
-                  video({ src: paths[clip] ?? clip, duration: 2000, hidden: clipHidden }),
-                  video({
-                    id: 'clip-2',
-                    jobId: GRAY_JOB,
-                    src: paths[gray] ?? gray,
-                    start: 2000,
-                    duration: 2000,
-                  }),
-                ],
-              },
-              (library as ComponentLibrary).catalog,
-            ),
-        },
-        { signal: new AbortController().signal, onProgress: () => {} },
+      const rendered = await renderProject(
+        id,
+        project([
+          video({ src: clip, duration: 2000, hidden: clipHidden }),
+          video({ id: 'clip-2', src: gray, start: 2000, duration: 2000 }),
+        ]),
+        [clip, gray],
       )
       try {
         return {
@@ -512,28 +545,16 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(shown.loudness - hidden.loudness).toBeGreaterThan(30)
   }, 600_000)
 
-  it('组件或块的片段：组件按可填项画出来，组件文字用到的中文字形在 <head> 里声明了', async () => {
-    const { logger } = memoryLogger()
-    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
-    const catalog = (library as ComponentLibrary).catalog
+  it('组件或块的片段：组件按可填项画出来，组件文字用到的中文字形在字体块里声明了', async () => {
+    const catalog = library as ComponentCatalog
     // 测试组件按 1920×1080 设计：左下角 x 120–1020、y 720–940 一块色底，色底里左边一行字
     const canvas = { width: 1920, height: 1080 }
     const title = '成片标题'
-    let composed = ''
+    let main = ''
     const render = async (id: string, hidden: boolean) => {
-      const rendered = await worker.render(
-        {
-          id,
-          registryDir: (library as ComponentLibrary).dir,
-          mediaUrls: [],
-          compose: () => {
-            const values = { text: title, accent: '#ff0000' }
-            composed = writeFilm({ canvas, clips: [host({ values, hidden })] }, catalog)
-            return composed
-          },
-        },
-        { signal: new AbortController().signal, onProgress: () => {} },
-      )
+      const files = project([host({ values: { text: title, accent: '#ff0000' }, hidden })], canvas)
+      main = files[0]?.content ?? ''
+      const rendered = await renderProject(id, files)
       try {
         return {
           panel: await frameAt(rendered.file, 1, { x: 700, y: 740, width: 300, height: 180 }),
@@ -545,7 +566,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       }
     }
     const shown = await render('component', false)
-    for (const char of title) expect(declaresGlyph(composed, catalog.cjk.family, char)).toBe(true)
+    for (const char of title) expect(declaresGlyph(main, catalog.cjk.family, char)).toBe(true)
     const hidden = await render('component-hidden', true)
 
     const red = solid(shown.panel.length, [255, 0, 0])
@@ -555,25 +576,77 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(meanDifference(hidden.panel, Buffer.alloc(hidden.panel.length, 0))).toBeLessThan(6)
   }, 600_000)
 
+  it('组件文件从工程里取：工程里那一份改过就画改过的样子；工程里没有这个文件时导出失败，不去组件库找', async () => {
+    const canvas = { width: 1920, height: 1080 }
+    const clips = [host({ values: { text: '', accent: '#ff0000' } })]
+    const files = project(clips, canvas)
+    const edited = files.map((file) =>
+      file.path === 'index.html'
+        ? file
+        : // 工程里的这一份把色底的默认位置挪到右上角：可填项给的底色照旧
+          { ...file, content: file.content.replace('top: 720px;', 'top: 60px;') },
+    )
+    expect(edited[1]?.content).not.toBe(files[1]?.content)
+    const rendered = await renderProject('component-from-project', edited)
+    try {
+      const moved = await frameAt(rendered.file, 1, { x: 700, y: 80, width: 300, height: 180 })
+      const left = await frameAt(rendered.file, 1, { x: 700, y: 740, width: 300, height: 180 })
+      expect(meanDifference(moved, solid(moved.length, [255, 0, 0]))).toBeLessThan(10)
+      expect(meanDifference(left, Buffer.alloc(left.length, 0))).toBeLessThan(6)
+    } finally {
+      await rendered.cleanup()
+    }
+
+    const workDir = join(dir, 'work-missing')
+    await expect(
+      workerIn(workDir).render(
+        {
+          id: 'component-missing',
+          files: files.slice(0, 1),
+          media: new Map(),
+          vendorDir: VENDOR_DIR,
+        },
+        { signal: new AbortController().signal, onProgress: () => {} },
+      ),
+    ).rejects.toMatchObject({
+      code: 'render-failed',
+      message: expect.stringContaining('compositions/fixtures/fixture-fields.html') as unknown,
+    })
+    expect(await readdir(workDir)).toEqual([])
+  }, 600_000)
+
+  it('带旁挂文件的条目：工程里有它的专有目录，照常导出', async () => {
+    const canvas = { width: 1920, height: 1080 }
+    const sidecar = host({
+      id: 'sidecar-1',
+      label: '测试旁挂',
+      item: 'fixture-sidecar',
+      src: 'compositions/fixture-sidecar/fixture-sidecar.html',
+      duration: 2000,
+    })
+    const files = project([sidecar], canvas)
+    expect(files.map((file) => file.path)).toEqual([
+      'index.html',
+      'compositions/fixture-sidecar/fixture-sidecar.html',
+      'compositions/fixture-sidecar/assets/fixture-sidecar.json',
+    ])
+    const rendered = await renderProject('sidecar', files)
+    try {
+      expect(await durationOf(rendered.file)).toBeGreaterThan(1.9)
+      const frame = await frameAt(rendered.file, 1, { x: 0, y: 0, width: 1920, height: 1080 })
+      expect(meanDifference(frame, Buffer.alloc(frame.length, 0))).toBeGreaterThan(5)
+    } finally {
+      await rendered.cleanup()
+    }
+  }, 600_000)
+
   it('固定尺寸的组件放进竖版画面：按原比例缩小、居中，不铺满也不出画', async () => {
-    const { logger } = memoryLogger()
-    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
-    const catalog = (library as ComponentLibrary).catalog
     // 测试组件按 1920×1080 设计，色底在 x 120–1020、y 720–940。放进 720×1280：缩成 0.375 倍、
     // 上下居中（顶边 437.5），色底落在 x 45–382.5、y 707.5–790
     const canvas = { width: 720, height: 1280 }
-    const rendered = await worker.render(
-      {
-        id: 'component-fit',
-        registryDir: (library as ComponentLibrary).dir,
-        mediaUrls: [],
-        compose: () =>
-          writeFilm(
-            { canvas, clips: [host({ values: { text: '', accent: '#ff0000' } })] },
-            catalog,
-          ),
-      },
-      { signal: new AbortController().signal, onProgress: () => {} },
+    const rendered = await renderProject(
+      'component-fit',
+      project([host({ values: { text: '', accent: '#ff0000' } })], canvas),
     )
     try {
       // 缩小后的色底左段：不缩时这里在色底左边（x 120 以左），是黑的
@@ -588,26 +661,11 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
   }, 600_000)
 
   it('组件的字体可填项换成组件库里的字体：字体变量生效，字的样子跟着变', async () => {
-    const { logger } = memoryLogger()
-    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
-    const catalog = (library as ComponentLibrary).catalog
     const canvas = { width: 1920, height: 1080 }
     const words = async (id: string, values: Record<string, string>) => {
-      const rendered = await worker.render(
-        {
-          id,
-          registryDir: (library as ComponentLibrary).dir,
-          mediaUrls: [],
-          compose: () =>
-            writeFilm(
-              {
-                canvas,
-                clips: [host({ values: { text: 'Sample', accent: '#ff0000', ...values } })],
-              },
-              catalog,
-            ),
-        },
-        { signal: new AbortController().signal, onProgress: () => {} },
+      const rendered = await renderProject(
+        id,
+        project([host({ values: { text: 'Sample', accent: '#ff0000', ...values } })], canvas),
       )
       try {
         return await frameAt(rendered.file, 1, { x: 170, y: 760, width: 380, height: 140 })
@@ -623,29 +681,31 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
   }, 600_000)
 
   it('在编辑器里改了组件的文字可填项：导出里画的是新的文字，和默认文字时不一样', async () => {
-    const { logger } = memoryLogger()
-    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
-    const catalog = (library as ComponentLibrary).catalog
+    const catalog = library as ComponentCatalog
     const canvas = { width: 1920, height: 1080 }
-    const stored = writeFilm({ canvas, clips: [host({ values: { accent: '#ff0000' } })] }, catalog)
-    // 和编辑器右侧栏改值一样：用 SDK 把片段上的取值整串换掉，存出来的文件再过渲染前的检查
+    const files = project([host({ values: { accent: '#ff0000' } })], canvas)
+    const stored = files[0]?.content ?? ''
+    // 和编辑器右侧栏改值一样：用 SDK 把片段上的取值整串换掉，存出时重算字体块
     const session = await openComposition(stored)
     session.setAttribute(
       'title-1',
       'data-variable-values',
       JSON.stringify({ accent: '#ff0000', text: '新的标题' }),
     )
-    const edited = (await checkFilm(session.serialize(), catalog)).html
+    const timings = session.getElementTimings()
+    const clips = session
+      .getElements()
+      .filter((element) => element.id === 'title-1')
+      .flatMap((element) => {
+        const timing = timings[element.id]
+        return timing === undefined ? [] : [clipOf(element, timing, catalog)]
+      })
+    const edited = withFontBlock(session.serialize(), clips, catalog)
     const words = async (id: string, html: string) => {
-      const rendered = await worker.render(
-        {
-          id,
-          registryDir: (library as ComponentLibrary).dir,
-          mediaUrls: [],
-          compose: () => html,
-        },
-        { signal: new AbortController().signal, onProgress: () => {} },
-      )
+      const rendered = await renderProject(id, [
+        { path: 'index.html', content: html },
+        ...files.slice(1),
+      ])
       try {
         return await frameAt(rendered.file, 1, { x: 170, y: 760, width: 380, height: 140 })
       } finally {
@@ -655,42 +715,20 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const plain = await words('component-text-default', stored)
     const changed = await words('component-text-edited', edited)
     expect(edited).toContain('&quot;text&quot;:&quot;新的标题&quot;')
+    for (const char of '新的标题')
+      expect(declaresGlyph(edited, catalog.cjk.family, char)).toBe(true)
     expect(meanDifference(plain, changed)).toBeGreaterThan(8)
   }, 600_000)
 
   it('音频片段：有声音，音量调低后更轻，循环时音频比片段短也一直有声，隐藏后没有声音', async () => {
-    const { logger } = memoryLogger()
-    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const tone = `${origin}/tone.m4a`
-    /** 1.5 秒的音频放进 0–3 秒的片段；和导出时一样，交给渲染的是 `localizedFilm` 那一份。 */
+    /** 1.5 秒的音频放进 0–3 秒的片段；隐藏的音频片段原样留在主文件里，交给渲染引擎。 */
     const render = async (id: string, overrides: Partial<AudioClip>) => {
-      const rendered = await worker.render(
-        {
-          id,
-          registryDir: (library as ComponentLibrary).dir,
-          mediaUrls: [tone],
-          compose: (paths) =>
-            localizedFilm(
-              { canvas: FRAME, clips: [audio({ src: tone, duration: 3000, ...overrides })] },
-              paths,
-              (library as ComponentLibrary).catalog,
-            ),
-        },
-        { signal: new AbortController().signal, onProgress: () => {} },
-      )
+      const files = project([audio({ src: tone, duration: 3000, ...overrides })])
+      if (overrides.hidden === true) expect(files[0]?.content).toMatch(/<audio data-hidden /)
+      const rendered = await renderProject(id, files, [tone])
       try {
-        const { stdout } = await run('ffprobe', [
-          '-v',
-          'error',
-          '-show_entries',
-          'format=duration',
-          '-of',
-          'json',
-          rendered.file,
-        ])
-        const duration = Number(
-          (JSON.parse(stdout) as { format: { duration: string } }).format.duration,
-        )
+        const duration = await durationOf(rendered.file)
         const streams = await streamsOf(rendered.file)
         if (!streams.includes('audio')) return { duration, streams, early: NaN, late: NaN }
         return {
@@ -722,27 +760,13 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
   }, 600_000)
 
   it('视频片段的声音：增益大于 0 dB 更响，淡入淡出时头尾更轻，静音后没有声音', async () => {
-    const { logger } = memoryLogger()
-    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const gray = `${origin}/gray.mp4`
     /** 7 秒的灰片放进 0–6 秒的片段；量开头、中间、结尾各 0.8 秒的响度，没有音轨时是 null。 */
     const render = async (id: string, overrides: Partial<VideoClip>) => {
-      const rendered = await worker.render(
-        {
-          id,
-          registryDir: (library as ComponentLibrary).dir,
-          mediaUrls: [gray],
-          compose: (paths) =>
-            localizedFilm(
-              {
-                canvas: FRAME,
-                clips: [video({ jobId: GRAY_JOB, src: gray, duration: 6000, ...overrides })],
-              },
-              paths,
-              (library as ComponentLibrary).catalog,
-            ),
-        },
-        { signal: new AbortController().signal, onProgress: () => {} },
+      const rendered = await renderProject(
+        id,
+        project([video({ src: gray, duration: 6000, ...overrides })]),
+        [gray],
       )
       try {
         if (!(await streamsOf(rendered.file)).includes('audio')) return null
@@ -772,30 +796,16 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
   }, 900_000)
 
   it('速度：2 倍的视频片段放的是素材后面的画面，2 倍的音频片段提前放完', async () => {
-    const { logger } = memoryLogger()
-    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     const [steps, tone] = [`${origin}/steps.mp4`, `${origin}/tone.m4a`]
     /** 6 秒的色块片放进 0–3 秒的视频片段，1.5 秒的音频放进 0–3 秒的音频片段，两个片段用同一个速度。 */
     const render = async (id: string, playbackRate: number) => {
-      const rendered = await worker.render(
-        {
-          id,
-          registryDir: (library as ComponentLibrary).dir,
-          mediaUrls: [steps, tone],
-          compose: (paths) =>
-            localizedFilm(
-              {
-                canvas: FRAME,
-                clips: [
-                  video({ src: steps, duration: 3000, muted: true, playbackRate }),
-                  audio({ src: tone, duration: 3000, playbackRate }),
-                ],
-              },
-              paths,
-              (library as ComponentLibrary).catalog,
-            ),
-        },
-        { signal: new AbortController().signal, onProgress: () => {} },
+      const rendered = await renderProject(
+        id,
+        project([
+          video({ src: steps, duration: 3000, muted: true, playbackRate }),
+          audio({ src: tone, duration: 3000, playbackRate }),
+        ]),
+        [steps, tone],
       )
       try {
         return {
@@ -820,25 +830,10 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
   }, 600_000)
 
   it('素材没有音轨：视频片段写成静音照常导出、画面正常；标成有声音时导出失败，说清哪里不对', async () => {
-    const { logger } = memoryLogger()
-    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
     // 色块片生成时就没有音轨
     const steps = `${origin}/steps.mp4`
     const render = (id: string, muted: boolean) =>
-      worker.render(
-        {
-          id,
-          registryDir: (library as ComponentLibrary).dir,
-          mediaUrls: [steps],
-          compose: (paths) =>
-            localizedFilm(
-              { canvas: FRAME, clips: [video({ src: steps, duration: 3000, muted })] },
-              paths,
-              (library as ComponentLibrary).catalog,
-            ),
-        },
-        { signal: new AbortController().signal, onProgress: () => {} },
-      )
+      renderProject(id, project([video({ src: steps, duration: 3000, muted })]), [steps])
 
     const rendered = await render('silent-muted', true)
     try {
@@ -855,43 +850,18 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     })
   }, 600_000)
 
-  it('成片里的片段全隐藏了：照样导出，是一段同样长的黑片，没有音轨', async () => {
-    const { logger } = memoryLogger()
-    const worker = createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger })
+  it('工程里的片段全隐藏了：照样导出，是一段同样长的黑片，没有音轨', async () => {
     const clip = `${origin}/clip.mp4`
-    const rendered = await worker.render(
-      {
-        id: 'all-hidden',
-        registryDir: (library as ComponentLibrary).dir,
-        mediaUrls: [clip],
-        compose: (paths) =>
-          writeFilm(
-            {
-              canvas: FRAME,
-              clips: [video({ src: paths[clip] ?? clip, duration: 2000, hidden: true })],
-            },
-            (library as ComponentLibrary).catalog,
-          ),
-      },
-      { signal: new AbortController().signal, onProgress: () => {} },
+    const rendered = await renderProject(
+      'all-hidden',
+      project([video({ src: clip, duration: 2000, hidden: true })]),
+      [clip],
     )
     try {
-      const { stdout } = await run('ffprobe', [
-        '-v',
-        'error',
-        '-show_entries',
-        'format=duration:stream=codec_type',
-        '-of',
-        'json',
-        rendered.file,
-      ])
-      const probe = JSON.parse(stdout) as {
-        format: { duration: string }
-        streams: { codec_type: string }[]
-      }
-      expect(probe.streams.map((stream) => stream.codec_type).toSorted()).toEqual(['video'])
-      expect(Number(probe.format.duration)).toBeGreaterThan(1.9)
-      expect(Number(probe.format.duration)).toBeLessThan(2.15)
+      expect(await streamsOf(rendered.file)).toEqual(['video'])
+      const duration = await durationOf(rendered.file)
+      expect(duration).toBeGreaterThan(1.9)
+      expect(duration).toBeLessThan(2.15)
       const frame = await frameAt(rendered.file, 1)
       expect(meanDifference(frame, Buffer.alloc(frame.length, 0))).toBeLessThan(6)
     } finally {

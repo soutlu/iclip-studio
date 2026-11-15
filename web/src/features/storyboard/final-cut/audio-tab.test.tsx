@@ -178,7 +178,6 @@ describe('音频栏 · 列表', () => {
     await user.keyboard('{Enter}')
     expect(onAdd).toHaveBeenCalledWith({
       label: title?.textContent,
-      jobId: uploaded.id,
       src: UPLOAD_URL,
       mediaStart: 0,
       duration: 12_400,
@@ -242,8 +241,8 @@ describe('音频栏 · 已使用', () => {
   it('成片里用着的那条标「已使用」，点这一行选中它最早的那个片段；没用到的点了什么也不做', async () => {
     const user = userEvent.setup()
     const clips = [
-      audio({ id: 'late', jobId: guitar.id, start: 8000 }),
-      audio({ id: 'early', jobId: guitar.id, start: 1000, track: 1 }),
+      audio({ id: 'late', src: GUITAR_URL, start: 8000 }),
+      audio({ id: 'early', src: GUITAR_URL, start: 1000, track: 1 }),
     ]
     const { onReveal, onAdd } = await openTab([guitar, night], clips)
     expect(within(rowOf('轻快原声吉他')).getByText('00:30 · 已使用')).toBeInTheDocument()
@@ -260,7 +259,6 @@ describe('音频栏 · 已使用', () => {
 describe('音频栏 · 加进成片', () => {
   const whole = {
     label: '轻快原声吉他',
-    jobId: guitar.id,
     src: GUITAR_URL,
     mediaStart: 0,
     duration: 30_000,
@@ -292,7 +290,7 @@ describe('音频栏 · 加进成片', () => {
   })
 
   it('按住一行拖出去：移动时报告指针位置，松手时交给时间线；松手后不算点了这一行', async () => {
-    const { onCarry, onDrop, onReveal } = await openTab([guitar], [audio({ jobId: guitar.id })])
+    const { onCarry, onDrop, onReveal } = await openTab([guitar], [audio({ src: GUITAR_URL })])
     const row = rowButton('轻快原声吉他，已使用')
     fireEvent.pointerDown(row, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
     fireEvent.pointerMove(row, { pointerId: 1, clientX: 10 + DRAG_THRESHOLD, clientY: 10 })

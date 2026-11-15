@@ -1,20 +1,21 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type * as z from 'zod'
-import { checkFilm, FilmProblem, localizedFilm, type CheckedFilm } from './film'
 import type { ExportQueue } from './jobs'
-import type { ComponentLibrary } from './library'
 import type { Logger } from './log'
-import { disallowedMediaHosts, parseRequest, zCheckRequest, zExportRequest } from './request'
+import { MAIN_FILE, mediaAddresses, projectProblem } from './project'
+import { disallowedMediaHosts, parseRequest, zExportRequest } from './request'
 
 export interface ServerContext {
   queue: ExportQueue
-  library: () => Promise<ComponentLibrary>
+  /** 公共目录（组件库根下的 `vendor/`）：渲染时工程里的 `vendor` 指向它。 */
+  vendorDir: string
   allowedHosts: Set<string>
   logger: Logger
   health: () => { gpu: 'hardware' | 'software'; chrome: string }
 }
 
-const MAX_BODY = 16 * 1024 * 1024
+// 工作区一段对话最多 20 MB；按 JSON 转义最坏翻倍，再给素材表和上传地址留出余量
+const MAX_BODY = 48 * 1024 * 1024
 
 class BodyTooLarge extends Error {}
 
@@ -55,7 +56,7 @@ async function readRequest<T>(
   try {
     body = JSON.parse(await readBody(req))
   } catch (error) {
-    const message = error instanceof BodyTooLarge ? '请求体超过 16 MB' : '请求体不是 JSON'
+    const message = error instanceof BodyTooLarge ? '请求体超过 48 MB' : '请求体不是 JSON'
     fail(res, 400, 'invalid-request', message)
     return null
   }
@@ -67,70 +68,35 @@ async function readRequest<T>(
   return parsed.request
 }
 
-/** 检查成片文件；不合写法时已经答复了 400，返回 null。 */
-async function checked(
-  res: ServerResponse,
-  film: string,
-  library: ComponentLibrary,
-  logger: Logger,
-): Promise<CheckedFilm | null> {
-  try {
-    return await checkFilm(film, library.catalog)
-  } catch (error) {
-    if (!(error instanceof FilmProblem)) throw error
-    logger.warn('成片文件没通过检查', { message: error.message, detail: error.detail })
-    fail(res, 400, 'invalid-film', error.message)
-    return null
-  }
-}
-
-async function checkFilmFile(req: IncomingMessage, res: ServerResponse, context: ServerContext) {
-  const request = await readRequest(req, res, zCheckRequest)
-  if (!request) return
-  const found = await checked(res, request.film, await context.library(), context.logger)
-  if (!found) return
-  send(res, 200, { html: found.html, durationMs: found.durationMs, sources: found.sources })
-}
-
 async function createExport(req: IncomingMessage, res: ServerResponse, context: ServerContext) {
   const request = await readRequest(req, res, zExportRequest)
   if (!request) return
-  const library = await context.library()
-  const found = await checked(res, request.film, library, context.logger)
-  if (!found) return
-  if (found.film.clips.length === 0) {
-    fail(res, 400, 'invalid-film', '成片暂无内容，无法导出；请先加入内容')
+  const problem = projectProblem(request.files)
+  if (problem !== undefined) {
+    fail(res, 400, 'invalid-project', problem)
     return
   }
+  const main = request.files.find((file) => file.path === MAIN_FILE)?.content ?? ''
   const downloads = new Map<string, string>()
-  for (const { url } of found.sources) {
-    const download = request.media[url]?.url
+  for (const address of mediaAddresses(main)) {
+    const download = request.media[address]?.url
     if (download === undefined) {
-      fail(res, 400, 'missing-media', `素材「${url}」缺少下载地址`)
+      fail(res, 400, 'missing-media', `素材「${address}」缺少下载地址`)
       return
     }
-    downloads.set(url, download)
+    downloads.set(address, download)
   }
   const rejected = disallowedMediaHosts([...downloads.values()], context.allowedHosts)
   if (rejected.length > 0) {
     fail(res, 400, 'media-host-not-allowed', `素材地址的主机不在允许范围：${rejected.join('、')}`)
     return
   }
-  const compose = (paths: Readonly<Record<string, string>>) => {
-    const local = Object.fromEntries(
-      [...downloads].flatMap(([url, download]) => {
-        const path = paths[download]
-        return path === undefined ? [] : [[url, path]]
-      }),
-    )
-    return localizedFilm(found.film, local, library.catalog)
-  }
   const accepted = context.queue.submit({
     id: request.id,
     conversationId: request.conversationId,
-    registryDir: library.dir,
-    mediaUrls: [...new Set(downloads.values())],
-    compose,
+    files: request.files,
+    media: downloads,
+    vendorDir: context.vendorDir,
     upload: request.upload,
   })
   if (!accepted) {
@@ -149,10 +115,6 @@ export async function handle(
   const exportId = /^\/exports\/([^/]+)$/.exec(pathname)?.[1]
   if (req.method === 'POST' && pathname === '/exports') {
     await createExport(req, res, context)
-    return
-  }
-  if (req.method === 'POST' && pathname === '/films/check') {
-    await checkFilmFile(req, res, context)
     return
   }
   if (exportId && req.method === 'GET') {

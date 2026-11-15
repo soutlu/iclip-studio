@@ -7,7 +7,6 @@ import structlog
 
 from iclip.common.errors import NotFound
 from iclip.domains.conversations.models import (
-    CheckedWholeFilm,
     WholeFilmExport,
     WholeFilmExportError,
     WholeFilmExportStatus,
@@ -28,14 +27,8 @@ from iclip.domains.generation.render import (
     RenderUnavailable,
 )
 from iclip.domains.generation.repository import GenerationRepository
-from iclip.domains.generation.schemas import (
-    KIND_WHOLE_FILM,
-    WholeFilmAudioSource,
-    WholeFilmRequest,
-    WholeFilmVideoSource,
-)
+from iclip.domains.generation.schemas import KIND_WHOLE_FILM
 from iclip.domains.generation.service import GenerationService
-from iclip.domains.identity.public import Principal
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -53,32 +46,6 @@ class WholeFilmExportAdapter:
         self._generation = generation
         self._generations = generations
         self._render = render
-
-    async def start(
-        self,
-        principal: Principal,
-        *,
-        conversation_id: uuid.UUID,
-        revision: int,
-        film: CheckedWholeFilm,
-    ) -> uuid.UUID:
-        request = WholeFilmRequest(
-            revision=revision,
-            videos=[
-                WholeFilmVideoSource(job_id=source.job_id, url=source.url)
-                for source in film.sources
-                if source.kind == "video"
-            ],
-            audios=[
-                WholeFilmAudioSource(job_id=source.job_id, url=source.url)
-                for source in film.sources
-                if source.kind == "audio"
-            ],
-        )
-        job = await self._generation.submit_whole_film(
-            principal, conversation_id=conversation_id, request=request
-        )
-        return job.id
 
     async def latest(
         self, *, conversation_id: uuid.UUID, owner_user_id: uuid.UUID

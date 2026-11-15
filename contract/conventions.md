@@ -152,20 +152,19 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
   - **一键修改全片画幅** `PUT .../film/aspect-ratio`：校验 `filmVersion`，将工程中所有视频节点和机位图的画幅统一改为指定比例（人物/场景设定图比例保持不变）。
   - **在制作页发起生图或出片** `POST .../film/image-generations` 与 `POST .../film/video-generations`：先检查该节点或该组视频的参考图列表是否有缺图（有缺图则返回 `422` 并列出具体缺哪几张），再按 `PUT .../film/image` 的口径检查这次要发的参考图（生图给了 `prompt` 时查它的 `referenceImageUrls`，`detail` 按「第 N 张参考图」说明是哪张），通过后创建生成任务（返回 `202` 与 `jobId`，并在 `metadata.film_node` 中记录节点名）。注意：新生成的图片不会自动替换当前选用的图片，需要用户在页面上点击选用才会写入 `film.icrun`。
 
-### 成片草稿
+### 成片工程的主文件
 
-业务规则见 [CONTEXT.md「成片草稿」](../docs/CONTEXT.md#术语)。草稿是一份成片文件（HTML 字符串 `html`），写法由 [composition/film.ts](../web/src/features/storyboard/final-cut/composition/film.ts) 定义：
-- **读取草稿** `GET /conversations/{id}/whole-film/draft`：如果还没保存过草稿，正常返回 `{ revision: 0, html: null, updatedAt: null }`。
-- **保存草稿** `PUT .../whole-film/draft`：仅对话创建者可保存，传入读取时的版本号 `revision`（首次保存传 `0`）与整份 `html`；版本冲突返回 `409`，保存成功后 `revision` 加 1。存下的是渲染服务按写法重写后的那一份（`<head>`、根上的属性和变量声明都按片段重新算出），所以读回来的文本可以和提交的不一样。组件或块的片段的摆放和字体也由 `<head>` 按片段的编号给出（片段上不另带样式）：组件库目录里条目的 `size` 和画面不一样大时，片段定成这个尺寸、居中，按 `min(画面宽 / 组件宽, 画面高 / 组件高)` 缩放；第一个字体类可填项取到组件库 `fonts` 里的字体族时（片段上没填就取默认值），`--font-display` 和 `--font-body` 都设成 `'<字体族>', '<中文字体族>', sans-serif`，取到别的值不写。
-- **草稿校验规则（违反返回 `422`）**：
-  - 写法由渲染服务检查：根下面只能有三种片段——视频片段 `<video class="clip picture">`、放着组件或块的片段 `<div class="clip component">`、音频片段 `<audio class="clip audio">`，每种片段只能带写法规定的属性（不能有脚本、事件属性、注释和别的标签）；片段的编号不能重复、每个片段不短于 100 毫秒；同一个区同一行上的片段不能时间重叠（视频片段和组件或块的片段在画面区，音频片段在声音区，两个区的 `data-track-index` 各算各的）；视频片段和组件或块的片段上的样式只能是叠放顺序（`style="z-index: N"`，N 为 0 到 9999 的整数），音频片段不能带样式；隐藏的片段带不写值的 `data-hidden`；组件或块的片段的 `data-composition-id` 和 `data-composition-src` 要是组件库目录里同一个条目的名字和文件，`data-variable-values` 要是一个 JSON 对象、值是字符串、数字或布尔；视频片段和音频片段的 `data-volume` 是 0 到 3.981072（+12 dB）的倍数，速度 `data-playback-rate` 是 0.1 到 10 的倍数（1 倍不写），淡入淡出 `data-fade-in` / `data-fade-out` 是秒数（0 不写）；视频片段有声音时带 `data-has-audio="true"`，静音时换成 `muted="true"`，两个不能同时带，音频片段不能带 `muted`；音频片段循环时写 `loop="true"`；素材地址变量的声明要和视频片段、音频片段一一对应，默认值等于片段上的地址；重写后还要通过渲染前的检查。
-  - 素材由后端检查：视频片段绑的变量 `src-<记录 id>` 指向的记录必须是本对话（或分叉继承）已完成的素材片，音频片段绑的变量指向的记录必须是本对话（或分叉继承）已完成的音频记录（`kind` 为 `audio`）；片段上的地址都必须等于这条记录的产物地址。
-  - 服务器未配置渲染服务时保存返回 `422`，渲染服务连不上返回 `502`。
+业务规则见 [CONTEXT.md「剪辑工程」](../docs/CONTEXT.md#术语)。主文件是工作区里的 `final-cut/index.html`，写法由 [composition/film.ts](../web/src/features/storyboard/final-cut/composition/film.ts) 定义；后端不读、不查它的内容：
+- **读写**：读走 `GET /conversations/{id}/workspace/file?path=final-cut/index.html`，没有这个文件（`404`）就是还没有工程。第一次保存走「新建工程文件」（`path` 写 `index.html`，已存在 `409`），之后带 `expectedVersion` 走 `PUT /conversations/{id}/workspace/file`（版本对不上 `409`，新版本号在答复里）。编辑器整份保存，`409` 时换成工作区里的那一份、放弃本地没存的改动。
+- **变化通知**：工程里的文件每写一次都推一次 `event.fs.changed`（见 §5「文件变化」），编辑器自己的保存也推，通知不带版本号。编辑器等在途的保存结束后读一次主文件，版本号比自己存下的新（或文件出现、消失了）才算别处改的；别的工程文件变了只重新加载预览。
+- **片段**：根（最外层带 `data-composition-id` 的元素）下面每个带时间（`data-start` 加 `data-duration`）的元素是一个片段，种类按标签认：`<video>`、`<audio>`、带 `data-composition-src` 且 `data-composition-id` 能在组件库目录里查到的宿主元素，其余都是「其他」片段。视频、音频的 `src` 直接写素材地址。组件或块的片段的摆放和字体变量写在宿主元素的行内样式上：条目的 `size` 和画面不一样大时定成这个尺寸、居中，按 `min(画面宽 / 组件宽, 画面高 / 组件高)` 缩放；第一个字体类可填项取到组件库 `fonts` 里的字体族时（没填取默认值），`--font-display` 和 `--font-body` 都设成 `'<字体族>', '<中文字体族>', sans-serif`，取到别的值不写。
+- **`<head>`**：编辑器只重算 `<!-- final-cut:fonts -->` 与 `<!-- /final-cut:fonts -->` 两行之间的字体块（字体族的样式表链接和用到的中文分片），标记之外原样保留；没有字体块时加在 `</head>` 前面。新建工程的主文件照固定模板写：根上的属性同 `#film`，`<head>` 带动画库的 `<script src="vendor/npm/gsap@…">`（版本照组件库目录的 `runtime.gsap`）。
+- **组件文件**：往工程里加贴片或场景时，前端按组件库目录里条目的 `files` 逐个取公共库的文件（`/hyperframes/<版本>/<路径>`），用「新建工程文件」写进 `final-cut/<路径>`，`409`（已经有了）跳过；拷进来以后就属于这个工程。
 
 ### 成片导出
 
-业务规则见 [CONTEXT.md「成片导出」](../docs/CONTEXT.md#术语)。以下三个接口仅限对话创建者本人调用（服务器未配置渲染服务时统一返回 `422`）：
-- **发起导出** `POST /conversations/{id}/whole-film/exports`：传入当前草稿版本号 `{ revision }`（与数据库最新草稿版本不一致返回 `409`，成片里还没有画面返回 `422`，渲染服务连不上返回 `502`）。受理后创建一条 `whole_film` 生成记录排入渲染队列，返回 `202 { exportId }`；记录里只存版本号和用到的素材（视频片段的素材片、音频片段的音频），交给渲染服务时按版本号取草稿里的成片文件，草稿这时已经不是那一版就把记录记为失败（`FILM_CHANGED`）。
+业务规则见 [CONTEXT.md「成片导出」](../docs/CONTEXT.md#术语)。以下三个接口仅限对话创建者本人调用：
+- **发起导出** `POST /conversations/{id}/whole-film/exports`：暂停中，看得见、能改的对话一律返回 `422`（「导出功能正在调整，无法导出；请稍后再试」），不建记录；暂停前已排队、还没交给渲染服务的记录交给队列时记为失败（`EXPORT_PAUSED`）。以下两个接口在服务器未配置渲染服务时返回 `422`。
 - **查询最新导出进度** `GET .../whole-film/exports/latest`：返回该对话下最新一次导出的状态 `{ export: { id, status, progress, queuePosition, error, downloadUrl } }`（从未导出过则 `export` 为 `null`；`status` 取值为 `queued | rendering | uploading | done | failed | cancelled`）。
 - **取消导出** `DELETE .../whole-film/exports/{exportId}`：取消排队中或正在渲染的导出任务（返回 `204`；如果刚好卡在向渲染服务提交的那一瞬间返回 `409`；如果渲染服务连不上返回 `502`）。
 
@@ -174,6 +173,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 成片工程是对话工作区里的 `final-cut/` 目录。工程里的脚本不可信，所以预览放在应用域名下的一个子域名（预览域名，配置项 `FINAL_CUT_PREVIEW_ORIGIN`，见 [deploy.md](../docs/deploy.md)）里运行。登录 Cookie 不设 `Domain`，预览域名拿不到它，取工程文件靠地址里的令牌。
 - **按主机名划分**：后端按请求的 `Host` 区分两个域名，在所有路由之前生效（反向代理须原样转发 `Host`，见 §1）。`Host` 是预览域名时只开放下面两个预览地址，其余接口（包括登录）一律 `404`，WebSocket 握手直接拒绝；`Host` 是别的主机时预览地址一律 `404`。没配置预览域名时，任何主机上的预览地址都是 `404`。
 - **发令牌** `POST /conversations/{id}/final-cut/preview`（应用域名，登录态）：可见范围同读工作区文件，治理者也能发；看不见这段对话返回 `404`。返回 `{ origin, token, expiresAt }`：`origin` 是预览域名，令牌 1 小时有效。令牌签进对话的创建者、对话、失效时刻和这次请求的 `Origin` 请求头，不落库，到期前不能吊销。没配置预览域名、请求没带 `Origin` 或它不是 `http(s)://主机[:端口]` 都返回 `422`；来源不被放行的（见 §2「请求来源检查」）先返回 `403`。前端自己拼出预览地址 `<origin>/api/final-cut/preview/<token>/…`。
+- **令牌续期**：编辑器开着时每 50 分钟取一张新令牌。预览页的页面地址固定用第一张（预览页按它确认应用来源），新令牌只用于预览文档的 `<base>`（`<origin>/api/final-cut/preview/<新令牌>/files/`），换令牌不重新加载预览页。
 - **预览地址**（预览域名，不看登录态）：令牌不对或已过期返回 `403`。
   - `GET /final-cut/preview/{token}/host` 返回 `{ appOrigin }`，即发令牌时请求的 `Origin`。预览页据此确认自己在预览域名上，并只接受来自这个来源的消息。
   - `GET /final-cut/preview/{token}/files/{path}`：`path` 相对工程根，带 `.` 或 `..` 段、空段、以 `/` 开头或结尾、带反斜杠都返回 `404`。以 `vendor/` 开头的返回 `307`，转到同主机的 `/hyperframes/vendor/<其余部分>`（公共库的文件，由前端的静态文件提供）；其余原文返回工作区里的 `final-cut/<path>`，没有就返回 `404`，不到别处找。类型按扩展名给出：`.html`、`.css`、`.js` / `.mjs`、`.json`、`.svg`、`.txt` 各用对应类型（文本类带 `charset=utf-8`），其余为 `application/octet-stream`。响应头带 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff` 与 `Referrer-Policy: no-referrer`。
@@ -238,7 +238,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 1. **获取直传签名 `POST /uploads/sign`**：返回 `uploadId`、限时上传地址 `upload.url` 和必须原样携带的请求头 `upload.headers`（里面签入了 `Content-Type` 和审计元数据 `x-oss-meta-*`，前端 PUT 上传到 OSS 时少传或改传任何一个 Header 都会被 OSS 拒绝并返回 `403`）。
 2. **确认上传完成 `POST /uploads/{uploadId}/confirm`**：服务端检查 OSS 桶内文件的真实类型和大小（文件还没传上去返回 `409`，格式或大小超限返回 `422`），通过后生成一条 `operation: "upload"` 的记录并返回永久公开地址 `{ url, contentType, sizeBytes }`（重复调用 `confirm` 幂等返回同一结果）：
    - **相同视频自动去重**：确认视频文件时，服务端会根据 OSS 对象的 MD5 查找是否已有完全相同的视频；如果以前有人传过，会直接返回最早那份视频的 `url` 并删掉刚传的重复文件，但仍会在当前用户名下记一条上传记录。
-   - **上传音乐关联对话**：只有上传音频文件时，才允许在 `confirm` 请求体中传入 `conversationId`（必须是自己的未删除对话，否则返回 `404` / `403`），关联后即可在该对话的成片草稿里选作背景音乐。
+   - **上传音乐关联对话**：只有上传音频文件时，才允许在 `confirm` 请求体中传入 `conversationId`（必须是自己的未删除对话，否则返回 `404` / `403`），关联后即可在该对话的剪辑工程里选作背景音乐。
 
 ---
 

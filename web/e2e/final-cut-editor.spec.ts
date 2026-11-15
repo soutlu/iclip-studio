@@ -1,13 +1,30 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page, type Request } from '@playwright/test'
 import { finalCutPreviewPage, openConversation, openFinalCut } from './helpers'
 
-const draftSaved = (page: Page, clips: number) =>
-  page.waitForRequest(
-    (request) =>
-      request.method() === 'PUT' &&
-      request.url().includes('/whole-film/draft') &&
-      ((request.postDataJSON() as { html: string }).html.match(/<video /g) ?? []).length === clips,
-  )
+/**
+ * 保存工程主文件的请求里写的主文件：第一次走「新建工程文件」，之后按版本写工作区文件；
+ * 不是保存主文件的请求时是 null。
+ */
+const savedHtmlOf = (request: Request): string | null => {
+  const url = request.url()
+  const isCreate = request.method() === 'POST' && url.includes('/final-cut/files')
+  const isWrite = request.method() === 'PUT' && url.includes('/workspace/file')
+  if (!isCreate && !isWrite) return null
+  const body = request.postDataJSON() as { path: string; content: string }
+  return body.path === (isCreate ? 'index.html' : 'final-cut/index.html') ? body.content : null
+}
+
+/** 存出来的主文件，没有时是空串。 */
+const htmlOf = (request: Request) => savedHtmlOf(request) ?? ''
+
+const mainSavedWith = (page: Page, check: (html: string) => boolean) =>
+  page.waitForRequest((request) => {
+    const html = savedHtmlOf(request)
+    return html !== null && check(html)
+  })
+
+const mainSaved = (page: Page, clips: number) =>
+  mainSavedWith(page, (html) => (html.match(/<video /g) ?? []).length === clips)
 
 const readyPlayer = async (editor: Locator) => {
   const player = finalCutPreviewPage(editor).locator('hyperframes-player')
@@ -36,7 +53,7 @@ const runtimeScripts = (player: Locator) =>
     RUNTIME_FILE,
   )
 
-test('成片编辑器：选镜头加入成片、播放、撤销、导出下载，切走再切回成片还在', async ({ page }) => {
+test('成片编辑器：选镜头加入成片、播放、撤销，导出暂停着，切走再切回成片还在', async ({ page }) => {
   test.setTimeout(60_000)
   // 预览和悬停预览的运行库都从组件库加载，整个过程不访问外网 CDN
   const cdnRequests: string[] = []
@@ -71,14 +88,17 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   const materials = editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-  const first = draftSaved(page, 1)
+  const first = mainSaved(page, 1)
   const previewRuntime = runtimeRequested()
   await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
   await page.keyboard.press('Enter')
-  const { html } = (await first).postDataJSON() as { html: string }
+  // 第一次保存新建工程主文件：模板的根、动画库，视频的 src 直接写素材地址
+  const html = htmlOf(await first)
+  expect((await first).method()).toBe('POST')
   expect(html).toContain('data-no-timeline')
-  expect(html).not.toContain('<script')
-  expect(html).toMatch(/<video [^>]*src="[^"]+" data-var-src="src-[0-9a-f-]{36}"/)
+  expect(html).toMatch(/<script src="vendor\/npm\/gsap@[^"]+">/)
+  expect(html).toMatch(/<video [^>]*src="[^"]*sample-video[^"]*"/)
+  expect(html).not.toContain('data-var-src')
 
   // 请求一发出就查：CDN 取不到时预览画不出来，等不到下面的断言
   await previewRuntime
@@ -121,7 +141,7 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   await page.mouse.move(0, 0)
   await expect(hoverPlayer).toHaveCount(0)
 
-  const second = draftSaved(page, 2)
+  const second = mainSaved(page, 2)
   await materials.getByRole('button', { name: /^生成 A 镜头 3，/ }).click()
   await page.keyboard.press('Enter')
   await second
@@ -171,40 +191,30 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   await toolbar.getByRole('button', { name: '显示缩略图' }).click()
   await expect(clip.locator('.wf-clip-frames')).toBeVisible()
 
-  const undone = draftSaved(page, 1)
+  const undone = mainSaved(page, 1)
   await toolbar.getByRole('button', { name: '撤销' }).click()
   await undone
-  const redone = draftSaved(page, 2)
+  const redone = mainSaved(page, 2)
   await toolbar.getByRole('button', { name: '重做' }).click()
   await redone
 
-  const exported = page.waitForResponse(
-    (response) => response.url().includes('/whole-film/exports') && response.status() === 202,
-  )
-  await toolbar.getByRole('button', { name: '导出', exact: true }).click()
-  const { exportId } = (await (await exported).json()) as { exportId: string }
-  const tiers = page.waitForResponse(
-    (response) => response.url().includes(`/generations/${exportId}/enhancements`),
-    { timeout: 20_000 },
-  )
-  await expect(editor.getByRole('status').filter({ hasText: /排队中|正在渲染/ })).toBeVisible()
-  const download = editor.getByRole('button', { name: '下载成片' })
-  await expect(download).toBeVisible({ timeout: 15_000 })
-  await tiers
-  const tracked = page.waitForRequest(
-    (request) => request.url().includes('/tracking/events') && request.method() === 'POST',
-  )
-  const fileSaved = page.waitForEvent('download')
-  await download.click()
-  await page.getByRole('menuitem', { name: '下载成片', exact: true }).click()
-  expect((await tracked).postDataJSON()).toMatchObject({ name: 'video.downloaded' })
-  expect((await fileSaved).suggestedFilename()).toMatch(/\.mp4$/)
+  // 发起导出暂停着：「导出」置灰，点了只说明原因，不发起导出
+  const exportRequests: string[] = []
+  page.on('request', (request) => {
+    if (request.url().includes('/whole-film/exports') && request.method() === 'POST')
+      exportRequests.push(request.url())
+  })
+  const exportButton = toolbar.getByRole('button', { name: '导出', exact: true })
+  await expect(exportButton).toHaveAttribute('aria-disabled', 'true')
+  // aria-disabled 的按钮 Playwright 认作不可点，照样点一下看说明
+  await exportButton.click({ force: true })
+  await expect(page.getByRole('tooltip')).toHaveText('导出功能正在调整，无法导出；请稍后再试')
+  expect(exportRequests).toEqual([])
 
-  // 切到「分镜」页签再切回来：编辑器重新打开，成片和导出都还在
+  // 切到「分镜」页签再切回来：编辑器重新打开，工程还在
   await panel.getByRole('tab', { name: '分镜' }).click()
   await expect(editor).toBeHidden()
   const reopened = await openFinalCut(panel)
-  await expect(reopened.getByRole('button', { name: '下载成片' })).toBeVisible()
   const reopenedToolbar = reopened.getByRole('toolbar', { name: '剪辑工具' })
   await expect(
     reopened.getByRole('group', { name: '播放控制' }).locator('.wf-clock span'),
@@ -262,7 +272,7 @@ test('播放条：倍速和静音对素材、成片都生效且换播放器后�
   ).toEqual([2, true])
 
   // 加入成片：成片预览也是 2×、静音
-  const first = draftSaved(page, 1)
+  const first = mainSaved(page, 1)
   await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).focus()
   await page.keyboard.press('Enter')
   await first
@@ -286,7 +296,7 @@ test('播放条：倍速和静音对素材、成片都生效且换播放器后�
   await expect(loop).toHaveAttribute('aria-pressed', 'true')
 
   // 改动成片后换了播放器：倍速、静音、循环都还在
-  const second = draftSaved(page, 2)
+  const second = mainSaved(page, 2)
   await materials.getByRole('button', { name: /^生成 A 镜头 3，/ }).click()
   await page.keyboard.press('Enter')
   await second
@@ -354,9 +364,9 @@ test('播放条：倍速和静音对素材、成片都生效且换播放器后�
 
 /** 存下来的成片里名字是 `title` 的组件或块的片段的属性；没有时是 null。 */
 const savedItem = (html: string, title: string) => {
-  const tag = new RegExp(`<div [^>]*class="clip component"[^>]*data-label="${title}"[^>]*>`).exec(
-    html,
-  )?.[0]
+  const tag = [...html.matchAll(/<div [^>]*data-composition-src="[^"]*"[^>]*>/g)]
+    .map(([found]) => found)
+    .find((found) => found.includes(` data-label="${title}"`))
   if (tag === undefined) return null
   const attribute = (name: string) => new RegExp(` ${name}="([^"]*)"`).exec(tag)?.[1]
   return {
@@ -371,14 +381,6 @@ const savedItem = (html: string, title: string) => {
   }
 }
 
-const draftSavedWith = (page: Page, check: (html: string) => boolean) =>
-  page.waitForRequest(
-    (request) =>
-      request.method() === 'PUT' &&
-      request.url().includes('/whole-film/draft') &&
-      check((request.postDataJSON() as { html: string }).html),
-  )
-
 test('块页签搜到块点「加到播放头」、组件页签拖一个组件到时间线上，预览里画出来，撤销回去', async ({
   page,
 }) => {
@@ -386,14 +388,14 @@ test('块页签搜到块点「加到播放头」、组件页签拖一个组件�
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await openFinalCut(panel)
-  const first = draftSaved(page, 1)
+  const first = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
     .getByRole('button', { name: /^生成 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
-  const { html: withVideo } = (await first).postDataJSON() as { html: string }
+  const withVideo = htmlOf(await first)
   const videoSeconds = Number(/<video [^>]*data-duration="([^"]+)"/.exec(withVideo)?.[1])
 
   const side = editor.getByRole('complementary', { name: '贴片、场景、音频和属性' })
@@ -410,9 +412,9 @@ test('块页签搜到块点「加到播放头」、组件页签拖一个组件�
   await expect(add).toHaveCSS('opacity', '1')
 
   // 播放头在 0：第一行这时有视频片段，块放进它下面新开的一行
-  const added = draftSavedWith(page, (html) => savedItem(html, '测试画面') !== null)
+  const added = mainSavedWith(page, (html) => savedItem(html, '测试画面') !== null)
   await add.click()
-  const placed = savedItem(((await added).postDataJSON() as { html: string }).html, '测试画面')
+  const placed = savedItem(htmlOf(await added), '测试画面')
   expect(placed).toMatchObject({ item: 'fixture-scene', start: 0, duration: 6, track: 1 })
   await expect(
     editor.getByRole('group', { name: '第 2 行' }).getByRole('group', { name: '测试画面，6.0 秒' }),
@@ -465,13 +467,13 @@ test('块页签搜到块点「加到播放头」、组件页签拖一个组件�
   await page.mouse.move(from.x + from.width / 2 + 10, from.y + 20, { steps: 3 })
   await page.mouse.move(dropX, lane.y + lane.height / 2, { steps: 8 })
   await expect(row.getByTestId('drop-ghost')).toBeVisible()
-  const dropped = draftSavedWith(page, (html) => savedItem(html, '测试叠加') !== null)
+  const dropped = mainSavedWith(page, (html) => savedItem(html, '测试叠加') !== null)
   await page.mouse.up()
-  const carried = savedItem(((await dropped).postDataJSON() as { html: string }).html, '测试叠加')
+  const carried = savedItem(htmlOf(await dropped), '测试叠加')
   expect(carried).toMatchObject({ item: 'fixture-overlay', duration: 4, track: 0 })
   expect(Math.abs((carried?.start ?? 0) - target)).toBeLessThan(0.1)
 
-  const undone = draftSavedWith(
+  const undone = mainSavedWith(
     page,
     (html) => savedItem(html, '测试叠加') === null && savedItem(html, '测试画面') !== null,
   )
@@ -496,10 +498,10 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
 
   await side.getByRole('searchbox', { name: '搜索贴片' }).fill('可填项')
   const card = side.getByRole('group', { name: '测试可填项，5 秒' })
-  const added = draftSavedWith(page, (html) => savedItem(html, '测试可填项') !== null)
+  const added = mainSavedWith(page, (html) => savedItem(html, '测试可填项') !== null)
   await card.hover()
   await card.getByRole('button', { name: '加到播放头' }).click()
-  const placed = savedItem(((await added).postDataJSON() as { html: string }).html, '测试可填项')
+  const placed = savedItem(htmlOf(await added), '测试可填项')
   expect(placed).toMatchObject({ item: 'fixture-fields', start: 0, values: {} })
 
   const row = editor.getByRole('group', { name: '第 1 行' })
@@ -516,7 +518,7 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
   // 分两下输入，中间停过提交的时间：预览换了一份，焦点还在框里
   await text.fill('新的')
   await page.waitForTimeout(600)
-  const renamed = draftSavedWith(
+  const renamed = mainSavedWith(
     page,
     (html) => savedItem(html, '测试可填项')?.values['text'] === '新的标题',
   )
@@ -536,7 +538,7 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
   await inspector.getByRole('button', { name: /^时间/ }).click()
   const start = inspector.getByRole('textbox', { name: '开始' })
   await expect(start).toHaveValue('0.00')
-  const moved = draftSavedWith(page, (html) => savedItem(html, '测试可填项')?.start === 2)
+  const moved = mainSavedWith(page, (html) => savedItem(html, '测试可填项')?.start === 2)
   await start.fill('2')
   await start.press('Enter')
   await moved
@@ -553,7 +555,7 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
   await expect(side.getByRole('searchbox', { name: '搜索贴片' })).toHaveValue('可填项')
   await expect(inspector).toHaveCount(0)
 
-  const undone = draftSavedWith(page, (html) => savedItem(html, '测试可填项')?.start === 0)
+  const undone = mainSavedWith(page, (html) => savedItem(html, '测试可填项')?.start === 0)
   await editor
     .getByRole('toolbar', { name: '剪辑工具' })
     .getByRole('button', { name: '撤销' })
@@ -582,14 +584,14 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、�
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await openFinalCut(panel)
-  const first = draftSaved(page, 1)
+  const first = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
     .getByRole('button', { name: /^生成 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
-  const { html: withVideo } = (await first).postDataJSON() as { html: string }
+  const withVideo = htmlOf(await first)
   const videoSeconds = Number(/<video [^>]*data-duration="([^"]+)"/.exec(withVideo)?.[1])
   const progress = editor
     .getByRole('group', { name: '播放控制' })
@@ -617,12 +619,12 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、�
   await editor.evaluate((element: HTMLElement) => element.focus())
   await page.keyboard.press('Shift+ArrowRight')
   await expect(progress).toHaveAttribute('aria-valuetext', /^00:01\.00 \//)
-  const added = draftSavedWith(page, (html) => savedAudio(html).length === 1)
+  const added = mainSavedWith(page, (html) => savedAudio(html).length === 1)
   await guitar
     .getByRole('button', { name: '轻快原声吉他，适合秋季穿搭', exact: true })
     .click({ button: 'right' })
   await page.getByRole('menuitem', { name: '加到播放头' }).click()
-  expect(savedAudio(((await added).postDataJSON() as { html: string }).html)).toEqual([
+  expect(savedAudio(htmlOf(await added))).toEqual([
     { label: '轻快原声吉他，适合秋季穿搭', start: 1, duration: 30, track: 0 },
   ])
   const soundRow = editor.getByRole('group', { name: '第 2 行' })
@@ -655,9 +657,9 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、�
   await page.mouse.move(from.x + from.width / 2 + 10, from.y + from.height / 2 + 10, { steps: 3 })
   await page.mouse.move(box.x + box.width + 4, lane.y + lane.height / 2, { steps: 8 })
   await expect(soundRow.getByTestId('drop-ghost')).toBeVisible()
-  const dropped = draftSavedWith(page, (html) => savedAudio(html).length === 2)
+  const dropped = mainSavedWith(page, (html) => savedAudio(html).length === 2)
   await page.mouse.up()
-  const both = savedAudio(((await dropped).postDataJSON() as { html: string }).html)
+  const both = savedAudio(htmlOf(await dropped))
   expect(both.map(({ start, duration, track }) => ({ start, duration, track }))).toEqual([
     { start: 1, duration: 30, track: 0 },
     { start: 31, duration: 30, track: 0 },
@@ -678,12 +680,12 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、�
     timeout: 15_000,
   })
 
-  const undone = draftSavedWith(page, (html) => savedAudio(html).length === 1)
+  const undone = mainSavedWith(page, (html) => savedAudio(html).length === 1)
   await editor
     .getByRole('toolbar', { name: '剪辑工具' })
     .getByRole('button', { name: '撤销' })
     .click()
-  expect(savedAudio(((await undone).postDataJSON() as { html: string }).html)).toEqual([
+  expect(savedAudio(htmlOf(await undone))).toEqual([
     { label: '轻快原声吉他，适合秋季穿搭', start: 1, duration: 30, track: 0 },
   ])
   await expect(uploaded).not.toContainText('已使用')
@@ -704,7 +706,7 @@ test('属性「媒体」：音频片段拉满增益、打开循环写进文件�
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await openFinalCut(panel)
   const inspector = editor.getByRole('tabpanel', { name: '属性' })
-  const first = draftSaved(page, 1)
+  const first = mainSaved(page, 1)
   const materials = editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
@@ -715,7 +717,7 @@ test('属性「媒体」：音频片段拉满增益、打开循环写进文件�
   // 音频加到播放头（0 秒），在画面行下面新开一行
   const side = editor.getByRole('complementary', { name: '贴片、场景、音频和属性' })
   await side.getByRole('tab', { name: '音频' }).click()
-  const added = draftSavedWith(page, (html) => savedAudio(html).length === 1)
+  const added = mainSavedWith(page, (html) => savedAudio(html).length === 1)
   await side
     .getByRole('list', { name: '音频' })
     .getByRole('button', { name: '轻快原声吉他，适合秋季穿搭', exact: true })
@@ -729,7 +731,7 @@ test('属性「媒体」：音频片段拉满增益、打开循环写进文件�
     .click()
   await inspector.getByRole('button', { name: /^媒体/ }).click()
   await expect(inspector.getByText('轻快原声吉他，适合秋季穿搭', { exact: true })).toHaveCount(2)
-  const louder = draftSavedWith(
+  const louder = mainSavedWith(
     page,
     (html) => savedAttribute(html, 'audio', 'data-volume') === '3.981072',
   )
@@ -739,7 +741,7 @@ test('属性「媒体」：音频片段拉满增益、打开循环写进文件�
     'aria-valuetext',
     '+12.0 dB',
   )
-  const looped = draftSavedWith(page, (html) => savedAttribute(html, 'audio', 'loop') === 'true')
+  const looped = mainSavedWith(page, (html) => savedAttribute(html, 'audio', 'loop') === 'true')
   await inspector.getByRole('switch', { name: '循环' }).click()
   await looped
 
@@ -758,14 +760,14 @@ test('属性「媒体」：音频片段拉满增益、打开循环写进文件�
   expect(longest).toBeGreaterThan(1)
 
   await inspector.getByRole('button', { name: /^媒体/ }).click()
-  const faster = draftSavedWith(
+  const faster = mainSavedWith(
     page,
     (html) => savedAttribute(html, 'video', 'data-playback-rate') === '2',
   )
   await inspector.getByRole('button', { name: /^速度 1x/ }).click()
   await inspector.getByRole('textbox', { name: '速度' }).fill('2')
   await inspector.getByRole('textbox', { name: '速度' }).press('Enter')
-  const html = ((await faster).postDataJSON() as { html: string }).html
+  const html = htmlOf(await faster)
   expect(Number(savedAttribute(html, 'video', 'data-duration'))).toBeCloseTo(longest, 2)
 
   // 收短再拉长：2 倍速时素材剩下的那段只够放原来的一半
@@ -782,7 +784,7 @@ test('在贴片卡片上按 ] 选中片段：侧栏切到「属性」，焦点�
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await openFinalCut(panel)
-  const first = draftSaved(page, 1)
+  const first = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
@@ -803,7 +805,7 @@ test('在贴片卡片上按 ] 选中片段：侧栏切到「属性」，焦点�
   await expect(editor.getByRole('tabpanel', { name: '属性' })).toBeVisible()
   await expect(editor).toBeFocused()
 
-  const removed = draftSaved(page, 0)
+  const removed = mainSaved(page, 0)
   await page.keyboard.press('Delete')
   await removed
   await expect(side.getByRole('tab', { name: '贴片' })).toHaveAttribute('aria-selected', 'true')
@@ -858,7 +860,7 @@ test('编辑区变窄时只裁不换行：工具条和侧栏页签都排一行�
 
 /** 加一个片段并选中它，返回选中它的按钮。 */
 const selectedClip = async (page: Page, editor: Locator) => {
-  const saved = draftSaved(page, 1)
+  const saved = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
@@ -874,11 +876,11 @@ const selectedClip = async (page: Page, editor: Locator) => {
   return clip
 }
 
-/** 接下来 `ms` 毫秒里成片草稿有没有存过。 */
+/** 接下来 `ms` 毫秒里工程主文件存过几次。 */
 const savesWithin = async (page: Page, ms: number) => {
   let saves = 0
-  const count = (request: { method: () => string; url: () => string }) => {
-    if (request.method() === 'PUT' && request.url().includes('/whole-film/draft')) saves += 1
+  const count = (request: Request) => {
+    if (savedHtmlOf(request) !== null) saves += 1
   }
   page.on('request', count)
   await page.waitForTimeout(ms)
@@ -942,7 +944,7 @@ test('焦点在对话框里时空格、Delete、Esc 都不碰剪辑；点编辑�
   await page.keyboard.press('Escape')
   await expect(clip).toHaveAttribute('aria-pressed', 'false')
   await clip.click()
-  const removed = draftSaved(page, 0)
+  const removed = mainSaved(page, 0)
   await page.keyboard.press('Delete')
   await removed
 })
@@ -996,7 +998,7 @@ test('预览正在播放时折叠工作台：播放停下，展开后停在原�
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
   for (const shot of [1, 2, 3]) {
-    const saved = draftSaved(page, shot)
+    const saved = mainSaved(page, shot)
     await shots.getByRole('button', { name: new RegExp(`^生成 A 镜头 ${shot}，`) }).click()
     await page.keyboard.press('Enter')
     await saved
@@ -1035,7 +1037,7 @@ test('改完马上切到别的页签再切回来：改动还在，接着改照�
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
   // 加进去以后不等停下来保存就切走：切走时存，切回来等它存完再读
-  const first = draftSaved(page, 1)
+  const first = mainSaved(page, 1)
   await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
   await page.keyboard.press('Enter')
   const row = editor.getByRole('group', { name: '第 1 行' })
@@ -1047,7 +1049,7 @@ test('改完马上切到别的页签再切回来：改动还在，接着改照�
     back.getByRole('group', { name: '第 1 行' }).getByRole('button', { name: /^选中：/ }),
   ).toHaveCount(1)
 
-  const second = draftSaved(page, 2)
+  const second = mainSaved(page, 2)
   await back
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
@@ -1056,4 +1058,57 @@ test('改完马上切到别的页签再切回来：改动还在，接着改照�
   await page.keyboard.press('Enter')
   await second
   await expect(page.getByText(/已在别处修改/)).toHaveCount(0)
+})
+
+test('新建工程、加镜头和一个贴片：条目文件拷进工程，刷新页面后都还在，预览里画出了贴片', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const createdFiles: string[] = []
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('/final-cut/files'))
+      createdFiles.push((request.postDataJSON() as { path: string }).path)
+  })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const first = mainSaved(page, 1)
+  await editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  await first
+
+  const side = editor.getByRole('complementary', { name: '贴片、场景、音频和属性' })
+  await side.getByRole('searchbox', { name: '搜索贴片' }).fill('叠加')
+  const card = side.getByRole('group', { name: '测试叠加，4 秒' })
+  const added = mainSavedWith(page, (html) => savedItem(html, '测试叠加') !== null)
+  await card.hover()
+  await card.getByRole('button', { name: '加到播放头' }).click()
+  const saved = await added
+  const placed = savedItem(htmlOf(saved), '测试叠加')
+  expect(placed).toMatchObject({ item: 'fixture-overlay', duration: 4 })
+  expect(createdFiles).toEqual(['index.html', 'compositions/fixtures/fixture-overlay.html'])
+
+  // 刷新整页：工程从工作区读回来，镜头和贴片都还在。等这次保存有了答复再刷新——请求刚发出就刷新，这一版还没存下来
+  await saved.response()
+  await page.reload()
+  const reloaded = await openFinalCut(await openConversation(page, '夜景延时素材生成'))
+  await expect(
+    reloaded.getByRole('group', { name: '第 1 行' }).getByRole('button', { name: /^选中：/ }),
+  ).toHaveCount(1)
+  await expect(reloaded.getByRole('group', { name: '测试叠加，4.0 秒' })).toBeVisible()
+
+  // 预览里的贴片：组件文件凭令牌从工程取，画出了组件里的圆环
+  const player = await readyPlayer(reloaded)
+  await expect
+    .poll(() =>
+      player.evaluate((element: HTMLElement & { iframeElement: HTMLIFrameElement }, id) => {
+        const host = element.iframeElement.contentDocument?.getElementById(id)
+        return host !== null && host !== undefined && host.querySelector('.fo-ring') !== null
+      }, placed?.id ?? ''),
+    )
+    .toBe(true)
 })

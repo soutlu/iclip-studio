@@ -37,7 +37,11 @@ const serveTiers = (tiers: Tier[]) => {
 
 const renderControl = (view: ExportView) =>
   renderWithProviders(
-    <ExportControl blocked={undefined} onCancel={() => {}} onStart={() => {}} view={view} />,
+    <ExportControl
+      blocked="导出功能正在调整，无法导出；请稍后再试"
+      onCancel={() => {}}
+      view={view}
+    />,
   )
 
 afterEach(() => {
@@ -121,6 +125,23 @@ describe('ExportControl · 高清版', () => {
     expect(screen.getByRole('status')).toHaveTextContent(text)
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(tiers.reads).toBe(0)
+  })
+
+  it.each([
+    { view: { kind: 'idle' } as const, button: '导出' },
+    { view: { kind: 'failed', message: '成片渲染失败，请重新导出' } as const, button: '导出' },
+    { view: { kind: 'cancelled' } as const, button: '导出' },
+    { view: DONE, button: '重新导出' },
+  ])('发起导出暂停着：「$button」禁用，点了说明原因', async ({ view, button }) => {
+    serveTiers([])
+    const user = userEvent.setup()
+    await renderControl(view)
+    const start = screen.getByRole('button', { name: new RegExp(`^${button}$`) })
+    expect(start).toHaveAttribute('aria-disabled', 'true')
+    await user.click(start)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      '导出功能正在调整，无法导出；请稍后再试',
+    )
   })
 
   it('「下载成片」能做高清版时先开菜单，第一项是「下载成片」，按钮上不带状态', async () => {

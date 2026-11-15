@@ -1,11 +1,14 @@
 import type { CatalogItem, ComponentCatalog } from './composition/catalog'
-import { writeFilm, type Canvas } from './composition/film'
-import { previewDocument } from './preview-document'
+import { emptyProject, hostElement, withFontBlock, type Canvas } from './composition/film'
+import { catalogBase, previewDocument } from './preview-document'
 
 /** 悬停预览的画布：和卡片上的封面一样是横版。 */
 export const HOVER_CANVAS: Canvas = { width: 1920, height: 1080 }
 
-/** 悬停预览用的那一份：只有这一个条目、从头播到它的时长；条目没写时长时是 undefined，不预览。 */
+/**
+ * 悬停预览用的那一份：新建工程的模板里只放这一个条目、从头播到它的时长，组件文件从公共组件库取；
+ * 条目没写时长时是 undefined，不预览。
+ */
 export const hoverPreviewOf = (
   item: CatalogItem,
   catalog: ComponentCatalog,
@@ -26,9 +29,11 @@ export const hoverPreviewOf = (
     z: 0,
     hidden: false,
   }
-  return previewDocument(
-    writeFilm({ canvas: HOVER_CANVAS, clips: [clip] }, catalog),
+  const html = emptyProject(
+    HOVER_CANVAS,
     catalog,
-    origin,
+    `${hostElement(clip, item, HOVER_CANVAS, catalog)}\n`,
+    clip.duration,
   )
+  return previewDocument(withFontBlock(html, [clip], catalog), catalogBase(catalog, origin))
 }

@@ -14,7 +14,6 @@ from iclip.domains.conversations.final_cut_project import FinalCutProject, Previ
 from iclip.domains.conversations.repository import (
     AgentPreviewStore,
     ConversationRepository,
-    WholeFilmDraftStore,
 )
 from iclip.domains.conversations.service import (
     ActivitiesOf,
@@ -38,7 +37,6 @@ from iclip.domains.conversations.service import (
     TaskExists,
     VideoProgressOf,
     WholeFilmExports,
-    WholeFilmFiles,
     WorkspaceDocumentValidator,
     WriteDerivedFile,
 )
@@ -68,8 +66,6 @@ def build_conversations_module(
     write_derived_file: WriteDerivedFile,
     document_validators: Mapping[str, WorkspaceDocumentValidator],
     film: ConversationFilm,
-    drafts: WholeFilmDraftStore,
-    films: WholeFilmFiles | None,
     exports: WholeFilmExports | None,
     generate_title: GenerateTitle,
     announce_title: AnnounceTitle,
@@ -97,8 +93,6 @@ def build_conversations_module(
         write_derived_file=write_derived_file,
         document_validators=document_validators,
         film=film,
-        drafts=drafts,
-        films=films,
         exports=exports,
         generate_title=generate_title,
         announce_title=announce_title,

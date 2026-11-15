@@ -7,10 +7,6 @@ export function escapeAttribute(value: string): string {
     .replaceAll('>', '&gt;')
 }
 
-export function jsonAttribute(value: unknown): string {
-  return escapeAttribute(JSON.stringify(value))
-}
-
 export function seconds(ms: number): string {
   return String(Math.round(ms) / 1000)
 }

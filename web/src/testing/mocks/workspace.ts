@@ -689,8 +689,73 @@ export const putMockWorkspaceFile = (conversationId: string, path: string, conte
   if (!generations.has(conversationId)) generations.set(conversationId, [])
   const version = (files.get(path)?.version ?? 0) + 1
   files.set(path, { content, updatedAt: new Date().toISOString(), version })
+  saveMockProjects()
   return version
 }
+
+/** 工作区里一个文件现在的内容和版本；没有时是 undefined。 */
+export const mockWorkspaceFile = (
+  conversationId: string,
+  path: string,
+): { content: string; version: number } | undefined => {
+  const file = workspaces.get(conversationId)?.get(path)
+  return file === undefined ? undefined : { content: file.content, version: file.version }
+}
+
+type MockFileChange = {
+  conversationId: string
+  path: string
+  change: 'created' | 'modified' | 'deleted'
+}
+
+const fileWatchers = new Set<(change: MockFileChange) => void>()
+
+/** 剪辑工程（`final-cut/`）里的文件每写一次都通知一次，编辑器自己的保存也一样（照后端）。 */
+export const watchMockProjectFiles = (watcher: (change: MockFileChange) => void) => {
+  fileWatchers.add(watcher)
+  return () => void fileWatchers.delete(watcher)
+}
+
+const PROJECT_PREFIX = 'final-cut/'
+
+const announceFile = (change: MockFileChange) => {
+  if (!change.path.startsWith(PROJECT_PREFIX)) return
+  saveMockProjects()
+  for (const watcher of fileWatchers) watcher(change)
+}
+
+// dev:mock 下剪辑工程的文件存进 sessionStorage，刷新页面后还在；只在浏览器里的 mock 打开
+const PROJECTS_STORAGE_KEY = 'cue.mock.final-cut-projects'
+let projectStorage: Storage | null = null
+
+function saveMockProjects() {
+  if (projectStorage === null) return
+  const stored: Record<string, Record<string, MockFile>> = {}
+  for (const [conversationId, files] of workspaces) {
+    const project = [...files].filter(([path]) => path.startsWith(PROJECT_PREFIX))
+    if (project.length > 0) stored[conversationId] = Object.fromEntries(project)
+  }
+  projectStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(stored))
+}
+
+/** 把存着的剪辑工程放回工作区，之后写剪辑工程时都存进 `storage`。在种好数据以后调用。 */
+export const persistMockProjects = (storage: Storage) => {
+  const stored = JSON.parse(storage.getItem(PROJECTS_STORAGE_KEY) ?? '{}') as Record<
+    string,
+    Record<string, MockFile>
+  >
+  for (const [conversationId, project] of Object.entries(stored)) {
+    const files = workspaces.get(conversationId) ?? new Map<string, MockFile>()
+    workspaces.set(conversationId, files)
+    for (const [path, file] of Object.entries(project)) files.set(path, file)
+  }
+  projectStorage = storage
+}
+
+/** 工程里的相对路径合不合规：照后端，不许空段、`.`、`..`、以 `/` 开头或结尾和反斜杠。 */
+const projectPathOk = (path: string) =>
+  !path.includes('\\') &&
+  !path.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')
 
 export const resetMockWorkspace = () => {
   for (const timer of timers) clearTimeout(timer)
@@ -743,7 +808,8 @@ export const seedMockMusic = (conversationId: string) => {
       id: crypto.randomUUID(),
       kind: 'audio',
       operation: 'upload',
-      outputUrl: MOCK_MUSIC_URL,
+      // 每条记录的产物地址各不相同（编辑器按地址认出成片里用着哪一条），都由同一个音频处理器答复
+      outputUrl: `${MOCK_MUSIC_URL}?upload`,
       prompt: '',
       status: 'completed',
     }),
@@ -823,9 +889,29 @@ export const workspaceHandlers = [
       version: file.version + 1,
     }
     files.set(body.path, written)
+    announceFile({
+      conversationId: String(params['conversationId']),
+      path: body.path,
+      change: 'modified',
+    })
     return HttpResponse.json({
       file: { content: written.content, path: body.path, version: written.version },
     })
+  }),
+
+  http.post('*/api/conversations/:conversationId/final-cut/files', async ({ params, request }) => {
+    const conversationId = String(params['conversationId'])
+    const body = (await request.json()) as { path: string; content: string }
+    if (!projectPathOk(body.path))
+      return HttpResponse.json({ detail: `路径 '${body.path}' 不合规` }, { status: 422 })
+    const path = `${PROJECT_PREFIX}${body.path}`
+    const files = workspaces.get(conversationId) ?? new Map<string, MockFile>()
+    workspaces.set(conversationId, files)
+    if (files.has(path))
+      return HttpResponse.json({ detail: '成片工程里已经有这个文件' }, { status: 409 })
+    files.set(path, { content: body.content, updatedAt: new Date().toISOString(), version: 1 })
+    announceFile({ conversationId, path, change: 'created' })
+    return HttpResponse.json({ path: body.path, version: 1 }, { status: 201 })
   }),
 
   http.get('*/api/generations/image-models', () =>
@@ -1079,7 +1165,7 @@ export const workspaceHandlers = [
       },
       conversationId: body.conversationId,
       metadata: body.metadata ?? null,
-      outputUrl: MOCK_MUSIC_URL,
+      outputUrl: `${MOCK_MUSIC_URL}?generated=${crypto.randomUUID()}`,
       durationMs: MOCK_MUSIC_SECONDS * 1000,
     })
     return HttpResponse.json({ generation: created }, { status: 202 })

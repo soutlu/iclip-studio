@@ -462,8 +462,8 @@ class WholeFilmAudioSource(CamelModel):
 
 
 class WholeFilmRequest(CamelModel):
-    """导出一条成片：成片草稿的哪一版、它用到的素材（视频片段的素材片、音频片段的音频）。成片文件
-    本身不存在这里，交给渲染服务时按 ``revision`` 从草稿里取。"""
+    """一条成片导出记录的请求：导出时成片的版本号和用到的素材（视频片段的素材片、音频片段的音频）。
+    发起导出暂停着，不再新建这种记录；已有的记录照旧读（高清版按 ``videos`` 找画幅）。"""
 
     kind: ClassVar[GenerationKind] = KIND_WHOLE_FILM
     operation: ClassVar[GenerationOperation] = OPERATION_RENDER

@@ -1,4 +1,5 @@
 import type { Logger } from './log'
+import type { ProjectFile } from './project'
 
 export type ExportStatus = 'queued' | 'rendering' | 'uploading' | 'done' | 'failed' | 'cancelled'
 
@@ -27,9 +28,12 @@ export interface UploadTarget {
 
 export interface RenderJobInput {
   id: string
-  registryDir: string
-  mediaUrls: string[]
-  compose(mediaPaths: Readonly<Record<string, string>>): string
+  /** 剪辑工程的文件，已经查过（见 `projectProblem`）。 */
+  files: readonly ProjectFile[]
+  /** 主文件里写的素材地址 → 去下载的地址。 */
+  media: ReadonlyMap<string, string>
+  /** 公共目录：工程里的 `vendor` 指向它。 */
+  vendorDir: string
 }
 
 export interface ExportWorker {
@@ -191,9 +195,9 @@ export class ExportQueue {
       rendered = await this.worker.render(
         {
           id: input.id,
-          registryDir: input.registryDir,
-          mediaUrls: input.mediaUrls,
-          compose: input.compose,
+          files: input.files,
+          media: input.media,
+          vendorDir: input.vendorDir,
         },
         {
           signal: controller.signal,

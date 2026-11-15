@@ -103,8 +103,12 @@ const shotOf = (materials: Locator, group: number, take: string, shot: number) =
 /** 存下来的成片里的视频片段，按起点排，写成「名字，从几秒起，多长」。 */
 const savedClips = (page: Page) =>
   page.evaluate(async (conversationId) => {
-    const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
-    const { html } = (await response.json()) as { html: string | null }
+    const response = await fetch(
+      `/api/conversations/${conversationId}/workspace/file?path=final-cut%2Findex.html`,
+    )
+    const html = response.ok
+      ? ((await response.json()) as { file: { content: string } }).file.content
+      : null
     const clips = (html ?? '').matchAll(
       /<video [^>]*data-label="([^"]*)"[^>]*data-start="([^"]*)" data-duration="([^"]*)"/g,
     )
@@ -399,8 +403,12 @@ test('没有音轨的素材片接进成片写成静音，有音轨的标着有�
 
   // 存下来的成片里每个视频片段的名字和声音的写法
   const sound = await page.evaluate(async (conversationId) => {
-    const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
-    const { html } = (await response.json()) as { html: string | null }
+    const response = await fetch(
+      `/api/conversations/${conversationId}/workspace/file?path=final-cut%2Findex.html`,
+    )
+    const html = response.ok
+      ? ((await response.json()) as { file: { content: string } }).file.content
+      : null
     const document = new DOMParser().parseFromString(html ?? '', 'text/html')
     return Object.fromEntries(
       [...document.querySelectorAll('video')].map((video) => [
@@ -614,8 +622,12 @@ test('换行：把片段拖到最下面的空行新开一行，再拖回去；�
   /** 存下来的成片里每个片段，按文件里的先后，写成「名字@行号 z叠放顺序」。 */
   const savedLayout = () =>
     page.evaluate(async (conversationId) => {
-      const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
-      const { html } = (await response.json()) as { html: string | null }
+      const response = await fetch(
+        `/api/conversations/${conversationId}/workspace/file?path=final-cut%2Findex.html`,
+      )
+      const html = response.ok
+        ? ((await response.json()) as { file: { content: string } }).file.content
+        : null
       return [...(html ?? '').matchAll(/<video [^>]*>/g)].map(([tag]) => {
         const label = /data-label="([^"]*)"/.exec(tag)?.[1]
         const track = /data-track-index="(\d+)"/.exec(tag)?.[1]
@@ -703,8 +715,12 @@ test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来�
   /** 存下来的成片里有几个隐藏的片段。 */
   const savedHidden = () =>
     page.evaluate(async (conversationId) => {
-      const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
-      const { html } = (await response.json()) as { html: string | null }
+      const response = await fetch(
+        `/api/conversations/${conversationId}/workspace/file?path=final-cut%2Findex.html`,
+      )
+      const html = response.ok
+        ? ((await response.json()) as { file: { content: string } }).file.content
+        : null
       return (html ?? '').match(/<video data-hidden=""/g)?.length ?? 0
     }, conversationIdOf(page))
   await expect(picture).not.toHaveCSS('display', 'none')
@@ -731,14 +747,14 @@ test('行多了只有轨道区上下滚：素材区留在面板底部，行头�
   await expect.poll(() => savedClips(page)).toHaveLength(1)
   await panel.getByRole('tab', { name: '分镜' }).click()
   await expect(editor).toBeHidden()
-  // 把这个片段复制到每一行上，直接存成草稿
+  // 把这个片段复制到每一行上，直接写进工程主文件
   await page.evaluate(
     async ({ conversationId, rows }) => {
-      const path = `/api/conversations/${conversationId}/whole-film/draft`
-      const { revision, html } = (await (await fetch(path)).json()) as {
-        revision: number
-        html: string
-      }
+      const path = `/api/conversations/${conversationId}/workspace/file`
+      const read = await fetch(`${path}?path=final-cut%2Findex.html`)
+      const { content: html, version } = (
+        (await read.json()) as { file: { content: string; version: number } }
+      ).file
       const video = /<video [^>]*><\/video>/.exec(html)?.[0] ?? ''
       const id = /\sid="([^"]+)"/.exec(video)?.[1] ?? ''
       const copies = Array.from({ length: rows }, (_, row) =>
@@ -749,9 +765,13 @@ test('行多了只有轨道区上下滚：素材区留在面板底部，行头�
       const response = await fetch(path, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ revision, html: html.replace(video, copies.join('\n')) }),
+        body: JSON.stringify({
+          path: 'final-cut/index.html',
+          content: html.replace(video, copies.join('\n')),
+          expectedVersion: version,
+        }),
       })
-      if (!response.ok) throw new Error(`存草稿失败：${response.status}`)
+      if (!response.ok) throw new Error(`写主文件失败：${response.status}`)
     },
     { conversationId: conversationIdOf(page), rows: ROWS },
   )
@@ -843,8 +863,12 @@ test('在两行之间、最上面新开一行：片段拖到两行中间的缝�
   /** 存下来的成片里每个片段在第几行，写成「名字@行号」，按名字排。 */
   const savedTracks = () =>
     page.evaluate(async (conversationId) => {
-      const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
-      const { html } = (await response.json()) as { html: string | null }
+      const response = await fetch(
+        `/api/conversations/${conversationId}/workspace/file?path=final-cut%2Findex.html`,
+      )
+      const html = response.ok
+        ? ((await response.json()) as { file: { content: string } }).file.content
+        : null
       return [
         ...(html ?? '').matchAll(/<video [^>]*data-label="([^"]*)"[^>]*data-track-index="(\d+)"/g),
       ]
@@ -1080,8 +1104,12 @@ test('成组挪动、成组裁剪：选中的片段挪同一个时间差，挡�
   /** 存下来的成片里每个镜头在哪：键是镜头号，时间按秒。 */
   const savedLayout = () =>
     page.evaluate(async (conversationId) => {
-      const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
-      const { html } = (await response.json()) as { html: string | null }
+      const response = await fetch(
+        `/api/conversations/${conversationId}/workspace/file?path=final-cut%2Findex.html`,
+      )
+      const html = response.ok
+        ? ((await response.json()) as { file: { content: string } }).file.content
+        : null
       const read = (tag: string, name: string) =>
         new RegExp(`${name}="([^"]*)"`).exec(tag)?.[1] ?? ''
       return Object.fromEntries(
@@ -1352,8 +1380,6 @@ test('缩放时播放头留在屏幕上原来的地方；滚到看不见它以�
     .toBeLessThan(16)
 })
 
-const AUDIO_JOB = '0c9a8b7d-6e5f-4a3b-8c2d-1e0f9a8b7c6d'
-
 /**
  * 打开成片编辑器，存一份三种片段都有的成片再打开：画面区第 0 行是组件或块的片段「标题」（0–2 秒），
  * 第 1 行是镜头 1（0–1 秒）；声音区第 0 行是「配乐 1」（0–4 秒）和「配乐 2」（5–6 秒）。
@@ -1369,12 +1395,12 @@ const openWithKinds = async (page: Page) => {
   // mock 环境把这个地址转到仓库里的测试音频
   const audioUrl = await page.evaluate(async () => (await fetch('/mock-audio/sample.mp3')).url)
   await page.evaluate(
-    async ({ conversationId, audioUrl, audioJob }) => {
-      const path = `/api/conversations/${conversationId}/whole-film/draft`
-      const { revision, html } = (await (await fetch(path)).json()) as {
-        revision: number
-        html: string
-      }
+    async ({ conversationId, audioUrl }) => {
+      const path = `/api/conversations/${conversationId}/workspace/file`
+      const read = await fetch(`${path}?path=final-cut%2Findex.html`)
+      const { content: html, version } = (
+        (await read.json()) as { file: { content: string; version: number } }
+      ).file
       const doc = new DOMParser().parseFromString(html, 'text/html')
       const root = doc.getElementById('film')
       if (root === null) throw new Error('成片文件里没有根')
@@ -1382,7 +1408,7 @@ const openWithKinds = async (page: Page) => {
       root.setAttribute('data-duration', '6')
       const values = JSON.stringify({ text: '新品上市' }).replaceAll('"', '&quot;')
       const sound = (id: string, label: string, start: number, duration: number) =>
-        `<audio id="${id}" data-hf-id="${id}" class="clip audio" data-label="${label}" src="${audioUrl}" data-var-src="src-${audioJob}" data-start="${start}" data-duration="${duration}" data-media-start="0" data-track-index="0" data-volume="1"></audio>`
+        `<audio id="${id}" data-hf-id="${id}" class="clip audio" data-label="${label}" src="${audioUrl}" data-start="${start}" data-duration="${duration}" data-media-start="0" data-track-index="0" data-volume="1"></audio>`
       root.insertAdjacentHTML(
         'afterbegin',
         [
@@ -1391,22 +1417,18 @@ const openWithKinds = async (page: Page) => {
           sound('music-2', '配乐 2', 5, 1),
         ].join('\n'),
       )
-      const variables = JSON.parse(
-        doc.documentElement.getAttribute('data-composition-variables') ?? '[]',
-      ) as unknown[]
-      variables.push({ id: `src-${audioJob}`, type: 'string', label: '音频', default: audioUrl })
-      doc.documentElement.setAttribute('data-composition-variables', JSON.stringify(variables))
       const response = await fetch(path, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          revision,
-          html: `<!doctype html>\n${doc.documentElement.outerHTML}`,
+          path: 'final-cut/index.html',
+          content: `<!doctype html>\n${doc.documentElement.outerHTML}`,
+          expectedVersion: version,
         }),
       })
-      if (!response.ok) throw new Error(`存草稿失败：${response.status}`)
+      if (!response.ok) throw new Error(`写主文件失败：${response.status}`)
     },
-    { conversationId: conversationIdOf(page), audioUrl, audioJob: AUDIO_JOB },
+    { conversationId: conversationIdOf(page), audioUrl },
   )
   await openFinalCut(panel)
   await expect(editor.getByRole('group', { name: /^配乐 2，/ })).toBeVisible()
@@ -1420,8 +1442,12 @@ const openWithKinds = async (page: Page) => {
  */
 const savedKinds = (page: Page) =>
   page.evaluate(async (conversationId) => {
-    const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
-    const { html } = (await response.json()) as { html: string | null }
+    const response = await fetch(
+      `/api/conversations/${conversationId}/workspace/file?path=final-cut%2Findex.html`,
+    )
+    const html = response.ok
+      ? ((await response.json()) as { file: { content: string } }).file.content
+      : null
     const doc = new DOMParser().parseFromString(html ?? '', 'text/html')
     return [...doc.querySelectorAll('#film > *')]
       .map((clip) => {
@@ -1533,8 +1559,12 @@ test('三种片段：组件或块的片段、视频片段、音频片段各在�
 const savedTiming = (page: Page, label: string) =>
   page.evaluate(
     async ({ conversationId, label }) => {
-      const response = await fetch(`/api/conversations/${conversationId}/whole-film/draft`)
-      const { html } = (await response.json()) as { html: string | null }
+      const response = await fetch(
+        `/api/conversations/${conversationId}/workspace/file?path=final-cut%2Findex.html`,
+      )
+      const html = response.ok
+        ? ((await response.json()) as { file: { content: string } }).file.content
+        : null
       const doc = new DOMParser().parseFromString(html ?? '', 'text/html')
       const clip = [...doc.querySelectorAll('#film > *')].find(
         (candidate) => candidate.getAttribute('data-label') === label,

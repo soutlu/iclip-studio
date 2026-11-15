@@ -112,6 +112,7 @@ export const shiftShot = (
 
 export type UsedSpan = { clipId: string; startMs: number; endMs: number }
 
+/** 视频片段用掉的素材段，按素材地址分：素材区按版本的地址对上这段对话的素材。 */
 export const usedSpans = (
   videos: readonly VideoClip[],
 ): ReadonlyMap<string, readonly UsedSpan[]> => {
@@ -122,7 +123,7 @@ export const usedSpans = (
       startMs: clip.mediaStart,
       endMs: clip.mediaStart + clip.duration * clip.playbackRate,
     }
-    used.set(clip.jobId, [...(used.get(clip.jobId) ?? []), span])
+    used.set(clip.src, [...(used.get(clip.src) ?? []), span])
   }
   return used
 }

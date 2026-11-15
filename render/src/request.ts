@@ -2,17 +2,24 @@ import * as z from 'zod'
 
 const zHttpUrl = z.url({ protocol: /^https?$/ })
 
-const MAX_FILM_CHARS = 1_000_000
+/** 一个工程文件的内容上限：工作区里一个文件最大 1 MB。 */
+const MAX_FILE_CHARS = 1_048_576
 
-const zFilm = z.string().min(1).max(MAX_FILM_CHARS)
-
-export const zCheckRequest = z.object({ film: zFilm })
+const MAX_PATH_CHARS = 1024
 
 export const zExportRequest = z.object({
   id: z.uuid(),
   conversationId: z.uuid(),
-  film: zFilm,
-  /** 成片文件里写的素材地址 → 渲染服务去下载的地址。 */
+  /** 剪辑工程的文本文件，路径相对工程根，规则见 project.ts。 */
+  files: z
+    .array(
+      z.object({
+        path: z.string().min(1).max(MAX_PATH_CHARS),
+        content: z.string().max(MAX_FILE_CHARS),
+      }),
+    )
+    .min(1),
+  /** 主文件里写的素材地址 → 渲染服务去下载的地址。 */
   media: z.record(z.string(), z.object({ url: zHttpUrl })),
   upload: z.object({ url: zHttpUrl, headers: z.record(z.string(), z.string()) }),
 })

@@ -141,27 +141,27 @@ describe('shiftShot：Shift 点镜头', () => {
 })
 
 describe('usedSpans：成片里每版素材片用了哪些段', () => {
-  it('按版本分开，同一版用了几段就记几段', () => {
+  it('按版本的地址分开，同一版用了几段就记几段', () => {
     const used = usedSpans([
-      video({ id: 'v1', jobId: 'a', mediaStart: 1_000, duration: 2_000 }),
-      video({ id: 'v2', jobId: 'b', mediaStart: 0, duration: 500 }),
-      video({ id: 'v3', jobId: 'a', mediaStart: 4_000, duration: 1_000 }),
+      video({ id: 'v1', src: 'a.mp4', mediaStart: 1_000, duration: 2_000 }),
+      video({ id: 'v2', src: 'b.mp4', mediaStart: 0, duration: 500 }),
+      video({ id: 'v3', src: 'a.mp4', mediaStart: 4_000, duration: 1_000 }),
     ])
     expect(Object.fromEntries(used)).toEqual({
-      a: [
+      'a.mp4': [
         { clipId: 'v1', startMs: 1_000, endMs: 3_000 },
         { clipId: 'v3', startMs: 4_000, endMs: 5_000 },
       ],
-      b: [{ clipId: 'v2', startMs: 0, endMs: 500 }],
+      'b.mp4': [{ clipId: 'v2', startMs: 0, endMs: 500 }],
     })
   })
 
   it('调了速度的片段：用掉的是片段长 × 速度那么长的一段', () => {
     const used = usedSpans([
-      video({ id: 'v1', jobId: 'a', mediaStart: 1_000, duration: 2_000, playbackRate: 2 }),
-      video({ id: 'v2', jobId: 'a', mediaStart: 6_000, duration: 2_000, playbackRate: 0.5 }),
+      video({ id: 'v1', src: 'a.mp4', mediaStart: 1_000, duration: 2_000, playbackRate: 2 }),
+      video({ id: 'v2', src: 'a.mp4', mediaStart: 6_000, duration: 2_000, playbackRate: 0.5 }),
     ])
-    expect(used.get('a')).toEqual([
+    expect(used.get('a.mp4')).toEqual([
       { clipId: 'v1', startMs: 1_000, endMs: 5_000 },
       { clipId: 'v2', startMs: 6_000, endMs: 7_000 },
     ])

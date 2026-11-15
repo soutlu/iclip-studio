@@ -11,7 +11,7 @@ export const openConversation = async (page: Page, title: string, { mobile = fal
   return page.getByRole('complementary', { name: '工作台' })
 }
 
-/** 点工作台里的「final-cut」页签打开成片编辑器，等它读完草稿；返回编辑器的根节点。 */
+/** 点工作台里的「final-cut」页签打开成片编辑器，等它读完工程主文件；返回编辑器的根节点。 */
 export const openFinalCut = async (panel: Locator) => {
   await panel.getByRole('tab', { name: 'final-cut', exact: true }).click()
   const editor = panel.getByRole('group', { name: '成片编辑器', exact: true })

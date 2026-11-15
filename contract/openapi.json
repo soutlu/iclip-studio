@@ -14016,90 +14016,6 @@
         "title": "WholeFilmCardsOut",
         "type": "object"
       },
-      "WholeFilmDraftIn": {
-        "additionalProperties": false,
-        "description": "整份保存成片文件。``revision`` 是读到的那一版，还没有草稿时是 0。",
-        "properties": {
-          "html": {
-            "maxLength": 1000000,
-            "minLength": 1,
-            "title": "Html",
-            "type": "string"
-          },
-          "revision": {
-            "minimum": 0.0,
-            "title": "Revision",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "revision",
-          "html"
-        ],
-        "title": "WholeFilmDraftIn",
-        "type": "object"
-      },
-      "WholeFilmDraftOut": {
-        "additionalProperties": false,
-        "description": "当前的成片文件；还没存过时 ``revision`` 是 0，``html`` 与 ``updatedAt`` 为 null。",
-        "properties": {
-          "html": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Html"
-          },
-          "revision": {
-            "title": "Revision",
-            "type": "integer"
-          },
-          "updatedAt": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updatedat"
-          }
-        },
-        "required": [
-          "revision",
-          "html",
-          "updatedAt"
-        ],
-        "title": "WholeFilmDraftOut",
-        "type": "object"
-      },
-      "WholeFilmDraftSavedOut": {
-        "additionalProperties": false,
-        "description": "保存后的新版本号与保存时刻。",
-        "properties": {
-          "revision": {
-            "title": "Revision",
-            "type": "integer"
-          },
-          "updatedAt": {
-            "format": "date-time",
-            "title": "Updatedat",
-            "type": "string"
-          }
-        },
-        "required": [
-          "revision",
-          "updatedAt"
-        ],
-        "title": "WholeFilmDraftSavedOut",
-        "type": "object"
-      },
       "WholeFilmExportErrorOut": {
         "additionalProperties": false,
         "properties": {
@@ -14117,22 +14033,6 @@
           "message"
         ],
         "title": "WholeFilmExportErrorOut",
-        "type": "object"
-      },
-      "WholeFilmExportIn": {
-        "additionalProperties": false,
-        "description": "按当前草稿导出；``revision`` 是页面上那一版，不是服务端存的那一版就不导。",
-        "properties": {
-          "revision": {
-            "minimum": 0.0,
-            "title": "Revision",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "revision"
-        ],
-        "title": "WholeFilmExportIn",
         "type": "object"
       },
       "WholeFilmExportLatestOut": {
@@ -14230,22 +14130,6 @@
           "downloadUrl"
         ],
         "title": "WholeFilmExportOut",
-        "type": "object"
-      },
-      "WholeFilmExportStartedOut": {
-        "additionalProperties": false,
-        "description": "已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id。",
-        "properties": {
-          "exportId": {
-            "format": "uuid",
-            "title": "Exportid",
-            "type": "string"
-          }
-        },
-        "required": [
-          "exportId"
-        ],
-        "title": "WholeFilmExportStartedOut",
         "type": "object"
       },
       "WholeFilmVersionOut": {
@@ -18705,129 +18589,9 @@
         ]
       }
     },
-    "/conversations/{conversation_id}/whole-film/draft": {
-      "get": {
-        "description": "读这段对话的成片草稿；可见范围同读工作区文件。还没存过答复 ``revision`` 0、\n``html`` 与 ``updatedAt`` 为 null。",
-        "operationId": "read_whole_film_draft_conversations__conversation_id__whole_film_draft_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "conversation_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Conversation Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WholeFilmDraftOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "SessionCookie": [
-              "agent:read"
-            ]
-          },
-          {
-            "BearerToken": [
-              "agent:read"
-            ]
-          }
-        ],
-        "summary": "Read Whole Film Draft",
-        "tags": [
-          "conversations"
-        ]
-      },
-      "put": {
-        "description": "整份保存成片文件，答复新的版本号；存下的是按写法重写后的那一份。只有属主能存；\n``revision`` 不是当前那一版（还没有草稿是 0）是 409；文件不合写法、用到的素材不是这段对话的、\n没开通都是 422；渲染服务不可用 502。",
-        "operationId": "save_whole_film_draft_conversations__conversation_id__whole_film_draft_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "conversation_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Conversation Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WholeFilmDraftIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WholeFilmDraftSavedOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "SessionCookie": [
-              "agent:run"
-            ]
-          },
-          {
-            "BearerToken": [
-              "agent:run"
-            ]
-          }
-        ],
-        "summary": "Save Whole Film Draft",
-        "tags": [
-          "conversations"
-        ]
-      }
-    },
     "/conversations/{conversation_id}/whole-film/exports": {
       "post": {
-        "description": "按当前草稿导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；\n``revision`` 不是存着的那一版 409；成片还是空的、用到的素材不再是这段对话的、没开通\n都是 422；渲染服务不可用 502。草稿在交给渲染服务之前又改过不在这里答，那条记录记为失败\n（``FILM_CHANGED``）。",
+        "description": "发起导出暂停着：看得见、能改的对话一律 422 并说明原因；看不见 404，看得见不能改 403。\n查最近一次导出、取消导出照常。",
         "operationId": "export_whole_film_conversations__conversation_id__whole_film_exports_post",
         "parameters": [
           {
@@ -18841,36 +18605,17 @@
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WholeFilmExportIn"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
-          "202": {
+          "200": {
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WholeFilmExportStartedOut"
-                }
+                "schema": {}
               }
             },
             "description": "Successful Response"
           },
           "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
+            "description": "发起导出暂停着"
           }
         },
         "security": [

@@ -11,7 +11,6 @@ import {
 } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { errorMessageOf } from '@/shared/api/client'
-import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import type { TimeSpan } from '@/shared/lib/time-spans'
 import { InlineAlert } from '@/shared/ui/inline-alert'
@@ -30,7 +29,7 @@ import { AudioTab } from './audio-tab'
 import type { SourceLength } from './clip-edit'
 import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
 import type { CatalogItem } from './composition/catalog'
-import { writeFilm, type Canvas } from './composition/film'
+import type { Canvas } from './composition/film'
 import { isEditorKeyTarget, useEditorEscape, useEditorRoot } from './editor-keys'
 import { EditorRoot } from './editor-root'
 import { EditorToolbar } from './editor-toolbar'
@@ -88,7 +87,12 @@ import {
 } from './timeline-scale'
 import { useFilmSession, type NewAudio } from './use-film-session'
 import { useWholeFilmExport } from './use-whole-film-export'
-import { useWholeFilmDraftQuery, useFinalCutPreviewQuery } from './final-cut.api'
+import {
+  projectFilesBase,
+  useFinalCutPreviewTokens,
+  useProjectMainQuery,
+  type ProjectMain,
+} from './final-cut.api'
 import './final-cut.css'
 
 const EMPTY_TEXT = '暂无成片内容，加入内容后可在此预览'
@@ -96,6 +100,7 @@ const PICK_FIRST_TEXT = '尚未选中镜头，无法加入成片；请先在下�
 const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏，无法进入全屏'
 const ADDING_ITEM_TEXT = '上一个贴片或场景正在加入成片，请稍后再试'
 const ADDING_AUDIO_TEXT = '上一条音频正在加入成片，请稍后再试'
+const EXPORT_PAUSED_TEXT = '导出功能正在调整，无法导出；请稍后再试'
 // 还没有成片时先放组件或块：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 
@@ -113,17 +118,21 @@ const fullscreenElementOf = () => document.fullscreenElement ?? null
 
 /** 工作台「final-cut」页签里的成片编辑器，填满页签内容区。 */
 export function FinalCutEditor({ conversationId }: Pick<ArtifactRendererProps, 'conversationId'>) {
-  const draftQuery = useWholeFilmDraftQuery(conversationId)
+  const projectQuery = useProjectMainQuery(conversationId)
   const catalogQuery = useComponentCatalog()
   const keysRef = useRef<((event: KeyboardEvent) => void) | null>(null)
-  const failed = draftQuery.isError ? draftQuery : catalogQuery.isError ? catalogQuery : undefined
+  const failed = projectQuery.isError
+    ? projectQuery
+    : catalogQuery.isError
+      ? catalogQuery
+      : undefined
   return (
     <EditorRoot onKeyDown={(event) => keysRef.current?.(event)}>
-      {draftQuery.data !== undefined && catalogQuery.data !== undefined ? (
+      {projectQuery.data !== undefined && catalogQuery.data !== undefined ? (
         <EditorBody
           catalog={catalogQuery.data}
           conversationId={conversationId}
-          initial={draftQuery.data}
+          initial={projectQuery.data}
           keysRef={keysRef}
         />
       ) : failed !== undefined ? (
@@ -132,7 +141,7 @@ export function FinalCutEditor({ conversationId }: Pick<ArtifactRendererProps, '
             action={{ label: '重试', onClick: () => void failed.refetch() }}
             message={errorMessageOf(
               failed.error,
-              failed === draftQuery ? '成片草稿读取失败' : '贴片和场景读取失败',
+              failed === projectQuery ? '成片草稿读取失败' : '贴片和场景读取失败',
             )}
           />
         </div>
@@ -169,7 +178,7 @@ function EditorBody({
   keysRef,
 }: {
   conversationId: string
-  initial: WholeFilmDraftOut
+  initial: ProjectMain | null
   catalog: ComponentCatalog
   keysRef: RefObject<((event: KeyboardEvent) => void) | null>
 }) {
@@ -399,7 +408,6 @@ function EditorBody({
       const shot = shotNumberOf(piece.mediaStart, material.url, keyframes)
       return {
         ...piece,
-        jobId: material.jobId,
         src: material.url,
         label: `${takeLetterOf(material)} · ${shot === undefined ? material.version : `镜头 ${shot}`}`,
       }
@@ -567,37 +575,35 @@ function EditorBody({
     }
   })
 
-  const previewQuery = useFinalCutPreviewQuery(conversationId)
-  const previewPage: PreviewPageAddress = previewQuery.isError
-    ? {
-        kind: 'failed',
-        message: errorMessageOf(previewQuery.error, '预览加载失败'),
-        onRetry: () => void previewQuery.refetch(),
-      }
-    : previewQuery.data === undefined
-      ? { kind: 'pending' }
-      : { kind: 'ready', origin: previewQuery.data.origin, token: previewQuery.data.token }
-  const previewOrigin = previewQuery.data?.origin
-  // 编辑时 SDK 不改 <head>：按片段重新写出整份（和渲染服务存下的一样）再交给预览。
-  // 成片在预览页里运行，组件库和运行库都从预览域名取，和它同源
+  const preview = useFinalCutPreviewTokens(conversationId)
+  const previewPage: PreviewPageAddress =
+    preview.page !== undefined
+      ? { kind: 'ready', origin: preview.page.origin, token: preview.page.token }
+      : preview.query.isError
+        ? {
+            kind: 'failed',
+            message: errorMessageOf(preview.query.error, '预览加载失败'),
+            onRetry: () => void preview.query.refetch(),
+          }
+        : { kind: 'pending' }
+  const tokens = preview.latest
+  const { filesRevision } = session
+  // 预览页拿到的就是当前的主文件（没存的改动也在里面），工程文件凭最新的令牌从预览域名取，
+  // 运行库从预览域名下的组件库取，和预览页同源。工程里别的文件变了时换一份对象，让预览重新加载
   const previewFilm = useMemo(
     () =>
-      film === null || clips.length === 0 || previewOrigin === undefined
+      film === null || clips.length === 0 || tokens === undefined
         ? undefined
         : {
-            html: previewDocument(
-              writeFilm({ canvas: film.canvas, clips: [...clips] }, catalog),
-              catalog,
-              previewOrigin,
-            ),
-            runtimeSrc: previewRuntimeSrc(catalog, previewOrigin),
+            html: previewDocument(film.html, projectFilesBase(tokens.origin, tokens.token)),
+            runtimeSrc: previewRuntimeSrc(catalog, tokens.origin),
+            filesRevision,
           },
-    [film, clips, catalog, previewOrigin],
+    [film, clips, catalog, tokens, filesRevision],
   )
   const playBlocked = film === null || clips.length === 0 ? EMPTY_TEXT : undefined
 
-  const exporting = useWholeFilmExport(conversationId, session.settle)
-  const exportBlocked = clips.length === 0 ? '成片暂无内容，无法导出；请先加入内容' : undefined
+  const exporting = useWholeFilmExport(conversationId)
 
   const viewedMaterial =
     materialView === null ? undefined : materials.byJob.get(materialView.range.jobId)
@@ -776,9 +782,8 @@ function EditorBody({
         <EditorToolbar
           actions={
             <ExportControl
-              blocked={exportBlocked}
+              blocked={EXPORT_PAUSED_TEXT}
               onCancel={() => void exporting.cancel()}
-              onStart={() => void exporting.start()}
               view={exporting.view}
             />
           }

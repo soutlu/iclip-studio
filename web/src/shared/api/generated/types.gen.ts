@@ -7457,58 +7457,6 @@ export type WholeFilmCardsOut = {
 }
 
 /**
- * WholeFilmDraftIn
- *
- * 整份保存成片文件。``revision`` 是读到的那一版，还没有草稿时是 0。
- */
-export type WholeFilmDraftIn = {
-  /**
-   * Html
-   */
-  html: string
-  /**
-   * Revision
-   */
-  revision: number
-}
-
-/**
- * WholeFilmDraftOut
- *
- * 当前的成片文件；还没存过时 ``revision`` 是 0，``html`` 与 ``updatedAt`` 为 null。
- */
-export type WholeFilmDraftOut = {
-  /**
-   * Html
-   */
-  html: string | null
-  /**
-   * Revision
-   */
-  revision: number
-  /**
-   * Updatedat
-   */
-  updatedAt: string | null
-}
-
-/**
- * WholeFilmDraftSavedOut
- *
- * 保存后的新版本号与保存时刻。
- */
-export type WholeFilmDraftSavedOut = {
-  /**
-   * Revision
-   */
-  revision: number
-  /**
-   * Updatedat
-   */
-  updatedAt: string
-}
-
-/**
  * WholeFilmExportErrorOut
  */
 export type WholeFilmExportErrorOut = {
@@ -7520,18 +7468,6 @@ export type WholeFilmExportErrorOut = {
    * Message
    */
   message: string
-}
-
-/**
- * WholeFilmExportIn
- *
- * 按当前草稿导出；``revision`` 是页面上那一版，不是服务端存的那一版就不导。
- */
-export type WholeFilmExportIn = {
-  /**
-   * Revision
-   */
-  revision: number
 }
 
 /**
@@ -7570,18 +7506,6 @@ export type WholeFilmExportOut = {
    * Status
    */
   status: 'queued' | 'rendering' | 'uploading' | 'done' | 'failed' | 'cancelled'
-}
-
-/**
- * WholeFilmExportStartedOut
- *
- * 已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id。
- */
-export type WholeFilmExportStartedOut = {
-  /**
-   * Exportid
-   */
-  exportId: string
 }
 
 /**
@@ -9864,72 +9788,8 @@ export type RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostRespon
 export type RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponse =
   RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponses[keyof RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponses]
 
-export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetData = {
-  body?: never
-  path: {
-    /**
-     * Conversation Id
-     */
-    conversation_id: string
-  }
-  query?: never
-  url: '/conversations/{conversation_id}/whole-film/draft'
-}
-
-export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetErrors = {
-  /**
-   * Validation Error
-   */
-  422: HttpValidationError
-}
-
-export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetError =
-  ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetErrors[keyof ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetErrors]
-
-export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponses = {
-  /**
-   * Successful Response
-   */
-  200: WholeFilmDraftOut
-}
-
-export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponse =
-  ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponses[keyof ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponses]
-
-export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutData = {
-  body: WholeFilmDraftIn
-  path: {
-    /**
-     * Conversation Id
-     */
-    conversation_id: string
-  }
-  query?: never
-  url: '/conversations/{conversation_id}/whole-film/draft'
-}
-
-export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutErrors = {
-  /**
-   * Validation Error
-   */
-  422: HttpValidationError
-}
-
-export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutError =
-  SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutErrors[keyof SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutErrors]
-
-export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponses = {
-  /**
-   * Successful Response
-   */
-  200: WholeFilmDraftSavedOut
-}
-
-export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponse =
-  SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponses[keyof SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponses]
-
 export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostData = {
-  body: WholeFilmExportIn
+  body?: never
   path: {
     /**
      * Conversation Id
@@ -9942,23 +9802,17 @@ export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostData =
 
 export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostErrors = {
   /**
-   * Validation Error
+   * 发起导出暂停着
    */
-  422: HttpValidationError
+  422: unknown
 }
-
-export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostError =
-  ExportWholeFilmConversationsConversationIdWholeFilmExportsPostErrors[keyof ExportWholeFilmConversationsConversationIdWholeFilmExportsPostErrors]
 
 export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponses = {
   /**
    * Successful Response
    */
-  202: WholeFilmExportStartedOut
+  200: unknown
 }
-
-export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponse =
-  ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponses[keyof ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponses]
 
 export type LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetData = {
   body?: never

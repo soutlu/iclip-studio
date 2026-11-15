@@ -7,8 +7,8 @@ import type { ExportView } from './use-whole-film-export'
 
 type ExportControlProps = {
   view: ExportView
-  blocked: string | undefined
-  onStart: () => void
+  /** 为什么现在不能发起导出：「导出」「重新导出」都按它禁用。 */
+  blocked: string
   onCancel: () => void
 }
 
@@ -16,8 +16,6 @@ type Status = { text: string; tone: 'normal' | 'busy' | 'error' }
 
 const exportStatus = (view: ExportView): Status | undefined => {
   switch (view.kind) {
-    case 'starting':
-      return { text: '正在提交导出…', tone: 'normal' }
     case 'queued':
       return {
         text:
@@ -52,7 +50,7 @@ const enhanceStatus = (rows: readonly EnhanceTierRow[]): Status | undefined => {
   return undefined
 }
 
-export function ExportControl({ view, blocked, onStart, onCancel }: ExportControlProps) {
+export function ExportControl({ view, blocked, onCancel }: ExportControlProps) {
   const running = view.kind === 'queued' || view.kind === 'rendering' || view.kind === 'uploading'
   const rows = useEnhanceTiers(view.kind === 'done' ? view.exportId : undefined)
   const status = exportStatus(view) ?? enhanceStatus(rows)
@@ -75,9 +73,11 @@ export function ExportControl({ view, blocked, onStart, onCancel }: ExportContro
         </Button>
       ) : view.kind === 'done' ? (
         <>
-          <Button onClick={onStart} size="md" variant="ghost">
-            重新导出
-          </Button>
+          <BlockedReason reason={blocked} side="bottom">
+            <Button aria-disabled size="md" variant="ghost">
+              重新导出
+            </Button>
+          </BlockedReason>
           <VideoDownload
             className="editor-compose"
             enhanceSourceId={view.exportId}
@@ -91,16 +91,7 @@ export function ExportControl({ view, blocked, onStart, onCancel }: ExportContro
         </>
       ) : (
         <BlockedReason reason={blocked} side="bottom">
-          <Button
-            aria-disabled={blocked === undefined && view.kind !== 'starting' ? undefined : true}
-            className="editor-compose"
-            leadingIcon="download"
-            loading={view.kind === 'starting'}
-            onClick={() => {
-              if (blocked === undefined && view.kind !== 'starting') onStart()
-            }}
-            size="md"
-          >
+          <Button aria-disabled className="editor-compose" leadingIcon="download" size="md">
             导出
           </Button>
         </BlockedReason>

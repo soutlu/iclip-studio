@@ -21,6 +21,9 @@ const film = [first, middle, last, above]
 
 const VISUAL_0 = { zone: 'visual', track: 0 } as const
 
+/** 片段写着的地址：素材地址或条目文件；「其他」片段没有。 */
+const srcOf = (clip: FilmClip) => (clip.kind === 'other' ? '' : clip.src)
+
 /** 每次改完都要满足的两条：同一行（同一个区、同一个行号）的片段不重叠，起点不为负。 */
 const expectValidFilm = (clips: readonly FilmClip[]) => {
   for (const clip of clips) {
@@ -129,6 +132,27 @@ describe('裁组件或块的片段和音频片段', () => {
     })
     const later = { ...title, playbackStart: 1_500 }
     expect(trimBounds(later, 'start', mixed, undefined).min).toBe(2_000)
+  })
+
+  it('「其他」片段没有入点：开头往前只被前一个片段挡住，结尾没有上限', () => {
+    const other: FilmClip = {
+      kind: 'other',
+      id: 'o',
+      label: '手写文字',
+      start: 3_000,
+      duration: 2_000,
+      track: 0,
+      hidden: false,
+      z: 0,
+    }
+    const row = [first, other]
+    expect(trimBounds(other, 'start', row, undefined)).toEqual({ min: 2_000, max: 4_900 })
+    expect(trimmed(other, 'start', 2_500, trimBounds(other, 'start', row, undefined))).toEqual({
+      start: 2_500,
+      duration: 2_500,
+      mediaStart: 0,
+    })
+    expect(trimBounds(other, 'end', row, undefined).max).toBe(Infinity)
   })
 
   it('组件或块的片段结尾没有上限：给了长度、长度没读到都不看，只被同一行后面的片段挡住', () => {
@@ -323,7 +347,7 @@ describe('成组裁剪', () => {
     ['n.mp4', 10_000],
     ['u.mp4', 5_000],
   ])
-  const known = (clip: FilmClip) => sources.get(clip.src)
+  const known = (clip: FilmClip) => sources.get(srcOf(clip))
 
   /** 一起裁完以后的成片；先检查三条，再按片段给出各自的起止和入点。 */
   const trimmedGroup = (
@@ -375,7 +399,7 @@ describe('成组裁剪', () => {
   })
 
   it('有一个片段的素材总长还没读到：结尾不能往外拉，往里收照样可以', () => {
-    const unread = (clip: FilmClip) => (clip.src === 'u.mp4' ? undefined : known(clip))
+    const unread = (clip: FilmClip) => (srcOf(clip) === 'u.mp4' ? undefined : known(clip))
     expect(trimmedGroup([right, upper], 'end', 1_000, unread)).toEqual({
       r: { start: 2_000, duration: 2_000, mediaStart: 0 },
       u: { start: 1_000, duration: 2_000, mediaStart: 1_000 },
@@ -403,7 +427,7 @@ describe('成组裁剪', () => {
       ['p.mp4', 4_000],
       ['a.mp3', 2_500],
     ])
-    const lengthOf = (clip: FilmClip) => lengths.get(clip.src)
+    const lengthOf = (clip: FilmClip) => lengths.get(srcOf(clip))
     const together = (edge: 'start' | 'end', delta: number) => {
       const timings = groupTrimmed(clips, edge, delta, clips, lengthOf)
       expectValidFilm(clips.map((clip) => ({ ...clip, ...timings.get(clip.id) })))

@@ -29,7 +29,6 @@ from iclip.domains.generation.ports import ConversationLineage, RemoteMediaProbe
 from iclip.domains.generation.provider import ImageModelSpec
 from iclip.domains.generation.queue import GenerationQueue
 from iclip.domains.generation.render import CANCELLED, CANCELLED_MESSAGE, RenderClient
-from iclip.domains.generation.render import PROVIDER_NAME as RENDER_PROVIDER_NAME
 from iclip.domains.generation.repository import GenerationRepository, conversation_record
 from iclip.domains.generation.schemas import (
     KIND_IMAGE,
@@ -471,23 +470,6 @@ class GenerationService:
                 conversation_id=request.conversation_id,
                 task_id=request.task_id,
                 metadata=request.metadata,
-                shot_index=None,
-            )
-        )
-
-    async def submit_whole_film(
-        self, principal: Principal, *, conversation_id: uuid.UUID, request: WholeFilmRequest
-    ) -> GenerationJob:
-        self._require_render()
-        return await self._queue_new(
-            _pending_job(
-                request,
-                owner_user_id=principal.user_id,
-                api_key_id=principal.api_key_id,
-                provider=RENDER_PROVIDER_NAME,
-                conversation_id=conversation_id,
-                task_id=None,
-                metadata=None,
                 shot_index=None,
             )
         )
