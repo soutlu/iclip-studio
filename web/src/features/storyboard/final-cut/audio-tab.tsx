@@ -46,6 +46,8 @@ const MAX_PROMPT_CHARS = 3000
 
 type AudioTabProps = {
   conversationId: string
+  /** 这个页签是不是正显示着；被藏起来时停止试听。 */
+  active: boolean
   /** 成片里现有的片段：看哪条音频用着、用在哪个片段上。 */
   clips: readonly FilmClip[]
   /** 右键「加到播放头」或按 Enter。 */
@@ -94,6 +96,7 @@ const isReady = (job: GenerationJob): job is GenerationJob & { outputUrl: string
 
 export function AudioTab({
   conversationId,
+  active,
   clips,
   onAdd,
   onCarry,
@@ -138,6 +141,15 @@ export function AudioTab({
     },
     [],
   )
+  // 选中片段时侧栏自动切到「属性」，这个页签只是藏起来、没有卸掉：试听要跟着停，不然声音在放、控件却看不见
+  const [wasActive, setWasActive] = useState(active)
+  if (wasActive !== active) {
+    setWasActive(active)
+    if (!active) setPlaying(null)
+  }
+  useEffect(() => {
+    if (!active) audioRef.current?.pause()
+  }, [active])
   const toggle = (job: GenerationJob & { outputUrl: string }) => {
     const audio = audioRef.current ?? new Audio()
     if (audioRef.current === null) {

@@ -59,10 +59,15 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
   const transport = dialog.getByRole('group', { name: '播放控制' })
   await expect(dialog.getByText('暂无成片内容，加入内容后可在此预览')).toBeVisible()
-  await expect(dialog.getByRole('button', { name: '导出', exact: true })).toHaveAttribute(
+  // 「导出」在剪辑工具条的最后；弹窗标题栏里只有标题和关闭
+  await expect(toolbar.getByRole('button', { name: '导出', exact: true })).toHaveAttribute(
     'aria-disabled',
     'true',
   )
+  await expect(toolbar.getByRole('button').last()).toHaveAccessibleName('导出')
+  const header = dialog.locator('header')
+  await expect(header.getByRole('button')).toHaveCount(1)
+  await expect(header.getByRole('button')).toHaveAccessibleName('关闭成片编辑')
 
   const materials = dialog
     .getByRole('region', { name: '视频素材区' })
@@ -177,7 +182,7 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   const exported = page.waitForResponse(
     (response) => response.url().includes('/whole-film/exports') && response.status() === 202,
   )
-  await dialog.getByRole('button', { name: '导出', exact: true }).click()
+  await toolbar.getByRole('button', { name: '导出', exact: true }).click()
   const { exportId } = (await (await exported).json()) as { exportId: string }
   const tiers = page.waitForResponse(
     (response) => response.url().includes(`/generations/${exportId}/enhancements`),
@@ -478,17 +483,18 @@ test('块页签搜到块点「加到播放头」、组件页签拖一个组件�
   await undone
 })
 
-test('右侧栏：选中组件或块的片段改文字可填项，存下来、预览里看得到；在「时间」里改开始；点空白处回到没有选中，撤销回去', async ({
+test('属性：选中组件或块的片段自动切到「属性」，改文字可填项，存下来、预览里看得到；在「时间」里改开始；点空白处回到贴片页签，撤销回去', async ({
   page,
 }) => {
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
   const dialog = await openFinalCut(page, panel)
-  const inspector = dialog.getByRole('complementary', { name: '属性' })
-  await expect(inspector.getByRole('heading', { name: '尚未选中片段' })).toBeVisible()
-
+  const inspector = dialog.getByRole('tabpanel', { name: '属性' })
   const side = dialog.getByRole('complementary', { name: '贴片、场景和音频' })
+  await expect(side.getByRole('tab', { name: '贴片' })).toHaveAttribute('aria-selected', 'true')
+  await expect(inspector).toHaveCount(0)
+
   await side.getByRole('searchbox', { name: '搜索贴片' }).fill('可填项')
   const card = side.getByRole('group', { name: '测试可填项，5 秒' })
   const added = draftSavedWith(page, (html) => savedItem(html, '测试可填项') !== null)
@@ -499,6 +505,7 @@ test('右侧栏：选中组件或块的片段改文字可填项，存下来、�
 
   const row = dialog.getByRole('group', { name: '第 1 行' })
   await row.getByRole('button', { name: /^选中：测试可填项，/ }).click()
+  await expect(side.getByRole('tab', { name: '属性' })).toHaveAttribute('aria-selected', 'true')
   await expect(inspector.getByRole('heading', { name: '测试可填项' })).toBeVisible()
   await expect(inspector.getByRole('button', { name: '内容' })).toHaveAttribute(
     'aria-expanded',
@@ -539,7 +546,13 @@ test('右侧栏：选中组件或块的片段改文字可填项，存下来、�
   const lane = await row.boundingBox()
   if (lane === null) throw new Error('时间线尚未布局')
   await page.mouse.click(lane.x + 6, lane.y + lane.height / 2)
-  await expect(inspector.getByRole('heading', { name: '尚未选中片段' })).toBeVisible()
+  await expect(row.getByRole('button', { name: /^选中：测试可填项，/ })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  )
+  await expect(side.getByRole('tab', { name: '贴片' })).toHaveAttribute('aria-selected', 'true')
+  await expect(side.getByRole('searchbox', { name: '搜索贴片' })).toHaveValue('可填项')
+  await expect(inspector).toHaveCount(0)
 
   const undone = draftSavedWith(page, (html) => savedItem(html, '测试可填项')?.start === 0)
   await dialog
@@ -620,8 +633,14 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、�
   await expect(progress).toHaveAttribute('aria-valuetext', '00:01.00 / 00:31.00')
   expect(videoSeconds).toBeLessThan(31)
 
-  // 点「已使用」的那一行：选中它对应的片段
+  // 点「已使用」的那一行：选中它对应的片段，侧栏跟着切到「属性」；再点回「音频」，选中不变
   await guitar.getByRole('button', { name: '轻快原声吉他，适合秋季穿搭，已使用' }).click()
+  await expect(music.getByRole('button', { name: /^选中：/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await expect(side.getByRole('tab', { name: '属性' })).toHaveAttribute('aria-selected', 'true')
+  await side.getByRole('tab', { name: '音频' }).click()
   await expect(music.getByRole('button', { name: /^选中：/ })).toHaveAttribute(
     'aria-pressed',
     'true',
@@ -678,14 +697,14 @@ const savedAttribute = (html: string, tag: 'video' | 'audio', name: string) => {
   return found === null ? undefined : (found[1] ?? '')
 }
 
-test('右侧栏「媒体」：音频片段拉满增益、打开循环写进文件；视频片段调成 2 倍速，片段长不变、能拉到的最长减半', async ({
+test('属性「媒体」：音频片段拉满增益、打开循环写进文件；视频片段调成 2 倍速，片段长不变、能拉到的最长减半', async ({
   page,
 }) => {
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
   const dialog = await openFinalCut(page, panel)
-  const inspector = dialog.getByRole('complementary', { name: '属性' })
+  const inspector = dialog.getByRole('tabpanel', { name: '属性' })
   const first = draftSaved(page, 1)
   const materials = dialog
     .getByRole('region', { name: '视频素材区' })
@@ -758,14 +777,77 @@ test('右侧栏「媒体」：音频片段拉满增益、打开循环写进文�
   await expect.poll(async () => Number(await length.inputValue())).toBeCloseTo(longest / 2, 1)
 })
 
-test('成片编辑器在窄屏上纵向排开', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
-  const panel = await openConversation(page, '夜景延时素材生成', { mobile: true })
+test('在贴片卡片上按 ] 选中片段：侧栏切到「属性」，焦点交还编辑器，Delete 照常删掉；选中没了回到贴片页签', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
   const dialog = await openFinalCut(page, panel)
-  await expect(dialog.getByRole('region', { name: '视频素材区' })).toBeVisible()
-  // 右侧栏接在时间线下面，按内容高，不被挤成看不见
-  const inspector = dialog.getByRole('complementary', { name: '属性' })
-  await inspector.scrollIntoViewIfNeeded()
-  await expect(inspector.getByRole('heading', { name: '尚未选中片段' })).toBeVisible()
-  expect((await inspector.boundingBox())?.height ?? 0).toBeGreaterThan(80)
+  const first = draftSaved(page, 1)
+  await dialog
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  await first
+
+  const side = dialog.getByRole('complementary', { name: '贴片、场景和音频' })
+  await side
+    .getByRole('list', { name: '贴片' })
+    .getByRole('group')
+    .first()
+    .getByRole('button', { name: '加到播放头' })
+    .focus()
+  await page.keyboard.press(']')
+  await expect(side.getByRole('tab', { name: '属性' })).toHaveAttribute('aria-selected', 'true')
+  await expect(dialog.getByRole('tabpanel', { name: '属性' })).toBeVisible()
+  await expect(dialog).toBeFocused()
+
+  const removed = draftSaved(page, 0)
+  await page.keyboard.press('Delete')
+  await removed
+  await expect(side.getByRole('tab', { name: '贴片' })).toHaveAttribute('aria-selected', 'true')
+  await expect(side.getByRole('list', { name: '贴片' })).toBeVisible()
+})
+
+test('编辑区变窄时只裁不换行：工具条和侧栏页签都排一行，放不下的被卡片裁掉，页面没有横向滚动条', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const dialog = await openFinalCut(page, panel)
+  // 弹窗比窗口窄 16px，编辑区再去掉四周的 12：编辑区约 560 宽
+  await page.setViewportSize({ width: 600, height: 900 })
+  // 等弹窗打开的缩放动画走完再量
+  await dialog.evaluate((element) =>
+    Promise.all(element.getAnimations().map((animation) => animation.finished)),
+  )
+  const editor = dialog.getByRole('group', { name: '成片编辑器' })
+  const workspace = await boxOf(editor)
+  expect(workspace.width).toBeLessThan(600)
+
+  const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
+  const undo = await boxOf(toolbar.getByRole('button', { name: '撤销' }))
+  const zoomIn = await boxOf(toolbar.getByRole('button', { name: '放大时间线' }))
+  expect(zoomIn.y).toBe(undo.y)
+  expect((await boxOf(toolbar)).height).toBeLessThanOrEqual(32)
+  // 「导出」排在工具条最后，超出编辑区右边的部分被时间线卡片裁掉
+  const exporting = await boxOf(toolbar.getByRole('button', { name: '导出', exact: true }))
+  expect(exporting.x + exporting.width).toBeGreaterThan(workspace.x + workspace.width)
+
+  const side = dialog.getByRole('complementary', { name: '贴片、场景和音频' })
+  const firstTab = await boxOf(side.getByRole('tab', { name: '贴片' }))
+  const propsTab = await boxOf(side.getByRole('tab', { name: '属性' }))
+  expect(propsTab.y).toBe(firstTab.y)
+
+  // 裁掉的部分滚不出来：横向滚动、把焦点挪到被裁掉的「导出」上，工具条都不挪
+  await page.mouse.move(undo.x + 100, undo.y + undo.height / 2)
+  await page.mouse.wheel(300, 0)
+  await toolbar
+    .getByRole('button', { name: '导出', exact: true })
+    .evaluate((button: HTMLElement) => button.focus())
+  await expect(toolbar.getByRole('button', { name: '导出', exact: true })).toBeFocused()
+  expect((await boxOf(toolbar.getByRole('button', { name: '撤销' }))).x).toBe(undo.x)
+  expect((await boxOf(editor)).x).toBe(workspace.x)
 })

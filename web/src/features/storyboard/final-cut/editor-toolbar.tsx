@@ -153,9 +153,12 @@ type EditorToolbarProps = {
   /** 「适应宽度」时一秒画多少像素，缩放的档位和滑杆都以它为准。 */
   fitPps: number
   onZoom: (zoom: Zoom) => void
+  /** 排在右边那组最后的控件（导出）。 */
+  actions: ReactNode
 }
 
 export function EditorToolbar({
+  actions,
   canUndo,
   canRedo,
   onUndo,
@@ -280,6 +283,7 @@ export function EditorToolbar({
           tip="放大时间线"
         />
         <span className="wf-zoom-readout">{zoomLabel(zoom, fitPps)}</span>
+        {actions}
       </div>
     </div>
   )

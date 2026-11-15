@@ -1,4 +1,4 @@
-/* 成片编辑器：上面从左到右是组件 / 块 / 音频栏、预览、右侧栏，下面是剪辑工具、时间线与视频素材区。
+/* 成片编辑器：上面是预览和侧栏（贴片 / 场景 / 音频 / 属性），下面是剪辑工具、时间线与视频素材区。
    外框沿用 editing/editor.css 的 .editor-dialog / .editor-header。 */
 
 .wf-dialog {
@@ -10,11 +10,6 @@
   outline: none;
 }
 
-.wf-dialog .editor-compose {
-  height: 32px;
-  font-size: var(--text-body-sm);
-}
-
 .wf-state {
   padding: 32px 24px;
   color: var(--color-on-surface-muted);
@@ -22,25 +17,26 @@
   line-height: var(--text-body-sm--line-height);
 }
 
+/* 任何宽度都是这一种摆法，不做小屏适配：放不下的内容由所在的卡片裁掉，不换行、不横向滚动。
+   编辑区和各卡片用 clip 不用 hidden：hidden 仍能滚动，滚轮或聚焦被裁掉的控件会把内容带偏 */
 .wf-workspace {
   display: grid;
   min-height: 0;
   flex: 1;
   grid-template-areas:
-    'side preview inspector'
-    'timeline timeline timeline';
-  grid-template-columns: 288px minmax(0, 1fr) 320px;
-  /* 时间线面板按内容高，最多占到预览留够最小高度之后剩下的地方 */
-  grid-template-rows: minmax(220px, 1fr) minmax(0, max-content);
+    'preview side'
+    'timeline timeline';
+  grid-template-columns: minmax(0, 1fr) 280px;
+  /* 时间线卡片按内容高，最多占内容区（连四周的 12 一起算）的 46%，放不下时只压缩轨道区 */
+  grid-template-rows: minmax(0, 1fr) fit-content(calc(0.46 * (100% + 24px)));
   gap: 12px;
-  padding: 0 24px 16px;
-  overflow-y: auto;
+  padding: 12px;
+  overflow: clip;
   color: var(--color-on-surface);
   font-size: var(--text-body);
-  scrollbar-width: thin;
 }
 
-/* ---- 左栏：组件 / 块 / 音频 ---- */
+/* ---- 侧栏：贴片 / 场景 / 音频，最右边是属性 ---- */
 
 .wf-side {
   display: flex;
@@ -48,6 +44,7 @@
   min-height: 0;
   flex-direction: column;
   grid-area: side;
+  overflow: clip;
   border-radius: var(--radius-xl);
   background: var(--color-surface-container-low);
 }
@@ -64,6 +61,10 @@
   flex-shrink: 0;
   padding: 0 10px;
   border-bottom: 1px solid var(--color-hairline);
+}
+
+.wf-side-tabs > .wf-side-tab-props {
+  margin-left: auto;
 }
 
 .wf-side-body {
@@ -401,17 +402,21 @@
   top: 10px;
 }
 
-/* ---- 右侧栏：选中的片段的名字、种类和分组，一次只展开一个分组 ---- */
+/* ---- 属性：选中的片段的名字、种类和分组，一次只展开一个分组；头部不动，分组在自己的滚动区里滚 ---- */
+
+.wf-side-body.is-props {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
 
 .wf-inspector {
   display: flex;
   min-width: 0;
   min-height: 0;
+  flex: 1;
   flex-direction: column;
-  grid-area: inspector;
-  overflow: hidden;
-  border-radius: var(--radius-xl);
-  background: var(--color-surface-container-low);
 }
 
 .wf-inspector-head {
@@ -691,28 +696,16 @@
   line-height: var(--text-label--line-height);
 }
 
-/* 没有选中：图标、一句标题、一句说明，在栏里居中 */
+/* 没有选中：一句说明，在页签里居中 */
 .wf-inspector-empty {
   display: flex;
-  height: 100%;
-  flex-direction: column;
+  flex: 1;
   align-items: center;
   justify-content: center;
-  gap: 8px;
   padding: 24px 28px;
   color: var(--color-on-surface-muted);
   font-size: var(--text-label);
   text-align: center;
-}
-
-.wf-inspector-empty > svg {
-  color: var(--color-on-surface-faint);
-}
-
-.wf-inspector-empty-title {
-  color: var(--color-on-surface);
-  font-size: var(--text-body);
-  font-weight: 600;
 }
 
 /* 选中了几个片段：标题、片段的名字，不显示字段 */
@@ -1040,9 +1033,9 @@
   justify-self: start;
 }
 
+/* 不压缩：放不下时整行往右超出，由预览卡片裁掉，不和左边的时间、播放键叠在一起 */
 .wf-transport-tools {
   display: flex;
-  min-width: 0;
   align-items: center;
   justify-self: end;
   gap: 2px;
@@ -1062,7 +1055,7 @@
   background: var(--color-state-active);
 }
 
-/* 预览和播放条包在一起，全屏时整块进全屏；里面仍按 preview 这一格叠放 */
+/* 预览和播放条包在一起，全屏时整块进全屏；里面仍按 preview 这一格叠放。放不下的播放条在这里裁掉 */
 .wf-stage {
   display: grid;
   min-width: 0;
@@ -1071,6 +1064,7 @@
   grid-template-areas: 'preview';
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
+  overflow: clip;
 }
 
 .wf-stage:fullscreen {
@@ -1132,13 +1126,6 @@
   font: inherit;
   font-size: var(--text-caption);
   line-height: 20px;
-}
-
-/* 窄屏多是触屏、没有键盘，右边放不下全部按钮时收起「快捷键」 */
-@media (max-width: 640px) {
-  .wf-tool.wf-transport-shortcuts {
-    display: none;
-  }
 }
 
 .wf-preview-note {
@@ -1576,6 +1563,11 @@
   gap: 8px;
 }
 
+.wf-export .editor-compose {
+  height: 32px;
+  font-size: var(--text-body-sm);
+}
+
 .wf-export-status {
   max-width: 320px;
   overflow: hidden;
@@ -1606,6 +1598,7 @@
   flex-direction: column;
   gap: 4px;
   grid-area: timeline;
+  overflow: clip;
   padding: 8px 12px 10px;
   border-radius: var(--radius-xl);
   background: var(--color-surface-container-low);
@@ -1620,19 +1613,18 @@
   flex: 0 1 auto;
 }
 
+/* 工具条只排一行：两组都不压缩，放不下时右边的被卡片裁掉 */
 .wf-toolbar {
   display: flex;
   min-height: 32px;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 4px 8px;
+  gap: 8px;
 }
 
 .wf-toolbar-group {
   display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
+  flex: none;
   align-items: center;
   gap: 2px;
 }
@@ -2894,69 +2886,4 @@
 .wf-range.is-lifting {
   background: color-mix(in srgb, var(--color-surface) 60%, transparent);
   cursor: grabbing;
-}
-
-/* 左右两栏一共要 608px，窗口不够宽时中间的预览会被挤没：改成纵向排开。预览定高，时间线面板照旧紧跟在
-   下面；右侧栏接在时间线下面、按内容高，在时间线上点了片段就在紧下面改它；左栏定高接在最后。
-   放不下时整个编辑区上下滚动 */
-@media (max-width: 1000px) {
-  .wf-workspace {
-    grid-template-areas:
-      'preview'
-      'timeline'
-      'inspector'
-      'side';
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 248px minmax(max-content, 1fr) max-content 360px;
-  }
-
-  /* 左栏变成通栏，卡片按栏宽多排几列，不跟着拉大 */
-  .wf-item-grid {
-    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  }
-}
-
-@media (max-width: 640px) {
-  .wf-workspace {
-    padding: 0 12px 12px;
-  }
-
-  .wf-tracks {
-    --wf-head-width: 72px;
-  }
-
-  /* 窄屏工具条折行，缩放钮另起一行，推子后面的分隔线不留在行尾 */
-  .wf-toolbar-sound .wf-divider {
-    display: none;
-  }
-
-  /* 窄屏轨名只有 72px：音乐轨收起轨名，只留图标与尾部圆钮 */
-  .wf-track-head:last-child > span[aria-hidden='true'] {
-    display: none;
-  }
-
-  /* 样式名收起，开关、样式菜单的展开箭头与识别挨着放 */
-  .wf-caption-style > span {
-    display: none;
-  }
-
-  .wf-caption-style {
-    justify-content: center;
-    padding: 0;
-  }
-
-  /* 左列只有 72px，放不下组名、原作名加版本：折成几行，行高随左列撑开 */
-  .wf-take {
-    height: auto;
-    min-height: 28px;
-    grid-template-columns: 72px minmax(0, 1fr);
-  }
-
-  .wf-take-head {
-    flex-wrap: wrap;
-  }
-
-  .wf-materials-body {
-    max-height: 96px;
-  }
 }

@@ -243,11 +243,7 @@ function ShortcutsPanel({ layer }: { layer: HTMLElement | null }) {
       <TooltipRoot onOpenChange={setHint} open={hint && !open}>
         <PopupTrigger asChild>
           <TooltipTrigger asChild>
-            <button
-              aria-label="快捷键"
-              className="wf-tool wf-transport-shortcuts ui-state ui-focus"
-              type="button"
-            >
+            <button aria-label="快捷键" className="wf-tool ui-state ui-focus" type="button">
               <Icon decorative name="shortcuts" size="sm" />
             </button>
           </TooltipTrigger>

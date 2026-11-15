@@ -1320,7 +1320,16 @@ test('缩放时播放头留在屏幕上原来的地方；滚到看不见它以�
   const row = await boxOf(dialog.getByRole('group', { name: '第 1 行' }))
   const ruler = await boxOf(dialog.getByRole('slider', { name: '时间线播放位置' }))
   await page.mouse.click(row.x + row.width * 0.3, ruler.y + ruler.height / 2)
-  const resting = await playheadX()
+  // 预览跳过去以后报回对齐到帧的时间，播放头会再挪不到 1 像素：等它停稳再记下位置
+  let resting = await playheadX()
+  await expect
+    .poll(async () => {
+      const previous = resting
+      await page.waitForTimeout(300)
+      resting = await playheadX()
+      return resting === previous
+    })
+    .toBe(true)
   expect(Math.abs(resting - (row.x + row.width * 0.3))).toBeLessThan(2)
 
   // 放大两档、再缩小一档：播放头在屏幕上不动

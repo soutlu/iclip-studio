@@ -1,12 +1,12 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
   type KeyboardEvent,
-  type ReactNode,
   type RefObject,
 } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -104,6 +104,11 @@ const ADDING_AUDIO_TEXT = '上一条音频正在加入成片，请稍后再试'
 // 还没有成片时先放组件或块：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 
+/** 侧栏的目录页签：贴片、场景、音频。 */
+type CatalogTab = ItemKind | 'audio'
+type SideTab = CatalogTab | 'props'
+const CATALOG_TABS: readonly CatalogTab[] = [...ITEM_KINDS, 'audio']
+
 const watchFullscreen = (notify: () => void) => {
   document.addEventListener('fullscreenchange', notify)
   return () => document.removeEventListener('fullscreenchange', notify)
@@ -111,15 +116,8 @@ const watchFullscreen = (notify: () => void) => {
 
 const fullscreenElementOf = () => document.fullscreenElement ?? null
 
-function EditorHeader({ actions, title }: { actions: ReactNode; title: string }) {
-  return (
-    <DialogHeader
-      actions={actions}
-      className="editor-header"
-      closeLabel="关闭成片编辑"
-      title={title}
-    />
-  )
+function EditorHeader({ title }: { title: string }) {
+  return <DialogHeader className="editor-header" closeLabel="关闭成片编辑" title={title} />
 }
 
 export function FinalCutEditor({ conversationId, conversationTitle, onClose }: Props) {
@@ -149,7 +147,7 @@ export function FinalCutEditor({ conversationId, conversationTitle, onClose }: P
           />
         ) : (
           <>
-            <EditorHeader actions={null} title={conversationTitle} />
+            <EditorHeader title={conversationTitle} />
             {failed !== undefined ? (
               <div className="wf-state">
                 <InlineAlert
@@ -302,9 +300,38 @@ function EditorBody({
   const selectedClips = clips.filter((clip) => selectedIds.has(clip.id))
   const selected = new Set(selectedClips.map((clip) => clip.id))
   const clearSelection = () => setSelectedIds(new Set())
+  // 侧栏：选中从没有变成有、或换了别的片段时切到「属性」，选中没了回到切走之前停的目录页签。
+  // 按实际还选中着的片段算，撤销、删除让选中的片段不存在了也算取消选中
+  const [sideTab, setSideTab] = useState<SideTab>('component')
+  const [catalogTab, setCatalogTab] = useState<CatalogTab>('component')
+  const selectionKey = [...selected].sort().join(' ')
+  const [seenSelection, setSeenSelection] = useState(selectionKey)
+  if (selectionKey !== seenSelection) {
+    setSeenSelection(selectionKey)
+    setSideTab(selectionKey === '' ? catalogTab : 'props')
+  }
+  const openSideTab = (value: string) => {
+    if (value === 'props') {
+      setSideTab('props')
+      return
+    }
+    const tab = CATALOG_TABS.find((each) => each === value)
+    if (tab === undefined) return
+    setCatalogTab(tab)
+    setSideTab(tab)
+  }
+  const sideRef = useRef<HTMLElement | null>(null)
+  // 切到「属性」时焦点可能还在刚藏起来的目录里（比如在卡片上按了 ]），浏览器随后把它丢到页面上，
+  // 快捷键就收不到了：交还给编辑器，和刚打开时一样
+  useLayoutEffect(() => {
+    const focused = document.activeElement
+    if (focused === null || sideRef.current?.contains(focused) !== true) return
+    if (focused.closest('[role="tabpanel"][hidden]') !== null)
+      sideRef.current.closest<HTMLElement>('[role="dialog"]')?.focus()
+  }, [sideTab])
   // 框选、拖片段中途的 Esc 归时间线（只取消那一次），这里先让开
   const [gesturing, setGesturing] = useState(false)
-  // 右侧栏里输数值的框正在输入：这时的 Esc 归那个框（放弃刚输入的），不取消选中、不关编辑器
+  // 「属性」里输数值的框正在输入：这时的 Esc 归那个框（放弃刚输入的），不取消选中、不关编辑器
   const [textEditing, setTextEditing] = useState(false)
   // Esc 先退全屏（浏览器多半自己退，按键还是传到页面时才轮到这里），再取消选中；都没有才关编辑器
   useEscapeAheadOfDialog(fullscreen || textEditing || (!gesturing && selected.size > 0), () => {
@@ -327,7 +354,7 @@ function EditorBody({
     setZoom(target.zoom)
     setScrollRequest({ left: target.scrollLeft })
   }
-  // 视频片段、音频片段素材的总长：时间线上拖着裁和右侧栏里输入时间都按它收住结尾
+  // 视频片段、音频片段素材的总长：时间线上拖着裁和「属性」里输入时间都按它收住结尾
   const audioPeaks = useAudioPeaks(
     useStableValue(
       [...new Set(clips.filter((clip) => clip.kind === 'audio').map((clip) => clip.src))].sort(),
@@ -485,7 +512,7 @@ function EditorBody({
   }
   const shortcut = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || !isShortcutTarget(event)) return
-    // 全屏时菜单挂在编辑器里面，菜单里按的键归菜单；右侧栏里的滑杆、下拉框、开关上按的键也归控件
+    // 全屏时菜单挂在编辑器里面，菜单里按的键归菜单；「属性」里的滑杆、下拉框、开关上按的键也归控件
     // 自己，照参照的工作台。时间尺上的播放位置也是滑杆，点过它以后快捷键照常用
     if (
       event.target instanceof Element &&
@@ -597,88 +624,21 @@ function EditorBody({
   if (session.opening)
     return (
       <>
-        <EditorHeader actions={null} title={title} />
+        <EditorHeader title={title} />
         <p className="wf-state" role="status">
           正在打开成片…
         </p>
       </>
     )
 
+  /** 切到「属性」时，切走前停的目录页签留在页面上（藏起来），回来时搜索词、分类、滚动位置都还在。 */
+  const catalogPanel = (tab: CatalogTab) =>
+    tab === catalogTab ? { forceMount: true as const, hidden: sideTab !== tab } : {}
+
   return (
     <>
-      <EditorHeader
-        title={title}
-        actions={
-          <ExportControl
-            blocked={exportBlocked}
-            onCancel={() => void exporting.cancel()}
-            onStart={() => void exporting.start()}
-            view={exporting.view}
-          />
-        }
-      />
+      <EditorHeader title={title} />
       <div aria-label="成片编辑器" className="wf-workspace" role="group">
-        <aside aria-label="贴片、场景和音频" className="wf-side">
-          <TabsRoot className="wf-side-panel" defaultValue="component">
-            <TabsList aria-label="贴片、场景和音频页签" className="wf-side-tabs">
-              {ITEM_KINDS.map((kind) => (
-                <TabsTrigger key={kind} value={kind}>
-                  {ITEM_KIND_LABEL[kind]}
-                </TabsTrigger>
-              ))}
-              <TabsTrigger value="audio">音频</TabsTrigger>
-            </TabsList>
-            {ITEM_KINDS.map((kind) => (
-              <TabsContent className="wf-side-body is-items" key={kind} value={kind}>
-                <ItemsTab
-                  catalog={catalog}
-                  filter={itemFilters[kind]}
-                  kind={kind}
-                  onAdd={addAtPlayhead}
-                  onCarry={(item, point) =>
-                    setGhost(
-                      point === null
-                        ? null
-                        : landingAt(point.clientX, point.clientY, itemDurationMs(item, clips)),
-                    )
-                  }
-                  onDrop={(item, point) => {
-                    const at = landingAt(point.clientX, point.clientY, itemDurationMs(item, clips))
-                    setGhost(null)
-                    if (at !== null) placeItem(item, { row: at.row, start: at.start })
-                  }}
-                  onFilterChange={(filter) =>
-                    setItemFilters((current) => ({ ...current, [kind]: filter }))
-                  }
-                  origin={window.location.origin}
-                />
-              </TabsContent>
-            ))}
-            <TabsContent className="wf-side-body is-audio" value="audio">
-              <AudioTab
-                clips={clips}
-                conversationId={conversationId}
-                onAdd={(audio) =>
-                  placeAudio(audio, audioPlayheadSpot(clips, playhead, audio.duration))
-                }
-                onCarry={(audio, point) =>
-                  setGhost(
-                    point === null
-                      ? null
-                      : landingAt(point.clientX, point.clientY, audio.duration, 'audio'),
-                  )
-                }
-                onDrop={(audio, point) => {
-                  const at = landingAt(point.clientX, point.clientY, audio.duration, 'audio')
-                  setGhost(null)
-                  if (at !== null) placeAudio(audio, { row: at.row, start: at.start })
-                }}
-                onNotice={notice}
-                onReveal={revealClip}
-              />
-            </TabsContent>
-          </TabsRoot>
-        </aside>
         <div className="wf-stage" ref={setStage}>
           <PreviewPlayer
             backdrop={shown === undefined ? undefined : videoSnapshotUrl(shown.src, 320)}
@@ -728,37 +688,117 @@ function EditorBody({
             totalMs={total}
           />
         </div>
-        <FilmInspector
-          clips={clips}
-          catalog={catalog}
-          onHide={(id, hidden) => {
-            leaveMaterial()
-            session.setHidden([id], hidden)
-          }}
-          onRemove={removeSelected}
-          onRestart={(starts) => {
-            leaveMaterial()
-            session.restart(starts)
-          }}
-          onRetime={(timings) => {
-            leaveMaterial()
-            session.retime(timings)
-          }}
-          onTextEditing={setTextEditing}
-          onValues={(id, values) => {
-            leaveMaterial()
-            session.setValues(id, values)
-          }}
-          onAttributes={(id, changes) => {
-            leaveMaterial()
-            session.setAttributes(id, changes)
-          }}
-          selected={selectedClips}
-          silentSource={(src) => audioTracks.get(src) === false}
-          sourceMs={sourceMs}
-        />
+        <aside aria-label="贴片、场景和音频" className="wf-side" ref={sideRef}>
+          <TabsRoot className="wf-side-panel" onValueChange={openSideTab} value={sideTab}>
+            <TabsList aria-label="贴片、场景和音频页签" className="wf-side-tabs">
+              {ITEM_KINDS.map((kind) => (
+                <TabsTrigger key={kind} value={kind}>
+                  {ITEM_KIND_LABEL[kind]}
+                </TabsTrigger>
+              ))}
+              <TabsTrigger value="audio">音频</TabsTrigger>
+              <TabsTrigger className="wf-side-tab-props" value="props">
+                属性
+              </TabsTrigger>
+            </TabsList>
+            {ITEM_KINDS.map((kind) => (
+              <TabsContent
+                className="wf-side-body is-items"
+                key={kind}
+                value={kind}
+                {...catalogPanel(kind)}
+              >
+                <ItemsTab
+                  catalog={catalog}
+                  filter={itemFilters[kind]}
+                  kind={kind}
+                  onAdd={addAtPlayhead}
+                  onCarry={(item, point) =>
+                    setGhost(
+                      point === null
+                        ? null
+                        : landingAt(point.clientX, point.clientY, itemDurationMs(item, clips)),
+                    )
+                  }
+                  onDrop={(item, point) => {
+                    const at = landingAt(point.clientX, point.clientY, itemDurationMs(item, clips))
+                    setGhost(null)
+                    if (at !== null) placeItem(item, { row: at.row, start: at.start })
+                  }}
+                  onFilterChange={(filter) =>
+                    setItemFilters((current) => ({ ...current, [kind]: filter }))
+                  }
+                  origin={window.location.origin}
+                />
+              </TabsContent>
+            ))}
+            <TabsContent className="wf-side-body is-audio" value="audio" {...catalogPanel('audio')}>
+              <AudioTab
+                active={sideTab === 'audio'}
+                clips={clips}
+                conversationId={conversationId}
+                onAdd={(audio) =>
+                  placeAudio(audio, audioPlayheadSpot(clips, playhead, audio.duration))
+                }
+                onCarry={(audio, point) =>
+                  setGhost(
+                    point === null
+                      ? null
+                      : landingAt(point.clientX, point.clientY, audio.duration, 'audio'),
+                  )
+                }
+                onDrop={(audio, point) => {
+                  const at = landingAt(point.clientX, point.clientY, audio.duration, 'audio')
+                  setGhost(null)
+                  if (at !== null) placeAudio(audio, { row: at.row, start: at.start })
+                }}
+                onNotice={notice}
+                onReveal={revealClip}
+              />
+            </TabsContent>
+            <TabsContent className="wf-side-body is-props" value="props">
+              <FilmInspector
+                clips={clips}
+                catalog={catalog}
+                onHide={(id, hidden) => {
+                  leaveMaterial()
+                  session.setHidden([id], hidden)
+                }}
+                onRemove={removeSelected}
+                onRestart={(starts) => {
+                  leaveMaterial()
+                  session.restart(starts)
+                }}
+                onRetime={(timings) => {
+                  leaveMaterial()
+                  session.retime(timings)
+                }}
+                onTextEditing={setTextEditing}
+                onValues={(id, values) => {
+                  leaveMaterial()
+                  session.setValues(id, values)
+                }}
+                onAttributes={(id, changes) => {
+                  leaveMaterial()
+                  session.setAttributes(id, changes)
+                }}
+                selected={selectedClips}
+                silentSource={(src) => audioTracks.get(src) === false}
+                sourceMs={sourceMs}
+              />
+            </TabsContent>
+          </TabsRoot>
+        </aside>
         <div className="wf-timeline">
           <EditorToolbar
+            actions={
+              <ExportControl
+                blocked={exportBlocked}
+                onCancel={() => void exporting.cancel()}
+                onStart={() => void exporting.start()}
+                view={exporting.view}
+              />
+            }
             canRedo={history.canRedo}
             canUndo={history.canUndo}
             fitPps={scale.fitPps}
