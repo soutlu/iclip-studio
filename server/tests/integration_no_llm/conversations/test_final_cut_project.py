@@ -329,7 +329,9 @@ async def test_missing_and_irregular_paths_are_404_and_vendor_redirects(
     ):
         missing = await preview.get(f"{base}/{raw}")
         assert missing.status_code == 404, f"{raw} 应当 404，实得 {missing.status_code}"
-        assert missing.json()["detail"] == "成片工程里没有这个文件", f"{raw} 要到达取文件的路由"
+        assert missing.json()["detail"] == "final-cut 工程里没有这个文件", (
+            f"{raw} 要到达取文件的路由"
+        )
 
     redirected = await preview.get(f"{base}/vendor/runtime/player.js")
     assert redirected.status_code == 307

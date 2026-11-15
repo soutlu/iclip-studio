@@ -62,10 +62,10 @@ export const filterItems = (
   )
 }
 
-// 和参照的工作台一样：条目没写时长时取 10 秒和成片现有总长里大的那个
+// 和参照的工作台一样：条目没写时长时取 10 秒和 final-cut 现有总长里大的那个
 const DEFAULT_ITEM_MS = 10_000
 
-/** 条目放进成片时的时长（毫秒）；`clips` 是成片里现有的片段。 */
+/** 条目放进 final-cut 时的时长（毫秒）；`clips` 是 final-cut 里现有的片段。 */
 export const itemDurationMs = (item: CatalogItem, clips: readonly FilmClip[]): number =>
   item.duration === null
     ? Math.max(DEFAULT_ITEM_MS, ...clips.map((clip) => clip.start + clip.duration))

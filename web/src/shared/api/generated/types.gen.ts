@@ -2673,7 +2673,7 @@ export type FinalCutFileCreatedOut = {
 /**
  * FinalCutFileIn
  *
- * 在成片工程里新建一个文件。``path`` 相对工程根，如 ``index.html``。
+ * 在 final-cut 工程里新建一个文件。``path`` 相对工程根，如 ``index.html``。
  */
 export type FinalCutFileIn = {
   /**

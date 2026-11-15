@@ -64,12 +64,12 @@ import {
   type TimelineScale,
 } from './timeline-scale'
 
-/** 素材拖进来时落在哪：哪一行（或新开的一行）、成片的第几毫秒。 */
+/** 素材拖进来时落在哪：哪一行（或新开的一行）、final-cut 的第几毫秒。 */
 export type TimelinePoint = { row: RowTarget; timeMs: number }
 
 export type TimelineHandle = {
   /**
-   * 屏幕上的这个点给 `zone` 区的素材落在哪一行、对应成片的第几毫秒；不在任何一行上时是 null。
+   * 屏幕上的这个点给 `zone` 区的素材落在哪一行、对应 final-cut 的第几毫秒；不在任何一行上时是 null。
    * 画面区的素材对着两行之间的缝时归离得近的那一行，声音区的素材和拖片段一样在缝里新开一行。
    */
   locate: (clientX: number, clientY: number, zone: Zone) => TimelinePoint | null
@@ -83,7 +83,7 @@ export type TimelineHandle = {
 export type DropGhost = { row: RowTarget; start: number; duration: number; guideMs: number | null }
 
 type FilmTimelineProps = {
-  /** 成片里所有的片段。 */
+  /** final-cut 里所有的片段。 */
   clips: readonly FilmClip[]
   /** 组件库：组件或块的片段上的小封面取自它。 */
   catalog: ComponentCatalog
@@ -212,11 +212,11 @@ type Preview = { timing: Timing; kind: Gesture['kind']; row: RowTarget | null }
 /** 成组拖动中跟着动的片段按这个画：拖的是哪一部分，各自的时间。 */
 type Following = { kind: Gesture['kind']; timings: ReadonlyMap<string, Timing> }
 
-/** 一个片段这一端在成片里的时间（毫秒）。 */
+/** 一个片段这一端在 final-cut 里的时间（毫秒）。 */
 const edgeAt = (clip: Timing, edge: Edge) =>
   edge === 'start' ? clip.start : clip.start + clip.duration
 
-/** `timings` 里和成片里现在不一样的那些。 */
+/** `timings` 里和 final-cut 里现在不一样的那些。 */
 const changedTimings = (
   clips: readonly FilmClip[],
   timings: ReadonlyMap<string, Timing>,
@@ -280,7 +280,7 @@ function ClipContent({
   if (clip.kind === 'other') return null
   if (clip.kind === 'host')
     return cover === null ? null : <img alt="" className="wf-clip-cover" src={cover} />
-  // 片段上画的是它用掉的那段素材：成片里的时长 × 速度
+  // 片段上画的是它用掉的那段素材：final-cut 里的时长 × 速度
   const part = {
     mediaUrl: clip.src,
     start: timing.mediaStart / 1000,
@@ -313,7 +313,7 @@ type TimelineClipProps = {
   /** 别的片段正带着一组片段拖动时，跟着动的片段的样子；没有时是 null。 */
   following: Following | null
   pps: number
-  /** 时间线内容区，用它把屏幕上的横坐标换成成片的时间。 */
+  /** 时间线内容区，用它把屏幕上的横坐标换成 final-cut 的时间。 */
   contentRef: RefObject<HTMLDivElement | null>
   /**
    * `zone` 区的片段拖到这个高度时落在哪一行，`between` 为真时两行之间也算（在那里新开一行）；
@@ -322,7 +322,7 @@ type TimelineClipProps = {
   rowAt: (clientY: number, between: boolean, zone: Zone) => RowTarget | undefined
   /** 拖动中要在第几行的位置新开一行，那里先让出一行；不新开、松手后是 null。 */
   onOpening: (insertAt: number | null) => void
-  /** `group` 里的片段一起裁 `edge` 这一端时，`clip` 这一端能到的范围（成片的毫秒）。 */
+  /** `group` 里的片段一起裁 `edge` 这一端时，`clip` 这一端能到的范围（final-cut 的毫秒）。 */
   trimRange: (
     clip: FilmClip,
     group: ReadonlySet<string>,
@@ -356,7 +356,7 @@ type TimelineClipProps = {
 /**
  * 时间线上的一个片段：点一下选中（带 Shift、⌘ 或 Ctrl 是加减选中），拖着挪动（在这一行里，
  * 或者拖到自己的区里别的行、新开的一行上），选中后拖两端的把手裁剪；在不止一个片段的选中里时，
- * 选中的片段一起挪、一起裁。松手才写进成片，拖动中按 Esc 什么都不写。
+ * 选中的片段一起挪、一起裁。松手才写进 final-cut，拖动中按 Esc 什么都不写。
  */
 function TimelineClip({
   clip,
@@ -520,7 +520,7 @@ function TimelineClip({
   })
   useEffect(() => () => abandon(), [])
 
-  // 拖动中成片被换掉（撤销了，或者别处存了更新的一版）：松手会按换之前算好的位置写回去，
+  // 拖动中 final-cut 被换掉（撤销了，或者别处存了更新的一版）：松手会按换之前算好的位置写回去，
   // 所以取消这次拖动，之后松手带来的那次点击也不算选中
   const dropStale = useEffectEvent(() => {
     if ((gestureRef.current?.group ?? null) === null) return
@@ -639,7 +639,7 @@ function RowToggle({
 const keyOf = (row: RowKey) => `${row.zone}-${row.track}`
 
 /**
- * 时间线：成片里的片段按行排开，画面区的行在上、声音区的行在下，最下面是一条可以新开一行的空行。
+ * 时间线：final-cut 里的片段按行排开，画面区的行在上、声音区的行在下，最下面是一条可以新开一行的空行。
  * 片段可以选中一个或几个（在空白处拖出框来框选）、在自己的区里挪动、裁两端；上面是时间尺和播放头。
  */
 export function FilmTimeline({
@@ -1028,7 +1028,7 @@ export function FilmTimeline({
                       ))}
                       {dropGhost(row)}
                       {clips.length === 0 && ghost === null ? (
-                        <span className="wf-lane-hint">将下方的镜头拖到此处可加入成片</span>
+                        <span className="wf-lane-hint">将下方的镜头拖到此处可加入 final-cut</span>
                       ) : null}
                     </div>
                   </ContextMenuTrigger>

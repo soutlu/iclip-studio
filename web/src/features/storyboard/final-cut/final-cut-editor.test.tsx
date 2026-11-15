@@ -124,7 +124,7 @@ const openEditor = async (records: GenerationJob[] = takes) => {
 }
 
 /** 编辑器的根节点：点在编辑器的空白处时焦点落在它上面。 */
-const editorRoot = () => screen.getByRole('group', { name: '成片编辑器' })
+const editorRoot = () => screen.getByRole('group', { name: 'final-cut 编辑器' })
 
 // 预览页换成跑着真逻辑的替身（播放器是测试替身），编辑器经消息和它来往
 let previewPages: ReturnType<typeof servePreviewPages>
@@ -146,7 +146,7 @@ const previewPlayer = () => {
   return found
 }
 
-/** 等预览页换上一份成片、新加载的都换了上来。 */
+/** 等预览页换上一份 final-cut、新加载的都换了上来。 */
 const previewSettled = () =>
   waitFor(() => {
     expect(previewPages.latest().mount?.querySelectorAll('hyperframes-player')).toHaveLength(1)
@@ -178,21 +178,21 @@ const twoVideos = () =>
     { width: 720, height: 1280 },
   )
 
-describe('成片编辑器 · 加入素材', () => {
+describe('final-cut 编辑器 ·加入素材', () => {
   it('还没有工程：播放、进度条置灰，没选镜头时按 Enter 提示先选；导出暂停着，置灰并说明原因；打开不保存', async () => {
     const user = userEvent.setup()
     await openEditor()
-    expect(screen.getByText('暂无成片内容，加入内容后可在此预览')).toBeVisible()
+    expect(screen.getByText('final-cut 暂无内容，加入内容后可在此预览')).toBeVisible()
     expect(within(transport()).getByRole('button', { name: '播放' })).toHaveAttribute(
       'aria-disabled',
       'true',
     )
     expect(progress()).toHaveAttribute('data-disabled')
-    expect(within(toolbar()).queryByRole('button', { name: '加入成片' })).toBeNull()
+    expect(within(toolbar()).queryByRole('button', { name: '加入 final-cut' })).toBeNull()
     editorRoot().focus()
     await user.keyboard('{Enter}')
     expect(
-      await screen.findByText('尚未选中镜头，无法加入成片；请先在下方选中镜头范围'),
+      await screen.findByText('尚未选中镜头，无法加入 final-cut；请先在下方选中镜头范围'),
     ).toBeVisible()
     const exportButton = screen.getByRole('button', { name: '导出' })
     expect(exportButton).toHaveAttribute('aria-disabled', 'true')
@@ -306,26 +306,26 @@ describe('成片编辑器 · 加入素材', () => {
   })
 })
 
-describe('成片编辑器 · 时间线', () => {
+describe('final-cut 编辑器 ·时间线', () => {
   const timeline = () => screen.getByRole('group', { name: '第 1 行' })
 
   it('工程里只有组件或块的片段、没有视频片段：照样能播放', async () => {
     putMockProjectMain(CONVERSATION, mainFile([host()], { width: 720, height: 1280 }))
     await openEditor()
-    expect(screen.queryByText('暂无成片内容，加入内容后可在此预览')).toBeNull()
+    expect(screen.queryByText('final-cut 暂无内容，加入内容后可在此预览')).toBeNull()
     expect(within(transport()).getByRole('button', { name: '播放' })).not.toHaveAttribute(
       'aria-disabled',
       'true',
     )
   })
 
-  it('还没有成片：留一行空的，提示把镜头拖进来', async () => {
+  it('还没有 final-cut：留一行空的，提示把镜头拖进来', async () => {
     await openEditor()
-    expect(within(timeline()).getByText('将下方的镜头拖到此处可加入成片')).toBeVisible()
+    expect(within(timeline()).getByText('将下方的镜头拖到此处可加入 final-cut')).toBeVisible()
     expect(screen.queryByRole('group', { name: '第 2 行' })).toBeNull()
   })
 
-  it('成片里的片段排在一行里，行头是第一个片段的名字和片段数', async () => {
+  it('final-cut 里的片段排在一行里，行头是第一个片段的名字和片段数', async () => {
     putMockProjectMain(
       CONVERSATION,
       mainFile(
@@ -353,7 +353,7 @@ describe('成片编辑器 · 时间线', () => {
     expect(screen.getByRole('slider', { name: '时间线播放位置' })).toBeEnabled()
   })
 
-  it('两行的成片：行号小的在上面，一个片段的行不显示片段数', async () => {
+  it('两行的 final-cut：行号小的在上面，一个片段的行不显示片段数', async () => {
     putMockProjectMain(
       CONVERSATION,
       mainFile(
@@ -401,7 +401,7 @@ describe('成片编辑器 · 时间线', () => {
 
   const clip = (name: RegExp) => within(timeline()).getByRole('button', { name })
 
-  it('点一个片段选中它，按 Delete 删掉：开着波纹编辑，后面的片段往前补上，成片变短', async () => {
+  it('点一个片段选中它，按 Delete 删掉：开着波纹编辑，后面的片段往前补上，final-cut 变短', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     const user = userEvent.setup()
     await openEditor()
@@ -470,7 +470,7 @@ describe('成片编辑器 · 时间线', () => {
   })
 })
 
-describe('成片编辑器 · 多选', () => {
+describe('final-cut 编辑器 ·多选', () => {
   // 一行三个片段：A 镜头 1 在 0–2 秒，B 镜头 1 在 2–3.5 秒，A 镜头 2 在 3.5–5 秒
   const threeVideos = () =>
     mainFile(
@@ -648,12 +648,12 @@ describe('成片编辑器 · 多选', () => {
   })
 })
 
-describe('成片编辑器 · 播放', () => {
+describe('final-cut 编辑器 ·播放', () => {
   afterEach(() => {
     starvedVideos.clear()
   })
 
-  it('打开存着的成片：显示总时长，可以播放', async () => {
+  it('打开存着的 final-cut：显示总时长，可以播放', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     await openEditor()
     expect(within(transport()).getByText('/ 00:03.50')).toBeVisible()
@@ -698,11 +698,11 @@ describe('成片编辑器 · 播放', () => {
     expect(previewPlayer()).toHaveProperty('paused', true)
   })
 
-  /** 最后一次发给预览页的成片。 */
+  /** 最后一次发给预览页的 final-cut。 */
   const lastLoad = () => {
     const loads = previewPages.latest().commands.filter((command) => command.type === 'load')
     const load = loads.at(-1)
-    if (load?.type !== 'load') throw new Error('还没有发过成片')
+    if (load?.type !== 'load') throw new Error('还没有发过 final-cut')
     return { html: load.html, count: loads.length }
   }
 
@@ -752,11 +752,11 @@ describe('成片编辑器 · 播放', () => {
       ),
     )
     expect(previewPages.pages).toHaveLength(1)
-    expect(screen.getByTitle('成片预览')).toBe(frame)
+    expect(screen.getByTitle('final-cut 预览')).toBe(frame)
     expect(frame.getAttribute('src')).toBe(src)
   })
 
-  it('工程里别的文件变了：重新发一次成片给预览页', async () => {
+  it('工程里别的文件变了：重新发一次 final-cut 给预览页', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     const { socket } = await openEditor()
     await previewSettled()
@@ -790,21 +790,21 @@ describe('成片编辑器 · 播放', () => {
     expect(await within(preview).findByRole('alert')).toHaveTextContent(
       '预览加载失败：没有配置预览域名',
     )
-    expect(within(preview).queryByTitle('成片预览')).not.toBeInTheDocument()
+    expect(within(preview).queryByTitle('final-cut 预览')).not.toBeInTheDocument()
 
     refused = false
     await user.click(within(preview).getByRole('button', { name: '重试' }))
-    expect(await within(preview).findByTitle('成片预览')).toBeInTheDocument()
+    expect(await within(preview).findByTitle('final-cut 预览')).toBeInTheDocument()
     expect(within(preview).queryByRole('alert')).not.toBeInTheDocument()
     await previewSettled()
   })
 })
 
-describe('成片编辑器 · 播放条设置', () => {
+describe('final-cut 编辑器 ·播放条设置', () => {
   const player = previewPlayer
   const playerUp = previewSettled
 
-  it('M 静音、再按恢复，⇧L 开关循环：交给播放器，成片不保存、不进撤销', async () => {
+  it('M 静音、再按恢复，⇧L 开关循环：交给播放器，final-cut 不保存、不进撤销', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     const user = userEvent.setup()
     await openEditor()
@@ -837,7 +837,7 @@ describe('成片编辑器 · 播放条设置', () => {
     )
   })
 
-  it('选 2×：素材预览和成片预览都是 2×，改动成片换了播放器还是 2×', async () => {
+  it('选 2×：素材预览和 final-cut 预览都是 2×，改动 final-cut 换了播放器还是 2×', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     const user = userEvent.setup()
     await openEditor()
@@ -922,7 +922,7 @@ describe('成片编辑器 · 播放条设置', () => {
   })
 })
 
-describe('成片编辑器 · 导出', () => {
+describe('final-cut 编辑器 ·导出', () => {
   const EXPORT_ID = '22222222-3333-4444-8555-666666666666'
   const EXPORTS_URL = '*/api/conversations/:conversationId/whole-film/exports'
   const EXPORT_URL = '*/api/conversations/:conversationId/whole-film/exports/:exportId'
@@ -1061,7 +1061,12 @@ describe('成片编辑器 · 导出', () => {
     ['渲染服务重启过', 'RENDER_LOST', 'render service restarted', '渲染服务已重启，请重新导出'],
     ['交出去太久没结束', 'PROVIDER_TIMEOUT', 'no end after 6 h', '导出等待超时，请重新导出'],
     ['渲染服务连不上', 'RENDER_UNAVAILABLE', 'connect refused', '渲染服务无法连接，请稍后重新导出'],
-    ['排队时成片又改过', 'FILM_CHANGED', 'draft moved on', '成片在排队期间已被修改，请重新导出'],
+    [
+      '排队时 final-cut 又改过',
+      'FILM_CHANGED',
+      'draft moved on',
+      'final-cut 在排队期间已被修改，请重新导出',
+    ],
     ['没见过的错误码', 'SUBMIT_INTERRUPTED', 'worker restarted', '成片导出失败，请重新导出'],
   ])('导出失败（%s）：按原因说一句话，不露给开发看的原文', async (_, code, message, text) => {
     serveLatest({ status: 'failed', error: { code, message } })
@@ -1071,7 +1076,7 @@ describe('成片编辑器 · 导出', () => {
     expect(screen.queryByText(message, { exact: false })).not.toBeInTheDocument()
   })
 
-  it('渲染服务不收这份成片：显示它给的原因', async () => {
+  it('渲染服务不收这份 final-cut：显示它给的原因', async () => {
     serveLatest({
       status: 'failed',
       error: { code: 'RENDER_REJECTED', message: '素材地址的主机不在允许范围' },
@@ -1082,7 +1087,7 @@ describe('成片编辑器 · 导出', () => {
   })
 })
 
-describe('成片编辑器 · 组件、块页签', () => {
+describe('final-cut 编辑器 ·组件、块页签', () => {
   const side = () => screen.getByRole('complementary', { name: '贴片、场景、音频和属性' })
   const openTab = (user: ReturnType<typeof userEvent.setup>, name: string) =>
     user.click(within(side()).getByRole('tab', { name }))
@@ -1179,7 +1184,7 @@ describe('成片编辑器 · 组件、块页签', () => {
     expect(savedClips()).toHaveLength(2)
   })
 
-  it('还没有成片时加组件：按竖版 1080×1920 建一份', async () => {
+  it('还没有 final-cut 时加组件：按竖版 1080×1920 建一份', async () => {
     const user = userEvent.setup()
     await openEditor()
     await addAtPlayhead(user, /^测试叠加/)
@@ -1196,11 +1201,11 @@ describe('成片编辑器 · 组件、块页签', () => {
     await waitSaved(() => expect(savedItems()).toHaveLength(1))
     await new Promise((resolve) => setTimeout(resolve, 1000))
     expect(savedItems()).toHaveLength(1)
-    expect(screen.getByText('上一个贴片或场景正在加入成片，请稍后再试')).toBeVisible()
+    expect(screen.getByText('上一个贴片或场景正在加入 final-cut，请稍后再试')).toBeVisible()
   })
 })
 
-describe('成片编辑器 · 属性', () => {
+describe('final-cut 编辑器 ·属性', () => {
   const inspector = () => screen.getByRole('tabpanel', { name: '属性' })
   const sideTab = (name: string) =>
     within(screen.getByRole('complementary', { name: '贴片、场景、音频和属性' })).getByRole('tab', {
@@ -1691,7 +1696,7 @@ describe('成片编辑器 · 属性', () => {
       expect(within(inspector()).queryByRole('switch', { name: '静音' })).toBeNull()
     })
 
-    it('增益：拖动中只改数值，松手写进成片，算一步撤销；正中不增不减，最左无声，最右 +12 dB', async () => {
+    it('增益：拖动中只改数值，松手写进 final-cut，算一步撤销；正中不增不减，最左无声，最右 +12 dB', async () => {
       const user = await openWith([audio({ duration: 4_000 })])
       await openMedia(user, '配乐')
       expect(slider('增益')).toHaveValue('0')
@@ -1864,7 +1869,7 @@ describe('成片编辑器 · 属性', () => {
   })
 })
 
-describe('成片编辑器 · 侧栏页签', () => {
+describe('final-cut 编辑器 ·侧栏页签', () => {
   const side = () => screen.getByRole('complementary', { name: '贴片、场景、音频和属性' })
   const tab = (name: string) => within(side()).getByRole('tab', { name })
   const props = () => screen.getByRole('tabpanel', { name: '属性' })
@@ -1980,7 +1985,7 @@ describe('成片编辑器 · 侧栏页签', () => {
   })
 })
 
-describe('成片编辑器 · 切走再切回', () => {
+describe('final-cut 编辑器 ·切走再切回', () => {
   const row = () => screen.getByRole('group', { name: '第 1 行' })
   const labels = () =>
     within(row())
@@ -2004,7 +2009,7 @@ describe('成片编辑器 · 切走再切回', () => {
 
   const stillReading = async () => {
     await new Promise((resolve) => setTimeout(resolve, 100))
-    expect(screen.getByRole('status')).toHaveTextContent('正在读取成片草稿…')
+    expect(screen.getByRole('status')).toHaveTextContent('正在读取 final-cut…')
     expect(screen.queryByRole('toolbar', { name: '剪辑工具' })).toBeNull()
   }
 

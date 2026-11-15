@@ -53,7 +53,9 @@ const runtimeScripts = (player: Locator) =>
     RUNTIME_FILE,
   )
 
-test('成片编辑器：选镜头加入成片、播放、撤销，导出暂停着，切走再切回成片还在', async ({ page }) => {
+test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销，导出暂停着，切走再切回 final-cut 还在', async ({
+  page,
+}) => {
   test.setTimeout(60_000)
   // 预览和悬停预览的运行库都从组件库加载，整个过程不访问外网 CDN
   const cdnRequests: string[] = []
@@ -67,7 +69,7 @@ test('成片编辑器：选镜头加入成片、播放、撤销，导出暂停�
   const editor = await openFinalCut(panel)
   const toolbar = editor.getByRole('toolbar', { name: '剪辑工具' })
   const transport = editor.getByRole('group', { name: '播放控制' })
-  await expect(editor.getByText('暂无成片内容，加入内容后可在此预览')).toBeVisible()
+  await expect(editor.getByText('final-cut 暂无内容，加入内容后可在此预览')).toBeVisible()
   // 「导出」在剪辑工具条的最后；编辑器是工作台的一个页签，排在「文件」前面，没有标题栏和关闭按钮
   await expect(toolbar.getByRole('button', { name: '导出', exact: true })).toHaveAttribute(
     'aria-disabled',
@@ -241,7 +243,7 @@ type PlayerSettings = HTMLElement & {
   iframeElement: HTMLIFrameElement
 }
 
-test('播放条：倍速和静音对素材、成片都生效且换播放器后还在，循环播放、快捷键面板、全屏', async ({
+test('播放条：倍速和静音对素材、final-cut 都生效且换播放器后还在，循环播放、快捷键面板、全屏', async ({
   page,
 }) => {
   test.setTimeout(60_000)
@@ -271,7 +273,7 @@ test('播放条：倍速和静音对素材、成片都生效且换播放器后�
     await material.evaluate((video: HTMLVideoElement) => [video.playbackRate, video.muted]),
   ).toEqual([2, true])
 
-  // 加入成片：成片预览也是 2×、静音
+  // 加入 final-cut：final-cut 预览也是 2×、静音
   const first = mainSaved(page, 1)
   await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).focus()
   await page.keyboard.press('Enter')
@@ -295,7 +297,7 @@ test('播放条：倍速和静音对素材、成片都生效且换播放器后�
   await loop.click()
   await expect(loop).toHaveAttribute('aria-pressed', 'true')
 
-  // 改动成片后换了播放器：倍速、静音、循环都还在
+  // 改动 final-cut 后换了播放器：倍速、静音、循环都还在
   const second = mainSaved(page, 2)
   await materials.getByRole('button', { name: /^生成 A 镜头 3，/ }).click()
   await page.keyboard.press('Enter')
@@ -330,7 +332,7 @@ test('播放条：倍速和静音对素材、成片都生效且换播放器后�
   await page.keyboard.press('Escape')
   await expect(sheet).toBeHidden()
 
-  // 再按 M 恢复声音：成片里的片段不再静音
+  // 再按 M 恢复声音：final-cut 里的片段不再静音
   await page.keyboard.press('m')
   await expect(transport.getByRole('button', { name: '静音', exact: true })).toBeVisible()
   await expect
@@ -362,7 +364,7 @@ test('播放条：倍速和静音对素材、成片都生效且换播放器后�
   await expect.poll(async () => [await boxOf(preview), await boxOf(transport)]).toEqual(before)
 })
 
-/** 存下来的成片里名字是 `title` 的组件或块的片段的属性；没有时是 null。 */
+/** 存下来的主文件里名字是 `title` 的组件或块的片段的属性；没有时是 null。 */
 const savedItem = (html: string, title: string) => {
   const tag = [...html.matchAll(/<div [^>]*data-composition-src="[^"]*"[^>]*>/g)]
     .map(([found]) => found)
@@ -563,7 +565,7 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
   await undone
 })
 
-/** 存下来的成片里的音频片段，写成「名字@行号 起点 时长」，按起点排。 */
+/** 存下来的主文件里的音频片段，写成「名字@行号 起点 时长」，按起点排。 */
 const savedAudio = (html: string) =>
   [...html.matchAll(/<audio [^>]*>/g)]
     .map(([tag]) => {
@@ -577,7 +579,7 @@ const savedAudio = (html: string) =>
     })
     .toSorted((left, right) => left.start - right.start)
 
-test('音频栏：试听只播一条，右键加到播放头新开声音行、成片变长，拖一条到声音行的空处，生成一条音乐，撤销回去', async ({
+test('音频栏：试听只播一条，右键加到播放头新开声音行、final-cut 变长，拖一条到声音行的空处，生成一条音乐，撤销回去', async ({
   page,
 }) => {
   test.setTimeout(60_000)
@@ -691,7 +693,7 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、�
   await expect(uploaded).not.toContainText('已使用')
 })
 
-/** 存下来的成片里第一个 `tag` 片段上的属性 `name`；不写值的属性是空串，没有这个属性时是 undefined。 */
+/** 存下来的主文件里第一个 `tag` 片段上的属性 `name`；不写值的属性是空串，没有这个属性时是 undefined。 */
 const savedAttribute = (html: string, tag: 'video' | 'audio', name: string) => {
   const element = new RegExp(`<${tag} [^>]*>`).exec(html)?.[0] ?? ''
   const found = new RegExp(` ${name}(?:="([^"]*)")?(?=[ >])`).exec(element)
@@ -903,7 +905,7 @@ test('地址带着 ?artifact=final-cut 时直接打开编辑器；正在对话�
     window.history.pushState(null, '', url)
     window.dispatchEvent(new PopStateEvent('popstate'))
   })
-  const editor = panel.getByRole('group', { name: '成片编辑器', exact: true })
+  const editor = panel.getByRole('group', { name: 'final-cut 编辑器', exact: true })
   await expect(editor.getByRole('toolbar', { name: '剪辑工具' })).toBeVisible()
   await expect(panel.getByRole('tab', { name: 'final-cut' })).toHaveAttribute(
     'aria-selected',

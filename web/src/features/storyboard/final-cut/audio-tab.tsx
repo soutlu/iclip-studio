@@ -48,7 +48,7 @@ type AudioTabProps = {
   conversationId: string
   /** 这个页签是不是正显示着；被藏起来时停止试听。 */
   active: boolean
-  /** 成片里现有的片段：看哪条音频用着、用在哪个片段上。 */
+  /** final-cut 里现有的片段：看哪条音频用着、用在哪个片段上。 */
   clips: readonly FilmClip[]
   /** 右键「加到播放头」或按 Enter。 */
   onAdd: (audio: NewAudio) => void
@@ -56,7 +56,7 @@ type AudioTabProps = {
   onCarry: (audio: NewAudio, point: CarryPoint | null) => void
   /** 拖着一行松手。 */
   onDrop: (audio: NewAudio, point: CarryPoint) => void
-  /** 点成片里用着的那一行：选中它对应的片段。 */
+  /** 点 final-cut 里用着的那一行：选中它对应的片段。 */
   onReveal: (clipId: string) => void
   onNotice: (message: string) => void
 }
@@ -115,20 +115,20 @@ export function AudioTab({
     jobs.flatMap((job) => (isReady(job) && job.durationMs === null ? [job.outputUrl] : [])),
   )
   const peaks = useAudioPeaks(unmeasured)
-  /** 加进成片的样子；还加不了时是加不了的原因。 */
+  /** 加进 final-cut 的样子；还加不了时是加不了的原因。 */
   const addable = (job: GenerationJob): NewAudio | string => {
     if (!isReady(job))
       return job.status === 'failed'
-        ? '音乐生成失败，无法加入成片；请重新生成'
-        : '音乐尚未生成完成，无法加入成片；请等待生成完成'
+        ? '音乐生成失败，无法加入 final-cut；请重新生成'
+        : '音乐尚未生成完成，无法加入 final-cut；请等待生成完成'
     const state = job.durationMs === null ? peaks.get(job.outputUrl) : undefined
     const duration =
       job.durationMs ??
       (state?.kind === 'ready' ? Math.round(state.peaks.duration * 1000) : undefined)
     if (duration === undefined)
       return state === undefined || state.kind === 'loading'
-        ? '正在读取音频时长，请稍后加入成片'
-        : '音频时长读取失败，无法加入成片'
+        ? '正在读取音频时长，请稍后加入 final-cut'
+        : '音频时长读取失败，无法加入 final-cut'
     return { label: audioTitleOf(job), src: job.outputUrl, mediaStart: 0, duration }
   }
 
@@ -324,7 +324,7 @@ function AudioRow({
   const [lifting, setLifting] = useState(false)
 
   const press = (event: PointerEvent<HTMLButtonElement>) => {
-    // 还加不了的不起拖，松手也不会落进成片
+    // 还加不了的不起拖，松手也不会落进 final-cut
     if (event.button !== 0 || typeof addable === 'string') return
     event.currentTarget.setPointerCapture(event.pointerId)
     clickAfterDrag.reset()
@@ -369,7 +369,7 @@ function AudioRow({
   return (
     <li
       className={cn('wf-song', used && 'is-used', lifting && 'is-lifting')}
-      title={ready ? '拖到时间线上可加入成片，右键可选择「加到播放头」' : undefined}
+      title={ready ? '拖到时间线上可加入 final-cut，右键可选择「加到播放头」' : undefined}
     >
       <ContextMenuRoot>
         <ContextMenuTrigger asChild>

@@ -26,10 +26,10 @@ export interface CatalogItem {
   variables: CatalogVariable[]
   thumbnail: string | null
   fonts: string[]
-  /** 组件文件里出现的非 ASCII 字符，成片按它声明中文字体分片。 */
+  /** 组件文件里出现的非 ASCII 字符，final-cut 按它声明中文字体分片。 */
   chars: string
   /**
-   * 把条目用进剪辑工程时要按原路径拷进工程的文本文件，路径相对版本目录。第一项是 `src`；
+   * 把条目用进 final-cut 工程时要按原路径拷进工程的文本文件，路径相对版本目录。第一项是 `src`；
    * `src` 所在目录只归这个条目时，后面按路径顺序跟上这个目录下的其余文件。
    */
   files: [string, ...string[]]

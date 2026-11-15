@@ -77,7 +77,7 @@ const openPage = async (html = film()) => {
   opened.send({ type: 'size', width: 180, height: 320 })
   opened.load(html)
   await firstLoaded(opened)
-  /** 换一份成片，等它换上来。 */
+  /** 换一份 final-cut，等它换上来。 */
   const showFilm = async (next: string) => {
     const old = opened.playerOf()
     const loaded = opened.of('loaded').length
@@ -107,7 +107,7 @@ describe('每个文件只下载一份', () => {
 })
 
 describe('运行库、尺寸、倍速', () => {
-  it('加载成片时播放器已带着运行库地址和画布尺寸；换上来的新播放器同样带着', async () => {
+  it('加载 final-cut 时播放器已带着运行库地址和画布尺寸；换上来的新播放器同样带着', async () => {
     const { playerOf, showFilm } = await openPage()
     expect(playerOf().loadedRuntimeSrc).toBe(RUNTIME)
     expect([playerOf().getAttribute('width'), playerOf().getAttribute('height')]).toEqual([
@@ -138,7 +138,7 @@ describe('运行库、尺寸、倍速', () => {
     expect(playerOf()).toMatchObject({ playbackRate: 2, muted: true, loop: true })
   })
 
-  it('换上来时报出成片的秒数', async () => {
+  it('换上来时报出 final-cut 的秒数', async () => {
     const { of } = await openPage()
     expect(of('loaded')).toEqual([{ type: 'loaded', duration: expect.any(Number) as number }])
   })
@@ -310,7 +310,7 @@ describe('时钟跟着画面走', () => {
   })
 })
 
-describe('第一份成片装好之前', () => {
+describe('第一份 final-cut 装好之前', () => {
   it('点播放先记下：报在放并转圈，装好后自动开始放、不再转圈', async () => {
     const opened = createPage()
     opened.load(film())
@@ -346,7 +346,7 @@ describe('第一份成片装好之前', () => {
     expect(opened.playerOf().paused).toBe(true)
   })
 
-  it('记下了播放但成片没了：报出停止播放、不再转圈，正在加载的那份不换上来', async () => {
+  it('记下了播放但 final-cut 没了：报出停止播放、不再转圈，正在加载的那份不换上来', async () => {
     const opened = createPage()
     opened.load(film())
     opened.send({ type: 'play' })
@@ -360,7 +360,7 @@ describe('第一份成片装好之前', () => {
   })
 })
 
-describe('换成片', () => {
+describe('换 final-cut', () => {
   it('连着换几份：只加载最后一份', async () => {
     const opened = createPage()
     opened.load(film('<p>一</p>'))
@@ -427,7 +427,7 @@ describe('换成片', () => {
     expect(old.paused).toBe(true)
   })
 
-  it('成片没了：不再放，也不再转圈', async () => {
+  it('final-cut 没了：不再放，也不再转圈', async () => {
     const { buffering, playerOf, playing, send } = await openPage()
     starvedVideos.add(FIRST)
     send({ type: 'play' })
@@ -445,7 +445,7 @@ describe('缓冲够了才继续', () => {
   const waitAt = async (at: number) => {
     const opened = await openPage(LONG_CLIP)
     const video = opened.playerOf().iframeElement.contentDocument?.querySelector('video')
-    if (video === null || video === undefined) throw new Error('成片页面里没有视频')
+    if (video === null || video === undefined) throw new Error('final-cut 页面里没有视频')
     video.currentTime = at
     starvedVideos.add(FIRST)
     downloadingVideos.add(FIRST)
@@ -554,7 +554,7 @@ describe('当前片段加载失败', () => {
     failVideo(FIRST)
     expect(of('clipFailed').at(-1)?.failed).toBe(true)
     const video = playerOf().iframeElement.contentDocument?.querySelector('video')
-    if (video === null || video === undefined) throw new Error('成片页面里没有视频')
+    if (video === null || video === undefined) throw new Error('final-cut 页面里没有视频')
     const load = vi.spyOn(video, 'load').mockImplementation(() => {
       clearFailedVideos()
       emitFrom(FIRST, 'emptied')
@@ -568,7 +568,7 @@ describe('当前片段加载失败', () => {
 })
 
 describe('报出已缓冲的区间', () => {
-  it('各视频片段已缓冲的部分换算成成片时间；没变化不重复报，换上新的以后重新报', async () => {
+  it('各视频片段已缓冲的部分换算成 final-cut 时间；没变化不重复报，换上新的以后重新报', async () => {
     bufferedVideos.set(FIRST, [[0, 1]])
     const { of, showFilm } = await openPage()
     expect(of('buffered').at(-1)?.spans).toEqual([{ start: 0, end: 1 }])
@@ -625,7 +625,7 @@ describe('视频都停止下载时报出', () => {
     expect(of('mediaSettled')).toHaveLength(1)
   })
 
-  it('成片里没有视频时不报', async () => {
+  it('final-cut 里没有视频时不报', async () => {
     const { of } = await openPage('<!doctype html><html><body></body></html>')
     expect(of('mediaSettled')).toEqual([])
   })
@@ -638,7 +638,7 @@ describe('拆掉', () => {
     send({ type: 'play' })
     const player = playerOf()
     const video = player.iframeElement.contentDocument?.querySelector('video')
-    if (video === null || video === undefined) throw new Error('成片页面里没有视频')
+    if (video === null || video === undefined) throw new Error('final-cut 页面里没有视频')
     page.dispose()
     expect(buffering().at(-1)).toBe(false)
     const count = sent.length

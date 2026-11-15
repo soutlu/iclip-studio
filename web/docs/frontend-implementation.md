@@ -40,7 +40,7 @@
 - **普通接口返回 401 / 403 时的处理**：业务接口返回 `401` 或 `403` 时，前端不会立刻当成已退登，而是触发一次 `/users/me` 重新核对当前登录状态并重算路由守卫。
 - **账号切换时自动重置 WebSocket 连接**：由于 WebSocket 的订阅身份是在握手那一刻确定的（见[跨端合同 §5](../../contract/conventions.md#5-agent-对话-transcript)），一旦检测到登录用户发生变化（退出、重新登录或切换了账号），`src/app/` 下的 `IdentityTranscriptProvider` 会自动让 `TranscriptProvider` 重建一套新的 WebSocket 连接与本地读取池，同时保持外层页面 DOM 树不重新挂载（侧边栏展开状态、输入框里正在打的字不会丢失）。
 
-## 成片编辑器
+## final-cut 编辑器
 
 - **工作台里的一个页签**：编辑器是工作台的「final-cut」页签，和对话并排；对话的工作区里有分镜或工程文件时出现，只读查看时没有。快捷键和 Esc 只认焦点在编辑器里时按的键，不在 window 上抢（[editor-keys.ts](../src/features/storyboard/final-cut/editor-keys.ts)）。
 - **不做小屏适配**：任何宽度下都是同一种摆法，宽度不够时内容被所在的卡片裁掉，不换行、不折叠，也不出现横向滚动条。
@@ -50,20 +50,20 @@
 成片动态组件目录的数据结构见 [catalog.ts](../src/features/storyboard/final-cut/composition/catalog.ts)，组件库源目录的打包规则见[组装脚本](../scripts/hyperframes-registry.mjs)文件头说明：
 
 - **组件字体 CSS 变量机制**：组件内部标题统一读取 `var(--font-display, <组件默认字体>)`，正文读取 `var(--font-body, <组件默认字体>)`。
-- **中文字体只声明用到的字**：播放运行时会把成片声明的字体全部加载完才运行组件脚本，所以主文件 `<head>` 的字体块只为出现的字声明 Noto Sans SC 的分片（[fonts.ts](../src/features/storyboard/final-cut/composition/fonts.ts)）——成片里写出的文字、所用组件文件里的非 ASCII 字符（组件目录每个条目的 `chars`），西文基本字符总是带上；用到的西文字体族按组件目录里的 `cjk` 描述各带一组指向同样分片的规则。组件文件不要自己链接整份中文字体样式，组装时会去掉这样的链接。
+- **中文字体只声明用到的字**：播放运行时会把主文件声明的字体全部加载完才运行组件脚本，所以主文件 `<head>` 的字体块只为出现的字声明 Noto Sans SC 的分片（[fonts.ts](../src/features/storyboard/final-cut/composition/fonts.ts)）——final-cut 里写出的文字、所用组件文件里的非 ASCII 字符（组件目录每个条目的 `chars`），西文基本字符总是带上；用到的西文字体族按组件目录里的 `cjk` 描述各带一组指向同样分片的规则。组件文件不要自己链接整份中文字体样式，组装时会去掉这样的链接。
 - **组件的字体配置项**：只要组件源码中使用了上述字体变量，打包脚本会自动为它补充一个 `{ "id": "font", "type": "font", "label": "字体", "default": "" }` 可填项。
-- **条目的文件清单**：组件目录每个条目的 `files` 是把它用进剪辑工程时要按原路径拷进工程的文件，路径相对版本目录，第一项是 `src`。`src` 所在目录（含子目录）里没有别的条目时，这个目录归它专有，后面按路径顺序跟上目录下其余的文件；多个条目共用的目录只列 `src`。`vendor/` 下的公共文件不在清单里。剪辑工程只能放文本，专有目录里有不是文本的文件（含 NUL 字节）时组装失败，报错列出条目和文件。
+- **条目的文件清单**：组件目录每个条目的 `files` 是把它用进 final-cut 工程时要按原路径拷进工程的文件，路径相对版本目录，第一项是 `src`。`src` 所在目录（含子目录）里没有别的条目时，这个目录归它专有，后面按路径顺序跟上目录下其余的文件；多个条目共用的目录只列 `src`。`vendor/` 下的公共文件不在清单里。final-cut 工程只能放文本，专有目录里有不是文本的文件（含 NUL 字节）时组装失败，报错列出条目和文件。
 
-## 剪辑工程
+## final-cut 工程
 
-编辑器编辑对话工作区里的剪辑工程（业务规则见 [CONTEXT.md「剪辑工程」](../../docs/CONTEXT.md#术语)，接口见 [conventions「成片工程的主文件」](../../contract/conventions.md#成片工程的主文件)），主文件的写法在 [composition/film.ts](../src/features/storyboard/final-cut/composition/film.ts)：
+编辑器编辑对话工作区里的 final-cut 工程（业务规则见 [CONTEXT.md「final-cut」](../../docs/CONTEXT.md#术语)，接口见 [conventions「final-cut 的主文件」](../../contract/conventions.md#final-cut-的主文件)），主文件的写法在 [composition/film.ts](../src/features/storyboard/final-cut/composition/film.ts)：
 
 - **只经 SDK 改片段**：编辑器用 SDK 打开主文件，每个编辑动作是一次 SDK 操作，撤销重做用 SDK 自带的；不直接拼改 HTML 字符串。片段列表来自 SDK 的 `getElementTimings()`，元素按 SDK 的编号（`data-hf-id`）操作。SDK 的编辑引擎按需加载，不进主包，它自带的保存队列不用。
 - **新片段用写法里的函数写**：往工程里加片段时，用 `film.ts` 里对应的函数写出元素（如 `videoElement`、`hostElement`），组件或块的摆放和字体变量写在宿主元素的行内样式上。
 - **`<head>` 只动字体块**：SDK 改不了 `<head>`，存出主文件时用 `withFontBlock` 只重算带标记的字体块，别的内容原样留着。
 - **保存交给会话**：[use-film-session.ts](../src/features/storyboard/final-cut/use-film-session.ts) 在停下后整份保存（第一次新建、之后带版本号）；`409` 或别处改了主文件时换成工作区里的那一份。主文件用自己的查询键，不挂在工作区文件下面：工作台每次文件变化都让工作区文件的查询失效，挂在下面的话一存就会重开引擎、清空撤销历史。
 - **预览发当前的主文件**：预览页拿到的就是会话里当前的主文件（没存的改动也在里面），加上指向凭令牌取工程文件的 `<base>` 和预览专用的媒体加载方式（[preview-document.ts](../src/features/storyboard/final-cut/preview-document.ts)）。
-- **预览在预览域名下运行**：工程里的脚本不能拿到应用的登录态，所以播放器和成片都放在预览域名下的预览页（[preview-page.ts](../src/features/storyboard/final-cut/preview-page.ts)）里，编辑器只嵌入它、靠消息控制它（协议见 [preview-protocol.ts](../src/features/storyboard/final-cut/preview-protocol.ts)）。缓冲、素材失败等要读成片页面的判断都在预览页里做，结果用消息报回；编辑器收到的每条消息先按协议校验，只当数据用。运行库地址用预览域名下的组件库。
+- **预览在预览域名下运行**：工程里的脚本不能拿到应用的登录态，所以播放器和 final-cut 都放在预览域名下的预览页（[preview-page.ts](../src/features/storyboard/final-cut/preview-page.ts)）里，编辑器只嵌入它、靠消息控制它（协议见 [preview-protocol.ts](../src/features/storyboard/final-cut/preview-protocol.ts)）。缓冲、素材失败等要读 final-cut 页面的判断都在预览页里做，结果用消息报回；编辑器收到的每条消息先按协议校验，只当数据用。运行库地址用预览域名下的组件库。
 
 ## 测试
 
@@ -80,4 +80,4 @@
 
 - **按用户可见的方式查找元素**：优先使用 `getByRole`、无障碍名称（`aria-label` / 按钮文字）或必要的 `data-testid` 定位元素；**严禁通过 CSS 类名（`className`）或内联样式来定位元素或做行为断言**。
 - **使用 MSW 拦截网络请求**：所有 HTTP 请求测试统一通过 MSW 处理，禁止手写 `vi.spyOn(global, 'fetch')`；同样禁止对仓库内部的模块、Hook 或工具函数打 spy（`toHaveBeenCalled*` 只用于组件对外的回调 Prop，或 `navigator.clipboard`、`window.open` 等浏览器原生系统边界）。
-- **成片编辑器测试使用内置固定夹具**：测试成片编辑器代码时，只使用仓库内置的测试组件库（`scripts/hyperframes-fixtures/`，单测直接用 `src/testing/final-cut.ts` 中的 `fixtureCatalog`），不依赖外部正式组件库。
+- **final-cut 编辑器测试使用内置固定夹具**：测试 final-cut 编辑器代码时，只使用仓库内置的测试组件库（`scripts/hyperframes-fixtures/`，单测直接用 `src/testing/final-cut.ts` 中的 `fixtureCatalog`），不依赖外部正式组件库。

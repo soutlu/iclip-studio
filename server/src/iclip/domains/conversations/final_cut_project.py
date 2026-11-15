@@ -1,4 +1,4 @@
-"""成片工程：对话工作区里的 ``final-cut/`` 目录，在预览域名上按令牌给出，属主可以新建文件。"""
+"""final-cut 工程：对话工作区里的 ``final-cut/`` 目录，在预览域名上按令牌给出，属主可以新建文件。"""
 
 from __future__ import annotations
 
@@ -139,14 +139,14 @@ class PreviewRedirect:
     location: str
 
 
-_NO_PREVIEW_ORIGIN = "尚未配置成片预览域名"
+_NO_PREVIEW_ORIGIN = "尚未配置 final-cut 预览域名"
 _NO_APP_ORIGIN = "请求没有带有效的 Origin 请求头，无法签发预览令牌"
 _BAD_TOKEN = "预览令牌无效或已过期"
-_NO_FILE = "成片工程里没有这个文件"
+_NO_FILE = "final-cut 工程里没有这个文件"
 
 
 class FinalCutProject:
-    """成片工程的三件事：给能读对话的人发预览令牌、按令牌给工程文件、属主新建工程文件。"""
+    """final-cut 工程的三件事：给能读对话的人发预览令牌、按令牌给工程文件、属主新建工程文件。"""
 
     def __init__(
         self,
@@ -229,7 +229,7 @@ class FinalCutProject:
         full = f"{PROJECT_DIR}/{checked}"
         owner = conversation.owner_user_id
         if await self._read_file(owner, conversation.id, full) is not None:
-            raise Conflict("成片工程里已经有这个文件")
+            raise Conflict("final-cut 工程里已经有这个文件")
         return await self._write_file(owner, conversation.id, full, content, None)
 
     def _grant(self, token: str) -> PreviewGrant:

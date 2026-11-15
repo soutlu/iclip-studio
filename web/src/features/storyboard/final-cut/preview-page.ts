@@ -5,7 +5,7 @@ import { mergeSpans, sameSpans, spansOf, windowSpans, type TimeSpan } from '@/sh
 import { zPreviewCommand, type PreviewCommand, type PreviewEvent } from './preview-protocol'
 import { secondsToFrame, STUDIO_PREVIEW_FPS } from './vendor/hyperframes-studio/player/lib/time'
 
-// 预览页：预览域名下的一个独立页面，播放器和成片都在这里运行。编辑器只经消息控制它（见 preview-protocol.ts）。
+// 预览页：预览域名下的一个独立页面，播放器和 final-cut 都在这里运行。编辑器只经消息控制它（见 preview-protocol.ts）。
 
 const RELOAD_DELAY_MS = 250
 
@@ -85,9 +85,9 @@ export type PreviewPage = {
 }
 
 /**
- * 在 `mount` 里放播放器、按命令换成片和播放，状态经 `send` 报出去。
+ * 在 `mount` 里放播放器、按命令换 final-cut 和播放，状态经 `send` 报出去。
  *
- * 换成片时新播放器先在底下加载，画好、停稳以后才换上来；第一份装好之前的播放、跳转先记下，
+ * 换 final-cut 时新播放器先在底下加载，画好、停稳以后才换上来；第一份装好之前的播放、跳转先记下，
  * 装好后照着办。
  */
 export const createPreviewPage = (
@@ -99,9 +99,9 @@ export const createPreviewPage = (
   let active: PlayerElement | null = null
   let wantsPlay = false
   let swapping = false
-  // 第一份成片装好之前记下的位置（秒）
+  // 第一份 final-cut 装好之前记下的位置（秒）
   let startAt = 0
-  // 成片连着改时只加载停下来的那一份
+  // final-cut 连着改时只加载停下来的那一份
   let scheduled: ReturnType<typeof setTimeout> | undefined
   let pending: { next: PlayerElement; cancelled: boolean } | null = null
   // 换上来的播放器按当前状态放或停；没有播放器时是 null
@@ -135,7 +135,7 @@ export const createPreviewPage = (
 
   const attach = (player: PlayerElement) => {
     const page = player.iframeElement.contentDocument
-    if (page === null) throw new Error('预览播放器里没有成片页面')
+    if (page === null) throw new Error('预览播放器里没有 final-cut 页面')
     swapping = false
     let buffering = false
     let settled = false
@@ -238,10 +238,10 @@ export const createPreviewPage = (
     next.setAttribute('disable-click-to-play', '')
     // 加载和缓冲的提示由编辑器自己画，播放器自带的那套不显示
     next.setAttribute('assets-loading-ui', 'none')
-    // 收到 srcdoc 时按它把运行库写进成片页面，不给就去外网 CDN 取
+    // 收到 srcdoc 时按它把运行库写进 final-cut 页面，不给就去外网 CDN 取
     next.setAttribute('runtime-src', runtimeSrc)
     applySize(next)
-    // 加载成片前就带上，换播放器时倍速、静音、循环不会先回到默认再变
+    // 加载 final-cut 前就带上，换播放器时倍速、静音、循环不会先回到默认再变
     applyPlayback(next, playback)
     next.classList.add('is-pending')
     mount.append(next)

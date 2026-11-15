@@ -3,7 +3,7 @@ import { audio, host, video } from '@/testing/final-cut'
 import { newClipZ, restackedZ, rowMoveDirection } from './stacking'
 
 describe('新加的片段的叠放顺序', () => {
-  it('空成片里加第一个片段：1', () => {
+  it('空的 final-cut 里加第一个片段：1', () => {
     expect(newClipZ([], 0)).toBe(1)
   })
 

@@ -630,7 +630,7 @@ def _preview_content_type(path: str) -> str:
 
 
 def create_final_cut_project_router(project: FinalCutProject) -> APIRouter:
-    """应用域名上的两个接口：发成片预览令牌、在成片工程里新建文件。"""
+    """应用域名上的两个接口：发 final-cut 预览令牌、在 final-cut 工程里新建文件。"""
 
     router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -640,7 +640,7 @@ def create_final_cut_project_router(project: FinalCutProject) -> APIRouter:
         request: Request,
         principal: Annotated[Principal, require_permission("agent:read")],
     ) -> FinalCutPreviewOut:
-        """给能读这段对话的人发一张 1 小时的成片预览令牌；可见范围同读工作区文件。
+        """给能读这段对话的人发一张 1 小时的 final-cut 预览令牌；可见范围同读工作区文件。
 
         令牌里签进对话的属主、对话、失效时刻与这次请求的 ``Origin``。看不见这段对话 404；
         没配置预览域名、请求没带合规的 ``Origin`` 都是 422。"""
@@ -662,7 +662,7 @@ def create_final_cut_project_router(project: FinalCutProject) -> APIRouter:
         body: FinalCutFileIn,
         principal: Annotated[Principal, require_permission("agent:run")],
     ) -> FinalCutFileCreatedOut:
-        """在成片工程里新建一个文件，写进工作区的 ``final-cut/<path>``。只有属主能建：看不见这段
+        """在 final-cut 工程里新建一个文件，写进工作区的 ``final-cut/<path>``。只有属主能建：看不见这段
         对话 404，看得见但不是属主、或看得见已删除的对话（治理者）403；路径不合规 422；文件已存在
         409，不覆盖。"""
 
@@ -697,7 +697,7 @@ def create_final_cut_preview_router(project: FinalCutProject) -> APIRouter:
         },
     )
     async def read_final_cut_preview_file(token: str, path: str) -> Response:
-        """取成片工程里的一个文件：``vendor/`` 开头的 307 转到同主机的 ``/hyperframes/vendor/…``，
+        """取 final-cut 工程里的一个文件：``vendor/`` 开头的 307 转到同主机的 ``/hyperframes/vendor/…``，
         其余原文给出工作区的 ``final-cut/<path>``。路径带 ``..``、以 ``/`` 开头、带反斜杠或文件不存在
         都是 404。"""
 

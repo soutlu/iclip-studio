@@ -10,7 +10,7 @@ const MAX_PATH_CHARS = 1024
 export const zExportRequest = z.object({
   id: z.uuid(),
   conversationId: z.uuid(),
-  /** 剪辑工程的文本文件，路径相对工程根，规则见 project.ts。 */
+  /** final-cut 工程的文本文件，路径相对工程根，规则见 project.ts。 */
   files: z
     .array(
       z.object({

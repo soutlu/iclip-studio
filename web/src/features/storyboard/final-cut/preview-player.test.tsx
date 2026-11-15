@@ -43,7 +43,7 @@ const preview = (on: ReturnType<typeof handlers>, props: Props = {}) => (
     controlRef={on.control}
     film={'film' in props ? props.film : FILM}
     height={320}
-    message="暂无成片内容"
+    message="final-cut 暂无内容"
     onBuffered={on.onBuffered}
     onBuffering={on.onBuffering}
     onMediaSettled={on.onMediaSettled}
@@ -89,7 +89,7 @@ const openPreview = async (props: Props = {}) => {
 describe('嵌进预览页', () => {
   it('预览域名下的预览页，令牌在 # 后面；只给脚本和同源权限，可以自动播放', async () => {
     await openPreview()
-    const frame = screen.getByTitle('成片预览')
+    const frame = screen.getByTitle('final-cut 预览')
     expect(frame).toHaveAttribute(
       'src',
       `${ORIGIN}/final-cut-preview.html#${encodeURIComponent(TOKEN)}`,
@@ -102,7 +102,7 @@ describe('嵌进预览页', () => {
   it('令牌还在取时不嵌预览页，也不能控制', () => {
     const on = handlers()
     render(preview(on, { page: { kind: 'pending' } }))
-    expect(screen.queryByTitle('成片预览')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('final-cut 预览')).not.toBeInTheDocument()
     expect(on.control.current).toBeNull()
   })
 
@@ -115,14 +115,14 @@ describe('嵌进预览页', () => {
       }),
     )
     expect(screen.getByRole('alert')).toHaveTextContent('预览加载失败：没有配置预览域名')
-    expect(screen.queryByTitle('成片预览')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('final-cut 预览')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '重试' }))
     expect(onRetry).toHaveBeenCalledOnce()
   })
 })
 
 describe('发给预览页', () => {
-  it('就绪后发播放设置、画布尺寸，再发成片；之后改了哪项发哪项', async () => {
+  it('就绪后发播放设置、画布尺寸，再发 final-cut；之后改了哪项发哪项', async () => {
     const on = handlers()
     const view = render(preview(on))
     await waitFor(() => expect(commandTypes()).toEqual(['playback', 'size', 'load']))
@@ -167,14 +167,14 @@ describe('发给预览页', () => {
     )
   })
 
-  it('预览页再报一次就绪（重新加载了）：设置和成片重发一遍', async () => {
+  it('预览页再报一次就绪（重新加载了）：设置和 final-cut 重发一遍', async () => {
     await openPreview()
     const before = served.latest().commands.length
     await report({ type: 'ready' })
     await waitFor(() => expect(commandTypes().slice(before)).toEqual(['playback', 'size', 'load']))
   })
 
-  it('成片没了：让预览页停下；换上过成片以后仍能控制它', async () => {
+  it('final-cut 没了：让预览页停下；换上过 final-cut 以后仍能控制它', async () => {
     const on = handlers()
     const view = render(preview(on))
     await waitFor(() => expect(commandTypes()).toContain('load'))
@@ -184,10 +184,10 @@ describe('发给预览页', () => {
     view.rerender(preview(on, { film: undefined }))
     await waitFor(() => expect(commandTypes().at(-1)).toBe('unload'))
     expect(on.control.current).not.toBeNull()
-    expect(screen.getByText('暂无成片内容')).toBeVisible()
+    expect(screen.getByText('final-cut 暂无内容')).toBeVisible()
   })
 
-  it('一开始就没有成片：不能控制', async () => {
+  it('一开始就没有 final-cut：不能控制', async () => {
     const on = handlers()
     render(preview(on, { film: undefined }))
     await waitFor(() => expect(commandTypes()).toContain('unload'))
@@ -221,7 +221,7 @@ describe('预览页就绪之前', () => {
     expect(served.latest().commands[1]).toEqual({ type: 'seek', ms: 1500, seq: 1 })
   })
 
-  it('记下了播放但成片没了：按钮回到播放、不再转圈，记下的命令作废，也不能控制', async () => {
+  it('记下了播放但 final-cut 没了：按钮回到播放、不再转圈，记下的命令作废，也不能控制', async () => {
     const on = handlers()
     const view = render(preview(on))
     await waitFor(() => expect(served.pages).toHaveLength(1))

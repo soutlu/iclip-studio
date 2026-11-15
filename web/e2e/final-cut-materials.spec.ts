@@ -76,7 +76,7 @@ const waitCompleted = (page: Page, ids: readonly string[]) =>
     )
     .toBe(ids.length)
 
-/** 打开成片编辑器，素材区里是给 `shots` 各组出的片，再接着 `silentShots` 各组出的没有音轨的片。 */
+/** 打开 final-cut 编辑器，素材区里是给 `shots` 各组出的片，再接着 `silentShots` 各组出的没有音轨的片。 */
 const openWith = async (
   page: Page,
   shots: readonly number[],
@@ -100,7 +100,7 @@ const shotOf = (materials: Locator, group: number, take: string, shot: number) =
     name: new RegExp(`^生成 ${take} 镜头 ${shot}，`),
   })
 
-/** 存下来的成片里的视频片段，按起点排，写成「名字，从几秒起，多长」。 */
+/** 存下来的主文件里的视频片段，按起点排，写成「名字，从几秒起，多长」。 */
 const savedClips = (page: Page) =>
   page.evaluate(async (conversationId) => {
     const response = await fetch(
@@ -156,7 +156,7 @@ test('素材区滚动后能选择后面的镜头组与末尾镜头', async ({ pa
   await expect(end).toHaveAttribute('aria-valuenow', '5.9')
 })
 
-test('点镜头只选中、预览停在开头不播放；素材暂停续播与段尾重播；加入成片后预览换成成片', async ({
+test('点镜头只选中、预览停在开头不播放；素材暂停续播与段尾重播；加入 final-cut 后预览换成 final-cut', async ({
   page,
 }) => {
   const { editor, materials } = await openWith(page, [1])
@@ -284,7 +284,7 @@ test('选区里的播放头只在素材播放时出现：点镜头、暂停、�
   await expect(playhead).toHaveCount(0)
 })
 
-test('Shift 选连着的几个镜头：不播放；在选区上单击只选那个镜头、Shift 点去掉一端；两端抓手不越过镜头边界，加入成片时一个镜头一个片段', async ({
+test('Shift 选连着的几个镜头：不播放；在选区上单击只选那个镜头、Shift 点去掉一端；两端抓手不越过镜头边界，加入 final-cut 时一个镜头一个片段', async ({
   page,
 }) => {
   const { editor, materials } = await openWith(page, [1])
@@ -341,7 +341,7 @@ test('Shift 选连着的几个镜头：不播放；在选区上单击只选那�
     ])
 })
 
-test('撤销、重做也是成片编辑：预览回到成片', async ({ page }) => {
+test('撤销、重做也是 final-cut 编辑：预览回到 final-cut', async ({ page }) => {
   const { editor, materials } = await openWith(page, [1, 1])
   const label = editor.getByText(/^素材 · 镜头组/)
   await shotOf(materials, 1, 'A', 1).click()
@@ -367,12 +367,16 @@ test('撤销、重做也是成片编辑：预览回到成片', async ({ page }) 
   await expect.poll(() => savedClips(page)).toHaveLength(0)
 })
 
-test('Enter 把选区接在成片末尾：焦点在镜头、选区两端或不在任何控件上时', async ({ page }) => {
+test('Enter 把选区接在 final-cut 末尾：焦点在镜头、选区两端或不在任何控件上时', async ({
+  page,
+}) => {
   const { editor, materials } = await openWith(page, [1, 1])
 
   await shotOf(materials, 1, 'A', 1).focus()
   await page.keyboard.press('Enter')
-  await expect(page.getByText('尚未选中镜头，无法加入成片；请先在下方选中镜头范围')).toBeVisible()
+  await expect(
+    page.getByText('尚未选中镜头，无法加入 final-cut；请先在下方选中镜头范围'),
+  ).toBeVisible()
   expect(await savedClips(page)).toEqual([])
 
   await shotOf(materials, 1, 'A', 1).click()
@@ -392,7 +396,7 @@ test('Enter 把选区接在成片末尾：焦点在镜头、选区两端或不�
   await expect.poll(() => savedClips(page)).toHaveLength(3)
 })
 
-test('没有音轨的素材片接进成片写成静音，有音轨的标着有声音', async ({ page }) => {
+test('没有音轨的素材片接进 final-cut 写成静音，有音轨的标着有声音', async ({ page }) => {
   const { materials } = await openWith(page, [1], [1])
   await shotOf(materials, 1, 'A', 1).click()
   await page.keyboard.press('Enter')
@@ -401,7 +405,7 @@ test('没有音轨的素材片接进成片写成静音，有音轨的标着有�
   await page.keyboard.press('Enter')
   await expect.poll(() => savedClips(page)).toHaveLength(2)
 
-  // 存下来的成片里每个视频片段的名字和声音的写法
+  // 存下来的主文件里每个视频片段的名字和声音的写法
   const sound = await page.evaluate(async (conversationId) => {
     const response = await fetch(
       `/api/conversations/${conversationId}/workspace/file?path=final-cut%2Findex.html`,
@@ -619,7 +623,7 @@ test('换行：把片段拖到最下面的空行新开一行，再拖回去；�
     await expect.poll(() => savedClips(page)).toHaveLength(at + 1)
   }
   await readyPlayer(editor)
-  /** 存下来的成片里每个片段，按文件里的先后，写成「名字@行号 z叠放顺序」。 */
+  /** 存下来的主文件里每个片段，按文件里的先后，写成「名字@行号 z叠放顺序」。 */
   const savedLayout = () =>
     page.evaluate(async (conversationId) => {
       const response = await fetch(
@@ -637,7 +641,7 @@ test('换行：把片段拖到最下面的空行新开一行，再拖回去；�
     }, conversationIdOf(page))
   /**
    * 预览画面正中看得见的片段，从最上面一层往下，写成「名字@行号」。
-   * 改动成片后预览会换一个播放器，看后来的那个；带上行号才认得出它已经换成新的成片。
+   * 改动 final-cut 后预览会换一个播放器，看后来的那个；带上行号才认得出它已经换成新的 final-cut。
    */
   const previewStack = () =>
     finalCutPreviewPage(editor)
@@ -698,7 +702,7 @@ test('换行：把片段拖到最下面的空行新开一行，再拖回去；�
   await expect(secondRow.locator('[data-clip-id]')).toHaveCount(1)
 })
 
-test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来的成片带着隐藏标记；再点显示回来', async ({
+test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来的主文件带着隐藏标记；再点显示回来', async ({
   page,
 }) => {
   const { editor, materials } = await openWith(page, [1])
@@ -706,13 +710,13 @@ test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来�
   await page.keyboard.press('Enter')
   await expect.poll(() => savedClips(page)).toHaveLength(1)
   await readyPlayer(editor)
-  // 改动成片后预览会换一个播放器，换的那一下新旧两个都在：看后来的那个
+  // 改动 final-cut 后预览会换一个播放器，换的那一下新旧两个都在：看后来的那个
   const picture = finalCutPreviewPage(editor)
     .locator('hyperframes-player')
     .last()
     .frameLocator('iframe')
     .locator('video.picture')
-  /** 存下来的成片里有几个隐藏的片段。 */
+  /** 存下来的主文件里有几个隐藏的片段。 */
   const savedHidden = () =>
     page.evaluate(async (conversationId) => {
       const response = await fetch(
@@ -860,7 +864,7 @@ test('在两行之间、最上面新开一行：片段拖到两行中间的缝�
     await expect.poll(() => savedClips(page)).toHaveLength(at + 1)
   }
   await readyPlayer(editor)
-  /** 存下来的成片里每个片段在第几行，写成「名字@行号」，按名字排。 */
+  /** 存下来的主文件里每个片段在第几行，写成「名字@行号」，按名字排。 */
   const savedTracks = () =>
     page.evaluate(async (conversationId) => {
       const response = await fetch(
@@ -1101,7 +1105,7 @@ test('成组挪动、成组裁剪：选中的片段挪同一个时间差，挡�
     return box
   }
   type Placed = { start: number; duration: number; track: number }
-  /** 存下来的成片里每个镜头在哪：键是镜头号，时间按秒。 */
+  /** 存下来的主文件里每个镜头在哪：键是镜头号，时间按秒。 */
   const savedLayout = () =>
     page.evaluate(async (conversationId) => {
       const response = await fetch(
@@ -1125,10 +1129,10 @@ test('成组挪动、成组裁剪：选中的片段挪同一个时间差，挡�
     }, conversationIdOf(page))
   const placedOf = (layout: Record<number, Placed>, shot: number) => {
     const placed = layout[shot]
-    if (placed === undefined) throw new Error(`成片里没有镜头 ${shot}`)
+    if (placed === undefined) throw new Error(`final-cut 里没有镜头 ${shot}`)
     return placed
   }
-  /** 存下来的成片里同一行的片段没有在时间上重叠的。 */
+  /** 存下来的主文件里同一行的片段没有在时间上重叠的。 */
   const expectNoOverlap = async () => {
     const clips = Object.values(await savedLayout())
     for (const clip of clips)
@@ -1205,7 +1209,7 @@ test('成组挪动、成组裁剪：选中的片段挪同一个时间差，挡�
   await expect
     .poll(async () => (await boxOf(clipFrameOf(3))).x)
     .toBeGreaterThan(resting.x + pps / 2)
-  // 拖动中按 Delete、撤销都不生效：成片这时被改，松手会按改之前算好的位置写回去
+  // 拖动中按 Delete、撤销都不生效：final-cut 这时被改，松手会按改之前算好的位置写回去
   await page.keyboard.press('Delete')
   await page.keyboard.press('ControlOrMeta+z')
   await expect(editor.locator('[data-clip-id]')).toHaveCount(count)
@@ -1270,7 +1274,9 @@ test('成组挪动、成组裁剪：选中的片段挪同一个时间差，挡�
   await expectNoOverlap()
 })
 
-test('拖到一半成片被换掉：这次拖动取消，松手不按换之前算好的位置写回去', async ({ page }) => {
+test('拖到一半 final-cut 被换掉：这次拖动取消，松手不按换之前算好的位置写回去', async ({
+  page,
+}) => {
   const { editor, materials } = await openWith(page, [1])
   for (const [at, shot] of [1, 3].entries()) {
     await shotOf(materials, 1, 'A', shot).click()
@@ -1301,7 +1307,7 @@ test('拖到一半成片被换掉：这次拖动取消，松手不按换之前�
   await page.mouse.up()
   await expect.poll(() => savedClips(page)).not.toEqual(original)
 
-  // 再按住它往后拖，拖到一半成片被换回去（指针按着，撤销按钮用事件点）：片段回到成片里的位置
+  // 再按住它往后拖，拖到一半 final-cut 被换回去（指针按着，撤销按钮用事件点）：片段回到 final-cut 里的位置
   await hold()
   await editor.getByRole('button', { name: '撤销' }).dispatchEvent('click')
   await expect.poll(() => leftOf(third)).toBeCloseTo(resting, 0)
@@ -1318,7 +1324,7 @@ test('缩放时播放头留在屏幕上原来的地方；滚到看不见它以�
 }) => {
   const { editor, materials } = await openWith(page, [1])
   await widenWorkbench(page)
-  // 成片排到 8 秒：播放头要能放到时间区中间偏左，放大以后两边都还有内容
+  // final-cut 排到 8 秒：播放头要能放到时间区中间偏左，放大以后两边都还有内容
   for (const [at, shot] of [1, 2, 3, 4, 1, 2, 3, 4].entries()) {
     await shotOf(materials, 1, 'A', shot).click()
     await page.keyboard.press('Enter')
@@ -1381,9 +1387,9 @@ test('缩放时播放头留在屏幕上原来的地方；滚到看不见它以�
 })
 
 /**
- * 打开成片编辑器，存一份三种片段都有的成片再打开：画面区第 0 行是组件或块的片段「标题」（0–2 秒），
+ * 打开 final-cut 编辑器，存一份三种片段都有的主文件再打开：画面区第 0 行是组件或块的片段「标题」（0–2 秒），
  * 第 1 行是镜头 1（0–1 秒）；声音区第 0 行是「配乐 1」（0–4 秒）和「配乐 2」（5–6 秒）。
- * 界面上还没有加组件和音频的入口，成片直接经接口存进去。
+ * 界面上还没有加组件和音频的入口，主文件直接经接口存进去。
  */
 const openWithKinds = async (page: Page) => {
   const { editor, materials, panel } = await openWith(page, [1])
@@ -1403,7 +1409,7 @@ const openWithKinds = async (page: Page) => {
       ).file
       const doc = new DOMParser().parseFromString(html, 'text/html')
       const root = doc.getElementById('film')
-      if (root === null) throw new Error('成片文件里没有根')
+      if (root === null) throw new Error('主文件里没有根')
       root.querySelector('video')?.setAttribute('data-track-index', '1')
       root.setAttribute('data-duration', '6')
       const values = JSON.stringify({ text: '新品上市' }).replaceAll('"', '&quot;')
@@ -1437,7 +1443,7 @@ const openWithKinds = async (page: Page) => {
 }
 
 /**
- * 存下来的成片里每个片段，按名字排，写成「名字@区行号 起点」，隐藏的后面写「隐藏」。
+ * 存下来的主文件里每个片段，按名字排，写成「名字@区行号 起点」，隐藏的后面写「隐藏」。
  * 区写成「画面」或「声音」。
  */
 const savedKinds = (page: Page) =>
@@ -1555,7 +1561,7 @@ test('三种片段：组件或块的片段、视频片段、音频片段各在�
   await expect.poll(() => savedKinds(page)).toEqual(lowered)
 })
 
-/** 存下来的成片里名字是 `label` 的片段，写成「起点 时长 从第几秒开始播」（没写的是 -）。 */
+/** 存下来的主文件里名字是 `label` 的片段，写成「起点 时长 从第几秒开始播」（没写的是 -）。 */
 const savedTiming = (page: Page, label: string) =>
   page.evaluate(
     async ({ conversationId, label }) => {
@@ -1615,7 +1621,7 @@ test('裁组件或块的片段和音频片段：音频片段的结尾拖到音�
   await expect.poll(() => savedTiming(page, '标题')).toBe('1 1 1')
 })
 
-test('声音行的喇叭：静音以后存下来的成片里这一行的音频片段都带隐藏标记，再点取消静音', async ({
+test('声音行的喇叭：静音以后存下来的主文件里这一行的音频片段都带隐藏标记，再点取消静音', async ({
   page,
 }) => {
   const { editor } = await openWithKinds(page)

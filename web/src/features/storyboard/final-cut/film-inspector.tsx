@@ -47,7 +47,7 @@ type Values = Readonly<Record<string, VariableValue>>
 type Props = {
   /** 时间线上选中的片段。 */
   selected: readonly FilmClip[]
-  /** 成片里所有的片段：改时间时按它们算落在哪。 */
+  /** final-cut 里所有的片段：改时间时按它们算落在哪。 */
   clips: readonly FilmClip[]
   catalog: ComponentCatalog
   sourceMs: SourceLength
@@ -82,7 +82,7 @@ function KindLabel({ clip, catalog }: { clip: FilmClip; catalog: ComponentCatalo
   return label === undefined ? null : <span className="wf-inspector-kind">{label}</span>
 }
 
-// 照参照的工作台：改可填项停下 300 毫秒再写进成片
+// 照参照的工作台：改可填项停下 300 毫秒再写进 final-cut
 const COMMIT_DELAY_MS = 300
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i
@@ -295,7 +295,7 @@ function TimeFields({
   onRetime: (timings: ReadonlyMap<string, Timing>) => void
   onEditing: (editing: boolean) => void
 }) {
-  // 框还聚焦着就被卸掉（成片被换成别处存的一版）时收不到失焦，这里补一下
+  // 框还聚焦着就被卸掉（final-cut 被换成别处存的一版）时收不到失焦，这里补一下
   useEffect(() => () => onEditing(false), [onEditing])
   const end = clip.start + clip.duration
   const startAt = (ms: number) => {
@@ -391,8 +391,8 @@ const fadeAttribute = (ms: number) => {
 
 /**
  * 「媒体」：文件、增益、速度、起始位置、淡入、淡出，音频片段另有循环，视频片段另有静音。
- * 换算和上下限照参照的工作台；拖滑杆时只动这里，松手（或按一下方向键）才写进成片，一次算一步撤销。
- * 改速度不改片段在成片里的时长，用掉的素材跟着变长或变短。
+ * 换算和上下限照参照的工作台；拖滑杆时只动这里，松手（或按一下方向键）才写进 final-cut，一次算一步撤销。
+ * 改速度不改片段在 final-cut 里的时长，用掉的素材跟着变长或变短。
  */
 function MediaFields({
   clip,

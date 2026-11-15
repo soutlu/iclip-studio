@@ -3,7 +3,7 @@ import { refuseFileDropProps } from '@/shared/ui/file-drop'
 import { EditorRootContext } from './editor-keys'
 
 /**
- * 成片编辑器的根节点。编辑器和工作台里的对话并排，所以快捷键和 Esc 只认焦点在根节点里面时按的键：
+ * final-cut 编辑器的根节点。编辑器和工作台里的对话并排，所以快捷键和 Esc 只认焦点在根节点里面时按的键：
  * 根节点可以聚焦（点在空白处时焦点落在它上面），打开时不抢焦点；拖进来的文件它不收，免得落到对话的
  * 输入框里。
  *
@@ -55,7 +55,7 @@ export function EditorRoot({
   }, [root])
   return (
     <div
-      aria-label="成片编辑器"
+      aria-label="final-cut 编辑器"
       className="wf-editor"
       data-final-cut-editor=""
       ref={setRoot}

@@ -109,8 +109,8 @@ describe('组件、块页签的分类和搜索', () => {
   })
 })
 
-describe('条目放进成片的时长', () => {
-  it('条目写了时长就用它；没写时取 10 秒和成片现有总长里大的那个', () => {
+describe('条目放进 final-cut 的时长', () => {
+  it('条目写了时长就用它；没写时取 10 秒和 final-cut 现有总长里大的那个', () => {
     expect(itemDurationMs(item('fixture-scene'), [])).toBe(6000)
     const timeless = { ...item('fixture-scene'), duration: null }
     expect(itemDurationMs(timeless, [video({ duration: 4000 })])).toBe(10_000)

@@ -64,7 +64,7 @@ export default defineConfig(({ mode }) => {
     build: {
       // mock 构建只供 e2e 的 preview 使用，与生产产物分目录，互不覆盖。
       ...(useBrowserMocks ? { outDir: 'dist-mock' } : {}),
-      // 第二个页面是成片的预览页，在预览域名下打开（见 ../contract/conventions.md「成片工程与预览域名」）
+      // 第二个页面是 final-cut 的预览页，在预览域名下打开（见 ../contract/conventions.md「final-cut 工程与预览域名」）
       rolldownOptions: {
         input: {
           main: path.resolve(import.meta.dirname, 'index.html'),

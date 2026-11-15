@@ -482,7 +482,7 @@ export function twinDescriptors(descriptors) {
   return result
 }
 
-// 中文字体由成片按用到的字声明；组件文件里链整份中文字体的那一行在组装时去掉
+// 中文字体由主文件按用到的字声明；组件文件里链整份中文字体的那一行在组装时去掉
 const CJK_STYLESHEET_LINK =
   /[ \t]*<link\b[^>]*\bhref="[^"]*vendor\/fonts\/noto-sans-sc\.css"[^>]*>\n?/g
 export const withoutCjkStylesheet = (html) => html.replace(CJK_STYLESHEET_LINK, '')
@@ -499,7 +499,7 @@ const USES_ANIMATION_LIBRARY = /\bgsap\./
 
 /**
  * 组件文件用到动画库、自己却没引用它时，在它的第一段脚本前补上引用。
- * 成片文件不带脚本，组件单独放进成片时要靠自带的引用，不然它的脚本一运行就报错。
+ * 主文件不带脚本，组件单独放进 final-cut 时要靠自带的引用，不然它的脚本一运行就报错。
  */
 export function withAnimationLibrary(html) {
   // 注释换成等长的空白：注释里的脚本不算，位置也不变
@@ -531,8 +531,8 @@ export function checkCatalogFonts(fonts) {
 }
 
 /**
- * 每个条目用进剪辑工程时要按原路径拷进工程的文件。第一项是条目的 src；src 所在目录（含子目录）里
- * 没有别的条目时，这个目录归它专有，后面按路径顺序跟上目录下其余的文件。剪辑工程只能放文本，
+ * 每个条目用进 final-cut 工程时要按原路径拷进工程的文件。第一项是条目的 src；src 所在目录（含子目录）里
+ * 没有别的条目时，这个目录归它专有，后面按路径顺序跟上目录下其余的文件。final-cut 工程只能放文本，
  * 列出的文件里有含 NUL 字节的就抛 SyncError，一次列出所有这样的条目和文件。
  *
  * @param {{ name: string, src: string }[]} items 组件目录的条目
@@ -555,7 +555,7 @@ export async function projectFiles(items, libraryText, libraryFiles) {
   }
   if (binary.length > 0)
     throw new SyncError(
-      `条目专有目录里有不是文本的文件（含 NUL 字节），剪辑工程只能放文本：\n  ${binary.join('\n  ')}`,
+      `条目专有目录里有不是文本的文件（含 NUL 字节），final-cut 工程只能放文本：\n  ${binary.join('\n  ')}`,
     )
   return result
 }

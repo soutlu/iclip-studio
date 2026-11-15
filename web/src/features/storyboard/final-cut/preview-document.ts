@@ -3,7 +3,7 @@ import { escapeAttribute } from './composition/html'
 
 const withBaseHref = (html: string, baseHref: string): string => {
   const head = /<head[^>]*>/i.exec(html)
-  if (head === null) throw new Error('成片文件没有 <head>')
+  if (head === null) throw new Error('主文件没有 <head>')
   const at = head.index + head[0].length
   return `${html.slice(0, at)}\n<base href="${escapeAttribute(baseHref)}">${html.slice(at)}`
 }

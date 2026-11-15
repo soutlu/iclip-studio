@@ -15,7 +15,7 @@
 | **运行时服务**（端口 `7790`） | 运行时项目 Cue，按 `runtime.ref` 检出到 `runtime/`（`agent_runtime`） | 负责所有跟 Agent 相关的事：管理配置（技能库、模型供应商、MCP 服务、Agent 版本）、维护会话与消息队列、驱动大模型运行、推送聊天流（Transcript）、读写工作区文件、统计 Token 用量。数据存于 `agent_runtime` schema |
 | **视频插件包**（装入运行时镜像） | [plugins/video/](../plugins/video/pyproject.toml)（`iclip_video`） | 为 Agent 提供视频领域的专属工具集（如视频理解、视频拆解、生成分镜图、校验工程文件）。需要调用视频后端能力时，通过 HTTP 调用后端的内部接口 |
 | **视频后端**（端口 `7788`） | [server/](../server/pyproject.toml)（`iclip`） | 浏览器唯一访问的入口（BFF）：负责用户登录与权限校验、管理业务侧的对话列表、处理视频生成/参考视频拆解/资料库/成片导出等业务逻辑。数据存于 `iclip` schema |
-| **成片渲染服务**（内网 `8080`） | [render/](../render/package.json)（Node.js） | 导出时接收剪辑工程的文件，在无头浏览器中渲染成 MP4 并上传到对象存储 |
+| **成片渲染服务**（内网 `8080`） | [render/](../render/package.json)（Node.js） | 导出时接收 final-cut 工程的文件，在无头浏览器中渲染成 MP4 并上传到对象存储 |
 
 **依赖方向与隔离原则：**
 - **单向代码依赖**：`视频插件包` 的插件依赖 `运行时`（装插件包的可选依赖 `runtime`）；`运行时` 不依赖任何业务包。`视频后端` 只用 `视频插件包` 里的视频格式代码，不装可选依赖 `runtime`，生产环境不安装运行时：调运行时的客户端与接口形状由后端自己留一份（见[客户端库](#客户端库)），两边只通过 HTTP 通信。
@@ -96,7 +96,7 @@
 
 ### 身份与模块协作
 
-- **按主机名划分预览域名（[app/preview_host.py](../server/src/iclip/app/preview_host.py)）**：最外层的中间件按 `Host` 区分应用域名与成片预览域名，预览域名上只放行成片预览地址，别的主机上预览地址一律 `404`，不依赖各路由自己声明（规则见 [conventions「成片工程与预览域名」](../contract/conventions.md#成片工程与预览域名)）。
+- **按主机名划分预览域名（[app/preview_host.py](../server/src/iclip/app/preview_host.py)）**：最外层的中间件按 `Host` 区分应用域名与 final-cut 预览域名，预览域名上只放行 final-cut 预览地址，别的主机上预览地址一律 `404`，不依赖各路由自己声明（规则见 [conventions「final-cut 工程与预览域名」](../contract/conventions.md#final-cut-工程与预览域名)）。
 - **写请求的来源检查（`WriteOriginCheck`）**：紧挨在按主机名划分的那一层之内、CORS 与登录态解析之外，`POST`、`PUT`、`PATCH`、`DELETE` 请求的 `Origin` 不被放行时直接 `403`，不依赖各路由自己声明；判定规则与 `/ws` 握手共用 [identity/middleware.py](../server/src/iclip/domains/identity/middleware.py) 的 `origin_allowed`（规则见 [conventions §2](../contract/conventions.md#2-双主体认证-dual-principals)）。
 - **统一鉴权与代指定用户操作（`ActAs`）**：所有 HTTP 和 WebSocket 请求由 `PrincipalMiddleware` 统一解析登录 Cookie 或 API Key（`/internal/runtime/` 内部接口与凭令牌访问的 `/final-cut/preview/` 预览地址除外），接口所需权限通过 FastAPI `Security` 直接声明在路由上。对于支持 `users:act_as` 的 6 个写接口（建对话、建需求单、发消息、提交生成、参考视频试生成、确认上传），在拿到请求体后会调用 [identity/acting.py](../server/src/iclip/domains/identity/acting.py) 的 `ActAs` 完成归属用户切换。
 - **模块间解耦**：`domains/` 下的各个业务模块互不直接导入对方的内部实现，需要跨模块协作时（例如发消息时自动把外部图片附件转存为上传记录、查询分叉对话的祖先出片记录、做同款时复制制作文件），一律由模块声明接口协议（Protocol），再由 `app/` 组合根注入适配器将两边接起来。
@@ -104,9 +104,9 @@
 
 ### 成片渲染服务
 
-- **剪辑工程不经后端检查**：编辑器直接读写对话工作区里的 `final-cut/` 目录，后端只按令牌把工程文件给预览域名（见 [conventions「成片工程与预览域名」](../contract/conventions.md#成片工程与预览域名)）；工程里的脚本只在预览域名和渲染服务里运行。
+- **final-cut 工程不经后端检查**：编辑器直接读写对话工作区里的 `final-cut/` 目录，后端只按令牌把工程文件给预览域名（见 [conventions「final-cut 工程与预览域名」](../contract/conventions.md#final-cut-工程与预览域名)）；工程里的脚本只在预览域名和渲染服务里运行。
 - **后端排队与调度（[generation/render.py](../server/src/iclip/domains/generation/render.py)）**：发起导出暂停中，后端不向渲染服务提交导出；暂停前已交给渲染服务的 `whole_film` 生成任务在异步队列的专属通道（lane）里照常经内网 HTTP（`FINAL_CUT_RENDER_URL`）轮询进度、取消（总超时 6 小时），还没交出去的记为失败（`EXPORT_PAUSED`）。
-- **独立 Node 渲染服务（[render/](../render/package.json)）**：运行在内网（无鉴权），挂载与前端相同的成片组件库目录（`RENDER_REGISTRY_ROOT`）。`POST /exports` 收剪辑工程的文本文件（路径 + 内容）、「主文件里的素材地址 → 下载地址」的对应表和预签名的 OSS 上传地址；路径不合规（空段、`.`、`..`、以 `/` 开头或结尾、反斜杠、控制字符、以 `vendor` 开头）、缺主文件、主文件里的素材没给下载地址都答 `400`。之后在内存队列中按先进先出顺序单任务执行：把工程文件写进临时目录、放上指向公共目录的 `vendor`，把素材下载到工程里新建的目录，只在导出用的那份主文件里把素材地址换成本地路径 → 启动无头浏览器按 30 fps 渲染出 MP4（期间拦截除素材白名单域名以外的一切外网请求；组件文件只从工程取，缺了就失败）→ 通过预签名地址上传到 OSS，用完删掉临时目录。如果渲染服务重启，内存中正在进行的任务会丢失，后端轮询发现后会将其标记为 `RENDER_LOST` 失败，提示用户重新导出。
+- **独立 Node 渲染服务（[render/](../render/package.json)）**：运行在内网（无鉴权），挂载与前端相同的成片组件库目录（`RENDER_REGISTRY_ROOT`）。`POST /exports` 收 final-cut 工程的文本文件（路径 + 内容）、「主文件里的素材地址 → 下载地址」的对应表和预签名的 OSS 上传地址；路径不合规（空段、`.`、`..`、以 `/` 开头或结尾、反斜杠、控制字符、以 `vendor` 开头）、缺主文件、主文件里的素材没给下载地址都答 `400`。之后在内存队列中按先进先出顺序单任务执行：把工程文件写进临时目录、放上指向公共目录的 `vendor`，把素材下载到工程里新建的目录，只在导出用的那份主文件里把素材地址换成本地路径 → 启动无头浏览器按 30 fps 渲染出 MP4（期间拦截除素材白名单域名以外的一切外网请求；组件文件只从工程取，缺了就失败）→ 通过预签名地址上传到 OSS，用完删掉临时目录。如果渲染服务重启，内存中正在进行的任务会丢失，后端轮询发现后会将其标记为 `RENDER_LOST` 失败，提示用户重新导出。
 
 ### 后端的持久化与迁移
 

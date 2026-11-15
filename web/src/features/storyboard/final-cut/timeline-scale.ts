@@ -25,7 +25,7 @@ export type Zoom = { mode: ZoomMode; percent: number }
 
 export const FIT_ZOOM: Zoom = { mode: 'fit', percent: 100 }
 
-// 成片再短，时间线也按这么多秒排，片段不会被拉得很宽
+// final-cut 再短，时间线也按这么多秒排，片段不会被拉得很宽
 const MIN_SPAN_S = 20
 
 export type TimelineScale = {

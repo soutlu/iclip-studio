@@ -90,7 +90,7 @@ describe('trimRange：挪选区的一端', () => {
   })
 })
 
-describe('rangePieces：加入成片时拆成的段', () => {
+describe('rangePieces：加入 final-cut 时拆成的段', () => {
   it('一个镜头一段；拉过镜头边界也不拆', () => {
     expect(rangePieces({ ...range(2_000, 3_000), startMs: 1_500, endMs: 4_500 })).toEqual([
       { mediaStart: 1_500, duration: 3_000 },
@@ -140,7 +140,7 @@ describe('shiftShot：Shift 点镜头', () => {
   })
 })
 
-describe('usedSpans：成片里每版素材片用了哪些段', () => {
+describe('usedSpans：final-cut 里每版素材片用了哪些段', () => {
   it('按版本的地址分开，同一版用了几段就记几段', () => {
     const used = usedSpans([
       video({ id: 'v1', src: 'a.mp4', mediaStart: 1_000, duration: 2_000 }),
@@ -167,7 +167,7 @@ describe('usedSpans：成片里每版素材片用了哪些段', () => {
     ])
   })
 
-  it('成片里没有画面时什么都没用', () => {
+  it('final-cut 里没有画面时什么都没用', () => {
     expect(usedSpans([]).size).toBe(0)
   })
 })

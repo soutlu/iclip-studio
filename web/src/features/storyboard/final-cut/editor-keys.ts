@@ -1,7 +1,7 @@
 import { createContext, use, useEffect, useEffectEvent } from 'react'
 import { isTextEntry } from '../editing/shortcut-target'
 
-/** 成片编辑器的根节点（`EditorRoot` 提供）；还没挂上时是 null。 */
+/** final-cut 编辑器的根节点（`EditorRoot` 提供）；还没挂上时是 null。 */
 export const EditorRootContext = createContext<HTMLElement | null>(null)
 
 /** 所在编辑器的根节点；还没挂上时是 null。 */

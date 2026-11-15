@@ -792,7 +792,7 @@ def build_app(
     # 写请求的来源检查在 CORS 与登录态解析之外：来源不对的直接 403，不必先查凭证；预检请求是 OPTIONS，
     # 不经它检查，仍由 CORS 直接答。它在按主机名的划分之内，预览域名上除预览地址外一律 404 的规则不受影响。
     app.add_middleware(WriteOriginCheck, allowed_origins=settings.security.cors_allow_origins)
-    # 按主机名的划分是成片预览的安全边界，必须在 CORS、来源检查与登录态解析之外，最后注册。
+    # 按主机名的划分是 final-cut 预览的安全边界，必须在 CORS、来源检查与登录态解析之外，最后注册。
     preview_origin = settings.final_cut_preview_origin
     app.add_middleware(
         PreviewHostSplit,

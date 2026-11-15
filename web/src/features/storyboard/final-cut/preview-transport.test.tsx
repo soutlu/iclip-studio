@@ -26,7 +26,7 @@ const base = (): ComponentProps<typeof PreviewTransport> => ({
 const transport = () => screen.getByRole('group', { name: '播放控制' })
 
 describe('预览下面的播放条', () => {
-  it('已缓冲的几段画在进度条上，超出成片结尾的部分不画', async () => {
+  it('已缓冲的几段画在进度条上，超出 final-cut 结尾的部分不画', async () => {
     await renderWithProviders(
       <PreviewTransport
         {...base()}
@@ -45,10 +45,10 @@ describe('预览下面的播放条', () => {
     const user = userEvent.setup()
     const onPlay = vi.fn()
     await renderWithProviders(
-      <PreviewTransport {...base()} onPlay={onPlay} playBlocked="成片还是空的" totalMs={0} />,
+      <PreviewTransport {...base()} onPlay={onPlay} playBlocked="final-cut 还是空的" totalMs={0} />,
     )
     await user.click(screen.getByRole('button', { name: '播放' }))
-    expect(await screen.findAllByText('成片还是空的')).not.toHaveLength(0)
+    expect(await screen.findAllByText('final-cut 还是空的')).not.toHaveLength(0)
     expect(onPlay).not.toHaveBeenCalled()
     expect(screen.queryByTestId('preview-buffered')).toBeNull()
   })

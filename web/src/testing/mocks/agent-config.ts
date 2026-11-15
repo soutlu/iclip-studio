@@ -60,7 +60,7 @@ export const mockAgentPlugins: AgentPluginOut[] = [
     requires: ['workspace'],
   },
   {
-    description: '创建、编辑与检查成片工程',
+    description: '创建、编辑与检查导演工程',
     label: '导演工程',
     name: 'iclip_studio',
     parameters: {},

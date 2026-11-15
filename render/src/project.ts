@@ -3,7 +3,7 @@ import { parse, type DefaultTreeAdapterTypes } from 'parse5'
 type Node = DefaultTreeAdapterTypes.Node
 type Element = DefaultTreeAdapterTypes.Element
 
-/** 剪辑工程的一个文件：路径相对工程根，内容是文本。 */
+/** final-cut 工程的一个文件：路径相对工程根，内容是文本。 */
 export interface ProjectFile {
   path: string
   content: string

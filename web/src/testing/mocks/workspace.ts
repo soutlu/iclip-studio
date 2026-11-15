@@ -710,7 +710,7 @@ type MockFileChange = {
 
 const fileWatchers = new Set<(change: MockFileChange) => void>()
 
-/** 剪辑工程（`final-cut/`）里的文件每写一次都通知一次，编辑器自己的保存也一样（照后端）。 */
+/** final-cut 工程（`final-cut/`）里的文件每写一次都通知一次，编辑器自己的保存也一样（照后端）。 */
 export const watchMockProjectFiles = (watcher: (change: MockFileChange) => void) => {
   fileWatchers.add(watcher)
   return () => void fileWatchers.delete(watcher)
@@ -724,7 +724,7 @@ const announceFile = (change: MockFileChange) => {
   for (const watcher of fileWatchers) watcher(change)
 }
 
-// dev:mock 下剪辑工程的文件存进 sessionStorage，刷新页面后还在；只在浏览器里的 mock 打开
+// dev:mock 下 final-cut 工程的文件存进 sessionStorage，刷新页面后还在；只在浏览器里的 mock 打开
 const PROJECTS_STORAGE_KEY = 'cue.mock.final-cut-projects'
 let projectStorage: Storage | null = null
 
@@ -738,7 +738,7 @@ function saveMockProjects() {
   projectStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(stored))
 }
 
-/** 把存着的剪辑工程放回工作区，之后写剪辑工程时都存进 `storage`。在种好数据以后调用。 */
+/** 把存着的 final-cut 工程放回工作区，之后写 final-cut 工程时都存进 `storage`。在种好数据以后调用。 */
 export const persistMockProjects = (storage: Storage) => {
   const stored = JSON.parse(storage.getItem(PROJECTS_STORAGE_KEY) ?? '{}') as Record<
     string,
@@ -808,7 +808,7 @@ export const seedMockMusic = (conversationId: string) => {
       id: crypto.randomUUID(),
       kind: 'audio',
       operation: 'upload',
-      // 每条记录的产物地址各不相同（编辑器按地址认出成片里用着哪一条），都由同一个音频处理器答复
+      // 每条记录的产物地址各不相同（编辑器按地址认出 final-cut 里用着哪一条），都由同一个音频处理器答复
       outputUrl: `${MOCK_MUSIC_URL}?upload`,
       prompt: '',
       status: 'completed',
@@ -908,7 +908,7 @@ export const workspaceHandlers = [
     const files = workspaces.get(conversationId) ?? new Map<string, MockFile>()
     workspaces.set(conversationId, files)
     if (files.has(path))
-      return HttpResponse.json({ detail: '成片工程里已经有这个文件' }, { status: 409 })
+      return HttpResponse.json({ detail: 'final-cut 工程里已经有这个文件' }, { status: 409 })
     files.set(path, { content: body.content, updatedAt: new Date().toISOString(), version: 1 })
     announceFile({ conversationId, path, change: 'created' })
     return HttpResponse.json({ path: body.path, version: 1 }, { status: 201 })

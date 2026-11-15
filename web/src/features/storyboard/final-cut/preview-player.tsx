@@ -20,11 +20,11 @@ export type PreviewControl = {
   seek: (ms: number) => void
 }
 
-/** 编辑时怎么听、怎么放：只管预览，不写进成片文件。 */
+/** 编辑时怎么听、怎么放：只管预览，不写进主文件。 */
 export type PlaybackSettings = {
   rate: number
   muted: boolean
-  /** 成片播到结尾从头接着播。 */
+  /** final-cut 播到结尾从头接着播。 */
   loop: boolean
 }
 
@@ -34,12 +34,12 @@ export type PreviewPageAddress =
   | { kind: 'ready'; origin: string; token: string }
   | { kind: 'failed'; message: string; onRetry: () => void }
 
-/** 交给预览页的一份成片：整份预览文档，和预览域名下的运行库地址（见 `previewRuntimeSrc`）。 */
+/** 交给预览页的一份 final-cut：整份预览文档，和预览域名下的运行库地址（见 `previewRuntimeSrc`）。 */
 export type PreviewFilm = { html: string; runtimeSrc: string }
 
 type PreviewPlayerProps = {
   page: PreviewPageAddress
-  /** 成片没有内容时是 undefined。 */
+  /** final-cut 没有内容时是 undefined。 */
   film: PreviewFilm | undefined
   message: string | undefined
   backdrop: string | undefined
@@ -62,7 +62,7 @@ type Link = { src: string; target: Window; origin: string }
 type Outgoing = Exclude<PreviewCommand, { type: 'seek' }> | { type: 'seek'; ms: number }
 
 /**
- * 成片预览：把预览域名下的预览页嵌进来，按消息协议（preview-protocol.ts）让它加载、播放，
+ * final-cut 预览：把预览域名下的预览页嵌进来，按消息协议（preview-protocol.ts）让它加载、播放，
  * 再把它报回来的时间、播放状态、缓冲和失败交给编辑器。
  */
 export function PreviewPlayer({
@@ -91,7 +91,7 @@ export function PreviewPlayer({
   const src = page.kind === 'ready' ? previewPageUrl(page.origin, page.token) : undefined
   const [readyLink, setReadyLink] = useState<Link | null>(null)
   const link = readyLink !== null && readyLink.src === src ? readyLink : null
-  // 预览页换上过成片的那个地址：换上过以后，成片没了也还能控制它（让它停下）
+  // 预览页换上过 final-cut 的那个地址：换上过以后，final-cut 没了也还能控制它（让它停下）
   const [shownAt, setShownAt] = useState<string | null>(null)
   const [clipFailed, setClipFailed] = useState(false)
 
@@ -102,7 +102,7 @@ export function PreviewPlayer({
     seq: 0,
   })
   const bufferingRef = useRef(false)
-  // 就绪之前记下了「在放」：按钮先算在放、舞台先转圈，和第一份成片装好之前一样
+  // 就绪之前记下了「在放」：按钮先算在放、舞台先转圈，和第一份 final-cut 装好之前一样
   const earlyPlayRef = useRef(false)
 
   const post = useCallback((command: Outgoing) => {
@@ -249,7 +249,7 @@ export function PreviewPlayer({
                 ref={frameRef}
                 sandbox="allow-scripts allow-same-origin"
                 src={src}
-                title="成片预览"
+                title="final-cut 预览"
               />
             )}
           </div>
