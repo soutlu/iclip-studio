@@ -1087,11 +1087,13 @@ test('新建工程、加镜头和一个贴片：条目文件拷进工程，刷�
   const added = mainSavedWith(page, (html) => savedItem(html, '测试叠加') !== null)
   await card.hover()
   await card.getByRole('button', { name: '加到播放头' }).click()
-  const placed = savedItem(htmlOf(await added), '测试叠加')
+  const saved = await added
+  const placed = savedItem(htmlOf(saved), '测试叠加')
   expect(placed).toMatchObject({ item: 'fixture-overlay', duration: 4 })
   expect(createdFiles).toEqual(['index.html', 'compositions/fixtures/fixture-overlay.html'])
 
-  // 刷新整页：工程从工作区读回来，镜头和贴片都还在
+  // 刷新整页：工程从工作区读回来，镜头和贴片都还在。等这次保存有了答复再刷新——请求刚发出就刷新，这一版还没存下来
+  await saved.response()
   await page.reload()
   const reloaded = await openFinalCut(await openConversation(page, '夜景延时素材生成'))
   await expect(
