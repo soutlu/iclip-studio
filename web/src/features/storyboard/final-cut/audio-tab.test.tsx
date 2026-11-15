@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { DialogRoot, DialogSurface } from '@/shared/ui/dialog'
 import { pasteTextIntoComposer } from '@/testing/editor'
@@ -73,9 +74,35 @@ const openTab = async (records: GenerationJob[], clips: FilmClip[] = []) => {
     onReveal: vi.fn(),
     onNotice: vi.fn(),
   }
-  await renderWithProviders(<AudioTab clips={clips} conversationId={conversation.id} {...props} />)
+  await renderWithProviders(
+    <AudioTab active clips={clips} conversationId={conversation.id} {...props} />,
+  )
   if (records.length > 0) await screen.findByRole('list', { name: '音频' })
   return { ...props, conversation }
+}
+
+const ignore = () => {}
+
+/** 能把音频页签藏起来再显示出来的外壳：侧栏切到别的页签时就是这样。 */
+function HideableAudioTab({ conversationId }: { conversationId: string }) {
+  const [active, setActive] = useState(true)
+  return (
+    <>
+      <button onClick={() => setActive((shown) => !shown)} type="button">
+        换页签
+      </button>
+      <AudioTab
+        active={active}
+        clips={[]}
+        conversationId={conversationId}
+        onAdd={ignore}
+        onCarry={ignore}
+        onDrop={ignore}
+        onNotice={ignore}
+        onReveal={ignore}
+      />
+    </>
+  )
 }
 
 const list = () => screen.getByRole('list', { name: '音频' })
@@ -185,6 +212,27 @@ describe('音频栏 · 试听', () => {
     expect(screen.queryAllByRole('button', { name: /^暂停试听：/ })).toEqual([])
     expect(onAdd).not.toHaveBeenCalled()
     expect(onReveal).not.toHaveBeenCalled()
+  })
+
+  it('页签被藏起来时试听停下，再显示出来时没有哪一条还算在播', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve())
+    const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+    const conversation = addMockConversation('音频页签')
+    server.use(http.get('*/api/generations', () => HttpResponse.json({ items: [guitar] })))
+    await renderWithProviders(<HideableAudioTab conversationId={conversation.id} />)
+    await screen.findByRole('list', { name: '音频' })
+
+    await user.click(screen.getByRole('button', { name: '试听：轻快原声吉他' }))
+    expect(screen.getByRole('button', { name: '暂停试听：轻快原声吉他' })).toBeInTheDocument()
+    expect(pause).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: '换页签' }))
+    expect(pause).toHaveBeenCalledTimes(1)
+
+    await user.click(screen.getByRole('button', { name: '换页签' }))
+    expect(screen.getByRole('button', { name: '试听：轻快原声吉他' })).toBeInTheDocument()
+    expect(screen.queryAllByRole('button', { name: /^暂停试听：/ })).toEqual([])
   })
 })
 
@@ -357,6 +405,7 @@ describe('音频栏 · 生成音乐', () => {
     )
     await renderWithProviders(
       <AudioTab
+        active
         clips={[]}
         conversationId={conversation.id}
         onAdd={vi.fn()}

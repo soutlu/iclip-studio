@@ -734,6 +734,7 @@ function EditorBody({
             ))}
             <TabsContent className="wf-side-body is-audio" value="audio" {...catalogPanel('audio')}>
               <AudioTab
+                active={sideTab === 'audio'}
                 clips={clips}
                 conversationId={conversationId}
                 onAdd={(audio) =>
