@@ -1175,6 +1175,11 @@ describe('成片编辑器 · 右侧栏', () => {
   /** 等过提交可填项的 300 毫秒。 */
   const pastDelay = () => new Promise((resolve) => setTimeout(resolve, 400))
 
+  // 用了假计时的用例失败时也换回真的，不影响后面的用例
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   const brand = () =>
     host({
       id: 'brand-1',
@@ -1339,20 +1344,46 @@ describe('成片编辑器 · 右侧栏', () => {
     const user = await openWith([host()])
     await pick(user, '测试可填项')
     const text = within(inspector()).getByRole('textbox', { name: '文字' })
-    await user.clear(text)
-    await user.type(text, '新的标题')
-    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
-    await waitFor(() => expect(undoButton()).not.toHaveAttribute('aria-disabled'))
-    await waitSaved(() => expect(savedValues('title-1')).toEqual({ text: '新的标题' }))
-    await waitFor(() =>
+    // 从这里到结束都用假的计时（含预览页等的动画帧）、由用例拨钟，不看机器快慢；
+    // user-event 在假计时下会卡住，所以直接发事件
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'],
+    })
+    const elapse = (ms: number) =>
+      act(async () => {
+        await vi.advanceTimersByTimeAsync(ms)
+      })
+    /** 每次拨 50 毫秒，直到 `check` 通过；拨满 5 秒还不通过就失败。 */
+    const elapseUntil = async (check: () => void) => {
+      for (let elapsed = 0; ; elapsed += 50) {
+        try {
+          check()
+          return
+        } catch (error) {
+          if (elapsed >= 5_000) throw error
+        }
+        await elapse(50)
+      }
+    }
+    // 每次按键之间停 299 毫秒：加起来早过了 300 毫秒，每次都还没写进片段
+    for (const value of ['', '新', '新的', '新的标', '新的标题']) {
+      fireEvent.change(text, { target: { value } })
+      await elapse(299)
+      expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+    }
+    await elapse(1)
+    expect(undoButton()).not.toHaveAttribute('aria-disabled')
+
+    await elapseUntil(() => expect(savedValues('title-1')).toEqual({ text: '新的标题' }))
+    await elapseUntil(() =>
       expect(previewPlayer().getAttribute('srcdoc')).toContain(
         '{&quot;text&quot;:&quot;新的标题&quot;}',
       ),
     )
     expect(text).toHaveValue('新的标题')
 
-    await user.click(undoButton())
-    await waitSaved(() => expect(savedValues('title-1')).toEqual({}))
+    fireEvent.click(undoButton())
+    await elapseUntil(() => expect(savedValues('title-1')).toEqual({}))
     expect(within(inspector()).getByRole('textbox', { name: '文字' })).toHaveValue('示例文字')
   })
 

@@ -26,7 +26,7 @@ const item = (name: string): CatalogItem => {
 describe('组件、块页签的分类和搜索', () => {
   it('分类一排：全部、品牌，再是目录里除字幕以外的各类，只列这种条目里有的', () => {
     expect(labels(itemChips(fixtureCatalog, 'component'))).toEqual(['全部', '效果', '文字效果'])
-    expect(labels(itemChips(fixtureCatalog, 'block'))).toEqual(['全部', '品牌', '场景'])
+    expect(labels(itemChips(fixtureCatalog, 'block'))).toEqual(['全部', '品牌', '通用'])
   })
 
   it('一类里两种条目都有：每个页签的这一类和「品牌」只列自己这种', () => {
@@ -42,9 +42,9 @@ describe('组件、块页签的分类和搜索', () => {
       const found = itemChips(catalog, kind).find((candidate) => candidate.label === label)
       return found === undefined ? [] : titles(filterItems(catalog, found, ''))
     }
-    expect(listed('component', '场景')).toEqual(['测试叠加'])
+    expect(listed('component', '通用')).toEqual(['测试叠加'])
     expect(listed('component', '品牌')).toEqual(['测试叠加'])
-    expect(listed('block', '场景')).toEqual(['测试画面', '示例品牌 片尾'])
+    expect(listed('block', '通用')).toEqual(['测试画面', '示例品牌 片尾'])
     expect(listed('block', '品牌')).toEqual(['示例品牌 片尾'])
   })
 
@@ -73,7 +73,7 @@ describe('组件、块页签的分类和搜索', () => {
     expect(titles(filterItems(fixtureCatalog, chip('block', '品牌'), ''))).toEqual([
       '示例品牌 片尾',
     ])
-    expect(titles(filterItems(fixtureCatalog, chip('block', '场景'), ''))).toEqual([
+    expect(titles(filterItems(fixtureCatalog, chip('block', '通用'), ''))).toEqual([
       '测试画面',
       '示例品牌 片尾',
     ])
