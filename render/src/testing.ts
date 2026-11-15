@@ -13,9 +13,13 @@ import {
 import type { ExportWorker, RenderedFile, UploadTarget } from './jobs'
 import { createLogger, type Logger } from './log'
 
-// 源目录里没有组装时才生成的内容：运行库路径照组装结果写，分片表只给西文基本字符那一片，条目补上空的 chars
+// 源目录里没有组装时才生成的内容：运行库路径照组装结果写，分片表只给西文基本字符那一片，条目补上空的 chars，
+// 文件清单照组装结果写（只有 fixture-sidecar 带着专有目录里的文件）
 const source = catalogJson as Omit<ComponentCatalog, 'version' | 'runtime' | 'cjk' | 'items'> & {
-  items: Omit<CatalogItem, 'chars'>[]
+  items: Omit<CatalogItem, 'chars' | 'files'>[]
+}
+const ownFiles: Record<string, string[]> = {
+  'fixture-sidecar': ['compositions/fixture-sidecar/assets/fixture-sidecar.json'],
 }
 
 export const catalog: ComponentCatalog = {
@@ -37,7 +41,11 @@ export const catalog: ComponentCatalog = {
       },
     ],
   },
-  items: source.items.map((item) => ({ ...item, chars: '' })),
+  items: source.items.map((item) => ({
+    ...item,
+    chars: '',
+    files: [item.src, ...(ownFiles[item.name] ?? [])],
+  })),
 }
 
 export const SOURCE_JOB = '6f1b5c3e-2a4d-4e8f-9b1c-0d2e3f4a5b6c'

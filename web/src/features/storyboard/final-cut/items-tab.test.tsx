@@ -59,7 +59,7 @@ describe('组件、块页签 · 列出和筛选', () => {
   it('块页签的卡片：封面、时长、名字、分类', async () => {
     await renderTab('block')
     expect(screen.getByRole('list', { name: '场景' })).toBeInTheDocument()
-    expect(cardNames()).toEqual(['测试画面，6 秒', '示例品牌 片尾，3 秒'])
+    expect(cardNames()).toEqual(['测试画面，6 秒', '示例品牌 片尾，3 秒', '测试旁挂文件，2 秒'])
     const scene = card('测试画面，6 秒')
     expect(within(scene).getByText('6s')).toBeInTheDocument()
     expect(within(scene).getByText('测试画面')).toBeInTheDocument()

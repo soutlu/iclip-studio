@@ -30,6 +30,7 @@ import {
   localReferences,
   localize,
   npmPackage,
+  projectFiles,
   publishedCatalog,
   registryItems,
   relocate,
@@ -312,6 +313,12 @@ async function assemble(temp, catalog, lock) {
     }
   }
   if (missing.length > 0) throw new SyncError(`引用的文件不存在：\n  ${missing.join('\n  ')}`)
+  // 发布目录时还会按版本目录再列一遍；这里先查，条目专有目录里有非文本文件时不装出这个版本
+  await projectFiles(
+    catalog.items,
+    (path) => readFile(join(temp, path), 'utf8'),
+    (dir) => listFiles(temp, dir),
+  )
 
   return { npmLock, files }
 }
@@ -382,8 +389,11 @@ async function main() {
 
 async function publishCatalog(catalog, version) {
   const versionDir = join(outDir, version)
-  const published = await publishedCatalog(catalog, version, (src) =>
-    readFile(join(versionDir, src), 'utf8'),
+  const published = await publishedCatalog(
+    catalog,
+    version,
+    (path) => readFile(join(versionDir, path), 'utf8'),
+    (dir) => listFiles(versionDir, dir),
   )
   await writeAtomic(join(outDir, 'catalog.json'), `${JSON.stringify(published, null, 2)}\n`)
   console.log(`组件目录已写入：${displayPath(join(outDir, 'catalog.json'))}（version ${version}）`)

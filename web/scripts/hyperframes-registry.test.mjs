@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +10,7 @@ import {
   RUNTIME,
   WEB_ROOT,
   libraryVersion,
+  listFiles,
   publishedCatalog,
 } from './hyperframes-shared.mjs'
 
@@ -61,13 +63,15 @@ describe('libraryVersion', () => {
 })
 
 describe('hf:registry', () => {
-  it('版本目录已存在时跳过组装，按版本目录里的组件文件写带 version 的 catalog.json', async () => {
+  const css = 'vendor/fonts/families/playfair-display-0123456789ab.css'
+
+  /** 照组装结果摆好版本目录（组件文件取自改写目录，字体表手写），再运行脚本；脚本因此跳过组装、只发布目录。 */
+  async function publishAssembled() {
     const out = join(work, 'out')
     const version = await libraryVersion(library)
     await cp(join(library, 'patches', 'compositions'), join(out, version, 'compositions'), {
       recursive: true,
     })
-    const css = 'vendor/fonts/families/playfair-display-0123456789ab.css'
     await writeFile(
       join(out, version, FONT_TABLE),
       JSON.stringify({
@@ -77,19 +81,28 @@ describe('hf:registry', () => {
       }),
     )
     await writeFile(join(out, version, 'marker'), '')
-
     const result = spawnSync(
       process.execPath,
       [join(WEB_ROOT, 'scripts', 'hyperframes-registry.mjs'), '--library', library, '--out', out],
       { encoding: 'utf8' },
     )
+    return { out, version, result }
+  }
+
+  it('版本目录已存在时跳过组装，按版本目录里的组件文件写带 version 的 catalog.json', async () => {
+    const { out, version, result } = await publishAssembled()
     expect(result.stderr).toBe('')
     expect(result.status).toBe(0)
 
     const source = JSON.parse(await readFile(join(library, 'catalog.json'), 'utf8'))
     const published = JSON.parse(await readFile(join(out, 'catalog.json'), 'utf8'))
     expect(published).toEqual(
-      await publishedCatalog(source, version, (src) => readFile(join(out, version, src), 'utf8')),
+      await publishedCatalog(
+        source,
+        version,
+        (path) => readFile(join(out, version, path), 'utf8'),
+        (dir) => listFiles(join(out, version), dir),
+      ),
     )
     const fontItems = published.items.flatMap((item) =>
       item.variables
@@ -111,5 +124,43 @@ describe('hf:registry', () => {
       'marker',
     ])
     expect((await readdir(out)).sort()).toEqual(['catalog.json', version].sort())
+  })
+
+  it('每个条目带上剪辑工程要拷的文件：共用目录里只有 src，专有目录里 src 在前、其余文件按路径排在后面', async () => {
+    const { out, version, result } = await publishAssembled()
+    expect(result.status).toBe(0)
+
+    const published = JSON.parse(await readFile(join(out, 'catalog.json'), 'utf8'))
+    expect(Object.fromEntries(published.items.map((item) => [item.name, item.files]))).toEqual({
+      'default-caption': ['compositions/fixtures/default-caption.html'],
+      'fixture-scene': ['compositions/fixtures/fixture-scene.html'],
+      'fixture-overlay': ['compositions/fixtures/fixture-overlay.html'],
+      'fixture-fields': ['compositions/fixtures/fixture-fields.html'],
+      'fixture-brand-card': ['compositions/fixtures/fixture-brand-card.html'],
+      'fixture-sidecar': [
+        'compositions/fixture-sidecar/fixture-sidecar.html',
+        'compositions/fixture-sidecar/assets/fixture-sidecar.json',
+      ],
+    })
+    for (const path of published.items.flatMap((item) => item.files)) {
+      expect(existsSync(join(out, version, path)), path).toBe(true)
+    }
+  })
+
+  it('专有目录里有不是文本的文件：失败，报错写明条目和文件，不写 catalog.json', async () => {
+    const binary = 'compositions/fixture-sidecar/assets/pixel.png'
+    await writeFile(
+      join(library, 'patches', binary),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00]),
+    )
+    const manifestPath = join(library, 'patches', 'manifest.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    manifest.files[binary] = { replaces: null }
+    await writeFile(manifestPath, JSON.stringify(manifest))
+
+    const { out, result } = await publishAssembled()
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain(`fixture-sidecar → ${binary}`)
+    expect(existsSync(join(out, 'catalog.json'))).toBe(false)
   })
 })

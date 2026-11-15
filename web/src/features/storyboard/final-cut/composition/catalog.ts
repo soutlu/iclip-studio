@@ -28,6 +28,11 @@ export interface CatalogItem {
   fonts: string[]
   /** 组件文件里出现的非 ASCII 字符，成片按它声明中文字体分片。 */
   chars: string
+  /**
+   * 把条目用进剪辑工程时要按原路径拷进工程的文本文件，路径相对版本目录。第一项是 `src`；
+   * `src` 所在目录只归这个条目时，后面按路径顺序跟上这个目录下的其余文件。
+   */
+  files: [string, ...string[]]
 }
 
 export interface CatalogFont {

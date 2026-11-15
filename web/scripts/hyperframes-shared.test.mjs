@@ -233,9 +233,14 @@ describe('publishedCatalog', () => {
     ],
     excluded: [],
   }
+  const read = async (path) => files[path]
+  const list = async (dir) =>
+    Object.keys(files)
+      .filter((path) => path.startsWith(`${dir}/`))
+      .sort()
 
   it('读了 --font-display 或 --font-body 的条目在最后加上字体项，自己写了的原样；字体去掉 faces，样式表路径按字体表写', async () => {
-    const published = await publishedCatalog(source, 'v1', async (path) => files[path])
+    const published = await publishedCatalog(source, 'v1', read, list)
     expect(published.version).toBe('v1')
     expect(Object.fromEntries(published.items.map((item) => [item.name, item.variables]))).toEqual({
       title: [source.items[0].variables[0], FONT_VARIABLE],
@@ -253,14 +258,17 @@ describe('publishedCatalog', () => {
   it('字体表里缺少某个字体的样式表：报错', async () => {
     const table = JSON.stringify({ slices, twins: {}, css: { Inter: css.Inter } })
     await expect(
-      publishedCatalog(source, 'v1', async (path) =>
-        path === FONT_TABLE ? table : (files[path] ?? ''),
+      publishedCatalog(
+        source,
+        'v1',
+        async (path) => (path === FONT_TABLE ? table : (files[path] ?? '')),
+        list,
       ),
     ).rejects.toThrow(SyncError)
   })
 
   it('带上组装时写下的中文分片表和各字体族的孪生描述，每个条目写上组件文件里的非 ASCII 字符', async () => {
-    const published = await publishedCatalog(source, 'v1', async (path) => files[path])
+    const published = await publishedCatalog(source, 'v1', read, list)
     expect(published.cjk).toEqual({ family: 'Noto Sans SC', slices })
     expect(Object.fromEntries(published.items.map((item) => [item.name, item.chars]))).toEqual({
       title: '标题',
@@ -272,13 +280,9 @@ describe('publishedCatalog', () => {
   })
 
   it('runtime 写组装结果里运行库与动画库的位置，源目录里写的 runtime 不采用', async () => {
-    expect((await publishedCatalog(source, 'v1', async (path) => files[path])).runtime).toEqual(
-      RUNTIME,
-    )
+    expect((await publishedCatalog(source, 'v1', read, list)).runtime).toEqual(RUNTIME)
     const declared = { ...source, runtime: { hyperframes: 'vendor/hyperframes/old.js' } }
-    expect((await publishedCatalog(declared, 'v1', async (path) => files[path])).runtime).toEqual(
-      RUNTIME,
-    )
+    expect((await publishedCatalog(declared, 'v1', read, list)).runtime).toEqual(RUNTIME)
     // vendor/ 里的运行库路径带引擎版本，换版本就换路径
     expect(RUNTIME.hyperframes).toContain(`/${HF_VERSION}/`)
   })
