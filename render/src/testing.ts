@@ -2,14 +2,14 @@ import catalogJson from '../../web/scripts/hyperframes-fixtures/catalog.json'
 import type {
   CatalogItem,
   ComponentCatalog,
-} from '../../web/src/features/storyboard/whole-film/composition/catalog'
+} from '../../web/src/features/storyboard/final-cut/composition/catalog'
 import {
   writeFilm,
   type AudioClip,
   type FilmClip,
   type HostClip,
   type VideoClip,
-} from '../../web/src/features/storyboard/whole-film/composition/film'
+} from '../../web/src/features/storyboard/final-cut/composition/film'
 import type { ExportWorker, RenderedFile, UploadTarget } from './jobs'
 import { createLogger, type Logger } from './log'
 

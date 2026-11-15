@@ -1,6 +1,6 @@
 import { lintHyperframeHtml } from '@hyperframes/core/lint'
 import { parse, type DefaultTreeAdapterTypes } from 'parse5'
-import type { ComponentCatalog } from '../../web/src/features/storyboard/whole-film/composition/catalog'
+import type { ComponentCatalog } from '../../web/src/features/storyboard/final-cut/composition/catalog'
 import {
   CLIP_SHAPES,
   clipFromAttributes,
@@ -17,7 +17,7 @@ import {
   type ClipKind,
   type Film,
   type FilmClip,
-} from '../../web/src/features/storyboard/whole-film/composition/film'
+} from '../../web/src/features/storyboard/final-cut/composition/film'
 
 type Node = DefaultTreeAdapterTypes.ChildNode
 type Element = DefaultTreeAdapterTypes.Element

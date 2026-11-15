@@ -71,29 +71,29 @@ class WholeFilmExportLatestOut(CamelModel):
     export: WholeFilmExportOut | None
 
 
-class WholeFilmPreviewOut(CamelModel):
-    """预览令牌。预览页的地址由前端拼成 ``<origin>/api/whole-film/preview/<token>/…``。"""
+class FinalCutPreviewOut(CamelModel):
+    """预览令牌。预览页的地址由前端拼成 ``<origin>/api/final-cut/preview/<token>/…``。"""
 
     origin: str
     token: str
     expires_at: datetime
 
 
-class WholeFilmPreviewHostOut(CamelModel):
+class FinalCutPreviewHostOut(CamelModel):
     """发令牌时请求的 ``Origin``：预览页只接受来自这个来源的消息。"""
 
     app_origin: str
 
 
-class WholeFilmFileIn(CamelModel):
+class FinalCutFileIn(CamelModel):
     """在成片工程里新建一个文件。``path`` 相对工程根，如 ``index.html``。"""
 
     path: Annotated[str, Field(min_length=1)]
     content: str
 
 
-class WholeFilmFileCreatedOut(CamelModel):
-    """新建的文件：``path`` 与请求里的相同（相对工程根），工作区里的路径是 ``whole-film/`` 加上它；
+class FinalCutFileCreatedOut(CamelModel):
+    """新建的文件：``path`` 与请求里的相同（相对工程根），工作区里的路径是 ``final-cut/`` 加上它；
     ``version`` 是工作区文件的版本号，之后用 ``PUT /conversations/{id}/workspace/file`` 修改。"""
 
     path: str
@@ -115,6 +115,10 @@ def whole_film_export_out(export: WholeFilmExport) -> WholeFilmExportOut:
 
 __all__ = [
     "MAX_FILM_CHARS",
+    "FinalCutFileCreatedOut",
+    "FinalCutFileIn",
+    "FinalCutPreviewHostOut",
+    "FinalCutPreviewOut",
     "WholeFilmDraftIn",
     "WholeFilmDraftOut",
     "WholeFilmDraftSavedOut",
@@ -123,9 +127,5 @@ __all__ = [
     "WholeFilmExportLatestOut",
     "WholeFilmExportOut",
     "WholeFilmExportStartedOut",
-    "WholeFilmFileCreatedOut",
-    "WholeFilmFileIn",
-    "WholeFilmPreviewHostOut",
-    "WholeFilmPreviewOut",
     "whole_film_export_out",
 ]

@@ -45,9 +45,9 @@ QWEN_API_KEY_ENV: Final = "QWEN_API_KEY"
 
 PRODUCT_CATALOG_DATABASE_URL_ENV: Final = "PRODUCT_CATALOG_DATABASE_URL"
 
-WHOLE_FILM_RENDER_URL_ENV: Final = "WHOLE_FILM_RENDER_URL"
+FINAL_CUT_RENDER_URL_ENV: Final = "FINAL_CUT_RENDER_URL"
 
-WHOLE_FILM_PREVIEW_ORIGIN_ENV: Final = "WHOLE_FILM_PREVIEW_ORIGIN"
+FINAL_CUT_PREVIEW_ORIGIN_ENV: Final = "FINAL_CUT_PREVIEW_ORIGIN"
 
 RUNTIME_INTERNAL_TOKEN_ENV: Final = "RUNTIME_INTERNAL_TOKEN"
 
@@ -125,20 +125,20 @@ class ProductCatalogEnv(EnvSettings):
     database_url: RequiredEnv = Field(validation_alias=PRODUCT_CATALOG_DATABASE_URL_ENV)
 
 
-class WholeFilmRenderEnv(EnvSettings):
-    url: RequiredEnv = Field(validation_alias=WHOLE_FILM_RENDER_URL_ENV)
+class FinalCutRenderEnv(EnvSettings):
+    url: RequiredEnv = Field(validation_alias=FINAL_CUT_RENDER_URL_ENV)
 
     @field_validator("url")
     @classmethod
     def _http_url(cls, value: str) -> str:
         parts = urlsplit(value)
         if parts.scheme not in {"http", "https"} or not parts.netloc:
-            raise ValueError(f"{WHOLE_FILM_RENDER_URL_ENV} 必须是 http:// 或 https:// 地址")
+            raise ValueError(f"{FINAL_CUT_RENDER_URL_ENV} 必须是 http:// 或 https:// 地址")
         return value.rstrip("/")
 
 
-class WholeFilmPreviewEnv(EnvSettings):
-    origin: RequiredEnv = Field(validation_alias=WHOLE_FILM_PREVIEW_ORIGIN_ENV)
+class FinalCutPreviewEnv(EnvSettings):
+    origin: RequiredEnv = Field(validation_alias=FINAL_CUT_PREVIEW_ORIGIN_ENV)
 
     @field_validator("origin")
     @classmethod
@@ -146,7 +146,7 @@ class WholeFilmPreviewEnv(EnvSettings):
         origin = value.removesuffix("/")
         if not is_http_origin(origin):
             raise ValueError(
-                f"{WHOLE_FILM_PREVIEW_ORIGIN_ENV} 必须是 http(s)://主机[:端口]，不带路径"
+                f"{FINAL_CUT_PREVIEW_ORIGIN_ENV} 必须是 http(s)://主机[:端口]，不带路径"
             )
         return origin
 
@@ -436,7 +436,7 @@ class ResolvedProductCatalog:
 
 
 @dataclass(frozen=True, slots=True)
-class ResolvedWholeFilmRender:
+class ResolvedFinalCutRender:
     url: str
 
 
@@ -458,8 +458,8 @@ class ResolvedSettings:
     shot_video: bool
     iclip_studio: ResolvedIclipStudio | None
     product_catalog: ResolvedProductCatalog | None
-    whole_film_render: ResolvedWholeFilmRender | None
-    whole_film_preview_origin: str | None
+    final_cut_render: ResolvedFinalCutRender | None
+    final_cut_preview_origin: str | None
     runtime_internal_token: str
     runtime_service: ResolvedRuntimeService
     log_level: str
@@ -588,10 +588,10 @@ def _resolve_product_catalog() -> ResolvedProductCatalog | None:
     return ResolvedProductCatalog(database_url=env.database_url)
 
 
-def _resolve_whole_film_render(
+def _resolve_final_cut_render(
     *, object_store_on: bool, media_generation_on: bool
-) -> ResolvedWholeFilmRender | None:
-    if not _switched_on(WHOLE_FILM_RENDER_URL_ENV):
+) -> ResolvedFinalCutRender | None:
+    if not _switched_on(FINAL_CUT_RENDER_URL_ENV):
         return None
     missing: list[str] = []
     if not object_store_on:
@@ -600,16 +600,16 @@ def _resolve_whole_film_render(
         missing.append(f"媒体生成（media_generation 段与 {VIDEO_SUBMIT_URL_ENV} 那一组）")
     if missing:
         raise RuntimeError(
-            f"配了 {WHOLE_FILM_RENDER_URL_ENV} 但没开{'与'.join(missing)}：每次导出是一条生成记录，"
+            f"配了 {FINAL_CUT_RENDER_URL_ENV} 但没开{'与'.join(missing)}：每次导出是一条生成记录，"
             f"由生成队列交给渲染服务，成片上传进桶。补上它们"
         )
-    return ResolvedWholeFilmRender(url=_from_env(WholeFilmRenderEnv).url)
+    return ResolvedFinalCutRender(url=_from_env(FinalCutRenderEnv).url)
 
 
-def _resolve_whole_film_preview_origin() -> str | None:
-    if not _switched_on(WHOLE_FILM_PREVIEW_ORIGIN_ENV):
+def _resolve_final_cut_preview_origin() -> str | None:
+    if not _switched_on(FINAL_CUT_PREVIEW_ORIGIN_ENV):
         return None
-    return _from_env(WholeFilmPreviewEnv).origin
+    return _from_env(FinalCutPreviewEnv).origin
 
 
 def _resolve_runtime_service() -> ResolvedRuntimeService:
@@ -652,11 +652,11 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
         shot_video=config.shot_video is not None,
         iclip_studio=_resolve_iclip_studio(config.iclip_studio),
         product_catalog=_resolve_product_catalog(),
-        whole_film_render=_resolve_whole_film_render(
+        final_cut_render=_resolve_final_cut_render(
             object_store_on=object_store is not None,
             media_generation_on=media_generation is not None,
         ),
-        whole_film_preview_origin=_resolve_whole_film_preview_origin(),
+        final_cut_preview_origin=_resolve_final_cut_preview_origin(),
         runtime_internal_token=_from_env(RuntimeInternalEnv).token,
         runtime_service=_resolve_runtime_service(),
         log_level=config.ops.log_level,

@@ -12,7 +12,7 @@ from iclip.domains.conversations.models import (
     WholeFilmExportError,
     WholeFilmExportStatus,
 )
-from iclip.domains.conversations.service import WholeFilmRenderUnavailable
+from iclip.domains.conversations.service import FinalCutRenderUnavailable
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_FAILED,
@@ -103,7 +103,7 @@ class WholeFilmExportAdapter:
         try:
             await self._generation.cancel_whole_film(job)
         except RenderUnavailable as exc:
-            raise WholeFilmRenderUnavailable(str(exc)) from exc
+            raise FinalCutRenderUnavailable(str(exc)) from exc
 
     async def _export_of(self, job: GenerationJob) -> WholeFilmExport:
         status: WholeFilmExportStatus = "queued"

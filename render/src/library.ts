@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ComponentCatalog } from '../../web/src/features/storyboard/whole-film/composition/catalog'
+import type { ComponentCatalog } from '../../web/src/features/storyboard/final-cut/composition/catalog'
 
 export interface ComponentLibrary {
   catalog: ComponentCatalog

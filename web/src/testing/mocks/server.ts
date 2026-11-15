@@ -1,6 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
-import { fixtureCatalog } from '../whole-film'
+import { fixtureCatalog } from '../final-cut'
 import { handlers } from './handlers'
 
 const componentCatalog = http.get('/hyperframes/catalog.json', () =>

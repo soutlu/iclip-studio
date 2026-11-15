@@ -9,4 +9,4 @@ public/lottie/
 public/hyperframes/
 # 外部合同与照抄的上游源码保持原文，见各目录 README。
 src/shared/transcript/vendor/
-src/features/storyboard/whole-film/vendor/hyperframes-studio/
+src/features/storyboard/final-cut/vendor/hyperframes-studio/

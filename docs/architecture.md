@@ -98,15 +98,15 @@
 
 - **按主机名划分预览域名（[app/preview_host.py](../server/src/iclip/app/preview_host.py)）**：最外层的中间件按 `Host` 区分应用域名与成片预览域名，预览域名上只放行成片预览地址，别的主机上预览地址一律 `404`，不依赖各路由自己声明（规则见 [conventions「成片工程与预览域名」](../contract/conventions.md#成片工程与预览域名)）。
 - **写请求的来源检查（`WriteOriginCheck`）**：紧挨在按主机名划分的那一层之内、CORS 与登录态解析之外，`POST`、`PUT`、`PATCH`、`DELETE` 请求的 `Origin` 不被放行时直接 `403`，不依赖各路由自己声明；判定规则与 `/ws` 握手共用 [identity/middleware.py](../server/src/iclip/domains/identity/middleware.py) 的 `origin_allowed`（规则见 [conventions §2](../contract/conventions.md#2-双主体认证-dual-principals)）。
-- **统一鉴权与代指定用户操作（`ActAs`）**：所有 HTTP 和 WebSocket 请求由 `PrincipalMiddleware` 统一解析登录 Cookie 或 API Key（`/internal/runtime/` 内部接口与凭令牌访问的 `/whole-film/preview/` 预览地址除外），接口所需权限通过 FastAPI `Security` 直接声明在路由上。对于支持 `users:act_as` 的 6 个写接口（建对话、建需求单、发消息、提交生成、参考视频试生成、确认上传），在拿到请求体后会调用 [identity/acting.py](../server/src/iclip/domains/identity/acting.py) 的 `ActAs` 完成归属用户切换。
+- **统一鉴权与代指定用户操作（`ActAs`）**：所有 HTTP 和 WebSocket 请求由 `PrincipalMiddleware` 统一解析登录 Cookie 或 API Key（`/internal/runtime/` 内部接口与凭令牌访问的 `/final-cut/preview/` 预览地址除外），接口所需权限通过 FastAPI `Security` 直接声明在路由上。对于支持 `users:act_as` 的 6 个写接口（建对话、建需求单、发消息、提交生成、参考视频试生成、确认上传），在拿到请求体后会调用 [identity/acting.py](../server/src/iclip/domains/identity/acting.py) 的 `ActAs` 完成归属用户切换。
 - **模块间解耦**：`domains/` 下的各个业务模块互不直接导入对方的内部实现，需要跨模块协作时（例如发消息时自动把外部图片附件转存为上传记录、查询分叉对话的祖先出片记录、做同款时复制制作文件），一律由模块声明接口协议（Protocol），再由 `app/` 组合根注入适配器将两边接起来。
 - **出网下载与地址检查**：组合根建好只连公网的出网下载器与客户端（lifespan 结束时关闭）。发消息时转存外部图片附件，以及制作页在插入、选用图片与按文件生图、出片时检查图片地址（[app/conversation_film.py](../server/src/iclip/app/conversation_film.py)），都经出网下载器发起。取帧拼板（[app/shot_media.py](../server/src/iclip/app/shot_media.py)）与参考视频拆解要下载的视频地址可能是模型给的：本系统 OSS 桶里的对象换成内网地址、经普通的共用 HTTP 客户端下载，其他地址经只连公网的客户端原样下载。拆解遇到这类外部地址时先下载到本地、再在本地文件上探时长，不把远程地址交给 ffprobe（它会自己跟随跳转）。
 
 ### 成片渲染服务
 
 - **保存时的检查（[app/whole_film_files.py](../server/src/iclip/app/whole_film_files.py)）**：成片文件的写法只有渲染服务读得懂。保存草稿与发起导出时，后端把文件交给渲染服务的 `POST /films/check`，拿回按写法重写后的文件、总时长和用到的素材（记录 id 与文件里写的地址），再自己核对这些素材是这段对话的素材片、地址和记录上的一致。文件会在打开它的人的页面里运行，所以这一步也是挡住脚本的安全边界。
-- **后端排队与调度（[generation/render.py](../server/src/iclip/domains/generation/render.py)）**：用户在前端点击导出成片后，对话模块把草稿的版本号和用到的素材存为一条 `whole_film` 生成任务，放入异步队列的专属通道（lane）。队列任务按版本号取草稿里的成片文件，通过内网 HTTP（`WHOLE_FILM_RENDER_URL`）把它连同「文件里的素材地址 → 下载地址」的对应表和预签名的 OSS 上传地址发给渲染服务，并轮询进度（总超时与上传签名有效期均为 6 小时）。
-- **独立 Node 渲染服务（[render/](../render/package.json)）**：运行在内网（无鉴权），构建时直接把前端的成片文件写法（`web/src/features/storyboard/whole-film/composition/`）打包进来，并挂载与前端相同的成片组件库目录（`RENDER_REGISTRY_ROOT`）。收到导出任务先再检查一遍文件，然后在内存队列中按先进先出顺序单任务执行：先把素材下载到本地临时目录、把文件里的素材地址换成本地路径 → 启动无头浏览器按 30 fps 渲染出 MP4（期间拦截除素材白名单域名以外的一切外网请求）→ 通过预签名地址上传到 OSS。如果渲染服务重启，内存中正在进行的任务会丢失，后端轮询发现后会将其标记为 `RENDER_LOST` 失败，提示用户重新导出。
+- **后端排队与调度（[generation/render.py](../server/src/iclip/domains/generation/render.py)）**：用户在前端点击导出成片后，对话模块把草稿的版本号和用到的素材存为一条 `whole_film` 生成任务，放入异步队列的专属通道（lane）。队列任务按版本号取草稿里的成片文件，通过内网 HTTP（`FINAL_CUT_RENDER_URL`）把它连同「文件里的素材地址 → 下载地址」的对应表和预签名的 OSS 上传地址发给渲染服务，并轮询进度（总超时与上传签名有效期均为 6 小时）。
+- **独立 Node 渲染服务（[render/](../render/package.json)）**：运行在内网（无鉴权），构建时直接把前端的成片文件写法（`web/src/features/storyboard/final-cut/composition/`）打包进来，并挂载与前端相同的成片组件库目录（`RENDER_REGISTRY_ROOT`）。收到导出任务先再检查一遍文件，然后在内存队列中按先进先出顺序单任务执行：先把素材下载到本地临时目录、把文件里的素材地址换成本地路径 → 启动无头浏览器按 30 fps 渲染出 MP4（期间拦截除素材白名单域名以外的一切外网请求）→ 通过预签名地址上传到 OSS。如果渲染服务重启，内存中正在进行的任务会丢失，后端轮询发现后会将其标记为 `RENDER_LOST` 失败，提示用户重新导出。
 
 ### 后端的持久化与迁移
 

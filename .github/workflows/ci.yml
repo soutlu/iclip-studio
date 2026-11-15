@@ -92,7 +92,7 @@ jobs:
                 esac
                 # 渲染服务打包 web 的成片文件写法，测试用 web 组装的测试组件库，它们变了也要查渲染服务。
                 case "$path" in
-                  web/src/features/storyboard/whole-film/composition/*|web/scripts/hyperframes-*)
+                  web/src/features/storyboard/final-cut/composition/*|web/scripts/hyperframes-*)
                     render=true ;;
                 esac
                 printf '%-6s %s\n' "$scope" "$path"
