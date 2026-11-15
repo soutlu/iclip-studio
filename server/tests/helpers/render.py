@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -8,40 +9,42 @@ import httpx
 
 @dataclass
 class StubRender:
-    """渲染服务的替身：只管查进度和取消（发起导出暂停着，后端不向它提交）。``requests`` 记下收到的
-    每个请求的方法和路径。"""
+    """渲染服务的替身。``submitted`` 记下收到的每次导出的请求体；``reject`` 给了时导出一律答 400。"""
 
     exports: dict[str, dict[str, Any]] = field(default_factory=dict[str, dict[str, Any]])
+    submitted: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
     cancelled: list[str] = field(default_factory=list[str])
-    requests: list[tuple[str, str]] = field(default_factory=list[tuple[str, str]])
+    reject: tuple[str, str] | None = None
     down: bool = False
     server_error: bool = False
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self._handle)
 
-    def accept(self, export_id: str, conversation_id: str) -> None:
-        """当作这次导出早先已经交到了渲染服务、正在排队。"""
-
-        self.exports[export_id] = {
-            "id": export_id,
-            "conversationId": conversation_id,
-            "status": "queued",
-            "progress": 0.0,
-            "queuePosition": len(self.exports),
-            "error": None,
-        }
-
     def advance(self, export_id: str, **state: Any) -> None:
         self.exports[export_id].update(state)
 
     def _handle(self, request: httpx.Request) -> httpx.Response:
-        self.requests.append((request.method, request.url.path))
         if self.down:
             raise httpx.ConnectError("Connection refused", request=request)
         if self.server_error:
             return httpx.Response(500, text="boom")
         path = request.url.path
+        if request.method == "POST" and path == "/exports":
+            payload = json.loads(request.content)
+            if self.reject is not None:
+                code, message = self.reject
+                return httpx.Response(400, json={"code": code, "message": message})
+            self.submitted.append(payload)
+            self.exports[payload["id"]] = {
+                "id": payload["id"],
+                "conversationId": payload["conversationId"],
+                "status": "queued",
+                "progress": 0.0,
+                "queuePosition": len(self.exports),
+                "error": None,
+            }
+            return httpx.Response(202, json={"id": payload["id"]})
         if not path.startswith("/exports/"):
             return httpx.Response(404, json={"code": "not-found", "message": "该接口不存在"})
         export_id = path.removeprefix("/exports/")

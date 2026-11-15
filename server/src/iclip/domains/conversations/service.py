@@ -12,6 +12,7 @@ import structlog
 from iclip_video.film_view import FilmImagePrompt, FilmTextEdit, FilmView
 
 from iclip.common.errors import NotFound, PermissionDenied, ValidationFailed
+from iclip.common.final_cut import MAIN_FILE, PROJECT_DIR
 from iclip.domains.conversations.models import (
     IDLE_ACTIVITY,
     AgentPreview,
@@ -237,6 +238,12 @@ class FinalCutRenderUnavailable(Exception):
 
 
 class WholeFilmExports(Protocol):
+    async def start(
+        self, principal: Principal, *, conversation_id: uuid.UUID, main_file: str
+    ) -> uuid.UUID:
+        """按 final-cut 主文件记一条导出排队，答复导出 id。"""
+        ...
+
     async def latest(
         self, *, conversation_id: uuid.UUID, owner_user_id: uuid.UUID
     ) -> WholeFilmExport | None: ...
@@ -247,7 +254,7 @@ class WholeFilmExports(Protocol):
 
 
 _EXPORTS_OFF = "成片导出没有开通"
-_EXPORT_PAUSED = "导出功能正在调整，无法导出；请稍后再试"
+_FINAL_CUT_EMPTY = "final-cut 暂无内容，无法导出"
 
 
 class WorkspaceDocumentValidator(Protocol):
@@ -568,11 +575,21 @@ class ConversationService:
             run_version=run_version,
         )
 
-    async def export_whole_film(self, principal: Principal, conversation_id: uuid.UUID) -> None:
-        """发起导出暂停着：看得见、能改的对话一律 422，看不见 404，看得见不能改 403。"""
+    async def export_whole_film(
+        self, principal: Principal, conversation_id: uuid.UUID
+    ) -> uuid.UUID:
+        """按 final-cut 主文件记一条导出排队，答复导出 id。还没有主文件抛 ``ValidationFailed``。"""
 
-        await self._workspace_writable(principal, conversation_id)
-        raise ValidationFailed(_EXPORT_PAUSED)
+        conversation = await self._workspace_writable(principal, conversation_id)
+        exports = self._require_exports()
+        main = await self._read_derived_file(
+            conversation.owner_user_id, conversation.id, f"{PROJECT_DIR}/{MAIN_FILE}"
+        )
+        if main is None:
+            raise ValidationFailed(_FINAL_CUT_EMPTY)
+        return await exports.start(
+            principal, conversation_id=conversation.id, main_file=main.content
+        )
 
     async def latest_whole_film_export(
         self, principal: Principal, conversation_id: uuid.UUID

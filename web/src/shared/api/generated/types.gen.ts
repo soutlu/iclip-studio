@@ -7509,6 +7509,18 @@ export type WholeFilmExportOut = {
 }
 
 /**
+ * WholeFilmExportStartedOut
+ *
+ * 已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id。
+ */
+export type WholeFilmExportStartedOut = {
+  /**
+   * Exportid
+   */
+  exportId: string
+}
+
+/**
  * WholeFilmVersionOut
  *
  * 成片卡里的一版：这段对话的一次已完成导出。
@@ -9802,17 +9814,23 @@ export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostData =
 
 export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostErrors = {
   /**
-   * 发起导出暂停着
+   * Validation Error
    */
-  422: unknown
+  422: HttpValidationError
 }
+
+export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostError =
+  ExportWholeFilmConversationsConversationIdWholeFilmExportsPostErrors[keyof ExportWholeFilmConversationsConversationIdWholeFilmExportsPostErrors]
 
 export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponses = {
   /**
    * Successful Response
    */
-  200: unknown
+  202: WholeFilmExportStartedOut
 }
+
+export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponse =
+  ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponses[keyof ExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponses]
 
 export type LatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetData = {
   body?: never

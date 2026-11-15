@@ -3732,6 +3732,15 @@ export const zWholeFilmExportLatestOut = z.object({
 })
 
 /**
+ * WholeFilmExportStartedOut
+ *
+ * 已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id。
+ */
+export const zWholeFilmExportStartedOut = z.object({
+  exportId: z.uuid(),
+})
+
+/**
  * WholeFilmVersionOut
  *
  * 成片卡里的一版：这段对话的一次已完成导出。
@@ -4462,6 +4471,12 @@ export const zRegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResp
 export const zExportWholeFilmConversationsConversationIdWholeFilmExportsPostPath = z.object({
   conversation_id: z.uuid(),
 })
+
+/**
+ * Successful Response
+ */
+export const zExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponse =
+  zWholeFilmExportStartedOut
 
 export const zLatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetPath =
   z.object({

@@ -299,6 +299,20 @@ class SqlGenerationRepository:
             row = (await conn.execute(stmt)).mappings().one_or_none()
         return None if row is None else _job_from_row(row)
 
+    async def earliest_by_outputs(self, urls: Collection[str]) -> Mapping[str, GenerationJob]:
+        if not urls:
+            return {}
+        stmt = (
+            select(generation_jobs_table)
+            .where(_OUTPUT_URL.in_(list(urls)), _JOBS.status == STATUS_COMPLETED)
+            .distinct(_OUTPUT_URL)
+            .order_by(_OUTPUT_URL, _JOBS.created_at, _JOBS.id)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).mappings().all()
+        jobs = (_job_from_row(row) for row in rows)
+        return {job.output.url: job for job in jobs if job.output.url is not None}
+
     async def find_video_upload_by_md5(self, content_md5: str) -> GenerationJob | None:
         stmt = (
             select(generation_jobs_table)

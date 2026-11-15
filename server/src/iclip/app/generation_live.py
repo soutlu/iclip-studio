@@ -48,6 +48,9 @@ class AnnouncingGenerationRepository:
             operation=operation,
         )
 
+    async def earliest_by_outputs(self, urls: Collection[str]) -> Mapping[str, GenerationJob]:
+        return await self._inner.earliest_by_outputs(urls)
+
     async def find_video_upload_by_md5(self, content_md5: str) -> GenerationJob | None:
         return await self._inner.find_video_upload_by_md5(content_md5)
 

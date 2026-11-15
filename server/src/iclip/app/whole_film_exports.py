@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from typing import Final
 
 import structlog
 
+from iclip.app.runtime_workspace import WorkspaceFiles
 from iclip.common.errors import NotFound
+from iclip.common.final_cut import PROJECT_DIR, media_addresses
 from iclip.domains.conversations.models import (
     WholeFilmExport,
     WholeFilmExportError,
@@ -21,18 +24,56 @@ from iclip.domains.generation.models import (
 from iclip.domains.generation.render import (
     CANCELLED,
     RENDER_STAGES,
+    ProjectFile,
+    ProjectUnavailable,
+    ReadProject,
     RenderClient,
     RenderExport,
     RenderStage,
     RenderUnavailable,
 )
 from iclip.domains.generation.repository import GenerationRepository
-from iclip.domains.generation.schemas import KIND_WHOLE_FILM
+from iclip.domains.generation.schemas import (
+    KIND_WHOLE_FILM,
+    WholeFilmAudioSource,
+    WholeFilmRequest,
+    WholeFilmVideoSource,
+)
 from iclip.domains.generation.service import GenerationService
+from iclip.domains.identity.public import Principal
+from iclip.platform.runtime_api.client import RuntimeUnavailable
+from iclip.platform.runtime_api.file_store.namespace import namespace_for
 
 _logger = structlog.stdlib.get_logger(__name__)
 
 _NOT_THIS_EXPORT: Final = "没有这次导出"
+
+_PROJECT_PREFIX: Final = f"{PROJECT_DIR}/"
+
+
+def final_cut_reader(store: WorkspaceFiles) -> ReadProject:
+    """交给渲染服务时读工程：列出工作区 ``final-cut/`` 下的全部文件逐个读出，路径去掉这个前缀。"""
+
+    async def read_project(owner: uuid.UUID, conversation_id: uuid.UUID) -> Sequence[ProjectFile]:
+        namespace = namespace_for(owner, str(conversation_id))
+        files: list[ProjectFile] = []
+        try:
+            for entry in await store.entries(namespace, prefix=PROJECT_DIR):
+                if not entry.path.startswith(_PROJECT_PREFIX):
+                    continue
+                stored = await store.read(namespace, entry.path)
+                # 列出之后又删掉的文件不算在这一刻的工程里
+                if stored is not None:
+                    files.append(
+                        ProjectFile(
+                            path=entry.path.removeprefix(_PROJECT_PREFIX), content=stored.content
+                        )
+                    )
+        except RuntimeUnavailable as exc:
+            raise ProjectUnavailable("读不到对话工作区里的 final-cut，稍后再试") from exc
+        return files
+
+    return read_project
 
 
 class WholeFilmExportAdapter:
@@ -46,6 +87,32 @@ class WholeFilmExportAdapter:
         self._generation = generation
         self._generations = generations
         self._render = render
+
+    async def start(
+        self, principal: Principal, *, conversation_id: uuid.UUID, main_file: str
+    ) -> uuid.UUID:
+        """记一条成片记录排队：主文件里的素材按输出地址对上生成记录的记进去，对不上的不记。"""
+
+        addresses = media_addresses(main_file)
+        records = await self._generations.earliest_by_outputs(
+            [address.url for address in addresses]
+        )
+        videos: list[WholeFilmVideoSource] = []
+        audios: list[WholeFilmAudioSource] = []
+        for address in addresses:
+            record = records.get(address.url)
+            if record is None:
+                continue
+            if address.kind == "video":
+                videos.append(WholeFilmVideoSource(job_id=record.id, url=address.url))
+            else:
+                audios.append(WholeFilmAudioSource(job_id=record.id, url=address.url))
+        job = await self._generation.submit_whole_film(
+            principal,
+            conversation_id=conversation_id,
+            request=WholeFilmRequest(videos=videos, audios=audios),
+        )
+        return job.id
 
     async def latest(
         self, *, conversation_id: uuid.UUID, owner_user_id: uuid.UUID
@@ -121,4 +188,4 @@ def _recorded_stage(provider_status: str | None) -> RenderStage:
     return "queued"
 
 
-__all__ = ["WholeFilmExportAdapter"]
+__all__ = ["WholeFilmExportAdapter", "final_cut_reader"]

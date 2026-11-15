@@ -53,7 +53,7 @@ const runtimeScripts = (player: Locator) =>
     RUNTIME_FILE,
   )
 
-test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销，导出暂停着，切走再切回 final-cut 还在', async ({
+test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销、导出下载，切走再切回 final-cut 还在', async ({
   page,
 }) => {
   test.setTimeout(60_000)
@@ -71,11 +71,12 @@ test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销，导出
   const transport = editor.getByRole('group', { name: '播放控制' })
   await expect(editor.getByText('final-cut 暂无内容，加入内容后可在此预览')).toBeVisible()
   // 「导出」在剪辑工具条的最后；编辑器是工作台的一个页签，排在「文件」前面，没有标题栏和关闭按钮
-  await expect(toolbar.getByRole('button', { name: '导出', exact: true })).toHaveAttribute(
-    'aria-disabled',
-    'true',
-  )
+  const exportButton = toolbar.getByRole('button', { name: '导出', exact: true })
   await expect(toolbar.getByRole('button').last()).toHaveAccessibleName('导出')
+  // final-cut 是空的：「导出」置灰，点了只说明原因（aria-disabled 的按钮 Playwright 认作不可点，照样点一下）
+  await expect(exportButton).toHaveAttribute('aria-disabled', 'true')
+  await exportButton.click({ force: true })
+  await expect(page.getByRole('tooltip')).toHaveText('final-cut 暂无内容，无法导出；请先加入内容')
   await expect(panel.getByRole('tablist', { name: '面板内容' }).getByRole('tab')).toHaveText([
     '分镜',
     'final-cut',
@@ -200,23 +201,33 @@ test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销，导出
   await toolbar.getByRole('button', { name: '重做' }).click()
   await redone
 
-  // 发起导出暂停着：「导出」置灰，点了只说明原因，不发起导出
-  const exportRequests: string[] = []
-  page.on('request', (request) => {
-    if (request.url().includes('/whole-film/exports') && request.method() === 'POST')
-      exportRequests.push(request.url())
-  })
-  const exportButton = toolbar.getByRole('button', { name: '导出', exact: true })
-  await expect(exportButton).toHaveAttribute('aria-disabled', 'true')
-  // aria-disabled 的按钮 Playwright 认作不可点，照样点一下看说明
-  await exportButton.click({ force: true })
-  await expect(page.getByRole('tooltip')).toHaveText('导出功能正在调整，无法导出；请稍后再试')
-  expect(exportRequests).toEqual([])
+  const exported = page.waitForResponse(
+    (response) => response.url().includes('/whole-film/exports') && response.status() === 202,
+  )
+  await exportButton.click()
+  const { exportId } = (await (await exported).json()) as { exportId: string }
+  const tiers = page.waitForResponse(
+    (response) => response.url().includes(`/generations/${exportId}/enhancements`),
+    { timeout: 20_000 },
+  )
+  await expect(editor.getByRole('status').filter({ hasText: /排队中|正在渲染/ })).toBeVisible()
+  const download = editor.getByRole('button', { name: '下载成片' })
+  await expect(download).toBeVisible({ timeout: 15_000 })
+  await tiers
+  const tracked = page.waitForRequest(
+    (request) => request.url().includes('/tracking/events') && request.method() === 'POST',
+  )
+  const fileSaved = page.waitForEvent('download')
+  await download.click()
+  await page.getByRole('menuitem', { name: '下载成片', exact: true }).click()
+  expect((await tracked).postDataJSON()).toMatchObject({ name: 'video.downloaded' })
+  expect((await fileSaved).suggestedFilename()).toMatch(/\.mp4$/)
 
-  // 切到「分镜」页签再切回来：编辑器重新打开，工程还在
+  // 切到「分镜」页签再切回来：编辑器重新打开，工程和导出都还在
   await panel.getByRole('tab', { name: '分镜' }).click()
   await expect(editor).toBeHidden()
   const reopened = await openFinalCut(panel)
+  await expect(reopened.getByRole('button', { name: '下载成片' })).toBeVisible()
   const reopenedToolbar = reopened.getByRole('toolbar', { name: '剪辑工具' })
   await expect(
     reopened.getByRole('group', { name: '播放控制' }).locator('.wf-clock span'),

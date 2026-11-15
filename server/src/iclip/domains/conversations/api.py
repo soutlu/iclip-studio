@@ -68,6 +68,7 @@ from iclip.domains.conversations.whole_film_schemas import (
     FinalCutPreviewHostOut,
     FinalCutPreviewOut,
     WholeFilmExportLatestOut,
+    WholeFilmExportStartedOut,
     whole_film_export_out,
 )
 from iclip.domains.identity.public import (
@@ -470,17 +471,19 @@ def create_conversations_router(
 
     @router.post(
         "/{conversation_id}/whole-film/exports",
-        response_model=None,
-        responses={422: {"description": "发起导出暂停着"}},
+        response_model=WholeFilmExportStartedOut,
+        status_code=202,
     )
     async def export_whole_film(
         conversation_id: uuid.UUID,
         principal: Annotated[Principal, require_permission("agent:run")],
-    ) -> None:
-        """发起导出暂停着：看得见、能改的对话一律 422 并说明原因；看不见 404，看得见不能改 403。
-        查最近一次导出、取消导出照常。"""
+    ) -> WholeFilmExportStartedOut:
+        """按 final-cut 导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；
+        还没有主文件 ``final-cut/index.html``、没开通都是 422。主文件里的素材按输出地址对上生成记录的
+        记进导出记录，对不上的不记、也不拒绝。导出的是交给渲染服务那一刻的工程。"""
 
-        await service.export_whole_film(principal, conversation_id)
+        export_id = await service.export_whole_film(principal, conversation_id)
+        return WholeFilmExportStartedOut(export_id=export_id)
 
     @router.get(
         "/{conversation_id}/whole-film/exports/latest", response_model=WholeFilmExportLatestOut

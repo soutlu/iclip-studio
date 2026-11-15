@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
 import type { WholeFilmExportOut } from '@/shared/api/generated/types.gen'
 import { toast } from '@/shared/ui/toast'
 import {
   cancelWholeFilmExport,
   readLatestWholeFilmExport,
+  startWholeFilmExport,
   wholeFilmQueryKeys,
 } from './final-cut.api'
 
@@ -20,11 +22,12 @@ const FAILURE_TEXT: Record<string, string> = {
   RENDER_LOST: '渲染服务已重启，请重新导出',
   PROVIDER_TIMEOUT: '导出等待超时，请重新导出',
   RENDER_UNAVAILABLE: '渲染服务无法连接，请稍后重新导出',
-  FILM_CHANGED: 'final-cut 在排队期间已被修改，请重新导出',
+  'lint-failed': 'final-cut 未通过导出前检查，无法导出',
 }
 
 export type ExportView =
   | { kind: 'idle' }
+  | { kind: 'starting' }
   | { kind: 'queued'; ahead: number | null }
   | { kind: 'rendering'; progress: number | null }
   | { kind: 'uploading' }
@@ -59,8 +62,13 @@ const viewOf = (state: WholeFilmExportOut): ExportView => {
   }
 }
 
-/** 这段对话最近一次导出的样子，和取消它。发起导出暂停着，这里不发起。 */
-export function useWholeFilmExport(conversationId: string) {
+/**
+ * 这段对话最近一次导出的样子，发起和取消导出。发起前先等 `settle` 把没存的改动存完，它答 false
+ * （没存成）就不发起。
+ */
+export function useWholeFilmExport(conversationId: string, settle: () => Promise<boolean>) {
+  const [local, setLocal] = useState<ExportView | null>(null)
+
   const latest = useQuery({
     queryKey: wholeFilmQueryKeys.latestExport(conversationId),
     queryFn: ({ signal }) => readLatestWholeFilmExport(conversationId, signal),
@@ -75,11 +83,28 @@ export function useWholeFilmExport(conversationId: string) {
   })
 
   const current = latest.data ?? null
-  const view: ExportView = latest.isError
-    ? { kind: 'failed', message: errorMessageOf(latest.error, '读取导出进度失败') }
-    : current === null
-      ? { kind: 'idle' }
-      : viewOf(current)
+  const view: ExportView =
+    local ??
+    (latest.isError
+      ? { kind: 'failed', message: errorMessageOf(latest.error, '读取导出进度失败') }
+      : current === null
+        ? { kind: 'idle' }
+        : viewOf(current))
+
+  const start = async () => {
+    setLocal({ kind: 'starting' })
+    if (!(await settle())) {
+      setLocal(null)
+      return
+    }
+    try {
+      await startWholeFilmExport(conversationId)
+      await latest.refetch()
+      setLocal(null)
+    } catch (error) {
+      setLocal({ kind: 'failed', message: errorMessageOf(error, '成片导出失败') })
+    }
+  }
 
   const cancel = async () => {
     if (current === null) return
@@ -91,5 +116,5 @@ export function useWholeFilmExport(conversationId: string) {
     }
   }
 
-  return { view, cancel }
+  return { view, start, cancel }
 }

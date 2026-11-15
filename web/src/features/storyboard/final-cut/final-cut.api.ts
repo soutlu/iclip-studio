@@ -10,6 +10,7 @@ import {
   zFinalCutPreviewOut,
   zGenerationEnvelope,
   zLatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetResponse as zLatestExport,
+  zWholeFilmExportStartedOut,
 } from '@/shared/api/generated/zod.gen'
 import {
   generationsRefetchInterval,
@@ -182,6 +183,13 @@ export const projectFilesBase = (origin: string, token: string): string =>
 
 const exportsPath = (conversationId: string) =>
   `${conversationPath(conversationId)}/whole-film/exports`
+
+/** 按工作区里现在的 final-cut 发起一次导出，答复导出 id。 */
+export const startWholeFilmExport = (conversationId: string) =>
+  apiFetch(exportsPath(conversationId), zWholeFilmExportStartedOut, {
+    fallbackErrorMessage: '成片导出失败',
+    method: 'POST',
+  })
 
 export const readLatestWholeFilmExport = async (conversationId: string, signal: AbortSignal) =>
   (

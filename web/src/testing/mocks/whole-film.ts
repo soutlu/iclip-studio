@@ -73,6 +73,15 @@ export const wholeFilmHandlers = [
     })
   }),
 
+  http.post('*/api/conversations/:conversationId/whole-film/exports', ({ params }) => {
+    const conversationId = String(params['conversationId'])
+    if (mockProjectMain(conversationId) === undefined)
+      return HttpResponse.json({ detail: 'final-cut 暂无内容，无法导出' }, { status: 422 })
+    const exportId = crypto.randomUUID()
+    latestExports.set(conversationId, { id: exportId, reads: 0, cancelled: false })
+    return HttpResponse.json({ exportId }, { status: 202 })
+  }),
+
   http.get('*/api/conversations/:conversationId/whole-film/exports/latest', ({ params }) => {
     const found = latestExports.get(String(params['conversationId']))
     return HttpResponse.json({ export: found === undefined ? null : exportOut(found) })

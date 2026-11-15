@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
@@ -19,13 +21,20 @@ from iclip.domains.generation.models import (
     GenerationJob,
 )
 from iclip.domains.generation.queue import GenerationQueue, StillRunning
-from iclip.domains.generation.render import EXPORT_PAUSED, EXPORT_PAUSED_MESSAGE, PROVIDER_NAME
-from iclip.domains.generation.schemas import KIND_VIDEO, OPERATION_ENHANCE, WholeFilmRequest
+from iclip.domains.generation.render import PROVIDER_NAME
+from iclip.domains.generation.schemas import (
+    KIND_VIDEO,
+    KIND_WHOLE_FILM,
+    OPERATION_ENHANCE,
+    OPERATION_RENDER,
+    WholeFilmRequest,
+    WholeFilmVideoSource,
+)
 from iclip.domains.generation.video import PROVIDER_NAME as VIDEO_PROVIDER_NAME
 from tests.helpers.app import make_client
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
-from tests.helpers.fork_lineage import complete, make_user, open_conversation
-from tests.helpers.generation import make_enhancement, make_job
+from tests.helpers.fork_lineage import complete, finished, make_user, open_conversation
+from tests.helpers.generation import make_enhancement, make_job, video_request
 from tests.helpers.render import StubRender
 from tests.helpers.whole_film import build_whole_film_app
 
@@ -33,7 +42,13 @@ URL = "/conversations"
 
 PUBLIC = "https://cdn.example.test"
 
-PAUSED = {"detail": "导出功能正在调整，无法导出；请稍后再试"}
+INTERNAL_HOST = "iclip-test.oss-ap-southeast-1-internal.aliyuncs.com"
+
+OWN_BUCKET_URL = f"{PUBLIC}/iclip/agent/videos/composed.mp4"
+
+UNKNOWN_MUSIC_URL = "https://example.test/somewhere/music.wav"
+
+COMPONENT = '<div data-composition-id="title-card"><h1>标题</h1></div>'
 
 
 @pytest.fixture
@@ -75,46 +90,50 @@ async def new_conversation(http: httpx.AsyncClient) -> uuid.UUID:
     return uuid.UUID(created.json()["conversation"]["id"])
 
 
+async def put_project_file(
+    http: httpx.AsyncClient, conversation_id: uuid.UUID, path: str, content: str
+) -> None:
+    created = await http.post(
+        f"{URL}/{conversation_id}/final-cut/files", json={"path": path, "content": content}
+    )
+    assert created.status_code == 201, created.text
+
+
+def main_file(*, videos: tuple[str, ...] = (), audios: tuple[str, ...] = ()) -> str:
+    clips = [
+        f'<video id="v{index}" class="clip" src="{url}" data-start="{index * 2}"'
+        ' data-duration="2" data-track-index="0" muted playsinline></video>'
+        for index, url in enumerate(videos)
+    ] + [
+        f'<audio id="a{index}" class="clip" src="{url}" data-start="0" data-duration="2"'
+        ' data-track-index="1"></audio>'
+        for index, url in enumerate(audios)
+    ]
+    return (
+        '<!doctype html><html><head><meta charset="utf-8"></head><body>'
+        '<div id="film" data-composition-id="film" data-width="1080" data-height="1920">'
+        + "".join(clips)
+        + "</div></body></html>"
+    )
+
+
 async def latest(http: httpx.AsyncClient, conversation_id: uuid.UUID) -> dict[str, Any] | None:
     found = await http.get(exports_url(conversation_id, "latest"))
     assert found.status_code == 200, found.text
     return found.json()["export"]
 
 
-def _whole_film(owner: uuid.UUID, conversation: uuid.UUID) -> GenerationJob:
-    return make_job(
-        WholeFilmRequest(revision=1, videos=[], audios=[]),
-        owner_user_id=owner,
-        conversation_id=conversation,
-        provider=PROVIDER_NAME,
-    )
-
-
-async def queued_export(
+async def started_export(
     http: httpx.AsyncClient, generations: SqlGenerationRepository, owner: uuid.UUID
 ) -> tuple[uuid.UUID, str]:
-    """发起导出暂停之前排进队列、还没交给渲染服务的一次导出。"""
-
     conversation = await new_conversation(http)
-    job = await generations.create(_whole_film(owner, conversation))
-    return conversation, str(job.id)
-
-
-async def handed_over_export(
-    http: httpx.AsyncClient,
-    generations: SqlGenerationRepository,
-    render: StubRender,
-    owner: uuid.UUID,
-) -> tuple[uuid.UUID, str]:
-    """发起导出暂停之前已经交给渲染服务、正在排队的一次导出。"""
-
-    conversation, export_id = await queued_export(http, generations, owner)
-    await generations.mark_submitting(uuid.UUID(export_id))
-    await generations.mark_submitted(
-        uuid.UUID(export_id), provider_task_id=export_id, provider_status="queued"
+    take = await finished(generations, owner, conversation, f"take-{uuid.uuid4()}")
+    await put_project_file(
+        http, conversation, "index.html", main_file(videos=(take.output.url or "",))
     )
-    render.accept(export_id, str(conversation))
-    return conversation, export_id
+    started = await http.post(exports_url(conversation))
+    assert started.status_code == 202, started.text
+    return conversation, started.json()["exportId"]
 
 
 async def record(generations: SqlGenerationRepository, export_id: str) -> GenerationJob:
@@ -132,21 +151,7 @@ async def submitted_hours_ago(engine: AsyncEngine, job_id: uuid.UUID, hours: int
         )
 
 
-async def test_starting_an_export_is_paused_and_leaves_no_record(
-    client: httpx.AsyncClient, pg_url: str, render: StubRender
-) -> None:
-    await login_as_editor(client, pg_url)
-    mine = await new_conversation(client)
-
-    for body in (None, {"revision": 1}):
-        started = await client.post(exports_url(mine), json=body)
-        assert (started.status_code, started.json()) == (422, PAUSED)
-
-    assert await latest(client, mine) is None
-    assert render.requests == [], "不找渲染服务"
-
-
-async def test_a_record_queued_before_the_pause_fails_without_reaching_the_render_service(
+async def test_an_export_hands_the_project_as_it_is_to_the_render_service_and_is_kept_public(
     client: httpx.AsyncClient,
     pg_url: str,
     generations: SqlGenerationRepository,
@@ -154,34 +159,67 @@ async def test_a_record_queued_before_the_pause_fails_without_reaching_the_rende
     queue: GenerationQueue,
 ) -> None:
     owner = uuid.UUID(await login_as_editor(client, pg_url))
-    conversation, export_id = await queued_export(client, generations, owner)
+    mine = await new_conversation(client)
+    take = await complete(
+        generations,
+        await generations.create(
+            make_job(video_request(), owner_user_id=owner, conversation_id=mine)
+        ),
+        OWN_BUCKET_URL,
+    )
+    film = main_file(videos=(OWN_BUCKET_URL,), audios=(UNKNOWN_MUSIC_URL,))
+    await put_project_file(client, mine, "index.html", film)
+    await put_project_file(client, mine, "compositions/title-card.html", COMPONENT)
+    marked = await client.put(f"{URL}/{mine}/completion", json={"completed": True})
+    assert marked.status_code == 200, marked.text
+
+    started = await client.post(exports_url(mine))
+
+    assert started.status_code == 202, started.text
+    export_id = started.json()["exportId"]
+    assert started.json() == {"exportId": export_id}
+    pending = await record(generations, export_id)
+    assert (pending.kind, pending.operation, pending.provider) == (
+        KIND_WHOLE_FILM,
+        OPERATION_RENDER,
+        PROVIDER_NAME,
+    )
+    assert (pending.owner_user_id, pending.conversation_id) == (owner, mine)
+    assert pending.request == WholeFilmRequest(
+        videos=[WholeFilmVideoSource(job_id=take.id, url=OWN_BUCKET_URL)], audios=[]
+    ), "只记对上了生成记录的素材，对不上的不记"
+    conversation = (await client.get(f"{URL}/{mine}")).json()["conversation"]
+    assert conversation["completedAt"] is not None, "导出不是动手创作，不抹收尾标记"
+    assert await latest(client, mine) == {
+        "id": export_id,
+        "status": "queued",
+        "progress": None,
+        "queuePosition": None,
+        "error": None,
+        "downloadUrl": None,
+    }
+    assert render.submitted == [], "受理时不调渲染服务"
 
     await queue.run_submit(export_id)
 
-    failed = await record(generations, export_id)
-    assert (failed.status, failed.error_code, failed.error_message) == (
-        STATUS_FAILED,
-        EXPORT_PAUSED,
-        EXPORT_PAUSED_MESSAGE,
-    )
-    assert render.requests == []
-    shown = await latest(client, conversation)
-    assert shown is not None
-    assert (shown["status"], shown["error"]) == (
-        "failed",
-        {"code": EXPORT_PAUSED, "message": EXPORT_PAUSED_MESSAGE},
-    )
-
-
-async def test_an_export_handed_over_before_the_pause_keeps_reporting_until_it_is_done(
-    client: httpx.AsyncClient,
-    pg_url: str,
-    generations: SqlGenerationRepository,
-    render: StubRender,
-    queue: GenerationQueue,
-) -> None:
-    owner = uuid.UUID(await login_as_editor(client, pg_url))
-    mine, export_id = await handed_over_export(client, generations, render, owner)
+    (payload,) = render.submitted
+    key = f"iclip/agent/whole-films/{export_id}.mp4"
+    assert (payload["id"], payload["conversationId"]) == (export_id, str(mine))
+    assert sorted(payload["files"], key=lambda file: file["path"]) == [
+        {"path": "compositions/title-card.html", "content": COMPONENT},
+        {"path": "index.html", "content": film},
+    ], "工程里的全部文件，路径相对工程根，内容原样"
+    assert payload["media"] == {
+        OWN_BUCKET_URL: {"url": f"https://{INTERNAL_HOST}/iclip/agent/videos/composed.mp4"},
+        UNKNOWN_MUSIC_URL: {"url": UNKNOWN_MUSIC_URL},
+    }, "主文件里每个素材地址都有下载地址：本桶对象换成内网地址，别处的原样"
+    upload = urlsplit(payload["upload"]["url"])
+    assert (upload.netloc, upload.path) == (INTERNAL_HOST, f"/{key}")
+    expires = datetime.fromtimestamp(int(parse_qs(upload.query)["Expires"][0]), UTC)
+    assert timedelta(hours=5, minutes=59) < expires - datetime.now(UTC) <= timedelta(hours=6)
+    assert payload["upload"]["headers"] == {"Content-Type": "video/mp4"}, "不带 ACL，随桶公共读"
+    submitted = await record(generations, export_id)
+    assert (submitted.status, submitted.provider_status) == (STATUS_SUBMITTED, "queued")
 
     render.advance(export_id, status="rendering", progress=0.4, queuePosition=None)
     assert await latest(client, mine) == {
@@ -199,7 +237,6 @@ async def test_an_export_handed_over_before_the_pause_keeps_reporting_until_it_i
     render.advance(export_id, status="done", progress=1.0)
     await queue.run_poll(export_id)
 
-    key = f"iclip/agent/whole-films/{export_id}.mp4"
     done = await record(generations, export_id)
     assert (done.status, done.output.url) == (STATUS_COMPLETED, f"{PUBLIC}/{key}")
     assert await latest(client, mine) == {
@@ -212,6 +249,53 @@ async def test_an_export_handed_over_before_the_pause_keeps_reporting_until_it_i
     }
 
 
+async def test_what_is_handed_over_is_the_project_at_hand_over_time(
+    client: httpx.AsyncClient,
+    pg_url: str,
+    generations: SqlGenerationRepository,
+    render: StubRender,
+    queue: GenerationQueue,
+) -> None:
+    owner = uuid.UUID(await login_as_editor(client, pg_url))
+    mine, export_id = await started_export(client, generations, owner)
+    later = main_file(videos=("https://example.test/later.mp4",))
+    stored = (
+        await client.get(f"{URL}/{mine}/workspace/file", params={"path": "final-cut/index.html"})
+    ).json()["file"]
+    edited = await client.put(
+        f"{URL}/{mine}/workspace/file",
+        json={
+            "path": "final-cut/index.html",
+            "content": later,
+            "expectedVersion": stored["version"],
+        },
+    )
+    assert edited.status_code == 200, edited.text
+
+    await queue.run_submit(export_id)
+
+    (payload,) = render.submitted
+    assert payload["files"] == [{"path": "index.html", "content": later}]
+    assert list(payload["media"]) == ["https://example.test/later.mp4"]
+
+
+async def test_an_empty_final_cut_is_refused_and_leaves_no_record(
+    client: httpx.AsyncClient, pg_url: str, render: StubRender
+) -> None:
+    await login_as_editor(client, pg_url)
+    mine = await new_conversation(client)
+    await put_project_file(client, mine, "compositions/title-card.html", COMPONENT)
+
+    started = await client.post(exports_url(mine))
+
+    assert (started.status_code, started.json()) == (
+        422,
+        {"detail": "final-cut 暂无内容，无法导出"},
+    )
+    assert await latest(client, mine) is None
+    assert render.submitted == []
+
+
 async def test_the_render_services_own_failure_and_a_lost_export_fail_the_record(
     client: httpx.AsyncClient,
     pg_url: str,
@@ -220,8 +304,10 @@ async def test_the_render_services_own_failure_and_a_lost_export_fail_the_record
     queue: GenerationQueue,
 ) -> None:
     owner = uuid.UUID(await login_as_editor(client, pg_url))
-    failing, failed_id = await handed_over_export(client, generations, render, owner)
-    lost, lost_id = await handed_over_export(client, generations, render, owner)
+    failing, failed_id = await started_export(client, generations, owner)
+    lost, lost_id = await started_export(client, generations, owner)
+    await queue.run_submit(failed_id)
+    await queue.run_submit(lost_id)
 
     error = {"code": "media-unreachable", "message": "取不到素材"}
     render.advance(failed_id, status="failed", queuePosition=None, error=error)
@@ -240,6 +326,61 @@ async def test_the_render_services_own_failure_and_a_lost_export_fail_the_record
     assert lost_export["error"]["code"] == "RENDER_LOST"
 
 
+async def test_a_refusal_or_an_outage_at_submit_fails_the_record_not_the_request(
+    client: httpx.AsyncClient,
+    pg_url: str,
+    generations: SqlGenerationRepository,
+    render: StubRender,
+    queue: GenerationQueue,
+) -> None:
+    owner = uuid.UUID(await login_as_editor(client, pg_url))
+    render.reject = ("missing-media", "素材「x」缺少下载地址")
+    refused_in, refused_id = await started_export(client, generations, owner)
+    await queue.run_submit(refused_id)
+
+    refused = await record(generations, refused_id)
+    assert (refused.status, refused.error_code, refused.error_message) == (
+        STATUS_FAILED,
+        "RENDER_REJECTED",
+        "素材「x」缺少下载地址",
+    )
+    shown = await latest(client, refused_in)
+    assert shown is not None
+    assert shown["error"] == {"code": "RENDER_REJECTED", "message": "素材「x」缺少下载地址"}
+
+    render.reject = None
+    _, down_id = await started_export(client, generations, owner)
+    render.down = True
+    await queue.run_submit(down_id)
+
+    down = await record(generations, down_id)
+    assert (down.status, down.error_code) == (STATUS_FAILED, "RENDER_UNAVAILABLE")
+    assert render.submitted == []
+
+
+async def test_a_record_whose_conversation_has_no_main_file_at_hand_over_fails(
+    client: httpx.AsyncClient,
+    pg_url: str,
+    generations: SqlGenerationRepository,
+    render: StubRender,
+    queue: GenerationQueue,
+) -> None:
+    owner = uuid.UUID(await login_as_editor(client, pg_url))
+    mine = await new_conversation(client)
+    await put_project_file(client, mine, "compositions/title-card.html", COMPONENT)
+    export_id = str((await generations.create(_whole_film(owner, mine))).id)
+
+    await queue.run_submit(export_id)
+
+    emptied = await record(generations, export_id)
+    assert (emptied.status, emptied.error_code, emptied.error_message) == (
+        STATUS_FAILED,
+        "FINAL_CUT_EMPTY",
+        "final-cut 暂无内容，无法导出",
+    )
+    assert render.submitted == []
+
+
 async def test_cancel_follows_where_the_record_is(
     client: httpx.AsyncClient,
     pg_url: str,
@@ -249,16 +390,17 @@ async def test_cancel_follows_where_the_record_is(
 ) -> None:
     owner = uuid.UUID(await login_as_editor(client, pg_url))
 
-    waiting_in, waiting_id = await queued_export(client, generations, owner)
+    waiting_in, waiting_id = await started_export(client, generations, owner)
     assert (await client.delete(exports_url(waiting_in, waiting_id))).status_code == 204
     cancelled = await latest(client, waiting_in)
     assert cancelled is not None
     assert (cancelled["status"], cancelled["error"]) == ("cancelled", None)
     await queue.run_submit(waiting_id)
-    assert render.cancelled == [], "排队中取消不找渲染服务"
+    assert render.submitted == [] and render.cancelled == [], "排队中取消不找渲染服务"
     assert (await record(generations, waiting_id)).error_code == "CANCELLED"
 
-    handed_in, handed_id = await handed_over_export(client, generations, render, owner)
+    handed_in, handed_id = await started_export(client, generations, owner)
+    await queue.run_submit(handed_id)
     render.down = True
     unreachable = await client.delete(exports_url(handed_in, handed_id))
     assert unreachable.status_code == 502, unreachable.text
@@ -272,17 +414,19 @@ async def test_cancel_follows_where_the_record_is(
     await queue.run_poll(handed_id)
     assert (await record(generations, handed_id)).error_code == "CANCELLED"
 
-    forgotten_in, forgotten_id = await handed_over_export(client, generations, render, owner)
+    forgotten_in, forgotten_id = await started_export(client, generations, owner)
+    await queue.run_submit(forgotten_id)
     del render.exports[forgotten_id]
     assert (await client.delete(exports_url(forgotten_in, forgotten_id))).status_code == 204
     assert (await record(generations, forgotten_id)).error_code == "CANCELLED"
 
-    busy_in, busy_id = await queued_export(client, generations, owner)
+    busy_in, busy_id = await started_export(client, generations, owner)
     await generations.mark_submitting(uuid.UUID(busy_id))
     busy = await client.delete(exports_url(busy_in, busy_id))
     assert (busy.status_code, busy.json()) == (409, {"detail": "正在交给渲染服务，稍后再取消"})
 
-    finished_in, finished_id = await handed_over_export(client, generations, render, owner)
+    finished_in, finished_id = await started_export(client, generations, owner)
+    await queue.run_submit(finished_id)
     render.advance(finished_id, status="done", progress=1.0)
     await queue.run_poll(finished_id)
     assert (await client.delete(exports_url(finished_in, finished_id))).status_code == 204
@@ -294,11 +438,11 @@ async def test_the_render_lane_waits_six_hours_while_other_lanes_keep_the_defaul
     pg_url: str,
     engine: AsyncEngine,
     generations: SqlGenerationRepository,
-    render: StubRender,
     queue: GenerationQueue,
 ) -> None:
     owner = uuid.UUID(await login_as_editor(client, pg_url))
-    _, export_id = await handed_over_export(client, generations, render, owner)
+    _, export_id = await started_export(client, generations, owner)
+    await queue.run_submit(export_id)
     video = await generations.create(make_job(owner_user_id=owner, provider=VIDEO_PROVIDER_NAME))
     await generations.mark_submitting(video.id)
     await generations.mark_submitted(video.id, provider_task_id="v-1", provider_status="queued")
@@ -322,6 +466,15 @@ async def test_the_render_lane_waits_six_hours_while_other_lanes_keep_the_defaul
     timed_out = await record(generations, export_id)
     assert (timed_out.status, timed_out.error_code) == (STATUS_FAILED, "PROVIDER_TIMEOUT")
     assert timed_out.error_message is not None and "21600" in timed_out.error_message
+
+
+def _whole_film(owner: uuid.UUID, conversation: uuid.UUID) -> GenerationJob:
+    return make_job(
+        WholeFilmRequest(videos=[], audios=[]),
+        owner_user_id=owner,
+        conversation_id=conversation,
+        provider=PROVIDER_NAME,
+    )
 
 
 async def test_latest_is_the_owners_newest_export_of_this_very_conversation(
@@ -380,7 +533,7 @@ async def test_exports_belong_to_the_owner_and_to_their_conversation(
     generations: SqlGenerationRepository,
 ) -> None:
     owner = uuid.UUID(await login_as_editor(client, pg_url))
-    mine, export_id = await queued_export(client, generations, owner)
+    mine, export_id = await started_export(client, generations, owner)
     another = await new_conversation(client)
 
     async with make_client(export_app) as stranger, make_client(export_app) as governor:
@@ -405,7 +558,7 @@ async def unrendered_app(
     return await build_whole_film_app(monkeypatch, engine, render, render_url=None)
 
 
-async def test_without_a_render_service_starting_is_paused_and_the_rest_is_unavailable(
+async def test_exports_are_unavailable_without_a_render_service(
     unrendered_app: FastAPI, pg_url: str
 ) -> None:
     async with make_client(unrendered_app) as http:
@@ -415,6 +568,6 @@ async def test_without_a_render_service_starting_is_paused_and_the_rest_is_unava
         read = await http.get(exports_url(mine, "latest"))
         cancelled = await http.delete(exports_url(mine, str(uuid.uuid4())))
 
-    assert (started.status_code, started.json()) == (422, PAUSED)
-    assert (read.status_code, read.json()) == (422, {"detail": "成片导出没有开通"})
+    assert (started.status_code, started.json()) == (422, {"detail": "成片导出没有开通"})
+    assert read.status_code == 422
     assert cancelled.status_code == 422

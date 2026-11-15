@@ -22,7 +22,7 @@
   | `RUNTIME_URL` | 必填 | 运行时服务地址，本地开发填 `http://localhost:7790`（见[调运行时](architecture.md#调运行时)） |
   | `RUNTIME_APP_KEY` | 必填 | 视频后端访问运行时的密钥（不少于 32 个字符，与 `runtime.yaml` 中 `apps.video.key_env` 对应） |
   | `RUNTIME_INTERNAL_TOKEN` | 必填 | 运行时回调后端、以及视频插件调用后端内部接口共用的令牌（不少于 32 个字符） |
-  | `FINAL_CUT_RENDER_URL` | 可选 | 本地需要调试成片导出（查看导出进度和取消要渲染服务）时，设为 `http://localhost:8080` |
+  | `FINAL_CUT_RENDER_URL` | 可选 | 本地需要调试成片导出时，设为 `http://localhost:8080` |
   | `FINAL_CUT_PREVIEW_ORIGIN` | 可选 | final-cut 工程预览所在的预览域名，只写 `http(s)://主机[:端口]`、不带路径（规则见 [conventions「final-cut 工程与预览域名」](../contract/conventions.md#final-cut-工程与预览域名)）。不配置时不能发预览令牌，final-cut 编辑器的预览无法加载。本地开发时填应用所用主机名之外的另一个，端口相同：在 `http://localhost:3013` 打开应用就填 `http://127.0.0.1:3013`，反过来也一样 |
 
 - 准备两份本地配置文件（均不入 Git 仓库，修改后需重启服务）：

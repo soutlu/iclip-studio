@@ -7,8 +7,9 @@ import type { ExportView } from './use-whole-film-export'
 
 type ExportControlProps = {
   view: ExportView
-  /** 为什么现在不能发起导出：「导出」「重新导出」都按它禁用。 */
-  blocked: string
+  /** 为什么现在不能发起导出：给了就把「导出」「重新导出」都禁用，点了说明它。 */
+  blocked: string | undefined
+  onStart: () => void
   onCancel: () => void
 }
 
@@ -16,6 +17,8 @@ type Status = { text: string; tone: 'normal' | 'busy' | 'error' }
 
 const exportStatus = (view: ExportView): Status | undefined => {
   switch (view.kind) {
+    case 'starting':
+      return { text: '正在提交导出…', tone: 'normal' }
     case 'queued':
       return {
         text:
@@ -50,8 +53,12 @@ const enhanceStatus = (rows: readonly EnhanceTierRow[]): Status | undefined => {
   return undefined
 }
 
-export function ExportControl({ view, blocked, onCancel }: ExportControlProps) {
+export function ExportControl({ view, blocked, onStart, onCancel }: ExportControlProps) {
   const running = view.kind === 'queued' || view.kind === 'rendering' || view.kind === 'uploading'
+  const startable = blocked === undefined && view.kind !== 'starting'
+  const startIfAllowed = () => {
+    if (startable) onStart()
+  }
   const rows = useEnhanceTiers(view.kind === 'done' ? view.exportId : undefined)
   const status = exportStatus(view) ?? enhanceStatus(rows)
   return (
@@ -74,7 +81,12 @@ export function ExportControl({ view, blocked, onCancel }: ExportControlProps) {
       ) : view.kind === 'done' ? (
         <>
           <BlockedReason reason={blocked} side="bottom">
-            <Button aria-disabled size="md" variant="ghost">
+            <Button
+              aria-disabled={blocked === undefined ? undefined : true}
+              onClick={startIfAllowed}
+              size="md"
+              variant="ghost"
+            >
               重新导出
             </Button>
           </BlockedReason>
@@ -91,7 +103,14 @@ export function ExportControl({ view, blocked, onCancel }: ExportControlProps) {
         </>
       ) : (
         <BlockedReason reason={blocked} side="bottom">
-          <Button aria-disabled className="editor-compose" leadingIcon="download" size="md">
+          <Button
+            aria-disabled={startable ? undefined : true}
+            className="editor-compose"
+            leadingIcon="download"
+            loading={view.kind === 'starting'}
+            onClick={startIfAllowed}
+            size="md"
+          >
             导出
           </Button>
         </BlockedReason>
