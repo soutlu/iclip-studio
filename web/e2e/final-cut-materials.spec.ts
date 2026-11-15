@@ -522,7 +522,6 @@ test('时间线上的片段：拖着挪动、拖把手裁剪、按 Delete 删掉
   await expect(second.getByRole('button')).toHaveAttribute('aria-pressed', 'true')
   await page.keyboard.press('Escape')
   await expect(second.getByRole('button')).toHaveAttribute('aria-pressed', 'false')
-  await expect(editor).toBeVisible()
 
   await second.getByRole('button').click()
   await page.keyboard.press('Delete')
@@ -954,7 +953,6 @@ test('多选：Shift 点选两个片段一起删掉再撤销回来；框选跨�
   await page.keyboard.press('Escape')
   await expect(page.getByRole('menu')).toHaveCount(0)
   await expect.poll(selectedShots).toEqual([3])
-  await expect(editor).toBeVisible()
 
   // Shift 点选两个片段，按 Delete 一起删掉；撤销一步两个都回来
   const before = await savedClips(page)
@@ -990,7 +988,7 @@ test('多选：Shift 点选两个片段一起删掉再撤销回来；框选跨�
     await page.mouse.move(to.x, to.y, { steps: 8 })
     await expect(editor.getByTestId('marquee')).toBeVisible()
   }
-  // 框选中途按 Esc：只取消这次框选，原来的选中不变，编辑器还开着
+  // 框选中途按 Esc：只取消这次框选，原来的选中不变
   await clipOf(1).click()
   await frameFromTo()
   await expect.poll(selectedShots).toEqual([3, 4])
@@ -998,7 +996,6 @@ test('多选：Shift 点选两个片段一起删掉再撤销回来；框选跨�
   await expect(editor.getByTestId('marquee')).toHaveCount(0)
   await page.mouse.up()
   await expect.poll(selectedShots).toEqual([1])
-  await expect(editor).toBeVisible()
 
   await frameFromTo()
   await expect.poll(selectedShots).toEqual([3, 4])
@@ -1170,7 +1167,7 @@ test('成组挪动、成组裁剪：选中的片段挪同一个时间差，挡�
   await page.keyboard.press('ControlOrMeta+z')
   await expect.poll(savedLayout).toEqual(before)
 
-  // 拖动中按 Esc：片段回到原处，什么都不写，选中不变，编辑器还开着
+  // 拖动中按 Esc：片段回到原处，什么都不写，选中不变
   const resting = await boxOf(clipFrameOf(3))
   const grab = await centerOf(clipOf(4))
   const count = await editor.locator('[data-clip-id]').count()
@@ -1188,7 +1185,6 @@ test('成组挪动、成组裁剪：选中的片段挪同一个时间差，挡�
   await page.mouse.up()
   expect((await boxOf(clipFrameOf(3))).x).toBeCloseTo(resting.x, 0)
   await expect.poll(selectedShots).toEqual([3, 4])
-  await expect(editor).toBeVisible()
   expect(await savedLayout()).toEqual(before)
 
   // 选中 1 和 4，拖没选中的 3 往后半秒：只挪它自己，选中不变

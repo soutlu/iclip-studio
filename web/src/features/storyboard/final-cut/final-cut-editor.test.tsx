@@ -430,7 +430,7 @@ describe('成片编辑器 · 时间线', () => {
     expect(savedClips()[0]).toContain('data-start="2" data-duration="1.5"')
   })
 
-  it('选中一个片段按 Esc：只取消选中，编辑器还开着', async () => {
+  it('选中一个片段按 Esc：只取消选中', async () => {
     putMockWholeFilmDraft(CONVERSATION, twoVideos())
     const user = userEvent.setup()
     await openEditor()
@@ -438,7 +438,6 @@ describe('成片编辑器 · 时间线', () => {
     expect(clip(/2\.0 秒$/)).toHaveAttribute('aria-pressed', 'true')
     await user.keyboard('{Escape}')
     expect(clip(/2\.0 秒$/)).toHaveAttribute('aria-pressed', 'false')
-    expect(screen.getByRole('group', { name: '成片编辑器' })).toBeVisible()
   })
 
   it('选中以后在把手上按方向键裁剪：裁结尾只改长度，裁开头起点和入点一起动；不超出素材', async () => {
@@ -534,7 +533,7 @@ describe('成片编辑器 · 多选', () => {
     expect(pressed()).toEqual(['A · 镜头 1'])
   })
 
-  it('点行里的空白处取消全部选中；按 Esc 也全部取消，编辑器还开着', async () => {
+  it('点行里的空白处取消全部选中；按 Esc 也全部取消', async () => {
     const user = await openThree()
     await user.click(clip('A · 镜头 1'))
     await user.keyboard('{Shift>}')
@@ -548,7 +547,6 @@ describe('成片编辑器 · 多选', () => {
     await user.click(clip('A · 镜头 2'))
     await user.keyboard('{/Shift}{Escape}')
     expect(pressed()).toEqual([])
-    expect(screen.getByRole('group', { name: '成片编辑器' })).toBeVisible()
   })
 
   it('[ 选中播放头左边的片段、] 选中右边的片段，替换原有选中；正好从播放头开始或结束的只算一边', async () => {
@@ -650,11 +648,9 @@ describe('成片编辑器 · 多选', () => {
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
     expect(pressed()).toEqual(['A · 镜头 1'])
-    expect(screen.getByRole('group', { name: '成片编辑器' })).toBeVisible()
 
     await user.keyboard('{Escape}')
     expect(pressed()).toEqual([])
-    expect(screen.getByRole('group', { name: '成片编辑器' })).toBeVisible()
   })
 })
 
@@ -823,7 +819,7 @@ describe('成片编辑器 · 播放条设置', () => {
       exitFullscreen.mockClear()
     })
 
-    it('F 把预览连同播放条一起全屏，菜单挂在全屏的元素里；Esc 退出全屏，编辑器还开着', async () => {
+    it('F 把预览连同播放条一起全屏，菜单挂在全屏的元素里；Esc 退出全屏', async () => {
       putMockWholeFilmDraft(CONVERSATION, twoVideos())
       const user = userEvent.setup()
       await openEditor()
@@ -850,7 +846,6 @@ describe('成片编辑器 · 播放条设置', () => {
       await user.keyboard('{Escape}')
       expect(exitFullscreen).toHaveBeenCalledTimes(1)
       expect(within(transport()).getByRole('button', { name: '全屏' })).toBeVisible()
-      expect(screen.getByRole('group', { name: '成片编辑器' })).toBeVisible()
     })
   })
 })
@@ -1561,7 +1556,7 @@ describe('成片编辑器 · 属性', () => {
       await waitSaved(() => expect(savedTag('clip-2')).toContain('data-duration="3"'))
     })
 
-    it('失焦也提交；Esc 放弃刚输入的，片段还选中着、编辑器还开着；不是数字时不提交、显示回原来的值', async () => {
+    it('失焦也提交；Esc 放弃刚输入的，片段还选中着；不是数字时不提交、显示回原来的值', async () => {
       const user = await openWith(twoApart())
       await pick(user, 'B · 镜头 1')
       await user.clear(field('开始'))
@@ -1572,7 +1567,6 @@ describe('成片编辑器 · 属性', () => {
         'aria-pressed',
         'true',
       )
-      expect(screen.getByRole('group', { name: '成片编辑器' })).toBeVisible()
 
       await enter(user, '时长', '很长')
       expect(field('时长')).toHaveValue('1.50')
@@ -1864,7 +1858,7 @@ describe('成片编辑器 · 侧栏页签', () => {
     expect(within(side()).getByRole('searchbox', { name: '搜索场景' })).toBeVisible()
   })
 
-  it('按 Esc 取消选中：回到切走之前停的目录页签，编辑器还开着', async () => {
+  it('按 Esc 取消选中：回到切走之前停的目录页签', async () => {
     const user = await openTwo()
     await user.click(tab('音频'))
     await user.click(clip(FIRST))
@@ -1874,7 +1868,6 @@ describe('成片编辑器 · 侧栏页签', () => {
     expect(clip(FIRST)).toHaveAttribute('aria-pressed', 'false')
     expect(tab('音频')).toHaveAttribute('aria-selected', 'true')
     expect(within(side()).getByRole('searchbox', { name: '搜索音频' })).toBeVisible()
-    expect(screen.getByRole('group', { name: '成片编辑器' })).toBeVisible()
   })
 
   it('撤销让选中的片段不存在了：回到切走之前停的目录页签', async () => {

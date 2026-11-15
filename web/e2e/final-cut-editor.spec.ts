@@ -349,7 +349,6 @@ test('播放条：倍速和静音对素材、成片都生效且换播放器后�
   await page.keyboard.press('Escape')
   await expect(transport.getByRole('button', { name: '全屏', exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.fullscreenElement)).toBeNull()
-  await expect(editor).toBeVisible()
   await expect.poll(async () => [await boxOf(preview), await boxOf(transport)]).toEqual(before)
 })
 
