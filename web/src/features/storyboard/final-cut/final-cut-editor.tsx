@@ -100,7 +100,7 @@ const PICK_FIRST_TEXT = '尚未选中镜头，无法加入 final-cut；请先在
 const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏，无法进入全屏'
 const ADDING_ITEM_TEXT = '上一个贴片或场景正在加入 final-cut，请稍后再试'
 const ADDING_AUDIO_TEXT = '上一条音频正在加入 final-cut，请稍后再试'
-const EXPORT_PAUSED_TEXT = '导出功能正在调整，无法导出；请稍后再试'
+const EMPTY_EXPORT_TEXT = 'final-cut 暂无内容，无法导出；请先加入内容'
 // 还没有 final-cut 时先放组件或块：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 
@@ -603,7 +603,8 @@ function EditorBody({
   )
   const playBlocked = film === null || clips.length === 0 ? EMPTY_TEXT : undefined
 
-  const exporting = useWholeFilmExport(conversationId)
+  const exporting = useWholeFilmExport(conversationId, session.settle)
+  const exportBlocked = clips.length === 0 ? EMPTY_EXPORT_TEXT : undefined
 
   const viewedMaterial =
     materialView === null ? undefined : materials.byJob.get(materialView.range.jobId)
@@ -782,8 +783,9 @@ function EditorBody({
         <EditorToolbar
           actions={
             <ExportControl
-              blocked={EXPORT_PAUSED_TEXT}
+              blocked={exportBlocked}
               onCancel={() => void exporting.cancel()}
+              onStart={() => void exporting.start()}
               view={exporting.view}
             />
           }

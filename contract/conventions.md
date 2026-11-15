@@ -154,7 +154,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 ### final-cut 的主文件
 
-业务规则见 [CONTEXT.md「final-cut」](../docs/CONTEXT.md#术语)。主文件是工作区里的 `final-cut/index.html`，写法由 [composition/film.ts](../web/src/features/storyboard/final-cut/composition/film.ts) 定义；后端不读、不查它的内容：
+业务规则见 [CONTEXT.md「final-cut」](../docs/CONTEXT.md#术语)。主文件是工作区里的 `final-cut/index.html`，写法由 [composition/film.ts](../web/src/features/storyboard/final-cut/composition/film.ts) 定义；后端不查它的写法，只在发起导出时从中取素材地址（见下文「成片导出」）：
 - **读写**：读走 `GET /conversations/{id}/workspace/file?path=final-cut/index.html`，没有这个文件（`404`）就是还没有工程。第一次保存走「新建工程文件」（`path` 写 `index.html`，已存在 `409`），之后带 `expectedVersion` 走 `PUT /conversations/{id}/workspace/file`（版本对不上 `409`，新版本号在答复里）。编辑器整份保存，`409` 时换成工作区里的那一份、放弃本地没存的改动。
 - **变化通知**：工程里的文件每写一次都推一次 `event.fs.changed`（见 §5「文件变化」），编辑器自己的保存也推，通知不带版本号。编辑器等在途的保存结束后读一次主文件，版本号比自己存下的新（或文件出现、消失了）才算别处改的；别的工程文件变了只重新加载预览。
 - **片段**：根（最外层带 `data-composition-id` 的元素）下面每个带时间（`data-start` 加 `data-duration`）的元素是一个片段，种类按标签认：`<video>`、`<audio>`、带 `data-composition-src` 且 `data-composition-id` 能在组件库目录里查到的宿主元素，其余都是「其他」片段。视频、音频的 `src` 直接写素材地址。组件或块的片段的摆放和字体变量写在宿主元素的行内样式上：条目的 `size` 和画面不一样大时定成这个尺寸、居中，按 `min(画面宽 / 组件宽, 画面高 / 组件高)` 缩放；第一个字体类可填项取到组件库 `fonts` 里的字体族时（没填取默认值），`--font-display` 和 `--font-body` 都设成 `'<字体族>', '<中文字体族>', sans-serif`，取到别的值不写。
@@ -163,8 +163,8 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 ### 成片导出
 
-业务规则见 [CONTEXT.md「成片导出」](../docs/CONTEXT.md#术语)。以下三个接口仅限对话创建者本人调用：
-- **发起导出** `POST /conversations/{id}/whole-film/exports`：暂停中，看得见、能改的对话一律返回 `422`（「导出功能正在调整，无法导出；请稍后再试」），不建记录；暂停前已排队、还没交给渲染服务的记录交给队列时记为失败（`EXPORT_PAUSED`）。以下两个接口在服务器未配置渲染服务时返回 `422`。
+业务规则见 [CONTEXT.md「成片导出」](../docs/CONTEXT.md#术语)。以下三个接口仅限对话创建者本人调用（服务器未配置渲染服务时统一返回 `422`）：
+- **发起导出** `POST /conversations/{id}/whole-film/exports`：没有请求体。工作区里还没有主文件 `final-cut/index.html` 返回 `422`（「final-cut 暂无内容，无法导出」）。受理后创建一条 `whole_film` 生成记录排入渲染队列，返回 `202 { exportId }`；记录里只存主文件里 `<video>`、`<audio>` 的素材地址按输出地址对上的生成记录（同一个地址对上多条取最早建的那条），对不上的地址不记，也不拒绝导出。工程本身不存进记录：队列把记录交给渲染服务时才读工作区里的整个 `final-cut/` 目录，导出的就是那一刻的工程；那时主文件已经不在了，记录记为失败（`FINAL_CUT_EMPTY`）。
 - **查询最新导出进度** `GET .../whole-film/exports/latest`：返回该对话下最新一次导出的状态 `{ export: { id, status, progress, queuePosition, error, downloadUrl } }`（从未导出过则 `export` 为 `null`；`status` 取值为 `queued | rendering | uploading | done | failed | cancelled`）。
 - **取消导出** `DELETE .../whole-film/exports/{exportId}`：取消排队中或正在渲染的导出任务（返回 `204`；如果刚好卡在向渲染服务提交的那一瞬间返回 `409`；如果渲染服务连不上返回 `502`）。
 

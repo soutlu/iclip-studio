@@ -15,6 +15,7 @@ from typing import Final
 from urllib.parse import quote
 
 from iclip.common.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from iclip.common.final_cut import PROJECT_DIR
 from iclip.common.urls import is_http_origin
 from iclip.domains.conversations.service import (
     ConversationService,
@@ -23,8 +24,6 @@ from iclip.domains.conversations.service import (
     WriteDerivedFile,
 )
 from iclip.domains.identity.public import Principal
-
-PROJECT_DIR: Final = "final-cut"
 
 FINAL_CUT_PREVIEW_PREFIX: Final = "/final-cut/preview"
 
@@ -242,7 +241,6 @@ class FinalCutProject:
 __all__ = [
     "FINAL_CUT_PREVIEW_PREFIX",
     "PREVIEW_TOKEN_LIFETIME",
-    "PROJECT_DIR",
     "FinalCutProject",
     "PreviewGrant",
     "PreviewRedirect",

@@ -610,5 +610,10 @@ export function useFilmSession(
     redo: () => step('redo'),
     save,
     flush: () => void saveNow(),
+    /** 等没存的改动存完；存好了（或本来就没有要存的）答 true，存失败或换成了别处改的那一份答 false。 */
+    settle: async () => {
+      const outcome = await saveNow()
+      return outcome === 'saved' || outcome === 'clean'
+    },
   }
 }

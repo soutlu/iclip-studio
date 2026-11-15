@@ -53,7 +53,7 @@ from iclip.app.runtime_internal import (
 from iclip.app.runtime_ports import RuntimeServicePorts
 from iclip.app.runtime_workspace import RuntimeFiles
 from iclip.app.shot_media import CutRecordsAdapter, FrameBoardsAdapter, GridCutsAdapter
-from iclip.app.whole_film_exports import WholeFilmExportAdapter
+from iclip.app.whole_film_exports import WholeFilmExportAdapter, final_cut_reader
 from iclip.common.errors import NotFound
 from iclip.config import (
     QWEN_API_KEY_ENV,
@@ -151,7 +151,11 @@ from iclip.platform.object_store.oss import (
     validate_internal_endpoint,
     validate_public_url_base,
 )
-from iclip.platform.object_store.store import PublicBucket, PublicObjectStore
+from iclip.platform.object_store.store import (
+    PublicBucket,
+    PublicObjectStore,
+    ServerUploadSigner,
+)
 from iclip.platform.outbound.fetch import TOTAL_TIMEOUT_SECONDS, PublicFetcher
 from iclip.platform.outbound.guard import public_client
 from iclip.platform.outbound.media_check import UrlProber
@@ -163,11 +167,13 @@ _logger = structlog.stdlib.get_logger(__name__)
 def _object_store(
     settings: ObjectStoreEnv | None,
     injected: PublicBucket | None,
-) -> tuple[PublicBucket | None, Callable[[str], str], Callable[[str], bool]]:
+) -> tuple[
+    PublicBucket | None, Callable[[str], str], Callable[[str], bool], ServerUploadSigner | None
+]:
     if injected is not None:
-        return injected, _as_is, _never
+        return injected, _as_is, _never, None
     if settings is None:
-        return None, _as_is, _never
+        return None, _as_is, _never, None
     oss = OssSettings(
         bucket=settings.bucket,
         endpoint=settings.endpoint,
@@ -177,7 +183,7 @@ def _object_store(
         internal_endpoint=validate_internal_endpoint(settings.internal_endpoint),
     )
     store = OssObjectStore(oss)
-    return store, oss_fetch_url(oss), oss_owns_url(oss)
+    return store, oss_fetch_url(oss), oss_owns_url(oss), store
 
 
 def _as_is(url: str) -> str:
@@ -351,7 +357,9 @@ def build_app(
         sso_verifier=sso_verifier,
         pms_client=pms_client,
     )
-    public_objects, fetch_url, owns_url = _object_store(settings.object_store, object_store)
+    public_objects, fetch_url, owns_url, server_uploads = _object_store(
+        settings.object_store, object_store
+    )
     _require_ffmpeg(settings.ffmpeg_required)
     render_client = (
         None
@@ -445,7 +453,14 @@ def build_app(
             raise RuntimeError("媒体生成已启用却没选编解码；ffmpeg_required 应当已包含媒体生成")
         render: RenderSetup | None = None
         if render_client is not None:
-            render = RenderSetup(client=render_client, public_url=public_objects.public_url)
+            if server_uploads is None:
+                raise RuntimeError("成片导出已启用却没有上传签名；注入的测试桶不支持成片导出")
+            render = RenderSetup(
+                client=render_client,
+                uploads=server_uploads,
+                public_url=public_objects.public_url,
+                read_project=final_cut_reader(workspace_files),
+            )
         generation = _generation_module(
             settings.media_generation,
             generation_repo,

@@ -148,7 +148,7 @@ def build_generation_module(
     if render is not None:
         render_lanes = (
             ProviderLane(
-                RenderProvider(render),
+                RenderProvider(render, fetch_url=fetch_url),
                 RENDER_SUBMIT_CONCURRENCY,
                 timeout_seconds=RENDER_TIMEOUT_SECONDS,
             ),

@@ -10,6 +10,12 @@ from iclip.domains.conversations.models import WholeFilmExport, WholeFilmExportS
 from iclip.domains.conversations.schemas import CamelModel
 
 
+class WholeFilmExportStartedOut(CamelModel):
+    """已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id。"""
+
+    export_id: uuid.UUID
+
+
 class WholeFilmExportErrorOut(CamelModel):
     code: str
     message: str
@@ -82,5 +88,6 @@ __all__ = [
     "WholeFilmExportErrorOut",
     "WholeFilmExportLatestOut",
     "WholeFilmExportOut",
+    "WholeFilmExportStartedOut",
     "whole_film_export_out",
 ]

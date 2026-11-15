@@ -179,7 +179,7 @@ const twoVideos = () =>
   )
 
 describe('final-cut 编辑器 · 加入素材', () => {
-  it('还没有工程：播放、进度条置灰，没选镜头时按 Enter 提示先选；导出暂停着，置灰并说明原因；打开不保存', async () => {
+  it('还没有工程：播放、进度条、导出置灰并说明原因，没选镜头时按 Enter 提示先选，打开不保存', async () => {
     const user = userEvent.setup()
     await openEditor()
     expect(screen.getByText('final-cut 暂无内容，加入内容后可在此预览')).toBeVisible()
@@ -198,7 +198,7 @@ describe('final-cut 编辑器 · 加入素材', () => {
     expect(exportButton).toHaveAttribute('aria-disabled', 'true')
     await user.click(exportButton)
     expect(
-      (await screen.findAllByText('导出功能正在调整，无法导出；请稍后再试')).length,
+      (await screen.findAllByText('final-cut 暂无内容，无法导出；请先加入内容')).length,
     ).toBeGreaterThan(0)
     await new Promise((resolve) => setTimeout(resolve, 100))
     expect(mockProjectMain(CONVERSATION)).toBeUndefined()
@@ -1014,7 +1014,7 @@ describe('final-cut 编辑器 · 导出', () => {
     await user.click(await screen.findByRole('button', { name: '取消导出' }))
     expect(await screen.findByText('已取消导出')).toBeInTheDocument()
     expect(cancelled).toEqual([EXPORT_ID])
-    expect(screen.getByRole('button', { name: '导出' })).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('button', { name: '导出' })).not.toHaveAttribute('aria-disabled')
   })
 
   it('取消时正赶上交给渲染服务（409）：提示原因，进度照旧', async () => {
@@ -1031,29 +1031,71 @@ describe('final-cut 编辑器 · 导出', () => {
     expect(screen.getByRole('button', { name: '取消导出' })).toBeInTheDocument()
   })
 
-  it.each([
-    ['还没导出过', null, '导出'],
-    ['上次导出好了', DONE, '重新导出'],
-  ])('发起导出暂停着（%s）：「%s」置灰，点了只说明原因，不发起导出', async (_, latest, name) => {
-    const user = userEvent.setup()
-    const started: string[] = []
+  /** 发起导出时工作区里的主文件，一次发起记一份。 */
+  const trackStarts = () => {
+    const mainAtStart: string[] = []
     server.use(
-      http.post(EXPORTS_URL, ({ request }) => {
-        started.push(request.url)
+      http.post(EXPORTS_URL, () => {
+        mainAtStart.push(savedFilm())
         return HttpResponse.json({ exportId: EXPORT_ID }, { status: 202 })
       }),
     )
-    serveLatest(latest)
+    return mainAtStart
+  }
+
+  it('加了素材马上导出：先把 final-cut 存好，再发起导出', async () => {
+    const user = userEvent.setup()
+    const mainAtStart = trackStarts()
+    serveLatest(null, DONE)
+    await openEditor()
+    await user.click(await shot(/^生成 A 镜头 1，/))
+    await user.keyboard('{Enter}')
+    await user.click(await within(toolbar()).findByRole('button', { name: '导出' }))
+    expect(await screen.findByRole('button', { name: '下载成片' })).toBeInTheDocument()
+    expect(mainAtStart).toHaveLength(1)
+    expect(mainAtStart[0]?.match(/<video [^>]*>/g)).toHaveLength(1)
+  })
+
+  it('上次导出好了，点「重新导出」再发起一次', async () => {
+    const user = userEvent.setup()
+    const mainAtStart = trackStarts()
+    serveLatest(DONE)
     putMockProjectMain(CONVERSATION, twoVideos())
     await openEditor()
-    const button = await within(toolbar()).findByRole('button', { name: new RegExp(`^${name}$`) })
-    expect(button).toHaveAttribute('aria-disabled', 'true')
-    await user.click(button)
-    expect(
-      (await screen.findAllByText('导出功能正在调整，无法导出；请稍后再试')).length,
-    ).toBeGreaterThan(0)
+    await user.click(await within(toolbar()).findByRole('button', { name: '重新导出' }))
+    await waitFor(() => expect(mainAtStart).toEqual([twoVideos()]))
+  })
+
+  it('改动没存进去：不发起导出，说明保存失败的原因', async () => {
+    const user = userEvent.setup()
+    const mainAtStart = trackStarts()
+    server.use(
+      http.post(CREATE_URL, () =>
+        HttpResponse.json({ detail: '工作区暂时写不进去' }, { status: 503 }),
+      ),
+    )
+    await openEditor()
+    await user.click(await shot(/^生成 A 镜头 1，/))
+    await user.keyboard('{Enter}')
+    await user.click(await within(toolbar()).findByRole('button', { name: '导出' }))
+    expect(await screen.findByText(/工作区暂时写不进去$/)).toBeVisible()
     await new Promise((resolve) => setTimeout(resolve, 100))
-    expect(started).toEqual([])
+    expect(mainAtStart).toEqual([])
+    expect(screen.getByRole('button', { name: '导出' })).not.toHaveAttribute('aria-disabled')
+  })
+
+  it('没开通（422）：显示原因，可以重新导出', async () => {
+    const user = userEvent.setup()
+    server.use(
+      http.post(EXPORTS_URL, () =>
+        HttpResponse.json({ detail: '成片导出没有开通' }, { status: 422 }),
+      ),
+    )
+    putMockProjectMain(CONVERSATION, twoVideos())
+    await openEditor()
+    await user.click(screen.getByRole('button', { name: '导出' }))
+    expect(await screen.findByText(/成片导出没有开通$/)).toHaveAttribute('role', 'status')
+    expect(screen.getByRole('button', { name: '导出' })).not.toHaveAttribute('aria-disabled')
   })
 
   it.each([
@@ -1062,10 +1104,10 @@ describe('final-cut 编辑器 · 导出', () => {
     ['交出去太久没结束', 'PROVIDER_TIMEOUT', 'no end after 6 h', '导出等待超时，请重新导出'],
     ['渲染服务连不上', 'RENDER_UNAVAILABLE', 'connect refused', '渲染服务无法连接，请稍后重新导出'],
     [
-      '排队时 final-cut 又改过',
-      'FILM_CHANGED',
-      'draft moved on',
-      'final-cut 在排队期间已被修改，请重新导出',
+      '没通过导出前检查',
+      'lint-failed',
+      'root missing data-composition-id',
+      'final-cut 未通过导出前检查，无法导出',
     ],
     ['没见过的错误码', 'SUBMIT_INTERRUPTED', 'worker restarted', '成片导出失败，请重新导出'],
   ])('导出失败（%s）：按原因说一句话，不露给开发看的原文', async (_, code, message, text) => {
@@ -1074,6 +1116,7 @@ describe('final-cut 编辑器 · 导出', () => {
     await openEditor()
     expect(await screen.findByText(text)).toHaveAttribute('role', 'status')
     expect(screen.queryByText(message, { exact: false })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '导出' })).not.toHaveAttribute('aria-disabled')
   })
 
   it('渲染服务不收这份 final-cut：显示它给的原因', async () => {

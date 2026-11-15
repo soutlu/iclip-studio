@@ -279,7 +279,6 @@ def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
 
 def whole_film_request(*sources: uuid.UUID) -> WholeFilmRequest:
     return WholeFilmRequest(
-        revision=1,
         videos=[
             WholeFilmVideoSource(job_id=source, url=f"https://cdn.test/videos/{source}.mp4")
             for source in sources
@@ -382,6 +381,14 @@ class InMemoryGenerationRepository:
             )
         ]
         return min(found, key=lambda job: (job.created_at, job.id), default=None)
+
+    async def earliest_by_outputs(self, urls: Collection[str]) -> Mapping[str, GenerationJob]:
+        found: dict[str, GenerationJob] = {}
+        for job in sorted(self.jobs.values(), key=lambda job: (job.created_at, job.id)):
+            url = job.output.url
+            if job.status == STATUS_COMPLETED and url is not None and url in urls:
+                found.setdefault(url, job)
+        return found
 
     async def find_video_upload_by_md5(self, content_md5: str) -> GenerationJob | None:
         found = [

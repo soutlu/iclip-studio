@@ -89,7 +89,6 @@ def test_old_export_records_get_an_audio_list_in_place_of_music(migrated_pg: str
     assert asyncio.run(_requests(migrated_pg, without_music, with_music)) == [
         whole_film_request(source),
         WholeFilmRequest(
-            revision=1,
             videos=whole_film_request(source).videos,
             audios=[
                 WholeFilmAudioSource(job_id=uuid.UUID(MUSIC["jobId"]), url=MUSIC["url"]),

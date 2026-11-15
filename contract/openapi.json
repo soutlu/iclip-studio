@@ -14132,6 +14132,22 @@
         "title": "WholeFilmExportOut",
         "type": "object"
       },
+      "WholeFilmExportStartedOut": {
+        "additionalProperties": false,
+        "description": "已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id。",
+        "properties": {
+          "exportId": {
+            "format": "uuid",
+            "title": "Exportid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "exportId"
+        ],
+        "title": "WholeFilmExportStartedOut",
+        "type": "object"
+      },
       "WholeFilmVersionOut": {
         "additionalProperties": false,
         "description": "成片卡里的一版：这段对话的一次已完成导出。",
@@ -18591,7 +18607,7 @@
     },
     "/conversations/{conversation_id}/whole-film/exports": {
       "post": {
-        "description": "发起导出暂停着：看得见、能改的对话一律 422 并说明原因；看不见 404，看得见不能改 403。\n查最近一次导出、取消导出照常。",
+        "description": "按 final-cut 导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；\n还没有主文件 ``final-cut/index.html``、没开通都是 422。主文件里的素材按输出地址对上生成记录的\n记进导出记录，对不上的不记、也不拒绝。导出的是交给渲染服务那一刻的工程。",
         "operationId": "export_whole_film_conversations__conversation_id__whole_film_exports_post",
         "parameters": [
           {
@@ -18606,16 +18622,25 @@
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/WholeFilmExportStartedOut"
+                }
               }
             },
             "description": "Successful Response"
           },
           "422": {
-            "description": "发起导出暂停着"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
