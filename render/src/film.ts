@@ -65,7 +65,7 @@ const CUSTOM_PROPERTY = /^--([^\s:]+)\s*:/
 
 const CLIP_NAMES: Record<ClipKind, string> = {
   video: '视频片段',
-  host: '组件或块的片段',
+  host: '贴片或场景的片段',
   audio: '音频片段',
 }
 
@@ -221,7 +221,7 @@ function readClip(element: Element, catalog: ComponentCatalog): FilmClip {
     clip.kind === 'host' &&
     !catalog.items.some((item) => item.name === clip.item && item.src === clip.src)
   ) {
-    fail(`${where}使用的组件或块不在组件库中：${clip.item}`)
+    fail(`${where}使用的贴片或场景不存在：${clip.item}`)
   }
   return clip
 }

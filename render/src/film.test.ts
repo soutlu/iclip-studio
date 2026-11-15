@@ -805,11 +805,15 @@ describe('readFilm 拒收写法之外的东西', () => {
     ['视频片段速度高于 10 倍', [video({ playbackRate: 10.5 })], /速度/],
     ['音频片段速度高于 10 倍', [audio({ playbackRate: 12 })], /速度/],
     ['同一条素材片两个地址', [video(), second({ jobId: SOURCE_JOB })], /两个地址|默认值/],
-    ['不在组件库里的组件', [host({ item: 'nope' })], /不在组件库/],
+    [
+      '不在组件库里的组件',
+      [host({ item: 'nope' })],
+      /贴片或场景的片段「title-1」使用的贴片或场景不存在：nope$/,
+    ],
     [
       '组件名和组件库里的文件对不上',
       [host({ src: 'compositions/fixtures/fixture-overlay.html' })],
-      /不在组件库/,
+      /使用的贴片或场景不存在/,
     ],
   ])('%s', (_name, clips, message) => {
     expect(() => readFilm(html(...clips), catalog)).toThrow(message)
