@@ -179,6 +179,29 @@ describe('渲染服务接口', () => {
     })
   })
 
+  it('POST /exports 的请求体类型不是 JSON 时答 415，不排进队列；JSON 带 charset 照常受理', async () => {
+    const body = JSON.stringify(exportRequest())
+    const plain = await fetch(`${base}/exports`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body,
+    })
+    expect(plain.status).toBe(415)
+    expect(await plain.json()).toMatchObject({ code: 'unsupported-media-type' })
+    const untyped = await fetch(`${base}/exports`, { method: 'POST', body: new Blob([body]) })
+    expect(untyped.status).toBe(415)
+    expect(await (await fetch(`${base}/health`)).json()).toMatchObject({
+      queue: { running: 0, waiting: 0 },
+    })
+
+    const typed = await fetch(`${base}/exports`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'Application/JSON; charset=utf-8' },
+      body,
+    })
+    expect(typed.status).toBe(202)
+  })
+
   it('同一 id 再提交答 409', async () => {
     expect((await post(exportRequest())).status).toBe(202)
     const response = await post(exportRequest())

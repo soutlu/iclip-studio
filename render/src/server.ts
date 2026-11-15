@@ -68,7 +68,16 @@ async function readRequest<T>(
   return parsed.request
 }
 
+/** 请求体的类型是不是 JSON（不看 charset 等参数）。 */
+const isJson = (req: IncomingMessage) =>
+  req.headers['content-type']?.split(';')[0]?.trim().toLowerCase() === 'application/json'
+
 async function createExport(req: IncomingMessage, res: ServerResponse, context: ServerContext) {
+  // 渲染页面里的脚本能访问回环地址上的本服务；只收 JSON 类型，浏览器的跨源请求就得先过预检，页面发不出导出
+  if (!isJson(req)) {
+    fail(res, 415, 'unsupported-media-type', '请求体须为 application/json')
+    return
+  }
   const request = await readRequest(req, res, zExportRequest)
   if (!request) return
   const problem = projectProblem(request.files)

@@ -1,4 +1,5 @@
 import { execFile, spawnSync } from 'node:child_process'
+import { createSocket } from 'node:dgram'
 import { createReadStream, createWriteStream, existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, readdir, rm, stat } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
@@ -20,6 +21,7 @@ import {
   type FilmClip,
   type VideoClip,
 } from '../../web/src/features/storyboard/final-cut/composition/film'
+import { startBrowserGuard, type BrowserGuard } from './browser'
 import { ExportQueue } from './jobs'
 import type { ProjectFile } from './project'
 import { createProducerWorker } from './renderer'
@@ -164,8 +166,13 @@ async function meanVolume(file: string, from: number, length: number): Promise<n
   return Number(/mean_volume: (-?[\d.]+) dB/.exec(stderr)?.[1])
 }
 
-async function startServer(dir: string): Promise<{ server: Server; origin: string }> {
+/** 素材和上传用的测试服务器；`requests` 按先后记下收到的每个请求。 */
+async function startServer(
+  dir: string,
+): Promise<{ server: Server; origin: string; requests: string[] }> {
+  const requests: string[] = []
   const server = createServer(async (req, res) => {
+    requests.push(`${req.method} ${req.url}`)
     const path = join(dir, new URL(req.url ?? '/', 'http://x').pathname)
     if (req.method === 'PUT') {
       await pipeline(req, createWriteStream(join(dir, 'received.mp4')))
@@ -193,7 +200,11 @@ async function startServer(dir: string): Promise<{ server: Server; origin: strin
     createReadStream(path).pipe(res)
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  return { server, origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}` }
+  return {
+    server,
+    origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    requests,
+  }
 }
 
 /** 和编辑器加条目时一样：条目的 `files` 从组件库版本目录按原路径原样拷进工程。 */
@@ -225,9 +236,18 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
   let dir: string
   let server: Server
   let origin: string
+  let requests: string[]
+  // 和服务启动时一样：浏览器经启动脚本启动，连不了回环以外的地址
+  let guard: BrowserGuard
+  const guardLog = memoryLogger()
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'render-integration-'))
+    guard = await startBrowserGuard(
+      resolveHeadlessShellPath() as string,
+      join(dir, 'browser'),
+      guardLog.logger,
+    )
     await run('ffmpeg', [
       '-v',
       'error',
@@ -309,30 +329,39 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       'yuv420p',
       join(dir, 'steps.mp4'),
     ])
-    ;({ server, origin } = await startServer(dir))
+    ;({ server, origin, requests } = await startServer(dir))
   })
 
   afterAll(async () => {
     await new Promise<void>((resolve) => server?.close(() => resolve()))
+    await guard?.close()
     if (dir) await rm(dir, { recursive: true, force: true })
   })
 
-  const workerIn = (workDir: string) => {
-    const { logger } = memoryLogger()
-    return createProducerWorker({ workDir, gpuEncode: false, logger })
-  }
+  const workerIn = (workDir: string, logger = memoryLogger().logger) =>
+    createProducerWorker({ workDir, chromePath: guard.chromePath, gpuEncode: false, logger })
 
   /** 渲染一份工程；`media` 是主文件里的素材地址，下载地址和它一样。 */
-  const renderProject = (id: string, files: ProjectFile[], media: readonly string[] = []) =>
-    workerIn(join(dir, 'work')).render(
+  const renderProject = (
+    id: string,
+    files: ProjectFile[],
+    media: readonly string[] = [],
+    logger = memoryLogger().logger,
+  ) =>
+    workerIn(join(dir, 'work'), logger).render(
       { id, files, media: mediaOf(media), vendorDir: VENDOR_DIR },
       { signal: new AbortController().signal, onProgress: () => {} },
     )
 
+  const blockedHosts = () =>
+    guardLog.lines
+      .filter((line) => line['event'] === '拦截了渲染页面的外部请求')
+      .map((line) => line['host'])
+
   it('经接口导出一份 2 秒的工程并上传：时长 2 秒、画布尺寸、有音轨', async () => {
     const { logger } = memoryLogger()
     const queue = new ExportQueue({
-      worker: createProducerWorker({ workDir: join(dir, 'work'), gpuEncode: false, logger }),
+      worker: workerIn(join(dir, 'work'), logger),
       logger,
       timeoutMs: 5 * 60_000,
     })
@@ -576,7 +605,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(meanDifference(hidden.panel, Buffer.alloc(hidden.panel.length, 0))).toBeLessThan(6)
   }, 600_000)
 
-  it('组件文件从工程里取：工程里那一份改过就画改过的样子；工程里没有这个文件时导出失败，不去组件库找', async () => {
+  it('组件文件从工程里取：工程里那一份改过就画改过的样子；工程里没有这个文件时检查不通过，不去组件库找', async () => {
     const canvas = { width: 1920, height: 1080 }
     const clips = [host({ values: { text: '', accent: '#ff0000' } })]
     const files = project(clips, canvas)
@@ -609,8 +638,8 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
         { signal: new AbortController().signal, onProgress: () => {} },
       ),
     ).rejects.toMatchObject({
-      code: 'render-failed',
-      message: expect.stringContaining('compositions/fixtures/fixture-fields.html') as unknown,
+      code: 'lint-failed',
+      message: expect.stringContaining('index.html：missing_or_empty_sub_composition') as unknown,
     })
     expect(await readdir(workDir)).toEqual([])
   }, 600_000)
@@ -867,5 +896,114 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     } finally {
       await rendered.cleanup()
     }
+  }, 300_000)
+
+  it('工程里的脚本往回环以外的地址发请求：都被拦下、记进日志，WebRTC 发不出 UDP，导出照常完成', async () => {
+    const clip = `${origin}/clip.mp4`
+    // WebRTC 的 UDP 不看代理：STUN 服务器放在回环地址上，收不到包说明 UDP 整个没有发
+    const stun = createSocket('udp4')
+    let datagrams = 0
+    stun.on('message', () => (datagrams += 1))
+    await new Promise<void>((resolve) => stun.bind(0, '127.0.0.1', resolve))
+    const [main, ...others] = project([video({ src: clip, duration: 2000 })])
+    const script = `<script>
+fetch('https://outside.invalid/fetch').catch(() => {})
+fetch('https://192.0.2.1/fetch').catch(() => {})
+fetch('http://169.254.169.254/latest/meta-data').catch(() => {})
+new WebSocket('wss://socket.outside.invalid/live')
+const peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:127.0.0.1:${stun.address().port}' }] })
+peer.createDataChannel('probe')
+peer.createOffer().then((offer) => peer.setLocalDescription(offer)).catch(() => {})
+</script>
+</body>`
+    const files = [
+      { path: 'index.html', content: (main?.content ?? '').replace('</body>', script) },
+    ]
+    expect(files[0]?.content).toContain('socket.outside.invalid')
+    try {
+      const rendered = await renderProject('outside-requests', [...files, ...others], [clip])
+      try {
+        expect(await durationOf(rendered.file)).toBeGreaterThan(1.9)
+        const frame = await frameAt(rendered.file, 0.5)
+        expect(meanDifference(frame, Buffer.alloc(frame.length, 0))).toBeGreaterThan(30)
+      } finally {
+        await rendered.cleanup()
+      }
+      expect(datagrams).toBe(0)
+    } finally {
+      stun.close()
+    }
+    await expect
+      .poll(blockedHosts)
+      .toEqual(
+        expect.arrayContaining([
+          'outside.invalid',
+          '192.0.2.1',
+          '169.254.169.254',
+          'socket.outside.invalid',
+        ]),
+      )
+  }, 300_000)
+
+  it('工程检查有错误：以 lint-failed 失败，不下载任何素材', async () => {
+    const workDir = join(dir, 'work-lint')
+    const clip = `${origin}/clip.mp4`
+    // 第一个片段写的是工程里没有的相对路径；两个素材都给了能下载的地址
+    const files = project([
+      video({ src: 'media/absent.mp4', duration: 1000 }),
+      video({ id: 'clip-2', src: clip, start: 1000, duration: 1000 }),
+    ])
+    const media = new Map([
+      ['media/absent.mp4', `${clip}?absent`],
+      [clip, clip],
+    ])
+    const before = requests.length
+    await expect(
+      workerIn(workDir).render(
+        { id: 'lint-error', files, media, vendorDir: VENDOR_DIR },
+        { signal: new AbortController().signal, onProgress: () => {} },
+      ),
+    ).rejects.toMatchObject({
+      code: 'lint-failed',
+      message: expect.stringContaining('index.html：missing_local_asset') as unknown,
+    })
+    expect(requests.slice(before)).toEqual([])
+    expect(await readdir(workDir)).toEqual([])
+  }, 60_000)
+
+  it('工程检查只有警告时照常导出，警告记进日志；没有警告的工程不记', async () => {
+    const [clip, tone] = [`${origin}/clip.mp4`, `${origin}/tone.m4a`]
+    const render = async (id: string, files: ProjectFile[], media: string[]) => {
+      const { logger, lines } = memoryLogger()
+      const rendered = await renderProject(id, files, media, logger)
+      try {
+        return {
+          duration: await durationOf(rendered.file),
+          warnings: lines.filter((line) => line['event'] === '工程检查有警告'),
+        }
+      } finally {
+        await rendered.cleanup()
+      }
+    }
+    const clean = await render('lint-clean', project([video({ src: clip, duration: 1000 })]), [
+      clip,
+    ])
+    // 同一行上有声音的视频片段和音频片段时间重叠：检查给 duplicate_audio_track 警告
+    const warned = await render(
+      'lint-warning',
+      project([video({ src: clip, duration: 1000 }), audio({ src: tone, duration: 1000 })]),
+      [clip, tone],
+    )
+
+    expect(clean.duration).toBeGreaterThan(0.9)
+    expect(clean.warnings).toEqual([])
+    expect(warned.duration).toBeGreaterThan(0.9)
+    expect(warned.warnings).toEqual([
+      expect.objectContaining({
+        level: 'warn',
+        count: 1,
+        codes: ['duplicate_audio_track'],
+      }),
+    ])
   }, 300_000)
 })

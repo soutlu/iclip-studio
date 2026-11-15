@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
+import { lintProject } from '@hyperframes/core/lint'
 import { resolveConfig } from '@hyperframes/engine'
 import {
   createRenderJob,
@@ -18,10 +19,15 @@ import { uploadFile } from './upload'
 
 export interface RendererOptions {
   workDir: string
+  /** 渲染用的浏览器：`startBrowserGuard` 给的启动脚本。 */
+  chromePath: string
   gpuEncode: boolean
   logger: Logger
   mediaTimeoutMs?: number
 }
+
+/** 报错时列出的检查结果条数。 */
+const LISTED_FINDINGS = 5
 
 const SILENT_SOURCE_TEXT =
   '有视频片段标记为有声音，但素材文件没有声音，无法导出；请将该视频片段设为静音后重新导出'
@@ -97,8 +103,37 @@ async function writeProject(project: string, files: readonly ProjectFile[], vend
   await symlink(vendorDir, join(root, VENDOR_DIR))
 }
 
+/**
+ * 检查整个工程（主文件和它挂载的组件文件）：有 error 时以 `lint-failed` 失败，列出前几条「文件：code」；
+ * 只有 warning 时记一条日志，照常渲染。
+ */
+async function checkProject(project: string, log: Logger): Promise<void> {
+  // 不传入口文件：传了只查入口这一个文件
+  const result = await lintProject(project, undefined, { host: 'studio' })
+  const findings = result.results.flatMap(({ file, result: { findings } }) =>
+    findings.map((finding) => ({ ...finding, file })),
+  )
+  if (result.totalErrors > 0) {
+    const listed = findings
+      .filter((finding) => finding.severity === 'error')
+      .slice(0, LISTED_FINDINGS)
+      .map((finding) => `${finding.file}：${finding.code}`)
+      .join('、')
+    throw new ExportFailure(
+      'lint-failed',
+      `工程检查有 ${result.totalErrors} 个错误：${listed}${result.totalErrors > LISTED_FINDINGS ? '等' : ''}`,
+    )
+  }
+  if (result.totalWarnings > 0) {
+    const codes = findings
+      .filter((finding) => finding.severity === 'warning')
+      .map((finding) => finding.code)
+    log.warn('工程检查有警告', { count: result.totalWarnings, codes: [...new Set(codes)] })
+  }
+}
+
 export function createProducerWorker(options: RendererOptions): ExportWorker {
-  const producerConfig = resolveConfig({ browserGpuMode: 'auto' })
+  const producerConfig = resolveConfig({ browserGpuMode: 'auto', chromePath: options.chromePath })
   return {
     async render(job, { signal, onProgress }): Promise<RenderedFile> {
       await mkdir(options.workDir, { recursive: true })
@@ -109,6 +144,7 @@ export function createProducerWorker(options: RendererOptions): ExportWorker {
       try {
         const project = join(dir, 'project')
         await writeProject(project, job.files, job.vendorDir)
+        await checkProject(project, log)
         // 素材放进工程里新建的目录：目录名由 mkdtemp 取，不会和工程文件重名
         const mediaDir = await mkdtemp(join(project, 'media-'))
         const started = Date.now()
