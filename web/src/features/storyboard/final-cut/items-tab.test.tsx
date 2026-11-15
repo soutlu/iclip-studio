@@ -58,7 +58,7 @@ describe('组件、块页签 · 列出和筛选', () => {
     const scene = card('测试画面，6 秒')
     expect(within(scene).getByText('6s')).toBeInTheDocument()
     expect(within(scene).getByText('测试画面')).toBeInTheDocument()
-    expect(within(scene).getByText('场景')).toBeInTheDocument()
+    expect(within(scene).getByText('通用')).toBeInTheDocument()
     expect(scene.querySelector('img')).toHaveAttribute(
       'src',
       '/hyperframes/test-fixtures/thumbnails/fixture-scene.svg',
@@ -72,7 +72,7 @@ describe('组件、块页签 · 列出和筛选', () => {
     const chipNames = within(chips)
       .getAllByRole('radio')
       .map((element) => element.textContent)
-    expect(chipNames).toEqual(['全部', '品牌', '场景'])
+    expect(chipNames).toEqual(['全部', '品牌', '通用'])
     expect(within(chips).getByRole('radio', { name: '全部' })).toHaveAttribute(
       'aria-checked',
       'true',
@@ -104,7 +104,7 @@ describe('组件、块页签 · 列出和筛选', () => {
     await user.type(search, '文字效果')
     expect(cardNames()).toEqual(['测试可填项，5 秒'])
     await user.clear(search)
-    await user.type(search, '场景')
+    await user.type(search, '通用')
     expect(screen.queryByRole('list')).toBeNull()
     expect(screen.getByRole('status')).toHaveTextContent('暂无符合条件的贴片，请更换关键词或分类')
   })

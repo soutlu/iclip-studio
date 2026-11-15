@@ -156,7 +156,7 @@ export function FinalCutEditor({ conversationId, conversationTitle, onClose }: P
                   action={{ label: '重试', onClick: () => void failed.refetch() }}
                   message={errorMessageOf(
                     failed.error,
-                    failed === draftQuery ? '成片草稿读取失败' : '组件库读取失败',
+                    failed === draftQuery ? '成片草稿读取失败' : '贴片和场景读取失败',
                   )}
                 />
               </div>

@@ -12,7 +12,7 @@
     { "id": "effects", "label": "效果" },
     { "id": "text-effects", "label": "文字效果" },
     { "id": "social", "label": "社交" },
-    { "id": "scenes", "label": "场景" }
+    { "id": "scenes", "label": "通用" }
   ],
   "items": [
     {
