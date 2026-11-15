@@ -152,7 +152,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 ### 成片草稿
 
-业务规则见 [CONTEXT.md「成片草稿」](../docs/CONTEXT.md#术语)。草稿是一份成片文件（HTML 字符串 `html`），写法由 [composition/film.ts](../web/src/features/storyboard/whole-film/composition/film.ts) 定义：
+业务规则见 [CONTEXT.md「成片草稿」](../docs/CONTEXT.md#术语)。草稿是一份成片文件（HTML 字符串 `html`），写法由 [composition/film.ts](../web/src/features/storyboard/final-cut/composition/film.ts) 定义：
 - **读取草稿** `GET /conversations/{id}/whole-film/draft`：如果还没保存过草稿，正常返回 `{ revision: 0, html: null, updatedAt: null }`。
 - **保存草稿** `PUT .../whole-film/draft`：仅对话创建者可保存，传入读取时的版本号 `revision`（首次保存传 `0`）与整份 `html`；版本冲突返回 `409`，保存成功后 `revision` 加 1。存下的是渲染服务按写法重写后的那一份（`<head>`、根上的属性和变量声明都按片段重新算出），所以读回来的文本可以和提交的不一样。组件或块的片段的摆放和字体也由 `<head>` 按片段的编号给出（片段上不另带样式）：组件库目录里条目的 `size` 和画面不一样大时，片段定成这个尺寸、居中，按 `min(画面宽 / 组件宽, 画面高 / 组件高)` 缩放；第一个字体类可填项取到组件库 `fonts` 里的字体族时（片段上没填就取默认值），`--font-display` 和 `--font-body` 都设成 `'<字体族>', '<中文字体族>', sans-serif`，取到别的值不写。
 - **草稿校验规则（违反返回 `422`）**：
@@ -169,13 +169,13 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 ### 成片工程与预览域名
 
-成片工程是对话工作区里的 `whole-film/` 目录。工程里的脚本不可信，所以预览放在应用域名下的一个子域名（预览域名，配置项 `WHOLE_FILM_PREVIEW_ORIGIN`，见 [deploy.md](../docs/deploy.md)）里运行。登录 Cookie 不设 `Domain`，预览域名拿不到它，取工程文件靠地址里的令牌。
+成片工程是对话工作区里的 `final-cut/` 目录。工程里的脚本不可信，所以预览放在应用域名下的一个子域名（预览域名，配置项 `FINAL_CUT_PREVIEW_ORIGIN`，见 [deploy.md](../docs/deploy.md)）里运行。登录 Cookie 不设 `Domain`，预览域名拿不到它，取工程文件靠地址里的令牌。
 - **按主机名划分**：后端按请求的 `Host` 区分两个域名，在所有路由之前生效（反向代理须原样转发 `Host`，见 §1）。`Host` 是预览域名时只开放下面两个预览地址，其余接口（包括登录）一律 `404`，WebSocket 握手直接拒绝；`Host` 是别的主机时预览地址一律 `404`。没配置预览域名时，任何主机上的预览地址都是 `404`。
-- **发令牌** `POST /conversations/{id}/whole-film/preview`（应用域名，登录态）：可见范围同读工作区文件，治理者也能发；看不见这段对话返回 `404`。返回 `{ origin, token, expiresAt }`：`origin` 是预览域名，令牌 1 小时有效。令牌签进对话的创建者、对话、失效时刻和这次请求的 `Origin` 请求头，不落库，到期前不能吊销。没配置预览域名、请求没带 `Origin` 或它不是 `http(s)://主机[:端口]` 都返回 `422`。前端自己拼出预览地址 `<origin>/api/whole-film/preview/<token>/…`。
+- **发令牌** `POST /conversations/{id}/final-cut/preview`（应用域名，登录态）：可见范围同读工作区文件，治理者也能发；看不见这段对话返回 `404`。返回 `{ origin, token, expiresAt }`：`origin` 是预览域名，令牌 1 小时有效。令牌签进对话的创建者、对话、失效时刻和这次请求的 `Origin` 请求头，不落库，到期前不能吊销。没配置预览域名、请求没带 `Origin` 或它不是 `http(s)://主机[:端口]` 都返回 `422`。前端自己拼出预览地址 `<origin>/api/final-cut/preview/<token>/…`。
 - **预览地址**（预览域名，不看登录态）：令牌不对或已过期返回 `403`。
-  - `GET /whole-film/preview/{token}/host` 返回 `{ appOrigin }`，即发令牌时请求的 `Origin`。预览页据此确认自己在预览域名上，并只接受来自这个来源的消息。
-  - `GET /whole-film/preview/{token}/files/{path}`：`path` 相对工程根，带 `.` 或 `..` 段、空段、以 `/` 开头或结尾、带反斜杠都返回 `404`。以 `vendor/` 开头的返回 `307`，转到同主机的 `/hyperframes/vendor/<其余部分>`（公共库的文件，由前端的静态文件提供）；其余原文返回工作区里的 `whole-film/<path>`，没有就返回 `404`，不到别处找。类型按扩展名给出：`.html`、`.css`、`.js` / `.mjs`、`.json`、`.svg`、`.txt` 各用对应类型（文本类带 `charset=utf-8`），其余为 `application/octet-stream`。响应头带 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff` 与 `Referrer-Policy: no-referrer`。
-- **新建工程文件** `POST /conversations/{id}/whole-film/files`（应用域名，登录态）：请求体 `{ path, content }`，`path` 相对工程根，规则同上，不合规返回 `422`；写进工作区的 `whole-film/<path>`。只有对话创建者能建：看不见这段对话返回 `404`（包括创建者自己删掉的对话），看得见但不是创建者、或看得见的是已删除的对话（治理者）返回 `403`。文件已存在返回 `409`，不覆盖；成功返回 `201 { path, version }`，`path` 与请求里的相同。之后修改这个文件走 `PUT /conversations/{id}/workspace/file`，路径写 `whole-film/<path>`。
+  - `GET /final-cut/preview/{token}/host` 返回 `{ appOrigin }`，即发令牌时请求的 `Origin`。预览页据此确认自己在预览域名上，并只接受来自这个来源的消息。
+  - `GET /final-cut/preview/{token}/files/{path}`：`path` 相对工程根，带 `.` 或 `..` 段、空段、以 `/` 开头或结尾、带反斜杠都返回 `404`。以 `vendor/` 开头的返回 `307`，转到同主机的 `/hyperframes/vendor/<其余部分>`（公共库的文件，由前端的静态文件提供）；其余原文返回工作区里的 `final-cut/<path>`，没有就返回 `404`，不到别处找。类型按扩展名给出：`.html`、`.css`、`.js` / `.mjs`、`.json`、`.svg`、`.txt` 各用对应类型（文本类带 `charset=utf-8`），其余为 `application/octet-stream`。响应头带 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff` 与 `Referrer-Policy: no-referrer`。
+- **新建工程文件** `POST /conversations/{id}/final-cut/files`（应用域名，登录态）：请求体 `{ path, content }`，`path` 相对工程根，规则同上，不合规返回 `422`；写进工作区的 `final-cut/<path>`。只有对话创建者能建：看不见这段对话返回 `404`（包括创建者自己删掉的对话），看得见但不是创建者、或看得见的是已删除的对话（治理者）返回 `403`。文件已存在返回 `409`，不覆盖；成功返回 `201 { path, version }`，`path` 与请求里的相同。之后修改这个文件走 `PUT /conversations/{id}/workspace/file`，路径写 `final-cut/<path>`。
 
 ### 分叉
 

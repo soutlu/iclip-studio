@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
-import { audio, host, video } from '@/testing/whole-film'
+import { audio, host, video } from '@/testing/final-cut'
 import {
   audioPlayheadSpot,
   audioTitleOf,

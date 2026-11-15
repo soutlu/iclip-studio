@@ -2,8 +2,8 @@
 **
 !render/
 !render/**
-!web/src/features/storyboard/whole-film/
-!web/src/features/storyboard/whole-film/**
+!web/src/features/storyboard/final-cut/
+!web/src/features/storyboard/final-cut/**
 !web/src/shared/api/generated/
 !web/src/shared/api/generated/**
 render/node_modules/

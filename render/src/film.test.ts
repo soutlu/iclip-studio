@@ -10,7 +10,7 @@ import {
   type Film,
   type FilmClip,
   type VideoClip,
-} from '../../web/src/features/storyboard/whole-film/composition/film'
+} from '../../web/src/features/storyboard/final-cut/composition/film'
 import { checkFilm, FilmProblem, localizedFilm, readFilm } from './film'
 import { AUDIO_JOB, AUDIO_URL, audio, catalog, host, SOURCE_JOB } from './testing'
 

@@ -68,7 +68,7 @@ export default defineConfig(({ mode }) => {
       rolldownOptions: {
         input: {
           main: path.resolve(import.meta.dirname, 'index.html'),
-          wholeFilmPreview: path.resolve(import.meta.dirname, 'whole-film-preview.html'),
+          finalCutPreview: path.resolve(import.meta.dirname, 'final-cut-preview.html'),
         },
       },
     },

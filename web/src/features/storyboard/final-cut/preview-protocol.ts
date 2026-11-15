@@ -7,7 +7,7 @@ import { z } from 'zod'
  */
 
 /** 预览页在预览域名下的路径；令牌写在 `#` 后面，不进请求和来源页地址。 */
-export const PREVIEW_PAGE_PATH = '/whole-film-preview.html'
+export const PREVIEW_PAGE_PATH = '/final-cut-preview.html'
 
 export const previewPageUrl = (origin: string, token: string): string =>
   `${origin}${PREVIEW_PAGE_PATH}#${encodeURIComponent(token)}`

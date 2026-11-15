@@ -10,9 +10,9 @@ import { addMockConversation } from '@/testing/mocks/conversations'
 import { server } from '@/testing/mocks/server'
 import { mockWholeFilmDraft, putMockWholeFilmDraft } from '@/testing/mocks/whole-film'
 import { renderWithProviders } from '@/testing/render'
-import { audio, filmFile, fixtureCatalog, host, video } from '@/testing/whole-film'
+import { audio, filmFile, fixtureCatalog, host, video } from '@/testing/final-cut'
 import type { GenerationJob } from '../storyboard.api'
-import { WholeFilmEditor } from './whole-film-editor'
+import { FinalCutEditor } from './final-cut-editor'
 
 const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: number }>())
 // 素材有没有音轨：在 `sounds` 里的有，在 `unreadable` 里的读音轨时出错，别的没有
@@ -108,7 +108,7 @@ const openEditor = async (records: GenerationJob[] = takes) => {
   serveGenerations(records)
   const rendered = await renderWithProviders(
     <>
-      <WholeFilmEditor
+      <FinalCutEditor
         conversationTitle="夜景延时素材生成"
         conversationId={CONVERSATION}
         onClose={vi.fn()}
@@ -293,7 +293,7 @@ describe('成片编辑器 · 加入素材', () => {
     )
     serveGenerations(takes)
     await renderWithProviders(
-      <WholeFilmEditor
+      <FinalCutEditor
         conversationTitle="夜景延时素材生成"
         conversationId={CONVERSATION}
         onClose={vi.fn()}
@@ -718,7 +718,7 @@ describe('成片编辑器 · 播放', () => {
     putMockWholeFilmDraft(CONVERSATION, twoVideos())
     let refused = true
     server.use(
-      http.post('*/api/conversations/:conversationId/whole-film/preview', () =>
+      http.post('*/api/conversations/:conversationId/final-cut/preview', () =>
         refused ? HttpResponse.json({ detail: '没有配置预览域名' }, { status: 422 }) : undefined,
       ),
     )

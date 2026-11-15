@@ -1,9 +1,9 @@
-import { createPreviewPage, type PreviewPage } from '@/features/storyboard/whole-film/preview-page'
+import { createPreviewPage, type PreviewPage } from '@/features/storyboard/final-cut/preview-page'
 import {
   PREVIEW_PAGE_PATH,
   zPreviewCommand,
   type PreviewCommand,
-} from '@/features/storyboard/whole-film/preview-protocol'
+} from '@/features/storyboard/final-cut/preview-protocol'
 
 /**
  * 嵌进编辑器的一个预览页替身。jsdom 不加载 iframe 的地址，跨来源的 postMessage 也会丢，

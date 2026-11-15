@@ -1,6 +1,6 @@
 import '@hyperframes/player'
 import { apiFetch } from '@/shared/api/client'
-import { zWholeFilmPreviewHostOut } from '@/shared/api/generated/zod.gen'
+import { zFinalCutPreviewHostOut } from '@/shared/api/generated/zod.gen'
 import { mergeSpans, sameSpans, spansOf, windowSpans, type TimeSpan } from '@/shared/lib/time-spans'
 import { zPreviewCommand, type PreviewCommand, type PreviewEvent } from './preview-protocol'
 import { secondsToFrame, STUDIO_PREVIEW_FPS } from './vendor/hyperframes-studio/player/lib/time'
@@ -326,8 +326,8 @@ export const createPreviewPage = (
 export const bootPreviewPage = async (token: string, mount: HTMLElement): Promise<() => void> => {
   if (token === '') throw new Error('预览页地址里没有令牌')
   const { appOrigin } = await apiFetch(
-    `/whole-film/preview/${encodeURIComponent(token)}/host`,
-    zWholeFilmPreviewHostOut,
+    `/final-cut/preview/${encodeURIComponent(token)}/host`,
+    zFinalCutPreviewHostOut,
     { fallbackErrorMessage: '预览页确认应用来源失败' },
   )
   const parent = window.parent

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { audio, host, video } from '@/testing/whole-film'
+import { audio, host, video } from '@/testing/final-cut'
 import type { FilmClip } from './composition/film'
 import {
   landingOn,

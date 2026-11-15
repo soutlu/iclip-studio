@@ -4,7 +4,7 @@ import { previewPageUrl, zPreviewCommand, zPreviewEvent } from './preview-protoc
 describe('预览页地址', () => {
   it('预览域名下的预览页，令牌编码后写在 # 后面', () => {
     expect(previewPageUrl('https://preview.example.com', 'a/b c')).toBe(
-      'https://preview.example.com/whole-film-preview.html#a%2Fb%20c',
+      'https://preview.example.com/final-cut-preview.html#a%2Fb%20c',
     )
   })
 })

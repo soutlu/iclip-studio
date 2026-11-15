@@ -69,7 +69,7 @@ const PREVIEW_TOKEN_TTL_MS = 3600_000
 
 export const wholeFilmHandlers = [
   // 预览页在另一个主机名上，应用页的 MSW 管不到它：它取应用来源走 mock 开发服务器的中间件
-  http.post('*/api/conversations/:conversationId/whole-film/preview', ({ request }) => {
+  http.post('*/api/conversations/:conversationId/final-cut/preview', ({ request }) => {
     const appOrigin = new URL(request.url).origin
     return HttpResponse.json({
       origin: mockPreviewOrigin(appOrigin),

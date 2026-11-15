@@ -6,10 +6,11 @@ from typing import Any
 
 from iclip.domains.conversations.api import (
     create_conversations_router,
+    create_final_cut_preview_router,
+    create_final_cut_project_router,
     create_previews_router,
-    create_whole_film_preview_router,
-    create_whole_film_project_router,
 )
+from iclip.domains.conversations.final_cut_project import FinalCutProject, PreviewTokens
 from iclip.domains.conversations.repository import (
     AgentPreviewStore,
     ConversationRepository,
@@ -41,7 +42,6 @@ from iclip.domains.conversations.service import (
     WorkspaceDocumentValidator,
     WriteDerivedFile,
 )
-from iclip.domains.conversations.whole_film_project import PreviewTokens, WholeFilmProject
 from iclip.domains.identity.public import ActAs
 
 
@@ -111,7 +111,7 @@ def build_conversations_module(
         announce_row=announce_row,
         announce_deleted=announce_deleted,
     )
-    project = WholeFilmProject(
+    project = FinalCutProject(
         service,
         read_file=read_derived_file,
         write_file=write_derived_file,
@@ -122,8 +122,8 @@ def build_conversations_module(
         routers=(
             create_conversations_router(service, agents=list_agents, act_as=act_as),
             create_previews_router(service),
-            create_whole_film_project_router(project),
-            create_whole_film_preview_router(project),
+            create_final_cut_project_router(project),
+            create_final_cut_preview_router(project),
         ),
         service=service,
     )

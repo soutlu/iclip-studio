@@ -58,7 +58,7 @@ export default tseslint.config(
       'docs',
       // vendor 按上游风格维护、不套本仓 lint，维护约定见各目录 README。
       'src/shared/transcript/vendor/**',
-      'src/features/storyboard/whole-film/vendor/hyperframes-studio/**',
+      'src/features/storyboard/final-cut/vendor/hyperframes-studio/**',
     ],
   },
 
@@ -246,7 +246,7 @@ export default tseslint.config(
   // allow-same-origin 不能去：预览页要保留自己的来源才能取文件、让播放器读到成片。
   // sandbox 本身也不能去：没有它，成片里的脚本能把整个应用页面带到别的网站。
   {
-    files: ['src/features/storyboard/whole-film/preview-player.tsx'],
+    files: ['src/features/storyboard/final-cut/preview-player.tsx'],
     rules: {
       '@eslint-react/dom-no-unsafe-iframe-sandbox': 'off',
     },

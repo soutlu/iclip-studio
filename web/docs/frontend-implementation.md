@@ -42,21 +42,21 @@
 
 ## 成片组件
 
-成片动态组件目录的数据结构见 [catalog.ts](../src/features/storyboard/whole-film/composition/catalog.ts)，组件库源目录的打包规则见[组装脚本](../scripts/hyperframes-registry.mjs)文件头说明：
+成片动态组件目录的数据结构见 [catalog.ts](../src/features/storyboard/final-cut/composition/catalog.ts)，组件库源目录的打包规则见[组装脚本](../scripts/hyperframes-registry.mjs)文件头说明：
 
 - **组件字体 CSS 变量机制**：组件内部标题统一读取 `var(--font-display, <组件默认字体>)`，正文读取 `var(--font-body, <组件默认字体>)`。
-- **中文字体只声明用到的字**：播放运行时会把成片声明的字体全部加载完才运行组件脚本，所以成片文件的 `<head>` 只为出现的字声明 Noto Sans SC 的分片（[fonts.ts](../src/features/storyboard/whole-film/composition/fonts.ts)）——成片里写出的文字、所用组件文件里的非 ASCII 字符（组件目录每个条目的 `chars`），西文基本字符总是带上；用到的西文字体族按组件目录里的 `cjk` 描述各带一组指向同样分片的规则。组件文件不要自己链接整份中文字体样式，组装时会去掉这样的链接。
+- **中文字体只声明用到的字**：播放运行时会把成片声明的字体全部加载完才运行组件脚本，所以成片文件的 `<head>` 只为出现的字声明 Noto Sans SC 的分片（[fonts.ts](../src/features/storyboard/final-cut/composition/fonts.ts)）——成片里写出的文字、所用组件文件里的非 ASCII 字符（组件目录每个条目的 `chars`），西文基本字符总是带上；用到的西文字体族按组件目录里的 `cjk` 描述各带一组指向同样分片的规则。组件文件不要自己链接整份中文字体样式，组装时会去掉这样的链接。
 - **组件的字体配置项**：只要组件源码中使用了上述字体变量，打包脚本会自动为它补充一个 `{ "id": "font", "type": "font", "label": "字体", "default": "" }` 可填项。
 
 ## 成片文件
 
-成片草稿是一份 HTML（业务规则见 [CONTEXT.md「成片草稿」](../../docs/CONTEXT.md#术语)），写法在 [composition/film.ts](../src/features/storyboard/whole-film/composition/film.ts)：
+成片草稿是一份 HTML（业务规则见 [CONTEXT.md「成片草稿」](../../docs/CONTEXT.md#术语)），写法在 [composition/film.ts](../src/features/storyboard/final-cut/composition/film.ts)：
 
 - **只经 SDK 改文件**：编辑器用 SDK 打开成片文件，每个编辑动作是一次 SDK 操作，撤销重做用 SDK 自带的；不直接拼改 HTML 字符串。SDK 的编辑引擎按需加载，不进主包。
 - **新片段用写法里的函数写**：往成片里加片段时，用 `film.ts` 里对应的函数写出标签（如 `videoClip`），素材地址的变量用 `sourceVariable` 声明，保证和渲染服务检查时读的是同一种写法。
-- **保存交给会话**：[use-film-session.ts](../src/features/storyboard/whole-film/use-film-session.ts) 在停下后整份保存并带上版本号；`409` 时换成服务端最新的一版。渲染服务会按写法重写文件，所以存下的文本可以和提交的不同。
-- **预览按片段重写整份、不改存着的文件**：SDK 编辑时不改 `<head>`，所以预览把当前的片段用 `writeFilm` 重新写出整份（和渲染服务存下的一样），再加上组件库的基准地址和预览专用的媒体加载方式（[preview-document.ts](../src/features/storyboard/whole-film/preview-document.ts)）。
-- **预览在预览域名下运行**：成片里的脚本不能拿到应用的登录态，所以播放器和成片都放在预览域名下的预览页（[preview-page.ts](../src/features/storyboard/whole-film/preview-page.ts)）里，编辑器只嵌入它、靠消息控制它（协议见 [preview-protocol.ts](../src/features/storyboard/whole-film/preview-protocol.ts)）。缓冲、素材失败等要读成片页面的判断都在预览页里做，结果用消息报回；编辑器收到的每条消息先按协议校验，只当数据用。成片文档里的组件库和运行库地址用预览域名。
+- **保存交给会话**：[use-film-session.ts](../src/features/storyboard/final-cut/use-film-session.ts) 在停下后整份保存并带上版本号；`409` 时换成服务端最新的一版。渲染服务会按写法重写文件，所以存下的文本可以和提交的不同。
+- **预览按片段重写整份、不改存着的文件**：SDK 编辑时不改 `<head>`，所以预览把当前的片段用 `writeFilm` 重新写出整份（和渲染服务存下的一样），再加上组件库的基准地址和预览专用的媒体加载方式（[preview-document.ts](../src/features/storyboard/final-cut/preview-document.ts)）。
+- **预览在预览域名下运行**：成片里的脚本不能拿到应用的登录态，所以播放器和成片都放在预览域名下的预览页（[preview-page.ts](../src/features/storyboard/final-cut/preview-page.ts)）里，编辑器只嵌入它、靠消息控制它（协议见 [preview-protocol.ts](../src/features/storyboard/final-cut/preview-protocol.ts)）。缓冲、素材失败等要读成片页面的判断都在预览页里做，结果用消息报回；编辑器收到的每条消息先按协议校验，只当数据用。成片文档里的组件库和运行库地址用预览域名。
 
 ## 测试
 
@@ -73,4 +73,4 @@
 
 - **按用户可见的方式查找元素**：优先使用 `getByRole`、无障碍名称（`aria-label` / 按钮文字）或必要的 `data-testid` 定位元素；**严禁通过 CSS 类名（`className`）或内联样式来定位元素或做行为断言**。
 - **使用 MSW 拦截网络请求**：所有 HTTP 请求测试统一通过 MSW 处理，禁止手写 `vi.spyOn(global, 'fetch')`；同样禁止对仓库内部的模块、Hook 或工具函数打 spy（`toHaveBeenCalled*` 只用于组件对外的回调 Prop，或 `navigator.clipboard`、`window.open` 等浏览器原生系统边界）。
-- **成片编辑器测试使用内置固定夹具**：测试成片编辑器代码时，只使用仓库内置的测试组件库（`scripts/hyperframes-fixtures/`，单测直接用 `src/testing/whole-film.ts` 中的 `fixtureCatalog`），不依赖外部正式组件库。
+- **成片编辑器测试使用内置固定夹具**：测试成片编辑器代码时，只使用仓库内置的测试组件库（`scripts/hyperframes-fixtures/`，单测直接用 `src/testing/final-cut.ts` 中的 `fixtureCatalog`），不依赖外部正式组件库。

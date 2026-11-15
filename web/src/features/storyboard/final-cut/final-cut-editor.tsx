@@ -87,8 +87,8 @@ import {
 } from './timeline-scale'
 import { useFilmSession, type NewAudio } from './use-film-session'
 import { useWholeFilmExport } from './use-whole-film-export'
-import { useWholeFilmDraftQuery, useWholeFilmPreviewQuery } from './whole-film.api'
-import './whole-film.css'
+import { useWholeFilmDraftQuery, useFinalCutPreviewQuery } from './final-cut.api'
+import './final-cut.css'
 
 type Props = {
   conversationId: string
@@ -122,7 +122,7 @@ function EditorHeader({ actions, title }: { actions: ReactNode; title: string })
   )
 }
 
-export function WholeFilmEditor({ conversationId, conversationTitle, onClose }: Props) {
+export function FinalCutEditor({ conversationId, conversationTitle, onClose }: Props) {
   const draftQuery = useWholeFilmDraftQuery(conversationId)
   const catalogQuery = useComponentCatalog()
   const keysRef = useRef<((event: KeyboardEvent<HTMLDivElement>) => void) | null>(null)
@@ -552,7 +552,7 @@ function EditorBody({
     }
   })
 
-  const previewQuery = useWholeFilmPreviewQuery(conversationId)
+  const previewQuery = useFinalCutPreviewQuery(conversationId)
   const previewPage: PreviewPageAddress = previewQuery.isError
     ? {
         kind: 'failed',

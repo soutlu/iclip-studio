@@ -78,6 +78,10 @@ from iclip.domains.brand_templates.infra_sql import SqlBrandTemplateStore
 from iclip.domains.brand_templates.module import BrandTemplatesModule, build_brand_templates_module
 from iclip.domains.collections.infra_sql import SqlCollectionRepository
 from iclip.domains.collections.module import build_collections_module
+from iclip.domains.conversations.final_cut_project import (
+    FINAL_CUT_PREVIEW_PREFIX,
+    PreviewTokens,
+)
 from iclip.domains.conversations.infra_sql import (
     SqlAgentPreviewStore,
     SqlConversationRepository,
@@ -87,10 +91,6 @@ from iclip.domains.conversations.module import build_conversations_module
 from iclip.domains.conversations.service import (
     CollectionInfo,
     ConversationActivity,
-)
-from iclip.domains.conversations.whole_film_project import (
-    WHOLE_FILM_PREVIEW_PREFIX,
-    PreviewTokens,
 )
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import InFlightPhase
@@ -309,7 +309,7 @@ def build_app(
     sso_verifier: SsoVerifier | None = None,
     pms_client: PmsUserClient | None = None,
     object_store: PublicBucket | None = None,
-    whole_film_render_transport: httpx.AsyncBaseTransport | None = None,
+    final_cut_render_transport: httpx.AsyncBaseTransport | None = None,
     image_fetcher: FetchBytes | None = None,
     queue_connector: procrastinate.BaseConnector | None = None,
     product_catalog_engine: AsyncEngine | None = None,
@@ -361,8 +361,8 @@ def build_app(
     _require_ffmpeg(settings.ffmpeg_required)
     render_client = (
         None
-        if settings.whole_film_render is None
-        else RenderClient(settings.whole_film_render.url, transport=whole_film_render_transport)
+        if settings.final_cut_render is None
+        else RenderClient(settings.final_cut_render.url, transport=final_cut_render_transport)
     )
     codec = _media_codec(settings.ffmpeg_required, media_codec)
     compose_concurrency = (
@@ -641,7 +641,7 @@ def build_app(
         video_progress_of=video_progress_of,
         same_style_files=SAME_STYLE,
         same_style_source=LibrarySameStyleSource(library_reports),
-        preview_origin=settings.whole_film_preview_origin,
+        preview_origin=settings.final_cut_preview_origin,
         preview_tokens=PreviewTokens(settings.security.secret),
     )
     mcp_servers = build_mcp_servers_module(
@@ -798,7 +798,7 @@ def build_app(
     app.add_middleware(
         PrincipalMiddleware,
         resolver=identity.resolver,
-        anonymous_prefixes=(f"{RUNTIME_INTERNAL_PREFIX}/", f"{WHOLE_FILM_PREVIEW_PREFIX}/"),
+        anonymous_prefixes=(f"{RUNTIME_INTERNAL_PREFIX}/", f"{FINAL_CUT_PREVIEW_PREFIX}/"),
     )
     if settings.security.cors_allow_origins:
         app.add_middleware(
@@ -809,11 +809,11 @@ def build_app(
             allow_headers=["*"],
         )
     # 按主机名的划分是成片预览的安全边界，必须在 CORS 与登录态解析之外，最后注册。
-    preview_origin = settings.whole_film_preview_origin
+    preview_origin = settings.final_cut_preview_origin
     app.add_middleware(
         PreviewHostSplit,
         preview_host=None if preview_origin is None else urlsplit(preview_origin).netloc,
-        preview_prefix=WHOLE_FILM_PREVIEW_PREFIX,
+        preview_prefix=FINAL_CUT_PREVIEW_PREFIX,
     )
 
     app.state.generation = generation

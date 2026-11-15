@@ -1,11 +1,11 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { openConversation, wholeFilmPreviewPage } from './helpers'
+import { openConversation, finalCutPreviewPage } from './helpers'
 
-const openWholeFilm = async (page: Page, panel: Locator) => {
+const openFinalCut = async (page: Page, panel: Locator) => {
   await panel.getByRole('button', { name: '成片', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '夜景延时素材生成' })
   await expect(dialog).toBeVisible()
-  await expect(page).toHaveURL(/[?&]wholeFilm=true/)
+  await expect(page).toHaveURL(/[?&]finalCut=true/)
   return dialog
 }
 
@@ -18,7 +18,7 @@ const draftSaved = (page: Page, clips: number) =>
   )
 
 const readyPlayer = async (dialog: Locator) => {
-  const player = wholeFilmPreviewPage(dialog).locator('hyperframes-player')
+  const player = finalCutPreviewPage(dialog).locator('hyperframes-player')
   await expect
     .poll(() =>
       player.evaluateAll(
@@ -55,7 +55,7 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
     page.waitForRequest((request) => new URL(request.url()).pathname.endsWith(RUNTIME_FILE))
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const dialog = await openWholeFilm(page, panel)
+  const dialog = await openFinalCut(page, panel)
   const toolbar = dialog.getByRole('toolbar', { name: '剪辑工具' })
   const transport = dialog.getByRole('group', { name: '播放控制' })
   await expect(dialog.getByText('暂无成片内容，加入内容后可在此预览')).toBeVisible()
@@ -198,7 +198,7 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
 
   await dialog.getByRole('button', { name: '关闭成片编辑' }).click()
   await expect(dialog).toBeHidden()
-  const reopened = await openWholeFilm(page, panel)
+  const reopened = await openFinalCut(page, panel)
   await expect(reopened.getByRole('button', { name: '下载成片' })).toBeVisible()
   const reopenedToolbar = reopened.getByRole('toolbar', { name: '剪辑工具' })
   await expect(
@@ -232,7 +232,7 @@ test('播放条：倍速和静音对素材、成片都生效且换播放器后�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const dialog = await openWholeFilm(page, panel)
+  const dialog = await openFinalCut(page, panel)
   const transport = dialog.getByRole('group', { name: '播放控制' })
   const materials = dialog
     .getByRole('region', { name: '视频素材区' })
@@ -381,7 +381,7 @@ test('块页签搜到块点「加到播放头」、组件页签拖一个组件�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const dialog = await openWholeFilm(page, panel)
+  const dialog = await openFinalCut(page, panel)
   const first = draftSaved(page, 1)
   await dialog
     .getByRole('region', { name: '视频素材区' })
@@ -484,7 +484,7 @@ test('右侧栏：选中组件或块的片段改文字可填项，存下来、�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const dialog = await openWholeFilm(page, panel)
+  const dialog = await openFinalCut(page, panel)
   const inspector = dialog.getByRole('complementary', { name: '属性' })
   await expect(inspector.getByRole('heading', { name: '尚未选中片段' })).toBeVisible()
 
@@ -569,7 +569,7 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const dialog = await openWholeFilm(page, panel)
+  const dialog = await openFinalCut(page, panel)
   const first = draftSaved(page, 1)
   await dialog
     .getByRole('region', { name: '视频素材区' })
@@ -684,7 +684,7 @@ test('右侧栏「媒体」：音频片段拉满增益、打开循环写进文�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const dialog = await openWholeFilm(page, panel)
+  const dialog = await openFinalCut(page, panel)
   const inspector = dialog.getByRole('complementary', { name: '属性' })
   const first = draftSaved(page, 1)
   const materials = dialog
@@ -761,7 +761,7 @@ test('右侧栏「媒体」：音频片段拉满增益、打开循环写进文�
 test('成片编辑器在窄屏上纵向排开', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const panel = await openConversation(page, '夜景延时素材生成', { mobile: true })
-  const dialog = await openWholeFilm(page, panel)
+  const dialog = await openFinalCut(page, panel)
   await expect(dialog.getByRole('region', { name: '视频素材区' })).toBeVisible()
   // 右侧栏接在时间线下面，按内容高，不被挤成看不见
   const inspector = dialog.getByRole('complementary', { name: '属性' })

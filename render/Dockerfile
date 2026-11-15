@@ -20,7 +20,7 @@ COPY render/package.json render/pnpm-lock.yaml render/pnpm-workspace.yaml render
 RUN npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")" \
     && pnpm install --frozen-lockfile
 COPY render/ ./
-COPY web/src/features/storyboard/whole-film/composition/ /app/web/src/features/storyboard/whole-film/composition/
+COPY web/src/features/storyboard/final-cut/composition/ /app/web/src/features/storyboard/final-cut/composition/
 RUN pnpm build && pnpm prune --prod
 
 # ---------------------------------------------------------------- 运行

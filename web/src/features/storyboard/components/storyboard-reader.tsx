@@ -18,7 +18,7 @@ import { useLiveGenerations } from '../use-live-generations'
 import { useStageSelection } from '../use-stage-selection'
 import { useVideoGeneration } from '../use-video-generation'
 import { VideoEditor } from '../video-editor/video-editor'
-import { WholeFilmEditor } from '../whole-film/whole-film-editor'
+import { FinalCutEditor } from '../final-cut/final-cut-editor'
 import { ConflictDialog, ReaderNotice, SaveStatus } from './draft-status'
 import { ReaderImageEdit, type FrameEditSession } from './reader-image-edit'
 import { ReaderPage } from './reader-page'
@@ -31,7 +31,7 @@ type ReaderSearch = {
   frame?: number | undefined
   shot?: number | undefined
   video?: string | undefined
-  wholeFilm?: true | undefined
+  finalCut?: true | undefined
 }
 
 export function StoryboardReader(props: ArtifactRendererProps) {
@@ -156,7 +156,7 @@ function StoryboardWorkspace({
           copy={{ done: '已复制完整提示词', label: '复制完整提示词', text: formatShotPrompt(shot) }}
           groups={shots.map((item) => shotGroupSummary(item, document.aspect_ratio))}
           onGoShot={goShot}
-          onWholeFilm={readOnly ? undefined : () => go({ wholeFilm: true })}
+          onFinalCut={readOnly ? undefined : () => go({ finalCut: true })}
           position={position}
           status={
             <SaveStatus
@@ -254,11 +254,11 @@ function StoryboardWorkspace({
           video={videoEditRoot}
         />
       )}
-      {search.wholeFilm === true && !readOnly ? (
-        <WholeFilmEditor
+      {search.finalCut === true && !readOnly ? (
+        <FinalCutEditor
           conversationId={conversationId}
           conversationTitle={conversationTitle}
-          onClose={() => go({ wholeFilm: undefined })}
+          onClose={() => go({ finalCut: undefined })}
         />
       ) : null}
       {imageEdit === null ? null : (

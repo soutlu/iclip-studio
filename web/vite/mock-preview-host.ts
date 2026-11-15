@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin } from 'vite'
 import { appOriginOfMockToken } from '../src/testing/mocks/preview-token.ts'
 
-const HOST_PATH = /^\/api\/whole-film\/preview\/([^/]+)\/host$/
+const HOST_PATH = /^\/api\/final-cut\/preview\/([^/]+)\/host$/
 
 const answer = (response: ServerResponse, status: number, body: unknown) => {
   response.statusCode = status
@@ -11,7 +11,7 @@ const answer = (response: ServerResponse, status: number, body: unknown) => {
 }
 
 /**
- * 按后端的规则回答预览页的 `GET /api/whole-film/preview/<令牌>/host`：令牌无效 403；
+ * 按后端的规则回答预览页的 `GET /api/final-cut/preview/<令牌>/host`：令牌无效 403；
  * 请求的主机名就是应用自己的（在应用域名下打开了预览页）404；否则给出令牌里的应用来源。
  */
 const answerPreviewHost = (
