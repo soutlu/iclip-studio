@@ -117,7 +117,7 @@ describe('同一镜头组里有几条原作', () => {
     expect(projectVersions(takeB, group).map((version) => version.label)).toEqual(['V2 原片', 'V4'])
   })
 
-  it('同一条素材片在成片素材区与编辑器里是同一个版本名', () => {
+  it('同一条素材片在 final-cut 素材区与编辑器里是同一个版本名', () => {
     const catalog = materialCatalog(groupConversationVideos(conversation))
     for (const take of [takeA, takeB]) {
       const chain = conversation.filter((item) => item.rootJobId === take.id)

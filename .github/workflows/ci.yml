@@ -90,7 +90,7 @@ jobs:
                   format) web_format=true ;;
                   all) video_plugins=true; server=true; web=true; render=true ;;
                 esac
-                # 渲染服务打包 web 的成片文件写法，测试用 web 组装的测试组件库，它们变了也要查渲染服务。
+                # 渲染服务打包 web 的 final-cut 主文件写法，测试用 web 组装的测试组件库，它们变了也要查渲染服务。
                 case "$path" in
                   web/src/features/storyboard/final-cut/composition/*|web/scripts/hyperframes-*)
                     render=true ;;

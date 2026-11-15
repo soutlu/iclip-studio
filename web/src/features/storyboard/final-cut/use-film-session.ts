@@ -54,11 +54,11 @@ export type NewVideo = Pick<VideoClip, 'label' | 'src' | 'mediaStart' | 'duratio
 /** 要放进工程的一段音频：一条音频记录从 `mediaStart` 起的 `duration` 毫秒。 */
 export type NewAudio = Pick<AudioClip, 'label' | 'src' | 'mediaStart' | 'duration'>
 
-// SDK 的编辑引擎只在打开成片编辑器时才用得到，单独成块按需加载。
+// SDK 的编辑引擎只在打开 final-cut 编辑器时才用得到，单独成块按需加载。
 const openComposition = async (html: string): Promise<Composition> =>
   (await import('@hyperframes/sdk')).openComposition(html)
 
-const STALE_NOTICE = '成片草稿已在别处修改，已切换到最新版本；未保存的改动已放弃'
+const STALE_NOTICE = 'final-cut 已在别处修改，已切换到最新版本；未保存的改动已放弃'
 
 const NO_RENUMBERING: Renumbering = new Map()
 const NO_STARTS: ReadonlyMap<string, number> = new Map()
@@ -123,7 +123,7 @@ type Options = {
 }
 
 /**
- * 编辑对话工作区里的剪辑工程：打开主文件 `final-cut/index.html`（`initial` 是 null 时还没有工程），
+ * 编辑对话工作区里的 final-cut 工程：打开主文件 `final-cut/index.html`（`initial` 是 null 时还没有工程），
  * 改动停下 `debounceMs` 毫秒后整份保存（第一次新建、之后按版本号写）。主文件在别处被改了时换上那一份、
  * 放弃本地没存的改动；工程里别的文件变了时 `filesRevision` 加 1，预览据此重新加载。
  */
@@ -228,11 +228,11 @@ export function useFilmSession(
             setSave({ kind: 'idle' })
             return 'reloaded' as const
           } catch (reloadError) {
-            setSave({ kind: 'failed', message: errorMessageOf(reloadError, '成片草稿读取失败') })
+            setSave({ kind: 'failed', message: errorMessageOf(reloadError, 'final-cut 读取失败') })
             return 'failed' as const
           }
         }
-        setSave({ kind: 'failed', message: errorMessageOf(error, '成片草稿保存失败') })
+        setSave({ kind: 'failed', message: errorMessageOf(error, 'final-cut 保存失败') })
         return 'failed' as const
       }
     })()
@@ -257,7 +257,7 @@ export function useFilmSession(
       const external = stored === null ? known !== null : known === null || stored.version > known
       if (external) await adoptStored(stored)
     } catch (error) {
-      setSave({ kind: 'failed', message: errorMessageOf(error, '成片草稿读取失败') })
+      setSave({ kind: 'failed', message: errorMessageOf(error, 'final-cut 读取失败') })
     }
   }, [adoptStored, conversationId, settled])
 

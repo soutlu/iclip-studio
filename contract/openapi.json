@@ -4695,7 +4695,7 @@
       },
       "FinalCutFileIn": {
         "additionalProperties": false,
-        "description": "在成片工程里新建一个文件。``path`` 相对工程根，如 ``index.html``。",
+        "description": "在 final-cut 工程里新建一个文件。``path`` 相对工程根，如 ``index.html``。",
         "properties": {
           "content": {
             "title": "Content",
@@ -17745,7 +17745,7 @@
     },
     "/conversations/{conversation_id}/final-cut/files": {
       "post": {
-        "description": "在成片工程里新建一个文件，写进工作区的 ``final-cut/<path>``。只有属主能建：看不见这段\n对话 404，看得见但不是属主、或看得见已删除的对话（治理者）403；路径不合规 422；文件已存在\n409，不覆盖。",
+        "description": "在 final-cut 工程里新建一个文件，写进工作区的 ``final-cut/<path>``。只有属主能建：看不见这段\n对话 404，看得见但不是属主、或看得见已删除的对话（治理者）403；路径不合规 422；文件已存在\n409，不覆盖。",
         "operationId": "create_final_cut_file_conversations__conversation_id__final_cut_files_post",
         "parameters": [
           {
@@ -17811,7 +17811,7 @@
     },
     "/conversations/{conversation_id}/final-cut/preview": {
       "post": {
-        "description": "给能读这段对话的人发一张 1 小时的成片预览令牌；可见范围同读工作区文件。\n\n令牌里签进对话的属主、对话、失效时刻与这次请求的 ``Origin``。看不见这段对话 404；\n没配置预览域名、请求没带合规的 ``Origin`` 都是 422。",
+        "description": "给能读这段对话的人发一张 1 小时的 final-cut 预览令牌；可见范围同读工作区文件。\n\n令牌里签进对话的属主、对话、失效时刻与这次请求的 ``Origin``。看不见这段对话 404；\n没配置预览域名、请求没带合规的 ``Origin`` 都是 422。",
         "operationId": "open_final_cut_preview_conversations__conversation_id__final_cut_preview_post",
         "parameters": [
           {
@@ -19157,7 +19157,7 @@
     },
     "/final-cut/preview/{token}/files/{path}": {
       "get": {
-        "description": "取成片工程里的一个文件：``vendor/`` 开头的 307 转到同主机的 ``/hyperframes/vendor/…``，\n其余原文给出工作区的 ``final-cut/<path>``。路径带 ``..``、以 ``/`` 开头、带反斜杠或文件不存在\n都是 404。",
+        "description": "取 final-cut 工程里的一个文件：``vendor/`` 开头的 307 转到同主机的 ``/hyperframes/vendor/…``，\n其余原文给出工作区的 ``final-cut/<path>``。路径带 ``..``、以 ``/`` 开头、带反斜杠或文件不存在\n都是 404。",
         "operationId": "read_final_cut_preview_file_final_cut_preview__token__files__path__get",
         "parameters": [
           {

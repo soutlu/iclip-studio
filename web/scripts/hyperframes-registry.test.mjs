@@ -126,7 +126,7 @@ describe('hf:registry', () => {
     expect((await readdir(out)).sort()).toEqual(['catalog.json', version].sort())
   })
 
-  it('每个条目带上剪辑工程要拷的文件：共用目录里只有 src，专有目录里 src 在前、其余文件按路径排在后面', async () => {
+  it('每个条目带上 final-cut 工程要拷的文件：共用目录里只有 src，专有目录里 src 在前、其余文件按路径排在后面', async () => {
     const { out, version, result } = await publishAssembled()
     expect(result.status).toBe(0)
 

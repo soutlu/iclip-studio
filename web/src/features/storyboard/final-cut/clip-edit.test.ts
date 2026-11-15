@@ -47,7 +47,7 @@ describe('裁剪一个片段', () => {
   it('结尾：往后不压到后一个片段，也不超出素材的结尾；别的行不挡路', () => {
     expect(trimBounds(middle, 'end', film, 10_000)).toEqual({ min: 3_100, max: 6_000 })
     expect(trimBounds(middle, 'end', film, 4_000).max).toBe(5_500)
-    // 后面没有片段：只受素材长度限制，成片多长都行
+    // 后面没有片段：只受素材长度限制，final-cut 多长都行
     expect(trimBounds(last, 'end', film, 200_000).max).toBe(206_000)
   })
 
@@ -79,7 +79,7 @@ describe('裁剪一个片段', () => {
   })
 
   it('2 倍速：结尾最多到（素材长 − 入点）÷ 2；开头往前最多拉回入点 ÷ 2，往后裁时入点动两倍', () => {
-    // 第 3 秒起、素材从 1.5 秒放起；素材 6 秒，剩下 4.5 秒，2 倍速在成片里能放 2.25 秒
+    // 第 3 秒起、素材从 1.5 秒放起；素材 6 秒，剩下 4.5 秒，2 倍速在 final-cut 里能放 2.25 秒
     const fast = { ...middle, playbackRate: 2 }
     const lone = [fast]
     expect(trimBounds(fast, 'end', lone, 6_000).max).toBe(5_250)
@@ -98,7 +98,7 @@ describe('裁剪一个片段', () => {
     })
   })
 
-  it('音频片段按它的速度算：0.5 倍速时剩下的音频在成片里放两倍长', () => {
+  it('音频片段按它的速度算：0.5 倍速时剩下的音频在 final-cut 里放两倍长', () => {
     const slow = audio({ start: 1_000, duration: 1_000, mediaStart: 500, playbackRate: 0.5 })
     expect(trimBounds(slow, 'end', [slow], 2_000).max).toBe(4_000)
   })
@@ -187,7 +187,7 @@ describe('裁组件或块的片段和音频片段', () => {
 // 新开的一行在测试里记成这个行号
 const NEW_ROW = 99
 
-/** 按 groupShift 的结果挪完以后的成片，连同结果本身。 */
+/** 按 groupShift 的结果挪完以后的 final-cut，连同结果本身。 */
 const shifted = (
   clips: readonly FilmClip[],
   grabbed: FilmClip,
@@ -225,7 +225,7 @@ describe('挪一个片段（只有它自己的一组）', () => {
     ['落点被占：落到最近的空位', middle, 5_200, 0, 4_000],
     ['自己原来的位置不算占用', middle, 3_500, 0, 3_500],
     ['空位不够长：接在这一行最后一个片段后面', above, 2_500, 0, 7_000],
-    ['拖到很后面：成片多长都行', last, 500_000, 0, 500_000],
+    ['拖到很后面：final-cut 多长都行', last, 500_000, 0, 500_000],
     ['别的行不挡路', first, 0, 1, 0],
     ['换到别的行、落点被占：落到最近的空位', first, 3_000, 1, 0],
     ['两边一样近：取靠后的', spare, 1_000, 4, 2_000],
@@ -320,7 +320,7 @@ describe('成组挪动', () => {
     })
   })
 
-  it('整组往后挪：成片多长都行', () => {
+  it('整组往后挪：final-cut 多长都行', () => {
     const end = video({ id: 'l', start: 110_000, duration: 5_000, track: 1 })
     const head = video({ id: 'e', start: 100_000, duration: 1_000, track: 2 })
     expect(shifted([end, head], head, ['l'], 20_000, 2)).toEqual({ delta: 20_000, track: 2 })
@@ -349,7 +349,7 @@ describe('成组裁剪', () => {
   ])
   const known = (clip: FilmClip) => sources.get(srcOf(clip))
 
-  /** 一起裁完以后的成片；先检查三条，再按片段给出各自的起止和入点。 */
+  /** 一起裁完以后的 final-cut；先检查三条，再按片段给出各自的起止和入点。 */
   const trimmedGroup = (
     members: readonly FilmClip[],
     edge: 'start' | 'end',

@@ -61,7 +61,7 @@ const answerPreview = (request: IncomingMessage, response: ServerResponse, next:
   }
   const file = decodeURIComponent(files?.[2] ?? '')
   if (!projectPathOk(file)) {
-    answer(response, 404, { detail: '成片工程里没有这个文件' })
+    answer(response, 404, { detail: 'final-cut 工程里没有这个文件' })
     return
   }
   if (file.startsWith(VENDOR_DIR)) {

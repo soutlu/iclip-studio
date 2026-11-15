@@ -2,7 +2,7 @@ import { http, HttpResponse } from 'msw'
 import { mockPreviewOrigin, mockPreviewToken } from './preview-token'
 import { mockWorkspaceFile, putMockWorkspaceFile } from './workspace'
 
-/** 剪辑工程主文件在工作区里的路径。 */
+/** final-cut 的主文件在工作区里的路径。 */
 const PROJECT_MAIN_PATH = 'final-cut/index.html'
 
 type MockExport = {

@@ -50,7 +50,7 @@ const slicesIn = (css: string, family = "'Noto Sans SC'") => [
 ]
 
 describe('cjkFontFaces · 中文字体自己的规则', () => {
-  it('没有中文的成片也带上画西文基本字符的分片，每个字重一条', () => {
+  it('没有中文的 final-cut 也带上画西文基本字符的分片，每个字重一条', () => {
     const rules = parseRules(cjkFontFaces(catalogOf(), '', []))
     expect(rules.map((rule) => [rule.weight, rule.src])).toEqual([
       ['400', 'latin-400-normal.woff2'],
@@ -182,7 +182,7 @@ describe('cjkFontFaces · 西文字体族的中文孪生规则', () => {
     expect(rules.every((rule) => rule.src?.endsWith('-400-normal.woff2'))).toBe(true)
   })
 
-  it('只给成片用到的字体族出；目录里没写孪生描述的品牌字体不出', () => {
+  it('只给 final-cut 用到的字体族出；目录里没写孪生描述的品牌字体不出', () => {
     const catalog = catalogOf({
       Inter: { css: 'inter.css', cjk: [{ weight: '400', style: 'normal' }] },
       Anton: { css: 'anton.css', cjk: [{ weight: '400', style: 'normal' }] },

@@ -55,7 +55,7 @@ const readBack = (html: string, catalog: ComponentCatalog = fixtureCatalog): Fil
 const headOf = (html: string) => /<head>[\s\S]*<\/head>/.exec(html)?.[0] ?? ''
 
 describe('新建工程的主文件', () => {
-  it('根上的属性照空成片写，<head> 里带动画库和空的字体块', () => {
+  it('根上的属性照空的 final-cut 写，<head> 里带动画库和空的字体块', () => {
     const html = emptyProject(CANVAS, fixtureCatalog)
     expect(html).toContain(
       '<div id="film" data-hf-id="film" data-composition-id="film" data-no-timeline data-start="0"' +

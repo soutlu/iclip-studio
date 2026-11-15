@@ -20,14 +20,14 @@ import {
 import type { CatalogItem, ComponentCatalog } from './composition/catalog'
 import { PROJECT_MAIN } from './composition/film'
 
-/** 剪辑工程在对话工作区里的目录。 */
+/** final-cut 工程在对话工作区里的目录。 */
 export const PROJECT_DIR = 'final-cut'
 
 /** 主文件在工作区里的路径。 */
 export const PROJECT_MAIN_PATH = `${PROJECT_DIR}/${PROJECT_MAIN}`
 
-const READ_FAILED = '成片草稿读取失败'
-const SAVE_FAILED = '成片草稿保存失败'
+const READ_FAILED = 'final-cut 读取失败'
+const SAVE_FAILED = 'final-cut 保存失败'
 const ITEM_FILES_FAILED = '贴片和场景读取失败'
 
 export const wholeFilmQueryKeys = {

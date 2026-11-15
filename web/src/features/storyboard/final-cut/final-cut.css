@@ -1,4 +1,4 @@
-/* 成片编辑器：工作台「final-cut」页签的内容。上面是预览和侧栏（贴片 / 场景 / 音频 / 属性），
+/* final-cut 编辑器：工作台「final-cut」页签的内容。上面是预览和侧栏（贴片 / 场景 / 音频 / 属性），
    下面是剪辑工具、时间线与视频素材区。 */
 
 .wf-editor {
@@ -790,7 +790,7 @@
   inset: 0;
 }
 
-/* 预览域名下的预览页，播放器和成片都在它里面。和播放器自己的 iframe 一样不接指针：
+/* 预览域名下的预览页，播放器和 final-cut 都在它里面。和播放器自己的 iframe 一样不接指针：
    点在预览上时焦点留在编辑器里，空格等快捷键照常用 */
 .wf-preview-frame {
   position: absolute;
@@ -960,7 +960,7 @@
   pointer-events: none;
 }
 
-/* ---- 播放条：贴在预览底部，成片和素材两种预览共用 ---- */
+/* ---- 播放条：贴在预览底部，final-cut 和素材两种预览共用 ---- */
 
 .wf-preview > .editor-hero-wrap,
 .wf-material-preview > .editor-hero-wrap {
@@ -2869,7 +2869,7 @@
   pointer-events: none;
 }
 
-/* 预览切到素材：盖在成片预览上，回到成片时卸掉 */
+/* 预览切到素材：盖在 final-cut 预览上，回到 final-cut 时卸掉 */
 .wf-material-preview {
   position: relative;
   isolation: isolate;

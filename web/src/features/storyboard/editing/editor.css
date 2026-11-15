@@ -91,7 +91,7 @@
   display: contents;
 }
 
-/* 舞台左上角注明放的是哪条视频的哪一段（见 StageLabel）：成片页预览素材、编辑视频预览原片时用。 */
+/* 舞台左上角注明放的是哪条视频的哪一段（见 StageLabel）：final-cut 编辑器预览素材、编辑视频预览原片时用。 */
 .editor-stage-label {
   position: absolute;
   top: 16px;

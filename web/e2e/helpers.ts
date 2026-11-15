@@ -11,10 +11,10 @@ export const openConversation = async (page: Page, title: string, { mobile = fal
   return page.getByRole('complementary', { name: '工作台' })
 }
 
-/** 点工作台里的「final-cut」页签打开成片编辑器，等它读完工程主文件；返回编辑器的根节点。 */
+/** 点工作台里的「final-cut」页签打开 final-cut 编辑器，等它读完主文件；返回编辑器的根节点。 */
 export const openFinalCut = async (panel: Locator) => {
   await panel.getByRole('tab', { name: 'final-cut', exact: true }).click()
-  const editor = panel.getByRole('group', { name: '成片编辑器', exact: true })
+  const editor = panel.getByRole('group', { name: 'final-cut 编辑器', exact: true })
   await expect(editor.getByRole('toolbar', { name: '剪辑工具' })).toBeVisible()
   return editor
 }
@@ -24,7 +24,7 @@ const CHAT_MIN = 400
 const widthOf = async (locator: Locator) => (await locator.boundingBox())?.width ?? Number.NaN
 
 /**
- * 收起侧边栏、把对话收到最窄（400），工作台尽量宽，成片编辑器里放得下更多东西。在对话里、工作台
+ * 收起侧边栏、把对话收到最窄（400），工作台尽量宽，final-cut 编辑器里放得下更多东西。在对话里、工作台
  * 并排展开时调用；不调用时是默认布局。
  */
 export const widenWorkbench = async (page: Page) => {
@@ -53,7 +53,7 @@ export const widenWorkbench = async (page: Page) => {
   await expect.poll(() => widthOf(chat)).toBeCloseTo(CHAT_MIN, 0)
 }
 
-/** 成片编辑器里嵌着的预览页（预览域名下），播放器和成片都在它里面。 */
+/** final-cut 编辑器里嵌着的预览页（预览域名下），播放器和 final-cut 都在它里面。 */
 export const finalCutPreviewPage = (editor: Locator) =>
   editor.getByRole('region', { name: '预览' }).locator('iframe').contentFrame()
 

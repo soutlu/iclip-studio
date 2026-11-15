@@ -197,7 +197,7 @@ describe('渲染服务接口', () => {
     expect((await fetch(`${base}/exports/missing`, { method: 'DELETE' })).status).toBe(404)
   })
 
-  it('没有检查成片文件的接口：POST /films/check 答 404', async () => {
+  it('没有检查主文件的接口：POST /films/check 答 404', async () => {
     const response = await send('/films/check', { film: mainFile() })
     expect(response.status).toBe(404)
   })

@@ -48,7 +48,7 @@ function unicodeRange(codes: readonly number[]): string {
   return parts.join(',')
 }
 
-// 每次改动都会重拼成片，分片表只解析一次
+// 每次改动都会重拼主文件，分片表只解析一次
 const holdersOfCode = new WeakMap<CjkFont, Map<number, number[]>>()
 
 /** 每个码位落在哪些分片里，按声明顺序。 */
@@ -74,7 +74,7 @@ const fontFace = (family: string, style: string, weight: string, file: string, r
   `src:url(${file}) format('woff2');unicode-range:${range}}`
 
 /**
- * 成片要声明的中文字体规则：只带 `text` 用到的分片，每条规则的范围只写用到的字。
+ * 主文件要声明的中文字体规则：只带 `text` 用到的分片，每条规则的范围只写用到的字。
  * `families` 里带中文孪生描述的字体族，各按描述再出一组指向同样分片的规则，范围只留中日韩区块里的字。
  */
 export function cjkFontFaces(

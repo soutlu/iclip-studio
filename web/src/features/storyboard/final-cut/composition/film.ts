@@ -3,7 +3,7 @@ import { cjkFontFaces } from './fonts'
 import { escapeAttribute, seconds } from './html'
 
 /**
- * 剪辑工程的主文件 `index.html`：工程目录里唯一的主时间线。根下面每个带时间的元素是时间线上的一个片段；
+ * final-cut 工程的主文件 `index.html`：工程目录里唯一的主时间线。根下面每个带时间的元素是时间线上的一个片段；
  * 文件可以由编辑器写，也可以手写。编辑器只改片段和根上的总长，`<head>` 里只重算带标记的字体块
  * （见 `withFontBlock`），别的内容原样留着。
  */
@@ -33,7 +33,7 @@ interface ClipBase {
 
 /**
  * 视频片段、音频片段共有的声音和播放：`mediaStart` 是从素材的第几毫秒开始放，`volume` 是增益的倍数
- * （0.5 比 1 低 6 dB），`playbackRate` 是速度的倍数（片段在成片里占的时长不跟着变，用掉的素材是
+ * （0.5 比 1 低 6 dB），`playbackRate` 是速度的倍数（片段在 final-cut 里占的时长不跟着变，用掉的素材是
  * 时长 × 速度），`fadeIn` / `fadeOut` 是声音淡入淡出的毫秒数。
  */
 interface MediaBase extends ClipBase {
@@ -421,7 +421,7 @@ export function withFontBlock(
 export const FILM_ID = 'film'
 
 /**
- * 新建工程时的主文件：根上的属性照空成片写，`<head>` 里带动画库、摆放片段的样式和空的字体块。
+ * 新建工程时的主文件：根上的属性照空的 final-cut 写，`<head>` 里带动画库、摆放片段的样式和空的字体块。
  * `children` 是根下面一开始就有的元素，`durationMs` 是根上写的总长。
  */
 export function emptyProject(

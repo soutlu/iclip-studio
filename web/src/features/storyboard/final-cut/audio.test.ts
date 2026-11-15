@@ -42,7 +42,7 @@ describe('音频的名字和筛选', () => {
   })
 })
 
-describe('成片里用着的音频', () => {
+describe('final-cut 里用着的音频', () => {
   it('用着这条音频（按地址对上）的片段里开始得最早的那个；别的地址、视频片段不算', () => {
     const clips = [
       audio({ id: 'late', start: 5000 }),

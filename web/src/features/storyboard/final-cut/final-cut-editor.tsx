@@ -95,13 +95,13 @@ import {
 } from './final-cut.api'
 import './final-cut.css'
 
-const EMPTY_TEXT = '暂无成片内容，加入内容后可在此预览'
-const PICK_FIRST_TEXT = '尚未选中镜头，无法加入成片；请先在下方选中镜头范围'
+const EMPTY_TEXT = 'final-cut 暂无内容，加入内容后可在此预览'
+const PICK_FIRST_TEXT = '尚未选中镜头，无法加入 final-cut；请先在下方选中镜头范围'
 const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏，无法进入全屏'
-const ADDING_ITEM_TEXT = '上一个贴片或场景正在加入成片，请稍后再试'
-const ADDING_AUDIO_TEXT = '上一条音频正在加入成片，请稍后再试'
+const ADDING_ITEM_TEXT = '上一个贴片或场景正在加入 final-cut，请稍后再试'
+const ADDING_AUDIO_TEXT = '上一条音频正在加入 final-cut，请稍后再试'
 const EXPORT_PAUSED_TEXT = '导出功能正在调整，无法导出；请稍后再试'
-// 还没有成片时先放组件或块：和 #41 之前的编辑器一样按竖版建
+// 还没有 final-cut 时先放组件或块：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 
 /** 侧栏的目录页签：贴片、场景、音频。 */
@@ -116,7 +116,7 @@ const watchFullscreen = (notify: () => void) => {
 
 const fullscreenElementOf = () => document.fullscreenElement ?? null
 
-/** 工作台「final-cut」页签里的成片编辑器，填满页签内容区。 */
+/** 工作台「final-cut」页签里的 final-cut 编辑器，填满页签内容区。 */
 export function FinalCutEditor({ conversationId }: Pick<ArtifactRendererProps, 'conversationId'>) {
   const projectQuery = useProjectMainQuery(conversationId)
   const catalogQuery = useComponentCatalog()
@@ -141,13 +141,13 @@ export function FinalCutEditor({ conversationId }: Pick<ArtifactRendererProps, '
             action={{ label: '重试', onClick: () => void failed.refetch() }}
             message={errorMessageOf(
               failed.error,
-              failed === projectQuery ? '成片草稿读取失败' : '贴片和场景读取失败',
+              failed === projectQuery ? 'final-cut 读取失败' : '贴片和场景读取失败',
             )}
           />
         </div>
       ) : (
         <p className="wf-state" role="status">
-          正在读取成片草稿…
+          正在读取 final-cut…
         </p>
       )}
     </EditorRoot>
@@ -217,7 +217,7 @@ function EditorBody({
     ].sort(),
   )
   const keyframes = useKeyframeIndexes(shownUrls)
-  // 素材区的镜头和成片里视频片段的素材有没有声音，和镜头一起先读好：加进成片时不用再等
+  // 素材区的镜头和 final-cut 里视频片段的素材有没有声音，和镜头一起先读好：加进 final-cut 时不用再等
   const audioTracks = useVideoAudio(
     useStableValue([...new Set([...shownUrls, ...videoClips.map((clip) => clip.src)])].sort()),
   )
@@ -231,7 +231,7 @@ function EditorBody({
   const [playback, setPlayback] = useState<PlaybackSettings>({ rate: 1, muted: false, loop: false })
   const toggleMute = () => setPlayback((current) => ({ ...current, muted: !current.muted }))
   const toggleLoop = () => setPlayback((current) => ({ ...current, loop: !current.loop }))
-  // 工作台折叠起来时编辑器还挂着，正在播的成片和素材不会自己停：停下，免得看不见还听得见
+  // 工作台折叠起来时编辑器还挂着，正在播的 final-cut 和素材不会自己停：停下，免得看不见还听得见
   const collapsed = useWorkbenchCollapsed()
   const stopPlaying = useEffectEvent(() => {
     previewRef.current?.pause()
@@ -394,7 +394,7 @@ function EditorBody({
       ? { track: row.track, renumber: undefined }
       : rowOpening(clips, row.zone, row.insertAt, movedId)
 
-  /** 把素材里的一段放进成片：给了 `at` 放在那里，没给就接在主轨的末尾。 */
+  /** 把素材里的一段放进 final-cut：给了 `at` 放在那里，没给就接在主轨的末尾。 */
   const place = (chosen: MaterialRange, at?: { row: RowTarget; start: number }) => {
     const material = materials.byJob.get(chosen.jobId)
     if (material === undefined) return
@@ -429,7 +429,7 @@ function EditorBody({
       void queryClient
         .fetchQuery(videoSizeQuery(material.url))
         .then(add, (error: unknown) =>
-          notice(errorMessageOf(error, '画面尺寸读取失败，无法加入成片')),
+          notice(errorMessageOf(error, '画面尺寸读取失败，无法加入 final-cut')),
         )
   }
   const insert = () => {
@@ -439,7 +439,7 @@ function EditorBody({
 
   // 照参照的工作台：上一个条目还没加完时不接下一个，免得两次都按加之前的样子算落点
   const addingItemRef = useRef(false)
-  /** 把组件库的一个条目放进成片的 `at`；还没有成片时按默认画布建一份。 */
+  /** 把组件库的一个条目放进 final-cut 的 `at`；还没有 final-cut 时按默认画布建一份。 */
   const placeItem = (item: CatalogItem, at: { row: RowTarget; start: number }) => {
     if (addingItemRef.current) {
       notice(ADDING_ITEM_TEXT)
@@ -467,7 +467,7 @@ function EditorBody({
 
   // 和组件、块一样：上一条音频还没加完时不接下一条
   const addingAudioRef = useRef(false)
-  /** 把一整条音频放进成片的 `at`；还没有成片时按默认画布建一份。 */
+  /** 把一整条音频放进 final-cut 的 `at`；还没有 final-cut 时按默认画布建一份。 */
   const placeAudio = (audio: NewAudio, at: { row: RowTarget; start: number }) => {
     if (addingAudioRef.current) {
       notice(ADDING_AUDIO_TEXT)
@@ -618,7 +618,7 @@ function EditorBody({
   if (session.opening)
     return (
       <p className="wf-state" role="status">
-        正在打开成片…
+        正在打开 final-cut…
       </p>
     )
 

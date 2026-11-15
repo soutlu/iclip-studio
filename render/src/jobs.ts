@@ -28,7 +28,7 @@ export interface UploadTarget {
 
 export interface RenderJobInput {
   id: string
-  /** 剪辑工程的文件，已经查过（见 `projectProblem`）。 */
+  /** final-cut 工程的文件，已经查过（见 `projectProblem`）。 */
   files: readonly ProjectFile[]
   /** 主文件里写的素材地址 → 去下载的地址。 */
   media: ReadonlyMap<string, string>

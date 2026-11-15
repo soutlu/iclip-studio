@@ -145,25 +145,28 @@ describe('音频栏 · 列表', () => {
   })
 
   it.each([
-    ['pending', '排队中', '音乐尚未生成完成，无法加入成片；请等待生成完成'],
-    ['submitting', '生成中', '音乐尚未生成完成，无法加入成片；请等待生成完成'],
-    ['submitted', '生成中', '音乐尚未生成完成，无法加入成片；请等待生成完成'],
-    ['failed', '生成失败', '音乐生成失败，无法加入成片；请重新生成'],
-  ] as const)('%s 显示「%s」，不能试听，按 Enter、右键都加不进成片', async (status, label, why) => {
-    const user = userEvent.setup()
-    const { onAdd, onNotice } = await openTab([musicJob({ status })])
-    expect(screen.getByRole('img', { name: label })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '试听：轻快电子节奏' })).toBeNull()
+    ['pending', '排队中', '音乐尚未生成完成，无法加入 final-cut；请等待生成完成'],
+    ['submitting', '生成中', '音乐尚未生成完成，无法加入 final-cut；请等待生成完成'],
+    ['submitted', '生成中', '音乐尚未生成完成，无法加入 final-cut；请等待生成完成'],
+    ['failed', '生成失败', '音乐生成失败，无法加入 final-cut；请重新生成'],
+  ] as const)(
+    '%s 显示「%s」，不能试听，按 Enter、右键都加不进 final-cut',
+    async (status, label, why) => {
+      const user = userEvent.setup()
+      const { onAdd, onNotice } = await openTab([musicJob({ status })])
+      expect(screen.getByRole('img', { name: label })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: '试听：轻快电子节奏' })).toBeNull()
 
-    act(() => rowButton('轻快电子节奏').focus())
-    await user.keyboard('{Enter}')
-    fireEvent.contextMenu(rowButton('轻快电子节奏'))
-    await user.click(await screen.findByRole('menuitem', { name: '加到播放头' }))
-    expect(onNotice.mock.calls).toEqual([[why], [why]])
-    expect(onAdd).not.toHaveBeenCalled()
-  })
+      act(() => rowButton('轻快电子节奏').focus())
+      await user.keyboard('{Enter}')
+      fireEvent.contextMenu(rowButton('轻快电子节奏'))
+      await user.click(await screen.findByRole('menuitem', { name: '加到播放头' }))
+      expect(onNotice.mock.calls).toEqual([[why], [why]])
+      expect(onAdd).not.toHaveBeenCalled()
+    },
+  )
 
-  it('上传的音频记录上没有时长：从文件里读出来显示，加进成片也按它', async () => {
+  it('上传的音频记录上没有时长：从文件里读出来显示，加进 final-cut 也按它', async () => {
     const user = userEvent.setup()
     const uploaded = makeGenerationJob({
       kind: 'audio',
@@ -238,7 +241,7 @@ describe('音频栏 · 试听', () => {
 })
 
 describe('音频栏 · 已使用', () => {
-  it('成片里用着的那条标「已使用」，点这一行选中它最早的那个片段；没用到的点了什么也不做', async () => {
+  it('final-cut 里用着的那条标「已使用」，点这一行选中它最早的那个片段；没用到的点了什么也不做', async () => {
     const user = userEvent.setup()
     const clips = [
       audio({ id: 'late', src: GUITAR_URL, start: 8000 }),
@@ -256,7 +259,7 @@ describe('音频栏 · 已使用', () => {
   })
 })
 
-describe('音频栏 · 加进成片', () => {
+describe('音频栏 · 加进 final-cut', () => {
   const whole = {
     label: '轻快原声吉他',
     src: GUITAR_URL,
@@ -303,7 +306,7 @@ describe('音频栏 · 加进成片', () => {
     expect(onReveal).not.toHaveBeenCalled()
   })
 
-  it('拖到一半按 Esc：这次拖动取消，松手不落进成片', async () => {
+  it('拖到一半按 Esc：这次拖动取消，松手不落进 final-cut', async () => {
     const user = userEvent.setup()
     const { onCarry, onDrop } = await openTab([guitar])
     const row = rowButton('轻快原声吉他')
@@ -570,7 +573,7 @@ describe('生成音乐的输入框', () => {
     return screen.findByRole('dialog', { name: '生成音乐' })
   }
 
-  it('挂在成片编辑器里、焦点落在 body 时工程文件配乐才到，预填后浮层仍开着', async () => {
+  it('挂在 final-cut 编辑器里、焦点落在 body 时工程文件配乐才到，预填后浮层仍开着', async () => {
     const conversation = addMockConversation('成片配乐')
     seedMockFilm(conversation.id, { musicDescription: '纯音乐，极简氛围钢琴小品' })
     let release = () => {}
@@ -597,7 +600,7 @@ describe('生成音乐的输入框', () => {
     expect(popover).toHaveAccessibleDescription('已填入工程文件里的配乐描述，可直接修改')
   })
 
-  it('挂在成片编辑器里、焦点落在 body 时点提交，浮层一直开到提交完成', async () => {
+  it('挂在 final-cut 编辑器里、焦点落在 body 时点提交，浮层一直开到提交完成', async () => {
     const conversation = addMockConversation('成片配乐')
     let release = () => {}
     const released = new Promise<void>((resolve) => {

@@ -15,7 +15,7 @@ export const videoSizeQuery = (url: string | undefined) =>
             const input = (await loadReader()).openInput(url)
             try {
               const track = await input.getPrimaryVideoTrack()
-              if (track === null) throw new UserFacingError('该视频没有画面，无法加入成片')
+              if (track === null) throw new UserFacingError('该视频没有画面，无法加入 final-cut')
               return {
                 width: await track.getDisplayWidth(),
                 height: await track.getDisplayHeight(),

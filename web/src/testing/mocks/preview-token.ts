@@ -1,4 +1,4 @@
-// mock 模式的成片预览令牌：直接写着发令牌时的应用来源。浏览器里的 MSW 用它发令牌，
+// mock 模式的 final-cut 预览令牌：直接写着发令牌时的应用来源。浏览器里的 MSW 用它发令牌，
 // mock 模式的开发服务器（vite/mock-preview-host.ts）在预览页那个主机名上按它回答应用来源。
 
 const PREFIX = 'mock-'

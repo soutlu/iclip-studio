@@ -219,7 +219,7 @@ describe('useFilmSession · 读存', () => {
     await waitFor(() => expect(videosOf(result)).toEqual([newer]))
     expect(result.current.film?.canUndo).toBe(false)
     expect(onNotice).toHaveBeenCalledWith(
-      '成片草稿已在别处修改，已切换到最新版本；未保存的改动已放弃',
+      'final-cut 已在别处修改，已切换到最新版本；未保存的改动已放弃',
     )
     await settled(result)
     expect(mockProjectMain(CONVERSATION)?.version).toBe(2)
@@ -231,7 +231,7 @@ describe('useFilmSession · 读存', () => {
     await add(result, piece({ mediaStart: 6_000 }))
     await waitFor(() => expect(videosOf(result).map((clip) => clip.id)).toEqual(['theirs']))
     expect(onNotice).toHaveBeenCalledWith(
-      '成片草稿已在别处修改，已切换到最新版本；未保存的改动已放弃',
+      'final-cut 已在别处修改，已切换到最新版本；未保存的改动已放弃',
     )
     await settled(result)
     expect(mockProjectMain(CONVERSATION)?.version).toBe(1)
@@ -248,7 +248,7 @@ describe('useFilmSession · 读存', () => {
     await waitFor(() =>
       expect(result.current.save).toEqual({
         kind: 'failed',
-        message: '成片草稿保存失败：工作区写不进去',
+        message: 'final-cut 保存失败：工作区写不进去',
       }),
     )
     act(() => result.current.flush())
@@ -332,7 +332,7 @@ describe('useFilmSession · 文件变化的通知', () => {
     await waitFor(() => expect(videosOf(result)).toEqual([theirs]))
     expect(result.current.film?.canUndo).toBe(false)
     expect(onNotice).toHaveBeenCalledExactlyOnceWith(
-      '成片草稿已在别处修改，已切换到最新版本；未保存的改动已放弃',
+      'final-cut 已在别处修改，已切换到最新版本；未保存的改动已放弃',
     )
   })
 
@@ -982,7 +982,7 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
       added = await result.current.addItem(CANVAS, catalogItem('fixture-fields'), {}, at)
     })
     expect(added).toBe(false)
-    expect(onNotice).toHaveBeenCalledWith('成片草稿保存失败：工作区写不进去')
+    expect(onNotice).toHaveBeenCalledWith('final-cut 保存失败：工作区写不进去')
     expect(result.current.film?.clips).toEqual([video()])
   })
 

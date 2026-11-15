@@ -7,7 +7,7 @@ import { rowBusy, rowsOf, type RowTarget } from './placement'
 const promptOf = (job: GenerationJob): string | undefined =>
   z.object({ prompt: z.string().min(1) }).safeParse(job.request).data?.prompt
 
-/** 音频在列表里的名字，加进成片的音频片段也叫这个：生成的取描述，上传的写上传时间。 */
+/** 音频在列表里的名字，加进 final-cut 的音频片段也叫这个：生成的取描述，上传的写上传时间。 */
 export const audioTitleOf = (job: GenerationJob): string =>
   job.operation === 'upload'
     ? `上传的音乐 · ${formatDateTime(job.createdAt)}`
@@ -25,7 +25,7 @@ export const durationLabel = (ms: number): string => {
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-/** 成片里用着地址 `src`（音频记录的产物地址）的音频片段里开始得最早的那个；没用到时是 undefined。 */
+/** final-cut 里用着地址 `src`（音频记录的产物地址）的音频片段里开始得最早的那个；没用到时是 undefined。 */
 export const firstAudioClipOf = (clips: readonly FilmClip[], src: string): AudioClip | undefined =>
   clips
     .filter((clip): clip is AudioClip => clip.kind === 'audio' && clip.src === src)

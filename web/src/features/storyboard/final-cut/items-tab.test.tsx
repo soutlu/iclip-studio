@@ -123,7 +123,7 @@ describe('组件、块页签 · 列出和筛选', () => {
   })
 })
 
-describe('组件、块页签 · 加进成片', () => {
+describe('组件、块页签 · 加进 final-cut', () => {
   it('点卡片上的「加到播放头」：交出这个条目', async () => {
     const user = userEvent.setup()
     const { onAdd, onCarry } = await renderTab('component')
@@ -158,7 +158,7 @@ describe('组件、块页签 · 加进成片', () => {
     const scene = card(/^测试画面/)
     fireEvent.pointerDown(scene, { pointerId: 1, button: 0, clientX: 10, clientY: 10 })
     // 卡片本身不可聚焦，浏览器按下时把焦点交给编辑器的根节点
-    act(() => screen.getByRole('group', { name: '成片编辑器' }).focus())
+    act(() => screen.getByRole('group', { name: 'final-cut 编辑器' }).focus())
     fireEvent.pointerMove(scene, { pointerId: 1, clientX: 300, clientY: 500 })
     await user.keyboard('{Escape}')
     expect(onCarry).toHaveBeenLastCalledWith(

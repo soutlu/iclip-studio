@@ -1,7 +1,7 @@
-# ADR-0003：基于 HyperFrames 重构成片编辑器与服务端渲染导出
+# ADR-0003：基于 HyperFrames 重构 final-cut 编辑器与服务端渲染导出
 
 - **状态**：已接受（2026-10-17）
-- **影响范围**：[CONTEXT.md](../CONTEXT.md)（剪辑工程、导出、生成任务、资料库、埋点事件）；[contract/openapi.json](../../contract/openapi.json)；[contract/conventions.md](../../contract/conventions.md) §6；[architecture.md](../architecture.md)；[deploy.md](../deploy.md)
+- **影响范围**：[CONTEXT.md](../CONTEXT.md)（final-cut、导出、生成任务、资料库、埋点事件）；[contract/openapi.json](../../contract/openapi.json)；[contract/conventions.md](../../contract/conventions.md) §6；[architecture.md](../architecture.md)；[deploy.md](../deploy.md)
 
 ## 背景
 
@@ -11,13 +11,13 @@
 
 ## 决策
 
-1. **成片就是一个剪辑工程**：对话工作区里的 `final-cut/` 目录，主文件 `index.html` 是唯一的主时间线；预览播放、导出渲染、编辑读写的都是这一份，不另存一套数据再生成页面。时间线上每个片段是主文件根下的一个带时间的元素；用到的组件按原路径拷进工程，归这个工程所有。主文件的写法在 `composition/` 定义。导出由独立的 Node 渲染服务（`render/`，基于 `@hyperframes/producer` + 无头 Chrome + GPU）执行，不再自行编写底层字幕排版或音频限幅逻辑。
+1. **编辑的对象是一个 final-cut 工程**：对话工作区里的 `final-cut/` 目录，主文件 `index.html` 是唯一的主时间线；预览播放、导出渲染、编辑读写的都是这一份，不另存一套数据再生成页面。时间线上每个片段是主文件根下的一个带时间的元素；用到的组件按原路径拷进工程，归这个工程所有。主文件的写法在 `composition/` 定义。导出由独立的 Node 渲染服务（`render/`，基于 `@hyperframes/producer` + 无头 Chrome + GPU）执行，不再自行编写底层字幕排版或音频限幅逻辑。
 2. **精简引入 HyperFrames 依赖与外置组件库**：
    - 编辑动作交给 `@hyperframes/sdk`（打开文件、改片段、撤销重做、存出文件）；对于 `@hyperframes/studio`，不安装整个 UI 包，只将其时间线拖拽、修剪、吸附与叠放纯算法源码摘录到本仓库 `vendor/hyperframes-studio/` 下，编辑器界面由我们自己实现。
    - 动态组件库（含 `catalog.json`、组件代码与字体文件）独立于应用镜像维护，在部署目录只读挂载给前端与渲染服务；新增或修改组件只需更新挂载目录，无需重新发版。
-3. **剪辑工程存在对话工作区里**：编辑器按工作区文件的版本号整份覆盖主文件（不保留历史版本），后端不检查、不重写工程内容；工程里的脚本只在预览域名下的预览页和渲染服务里运行，拿不到应用的登录态。素材地址直接写在片段上。
+3. **final-cut 工程存在对话工作区里**：编辑器按工作区文件的版本号整份覆盖主文件（不保留历史版本），后端不检查、不重写工程内容；工程里的脚本只在预览域名下的预览页和渲染服务里运行，拿不到应用的登录态。素材地址直接写在片段上。
 4. **异步渲染导出与下载归因**：每次点击导出都会创建一条 `kind: "whole_film", operation: "render"` 生成任务，交由渲染服务单任务排队渲染并上传为永久公开的 OSS 对象，同时收录进资料库的「成片」页签。渲染服务重启或用户手动取消均将任务记为失败。下载成片记一条 `video.downloaded` 事件，`jobId` 是这条成片记录；成片用到的素材片在读取时按血缘归因。
-5. **编辑器工作台布局**：预览区下方是按原作分组的视频素材区，选中的镜头接在成片末尾。
+5. **编辑器工作台布局**：预览区下方是按原作分组的视频素材区，选中的镜头接在 final-cut 末尾。
 6. **逐词字幕**：使用千问 ASR（`qwen-audio-3.1-asr-flash`）识别并保存每句话的逐词时间戳。
 
 ## 取舍
@@ -27,6 +27,6 @@
   - 升级渲染引擎后，旧工程重新导出的视觉细节可能随之更新；已经拷进工程的组件不跟着组件库更新；
   - 不同视频片段之间不做自动响度均衡或切点交叉淡入淡出。
 - **不做**：
-  - 不保存剪辑工程的历史版本；
+  - 不保存 final-cut 工程的历史版本；
   - 不在用户浏览器端本地渲染导出视频；
   - 不直接安装 `@hyperframes/studio` UI 组件包。

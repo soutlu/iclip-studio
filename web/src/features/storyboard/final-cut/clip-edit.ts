@@ -9,7 +9,7 @@ import {
 } from './vendor/hyperframes-studio/player/components/timelineGaps'
 
 /**
- * 一个片段在成片里的起止和它的入点（毫秒）。入点是从素材的哪里开始放，
+ * 一个片段在 final-cut 里的起止和它的入点（毫秒）。入点是从素材的哪里开始放，
  * 组件或块的片段是从组件自己的第几毫秒开始播（`playbackStart`），「其他」片段没有入点，是 0。
  */
 export type Timing = { start: number; duration: number; mediaStart: number }
@@ -24,13 +24,13 @@ const endOf = (clip: Pick<FilmClip, 'start' | 'duration'>) => clip.start + clip.
 
 const rowKeyOf = (clip: FilmClip): RowKey => ({ zone: zoneOf(clip), track: clip.track })
 
-/** 片段的速度：成片里的 1 毫秒用掉素材的几毫秒。组件或块的片段是 1。 */
+/** 片段的速度：final-cut 里的 1 毫秒用掉素材的几毫秒。组件或块的片段是 1。 */
 export const rateOf = (clip: FilmClip): number => (isMediaClip(clip) ? clip.playbackRate : 1)
 
 /**
- * 裁 `edge` 这一端时，这一端能到的范围（成片的毫秒）：不压到同一行的邻居，片段不短于最短长度；
+ * 裁 `edge` 这一端时，这一端能到的范围（final-cut 的毫秒）：不压到同一行的邻居，片段不短于最短长度；
  * 开头往前不早于入点 0（「其他」片段没有入点，只受邻居限制），结尾往后不超出素材剩下的长度（音频开着
- * 循环也一样）。素材按片段的速度用，照参照的工作台：剩下的素材在成片里能放（素材长 − 入点）÷ 速度。
+ * 循环也一样）。素材按片段的速度用，照参照的工作台：剩下的素材在 final-cut 里能放（素材长 − 入点）÷ 速度。
  * `sourceMs` 是视频片段、音频片段素材的总长，还不知道时结尾不许往外拉；别的片段不看它，结尾不设上限。
  */
 export const trimBounds = (

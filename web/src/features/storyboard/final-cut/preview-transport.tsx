@@ -46,7 +46,7 @@ const SHORTCUTS: readonly { keys: readonly string[]; action: string }[] = [
   { keys: ['['], action: '选中播放头左边的片段' },
   { keys: [']'], action: '选中播放头右边的片段' },
   { keys: ['Z'], action: '缩放到选中的片段' },
-  { keys: ['Enter'], action: '将选中的镜头加入成片' },
+  { keys: ['Enter'], action: '将选中的镜头加入 final-cut' },
   { keys: ['Esc'], action: '退出全屏、取消选中' },
   { keys: ['M'], action: '静音或开启声音' },
   { keys: ['⇧L'], action: '开启或关闭循环播放' },
