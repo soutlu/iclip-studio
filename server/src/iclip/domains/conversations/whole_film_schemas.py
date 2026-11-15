@@ -2,51 +2,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Final
+from typing import Annotated
 
-from pydantic import Field, StringConstraints
+from pydantic import Field
 
 from iclip.domains.conversations.models import WholeFilmExport, WholeFilmExportStatus
 from iclip.domains.conversations.schemas import CamelModel
-
-MAX_FILM_CHARS: Final = 1_000_000
-
-Index = Annotated[int, Field(ge=0)]
-FilmHtml = Annotated[str, StringConstraints(min_length=1, max_length=MAX_FILM_CHARS)]
-
-
-class WholeFilmDraftIn(CamelModel):
-    """整份保存成片文件。``revision`` 是读到的那一版，还没有草稿时是 0。"""
-
-    revision: Index
-    html: FilmHtml
-
-
-class WholeFilmDraftOut(CamelModel):
-    """当前的成片文件；还没存过时 ``revision`` 是 0，``html`` 与 ``updatedAt`` 为 null。"""
-
-    revision: int
-    html: str | None
-    updated_at: datetime | None
-
-
-class WholeFilmDraftSavedOut(CamelModel):
-    """保存后的新版本号与保存时刻。"""
-
-    revision: int
-    updated_at: datetime
-
-
-class WholeFilmExportIn(CamelModel):
-    """按当前草稿导出；``revision`` 是页面上那一版，不是服务端存的那一版就不导。"""
-
-    revision: Index
-
-
-class WholeFilmExportStartedOut(CamelModel):
-    """已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id。"""
-
-    export_id: uuid.UUID
 
 
 class WholeFilmExportErrorOut(CamelModel):
@@ -114,18 +75,12 @@ def whole_film_export_out(export: WholeFilmExport) -> WholeFilmExportOut:
 
 
 __all__ = [
-    "MAX_FILM_CHARS",
     "FinalCutFileCreatedOut",
     "FinalCutFileIn",
     "FinalCutPreviewHostOut",
     "FinalCutPreviewOut",
-    "WholeFilmDraftIn",
-    "WholeFilmDraftOut",
-    "WholeFilmDraftSavedOut",
     "WholeFilmExportErrorOut",
-    "WholeFilmExportIn",
     "WholeFilmExportLatestOut",
     "WholeFilmExportOut",
-    "WholeFilmExportStartedOut",
     "whole_film_export_out",
 ]

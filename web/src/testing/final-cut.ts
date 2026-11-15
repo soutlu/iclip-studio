@@ -4,7 +4,12 @@ import type {
   ComponentCatalog,
 } from '@/features/storyboard/final-cut/composition/catalog'
 import {
-  writeFilm,
+  audioElement,
+  emptyProject,
+  hostElement,
+  itemNamed,
+  videoElement,
+  withFontBlock,
   type AudioClip,
   type Canvas,
   type FilmClip,
@@ -43,7 +48,6 @@ export const video = (overrides: Partial<VideoClip> = {}): VideoClip => ({
   kind: 'video',
   id: 'clip-1',
   label: 'A · 镜头 1',
-  jobId: '6f1b5c3e-2a4d-4e8f-9b1c-0d2e3f4a5b6c',
   src: 'https://media.test/videos/a.mp4',
   start: 0,
   duration: 2000,
@@ -58,8 +62,6 @@ export const video = (overrides: Partial<VideoClip> = {}): VideoClip => ({
   hidden: false,
   ...overrides,
 })
-
-export const AUDIO_JOB = '0c9a8b7d-6e5f-4a3b-8c2d-1e0f9a8b7c6d'
 
 /** 测试组件库里带可填项的那个条目。 */
 export const host = (overrides: Partial<HostClip> = {}): HostClip => ({
@@ -82,7 +84,6 @@ export const audio = (overrides: Partial<AudioClip> = {}): AudioClip => ({
   kind: 'audio',
   id: 'music-1',
   label: '配乐',
-  jobId: AUDIO_JOB,
   src: 'https://media.test/audio/music.mp3',
   start: 0,
   duration: 2000,
@@ -97,7 +98,37 @@ export const audio = (overrides: Partial<AudioClip> = {}): AudioClip => ({
   ...overrides,
 })
 
-export const filmFile = (
+/**
+ * 测试用的工程主文件：新建工程的模板，根下按先后放上 `clips`（视频、组件或块、音频三种；「其他」片段
+ * 用 `extra` 直接写 HTML，放在最后），字体块按片段算好，根上的总长是最晚的结尾。
+ */
+export const mainFile = (
   clips: FilmClip[] = [video()],
   canvas: Canvas = { width: 1080, height: 1920 },
-): string => writeFilm({ canvas, clips }, fixtureCatalog)
+  extra = '',
+): string => {
+  const elements = clips.map((clip) => {
+    switch (clip.kind) {
+      case 'video':
+        return videoElement(clip)
+      case 'audio':
+        return audioElement(clip)
+      case 'host': {
+        const item = itemNamed(fixtureCatalog, clip.item)
+        if (item === undefined) throw new Error(`测试组件库里没有条目 ${clip.item}`)
+        return hostElement(clip, item, canvas, fixtureCatalog)
+      }
+      case 'other':
+        throw new Error('「其他」片段用 extra 直接写 HTML')
+    }
+  })
+  const duration = Math.max(0, ...clips.map((clip) => clip.start + clip.duration))
+  const children = [...elements, ...(extra === '' ? [] : [extra])]
+    .map((written) => `${written}\n`)
+    .join('')
+  return withFontBlock(
+    emptyProject(canvas, fixtureCatalog, children, duration),
+    clips,
+    fixtureCatalog,
+  )
+}

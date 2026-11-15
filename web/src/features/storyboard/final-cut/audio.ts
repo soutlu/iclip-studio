@@ -25,13 +25,10 @@ export const durationLabel = (ms: number): string => {
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-/** 成片里用着记录 `jobId` 的音频片段里开始得最早的那个；没用到时是 undefined。 */
-export const firstAudioClipOf = (
-  clips: readonly FilmClip[],
-  jobId: string,
-): AudioClip | undefined =>
+/** 成片里用着地址 `src`（音频记录的产物地址）的音频片段里开始得最早的那个；没用到时是 undefined。 */
+export const firstAudioClipOf = (clips: readonly FilmClip[], src: string): AudioClip | undefined =>
   clips
-    .filter((clip): clip is AudioClip => clip.kind === 'audio' && clip.jobId === jobId)
+    .filter((clip): clip is AudioClip => clip.kind === 'audio' && clip.src === src)
     .reduce<AudioClip | undefined>(
       (earliest, clip) => (earliest === undefined || clip.start < earliest.start ? clip : earliest),
       undefined,

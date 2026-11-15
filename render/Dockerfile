@@ -1,5 +1,5 @@
-# 成片渲染服务镜像（iclip-render）。构建上下文为仓库根：要用 web/ 的成片合成构建与后端合同的
-# zod 生成物。镜像里不带组件库：部署时把组件库目录挂到 RENDER_REGISTRY_ROOT（见 deploy/compose.yaml）。
+# 成片渲染服务镜像（iclip-render）。构建上下文为仓库根（和别的镜像一样），只用到 render/。
+# 镜像里不带组件库：部署时把组件库目录挂到 RENDER_REGISTRY_ROOT（见 deploy/compose.yaml）。
 #
 #   docker build --platform linux/amd64 -f render/Dockerfile -t iclip-render .
 #
@@ -20,7 +20,6 @@ COPY render/package.json render/pnpm-lock.yaml render/pnpm-workspace.yaml render
 RUN npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")" \
     && pnpm install --frozen-lockfile
 COPY render/ ./
-COPY web/src/features/storyboard/final-cut/composition/ /app/web/src/features/storyboard/final-cut/composition/
 RUN pnpm build && pnpm prune --prod
 
 # ---------------------------------------------------------------- 运行

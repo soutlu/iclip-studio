@@ -68,10 +68,11 @@ type Props = {
 
 type AttributeChanges = Readonly<Partial<Record<ClipAttribute, string | null>>>
 
-/** 片段的种类；组件或块的片段按条目在组件库里的种类写，组件库里没有这个条目时不写。 */
+/** 片段的种类；组件或块的片段按条目在组件库里的种类写，「其他」片段不写。 */
 const kindLabel = (clip: FilmClip, catalog: ComponentCatalog): string | undefined => {
   if (clip.kind === 'video') return '视频'
   if (clip.kind === 'audio') return '音频'
+  if (clip.kind === 'other') return undefined
   const kind = catalog.items.find((item) => item.name === clip.item)?.kind
   return kind === undefined ? undefined : ITEM_KIND_LABEL[kind]
 }

@@ -8,7 +8,21 @@ describe('导出请求', () => {
   })
 
   it.each<[string, (body: Record<string, unknown>) => void, string]>([
-    ['缺少成片文件', (body) => delete body['film'], 'film'],
+    ['缺少工程文件', (body) => delete body['files'], 'files'],
+    [
+      '工程文件的内容不是字符串',
+      (body) => {
+        body['files'] = [{ path: 'index.html', content: 1 }]
+      },
+      'files.0.content',
+    ],
+    [
+      '工程文件超过 1 MB',
+      (body) => {
+        body['files'] = [{ path: 'index.html', content: 'x'.repeat(1_048_577) }]
+      },
+      'files.0.content',
+    ],
     [
       '下载地址不是 http(s)',
       (body) => {

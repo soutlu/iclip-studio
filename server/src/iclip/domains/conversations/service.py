@@ -11,16 +11,14 @@ from typing import Any, Literal, Protocol
 import structlog
 from iclip_video.film_view import FilmImagePrompt, FilmTextEdit, FilmView
 
-from iclip.common.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from iclip.common.errors import NotFound, PermissionDenied, ValidationFailed
 from iclip.domains.conversations.models import (
     IDLE_ACTIVITY,
     AgentPreview,
-    CheckedWholeFilm,
     Conversation,
     ConversationActivity,
     PreviewHeader,
     VideoPhase,
-    WholeFilmDraft,
     WholeFilmExport,
 )
 from iclip.domains.conversations.repository import (
@@ -32,7 +30,6 @@ from iclip.domains.conversations.repository import (
     DeletedFilter,
     PageCursor,
     StateFilter,
-    WholeFilmDraftStore,
 )
 from iclip.domains.conversations.schemas import DEFAULT_TITLE, MAX_TITLE_CHARS, conversation_out
 from iclip.domains.identity.public import (
@@ -239,28 +236,7 @@ class FinalCutRenderUnavailable(Exception):
     pass
 
 
-class WholeFilmFiles(Protocol):
-    async def check(
-        self, principal: Principal, conversation_id: uuid.UUID, html: str
-    ) -> CheckedWholeFilm:
-        """查一份成片文件，答复按写法重写后的文件和它用到的素材。
-
-        不合写法、用到的素材不是这段对话的抛 ``ValidationFailed``；渲染服务连不上抛
-        ``FinalCutRenderUnavailable``。
-        """
-        ...
-
-
 class WholeFilmExports(Protocol):
-    async def start(
-        self,
-        principal: Principal,
-        *,
-        conversation_id: uuid.UUID,
-        revision: int,
-        film: CheckedWholeFilm,
-    ) -> uuid.UUID: ...
-
     async def latest(
         self, *, conversation_id: uuid.UUID, owner_user_id: uuid.UUID
     ) -> WholeFilmExport | None: ...
@@ -271,8 +247,7 @@ class WholeFilmExports(Protocol):
 
 
 _EXPORTS_OFF = "成片导出没有开通"
-_FILMS_OFF = "成片没有开通"
-_EMPTY_FILM = "成片还是空的，导不出成片"
+_EXPORT_PAUSED = "导出功能正在调整，无法导出；请稍后再试"
 
 
 class WorkspaceDocumentValidator(Protocol):
@@ -360,8 +335,6 @@ class ConversationService:
         write_derived_file: WriteDerivedFile,
         document_validators: Mapping[str, WorkspaceDocumentValidator],
         film: ConversationFilm,
-        drafts: WholeFilmDraftStore,
-        films: WholeFilmFiles | None,
         exports: WholeFilmExports | None,
         generate_title: GenerateTitle,
         announce_title: AnnounceTitle,
@@ -377,8 +350,6 @@ class ConversationService:
         self._repo = repo
         self._previews = previews
         self._runtime = runtime
-        self._drafts = drafts
-        self._films = films
         self._exports = exports
         self._same_style_files = same_style_files
         self._same_style_source = same_style_source
@@ -597,42 +568,11 @@ class ConversationService:
             run_version=run_version,
         )
 
-    async def whole_film_draft(
-        self, principal: Principal, conversation_id: uuid.UUID
-    ) -> WholeFilmDraft | None:
-        conversation = await self._readable(principal, conversation_id)
-        return await self._drafts.get(conversation.id)
+    async def export_whole_film(self, principal: Principal, conversation_id: uuid.UUID) -> None:
+        """发起导出暂停着：看得见、能改的对话一律 422，看不见 404，看得见不能改 403。"""
 
-    async def save_whole_film_draft(
-        self, principal: Principal, conversation_id: uuid.UUID, *, revision: int, html: str
-    ) -> WholeFilmDraft:
-        conversation = await self._workspace_writable(principal, conversation_id)
-        checked = await self._require_films().check(principal, conversation.id, html)
-        saved = await self._drafts.save(
-            conversation.id, html=checked.html, revision=revision, updated_by=principal.user_id
-        )
-        if saved is None:
-            raise Conflict("成片草稿已经有更新的一版，重新读取后再改")
-        return saved
-
-    async def export_whole_film(
-        self, principal: Principal, conversation_id: uuid.UUID, *, revision: int
-    ) -> uuid.UUID:
-        conversation = await self._workspace_writable(principal, conversation_id)
-        exports = self._require_exports()
-        films = self._require_films()
-        found = await self._drafts.get(conversation.id)
-        if (found.revision if found is not None else 0) != revision:
-            raise Conflict("成片草稿已经有更新的一版，重新读取后再导出")
-        if found is None:
-            raise ValidationFailed(_EMPTY_FILM)
-        film = await films.check(principal, conversation.id, found.html)
-        # 只有组件或块的片段的成片没有素材也能导出；一个片段都没有时总长是 0
-        if film.duration_ms == 0:
-            raise ValidationFailed(_EMPTY_FILM)
-        return await exports.start(
-            principal, conversation_id=conversation.id, revision=revision, film=film
-        )
+        await self._workspace_writable(principal, conversation_id)
+        raise ValidationFailed(_EXPORT_PAUSED)
 
     async def latest_whole_film_export(
         self, principal: Principal, conversation_id: uuid.UUID
@@ -656,11 +596,6 @@ class ConversationService:
         if self._exports is None:
             raise ValidationFailed(_EXPORTS_OFF)
         return self._exports
-
-    def _require_films(self) -> WholeFilmFiles:
-        if self._films is None:
-            raise ValidationFailed(_FILMS_OFF)
-        return self._films
 
     async def workspace_writable(
         self, principal: Principal, conversation_id: uuid.UUID
@@ -1085,7 +1020,6 @@ __all__ = [
     "TaskExists",
     "VideoProgressOf",
     "WholeFilmExports",
-    "WholeFilmFiles",
     "WorkspaceDocumentValidator",
     "WriteDerivedFile",
 ]

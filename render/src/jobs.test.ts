@@ -5,9 +5,9 @@ import { flush, manualWorker, memoryLogger } from './testing'
 const input = (id: string): ExportInput => ({
   id,
   conversationId: `conv-${id}`,
-  registryDir: '/registry/test',
-  compose: () => '<html></html>',
-  mediaUrls: ['https://oss.example.com/a.mp4'],
+  files: [{ path: 'index.html', content: '<html></html>' }],
+  media: new Map([['https://media.test/a.mp4', 'https://oss.example.com/a.mp4']]),
+  vendorDir: '/registry/vendor',
   upload: { url: 'https://upload.example.com/a.mp4', headers: {} },
 })
 

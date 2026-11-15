@@ -1,52 +1,58 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { Composition } from '@hyperframes/sdk'
+import { use, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { Composition, ElementSnapshot } from '@hyperframes/sdk'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
-import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
+import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
 import { rippleStarts, type Timing } from './clip-edit'
 import type { CatalogItem, ComponentCatalog, VariableValue } from './composition/catalog'
 import {
-  AUDIO_SOURCE_LABEL,
-  audioClip,
-  clipFromAttributes,
-  clipKindOfTag,
-  FILM_ID,
-  hostClip,
-  sourceVariable,
-  videoClip,
-  writeFilm,
+  audioElement,
+  clipOf,
+  emptyProject,
+  hostElement,
+  itemFonts,
+  itemNamed,
+  PROJECT_MAIN,
+  videoElement,
+  withFontBlock,
   type AudioClip,
   type Canvas,
   type ClipAttribute,
   type FilmClip,
   type VideoClip,
 } from './composition/film'
+import {
+  copyItemFiles,
+  createProjectFile,
+  holdProjectReads,
+  PROJECT_DIR,
+  PROJECT_MAIN_PATH,
+  readProjectMain,
+  writeProjectMain,
+  type ProjectMain,
+} from './final-cut.api'
 import { itemDurationMs } from './items'
 import { onRow, topTrack, type Landing, type Renumbering } from './placement'
 import { newClipZ, restackedZ } from './stacking'
 import type { StackingDirection } from './vendor/hyperframes-studio/player/components/timelineStackingSync'
-import { holdDraftReads, readWholeFilmDraft, saveWholeFilmDraft } from './final-cut.api'
 
 export type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'failed'; message: string }
 
-/** 成片现在的样子：`html` 是 SDK 存出来的当前文件，其余是从它读出来的。 */
+/** 工程现在的样子：`html` 是当前的主文件（没存的改动也在里面），其余是从它读出来的。 */
 export type FilmView = {
   html: string
   canvas: Canvas
-  /** 文件里所有的片段（三种），按它们在文件里的先后。 */
+  /** 主文件根下所有带时间的元素，按它们在文件里的先后。 */
   clips: readonly FilmClip[]
   durationMs: number
   canUndo: boolean
   canRedo: boolean
 }
 
-/** 要放进成片的一段素材；起点由成片现有内容决定，接在画面那一行的末尾。 */
-export type NewVideo = Pick<
-  VideoClip,
-  'label' | 'jobId' | 'src' | 'mediaStart' | 'duration' | 'muted'
->
+/** 要放进工程的一段素材；起点由现有内容决定，接在画面那一行的末尾。 */
+export type NewVideo = Pick<VideoClip, 'label' | 'src' | 'mediaStart' | 'duration' | 'muted'>
 
-/** 要放进成片的一段音频：一条音频记录从 `mediaStart` 起的 `duration` 毫秒。 */
-export type NewAudio = Pick<AudioClip, 'label' | 'jobId' | 'src' | 'mediaStart' | 'duration'>
+/** 要放进工程的一段音频：一条音频记录从 `mediaStart` 起的 `duration` 毫秒。 */
+export type NewAudio = Pick<AudioClip, 'label' | 'src' | 'mediaStart' | 'duration'>
 
 // SDK 的编辑引擎只在打开成片编辑器时才用得到，单独成块按需加载。
 const openComposition = async (html: string): Promise<Composition> =>
@@ -57,55 +63,57 @@ const STALE_NOTICE = '成片草稿已在别处修改，已切换到最新版本�
 const NO_RENUMBERING: Renumbering = new Map()
 const NO_STARTS: ReadonlyMap<string, number> = new Map()
 
-/** 成片里所有的片段，按它们在文件里的先后。只读出片段，不存出文件，一批操作中间也能用。 */
-const clipsOf = (engine: Composition): FilmClip[] =>
-  (engine.getElements().find((element) => element.id === FILM_ID)?.children ?? []).flatMap(
-    (element) => {
-      const kind = clipKindOfTag(element.tag)
-      const clip =
-        kind === undefined
-          ? undefined
-          : clipFromAttributes(kind, element.id, element.attributes, element.inlineStyles['zIndex'])
-      return clip === undefined ? [] : [clip]
-    },
+/** 主文件的根：最外层带 `data-composition-id` 的元素。 */
+const rootOf = (engine: Composition): ElementSnapshot | undefined =>
+  engine
+    .getRootElements()
+    .find((element) => element.attributes['data-composition-id'] !== undefined)
+
+/** 根下所有带时间的元素读成的片段，按它们在文件里的先后。不存出文件，一批操作中间也能用。 */
+const clipsOf = (engine: Composition, catalog: ComponentCatalog): FilmClip[] => {
+  const timings = engine.getElementTimings()
+  return (rootOf(engine)?.children ?? []).flatMap((element) => {
+    const timing = timings[element.id]
+    return timing === undefined ? [] : [clipOf(element, timing, catalog)]
+  })
+}
+
+/** 工程总长：根以外所有带时间的元素里最晚的结尾（毫秒）。 */
+const latestEnd = (engine: Composition): number => {
+  const root = rootOf(engine)?.id
+  return Math.round(
+    Math.max(
+      0,
+      ...Object.entries(engine.getElementTimings())
+        .filter(([id]) => id !== root)
+        .map(([, timing]) => timing.exitAt * 1000),
+    ),
   )
+}
 
-/** 成片总长：所有片段里最晚的结尾。 */
-const durationOf = (clips: readonly FilmClip[]) =>
-  Math.max(0, ...clips.map((clip) => clip.start + clip.duration))
-
-const viewOf = (engine: Composition): FilmView => {
-  const root = engine.getElements().find((element) => element.id === FILM_ID)
-  const clips = clipsOf(engine)
+const viewOf = (engine: Composition, catalog: ComponentCatalog): FilmView => {
+  const root = rootOf(engine)
+  const clips = clipsOf(engine, catalog)
   return {
-    html: engine.serialize(),
+    // SDK 改不了 <head>：存出时只重算字体块
+    html: withFontBlock(engine.serialize(), clips, catalog),
     canvas: {
       width: Number(root?.attributes['data-width'] ?? 0),
       height: Number(root?.attributes['data-height'] ?? 0),
     },
     clips,
-    durationMs: durationOf(clips),
+    durationMs: latestEnd(engine),
     canUndo: engine.canUndo(),
     canRedo: engine.canRedo(),
   }
 }
 
-/** 在一批操作里做完 `change`，再按改完的所有片段写根上的总长：一起算一步撤销。 */
+/** 在一批操作里做完 `change`，再按改完的样子写根上的总长：一起算一步撤销。 */
 const applyTo = (engine: Composition, change: () => void) =>
   engine.batch(() => {
     change()
-    engine.dispatch({
-      type: 'setCompositionMetadata',
-      duration: durationOf(clipsOf(engine)) / 1000,
-    })
+    engine.dispatch({ type: 'setCompositionMetadata', duration: latestEnd(engine) / 1000 })
   })
-
-/** 素材地址的变量没声明过就声明。 */
-const declareSource = (engine: Composition, jobId: string, src: string, label?: string) => {
-  const variable = sourceVariable(jobId, src, label)
-  if (!engine.listVariables().some((declared) => declared.id === variable.id))
-    engine.declareVariable(variable)
-}
 
 const newClipId = () => `clip-${crypto.randomUUID().slice(0, 8)}`
 
@@ -114,18 +122,25 @@ type Options = {
   onNotice: (message: string) => void
 }
 
+/**
+ * 编辑对话工作区里的剪辑工程：打开主文件 `final-cut/index.html`（`initial` 是 null 时还没有工程），
+ * 改动停下 `debounceMs` 毫秒后整份保存（第一次新建、之后按版本号写）。主文件在别处被改了时换上那一份、
+ * 放弃本地没存的改动；工程里别的文件变了时 `filesRevision` 加 1，预览据此重新加载。
+ */
 export function useFilmSession(
   conversationId: string,
-  initial: WholeFilmDraftOut,
+  initial: ProjectMain | null,
   catalog: ComponentCatalog,
   { debounceMs = 800, onNotice }: Options,
 ) {
   const [film, setFilm] = useState<FilmView | null>(null)
-  const [opening, setOpening] = useState(initial.html !== null)
+  const [opening, setOpening] = useState(initial !== null)
   const [save, setSave] = useState<SaveState>({ kind: 'idle' })
+  const [filesRevision, setFilesRevision] = useState(0)
   const engineRef = useRef<Composition | null>(null)
   const creatingRef = useRef<Promise<Composition | null> | null>(null)
-  const revisionRef = useRef(initial.revision)
+  // 工作区里主文件的版本号；还没有这个文件时是 null，第一次保存走新建
+  const versionRef = useRef(initial?.version ?? null)
   const savedRef = useRef<string | null>(null)
   const presentRef = useRef<string | null>(null)
   const inFlightRef = useRef<Promise<void> | null>(null)
@@ -133,15 +148,19 @@ export function useFilmSession(
   useLayoutEffect(() => {
     noticeRef.current = onNotice
   })
+  const initialHtml = initial?.content ?? null
 
   /** 改动都从这里发出，改完读一遍现在的样子。 */
-  const show = useCallback((engine: Composition | null) => {
-    const view = engine === null ? null : viewOf(engine)
-    presentRef.current = view?.html ?? null
-    setFilm(view)
-  }, [])
+  const show = useCallback(
+    (engine: Composition | null) => {
+      const view = engine === null ? null : viewOf(engine, catalog)
+      presentRef.current = view?.html ?? null
+      setFilm(view)
+    },
+    [catalog],
+  )
 
-  /** 换上一份成片文件（null 是还没有成片）；`saved` 为真时它就是服务端存着的那一份。 */
+  /** 换上一份主文件（null 是还没有工程）；`saved` 为真时它就是工作区里存着的那一份。 */
   const adopt = useCallback(
     async (html: string | null, saved: boolean) => {
       engineRef.current?.dispose()
@@ -155,9 +174,9 @@ export function useFilmSession(
   )
 
   useEffect(() => {
-    if (initial.html === null) return
+    if (initialHtml === null) return
     let cancelled = false
-    void openComposition(initial.html).then((engine) => {
+    void openComposition(initialHtml).then((engine) => {
       if (cancelled) {
         engine.dispose()
         return
@@ -170,34 +189,42 @@ export function useFilmSession(
     return () => {
       cancelled = true
     }
-  }, [initial.html, show])
+  }, [initialHtml, show])
 
-  const reloadServerCopy = useCallback(async () => {
-    const server = await readWholeFilmDraft(conversationId)
-    revisionRef.current = server.revision
-    await adopt(server.html, true)
-    noticeRef.current(STALE_NOTICE)
-  }, [adopt, conversationId])
+  /** 在途的保存都结束。 */
+  const settled = useCallback(async () => {
+    while (inFlightRef.current !== null) await inFlightRef.current
+  }, [])
+
+  /** 换上工作区里现在的那一份，放弃本地没存的改动并提示。 */
+  const adoptStored = useCallback(
+    async (stored: ProjectMain | null) => {
+      versionRef.current = stored?.version ?? null
+      await adopt(stored?.content ?? null, true)
+      noticeRef.current(STALE_NOTICE)
+    },
+    [adopt],
+  )
 
   const saveNow = useCallback(async (): Promise<'saved' | 'clean' | 'reloaded' | 'failed'> => {
-    while (inFlightRef.current !== null) await inFlightRef.current
+    await settled()
     const html = presentRef.current
     if (html === null || html === savedRef.current) return 'clean'
     const run = (async () => {
       setSave({ kind: 'saving' })
       try {
-        const saved = await saveWholeFilmDraft(conversationId, {
-          revision: revisionRef.current,
-          html,
-        })
-        revisionRef.current = saved.revision
+        const known = versionRef.current
+        versionRef.current =
+          known === null
+            ? await createProjectFile(conversationId, PROJECT_MAIN, html)
+            : await writeProjectMain(conversationId, html, known)
         savedRef.current = html
         setSave({ kind: 'idle' })
         return 'saved' as const
       } catch (error) {
         if (error instanceof ApiError && error.status === 409) {
           try {
-            await reloadServerCopy()
+            await adoptStored(await readProjectMain(conversationId))
             setSave({ kind: 'idle' })
             return 'reloaded' as const
           } catch (reloadError) {
@@ -215,7 +242,49 @@ export function useFilmSession(
     } finally {
       inFlightRef.current = null
     }
-  }, [conversationId, reloadServerCopy])
+  }, [adoptStored, conversationId, settled])
+
+  /**
+   * 主文件变了：通知不带版本号，自己的保存也会通知。等在途的保存结束再读，读回来以后再等一次
+   * （读的时候可能又存了一版），只有工作区里的版本比自己知道的新（或文件出现、消失了）才算别处改的。
+   */
+  const checkStored = useCallback(async () => {
+    try {
+      await settled()
+      const stored = await readProjectMain(conversationId)
+      await settled()
+      const known = versionRef.current
+      const external = stored === null ? known !== null : known === null || stored.version > known
+      if (external) await adoptStored(stored)
+    } catch (error) {
+      setSave({ kind: 'failed', message: errorMessageOf(error, '成片草稿读取失败') })
+    }
+  }, [adoptStored, conversationId, settled])
+
+  const connection = use(TranscriptConnectionContext)
+  useEffect(() => {
+    if (connection === null) return undefined
+    const unwatchFiles = connection.watchFs(
+      conversationId,
+      [PROJECT_DIR],
+      (changes) => {
+        if (changes.some((change) => change.path === PROJECT_MAIN_PATH)) void checkStored()
+        if (changes.some((change) => change.path !== PROJECT_MAIN_PATH))
+          setFilesRevision((revision) => revision + 1)
+      },
+      { recursive: true },
+    )
+    // 断线期间的通知收不到：重连后按主文件变了、别的文件也变了处理
+    const unwatchSessions = connection.watchSessions((update) => {
+      if (update.kind !== 'reconnected') return
+      void checkStored()
+      setFilesRevision((revision) => revision + 1)
+    })
+    return () => {
+      unwatchFiles()
+      unwatchSessions()
+    }
+  }, [checkStored, connection, conversationId])
 
   const html = film?.html ?? null
   useEffect(() => {
@@ -224,35 +293,33 @@ export function useFilmSession(
     return () => clearTimeout(timer)
   }, [html, debounceMs, saveNow])
 
-  // 卸载时把没存的存掉；连同还在途的那次一起交给草稿读取，再打开时等它们存完再读
+  // 卸载时把没存的存掉；连同还在途的那次一起交给主文件的读取，再打开时等它们存完再读
   useEffect(
     () => () => {
       const dirty = presentRef.current !== null && presentRef.current !== savedRef.current
-      if (dirty || inFlightRef.current !== null) holdDraftReads(conversationId, saveNow())
+      if (dirty || inFlightRef.current !== null) holdProjectReads(conversationId, saveNow())
     },
     [conversationId, saveNow],
   )
 
   useEffect(() => () => engineRef.current?.dispose(), [])
 
-  /** 还没有成片时按 `canvas` 建一份；连着加两次素材也只建一份，后一次等前一次建好。 */
+  /** 还没有工程时按 `canvas` 用模板建一份；连着加两次也只建一份，后一次等前一次建好。 */
   const engineFor = useCallback(
     async (canvas: Canvas): Promise<Composition | null> => {
       if (engineRef.current !== null) return engineRef.current
-      creatingRef.current ??= adopt(writeFilm({ canvas, clips: [] }, catalog), false).finally(
-        () => {
-          creatingRef.current = null
-        },
-      )
+      creatingRef.current ??= adopt(emptyProject(canvas, catalog), false).finally(() => {
+        creatingRef.current = null
+      })
       return creatingRef.current
     },
     [adopt, catalog],
   )
 
   /**
-   * 把几段素材一段接一段放进成片的画面区：给了 `at` 就从那一行的那个时间放起（调用方保证那里空着），
+   * 把几段素材一段接一段放进画面区：给了 `at` 就从那一行的那个时间放起（调用方保证那里空着），
    * 没给就接在主轨（画面区最上面那一行）的末尾。`renumber` 是为它新开一行时别的片段要换成的行号。
-   * 每段都叠在最上面，写在根下第一个。还没有成片时先按 `canvas` 建一份。放不下时不动成片。
+   * 每段都叠在最上面，写在根下第一个。还没有工程时先按 `canvas` 建一份。放不下时不动工程。
    */
   const addVideos = useCallback(
     async (
@@ -262,8 +329,9 @@ export function useFilmSession(
       renumber: Renumbering = NO_RENUMBERING,
     ): Promise<boolean> => {
       const engine = await engineFor(canvas)
-      if (engine === null) return false
-      const existing = clipsOf(engine)
+      const root = engine === null ? undefined : rootOf(engine)
+      if (engine === null || root === undefined) return false
+      const existing = clipsOf(engine, catalog)
       // 别的片段先换成新的行号，后面都按换完的样子算
       const others = existing.map((clip) => ({
         ...clip,
@@ -275,10 +343,8 @@ export function useFilmSession(
       applyTo(engine, () => {
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
         for (const [placed, video] of videos.entries()) {
-          declareSource(engine, video.jobId, video.src)
-          const clip = {
+          const element = videoElement({
             ...video,
-            kind: 'video' as const,
             id: newClipId(),
             start: end,
             track,
@@ -288,21 +354,21 @@ export function useFilmSession(
             fadeOut: 0,
             z: newClipZ(existing, placed),
             hidden: false,
-          }
-          engine.addElement(FILM_ID, 0, videoClip(clip))
+          })
+          engine.addElement(root.id, 0, element)
           end += video.duration
         }
       })
       show(engine)
       return true
     },
-    [engineFor, show],
+    [catalog, engineFor, show],
   )
 
   /**
-   * 把组件库的一个条目放进成片：从 `at` 那一行的那个时间放起（调用方保证那里空着），
+   * 把组件库的一个条目放进工程：先把条目的文件拷进工程，再从 `at` 那一行的那个时间放起（调用方保证那里空着），
    * 可填项取 `values`，时长取条目的时长。`renumber` 同 `addVideos`。
-   * 叠在最上面，写在根下第一个。还没有成片时先按 `canvas` 建一份。
+   * 叠在最上面，写在根下第一个。还没有工程时先按 `canvas` 建一份。文件拷不进来时提示原因，不动工程。
    */
   const addItem = useCallback(
     async (
@@ -312,37 +378,52 @@ export function useFilmSession(
       at: Landing,
       renumber: Renumbering = NO_RENUMBERING,
     ): Promise<boolean> => {
+      try {
+        await copyItemFiles(conversationId, catalog, item)
+      } catch (error) {
+        noticeRef.current(errorMessageOf(error, '贴片和场景读取失败'))
+        return false
+      }
       const engine = await engineFor(canvas)
-      if (engine === null) return false
-      const existing = clipsOf(engine)
+      const root = engine === null ? undefined : rootOf(engine)
+      if (engine === null || root === undefined) return false
+      const existing = clipsOf(engine, catalog)
       const duration = itemDurationMs(item, existing)
+      const size = {
+        width: Number(root.attributes['data-width'] ?? canvas.width),
+        height: Number(root.attributes['data-height'] ?? canvas.height),
+      }
       applyTo(engine, () => {
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
-        const clip = {
-          kind: 'host' as const,
-          id: newClipId(),
-          label: item.title,
-          item: item.name,
-          src: item.src,
-          start: at.start,
-          duration,
-          playbackStart: 0,
-          track: at.track,
-          values: { ...values },
-          z: newClipZ(existing, 0),
-          hidden: false,
-        }
-        engine.addElement(FILM_ID, 0, hostClip(clip))
+        const element = hostElement(
+          {
+            id: newClipId(),
+            label: item.title,
+            item: item.name,
+            src: item.src,
+            start: at.start,
+            duration,
+            playbackStart: 0,
+            track: at.track,
+            values: { ...values },
+            z: newClipZ(existing, 0),
+            hidden: false,
+          },
+          item,
+          size,
+          catalog,
+        )
+        engine.addElement(root.id, 0, element)
       })
       show(engine)
       return true
     },
-    [engineFor, show],
+    [catalog, conversationId, engineFor, show],
   )
 
   /**
-   * 把一段音频放进成片的声音区：从 `at` 那一行的那个时间放起（调用方保证那里空着）。
-   * 写在根下第一个，不带叠放顺序。`renumber` 同 `addVideos`。还没有成片时先按 `canvas` 建一份。
+   * 把一段音频放进声音区：从 `at` 那一行的那个时间放起（调用方保证那里空着）。
+   * 写在根下第一个，不带叠放顺序。`renumber` 同 `addVideos`。还没有工程时先按 `canvas` 建一份。
    */
   const addAudio = useCallback(
     async (
@@ -352,13 +433,12 @@ export function useFilmSession(
       renumber: Renumbering = NO_RENUMBERING,
     ): Promise<boolean> => {
       const engine = await engineFor(canvas)
-      if (engine === null) return false
+      const root = engine === null ? undefined : rootOf(engine)
+      if (engine === null || root === undefined) return false
       applyTo(engine, () => {
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
-        declareSource(engine, audio.jobId, audio.src, AUDIO_SOURCE_LABEL)
-        const clip = {
+        const element = audioElement({
           ...audio,
-          kind: 'audio' as const,
           id: newClipId(),
           start: at.start,
           track: at.track,
@@ -368,8 +448,8 @@ export function useFilmSession(
           fadeOut: 0,
           loop: false,
           hidden: false,
-        }
-        engine.addElement(FILM_ID, 0, audioClip(clip))
+        })
+        engine.addElement(root.id, 0, element)
       })
       show(engine)
       return true
@@ -377,7 +457,7 @@ export function useFilmSession(
     [engineFor, show],
   )
 
-  /** 改成片里已有的东西：`change` 里的几步和成片总长一起算一步撤销。 */
+  /** 改工程里已有的东西：`change` 里的几步和工程总长一起算一步撤销。 */
   const edit = useCallback(
     (change: (engine: Composition) => void) => {
       const engine = engineRef.current
@@ -389,22 +469,24 @@ export function useFilmSession(
   )
 
   /**
-   * 改几个片段各自的起止和入点，一起算一步撤销。组件或块的片段的入点写成从第几秒开始播，是 0 时去掉这个属性。
+   * 改几个片段各自的起止和入点，一起算一步撤销。组件或块的片段的入点写成从第几秒开始播，是 0 时去掉
+   * 这个属性；「其他」片段没有入点，只改起止。
    */
   const retime = useCallback(
     (timings: ReadonlyMap<string, Timing>) =>
       edit((engine) => {
-        const kinds = new Map(clipsOf(engine).map((clip) => [clip.id, clip.kind]))
+        const kinds = new Map(clipsOf(engine, catalog).map((clip) => [clip.id, clip.kind]))
         for (const [id, timing] of timings) {
           engine.setTiming(id, { start: timing.start / 1000, duration: timing.duration / 1000 })
           const kind = kinds.get(id)
           const inPoint = String(timing.mediaStart / 1000)
           if (kind === 'host')
             engine.setAttribute(id, 'data-playback-start', timing.mediaStart > 0 ? inPoint : null)
-          else if (kind !== undefined) engine.setAttribute(id, 'data-media-start', inPoint)
+          else if (kind === 'video' || kind === 'audio')
+            engine.setAttribute(id, 'data-media-start', inPoint)
         }
       }),
-    [edit],
+    [catalog, edit],
   )
 
   /**
@@ -427,10 +509,10 @@ export function useFilmSession(
         engine.setTiming(id, { start: at.start / 1000, trackIndex: at.track })
         if (direction === null) return
         // 按挪完的样子算：一起挪的片段的新起点、别的片段的新行号都已写进去
-        const z = restackedZ(clipsOf(engine), id, direction)
+        const z = restackedZ(clipsOf(engine, catalog), id, direction)
         if (z !== undefined) engine.setStyle(id, { zIndex: z > 0 ? String(z) : null })
       }),
-    [edit],
+    [catalog, edit],
   )
 
   /** 把几个片段各自挪到新的起点，一起算一步撤销。 */
@@ -452,27 +534,32 @@ export function useFilmSession(
   )
 
   /**
-   * 把组件或块的片段 `id` 的可填项取值整个换成 `values`，算一步撤销。
-   * 片段已经不在成片里（比如改完还没提交就删掉了）时不动成片。
+   * 把组件或块的片段 `id` 的可填项取值整个换成 `values`，宿主上的字体变量跟着重算，算一步撤销。
+   * 片段已经不在工程里（比如改完还没提交就删掉了）时不动工程。
    */
   const setValues = useCallback(
     (id: string, values: Readonly<Record<string, VariableValue>>) => {
       const engine = engineRef.current
-      if (engine === null || !clipsOf(engine).some((clip) => clip.id === id)) return
-      edit((current) => current.setAttribute(id, 'data-variable-values', JSON.stringify(values)))
+      const clip = engine === null ? undefined : clipsOf(engine, catalog).find((c) => c.id === id)
+      if (clip?.kind !== 'host') return
+      const item = itemNamed(catalog, clip.item)
+      edit((current) => {
+        current.setAttribute(id, 'data-variable-values', JSON.stringify(values))
+        if (item !== undefined) current.setStyle(id, itemFonts(item, values, catalog))
+      })
     },
-    [edit],
+    [catalog, edit],
   )
 
   /**
-   * 改片段 `id` 上的几个属性（null 是去掉），算一步撤销。片段已经不在成片里、或者属性都已经是这些值时
-   * 不动成片。
+   * 改片段 `id` 上的几个属性（null 是去掉），算一步撤销。片段已经不在工程里、或者属性都已经是这些值时
+   * 不动工程。
    */
   const setAttributes = useCallback(
     (id: string, changes: Readonly<Partial<Record<ClipAttribute, string | null>>>) => {
       const engine = engineRef.current
-      const element = engine?.getElements().find((candidate) => candidate.id === id)
-      if (engine === null || element === undefined) return
+      const element = engine?.getElement(id) ?? null
+      if (engine === null || element === null) return
       const changed = Object.entries(changes).filter(
         ([name, value]) => (element.attributes[name] ?? null) !== value,
       )
@@ -484,23 +571,18 @@ export function useFilmSession(
     [edit],
   )
 
-  /** 删掉几个片段；`ripple` 为真时主轨里后面的片段往前补上。没有片段再用的素材变量一起去掉。 */
+  /** 删掉几个片段；`ripple` 为真时主轨里后面的片段往前补上。 */
   const removeClips = useCallback(
     (ids: readonly string[], ripple: boolean) =>
       edit((engine) => {
-        const before = clipsOf(engine)
+        const before = clipsOf(engine, catalog)
         const gone = new Set(ids)
         for (const id of gone) engine.removeElement(id)
         if (ripple)
           for (const [id, start] of rippleStarts(before, gone))
             engine.setTiming(id, { start: start / 1000 })
-        const used = new Set(
-          engine.getElements().flatMap((element) => element.attributes['data-var-src'] ?? []),
-        )
-        for (const variable of engine.listVariables())
-          if (!used.has(variable.id)) engine.removeVariableDeclaration(variable.id)
       }),
-    [edit],
+    [catalog, edit],
   )
 
   const step = (direction: 'undo' | 'redo') => {
@@ -513,6 +595,7 @@ export function useFilmSession(
   return {
     film,
     opening,
+    filesRevision,
     addVideos,
     addItem,
     addAudio,
@@ -527,9 +610,5 @@ export function useFilmSession(
     redo: () => step('redo'),
     save,
     flush: () => void saveNow(),
-    settle: async (): Promise<number | undefined> => {
-      const outcome = await saveNow()
-      return outcome === 'saved' || outcome === 'clean' ? revisionRef.current : undefined
-    },
   }
 }

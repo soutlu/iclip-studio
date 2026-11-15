@@ -67,12 +67,7 @@ from iclip.domains.conversations.whole_film_schemas import (
     FinalCutFileIn,
     FinalCutPreviewHostOut,
     FinalCutPreviewOut,
-    WholeFilmDraftIn,
-    WholeFilmDraftOut,
-    WholeFilmDraftSavedOut,
-    WholeFilmExportIn,
     WholeFilmExportLatestOut,
-    WholeFilmExportStartedOut,
     whole_film_export_out,
 )
 from iclip.domains.identity.public import (
@@ -473,57 +468,19 @@ def create_conversations_router(
         )
         return FilmJobOut(job_id=job_id)
 
-    @router.get("/{conversation_id}/whole-film/draft", response_model=WholeFilmDraftOut)
-    async def read_whole_film_draft(
-        conversation_id: uuid.UUID,
-        principal: Annotated[Principal, require_permission("agent:read")],
-    ) -> WholeFilmDraftOut:
-        """读这段对话的成片草稿；可见范围同读工作区文件。还没存过答复 ``revision`` 0、
-        ``html`` 与 ``updatedAt`` 为 null。"""
-
-        draft = await service.whole_film_draft(principal, conversation_id)
-        if draft is None:
-            return WholeFilmDraftOut(revision=0, html=None, updated_at=None)
-        return WholeFilmDraftOut(
-            revision=draft.revision, html=draft.html, updated_at=draft.updated_at
-        )
-
-    @router.put("/{conversation_id}/whole-film/draft", response_model=WholeFilmDraftSavedOut)
-    async def save_whole_film_draft(
-        conversation_id: uuid.UUID,
-        body: WholeFilmDraftIn,
-        principal: Annotated[Principal, require_permission("agent:run")],
-    ) -> WholeFilmDraftSavedOut:
-        """整份保存成片文件，答复新的版本号；存下的是按写法重写后的那一份。只有属主能存；
-        ``revision`` 不是当前那一版（还没有草稿是 0）是 409；文件不合写法、用到的素材不是这段对话的、
-        没开通都是 422；渲染服务不可用 502。"""
-
-        with _render_unavailable_as_502():
-            saved = await service.save_whole_film_draft(
-                principal, conversation_id, revision=body.revision, html=body.html
-            )
-        return WholeFilmDraftSavedOut(revision=saved.revision, updated_at=saved.updated_at)
-
     @router.post(
         "/{conversation_id}/whole-film/exports",
-        response_model=WholeFilmExportStartedOut,
-        status_code=202,
+        response_model=None,
+        responses={422: {"description": "发起导出暂停着"}},
     )
     async def export_whole_film(
         conversation_id: uuid.UUID,
-        body: WholeFilmExportIn,
         principal: Annotated[Principal, require_permission("agent:run")],
-    ) -> WholeFilmExportStartedOut:
-        """按当前草稿导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；
-        ``revision`` 不是存着的那一版 409；成片还是空的、用到的素材不再是这段对话的、没开通
-        都是 422；渲染服务不可用 502。草稿在交给渲染服务之前又改过不在这里答，那条记录记为失败
-        （``FILM_CHANGED``）。"""
+    ) -> None:
+        """发起导出暂停着：看得见、能改的对话一律 422 并说明原因；看不见 404，看得见不能改 403。
+        查最近一次导出、取消导出照常。"""
 
-        with _render_unavailable_as_502():
-            export_id = await service.export_whole_film(
-                principal, conversation_id, revision=body.revision
-            )
-        return WholeFilmExportStartedOut(export_id=export_id)
+        await service.export_whole_film(principal, conversation_id)
 
     @router.get(
         "/{conversation_id}/whole-film/exports/latest", response_model=WholeFilmExportLatestOut

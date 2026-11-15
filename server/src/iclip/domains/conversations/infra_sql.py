@@ -5,7 +5,6 @@ from datetime import datetime
 from typing import Final
 
 from sqlalchemy import (
-    CheckConstraint,
     Column,
     ColumnElement,
     DateTime,
@@ -31,7 +30,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.common.errors import NotFound, ValidationFailed
-from iclip.domains.conversations.models import AgentPreview, Conversation, WholeFilmDraft
+from iclip.domains.conversations.models import AgentPreview, Conversation
 from iclip.domains.conversations.repository import (
     MISSING_COLLECTION,
     MISSING_TASK,
@@ -124,29 +123,6 @@ Index(
     postgresql_where=and_(_ROWS.collection_id.isnot(None), _LIVE),
 )
 
-
-whole_film_drafts_table = Table(
-    "whole_film_drafts",
-    metadata_obj,
-    Column(
-        "conversation_id",
-        Uuid,
-        ForeignKey(f"{DB_SCHEMA}.conversations.id", name="fk_whole_film_drafts_conversation"),
-        primary_key=True,
-    ),
-    Column("html", Text, nullable=False),
-    Column("revision", Integer, nullable=False),
-    Column(
-        "updated_by",
-        Uuid,
-        ForeignKey(f"{DB_SCHEMA}.users.id", name="fk_whole_film_drafts_updated_by"),
-        nullable=False,
-    ),
-    Column("updated_at", DateTime(timezone=True), nullable=False),
-    CheckConstraint("revision >= 1", name="ck_whole_film_drafts_revision"),
-)
-
-_DRAFTS = whole_film_drafts_table.c
 
 agent_previews_table = Table(
     "agent_previews",
@@ -572,66 +548,6 @@ class SqlConversationRepository:
         return _row(row)
 
 
-def _draft(mapping: RowMapping) -> WholeFilmDraft:
-    return WholeFilmDraft(
-        conversation_id=mapping["conversation_id"],
-        html=mapping["html"],
-        revision=mapping["revision"],
-        updated_by=mapping["updated_by"],
-        updated_at=mapping["updated_at"],
-    )
-
-
-class SqlWholeFilmDraftStore:
-    def __init__(self, engine: AsyncEngine) -> None:
-        self._engine = engine
-
-    async def get(self, conversation_id: uuid.UUID) -> WholeFilmDraft | None:
-        statement = select(whole_film_drafts_table).where(
-            _DRAFTS.conversation_id == conversation_id
-        )
-        async with self._engine.connect() as conn:
-            row = (await conn.execute(statement)).mappings().one_or_none()
-        return None if row is None else _draft(row)
-
-    async def save(
-        self,
-        conversation_id: uuid.UUID,
-        *,
-        html: str,
-        revision: int,
-        updated_by: uuid.UUID,
-    ) -> WholeFilmDraft | None:
-        if revision == 0:
-            statement = (
-                pg_insert(whole_film_drafts_table)
-                .values(
-                    conversation_id=conversation_id,
-                    html=html,
-                    revision=1,
-                    updated_by=updated_by,
-                    updated_at=func.now(),
-                )
-                .on_conflict_do_nothing(index_elements=[_DRAFTS.conversation_id])
-                .returning(*whole_film_drafts_table.c)
-            )
-        else:
-            statement = (
-                update(whole_film_drafts_table)
-                .where(_DRAFTS.conversation_id == conversation_id, _DRAFTS.revision == revision)
-                .values(
-                    html=html,
-                    revision=_DRAFTS.revision + 1,
-                    updated_by=updated_by,
-                    updated_at=func.now(),
-                )
-                .returning(*whole_film_drafts_table.c)
-            )
-        async with self._engine.begin() as conn:
-            row = (await conn.execute(statement)).mappings().one_or_none()
-        return None if row is None else _draft(row)
-
-
 def _preview(mapping: RowMapping) -> AgentPreview:
     return AgentPreview(
         id=mapping["id"],
@@ -687,9 +603,7 @@ __all__ = [
     "DB_SCHEMA",
     "SqlAgentPreviewStore",
     "SqlConversationRepository",
-    "SqlWholeFilmDraftStore",
     "agent_previews_table",
     "conversations_table",
     "metadata_obj",
-    "whole_film_drafts_table",
 ]

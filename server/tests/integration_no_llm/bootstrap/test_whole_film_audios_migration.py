@@ -29,8 +29,6 @@ MUSIC = {"jobId": str(uuid.uuid4()), "url": "https://cdn.test/iclip/agent/audio/
 async def _plant_old_records(url: str, source: uuid.UUID) -> tuple[uuid.UUID, uuid.UUID]:
     """在改之前的版本上种两条旧形状的成片记录：一条 ``music`` 是 null，一条带一条配乐。"""
 
-    async with connected(url) as conn:
-        await reset_database(conn)
     engine = build_engine(url)
     try:
         owner = await make_user(engine)
@@ -60,6 +58,11 @@ async def _plant_old_records(url: str, source: uuid.UUID) -> tuple[uuid.UUID, uu
         await engine.dispose()
 
 
+async def _reset(url: str) -> None:
+    async with connected(url) as conn:
+        await reset_database(conn)
+
+
 async def _requests(url: str, *ids: uuid.UUID) -> list[Any]:
     engine = build_engine(url)
     try:
@@ -74,6 +77,8 @@ def test_old_export_records_get_an_audio_list_in_place_of_music(migrated_pg: str
     config.set_main_option("script_location", str(SERVER_DIR / "migrations"))
     config.attributes["sqlalchemy_url"] = migrated_pg
     source = uuid.uuid4()
+    # 在最新的表结构上清空数据：旧版本里还有草稿表，它引用着用户表，那时清不了
+    asyncio.run(_reset(migrated_pg))
 
     command.downgrade(config, BEFORE_AUDIOS)
     try:

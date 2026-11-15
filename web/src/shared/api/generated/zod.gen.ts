@@ -3701,51 +3701,11 @@ export const zVideoTaskOut = z.object({
 })
 
 /**
- * WholeFilmDraftIn
- *
- * 整份保存成片文件。``revision`` 是读到的那一版，还没有草稿时是 0。
- */
-export const zWholeFilmDraftIn = z.object({
-  html: z.string().min(1).max(1000000),
-  revision: z.int().gte(0),
-})
-
-/**
- * WholeFilmDraftOut
- *
- * 当前的成片文件；还没存过时 ``revision`` 是 0，``html`` 与 ``updatedAt`` 为 null。
- */
-export const zWholeFilmDraftOut = z.object({
-  html: z.string().nullable(),
-  revision: z.int(),
-  updatedAt: z.iso.datetime().nullable(),
-})
-
-/**
- * WholeFilmDraftSavedOut
- *
- * 保存后的新版本号与保存时刻。
- */
-export const zWholeFilmDraftSavedOut = z.object({
-  revision: z.int(),
-  updatedAt: z.iso.datetime(),
-})
-
-/**
  * WholeFilmExportErrorOut
  */
 export const zWholeFilmExportErrorOut = z.object({
   code: z.string(),
   message: z.string(),
-})
-
-/**
- * WholeFilmExportIn
- *
- * 按当前草稿导出；``revision`` 是页面上那一版，不是服务端存的那一版就不导。
- */
-export const zWholeFilmExportIn = z.object({
-  revision: z.int().gte(0),
 })
 
 /**
@@ -3769,15 +3729,6 @@ export const zWholeFilmExportOut = z.object({
  */
 export const zWholeFilmExportLatestOut = z.object({
   export: zWholeFilmExportOut.nullable(),
-})
-
-/**
- * WholeFilmExportStartedOut
- *
- * 已受理、排进导出队列。``exportId`` 是这次导出那条生成记录的 id。
- */
-export const zWholeFilmExportStartedOut = z.object({
-  exportId: z.uuid(),
 })
 
 /**
@@ -4508,40 +4459,9 @@ export const zRegenerateConversationsConversationIdTurnsTurnIdRegeneratePostPath
  */
 export const zRegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponse = zPrompt
 
-export const zReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetPath = z.object({
-  conversation_id: z.uuid(),
-})
-
-/**
- * Successful Response
- */
-export const zReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponse =
-  zWholeFilmDraftOut
-
-export const zSaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutBody = zWholeFilmDraftIn
-
-export const zSaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutPath = z.object({
-  conversation_id: z.uuid(),
-})
-
-/**
- * Successful Response
- */
-export const zSaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponse =
-  zWholeFilmDraftSavedOut
-
-export const zExportWholeFilmConversationsConversationIdWholeFilmExportsPostBody =
-  zWholeFilmExportIn
-
 export const zExportWholeFilmConversationsConversationIdWholeFilmExportsPostPath = z.object({
   conversation_id: z.uuid(),
 })
-
-/**
- * Successful Response
- */
-export const zExportWholeFilmConversationsConversationIdWholeFilmExportsPostResponse =
-  zWholeFilmExportStartedOut
 
 export const zLatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetPath =
   z.object({

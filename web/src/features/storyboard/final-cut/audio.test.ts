@@ -43,14 +43,14 @@ describe('音频的名字和筛选', () => {
 })
 
 describe('成片里用着的音频', () => {
-  it('用着这条音频的片段里开始得最早的那个；别的记录、视频片段不算', () => {
+  it('用着这条音频（按地址对上）的片段里开始得最早的那个；别的地址、视频片段不算', () => {
     const clips = [
       audio({ id: 'late', start: 5000 }),
-      video({ jobId: 'other' }),
+      video({ src: audio().src }),
       audio({ id: 'early', start: 1000, track: 1 }),
-      audio({ id: 'else', jobId: 'other-audio', start: 0 }),
+      audio({ id: 'else', src: 'https://media.test/audio/other.mp3', start: 0 }),
     ]
-    expect(firstAudioClipOf(clips, audio().jobId)?.id).toBe('early')
+    expect(firstAudioClipOf(clips, audio().src)?.id).toBe('early')
     expect(firstAudioClipOf(clips, 'missing')).toBeUndefined()
   })
 })

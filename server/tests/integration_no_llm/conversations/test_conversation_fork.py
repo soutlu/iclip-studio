@@ -22,7 +22,6 @@ from iclip.config import VideoGenerationSection
 from iclip.domains.conversations.infra_sql import (
     SqlAgentPreviewStore,
     SqlConversationRepository,
-    SqlWholeFilmDraftStore,
 )
 from iclip.domains.conversations.service import ConversationService
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
@@ -385,8 +384,6 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
             write_derived_file=_untouched,
             document_validators={},
             film=UnusedFilmPage(),
-            drafts=SqlWholeFilmDraftStore(engine),
-            films=None,
             exports=None,
             generate_title=_untouched,
             announce_title=_untouched,

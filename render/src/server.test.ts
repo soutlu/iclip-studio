@@ -1,39 +1,34 @@
 import type { AddressInfo } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { writeFilm } from '../../web/src/features/storyboard/final-cut/composition/film'
 import { ExportQueue } from './jobs'
-import type { ComponentLibrary } from './library'
 import { createExportServer } from './server'
 import {
   audio,
-  AUDIO_JOB,
   AUDIO_URL,
-  catalog,
   CLIP_URL,
   exportRequest,
-  filmFile,
   flush,
   host,
+  mainFile,
   manualWorker,
   memoryLogger,
-  SOURCE_JOB,
   video,
 } from './testing'
+
+const VENDOR_DIR = '/registry/vendor'
 
 let base: string
 let close: () => Promise<void>
 let renders: ReturnType<typeof manualWorker>['renders']
-let current: ComponentLibrary
 
 beforeEach(async () => {
   const manual = manualWorker()
   renders = manual.renders
-  current = { catalog, dir: '/registry/test-fixtures' }
   const { logger } = memoryLogger()
   const queue = new ExportQueue({ worker: manual.worker, logger, timeoutMs: 60_000 })
   const server = createExportServer({
     queue,
-    library: async () => current,
+    vendorDir: VENDOR_DIR,
     allowedHosts: new Set(['oss.example.com']),
     logger,
     health: () => ({ gpu: 'software', chrome: 'Chrome Headless Shell 152.0.7977.30' }),
@@ -55,7 +50,11 @@ const send = (path: string, body: unknown) =>
   })
 
 const post = (body: unknown) => send('/exports', body)
-const check = (body: unknown) => send('/films/check', body)
+
+const withMain = (content: string, others: { path: string; content: string }[] = []) => [
+  { path: 'index.html', content },
+  ...others,
+]
 
 describe('渲染服务接口', () => {
   it('POST /exports 合法时答 202，可以查询任务的渲染状态', async () => {
@@ -76,29 +75,49 @@ describe('渲染服务接口', () => {
     })
   })
 
-  it('每次受理都读当前的组件库：发布新的一版后不用重启，任务用受理时那一版的目录', async () => {
-    expect((await post(exportRequest({ id: crypto.randomUUID() }))).status).toBe(202)
-    current = { catalog: { ...catalog, version: 'next' }, dir: '/registry/next' }
-    expect((await post(exportRequest({ id: crypto.randomUUID() }))).status).toBe(202)
+  it('受理后交给渲染的是原样的工程文件、主文件里素材地址到下载地址的对应和公共目录', async () => {
+    const component = {
+      path: 'compositions/fixtures/fixture-fields.html',
+      content: '<html></html>',
+    }
+    const files = withMain(mainFile([video(), host({ track: 1 })]), [component])
+    expect((await post(exportRequest({ files }))).status).toBe(202)
     await flush()
-    await renders[0]?.pending.reject(new Error('stop'))
-    await flush()
-    expect(renders.map((render) => render.registryDir)).toEqual([
-      '/registry/test-fixtures',
-      '/registry/next',
-    ])
+    expect(renders[0]).toMatchObject({ files, vendorDir: VENDOR_DIR })
+    expect(renders[0]?.media).toEqual(
+      new Map([[CLIP_URL, 'https://oss.example.com/clip.mp4?sig=1']]),
+    )
   })
 
-  it('渲染用的那一份：文件里的素材地址换成下载到本地的路径，别的不变', async () => {
-    expect((await post(exportRequest())).status).toBe(202)
+  it('主文件里有音频片段：音频也要给下载地址，隐藏的音频片段也一样', async () => {
+    const files = withMain(mainFile([video(), audio({ hidden: true })]))
+    const missing = await post(exportRequest({ files }))
+    expect(missing.status).toBe(400)
+    expect(await missing.json()).toMatchObject({ code: 'missing-media' })
+
+    const request = exportRequest({ files })
+    const audioDownload = 'https://oss.example.com/music.mp3?sig=2'
+    const media = { ...(request['media'] as object), [AUDIO_URL]: { url: audioDownload } }
+    expect((await post({ ...request, media })).status).toBe(202)
     await flush()
-    const local = renders[0]!.compose({ 'https://oss.example.com/clip.mp4?sig=1': 'media/a.mp4' })
-    expect(local).toBe(filmFile().replaceAll(CLIP_URL, 'media/a.mp4'))
+    expect(renders[0]?.media.get(AUDIO_URL)).toBe(audioDownload)
+  })
+
+  it('素材表里多给的地址不下载', async () => {
+    const request = exportRequest()
+    const media = {
+      ...(request['media'] as object),
+      'https://media.iclip.test/unused.mp4': { url: 'https://oss.example.com/unused.mp4' },
+    }
+    expect((await post({ ...request, media })).status).toBe(202)
+    await flush()
+    expect([...(renders[0]?.media.keys() ?? [])]).toEqual([CLIP_URL])
   })
 
   it.each<[string, unknown, string]>([
     ['请求体不是 JSON', '{oops', 'invalid-request'],
     ['形状不对', { ...exportRequest(), id: 'nope' }, 'invalid-request'],
+    ['没有工程文件', { ...exportRequest(), files: [] }, 'invalid-request'],
     [
       '素材主机不在白名单',
       exportRequest({ mediaHost: 'evil.example.net' }),
@@ -106,15 +125,50 @@ describe('渲染服务接口', () => {
     ],
     ['文件里的素材没有给下载地址', { ...exportRequest(), media: {} }, 'missing-media'],
     [
-      '成片文件里有脚本',
-      {
-        ...exportRequest(),
-        film: filmFile().replace('</div>', '<script>alert(1)</script></div>'),
-      },
-      'invalid-film',
+      '工程里没有主文件',
+      exportRequest({ files: [{ path: 'main.html', content: mainFile() }] }),
+      'invalid-project',
     ],
-    ['成片还是空的', { ...exportRequest(), film: filmFile([]), media: {} }, 'invalid-film'],
-  ])('%s时答 400（%s）', async (_, body, code) => {
+    ...(
+      [
+        ['../escape.html', '往上跳出工程'],
+        ['a/../../escape.html', '中间带 ..'],
+        ['./index2.html', '带 . 段'],
+        ['/etc/passwd', '以 / 开头'],
+        ['compositions/', '以 / 结尾'],
+        ['a//b.html', '空段'],
+        ['a\\b.html', '反斜杠'],
+        ['a\u0000b.html', '控制字符'],
+        ['vendor/npm/gsap.js', '以 vendor/ 开头'],
+        ['vendor', '就叫 vendor'],
+        ['Vendor/x.js', '大小写不同的 vendor'],
+      ] as const
+    ).map(([path, why]): [string, unknown, string] => [
+      `工程文件的路径${why}`,
+      exportRequest({ files: withMain(mainFile(), [{ path, content: 'x' }]) }),
+      'invalid-project',
+    ]),
+    [
+      '工程文件重复',
+      exportRequest({
+        files: withMain(mainFile(), [
+          { path: 'a.html', content: '1' },
+          { path: 'a.html', content: '2' },
+        ]),
+      }),
+      'invalid-project',
+    ],
+    [
+      '一个路径既是文件又是目录',
+      exportRequest({
+        files: withMain(mainFile(), [
+          { path: 'a', content: '1' },
+          { path: 'a/b.html', content: '2' },
+        ]),
+      }),
+      'invalid-project',
+    ],
+  ])('%s时答 400（%s），不排进队列', async (_, body, code) => {
     const response = await post(body)
     expect(response.status).toBe(400)
     const payload = (await response.json()) as { code: string; message: string }
@@ -143,78 +197,9 @@ describe('渲染服务接口', () => {
     expect((await fetch(`${base}/exports/missing`, { method: 'DELETE' })).status).toBe(404)
   })
 
-  it('POST /films/check 合写法时答 200：重写后的文件、总时长和用到的素材（分视频和音频）', async () => {
-    const second = video({ id: 'clip-2', start: 2000, duration: 1500, mediaStart: 3000 })
-    const clips = [video(), second, host({ track: 1 }), audio({ duration: 4000 })]
-    const response = await check({ film: filmFile(clips) })
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({
-      html: filmFile(clips),
-      durationMs: 4000,
-      sources: [
-        { jobId: SOURCE_JOB, url: CLIP_URL, kind: 'video' },
-        { jobId: AUDIO_JOB, url: AUDIO_URL, kind: 'audio' },
-      ],
-    })
-  })
-
-  it('POST /exports 成片里有音频片段：音频也要给下载地址，渲染用的那一份里换成本地路径', async () => {
-    const film = filmFile([video(), audio()])
-    const missing = await post({ ...exportRequest(), film })
-    expect(missing.status).toBe(400)
-    expect(await missing.json()).toMatchObject({ code: 'missing-media' })
-
-    const audioDownload = 'https://oss.example.com/music.mp3?sig=2'
-    const request = exportRequest()
-    const media = { ...(request['media'] as object), [AUDIO_URL]: { url: audioDownload } }
-    expect((await post({ ...request, film, media })).status).toBe(202)
-    await flush()
-    const local = renders[0]!.compose({
-      'https://oss.example.com/clip.mp4?sig=1': 'media/a.mp4',
-      [audioDownload]: 'media/m.mp3',
-    })
-    expect(local).toBe(
-      film.replaceAll(CLIP_URL, 'media/a.mp4').replaceAll(AUDIO_URL, 'media/m.mp3'),
-    )
-  })
-
-  it('隐藏的音频片段：检查照常带着它和它的素材，渲染用的那一份里没有它，总时长不变', async () => {
-    const film = filmFile([video(), audio({ duration: 5000, hidden: true })])
-    const checked = (await (await check({ film })).json()) as {
-      html: string
-      sources: { kind: string }[]
-    }
-    expect(checked.html).toBe(film)
-    expect(checked.sources.map((source) => source.kind)).toEqual(['video', 'audio'])
-
-    const request = exportRequest()
-    const media = {
-      ...(request['media'] as object),
-      [AUDIO_URL]: { url: 'https://oss.example.com/music.mp3' },
-    }
-    expect((await post({ ...request, film, media })).status).toBe(202)
-    await flush()
-    const local = renders[0]!.compose({ 'https://oss.example.com/clip.mp4?sig=1': 'media/a.mp4' })
-    expect(local).toBe(
-      writeFilm(
-        { canvas: { width: 720, height: 1280 }, clips: [video({ src: 'media/a.mp4' })] },
-        catalog,
-        5000,
-      ),
-    )
-  })
-
-  it.each<[string, unknown, string]>([
-    ['没有成片文件', {}, 'invalid-request'],
-    [
-      '文件不合写法',
-      { film: filmFile().replace('<video ', '<video onerror="alert(1)" ') },
-      'invalid-film',
-    ],
-  ])('POST /films/check %s时答 400（%s）', async (_, body, code) => {
-    const response = await check(body)
-    expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({ code })
+  it('没有检查成片文件的接口：POST /films/check 答 404', async () => {
+    const response = await send('/films/check', { film: mainFile() })
+    expect(response.status).toBe(404)
   })
 
   it('GET /health 报告浏览器渲染方式、Chrome 版本与队列', async () => {

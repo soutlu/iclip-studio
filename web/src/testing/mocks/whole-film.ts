@@ -1,10 +1,9 @@
 import { http, HttpResponse } from 'msw'
-import { zWholeFilmDraftIn, zWholeFilmExportIn } from '@/shared/api/generated/zod.gen'
 import { mockPreviewOrigin, mockPreviewToken } from './preview-token'
+import { mockWorkspaceFile, putMockWorkspaceFile } from './workspace'
 
-type StoredDraft = { revision: number; html: string; updatedAt: string }
-
-const drafts = new Map<string, StoredDraft>()
+/** 剪辑工程主文件在工作区里的路径。 */
+const PROJECT_MAIN_PATH = 'final-cut/index.html'
 
 type MockExport = {
   id: string
@@ -23,11 +22,7 @@ const EXPORT_STEPS = [
   { status: 'uploading', progress: null, queuePosition: null },
 ] as const
 
-export const STALE_DRAFT_DETAIL = '成片草稿已经有更新的一版，重新读取后再改'
-export const STALE_EXPORT_DETAIL = '成片草稿已经有更新的一版，重新读取后再导出'
-
 export const resetMockWholeFilm = () => {
-  drafts.clear()
   latestExports.clear()
 }
 
@@ -55,20 +50,20 @@ export const findMockWholeFilmExport = (exportId: string): { downloadUrl: string
   return found === undefined ? undefined : { downloadUrl: `/mock-exports/${found.id}.mp4` }
 }
 
-export const mockWholeFilmDraft = (conversationId: string): StoredDraft | undefined =>
-  drafts.get(conversationId)
+/** 工程主文件现在的内容和版本；还没有工程时是 undefined。 */
+export const mockProjectMain = (conversationId: string) =>
+  mockWorkspaceFile(conversationId, PROJECT_MAIN_PATH)
 
-export const putMockWholeFilmDraft = (conversationId: string, html: string) => {
-  const revision = (drafts.get(conversationId)?.revision ?? 0) + 1
-  const stored = { revision, html, updatedAt: new Date().toISOString() }
-  drafts.set(conversationId, stored)
-  return stored
-}
+/** 把工程主文件写成 `html`（没有就建），答复写进去的内容和版本。 */
+export const putMockProjectMain = (conversationId: string, html: string) => ({
+  content: html,
+  version: putMockWorkspaceFile(conversationId, PROJECT_MAIN_PATH, html),
+})
 
 const PREVIEW_TOKEN_TTL_MS = 3600_000
 
 export const wholeFilmHandlers = [
-  // 预览页在另一个主机名上，应用页的 MSW 管不到它：它取应用来源走 mock 开发服务器的中间件
+  // 预览页在另一个主机名上，应用页的 MSW 管不到它：它取应用来源、取工程文件走 mock 开发服务器的中间件
   http.post('*/api/conversations/:conversationId/final-cut/preview', ({ request }) => {
     const appOrigin = new URL(request.url).origin
     return HttpResponse.json({
@@ -77,40 +72,6 @@ export const wholeFilmHandlers = [
       expiresAt: new Date(Date.now() + PREVIEW_TOKEN_TTL_MS).toISOString(),
     })
   }),
-
-  http.get('*/api/conversations/:conversationId/whole-film/draft', ({ params }) => {
-    const stored = drafts.get(String(params['conversationId']))
-    return HttpResponse.json(stored ?? { revision: 0, html: null, updatedAt: null })
-  }),
-
-  http.put('*/api/conversations/:conversationId/whole-film/draft', async ({ params, request }) => {
-    const conversationId = String(params['conversationId'])
-    const parsed = zWholeFilmDraftIn.safeParse(await request.json())
-    if (!parsed.success) return HttpResponse.json({ detail: 'html: 形状不对' }, { status: 422 })
-    const current = drafts.get(conversationId)?.revision ?? 0
-    if (parsed.data.revision !== current)
-      return HttpResponse.json({ detail: STALE_DRAFT_DETAIL }, { status: 409 })
-    const stored = putMockWholeFilmDraft(conversationId, parsed.data.html)
-    return HttpResponse.json({ revision: stored.revision, updatedAt: stored.updatedAt })
-  }),
-
-  http.post(
-    '*/api/conversations/:conversationId/whole-film/exports',
-    async ({ params, request }) => {
-      const conversationId = String(params['conversationId'])
-      const parsed = zWholeFilmExportIn.safeParse(await request.json())
-      if (!parsed.success)
-        return HttpResponse.json({ detail: 'revision: 形状不对' }, { status: 422 })
-      const stored = drafts.get(conversationId)
-      if (parsed.data.revision !== (stored?.revision ?? 0))
-        return HttpResponse.json({ detail: STALE_EXPORT_DETAIL }, { status: 409 })
-      if (!/class="clip /.test(stored?.html ?? ''))
-        return HttpResponse.json({ detail: '成片还是空的，导不出成片' }, { status: 422 })
-      const exportId = crypto.randomUUID()
-      latestExports.set(conversationId, { id: exportId, reads: 0, cancelled: false })
-      return HttpResponse.json({ exportId }, { status: 202 })
-    },
-  ),
 
   http.get('*/api/conversations/:conversationId/whole-film/exports/latest', ({ params }) => {
     const found = latestExports.get(String(params['conversationId']))

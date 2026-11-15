@@ -8,7 +8,7 @@ const withBaseHref = (html: string, baseHref: string): string => {
   return `${html.slice(0, at)}\n<base href="${escapeAttribute(baseHref)}">${html.slice(at)}`
 }
 
-// 只改预览，存着的成片文件不动。preload 写 none 时运行时按播放位置调 load()，一次只加载用得到的片段；
+// 只改预览，存着的文件不动。preload 写 none 时运行时按播放位置调 load()，一次只加载用得到的片段；
 // 写 metadata 会一开始就下载，运行时之后设成 none 也停不下来，几个文件会一起抢带宽。
 // 音频片段在文件里不写 preload，这里补上。
 const withPreviewMedia = (html: string): string =>
@@ -18,12 +18,16 @@ const withPreviewMedia = (html: string): string =>
     .replaceAll('<audio ', '<audio crossorigin="anonymous" preload="none" ')
     .replace(/<head[^>]*>/i, '$&\n<meta name="hyperframes-studio-preview" content="1">')
 
-const catalogBase = (catalog: ComponentCatalog, origin: string) =>
+/** 公共组件库当前版本目录的地址。 */
+export const catalogBase = (catalog: ComponentCatalog, origin: string) =>
   `${origin}/hyperframes/${catalog.version}/`
 
-/** 预览用的那一份：成片文件加上组件库的基准地址和预览专用的媒体加载方式。 */
-export const previewDocument = (html: string, catalog: ComponentCatalog, origin: string): string =>
-  withBaseHref(withPreviewMedia(html), catalogBase(catalog, origin))
+/**
+ * 预览用的那一份：文件加上基准地址和预览专用的媒体加载方式。文件里的相对地址（组件文件、`vendor/`）
+ * 都按 `baseHref` 取。
+ */
+export const previewDocument = (html: string, baseHref: string): string =>
+  withBaseHref(withPreviewMedia(html), baseHref)
 
 /**
  * 交给预览播放器 `runtime-src` 的运行库地址：组件库里带的那一份。

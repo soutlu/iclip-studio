@@ -2440,9 +2440,10 @@
   background: var(--color-surface-container);
 }
 
-/* 组件或块的片段和音频片段：片段浅色，上面是名字；组件或块的片段左下角一张小封面，音频片段下面整段波形 */
+/* 组件或块的片段、音频片段和「其他」片段：片段浅色，上面是名字；组件或块的片段左下角一张小封面，音频片段下面整段波形 */
 .wf-clip.is-host > .wf-clip-body,
-.wf-clip.is-audio > .wf-clip-body {
+.wf-clip.is-audio > .wf-clip-body,
+.wf-clip.is-other > .wf-clip-body {
   background: color-mix(in srgb, var(--color-on-surface) 9%, var(--color-top-layer));
 }
 

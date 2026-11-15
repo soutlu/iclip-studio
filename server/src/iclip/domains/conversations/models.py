@@ -61,37 +61,6 @@ IDLE_ACTIVITY = ConversationActivity()
 VideoPhase = Literal["queued", "running"]
 
 
-@dataclass(frozen=True, slots=True)
-class WholeFilmDraft:
-    conversation_id: uuid.UUID
-    html: str
-    revision: int
-    updated_by: uuid.UUID
-    updated_at: datetime
-
-
-WholeFilmSourceKind = Literal["video", "audio"]
-
-
-@dataclass(frozen=True, slots=True)
-class WholeFilmSource:
-    """成片文件里用到的一条素材：它出自哪条生成记录、文件里写的地址、是视频片段用的视频还是
-    音频片段用的音频。"""
-
-    job_id: uuid.UUID
-    url: str
-    kind: WholeFilmSourceKind
-
-
-@dataclass(frozen=True, slots=True)
-class CheckedWholeFilm:
-    """查过的成片文件：``html`` 是按写法重写后的那一份。"""
-
-    html: str
-    duration_ms: int
-    sources: tuple[WholeFilmSource, ...]
-
-
 WholeFilmExportStatus = Literal["queued", "rendering", "uploading", "done", "failed", "cancelled"]
 
 
@@ -115,16 +84,12 @@ __all__ = [
     "IDLE_ACTIVITY",
     "PREVIEW_TITLE",
     "AgentPreview",
-    "CheckedWholeFilm",
     "Conversation",
     "ConversationActivity",
     "PreviewHeader",
     "TitleKind",
     "VideoPhase",
-    "WholeFilmDraft",
     "WholeFilmExport",
     "WholeFilmExportError",
     "WholeFilmExportStatus",
-    "WholeFilmSource",
-    "WholeFilmSourceKind",
 ]

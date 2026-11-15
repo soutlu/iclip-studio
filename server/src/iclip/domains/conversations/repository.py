@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Final, Literal, Protocol
 
-from iclip.domains.conversations.models import AgentPreview, Conversation, WholeFilmDraft
+from iclip.domains.conversations.models import AgentPreview, Conversation
 
 MISSING_TASK: Final = "没有这张需求单"
 MISSING_COLLECTION: Final = "没有这个合集"
@@ -129,19 +129,6 @@ class ConversationRepository(Protocol):
     ) -> Conversation: ...
 
 
-class WholeFilmDraftStore(Protocol):
-    async def get(self, conversation_id: uuid.UUID) -> WholeFilmDraft | None: ...
-
-    async def save(
-        self,
-        conversation_id: uuid.UUID,
-        *,
-        html: str,
-        revision: int,
-        updated_by: uuid.UUID,
-    ) -> WholeFilmDraft | None: ...
-
-
 class AgentPreviewStore(Protocol):
     async def current(self, *, owner: uuid.UUID, agent_id: str) -> AgentPreview | None: ...
 
@@ -162,5 +149,4 @@ __all__ = [
     "CollectionConversations",
     "ConversationRepository",
     "PageCursor",
-    "WholeFilmDraftStore",
 ]

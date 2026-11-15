@@ -111,7 +111,7 @@ export function MaterialArea({
                       playingMs={range?.takeId === take.id ? playingMs : undefined}
                       range={range?.takeId === take.id ? range : null}
                       take={take}
-                      used={used.get(version.jobId) ?? []}
+                      used={used.get(version.url) ?? []}
                       version={version}
                     />
                   )

@@ -1,7 +1,12 @@
 import { http, HttpResponse, ws } from 'msw'
 import { mockAuthUser } from './auth-user'
 import { type MockConversation, mockConversationOwner, mockSessionEnvelope } from './conversations'
-import { SHOTS_MOCK_PATH, touchMockShots, watchMockGenerations } from './workspace'
+import {
+  SHOTS_MOCK_PATH,
+  touchMockShots,
+  watchMockGenerations,
+  watchMockProjectFiles,
+} from './workspace'
 
 const HISTORY_TURNS = 2
 
@@ -776,8 +781,21 @@ export const transcriptHandlers = [
       client.send(JSON.stringify({ ...envelope, payload, type: 'event.generation.changed' }))
     })
 
+    const unwatchProjectFiles = watchMockProjectFiles(({ conversationId, path, change }) => {
+      if (!joined.has(conversationId)) return
+      client.send(
+        JSON.stringify({
+          payload: { changes: [{ change, path }] },
+          session_id: conversationId,
+          timestamp: new Date().toISOString(),
+          type: 'event.fs.changed',
+        }),
+      )
+    })
+
     client.addEventListener('close', () => {
       unwatchGenerations()
+      unwatchProjectFiles()
       for (const connection of joined.values()) connections.delete(connection)
     })
   }),

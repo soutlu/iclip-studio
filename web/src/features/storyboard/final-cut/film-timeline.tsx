@@ -277,6 +277,7 @@ function ClipContent({
   cover: string | null
   peaks: PeaksState
 }) {
+  if (clip.kind === 'other') return null
   if (clip.kind === 'host')
     return cover === null ? null : <img alt="" className="wf-clip-cover" src={cover} />
   // 片段上画的是它用掉的那段素材：成片里的时长 × 速度

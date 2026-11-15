@@ -14,7 +14,6 @@ from iclip.domains.conversations.models import Conversation, ConversationActivit
 from iclip.domains.conversations.repository import (
     AgentPreviewStore,
     ConversationRepository,
-    WholeFilmDraftStore,
 )
 from iclip.domains.conversations.service import (
     ActivitiesOf,
@@ -245,8 +244,6 @@ def build(
         write_derived_file=_untouched,
         document_validators={},
         film=UnusedFilmPage(),
-        drafts=cast("WholeFilmDraftStore", object()),
-        films=None,
         exports=None,
         generate_title=generate_title,
         announce_title=announced.title,
