@@ -655,8 +655,17 @@ def _breakdown_call(tool_call_id: str = BREAKDOWN_CALL) -> DeltaToolCall:
 
 
 def waits_for_breakdown(
-    ended: asyncio.Event, *, write: bool = False, seen: list[list[ModelMessage]] | None = None
+    ended: asyncio.Event,
+    *,
+    write: bool = False,
+    seen: list[list[ModelMessage]] | None = None,
+    hold: asyncio.Event | None = None,
 ) -> FunctionModel:
+    """假模型：发起拆解后说「等拆解」并置位 ``ended``，拆解结果到了再接着写。
+
+    给了 ``hold`` 时，「等拆解」这句回复要等它置位才结束：用例借此赶在这一步结束之前把事情做完。
+    """
+
     async def stream(
         messages: list[ModelMessage], _info: AgentInfo
     ) -> AsyncIterator[str | DeltaToolCalls]:
@@ -677,6 +686,8 @@ def waits_for_breakdown(
         else:
             yield "简报写好了，等拆解。"
             ended.set()
+            if hold is not None:
+                await hold.wait()
 
     return FunctionModel(stream_function=stream)
 
@@ -803,11 +814,11 @@ async def test_a_background_breakdown_lets_the_model_write_first_and_settles_lat
 async def test_a_steer_during_a_background_wait_still_shows_and_the_outcome_settles(
     engine: AsyncEngine,
 ) -> None:
-    ended, release = asyncio.Event(), asyncio.Event()
+    ended, release, steered = asyncio.Event(), asyncio.Event(), asyncio.Event()
     store = TranscriptStore()
     runner, step_store, queue = build_runner(
         engine,
-        waits_for_breakdown(ended),
+        waits_for_breakdown(ended, hold=steered),
         store=store,
         tools=[slow_breakdown(release)],
         capabilities=[BackgroundTools()],
@@ -819,7 +830,13 @@ async def test_a_steer_during_a_background_wait_still_shows_and_the_outcome_sett
     await submit_text(runner, queue, conversation_id, "拆一下这条视频")
     second = await submit_text(runner, queue, conversation_id, "临时插一句")
     await ended.wait()
+    ended.clear()
+    # 插话要赶在这一步结束之前送到：这一步一结束、还有后台任务没完成时，BackgroundTools 只查一次
+    # 待处理的消息就去等后台结果，晚到的插话会和结果一起进同一步。所以让模型的回复等到插话送到再结束。
     await runner.steer(conversation_id, (second,))
+    steered.set()
+    # 等模型答完这句插话（进入下一步）再放行拆解，结果才落在插话之后的那一步
+    await ended.wait()
     release.set()
     await drained(queue, conversation_id)
     await runner.shutdown()
