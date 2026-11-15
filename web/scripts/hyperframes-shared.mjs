@@ -530,7 +530,38 @@ export function checkCatalogFonts(fonts) {
   }
 }
 
-export async function publishedCatalog(catalog, version, libraryText) {
+/**
+ * 每个条目用进剪辑工程时要按原路径拷进工程的文件。第一项是条目的 src；src 所在目录（含子目录）里
+ * 没有别的条目时，这个目录归它专有，后面按路径顺序跟上目录下其余的文件。剪辑工程只能放文本，
+ * 列出的文件里有含 NUL 字节的就抛 SyncError，一次列出所有这样的条目和文件。
+ *
+ * @param {{ name: string, src: string }[]} items 组件目录的条目
+ * @param {(path: string) => Promise<string>} libraryText 按相对版本目录的路径读文件
+ * @param {(dir: string) => Promise<string[]>} libraryFiles 列出版本目录里一个目录下（含子目录）的全部文件，路径相对版本目录
+ * @returns {Promise<Map<string, string[]>>} 条目名到文件清单
+ */
+export async function projectFiles(items, libraryText, libraryFiles) {
+  const result = new Map()
+  const binary = []
+  for (const item of items) {
+    const dir = posix.dirname(item.src)
+    const shared = items.some((other) => other !== item && other.src.startsWith(`${dir}/`))
+    const own = shared ? [] : (await libraryFiles(dir)).filter((path) => path !== item.src)
+    const files = [item.src, ...own]
+    for (const path of files) {
+      if ((await libraryText(path)).includes('\0')) binary.push(`${item.name} → ${path}`)
+    }
+    result.set(item.name, files)
+  }
+  if (binary.length > 0)
+    throw new SyncError(
+      `条目专有目录里有不是文本的文件（含 NUL 字节），剪辑工程只能放文本：\n  ${binary.join('\n  ')}`,
+    )
+  return result
+}
+
+export async function publishedCatalog(catalog, version, libraryText, libraryFiles) {
+  const files = await projectFiles(catalog.items, libraryText, libraryFiles)
   const items = []
   for (const item of catalog.items) {
     const text = await libraryText(item.src)
@@ -542,6 +573,7 @@ export async function publishedCatalog(catalog, version, libraryText) {
           ? [...item.variables, FONT_VARIABLE]
           : item.variables,
       chars: componentChars(text),
+      files: files.get(item.name),
     })
   }
   const { slices, twins, css } = JSON.parse(await libraryText(FONT_TABLE))

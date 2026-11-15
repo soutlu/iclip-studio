@@ -12,12 +12,16 @@ import {
   type VideoClip,
 } from '@/features/storyboard/final-cut/composition/film'
 
-// 源目录里没有组装时才生成的内容：运行库路径照组装结果写，分片表留空，条目补上空的 chars
+// 源目录里没有组装时才生成的内容：运行库路径照组装结果写，分片表留空，条目补上空的 chars，
+// 文件清单照组装结果写（只有 fixture-sidecar 带着专有目录里的文件）
 const fixtureSource = fixtureCatalogJson as Omit<
   ComponentCatalog,
   'version' | 'runtime' | 'cjk' | 'items'
 > & {
-  items: Omit<CatalogItem, 'chars'>[]
+  items: Omit<CatalogItem, 'chars' | 'files'>[]
+}
+const ownFiles: Record<string, string[]> = {
+  'fixture-sidecar': ['compositions/fixture-sidecar/assets/fixture-sidecar.json'],
 }
 
 export const fixtureCatalog: ComponentCatalog = {
@@ -28,7 +32,11 @@ export const fixtureCatalog: ComponentCatalog = {
     gsap: 'vendor/npm/gsap@3.14.2/dist/gsap.min.js',
   },
   cjk: { family: 'Noto Sans SC', slices: [] },
-  items: fixtureSource.items.map((item) => ({ ...item, chars: '' })),
+  items: fixtureSource.items.map((item) => ({
+    ...item,
+    chars: '',
+    files: [item.src, ...(ownFiles[item.name] ?? [])],
+  })),
 }
 
 export const video = (overrides: Partial<VideoClip> = {}): VideoClip => ({

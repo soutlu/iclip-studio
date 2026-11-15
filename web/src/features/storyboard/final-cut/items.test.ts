@@ -44,7 +44,7 @@ describe('组件、块页签的分类和搜索', () => {
     }
     expect(listed('component', '通用')).toEqual(['测试叠加'])
     expect(listed('component', '品牌')).toEqual(['测试叠加'])
-    expect(listed('block', '通用')).toEqual(['测试画面', '示例品牌 片尾'])
+    expect(listed('block', '通用')).toEqual(['测试画面', '示例品牌 片尾', '测试旁挂文件'])
     expect(listed('block', '品牌')).toEqual(['示例品牌 片尾'])
   })
 
@@ -66,6 +66,7 @@ describe('组件、块页签的分类和搜索', () => {
     expect(titles(filterItems(fixtureCatalog, chip('block', '全部'), ''))).toEqual([
       '测试画面',
       '示例品牌 片尾',
+      '测试旁挂文件',
     ])
   })
 
@@ -76,6 +77,7 @@ describe('组件、块页签的分类和搜索', () => {
     expect(titles(filterItems(fixtureCatalog, chip('block', '通用'), ''))).toEqual([
       '测试画面',
       '示例品牌 片尾',
+      '测试旁挂文件',
     ])
     expect(titles(filterItems(fixtureCatalog, chip('component', '效果'), ''))).toEqual(['测试叠加'])
   })

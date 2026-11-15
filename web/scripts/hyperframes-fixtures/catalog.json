@@ -111,6 +111,20 @@
       ],
       "thumbnail": "fixture-brand-card.svg",
       "fonts": ["Playfair Display"]
+    },
+    {
+      "name": "fixture-sidecar",
+      "kind": "block",
+      "title": "测试旁挂文件",
+      "description": "2 秒的青色底，卡片上的字从同目录的数据文件读",
+      "category": "scenes",
+      "placement": null,
+      "src": "compositions/fixture-sidecar/fixture-sidecar.html",
+      "size": { "width": 1920, "height": 1080 },
+      "duration": 2,
+      "variables": [],
+      "thumbnail": "fixture-sidecar.svg",
+      "fonts": []
     }
   ],
   "excluded": []
