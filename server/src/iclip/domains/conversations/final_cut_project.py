@@ -34,7 +34,7 @@ VENDOR_DIR: Final = "vendor/"
 
 VENDOR_ROUTE: Final = "/hyperframes/vendor/"
 
-_TOKEN_KEY_PURPOSE: Final = b"iclip/whole-film-preview-token/v1"
+_TOKEN_KEY_PURPOSE: Final = b"iclip/final-cut-preview-token/v1"
 
 
 @dataclass(frozen=True, slots=True)
