@@ -127,7 +127,7 @@ const seconds = (ms: number) => (ms / 1000).toFixed(1)
 // 指针离一条空行（待新开的那一行）的上下边这么近也算在它上面
 const ROW_REACH_PX = 3
 
-// 时间区左右留的空（whole-film.css 里 .wf-track-content 的 margin：左 8、右 16），不算进能排时间的宽度
+// 时间区左右留的空（final-cut.css 里 .wf-track-content 的 margin：左 8、右 16），不算进能排时间的宽度
 const INSET_PX = 24
 
 const rowKeyOf = (clip: FilmClip): RowKey => ({ zone: zoneOf(clip), track: clip.track })

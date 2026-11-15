@@ -14,7 +14,7 @@ import {
   writeFilm,
   type AudioClip,
   type VideoClip,
-} from '../../web/src/features/storyboard/whole-film/composition/film'
+} from '../../web/src/features/storyboard/final-cut/composition/film'
 import { checkFilm, localizedFilm } from './film'
 import { ExportQueue } from './jobs'
 import { loadLibrary, type ComponentLibrary } from './library'

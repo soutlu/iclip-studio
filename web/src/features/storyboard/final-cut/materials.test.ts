@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { video } from '@/testing/whole-film'
+import { video } from '@/testing/final-cut'
 import {
   rangePieces,
   shiftShot,

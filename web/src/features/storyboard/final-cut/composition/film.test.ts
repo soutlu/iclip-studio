@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { audio, AUDIO_JOB, fixtureCatalog, host, video } from '@/testing/whole-film'
+import { audio, AUDIO_JOB, fixtureCatalog, host, video } from '@/testing/final-cut'
 import type { ComponentCatalog } from './catalog'
 import {
   AUDIO_SOURCE_LABEL,

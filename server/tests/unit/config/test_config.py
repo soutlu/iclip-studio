@@ -33,8 +33,8 @@ MANIFEST = (
     "PRODUCT_CATALOG_DATABASE_URL",
     "QWEN_API_KEY",
     "T_QWEN_KEY",
-    "WHOLE_FILM_RENDER_URL",
-    "WHOLE_FILM_PREVIEW_ORIGIN",
+    "FINAL_CUT_RENDER_URL",
+    "FINAL_CUT_PREVIEW_ORIGIN",
     "RUNTIME_INTERNAL_TOKEN",
     "RUNTIME_URL",
     "RUNTIME_APP_KEY",
@@ -205,7 +205,7 @@ def test_optional_services_are_off_when_env_empty(
     assert settings.object_store is None
     assert settings.iclip_studio is None
     assert settings.product_catalog is None
-    assert settings.whole_film_render is None
+    assert settings.final_cut_render is None
     assert not settings.shot_tools_enabled
     assert not settings.ffmpeg_required
 
@@ -420,24 +420,24 @@ def _bucket_env(monkeypatch: pytest.MonkeyPatch) -> None:
             monkeypatch.setenv(name, value)
 
 
-def test_whole_film_render_is_off_until_its_url_is_set(
+def test_final_cut_render_is_off_until_its_url_is_set(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = load_runtime_config(write(tmp_path, VALID + MEDIA))
     _media_env(monkeypatch)
-    assert resolve_settings(config).whole_film_render is None
+    assert resolve_settings(config).final_cut_render is None
 
-    monkeypatch.setenv("WHOLE_FILM_RENDER_URL", " http://render:8080/ ")
-    render = resolve_settings(config).whole_film_render
+    monkeypatch.setenv("FINAL_CUT_RENDER_URL", " http://render:8080/ ")
+    render = resolve_settings(config).final_cut_render
     assert render is not None and render.url == "http://render:8080"
 
 
-def test_whole_film_render_without_a_bucket_or_media_generation_fails_loudly(
+def test_final_cut_render_without_a_bucket_or_media_generation_fails_loudly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = load_runtime_config(write(tmp_path, VALID))
     _core(monkeypatch)
-    monkeypatch.setenv("WHOLE_FILM_RENDER_URL", "http://render:8080")
+    monkeypatch.setenv("FINAL_CUT_RENDER_URL", "http://render:8080")
     with pytest.raises(RuntimeError, match="OSS_BUCKET") as neither:
         resolve_settings(config)
     assert "media_generation" in str(neither.value)
@@ -449,13 +449,13 @@ def test_whole_film_render_without_a_bucket_or_media_generation_fails_loudly(
 
 
 @pytest.mark.parametrize("bad", ["render:8080", "ftp://render", "http://"])
-def test_whole_film_render_url_must_be_http(
+def test_final_cut_render_url_must_be_http(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad: str
 ) -> None:
     config = load_runtime_config(write(tmp_path, VALID + MEDIA))
     _media_env(monkeypatch)
-    monkeypatch.setenv("WHOLE_FILM_RENDER_URL", bad)
-    with pytest.raises(ValidationError, match="WHOLE_FILM_RENDER_URL"):
+    monkeypatch.setenv("FINAL_CUT_RENDER_URL", bad)
+    with pytest.raises(ValidationError, match="FINAL_CUT_RENDER_URL"):
         resolve_settings(config)
 
 
@@ -466,15 +466,15 @@ def test_whole_film_render_url_must_be_http(
         (" http://preview.localhost:3014/ ", "http://preview.localhost:3014"),
     ],
 )
-def test_whole_film_preview_origin_is_read_as_a_bare_origin(
+def test_final_cut_preview_origin_is_read_as_a_bare_origin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, given: str, resolved: str
 ) -> None:
     config = load_runtime_config(write(tmp_path, VALID))
     _core(monkeypatch)
-    assert resolve_settings(config).whole_film_preview_origin is None
+    assert resolve_settings(config).final_cut_preview_origin is None
 
-    monkeypatch.setenv("WHOLE_FILM_PREVIEW_ORIGIN", given)
-    assert resolve_settings(config).whole_film_preview_origin == resolved
+    monkeypatch.setenv("FINAL_CUT_PREVIEW_ORIGIN", given)
+    assert resolve_settings(config).final_cut_preview_origin == resolved
 
 
 @pytest.mark.parametrize(
@@ -489,13 +489,13 @@ def test_whole_film_preview_origin_is_read_as_a_bare_origin(
         "null",
     ],
 )
-def test_whole_film_preview_origin_must_be_http_host_and_port_only(
+def test_final_cut_preview_origin_must_be_http_host_and_port_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad: str
 ) -> None:
     config = load_runtime_config(write(tmp_path, VALID))
     _core(monkeypatch)
-    monkeypatch.setenv("WHOLE_FILM_PREVIEW_ORIGIN", bad)
-    with pytest.raises(ValidationError, match="WHOLE_FILM_PREVIEW_ORIGIN"):
+    monkeypatch.setenv("FINAL_CUT_PREVIEW_ORIGIN", bad)
+    with pytest.raises(ValidationError, match="FINAL_CUT_PREVIEW_ORIGIN"):
         resolve_settings(config)
 
 

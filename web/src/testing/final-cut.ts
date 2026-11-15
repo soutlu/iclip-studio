@@ -2,7 +2,7 @@ import fixtureCatalogJson from '../../scripts/hyperframes-fixtures/catalog.json'
 import type {
   CatalogItem,
   ComponentCatalog,
-} from '@/features/storyboard/whole-film/composition/catalog'
+} from '@/features/storyboard/final-cut/composition/catalog'
 import {
   writeFilm,
   type AudioClip,
@@ -10,7 +10,7 @@ import {
   type FilmClip,
   type HostClip,
   type VideoClip,
-} from '@/features/storyboard/whole-film/composition/film'
+} from '@/features/storyboard/final-cut/composition/film'
 
 // 源目录里没有组装时才生成的内容：运行库路径照组装结果写，分片表留空，条目补上空的 chars
 const fixtureSource = fixtureCatalogJson as Omit<

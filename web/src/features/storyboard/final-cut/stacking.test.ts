@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { audio, host, video } from '@/testing/whole-film'
+import { audio, host, video } from '@/testing/final-cut'
 import { newClipZ, restackedZ, rowMoveDirection } from './stacking'
 
 describe('新加的片段的叠放顺序', () => {

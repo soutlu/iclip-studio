@@ -15,7 +15,7 @@ from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord,
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from iclip.domains.conversations.whole_film_project import PreviewGrant, PreviewTokens
+from iclip.domains.conversations.final_cut_project import PreviewGrant, PreviewTokens
 from iclip.platform.db.engine import build_engine
 from tests.helpers.app import make_client
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
@@ -44,9 +44,9 @@ def _preview_env(
     monkeypatch: pytest.MonkeyPatch, base_env: None, preview_origin: str | None
 ) -> None:
     if preview_origin is None:
-        monkeypatch.delenv("WHOLE_FILM_PREVIEW_ORIGIN", raising=False)
+        monkeypatch.delenv("FINAL_CUT_PREVIEW_ORIGIN", raising=False)
     else:
-        monkeypatch.setenv("WHOLE_FILM_PREVIEW_ORIGIN", preview_origin)
+        monkeypatch.setenv("FINAL_CUT_PREVIEW_ORIGIN", preview_origin)
 
 
 @pytest.fixture
@@ -67,7 +67,7 @@ async def open_preview(
     client: httpx.AsyncClient, conversation_id: str, *, origin: str | None = APP_ORIGIN
 ) -> httpx.Response:
     return await client.post(
-        f"{URL}/{conversation_id}/whole-film/preview",
+        f"{URL}/{conversation_id}/final-cut/preview",
         headers={} if origin is None else {"origin": origin},
     )
 
@@ -82,12 +82,12 @@ async def create_file(
     client: httpx.AsyncClient, conversation_id: str, path: str, content: str
 ) -> httpx.Response:
     return await client.post(
-        f"{URL}/{conversation_id}/whole-film/files", json={"path": path, "content": content}
+        f"{URL}/{conversation_id}/final-cut/files", json={"path": path, "content": content}
     )
 
 
 def file_url(token: str, path: str) -> str:
-    return f"/whole-film/preview/{token}/files/{path}"
+    return f"/final-cut/preview/{token}/files/{path}"
 
 
 async def login_as_governor(client: httpx.AsyncClient, pg_url: str) -> str:
@@ -111,7 +111,7 @@ async def test_preview_host_serves_only_preview_addresses(
         ("GET", "/users/me"),
         ("GET", URL),
         ("GET", f"{URL}/{mine}/workspace/files"),
-        ("POST", f"{URL}/{mine}/whole-film/preview"),
+        ("POST", f"{URL}/{mine}/final-cut/preview"),
         ("GET", "/healthz"),
         ("GET", "/openapi.json"),
     ):
@@ -119,9 +119,9 @@ async def test_preview_host_serves_only_preview_addresses(
         assert refused.status_code == 404, f"预览域名上 {method} {path} 必须 404"
 
     assert (await preview.get(file_url(token, "index.html"))).status_code == 200
-    assert (await preview.get(f"/whole-film/preview/{token}/host")).status_code == 200
+    assert (await preview.get(f"/final-cut/preview/{token}/host")).status_code == 200
     assert (await client.get(file_url(token, "index.html"))).status_code == 404
-    assert (await client.get(f"/whole-film/preview/{token}/host")).status_code == 404
+    assert (await client.get(f"/final-cut/preview/{token}/host")).status_code == 404
 
 
 def test_preview_host_refuses_websocket_upgrades(ws_agent_app: FastAPI, pg_url: str) -> None:
@@ -153,7 +153,7 @@ async def test_token_goes_to_readers_and_carries_the_request_origin(
     assert ticket["origin"] == PREVIEW_ORIGIN
     expires_at = datetime.fromisoformat(ticket["expiresAt"])
     assert timedelta(minutes=59) < expires_at - before <= timedelta(hours=1)
-    host = await preview.get(f"/whole-film/preview/{ticket['token']}/host")
+    host = await preview.get(f"/final-cut/preview/{ticket['token']}/host")
     assert host.status_code == 200, host.text
     assert host.json() == {"appOrigin": APP_ORIGIN}
 
@@ -191,7 +191,7 @@ async def test_without_a_preview_origin_no_token_is_issued_and_no_host_serves_pr
             expires_at=datetime.now(UTC) + timedelta(minutes=5),
         )
     )
-    assert (await client.get(f"/whole-film/preview/{minted}/host")).status_code == 404
+    assert (await client.get(f"/final-cut/preview/{minted}/host")).status_code == 404
 
 
 async def test_expired_tampered_and_swapped_tokens_are_refused(
@@ -238,7 +238,7 @@ async def test_expired_tampered_and_swapped_tokens_are_refused(
         "not-a-token",
     ):
         assert (await preview.get(file_url(bad, "index.html"))).status_code == 403
-        assert (await preview.get(f"/whole-film/preview/{bad}/host")).status_code == 403
+        assert (await preview.get(f"/final-cut/preview/{bad}/host")).status_code == 403
 
     assert (await preview.get(file_url(second_token, "index.html"))).status_code == 404, (
         "第二段的令牌取不到只在第一段里的文件"
@@ -292,7 +292,7 @@ async def test_missing_and_irregular_paths_are_404_and_vendor_redirects(
     assert (await create_file(client, mine, "index.html", "片")).status_code == 201
     assert (await create_file(client, mine, "assets/a.txt", "a")).status_code == 201
     token = await token_for(client, mine)
-    base = f"/whole-film/preview/{token}/files"
+    base = f"/final-cut/preview/{token}/files"
 
     assert (await preview.get(f"{base}/index.html")).status_code == 200
     for raw in (
@@ -362,7 +362,7 @@ async def test_a_fork_by_another_user_previews_its_own_files(
         copy = forked.json()["conversation"]["id"]
         rewritten = await governor.put(
             f"{URL}/{copy}/workspace/file",
-            json={"path": "whole-film/index.html", "content": "改过的片", "expectedVersion": 1},
+            json={"path": "final-cut/index.html", "content": "改过的片", "expectedVersion": 1},
         )
         assert rewritten.status_code == 200, rewritten.text
         copy_token = await token_for(governor, copy)
@@ -390,7 +390,7 @@ async def test_owner_creates_project_files_once_and_edits_them_with_the_workspac
         assert refused.status_code == 422, f"{bad!r} 应当 422，实得 {refused.status_code}"
     assert (await create_file(client, mine, "", "x")).status_code == 422
 
-    workspace_path = "whole-film/compositions/components/x.html"
+    workspace_path = "final-cut/compositions/components/x.html"
     read = await client.get(f"{URL}/{mine}/workspace/file", params={"path": workspace_path})
     assert read.json()["file"] == {"path": workspace_path, "content": "<p>初稿</p>", "version": 1}
     edited = await client.put(

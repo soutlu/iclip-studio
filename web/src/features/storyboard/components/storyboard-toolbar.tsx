@@ -13,26 +13,26 @@ type StoryboardToolbarProps = {
   status: ReactNode
   onGoShot: (shot: number) => void
   copy: { label: string; text: string; done: string; blocked?: string | undefined }
-  onWholeFilm: (() => void) | undefined
+  onFinalCut: (() => void) | undefined
 }
 
 export function StoryboardToolbar({
   copy,
   groups,
   onGoShot,
-  onWholeFilm,
+  onFinalCut,
   position,
   status,
 }: StoryboardToolbarProps) {
   return (
     <div aria-label="分镜工具栏" className="storyboard-toolbar" role="group">
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{status}</div>
-      {onWholeFilm === undefined ? null : (
+      {onFinalCut === undefined ? null : (
         <TooltipRoot>
           <TooltipTrigger asChild>
             <button
               className={cn(workbenchControl({ shape: 'label' }), 'gap-1.5')}
-              onClick={onWholeFilm}
+              onClick={onFinalCut}
               type="button"
             >
               <Icon decorative name="video-type" size="sm" />

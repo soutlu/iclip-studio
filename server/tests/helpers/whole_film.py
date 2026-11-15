@@ -28,15 +28,15 @@ async def build_whole_film_app(
     for name, value in RENDER_ENVS.items():
         monkeypatch.setenv(name, value)
     if render_url is None:
-        monkeypatch.delenv("WHOLE_FILM_RENDER_URL", raising=False)
+        monkeypatch.delenv("FINAL_CUT_RENDER_URL", raising=False)
     else:
-        monkeypatch.setenv("WHOLE_FILM_RENDER_URL", render_url)
+        monkeypatch.setenv("FINAL_CUT_RENDER_URL", render_url)
     built = build_backed_app(
         config_with_media(),
         engine=engine,
         queue_connector=InMemoryConnector(),
         media_codec=SOFTWARE,
-        whole_film_render_transport=render.transport(),
+        final_cut_render_transport=render.transport(),
         credential_probe=KeyCheckingProbe({GOOD_KEY}),
     )
     await seed_agents(config_services_of(built), engine, CONVERSABLE_SEEDS)

@@ -92,7 +92,7 @@ describe('嵌进预览页', () => {
     const frame = screen.getByTitle('成片预览')
     expect(frame).toHaveAttribute(
       'src',
-      `${ORIGIN}/whole-film-preview.html#${encodeURIComponent(TOKEN)}`,
+      `${ORIGIN}/final-cut-preview.html#${encodeURIComponent(TOKEN)}`,
     )
     expect(frame).toHaveAttribute('sandbox', 'allow-scripts allow-same-origin')
     expect(frame).toHaveAttribute('allow', 'autoplay')

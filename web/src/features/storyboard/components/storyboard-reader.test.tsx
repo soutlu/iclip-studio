@@ -555,7 +555,7 @@ describe('StoryboardReader', () => {
 
   it('地址带着成片就打开成片编辑器，关掉回到分镜页；顶栏「成片」再打开', async () => {
     provide()
-    await renderReader('/?shot=1&wholeFilm=true')
+    await renderReader('/?shot=1&finalCut=true')
     const editor = await screen.findByRole('dialog', { name: '夜景延时素材生成' })
     await userEvent.click(within(editor).getByRole('button', { name: '关闭成片编辑' }))
     await waitFor(() =>
@@ -567,7 +567,7 @@ describe('StoryboardReader', () => {
 
   it('只读时没有「成片」入口，地址里带着也不打开', async () => {
     provide()
-    await renderReader('/?shot=1&wholeFilm=true', true)
+    await renderReader('/?shot=1&finalCut=true', true)
     await screen.findByRole('region', { name: '镜头组 1' })
     expect(screen.queryByRole('button', { name: '成片' })).toBeNull()
     expect(screen.queryByRole('dialog', { name: '夜景延时素材生成' })).toBeNull()

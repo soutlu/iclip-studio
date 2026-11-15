@@ -1,4 +1,4 @@
-"""成片工程：对话工作区里的 ``whole-film/`` 目录，在预览域名上按令牌给出，属主可以新建文件。"""
+"""成片工程：对话工作区里的 ``final-cut/`` 目录，在预览域名上按令牌给出，属主可以新建文件。"""
 
 from __future__ import annotations
 
@@ -24,9 +24,9 @@ from iclip.domains.conversations.service import (
 )
 from iclip.domains.identity.public import Principal
 
-PROJECT_DIR: Final = "whole-film"
+PROJECT_DIR: Final = "final-cut"
 
-WHOLE_FILM_PREVIEW_PREFIX: Final = "/whole-film/preview"
+FINAL_CUT_PREVIEW_PREFIX: Final = "/final-cut/preview"
 
 PREVIEW_TOKEN_LIFETIME: Final = timedelta(hours=1)
 
@@ -34,7 +34,7 @@ VENDOR_DIR: Final = "vendor/"
 
 VENDOR_ROUTE: Final = "/hyperframes/vendor/"
 
-_TOKEN_KEY_PURPOSE: Final = b"iclip/whole-film-preview-token/v1"
+_TOKEN_KEY_PURPOSE: Final = b"iclip/final-cut-preview-token/v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,7 +145,7 @@ _BAD_TOKEN = "预览令牌无效或已过期"
 _NO_FILE = "成片工程里没有这个文件"
 
 
-class WholeFilmProject:
+class FinalCutProject:
     """成片工程的三件事：给能读对话的人发预览令牌、按令牌给工程文件、属主新建工程文件。"""
 
     def __init__(
@@ -194,7 +194,7 @@ class WholeFilmProject:
 
     async def preview_file(self, token: str, path: str) -> DerivedFileContent | PreviewRedirect:
         """按令牌取工程里的一个文件：``vendor/`` 开头的转到公共库，其余读工作区的
-        ``whole-film/<path>``。
+        ``final-cut/<path>``。
 
         令牌不对或过期抛 ``PermissionDenied``；路径不合规或文件不存在抛 ``NotFound``。
         """
@@ -217,7 +217,7 @@ class WholeFilmProject:
     async def create_file(
         self, principal: Principal, conversation_id: uuid.UUID, *, path: str, content: str
     ) -> DerivedFileContent:
-        """属主在工程里新建一个文件，答复写进工作区的那一份（路径带 ``whole-film/``）。
+        """属主在工程里新建一个文件，答复写进工作区的那一份（路径带 ``final-cut/``）。
 
         路径不合规 422；文件已存在 409，不覆盖。先读后写，两步之间别人写进同名文件时以后写的为准。
         """
@@ -240,13 +240,13 @@ class WholeFilmProject:
 
 
 __all__ = [
+    "FINAL_CUT_PREVIEW_PREFIX",
     "PREVIEW_TOKEN_LIFETIME",
     "PROJECT_DIR",
-    "WHOLE_FILM_PREVIEW_PREFIX",
+    "FinalCutProject",
     "PreviewGrant",
     "PreviewRedirect",
     "PreviewTicket",
     "PreviewTokens",
-    "WholeFilmProject",
     "project_path",
 ]

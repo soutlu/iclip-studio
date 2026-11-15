@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { audio, fixtureCatalog, host, video } from '@/testing/whole-film'
+import { audio, fixtureCatalog, host, video } from '@/testing/final-cut'
 import type { CatalogItem } from './composition/catalog'
 import {
   filterItems,

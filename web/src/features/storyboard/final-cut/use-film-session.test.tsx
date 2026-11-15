@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { WholeFilmDraftIn, WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
 import { server } from '@/testing/mocks/server'
 import { mockWholeFilmDraft, putMockWholeFilmDraft } from '@/testing/mocks/whole-film'
-import { audio, AUDIO_JOB, filmFile, fixtureCatalog, host, video } from '@/testing/whole-film'
+import { audio, AUDIO_JOB, filmFile, fixtureCatalog, host, video } from '@/testing/final-cut'
 import type { FilmClip, VideoClip } from './composition/film'
 import { useFilmSession, type NewAudio, type NewVideo } from './use-film-session'
 

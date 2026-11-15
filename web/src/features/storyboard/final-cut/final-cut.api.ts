@@ -9,7 +9,7 @@ import {
   zWholeFilmDraftOut,
   zWholeFilmDraftSavedOut,
   zWholeFilmExportStartedOut,
-  zWholeFilmPreviewOut,
+  zFinalCutPreviewOut,
 } from '@/shared/api/generated/zod.gen'
 import {
   generationsRefetchInterval,
@@ -58,13 +58,13 @@ export const saveWholeFilmDraft = (conversationId: string, body: WholeFilmDraftI
  * 编辑器打开时取一次预览令牌：预览页在预览域名 `origin` 下，凭 `token` 运行。
  * 编辑器开着时不再重取，换了令牌预览页就要重新加载。
  */
-export const useWholeFilmPreviewQuery = (conversationId: string) =>
+export const useFinalCutPreviewQuery = (conversationId: string) =>
   useQuery({
     queryKey: wholeFilmQueryKeys.preview(conversationId),
     queryFn: ({ signal }) =>
       apiFetch(
-        `/conversations/${encodeURIComponent(conversationId)}/whole-film/preview`,
-        zWholeFilmPreviewOut,
+        `/conversations/${encodeURIComponent(conversationId)}/final-cut/preview`,
+        zFinalCutPreviewOut,
         { fallbackErrorMessage: '预览加载失败', method: 'POST', signal },
       ),
     staleTime: Infinity,

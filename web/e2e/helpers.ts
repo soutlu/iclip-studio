@@ -12,7 +12,7 @@ export const openConversation = async (page: Page, title: string, { mobile = fal
 }
 
 /** 成片编辑器里嵌着的预览页（预览域名下），播放器和成片都在它里面。 */
-export const wholeFilmPreviewPage = (dialog: Locator) =>
+export const finalCutPreviewPage = (dialog: Locator) =>
   dialog.getByRole('region', { name: '预览' }).locator('iframe').contentFrame()
 
 export const openStoryboardShot = async (panel: Locator, index: number) => {

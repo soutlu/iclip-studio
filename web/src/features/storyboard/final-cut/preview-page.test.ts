@@ -660,7 +660,7 @@ describe('启动', () => {
   const hostLookups: string[] = []
   const answerHost = (status: number) =>
     server.use(
-      http.get('*/api/whole-film/preview/:token/host', ({ params }) => {
+      http.get('*/api/final-cut/preview/:token/host', ({ params }) => {
         hostLookups.push(String(params['token']))
         return status === 200
           ? HttpResponse.json({ appOrigin: APP })

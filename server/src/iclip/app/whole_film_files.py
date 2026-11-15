@@ -6,7 +6,7 @@ from iclip.common.errors import ValidationFailed
 from iclip.domains.conversations.infra_sql import SqlConversationRepository
 from iclip.domains.conversations.models import CheckedWholeFilm, WholeFilmSource
 from iclip.domains.conversations.repository import WholeFilmDraftStore
-from iclip.domains.conversations.service import WholeFilmRenderUnavailable
+from iclip.domains.conversations.service import FinalCutRenderUnavailable
 from iclip.domains.generation.models import STATUS_COMPLETED, GenerationJob, is_base_master
 from iclip.domains.generation.render import FilmAt, RenderClient, RenderRejected, RenderUnavailable
 from iclip.domains.generation.repository import GenerationRepository, conversation_record
@@ -37,7 +37,7 @@ class WholeFilmFileChecker:
         except RenderRejected as exc:
             raise ValidationFailed(str(exc)) from exc
         except RenderUnavailable as exc:
-            raise WholeFilmRenderUnavailable(str(exc)) from exc
+            raise FinalCutRenderUnavailable(str(exc)) from exc
         inheritance = await self._conversations.ancestry(conversation_id)
         for source in checked.sources:
             record = await conversation_record(

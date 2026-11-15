@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { groupConversationVideos } from '../conversation-videos/video-groups'
 import type { GenerationJob } from '../storyboard.api'
-import { materialCatalog } from '../whole-film/materials'
+import { materialCatalog } from '../final-cut/materials'
 import {
   composingOf,
   editCountsByRoot,

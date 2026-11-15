@@ -1,6 +1,6 @@
 import { bootPreviewPage } from './preview-page'
 
-// 预览页（whole-film-preview.html）的入口：令牌在地址的 # 后面
+// 预览页（final-cut-preview.html）的入口：令牌在地址的 # 后面
 const start = async () =>
   bootPreviewPage(decodeURIComponent(window.location.hash.slice(1)), document.body)
 

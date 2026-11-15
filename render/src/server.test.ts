@@ -1,6 +1,6 @@
 import type { AddressInfo } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { writeFilm } from '../../web/src/features/storyboard/whole-film/composition/film'
+import { writeFilm } from '../../web/src/features/storyboard/final-cut/composition/film'
 import { ExportQueue } from './jobs'
 import type { ComponentLibrary } from './library'
 import { createExportServer } from './server'

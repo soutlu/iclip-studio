@@ -235,7 +235,7 @@ class ConversationFilm(Protocol):
     ) -> uuid.UUID: ...
 
 
-class WholeFilmRenderUnavailable(Exception):
+class FinalCutRenderUnavailable(Exception):
     pass
 
 
@@ -246,7 +246,7 @@ class WholeFilmFiles(Protocol):
         """查一份成片文件，答复按写法重写后的文件和它用到的素材。
 
         不合写法、用到的素材不是这段对话的抛 ``ValidationFailed``；渲染服务连不上抛
-        ``WholeFilmRenderUnavailable``。
+        ``FinalCutRenderUnavailable``。
         """
         ...
 
@@ -1071,6 +1071,7 @@ __all__ = [
     "DeletedFilter",
     "DerivedFile",
     "DerivedFileContent",
+    "FinalCutRenderUnavailable",
     "LatestMasterUrls",
     "ListAgents",
     "ListCollections",
@@ -1085,7 +1086,6 @@ __all__ = [
     "VideoProgressOf",
     "WholeFilmExports",
     "WholeFilmFiles",
-    "WholeFilmRenderUnavailable",
     "WorkspaceDocumentValidator",
     "WriteDerivedFile",
 ]

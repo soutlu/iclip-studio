@@ -62,7 +62,7 @@ services:
       retries: 5
       start_period: 20s
 
-  # 成片导出的渲染服务：只在 compose 网络里可达（后端 WHOLE_FILM_RENDER_URL=http://render:8080），
+  # 成片导出的渲染服务：只在 compose 网络里可达（后端 FINAL_CUT_RENDER_URL=http://render:8080），
   # 不对外开端口。RENDER_ALLOWED_MEDIA_HOSTS 列出它会取素材的主机，见 docs/deploy.md「成片渲染服务」。
   render:
     image: ${ACR_REGISTRY}/${ACR_NAMESPACE}/iclip-render:${IMAGE_TAG:-latest}
