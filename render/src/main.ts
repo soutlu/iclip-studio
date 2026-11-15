@@ -8,6 +8,7 @@ import {
   resolveBrowserGpuMode,
   resolveHeadlessShellPath,
 } from '@hyperframes/engine'
+import { startBrowserGuard } from './browser'
 import { ConfigError, loadConfig } from './config'
 import { ExportQueue } from './jobs'
 import { createLogger } from './log'
@@ -32,19 +33,22 @@ async function main(): Promise<void> {
   const logger = createLogger(config.logLevel)
   restrictFetch(config.allowedHosts, logger)
 
-  const chromePath = resolveHeadlessShellPath()
-  if (!chromePath) {
+  const browser = resolveHeadlessShellPath()
+  if (!browser) {
     logger.error('找不到 chrome-headless-shell', {
       hint: '设置 PRODUCER_HEADLESS_SHELL_PATH 或用 @puppeteer/browsers 安装',
     })
     process.exit(1)
   }
+  // 启动脚本放在 workDir 里：先清空 workDir 再写
+  await rm(config.workDir, { recursive: true, force: true })
+  const { chromePath } = await startBrowserGuard(browser, join(config.workDir, 'browser'), logger)
   const chrome = (await run(chromePath, ['--version'])).stdout.trim()
   const gpu = await resolveBrowserGpuMode('auto', { chromePath })
   const encoder = await detectGpuEncoder()
   logger.info('渲染环境', {
     chrome,
-    chromePath,
+    chromePath: browser,
     gpu,
     videoEncoder: encoder ?? 'libx264（软件）',
     registryRoot: config.registryRoot,
@@ -57,10 +61,10 @@ async function main(): Promise<void> {
     process.exit(1)
   }
 
-  await rm(config.workDir, { recursive: true, force: true })
   const queue = new ExportQueue({
     worker: createProducerWorker({
       workDir: config.workDir,
+      chromePath,
       gpuEncode: encoder !== null,
       logger,
     }),
