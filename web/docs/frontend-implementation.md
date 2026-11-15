@@ -45,9 +45,9 @@
 - **工作台里的一个页签**：编辑器是工作台的「final-cut」页签，和对话并排；对话的工作区里有分镜或工程文件时出现，只读查看时没有。快捷键和 Esc 只认焦点在编辑器里时按的键，不在 window 上抢（[editor-keys.ts](../src/features/storyboard/final-cut/editor-keys.ts)）。
 - **不做小屏适配**：任何宽度下都是同一种摆法，宽度不够时内容被所在的卡片裁掉，不换行、不折叠，也不出现横向滚动条。
 
-## 成片组件
+## 组件库
 
-成片动态组件目录的数据结构见 [catalog.ts](../src/features/storyboard/final-cut/composition/catalog.ts)，组件库源目录的打包规则见[组装脚本](../scripts/hyperframes-registry.mjs)文件头说明：
+组件目录的数据结构见 [catalog.ts](../src/features/storyboard/final-cut/composition/catalog.ts)，组件库源目录的打包规则见[组装脚本](../scripts/hyperframes-registry.mjs)文件头说明：
 
 - **组件字体 CSS 变量机制**：组件内部标题统一读取 `var(--font-display, <组件默认字体>)`，正文读取 `var(--font-body, <组件默认字体>)`。
 - **中文字体只声明用到的字**：播放运行时会把主文件声明的字体全部加载完才运行组件脚本，所以主文件 `<head>` 的字体块只为出现的字声明 Noto Sans SC 的分片（[fonts.ts](../src/features/storyboard/final-cut/composition/fonts.ts)）——final-cut 里写出的文字、所用组件文件里的非 ASCII 字符（组件目录每个条目的 `chars`），西文基本字符总是带上；用到的西文字体族按组件目录里的 `cjk` 描述各带一组指向同样分片的规则。组件文件不要自己链接整份中文字体样式，组装时会去掉这样的链接。

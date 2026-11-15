@@ -24,7 +24,7 @@ final-cut 编辑器的预览在预览域名下的预览页（`/final-cut-preview
 - **`pnpm dev`**：用哪个主机名打开应用，就把根目录 `.env` 里的 `FINAL_CUT_PREVIEW_ORIGIN` 设成另一个，例如在 `http://localhost:3013` 打开时设成 `http://127.0.0.1:3013`。不配置时 final-cut 编辑器的预览无法加载。
 - **`pnpm dev:mock`**：不用配置。预览页自动放在另一个主机名下，预览页取应用来源的地址由 mock 模式的开发服务器回答。
 
-### 成片组件库与 Mock 模式
+### 组件库与 Mock 模式
 
-- **指定正式组件库**：`pnpm dev` 启动前默认会把仓库自带的测试组件库打包到 `public/hyperframes/`；如果需要加载本地的正式成片组件库，可指定 `HYPERFRAMES_LIBRARY=<组件库源目录> pnpm dev`。
+- **指定正式组件库**：`pnpm dev` 启动前默认会把仓库自带的测试组件库打包到 `public/hyperframes/`；如果需要加载本地的正式组件库，可指定 `HYPERFRAMES_LIBRARY=<组件库源目录> pnpm dev`。
 - **纯前端 Mock 模式（`pnpm dev:mock`）**：不连接真实后端，使用 MSW 模拟数据。在主目录运行时默认端口为 `3014`，在 Git Worktree 中运行时会根据路径自动分配 `3100–3899` 之间的固定端口（启动日志会打印实际地址，也可通过 `PORT=3015 pnpm dev:mock` 手动指定）。

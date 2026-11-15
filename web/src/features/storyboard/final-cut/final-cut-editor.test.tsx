@@ -178,7 +178,7 @@ const twoVideos = () =>
     { width: 720, height: 1280 },
   )
 
-describe('final-cut 编辑器 ·加入素材', () => {
+describe('final-cut 编辑器 · 加入素材', () => {
   it('还没有工程：播放、进度条置灰，没选镜头时按 Enter 提示先选；导出暂停着，置灰并说明原因；打开不保存', async () => {
     const user = userEvent.setup()
     await openEditor()
@@ -306,7 +306,7 @@ describe('final-cut 编辑器 ·加入素材', () => {
   })
 })
 
-describe('final-cut 编辑器 ·时间线', () => {
+describe('final-cut 编辑器 · 时间线', () => {
   const timeline = () => screen.getByRole('group', { name: '第 1 行' })
 
   it('工程里只有组件或块的片段、没有视频片段：照样能播放', async () => {
@@ -470,7 +470,7 @@ describe('final-cut 编辑器 ·时间线', () => {
   })
 })
 
-describe('final-cut 编辑器 ·多选', () => {
+describe('final-cut 编辑器 · 多选', () => {
   // 一行三个片段：A 镜头 1 在 0–2 秒，B 镜头 1 在 2–3.5 秒，A 镜头 2 在 3.5–5 秒
   const threeVideos = () =>
     mainFile(
@@ -648,7 +648,7 @@ describe('final-cut 编辑器 ·多选', () => {
   })
 })
 
-describe('final-cut 编辑器 ·播放', () => {
+describe('final-cut 编辑器 · 播放', () => {
   afterEach(() => {
     starvedVideos.clear()
   })
@@ -800,7 +800,7 @@ describe('final-cut 编辑器 ·播放', () => {
   })
 })
 
-describe('final-cut 编辑器 ·播放条设置', () => {
+describe('final-cut 编辑器 · 播放条设置', () => {
   const player = previewPlayer
   const playerUp = previewSettled
 
@@ -922,7 +922,7 @@ describe('final-cut 编辑器 ·播放条设置', () => {
   })
 })
 
-describe('final-cut 编辑器 ·导出', () => {
+describe('final-cut 编辑器 · 导出', () => {
   const EXPORT_ID = '22222222-3333-4444-8555-666666666666'
   const EXPORTS_URL = '*/api/conversations/:conversationId/whole-film/exports'
   const EXPORT_URL = '*/api/conversations/:conversationId/whole-film/exports/:exportId'
@@ -1087,7 +1087,7 @@ describe('final-cut 编辑器 ·导出', () => {
   })
 })
 
-describe('final-cut 编辑器 ·组件、块页签', () => {
+describe('final-cut 编辑器 · 组件、块页签', () => {
   const side = () => screen.getByRole('complementary', { name: '贴片、场景、音频和属性' })
   const openTab = (user: ReturnType<typeof userEvent.setup>, name: string) =>
     user.click(within(side()).getByRole('tab', { name }))
@@ -1205,7 +1205,7 @@ describe('final-cut 编辑器 ·组件、块页签', () => {
   })
 })
 
-describe('final-cut 编辑器 ·属性', () => {
+describe('final-cut 编辑器 · 属性', () => {
   const inspector = () => screen.getByRole('tabpanel', { name: '属性' })
   const sideTab = (name: string) =>
     within(screen.getByRole('complementary', { name: '贴片、场景、音频和属性' })).getByRole('tab', {
@@ -1869,7 +1869,7 @@ describe('final-cut 编辑器 ·属性', () => {
   })
 })
 
-describe('final-cut 编辑器 ·侧栏页签', () => {
+describe('final-cut 编辑器 · 侧栏页签', () => {
   const side = () => screen.getByRole('complementary', { name: '贴片、场景、音频和属性' })
   const tab = (name: string) => within(side()).getByRole('tab', { name })
   const props = () => screen.getByRole('tabpanel', { name: '属性' })
@@ -1985,7 +1985,7 @@ describe('final-cut 编辑器 ·侧栏页签', () => {
   })
 })
 
-describe('final-cut 编辑器 ·切走再切回', () => {
+describe('final-cut 编辑器 · 切走再切回', () => {
   const row = () => screen.getByRole('group', { name: '第 1 行' })
   const labels = () =>
     within(row())
