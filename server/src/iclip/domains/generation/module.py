@@ -15,7 +15,7 @@ from iclip.domains.generation.image_upstream import (
     GatewayImageProvider,
     GatewayImageSettings,
 )
-from iclip.domains.generation.models import STATUS_SUBMITTING, GenerationJob
+from iclip.domains.generation.models import STATUS_SUBMITTING
 from iclip.domains.generation.music import MUSIC_MODEL, QwenMusicProvider
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
 from iclip.domains.generation.ports import ConversationLineage
@@ -154,9 +154,6 @@ def build_generation_module(
             ),
         )
 
-    async def transcribe_completed(job: GenerationJob) -> None:
-        await service.transcribe_completed(job)
-
     queue = GenerationQueue(
         repo,
         lanes=(
@@ -172,7 +169,6 @@ def build_generation_module(
         ),
         connector=queue_connector,
         settings=queue_settings,
-        on_completed=transcribe_completed if subtitle_target is not None else None,
     )
     service = GenerationService(
         repo,

@@ -434,23 +434,6 @@ class GenerationService:
             )
         )
 
-    async def transcribe_completed(self, job: GenerationJob) -> None:
-        if self._subtitles is None or not is_base_master(job) or job.output.url is None:
-            return
-        await self._queue_new(
-            _pending_job(
-                SubtitleRequest(model=self._subtitles.model, video_url=job.output.url),
-                owner_user_id=job.owner_user_id,
-                api_key_id=job.api_key_id,
-                provider=self._subtitles.provider,
-                conversation_id=job.conversation_id,
-                task_id=job.task_id,
-                metadata=None,
-                shot_index=None,
-                source_job_id=job.id,
-            )
-        )
-
     def _require_subtitles(self) -> ProviderTarget:
         if self._subtitles is None:
             raise ValidationFailed("字幕识别没有开通，暂时不能识别")

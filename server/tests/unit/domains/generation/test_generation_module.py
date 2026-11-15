@@ -14,9 +14,11 @@ from iclip.domains.generation.module import (
     IMAGE_MODEL_SPECS,
     GenerationModule,
     ImageModelConfig,
+    QwenServiceConfig,
     build_generation_module,
 )
-from iclip.domains.generation.schemas import VideoEnhanceIn
+from iclip.domains.generation.qwen import QwenEndpoint
+from iclip.domains.generation.schemas import SubtitleIn, VideoEnhanceIn
 from iclip.domains.generation.service import VideoEnhanceSpec
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.acting import ActAs
@@ -71,6 +73,7 @@ def build(
     video: VideoProviderSettings = VIDEO,
     video_enhance: VideoEnhanceSpec | None = None,
     video_transport: httpx.AsyncBaseTransport | None = None,
+    subtitles: QwenServiceConfig | None = None,
 ) -> GenerationModule:
     return build_generation_module(
         repo,
@@ -80,6 +83,7 @@ def build(
         video=video,
         video_enhance=video_enhance,
         video_transport=video_transport,
+        subtitles=subtitles,
         video_default_model="vendor-a-seedance-2-5",
         video_allowed_models=("vendor-a-seedance-2-5",),
         image_models=[
@@ -253,6 +257,48 @@ async def test_an_enhancement_runs_through_the_video_lane_to_both_addresses() ->
         ("POST", ENHANCE_URL),
         ("GET", "https://video.test/tasks/e-1?user_name=tester"),
     ]
+
+
+SUBTITLES = QwenServiceConfig(
+    endpoint=QwenEndpoint(url="https://asr.test/generation", api_key="sk-test", timeout_seconds=30),
+    concurrency=1,
+)
+
+
+async def test_a_completed_take_is_not_transcribed_even_with_subtitles_on() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(200, json={"task_id": "t-1"})
+        return httpx.Response(
+            200,
+            json={
+                "status": "succeeded",
+                "result": {
+                    "output_url": "https://cdn.test/take.mp4",
+                    "watermark_output_url": "https://cdn.test/take-wm.mp4",
+                },
+            },
+        )
+
+    repo = InMemoryGenerationRepository()
+    module = build(
+        repo,
+        names=["nano_banana_pro"],
+        video_transport=httpx.MockTransport(handler),
+        subtitles=SUBTITLES,
+    )
+
+    take = await module.service.submit_video(PRINCIPAL, video_request())
+    await module.queue.run_submit(str(take.id))
+    await module.queue.run_poll(str(take.id))
+
+    assert repo.jobs[take.id].status == STATUS_COMPLETED
+    assert [job for job in repo.jobs.values() if job.kind == "subtitle"] == []
+
+    manual = await module.service.submit_subtitle(PRINCIPAL, SubtitleIn(source_job_id=take.id))
+    assert [job.id for job in repo.jobs.values() if job.kind == "subtitle"] == [manual.id], (
+        "开通了识别，只有调接口才出字幕记录"
+    )
 
 
 @pytest.mark.parametrize(

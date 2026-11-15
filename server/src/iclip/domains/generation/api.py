@@ -117,8 +117,8 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         body: SubtitleIn,
         principal: Annotated[Principal, require_permission("generation:submit")],
     ) -> GenerationEnvelope:
-        """手动识别一条素材片的口播，另起一条字幕记录（种类 ``subtitle``）；素材片完成时后台已自动识别
-        一次，这里用来补识别旧视频或识别失败后重来。结果在记录的 ``sentences`` 里。
+        """按需识别一条素材片的口播，另起一条字幕记录（种类 ``subtitle``）；素材片完成时不会识别，
+        只有调这个接口才识别。结果在记录的 ``sentences`` 里。
 
         ``sourceJobId`` 要是这段对话（``conversationId``）自己的或继承来的一条视频，读不到 404；读得到
         却不是素材片（已完成的出片或合成）422。字幕识别没开通 422。新记录的对话、需求单与 ``metadata``
