@@ -99,7 +99,7 @@ type Props = {
 const EMPTY_TEXT = '暂无成片内容，加入内容后可在此预览'
 const PICK_FIRST_TEXT = '尚未选中镜头，无法加入成片；请先在下方选中镜头范围'
 const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏，无法进入全屏'
-const ADDING_ITEM_TEXT = '上一个组件或块正在加入成片，请稍后再试'
+const ADDING_ITEM_TEXT = '上一个贴片或场景正在加入成片，请稍后再试'
 const ADDING_AUDIO_TEXT = '上一条音频正在加入成片，请稍后再试'
 // 还没有成片时先放组件或块：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
@@ -618,9 +618,9 @@ function EditorBody({
         }
       />
       <div aria-label="成片编辑器" className="wf-workspace" role="group">
-        <aside aria-label="组件、块和音频" className="wf-side">
+        <aside aria-label="贴片、场景和音频" className="wf-side">
           <TabsRoot className="wf-side-panel" defaultValue="component">
-            <TabsList aria-label="组件、块和音频页签" className="wf-side-tabs">
+            <TabsList aria-label="贴片、场景和音频页签" className="wf-side-tabs">
               {ITEM_KINDS.map((kind) => (
                 <TabsTrigger key={kind} value={kind}>
                   {ITEM_KIND_LABEL[kind]}

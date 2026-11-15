@@ -95,7 +95,7 @@ test('成片编辑器：选镜头加入成片、播放、撤销、导出下载�
   for (const src of scripts) expect(src).toMatch(libraryOf(previewOrigin))
 
   const card = dialog
-    .getByRole('complementary', { name: '组件、块和音频' })
+    .getByRole('complementary', { name: '贴片、场景和音频' })
     .getByRole('list')
     .getByRole('group', { name: /秒$/ })
     .first()
@@ -392,11 +392,11 @@ test('块页签搜到块点「加到播放头」、组件页签拖一个组件�
   const { html: withVideo } = (await first).postDataJSON() as { html: string }
   const videoSeconds = Number(/<video [^>]*data-duration="([^"]+)"/.exec(withVideo)?.[1])
 
-  const side = dialog.getByRole('complementary', { name: '组件、块和音频' })
-  await expect(side.getByRole('tab', { name: '组件' })).toHaveAttribute('aria-selected', 'true')
-  await side.getByRole('tab', { name: '块' }).click()
-  await side.getByRole('searchbox', { name: '搜索块' }).fill('渐变')
-  const cards = side.getByRole('list', { name: '块' }).getByRole('group')
+  const side = dialog.getByRole('complementary', { name: '贴片、场景和音频' })
+  await expect(side.getByRole('tab', { name: '贴片' })).toHaveAttribute('aria-selected', 'true')
+  await side.getByRole('tab', { name: '场景' }).click()
+  await side.getByRole('searchbox', { name: '搜索场景' }).fill('渐变')
+  const cards = side.getByRole('list', { name: '场景' }).getByRole('group')
   await expect(cards).toHaveCount(1)
   const scene = cards.first()
   await expect(scene).toHaveAccessibleName('测试画面，6 秒')
@@ -439,9 +439,9 @@ test('块页签搜到块点「加到播放头」、组件页签拖一个组件�
     .toEqual({ width: true, height: true, centered: true })
 
   // 拖一个组件到第一行视频片段后面的空处（离各个吸附点都远）：落在指针的位置
-  await side.getByRole('tab', { name: '组件' }).click()
+  await side.getByRole('tab', { name: '贴片' }).click()
   const overlay = side
-    .getByRole('list', { name: '组件' })
+    .getByRole('list', { name: '贴片' })
     .getByRole('group', { name: '测试叠加，4 秒' })
   const row = dialog.getByRole('group', { name: '第 1 行' })
   // 6 秒长、从 0 开始的那个片段量出每秒多少像素
@@ -488,8 +488,8 @@ test('右侧栏：选中组件或块的片段改文字可填项，存下来、�
   const inspector = dialog.getByRole('complementary', { name: '属性' })
   await expect(inspector.getByRole('heading', { name: '尚未选中片段' })).toBeVisible()
 
-  const side = dialog.getByRole('complementary', { name: '组件、块和音频' })
-  await side.getByRole('searchbox', { name: '搜索组件' }).fill('可填项')
+  const side = dialog.getByRole('complementary', { name: '贴片、场景和音频' })
+  await side.getByRole('searchbox', { name: '搜索贴片' }).fill('可填项')
   const card = side.getByRole('group', { name: '测试可填项，5 秒' })
   const added = draftSavedWith(page, (html) => savedItem(html, '测试可填项') !== null)
   await card.hover()
@@ -584,7 +584,7 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、�
     .getByRole('slider', { name: '播放进度' })
   await expect(progress).toHaveAttribute('aria-valuetext', /^00:00\.00 \/ 00:0\d\.\d\d$/)
 
-  const side = dialog.getByRole('complementary', { name: '组件、块和音频' })
+  const side = dialog.getByRole('complementary', { name: '贴片、场景和音频' })
   await side.getByRole('tab', { name: '音频' }).click()
   const list = side.getByRole('list', { name: '音频' })
   const guitar = list.getByRole('listitem').filter({ hasText: '轻快原声吉他，适合秋季穿搭' })
@@ -695,7 +695,7 @@ test('右侧栏「媒体」：音频片段拉满增益、打开循环写进文�
   await first
 
   // 音频加到播放头（0 秒），在画面行下面新开一行
-  const side = dialog.getByRole('complementary', { name: '组件、块和音频' })
+  const side = dialog.getByRole('complementary', { name: '贴片、场景和音频' })
   await side.getByRole('tab', { name: '音频' }).click()
   const added = draftSavedWith(page, (html) => savedAudio(html).length === 1)
   await side

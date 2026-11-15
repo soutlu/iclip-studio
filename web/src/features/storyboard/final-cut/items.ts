@@ -8,7 +8,7 @@ export type ItemKind = CatalogItem['kind']
 export const ITEM_KINDS: readonly ItemKind[] = ['component', 'block']
 
 /** 两种条目在界面上的叫法。 */
-export const ITEM_KIND_LABEL: Record<ItemKind, string> = { component: '组件', block: '块' }
+export const ITEM_KIND_LABEL: Record<ItemKind, string> = { component: '贴片', block: '场景' }
 
 /** 条目页签的一个分类：「全部」「品牌」，或者组件库目录里的一类。 */
 export type ItemChip = {
