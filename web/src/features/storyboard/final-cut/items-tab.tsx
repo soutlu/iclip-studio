@@ -2,11 +2,11 @@ import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
-import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { Input } from '@/shared/ui/field'
 import { DRAG_THRESHOLD, releasePointer } from '../editing/timeline-drag'
 import { thumbnailUrl } from './component-catalog'
 import type { CatalogItem, ComponentCatalog } from './composition/catalog'
+import { useEditorEscape } from './editor-keys'
 import { hoverPreviewOf } from './hover-preview'
 import { ItemHoverPreview } from './item-hover-preview'
 import { previewRuntimeSrc } from './preview-document'
@@ -192,7 +192,7 @@ function ItemCard({
     pressRef.current = null
     setLifting(false)
   }
-  useEscapeAheadOfDialog(lifting, cancel)
+  useEditorEscape(lifting, cancel)
 
   return (
     <div

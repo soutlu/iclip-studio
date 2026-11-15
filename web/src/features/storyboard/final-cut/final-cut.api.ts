@@ -38,10 +38,29 @@ export const readWholeFilmDraft = (conversationId: string, signal?: AbortSignal)
     ...(signal === undefined ? {} : { signal }),
   })
 
+// 编辑器卸载时还没存完的保存，按对话记着，存完就去掉
+const closingSaves = new Map<string, Promise<void>>()
+
+/**
+ * 编辑器卸载时调用：`saving` 结束之前，这段对话的编辑器再打开也先不读草稿。
+ * 不等的话会读到存之前的一版，随后的保存因版本号过期被拒，刚才的改动跟着丢掉。
+ */
+export const holdDraftReads = (conversationId: string, saving: Promise<unknown>) => {
+  const previous = closingSaves.get(conversationId)
+  const settled = Promise.allSettled([previous, saving]).then(() => undefined)
+  closingSaves.set(conversationId, settled)
+  void settled.then(() => {
+    if (closingSaves.get(conversationId) === settled) closingSaves.delete(conversationId)
+  })
+}
+
 export const useWholeFilmDraftQuery = (conversationId: string) =>
   useQuery({
     queryKey: wholeFilmQueryKeys.draft(conversationId),
-    queryFn: ({ signal }) => readWholeFilmDraft(conversationId, signal),
+    queryFn: async ({ signal }) => {
+      await closingSaves.get(conversationId)
+      return readWholeFilmDraft(conversationId, signal)
+    },
     staleTime: Infinity,
     gcTime: 0,
     refetchOnWindowFocus: false,

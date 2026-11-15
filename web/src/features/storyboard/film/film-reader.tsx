@@ -29,7 +29,6 @@ import { useShotArrowKeys } from '../use-shot-arrow-keys'
 import { useStageSelection } from '../use-stage-selection'
 import { useVideoGeneration } from '../use-video-generation'
 import { VideoEditor } from '../video-editor/video-editor'
-import { FinalCutEditor } from '../final-cut/final-cut-editor'
 import {
   chooseFilmImage,
   filmQueryKey,
@@ -59,7 +58,6 @@ type ReaderSearch = {
   frame?: number | undefined
   shot?: number | undefined
   video?: string | undefined
-  finalCut?: true | undefined
 }
 
 const REPLACE_UPLOAD = 0
@@ -74,7 +72,7 @@ export function FilmReader(props: ArtifactRendererProps) {
   return <FilmWorkspace key={props.conversationId} {...props} />
 }
 
-function FilmWorkspace({ conversationId, conversationTitle, readOnly }: ArtifactRendererProps) {
+function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   const film = useFilmView(conversationId)
   useFilmFileChanges(conversationId)
   useLiveGenerations(conversationId)
@@ -338,7 +336,6 @@ function FilmWorkspace({ conversationId, conversationTitle, readOnly }: Artifact
           }}
           groups={groups.map(filmGroupSummary)}
           onGoShot={goShot}
-          onFinalCut={readOnly ? undefined : () => go({ finalCut: true })}
           position={position}
           status={
             <SaveStatus
@@ -492,13 +489,6 @@ function FilmWorkspace({ conversationId, conversationTitle, readOnly }: Artifact
           video={videoEditRoot}
         />
       )}
-      {search.finalCut === true && !readOnly ? (
-        <FinalCutEditor
-          conversationId={conversationId}
-          conversationTitle={conversationTitle}
-          onClose={() => go({ finalCut: undefined })}
-        />
-      ) : null}
       <FilmConflictDialog resolve={draft.resolveConflict} state={draft.state} />
     </>
   )

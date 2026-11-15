@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { DialogRoot, DialogSurface } from '@/shared/ui/dialog'
 import { pasteTextIntoComposer } from '@/testing/editor'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { addMockConversation } from '@/testing/mocks/conversations'
@@ -14,6 +13,7 @@ import { audio } from '@/testing/final-cut'
 import { DRAG_THRESHOLD } from '../editing/timeline-drag'
 import type { GenerationJob } from '../storyboard.api'
 import { AudioTab, GenerateMusic } from './audio-tab'
+import { EditorRoot } from './editor-root'
 import type { FilmClip } from './composition/film'
 
 const durations = vi.hoisted(() => new Map<string, number>())
@@ -75,7 +75,9 @@ const openTab = async (records: GenerationJob[], clips: FilmClip[] = []) => {
     onNotice: vi.fn(),
   }
   await renderWithProviders(
-    <AudioTab active clips={clips} conversationId={conversation.id} {...props} />,
+    <EditorRoot>
+      <AudioTab active clips={clips} conversationId={conversation.id} {...props} />
+    </EditorRoot>,
   )
   if (records.length > 0) await screen.findByRole('list', { name: '音频' })
   return { ...props, conversation }
@@ -308,6 +310,7 @@ describe('音频栏 · 加进成片', () => {
     const { onCarry, onDrop } = await openTab([guitar])
     const row = rowButton('轻快原声吉他')
     fireEvent.pointerDown(row, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
+    act(() => row.focus())
     fireEvent.pointerMove(row, { pointerId: 1, clientX: 200, clientY: 400 })
     await user.keyboard('{Escape}')
     expect(onCarry).toHaveBeenLastCalledWith(whole, null)
@@ -554,24 +557,22 @@ describe('生成音乐的输入框', () => {
     )
   })
 
-  const openInDialog = async (conversationId: string) => {
+  const openInEditor = async (conversationId: string) => {
     const user = userEvent.setup()
     await renderWithProviders(
-      <DialogRoot open>
-        <DialogSurface aria-describedby={undefined} aria-label="成片编辑器">
-          <div>
-            <GenerateMusic conversationId={conversationId} onNotice={vi.fn()}>
-              <button type="button">打开</button>
-            </GenerateMusic>
-          </div>
-        </DialogSurface>
-      </DialogRoot>,
+      <EditorRoot>
+        <div>
+          <GenerateMusic conversationId={conversationId} onNotice={vi.fn()}>
+            <button type="button">打开</button>
+          </GenerateMusic>
+        </div>
+      </EditorRoot>,
     )
     await user.click(screen.getByRole('button', { name: '打开' }))
     return screen.findByRole('dialog', { name: '生成音乐' })
   }
 
-  it('挂在成片弹窗里、焦点落在 body 时工程文件配乐才到，预填后浮层仍开着', async () => {
+  it('挂在成片编辑器里、焦点落在 body 时工程文件配乐才到，预填后浮层仍开着', async () => {
     const conversation = addMockConversation('成片配乐')
     seedMockFilm(conversation.id, { musicDescription: '纯音乐，极简氛围钢琴小品' })
     let release = () => {}
@@ -584,7 +585,7 @@ describe('生成音乐的输入框', () => {
         return undefined
       }),
     )
-    const popover = await openInDialog(conversation.id)
+    const popover = await openInEditor(conversation.id)
 
     act(() => (document.activeElement as HTMLElement).blur())
     release()
@@ -598,7 +599,7 @@ describe('生成音乐的输入框', () => {
     expect(popover).toHaveAccessibleDescription('已填入工程文件里的配乐描述，可直接修改')
   })
 
-  it('挂在成片弹窗里、焦点落在 body 时点提交，浮层一直开到提交完成', async () => {
+  it('挂在成片编辑器里、焦点落在 body 时点提交，浮层一直开到提交完成', async () => {
     const conversation = addMockConversation('成片配乐')
     let release = () => {}
     const released = new Promise<void>((resolve) => {
@@ -610,7 +611,7 @@ describe('生成音乐的输入框', () => {
         return undefined
       }),
     )
-    const popover = await openInDialog(conversation.id)
+    const popover = await openInEditor(conversation.id)
     pasteTextIntoComposer(
       within(popover).getByRole('textbox', { name: '音乐描述' }),
       '轻快的原声吉他',

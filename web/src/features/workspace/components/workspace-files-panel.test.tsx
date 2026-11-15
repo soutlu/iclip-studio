@@ -28,12 +28,7 @@ const renderPanel = (initialPath = `/c/${CONVERSATION_ID}`) => {
   })
   return renderWithProviders(
     <WorkbenchRegistryProvider registry={registry}>
-      <WorkspaceFilesPanel
-        conversationTitle="夜景延时素材生成"
-        artifact={artifact}
-        conversationId={CONVERSATION_ID}
-        readOnly={false}
-      />
+      <WorkspaceFilesPanel artifact={artifact} conversationId={CONVERSATION_ID} readOnly={false} />
     </WorkbenchRegistryProvider>,
     { initialPath },
   )

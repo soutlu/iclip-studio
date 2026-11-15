@@ -67,12 +67,7 @@ const mount = async ({
   seedMockFilm(CONVERSATION_ID, { complete, model, problems, sharedBody })
   await renderWithProviders(
     <>
-      <FilmReader
-        conversationTitle="夜景延时素材生成"
-        artifact={artifact}
-        conversationId={CONVERSATION_ID}
-        readOnly={readOnly}
-      />
+      <FilmReader artifact={artifact} conversationId={CONVERSATION_ID} readOnly={readOnly} />
       <Toaster />
     </>,
     { initialPath: '/?shot=1' },

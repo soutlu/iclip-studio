@@ -1,12 +1,16 @@
-/* 成片编辑器：上面是预览和侧栏（贴片 / 场景 / 音频 / 属性），下面是剪辑工具、时间线与视频素材区。
-   外框沿用 editing/editor.css 的 .editor-dialog / .editor-header。 */
+/* 成片编辑器：工作台「final-cut」页签的内容。上面是预览和侧栏（贴片 / 场景 / 音频 / 属性），
+   下面是剪辑工具、时间线与视频素材区。 */
 
-.wf-dialog {
-  border-radius: var(--radius-lg);
+.wf-editor {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
 }
 
-/* 弹窗容器只承接打开时的焦点，操作控件仍保留各自的 ui-focus 焦点环。 */
-.wf-dialog:focus {
+/* 根节点只承接点在空白处时的焦点，好让快捷键生效；操作控件仍保留各自的 ui-focus 焦点环。 */
+.wf-editor:focus {
   outline: none;
 }
 

@@ -6,6 +6,7 @@ import { renderWithProviders } from '@/testing/render'
 import { fixtureCatalog } from '@/testing/final-cut'
 import { DRAG_THRESHOLD } from '../editing/timeline-drag'
 import type { CatalogItem } from './composition/catalog'
+import { EditorRoot } from './editor-root'
 import { NO_FILTER, type ItemKind } from './items'
 import { HOVER_PREVIEW_DELAY_MS, ItemsTab } from './items-tab'
 
@@ -32,7 +33,11 @@ const renderTab = async (kind: ItemKind) => {
   const onAdd = vi.fn<(item: CatalogItem) => void>()
   const onCarry = vi.fn()
   const onDrop = vi.fn()
-  await renderWithProviders(<Harness kind={kind} onAdd={onAdd} onCarry={onCarry} onDrop={onDrop} />)
+  await renderWithProviders(
+    <EditorRoot>
+      <Harness kind={kind} onAdd={onAdd} onCarry={onCarry} onDrop={onDrop} />
+    </EditorRoot>,
+  )
   return { onAdd, onCarry, onDrop }
 }
 
@@ -152,6 +157,8 @@ describe('组件、块页签 · 加进成片', () => {
     const { onCarry, onDrop } = await renderTab('block')
     const scene = card(/^测试画面/)
     fireEvent.pointerDown(scene, { pointerId: 1, button: 0, clientX: 10, clientY: 10 })
+    // 卡片本身不可聚焦，浏览器按下时把焦点交给编辑器的根节点
+    act(() => screen.getByRole('group', { name: '成片编辑器' }).focus())
     fireEvent.pointerMove(scene, { pointerId: 1, clientX: 300, clientY: 500 })
     await user.keyboard('{Escape}')
     expect(onCarry).toHaveBeenLastCalledWith(
