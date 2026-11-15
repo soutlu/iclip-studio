@@ -35,7 +35,10 @@ const matchesFrame = (entry: ArtifactEntry, frame: WorkbenchFrame): boolean =>
   'displayKind' in entry.match && entry.match.displayKind === displayKindOf(frame.display)
 
 export const isStanding = (entry: ArtifactEntry): boolean =>
-  'path' in entry.match || 'pattern' in entry.match || 'workspace' in entry.match
+  'path' in entry.match ||
+  'pattern' in entry.match ||
+  'anyPath' in entry.match ||
+  'workspace' in entry.match
 
 export class ArtifactRegistry {
   private readonly entries: ArtifactEntry[] = []
@@ -74,6 +77,17 @@ export class ArtifactRegistry {
     })
   }
 
+  matchAnyPath(files: readonly WorkbenchFile[]): Artifact[] {
+    return this.entries.flatMap((entry) => {
+      if (!('anyPath' in entry.match)) return []
+      const listed = entry.match.anyPath
+      const paths = files.map((file) => file.path).filter((path) => listed.includes(path))
+      if (paths.length === 0) return []
+      const source = { kind: 'paths', paths } as const
+      return [{ id: entry.type, source, title: entry.title(source), type: entry.type }]
+    })
+  }
+
   matchWorkspace(files: readonly WorkbenchFile[]): Artifact[] {
     const entry = this.entries.find((candidate) => 'workspace' in candidate.match)
     if (entry === undefined || files.length === 0) return []
@@ -105,15 +119,22 @@ export class ArtifactRegistry {
   }
 }
 
+/**
+ * 工作台里有哪些产物，按页签的先后：按路径命中的文件、按 `anyPath` 命中的、工作区、工具帧。
+ * `readOnly` 时去掉登记为 `hiddenWhenReadOnly` 的类型。
+ */
 export const composeArtifacts = (
   registry: ArtifactRegistry,
   files: readonly WorkbenchFile[],
   frames: readonly WorkbenchFrame[],
-): Artifact[] => [
-  ...registry.matchFiles(files),
-  ...registry.matchWorkspace(files),
-  ...registry.matchFrames(frames),
-]
+  readOnly: boolean,
+): Artifact[] =>
+  [
+    ...registry.matchFiles(files),
+    ...registry.matchAnyPath(files),
+    ...registry.matchWorkspace(files),
+    ...registry.matchFrames(frames),
+  ].filter((artifact) => !readOnly || registry.resolve(artifact.type)?.hiddenWhenReadOnly !== true)
 
 export const pickArtifact = (
   registry: ArtifactRegistry,

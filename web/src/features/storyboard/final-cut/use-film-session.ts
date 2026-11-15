@@ -24,7 +24,7 @@ import { itemDurationMs } from './items'
 import { onRow, topTrack, type Landing, type Renumbering } from './placement'
 import { newClipZ, restackedZ } from './stacking'
 import type { StackingDirection } from './vendor/hyperframes-studio/player/components/timelineStackingSync'
-import { readWholeFilmDraft, saveWholeFilmDraft } from './final-cut.api'
+import { holdDraftReads, readWholeFilmDraft, saveWholeFilmDraft } from './final-cut.api'
 
 export type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'failed'; message: string }
 
@@ -224,11 +224,13 @@ export function useFilmSession(
     return () => clearTimeout(timer)
   }, [html, debounceMs, saveNow])
 
+  // 卸载时把没存的存掉；连同还在途的那次一起交给草稿读取，再打开时等它们存完再读
   useEffect(
     () => () => {
-      if (presentRef.current !== null && presentRef.current !== savedRef.current) void saveNow()
+      const dirty = presentRef.current !== null && presentRef.current !== savedRef.current
+      if (dirty || inFlightRef.current !== null) holdDraftReads(conversationId, saveNow())
     },
-    [saveNow],
+    [conversationId, saveNow],
   )
 
   useEffect(() => () => engineRef.current?.dispose(), [])

@@ -2,7 +2,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { use, useEffect, useMemo, useRef } from 'react'
 import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
 import { useConversationReadOnly } from '@/shared/transcript/use-conversation-read-only'
-import { useConversationTitle } from '@/shared/transcript/use-conversation-title'
 import { useTranscript } from '@/shared/transcript/use-transcript'
 import type { TranscriptItem } from '@/shared/transcript/vendor'
 import { Icon } from '@/shared/icons'
@@ -98,7 +97,6 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
   const openArtifact = useOpenArtifact()
   const files = useWorkspaceFiles(conversationId)
   const { view } = useTranscript(conversationId)
-  const conversationTitle = useConversationTitle(conversationId, view.title)
   const readOnly = useConversationReadOnly(view)
   const frames = useMemo(() => toolFrames(view.items), [view.items])
   const { openToken } = useWorkbenchOpenRequest()
@@ -135,7 +133,7 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
     )
   }, [connection, conversationId, queryClient])
 
-  const artifacts = composeArtifacts(registry, files.data?.files ?? [], frames)
+  const artifacts = composeArtifacts(registry, files.data?.files ?? [], frames, readOnly)
   const selected = pickArtifact(registry, artifacts, artifactId)
   const entry = selected === undefined ? undefined : registry.resolve(selected.type)
   const selectedId = selected?.id
@@ -228,7 +226,6 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
             <Renderer
               artifact={selected}
               conversationId={conversationId}
-              conversationTitle={conversationTitle}
               key={selected.id}
               readOnly={readOnly}
             />

@@ -1,12 +1,12 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
-  type KeyboardEvent,
   type RefObject,
 } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -14,15 +14,14 @@ import { errorMessageOf } from '@/shared/api/client'
 import type { WholeFilmDraftOut } from '@/shared/api/generated/types.gen'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import type { TimeSpan } from '@/shared/lib/time-spans'
-import { DialogHeader, DialogRoot, DialogSurface, useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MediaBuffering } from '@/shared/ui/media-buffering'
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from '@/shared/ui/tabs'
 import { toast } from '@/shared/ui/toast'
+import { useWorkbenchCollapsed, type ArtifactRendererProps } from '@/shared/workbench'
 import { groupConversationVideos } from '../conversation-videos/video-groups'
 import { keyframeRanges } from '../editing/keyframe-segments'
 import { useAudioPeaks } from '../editing/media-analysis'
-import { isShortcutTarget } from '../editing/shortcut-target'
 import { handleUndoShortcut } from '../editing/undo-shortcut'
 import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
@@ -32,6 +31,8 @@ import type { SourceLength } from './clip-edit'
 import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
 import type { CatalogItem } from './composition/catalog'
 import { writeFilm, type Canvas } from './composition/film'
+import { isEditorKeyTarget, useEditorEscape, useEditorRoot } from './editor-keys'
+import { EditorRoot } from './editor-root'
 import { EditorToolbar } from './editor-toolbar'
 import { ExportControl } from './export-control'
 import { FilmInspector } from './film-inspector'
@@ -90,12 +91,6 @@ import { useWholeFilmExport } from './use-whole-film-export'
 import { useWholeFilmDraftQuery, useFinalCutPreviewQuery } from './final-cut.api'
 import './final-cut.css'
 
-type Props = {
-  conversationId: string
-  conversationTitle: string
-  onClose: () => void
-}
-
 const EMPTY_TEXT = '暂无成片内容，加入内容后可在此预览'
 const PICK_FIRST_TEXT = '尚未选中镜头，无法加入成片；请先在下方选中镜头范围'
 const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏，无法进入全屏'
@@ -116,57 +111,37 @@ const watchFullscreen = (notify: () => void) => {
 
 const fullscreenElementOf = () => document.fullscreenElement ?? null
 
-function EditorHeader({ title }: { title: string }) {
-  return <DialogHeader className="editor-header" closeLabel="关闭成片编辑" title={title} />
-}
-
-export function FinalCutEditor({ conversationId, conversationTitle, onClose }: Props) {
+/** 工作台「final-cut」页签里的成片编辑器，填满页签内容区。 */
+export function FinalCutEditor({ conversationId }: Pick<ArtifactRendererProps, 'conversationId'>) {
   const draftQuery = useWholeFilmDraftQuery(conversationId)
   const catalogQuery = useComponentCatalog()
-  const keysRef = useRef<((event: KeyboardEvent<HTMLDivElement>) => void) | null>(null)
+  const keysRef = useRef<((event: KeyboardEvent) => void) | null>(null)
   const failed = draftQuery.isError ? draftQuery : catalogQuery.isError ? catalogQuery : undefined
   return (
-    <DialogRoot open onOpenChange={(open) => !open && onClose()}>
-      <DialogSurface
-        aria-describedby={undefined}
-        className="editor-dialog wf-dialog"
-        onOpenAutoFocus={(event) => {
-          event.preventDefault()
-          if (event.target instanceof HTMLElement) event.target.focus()
-        }}
-        onInteractOutside={(event) => event.preventDefault()}
-        onKeyDown={(event) => keysRef.current?.(event)}
-      >
-        {draftQuery.data !== undefined && catalogQuery.data !== undefined ? (
-          <EditorBody
-            catalog={catalogQuery.data}
-            conversationId={conversationId}
-            initial={draftQuery.data}
-            keysRef={keysRef}
-            title={conversationTitle}
-          />
-        ) : (
-          <>
-            <EditorHeader title={conversationTitle} />
-            {failed !== undefined ? (
-              <div className="wf-state">
-                <InlineAlert
-                  action={{ label: '重试', onClick: () => void failed.refetch() }}
-                  message={errorMessageOf(
-                    failed.error,
-                    failed === draftQuery ? '成片草稿读取失败' : '贴片和场景读取失败',
-                  )}
-                />
-              </div>
-            ) : (
-              <p className="wf-state" role="status">
-                正在读取成片草稿…
-              </p>
+    <EditorRoot onKeyDown={(event) => keysRef.current?.(event)}>
+      {draftQuery.data !== undefined && catalogQuery.data !== undefined ? (
+        <EditorBody
+          catalog={catalogQuery.data}
+          conversationId={conversationId}
+          initial={draftQuery.data}
+          keysRef={keysRef}
+        />
+      ) : failed !== undefined ? (
+        <div className="wf-state">
+          <InlineAlert
+            action={{ label: '重试', onClick: () => void failed.refetch() }}
+            message={errorMessageOf(
+              failed.error,
+              failed === draftQuery ? '成片草稿读取失败' : '贴片和场景读取失败',
             )}
-          </>
-        )}
-      </DialogSurface>
-    </DialogRoot>
+          />
+        </div>
+      ) : (
+        <p className="wf-state" role="status">
+          正在读取成片草稿…
+        </p>
+      )}
+    </EditorRoot>
   )
 }
 
@@ -192,14 +167,13 @@ function EditorBody({
   initial,
   catalog,
   keysRef,
-  title,
 }: {
   conversationId: string
   initial: WholeFilmDraftOut
   catalog: ComponentCatalog
-  title: string
-  keysRef: RefObject<((event: KeyboardEvent<HTMLDivElement>) => void) | null>
+  keysRef: RefObject<((event: KeyboardEvent) => void) | null>
 }) {
+  const root = useEditorRoot()
   const notice = useCallback((message: string) => toast.info(message), [])
   const session = useFilmSession(conversationId, initial, catalog, { onNotice: notice })
   const { film } = session
@@ -248,6 +222,15 @@ function EditorBody({
   const [playback, setPlayback] = useState<PlaybackSettings>({ rate: 1, muted: false, loop: false })
   const toggleMute = () => setPlayback((current) => ({ ...current, muted: !current.muted }))
   const toggleLoop = () => setPlayback((current) => ({ ...current, loop: !current.loop }))
+  // 工作台折叠起来时编辑器还挂着，正在播的成片和素材不会自己停：停下，免得看不见还听得见
+  const collapsed = useWorkbenchCollapsed()
+  const stopPlaying = useEffectEvent(() => {
+    previewRef.current?.pause()
+    if (materialPlaying) materialPreviewRef.current?.toggle()
+  })
+  useEffect(() => {
+    if (collapsed) stopPlaying()
+  }, [collapsed])
 
   // 预览和播放条一起全屏；全屏时提示、菜单、面板要挂进这个元素才看得见
   const [stage, setStage] = useState<HTMLDivElement | null>(null)
@@ -322,19 +305,18 @@ function EditorBody({
   }
   const sideRef = useRef<HTMLElement | null>(null)
   // 切到「属性」时焦点可能还在刚藏起来的目录里（比如在卡片上按了 ]），浏览器随后把它丢到页面上，
-  // 快捷键就收不到了：交还给编辑器，和刚打开时一样
+  // 快捷键就收不到了：交还给编辑器的根节点
   useLayoutEffect(() => {
     const focused = document.activeElement
     if (focused === null || sideRef.current?.contains(focused) !== true) return
-    if (focused.closest('[role="tabpanel"][hidden]') !== null)
-      sideRef.current.closest<HTMLElement>('[role="dialog"]')?.focus()
-  }, [sideTab])
+    if (focused.closest('[role="tabpanel"][hidden]') !== null) root?.focus()
+  }, [root, sideTab])
   // 框选、拖片段中途的 Esc 归时间线（只取消那一次），这里先让开
   const [gesturing, setGesturing] = useState(false)
-  // 「属性」里输数值的框正在输入：这时的 Esc 归那个框（放弃刚输入的），不取消选中、不关编辑器
+  // 「属性」里输数值的框正在输入：这时的 Esc 归那个框（放弃刚输入的），不取消选中
   const [textEditing, setTextEditing] = useState(false)
-  // Esc 先退全屏（浏览器多半自己退，按键还是传到页面时才轮到这里），再取消选中；都没有才关编辑器
-  useEscapeAheadOfDialog(fullscreen || textEditing || (!gesturing && selected.size > 0), () => {
+  // Esc 先退全屏（浏览器多半自己退，按键还是传到页面时才轮到这里），再取消选中；都没有时不用掉这一下
+  useEditorEscape(fullscreen || textEditing || (!gesturing && selected.size > 0), () => {
     if (fullscreen) exitFullscreen()
     else if (!textEditing) clearSelection()
   })
@@ -510,8 +492,14 @@ function EditorBody({
     undo: session.undo,
     redo: session.redo,
   }
-  const shortcut = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.defaultPrevented || event.metaKey || event.ctrlKey || !isShortcutTarget(event)) return
+  const shortcut = (event: KeyboardEvent, editor: HTMLElement) => {
+    if (
+      event.defaultPrevented ||
+      event.metaKey ||
+      event.ctrlKey ||
+      !isEditorKeyTarget(event, editor)
+    )
+      return
     // 全屏时菜单挂在编辑器里面，菜单里按的键归菜单；「属性」里的滑杆、下拉框、开关上按的键也归控件
     // 自己，照参照的工作台。时间尺上的播放位置也是滑杆，点过它以后快捷键照常用
     if (
@@ -565,14 +553,14 @@ function EditorBody({
   useEffect(() => {
     keysRef.current = (event) => {
       // 拖片段、框选进行中不接快捷键：这时撤销或删片段，松手会按改之前算好的位置写回去
-      if (gesturing) return
+      if (gesturing || root === null) return
       handleUndoShortcut(event, history, leaveMaterial)
-      if (event.key === 'Enter' && event.target === event.currentTarget) {
+      if (event.key === 'Enter' && event.target === root) {
         event.preventDefault()
         insert()
         return
       }
-      shortcut(event)
+      shortcut(event, root)
     }
     return () => {
       keysRef.current = null
@@ -623,12 +611,9 @@ function EditorBody({
 
   if (session.opening)
     return (
-      <>
-        <EditorHeader title={title} />
-        <p className="wf-state" role="status">
-          正在打开成片…
-        </p>
-      </>
+      <p className="wf-state" role="status">
+        正在打开成片…
+      </p>
     )
 
   /** 切到「属性」时，切走前停的目录页签留在页面上（藏起来），回来时搜索词、分类、滚动位置都还在。 */
@@ -636,297 +621,290 @@ function EditorBody({
     tab === catalogTab ? { forceMount: true as const, hidden: sideTab !== tab } : {}
 
   return (
-    <>
-      <EditorHeader title={title} />
-      <div aria-label="成片编辑器" className="wf-workspace" role="group">
-        <div className="wf-stage" ref={setStage}>
-          <PreviewPlayer
-            backdrop={shown === undefined ? undefined : videoSnapshotUrl(shown.src, 320)}
-            controlRef={previewRef}
-            film={previewFilm}
-            height={film?.canvas.height ?? DEFAULT_CANVAS.height}
-            message={playBlocked}
-            onBuffered={setBuffered}
-            onBuffering={setBuffering}
-            onPlaying={setPlaying}
-            onTime={setPlayheadMs}
-            page={previewPage}
-            playback={playback}
-            width={film?.canvas.width ?? DEFAULT_CANVAS.width}
-          >
-            {buffering ? <MediaBuffering /> : null}
-          </PreviewPlayer>
-          {viewedMaterial === undefined || materialView === null ? null : (
-            <MaterialPreview
-              controlRef={materialPreviewRef}
-              label={materialLabel(viewedMaterial, materialView.range)}
-              muted={playback.muted}
-              onNotice={notice}
-              onPlaying={setMaterialPlaying}
-              onTime={setMaterialMs}
-              rate={playback.rate}
-              timeMs={materialMs}
-              url={viewedMaterial.url}
-              view={materialView}
-            />
-          )}
-          <PreviewTransport
-            buffered={buffered}
-            fullscreen={fullscreen}
-            fullscreenBlocked={fullscreenBlocked}
-            layer={fullscreen ? stage : null}
-            onFullscreen={toggleFullscreen}
-            onLoop={toggleLoop}
-            onMute={toggleMute}
-            onPlay={togglePlay}
-            onRate={(rate) => setPlayback((current) => ({ ...current, rate }))}
-            onSeek={seek}
-            playBlocked={materialView === null ? playBlocked : undefined}
-            playback={playback}
-            playheadMs={playhead}
-            playing={materialView === null ? playing : materialPlaying}
-            totalMs={total}
+    <div className="wf-workspace">
+      <div className="wf-stage" ref={setStage}>
+        <PreviewPlayer
+          backdrop={shown === undefined ? undefined : videoSnapshotUrl(shown.src, 320)}
+          controlRef={previewRef}
+          film={previewFilm}
+          height={film?.canvas.height ?? DEFAULT_CANVAS.height}
+          message={playBlocked}
+          onBuffered={setBuffered}
+          onBuffering={setBuffering}
+          onPlaying={setPlaying}
+          onTime={setPlayheadMs}
+          page={previewPage}
+          playback={playback}
+          width={film?.canvas.width ?? DEFAULT_CANVAS.width}
+        >
+          {buffering ? <MediaBuffering /> : null}
+        </PreviewPlayer>
+        {viewedMaterial === undefined || materialView === null ? null : (
+          <MaterialPreview
+            controlRef={materialPreviewRef}
+            label={materialLabel(viewedMaterial, materialView.range)}
+            muted={playback.muted}
+            onNotice={notice}
+            onPlaying={setMaterialPlaying}
+            onTime={setMaterialMs}
+            rate={playback.rate}
+            timeMs={materialMs}
+            url={viewedMaterial.url}
+            view={materialView}
           />
-        </div>
-        <aside aria-label="贴片、场景和音频" className="wf-side" ref={sideRef}>
-          <TabsRoot className="wf-side-panel" onValueChange={openSideTab} value={sideTab}>
-            <TabsList aria-label="贴片、场景和音频页签" className="wf-side-tabs">
-              {ITEM_KINDS.map((kind) => (
-                <TabsTrigger key={kind} value={kind}>
-                  {ITEM_KIND_LABEL[kind]}
-                </TabsTrigger>
-              ))}
-              <TabsTrigger value="audio">音频</TabsTrigger>
-              <TabsTrigger className="wf-side-tab-props" value="props">
-                属性
-              </TabsTrigger>
-            </TabsList>
+        )}
+        <PreviewTransport
+          buffered={buffered}
+          fullscreen={fullscreen}
+          fullscreenBlocked={fullscreenBlocked}
+          layer={fullscreen ? stage : null}
+          onFullscreen={toggleFullscreen}
+          onLoop={toggleLoop}
+          onMute={toggleMute}
+          onPlay={togglePlay}
+          onRate={(rate) => setPlayback((current) => ({ ...current, rate }))}
+          onSeek={seek}
+          playBlocked={materialView === null ? playBlocked : undefined}
+          playback={playback}
+          playheadMs={playhead}
+          playing={materialView === null ? playing : materialPlaying}
+          totalMs={total}
+        />
+      </div>
+      <aside aria-label="贴片、场景、音频和属性" className="wf-side" ref={sideRef}>
+        <TabsRoot className="wf-side-panel" onValueChange={openSideTab} value={sideTab}>
+          <TabsList aria-label="贴片、场景、音频和属性页签" className="wf-side-tabs">
             {ITEM_KINDS.map((kind) => (
-              <TabsContent
-                className="wf-side-body is-items"
-                key={kind}
-                value={kind}
-                {...catalogPanel(kind)}
-              >
-                <ItemsTab
-                  catalog={catalog}
-                  filter={itemFilters[kind]}
-                  kind={kind}
-                  onAdd={addAtPlayhead}
-                  onCarry={(item, point) =>
-                    setGhost(
-                      point === null
-                        ? null
-                        : landingAt(point.clientX, point.clientY, itemDurationMs(item, clips)),
-                    )
-                  }
-                  onDrop={(item, point) => {
-                    const at = landingAt(point.clientX, point.clientY, itemDurationMs(item, clips))
-                    setGhost(null)
-                    if (at !== null) placeItem(item, { row: at.row, start: at.start })
-                  }}
-                  onFilterChange={(filter) =>
-                    setItemFilters((current) => ({ ...current, [kind]: filter }))
-                  }
-                  origin={window.location.origin}
-                />
-              </TabsContent>
+              <TabsTrigger key={kind} value={kind}>
+                {ITEM_KIND_LABEL[kind]}
+              </TabsTrigger>
             ))}
-            <TabsContent className="wf-side-body is-audio" value="audio" {...catalogPanel('audio')}>
-              <AudioTab
-                active={sideTab === 'audio'}
-                clips={clips}
-                conversationId={conversationId}
-                onAdd={(audio) =>
-                  placeAudio(audio, audioPlayheadSpot(clips, playhead, audio.duration))
-                }
-                onCarry={(audio, point) =>
+            <TabsTrigger value="audio">音频</TabsTrigger>
+            <TabsTrigger className="wf-side-tab-props" value="props">
+              属性
+            </TabsTrigger>
+          </TabsList>
+          {ITEM_KINDS.map((kind) => (
+            <TabsContent
+              className="wf-side-body is-items"
+              key={kind}
+              value={kind}
+              {...catalogPanel(kind)}
+            >
+              <ItemsTab
+                catalog={catalog}
+                filter={itemFilters[kind]}
+                kind={kind}
+                onAdd={addAtPlayhead}
+                onCarry={(item, point) =>
                   setGhost(
                     point === null
                       ? null
-                      : landingAt(point.clientX, point.clientY, audio.duration, 'audio'),
+                      : landingAt(point.clientX, point.clientY, itemDurationMs(item, clips)),
                   )
                 }
-                onDrop={(audio, point) => {
-                  const at = landingAt(point.clientX, point.clientY, audio.duration, 'audio')
+                onDrop={(item, point) => {
+                  const at = landingAt(point.clientX, point.clientY, itemDurationMs(item, clips))
                   setGhost(null)
-                  if (at !== null) placeAudio(audio, { row: at.row, start: at.start })
+                  if (at !== null) placeItem(item, { row: at.row, start: at.start })
                 }}
-                onNotice={notice}
-                onReveal={revealClip}
+                onFilterChange={(filter) =>
+                  setItemFilters((current) => ({ ...current, [kind]: filter }))
+                }
+                origin={window.location.origin}
               />
             </TabsContent>
-            <TabsContent className="wf-side-body is-props" value="props">
-              <FilmInspector
-                clips={clips}
-                catalog={catalog}
-                onHide={(id, hidden) => {
-                  leaveMaterial()
-                  session.setHidden([id], hidden)
-                }}
-                onRemove={removeSelected}
-                onRestart={(starts) => {
-                  leaveMaterial()
-                  session.restart(starts)
-                }}
-                onRetime={(timings) => {
-                  leaveMaterial()
-                  session.retime(timings)
-                }}
-                onTextEditing={setTextEditing}
-                onValues={(id, values) => {
-                  leaveMaterial()
-                  session.setValues(id, values)
-                }}
-                onAttributes={(id, changes) => {
-                  leaveMaterial()
-                  session.setAttributes(id, changes)
-                }}
-                selected={selectedClips}
-                silentSource={(src) => audioTracks.get(src) === false}
-                sourceMs={sourceMs}
-              />
-            </TabsContent>
-          </TabsRoot>
-        </aside>
-        <div className="wf-timeline">
-          <EditorToolbar
-            actions={
-              <ExportControl
-                blocked={exportBlocked}
-                onCancel={() => void exporting.cancel()}
-                onStart={() => void exporting.start()}
-                view={exporting.view}
-              />
-            }
-            canRedo={history.canRedo}
-            canUndo={history.canUndo}
-            fitPps={scale.fitPps}
-            onRedo={() => {
-              leaveMaterial()
-              session.redo()
-            }}
-            onUndo={() => {
-              leaveMaterial()
-              session.undo()
-            }}
-            hasSelection={selected.size > 0}
-            onSelectAround={selectAround}
-            onZoomToSelection={zoomToSelection}
-            onRipple={() => setRipple((on) => !on)}
-            onSnap={() => setSnap((on) => !on)}
-            onThumbnails={() => setThumbnails((on) => !on)}
-            onZoom={zoomTo}
-            ripple={ripple}
-            snap={snap}
-            thumbnails={thumbnails}
-            zoom={zoom}
-          />
-          <FilmTimeline
-            clips={clips}
-            buffered={buffered}
-            catalog={catalog}
-            ghost={ghost}
-            handleRef={timelineRef}
-            onHide={(row, hidden) => {
-              leaveMaterial()
-              session.setHidden(
-                clips.filter((clip) => onRow(clip, row)).map((clip) => clip.id),
-                hidden,
-              )
-            }}
-            onRetime={(timings) => {
-              leaveMaterial()
-              session.retime(timings)
-            }}
-            onGesture={setGesturing}
-            onSeek={seek}
-            onSelect={setSelectedIds}
-            onViewportWidth={setViewportWidth}
-            playheadMs={playhead}
-            scale={scale}
-            onMove={(id, row, start, starts) => {
-              const { track, renumber } = trackFor(row, id)
-              leaveMaterial()
-              session.moveClip(
-                id,
-                { track, start },
-                rowMoveDirection(clips, id, row),
-                renumber,
-                starts,
-              )
-            }}
-            onRestart={(starts) => {
-              leaveMaterial()
-              session.restart(starts)
-            }}
-            scrollRequest={scrollRequest}
-            selected={selected}
-            snap={snap}
-            thumbnails={thumbnails}
-            sourceMs={sourceMs}
-            totalMs={total}
-          />
-          {session.save.kind === 'failed' ? (
-            <InlineAlert
-              action={{ label: '重新保存', onClick: session.flush }}
-              message={session.save.message}
+          ))}
+          <TabsContent className="wf-side-body is-audio" value="audio" {...catalogPanel('audio')}>
+            <AudioTab
+              active={sideTab === 'audio' && !collapsed}
+              clips={clips}
+              conversationId={conversationId}
+              onAdd={(audio) =>
+                placeAudio(audio, audioPlayheadSpot(clips, playhead, audio.duration))
+              }
+              onCarry={(audio, point) =>
+                setGhost(
+                  point === null
+                    ? null
+                    : landingAt(point.clientX, point.clientY, audio.duration, 'audio'),
+                )
+              }
+              onDrop={(audio, point) => {
+                const at = landingAt(point.clientX, point.clientY, audio.duration, 'audio')
+                setGhost(null)
+                if (at !== null) placeAudio(audio, { row: at.row, start: at.start })
+              }}
+              onNotice={notice}
+              onReveal={revealClip}
             />
-          ) : null}
-          <MaterialArea
-            groups={materials.groups}
-            keyframes={keyframes}
-            onCarry={(carry) =>
-              setGhost(
-                carry === null
-                  ? null
-                  : landingAt(
-                      carry.clientX,
-                      carry.clientY,
-                      carry.range.endMs - carry.range.startMs,
-                    ),
-              )
-            }
-            onDrop={(clientX, clientY, dropped) => {
-              const at = landingAt(clientX, clientY, dropped.endMs - dropped.startMs)
-              setGhost(null)
-              if (at === null) return false
-              place(dropped, { row: at.row, start: at.start })
-              return true
-            }}
-            onInsert={insert}
-            onClear={() => {
-              setRange(null)
-              leaveMaterial()
-            }}
-            onPick={(picked) => showMaterial(picked, 'start')}
-            onSelect={setRange}
-            onTrim={showMaterial}
-            onVersion={(takeId, jobId) => {
-              setPickedVersions((current) => ({ ...current, [takeId]: jobId }))
-              if (range?.takeId !== takeId) return
-              setRange(null)
-              leaveMaterial()
-            }}
-            placeholder={
-              videos.isError ? (
-                <InlineAlert
-                  action={{ label: '重试', onClick: () => void videos.refetch() }}
-                  message={errorMessageOf(videos.error, '读取素材片失败')}
-                />
-              ) : videos.isPending ? (
-                <p className="wf-panel-note" role="status">
-                  正在读取素材片…
-                </p>
-              ) : undefined
-            }
-            playingMs={materialPlaying ? materialMs : undefined}
-            range={range}
-            used={usedSpans(videoClips)}
-            versionOf={versionOf}
+          </TabsContent>
+          <TabsContent className="wf-side-body is-props" value="props">
+            <FilmInspector
+              clips={clips}
+              catalog={catalog}
+              onHide={(id, hidden) => {
+                leaveMaterial()
+                session.setHidden([id], hidden)
+              }}
+              onRemove={removeSelected}
+              onRestart={(starts) => {
+                leaveMaterial()
+                session.restart(starts)
+              }}
+              onRetime={(timings) => {
+                leaveMaterial()
+                session.retime(timings)
+              }}
+              onTextEditing={setTextEditing}
+              onValues={(id, values) => {
+                leaveMaterial()
+                session.setValues(id, values)
+              }}
+              onAttributes={(id, changes) => {
+                leaveMaterial()
+                session.setAttributes(id, changes)
+              }}
+              selected={selectedClips}
+              silentSource={(src) => audioTracks.get(src) === false}
+              sourceMs={sourceMs}
+            />
+          </TabsContent>
+        </TabsRoot>
+      </aside>
+      <div className="wf-timeline">
+        <EditorToolbar
+          actions={
+            <ExportControl
+              blocked={exportBlocked}
+              onCancel={() => void exporting.cancel()}
+              onStart={() => void exporting.start()}
+              view={exporting.view}
+            />
+          }
+          canRedo={history.canRedo}
+          canUndo={history.canUndo}
+          fitPps={scale.fitPps}
+          onRedo={() => {
+            leaveMaterial()
+            session.redo()
+          }}
+          onUndo={() => {
+            leaveMaterial()
+            session.undo()
+          }}
+          hasSelection={selected.size > 0}
+          onSelectAround={selectAround}
+          onZoomToSelection={zoomToSelection}
+          onRipple={() => setRipple((on) => !on)}
+          onSnap={() => setSnap((on) => !on)}
+          onThumbnails={() => setThumbnails((on) => !on)}
+          onZoom={zoomTo}
+          ripple={ripple}
+          snap={snap}
+          thumbnails={thumbnails}
+          zoom={zoom}
+        />
+        <FilmTimeline
+          clips={clips}
+          buffered={buffered}
+          catalog={catalog}
+          ghost={ghost}
+          handleRef={timelineRef}
+          onHide={(row, hidden) => {
+            leaveMaterial()
+            session.setHidden(
+              clips.filter((clip) => onRow(clip, row)).map((clip) => clip.id),
+              hidden,
+            )
+          }}
+          onRetime={(timings) => {
+            leaveMaterial()
+            session.retime(timings)
+          }}
+          onGesture={setGesturing}
+          onSeek={seek}
+          onSelect={setSelectedIds}
+          onViewportWidth={setViewportWidth}
+          playheadMs={playhead}
+          scale={scale}
+          onMove={(id, row, start, starts) => {
+            const { track, renumber } = trackFor(row, id)
+            leaveMaterial()
+            session.moveClip(
+              id,
+              { track, start },
+              rowMoveDirection(clips, id, row),
+              renumber,
+              starts,
+            )
+          }}
+          onRestart={(starts) => {
+            leaveMaterial()
+            session.restart(starts)
+          }}
+          scrollRequest={scrollRequest}
+          selected={selected}
+          snap={snap}
+          thumbnails={thumbnails}
+          sourceMs={sourceMs}
+          totalMs={total}
+        />
+        {session.save.kind === 'failed' ? (
+          <InlineAlert
+            action={{ label: '重新保存', onClick: session.flush }}
+            message={session.save.message}
           />
-        </div>
+        ) : null}
+        <MaterialArea
+          groups={materials.groups}
+          keyframes={keyframes}
+          onCarry={(carry) =>
+            setGhost(
+              carry === null
+                ? null
+                : landingAt(carry.clientX, carry.clientY, carry.range.endMs - carry.range.startMs),
+            )
+          }
+          onDrop={(clientX, clientY, dropped) => {
+            const at = landingAt(clientX, clientY, dropped.endMs - dropped.startMs)
+            setGhost(null)
+            if (at === null) return false
+            place(dropped, { row: at.row, start: at.start })
+            return true
+          }}
+          onInsert={insert}
+          onClear={() => {
+            setRange(null)
+            leaveMaterial()
+          }}
+          onPick={(picked) => showMaterial(picked, 'start')}
+          onSelect={setRange}
+          onTrim={showMaterial}
+          onVersion={(takeId, jobId) => {
+            setPickedVersions((current) => ({ ...current, [takeId]: jobId }))
+            if (range?.takeId !== takeId) return
+            setRange(null)
+            leaveMaterial()
+          }}
+          placeholder={
+            videos.isError ? (
+              <InlineAlert
+                action={{ label: '重试', onClick: () => void videos.refetch() }}
+                message={errorMessageOf(videos.error, '读取素材片失败')}
+              />
+            ) : videos.isPending ? (
+              <p className="wf-panel-note" role="status">
+                正在读取素材片…
+              </p>
+            ) : undefined
+          }
+          playingMs={materialPlaying ? materialMs : undefined}
+          range={range}
+          used={usedSpans(videoClips)}
+          versionOf={versionOf}
+        />
       </div>
-    </>
+    </div>
   )
 }

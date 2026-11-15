@@ -18,7 +18,6 @@ import { useLiveGenerations } from '../use-live-generations'
 import { useStageSelection } from '../use-stage-selection'
 import { useVideoGeneration } from '../use-video-generation'
 import { VideoEditor } from '../video-editor/video-editor'
-import { FinalCutEditor } from '../final-cut/final-cut-editor'
 import { ConflictDialog, ReaderNotice, SaveStatus } from './draft-status'
 import { ReaderImageEdit, type FrameEditSession } from './reader-image-edit'
 import { ReaderPage } from './reader-page'
@@ -31,7 +30,6 @@ type ReaderSearch = {
   frame?: number | undefined
   shot?: number | undefined
   video?: string | undefined
-  finalCut?: true | undefined
 }
 
 export function StoryboardReader(props: ArtifactRendererProps) {
@@ -39,12 +37,7 @@ export function StoryboardReader(props: ArtifactRendererProps) {
   return <StoryboardWorkspace key={`${props.conversationId}:${path}`} {...props} />
 }
 
-function StoryboardWorkspace({
-  artifact,
-  conversationId,
-  conversationTitle,
-  readOnly,
-}: ArtifactRendererProps) {
+function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRendererProps) {
   const path = artifact.source.kind === 'file' ? artifact.source.path : SHOTS_PATH
   const gate = useGenerationGate()
   const file = useWorkspaceFile(conversationId, path)
@@ -156,7 +149,6 @@ function StoryboardWorkspace({
           copy={{ done: '已复制完整提示词', label: '复制完整提示词', text: formatShotPrompt(shot) }}
           groups={shots.map((item) => shotGroupSummary(item, document.aspect_ratio))}
           onGoShot={goShot}
-          onFinalCut={readOnly ? undefined : () => go({ finalCut: true })}
           position={position}
           status={
             <SaveStatus
@@ -254,13 +246,6 @@ function StoryboardWorkspace({
           video={videoEditRoot}
         />
       )}
-      {search.finalCut === true && !readOnly ? (
-        <FinalCutEditor
-          conversationId={conversationId}
-          conversationTitle={conversationTitle}
-          onClose={() => go({ finalCut: undefined })}
-        />
-      ) : null}
       {imageEdit === null ? null : (
         <ReaderImageEdit
           aspectRatio={document.aspect_ratio}

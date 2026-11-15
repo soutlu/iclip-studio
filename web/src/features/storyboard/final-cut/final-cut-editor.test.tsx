@@ -106,19 +106,19 @@ const serveGenerations = (records: GenerationJob[]) => {
 
 const openEditor = async (records: GenerationJob[] = takes) => {
   serveGenerations(records)
-  const rendered = await renderWithProviders(
+  const editor = (
     <>
-      <FinalCutEditor
-        conversationTitle="夜景延时素材生成"
-        conversationId={CONVERSATION}
-        onClose={vi.fn()}
-      />
+      <FinalCutEditor conversationId={CONVERSATION} />
       <Toaster />
-    </>,
+    </>
   )
-  await screen.findByRole('group', { name: '成片编辑器' })
-  return { close: () => rendered.rerender(<Toaster />) }
+  const rendered = await renderWithProviders(editor)
+  await screen.findByRole('toolbar', { name: '剪辑工具' })
+  return { close: () => rendered.rerender(<Toaster />), reopen: () => rendered.rerender(editor) }
 }
+
+/** 编辑器的根节点：点在编辑器的空白处时焦点落在它上面。 */
+const editorRoot = () => screen.getByRole('group', { name: '成片编辑器' })
 
 // 预览页换成跑着真逻辑的替身（播放器是测试替身），编辑器经消息和它来往
 let previewPages: ReturnType<typeof servePreviewPages>
@@ -180,7 +180,7 @@ describe('成片编辑器 · 加入素材', () => {
     )
     expect(progress()).toHaveAttribute('data-disabled')
     expect(within(toolbar()).queryByRole('button', { name: '加入成片' })).toBeNull()
-    screen.getByRole('dialog').focus()
+    editorRoot().focus()
     await user.keyboard('{Enter}')
     expect(
       await screen.findByText('尚未选中镜头，无法加入成片；请先在下方选中镜头范围'),
@@ -292,16 +292,10 @@ describe('成片编辑器 · 加入素材', () => {
       ),
     )
     serveGenerations(takes)
-    await renderWithProviders(
-      <FinalCutEditor
-        conversationTitle="夜景延时素材生成"
-        conversationId={CONVERSATION}
-        onClose={vi.fn()}
-      />,
-    )
+    await renderWithProviders(<FinalCutEditor conversationId={CONVERSATION} />)
     expect(await screen.findByText(/服务暂时不可用$/)).toBeVisible()
     await user.click(screen.getByRole('button', { name: '重试' }))
-    expect(await screen.findByRole('group', { name: '成片编辑器' })).toBeVisible()
+    expect(await screen.findByRole('toolbar', { name: '剪辑工具' })).toBeVisible()
   })
 })
 
@@ -562,7 +556,7 @@ describe('成片编辑器 · 多选', () => {
     await act(() => new Promise((resolve) => setTimeout(resolve, 500)))
     await user.click(clip('A · 镜头 2'))
     // 播放头挪到 2 秒：A 镜头 1 正好在这里结束，B 镜头 1 正好从这里开始
-    screen.getByRole('dialog').focus()
+    editorRoot().focus()
     await user.keyboard('{Shift>}{ArrowRight}{ArrowRight}{/Shift}')
     expect(within(transport()).getByText('00:02.00')).toBeVisible()
 
@@ -747,7 +741,7 @@ describe('成片编辑器 · 播放条设置', () => {
     const user = userEvent.setup()
     await openEditor()
     await playerUp()
-    screen.getByRole('dialog').focus()
+    editorRoot().focus()
 
     await user.keyboard('m')
     expect(within(transport()).getByRole('button', { name: '开启声音' })).toBeVisible()
@@ -834,7 +828,7 @@ describe('成片编辑器 · 播放条设置', () => {
       const user = userEvent.setup()
       await openEditor()
       await playerUp()
-      screen.getByRole('dialog').focus()
+      editorRoot().focus()
 
       await user.keyboard('f')
       const stage = fullscreen.element
@@ -852,7 +846,7 @@ describe('成片编辑器 · 播放条设置', () => {
       expect(within(transport()).getByRole('button', { name: '静音' })).toBeVisible()
       expect(within(transport()).getByText('00:00.00')).toBeVisible()
 
-      screen.getByRole('dialog').focus()
+      editorRoot().focus()
       await user.keyboard('{Escape}')
       expect(exitFullscreen).toHaveBeenCalledTimes(1)
       expect(within(transport()).getByRole('button', { name: '全屏' })).toBeVisible()
@@ -903,17 +897,12 @@ describe('成片编辑器 · 导出', () => {
   const DONE = { status: 'done', progress: 1, downloadUrl: DOWNLOAD_URL }
   const RENDERING = { status: 'rendering', progress: 0.4 }
 
-  it('「导出」在剪辑工具条里，弹窗标题栏里只有标题和关闭', async () => {
+  it('「导出」在剪辑工具条里；编辑器没有标题栏，也没有关闭按钮', async () => {
     putMockWholeFilmDraft(CONVERSATION, twoVideos())
     await openEditor()
     expect(within(toolbar()).getByRole('button', { name: '导出' })).toBeVisible()
-    const header = screen.getByRole('heading', { name: '夜景延时素材生成' }).closest('header')
-    if (header === null) throw new Error('找不到弹窗标题栏')
-    expect(
-      within(header)
-        .getAllByRole('button')
-        .map((button) => button.getAttribute('aria-label') ?? button.textContent),
-    ).toEqual(['关闭成片编辑'])
+    expect(within(editorRoot()).queryByRole('banner')).toBeNull()
+    expect(within(editorRoot()).queryByRole('button', { name: /关闭/ })).toBeNull()
   })
 
   it('打开编辑器时最近一次导出还没结束：接着显示进度，关掉编辑器不取消它', async () => {
@@ -1060,7 +1049,7 @@ describe('成片编辑器 · 导出', () => {
 })
 
 describe('成片编辑器 · 组件、块页签', () => {
-  const side = () => screen.getByRole('complementary', { name: '贴片、场景和音频' })
+  const side = () => screen.getByRole('complementary', { name: '贴片、场景、音频和属性' })
   const openTab = (user: ReturnType<typeof userEvent.setup>, name: string) =>
     user.click(within(side()).getByRole('tab', { name }))
   const itemCard = (name: RegExp) =>
@@ -1173,7 +1162,7 @@ describe('成片编辑器 · 组件、块页签', () => {
 describe('成片编辑器 · 属性', () => {
   const inspector = () => screen.getByRole('tabpanel', { name: '属性' })
   const sideTab = (name: string) =>
-    within(screen.getByRole('complementary', { name: '贴片、场景和音频' })).getByRole('tab', {
+    within(screen.getByRole('complementary', { name: '贴片、场景、音频和属性' })).getByRole('tab', {
       name,
     })
   const row = () => screen.getByRole('group', { name: '第 1 行' })
@@ -1829,7 +1818,7 @@ describe('成片编辑器 · 属性', () => {
 })
 
 describe('成片编辑器 · 侧栏页签', () => {
-  const side = () => screen.getByRole('complementary', { name: '贴片、场景和音频' })
+  const side = () => screen.getByRole('complementary', { name: '贴片、场景、音频和属性' })
   const tab = (name: string) => within(side()).getByRole('tab', { name })
   const props = () => screen.getByRole('tabpanel', { name: '属性' })
   const row = (number = 1) => screen.getByRole('group', { name: `第 ${String(number)} 行` })
@@ -1929,7 +1918,7 @@ describe('成片编辑器 · 侧栏页签', () => {
     expect(within(side()).getByRole('searchbox', { name: '搜索音频' })).toHaveValue('吉他')
   })
 
-  it('在目录的卡片上按 ] 选中片段、切到「属性」后：焦点交还编辑器，Delete 照常删掉选中的片段', async () => {
+  it('在目录的卡片上按 ] 选中片段、切到「属性」后：焦点交还编辑器的根节点，Delete 照常删掉选中的片段', async () => {
     const user = await openTwo()
     within(within(side()).getByRole('group', { name: /^测试叠加/ }))
       .getByRole('button', { name: '加到播放头' })
@@ -1937,10 +1926,112 @@ describe('成片编辑器 · 侧栏页签', () => {
     await user.keyboard(']')
     expect(tab('属性')).toHaveAttribute('aria-selected', 'true')
     expect(within(props()).getByRole('heading', { name: '已选中 2 个片段' })).toBeVisible()
-    expect(screen.getByRole('dialog')).toHaveFocus()
+    expect(editorRoot()).toHaveFocus()
 
     await user.keyboard('{Delete}')
     await waitSaved(() => expect(savedClips()).toHaveLength(0))
     expect(tab('贴片')).toHaveAttribute('aria-selected', 'true')
+  })
+})
+
+describe('成片编辑器 · 切走再切回', () => {
+  const row = () => screen.getByRole('group', { name: '第 1 行' })
+  const labels = () =>
+    within(row())
+      .getAllByRole('button', { name: /^选中：/ })
+      .map((button) => /^选中：(.+?)，/.exec(button.getAttribute('aria-label') ?? '')?.[1])
+
+  /** 接下来的 `count` 次保存各自先压着，`release` 按到达的先后放行一次，放行后照常存。 */
+  const holdSaves = (count: number) => {
+    const waiting: (() => void)[] = []
+    let held = 0
+    server.use(
+      http.put('*/api/conversations/:conversationId/whole-film/draft', async () => {
+        if (held >= count) return undefined
+        held += 1
+        await new Promise<void>((resolve) => waiting.push(resolve))
+        return undefined
+      }),
+    )
+    return { held: () => held, release: () => waiting.shift()?.() }
+  }
+
+  const stillReading = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(screen.getByRole('status')).toHaveTextContent('正在读取成片草稿…')
+    expect(screen.queryByRole('toolbar', { name: '剪辑工具' })).toBeNull()
+  }
+
+  /** 在别的页签上停一会儿再切回来。 */
+  const switchBack = async (reopen: () => void) => {
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    reopen()
+  }
+
+  it('改完马上切走、保存还没回来时切回：等保存完才读草稿，读到改过的，接着改照常保存', async () => {
+    putMockWholeFilmDraft(
+      CONVERSATION,
+      filmFile(
+        [
+          video({ label: '甲', jobId: TAKE_A, src: URL_A, duration: 2_000 }),
+          video({ id: 'clip-2', label: '乙', jobId: TAKE_B, src: URL_B, start: 2_000 }),
+        ],
+        { width: 720, height: 1280 },
+      ),
+    )
+    const user = userEvent.setup()
+    const { close, reopen } = await openEditor()
+    await user.click(within(row()).getByRole('button', { name: /^选中：甲，/ }))
+    await user.keyboard('{Delete}')
+    expect(labels()).toEqual(['乙'])
+
+    const saves = holdSaves(1)
+    close()
+    await waitFor(() => expect(saves.held()).toBe(1))
+    await switchBack(reopen)
+    await stillReading()
+    saves.release()
+    await screen.findByRole('toolbar', { name: '剪辑工具' })
+    expect(labels()).toEqual(['乙'])
+
+    await user.click(await shot(/^生成 A 镜头 1，/))
+    await user.keyboard('{Enter}')
+    await waitSaved(() => expect(savedClips()).toHaveLength(2))
+    expect(labels()).toEqual(['乙', 'A · 镜头 1'])
+    expect(screen.queryByText(/已在别处修改/)).toBeNull()
+  })
+
+  it('一次保存还在途时又改了一处再切走：切回时等两次保存都完成才读草稿', async () => {
+    putMockWholeFilmDraft(
+      CONVERSATION,
+      filmFile(
+        [
+          video({ label: '甲', jobId: TAKE_A, src: URL_A, duration: 2_000 }),
+          video({ id: 'clip-2', label: '乙', jobId: TAKE_B, src: URL_B, start: 2_000 }),
+        ],
+        { width: 720, height: 1280 },
+      ),
+    )
+    const user = userEvent.setup()
+    const { close, reopen } = await openEditor()
+    const saves = holdSaves(2)
+    await user.click(within(row()).getByRole('button', { name: /^选中：甲，/ }))
+    await user.keyboard('{Delete}')
+    await waitFor(() => expect(saves.held()).toBe(1), { timeout: 4000 })
+    await user.click(await shot(/^生成 A 镜头 1，/))
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(labels()).toEqual(['乙', 'A · 镜头 1']))
+
+    close()
+    await switchBack(reopen)
+    await stillReading()
+    saves.release()
+    await waitFor(() => expect(saves.held()).toBe(2))
+    await stillReading()
+    saves.release()
+    await screen.findByRole('toolbar', { name: '剪辑工具' })
+    expect(labels()).toEqual(['乙', 'A · 镜头 1'])
+    expect(savedClips()).toHaveLength(2)
+    expect(screen.queryByText(/已在别处修改/)).toBeNull()
   })
 })

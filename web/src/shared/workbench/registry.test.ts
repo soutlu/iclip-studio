@@ -38,6 +38,17 @@ const workspaceEntry: ArtifactEntry = {
   type: 'workspace',
 }
 
+const editingEntry: ArtifactEntry = {
+  autoOpen: false,
+  component: Placeholder,
+  hiddenWhenReadOnly: true,
+  icon: 'video-type',
+  label: '剪辑',
+  match: { anyPath: ['video_shot.json', 'film.icml'] },
+  title: () => '剪辑',
+  type: 'editing',
+}
+
 const patternEntry = (pattern: string, type = 'canvas'): ArtifactEntry => ({
   autoOpen: false,
   component: Placeholder,
@@ -119,26 +130,76 @@ describe('ArtifactRegistry', () => {
     expect(registry.matchWorkspace([])).toEqual([])
   })
 
-  it('三个来源合成一份列表：按路径命中的文件、工作区、工具帧', () => {
-    const registry = registryWith(shotsEntry, workspaceEntry, agentEntry)
+  it('几个来源合成一份列表：按路径命中的文件、按任一路径命中的、工作区、工具帧', () => {
+    const registry = registryWith(workspaceEntry, editingEntry, shotsEntry, agentEntry)
 
     const artifacts = composeArtifacts(
       registry,
       [{ path: 'video_shot.json', version: 1 }],
       [agentFrame],
+      false,
     )
 
     expect(artifacts.map((artifact) => artifact.id)).toEqual([
       'file:video_shot.json',
+      'editing',
       'workspace',
       'frame:call_frames',
     ])
   })
 
-  it('常驻类型是按路径与按工作区命中的那些，按登记顺序给', () => {
-    const registry = registryWith(agentEntry, workspaceEntry, shotsEntry)
+  it('按任一路径认领：列着的文件在任一份就是一件产物，id 是类型，来源带上在的那几份', () => {
+    const registry = registryWith(editingEntry)
 
-    expect(registry.standing().map((entry) => entry.type)).toEqual(['workspace', 'storyboard'])
+    for (const paths of [['video_shot.json'], ['film.icml', 'notes.md']]) {
+      expect(registry.matchAnyPath(paths.map((path) => ({ path, version: 1 })))).toEqual([
+        {
+          id: 'editing',
+          source: { kind: 'paths', paths: paths.filter((path) => path !== 'notes.md') },
+          title: '剪辑',
+          type: 'editing',
+        },
+      ])
+    }
+    expect(
+      registry.matchAnyPath([
+        { path: 'video_shot.json', version: 1 },
+        { path: 'film.icml', version: 2 },
+      ]),
+    ).toEqual([
+      {
+        id: 'editing',
+        source: { kind: 'paths', paths: ['video_shot.json', 'film.icml'] },
+        title: '剪辑',
+        type: 'editing',
+      },
+    ])
+    expect(registry.matchAnyPath([{ path: 'notes.md', version: 1 }])).toEqual([])
+  })
+
+  it('只读时去掉登记为只读不显示的类型，别的照常', () => {
+    const registry = registryWith(shotsEntry, editingEntry, workspaceEntry)
+    const files = [{ path: 'video_shot.json', version: 1 }]
+
+    expect(composeArtifacts(registry, files, [], true).map((artifact) => artifact.id)).toEqual([
+      'file:video_shot.json',
+      'workspace',
+    ])
+    expect(composeArtifacts(registry, files, [], false).map((artifact) => artifact.id)).toEqual([
+      'file:video_shot.json',
+      'editing',
+      'workspace',
+    ])
+  })
+
+  it('常驻类型是按路径、按任一路径与按工作区命中的那些，按登记顺序给', () => {
+    const registry = registryWith(agentEntry, workspaceEntry, editingEntry, shotsEntry)
+
+    expect(registry.standing().map((entry) => entry.type)).toEqual([
+      'workspace',
+      'editing',
+      'storyboard',
+    ])
   })
 
   it('模式里的 * 只认一段路径，不跨目录', () => {

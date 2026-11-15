@@ -23,7 +23,6 @@ import {
   type Edge,
 } from '../editing/timeline-drag'
 import { useStableValue } from '../editing/use-stable-value'
-import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import {
   ContextMenuItem,
   ContextMenuRoot,
@@ -42,6 +41,7 @@ import {
 } from './clip-edit'
 import { thumbnailUrl, type ComponentCatalog } from './component-catalog'
 import { isMediaClip, type FilmClip } from './composition/film'
+import { useEditorEscape } from './editor-keys'
 import {
   rowHidden,
   rowsOf,
@@ -508,7 +508,7 @@ function TimelineClip({
   }
 
   // 拖动中按 Esc：取消这次拖动，什么都不写；之后松手带来的那次点击也不算选中
-  useEscapeAheadOfDialog(preview !== undefined, () => {
+  useEditorEscape(preview !== undefined, () => {
     clickAfterDrag.swallow()
     finish()
   })
@@ -881,7 +881,7 @@ export function FilmTimeline({
     onGesture(false)
   }
   // 框选中途按 Esc：只取消这次框选，原来的选中不变
-  useEscapeAheadOfDialog(marquee !== null, dropFraming)
+  useEditorEscape(marquee !== null, dropFraming)
 
   const pressLanes = (event: PointerEvent<HTMLDivElement>) => {
     const { target } = event

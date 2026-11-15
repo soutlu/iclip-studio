@@ -14,7 +14,6 @@ import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
 import { Composer, type ComposerHandle } from '@/shared/ui/composer'
-import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { Input } from '@/shared/ui/field'
 import { useFileDropTarget } from '@/shared/ui/file-drop'
 import { InlineAlert } from '@/shared/ui/inline-alert'
@@ -34,6 +33,7 @@ import type { GenerationJob } from '../storyboard.api'
 import { audioTitleOf, durationLabel, filterAudio, firstAudioClipOf } from './audio'
 import type { CarryPoint } from './items-tab'
 import type { FilmClip } from './composition/film'
+import { useEditorEscape } from './editor-keys'
 import type { NewAudio } from './use-film-session'
 import {
   refreshConversationMusic,
@@ -364,7 +364,7 @@ function AudioRow({
     pressRef.current = null
     setLifting(false)
   }
-  useEscapeAheadOfDialog(lifting, cancel)
+  useEditorEscape(lifting, cancel)
 
   return (
     <li
@@ -488,7 +488,7 @@ export function GenerateMusic({
   const reason = submitting
     ? '正在提交，请稍候'
     : task.isError
-      ? '对话信息读取失败，无法生成；请关闭后重新打开成片编辑器'
+      ? '对话信息读取失败，无法生成；请刷新页面后重试'
       : task.data === undefined
         ? '正在读取对话信息，请稍后再试'
         : text === ''
@@ -542,12 +542,6 @@ export function GenerateMusic({
         className="wf-generate"
         collisionPadding={16}
         container={trigger?.parentElement ?? null}
-        // 浮层挂在成片弹窗里：焦点落回弹窗本身（比如点了提交、按钮随即置灰）时不算点到外面
-        onFocusOutside={(event) => {
-          if (event.target !== trigger?.closest('[role="dialog"]')) return
-          event.preventDefault()
-          if (open) composer?.focus()
-        }}
         side="bottom"
         sideOffset={6}
       >

@@ -1,7 +1,6 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import { useEscapeAheadOfDialog } from '@/shared/ui/dialog'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { keyframeRanges } from '../editing/keyframe-segments'
 import { Frames, TrimHandle } from '../editing/timeline'
@@ -12,6 +11,7 @@ import {
   useClickAfterDrag,
   type Edge,
 } from '../editing/timeline-drag'
+import { useEditorEscape } from './editor-keys'
 import type { KeyframeStates } from './material-media'
 import {
   shiftShot,
@@ -278,7 +278,7 @@ function TakeRow({
     dragRef.current = null
     setLifting(false)
   }
-  useEscapeAheadOfDialog(lifting, cancel)
+  useEditorEscape(lifting, cancel)
 
   return (
     <div className="wf-take">

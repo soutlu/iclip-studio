@@ -11,9 +11,51 @@ export const openConversation = async (page: Page, title: string, { mobile = fal
   return page.getByRole('complementary', { name: '工作台' })
 }
 
+/** 点工作台里的「final-cut」页签打开成片编辑器，等它读完草稿；返回编辑器的根节点。 */
+export const openFinalCut = async (panel: Locator) => {
+  await panel.getByRole('tab', { name: 'final-cut', exact: true }).click()
+  const editor = panel.getByRole('group', { name: '成片编辑器', exact: true })
+  await expect(editor.getByRole('toolbar', { name: '剪辑工具' })).toBeVisible()
+  return editor
+}
+
+const CHAT_MIN = 400
+
+const widthOf = async (locator: Locator) => (await locator.boundingBox())?.width ?? Number.NaN
+
+/**
+ * 收起侧边栏、把对话收到最窄（400），工作台尽量宽，成片编辑器里放得下更多东西。在对话里、工作台
+ * 并排展开时调用；不调用时是默认布局。
+ */
+export const widenWorkbench = async (page: Page) => {
+  const chat = page.getByRole('main')
+  const before = await widthOf(chat)
+  await page.getByRole('button', { name: '折叠侧边栏' }).click()
+  // 侧边栏收起有过渡，对话区跟着变宽：等它的宽度停下来再量
+  let last = before
+  await expect
+    .poll(async () => {
+      const width = await widthOf(chat)
+      const still = width === last && width !== before
+      last = width
+      return still
+    })
+    .toBe(true)
+  const handle = await page.getByRole('button', { name: '调整工作台宽度' }).boundingBox()
+  if (handle === null) throw new Error('外框布局还没排好')
+  const x = handle.x + handle.width / 2
+  const y = handle.y + handle.height / 2
+  // 正好收到 400：再往左对话会被收进去一截
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x - (last - CHAT_MIN), y, { steps: 10 })
+  await page.mouse.up()
+  await expect.poll(() => widthOf(chat)).toBeCloseTo(CHAT_MIN, 0)
+}
+
 /** 成片编辑器里嵌着的预览页（预览域名下），播放器和成片都在它里面。 */
-export const finalCutPreviewPage = (dialog: Locator) =>
-  dialog.getByRole('region', { name: '预览' }).locator('iframe').contentFrame()
+export const finalCutPreviewPage = (editor: Locator) =>
+  editor.getByRole('region', { name: '预览' }).locator('iframe').contentFrame()
 
 export const openStoryboardShot = async (panel: Locator, index: number) => {
   await panel.getByRole('button', { name: /展开镜头组列表/ }).click()

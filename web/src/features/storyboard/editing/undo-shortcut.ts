@@ -1,4 +1,3 @@
-import type { KeyboardEvent } from 'react'
 import { isTextEntry } from './shortcut-target'
 
 export type UndoHistory = {
@@ -9,7 +8,10 @@ export type UndoHistory = {
 }
 
 export const handleUndoShortcut = (
-  event: KeyboardEvent<HTMLElement>,
+  event: Pick<
+    KeyboardEvent,
+    'ctrlKey' | 'key' | 'metaKey' | 'preventDefault' | 'shiftKey' | 'target'
+  >,
   history: UndoHistory | undefined,
   beforeChange?: () => void,
 ) => {
