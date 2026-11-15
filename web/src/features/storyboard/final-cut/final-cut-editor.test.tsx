@@ -1047,7 +1047,7 @@ describe('成片编辑器 · 导出', () => {
 })
 
 describe('成片编辑器 · 组件、块页签', () => {
-  const side = () => screen.getByRole('complementary', { name: '组件、块和音频' })
+  const side = () => screen.getByRole('complementary', { name: '贴片、场景和音频' })
   const openTab = (user: ReturnType<typeof userEvent.setup>, name: string) =>
     user.click(within(side()).getByRole('tab', { name }))
   const itemCard = (name: RegExp) =>
@@ -1069,26 +1069,26 @@ describe('成片编辑器 · 组件、块页签', () => {
       within(side())
         .getAllByRole('tab')
         .map((tab) => tab.textContent),
-    ).toEqual(['组件', '块', '音频'])
-    expect(within(side()).getByRole('tab', { name: '组件' })).toHaveAttribute(
+    ).toEqual(['贴片', '场景', '音频'])
+    expect(within(side()).getByRole('tab', { name: '贴片' })).toHaveAttribute(
       'aria-selected',
       'true',
     )
-    expect(within(side()).getByRole('list', { name: '组件' })).toBeVisible()
-    await user.type(within(side()).getByRole('searchbox', { name: '搜索组件' }), '圆环')
+    expect(within(side()).getByRole('list', { name: '贴片' })).toBeVisible()
+    await user.type(within(side()).getByRole('searchbox', { name: '搜索贴片' }), '圆环')
     expect(cardNames()).toEqual(['测试叠加，4 秒'])
 
-    await openTab(user, '块')
-    expect(within(side()).getByRole('searchbox', { name: '搜索块' })).toHaveValue('')
-    const blockChips = () => within(side()).getByRole('radiogroup', { name: '块分类' })
+    await openTab(user, '场景')
+    expect(within(side()).getByRole('searchbox', { name: '搜索场景' })).toHaveValue('')
+    const blockChips = () => within(side()).getByRole('radiogroup', { name: '场景分类' })
     await user.click(within(blockChips()).getByRole('radio', { name: '品牌' }))
     expect(cardNames()).toEqual(['示例品牌 片尾，3 秒'])
 
     await openTab(user, '音频')
-    await openTab(user, '组件')
-    expect(within(side()).getByRole('searchbox', { name: '搜索组件' })).toHaveValue('圆环')
+    await openTab(user, '贴片')
+    expect(within(side()).getByRole('searchbox', { name: '搜索贴片' })).toHaveValue('圆环')
     expect(cardNames()).toEqual(['测试叠加，4 秒'])
-    await openTab(user, '块')
+    await openTab(user, '场景')
     expect(within(blockChips()).getByRole('radio', { name: '品牌' })).toHaveAttribute(
       'aria-checked',
       'true',
@@ -1100,7 +1100,7 @@ describe('成片编辑器 · 组件、块页签', () => {
     putMockWholeFilmDraft(CONVERSATION, twoVideos())
     const user = userEvent.setup()
     await openEditor()
-    await openTab(user, '块')
+    await openTab(user, '场景')
     await addAtPlayhead(user, /^测试画面/)
 
     await waitSaved(() => expect(savedItems()).toHaveLength(1))
@@ -1153,7 +1153,7 @@ describe('成片编辑器 · 组件、块页签', () => {
     await waitSaved(() => expect(savedItems()).toHaveLength(1))
     await new Promise((resolve) => setTimeout(resolve, 1000))
     expect(savedItems()).toHaveLength(1)
-    expect(screen.getByText('上一个组件或块正在加入成片，请稍后再试')).toBeVisible()
+    expect(screen.getByText('上一个贴片或场景正在加入成片，请稍后再试')).toBeVisible()
   })
 })
 
@@ -1216,7 +1216,7 @@ describe('成片编辑器 · 右侧栏', () => {
     const names = within(within(inspector()).getByRole('list', { name: '选中的片段' }))
       .getAllByRole('listitem')
       .map((item) => item.textContent)
-    expect(names).toEqual(['测试可填项组件', 'B · 镜头 1视频'])
+    expect(names).toEqual(['测试可填项贴片', 'B · 镜头 1视频'])
     expect(within(inspector()).queryByRole('textbox')).toBeNull()
     expect(within(inspector()).queryByRole('button', { name: /^时间/ })).toBeNull()
 
@@ -1228,7 +1228,7 @@ describe('成片编辑器 · 右侧栏', () => {
     const user = await openWith([host({ start: 1_000, duration: 3_500 })])
     await pick(user, '测试可填项')
     expect(within(inspector()).getByRole('heading', { name: '测试可填项' })).toBeVisible()
-    expect(within(inspector()).getByText('组件')).toBeVisible()
+    expect(within(inspector()).getByText('贴片')).toBeVisible()
     expect(groupButton('内容')).toHaveAttribute('aria-expanded', 'true')
     expect(groupButton('内容')).toHaveAccessibleName('内容')
     expect(groupButton('时间')).toHaveAttribute('aria-expanded', 'false')
@@ -1248,7 +1248,7 @@ describe('成片编辑器 · 右侧栏', () => {
     expect(groupButton('内容')).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('头部名字后面的种类按条目在组件库里的种类写：块写「块」，组件库里没有的条目不写', async () => {
+  it('头部名字后面的种类按条目在组件库里的种类写：块写「场景」，组件库里没有的条目不写', async () => {
     const user = await openWith([
       brand(),
       host({
@@ -1262,13 +1262,13 @@ describe('成片编辑器 · 右侧栏', () => {
     const head = () => within(inspector()).getByRole('banner')
     await pick(user, '示例品牌 片尾')
     expect(within(head()).getByRole('heading', { name: '示例品牌 片尾' })).toBeVisible()
-    expect(within(head()).getByText('块')).toBeVisible()
-    expect(within(head()).queryByText('组件')).toBeNull()
+    expect(within(head()).getByText('场景')).toBeVisible()
+    expect(within(head()).queryByText('贴片')).toBeNull()
 
     await pick(user, '已下架')
     expect(within(head()).getByRole('heading', { name: '已下架' })).toBeVisible()
-    expect(within(head()).queryByText('块')).toBeNull()
-    expect(within(head()).queryByText('组件')).toBeNull()
+    expect(within(head()).queryByText('场景')).toBeNull()
+    expect(within(head()).queryByText('贴片')).toBeNull()
   })
 
   it('视频片段、音频片段有「时间」和「媒体」，默认展开「时间」；音频片段的隐藏叫静音', async () => {
