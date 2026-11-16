@@ -4,8 +4,15 @@ import { mintLinkId, relinkSplitHalves } from '@hyperframes/core/media-link'
 import type { Composition, ElementSnapshot } from '@hyperframes/sdk'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
+import {
+  CAPTION_FOLLOW_REFUSAL_TEXT,
+  captionsFollowing,
+  splitOwners,
+  type NewCaption,
+} from './caption-edit'
 import { rippleStarts, withLinkedStarts, type Cut, type Links, type Timing } from './clip-edit'
 import {
+  CAPTION_OWNER,
   CAPTIONS_PATH,
   captionElement,
   captionOf,
@@ -186,6 +193,16 @@ const captionsIn = (scene: Composition, main: Composition): CaptionClip[] => {
   })
 }
 
+/** 主文件里的片段和字幕场景里的各句字幕（见 `FilmView.clips`）。 */
+const allClipsOf = (
+  main: Composition,
+  scene: Composition | undefined,
+  catalog: ComponentCatalog,
+): FilmClip[] => [
+  ...clipsOf(main, catalog),
+  ...(scene === undefined ? [] : captionsIn(scene, main)),
+]
+
 /** 各句字幕，编号 → 字幕；还没有字幕场景时是空的。 */
 const captionsById = (main: Composition, scene: Composition | undefined) =>
   new Map(
@@ -235,8 +252,7 @@ const viewOf = (
 ): { view: FilmView; present: Map<string, string> } => {
   const main = mainOf(project)
   const scene = sceneOf(project)
-  const captions = scene === undefined ? [] : captionsIn(scene, main)
-  const clips = [...clipsOf(main, catalog), ...captions]
+  const clips = allClipsOf(main, scene, catalog)
   const html = withFontBlock(main.serialize(), clips, catalog)
   const present = new Map(
     [...project.files].map(([path, file]) => [
@@ -304,13 +320,37 @@ const keepingLinks = (engine: Composition, change: () => void) => {
 
 const HF_ID = 'data-hf-id'
 
-/** 要加进根下的一个后半段：它的编号，写在根下第几个，元素的整段 HTML。 */
-type SplitHalf = { id: string; index: number; html: string }
+/** 要加进根下的一个后半段：它的编号，切的是哪个片段（`of`），写在根下第几个，元素的整段 HTML。 */
+type SplitHalf = { id: string; of: string; index: number; html: string }
 
 const SPLIT_FAILED_TEXT = '片段里带有无法复制的内容，无法切开'
 
 /** 有一个后半段没能原样加进去（引擎不收这段 HTML）：整次切开退回去。 */
 class HalfRejected extends Error {}
+
+/** 字幕跟着视频片段挪了会和别的字幕重叠：整步编辑退回去。 */
+class CaptionsBlocked extends Error {}
+
+/**
+ * 一步编辑做完以后，属于视频片段的字幕跟着它走（规则见 `captionsFollowing`，`before` 是这一步之前的片段）：
+ * 挪字幕的起点、删掉没了的视频片段的字幕和它们的变量。会重叠时抛出 `CaptionsBlocked`。
+ */
+const followVideos = (
+  main: Composition,
+  scene: Composition,
+  before: readonly FilmClip[],
+  catalog: ComponentCatalog,
+) => {
+  const plan = captionsFollowing(before, allClipsOf(main, scene, catalog))
+  if ('refusal' in plan) throw new CaptionsBlocked()
+  const captions = captionsById(main, scene)
+  for (const [id, start] of plan.starts) setOwnTiming(scene, id, { start: start / 1000 })
+  for (const id of plan.removed) {
+    const variable = captions.get(id)?.variable
+    scene.removeElement(id)
+    if (variable !== undefined && declares(main, variable)) main.removeVariableDeclaration(variable)
+  }
+}
 
 /**
  * 切开以后的各个后半段：在当前主文件的一份副本里把原元素整个复制一份（属性、样式、子元素都带上），
@@ -329,7 +369,7 @@ function splitHalves(
   )
   if (root === undefined) return null
   const kinds = new Map(clips.map((clip) => [clip.id, clip.kind]))
-  const halves: Element[] = []
+  const halves: { element: Element; of: string }[] = []
   for (const cut of cuts) {
     const original = [...root.children].find((child) => child.getAttribute(HF_ID) === cut.id)
     if (original === undefined) return null
@@ -344,17 +384,18 @@ function splitHalves(
     if (kinds.get(cut.id) === 'host') half.setAttribute('data-playback-start', inPoint)
     else half.setAttribute('data-media-start', inPoint)
     original.after(half)
-    halves.push(half)
+    halves.push({ element: half, of: cut.id })
   }
   relinkSplitHalves(
     copy,
-    halves.map((half) => half.id),
+    halves.map((half) => half.element.id),
   )
   return halves
-    .map((half) => ({
-      id: half.id,
-      index: [...root.children].indexOf(half),
-      html: half.outerHTML,
+    .map(({ element, of }) => ({
+      id: element.id,
+      of,
+      index: [...root.children].indexOf(element),
+      html: element.outerHTML,
     }))
     .toSorted((left, right) => left.index - right.index)
 }
@@ -807,15 +848,28 @@ export function useFilmSession(
 
   /**
    * 改工程里已有的东西：`change` 拿到主文件和字幕场景（没有时是 undefined），里面的几步和工程总长一起算一步撤销。
+   * 属于视频片段的字幕在同一步里跟着它走（见 `followVideos`）；跟着挪会和别的字幕重叠时整步不做，提示原因。
    */
   const edit = useCallback(
     (change: (main: Composition, scene: Composition | undefined) => void) => {
       const project = projectRef.current
       if (project === null) return
-      perform(project, () => change(mainOf(project), sceneOf(project)))
+      const main = mainOf(project)
+      try {
+        perform(project, () => {
+          const scene = sceneOf(project)
+          const before = allClipsOf(main, scene, catalog)
+          change(main, scene)
+          if (scene !== undefined) followVideos(main, scene, before, catalog)
+        })
+      } catch (error) {
+        // 一批操作里抛出时引擎已经整批退回
+        if (!(error instanceof CaptionsBlocked)) throw error
+        noticeRef.current(CAPTION_FOLLOW_REFUSAL_TEXT)
+      }
       show()
     },
-    [perform, show],
+    [catalog, perform, show],
   )
 
   /**
@@ -1062,23 +1116,31 @@ export function useFilmSession(
 
   /**
    * 切开几个片段（`cuts` 由 `clip-edit.ts` 里的切开函数算好），算一步撤销：前半段还是原来的片段、只改时长，
-   * 后半段是它的整份复制、紧跟在它后面。有一个后半段写不进去（比如元素里带着脚本）时都不切，提示原因。
+   * 后半段是它的整份复制、紧跟在它后面；切的是视频片段时，从切点起的字幕改成属于后半段（见 `splitOwners`）。
+   * 有一个后半段写不进去（比如元素里带着脚本）时都不切，提示原因。
    */
   const split = useCallback(
     (cuts: readonly Cut[]) => {
       const project = projectRef.current
-      const engine = project === null ? undefined : mainOf(project)
-      const root = engine === undefined ? undefined : rootOf(engine)
-      if (engine === undefined || root === undefined || cuts.length === 0) return
+      if (project === null || cuts.length === 0) return
+      const engine = mainOf(project)
+      const root = rootOf(engine)
+      if (root === undefined) return
       const halves = splitHalves(engine, cuts, clipsOf(engine, catalog))
       if (halves === null) return
+      const owners = splitOwners(
+        allClipsOf(engine, sceneOf(project), catalog),
+        cuts,
+        new Map(halves.map((half) => [half.of, half.id])),
+      )
       try {
-        edit((current) => {
+        edit((current, scene) => {
           for (const half of halves)
             if (current.addElement(root.id, half.index, half.html) !== half.id)
               throw new HalfRejected()
           // 链接的片段切在同一处：SDK 把时长带给结尾对齐的链接片段时，带过去的也正好是切点
           for (const cut of cuts) current.setTiming(cut.id, { duration: cut.first.duration / 1000 })
+          for (const [id, owner] of owners) scene?.setAttribute(id, CAPTION_OWNER, owner)
         })
       } catch (error) {
         // 一批操作里抛出时引擎已经整批退回
@@ -1126,12 +1188,15 @@ export function useFilmSession(
   )
 
   /**
-   * 在 `at`（毫秒）加一句字幕，字是 `text`，算一步撤销：场景里按开始时间排进它的元素，主文件根上声明它的变量；
-   * 主文件里还没有字幕宿主时加在根下最后。还没有字幕场景文件时先建一份空的。答复新字幕的编号；还没有工程、
-   * 场景文件建不了时不动工程（建不了时提示原因）。
+   * 加几句字幕，一起算一步撤销：先准备好字幕场景文件（还没有时建一份空的），再按那时工程里的片段（含字幕）
+   * 用 `captionsFor` 算出要加的句子，场景里各按开始时间排进它的元素，主文件根上各声明一个变量；主文件里还没有
+   * 字幕宿主时加在根下最后。答复新字幕的编号（按 `captionsFor` 给的先后；一句都没有时是空的、不动工程）；
+   * 还没有工程、场景文件建不了时不动工程（建不了时提示原因），答复 undefined。
    */
-  const addCaption = useCallback(
-    async (at: { start: number; duration: number }, text: string): Promise<string | undefined> => {
+  const addCaptions = useCallback(
+    async (
+      captionsFor: (clips: readonly FilmClip[]) => readonly NewCaption[],
+    ): Promise<string[] | undefined> => {
       const project = projectRef.current
       if (project === null) return undefined
       let file: OpenFile | undefined
@@ -1146,26 +1211,33 @@ export function useFilmSession(
       const sceneRoot = file === undefined ? undefined : rootOf(file.engine)
       if (file === undefined || root === undefined || sceneRoot === undefined) return undefined
       const scene = file.engine
-      const key = crypto.randomUUID().slice(0, 8)
-      const caption = { id: `cap-${key}`, variable: `cap_${key}`, text, ...at }
-      const timings = scene.getElementTimings()
-      const later = sceneRoot.children.findIndex(
-        (child) => (timings[child.id]?.enterAt ?? -Infinity) * 1000 > at.start,
-      )
+      const captions = captionsFor(allClipsOf(main, scene, catalog)).map((caption) => {
+        const key = crypto.randomUUID().slice(0, 8)
+        return { ...caption, id: `cap-${key}`, variable: `cap_${key}` }
+      })
+      if (captions.length === 0) return []
       perform(project, () => {
         if (captionsHostOf(main) === undefined)
           main.addElement(root.id, root.children.length, captionsHostElement(canvasOf(main), 0))
-        scene.addElement(
-          sceneRoot.id,
-          later === -1 ? sceneRoot.children.length : later,
-          captionElement(caption),
-        )
-        main.declareVariable(captionVariable(caption))
+        for (const caption of captions) {
+          // 按加过前面几句的样子找位置
+          const timings = scene.getElementTimings()
+          const children = rootOf(scene)?.children ?? []
+          const later = children.findIndex(
+            (child) => (timings[child.id]?.enterAt ?? -Infinity) * 1000 > caption.start,
+          )
+          scene.addElement(
+            sceneRoot.id,
+            later === -1 ? children.length : later,
+            captionElement(caption),
+          )
+          main.declareVariable(captionVariable(caption))
+        }
       })
       show()
-      return caption.id
+      return captions.map((caption) => caption.id)
     },
-    [captionsFile, perform, show],
+    [captionsFile, catalog, perform, show],
   )
 
   /**
@@ -1250,7 +1322,7 @@ export function useFilmSession(
     merge,
     setLinked,
     resync,
-    addCaption,
+    addCaptions,
     setCaptionText,
     undo: () => step('undo'),
     redo: () => step('redo'),

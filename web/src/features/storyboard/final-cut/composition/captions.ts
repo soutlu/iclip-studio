@@ -40,15 +40,26 @@ export function captionsHostElement(canvas: Canvas, durationMs: number): string 
   )
 }
 
-/** 一句字幕的元素：字里的换行写成 `<br>`，和 SDK 改字时一样。 */
+/**
+ * 字幕属于哪个视频片段（值是视频片段的编号）：编辑器自己的约定，播放和导出不读它。识别出来的字幕带着，
+ * 手动加的没有。
+ */
+export const CAPTION_OWNER = 'data-caption-of'
+
+/** 一句字幕的元素：字里的换行写成 `<br>`，和 SDK 改字时一样；属于某个视频片段时带上 `data-caption-of`。 */
 export function captionElement(
-  caption: Pick<CaptionClip, 'id' | 'start' | 'duration' | 'variable' | 'text'>,
+  caption: Pick<CaptionClip, 'id' | 'start' | 'duration' | 'variable' | 'text'> &
+    Partial<Pick<CaptionClip, 'owner'>>,
 ): string {
   const text = escapeAttribute(caption.text).replaceAll('\n', '<br>')
+  const owner =
+    caption.owner === undefined || caption.owner === null
+      ? ''
+      : ` ${CAPTION_OWNER}="${escapeAttribute(caption.owner)}"`
   return (
     `<div id="${escapeAttribute(caption.id)}" data-hf-id="${escapeAttribute(caption.id)}" class="clip caption"` +
     ` data-start="${seconds(caption.start)}" data-duration="${seconds(caption.duration)}"` +
-    ` data-var-text="${escapeAttribute(caption.variable)}">${text}</div>`
+    ` data-var-text="${escapeAttribute(caption.variable)}"${owner}>${text}</div>`
   )
 }
 
@@ -115,6 +126,7 @@ ${children}</div>
 /**
  * 把场景根下一个带时间的元素读成一句字幕：字取主文件根上它的变量的默认值（`texts`，变量 → 字），
  * 没有这个变量时取元素里写的字。名字就是它的字，换行和连着的空白合成一个空格；字是空的时叫「字幕」。
+ * `data-caption-of` 没写或是空的时不属于任何片段。
  */
 export function captionOf(
   element: ElementView,
@@ -125,6 +137,7 @@ export function captionOf(
   const variable = element.attributes['data-var-text'] ?? ''
   const text = texts.get(variable) ?? element.text ?? ''
   const name = text.replace(/\s+/g, ' ').trim()
+  const owner = element.attributes[CAPTION_OWNER]
   return {
     kind: 'caption',
     id: element.id,
@@ -136,6 +149,7 @@ export function captionOf(
     link: null,
     text,
     variable,
+    owner: owner === undefined || owner === '' ? null : owner,
   }
 }
 

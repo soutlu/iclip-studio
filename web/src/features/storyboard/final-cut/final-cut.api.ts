@@ -1,7 +1,7 @@
-import { useQuery, type QueryClient } from '@tanstack/react-query'
+import { queryOptions, useQuery, type QueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ApiError, apiFetch, UserFacingError } from '@/shared/api/client'
-import type { FinalCutPreviewOut, MusicIn } from '@/shared/api/generated/types.gen'
+import type { FinalCutPreviewOut, MusicIn, SubtitleIn } from '@/shared/api/generated/types.gen'
 import {
   zCancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponse as zExportCancelled,
   zConversationEnvelope,
@@ -40,6 +40,8 @@ export const wholeFilmQueryKeys = {
   // 挂在对话的生成记录下面：生成记录有变化时跟着刷新
   music: (conversationId: string) =>
     [...storyboardQueryKeys.conversation(conversationId), 'audio'] as const,
+  subtitles: (conversationId: string, sourceJobId: string) =>
+    [...storyboardQueryKeys.conversation(conversationId), 'subtitle', sourceJobId] as const,
   preview: (conversationId: string) => ['whole-film', 'preview', conversationId] as const,
   task: (conversationId: string) => ['whole-film', 'task', conversationId] as const,
 }
@@ -280,6 +282,29 @@ export const submitMusic = async (body: MusicIn): Promise<GenerationJob> =>
     await apiFetch('/generations/music', zGenerationEnvelope, {
       body,
       fallbackErrorMessage: '音乐生成提交失败',
+      method: 'POST',
+    })
+  ).generation
+
+/** 一条素材片（`sourceJobId`）的字幕识别记录，新的在前；有没识别完的就隔一会儿再读。 */
+export const subtitleJobsQuery = (conversationId: string, sourceJobId: string) =>
+  queryOptions({
+    queryKey: wholeFilmQueryKeys.subtitles(conversationId, sourceJobId),
+    queryFn: ({ signal }) =>
+      readAllGenerations(
+        { conversationId, kind: 'subtitle', sourceJobId },
+        signal,
+        '读取字幕识别记录失败',
+      ),
+    refetchInterval: ({ state }) => generationsRefetchInterval(state.data ?? []),
+  })
+
+/** 发起识别一条素材片的字幕（付费的上游服务），答复排队中的字幕识别记录。 */
+export const submitSubtitles = async (body: SubtitleIn): Promise<GenerationJob> =>
+  (
+    await apiFetch('/generations/subtitles', zGenerationEnvelope, {
+      body,
+      fallbackErrorMessage: '字幕识别提交失败',
       method: 'POST',
     })
   ).generation

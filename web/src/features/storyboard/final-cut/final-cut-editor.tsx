@@ -27,7 +27,15 @@ import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
 import { audioPlayheadSpot } from './audio'
 import { AudioTab } from './audio-tab'
-import { CAPTION_REFUSAL_TEXT, captionSpot, NEW_CAPTION_TEXT } from './caption-edit'
+import {
+  CAPTION_REFUSAL_TEXT,
+  captionSpot,
+  NEW_CAPTION_TEXT,
+  RECOGNITION_REFUSAL_TEXT,
+  recognitionTargets,
+  recognizedCaptions,
+  type Sentence,
+} from './caption-edit'
 import { CaptionsTab } from './captions-tab'
 import {
   linkedPartners,
@@ -39,7 +47,7 @@ import {
 } from './clip-edit'
 import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
 import type { CatalogItem } from './composition/catalog'
-import type { Canvas, CaptionClip } from './composition/film'
+import type { Canvas, CaptionClip, FilmClip } from './composition/film'
 import { isEditorKeyTarget, useEditorEscape, useEditorRoot } from './editor-keys'
 import { EditorRoot } from './editor-root'
 import { EditorToolbar, type EditTool } from './editor-toolbar'
@@ -113,6 +121,7 @@ import {
   zoomToClips,
   type Zoom,
 } from './timeline-scale'
+import { useCaptionRecognition, type RecognitionOutcome } from './use-caption-recognition'
 import { useFilmSession, type NewAudio } from './use-film-session'
 import { useWholeFilmExport } from './use-whole-film-export'
 import {
@@ -130,6 +139,8 @@ const ADDING_ITEM_TEXT = '上一个贴片或场景正在加入 final-cut，请�
 const ADDING_AUDIO_TEXT = '上一条音频正在加入 final-cut，请稍后再试'
 const EMPTY_EXPORT_TEXT = 'final-cut 暂无内容，无法导出；请先加入内容'
 const NO_FILM_CAPTION_TEXT = 'final-cut 暂无内容，无法加字幕；请先加入镜头'
+const READING_TAKES_TEXT = '正在读取素材片，请稍后再识别字幕'
+const RECOGNIZING_TEXT = '正在识别字幕，请等待识别完成'
 // 还没有 final-cut 时先放组件或块：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 const NO_LINKS: Links = new Map()
@@ -256,6 +267,13 @@ function EditorBody({
       ),
     [materials],
   )
+  // 识别字幕时视频片段按地址对上素材片；同一个地址对上几条时取素材目录里排在前面的那条
+  const takeOfUrl = useMemo(() => {
+    const found = new Map<string, string>()
+    for (const item of materials.byJob.values())
+      if (!found.has(item.url)) found.set(item.url, item.jobId)
+    return found
+  }, [materials])
   const [pickedVersions, setPickedVersions] = useState<Readonly<Record<string, string>>>({})
   const versionOf = (take: MaterialTake): Material =>
     take.versions.find((item) => item.jobId === pickedVersions[take.id]) ?? take.latest
@@ -748,9 +766,72 @@ function EditorBody({
   const addCaption = async () => {
     if ('refusal' in captionAt) return undefined
     leaveMaterial()
-    const id = await session.addCaption(captionAt, NEW_CAPTION_TEXT)
+    const [id] =
+      (await session.addCaptions(() => [{ ...captionAt, text: NEW_CAPTION_TEXT, owner: null }])) ??
+      []
     if (id !== undefined) selectOnly(id)
     return id
+  }
+
+  // 「字幕」页签里的「识别字幕」：识别中照常编辑，全部有了结果后按那时的 final-cut 一次写进去
+  const takeOf = (src: string) => takeOfUrl.get(src)
+  const recognizable = recognitionTargets(clips, takeOf)
+  /** 识别结果按 `current`（那时的片段）换算：哪些片段失败了，要加的字幕，跳过的句数，没识别出话的片段。 */
+  const recognitionResult = (
+    current: readonly FilmClip[],
+    clipIds: readonly string[],
+    outcomes: ReadonlyMap<string, RecognitionOutcome>,
+  ) => {
+    const wanted = new Set(clipIds)
+    // 识别期间片段删掉了、有了字幕的不再写
+    const found = recognitionTargets(current, takeOf)
+    const targets = 'targets' in found ? found.targets.filter((t) => wanted.has(t.clipId)) : []
+    const failed: string[] = []
+    const sentences = new Map<string, readonly Sentence[]>()
+    for (const target of targets) {
+      const outcome = outcomes.get(target.sourceJobId)
+      if (outcome?.kind === 'ready') sentences.set(target.clipId, outcome.sentences)
+      else failed.push(target.clipId)
+    }
+    return { failed, ...recognizedCaptions(current, sentences) }
+  }
+  const writeRecognized = async (
+    clipIds: readonly string[],
+    outcomes: ReadonlyMap<string, RecognitionOutcome>,
+  ) => {
+    let result = recognitionResult(clips, clipIds, outcomes)
+    let added = 0
+    if (result.captions.length > 0) {
+      const ids = await session.addCaptions((current) => {
+        result = recognitionResult(current, clipIds, outcomes)
+        return result.captions
+      })
+      added = ids?.length ?? 0
+    }
+    const labels = (ids: readonly string[]) =>
+      ids.map((id) => clips.find((clip) => clip.id === id)?.label ?? id).join('、')
+    if (added > 0) notice(`已加入 ${added} 句字幕`)
+    if (result.skipped > 0) notice(`${result.skipped} 句与已有字幕重叠，已跳过`)
+    if (result.silent.length > 0) notice(`${labels(result.silent)} 没有识别出说话，未加字幕`)
+    if (result.failed.length > 0)
+      notice(`${labels(result.failed)} 的字幕识别失败，请点击「识别字幕」重试`)
+  }
+  const recognition = useCaptionRecognition(conversationId, (clipIds, outcomes) => {
+    void writeRecognized(clipIds, outcomes)
+  })
+  const recognizeBlocked =
+    recognition.recognizing > 0
+      ? RECOGNIZING_TEXT
+      : film === null
+        ? RECOGNITION_REFUSAL_TEXT.empty
+        : videos.isPending
+          ? READING_TAKES_TEXT
+          : 'refusal' in recognizable
+            ? RECOGNITION_REFUSAL_TEXT[recognizable.refusal]
+            : undefined
+  const recognize = () => {
+    if (recognizeBlocked === undefined && 'targets' in recognizable)
+      void recognition.start(recognizable.targets)
   }
   // 「字幕」页签和「属性」里改字幕的字
   const setCaptionText = (id: string, text: string) => {
@@ -989,12 +1070,15 @@ function EditorBody({
                 seek(caption.start)
                 selectOnly(caption.id)
               }}
+              onRecognize={recognize}
               onRemove={(id) => {
                 leaveMaterial()
                 session.removeClips([id], false)
               }}
               onText={setCaptionText}
               problem={film?.captionsProblem}
+              recognizeBlocked={recognizeBlocked}
+              recognizing={recognition.recognizing}
               selected={selected}
             />
           </TabsContent>

@@ -1525,7 +1525,7 @@ test('字幕：在「字幕」页签加一句、改字，字幕文件和主文�
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
-  await expect(tab.getByText('暂无字幕，请点击「在播放头处加一句」')).toBeVisible()
+  await expect(tab.getByText('暂无字幕，请点击「识别字幕」或「在播放头处加一句」')).toBeVisible()
   const sceneWith = (text: string) =>
     page.waitForRequest((request) => savedFileOf(request, CAPTIONS_FILE)?.includes(text) === true)
   const created = sceneWith('</template>')
@@ -1694,4 +1694,81 @@ test('字幕行：拖一句挪位置、拖结尾裁短，存下来的字幕场�
   // 再显示回来：播放头没动，又看得到了
   await editor.getByRole('button', { name: '显示字幕' }).click()
   await expect.poll(shown).toBe(true)
+})
+
+/** 存出的字幕场景里各句的字、起点（秒）和属于哪个视频片段，按文件里的先后。 */
+const savedCaptionLines = (scene: string) =>
+  [...scene.matchAll(/<div id="cap-[^"]+"([^>]*)>([^<]*)<\/div>/g)].map(
+    ([, attributes = '', text]) => ({
+      text,
+      start: Number(/ data-start="([\d.]+)"/.exec(attributes)?.[1]),
+      owner: / data-caption-of="([^"]+)"/.exec(attributes)?.[1] ?? null,
+    }),
+  )
+
+test('识别字幕：点「识别字幕」发起一次识别，识别完写进字幕场景、属于那个视频片段；拖这个视频片段，字幕跟着挪', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  // 这段对话里还没有字幕识别记录：点了会真的发起识别（模拟环境里几秒后识别出两句）
+  const panel = await openConversation(page, '工具过程展示')
+  const editor = await openFinalCut(panel)
+  const group = editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+  await group.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
+  // 选中范围的结尾拉到素材末尾：整条素材放进 final-cut，两句话都在里面
+  await group.getByRole('slider', { name: '裁剪结尾' }).focus()
+  for (let second = 0; second < 6; second += 1) await page.keyboard.press('Shift+ArrowRight')
+  const added = mainSaved(page, 1)
+  await page.keyboard.press('Enter')
+  const videoId = /<video [^>]*id="([^"]+)"/.exec(htmlOf(await added))?.[1]
+  expect(videoId).toBeDefined()
+
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '字幕' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕' })
+  const sceneSavedWith = (check: (lines: ReturnType<typeof savedCaptionLines>) => boolean) =>
+    page.waitForRequest((request) => {
+      const scene = savedFileOf(request, CAPTIONS_FILE)
+      return scene !== null && check(savedCaptionLines(scene))
+    })
+  const submitted: string[] = []
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('/generations/subtitles'))
+      submitted.push(request.url())
+  })
+  const recognized = sceneSavedWith((lines) => lines.length === 2)
+  await tab.getByRole('button', { name: '识别字幕', exact: true }).click()
+  await expect(tab.getByRole('button', { name: '识别中…', exact: true })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  )
+  await expect(tab.getByText('正在识别 1 个视频片段的字幕，可继续编辑')).toBeVisible()
+  const lines = savedCaptionLines(savedFileOf(await recognized, CAPTIONS_FILE) ?? '')
+  expect(lines).toEqual([
+    { text: '夜色里，城市慢慢亮起来', start: 0.3, owner: videoId },
+    { text: '车流划出一道道光', start: 2.4, owner: videoId },
+  ])
+  expect(submitted).toHaveLength(1)
+  await expect(tab.getByRole('listitem')).toHaveCount(2)
+  // 这个片段已经有字幕了：不再识别
+  await expect(tab.getByRole('button', { name: '识别字幕', exact: true })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  )
+
+  // 往右拖视频片段：两句字幕挪同样的时间
+  const moved = sceneSavedWith((saved) => (saved[0]?.start ?? 0) > 0.3)
+  const mainMoved = mainSavedWith(page, (html) => (savedVideoTimings(html)[0]?.start ?? 0) > 0)
+  const clip = editor.getByRole('group', { name: '画面 1', exact: true }).getByRole('group')
+  await dragClip(page, clip.getByRole('button', { name: /^选中：/ }), 120)
+  const [video] = savedVideoTimings(htmlOf(await mainMoved))
+  const after = savedCaptionLines(savedFileOf(await moved, CAPTIONS_FILE) ?? '')
+  if (video === undefined) throw new Error('视频片段没了')
+  expect(video.start).toBeGreaterThan(0)
+  expect(after).toHaveLength(2)
+  expect(after[0]?.start).toBeCloseTo(0.3 + video.start, 3)
+  expect(after[1]?.start).toBeCloseTo(2.4 + video.start, 3)
 })

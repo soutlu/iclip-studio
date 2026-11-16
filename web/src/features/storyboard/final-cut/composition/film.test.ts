@@ -357,6 +357,7 @@ describe('<head> 里的字体块', () => {
       link: null,
       text: '字幕\n两行',
       variable: 'cap_a1',
+      owner: null,
     }
     const html = withFonts([video(), caption])
     for (const char of '字幕两行') expect(covers(html, catalog.cjk.family, char)).toBe(true)

@@ -11,6 +11,7 @@ import type { CaptionClip } from './composition/film'
 const COMMIT_DELAY_MS = 300
 
 const ADD_LABEL = '在播放头处加一句'
+const RECOGNIZE_LABEL = '识别字幕'
 
 type CaptionsTabProps = {
   captions: readonly CaptionClip[]
@@ -18,6 +19,11 @@ type CaptionsTabProps = {
   selected: ReadonlySet<string>
   /** 为什么现在不能在播放头处加一句；给了就把按钮置灰，点了说明它。 */
   addBlocked: string | undefined
+  /** 正在识别几个视频片段的字幕；没在识别时是 0。 */
+  recognizing: number
+  /** 为什么现在不能识别字幕；给了就把「识别字幕」置灰，点了说明它。 */
+  recognizeBlocked: string | undefined
+  onRecognize: () => void
   /** 字幕写法不对时的原因，显示在最上面。 */
   problem: string | undefined
   /** 在播放头处加一句，答复新字幕的编号；没加上时是 undefined。 */
@@ -29,13 +35,16 @@ type CaptionsTabProps = {
 }
 
 /**
- * 「字幕」页签：在播放头处加一句，下面是按开始时间排的字幕列表，每句能直接改字、删掉，点时间选中它、跳到它的开始。
- * 编辑器里选中的字幕标成当前这一句；刚加的那一句焦点进它的文字框。
+ * 「字幕」页签：识别字幕、在播放头处加一句，下面是按开始时间排的字幕列表，每句能直接改字、删掉，点时间选中它、
+ * 跳到它的开始。编辑器里选中的字幕标成当前这一句；刚加的那一句焦点进它的文字框。识别中写着在识别几个片段。
  */
 export function CaptionsTab({
   captions,
   selected,
   addBlocked,
+  recognizing,
+  recognizeBlocked,
+  onRecognize,
   problem,
   onAdd,
   onText,
@@ -54,10 +63,24 @@ export function CaptionsTab({
         <InlineAlert className="wf-captions-alert" message={problem} />
       )}
       <div className="wf-captions-actions">
+        <BlockedReason reason={recognizeBlocked}>
+          <Button
+            aria-disabled={recognizeBlocked === undefined ? undefined : true}
+            className="wf-captions-action wf-captions-recognize"
+            leadingIcon="waveform"
+            onClick={() => {
+              if (recognizeBlocked === undefined) onRecognize()
+            }}
+            size="md"
+            variant="inverted"
+          >
+            {recognizing > 0 ? '识别中…' : RECOGNIZE_LABEL}
+          </Button>
+        </BlockedReason>
         <BlockedReason reason={addBlocked}>
           <Button
             aria-disabled={addBlocked === undefined ? undefined : true}
-            className="wf-captions-add"
+            className="wf-captions-action"
             leadingIcon="add"
             onClick={() => void add()}
             size="md"
@@ -67,10 +90,17 @@ export function CaptionsTab({
           </Button>
         </BlockedReason>
       </div>
-      {captions.length === 0 ? (
+      {recognizing > 0 ? (
         <p className="wf-captions-note" role="status">
-          暂无字幕，请点击「{ADD_LABEL}」
+          正在识别 {recognizing} 个视频片段的字幕，可继续编辑
         </p>
+      ) : null}
+      {captions.length === 0 ? (
+        recognizing > 0 ? null : (
+          <p className="wf-captions-note" role="status">
+            暂无字幕，请点击「{RECOGNIZE_LABEL}」或「{ADD_LABEL}」
+          </p>
+        )
       ) : (
         <ol aria-label="字幕" className="wf-caption-list">
           {captionsInOrder(captions).map((caption) => (

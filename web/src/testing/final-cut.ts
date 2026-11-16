@@ -118,6 +118,7 @@ export const caption = (overrides: Partial<CaptionClip> = {}): CaptionClip => {
     link: null,
     text,
     variable: 'cap_a1',
+    owner: null,
     ...overrides,
   }
 }

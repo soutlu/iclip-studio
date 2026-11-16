@@ -9,6 +9,7 @@ import { audio, fixtureCatalog, host, mainFile, video } from '@/testing/final-cu
 import { itemFileContent, server } from '@/testing/mocks/server'
 import { mockProjectMain, putMockProjectMain } from '@/testing/mocks/whole-film'
 import { mockWorkspaceFile, putMockWorkspaceFile } from '@/testing/mocks/workspace'
+import { CAPTION_FOLLOW_REFUSAL_TEXT } from './caption-edit'
 import { groupTrimmed, splitAt, timingOf } from './clip-edit'
 import {
   CAPTIONS_PATH,
@@ -1929,7 +1930,8 @@ describe('useFilmSession · 字幕', () => {
 
   const storedScene = (conversation: string) => mockWorkspaceFile(conversation, SCENE_PATH)?.content
 
-  type Line = Pick<CaptionClip, 'id' | 'start' | 'duration' | 'variable' | 'text'>
+  type Line = Pick<CaptionClip, 'id' | 'start' | 'duration' | 'variable' | 'text'> &
+    Partial<Pick<CaptionClip, 'owner'>>
   const line = (key: string, start: number, duration: number, text: string): Line => ({
     id: `cap-${key}`,
     variable: `cap_${key}`,
@@ -1965,7 +1967,8 @@ describe('useFilmSession · 字幕', () => {
   const addCaption = async (result: Session, start: number, duration: number, text: string) => {
     let id: string | undefined
     await act(async () => {
-      id = await result.current.addCaption({ start, duration }, text)
+      const ids = await result.current.addCaptions(() => [{ start, duration, text, owner: null }])
+      id = ids?.[0]
     })
     if (id === undefined) throw new Error('没有加上字幕')
     return id
@@ -2315,5 +2318,26 @@ describe('useFilmSession · 字幕', () => {
     act(() => result.current.undo())
     expect(captionsOf(result).map((caption) => caption.hidden)).toEqual([false, false])
     expect(hostIn(result.current.film?.html)).not.toHaveProperty('data-hidden')
+  })
+
+  it('字幕跟着视频片段挪过去会压到别的字幕：整步不做（视频片段也不挪），提示原因，不记撤销', async () => {
+    const { result, onNotice } = await openCaptioned(
+      [video({ duration: 2_000 })],
+      [
+        { ...line('a1', 500, 1_000, '它的字幕'), owner: 'clip-1' },
+        line('b2', 3_500, 1_000, '挡路'),
+      ],
+    )
+    const before = result.current.film?.html
+    act(() =>
+      result.current.retime(
+        new Map([['clip-1', { start: 3_000, duration: 2_000, mediaStart: 0 }]]),
+      ),
+    )
+    expect(onNotice).toHaveBeenCalledWith(CAPTION_FOLLOW_REFUSAL_TEXT)
+    expect(videosOf(result)[0]?.start).toBe(0)
+    expect(captionsOf(result).map((caption) => caption.start)).toEqual([500, 3_500])
+    expect(result.current.film?.html).toBe(before)
+    expect(result.current.film?.canUndo).toBe(false)
   })
 })

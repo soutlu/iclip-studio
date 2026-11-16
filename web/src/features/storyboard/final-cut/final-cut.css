@@ -211,19 +211,26 @@
 .wf-captions-actions {
   display: flex;
   flex: none;
+  gap: 6px;
   margin: 10px 12px 8px;
 }
 
-/* 两个类压过按钮自带的高度、内边距和字号 */
-.wf-captions-actions .wf-captions-add {
-  width: 100%;
+/* 两个类压过按钮自带的高度、内边距和字号；两个按钮按字的长短分一行 */
+.wf-captions-actions .wf-captions-action {
+  min-width: 0;
   height: 30px;
+  flex: 1 1 auto;
   gap: 6px;
   padding: 0 8px;
   font-size: var(--text-label);
 }
 
-.wf-captions-actions .wf-captions-add svg {
+/* 实底的「识别字幕」置灰时底色也换成置灰的：不然深色下浅底上的灰字看不见 */
+.wf-captions-actions .wf-captions-recognize[aria-disabled='true'] {
+  background-color: var(--color-disabled-container);
+}
+
+.wf-captions-actions .wf-captions-action svg {
   width: 14px;
   height: 14px;
 }
