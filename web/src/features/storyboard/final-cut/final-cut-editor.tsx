@@ -48,6 +48,7 @@ import {
 import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
 import type { CatalogItem } from './composition/catalog'
 import type { Canvas, CaptionClip, FilmClip } from './composition/film'
+import { textHosts, type LocaleBindings } from './composition/locale-text'
 import { isEditorKeyTarget, useEditorEscape, useEditorRoot } from './editor-keys'
 import { EditorRoot } from './editor-root'
 import { EditorToolbar, type EditTool } from './editor-toolbar'
@@ -145,6 +146,7 @@ const RECOGNIZING_TEXT = '正在识别字幕，请等待识别完成'
 // 还没有 final-cut 时先放组件或块：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 const NO_LINKS: Links = new Map()
+const NO_BINDINGS: ReadonlyMap<string, LocaleBindings> = new Map()
 const SOURCE_SHOWN: ShownLocale = { code: SOURCE_LOCALE, values: null }
 
 /** 侧栏的目录页签：镜头、贴片、场景、配乐、字幕。 */
@@ -855,6 +857,19 @@ function EditorBody({
     leaveMaterial()
     session.setCaptionText(id, text, code)
   }
+  // 贴片、场景的文字：「组件文字」和「属性」共用
+  const itemTexts = {
+    bindings: film?.bindings ?? NO_BINDINGS,
+    multilingual: (film?.locales.length ?? 0) > 0,
+    onText: (id: string, field: string, text: string, code: LocaleCode) => {
+      leaveMaterial()
+      session.setItemText(id, field, text, code)
+    },
+    onFollow: (id: string, field: string, follow: boolean) => {
+      leaveMaterial()
+      session.setFollowsLocale(id, field, follow)
+    },
+  }
 
   const viewedMaterial =
     materialView === null ? undefined : materials.byJob.get(materialView.range.jobId)
@@ -1082,6 +1097,15 @@ function EditorBody({
             <CaptionsTab
               addBlocked={captionBlocked}
               captions={captions}
+              texts={{
+                ...itemTexts,
+                hosts: textHosts(clips, catalog),
+                catalog,
+                onPick: (clip, jump) => {
+                  if (jump) seek(clip.start)
+                  selectOnly(clip.id)
+                },
+              }}
               locale={locale}
               onAdd={addCaption}
               onPick={(caption) => {
@@ -1121,6 +1145,7 @@ function EditorBody({
               onAttributes={setClipAttributes}
               locale={locale}
               onCaptionText={setCaptionText}
+              texts={itemTexts}
               selected={selectedClips}
               silentSource={silentSource}
               soundControls={soundControls}

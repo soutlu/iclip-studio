@@ -4,9 +4,17 @@ import { ColorPicker } from '@/shared/ui/color-picker'
 import { Input } from '@/shared/ui/field'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { Switch } from '@/shared/ui/switch'
+import {
+  FollowToggle,
+  HostTextField,
+  type FollowChange,
+  type ItemTextChange,
+} from './component-texts'
 import type { CatalogVariable, VariableValue } from './composition/catalog'
 import type { HostClip } from './composition/film'
+import type { LocaleBindings } from './composition/locale-text'
 import { SliderControl } from './inspector-controls'
+import type { ShownLocale } from './locales'
 
 type Values = Readonly<Record<string, VariableValue>>
 
@@ -15,10 +23,20 @@ const COMMIT_DELAY_MS = 300
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i
 
+/** 文字字段分语言要用的：显示着的语言、哪些字段随语言、工程里有没有外语，改字和切换「固定 / 随语言」。 */
+export type TextLocale = {
+  locale: ShownLocale
+  bindings: LocaleBindings
+  /** 工程里有外语：这时文字字段右边才有「固定 / 随语言」。 */
+  multilingual: boolean
+  onText: ItemTextChange
+  onFollow: FollowChange
+}
+
 /**
  * 「内容与样式」：条目的可填项，一项一行。改了先留在这里，停下 300 毫秒再整串写进片段；
  * 几项一起改时合成一次写。焦点离开这一段、换选中的片段时把没写的立刻写进去。滑杆、取色板拖动中只动控件自己，
- * 松手才算改了。
+ * 松手才算改了。外语下文字字段换成这种语言的文字框（见 `HostTextField`），单独写进去。
  */
 export function ContentFields({
   clip,
@@ -26,12 +44,14 @@ export function ContentFields({
   fonts,
   onValues,
   onEditing,
+  texts,
 }: {
   clip: HostClip
   variables: readonly CatalogVariable[]
   fonts: readonly string[]
   onValues: (id: string, values: Values) => void
   onEditing: (editing: boolean) => void
+  texts: TextLocale
 }) {
   const [pending, setPending] = useState<Values>({})
   const pendingRef = useRef<Values>({})
@@ -85,16 +105,29 @@ export function ContentFields({
           onCompositionEnd={() => compose(false)}
           onCompositionStart={() => compose(true)}
         >
-          {variables.map((variable) => (
-            <VariableRow
-              current={pending[variable.id] ?? clip.values[variable.id] ?? variable.default}
-              fonts={fonts}
-              key={variable.id}
-              onChange={(value) => change(variable.id, value)}
-              onEditing={onEditing}
-              variable={variable}
-            />
-          ))}
+          {variables.map((variable) =>
+            variable.type === 'string' ? (
+              <TextRow
+                clip={clip}
+                current={String(
+                  pending[variable.id] ?? clip.values[variable.id] ?? variable.default,
+                )}
+                key={variable.id}
+                onChange={(value) => change(variable.id, value)}
+                texts={texts}
+                variable={variable}
+              />
+            ) : (
+              <VariableRow
+                current={pending[variable.id] ?? clip.values[variable.id] ?? variable.default}
+                fonts={fonts}
+                key={variable.id}
+                onChange={(value) => change(variable.id, value)}
+                onEditing={onEditing}
+                variable={variable}
+              />
+            ),
+          )}
         </div>
       )}
     </section>
@@ -108,6 +141,62 @@ type ControlProps = {
   fonts: readonly string[]
   onChange: (value: VariableValue) => void
   onEditing: (editing: boolean) => void
+}
+
+/**
+ * 文字可填项：中文下是输入框，和别的可填项一起写；外语下换成这种语言的文字框。有外语时右边是「固定 / 随语言」。
+ */
+function TextRow({
+  clip,
+  variable,
+  current,
+  onChange,
+  texts,
+}: {
+  clip: HostClip
+  variable: CatalogVariable
+  current: string
+  onChange: (value: string) => void
+  texts: TextLocale
+}) {
+  const id = useId()
+  const bound = texts.bindings[variable.id]
+  return (
+    <div className="wf-prop-row is-content is-text">
+      <label className="wf-prop-label" htmlFor={id} title={variable.label}>
+        {variable.label}
+      </label>
+      <div className="wf-text-line">
+        {texts.locale.values === null ? (
+          <Input
+            autoComplete="off"
+            className="wf-prop-input"
+            id={id}
+            onChange={(event) => onChange(event.target.value)}
+            value={current}
+          />
+        ) : (
+          <HostTextField
+            className="wf-prop-input"
+            clip={clip}
+            field={variable}
+            id={id}
+            key={texts.locale.code}
+            locale={texts.locale}
+            onText={texts.onText}
+            variable={bound}
+          />
+        )}
+        {texts.multilingual ? (
+          <FollowToggle
+            follows={bound !== undefined}
+            label={variable.label}
+            onToggle={(follow) => texts.onFollow(clip.id, variable.id, follow)}
+          />
+        ) : null}
+      </div>
+    </div>
+  )
 }
 
 /** 一项可填项：名字在左，按类型用不同的控件。 */
@@ -168,15 +257,8 @@ function VariableControl({ id, variable, current, fonts, onChange, onEditing }: 
     case 'image':
       return <span className="wf-inspector-note">暂不支持在此修改图片</span>
     case 'string':
-      return (
-        <Input
-          autoComplete="off"
-          className="wf-prop-input"
-          id={id}
-          onChange={(event) => onChange(event.target.value)}
-          value={String(current)}
-        />
-      )
+      // 文字可填项由 TextRow 管
+      return null
   }
 }
 

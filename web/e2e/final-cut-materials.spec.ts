@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { finalCutPreviewPage, openConversation, openFinalCut, widenWorkbench } from './helpers'
+import { finalCutPreviewPlayer, openConversation, openFinalCut, widenWorkbench } from './helpers'
 
 const CONVERSATION = '无图分镜草稿'
 
@@ -123,7 +123,7 @@ const savedClips = (page: Page) =>
   }, conversationIdOf(page))
 
 const readyPlayer = async (editor: Locator) => {
-  const player = finalCutPreviewPage(editor).locator('hyperframes-player')
+  const player = finalCutPreviewPlayer(editor)
   await expect
     .poll(() =>
       player.evaluateAll(
@@ -872,12 +872,10 @@ test('换行：把片段拖到最下面的空行新开一行，再拖回去；�
     }, conversationIdOf(page))
   /**
    * 预览画面正中看得见的片段，从最上面一层往下，写成「名字@行号」。
-   * 改动 final-cut 后预览会换一个播放器，看后来的那个；带上行号才认得出它已经换成新的 final-cut。
+   * 改动 final-cut 后预览会换一个播放器，看正在显示的那个；带上行号才认得出它已经换成新的 final-cut。
    */
   const previewStack = () =>
-    finalCutPreviewPage(editor)
-      .locator('hyperframes-player')
-      .last()
+    finalCutPreviewPlayer(editor)
       .frameLocator('iframe')
       .locator('body')
       .evaluate(() =>
@@ -941,12 +939,8 @@ test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来�
   await page.keyboard.press('Enter')
   await expect.poll(() => savedClips(page)).toHaveLength(1)
   await readyPlayer(editor)
-  // 改动 final-cut 后预览会换一个播放器，换的那一下新旧两个都在：看后来的那个
-  const picture = finalCutPreviewPage(editor)
-    .locator('hyperframes-player')
-    .last()
-    .frameLocator('iframe')
-    .locator('video.picture')
+  // 改动 final-cut 后预览会换一个播放器：看正在显示的那个
+  const picture = finalCutPreviewPlayer(editor).frameLocator('iframe').locator('video.picture')
   /** 存下来的主文件里有几个隐藏的片段。 */
   const savedHidden = () =>
     page.evaluate(async (conversationId) => {
@@ -962,7 +956,8 @@ test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来�
 
   await editor.getByRole('button', { name: '隐藏画面 1', exact: true }).click()
   await expect.poll(savedHidden).toBe(1)
-  await expect(picture).toHaveCSS('display', 'none')
+  // 隐藏的视频不加载，新播放器要等它的「素材加载完」超时（8 秒）才换上来
+  await expect(picture).toHaveCSS('display', 'none', { timeout: 15_000 })
   await expect(editor.getByRole('group', { name: /，已隐藏$/ })).toHaveCount(1)
 
   const eye = editor.getByRole('button', { name: '显示画面 1', exact: true })
@@ -1921,11 +1916,7 @@ test('组件那一行在画面行上面：Enter 接的镜头落在画面区第�
   // 预览里的音频片段按预览的方式加载，播放以后读得出来
   const transport = editor.getByRole('group', { name: '播放控制' })
   await transport.getByRole('button', { name: '播放', exact: true }).click()
-  const sound = finalCutPreviewPage(editor)
-    .locator('hyperframes-player')
-    .last()
-    .frameLocator('iframe')
-    .locator('audio#music-1')
+  const sound = finalCutPreviewPlayer(editor).frameLocator('iframe').locator('audio#music-1')
   await expect(sound).toHaveAttribute('crossorigin', 'anonymous')
   await expect
     .poll(() =>

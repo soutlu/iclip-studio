@@ -1,15 +1,14 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type Ref } from 'react'
+import { useEffect, useId, useRef, useState, type ComponentProps, type Ref } from 'react'
 import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
 import { Textarea } from '@/shared/ui/field'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { BlockedReason } from '../components/blocked-reason'
 import { captionClock, captionsInOrder } from './caption-edit'
+import { ComponentTexts } from './component-texts'
 import type { CaptionClip } from './composition/film'
 import { captionIn, localeNamed, type LocaleCode, type ShownLocale } from './locales'
-
-// 照「内容与样式」里的文字框：改字停下 300 毫秒再写进 final-cut
-const COMMIT_DELAY_MS = 300
+import { usePausedCommit } from './use-paused-commit'
 
 const ADD_LABEL = '在播放头处加一句'
 const RECOGNIZE_LABEL = '识别字幕'
@@ -19,6 +18,8 @@ export type CaptionTextChange = (id: string, text: string, locale: LocaleCode) =
 
 type CaptionsTabProps = {
   captions: readonly CaptionClip[]
+  /** 「组件文字」那一段（显示着的语言、选中的片段和这里共用）。 */
+  texts: Omit<ComponentProps<typeof ComponentTexts>, 'locale' | 'selected'>
   /** 显示着的语言：外语时文字框里是这种语言的字，旁边写着原文。 */
   locale: ShownLocale
   /** 编辑器里选中的片段：选中的字幕在列表里标出来。 */
@@ -41,12 +42,14 @@ type CaptionsTabProps = {
 }
 
 /**
- * 「字幕」页签：识别字幕、在播放头处加一句，下面是按开始时间排的字幕列表，每句能直接改字、删掉，点时间选中它、
- * 跳到它的开始。编辑器里选中的字幕标成当前这一句；刚加的那一句焦点进它的文字框。识别中写着在识别几个片段。
- * 外语下改的是这种语言的字。
+ * 「字幕」页签：最上面在「字幕」和「组件文字」（见 `ComponentTexts`）两段之间切换，各写着有几个。「字幕」是识别
+ * 字幕、在播放头处加一句，下面是按开始时间排的字幕列表，每句能直接改字、删掉，点时间选中它、跳到它的开始。
+ * 编辑器里选中的字幕标成当前这一句；刚加的那一句焦点进它的文字框。识别中写着在识别几个片段。外语下改的是这种
+ * 语言的字。
  */
 export function CaptionsTab({
   captions,
+  texts,
   locale,
   selected,
   addBlocked,
@@ -60,16 +63,80 @@ export function CaptionsTab({
   onPick,
 }: CaptionsTabProps) {
   const [focusing, setFocusing] = useState<string | null>(null)
+  const [view, setView] = useState<'captions' | 'texts'>('captions')
   const add = async () => {
     if (addBlocked !== undefined) return
     const id = await onAdd()
     if (id !== undefined) setFocusing(id)
   }
+  const views = [
+    { value: 'captions', label: '字幕', count: captions.length },
+    { value: 'texts', label: '组件文字', count: texts.hosts.length },
+  ] as const
   return (
     <div className="wf-captions">
       {problem === undefined ? null : (
         <InlineAlert className="wf-captions-alert" message={problem} />
       )}
+      <div aria-label="字幕或组件文字" className="wf-captions-views" role="group">
+        {views.map((each) => (
+          <button
+            aria-pressed={view === each.value}
+            className="wf-captions-view ui-state ui-focus"
+            key={each.value}
+            onClick={() => setView(each.value)}
+            type="button"
+          >
+            {each.label} <span className="wf-captions-count">{each.count}</span>
+          </button>
+        ))}
+      </div>
+      {view === 'texts' ? (
+        <ComponentTexts {...texts} locale={locale} selected={selected} />
+      ) : (
+        <CaptionsView
+          add={add}
+          addBlocked={addBlocked}
+          captions={captions}
+          focusing={focusing}
+          locale={locale}
+          onFocused={() => setFocusing(null)}
+          onPick={onPick}
+          onRecognize={onRecognize}
+          onRemove={onRemove}
+          onText={onText}
+          recognizeBlocked={recognizeBlocked}
+          recognizing={recognizing}
+          selected={selected}
+        />
+      )}
+    </div>
+  )
+}
+
+/** 「字幕」那一段：识别、加一句的按钮和字幕列表。 */
+function CaptionsView({
+  captions,
+  locale,
+  selected,
+  addBlocked,
+  recognizing,
+  recognizeBlocked,
+  onRecognize,
+  add,
+  focusing,
+  onFocused,
+  onText,
+  onRemove,
+  onPick,
+}: Omit<CaptionsTabProps, 'texts' | 'problem' | 'onAdd'> & {
+  add: () => Promise<void>
+  /** 焦点要进的那一句（刚加的）。 */
+  focusing: string | null
+  onFocused: () => void
+}) {
+  return (
+    <>
       <div className="wf-captions-actions">
         <BlockedReason reason={recognizeBlocked}>
           <Button
@@ -118,7 +185,7 @@ export function CaptionsTab({
               focus={caption.id === focusing}
               key={caption.id}
               locale={locale}
-              onFocused={() => setFocusing(null)}
+              onFocused={onFocused}
               onRemove={() => onRemove(caption.id)}
               onSeek={() => onPick(caption)}
               onText={onText}
@@ -126,7 +193,7 @@ export function CaptionsTab({
           ))}
         </ol>
       )}
-    </div>
+    </>
   )
 }
 
@@ -198,58 +265,21 @@ type CaptionTextFieldProps = {
 }
 
 /**
- * 一句字幕的文字框（「字幕」页签和「属性」共用）：回车是换行。改了先留在框里，停下 300 毫秒再写进去；
- * 输入法拼字时不计时，焦点离开、框没了时把没写的立刻写进去。外语下框里是这种语言的字，还没翻时是空的、
- * 占位字提示输入这种语言，下面写着原文。
+ * 一句字幕的文字框（「字幕」页签和「属性」共用）：回车是换行，停下 300 毫秒再写进去（见 `usePausedCommit`）。
+ * 外语下框里是这种语言的字，还没翻时是空的、占位字提示输入这种语言，下面写着原文。
  */
 export function CaptionTextField({ caption, locale, onText, ...field }: CaptionTextFieldProps) {
-  const [draft, setDraft] = useState<string | null>(null)
-  const draftRef = useRef<string | null>(null)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const latestRef = useRef({ id: caption.id, onText, code: locale.code })
-  useLayoutEffect(() => {
-    latestRef.current = { id: caption.id, onText, code: locale.code }
-  })
-  const flush = useCallback(() => {
-    if (timerRef.current !== null) clearTimeout(timerRef.current)
-    timerRef.current = null
-    const text = draftRef.current
-    if (text === null) return
-    draftRef.current = null
-    setDraft(null)
-    const { id, code, onText: write } = latestRef.current
-    write(id, text, code)
-  }, [])
+  const { draft, fieldProps } = usePausedCommit((text) => onText(caption.id, text, locale.code))
   const sourceId = useId()
   const shown = captionIn(locale, caption)
   const foreign = locale.values !== null
-  useEffect(() => flush, [flush])
-
-  const composingRef = useRef(false)
-  const schedule = () => {
-    if (timerRef.current !== null) clearTimeout(timerRef.current)
-    timerRef.current = composingRef.current ? null : setTimeout(flush, COMMIT_DELAY_MS)
-  }
 
   return (
     <>
       <Textarea
         {...field}
+        {...fieldProps}
         aria-describedby={foreign ? sourceId : undefined}
-        onBlur={flush}
-        onChange={(event) => {
-          draftRef.current = event.target.value
-          setDraft(event.target.value)
-          schedule()
-        }}
-        onCompositionEnd={() => {
-          composingRef.current = false
-          schedule()
-        }}
-        onCompositionStart={() => {
-          composingRef.current = true
-          schedule()
-        }}
         placeholder={foreign ? `输入 ${localeNamed(locale.code).name} 字幕…` : undefined}
         rows={2}
         value={draft ?? shown.text}

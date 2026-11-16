@@ -4025,3 +4025,165 @@ describe('final-cut 编辑器 · 语言', () => {
     expect(within(row).getByRole('group', { name: /^字幕 a1，1\.0 秒$/ })).toBeVisible()
   })
 })
+
+describe('final-cut 编辑器 · 贴片、场景的文字分语言', () => {
+  const EN_FILE = 'final-cut/locales/en.json'
+  const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
+  const side = () =>
+    screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
+  const inspector = () => screen.getByRole('tabpanel', { name: '属性' })
+  const texts = () => within(panel()).getByRole('list', { name: '组件文字' })
+  const savedHost = (id: string) => {
+    const element = new DOMParser().parseFromString(savedFilm(), 'text/html').getElementById(id)
+    const bindings = element?.getAttribute('data-locale-bindings')
+    return {
+      values: JSON.parse(element?.getAttribute('data-variable-values') ?? 'null') as unknown,
+      bindings:
+        bindings === null || bindings === undefined ? null : (JSON.parse(bindings) as unknown),
+    }
+  }
+  const savedEnglish = (): unknown =>
+    JSON.parse(mockWorkspaceFile(CONVERSATION, EN_FILE)?.content ?? 'null')
+  /** 最后一次发给预览页的 final-cut 里片段 `id` 的取值。 */
+  const previewHostValues = (id: string): unknown => {
+    const load = previewPages
+      .latest()
+      .commands.filter((command) => command.type === 'load')
+      .at(-1)
+    if (load?.type !== 'load') throw new Error('还没有发过 final-cut')
+    const element = new DOMParser().parseFromString(load.html, 'text/html').getElementById(id)
+    return JSON.parse(element?.getAttribute('data-variable-values') ?? 'null')
+  }
+
+  /** 工程：一段视频，两个贴片——中文标题、英文季标。`english` 时已有 English，中文标题随语言。 */
+  const open = async (english = false) => {
+    const main = await openComposition(
+      mainFile(
+        [
+          video({ src: URL_A, duration: 4_000 }),
+          host({ id: 'zh', label: '中文标题', start: 500, track: 1, values: { text: '新品上市' } }),
+          host({
+            id: 'latin',
+            label: '季标',
+            start: 2_000,
+            track: 2,
+            values: { text: 'NEW IN · AW26' },
+          }),
+        ],
+        CAPTION_CANVAS,
+      ),
+    )
+    if (english) {
+      main.declareVariable({
+        id: 'txt_zh_text',
+        type: 'string',
+        label: '文字',
+        default: '新品上市',
+      })
+      main.setAttribute('zh', 'data-locale-bindings', '{"text":"txt_zh_text"}')
+      putMockWorkspaceFile(CONVERSATION, EN_FILE, '{}')
+    }
+    putMockProjectMain(CONVERSATION, main.serialize())
+    const user = userEvent.setup()
+    await openEditor()
+    await previewSettled()
+    await user.click(within(side()).getByRole('tab', { name: '字幕' }))
+    return user
+  }
+
+  it('「字幕」页签上面切换「字幕」「组件文字」，各带个数；「组件文字」每个贴片一块、每个文字字段一行，没有外语时不显示「固定 / 随语言」，改的是中文', async () => {
+    const user = await open()
+    const views = within(panel()).getByRole('group', { name: '字幕或组件文字' })
+    expect(
+      within(views)
+        .getAllByRole('button')
+        .map((button) => [button.textContent, button.getAttribute('aria-pressed')]),
+    ).toEqual([
+      ['字幕 0', 'true'],
+      ['组件文字 2', 'false'],
+    ])
+    await user.click(within(views).getByRole('button', { name: '组件文字 2' }))
+    expect(
+      within(texts())
+        .getAllByRole('listitem')
+        .map((item) => within(item).getAllByRole('button')[0]?.textContent),
+    ).toEqual(['中文标题00:00.50', '季标00:02.00'])
+    expect(within(texts()).queryByRole('button', { name: /：(固定|随语言)$/ })).toBeNull()
+
+    const field = within(texts()).getByRole('textbox', { name: '中文标题 文字' })
+    expect(field).toHaveValue('新品上市')
+    await user.clear(field)
+    await user.type(field, '早秋新品')
+    await waitSaved(() => expect(savedHost('zh').values).toEqual({ text: '早秋新品' }))
+    // 点一块的名字：选中它（停在「字幕」页签），播放头到它的开始
+    await user.click(within(texts()).getByRole('button', { name: /^季标/ }))
+    expect(within(texts()).getAllByRole('listitem')[1]).toHaveAttribute('aria-current', 'true')
+    await waitFor(() => expect(progress()).toHaveAttribute('aria-valuetext', '00:02.00 / 00:04.00'))
+  })
+
+  it('加上 English：中文的字段随语言、西文的固定；外语下随语言的框里写英文存进值表、预览里那个贴片是英文，固定的只读；点「随语言」改成固定', async () => {
+    const user = await open()
+    await user.click(
+      within(within(panel()).getByRole('group', { name: '字幕或组件文字' })).getByRole('button', {
+        name: '组件文字 2',
+      }),
+    )
+    await user.click(within(languages()).getByRole('button', { name: '添加语言' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'English（EN）' }))
+    await waitFor(() =>
+      expect(within(languages()).getByRole('button', { name: 'English（EN）' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      ),
+    )
+    expect(within(texts()).getByRole('button', { name: '文字：随语言' })).toBeVisible()
+    expect(within(texts()).getByRole('button', { name: '文字：固定' })).toBeVisible()
+    await waitSaved(() => expect(savedHost('zh').bindings).toEqual({ text: 'txt_zh_text' }))
+    expect(savedHost('latin').bindings).toBeNull()
+    expect(savedVariableTexts()).toEqual(['新品上市'])
+
+    const zh = within(texts()).getByRole('textbox', { name: '中文标题 文字' })
+    expect(zh).toHaveValue('')
+    expect(zh).toHaveAttribute('placeholder', '输入 English 文字…')
+    expect(zh).toHaveAccessibleDescription('原文 新品上市')
+    const latin = within(texts()).getByRole('textbox', { name: '季标 文字' })
+    expect(latin).toHaveValue('NEW IN · AW26')
+    expect(latin).toHaveAttribute('readonly')
+    expect(latin).toHaveAccessibleDescription('固定原文，所有语言共用；点击「随语言」可分别修改')
+
+    await user.type(zh, 'New in')
+    await waitSaved(() => expect(savedEnglish()).toEqual({ txt_zh_text: 'New in' }))
+    expect(savedHost('zh').values).toEqual({ text: '新品上市' })
+    await waitFor(() => expect(previewHostValues('zh')).toEqual({ text: 'New in' }))
+    expect(previewHostValues('latin')).toEqual({ text: 'NEW IN · AW26' })
+
+    await user.click(within(texts()).getByRole('button', { name: '文字：随语言' }))
+    await waitSaved(() => expect(savedEnglish()).toEqual({}))
+    expect(savedHost('zh').bindings).toBeNull()
+    expect(savedVariableTexts()).toEqual([])
+    expect(within(texts()).getByRole('textbox', { name: '中文标题 文字' })).toHaveValue('新品上市')
+    expect(within(texts()).getAllByRole('button', { name: '文字：固定' })).toHaveLength(2)
+  })
+
+  it('「属性」里的文字字段右边也有「固定 / 随语言」；外语下随语言的写这种语言，固定的只读', async () => {
+    const user = await open(true)
+    await user.click(screen.getByRole('button', { name: /^选中：中文标题，/ }))
+    await user.click(within(side()).getByRole('tab', { name: '属性' }))
+    const toggle = within(inspector()).getByRole('button', { name: '文字：随语言' })
+    expect(within(inspector()).getByRole('textbox', { name: '文字' })).toHaveValue('新品上市')
+
+    await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
+    const field = within(inspector()).getByRole('textbox', { name: '文字' })
+    expect(field).toHaveValue('')
+    await user.type(field, 'New in')
+    await waitSaved(() => expect(savedEnglish()).toEqual({ txt_zh_text: 'New in' }))
+
+    await user.click(toggle)
+    await waitSaved(() => expect(savedHost('zh').bindings).toBeNull())
+    const pinned = within(inspector()).getByRole('textbox', { name: '文字' })
+    expect(pinned).toHaveValue('新品上市')
+    expect(pinned).toHaveAttribute('readonly')
+    expect(within(inspector()).getByRole('button', { name: '文字：固定' })).toBeVisible()
+  })
+})

@@ -244,6 +244,8 @@ export const createPreviewPage = (
     // 加载 final-cut 前就带上，换播放器时倍速、静音、循环不会先回到默认再变
     applyPlayback(next, playback)
     next.classList.add('is-pending')
+    // 换上来之前看不见，读屏也不该读到它
+    next.setAttribute('aria-hidden', 'true')
     mount.append(next)
     void (async () => {
       const ready = once(next, 'ready')
@@ -258,6 +260,7 @@ export const createPreviewPage = (
       if (resumeAt() !== settledAt) next.seek(resumeAt())
       pending = null
       next.classList.remove('is-pending')
+      next.removeAttribute('aria-hidden')
       activate(next)
     })()
   }

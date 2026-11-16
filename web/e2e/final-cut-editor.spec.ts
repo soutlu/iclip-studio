@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page, type Request } from '@playwright/test'
-import { finalCutPreviewPage, openConversation, openFinalCut } from './helpers'
+import { finalCutPreviewPlayer, openConversation, openFinalCut } from './helpers'
 
 /**
  * 保存工程里文件 `path`（相对工程根）的请求里写的内容：第一次走「新建工程文件」，之后按版本写工作区文件；
@@ -30,7 +30,7 @@ const mainSaved = (page: Page, clips: number) =>
   mainSavedWith(page, (html) => (html.match(/<video /g) ?? []).length === clips)
 
 const readyPlayer = async (editor: Locator) => {
-  const player = finalCutPreviewPage(editor).locator('hyperframes-player')
+  const player = finalCutPreviewPlayer(editor)
   await expect
     .poll(() =>
       player.evaluateAll(
@@ -1845,4 +1845,79 @@ test('语言：加上 English 切过去，给一句字幕写英文，存下的 E
   await languages.getByRole('button', { name: '中文（ZH）' }).click()
   await expect(field).toHaveValue('新字幕')
   await expect.poll(captionText).toBe('新字幕')
+})
+
+/** 存出的主文件里一个属性的值（双引号里、`&quot;` 换回引号）；`tag` 是元素的开始标签。 */
+const jsonAttribute = (tag: string, name: string): unknown => {
+  const value = new RegExp(` ${name}="([^"]*)"`).exec(tag)?.[1]
+  return value === undefined ? undefined : JSON.parse(value.replaceAll('&quot;', '"'))
+}
+
+test('贴片的文字随语言：加上 English 时主文件里宿主记着根变量、根上声明了它，在「组件文字」里给中文字段写英文，English 值表里是英文，预览里贴片显示英文', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const first = mainSaved(page, 1)
+  await editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  await first
+
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '贴片' }).click()
+  await side.getByRole('searchbox', { name: '搜索贴片' }).fill('可填项')
+  const card = side.getByRole('group', { name: '测试可填项，5 秒' })
+  const added = mainSavedWith(page, (html) => savedItem(html, '测试可填项') !== null)
+  await card.hover()
+  await card.getByRole('button', { name: '加到播放头' }).click()
+  const id = savedItem(htmlOf(await added), '测试可填项')?.id ?? ''
+  expect(id).not.toBe('')
+  const variable = `txt_${id}_text`
+
+  // 加上 English：没填的「文字」用的是中文默认值，按默认规则随语言
+  const languages = editor.getByRole('group', { name: '语言' })
+  const bound = mainSavedWith(page, (html) => html.includes(variable))
+  await languages.getByRole('button', { name: '添加语言' }).click()
+  await page.getByRole('menuitem', { name: 'English（EN）' }).click()
+  // 存下的主文件：宿主记着字段对应的根变量、取值照旧（没填），根上声明了这个变量、默认值是中文
+  const saved = htmlOf(await bound)
+  const tag = new RegExp(`<div [^>]*\\bid="${id}"[^>]*>`).exec(saved)?.[0] ?? ''
+  expect(jsonAttribute(tag, 'data-locale-bindings')).toEqual({ text: variable })
+  expect(jsonAttribute(tag, 'data-variable-values')).toEqual({})
+  const root = /<html [^>]*>/.exec(saved)?.[0] ?? ''
+  expect(jsonAttribute(root, 'data-composition-variables')).toEqual([
+    expect.objectContaining({ id: variable, type: 'string', default: '示例文字' }),
+  ])
+
+  await side.getByRole('tab', { name: '字幕' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕' })
+  await tab.getByRole('button', { name: '组件文字 1' }).click()
+  await expect(tab.getByRole('button', { name: '文字：随语言' })).toBeVisible()
+  const field = tab.getByRole('textbox', { name: '测试可填项 文字' })
+  await expect(field).toHaveValue('')
+  await expect(field).toHaveAccessibleDescription('原文 示例文字')
+  const translated = page.waitForRequest(
+    (request) => savedFileOf(request, ENGLISH_FILE)?.includes('Hello there') === true,
+  )
+  await field.fill('Hello there')
+  expect(JSON.parse(savedFileOf(await translated, ENGLISH_FILE) ?? '')).toEqual({
+    [variable]: 'Hello there',
+  })
+
+  // 预览：贴片里的字是英文；改了值以后预览会换一个播放器重新加载，等只剩一个再看
+  const player = await readyPlayer(editor)
+  const shownText = () =>
+    player.evaluateAll((elements, hostId) => {
+      if (elements.length !== 1) return null
+      const [element] = elements as (HTMLElement & { iframeElement: HTMLIFrameElement })[]
+      const host = element?.iframeElement.contentDocument?.getElementById(hostId)
+      return host?.querySelector('.ff-text')?.textContent ?? null
+    }, id)
+  await expect.poll(shownText).toBe('Hello there')
 })
