@@ -1,3 +1,4 @@
+import type { Composition } from '@hyperframes/sdk'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { delay, http, HttpResponse } from 'msw'
 import type { ReactNode } from 'react'
@@ -458,6 +459,68 @@ describe('useFilmSession · 编辑', () => {
     ])
     expect(result.current.film?.durationMs).toBe(4_500)
     expect(result.current.film?.canUndo).toBe(false)
+  })
+
+  it('同一个片段连着很快改两次：算两步撤销，撤销一次只退回一次', async () => {
+    const { result } = await openThree()
+    const lengthOfB = (duration: number) =>
+      new Map([['b', { start: 2_000, duration, mediaStart: 0 }]])
+    act(() => result.current.retime(lengthOfB(500)))
+    act(() => result.current.retime(lengthOfB(250)))
+    act(() => result.current.undo())
+    expect(spans(result)[1]).toEqual([OTHER_SRC, 2_000, 500])
+    act(() => result.current.undo())
+    expect(spans(result)[1]).toEqual([OTHER_SRC, 2_000, 1_000])
+    expect(result.current.film?.canUndo).toBe(false)
+    act(() => result.current.redo())
+    expect(spans(result)[1]).toEqual([OTHER_SRC, 2_000, 500])
+    expect(result.current.film).toMatchObject({ canUndo: true, canRedo: true })
+  })
+
+  it('撤销时引擎报错（补丁只应用了一半）：文件留在撤销之前的样子，撤销记录清空并提示，不多存一次', async () => {
+    const saves = recordSaves()
+    const { result, onNotice } = await openThree()
+    act(() =>
+      result.current.retime(
+        new Map([
+          ['b', { start: 2_000, duration: 600, mediaStart: 0 }],
+          ['c', { start: 3_400, duration: 1_000, mediaStart: 400 }],
+        ]),
+      ),
+    )
+    await waitFor(() => expect(saves).toHaveLength(1))
+    await settled(result)
+    const edited = result.current.film?.html
+    const editedSpans = spans(result)
+
+    // 引擎的方法都在同一个原型上：让下一次应用补丁只应用第一个就报错
+    const { openComposition } = await import('@hyperframes/sdk')
+    const probe = await openComposition('<div data-composition-id="probe"></div>', {
+      history: false,
+    })
+    const engines = Object.getPrototypeOf(probe) as Composition
+    probe.dispose()
+    const applyPatches = engines.applyPatches
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.spyOn(engines, 'applyPatches').mockImplementationOnce(function (this: Composition, patches) {
+      applyPatches.call(this, patches.slice(0, 1))
+      throw new Error('补丁对不上')
+    })
+
+    act(() => result.current.undo())
+    expect(onNotice).toHaveBeenCalledWith('撤销失败，已清空撤销记录')
+    await waitFor(() =>
+      expect(result.current.film).toMatchObject({ canUndo: false, canRedo: false }),
+    )
+    expect(result.current.film?.html).toBe(edited)
+    expect(spans(result)).toEqual(editedSpans)
+    // 换回去的引擎接着能用：再改一次只动这一处，撤销一步回到报错前的样子
+    act(() => result.current.setHidden(['a'], true))
+    act(() => result.current.undo())
+    expect(result.current.film?.html).toBe(edited)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    await settled(result)
+    expect(saves).toHaveLength(1)
   })
 
   it('删掉一个片段、开着波纹编辑：后面的片段往前补上；撤销回来', async () => {
@@ -1215,15 +1278,24 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
     const original = result.current.film?.html ?? ''
     expect(tagOf(original, 'brand')).toContain("--font-display: 'Playfair Display'")
     act(() => result.current.setValues('brand', { font: 'Comic Sans' }))
-    expect(tagOf(result.current.film?.html, 'brand')).not.toContain('--font-display')
-    expect(tagOf(result.current.film?.html, 'brand')).toContain('scale: 0.375')
+    const comicSans = result.current.film?.html
+    expect(tagOf(comicSans, 'brand')).not.toContain('--font-display')
+    expect(tagOf(comicSans, 'brand')).toContain('scale: 0.375')
     act(() => result.current.setValues('brand', { font: 'Playfair Display' }))
     expect(tagOf(result.current.film?.html, 'brand')).toContain(
       "--font-display: 'Playfair Display', 'Noto Sans SC', sans-serif",
     )
     act(() => result.current.undo())
+    expect(result.current.film?.html).toBe(comicSans)
     act(() => result.current.undo())
-    expect(result.current.film?.html).toBe(original)
+    // 撤销时引擎倒着加回两个字体变量，行内样式里两条的先后会对调，只比每条声明
+    const sortedStyles = (html: string | undefined) =>
+      (html ?? '').replaceAll(
+        /style="([^"]*)"/g,
+        (_, css: string) => `style="${css.split('; ').toSorted().join('; ')}"`,
+      )
+    expect(sortedStyles(result.current.film?.html)).toBe(sortedStyles(original))
+    expect(result.current.film?.canUndo).toBe(false)
   })
 
   it('改视频片段、音频片段上的属性：几项一起写进文件、读回来是新的值，算一步撤销；值没变、片段已经删掉时不动工程', async () => {
@@ -1731,6 +1803,38 @@ describe('useFilmSession · 分离音频、合并回视频、联动', () => {
     act(() => result.current.resync('a', 3_000))
     expect(timingAndLink(result, 'a')).toEqual([3_000, 2_000, 1_000, 'lk-1'])
     expect(timingAndLink(result, 'v')).toEqual([3_000, 2_000, 1_000, 'lk-1'])
+  })
+
+  it('联动开着、挪动以后撤销、重做：整份文件回到挪之前、挪之后，链接名都在；照常保存', async () => {
+    const saves = recordSaves()
+    const { result } = await openWith(pairFilm({ audio: { start: 2_400 } }))
+    const before = savedElements(result.current.film?.html)
+    act(() =>
+      result.current.moveClip(
+        'v',
+        { track: 0, start: 3_000 },
+        null,
+        undefined,
+        new Map([['a', 3_400]]),
+      ),
+    )
+    const moved = savedElements(result.current.film?.html)
+    await waitFor(() => expect(saves).toHaveLength(1))
+
+    act(() => result.current.undo())
+    expect(savedElements(result.current.film?.html)).toEqual(before)
+    expect([timingAndLink(result, 'v'), timingAndLink(result, 'a')]).toEqual([
+      [2_000, 2_000, 1_000, 'lk-1'],
+      [2_400, 2_000, 1_000, 'lk-1'],
+    ])
+    await waitFor(() => expect(saves).toHaveLength(2))
+    expect(savedElements(saves[1]?.html)).toEqual(before)
+
+    act(() => result.current.redo())
+    expect(savedElements(result.current.film?.html)).toEqual(moved)
+    expect(pairIn(result, 'v').linked).toBe(true)
+    await waitFor(() => expect(saves).toHaveLength(3))
+    expect(savedElements(saves[2]?.html)).toEqual(moved)
   })
 
   it('合拢空档、波纹删除补位：联动的伙伴挪同样的时间差；联动关着时伙伴不动', async () => {

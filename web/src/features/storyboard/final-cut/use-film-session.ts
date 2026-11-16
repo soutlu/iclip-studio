@@ -37,6 +37,7 @@ import type { AttributeChanges } from './original-sound'
 import { onRow, topTrack, voiceRowFor, type Landing, type Renumbering } from './placement'
 import { detachedVideoChanges, mergedVideoChanges, type SoundPair } from './sound-pair'
 import { newClipZ, restackedZ } from './stacking'
+import { createUndoHistory, type PatchChange, type UndoHistory } from './undo-history'
 import type { StackingDirection } from './vendor/hyperframes-studio/player/components/timelineStackingSync'
 
 export type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'failed'; message: string }
@@ -60,11 +61,28 @@ export type NewVideo = Pick<VideoClip, 'label' | 'src' | 'mediaStart' | 'duratio
 /** 要放进工程的一段音频：一条音频记录从 `mediaStart` 起的 `duration` 毫秒。 */
 export type NewAudio = Pick<AudioClip, 'label' | 'src' | 'mediaStart' | 'duration'>
 
-// SDK 的编辑引擎只在打开 final-cut 编辑器时才用得到，单独成块按需加载。
-const openComposition = async (html: string): Promise<Composition> =>
-  (await import('@hyperframes/sdk')).openComposition(html)
+/**
+ * 打开主文件，引擎的每次改动都报给 `onChange`。撤销由会话自己管：关掉 SDK 自带的，撤销重做时应用补丁
+ * 引起的改动不报。SDK 的编辑引擎只在打开 final-cut 编辑器时才用得到，单独成块按需加载。
+ */
+const openEngine = async (
+  html: string,
+  onChange: (change: PatchChange) => void,
+): Promise<Composition> => {
+  const { openComposition, ORIGIN_APPLY_PATCHES } = await import('@hyperframes/sdk')
+  const engine = await openComposition(html, { history: false })
+  engine.on('patch', ({ patches, inversePatches, origin }) => {
+    if (origin !== ORIGIN_APPLY_PATCHES) onChange({ patches, inversePatches })
+  })
+  return engine
+}
 
 const STALE_NOTICE = 'final-cut 已在别处修改，已切换到最新版本；未保存的改动已放弃'
+
+const STEP_FAILED_TEXT = {
+  undo: '撤销失败，已清空撤销记录',
+  redo: '重做失败，已清空撤销记录',
+} as const
 
 const NO_RENUMBERING: Renumbering = new Map()
 const NO_STARTS: ReadonlyMap<string, number> = new Map()
@@ -97,7 +115,7 @@ const latestEnd = (engine: Composition): number => {
   )
 }
 
-const viewOf = (engine: Composition, catalog: ComponentCatalog): FilmView => {
+const viewOf = (engine: Composition, catalog: ComponentCatalog, history: UndoHistory): FilmView => {
   const root = rootOf(engine)
   const clips = clipsOf(engine, catalog)
   return {
@@ -110,12 +128,12 @@ const viewOf = (engine: Composition, catalog: ComponentCatalog): FilmView => {
     clips,
     links: new Map(clips.flatMap((clip) => (clip.link === null ? [] : [[clip.id, clip.link]]))),
     durationMs: latestEnd(engine),
-    canUndo: engine.canUndo(),
-    canRedo: engine.canRedo(),
+    canUndo: history.canUndo(),
+    canRedo: history.canRedo(),
   }
 }
 
-/** 在一批操作里做完 `change`，再按改完的样子写根上的总长：一起算一步撤销。 */
+/** 在一批操作里做完 `change`，再按改完的样子写根上的总长。 */
 const applyTo = (engine: Composition, change: () => void) =>
   engine.batch(() => {
     change()
@@ -242,6 +260,9 @@ export function useFilmSession(
   const [save, setSave] = useState<SaveState>({ kind: 'idle' })
   const [filesRevision, setFilesRevision] = useState(0)
   const engineRef = useRef<Composition | null>(null)
+  const [history] = useState(createUndoHistory)
+  // 正在做的编辑动作里引擎报的改动，做完记成一步撤销
+  const stepRef = useRef<PatchChange[] | null>(null)
   const creatingRef = useRef<Promise<Composition | null> | null>(null)
   // 工作区里主文件的版本号；还没有这个文件时是 null，第一次保存走新建
   const versionRef = useRef(initial?.version ?? null)
@@ -257,35 +278,56 @@ export function useFilmSession(
   /** 改动都从这里发出，改完读一遍现在的样子。 */
   const show = useCallback(
     (engine: Composition | null) => {
-      const view = engine === null ? null : viewOf(engine, catalog)
+      const view = engine === null ? null : viewOf(engine, catalog, history)
       presentRef.current = view?.html ?? null
       setFilm(view)
     },
-    [catalog],
+    [catalog, history],
   )
 
-  /** 换上一份主文件（null 是还没有工程）；`saved` 为真时它就是工作区里存着的那一份。 */
+  const collect = useCallback((change: PatchChange) => {
+    stepRef.current?.push(change)
+  }, [])
+
+  /** 编辑动作都从这里改主文件：`change` 和工程总长在一批操作里做完，引擎报的改动记成一步撤销。 */
+  const perform = useCallback(
+    (engine: Composition, change: () => void) => {
+      const step: PatchChange[] = []
+      stepRef.current = step
+      try {
+        applyTo(engine, change)
+      } finally {
+        stepRef.current = null
+      }
+      history.record(step)
+    },
+    [history],
+  )
+
+  /** 换上一份主文件（null 是还没有工程），撤销记录清空；`saved` 为真时它就是工作区里存着的那一份。 */
   const adopt = useCallback(
     async (html: string | null, saved: boolean) => {
       engineRef.current?.dispose()
-      const engine = html === null ? null : await openComposition(html)
+      history.clear()
+      const engine = html === null ? null : await openEngine(html, collect)
       engineRef.current = engine
       show(engine)
       if (saved) savedRef.current = presentRef.current
       return engine
     },
-    [show],
+    [collect, history, show],
   )
 
   useEffect(() => {
     if (initialHtml === null) return
     let cancelled = false
-    void openComposition(initialHtml).then((engine) => {
+    void openEngine(initialHtml, collect).then((engine) => {
       if (cancelled) {
         engine.dispose()
         return
       }
       engineRef.current = engine
+      history.clear()
       show(engine)
       savedRef.current = presentRef.current
       setOpening(false)
@@ -293,7 +335,7 @@ export function useFilmSession(
     return () => {
       cancelled = true
     }
-  }, [initialHtml, show])
+  }, [collect, history, initialHtml, show])
 
   /** 在途的保存都结束。 */
   const settled = useCallback(async () => {
@@ -444,7 +486,7 @@ export function useFilmSession(
       const track = at?.track ?? topTrack(others)
       const row = others.filter((clip) => onRow(clip, { zone: 'visual', track }))
       let end = at?.start ?? Math.max(0, ...row.map((clip) => clip.start + clip.duration))
-      applyTo(engine, () => {
+      perform(engine, () => {
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
         for (const [placed, video] of videos.entries()) {
           const element = videoElement({
@@ -468,7 +510,7 @@ export function useFilmSession(
       show(engine)
       return true
     },
-    [catalog, engineFor, show],
+    [catalog, engineFor, perform, show],
   )
 
   /**
@@ -499,7 +541,7 @@ export function useFilmSession(
         width: Number(root.attributes['data-width'] ?? canvas.width),
         height: Number(root.attributes['data-height'] ?? canvas.height),
       }
-      applyTo(engine, () => {
+      perform(engine, () => {
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
         const element = hostElement(
           {
@@ -525,7 +567,7 @@ export function useFilmSession(
       show(engine)
       return true
     },
-    [catalog, conversationId, engineFor, show],
+    [catalog, conversationId, engineFor, perform, show],
   )
 
   /**
@@ -542,7 +584,7 @@ export function useFilmSession(
       const engine = await engineFor(canvas)
       const root = engine === null ? undefined : rootOf(engine)
       if (engine === null || root === undefined) return false
-      applyTo(engine, () => {
+      perform(engine, () => {
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
         const element = audioElement({
           ...audio,
@@ -563,7 +605,7 @@ export function useFilmSession(
       show(engine)
       return true
     },
-    [engineFor, show],
+    [engineFor, perform, show],
   )
 
   /** 改工程里已有的东西：`change` 里的几步和工程总长一起算一步撤销。 */
@@ -571,10 +613,10 @@ export function useFilmSession(
     (change: (engine: Composition) => void) => {
       const engine = engineRef.current
       if (engine === null) return
-      applyTo(engine, () => change(engine))
+      perform(engine, () => change(engine))
       show(engine)
     },
-    [show],
+    [perform, show],
   )
 
   /**
@@ -825,8 +867,18 @@ export function useFilmSession(
 
   const step = (direction: 'undo' | 'redo') => {
     const engine = engineRef.current
-    if (engine === null) return
-    engine[direction]()
+    const changes = engine === null ? undefined : history[direction]()
+    if (engine === null || changes === undefined) return
+    const before = presentRef.current
+    try {
+      for (const change of changes) engine.applyPatches(change.patches)
+    } catch (error) {
+      console.error('final-cut 撤销重做失败', error)
+      noticeRef.current(STEP_FAILED_TEXT[direction])
+      // 补丁可能只应用了一半：换回应用之前的那一份，撤销记录跟着清空
+      void adopt(before, false)
+      return
+    }
     show(engine)
   }
 
