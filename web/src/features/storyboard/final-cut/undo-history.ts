@@ -1,12 +1,16 @@
 import type { JsonPatchOp } from '@hyperframes/sdk'
 
-/** 引擎报的一次改动：`patches` 是怎么改的，`inversePatches` 是怎么改回去（引擎已按应用的顺序排好）。 */
+/**
+ * 引擎报的一次改动：`file` 是改的哪个工程文件（相对工程根的路径），`patches` 是怎么改的，
+ * `inversePatches` 是怎么改回去（引擎已按应用的顺序排好）。
+ */
 export type PatchChange = {
+  readonly file: string
   readonly patches: readonly JsonPatchOp[]
   readonly inversePatches: readonly JsonPatchOp[]
 }
 
-/** 一步撤销：一个编辑动作里的所有改动，按发生的先后。 */
+/** 一步撤销：一个编辑动作里的所有改动（可以跨几个文件），按发生的先后。 */
 export type UndoStep = readonly PatchChange[]
 
 /** 最多记多少步，照 SDK 自带撤销的默认值。 */

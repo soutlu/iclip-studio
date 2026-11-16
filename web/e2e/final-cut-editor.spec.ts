@@ -2,17 +2,20 @@ import { expect, test, type Locator, type Page, type Request } from '@playwright
 import { finalCutPreviewPage, openConversation, openFinalCut } from './helpers'
 
 /**
- * 保存工程主文件的请求里写的主文件：第一次走「新建工程文件」，之后按版本写工作区文件；
- * 不是保存主文件的请求时是 null。
+ * 保存工程里文件 `path`（相对工程根）的请求里写的内容：第一次走「新建工程文件」，之后按版本写工作区文件；
+ * 不是保存这个文件的请求时是 null。
  */
-const savedHtmlOf = (request: Request): string | null => {
+const savedFileOf = (request: Request, path: string): string | null => {
   const url = request.url()
   const isCreate = request.method() === 'POST' && url.includes('/final-cut/files')
   const isWrite = request.method() === 'PUT' && url.includes('/workspace/file')
   if (!isCreate && !isWrite) return null
   const body = request.postDataJSON() as { path: string; content: string }
-  return body.path === (isCreate ? 'index.html' : 'final-cut/index.html') ? body.content : null
+  return body.path === (isCreate ? path : `final-cut/${path}`) ? body.content : null
 }
+
+/** 保存工程主文件的请求里写的主文件；不是保存主文件的请求时是 null。 */
+const savedHtmlOf = (request: Request): string | null => savedFileOf(request, 'index.html')
 
 /** 存出来的主文件，没有时是空串。 */
 const htmlOf = (request: Request) => savedHtmlOf(request) ?? ''
@@ -121,7 +124,7 @@ test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销、导出
   expect(scripts).not.toHaveLength(0)
   for (const src of scripts) expect(src).toMatch(libraryOf(previewOrigin))
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '贴片' }).click()
   const card = side.getByRole('list').getByRole('group', { name: /秒$/ }).first()
   const hoverRuntime = runtimeRequested()
@@ -409,7 +412,7 @@ test('块页签搜到块点「加到播放头」、组件页签拖一个组件�
   const withVideo = htmlOf(await first)
   const videoSeconds = Number(/<video [^>]*data-duration="([^"]+)"/.exec(withVideo)?.[1])
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await expect(side.getByRole('tab', { name: '镜头' })).toHaveAttribute('aria-selected', 'true')
   await side.getByRole('tab', { name: '场景' }).click()
   await side.getByRole('searchbox', { name: '搜索场景' }).fill('渐变')
@@ -505,7 +508,7 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await openFinalCut(panel)
   const inspector = editor.getByRole('tabpanel', { name: '属性' })
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await expect(side.getByRole('tab', { name: '镜头' })).toHaveAttribute('aria-selected', 'true')
   await expect(inspector).toHaveCount(0)
 
@@ -677,7 +680,7 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、fi
     .getByRole('slider', { name: '播放进度' })
   await expect(progress).toHaveAttribute('aria-valuetext', /^00:00\.00 \/ 00:0\d\.\d\d$/)
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '配乐' }).click()
   const list = side.getByRole('list', { name: '音频' })
   const guitar = list.getByRole('listitem').filter({ hasText: '轻快原声吉他，适合秋季穿搭' })
@@ -795,7 +798,7 @@ test('属性：音频片段拉满音量、打开循环播放写进文件；视�
   await first
 
   // 音频加到播放头（0 秒），在画面行下面新开一行
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '配乐' }).click()
   const added = mainSavedWith(page, (html) => savedAudio(html).length === 1)
   await side
@@ -914,7 +917,7 @@ test('在贴片卡片上按 ] 选中片段：侧栏切到「属性」，焦点�
   await page.keyboard.press('Enter')
   await first
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '贴片' }).click()
   await side
     .getByRole('list', { name: '贴片' })
@@ -962,7 +965,7 @@ test('编辑区变窄时只裁不换行：工具条和侧栏页签都排一行�
   const exporting = await boxOf(toolbar.getByRole('button', { name: '导出', exact: true }))
   expect(exporting.x + exporting.width).toBeGreaterThan(workspace.x + workspace.width)
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   const firstTab = await boxOf(side.getByRole('tab', { name: '镜头' }))
   const propsTab = await boxOf(side.getByRole('tab', { name: '属性' }))
   expect(propsTab.y).toBe(firstTab.y)
@@ -1445,7 +1448,7 @@ test('新建工程、加镜头和一个贴片：条目文件拷进工程，刷�
   await page.keyboard.press('Enter')
   await first
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '贴片' }).click()
   await side.getByRole('searchbox', { name: '搜索贴片' }).fill('叠加')
   const card = side.getByRole('group', { name: '测试叠加，4 秒' })
@@ -1478,4 +1481,111 @@ test('新建工程、加镜头和一个贴片：条目文件拷进工程，刷�
       }, placed?.id ?? ''),
     )
     .toBe(true)
+})
+
+const CAPTIONS_FILE = 'compositions/captions.html'
+
+test('字幕：在「字幕」页签加一句、改字，字幕文件和主文件都存对了，预览里这个时间点看得到改过的字', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  // mock 的预览域名不存工程文件（只转到组件库里的同名文件）：字幕场景照后端，答复编辑器最近存下的那一份
+  let storedScene: string | null = null
+  page.on('request', (request) => {
+    storedScene = savedFileOf(request, CAPTIONS_FILE) ?? storedScene
+  })
+  await page.route(`**/api/final-cut/preview/*/files/${CAPTIONS_FILE}`, (route) =>
+    route.fulfill(
+      storedScene === null
+        ? { status: 404, json: { detail: 'final-cut 工程里没有这个文件' } }
+        : {
+            status: 200,
+            contentType: 'text/html; charset=utf-8',
+            headers: { 'Cache-Control': 'no-store' },
+            body: storedScene,
+          },
+    ),
+  )
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const first = mainSaved(page, 1)
+  await editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  await first
+
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '字幕' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕' })
+  await expect(tab.getByText('暂无字幕，请点击「在播放头处加一句」')).toBeVisible()
+  const sceneWith = (text: string) =>
+    page.waitForRequest((request) => savedFileOf(request, CAPTIONS_FILE)?.includes(text) === true)
+  const created = sceneWith('</template>')
+  await tab.getByRole('button', { name: '在播放头处加一句' }).click()
+  const field = tab.getByRole('textbox', { name: '字幕文字 00:00.00 – 00:02.00' })
+  await expect(field).toBeFocused()
+  await expect(field).toHaveValue('新字幕')
+  await created
+
+  const sceneSaved = sceneWith('>改过的字幕</div>')
+  const mainWithText = mainSavedWith(page, (html) => html.includes('改过的字幕'))
+  await field.fill('改过的字幕')
+  const scene = savedFileOf(await sceneSaved, CAPTIONS_FILE) ?? ''
+  const main = htmlOf(await mainWithText)
+
+  // 场景文件：<template> 包着，这句字幕读一个变量，场景自己不声明变量
+  expect(scene.trim().startsWith('<template>')).toBe(true)
+  expect(scene).not.toContain('data-composition-variables')
+  const element = /<div id="(cap-[^"]+)"[^>]* data-var-text="([^"]+)">改过的字幕<\/div>/.exec(scene)
+  const [, captionId = '', variable = ''] = element ?? []
+  expect(element).not.toBeNull()
+  // 主文件：根上声明了这个变量、字是默认值；字幕宿主挂载场景文件，不带取值
+  const declared = await page.evaluate((html) => {
+    const document = new DOMParser().parseFromString(html, 'text/html')
+    const host = document.getElementById('captions')
+    return {
+      variables: JSON.parse(
+        document.documentElement.getAttribute('data-composition-variables') ?? '[]',
+      ) as { id: string; default: string }[],
+      host:
+        host === null
+          ? null
+          : Object.fromEntries([...host.attributes].map((item) => [item.name, item.value])),
+    }
+  }, main)
+  expect(declared.variables).toEqual([
+    expect.objectContaining({ id: variable, default: '改过的字幕' }),
+  ])
+  expect(declared.host).toMatchObject({
+    'data-composition-src': CAPTIONS_FILE,
+    'data-no-timeline': '',
+  })
+  expect(declared.host).not.toHaveProperty('data-variable-values')
+
+  // 预览：场景从工程里取，这句字幕在第 0 秒显示改过的字，在画面靠下的地方、盖在视频上面
+  const player = await readyPlayer(editor)
+  await expect
+    .poll(() =>
+      player.evaluate((element: HTMLElement & { iframeElement: HTMLIFrameElement }, id) => {
+        const page = element.iframeElement.contentDocument
+        const caption = page?.getElementById(id)
+        const root = page?.getElementById('film')
+        if (!page || !caption || !root) return null
+        const box = caption.getBoundingClientRect()
+        const frame = root.getBoundingClientRect()
+        const style = page.defaultView?.getComputedStyle(caption)
+        const hit = page.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+        return {
+          text: caption.textContent,
+          shown: style?.visibility !== 'hidden' && style?.display !== 'none' && box.height > 0,
+          low: (box.top + box.height / 2 - frame.top) / frame.height > 0.8,
+          onTop: hit !== null && caption.contains(hit),
+        }
+      }, captionId),
+    )
+    .toEqual({ text: '改过的字幕', shown: true, low: true, onTop: true })
 })

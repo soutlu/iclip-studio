@@ -345,6 +345,25 @@ describe('<head> 里的字体块', () => {
     expect(covers(html, 'Noto Sans SC', '上')).toBe(false)
   })
 
+  it('字幕的字按字幕用的中文字体声明了粗体和常规两种字形', () => {
+    const caption: FilmClip = {
+      kind: 'caption',
+      id: 'cap-a1',
+      label: '字幕',
+      start: 0,
+      duration: 2000,
+      track: 0,
+      hidden: false,
+      link: null,
+      text: '字幕\n两行',
+      variable: 'cap_a1',
+    }
+    const html = withFonts([video(), caption])
+    for (const char of '字幕两行') expect(covers(html, catalog.cjk.family, char)).toBe(true)
+    expect(html).toContain('font-weight:700;src:url(vendor/fonts/noto-cjk-700.woff2)')
+    expect(covers(html, catalog.cjk.family, '上')).toBe(false)
+  })
+
   it('没有组件或块的片段时只声明西文基本字符', () => {
     const html = withFonts([video({ label: '新品' })])
     expect(covers(html, 'Noto Sans SC', 'A')).toBe(true)

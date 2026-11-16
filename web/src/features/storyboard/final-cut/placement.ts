@@ -4,11 +4,14 @@ import {
   resolveZoneDropPlacement,
 } from './vendor/hyperframes-studio/player/components/timelineCollision'
 
-/** 时间线上的区：画面区（视频片段和组件或块的片段）在上，声音区（音频片段）在下。 */
-export type Zone = 'visual' | 'audio'
+/**
+ * 片段所在的区：画面区（视频片段和组件或块的片段）、声音区（音频片段）、字幕区（字幕）。时间线上画的是
+ * 画面区（在上）和声音区（在下）。
+ */
+export type Zone = 'visual' | 'audio' | 'caption'
 
 export const zoneOf = (clip: Pick<FilmClip, 'kind'>): Zone =>
-  clip.kind === 'audio' ? 'audio' : 'visual'
+  clip.kind === 'audio' ? 'audio' : clip.kind === 'caption' ? 'caption' : 'visual'
 
 /** 一行：哪个区的第几号。两个区的行号各算各的。 */
 export type RowKey = { zone: Zone; track: number }
@@ -30,7 +33,10 @@ export const sameRow = (left: RowTarget, right: RowTarget): boolean =>
     ? left.track === right.track
     : 'insertAt' in left && 'insertAt' in right && left.insertAt === right.insertAt)
 
-/** 按行分好的片段，按时间线上从上往下：画面区各行、声音区各行，区里行号小的在上面；行里按开始时间排。 */
+/**
+ * 时间线上按行分好的片段，从上往下：画面区各行、声音区各行，区里行号小的在上面；行里按开始时间排。
+ * 字幕区不在里面。
+ */
 export const rowsOf = (clips: readonly FilmClip[]): Row[] =>
   (['visual', 'audio'] as const).flatMap((zone) => {
     const rows = new Map<number, FilmClip[]>()

@@ -5,6 +5,16 @@ import type { Composition, ElementSnapshot } from '@hyperframes/sdk'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
 import { rippleStarts, withLinkedStarts, type Cut, type Links, type Timing } from './clip-edit'
+import {
+  CAPTIONS_PATH,
+  captionElement,
+  captionOf,
+  captionsHostElement,
+  captionsProblem,
+  captionsScene,
+  captionVariable,
+  isCaptionsHost,
+} from './composition/captions'
 import type { CatalogItem, ComponentCatalog, VariableValue } from './composition/catalog'
 import {
   audioElement,
@@ -18,6 +28,7 @@ import {
   withFontBlock,
   type AudioClip,
   type Canvas,
+  type CaptionClip,
   type ClipAttribute,
   type FilmClip,
   type VideoClip,
@@ -28,9 +39,11 @@ import {
   holdProjectReads,
   PROJECT_DIR,
   PROJECT_MAIN_PATH,
-  readProjectMain,
-  writeProjectMain,
-  type ProjectMain,
+  readProject,
+  readProjectFile,
+  writeProjectFile,
+  type StoredFile,
+  type StoredProject,
 } from './final-cut.api'
 import { itemDurationMs } from './items'
 import type { AttributeChanges } from './original-sound'
@@ -42,15 +55,20 @@ import type { StackingDirection } from './vendor/hyperframes-studio/player/compo
 
 export type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'failed'; message: string }
 
-/** 工程现在的样子：`html` 是当前的主文件（没存的改动也在里面），其余是从它读出来的。 */
+/** 工程现在的样子：`html` 是当前的主文件（没存的改动也在里面），其余是从工程里的文件读出来的。 */
 export type FilmView = {
   html: string
   canvas: Canvas
-  /** 主文件根下所有带时间的元素，按它们在文件里的先后。 */
+  /**
+   * 主文件根下所有带时间的元素（字幕宿主除外），按它们在文件里的先后；后面跟着字幕场景里的各句字幕，
+   * 按它们在场景里的先后。
+   */
   clips: readonly FilmClip[]
   /** 带链接（`data-link`）的片段各自的链接名。 */
   links: Links
   durationMs: number
+  /** 字幕写法不对时的原因（见 `captionsProblem`），导出前要先改好。 */
+  captionsProblem: string | undefined
   canUndo: boolean
   canRedo: boolean
 }
@@ -62,22 +80,50 @@ export type NewVideo = Pick<VideoClip, 'label' | 'src' | 'mediaStart' | 'duratio
 export type NewAudio = Pick<AudioClip, 'label' | 'src' | 'mediaStart' | 'duration'>
 
 /**
- * 打开主文件，引擎的每次改动都报给 `onChange`。撤销由会话自己管：关掉 SDK 自带的，撤销重做时应用补丁
- * 引起的改动不报。SDK 的编辑引擎只在打开 final-cut 编辑器时才用得到，单独成块按需加载。
+ * 打开工程里的文件 `file`（相对工程根的路径），引擎的每次改动带上文件报给 `onChange`。撤销由会话自己管：
+ * 关掉 SDK 自带的，撤销重做时应用补丁引起的改动不报。SDK 的编辑引擎只在打开 final-cut 编辑器时才用得到，
+ * 单独成块按需加载。
  */
 const openEngine = async (
   html: string,
+  file: string,
   onChange: (change: PatchChange) => void,
 ): Promise<Composition> => {
   const { openComposition, ORIGIN_APPLY_PATCHES } = await import('@hyperframes/sdk')
   const engine = await openComposition(html, { history: false })
   engine.on('patch', ({ patches, inversePatches, origin }) => {
-    if (origin !== ORIGIN_APPLY_PATCHES) onChange({ patches, inversePatches })
+    if (origin !== ORIGIN_APPLY_PATCHES) onChange({ file, patches, inversePatches })
   })
   return engine
 }
 
+/**
+ * 会话打开着的一个工程文件：`version` 是工作区里的版本号（新建工程还没存过的主文件是 null，第一次保存走新建），
+ * `saved` 是最近一次存下或读到的内容（还没存过时是 null）。
+ */
+type OpenFile = { engine: Composition; version: number | null; saved: string | null }
+
+/**
+ * 会话打开着的工程：`files` 是路径（相对工程根）到文件，主文件在 `PROJECT_MAIN`。`captionsPath` 是字幕场景
+ * 文件的路径（主文件里字幕宿主挂载的那个；没有宿主时是编辑器新建它的位置），文件打开着时在 `files` 里。
+ */
+type Project = { files: Map<string, OpenFile>; captionsPath: string }
+
+const mainOf = (project: Project): Composition => {
+  const main = project.files.get(PROJECT_MAIN)
+  if (main === undefined) throw new Error('final-cut 工程里没有打开主文件')
+  return main.engine
+}
+
+const sceneOf = (project: Project): Composition | undefined =>
+  project.files.get(project.captionsPath)?.engine
+
+/** 有没有没存的文件：`present` 是各文件现在的内容。 */
+const unsaved = (project: Project | null, present: ReadonlyMap<string, string>) =>
+  [...(project?.files ?? [])].some(([path, file]) => present.get(path) !== file.saved)
+
 const STALE_NOTICE = 'final-cut 已在别处修改，已切换到最新版本；未保存的改动已放弃'
+const CAPTIONS_MISSING_TEXT = '字幕文件不存在，已按没有字幕打开 final-cut'
 
 const STEP_FAILED_TEXT = {
   undo: '撤销失败，已清空撤销记录',
@@ -87,58 +133,118 @@ const STEP_FAILED_TEXT = {
 const NO_RENUMBERING: Renumbering = new Map()
 const NO_STARTS: ReadonlyMap<string, number> = new Map()
 
-/** 主文件的根：最外层带 `data-composition-id` 的元素。 */
+/** 文件的根：最外层带 `data-composition-id` 的元素（主文件的根、字幕场景的根）。 */
 const rootOf = (engine: Composition): ElementSnapshot | undefined =>
   engine
     .getRootElements()
     .find((element) => element.attributes['data-composition-id'] !== undefined)
 
-/** 根下所有带时间的元素读成的片段，按它们在文件里的先后。不存出文件，一批操作中间也能用。 */
-const clipsOf = (engine: Composition, catalog: ComponentCatalog): FilmClip[] => {
-  const timings = engine.getElementTimings()
-  return (rootOf(engine)?.children ?? []).flatMap((element) => {
-    const timing = timings[element.id]
-    return timing === undefined ? [] : [clipOf(element, timing, catalog)]
-  })
-}
+/** 主文件里的字幕宿主。 */
+const captionsHostOf = (main: Composition): ElementSnapshot | undefined =>
+  rootOf(main)?.children.find((element) => isCaptionsHost(element.attributes))
 
-/** 工程总长：根以外所有带时间的元素里最晚的结尾（毫秒）。 */
-const latestEnd = (engine: Composition): number => {
-  const root = rootOf(engine)?.id
-  return Math.round(
-    Math.max(
-      0,
-      ...Object.entries(engine.getElementTimings())
-        .filter(([id]) => id !== root)
-        .map(([, timing]) => timing.exitAt * 1000),
-    ),
-  )
-}
-
-const viewOf = (engine: Composition, catalog: ComponentCatalog, history: UndoHistory): FilmView => {
-  const root = rootOf(engine)
-  const clips = clipsOf(engine, catalog)
+const canvasOf = (main: Composition): Canvas => {
+  const root = rootOf(main)
   return {
-    // SDK 改不了 <head>：存出时只重算字体块
-    html: withFontBlock(engine.serialize(), clips, catalog),
-    canvas: {
-      width: Number(root?.attributes['data-width'] ?? 0),
-      height: Number(root?.attributes['data-height'] ?? 0),
-    },
-    clips,
-    links: new Map(clips.flatMap((clip) => (clip.link === null ? [] : [[clip.id, clip.link]]))),
-    durationMs: latestEnd(engine),
-    canUndo: history.canUndo(),
-    canRedo: history.canRedo(),
+    width: Number(root?.attributes['data-width'] ?? 0),
+    height: Number(root?.attributes['data-height'] ?? 0),
   }
 }
 
-/** 在一批操作里做完 `change`，再按改完的样子写根上的总长。 */
-const applyTo = (engine: Composition, change: () => void) =>
-  engine.batch(() => {
-    change()
-    engine.dispatch({ type: 'setCompositionMetadata', duration: latestEnd(engine) / 1000 })
+/**
+ * 主文件根下所有带时间的元素（字幕宿主除外）读成的片段，按它们在文件里的先后。不存出文件，一批操作中间也能用。
+ */
+const clipsOf = (main: Composition, catalog: ComponentCatalog): FilmClip[] => {
+  const timings = main.getElementTimings()
+  return (rootOf(main)?.children ?? []).flatMap((element) => {
+    const timing = timings[element.id]
+    return timing === undefined || isCaptionsHost(element.attributes)
+      ? []
+      : [clipOf(element, timing, catalog)]
   })
+}
+
+/** 字幕场景根下的各句字幕，按它们在场景里的先后；字取主文件根上的变量。 */
+const captionsIn = (scene: Composition, main: Composition): CaptionClip[] => {
+  const texts = new Map(
+    main
+      .getVariableDeclarations()
+      .flatMap((declaration) =>
+        typeof declaration.default === 'string' ? [[declaration.id, declaration.default]] : [],
+      ),
+  )
+  const timings = scene.getElementTimings()
+  return (rootOf(scene)?.children ?? []).flatMap((element) => {
+    const timing = timings[element.id]
+    return timing === undefined ? [] : [captionOf(element, timing, texts)]
+  })
+}
+
+/** 各句字幕，编号 → 字幕；还没有字幕场景时是空的。 */
+const captionsById = (main: Composition, scene: Composition | undefined) =>
+  new Map(
+    (scene === undefined ? [] : captionsIn(scene, main)).map((caption) => [caption.id, caption]),
+  )
+
+const declares = (main: Composition, variable: string) =>
+  main.getVariableDeclarations().some((declaration) => declaration.id === variable)
+
+/** 工程总长（毫秒）：主文件根下的片段（字幕宿主除外）和各句字幕里最晚的结尾。 */
+const latestEnd = (main: Composition, scene: Composition | undefined): number => {
+  const skipped = new Set([rootOf(main)?.id, captionsHostOf(main)?.id])
+  const ends = (engine: Composition) =>
+    Object.entries(engine.getElementTimings())
+      .filter(([id]) => !skipped.has(id))
+      .map(([, timing]) => timing.exitAt * 1000)
+  if (scene !== undefined) skipped.add(rootOf(scene)?.id)
+  return Math.round(Math.max(0, ...ends(main), ...(scene === undefined ? [] : ends(scene))))
+}
+
+/** 按现在的样子写总长：根上的总长，字幕宿主的时长跟着一样长。 */
+const writeTotal = (main: Composition, scene: Composition | undefined) => {
+  const total = latestEnd(main, scene) / 1000
+  main.dispatch({ type: 'setCompositionMetadata', duration: total })
+  const host = captionsHostOf(main)
+  const timing = host === undefined ? undefined : main.getElementTimings()[host.id]
+  if (host !== undefined && timing !== undefined && timing.exitAt - timing.enterAt !== total)
+    main.setTiming(host.id, { start: 0, duration: total }, { linked: false })
+}
+
+/**
+ * 工程现在的样子，和各文件现在的内容（路径 → 内容）：主文件只重算 `<head>` 里的字体块（SDK 改不了 `<head>`），
+ * 别的文件照 SDK 存出的写。
+ */
+const viewOf = (
+  project: Project,
+  catalog: ComponentCatalog,
+  history: UndoHistory,
+): { view: FilmView; present: Map<string, string> } => {
+  const main = mainOf(project)
+  const scene = sceneOf(project)
+  const captions = scene === undefined ? [] : captionsIn(scene, main)
+  const clips = [...clipsOf(main, catalog), ...captions]
+  const html = withFontBlock(main.serialize(), clips, catalog)
+  const present = new Map(
+    [...project.files].map(([path, file]) => [
+      path,
+      path === PROJECT_MAIN ? html : file.engine.serialize(),
+    ]),
+  )
+  const view: FilmView = {
+    html,
+    canvas: canvasOf(main),
+    clips,
+    links: new Map(clips.flatMap((clip) => (clip.link === null ? [] : [[clip.id, clip.link]]))),
+    durationMs: latestEnd(main, scene),
+    captionsProblem: captionsProblem(
+      present.get(project.captionsPath) ?? null,
+      captionsHostOf(main)?.attributes,
+    ),
+    canUndo: history.canUndo(),
+    canRedo: history.canRedo(),
+  }
+  return { view, present }
+}
 
 const newClipId = () => `clip-${crypto.randomUUID().slice(0, 8)}`
 
@@ -245,13 +351,14 @@ type Options = {
 }
 
 /**
- * 编辑对话工作区里的 final-cut 工程：打开主文件 `final-cut/index.html`（`initial` 是 null 时还没有工程），
- * 改动停下 `debounceMs` 毫秒后整份保存（第一次新建、之后按版本号写）。主文件在别处被改了时换上那一份、
- * 放弃本地没存的改动；工程里别的文件变了时 `filesRevision` 加 1，预览据此重新加载。
+ * 编辑对话工作区里的 final-cut 工程：打开读到的主文件 `final-cut/index.html` 和它的字幕场景文件（有时；
+ * `initial` 见 `readProject`，是 null 时还没有工程），改动停下 `debounceMs` 毫秒后把改了的文件整份保存（主文件第一次新建、之后按
+ * 版本号写；字幕场景先存，主文件后存）。打开着的文件有一个在别处被改了、或保存时版本对不上，就都换上
+ * 工作区里的那一份、放弃本地没存的改动；工程里主文件以外的文件变了时 `filesRevision` 加 1，预览据此重新加载。
  */
 export function useFilmSession(
   conversationId: string,
-  initial: ProjectMain | null,
+  initial: StoredProject | null,
   catalog: ComponentCatalog,
   { debounceMs = 800, onNotice }: Options,
 ) {
@@ -259,43 +366,49 @@ export function useFilmSession(
   const [opening, setOpening] = useState(initial !== null)
   const [save, setSave] = useState<SaveState>({ kind: 'idle' })
   const [filesRevision, setFilesRevision] = useState(0)
-  const engineRef = useRef<Composition | null>(null)
+  const projectRef = useRef<Project | null>(null)
   const [history] = useState(createUndoHistory)
   // 正在做的编辑动作里引擎报的改动，做完记成一步撤销
   const stepRef = useRef<PatchChange[] | null>(null)
-  const creatingRef = useRef<Promise<Composition | null> | null>(null)
-  // 工作区里主文件的版本号；还没有这个文件时是 null，第一次保存走新建
-  const versionRef = useRef(initial?.version ?? null)
-  const savedRef = useRef<string | null>(null)
-  const presentRef = useRef<string | null>(null)
+  const creatingRef = useRef<Promise<Project> | null>(null)
+  const creatingCaptionsRef = useRef<Promise<OpenFile | undefined> | null>(null)
+  // 各文件现在的内容（路径 → 内容），和 `saved` 不一样的就是没存的
+  const presentRef = useRef<ReadonlyMap<string, string>>(new Map())
   const inFlightRef = useRef<Promise<void> | null>(null)
   const noticeRef = useRef(onNotice)
   useLayoutEffect(() => {
     noticeRef.current = onNotice
   })
-  const initialHtml = initial?.content ?? null
 
   /** 改动都从这里发出，改完读一遍现在的样子。 */
-  const show = useCallback(
-    (engine: Composition | null) => {
-      const view = engine === null ? null : viewOf(engine, catalog, history)
-      presentRef.current = view?.html ?? null
-      setFilm(view)
-    },
-    [catalog, history],
-  )
+  const show = useCallback(() => {
+    const project = projectRef.current
+    const shown = project === null ? null : viewOf(project, catalog, history)
+    presentRef.current = shown?.present ?? new Map()
+    setFilm(shown?.view ?? null)
+  }, [catalog, history])
 
   const collect = useCallback((change: PatchChange) => {
     stepRef.current?.push(change)
   }, [])
 
-  /** 编辑动作都从这里改主文件：`change` 和工程总长在一批操作里做完，引擎报的改动记成一步撤销。 */
+  /**
+   * 编辑动作都从这里改工程：`change` 和工程总长在一批操作里做完（每个打开着的文件各一批，里面抛出时都退回），
+   * 引擎报的改动不管改了几个文件都记成一步撤销。
+   */
   const perform = useCallback(
-    (engine: Composition, change: () => void) => {
+    (project: Project, change: () => void) => {
+      const main = mainOf(project)
+      const others = [...project.files]
+        .filter(([path]) => path !== PROJECT_MAIN)
+        .map(([, file]) => file.engine)
       const step: PatchChange[] = []
       stepRef.current = step
       try {
-        applyTo(engine, change)
+        main.batch(() => {
+          others.reduce<() => void>((inner, engine) => () => engine.batch(inner), change)()
+          writeTotal(main, sceneOf(project))
+        })
       } finally {
         stepRef.current = null
       }
@@ -304,73 +417,111 @@ export function useFilmSession(
     [history],
   )
 
-  /** 换上一份主文件（null 是还没有工程），撤销记录清空；`saved` 为真时它就是工作区里存着的那一份。 */
-  const adopt = useCallback(
-    async (html: string | null, saved: boolean) => {
-      engineRef.current?.dispose()
+  /**
+   * 换上一份工程（null 是还没有工程），撤销记录清空；`stored` 为真时各文件现在的内容就是工作区里存着的那一份。
+   */
+  const install = useCallback(
+    (project: Project | null, stored: boolean) => {
+      for (const file of projectRef.current?.files.values() ?? []) file.engine.dispose()
       history.clear()
-      const engine = html === null ? null : await openEngine(html, collect)
-      engineRef.current = engine
-      show(engine)
-      if (saved) savedRef.current = presentRef.current
-      return engine
+      projectRef.current = project
+      show()
+      if (stored && project !== null)
+        for (const [path, file] of project.files) file.saved = presentRef.current.get(path) ?? null
     },
-    [collect, history, show],
+    [history, show],
   )
 
+  /**
+   * 打开工作区里存着的工程 `stored`（null 是还没有工程，见 `readProject`）：主文件和字幕场景文件。有字幕宿主
+   * 但场景文件不存在时按没有字幕打开，提示一句。
+   */
+  const openStored = useCallback(
+    async (stored: StoredProject | null): Promise<Project | null> => {
+      if (stored === null) return null
+      const { main, captions, captionsPath } = stored
+      const files = new Map<string, OpenFile>([
+        [
+          PROJECT_MAIN,
+          {
+            engine: await openEngine(main.content, PROJECT_MAIN, collect),
+            version: main.version,
+            saved: null,
+          },
+        ],
+      ])
+      if (captions !== null)
+        files.set(captionsPath, {
+          engine: await openEngine(captions.content, captionsPath, collect),
+          version: captions.version,
+          saved: null,
+        })
+      else if (stored.hosted) noticeRef.current(CAPTIONS_MISSING_TEXT)
+      return { files, captionsPath }
+    },
+    [collect],
+  )
+
+  const [initialProject] = useState(initial)
   useEffect(() => {
-    if (initialHtml === null) return
+    if (initialProject === null) return
     let cancelled = false
-    void openEngine(initialHtml, collect).then((engine) => {
+    void openStored(initialProject).then((project) => {
       if (cancelled) {
-        engine.dispose()
+        for (const file of project?.files.values() ?? []) file.engine.dispose()
         return
       }
-      engineRef.current = engine
-      history.clear()
-      show(engine)
-      savedRef.current = presentRef.current
+      install(project, true)
       setOpening(false)
     })
     return () => {
       cancelled = true
     }
-  }, [collect, history, initialHtml, show])
+  }, [initialProject, install, openStored])
 
   /** 在途的保存都结束。 */
   const settled = useCallback(async () => {
     while (inFlightRef.current !== null) await inFlightRef.current
   }, [])
 
-  /** 换上工作区里现在的那一份，放弃本地没存的改动并提示。 */
+  /** 换上工作区里现在的那一份 `stored`，放弃本地没存的改动并提示。 */
   const adoptStored = useCallback(
-    async (stored: ProjectMain | null) => {
-      versionRef.current = stored?.version ?? null
-      await adopt(stored?.content ?? null, true)
+    async (stored: StoredProject | null) => {
+      install(await openStored(stored), true)
       noticeRef.current(STALE_NOTICE)
     },
-    [adopt],
+    [install, openStored],
   )
 
   const saveNow = useCallback(async (): Promise<'saved' | 'clean' | 'reloaded' | 'failed'> => {
     await settled()
-    const html = presentRef.current
-    if (html === null || html === savedRef.current) return 'clean'
+    const present = presentRef.current
+    // 字幕场景先存、主文件后存：主文件挂载着场景，先存主文件的话预览可能取到还没存的场景
+    const writes = [...(projectRef.current?.files ?? [])]
+      .flatMap(([path, file]) => {
+        const content = present.get(path)
+        return content === undefined || content === file.saved ? [] : [{ path, file, content }]
+      })
+      .toSorted(
+        (left, right) => Number(left.path === PROJECT_MAIN) - Number(right.path === PROJECT_MAIN),
+      )
+    if (writes.length === 0) return 'clean'
     const run = (async () => {
       setSave({ kind: 'saving' })
       try {
-        const known = versionRef.current
-        versionRef.current =
-          known === null
-            ? await createProjectFile(conversationId, PROJECT_MAIN, html)
-            : await writeProjectMain(conversationId, html, known)
-        savedRef.current = html
+        for (const { path, file, content } of writes) {
+          file.version =
+            file.version === null
+              ? await createProjectFile(conversationId, path, content)
+              : await writeProjectFile(conversationId, path, content, file.version)
+          file.saved = content
+        }
         setSave({ kind: 'idle' })
         return 'saved' as const
       } catch (error) {
         if (error instanceof ApiError && error.status === 409) {
           try {
-            await adoptStored(await readProjectMain(conversationId))
+            await adoptStored(await readProject(conversationId))
             setSave({ kind: 'idle' })
             return 'reloaded' as const
           } catch (reloadError) {
@@ -391,16 +542,29 @@ export function useFilmSession(
   }, [adoptStored, conversationId, settled])
 
   /**
-   * 主文件变了：通知不带版本号，自己的保存也会通知。等在途的保存结束再读，读回来以后再等一次
-   * （读的时候可能又存了一版），只有工作区里的版本比自己知道的新（或文件出现、消失了）才算别处改的。
+   * 打开着的文件（没有工程时是主文件）变了：通知不带版本号，自己的保存也会通知。等在途的保存结束再读，读回来
+   * 以后再等一次（读的时候可能又存了一版），有一个文件在工作区里的版本比自己知道的新（或文件出现、消失了）
+   * 才算别处改的。
    */
   const checkStored = useCallback(async () => {
     try {
       await settled()
-      const stored = await readProjectMain(conversationId)
+      const stored = await readProject(conversationId)
       await settled()
-      const known = versionRef.current
-      const external = stored === null ? known !== null : known === null || stored.version > known
+      const storedFiles = new Map<string, StoredFile | null>(
+        stored === null
+          ? []
+          : [
+              [PROJECT_MAIN, stored.main],
+              [stored.captionsPath, stored.captions],
+            ],
+      )
+      const files = projectRef.current?.files
+      const external = [...(files?.keys() ?? [PROJECT_MAIN])].some((path) => {
+        const found = storedFiles.get(path) ?? null
+        const known = files?.get(path)?.version ?? null
+        return found === null ? known !== null : known === null || found.version > known
+      })
       if (external) await adoptStored(stored)
     } catch (error) {
       setSave({ kind: 'failed', message: errorMessageOf(error, 'final-cut 读取失败') })
@@ -414,13 +578,16 @@ export function useFilmSession(
       conversationId,
       [PROJECT_DIR],
       (changes) => {
-        if (changes.some((change) => change.path === PROJECT_MAIN_PATH)) void checkStored()
+        const opened = [...(projectRef.current?.files.keys() ?? [PROJECT_MAIN])]
+        const watched = new Set(opened.map((path) => `${PROJECT_DIR}/${path}`))
+        if (changes.some((change) => watched.has(change.path))) void checkStored()
+        // 字幕场景存好以后也要让预览重新加载：预览从工作区取它
         if (changes.some((change) => change.path !== PROJECT_MAIN_PATH))
           setFilesRevision((revision) => revision + 1)
       },
       { recursive: true },
     )
-    // 断线期间的通知收不到：重连后按主文件变了、别的文件也变了处理
+    // 断线期间的通知收不到：重连后按打开着的文件变了、别的文件也变了处理
     const unwatchSessions = connection.watchSessions((update) => {
       if (update.kind !== 'reconnected') return
       void checkStored()
@@ -432,34 +599,47 @@ export function useFilmSession(
     }
   }, [checkStored, connection, conversationId])
 
-  const html = film?.html ?? null
   useEffect(() => {
-    if (html === null || html === savedRef.current) return
+    if (film === null || !unsaved(projectRef.current, presentRef.current)) return
     const timer = setTimeout(() => void saveNow(), debounceMs)
     return () => clearTimeout(timer)
-  }, [html, debounceMs, saveNow])
+  }, [film, debounceMs, saveNow])
 
   // 卸载时把没存的存掉；连同还在途的那次一起交给主文件的读取，再打开时等它们存完再读
   useEffect(
     () => () => {
-      const dirty = presentRef.current !== null && presentRef.current !== savedRef.current
-      if (dirty || inFlightRef.current !== null) holdProjectReads(conversationId, saveNow())
+      if (unsaved(projectRef.current, presentRef.current) || inFlightRef.current !== null)
+        holdProjectReads(conversationId, saveNow())
     },
     [conversationId, saveNow],
   )
 
-  useEffect(() => () => engineRef.current?.dispose(), [])
+  useEffect(
+    () => () => {
+      for (const file of projectRef.current?.files.values() ?? []) file.engine.dispose()
+    },
+    [],
+  )
 
   /** 还没有工程时按 `canvas` 用模板建一份；连着加两次也只建一份，后一次等前一次建好。 */
-  const engineFor = useCallback(
-    async (canvas: Canvas): Promise<Composition | null> => {
-      if (engineRef.current !== null) return engineRef.current
-      creatingRef.current ??= adopt(emptyProject(canvas, catalog), false).finally(() => {
-        creatingRef.current = null
-      })
+  const projectFor = useCallback(
+    async (canvas: Canvas): Promise<Project> => {
+      if (projectRef.current !== null) return projectRef.current
+      creatingRef.current ??= openEngine(emptyProject(canvas, catalog), PROJECT_MAIN, collect)
+        .then((main) => {
+          const project: Project = {
+            files: new Map([[PROJECT_MAIN, { engine: main, version: null, saved: null }]]),
+            captionsPath: CAPTIONS_PATH,
+          }
+          install(project, false)
+          return project
+        })
+        .finally(() => {
+          creatingRef.current = null
+        })
       return creatingRef.current
     },
-    [adopt, catalog],
+    [catalog, collect, install],
   )
 
   /**
@@ -474,9 +654,10 @@ export function useFilmSession(
       at?: Landing,
       renumber: Renumbering = NO_RENUMBERING,
     ): Promise<boolean> => {
-      const engine = await engineFor(canvas)
-      const root = engine === null ? undefined : rootOf(engine)
-      if (engine === null || root === undefined) return false
+      const project = await projectFor(canvas)
+      const engine = mainOf(project)
+      const root = rootOf(engine)
+      if (root === undefined) return false
       const existing = clipsOf(engine, catalog)
       // 别的片段先换成新的行号，后面都按换完的样子算
       const others = existing.map((clip) => ({
@@ -486,7 +667,7 @@ export function useFilmSession(
       const track = at?.track ?? topTrack(others)
       const row = others.filter((clip) => onRow(clip, { zone: 'visual', track }))
       let end = at?.start ?? Math.max(0, ...row.map((clip) => clip.start + clip.duration))
-      perform(engine, () => {
+      perform(project, () => {
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
         for (const [placed, video] of videos.entries()) {
           const element = videoElement({
@@ -507,10 +688,10 @@ export function useFilmSession(
           end += video.duration
         }
       })
-      show(engine)
+      show()
       return true
     },
-    [catalog, engineFor, perform, show],
+    [catalog, projectFor, perform, show],
   )
 
   /**
@@ -532,16 +713,17 @@ export function useFilmSession(
         noticeRef.current(errorMessageOf(error, '贴片和场景读取失败'))
         return false
       }
-      const engine = await engineFor(canvas)
-      const root = engine === null ? undefined : rootOf(engine)
-      if (engine === null || root === undefined) return false
+      const project = await projectFor(canvas)
+      const engine = mainOf(project)
+      const root = rootOf(engine)
+      if (root === undefined) return false
       const existing = clipsOf(engine, catalog)
       const duration = itemDurationMs(item, existing)
       const size = {
         width: Number(root.attributes['data-width'] ?? canvas.width),
         height: Number(root.attributes['data-height'] ?? canvas.height),
       }
-      perform(engine, () => {
+      perform(project, () => {
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
         const element = hostElement(
           {
@@ -564,10 +746,10 @@ export function useFilmSession(
         )
         engine.addElement(root.id, 0, element)
       })
-      show(engine)
+      show()
       return true
     },
-    [catalog, conversationId, engineFor, perform, show],
+    [catalog, conversationId, projectFor, perform, show],
   )
 
   /**
@@ -581,10 +763,11 @@ export function useFilmSession(
       at: Landing,
       renumber: Renumbering = NO_RENUMBERING,
     ): Promise<boolean> => {
-      const engine = await engineFor(canvas)
-      const root = engine === null ? undefined : rootOf(engine)
-      if (engine === null || root === undefined) return false
-      perform(engine, () => {
+      const project = await projectFor(canvas)
+      const engine = mainOf(project)
+      const root = rootOf(engine)
+      if (root === undefined) return false
+      perform(project, () => {
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
         const element = audioElement({
           ...audio,
@@ -602,37 +785,43 @@ export function useFilmSession(
         })
         engine.addElement(root.id, 0, element)
       })
-      show(engine)
+      show()
       return true
     },
-    [engineFor, perform, show],
+    [projectFor, perform, show],
   )
 
-  /** 改工程里已有的东西：`change` 里的几步和工程总长一起算一步撤销。 */
+  /**
+   * 改工程里已有的东西：`change` 拿到主文件和字幕场景（没有时是 undefined），里面的几步和工程总长一起算一步撤销。
+   */
   const edit = useCallback(
-    (change: (engine: Composition) => void) => {
-      const engine = engineRef.current
-      if (engine === null) return
-      perform(engine, () => change(engine))
-      show(engine)
+    (change: (main: Composition, scene: Composition | undefined) => void) => {
+      const project = projectRef.current
+      if (project === null) return
+      perform(project, () => change(mainOf(project), sceneOf(project)))
+      show()
     },
     [perform, show],
   )
 
   /**
    * 改几个片段各自的起止和入点，一起算一步撤销。组件或块的片段的入点写成从第几秒开始播，是 0 时去掉
-   * 这个属性；「其他」片段没有入点，只改起止。联动的伙伴要跟着动时由调用方算进 `timings`。
+   * 这个属性；「其他」片段和字幕没有入点，只改起止（字幕改在字幕场景里）。联动的伙伴要跟着动时由调用方
+   * 算进 `timings`。
    */
   const retime = useCallback(
     (timings: ReadonlyMap<string, Timing>) =>
-      edit((engine) => {
+      edit((engine, scene) => {
         const kinds = new Map(clipsOf(engine, catalog).map((clip) => [clip.id, clip.kind]))
+        const captions = captionsById(engine, scene)
         keepingLinks(engine, () => {
           for (const [id, timing] of timings) {
-            setOwnTiming(engine, id, {
-              start: timing.start / 1000,
-              duration: timing.duration / 1000,
-            })
+            const span = { start: timing.start / 1000, duration: timing.duration / 1000 }
+            if (scene !== undefined && captions.has(id)) {
+              setOwnTiming(scene, id, span)
+              continue
+            }
+            setOwnTiming(engine, id, span)
             const kind = kinds.get(id)
             const inPoint = String(timing.mediaStart / 1000)
             if (kind === 'host')
@@ -700,8 +889,9 @@ export function useFilmSession(
    */
   const setValues = useCallback(
     (id: string, values: Readonly<Record<string, VariableValue>>) => {
-      const engine = engineRef.current
-      const clip = engine === null ? undefined : clipsOf(engine, catalog).find((c) => c.id === id)
+      const project = projectRef.current
+      const clip =
+        project === null ? undefined : clipsOf(mainOf(project), catalog).find((c) => c.id === id)
       if (clip?.kind !== 'host') return
       const item = itemNamed(catalog, clip.item)
       edit((current) => {
@@ -718,8 +908,9 @@ export function useFilmSession(
    */
   const setAttributes = useCallback(
     (ids: readonly string[], changes: Readonly<Partial<Record<ClipAttribute, string | null>>>) => {
-      const engine = engineRef.current
-      if (engine === null) return
+      const project = projectRef.current
+      if (project === null) return
+      const engine = mainOf(project)
       const changed = ids.flatMap((id) => {
         const element = engine.getElement(id)
         if (element === null) return []
@@ -735,14 +926,26 @@ export function useFilmSession(
     [edit],
   )
 
-  /** 删掉几个片段；`ripple` 为真时主轨里后面的片段往前补上，联动的伙伴挪同样的时间差。 */
+  /**
+   * 删掉几个片段；`ripple` 为真时主轨里后面的片段往前补上，联动的伙伴挪同样的时间差。删一句字幕是删掉
+   * 场景里它的元素和主文件根上它的变量；删掉最后一句时场景文件和宿主都留着。
+   */
   const removeClips = useCallback(
     (ids: readonly string[], ripple: boolean) =>
-      edit((engine) => {
+      edit((engine, scene) => {
         const before = clipsOf(engine, catalog)
+        const captions = captionsById(engine, scene)
         const gone = new Set(ids)
         const starts = ripple ? withLinkedStarts(rippleStarts(before, gone), before) : NO_STARTS
-        for (const id of gone) engine.removeElement(id)
+        for (const id of gone) {
+          const caption = captions.get(id)
+          if (scene === undefined || caption === undefined) {
+            engine.removeElement(id)
+            continue
+          }
+          scene.removeElement(id)
+          if (declares(engine, caption.variable)) engine.removeVariableDeclaration(caption.variable)
+        }
         keepingLinks(engine, () => {
           for (const [id, start] of starts)
             if (!gone.has(id)) setOwnTiming(engine, id, { start: start / 1000 })
@@ -758,9 +961,10 @@ export function useFilmSession(
    */
   const detach = useCallback(
     (videoId: string): string | undefined => {
-      const engine = engineRef.current
-      const root = engine === null ? undefined : rootOf(engine)
-      if (engine === null || root === undefined) return undefined
+      const project = projectRef.current
+      const engine = project === null ? undefined : mainOf(project)
+      const root = engine === undefined ? undefined : rootOf(engine)
+      if (engine === undefined || root === undefined) return undefined
       const clips = clipsOf(engine, catalog)
       const video = clips.find((clip) => clip.id === videoId)
       if (video?.kind !== 'video') return undefined
@@ -805,8 +1009,8 @@ export function useFilmSession(
    */
   const merge = useCallback(
     ({ video, audio }: SoundPair) => {
-      const engine = engineRef.current
-      const element = engine?.getElement(audio.id) ?? null
+      const project = projectRef.current
+      const element = project === null ? null : mainOf(project).getElement(audio.id)
       if (element === null) return
       const changes: AttributeChanges = mergedVideoChanges(element.attributes)
       edit((current) => {
@@ -843,9 +1047,10 @@ export function useFilmSession(
    */
   const split = useCallback(
     (cuts: readonly Cut[]) => {
-      const engine = engineRef.current
-      const root = engine === null ? undefined : rootOf(engine)
-      if (engine === null || root === undefined || cuts.length === 0) return
+      const project = projectRef.current
+      const engine = project === null ? undefined : mainOf(project)
+      const root = engine === undefined ? undefined : rootOf(engine)
+      if (engine === undefined || root === undefined || cuts.length === 0) return
       const halves = splitHalves(engine, cuts, clipsOf(engine, catalog))
       if (halves === null) return
       try {
@@ -865,21 +1070,146 @@ export function useFilmSession(
     [catalog, edit],
   )
 
+  /**
+   * 工程里的字幕场景文件，还没有时先在工作区里建一份空的（不进撤销）；建的时候已经有了（409，比如加了又撤销
+   * 留下的空文件）就用工作区里的那一份。连着加两句也只建一次。工程在这期间换过了时答复 undefined。
+   */
+  const captionsFile = useCallback(
+    async (project: Project): Promise<OpenFile | undefined> => {
+      const opened = project.files.get(project.captionsPath)
+      if (opened !== undefined) return opened
+      creatingCaptionsRef.current ??= (async () => {
+        const path = project.captionsPath
+        const content = captionsScene(canvasOf(mainOf(project)), catalog)
+        let stored: StoredFile | null
+        try {
+          stored = { content, version: await createProjectFile(conversationId, path, content) }
+        } catch (error) {
+          if (!(error instanceof ApiError) || error.status !== 409) throw error
+          stored = await readProjectFile(conversationId, path)
+          if (stored === null) throw error
+        }
+        const engine = await openEngine(stored.content, path, collect)
+        if (projectRef.current !== project) {
+          engine.dispose()
+          return undefined
+        }
+        // 打开后 SDK 存出的样子当作已存的那一份，不然一打开就算有改动
+        const file: OpenFile = { engine, version: stored.version, saved: engine.serialize() }
+        project.files.set(path, file)
+        return file
+      })().finally(() => {
+        creatingCaptionsRef.current = null
+      })
+      return creatingCaptionsRef.current
+    },
+    [catalog, collect, conversationId],
+  )
+
+  /**
+   * 在 `at`（毫秒）加一句字幕，字是 `text`，算一步撤销：场景里按开始时间排进它的元素，主文件根上声明它的变量；
+   * 主文件里还没有字幕宿主时加在根下最后。还没有字幕场景文件时先建一份空的。答复新字幕的编号；还没有工程、
+   * 场景文件建不了时不动工程（建不了时提示原因）。
+   */
+  const addCaption = useCallback(
+    async (at: { start: number; duration: number }, text: string): Promise<string | undefined> => {
+      const project = projectRef.current
+      if (project === null) return undefined
+      let file: OpenFile | undefined
+      try {
+        file = await captionsFile(project)
+      } catch (error) {
+        noticeRef.current(errorMessageOf(error, '字幕文件新建失败，请重试'))
+        return undefined
+      }
+      const main = mainOf(project)
+      const root = rootOf(main)
+      const sceneRoot = file === undefined ? undefined : rootOf(file.engine)
+      if (file === undefined || root === undefined || sceneRoot === undefined) return undefined
+      const scene = file.engine
+      const key = crypto.randomUUID().slice(0, 8)
+      const caption = { id: `cap-${key}`, variable: `cap_${key}`, text, ...at }
+      const timings = scene.getElementTimings()
+      const later = sceneRoot.children.findIndex(
+        (child) => (timings[child.id]?.enterAt ?? -Infinity) * 1000 > at.start,
+      )
+      perform(project, () => {
+        if (captionsHostOf(main) === undefined)
+          main.addElement(root.id, root.children.length, captionsHostElement(canvasOf(main), 0))
+        scene.addElement(
+          sceneRoot.id,
+          later === -1 ? sceneRoot.children.length : later,
+          captionElement(caption),
+        )
+        main.declareVariable(captionVariable(caption))
+      })
+      show()
+      return caption.id
+    },
+    [captionsFile, perform, show],
+  )
+
+  /**
+   * 把字幕 `id` 的字改成 `text`，算一步撤销：主文件根上它的变量的默认值改成它（还没声明时声明上），场景里
+   * 那个元素的字也改成一样的。字没变、字幕已经不在了时不动工程。
+   */
+  const setCaptionText = useCallback(
+    (id: string, text: string) => {
+      const project = projectRef.current
+      const scene = project === null ? undefined : sceneOf(project)
+      const caption = project === null ? undefined : captionsById(mainOf(project), scene).get(id)
+      if (scene === undefined || caption === undefined || caption.text === text) return
+      edit((main) => {
+        if (caption.variable !== '') {
+          if (declares(main, caption.variable)) main.setVariableValue(caption.variable, text)
+          else main.declareVariable(captionVariable({ variable: caption.variable, text }))
+        }
+        scene.setText(id, text)
+      })
+    },
+    [edit],
+  )
+
   const step = (direction: 'undo' | 'redo') => {
-    const engine = engineRef.current
-    const changes = engine === null ? undefined : history[direction]()
-    if (engine === null || changes === undefined) return
+    const project = projectRef.current
+    const changes = project === null ? undefined : history[direction]()
+    if (project === null || changes === undefined) return
     const before = presentRef.current
     try {
-      for (const change of changes) engine.applyPatches(change.patches)
+      for (const change of changes) {
+        const file = project.files.get(change.file)
+        if (file === undefined) throw new Error(`撤销记录里的文件没有打开：${change.file}`)
+        file.engine.applyPatches(change.patches)
+      }
     } catch (error) {
       console.error('final-cut 撤销重做失败', error)
       noticeRef.current(STEP_FAILED_TEXT[direction])
-      // 补丁可能只应用了一半：换回应用之前的那一份，撤销记录跟着清空
-      void adopt(before, false)
+      // 补丁可能只应用了一半：各文件都换回应用之前的那一份，撤销记录跟着清空
+      void restore(project, before)
       return
     }
-    show(engine)
+    show()
+  }
+
+  /** 把工程的各文件换成 `contents` 里的内容（路径 → 内容），版本号和已存的那一份不变，撤销记录清空。 */
+  const restore = async (project: Project, contents: ReadonlyMap<string, string>) => {
+    const files = await Promise.all(
+      [...project.files].map(
+        async ([path, file]) =>
+          [
+            path,
+            {
+              ...file,
+              engine: await openEngine(
+                contents.get(path) ?? file.engine.serialize(),
+                path,
+                collect,
+              ),
+            },
+          ] as const,
+      ),
+    )
+    install({ files: new Map(files), captionsPath: project.captionsPath }, false)
   }
 
   return {
@@ -901,6 +1231,8 @@ export function useFilmSession(
     merge,
     setLinked,
     resync,
+    addCaption,
+    setCaptionText,
     undo: () => step('undo'),
     redo: () => step('redo'),
     save,

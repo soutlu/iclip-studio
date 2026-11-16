@@ -10,7 +10,13 @@ import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import { resolveHeadlessShellPath } from '@hyperframes/engine'
 import { openComposition } from '@hyperframes/sdk'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import {
+  CAPTIONS_PATH,
+  captionsHostElement,
+  captionsScene,
+  captionVariable,
+} from '../../web/src/features/storyboard/final-cut/composition/captions'
 import type { ComponentCatalog } from '../../web/src/features/storyboard/final-cut/composition/catalog'
 import {
   clipOf,
@@ -18,6 +24,7 @@ import {
   withFontBlock,
   type AudioClip,
   type Canvas,
+  type CaptionClip,
   type FilmClip,
   type VideoClip,
 } from '../../web/src/features/storyboard/final-cut/composition/film'
@@ -747,6 +754,95 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     for (const char of '新的标题')
       expect(declaresGlyph(edited, catalog.cjk.family, char)).toBe(true)
     expect(meanDifference(plain, changed)).toBeGreaterThan(8)
+  }, 600_000)
+
+  it('字幕：场景里的字读主文件根上的变量，那一秒画面底部有白字黑边；工程检查没有错误和警告，不去外网取字体', async () => {
+    const catalog = library as ComponentCatalog
+    const steps = `${origin}/steps.mp4`
+    // 照编辑器的写法：视频片段带叠放顺序，字幕宿主写在根下最后、叠在最上面
+    const clips = [video({ src: steps, duration: 2000, muted: true, z: 1 })]
+    const caption: CaptionClip = {
+      kind: 'caption',
+      id: 'cap-a1',
+      label: '字幕',
+      start: 0,
+      duration: 2000,
+      track: 0,
+      hidden: false,
+      link: null,
+      text: '字幕第一行\nSecond line',
+      variable: 'cap_a1',
+    }
+    /** 有字幕时：场景里的元素不写字，字只在主文件根上的变量里；读不到变量就画不出字。 */
+    const files = async (captioned: boolean): Promise<ProjectFile[]> => {
+      const [main, ...others] = project(clips)
+      const session = await openComposition(main?.content ?? '')
+      session.addElement('film', 99, captionsHostElement(FRAME, 2000))
+      if (captioned) session.declareVariable(captionVariable(caption))
+      const lines = captioned ? [{ ...caption, text: '' }] : []
+      return [
+        {
+          path: 'index.html',
+          content: withFontBlock(
+            session.serialize(),
+            captioned ? [...clips, caption] : clips,
+            catalog,
+          ),
+        },
+        { path: CAPTIONS_PATH, content: captionsScene(FRAME, catalog, lines) },
+        ...others,
+      ]
+    }
+    // 字幕在画面 86.5% 高处、两行：这块里数接近白色和接近黑色的像素，底色是红的
+    const area = { x: 64, y: 256, width: 512, height: 100 }
+    const count = (pixels: Buffer, test: (r: number, g: number, b: number) => boolean) => {
+      let found = 0
+      for (let offset = 0; offset < pixels.length; offset += 3)
+        if (test(pixels[offset] ?? 0, pixels[offset + 1] ?? 0, pixels[offset + 2] ?? 0)) found += 1
+      return found
+    }
+    const render = async (id: string, captioned: boolean) => {
+      const { logger, lines } = memoryLogger()
+      const rendered = await renderProject(id, await files(captioned), [steps], logger)
+      try {
+        const pixels = await frameAt(rendered.file, 1, area)
+        return {
+          white: count(pixels, (r, g, b) => r > 220 && g > 220 && b > 220),
+          black: count(pixels, (r, g, b) => r < 40 && g < 40 && b < 40),
+          warnings: lines.filter((line) => line['event'] === '工程检查有警告'),
+          log: JSON.stringify(lines),
+        }
+      } finally {
+        await rendered.cleanup()
+      }
+    }
+    // 渲染服务这边（编译工程时取字体等）发出的请求：除了取素材的回环地址，一个都不该有
+    const requests = vi.spyOn(globalThis, 'fetch')
+    let shown: Awaited<ReturnType<typeof render>>
+    let bare: Awaited<ReturnType<typeof render>>
+    let urls: URL[]
+    try {
+      shown = await render('captions', true)
+      bare = await render('captions-bare', false)
+    } finally {
+      // 先取出调用记录：还原会连记录一起清掉
+      urls = requests.mock.calls.map(
+        ([input]) => new URL(input instanceof Request ? input.url : String(input)),
+      )
+      requests.mockRestore()
+    }
+    // 取素材走的就是这个 fetch：看得到它，说明外网请求也看得到
+    expect(urls.some((url) => url.hostname === '127.0.0.1')).toBe(true)
+    const outside = urls.filter((url) => url.hostname !== '127.0.0.1').map((url) => url.href)
+
+    expect(shown.white).toBeGreaterThan(300)
+    expect(shown.black).toBeGreaterThan(300)
+    expect(bare.white).toBeLessThan(5)
+    expect(bare.black).toBeLessThan(5)
+    expect(shown.warnings).toEqual([])
+    expect(outside).toEqual([])
+    expect(shown.log).not.toMatch(/fonts\.(googleapis|gstatic)\.com/)
+    expect(blockedHosts().filter((host) => /fonts\./.test(String(host)))).toEqual([])
   }, 600_000)
 
   it('音频片段：有声音，音量调低后更轻，循环时音频比片段短也一直有声，隐藏后没有声音', async () => {

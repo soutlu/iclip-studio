@@ -187,6 +187,123 @@
   scrollbar-width: thin;
 }
 
+/* ---- 字幕栏：加一句的按钮、按开始时间排的字幕列表 ---- */
+
+.wf-side-body.is-captions {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.wf-captions {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.wf-captions-alert {
+  margin: 10px 12px 0;
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+
+.wf-captions-actions {
+  display: flex;
+  flex: none;
+  margin: 10px 12px 8px;
+}
+
+/* 两个类压过按钮自带的高度、内边距和字号 */
+.wf-captions-actions .wf-captions-add {
+  width: 100%;
+  height: 30px;
+  gap: 6px;
+  padding: 0 8px;
+  font-size: var(--text-label);
+}
+
+.wf-captions-actions .wf-captions-add svg {
+  width: 14px;
+  height: 14px;
+}
+
+.wf-captions-note {
+  padding: 4px 14px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+
+.wf-caption-list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  padding: 0 12px 10px;
+  scrollbar-width: thin;
+}
+
+.wf-caption {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container);
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+}
+
+/* 当前这一句只加一圈描边：底色不变，文字框和底色才分得开（深色下文字框的底和高一层的底一样） */
+.wf-caption.is-current {
+  box-shadow: inset 0 0 0 1px var(--color-outline-variant);
+}
+
+.wf-caption-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.wf-caption-time {
+  padding: 0 2px;
+  border-radius: var(--radius-xs);
+  color: var(--color-on-surface-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.wf-caption-time:hover {
+  color: var(--color-on-surface);
+}
+
+.wf-caption-time:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-focus-ring);
+}
+
+/* 两个类压过文字框自带的圆角、内边距和字号 */
+.wf-caption .wf-caption-text {
+  min-height: 0;
+  padding: 5px 9px;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  background: var(--color-top-layer);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  resize: none;
+}
+
+.wf-caption .wf-caption-text:focus {
+  border-color: var(--color-on-surface);
+}
+
 .wf-song {
   position: relative;
   display: flex;

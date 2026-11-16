@@ -64,6 +64,7 @@ type Props = {
 const kindLabel = (clip: FilmClip, catalog: ComponentCatalog): string | undefined => {
   if (clip.kind === 'video') return '视频'
   if (clip.kind === 'audio') return clip.syncOrigin === null ? '音频' : '分离原声'
+  if (clip.kind === 'caption') return '字幕'
   if (clip.kind === 'other') return undefined
   const kind = catalog.items.find((item) => item.name === clip.item)?.kind
   return kind === undefined ? undefined : ITEM_KIND_LABEL[kind]

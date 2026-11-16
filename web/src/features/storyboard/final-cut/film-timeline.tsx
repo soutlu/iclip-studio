@@ -312,7 +312,7 @@ function ClipContent({
   peaks: PeaksState
 }) {
   const name = <span className="wf-clip-name">{clip.label}</span>
-  if (clip.kind === 'other') return name
+  if (clip.kind === 'other' || clip.kind === 'caption') return name
   if (clip.kind === 'host')
     return (
       <>

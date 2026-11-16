@@ -18,6 +18,7 @@ import {
   storyboardQueryKeys,
   type GenerationJob,
 } from '../storyboard.api'
+import { CAPTIONS_PATH, isCaptionsHost } from './composition/captions'
 import type { CatalogItem, ComponentCatalog } from './composition/catalog'
 import { PROJECT_MAIN } from './composition/film'
 
@@ -43,20 +44,21 @@ export const wholeFilmQueryKeys = {
   task: (conversationId: string) => ['whole-film', 'task', conversationId] as const,
 }
 
-/** 工程主文件：内容和工作区里的版本号。 */
-export type ProjectMain = { content: string; version: number }
+/** 工作区里的一个工程文件：内容和版本号。 */
+export type StoredFile = { content: string; version: number }
 
 const conversationPath = (conversationId: string) =>
   `/conversations/${encodeURIComponent(conversationId)}`
 
-/** 读工程主文件；还没有工程（文件不存在）时是 null。 */
-export const readProjectMain = async (
+/** 读工程里的一个文件（`path` 相对工程根）；文件不存在时是 null，主文件不存在就是还没有工程。 */
+export const readProjectFile = async (
   conversationId: string,
+  path: string,
   signal?: AbortSignal,
-): Promise<ProjectMain | null> => {
+): Promise<StoredFile | null> => {
   try {
     const { file } = await apiFetch(
-      `${conversationPath(conversationId)}/workspace/file?path=${encodeURIComponent(PROJECT_MAIN_PATH)}`,
+      `${conversationPath(conversationId)}/workspace/file?path=${encodeURIComponent(`${PROJECT_DIR}/${path}`)}`,
       zConversationFileEnvelope,
       { fallbackErrorMessage: READ_FAILED, ...(signal === undefined ? {} : { signal }) },
     )
@@ -81,9 +83,10 @@ export const createProjectFile = async (
     })
   ).version
 
-/** 按读到的版本整份写工程主文件，答复新的版本号；版本对不上时是 409。 */
-export const writeProjectMain = async (
+/** 按读到的版本整份写工程里的一个文件（`path` 相对工程根），答复新的版本号；版本对不上时是 409。 */
+export const writeProjectFile = async (
   conversationId: string,
+  path: string,
   content: string,
   expectedVersion: number,
 ): Promise<number> =>
@@ -92,7 +95,7 @@ export const writeProjectMain = async (
       `${conversationPath(conversationId)}/workspace/file`,
       zConversationFileEnvelope,
       {
-        body: { path: PROJECT_MAIN_PATH, content, expectedVersion },
+        body: { path: `${PROJECT_DIR}/${path}`, content, expectedVersion },
         fallbackErrorMessage: SAVE_FAILED,
         method: 'PUT',
       },
@@ -124,7 +127,7 @@ export const copyItemFiles = async (
 const closingSaves = new Map<string, Promise<void>>()
 
 /**
- * 编辑器卸载时调用：`saving` 结束之前，这段对话的编辑器再打开也先不读工程主文件。
+ * 编辑器卸载时调用：`saving` 结束之前，这段对话的编辑器再打开也先不读工程文件。
  * 不等的话会读到存之前的一版，随后的保存因版本号过期被拒，刚才的改动跟着丢掉。
  */
 export const holdProjectReads = (conversationId: string, saving: Promise<unknown>) => {
@@ -136,12 +139,57 @@ export const holdProjectReads = (conversationId: string, saving: Promise<unknown
   })
 }
 
-export const useProjectMainQuery = (conversationId: string) =>
+/**
+ * 工作区里存着的工程：主文件，和字幕场景文件（`captions`，不存在时是 null）。`captionsPath` 是字幕场景文件的
+ * 路径：主文件里字幕宿主挂载的那个，没有宿主时是编辑器新建它的位置；`hosted` 是主文件里有没有字幕宿主。
+ */
+export type StoredProject = {
+  main: StoredFile
+  captionsPath: string
+  captions: StoredFile | null
+  hosted: boolean
+}
+
+/** 主文件根下字幕宿主挂载的文件；没有宿主时是 undefined。 */
+const captionsSourceOf = (html: string): string | undefined => {
+  const page = new DOMParser().parseFromString(html, 'text/html')
+  const root = page.querySelector('[data-composition-id]')
+  const host = [...(root?.children ?? [])].find((child) =>
+    isCaptionsHost(
+      Object.fromEntries(
+        [...child.attributes].map((attribute) => [attribute.name, attribute.value]),
+      ),
+    ),
+  )
+  return host?.getAttribute('data-composition-src') ?? undefined
+}
+
+/**
+ * 读工作区里的工程，还没有工程（没有主文件）时是 null。字幕场景文件按主文件里字幕宿主挂载的路径读；没有宿主
+ * 时也读编辑器新建它的位置（加了又撤销会留下空的场景文件）。
+ */
+export const readProject = async (
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<StoredProject | null> => {
+  const main = await readProjectFile(conversationId, PROJECT_MAIN, signal)
+  if (main === null) return null
+  const source = captionsSourceOf(main.content)
+  const captionsPath = source ?? CAPTIONS_PATH
+  return {
+    main,
+    captionsPath,
+    captions: await readProjectFile(conversationId, captionsPath, signal),
+    hosted: source !== undefined,
+  }
+}
+
+export const useProjectQuery = (conversationId: string) =>
   useQuery({
     queryKey: wholeFilmQueryKeys.project(conversationId),
     queryFn: async ({ signal }) => {
       await closingSaves.get(conversationId)
-      return readProjectMain(conversationId, signal)
+      return readProject(conversationId, signal)
     },
     staleTime: Infinity,
     gcTime: 0,

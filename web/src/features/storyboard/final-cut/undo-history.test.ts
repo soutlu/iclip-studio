@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { createUndoHistory, type PatchChange } from './undo-history'
 
-/** 把 `/x` 从 `from` 改成 `to` 的一次改动。 */
-const change = (from: string, to: string, path = '/x'): PatchChange => ({
+/** 把 `file` 里的 `/x` 从 `from` 改成 `to` 的一次改动。 */
+const change = (from: string, to: string, path = '/x', file = 'index.html'): PatchChange => ({
+  file,
   patches: [{ op: 'replace', path, value: to }],
   inversePatches: [{ op: 'replace', path, value: from }],
 })
@@ -34,6 +35,18 @@ describe('撤销重做', () => {
     history.record([first, second])
     expect(history.undo()).toEqual([change('2', '1', '/y'), change('b', 'a', '/x')])
     expect(history.redo()).toEqual([first, second])
+  })
+
+  it('一步里改了两个文件：撤销、重做都带着各自的文件', () => {
+    const history = createUndoHistory()
+    const main = change('a', 'b', '/x', 'index.html')
+    const scene = change('1', '2', '/y', 'compositions/captions.html')
+    history.record([scene, main])
+    expect(history.undo()).toEqual([
+      change('b', 'a', '/x', 'index.html'),
+      change('2', '1', '/y', 'compositions/captions.html'),
+    ])
+    expect(history.redo()).toEqual([scene, main])
   })
 
   it('有新的一步时清空重做栈；空的一步不记，也不清重做栈', () => {

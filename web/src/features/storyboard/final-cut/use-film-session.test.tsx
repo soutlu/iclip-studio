@@ -1,4 +1,4 @@
-import type { Composition } from '@hyperframes/sdk'
+import { openComposition, type Composition } from '@hyperframes/sdk'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { delay, http, HttpResponse } from 'msw'
 import type { ReactNode } from 'react'
@@ -11,13 +11,21 @@ import { mockProjectMain, putMockProjectMain } from '@/testing/mocks/whole-film'
 import { mockWorkspaceFile, putMockWorkspaceFile } from '@/testing/mocks/workspace'
 import { groupTrimmed, splitAt, timingOf } from './clip-edit'
 import {
+  CAPTIONS_PATH,
+  CAPTIONS_PROBLEM_TEXT,
+  captionsHostElement,
+  captionsScene,
+  captionVariable,
+} from './composition/captions'
+import {
   FONT_BLOCK_END,
   FONT_BLOCK_START,
   type AudioClip,
+  type CaptionClip,
   type FilmClip,
   type VideoClip,
 } from './composition/film'
-import type { ProjectMain } from './final-cut.api'
+import { readProject, type StoredFile } from './final-cut.api'
 import { soundPairOf } from './sound-pair'
 import { useFilmSession, type NewAudio, type NewVideo } from './use-film-session'
 
@@ -56,6 +64,18 @@ const recordSaves = (slow = 0) => {
   return saves
 }
 
+/** 从现在起数读了几次主文件（读工程时还会读字幕场景文件，不算在里面）。 */
+const countMainReads = () => {
+  const reads = { count: 0 }
+  server.use(
+    http.get(READ, ({ request }) => {
+      if (new URL(request.url).searchParams.get('path') === MAIN_PATH) reads.count += 1
+      return undefined
+    }),
+  )
+  return reads
+}
+
 /** 编辑器订阅文件变化用的连接：测试里自己发通知。 */
 const fakeConnection = () => {
   const files = new Set<{ paths: readonly string[]; handler: (changes: FsChange[]) => void }>()
@@ -83,11 +103,17 @@ const fakeConnection = () => {
   return { connection, notify }
 }
 
+/**
+ * 打开工程：`stored` 是编辑器读到的主文件（null 是还没有工程；工作区里可能已经有更新的一版），字幕场景文件
+ * 和编辑器一样经 `readProject` 读。
+ */
 const open = async (
-  initial: ProjectMain | null = null,
+  stored: StoredFile | null = null,
   debounceMs = 10,
   conversation = CONVERSATION,
 ) => {
+  const read = stored === null ? null : await readProject(conversation)
+  const initial = stored === null || read === null ? null : { ...read, main: stored }
   const onNotice = vi.fn<(message: string) => void>()
   const { connection, notify } = fakeConnection()
   const hook = renderHook(
@@ -302,24 +328,18 @@ describe('useFilmSession · 读存', () => {
 describe('useFilmSession · 文件变化的通知', () => {
   it('自己保存的那一版也会通知：不重读、不提示，撤销还管用', async () => {
     const saves = recordSaves(80)
-    let reads = 0
-    server.use(
-      http.get(READ, () => {
-        reads += 1
-        return undefined
-      }),
-    )
     const { result, onNotice, notify } = await open(
       putMockProjectMain(CONVERSATION, mainFile([video()], CANVAS)),
     )
+    const reads = countMainReads()
     await add(result, piece({ mediaStart: 3_000 }))
     await waitFor(() => expect(saves).toHaveLength(1))
     // 通知不带版本号，在保存还没回来的时候就到了
     notify(MAIN_PATH)
     await settled(result)
-    await waitFor(() => expect(reads).toBe(1))
+    await waitFor(() => expect(reads.count).toBe(1))
     notify(MAIN_PATH)
-    await waitFor(() => expect(reads).toBe(2))
+    await waitFor(() => expect(reads.count).toBe(2))
     await new Promise((resolve) => setTimeout(resolve, 30))
     expect(onNotice).not.toHaveBeenCalled()
     expect(result.current.film?.canUndo).toBe(true)
@@ -362,21 +382,15 @@ describe('useFilmSession · 文件变化的通知', () => {
   })
 
   it('工程里别的文件变了：预览要重新加载，主文件不重读', async () => {
-    let reads = 0
-    server.use(
-      http.get(READ, () => {
-        reads += 1
-        return undefined
-      }),
-    )
     const { result, notify } = await open(
       putMockProjectMain(CONVERSATION, mainFile([video()], CANVAS)),
     )
+    const reads = countMainReads()
     expect(result.current.filesRevision).toBe(0)
     notify('final-cut/compositions/fixtures/fixture-fields.html')
     expect(result.current.filesRevision).toBe(1)
     await new Promise((resolve) => setTimeout(resolve, 30))
-    expect(reads).toBe(0)
+    expect(reads.count).toBe(0)
     expect(result.current.film?.clips).toEqual([video()])
   })
 })
@@ -1159,7 +1173,7 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
       clip.id,
       clip.track,
       clip.start,
-      clip.kind === 'audio' ? null : clip.z,
+      clip.kind === 'audio' || clip.kind === 'caption' ? null : clip.z,
     ])
 
   it('把音频片段换到声音区的另一行：只改行号和起点，不带叠放顺序；一步撤销', async () => {
@@ -1851,5 +1865,375 @@ describe('useFilmSession · 分离音频、合并回视频、联动', () => {
     const other = await openWith([lead, ...unlinked])
     act(() => other.result.current.restart(new Map([['v', 1_000]])))
     expect(clipOf(other.result, 'a').start).toBe(2_000)
+  })
+})
+
+describe('useFilmSession · 字幕', () => {
+  const SCENE_PATH = `final-cut/${CAPTIONS_PATH}`
+
+  type Write = { path: string; content: string; expectedVersion: number | null }
+
+  /** 每次写工程文件（新建或按版本写），按先后记成相对工程根的路径、内容和带的版本号（新建是 null）。 */
+  const recordWrites = () => {
+    const writes: Write[] = []
+    server.use(
+      http.put(WRITE, async ({ request }) => {
+        const body = (await request.clone().json()) as Write
+        writes.push({ ...body, path: body.path.replace(/^final-cut\//, '') })
+        return undefined
+      }),
+      http.post(CREATE, async ({ request }) => {
+        const body = (await request.clone().json()) as Omit<Write, 'expectedVersion'>
+        writes.push({ ...body, expectedVersion: null })
+        return undefined
+      }),
+    )
+    return writes
+  }
+
+  const captionsOf = (result: Session): CaptionClip[] =>
+    (result.current.film?.clips ?? []).filter((clip) => clip.kind === 'caption')
+
+  const parse = (html: string | undefined) =>
+    new DOMParser().parseFromString(html ?? '', 'text/html')
+
+  /** 主文件根上声明的变量，变量 → 默认值。 */
+  const variablesIn = (html: string | undefined) =>
+    Object.fromEntries(
+      (
+        JSON.parse(
+          parse(html).documentElement.getAttribute('data-composition-variables') ?? '[]',
+        ) as { id: string; default: unknown }[]
+      ).map((declaration) => [declaration.id, declaration.default]),
+    )
+
+  /** 主文件里字幕宿主的属性；没有宿主时是 undefined。 */
+  const hostIn = (html: string | undefined) => {
+    const host = parse(html).getElementById('captions')
+    return host === null
+      ? undefined
+      : Object.fromEntries([...host.attributes].map((item) => [item.name, item.value]))
+  }
+
+  /** 场景文件里的各句字幕，写成「编号、开始、时长、读的变量、元素里的字」。 */
+  const sceneCaptions = (scene: string | undefined) =>
+    [...parse((scene ?? '').replace(/<\/?template>/g, '')).querySelectorAll('.caption')].map(
+      (element) => [
+        element.id,
+        Number(element.getAttribute('data-start')),
+        Number(element.getAttribute('data-duration')),
+        element.getAttribute('data-var-text'),
+        (element as HTMLElement).innerHTML.replaceAll('<br>', '\n'),
+      ],
+    )
+
+  const storedScene = (conversation: string) => mockWorkspaceFile(conversation, SCENE_PATH)?.content
+
+  type Line = Pick<CaptionClip, 'id' | 'start' | 'duration' | 'variable' | 'text'>
+  const line = (key: string, start: number, duration: number, text: string): Line => ({
+    id: `cap-${key}`,
+    variable: `cap_${key}`,
+    start,
+    duration,
+    text,
+  })
+
+  /**
+   * 工作区里放一份带字幕的工程：主文件按 `clips` 写，根下最后是字幕宿主、根上每句一个变量（照编辑器用 SDK
+   * 写），场景文件里放上 `lines`。`scene` 给了就用它当场景文件。
+   */
+  const putCaptioned = async (
+    conversation: string,
+    clips: FilmClip[],
+    lines: Line[],
+    scene = captionsScene(CANVAS, fixtureCatalog, lines),
+  ) => {
+    const main = await openComposition(mainFile(clips, CANVAS))
+    const end = Math.max(...[...clips, ...lines].map((clip) => clip.start + clip.duration))
+    main.addElement('film', 99, captionsHostElement(CANVAS, end))
+    for (const each of lines) main.declareVariable(captionVariable(each))
+    putMockWorkspaceFile(conversation, SCENE_PATH, scene)
+    return putMockProjectMain(conversation, main.serialize())
+  }
+
+  const openCaptioned = async (clips: FilmClip[], lines: Line[]) => {
+    const conversation = crypto.randomUUID()
+    const stored = await putCaptioned(conversation, clips, lines)
+    return { conversation, ...(await open(stored, 10, conversation)) }
+  }
+
+  const addCaption = async (result: Session, start: number, duration: number, text: string) => {
+    let id: string | undefined
+    await act(async () => {
+      id = await result.current.addCaption({ start, duration }, text)
+    })
+    if (id === undefined) throw new Error('没有加上字幕')
+    return id
+  }
+
+  /** 马上把没存的都存掉，等存完。 */
+  const saveAll = (result: Session) =>
+    act(async () => {
+      await result.current.settle()
+    })
+
+  it('加第一句：先建好空的场景文件，再一步写上宿主、根上的变量和这句字幕；场景先存、主文件后存', async () => {
+    const conversation = crypto.randomUUID()
+    const writes = recordWrites()
+    const { result } = await open(
+      putMockProjectMain(conversation, mainFile([video({ duration: 3_000 })], CANVAS)),
+      10,
+      conversation,
+    )
+    const id = await addCaption(result, 500, 2_000, '第一句')
+    expect(captionsOf(result)).toEqual([
+      expect.objectContaining({ id, start: 500, duration: 2_000, text: '第一句' }),
+    ])
+    await waitFor(() =>
+      expect(writes.map((write) => [write.path, write.expectedVersion])).toEqual([
+        [CAPTIONS_PATH, null],
+        [CAPTIONS_PATH, 1],
+        ['index.html', 1],
+      ]),
+    )
+    expect(sceneCaptions(writes[0]?.content)).toEqual([])
+
+    const main = mockProjectMain(conversation)?.content
+    const variable = captionsOf(result)[0]?.variable ?? ''
+    expect(variablesIn(main)).toEqual({ [variable]: '第一句' })
+    expect(hostIn(main)).toMatchObject({
+      'data-composition-src': CAPTIONS_PATH,
+      'data-start': '0',
+      'data-duration': '3',
+      'data-no-timeline': '',
+    })
+    expect(hostIn(main)).not.toHaveProperty('data-variable-values')
+    const scene = storedScene(conversation)
+    expect(sceneCaptions(scene)).toEqual([[id, 0.5, 2, variable, '第一句']])
+    expect(scene?.trim().startsWith('<template>')).toBe(true)
+    expect(scene).not.toContain('data-composition-variables')
+    expect(result.current.film?.captionsProblem).toBeUndefined()
+
+    // 一步撤销：宿主、变量、这句字幕一起没了；场景文件留着（空的）
+    act(() => result.current.undo())
+    expect(captionsOf(result)).toEqual([])
+    expect(hostIn(result.current.film?.html)).toBeUndefined()
+    expect(variablesIn(result.current.film?.html)).toEqual({})
+    await waitFor(() => expect(sceneCaptions(storedScene(conversation))).toEqual([]))
+    act(() => result.current.redo())
+    expect(captionsOf(result).map((caption) => caption.id)).toEqual([id])
+    expect(hostIn(result.current.film?.html)).toBeDefined()
+  })
+
+  it('加第二句：按开始时间排进场景，再声明一个变量；字幕在最后时宿主和根上的总长跟着变长', async () => {
+    const { result, conversation } = await openCaptioned(
+      [video({ duration: 3_000 })],
+      [line('a1', 1_000, 1_000, '第一句')],
+    )
+    expect(captionsOf(result).map((caption) => caption.text)).toEqual(['第一句'])
+    const later = await addCaption(result, 4_000, 2_000, '最后一句')
+    const earlier = await addCaption(result, 0, 1_000, '开头')
+    expect(result.current.film?.durationMs).toBe(6_000)
+    expect(hostIn(result.current.film?.html)?.['data-duration']).toBe('6')
+    await saveAll(result)
+    expect(sceneCaptions(storedScene(conversation)).map(([id]) => id)).toEqual([
+      earlier,
+      'cap-a1',
+      later,
+    ])
+    expect(Object.values(variablesIn(mockProjectMain(conversation)?.content))).toEqual([
+      '第一句',
+      '最后一句',
+      '开头',
+    ])
+  })
+
+  it('宿主时长跟着总长变：加片段变长，删掉片段变短，最晚的是字幕时按字幕的结尾', async () => {
+    const { result } = await openCaptioned(
+      [video({ duration: 3_000 })],
+      [line('a1', 1_000, 1_000, '第一句')],
+    )
+    const hostLength = () => hostIn(result.current.film?.html)?.['data-duration']
+    expect(hostLength()).toBe('3')
+    await add(result, piece({ duration: 2_000 }))
+    expect(hostLength()).toBe('5')
+    const added = videosOf(result).find((clip) => clip.id !== 'clip-1')?.id ?? ''
+    act(() => result.current.removeClips([added, 'clip-1'], false))
+    expect(result.current.film?.durationMs).toBe(2_000)
+    expect(hostLength()).toBe('2')
+    act(() =>
+      result.current.retime(
+        new Map([['cap-a1', { start: 3_000, duration: 1_500, mediaStart: 0 }]]),
+      ),
+    )
+    expect(hostLength()).toBe('4.5')
+  })
+
+  it('改字：变量的默认值和场景里的字都改成新的，一步撤销、重做两个文件一起退、一起进', async () => {
+    const { result, conversation } = await openCaptioned(
+      [video()],
+      [line('a1', 0, 1_000, '第一句')],
+    )
+    act(() => result.current.setCaptionText('cap-a1', '改过的\n两行'))
+    expect(captionsOf(result)[0]?.text).toBe('改过的\n两行')
+    expect(variablesIn(result.current.film?.html)).toEqual({ cap_a1: '改过的\n两行' })
+    await saveAll(result)
+    expect(sceneCaptions(storedScene(conversation))).toEqual([
+      ['cap-a1', 0, 1, 'cap_a1', '改过的\n两行'],
+    ])
+    // 字没变时不记一步
+    act(() => result.current.setCaptionText('cap-a1', '改过的\n两行'))
+    act(() => result.current.undo())
+    expect(variablesIn(result.current.film?.html)).toEqual({ cap_a1: '第一句' })
+    expect(result.current.film?.canUndo).toBe(false)
+    await saveAll(result)
+    expect(sceneCaptions(storedScene(conversation))[0]?.[4]).toBe('第一句')
+    expect(variablesIn(mockProjectMain(conversation)?.content)).toEqual({ cap_a1: '第一句' })
+    act(() => result.current.redo())
+    expect(captionsOf(result)[0]?.text).toBe('改过的\n两行')
+    await waitFor(() =>
+      expect(sceneCaptions(storedScene(conversation))[0]?.[4]).toBe('改过的\n两行'),
+    )
+  })
+
+  it('删一句：场景里的元素和根上的变量都没了，一步撤销两个都回来；删到没有时场景文件和宿主都留着', async () => {
+    const { result, conversation } = await openCaptioned(
+      [video()],
+      [line('a1', 0, 1_000, '第一句'), line('b2', 1_000, 1_000, '第二句')],
+    )
+    act(() => result.current.removeClips(['cap-a1'], true))
+    expect(captionsOf(result).map((caption) => caption.id)).toEqual(['cap-b2'])
+    expect(variablesIn(result.current.film?.html)).toEqual({ cap_b2: '第二句' })
+    expect(videosOf(result)).toEqual([video()])
+    act(() => result.current.undo())
+    expect(captionsOf(result).map((caption) => caption.text)).toEqual(['第一句', '第二句'])
+    expect(variablesIn(result.current.film?.html)).toEqual({ cap_a1: '第一句', cap_b2: '第二句' })
+    act(() => result.current.redo())
+    act(() => result.current.removeClips(['cap-b2'], false))
+    expect(captionsOf(result)).toEqual([])
+    await saveAll(result)
+    expect(sceneCaptions(storedScene(conversation))).toEqual([])
+    expect(variablesIn(mockProjectMain(conversation)?.content)).toEqual({})
+    expect(hostIn(mockProjectMain(conversation)?.content)).toBeDefined()
+  })
+
+  it('打开工程：没有宿主但场景文件在（加了又撤销留下的）也读它，加字幕时不再新建', async () => {
+    const conversation = crypto.randomUUID()
+    putMockWorkspaceFile(conversation, SCENE_PATH, captionsScene(CANVAS, fixtureCatalog))
+    const writes = recordWrites()
+    const { result } = await open(
+      putMockProjectMain(conversation, mainFile([video()], CANVAS)),
+      10,
+      conversation,
+    )
+    await addCaption(result, 0, 1_000, '一句')
+    await saveAll(result)
+    expect(writes.map((write) => [write.path, write.expectedVersion])).toEqual([
+      [CAPTIONS_PATH, 1],
+      ['index.html', 1],
+    ])
+  })
+
+  it('建场景文件时工作区里已经有了（409）：用那一份和它的版本号接着加，不当成别处改的', async () => {
+    const conversation = crypto.randomUUID()
+    const { result, onNotice } = await open(
+      putMockProjectMain(conversation, mainFile([video()], CANVAS)),
+      10,
+      conversation,
+    )
+    // 打开以后才出现的场景文件，已经写过两版
+    putMockWorkspaceFile(conversation, SCENE_PATH, captionsScene(CANVAS, fixtureCatalog))
+    putMockWorkspaceFile(conversation, SCENE_PATH, captionsScene(CANVAS, fixtureCatalog))
+    const writes = recordWrites()
+    await addCaption(result, 0, 1_000, '一句')
+    await saveAll(result)
+    expect(writes.map((write) => [write.path, write.expectedVersion])).toEqual([
+      [CAPTIONS_PATH, null],
+      [CAPTIONS_PATH, 2],
+      ['index.html', 1],
+    ])
+    expect(onNotice).not.toHaveBeenCalled()
+    expect(result.current.film?.canUndo).toBe(true)
+  })
+
+  it('打开工程：宿主挂载的场景文件不存在时按没有字幕打开，提示一句', async () => {
+    const conversation = crypto.randomUUID()
+    const stored = await putCaptioned(conversation, [video()], [line('a1', 0, 1_000, '一句')])
+    server.use(
+      http.get(READ, ({ request }) =>
+        new URL(request.url).searchParams.get('path') === SCENE_PATH
+          ? HttpResponse.json({ detail: '文件不存在' }, { status: 404 })
+          : undefined,
+      ),
+    )
+    const { result, onNotice } = await open(stored, 10, conversation)
+    expect(captionsOf(result)).toEqual([])
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('字幕文件不存在，已按没有字幕打开 final-cut')
+  })
+
+  it('字幕场景存的时候版本对不上（409）：两个文件都换成工作区里的那一份，撤销记录清空并提示', async () => {
+    const { result, conversation, onNotice } = await openCaptioned(
+      [video()],
+      [line('a1', 0, 1_000, '第一句')],
+    )
+    const writes = recordWrites()
+    // 别处把场景文件和主文件都改了：场景里只剩另一句，主文件里换成它的变量
+    const theirs = [line('z9', 500, 1_000, '别处写的')]
+    await putCaptioned(conversation, [video({ duration: 4_000 })], theirs)
+    act(() => result.current.setCaptionText('cap-a1', '本地改的'))
+    await waitFor(() => expect(onNotice).toHaveBeenCalledOnce())
+    expect(onNotice).toHaveBeenCalledWith(
+      'final-cut 已在别处修改，已切换到最新版本；未保存的改动已放弃',
+    )
+    expect(writes.map((write) => write.path)).toEqual([CAPTIONS_PATH])
+    expect(captionsOf(result).map((caption) => [caption.id, caption.text])).toEqual([
+      ['cap-z9', '别处写的'],
+    ])
+    expect(videosOf(result)[0]?.duration).toBe(4_000)
+    expect(result.current.film?.canUndo).toBe(false)
+    expect(result.current.save.kind).toBe('idle')
+  })
+
+  it('场景文件在别处改了（通知）：两个文件都换成工作区里的那一份', async () => {
+    const { result, conversation, onNotice, notify } = await openCaptioned(
+      [video()],
+      [line('a1', 0, 1_000, '第一句')],
+    )
+    act(() => result.current.setCaptionText('cap-a1', '本地改的'))
+    putMockWorkspaceFile(
+      conversation,
+      SCENE_PATH,
+      captionsScene(CANVAS, fixtureCatalog, [line('a1', 200, 800, '第一句')]),
+    )
+    notify(SCENE_PATH)
+    await waitFor(() => expect(onNotice).toHaveBeenCalledOnce())
+    expect(captionsOf(result).map((caption) => [caption.start, caption.text])).toEqual([
+      [200, '第一句'],
+    ])
+    expect(result.current.film?.canUndo).toBe(false)
+  })
+
+  it('场景自己声明了变量、或宿主带了取值：给出原因', async () => {
+    const conversation = crypto.randomUUID()
+    const lines = [line('a1', 0, 1_000, '一句')]
+    const declared = captionsScene(CANVAS, fixtureCatalog, lines).replace(
+      'data-no-timeline',
+      `data-no-timeline data-composition-variables='[{"id":"x","type":"string","label":"x","default":"y"}]'`,
+    )
+    const stored = await putCaptioned(conversation, [video()], lines, declared)
+    const { result } = await open(stored, 10, conversation)
+    expect(result.current.film?.captionsProblem).toBe(CAPTIONS_PROBLEM_TEXT)
+
+    const other = crypto.randomUUID()
+    const { content } = await putCaptioned(other, [video()], lines)
+    const valued = putMockProjectMain(
+      other,
+      content.replace(
+        'data-track-kind="captions"',
+        `data-track-kind="captions" data-variable-values="{}"`,
+      ),
+    )
+    const reopened = await open(valued, 10, other)
+    expect(reopened.result.current.film?.captionsProblem).toBe(CAPTIONS_PROBLEM_TEXT)
   })
 })

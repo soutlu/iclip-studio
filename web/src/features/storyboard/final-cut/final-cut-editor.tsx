@@ -27,6 +27,8 @@ import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
 import { audioPlayheadSpot } from './audio'
 import { AudioTab } from './audio-tab'
+import { CAPTION_REFUSAL_TEXT, captionSpot, NEW_CAPTION_TEXT } from './caption-edit'
+import { CaptionsTab } from './captions-tab'
 import {
   linkedPartners,
   playheadSplit,
@@ -37,7 +39,7 @@ import {
 } from './clip-edit'
 import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
 import type { CatalogItem } from './composition/catalog'
-import type { Canvas } from './composition/film'
+import type { Canvas, CaptionClip } from './composition/film'
 import { isEditorKeyTarget, useEditorEscape, useEditorRoot } from './editor-keys'
 import { EditorRoot } from './editor-root'
 import { EditorToolbar, type EditTool } from './editor-toolbar'
@@ -116,8 +118,8 @@ import { useWholeFilmExport } from './use-whole-film-export'
 import {
   projectFilesBase,
   useFinalCutPreviewTokens,
-  useProjectMainQuery,
-  type ProjectMain,
+  useProjectQuery,
+  type StoredProject,
 } from './final-cut.api'
 import './final-cut.css'
 
@@ -127,14 +129,15 @@ const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏，无法进入全屏'
 const ADDING_ITEM_TEXT = '上一个贴片或场景正在加入 final-cut，请稍后再试'
 const ADDING_AUDIO_TEXT = '上一条音频正在加入 final-cut，请稍后再试'
 const EMPTY_EXPORT_TEXT = 'final-cut 暂无内容，无法导出；请先加入内容'
+const NO_FILM_CAPTION_TEXT = 'final-cut 暂无内容，无法加字幕；请先加入镜头'
 // 还没有 final-cut 时先放组件或块：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 const NO_LINKS: Links = new Map()
 
-/** 侧栏的目录页签：镜头、贴片、场景、配乐。 */
-type CatalogTab = 'shots' | ItemKind | 'audio'
+/** 侧栏的目录页签：镜头、贴片、场景、配乐、字幕。 */
+type CatalogTab = 'shots' | ItemKind | 'audio' | 'captions'
 type SideTab = CatalogTab | 'props'
-const CATALOG_TABS: readonly CatalogTab[] = ['shots', ...ITEM_KINDS, 'audio']
+const CATALOG_TABS: readonly CatalogTab[] = ['shots', ...ITEM_KINDS, 'audio', 'captions']
 // 侧栏页签：当前页签是浅底块，不用共用页签的下划线
 const SIDE_TAB_CLASS =
   'rounded-sm py-1 text-label text-on-surface-muted after:hidden data-[state=active]:bg-state-active data-[state=active]:font-semibold'
@@ -148,7 +151,7 @@ const fullscreenElementOf = () => document.fullscreenElement ?? null
 
 /** 工作台「final-cut」页签里的 final-cut 编辑器，填满页签内容区。 */
 export function FinalCutEditor({ conversationId }: Pick<ArtifactRendererProps, 'conversationId'>) {
-  const projectQuery = useProjectMainQuery(conversationId)
+  const projectQuery = useProjectQuery(conversationId)
   const catalogQuery = useComponentCatalog()
   const keysRef = useRef<((event: KeyboardEvent) => void) | null>(null)
   const failed = projectQuery.isError
@@ -206,7 +209,7 @@ function EditorBody({
   keysRef,
 }: {
   conversationId: string
-  initial: ProjectMain | null
+  initial: StoredProject | null
   catalog: ComponentCatalog
   keysRef: RefObject<((event: KeyboardEvent) => void) | null>
 }) {
@@ -214,7 +217,13 @@ function EditorBody({
   const notice = useCallback((message: string) => toast.info(message), [])
   const session = useFilmSession(conversationId, initial, catalog, { onNotice: notice })
   const { film } = session
-  const clips = useMemo(() => film?.clips ?? [], [film])
+  // 字幕不在时间线上：选中、吸附、切开这些只算时间线上的片段，字幕在「字幕」页签里改
+  const clips = useMemo(() => (film?.clips ?? []).filter((clip) => clip.kind !== 'caption'), [film])
+  const captions = useMemo(
+    () => (film?.clips ?? []).filter((clip): clip is CaptionClip => clip.kind === 'caption'),
+    [film],
+  )
+  const empty = film === null || film.clips.length === 0
   const links = film?.links ?? NO_LINKS
   const videoClips = useMemo(() => clips.filter((clip) => clip.kind === 'video'), [clips])
   const [itemFilters, setItemFilters] = useState<Readonly<Record<ItemKind, ItemFilter>>>({
@@ -710,19 +719,33 @@ function EditorBody({
   // 运行库从预览域名下的组件库取，和预览页同源。工程里别的文件变了时换一份对象，让预览重新加载
   const previewFilm = useMemo(
     () =>
-      film === null || clips.length === 0 || tokens === undefined
+      film === null || film.clips.length === 0 || tokens === undefined
         ? undefined
         : {
             html: previewDocument(film.html, projectFilesBase(tokens.origin, tokens.token)),
             runtimeSrc: previewRuntimeSrc(catalog, tokens.origin),
             filesRevision,
           },
-    [film, clips, catalog, tokens, filesRevision],
+    [film, catalog, tokens, filesRevision],
   )
-  const playBlocked = film === null || clips.length === 0 ? EMPTY_TEXT : undefined
+  const playBlocked = empty ? EMPTY_TEXT : undefined
 
   const exporting = useWholeFilmExport(conversationId, session.settle)
-  const exportBlocked = clips.length === 0 ? EMPTY_EXPORT_TEXT : undefined
+  const exportBlocked = empty ? EMPTY_EXPORT_TEXT : film.captionsProblem
+
+  // 「字幕」页签里在播放头处加一句：从播放头起 2 秒，碰到后面的字幕时缩短
+  const captionAt = captionSpot(captions, playhead)
+  const captionBlocked =
+    film === null
+      ? NO_FILM_CAPTION_TEXT
+      : 'refusal' in captionAt
+        ? CAPTION_REFUSAL_TEXT[captionAt.refusal]
+        : undefined
+  const addCaption = async () => {
+    if ('refusal' in captionAt) return undefined
+    leaveMaterial()
+    return session.addCaption(captionAt, NEW_CAPTION_TEXT)
+  }
 
   const viewedMaterial =
     materialView === null ? undefined : materials.byJob.get(materialView.range.jobId)
@@ -806,10 +829,10 @@ function EditorBody({
           playback={playback}
         />
       </div>
-      <aside aria-label="镜头、贴片、场景、配乐和属性" className="wf-side" ref={sideRef}>
+      <aside aria-label="镜头、贴片、场景、配乐、字幕和属性" className="wf-side" ref={sideRef}>
         <TabsRoot className="wf-side-panel" onValueChange={openSideTab} value={sideTab}>
           <TabsList
-            aria-label="镜头、贴片、场景、配乐和属性页签"
+            aria-label="镜头、贴片、场景、配乐、字幕和属性页签"
             className="wf-side-tabs items-center gap-0.5"
           >
             <TabsTrigger className={SIDE_TAB_CLASS} value="shots">
@@ -822,6 +845,9 @@ function EditorBody({
             ))}
             <TabsTrigger className={SIDE_TAB_CLASS} value="audio">
               配乐
+            </TabsTrigger>
+            <TabsTrigger className={SIDE_TAB_CLASS} value="captions">
+              字幕
             </TabsTrigger>
             <TabsTrigger className={cn(SIDE_TAB_CLASS, 'wf-side-tab-props')} value="props">
               属性
@@ -937,6 +963,27 @@ function EditorBody({
               }}
               onNotice={notice}
               onReveal={revealClip}
+            />
+          </TabsContent>
+          <TabsContent
+            className="wf-side-body is-captions"
+            value="captions"
+            {...catalogPanel('captions')}
+          >
+            <CaptionsTab
+              addBlocked={captionBlocked}
+              captions={captions}
+              onAdd={addCaption}
+              onRemove={(id) => {
+                leaveMaterial()
+                session.removeClips([id], false)
+              }}
+              onSeek={seek}
+              onText={(id, text) => {
+                leaveMaterial()
+                session.setCaptionText(id, text)
+              }}
+              problem={film?.captionsProblem}
             />
           </TabsContent>
           <TabsContent className="wf-side-body is-props" value="props">
