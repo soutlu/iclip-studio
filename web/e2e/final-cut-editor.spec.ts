@@ -1772,3 +1772,77 @@ test('识别字幕：点「识别字幕」发起一次识别，识别完写进�
   expect(after[0]?.start).toBeCloseTo(0.3 + video.start, 3)
   expect(after[1]?.start).toBeCloseTo(2.4 + video.start, 3)
 })
+
+const ENGLISH_FILE = 'locales/en.json'
+
+test('语言：加上 English 切过去，给一句字幕写英文，存下的 English 值表对、预览里显示英文；切回中文显示原文', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await serveSavedCaptions(page)
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const added = mainSaved(page, 1)
+  await editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  await added
+
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '字幕' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕' })
+  const sceneCreated = page.waitForRequest(
+    (request) => savedFileOf(request, CAPTIONS_FILE)?.includes('data-var-text') === true,
+  )
+  await tab.getByRole('button', { name: '在播放头处加一句' }).click()
+  const scene = savedFileOf(await sceneCreated, CAPTIONS_FILE) ?? ''
+  const variable = / data-var-text="([^"]+)"/.exec(scene)?.[1] ?? ''
+  expect(variable).not.toBe('')
+
+  // 「+」里选 English：建一份空的值表，切过去
+  const languages = editor.getByRole('group', { name: '语言' })
+  const created = page.waitForRequest((request) => savedFileOf(request, ENGLISH_FILE) !== null)
+  await languages.getByRole('button', { name: '添加语言' }).click()
+  await page.getByRole('menuitem', { name: 'English（EN）' }).click()
+  expect(JSON.parse(savedFileOf(await created, ENGLISH_FILE) ?? '')).toEqual({})
+  await expect(languages.getByRole('button', { name: 'English（EN）' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+
+  // 外语下框里是空的、占位字提示输入英文，下面写着原文；加一句置灰
+  const field = tab.getByRole('textbox', { name: '字幕文字 00:00.00 – 00:02.00' })
+  await expect(field).toHaveValue('')
+  await expect(field).toHaveAttribute('placeholder', '输入 English 字幕…')
+  await expect(field).toHaveAccessibleDescription('原文 新字幕')
+  await expect(tab.getByRole('button', { name: '在播放头处加一句' })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  )
+
+  const translated = page.waitForRequest(
+    (request) => savedFileOf(request, ENGLISH_FILE)?.includes('Hello world') === true,
+  )
+  await field.fill('Hello world')
+  expect(JSON.parse(savedFileOf(await translated, ENGLISH_FILE) ?? '')).toEqual({
+    [variable]: 'Hello world',
+  })
+
+  // 预览：这时第 0 秒显示英文；改了值以后预览会换一个播放器重新加载，换的那一刻有两个，等只剩一个再看
+  const player = await readyPlayer(editor)
+  const captionText = () =>
+    player.evaluateAll((elements) => {
+      if (elements.length !== 1) return null
+      const [element] = elements as (HTMLElement & { iframeElement: HTMLIFrameElement })[]
+      return element?.iframeElement.contentDocument?.querySelector('.caption')?.textContent ?? null
+    })
+  await expect.poll(captionText).toBe('Hello world')
+
+  await languages.getByRole('button', { name: '中文（ZH）' }).click()
+  await expect(field).toHaveValue('新字幕')
+  await expect.poll(captionText).toBe('新字幕')
+})

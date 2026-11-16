@@ -7,11 +7,12 @@ import { BlockedReason } from '../components/blocked-reason'
 import type { PeaksState } from '../editing/media-analysis'
 import { sourceTrimmed, trimBounds, trimmed, type SourceLength, type Timing } from './clip-edit'
 import type { ComponentCatalog, VariableValue } from './composition/catalog'
-import { CaptionTextField } from './captions-tab'
+import { CaptionTextField, type CaptionTextChange } from './captions-tab'
 import { isMediaClip, type CaptionClip, type FilmClip } from './composition/film'
 import { ContentFields } from './content-fields'
 import { Keys, Tool } from './editor-toolbar'
 import { ITEM_KIND_LABEL } from './items'
+import type { ShownLocale } from './locales'
 import type { KeyframeStates } from './material-media'
 import { MediaMix, RateRow } from './media-mix'
 import type { AttributeChanges } from './original-sound'
@@ -55,8 +56,10 @@ type Props = {
   onValues: (id: string, values: Values) => void
   /** 改片段 `id` 上的几个属性（null 是去掉），算一步撤销。 */
   onAttributes: (id: string, changes: AttributeChanges) => void
-  /** 把字幕 `id` 的字改成 `text`，算一步撤销。 */
-  onCaptionText: (id: string, text: string) => void
+  /** 显示着的语言：字幕的「内容」改的是这种语言的字。 */
+  locale: ShownLocale
+  /** 把字幕 `id` 在一种语言里的字改成 `text`，算一步撤销。 */
+  onCaptionText: CaptionTextChange
   /** 分离音频、合并回视频、联动、对齐口型、选中另一段。 */
   soundControls: SoundControls
   /** 焦点进出「属性」里输数值的框：在里面时 Esc 归输入框，放弃刚输入的。 */
@@ -134,6 +137,7 @@ function ClipInspector({
   onGesture,
   onValues,
   onAttributes,
+  locale,
   onCaptionText,
   soundControls,
   onTextEditing,
@@ -246,7 +250,7 @@ function ClipInspector({
                 variables={catalog.items.find((item) => item.name === clip.item)?.variables ?? []}
               />
             ) : clip.kind === 'caption' ? (
-              <CaptionContent clip={clip} onText={onCaptionText} />
+              <CaptionContent clip={clip} locale={locale} onText={onCaptionText} />
             ) : null}
           </>
         )}
@@ -258,10 +262,12 @@ function ClipInspector({
 /** 字幕的「内容」：这句的字，和「字幕」页签里那条同一个文字框。 */
 function CaptionContent({
   clip,
+  locale,
   onText,
 }: {
   clip: CaptionClip
-  onText: (id: string, text: string) => void
+  locale: ShownLocale
+  onText: CaptionTextChange
 }) {
   const id = useId()
   return (
@@ -269,7 +275,14 @@ function CaptionContent({
       <h4 className="wf-prop-title">
         <label htmlFor={id}>内容</label>
       </h4>
-      <CaptionTextField caption={clip} className="wf-prop-textarea" id={id} onText={onText} />
+      <CaptionTextField
+        caption={clip}
+        className="wf-prop-textarea"
+        id={id}
+        key={locale.code}
+        locale={locale}
+        onText={onText}
+      />
     </section>
   )
 }

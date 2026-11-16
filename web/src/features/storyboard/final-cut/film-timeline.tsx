@@ -97,6 +97,8 @@ export type DropGhost = { row: RowTarget; start: number; duration: number; guide
 type FilmTimelineProps = {
   /** final-cut 里所有的片段。 */
   clips: readonly FilmClip[]
+  /** 显示着外语时还没翻的字幕：片段上写的是原文，右边标一个「原文」。 */
+  untranslated: ReadonlySet<string>
   /** 片段的链接名：链接的片段一起切。 */
   links: Links
   /**
@@ -154,6 +156,9 @@ type FilmTimelineProps = {
 }
 
 const seconds = (ms: number) => (ms / 1000).toFixed(1)
+
+/** 外语里还没翻的字幕：片段上写的是原文，标出来。 */
+const SOURCE_TEXT_BADGE: SoundBadge = { text: '原文', tone: 'muted' }
 
 // 指针离一条空行（待新开的那一行）的上下边这么近也算在它上面
 const ROW_REACH_PX = 3
@@ -366,7 +371,7 @@ type TimelineClipProps = {
   trimmable: boolean
   /** 拖这个片段挪动或裁 `kind` 这一端时一起动的片段，含它自己和跟着动的联动伙伴。 */
   groupFor: (kind: Gesture['kind']) => ReadonlySet<string>
-  /** 分离出来的原声右边的小标；没有时是 undefined。 */
+  /** 分离出来的原声、外语里还没翻的字幕右边的小标；没有时是 undefined。 */
   badge: SoundBadge | undefined
   /** 别的片段正带着一组片段拖动时，跟着动的片段的样子；没有时是 null。 */
   following: Following | null
@@ -738,6 +743,7 @@ const keyOf = (row: RowKey) => `${row.zone}-${row.track}`
  */
 export function FilmTimeline({
   clips,
+  untranslated,
   links,
   tool,
   onSplit,
@@ -1163,7 +1169,10 @@ export function FilmTimeline({
                           cover={clip.kind === 'host' ? thumbnailUrl(catalog, clip.item) : null}
                           following={following}
                           groupFor={(kind) => editGroup(clip, selected, clips, kind)}
-                          badge={soundBadgeOf(clip, clips)}
+                          badge={
+                            soundBadgeOf(clip, clips) ??
+                            (untranslated.has(clip.id) ? SOURCE_TEXT_BADGE : undefined)
+                          }
                           key={clip.id}
                           onFollow={setFollowing}
                           gesturing={gesturing}

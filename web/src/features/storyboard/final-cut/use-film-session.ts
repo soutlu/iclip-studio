@@ -1,7 +1,7 @@
 import { use, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { writeClipTiming } from '@hyperframes/core/composition-contract'
 import { mintLinkId, relinkSplitHalves } from '@hyperframes/core/media-link'
-import type { Composition, ElementSnapshot } from '@hyperframes/sdk'
+import type { Composition, ElementSnapshot, JsonPatchOp } from '@hyperframes/sdk'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
 import {
@@ -15,6 +15,7 @@ import {
   CAPTION_OWNER,
   CAPTIONS_PATH,
   captionElement,
+  captionLabel,
   captionOf,
   captionsHostElement,
   captionsProblem,
@@ -46,6 +47,8 @@ import {
   holdProjectReads,
   PROJECT_DIR,
   PROJECT_MAIN_PATH,
+  projectLocaleOf,
+  readLocaleFile,
   readProject,
   readProjectFile,
   writeProjectFile,
@@ -53,6 +56,19 @@ import {
   type StoredProject,
 } from './final-cut.api'
 import { itemDurationMs } from './items'
+import {
+  LOCALES,
+  localeOfPath,
+  localePath,
+  localeValuesFile,
+  openValueTable,
+  parseLocaleValues,
+  SOURCE_LOCALE,
+  translationOf,
+  type LocaleCode,
+  type ShownLocale,
+  type ValueTable,
+} from './locales'
 import type { AttributeChanges } from './original-sound'
 import { onRow, topTrack, voiceRowFor, type Landing, type Renumbering } from './placement'
 import { detachedVideoChanges, mergedVideoChanges, type SoundPair } from './sound-pair'
@@ -76,6 +92,13 @@ export type FilmView = {
   durationMs: number
   /** 字幕写法不对时的原因（见 `captionsProblem`），导出前要先改好。 */
   captionsProblem: string | undefined
+  /**
+   * 当前显示的语言和它的值表（中文时是 null）。`clips` 里字幕的 `text` 总是原文，名字取这种语言的字
+   * （还没翻的取原文）；预览按值表套上这种语言。
+   */
+  locale: ShownLocale
+  /** 工程里有值表的外语，按 `LOCALES` 的先后。 */
+  locales: readonly LocaleCode[]
   canUndo: boolean
   canRedo: boolean
 }
@@ -105,25 +128,76 @@ const openEngine = async (
 }
 
 /**
+ * 打开着的一个工程文件的内容。几种文件的区别都收在这里：主文件、字幕场景用 SDK 打开（`composition`），语言值表
+ * 是 JSON（`values`，见 `openValueTable`）。保存、冲突、撤销重做都只经 `docOps` 用它们共有的那几样。
+ */
+type FileDoc = { kind: 'composition'; engine: Composition } | { kind: 'values'; table: ValueTable }
+
+/** 每种文件都有的：存出内容、应用撤销重做的补丁、一批操作（里面抛出时整批退回）、关掉。 */
+type DocOps = {
+  serialize: () => string
+  applyPatches: (patches: readonly JsonPatchOp[]) => void
+  batch: (change: () => void) => void
+  dispose: () => void
+}
+
+const docOps = (doc: FileDoc): DocOps => (doc.kind === 'composition' ? doc.engine : doc.table)
+
+/** 按路径打开工程文件 `path`（相对工程根）：语言值表读成值表，别的用 SDK 打开；改动带上文件报给 `onChange`。 */
+const openDoc = async (
+  path: string,
+  content: string,
+  onChange: (change: PatchChange) => void,
+): Promise<FileDoc> => {
+  const locale = localeOfPath(path)
+  if (locale === undefined)
+    return { kind: 'composition', engine: await openEngine(content, path, onChange) }
+  const table = openValueTable(parseLocaleValues(content, locale), (patches, inversePatches) =>
+    onChange({ file: path, patches, inversePatches }),
+  )
+  return { kind: 'values', table }
+}
+
+/**
  * 会话打开着的一个工程文件：`version` 是工作区里的版本号（新建工程还没存过的主文件是 null，第一次保存走新建），
  * `saved` 是最近一次存下或读到的内容（还没存过时是 null）。
  */
-type OpenFile = { engine: Composition; version: number | null; saved: string | null }
+type OpenFile = { doc: FileDoc; version: number | null; saved: string | null }
 
 /**
  * 会话打开着的工程：`files` 是路径（相对工程根）到文件，主文件在 `PROJECT_MAIN`。`captionsPath` 是字幕场景
  * 文件的路径（主文件里字幕宿主挂载的那个；没有宿主时是编辑器新建它的位置），文件打开着时在 `files` 里。
+ * 各外语的值表在 `locales/<语言>.json`。
  */
 type Project = { files: Map<string, OpenFile>; captionsPath: string }
 
+const engineAt = (project: Project, path: string): Composition | undefined => {
+  const doc = project.files.get(path)?.doc
+  return doc?.kind === 'composition' ? doc.engine : undefined
+}
+
 const mainOf = (project: Project): Composition => {
-  const main = project.files.get(PROJECT_MAIN)
+  const main = engineAt(project, PROJECT_MAIN)
   if (main === undefined) throw new Error('final-cut 工程里没有打开主文件')
-  return main.engine
+  return main
 }
 
 const sceneOf = (project: Project): Composition | undefined =>
-  project.files.get(project.captionsPath)?.engine
+  engineAt(project, project.captionsPath)
+
+/** 工程里各外语的值表，按 `LOCALES` 的先后。 */
+const tablesOf = (project: Project): Map<LocaleCode, ValueTable> => {
+  const tables = new Map<LocaleCode, ValueTable>()
+  for (const { code } of LOCALES) {
+    const doc = project.files.get(localePath(code))?.doc
+    if (doc?.kind === 'values') tables.set(code, doc.table)
+  }
+  return tables
+}
+
+const disposeAll = (project: Project | null) => {
+  for (const file of project?.files.values() ?? []) docOps(file.doc).dispose()
+}
 
 /** 有没有没存的文件：`present` 是各文件现在的内容。 */
 const unsaved = (project: Project | null, present: ReadonlyMap<string, string>) =>
@@ -242,39 +316,71 @@ const writeTotal = (main: Composition, scene: Composition | undefined) => {
 }
 
 /**
- * 工程现在的样子，和各文件现在的内容（路径 → 内容）：主文件只重算 `<head>` 里的字体块（SDK 改不了 `<head>`），
- * 别的文件照 SDK 存出的写。
+ * 工程现在的样子（显示语言 `locale` 的字），和各文件现在的内容（路径 → 内容）：主文件只重算 `<head>` 里的
+ * 字体块（SDK 改不了 `<head>`），字按原文和所有值表里的字一起算，存出的内容和显示哪种语言无关；别的文件照
+ * 各自存出的写。
  */
 const viewOf = (
   project: Project,
   catalog: ComponentCatalog,
   history: UndoHistory,
+  locale: LocaleCode,
 ): { view: FilmView; present: Map<string, string> } => {
   const main = mainOf(project)
   const scene = sceneOf(project)
   const clips = allClipsOf(main, scene, catalog)
-  const html = withFontBlock(main.serialize(), clips, catalog)
+  const tables = tablesOf(project)
+  const localeText = [...tables.values()]
+    .flatMap((table) => Object.values(table.values()))
+    .filter((value) => typeof value === 'string')
+    .join('')
+  const html = withFontBlock(main.serialize(), clips, catalog, localeText)
   const present = new Map(
     [...project.files].map(([path, file]) => [
       path,
-      path === PROJECT_MAIN ? html : file.engine.serialize(),
+      path === PROJECT_MAIN ? html : docOps(file.doc).serialize(),
     ]),
   )
+  const shown: ShownLocale = { code: locale, values: tables.get(locale)?.values() ?? null }
   const view: FilmView = {
     html,
     canvas: canvasOf(main),
-    clips,
+    clips:
+      shown.values === null
+        ? clips
+        : clips.map((clip) =>
+            clip.kind === 'caption'
+              ? {
+                  ...clip,
+                  label: captionLabel(translationOf(shown.values, clip.variable) ?? clip.text),
+                }
+              : clip,
+          ),
     links: new Map(clips.flatMap((clip) => (clip.link === null ? [] : [[clip.id, clip.link]]))),
     durationMs: latestEnd(main, scene),
     captionsProblem: captionsProblem(
       present.get(project.captionsPath) ?? null,
       captionsHostOf(main)?.attributes,
     ),
+    locale: shown,
+    locales: [...tables.keys()],
     canUndo: history.canUndo(),
     canRedo: history.canRedo(),
   }
   return { view, present }
 }
+
+/** 工作区里存着的各文件（路径相对工程根 → 文件，不存在的是 null）：主文件、字幕场景和各语言值表。 */
+const storedFilesOf = (stored: StoredProject | null): Map<string, StoredFile | null> =>
+  new Map<string, StoredFile | null>(
+    stored === null
+      ? []
+      : [
+          [PROJECT_MAIN, stored.main],
+          [stored.captionsPath, stored.captions],
+          ...[...stored.locales].map(([code, file]) => [localePath(code), file] as const),
+        ],
+  )
 
 const newClipId = () => `clip-${crypto.randomUUID().slice(0, 8)}`
 
@@ -331,13 +437,26 @@ class HalfRejected extends Error {}
 /** 字幕跟着视频片段挪了会和别的字幕重叠：整步编辑退回去。 */
 class CaptionsBlocked extends Error {}
 
+/** 删掉一句字幕：场景里它的元素、主文件根上它的变量，和各语言值表里它的值。 */
+const removeCaption = (
+  main: Composition,
+  scene: Composition,
+  tables: Iterable<ValueTable>,
+  caption: Pick<CaptionClip, 'id' | 'variable'>,
+) => {
+  scene.removeElement(caption.id)
+  if (declares(main, caption.variable)) main.removeVariableDeclaration(caption.variable)
+  for (const table of tables) table.set(caption.variable, null)
+}
+
 /**
  * 一步编辑做完以后，属于视频片段的字幕跟着它走（规则见 `captionsFollowing`，`before` 是这一步之前的片段）：
- * 挪字幕的起点、删掉没了的视频片段的字幕和它们的变量。会重叠时抛出 `CaptionsBlocked`。
+ * 挪字幕的起点、删掉没了的视频片段的字幕（见 `removeCaption`）。会重叠时抛出 `CaptionsBlocked`。
  */
 const followVideos = (
   main: Composition,
   scene: Composition,
+  tables: Iterable<ValueTable>,
   before: readonly FilmClip[],
   catalog: ComponentCatalog,
 ) => {
@@ -346,9 +465,8 @@ const followVideos = (
   const captions = captionsById(main, scene)
   for (const [id, start] of plan.starts) setOwnTiming(scene, id, { start: start / 1000 })
   for (const id of plan.removed) {
-    const variable = captions.get(id)?.variable
-    scene.removeElement(id)
-    if (variable !== undefined && declares(main, variable)) main.removeVariableDeclaration(variable)
+    const caption = captions.get(id)
+    if (caption !== undefined) removeCaption(main, scene, tables, caption)
   }
 }
 
@@ -406,10 +524,11 @@ type Options = {
 }
 
 /**
- * 编辑对话工作区里的 final-cut 工程：打开读到的主文件 `final-cut/index.html` 和它的字幕场景文件（有时；
- * `initial` 见 `readProject`，是 null 时还没有工程），改动停下 `debounceMs` 毫秒后把改了的文件整份保存（主文件第一次新建、之后按
- * 版本号写；字幕场景先存，主文件后存）。打开着的文件有一个在别处被改了、或保存时版本对不上，就都换上
- * 工作区里的那一份、放弃本地没存的改动；工程里主文件以外的文件变了时 `filesRevision` 加 1，预览据此重新加载。
+ * 编辑对话工作区里的 final-cut 工程：打开读到的主文件 `final-cut/index.html`、它的字幕场景文件和各语言的值表
+ * （有时；`initial` 见 `readProject`，是 null 时还没有工程），改动停下 `debounceMs` 毫秒后把改了的文件整份保存
+ * （主文件第一次新建、之后按版本号写；别的文件先存，主文件最后存）。打开着的文件有一个在别处被改了、或保存时
+ * 版本对不上，就都换上工作区里的那一份、放弃本地没存的改动；工程里主文件和值表以外的文件变了时 `filesRevision`
+ * 加 1，预览据此重新加载。当前显示的语言打开时是中文。
  */
 export function useFilmSession(
   conversationId: string,
@@ -426,7 +545,11 @@ export function useFilmSession(
   // 正在做的编辑动作里引擎报的改动，做完记成一步撤销
   const stepRef = useRef<PatchChange[] | null>(null)
   const creatingRef = useRef<Promise<Project> | null>(null)
-  const creatingCaptionsRef = useRef<Promise<OpenFile | undefined> | null>(null)
+  const creatingCaptionsRef = useRef<Promise<Composition | undefined> | null>(null)
+  // 正在加的语言：建好值表文件、放进工程之前，检查别处的改动要等它
+  const addingLocaleRef = useRef<Promise<void> | null>(null)
+  // 当前显示的语言：编辑器自己的状态，不存进文件
+  const localeRef = useRef<LocaleCode>(SOURCE_LOCALE)
   // 各文件现在的内容（路径 → 内容），和 `saved` 不一样的就是没存的
   const presentRef = useRef<ReadonlyMap<string, string>>(new Map())
   const inFlightRef = useRef<Promise<void> | null>(null)
@@ -438,7 +561,7 @@ export function useFilmSession(
   /** 改动都从这里发出，改完读一遍现在的样子。 */
   const show = useCallback(() => {
     const project = projectRef.current
-    const shown = project === null ? null : viewOf(project, catalog, history)
+    const shown = project === null ? null : viewOf(project, catalog, history, localeRef.current)
     presentRef.current = shown?.present ?? new Map()
     setFilm(shown?.view ?? null)
   }, [catalog, history])
@@ -456,12 +579,12 @@ export function useFilmSession(
       const main = mainOf(project)
       const others = [...project.files]
         .filter(([path]) => path !== PROJECT_MAIN)
-        .map(([, file]) => file.engine)
+        .map(([, file]) => docOps(file.doc))
       const step: PatchChange[] = []
       stepRef.current = step
       try {
         main.batch(() => {
-          others.reduce<() => void>((inner, engine) => () => engine.batch(inner), change)()
+          others.reduce<() => void>((inner, doc) => () => doc.batch(inner), change)()
           writeTotal(main, sceneOf(project))
         })
       } finally {
@@ -474,12 +597,15 @@ export function useFilmSession(
 
   /**
    * 换上一份工程（null 是还没有工程），撤销记录清空；`stored` 为真时各文件现在的内容就是工作区里存着的那一份。
+   * 当前语言的值表不在新的工程里时回到中文。
    */
   const install = useCallback(
     (project: Project | null, stored: boolean) => {
-      for (const file of projectRef.current?.files.values() ?? []) file.engine.dispose()
+      disposeAll(projectRef.current)
       history.clear()
       projectRef.current = project
+      if (project === null || !tablesOf(project).has(localeRef.current))
+        localeRef.current = SOURCE_LOCALE
       show()
       if (stored && project !== null)
         for (const [path, file] of project.files) file.saved = presentRef.current.get(path) ?? null
@@ -488,31 +614,22 @@ export function useFilmSession(
   )
 
   /**
-   * 打开工作区里存着的工程 `stored`（null 是还没有工程，见 `readProject`）：主文件和字幕场景文件。有字幕宿主
-   * 但场景文件不存在时按没有字幕打开，提示一句。
+   * 打开工作区里存着的工程 `stored`（null 是还没有工程，见 `readProject`）：主文件、字幕场景文件和各语言的值表。
+   * 有字幕宿主但场景文件不存在时按没有字幕打开，提示一句。
    */
   const openStored = useCallback(
     async (stored: StoredProject | null): Promise<Project | null> => {
       if (stored === null) return null
-      const { main, captions, captionsPath } = stored
-      const files = new Map<string, OpenFile>([
-        [
-          PROJECT_MAIN,
-          {
-            engine: await openEngine(main.content, PROJECT_MAIN, collect),
-            version: main.version,
+      if (stored.captions === null && stored.hosted) noticeRef.current(CAPTIONS_MISSING_TEXT)
+      const files = new Map<string, OpenFile>()
+      for (const [path, file] of storedFilesOf(stored))
+        if (file !== null)
+          files.set(path, {
+            doc: await openDoc(path, file.content, collect),
+            version: file.version,
             saved: null,
-          },
-        ],
-      ])
-      if (captions !== null)
-        files.set(captionsPath, {
-          engine: await openEngine(captions.content, captionsPath, collect),
-          version: captions.version,
-          saved: null,
-        })
-      else if (stored.hosted) noticeRef.current(CAPTIONS_MISSING_TEXT)
-      return { files, captionsPath }
+          })
+      return { files, captionsPath: stored.captionsPath }
     },
     [collect],
   )
@@ -523,7 +640,7 @@ export function useFilmSession(
     let cancelled = false
     void openStored(initialProject).then((project) => {
       if (cancelled) {
-        for (const file of project?.files.values() ?? []) file.engine.dispose()
+        disposeAll(project)
         return
       }
       install(project, true)
@@ -534,9 +651,10 @@ export function useFilmSession(
     }
   }, [initialProject, install, openStored])
 
-  /** 在途的保存都结束。 */
+  /** 在途的保存和正在加的语言都结束。 */
   const settled = useCallback(async () => {
-    while (inFlightRef.current !== null) await inFlightRef.current
+    while (inFlightRef.current !== null || addingLocaleRef.current !== null)
+      await (inFlightRef.current ?? addingLocaleRef.current)
   }, [])
 
   /** 换上工作区里现在的那一份 `stored`，放弃本地没存的改动并提示。 */
@@ -597,25 +715,22 @@ export function useFilmSession(
   }, [adoptStored, conversationId, settled])
 
   /**
-   * 打开着的文件（没有工程时是主文件）变了：通知不带版本号，自己的保存也会通知。等在途的保存结束再读，读回来
-   * 以后再等一次（读的时候可能又存了一版），有一个文件在工作区里的版本比自己知道的新（或文件出现、消失了）
-   * 才算别处改的。
+   * 打开着的文件（没有工程时是主文件）或语言值表变了：通知不带版本号，自己的保存也会通知。等在途的保存结束再读，
+   * 读回来以后再等一次（读的时候可能又存了一版），有一个文件在工作区里的版本比自己知道的新（或文件出现、
+   * 消失了，含别处加的语言）才算别处改的。
    */
   const checkStored = useCallback(async () => {
     try {
       await settled()
       const stored = await readProject(conversationId)
       await settled()
-      const storedFiles = new Map<string, StoredFile | null>(
-        stored === null
-          ? []
-          : [
-              [PROJECT_MAIN, stored.main],
-              [stored.captionsPath, stored.captions],
-            ],
-      )
+      const storedFiles = storedFilesOf(stored)
       const files = projectRef.current?.files
-      const external = [...(files?.keys() ?? [PROJECT_MAIN])].some((path) => {
+      const paths = new Set([
+        ...(files?.keys() ?? [PROJECT_MAIN]),
+        ...[...storedFiles.keys()].filter((path) => localeOfPath(path) !== undefined),
+      ])
+      const external = [...paths].some((path) => {
         const found = storedFiles.get(path) ?? null
         const known = files?.get(path)?.version ?? null
         return found === null ? known !== null : known === null || found.version > known
@@ -635,9 +750,19 @@ export function useFilmSession(
       (changes) => {
         const opened = [...(projectRef.current?.files.keys() ?? [PROJECT_MAIN])]
         const watched = new Set(opened.map((path) => `${PROJECT_DIR}/${path}`))
-        if (changes.some((change) => watched.has(change.path))) void checkStored()
-        // 字幕场景存好以后也要让预览重新加载：预览从工作区取它
-        if (changes.some((change) => change.path !== PROJECT_MAIN_PATH))
+        if (
+          changes.some(
+            (change) => watched.has(change.path) || projectLocaleOf(change.path) !== undefined,
+          )
+        )
+          void checkStored()
+        // 字幕场景存好以后也要让预览重新加载：预览从工作区取它。值表预览不取，语言的值随主文件一起发过去
+        if (
+          changes.some(
+            (change) =>
+              change.path !== PROJECT_MAIN_PATH && projectLocaleOf(change.path) === undefined,
+          )
+        )
           setFilesRevision((revision) => revision + 1)
       },
       { recursive: true },
@@ -669,21 +794,16 @@ export function useFilmSession(
     [conversationId, saveNow],
   )
 
-  useEffect(
-    () => () => {
-      for (const file of projectRef.current?.files.values() ?? []) file.engine.dispose()
-    },
-    [],
-  )
+  useEffect(() => () => disposeAll(projectRef.current), [])
 
   /** 还没有工程时按 `canvas` 用模板建一份；连着加两次也只建一份，后一次等前一次建好。 */
   const projectFor = useCallback(
     async (canvas: Canvas): Promise<Project> => {
       if (projectRef.current !== null) return projectRef.current
-      creatingRef.current ??= openEngine(emptyProject(canvas, catalog), PROJECT_MAIN, collect)
-        .then((main) => {
+      creatingRef.current ??= openDoc(PROJECT_MAIN, emptyProject(canvas, catalog), collect)
+        .then((doc) => {
           const project: Project = {
-            files: new Map([[PROJECT_MAIN, { engine: main, version: null, saved: null }]]),
+            files: new Map([[PROJECT_MAIN, { doc, version: null, saved: null }]]),
             captionsPath: CAPTIONS_PATH,
           }
           install(project, false)
@@ -847,20 +967,28 @@ export function useFilmSession(
   )
 
   /**
-   * 改工程里已有的东西：`change` 拿到主文件和字幕场景（没有时是 undefined），里面的几步和工程总长一起算一步撤销。
-   * 属于视频片段的字幕在同一步里跟着它走（见 `followVideos`）；跟着挪会和别的字幕重叠时整步不做，提示原因。
+   * 改工程里已有的东西：`change` 拿到主文件、字幕场景（没有时是 undefined）和各语言的值表，里面的几步和工程总长
+   * 一起算一步撤销。属于视频片段的字幕在同一步里跟着它走（见 `followVideos`）；跟着挪会和别的字幕重叠时整步
+   * 不做，提示原因。
    */
   const edit = useCallback(
-    (change: (main: Composition, scene: Composition | undefined) => void) => {
+    (
+      change: (
+        main: Composition,
+        scene: Composition | undefined,
+        tables: ReadonlyMap<LocaleCode, ValueTable>,
+      ) => void,
+    ) => {
       const project = projectRef.current
       if (project === null) return
       const main = mainOf(project)
+      const tables = tablesOf(project)
       try {
         perform(project, () => {
           const scene = sceneOf(project)
           const before = allClipsOf(main, scene, catalog)
-          change(main, scene)
-          if (scene !== undefined) followVideos(main, scene, before, catalog)
+          change(main, scene, tables)
+          if (scene !== undefined) followVideos(main, scene, tables.values(), before, catalog)
         })
       } catch (error) {
         // 一批操作里抛出时引擎已经整批退回
@@ -1001,23 +1129,19 @@ export function useFilmSession(
 
   /**
    * 删掉几个片段；`ripple` 为真时主轨里后面的片段往前补上，联动的伙伴挪同样的时间差。删一句字幕是删掉
-   * 场景里它的元素和主文件根上它的变量；删掉最后一句时场景文件和宿主都留着。
+   * 场景里它的元素、主文件根上它的变量和各语言值表里它的值；删掉最后一句时场景文件和宿主都留着。
    */
   const removeClips = useCallback(
     (ids: readonly string[], ripple: boolean) =>
-      edit((engine, scene) => {
+      edit((engine, scene, tables) => {
         const before = clipsOf(engine, catalog)
         const captions = captionsById(engine, scene)
         const gone = new Set(ids)
         const starts = ripple ? withLinkedStarts(rippleStarts(before, gone), before) : NO_STARTS
         for (const id of gone) {
           const caption = captions.get(id)
-          if (scene === undefined || caption === undefined) {
-            engine.removeElement(id)
-            continue
-          }
-          scene.removeElement(id)
-          if (declares(engine, caption.variable)) engine.removeVariableDeclaration(caption.variable)
+          if (scene === undefined || caption === undefined) engine.removeElement(id)
+          else removeCaption(engine, scene, tables.values(), caption)
         }
         keepingLinks(engine, () => {
           for (const [id, start] of starts)
@@ -1156,8 +1280,8 @@ export function useFilmSession(
    * 留下的空文件）就用工作区里的那一份。连着加两句也只建一次。工程在这期间换过了时答复 undefined。
    */
   const captionsFile = useCallback(
-    async (project: Project): Promise<OpenFile | undefined> => {
-      const opened = project.files.get(project.captionsPath)
+    async (project: Project): Promise<Composition | undefined> => {
+      const opened = sceneOf(project)
       if (opened !== undefined) return opened
       creatingCaptionsRef.current ??= (async () => {
         const path = project.captionsPath
@@ -1176,9 +1300,9 @@ export function useFilmSession(
           return undefined
         }
         // 打开后 SDK 存出的样子当作已存的那一份，不然一打开就算有改动
-        const file: OpenFile = { engine, version: stored.version, saved: engine.serialize() }
-        project.files.set(path, file)
-        return file
+        const doc: FileDoc = { kind: 'composition', engine }
+        project.files.set(path, { doc, version: stored.version, saved: engine.serialize() })
+        return engine
       })().finally(() => {
         creatingCaptionsRef.current = null
       })
@@ -1199,18 +1323,17 @@ export function useFilmSession(
     ): Promise<string[] | undefined> => {
       const project = projectRef.current
       if (project === null) return undefined
-      let file: OpenFile | undefined
+      let scene: Composition | undefined
       try {
-        file = await captionsFile(project)
+        scene = await captionsFile(project)
       } catch (error) {
         noticeRef.current(errorMessageOf(error, '字幕文件新建失败，请重试'))
         return undefined
       }
       const main = mainOf(project)
       const root = rootOf(main)
-      const sceneRoot = file === undefined ? undefined : rootOf(file.engine)
-      if (file === undefined || root === undefined || sceneRoot === undefined) return undefined
-      const scene = file.engine
+      const sceneRoot = scene === undefined ? undefined : rootOf(scene)
+      if (scene === undefined || root === undefined || sceneRoot === undefined) return undefined
       const captions = captionsFor(allClipsOf(main, scene, catalog)).map((caption) => {
         const key = crypto.randomUUID().slice(0, 8)
         return { ...caption, id: `cap-${key}`, variable: `cap_${key}` }
@@ -1241,15 +1364,25 @@ export function useFilmSession(
   )
 
   /**
-   * 把字幕 `id` 的字改成 `text`，算一步撤销：主文件根上它的变量的默认值改成它（还没声明时声明上），场景里
-   * 那个元素的字也改成一样的。字没变、字幕已经不在了时不动工程。
+   * 把字幕 `id` 在语言 `locale` 里的字改成 `text`，算一步撤销。中文改的是原文：主文件根上它的变量的默认值改成它
+   * （还没声明时声明上），场景里那个元素的字也改成一样的。外语改的是那种语言的值表里这个变量的值，`text` 是
+   * 空的时从值表里去掉（回到用原文），原文不动。字没变、字幕已经不在了、没有这种语言时不动工程。
    */
   const setCaptionText = useCallback(
-    (id: string, text: string) => {
+    (id: string, text: string, locale: LocaleCode) => {
       const project = projectRef.current
       const scene = project === null ? undefined : sceneOf(project)
       const caption = project === null ? undefined : captionsById(mainOf(project), scene).get(id)
-      if (scene === undefined || caption === undefined || caption.text === text) return
+      if (project === null || scene === undefined || caption === undefined) return
+      if (locale !== SOURCE_LOCALE) {
+        const table = tablesOf(project).get(locale)
+        const value = text === '' ? null : text
+        if (table === undefined || caption.variable === '') return
+        if (translationOf(table.values(), caption.variable) === value) return
+        edit(() => table.set(caption.variable, value))
+        return
+      }
+      if (caption.text === text) return
       edit((main) => {
         if (caption.variable !== '') {
           if (declares(main, caption.variable)) main.setVariableValue(caption.variable, text)
@@ -1261,6 +1394,57 @@ export function useFilmSession(
     [edit],
   )
 
+  /** 切换显示的语言（不进撤销、不改文件）；工程里没有这种语言的值表时不切。 */
+  const setLocale = useCallback(
+    (locale: LocaleCode) => {
+      const project = projectRef.current
+      if (project === null || (locale !== SOURCE_LOCALE && !tablesOf(project).has(locale))) return
+      localeRef.current = locale
+      show()
+    },
+    [show],
+  )
+
+  /**
+   * 加一种语言并切过去：在工作区里建一份空的值表（不进撤销）；建的时候已经有了（409）就用工作区里的那一份。
+   * 工程里已经有这种语言时直接切过去。建不了时提示原因，不切。
+   */
+  const addLocale = useCallback(
+    async (locale: LocaleCode) => {
+      const project = projectRef.current
+      if (project === null || locale === SOURCE_LOCALE) return
+      const path = localePath(locale)
+      if (!project.files.has(path)) {
+        const adding = (async () => {
+          const content = localeValuesFile({})
+          let stored: StoredFile | null
+          try {
+            stored = { content, version: await createProjectFile(conversationId, path, content) }
+          } catch (error) {
+            if (!(error instanceof ApiError) || error.status !== 409) throw error
+            stored = await readLocaleFile(conversationId, locale)
+            if (stored === null) throw error
+          }
+          const doc = await openDoc(path, stored.content, collect)
+          // 工程在这期间换过了（比如别处改了）：换上来的那一份里有没有这种语言由它自己说了算
+          if (projectRef.current !== project) return
+          project.files.set(path, { doc, version: stored.version, saved: docOps(doc).serialize() })
+        })()
+        addingLocaleRef.current = adding.catch(() => undefined)
+        try {
+          await adding
+        } catch (error) {
+          noticeRef.current(errorMessageOf(error, '语言添加失败，请重试'))
+          return
+        } finally {
+          addingLocaleRef.current = null
+        }
+      }
+      setLocale(locale)
+    },
+    [collect, conversationId, setLocale],
+  )
+
   const step = (direction: 'undo' | 'redo') => {
     const project = projectRef.current
     const changes = project === null ? undefined : history[direction]()
@@ -1270,7 +1454,7 @@ export function useFilmSession(
       for (const change of changes) {
         const file = project.files.get(change.file)
         if (file === undefined) throw new Error(`撤销记录里的文件没有打开：${change.file}`)
-        file.engine.applyPatches(change.patches)
+        docOps(file.doc).applyPatches(change.patches)
       }
     } catch (error) {
       console.error('final-cut 撤销重做失败', error)
@@ -1291,11 +1475,7 @@ export function useFilmSession(
             path,
             {
               ...file,
-              engine: await openEngine(
-                contents.get(path) ?? file.engine.serialize(),
-                path,
-                collect,
-              ),
+              doc: await openDoc(path, contents.get(path) ?? docOps(file.doc).serialize(), collect),
             },
           ] as const,
       ),
@@ -1324,6 +1504,8 @@ export function useFilmSession(
     resync,
     addCaptions,
     setCaptionText,
+    setLocale,
+    addLocale,
     undo: () => step('undo'),
     redo: () => step('redo'),
     save,
