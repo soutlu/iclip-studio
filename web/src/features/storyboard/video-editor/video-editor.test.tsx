@@ -293,8 +293,49 @@ describe('时间线缩略图限量排队', () => {
   const mediaOf = (name: string) => `https://bucket.oss-cn-hangzhou.aliyuncs.com/${name}.mp4`
   const timesOf = (images: readonly HTMLImageElement[]) =>
     images.map((image) => Number(/t_(\d+),/.exec(image.getAttribute('src') ?? '')?.[1]))
-  const framesOf = (mediaUrl: string) => <Frames part={{ mediaUrl, start: 1, end: 4 }} />
+  const framesOf = (mediaUrl: string, start = 1, end = 4) => (
+    <Frames part={{ mediaUrl, start, end }} />
+  )
   const imagesIn = (container: HTMLElement) => [...container.querySelectorAll('img')]
+  const layOut = (width: number) =>
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      bottom: 40,
+      height: 40,
+      left: 0,
+      right: width,
+      top: 0,
+      width,
+      x: 0,
+      y: 0,
+    } as DOMRect)
+
+  beforeEach(() => {
+    layOut(600)
+  })
+
+  it('画得窄时拉大间隔：每张至少 48 像素宽', async () => {
+    layOut(96)
+    const viewport = stubIntersectionObserver()
+    const view = render(framesOf(mediaOf('narrow'), 0, 8))
+    await viewport.scroll(true)
+    expect(timesOf(imagesIn(view.container))).toEqual([2000, 6000])
+  })
+
+  it('两头不在整格上时，图取自这一段以内', async () => {
+    layOut(56)
+    const viewport = stubIntersectionObserver()
+    const view = render(framesOf(mediaOf('edges'), 3.2, 5))
+    await viewport.scroll(true)
+    expect(timesOf(imagesIn(view.container))).toEqual([3500, 4500])
+  })
+
+  it('还没有宽度时不请求', async () => {
+    layOut(0)
+    const viewport = stubIntersectionObserver()
+    const view = render(framesOf(mediaOf('unsized')))
+    await viewport.scroll(true)
+    expect(imagesIn(view.container)).toEqual([])
+  })
 
   it('全部进入可视区时只请求 3 张，一张加载完才出下一张', async () => {
     const viewport = stubIntersectionObserver()
