@@ -80,6 +80,15 @@ describe('字幕场景文件', () => {
     )
   })
 
+  it('属于视频片段的字幕写上 data-caption-of，存回去再读还认得；手动加的不属于任何片段', async () => {
+    const scene = await openComposition(
+      captionsScene(CANVAS, fixtureCatalog, [{ ...first, owner: 'clip-1' }, second]),
+    )
+    expect(tagOf(scene.serialize(), 'cap-a1')).toContain('data-caption-of="clip-1"')
+    const reread = readCaptions(await openComposition(scene.serialize()))
+    expect(reread.map((caption) => caption.owner)).toEqual(['clip-1', null])
+  })
+
   it('字幕的样子写在场景里：字体是组件库的中文字体，后面只跟通用字体', () => {
     const scene = captionsScene(CANVAS, fixtureCatalog)
     expect(scene).toContain(`font-family: '${fixtureCatalog.cjk.family}', sans-serif;`)

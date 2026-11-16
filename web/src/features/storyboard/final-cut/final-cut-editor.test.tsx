@@ -21,6 +21,7 @@ import {
   captionsScene,
   captionVariable,
 } from './composition/captions'
+import type { CaptionClip, FilmClip } from './composition/film'
 import { FinalCutEditor } from './final-cut-editor'
 
 const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: number }>())
@@ -3148,6 +3149,8 @@ describe('final-cut 编辑器 · 切走再切回', () => {
   })
 })
 
+const EMPTY_CAPTIONS_TEXT = '暂无字幕，请点击「识别字幕」或「在播放头处加一句」'
+
 describe('final-cut 编辑器 · 字幕页签', () => {
   const side = () =>
     screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
@@ -3183,7 +3186,7 @@ describe('final-cut 编辑器 · 字幕页签', () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     await openEditor()
     await openCaptions(user)
-    expect(within(panel()).getByText('暂无字幕，请点击「在播放头处加一句」')).toBeVisible()
+    expect(within(panel()).getByText(EMPTY_CAPTIONS_TEXT)).toBeVisible()
 
     await user.click(addButton())
     const field = await within(panel()).findByRole('textbox', {
@@ -3209,7 +3212,7 @@ describe('final-cut 编辑器 · 字幕页签', () => {
     await user.click(
       within(panel()).getByRole('button', { name: '删除 00:00.00 – 00:02.00 的字幕' }),
     )
-    expect(within(panel()).getByText('暂无字幕，请点击「在播放头处加一句」')).toBeVisible()
+    expect(within(panel()).getByText(EMPTY_CAPTIONS_TEXT)).toBeVisible()
     await waitSaved(() => expect(savedTexts()).toEqual([]))
     expect(savedScene()).not.toContain('class="clip caption"')
   })
@@ -3496,5 +3499,413 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
     fireEvent.contextMenu(captionRow(), { clientX: 120 })
     await act(() => new Promise((resolve) => setTimeout(resolve, 100)))
     expect(screen.queryByRole('menu')).toBeNull()
+  })
+})
+
+/** 字幕场景里的一句：`owner` 是它属于的视频片段，手动加的是 null。 */
+type SceneLine = Pick<CaptionClip, 'id' | 'start' | 'duration' | 'variable' | 'text' | 'owner'>
+const sceneLine = (key: string, start: number, duration: number, owner: string | null = null) => ({
+  id: `cap-${key}`,
+  variable: `cap_${key}`,
+  text: `字幕 ${key}`,
+  start,
+  duration,
+  owner,
+})
+
+const CAPTION_CANVAS = { width: 720, height: 1280 }
+const SCENE_FILE = `final-cut/${CAPTIONS_PATH}`
+
+/** 工作区里放一份工程：主文件按 `clips` 写；有 `lines` 时照编辑器用 SDK 写的样子加上字幕宿主、变量和场景文件。 */
+const putFilm = async (clips: FilmClip[], lines: SceneLine[] = []) => {
+  const main = await openComposition(mainFile(clips, CAPTION_CANVAS))
+  if (lines.length > 0) {
+    const end = Math.max(...[...clips, ...lines].map((clip) => clip.start + clip.duration))
+    main.addElement('film', 99, captionsHostElement(CAPTION_CANVAS, end))
+    for (const each of lines) main.declareVariable(captionVariable(each))
+    putMockWorkspaceFile(
+      CONVERSATION,
+      SCENE_FILE,
+      captionsScene(CAPTION_CANVAS, fixtureCatalog, lines),
+    )
+  }
+  putMockProjectMain(CONVERSATION, main.serialize())
+}
+
+/** 存下来的字幕场景里各句的「字、开始、时长（秒）、属于哪个片段」，按文件里的先后。 */
+const savedSceneLines = () =>
+  [
+    ...new DOMParser()
+      .parseFromString(
+        (mockWorkspaceFile(CONVERSATION, SCENE_FILE)?.content ?? '').replace(/<\/?template>/g, ''),
+        'text/html',
+      )
+      .querySelectorAll('.caption'),
+  ].map((element) => [
+    element.textContent,
+    Number(element.getAttribute('data-start')),
+    Number(element.getAttribute('data-duration')),
+    element.getAttribute('data-caption-of'),
+  ])
+
+/** 存下来的主文件根上声明的字幕变量的默认值。 */
+const savedVariableTexts = () =>
+  (
+    JSON.parse(
+      new DOMParser()
+        .parseFromString(savedFilm(), 'text/html')
+        .documentElement.getAttribute('data-composition-variables') ?? '[]',
+    ) as { default: unknown }[]
+  ).map((declaration) => declaration.default)
+
+const undoButton = () => within(toolbar()).getByRole('button', { name: '撤销' })
+
+const subtitleJob = (sourceJobId: string, overrides: Partial<GenerationJob> = {}): GenerationJob =>
+  makeGenerationJob({ kind: 'subtitle', sourceJobId, sentences: [], ...overrides })
+
+const said = (startMs: number, endMs: number, text: string) => ({
+  startMs,
+  endMs,
+  text,
+  speaker: null,
+  words: [],
+})
+
+/**
+ * 字幕识别记录：`stored` 是已有的记录。发起识别时记下素材片，答复一条排队中的记录，之后读到的是
+ * `outcome(素材片)` 给的那一条（默认识别完成、没有句子）；`hold` 给了时发起识别的答复等它放行。
+ */
+const serveSubtitles = (
+  stored: GenerationJob[],
+  outcome: (sourceJobId: string) => GenerationJob = (source) => subtitleJob(source),
+  hold?: Promise<void>,
+) => {
+  const records = [...stored]
+  const submitted: string[] = []
+  server.use(
+    http.get('*/api/generations', ({ request }) => {
+      const params = new URL(request.url).searchParams
+      if (params.get('kind') !== 'subtitle') return undefined
+      const source = params.get('sourceJobId')
+      return HttpResponse.json({ items: records.filter((job) => job.sourceJobId === source) })
+    }),
+    http.post('*/api/generations/subtitles', async ({ request }) => {
+      const { sourceJobId } = (await request.json()) as { sourceJobId: string }
+      submitted.push(sourceJobId)
+      await hold
+      records.unshift(outcome(sourceJobId))
+      return HttpResponse.json(
+        { generation: subtitleJob(sourceJobId, { status: 'submitted', sentences: null }) },
+        { status: 202 },
+      )
+    }),
+  )
+  return submitted
+}
+
+describe('final-cut 编辑器 · 识别字幕', () => {
+  const openCaptions = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(
+      within(
+        screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
+      ).getByRole('tab', { name: '字幕' }),
+    )
+    return screen.getByRole('tabpanel', { name: '字幕' })
+  }
+  const recognizeButton = (panel: HTMLElement) =>
+    within(panel).getByRole('button', { name: /^(识别字幕|识别中…)$/ })
+  const clipA = video({ label: 'A · 镜头 1', src: URL_A, duration: 2_000 })
+  const clipB = video({
+    id: 'clip-2',
+    label: 'B · 镜头 1',
+    src: URL_B,
+    start: 2_000,
+    duration: 1_500,
+  })
+
+  it('已有识别完成的记录：不发起识别，各片段的句子换算到 final-cut 里一次写进去，属于各自的片段，一步撤销', async () => {
+    await putFilm([clipA, clipB])
+    const user = userEvent.setup()
+    await openEditor()
+    const submitted = serveSubtitles([
+      subtitleJob(TAKE_A, { sentences: [said(300, 1_200, '第一句话')] }),
+      // 片段只用到素材的前 1.5 秒：后一句截到片段结尾
+      subtitleJob(TAKE_B, { sentences: [said(200, 1_000, '第二段'), said(1_200, 2_500, '截短')] }),
+    ])
+    const panel = await openCaptions(user)
+    await user.click(recognizeButton(panel))
+    await waitSaved(() =>
+      expect(savedSceneLines()).toEqual([
+        ['第一句话', 0.3, 0.9, 'clip-1'],
+        ['第二段', 2.2, 0.8, 'clip-2'],
+        ['截短', 3.2, 0.3, 'clip-2'],
+      ]),
+    )
+    expect(savedVariableTexts()).toEqual(['第一句话', '第二段', '截短'])
+    expect(submitted).toEqual([])
+    expect(await screen.findByText('已加入 3 句字幕')).toBeVisible()
+    // 都有字幕了：不再识别
+    expect(recognizeButton(panel)).toHaveAttribute('aria-disabled', 'true')
+
+    await user.click(undoButton())
+    await waitSaved(() => expect(savedSceneLines()).toEqual([]))
+    expect(savedVariableTexts()).toEqual([])
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('没有记录：同一条素材的两个片段只发起一次识别；识别中按钮写「识别中…」、写着在识别几个片段，结果来了一次写进去', async () => {
+    // 两个片段用同一条素材的前后两段
+    await putFilm([
+      video({ label: '前半', src: URL_A, duration: 2_000 }),
+      video({
+        id: 'clip-2',
+        label: '后半',
+        src: URL_A,
+        start: 2_000,
+        duration: 2_000,
+        mediaStart: 2_000,
+      }),
+    ])
+    const user = userEvent.setup()
+    await openEditor()
+    let release = () => {}
+    const hold = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const submitted = serveSubtitles(
+      [],
+      (source) =>
+        subtitleJob(source, {
+          sentences: [said(500, 1_500, '前一句'), said(2_500, 3_500, '后一句')],
+        }),
+      hold,
+    )
+    const panel = await openCaptions(user)
+    await user.click(recognizeButton(panel))
+    await waitFor(() => expect(recognizeButton(panel)).toHaveTextContent('识别中…'))
+    expect(recognizeButton(panel)).toHaveAttribute('aria-disabled', 'true')
+    expect(within(panel).getByText('正在识别 2 个视频片段的字幕，可继续编辑')).toBeVisible()
+    // 识别中再点不会再发起
+    await user.click(recognizeButton(panel))
+    release()
+    await waitSaved(() =>
+      expect(savedSceneLines()).toEqual([
+        ['前一句', 0.5, 1, 'clip-1'],
+        ['后一句', 2.5, 1, 'clip-2'],
+      ]),
+    )
+    expect(submitted).toEqual([TAKE_A])
+    expect(recognizeButton(panel)).toHaveTextContent('识别字幕')
+    expect(within(panel).queryByText(/^正在识别/)).toBeNull()
+  })
+
+  it('这条素材正在识别：不再发起，等着它', async () => {
+    await putFilm([clipA])
+    const user = userEvent.setup()
+    await openEditor()
+    const submitted = serveSubtitles([
+      subtitleJob(TAKE_A, { status: 'submitted', sentences: null }),
+    ])
+    const panel = await openCaptions(user)
+    await user.click(recognizeButton(panel))
+    await act(() => new Promise((resolve) => setTimeout(resolve, 300)))
+    expect(submitted).toEqual([])
+    expect(recognizeButton(panel)).toHaveTextContent('识别中…')
+    expect(within(panel).getByText('正在识别 1 个视频片段的字幕，可继续编辑')).toBeVisible()
+  })
+
+  it('已经有字幕的片段、关闭了原声又没分离的片段不识别，别的照常', async () => {
+    await putFilm(
+      [
+        clipA,
+        video({
+          id: 'clip-2',
+          label: '静音',
+          src: URL_B,
+          start: 2_000,
+          duration: 1_500,
+          muted: true,
+        }),
+        video({ id: 'clip-3', label: '有声', src: URL_B, start: 4_000, duration: 1_500 }),
+      ],
+      [sceneLine('a1', 0, 1_000, 'clip-1')],
+    )
+    const user = userEvent.setup()
+    await openEditor()
+    const submitted = serveSubtitles([
+      subtitleJob(TAKE_A, { sentences: [said(1_200, 1_800, '不会写进去')] }),
+      subtitleJob(TAKE_B, { sentences: [said(100, 900, '有声的话')] }),
+    ])
+    const panel = await openCaptions(user)
+    await user.click(recognizeButton(panel))
+    await waitSaved(() =>
+      expect(savedSceneLines()).toEqual([
+        ['字幕 a1', 0, 1, 'clip-1'],
+        ['有声的话', 4.1, 0.8, 'clip-3'],
+      ]),
+    )
+    expect(submitted).toEqual([])
+  })
+
+  it('一个片段识别失败：其余照常写进去，提示失败的片段，可以再点重试；识别出来没有话的片段也提示', async () => {
+    await putFilm([
+      clipA,
+      clipB,
+      video({ id: 'clip-3', label: '安静', src: URL_SILENT, start: 4_000 }),
+    ])
+    const user = userEvent.setup()
+    await openEditor([...takes, ...quietTakes])
+    const submitted = serveSubtitles(
+      [
+        subtitleJob(TAKE_A, { status: 'failed', sentences: null }),
+        subtitleJob(TAKE_B, { sentences: [said(200, 1_000, '照常写')] }),
+        subtitleJob(TAKE_SILENT, { sentences: [] }),
+      ],
+      (source) => subtitleJob(source, { status: 'failed', sentences: null }),
+    )
+    const panel = await openCaptions(user)
+    await user.click(recognizeButton(panel))
+    await waitSaved(() => expect(savedSceneLines()).toEqual([['照常写', 2.2, 0.8, 'clip-2']]))
+    expect(
+      await screen.findByText('A · 镜头 1 的字幕识别失败，请点击「识别字幕」重试'),
+    ).toBeVisible()
+    expect(await screen.findByText('安静 没有识别出说话，未加字幕')).toBeVisible()
+    // 上次失败了的那条重新发起一次
+    expect(submitted).toEqual([TAKE_A])
+    await waitFor(() => expect(recognizeButton(panel)).not.toHaveAttribute('aria-disabled'))
+    await user.click(recognizeButton(panel))
+    await waitFor(() => expect(submitted).toEqual([TAKE_A, TAKE_A]))
+  })
+
+  it('没有可识别的片段时「识别字幕」置灰，点了说明原因', async () => {
+    const user = userEvent.setup()
+    await openEditor()
+    const panel = await openCaptions(user)
+    expect(recognizeButton(panel)).toHaveAttribute('aria-disabled', 'true')
+    await user.click(recognizeButton(panel))
+    expect(
+      (await screen.findAllByText('final-cut 里暂无视频片段，无法识别字幕；请先加入镜头')).length,
+    ).toBeGreaterThan(0)
+  })
+
+  it('视频片段都关了原声：「识别字幕」置灰，说明原因', async () => {
+    await putFilm([{ ...clipA, muted: true }])
+    const user = userEvent.setup()
+    await openEditor()
+    // 素材片读完了才知道片段对不对得上素材
+    await shot(/^生成 A 镜头 1，/)
+    const panel = await openCaptions(user)
+    expect(recognizeButton(panel)).toHaveAttribute('aria-disabled', 'true')
+    await user.click(recognizeButton(panel))
+    expect(
+      (
+        await screen.findAllByText(
+          '视频片段都关闭了原声或找不到素材记录，无法识别字幕；请先打开原声',
+        )
+      ).length,
+    ).toBeGreaterThan(0)
+  })
+})
+
+describe('final-cut 编辑器 · 字幕跟着视频片段走', () => {
+  /** 画面 1：视频 0–4 秒；字幕：它的两句 0.5–1 秒、2.5–3 秒，手动加的一句 6–7 秒。 */
+  const open = async () => {
+    await putFilm(
+      [video({ label: 'A · 镜头 1', src: URL_A, duration: 4_000 })],
+      [
+        sceneLine('a1', 500, 500, 'clip-1'),
+        sceneLine('b2', 2_500, 500, 'clip-1'),
+        sceneLine('m3', 6_000, 1_000),
+      ],
+    )
+    const user = userEvent.setup()
+    await openEditor()
+    return user
+  }
+  const lane = () => screen.getByRole('group', { name: '画面 1' })
+  const videoBodies = () => within(lane()).getAllByRole('button', { name: /^选中：/ })
+  /** 拖片段：测试里时间线按一秒 100 像素排，拖 `dx` 像素就是想挪到第 `dx` × 10 毫秒。 */
+  const drag = (target: HTMLElement, dx: number) => {
+    fireEvent.pointerDown(target, { button: 0, pointerId: 1, clientX: 10, clientY: 50 })
+    fireEvent.pointerMove(target, { pointerId: 1, clientX: 10 + dx, clientY: 50 })
+    fireEvent.pointerUp(target, { pointerId: 1, clientX: 10 + dx, clientY: 50 })
+  }
+  const timingsOf = () => savedSceneLines().map(([text, start]) => [text, start])
+
+  it('在时间线上拖视频片段：它的字幕挪同样的时间，手动加的不动；一步撤销都回去', async () => {
+    const user = await open()
+    const [body] = videoBodies()
+    if (body === undefined) throw new Error('没有视频片段')
+    drag(body, 100)
+    await waitSaved(() =>
+      expect(timingsOf()).toEqual([
+        ['字幕 a1', 1.5],
+        ['字幕 b2', 3.5],
+        ['字幕 m3', 6],
+      ]),
+    )
+    expect(savedClips()[0]).toContain('data-start="1"')
+    await user.click(undoButton())
+    await waitSaved(() =>
+      expect(timingsOf()).toEqual([
+        ['字幕 a1', 0.5],
+        ['字幕 b2', 2.5],
+        ['字幕 m3', 6],
+      ]),
+    )
+    expect(savedClips()[0]).toContain('data-start="0"')
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('删掉视频片段：它的字幕和变量一起删，手动加的留着；一步撤销都回来', async () => {
+    const user = await open()
+    const [body] = videoBodies()
+    if (body === undefined) throw new Error('没有视频片段')
+    await user.click(body)
+    await user.keyboard('{Delete}')
+    await waitSaved(() => expect(timingsOf()).toEqual([['字幕 m3', 6]]))
+    expect(savedVariableTexts()).toEqual(['字幕 m3'])
+    expect(savedClips()).toHaveLength(0)
+    await user.click(undoButton())
+    await waitSaved(() => expect(timingsOf()).toHaveLength(3))
+    expect(savedClips()).toHaveLength(1)
+  })
+
+  it('切开以后挪后半段：切点以后的字幕跟着后半段走，切点以前的留在原处', async () => {
+    const user = await open()
+    editorRoot().focus()
+    await user.keyboard('b')
+    // 剃刀点在 2 秒处（一秒 100 像素）
+    fireEvent.pointerDown(lane(), {
+      button: 0,
+      pointerId: 1,
+      pointerType: 'mouse',
+      clientX: 200,
+      clientY: 10,
+    })
+    await waitSaved(() => expect(savedClips()).toHaveLength(2))
+    const halfId = /id="(clip-[^"]+)"/.exec(
+      savedClips().find((tag) => tag.includes('data-start="2"')) ?? '',
+    )?.[1]
+    expect(halfId).toBeDefined()
+    expect(savedSceneLines().map(([text, , , owner]) => [text, owner])).toEqual([
+      ['字幕 a1', 'clip-1'],
+      ['字幕 b2', halfId],
+      ['字幕 m3', null],
+    ])
+
+    editorRoot().focus()
+    await user.keyboard('v')
+    const second = videoBodies()[1]
+    if (second === undefined) throw new Error('没有后半段')
+    // 后半段从 2 秒挪到 4.5 秒
+    drag(second, 450)
+    await waitSaved(() =>
+      expect(timingsOf()).toEqual([
+        ['字幕 a1', 0.5],
+        ['字幕 b2', 5],
+        ['字幕 m3', 6],
+      ]),
+    )
   })
 })

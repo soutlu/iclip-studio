@@ -772,6 +772,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       link: null,
       text: '字幕第一行\nSecond line',
       variable: 'cap_a1',
+      owner: null,
     }
     /** 有字幕时：场景里的元素不写字，字只在主文件根上的变量里；读不到变量就画不出字。 */
     const files = async (captioned: boolean): Promise<ProjectFile[]> => {
