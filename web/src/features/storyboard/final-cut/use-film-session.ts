@@ -23,7 +23,12 @@ import {
   captionVariable,
   isCaptionsHost,
 } from './composition/captions'
-import type { CatalogItem, ComponentCatalog, VariableValue } from './composition/catalog'
+import type {
+  CatalogItem,
+  CatalogVariable,
+  ComponentCatalog,
+  VariableValue,
+} from './composition/catalog'
 import {
   audioElement,
   clipOf,
@@ -39,8 +44,20 @@ import {
   type CaptionClip,
   type ClipAttribute,
   type FilmClip,
+  type HostClip,
   type VideoClip,
 } from './composition/film'
+import {
+  fieldText,
+  LOCALE_BINDINGS,
+  localeBindingsAttribute,
+  localeBindingsOf,
+  localeVariable,
+  localeVariableId,
+  pinnedByDefault,
+  textFields,
+  type LocaleBindings,
+} from './composition/locale-text'
 import {
   copyItemFiles,
   createProjectFile,
@@ -99,6 +116,8 @@ export type FilmView = {
   locale: ShownLocale
   /** 工程里有值表的外语，按 `LOCALES` 的先后。 */
   locales: readonly LocaleCode[]
+  /** 组件或块的片段里随语言的文字字段（片段编号 → 字段到根变量），没有随语言字段的片段不在里面。 */
+  bindings: ReadonlyMap<string, LocaleBindings>
   canUndo: boolean
   canRedo: boolean
 }
@@ -294,6 +313,57 @@ const fileOf = (
 const declares = (main: Composition, variable: string) =>
   main.getVariableDeclarations().some((declaration) => declaration.id === variable)
 
+/** 主文件根上的变量现在的默认值；没声明时是 undefined。 */
+const declaredDefault = (main: Composition, variable: string) =>
+  main.getVariableDeclarations().find((declaration) => declaration.id === variable)?.default
+
+/** 主文件根上的变量 `variable` 的默认值写成 `text`，还没声明时声明上（名字是 `label`）。 */
+const writeDefault = (main: Composition, variable: string, label: string, text: string) => {
+  if (!declares(main, variable)) main.declareVariable(localeVariable(variable, label, text))
+  else if (declaredDefault(main, variable) !== text) main.setVariableValue(variable, text)
+}
+
+/** 片段 `id` 上随语言的字段（见 `LOCALE_BINDINGS`）。 */
+const bindingsOf = (main: Composition, id: string): LocaleBindings =>
+  localeBindingsOf(main.getElement(id)?.attributes[LOCALE_BINDINGS])
+
+const writeBindings = (main: Composition, id: string, bindings: LocaleBindings) =>
+  main.setAttribute(id, LOCALE_BINDINGS, localeBindingsAttribute(bindings))
+
+/** 组件或块的片段 `clip` 的文字字段 `field` 改成随语言：根上声明变量（默认值是现在的字），宿主上记下。 */
+const followLocale = (
+  main: Composition,
+  clip: Pick<HostClip, 'id' | 'values'>,
+  field: CatalogVariable,
+) => {
+  const bindings = bindingsOf(main, clip.id)
+  if (bindings[field.id] !== undefined) return
+  const variable = localeVariableId(clip.id, field.id)
+  writeDefault(main, variable, field.label, fieldText(clip.values, field))
+  writeBindings(main, clip.id, { ...bindings, [field.id]: variable })
+}
+
+/** 片段 `id` 的字段 `fieldId` 改成固定：去掉宿主上的记录、根上的变量和各语言值表里它的值。 */
+const pinField = (main: Composition, tables: Iterable<ValueTable>, id: string, fieldId: string) => {
+  const { [fieldId]: variable, ...rest } = bindingsOf(main, id)
+  if (variable === undefined) return
+  writeBindings(main, id, rest)
+  if (declares(main, variable)) main.removeVariableDeclaration(variable)
+  for (const table of tables) table.set(variable, null)
+}
+
+/** 片段 `clip` 按默认规则（见 `pinnedByDefault`）该随语言、现在还固定着的文字字段。 */
+const followingByDefault = (
+  main: Composition,
+  clip: Pick<HostClip, 'id' | 'values'>,
+  item: CatalogItem,
+): CatalogVariable[] =>
+  textFields(item).filter(
+    (field) =>
+      !pinnedByDefault(fieldText(clip.values, field)) &&
+      bindingsOf(main, clip.id)[field.id] === undefined,
+  )
+
 /** 工程总长（毫秒）：主文件根下的片段（字幕宿主除外）和各句字幕里最晚的结尾。 */
 const latestEnd = (main: Composition, scene: Composition | undefined): number => {
   const skipped = new Set([rootOf(main)?.id, captionsHostOf(main)?.id])
@@ -364,6 +434,12 @@ const viewOf = (
     ),
     locale: shown,
     locales: [...tables.keys()],
+    bindings: new Map(
+      clips.flatMap((clip) => {
+        const bindings = clip.kind === 'host' ? bindingsOf(main, clip.id) : {}
+        return Object.keys(bindings).length === 0 ? [] : [[clip.id, bindings]]
+      }),
+    ),
     canUndo: history.canUndo(),
     canRedo: history.canRedo(),
   }
@@ -426,8 +502,17 @@ const keepingLinks = (engine: Composition, change: () => void) => {
 
 const HF_ID = 'data-hf-id'
 
-/** 要加进根下的一个后半段：它的编号，切的是哪个片段（`of`），写在根下第几个，元素的整段 HTML。 */
-type SplitHalf = { id: string; of: string; index: number; html: string }
+/**
+ * 要加进根下的一个后半段：它的编号，切的是哪个片段（`of`），写在根下第几个，元素的整段 HTML；`variables` 是
+ * 随语言的字段换成的新根变量（原来的 → 新的），要照原来的声明、各语言的值复制一份。
+ */
+type SplitHalf = {
+  id: string
+  of: string
+  index: number
+  html: string
+  variables: readonly (readonly [from: string, to: string])[]
+}
 
 const SPLIT_FAILED_TEXT = '片段里带有无法复制的内容，无法切开'
 
@@ -472,8 +557,8 @@ const followVideos = (
 
 /**
  * 切开以后的各个后半段：在当前主文件的一份副本里把原元素整个复制一份（属性、样式、子元素都带上），
- * 换上新的编号、后半段的起止和入点，紧跟在原元素后面；链接名照引擎的规则重新取。按在根下的先后排，
- * 依次加进去时前面加的不会挪动后面要加的位置。找不到根或片段时是 null。
+ * 换上新的编号、后半段的起止和入点，紧跟在原元素后面；链接名照引擎的规则重新取，随语言的字段换成按新编号取的
+ * 根变量，不和前半段共用。按在根下的先后排，依次加进去时前面加的不会挪动后面要加的位置。找不到根或片段时是 null。
  */
 function splitHalves(
   engine: Composition,
@@ -487,7 +572,7 @@ function splitHalves(
   )
   if (root === undefined) return null
   const kinds = new Map(clips.map((clip) => [clip.id, clip.kind]))
-  const halves: { element: Element; of: string }[] = []
+  const halves: { element: Element; of: string; variables: [string, string][] }[] = []
   for (const cut of cuts) {
     const original = [...root.children].find((child) => child.getAttribute(HF_ID) === cut.id)
     if (original === undefined) return null
@@ -501,19 +586,31 @@ function splitHalves(
     const inPoint = String(cut.second.mediaStart / 1000)
     if (kinds.get(cut.id) === 'host') half.setAttribute('data-playback-start', inPoint)
     else half.setAttribute('data-media-start', inPoint)
+    const bindings = Object.entries(
+      localeBindingsOf(half.getAttribute(LOCALE_BINDINGS) ?? undefined),
+    ).map(([field, from]) => [field, from, localeVariableId(id, field)] as const)
+    const renamed = localeBindingsAttribute(
+      Object.fromEntries(bindings.map(([field, , to]) => [field, to])),
+    )
+    if (renamed !== null) half.setAttribute(LOCALE_BINDINGS, renamed)
     original.after(half)
-    halves.push({ element: half, of: cut.id })
+    halves.push({
+      element: half,
+      of: cut.id,
+      variables: bindings.map(([, from, to]) => [from, to]),
+    })
   }
   relinkSplitHalves(
     copy,
     halves.map((half) => half.element.id),
   )
   return halves
-    .map(({ element, of }) => ({
+    .map(({ element, of, variables }) => ({
       id: element.id,
       of,
       index: [...root.children].indexOf(element),
       html: element.outerHTML,
+      variables,
     }))
     .toSorted((left, right) => left.index - right.index)
 }
@@ -871,7 +968,8 @@ export function useFilmSession(
 
   /**
    * 把组件库的一个条目放进工程：先把条目的文件拷进工程，再从 `at` 那一行的那个时间放起（调用方保证那里空着），
-   * 可填项取 `values`，时长取条目的时长。`renumber` 同 `addVideos`。
+   * 可填项取 `values`，时长取条目的时长。工程里有外语时，文字字段按默认规则随语言（见 `followingByDefault`）。
+   * `renumber` 同 `addVideos`。
    * 叠在最上面，写在根下第一个。还没有工程时先按 `canvas` 建一份。文件拷不进来时提示原因，不动工程。
    */
   const addItem = useCallback(
@@ -898,11 +996,12 @@ export function useFilmSession(
         width: Number(root.attributes['data-width'] ?? canvas.width),
         height: Number(root.attributes['data-height'] ?? canvas.height),
       }
+      const id = newClipId()
       perform(project, () => {
-        for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
+        for (const [other, next] of renumber) engine.setTiming(other, { trackIndex: next })
         const element = hostElement(
           {
-            id: newClipId(),
+            id,
             label: item.title,
             item: item.name,
             src: item.src,
@@ -920,6 +1019,9 @@ export function useFilmSession(
           catalog,
         )
         engine.addElement(root.id, 0, element)
+        if (tablesOf(project).size > 0)
+          for (const field of followingByDefault(engine, { id, values }, item))
+            followLocale(engine, { id, values }, field)
       })
       show()
       return true
@@ -1084,23 +1186,82 @@ export function useFilmSession(
     [edit],
   )
 
-  /**
-   * 把组件或块的片段 `id` 的可填项取值整个换成 `values`，宿主上的字体变量跟着重算，算一步撤销。
-   * 片段已经不在工程里（比如改完还没提交就删掉了）时不动工程。
-   */
-  const setValues = useCallback(
-    (id: string, values: Readonly<Record<string, VariableValue>>) => {
+  /** 组件或块的片段 `id`；不在工程里时是 undefined。 */
+  const hostClip = useCallback(
+    (id: string): HostClip | undefined => {
       const project = projectRef.current
       const clip =
         project === null ? undefined : clipsOf(mainOf(project), catalog).find((c) => c.id === id)
-      if (clip?.kind !== 'host') return
+      return clip?.kind === 'host' ? clip : undefined
+    },
+    [catalog],
+  )
+
+  /**
+   * 把组件或块的片段 `id` 的可填项取值整个换成 `values`（中文），宿主上的字体变量跟着重算，随语言的字段的根变量
+   * 默认值跟着改成新的字，算一步撤销。片段已经不在工程里（比如改完还没提交就删掉了）时不动工程。
+   */
+  const setValues = useCallback(
+    (id: string, values: Readonly<Record<string, VariableValue>>) => {
+      const clip = hostClip(id)
+      if (clip === undefined) return
       const item = itemNamed(catalog, clip.item)
       edit((current) => {
         current.setAttribute(id, 'data-variable-values', JSON.stringify(values))
         if (item !== undefined) current.setStyle(id, itemFonts(item, values, catalog))
+        for (const [fieldId, variable] of Object.entries(bindingsOf(current, id))) {
+          const field = item?.variables.find((candidate) => candidate.id === fieldId)
+          if (field !== undefined)
+            writeDefault(current, variable, field.label, fieldText(values, field))
+        }
       })
     },
-    [catalog, edit],
+    [catalog, edit, hostClip],
+  )
+
+  /**
+   * 把片段 `id` 的文字字段 `fieldId` 在语言 `locale` 里的字改成 `text`，算一步撤销。中文改的是宿主的取值
+   * （见 `setValues`）；外语下随语言的字段改的是那种语言值表里它的根变量的值（`text` 是空的时去掉，回到用中文），
+   * 固定的字段不改。字没变、片段不在了时不动工程。
+   */
+  const setItemText = useCallback(
+    (id: string, fieldId: string, text: string, locale: LocaleCode) => {
+      const project = projectRef.current
+      const clip = hostClip(id)
+      const field = itemNamed(catalog, clip?.item ?? '')?.variables.find((v) => v.id === fieldId)
+      if (project === null || clip === undefined || field === undefined) return
+      if (locale === SOURCE_LOCALE) {
+        if (fieldText(clip.values, field) !== text)
+          setValues(id, { ...clip.values, [fieldId]: text })
+        return
+      }
+      const variable = bindingsOf(mainOf(project), id)[fieldId]
+      const table = tablesOf(project).get(locale)
+      const value = text === '' ? null : text
+      if (variable === undefined || table === undefined) return
+      if (translationOf(table.values(), variable) === value) return
+      edit(() => table.set(variable, value))
+    },
+    [catalog, edit, hostClip, setValues],
+  )
+
+  /**
+   * 片段 `id` 的文字字段 `fieldId` 改成随语言（`follow`，见 `followLocale`）或固定（见 `pinField`），算一步撤销。
+   * 已经是这样、片段不在了时不动工程。
+   */
+  const setFollowsLocale = useCallback(
+    (id: string, fieldId: string, follow: boolean) => {
+      const project = projectRef.current
+      const clip = hostClip(id)
+      const field = itemNamed(catalog, clip?.item ?? '')?.variables.find((v) => v.id === fieldId)
+      if (project === null || clip === undefined || field === undefined) return
+      if ((bindingsOf(mainOf(project), id)[fieldId] !== undefined) === follow) return
+      edit((main, _scene, tables) => {
+        if (follow) followLocale(main, clip, field)
+        else pinField(main, tables.values(), id, fieldId)
+      })
+    },
+    [catalog, edit, hostClip],
   )
 
   /**
@@ -1130,6 +1291,7 @@ export function useFilmSession(
   /**
    * 删掉几个片段；`ripple` 为真时主轨里后面的片段往前补上，联动的伙伴挪同样的时间差。删一句字幕是删掉
    * 场景里它的元素、主文件根上它的变量和各语言值表里它的值；删掉最后一句时场景文件和宿主都留着。
+   * 删组件或块的片段时它随语言的字段的根变量和各语言值表里的值一起删掉。
    */
   const removeClips = useCallback(
     (ids: readonly string[], ripple: boolean) =>
@@ -1140,8 +1302,13 @@ export function useFilmSession(
         const starts = ripple ? withLinkedStarts(rippleStarts(before, gone), before) : NO_STARTS
         for (const id of gone) {
           const caption = captions.get(id)
-          if (scene === undefined || caption === undefined) engine.removeElement(id)
-          else removeCaption(engine, scene, tables.values(), caption)
+          if (scene !== undefined && caption !== undefined) {
+            removeCaption(engine, scene, tables.values(), caption)
+            continue
+          }
+          for (const fieldId of Object.keys(bindingsOf(engine, id)))
+            pinField(engine, tables.values(), id, fieldId)
+          engine.removeElement(id)
         }
         keepingLinks(engine, () => {
           for (const [id, start] of starts)
@@ -1240,7 +1407,8 @@ export function useFilmSession(
 
   /**
    * 切开几个片段（`cuts` 由 `clip-edit.ts` 里的切开函数算好），算一步撤销：前半段还是原来的片段、只改时长，
-   * 后半段是它的整份复制、紧跟在它后面；切的是视频片段时，从切点起的字幕改成属于后半段（见 `splitOwners`）。
+   * 后半段是它的整份复制、紧跟在它后面，随语言的字段的根变量连同各语言的值复制一份给它；切的是视频片段时，
+   * 从切点起的字幕改成属于后半段（见 `splitOwners`）。
    * 有一个后半段写不进去（比如元素里带着脚本）时都不切，提示原因。
    */
   const split = useCallback(
@@ -1258,10 +1426,18 @@ export function useFilmSession(
         new Map(halves.map((half) => [half.of, half.id])),
       )
       try {
-        edit((current, scene) => {
+        edit((current, scene, tables) => {
           for (const half of halves)
             if (current.addElement(root.id, half.index, half.html) !== half.id)
               throw new HalfRejected()
+          for (const [from, to] of halves.flatMap((half) => half.variables)) {
+            const declaration = current.getVariableDeclarations().find((each) => each.id === from)
+            if (declaration !== undefined) current.declareVariable({ ...declaration, id: to })
+            for (const table of tables.values()) {
+              const value = translationOf(table.values(), from)
+              if (value !== null) table.set(to, value)
+            }
+          }
           // 链接的片段切在同一处：SDK 把时长带给结尾对齐的链接片段时，带过去的也正好是切点
           for (const cut of cuts) current.setTiming(cut.id, { duration: cut.first.duration / 1000 })
           for (const [id, owner] of owners) scene?.setAttribute(id, CAPTION_OWNER, owner)
@@ -1407,7 +1583,9 @@ export function useFilmSession(
 
   /**
    * 加一种语言并切过去：在工作区里建一份空的值表（不进撤销）；建的时候已经有了（409）就用工作区里的那一份。
-   * 工程里已经有这种语言时直接切过去。建不了时提示原因，不切。
+   * 这是工程里的第一种外语时，接着把所有组件或块的片段的文字字段按默认规则改成随语言（见 `followingByDefault`），
+   * 这一步单独算一步撤销（撤销后值表还在，字段都是固定的）。工程里已经有这种语言时直接切过去。建不了时提示原因，
+   * 不切。
    */
   const addLocale = useCallback(
     async (locale: LocaleCode) => {
@@ -1415,6 +1593,7 @@ export function useFilmSession(
       if (project === null || locale === SOURCE_LOCALE) return
       const path = localePath(locale)
       if (!project.files.has(path)) {
+        const first = tablesOf(project).size === 0
         const adding = (async () => {
           const content = localeValuesFile({})
           let stored: StoredFile | null
@@ -1429,6 +1608,19 @@ export function useFilmSession(
           // 工程在这期间换过了（比如别处改了）：换上来的那一份里有没有这种语言由它自己说了算
           if (projectRef.current !== project) return
           project.files.set(path, { doc, version: stored.version, saved: docOps(doc).serialize() })
+          if (!first) return
+          const main = mainOf(project)
+          const following = clipsOf(main, catalog).flatMap((clip) => {
+            const item = clip.kind === 'host' ? itemNamed(catalog, clip.item) : undefined
+            return clip.kind !== 'host' || item === undefined
+              ? []
+              : followingByDefault(main, clip, item).map((field) => ({ clip, field }))
+          })
+          // 一个要改的字段都没有时不记一步（写总长也会报改动）
+          if (following.length > 0)
+            perform(project, () => {
+              for (const { clip, field } of following) followLocale(main, clip, field)
+            })
         })()
         addingLocaleRef.current = adding.catch(() => undefined)
         try {
@@ -1442,7 +1634,7 @@ export function useFilmSession(
       }
       setLocale(locale)
     },
-    [collect, conversationId, setLocale],
+    [catalog, collect, conversationId, perform, setLocale],
   )
 
   const step = (direction: 'undo' | 'redo') => {
@@ -1504,6 +1696,8 @@ export function useFilmSession(
     resync,
     addCaptions,
     setCaptionText,
+    setItemText,
+    setFollowsLocale,
     setLocale,
     addLocale,
     undo: () => step('undo'),

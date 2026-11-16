@@ -330,6 +330,153 @@
   background: var(--color-surface-container-high);
 }
 
+/* 「字幕 / 组件文字」两段切换：一条浅底槽，当前那段是浮起的白块 */
+.wf-captions-views {
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  margin: 10px 12px 0;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-high);
+}
+
+.wf-captions-view {
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: var(--radius-xs);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+}
+
+.wf-captions-view[aria-pressed='true'] {
+  background: var(--color-surface);
+  box-shadow: var(--shadow-1);
+  color: var(--color-on-surface);
+  font-weight: 600;
+}
+
+.wf-captions-count {
+  color: var(--color-on-surface-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.wf-captions-views + .wf-captions-actions,
+.wf-captions-views + .wf-captions-note,
+.wf-captions-views + .wf-caption-list {
+  margin-top: 8px;
+}
+
+/* 「组件文字」一块的头：名字在左、开始时间在右，点了选中、跳到它的开始 */
+.wf-caption-time.wf-text-head {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+}
+
+.wf-text-name {
+  overflow: hidden;
+  color: var(--color-on-surface);
+  font-family: var(--font-cue-ui);
+  font-size: var(--text-label);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 一个文字字段：名字一列，文字框和「固定 / 随语言」一行，外语下的说明排在下面 */
+.wf-text-row {
+  display: grid;
+  align-items: start;
+  column-gap: 8px;
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+
+.wf-text-row > .wf-prop-label,
+.wf-prop-row.is-text > .wf-prop-label {
+  line-height: 28px;
+}
+
+/* 「属性」里的文字字段：外语下框下面有说明，名字和框顶对齐 */
+.wf-prop-row.is-text {
+  align-items: start;
+}
+
+.wf-text-line {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.wf-text-line > input {
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+/* 两个类压过输入框自带的高度、圆角、边框和字号：和字幕的文字框一样 */
+.wf-caption .wf-text-input {
+  height: 28px;
+  padding: 0 9px;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  background: var(--color-top-layer);
+  font-size: var(--text-label);
+}
+
+.wf-caption .wf-text-input:focus {
+  border-color: var(--color-on-surface);
+}
+
+.wf-text-line > input:read-only {
+  color: var(--color-on-surface-muted);
+}
+
+.wf-text-note {
+  display: flex;
+  flex-basis: 100%;
+  align-items: baseline;
+  gap: 6px;
+  order: 1;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  overflow-wrap: anywhere;
+}
+
+/* 「固定」是灰底细框，「随语言」是主色淡底 */
+.wf-follow {
+  display: inline-flex;
+  height: 24px;
+  flex: none;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-high);
+  box-shadow: inset 0 0 0 0.5px var(--color-outline-variant);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.wf-follow.is-follow {
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 30%, transparent);
+  color: var(--color-primary);
+}
+
 .wf-song {
   position: relative;
   display: flex;

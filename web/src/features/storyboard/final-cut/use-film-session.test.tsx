@@ -2567,4 +2567,308 @@ describe('useFilmSession · 字幕', () => {
       expect(result.current.film?.locale).toEqual({ code: 'en', values: { cap_a1: 'Hi' } })
     })
   })
+
+  describe('贴片、场景的文字：固定 / 随语言', () => {
+    const EN_PATH = 'final-cut/locales/en.json'
+    const DE_PATH = 'final-cut/locales/de.json'
+
+    /** 主文件里片段 `id` 的取值和随语言的字段（属性写法不对时测试直接失败）。 */
+    const hostIn = (html: string | undefined, id: string) => {
+      const element = parse(html).getElementById(id)
+      if (element === null) return undefined
+      const bindings = element.getAttribute('data-locale-bindings')
+      return {
+        values: JSON.parse(element.getAttribute('data-variable-values') ?? 'null') as unknown,
+        bindings: bindings === null ? null : (JSON.parse(bindings) as unknown),
+      }
+    }
+    const storedValues = (conversation: string, path: string): unknown =>
+      JSON.parse(mockWorkspaceFile(conversation, path)?.content ?? 'null')
+    const html = (result: Session) => result.current.film?.html
+
+    /**
+     * 工作区里放一份工程打开：主文件按 `clips` 写，`bind` 里的字段（片段编号 → 字段 → 中文）照编辑器的写法
+     * 随语言；再放上 `files`（工作区里的路径 → 内容）。
+     */
+    const openTexts = async (
+      clips: FilmClip[],
+      files: Record<string, string> = {},
+      bind: Record<string, Record<string, string>> = {},
+    ) => {
+      const conversation = crypto.randomUUID()
+      const main = await openComposition(mainFile(clips, CANVAS))
+      for (const [id, fields] of Object.entries(bind)) {
+        const bindings: Record<string, string> = {}
+        for (const [field, text] of Object.entries(fields)) {
+          bindings[field] = `txt_${id}_${field}`
+          main.declareVariable({
+            id: bindings[field],
+            type: 'string',
+            label: '文字',
+            default: text,
+          })
+        }
+        main.setAttribute(id, 'data-locale-bindings', JSON.stringify(bindings))
+      }
+      const stored = putMockProjectMain(conversation, main.serialize())
+      for (const [path, content] of Object.entries(files))
+        putMockWorkspaceFile(conversation, path, content)
+      return { conversation, ...(await open(stored, 10, conversation)) }
+    }
+
+    it('加第一种外语：有中文的文字字段随语言（根上声明变量、默认值是现在的中文，宿主记下），全是西文的固定；一步撤销，值表还在；再加一种不再改', async () => {
+      const { result, conversation } = await openTexts([
+        host({ id: 'zh', values: { text: '新品上市' } }),
+        host({ id: 'latin', values: { text: 'NEW IN · AW26' } }),
+        // 没填：用条目的默认值「示例文字」
+        host({ id: 'blank', values: {} }),
+      ])
+      await act(async () => {
+        await result.current.addLocale('en')
+      })
+      expect(hostIn(html(result), 'zh')).toEqual({
+        values: { text: '新品上市' },
+        bindings: { text: 'txt_zh_text' },
+      })
+      expect(hostIn(html(result), 'latin')).toEqual({
+        values: { text: 'NEW IN · AW26' },
+        bindings: null,
+      })
+      expect(hostIn(html(result), 'blank')).toEqual({
+        values: {},
+        bindings: { text: 'txt_blank_text' },
+      })
+      expect(variablesIn(html(result))).toEqual({
+        txt_zh_text: '新品上市',
+        txt_blank_text: '示例文字',
+      })
+      expect(result.current.film?.bindings).toEqual(
+        new Map([
+          ['zh', { text: 'txt_zh_text' }],
+          ['blank', { text: 'txt_blank_text' }],
+        ]),
+      )
+      await saveAll(result)
+      expect(hostIn(mockProjectMain(conversation)?.content, 'zh')?.bindings).toEqual({
+        text: 'txt_zh_text',
+      })
+
+      act(() => result.current.undo())
+      expect(variablesIn(html(result))).toEqual({})
+      expect(hostIn(html(result), 'zh')?.bindings).toBeNull()
+      expect(result.current.film?.locales).toEqual(['en'])
+      expect(result.current.film?.canUndo).toBe(false)
+
+      act(() => result.current.redo())
+      await act(async () => {
+        await result.current.addLocale('de')
+      })
+      expect(variablesIn(html(result))).toEqual({
+        txt_zh_text: '新品上市',
+        txt_blank_text: '示例文字',
+      })
+      act(() => result.current.undo())
+      expect(variablesIn(html(result))).toEqual({})
+    })
+
+    it('有外语以后新加的贴片按默认规则随语言，没有外语时加的不随语言', async () => {
+      const { result } = await openTexts([video()])
+      const fields = fixtureItem('fixture-fields')
+      const addAt = async (values: Record<string, string>, start: number) => {
+        await act(() => result.current.addItem(CANVAS, fields, values, { track: 1, start }))
+        return result.current.film?.clips.find(
+          (clip) => clip.kind === 'host' && clip.start === start,
+        )?.id
+      }
+      const before = await addAt({}, 0)
+      await act(async () => {
+        await result.current.addLocale('en')
+      })
+      const chinese = await addAt({ text: '早秋新品' }, 5_000)
+      const latin = await addAt({ text: 'AUTUMN LINEN' }, 10_000)
+      if (before === undefined || chinese === undefined || latin === undefined)
+        throw new Error('没有加上贴片')
+      // 加 English 时已有的那个跟着改成随语言
+      expect(hostIn(html(result), before)?.bindings).toEqual({ text: `txt_${before}_text` })
+      expect(hostIn(html(result), chinese)?.bindings).toEqual({ text: `txt_${chinese}_text` })
+      expect(hostIn(html(result), latin)?.bindings).toBeNull()
+      expect(variablesIn(html(result))[`txt_${chinese}_text`]).toBe('早秋新品')
+      // 加贴片和它的绑定是一步
+      act(() => result.current.undo())
+      expect(hostIn(html(result), latin)).toBeUndefined()
+      act(() => result.current.undo())
+      expect(hostIn(html(result), chinese)).toBeUndefined()
+      expect(variablesIn(html(result))[`txt_${chinese}_text`]).toBeUndefined()
+    })
+
+    it('切换：固定 → 随语言声明变量（默认值是现在的字）、宿主记下；随语言 → 固定去掉记录、变量和所有值表里的值；各一步撤销', async () => {
+      const { result, conversation } = await openTexts(
+        [host({ id: 't1', values: { text: '新品上市' } })],
+        { [EN_PATH]: '{"txt_t1_text": "New in"}', [DE_PATH]: '{"txt_t1_text": "Neu"}' },
+        { t1: { text: '新品上市' } },
+      )
+      act(() => result.current.setFollowsLocale('t1', 'text', false))
+      expect(hostIn(html(result), 't1')).toEqual({ values: { text: '新品上市' }, bindings: null })
+      expect(variablesIn(html(result))).toEqual({})
+      await saveAll(result)
+      expect(storedValues(conversation, EN_PATH)).toEqual({})
+      expect(storedValues(conversation, DE_PATH)).toEqual({})
+      // 已经是固定的：不记一步
+      act(() => result.current.setFollowsLocale('t1', 'text', false))
+      act(() => result.current.undo())
+      expect(hostIn(html(result), 't1')?.bindings).toEqual({ text: 'txt_t1_text' })
+      await saveAll(result)
+      expect(storedValues(conversation, EN_PATH)).toEqual({ txt_t1_text: 'New in' })
+      expect(result.current.film?.canUndo).toBe(false)
+
+      act(() => result.current.setFollowsLocale('t1', 'text', false))
+      act(() => result.current.setFollowsLocale('t1', 'text', true))
+      expect(hostIn(html(result), 't1')?.bindings).toEqual({ text: 'txt_t1_text' })
+      expect(variablesIn(html(result))).toEqual({ txt_t1_text: '新品上市' })
+      expect(result.current.film?.locale.values).toBeNull()
+      act(() => result.current.undo())
+      expect(hostIn(html(result), 't1')?.bindings).toBeNull()
+      expect(variablesIn(html(result))).toEqual({})
+    })
+
+    it('中文下改随语言的字段：宿主的取值和根变量的默认值一起改，一步撤销；固定的字段只改宿主的取值', async () => {
+      const { result } = await openTexts(
+        [host({ id: 't1', values: { text: '新品上市' } }), host({ id: 't2', start: 2_000 })],
+        { [EN_PATH]: '{}' },
+        { t1: { text: '新品上市' } },
+      )
+      act(() => result.current.setItemText('t1', 'text', '早秋新品', 'zh'))
+      expect(hostIn(html(result), 't1')?.values).toEqual({ text: '早秋新品' })
+      expect(variablesIn(html(result))).toEqual({ txt_t1_text: '早秋新品' })
+      // 「内容与样式」整串写进来时也一样
+      act(() => result.current.setValues('t1', { text: '秋冬新品', weight: '700' }))
+      expect(variablesIn(html(result))).toEqual({ txt_t1_text: '秋冬新品' })
+      act(() => result.current.undo())
+      act(() => result.current.undo())
+      expect(hostIn(html(result), 't1')?.values).toEqual({ text: '新品上市' })
+      expect(variablesIn(html(result))).toEqual({ txt_t1_text: '新品上市' })
+
+      act(() => result.current.setItemText('t2', 'text', '固定的字', 'zh'))
+      expect(hostIn(html(result), 't2')).toEqual({ values: { text: '固定的字' }, bindings: null })
+      expect(variablesIn(html(result))).toEqual({ txt_t1_text: '新品上市' })
+    })
+
+    it('外语下改随语言的字段写进那种语言的值表，清空就去掉；中文原文不动；固定的字段不能改', async () => {
+      const { result, conversation } = await openTexts(
+        [host({ id: 't1', values: { text: '新品上市' } }), host({ id: 't2', start: 2_000 })],
+        { [EN_PATH]: '{}' },
+        { t1: { text: '新品上市' } },
+      )
+      act(() => result.current.setLocale('en'))
+      act(() => result.current.setItemText('t1', 'text', 'New in', 'en'))
+      expect(result.current.film?.locale.values).toEqual({ txt_t1_text: 'New in' })
+      expect(hostIn(html(result), 't1')?.values).toEqual({ text: '新品上市' })
+      expect(variablesIn(html(result))).toEqual({ txt_t1_text: '新品上市' })
+      await saveAll(result)
+      expect(storedValues(conversation, EN_PATH)).toEqual({ txt_t1_text: 'New in' })
+
+      act(() => result.current.setItemText('t1', 'text', '', 'en'))
+      expect(result.current.film?.locale.values).toEqual({})
+      act(() => result.current.undo())
+      expect(result.current.film?.locale.values).toEqual({ txt_t1_text: 'New in' })
+      act(() => result.current.undo())
+      expect(result.current.film?.canUndo).toBe(false)
+
+      act(() => result.current.setItemText('t2', 'text', 'Fixed', 'en'))
+      expect(hostIn(html(result), 't2')?.values).toEqual({})
+      expect(result.current.film?.locale.values).toEqual({})
+      expect(result.current.film?.canUndo).toBe(false)
+    })
+
+    it('贴片的外文也有字形：值表里贴片文字的字算进字体块', async () => {
+      const catalog = {
+        ...fixtureCatalog,
+        cjk: {
+          family: 'Noto Sans SC',
+          slices: [
+            { range: 'U+00e0-00ff', files: { '700': 'vendor/fonts/latin-ext-700.woff2' } },
+            { range: 'U+0020-007e', files: { '700': 'vendor/fonts/latin-700.woff2' } },
+          ],
+        },
+      }
+      const conversation = crypto.randomUUID()
+      const main = await openComposition(
+        mainFile([host({ id: 't1', values: { text: '新品上市' } })], CANVAS),
+      )
+      main.declareVariable({
+        id: 'txt_t1_text',
+        type: 'string',
+        label: '文字',
+        default: '新品上市',
+      })
+      main.setAttribute('t1', 'data-locale-bindings', '{"text":"txt_t1_text"}')
+      putMockWorkspaceFile(conversation, DE_PATH, '{}')
+      const stored = putMockProjectMain(conversation, main.serialize())
+      const { result } = await open(stored, 10, conversation, catalog)
+      expect(html(result)).not.toContain('latin-ext-700.woff2')
+      act(() => result.current.setItemText('t1', 'text', 'Grüße', 'de'))
+      expect(html(result)).toContain('latin-ext-700.woff2')
+    })
+
+    it('删贴片：同一步里去掉它随语言字段的根变量和所有值表里的值；撤销都回来', async () => {
+      const { result, conversation } = await openTexts(
+        [host({ id: 't1', values: { text: '新品上市' } }), video({ start: 2_000 })],
+        {
+          [EN_PATH]: '{"txt_t1_text": "New in", "other": "x"}',
+          [DE_PATH]: '{"txt_t1_text": "Neu"}',
+        },
+        { t1: { text: '新品上市' } },
+      )
+      act(() => result.current.removeClips(['t1'], false))
+      expect(variablesIn(html(result))).toEqual({})
+      await saveAll(result)
+      expect(storedValues(conversation, EN_PATH)).toEqual({ other: 'x' })
+      expect(storedValues(conversation, DE_PATH)).toEqual({})
+      act(() => result.current.undo())
+      await saveAll(result)
+      expect(hostIn(html(result), 't1')?.bindings).toEqual({ text: 'txt_t1_text' })
+      expect(variablesIn(html(result))).toEqual({ txt_t1_text: '新品上市' })
+      expect(storedValues(conversation, EN_PATH)).toEqual({ txt_t1_text: 'New in', other: 'x' })
+      expect(storedValues(conversation, DE_PATH)).toEqual({ txt_t1_text: 'Neu' })
+    })
+
+    it('切开随语言的贴片：后半段换成按自己编号取的根变量，声明和各语言的值复制一份；两半各改各的', async () => {
+      const { result } = await openTexts(
+        [host({ id: 't1', duration: 4_000, values: { text: '新品上市' } })],
+        { [EN_PATH]: '{"txt_t1_text": "New in"}' },
+        { t1: { text: '新品上市' } },
+      )
+      const film = result.current.film
+      const clip = film?.clips.find((each) => each.id === 't1')
+      if (film === null || film === undefined || clip === undefined) throw new Error('没有 t1')
+      const plan = splitAt(clip, 1_500, film.clips, film.links)
+      if (!('cuts' in plan)) throw new Error(`切不了：${plan.refusal}`)
+      act(() => result.current.split(plan.cuts))
+      const second = result.current.film?.clips.find(
+        (each) => each.kind === 'host' && each.id !== 't1',
+      )?.id
+      if (second === undefined) throw new Error('没有后半段')
+      expect(hostIn(html(result), 't1')?.bindings).toEqual({ text: 'txt_t1_text' })
+      expect(hostIn(html(result), second)?.bindings).toEqual({ text: `txt_${second}_text` })
+      expect(variablesIn(html(result))).toEqual({
+        txt_t1_text: '新品上市',
+        [`txt_${second}_text`]: '新品上市',
+      })
+      act(() => result.current.setLocale('en'))
+      expect(result.current.film?.locale.values).toEqual({
+        txt_t1_text: 'New in',
+        [`txt_${second}_text`]: 'New in',
+      })
+      act(() => result.current.setItemText(second, 'text', 'Later', 'en'))
+      expect(result.current.film?.locale.values).toEqual({
+        txt_t1_text: 'New in',
+        [`txt_${second}_text`]: 'Later',
+      })
+      // 切开是一步：撤销两次回到没切
+      act(() => result.current.undo())
+      act(() => result.current.undo())
+      expect(variablesIn(html(result))).toEqual({ txt_t1_text: '新品上市' })
+      expect(result.current.film?.locale.values).toEqual({ txt_t1_text: 'New in' })
+    })
+  })
 })

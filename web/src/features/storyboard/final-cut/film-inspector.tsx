@@ -9,7 +9,8 @@ import { sourceTrimmed, trimBounds, trimmed, type SourceLength, type Timing } fr
 import type { ComponentCatalog, VariableValue } from './composition/catalog'
 import { CaptionTextField, type CaptionTextChange } from './captions-tab'
 import { isMediaClip, type CaptionClip, type FilmClip } from './composition/film'
-import { ContentFields } from './content-fields'
+import type { LocaleBindings } from './composition/locale-text'
+import { ContentFields, type TextLocale } from './content-fields'
 import { Keys, Tool } from './editor-toolbar'
 import { ITEM_KIND_LABEL } from './items'
 import type { ShownLocale } from './locales'
@@ -60,6 +61,10 @@ type Props = {
   locale: ShownLocale
   /** 把字幕 `id` 在一种语言里的字改成 `text`，算一步撤销。 */
   onCaptionText: CaptionTextChange
+  /** 组件或块的片段的文字字段分语言（「内容与样式」用），`bindings` 是各片段随语言的字段。 */
+  texts: Omit<TextLocale, 'locale' | 'bindings'> & {
+    bindings: ReadonlyMap<string, LocaleBindings>
+  }
   /** 分离音频、合并回视频、联动、对齐口型、选中另一段。 */
   soundControls: SoundControls
   /** 焦点进出「属性」里输数值的框：在里面时 Esc 归输入框，放弃刚输入的。 */
@@ -82,6 +87,7 @@ function KindLabel({ clip, catalog }: { clip: FilmClip; catalog: ComponentCatalo
 }
 
 const NO_PEAKS: PeaksState = { kind: 'loading' }
+const NO_BINDINGS: LocaleBindings = {}
 
 /**
  * 侧栏「属性」页签的内容：选中一个片段时显示它的名字、种类和可以改的几段；没选中、选中多个时各有一句说明。
@@ -139,6 +145,7 @@ function ClipInspector({
   onAttributes,
   locale,
   onCaptionText,
+  texts,
   soundControls,
   onTextEditing,
 }: Omit<Props, 'selected'> & { clip: FilmClip }) {
@@ -247,6 +254,7 @@ function ClipInspector({
                 fonts={Object.keys(catalog.fonts).toSorted()}
                 onEditing={onTextEditing}
                 onValues={onValues}
+                texts={{ ...texts, locale, bindings: texts.bindings.get(clip.id) ?? NO_BINDINGS }}
                 variables={catalog.items.find((item) => item.name === clip.item)?.variables ?? []}
               />
             ) : clip.kind === 'caption' ? (
