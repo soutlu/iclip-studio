@@ -2476,7 +2476,7 @@ describe('final-cut 编辑器 · 属性', () => {
       await user.type(field(), `${value}{Enter}`)
     }
 
-    it('「−」「+」一次改 0.5 秒，开始不动；算一步撤销', async () => {
+    it('「−」「+」一次改 0.5 秒，开始不动；每按一次算一步撤销，连按两次撤销一次只退回一次', async () => {
       const user = await openWith(twoApart())
       await pick(user, '测试可填项')
       expect(field()).toHaveValue('2.00')
@@ -2490,8 +2490,13 @@ describe('final-cut 编辑器 · 属性', () => {
       expect(field()).toHaveValue('2.00')
 
       await user.click(step('缩短 0.5 秒'))
-      expect(field()).toHaveValue('1.50')
+      await user.click(step('缩短 0.5 秒'))
+      expect(field()).toHaveValue('1.00')
+      await waitSaved(() => expect(savedTag('title-1')).toContain('data-duration="1"'))
+      await user.click(undoButton())
       await waitSaved(() => expect(savedTag('title-1')).toContain('data-duration="1.5"'))
+      expect(field()).toHaveValue('1.50')
+      expect(undoButton()).not.toHaveAttribute('aria-disabled')
     })
 
     it('上下限：不压到后面的片段，不短于最短长度；到头时那一边的按钮不能点', async () => {
