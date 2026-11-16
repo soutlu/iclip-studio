@@ -2236,4 +2236,84 @@ describe('useFilmSession · 字幕', () => {
     const reopened = await open(valued, 10, other)
     expect(reopened.result.current.film?.captionsProblem).toBe(CAPTIONS_PROBLEM_TEXT)
   })
+
+  it('字幕的名字就是它的字：换行和连着的空白合成一个空格，字照旧带着换行', async () => {
+    const { result } = await openCaptioned([video()], [line('a1', 0, 1_000, '第一句')])
+    expect(captionsOf(result)[0]?.label).toBe('第一句')
+    act(() => result.current.setCaptionText('cap-a1', ' 改过的\n\n两  行 '))
+    expect(captionsOf(result)[0]).toMatchObject({
+      label: '改过的 两 行',
+      text: ' 改过的\n\n两  行 ',
+    })
+    act(() => result.current.setCaptionText('cap-a1', ' \n '))
+    expect(captionsOf(result)[0]?.label).toBe('字幕')
+  })
+
+  /** 存下来的场景文件里各句的「编号、开始、时长」（秒）。 */
+  const storedTimings = (conversation: string) =>
+    sceneCaptions(storedScene(conversation)).map(([id, start, duration]) => [id, start, duration])
+  /** 存下来的主文件里视频片段的开始（秒）。 */
+  const storedVideoStarts = (conversation: string) =>
+    [...parse(mockProjectMain(conversation)?.content).querySelectorAll('video')].map((element) =>
+      Number(element.getAttribute('data-start')),
+    )
+
+  it('一起改字幕和视频片段的时间（一起挪、一起裁）：各改在自己的文件里，一步撤销两个都退回', async () => {
+    const { result, conversation } = await openCaptioned(
+      [video({ duration: 1_000 })],
+      [line('a1', 0, 1_000, '第一句')],
+    )
+    act(() =>
+      result.current.retime(
+        new Map([
+          ['clip-1', { start: 500, duration: 1_000, mediaStart: 0 }],
+          ['cap-a1', { start: 500, duration: 800, mediaStart: 0 }],
+        ]),
+      ),
+    )
+    await saveAll(result)
+    expect(storedTimings(conversation)).toEqual([['cap-a1', 0.5, 0.8]])
+    expect(storedVideoStarts(conversation)).toEqual([0.5])
+    act(() => result.current.undo())
+    await saveAll(result)
+    expect(storedTimings(conversation)).toEqual([['cap-a1', 0, 1]])
+    expect(storedVideoStarts(conversation)).toEqual([0])
+  })
+
+  it('视频片段换行时一起挪的字幕：字幕改在字幕场景里', async () => {
+    const { result, conversation } = await openCaptioned(
+      [video({ duration: 1_000 })],
+      [line('a1', 0, 1_000, '第一句'), line('b2', 3_000, 1_000, '第二句')],
+    )
+    act(() =>
+      result.current.moveClip(
+        'clip-1',
+        { track: 1, start: 1_000 },
+        null,
+        undefined,
+        new Map([['cap-a1', 1_000]]),
+      ),
+    )
+    await saveAll(result)
+    expect(storedTimings(conversation)).toEqual([
+      ['cap-a1', 1, 1],
+      ['cap-b2', 3, 1],
+    ])
+  })
+
+  it('隐藏字幕：隐藏的是主文件里的字幕宿主，每句都算隐藏；一步撤销', async () => {
+    const { result, conversation } = await openCaptioned(
+      [video()],
+      [line('a1', 0, 1_000, '第一句'), line('b2', 1_000, 1_000, '第二句')],
+    )
+    act(() => result.current.setHidden(['cap-a1', 'cap-b2'], true))
+    expect(captionsOf(result).map((caption) => caption.hidden)).toEqual([true, true])
+    expect(videosOf(result)[0]?.hidden).toBe(false)
+    await saveAll(result)
+    expect(hostIn(mockProjectMain(conversation)?.content)).toHaveProperty('data-hidden', '')
+    expect(storedScene(conversation)).not.toContain('data-hidden')
+    act(() => result.current.undo())
+    expect(captionsOf(result).map((caption) => caption.hidden)).toEqual([false, false])
+    expect(hostIn(result.current.film?.html)).not.toHaveProperty('data-hidden')
+  })
 })

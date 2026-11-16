@@ -2,6 +2,7 @@ import { SPLIT_BOUNDARY_EPSILON_S } from '@hyperframes/core/composition-contract
 import type { Edge } from '../editing/timeline-drag'
 import { isMediaClip, MIN_CLIP_MS, type FilmClip, type MediaClip } from './composition/film'
 import { onRow, topTrack, zoneOf, type RowKey } from './placement'
+import { movingWith } from './selection'
 import { resolveNearestFreeStart } from './vendor/hyperframes-studio/player/components/timelineCollision'
 import {
   resolveAllTrackGaps,
@@ -11,9 +12,12 @@ import {
 
 /**
  * 一个片段在 final-cut 里的起止和它的入点（毫秒）。入点是从素材的哪里开始放，
- * 组件或块的片段是从组件自己的第几毫秒开始播（`playbackStart`），「其他」片段没有入点，是 0。
+ * 组件或块的片段是从组件自己的第几毫秒开始播（`playbackStart`），「其他」片段和字幕没有入点，是 0。
  */
 export type Timing = { start: number; duration: number; mediaStart: number }
+
+/** 片段有没有入点：视频片段、音频片段和组件或块的片段有。 */
+const hasInPoint = (clip: FilmClip) => isMediaClip(clip) || clip.kind === 'host'
 
 export const timingOf = (clip: FilmClip): Timing => ({
   start: clip.start,
@@ -30,7 +34,7 @@ export const rateOf = (clip: FilmClip): number => (isMediaClip(clip) ? clip.play
 
 /**
  * 裁 `edge` 这一端时，这一端能到的范围（final-cut 的毫秒）：不压到同一行的邻居，片段不短于最短长度；
- * 开头往前不早于入点 0（「其他」片段没有入点，只受邻居限制），结尾往后不超出素材剩下的长度（音频开着
+ * 开头往前不早于入点 0（「其他」片段和字幕没有入点，只受邻居限制），结尾往后不超出素材剩下的长度（音频开着
  * 循环也一样）。素材按片段的速度用，照参照的工作台：剩下的素材在 final-cut 里能放（素材长 − 入点）÷ 速度。
  * `sourceMs` 是视频片段、音频片段素材的总长，还不知道时结尾不许往外拉；别的片段不看它，结尾不设上限。
  */
@@ -45,7 +49,7 @@ export const trimBounds = (
   const rate = rateOf(clip)
   if (edge === 'start') {
     const previousEnd = Math.max(0, ...row.filter((other) => endOf(other) <= clip.start).map(endOf))
-    const inPoint = clip.kind === 'other' ? 0 : Math.ceil(clip.start - mediaStart / rate)
+    const inPoint = hasInPoint(clip) ? Math.ceil(clip.start - mediaStart / rate) : 0
     return {
       min: Math.max(previousEnd, inPoint),
       max: endOf(clip) - MIN_CLIP_MS,
@@ -214,6 +218,30 @@ export const linkedGroup = (
 }
 
 /**
+ * 在时间线上拖 `clip` 挪动（`move`）或裁 `edge` 这一端时一起动的片段，含它自己和跟着动的联动伙伴（见
+ * `linkedGroup`）：它在不止一个片段的选中（`selected`）里时是整个选中，不然只有它。裁剪只裁同类的：
+ * 拖的是字幕时只有选中的字幕一起裁，拖的是别的片段时选中的字幕不跟着裁。
+ */
+export const editGroup = (
+  clip: FilmClip,
+  selected: ReadonlySet<string>,
+  clips: readonly FilmClip[],
+  kind: 'move' | Edge,
+): ReadonlySet<string> => {
+  const group = movingWith(selected, clip.id)
+  const isCaption = (each: FilmClip) => each.kind === 'caption'
+  const own =
+    kind === 'move'
+      ? group
+      : new Set(
+          clips
+            .filter((other) => group.has(other.id) && isCaption(other) === isCaption(clip))
+            .map((other) => other.id),
+        )
+  return linkedGroup(own, clips, kind)
+}
+
+/**
  * 几个片段各自挪到新起点（合拢空档、波纹删除补位）时，联动的伙伴挪同样的时间差；伙伴自己也在
  * `starts` 里时按它自己的。挪到 0 秒之前的收在 0。
  */
@@ -343,8 +371,14 @@ export type GapClosing = {
   all: ReadonlyMap<string, number>
 }
 
-/** 在 `row` 这一行的 `timeMs` 处点右键时，两种合拢各自要挪哪些片段。 */
+const NO_CLOSING: GapClosing = { one: new Map(), all: new Map() }
+
+/**
+ * 在 `row` 这一行的 `timeMs` 处点右键时，两种合拢各自要挪哪些片段。字幕那一行不合拢：合拢会把字幕从说话的
+ * 时间上挪开。
+ */
 export const gapClosing = (clips: readonly FilmClip[], row: RowKey, timeMs: number): GapClosing => {
+  if (row.zone === 'caption') return NO_CLOSING
   const members = clips
     .filter((clip) => onRow(clip, row))
     .map((clip) => ({
@@ -412,7 +446,7 @@ const cutOf = (clip: FilmClip, atMs: number): Cut => {
 }
 
 /**
- * 在 final-cut 的 `atMs`（取整到毫秒）处切开 `clip`：「其他」片段不切，切点离两端各至少 `SPLIT_MARGIN_MS`。
+ * 在 final-cut 的 `atMs`（取整到毫秒）处切开 `clip`：「其他」片段和字幕不切，切点离两端各至少 `SPLIT_MARGIN_MS`。
  * 它带着链接时，同名的片段在同一处一起切，其中有一个切不了就都不切。
  */
 export const splitAt = (
@@ -422,7 +456,7 @@ export const splitAt = (
   links: Links,
 ): SplitPlan => {
   const at = Math.round(atMs)
-  if (clip.kind === 'other') return { refusal: 'kind' }
+  if (clip.kind === 'other' || clip.kind === 'caption') return { refusal: 'kind' }
   const own = placeRefusal(clip, at)
   if (own !== undefined) return { refusal: own }
   const link = links.get(clip.id)

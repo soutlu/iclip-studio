@@ -42,6 +42,7 @@ const SOUND_KEYS = ['⇧⌘B']
  * 时间线上片段右键菜单里的几项。切开、分离音频、静音、隐藏只改点右键的这一个片段：视频片段的静音是「属性」里的
  * 「关闭原声」，音频片段的静音和画面区片段的隐藏是「属性」头部的开关；删除和按 Delete 一样删掉选中的全部片段。
  * 已分离的一对里的片段换成选中另一段、联动开关、对齐口型（错开时）和合并回视频；分离过原声的视频片段不再有静音。
+ * 字幕不能切开、分离、静音，也不能单句隐藏，只有「删除字幕」。
  */
 export function ClipMenuItems({
   clip,
@@ -55,6 +56,7 @@ export function ClipMenuItems({
   onAttributes,
   onRemove,
 }: ClipMenuItemsProps) {
+  if (clip.kind === 'caption') return <RemoveItem onRemove={onRemove}>删除字幕</RemoveItem>
   const toggleHidden = () => onHide(clip.id, !clip.hidden)
   const paired = sound.kind === 'merge'
   return (
@@ -95,10 +97,17 @@ export function ClipMenuItems({
         </ContextMenuItem>
       )}
       <ContextMenuSeparator />
-      <ContextMenuItem destructive onSelect={onRemove} shortcut={['Delete']}>
-        删除片段
-      </ContextMenuItem>
+      <RemoveItem onRemove={onRemove}>删除片段</RemoveItem>
     </>
+  )
+}
+
+/** 删除选中的片段，和按 Delete 一样。 */
+function RemoveItem({ onRemove, children }: { onRemove: () => void; children: ReactNode }) {
+  return (
+    <ContextMenuItem destructive onSelect={onRemove} shortcut={['Delete']}>
+      {children}
+    </ContextMenuItem>
   )
 }
 

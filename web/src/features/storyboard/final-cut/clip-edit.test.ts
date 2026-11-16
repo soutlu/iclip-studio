@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { audio, host, video } from '@/testing/final-cut'
+import { audio, caption, host, video } from '@/testing/final-cut'
 import {
+  editGroup,
   gapClosing,
   groupShift,
   groupTrimmed,
@@ -165,6 +166,20 @@ describe('裁组件或块的片段和音频片段', () => {
       mediaStart: 0,
     })
     expect(trimBounds(other, 'end', row, undefined).max).toBe(Infinity)
+  })
+
+  it('字幕没有入点：开头往前只被前一句挡住，结尾只被后一句挡住，同一时间的视频片段不挡', () => {
+    const before = caption({ id: 'cap-0', start: 0, duration: 1_000 })
+    const one = caption({ start: 3_000, duration: 2_000 })
+    const after = caption({ id: 'cap-2', start: 6_000, duration: 1_000 })
+    const row = [first, middle, before, one, after]
+    expect(trimBounds(one, 'start', row, undefined)).toEqual({ min: 1_000, max: 4_900 })
+    expect(trimBounds(one, 'end', row, undefined)).toEqual({ min: 3_100, max: 6_000 })
+    expect(trimmed(one, 'start', 1_500, trimBounds(one, 'start', row, undefined))).toEqual({
+      start: 1_500,
+      duration: 3_500,
+      mediaStart: 0,
+    })
   })
 
   it('组件或块的片段结尾没有上限：给了长度、长度没读到都不看，只被同一行后面的片段挡住', () => {
@@ -447,6 +462,50 @@ describe('成组挪动', () => {
   })
 })
 
+describe('挪字幕、字幕和别的片段一起挪', () => {
+  // 字幕那一行：0–1 秒、3–4 秒两句；画面区第 0 行同一时间有视频片段
+  const early = caption({ id: 'cap-a', start: 0, duration: 1_000 })
+  const late = caption({ id: 'cap-b', start: 3_000, duration: 1_000 })
+  const shot = video({ id: 'v', start: 0, duration: 4_000 })
+  const clips = [early, late, shot]
+
+  it('字幕碰到同一行的别的字幕就停：落在最近的空处；视频片段不挡它', () => {
+    expect(shifted(clips, early, [], 2_500, 0)).toEqual({ delta: 2_000, track: 0 })
+    expect(shifted(clips, early, [], 1_200, 0)).toEqual({ delta: 1_200, track: 0 })
+  })
+
+  it('和视频片段一起挪：各自只避让自己那一行，挪同一个时间差', () => {
+    const lone = video({ id: 'w', start: 0, duration: 1_000, track: 1 })
+    expect(shifted([...clips, lone], lone, ['cap-a'], 2_500, 1)).toEqual({
+      delta: 2_000,
+      track: 1,
+    })
+  })
+})
+
+describe('拖一个片段时一起动的片段', () => {
+  const line = caption({ id: 'cap-a', start: 0, duration: 1_000 })
+  const other = caption({ id: 'cap-b', start: 2_000, duration: 1_000 })
+  const shot = video({ id: 'v', start: 0, duration: 2_000, link: 'lk-1' })
+  const voice = audio({ id: 'a', start: 0, duration: 2_000, link: 'lk-1' })
+  const clips = [line, other, shot, voice]
+  const selected = new Set(['cap-a', 'cap-b', 'v'])
+
+  it('不在多选里：只有它自己（和联动的伙伴）', () => {
+    expect(editGroup(line, new Set(['v']), clips, 'move')).toEqual(new Set(['cap-a']))
+    expect(editGroup(shot, new Set(), clips, 'end')).toEqual(new Set(['v', 'a']))
+  })
+
+  it('挪动：整个选中一起挪，联动的伙伴跟着', () => {
+    expect(editGroup(line, selected, clips, 'move')).toEqual(new Set(['cap-a', 'cap-b', 'v', 'a']))
+  })
+
+  it('裁剪只裁同类的：拖字幕时只有选中的字幕，拖别的片段时选中的字幕不跟着', () => {
+    expect(editGroup(line, selected, clips, 'start')).toEqual(new Set(['cap-a', 'cap-b']))
+    expect(editGroup(shot, selected, clips, 'end')).toEqual(new Set(['v', 'a']))
+  })
+})
+
 describe('成组裁剪', () => {
   // 第一行：相邻的 l、r，后面隔开的 n；第二行：u
   const left = video({ id: 'l', start: 0, duration: 2_000, mediaStart: 500, src: 'l.mp4' })
@@ -622,6 +681,14 @@ describe('合拢空档', () => {
       ['c', 4_000],
     ])
   })
+
+  it('字幕那一行不合拢：两种都没有可挪的', () => {
+    const lines = [caption({ start: 1_000 }), caption({ id: 'cap-b2', start: 5_000 })]
+    expect(gapClosing(lines, { zone: 'caption', track: 0 }, 4_000)).toEqual({
+      one: new Map(),
+      all: new Map(),
+    })
+  })
 })
 
 describe('波纹编辑', () => {
@@ -734,9 +801,14 @@ describe('切开', () => {
     }
   })
 
-  it('「其他」片段不切', () => {
-    expect(splitAt(handwritten, 1_000, [handwritten], NO_LINKS)).toEqual({ refusal: 'kind' })
-    expect(razorSplit(handwritten, 1_000, [handwritten], NO_LINKS)).toEqual([])
+  it('「其他」片段和字幕不切；按着 Shift 用剃刀点时也跳过字幕', () => {
+    const line = caption({ start: 0, duration: 2_000 })
+    const shot = video({ id: 'v', start: 0, duration: 2_000 })
+    for (const clip of [handwritten, line]) {
+      expect(splitAt(clip, 1_000, [clip], NO_LINKS)).toEqual({ refusal: 'kind' })
+      expect(razorSplit(clip, 1_000, [clip], NO_LINKS)).toEqual([])
+    }
+    expect(splitAllAt(1_000, [shot, line], NO_LINKS).map((cut) => cut.id)).toEqual(['v'])
   })
 
   it('链接的一对在同一处一起切；链接的片段离端点太近时整个不切', () => {

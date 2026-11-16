@@ -217,11 +217,12 @@ function EditorBody({
   const notice = useCallback((message: string) => toast.info(message), [])
   const session = useFilmSession(conversationId, initial, catalog, { onNotice: notice })
   const { film } = session
-  // 字幕不在时间线上：选中、吸附、切开这些只算时间线上的片段，字幕在「字幕」页签里改
-  const clips = useMemo(() => (film?.clips ?? []).filter((clip) => clip.kind !== 'caption'), [film])
+  // 字幕也在时间线上（单独一行）：选中、吸附、切开这些都算它们，各种片段怎么处理由各自的计算管；
+  // 「字幕」页签只列字幕
+  const clips = useMemo(() => film?.clips ?? [], [film])
   const captions = useMemo(
-    () => (film?.clips ?? []).filter((clip): clip is CaptionClip => clip.kind === 'caption'),
-    [film],
+    () => clips.filter((clip): clip is CaptionClip => clip.kind === 'caption'),
+    [clips],
   )
   const empty = film === null || film.clips.length === 0
   const links = film?.links ?? NO_LINKS
@@ -347,10 +348,12 @@ function EditorBody({
   const [catalogTab, setCatalogTab] = useState<CatalogTab>('shots')
   const selectionKey = [...selected].sort().join(' ')
   const [seenSelection, setSeenSelection] = useState(selectionKey)
+  // 照稿子：停在「字幕」页签时选中什么都不切走，选中的字幕在列表里标出来
   if (selectionKey !== seenSelection) {
     setSeenSelection(selectionKey)
-    setSideTab(selectionKey === '' ? catalogTab : 'props')
+    if (sideTab !== 'captions') setSideTab(selectionKey === '' ? catalogTab : 'props')
   }
+  const selectOnly = (id: string) => setSelectedIds(new Set([id]))
   const openSideTab = (value: string) => {
     if (value === 'props') {
       setSideTab('props')
@@ -741,10 +744,18 @@ function EditorBody({
       : 'refusal' in captionAt
         ? CAPTION_REFUSAL_TEXT[captionAt.refusal]
         : undefined
+  // 加上的那一句就是选中的这一句
   const addCaption = async () => {
     if ('refusal' in captionAt) return undefined
     leaveMaterial()
-    return session.addCaption(captionAt, NEW_CAPTION_TEXT)
+    const id = await session.addCaption(captionAt, NEW_CAPTION_TEXT)
+    if (id !== undefined) selectOnly(id)
+    return id
+  }
+  // 「字幕」页签和「属性」里改字幕的字
+  const setCaptionText = (id: string, text: string) => {
+    leaveMaterial()
+    session.setCaptionText(id, text)
   }
 
   const viewedMaterial =
@@ -974,16 +985,17 @@ function EditorBody({
               addBlocked={captionBlocked}
               captions={captions}
               onAdd={addCaption}
+              onPick={(caption) => {
+                seek(caption.start)
+                selectOnly(caption.id)
+              }}
               onRemove={(id) => {
                 leaveMaterial()
                 session.removeClips([id], false)
               }}
-              onSeek={seek}
-              onText={(id, text) => {
-                leaveMaterial()
-                session.setCaptionText(id, text)
-              }}
+              onText={setCaptionText}
               problem={film?.captionsProblem}
+              selected={selected}
             />
           </TabsContent>
           <TabsContent className="wf-side-body is-props" value="props">
@@ -1005,6 +1017,7 @@ function EditorBody({
                 session.setValues(id, values)
               }}
               onAttributes={setClipAttributes}
+              onCaptionText={setCaptionText}
               selected={selectedClips}
               silentSource={silentSource}
               soundControls={soundControls}

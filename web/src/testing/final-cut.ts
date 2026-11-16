@@ -12,6 +12,7 @@ import {
   withFontBlock,
   type AudioClip,
   type Canvas,
+  type CaptionClip,
   type FilmClip,
   type HostClip,
   type VideoClip,
@@ -102,6 +103,24 @@ export const audio = (overrides: Partial<AudioClip> = {}): AudioClip => ({
   syncOrigin: null,
   ...overrides,
 })
+
+/** 一句字幕（写在字幕场景文件里，不在主文件里）：名字就是它的字。 */
+export const caption = (overrides: Partial<CaptionClip> = {}): CaptionClip => {
+  const text = overrides.text ?? '第一句'
+  return {
+    kind: 'caption',
+    id: 'cap-a1',
+    label: text,
+    start: 0,
+    duration: 2000,
+    track: 0,
+    hidden: false,
+    link: null,
+    text,
+    variable: 'cap_a1',
+    ...overrides,
+  }
+}
 
 /**
  * 测试用的工程主文件：新建工程的模板，根下按先后放上 `clips`（视频、组件或块、音频三种；「其他」片段

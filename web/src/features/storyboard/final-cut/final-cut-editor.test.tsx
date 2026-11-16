@@ -1,3 +1,4 @@
+import { openComposition } from '@hyperframes/sdk'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
@@ -11,13 +12,14 @@ import { itemFileContent, server } from '@/testing/mocks/server'
 import { mockProjectMain, putMockProjectMain } from '@/testing/mocks/whole-film'
 import { mockWorkspaceFile, putMockWorkspaceFile } from '@/testing/mocks/workspace'
 import { renderWithProviders } from '@/testing/render'
-import { audio, fixtureCatalog, host, mainFile, video } from '@/testing/final-cut'
+import { audio, caption, fixtureCatalog, host, mainFile, video } from '@/testing/final-cut'
 import type { GenerationJob } from '../storyboard.api'
 import {
   CAPTIONS_PATH,
   CAPTIONS_PROBLEM_TEXT,
   captionsHostElement,
   captionsScene,
+  captionVariable,
 } from './composition/captions'
 import { FinalCutEditor } from './final-cut-editor'
 
@@ -3238,5 +3240,261 @@ describe('final-cut 编辑器 · 字幕页签', () => {
     expect((await screen.findAllByText(CAPTIONS_PROBLEM_TEXT)).length).toBeGreaterThan(0)
     await openCaptions(user)
     expect(within(panel()).getByRole('alert')).toHaveTextContent(CAPTIONS_PROBLEM_TEXT)
+  })
+})
+
+describe('final-cut 编辑器 · 时间线上的字幕', () => {
+  const CANVAS = { width: 720, height: 1280 }
+  const SCENE = `final-cut/${CAPTIONS_PATH}`
+  // 画面 1：视频 0–2 秒；字幕：0–1、1.5–2.5、3–4 秒三句；配乐 0–4 秒
+  const lines = [
+    caption({ id: 'cap-a1', variable: 'cap_a1', start: 0, duration: 1_000, text: '第一句' }),
+    caption({ id: 'cap-b2', variable: 'cap_b2', start: 1_500, duration: 1_000, text: '第二句' }),
+    caption({ id: 'cap-c3', variable: 'cap_c3', start: 3_000, duration: 1_000, text: '第三句' }),
+  ]
+  const others = [video({ src: URL_A, duration: 2_000 }), audio({ duration: 4_000 })]
+
+  /** 工作区里放一份带字幕的工程（照编辑器用 SDK 写的样子），打开编辑器。 */
+  const open = async () => {
+    const main = await openComposition(mainFile(others, CANVAS))
+    main.addElement('film', 99, captionsHostElement(CANVAS, 4_000))
+    for (const each of lines) main.declareVariable(captionVariable(each))
+    putMockWorkspaceFile(CONVERSATION, SCENE, captionsScene(CANVAS, fixtureCatalog, lines))
+    putMockProjectMain(CONVERSATION, main.serialize())
+    const user = userEvent.setup()
+    await openEditor()
+    return user
+  }
+
+  const captionRow = () => screen.getByRole('group', { name: '字幕' })
+  const clipOf = (text: string) => screen.getByRole('group', { name: new RegExp(`^${text}，`) })
+  const bodyOf = (text: string) =>
+    within(clipOf(text)).getByRole('button', { name: new RegExp(`^选中：${text}，`) })
+  /** 存下来的字幕场景里各句的「编号、开始、时长」（秒）。 */
+  const savedLines = () =>
+    [
+      ...new DOMParser()
+        .parseFromString(
+          (mockWorkspaceFile(CONVERSATION, SCENE)?.content ?? '').replace(/<\/?template>/g, ''),
+          'text/html',
+        )
+        .querySelectorAll('.caption'),
+    ].map((element) => [
+      element.id,
+      Number(element.getAttribute('data-start')),
+      Number(element.getAttribute('data-duration')),
+    ])
+  /** 存下来的主文件里字幕宿主带没带隐藏标记。 */
+  const hostHidden = () =>
+    new DOMParser()
+      .parseFromString(savedFilm(), 'text/html')
+      .getElementById('captions')
+      ?.hasAttribute('data-hidden')
+  const undoButton = () => within(toolbar()).getByRole('button', { name: '撤销' })
+  /**
+   * 拖片段：测试里时间线按一秒 100 像素排、没有排版（片段的左边都量成 0），拖 `dx` 像素就是想挪到
+   * 第 `dx` × 10 毫秒。
+   */
+  const drag = (target: HTMLElement, dx: number) => {
+    fireEvent.pointerDown(target, { button: 0, pointerId: 1, clientX: 10, clientY: 50 })
+    fireEvent.pointerMove(target, { pointerId: 1, clientX: 10 + dx, clientY: 50 })
+    fireEvent.pointerUp(target, { pointerId: 1, clientX: 10 + dx, clientY: 50 })
+  }
+
+  it('「字幕」一行在画面区和声音区之间，行头是名字和眼睛；每句是一个片段，写着这句的字', async () => {
+    await open()
+    const rows = screen
+      .getAllByRole('group')
+      .map((group) => group.getAttribute('aria-label'))
+      .filter((name) => name === '画面 1' || name === '字幕' || name === '配乐')
+    expect(rows).toEqual(['画面 1', '字幕', '配乐'])
+    expect(
+      within(captionRow())
+        .getAllByRole('group')
+        .map((clip) => clip.getAttribute('aria-label')),
+    ).toEqual(['第一句，1.0 秒', '第二句，1.0 秒', '第三句，1.0 秒'])
+    expect(within(clipOf('第二句')).getByText('第二句')).toBeVisible()
+    expect(screen.getByRole('button', { name: '隐藏字幕' }).parentElement).toHaveTextContent(
+      /^字幕$/,
+    )
+  })
+
+  it('拖着挪一句：碰到后一句就停；把手上按方向键裁结尾，不压到后一句；都写进字幕场景，各一步撤销', async () => {
+    const user = await open()
+    // 想挪到 0.8 秒：会压到 1.5 秒开始的第二句，停在 0.5 秒
+    drag(bodyOf('第一句'), 80)
+    await waitSaved(() => expect(savedLines()[0]).toEqual(['cap-a1', 0.5, 1]))
+    expect(savedLines().slice(1)).toEqual([
+      ['cap-b2', 1.5, 1],
+      ['cap-c3', 3, 1],
+    ])
+
+    await user.click(bodyOf('第二句'))
+    const end = within(clipOf('第二句')).getByRole('slider', { name: '裁剪结尾' })
+    end.focus()
+    await user.keyboard('{ArrowLeft}')
+    await waitSaved(() => expect(savedLines()[1]).toEqual(['cap-b2', 1.5, 0.9]))
+    await user.keyboard('{Shift>}{ArrowRight}{ArrowRight}{/Shift}')
+    await waitSaved(() => expect(savedLines()[1]).toEqual(['cap-b2', 1.5, 1.5]))
+
+    await user.click(undoButton())
+    await waitSaved(() => expect(savedLines()[1]).toEqual(['cap-b2', 1.5, 0.9]))
+    await user.click(undoButton())
+    await user.click(undoButton())
+    await waitSaved(() => expect(savedLines()[0]).toEqual(['cap-a1', 0, 1]))
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('删一句：选中按 Delete，或者右键选「删除字幕」（菜单里只有这一项）；开着波纹编辑别的片段也不动', async () => {
+    const user = await open()
+    await user.click(bodyOf('第一句'))
+    await user.keyboard('{Delete}')
+    await waitSaved(() => expect(savedLines().map(([id]) => id)).toEqual(['cap-b2', 'cap-c3']))
+    expect(savedClips()[0]).toContain('data-start="0" data-duration="2"')
+
+    fireEvent.pointerDown(clipOf('第二句'), { button: 2, pointerType: 'mouse' })
+    fireEvent.contextMenu(clipOf('第二句'))
+    const menu = await screen.findByRole('menu', { name: '第二句' })
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent),
+    ).toEqual(['删除字幕Delete'])
+    await user.click(within(menu).getByRole('menuitem', { name: /^删除字幕/ }))
+    await waitSaved(() => expect(savedLines().map(([id]) => id)).toEqual(['cap-c3']))
+  })
+
+  it('和视频片段一起多选：一起挪同样的时间，一起删；删除一步撤销两个都回来', async () => {
+    const user = await open()
+    await user.click(within(screen.getByRole('group', { name: '画面 1' })).getByRole('button'))
+    await user.keyboard('{Shift>}')
+    await user.click(bodyOf('第三句'))
+    await user.keyboard('{/Shift}')
+    drag(bodyOf('第三句'), 350)
+    await waitSaved(() => expect(savedLines()[2]).toEqual(['cap-c3', 3.5, 1]))
+    await waitSaved(() => expect(savedClips()[0]).toContain('data-start="0.5"'))
+
+    await user.keyboard('{Delete}')
+    await waitSaved(() => expect(savedClips()).toHaveLength(0))
+    expect(savedLines().map(([id]) => id)).toEqual(['cap-a1', 'cap-b2'])
+    await user.click(undoButton())
+    await waitSaved(() => expect(savedClips()).toHaveLength(1))
+    expect(savedLines().map(([id]) => id)).toEqual(['cap-a1', 'cap-b2', 'cap-c3'])
+  })
+
+  it('点行头的眼睛：隐藏标记写在字幕宿主上，每句都标成已隐藏；再点显示回来', async () => {
+    const user = await open()
+    await user.click(screen.getByRole('button', { name: '隐藏字幕' }))
+    await waitSaved(() => expect(hostHidden()).toBe(true))
+    expect(
+      within(captionRow())
+        .getAllByRole('group')
+        .map((clip) => clip.getAttribute('aria-label')),
+    ).toEqual(['第一句，1.0 秒，已隐藏', '第二句，1.0 秒，已隐藏', '第三句，1.0 秒，已隐藏'])
+    expect(mockWorkspaceFile(CONVERSATION, SCENE)?.content).not.toContain('data-hidden')
+
+    await user.click(screen.getByRole('button', { name: '显示字幕' }))
+    await waitSaved(() => expect(hostHidden()).toBe(false))
+    expect(screen.getByRole('button', { name: '隐藏字幕' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('切开工具点在字幕上什么都不做；按着 Shift 点只切开那个时间上的视频片段，字幕不切', async () => {
+    const user = await open()
+    editorRoot().focus()
+    await user.keyboard('b')
+    const razorAt = (x: number, shiftKey = false) =>
+      fireEvent.pointerDown(captionRow(), {
+        button: 0,
+        pointerId: 1,
+        pointerType: 'mouse',
+        clientX: x,
+        clientY: 10,
+        shiftKey,
+      })
+    razorAt(50)
+    await act(() => new Promise((resolve) => setTimeout(resolve, 900)))
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+    razorAt(50, true)
+    await waitSaved(() => expect(savedClips()).toHaveLength(2))
+    expect(savedLines()).toEqual([
+      ['cap-a1', 0, 1],
+      ['cap-b2', 1.5, 1],
+      ['cap-c3', 3, 1],
+    ])
+  })
+
+  it('选中一句时的「属性」：头部是字、「字幕」、时长和删除，没有隐藏；改字停下才写进去、改时长按「+」，各一步撤销', async () => {
+    const user = await open()
+    await user.click(bodyOf('第一句'))
+    const inspector = screen.getByRole('tabpanel', { name: '属性' })
+    expect(within(inspector).getByRole('heading', { name: '第一句' })).toBeVisible()
+    expect(within(inspector).getByText('字幕')).toBeVisible()
+    expect(within(inspector).getByText('1.00s')).toBeVisible()
+    expect(within(inspector).getByRole('button', { name: '删除' })).toBeVisible()
+    expect(within(inspector).queryByRole('button', { name: '隐藏' })).toBeNull()
+
+    const field = within(inspector).getByRole('textbox', { name: '内容' })
+    expect(field).toHaveValue('第一句')
+    await user.clear(field)
+    await user.type(field, '改过的{Enter}两行')
+    await waitSaved(() =>
+      expect(mockWorkspaceFile(CONVERSATION, SCENE)?.content).toContain('>改过的<br>两行</div>'),
+    )
+    // 名字里的换行合成一个空格；文字框里照旧是换行
+    expect(clipOf('改过的 两行')).toBeVisible()
+    expect(within(inspector).getByRole('heading', { name: '改过的 两行' })).toBeVisible()
+    expect(field).toHaveValue('改过的\n两行')
+    await user.click(undoButton())
+    await waitSaved(() =>
+      expect(mockWorkspaceFile(CONVERSATION, SCENE)?.content).toContain('>第一句</div>'),
+    )
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+
+    // 第二句从 1.5 秒开始：结尾最多拉到那里
+    await user.click(within(inspector).getByRole('button', { name: '延长 0.5 秒' }))
+    await waitSaved(() => expect(savedLines()[0]).toEqual(['cap-a1', 0, 1.5]))
+    expect(within(inspector).getByRole('button', { name: '延长 0.5 秒' })).toBeDisabled()
+    await user.click(undoButton())
+    await waitSaved(() => expect(savedLines()[0]).toEqual(['cap-a1', 0, 1]))
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('停在「字幕」页签时在时间线上选中片段（字幕、视频都一样）不切走，选中的字幕在列表里标成当前；在页签里点一句的时间：选中它、播放头到它的开始', async () => {
+    const user = await open()
+    const side = screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+    await user.click(within(side).getByRole('tab', { name: '字幕' }))
+    const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
+    const current = () =>
+      within(panel())
+        .getAllByRole('listitem')
+        .filter((item) => item.getAttribute('aria-current') === 'true')
+        .map((item) => within(item).getByRole('textbox').getAttribute('aria-label'))
+
+    await user.click(bodyOf('第二句'))
+    expect(panel()).toBeVisible()
+    expect(current()).toEqual(['字幕文字 00:01.50 – 00:02.50'])
+    await user.click(within(screen.getByRole('group', { name: '画面 1' })).getByRole('button'))
+    expect(panel()).toBeVisible()
+    expect(current()).toEqual([])
+
+    await user.click(within(panel()).getByRole('button', { name: '00:03.00 – 00:04.00' }))
+    expect(bodyOf('第三句')).toHaveAttribute('aria-pressed', 'true')
+    expect(current()).toEqual(['字幕文字 00:03.00 – 00:04.00'])
+    expect(progress()).toHaveAttribute('aria-valuetext', '00:03.00 / 00:04.00')
+    expect(panel()).toBeVisible()
+  })
+
+  it('停在别的页签时在时间线上选中字幕：照常切到「属性」', async () => {
+    const user = await open()
+    await user.click(bodyOf('第二句'))
+    expect(screen.getByRole('tabpanel', { name: '属性' })).toBeVisible()
+  })
+
+  it('字幕那一行的空白处点右键什么都不出：合拢会把字幕从说话的时间上挪开', async () => {
+    await open()
+    // 1.2 秒处是第一句和第二句之间的空档（测试里一秒 100 像素）
+    fireEvent.contextMenu(captionRow(), { clientX: 120 })
+    await act(() => new Promise((resolve) => setTimeout(resolve, 100)))
+    expect(screen.queryByRole('menu')).toBeNull()
   })
 })

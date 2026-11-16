@@ -31,11 +31,11 @@ import {
   ContextMenuTrigger,
 } from '@/shared/ui/menu'
 import {
+  editGroup,
   gapClosing,
   groupShift,
   groupTrimmed,
   groupTrimRange,
-  linkedGroup,
   playheadSplit,
   razorSplit,
   splitAllAt,
@@ -65,7 +65,7 @@ import {
   type RowTarget,
   type Zone,
 } from './placement'
-import { boxBetween, marqueeMode, marqueeSelection, movingWith, type Box } from './selection'
+import { boxBetween, marqueeMode, marqueeSelection, type Box } from './selection'
 import { soundActionFor, soundBadgeOf, type SoundBadge, type SoundControls } from './sound-pair'
 import {
   msToPx,
@@ -298,7 +298,7 @@ const movePlan = (
 
 /**
  * 片段里画什么：视频片段是铺满的画面，读出原声后底部叠一条波形；组件或块的片段是小封面和名字；
- * 音频片段是音符、名字和整段波形；「其他」片段只有名字。
+ * 字幕是文字记号和名字（就是这句的字）；音频片段是音符、名字和整段波形；「其他」片段只有名字。
  */
 function ClipContent({
   clip,
@@ -312,7 +312,14 @@ function ClipContent({
   peaks: PeaksState
 }) {
   const name = <span className="wf-clip-name">{clip.label}</span>
-  if (clip.kind === 'other' || clip.kind === 'caption') return name
+  if (clip.kind === 'other') return name
+  if (clip.kind === 'caption')
+    return (
+      <>
+        <Icon className="wf-clip-icon" decorative name="type" size="xs" />
+        {name}
+      </>
+    )
   if (clip.kind === 'host')
     return (
       <>
@@ -688,7 +695,7 @@ function TimelineClip({
 }
 
 /**
- * 行头最右边的开关：把这一行的片段一起隐藏或显示回来。画面区的行画成眼睛；声音区的行画成喇叭，
+ * 行头最右边的开关：把这一行的片段一起隐藏或显示回来。画面区的行和字幕那一行画成眼睛；声音区的行画成喇叭，
  * 隐藏就是静音。`name` 是这一行的行名。
  */
 function RowToggle({
@@ -725,7 +732,8 @@ function RowToggle({
 const keyOf = (row: RowKey) => `${row.zone}-${row.track}`
 
 /**
- * 时间线：final-cut 里的片段按行排开，画面区的行在上、声音区的行在下，最下面是一条可以新开一行的空行。
+ * 时间线：final-cut 里的片段按行排开，画面区的行在上、有字幕时中间一行「字幕」、声音区的行在下，最下面是一条
+ * 可以新开一行的空行。
  * 片段可以选中一个或几个（在空白处拖出框来框选）、在自己的区里挪动、裁两端；上面是时间尺和播放头。
  */
 export function FilmTimeline({
@@ -1154,9 +1162,7 @@ export function FilmTimeline({
                           contentRef={contentRef}
                           cover={clip.kind === 'host' ? thumbnailUrl(catalog, clip.item) : null}
                           following={following}
-                          groupFor={(kind) =>
-                            linkedGroup(movingWith(selected, clip.id), clips, kind)
-                          }
+                          groupFor={(kind) => editGroup(clip, selected, clips, kind)}
                           badge={soundBadgeOf(clip, clips)}
                           key={clip.id}
                           onFollow={setFollowing}

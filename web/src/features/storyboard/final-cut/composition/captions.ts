@@ -114,7 +114,7 @@ ${children}</div>
 
 /**
  * 把场景根下一个带时间的元素读成一句字幕：字取主文件根上它的变量的默认值（`texts`，变量 → 字），
- * 没有这个变量时取元素里写的字。
+ * 没有这个变量时取元素里写的字。名字就是它的字，换行和连着的空白合成一个空格；字是空的时叫「字幕」。
  */
 export function captionOf(
   element: ElementView,
@@ -123,16 +123,18 @@ export function captionOf(
 ): CaptionClip {
   const start = Math.round(timing.enterAt * 1000)
   const variable = element.attributes['data-var-text'] ?? ''
+  const text = texts.get(variable) ?? element.text ?? ''
+  const name = text.replace(/\s+/g, ' ').trim()
   return {
     kind: 'caption',
     id: element.id,
-    label: VARIABLE_LABEL,
+    label: name === '' ? VARIABLE_LABEL : name,
     start,
     duration: Math.round(timing.exitAt * 1000) - start,
     track: 0,
     hidden: element.attributes['data-hidden'] !== undefined,
     link: null,
-    text: texts.get(variable) ?? element.text ?? '',
+    text,
     variable,
   }
 }
