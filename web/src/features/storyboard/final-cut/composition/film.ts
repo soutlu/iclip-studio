@@ -4,22 +4,22 @@ import { escapeAttribute, seconds } from './html'
 
 /**
  * final-cut 工程的主文件 `index.html`：工程目录里唯一的主时间线。根下面每个带时间的元素是时间线上的一个片段；
- * 文件可以由编辑器写，也可以手写。编辑器只改片段和根上的总长，`<head>` 里只重算带标记的字体块
- * （见 `withFontBlock`），别的内容原样留着。
+ * 文件可以由编辑器写，也可以手写。编辑器只改片段、根上的总长和 `<html>` 上声明的字幕变量，`<head>` 里
+ * 只重算带标记的字体块（见 `withFontBlock`），别的内容原样留着。
  */
 export interface Canvas {
   width: number
   height: number
 }
 
-export type FilmClip = VideoClip | HostClip | AudioClip | OtherClip
+export type FilmClip = VideoClip | HostClip | AudioClip | OtherClip | CaptionClip
 /** 用素材地址的片段：地址写在元素的 `src` 上。 */
 export type MediaClip = VideoClip | AudioClip
 
 /**
- * 四种片段共有的部分。时间都是毫秒。
+ * 各种片段共有的部分。时间都是毫秒。
  *
- * `track` 是它在自己那个区的第几行，只管显示：音频片段在声音区，别的在画面区，两个区的行号各算各的。
+ * `track` 是它在自己那个区的第几行，只管显示：音频片段在声音区，字幕在字幕区，别的在画面区，各区的行号各算各的。
  * `hidden` 的片段留在时间线上、占着它的时间，预览和导出里都不出现、不出声。
  * `link` 是它的链接名（`data-link`）：同名的片段编辑时一起动（「联动」），播放和导出不看它；没有时是 null。
  */
@@ -84,6 +84,16 @@ export interface AudioClip extends MediaBase {
 export interface OtherClip extends ClipBase {
   kind: 'other'
   z: number
+}
+
+/**
+ * 一句字幕：字幕场景文件里的一个带时间的元素（见 `captions.ts`），不在主文件里。`text` 是它的字，
+ * 存在主文件根上的变量 `variable` 的默认值里。
+ */
+export interface CaptionClip extends ClipBase {
+  kind: 'caption'
+  text: string
+  variable: string
 }
 
 export const isMediaClip = (clip: FilmClip): clip is MediaClip =>
@@ -371,8 +381,8 @@ export function hostElement(
 }
 
 /**
- * 工程要声明的字体：用到的条目自带的字体族，加上字体类可填项取到的字体族；中文字体按可填项里的文字和
- * 条目里出现的字声明。组件库里没有的字体族不声明。
+ * 工程要声明的字体：用到的条目自带的字体族，加上字体类可填项取到的字体族；中文字体按可填项里的文字、
+ * 条目里出现的字和字幕的字声明（字幕用的就是中文字体）。组件库里没有的字体族不声明。
  */
 function fontsOf(
   clips: readonly FilmClip[],
@@ -382,6 +392,7 @@ function fontsOf(
   let text = ''
   const used = new Set<string>()
   for (const clip of clips) {
+    if (clip.kind === 'caption') text += clip.text
     if (clip.kind !== 'host') continue
     text += Object.values(clip.values)
       .filter((value) => typeof value === 'string')

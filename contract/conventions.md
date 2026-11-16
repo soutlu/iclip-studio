@@ -156,10 +156,16 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 业务规则见 [CONTEXT.md「final-cut」](../docs/CONTEXT.md#术语)。主文件是工作区里的 `final-cut/index.html`，写法由 [composition/film.ts](../web/src/features/storyboard/final-cut/composition/film.ts) 定义；后端不查它的写法，只在发起导出时从中取素材地址（见下文「成片导出」）：
 - **读写**：读走 `GET /conversations/{id}/workspace/file?path=final-cut/index.html`，没有这个文件（`404`）就是还没有工程。第一次保存走「新建工程文件」（`path` 写 `index.html`，已存在 `409`），之后带 `expectedVersion` 走 `PUT /conversations/{id}/workspace/file`（版本对不上 `409`，新版本号在答复里）。编辑器整份保存，`409` 时换成工作区里的那一份、放弃本地没存的改动。
-- **变化通知**：工程里的文件每写一次都推一次 `event.fs.changed`（见 §5「文件变化」），编辑器自己的保存也推，通知不带版本号。编辑器等在途的保存结束后读一次主文件，版本号比自己存下的新（或文件出现、消失了）才算别处改的；别的工程文件变了只重新加载预览。
-- **片段**：根（最外层带 `data-composition-id` 的元素）下面每个带时间（`data-start` 加 `data-duration`）的元素是一个片段，种类按标签认：`<video>`、`<audio>`、带 `data-composition-src` 且 `data-composition-id` 能在组件库目录里查到的宿主元素，其余都是「其他」片段。视频、音频的 `src` 直接写素材地址。组件或块的片段的摆放和字体变量写在宿主元素的行内样式上：条目的 `size` 和画面不一样大时定成这个尺寸、居中，按 `min(画面宽 / 组件宽, 画面高 / 组件高)` 缩放；第一个字体类可填项取到组件库 `fonts` 里的字体族时（没填取默认值），`--font-display` 和 `--font-body` 都设成 `'<字体族>', '<中文字体族>', sans-serif`，取到别的值不写。
+- **变化通知**：工程里的文件每写一次都推一次 `event.fs.changed`（见 §5「文件变化」），编辑器自己的保存也推，通知不带版本号。编辑器等在途的保存结束后读一次它打开着的文件（主文件和字幕场景文件），有一个的版本号比自己存下的新（或文件出现、消失了）才算别处改的，这时两个都换成工作区里的那一份；主文件以外的工程文件变了都重新加载预览。
+- **片段**：根（最外层带 `data-composition-id` 的元素）下面每个带时间（`data-start` 加 `data-duration`）的元素是一个片段（字幕宿主除外，见下），种类按标签认：`<video>`、`<audio>`、带 `data-composition-src` 且 `data-composition-id` 能在组件库目录里查到的宿主元素，其余都是「其他」片段。视频、音频的 `src` 直接写素材地址。组件或块的片段的摆放和字体变量写在宿主元素的行内样式上：条目的 `size` 和画面不一样大时定成这个尺寸、居中，按 `min(画面宽 / 组件宽, 画面高 / 组件高)` 缩放；第一个字体类可填项取到组件库 `fonts` 里的字体族时（没填取默认值），`--font-display` 和 `--font-body` 都设成 `'<字体族>', '<中文字体族>', sans-serif`，取到别的值不写。
 - **`<head>`**：编辑器只重算 `<!-- final-cut:fonts -->` 与 `<!-- /final-cut:fonts -->` 两行之间的字体块（字体族的样式表链接和用到的中文分片），标记之外原样保留；没有字体块时加在 `</head>` 前面。新建工程的主文件照固定模板写：根上的属性同 `#film`，`<head>` 带动画库的 `<script src="vendor/npm/gsap@…">`（版本照组件库目录的 `runtime.gsap`）。
 - **组件文件**：往工程里加贴片或场景时，前端按组件库目录里条目的 `files` 逐个取公共库的文件（`/hyperframes/<版本>/<路径>`），用「新建工程文件」写进 `final-cut/<路径>`，`409`（已经有了）跳过；拷进来以后就属于这个工程。
+- **字幕**：写法由 [composition/captions.ts](../web/src/features/storyboard/final-cut/composition/captions.ts) 定义，文件由编辑器写，也可以由代理写。
+  - 字幕场景文件：编辑器第一次加字幕时用「新建工程文件」建一份空的 `compositions/captions.html`（`409` 就读已有的那份、用它的版本号），建文件不算一步撤销；删掉最后一句时文件留着。文件用 `<template>` 包着，根是 `data-composition-id="captions"` 的 `<div>`，每句字幕是根下一个带时间的元素，`data-var-text` 指向这句的变量，元素里写着同样的字。
+  - 字幕宿主：主文件根下一个 `data-track-kind="captions"` 的元素，`data-composition-src` 指向场景文件，从 0 开始，时长等于 final-cut 的总长（片段和字幕里最晚的结尾），叠在所有片段上面。删掉最后一句时宿主留着。
+  - 字：每句的字是主文件根（`<html>` 上的 `data-composition-variables`）上声明的一个字符串变量的默认值。场景自己不声明变量（根 `<div>` 上、`<html>` 上都不行），宿主不带 `data-variable-values`：有一处写了，主文件根上的变量就到不了场景，字幕显示成元素里写的字；编辑器打开这样的工程时说明原因、不让导出。
+  - 主文件根、字幕宿主、场景根都带 `data-no-timeline`，不然工程检查报错、导出被拒。
+  - 保存：编辑器先存场景文件、再存主文件（主文件挂载着场景文件），两个文件各按自己的版本号写；有一个 `409` 时两个都换成工作区里的那一份。
 
 ### 成片导出
 

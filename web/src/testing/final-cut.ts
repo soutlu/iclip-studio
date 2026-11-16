@@ -125,6 +125,8 @@ export const mainFile = (
       }
       case 'other':
         throw new Error('「其他」片段用 extra 直接写 HTML')
+      case 'caption':
+        throw new Error('字幕写在字幕场景文件里，不在主文件里')
     }
   })
   const duration = Math.max(0, ...clips.map((clip) => clip.start + clip.duration))

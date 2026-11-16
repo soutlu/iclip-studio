@@ -9,10 +9,16 @@ import { servePreviewPages } from '@/testing/preview-page'
 import { addMockConversation } from '@/testing/mocks/conversations'
 import { itemFileContent, server } from '@/testing/mocks/server'
 import { mockProjectMain, putMockProjectMain } from '@/testing/mocks/whole-film'
-import { mockWorkspaceFile } from '@/testing/mocks/workspace'
+import { mockWorkspaceFile, putMockWorkspaceFile } from '@/testing/mocks/workspace'
 import { renderWithProviders } from '@/testing/render'
 import { audio, fixtureCatalog, host, mainFile, video } from '@/testing/final-cut'
 import type { GenerationJob } from '../storyboard.api'
+import {
+  CAPTIONS_PATH,
+  CAPTIONS_PROBLEM_TEXT,
+  captionsHostElement,
+  captionsScene,
+} from './composition/captions'
 import { FinalCutEditor } from './final-cut-editor'
 
 const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: number }>())
@@ -1955,7 +1961,8 @@ describe('final-cut 编辑器 · 导出', () => {
 })
 
 describe('final-cut 编辑器 · 组件、块页签', () => {
-  const side = () => screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  const side = () =>
+    screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   const openTab = (user: ReturnType<typeof userEvent.setup>, name: string) =>
     user.click(within(side()).getByRole('tab', { name }))
   const itemCard = (name: RegExp) =>
@@ -1970,14 +1977,14 @@ describe('final-cut 编辑器 · 组件、块页签', () => {
   const previewHtml = () => previewPlayer().getAttribute('srcdoc') ?? ''
   const playerUp = previewSettled
 
-  it('侧栏五个页签：镜头、贴片、场景、配乐、属性；贴片、场景各记着自己的搜索词和分类，切走再回来还在', async () => {
+  it('侧栏六个页签：镜头、贴片、场景、配乐、字幕、属性；贴片、场景各记着自己的搜索词和分类，切走再回来还在', async () => {
     const user = userEvent.setup()
     await openEditor()
     expect(
       within(side())
         .getAllByRole('tab')
         .map((tab) => tab.textContent),
-    ).toEqual(['镜头', '贴片', '场景', '配乐', '属性'])
+    ).toEqual(['镜头', '贴片', '场景', '配乐', '字幕', '属性'])
     await openTab(user, '贴片')
     expect(within(side()).getByRole('list', { name: '贴片' })).toBeVisible()
     await user.type(within(side()).getByRole('searchbox', { name: '搜索贴片' }), '圆环')
@@ -2075,10 +2082,9 @@ describe('final-cut 编辑器 · 组件、块页签', () => {
 describe('final-cut 编辑器 · 属性', () => {
   const inspector = () => screen.getByRole('tabpanel', { name: '属性' })
   const sideTab = (name: string) =>
-    within(screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })).getByRole(
-      'tab',
-      { name },
-    )
+    within(
+      screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
+    ).getByRole('tab', { name })
   const row = () => screen.getByRole('group', { name: '画面 1' })
   const pick = (user: ReturnType<typeof userEvent.setup>, label: string) =>
     user.click(screen.getByRole('button', { name: new RegExp(`^选中：${label}，`) }))
@@ -2895,7 +2901,8 @@ describe('final-cut 编辑器 · 属性', () => {
 })
 
 describe('final-cut 编辑器 · 侧栏页签', () => {
-  const side = () => screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  const side = () =>
+    screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   const tab = (name: string) => within(side()).getByRole('tab', { name })
   const props = () => screen.getByRole('tabpanel', { name: '属性' })
   const shotsPanel = () => screen.getByRole('tabpanel', { name: '镜头' })
@@ -3136,5 +3143,100 @@ describe('final-cut 编辑器 · 切走再切回', () => {
     expect(labels()).toEqual(['乙', 'A · 镜头 1'])
     expect(savedClips()).toHaveLength(2)
     expect(screen.queryByText(/已在别处修改/)).toBeNull()
+  })
+})
+
+describe('final-cut 编辑器 · 字幕页签', () => {
+  const side = () =>
+    screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const openCaptions = (user: ReturnType<typeof userEvent.setup>) =>
+    user.click(within(side()).getByRole('tab', { name: '字幕' }))
+  const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
+  const addButton = () => within(panel()).getByRole('button', { name: '在播放头处加一句' })
+  const savedScene = () =>
+    mockWorkspaceFile(CONVERSATION, `final-cut/${CAPTIONS_PATH}`)?.content ?? ''
+  /** 存下来的主文件根上声明的变量的默认值。 */
+  const savedTexts = () =>
+    (
+      JSON.parse(
+        new DOMParser()
+          .parseFromString(savedFilm(), 'text/html')
+          .documentElement.getAttribute('data-composition-variables') ?? '[]',
+      ) as { default: unknown }[]
+    ).map((declaration) => declaration.default)
+
+  it('还没有工程时「在播放头处加一句」置灰并说明原因', async () => {
+    const user = userEvent.setup()
+    await openEditor()
+    await openCaptions(user)
+    expect(addButton()).toHaveAttribute('aria-disabled', 'true')
+    await user.click(addButton())
+    expect(
+      (await screen.findAllByText('final-cut 暂无内容，无法加字幕；请先加入镜头')).length,
+    ).toBeGreaterThan(0)
+  })
+
+  it('加一句：列表里出现、焦点进文字框；同一处再加置灰；改字存进主文件的变量和字幕文件；删掉回到空的', async () => {
+    const user = userEvent.setup()
+    putMockProjectMain(CONVERSATION, twoVideos())
+    await openEditor()
+    await openCaptions(user)
+    expect(within(panel()).getByText('暂无字幕，请点击「在播放头处加一句」')).toBeVisible()
+
+    await user.click(addButton())
+    const field = await within(panel()).findByRole('textbox', {
+      name: '字幕文字 00:00.00 – 00:02.00',
+    })
+    expect(field).toHaveValue('新字幕')
+    expect(field).toHaveFocus()
+    expect(within(panel()).getByRole('listitem')).toHaveAttribute('aria-current', 'true')
+    expect(addButton()).toHaveAttribute('aria-disabled', 'true')
+    await user.click(addButton())
+    expect(
+      (await screen.findAllByText('播放头处已有字幕，无法再加一句；请把播放头移到没有字幕的地方'))
+        .length,
+    ).toBeGreaterThan(0)
+
+    // 回车是换行；写进去以后焦点还在框里
+    await user.clear(field)
+    await user.type(field, '第一句{Enter}第二行')
+    await waitSaved(() => expect(savedTexts()).toEqual(['第一句\n第二行']))
+    await waitSaved(() => expect(savedScene()).toContain('>第一句<br>第二行</div>'))
+    expect(field).toHaveFocus()
+
+    await user.click(
+      within(panel()).getByRole('button', { name: '删除 00:00.00 – 00:02.00 的字幕' }),
+    )
+    expect(within(panel()).getByText('暂无字幕，请点击「在播放头处加一句」')).toBeVisible()
+    await waitSaved(() => expect(savedTexts()).toEqual([]))
+    expect(savedScene()).not.toContain('class="clip caption"')
+  })
+
+  it('字幕写法不对（宿主带了取值）：导出置灰写原因，字幕页签里也显示这句', async () => {
+    const user = userEvent.setup()
+    const canvas = { width: 720, height: 1280 }
+    const host = captionsHostElement(canvas, 2_000).replace(
+      'data-no-timeline',
+      'data-no-timeline data-variable-values="{}"',
+    )
+    putMockProjectMain(
+      CONVERSATION,
+      mainFile([video({ src: URL_A })], canvas).replace(
+        '</div>\n</body>',
+        `${host}\n</div>\n</body>`,
+      ),
+    )
+    putMockWorkspaceFile(
+      CONVERSATION,
+      `final-cut/${CAPTIONS_PATH}`,
+      captionsScene(canvas, fixtureCatalog),
+    )
+    await openEditor()
+    const exportButton = screen.getByRole('button', { name: '导出' })
+    expect(exportButton).toHaveAttribute('aria-disabled', 'true')
+    await user.click(exportButton)
+    expect((await screen.findAllByText(CAPTIONS_PROBLEM_TEXT)).length).toBeGreaterThan(0)
+    await openCaptions(user)
+    expect(within(panel()).getByRole('alert')).toHaveTextContent(CAPTIONS_PROBLEM_TEXT)
   })
 })

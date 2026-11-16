@@ -32,8 +32,8 @@ const film = [first, middle, last, above]
 
 const VISUAL_0 = { zone: 'visual', track: 0 } as const
 
-/** 片段写着的地址：素材地址或条目文件；「其他」片段没有。 */
-const srcOf = (clip: FilmClip) => (clip.kind === 'other' ? '' : clip.src)
+/** 片段写着的地址：素材地址或条目文件；「其他」片段和字幕没有。 */
+const srcOf = (clip: FilmClip) => (clip.kind === 'other' || clip.kind === 'caption' ? '' : clip.src)
 
 /** 每次改完都要满足的两条：同一行（同一个区、同一个行号）的片段不重叠，起点不为负。 */
 const expectValidFilm = (clips: readonly FilmClip[]) => {

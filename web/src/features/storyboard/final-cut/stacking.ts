@@ -48,7 +48,7 @@ export const restackedZ = (
     start: clip.start / 1000,
     duration: clip.duration / 1000,
     track: clip.track,
-    zIndex: clip.kind === 'audio' ? 0 : clip.z,
+    zIndex: clip.kind === 'audio' || clip.kind === 'caption' ? 0 : clip.z,
     isAudio: clip.kind === 'audio',
     domIndex,
   }))
