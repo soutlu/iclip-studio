@@ -7,13 +7,14 @@ from datetime import datetime
 from typing import Annotated, Final
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from iclip.domains.conversations.final_cut_project import (
     FINAL_CUT_PREVIEW_PREFIX,
     FinalCutProject,
     PreviewRedirect,
 )
+from iclip.domains.conversations.final_cut_translation import FinalCutTranslationFailed
 from iclip.domains.conversations.models import Conversation, ConversationActivity
 from iclip.domains.conversations.schemas import (
     MAX_AGENT_ID_CHARS,
@@ -67,8 +68,12 @@ from iclip.domains.conversations.whole_film_schemas import (
     FinalCutFileIn,
     FinalCutPreviewHostOut,
     FinalCutPreviewOut,
+    FinalCutTranslationErrorOut,
+    FinalCutTranslationsIn,
+    FinalCutTranslationsOut,
     WholeFilmExportLatestOut,
     WholeFilmExportStartedOut,
+    final_cut_translations_out,
     whole_film_export_out,
 )
 from iclip.domains.identity.public import (
@@ -633,7 +638,7 @@ def _preview_content_type(path: str) -> str:
 
 
 def create_final_cut_project_router(project: FinalCutProject) -> APIRouter:
-    """应用域名上的两个接口：发 final-cut 预览令牌、在 final-cut 工程里新建文件。"""
+    """应用域名上的三个接口：发 final-cut 预览令牌、在 final-cut 工程里新建文件、翻译 final-cut 里的字。"""
 
     router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -673,6 +678,41 @@ def create_final_cut_project_router(project: FinalCutProject) -> APIRouter:
             principal, conversation_id, path=body.path, content=body.content
         )
         return FinalCutFileCreatedOut(path=body.path, version=created.version)
+
+    @router.post(
+        "/{conversation_id}/final-cut/translations",
+        response_model=FinalCutTranslationsOut,
+        responses={
+            409: {
+                "model": FinalCutTranslationErrorOut,
+                "description": "code 为 model_unavailable：没有启用翻译用的模型",
+            },
+            502: {
+                "model": FinalCutTranslationErrorOut,
+                "description": "code 为 model_call_failed（可以再试）或 model_failed（模型拒绝、"
+                "超时或回答不对）",
+            },
+        },
+    )
+    async def translate_final_cut_texts(
+        conversation_id: uuid.UUID,
+        body: FinalCutTranslationsIn,
+        principal: Annotated[Principal, require_permission("agent:run")],
+    ) -> FinalCutTranslationsOut | JSONResponse:
+        """把一批中文短句翻成一种外语，一次请求一次模型调用，同步答复；不落库、不写工作区。只有属主能翻：
+        看不见这段对话 404，看得见但不是属主、或看得见已删除的对话（治理者）403。语言、条数、长度不合规或
+        ``id`` 重复 422。模型没启用 409，模型调用失败或回答不对 502，都带 ``code``。"""
+
+        try:
+            translated = await project.translate(
+                principal, conversation_id, locale=body.target_locale, entries=body.texts()
+            )
+        except FinalCutTranslationFailed as exc:
+            return JSONResponse(
+                status_code=502,
+                content=FinalCutTranslationErrorOut(detail=str(exc), code=exc.code).model_dump(),
+            )
+        return final_cut_translations_out(translated)
 
     return router
 

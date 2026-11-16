@@ -9,6 +9,7 @@ import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from iclip.app.final_cut_translation import ArkFinalCutTranslator, build_final_cut_translator
 from iclip.app.library_tagging import ArkTagger, build_library_tagger
 from iclip.app.reference_breakdown import ArkVideoBreakdowns
 from iclip.app.reference_test_video import TEST_VIDEO_MODEL
@@ -173,12 +174,22 @@ class FakeSampler:
         return SampledVideo(frames=(b"jpeg",), audio=None)
 
 
+def ark_runtime(ark: FakeArk) -> RuntimeClient:
+    """调运行时模型调用接口的客户端，答复由 ``ark`` 给出。"""
+
+    return RuntimeClient(
+        "http://runtime.test", "app-key-test-0123456789", transport=httpx.MockTransport(ark)
+    )
+
+
+def ark_translator(ark: FakeArk) -> ArkFinalCutTranslator:
+    return build_final_cut_translator(ark_runtime(ark))
+
+
 def ark_pipeline(
     ark: FakeArk, *, sampler: FakeSampler | None = None
 ) -> tuple[ArkVideoBreakdowns, ArkTagger]:
-    runtime = RuntimeClient(
-        "http://runtime.test", "app-key-test-0123456789", transport=httpx.MockTransport(ark)
-    )
+    runtime = ark_runtime(ark)
     breakdown = BreakdownRunner(
         model=ArkBreakdownModel(runtime, model=BREAKDOWN_MODEL), sampler=sampler or FakeSampler()
     )
@@ -264,6 +275,8 @@ __all__ = [
     "FakeSampler",
     "NoTestVideos",
     "ark_pipeline",
+    "ark_runtime",
+    "ark_translator",
     "breakdown_answer",
     "config_with_studio",
     "config_with_studio_and_media",

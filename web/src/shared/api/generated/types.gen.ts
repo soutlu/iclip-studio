@@ -2719,6 +2719,83 @@ export type FinalCutPreviewOut = {
 }
 
 /**
+ * FinalCutTextIn
+ *
+ * 一条要翻的中文：``id`` 是编辑器里变量的 id，``text`` 不能只有空白。
+ */
+export type FinalCutTextIn = {
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * FinalCutTranslationErrorOut
+ *
+ * 翻译失败：``model_unavailable`` 没有启用翻译用的模型（409）；``model_call_failed`` 模型调用
+ * 暂时失败，再试一次可能就好（502）；``model_failed`` 模型拒绝、等待超时或回答不对（502）。
+ */
+export type FinalCutTranslationErrorOut = {
+  /**
+   * Code
+   */
+  code: 'model_unavailable' | 'model_call_failed' | 'model_failed'
+  /**
+   * Detail
+   */
+  detail: string
+}
+
+/**
+ * FinalCutTranslationOut
+ */
+export type FinalCutTranslationOut = {
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * FinalCutTranslationsIn
+ *
+ * 把一批中文短句翻成 ``targetLocale``。源语言固定是中文；``entries`` 里的 ``id`` 不能重复。
+ */
+export type FinalCutTranslationsIn = {
+  /**
+   * Entries
+   *
+   * 所有 text 加起来最多 4000 字，超了要分批发
+   */
+  entries: Array<FinalCutTextIn>
+  /**
+   * Targetlocale
+   */
+  targetLocale: 'en' | 'de' | 'es' | 'fr'
+}
+
+/**
+ * FinalCutTranslationsOut
+ *
+ * 译文：请求里的每个 ``id`` 恰好一条，顺序同请求。
+ */
+export type FinalCutTranslationsOut = {
+  /**
+   * Translations
+   */
+  translations: Array<FinalCutTranslationOut>
+}
+
+/**
  * FrameTarget
  */
 export type FrameTarget = {
@@ -9434,6 +9511,46 @@ export type OpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostRes
 
 export type OpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostResponse =
   OpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostResponses[keyof OpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostResponses]
+
+export type TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostData = {
+  body: FinalCutTranslationsIn
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/final-cut/translations'
+}
+
+export type TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostErrors = {
+  /**
+   * code 为 model_unavailable：没有启用翻译用的模型
+   */
+  409: FinalCutTranslationErrorOut
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+  /**
+   * code 为 model_call_failed（可以再试）或 model_failed（模型拒绝、超时或回答不对）
+   */
+  502: FinalCutTranslationErrorOut
+}
+
+export type TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostError =
+  TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostErrors[keyof TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostErrors]
+
+export type TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: FinalCutTranslationsOut
+}
+
+export type TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostResponse =
+  TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostResponses[keyof TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostResponses]
 
 export type ApproveConversationsConversationIdInteractionsInteractionIdPostData = {
   body: ApprovalRequest
