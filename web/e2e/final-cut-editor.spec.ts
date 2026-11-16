@@ -171,7 +171,10 @@ test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销、导出
   await expect.poll(playerTime).toBeLessThan(0.1)
 
   // 缩放：放大一档片段变宽一倍，读数从「适应」变成百分比；点「适应宽度」回去
-  const clip = editor.getByRole('group', { name: '第 1 行' }).locator('[data-clip-id]').first()
+  const clip = editor
+    .getByRole('group', { name: '画面 1', exact: true })
+    .locator('[data-clip-id]')
+    .first()
   const widthOf = async () => (await clip.boundingBox())?.width ?? 0
   const fitted = await widthOf()
   await expect(toolbar.getByText('适应', { exact: true })).toBeVisible()
@@ -185,13 +188,9 @@ test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销、导出
   await expect(toolbar.getByText('适应', { exact: true })).toBeVisible()
   expect(Math.abs((await widthOf()) - fitted)).toBeLessThan(1)
 
-  // 关掉缩略图：片段上不画画面，只剩名字和声音
+  // 片段上一直画着画面，没有关掉缩略图的开关
   await expect(clip.locator('.wf-clip-frames')).toBeVisible()
-  await toolbar.getByRole('button', { name: '显示缩略图' }).click()
-  await expect(clip.locator('.wf-clip-frames')).toBeHidden()
-  await expect(clip.locator('.wf-clip-label')).toBeVisible()
-  await toolbar.getByRole('button', { name: '显示缩略图' }).click()
-  await expect(clip.locator('.wf-clip-frames')).toBeVisible()
+  await expect(toolbar.getByRole('button', { name: /缩略图/ })).toHaveCount(0)
 
   const undone = mainSaved(page, 1)
   await toolbar.getByRole('button', { name: '撤销' }).click()
@@ -429,7 +428,9 @@ test('块页签搜到块点「加到播放头」、组件页签拖一个组件�
   const placed = savedItem(htmlOf(await added), '测试画面')
   expect(placed).toMatchObject({ item: 'fixture-scene', start: 0, duration: 6, track: 1 })
   await expect(
-    editor.getByRole('group', { name: '第 2 行' }).getByRole('group', { name: '测试画面，6.0 秒' }),
+    editor
+      .getByRole('group', { name: '画面 2', exact: true })
+      .getByRole('group', { name: '测试画面，6.0 秒' }),
   ).toBeVisible()
 
   // 预览里画出了块，按原比例缩进画面、居中
@@ -461,10 +462,10 @@ test('块页签搜到块点「加到播放头」、组件页签拖一个组件�
   const overlay = side
     .getByRole('list', { name: '贴片' })
     .getByRole('group', { name: '测试叠加，4 秒' })
-  const row = editor.getByRole('group', { name: '第 1 行' })
+  const row = editor.getByRole('group', { name: '画面 1', exact: true })
   // 6 秒长、从 0 开始的那个片段量出每秒多少像素
   const sceneBox = await editor
-    .getByRole('group', { name: '第 2 行' })
+    .getByRole('group', { name: '画面 2', exact: true })
     .locator('[data-clip-id]')
     .first()
     .boundingBox()
@@ -517,7 +518,7 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
   const placed = savedItem(htmlOf(await added), '测试可填项')
   expect(placed).toMatchObject({ item: 'fixture-fields', start: 0, values: {} })
 
-  const row = editor.getByRole('group', { name: '第 1 行' })
+  const row = editor.getByRole('group', { name: '画面 1', exact: true })
   await row.getByRole('button', { name: /^选中：测试可填项，/ }).click()
   await expect(side.getByRole('tab', { name: '属性' })).toHaveAttribute('aria-selected', 'true')
   await expect(inspector.getByRole('heading', { name: '测试可填项' })).toBeVisible()
@@ -640,7 +641,7 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、fi
   expect(savedAudio(htmlOf(await added))).toEqual([
     { label: '轻快原声吉他，适合秋季穿搭', start: 1, duration: 30, track: 0 },
   ])
-  const soundRow = editor.getByRole('group', { name: '第 2 行' })
+  const soundRow = editor.getByRole('group', { name: '配乐', exact: true })
   const music = soundRow.getByRole('group', { name: '轻快原声吉他，适合秋季穿搭，30.0 秒' })
   await expect(music).toBeVisible()
   await expect(guitar).toContainText('00:30 · 已使用')
@@ -679,7 +680,7 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、fi
     { start: 31, duration: 30, track: 0 },
   ])
   expect(both[1]?.label).toMatch(/^上传的音乐 · /)
-  await expect(editor.getByRole('group', { name: '第 3 行' })).toHaveCount(0)
+  await expect(editor.getByRole('group', { name: '配乐 2', exact: true })).toHaveCount(0)
   await expect(progress).toHaveAttribute('aria-valuetext', '00:01.00 / 01:01.00')
 
   // 生成一条音乐：先是生成中，生成完能试听
@@ -740,7 +741,7 @@ test('属性「媒体」：音频片段拉满增益、打开循环写进文件�
   await added
 
   await editor
-    .getByRole('group', { name: '第 2 行' })
+    .getByRole('group', { name: '配乐', exact: true })
     .getByRole('button', { name: /^选中：轻快原声吉他/ })
     .click()
   await inspector.getByRole('button', { name: /^媒体/ }).click()
@@ -761,7 +762,7 @@ test('属性「媒体」：音频片段拉满增益、打开循环写进文件�
 
   // 视频片段（选中后展开的是「时间」）：先把时长拉到素材能放的最长
   await editor
-    .getByRole('group', { name: '第 1 行' })
+    .getByRole('group', { name: '画面 1', exact: true })
     .getByRole('button', { name: /^选中：A · / })
     .click()
   const length = inspector.getByRole('textbox', { name: '时长' })
@@ -884,7 +885,7 @@ const selectedClip = async (page: Page, editor: Locator) => {
   await page.keyboard.press('Enter')
   await saved
   const clip = editor
-    .getByRole('group', { name: '第 1 行' })
+    .getByRole('group', { name: '画面 1', exact: true })
     .getByRole('button', { name: /^选中：/ })
   await clip.click()
   await expect(clip).toHaveAttribute('aria-pressed', 'true')
@@ -1055,13 +1056,15 @@ test('改完马上切到别的页签再切回来：改动还在，接着改照�
   const first = mainSaved(page, 1)
   await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
   await page.keyboard.press('Enter')
-  const row = editor.getByRole('group', { name: '第 1 行' })
+  const row = editor.getByRole('group', { name: '画面 1', exact: true })
   await expect(row.getByRole('button', { name: /^选中：/ })).toHaveCount(1)
   await panel.getByRole('tab', { name: '分镜' }).click()
   await first
   const back = await openFinalCut(panel)
   await expect(
-    back.getByRole('group', { name: '第 1 行' }).getByRole('button', { name: /^选中：/ }),
+    back
+      .getByRole('group', { name: '画面 1', exact: true })
+      .getByRole('button', { name: /^选中：/ }),
   ).toHaveCount(1)
 
   const second = mainSaved(page, 2)
@@ -1113,7 +1116,9 @@ test('新建工程、加镜头和一个贴片：条目文件拷进工程，刷�
   await page.reload()
   const reloaded = await openFinalCut(await openConversation(page, '夜景延时素材生成'))
   await expect(
-    reloaded.getByRole('group', { name: '第 1 行' }).getByRole('button', { name: /^选中：/ }),
+    reloaded
+      .getByRole('group', { name: '画面 1', exact: true })
+      .getByRole('button', { name: /^选中：/ }),
   ).toHaveCount(1)
   await expect(reloaded.getByRole('group', { name: '测试叠加，4.0 秒' })).toBeVisible()
 

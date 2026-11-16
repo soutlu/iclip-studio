@@ -214,7 +214,7 @@ test('镜头条比格子宽时横着滚：滚过以后点选、在选区上单�
   await page.mouse.up()
   await expect(end).toHaveAttribute('aria-valuetext', '15.5 秒')
 
-  const row = editor.getByRole('group', { name: '第 1 行' })
+  const row = editor.getByRole('group', { name: '画面 1', exact: true })
   const lane = await row.boundingBox()
   if (lane === null) throw new Error('时间线尚未布局')
   const dropX = lane.x + lane.width * 0.3
@@ -530,7 +530,7 @@ test('每条原作可以换版本；换了之后这条轨上的选区收起', as
 
 test('把镜头拖进时间线：落在指针的位置；压在别的片段上时挪到它后面', async ({ page }) => {
   const { editor, materials } = await openWith(page, [1])
-  const row = editor.getByRole('group', { name: '第 1 行' })
+  const row = editor.getByRole('group', { name: '画面 1', exact: true })
   const range = groupOf(materials, 1).getByRole('group', { name: /^选中的范围/ })
   const lane = await row.boundingBox()
   if (lane === null) throw new Error('时间线尚未布局')
@@ -584,7 +584,7 @@ test('把镜头拖进时间线：落在指针的位置；压在别的片段上�
 
 test('时间线上的片段：拖着挪动、拖把手裁剪、按 Delete 删掉，都能撤销', async ({ page }) => {
   const { editor, materials } = await openWith(page, [1])
-  const row = editor.getByRole('group', { name: '第 1 行' })
+  const row = editor.getByRole('group', { name: '画面 1', exact: true })
   for (const [at, shot] of [1, 3].entries()) {
     await shotOf(materials, 1, 'A', shot).click()
     await page.keyboard.press('Enter')
@@ -635,7 +635,7 @@ test('吸附：拖到别的片段旁边会贴上去并画出吸附线，关掉�
   page,
 }) => {
   const { editor, materials } = await openWith(page, [1])
-  const row = editor.getByRole('group', { name: '第 1 行' })
+  const row = editor.getByRole('group', { name: '画面 1', exact: true })
   const toolbar = editor.getByRole('toolbar', { name: '剪辑工具' })
   for (const [at, shot] of [1, 3].entries()) {
     await shotOf(materials, 1, 'A', shot).click()
@@ -701,8 +701,8 @@ test('换行：把片段拖到最下面的空行新开一行，再拖回去；�
   page,
 }) => {
   const { editor, materials } = await openWith(page, [1])
-  const firstRow = editor.getByRole('group', { name: '第 1 行' })
-  const secondRow = editor.getByRole('group', { name: '第 2 行' })
+  const firstRow = editor.getByRole('group', { name: '画面 1', exact: true })
+  const secondRow = editor.getByRole('group', { name: '画面 2', exact: true })
   const newRow = editor.getByRole('group', { name: '新的一行' })
   for (const [at, shot] of [1, 3].entries()) {
     await shotOf(materials, 1, 'A', shot).click()
@@ -816,12 +816,12 @@ test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来�
     }, conversationIdOf(page))
   await expect(picture).not.toHaveCSS('display', 'none')
 
-  await editor.getByRole('button', { name: '隐藏第 1 行' }).click()
+  await editor.getByRole('button', { name: '隐藏画面 1', exact: true }).click()
   await expect.poll(savedHidden).toBe(1)
   await expect(picture).toHaveCSS('display', 'none')
   await expect(editor.getByRole('group', { name: /，已隐藏$/ })).toHaveCount(1)
 
-  const eye = editor.getByRole('button', { name: '显示第 1 行' })
+  const eye = editor.getByRole('button', { name: '显示画面 1', exact: true })
   await expect(eye).toHaveAttribute('aria-pressed', 'false')
   await eye.click()
   await expect.poll(savedHidden).toBe(0)
@@ -829,7 +829,8 @@ test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来�
 })
 
 test('行多了只有轨道区上下滚：行头跟着各行走，看不见的行落不上去', async ({ page }) => {
-  const ROWS = 10
+  // 行要多到滚到一半时最上面几行卷到工具条底下（行高 28px）
+  const ROWS = 16
   const { editor, materials, panel } = await openWith(page, [1])
   await shotOf(materials, 1, 'A', 1).click()
   await page.keyboard.press('Enter')
@@ -866,7 +867,7 @@ test('行多了只有轨道区上下滚：行头跟着各行走，看不见的�
   )
   await page.setViewportSize({ width: 1440, height: 900 })
   await openFinalCut(panel)
-  await expect(editor.getByRole('group', { name: `第 ${ROWS} 行` })).toHaveCount(1)
+  await expect(editor.getByRole('group', { name: `画面 ${ROWS}`, exact: true })).toHaveCount(1)
   await readyPlayer(editor)
 
   const boxOf = async (locator: Locator) => {
@@ -933,14 +934,14 @@ test('行多了只有轨道区上下滚：行头跟着各行走，看不见的�
   await page.mouse.move(target.x, target.y, { steps: 8 })
   await expect(newRow.getByTestId('drop-ghost')).toBeVisible()
   await page.mouse.up()
-  await expect(editor.getByRole('group', { name: `第 ${ROWS + 1} 行` })).toHaveCount(1)
+  await expect(editor.getByRole('group', { name: `画面 ${ROWS + 1}`, exact: true })).toHaveCount(1)
 })
 
 test('在两行之间、最上面新开一行：片段拖到两行中间的缝里，镜头拖到第一行上面，别的行跟着改行号', async ({
   page,
 }) => {
   const { editor, materials } = await openWith(page, [1])
-  const row = (number: number) => editor.getByRole('group', { name: `第 ${number} 行` })
+  const row = (number: number) => editor.getByRole('group', { name: `画面 ${number}`, exact: true })
   const newRow = editor.getByRole('group', { name: '新的一行' })
   const opening = editor.locator('.wf-lane.is-opening')
   for (const [at, shot] of [1, 3, 4].entries()) {
@@ -993,7 +994,7 @@ test('在两行之间、最上面新开一行：片段拖到两行中间的缝�
 
   // 独占一行的片段拖到自己这一行上面的缝里横着挪：那里照常让出一行；松手后它还是这一行，
   // 行号都不变，隐藏着的也照旧隐藏
-  await editor.getByRole('button', { name: '隐藏第 2 行' }).click()
+  await editor.getByRole('button', { name: '隐藏画面 2', exact: true }).click()
   const lone = row(2).locator('[data-clip-id]')
   await expect(lone).toHaveAccessibleName(/已隐藏$/)
   const before = (await savedClips(page)).find((saved) => saved.startsWith('A · 镜头 3'))
@@ -1035,8 +1036,8 @@ test('多选：Shift 点选两个片段一起删掉再撤销回来；框选跨�
   const { editor, materials } = await openWith(page, [1])
   // 时间线放宽一些，1 秒的片段才点得到它中间（两端的把手不压住按钮）
   await widenWorkbench(page)
-  const firstRow = editor.getByRole('group', { name: '第 1 行' })
-  const secondRow = editor.getByRole('group', { name: '第 2 行' })
+  const firstRow = editor.getByRole('group', { name: '画面 1', exact: true })
+  const secondRow = editor.getByRole('group', { name: '画面 2', exact: true })
   const toolbar = editor.getByRole('toolbar', { name: '剪辑工具' })
   for (const [at, shot] of [1, 3, 4].entries()) {
     await shotOf(materials, 1, 'A', shot).click()
@@ -1164,7 +1165,7 @@ test('成组挪动、成组裁剪：选中的片段挪同一个时间差，挡�
   const { editor, materials } = await openWith(page, [1])
   // 在宽一些的时间线上跑：默认宽度下成组挪动挪不到断言要的距离
   await widenWorkbench(page)
-  const secondRow = editor.getByRole('group', { name: '第 2 行' })
+  const secondRow = editor.getByRole('group', { name: '画面 2', exact: true })
   for (const [at, shot] of [1, 3, 4].entries()) {
     await shotOf(materials, 1, 'A', shot).click()
     await page.keyboard.press('Enter')
@@ -1267,7 +1268,7 @@ test('成组挪动、成组裁剪：选中的片段挪同一个时间差，挡�
   await expect.poll(savedLayout).toEqual(before)
 
   // 拖 4 到第一行上面、往后半秒：4 新开最上面一行，3 留在原来那一行（行号跟着往后排）挪一样的量；撤销一步都回来
-  const topRow = await boxOf(editor.getByRole('group', { name: '第 1 行' }))
+  const topRow = await boxOf(editor.getByRole('group', { name: '画面 1', exact: true }))
   const lifted = await centerOf(clipOf(4))
   await page.mouse.move(lifted.x, lifted.y)
   await page.mouse.down()
@@ -1426,7 +1427,7 @@ test('缩放时播放头留在屏幕上原来的地方；滚到看不见它以�
   const playheadX = async () => (await boxOf(tracks.locator('.timeline-playhead'))).x
 
   // 播放头放在时间区靠左三成的地方
-  const row = await boxOf(editor.getByRole('group', { name: '第 1 行' }))
+  const row = await boxOf(editor.getByRole('group', { name: '画面 1', exact: true }))
   const ruler = await boxOf(editor.getByRole('slider', { name: '时间线播放位置' }))
   await page.mouse.click(row.x + row.width * 0.3, ruler.y + ruler.height / 2)
   // 预览跳过去以后报回对齐到帧的时间，播放头会再挪不到 1 像素：等它停稳再记下位置
@@ -1553,7 +1554,9 @@ test('三种片段：组件或块的片段、视频片段、音频片段各在�
   page,
 }) => {
   const { editor } = await openWithKinds(page)
-  const row = (number: number) => editor.getByRole('group', { name: `第 ${number} 行` })
+  const row = (name: string) => editor.getByRole('group', { name, exact: true })
+  // 时间线上的各行（片段的名字后面都带着时长，不会被认成行）
+  const rows = editor.getByRole('group', { name: /^(画面|配乐)( \d+)?$/ })
   const newRow = editor.getByRole('group', { name: '新的一行' })
   const clipNamed = (name: string) => editor.getByRole('group', { name: new RegExp(`^${name}，`) })
   const title = clipNamed('标题')
@@ -1561,18 +1564,20 @@ test('三种片段：组件或块的片段、视频片段、音频片段各在�
   const original = ['A · 镜头 1@画面1 0', '标题@画面0 0', '配乐 1@声音0 0', '配乐 2@声音0 5']
   expect(await savedKinds(page)).toEqual(original)
 
-  await expect(row(1).getByRole('group', { name: /^标题，/ })).toHaveCount(1)
-  await expect(row(2).getByRole('group', { name: /^A · 镜头 1，/ })).toHaveCount(1)
-  await expect(row(3).getByRole('group', { name: /^配乐 \d，/ })).toHaveCount(2)
-  await expect(row(4)).toHaveCount(0)
+  await expect(row('画面 1').getByRole('group', { name: /^标题，/ })).toHaveCount(1)
+  await expect(row('画面 2').getByRole('group', { name: /^A · 镜头 1，/ })).toHaveCount(1)
+  await expect(row('配乐').getByRole('group', { name: /^配乐 \d，/ })).toHaveCount(2)
+  await expect(rows).toHaveCount(3)
   const tops = await Promise.all(
-    [row(1), row(2), row(3), newRow].map(async (lane) => (await lane.boundingBox())?.y ?? 0),
+    [row('画面 1'), row('画面 2'), row('配乐'), newRow].map(
+      async (lane) => (await lane.boundingBox())?.y ?? 0,
+    ),
   )
   expect(tops).toEqual(tops.toSorted((left, right) => left - right))
   // 画面区的行头是眼睛，声音区的行头是喇叭；音频片段上画着它的波形
-  await expect(editor.getByRole('button', { name: '隐藏第 2 行' })).toBeVisible()
-  await expect(editor.getByRole('button', { name: '静音第 3 行' })).toBeVisible()
-  await expect(editor.getByRole('button', { name: '隐藏第 3 行' })).toHaveCount(0)
+  await expect(editor.getByRole('button', { name: '隐藏画面 2', exact: true })).toBeVisible()
+  await expect(editor.getByRole('button', { name: '静音配乐', exact: true })).toBeVisible()
+  await expect(editor.getByRole('button', { name: '隐藏配乐', exact: true })).toHaveCount(0)
   await expect(second.getByTestId('timeline-wave')).toBeVisible()
 
   const dragTo = async (from: Locator, to: { x: number; y: number }) => {
@@ -1597,14 +1602,14 @@ test('三种片段：组件或块的片段、视频片段、音频片段各在�
   await dragTo(second, { x: secondAt.x, y: (await centerOf(newRow)).y })
   const lowered = ['A · 镜头 1@画面1 0', '标题@画面0 0', '配乐 1@声音0 0', '配乐 2@声音1 5']
   await expect.poll(() => savedKinds(page)).toEqual(lowered)
-  await expect(row(4).getByRole('group', { name: /^配乐 2，/ })).toHaveCount(1)
+  await expect(row('配乐 2').getByRole('group', { name: /^配乐 2，/ })).toHaveCount(1)
 
   // 再把它往上拖到镜头那一行：拖不进画面区，落在声音区最上面那一行；撤销这一步，回到下面那一行
   const back = await centerOf(second)
-  await dragTo(second, { x: back.x, y: (await centerOf(row(2))).y })
+  await dragTo(second, { x: back.x, y: (await centerOf(row('画面 2'))).y })
   await expect.poll(() => savedKinds(page)).toEqual(original)
-  await expect(row(2).getByRole('group', { name: /^配乐/ })).toHaveCount(0)
-  await expect(row(3).getByRole('group', { name: /^配乐 \d，/ })).toHaveCount(2)
+  await expect(row('画面 2').getByRole('group', { name: /^配乐/ })).toHaveCount(0)
+  await expect(row('配乐').getByRole('group', { name: /^配乐 \d，/ })).toHaveCount(2)
   await page.keyboard.press('ControlOrMeta+z')
   await expect.poll(() => savedKinds(page)).toEqual(lowered)
 
@@ -1618,14 +1623,17 @@ test('三种片段：组件或块的片段、视频片段、音频片段各在�
   for (const dx of [30, -20, 10, 0]) {
     await page.mouse.move(from.x + dx, bottom, { steps: 3 })
     await expect(opening).toHaveCount(1)
-    const [openingBox, soundBox] = await Promise.all([opening.boundingBox(), row(3).boundingBox()])
+    const [openingBox, soundBox] = await Promise.all([
+      opening.boundingBox(),
+      row('配乐 1').boundingBox(),
+    ])
     expect(openingBox?.y ?? Infinity).toBeLessThan(soundBox?.y ?? 0)
   }
   await page.mouse.up()
   await expect
     .poll(() => savedKinds(page))
     .toEqual(['A · 镜头 1@画面0 0', '标题@画面1 0', '配乐 1@声音0 0', '配乐 2@声音1 5'])
-  await expect(row(2).getByRole('group', { name: /^标题，/ })).toHaveCount(1)
+  await expect(row('画面 2').getByRole('group', { name: /^标题，/ })).toHaveCount(1)
   await page.keyboard.press('ControlOrMeta+z')
   await expect.poll(() => savedKinds(page)).toEqual(lowered)
 
@@ -1710,12 +1718,12 @@ test('声音行的喇叭：静音以后存下来的主文件里这一行的音�
   page,
 }) => {
   const { editor } = await openWithKinds(page)
-  await editor.getByRole('button', { name: '静音第 3 行' }).click()
+  await editor.getByRole('button', { name: '静音配乐', exact: true }).click()
   await expect
     .poll(() => savedKinds(page))
     .toEqual(['A · 镜头 1@画面1 0', '标题@画面0 0', '配乐 1@声音0 0 隐藏', '配乐 2@声音0 5 隐藏'])
   await expect(editor.getByRole('group', { name: /^配乐 \d，.*，已隐藏$/ })).toHaveCount(2)
-  const speaker = editor.getByRole('button', { name: '取消静音第 3 行' })
+  const speaker = editor.getByRole('button', { name: '取消静音配乐', exact: true })
   await expect(speaker).toHaveAttribute('aria-pressed', 'false')
   await speaker.click()
   await expect
@@ -1731,7 +1739,9 @@ test('组件那一行在画面行上面：Enter 接的镜头落在画面区第�
   await page.keyboard.press('Enter')
   await expect.poll(() => savedKinds(page)).toContain('A · 镜头 3@画面0 2')
   await expect(
-    editor.getByRole('group', { name: '第 1 行' }).getByRole('group', { name: /^A · 镜头 3，/ }),
+    editor
+      .getByRole('group', { name: '画面 1', exact: true })
+      .getByRole('group', { name: /^A · 镜头 3，/ }),
   ).toHaveCount(1)
 
   // 删掉组件或块的片段（波纹编辑默认开着）：画面区第一行后面的镜头往前补，别的行不动
@@ -1759,7 +1769,9 @@ test('组件那一行在画面行上面：Enter 接的镜头落在画面区第�
     .poll(async () => (await savedKinds(page)).filter((saved) => saved.startsWith('A · 镜头 2')))
     .toEqual([expect.stringMatching(/^A · 镜头 2@画面2 [\d.]+$/)])
   await expect(
-    editor.getByRole('group', { name: '第 3 行' }).getByRole('group', { name: /^A · 镜头 2，/ }),
+    editor
+      .getByRole('group', { name: '画面 3', exact: true })
+      .getByRole('group', { name: /^A · 镜头 2，/ }),
   ).toHaveCount(1)
 
   // 预览里的音频片段按预览的方式加载，播放以后读得出来

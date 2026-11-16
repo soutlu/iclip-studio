@@ -307,7 +307,7 @@ describe('final-cut 编辑器 · 加入素材', () => {
 })
 
 describe('final-cut 编辑器 · 时间线', () => {
-  const timeline = () => screen.getByRole('group', { name: '第 1 行' })
+  const timeline = () => screen.getByRole('group', { name: '画面 1' })
 
   it('工程里只有组件或块的片段、没有视频片段：照样能播放', async () => {
     putMockProjectMain(CONVERSATION, mainFile([host()], { width: 720, height: 1280 }))
@@ -324,10 +324,10 @@ describe('final-cut 编辑器 · 时间线', () => {
     expect(
       within(timeline()).getByText('将「镜头」页签里的镜头拖到此处可加入 final-cut'),
     ).toBeVisible()
-    expect(screen.queryByRole('group', { name: '第 2 行' })).toBeNull()
+    expect(screen.queryByRole('group', { name: '画面 2' })).toBeNull()
   })
 
-  it('final-cut 里的片段排在一行里，行头是第一个片段的名字和片段数', async () => {
+  it('final-cut 里的片段排在一行里，行头只写行名和开关，不写片段的名字和片段数', async () => {
     putMockProjectMain(
       CONVERSATION,
       mainFile(
@@ -350,12 +350,12 @@ describe('final-cut 编辑器 · 时间线', () => {
       'A · 镜头 2，2.0 秒',
       'B · 镜头 1，1.5 秒',
     ])
-    const head = screen.getByLabelText('2 个片段').parentElement
-    expect(head).toHaveTextContent('A · 镜头 2')
+    const head = screen.getByRole('button', { name: '隐藏画面 1' }).parentElement
+    expect(head).toHaveTextContent(/^画面 1$/)
     expect(screen.getByRole('slider', { name: '时间线播放位置' })).toBeEnabled()
   })
 
-  it('两行的 final-cut：行号小的在上面，一个片段的行不显示片段数', async () => {
+  it('两行的 final-cut：行号小的在上面，画面区的行从上往下叫「画面 1」「画面 2」', async () => {
     putMockProjectMain(
       CONVERSATION,
       mainFile(
@@ -374,16 +374,58 @@ describe('final-cut 编辑器 · 时间线', () => {
     await openEditor()
     expect(within(timeline()).getByRole('group')).toHaveAccessibleName('B · 镜头 1，1.5 秒')
     expect(
-      within(screen.getByRole('group', { name: '第 2 行' })).getByRole('group'),
+      within(screen.getByRole('group', { name: '画面 2' })).getByRole('group'),
     ).toHaveAccessibleName('A · 镜头 2，2.0 秒')
-    expect(screen.queryByLabelText(/个片段$/)).toBeNull()
+    expect(screen.getByRole('button', { name: '隐藏画面 2' })).toBeVisible()
+  })
+
+  it('声音区只有一行：行叫「配乐」，开关是「静音配乐」，点了换成「取消静音配乐」', async () => {
+    putMockProjectMain(
+      CONVERSATION,
+      mainFile([video({ src: URL_A, duration: 2_000 }), audio({ duration: 2_000 })], {
+        width: 720,
+        height: 1280,
+      }),
+    )
+    const user = userEvent.setup()
+    await openEditor()
+    expect(
+      within(screen.getByRole('group', { name: '配乐' })).getByRole('group'),
+    ).toHaveAccessibleName('配乐，2.0 秒')
+    await user.click(screen.getByRole('button', { name: '静音配乐' }))
+    expect(screen.getByRole('button', { name: '取消静音配乐' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    await waitSaved(() => expect(savedFilm()).toContain('data-hidden'))
+  })
+
+  it('声音区不止一行：从上往下叫「配乐 1」「配乐 2」', async () => {
+    putMockProjectMain(
+      CONVERSATION,
+      mainFile(
+        [
+          audio({ duration: 2_000 }),
+          audio({ id: 'audio-2', label: '音效', duration: 1_000, track: 1 }),
+        ],
+        { width: 720, height: 1280 },
+      ),
+    )
+    await openEditor()
+    expect(
+      within(screen.getByRole('group', { name: '配乐 1' })).getByRole('group'),
+    ).toHaveAccessibleName('配乐，2.0 秒')
+    expect(
+      within(screen.getByRole('group', { name: '配乐 2' })).getByRole('group'),
+    ).toHaveAccessibleName('音效，1.0 秒')
+    expect(screen.getByRole('button', { name: '静音配乐 2' })).toBeVisible()
   })
 
   it('点行头的眼睛：这一行的片段一起隐藏，存出的文件带着隐藏标记；再点显示回来', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     const user = userEvent.setup()
     await openEditor()
-    await user.click(screen.getByRole('button', { name: '隐藏第 1 行' }))
+    await user.click(screen.getByRole('button', { name: '隐藏画面 1' }))
     expect(
       within(timeline())
         .getAllByRole('group')
@@ -391,11 +433,11 @@ describe('final-cut 编辑器 · 时间线', () => {
     ).toEqual(['A · 镜头 1，2.0 秒，已隐藏', 'A · 镜头 1，1.5 秒，已隐藏'])
     await waitSaved(() => expect(savedFilm().match(/data-hidden=""/g)).toHaveLength(2))
 
-    const eye = screen.getByRole('button', { name: '显示第 1 行' })
+    const eye = screen.getByRole('button', { name: '显示画面 1' })
     expect(eye).toHaveAttribute('aria-pressed', 'false')
     await user.click(eye)
     await waitSaved(() => expect(savedFilm()).not.toContain('data-hidden'))
-    expect(screen.getByRole('button', { name: '隐藏第 1 行' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: '隐藏画面 1' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
@@ -496,7 +538,7 @@ describe('final-cut 编辑器 · 多选', () => {
       ],
       { width: 720, height: 1280 },
     )
-  const row = () => screen.getByRole('group', { name: '第 1 行' })
+  const row = () => screen.getByRole('group', { name: '画面 1' })
   const NAMES = ['A · 镜头 1', 'B · 镜头 1', 'A · 镜头 2'] as const
   const clip = (label: (typeof NAMES)[number]) =>
     within(row()).getByRole('button', { name: new RegExp(`^选中：${label}，`) })
@@ -633,6 +675,34 @@ describe('final-cut 编辑器 · 多选', () => {
     expect(screen.queryByRole('menu')).toBeNull()
     expect(pressed()).toEqual(['A · 镜头 1', 'B · 镜头 1', 'A · 镜头 2'])
     expect(zoomTo).not.toHaveAttribute('aria-disabled')
+  })
+
+  it('工具条的「删除」：没选中时置灰并说明原因，点了什么都不删；选中几个片段后点它一起删掉，和按 Delete 一样', async () => {
+    const user = await openThree()
+    const remove = within(toolbar()).getByRole('button', { name: '删除' })
+    expect(remove).toHaveAttribute('aria-disabled', 'true')
+    expect(remove).toHaveAttribute('aria-keyshortcuts', 'Delete')
+    await user.click(remove)
+    expect(
+      (await screen.findAllByText('尚未选中片段，无法删除；请先选中片段')).length,
+    ).toBeGreaterThan(0)
+    expect(within(row()).getAllByRole('button', { name: /^选中：/ })).toHaveLength(3)
+
+    await user.click(clip('A · 镜头 1'))
+    await user.keyboard('{Shift>}')
+    await user.click(clip('B · 镜头 1'))
+    await user.keyboard('{/Shift}')
+    expect(remove).not.toHaveAttribute('aria-disabled')
+    await user.click(remove)
+    // 开着波纹编辑：剩下的片段往前补到开头
+    await waitSaved(() => expect(savedClips()).toEqual([expect.stringContaining('data-start="0"')]))
+    expect(within(row()).getAllByRole('button', { name: /^选中：/ })).toHaveLength(1)
+    expect(remove).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('工具条上没有缩略图开关', async () => {
+    await openThree()
+    expect(within(toolbar()).queryByRole('button', { name: /缩略图/ })).toBeNull()
   })
 
   it('开着菜单又有选中的片段：第一下 Esc 只关菜单、选中不变，第二下才取消选中，编辑器一直开着', async () => {
@@ -1200,7 +1270,7 @@ describe('final-cut 编辑器 · 组件、块页签', () => {
       'left: 50%; top: 50%; width: 1920px; height: 1080px; translate: -50% -50%; scale: 0.375',
     )
     expect(
-      within(screen.getByRole('group', { name: '第 2 行' })).getByRole('group'),
+      within(screen.getByRole('group', { name: '画面 2' })).getByRole('group'),
     ).toHaveAccessibleName('测试画面，6.0 秒')
 
     await playerUp()
@@ -1257,7 +1327,7 @@ describe('final-cut 编辑器 · 属性', () => {
       'tab',
       { name },
     )
-  const row = () => screen.getByRole('group', { name: '第 1 行' })
+  const row = () => screen.getByRole('group', { name: '画面 1' })
   const pick = (user: ReturnType<typeof userEvent.setup>, label: string) =>
     user.click(screen.getByRole('button', { name: new RegExp(`^选中：${label}，`) }))
   const groupButton = (title: string) =>
@@ -1782,7 +1852,8 @@ describe('final-cut 编辑器 · 属性', () => {
       expect(box).toHaveFocus()
       await user.keyboard('{Escape}')
       expect(readout('增益')).toHaveTextContent('-6.0 dB')
-      expect(within(row()).getByRole('button', { name: /^选中：配乐，/ })).toHaveAttribute(
+      const soundRow = screen.getByRole('group', { name: '配乐' })
+      expect(within(soundRow).getByRole('button', { name: /^选中：配乐，/ })).toHaveAttribute(
         'aria-pressed',
         'true',
       )
@@ -1921,7 +1992,7 @@ describe('final-cut 编辑器 · 侧栏页签', () => {
   const props = () => screen.getByRole('tabpanel', { name: '属性' })
   const shotsPanel = () => screen.getByRole('tabpanel', { name: '镜头' })
   const selectionDot = () => within(tab('属性')).queryByTestId('selection-dot')
-  const row = (number = 1) => screen.getByRole('group', { name: `第 ${String(number)} 行` })
+  const row = (number = 1) => screen.getByRole('group', { name: `画面 ${String(number)}` })
   // twoVideos 的两个片段同名，按时长认：第一个 2 秒，第二个 1.5 秒
   const FIRST = /2\.0 秒$/
   const SECOND = /1\.5 秒$/
@@ -2013,7 +2084,7 @@ describe('final-cut 编辑器 · 侧栏页签', () => {
     expect(tab('属性')).toHaveAttribute('aria-selected', 'true')
 
     await user.click(within(toolbar()).getByRole('button', { name: '撤销' }))
-    await waitFor(() => expect(screen.queryByRole('group', { name: '第 2 行' })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('group', { name: '画面 2' })).toBeNull())
     expect(tab('场景')).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('tabpanel', { name: '属性' })).toBeNull()
   })
@@ -2059,7 +2130,7 @@ describe('final-cut 编辑器 · 侧栏页签', () => {
 })
 
 describe('final-cut 编辑器 · 切走再切回', () => {
-  const row = () => screen.getByRole('group', { name: '第 1 行' })
+  const row = () => screen.getByRole('group', { name: '画面 1' })
   const labels = () =>
     within(row())
       .getAllByRole('button', { name: /^选中：/ })

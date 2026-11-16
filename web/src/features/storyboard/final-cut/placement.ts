@@ -64,6 +64,24 @@ export const rowHidden = (clips: readonly FilmClip[], row: RowKey): boolean => {
   return members.length > 0 && members.every((clip) => clip.hidden)
 }
 
+/** 各区的行在行头上叫什么；`numberedAlone` 为假时，区里只有一行就不带编号。 */
+const ROW_NAMING: Record<Zone, { label: string; numberedAlone: boolean }> = {
+  visual: { label: '画面', numberedAlone: true },
+  audio: { label: '配乐', numberedAlone: false },
+}
+
+/**
+ * 给时间线上从上往下排的各行带上行名：区里从上往下编号，如「画面 1」「画面 2」；
+ * 声音区只有一行时叫「配乐」，不止一行时是「配乐 1」「配乐 2」。
+ */
+export const namedRows = <T extends RowKey>(rows: readonly T[]): (T & { name: string })[] =>
+  rows.map((row, at) => {
+    const { label, numberedAlone } = ROW_NAMING[row.zone]
+    const count = rows.filter((other) => other.zone === row.zone).length
+    const number = rows.slice(0, at + 1).filter((other) => other.zone === row.zone).length
+    return { ...row, name: count === 1 && !numberedAlone ? label : `${label} ${number}` }
+  })
+
 /** 新开一行时别的片段要换成的行号；行号没变的不列。 */
 export type Renumbering = ReadonlyMap<string, number>
 
