@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Ref } from 'react'
 import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
 import { Textarea } from '@/shared/ui/field'
@@ -14,6 +14,8 @@ const ADD_LABEL = '在播放头处加一句'
 
 type CaptionsTabProps = {
   captions: readonly CaptionClip[]
+  /** 编辑器里选中的片段：选中的字幕在列表里标出来。 */
+  selected: ReadonlySet<string>
   /** 为什么现在不能在播放头处加一句；给了就把按钮置灰，点了说明它。 */
   addBlocked: string | undefined
   /** 字幕写法不对时的原因，显示在最上面。 */
@@ -22,30 +24,29 @@ type CaptionsTabProps = {
   onAdd: () => Promise<string | undefined>
   onText: (id: string, text: string) => void
   onRemove: (id: string) => void
-  onSeek: (ms: number) => void
+  /** 点了一句的时间：选中它、播放头跳到它的开始。 */
+  onPick: (caption: CaptionClip) => void
 }
 
 /**
- * 「字幕」页签：在播放头处加一句，下面是按开始时间排的字幕列表，每句能直接改字、删掉，点时间跳到它的开始。
- * 刚加的那一句标成当前这一句，焦点进它的文字框。
+ * 「字幕」页签：在播放头处加一句，下面是按开始时间排的字幕列表，每句能直接改字、删掉，点时间选中它、跳到它的开始。
+ * 编辑器里选中的字幕标成当前这一句；刚加的那一句焦点进它的文字框。
  */
 export function CaptionsTab({
   captions,
+  selected,
   addBlocked,
   problem,
   onAdd,
   onText,
   onRemove,
-  onSeek,
+  onPick,
 }: CaptionsTabProps) {
-  const [current, setCurrent] = useState<string | null>(null)
   const [focusing, setFocusing] = useState<string | null>(null)
   const add = async () => {
     if (addBlocked !== undefined) return
     const id = await onAdd()
-    if (id === undefined) return
-    setCurrent(id)
-    setFocusing(id)
+    if (id !== undefined) setFocusing(id)
   }
   return (
     <div className="wf-captions">
@@ -75,15 +76,12 @@ export function CaptionsTab({
           {captionsInOrder(captions).map((caption) => (
             <CaptionRow
               caption={caption}
-              current={caption.id === current}
+              current={selected.has(caption.id)}
               focus={caption.id === focusing}
               key={caption.id}
               onFocused={() => setFocusing(null)}
               onRemove={() => onRemove(caption.id)}
-              onSeek={() => {
-                setCurrent(caption.id)
-                onSeek(caption.start)
-              }}
+              onSeek={() => onPick(caption)}
               onText={onText}
             />
           ))}
@@ -104,10 +102,7 @@ type CaptionRowProps = {
   onSeek: () => void
 }
 
-/**
- * 一句字幕：起止时间、删除钮和文字框。改了先留在框里，停下 300 毫秒再写进去；输入法拼字时不计时，焦点离开、
- * 这一行没了时把没写的立刻写进去。
- */
+/** 一句字幕：起止时间、删除钮和文字框。 */
 function CaptionRow({
   caption,
   current,
@@ -117,6 +112,51 @@ function CaptionRow({
   onRemove,
   onSeek,
 }: CaptionRowProps) {
+  const fieldRef = useRef<HTMLTextAreaElement | null>(null)
+  useEffect(() => {
+    if (!focus) return
+    fieldRef.current?.focus()
+    fieldRef.current?.select()
+    onFocused()
+  }, [focus, onFocused])
+
+  const range = `${captionClock(caption.start)} – ${captionClock(caption.start + caption.duration)}`
+  return (
+    <li
+      aria-current={current ? 'true' : undefined}
+      className={cn('wf-caption', current && 'is-current')}
+    >
+      <div className="wf-caption-head">
+        <button className="wf-caption-time" onClick={onSeek} type="button">
+          {range}
+        </button>
+        <IconButton label={`删除 ${range} 的字幕`} name="delete" onClick={onRemove} size="xs" />
+      </div>
+      <CaptionTextField
+        aria-label={`字幕文字 ${range}`}
+        caption={caption}
+        className="wf-caption-text"
+        onText={onText}
+        ref={fieldRef}
+      />
+    </li>
+  )
+}
+
+type CaptionTextFieldProps = {
+  caption: CaptionClip
+  onText: (id: string, text: string) => void
+  className: string
+  ref?: Ref<HTMLTextAreaElement>
+  id?: string
+  'aria-label'?: string
+}
+
+/**
+ * 一句字幕的文字框（「字幕」页签和「属性」共用）：回车是换行。改了先留在框里，停下 300 毫秒再写进去；
+ * 输入法拼字时不计时，焦点离开、框没了时把没写的立刻写进去。
+ */
+export function CaptionTextField({ caption, onText, ...field }: CaptionTextFieldProps) {
   const [draft, setDraft] = useState<string | null>(null)
   const draftRef = useRef<string | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -141,47 +181,25 @@ function CaptionRow({
     timerRef.current = composingRef.current ? null : setTimeout(flush, COMMIT_DELAY_MS)
   }
 
-  const fieldRef = useRef<HTMLTextAreaElement | null>(null)
-  useEffect(() => {
-    if (!focus) return
-    fieldRef.current?.focus()
-    fieldRef.current?.select()
-    onFocused()
-  }, [focus, onFocused])
-
-  const range = `${captionClock(caption.start)} – ${captionClock(caption.start + caption.duration)}`
   return (
-    <li
-      aria-current={current ? 'true' : undefined}
-      className={cn('wf-caption', current && 'is-current')}
-    >
-      <div className="wf-caption-head">
-        <button className="wf-caption-time" onClick={onSeek} type="button">
-          {range}
-        </button>
-        <IconButton label={`删除 ${range} 的字幕`} name="delete" onClick={onRemove} size="xs" />
-      </div>
-      <Textarea
-        aria-label={`字幕文字 ${range}`}
-        className="wf-caption-text"
-        onBlur={flush}
-        onChange={(event) => {
-          draftRef.current = event.target.value
-          setDraft(event.target.value)
-          schedule()
-        }}
-        onCompositionEnd={() => {
-          composingRef.current = false
-          schedule()
-        }}
-        onCompositionStart={() => {
-          composingRef.current = true
-          schedule()
-        }}
-        ref={fieldRef}
-        rows={2}
-        value={draft ?? caption.text}
-      />
-    </li>
+    <Textarea
+      {...field}
+      onBlur={flush}
+      onChange={(event) => {
+        draftRef.current = event.target.value
+        setDraft(event.target.value)
+        schedule()
+      }}
+      onCompositionEnd={() => {
+        composingRef.current = false
+        schedule()
+      }}
+      onCompositionStart={() => {
+        composingRef.current = true
+        schedule()
+      }}
+      rows={2}
+      value={draft ?? caption.text}
+    />
   )
 }

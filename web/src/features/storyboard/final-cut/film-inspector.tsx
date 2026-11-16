@@ -7,7 +7,8 @@ import { BlockedReason } from '../components/blocked-reason'
 import type { PeaksState } from '../editing/media-analysis'
 import { sourceTrimmed, trimBounds, trimmed, type SourceLength, type Timing } from './clip-edit'
 import type { ComponentCatalog, VariableValue } from './composition/catalog'
-import { isMediaClip, type FilmClip } from './composition/film'
+import { CaptionTextField } from './captions-tab'
+import { isMediaClip, type CaptionClip, type FilmClip } from './composition/film'
 import { ContentFields } from './content-fields'
 import { Keys, Tool } from './editor-toolbar'
 import { ITEM_KIND_LABEL } from './items'
@@ -54,6 +55,8 @@ type Props = {
   onValues: (id: string, values: Values) => void
   /** 改片段 `id` 上的几个属性（null 是去掉），算一步撤销。 */
   onAttributes: (id: string, changes: AttributeChanges) => void
+  /** 把字幕 `id` 的字改成 `text`，算一步撤销。 */
+  onCaptionText: (id: string, text: string) => void
   /** 分离音频、合并回视频、联动、对齐口型、选中另一段。 */
   soundControls: SoundControls
   /** 焦点进出「属性」里输数值的框：在里面时 Esc 归输入框，放弃刚输入的。 */
@@ -112,9 +115,9 @@ export function FilmInspector({ selected, ...rest }: Props) {
 
 /**
  * 选中一个片段：头部是名字、种类、时长和隐藏、删除，视频片段还有「分离音频」，分离出来的原声有「合并回视频」；
- * 下面平铺几段。视频片段、音频片段是「原片截取」和「音量与变速」，组件或块的片段是「显示时长」和「内容与样式」，
- * 「其他」片段只有「显示时长」。分离过原声的视频片段把「音量与变速」换成「画面变速」和原声去处的一块，
- * 分离出来的原声最上面多一条同步栏。
+ * 字幕没有隐藏（只能在行头上整行隐藏）。下面平铺几段。视频片段、音频片段是「原片截取」和「音量与变速」，
+ * 组件或块的片段是「显示时长」和「内容与样式」，字幕是「显示时长」和「内容」，「其他」片段只有「显示时长」。
+ * 分离过原声的视频片段把「音量与变速」换成「画面变速」和原声去处的一块，分离出来的原声最上面多一条同步栏。
  */
 function ClipInspector({
   clip,
@@ -131,11 +134,19 @@ function ClipInspector({
   onGesture,
   onValues,
   onAttributes,
+  onCaptionText,
   soundControls,
   onTextEditing,
 }: Omit<Props, 'selected'> & { clip: FilmClip }) {
   const sound = clip.kind === 'audio'
   const hideLabel = sound ? (clip.hidden ? '取消静音' : '静音') : clip.hidden ? '显示' : '隐藏'
+  const hideIcon = sound
+    ? clip.hidden
+      ? 'audio-off'
+      : 'audio'
+    : clip.hidden
+      ? 'excluded'
+      : 'included'
   const action = soundActionFor([clip], clips, silentSource)
   const pair = action.kind === 'merge' ? action.pair : undefined
   return (
@@ -148,14 +159,14 @@ function ClipInspector({
           {action.kind === 'detach' || (action.kind === 'merge' && clip.kind === 'audio') ? (
             <SoundButton action={action} controls={soundControls} />
           ) : null}
-          <Tool
-            icon={
-              sound ? (clip.hidden ? 'audio-off' : 'audio') : clip.hidden ? 'excluded' : 'included'
-            }
-            label={hideLabel}
-            onClick={() => onHide(clip.id, !clip.hidden)}
-            tip={hideLabel}
-          />
+          {clip.kind === 'caption' ? null : (
+            <Tool
+              icon={hideIcon}
+              label={hideLabel}
+              onClick={() => onHide(clip.id, !clip.hidden)}
+              tip={hideLabel}
+            />
+          )}
           <Tool
             icon="delete"
             label="删除"
@@ -234,11 +245,32 @@ function ClipInspector({
                 onValues={onValues}
                 variables={catalog.items.find((item) => item.name === clip.item)?.variables ?? []}
               />
+            ) : clip.kind === 'caption' ? (
+              <CaptionContent clip={clip} onText={onCaptionText} />
             ) : null}
           </>
         )}
       </div>
     </>
+  )
+}
+
+/** 字幕的「内容」：这句的字，和「字幕」页签里那条同一个文字框。 */
+function CaptionContent({
+  clip,
+  onText,
+}: {
+  clip: CaptionClip
+  onText: (id: string, text: string) => void
+}) {
+  const id = useId()
+  return (
+    <section className="wf-prop-section">
+      <h4 className="wf-prop-title">
+        <label htmlFor={id}>内容</label>
+      </h4>
+      <CaptionTextField caption={clip} className="wf-prop-textarea" id={id} onText={onText} />
+    </section>
   )
 }
 

@@ -1485,12 +1485,8 @@ test('新建工程、加镜头和一个贴片：条目文件拷进工程，刷�
 
 const CAPTIONS_FILE = 'compositions/captions.html'
 
-test('字幕：在「字幕」页签加一句、改字，字幕文件和主文件都存对了，预览里这个时间点看得到改过的字', async ({
-  page,
-}) => {
-  test.setTimeout(60_000)
-  await page.setViewportSize({ width: 1440, height: 900 })
-  // mock 的预览域名不存工程文件（只转到组件库里的同名文件）：字幕场景照后端，答复编辑器最近存下的那一份
+/** mock 的预览域名不存工程文件（只转到组件库里的同名文件）：字幕场景照后端，答复编辑器最近存下的那一份。 */
+const serveSavedCaptions = async (page: Page) => {
   let storedScene: string | null = null
   page.on('request', (request) => {
     storedScene = savedFileOf(request, CAPTIONS_FILE) ?? storedScene
@@ -1507,6 +1503,14 @@ test('字幕：在「字幕」页签加一句、改字，字幕文件和主文�
           },
     ),
   )
+}
+
+test('字幕：在「字幕」页签加一句、改字，字幕文件和主文件都存对了，预览里这个时间点看得到改过的字', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await serveSavedCaptions(page)
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await openFinalCut(panel)
   const first = mainSaved(page, 1)
@@ -1588,4 +1592,103 @@ test('字幕：在「字幕」页签加一句、改字，字幕文件和主文�
       }, captionId),
     )
     .toEqual({ text: '改过的字幕', shown: true, low: true, onTop: true })
+})
+
+/** 存出的字幕场景里各句的起点和时长（秒），按文件里的先后。 */
+const savedCaptionTimings = (scene: string) =>
+  [
+    ...scene.matchAll(/<div id="cap-[^"]+"[^>]* data-start="([\d.]+)" data-duration="([\d.]+)"/g),
+  ].map(([, start, duration]) => ({ start: Number(start), duration: Number(duration) }))
+
+/** 字幕列表里写的时间：分:秒，秒带两位小数。 */
+const captionClock = (seconds: number) => {
+  const hundredths = Math.round(seconds * 100)
+  const minutes = String(Math.floor(hundredths / 6000)).padStart(2, '0')
+  return `${minutes}:${((hundredths % 6000) / 100).toFixed(2).padStart(5, '0')}`
+}
+
+test('字幕行：拖一句挪位置、拖结尾裁短，存下来的字幕场景里时间对；整行隐藏后预览里不出字幕，显示回来又有', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await serveSavedCaptions(page)
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const added = mainSaved(page, 1)
+  await editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  await added
+
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '字幕' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕' })
+  const sceneSavedWith = (check: (scene: string) => boolean) =>
+    page.waitForRequest((request) => {
+      const scene = savedFileOf(request, CAPTIONS_FILE)
+      return scene !== null && check(scene)
+    })
+  const created = sceneSavedWith((scene) => savedCaptionTimings(scene).length === 1)
+  await tab.getByRole('button', { name: '在播放头处加一句' }).click()
+  await created
+
+  // 加上的那一句是选中的：时间线上「字幕」一行里有它、带着两端的把手，侧栏还停在「字幕」页签
+  const row = editor.getByRole('group', { name: '字幕', exact: true })
+  const clip = row.getByRole('group', { name: /^新字幕，/ })
+  const body = clip.getByRole('button', { name: /^选中：/ })
+  await expect(body).toHaveAttribute('aria-pressed', 'true')
+  await expect(tab).toBeVisible()
+  /** 列表里写着这段时间的那一句的时间按钮。 */
+  const timeButton = (timing: { start: number; duration: number }) =>
+    tab.getByRole('button', {
+      name: `${captionClock(timing.start)} – ${captionClock(timing.start + timing.duration)}`,
+      exact: true,
+    })
+  /** 列表里这一句写的时间和存下来的一样。 */
+  const listed = (timing: { start: number; duration: number }) =>
+    expect(timeButton(timing)).toBeVisible()
+
+  // 往右拖：整句挪过去，时长不变
+  const moved = sceneSavedWith((scene) => (savedCaptionTimings(scene)[0]?.start ?? 0) > 0)
+  await dragClip(page, body, 120)
+  const [after] = savedCaptionTimings(savedFileOf(await moved, CAPTIONS_FILE) ?? '')
+  if (after === undefined) throw new Error('字幕没了')
+  expect(after.start).toBeGreaterThan(1)
+  expect(after.duration).toBe(2)
+  await listed(after)
+
+  // 往左拖结尾的把手：开头不动，变短
+  const trimmed = sceneSavedWith((scene) => (savedCaptionTimings(scene)[0]?.duration ?? 2) < 2)
+  await dragClip(page, clip.getByRole('slider', { name: '裁剪结尾' }), -20)
+  const [shorter] = savedCaptionTimings(savedFileOf(await trimmed, CAPTIONS_FILE) ?? '')
+  if (shorter === undefined) throw new Error('字幕没了')
+  expect(shorter.start).toBe(after.start)
+  expect(shorter.duration).toBeGreaterThan(0.1)
+  await listed(shorter)
+
+  // 点列表里这一句的时间：播放头到它的开始，预览里这时看得到字幕；隐藏整行后看不到
+  await timeButton(shorter).click()
+  const player = await readyPlayer(editor)
+  const shown = () =>
+    player.evaluate((element: HTMLElement & { iframeElement: HTMLIFrameElement }) => {
+      const caption = element.iframeElement.contentDocument?.querySelector('.caption')
+      if (caption === null || caption === undefined) return null
+      const style = caption.ownerDocument.defaultView?.getComputedStyle(caption)
+      const box = caption.getBoundingClientRect()
+      return style?.visibility !== 'hidden' && style?.display !== 'none' && box.height > 0
+    })
+  await expect.poll(shown).toBe(true)
+  const hidden = mainSavedWith(page, (html) =>
+    /<div data-hidden="" id="captions"|<div [^>]*id="captions"[^>]* data-hidden=""/.test(html),
+  )
+  await editor.getByRole('button', { name: '隐藏字幕' }).click()
+  await hidden
+  await expect.poll(shown).toBe(false)
+  // 再显示回来：播放头没动，又看得到了
+  await editor.getByRole('button', { name: '显示字幕' }).click()
+  await expect.poll(shown).toBe(true)
 })

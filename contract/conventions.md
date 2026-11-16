@@ -162,7 +162,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 - **组件文件**：往工程里加贴片或场景时，前端按组件库目录里条目的 `files` 逐个取公共库的文件（`/hyperframes/<版本>/<路径>`），用「新建工程文件」写进 `final-cut/<路径>`，`409`（已经有了）跳过；拷进来以后就属于这个工程。
 - **字幕**：写法由 [composition/captions.ts](../web/src/features/storyboard/final-cut/composition/captions.ts) 定义，文件由编辑器写，也可以由代理写。
   - 字幕场景文件：编辑器第一次加字幕时用「新建工程文件」建一份空的 `compositions/captions.html`（`409` 就读已有的那份、用它的版本号），建文件不算一步撤销；删掉最后一句时文件留着。文件用 `<template>` 包着，根是 `data-composition-id="captions"` 的 `<div>`，每句字幕是根下一个带时间的元素，`data-var-text` 指向这句的变量，元素里写着同样的字。
-  - 字幕宿主：主文件根下一个 `data-track-kind="captions"` 的元素，`data-composition-src` 指向场景文件，从 0 开始，时长等于 final-cut 的总长（片段和字幕里最晚的结尾），叠在所有片段上面。删掉最后一句时宿主留着。
+  - 字幕宿主：主文件根下一个 `data-track-kind="captions"` 的元素，`data-composition-src` 指向场景文件，从 0 开始，时长等于 final-cut 的总长（片段和字幕里最晚的结尾），叠在所有片段上面。删掉最后一句时宿主留着。隐藏字幕（时间线上字幕行的眼睛开关）是在宿主上写 `data-hidden`，整行一起隐藏，没有单句隐藏。
   - 字：每句的字是主文件根（`<html>` 上的 `data-composition-variables`）上声明的一个字符串变量的默认值。场景自己不声明变量（根 `<div>` 上、`<html>` 上都不行），宿主不带 `data-variable-values`：有一处写了，主文件根上的变量就到不了场景，字幕显示成元素里写的字；编辑器打开这样的工程时说明原因、不让导出。
   - 主文件根、字幕宿主、场景根都带 `data-no-timeline`，不然工程检查报错、导出被拒。
   - 保存：编辑器先存场景文件、再存主文件（主文件挂载着场景文件），两个文件各按自己的版本号写；有一个 `409` 时两个都换成工作区里的那一份。

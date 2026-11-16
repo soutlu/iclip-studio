@@ -5,15 +5,15 @@ import {
 } from './vendor/hyperframes-studio/player/components/timelineCollision'
 
 /**
- * 片段所在的区：画面区（视频片段和组件或块的片段）、声音区（音频片段）、字幕区（字幕）。时间线上画的是
- * 画面区（在上）和声音区（在下）。
+ * 片段所在的区：画面区（视频片段和组件或块的片段）、字幕区（字幕）、声音区（音频片段），时间线上从上往下
+ * 就是这个顺序。字幕区只有一行，片段不能在区之间换。
  */
 export type Zone = 'visual' | 'audio' | 'caption'
 
 export const zoneOf = (clip: Pick<FilmClip, 'kind'>): Zone =>
   clip.kind === 'audio' ? 'audio' : clip.kind === 'caption' ? 'caption' : 'visual'
 
-/** 一行：哪个区的第几号。两个区的行号各算各的。 */
+/** 一行：哪个区的第几号。各区的行号各算各的。 */
 export type RowKey = { zone: Zone; track: number }
 
 export type Row = RowKey & { clips: readonly FilmClip[] }
@@ -34,11 +34,11 @@ export const sameRow = (left: RowTarget, right: RowTarget): boolean =>
     : 'insertAt' in left && 'insertAt' in right && left.insertAt === right.insertAt)
 
 /**
- * 时间线上按行分好的片段，从上往下：画面区各行、声音区各行，区里行号小的在上面；行里按开始时间排。
- * 字幕区不在里面。
+ * 时间线上按行分好的片段，从上往下：画面区各行、字幕那一行、声音区各行，区里行号小的在上面；行里按开始时间排。
+ * 没有片段的区没有行。
  */
 export const rowsOf = (clips: readonly FilmClip[]): Row[] =>
-  (['visual', 'audio'] as const).flatMap((zone) => {
+  (['visual', 'caption', 'audio'] as const).flatMap((zone) => {
     const rows = new Map<number, FilmClip[]>()
     for (const clip of clips)
       if (zoneOf(clip) === zone) rows.set(clip.track, [...(rows.get(clip.track) ?? []), clip])
@@ -75,22 +75,23 @@ export const isVoiceRow = (row: Pick<Row, 'zone' | 'clips'>): boolean =>
   row.zone === 'audio' && row.clips.length > 0 && row.clips.every(isDetachedAudio)
 
 /** 行的种类，同种的行一起编号。 */
-type RowKind = 'visual' | 'voice' | 'music'
+type RowKind = 'visual' | 'caption' | 'voice' | 'music'
 
 /** 各种行在行头上叫什么；`numberedAlone` 为假时，这种行只有一行就不带编号。 */
 const ROW_NAMING: Record<RowKind, { label: string; numberedAlone: boolean }> = {
   visual: { label: '画面', numberedAlone: true },
+  caption: { label: '字幕', numberedAlone: false },
   voice: { label: '人声', numberedAlone: false },
   music: { label: '配乐', numberedAlone: false },
 }
 
 const kindOf = (row: Row): RowKind =>
-  row.zone === 'visual' ? 'visual' : isVoiceRow(row) ? 'voice' : 'music'
+  row.zone === 'audio' ? (isVoiceRow(row) ? 'voice' : 'music') : row.zone
 
 /**
- * 给时间线上从上往下排的各行带上行名，同种的行从上往下编号：画面区是「画面 1」「画面 2」；声音区里
- * 「人声」行（见 `isVoiceRow`）只有一行时叫「人声」，不止一行时是「人声 1」「人声 2」，别的行同样叫「配乐」
- * 或「配乐 1」「配乐 2」。
+ * 给时间线上从上往下排的各行带上行名，同种的行从上往下编号：画面区是「画面 1」「画面 2」；字幕那一行叫「字幕」；
+ * 声音区里「人声」行（见 `isVoiceRow`）只有一行时叫「人声」，不止一行时是「人声 1」「人声 2」，别的行同样叫
+ * 「配乐」或「配乐 1」「配乐 2」。
  */
 export const namedRows = <T extends Row>(rows: readonly T[]): (T & { name: string })[] => {
   const kinds = rows.map(kindOf)
@@ -168,16 +169,25 @@ export type Aim = { at: number } | { insertAt: number }
 
 /**
  * `zone` 区的片段对着 `aim` 时落在哪一行：片段只待在自己的区里。
- * 对着别的区的行、或者在别的区里新开一行时，落在自己的区里挨着的那一行；
- * 对着最上面、最下面而那里不归自己的区时，在自己的区的边上新开一行。
+ * 对着别的区的行（含字幕那一行）、或者在别的区里新开一行时，落在自己的区里挨着的那一行；
+ * 对着最上面、最下面而那里不归自己的区时，在自己的区的边上新开一行。字幕只有一行，对着哪里都留在那一行。
  */
 export const targetIn = (rows: readonly RowKey[], aim: Aim, zone: Zone): RowTarget => {
+  if (zone === 'caption')
+    return { zone, track: rows.find((row) => row.zone === 'caption')?.track ?? 0 }
   // 参照的算法认不出还没有行的声音区，会让音频在画面行之间新开一行：声音区的第一行总在最下面
   if (zone === 'audio' && rows.every((row) => row.zone !== 'audio'))
     return { zone, insertAt: rows.length }
   // 参照的算法只认一串行号：这里用的是时间线上的第几行，各区的行号不进去
   const order = rows.map((_, at) => at)
-  const audioRows = new Set(order.filter((at) => rows[at]?.zone === 'audio'))
+  // 参照的算法只分音频和别的：字幕那一行夹在两区之间，算作拖着的片段对面的区，片段就进不去、也不在它两边
+  // 都新开行（画面区的片段在它上面、音频片段在它下面才新开）
+  const audioRows = new Set(
+    order.filter((at) => {
+      const rowZone = rows[at]?.zone
+      return rowZone === 'audio' || (rowZone === 'caption' && zone === 'visual')
+    }),
+  )
   const placed = resolveZoneDropPlacement({
     order,
     audioTracks: audioRows,

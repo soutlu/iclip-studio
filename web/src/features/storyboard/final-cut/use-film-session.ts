@@ -164,7 +164,10 @@ const clipsOf = (main: Composition, catalog: ComponentCatalog): FilmClip[] => {
   })
 }
 
-/** 字幕场景根下的各句字幕，按它们在场景里的先后；字取主文件根上的变量。 */
+/**
+ * 字幕场景根下的各句字幕，按它们在场景里的先后；字取主文件根上的变量。字幕宿主隐藏着时每句都算隐藏
+ * （预览和导出里都不出现）。
+ */
 const captionsIn = (scene: Composition, main: Composition): CaptionClip[] => {
   const texts = new Map(
     main
@@ -173,10 +176,13 @@ const captionsIn = (scene: Composition, main: Composition): CaptionClip[] => {
         typeof declaration.default === 'string' ? [[declaration.id, declaration.default]] : [],
       ),
   )
+  const hostHidden = captionsHostOf(main)?.attributes['data-hidden'] !== undefined
   const timings = scene.getElementTimings()
   return (rootOf(scene)?.children ?? []).flatMap((element) => {
     const timing = timings[element.id]
-    return timing === undefined ? [] : [captionOf(element, timing, texts)]
+    if (timing === undefined) return []
+    const caption = captionOf(element, timing, texts)
+    return [{ ...caption, hidden: caption.hidden || hostHidden }]
   })
 }
 
@@ -185,6 +191,14 @@ const captionsById = (main: Composition, scene: Composition | undefined) =>
   new Map(
     (scene === undefined ? [] : captionsIn(scene, main)).map((caption) => [caption.id, caption]),
   )
+
+/** 片段 `id` 写在哪个文件里：字幕（`captions` 里的）在字幕场景里，别的在主文件里。 */
+const fileOf = (
+  main: Composition,
+  scene: Composition | undefined,
+  captions: ReadonlyMap<string, CaptionClip>,
+  id: string,
+): Composition => (scene !== undefined && captions.has(id) ? scene : main)
 
 const declares = (main: Composition, variable: string) =>
   main.getVariableDeclarations().some((declaration) => declaration.id === variable)
@@ -817,11 +831,7 @@ export function useFilmSession(
         keepingLinks(engine, () => {
           for (const [id, timing] of timings) {
             const span = { start: timing.start / 1000, duration: timing.duration / 1000 }
-            if (scene !== undefined && captions.has(id)) {
-              setOwnTiming(scene, id, span)
-              continue
-            }
-            setOwnTiming(engine, id, span)
+            setOwnTiming(fileOf(engine, scene, captions, id), id, span)
             const kind = kinds.get(id)
             const inPoint = String(timing.mediaStart / 1000)
             if (kind === 'host')
@@ -837,8 +847,8 @@ export function useFilmSession(
   /**
    * 把一个片段换到另一行的某个时间。`direction` 是它往上还是往下挪（null 时不调叠放顺序）：
    * 只重排它自己，别的片段的叠放顺序和文件里的先后都不动。
-   * `renumber` 是为它新开一行时别的片段要换成的行号；`starts` 是和它一起挪的片段（含联动的伙伴）
-   * 各自的新起点，它们留在原来的行。都和它算一步撤销。
+   * `renumber` 是为它新开一行时别的片段要换成的行号；`starts` 是和它一起挪的片段（含联动的伙伴，字幕改在字幕
+   * 场景里）各自的新起点，它们留在原来的行。都和它算一步撤销。
    */
   const moveClip = useCallback(
     (
@@ -848,10 +858,12 @@ export function useFilmSession(
       renumber: Renumbering = NO_RENUMBERING,
       starts: ReadonlyMap<string, number> = NO_STARTS,
     ) =>
-      edit((engine) => {
+      edit((engine, scene) => {
+        const captions = captionsById(engine, scene)
         for (const [other, next] of renumber) engine.setTiming(other, { trackIndex: next })
         keepingLinks(engine, () => {
-          for (const [other, start] of starts) setOwnTiming(engine, other, { start: start / 1000 })
+          for (const [other, start] of starts)
+            setOwnTiming(fileOf(engine, scene, captions, other), other, { start: start / 1000 })
           setOwnTiming(engine, id, { start: at.start / 1000, trackIndex: at.track })
         })
         if (direction === null) return
@@ -874,11 +886,18 @@ export function useFilmSession(
     [catalog, edit],
   )
 
-  /** 把几个片段一起隐藏或显示回来，算一步撤销。 */
+  /**
+   * 把几个片段一起隐藏或显示回来，算一步撤销。字幕不能单句隐藏：给到字幕时隐藏、显示的是主文件里的字幕宿主，
+   * 所有字幕一起。
+   */
   const setHidden = useCallback(
     (ids: readonly string[], hidden: boolean) =>
-      edit((engine) => {
-        for (const id of ids) engine.setAttribute(id, 'data-hidden', hidden ? '' : null)
+      edit((engine, scene) => {
+        const captions = captionsById(engine, scene)
+        const host = captionsHostOf(engine)?.id
+        const targets = new Set(ids.map((id) => (captions.has(id) ? host : id)))
+        for (const id of targets)
+          if (id !== undefined) engine.setAttribute(id, 'data-hidden', hidden ? '' : null)
       }),
     [edit],
   )

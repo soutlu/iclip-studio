@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { audio, host, video } from '@/testing/final-cut'
+import { audio, caption, host, video } from '@/testing/final-cut'
 import type { FilmClip } from './composition/film'
 import {
   landingOn,
@@ -231,6 +231,72 @@ describe('片段只落在自己的区', () => {
   it('最上面（指针在时间尺上也算）：画面区的片段在那里新开一行；音频片段在声音区的最上面新开一行', () => {
     expect(aimed({ insertAt: 0 }, 'visual')).toEqual({ zone: 'visual', insertAt: 0 })
     expect(aimed({ insertAt: 0 }, 'audio')).toEqual({ zone: 'audio', insertAt: 2 })
+  })
+
+  describe('有字幕时：画面 1、画面 2、字幕、配乐 1、配乐 2（时间线上第 0–4 行）', () => {
+    const captioned = rowsOf([
+      ...mixed,
+      caption({ start: 0 }),
+      caption({ id: 'cap-b2', start: 3_000 }),
+    ])
+    const at = (aim: Aim, zone: Zone) => targetIn(captioned, aim, zone)
+
+    it('字幕那一行在画面区和声音区之间，叫「字幕」，一行里按开始时间排', () => {
+      expect(layout([...mixed, caption({ id: 'cap-b2', start: 3_000 }), caption()])).toEqual([
+        ['visual', 0, ['t']],
+        ['visual', 1, ['p']],
+        ['caption', 0, ['cap-a1', 'cap-b2']],
+        ['audio', 0, ['m']],
+        ['audio', 1, ['v']],
+      ])
+      expect(namedRows(captioned).map((row) => row.name)).toEqual([
+        '画面 1',
+        '画面 2',
+        '字幕',
+        '配乐 1',
+        '配乐 2',
+      ])
+    })
+
+    it('字幕对着哪里都留在字幕那一行，不新开行', () => {
+      const own = { zone: 'caption', track: 0 }
+      for (const aim of [
+        { at: 0 },
+        { at: 2 },
+        { at: 4 },
+        { insertAt: 0 },
+        { insertAt: 2 },
+        { insertAt: 3 },
+        { insertAt: 5 },
+      ])
+        expect(at(aim, 'caption')).toEqual(own)
+    })
+
+    it('别的片段进不了字幕那一行：画面区的片段落在画面区最下面那一行，音频片段落在声音区最上面那一行', () => {
+      expect(at({ at: 2 }, 'visual')).toEqual({ zone: 'visual', track: 1 })
+      expect(at({ at: 2 }, 'audio')).toEqual({ zone: 'audio', track: 0 })
+    })
+
+    it('字幕那一行上面的缝：画面区的片段在那里新开一行，音频片段落在声音区最上面那一行', () => {
+      expect(at({ insertAt: 2 }, 'visual')).toEqual({ zone: 'visual', insertAt: 2 })
+      expect(at({ insertAt: 2 }, 'audio')).toEqual({ zone: 'audio', track: 0 })
+    })
+
+    it('字幕那一行下面的缝：音频片段在那里新开一行，画面区的片段落在画面区最下面那一行', () => {
+      expect(at({ insertAt: 3 }, 'audio')).toEqual({ zone: 'audio', insertAt: 3 })
+      expect(at({ insertAt: 3 }, 'visual')).toEqual({ zone: 'visual', track: 1 })
+    })
+
+    it('新开一行按时间线上的第几行算，字幕那一行也算在里面', () => {
+      expect(rowOpening([...mixed, caption()], 'visual', 2).track).toBe(2)
+      expect(rowOpening([...mixed, caption()], 'audio', 3)).toEqual({
+        track: 0,
+        renumber: new Map([
+          ['m', 1],
+          ['v', 2],
+        ]),
+      })
+    })
   })
 
   it('画面区还没有行：镜头对着声音区的行或最下面，都在最上面新开画面区的第一行', () => {

@@ -822,8 +822,21 @@
 }
 
 /* 聚焦时 1px 边框转墨色，同设计系统的输入框 */
-.wf-inspector .wf-prop-input:focus {
+.wf-inspector .wf-prop-input:focus,
+.wf-inspector .wf-prop-textarea:focus {
   border-color: var(--color-on-surface);
+}
+
+/* 字幕「内容」的多行文字框：和输入框一样的浅底，回车换行 */
+.wf-inspector .wf-prop-textarea {
+  min-height: 0;
+  padding: 5px 10px;
+  border-color: transparent;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-high);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  resize: none;
 }
 
 .wf-inspector .wf-prop-readout-input {
@@ -2119,9 +2132,10 @@
   background: color-mix(in srgb, var(--color-surface-container) 72%, transparent);
 }
 
-/* 组件或块的片段、音频片段和「其他」片段：浅底细边，一行排下来。组件或块的片段是小封面和名字，
-   音频片段是音符、名字和整段波形，「其他」片段只有名字 */
+/* 组件或块的片段、字幕、音频片段和「其他」片段：浅底细边，一行排下来。组件或块的片段是小封面和名字，
+   字幕是文字记号和这句的字，音频片段是音符、名字和整段波形，「其他」片段只有名字 */
 .wf-clip.is-host > .wf-clip-body,
+.wf-clip.is-caption > .wf-clip-body,
 .wf-clip.is-audio > .wf-clip-body,
 .wf-clip.is-other > .wf-clip-body {
   background: color-mix(in srgb, var(--color-on-surface) 9%, var(--color-top-layer));
