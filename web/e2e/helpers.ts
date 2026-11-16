@@ -54,8 +54,16 @@ export const widenWorkbench = async (page: Page) => {
 }
 
 /** final-cut 编辑器里嵌着的预览页（预览域名下），播放器和 final-cut 都在它里面。 */
-export const finalCutPreviewPage = (editor: Locator) =>
-  editor.getByRole('region', { name: '预览' }).locator('iframe').contentFrame()
+/**
+ * 预览里正在显示的那个播放器。改了 final-cut 预览会换一个播放器重新加载，新的那个装好之前对读屏隐藏，
+ * 换的那一刻页面里有两个：只认没隐藏的那一个。
+ */
+export const finalCutPreviewPlayer = (editor: Locator) =>
+  editor
+    .getByRole('region', { name: '预览' })
+    .locator('iframe')
+    .contentFrame()
+    .locator('hyperframes-player:not([aria-hidden="true"])')
 
 export const openStoryboardShot = async (panel: Locator, index: number) => {
   await panel.getByRole('button', { name: /展开镜头组列表/ }).click()

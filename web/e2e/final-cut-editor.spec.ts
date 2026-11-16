@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page, type Request } from '@playwright/test'
-import { finalCutPreviewPage, openConversation, openFinalCut } from './helpers'
+import { finalCutPreviewPlayer, openConversation, openFinalCut } from './helpers'
 
 /**
  * 保存工程里文件 `path`（相对工程根）的请求里写的内容：第一次走「新建工程文件」，之后按版本写工作区文件；
@@ -30,7 +30,7 @@ const mainSaved = (page: Page, clips: number) =>
   mainSavedWith(page, (html) => (html.match(/<video /g) ?? []).length === clips)
 
 const readyPlayer = async (editor: Locator) => {
-  const player = finalCutPreviewPage(editor).locator('hyperframes-player')
+  const player = finalCutPreviewPlayer(editor)
   await expect
     .poll(() =>
       player.evaluateAll(
