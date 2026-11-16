@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Ref } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type Ref } from 'react'
 import { cn } from '@/shared/lib/utils'
 import { Button, IconButton } from '@/shared/ui/button'
 import { Textarea } from '@/shared/ui/field'
@@ -6,6 +6,7 @@ import { InlineAlert } from '@/shared/ui/inline-alert'
 import { BlockedReason } from '../components/blocked-reason'
 import { captionClock, captionsInOrder } from './caption-edit'
 import type { CaptionClip } from './composition/film'
+import { captionIn, localeNamed, type LocaleCode, type ShownLocale } from './locales'
 
 // 照「内容与样式」里的文字框：改字停下 300 毫秒再写进 final-cut
 const COMMIT_DELAY_MS = 300
@@ -13,8 +14,13 @@ const COMMIT_DELAY_MS = 300
 const ADD_LABEL = '在播放头处加一句'
 const RECOGNIZE_LABEL = '识别字幕'
 
+/** 改一句字幕在语言 `locale` 里的字（见 `useFilmSession` 的 `setCaptionText`）。 */
+export type CaptionTextChange = (id: string, text: string, locale: LocaleCode) => void
+
 type CaptionsTabProps = {
   captions: readonly CaptionClip[]
+  /** 显示着的语言：外语时文字框里是这种语言的字，旁边写着原文。 */
+  locale: ShownLocale
   /** 编辑器里选中的片段：选中的字幕在列表里标出来。 */
   selected: ReadonlySet<string>
   /** 为什么现在不能在播放头处加一句；给了就把按钮置灰，点了说明它。 */
@@ -28,7 +34,7 @@ type CaptionsTabProps = {
   problem: string | undefined
   /** 在播放头处加一句，答复新字幕的编号；没加上时是 undefined。 */
   onAdd: () => Promise<string | undefined>
-  onText: (id: string, text: string) => void
+  onText: CaptionTextChange
   onRemove: (id: string) => void
   /** 点了一句的时间：选中它、播放头跳到它的开始。 */
   onPick: (caption: CaptionClip) => void
@@ -37,9 +43,11 @@ type CaptionsTabProps = {
 /**
  * 「字幕」页签：识别字幕、在播放头处加一句，下面是按开始时间排的字幕列表，每句能直接改字、删掉，点时间选中它、
  * 跳到它的开始。编辑器里选中的字幕标成当前这一句；刚加的那一句焦点进它的文字框。识别中写着在识别几个片段。
+ * 外语下改的是这种语言的字。
  */
 export function CaptionsTab({
   captions,
+  locale,
   selected,
   addBlocked,
   recognizing,
@@ -109,6 +117,7 @@ export function CaptionsTab({
               current={selected.has(caption.id)}
               focus={caption.id === focusing}
               key={caption.id}
+              locale={locale}
               onFocused={() => setFocusing(null)}
               onRemove={() => onRemove(caption.id)}
               onSeek={() => onPick(caption)}
@@ -123,11 +132,12 @@ export function CaptionsTab({
 
 type CaptionRowProps = {
   caption: CaptionClip
+  locale: ShownLocale
   current: boolean
   /** 焦点要进这一句的文字框（刚加的那一句）。 */
   focus: boolean
   onFocused: () => void
-  onText: (id: string, text: string) => void
+  onText: CaptionTextChange
   onRemove: () => void
   onSeek: () => void
 }
@@ -135,6 +145,7 @@ type CaptionRowProps = {
 /** 一句字幕：起止时间、删除钮和文字框。 */
 function CaptionRow({
   caption,
+  locale,
   current,
   focus,
   onFocused,
@@ -166,6 +177,8 @@ function CaptionRow({
         aria-label={`字幕文字 ${range}`}
         caption={caption}
         className="wf-caption-text"
+        key={locale.code}
+        locale={locale}
         onText={onText}
         ref={fieldRef}
       />
@@ -175,7 +188,9 @@ function CaptionRow({
 
 type CaptionTextFieldProps = {
   caption: CaptionClip
-  onText: (id: string, text: string) => void
+  /** 显示着的语言；换了语言时调用方要换一个文字框（按语言给 `key`），没写的字留在原来的语言里。 */
+  locale: ShownLocale
+  onText: CaptionTextChange
   className: string
   ref?: Ref<HTMLTextAreaElement>
   id?: string
@@ -184,15 +199,16 @@ type CaptionTextFieldProps = {
 
 /**
  * 一句字幕的文字框（「字幕」页签和「属性」共用）：回车是换行。改了先留在框里，停下 300 毫秒再写进去；
- * 输入法拼字时不计时，焦点离开、框没了时把没写的立刻写进去。
+ * 输入法拼字时不计时，焦点离开、框没了时把没写的立刻写进去。外语下框里是这种语言的字，还没翻时是空的、
+ * 占位字提示输入这种语言，下面写着原文。
  */
-export function CaptionTextField({ caption, onText, ...field }: CaptionTextFieldProps) {
+export function CaptionTextField({ caption, locale, onText, ...field }: CaptionTextFieldProps) {
   const [draft, setDraft] = useState<string | null>(null)
   const draftRef = useRef<string | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const latestRef = useRef({ id: caption.id, onText })
+  const latestRef = useRef({ id: caption.id, onText, code: locale.code })
   useLayoutEffect(() => {
-    latestRef.current = { id: caption.id, onText }
+    latestRef.current = { id: caption.id, onText, code: locale.code }
   })
   const flush = useCallback(() => {
     if (timerRef.current !== null) clearTimeout(timerRef.current)
@@ -201,8 +217,12 @@ export function CaptionTextField({ caption, onText, ...field }: CaptionTextField
     if (text === null) return
     draftRef.current = null
     setDraft(null)
-    latestRef.current.onText(latestRef.current.id, text)
+    const { id, code, onText: write } = latestRef.current
+    write(id, text, code)
   }, [])
+  const sourceId = useId()
+  const shown = captionIn(locale, caption)
+  const foreign = locale.values !== null
   useEffect(() => flush, [flush])
 
   const composingRef = useRef(false)
@@ -212,24 +232,33 @@ export function CaptionTextField({ caption, onText, ...field }: CaptionTextField
   }
 
   return (
-    <Textarea
-      {...field}
-      onBlur={flush}
-      onChange={(event) => {
-        draftRef.current = event.target.value
-        setDraft(event.target.value)
-        schedule()
-      }}
-      onCompositionEnd={() => {
-        composingRef.current = false
-        schedule()
-      }}
-      onCompositionStart={() => {
-        composingRef.current = true
-        schedule()
-      }}
-      rows={2}
-      value={draft ?? caption.text}
-    />
+    <>
+      <Textarea
+        {...field}
+        aria-describedby={foreign ? sourceId : undefined}
+        onBlur={flush}
+        onChange={(event) => {
+          draftRef.current = event.target.value
+          setDraft(event.target.value)
+          schedule()
+        }}
+        onCompositionEnd={() => {
+          composingRef.current = false
+          schedule()
+        }}
+        onCompositionStart={() => {
+          composingRef.current = true
+          schedule()
+        }}
+        placeholder={foreign ? `输入 ${localeNamed(locale.code).name} 字幕…` : undefined}
+        rows={2}
+        value={draft ?? shown.text}
+      />
+      {foreign ? (
+        <p className="wf-caption-source" id={sourceId}>
+          <span className="wf-caption-source-tag">原文</span> {caption.text}
+        </p>
+      ) : null}
+    </>
   )
 }

@@ -123,10 +123,15 @@ ${children}</div>
 `
 }
 
+/** 一句字幕叫什么：就是它的字，换行和连着的空白合成一个空格；字是空的时叫「字幕」。 */
+export function captionLabel(text: string): string {
+  const name = text.replace(/\s+/g, ' ').trim()
+  return name === '' ? VARIABLE_LABEL : name
+}
+
 /**
  * 把场景根下一个带时间的元素读成一句字幕：字取主文件根上它的变量的默认值（`texts`，变量 → 字），
- * 没有这个变量时取元素里写的字。名字就是它的字，换行和连着的空白合成一个空格；字是空的时叫「字幕」。
- * `data-caption-of` 没写或是空的时不属于任何片段。
+ * 没有这个变量时取元素里写的字；名字见 `captionLabel`。`data-caption-of` 没写或是空的时不属于任何片段。
  */
 export function captionOf(
   element: ElementView,
@@ -136,12 +141,11 @@ export function captionOf(
   const start = Math.round(timing.enterAt * 1000)
   const variable = element.attributes['data-var-text'] ?? ''
   const text = texts.get(variable) ?? element.text ?? ''
-  const name = text.replace(/\s+/g, ' ').trim()
   const owner = element.attributes[CAPTION_OWNER]
   return {
     kind: 'caption',
     id: element.id,
-    label: name === '' ? VARIABLE_LABEL : name,
+    label: captionLabel(text),
     start,
     duration: Math.round(timing.exitAt * 1000) - start,
     track: 0,

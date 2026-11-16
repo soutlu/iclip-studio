@@ -418,8 +418,15 @@ function fontsOf(
   }
 }
 
-/** 字体块：两行标记之间是字体族的样式表链接和中文字体的 `@font-face`。 */
-export function fontBlock(clips: readonly FilmClip[], catalog: ComponentCatalog): string {
+/**
+ * 字体块：两行标记之间是字体族的样式表链接和中文字体的 `@font-face`。`localeText` 是各语言值表里的字，
+ * 和片段里的字一起声明，哪种语言预览、导出都有字形。
+ */
+export function fontBlock(
+  clips: readonly FilmClip[],
+  catalog: ComponentCatalog,
+  localeText = '',
+): string {
   const { families, text } = fontsOf(clips, catalog)
   // 渲染服务按这种写法的链接找到字体文件
   const links = families
@@ -428,21 +435,22 @@ export function fontBlock(clips: readonly FilmClip[], catalog: ComponentCatalog)
         `<link rel="stylesheet" href="${escapeAttribute(catalog.fonts[family]?.css ?? '')}">\n`,
     )
     .join('')
-  return `${FONT_BLOCK_START}\n${links}<style>\n${cjkFontFaces(catalog, text, families)}\n</style>\n${FONT_BLOCK_END}`
+  return `${FONT_BLOCK_START}\n${links}<style>\n${cjkFontFaces(catalog, text + localeText, families)}\n</style>\n${FONT_BLOCK_END}`
 }
 
 /**
- * 主文件按 `clips` 换上新的字体块：只换 `<head>` 里两行标记之间（含标记）的内容，别的一个字不动。
- * `<head>` 里还没有字体块时加在 `</head>` 前面；没有 `</head>` 时原样返回。
+ * 主文件按 `clips` 和各语言值表里的字（`localeText`，见 `fontBlock`）换上新的字体块：只换 `<head>` 里两行标记
+ * 之间（含标记）的内容，别的一个字不动。`<head>` 里还没有字体块时加在 `</head>` 前面；没有 `</head>` 时原样返回。
  */
 export function withFontBlock(
   html: string,
   clips: readonly FilmClip[],
   catalog: ComponentCatalog,
+  localeText = '',
 ): string {
   const headEnd = html.search(/<\/head\s*>/i)
   if (headEnd < 0) return html
-  const block = fontBlock(clips, catalog)
+  const block = fontBlock(clips, catalog, localeText)
   const from = html.indexOf(FONT_BLOCK_START)
   const to = from < 0 ? -1 : html.indexOf(FONT_BLOCK_END, from)
   if (from < 0 || to < 0 || to > headEnd)

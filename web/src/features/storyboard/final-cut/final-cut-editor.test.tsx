@@ -3909,3 +3909,119 @@ describe('final-cut 编辑器 · 字幕跟着视频片段走', () => {
     )
   })
 })
+
+describe('final-cut 编辑器 · 语言', () => {
+  const EN_FILE = 'final-cut/locales/en.json'
+  const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
+  const side = () =>
+    screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
+
+  /** 最后一次发给预览页的 final-cut 里套的值；没套时是 undefined。 */
+  const previewValues = (): unknown => {
+    const load = previewPages
+      .latest()
+      .commands.filter((command) => command.type === 'load')
+      .at(-1)
+    if (load?.type !== 'load') throw new Error('还没有发过 final-cut')
+    const match = /<script data-hf-preview-variables>window\.__hfVariables=(.*?);<\/script>/.exec(
+      load.html,
+    )
+    return match?.[1] === undefined ? undefined : JSON.parse(match[1])
+  }
+
+  /** 工程：0–2 秒一段视频，两句字幕；English 翻了第一句。 */
+  const open = async () => {
+    await putFilm(
+      [video({ src: URL_A, duration: 2_000 })],
+      [sceneLine('a1', 0, 1_000), sceneLine('b2', 1_000, 1_000)],
+    )
+    putMockWorkspaceFile(CONVERSATION, EN_FILE, '{"cap_a1": "Line one"}')
+    const user = userEvent.setup()
+    await openEditor()
+    await previewSettled()
+    return user
+  }
+
+  it('工具条上一排语言：中文和工程里有的语言，当前的高亮；「+」里列出还没加的语言，选一个就加上并切过去', async () => {
+    const user = await open()
+    expect(
+      within(languages())
+        .getAllByRole('button')
+        .map((button) => [button.textContent, button.getAttribute('aria-pressed')]),
+    ).toEqual([
+      ['ZH', 'true'],
+      ['EN', 'false'],
+      ['', null],
+    ])
+    await user.click(within(languages()).getByRole('button', { name: '添加语言' }))
+    const menu = await screen.findByRole('menu')
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent),
+    ).toEqual(['Deutsch（DE）', 'Español（ES）', 'Français（FR）'])
+    await user.click(within(menu).getByRole('menuitem', { name: 'Français（FR）' }))
+    await waitFor(() =>
+      expect(within(languages()).getByRole('button', { name: 'Français（FR）' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      ),
+    )
+    expect(mockWorkspaceFile(CONVERSATION, 'final-cut/locales/fr.json')?.content).toBe('{}\n')
+  })
+
+  it('所有语言都加了：不显示「+」', async () => {
+    await putFilm([video({ src: URL_A, duration: 2_000 })])
+    for (const code of ['en', 'de', 'es', 'fr'])
+      putMockWorkspaceFile(CONVERSATION, `final-cut/locales/${code}.json`, '{}')
+    await openEditor()
+    expect(
+      within(languages())
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['ZH', 'EN', 'DE', 'ES', 'FR'])
+  })
+
+  it('切到 English：预览套上 English 的值，字幕页签、时间线上是英文，没翻的显示原文并标出来，不能加字幕；切回中文都回来', async () => {
+    const user = await open()
+    expect(previewValues()).toBeUndefined()
+    await user.click(within(side()).getByRole('tab', { name: '字幕' }))
+
+    await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
+    await waitFor(() => expect(previewValues()).toEqual({ cap_a1: 'Line one' }))
+    const first = within(panel()).getByRole('textbox', { name: '字幕文字 00:00.00 – 00:01.00' })
+    const second = within(panel()).getByRole('textbox', { name: '字幕文字 00:01.00 – 00:02.00' })
+    expect(first).toHaveValue('Line one')
+    expect(first).toHaveAccessibleDescription('原文 字幕 a1')
+    expect(second).toHaveValue('')
+    expect(second).toHaveAttribute('placeholder', '输入 English 字幕…')
+    const row = screen.getByRole('group', { name: '字幕' })
+    expect(within(row).getByRole('group', { name: /^Line one，/ })).toBeVisible()
+    expect(within(row).getByRole('group', { name: /^字幕 b2，1\.0 秒，原文$/ })).toBeVisible()
+    const add = within(panel()).getByRole('button', { name: '在播放头处加一句' })
+    expect(add).toHaveAttribute('aria-disabled', 'true')
+    await user.click(add)
+    expect(
+      (await screen.findAllByText('当前语言是 English，无法加字幕；请先切换到中文')).length,
+    ).toBeGreaterThan(0)
+
+    // 外语下写一句：存进 English 的值表，原文不变
+    await user.type(second, 'Line two')
+    await waitSaved(() =>
+      expect(JSON.parse(mockWorkspaceFile(CONVERSATION, EN_FILE)?.content ?? '')).toEqual({
+        cap_a1: 'Line one',
+        cap_b2: 'Line two',
+      }),
+    )
+    expect(savedVariableTexts()).toEqual(['字幕 a1', '字幕 b2'])
+    await waitFor(() => expect(previewValues()).toEqual({ cap_a1: 'Line one', cap_b2: 'Line two' }))
+
+    await user.click(within(languages()).getByRole('button', { name: '中文（ZH）' }))
+    await waitFor(() => expect(previewValues()).toBeUndefined())
+    expect(
+      within(panel()).getByRole('textbox', { name: '字幕文字 00:01.00 – 00:02.00' }),
+    ).toHaveValue('字幕 b2')
+    expect(within(row).getByRole('group', { name: /^字幕 a1，1\.0 秒$/ })).toBeVisible()
+  })
+})

@@ -106,19 +106,20 @@ const fakeConnection = () => {
 
 /**
  * 打开工程：`stored` 是编辑器读到的主文件（null 是还没有工程；工作区里可能已经有更新的一版），字幕场景文件
- * 和编辑器一样经 `readProject` 读。
+ * 和语言值表和编辑器一样经 `readProject` 读。
  */
 const open = async (
   stored: StoredFile | null = null,
   debounceMs = 10,
   conversation = CONVERSATION,
+  catalog = fixtureCatalog,
 ) => {
   const read = stored === null ? null : await readProject(conversation)
   const initial = stored === null || read === null ? null : { ...read, main: stored }
   const onNotice = vi.fn<(message: string) => void>()
   const { connection, notify } = fakeConnection()
   const hook = renderHook(
-    () => useFilmSession(conversation, initial, fixtureCatalog, { debounceMs, onNotice }),
+    () => useFilmSession(conversation, initial, catalog, { debounceMs, onNotice }),
     {
       wrapper: ({ children }: { children: ReactNode }) => (
         <TranscriptConnectionContext value={connection}>{children}</TranscriptConnectionContext>
@@ -2077,7 +2078,7 @@ describe('useFilmSession · 字幕', () => {
       [video()],
       [line('a1', 0, 1_000, '第一句')],
     )
-    act(() => result.current.setCaptionText('cap-a1', '改过的\n两行'))
+    act(() => result.current.setCaptionText('cap-a1', '改过的\n两行', 'zh'))
     expect(captionsOf(result)[0]?.text).toBe('改过的\n两行')
     expect(variablesIn(result.current.film?.html)).toEqual({ cap_a1: '改过的\n两行' })
     await saveAll(result)
@@ -2085,7 +2086,7 @@ describe('useFilmSession · 字幕', () => {
       ['cap-a1', 0, 1, 'cap_a1', '改过的\n两行'],
     ])
     // 字没变时不记一步
-    act(() => result.current.setCaptionText('cap-a1', '改过的\n两行'))
+    act(() => result.current.setCaptionText('cap-a1', '改过的\n两行', 'zh'))
     act(() => result.current.undo())
     expect(variablesIn(result.current.film?.html)).toEqual({ cap_a1: '第一句' })
     expect(result.current.film?.canUndo).toBe(false)
@@ -2183,7 +2184,7 @@ describe('useFilmSession · 字幕', () => {
     // 别处把场景文件和主文件都改了：场景里只剩另一句，主文件里换成它的变量
     const theirs = [line('z9', 500, 1_000, '别处写的')]
     await putCaptioned(conversation, [video({ duration: 4_000 })], theirs)
-    act(() => result.current.setCaptionText('cap-a1', '本地改的'))
+    act(() => result.current.setCaptionText('cap-a1', '本地改的', 'zh'))
     await waitFor(() => expect(onNotice).toHaveBeenCalledOnce())
     expect(onNotice).toHaveBeenCalledWith(
       'final-cut 已在别处修改，已切换到最新版本；未保存的改动已放弃',
@@ -2202,7 +2203,7 @@ describe('useFilmSession · 字幕', () => {
       [video()],
       [line('a1', 0, 1_000, '第一句')],
     )
-    act(() => result.current.setCaptionText('cap-a1', '本地改的'))
+    act(() => result.current.setCaptionText('cap-a1', '本地改的', 'zh'))
     putMockWorkspaceFile(
       conversation,
       SCENE_PATH,
@@ -2243,12 +2244,12 @@ describe('useFilmSession · 字幕', () => {
   it('字幕的名字就是它的字：换行和连着的空白合成一个空格，字照旧带着换行', async () => {
     const { result } = await openCaptioned([video()], [line('a1', 0, 1_000, '第一句')])
     expect(captionsOf(result)[0]?.label).toBe('第一句')
-    act(() => result.current.setCaptionText('cap-a1', ' 改过的\n\n两  行 '))
+    act(() => result.current.setCaptionText('cap-a1', ' 改过的\n\n两  行 ', 'zh'))
     expect(captionsOf(result)[0]).toMatchObject({
       label: '改过的 两 行',
       text: ' 改过的\n\n两  行 ',
     })
-    act(() => result.current.setCaptionText('cap-a1', ' \n '))
+    act(() => result.current.setCaptionText('cap-a1', ' \n ', 'zh'))
     expect(captionsOf(result)[0]?.label).toBe('字幕')
   })
 
@@ -2339,5 +2340,231 @@ describe('useFilmSession · 字幕', () => {
     expect(captionsOf(result).map((caption) => caption.start)).toEqual([500, 3_500])
     expect(result.current.film?.html).toBe(before)
     expect(result.current.film?.canUndo).toBe(false)
+  })
+
+  describe('语言', () => {
+    const EN_PATH = 'final-cut/locales/en.json'
+    const DE_PATH = 'final-cut/locales/de.json'
+    const STALE_TEXT = 'final-cut 已在别处修改，已切换到最新版本；未保存的改动已放弃'
+
+    /** 工作区里存着的一份值表，读成对象；没有时是 undefined。 */
+    const storedValues = (conversation: string, path: string): unknown => {
+      const content = mockWorkspaceFile(conversation, path)?.content
+      return content === undefined ? undefined : JSON.parse(content)
+    }
+
+    /** 带字幕的工程（一段视频片段和 `lines`），工作区里再放上 `files`（工作区里的路径 → 内容），打开它。 */
+    const openLocalized = async (
+      lines: Line[],
+      files: Record<string, string>,
+      catalog = fixtureCatalog,
+    ) => {
+      const conversation = crypto.randomUUID()
+      const stored = await putCaptioned(conversation, [video()], lines)
+      for (const [path, content] of Object.entries(files))
+        putMockWorkspaceFile(conversation, path, content)
+      return { conversation, ...(await open(stored, 10, conversation, catalog)) }
+    }
+
+    it('读工程时读到 locales/ 下的值表，不认识的语言、别的文件不算；切到 English 时字幕的名字是英文，没翻的是原文，原文不变', async () => {
+      const { result } = await openLocalized(
+        [line('a1', 0, 1_000, '第一句'), line('b2', 1_000, 1_000, '第二句')],
+        {
+          [EN_PATH]: '{"cap_a1": "First line"}',
+          'final-cut/locales/ja.json': '{"cap_a1": "一行目"}',
+          'final-cut/locales/en.txt': '{}',
+          'final-cut/compositions/locales/de.json': '{}',
+        },
+      )
+      expect(result.current.film?.locales).toEqual(['en'])
+      expect(result.current.film?.locale).toEqual({ code: 'zh', values: null })
+      expect(captionsOf(result).map((caption) => caption.label)).toEqual(['第一句', '第二句'])
+      // 工程里没有的语言切不过去
+      act(() => result.current.setLocale('fr'))
+      expect(result.current.film?.locale.code).toBe('zh')
+      act(() => result.current.setLocale('en'))
+      expect(result.current.film?.locale).toEqual({
+        code: 'en',
+        values: { cap_a1: 'First line' },
+      })
+      expect(captionsOf(result).map((caption) => [caption.label, caption.text])).toEqual([
+        ['First line', '第一句'],
+        ['第二句', '第二句'],
+      ])
+    })
+
+    it('值表不是 JSON 对象：读工程时说明原因', async () => {
+      const conversation = crypto.randomUUID()
+      await putCaptioned(conversation, [video()], [line('a1', 0, 1_000, '第一句')])
+      putMockWorkspaceFile(conversation, EN_PATH, '["cap_a1"]')
+      await expect(readProject(conversation)).rejects.toThrow(
+        'English 的语言文件写法不对，无法打开 final-cut；请把它改成变量 id 对应文字的 JSON 对象',
+      )
+    })
+
+    it('加一种语言：建一份空的值表、切过去，不算一步撤销；工作区里已经有了（409）就用那一份，不当成别处改的，没改不重写', async () => {
+      const { result, conversation, onNotice } = await openLocalized(
+        [line('a1', 0, 1_000, '第一句')],
+        {},
+      )
+      const writes = recordWrites()
+      await act(async () => {
+        await result.current.addLocale('de')
+      })
+      expect(writes).toEqual([{ path: 'locales/de.json', content: '{}\n', expectedVersion: null }])
+      expect(result.current.film?.locales).toEqual(['de'])
+      expect(result.current.film?.locale).toEqual({ code: 'de', values: {} })
+      expect(result.current.film?.canUndo).toBe(false)
+
+      // 打开以后别处建好的 Français 值表，写法和编辑器存出的不一样
+      const theirs = '{"cap_a1":"Première"}'
+      putMockWorkspaceFile(conversation, 'final-cut/locales/fr.json', theirs)
+      await act(async () => {
+        await result.current.addLocale('fr')
+      })
+      expect(result.current.film?.locales).toEqual(['de', 'fr'])
+      expect(result.current.film?.locale.code).toBe('fr')
+      expect(captionsOf(result)[0]?.label).toBe('Première')
+      await saveAll(result)
+      // 只有那一次没建成的新建：值表没改，不重写
+      expect(writes.map((write) => write.path)).toEqual(['locales/de.json', 'locales/fr.json'])
+      expect(mockWorkspaceFile(conversation, 'final-cut/locales/fr.json')).toEqual({
+        content: theirs,
+        version: 1,
+      })
+      expect(onNotice).not.toHaveBeenCalled()
+    })
+
+    it('外语下改字：写进那种语言的值表，原文（变量的默认值、场景里的字）不动；一次一步撤销；清空时从值表里去掉', async () => {
+      const { result, conversation } = await openLocalized([line('a1', 0, 1_000, '第一句')], {
+        [EN_PATH]: '{}',
+      })
+      act(() => result.current.setLocale('en'))
+      act(() => result.current.setCaptionText('cap-a1', 'Hello', 'en'))
+      expect(result.current.film?.locale.values).toEqual({ cap_a1: 'Hello' })
+      expect(captionsOf(result)[0]).toMatchObject({ text: '第一句', label: 'Hello' })
+      expect(variablesIn(result.current.film?.html)).toEqual({ cap_a1: '第一句' })
+      await saveAll(result)
+      expect(mockWorkspaceFile(conversation, EN_PATH)?.content).toBe('{\n  "cap_a1": "Hello"\n}\n')
+      expect(sceneCaptions(storedScene(conversation))[0]?.[4]).toBe('第一句')
+      expect(variablesIn(mockProjectMain(conversation)?.content)).toEqual({ cap_a1: '第一句' })
+
+      // 字没变时不记一步；撤销一步就回到没翻
+      act(() => result.current.setCaptionText('cap-a1', 'Hello', 'en'))
+      act(() => result.current.undo())
+      expect(result.current.film?.locale.values).toEqual({})
+      expect(captionsOf(result)[0]?.label).toBe('第一句')
+      expect(result.current.film?.canUndo).toBe(false)
+      act(() => result.current.redo())
+      expect(result.current.film?.locale.values).toEqual({ cap_a1: 'Hello' })
+
+      act(() => result.current.setCaptionText('cap-a1', '', 'en'))
+      expect(result.current.film?.locale.values).toEqual({})
+      await saveAll(result)
+      expect(mockWorkspaceFile(conversation, EN_PATH)?.content).toBe('{}\n')
+
+      // 中文照旧改原文，值表不动
+      act(() => result.current.setCaptionText('cap-a1', '改过的', 'zh'))
+      expect(captionsOf(result)[0]).toMatchObject({ text: '改过的', label: '改过的' })
+      expect(result.current.film?.locale.values).toEqual({})
+    })
+
+    it('删一句字幕、删掉字幕属于的视频片段：同一步里从所有值表里去掉它的值；撤销都回来', async () => {
+      const { result, conversation } = await openLocalized(
+        [
+          line('a1', 0, 1_000, '第一句'),
+          { ...line('b2', 1_000, 1_000, '第二句'), owner: 'clip-1' },
+        ],
+        {
+          [EN_PATH]: '{"cap_a1": "One", "cap_b2": "Two"}',
+          [DE_PATH]: '{"cap_a1": "Eins"}',
+        },
+      )
+      act(() => result.current.removeClips(['cap-a1'], false))
+      await saveAll(result)
+      expect(storedValues(conversation, EN_PATH)).toEqual({ cap_b2: 'Two' })
+      expect(storedValues(conversation, DE_PATH)).toEqual({})
+      act(() => result.current.undo())
+      await saveAll(result)
+      expect(storedValues(conversation, EN_PATH)).toEqual({ cap_a1: 'One', cap_b2: 'Two' })
+      expect(storedValues(conversation, DE_PATH)).toEqual({ cap_a1: 'Eins' })
+
+      act(() => result.current.removeClips(['clip-1'], false))
+      expect(captionsOf(result).map((caption) => caption.id)).toEqual(['cap-a1'])
+      await saveAll(result)
+      expect(storedValues(conversation, EN_PATH)).toEqual({ cap_a1: 'One' })
+    })
+
+    it('主文件的字体块按原文和所有值表里的字一起声明：外文的字也有字形；撤销改值表的那一步，字体块跟着回去', async () => {
+      const catalog = {
+        ...fixtureCatalog,
+        cjk: {
+          family: 'Noto Sans SC',
+          slices: [
+            { range: 'U+00e0-00ff', files: { '700': 'vendor/fonts/latin-ext-700.woff2' } },
+            { range: 'U+4e00-9fff', files: { '700': 'vendor/fonts/cjk-700.woff2' } },
+            { range: 'U+0020-007e', files: { '700': 'vendor/fonts/latin-700.woff2' } },
+          ],
+        },
+      }
+      const { result, conversation } = await openLocalized(
+        [line('a1', 0, 1_000, '第一句')],
+        { [DE_PATH]: '{"cap_a1": "Grüße"}' },
+        catalog,
+      )
+      const html = () => result.current.film?.html ?? ''
+      // 中文显示着也带上德文的字
+      expect(html()).toContain('latin-ext-700.woff2')
+      expect(html()).toContain('cjk-700.woff2')
+      act(() => result.current.setCaptionText('cap-a1', 'Grusse', 'de'))
+      expect(html()).not.toContain('latin-ext-700.woff2')
+      await saveAll(result)
+      expect(mockProjectMain(conversation)?.content).not.toContain('latin-ext-700.woff2')
+      act(() => result.current.undo())
+      expect(html()).toContain('latin-ext-700.woff2')
+    })
+
+    it('值表存的时候版本对不上（409）：整个工程换成工作区里的那一份，提示，撤销记录清空', async () => {
+      const { result, conversation, onNotice } = await openLocalized(
+        [line('a1', 0, 1_000, '第一句')],
+        { [EN_PATH]: '{}' },
+      )
+      putMockWorkspaceFile(conversation, EN_PATH, '{"cap_a1": "Theirs"}')
+      act(() => result.current.setLocale('en'))
+      act(() => result.current.setCaptionText('cap-a1', 'Mine', 'en'))
+      await waitFor(() => expect(onNotice).toHaveBeenCalledExactlyOnceWith(STALE_TEXT))
+      expect(result.current.film?.locale).toEqual({ code: 'en', values: { cap_a1: 'Theirs' } })
+      expect(result.current.film?.canUndo).toBe(false)
+      expect(result.current.save.kind).toBe('idle')
+    })
+
+    it('切换语言不写文件；自己存值表的通知不算别处改的、预览不为它重新加载；别处加了一种语言算别处改的', async () => {
+      const { result, conversation, onNotice, notify } = await openLocalized(
+        [line('a1', 0, 1_000, '第一句')],
+        { [EN_PATH]: '{}' },
+      )
+      const writes = recordWrites()
+      act(() => result.current.setLocale('en'))
+      act(() => result.current.setLocale('zh'))
+      act(() => result.current.setLocale('en'))
+      await saveAll(result)
+      expect(writes).toEqual([])
+
+      act(() => result.current.setCaptionText('cap-a1', 'Hi', 'en'))
+      await saveAll(result)
+      const reads = countMainReads()
+      notify(EN_PATH)
+      await waitFor(() => expect(reads.count).toBe(1))
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      expect(onNotice).not.toHaveBeenCalled()
+      expect(result.current.film?.canUndo).toBe(true)
+      expect(result.current.filesRevision).toBe(0)
+
+      putMockWorkspaceFile(conversation, DE_PATH, '{}')
+      notify(DE_PATH)
+      await waitFor(() => expect(result.current.film?.locales).toEqual(['en', 'de']))
+      expect(onNotice).toHaveBeenCalledExactlyOnceWith(STALE_TEXT)
+      expect(result.current.film?.locale).toEqual({ code: 'en', values: { cap_a1: 'Hi' } })
+    })
   })
 })

@@ -12,6 +12,7 @@ import {
 } from '@/shared/ui/menu'
 import { Slider } from '@/shared/ui/slider'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
+import { LOCALES, SOURCE_LOCALE, type LocaleCode } from './locales'
 import {
   FIT_ZOOM,
   nextZoom,
@@ -165,6 +166,92 @@ function ToolPicker({ tool, onTool, onSelectAround, splitBlocked, onSplit }: Too
 /** 切开的命令在下拉和片段右键菜单里都叫这个。 */
 export const SPLIT_LABEL = '在播放头处切开'
 
+/** 工具条上的语言切换：`current` 是显示着的语言，`present` 是工程里有值表的外语。 */
+export type LocaleControls = {
+  current: LocaleCode
+  present: readonly LocaleCode[]
+  onSwitch: (code: LocaleCode) => void
+  /** 加一种语言并切过去。 */
+  onAdd: (code: LocaleCode) => void
+}
+
+const localeButtonName = ({ name, tag }: { name: string; tag: string }) => `${name}（${tag}）`
+
+/**
+ * 语言切换：中文和工程里有的语言各一个代码按钮，当前的高亮；最后的「+」点开列出还没加的语言，选一个加上并
+ * 切过去，都加了时不显示。
+ */
+function LocaleBar({ current, present, onSwitch, onAdd }: LocaleControls) {
+  const shown = LOCALES.filter(({ code }) => code === SOURCE_LOCALE || present.includes(code))
+  const addable = LOCALES.filter(({ code }) => !shown.some((locale) => locale.code === code))
+  return (
+    <div aria-label="语言" className="wf-locales" role="group">
+      {shown.map((locale) => (
+        <TooltipRoot key={locale.code}>
+          <TooltipTrigger asChild>
+            <button
+              aria-label={localeButtonName(locale)}
+              aria-pressed={locale.code === current}
+              className="wf-locale ui-state ui-focus"
+              onClick={() => onSwitch(locale.code)}
+              type="button"
+            >
+              {locale.tag}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="wf-tip" side="top">
+            {locale.code === SOURCE_LOCALE
+              ? '切换到中文：预览和字幕显示原文'
+              : `切换到 ${locale.name}：预览和字幕显示 ${locale.name} 的字`}
+          </TooltipContent>
+        </TooltipRoot>
+      ))}
+      {addable.length === 0 ? null : <AddLocale addable={addable} onAdd={onAdd} />}
+    </div>
+  )
+}
+
+function AddLocale({
+  addable,
+  onAdd,
+}: {
+  addable: readonly (typeof LOCALES)[number][]
+  onAdd: (code: LocaleCode) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [hint, setHint] = useState(false)
+  return (
+    <MenuRoot
+      onOpenChange={(next) => {
+        setOpen(next)
+        setHint(false)
+      }}
+      open={open}
+    >
+      {/* 和选择工具的下拉一样：菜单开着时不出提示，免得压在向上弹出的菜单底下 */}
+      <TooltipRoot onOpenChange={setHint} open={hint && !open}>
+        <MenuTrigger asChild>
+          <TooltipTrigger asChild>
+            <button aria-label="添加语言" className="wf-locale-add ui-state ui-focus" type="button">
+              <Icon decorative name="add" size="xs" />
+            </button>
+          </TooltipTrigger>
+        </MenuTrigger>
+        <TooltipContent className="wf-tip" side="top">
+          添加语言
+        </TooltipContent>
+      </TooltipRoot>
+      <MenuSurface align="start" side="top">
+        {addable.map((locale) => (
+          <MenuItem key={locale.code} onSelect={() => onAdd(locale.code)}>
+            {localeButtonName(locale)}
+          </MenuItem>
+        ))}
+      </MenuSurface>
+    </MenuRoot>
+  )
+}
+
 type EditorToolbarProps = {
   canUndo: boolean
   canRedo: boolean
@@ -193,6 +280,8 @@ type EditorToolbarProps = {
   /** 「适应宽度」时一秒画多少像素，缩放的档位和滑杆都以它为准。 */
   fitPps: number
   onZoom: (zoom: Zoom) => void
+  /** 语言切换，排在吸附、波纹编辑后面；还没有工程时是 undefined，不显示。 */
+  locales: LocaleControls | undefined
   /** 排在右边那组最后的控件（导出）。 */
   actions: ReactNode
 }
@@ -219,6 +308,7 @@ export function EditorToolbar({
   zoom,
   fitPps,
   onZoom,
+  locales,
 }: EditorToolbarProps) {
   return (
     <div aria-label="剪辑工具" className="wf-toolbar" role="toolbar">
@@ -306,6 +396,12 @@ export function EditorToolbar({
               : '波纹编辑已关闭：删除片段后保留空档'
           }
         />
+        {locales === undefined ? null : (
+          <>
+            <span aria-hidden="true" className="wf-divider" />
+            <LocaleBar {...locales} />
+          </>
+        )}
       </div>
       <div className="wf-toolbar-group">
         <Tool

@@ -311,6 +311,25 @@
   border-color: var(--color-on-surface);
 }
 
+/* 外语下文字框下面的原文：小号淡色，前面一个「原文」小标 */
+.wf-caption-source {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.wf-caption-source-tag {
+  flex: none;
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-high);
+}
+
 .wf-song {
   position: relative;
   display: flex;
@@ -1788,6 +1807,52 @@
 .wf-tool.is-pressed {
   background: color-mix(in srgb, var(--color-primary) 8%, transparent);
   color: var(--color-primary);
+}
+
+/* 语言切换：一条胶囊里排着语言代码，当前的反色高亮；最后是「+」 */
+.wf-locales {
+  display: inline-flex;
+  height: 24px;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-low);
+  box-shadow: inset 0 0 0 1px var(--color-hairline);
+}
+
+.wf-locale,
+.wf-locale-add {
+  display: inline-flex;
+  height: 20px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  color: var(--color-on-surface-variant);
+}
+
+.wf-locale {
+  padding: 0 8px;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+}
+
+.wf-locale[aria-pressed='true'] {
+  background: var(--color-on-surface);
+  color: var(--color-surface);
+  font-weight: 600;
+}
+
+.wf-locale-add {
+  width: 20px;
+  color: var(--color-on-surface-muted);
+}
+
+.wf-locale-add[data-state='open'] {
+  background: var(--color-state-active);
 }
 
 /* 选择工具：当前工具的图标后面跟一个小箭头，点开是下拉菜单 */

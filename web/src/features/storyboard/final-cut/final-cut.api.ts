@@ -6,6 +6,7 @@ import {
   zCancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponse as zExportCancelled,
   zConversationEnvelope,
   zConversationFileEnvelope,
+  zConversationFilesOut,
   zFinalCutFileCreatedOut,
   zFinalCutPreviewOut,
   zGenerationEnvelope,
@@ -21,6 +22,7 @@ import {
 import { CAPTIONS_PATH, isCaptionsHost } from './composition/captions'
 import type { CatalogItem, ComponentCatalog } from './composition/catalog'
 import { PROJECT_MAIN } from './composition/film'
+import { LOCALES, localeOfPath, localePath, parseLocaleValues, type LocaleCode } from './locales'
 
 /** final-cut 工程在对话工作区里的目录。 */
 export const PROJECT_DIR = 'final-cut'
@@ -144,12 +146,40 @@ export const holdProjectReads = (conversationId: string, saving: Promise<unknown
 /**
  * 工作区里存着的工程：主文件，和字幕场景文件（`captions`，不存在时是 null）。`captionsPath` 是字幕场景文件的
  * 路径：主文件里字幕宿主挂载的那个，没有宿主时是编辑器新建它的位置；`hosted` 是主文件里有没有字幕宿主。
+ * `locales` 是工程里有的各外语的值表（语言 → 文件），按 `LOCALES` 的先后。
  */
 export type StoredProject = {
   main: StoredFile
   captionsPath: string
   captions: StoredFile | null
   hosted: boolean
+  locales: ReadonlyMap<LocaleCode, StoredFile>
+}
+
+/** 工程里有值表的外语：`final-cut/locales/` 下认识的语言的值表，按 `LOCALES` 的先后。 */
+const storedLocales = async (conversationId: string, signal?: AbortSignal) => {
+  const { files } = await apiFetch(
+    `${conversationPath(conversationId)}/workspace/files`,
+    zConversationFilesOut,
+    { fallbackErrorMessage: READ_FAILED, ...(signal === undefined ? {} : { signal }) },
+  )
+  const found = new Set(files.map((file) => projectLocaleOf(file.path)))
+  return LOCALES.flatMap(({ code }) => (found.has(code) ? [code] : []))
+}
+
+/** 工作区里的路径 `path` 是不是工程里哪种外语的值表（见 `localeOfPath`）。 */
+export const projectLocaleOf = (path: string): LocaleCode | undefined =>
+  path.startsWith(`${PROJECT_DIR}/`) ? localeOfPath(path.slice(PROJECT_DIR.length + 1)) : undefined
+
+/** 读工程里语言 `code` 的值表，写法不对时说明原因；文件不存在时是 null。 */
+export const readLocaleFile = async (
+  conversationId: string,
+  code: LocaleCode,
+  signal?: AbortSignal,
+): Promise<StoredFile | null> => {
+  const file = await readProjectFile(conversationId, localePath(code), signal)
+  if (file !== null) parseLocaleValues(file.content, code)
+  return file
 }
 
 /** 主文件根下字幕宿主挂载的文件；没有宿主时是 undefined。 */
@@ -168,7 +198,8 @@ const captionsSourceOf = (html: string): string | undefined => {
 
 /**
  * 读工作区里的工程，还没有工程（没有主文件）时是 null。字幕场景文件按主文件里字幕宿主挂载的路径读；没有宿主
- * 时也读编辑器新建它的位置（加了又撤销会留下空的场景文件）。
+ * 时也读编辑器新建它的位置（加了又撤销会留下空的场景文件）。语言值表按工作区的文件列表找，不认识的语言不读；
+ * 值表写法不对时说明原因。
  */
 export const readProject = async (
   conversationId: string,
@@ -178,11 +209,17 @@ export const readProject = async (
   if (main === null) return null
   const source = captionsSourceOf(main.content)
   const captionsPath = source ?? CAPTIONS_PATH
+  const locales = new Map<LocaleCode, StoredFile>()
+  for (const code of await storedLocales(conversationId, signal)) {
+    const file = await readLocaleFile(conversationId, code, signal)
+    if (file !== null) locales.set(code, file)
+  }
   return {
     main,
     captionsPath,
     captions: await readProjectFile(conversationId, captionsPath, signal),
     hosted: source !== undefined,
+    locales,
   }
 }
 

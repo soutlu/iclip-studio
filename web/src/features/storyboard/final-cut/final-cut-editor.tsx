@@ -64,6 +64,7 @@ import {
   type ItemKind,
 } from './items'
 import { ItemsTab } from './items-tab'
+import { captionIn, localeNamed, SOURCE_LOCALE, type LocaleCode, type ShownLocale } from './locales'
 import { MaterialArea } from './material-area'
 import {
   takeDurationMs,
@@ -144,6 +145,7 @@ const RECOGNIZING_TEXT = '正在识别字幕，请等待识别完成'
 // 还没有 final-cut 时先放组件或块：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 const NO_LINKS: Links = new Map()
+const SOURCE_SHOWN: ShownLocale = { code: SOURCE_LOCALE, values: null }
 
 /** 侧栏的目录页签：镜头、贴片、场景、配乐、字幕。 */
 type CatalogTab = 'shots' | ItemKind | 'audio' | 'captions'
@@ -234,6 +236,15 @@ function EditorBody({
   const captions = useMemo(
     () => clips.filter((clip): clip is CaptionClip => clip.kind === 'caption'),
     [clips],
+  )
+  // 显示着的语言：字幕页签、「属性」、时间线上的字幕和预览都按它
+  const locale = film?.locale ?? SOURCE_SHOWN
+  const untranslated = useMemo(
+    () =>
+      new Set(
+        captions.filter((caption) => captionIn(locale, caption).untranslated).map((c) => c.id),
+      ),
+    [captions, locale],
   )
   const empty = film === null || film.clips.length === 0
   const links = film?.links ?? NO_LINKS
@@ -743,7 +754,11 @@ function EditorBody({
       film === null || film.clips.length === 0 || tokens === undefined
         ? undefined
         : {
-            html: previewDocument(film.html, projectFilesBase(tokens.origin, tokens.token)),
+            html: previewDocument(
+              film.html,
+              projectFilesBase(tokens.origin, tokens.token),
+              film.locale.values,
+            ),
             runtimeSrc: previewRuntimeSrc(catalog, tokens.origin),
             filesRevision,
           },
@@ -759,9 +774,11 @@ function EditorBody({
   const captionBlocked =
     film === null
       ? NO_FILM_CAPTION_TEXT
-      : 'refusal' in captionAt
-        ? CAPTION_REFUSAL_TEXT[captionAt.refusal]
-        : undefined
+      : locale.values !== null
+        ? `当前语言是 ${localeNamed(locale.code).name}，无法加字幕；请先切换到中文`
+        : 'refusal' in captionAt
+          ? CAPTION_REFUSAL_TEXT[captionAt.refusal]
+          : undefined
   // 加上的那一句就是选中的这一句
   const addCaption = async () => {
     if ('refusal' in captionAt) return undefined
@@ -833,10 +850,10 @@ function EditorBody({
     if (recognizeBlocked === undefined && 'targets' in recognizable)
       void recognition.start(recognizable.targets)
   }
-  // 「字幕」页签和「属性」里改字幕的字
-  const setCaptionText = (id: string, text: string) => {
+  // 「字幕」页签和「属性」里改字幕的字：改的是文字框所在的那种语言
+  const setCaptionText = (id: string, text: string, code: LocaleCode) => {
     leaveMaterial()
-    session.setCaptionText(id, text)
+    session.setCaptionText(id, text, code)
   }
 
   const viewedMaterial =
@@ -1065,6 +1082,7 @@ function EditorBody({
             <CaptionsTab
               addBlocked={captionBlocked}
               captions={captions}
+              locale={locale}
               onAdd={addCaption}
               onPick={(caption) => {
                 seek(caption.start)
@@ -1101,6 +1119,7 @@ function EditorBody({
                 session.setValues(id, values)
               }}
               onAttributes={setClipAttributes}
+              locale={locale}
               onCaptionText={setCaptionText}
               selected={selectedClips}
               silentSource={silentSource}
@@ -1146,6 +1165,22 @@ function EditorBody({
             'refusal' in playheadCut ? SPLIT_REFUSAL_TEXT[playheadCut.refusal] : undefined
           }
           tool={tool}
+          locales={
+            film === null
+              ? undefined
+              : {
+                  current: locale.code,
+                  present: film.locales,
+                  onSwitch: (code) => {
+                    leaveMaterial()
+                    session.setLocale(code)
+                  },
+                  onAdd: (code) => {
+                    leaveMaterial()
+                    void session.addLocale(code)
+                  },
+                }
+          }
           onZoomToSelection={zoomToSelection}
           onRipple={() => setRipple((on) => !on)}
           onSnap={() => setSnap((on) => !on)}
@@ -1156,6 +1191,7 @@ function EditorBody({
         />
         <FilmTimeline
           clips={clips}
+          untranslated={untranslated}
           links={links}
           onSplit={split}
           tool={tool}
