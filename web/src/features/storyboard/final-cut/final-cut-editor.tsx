@@ -355,10 +355,7 @@ function EditorBody({
     ),
   )
   const sourceMs: SourceLength = (clip) => {
-    if (clip.kind === 'video') {
-      const state = keyframes.get(clip.src)
-      return state?.kind === 'ready' ? Math.round(state.index.duration * 1000) : undefined
-    }
+    if (clip.kind === 'video') return takeDurationMs(keyframes.get(clip.src))
     const state = clip.kind === 'audio' ? audioPeaks.get(clip.src) : undefined
     return state?.kind === 'ready' ? Math.round(state.peaks.duration * 1000) : undefined
   }
@@ -510,12 +507,12 @@ function EditorBody({
       !isEditorKeyTarget(event, editor)
     )
       return
-    // 全屏时菜单挂在编辑器里面，菜单里按的键归菜单；「属性」里的滑杆、下拉框、开关上按的键也归控件
+    // 全屏时菜单挂在编辑器里面，菜单里按的键归菜单；「属性」里的滑杆、下拉、取色、开关上按的键也归控件
     // 自己，照参照的工作台。时间尺上的播放位置也是滑杆，点过它以后快捷键照常用
     if (
       event.target instanceof Element &&
       event.target.closest(
-        '[role="menu"], [data-inspector] :is(input, select, [role="switch"])',
+        '[role="menu"], [data-inspector] :is(input, [role="slider"], [role="switch"], [aria-haspopup])',
       ) !== null
     )
       return
@@ -825,17 +822,16 @@ function EditorBody({
           </TabsContent>
           <TabsContent className="wf-side-body is-props" value="props">
             <FilmInspector
+              audioPeaks={audioPeaks}
               clips={clips}
               catalog={catalog}
+              keyframes={keyframes}
+              onGesture={setGesturing}
               onHide={(id, hidden) => {
                 leaveMaterial()
                 session.setHidden([id], hidden)
               }}
               onRemove={removeSelected}
-              onRestart={(starts) => {
-                leaveMaterial()
-                session.restart(starts)
-              }}
               onRetime={(timings) => {
                 leaveMaterial()
                 session.retime(timings)

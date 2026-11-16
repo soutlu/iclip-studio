@@ -6,11 +6,12 @@ import {
   groupTrimmed,
   groupTrimRange,
   rippleStarts,
+  slipped,
   trimBounds,
   trimmed,
   type Timing,
 } from './clip-edit'
-import type { FilmClip } from './composition/film'
+import { MIN_CLIP_MS, type FilmClip } from './composition/film'
 import { zoneOf } from './placement'
 
 const first = video({ id: 'a', start: 0, duration: 2_000 })
@@ -209,6 +210,114 @@ const shifted = (
   expectValidFilm(after)
   return result
 }
+
+describe('原片截取', () => {
+  // 素材 6 秒；片段在 final-cut 的 1–3 秒，用素材的 2–4 秒；同一行 4 秒处有下一个片段，别的行不挡路
+  const SOURCE = 6_000
+  const clip = video({ id: 's', start: 1_000, duration: 2_000, mediaStart: 2_000 })
+  const next = video({ id: 'n', start: 4_000, duration: 1_000 })
+  const elsewhere = video({ id: 'o', start: 3_000, duration: 1_000, track: 1 })
+  const row = [clip, next, elsewhere]
+  const alone = [clip, elsewhere]
+
+  it('拖入点：出点不动，片段的开始不动、时长跟着变；往前拉碰到后面的片段就停，不早于素材开头', () => {
+    expect(slipped(clip, 'start', 2_500, row, SOURCE)).toEqual({
+      start: 1_000,
+      duration: 1_500,
+      mediaStart: 2_500,
+    })
+    // 后面的片段在 4 秒：时长最多 3 秒，入点最早到 1 秒
+    expect(slipped(clip, 'start', 0, row, SOURCE)).toEqual({
+      start: 1_000,
+      duration: 3_000,
+      mediaStart: 1_000,
+    })
+    expect(slipped(clip, 'start', -500, alone, SOURCE)).toEqual({
+      start: 1_000,
+      duration: 4_000,
+      mediaStart: 0,
+    })
+  })
+
+  it('拖入点：出点在素材最后时也能往前拉，只被后面的片段挡住', () => {
+    const atEnd = video({ id: 'e', start: 0, duration: 2_000, mediaStart: 4_000 })
+    expect(slipped(atEnd, 'start', 0, [atEnd], SOURCE)).toEqual({
+      start: 0,
+      duration: 6_000,
+      mediaStart: 0,
+    })
+    const blocker = video({ id: 'b', start: 3_000, duration: 1_000 })
+    expect(slipped(atEnd, 'start', 0, [atEnd, blocker], SOURCE)).toEqual({
+      start: 0,
+      duration: 3_000,
+      mediaStart: 3_000,
+    })
+  })
+
+  it('拖入点：往后推最多到出点前留够最短时长', () => {
+    expect(slipped(clip, 'start', 3_990, row, SOURCE)).toEqual({
+      start: 1_000,
+      duration: MIN_CLIP_MS,
+      mediaStart: 4_000 - MIN_CLIP_MS,
+    })
+  })
+
+  it('拖出点：入点不动；往外碰到后面的片段、素材结尾就停，往里留够最短时长', () => {
+    expect(slipped(clip, 'end', 3_500, row, SOURCE)).toEqual({
+      start: 1_000,
+      duration: 1_500,
+      mediaStart: 2_000,
+    })
+    expect(slipped(clip, 'end', 6_000, row, SOURCE).duration).toBe(3_000)
+    expect(slipped(clip, 'end', 9_000, alone, SOURCE).duration).toBe(4_000)
+    expect(slipped(clip, 'end', 0, row, SOURCE).duration).toBe(MIN_CLIP_MS)
+  })
+
+  it('拖整段：时长不变，框的正中对到指针处，收在素材里', () => {
+    expect(slipped(clip, 'body', 3_000, row, SOURCE)).toEqual({
+      start: 1_000,
+      duration: 2_000,
+      mediaStart: 2_000,
+    })
+    expect(slipped(clip, 'body', 1_200, row, SOURCE).mediaStart).toBe(200)
+    expect(slipped(clip, 'body', 500, row, SOURCE).mediaStart).toBe(0)
+    expect(slipped(clip, 'body', 5_900, row, SOURCE).mediaStart).toBe(4_000)
+    // 后面的片段不挡：时长没变，不会压过去
+    expect(slipped(clip, 'body', 5_900, row, SOURCE).duration).toBe(2_000)
+  })
+
+  it('2 倍速：用掉的素材是时长的两倍；入点、出点按素材时间换成 final-cut 的时长', () => {
+    // final-cut 的 0–1 秒，用素材的 1–3 秒
+    const fast = video({ id: 'f', start: 0, duration: 1_000, mediaStart: 1_000, playbackRate: 2 })
+    expect(slipped(fast, 'end', 5_000, [fast], SOURCE)).toEqual({
+      start: 0,
+      duration: 2_000,
+      mediaStart: 1_000,
+    })
+    // 素材剩下 5 秒，2 倍速只够放 2.5 秒
+    expect(slipped(fast, 'end', 9_000, [fast], SOURCE).duration).toBe(2_500)
+    expect(slipped(fast, 'start', 0, [fast], SOURCE)).toEqual({
+      start: 0,
+      duration: 1_500,
+      mediaStart: 0,
+    })
+    expect(slipped(fast, 'start', 3_000, [fast], SOURCE)).toEqual({
+      start: 0,
+      duration: MIN_CLIP_MS,
+      mediaStart: 3_000 - MIN_CLIP_MS * 2,
+    })
+    expect(slipped(fast, 'body', 6_000, [fast], SOURCE).mediaStart).toBe(4_000)
+  })
+
+  it('开着循环的音频用掉的比素材还长：整段只能从 0 开始', () => {
+    const looped = audio({ duration: 8_000, loop: true })
+    expect(slipped(looped, 'body', 3_000, [looped], SOURCE)).toEqual({
+      start: 0,
+      duration: 8_000,
+      mediaStart: 0,
+    })
+  })
+})
 
 describe('挪一个片段（只有它自己的一组）', () => {
   const offGrid = video({ id: 'e', start: 0, duration: 1_234, track: 2 })

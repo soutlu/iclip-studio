@@ -1,4 +1,3 @@
-import { Slider } from 'radix-ui'
 import { useState, type ReactNode } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -10,6 +9,7 @@ import {
   MenuSurface,
   MenuTrigger,
 } from '@/shared/ui/menu'
+import { Slider } from '@/shared/ui/slider'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import {
   FIT_ZOOM,
@@ -256,22 +256,15 @@ export function EditorToolbar({
           onClick={() => onZoom(nextZoom('out', zoom, fitPps))}
           tip="缩小时间线"
         />
-        <Slider.Root
-          className="wf-zoom"
+        <Slider
+          className="mx-1 w-17 flex-none"
+          label="时间线缩放"
           max={100}
-          onValueChange={([at]) => {
-            if (at !== undefined) onZoom(sliderToZoom(at, fitPps))
-          }}
-          step={1}
-          value={[zoomToSlider(zoom, fitPps)]}
-        >
-          <Slider.Track className="wf-zoom-track" />
-          <Slider.Thumb
-            aria-label="时间线缩放"
-            aria-valuetext={zoomLabel(zoom, fitPps)}
-            className="wf-zoom-thumb ui-focus"
-          />
-        </Slider.Root>
+          min={0}
+          onChange={(at) => onZoom(sliderToZoom(at, fitPps))}
+          value={zoomToSlider(zoom, fitPps)}
+          valueText={zoomLabel(zoom, fitPps)}
+        />
         <Tool
           icon="zoom"
           label="放大时间线"

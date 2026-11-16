@@ -1,5 +1,5 @@
 import type { Edge } from '../editing/timeline-drag'
-import { isMediaClip, MIN_CLIP_MS, type FilmClip } from './composition/film'
+import { isMediaClip, MIN_CLIP_MS, type FilmClip, type MediaClip } from './composition/film'
 import { onRow, topTrack, zoneOf, type RowKey } from './placement'
 import { resolveNearestFreeStart } from './vendor/hyperframes-studio/player/components/timelineCollision'
 import {
@@ -84,6 +84,47 @@ export const trimmed = (
     start: at,
     duration: clip.duration - delta,
     mediaStart: Math.max(0, Math.round(mediaStart + delta * rateOf(clip))),
+  }
+}
+
+/** 「原片截取」条上拖的是哪里：入点的抓手、出点的抓手，或整段（换一截素材）。 */
+export type SlipGrip = Edge | 'body'
+
+/**
+ * 在「原片截取」条上拖 `grip`、指针对着素材的 `sourceAt` 毫秒时，片段的起止和入点（`sourceMs` 是素材总长）。
+ * 片段在 final-cut 里的开始不动，不推后面的片段：
+ * - 入点：出点不动，时长 =（出点 − 入点）÷ 速度；往前最多到时长碰上同一行后面的片段、不早于 0，往后留够最短时长；
+ * - 出点：入点不动，按裁结尾（`trimBounds`）收住；
+ * - 整段：时长不变，框的正中对到指针处，入点收在 0 到「素材总长 − 用掉的长度」之间。
+ */
+export const slipped = (
+  clip: MediaClip,
+  grip: SlipGrip,
+  sourceAt: number,
+  clips: readonly FilmClip[],
+  sourceMs: number,
+): Timing => {
+  const { mediaStart } = clip
+  const rate = rateOf(clip)
+  const used = clip.duration * rate
+  const outPoint = mediaStart + used
+  if (grip === 'end') {
+    const bounds = trimBounds(clip, 'end', clips, sourceMs)
+    return trimmed(clip, 'end', Math.round(clip.start + (sourceAt - mediaStart) / rate), bounds)
+  }
+  if (grip === 'body') {
+    const at = Math.min(sourceMs - used, sourceAt - used / 2)
+    return { start: clip.start, duration: clip.duration, mediaStart: Math.max(0, Math.round(at)) }
+  }
+  // 出点不动，素材剩下的长度卡不住入点往前拉：按入点在 0 处算裁结尾的上限，只剩后面片段的限制
+  const { max } = trimBounds({ ...clip, mediaStart: 0 }, 'end', clips, sourceMs)
+  const earliest = Math.max(0, Math.ceil(outPoint - (max - clip.start) * rate))
+  const latest = Math.floor(outPoint - MIN_CLIP_MS * rate)
+  const inPoint = Math.max(earliest, Math.min(latest, Math.round(sourceAt)))
+  return {
+    start: clip.start,
+    duration: Math.round((outPoint - inPoint) / rate),
+    mediaStart: inPoint,
   }
 }
 
