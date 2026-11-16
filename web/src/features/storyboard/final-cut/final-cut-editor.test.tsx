@@ -1863,7 +1863,7 @@ describe('final-cut 编辑器 · 属性', () => {
       const user = await openWith(twoClips())
       await shot(/^生成 A 镜头 1，/)
       await pick(user, 'A · 镜头 1')
-      expect(within(inspector()).getByText('· A · 镜头 1')).toBeVisible()
+      expect(within(inspector()).getByText('· 镜头组 1 · A · V1')).toBeVisible()
       await waitFor(() => expect(summary()).toHaveTextContent('1.00 – 3.00s / 6.0s'))
 
       handle('裁剪开头').focus()
@@ -1921,9 +1921,10 @@ describe('final-cut 编辑器 · 属性', () => {
       )
     })
 
-    it('片段用的素材不在「镜头」页签里显示着：照样读到总长，能截取', async () => {
+    it('片段用的素材不在出片里：标题写片段自己的名字，照样读到总长，能截取', async () => {
       const user = await openWith([video({ src: URL_OLD, duration: 2_000 })])
       await pick(user, 'A · 镜头 1')
+      expect(within(inspector()).getByText('· A · 镜头 1')).toBeVisible()
       await waitFor(() => expect(summary()).toHaveTextContent('0.00 – 2.00s / 5.0s'))
       handle('裁剪结尾').focus()
       await user.keyboard('{Shift>}{ArrowRight}{/Shift}')

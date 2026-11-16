@@ -209,6 +209,17 @@ function EditorBody({
     () => materialCatalog(groupConversationVideos(videos.data ?? [])),
     [videos.data],
   )
+  // 「原片截取」标题里写的素材名：视频片段按地址在出片的各个版本里找
+  const sourceNames = useMemo(
+    () =>
+      new Map(
+        [...materials.byJob.values()].map((item) => [
+          item.url,
+          `${item.groupLabel} · ${item.takeLetter} · ${item.versionNumber}`,
+        ]),
+      ),
+    [materials],
+  )
   const [pickedVersions, setPickedVersions] = useState<Readonly<Record<string, string>>>({})
   const versionOf = (take: MaterialTake): Material =>
     take.versions.find((item) => item.jobId === pickedVersions[take.id]) ?? take.latest
@@ -848,6 +859,7 @@ function EditorBody({
               selected={selectedClips}
               silentSource={(src) => audioTracks.get(src) === false}
               sourceMs={sourceMs}
+              sourceName={(src) => sourceNames.get(src)}
             />
           </TabsContent>
         </TabsRoot>

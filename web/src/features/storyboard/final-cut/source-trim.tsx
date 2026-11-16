@@ -40,6 +40,7 @@ type Drag = {
 export function SourceTrim({
   clip,
   clips,
+  name,
   sourceMs,
   keyframe,
   peaks,
@@ -48,6 +49,8 @@ export function SourceTrim({
 }: {
   clip: MediaClip
   clips: readonly FilmClip[]
+  /** 标题里写的素材名。 */
+  name: string
   /** 素材的总长；还不知道时是 undefined。 */
   sourceMs: number | undefined
   /** 视频片段素材的镜头读取状态。 */
@@ -156,8 +159,8 @@ export function SourceTrim({
     <section className="wf-prop-section">
       <div className="wf-prop-title-row">
         <h4 className="wf-prop-title">原片截取</h4>
-        <span className="wf-prop-subtitle" title={clip.label}>
-          · {clip.label}
+        <span className="wf-prop-subtitle" title={name}>
+          · {name}
         </span>
         {known ? (
           <span className="wf-slip-summary" data-testid="slip-summary">

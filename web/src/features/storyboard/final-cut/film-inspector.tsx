@@ -27,6 +27,8 @@ type Props = {
   audioPeaks: ReadonlyMap<string, PeaksState>
   /** 这个地址的素材确认没有声音；有声音、还不知道时是 false。 */
   silentSource: (src: string) => boolean
+  /** 这个地址的出片叫什么（镜头组、原作、版本）；不是出片时是 undefined。 */
+  sourceName: (src: string) => string | undefined
   onHide: (id: string, hidden: boolean) => void
   /** 删掉选中的片段，和按 Delete 一样。 */
   onRemove: () => void
@@ -102,6 +104,7 @@ function ClipInspector({
   keyframes,
   audioPeaks,
   silentSource,
+  sourceName,
   onHide,
   onRemove,
   onRetime,
@@ -148,6 +151,7 @@ function ClipInspector({
               clip={clip}
               clips={clips}
               keyframe={keyframes.get(clip.src)}
+              name={sourceName(clip.src) ?? clip.label}
               onGesture={onGesture}
               onRetime={onRetime}
               peaks={audioPeaks.get(clip.src) ?? NO_PEAKS}
