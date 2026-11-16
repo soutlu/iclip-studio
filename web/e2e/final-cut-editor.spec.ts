@@ -121,11 +121,9 @@ test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销、导出
   expect(scripts).not.toHaveLength(0)
   for (const src of scripts) expect(src).toMatch(libraryOf(previewOrigin))
 
-  const card = editor
-    .getByRole('complementary', { name: '贴片、场景、音频和属性' })
-    .getByRole('list')
-    .getByRole('group', { name: /秒$/ })
-    .first()
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  await side.getByRole('tab', { name: '贴片' }).click()
+  const card = side.getByRole('list').getByRole('group', { name: /秒$/ }).first()
   const hoverRuntime = runtimeRequested()
   await card.hover()
   await hoverRuntime
@@ -145,6 +143,7 @@ test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销、导出
   await expect(hoverPlayer).toHaveCount(0)
 
   const second = mainSaved(page, 2)
+  await side.getByRole('tab', { name: '镜头' }).click()
   await materials.getByRole('button', { name: /^生成 A 镜头 3，/ }).click()
   await page.keyboard.press('Enter')
   await second
@@ -411,8 +410,8 @@ test('块页签搜到块点「加到播放头」、组件页签拖一个组件�
   const withVideo = htmlOf(await first)
   const videoSeconds = Number(/<video [^>]*data-duration="([^"]+)"/.exec(withVideo)?.[1])
 
-  const side = editor.getByRole('complementary', { name: '贴片、场景、音频和属性' })
-  await expect(side.getByRole('tab', { name: '贴片' })).toHaveAttribute('aria-selected', 'true')
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  await expect(side.getByRole('tab', { name: '镜头' })).toHaveAttribute('aria-selected', 'true')
   await side.getByRole('tab', { name: '场景' }).click()
   await side.getByRole('searchbox', { name: '搜索场景' }).fill('渐变')
   const cards = side.getByRole('list', { name: '场景' }).getByRole('group')
@@ -505,10 +504,11 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await openFinalCut(panel)
   const inspector = editor.getByRole('tabpanel', { name: '属性' })
-  const side = editor.getByRole('complementary', { name: '贴片、场景、音频和属性' })
-  await expect(side.getByRole('tab', { name: '贴片' })).toHaveAttribute('aria-selected', 'true')
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  await expect(side.getByRole('tab', { name: '镜头' })).toHaveAttribute('aria-selected', 'true')
   await expect(inspector).toHaveCount(0)
 
+  await side.getByRole('tab', { name: '贴片' }).click()
   await side.getByRole('searchbox', { name: '搜索贴片' }).fill('可填项')
   const card = side.getByRole('group', { name: '测试可填项，5 秒' })
   const added = mainSavedWith(page, (html) => savedItem(html, '测试可填项') !== null)
@@ -611,8 +611,8 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、fi
     .getByRole('slider', { name: '播放进度' })
   await expect(progress).toHaveAttribute('aria-valuetext', /^00:00\.00 \/ 00:0\d\.\d\d$/)
 
-  const side = editor.getByRole('complementary', { name: '贴片、场景、音频和属性' })
-  await side.getByRole('tab', { name: '音频' }).click()
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  await side.getByRole('tab', { name: '配乐' }).click()
   const list = side.getByRole('list', { name: '音频' })
   const guitar = list.getByRole('listitem').filter({ hasText: '轻快原声吉他，适合秋季穿搭' })
   const uploaded = list.getByRole('listitem').filter({ hasText: /^上传的音乐 · / })
@@ -647,14 +647,14 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、fi
   await expect(progress).toHaveAttribute('aria-valuetext', '00:01.00 / 00:31.00')
   expect(videoSeconds).toBeLessThan(31)
 
-  // 点「已使用」的那一行：选中它对应的片段，侧栏跟着切到「属性」；再点回「音频」，选中不变
+  // 点「已使用」的那一行：选中它对应的片段，侧栏跟着切到「属性」；再点回「配乐」，选中不变
   await guitar.getByRole('button', { name: '轻快原声吉他，适合秋季穿搭，已使用' }).click()
   await expect(music.getByRole('button', { name: /^选中：/ })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
   await expect(side.getByRole('tab', { name: '属性' })).toHaveAttribute('aria-selected', 'true')
-  await side.getByRole('tab', { name: '音频' }).click()
+  await side.getByRole('tab', { name: '配乐' }).click()
   await expect(music.getByRole('button', { name: /^选中：/ })).toHaveAttribute(
     'aria-pressed',
     'true',
@@ -668,7 +668,8 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、fi
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
   await page.mouse.down()
   await page.mouse.move(from.x + from.width / 2 + 10, from.y + from.height / 2 + 10, { steps: 3 })
-  await page.mouse.move(box.x + box.width + 4, lane.y + lane.height / 2, { steps: 8 })
+  // 一步落到声音行上：分几步拖过去，中途停在两行之间的缝上会先让出新的一行，声音行被挤下去
+  await page.mouse.move(box.x + box.width + 4, lane.y + lane.height / 2)
   await expect(soundRow.getByTestId('drop-ghost')).toBeVisible()
   const dropped = mainSavedWith(page, (html) => savedAudio(html).length === 2)
   await page.mouse.up()
@@ -728,8 +729,8 @@ test('属性「媒体」：音频片段拉满增益、打开循环写进文件�
   await first
 
   // 音频加到播放头（0 秒），在画面行下面新开一行
-  const side = editor.getByRole('complementary', { name: '贴片、场景、音频和属性' })
-  await side.getByRole('tab', { name: '音频' }).click()
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  await side.getByRole('tab', { name: '配乐' }).click()
   const added = mainSavedWith(page, (html) => savedAudio(html).length === 1)
   await side
     .getByRole('list', { name: '音频' })
@@ -806,7 +807,8 @@ test('在贴片卡片上按 ] 选中片段：侧栏切到「属性」，焦点�
   await page.keyboard.press('Enter')
   await first
 
-  const side = editor.getByRole('complementary', { name: '贴片、场景、音频和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  await side.getByRole('tab', { name: '贴片' }).click()
   await side
     .getByRole('list', { name: '贴片' })
     .getByRole('group')
@@ -853,8 +855,8 @@ test('编辑区变窄时只裁不换行：工具条和侧栏页签都排一行�
   const exporting = await boxOf(toolbar.getByRole('button', { name: '导出', exact: true }))
   expect(exporting.x + exporting.width).toBeGreaterThan(workspace.x + workspace.width)
 
-  const side = editor.getByRole('complementary', { name: '贴片、场景、音频和属性' })
-  const firstTab = await boxOf(side.getByRole('tab', { name: '贴片' }))
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  const firstTab = await boxOf(side.getByRole('tab', { name: '镜头' }))
   const propsTab = await boxOf(side.getByRole('tab', { name: '属性' }))
   expect(propsTab.y).toBe(firstTab.y)
 
@@ -1094,7 +1096,8 @@ test('新建工程、加镜头和一个贴片：条目文件拷进工程，刷�
   await page.keyboard.press('Enter')
   await first
 
-  const side = editor.getByRole('complementary', { name: '贴片、场景、音频和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
+  await side.getByRole('tab', { name: '贴片' }).click()
   await side.getByRole('searchbox', { name: '搜索贴片' }).fill('叠加')
   const card = side.getByRole('group', { name: '测试叠加，4 秒' })
   const added = mainSavedWith(page, (html) => savedItem(html, '测试叠加') !== null)

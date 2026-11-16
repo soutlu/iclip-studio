@@ -1028,7 +1028,9 @@ export function FilmTimeline({
                       ))}
                       {dropGhost(row)}
                       {clips.length === 0 && ghost === null ? (
-                        <span className="wf-lane-hint">将下方的镜头拖到此处可加入 final-cut</span>
+                        <span className="wf-lane-hint">
+                          将「镜头」页签里的镜头拖到此处可加入 final-cut
+                        </span>
                       ) : null}
                     </div>
                   </ContextMenuTrigger>

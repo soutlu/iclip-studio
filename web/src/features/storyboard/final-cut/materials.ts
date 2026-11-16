@@ -1,5 +1,6 @@
 import { versionNameOf, type ConversationVideoGroup } from '../conversation-videos/video-groups'
 import type { SecondsRange } from '../editing/clip'
+import { versionLabel } from '../editing/version-lineage'
 import type { Edge } from '../editing/timeline-drag'
 import { shiftSelect } from '../editing/range-select'
 import { MIN_CLIP_MS, type VideoClip } from './composition/film'
@@ -14,8 +15,13 @@ export type Material = {
   groupId: string
   groupLabel: string
   takeId: string
+  /** 原作在组里的字母：A、B… */
+  takeLetter: string
   takeLabel: string
+  /** 版本的完整名字，如「V1 原片」。 */
   version: string
+  /** 只有版本号那一截：V1、V2… */
+  versionNumber: string
 }
 
 export type MaterialTake = {
@@ -155,7 +161,8 @@ export const materialCatalog = (groups: readonly ConversationVideoGroup[]): Mate
       else videos.push(video)
     }
     const takes = [...byTake].flatMap(([takeId, videos], index): MaterialTake[] => {
-      const takeLabel = `生成 ${takeLetter(index)}`
+      const letter = takeLetter(index)
+      const takeLabel = `生成 ${letter}`
       const versions = videos.map((video) => ({
         jobId: video.id,
         url: video.outputUrl,
@@ -163,8 +170,10 @@ export const materialCatalog = (groups: readonly ConversationVideoGroup[]): Mate
         groupId: group.id,
         groupLabel: group.label,
         takeId,
+        takeLetter: letter,
         takeLabel,
         version: versionNameOf(video),
+        versionNumber: versionLabel(video.version),
       }))
       const latest = versions.at(-1)
       return latest === undefined ? [] : [{ id: takeId, label: takeLabel, versions, latest }]
