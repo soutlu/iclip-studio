@@ -5,10 +5,16 @@ import {
   groupShift,
   groupTrimmed,
   groupTrimRange,
+  playheadSplit,
+  razorSplit,
   rippleStarts,
   slipped,
+  splitAllAt,
+  splitAt,
+  SPLIT_REFUSAL_TEXT,
   trimBounds,
   trimmed,
+  type Links,
   type Timing,
 } from './clip-edit'
 import { MIN_CLIP_MS, type FilmClip } from './composition/film'
@@ -648,5 +654,145 @@ describe('波纹编辑', () => {
       ['k', 5_000],
     ])
     expect(rippleStarts([...raised, music], new Set(['m'])).size).toBe(0)
+  })
+})
+
+describe('切开', () => {
+  const NO_LINKS: Links = new Map()
+  const handwritten: FilmClip = {
+    kind: 'other',
+    id: 'o',
+    label: '手写文字',
+    start: 0,
+    duration: 2_000,
+    track: 2,
+    hidden: false,
+    z: 0,
+  }
+
+  it('2 倍速的视频片段（1–7 秒）在 3 秒处切：前半段时长 2、入点不变，后半段从 3 秒起、时长 4、入点 4 秒', () => {
+    const fast = video({ id: 'v', start: 1_000, duration: 6_000, playbackRate: 2 })
+    expect(splitAt(fast, 3_000, [fast], NO_LINKS)).toEqual({
+      cuts: [
+        {
+          id: 'v',
+          first: { start: 1_000, duration: 2_000, mediaStart: 0 },
+          second: { start: 3_000, duration: 4_000, mediaStart: 4_000 },
+        },
+      ],
+    })
+  })
+
+  it('贴片、场景片段的入点是从组件自己的第几毫秒开始播；音频片段按入点接着算；切点取整到毫秒', () => {
+    const title = host({ id: 't', start: 1_000, duration: 3_000, playbackStart: 500 })
+    expect(splitAt(title, 2_500.4, [title], NO_LINKS)).toEqual({
+      cuts: [
+        {
+          id: 't',
+          first: { start: 1_000, duration: 1_500, mediaStart: 500 },
+          second: { start: 2_500, duration: 1_500, mediaStart: 2_000 },
+        },
+      ],
+    })
+    const music = audio({ id: 'm', start: 0, duration: 4_000, mediaStart: 10_000 })
+    expect(splitAt(music, 1_000, [music], NO_LINKS)).toMatchObject({
+      cuts: [{ second: { start: 1_000, duration: 3_000, mediaStart: 11_000 } }],
+    })
+  })
+
+  it('切点离两端不到最短片段长度（0.1 秒）、或者不在片段里：不切，说明是哪种', () => {
+    const clip = video({ id: 'v', start: 1_000, duration: 2_000 })
+    expect(splitAt(clip, 1_099, [clip], NO_LINKS)).toEqual({ refusal: 'edge' })
+    expect(splitAt(clip, 2_901, [clip], NO_LINKS)).toEqual({ refusal: 'edge' })
+    expect(splitAt(clip, 1_000, [clip], NO_LINKS)).toEqual({ refusal: 'outside' })
+    expect(splitAt(clip, 3_500, [clip], NO_LINKS)).toEqual({ refusal: 'outside' })
+    expect(splitAt(clip, 1_100, [clip], NO_LINKS)).toHaveProperty('cuts')
+    expect(splitAt(clip, 2_900, [clip], NO_LINKS)).toHaveProperty('cuts')
+    expect(SPLIT_REFUSAL_TEXT.edge).toBe(
+      '播放头离片段两端不足 0.1 秒，无法切开；请把播放头移到片段里面',
+    )
+  })
+
+  it('切出来的两半都不短于最短片段长度：之后裁开头时能到的范围不颠倒', () => {
+    const before = video({ id: 'a', start: 0, duration: 2_000 })
+    const clip = video({ id: 'b', start: 2_000, duration: 2_000 })
+    const [cut] = razorSplit(clip, 2_001, [before, clip], NO_LINKS)
+    if (cut === undefined) throw new Error('没有切开')
+    const head = { ...clip, ...cut.first }
+    const tail = video({ id: 'c', ...cut.second })
+    const clips = [before, head, tail]
+    for (const half of [head, tail]) {
+      expect(half.duration).toBeGreaterThanOrEqual(MIN_CLIP_MS)
+      const bounds = trimBounds(half, 'start', clips, 6_000)
+      expect(bounds.min).toBeLessThanOrEqual(bounds.max)
+    }
+  })
+
+  it('「其他」片段不切', () => {
+    expect(splitAt(handwritten, 1_000, [handwritten], NO_LINKS)).toEqual({ refusal: 'kind' })
+    expect(razorSplit(handwritten, 1_000, [handwritten], NO_LINKS)).toEqual([])
+  })
+
+  it('链接的一对在同一处一起切；链接的片段离端点太近时整个不切', () => {
+    const picture = video({ id: 'v', start: 0, duration: 4_000, mediaStart: 1_000 })
+    const sound = audio({ id: 'a', start: 500, duration: 3_500, mediaStart: 1_500 })
+    const clips = [picture, sound]
+    const links: Links = new Map([
+      ['v', 'lk-1'],
+      ['a', 'lk-1'],
+    ])
+    expect(splitAt(picture, 2_000, clips, links)).toEqual({
+      cuts: [
+        {
+          id: 'v',
+          first: { start: 0, duration: 2_000, mediaStart: 1_000 },
+          second: { start: 2_000, duration: 2_000, mediaStart: 3_000 },
+        },
+        {
+          id: 'a',
+          first: { start: 500, duration: 1_500, mediaStart: 1_500 },
+          second: { start: 2_000, duration: 2_000, mediaStart: 3_000 },
+        },
+      ],
+    })
+    expect(splitAt(picture, 510, clips, links)).toEqual({ refusal: 'partner' })
+    expect(razorSplit(picture, 510, clips, links)).toEqual([])
+  })
+
+  it('在播放头处切：没选中、选中了多个都不切；只有一个时照 splitAt', () => {
+    const one = video({ id: 'a', start: 0, duration: 2_000 })
+    const two = video({ id: 'b', start: 2_000, duration: 2_000 })
+    expect(playheadSplit([], 1_000, [one, two], NO_LINKS)).toEqual({ refusal: 'none' })
+    expect(playheadSplit([one, two], 1_000, [one, two], NO_LINKS)).toEqual({ refusal: 'many' })
+    expect(playheadSplit([two], 1_000, [one, two], NO_LINKS)).toEqual({ refusal: 'outside' })
+    expect(playheadSplit([one], 1_000, [one, two], NO_LINKS)).toEqual(
+      splitAt(one, 1_000, [one, two], NO_LINKS),
+    )
+  })
+
+  it('剃刀点得太靠边：夹进离两端 0.1 秒处切；片段短得夹不进时不切', () => {
+    const clip = video({ id: 'v', start: 1_000, duration: 2_000 })
+    expect(razorSplit(clip, 1_005, [clip], NO_LINKS)).toMatchObject([
+      { first: { duration: 100 }, second: { start: 1_100 } },
+    ])
+    expect(razorSplit(clip, 2_999, [clip], NO_LINKS)).toMatchObject([
+      { first: { duration: 1_900 }, second: { start: 2_900, duration: 100 } },
+    ])
+    const tiny = video({ id: 't', start: 0, duration: 150 })
+    expect(razorSplit(tiny, 75, [tiny], NO_LINKS)).toEqual([])
+  })
+
+  it('按着 Shift 点：在那个时间切开所有能切的片段，链接的片段只切一次，切不了的跳过', () => {
+    const picture = video({ id: 'v', start: 0, duration: 4_000 })
+    const sound = audio({ id: 'a', start: 0, duration: 4_000 })
+    const title = host({ id: 't', start: 1_990, duration: 1_000, track: 1 })
+    const later = video({ id: 'l', start: 4_000, duration: 1_000 })
+    const clips = [picture, sound, title, later, handwritten]
+    const links: Links = new Map([
+      ['v', 'lk-1'],
+      ['a', 'lk-1'],
+    ])
+    expect(splitAllAt(2_000, clips, links).map((cut) => cut.id)).toEqual(['v', 'a'])
+    expect(splitAllAt(2_100, clips, links).map((cut) => cut.id)).toEqual(['v', 'a', 't'])
   })
 })

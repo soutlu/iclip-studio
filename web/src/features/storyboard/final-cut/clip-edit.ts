@@ -1,3 +1,4 @@
+import { SPLIT_BOUNDARY_EPSILON_S } from '@hyperframes/core/composition-contract'
 import type { Edge } from '../editing/timeline-drag'
 import { isMediaClip, MIN_CLIP_MS, type FilmClip, type MediaClip } from './composition/film'
 import { onRow, topTrack, zoneOf, type RowKey } from './placement'
@@ -256,6 +257,124 @@ export const gapClosing = (clips: readonly FilmClip[], row: RowKey, timeMs: numb
     one: starts(gap === null ? [] : resolveCloseGapShifts(members, gap)),
     all: starts(resolveAllTrackGaps(members)),
   }
+}
+
+/**
+ * 切点离片段两端至少这么远（毫秒）。参照的工作台只留 0.03 秒，这里不照它：切出比最短片段还短的半段，
+ * 之后裁开头时能到的范围上下颠倒（`trimBounds`），所以取两者里大的那个，实际是 `MIN_CLIP_MS`。
+ */
+export const SPLIT_MARGIN_MS = Math.max(MIN_CLIP_MS, Math.round(SPLIT_BOUNDARY_EPSILON_S * 1000))
+
+/** 片段的链接名（`data-link`）：同名的片段一起切。没有链接的片段不在表里。 */
+export type Links = ReadonlyMap<string, string>
+
+/** 一个片段切开后两半的起止和入点：前半段还是原来那个片段（`id`），后半段是它的整份复制。 */
+export type Cut = { id: string; first: Timing; second: Timing }
+
+/** 切不了的原因：没选中、选中了多个、这种片段不能切、切点不在片段里、离两端太近、链接的片段切不了。 */
+export type SplitRefusal = 'none' | 'many' | 'kind' | 'outside' | 'edge' | 'partner'
+
+export const SPLIT_REFUSAL_TEXT: Readonly<Record<SplitRefusal, string>> = {
+  none: '尚未选中片段，无法切开；请先选中一个片段',
+  many: '选中了多个片段，无法切开；请只选中一个片段',
+  kind: '只有视频、音频、贴片和场景片段可以切开',
+  outside: '播放头不在片段里，无法切开；请把播放头移到片段里面',
+  edge: `播放头离片段两端不足 ${SPLIT_MARGIN_MS / 1000} 秒，无法切开；请把播放头移到片段里面`,
+  partner: '与它链接的片段无法在同一处切开',
+}
+
+/** 切开的打算：能切时是要切的片段（含链接的片段），切不了时是原因。 */
+export type SplitPlan = { cuts: readonly Cut[] } | { refusal: SplitRefusal }
+
+/** `atMs` 在不在片段里、离两端够不够远；够时是 undefined。 */
+const placeRefusal = (clip: FilmClip, atMs: number): SplitRefusal | undefined => {
+  if (atMs <= clip.start || atMs >= endOf(clip)) return 'outside'
+  return atMs < clip.start + SPLIT_MARGIN_MS || atMs > endOf(clip) - SPLIT_MARGIN_MS
+    ? 'edge'
+    : undefined
+}
+
+const cutOf = (clip: FilmClip, atMs: number): Cut => {
+  const timing = timingOf(clip)
+  const head = atMs - clip.start
+  return {
+    id: clip.id,
+    first: { ...timing, duration: head },
+    second: {
+      start: atMs,
+      duration: endOf(clip) - atMs,
+      mediaStart: Math.round(timing.mediaStart + head * rateOf(clip)),
+    },
+  }
+}
+
+/**
+ * 在 final-cut 的 `atMs`（取整到毫秒）处切开 `clip`：「其他」片段不切，切点离两端各至少 `SPLIT_MARGIN_MS`。
+ * 它带着链接时，同名的片段在同一处一起切，其中有一个切不了就都不切。
+ */
+export const splitAt = (
+  clip: FilmClip,
+  atMs: number,
+  clips: readonly FilmClip[],
+  links: Links,
+): SplitPlan => {
+  const at = Math.round(atMs)
+  if (clip.kind === 'other') return { refusal: 'kind' }
+  const own = placeRefusal(clip, at)
+  if (own !== undefined) return { refusal: own }
+  const link = links.get(clip.id)
+  const partners =
+    link === undefined
+      ? []
+      : clips.filter((other) => other.id !== clip.id && links.get(other.id) === link)
+  if (
+    partners.some((partner) => partner.kind === 'other' || placeRefusal(partner, at) !== undefined)
+  )
+    return { refusal: 'partner' }
+  return { cuts: [clip, ...partners].map((each) => cutOf(each, at)) }
+}
+
+/** 在播放头处切开 `targets`（选中的片段，或点右键的那一个）：只能是一个片段。 */
+export const playheadSplit = (
+  targets: readonly FilmClip[],
+  playheadMs: number,
+  clips: readonly FilmClip[],
+  links: Links,
+): SplitPlan => {
+  const [target] = targets
+  if (target === undefined) return { refusal: 'none' }
+  if (targets.length > 1) return { refusal: 'many' }
+  return splitAt(target, playheadMs, clips, links)
+}
+
+/** 剃刀点在 `clip` 的 `atMs` 处：太靠边时夹进离两端 `SPLIT_MARGIN_MS` 以内；切不了时什么都不切。 */
+export const razorSplit = (
+  clip: FilmClip,
+  atMs: number,
+  clips: readonly FilmClip[],
+  links: Links,
+): readonly Cut[] => {
+  const at = Math.min(
+    endOf(clip) - SPLIT_MARGIN_MS,
+    Math.max(clip.start + SPLIT_MARGIN_MS, Math.round(atMs)),
+  )
+  const plan = splitAt(clip, at, clips, links)
+  return 'cuts' in plan ? plan.cuts : []
+}
+
+/** 按着 Shift 用剃刀点：在 `atMs` 处把所有能切的片段一起切开（不夹，切不了的跳过）。 */
+export const splitAllAt = (
+  atMs: number,
+  clips: readonly FilmClip[],
+  links: Links,
+): readonly Cut[] => {
+  const cuts = new Map<string, Cut>()
+  for (const clip of clips) {
+    if (cuts.has(clip.id)) continue
+    const plan = splitAt(clip, atMs, clips, links)
+    if ('cuts' in plan) for (const cut of plan.cuts) cuts.set(cut.id, cut)
+  }
+  return [...cuts.values()]
 }
 
 /**

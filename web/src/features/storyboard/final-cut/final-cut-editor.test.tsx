@@ -650,7 +650,7 @@ describe('final-cut 编辑器 · 多选', () => {
     })
   })
 
-  it('工具条：选择工具的菜单有三项，点「选中播放头右边的片段」选中；没选中时「缩放到选中的片段」置灰并说明原因', async () => {
+  it('工具条：选择工具的菜单有两个工具和三条命令，点「选中播放头右边的片段」选中；没选中时「缩放到选中的片段」置灰并说明原因', async () => {
     const user = await openThree()
     const zoomTo = within(toolbar()).getByRole('button', { name: '缩放到选中的片段' })
     expect(zoomTo).toHaveAttribute('aria-disabled', 'true')
@@ -671,8 +671,16 @@ describe('final-cut 编辑器 · 多选', () => {
     )
     const right = within(menu).getByRole('menuitem', { name: /^选中播放头右边的片段/ })
     expect(right).toHaveTextContent(']')
-    expect(within(menu).getAllByRole('menuitemradio')).toHaveLength(1)
-    expect(within(menu).getAllByRole('menuitem')).toHaveLength(2)
+    expect(
+      within(menu)
+        .getAllByRole('menuitemradio')
+        .map((item) => item.textContent),
+    ).toEqual(['选择', '切开'])
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent),
+    ).toEqual(['在播放头处切开S', '选中播放头左边的片段[', '选中播放头右边的片段]'])
 
     await user.click(right)
     expect(screen.queryByRole('menu')).toBeNull()
@@ -735,8 +743,10 @@ describe('final-cut 编辑器 · 片段右键菜单', () => {
     within(clipOf(label))
       .getByRole('button', { name: /^选中：/ })
       .getAttribute('aria-pressed')
-  /** 在片段上点右键，等它的菜单出来。 */
+  /** 用鼠标在片段上点右键，等它的菜单出来。 */
   const openMenu = async (label: string) => {
+    // 先按下右键：菜单按鼠标打开，不把焦点放到第一项上
+    fireEvent.pointerDown(clipOf(label), { button: 2, pointerType: 'mouse' })
     fireEvent.contextMenu(clipOf(label))
     return screen.findByRole('menu', { name: label })
   }
@@ -758,7 +768,7 @@ describe('final-cut 编辑器 · 片段右键菜单', () => {
   const savedTag = (id: string) =>
     new RegExp(`<[a-z]+ [^>]*\\bid="${id}"[^>]*>`).exec(savedFilm())?.[0] ?? ''
 
-  it('各种片段的菜单项：视频、音频片段能静音，画面区的片段能隐藏，最后是分隔线和「删除片段」；文字随状态变', async () => {
+  it('各种片段的菜单项：最上面是「在播放头处切开」，视频、音频片段能静音，画面区的片段能隐藏，最后是分隔线和「删除片段」；文字随状态变', async () => {
     await openWith(
       [
         video({ src: URL_A, duration: 2_000 }),
@@ -779,11 +789,14 @@ describe('final-cut 编辑器 · 片段右键菜单', () => {
     }
     for (const [label, items] of Object.entries(expected)) {
       const menu = await openMenu(label)
-      expect(itemsOf(menu)).toEqual(items)
-      // 分隔线在「删除片段」前面
-      const separator = within(menu).getByRole('separator')
-      expect(separator.nextElementSibling).toHaveTextContent(/^删除片段/)
-      for (const item of within(menu).getAllByRole('menuitem'))
+      expect(itemsOf(menu)).toEqual(['在播放头处切开S', ...items])
+      // 「在播放头处切开」后面和「删除片段」前面各有一条分隔线
+      const separators = within(menu).getAllByRole('separator')
+      expect(separators).toHaveLength(2)
+      expect(separators[0]?.previousElementSibling).toHaveTextContent(/^在播放头处切开/)
+      expect(separators[1]?.nextElementSibling).toHaveTextContent(/^删除片段/)
+      // 切开另有用例；别的项都能选
+      for (const item of within(menu).getAllByRole('menuitem').slice(1))
         expect(item).not.toHaveAttribute('aria-disabled')
       await closeMenu()
     }
@@ -802,9 +815,9 @@ describe('final-cut 编辑器 · 片段右键菜单', () => {
     await user().click(unmute())
     expect(screen.getByRole('menu', { name: '无声' })).toBeVisible()
     await closeMenu()
-    // 用键盘也能走到置灰的那一项，聚焦时说明原因
+    // 用键盘也能走到置灰的那一项（第一项是「在播放头处切开」），聚焦时说明原因
     await openMenu('无声')
-    await user().keyboard('{End}{Home}')
+    await user().keyboard('{End}{Home}{ArrowDown}')
     await waitFor(() => expect(screen.getByRole('menuitem', { name: '取消静音' })).toHaveFocus())
     expect(await screen.findByRole('tooltip')).toHaveTextContent('该素材没有声音，无法打开原声')
     // 第一下 Esc 先收起说明，第二下关菜单
@@ -935,6 +948,329 @@ describe('final-cut 编辑器 · 片段右键菜单', () => {
     expect(screen.queryByRole('menu')).toBeNull()
     fireEvent.pointerUp(row, { pointerId: 2, clientX: 300, clientY: 80 })
     expect(screen.queryByTestId('marquee')).toBeNull()
+  })
+})
+
+describe('final-cut 编辑器 · 切开', () => {
+  // 画面 1：A 镜头 1 在 0–2 秒、B 镜头 1 在 2–3.5 秒；画面 2：贴片在 0–3 秒
+  const film = () =>
+    mainFile(
+      [
+        video({ label: 'A · 镜头 1', src: URL_A, duration: 2_000, mediaStart: 500 }),
+        video({ id: 'clip-2', label: 'B · 镜头 1', src: URL_B, start: 2_000, duration: 1_500 }),
+        host({ start: 0, duration: 3_000, track: 1 }),
+      ],
+      { width: 720, height: 1280 },
+    )
+  const open = async () => {
+    putMockProjectMain(CONVERSATION, film())
+    const user = userEvent.setup()
+    await openEditor()
+    return user
+  }
+  const lanes = () => screen.getByRole('group', { name: '画面 1' })
+  /** 选中片段的按钮：`label` 是名字，名字重了时连时长一起写（「A · 镜头 1，0.8 秒」）。 */
+  const body = (label: string) =>
+    screen.getByRole('button', { name: new RegExp(`^选中：${label}(，|$)`) })
+  const pressedOf = (label: string) => body(label).getAttribute('aria-pressed')
+  /** 时间线上的片段，按名字和时长，按时间线上的先后。 */
+  const shownClips = () =>
+    screen
+      .getAllByRole('button', { name: /^选中：/ })
+      .map((each) => each.getAttribute('aria-label'))
+  /** 存出的文件里的视频片段：起点、时长、入点（秒）。 */
+  const savedVideos = () =>
+    savedClips().map((tag) =>
+      ['data-start', 'data-duration', 'data-media-start'].map(
+        (name) => new RegExp(`${name}="([\\d.]+)"`).exec(tag)?.[1],
+      ),
+    )
+  /** 把播放头挪到第 `tenths` 个 0.1 秒（从 0 起）。 */
+  const playheadTo = async (user: ReturnType<typeof userEvent.setup>, tenths: number) => {
+    await act(() => new Promise((resolve) => setTimeout(resolve, 500)))
+    editorRoot().focus()
+    await user.keyboard('{ArrowRight}'.repeat(tenths))
+  }
+  const picker = (name: string) =>
+    within(toolbar()).getByRole('button', { name: `选择工具：${name}` })
+  // 测试里时间线没有宽度，按一秒 100 像素排：横坐标 x 就是第 x × 10 毫秒
+  const razorAt = (target: HTMLElement, x: number, shiftKey = false) =>
+    fireEvent.pointerDown(target, {
+      button: 0,
+      pointerId: 1,
+      pointerType: 'mouse',
+      clientX: x,
+      clientY: 10,
+      shiftKey,
+    })
+
+  it('按 S 在播放头处切开选中的片段：后半段紧跟着、入点接上，选着的还是前半段，一步撤销', async () => {
+    const user = await open()
+    await playheadTo(user, 8)
+    await user.click(body('A · 镜头 1'))
+    editorRoot().focus()
+    // 键被用掉了：不往别处传
+    expect(fireEvent.keyDown(editorRoot(), { key: 's' })).toBe(false)
+    await waitSaved(() => expect(savedClips()).toHaveLength(3))
+    expect(savedVideos()).toEqual([
+      ['0', '0.8', '0.5'],
+      ['0.8', '1.2', '1.3'],
+      ['2', '1.5', '0'],
+    ])
+    expect(shownClips()).toEqual([
+      '选中：A · 镜头 1，0.8 秒',
+      '选中：A · 镜头 1，1.2 秒',
+      '选中：B · 镜头 1，1.5 秒',
+      '选中：测试可填项，3.0 秒',
+    ])
+    expect(body('A · 镜头 1，0.8 秒')).toHaveAttribute('aria-pressed', 'true')
+    expect(body('A · 镜头 1，1.2 秒')).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(within(toolbar()).getByRole('button', { name: '撤销' }))
+    await waitSaved(() => expect(savedClips()).toHaveLength(2))
+  })
+
+  it('S 切不开时什么都不做：没选中、播放头不在选中的片段里；选中了多个时提示只选一个', async () => {
+    const user = await open()
+    await playheadTo(user, 8)
+    expect(fireEvent.keyDown(editorRoot(), { key: 's' })).toBe(false)
+    await user.click(body('B · 镜头 1'))
+    editorRoot().focus()
+    expect(fireEvent.keyDown(editorRoot(), { key: 's' })).toBe(false)
+    await user.keyboard('{Shift>}')
+    await user.click(body('A · 镜头 1'))
+    await user.keyboard('{/Shift}')
+    editorRoot().focus()
+    await user.keyboard('s')
+    expect(await screen.findByText('选中了多个片段，无法切开；请只选中一个片段')).toBeVisible()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 900)))
+    expect(savedClips()).toHaveLength(2)
+    expect(within(toolbar()).getByRole('button', { name: '撤销' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+  })
+
+  it('选择工具的下拉里「在播放头处切开」：切不开时置灰、悬停说明原因；能切时点了就切', async () => {
+    const user = await open()
+    await playheadTo(user, 8)
+    await user.click(picker('选择'))
+    const item = () =>
+      within(screen.getByRole('menu', { name: '选择工具：选择' })).getByRole('menuitem', {
+        name: /^在播放头处切开/,
+      })
+    expect(item()).toHaveAttribute('aria-disabled', 'true')
+    expect(item()).toHaveTextContent('S')
+    await user.hover(item())
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      '尚未选中片段，无法切开；请先选中一个片段',
+    )
+    await user.click(item())
+    expect(screen.getByRole('menu', { name: '选择工具：选择' })).toBeVisible()
+    await user.keyboard('{Escape}{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+
+    await user.click(body('B · 镜头 1'))
+    await user.click(picker('选择'))
+    await user.hover(item())
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      '播放头不在片段里，无法切开；请把播放头移到片段里面',
+    )
+    await user.keyboard('{Escape}{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+
+    await user.click(body('A · 镜头 1'))
+    await user.click(picker('选择'))
+    expect(item()).not.toHaveAttribute('aria-disabled')
+    await user.click(item())
+    await waitSaved(() => expect(savedClips()).toHaveLength(3))
+  })
+
+  it('B 换成切开工具：下拉按钮跟着变；点片段在点的地方切开、选中不变，点得太靠边夹进 0.1 秒', async () => {
+    const user = await open()
+    await user.click(body('B · 镜头 1'))
+    editorRoot().focus()
+    await user.keyboard('b')
+    expect(picker('切开')).toBeVisible()
+    await user.click(picker('切开'))
+    const menu = await screen.findByRole('menu', { name: '选择工具：切开' })
+    expect(within(menu).getByRole('menuitemradio', { name: '切开' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+
+    // 指针在各行上时有一条竖线跟着它
+    fireEvent.pointerMove(lanes(), { clientX: 50, clientY: 10 })
+    expect(screen.getByTestId('razor-line')).toHaveStyle({ left: '50px' })
+    fireEvent.pointerLeave(lanes())
+    expect(screen.queryByTestId('razor-line')).toBeNull()
+
+    razorAt(body('A · 镜头 1'), 50)
+    await waitSaved(() => expect(savedClips()).toHaveLength(3))
+    expect(savedVideos().slice(0, 2)).toEqual([
+      ['0', '0.5', '0.5'],
+      ['0.5', '1.5', '1'],
+    ])
+    expect(pressedOf('B · 镜头 1')).toBe('true')
+    expect(pressedOf('A · 镜头 1，0.5 秒')).toBe('false')
+
+    // 点在离开头 0.01 秒处：切在离开头 0.1 秒（最短片段长度）处
+    razorAt(body('B · 镜头 1'), 201)
+    await waitSaved(() => expect(savedClips()).toHaveLength(4))
+    expect(savedVideos().slice(2)).toEqual([
+      ['2', '0.1', '0'],
+      ['2.1', '1.4', '0.1'],
+    ])
+  })
+
+  it('切开工具切的是指针所在那一行、那个时间上的片段，不看按下的是哪个元素', async () => {
+    const user = await open()
+    editorRoot().focus()
+    await user.keyboard('b')
+    // 按在 A 上、指针的时间已经在 B 上（2.5 秒）：切的是 B
+    razorAt(body('A · 镜头 1'), 250)
+    await waitSaved(() => expect(savedClips()).toHaveLength(3))
+    expect(savedVideos()).toEqual([
+      ['0', '2', '0.5'],
+      ['2', '0.5', '0'],
+      ['2.5', '1', '0.5'],
+    ])
+  })
+
+  it('切开工具下按着 Shift 点：在那个时间把所有能切的片段一起切开，点在空白处也一样', async () => {
+    const user = await open()
+    editorRoot().focus()
+    await user.keyboard('b')
+    razorAt(lanes(), 100, true)
+    await waitSaved(() => expect(savedClips()).toHaveLength(3))
+    expect(shownClips()).toEqual([
+      '选中：A · 镜头 1，1.0 秒',
+      '选中：A · 镜头 1，1.0 秒',
+      '选中：B · 镜头 1，1.5 秒',
+      '选中：测试可填项，1.0 秒',
+      '选中：测试可填项，2.0 秒',
+    ])
+    expect(within(toolbar()).getByRole('button', { name: '撤销' })).not.toHaveAttribute(
+      'aria-disabled',
+    )
+    // 一步撤销：两个片段都回去
+    await user.click(within(toolbar()).getByRole('button', { name: '撤销' }))
+    await waitFor(() => expect(shownClips()).toHaveLength(3))
+  })
+
+  it('切开工具下选中的片段没有裁剪把手：原来聚焦在把手上时焦点交还编辑器，按方向键不改文件；回到选择后把手回来', async () => {
+    const user = await open()
+    await user.click(body('B · 镜头 1'))
+    within(lanes()).getByRole('slider', { name: '裁剪结尾' }).focus()
+    await user.keyboard('b')
+    expect(picker('切开')).toBeVisible()
+    expect(within(lanes()).queryAllByRole('slider', { name: /^裁剪/ })).toEqual([])
+    expect(editorRoot()).toHaveFocus()
+    await user.keyboard('{ArrowLeft}{Shift>}{ArrowRight}{/Shift}')
+    await act(() => new Promise((resolve) => setTimeout(resolve, 900)))
+    expect(savedVideos()).toEqual([
+      ['0', '2', '0.5'],
+      ['2', '1.5', '0'],
+    ])
+    expect(pressedOf('B · 镜头 1')).toBe('true')
+
+    await user.keyboard('v')
+    expect(within(lanes()).getAllByRole('slider', { name: /^裁剪/ })).toHaveLength(2)
+  })
+
+  it('切开工具下不能拖片段、不能框选、点片段（含按 Enter）不选中；Esc 先取消选中再回到选择，V 也回到选择', async () => {
+    const user = await open()
+    await user.click(body('B · 镜头 1'))
+    editorRoot().focus()
+    await user.keyboard('b')
+    // 在片段上按下又拖：只是在按下的地方切一刀，片段不跟着走
+    const host = body('测试可填项')
+    razorAt(host, 290)
+    fireEvent.pointerMove(host, { pointerId: 1, clientX: 100, clientY: 40 })
+    fireEvent.pointerUp(host, { pointerId: 1, clientX: 100, clientY: 40 })
+    await waitSaved(() => expect(savedFilm()).toContain('data-start="0" data-duration="2.9"'))
+    expect(savedFilm()).toMatch(/data-start="2.9" data-duration="0.1"/)
+    // 在空白处按下又拖：不出框
+    razorAt(lanes(), 380)
+    fireEvent.pointerMove(lanes(), { pointerId: 1, clientX: 100, clientY: 40 })
+    expect(screen.queryByTestId('marquee')).toBeNull()
+    fireEvent.pointerUp(lanes(), { pointerId: 1, clientX: 100, clientY: 40 })
+    expect(savedVideos()).toEqual([
+      ['0', '2', '0.5'],
+      ['2', '1.5', '0'],
+    ])
+    body('A · 镜头 1').focus()
+    await user.keyboard('{Enter}')
+    expect(pressedOf('A · 镜头 1')).toBe('false')
+    expect(pressedOf('B · 镜头 1')).toBe('true')
+
+    editorRoot().focus()
+    await user.keyboard('{Escape}')
+    expect(pressedOf('B · 镜头 1')).toBe('false')
+    expect(picker('切开')).toBeVisible()
+    await user.keyboard('{Escape}')
+    expect(picker('选择')).toBeVisible()
+    await user.keyboard('b')
+    expect(picker('切开')).toBeVisible()
+    await user.keyboard('v')
+    expect(picker('选择')).toBeVisible()
+    await user.keyboard('b')
+    await user.keyboard('a')
+    expect(picker('选择')).toBeVisible()
+    // 回到选择以后点片段又是选中
+    await user.click(body('A · 镜头 1'))
+    expect(pressedOf('A · 镜头 1')).toBe('true')
+  })
+
+  it('切开工具下片段的右键菜单照常能用：选里面的项不当成在时间线上点了一下', async () => {
+    const user = await open()
+    editorRoot().focus()
+    await user.keyboard('b')
+    const clip = screen.getByRole('group', { name: /^B · 镜头 1，/ })
+    fireEvent.pointerDown(clip, { button: 2, pointerType: 'mouse' })
+    fireEvent.contextMenu(clip)
+    const menu = await screen.findByRole('menu', { name: 'B · 镜头 1' })
+    const mute = within(menu).getByRole('menuitem', { name: '静音此片段' })
+    // 按着 Shift 在菜单项上按下：不在那个位置切开所有片段
+    razorAt(mute, 100, true)
+    await user.click(mute)
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    await waitSaved(() => expect(savedClips()[1]).toContain('muted="true"'))
+    expect(savedClips()).toHaveLength(2)
+    expect(shownClips()).toHaveLength(3)
+  })
+
+  it('片段右键菜单最上面是「在播放头处切开」：播放头在片段里时能切，不在时置灰、悬停说明原因', async () => {
+    const user = await open()
+    await playheadTo(user, 8)
+    const openMenu = async (label: string) => {
+      const clip = screen.getByRole('group', { name: new RegExp(`^${label}，`) })
+      fireEvent.pointerDown(clip, { button: 2, pointerType: 'mouse' })
+      fireEvent.contextMenu(clip)
+      return screen.findByRole('menu', { name: label })
+    }
+    const splitItem = (menu: HTMLElement) =>
+      within(menu).getByRole('menuitem', { name: /^在播放头处切开/ })
+
+    const outside = await openMenu('B · 镜头 1')
+    expect(splitItem(outside)).toHaveAttribute('aria-disabled', 'true')
+    await user.hover(splitItem(outside))
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      '播放头不在片段里，无法切开；请把播放头移到片段里面',
+    )
+    await user.click(splitItem(outside))
+    expect(screen.getByRole('menu', { name: 'B · 镜头 1' })).toBeVisible()
+    await user.keyboard('{Escape}{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+
+    const inside = await openMenu('A · 镜头 1')
+    expect(splitItem(inside)).not.toHaveAttribute('aria-disabled')
+    expect(splitItem(inside)).toHaveTextContent('S')
+    await user.click(splitItem(inside))
+    await waitSaved(() => expect(savedClips()).toHaveLength(3))
+    expect(savedVideos()[1]).toEqual(['0.8', '1.2', '1.3'])
   })
 })
 

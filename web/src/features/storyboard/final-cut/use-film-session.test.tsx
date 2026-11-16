@@ -8,6 +8,7 @@ import { audio, fixtureCatalog, host, mainFile, video } from '@/testing/final-cu
 import { itemFileContent, server } from '@/testing/mocks/server'
 import { mockProjectMain, putMockProjectMain } from '@/testing/mocks/whole-film'
 import { mockWorkspaceFile, putMockWorkspaceFile } from '@/testing/mocks/workspace'
+import { splitAt } from './clip-edit'
 import { FONT_BLOCK_END, FONT_BLOCK_START, type FilmClip, type VideoClip } from './composition/film'
 import type { ProjectMain } from './final-cut.api'
 import { useFilmSession, type NewAudio, type NewVideo } from './use-film-session'
@@ -1330,5 +1331,181 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
     act(() => result.current.removeClips([id], false))
     expect(result.current.film?.clips.map((clip) => clip.kind)).toEqual(['video'])
     expect(result.current.film?.durationMs).toBe(2_000)
+  })
+})
+
+describe('useFilmSession · 切开', () => {
+  /** 打开一份直接写好的主文件。 */
+  const openHtml = (html: string) => {
+    const conversation = crypto.randomUUID()
+    return open(putMockProjectMain(conversation, html), 10, conversation)
+  }
+  /** 在 `atMs` 处切开 `id` 这个片段（连同链接的片段）。 */
+  const splitClip = (result: Session, id: string, atMs: number) => {
+    const film = result.current.film
+    const clip = film?.clips.find((each) => each.id === id)
+    if (film === null || film === undefined || clip === undefined) throw new Error(`没有片段 ${id}`)
+    const plan = splitAt(clip, atMs, film.clips, film.links)
+    if (!('cuts' in plan)) throw new Error(`切不了：${plan.refusal}`)
+    act(() => result.current.split(plan.cuts))
+  }
+  /** 存出的文件里根下的元素，按文件里的先后。 */
+  const rootChildren = (html: string | undefined) => [
+    ...(new DOMParser().parseFromString(html ?? '', 'text/html').getElementById('film')?.children ??
+      []),
+  ]
+  const attributesOf = (element: Element | undefined) =>
+    Object.fromEntries([...(element?.attributes ?? [])].map((each) => [each.name, each.value]))
+
+  it('后半段是原元素的整份复制，紧跟在它后面：模型里没有的属性、样式、子元素都带上，只换编号、起止和入点；一步撤销', async () => {
+    const saves = recordSaves()
+    const file = mainFile(
+      [
+        video({
+          id: 'v',
+          start: 1_000,
+          duration: 6_000,
+          playbackRate: 2,
+          fadeIn: 300,
+          fadeOut: 400,
+        }),
+        video({ id: 'w', start: 7_000, duration: 1_000, src: OTHER_SRC }),
+      ],
+      CANVAS,
+    )
+      // 根下片段前面有一个不带时间的元素，片段上有代理写进去、编辑器不认识的属性和子元素
+      .replace('<video ', '<div class="backdrop"></div>\n<video data-agent-note="保留" ')
+      .replace('</video>', '<track kind="captions" src="captions.vtt"></video>')
+    const { result } = await openHtml(file)
+    splitClip(result, 'v', 3_000)
+
+    const clips = result.current.film?.clips ?? []
+    expect(
+      clips.map((clip) => [clip.id === 'v' || clip.id === 'w', clip.start, clip.duration]),
+    ).toEqual([
+      [true, 1_000, 2_000],
+      [false, 3_000, 4_000],
+      [true, 7_000, 1_000],
+    ])
+    expect(clips[1]).toMatchObject({
+      mediaStart: 4_000,
+      playbackRate: 2,
+      fadeIn: 300,
+      fadeOut: 400,
+    })
+    expect(result.current.film?.canUndo).toBe(true)
+
+    await waitFor(() => expect(saves).toHaveLength(1))
+    const [backdrop, first, second, last] = rootChildren(saves[0]?.html)
+    expect(backdrop?.className).toBe('backdrop')
+    expect(first?.id).toBe('v')
+    expect(last?.id).toBe('w')
+    const newId = second?.id ?? ''
+    expect(newId).not.toBe('v')
+    const { id, 'data-hf-id': hfId, ...copied } = attributesOf(second)
+    expect([id, hfId]).toEqual([newId, newId])
+    expect(copied).toEqual({
+      ...attributesOf(first),
+      id: undefined,
+      'data-hf-id': undefined,
+      'data-start': '3',
+      'data-duration': '4',
+      'data-media-start': '4',
+    })
+    expect(copied['data-agent-note']).toBe('保留')
+    expect(second?.querySelector('track')?.getAttribute('src')).toBe('captions.vtt')
+    expect(attributesOf(first)).toMatchObject({ 'data-start': '1', 'data-duration': '2' })
+
+    act(() => result.current.undo())
+    expect(result.current.film?.clips.map((clip) => [clip.id, clip.start, clip.duration])).toEqual([
+      ['v', 1_000, 6_000],
+      ['w', 7_000, 1_000],
+    ])
+    expect(result.current.film?.canUndo).toBe(false)
+  })
+
+  it('贴片、场景片段的后半段写从组件的第几秒开始播；可填项的值、叠放顺序、隐藏都照抄', async () => {
+    const { result } = await openWith([
+      host({ id: 't', duration: 4_000, values: { headline: '新品' }, z: 3, hidden: true }),
+    ])
+    splitClip(result, 't', 1_500)
+    const [first, second] = result.current.film?.clips ?? []
+    expect(first).toMatchObject({ id: 't', start: 0, duration: 1_500, playbackStart: 0 })
+    expect(second).toMatchObject({
+      kind: 'host',
+      start: 1_500,
+      duration: 2_500,
+      playbackStart: 1_500,
+      values: { headline: '新品' },
+      z: 3,
+      hidden: true,
+    })
+  })
+
+  it('链接的一对一起切，算一步撤销：后半段那一对换成新的链接名，两边都切到时同源标记也换新', async () => {
+    const saves = recordSaves()
+    const file = mainFile(
+      [video({ id: 'v', duration: 4_000 }), audio({ id: 'a', duration: 4_000 })],
+      CANVAS,
+    )
+      .replace('<video ', '<video data-link="lk-1" data-sync-origin="lk-9" ')
+      .replace('<audio ', '<audio data-link="lk-1" data-sync-origin="lk-9" ')
+    const { result } = await openHtml(file)
+    splitClip(result, 'a', 1_000)
+    expect(
+      result.current.film?.clips.map((clip) => [clip.kind, clip.start, clip.duration]),
+    ).toEqual([
+      ['video', 0, 1_000],
+      ['video', 1_000, 3_000],
+      ['audio', 0, 1_000],
+      ['audio', 1_000, 3_000],
+    ])
+    await waitFor(() => expect(saves).toHaveLength(1))
+    const pairing = rootChildren(saves[0]?.html).map((element) => [
+      element.getAttribute('data-link'),
+      element.getAttribute('data-sync-origin'),
+    ])
+    expect(pairing).toEqual([
+      ['lk-1', 'lk-9'],
+      ['lk-2', 'lk-3'],
+      ['lk-1', 'lk-9'],
+      ['lk-2', 'lk-3'],
+    ])
+
+    act(() => result.current.undo())
+    expect(result.current.film?.clips).toHaveLength(2)
+    expect(result.current.film?.canUndo).toBe(false)
+  })
+
+  it('链接的片段结尾没对齐：各自切在同一处，结尾不动', async () => {
+    const file = mainFile(
+      [video({ id: 'v', duration: 4_000 }), audio({ id: 'a', start: 500, duration: 5_000 })],
+      CANVAS,
+    )
+      .replace('<video ', '<video data-link="lk-1" ')
+      .replace('<audio ', '<audio data-link="lk-1" ')
+    const { result } = await openHtml(file)
+    splitClip(result, 'v', 2_000)
+    expect(
+      result.current.film?.clips.map((clip) => [clip.kind, clip.start, clip.start + clip.duration]),
+    ).toEqual([
+      ['video', 0, 2_000],
+      ['video', 2_000, 4_000],
+      ['audio', 500, 2_000],
+      ['audio', 2_000, 5_500],
+    ])
+  })
+
+  it('后半段写不进去（片段里带着脚本）：整个不切，提示原因', async () => {
+    const file = mainFile([host({ id: 't', duration: 4_000 })], CANVAS).replace(
+      '></div>\n</div>',
+      '><script>window.note = 1</script></div>\n</div>',
+    )
+    const { result, onNotice } = await openHtml(file)
+    const before = result.current.film?.html
+    splitClip(result, 't', 1_000)
+    expect(onNotice).toHaveBeenCalledWith('片段里带有无法复制的内容，无法切开')
+    expect(result.current.film?.html).toBe(before)
+    expect(result.current.film?.canUndo).toBe(false)
   })
 })
