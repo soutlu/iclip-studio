@@ -67,6 +67,10 @@ export type KeyframeState =
 
 export type KeyframeStates = ReadonlyMap<string, KeyframeState>
 
+/** 原作的总长（毫秒），镜头读好了才有。 */
+export const takeDurationMs = (state: KeyframeState | undefined): number | undefined =>
+  state?.kind === 'ready' ? Math.round(state.index.duration * 1000) : undefined
+
 export const useKeyframeIndexes = (urls: readonly string[]): KeyframeStates =>
   useQueries({
     queries: urls.map((url) => keyframeQuery(url)),
