@@ -46,7 +46,7 @@
 | `Conflict` | `409` | 与当前状态冲突：例如乐观锁版本号过期、状态机不允许当前操作、资源正在被引用无法删除。当对话绑定的 Agent 版本无法装配时，额外附带 `code: "agent_unavailable"` |
 | `ValidationFailed` | `422` | 请求参数校验不通过（格式为 `<字段路径>: <原因>`，单次返回第一个错误）。当发布 Agent 编译检查不通过时，额外附带字段级错误列表 `problems: [{ path, message }]` |
 
-- **网关与下游错误**：取消成片导出时若渲染服务连不上，返回 `502`；Agent 运行时服务连不上或报错时，统一返回 `503`。
+- **网关与下游错误**：取消成片导出时若渲染服务连不上，返回 `502`；final-cut 翻译调模型失败（包括经过的运行时连不上）返回带 `code` 的 `502`（见[翻译](#final-cut-工程与预览域名)）；其余情况下 Agent 运行时服务连不上或报错时，统一返回 `503`。
 - **异步任务失败**：视频、图片等生成接口返回 `202` 仅代表任务已入队；后续生成失败不会报错在 HTTP 状态码上，而是体现在任务记录的 `status: "failed"` 及 `errorCode` / `errorMessage` 字段中。
 
 ---
@@ -186,6 +186,7 @@ final-cut 工程是对话工作区里的 `final-cut/` 目录。工程里的脚�
   - `GET /final-cut/preview/{token}/host` 返回 `{ appOrigin }`，即发令牌时请求的 `Origin`。预览页据此确认自己在预览域名上，并只接受来自这个来源的消息。
   - `GET /final-cut/preview/{token}/files/{path}`：`path` 相对工程根，带 `.` 或 `..` 段、空段、以 `/` 开头或结尾、带反斜杠都返回 `404`。以 `vendor/` 开头的返回 `307`，转到同主机的 `/hyperframes/vendor/<其余部分>`（公共库的文件，由前端的静态文件提供）；其余原文返回工作区里的 `final-cut/<path>`，没有就返回 `404`，不到别处找。类型按扩展名给出：`.html`、`.css`、`.js` / `.mjs`、`.json`、`.svg`、`.txt` 各用对应类型（文本类带 `charset=utf-8`），其余为 `application/octet-stream`。响应头带 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff` 与 `Referrer-Policy: no-referrer`。
 - **新建工程文件** `POST /conversations/{id}/final-cut/files`（应用域名，登录态）：请求体 `{ path, content }`，`path` 相对工程根，规则同上，不合规返回 `422`；写进工作区的 `final-cut/<path>`。只有对话创建者能建：看不见这段对话返回 `404`（包括创建者自己删掉的对话），看得见但不是创建者、或看得见的是已删除的对话（治理者）返回 `403`。文件已存在返回 `409`，不覆盖；成功返回 `201 { path, version }`，`path` 与请求里的相同。之后修改这个文件走 `PUT /conversations/{id}/workspace/file`，路径写 `final-cut/<path>`。
+- **翻译** `POST /conversations/{id}/final-cut/translations`（应用域名，登录态）：把一批中文短句（字幕、画面文字）翻成一种外语，源语言固定是中文。请求体 `{ targetLocale, entries: [{ id, text }] }`，`targetLocale` 只认 `en`、`de`、`es`、`fr`，`entries` 1 到 200 条，`id` 在这一批里不能重复，`text` 不能只有空白、最长 500 字，所有 `text` 加起来最多 4000 字（保证一次调用答得完、不被截断；更多的字由调用方分批发），不合规返回 `422`。权限同「新建工程文件」：看不见这段对话返回 `404`，看得见但不是创建者、或已删除（治理者）返回 `403`。一次请求就是一次模型调用，同步返回 `200 { translations: [{ id, text }] }`，请求里的每个 `id` 恰好一条、顺序同请求；不落库、不写工作区、不进生成记录。失败都带 `code`：没有启用翻译用的模型返回 `409`（`model_unavailable`）；模型调用暂时失败（限流、网络、上游 5xx 或没答完）返回 `502`（`model_call_failed`，可以再试）；模型拒绝、等待超时，或回答缺条、多条、`id` 对不上、结构不对、译文为空，返回 `502`（`model_failed`），不拿原文顶替。
 
 ### 分叉
 

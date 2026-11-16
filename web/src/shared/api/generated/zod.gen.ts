@@ -1247,6 +1247,54 @@ export const zFinalCutPreviewOut = z.object({
 })
 
 /**
+ * FinalCutTextIn
+ *
+ * 一条要翻的中文：``id`` 是编辑器里变量的 id，``text`` 不能只有空白。
+ */
+export const zFinalCutTextIn = z.object({
+  id: z.string().min(1).max(128),
+  text: z.string().min(1).max(500),
+})
+
+/**
+ * FinalCutTranslationErrorOut
+ *
+ * 翻译失败：``model_unavailable`` 没有启用翻译用的模型（409）；``model_call_failed`` 模型调用
+ * 暂时失败，再试一次可能就好（502）；``model_failed`` 模型拒绝、等待超时或回答不对（502）。
+ */
+export const zFinalCutTranslationErrorOut = z.object({
+  code: z.enum(['model_unavailable', 'model_call_failed', 'model_failed']),
+  detail: z.string(),
+})
+
+/**
+ * FinalCutTranslationOut
+ */
+export const zFinalCutTranslationOut = z.object({
+  id: z.string(),
+  text: z.string(),
+})
+
+/**
+ * FinalCutTranslationsIn
+ *
+ * 把一批中文短句翻成 ``targetLocale``。源语言固定是中文；``entries`` 里的 ``id`` 不能重复。
+ */
+export const zFinalCutTranslationsIn = z.object({
+  entries: z.array(zFinalCutTextIn).min(1).max(200),
+  targetLocale: z.enum(['en', 'de', 'es', 'fr']),
+})
+
+/**
+ * FinalCutTranslationsOut
+ *
+ * 译文：请求里的每个 ``id`` 恰好一条，顺序同请求。
+ */
+export const zFinalCutTranslationsOut = z.object({
+  translations: z.array(zFinalCutTranslationOut),
+})
+
+/**
  * FrameTarget
  */
 export const zFrameTarget = z.object({
@@ -4339,6 +4387,20 @@ export const zOpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostP
  */
 export const zOpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostResponse =
   zFinalCutPreviewOut
+
+export const zTranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostBody =
+  zFinalCutTranslationsIn
+
+export const zTranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostPath =
+  z.object({
+    conversation_id: z.uuid(),
+  })
+
+/**
+ * Successful Response
+ */
+export const zTranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostResponse =
+  zFinalCutTranslationsOut
 
 export const zApproveConversationsConversationIdInteractionsInteractionIdPostBody = zApprovalRequest
 

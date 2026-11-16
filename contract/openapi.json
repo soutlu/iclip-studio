@@ -4755,6 +4755,124 @@
         "title": "FinalCutPreviewOut",
         "type": "object"
       },
+      "FinalCutTextIn": {
+        "additionalProperties": false,
+        "description": "一条要翻的中文：``id`` 是编辑器里变量的 id，``text`` 不能只有空白。",
+        "properties": {
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ],
+        "title": "FinalCutTextIn",
+        "type": "object"
+      },
+      "FinalCutTranslationErrorOut": {
+        "additionalProperties": false,
+        "description": "翻译失败：``model_unavailable`` 没有启用翻译用的模型（409）；``model_call_failed`` 模型调用\n暂时失败，再试一次可能就好（502）；``model_failed`` 模型拒绝、等待超时或回答不对（502）。",
+        "properties": {
+          "code": {
+            "enum": [
+              "model_unavailable",
+              "model_call_failed",
+              "model_failed"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail",
+          "code"
+        ],
+        "title": "FinalCutTranslationErrorOut",
+        "type": "object"
+      },
+      "FinalCutTranslationOut": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ],
+        "title": "FinalCutTranslationOut",
+        "type": "object"
+      },
+      "FinalCutTranslationsIn": {
+        "additionalProperties": false,
+        "description": "把一批中文短句翻成 ``targetLocale``。源语言固定是中文；``entries`` 里的 ``id`` 不能重复。",
+        "properties": {
+          "entries": {
+            "description": "所有 text 加起来最多 4000 字，超了要分批发",
+            "items": {
+              "$ref": "#/components/schemas/FinalCutTextIn"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Entries",
+            "type": "array"
+          },
+          "targetLocale": {
+            "enum": [
+              "en",
+              "de",
+              "es",
+              "fr"
+            ],
+            "title": "Targetlocale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "targetLocale",
+          "entries"
+        ],
+        "title": "FinalCutTranslationsIn",
+        "type": "object"
+      },
+      "FinalCutTranslationsOut": {
+        "additionalProperties": false,
+        "description": "译文：请求里的每个 ``id`` 恰好一条，顺序同请求。",
+        "properties": {
+          "translations": {
+            "items": {
+              "$ref": "#/components/schemas/FinalCutTranslationOut"
+            },
+            "title": "Translations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "translations"
+        ],
+        "title": "FinalCutTranslationsOut",
+        "type": "object"
+      },
       "FrameTarget": {
         "additionalProperties": false,
         "properties": {
@@ -17876,6 +17994,92 @@
           }
         ],
         "summary": "Open Final Cut Preview",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/final-cut/translations": {
+      "post": {
+        "description": "把一批中文短句翻成一种外语，一次请求一次模型调用，同步答复；不落库、不写工作区。只有属主能翻：\n看不见这段对话 404，看得见但不是属主、或看得见已删除的对话（治理者）403。语言、条数、长度不合规或\n``id`` 重复 422。模型没启用 409，模型调用失败或回答不对 502，都带 ``code``。",
+        "operationId": "translate_final_cut_texts_conversations__conversation_id__final_cut_translations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinalCutTranslationsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalCutTranslationsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalCutTranslationErrorOut"
+                }
+              }
+            },
+            "description": "code 为 model_unavailable：没有启用翻译用的模型"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalCutTranslationErrorOut"
+                }
+              }
+            },
+            "description": "code 为 model_call_failed（可以再试）或 model_failed（模型拒绝、超时或回答不对）"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:run"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:run"
+            ]
+          }
+        ],
+        "summary": "Translate Final Cut Texts",
         "tags": [
           "conversations"
         ]

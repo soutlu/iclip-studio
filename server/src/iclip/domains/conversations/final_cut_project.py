@@ -1,4 +1,5 @@
-"""final-cut 工程：对话工作区里的 ``final-cut/`` 目录，在预览域名上按令牌给出，属主可以新建文件。"""
+"""final-cut 工程：对话工作区里的 ``final-cut/`` 目录，在预览域名上按令牌给出，属主可以新建文件、
+翻译工程里的字。"""
 
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ import hmac
 import json
 import unicodedata
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Final
@@ -17,6 +19,11 @@ from urllib.parse import quote
 from iclip.common.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from iclip.common.final_cut import PROJECT_DIR
 from iclip.common.urls import is_http_origin
+from iclip.domains.conversations.final_cut_translation import (
+    FinalCutText,
+    FinalCutTranslator,
+    TargetLocale,
+)
 from iclip.domains.conversations.service import (
     ConversationService,
     DerivedFileContent,
@@ -145,7 +152,8 @@ _NO_FILE = "final-cut 工程里没有这个文件"
 
 
 class FinalCutProject:
-    """final-cut 工程的三件事：给能读对话的人发预览令牌、按令牌给工程文件、属主新建工程文件。"""
+    """final-cut 工程的四件事：给能读对话的人发预览令牌、按令牌给工程文件、属主新建工程文件、
+    属主翻译工程里的字。"""
 
     def __init__(
         self,
@@ -155,12 +163,14 @@ class FinalCutProject:
         write_file: WriteDerivedFile,
         preview_origin: str | None,
         tokens: PreviewTokens,
+        translator: FinalCutTranslator,
     ) -> None:
         self._conversations = conversations
         self._read_file = read_file
         self._write_file = write_file
         self._preview_origin = preview_origin
         self._tokens = tokens
+        self._translator = translator
 
     async def open_preview(
         self, principal: Principal, conversation_id: uuid.UUID, *, app_origin: str | None
@@ -230,6 +240,23 @@ class FinalCutProject:
         if await self._read_file(owner, conversation.id, full) is not None:
             raise Conflict("final-cut 工程里已经有这个文件")
         return await self._write_file(owner, conversation.id, full, content, None)
+
+    async def translate(
+        self,
+        principal: Principal,
+        conversation_id: uuid.UUID,
+        *,
+        locale: TargetLocale,
+        entries: Sequence[FinalCutText],
+    ) -> tuple[FinalCutText, ...]:
+        """属主把一批中文短句翻成 ``locale``，答复按请求的顺序每个 id 恰好一条。不落库、不写工作区。
+
+        看不见这段对话 404，看得见但不是属主或对话已删除 403，这两种都不调模型。模型没启用抛
+        ``ModelUnavailable``，调用失败或回答不对抛 ``FinalCutTranslationFailed``。
+        """
+
+        await self._conversations.workspace_writable(principal, conversation_id)
+        return await self._translator.translate(entries, locale=locale)
 
     def _grant(self, token: str) -> PreviewGrant:
         grant = self._tokens.verify(token, now=datetime.now(UTC))

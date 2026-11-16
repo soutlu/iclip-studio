@@ -11,6 +11,7 @@ from iclip.domains.conversations.api import (
     create_previews_router,
 )
 from iclip.domains.conversations.final_cut_project import FinalCutProject, PreviewTokens
+from iclip.domains.conversations.final_cut_translation import FinalCutTranslator
 from iclip.domains.conversations.repository import (
     AgentPreviewStore,
     ConversationRepository,
@@ -79,6 +80,7 @@ def build_conversations_module(
     announce_deleted: AnnounceConversationDeleted,
     preview_origin: str | None,
     preview_tokens: PreviewTokens,
+    final_cut_translator: FinalCutTranslator,
 ) -> ConversationsModule:
     service = ConversationService(
         repo,
@@ -111,6 +113,7 @@ def build_conversations_module(
         write_file=write_derived_file,
         preview_origin=preview_origin,
         tokens=preview_tokens,
+        translator=final_cut_translator,
     )
     return ConversationsModule(
         routers=(

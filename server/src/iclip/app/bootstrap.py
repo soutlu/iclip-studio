@@ -30,6 +30,7 @@ from iclip.app.conversation_workspace import (
     validate_video_shots,
 )
 from iclip.app.errors import install_error_handlers
+from iclip.app.final_cut_translation import build_final_cut_translator
 from iclip.app.generation_live import AnnouncingGenerationRepository
 from iclip.app.image_generations import GenerationsAdapter
 from iclip.app.library_tagging import (
@@ -81,6 +82,7 @@ from iclip.domains.conversations.final_cut_project import (
     FINAL_CUT_PREVIEW_PREFIX,
     PreviewTokens,
 )
+from iclip.domains.conversations.final_cut_translation import FinalCutTranslator
 from iclip.domains.conversations.infra_sql import (
     SqlAgentPreviewStore,
     SqlConversationRepository,
@@ -317,6 +319,7 @@ def build_app(
     product_catalog_engine: AsyncEngine | None = None,
     reference_breakdowns: VideoBreakdowns | None = None,
     library_tagger: Tagger | None = None,
+    final_cut_translator: FinalCutTranslator | None = None,
     brand_font_probe: ProbeFont | None = None,
     media_codec: MediaCodec | None = None,
     runtime_transport: httpx.AsyncBaseTransport | None = None,
@@ -638,6 +641,7 @@ def build_app(
         same_style_source=LibrarySameStyleSource(library_reports),
         preview_origin=settings.final_cut_preview_origin,
         preview_tokens=PreviewTokens(settings.security.secret),
+        final_cut_translator=final_cut_translator or build_final_cut_translator(runtime_client),
     )
     mcp_servers = build_mcp_servers_module(
         runtime_client,

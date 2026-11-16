@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import type {
+  FinalCutTranslationsOut,
   ImageGenerationIn,
   MusicIn,
   SubtitleSentence,
@@ -8,7 +9,7 @@ import type {
   VideoGenerationIn,
   VideoShotIn,
 } from '@/shared/api/generated/types.gen'
-import { zSubtitleIn } from '@/shared/api/generated/zod.gen'
+import { zFinalCutTranslationsIn, zSubtitleIn } from '@/shared/api/generated/zod.gen'
 // ?no-inline 阻止 Vite 将小体积媒体资源内联为 data URI。
 import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
 import sampleLongUrl from '../fixtures/sample-video-long.mp4?no-inline'
@@ -915,6 +916,20 @@ export const workspaceHandlers = [
     files.set(path, { content: body.content, updatedAt: new Date().toISOString(), version: 1 })
     announceFile({ conversationId, path, change: 'created' })
     return HttpResponse.json({ path: body.path, version: 1 }, { status: 201 })
+  }),
+
+  // 模拟的译文是「[语言代码大写] 原文」，一眼看得出不是真翻的
+  http.post('*/api/conversations/:conversationId/final-cut/translations', async ({ request }) => {
+    const parsed = zFinalCutTranslationsIn.safeParse(await request.json())
+    if (!parsed.success) return HttpResponse.json({ detail: '翻译参数无效' }, { status: 422 })
+    const { targetLocale, entries } = parsed.data
+    const answer: FinalCutTranslationsOut = {
+      translations: entries.map((entry) => ({
+        id: entry.id,
+        text: `[${targetLocale.toUpperCase()}] ${entry.text}`,
+      })),
+    }
+    return HttpResponse.json(answer)
   }),
 
   http.get('*/api/generations/image-models', () =>
