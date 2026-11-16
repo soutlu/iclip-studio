@@ -8,9 +8,16 @@ import { audio, fixtureCatalog, host, mainFile, video } from '@/testing/final-cu
 import { itemFileContent, server } from '@/testing/mocks/server'
 import { mockProjectMain, putMockProjectMain } from '@/testing/mocks/whole-film'
 import { mockWorkspaceFile, putMockWorkspaceFile } from '@/testing/mocks/workspace'
-import { splitAt } from './clip-edit'
-import { FONT_BLOCK_END, FONT_BLOCK_START, type FilmClip, type VideoClip } from './composition/film'
+import { groupTrimmed, splitAt, timingOf } from './clip-edit'
+import {
+  FONT_BLOCK_END,
+  FONT_BLOCK_START,
+  type AudioClip,
+  type FilmClip,
+  type VideoClip,
+} from './composition/film'
 import type { ProjectMain } from './final-cut.api'
+import { soundPairOf } from './sound-pair'
 import { useFilmSession, type NewAudio, type NewVideo } from './use-film-session'
 
 const CONVERSATION = '6b0f3a4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b'
@@ -1021,6 +1028,8 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
       fadeOut: 0,
       loop: false,
       hidden: false,
+      link: null,
+      syncOrigin: null,
     })
     expect(result.current.film?.durationMs).toBe(10_000)
     await waitFor(() => expect(saves).toHaveLength(1))
@@ -1221,7 +1230,7 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
     const saves = recordSaves()
     const { result } = await openWith(stacked())
     act(() =>
-      result.current.setAttributes('p', {
+      result.current.setAttributes(['p'], {
         'data-playback-rate': '2',
         'data-fade-in': '0.5',
         muted: 'true',
@@ -1237,7 +1246,7 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
     expect(tag).toContain(' muted="true"')
     expect(tag).not.toContain('data-has-audio')
 
-    act(() => result.current.setAttributes('m', { loop: 'true', 'data-volume': '1.995262' }))
+    act(() => result.current.setAttributes(['m'], { loop: 'true', 'data-volume': '1.995262' }))
     expect(result.current.film?.clips[2]).toMatchObject({ loop: true, volume: 1.995262 })
     act(() => result.current.undo())
     expect(result.current.film?.clips[2]).toEqual(audio({ id: 'm', duration: 8_000 }))
@@ -1246,8 +1255,8 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
     expect(result.current.film?.canUndo).toBe(false)
 
     const before = result.current.film?.html
-    act(() => result.current.setAttributes('m', { 'data-volume': '1', loop: null }))
-    act(() => result.current.setAttributes('gone', { 'data-volume': '0.5' }))
+    act(() => result.current.setAttributes(['m'], { 'data-volume': '1', loop: null }))
+    act(() => result.current.setAttributes(['gone'], { 'data-volume': '0.5' }))
     expect(result.current.film?.html).toBe(before)
     expect(result.current.film?.canUndo).toBe(false)
   })
@@ -1304,6 +1313,7 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
       duration: 2_000,
       track: 2,
       hidden: false,
+      link: null,
       z: 0,
     })
     expect(result.current.film?.durationMs).toBe(3_000)
@@ -1507,5 +1517,235 @@ describe('useFilmSession · 切开', () => {
     expect(onNotice).toHaveBeenCalledWith('片段里带有无法复制的内容，无法切开')
     expect(result.current.film?.html).toBe(before)
     expect(result.current.film?.canUndo).toBe(false)
+  })
+})
+
+describe('useFilmSession · 分离音频、合并回视频、联动', () => {
+  /** 主文件根下的元素各自的属性，按文件里的先后。 */
+  const savedElements = (html: string | undefined) =>
+    [
+      ...(new DOMParser().parseFromString(html ?? '', 'text/html').getElementById('film')
+        ?.children ?? []),
+    ].map((element) =>
+      Object.fromEntries([...element.attributes].map((each) => [each.name, each.value])),
+    )
+  const clipsOf = (result: Session) => result.current.film?.clips ?? []
+  const clipOf = (result: Session, id: string) => {
+    const clip = clipsOf(result).find((each) => each.id === id)
+    if (clip === undefined) throw new Error(`没有片段 ${id}`)
+    return clip
+  }
+  const pairIn = (result: Session, id: string) => {
+    const pair = soundPairOf(clipOf(result, id), clipsOf(result))
+    if (pair === undefined) throw new Error(`${id} 不成对`)
+    return pair
+  }
+  /** 片段的「开始、时长、入点」和链接名。 */
+  const timingAndLink = (result: Session, id: string) => {
+    const clip = clipOf(result, id)
+    return [clip.start, clip.duration, timingOf(clip).mediaStart, clip.link]
+  }
+
+  // 画面 1 秒起 2 秒长、入点 0.5 秒，带淡入、音量；声音区已经有一条配乐
+  const shot = video({
+    id: 'v',
+    label: 'A · 镜头 1',
+    start: 1_000,
+    duration: 2_000,
+    mediaStart: 500,
+    volume: 0.5,
+    fadeIn: 300,
+    playbackRate: 1.5,
+  })
+  const music = audio({ id: 'm', start: 0, duration: 6_000 })
+
+  /** 分离过原声、联动着的一对（2–4 秒，入点 1 秒），原声在人声行（声音区第 0 行），配乐在第 1 行。 */
+  const pairFilm = (overrides: { video?: Partial<VideoClip>; audio?: Partial<AudioClip> } = {}) => [
+    audio({
+      id: 'a',
+      label: 'A · 镜头 1 · 原声',
+      src: shot.src,
+      start: 2_000,
+      duration: 2_000,
+      mediaStart: 1_000,
+      volume: 0.5,
+      link: 'lk-1',
+      syncOrigin: 'lk-1',
+      ...overrides.audio,
+    }),
+    video({
+      id: 'v',
+      start: 2_000,
+      duration: 2_000,
+      mediaStart: 1_000,
+      muted: true,
+      link: 'lk-1',
+      syncOrigin: 'lk-1',
+      ...overrides.video,
+    }),
+    audio({ id: 'm', start: 0, duration: 8_000, track: 1 }),
+  ]
+
+  it('分离：原声片段写在视频前面、照抄地址起止入点速度和声音属性，视频关掉原声、去掉声音属性，两段同一个链接名和出处；声音区最上面新开人声行；一步撤销', async () => {
+    const saves = recordSaves()
+    const { result } = await openWith([shot, music])
+    let added: string | undefined
+    act(() => {
+      added = result.current.detach('v')
+    })
+    if (added === undefined) throw new Error('没有分离出原声')
+    await waitFor(() => expect(saves).toHaveLength(1))
+    const [first, second, third] = savedElements(saves[0]?.html)
+    expect(first).toEqual({
+      id: added,
+      'data-hf-id': added,
+      'data-label': 'A · 镜头 1 · 原声',
+      'data-start': '1',
+      'data-duration': '2',
+      'data-track-index': '0',
+      'data-link': 'lk-1',
+      class: 'clip audio',
+      src: shot.src,
+      'data-media-start': '0.5',
+      'data-volume': '0.5',
+      'data-playback-rate': '1.5',
+      'data-fade-in': '0.3',
+      'data-sync-origin': 'lk-1',
+    })
+    expect(second).toMatchObject({
+      id: 'v',
+      muted: 'true',
+      'data-link': 'lk-1',
+      'data-sync-origin': 'lk-1',
+      'data-media-start': '0.5',
+      'data-start': '1',
+    })
+    for (const gone of ['data-has-audio', 'data-volume', 'data-fade-in'])
+      expect(second).not.toHaveProperty(gone)
+    // 原来的配乐往下排一号，行名是「人声」「配乐」
+    expect(third).toMatchObject({ id: 'm', 'data-track-index': '1' })
+    expect(pairIn(result, added)).toMatchObject({ linked: true, offsetMs: 0 })
+
+    act(() => result.current.undo())
+    expect(clipsOf(result)).toEqual([shot, music])
+    expect(result.current.film?.canUndo).toBe(false)
+  })
+
+  it('分离：隐藏着的视频分离出的原声也隐藏；有空着的人声行时放进去，不新开行', async () => {
+    const { result } = await openWith([
+      ...pairFilm(),
+      video({ id: 'w', start: 5_000, duration: 1_000, hidden: true }),
+    ])
+    let added: string | undefined
+    act(() => {
+      added = result.current.detach('w')
+    })
+    if (added === undefined) throw new Error('没有分离出原声')
+    expect(clipOf(result, added)).toMatchObject({ track: 0, hidden: true, start: 5_000 })
+    expect(clipOf(result, 'm').track).toBe(1)
+    // 新的链接名不和已有的 lk-1 重名
+    expect(clipOf(result, added).link).toBe('lk-2')
+  })
+
+  it('合并：原声上的声音属性写回视频，视频打开原声、去掉链接名和出处，原声删掉；一步撤销', async () => {
+    const saves = recordSaves()
+    const before = pairFilm({ audio: { volume: 2, fadeOut: 400 } })
+    const { result } = await openWith(before)
+    act(() => result.current.merge(pairIn(result, 'a')))
+    await waitFor(() => expect(saves).toHaveLength(1))
+    const elements = savedElements(saves[0]?.html)
+    expect(elements.map((element) => element['id'])).toEqual(['v', 'm'])
+    expect(elements[0]).toMatchObject({
+      'data-volume': '2',
+      'data-fade-out': '0.4',
+      'data-has-audio': 'true',
+    })
+    for (const gone of ['muted', 'data-link', 'data-sync-origin', 'data-fade-in'])
+      expect(elements[0]).not.toHaveProperty(gone)
+    act(() => result.current.undo())
+    expect(clipsOf(result)).toEqual(before)
+  })
+
+  it('联动开关：关掉时两段去掉链接名、出处还在；打开时写上新的链接名；各一步撤销', async () => {
+    const { result } = await openWith(pairFilm())
+    act(() => result.current.setLinked(pairIn(result, 'a'), false))
+    expect([clipOf(result, 'a'), clipOf(result, 'v')]).toMatchObject([
+      { link: null, syncOrigin: 'lk-1' },
+      { link: null, syncOrigin: 'lk-1' },
+    ])
+    expect(pairIn(result, 'v').linked).toBe(false)
+    act(() => result.current.undo())
+    expect(clipsOf(result)).toEqual(pairFilm())
+    expect(result.current.film?.canUndo).toBe(false)
+
+    // 新的链接名不和出处 lk-1 重名
+    const unlinked = await openWith(pairFilm({ video: { link: null }, audio: { link: null } }))
+    act(() => unlinked.result.current.setLinked(pairIn(unlinked.result, 'a'), true))
+    expect(pairIn(unlinked.result, 'v').linked).toBe(true)
+    expect(clipOf(unlinked.result, 'a').link).toBe('lk-2')
+    act(() => unlinked.result.current.undo())
+    expect(clipOf(unlinked.result, 'v').link).toBeNull()
+  })
+
+  it('联动开着、一起裁开头：各自的入点按算好的写，不被引擎再挪一次，链接名还在', async () => {
+    const { result } = await openWith(pairFilm())
+    const timings = groupTrimmed(
+      clipsOf(result).filter((clip) => clip.id !== 'm'),
+      'start',
+      500,
+      clipsOf(result),
+      () => 10_000,
+    )
+    act(() => result.current.retime(timings))
+    expect(timingAndLink(result, 'v')).toEqual([2_500, 1_500, 1_500, 'lk-1'])
+    expect(timingAndLink(result, 'a')).toEqual([2_500, 1_500, 1_500, 'lk-1'])
+    expect(pairIn(result, 'a').offsetMs).toBe(0)
+    // 解除再写回链接名和改时间算一步撤销
+    act(() => result.current.undo())
+    expect(clipsOf(result)).toEqual(pairFilm())
+    expect(result.current.film?.canUndo).toBe(false)
+  })
+
+  it('联动开着、只改视频（伙伴结尾没对齐不跟着裁）：原声不动，两段的链接名都还在', async () => {
+    const { result } = await openWith(pairFilm({ audio: { duration: 2_500 } }))
+    act(() =>
+      result.current.retime(new Map([['v', { start: 2_000, duration: 1_000, mediaStart: 1_000 }]])),
+    )
+    expect(timingAndLink(result, 'v')).toEqual([2_000, 1_000, 1_000, 'lk-1'])
+    expect(timingAndLink(result, 'a')).toEqual([2_000, 2_500, 1_000, 'lk-1'])
+  })
+
+  it('联动开着、换行挪动：一起挪的伙伴只挪一次；对齐口型只挪原声，联动不变', async () => {
+    const { result } = await openWith(pairFilm({ audio: { start: 2_400 } }))
+    act(() =>
+      result.current.moveClip(
+        'v',
+        { track: 0, start: 3_000 },
+        null,
+        undefined,
+        new Map([['a', 3_400]]),
+      ),
+    )
+    expect(timingAndLink(result, 'v')).toEqual([3_000, 2_000, 1_000, 'lk-1'])
+    expect(timingAndLink(result, 'a')).toEqual([3_400, 2_000, 1_000, 'lk-1'])
+    act(() => result.current.resync('a', 3_000))
+    expect(timingAndLink(result, 'a')).toEqual([3_000, 2_000, 1_000, 'lk-1'])
+    expect(timingAndLink(result, 'v')).toEqual([3_000, 2_000, 1_000, 'lk-1'])
+  })
+
+  it('合拢空档、波纹删除补位：联动的伙伴挪同样的时间差；联动关着时伙伴不动', async () => {
+    const lead = video({ id: 'x', start: 0, duration: 1_000 })
+    const { result } = await openWith([lead, ...pairFilm()])
+    act(() => result.current.restart(new Map([['v', 1_000]])))
+    expect(clipOf(result, 'a').start).toBe(1_000)
+    act(() => result.current.undo())
+    act(() => result.current.removeClips(['x'], true))
+    expect([clipOf(result, 'v').start, clipOf(result, 'a').start]).toEqual([1_000, 1_000])
+    expect(clipOf(result, 'a').link).toBe('lk-1')
+
+    const unlinked = pairFilm({ video: { link: null }, audio: { link: null } })
+    const other = await openWith([lead, ...unlinked])
+    act(() => other.result.current.restart(new Map([['v', 1_000]])))
+    expect(clipOf(other.result, 'a').start).toBe(2_000)
   })
 })

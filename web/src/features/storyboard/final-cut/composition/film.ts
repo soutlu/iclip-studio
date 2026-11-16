@@ -21,6 +21,7 @@ export type MediaClip = VideoClip | AudioClip
  *
  * `track` 是它在自己那个区的第几行，只管显示：音频片段在声音区，别的在画面区，两个区的行号各算各的。
  * `hidden` 的片段留在时间线上、占着它的时间，预览和导出里都不出现、不出声。
+ * `link` 是它的链接名（`data-link`）：同名的片段编辑时一起动（「联动」），播放和导出不看它；没有时是 null。
  */
 interface ClipBase {
   id: string
@@ -29,12 +30,15 @@ interface ClipBase {
   duration: number
   track: number
   hidden: boolean
+  link: string | null
 }
 
 /**
  * 视频片段、音频片段共有的声音和播放：`mediaStart` 是从素材的第几毫秒开始放，`volume` 是增益的倍数
  * （0.5 比 1 低 6 dB），`playbackRate` 是速度的倍数（片段在 final-cut 里占的时长不跟着变，用掉的素材是
  * 时长 × 速度），`fadeIn` / `fadeOut` 是声音淡入淡出的毫秒数。
+ * `syncOrigin`（`data-sync-origin`）相同的视频片段和音频片段出自同一个文件（分离出来的原声和它的画面），
+ * 解除联动后也留着，用来算两段错开了多少；没有时是 null。
  */
 interface MediaBase extends ClipBase {
   src: string
@@ -43,6 +47,7 @@ interface MediaBase extends ClipBase {
   playbackRate: number
   fadeIn: number
   fadeOut: number
+  syncOrigin: string | null
 }
 
 /**
@@ -84,6 +89,10 @@ export interface OtherClip extends ClipBase {
 export const isMediaClip = (clip: FilmClip): clip is MediaClip =>
   clip.kind === 'video' || clip.kind === 'audio'
 
+/** 从视频片段分离出来的原声：带 `data-sync-origin` 的音频片段。 */
+export const isDetachedAudio = (clip: FilmClip): clip is AudioClip =>
+  clip.kind === 'audio' && clip.syncOrigin !== null
+
 export const MIN_CLIP_MS = 100
 
 /** 工程主文件在工程目录里的路径。 */
@@ -107,6 +116,8 @@ export type ClipAttribute =
   | 'muted'
   | 'loop'
   | 'data-variable-values'
+  | 'data-link'
+  | 'data-sync-origin'
 
 /** 一个元素在读片段时用得到的部分（SDK 的元素快照里有）：`attributes` 不含 `style`、`class`。 */
 export interface ElementView {
@@ -135,6 +146,10 @@ const numberOr = (value: string | undefined, fallback: number): number => {
   const parsed = Number(value)
   return value === undefined || value.trim() === '' || !Number.isFinite(parsed) ? fallback : parsed
 }
+
+/** 链接名这类名字：没写或写成空的都算没有。 */
+const nameOf = (value: string | undefined): string | null =>
+  value === undefined || value === '' ? null : value
 
 const stackingOf = (zIndex: string | undefined) =>
   zIndex === undefined || !INTEGER.test(zIndex) ? 0 : Number(zIndex)
@@ -183,6 +198,7 @@ export function clipOf(
     duration: Math.round(timing.exitAt * 1000) - start,
     track: element.trackIndex ?? 0,
     hidden: attributes['data-hidden'] !== undefined,
+    link: nameOf(attributes['data-link']),
   }
   const z = stackingOf(element.inlineStyles['zIndex'])
   const media = () => ({
@@ -192,6 +208,7 @@ export function clipOf(
     playbackRate: numberOr(attributes['data-playback-rate'], 1),
     fadeIn: millisecondsOr(attributes['data-fade-in'], 0),
     fadeOut: millisecondsOr(attributes['data-fade-out'], 0),
+    syncOrigin: nameOf(attributes['data-sync-origin']),
   })
   if (element.tag === 'video')
     return { kind: 'video', ...common, ...media(), muted: attributes['muted'] !== undefined, z }
@@ -239,6 +256,7 @@ const commonAttributes = (clip: ClipBase) => ({
   'data-start': seconds(clip.start),
   'data-duration': seconds(clip.duration),
   'data-track-index': String(clip.track),
+  'data-link': clip.link ?? undefined,
 })
 
 const mediaAttributes = (clip: MediaBase) => ({
@@ -248,6 +266,7 @@ const mediaAttributes = (clip: MediaBase) => ({
   'data-playback-rate': clip.playbackRate === 1 ? undefined : String(clip.playbackRate),
   'data-fade-in': unlessZero(clip.fadeIn),
   'data-fade-out': unlessZero(clip.fadeOut),
+  'data-sync-origin': clip.syncOrigin ?? undefined,
 })
 
 /** 新加的视频片段：有声音时带 `data-has-audio`，静音时换成 `muted`。 */

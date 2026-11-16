@@ -28,6 +28,7 @@ import { useShotGenerations } from '../storyboard.api'
 import { audioPlayheadSpot } from './audio'
 import { AudioTab } from './audio-tab'
 import {
+  linkedPartners,
   playheadSplit,
   SPLIT_REFUSAL_TEXT,
   type Cut,
@@ -74,7 +75,15 @@ import {
   type MaterialRange,
   type MaterialTake,
 } from './materials'
-import { landingOn, onRow, rowOpening, type RowTarget, type Zone } from './placement'
+import {
+  landingOn,
+  musicRowTarget,
+  onRow,
+  rowOpening,
+  rowsOf,
+  type RowTarget,
+  type Zone,
+} from './placement'
 import { previewDocument, previewRuntimeSrc } from './preview-document'
 import {
   PreviewPlayer,
@@ -84,6 +93,14 @@ import {
 } from './preview-player'
 import { PreviewTransport } from './preview-transport'
 import { aroundPlayhead } from './selection'
+import {
+  DETACH_LABEL,
+  MERGE_LABEL,
+  resyncPlan,
+  soundActionFor,
+  type SoundAction,
+  type SoundControls,
+} from './sound-pair'
 import { rowMoveDirection } from './stacking'
 import {
   FIT_ZOOM,
@@ -399,21 +416,62 @@ function EditorBody({
     return state?.kind === 'ready' ? Math.round(state.peaks.duration * 1000) : undefined
   }
   const [ripple, setRipple] = useState(true)
+  // 删掉联动着的片段时，联动的伙伴一起删
   const removeSelected = () => {
     leaveMaterial()
     clearSelection()
-    session.removeClips([...selected], ripple)
+    session.removeClips([...selected, ...linkedPartners(selected, clips)], ripple)
   }
   // 「属性」和时间线上片段的右键菜单共用这几个操作
   const hideClip = (id: string, hidden: boolean) => {
     leaveMaterial()
     session.setHidden([id], hidden)
   }
+  // 改速度时联动的伙伴一起改；音量、淡入淡出、静音各管各的
   const setClipAttributes = (id: string, changes: AttributeChanges) => {
     leaveMaterial()
-    session.setAttributes(id, changes)
+    const partners = 'data-playback-rate' in changes ? linkedPartners([id], clips) : []
+    session.setAttributes([id, ...partners], changes)
   }
   const silentSource = (src: string) => audioTracks.get(src) === false
+  const revealClip = (id: string) => {
+    setSelectedIds(new Set([id]))
+    timelineRef.current?.reveal(id)
+  }
+  // 分离音频、合并回视频、联动、对齐口型：「属性」、右键菜单、工具条和 ⇧⌘B 都走这里
+  const soundControls: SoundControls = {
+    run: (action) => {
+      if (action.kind === 'none' || action.blocked !== undefined) return
+      leaveMaterial()
+      if (action.kind === 'merge') {
+        session.merge(action.pair)
+        setSelectedIds(new Set([action.pair.video.id]))
+        return
+      }
+      const added = session.detach(action.video.id)
+      if (added !== undefined) setSelectedIds(new Set([added]))
+    },
+    link: (pair, linked) => {
+      leaveMaterial()
+      session.setLinked(pair, linked)
+    },
+    resync: (pair) => {
+      const plan = resyncPlan(pair, clips)
+      if ('refusal' in plan) {
+        notice(plan.refusal)
+        return
+      }
+      leaveMaterial()
+      session.resync(pair.audio.id, plan.start)
+      if (plan.displaced) notice('原声那一行的对齐位置已被占用，已移到最近的空位')
+    },
+    locate: revealClip,
+  }
+  const soundAction: SoundAction = soundActionFor(selectedClips, clips, silentSource)
+  const runSoundAction = () => {
+    if (soundAction.blocked !== undefined) notice(soundAction.blocked)
+    else soundControls.run(soundAction)
+  }
   const [snap, setSnap] = useState(true)
   /**
    * 拖着的素材、组件、块或音频（长 `duration` 毫秒，放进 `zone` 区）会落在哪：
@@ -422,14 +480,15 @@ function EditorBody({
   const landingAt = (clientX: number, clientY: number, duration: number, zone: Zone = 'visual') => {
     const point = timelineRef.current?.locate(clientX, clientY, zone) ?? null
     if (point === null) return null
+    // 拖进声音区的只有配乐：不进人声行
+    const row = zone === 'audio' ? musicRowTarget(rowsOf(clips), point.row) : point.row
     const snapped = snap
       ? snapSpanStartMs(point.timeMs, duration, snapTargets(clips, playhead), scale.pps)
       : { ms: point.timeMs, guideMs: null }
     // 新开的一行上没有别的片段，放在哪里都不会重叠
-    const start =
-      'track' in point.row ? landingOn(clips, point.row, snapped.ms, duration).start : snapped.ms
+    const start = 'track' in row ? landingOn(clips, row, snapped.ms, duration).start : snapped.ms
     return {
-      row: point.row,
+      row,
       start,
       duration,
       guideMs: start === snapped.ms ? snapped.guideMs : null,
@@ -537,11 +596,6 @@ function EditorBody({
         addingAudioRef.current = false
       })
   }
-  const revealClip = (id: string) => {
-    setSelectedIds(new Set([id]))
-    timelineRef.current?.reveal(id)
-  }
-
   const history = {
     canUndo: film?.canUndo ?? false,
     canRedo: film?.canRedo ?? false,
@@ -549,13 +603,7 @@ function EditorBody({
     redo: session.redo,
   }
   const shortcut = (event: KeyboardEvent, editor: HTMLElement) => {
-    if (
-      event.defaultPrevented ||
-      event.metaKey ||
-      event.ctrlKey ||
-      !isEditorKeyTarget(event, editor)
-    )
-      return
+    if (event.defaultPrevented || !isEditorKeyTarget(event, editor)) return
     // 全屏时菜单挂在编辑器里面，菜单里按的键归菜单；「属性」里的滑杆、下拉、取色、开关上按的键也归控件
     // 自己，照参照的工作台。时间尺上的播放位置也是滑杆，点过它以后快捷键照常用
     if (
@@ -566,6 +614,13 @@ function EditorBody({
     )
       return
     const { key } = event
+    // 带 ⌘ / Ctrl 的只有 ⇧⌘B（分离音频或合并回视频），撤销重做在前面处理过
+    if (event.metaKey || event.ctrlKey) {
+      if (!event.shiftKey || event.altKey || key.toLowerCase() !== 'b') return
+      event.preventDefault()
+      if (!event.repeat) runSoundAction()
+      return
+    }
     if (key === ' ') {
       event.preventDefault()
       togglePlay()
@@ -905,6 +960,7 @@ function EditorBody({
               onAttributes={setClipAttributes}
               selected={selectedClips}
               silentSource={silentSource}
+              soundControls={soundControls}
               sourceMs={sourceMs}
               sourceName={(src) => sourceNames.get(src)}
             />
@@ -934,6 +990,11 @@ function EditorBody({
           }}
           hasSelection={selected.size > 0}
           onRemove={removeSelected}
+          sound={{
+            label: soundAction.kind === 'merge' ? MERGE_LABEL : DETACH_LABEL,
+            blocked: soundAction.blocked,
+            onClick: () => soundControls.run(soundAction),
+          }}
           onSelectAround={selectAround}
           onSplit={splitAtPlayhead}
           onTool={setTool}
@@ -963,6 +1024,7 @@ function EditorBody({
           onHideClip={hideClip}
           onRemove={removeSelected}
           silentSource={silentSource}
+          soundControls={soundControls}
           onHide={(row, hidden) => {
             leaveMaterial()
             session.setHidden(

@@ -47,6 +47,7 @@ const SHORTCUTS: readonly { keys: readonly string[]; action: string }[] = [
   { keys: [']'], action: '选中播放头右边的片段' },
   { keys: ['S'], action: '在播放头处切开选中的片段' },
   { keys: ['B'], action: '切换切开工具和选择工具' },
+  { keys: ['⇧⌘B'], action: '分离选中视频的音频，或合并回视频' },
   { keys: ['V', 'A'], action: '回到选择工具' },
   { keys: ['Z'], action: '缩放到选中的片段' },
   { keys: ['Enter'], action: '将选中的镜头加入 final-cut' },

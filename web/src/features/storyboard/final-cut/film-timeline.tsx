@@ -35,6 +35,7 @@ import {
   groupShift,
   groupTrimmed,
   groupTrimRange,
+  linkedGroup,
   playheadSplit,
   razorSplit,
   splitAllAt,
@@ -65,6 +66,7 @@ import {
   type Zone,
 } from './placement'
 import { boxBetween, marqueeMode, marqueeSelection, movingWith, type Box } from './selection'
+import { soundActionFor, soundBadgeOf, type SoundBadge, type SoundControls } from './sound-pair'
 import {
   msToPx,
   pxToMs,
@@ -144,6 +146,8 @@ type FilmTimelineProps = {
   onRemove: () => void
   /** 这个地址的视频素材确认没有声音。 */
   silentSource: (src: string) => boolean
+  /** 片段右键菜单：分离音频、合并回视频、联动、对齐口型、选中另一段。 */
+  soundControls: SoundControls
   onSeek: (ms: number) => void
   onViewportWidth: (width: number) => void
   handleRef: RefObject<TimelineHandle | null>
@@ -353,8 +357,10 @@ type TimelineClipProps = {
   selected: boolean
   /** 选中时画不画两端的把手：切开工具下不能裁剪，不画。 */
   trimmable: boolean
-  /** 拖这个片段（挪动或裁剪）时一起动的片段，含它自己。 */
-  group: ReadonlySet<string>
+  /** 拖这个片段挪动或裁 `kind` 这一端时一起动的片段，含它自己和跟着动的联动伙伴。 */
+  groupFor: (kind: Gesture['kind']) => ReadonlySet<string>
+  /** 分离出来的原声右边的小标；没有时是 undefined。 */
+  badge: SoundBadge | undefined
   /** 别的片段正带着一组片段拖动时，跟着动的片段的样子；没有时是 null。 */
   following: Following | null
   pps: number
@@ -413,7 +419,8 @@ function TimelineClip({
   clips,
   selected,
   trimmable,
-  group,
+  groupFor,
+  badge,
   following,
   pps,
   contentRef,
@@ -452,7 +459,9 @@ function TimelineClip({
         : `0 ${target.getBoundingClientRect().top - own.getBoundingClientRect().top}px`
   })
   const timing = preview?.timing ?? following?.timings.get(clip.id) ?? timingOf(clip)
-  const name = `${clip.label}，${seconds(timing.duration)} 秒${clip.hidden ? '，已隐藏' : ''}`
+  // 音频片段隐藏就是静音，小标上已经写着
+  const state = badge === undefined ? (clip.hidden ? '，已隐藏' : '') : `，${badge.text}`
+  const name = `${clip.label}，${seconds(timing.duration)} 秒${state}`
 
   const timeAt = (clientX: number) =>
     pxToMs(clientX - (contentRef.current?.getBoundingClientRect().left ?? 0), pps)
@@ -493,7 +502,7 @@ function TimelineClip({
     if (gesture.timing === null && moved <= DRAG_THRESHOLD) return
     if (gesture.group === null) onGesture(true)
     // 开始拖的那一刻定下一起动的片段
-    gesture.group ??= group
+    gesture.group ??= groupFor(gesture.kind)
     const members = gesture.group
     const at = timeAt(event.clientX)
     const { kind } = gesture
@@ -590,7 +599,7 @@ function TimelineClip({
     event.stopPropagation()
     const changed = changedTimings(
       clips,
-      trimTo(clip, group, edge, edgeAt(timingOf(clip), edge) + Math.round(step * 1000)),
+      trimTo(clip, groupFor(edge), edge, edgeAt(timingOf(clip), edge) + Math.round(step * 1000)),
     )
     if (changed.size > 0) onRetime(changed)
   }
@@ -633,10 +642,15 @@ function TimelineClip({
             type="button"
           >
             <ClipContent clip={clip} cover={cover} peaks={peaks} timing={timing} />
+            {badge === undefined ? null : (
+              <span aria-hidden="true" className="wf-clip-badge" data-tone={badge.tone}>
+                {badge.text}
+              </span>
+            )}
           </button>
           {selected && trimmable
             ? (['start', 'end'] as const).map((edge) => {
-                const bounds = trimRange(clip, group, edge)
+                const bounds = trimRange(clip, groupFor(edge), edge)
                 const edgeMs = edgeAt(timing, edge)
                 return (
                   <TrimHandle
@@ -740,6 +754,7 @@ export function FilmTimeline({
   onAttributes,
   onRemove,
   silentSource,
+  soundControls,
   onSeek,
   onViewportWidth,
   handleRef,
@@ -995,7 +1010,7 @@ export function FilmTimeline({
       if (event.button !== 0 || !inLanes(event)) return
       event.stopPropagation()
       const at = timeAt(event.clientX)
-      // 按指针所在的行和时间找片段，不按点中的元素：选中的片段两端的把手比它宽，会盖住旁边窄的片段
+      // 按指针所在的行和时间找片段，不按点中的元素：片段画出来比它的时长窄 2px，点在这道缝上也能切到那一刻的片段
       const lane =
         event.target instanceof Element
           ? event.target.closest<HTMLElement>('[data-zone][data-track]')
@@ -1139,18 +1154,24 @@ export function FilmTimeline({
                           contentRef={contentRef}
                           cover={clip.kind === 'host' ? thumbnailUrl(catalog, clip.item) : null}
                           following={following}
-                          group={movingWith(selected, clip.id)}
+                          groupFor={(kind) =>
+                            linkedGroup(movingWith(selected, clip.id), clips, kind)
+                          }
+                          badge={soundBadgeOf(clip, clips)}
                           key={clip.id}
                           onFollow={setFollowing}
                           gesturing={gesturing}
                           menu={
                             <ClipMenuItems
                               clip={clip}
+                              clips={clips}
+                              controls={soundControls}
                               onAttributes={onAttributes}
                               onHide={onHideClip}
                               onRemove={onRemove}
                               onSplit={onSplit}
                               silent={clip.kind === 'video' && silentSource(clip.src)}
+                              sound={soundActionFor([clip], clips, silentSource)}
                               split={playheadSplit([clip], playheadMs, clips, links)}
                             />
                           }

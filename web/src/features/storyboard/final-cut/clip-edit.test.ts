@@ -5,15 +5,19 @@ import {
   groupShift,
   groupTrimmed,
   groupTrimRange,
+  linkedGroup,
+  linkedPartners,
   playheadSplit,
   razorSplit,
   rippleStarts,
   slipped,
+  sourceTrimmed,
   splitAllAt,
   splitAt,
   SPLIT_REFUSAL_TEXT,
   trimBounds,
   trimmed,
+  withLinkedStarts,
   type Links,
   type Timing,
 } from './clip-edit'
@@ -150,6 +154,7 @@ describe('裁组件或块的片段和音频片段', () => {
       duration: 2_000,
       track: 0,
       hidden: false,
+      link: null,
       z: 0,
     }
     const row = [first, other]
@@ -667,6 +672,7 @@ describe('切开', () => {
     duration: 2_000,
     track: 2,
     hidden: false,
+    link: null,
     z: 0,
   }
 
@@ -794,5 +800,129 @@ describe('切开', () => {
     ])
     expect(splitAllAt(2_000, clips, links).map((cut) => cut.id)).toEqual(['v', 'a'])
     expect(splitAllAt(2_100, clips, links).map((cut) => cut.id)).toEqual(['v', 'a', 't'])
+  })
+})
+
+describe('联动', () => {
+  // 视频 2–4 秒、入点 1 秒；分离出来的原声同样的起止、入点，和它联动着；原声那一行 5 秒处有一条配乐
+  const shot = video({ id: 'v', start: 2_000, duration: 2_000, mediaStart: 1_000, link: 'lk-1' })
+  const voice = audio({ id: 'a', start: 2_000, duration: 2_000, mediaStart: 1_000, link: 'lk-1' })
+  const music = audio({ id: 'm', start: 5_000, duration: 2_000 })
+  const pair = [shot, voice, music]
+  const ONE = new Set(['v'])
+  const plenty = () => 10_000
+
+  it('挪动时联动的伙伴一起挪；联动关着时只有自己', () => {
+    expect(linkedGroup(ONE, pair, 'move')).toEqual(new Set(['v', 'a']))
+    const unlinked = [shot, { ...voice, link: null }, music]
+    expect(linkedGroup(ONE, unlinked, 'move')).toEqual(ONE)
+    expect(linkedPartners(['a'], pair)).toEqual(['v'])
+    expect(linkedPartners(['a', 'v'], pair)).toEqual([])
+    expect(linkedPartners(['m'], pair)).toEqual([])
+  })
+
+  it('一起挪：伙伴在自己那一行放不下时整对停住（和多选一起挪一样）', () => {
+    const group = linkedGroup(ONE, pair, 'move')
+    // 想往后挪 2 秒：原声会压到 5 秒处的配乐，整对停在原声贴着配乐的地方
+    expect(shifted(pair, shot, [...group], 2_000, 0).delta).toBe(1_000)
+    // 往前挪到 0 秒以前：整对停在 0
+    expect(shifted(pair, shot, [...group], -5_000, 0).delta).toBe(-2_000)
+  })
+
+  it('裁一端：这一端原来对齐的伙伴跟着裁，没对齐的不跟', () => {
+    const longer = { ...voice, duration: 2_500 }
+    expect(linkedGroup(ONE, [shot, longer], 'end')).toEqual(ONE)
+    expect(linkedGroup(ONE, [shot, longer], 'start')).toEqual(new Set(['v', 'a']))
+    const later = { ...voice, start: 2_300, duration: 1_700, mediaStart: 1_300 }
+    expect(linkedGroup(ONE, [shot, later], 'start')).toEqual(ONE)
+    expect(linkedGroup(ONE, [shot, later], 'end')).toEqual(new Set(['v', 'a']))
+  })
+
+  it('一起裁开头：伙伴的入点跟着变，裁完口型不乱', () => {
+    const members = pair.filter((clip) => linkedGroup(ONE, pair, 'start').has(clip.id))
+    const timings = groupTrimmed(members, 'start', 500, pair, plenty)
+    expect(timings).toEqual(
+      new Map([
+        ['v', { start: 2_500, duration: 1_500, mediaStart: 1_500 }],
+        ['a', { start: 2_500, duration: 1_500, mediaStart: 1_500 }],
+      ]),
+    )
+  })
+
+  it('合拢空档、波纹补位：伙伴挪同样的时间差，自己也在表里时按自己的，不早于 0', () => {
+    expect(withLinkedStarts(new Map([['v', 1_000]]), pair)).toEqual(
+      new Map([
+        ['v', 1_000],
+        ['a', 1_000],
+      ]),
+    )
+    expect(
+      withLinkedStarts(
+        new Map([
+          ['v', 1_000],
+          ['a', 1_500],
+        ]),
+        pair,
+      ),
+    ).toEqual(
+      new Map([
+        ['v', 1_000],
+        ['a', 1_500],
+      ]),
+    )
+    const earlier = [shot, { ...voice, start: 500, mediaStart: 0 }]
+    expect(withLinkedStarts(new Map([['v', 0]]), earlier).get('a')).toBe(0)
+  })
+
+  it('「原片截取」上只拖出点：结尾对齐的伙伴一起裁', () => {
+    const end = { start: 2_000, duration: 1_500, mediaStart: 1_000 }
+    expect(sourceTrimmed(shot, end, pair, plenty)).toEqual(
+      new Map([
+        ['v', end],
+        ['a', end],
+      ]),
+    )
+  })
+
+  it('「原片截取」上改入点、换一截素材：计时完全一样的伙伴做同样的改动，不一样的只改自己', () => {
+    const inPoint = { start: 2_000, duration: 1_800, mediaStart: 1_200 }
+    const both = new Map([
+      ['v', inPoint],
+      ['a', inPoint],
+    ])
+    expect(sourceTrimmed(shot, inPoint, pair, plenty)).toEqual(both)
+    const body = { start: 2_000, duration: 2_000, mediaStart: 3_000 }
+    expect(sourceTrimmed(voice, body, pair, plenty)).toEqual(
+      new Map([
+        ['a', body],
+        ['v', body],
+      ]),
+    )
+    // 开始、时长、入点、速度有一样不同：只改自己
+    for (const differs of [
+      { start: 2_100, mediaStart: 1_100, duration: 1_900 },
+      { duration: 1_500 },
+      { mediaStart: 900 },
+      { playbackRate: 1.5 },
+    ]) {
+      const film = [shot, { ...voice, ...differs }, music]
+      expect(sourceTrimmed(shot, inPoint, film, plenty)).toEqual(new Map([['v', inPoint]]))
+    }
+    // 联动关着：只改自己
+    const unlinked = [shot, { ...voice, link: null }, music]
+    expect(sourceTrimmed(shot, inPoint, unlinked, plenty)).toEqual(new Map([['v', inPoint]]))
+  })
+
+  it('改入点让两段都往后延时，按挡得最紧的那一行收住，出点不动', () => {
+    // 原声那一行 4.5 秒处有片段；视频想从入点 0 起放到 5 秒
+    const blocked = [shot, voice, { ...music, start: 4_500 }]
+    const longer = { start: 2_000, duration: 3_000, mediaStart: 0 }
+    const capped = { start: 2_000, duration: 2_500, mediaStart: 500 }
+    expect(sourceTrimmed(shot, longer, blocked, plenty)).toEqual(
+      new Map([
+        ['v', capped],
+        ['a', capped],
+      ]),
+    )
   })
 })

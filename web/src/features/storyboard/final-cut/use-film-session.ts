@@ -1,10 +1,10 @@
 import { use, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { writeClipTiming } from '@hyperframes/core/composition-contract'
-import { relinkSplitHalves } from '@hyperframes/core/media-link'
+import { mintLinkId, relinkSplitHalves } from '@hyperframes/core/media-link'
 import type { Composition, ElementSnapshot } from '@hyperframes/sdk'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
-import { rippleStarts, type Cut, type Links, type Timing } from './clip-edit'
+import { rippleStarts, withLinkedStarts, type Cut, type Links, type Timing } from './clip-edit'
 import type { CatalogItem, ComponentCatalog, VariableValue } from './composition/catalog'
 import {
   audioElement,
@@ -33,7 +33,9 @@ import {
   type ProjectMain,
 } from './final-cut.api'
 import { itemDurationMs } from './items'
-import { onRow, topTrack, type Landing, type Renumbering } from './placement'
+import type { AttributeChanges } from './original-sound'
+import { onRow, topTrack, voiceRowFor, type Landing, type Renumbering } from './placement'
+import { detachedVideoChanges, mergedVideoChanges, type SoundPair } from './sound-pair'
 import { newClipZ, restackedZ } from './stacking'
 import type { StackingDirection } from './vendor/hyperframes-studio/player/components/timelineStackingSync'
 
@@ -95,14 +97,6 @@ const latestEnd = (engine: Composition): number => {
   )
 }
 
-const linksOf = (engine: Composition): Links =>
-  new Map(
-    (rootOf(engine)?.children ?? []).flatMap((element) => {
-      const link = element.attributes['data-link']
-      return link === undefined ? [] : [[element.id, link] as const]
-    }),
-  )
-
 const viewOf = (engine: Composition, catalog: ComponentCatalog): FilmView => {
   const root = rootOf(engine)
   const clips = clipsOf(engine, catalog)
@@ -114,7 +108,7 @@ const viewOf = (engine: Composition, catalog: ComponentCatalog): FilmView => {
       height: Number(root?.attributes['data-height'] ?? 0),
     },
     clips,
-    links: linksOf(engine),
+    links: new Map(clips.flatMap((clip) => (clip.link === null ? [] : [[clip.id, clip.link]]))),
     durationMs: latestEnd(engine),
     canUndo: engine.canUndo(),
     canRedo: engine.canRedo(),
@@ -129,6 +123,46 @@ const applyTo = (engine: Composition, change: () => void) =>
   })
 
 const newClipId = () => `clip-${crypto.randomUUID().slice(0, 8)}`
+
+const LINK = 'data-link'
+
+/**
+ * 新的链接名（也用作分离出来的原声的出处）：照引擎的取法，不和文件里任何元素的编号、链接名、出处重名。
+ */
+const newLinkName = (engine: Composition) =>
+  mintLinkId(
+    engine
+      .getElements()
+      .flatMap((element) => [
+        element.id,
+        element.attributes['id'] ?? '',
+        element.attributes[LINK] ?? '',
+        element.attributes['data-sync-origin'] ?? '',
+      ]),
+  )
+
+/** 编辑器按算好的样子写一个片段的起止或行：联动的伙伴由调用方一起算进去，不让引擎再带着挪一次。 */
+const setOwnTiming = (
+  engine: Composition,
+  id: string,
+  timing: { start?: number; duration?: number; trackIndex?: number },
+) => engine.setTiming(id, timing, { linked: false })
+
+/**
+ * 做完 `change`（里面用 `setOwnTiming` 写时间）以后，把做之前根下各元素的链接名原样写回去：
+ * 引擎只改一个片段时会解除它和伙伴的链接，联动不该因为挪了、裁了就断掉。
+ */
+const keepingLinks = (engine: Composition, change: () => void) => {
+  const before = (rootOf(engine)?.children ?? []).flatMap((element) => {
+    const link = element.attributes[LINK]
+    return link === undefined ? [] : [[element.id, link] as const]
+  })
+  change()
+  for (const [id, link] of before) {
+    const element = engine.getElement(id)
+    if (element !== null && element.attributes[LINK] !== link) engine.setAttribute(id, LINK, link)
+  }
+}
 
 const HF_ID = 'data-hf-id'
 
@@ -424,6 +458,8 @@ export function useFilmSession(
             fadeOut: 0,
             z: newClipZ(existing, placed),
             hidden: false,
+            link: null,
+            syncOrigin: null,
           })
           engine.addElement(root.id, 0, element)
           end += video.duration
@@ -478,6 +514,7 @@ export function useFilmSession(
             values: { ...values },
             z: newClipZ(existing, 0),
             hidden: false,
+            link: null,
           },
           item,
           size,
@@ -518,6 +555,8 @@ export function useFilmSession(
           fadeOut: 0,
           loop: false,
           hidden: false,
+          link: null,
+          syncOrigin: null,
         })
         engine.addElement(root.id, 0, element)
       })
@@ -540,21 +579,26 @@ export function useFilmSession(
 
   /**
    * 改几个片段各自的起止和入点，一起算一步撤销。组件或块的片段的入点写成从第几秒开始播，是 0 时去掉
-   * 这个属性；「其他」片段没有入点，只改起止。
+   * 这个属性；「其他」片段没有入点，只改起止。联动的伙伴要跟着动时由调用方算进 `timings`。
    */
   const retime = useCallback(
     (timings: ReadonlyMap<string, Timing>) =>
       edit((engine) => {
         const kinds = new Map(clipsOf(engine, catalog).map((clip) => [clip.id, clip.kind]))
-        for (const [id, timing] of timings) {
-          engine.setTiming(id, { start: timing.start / 1000, duration: timing.duration / 1000 })
-          const kind = kinds.get(id)
-          const inPoint = String(timing.mediaStart / 1000)
-          if (kind === 'host')
-            engine.setAttribute(id, 'data-playback-start', timing.mediaStart > 0 ? inPoint : null)
-          else if (kind === 'video' || kind === 'audio')
-            engine.setAttribute(id, 'data-media-start', inPoint)
-        }
+        keepingLinks(engine, () => {
+          for (const [id, timing] of timings) {
+            setOwnTiming(engine, id, {
+              start: timing.start / 1000,
+              duration: timing.duration / 1000,
+            })
+            const kind = kinds.get(id)
+            const inPoint = String(timing.mediaStart / 1000)
+            if (kind === 'host')
+              engine.setAttribute(id, 'data-playback-start', timing.mediaStart > 0 ? inPoint : null)
+            else if (kind === 'video' || kind === 'audio')
+              engine.setAttribute(id, 'data-media-start', inPoint)
+          }
+        })
       }),
     [catalog, edit],
   )
@@ -562,8 +606,8 @@ export function useFilmSession(
   /**
    * 把一个片段换到另一行的某个时间。`direction` 是它往上还是往下挪（null 时不调叠放顺序）：
    * 只重排它自己，别的片段的叠放顺序和文件里的先后都不动。
-   * `renumber` 是为它新开一行时别的片段要换成的行号；`starts` 是和它一起挪的片段各自的新起点，
-   * 它们留在原来的行。都和它算一步撤销。
+   * `renumber` 是为它新开一行时别的片段要换成的行号；`starts` 是和它一起挪的片段（含联动的伙伴）
+   * 各自的新起点，它们留在原来的行。都和它算一步撤销。
    */
   const moveClip = useCallback(
     (
@@ -575,8 +619,10 @@ export function useFilmSession(
     ) =>
       edit((engine) => {
         for (const [other, next] of renumber) engine.setTiming(other, { trackIndex: next })
-        for (const [other, start] of starts) engine.setTiming(other, { start: start / 1000 })
-        engine.setTiming(id, { start: at.start / 1000, trackIndex: at.track })
+        keepingLinks(engine, () => {
+          for (const [other, start] of starts) setOwnTiming(engine, other, { start: start / 1000 })
+          setOwnTiming(engine, id, { start: at.start / 1000, trackIndex: at.track })
+        })
         if (direction === null) return
         // 按挪完的样子算：一起挪的片段的新起点、别的片段的新行号都已写进去
         const z = restackedZ(clipsOf(engine, catalog), id, direction)
@@ -585,13 +631,16 @@ export function useFilmSession(
     [catalog, edit],
   )
 
-  /** 把几个片段各自挪到新的起点，一起算一步撤销。 */
+  /** 把几个片段各自挪到新的起点（合拢空档），联动的伙伴挪同样的时间差，一起算一步撤销。 */
   const restart = useCallback(
     (starts: ReadonlyMap<string, number>) =>
       edit((engine) => {
-        for (const [id, start] of starts) engine.setTiming(id, { start: start / 1000 })
+        const all = withLinkedStarts(starts, clipsOf(engine, catalog))
+        keepingLinks(engine, () => {
+          for (const [id, start] of all) setOwnTiming(engine, id, { start: start / 1000 })
+        })
       }),
-    [edit],
+    [catalog, edit],
   )
 
   /** 把几个片段一起隐藏或显示回来，算一步撤销。 */
@@ -622,37 +671,128 @@ export function useFilmSession(
   )
 
   /**
-   * 改片段 `id` 上的几个属性（null 是去掉），算一步撤销。片段已经不在工程里、或者属性都已经是这些值时
-   * 不动工程。
+   * 在几个片段上都改同样的几个属性（null 是去掉），算一步撤销。不在工程里的片段跳过；
+   * 属性都已经是这些值时不动工程。
    */
   const setAttributes = useCallback(
-    (id: string, changes: Readonly<Partial<Record<ClipAttribute, string | null>>>) => {
+    (ids: readonly string[], changes: Readonly<Partial<Record<ClipAttribute, string | null>>>) => {
       const engine = engineRef.current
-      const element = engine?.getElement(id) ?? null
-      if (engine === null || element === null) return
-      const changed = Object.entries(changes).filter(
-        ([name, value]) => (element.attributes[name] ?? null) !== value,
-      )
+      if (engine === null) return
+      const changed = ids.flatMap((id) => {
+        const element = engine.getElement(id)
+        if (element === null) return []
+        return Object.entries(changes)
+          .filter(([name, value]) => (element.attributes[name] ?? null) !== value)
+          .map(([name, value]) => ({ id, name, value: value ?? null }))
+      })
       if (changed.length === 0) return
       edit((current) => {
-        for (const [name, value] of changed) current.setAttribute(id, name, value ?? null)
+        for (const { id, name, value } of changed) current.setAttribute(id, name, value)
       })
     },
     [edit],
   )
 
-  /** 删掉几个片段；`ripple` 为真时主轨里后面的片段往前补上。 */
+  /** 删掉几个片段；`ripple` 为真时主轨里后面的片段往前补上，联动的伙伴挪同样的时间差。 */
   const removeClips = useCallback(
     (ids: readonly string[], ripple: boolean) =>
       edit((engine) => {
         const before = clipsOf(engine, catalog)
         const gone = new Set(ids)
+        const starts = ripple ? withLinkedStarts(rippleStarts(before, gone), before) : NO_STARTS
         for (const id of gone) engine.removeElement(id)
-        if (ripple)
-          for (const [id, start] of rippleStarts(before, gone))
-            engine.setTiming(id, { start: start / 1000 })
+        keepingLinks(engine, () => {
+          for (const [id, start] of starts)
+            if (!gone.has(id)) setOwnTiming(engine, id, { start: start / 1000 })
+        })
       }),
     [catalog, edit],
+  )
+
+  /**
+   * 把视频片段 `videoId` 的原声分离成一个音频片段，算一步撤销：视频片段关掉原声、声音属性搬走，原声片段
+   * 和它同一个地址、同样的起止、入点、速度，写在文件里紧挨着它前面，放进「人声」行（见 `voiceRowFor`）；
+   * 两段写上同一个新的链接名，也当出处，联动着。返回原声片段的编号；片段不是视频片段时不动工程。
+   */
+  const detach = useCallback(
+    (videoId: string): string | undefined => {
+      const engine = engineRef.current
+      const root = engine === null ? undefined : rootOf(engine)
+      if (engine === null || root === undefined) return undefined
+      const clips = clipsOf(engine, catalog)
+      const video = clips.find((clip) => clip.id === videoId)
+      if (video?.kind !== 'video') return undefined
+      const name = newLinkName(engine)
+      const { track, renumber } = voiceRowFor(clips, video.start, video.duration)
+      const index = root.children.findIndex((child) => child.id === videoId)
+      let added: string | undefined
+      edit((current) => {
+        for (const [id, next] of renumber) current.setTiming(id, { trackIndex: next })
+        added = current.addElement(
+          root.id,
+          index,
+          audioElement({
+            id: newClipId(),
+            label: `${video.label} · 原声`,
+            src: video.src,
+            start: video.start,
+            duration: video.duration,
+            mediaStart: video.mediaStart,
+            playbackRate: video.playbackRate,
+            volume: video.volume,
+            fadeIn: video.fadeIn,
+            fadeOut: video.fadeOut,
+            track,
+            loop: false,
+            hidden: video.hidden,
+            link: name,
+            syncOrigin: name,
+          }),
+        )
+        for (const [attribute, value] of Object.entries(detachedVideoChanges(name)))
+          current.setAttribute(videoId, attribute, value ?? null)
+      })
+      return added
+    },
+    [catalog, edit],
+  )
+
+  /**
+   * 把分离出来的原声合并回视频片段，算一步撤销：原声上的声音属性写回视频片段，视频片段打开原声、去掉链接名
+   * 和出处，原声片段删掉。能不能合并由调用方按 `mergeBlocked` 先查。
+   */
+  const merge = useCallback(
+    ({ video, audio }: SoundPair) => {
+      const engine = engineRef.current
+      const element = engine?.getElement(audio.id) ?? null
+      if (element === null) return
+      const changes: AttributeChanges = mergedVideoChanges(element.attributes)
+      edit((current) => {
+        for (const [attribute, value] of Object.entries(changes))
+          current.setAttribute(video.id, attribute, value ?? null)
+        current.removeElement(audio.id)
+      })
+    },
+    [edit],
+  )
+
+  /** 打开（两段写上一个新的链接名）或关掉（两段去掉链接名）一对的联动，算一步撤销。 */
+  const setLinked = useCallback(
+    ({ video, audio }: SoundPair, linked: boolean) =>
+      edit((engine) => {
+        const name = linked ? newLinkName(engine) : null
+        for (const id of [video.id, audio.id]) engine.setAttribute(id, LINK, name)
+      }),
+    [edit],
+  )
+
+  /** 对齐口型：只把原声片段 `audioId` 挪到 `startMs`（由 `resyncPlan` 算好），联动不变，算一步撤销。 */
+  const resync = useCallback(
+    (audioId: string, startMs: number) =>
+      edit((engine) =>
+        keepingLinks(engine, () => setOwnTiming(engine, audioId, { start: startMs / 1000 })),
+      ),
+    [edit],
   )
 
   /**
@@ -705,6 +845,10 @@ export function useFilmSession(
     setAttributes,
     removeClips,
     split,
+    detach,
+    merge,
+    setLinked,
+    resync,
     undo: () => step('undo'),
     redo: () => step('redo'),
     save,

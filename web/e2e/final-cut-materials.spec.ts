@@ -811,6 +811,7 @@ test('片段的右键菜单：先选中点右键的片段，「隐藏片段画�
   const menu = page.getByRole('menu', { name: 'A · 镜头 1' })
   await expect(menu.getByRole('menuitem')).toHaveText([
     /^在播放头处切开/,
+    /^分离音频至独立音轨/,
     '静音此片段',
     '隐藏片段画面',
     /^删除片段/,

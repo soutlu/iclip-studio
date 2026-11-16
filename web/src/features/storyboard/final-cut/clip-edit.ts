@@ -177,6 +177,109 @@ export const groupTrimmed = (
   )
 }
 
+/** `clip` 联动着的别的片段：链接名（`data-link`）和它相同的。 */
+export const linkedWith = (clip: FilmClip, clips: readonly FilmClip[]): FilmClip[] =>
+  clip.link === null
+    ? []
+    : clips.filter((other) => other.id !== clip.id && other.link === clip.link)
+
+/** `ids` 这些片段联动着的、不在 `ids` 里的片段（删除、改速度时一起改）。 */
+export const linkedPartners = (ids: Iterable<string>, clips: readonly FilmClip[]): string[] => {
+  const own = new Set(ids)
+  const partners = clips
+    .filter((clip) => own.has(clip.id))
+    .flatMap((clip) => linkedWith(clip, clips))
+    .map((clip) => clip.id)
+  return [...new Set(partners)].filter((id) => !own.has(id))
+}
+
+// 两端算对齐的误差：和引擎带着链接的片段改时长时一样，1 毫秒以内
+const ALIGNED_MS = 1
+
+/**
+ * 一起动的片段（`group`）加上联动的伙伴：挪动（`move`）时伙伴都跟着；裁一端时只有这一端原来和
+ * 组里联动的片段对齐的伙伴跟着，这样裁完口型不乱（裁开头时入点由 `groupTrimmed` 一起算）。
+ */
+export const linkedGroup = (
+  group: ReadonlySet<string>,
+  clips: readonly FilmClip[],
+  kind: 'move' | Edge,
+): ReadonlySet<string> => {
+  const joined = new Set(group)
+  for (const member of clips.filter((clip) => group.has(clip.id)))
+    for (const partner of linkedWith(member, clips))
+      if (kind === 'move' || Math.abs(edgeOf(partner, kind) - edgeOf(member, kind)) < ALIGNED_MS)
+        joined.add(partner.id)
+  return joined
+}
+
+/**
+ * 几个片段各自挪到新起点（合拢空档、波纹删除补位）时，联动的伙伴挪同样的时间差；伙伴自己也在
+ * `starts` 里时按它自己的。挪到 0 秒之前的收在 0。
+ */
+export const withLinkedStarts = (
+  starts: ReadonlyMap<string, number>,
+  clips: readonly FilmClip[],
+): Map<string, number> => {
+  const result = new Map(starts)
+  for (const clip of clips) {
+    const start = starts.get(clip.id)
+    if (start === undefined) continue
+    for (const partner of linkedWith(clip, clips))
+      if (!result.has(partner.id))
+        result.set(partner.id, Math.max(0, partner.start + start - clip.start))
+  }
+  return result
+}
+
+const sameMediaTiming = (left: MediaClip, right: MediaClip) =>
+  left.start === right.start &&
+  left.duration === right.duration &&
+  left.mediaStart === right.mediaStart &&
+  left.playbackRate === right.playbackRate
+
+/**
+ * 在「原片截取」上改完 `clip` 以后要写的时间（`next` 由 `slipped` 算好）：
+ * - 只拖了出点：就是裁结尾，联动的伙伴照时间线上一起裁的规则跟着；
+ * - 改了入点、换了一截素材：联动的伙伴里开始、时长、入点、速度都和它一样的做同样的改动（口型不乱），
+ *   别的伙伴不动。改入点让结尾往后延时，不压到任何一段那一行后面的片段。
+ */
+export const sourceTrimmed = (
+  clip: MediaClip,
+  next: Timing,
+  clips: readonly FilmClip[],
+  sourceMs: SourceLength,
+): Map<string, Timing> => {
+  if (next.start === clip.start && next.mediaStart === clip.mediaStart) {
+    const group = linkedGroup(new Set([clip.id]), clips, 'end')
+    return groupTrimmed(
+      clips.filter((other) => group.has(other.id)),
+      'end',
+      next.duration - clip.duration,
+      clips,
+      sourceMs,
+    )
+  }
+  const twins = linkedWith(clip, clips).filter(
+    (other): other is MediaClip => isMediaClip(other) && sameMediaTiming(other, clip),
+  )
+  if (twins.length === 0) return new Map([[clip.id, next]])
+  // 出点不动、入点往前时片段变长：素材剩下的长度由 `slipped` 卡过，这里只看各自那一行后面的片段
+  const latestEnd = Math.min(
+    ...[clip, ...twins].map((member) => trimBounds(member, 'end', clips, Infinity).max),
+  )
+  const outPoint = clip.mediaStart + clip.duration * clip.playbackRate
+  const timing =
+    next.start + next.duration <= latestEnd
+      ? next
+      : {
+          start: next.start,
+          duration: latestEnd - next.start,
+          mediaStart: Math.round(outPoint - (latestEnd - next.start) * clip.playbackRate),
+        }
+  return new Map([clip, ...twins].map((member) => [member.id, timing]))
+}
+
 /** 挪动的结果：一起挪的片段共用的时间差（毫秒），被抓的片段最后在它那个区的哪一行（null 是新开的一行）。 */
 export type GroupShift = { delta: number; track: number | null }
 

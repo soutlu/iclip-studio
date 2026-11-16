@@ -28,6 +28,7 @@ export const hoverPreviewOf = (
     values: {},
     z: 0,
     hidden: false,
+    link: null,
   }
   const html = emptyProject(
     HOVER_CANVAS,

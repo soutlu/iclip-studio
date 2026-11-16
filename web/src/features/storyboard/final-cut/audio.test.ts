@@ -95,4 +95,22 @@ describe('音频点「加到播放头」时放在哪', () => {
     // 正好接在第一行的片段后面不算占着
     expect(audioPlayheadSpot(clips, 1000, 5000).row).toEqual({ zone: 'audio', track: 0 })
   })
+
+  it('配乐不进人声行：放进人声行下面的第一条配乐行；它占着时在它下面新开一行；没有配乐行时在人声行下面新开一行', () => {
+    const spoken = audio({ id: 'v', track: 0, start: 0, duration: 1000, syncOrigin: 'lk-1' })
+    const music = audio({ id: 'm', track: 1, start: 5000, duration: 1000 })
+    // 画面一行、人声一行、配乐一行：人声行这时空着也不进去
+    expect(audioPlayheadSpot([video(), spoken, music], 2000, 1000).row).toEqual({
+      zone: 'audio',
+      track: 1,
+    })
+    expect(audioPlayheadSpot([video(), spoken, music], 4500, 1000).row).toEqual({
+      zone: 'audio',
+      insertAt: 3,
+    })
+    expect(audioPlayheadSpot([video(), spoken], 2000, 1000).row).toEqual({
+      zone: 'audio',
+      insertAt: 2,
+    })
+  })
 })
