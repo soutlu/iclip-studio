@@ -723,6 +723,221 @@ describe('final-cut 编辑器 · 多选', () => {
   })
 })
 
+describe('final-cut 编辑器 · 片段右键菜单', () => {
+  const user = () => userEvent.setup()
+  const openWith = async (clips: Parameters<typeof mainFile>[0], extra = '') => {
+    putMockProjectMain(CONVERSATION, mainFile(clips, { width: 720, height: 1280 }, extra))
+    await openEditor()
+  }
+  /** 时间线上名字是 `label` 的片段。 */
+  const clipOf = (label: string) => screen.getByRole('group', { name: new RegExp(`^${label}，`) })
+  const pressedOf = (label: string) =>
+    within(clipOf(label))
+      .getByRole('button', { name: /^选中：/ })
+      .getAttribute('aria-pressed')
+  /** 在片段上点右键，等它的菜单出来。 */
+  const openMenu = async (label: string) => {
+    fireEvent.contextMenu(clipOf(label))
+    return screen.findByRole('menu', { name: label })
+  }
+  const itemsOf = (menu: HTMLElement) =>
+    within(menu)
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent)
+  const choose = async (label: string, item: string) => {
+    const menu = await openMenu(label)
+    await user().click(within(menu).getByRole('menuitem', { name: new RegExp(`^${item}`) }))
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+  }
+  const closeMenu = async () => {
+    await user().keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+  }
+  const inspector = () => screen.getByRole('tabpanel', { name: '属性' })
+  const undoButton = () => within(toolbar()).getByRole('button', { name: '撤销' })
+  const savedTag = (id: string) =>
+    new RegExp(`<[a-z]+ [^>]*\\bid="${id}"[^>]*>`).exec(savedFilm())?.[0] ?? ''
+
+  it('各种片段的菜单项：视频、音频片段能静音，画面区的片段能隐藏，最后是分隔线和「删除片段」；文字随状态变', async () => {
+    await openWith(
+      [
+        video({ src: URL_A, duration: 2_000 }),
+        video({ id: 'clip-2', label: '已关', src: URL_B, start: 2_000, muted: true, hidden: true }),
+        host({ start: 0, track: 1 }),
+        audio({ duration: 4_000 }),
+        audio({ id: 'music-2', label: '已静音', start: 4_000, hidden: true }),
+      ],
+      '<p id="note" data-start="0" data-duration="2" data-track-index="2">手写文字</p>',
+    )
+    const expected: Record<string, string[]> = {
+      'A · 镜头 1': ['静音此片段', '隐藏片段画面', '删除片段Delete'],
+      已关: ['取消静音', '恢复显示画面', '删除片段Delete'],
+      测试可填项: ['隐藏片段画面', '删除片段Delete'],
+      手写文字: ['隐藏片段画面', '删除片段Delete'],
+      配乐: ['静音此片段', '删除片段Delete'],
+      已静音: ['取消静音', '删除片段Delete'],
+    }
+    for (const [label, items] of Object.entries(expected)) {
+      const menu = await openMenu(label)
+      expect(itemsOf(menu)).toEqual(items)
+      // 分隔线在「删除片段」前面
+      const separator = within(menu).getByRole('separator')
+      expect(separator.nextElementSibling).toHaveTextContent(/^删除片段/)
+      for (const item of within(menu).getAllByRole('menuitem'))
+        expect(item).not.toHaveAttribute('aria-disabled')
+      await closeMenu()
+    }
+  })
+
+  it('视频片段的素材没有声音：「取消静音」置灰，悬停说明原因，选它什么都不改、菜单不关；读不出有没有声音时照常能选', async () => {
+    await openWith([
+      video({ src: URL_SILENT, label: '无声', muted: true }),
+      video({ id: 'clip-2', src: URL_UNREADABLE, label: '读不出', start: 2_000, muted: true }),
+    ])
+    const menu = await openMenu('无声')
+    const unmute = () => within(menu).getByRole('menuitem', { name: '取消静音' })
+    await waitFor(() => expect(unmute()).toHaveAttribute('aria-disabled', 'true'))
+    await user().hover(unmute())
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('该素材没有声音，无法打开原声')
+    await user().click(unmute())
+    expect(screen.getByRole('menu', { name: '无声' })).toBeVisible()
+    await closeMenu()
+    // 用键盘也能走到置灰的那一项，聚焦时说明原因
+    await openMenu('无声')
+    await user().keyboard('{End}{Home}')
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: '取消静音' })).toHaveFocus())
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('该素材没有声音，无法打开原声')
+    // 第一下 Esc 先收起说明，第二下关菜单
+    await user().keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+    expect(screen.getByRole('menu', { name: '无声' })).toBeVisible()
+    await closeMenu()
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+
+    await choose('读不出', '取消静音')
+    await waitSaved(() => expect(savedTag('clip-2')).toContain('data-has-audio="true"'))
+  })
+
+  it('右键没选中的片段先只选中它、侧栏切到「属性」；多选时右键其中一个选中不变，静音、隐藏只改它，删除删掉全部选中的', async () => {
+    await openWith([
+      video({ label: 'A · 镜头 1', src: URL_A, duration: 2_000 }),
+      video({ id: 'clip-2', label: 'B · 镜头 1', src: URL_B, start: 2_000, duration: 1_500 }),
+      video({ id: 'clip-3', label: 'A · 镜头 2', src: URL_A, start: 3_500, duration: 1_500 }),
+    ])
+    // 菜单开着时页面别处对读屏藏起来，关了再看
+    await openMenu('B · 镜头 1')
+    await closeMenu()
+    expect(pressedOf('B · 镜头 1')).toBe('true')
+    expect(pressedOf('A · 镜头 1')).toBe('false')
+    expect(within(inspector()).getByRole('heading', { name: 'B · 镜头 1' })).toBeVisible()
+
+    const clicks = user()
+    await clicks.keyboard('{Shift>}')
+    await clicks.click(within(clipOf('A · 镜头 1')).getByRole('button', { name: /^选中：/ }))
+    await clicks.keyboard('{/Shift}')
+    await choose('B · 镜头 1', '隐藏片段画面')
+    await waitSaved(() => expect(savedTag('clip-2')).toContain('data-hidden'))
+    expect(savedTag('clip-1')).not.toContain('data-hidden')
+    await choose('A · 镜头 1', '静音此片段')
+    await waitSaved(() => expect(savedTag('clip-1')).toContain('muted="true"'))
+    expect(savedTag('clip-2')).not.toContain('muted')
+    expect(['A · 镜头 1', 'B · 镜头 1', 'A · 镜头 2'].map(pressedOf)).toEqual([
+      'true',
+      'true',
+      'false',
+    ])
+
+    // 开着波纹编辑：剩下的那个补到开头
+    await choose('A · 镜头 1', '删除片段')
+    await waitSaved(() => expect(savedClips()).toHaveLength(1))
+    expect(savedTag('clip-3')).toContain('data-start="0"')
+  })
+
+  it('菜单里的静音、隐藏写进文件的和「属性」里同样的操作一样，各算一步撤销', async () => {
+    await openWith([video({ src: URL_A, duration: 2_000 }), audio({ duration: 4_000 })])
+    /** 先用菜单做一次、撤销一步，再用「属性」做一次：两次存下来的一样，撤销一步就回到做之前。 */
+    const sameAsInspector = async (
+      label: string,
+      item: string,
+      viaInspector: () => Promise<void>,
+    ) => {
+      const before = savedFilm()
+      await choose(label, item)
+      await waitSaved(() => expect(savedFilm()).not.toBe(before))
+      const viaMenu = savedFilm()
+      await user().click(undoButton())
+      await waitSaved(() => expect(savedFilm()).not.toBe(viaMenu))
+      expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+      const undone = savedFilm()
+      await viaInspector()
+      await waitSaved(() => expect(savedFilm()).not.toBe(undone))
+      expect(savedFilm()).toBe(viaMenu)
+      await user().click(undoButton())
+      await waitSaved(() => expect(savedFilm()).toBe(undone))
+    }
+    await sameAsInspector('A · 镜头 1', '静音此片段', () =>
+      user().click(within(inspector()).getByRole('switch', { name: '关闭原声' })),
+    )
+    await sameAsInspector('A · 镜头 1', '隐藏片段画面', () =>
+      user().click(within(inspector()).getByRole('button', { name: '隐藏' })),
+    )
+    await sameAsInspector('配乐', '静音此片段', () =>
+      user().click(within(inspector()).getByRole('button', { name: '静音' })),
+    )
+  })
+
+  it('片段上右键只出片段的菜单，空档上右键只出空档的菜单；在打开的菜单上再点右键不换成空档的菜单', async () => {
+    // 片段从 2 秒开始，开头是一段空档
+    await openWith([video({ src: URL_A, start: 2_000, duration: 2_000 })])
+    const row = screen.getByRole('group', { name: '画面 1' })
+    fireEvent.contextMenu(row, { clientX: 0 })
+    const gap = await screen.findByRole('menu', { name: '空档' })
+    expect(itemsOf(gap)).toEqual(['合拢此空档', '合拢该行的所有空档'])
+    await closeMenu()
+
+    const menu = await openMenu('A · 镜头 1')
+    expect(screen.getAllByRole('menu')).toEqual([menu])
+    fireEvent.contextMenu(within(menu).getByRole('menuitem', { name: '静音此片段' }), {
+      clientX: 0,
+    })
+    expect(screen.queryByRole('menu', { name: '空档' })).toBeNull()
+    expect(screen.getAllByRole('menu')).toEqual([menu])
+  })
+
+  it('菜单开着时按 Esc 只关菜单、选中不变；菜单里按的键不当快捷键', async () => {
+    await openWith([video({ src: URL_A, duration: 2_000 })])
+    await openMenu('A · 镜头 1')
+    await user().keyboard('{Delete}{Backspace}m')
+    await closeMenu()
+    expect(within(transport()).getByRole('button', { name: '静音' })).toBeVisible()
+    expect(pressedOf('A · 镜头 1')).toBe('true')
+    await act(() => new Promise((resolve) => setTimeout(resolve, 900)))
+    expect(savedClips()).toHaveLength(1)
+  })
+
+  it('拖片段、框选进行中点右键：不出菜单，也不打断拖动', async () => {
+    await openWith([video({ src: URL_A, start: 1_000, duration: 2_000 })])
+    const body = within(clipOf('A · 镜头 1')).getByRole('button', { name: /^选中：/ })
+    fireEvent.pointerDown(body, { button: 0, pointerId: 1, clientX: 10, clientY: 50 })
+    fireEvent.pointerMove(body, { pointerId: 1, clientX: 200, clientY: 50 })
+    fireEvent.contextMenu(clipOf('A · 镜头 1'))
+    fireEvent.contextMenu(screen.getByRole('group', { name: '画面 1' }), { clientX: 0 })
+    expect(screen.queryByRole('menu')).toBeNull()
+    fireEvent.pointerUp(body, { pointerId: 1, clientX: 200, clientY: 50 })
+    await waitSaved(() => expect(savedTag('clip-1')).not.toContain('data-start="1"'))
+
+    const row = screen.getByRole('group', { name: '画面 1' })
+    fireEvent.pointerDown(row, { button: 0, pointerId: 2, clientX: 0, clientY: 50 })
+    fireEvent.pointerMove(row, { pointerId: 2, clientX: 300, clientY: 80 })
+    expect(screen.getByTestId('marquee')).toBeInTheDocument()
+    fireEvent.contextMenu(row, { clientX: 0 })
+    fireEvent.contextMenu(clipOf('A · 镜头 1'))
+    expect(screen.queryByRole('menu')).toBeNull()
+    fireEvent.pointerUp(row, { pointerId: 2, clientX: 300, clientY: 80 })
+    expect(screen.queryByTestId('marquee')).toBeNull()
+  })
+})
+
 describe('final-cut 编辑器 · 播放', () => {
   afterEach(() => {
     starvedVideos.clear()

@@ -9,7 +9,8 @@ import { ContentFields } from './content-fields'
 import { Keys, Tool } from './editor-toolbar'
 import { ITEM_KIND_LABEL } from './items'
 import type { KeyframeStates } from './material-media'
-import { MediaMix, type AttributeChanges } from './media-mix'
+import { MediaMix } from './media-mix'
+import type { AttributeChanges } from './original-sound'
 import { SourceTrim } from './source-trim'
 
 type Values = Readonly<Record<string, VariableValue>>

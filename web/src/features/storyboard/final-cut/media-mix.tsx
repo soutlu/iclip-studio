@@ -9,8 +9,9 @@ import {
   formatAudioGain,
 } from '@hyperframes/core/audio-gain'
 import { Switch } from '@/shared/ui/switch'
-import type { ClipAttribute, MediaClip } from './composition/film'
+import type { MediaClip } from './composition/film'
 import { SliderControl } from './inspector-controls'
+import { originalSoundBlocked, originalSoundChanges, type AttributeChanges } from './original-sound'
 import {
   parseGainInput,
   parseRateInput,
@@ -21,10 +22,6 @@ import {
   fromUnit,
   toUnit,
 } from './vendor/hyperframes-studio/player/components/automationLaneGeometry'
-
-export type AttributeChanges = Readonly<Partial<Record<ClipAttribute, string | null>>>
-
-const SILENT_SOURCE_TEXT = '该素材没有声音，无法打开原声'
 
 // 倍速滑杆的格数：照参照的工作台，0.1–10 倍按对数铺满 1000 格，正中是 1 倍
 const RATE_STEPS = 1000
@@ -112,18 +109,10 @@ export function MediaMix({
             />
           ) : (
             <Switch
-              // 素材没有声音时不让打开原声：标成有声音的视频片段导出必定失败
-              blockedReason={silent && clip.muted ? SILENT_SOURCE_TEXT : undefined}
+              blockedReason={originalSoundBlocked(clip, silent)}
               checked={clip.muted}
               id={switchId}
-              // 照参照的工作台：关闭原声写 muted、去掉有声音的标记，打开反过来，两个不同时写
-              onCheckedChange={(off) =>
-                onChange(
-                  off
-                    ? { muted: 'true', 'data-has-audio': null }
-                    : { muted: null, 'data-has-audio': 'true' },
-                )
-              }
+              onCheckedChange={(off) => onChange(originalSoundChanges(off))}
             />
           )}
         </span>

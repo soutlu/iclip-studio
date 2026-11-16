@@ -8,6 +8,7 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type PointerEvent,
+  type ReactNode,
   type RefObject,
 } from 'react'
 import { Icon } from '@/shared/icons'
@@ -39,9 +40,11 @@ import {
   type SourceLength,
   type Timing,
 } from './clip-edit'
+import { ClipMenuItems } from './clip-menu'
 import { thumbnailUrl, type ComponentCatalog } from './component-catalog'
 import { isMediaClip, type FilmClip } from './composition/film'
-import { useEditorEscape } from './editor-keys'
+import { useEditorEscape, useEditorRoot } from './editor-keys'
+import type { AttributeChanges } from './original-sound'
 import {
   namedRows,
   rowHidden,
@@ -103,6 +106,8 @@ type FilmTimelineProps = {
   onSelect: (ids: ReadonlySet<string>) => void
   /** 开始或结束框选、拖片段；中途按 Esc 由时间线自己取消。 */
   onGesture: (active: boolean) => void
+  /** 正在拖片段、框选或拖「原片截取」：这时点右键不出菜单，不打断它。 */
+  gesturing: boolean
   /** 给了就把时间线横向滚到 `left`（像素）；每次给新的对象才滚。 */
   scrollRequest: { left: number } | null
   /** 改几个片段各自的起止和入点（在行里挪、裁剪），一起算一步。 */
@@ -116,6 +121,14 @@ type FilmTimelineProps = {
   onRestart: (starts: ReadonlyMap<string, number>) => void
   /** 把 `row` 这一行的片段一起隐藏（`hidden` 为真，声音区的行就是静音）或显示回来。 */
   onHide: (row: RowKey, hidden: boolean) => void
+  /** 片段右键菜单：隐藏或显示一个片段（音频片段就是静音）。 */
+  onHideClip: (id: string, hidden: boolean) => void
+  /** 片段右键菜单：改片段上的几个属性（视频片段的静音）。 */
+  onAttributes: (id: string, changes: AttributeChanges) => void
+  /** 片段右键菜单：删掉选中的片段，和按 Delete 一样。 */
+  onRemove: () => void
+  /** 这个地址的视频素材确认没有声音。 */
+  silentSource: (src: string) => boolean
   onSeek: (ms: number) => void
   onViewportWidth: (width: number) => void
   handleRef: RefObject<TimelineHandle | null>
@@ -361,6 +374,10 @@ type TimelineClipProps = {
   onFollow: (following: Following | null) => void
   /** 开始或结束拖动。 */
   onGesture: (active: boolean) => void
+  /** 正在拖片段、框选或裁剪（含这个片段自己的）：这时点右键不出菜单。 */
+  gesturing: boolean
+  /** 右键菜单里的几项。 */
+  menu: ReactNode
   /** 点了这个片段：`toggle` 为真时是把它加进选中或移出去，否则只选它。 */
   onSelect: (id: string, toggle: boolean) => void
   onRetime: (timings: ReadonlyMap<string, Timing>) => void
@@ -372,6 +389,7 @@ type TimelineClipProps = {
  * 时间线上的一个片段：点一下选中（带 Shift、⌘ 或 Ctrl 是加减选中），拖着挪动（在这一行里，
  * 或者拖到自己的区里别的行、新开的一行上），选中后拖两端的把手裁剪；在不止一个片段的选中里时，
  * 选中的片段一起挪、一起裁。松手才写进 final-cut，拖动中按 Esc 什么都不写。
+ * 点右键出它的菜单：它不在选中里时先只选中它，在选中里（含多选）时选中不变。
  */
 function TimelineClip({
   clip,
@@ -392,10 +410,13 @@ function TimelineClip({
   onGuide,
   onFollow,
   onGesture,
+  gesturing,
+  menu,
   onSelect,
   onRetime,
   onMove,
 }: TimelineClipProps) {
+  const editorRoot = useEditorRoot()
   const rootRef = useRef<HTMLDivElement>(null)
   const gestureRef = useRef<Gesture | null>(null)
   const clickAfterDrag = useClickAfterDrag()
@@ -557,61 +578,80 @@ function TimelineClip({
   }
 
   return (
-    <div
-      aria-label={name}
-      className={cn(
-        'wf-clip',
-        `is-${clip.kind}`,
-        selected && 'is-selected',
-        clip.hidden && 'is-hidden',
-        preview?.kind === 'move' && 'is-lifted',
-      )}
-      data-clip-id={clip.id}
-      ref={rootRef}
-      role="group"
-      style={{
-        left: msToPx(timing.start, pps),
-        width: Math.max(2, msToPx(timing.duration, pps) - 2),
-      }}
-    >
-      <button
-        aria-label={`选中：${name}`}
-        aria-pressed={selected}
-        className="wf-clip-body ui-focus"
-        onClick={(event) => {
-          if (!clickAfterDrag.take()) onSelect(clip.id, togglesSelection(event))
+    <ContextMenuRoot>
+      <ContextMenuTrigger asChild>
+        <div
+          aria-label={name}
+          className={cn(
+            'wf-clip',
+            `is-${clip.kind}`,
+            selected && 'is-selected',
+            clip.hidden && 'is-hidden',
+            preview?.kind === 'move' && 'is-lifted',
+          )}
+          data-clip-id={clip.id}
+          onContextMenu={(event) => {
+            if (gesturing) event.preventDefault()
+            else if (!selected) onSelect(clip.id, false)
+          }}
+          ref={rootRef}
+          role="group"
+          style={{
+            left: msToPx(timing.start, pps),
+            width: Math.max(2, msToPx(timing.duration, pps) - 2),
+          }}
+        >
+          <button
+            aria-label={`选中：${name}`}
+            aria-pressed={selected}
+            className="wf-clip-body ui-focus"
+            onClick={(event) => {
+              if (!clickAfterDrag.take()) onSelect(clip.id, togglesSelection(event))
+            }}
+            onPointerCancel={finish}
+            onPointerDown={(event) => press(event, 'move')}
+            onPointerMove={drag}
+            onPointerUp={release}
+            type="button"
+          >
+            <ClipContent clip={clip} cover={cover} peaks={peaks} timing={timing} />
+          </button>
+          {selected
+            ? (['start', 'end'] as const).map((edge) => {
+                const bounds = trimRange(clip, group, edge)
+                const edgeMs = edgeAt(timing, edge)
+                return (
+                  <TrimHandle
+                    bounds={{ min: bounds.min / 1000, max: bounds.max / 1000 }}
+                    edge={edge}
+                    key={edge}
+                    onKeyDown={(event) => nudge(event, edge)}
+                    onPointerCancel={finish}
+                    onPointerDown={pressEdge}
+                    onPointerMove={drag}
+                    onPointerUp={release}
+                    pressed={preview?.kind === edge}
+                    style={{ left: edge === 'start' ? 0 : '100%' }}
+                    value={edgeMs / 1000}
+                    valueText={`${seconds(edgeMs)} 秒`}
+                  />
+                )
+              })
+            : null}
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuSurface
+        aria-label={clip.label}
+        onCloseAutoFocus={(event) => {
+          // 菜单里删掉了这个片段：焦点要回去的地方没了，交还编辑器的根节点，快捷键照常
+          if (rootRef.current !== null) return
+          event.preventDefault()
+          editorRoot?.focus()
         }}
-        onPointerCancel={finish}
-        onPointerDown={(event) => press(event, 'move')}
-        onPointerMove={drag}
-        onPointerUp={release}
-        type="button"
       >
-        <ClipContent clip={clip} cover={cover} peaks={peaks} timing={timing} />
-      </button>
-      {selected
-        ? (['start', 'end'] as const).map((edge) => {
-            const bounds = trimRange(clip, group, edge)
-            const edgeMs = edgeAt(timing, edge)
-            return (
-              <TrimHandle
-                bounds={{ min: bounds.min / 1000, max: bounds.max / 1000 }}
-                edge={edge}
-                key={edge}
-                onKeyDown={(event) => nudge(event, edge)}
-                onPointerCancel={finish}
-                onPointerDown={pressEdge}
-                onPointerMove={drag}
-                onPointerUp={release}
-                pressed={preview?.kind === edge}
-                style={{ left: edge === 'start' ? 0 : '100%' }}
-                value={edgeMs / 1000}
-                valueText={`${seconds(edgeMs)} 秒`}
-              />
-            )
-          })
-        : null}
-    </div>
+        {menu}
+      </ContextMenuSurface>
+    </ContextMenuRoot>
   )
 }
 
@@ -669,11 +709,16 @@ export function FilmTimeline({
   sourceMs,
   onSelect,
   onGesture,
+  gesturing,
   scrollRequest,
   onRetime,
   onMove,
   onRestart,
   onHide,
+  onHideClip,
+  onAttributes,
+  onRemove,
+  silentSource,
   onSeek,
   onViewportWidth,
   handleRef,
@@ -836,11 +881,16 @@ export function FilmTimeline({
       ? dropGhost(ghost.row)
       : null
 
-  // 点在片段上，或者这一行没有可合拢的空档：不开菜单
+  // 点在片段上（那里出片段的菜单）、点在弹出的菜单上（沿组件树传上来）、正在拖动或框选，
+  // 或者这一行没有可合拢的空档：不开菜单
   const openGapMenu = (event: MouseEvent<HTMLElement>, row: RowKey) => {
-    const onClip =
-      event.target instanceof Element && event.target.closest('[data-clip-id]') !== null
-    const next = onClip ? undefined : gapClosing(clips, row, timeAt(event.clientX))
+    const { target } = event
+    const inGap =
+      !gesturing &&
+      target instanceof Element &&
+      event.currentTarget.contains(target) &&
+      target.closest('[data-clip-id]') === null
+    const next = inGap ? gapClosing(clips, row, timeAt(event.clientX)) : undefined
     if (next === undefined || (next.one.size === 0 && next.all.size === 0)) {
       event.preventDefault()
       return
@@ -1017,6 +1067,16 @@ export function FilmTimeline({
                           group={movingWith(selected, clip.id)}
                           key={clip.id}
                           onFollow={setFollowing}
+                          gesturing={gesturing}
+                          menu={
+                            <ClipMenuItems
+                              clip={clip}
+                              onAttributes={onAttributes}
+                              onHide={onHideClip}
+                              onRemove={onRemove}
+                              silent={clip.kind === 'video' && silentSource(clip.src)}
+                            />
+                          }
                           onGesture={onGesture}
                           onGuide={setClipGuideMs}
                           onMove={onMove}

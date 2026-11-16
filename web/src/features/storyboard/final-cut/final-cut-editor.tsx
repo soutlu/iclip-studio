@@ -58,6 +58,7 @@ import {
   type KeyframeStates,
 } from './material-media'
 import { MaterialPreview, type MaterialPreviewControl, type MaterialView } from './material-preview'
+import type { AttributeChanges } from './original-sound'
 import {
   materialCatalog,
   rangePieces,
@@ -376,6 +377,16 @@ function EditorBody({
     clearSelection()
     session.removeClips([...selected], ripple)
   }
+  // 「属性」和时间线上片段的右键菜单共用这几个操作
+  const hideClip = (id: string, hidden: boolean) => {
+    leaveMaterial()
+    session.setHidden([id], hidden)
+  }
+  const setClipAttributes = (id: string, changes: AttributeChanges) => {
+    leaveMaterial()
+    session.setAttributes(id, changes)
+  }
+  const silentSource = (src: string) => audioTracks.get(src) === false
   const [snap, setSnap] = useState(true)
   /**
    * 拖着的素材、组件、块或音频（长 `duration` 毫秒，放进 `zone` 区）会落在哪：
@@ -838,10 +849,7 @@ function EditorBody({
               catalog={catalog}
               keyframes={keyframes}
               onGesture={setGesturing}
-              onHide={(id, hidden) => {
-                leaveMaterial()
-                session.setHidden([id], hidden)
-              }}
+              onHide={hideClip}
               onRemove={removeSelected}
               onRetime={(timings) => {
                 leaveMaterial()
@@ -852,12 +860,9 @@ function EditorBody({
                 leaveMaterial()
                 session.setValues(id, values)
               }}
-              onAttributes={(id, changes) => {
-                leaveMaterial()
-                session.setAttributes(id, changes)
-              }}
+              onAttributes={setClipAttributes}
               selected={selectedClips}
-              silentSource={(src) => audioTracks.get(src) === false}
+              silentSource={silentSource}
               sourceMs={sourceMs}
               sourceName={(src) => sourceNames.get(src)}
             />
@@ -901,7 +906,12 @@ function EditorBody({
           buffered={buffered}
           catalog={catalog}
           ghost={ghost}
+          gesturing={gesturing}
           handleRef={timelineRef}
+          onAttributes={setClipAttributes}
+          onHideClip={hideClip}
+          onRemove={removeSelected}
+          silentSource={silentSource}
           onHide={(row, hidden) => {
             leaveMaterial()
             session.setHidden(
