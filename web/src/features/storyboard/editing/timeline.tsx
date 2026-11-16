@@ -13,6 +13,7 @@ import { createPortal } from 'react-dom'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import type { TimeSpan } from '@/shared/lib/time-spans'
+import { useElementSize } from '@/shared/lib/use-element-size'
 import { cn } from '@/shared/lib/utils'
 import { bubbleAlign } from './bubble-align'
 import type { PeaksState } from './media-analysis'
@@ -237,32 +238,46 @@ export function LimitBubble({ text, left, viewportRef }: LimitBubbleProps) {
 
 const MAX_FRAMES = 24
 const FRAME_STEP = 0.5
+const FRAME_SNAP = FRAME_STEP / 2
+const MIN_FRAME_PX = 48
 
-const frameStepOf = (length: number) => {
+/** 一张缩略图盖多少秒素材：从 0.5 秒起翻倍，到每张至少 `MIN_FRAME_PX` 宽、整段不超过 `MAX_FRAMES` 张为止。 */
+const frameStepOf = (length: number, width: number) => {
   let step = FRAME_STEP
-  while (Math.ceil(length / step) + 1 > MAX_FRAMES) step *= 2
+  while (step * width < MIN_FRAME_PX * length || Math.ceil(length / step) + 1 > MAX_FRAMES)
+    step *= 2
   return step
 }
 
-export function Frames({ part }: { part: PlaySegment }) {
-  const length = Math.max(0, part.end - part.start)
-  const step = frameStepOf(length)
+/**
+ * 格子对齐在素材时间的整格上，裁剪时中间的格子不动；每格取它落在这一段里那一截的正中，
+ * 图不会来自这一段以外的画面。
+ */
+const frameCells = (part: PlaySegment, step: number) => {
   const first = Math.floor(part.start / step)
   const last = Math.max(first, Math.ceil(part.end / step) - 1)
-  const cells = Array.from({ length: last - first + 1 }).flatMap((_, at) => {
+  return Array.from({ length: last - first + 1 }).flatMap((_, at) => {
     const from = (first + at) * step
-    const src = videoSnapshotUrl(part.mediaUrl, 96, from + step / 2)
+    const shown = (Math.max(from, part.start) + Math.min(from + step, part.end)) / 2
+    const src = videoSnapshotUrl(part.mediaUrl, 96, Math.round(shown / FRAME_SNAP) * FRAME_SNAP)
     return src === undefined ? [] : [{ from, src }]
   })
+}
+
+export function Frames({ part }: { part: PlaySegment }) {
+  const [frames, { width }] = useElementSize<HTMLSpanElement>()
+  const length = Math.max(0, part.end - part.start)
+  const step = width > 0 ? frameStepOf(length, width) : undefined
+  const cells = step === undefined ? [] : frameCells(part, step)
   const percent = (seconds: number) => `${length > 0 ? (seconds / length) * 100 : 0}%`
   return (
-    <span className="timeline-frames">
-      {cells.length === 0 ? (
+    <span className="timeline-frames" ref={frames}>
+      {step === undefined ? null : cells.length === 0 ? (
         <Icon decorative name="video" size="sm" />
       ) : (
         cells.map(({ from, src }) => (
           <Frame
-            key={src}
+            key={`${from} ${src}`}
             src={src}
             style={{
               left: percent(from - part.start),

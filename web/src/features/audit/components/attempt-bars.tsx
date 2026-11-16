@@ -13,7 +13,7 @@ import {
 import { fmtRate } from '../overview-format'
 import { ATTEMPT_BINS, type AttemptSummary } from '../overview-model'
 import { ChartTooltipCard } from './chart-tooltip'
-import { useElementSize } from './use-element-size'
+import { useElementSize } from '@/shared/lib/use-element-size'
 
 const HEIGHT = 210
 

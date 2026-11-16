@@ -21,7 +21,7 @@ import { cn } from '@/shared/lib/utils'
 import { tickEvery } from '../overview-format'
 import type { ChartModel, ChartPoint } from '../overview-model'
 import { ChartTooltipCard } from './chart-tooltip'
-import { useElementSize } from './use-element-size'
+import { useElementSize } from '@/shared/lib/use-element-size'
 
 const MARGIN = { top: 10, right: 8, bottom: 0, left: 0 }
 const Y_AXIS_WIDTH = 46
