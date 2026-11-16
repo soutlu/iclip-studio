@@ -192,7 +192,7 @@ describe('final-cut 编辑器 · 加入素材', () => {
     editorRoot().focus()
     await user.keyboard('{Enter}')
     expect(
-      await screen.findByText('尚未选中镜头，无法加入 final-cut；请先在下方选中镜头范围'),
+      await screen.findByText('尚未选中镜头，无法加入 final-cut；请先在「镜头」页签中选中镜头范围'),
     ).toBeVisible()
     const exportButton = screen.getByRole('button', { name: '导出' })
     expect(exportButton).toHaveAttribute('aria-disabled', 'true')
@@ -321,7 +321,9 @@ describe('final-cut 编辑器 · 时间线', () => {
 
   it('还没有 final-cut：留一行空的，提示把镜头拖进来', async () => {
     await openEditor()
-    expect(within(timeline()).getByText('将下方的镜头拖到此处可加入 final-cut')).toBeVisible()
+    expect(
+      within(timeline()).getByText('将「镜头」页签里的镜头拖到此处可加入 final-cut'),
+    ).toBeVisible()
     expect(screen.queryByRole('group', { name: '第 2 行' })).toBeNull()
   })
 
@@ -1131,7 +1133,7 @@ describe('final-cut 编辑器 · 导出', () => {
 })
 
 describe('final-cut 编辑器 · 组件、块页签', () => {
-  const side = () => screen.getByRole('complementary', { name: '贴片、场景、音频和属性' })
+  const side = () => screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
   const openTab = (user: ReturnType<typeof userEvent.setup>, name: string) =>
     user.click(within(side()).getByRole('tab', { name }))
   const itemCard = (name: RegExp) =>
@@ -1146,18 +1148,15 @@ describe('final-cut 编辑器 · 组件、块页签', () => {
   const previewHtml = () => previewPlayer().getAttribute('srcdoc') ?? ''
   const playerUp = previewSettled
 
-  it('侧栏四个页签：贴片、场景、音频、属性，默认打开贴片；贴片、场景各记着自己的搜索词和分类，切走再回来还在', async () => {
+  it('侧栏五个页签：镜头、贴片、场景、配乐、属性；贴片、场景各记着自己的搜索词和分类，切走再回来还在', async () => {
     const user = userEvent.setup()
     await openEditor()
     expect(
       within(side())
         .getAllByRole('tab')
         .map((tab) => tab.textContent),
-    ).toEqual(['贴片', '场景', '音频', '属性'])
-    expect(within(side()).getByRole('tab', { name: '贴片' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    )
+    ).toEqual(['镜头', '贴片', '场景', '配乐', '属性'])
+    await openTab(user, '贴片')
     expect(within(side()).getByRole('list', { name: '贴片' })).toBeVisible()
     await user.type(within(side()).getByRole('searchbox', { name: '搜索贴片' }), '圆环')
     expect(cardNames()).toEqual(['测试叠加，4 秒'])
@@ -1168,7 +1167,7 @@ describe('final-cut 编辑器 · 组件、块页签', () => {
     await user.click(within(blockChips()).getByRole('radio', { name: '品牌' }))
     expect(cardNames()).toEqual(['示例品牌 片尾，3 秒'])
 
-    await openTab(user, '音频')
+    await openTab(user, '配乐')
     await openTab(user, '贴片')
     expect(within(side()).getByRole('searchbox', { name: '搜索贴片' })).toHaveValue('圆环')
     expect(cardNames()).toEqual(['测试叠加，4 秒'])
@@ -1218,6 +1217,7 @@ describe('final-cut 编辑器 · 组件、块页签', () => {
     progress().focus()
     await user.keyboard('{End}')
     expect(within(transport()).getByText('00:03.50')).toBeVisible()
+    await openTab(user, '贴片')
     await addAtPlayhead(user, /^测试叠加/)
 
     await waitSaved(() => expect(savedItems()).toHaveLength(1))
@@ -1230,6 +1230,7 @@ describe('final-cut 编辑器 · 组件、块页签', () => {
   it('还没有 final-cut 时加组件：按竖版 1080×1920 建一份', async () => {
     const user = userEvent.setup()
     await openEditor()
+    await openTab(user, '贴片')
     await addAtPlayhead(user, /^测试叠加/)
     await waitSaved(() => expect(savedItems()).toHaveLength(1))
     expect(savedFilm()).toContain('data-width="1080" data-height="1920"')
@@ -1238,6 +1239,7 @@ describe('final-cut 编辑器 · 组件、块页签', () => {
 
   it('上一个还没加完又点「加到播放头」：只加一个，提示稍后再加', async () => {
     await openEditor()
+    await openTab(userEvent.setup(), '贴片')
     const add = within(itemCard(/^测试叠加/)).getByRole('button', { name: '加到播放头' })
     fireEvent.click(add)
     fireEvent.click(add)
@@ -1251,9 +1253,10 @@ describe('final-cut 编辑器 · 组件、块页签', () => {
 describe('final-cut 编辑器 · 属性', () => {
   const inspector = () => screen.getByRole('tabpanel', { name: '属性' })
   const sideTab = (name: string) =>
-    within(screen.getByRole('complementary', { name: '贴片、场景、音频和属性' })).getByRole('tab', {
-      name,
-    })
+    within(screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })).getByRole(
+      'tab',
+      { name },
+    )
   const row = () => screen.getByRole('group', { name: '第 1 行' })
   const pick = (user: ReturnType<typeof userEvent.setup>, label: string) =>
     user.click(screen.getByRole('button', { name: new RegExp(`^选中：${label}，`) }))
@@ -1324,7 +1327,7 @@ describe('final-cut 编辑器 · 属性', () => {
     await user.click(row())
     for (const clip of within(row()).getAllByRole('button', { name: /^选中：/ }))
       expect(clip).toHaveAttribute('aria-pressed', 'false')
-    expect(sideTab('贴片')).toHaveAttribute('aria-selected', 'true')
+    expect(sideTab('镜头')).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('tabpanel', { name: '属性' })).toBeNull()
   })
 
@@ -1428,7 +1431,7 @@ describe('final-cut 编辑器 · 属性', () => {
       'aria-pressed',
       'false',
     )
-    expect(sideTab('贴片')).toHaveAttribute('aria-selected', 'true')
+    expect(sideTab('镜头')).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('tabpanel', { name: '属性' })).toBeNull()
   })
 
@@ -1913,9 +1916,11 @@ describe('final-cut 编辑器 · 属性', () => {
 })
 
 describe('final-cut 编辑器 · 侧栏页签', () => {
-  const side = () => screen.getByRole('complementary', { name: '贴片、场景、音频和属性' })
+  const side = () => screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐和属性' })
   const tab = (name: string) => within(side()).getByRole('tab', { name })
   const props = () => screen.getByRole('tabpanel', { name: '属性' })
+  const shotsPanel = () => screen.getByRole('tabpanel', { name: '镜头' })
+  const selectionDot = () => within(tab('属性')).queryByTestId('selection-dot')
   const row = (number = 1) => screen.getByRole('group', { name: `第 ${String(number)} 行` })
   // twoVideos 的两个片段同名，按时长认：第一个 2 秒，第二个 1.5 秒
   const FIRST = /2\.0 秒$/
@@ -1929,10 +1934,34 @@ describe('final-cut 编辑器 · 侧栏页签', () => {
     return user
   }
 
+  it('默认停在「镜头」，素材片只在这个页签里；选中片段切到「属性」、页签名后出现圆点，取消选中回到「镜头」，选中的镜头范围还在', async () => {
+    const user = await openTwo()
+    expect(tab('镜头')).toHaveAttribute('aria-selected', 'true')
+    expect(within(shotsPanel()).getByRole('region', { name: '视频素材区' })).toBeVisible()
+    expect(screen.getAllByRole('region', { name: '视频素材区' })).toHaveLength(1)
+    await user.click(await within(shotsPanel()).findByRole('button', { name: /^生成 A 镜头 2，/ }))
+    const range = () =>
+      within(shotsPanel()).getByRole('group', { name: /^选中的范围 2\.0–4\.5 秒/ })
+    expect(range()).toBeVisible()
+    expect(selectionDot()).toBeNull()
+
+    await user.click(clip(FIRST))
+    expect(tab('属性')).toHaveAttribute('aria-selected', 'true')
+    expect(selectionDot()).not.toBeNull()
+    expect(tab('属性')).toHaveAccessibleName('属性')
+    expect(screen.queryByRole('region', { name: '视频素材区' })).toBeNull()
+
+    await user.keyboard('{Escape}')
+    expect(tab('镜头')).toHaveAttribute('aria-selected', 'true')
+    expect(selectionDot()).toBeNull()
+    expect(range()).toBeVisible()
+
+    await user.click(tab('贴片'))
+    expect(screen.queryByRole('region', { name: '视频素材区' })).toBeNull()
+  })
+
   it('选中片段自动切到「属性」，换选别的片段仍在「属性」；选中着时点目录页签显示目录，选中不变', async () => {
     const user = await openTwo()
-    expect(tab('贴片')).toHaveAttribute('aria-selected', 'true')
-
     await user.click(clip(FIRST))
     expect(tab('属性')).toHaveAttribute('aria-selected', 'true')
     expect(within(props()).getByRole('textbox', { name: '开始' })).toHaveValue('0.00')
@@ -1961,13 +1990,13 @@ describe('final-cut 编辑器 · 侧栏页签', () => {
 
   it('按 Esc 取消选中：回到切走之前停的目录页签', async () => {
     const user = await openTwo()
-    await user.click(tab('音频'))
+    await user.click(tab('配乐'))
     await user.click(clip(FIRST))
     expect(tab('属性')).toHaveAttribute('aria-selected', 'true')
 
     await user.keyboard('{Escape}')
     expect(clip(FIRST)).toHaveAttribute('aria-pressed', 'false')
-    expect(tab('音频')).toHaveAttribute('aria-selected', 'true')
+    expect(tab('配乐')).toHaveAttribute('aria-selected', 'true')
     expect(within(side()).getByRole('searchbox', { name: '搜索音频' })).toBeVisible()
   })
 
@@ -2004,7 +2033,7 @@ describe('final-cut 编辑器 · 侧栏页签', () => {
       'true',
     )
 
-    await user.click(tab('音频'))
+    await user.click(tab('配乐'))
     await user.type(within(side()).getByRole('searchbox', { name: '搜索音频' }), '吉他')
     await user.click(clip(SECOND))
     expect(within(side()).queryByRole('searchbox', { name: '搜索音频' })).toBeNull()
@@ -2014,6 +2043,7 @@ describe('final-cut 编辑器 · 侧栏页签', () => {
 
   it('在目录的卡片上按 ] 选中片段、切到「属性」后：焦点交还编辑器的根节点，Delete 照常删掉选中的片段', async () => {
     const user = await openTwo()
+    await user.click(tab('贴片'))
     within(within(side()).getByRole('group', { name: /^测试叠加/ }))
       .getByRole('button', { name: '加到播放头' })
       .focus()

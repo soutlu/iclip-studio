@@ -432,7 +432,7 @@ describe('音频栏 · 生成音乐', () => {
       '轻快的原声吉他',
     )
     await waitFor(() => expect(submit).toBeEnabled())
-    expect(popover).toHaveAccessibleDescription('生成后可在「音频」页签的列表中查看')
+    expect(popover).toHaveAccessibleDescription('生成后可在「配乐」页签的列表中查看')
     await user.click(submit)
 
     await waitFor(() => expect(popover).not.toBeInTheDocument())

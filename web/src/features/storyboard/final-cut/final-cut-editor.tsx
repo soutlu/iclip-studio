@@ -13,6 +13,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { errorMessageOf } from '@/shared/api/client'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import type { TimeSpan } from '@/shared/lib/time-spans'
+import { cn } from '@/shared/lib/utils'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MediaBuffering } from '@/shared/ui/media-buffering'
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from '@/shared/ui/tabs'
@@ -96,7 +97,7 @@ import {
 import './final-cut.css'
 
 const EMPTY_TEXT = 'final-cut 暂无内容，加入内容后可在此预览'
-const PICK_FIRST_TEXT = '尚未选中镜头，无法加入 final-cut；请先在下方选中镜头范围'
+const PICK_FIRST_TEXT = '尚未选中镜头，无法加入 final-cut；请先在「镜头」页签中选中镜头范围'
 const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏，无法进入全屏'
 const ADDING_ITEM_TEXT = '上一个贴片或场景正在加入 final-cut，请稍后再试'
 const ADDING_AUDIO_TEXT = '上一条音频正在加入 final-cut，请稍后再试'
@@ -104,10 +105,13 @@ const EMPTY_EXPORT_TEXT = 'final-cut 暂无内容，无法导出；请先加入�
 // 还没有 final-cut 时先放组件或块：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 
-/** 侧栏的目录页签：贴片、场景、音频。 */
-type CatalogTab = ItemKind | 'audio'
+/** 侧栏的目录页签：镜头、贴片、场景、配乐。 */
+type CatalogTab = 'shots' | ItemKind | 'audio'
 type SideTab = CatalogTab | 'props'
-const CATALOG_TABS: readonly CatalogTab[] = [...ITEM_KINDS, 'audio']
+const CATALOG_TABS: readonly CatalogTab[] = ['shots', ...ITEM_KINDS, 'audio']
+// 侧栏页签：当前页签是浅底块，不用共用页签的下划线
+const SIDE_TAB_CLASS =
+  'rounded-sm py-1 text-label text-on-surface-muted after:hidden data-[state=active]:bg-state-active data-[state=active]:font-semibold'
 
 const watchFullscreen = (notify: () => void) => {
   document.addEventListener('fullscreenchange', notify)
@@ -153,8 +157,6 @@ export function FinalCutEditor({ conversationId }: Pick<ArtifactRendererProps, '
     </EditorRoot>
   )
 }
-
-const takeLetterOf = (material: Material) => material.takeLabel.replace(/^生成\s*/, '')
 
 const shotNumberOf = (ms: number, url: string, keyframes: KeyframeStates) => {
   const state = keyframes.get(url)
@@ -294,8 +296,8 @@ function EditorBody({
   const clearSelection = () => setSelectedIds(new Set())
   // 侧栏：选中从没有变成有、或换了别的片段时切到「属性」，选中没了回到切走之前停的目录页签。
   // 按实际还选中着的片段算，撤销、删除让选中的片段不存在了也算取消选中
-  const [sideTab, setSideTab] = useState<SideTab>('component')
-  const [catalogTab, setCatalogTab] = useState<CatalogTab>('component')
+  const [sideTab, setSideTab] = useState<SideTab>('shots')
+  const [catalogTab, setCatalogTab] = useState<CatalogTab>('shots')
   const selectionKey = [...selected].sort().join(' ')
   const [seenSelection, setSeenSelection] = useState(selectionKey)
   if (selectionKey !== seenSelection) {
@@ -409,7 +411,7 @@ function EditorBody({
       return {
         ...piece,
         src: material.url,
-        label: `${takeLetterOf(material)} · ${shot === undefined ? material.version : `镜头 ${shot}`}`,
+        label: `${material.takeLetter} · ${shot === undefined ? material.version : `镜头 ${shot}`}`,
       }
     })
     const add = async (canvas: Canvas) => {
@@ -678,19 +680,84 @@ function EditorBody({
           totalMs={total}
         />
       </div>
-      <aside aria-label="贴片、场景、音频和属性" className="wf-side" ref={sideRef}>
+      <aside aria-label="镜头、贴片、场景、配乐和属性" className="wf-side" ref={sideRef}>
         <TabsRoot className="wf-side-panel" onValueChange={openSideTab} value={sideTab}>
-          <TabsList aria-label="贴片、场景、音频和属性页签" className="wf-side-tabs">
+          <TabsList
+            aria-label="镜头、贴片、场景、配乐和属性页签"
+            className="wf-side-tabs items-center gap-0.5"
+          >
+            <TabsTrigger className={SIDE_TAB_CLASS} value="shots">
+              镜头
+            </TabsTrigger>
             {ITEM_KINDS.map((kind) => (
-              <TabsTrigger key={kind} value={kind}>
+              <TabsTrigger className={SIDE_TAB_CLASS} key={kind} value={kind}>
                 {ITEM_KIND_LABEL[kind]}
               </TabsTrigger>
             ))}
-            <TabsTrigger value="audio">音频</TabsTrigger>
-            <TabsTrigger className="wf-side-tab-props" value="props">
+            <TabsTrigger className={SIDE_TAB_CLASS} value="audio">
+              配乐
+            </TabsTrigger>
+            <TabsTrigger className={cn(SIDE_TAB_CLASS, 'wf-side-tab-props')} value="props">
               属性
+              {selected.size > 0 ? (
+                <i aria-hidden="true" className="wf-side-dot" data-testid="selection-dot" />
+              ) : null}
             </TabsTrigger>
           </TabsList>
+          <TabsContent className="wf-side-body" value="shots" {...catalogPanel('shots')}>
+            <MaterialArea
+              groups={materials.groups}
+              keyframes={keyframes}
+              onCarry={(carry) =>
+                setGhost(
+                  carry === null
+                    ? null
+                    : landingAt(
+                        carry.clientX,
+                        carry.clientY,
+                        carry.range.endMs - carry.range.startMs,
+                      ),
+                )
+              }
+              onDrop={(clientX, clientY, dropped) => {
+                const at = landingAt(clientX, clientY, dropped.endMs - dropped.startMs)
+                setGhost(null)
+                if (at === null) return false
+                place(dropped, { row: at.row, start: at.start })
+                return true
+              }}
+              onInsert={insert}
+              onClear={() => {
+                setRange(null)
+                leaveMaterial()
+              }}
+              onPick={(picked) => showMaterial(picked, 'start')}
+              onSelect={setRange}
+              onTrim={showMaterial}
+              onVersion={(takeId, jobId) => {
+                setPickedVersions((current) => ({ ...current, [takeId]: jobId }))
+                if (range?.takeId !== takeId) return
+                setRange(null)
+                leaveMaterial()
+              }}
+              placeholder={
+                videos.isError ? (
+                  <InlineAlert
+                    action={{ label: '重试', onClick: () => void videos.refetch() }}
+                    message={errorMessageOf(videos.error, '读取素材片失败')}
+                  />
+                ) : videos.isPending ? (
+                  <p className="wf-panel-note" role="status">
+                    正在读取素材片…
+                  </p>
+                ) : undefined
+              }
+              playingMs={materialPlaying ? materialMs : undefined}
+              range={range}
+              used={usedSpans(videoClips)}
+              versionOf={versionOf}
+            />
+          </TabsContent>
           {ITEM_KINDS.map((kind) => (
             <TabsContent
               className="wf-side-body is-items"
@@ -863,54 +930,6 @@ function EditorBody({
             message={session.save.message}
           />
         ) : null}
-        <MaterialArea
-          groups={materials.groups}
-          keyframes={keyframes}
-          onCarry={(carry) =>
-            setGhost(
-              carry === null
-                ? null
-                : landingAt(carry.clientX, carry.clientY, carry.range.endMs - carry.range.startMs),
-            )
-          }
-          onDrop={(clientX, clientY, dropped) => {
-            const at = landingAt(clientX, clientY, dropped.endMs - dropped.startMs)
-            setGhost(null)
-            if (at === null) return false
-            place(dropped, { row: at.row, start: at.start })
-            return true
-          }}
-          onInsert={insert}
-          onClear={() => {
-            setRange(null)
-            leaveMaterial()
-          }}
-          onPick={(picked) => showMaterial(picked, 'start')}
-          onSelect={setRange}
-          onTrim={showMaterial}
-          onVersion={(takeId, jobId) => {
-            setPickedVersions((current) => ({ ...current, [takeId]: jobId }))
-            if (range?.takeId !== takeId) return
-            setRange(null)
-            leaveMaterial()
-          }}
-          placeholder={
-            videos.isError ? (
-              <InlineAlert
-                action={{ label: '重试', onClick: () => void videos.refetch() }}
-                message={errorMessageOf(videos.error, '读取素材片失败')}
-              />
-            ) : videos.isPending ? (
-              <p className="wf-panel-note" role="status">
-                正在读取素材片…
-              </p>
-            ) : undefined
-          }
-          playingMs={materialPlaying ? materialMs : undefined}
-          range={range}
-          used={usedSpans(videoClips)}
-          versionOf={versionOf}
-        />
       </div>
     </div>
   )

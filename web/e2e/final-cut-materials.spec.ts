@@ -8,11 +8,15 @@ test.describe.configure({ timeout: 60_000 })
 
 const conversationIdOf = (page: Page) => new URL(page.url()).pathname.split('/').at(-1) ?? ''
 
-/** 给这几组各出一条片；`sound` 为 false 时出的片没有音轨。 */
-const addTakes = async (page: Page, shots: readonly number[], sound = true) => {
+/** 给这几组各出一条片；`sound` 为 false 时出的片没有音轨，`seconds` 是要的片长（不给按默认）。 */
+const addTakes = async (
+  page: Page,
+  shots: readonly number[],
+  { sound = true, seconds = null }: { sound?: boolean; seconds?: number | null } = {},
+) => {
   const conversationId = conversationIdOf(page)
   const ids = await page.evaluate(
-    async ({ conversationId, shots, sound }) => {
+    async ({ conversationId, shots, sound, seconds }) => {
       const created: string[] = []
       for (const shot of shots) {
         const response = await fetch('/api/generations/video', {
@@ -23,6 +27,7 @@ const addTakes = async (page: Page, shots: readonly number[], sound = true) => {
             shot_index: shot,
             prompt: `第 ${shot} 组`,
             generate_audio: sound,
+            seconds,
           }),
         })
         if (!response.ok) throw new Error(`出片失败：${response.status}`)
@@ -30,7 +35,7 @@ const addTakes = async (page: Page, shots: readonly number[], sound = true) => {
       }
       return created
     },
-    { conversationId, shots, sound },
+    { conversationId, shots, sound, seconds },
   )
   await waitCompleted(page, ids)
   return ids
@@ -85,7 +90,7 @@ const openWith = async (
   await page.setViewportSize({ width: 1449, height: 982 })
   const panel = await openConversation(page, CONVERSATION)
   await addTakes(page, shots)
-  if (silentShots.length > 0) await addTakes(page, silentShots, false)
+  if (silentShots.length > 0) await addTakes(page, silentShots, { sound: false })
   const editor = await openFinalCut(panel)
   const materials = editor.getByRole('region', { name: '视频素材区' })
   await expect(materials.getByRole('button', { name: /镜头 1，/ }).first()).toBeVisible()
@@ -141,19 +146,94 @@ const centerOf = async (locator: Locator) => {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
 }
 
-test('素材区滚动后能选择后面的镜头组与末尾镜头', async ({ page }) => {
-  const { materials } = await openWith(page, [1, 1, 2, 2, 3])
-  const last = shotOf(materials, 3, 'A', 6)
+test('「镜头」页签上下滚动后能选择后面的镜头组与末尾镜头', async ({ page }) => {
+  const { materials } = await openWith(page, [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7])
+  // 窗口矮一些，十几条原作放不下
+  await page.setViewportSize({ width: 1449, height: 600 })
+  const last = shotOf(materials, 7, 'A', 6)
   await expect(last).not.toBeInViewport()
   await materials.hover()
-  await page.mouse.wheel(0, 400)
+  await page.mouse.wheel(0, 800)
   await expect(last).toBeInViewport()
   await last.click()
-  const end = groupOf(materials, 3).getByRole('slider', { name: '裁剪结尾' })
+  const end = groupOf(materials, 7).getByRole('slider', { name: '裁剪结尾' })
   await expect(end).toBeInViewport()
   await end.focus()
   await page.keyboard.press('ArrowLeft')
   await expect(end).toHaveAttribute('aria-valuenow', '5.9')
+})
+
+test('镜头条比格子宽时横着滚：滚过以后点选、在选区上单击、拖抓手裁剪、拖进时间线都落在对的镜头和位置', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1449, height: 982 })
+  const panel = await openConversation(page, CONVERSATION)
+  // 20 秒的片每 2 秒一个镜头，镜头条比「镜头」页签里那一格宽
+  await addTakes(page, [1], { seconds: 20 })
+  const editor = await openFinalCut(panel)
+  const materials = editor.getByRole('region', { name: '视频素材区' })
+  const shot = (index: number) => shotOf(materials, 1, 'A', index)
+  await expect(shot(1)).toBeInViewport()
+  await expect(shot(5)).not.toBeInViewport()
+
+  // 每个镜头 56 像素宽：滚过 260 像素以后，第 6、7 个镜头整个露出来，第 1 个卷走
+  const first = await centerOf(shot(1))
+  await page.mouse.move(first.x, first.y)
+  await page.mouse.wheel(260, 0)
+  // 滚轮滚动有过渡：等镜头条停下再点
+  let lastX = Number.NaN
+  await expect
+    .poll(async () => {
+      const { x } = await centerOf(shot(7))
+      const still = x === lastX
+      lastX = x
+      return still
+    })
+    .toBe(true)
+  await expect(shot(1)).not.toBeInViewport()
+  await expect(shot(6)).toBeInViewport({ ratio: 1 })
+  await expect(shot(7)).toBeInViewport({ ratio: 1 })
+
+  await shot(6).click()
+  await shot(7).click({ modifiers: ['Shift'] })
+  const range = groupOf(materials, 1).getByRole('group', { name: /^选中的范围/ })
+  await expect(range).toHaveAccessibleName(/^选中的范围 10\.0–14\.0 秒，2 个镜头/)
+  // 在选区上单击：按指针落在镜头条上的位置认出是哪个镜头
+  const sixth = await centerOf(shot(6))
+  await page.mouse.click(sixth.x, sixth.y)
+  await expect(range).toHaveAccessibleName(/^选中的范围 10\.0–12\.0 秒，1 个镜头/)
+  await shot(7).click({ modifiers: ['Shift'] })
+  await expect(range).toHaveAccessibleName(/^选中的范围 10\.0–14\.0 秒，2 个镜头/)
+
+  const perSecond = ((await centerOf(shot(7))).x - (await centerOf(shot(6))).x) / 2
+  const end = groupOf(materials, 1).getByRole('slider', { name: '裁剪结尾' })
+  const from = await centerOf(end)
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + perSecond * 1.5, from.y, { steps: 6 })
+  await page.mouse.up()
+  await expect(end).toHaveAttribute('aria-valuetext', '15.5 秒')
+
+  const row = editor.getByRole('group', { name: '第 1 行' })
+  const lane = await row.boundingBox()
+  if (lane === null) throw new Error('时间线尚未布局')
+  const dropX = lane.x + lane.width * 0.3
+  const carried = await centerOf(range)
+  await page.mouse.move(carried.x, carried.y)
+  await page.mouse.down()
+  await page.mouse.move(carried.x + 10, carried.y - 10, { steps: 3 })
+  await page.mouse.move(dropX, lane.y + lane.height / 2, { steps: 8 })
+  await expect(row.getByTestId('drop-ghost')).toBeVisible()
+  await page.mouse.up()
+  await expect
+    .poll(() => savedClips(page))
+    .toEqual([
+      expect.stringMatching(/^A · 镜头 6，[\d.]+ 秒起，2 秒$/),
+      expect.stringMatching(/^A · 镜头 7，[\d.]+ 秒起，3\.5 秒$/),
+    ])
+  const placed = await row.locator('[data-clip-id]').first().boundingBox()
+  if (placed === null) throw new Error('片段尚未布局')
+  expect(Math.abs(placed.x - dropX)).toBeLessThan(3)
 })
 
 test('点镜头只选中、预览停在开头不播放；素材暂停续播与段尾重播；加入 final-cut 后预览换成 final-cut', async ({
@@ -223,7 +303,7 @@ test('点镜头只选中、预览停在开头不播放；素材暂停续播与�
 
 test('选区两端拖动、←/→ 微调 0.1 秒、⇧ 1 秒；调的时候预览停在那一端的画面', async ({ page }) => {
   const { editor, materials } = await openWith(page, [1])
-  const label = editor.getByText(/^素材 · 镜头组/)
+  const label = editor.getByRole('paragraph').filter({ hasText: /^素材 · 镜头组/ })
   await shotOf(materials, 1, 'A', 2).click()
   const start = groupOf(materials, 1).getByRole('slider', { name: '裁剪开头' })
   const end = groupOf(materials, 1).getByRole('slider', { name: '裁剪结尾' })
@@ -343,7 +423,7 @@ test('Shift 选连着的几个镜头：不播放；在选区上单击只选那�
 
 test('撤销、重做也是 final-cut 编辑：预览回到 final-cut', async ({ page }) => {
   const { editor, materials } = await openWith(page, [1, 1])
-  const label = editor.getByText(/^素材 · 镜头组/)
+  const label = editor.getByRole('paragraph').filter({ hasText: /^素材 · 镜头组/ })
   await shotOf(materials, 1, 'A', 1).click()
   await page.keyboard.press('Enter')
   await expect.poll(() => savedClips(page)).toHaveLength(1)
@@ -375,7 +455,7 @@ test('Enter 把选区接在 final-cut 末尾：焦点在镜头、选区两端或
   await shotOf(materials, 1, 'A', 1).focus()
   await page.keyboard.press('Enter')
   await expect(
-    page.getByText('尚未选中镜头，无法加入 final-cut；请先在下方选中镜头范围'),
+    page.getByText('尚未选中镜头，无法加入 final-cut；请先在「镜头」页签中选中镜头范围'),
   ).toBeVisible()
   expect(await savedClips(page)).toEqual([])
 
@@ -443,6 +523,8 @@ test('每条原作可以换版本；换了之后这条轨上的选区收起', as
   await picker.click()
   await page.getByRole('menuitemradio', { name: 'V1 原片' }).click()
   await expect(picker).toHaveAccessibleName('生成 A的版本：V1 原片')
+  // 胶囊里只写版本号
+  await expect(picker).toHaveText('V1')
   await expect(groupOf(materials, 1).getByRole('slider')).toHaveCount(0)
 })
 
@@ -467,7 +549,12 @@ test('把镜头拖进时间线：落在指针的位置；压在别的片段上�
     return box
   }
 
+  // 默认宽度下 1 秒的镜头不到 30 像素：选中一个以后，紧挨着的镜头正中、选区正中都不在两端抓手底下
   await shotOf(materials, 1, 'A', 2).click()
+  await shotOf(materials, 1, 'A', 3).click()
+  await expect(range).toHaveAccessibleName(/^选中的范围 2\.0–3\.0 秒，1 个镜头/)
+  await shotOf(materials, 1, 'A', 2).click()
+  await expect(range).toHaveAccessibleName(/^选中的范围 1\.0–2\.0 秒，1 个镜头/)
   const dropX = lane.x + lane.width * 0.3
   await carryTo(dropX)
   await expect(row.getByTestId('drop-ghost')).toBeVisible()
@@ -741,9 +828,7 @@ test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来�
   await expect(picture).not.toHaveCSS('display', 'none')
 })
 
-test('行多了只有轨道区上下滚：素材区留在面板底部，行头跟着各行走，看不见的行落不上去', async ({
-  page,
-}) => {
+test('行多了只有轨道区上下滚：行头跟着各行走，看不见的行落不上去', async ({ page }) => {
   const ROWS = 10
   const { editor, materials, panel } = await openWith(page, [1])
   await shotOf(materials, 1, 'A', 1).click()
@@ -794,8 +879,6 @@ test('行多了只有轨道区上下滚：素材区留在面板底部，行头�
   expect((await boxOf(editor.getByRole('region', { name: '预览' }))).height).toBeGreaterThanOrEqual(
     220,
   )
-  const materialsBox = await boxOf(materials)
-  expect(materialsBox.y + materialsBox.height).toBeLessThanOrEqual(900)
   expect(await tracks.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true)
 
   const tops = (locator: Locator) =>
@@ -819,26 +902,28 @@ test('行多了只有轨道区上下滚：素材区留在面板底部，行头�
   const tracksBox = await boxOf(tracks)
   expect(newRowBox.y + newRowBox.height).toBeLessThanOrEqual(tracksBox.y + tracksBox.height)
 
-  // 滚回顶上：最下面几行被裁在素材区那一截里，镜头在素材区里拖着不会落到看不见的行上
+  // 滚到中间：上面几行卷到了工具条底下，镜头拖到工具条上不会落到看不见的行上
   await tracks.evaluate((element) => {
-    element.scrollTop = 0
+    element.scrollTop = Math.round((element.scrollHeight - element.clientHeight) / 2)
   })
   await shotOf(materials, 1, 'A', 3).click()
   const range = groupOf(materials, 1).getByRole('group', { name: /^选中的范围/ })
   const from = await centerOf(range)
-  // 拖到的地方底下确实压着一条被裁掉的行
+  const toolbar = await boxOf(editor.getByRole('toolbar', { name: '剪辑工具' }))
+  const over = { x: tracksBox.x + tracksBox.width / 2, y: toolbar.y + toolbar.height / 2 }
+  // 拖到的地方底下确实压着一条卷上去的行
   const behind = await tracks.locator('[data-track]').evaluateAll(
     (lanes, y) =>
       lanes.some((lane) => {
         const { top, bottom } = lane.getBoundingClientRect()
-        return y - 4 >= top && y - 4 <= bottom
+        return y >= top && y <= bottom
       }),
-    from.y,
+    over.y,
   )
   expect(behind).toBe(true)
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
-  await page.mouse.move(from.x + 40, from.y - 4, { steps: 4 })
+  await page.mouse.move(over.x, over.y, { steps: 8 })
   await expect(editor.getByTestId('drop-ghost')).toHaveCount(0)
   // 滚到底再拖进最下面那条空行：新开第 ROWS + 1 行
   await tracks.evaluate((element) => {

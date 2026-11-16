@@ -502,7 +502,7 @@ export function GenerateMusic({
       ? '已填入上次的描述，可直接修改'
       : initialPrompt === undefined && text === musicDescription.trim()
         ? '已填入工程文件里的配乐描述，可直接修改'
-        : '生成后可在「音频」页签的列表中查看')
+        : '生成后可在「配乐」页签的列表中查看')
 
   const fill = useEffectEvent((target: ComposerHandle) =>
     target.restore({ media: [], parts: text === '' ? [] : [{ kind: 'text', text }], text: '' }),

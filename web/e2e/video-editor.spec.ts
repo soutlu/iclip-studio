@@ -597,7 +597,7 @@ test('原片选区：拖结尾把手停在镜头中间，卡与舞台标签跟�
   await shot(dialog, 2).click()
   await expectCard(dialog, '镜头 2 · 视频生成', '原片 1.0 – 2.0 秒 · 视频和原声一起重做')
   await requestBox(dialog).fill('换成黄昏的暖光')
-  const label = dialog.getByText(/^原片 · 镜头/)
+  const label = dialog.getByRole('paragraph').filter({ hasText: /^原片 · 镜头/ })
   await expect(label).toContainText('1.0 秒 · 选区 1.0–2.0')
 
   const end = timelineOf(dialog).getByRole('slider', { name: '裁剪结尾', exact: true })

@@ -13,8 +13,8 @@ export function StageLabel({ label, time, range }: StageLabelProps) {
   return (
     <p className="editor-stage-label">
       <Icon decorative name="video" size="xs" />
-      {label}
-      <span>
+      <span className="editor-stage-label-name">{label}</span>
+      <span className="editor-stage-label-time">
         {seconds(time)} 秒 · 选区 {seconds(range.start)}–{seconds(range.end)}
       </span>
     </p>

@@ -11,6 +11,7 @@ import type {
 import { zSubtitleIn } from '@/shared/api/generated/zod.gen'
 // ?no-inline 阻止 Vite 将小体积媒体资源内联为 data URI。
 import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
+import sampleLongUrl from '../fixtures/sample-video-long.mp4?no-inline'
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
 import { VIDEO_MODELS } from '../video-models'
@@ -43,6 +44,8 @@ const VIDEO_URL = sampleVideoUrl
 const EDITED_URL = sampleEditedUrl
 const VIDEO_MS = 6000
 const EDITED_MS = 3000
+const LONG_VIDEO_URL = sampleLongUrl
+const LONG_VIDEO_MS = 20_000
 const WIDE_VIDEO_URL = sampleWideUrl
 
 const PREAMBLE = ['参考锁定：模特的服装与发型跟住 @Image1。', '剪辑形式：硬切。'].join('\n')
@@ -1004,10 +1007,16 @@ export const workspaceHandlers = [
       conversationId: body.conversation_id ?? null,
       metadata: body.metadata ?? null,
       shotIndex: body.shot_index ?? null,
-      // 不生成声音时出的片没有音轨：借用编辑结果那个没有音轨的样片
+      // 不生成声音时出的片没有音轨：借用编辑结果那个没有音轨的样片；要 20 秒的片时给 20 秒的长样片
       ...(body.generate_audio === false
         ? { outputUrl: EDITED_URL, watermarkOutputUrl: EDITED_URL, durationMs: EDITED_MS }
-        : { outputUrl: VIDEO_URL, watermarkOutputUrl: VIDEO_URL, durationMs: VIDEO_MS }),
+        : body.seconds === LONG_VIDEO_MS / 1000
+          ? {
+              outputUrl: LONG_VIDEO_URL,
+              watermarkOutputUrl: LONG_VIDEO_URL,
+              durationMs: LONG_VIDEO_MS,
+            }
+          : { outputUrl: VIDEO_URL, watermarkOutputUrl: VIDEO_URL, durationMs: VIDEO_MS }),
     })
     return HttpResponse.json({ task_id: created.id }, { status: 202 })
   }),
