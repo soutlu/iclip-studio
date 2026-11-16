@@ -1673,9 +1673,12 @@ test('字幕行：拖一句挪位置、拖结尾裁短，存下来的字幕场�
   // 点列表里这一句的时间：播放头到它的开始，预览里这时看得到字幕；隐藏整行后看不到
   await timeButton(shorter).click()
   const player = await readyPlayer(editor)
+  // 改了主文件预览会换一个播放器重新加载，换的那一刻页面里有两个：等只剩一个再看
   const shown = () =>
-    player.evaluate((element: HTMLElement & { iframeElement: HTMLIFrameElement }) => {
-      const caption = element.iframeElement.contentDocument?.querySelector('.caption')
+    player.evaluateAll((elements) => {
+      if (elements.length !== 1) return null
+      const [element] = elements as (HTMLElement & { iframeElement: HTMLIFrameElement })[]
+      const caption = element?.iframeElement.contentDocument?.querySelector('.caption')
       if (caption === null || caption === undefined) return null
       const style = caption.ownerDocument.defaultView?.getComputedStyle(caption)
       const box = caption.getBoundingClientRect()
