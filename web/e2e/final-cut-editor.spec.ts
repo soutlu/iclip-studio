@@ -497,7 +497,7 @@ test('块页签搜到块点「加到播放头」、组件页签拖一个组件�
   await undone
 })
 
-test('属性：选中组件或块的片段自动切到「属性」，改文字可填项，存下来、预览里看得到；在「时间」里改开始；点空白处回到贴片页签，撤销回去', async ({
+test('属性：选中组件或块的片段自动切到「属性」，改文字可填项，存下来、预览里看得到；「显示时长」加 0.5 秒；取色板拖方块和色相条只在松手时写一次、拖到灰再拖回来色相还在；Esc 只关取色板，点空白处回到贴片页签，撤销一步回去', async ({
   page,
 }) => {
   test.setTimeout(60_000)
@@ -522,10 +522,7 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
   await row.getByRole('button', { name: /^选中：测试可填项，/ }).click()
   await expect(side.getByRole('tab', { name: '属性' })).toHaveAttribute('aria-selected', 'true')
   await expect(inspector.getByRole('heading', { name: '测试可填项' })).toBeVisible()
-  await expect(inspector.getByRole('button', { name: '内容' })).toHaveAttribute(
-    'aria-expanded',
-    'true',
-  )
+  await expect(inspector.getByRole('heading', { level: 4 })).toHaveText(['显示时长', '内容与样式'])
   const text = inspector.getByRole('textbox', { name: '文字' })
   await expect(text).toHaveValue('示例文字')
 
@@ -549,18 +546,85 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
     )
     .toBe('新的标题')
 
-  await inspector.getByRole('button', { name: /^时间/ }).click()
-  const start = inspector.getByRole('textbox', { name: '开始' })
-  await expect(start).toHaveValue('0.00')
-  const moved = mainSavedWith(page, (html) => savedItem(html, '测试可填项')?.start === 2)
-  await start.fill('2')
-  await start.press('Enter')
-  await moved
-  await expect(start).toHaveValue('2.00')
+  const length = inspector.getByRole('textbox', { name: '显示时长' })
+  await expect(length).toHaveValue('5.00')
+  const longer = mainSavedWith(page, (html) => savedItem(html, '测试可填项')?.duration === 5.5)
+  await inspector.getByRole('button', { name: '延长 0.5 秒' }).click()
+  await longer
+  await expect(length).toHaveValue('5.50')
 
+  // 取色板：方块拖到灰色松手，再从右上按下，色相还是原来的蓝；再拖色相条。拖动中不写，松手各写一次
+  const saves: string[] = []
+  const rgbOf = (hex: string) => [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16))
+  page.on('request', (request) => {
+    const html = savedHtmlOf(request)
+    const accent = html === null ? undefined : savedItem(html, '测试可填项')?.values['accent']
+    if (typeof accent === 'string') saves.push(accent)
+  })
+  await inspector.getByRole('button', { name: '底色取色' }).click()
+  const picker = page.getByRole('dialog', { name: '取色板' })
+  const board = picker.getByRole('slider', { name: '饱和度与明度' })
+  // 浮层弹出时有一下缩放：等它停下再量。浮层 176px 宽，方块高 76px
+  await expect.poll(async () => Math.round((await picker.boundingBox())?.width ?? 0)).toBe(176)
+  const square = await board.boundingBox()
+  if (square === null) throw new Error('取色板尚未布局')
+  expect(square.height).toBeCloseTo(76, 0)
+  const swatchText = inspector.getByRole('textbox', { name: '底色' })
+  await page.mouse.move(square.x + square.width - 2, square.y + 2)
+  await page.mouse.down()
+  await page.mouse.move(square.x + square.width / 2, square.y + square.height / 2, { steps: 4 })
+  await page.mouse.move(square.x - 10, square.y + square.height / 2, { steps: 4 })
+  await page.waitForTimeout(600)
+  expect(saves).toEqual([])
+  await expect(swatchText).not.toHaveValue('#2756ff')
+  const greyed = mainSavedWith(page, (html) => {
+    const accent = savedItem(html, '测试可填项')?.values['accent']
+    return typeof accent === 'string' && new Set(rgbOf(accent)).size === 1
+  })
+  await page.mouse.up()
+  await greyed
+  const blued = mainSavedWith(page, (html) => {
+    const accent = savedItem(html, '测试可填项')?.values['accent']
+    if (typeof accent !== 'string') return false
+    const [red = 0, green = 0, blue = 0] = rgbOf(accent)
+    return blue > red + 100 && blue > green + 60
+  })
+  await page.mouse.move(square.x + square.width - 1, square.y + 1)
+  await page.mouse.down()
+  await page.mouse.up()
+  await blued
+  expect(saves).toHaveLength(2)
+  const hue = picker.getByRole('slider', { name: '色相' })
+  const bar = await hue.boundingBox()
+  if (bar === null) throw new Error('色相条尚未布局')
+  expect(bar.height).toBeCloseTo(7, 0)
+  const beforeHue = await swatchText.inputValue()
+  await page.mouse.move(bar.x + bar.width * 0.1, bar.y + bar.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(bar.x + bar.width * 0.4, bar.y + bar.height / 2, { steps: 4 })
+  await page.waitForTimeout(600)
+  expect(saves).toHaveLength(2)
+  const hued = mainSavedWith(page, (html) => {
+    const accent = savedItem(html, '测试可填项')?.values['accent']
+    return typeof accent === 'string' && accent !== beforeHue
+  })
+  await page.mouse.up()
+  await hued
+  expect(saves).toHaveLength(3)
+  // Esc 只关上取色板，片段还选中着
+  await page.keyboard.press('Escape')
+  await expect(picker).toHaveCount(0)
+  await expect(row.getByRole('button', { name: /^选中：测试可填项，/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  // 缩小时间线让片段后面空出来，点空白处取消选中
+  const toolbar = editor.getByRole('toolbar', { name: '剪辑工具' })
+  await toolbar.getByRole('button', { name: '缩小时间线' }).click()
+  await toolbar.getByRole('button', { name: '缩小时间线' }).click()
   const lane = await row.boundingBox()
   if (lane === null) throw new Error('时间线尚未布局')
-  await page.mouse.click(lane.x + 6, lane.y + lane.height / 2)
+  await page.mouse.click(lane.x + lane.width - 6, lane.y + lane.height / 2)
   await expect(row.getByRole('button', { name: /^选中：测试可填项，/ })).toHaveAttribute(
     'aria-pressed',
     'false',
@@ -569,11 +633,12 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
   await expect(side.getByRole('searchbox', { name: '搜索贴片' })).toHaveValue('可填项')
   await expect(inspector).toHaveCount(0)
 
-  const undone = mainSavedWith(page, (html) => savedItem(html, '测试可填项')?.start === 0)
-  await editor
-    .getByRole('toolbar', { name: '剪辑工具' })
-    .getByRole('button', { name: '撤销' })
-    .click()
+  // 撤销一步：回到拖色相条之前的颜色
+  const undone = mainSavedWith(
+    page,
+    (html) => savedItem(html, '测试可填项')?.values['accent'] === saves[1],
+  )
+  await toolbar.getByRole('button', { name: '撤销' }).click()
   await undone
 })
 
@@ -713,7 +778,7 @@ const savedAttribute = (html: string, tag: 'video' | 'audio', name: string) => {
   return found === null ? undefined : (found[1] ?? '')
 }
 
-test('属性「媒体」：音频片段拉满增益、打开循环写进文件；视频片段调成 2 倍速，片段长不变、能拉到的最长减半', async ({
+test('属性：音频片段拉满音量、打开循环播放写进文件；视频片段在「原片截取」上拖出点，松手写一次、一步撤销；调成 2 倍速，片段长不变、用掉的素材翻倍', async ({
   page,
 }) => {
   test.setTimeout(60_000)
@@ -744,53 +809,94 @@ test('属性「媒体」：音频片段拉满增益、打开循环写进文件�
     .getByRole('group', { name: '配乐', exact: true })
     .getByRole('button', { name: /^选中：轻快原声吉他/ })
     .click()
-  await inspector.getByRole('button', { name: /^媒体/ }).click()
-  await expect(inspector.getByText('轻快原声吉他，适合秋季穿搭', { exact: true })).toHaveCount(2)
+  await expect(inspector.getByText('· 轻快原声吉他，适合秋季穿搭', { exact: true })).toBeVisible()
   const louder = mainSavedWith(
     page,
     (html) => savedAttribute(html, 'audio', 'data-volume') === '3.981072',
   )
-  await inspector.getByRole('slider', { name: '增益' }).press('End')
+  await inspector.getByRole('slider', { name: '音量' }).press('End')
   await louder
-  await expect(inspector.getByRole('slider', { name: '增益' })).toHaveAttribute(
+  await expect(inspector.getByRole('slider', { name: '音量' })).toHaveAttribute(
     'aria-valuetext',
     '+12.0 dB',
   )
   const looped = mainSavedWith(page, (html) => savedAttribute(html, 'audio', 'loop') === 'true')
-  await inspector.getByRole('switch', { name: '循环' }).click()
+  await inspector.getByRole('switch', { name: '循环播放' }).click()
   await looped
 
-  // 视频片段（选中后展开的是「时间」）：先把时长拉到素材能放的最长
+  // 视频片段：把出点拖到素材的最后，拖动中不写
   await editor
     .getByRole('group', { name: '画面 1', exact: true })
     .getByRole('button', { name: /^选中：A · / })
     .click()
-  const length = inspector.getByRole('textbox', { name: '时长' })
-  const setLength = async (seconds: string) => {
-    await length.fill(seconds)
-    await length.press('Enter')
+  const summary = inspector.getByTestId('slip-summary')
+  await expect(summary).toBeVisible()
+  /** 标题行右边的入点、出点和素材总长（秒）。 */
+  const points = async () => {
+    const [inPoint, outPoint, total] = ((await summary.textContent()) ?? '')
+      .match(/[\d.]+/g)
+      ?.map(Number) ?? [NaN, NaN, NaN]
+    return { inPoint, outPoint, total }
   }
-  await setLength('999')
-  const longest = Number(await length.inputValue())
-  expect(longest).toBeGreaterThan(1)
+  const before = await points()
+  expect(before.outPoint).toBeLessThan(before.total)
+  const savedDurations: number[] = []
+  page.on('request', (request) => {
+    const html = savedHtmlOf(request)
+    if (html !== null) savedDurations.push(Number(savedAttribute(html, 'video', 'data-duration')))
+  })
+  const strip = await inspector.getByRole('group', { name: '原片截取条' }).boundingBox()
+  const grip = await inspector.getByRole('slider', { name: '裁剪结尾' }).boundingBox()
+  if (strip === null || grip === null) throw new Error('原片截取条尚未布局')
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(strip.x + strip.width + 20, grip.y + grip.height / 2, { steps: 6 })
+  await expect.poll(async () => (await points()).outPoint).toBeCloseTo(before.total, 1)
+  await page.waitForTimeout(600)
+  expect(savedDurations).toEqual([])
+  const extended = mainSavedWith(
+    page,
+    (html) =>
+      Number(savedAttribute(html, 'video', 'data-duration')) >
+      before.outPoint - before.inPoint + 0.5,
+  )
+  await page.mouse.up()
+  await extended
+  expect(savedDurations).toHaveLength(1)
 
-  await inspector.getByRole('button', { name: /^媒体/ }).click()
+  const undone = mainSavedWith(
+    page,
+    (html) =>
+      Math.abs(
+        Number(savedAttribute(html, 'video', 'data-duration')) - (before.outPoint - before.inPoint),
+      ) < 0.01,
+  )
+  await editor
+    .getByRole('toolbar', { name: '剪辑工具' })
+    .getByRole('button', { name: '撤销' })
+    .click()
+  await undone
+  await expect.poll(async () => (await points()).outPoint).toBeCloseTo(before.outPoint, 2)
+
+  // 2 倍速：片段长不变，用掉的素材翻倍
   const faster = mainSavedWith(
     page,
     (html) => savedAttribute(html, 'video', 'data-playback-rate') === '2',
   )
-  await inspector.getByRole('button', { name: /^速度 1x/ }).click()
-  await inspector.getByRole('textbox', { name: '速度' }).fill('2')
-  await inspector.getByRole('textbox', { name: '速度' }).press('Enter')
+  await inspector.getByRole('button', { name: /^倍速 1x/ }).click()
+  await inspector.getByRole('textbox', { name: '倍速' }).fill('2')
+  await inspector.getByRole('textbox', { name: '倍速' }).press('Enter')
   const html = htmlOf(await faster)
-  expect(Number(savedAttribute(html, 'video', 'data-duration'))).toBeCloseTo(longest, 2)
-
-  // 收短再拉长：2 倍速时素材剩下的那段只够放原来的一半
-  await inspector.getByRole('button', { name: /^时间/ }).click()
-  await setLength('1')
-  await expect(length).toHaveValue('1.00')
-  await setLength('999')
-  await expect.poll(async () => Number(await length.inputValue())).toBeCloseTo(longest / 2, 1)
+  expect(Number(savedAttribute(html, 'video', 'data-duration'))).toBeCloseTo(
+    before.outPoint - before.inPoint,
+    2,
+  )
+  await expect
+    .poll(async () => {
+      const now = await points()
+      return now.outPoint - now.inPoint
+    })
+    .toBeCloseTo(2 * (before.outPoint - before.inPoint), 1)
 })
 
 test('在贴片卡片上按 ] 选中片段：侧栏切到「属性」，焦点交还编辑器，Delete 照常删掉；选中没了回到贴片页签', async ({

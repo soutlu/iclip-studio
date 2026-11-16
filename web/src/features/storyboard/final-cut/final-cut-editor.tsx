@@ -209,21 +209,32 @@ function EditorBody({
     () => materialCatalog(groupConversationVideos(videos.data ?? [])),
     [videos.data],
   )
+  // 「原片截取」标题里写的素材名：视频片段按地址在出片的各个版本里找
+  const sourceNames = useMemo(
+    () =>
+      new Map(
+        [...materials.byJob.values()].map((item) => [
+          item.url,
+          `${item.groupLabel} · ${item.takeLetter} · ${item.versionNumber}`,
+        ]),
+      ),
+    [materials],
+  )
   const [pickedVersions, setPickedVersions] = useState<Readonly<Record<string, string>>>({})
   const versionOf = (take: MaterialTake): Material =>
     take.versions.find((item) => item.jobId === pickedVersions[take.id]) ?? take.latest
-  const shownUrls = useStableValue(
+  // 「镜头」页签里显示着的版本，加上 final-cut 里视频片段用的素材（可能是没显示着的旧版本）：镜头、总长、
+  // 有没有声音都先读好——加进 final-cut 时不用再等，裁剪和「原片截取」也要知道素材的总长
+  const videoUrls = useStableValue(
     [
-      ...new Set(
-        materials.groups.flatMap((group) => group.takes.map((take) => versionOf(take).url)),
-      ),
+      ...new Set([
+        ...materials.groups.flatMap((group) => group.takes.map((take) => versionOf(take).url)),
+        ...videoClips.map((clip) => clip.src),
+      ]),
     ].sort(),
   )
-  const keyframes = useKeyframeIndexes(shownUrls)
-  // 素材区的镜头和 final-cut 里视频片段的素材有没有声音，和镜头一起先读好：加进 final-cut 时不用再等
-  const audioTracks = useVideoAudio(
-    useStableValue([...new Set([...shownUrls, ...videoClips.map((clip) => clip.src)])].sort()),
-  )
+  const keyframes = useKeyframeIndexes(videoUrls)
+  const audioTracks = useVideoAudio(videoUrls)
 
   const [playheadMs, setPlayheadMs] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -355,10 +366,7 @@ function EditorBody({
     ),
   )
   const sourceMs: SourceLength = (clip) => {
-    if (clip.kind === 'video') {
-      const state = keyframes.get(clip.src)
-      return state?.kind === 'ready' ? Math.round(state.index.duration * 1000) : undefined
-    }
+    if (clip.kind === 'video') return takeDurationMs(keyframes.get(clip.src))
     const state = clip.kind === 'audio' ? audioPeaks.get(clip.src) : undefined
     return state?.kind === 'ready' ? Math.round(state.peaks.duration * 1000) : undefined
   }
@@ -510,12 +518,12 @@ function EditorBody({
       !isEditorKeyTarget(event, editor)
     )
       return
-    // 全屏时菜单挂在编辑器里面，菜单里按的键归菜单；「属性」里的滑杆、下拉框、开关上按的键也归控件
+    // 全屏时菜单挂在编辑器里面，菜单里按的键归菜单；「属性」里的滑杆、下拉、取色、开关上按的键也归控件
     // 自己，照参照的工作台。时间尺上的播放位置也是滑杆，点过它以后快捷键照常用
     if (
       event.target instanceof Element &&
       event.target.closest(
-        '[role="menu"], [data-inspector] :is(input, select, [role="switch"])',
+        '[role="menu"], [data-inspector] :is(input, [role="slider"], [role="switch"], [aria-haspopup])',
       ) !== null
     )
       return
@@ -825,17 +833,16 @@ function EditorBody({
           </TabsContent>
           <TabsContent className="wf-side-body is-props" value="props">
             <FilmInspector
+              audioPeaks={audioPeaks}
               clips={clips}
               catalog={catalog}
+              keyframes={keyframes}
+              onGesture={setGesturing}
               onHide={(id, hidden) => {
                 leaveMaterial()
                 session.setHidden([id], hidden)
               }}
               onRemove={removeSelected}
-              onRestart={(starts) => {
-                leaveMaterial()
-                session.restart(starts)
-              }}
               onRetime={(timings) => {
                 leaveMaterial()
                 session.retime(timings)
@@ -852,6 +859,7 @@ function EditorBody({
               selected={selectedClips}
               silentSource={(src) => audioTracks.get(src) === false}
               sourceMs={sourceMs}
+              sourceName={(src) => sourceNames.get(src)}
             />
           </TabsContent>
         </TabsRoot>

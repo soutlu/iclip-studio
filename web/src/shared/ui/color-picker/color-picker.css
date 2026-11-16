@@ -1,0 +1,31 @@
+/* 方块和色相条来自 react-colorful：它挂上时往页面里插一段不分层的样式，这里用两个类压过它。
+   方块高 76px、色相条高 7px、两个圆点 10px；色相条的彩虹和圆点的白边用它自己的。 */
+.color-picker .react-colorful {
+  width: 100%;
+  height: auto;
+  gap: 8px;
+}
+
+.color-picker .react-colorful__saturation {
+  height: 76px;
+  flex: none;
+  border-bottom: 0;
+  border-radius: var(--radius-xs);
+}
+
+.color-picker .react-colorful__hue {
+  height: 7px;
+  border-radius: var(--radius-full);
+}
+
+.color-picker .react-colorful__pointer {
+  width: 10px;
+  height: 10px;
+  border-width: 1.5px;
+}
+
+/* 它把焦点框去掉了：键盘聚焦时给圆点套上全站的焦点环 */
+.color-picker .react-colorful__interactive:focus-visible .react-colorful__pointer {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
