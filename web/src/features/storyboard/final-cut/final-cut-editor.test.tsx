@@ -44,6 +44,8 @@ const URL_A = 'https://media.test/take-a.mp4'
 const URL_B = 'https://media.test/take-b.mp4'
 const URL_SILENT = 'https://media.test/take-silent.mp4'
 const URL_UNREADABLE = 'https://media.test/take-unreadable.mp4'
+// 不在出片列表里的地址：final-cut 里的片段还在用、「镜头」页签里已经不显示的旧版本
+const URL_OLD = 'https://media.test/take-old.mp4'
 const TAKE_A = '11111111-2222-4333-8444-555555555555'
 const TAKE_B = '66666666-7777-4888-8999-aaaaaaaaaaaa'
 const TAKE_SILENT = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff'
@@ -53,6 +55,7 @@ files.set(URL_A, { keyframes: [0, 2, 4.5], duration: 6 })
 files.set(URL_B, { keyframes: [0, 1.5], duration: 3 })
 files.set(URL_SILENT, { keyframes: [0, 1], duration: 2 })
 files.set(URL_UNREADABLE, { keyframes: [0, 1], duration: 2 })
+files.set(URL_OLD, { keyframes: [0, 2], duration: 5 })
 sounds.add(URL_A)
 sounds.add(URL_B)
 unreadable.add(URL_UNREADABLE)
@@ -1918,13 +1921,23 @@ describe('final-cut 编辑器 · 属性', () => {
       )
     })
 
-    it('素材总长还没读到：条上写读到哪了，没有框和抓手，按下不改', async () => {
+    it('片段用的素材不在「镜头」页签里显示着：照样读到总长，能截取', async () => {
+      const user = await openWith([video({ src: URL_OLD, duration: 2_000 })])
+      await pick(user, 'A · 镜头 1')
+      await waitFor(() => expect(summary()).toHaveTextContent('0.00 – 2.00s / 5.0s'))
+      handle('裁剪结尾').focus()
+      await user.keyboard('{Shift>}{ArrowRight}{/Shift}')
+      expect(summary()).toHaveTextContent('0.00 – 3.00s / 5.0s')
+      await waitSaved(() => expect(savedClips()[0]).toContain('data-duration="3"'))
+    })
+
+    it('素材总长读不出来：条上写原因，没有框和抓手，按下不改', async () => {
       const user = await openWith([
         video({ src: 'https://media.test/videos/elsewhere.mp4', duration: 2_000 }),
         audio({ duration: 4_000 }),
       ])
       await pick(user, 'A · 镜头 1')
-      expect(within(strip()).getByText('正在读取镜头…')).toBeVisible()
+      expect(await within(strip()).findByText('视频时长无效，无法分段')).toBeVisible()
       expect(within(inspector()).queryByTestId('slip-summary')).toBeNull()
       expect(within(inspector()).queryByRole('slider', { name: /^裁剪/ })).toBeNull()
       fireEvent.pointerDown(strip(), { button: 0, pointerId: 1, clientX: 30 })

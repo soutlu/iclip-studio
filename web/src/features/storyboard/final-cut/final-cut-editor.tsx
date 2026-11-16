@@ -212,18 +212,18 @@ function EditorBody({
   const [pickedVersions, setPickedVersions] = useState<Readonly<Record<string, string>>>({})
   const versionOf = (take: MaterialTake): Material =>
     take.versions.find((item) => item.jobId === pickedVersions[take.id]) ?? take.latest
-  const shownUrls = useStableValue(
+  // 「镜头」页签里显示着的版本，加上 final-cut 里视频片段用的素材（可能是没显示着的旧版本）：镜头、总长、
+  // 有没有声音都先读好——加进 final-cut 时不用再等，裁剪和「原片截取」也要知道素材的总长
+  const videoUrls = useStableValue(
     [
-      ...new Set(
-        materials.groups.flatMap((group) => group.takes.map((take) => versionOf(take).url)),
-      ),
+      ...new Set([
+        ...materials.groups.flatMap((group) => group.takes.map((take) => versionOf(take).url)),
+        ...videoClips.map((clip) => clip.src),
+      ]),
     ].sort(),
   )
-  const keyframes = useKeyframeIndexes(shownUrls)
-  // 素材区的镜头和 final-cut 里视频片段的素材有没有声音，和镜头一起先读好：加进 final-cut 时不用再等
-  const audioTracks = useVideoAudio(
-    useStableValue([...new Set([...shownUrls, ...videoClips.map((clip) => clip.src)])].sort()),
-  )
+  const keyframes = useKeyframeIndexes(videoUrls)
+  const audioTracks = useVideoAudio(videoUrls)
 
   const [playheadMs, setPlayheadMs] = useState(0)
   const [playing, setPlaying] = useState(false)
