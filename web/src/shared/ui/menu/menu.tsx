@@ -16,13 +16,13 @@ const ITEM_CLASS =
   // design-allow -- Radix 用 .focus() 移动高亮，浏览器默认框会和 ui-focus 的焦点环叠一起
   'ui-state ui-focus flex h-(--control-height-sm) cursor-pointer items-center gap-2 rounded-sm px-2 text-body outline-none select-none'
 
+const SEPARATOR_CLASS = 'mx-2 my-1 h-px bg-hairline'
+
 export function MenuSeparator({
   className,
   ...props
 }: ComponentPropsWithoutRef<typeof DropdownMenu.Separator>) {
-  return (
-    <DropdownMenu.Separator className={cn('mx-2 my-1 h-px bg-hairline', className)} {...props} />
-  )
+  return <DropdownMenu.Separator className={cn(SEPARATOR_CLASS, className)} {...props} />
 }
 
 type MenuSurfaceProps = ComponentPropsWithoutRef<typeof DropdownMenu.Content> & {
@@ -47,27 +47,28 @@ export function MenuSurface({
   )
 }
 
-type MenuItemProps = ComponentPropsWithoutRef<typeof DropdownMenu.Item> & {
+/** 下拉菜单和右键菜单的条目共用的外观。 */
+type ItemLook = {
+  /** 删除之类的危险操作：文字用警示色。 */
   destructive?: boolean
-  icon?: Parameters<typeof Icon>[0]['name']
-  shortcut?: readonly string[]
+  icon?: IconName | undefined
+  /** 右边写的快捷键，一个键一格。 */
+  shortcut?: readonly string[] | undefined
   trailing?: ReactNode
 }
 
-export function MenuItem({
+const itemClass = (destructive: boolean, className: string | undefined) =>
+  cn(ITEM_CLASS, destructive ? 'text-error' : 'text-on-surface', className)
+
+function ItemBody({
   children,
-  className,
   destructive = false,
   icon,
   shortcut,
   trailing,
-  ...props
-}: MenuItemProps) {
+}: ItemLook & { children: ReactNode }) {
   return (
-    <DropdownMenu.Item
-      className={cn(ITEM_CLASS, destructive ? 'text-error' : 'text-on-surface', className)}
-      {...props}
-    >
+    <>
       {icon ? (
         <Icon
           className={cn('shrink-0', !destructive && 'text-on-surface-variant')}
@@ -89,6 +90,24 @@ export function MenuItem({
           ))}
         </span>
       ) : null}
+    </>
+  )
+}
+
+export function MenuItem({
+  children,
+  className,
+  destructive = false,
+  icon,
+  shortcut,
+  trailing,
+  ...props
+}: ComponentPropsWithoutRef<typeof DropdownMenu.Item> & ItemLook) {
+  return (
+    <DropdownMenu.Item className={itemClass(destructive, className)} {...props}>
+      <ItemBody destructive={destructive} icon={icon} shortcut={shortcut} trailing={trailing}>
+        {children}
+      </ItemBody>
     </DropdownMenu.Item>
   )
 }
@@ -114,20 +133,35 @@ export function ContextMenuSurface({
 export function ContextMenuItem({
   children,
   className,
+  destructive = false,
+  icon,
+  shortcut,
+  trailing,
   ...props
-}: ComponentPropsWithoutRef<typeof ContextMenu.Item>) {
+}: ComponentPropsWithoutRef<typeof ContextMenu.Item> & ItemLook) {
   return (
     <ContextMenu.Item
-      className={cn(
-        ITEM_CLASS,
-        'text-on-surface data-[disabled]:cursor-default data-[disabled]:opacity-(--state-disabled-content)',
-        className,
+      className={itemClass(
+        destructive,
+        cn(
+          'data-[disabled]:cursor-default data-[disabled]:opacity-(--state-disabled-content)',
+          className,
+        ),
       )}
       {...props}
     >
-      <span className="min-w-0 flex-1 truncate">{children}</span>
+      <ItemBody destructive={destructive} icon={icon} shortcut={shortcut} trailing={trailing}>
+        {children}
+      </ItemBody>
     </ContextMenu.Item>
   )
+}
+
+export function ContextMenuSeparator({
+  className,
+  ...props
+}: ComponentPropsWithoutRef<typeof ContextMenu.Separator>) {
+  return <ContextMenu.Separator className={cn(SEPARATOR_CLASS, className)} {...props} />
 }
 
 export function MenuRadioItem({

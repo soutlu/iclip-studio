@@ -1,6 +1,7 @@
 export {
   ContextMenuItem,
   ContextMenuRoot,
+  ContextMenuSeparator,
   ContextMenuSurface,
   ContextMenuTrigger,
   MenuBareItem,

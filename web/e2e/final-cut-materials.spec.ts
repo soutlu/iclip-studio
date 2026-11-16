@@ -771,12 +771,68 @@ test('吸附：拖到别的片段旁边会贴上去并画出吸附线，关掉�
   const gapX = (await firstEnd()) + 150
   const rowBox = await boxOf(row)
   await page.mouse.click(gapX, rowBox.y + rowBox.height / 2, { button: 'right' })
+  // 空档上只出空档的菜单，没有片段菜单里的项
+  await expect(page.getByRole('menu')).toHaveAccessibleName('空档')
+  await expect(page.getByRole('menuitem', { name: '删除片段' })).toHaveCount(0)
   await page.getByRole('menuitem', { name: '合拢此空档' }).click()
   await expect.poll(secondStart).toBe(1)
 
   // 没有空档了：再点右键不出菜单
   await page.mouse.click(gapX + 200, rowBox.y + rowBox.height / 2, { button: 'right' })
   await expect(page.getByRole('menu')).toHaveCount(0)
+})
+
+test('片段的右键菜单：先选中点右键的片段，「隐藏片段画面」写进主文件，「删除片段」删掉它', async ({
+  page,
+}) => {
+  const { editor, materials } = await openWith(page, [1])
+  await shotOf(materials, 1, 'A', 1).click()
+  await page.keyboard.press('Enter')
+  await expect.poll(() => savedClips(page)).toHaveLength(1)
+  /** 存下来的主文件里有几个隐藏的视频片段。 */
+  const savedHidden = () =>
+    page.evaluate(async (conversationId) => {
+      const response = await fetch(
+        `/api/conversations/${conversationId}/workspace/file?path=final-cut%2Findex.html`,
+      )
+      const html = response.ok
+        ? ((await response.json()) as { file: { content: string } }).file.content
+        : ''
+      return html.match(/<video data-hidden=""/g)?.length ?? 0
+    }, conversationIdOf(page))
+  const row = editor.getByRole('group', { name: '画面 1', exact: true })
+  const clip = row.locator('[data-clip-id]')
+  await expect(clip.getByRole('button', { name: /^选中：/ })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  )
+
+  await clip.click({ button: 'right' })
+  const menu = page.getByRole('menu', { name: 'A · 镜头 1' })
+  await expect(menu.getByRole('menuitem')).toHaveText(['静音此片段', '隐藏片段画面', /^删除片段/])
+  await menu.getByRole('menuitem', { name: '隐藏片段画面' }).click()
+  await expect(menu).toHaveCount(0)
+  await expect.poll(savedHidden).toBe(1)
+  await expect(clip.getByRole('button', { name: /^选中：/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await expect(clip).toHaveAccessibleName(/，已隐藏$/)
+  // 菜单关了以后编辑器的按键照常：Esc 取消选中
+  await page.keyboard.press('Escape')
+  await expect(clip.getByRole('button', { name: /^选中：/ })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  )
+
+  await clip.click({ button: 'right' })
+  await expect(menu.getByRole('menuitem', { name: '恢复显示画面' })).toBeVisible()
+  await menu.getByRole('menuitem', { name: '删除片段' }).click()
+  await expect.poll(() => savedClips(page)).toEqual([])
+  await expect(clip).toHaveCount(0)
+  // 删掉的片段原来有焦点，删完撤销照常
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(() => savedClips(page)).toHaveLength(1)
 })
 
 test('换行：把片段拖到最下面的空行新开一行，再拖回去；镜头也能直接拖进新的一行', async ({
