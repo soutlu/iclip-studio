@@ -49,6 +49,7 @@ import {
 import { ItemsTab } from './items-tab'
 import { MaterialArea } from './material-area'
 import {
+  takeDurationMs,
   useKeyframeIndexes,
   useVideoAudio,
   useVideoSize,
@@ -616,6 +617,22 @@ function EditorBody({
     setRange(viewed)
     setMaterialView({ range: viewed, show })
   }
+  // 素材预览显示着时播放条换成素材的：时间和进度按整条原作算（还没读到时长先用选中范围的结尾），
+  // 拖进度条在素材里跳
+  const transportSource =
+    materialView === null
+      ? { playheadMs: playhead, totalMs: total, buffered, playBlocked, playing, onSeek: seek }
+      : {
+          playheadMs: materialMs,
+          totalMs:
+            takeDurationMs(
+              viewedMaterial === undefined ? undefined : keyframes.get(viewedMaterial.url),
+            ) ?? materialView.range.endMs,
+          buffered: [],
+          playBlocked: undefined,
+          playing: materialPlaying,
+          onSeek: (ms: number) => materialPreviewRef.current?.seek(ms),
+        }
 
   if (session.opening)
     return (
@@ -656,13 +673,12 @@ function EditorBody({
             onPlaying={setMaterialPlaying}
             onTime={setMaterialMs}
             rate={playback.rate}
-            timeMs={materialMs}
             url={viewedMaterial.url}
             view={materialView}
           />
         )}
         <PreviewTransport
-          buffered={buffered}
+          {...transportSource}
           fullscreen={fullscreen}
           fullscreenBlocked={fullscreenBlocked}
           layer={fullscreen ? stage : null}
@@ -671,12 +687,7 @@ function EditorBody({
           onMute={toggleMute}
           onPlay={togglePlay}
           onRate={(rate) => setPlayback((current) => ({ ...current, rate }))}
-          onSeek={seek}
-          playBlocked={materialView === null ? playBlocked : undefined}
           playback={playback}
-          playheadMs={playhead}
-          playing={materialView === null ? playing : materialPlaying}
-          totalMs={total}
         />
       </div>
       <aside aria-label="镜头、贴片、场景、配乐和属性" className="wf-side" ref={sideRef}>

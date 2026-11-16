@@ -303,7 +303,9 @@ test('点镜头只选中、预览停在开头不播放；素材暂停续播与�
 
 test('选区两端拖动、←/→ 微调 0.1 秒、⇧ 1 秒；调的时候预览停在那一端的画面', async ({ page }) => {
   const { editor, materials } = await openWith(page, [1])
-  const label = editor.getByRole('paragraph').filter({ hasText: /^素材 · 镜头组/ })
+  const progress = editor
+    .getByRole('group', { name: '播放控制' })
+    .getByRole('slider', { name: '播放进度' })
   await shotOf(materials, 1, 'A', 2).click()
   const start = groupOf(materials, 1).getByRole('slider', { name: '裁剪开头' })
   const end = groupOf(materials, 1).getByRole('slider', { name: '裁剪结尾' })
@@ -312,7 +314,8 @@ test('选区两端拖动、←/→ 微调 0.1 秒、⇧ 1 秒；调的时候预�
   await start.focus()
   await page.keyboard.press('ArrowRight')
   await expect(start).toHaveAttribute('aria-valuenow', '1.1')
-  await expect(label).toContainText('1.1 秒 · 选区 1.1–2.0')
+  await expect(end).toHaveAttribute('aria-valuenow', '2')
+  await expect(progress).toHaveAttribute('aria-valuetext', '00:01.10 / 00:06.00')
   await expect.poll(() => previewVideo(editor)).toEqual({ paused: true, time: 1.1 })
   await page.keyboard.press('Shift+ArrowRight')
   await expect(start).toHaveAttribute('aria-valuenow', '1.9')
@@ -326,10 +329,89 @@ test('选区两端拖动、←/→ 微调 0.1 秒、⇧ 1 秒；调的时候预�
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
   await page.mouse.move(from.x + perSecond * 1.5, from.y, { steps: 6 })
-  await expect(label).toContainText('3.5 秒 · 选区 0.9–3.5')
+  await expect(start).toHaveAttribute('aria-valuenow', '0.9')
+  await expect(end).toHaveAttribute('aria-valuenow', '3.5')
+  await expect(progress).toHaveAttribute('aria-valuetext', '00:03.50 / 00:06.00')
   await expect.poll(() => previewVideo(editor)).toEqual({ paused: true, time: 3.5 })
   await page.mouse.up()
   await expect(end).toHaveAttribute('aria-valuetext', '3.5 秒')
+})
+
+test('预览素材时播放条是素材的：读数按整条原作算，点、拖进度条在素材里跳，范围以外停在那一端，在播接着播、停着还停着；在时间尺上点回到 final-cut', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1449, height: 982 })
+  const panel = await openConversation(page, CONVERSATION)
+  // 20 秒的片每 2 秒一个镜头
+  await addTakes(page, [1], { seconds: 20 })
+  const editor = await openFinalCut(panel)
+  const materials = editor.getByRole('region', { name: '视频素材区' })
+  const transport = editor.getByRole('group', { name: '播放控制' })
+  const progress = transport.getByRole('slider', { name: '播放进度' })
+  const material = editor.getByRole('region', { name: /^素材 · / })
+  const video = material.locator('video')
+  const mediaTime = () => video.evaluate((element: HTMLVideoElement) => element.currentTime)
+  const mediaPaused = () => video.evaluate((element: HTMLVideoElement) => element.paused)
+
+  await shotOf(materials, 1, 'A', 1).click()
+  await page.keyboard.press('Enter')
+  await expect.poll(() => savedClips(page)).toHaveLength(1)
+  await readyPlayer(editor)
+  await expect(progress).toHaveAttribute('aria-valuetext', '00:00.00 / 00:02.00')
+
+  await shotOf(materials, 1, 'A', 2).click()
+  await shotOf(materials, 1, 'A', 3).click({ modifiers: ['Shift'] })
+  await shotOf(materials, 1, 'A', 4).click({ modifiers: ['Shift'] })
+  await expect(groupOf(materials, 1).getByRole('slider', { name: '裁剪开头' })).toHaveAttribute(
+    'aria-valuenow',
+    '2',
+  )
+  await expect(groupOf(materials, 1).getByRole('slider', { name: '裁剪结尾' })).toHaveAttribute(
+    'aria-valuenow',
+    '8',
+  )
+  await expect(material).toHaveAccessibleName('素材 · 镜头组 1 · 生成 A · 镜头 2–4')
+  await expect(material).toHaveText('')
+  await expect(progress).toHaveAttribute('aria-valuetext', '00:02.00 / 00:20.00')
+
+  const bar = await transport.getByTestId('preview-seek').boundingBox()
+  if (bar === null) throw new Error('进度条尚未布局')
+  const at = (ratio: number) => ({ x: bar.x + bar.width * ratio, y: bar.y + bar.height / 2 })
+
+  // 停着时点进度条：跳到那里还停着；点在范围前面停在范围开头
+  await page.mouse.click(at(0.25).x, at(0.25).y)
+  await expect(progress).toHaveAttribute('aria-valuetext', '00:05.00 / 00:20.00')
+  await expect.poll(() => previewVideo(editor)).toEqual({ paused: true, time: 5 })
+  await page.mouse.click(at(0.05).x, at(0.05).y)
+  await expect(progress).toHaveAttribute('aria-valuetext', '00:02.00 / 00:20.00')
+  await expect.poll(() => previewVideo(editor)).toEqual({ paused: true, time: 2 })
+
+  // 拖到范围后面：拖动中画面就停在范围结尾，松手后仍在素材预览
+  await page.mouse.move(at(0.25).x, at(0.25).y)
+  await page.mouse.down()
+  await page.mouse.move(at(0.9).x, at(0.9).y, { steps: 6 })
+  await expect(progress).toHaveAttribute('aria-valuetext', '00:08.00 / 00:20.00')
+  await expect.poll(() => previewVideo(editor)).toEqual({ paused: true, time: 8 })
+  await page.mouse.up()
+  await expect(material).toBeVisible()
+
+  // 在播时点进度条：从那里接着播。播放从范围开头（2 秒）起，自己播到 5 秒要 3 秒
+  await transport.getByRole('button', { name: '播放', exact: true }).click()
+  await expect.poll(mediaPaused).toBe(false)
+  await page.mouse.click(at(0.25).x, at(0.25).y)
+  const jumped = await mediaTime()
+  expect(jumped).toBeGreaterThan(4.85)
+  await expect.poll(mediaTime).toBeGreaterThan(jumped + 0.2)
+  expect(await mediaPaused()).toBe(false)
+  await expect(transport.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
+  await transport.getByRole('button', { name: '暂停', exact: true }).click()
+  await expect.poll(mediaPaused).toBe(true)
+
+  const ruler = await editor.getByRole('slider', { name: '时间线播放位置' }).boundingBox()
+  if (ruler === null) throw new Error('时间尺尚未布局')
+  await page.mouse.click(ruler.x + 4, ruler.y + ruler.height / 2)
+  await expect(material).toHaveCount(0)
+  await expect(progress).toHaveAttribute('aria-valuetext', /^00:00\.\d\d \/ 00:02\.00$/)
 })
 
 test('选区里的播放头只在素材播放时出现：点镜头、暂停、拖抓手松手后都没有', async ({ page }) => {
@@ -423,27 +505,27 @@ test('Shift 选连着的几个镜头：不播放；在选区上单击只选那�
 
 test('撤销、重做也是 final-cut 编辑：预览回到 final-cut', async ({ page }) => {
   const { editor, materials } = await openWith(page, [1, 1])
-  const label = editor.getByRole('paragraph').filter({ hasText: /^素材 · 镜头组/ })
+  const material = editor.getByRole('region', { name: /^素材 · / })
   await shotOf(materials, 1, 'A', 1).click()
   await page.keyboard.press('Enter')
   await expect.poll(() => savedClips(page)).toHaveLength(1)
 
   await shotOf(materials, 1, 'B', 2).click()
-  await expect(label).toBeVisible()
+  await expect(material).toHaveAccessibleName('素材 · 镜头组 1 · 生成 B · 镜头 2')
   await editor.getByRole('button', { name: '撤销' }).click()
-  await expect(label).toHaveCount(0)
+  await expect(material).toHaveCount(0)
   await expect.poll(() => savedClips(page)).toHaveLength(0)
 
   await shotOf(materials, 1, 'B', 4).click()
-  await expect(label).toBeVisible()
+  await expect(material).toHaveAccessibleName('素材 · 镜头组 1 · 生成 B · 镜头 4')
   await editor.getByRole('button', { name: '重做' }).click()
-  await expect(label).toHaveCount(0)
+  await expect(material).toHaveCount(0)
   await expect.poll(() => savedClips(page)).toHaveLength(1)
 
   await shotOf(materials, 1, 'B', 3).click()
-  await expect(label).toBeVisible()
+  await expect(material).toHaveAccessibleName('素材 · 镜头组 1 · 生成 B · 镜头 3')
   await page.keyboard.press('ControlOrMeta+z')
-  await expect(label).toHaveCount(0)
+  await expect(material).toHaveCount(0)
   await expect.poll(() => savedClips(page)).toHaveLength(0)
 })
 

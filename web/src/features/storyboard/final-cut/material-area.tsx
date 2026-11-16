@@ -12,7 +12,7 @@ import {
   type Edge,
 } from '../editing/timeline-drag'
 import { useEditorEscape } from './editor-keys'
-import type { KeyframeStates } from './material-media'
+import { takeDurationMs, type KeyframeStates } from './material-media'
 import {
   shiftShot,
   shotRange,
@@ -170,7 +170,7 @@ function TakeRow({
   const clickAfterDrag = useClickAfterDrag()
   const [lifting, setLifting] = useState(false)
   const state = keyframes.get(version.url)
-  const durationMs = state?.kind === 'ready' ? Math.round(state.index.duration * 1000) : undefined
+  const durationMs = takeDurationMs(state)
   const shown = range !== null && range.jobId === version.jobId ? range : null
   const shots: ShotSpan[] =
     state?.kind === 'ready'

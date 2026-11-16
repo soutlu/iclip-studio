@@ -81,6 +81,7 @@ export function PreviewTransport({
     <div aria-label="播放控制" className="wf-transport" role="group">
       <Slider.Root
         className="wf-seek"
+        data-testid="preview-seek"
         disabled={total <= 0}
         max={total > 0 ? total : 1}
         onValueChange={([at]) => {

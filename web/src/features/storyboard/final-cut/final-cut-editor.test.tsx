@@ -757,6 +757,58 @@ describe('final-cut 编辑器 · 播放', () => {
     expect(within(transport()).getByText('/ 00:03.50')).toBeVisible()
   })
 
+  it('预览素材时播放条显示素材的时间和原作总长，在进度条上跳转夹在选区里、不离开素材；取消选中后回到 final-cut 的时间', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 500)))
+    progress().focus()
+    await user.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}')
+    expect(progress()).toHaveAttribute('aria-valuetext', '00:00.30 / 00:03.50')
+
+    // 素材 A 一共 6 秒，镜头 2 是 2–4.5 秒
+    await user.click(await shot(/^生成 A 镜头 2，/))
+    const material = screen.getByRole('region', { name: '素材 · 镜头组 1 · 生成 A · 镜头 2' })
+    expect(material.textContent).toBe('')
+    expect(within(transport()).getByText('00:02.00')).toBeVisible()
+    expect(within(transport()).getByText('/ 00:06.00')).toBeVisible()
+    expect(progress()).toHaveAttribute('aria-valuetext', '00:02.00 / 00:06.00')
+
+    progress().focus()
+    await user.keyboard('{ArrowRight}')
+    expect(progress()).toHaveAttribute('aria-valuetext', '00:02.10 / 00:06.00')
+    await user.keyboard('{End}')
+    expect(progress()).toHaveAttribute('aria-valuetext', '00:04.50 / 00:06.00')
+    await user.keyboard('{Home}')
+    expect(progress()).toHaveAttribute('aria-valuetext', '00:02.00 / 00:06.00')
+    expect(material).toBeInTheDocument()
+    expect(material.querySelector('video')?.currentTime).toBeCloseTo(2.001, 6)
+
+    await user.keyboard('{Shift>}')
+    await user.click(await shot(/^生成 A 镜头 2，/))
+    await user.keyboard('{/Shift}')
+    expect(material).not.toBeInTheDocument()
+    expect(progress()).toHaveAttribute('aria-valuetext', '00:00.30 / 00:03.50')
+  })
+
+  it('还没有工程时预览素材：进度条按素材可以拖，取消选中后又置灰', async () => {
+    const user = userEvent.setup()
+    await openEditor()
+    expect(progress()).toHaveAttribute('data-disabled')
+
+    await user.click(await shot(/^生成 B 镜头 2，/))
+    expect(progress()).not.toHaveAttribute('data-disabled')
+    expect(progress()).toHaveAttribute('aria-valuetext', '00:01.50 / 00:03.00')
+    progress().focus()
+    await user.keyboard('{ArrowRight}')
+    expect(progress()).toHaveAttribute('aria-valuetext', '00:01.60 / 00:03.00')
+
+    await user.keyboard('{Shift>}')
+    await user.click(await shot(/^生成 B 镜头 2，/))
+    await user.keyboard('{/Shift}')
+    expect(progress()).toHaveAttribute('data-disabled')
+  })
+
   it('当前片段数据不够时舞台转圈，播放按钮是「暂停」', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     const user = userEvent.setup()

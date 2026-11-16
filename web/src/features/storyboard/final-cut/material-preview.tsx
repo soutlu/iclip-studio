@@ -10,7 +10,6 @@ import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { MediaBuffering } from '@/shared/ui/media-buffering'
 import { StageBackdrop } from '../components/stage-backdrop'
 import { framePosition } from '../editing/frame-seek'
-import { StageLabel } from '../editing/stage-label'
 import type { Edge } from '../editing/timeline-drag'
 import type { MaterialRange } from './materials'
 
@@ -19,14 +18,18 @@ export type MaterialView = {
   show: Edge
 }
 
-export type MaterialPreviewControl = { toggle: () => void }
+export type MaterialPreviewControl = {
+  toggle: () => void
+  /** 跳到素材里的这个时间（毫秒），夹在选中的范围里；在播还是停着不变。 */
+  seek: (ms: number) => void
+}
 
 type MaterialPreviewProps = {
   controlRef: RefObject<MaterialPreviewControl | null>
   url: string
   view: MaterialView
+  /** 这块区域的无障碍名称：放的是哪条素材的哪几个镜头。 */
   label: string
-  timeMs: number
   rate: number
   muted: boolean
   onTime: (ms: number) => void
@@ -39,7 +42,6 @@ export function MaterialPreview({
   url,
   view,
   label,
-  timeMs,
   rate,
   muted,
   onTime,
@@ -111,7 +113,13 @@ export function MaterialPreview({
         },
       )
     }
-    controlRef.current = { toggle: () => (video.paused ? play() : pause()) }
+    const seek = (ms: number) => {
+      const at = Math.min(range.endMs, Math.max(range.startMs, ms))
+      atEnd = at === range.endMs
+      video.currentTime = framePosition(at / 1000, atEnd ? 'end' : 'start', start, end)
+      report(at)
+    }
+    controlRef.current = { toggle: () => (video.paused ? play() : pause()), seek }
     seekTo(show)
     report(show === 'end' ? range.endMs : range.startMs)
     pause()
@@ -123,7 +131,7 @@ export function MaterialPreview({
   }, [view, url, controlRef])
 
   return (
-    <div className="wf-material-preview">
+    <div aria-label={label} className="wf-material-preview" role="region">
       <StageBackdrop url={videoSnapshotUrl(url, 320)} />
       <div className="editor-hero-wrap">
         {/* eslint-disable-next-line jsx-a11y-x/media-has-caption -- 生成视频无字幕轨 */}
@@ -154,11 +162,6 @@ export function MaterialPreview({
         />
       </div>
       {waiting ? <MediaBuffering /> : null}
-      <StageLabel
-        label={label}
-        range={{ start: view.range.startMs / 1000, end: view.range.endMs / 1000 }}
-        time={timeMs / 1000}
-      />
     </div>
   )
 }
