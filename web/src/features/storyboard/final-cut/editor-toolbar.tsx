@@ -182,6 +182,8 @@ type EditorToolbarProps = {
   hasSelection: boolean
   /** 删掉选中的片段，和按 Delete 一样。 */
   onRemove: () => void
+  /** 「删除」右边的分离音频钮：分离或合并回视频，和按 ⇧⌘B 一样。 */
+  sound: { label: string; blocked: string | undefined; onClick: () => void }
   onZoomToSelection: () => void
   snap: boolean
   onSnap: () => void
@@ -208,6 +210,7 @@ export function EditorToolbar({
   onSplit,
   hasSelection,
   onRemove,
+  sound,
   onZoomToSelection,
   snap,
   onSnap,
@@ -264,6 +267,19 @@ export function EditorToolbar({
             <>
               删除
               <Keys>Delete</Keys>
+            </>
+          }
+        />
+        <Tool
+          blocked={sound.blocked}
+          icon="waveform"
+          label={sound.label}
+          onClick={sound.onClick}
+          shortcuts="Shift+Meta+B"
+          tip={
+            <>
+              {sound.label}
+              <Keys>⇧⌘B</Keys>
             </>
           }
         />

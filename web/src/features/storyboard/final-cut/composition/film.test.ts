@@ -134,6 +134,7 @@ describe('按标签认片段', () => {
       duration: 2500,
       track: 3,
       hidden: false,
+      link: null,
       z: 0,
     })
     expect(badge).toMatchObject({ kind: 'other', label: '角标', track: 0, z: 4 })
@@ -176,8 +177,25 @@ describe('按标签认片段', () => {
         fadeOut: 0,
         muted: false,
         z: 0,
+        link: null,
+        syncOrigin: null,
       },
     ])
+  })
+
+  it('链接名和出处：写出去读回来一样；写成空的算没有', () => {
+    const pair = [
+      video({ id: 'v', muted: true, link: 'lk-1', syncOrigin: 'lk-1' }),
+      audio({ id: 'a', link: 'lk-1', syncOrigin: 'lk-1' }),
+    ]
+    expect(readBack(mainFile(pair, CANVAS))).toEqual(pair)
+    const html = mainFile(
+      [],
+      CANVAS,
+      '<audio id="a" src="https://media.test/a.mp3" data-link="" data-sync-origin=""' +
+        ' data-start="0" data-duration="1"></audio>',
+    )
+    expect(readBack(html)).toMatchObject([{ link: null, syncOrigin: null }])
   })
 })
 

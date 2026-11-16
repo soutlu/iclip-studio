@@ -1078,6 +1078,178 @@ test('切开：选中视频片段、把播放头放进去按 S，存下来多了
   expect(last.mediaStart).toBeCloseTo(middle.mediaStart + middle.duration, 3)
 })
 
+/** 存下来的主文件里第一个 `tag` 元素的属性。 */
+const savedElementAttributes = (html: string, tag: 'video' | 'audio') => {
+  const element = new RegExp(`<${tag} [^>]*>`).exec(html)?.[0] ?? ''
+  return Object.fromEntries(
+    [...element.matchAll(/ ([a-z-]+)(?:="([^"]*)")?(?=[ >])/g)].map(([, name, value]) => [
+      name ?? '',
+      value ?? '',
+    ]),
+  )
+}
+
+/** 拖着时间线上的片段横着挪 `dx` 像素。 */
+const dragClip = async (page: Page, clip: Locator, dx: number) => {
+  const box = await clip.boundingBox()
+  if (box === null) throw new Error('片段还没排好')
+  const y = box.y + box.height / 2
+  await page.mouse.move(box.x + box.width / 2, y)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + dx, y, { steps: 8 })
+  await page.mouse.up()
+}
+
+test('默认缩放下选中 1 秒的片段：按在正中拖是挪动、不是裁剪；把手不伸到片段外面', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const added = mainSaved(page, 1)
+  await editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  const [whole] = savedVideoTimings(htmlOf(await added))
+  if (whole === undefined) throw new Error('没有加进片段')
+  expect(whole.duration).toBe(1)
+  const clip = editor.getByRole('group', { name: '画面 1', exact: true }).getByRole('group')
+  await clip.getByRole('button', { name: /^选中：/ }).click()
+  // 时间线至少排 20 秒：1 秒的片段只有几十像素宽
+  const box = await clip.boundingBox()
+  if (box === null) throw new Error('片段还没排好')
+  expect(box.width).toBeLessThan(40)
+  for (const name of ['裁剪开头', '裁剪结尾']) {
+    const handle = await clip.getByRole('slider', { name }).boundingBox()
+    if (handle === null) throw new Error('把手还没排好')
+    expect(handle.x).toBeGreaterThanOrEqual(box.x - 0.5)
+    expect(handle.x + handle.width).toBeLessThanOrEqual(box.x + box.width + 0.5)
+  }
+  // 点按区也不伸出去：紧挨着片段两边按下去的不是把手
+  const y = box.y + box.height / 2
+  for (const x of [box.x - 2, box.x + box.width + 2])
+    expect(
+      await page.evaluate(
+        ([atX, atY]) => document.elementFromPoint(atX ?? 0, atY ?? 0)?.getAttribute('role'),
+        [x, y],
+      ),
+    ).not.toBe('slider')
+  const moved = mainSavedWith(page, (html) => (savedVideoTimings(html)[0]?.start ?? 0) > 0)
+  await dragClip(page, clip, 60)
+  const [after] = savedVideoTimings(htmlOf(await moved))
+  expect(after).toMatchObject({ duration: whole.duration, mediaStart: whole.mediaStart })
+})
+
+test('分离音频：存下来多一个原声片段、两段属性对；联动着拖原声两段一起挪；关掉联动单独挪出现错开，对齐画面回到同步；合并回视频', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const toolbar = editor.getByRole('toolbar', { name: '剪辑工具' })
+  const inspector = editor.getByRole('tabpanel', { name: '属性' })
+  const added = mainSaved(page, 1)
+  await editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  const original = savedElementAttributes(htmlOf(await added), 'video')
+  expect(original['data-has-audio']).toBe('true')
+
+  await editor
+    .getByRole('group', { name: '画面 1', exact: true })
+    .getByRole('button', { name: /^选中：/ })
+    .click()
+  const detached = mainSavedWith(page, (html) => html.includes('<audio '))
+  await toolbar.getByRole('button', { name: '分离音频', exact: true }).click()
+  const html = htmlOf(await detached)
+  const voice = savedElementAttributes(html, 'audio')
+  const shot = savedElementAttributes(html, 'video')
+  expect(voice).toMatchObject({
+    'data-label': `${original['data-label']} · 原声`,
+    src: original['src'],
+    'data-start': original['data-start'],
+    'data-duration': original['data-duration'],
+    'data-media-start': original['data-media-start'],
+    'data-volume': '1',
+  })
+  expect(voice['data-link']).toBeTruthy()
+  expect(voice['data-sync-origin']).toBe(voice['data-link'])
+  expect(shot).toMatchObject({
+    muted: 'true',
+    'data-link': voice['data-link'],
+    'data-sync-origin': voice['data-link'],
+  })
+  expect(shot).not.toHaveProperty('data-has-audio')
+  expect(shot).not.toHaveProperty('data-volume')
+  // 原声在声音区新开的「人声」行里，分离完选中的是它
+  const voiceRow = editor.getByRole('group', { name: '人声', exact: true })
+  const voiceClip = voiceRow.getByRole('group', { name: /· 原声，/ })
+  await expect(voiceClip).toHaveAccessibleName(/，联动$/)
+  await expect(inspector.getByTestId('sync-status')).toHaveText('与画面口型同步')
+
+  // 预览：换上分离后的 final-cut、加载完，里面有这段原声，地址就是视频的地址，也不报片段放不出
+  const player = await readyPlayer(editor)
+  await expect
+    .poll(() =>
+      player.evaluate((element: HTMLElement & { iframeElement: HTMLIFrameElement }) => {
+        const page = element.iframeElement.contentDocument
+        const sound = page?.querySelector('audio[data-sync-origin]')?.getAttribute('src')
+        const picture = page?.querySelector('video[data-sync-origin]')?.getAttribute('src')
+        return sound !== undefined && sound !== null && sound === picture ? sound : null
+      }),
+    )
+    .toContain('sample-video')
+  await expect(editor.getByRole('region', { name: '预览' }).getByRole('alert')).toHaveCount(0)
+
+  // 联动开着：拖原声，画面跟着挪同样的距离
+  const moved = mainSavedWith(page, (saved) => {
+    const start = Number(savedElementAttributes(saved, 'audio')['data-start'])
+    return start > 0 && Number(savedElementAttributes(saved, 'video')['data-start']) === start
+  })
+  await dragClip(page, voiceClip, 120)
+  const together = htmlOf(await moved)
+  const pairStart = Number(savedElementAttributes(together, 'video')['data-start'])
+  expect(savedElementAttributes(together, 'audio')['data-link']).toBe(voice['data-link'])
+
+  // 关掉联动，单独挪原声：画面不动，出现错开
+  const unlinked = mainSavedWith(page, (saved) => !saved.includes('data-link'))
+  await inspector.getByRole('switch', { name: '联动' }).click()
+  await unlinked
+  const alone = mainSavedWith(
+    page,
+    (saved) => Number(savedElementAttributes(saved, 'audio')['data-start']) > pairStart,
+  )
+  await dragClip(page, voiceClip, 120)
+  expect(Number(savedElementAttributes(htmlOf(await alone), 'video')['data-start'])).toBe(pairStart)
+  await expect(voiceClip).toHaveAccessibleName(/，错开 \+\d+\.\d+s$/)
+  await expect(inspector.getByTestId('sync-status')).toHaveText(/^与画面错开 \+\d+\.\d+ 秒$/)
+
+  // 对齐画面：原声回到画面的位置，联动仍关着
+  const synced = mainSavedWith(
+    page,
+    (saved) => Number(savedElementAttributes(saved, 'audio')['data-start']) === pairStart,
+  )
+  await inspector.getByRole('button', { name: '对齐画面' }).click()
+  expect(htmlOf(await synced)).not.toContain('data-link')
+  await expect(inspector.getByTestId('sync-status')).toHaveText('与画面口型同步')
+
+  // 合并回视频：原声片段没了，视频打开原声
+  const merged = mainSavedWith(page, (saved) => !saved.includes('<audio '))
+  await toolbar.getByRole('button', { name: '合并回视频', exact: true }).click()
+  const back = savedElementAttributes(htmlOf(await merged), 'video')
+  expect(back).toMatchObject({ 'data-has-audio': 'true', 'data-volume': '1' })
+  expect(back).not.toHaveProperty('muted')
+  expect(back).not.toHaveProperty('data-sync-origin')
+  await expect(editor.getByRole('group', { name: '人声', exact: true })).toHaveCount(0)
+})
+
 test('地址带着 ?artifact=final-cut 时直接打开编辑器；正在对话框里打字时不抢焦点', async ({
   page,
 }) => {

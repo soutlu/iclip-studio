@@ -3,14 +3,16 @@ import { audio, host, video } from '@/testing/final-cut'
 import type { FilmClip } from './composition/film'
 import {
   landingOn,
+  musicRowTarget,
   rowHidden,
   namedRows,
   rowOpening,
   rowsOf,
   targetIn,
   topTrack,
+  voiceRowFor,
   type Aim,
-  type RowKey,
+  type Row,
   type Zone,
 } from './placement'
 
@@ -61,7 +63,7 @@ describe('时间线上的行', () => {
 })
 
 describe('行名', () => {
-  const names = (rows: readonly RowKey[]) => namedRows(rows).map((row) => row.name)
+  const names = (rows: readonly Row[]) => namedRows(rows).map((row) => row.name)
 
   it('画面区一行、声音区一行：「画面 1」和「配乐」', () => {
     expect(names(rowsOf([first, music]))).toEqual(['画面 1', '配乐'])
@@ -76,8 +78,92 @@ describe('行名', () => {
   })
 
   it('还没有片段时留着的那一条空行：「画面 1」', () => {
-    expect(names([{ zone: 'visual', track: 0 }])).toEqual(['画面 1'])
+    expect(names([{ zone: 'visual', track: 0, clips: [] }])).toEqual(['画面 1'])
     expect(names([])).toEqual([])
+  })
+
+  it('全是分离出来的原声的行叫「人声」，排在配乐行上面；人声行、配乐行各自编号', () => {
+    const spoken = (id: string, track: number) =>
+      audio({ id, start: 0, duration: 1_000, track, link: 'lk-1', syncOrigin: 'lk-1' })
+    expect(names(rowsOf([first, spoken('v1', 0), { ...music, track: 1 }]))).toEqual([
+      '画面 1',
+      '人声',
+      '配乐',
+    ])
+    expect(
+      names(
+        rowsOf([
+          first,
+          spoken('v1', 0),
+          spoken('v2', 1),
+          { ...music, track: 2 },
+          { ...voice, track: 3 },
+        ]),
+      ),
+    ).toEqual(['画面 1', '人声 1', '人声 2', '配乐 1', '配乐 2'])
+    // 分离出来的原声和别的音频混在一行：是配乐行
+    expect(names(rowsOf([first, spoken('v1', 0), { ...voice, track: 0, start: 3_000 }]))).toEqual([
+      '画面 1',
+      '配乐',
+    ])
+  })
+
+  it('分离出来的原声放进第一条这段时间空着的人声行；都占着、或还没有人声行时在声音区最上面新开一行', () => {
+    const spoken = (id: string, track: number, start: number) =>
+      audio({ id, start, duration: 1_000, track, link: id, syncOrigin: id })
+    const film = [
+      first,
+      spoken('v1', 0, 0),
+      spoken('v2', 1, 2_000),
+      { ...music, track: 2, start: 3_000 },
+    ]
+    // 第一条人声行 0–1 秒占着，第二条空着
+    expect(voiceRowFor(film, 500, 1_000)).toEqual({ track: 1, renumber: new Map() })
+    // 第一条人声行 2–3 秒空着
+    expect(voiceRowFor(film, 2_000, 1_000)).toEqual({ track: 0, renumber: new Map() })
+    // 两条人声行在 0.5–2.5 秒都占着：最上面新开一行，原来的声音行往下排一号
+    expect(voiceRowFor(film, 500, 2_000)).toEqual({
+      track: 0,
+      renumber: new Map([
+        ['v1', 1],
+        ['v2', 2],
+        ['m', 3],
+      ]),
+    })
+    // 只有配乐行，空着也不进去：在它上面新开一行
+    expect(voiceRowFor([first, music], 5_000, 1_000)).toEqual({
+      track: 0,
+      renumber: new Map([['m', 1]]),
+    })
+    // 还没有声音行：新开第一行
+    expect(voiceRowFor([first], 0, 1_000)).toEqual({ track: 0, renumber: new Map() })
+  })
+
+  it('配乐拖进声音区：对着人声行或在人声行之间、上面新开一行时，改成在最后一条人声行下面新开一行', () => {
+    const spoken = (id: string, track: number) =>
+      audio({ id, start: 0, duration: 1_000, track, syncOrigin: id })
+    // 画面 1、人声 1、人声 2、配乐（时间线上第 0–3 行）
+    const rows = rowsOf([first, spoken('v1', 0), spoken('v2', 1), { ...music, track: 2 }])
+    const below = { zone: 'audio', insertAt: 3 } as const
+    expect(musicRowTarget(rows, { zone: 'audio', track: 0 })).toEqual(below)
+    expect(musicRowTarget(rows, { zone: 'audio', track: 1 })).toEqual(below)
+    expect(musicRowTarget(rows, { zone: 'audio', insertAt: 1 })).toEqual(below)
+    expect(musicRowTarget(rows, { zone: 'audio', insertAt: 2 })).toEqual(below)
+    // 配乐行、配乐行下面、画面区：照原样
+    expect(musicRowTarget(rows, { zone: 'audio', track: 2 })).toEqual({ zone: 'audio', track: 2 })
+    expect(musicRowTarget(rows, { zone: 'audio', insertAt: 4 })).toEqual({
+      zone: 'audio',
+      insertAt: 4,
+    })
+    expect(musicRowTarget(rows, { zone: 'visual', track: 0 })).toEqual({
+      zone: 'visual',
+      track: 0,
+    })
+    // 没有人声行时不改
+    expect(musicRowTarget(rowsOf([first, music]), { zone: 'audio', insertAt: 1 })).toEqual({
+      zone: 'audio',
+      insertAt: 1,
+    })
   })
 
   it('行名跟着行走，行本身原样带着', () => {

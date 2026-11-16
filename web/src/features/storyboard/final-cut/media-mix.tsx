@@ -65,10 +65,6 @@ export function MediaMix({
   const { volume, playbackRate, duration, fadeIn, fadeOut } = clip
   const muted = clip.kind === 'video' && clip.muted
   const setGain = (gain: number) => onChange({ 'data-volume': formatAudioGain(gain) })
-  const setRate = (rate: number) => {
-    const written = formatNumericValue(rate)
-    onChange({ 'data-playback-rate': written === '1' ? null : written })
-  }
   const fade = (name: 'data-fade-in' | 'data-fade-out', ms: number, other: number) => {
     // 照参照的工作台：一端最多到片段长减去另一端
     const max = Math.max(0, duration - other)
@@ -141,28 +137,50 @@ export function MediaMix({
         </Row>
         {fade('data-fade-in', fadeIn, fadeOut)}
         {fade('data-fade-out', fadeOut, fadeIn)}
-        <Row disabled={false} label="倍速">
-          <SliderControl
-            format={(position) => rateText(rateAt(position))}
-            label="倍速"
-            mark={ratePosition(1)}
-            max={RATE_STEPS}
-            min={0}
-            onCommit={(position) => setRate(rateAt(position))}
-            onDoubleClick={() => setRate(1)}
-            onEditing={onEditing}
-            onText={(text) => {
-              const rate = parseRateInput(text)
-              if (rate === null) return false
-              setRate(rate)
-              return true
-            }}
-            position={ratePosition(playbackRate)}
-            text={rateText(playbackRate)}
-          />
-        </Row>
+        <RateRow onChange={onChange} onEditing={onEditing} rate={playbackRate} />
       </div>
     </section>
+  )
+}
+
+/**
+ * 「倍速」一行：照参照的工作台 0.1–10 倍按对数铺满滑杆，双击回到 1 倍，1 倍时去掉这个属性。
+ * 改的是 `data-playback-rate`，联动的伙伴由编辑器一起改。
+ */
+export function RateRow({
+  rate,
+  onChange,
+  onEditing,
+}: {
+  rate: number
+  onChange: (changes: AttributeChanges) => void
+  onEditing: (editing: boolean) => void
+}) {
+  const setRate = (next: number) => {
+    const written = formatNumericValue(next)
+    onChange({ 'data-playback-rate': written === '1' ? null : written })
+  }
+  return (
+    <Row disabled={false} label="倍速">
+      <SliderControl
+        format={(position) => rateText(rateAt(position))}
+        label="倍速"
+        mark={ratePosition(1)}
+        max={RATE_STEPS}
+        min={0}
+        onCommit={(position) => setRate(rateAt(position))}
+        onDoubleClick={() => setRate(1)}
+        onEditing={onEditing}
+        onText={(text) => {
+          const typed = parseRateInput(text)
+          if (typed === null) return false
+          setRate(typed)
+          return true
+        }}
+        position={ratePosition(rate)}
+        text={rateText(rate)}
+      />
+    </Row>
   )
 }
 

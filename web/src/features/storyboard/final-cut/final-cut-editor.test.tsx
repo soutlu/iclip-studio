@@ -779,9 +779,10 @@ describe('final-cut 编辑器 · 片段右键菜单', () => {
       ],
       '<p id="note" data-start="0" data-duration="2" data-track-index="2">手写文字</p>',
     )
+    const detach = '分离音频至独立音轨⇧⌘B'
     const expected: Record<string, string[]> = {
-      'A · 镜头 1': ['静音此片段', '隐藏片段画面', '删除片段Delete'],
-      已关: ['取消静音', '恢复显示画面', '删除片段Delete'],
+      'A · 镜头 1': [detach, '静音此片段', '隐藏片段画面', '删除片段Delete'],
+      已关: [detach, '取消静音', '恢复显示画面', '删除片段Delete'],
       测试可填项: ['隐藏片段画面', '删除片段Delete'],
       手写文字: ['隐藏片段画面', '删除片段Delete'],
       配乐: ['静音此片段', '删除片段Delete'],
@@ -790,14 +791,16 @@ describe('final-cut 编辑器 · 片段右键菜单', () => {
     for (const [label, items] of Object.entries(expected)) {
       const menu = await openMenu(label)
       expect(itemsOf(menu)).toEqual(['在播放头处切开S', ...items])
-      // 「在播放头处切开」后面和「删除片段」前面各有一条分隔线
+      // 「在播放头处切开」后面和「删除片段」前面各有一条分隔线，视频片段的「分离音频」自成一组
       const separators = within(menu).getAllByRole('separator')
-      expect(separators).toHaveLength(2)
+      expect(separators).toHaveLength(items[0] === detach ? 3 : 2)
       expect(separators[0]?.previousElementSibling).toHaveTextContent(/^在播放头处切开/)
-      expect(separators[1]?.nextElementSibling).toHaveTextContent(/^删除片段/)
-      // 切开另有用例；别的项都能选
+      expect(separators.at(-1)?.nextElementSibling).toHaveTextContent(/^删除片段/)
+      // 切开另有用例；关着原声的视频片段不能分离音频，别的项都能选
       for (const item of within(menu).getAllByRole('menuitem').slice(1))
-        expect(item).not.toHaveAttribute('aria-disabled')
+        if (label === '已关' && item.textContent === detach)
+          expect(item).toHaveAttribute('aria-disabled', 'true')
+        else expect(item).not.toHaveAttribute('aria-disabled')
       await closeMenu()
     }
   })
@@ -815,9 +818,9 @@ describe('final-cut 编辑器 · 片段右键菜单', () => {
     await user().click(unmute())
     expect(screen.getByRole('menu', { name: '无声' })).toBeVisible()
     await closeMenu()
-    // 用键盘也能走到置灰的那一项（第一项是「在播放头处切开」），聚焦时说明原因
+    // 用键盘也能走到置灰的那一项（前两项是「在播放头处切开」「分离音频至独立音轨」），聚焦时说明原因
     await openMenu('无声')
-    await user().keyboard('{End}{Home}{ArrowDown}')
+    await user().keyboard('{End}{Home}{ArrowDown}{ArrowDown}')
     await waitFor(() => expect(screen.getByRole('menuitem', { name: '取消静音' })).toHaveFocus())
     expect(await screen.findByRole('tooltip')).toHaveTextContent('该素材没有声音，无法打开原声')
     // 第一下 Esc 先收起说明，第二下关菜单
@@ -1271,6 +1274,142 @@ describe('final-cut 编辑器 · 切开', () => {
     await user.click(splitItem(inside))
     await waitSaved(() => expect(savedClips()).toHaveLength(3))
     expect(savedVideos()[1]).toEqual(['0.8', '1.2', '1.3'])
+  })
+})
+
+describe('final-cut 编辑器 · 分离音频', () => {
+  const openWith = async (clips: Parameters<typeof mainFile>[0]) => {
+    putMockProjectMain(CONVERSATION, mainFile(clips, { width: 720, height: 1280 }))
+    await openEditor()
+    return userEvent.setup()
+  }
+  const clipOf = (label: string) => screen.getByRole('group', { name: new RegExp(`^${label}，`) })
+  const select = (user: ReturnType<typeof userEvent.setup>, label: string) =>
+    user.click(within(clipOf(label)).getByRole('button', { name: /^选中：/ }))
+  const inspector = () => screen.getByRole('tabpanel', { name: '属性' })
+  const savedTags = () => savedFilm().match(/<(video|audio) [^>]*>/g) ?? []
+  const pair = (offset = 0) => [
+    audio({
+      id: 'voice',
+      label: 'A · 镜头 1 · 原声',
+      src: URL_A,
+      start: 1_000 + offset,
+      duration: 2_000,
+      link: offset === 0 ? 'lk-1' : null,
+      syncOrigin: 'lk-1',
+    }),
+    video({
+      src: URL_A,
+      start: 1_000,
+      duration: 2_000,
+      muted: true,
+      link: offset === 0 ? 'lk-1' : null,
+      syncOrigin: 'lk-1',
+    }),
+  ]
+
+  it('选中有声音的视频片段点「分离音频」：声音区最上面多一条「人声」行、选中原声，同步栏写口型同步、小标写联动；⇧⌘B 合并回视频', async () => {
+    const user = await openWith([
+      video({ src: URL_A, duration: 2_000 }),
+      audio({ start: 0, duration: 4_000 }),
+    ])
+    const button = () => within(toolbar()).getByRole('button', { name: /^(分离音频|合并回视频)$/ })
+    expect(button()).toHaveAccessibleName('分离音频')
+    expect(button()).toHaveAttribute('aria-disabled', 'true')
+    await select(user, 'A · 镜头 1')
+    await waitFor(() => expect(button()).not.toHaveAttribute('aria-disabled'))
+    await user.click(button())
+
+    expect(screen.getByRole('group', { name: '人声' })).toBeVisible()
+    expect(screen.getByRole('group', { name: '配乐' })).toBeVisible()
+    expect(clipOf('A · 镜头 1 · 原声')).toHaveAccessibleName(/，联动$/)
+    expect(within(inspector()).getByRole('heading', { name: 'A · 镜头 1 · 原声' })).toBeVisible()
+    expect(within(inspector()).getByTestId('sync-status')).toHaveTextContent('与画面口型同步')
+    expect(within(inspector()).getByRole('switch', { name: '联动' })).toBeChecked()
+    expect(button()).toHaveAccessibleName('合并回视频')
+    await waitSaved(() => expect(savedTags()).toHaveLength(3))
+    // 原声写在视频片段前面
+    expect(savedTags()[0]).toMatch(/^<audio [^>]*data-sync-origin="lk-1"/)
+    expect(savedTags()[1]).toMatch(/^<video [^>]*data-sync-origin="lk-1"/)
+
+    editorRoot().focus()
+    await user.keyboard('{Shift>}{Meta>}b{/Meta}{/Shift}')
+    expect(screen.queryByRole('group', { name: '人声' })).toBeNull()
+    expect(within(inspector()).getByRole('heading', { name: 'A · 镜头 1' })).toBeVisible()
+    await waitSaved(() => expect(savedTags()).toHaveLength(2))
+    expect(savedTags()[0]).toContain('data-has-audio="true"')
+  })
+
+  it('不能分离：素材没有声音、已关闭原声时按钮置灰并说明原因', async () => {
+    const user = await openWith([video({ src: URL_A, duration: 2_000, muted: true })])
+    await select(user, 'A · 镜头 1')
+    const detach = within(inspector()).getByRole('button', { name: '分离音频' })
+    expect(detach).toHaveAttribute('aria-disabled', 'true')
+    await user.click(detach)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      '已关闭原声，无法分离音频；请先打开原声',
+    )
+    expect(savedTags()).toHaveLength(1)
+  })
+
+  it('原声单独挪开了：时间线小标和同步栏写错开多少，视频片段那边合并置灰；「对齐画面」挪回去，联动仍关着', async () => {
+    const user = await openWith(pair(400))
+    expect(clipOf('A · 镜头 1 · 原声')).toHaveAccessibleName(/，错开 \+0\.40s$/)
+
+    await select(user, 'A · 镜头 1')
+    expect(within(inspector()).getByText('原声已分离至「人声」行')).toBeVisible()
+    expect(within(inspector()).getByTestId('sync-status')).toHaveTextContent('错开 +0.40s')
+    expect(within(inspector()).getByRole('switch', { name: '与分离原声联动' })).not.toBeChecked()
+    expect(within(inspector()).queryByRole('switch', { name: '关闭原声' })).toBeNull()
+    const merge = within(inspector()).getByRole('button', { name: '合并' })
+    expect(merge).toHaveAttribute('aria-disabled', 'true')
+    await user.hover(merge)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('原声和画面没对齐，请先对齐口型')
+
+    await user.click(within(inspector()).getByRole('button', { name: '定位分离原声' }))
+    expect(within(inspector()).getByTestId('sync-status')).toHaveTextContent('与画面错开 +0.40 秒')
+    await user.click(within(inspector()).getByRole('button', { name: '对齐画面' }))
+    expect(within(inspector()).getByTestId('sync-status')).toHaveTextContent('与画面口型同步')
+    expect(clipOf('A · 镜头 1 · 原声')).toHaveAccessibleName(/秒$/)
+    await waitSaved(() => expect(savedTags()[0]).toContain('data-start="1"'))
+    expect(savedTags()[0]).not.toContain('data-link')
+  })
+
+  it('联动开着：改原声的倍速两段一起改；删掉其中一段时两段都删', async () => {
+    const user = await openWith(pair())
+    await select(user, 'A · 镜头 1 · 原声')
+    await user.click(within(inspector()).getByRole('button', { name: /^倍速 1x/ }))
+    await user.keyboard('2{Enter}')
+    await waitSaved(() =>
+      expect(savedTags().map((tag) => tag.includes('data-playback-rate="2"'))).toEqual([
+        true,
+        true,
+      ]),
+    )
+    await select(user, 'A · 镜头 1')
+    await user.keyboard('{Delete}')
+    await waitSaved(() => expect(savedTags()).toHaveLength(0))
+  })
+
+  it('一对里的片段的右键菜单：选中另一段、联动开关、合并回视频；视频片段没有静音', async () => {
+    await openWith(pair())
+    fireEvent.pointerDown(clipOf('A · 镜头 1'), { button: 2, pointerType: 'mouse' })
+    fireEvent.contextMenu(clipOf('A · 镜头 1'))
+    const menu = await screen.findByRole('menu', { name: 'A · 镜头 1' })
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent),
+    ).toEqual([
+      '在播放头处切开S',
+      '选中分离的原声片段',
+      '解除与画面的联动',
+      '合并回视频⇧⌘B',
+      '隐藏片段画面',
+      '删除片段Delete',
+    ])
+    await userEvent.setup().click(within(menu).getByRole('menuitem', { name: '解除与画面的联动' }))
+    await waitSaved(() => expect(savedTags().join('')).not.toContain('data-link'))
   })
 })
 

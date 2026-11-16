@@ -1,4 +1,4 @@
-import type { FilmClip } from './composition/film'
+import { isDetachedAudio, type FilmClip } from './composition/film'
 import {
   resolveNearestFreeStart,
   resolveZoneDropPlacement,
@@ -64,23 +64,38 @@ export const rowHidden = (clips: readonly FilmClip[], row: RowKey): boolean => {
   return members.length > 0 && members.every((clip) => clip.hidden)
 }
 
-/** 各区的行在行头上叫什么；`numberedAlone` 为假时，区里只有一行就不带编号。 */
-const ROW_NAMING: Record<Zone, { label: string; numberedAlone: boolean }> = {
+/** 「人声」行：声音区里片段全是分离出来的原声的行。 */
+export const isVoiceRow = (row: Pick<Row, 'zone' | 'clips'>): boolean =>
+  row.zone === 'audio' && row.clips.length > 0 && row.clips.every(isDetachedAudio)
+
+/** 行的种类，同种的行一起编号。 */
+type RowKind = 'visual' | 'voice' | 'music'
+
+/** 各种行在行头上叫什么；`numberedAlone` 为假时，这种行只有一行就不带编号。 */
+const ROW_NAMING: Record<RowKind, { label: string; numberedAlone: boolean }> = {
   visual: { label: '画面', numberedAlone: true },
-  audio: { label: '配乐', numberedAlone: false },
+  voice: { label: '人声', numberedAlone: false },
+  music: { label: '配乐', numberedAlone: false },
 }
 
+const kindOf = (row: Row): RowKind =>
+  row.zone === 'visual' ? 'visual' : isVoiceRow(row) ? 'voice' : 'music'
+
 /**
- * 给时间线上从上往下排的各行带上行名：区里从上往下编号，如「画面 1」「画面 2」；
- * 声音区只有一行时叫「配乐」，不止一行时是「配乐 1」「配乐 2」。
+ * 给时间线上从上往下排的各行带上行名，同种的行从上往下编号：画面区是「画面 1」「画面 2」；声音区里
+ * 「人声」行（见 `isVoiceRow`）只有一行时叫「人声」，不止一行时是「人声 1」「人声 2」，别的行同样叫「配乐」
+ * 或「配乐 1」「配乐 2」。
  */
-export const namedRows = <T extends RowKey>(rows: readonly T[]): (T & { name: string })[] =>
-  rows.map((row, at) => {
-    const { label, numberedAlone } = ROW_NAMING[row.zone]
-    const count = rows.filter((other) => other.zone === row.zone).length
-    const number = rows.slice(0, at + 1).filter((other) => other.zone === row.zone).length
+export const namedRows = <T extends Row>(rows: readonly T[]): (T & { name: string })[] => {
+  const kinds = rows.map(kindOf)
+  return rows.map((row, at) => {
+    const kind = kinds[at] ?? 'visual'
+    const { label, numberedAlone } = ROW_NAMING[kind]
+    const count = kinds.filter((other) => other === kind).length
+    const number = kinds.slice(0, at + 1).filter((other) => other === kind).length
     return { ...row, name: count === 1 && !numberedAlone ? label : `${label} ${number}` }
   })
+}
 
 /** 新开一行时别的片段要换成的行号；行号没变的不列。 */
 export type Renumbering = ReadonlyMap<string, number>
@@ -107,6 +122,36 @@ export const rowOpening = (
     for (const clip of row.clips) if (clip.track !== next) renumber.set(clip.id, next)
   })
   return { track, renumber }
+}
+
+/**
+ * 分离出来的原声放在哪一行（它从 `start` 起长 `duration` 毫秒）：从上往下第一条这段时间空着的「人声」行；
+ * 都占着、或者还没有「人声」行时，在声音区最上面新开一行，`renumber` 是别的片段要换成的行号。
+ */
+export const voiceRowFor = (
+  clips: readonly FilmClip[],
+  start: number,
+  duration: number,
+): { track: number; renumber: Renumbering } => {
+  const rows = rowsOf(clips)
+  const free = rows.find((row) => isVoiceRow(row) && !rowBusy(row, start, duration))
+  if (free !== undefined) return { track: free.track, renumber: new Map() }
+  const firstAudio = rows.findIndex((row) => row.zone === 'audio')
+  return rowOpening(clips, 'audio', firstAudio === -1 ? rows.length : firstAudio)
+}
+
+/**
+ * 配乐拖进声音区时落在哪一行（`rows` 是时间线上从上往下的各行）：配乐不进「人声」行，对着人声行、
+ * 或者要在人声行之间、上面新开一行时，改成在最后一条人声行下面新开一行；别的照原样。
+ */
+export const musicRowTarget = (rows: readonly Row[], target: RowTarget): RowTarget => {
+  const lastVoice = rows.findLastIndex(isVoiceRow)
+  if (target.zone !== 'audio' || lastVoice === -1) return target
+  const intoVoice =
+    'track' in target
+      ? rows.some((row) => row.zone === 'audio' && row.track === target.track && isVoiceRow(row))
+      : target.insertAt <= lastVoice
+  return intoVoice ? { zone: 'audio', insertAt: lastVoice + 1 } : target
 }
 
 /**

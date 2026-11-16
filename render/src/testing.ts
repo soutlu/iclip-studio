@@ -75,6 +75,8 @@ export function video(overrides: Partial<VideoClip> = {}): VideoClip {
     muted: false,
     z: 0,
     hidden: false,
+    link: null,
+    syncOrigin: null,
     ...overrides,
   }
 }
@@ -94,6 +96,7 @@ export function host(overrides: Partial<HostClip> = {}): HostClip {
     values: {},
     z: 0,
     hidden: false,
+    link: null,
     ...overrides,
   }
 }
@@ -114,6 +117,8 @@ export function audio(overrides: Partial<AudioClip> = {}): AudioClip {
     fadeOut: 0,
     loop: false,
     hidden: false,
+    link: null,
+    syncOrigin: null,
     ...overrides,
   }
 }

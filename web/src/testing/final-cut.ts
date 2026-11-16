@@ -60,6 +60,8 @@ export const video = (overrides: Partial<VideoClip> = {}): VideoClip => ({
   muted: false,
   z: 0,
   hidden: false,
+  link: null,
+  syncOrigin: null,
   ...overrides,
 })
 
@@ -77,6 +79,7 @@ export const host = (overrides: Partial<HostClip> = {}): HostClip => ({
   values: {},
   z: 0,
   hidden: false,
+  link: null,
   ...overrides,
 })
 
@@ -95,6 +98,8 @@ export const audio = (overrides: Partial<AudioClip> = {}): AudioClip => ({
   fadeOut: 0,
   loop: false,
   hidden: false,
+  link: null,
+  syncOrigin: null,
   ...overrides,
 })
 

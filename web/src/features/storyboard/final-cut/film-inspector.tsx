@@ -1,16 +1,30 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
+import { cn } from '@/shared/lib/utils'
 import { Input } from '@/shared/ui/field'
+import { Switch } from '@/shared/ui/switch'
+import { BlockedReason } from '../components/blocked-reason'
 import type { PeaksState } from '../editing/media-analysis'
-import { trimBounds, trimmed, type SourceLength, type Timing } from './clip-edit'
+import { sourceTrimmed, trimBounds, trimmed, type SourceLength, type Timing } from './clip-edit'
 import type { ComponentCatalog, VariableValue } from './composition/catalog'
 import { isMediaClip, type FilmClip } from './composition/film'
 import { ContentFields } from './content-fields'
 import { Keys, Tool } from './editor-toolbar'
 import { ITEM_KIND_LABEL } from './items'
 import type { KeyframeStates } from './material-media'
-import { MediaMix } from './media-mix'
+import { MediaMix, RateRow } from './media-mix'
 import type { AttributeChanges } from './original-sound'
+import {
+  DETACH_LABEL,
+  MERGE_LABEL,
+  mergeBlocked,
+  offsetText,
+  resyncPlan,
+  soundActionFor,
+  type SoundAction,
+  type SoundControls,
+  type SoundPair,
+} from './sound-pair'
 import { SourceTrim } from './source-trim'
 
 type Values = Readonly<Record<string, VariableValue>>
@@ -40,6 +54,8 @@ type Props = {
   onValues: (id: string, values: Values) => void
   /** 改片段 `id` 上的几个属性（null 是去掉），算一步撤销。 */
   onAttributes: (id: string, changes: AttributeChanges) => void
+  /** 分离音频、合并回视频、联动、对齐口型、选中另一段。 */
+  soundControls: SoundControls
   /** 焦点进出「属性」里输数值的框：在里面时 Esc 归输入框，放弃刚输入的。 */
   onTextEditing: (editing: boolean) => void
 }
@@ -47,7 +63,7 @@ type Props = {
 /** 片段的种类；组件或块的片段按条目在组件库里的种类写，「其他」片段不写。 */
 const kindLabel = (clip: FilmClip, catalog: ComponentCatalog): string | undefined => {
   if (clip.kind === 'video') return '视频'
-  if (clip.kind === 'audio') return '音频'
+  if (clip.kind === 'audio') return clip.syncOrigin === null ? '音频' : '分离原声'
   if (clip.kind === 'other') return undefined
   const kind = catalog.items.find((item) => item.name === clip.item)?.kind
   return kind === undefined ? undefined : ITEM_KIND_LABEL[kind]
@@ -94,8 +110,10 @@ export function FilmInspector({ selected, ...rest }: Props) {
 }
 
 /**
- * 选中一个片段：头部是名字、种类、时长和隐藏、删除；下面平铺几段。视频片段、音频片段是「原片截取」和
- * 「音量与变速」，组件或块的片段是「显示时长」和「内容与样式」，「其他」片段只有「显示时长」。
+ * 选中一个片段：头部是名字、种类、时长和隐藏、删除，视频片段还有「分离音频」，分离出来的原声有「合并回视频」；
+ * 下面平铺几段。视频片段、音频片段是「原片截取」和「音量与变速」，组件或块的片段是「显示时长」和「内容与样式」，
+ * 「其他」片段只有「显示时长」。分离过原声的视频片段把「音量与变速」换成「画面变速」和原声去处的一块，
+ * 分离出来的原声最上面多一条同步栏。
  */
 function ClipInspector({
   clip,
@@ -112,10 +130,13 @@ function ClipInspector({
   onGesture,
   onValues,
   onAttributes,
+  soundControls,
   onTextEditing,
 }: Omit<Props, 'selected'> & { clip: FilmClip }) {
   const sound = clip.kind === 'audio'
   const hideLabel = sound ? (clip.hidden ? '取消静音' : '静音') : clip.hidden ? '显示' : '隐藏'
+  const action = soundActionFor([clip], clips, silentSource)
+  const pair = action.kind === 'merge' ? action.pair : undefined
   return (
     <>
       <header className="wf-inspector-head">
@@ -123,6 +144,9 @@ function ClipInspector({
         <KindLabel catalog={catalog} clip={clip} />
         <span className="wf-inspector-duration">{(clip.duration / 1000).toFixed(2)}s</span>
         <span className="wf-inspector-actions">
+          {action.kind === 'detach' || (action.kind === 'merge' && clip.kind === 'audio') ? (
+            <SoundButton action={action} controls={soundControls} />
+          ) : null}
           <Tool
             icon={
               sound ? (clip.hidden ? 'audio-off' : 'audio') : clip.hidden ? 'excluded' : 'included'
@@ -148,22 +172,49 @@ function ClipInspector({
       <div className="wf-inspector-body">
         {isMediaClip(clip) ? (
           <>
+            {pair !== undefined && clip.kind === 'audio' ? (
+              <SyncBar clips={clips} controls={soundControls} pair={pair} />
+            ) : null}
             <SourceTrim
               clip={clip}
               clips={clips}
               keyframe={keyframes.get(clip.src)}
               name={sourceName(clip.src) ?? clip.label}
               onGesture={onGesture}
-              onRetime={onRetime}
+              onRetime={(timings) => {
+                const next = timings.get(clip.id)
+                onRetime(next === undefined ? timings : sourceTrimmed(clip, next, clips, sourceMs))
+              }}
               peaks={audioPeaks.get(clip.src) ?? NO_PEAKS}
               sourceMs={sourceMs(clip)}
             />
-            <MediaMix
-              clip={clip}
-              onChange={(changes) => onAttributes(clip.id, changes)}
-              onEditing={onTextEditing}
-              silent={clip.kind === 'video' && silentSource(clip.src)}
-            />
+            {pair !== undefined && clip.kind === 'video' ? (
+              <>
+                <section className="wf-prop-section">
+                  <LinkSwitchRow
+                    controls={soundControls}
+                    label="与分离原声联动"
+                    pair={pair}
+                    title="画面变速"
+                  />
+                  <div className="wf-prop-rows">
+                    <RateRow
+                      onChange={(changes) => onAttributes(clip.id, changes)}
+                      onEditing={onTextEditing}
+                      rate={clip.playbackRate}
+                    />
+                  </div>
+                </section>
+                <DetachedCard clips={clips} controls={soundControls} pair={pair} />
+              </>
+            ) : (
+              <MediaMix
+                clip={clip}
+                onChange={(changes) => onAttributes(clip.id, changes)}
+                onEditing={onTextEditing}
+                silent={clip.kind === 'video' && silentSource(clip.src)}
+              />
+            )}
           </>
         ) : (
           <>
@@ -187,6 +238,196 @@ function ClipInspector({
         )}
       </div>
     </>
+  )
+}
+
+/** 带字的小按钮；`blocked` 时置灰、仍能聚焦，点了说明原因。 */
+function PropAction({
+  blocked,
+  tone,
+  onClick,
+  children,
+}: {
+  blocked?: string | undefined
+  /** 错开时的对齐用提示色。 */
+  tone?: 'warning'
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <BlockedReason reason={blocked}>
+      <button
+        aria-disabled={blocked === undefined ? undefined : true}
+        className={cn('wf-prop-action ui-state ui-focus', tone === 'warning' && 'is-warning')}
+        onClick={() => {
+          if (blocked === undefined) onClick()
+        }}
+        type="button"
+      >
+        {children}
+      </button>
+    </BlockedReason>
+  )
+}
+
+/** 头部的「分离音频」（视频片段）或「合并回视频」（分离出来的原声）。 */
+function SoundButton({
+  action,
+  controls,
+}: {
+  action: Extract<SoundAction, { kind: 'detach' | 'merge' }>
+  controls: SoundControls
+}) {
+  return (
+    <PropAction blocked={action.blocked} onClick={() => controls.run(action)}>
+      <Icon decorative name="waveform" size="xs" />
+      {action.kind === 'detach' ? DETACH_LABEL : MERGE_LABEL}
+    </PropAction>
+  )
+}
+
+/** 一段的标题行，右边是一对的联动开关。 */
+function LinkSwitchRow({
+  title,
+  label,
+  pair,
+  controls,
+}: {
+  title: string
+  label: string
+  pair: SoundPair
+  controls: SoundControls
+}) {
+  const id = useId()
+  return (
+    <div className="wf-prop-title-row">
+      <h4 className="wf-prop-title">{title}</h4>
+      <span className="wf-prop-switch">
+        <label htmlFor={id}>{label}</label>
+        <Switch
+          checked={pair.linked}
+          id={id}
+          onCheckedChange={(linked) => controls.link(pair, linked)}
+        />
+      </span>
+    </div>
+  )
+}
+
+/** 对齐口型的按钮：错开时才有；对不了时置灰说明原因。 */
+function ResyncAction({
+  pair,
+  clips,
+  controls,
+  children,
+}: {
+  pair: SoundPair
+  clips: readonly FilmClip[]
+  controls: SoundControls
+  children: ReactNode
+}) {
+  if (pair.offsetMs === 0) return null
+  const plan = resyncPlan(pair, clips)
+  return (
+    <PropAction
+      blocked={'refusal' in plan ? plan.refusal : undefined}
+      onClick={() => controls.resync(pair)}
+      tone="warning"
+    >
+      {children}
+    </PropAction>
+  )
+}
+
+/** 一对现在同步没有：口型同步、错开多少、倍速不同。 */
+const syncText = (offsetMs: number | null, unit: string) =>
+  offsetMs === null
+    ? '倍速不同'
+    : offsetMs === 0
+      ? '口型同步'
+      : `错开 ${offsetText(offsetMs, unit)}`
+
+/**
+ * 分离过原声的视频片段：原声去了「人声」行，同步状态，「定位分离原声」、错开时「对齐口型」、「合并」。
+ */
+function DetachedCard({
+  pair,
+  clips,
+  controls,
+}: {
+  pair: SoundPair
+  clips: readonly FilmClip[]
+  controls: SoundControls
+}) {
+  const blocked = mergeBlocked(pair)
+  return (
+    <section className="wf-prop-section">
+      <div className="wf-sound-card">
+        <div className="wf-prop-title-row">
+          <i
+            aria-hidden="true"
+            className={cn('wf-sound-dot', pair.offsetMs !== 0 && 'is-warning')}
+          />
+          <h4 className="wf-prop-title">原声已分离至「人声」行</h4>
+          <span
+            className={cn('wf-sound-status', pair.offsetMs !== 0 && 'is-warning')}
+            data-testid="sync-status"
+          >
+            {syncText(pair.offsetMs, 's')}
+          </span>
+        </div>
+        <div className="wf-sound-actions">
+          <PropAction onClick={() => controls.locate(pair.audio.id)}>定位分离原声</PropAction>
+          <ResyncAction clips={clips} controls={controls} pair={pair}>
+            对齐口型
+          </ResyncAction>
+          <PropAction
+            blocked={blocked}
+            onClick={() => controls.run({ kind: 'merge', pair, blocked })}
+          >
+            合并
+          </PropAction>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** 分离出来的原声最上面的同步栏：和画面同步没有，错开时「对齐画面」，「定位画面」，联动开关。 */
+function SyncBar({
+  pair,
+  clips,
+  controls,
+}: {
+  pair: SoundPair
+  clips: readonly FilmClip[]
+  controls: SoundControls
+}) {
+  const id = useId()
+  return (
+    <div className="wf-sound-bar">
+      <i aria-hidden="true" className={cn('wf-sound-dot', pair.offsetMs !== 0 && 'is-warning')} />
+      <span
+        className={cn('wf-sound-status', pair.offsetMs !== 0 && 'is-warning')}
+        data-testid="sync-status"
+      >
+        与画面{syncText(pair.offsetMs, ' 秒')}
+      </span>
+      <ResyncAction clips={clips} controls={controls} pair={pair}>
+        对齐画面
+      </ResyncAction>
+      <span className="wf-sound-bar-end">
+        <PropAction onClick={() => controls.locate(pair.video.id)}>定位画面</PropAction>
+        <span className="wf-prop-switch">
+          <label htmlFor={id}>联动</label>
+          <Switch
+            checked={pair.linked}
+            id={id}
+            onCheckedChange={(linked) => controls.link(pair, linked)}
+          />
+        </span>
+      </span>
+    </div>
   )
 }
 

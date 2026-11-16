@@ -476,6 +476,8 @@
 .wf-inspector-actions {
   display: flex;
   flex: none;
+  align-items: center;
+  gap: 2px;
   margin-left: auto;
 }
 
@@ -566,6 +568,106 @@
   margin-left: auto;
   color: var(--color-on-surface-variant);
   font-size: var(--text-caption);
+}
+
+/* 带字的小按钮：头部的「分离音频」「合并回视频」，原声去处、同步栏里的定位、对齐、合并 */
+.wf-prop-action {
+  display: inline-flex;
+  height: 24px;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.wf-prop-action[aria-disabled='true'] {
+  color: var(--color-on-surface-faint);
+}
+
+/* 错开时的对齐：提示色 */
+.wf-prop-action.is-warning:not([aria-disabled='true']) {
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  color: var(--color-warning);
+}
+
+/* 分离过原声的视频片段：原声去处的一块，浅底圆角 */
+.wf-sound-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container);
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+}
+
+.wf-sound-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 同步状态前面的小圆点：同步时是主色，错开时是提示色 */
+.wf-sound-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+}
+
+.wf-sound-dot.is-warning {
+  background: var(--color-warning);
+}
+
+.wf-sound-status {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-on-surface-variant);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-sound-card .wf-sound-status {
+  margin-left: auto;
+}
+
+.wf-sound-status.is-warning {
+  color: var(--color-warning);
+  font-weight: 500;
+}
+
+/* 分离出来的原声最上面的同步栏：左边状态和对齐，右边定位画面和联动开关 */
+.wf-sound-bar {
+  display: flex;
+  min-width: 0;
+  min-height: 40px;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--color-hairline);
+  background: var(--color-surface-container);
+}
+
+.wf-sound-bar-end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.wf-sound-bar-end .wf-prop-switch {
+  margin-left: 0;
 }
 
 /* 滑杆加右边的数值；点数值就地变成输入框 */
@@ -1812,6 +1914,38 @@
   height: calc(var(--wf-film-height) - 4px);
   border-radius: var(--radius-xs);
   background: var(--color-surface-container-high);
+  /* 两端把手按片段的宽算点按区（cqw） */
+  container-type: inline-size;
+}
+
+/* 片段上的裁剪把手：整个落在片段里面（开头的贴着左边、结尾的贴着右边往里），点按区最多 14px、
+   不超过片段宽的三分之一。时间线至少排 20 秒，1 秒的片段只有 30px 上下：两端都留着、正中按得住拖动，
+   也不盖住紧挨着的片段 */
+.wf-clip > .timeline-handle {
+  width: min(8px, 100cqw / 3);
+}
+
+.wf-clip > .timeline-handle.is-start {
+  translate: 0 -50%;
+}
+
+.wf-clip > .timeline-handle.is-end {
+  translate: -100% -50%;
+}
+
+.wf-clip > .timeline-handle::before {
+  width: min(14px, 100cqw / 3);
+}
+
+.wf-clip > .timeline-handle.is-start::before {
+  left: 0;
+  translate: 0 -50%;
+}
+
+.wf-clip > .timeline-handle.is-end::before {
+  right: 0;
+  left: auto;
+  translate: 0 -50%;
 }
 
 /* 选中的框画在片段的内容上面，不被画面和波形盖住 */
@@ -1910,6 +2044,30 @@
   min-width: 32px;
   height: 100%;
   flex: 1;
+}
+
+/* 分离出来的原声右边的小标：静音、错开（提示色）、联动 */
+.wf-clip-badge {
+  flex: none;
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-caption--line-height);
+  white-space: nowrap;
+}
+
+.wf-clip-badge[data-tone='offset'] {
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
+  font-weight: 500;
+}
+
+.wf-clip-badge[data-tone='linked'] {
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  color: var(--color-primary);
 }
 
 /* 音频片段窄得放不下音符、名字和波形时只画波形（名字仍在无障碍名称和「属性」里） */
