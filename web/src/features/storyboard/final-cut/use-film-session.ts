@@ -1,8 +1,10 @@
 import { use, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { writeClipTiming } from '@hyperframes/core/composition-contract'
+import { relinkSplitHalves } from '@hyperframes/core/media-link'
 import type { Composition, ElementSnapshot } from '@hyperframes/sdk'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
-import { rippleStarts, type Timing } from './clip-edit'
+import { rippleStarts, type Cut, type Links, type Timing } from './clip-edit'
 import type { CatalogItem, ComponentCatalog, VariableValue } from './composition/catalog'
 import {
   audioElement,
@@ -43,6 +45,8 @@ export type FilmView = {
   canvas: Canvas
   /** 主文件根下所有带时间的元素，按它们在文件里的先后。 */
   clips: readonly FilmClip[]
+  /** 带链接（`data-link`）的片段各自的链接名。 */
+  links: Links
   durationMs: number
   canUndo: boolean
   canRedo: boolean
@@ -91,6 +95,14 @@ const latestEnd = (engine: Composition): number => {
   )
 }
 
+const linksOf = (engine: Composition): Links =>
+  new Map(
+    (rootOf(engine)?.children ?? []).flatMap((element) => {
+      const link = element.attributes['data-link']
+      return link === undefined ? [] : [[element.id, link] as const]
+    }),
+  )
+
 const viewOf = (engine: Composition, catalog: ComponentCatalog): FilmView => {
   const root = rootOf(engine)
   const clips = clipsOf(engine, catalog)
@@ -102,6 +114,7 @@ const viewOf = (engine: Composition, catalog: ComponentCatalog): FilmView => {
       height: Number(root?.attributes['data-height'] ?? 0),
     },
     clips,
+    links: linksOf(engine),
     durationMs: latestEnd(engine),
     canUndo: engine.canUndo(),
     canRedo: engine.canRedo(),
@@ -116,6 +129,63 @@ const applyTo = (engine: Composition, change: () => void) =>
   })
 
 const newClipId = () => `clip-${crypto.randomUUID().slice(0, 8)}`
+
+const HF_ID = 'data-hf-id'
+
+/** 要加进根下的一个后半段：它的编号，写在根下第几个，元素的整段 HTML。 */
+type SplitHalf = { id: string; index: number; html: string }
+
+const SPLIT_FAILED_TEXT = '片段里带有无法复制的内容，无法切开'
+
+/** 有一个后半段没能原样加进去（引擎不收这段 HTML）：整次切开退回去。 */
+class HalfRejected extends Error {}
+
+/**
+ * 切开以后的各个后半段：在当前主文件的一份副本里把原元素整个复制一份（属性、样式、子元素都带上），
+ * 换上新的编号、后半段的起止和入点，紧跟在原元素后面；链接名照引擎的规则重新取。按在根下的先后排，
+ * 依次加进去时前面加的不会挪动后面要加的位置。找不到根或片段时是 null。
+ */
+function splitHalves(
+  engine: Composition,
+  cuts: readonly Cut[],
+  clips: readonly FilmClip[],
+): readonly SplitHalf[] | null {
+  const rootId = rootOf(engine)?.id
+  const copy = new DOMParser().parseFromString(engine.serialize(), 'text/html')
+  const root = [...copy.querySelectorAll(`[${HF_ID}]`)].find(
+    (element) => element.getAttribute(HF_ID) === rootId,
+  )
+  if (root === undefined) return null
+  const kinds = new Map(clips.map((clip) => [clip.id, clip.kind]))
+  const halves: Element[] = []
+  for (const cut of cuts) {
+    const original = [...root.children].find((child) => child.getAttribute(HF_ID) === cut.id)
+    if (original === undefined) return null
+    const half = original.cloneNode(true) as Element
+    const id = newClipId()
+    half.id = id
+    half.setAttribute(HF_ID, id)
+    // 子元素的编号交给引擎重新取，免得和原元素里的重复
+    for (const child of half.querySelectorAll(`[${HF_ID}]`)) child.removeAttribute(HF_ID)
+    writeClipTiming(half, { start: cut.second.start / 1000, duration: cut.second.duration / 1000 })
+    const inPoint = String(cut.second.mediaStart / 1000)
+    if (kinds.get(cut.id) === 'host') half.setAttribute('data-playback-start', inPoint)
+    else half.setAttribute('data-media-start', inPoint)
+    original.after(half)
+    halves.push(half)
+  }
+  relinkSplitHalves(
+    copy,
+    halves.map((half) => half.id),
+  )
+  return halves
+    .map((half) => ({
+      id: half.id,
+      index: [...root.children].indexOf(half),
+      html: half.outerHTML,
+    }))
+    .toSorted((left, right) => left.index - right.index)
+}
 
 type Options = {
   debounceMs?: number
@@ -585,6 +655,34 @@ export function useFilmSession(
     [catalog, edit],
   )
 
+  /**
+   * 切开几个片段（`cuts` 由 `clip-edit.ts` 里的切开函数算好），算一步撤销：前半段还是原来的片段、只改时长，
+   * 后半段是它的整份复制、紧跟在它后面。有一个后半段写不进去（比如元素里带着脚本）时都不切，提示原因。
+   */
+  const split = useCallback(
+    (cuts: readonly Cut[]) => {
+      const engine = engineRef.current
+      const root = engine === null ? undefined : rootOf(engine)
+      if (engine === null || root === undefined || cuts.length === 0) return
+      const halves = splitHalves(engine, cuts, clipsOf(engine, catalog))
+      if (halves === null) return
+      try {
+        edit((current) => {
+          for (const half of halves)
+            if (current.addElement(root.id, half.index, half.html) !== half.id)
+              throw new HalfRejected()
+          // 链接的片段切在同一处：SDK 把时长带给结尾对齐的链接片段时，带过去的也正好是切点
+          for (const cut of cuts) current.setTiming(cut.id, { duration: cut.first.duration / 1000 })
+        })
+      } catch (error) {
+        // 一批操作里抛出时引擎已经整批退回
+        if (!(error instanceof HalfRejected)) throw error
+        noticeRef.current(SPLIT_FAILED_TEXT)
+      }
+    },
+    [catalog, edit],
+  )
+
   const step = (direction: 'undo' | 'redo') => {
     const engine = engineRef.current
     if (engine === null) return
@@ -606,6 +704,7 @@ export function useFilmSession(
     setValues,
     setAttributes,
     removeClips,
+    split,
     undo: () => step('undo'),
     redo: () => step('redo'),
     save,

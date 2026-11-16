@@ -132,6 +132,8 @@ describe('播放条右边的设置', () => {
       ['选中播放头左边的片段', '['],
       ['选中播放头右边的片段', ']'],
       ['缩放到选中的片段', 'Z'],
+      ['在播放头处切开选中的片段', 'S'],
+      ['切换切开工具和选择工具', 'B'],
     ] as const)
       expect(within(panel).getByText(action).parentElement).toHaveTextContent(key)
   })

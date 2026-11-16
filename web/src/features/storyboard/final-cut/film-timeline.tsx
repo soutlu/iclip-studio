@@ -35,8 +35,13 @@ import {
   groupShift,
   groupTrimmed,
   groupTrimRange,
+  playheadSplit,
+  razorSplit,
+  splitAllAt,
   timingOf,
+  type Cut,
   type GapClosing,
+  type Links,
   type SourceLength,
   type Timing,
 } from './clip-edit'
@@ -44,6 +49,7 @@ import { ClipMenuItems } from './clip-menu'
 import { thumbnailUrl, type ComponentCatalog } from './component-catalog'
 import { isMediaClip, type FilmClip } from './composition/film'
 import { useEditorEscape, useEditorRoot } from './editor-keys'
+import type { EditTool } from './editor-toolbar'
 import type { AttributeChanges } from './original-sound'
 import {
   namedRows,
@@ -89,6 +95,15 @@ export type DropGhost = { row: RowTarget; start: number; duration: number; guide
 type FilmTimelineProps = {
   /** final-cut 里所有的片段。 */
   clips: readonly FilmClip[]
+  /** 片段的链接名：链接的片段一起切。 */
+  links: Links
+  /**
+   * 点下去做什么。切开（剃刀）时点片段在点的地方切开它、按着 Shift 点切开那个时间上所有的片段，
+   * 不选中、不拖动、不框选、不裁剪。
+   */
+  tool: EditTool
+  /** 切开几个片段（剃刀，或右键菜单里的「在播放头处切开」）。 */
+  onSplit: (cuts: readonly Cut[]) => void
   /** 组件库：组件或块的片段上的小封面取自它。 */
   catalog: ComponentCatalog
   totalMs: number
@@ -336,6 +351,8 @@ type TimelineClipProps = {
   clip: FilmClip
   clips: readonly FilmClip[]
   selected: boolean
+  /** 选中时画不画两端的把手：切开工具下不能裁剪，不画。 */
+  trimmable: boolean
   /** 拖这个片段（挪动或裁剪）时一起动的片段，含它自己。 */
   group: ReadonlySet<string>
   /** 别的片段正带着一组片段拖动时，跟着动的片段的样子；没有时是 null。 */
@@ -395,6 +412,7 @@ function TimelineClip({
   clip,
   clips,
   selected,
+  trimmable,
   group,
   following,
   pps,
@@ -616,7 +634,7 @@ function TimelineClip({
           >
             <ClipContent clip={clip} cover={cover} peaks={peaks} timing={timing} />
           </button>
-          {selected
+          {selected && trimmable
             ? (['start', 'end'] as const).map((edge) => {
                 const bounds = trimRange(clip, group, edge)
                 const edgeMs = edgeAt(timing, edge)
@@ -698,6 +716,9 @@ const keyOf = (row: RowKey) => `${row.zone}-${row.track}`
  */
 export function FilmTimeline({
   clips,
+  links,
+  tool,
+  onSplit,
   catalog,
   totalMs,
   playheadMs,
@@ -949,6 +970,59 @@ export function FilmTimeline({
   // 框选中途按 Esc：只取消这次框选，原来的选中不变
   useEditorEscape(marquee !== null, dropFraming)
 
+  // 剃刀下指针在各行上时，一条竖线跟着它（不吸附）；换工具时收起，等指针再动
+  const [razorAt, setRazorAt] = useState<number | null>(null)
+  const [razorTool, setRazorTool] = useState(tool)
+  if (razorTool !== tool) {
+    setRazorTool(tool)
+    setRazorAt(null)
+  }
+  const razor = tool === 'razor'
+  // 换成切开工具时把手不画了：焦点原来在把手上的话随它丢到页面上，快捷键就收不到了，交还编辑器的根节点
+  const editorRoot = useEditorRoot()
+  useLayoutEffect(() => {
+    if (razor && document.activeElement === document.body) editorRoot?.focus()
+  }, [editorRoot, razor])
+  // 片段和空档的右键菜单挂在别处，但它们的事件也会沿着组件树传到这里：只认各行里面的
+  const inLanes = (event: { target: EventTarget; currentTarget: HTMLElement }) =>
+    event.target instanceof Node && event.currentTarget.contains(event.target)
+  /**
+   * 剃刀下各行上的左键按下和点击在这里截住，不往片段、把手、框选那里传：按下就在那个时间切开，
+   * 点击只吞掉（在片段上按 Enter 也不选中）。右键照常出菜单。
+   */
+  const razorLanes = {
+    onPointerDownCapture: (event: PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0 || !inLanes(event)) return
+      event.stopPropagation()
+      const at = timeAt(event.clientX)
+      // 按指针所在的行和时间找片段，不按点中的元素：选中的片段两端的把手比它宽，会盖住旁边窄的片段
+      const lane =
+        event.target instanceof Element
+          ? event.target.closest<HTMLElement>('[data-zone][data-track]')
+          : null
+      const clip = clips.find(
+        (each) =>
+          zoneOf(each) === lane?.dataset['zone'] &&
+          String(each.track) === lane.dataset['track'] &&
+          each.start <= at &&
+          at < each.start + each.duration,
+      )
+      onSplit(
+        event.shiftKey
+          ? splitAllAt(at, clips, links)
+          : clip === undefined
+            ? []
+            : razorSplit(clip, at, clips, links),
+      )
+    },
+    onClickCapture: (event: MouseEvent<HTMLDivElement>) => {
+      if (inLanes(event)) event.stopPropagation()
+    },
+    onPointerMove: (event: PointerEvent<HTMLDivElement>) =>
+      setRazorAt(inLanes(event) ? timeAt(event.clientX) : null),
+    onPointerLeave: () => setRazorAt(null),
+  }
+
   const pressLanes = (event: PointerEvent<HTMLDivElement>) => {
     const { target } = event
     // 行的右键菜单挂在别处，但它的事件也会沿着组件树传到这里
@@ -1034,11 +1108,12 @@ export function FilmTimeline({
             <TimelinePlayhead style={{ left: msToPx(Math.min(playheadMs, totalMs), pps) }} />
           </div>
           <div
-            className="wf-lanes"
+            className={cn('wf-lanes', razor && 'is-razor')}
             onPointerCancel={dropFraming}
             onPointerDown={pressLanes}
             onPointerMove={dragLanes}
             onPointerUp={releaseLanes}
+            {...(razor ? razorLanes : {})}
           >
             {shown.map((row, at) => (
               <Fragment key={keyOf(row)}>
@@ -1074,7 +1149,9 @@ export function FilmTimeline({
                               onAttributes={onAttributes}
                               onHide={onHideClip}
                               onRemove={onRemove}
+                              onSplit={onSplit}
                               silent={clip.kind === 'video' && silentSource(clip.src)}
+                              split={playheadSplit([clip], playheadMs, clips, links)}
                             />
                           }
                           onGesture={onGesture}
@@ -1093,6 +1170,7 @@ export function FilmTimeline({
                           rowAt={rowAt}
                           selected={shownSelection.has(clip.id)}
                           snap={snap}
+                          trimmable={!razor}
                           trimRange={trimRange}
                           trimTo={trimTo}
                         />
@@ -1139,6 +1217,14 @@ export function FilmTimeline({
               </div>
             )}
           </div>
+          {razorAt === null ? null : (
+            <span
+              aria-hidden="true"
+              className="wf-razor-line"
+              data-testid="razor-line"
+              style={{ left: msToPx(razorAt, pps) }}
+            />
+          )}
           {guideMs === null ? null : (
             <span
               aria-hidden="true"

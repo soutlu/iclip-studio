@@ -1940,6 +1940,23 @@
   pointer-events: none;
 }
 
+/* 剃刀：各行上是十字光标，一条竖线跟着指针贯穿所有行 */
+.wf-lanes.is-razor,
+.wf-lanes.is-razor * {
+  cursor: crosshair;
+}
+
+.wf-razor-line {
+  position: absolute;
+  top: var(--timeline-ruler-height);
+  bottom: 0;
+  z-index: var(--z-local-2);
+  width: 0;
+  translate: -0.5px 0;
+  border-left: 1px solid var(--color-on-surface);
+  pointer-events: none;
+}
+
 /* 框选时拖出来的框：盖在各行上面、压不过吸在顶上的时间尺 */
 .wf-marquee {
   position: absolute;

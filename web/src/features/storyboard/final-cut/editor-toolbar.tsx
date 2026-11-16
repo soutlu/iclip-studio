@@ -6,6 +6,7 @@ import {
   MenuRadioGroup,
   MenuRadioItem,
   MenuRoot,
+  MenuSeparator,
   MenuSurface,
   MenuTrigger,
 } from '@/shared/ui/menu'
@@ -79,10 +80,26 @@ export function Tool({
 
 export const Keys = ({ children }: { children: string }) => <kbd className="wf-kbd">{children}</kbd>
 
-/** 选择工具的下拉：现在只有「选择」一个工具；另两项是一次性的命令，点完工具不变。 */
-function ToolPicker({ onSelectAround }: { onSelectAround: (side: 'left' | 'right') => void }) {
+/** 时间线上点下去做什么：选择（选中、拖动、裁剪）或切开（剃刀）。 */
+export type EditTool = 'select' | 'razor'
+
+const TOOLS: Readonly<Record<EditTool, { name: string; icon: IconName }>> = {
+  select: { name: '选择', icon: 'select-tool' },
+  razor: { name: '切开', icon: 'split' },
+}
+
+const isEditTool = (value: string): value is EditTool => value in TOOLS
+
+type ToolPickerProps = Pick<
+  EditorToolbarProps,
+  'tool' | 'onTool' | 'onSelectAround' | 'splitBlocked' | 'onSplit'
+>
+
+/** 选择工具的下拉：上面是两个工具；下面三项是一次性的命令，点完工具不变。 */
+function ToolPicker({ tool, onTool, onSelectAround, splitBlocked, onSplit }: ToolPickerProps) {
   const [open, setOpen] = useState(false)
   const [hint, setHint] = useState(false)
+  const current = TOOLS[tool]
   return (
     <MenuRoot
       onOpenChange={(next) => {
@@ -96,11 +113,11 @@ function ToolPicker({ onSelectAround }: { onSelectAround: (side: 'left' | 'right
         <MenuTrigger asChild>
           <TooltipTrigger asChild>
             <button
-              aria-label="选择工具：选择"
+              aria-label={`选择工具：${current.name}`}
               className="wf-tool wf-tool-picker ui-state ui-focus"
               type="button"
             >
-              <Icon decorative name="select-tool" size="sm" />
+              <Icon decorative name={current.icon} size="sm" />
               <Icon decorative name="expand" size="xs" />
             </button>
           </TooltipTrigger>
@@ -110,9 +127,30 @@ function ToolPicker({ onSelectAround }: { onSelectAround: (side: 'left' | 'right
         </TooltipContent>
       </TooltipRoot>
       <MenuSurface align="start" side="top">
-        <MenuRadioGroup value="select">
-          <MenuRadioItem value="select">选择</MenuRadioItem>
+        <MenuRadioGroup
+          onValueChange={(value) => {
+            if (isEditTool(value)) onTool(value)
+          }}
+          value={tool}
+        >
+          <MenuRadioItem value="select">{TOOLS.select.name}</MenuRadioItem>
+          <MenuRadioItem value="razor">{TOOLS.razor.name}</MenuRadioItem>
         </MenuRadioGroup>
+        <MenuSeparator />
+        {splitBlocked === undefined ? (
+          <MenuItem onSelect={onSplit} shortcut={['S']}>
+            {SPLIT_LABEL}
+          </MenuItem>
+        ) : (
+          <TooltipRoot>
+            <TooltipTrigger asChild>
+              <MenuItem aria-disabled onSelect={(event) => event.preventDefault()} shortcut={['S']}>
+                {SPLIT_LABEL}
+              </MenuItem>
+            </TooltipTrigger>
+            <TooltipContent side="right">{splitBlocked}</TooltipContent>
+          </TooltipRoot>
+        )}
         <MenuItem onSelect={() => onSelectAround('left')} shortcut={['[']}>
           选中播放头左边的片段
         </MenuItem>
@@ -124,13 +162,22 @@ function ToolPicker({ onSelectAround }: { onSelectAround: (side: 'left' | 'right
   )
 }
 
+/** 切开的命令在下拉和片段右键菜单里都叫这个。 */
+export const SPLIT_LABEL = '在播放头处切开'
+
 type EditorToolbarProps = {
   canUndo: boolean
   canRedo: boolean
   onUndo: () => void
   onRedo: () => void
+  tool: EditTool
+  onTool: (tool: EditTool) => void
   /** 选中播放头左边或右边的片段，替换原有选中。 */
   onSelectAround: (side: 'left' | 'right') => void
+  /** 在播放头处切不开选中的片段时的原因；能切时是 undefined。 */
+  splitBlocked: string | undefined
+  /** 在播放头处切开选中的片段，和按 S 一样。 */
+  onSplit: () => void
   /** 有没有选中的片段；没有时「删除」「缩放到选中的片段」置灰。 */
   hasSelection: boolean
   /** 删掉选中的片段，和按 Delete 一样。 */
@@ -154,7 +201,11 @@ export function EditorToolbar({
   canRedo,
   onUndo,
   onRedo,
+  tool,
+  onTool,
   onSelectAround,
+  splitBlocked,
+  onSplit,
   hasSelection,
   onRemove,
   onZoomToSelection,
@@ -196,7 +247,13 @@ export function EditorToolbar({
           }
         />
         <span aria-hidden="true" className="wf-divider" />
-        <ToolPicker onSelectAround={onSelectAround} />
+        <ToolPicker
+          onSelectAround={onSelectAround}
+          onSplit={onSplit}
+          onTool={onTool}
+          splitBlocked={splitBlocked}
+          tool={tool}
+        />
         <Tool
           blocked={hasSelection ? undefined : '尚未选中片段，无法删除；请先选中片段'}
           icon="delete"

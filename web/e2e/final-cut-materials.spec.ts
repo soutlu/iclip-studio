@@ -809,7 +809,12 @@ test('片段的右键菜单：先选中点右键的片段，「隐藏片段画�
 
   await clip.click({ button: 'right' })
   const menu = page.getByRole('menu', { name: 'A · 镜头 1' })
-  await expect(menu.getByRole('menuitem')).toHaveText(['静音此片段', '隐藏片段画面', /^删除片段/])
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    /^在播放头处切开/,
+    '静音此片段',
+    '隐藏片段画面',
+    /^删除片段/,
+  ])
   await menu.getByRole('menuitem', { name: '隐藏片段画面' }).click()
   await expect(menu).toHaveCount(0)
   await expect.poll(savedHidden).toBe(1)

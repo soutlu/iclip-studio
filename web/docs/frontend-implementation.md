@@ -59,7 +59,7 @@
 编辑器编辑对话工作区里的 final-cut 工程（业务规则见 [CONTEXT.md「final-cut」](../../docs/CONTEXT.md#术语)，接口见 [conventions「final-cut 的主文件」](../../contract/conventions.md#final-cut-的主文件)），主文件的写法在 [composition/film.ts](../src/features/storyboard/final-cut/composition/film.ts)：
 
 - **只经 SDK 改片段**：编辑器用 SDK 打开主文件，每个编辑动作是一次 SDK 操作，撤销重做用 SDK 自带的；不直接拼改 HTML 字符串。片段列表来自 SDK 的 `getElementTimings()`，元素按 SDK 的编号（`data-hf-id`）操作。SDK 的编辑引擎按需加载，不进主包，它自带的保存队列不用。
-- **新片段用写法里的函数写**：往工程里加片段时，用 `film.ts` 里对应的函数写出元素（如 `videoElement`、`hostElement`），组件或块的摆放和字体变量写在宿主元素的行内样式上。
+- **新片段用写法里的函数写**：往工程里加片段时，用 `film.ts` 里对应的函数写出元素（如 `videoElement`、`hostElement`），组件或块的摆放和字体变量写在宿主元素的行内样式上。切开片段时后半段是原元素的整份复制，不经过写法里的函数，这样代理写进去的属性也不会丢。
 - **`<head>` 只动字体块**：SDK 改不了 `<head>`，存出主文件时用 `withFontBlock` 只重算带标记的字体块，别的内容原样留着。
 - **保存交给会话**：[use-film-session.ts](../src/features/storyboard/final-cut/use-film-session.ts) 在停下后整份保存（第一次新建、之后带版本号）；`409` 或别处改了主文件时换成工作区里的那一份。主文件用自己的查询键，不挂在工作区文件下面：工作台每次文件变化都让工作区文件的查询失效，挂在下面的话一存就会重开引擎、清空撤销历史。
 - **预览发当前的主文件**：预览页拿到的就是会话里当前的主文件（没存的改动也在里面），加上指向凭令牌取工程文件的 `<base>` 和预览专用的媒体加载方式（[preview-document.ts](../src/features/storyboard/final-cut/preview-document.ts)）。

@@ -1010,6 +1010,74 @@ const savesWithin = async (page: Page, ms: number) => {
   return saves
 }
 
+/** 存出的主文件里的视频片段，按文件里的先后：起点、时长、入点（秒）。 */
+const savedVideoTimings = (html: string) =>
+  (html.match(/<video [^>]*>/g) ?? []).map((tag) => {
+    const seconds = (name: string) => Number(new RegExp(` ${name}="([\\d.]+)"`).exec(tag)?.[1])
+    return {
+      start: seconds('data-start'),
+      duration: seconds('data-duration'),
+      mediaStart: seconds('data-media-start'),
+    }
+  })
+
+test('切开：选中视频片段、把播放头放进去按 S，存下来多了一个片段、两半接得上；再用切开工具在另一处点一下', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const added = mainSaved(page, 1)
+  await editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  const [whole] = savedVideoTimings(htmlOf(await added))
+  if (whole === undefined) throw new Error('没有加进片段')
+  expect(whole).toMatchObject({ start: 0, duration: 1 })
+  // 预览加载好以后才挪播放头：加载中报上来的时间会把它拉回去
+  await readyPlayer(editor)
+
+  const row = editor.getByRole('group', { name: '画面 1', exact: true })
+  await row.getByRole('button', { name: /^选中：/ }).click()
+  // 播放头一格一格挪到 0.4 秒：每按一下等它显示出来再按下一下
+  for (let step = 1; step <= 4; step += 1) {
+    await page.keyboard.press('ArrowRight')
+    await expect(editor.getByRole('group', { name: '播放控制' })).toContainText(`00:00.${step}0 /`)
+  }
+  const cut = mainSaved(page, 2)
+  await page.keyboard.press('s')
+  const [first, second] = savedVideoTimings(htmlOf(await cut))
+  expect(first).toEqual({ ...whole, duration: 0.4 })
+  expect(second).toEqual({ start: 0.4, duration: 0.6, mediaStart: whole.mediaStart + 0.4 })
+
+  // 切开工具：指针在行上有一条竖线，在后半段的正中点一下
+  await page.keyboard.press('b')
+  await expect(
+    editor
+      .getByRole('toolbar', { name: '剪辑工具' })
+      .getByRole('button', { name: '选择工具：切开' }),
+  ).toBeVisible()
+  const back = row.getByRole('group').last()
+  const box = await back.boundingBox()
+  if (box === null) throw new Error('后半段还没排好')
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await expect(editor.getByTestId('razor-line')).toBeVisible()
+  const again = mainSaved(page, 3)
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+  const [, middle, last] = savedVideoTimings(htmlOf(await again))
+  if (second === undefined || middle === undefined || last === undefined)
+    throw new Error('没有切成三段')
+  expect(middle.start).toBe(0.4)
+  expect(middle.start + middle.duration).toBeCloseTo(last.start, 3)
+  expect(last.start + last.duration).toBeCloseTo(second.start + second.duration, 3)
+  expect(last.start).toBeCloseTo(second.start + second.duration / 2, 1)
+  expect(last.mediaStart).toBeCloseTo(middle.mediaStart + middle.duration, 3)
+})
+
 test('地址带着 ?artifact=final-cut 时直接打开编辑器；正在对话框里打字时不抢焦点', async ({
   page,
 }) => {

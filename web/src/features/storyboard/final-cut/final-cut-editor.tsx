@@ -27,13 +27,19 @@ import { useStableValue } from '../editing/use-stable-value'
 import { useShotGenerations } from '../storyboard.api'
 import { audioPlayheadSpot } from './audio'
 import { AudioTab } from './audio-tab'
-import type { SourceLength } from './clip-edit'
+import {
+  playheadSplit,
+  SPLIT_REFUSAL_TEXT,
+  type Cut,
+  type Links,
+  type SourceLength,
+} from './clip-edit'
 import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
 import type { CatalogItem } from './composition/catalog'
 import type { Canvas } from './composition/film'
 import { isEditorKeyTarget, useEditorEscape, useEditorRoot } from './editor-keys'
 import { EditorRoot } from './editor-root'
-import { EditorToolbar } from './editor-toolbar'
+import { EditorToolbar, type EditTool } from './editor-toolbar'
 import { ExportControl } from './export-control'
 import { FilmInspector } from './film-inspector'
 import { FilmTimeline, type DropGhost, type TimelineHandle } from './film-timeline'
@@ -106,6 +112,7 @@ const ADDING_AUDIO_TEXT = '上一条音频正在加入 final-cut，请稍后再�
 const EMPTY_EXPORT_TEXT = 'final-cut 暂无内容，无法导出；请先加入内容'
 // 还没有 final-cut 时先放组件或块：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
+const NO_LINKS: Links = new Map()
 
 /** 侧栏的目录页签：镜头、贴片、场景、配乐。 */
 type CatalogTab = 'shots' | ItemKind | 'audio'
@@ -191,6 +198,7 @@ function EditorBody({
   const session = useFilmSession(conversationId, initial, catalog, { onNotice: notice })
   const { film } = session
   const clips = useMemo(() => film?.clips ?? [], [film])
+  const links = film?.links ?? NO_LINKS
   const videoClips = useMemo(() => clips.filter((clip) => clip.kind === 'video'), [clips])
   const [itemFilters, setItemFilters] = useState<Readonly<Record<ItemKind, ItemFilter>>>({
     component: NO_FILTER,
@@ -339,13 +347,32 @@ function EditorBody({
   const [gesturing, setGesturing] = useState(false)
   // 「属性」里输数值的框正在输入：这时的 Esc 归那个框（放弃刚输入的），不取消选中
   const [textEditing, setTextEditing] = useState(false)
-  // Esc 先退全屏（浏览器多半自己退，按键还是传到页面时才轮到这里），再取消选中；都没有时不用掉这一下
-  useEditorEscape(fullscreen || textEditing || (!gesturing && selected.size > 0), () => {
-    if (fullscreen) exitFullscreen()
-    else if (!textEditing) clearSelection()
-  })
+  // 时间线上点下去做什么：B 在切开和选择之间来回换，V、A 回到选择，Esc 取消选中以后也回到选择
+  const [tool, setTool] = useState<EditTool>('select')
+  // Esc 先退全屏（浏览器多半自己退，按键还是传到页面时才轮到这里），再取消选中，再回到选择工具；
+  // 都没有时不用掉这一下
+  useEditorEscape(
+    fullscreen || textEditing || (!gesturing && (selected.size > 0 || tool === 'razor')),
+    () => {
+      if (fullscreen) exitFullscreen()
+      else if (textEditing) return
+      else if (selected.size > 0) clearSelection()
+      else setTool('select')
+    },
+  )
   const selectAround = (side: 'left' | 'right') =>
     setSelectedIds(new Set(aroundPlayhead(clips, playhead, side)))
+  const split = (cuts: readonly Cut[]) => {
+    if (cuts.length === 0) return
+    leaveMaterial()
+    session.split(cuts)
+  }
+  // 在播放头处切开选中的片段：S、工具条的下拉都按它
+  const playheadCut = playheadSplit(selectedClips, playhead, clips, links)
+  const splitAtPlayhead = () => {
+    if ('cuts' in playheadCut) split(playheadCut.cuts)
+    else if (playheadCut.refusal === 'many') notice(SPLIT_REFUSAL_TEXT.many)
+  }
   const [scrollRequest, setScrollRequest] = useState<{ left: number } | null>(null)
   // 工具条上的缩放：播放头留在屏幕上原来的地方，看不见它时把它放到中间
   const zoomTo = (next: Zoom) => {
@@ -571,6 +598,21 @@ function EditorBody({
     if (letter === 'z' && !event.shiftKey) {
       event.preventDefault()
       if (!event.repeat) zoomToSelection()
+      return
+    }
+    // 切不开时 S 什么都不做，也照样占着这个键
+    const command = event.shiftKey
+      ? undefined
+      : letter === 's'
+        ? splitAtPlayhead
+        : letter === 'b'
+          ? () => setTool((current) => (current === 'razor' ? 'select' : 'razor'))
+          : letter === 'v' || letter === 'a'
+            ? () => setTool('select')
+            : undefined
+    if (command !== undefined) {
+      event.preventDefault()
+      if (!event.repeat) command()
       return
     }
     if (key !== 'ArrowLeft' && key !== 'ArrowRight') return
@@ -893,6 +935,12 @@ function EditorBody({
           hasSelection={selected.size > 0}
           onRemove={removeSelected}
           onSelectAround={selectAround}
+          onSplit={splitAtPlayhead}
+          onTool={setTool}
+          splitBlocked={
+            'refusal' in playheadCut ? SPLIT_REFUSAL_TEXT[playheadCut.refusal] : undefined
+          }
+          tool={tool}
           onZoomToSelection={zoomToSelection}
           onRipple={() => setRipple((on) => !on)}
           onSnap={() => setSnap((on) => !on)}
@@ -903,6 +951,9 @@ function EditorBody({
         />
         <FilmTimeline
           clips={clips}
+          links={links}
+          onSplit={split}
+          tool={tool}
           buffered={buffered}
           catalog={catalog}
           ghost={ghost}
