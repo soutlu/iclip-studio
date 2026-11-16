@@ -367,7 +367,6 @@ function EditorBody({
     clearSelection()
     session.removeClips([...selected], ripple)
   }
-  const [thumbnails, setThumbnails] = useState(true)
   const [snap, setSnap] = useState(true)
   /**
    * 拖着的素材、组件、块或音频（长 `duration` 毫秒，放进 `zone` 区）会落在哪：
@@ -868,15 +867,14 @@ function EditorBody({
             session.undo()
           }}
           hasSelection={selected.size > 0}
+          onRemove={removeSelected}
           onSelectAround={selectAround}
           onZoomToSelection={zoomToSelection}
           onRipple={() => setRipple((on) => !on)}
           onSnap={() => setSnap((on) => !on)}
-          onThumbnails={() => setThumbnails((on) => !on)}
           onZoom={zoomTo}
           ripple={ripple}
           snap={snap}
-          thumbnails={thumbnails}
           zoom={zoom}
         />
         <FilmTimeline
@@ -920,7 +918,6 @@ function EditorBody({
           scrollRequest={scrollRequest}
           selected={selected}
           snap={snap}
-          thumbnails={thumbnails}
           sourceMs={sourceMs}
           totalMs={total}
         />

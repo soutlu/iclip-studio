@@ -43,6 +43,7 @@ import { thumbnailUrl, type ComponentCatalog } from './component-catalog'
 import { isMediaClip, type FilmClip } from './composition/film'
 import { useEditorEscape } from './editor-keys'
 import {
+  namedRows,
   rowHidden,
   rowsOf,
   sameRow,
@@ -96,8 +97,6 @@ type FilmTimelineProps = {
   selected: ReadonlySet<string>
   /** 拖动和裁剪时要不要吸到别的片段的两端和播放头上。 */
   snap: boolean
-  /** 片段上要不要显示画面缩略图；关掉只剩名字和声音。 */
-  thumbnails: boolean
   /** 视频片段、音频片段素材的总长（毫秒），还没读到时是 undefined；裁结尾时不超出它。 */
   sourceMs: SourceLength
   /** 换成这些选中的片段（空的就是全部取消）。 */
@@ -127,8 +126,8 @@ const seconds = (ms: number) => (ms / 1000).toFixed(1)
 // 指针离一条空行（待新开的那一行）的上下边这么近也算在它上面
 const ROW_REACH_PX = 3
 
-// 时间区左右留的空（final-cut.css 里 .wf-track-content 的 margin：左 8、右 16），不算进能排时间的宽度
-const INSET_PX = 24
+// 时间区左右留的空，露出开头的播放头和两端的把手；不算进能排时间的宽度。只在这里定，时间区的外边距用它
+const INSET = { left: 8, right: 6 }
 
 const rowKeyOf = (clip: FilmClip): RowKey => ({ zone: zoneOf(clip), track: clip.track })
 
@@ -265,7 +264,10 @@ const movePlan = (
   }
 }
 
-/** 片段里画什么：视频片段是画面和原声，组件或块的片段是小封面，音频片段是整段波形。 */
+/**
+ * 片段里画什么：视频片段是铺满的画面，读出原声后底部叠一条波形；组件或块的片段是小封面和名字；
+ * 音频片段是音符、名字和整段波形；「其他」片段只有名字。
+ */
 function ClipContent({
   clip,
   timing,
@@ -277,9 +279,15 @@ function ClipContent({
   cover: string | null
   peaks: PeaksState
 }) {
-  if (clip.kind === 'other') return null
+  const name = <span className="wf-clip-name">{clip.label}</span>
+  if (clip.kind === 'other') return name
   if (clip.kind === 'host')
-    return cover === null ? null : <img alt="" className="wf-clip-cover" src={cover} />
+    return (
+      <>
+        {cover === null ? null : <img alt="" className="wf-clip-cover" src={cover} />}
+        {name}
+      </>
+    )
   // 片段上画的是它用掉的那段素材：final-cut 里的时长 × 速度
   const part = {
     mediaUrl: clip.src,
@@ -288,19 +296,26 @@ function ClipContent({
   }
   if (clip.kind === 'audio')
     return (
-      <span className="wf-clip-sound">
-        <Wave part={part} state={peaks} />
-      </span>
+      <>
+        <Icon className="wf-clip-icon" decorative name="music" size="xs" />
+        {name}
+        <span className="wf-clip-sound">
+          <Wave part={part} state={peaks} />
+        </span>
+      </>
     )
+  // 波形条只有画面的三分之一高，放不下「无声」「原声读取失败」这类说明，只在读出波形后叠上去
   return (
-    <span className="wf-clip-media">
+    <>
       <span className="wf-clip-frames">
         <Frames part={part} />
       </span>
-      <span className="wf-clip-wave">
-        <Wave part={part} state={peaks} />
-      </span>
-    </span>
+      {peaks.kind === 'ready' ? (
+        <span className="wf-clip-wave">
+          <Wave part={part} state={peaks} />
+        </span>
+      ) : null}
+    </>
   )
 }
 
@@ -572,7 +587,6 @@ function TimelineClip({
         onPointerUp={release}
         type="button"
       >
-        <span className="wf-clip-label">{clip.label}</span>
         <ClipContent clip={clip} cover={cover} peaks={peaks} timing={timing} />
       </button>
       {selected
@@ -603,15 +617,15 @@ function TimelineClip({
 
 /**
  * 行头最右边的开关：把这一行的片段一起隐藏或显示回来。画面区的行画成眼睛；声音区的行画成喇叭，
- * 隐藏就是静音。`row` 是界面上的第几行。
+ * 隐藏就是静音。`name` 是这一行的行名。
  */
 function RowToggle({
-  row,
+  name,
   zone,
   hidden,
   onHide,
 }: {
-  row: number
+  name: string
   zone: Zone
   hidden: boolean
   onHide: (hidden: boolean) => void
@@ -620,7 +634,7 @@ function RowToggle({
   const [hide, show] = sound ? ['静音', '取消静音'] : ['隐藏', '显示']
   return (
     <button
-      aria-label={`${hidden ? show : hide}第 ${row} 行`}
+      aria-label={`${hidden ? show : hide}${name}`}
       aria-pressed={!hidden}
       className="wf-head-eye ui-state ui-focus"
       onClick={() => onHide(!hidden)}
@@ -652,7 +666,6 @@ export function FilmTimeline({
   ghost,
   selected,
   snap,
-  thumbnails,
   sourceMs,
   onSelect,
   onGesture,
@@ -694,7 +707,7 @@ export function FilmTimeline({
   const { pps, contentWidth } = scale
   const rows = rowsOf(clips)
   // 还没有片段时也留一行（画面区的第 0 行），镜头拖得进来
-  const shown: readonly Row[] = rows.length === 0 ? [{ zone: 'visual', track: 0, clips: [] }] : rows
+  const shown = namedRows<Row>(rows.length === 0 ? [{ zone: 'visual', track: 0, clips: [] }] : rows)
   // 要在别的位置新开一行时，最下面那条空行挪到那里去：总高度不变，上面的行不动、下面的行往下让
   const openedAt = opening !== null && opening < rows.length ? opening : null
 
@@ -704,7 +717,9 @@ export function FilmTimeline({
     if (viewport === null || heads === null) return
     // 行头那一列和时间区在同一个滚动容器里，排时间的宽度要把它去掉
     const report = () =>
-      onViewportWidth(Math.max(0, viewport.clientWidth - heads.offsetWidth - INSET_PX))
+      onViewportWidth(
+        Math.max(0, viewport.clientWidth - heads.offsetWidth - INSET.left - INSET.right),
+      )
     report()
     const observer = new ResizeObserver(report)
     observer.observe(viewport)
@@ -925,7 +940,7 @@ export function FilmTimeline({
   }
 
   return (
-    <div className={cn('wf-tracks', !thumbnails && 'is-plain')} ref={scrollRef}>
+    <div className="wf-tracks" ref={scrollRef}>
       <div className="wf-track-inner">
         <div className="wf-track-heads" ref={headsRef}>
           <span aria-hidden="true" className="wf-track-corner" />
@@ -935,20 +950,12 @@ export function FilmTimeline({
                 <span aria-hidden="true" className="wf-track-head is-opening" />
               ) : null}
               <span className="wf-track-head">
-                {row.zone === 'audio' ? (
-                  <Icon className="wf-head-icon" decorative name="music" size="xs" />
-                ) : null}
-                <span className="wf-head-name">{row.clips[0]?.label}</span>
-                {row.clips.length > 1 ? (
-                  <span aria-label={`${row.clips.length} 个片段`} className="wf-head-count">
-                    {row.clips.length}
-                  </span>
-                ) : null}
+                <span className="wf-head-name">{row.name}</span>
                 {row.clips.length > 0 ? (
                   <RowToggle
                     hidden={rowHidden(clips, row)}
+                    name={row.name}
                     onHide={(hidden) => onHide({ zone: row.zone, track: row.track }, hidden)}
-                    row={at + 1}
                     zone={row.zone}
                   />
                 ) : null}
@@ -956,7 +963,11 @@ export function FilmTimeline({
             </Fragment>
           ))}
         </div>
-        <div className="wf-track-content" ref={contentRef} style={{ width: contentWidth }}>
+        <div
+          className="wf-track-content"
+          ref={contentRef}
+          style={{ width: contentWidth, marginLeft: INSET.left, marginRight: INSET.right }}
+        >
           <div className="wf-track-top" ref={rulerBarRef}>
             <TimelineRuler
               buffered={buffered}
@@ -989,7 +1000,7 @@ export function FilmTimeline({
                 <ContextMenuRoot>
                   <ContextMenuTrigger asChild>
                     <div
-                      aria-label={`第 ${at + 1} 行`}
+                      aria-label={row.name}
                       className="wf-lane"
                       data-track={row.track}
                       data-zone={row.zone}

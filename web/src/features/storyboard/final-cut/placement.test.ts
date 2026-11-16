@@ -4,11 +4,13 @@ import type { FilmClip } from './composition/film'
 import {
   landingOn,
   rowHidden,
+  namedRows,
   rowOpening,
   rowsOf,
   targetIn,
   topTrack,
   type Aim,
+  type RowKey,
   type Zone,
 } from './placement'
 
@@ -55,6 +57,32 @@ describe('时间线上的行', () => {
     expect(rowHidden(muted, { zone: 'audio', track: 0 })).toBe(true)
     expect(rowHidden(muted, { zone: 'visual', track: 0 })).toBe(false)
     expect(rowHidden(muted, { zone: 'audio', track: 1 })).toBe(false)
+  })
+})
+
+describe('行名', () => {
+  const names = (rows: readonly RowKey[]) => namedRows(rows).map((row) => row.name)
+
+  it('画面区一行、声音区一行：「画面 1」和「配乐」', () => {
+    expect(names(rowsOf([first, music]))).toEqual(['画面 1', '配乐'])
+  })
+
+  it('画面区几行、声音区几行：各区从上往下编号，声音区的编号不接着画面区', () => {
+    expect(names(rowsOf(mixed))).toEqual(['画面 1', '画面 2', '配乐 1', '配乐 2'])
+  })
+
+  it('只有声音区：一行叫「配乐」', () => {
+    expect(names(rowsOf([music]))).toEqual(['配乐'])
+  })
+
+  it('还没有片段时留着的那一条空行：「画面 1」', () => {
+    expect(names([{ zone: 'visual', track: 0 }])).toEqual(['画面 1'])
+    expect(names([])).toEqual([])
+  })
+
+  it('行名跟着行走，行本身原样带着', () => {
+    const [row] = namedRows(rowsOf([first]))
+    expect(row).toEqual({ zone: 'visual', track: 0, clips: [first], name: '画面 1' })
   })
 })
 

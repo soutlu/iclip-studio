@@ -28,7 +28,6 @@ type ToolProps = {
   /** 开关类按钮现在是开还是关；不是开关就不给。 */
   pressed?: boolean
   onClick: () => void
-  showLabel?: boolean
   shortcuts?: string
   className?: string
   /** 提示挂到哪个元素里，见 `TooltipContent` 的 `container`。 */
@@ -42,7 +41,6 @@ export function Tool({
   blocked,
   pressed,
   onClick,
-  showLabel = false,
   shortcuts,
   className,
   tipContainer = null,
@@ -61,21 +59,15 @@ export function Tool({
         <button
           aria-disabled={blocked === undefined ? undefined : true}
           aria-keyshortcuts={shortcuts}
-          aria-label={showLabel ? undefined : label}
+          aria-label={label}
           aria-pressed={pressed}
-          className={cn(
-            'wf-tool ui-state ui-focus',
-            showLabel && 'has-label',
-            pressed === true && 'is-pressed',
-            className,
-          )}
+          className={cn('wf-tool ui-state ui-focus', pressed === true && 'is-pressed', className)}
           onClick={() => {
             if (blocked === undefined) onClick()
           }}
           type="button"
         >
           <Icon decorative name={icon} size="sm" />
-          {showLabel ? <span>{label}</span> : null}
         </button>
       </TooltipTrigger>
       <TooltipContent className="wf-tip" container={tipContainer} side="top">
@@ -139,16 +131,15 @@ type EditorToolbarProps = {
   onRedo: () => void
   /** 选中播放头左边或右边的片段，替换原有选中。 */
   onSelectAround: (side: 'left' | 'right') => void
-  /** 有没有选中的片段；没有时「缩放到选中的片段」置灰。 */
+  /** 有没有选中的片段；没有时「删除」「缩放到选中的片段」置灰。 */
   hasSelection: boolean
+  /** 删掉选中的片段，和按 Delete 一样。 */
+  onRemove: () => void
   onZoomToSelection: () => void
   snap: boolean
   onSnap: () => void
   ripple: boolean
   onRipple: () => void
-  /** 片段上要不要显示画面缩略图。 */
-  thumbnails: boolean
-  onThumbnails: () => void
   zoom: Zoom
   /** 「适应宽度」时一秒画多少像素，缩放的档位和滑杆都以它为准。 */
   fitPps: number
@@ -165,13 +156,12 @@ export function EditorToolbar({
   onRedo,
   onSelectAround,
   hasSelection,
+  onRemove,
   onZoomToSelection,
   snap,
   onSnap,
   ripple,
   onRipple,
-  thumbnails,
-  onThumbnails,
   zoom,
   fitPps,
   onZoom,
@@ -207,6 +197,19 @@ export function EditorToolbar({
         />
         <span aria-hidden="true" className="wf-divider" />
         <ToolPicker onSelectAround={onSelectAround} />
+        <Tool
+          blocked={hasSelection ? undefined : '尚未选中片段，无法删除；请先选中片段'}
+          icon="delete"
+          label="删除"
+          onClick={onRemove}
+          shortcuts="Delete"
+          tip={
+            <>
+              删除
+              <Keys>Delete</Keys>
+            </>
+          }
+        />
         <span aria-hidden="true" className="wf-divider" />
         <Tool
           icon="snap"
@@ -233,13 +236,6 @@ export function EditorToolbar({
       </div>
       <div className="wf-toolbar-group">
         <Tool
-          icon="image"
-          label="显示缩略图"
-          onClick={onThumbnails}
-          pressed={thumbnails}
-          tip={thumbnails ? '缩略图已开启：片段上显示画面' : '缩略图已关闭：片段上仅显示名称和声音'}
-        />
-        <Tool
           blocked={hasSelection ? undefined : '尚未选中片段，无法缩放；请先选中一个片段'}
           icon="zoom-selection"
           label="缩放到选中的片段"
@@ -252,8 +248,8 @@ export function EditorToolbar({
             </>
           }
         />
-        <span aria-hidden="true" className="wf-divider" />
         <Tool icon="fit" label="适应宽度" onClick={() => onZoom(FIT_ZOOM)} tip="适应宽度" />
+        <span aria-hidden="true" className="wf-divider" />
         <Tool
           icon="zoom-out"
           label="缩小时间线"

@@ -262,7 +262,7 @@ export function PreviewPlayer({
       </div>
       {children}
       {page.kind === 'failed' ? (
-        <div className="wf-preview-note">
+        <div className="wf-preview-alert">
           <InlineAlert action={{ label: '重试', onClick: page.onRetry }} message={page.message} />
         </div>
       ) : film === undefined && message !== undefined ? (
