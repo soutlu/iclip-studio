@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-GenerationKind = Literal["video", "image", "subtitle", "dubbing", "audio", "whole_film"]
+GenerationKind = Literal["video", "image", "subtitle", "dubbing", "speech", "audio", "whole_film"]
 
 GenerationOperation = Literal["generate", "compose", "cut", "render", "enhance", "trial"]
 

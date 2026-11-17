@@ -93,19 +93,26 @@ export interface AudioClip extends MediaBase {
 }
 
 /**
- * 配音片段：一句字幕在一种语言下的配音，是一个普通的音频片段，放在「配音」行上、和那句字幕对齐。`locale` 是
- * `data-locale`，`caption` 是 `data-dub-of`（它配的那句字幕的编号），两个都写了才算配音；`trimmed` 是
- * `data-dub-trimmed`，生成时这句加速到上限也放不下、截掉了尾巴。哪种语言下出不出声见 `voices.ts`。
+ * 配音片段：一句字幕的配音，是一个普通的音频片段，放在「配音」行上、和那句字幕对齐。`caption` 是 `data-dub-of`
+ * （它配的那句字幕的编号），写了就是配音片段。`locale` 是 `data-locale`，配的是哪种语言；没写（null）的是这句
+ * 在原文下的配音，即旁白，`voice` 是 `data-dub-voice`，记着合成它用的参考音频库里的音色（其它语言给这句配音、
+ * 音色取「原声」时用它）。`trimmed` 是 `data-dub-trimmed`，生成时这句加速到上限也放不下、截掉了尾巴。哪种语言下
+ * 出不出声见 `voices.ts`。
  */
 export interface AudioDub {
-  locale: string
+  locale: string | null
   caption: string
   trimmed: boolean
+  voice: string | null
 }
 
-/** 一句字幕的配音片段：带 `data-locale` 和 `data-dub-of` 的音频片段。 */
+/** 一句字幕的配音片段：带 `data-dub-of` 的音频片段。 */
 export const isDubClip = (clip: FilmClip): clip is AudioClip & { dub: AudioDub } =>
   clip.kind === 'audio' && clip.dub !== null
+
+/** 旁白片段：原文下的配音片段（没有 `data-locale`）。 */
+export const isNarration = (clip: FilmClip): clip is AudioClip & { dub: AudioDub } =>
+  isDubClip(clip) && clip.dub.locale === null
 
 /** 别的带时间的元素（手写的文字、目录里查不到的宿主等）：只能挪动、裁两端、换行、隐藏和删除。 */
 export interface OtherClip extends ClipBase {
@@ -260,7 +267,6 @@ export function clipOf(
   if (element.tag === 'video')
     return { kind: 'video', ...common, ...media(), muted: attributes['muted'] !== undefined, z }
   if (element.tag === 'audio') {
-    const locale = nameOf(attributes['data-locale'])
     const caption = nameOf(attributes['data-dub-of'])
     return {
       kind: 'audio',
@@ -268,9 +274,14 @@ export function clipOf(
       ...media(),
       loop: attributes['loop'] !== undefined,
       dub:
-        locale === null || caption === null
+        caption === null
           ? null
-          : { locale, caption, trimmed: attributes['data-dub-trimmed'] !== undefined },
+          : {
+              locale: nameOf(attributes['data-locale']),
+              caption,
+              trimmed: attributes['data-dub-trimmed'] !== undefined,
+              voice: nameOf(attributes['data-dub-voice']),
+            },
     }
   }
   const item = attributes['data-composition-id']
@@ -347,7 +358,7 @@ export function videoElement(clip: Omit<VideoClip, 'kind'>): string {
   })
 }
 
-/** 新加的音频片段；配音片段带上语言、配的哪句和截没截尾。 */
+/** 新加的音频片段；配音片段带上语言（旁白不带）、配的哪句、截没截尾和旁白的音色。 */
 export function audioElement(clip: Omit<AudioClip, 'kind'>): string {
   return element('audio', {
     'data-hidden': clip.hidden ? '' : undefined,
@@ -355,9 +366,10 @@ export function audioElement(clip: Omit<AudioClip, 'kind'>): string {
     class: 'clip audio',
     ...mediaAttributes(clip),
     loop: clip.loop ? 'true' : undefined,
-    'data-locale': clip.dub?.locale,
+    'data-locale': clip.dub?.locale ?? undefined,
     'data-dub-of': clip.dub?.caption,
     'data-dub-trimmed': clip.dub?.trimmed === true ? '' : undefined,
+    'data-dub-voice': clip.dub?.voice ?? undefined,
   })
 }
 

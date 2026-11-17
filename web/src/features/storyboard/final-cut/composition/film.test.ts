@@ -213,6 +213,21 @@ describe('按标签认片段', () => {
     for (const written of [audioElement(audio()), videoElement(video())])
       expect(written).not.toMatch(/data-audio-group|data-fx-carve|data-fx-chain/)
   })
+
+  it('配音片段：其它语言的写着语言，原文的旁白不写语言、写着音色；读回来一样', () => {
+    const dubbed = audio({
+      id: 'd',
+      dub: { locale: 'en', caption: 'cap-1', trimmed: true, voice: null },
+    })
+    const narration = audio({
+      id: 'n',
+      dub: { locale: null, caption: 'cap-2', trimmed: false, voice: 'v-1' },
+    })
+    expect(readBack(mainFile([dubbed, narration], CANVAS))).toEqual([dubbed, narration])
+    expect(audioElement(narration)).not.toContain('data-locale')
+    expect(audioElement(narration)).toContain('data-dub-voice="v-1"')
+    expect(audioElement(dubbed)).not.toContain('data-dub-voice')
+  })
 })
 
 describe('组件或块的片段的摆放和字体（宿主元素的行内样式）', () => {

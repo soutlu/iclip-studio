@@ -4615,7 +4615,7 @@ describe('final-cut 编辑器 · 字幕跟着视频片段、配音片段走', ()
         src: `https://media.test/${id}.m4a`,
         start,
         duration: 500,
-        dub: { locale, caption, trimmed: false },
+        dub: { locale, caption, trimmed: false, voice: null },
       })
     await putFilm(
       [
@@ -4748,7 +4748,7 @@ describe('final-cut 编辑器 · 字幕跟着视频片段、配音片段走', ()
         src: `https://media.test/${id}.m4a`,
         start,
         duration: 500,
-        dub: { locale, caption, trimmed: false },
+        dub: { locale, caption, trimmed: false, voice: null },
       })
     await putFilm(
       [
@@ -5924,5 +5924,197 @@ describe('final-cut 编辑器 · 配音', () => {
     release()
     await waitFor(() => expect(lineChip(0)).not.toHaveAttribute('aria-disabled'))
     expect(savedDubs()).toHaveLength(3)
+  })
+})
+
+describe('final-cut 编辑器 · 旁白配音', () => {
+  const EN_FILE = 'final-cut/locales/en.json'
+  const SPEECH_URL = 'https://media.test/speech.m4a'
+  const panel = () => screen.getByRole('tabpanel', { name: '字幕·配音' })
+  const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
+  const narrationClips = () => screen.queryAllByRole('group', { name: /^旁白 · / })
+
+  /** 存下来的主文件里的配音片段：配的哪句、语言、起止（秒）、音色、地址。 */
+  const savedDubs = () =>
+    [
+      ...new DOMParser()
+        .parseFromString(savedFilm(), 'text/html')
+        .querySelectorAll('audio[data-dub-of]'),
+    ].map((element) => ({
+      caption: element.getAttribute('data-dub-of'),
+      locale: element.getAttribute('data-locale'),
+      start: Number(element.getAttribute('data-start')),
+      duration: Number(element.getAttribute('data-duration')),
+      voice: element.getAttribute('data-dub-voice'),
+      src: element.getAttribute('src'),
+    }))
+
+  /** 合成接口：记下请求体，答复排队中的记录；之后读到的是合成好的那一条（1.5 秒）。 */
+  const serveSpeeches = () => {
+    const records: GenerationJob[] = []
+    const sent: Record<string, unknown>[] = []
+    server.use(
+      http.get('*/api/generations', ({ request }) =>
+        new URL(request.url).searchParams.get('kind') === 'speech'
+          ? HttpResponse.json({ items: records })
+          : undefined,
+      ),
+      http.post('*/api/generations/speeches', async ({ request }) => {
+        sent.push((await request.json()) as Record<string, unknown>)
+        const id = crypto.randomUUID()
+        records.unshift(
+          makeGenerationJob({ id, kind: 'speech', outputUrl: SPEECH_URL, durationMs: 1_500 }),
+        )
+        return HttpResponse.json(
+          { generation: makeGenerationJob({ id, kind: 'speech', status: 'submitted' }) },
+          { status: 202 },
+        )
+      }),
+    )
+    return sent
+  }
+
+  /** 旁白片段：配 `cap-n1`（2–3 秒），用音色 `voice`。 */
+  const narration = (voice: string) =>
+    audio({
+      id: 'narr-1',
+      label: '旁白 · 欢迎光临',
+      src: SPEECH_URL,
+      start: 2_000,
+      duration: 1_000,
+      dub: { locale: null, caption: 'cap-n1', trimmed: false, voice },
+    })
+
+  /**
+   * 工程：素材 A 一段（0–4 秒），字幕 a1（0–1 秒）属于它；给了 `voice` 时还有一句旁白 n1（2–3 秒，用这个音色）和它的
+   * 旁白片段，`dubbed` 时再加 n1 的 English 配音、English 是 AI 配音。打开编辑器，切到「字幕·配音」页签。
+   */
+  const open = async ({ voice, dubbed = false }: { voice?: string; dubbed?: boolean } = {}) => {
+    const lines = [sceneLine('a1', 0, 1_000, 'clip-1')]
+    const clips: FilmClip[] = [video({ src: URL_A, duration: 4_000 })]
+    if (voice !== undefined) {
+      lines.push(sceneLine('n1', 2_000, 1_000))
+      clips.push(narration(voice))
+    }
+    if (dubbed)
+      clips.push(
+        audio({
+          id: 'narr-en',
+          label: '配音 · Welcome',
+          src: 'https://media.test/speech-en.m4a',
+          start: 2_000,
+          duration: 1_000,
+          dub: { locale: 'en', caption: 'cap-n1', trimmed: false, voice: null },
+        }),
+      )
+    await putFilm(clips, lines, dubbed ? '{"en":{"mode":"dub","voice":null}}' : undefined)
+    putMockWorkspaceFile(
+      CONVERSATION,
+      EN_FILE,
+      JSON.stringify({ cap_a1: 'A one', cap_n1: 'Welcome' }),
+    )
+    const user = userEvent.setup()
+    await openEditor()
+    await previewSettled()
+    await shot(/^生成 A 镜头 1，/)
+    await user.click(
+      within(
+        screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
+      ).getByRole('tab', { name: '字幕·配音' }),
+    )
+    return user
+  }
+
+  it('原文下输入文案、选音色插入：时间线上多一句字幕和一个对齐的旁白片段（播放头处有字幕时往后放），一步撤销', async () => {
+    resetMockReferenceAudios([])
+    const emma = addMockReferenceAudio({ title: 'Emma' })
+    const user = await open()
+    const sent = serveSpeeches()
+
+    await user.click(within(panel()).getByRole('button', { name: '旁白配音' }))
+    await user.type(within(panel()).getByRole('textbox', { name: '旁白文案' }), '欢迎光临')
+    await user.click(await within(panel()).findByRole('button', { name: 'Emma' }))
+    await user.click(within(panel()).getByRole('button', { name: '插入配音与字幕' }))
+
+    await waitSaved(() =>
+      expect(savedDubs()).toEqual([
+        // 播放头在 0 秒，那里有 a1（0–1 秒），往后放到 1 秒；长度是合成出来的 1.5 秒
+        {
+          caption: expect.any(String),
+          locale: null,
+          start: 1,
+          duration: 1.5,
+          voice: emma,
+          src: SPEECH_URL,
+        },
+      ]),
+    )
+    expect(sent).toEqual([
+      {
+        conversationId: CONVERSATION,
+        text: '欢迎光临',
+        reference: { kind: 'reference_audio', referenceId: emma },
+      },
+    ])
+    expect(savedSceneLines()).toEqual([
+      ['字幕 a1', 0, 1, 'clip-1'],
+      ['欢迎光临', 1, 1.5, null],
+    ])
+    // 旁白片段配的就是新加的那一句
+    expect(mockWorkspaceFile(CONVERSATION, SCENE_FILE)?.content).toContain(
+      `id="${savedDubs()[0]?.caption ?? '?'}"`,
+    )
+    expect(narrationClips()).toHaveLength(1)
+
+    await user.click(undoButton())
+    await waitSaved(() => expect(savedDubs()).toEqual([]))
+    expect(savedSceneLines()).toEqual([['字幕 a1', 0, 1, 'clip-1']])
+  })
+
+  it('切到 AI 配音的语言：时间线上不显示原文的旁白，显示这种语言给它配的音', async () => {
+    const user = await open({ voice: 'v-own', dubbed: true })
+    expect(narrationClips()).toHaveLength(1)
+
+    await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
+
+    await waitFor(() => expect(narrationClips()).toHaveLength(0))
+    expect(screen.getByRole('group', { name: /^配音 · Welcome/ })).toBeVisible()
+  })
+
+  it('AI 配音的语言下「重新生成」：旁白这句按译文合成，音色取「原声」时用旁白记着的音色，配好换掉它原来的配音', async () => {
+    const user = await open({ voice: 'v-own', dubbed: true })
+    const sent = serveSpeeches()
+    server.use(
+      http.post('*/api/generations/dubbings', () =>
+        HttpResponse.json({ detail: '配音没有开通，暂时不能配音' }, { status: 422 }),
+      ),
+    )
+    await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
+
+    await user.click(await within(panel()).findByRole('button', { name: '重新生成' }))
+
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0]).toEqual({
+      conversationId: CONVERSATION,
+      text: 'Welcome',
+      locale: 'en',
+      reference: { kind: 'reference_audio', referenceId: 'v-own' },
+    })
+    await waitSaved(() =>
+      expect(savedDubs().filter((dub) => dub.locale === 'en')).toEqual([
+        { caption: 'cap-n1', locale: 'en', start: 2, duration: 1.5, voice: null, src: SPEECH_URL },
+      ]),
+    )
+  })
+
+  it('删掉有旁白的那句字幕：旁白片段一起删', async () => {
+    const user = await open({ voice: 'v-own' })
+
+    await user.click(
+      within(panel()).getByRole('button', { name: '删除 00:02.00 – 00:03.00 的字幕' }),
+    )
+
+    await waitSaved(() => expect(savedDubs()).toEqual([]))
+    expect(savedSceneLines()).toEqual([['字幕 a1', 0, 1, 'clip-1']])
   })
 })

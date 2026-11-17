@@ -41,6 +41,22 @@ export function captionSpot(
   return duration < MIN_CLIP_MS ? { refusal: 'tight' } : { start, duration }
 }
 
+/**
+ * 旁白（长 `durationMs` 毫秒）和它的那句字幕放在哪：从播放头 `playheadMs` 起，和已有的字幕重叠时往后挪到第一个
+ * 放得下的地方。
+ */
+export function narrationSpot(
+  captions: readonly Pick<CaptionClip, 'id' | 'start' | 'duration'>[],
+  playheadMs: number,
+  durationMs: number,
+): { start: number; duration: number } {
+  let start = Math.max(0, Math.round(playheadMs))
+  for (const caption of captionsInOrder(captions))
+    if (caption.start < start + durationMs && start < caption.start + caption.duration)
+      start = caption.start + caption.duration
+  return { start, duration: durationMs }
+}
+
 /** 字幕列表里写的时间：分:秒，秒带两位小数（`00:01.50`）。 */
 export const captionClock = (ms: number): string => {
   const hundredths = Math.round(Math.max(0, ms) / 10)

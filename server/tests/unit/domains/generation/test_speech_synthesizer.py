@@ -102,6 +102,21 @@ async def test_speaks_the_line_in_the_reference_voice_and_returns_the_downloaded
     assert [str(request.url) for request in services.downloads] == [GENERATED_URL]
 
 
+async def test_without_a_locale_the_prompt_names_no_language() -> None:
+    services = FakeServices(httpx.Response(200, json=_generated()), SPOKEN)
+
+    await _synthesizer(services).synthesize(
+        "欢迎来到新品发布会", reference=REFERENCE, locale=None, api_key=None
+    )
+
+    (sent,) = services.syntheses
+    prompt = json.loads(sent.content)["input"]["text_prompt"]
+    assert prompt.startswith("@voice1"), prompt
+    assert "“欢迎来到新品发布会”" in prompt
+    assert not any(language in prompt for language in ("中文", "英语", "德语", "西班牙语", "法语"))
+    assert "用" not in prompt
+
+
 async def test_a_group_key_replaces_the_default_one() -> None:
     services = FakeServices(httpx.Response(200, json=_generated()), SPOKEN)
 

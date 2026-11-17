@@ -61,6 +61,8 @@ from iclip.domains.generation.schemas import (
     ImageGenerationIn,
     MusicIn,
     MusicRequest,
+    SpeechIn,
+    SpeechRequest,
     SubtitleIn,
     SubtitleRequest,
     VideoComposeIn,
@@ -485,8 +487,7 @@ class GenerationService:
         return self._subtitles
 
     async def submit_dubbing(self, principal: Principal, request: DubbingIn) -> GenerationJob:
-        if self._dubbing_provider is None:
-            raise ValidationFailed("配音没有开通，暂时不能配音")
+        dubbing_provider = self._require_dubbing()
         reference = await self._dubbing_reference(principal, request)
         video, video_url = await self._readable_master(
             principal,
@@ -511,7 +512,7 @@ class GenerationService:
                 ),
                 owner_user_id=principal.user_id,
                 api_key_id=principal.api_key_id,
-                provider=self._dubbing_provider,
+                provider=dubbing_provider,
                 conversation_id=request.conversation_id,
                 task_id=request.task_id,
                 metadata=request.metadata,
@@ -520,6 +521,39 @@ class GenerationService:
                 model_group=await self._model_groups.group_of(principal.user_id),
             )
         )
+
+    async def submit_speech(self, principal: Principal, request: SpeechIn) -> GenerationJob:
+        """按文字合成一段语音，和配音同一个通道。给了对话时要读得到它。"""
+
+        dubbing_provider = self._require_dubbing()
+        reference = await self._voice_reference(request.reference)
+        if request.conversation_id is not None and not await self._lineage.readable(
+            principal, request.conversation_id
+        ):
+            raise NotFound(f"没有这段对话: {request.conversation_id}")
+        return await self._queue_new(
+            _pending_job(
+                SpeechRequest(
+                    text=request.text,
+                    locale=request.locale,
+                    reference=reference,
+                    max_duration_ms=request.max_duration_ms,
+                ),
+                owner_user_id=principal.user_id,
+                api_key_id=principal.api_key_id,
+                provider=dubbing_provider,
+                conversation_id=request.conversation_id,
+                task_id=request.task_id,
+                metadata=request.metadata,
+                shot_index=None,
+                model_group=await self._model_groups.group_of(principal.user_id),
+            )
+        )
+
+    def _require_dubbing(self) -> str:
+        if self._dubbing_provider is None:
+            raise ValidationFailed("配音没有开通，暂时不能配音")
+        return self._dubbing_provider
 
     async def _dubbing_reference(
         self, principal: Principal, request: DubbingIn
@@ -530,19 +564,22 @@ class GenerationService:
         if isinstance(reference, DubbingOriginalReference):
             return reference
         if isinstance(reference, DubbingVoiceReferenceIn):
-            voice = await self._references.voice(reference.reference_id)
-            if voice is None:
-                raise ValidationFailed("参考音频要用参考音频库里一条没移除的音色")
-            return DubbingVoiceReference(
-                kind="reference_audio",
-                reference_id=reference.reference_id,
-                url=voice.url,
-                transcript=voice.transcript,
-            )
+            return await self._voice_reference(reference)
         url = await self._references.own_audio_upload(principal, reference.upload_id)
         if url is None:
             raise ValidationFailed("参考音频要用调用者本人的一条音频上传")
         return DubbingUploadReference(kind="upload", upload_id=reference.upload_id, url=url)
+
+    async def _voice_reference(self, reference: DubbingVoiceReferenceIn) -> DubbingVoiceReference:
+        voice = await self._references.voice(reference.reference_id)
+        if voice is None:
+            raise ValidationFailed("参考音频要用参考音频库里一条没移除的音色")
+        return DubbingVoiceReference(
+            kind="reference_audio",
+            reference_id=reference.reference_id,
+            url=voice.url,
+            transcript=voice.transcript,
+        )
 
     async def submit_music(self, principal: Principal, request: MusicIn) -> GenerationJob:
         if self._music is None:

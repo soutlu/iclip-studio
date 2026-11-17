@@ -3462,7 +3462,7 @@
       },
       "DubbedLine": {
         "additionalProperties": false,
-        "description": "配好的一句：``index`` 是它在请求 ``lines`` 里的位置，``speed`` 是加速的倍数（1 是原速），\n``trimmed`` 表示加速到上限也放不下、截掉了尾巴。",
+        "description": "配好的一句：``index`` 是它在请求 ``lines`` 里的位置（合成一段语音时只有一句，是 0），``speed`` 是\n加速的倍数（1 是原速），``trimmed`` 表示加速到上限也放不下、截掉了尾巴。",
         "properties": {
           "index": {
             "minimum": 0.0,
@@ -5166,6 +5166,7 @@
               "image",
               "subtitle",
               "dubbing",
+              "speech",
               "audio",
               "whole_film"
             ],
@@ -10620,6 +10621,107 @@
           "items"
         ],
         "title": "SkillsOut",
+        "type": "object"
+      },
+      "SpeechIn": {
+        "additionalProperties": false,
+        "description": "按文字合成一段语音的受理输入：用参考音频库里一个音色的声音把 ``text`` 念出来。\n\n``locale`` 不给时不声明用哪种语言念（final-cut 的原文没有声明语言）。``maxDurationMs`` 给了时念出来\n更长就照配音每句的规则先加速、再截尾。归属参数与 ``userName`` 的规则同配音。",
+        "properties": {
+          "conversationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversationid"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "zh",
+                  "en",
+                  "de",
+                  "es",
+                  "fr"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "maxDurationMs": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "最长多少毫秒；不写时念多长就是多长",
+            "title": "Maxdurationms"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "reference": {
+            "$ref": "#/components/schemas/DubbingVoiceReferenceIn"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taskid"
+          },
+          "text": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "text",
+          "reference"
+        ],
+        "title": "SpeechIn",
         "type": "object"
       },
       "SpreadOut": {
@@ -20085,6 +20187,7 @@
                     "image",
                     "subtitle",
                     "dubbing",
+                    "speech",
                     "audio",
                     "whole_film"
                   ],
@@ -20414,6 +20517,57 @@
           }
         ],
         "summary": "Submit Music"
+      }
+    },
+    "/generations/speeches": {
+      "post": {
+        "description": "按文字合成一段语音（final-cut 的旁白配音），另起一条记录（种类 ``speech``）。\n\n用参考音频库里那条音色（要没移除、是音色，否则 422；取前 10 秒）的声音把 ``text`` 念出来，给了\n``locale`` 时写明用这种语言念，不给时不写。给了 ``maxDurationMs`` 时念出来更长就先加速，最多\n1.25 倍，还放不下就截到这个长度并淡出；不补静音，念多长（加速后）就多长。产物是一段 m4a\n（``outputUrl``，时长在 ``durationMs``），加速了多少、截没截在 ``dubbedLines`` 唯一的一项里。\n``text`` 的字数上限同配音每句；给了 ``conversationId`` 却读不到这段对话 404；配音没开通 422。\n``userName`` 的规则同出片，只用来替人办事，不进 ``request``。",
+        "operationId": "submit_speech_generations_speeches_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeechIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Submit Speech"
       }
     },
     "/generations/subtitles": {

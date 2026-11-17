@@ -30,7 +30,7 @@ import type { ExportLocale } from './request'
  * 按语言导出：final-cut 的原文是视频自带的语言（主文件根上变量的默认值，没有值表），能加的每种语言一份值表
  * `locales/<语言>.json`（变量 id → 这种语言的值）。导出一种语言时规则和编辑器预览这种语言一样：字幕的字是主文件
  * 根上的变量，值交给渲染器；贴片、场景里随语言的字段由 `localizedHostValues`（和预览同一个函数）并进宿主的
- * `data-variable-values`；人声由 `localizedVoices`（也和预览同一个函数）定，原文也要用它去掉配音片段。
+ * `data-variable-values`；人声由 `localizedVoices`（也和预览同一个函数）定，原文也要用它去掉其它语言的配音片段。
  */
 
 /** 成功时的结果，或说明哪里不对的一句话（会给用户看，不带值表里的字）。 */
@@ -175,7 +175,7 @@ const withLeadingSpace = (html: string, from: number, to: number) => {
 
 /**
  * 主文件按导出的语言 `locale`（原文是 null）放人声：规则见 `localizedVoices`（和预览同一个函数），别的语言的
- * 配音片段去掉，AI 配音时原声关掉。只改要改的元素，别的字一个不动。
+ * 配音片段去掉，AI 配音时原声和原文的旁白关掉。只改要改的元素，别的字一个不动。
  */
 export function withLocalizedVoices(html: string, locale: ExportLocale | null): string {
   const root = [...elementsOf(parse(html, { sourceCodeLocationInfo: true }))].find((element) =>

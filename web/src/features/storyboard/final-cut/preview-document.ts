@@ -114,7 +114,7 @@ export function withLocalizedHosts(html: string, values: LocaleValues | null): s
 
 /**
  * 按显示着的语言 `locale`（原文是 null）放人声：规则见 `localizedVoices`（别的语言的配音片段去掉，AI 配音时
- * 原声关掉）。没有要改的时原样返回。
+ * 原声和原文的旁白关掉）。没有要改的时原样返回。
  */
 function withLocalizedVoices(html: string, locale: Language): string {
   const film = parse(html)

@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import type { DubbingIn } from '@/shared/api/generated/types.gen'
+import type { DubbingIn, SpeechIn } from '@/shared/api/generated/types.gen'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { server } from '@/testing/mocks/server'
 import type { GenerationJob } from '../storyboard.api'
@@ -76,7 +76,9 @@ describe('useDubbing', () => {
       ),
     })
 
-    await act(() => result.current.start('en', targets, (setting) => setting))
+    await act(() =>
+      result.current.start('en', { takes: targets, narrations: [] }, (setting) => setting),
+    )
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1))
 
     expect(
@@ -107,5 +109,96 @@ describe('useDubbing', () => {
       { voice: EMMA, url: 'https://media.test/dub-emma.m4a' },
     ])
     expect(result.current.generating).toBe(0)
+  })
+
+  describe('旁白的句子：每句按文字合成一次，和素材片的请求一起结束', () => {
+    /** 合成接口：记下请求体，答复一条排队中的记录；之后读到的是合成好的那一条。 */
+    const serveSpeeches = () => {
+      const records: GenerationJob[] = []
+      const sent: SpeechIn[] = []
+      server.use(
+        http.get('*/api/generations', ({ request }) =>
+          HttpResponse.json({
+            items: new URL(request.url).searchParams.get('kind') === 'speech' ? records : [],
+          }),
+        ),
+        http.post('*/api/generations/speeches', async ({ request }) => {
+          const body = (await request.json()) as SpeechIn
+          sent.push(body)
+          const id = crypto.randomUUID()
+          records.unshift(
+            makeGenerationJob({
+              id,
+              kind: 'speech',
+              outputUrl: 'https://media.test/speech.m4a',
+              durationMs: 900,
+            }),
+          )
+          return HttpResponse.json(
+            { generation: makeGenerationJob({ id, kind: 'speech', status: 'submitted' }) },
+            { status: 202 },
+          )
+        }),
+      )
+      return sent
+    }
+    const render = (onDone: (done: DubbingDone) => void) => {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      return renderHook(() => useDubbing(CONVERSATION, onDone), {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        ),
+      }).result
+    }
+
+    it('其它语言下带着语言和上限发，结果在 `narrations` 里', async () => {
+      const sent = serveSpeeches()
+      const onDone = vi.fn<(done: DubbingDone) => void>()
+      const result = render(onDone)
+      const line = { caption: 'n1', text: 'Hello', voice: EMMA, maxMs: 900 }
+
+      await act(() =>
+        result.current.start('en', { takes: [], narrations: [line] }, (setting) => setting),
+      )
+      await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1))
+
+      expect(sent).toEqual([
+        {
+          conversationId: CONVERSATION,
+          text: 'Hello',
+          locale: 'en',
+          reference: { kind: 'reference_audio', referenceId: EMMA },
+          maxDurationMs: 900,
+        },
+      ])
+      const done = onDone.mock.calls[0]?.[0]
+      expect(
+        done?.narrations.map(({ line: each, outcome }) => ({
+          caption: each.caption,
+          url: outcome.kind === 'ready' ? outcome.job.outputUrl : outcome.message,
+        })),
+      ).toEqual([{ caption: 'n1', url: 'https://media.test/speech.m4a' }])
+    })
+
+    it('原文下不写语言，也不写上限', async () => {
+      const sent = serveSpeeches()
+      const onDone = vi.fn<(done: DubbingDone) => void>()
+      const result = render(onDone)
+      const line = { caption: null, text: '欢迎光临', voice: EMMA }
+
+      await act(() =>
+        result.current.start(null, { takes: [], narrations: [line] }, (setting) => setting),
+      )
+      await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1))
+
+      expect(sent).toEqual([
+        {
+          conversationId: CONVERSATION,
+          text: '欢迎光临',
+          reference: { kind: 'reference_audio', referenceId: EMMA },
+        },
+      ])
+      expect(result.current.narrating).toBe(0)
+    })
   })
 })

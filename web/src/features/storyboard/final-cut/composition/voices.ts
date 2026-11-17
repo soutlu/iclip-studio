@@ -1,14 +1,16 @@
 /**
- * 按语言放人声。原文永远用原声；加的每种语言有一个人声设置，记在主文件根上的 `data-voice-modes`：
- * - 保留原声（`original`）：这种语言的配音片段不出声，原声照常；
- * - AI 配音（`dub`）：这种语言的配音片段出声，原视频的声音（视频片段的原声、分离出来的原声片段）都不出声。
+ * 按语言放人声。原文用原声，加上原文的旁白（原文下的配音片段，见 `film.ts` 的 `AudioDub`）；加的每种语言有一个
+ * 人声设置，记在主文件根上的 `data-voice-modes`：
+ * - 保留原声（`original`）：和原文一样，这种语言的配音片段不出声；
+ * - AI 配音（`dub`）：这种语言的配音片段出声，原视频的声音（视频片段的原声、分离出来的原声片段）和原文的旁白
+ *   都不出声。
  * 每种语言还记着配音用的音色：参考音频库里一个音色的编号，或者从素材片的原声里取（null）；各句可以有自己的
  * 选择（按字幕编号记）：用某个音色（null 是原声的音色），或者不配音，没记的句子跟着这种语言的音色。写法是
  * `{ "<语言>": { "mode": "dub" | "original", "voice": "<音色>" | null,
  *   "lines": { "<字幕编号>": { "voice": "<音色>" | null } | { "dub": false } } } }`，`lines` 空着时不写；没写的语言、
  * 写法不对的语言都是保留原声、原声的音色，写法不对的句子当没选过。
- * 配音片段是带 `data-locale`、`data-dub-of` 的普通 `<audio>`（见 `film.ts` 的 `AudioDub`）。预览和按语言导出都用
- * `localizedVoices` 按这条规则改主文件。
+ * 配音片段是带 `data-dub-of` 的普通 `<audio>`，其它语言的带 `data-locale`，旁白不带（见 `film.ts` 的 `AudioDub`）。
+ * 预览和按语言导出都用 `localizedVoices` 按这条规则改主文件。
  */
 export const VOICE_MODES = 'data-voice-modes'
 
@@ -146,7 +148,8 @@ const named = (value: string | undefined) => value !== undefined && value !== ''
 /**
  * 按语言放人声（规则见文件头）：`elements` 是主文件根下的元素（按文件里的先后），`modes` 是根上的人声设置，
  * `locale` 是要放的语言（原文是 null）。答复要改的元素，按文件里的先后：
- * - 配音片段：别的语言的、原文下的、这种语言保留原声时的都去掉；
+ * - 其它语言的配音片段：别的语言的、原文下的、这种语言保留原声时的都去掉；
+ * - 旁白：AI 配音时去掉；
  * - AI 配音时：原声开着的视频片段关掉原声（照编辑器的写法加 `muted`、去掉 `data-has-audio`），分离出来的
  *   原声片段（带 `data-sync-origin` 的 `<audio>`）去掉。
  * 别的元素不动。
@@ -158,8 +161,12 @@ export function localizedVoices(
 ): VoiceChange[] {
   const dubbing = voiceModeOf(modes, locale) === 'dub'
   return elements.flatMap(({ tag, attributes }, index): VoiceChange[] => {
-    if (tag === 'audio' && named(attributes['data-locale']) && named(attributes['data-dub-of']))
-      return dubbing && attributes['data-locale'] === locale ? [] : [{ index, remove: true }]
+    if (tag === 'audio' && named(attributes['data-dub-of'])) {
+      const spoken = named(attributes['data-locale'])
+        ? dubbing && attributes['data-locale'] === locale
+        : !dubbing
+      return spoken ? [] : [{ index, remove: true }]
+    }
     if (!dubbing) return []
     if (tag === 'audio' && named(attributes['data-sync-origin'])) return [{ index, remove: true }]
     if (tag === 'video' && attributes['muted'] === undefined)
