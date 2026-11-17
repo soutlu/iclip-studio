@@ -3241,83 +3241,101 @@ describe('final-cut 编辑器 · 属性', () => {
       expect(fetched).toEqual([URL_A, MUSIC])
     })
 
-    it('选预设、调一段均衡、加一个效果再改参数：各是一步撤销，存下的效果链对', async () => {
+    // 音色风格和精细调音：一条用例只做一样，连着做会超过单条用例的时限
+    const fxChain = () =>
+      parseAudioFxChain(savedAttribute('clip-1', 'data-fx-chain') ?? '{"version":1,"nodes":[]}')
+    const styleTile = (name: string) =>
+      within(within(inspector()).getByRole('radiogroup', { name: '音色风格' })).getByRole('radio', {
+        name,
+      })
+    const eqGains = () => eqBandsOf(fxChain()).map((band) => band.gain)
+    const fineTune = () => within(inspector()).getByRole('button', { name: /^精细调音/ })
+    const openVoiceClip = async () => {
       const user = await openWith([video({ src: URL_A, duration: 2_000 })])
       await pick(user, 'A · 镜头 1')
       await pastDelay()
-      const chain = () =>
-        parseAudioFxChain(savedAttribute('clip-1', 'data-fx-chain') ?? '{"version":1,"nodes":[]}')
-      const style = () => within(inspector()).getByRole('radiogroup', { name: '音色风格' })
-      const tile = (name: string) => within(style()).getByRole('radio', { name })
-      const gains = () => eqBandsOf(chain()).map((band) => band.gain)
-      expect(tile('原声')).toHaveAttribute('aria-checked', 'true')
+      return user
+    }
 
-      await user.click(tile('纯净人声'))
-      await waitSaved(() => expect(presetOf(chain())).toBe('voice-clean'))
-      expect(tile('纯净人声')).toHaveAttribute('aria-checked', 'true')
+    it('选预设、从全部预设里换一个：各是一步撤销，链上只有现在这个预设的节点', async () => {
+      const user = await openVoiceClip()
+      expect(styleTile('原声')).toHaveAttribute('aria-checked', 'true')
+
+      await user.click(styleTile('纯净人声'))
+      await waitSaved(() => expect(presetOf(fxChain())).toBe('voice-clean'))
+      expect(styleTile('纯净人声')).toHaveAttribute('aria-checked', 'true')
       // 从全部预设里换一个：只剩它的节点，快捷小块的最后一个换成它
       await user.click(within(inspector()).getByRole('button', { name: '全部预设 (22)' }))
       await user.click(screen.getByRole('menuitemradio', { name: /^花栗鼠/ }))
-      await waitSaved(() => expect(presetOf(chain())).toBe('chipmunk'))
-      expect(chain().nodes.every((node) => node.fromPreset === 'chipmunk')).toBe(true)
-      expect(tile('花栗鼠')).toHaveAttribute('aria-checked', 'true')
+      await waitSaved(() => expect(presetOf(fxChain())).toBe('chipmunk'))
+      expect(fxChain().nodes.every((node) => node.fromPreset === 'chipmunk')).toBe(true)
+      expect(styleTile('花栗鼠')).toHaveAttribute('aria-checked', 'true')
 
-      const fineTune = () => within(inspector()).getByRole('button', { name: /^精细调音/ })
+      await user.click(undoButton())
+      await waitSaved(() => expect(presetOf(fxChain())).toBe('voice-clean'))
+      await user.click(undoButton())
+      await waitSaved(() => expect(savedTag('clip-1')).not.toContain('data-fx-chain'))
+      expect(styleTile('原声')).toHaveAttribute('aria-checked', 'true')
+    })
+
+    it('调一段均衡、双击滑杆归零：各是一步撤销，三段都回到 0 时去掉均衡', async () => {
+      const user = await openVoiceClip()
       expect(fineTune()).toHaveAttribute('aria-expanded', 'false')
       expect(fineTune()).toHaveTextContent('默认')
       await user.click(fineTune())
-      // 双击滑杆归零这一段；右上「归零」把均衡和升降调一起清掉
+
       await typeStrength(user, '中频 1kHz', '0.0dB', '2')
-      await waitSaved(() => expect(gains()).toEqual([0, 2, 0]))
+      await waitSaved(() => expect(eqGains()).toEqual([0, 2, 0]))
       await user.dblClick(within(inspector()).getByRole('slider', { name: '中频 1kHz' }))
-      await waitSaved(() => expect(savedTag('clip-1')).not.toContain('fromEq'))
+      await waitSaved(() => expect(savedTag('clip-1')).not.toContain('data-fx-chain'))
+
+      await user.click(undoButton())
+      await waitSaved(() => expect(eqGains()).toEqual([0, 2, 0]))
+      await user.click(undoButton())
+      await waitSaved(() => expect(savedTag('clip-1')).not.toContain('data-fx-chain'))
+    })
+
+    it('升降调以后点右上「归零」：一起清掉，是一步撤销', async () => {
+      const user = await openVoiceClip()
+      await user.click(fineTune())
+      expect(within(inspector()).queryByRole('button', { name: '归零' })).toBeNull()
+
       await typeStrength(user, '升降音调', '0半音', '3')
       await waitSaved(() => expect(savedTag('clip-1')).toContain('pitchshift'))
       await user.click(within(inspector()).getByRole('button', { name: '归零' }))
-      await waitSaved(() =>
-        expect(chain().nodes.every((node) => node.fromPreset === 'chipmunk')).toBe(true),
-      )
+      await waitSaved(() => expect(savedTag('clip-1')).not.toContain('data-fx-chain'))
       expect(within(inspector()).queryByRole('button', { name: '归零' })).toBeNull()
+
+      await user.click(undoButton())
+      await waitSaved(() => expect(savedTag('clip-1')).toContain('pitchshift'))
+    })
+
+    it('加一个效果再改参数：各是一步撤销，均衡不动，摘要跟着变', async () => {
+      const user = await openVoiceClip()
+      await user.click(fineTune())
       await typeStrength(user, '低频 200Hz', '0.0dB', '3')
-      await waitSaved(() => expect(gains()).toEqual([3, 0, 0]))
+      await waitSaved(() => expect(eqGains()).toEqual([3, 0, 0]))
 
       await user.click(within(inspector()).getByRole('button', { name: /添加效果/ }))
       await user.click(screen.getByRole('menuitem', { name: /^隔门闷音过滤/ }))
       await waitSaved(() =>
-        expect(ownEffects(chain()).map((node) => node.type)).toEqual(['lowpass']),
+        expect(ownEffects(fxChain()).map((node) => node.type)).toEqual(['lowpass']),
       )
       expect(within(inspector()).getByRole('group', { name: '隔门闷音过滤' })).toBeVisible()
       await typeStrength(user, '保留频率', '8000Hz', '1800')
       await waitSaved(() =>
-        expect(ownEffects(chain())[0]?.params).toMatchObject({ frequency: 1800 }),
+        expect(ownEffects(fxChain())[0]?.params).toMatchObject({ frequency: 1800 }),
       )
+      expect(eqGains()).toEqual([3, 0, 0])
       expect(fineTune()).toHaveTextContent('均衡 · 1 个效果')
 
-      // 每一下是一步撤销
       await user.click(undoButton())
       await waitSaved(() =>
-        expect(ownEffects(chain())[0]?.params).toMatchObject({ frequency: 8000 }),
+        expect(ownEffects(fxChain())[0]?.params).toMatchObject({ frequency: 8000 }),
       )
       await user.click(undoButton())
-      await waitSaved(() => expect(ownEffects(chain())).toEqual([]))
-      expect(gains()).toEqual([3, 0, 0])
-      await user.click(undoButton())
-      await waitSaved(() => expect(gains()).toEqual([0, 0, 0]))
-      expect(presetOf(chain())).toBe('chipmunk')
-      // 「归零」、升降调、双击归零、调中频也各是一步
-      await user.click(undoButton())
-      await waitSaved(() => expect(gains()).toEqual([0, 0, 0]))
-      expect(savedTag('clip-1')).toContain('pitchshift')
-      await user.click(undoButton())
-      await user.click(undoButton())
-      await waitSaved(() => expect(gains()).toEqual([0, 2, 0]))
-      await user.click(undoButton())
-      await waitSaved(() => expect(gains()).toEqual([0, 0, 0]))
-      await user.click(undoButton())
-      await waitSaved(() => expect(presetOf(chain())).toBe('voice-clean'))
-      await user.click(undoButton())
-      await waitSaved(() => expect(savedTag('clip-1')).not.toContain('data-fx-chain'))
-      expect(tile('原声')).toHaveAttribute('aria-checked', 'true')
+      await waitSaved(() => expect(ownEffects(fxChain())).toEqual([]))
+      expect(eqGains()).toEqual([3, 0, 0])
     })
   })
 })
