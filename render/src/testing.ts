@@ -80,6 +80,7 @@ export function video(overrides: Partial<VideoClip> = {}): VideoClip {
     audioGroup: null,
     fxCarve: null,
     fxChain: null,
+    automation: null,
     ...overrides,
   }
 }
@@ -126,6 +127,7 @@ export function audio(overrides: Partial<AudioClip> = {}): AudioClip {
     audioGroup: null,
     fxCarve: null,
     fxChain: null,
+    automation: null,
     ...overrides,
   }
 }

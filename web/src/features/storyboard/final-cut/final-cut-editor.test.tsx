@@ -3337,6 +3337,126 @@ describe('final-cut 编辑器 · 属性', () => {
       await waitSaved(() => expect(ownEffects(fxChain())).toEqual([]))
       expect(eqGains()).toEqual([3, 0, 0])
     })
+
+    const volumeLane = (id: string) =>
+      parseAutomation(
+        savedAttribute(id, 'data-automation') ?? '{"version":1,"lanes":[]}',
+      ).lanes.find((lane) => lane.target === 'volume')?.points
+
+    it('波形音量关键帧：打开加平的一条、关掉去掉曲线，各算一步撤销；开没开从文件里读', async () => {
+      const user = await openWith([video({ src: URL_A, duration: 2_000 })])
+      await pick(user, 'A · 镜头 1')
+      await pastDelay()
+      await user.click(within(inspector()).getByRole('button', { name: /^精细调音/ }))
+      const toggle = () => control('波形音量关键帧')
+      expect(toggle()).toHaveAttribute('aria-checked', 'false')
+      expect(within(inspector()).queryByRole('button', { name: '重置' })).toBeNull()
+
+      await user.click(toggle())
+      await waitSaved(() =>
+        expect(volumeLane('clip-1')).toEqual([
+          { t: 0, v: 1 },
+          { t: 2, v: 1 },
+        ]),
+      )
+      expect(toggle()).toHaveAttribute('aria-checked', 'true')
+      expect(screen.getByRole('group', { name: /^A · 镜头 1，/ })).toHaveTextContent('关键帧')
+      expect(within(inspector()).getByRole('button', { name: /^精细调音/ })).toHaveTextContent(
+        '关键帧',
+      )
+
+      await user.click(toggle())
+      await waitSaved(() => expect(savedTag('clip-1')).not.toContain('data-automation'))
+      expect(toggle()).toHaveAttribute('aria-checked', 'false')
+
+      await user.click(undoButton())
+      await waitSaved(() => expect(volumeLane('clip-1')?.[0]?.v).toBe(1))
+      expect(toggle()).toHaveAttribute('aria-checked', 'true')
+      await user.click(undoButton())
+      await waitSaved(() => expect(savedTag('clip-1')).not.toContain('data-automation'))
+      expect(toggle()).toHaveAttribute('aria-checked', 'false')
+    })
+
+    it('波形音量关键帧的「重置」：调过的曲线换回平的一条，算一步撤销', async () => {
+      const dipped = JSON.stringify({
+        version: 1,
+        lanes: [
+          {
+            target: 'volume',
+            points: [
+              { t: 0, v: 0.5 },
+              { t: 2, v: 1 },
+            ],
+          },
+        ],
+      })
+      const user = await openWith([video({ src: URL_A, duration: 2_000, automation: dipped })])
+      await pick(user, 'A · 镜头 1')
+      await pastDelay()
+      await user.click(within(inspector()).getByRole('button', { name: /^精细调音/ }))
+      expect(control('波形音量关键帧')).toHaveAttribute('aria-checked', 'true')
+
+      await user.click(within(inspector()).getByRole('button', { name: '重置' }))
+      await waitSaved(() =>
+        expect(volumeLane('clip-1')).toEqual([
+          { t: 0, v: 1 },
+          { t: 2, v: 1 },
+        ]),
+      )
+      await user.click(undoButton())
+      await waitSaved(() => expect(volumeLane('clip-1')?.[0]?.v).toBe(0.5))
+    })
+
+    it('时间线上的音量关键帧：没选中的片段只画线、改不了；选中后每个点是滑杆，方向键调音量、Delete 删中间的点，各一步撤销', async () => {
+      const lane = JSON.stringify({
+        version: 1,
+        lanes: [
+          {
+            target: 'volume',
+            points: [
+              { t: 0, v: 1 },
+              { t: 1, v: 1 },
+              { t: 2, v: 1 },
+            ],
+          },
+        ],
+      })
+      const user = await openWith([
+        video({ src: URL_A, duration: 2_000, automation: lane }),
+        audio({ start: 3_000, duration: 2_000, automation: lane }),
+      ])
+      const music = () => screen.getByRole('group', { name: /^配乐，/ })
+      const shot = () => screen.getByRole('group', { name: /^A · 镜头 1，/ })
+      expect(within(music()).getByTestId('volume-envelope')).toBeInTheDocument()
+      expect(within(music()).queryAllByRole('slider', { name: /^音量关键帧/ })).toEqual([])
+      expect(within(music()).queryByTestId('volume-envelope-line')).toBeNull()
+
+      await pick(user, 'A · 镜头 1')
+      expect(within(music()).queryAllByRole('slider', { name: /^音量关键帧/ })).toEqual([])
+      const points = within(shot()).getAllByRole('slider', { name: /^音量关键帧/ })
+      expect(points).toHaveLength(3)
+      expect(points[1]).toHaveAttribute('aria-valuetext', '0.0 dB，第 1.0 秒')
+
+      points[1]?.focus()
+      await user.keyboard('{Shift>}{ArrowDown}{/Shift}')
+      await waitSaved(() => expect(volumeLane('clip-1')?.[1]?.v).toBeLessThan(0.6))
+      expect(volumeLane('clip-1')?.[1]?.t).toBe(1)
+      expect(within(shot()).getByRole('slider', { name: '音量关键帧 2' })).toHaveFocus()
+      // 两头的点按 Delete 不删，片段也还在
+      within(shot()).getByRole('slider', { name: '音量关键帧 1' }).focus()
+      await user.keyboard('{Delete}')
+      within(shot()).getByRole('slider', { name: '音量关键帧 2' }).focus()
+      await user.keyboard('{Delete}')
+      await waitSaved(() => expect(volumeLane('clip-1')).toHaveLength(2))
+      expect(savedTag('clip-1')).toContain('<video')
+      // 别的片段的曲线没动
+      expect(volumeLane('music-1')).toHaveLength(3)
+
+      await user.click(undoButton())
+      await waitSaved(() => expect(volumeLane('clip-1')).toHaveLength(3))
+      await user.click(undoButton())
+      await waitSaved(() => expect(volumeLane('clip-1')?.[1]?.v).toBe(1))
+    })
   })
 })
 

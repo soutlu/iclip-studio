@@ -3004,6 +3004,120 @@
   color: var(--color-primary);
 }
 
+/* 波形音量关键帧：片段上的小标、波形上的曲线都用琥珀色（设计系统的 tertiary 一族） */
+.wf-clip-keyframes {
+  background: color-mix(in srgb, var(--color-tertiary) 16%, transparent);
+  color: var(--color-tertiary);
+  font-weight: 500;
+}
+
+@container (width < 120px) {
+  .wf-clip-keyframes {
+    display: none;
+  }
+}
+
+/* 不出声的片段（静音、关了原声）：波形画灰（高低由波形自己压矮） */
+.wf-clip-sound.is-silent .timeline-wave,
+.wf-clip-wave.is-silent .timeline-wave {
+  --timeline-wave-color: color-mix(in srgb, var(--color-on-surface) 16%, transparent);
+}
+
+/* 有音量曲线时波形两边让出裁剪把手的点按区，两头的点不被把手盖住；视频片段的波形条加高，线有地方上下，
+   但不高过片段的一半，按片段正中照常是挪动 */
+.wf-clip-sound.has-envelope,
+.wf-clip-wave.has-envelope {
+  padding: 0 14px;
+}
+
+.wf-clip-wave.has-envelope {
+  height: 10px;
+}
+
+/* 曲线一层叠在波形上，自己不接指针：只有选中时的线和点接，别处按到片段上 */
+.wf-envelope {
+  position: absolute;
+  right: 14px;
+  bottom: 0;
+  left: 14px;
+  z-index: var(--z-local-2);
+  height: 10px;
+  pointer-events: none;
+}
+
+/* 按百分比画在这一块里：线宽不跟着拉伸；按在线上的范围不出这一块 */
+.wf-envelope-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.wf-envelope-line {
+  fill: none;
+  stroke: var(--color-tertiary);
+  stroke-linejoin: round;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+
+/* 线两边各 5px 都算按在线上（照引擎工作台的抓取距离） */
+.wf-envelope-hit {
+  fill: none;
+  cursor: copy;
+  pointer-events: stroke;
+  stroke: transparent;
+  stroke-width: 10;
+  vector-effect: non-scaling-stroke;
+}
+
+.wf-envelope-point {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  translate: -50% -50%;
+  border-radius: var(--radius-full);
+  background: var(--color-tertiary);
+  box-shadow: 0 0 0 1px var(--color-surface-container-lowest);
+}
+
+.wf-envelope.is-editable .wf-envelope-point {
+  cursor: ns-resize;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* 圆点看着小，按的地方是 14px 见方 */
+.wf-envelope.is-editable .wf-envelope-point::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  translate: -50% -50%;
+}
+
+.wf-envelope-point.is-active {
+  scale: 1.4;
+}
+
+.wf-envelope-readout {
+  position: absolute;
+  z-index: var(--z-local-3);
+  padding: 0 4px;
+  translate: 8px -120%;
+  border-radius: var(--radius-xs);
+  background: var(--color-inverse-surface);
+  color: var(--color-inverse-on-surface);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-caption--line-height);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 /* 音频片段窄得放不下音符、名字和波形时只画波形（名字仍在无障碍名称和「属性」里） */
 .wf-clip.is-audio > .wf-clip-body {
   container-type: inline-size;

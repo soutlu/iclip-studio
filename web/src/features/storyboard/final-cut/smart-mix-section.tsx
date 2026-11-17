@@ -129,7 +129,14 @@ export function SmartMixSection({
           strength={presetAmountOf(mix.chain)}
         />
       )}
-      <MixFineTune chain={mix.chain} onChange={mix.editChain} onEditing={onEditing} />
+      <MixFineTune
+        chain={mix.chain}
+        envelope={mix.envelope}
+        onChange={mix.editChain}
+        onEditing={onEditing}
+        onEnvelope={mix.setEnvelope}
+        onResetEnvelope={mix.resetEnvelope}
+      />
     </section>
   )
 }

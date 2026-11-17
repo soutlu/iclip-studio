@@ -182,6 +182,7 @@ describe('按标签认片段', () => {
         audioGroup: null,
         fxCarve: null,
         fxChain: null,
+        automation: null,
       },
     ])
   })

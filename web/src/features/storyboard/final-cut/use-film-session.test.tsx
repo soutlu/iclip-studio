@@ -1213,6 +1213,7 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
       audioGroup: null,
       fxCarve: null,
       fxChain: null,
+      automation: null,
     })
     expect(result.current.film?.durationMs).toBe(10_000)
     await waitFor(() => expect(saves).toHaveLength(1))

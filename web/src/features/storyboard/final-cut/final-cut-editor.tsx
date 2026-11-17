@@ -167,6 +167,7 @@ import { useFilmSession, type NewAudio } from './use-film-session'
 import { useSmartMix } from './use-smart-mix'
 import { useTranslation } from './use-translation'
 import { useWholeFilmExport } from './use-whole-film-export'
+import { withVolumePoints } from './volume-envelope'
 import {
   projectFilesBase,
   useFinalCutPreviewTokens,
@@ -561,6 +562,10 @@ function EditorBody({
     writeFx: (id, change) => {
       leaveMaterial()
       session.setFx(id, change)
+    },
+    writeAutomation: (id, change) => {
+      leaveMaterial()
+      session.setAutomation(id, change)
     },
     onNotice: notice,
   })
@@ -1650,6 +1655,10 @@ function EditorBody({
           onRestart={(starts) => {
             leaveMaterial()
             session.restart(starts)
+          }}
+          onEnvelope={(id, points) => {
+            leaveMaterial()
+            session.setAutomation(id, (automation) => withVolumePoints(automation, points))
           }}
           scrollRequest={scrollRequest}
           selected={selected}
