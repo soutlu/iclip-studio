@@ -750,6 +750,104 @@ describe('final-cut 编辑器 · 多选', () => {
   })
 })
 
+describe('final-cut 编辑器 · 吸到配乐的节拍', () => {
+  const MUSIC = 'https://media.test/audio/music.mp3'
+
+  // 配乐：8 秒鼓点，每 0.5 秒一下、每 2 秒重一下。文件内容直接是解好的采样（48 kHz），离线音频上下文原样读出来，
+  // 节拍由引擎真的算
+  const RATE = 48_000
+  const drums = Float32Array.from({ length: 8 * RATE }, (_, i) => {
+    const t = i / RATE
+    const sinceHit = t % 0.5
+    const level = t % 2 < 0.5 ? 0.9 : 0.6
+    return (
+      level * Math.exp(-25 * sinceHit) * Math.sin(2 * Math.PI * 60 * sinceHit) +
+      0.05 * Math.sin(2 * Math.PI * 440 * t)
+    )
+  })
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      'OfflineAudioContext',
+      class {
+        decodeAudioData(data: ArrayBuffer) {
+          return Promise.resolve({ getChannelData: () => new Float32Array(data) })
+        }
+      },
+    )
+    server.use(http.get(MUSIC, () => HttpResponse.arrayBuffer(drums.slice().buffer)))
+  })
+
+  afterEach(() => vi.unstubAllGlobals())
+
+  // 视频片段在 0–1.2 秒（挪动时结尾离节拍远，只有开头吸），配乐在声音区 0–8 秒
+  const open = async () => {
+    putMockProjectMain(
+      CONVERSATION,
+      mainFile(
+        [
+          video({ label: 'A · 镜头 1', src: URL_A, duration: 1_200 }),
+          audio({ src: MUSIC, duration: 8_000 }),
+        ],
+        { width: 720, height: 1280 },
+      ),
+    )
+    const user = userEvent.setup()
+    await openEditor()
+    return user
+  }
+  const clipOf = (label: string) => screen.getByRole('group', { name: new RegExp(`^${label}，`) })
+  const marks = () => within(clipOf('配乐')).findByTestId('beat-marks', {}, { timeout: 4000 })
+  /** 画出来的节拍在 final-cut 的第几毫秒：配乐从 0 秒放起，测试里一秒 100 像素。 */
+  const beatsDrawn = async () =>
+    [...(await marks()).children].map((mark) =>
+      Math.round(Number.parseFloat((mark as HTMLElement).style.left) * 10),
+    )
+  const savedStart = () => Number(/data-start="([\d.]+)"/.exec(savedClips()[0] ?? '')?.[1])
+  /** 把视频片段往右拖到第 `ms` 毫秒处（测试里片段的左边量成 0、一秒 100 像素），不松手；返回松手。 */
+  const press = (ms: number) => {
+    const body = within(clipOf('A · 镜头 1')).getByRole('button', { name: /^选中：/ })
+    const x = 10 + ms / 10
+    fireEvent.pointerDown(body, { button: 0, pointerId: 1, clientX: 10, clientY: 50 })
+    fireEvent.pointerMove(body, { pointerId: 1, clientX: x, clientY: 50 })
+    return () => fireEvent.pointerUp(body, { pointerId: 1, clientX: x, clientY: 50 })
+  }
+  /** 2 秒以后的第一拍：够不着视频片段原来的边、配乐的两端和播放头。 */
+  const beatAfter2s = async () => {
+    const beat = (await beatsDrawn()).find((ms) => ms > 2_000)
+    if (beat === undefined) throw new Error('没有画出节拍')
+    return beat
+  }
+
+  it('配乐片段上画出算出来的节拍，每 0.5 秒一拍，其中有强拍', async () => {
+    await open()
+    const beats = await beatsDrawn()
+    expect(new Set(beats.slice(1).map((ms, i) => ms - (beats[i] ?? 0)))).toEqual(new Set([500]))
+    const strong = (await marks()).querySelectorAll('.is-strong').length
+    expect(strong).toBeGreaterThan(0)
+    expect(strong).toBeLessThan(beats.length)
+  })
+
+  it('拖一个片段到节拍附近：吸附线画在节拍上，松手后开头正好落在节拍上', async () => {
+    await open()
+    const beat = await beatAfter2s()
+    const release = press(beat - 20)
+    expect(screen.getByTestId('snap-guide')).toHaveStyle({ left: `${beat / 10}px` })
+    release()
+    await waitSaved(() => expect(savedStart()).toBe(beat / 1000))
+  })
+
+  it('关掉吸附：不吸节拍，片段停在拖到的位置', async () => {
+    const user = await open()
+    const beat = await beatAfter2s()
+    await user.click(within(toolbar()).getByRole('button', { name: '吸附' }))
+    const release = press(beat - 20)
+    expect(screen.queryByTestId('snap-guide')).toBeNull()
+    release()
+    await waitSaved(() => expect(savedStart()).toBe((beat - 20) / 1000))
+  })
+})
+
 describe('final-cut 编辑器 · 片段右键菜单', () => {
   const user = () => userEvent.setup()
   const openWith = async (clips: Parameters<typeof mainFile>[0], extra = '') => {
@@ -3237,8 +3335,9 @@ describe('final-cut 编辑器 · 属性', () => {
       expect(carveSwitch()).toHaveAttribute('aria-checked', 'false')
       await pastDelay()
       expect(savedTag('music-1')).not.toContain('data-fx-carve')
-      // 只分析了一次：读失败以后不会一直重试
-      expect(fetched).toEqual([URL_A, MUSIC])
+      // 读失败以后不会一直重试：人声读一次；配乐打开时节拍分析读过一次（失败不重试），压低最多再读一次
+      expect(fetched.filter((url) => url === URL_A)).toHaveLength(1)
+      expect(fetched.filter((url) => url === MUSIC).length).toBeLessThanOrEqual(2)
     })
 
     // 音色风格和精细调音：一条用例只做一样，连着做会超过单条用例的时限

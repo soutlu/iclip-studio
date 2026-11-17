@@ -141,6 +141,14 @@ export const snapTargets = (spans: readonly Span[], playheadMs: number): SnapTar
     beatTimes: [],
   })
 
+/** 能吸上去的节拍（毫秒）。 */
+export const beatSnapTargets = (beatsMs: readonly number[]): SnapTargets =>
+  collectTimelineSnapTargets({
+    elements: [],
+    playheadTime: null,
+    beatTimes: beatsMs.map((ms) => ms / 1000),
+  })
+
 /** 吸附之后的时间；`guideMs` 是吸上去的那个点，没吸上是 null。 */
 export type Snapped = { ms: number; guideMs: number | null }
 

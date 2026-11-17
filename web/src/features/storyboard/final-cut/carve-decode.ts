@@ -12,3 +12,19 @@ export const decodeForCarve: CarveDecode = async (src) => {
   const buffer = await context.decodeAudioData(await response.arrayBuffer())
   return buffer.getChannelData(0)
 }
+
+/**
+ * 给 `decode` 加一层按地址的缓存：编辑器里智能调音和节拍分析共用，同一个地址只读一次声音。读失败的不留着，
+ * 下次重读。
+ */
+export const cachedDecode = (decode: CarveDecode): CarveDecode => {
+  const cache = new Map<string, Promise<Float32Array>>()
+  return (src) => {
+    const known = cache.get(src)
+    if (known !== undefined) return known
+    const reading = decode(src)
+    cache.set(src, reading)
+    void reading.catch(() => cache.delete(src))
+    return reading
+  }
+}

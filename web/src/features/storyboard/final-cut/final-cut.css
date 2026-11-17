@@ -3134,6 +3134,29 @@
   }
 }
 
+/* 配乐片段上的节拍：贴着底边一排细竖线，强拍更高更实；不挡拖动和点选 */
+.wf-beat-marks {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.wf-beat {
+  position: absolute;
+  bottom: 0;
+  width: 0;
+  height: 5px;
+  translate: -0.5px 0;
+  border-left: 1px solid color-mix(in srgb, var(--color-on-surface) 40%, transparent);
+}
+
+.wf-beat.is-strong {
+  height: 10px;
+  border-left-color: var(--color-on-surface);
+}
+
 /* 吸附时的对齐线 */
 .wf-snap-guide {
   position: absolute;
