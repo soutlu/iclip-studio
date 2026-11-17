@@ -2054,6 +2054,128 @@ export type DraftFileWriteIn = {
 }
 
 /**
+ * DubbedLine
+ *
+ * 配好的一句：``index`` 是它在请求 ``lines`` 里的位置，``speed`` 是加速的倍数（1 是原速），
+ * ``trimmed`` 表示加速到上限也放不下、截掉了尾巴。
+ */
+export type DubbedLine = {
+  /**
+   * Index
+   */
+  index: number
+  /**
+   * Speed
+   */
+  speed: number
+  /**
+   * Trimmed
+   */
+  trimmed: boolean
+}
+
+/**
+ * DubbingAudioReference
+ *
+ * 参考音频取一个音频地址，只收本系统存储里的地址。
+ */
+export type DubbingAudioReference = {
+  /**
+   * Kind
+   */
+  kind: 'audio'
+  /**
+   * Url
+   */
+  url: string
+}
+
+/**
+ * DubbingIn
+ *
+ * 给一条素材片配一种外语的受理输入：每句译文按 ``lines`` 的时间放，用参考音频的声音合成。
+ *
+ * ``lines`` 按开始时间排好、互不重叠，都在素材片的时长之内（时长在受理时核对）。归属参数与
+ * ``userName`` 的规则同字幕识别。
+ */
+export type DubbingIn = {
+  /**
+   * Conversationid
+   */
+  conversationId?: string | null
+  /**
+   * Lines
+   *
+   * 每句的 text 最多 500 字，所有 text 加起来最多 4000 字
+   */
+  lines: Array<DubbingLine>
+  /**
+   * Locale
+   */
+  locale: 'en' | 'de' | 'es' | 'fr'
+  /**
+   * Metadata
+   */
+  metadata?: {
+    [key: string]: unknown
+  } | null
+  /**
+   * Reference
+   */
+  reference:
+    | ({
+        kind: 'original'
+      } & DubbingOriginalReference)
+    | ({
+        kind: 'audio'
+      } & DubbingAudioReference)
+  /**
+   * Sourcejobid
+   */
+  sourceJobId: string
+  /**
+   * Taskid
+   */
+  taskId?: string | null
+  /**
+   * Username
+   */
+  userName?: string | null
+}
+
+/**
+ * DubbingLine
+ *
+ * 要配的一句：在素材片视频里的起止（毫秒，与字幕记录的 ``sentences`` 同一口径）与译文。
+ */
+export type DubbingLine = {
+  /**
+   * Endms
+   */
+  endMs: number
+  /**
+   * Startms
+   */
+  startMs: number
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * DubbingOriginalReference
+ *
+ * 参考音频取素材片自己的原声：服务端从被字幕覆盖得最多的一段里截。
+ */
+export type DubbingOriginalReference = {
+  /**
+   * Kind
+   */
+  kind: 'original'
+}
+
+/**
  * ErrorModel
  */
 export type ErrorModel = {
@@ -2876,6 +2998,10 @@ export type GenerationOut = {
    */
   createdAt: string
   /**
+   * Dubbedlines
+   */
+  dubbedLines?: Array<DubbedLine> | null
+  /**
    * Durationms
    */
   durationMs: number | null
@@ -2894,7 +3020,7 @@ export type GenerationOut = {
   /**
    * Kind
    */
-  kind: 'video' | 'image' | 'subtitle' | 'audio' | 'whole_film'
+  kind: 'video' | 'image' | 'subtitle' | 'dubbing' | 'audio' | 'whole_film'
   /**
    * Metadata
    */
@@ -10345,7 +10471,7 @@ export type ListGenerationsGenerationsGetData = {
     /**
      * Kind
      */
-    kind?: 'video' | 'image' | 'subtitle' | 'audio' | 'whole_film' | null
+    kind?: 'video' | 'image' | 'subtitle' | 'dubbing' | 'audio' | 'whole_film' | null
     /**
      * Operation
      */
@@ -10395,6 +10521,33 @@ export type ListGenerationsGenerationsGetResponses = {
 
 export type ListGenerationsGenerationsGetResponse =
   ListGenerationsGenerationsGetResponses[keyof ListGenerationsGenerationsGetResponses]
+
+export type SubmitDubbingGenerationsDubbingsPostData = {
+  body: DubbingIn
+  path?: never
+  query?: never
+  url: '/generations/dubbings'
+}
+
+export type SubmitDubbingGenerationsDubbingsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SubmitDubbingGenerationsDubbingsPostError =
+  SubmitDubbingGenerationsDubbingsPostErrors[keyof SubmitDubbingGenerationsDubbingsPostErrors]
+
+export type SubmitDubbingGenerationsDubbingsPostResponses = {
+  /**
+   * Successful Response
+   */
+  202: GenerationEnvelope
+}
+
+export type SubmitDubbingGenerationsDubbingsPostResponse =
+  SubmitDubbingGenerationsDubbingsPostResponses[keyof SubmitDubbingGenerationsDubbingsPostResponses]
 
 export type SubmitImageGenerationsImagePostData = {
   body: ImageGenerationIn

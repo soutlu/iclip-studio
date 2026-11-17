@@ -15,6 +15,7 @@ from iclip.domains.generation.schemas import (
     STATUS_PENDING,
     STATUS_SUBMITTED,
     STATUS_SUBMITTING,
+    DubbedLine,
     GenerationKind,
     GenerationOperation,
     GenerationStatus,
@@ -38,6 +39,7 @@ class GenerationOutput(SnakeModel):
     duration_ms: int | None = None
     content_md5: str | None = None
     sentences: tuple[SubtitleSentence, ...] | None = None
+    dubbed_lines: tuple[DubbedLine, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)

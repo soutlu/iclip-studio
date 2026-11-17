@@ -48,6 +48,7 @@ STATUS_FAILED: Final = "failed"
 KIND_VIDEO: Final = "video"
 KIND_IMAGE: Final = "image"
 KIND_SUBTITLE: Final = "subtitle"
+KIND_DUBBING: Final = "dubbing"
 KIND_AUDIO: Final = "audio"
 KIND_WHOLE_FILM: Final = "whole_film"
 
@@ -419,6 +420,114 @@ class SubtitleSentence(CamelModel):
         return self
 
 
+# 与 final-cut 翻译一批的上限相同：配的就是那一批字幕的译文。
+MAX_DUBBING_LINES: Final = 200
+
+MAX_DUBBING_LINE_CHARS: Final = 500
+
+MAX_DUBBING_TOTAL_CHARS: Final = 4_000
+
+
+class DubbingLine(CamelModel):
+    """要配的一句：在素材片视频里的起止（毫秒，与字幕记录的 ``sentences`` 同一口径）与译文。"""
+
+    start_ms: Annotated[int, Field(ge=0)]
+    end_ms: Annotated[int, Field(ge=0)]
+    text: Annotated[str, Field(min_length=1)]
+
+    _check_text = field_validator("text")(nonblank)
+
+    @model_validator(mode="after")
+    def _end_after_start(self) -> DubbingLine:
+        if self.end_ms <= self.start_ms:
+            raise ValueError("end_ms 必须晚于 start_ms")
+        return self
+
+
+class DubbingOriginalReference(CamelModel):
+    """参考音频取素材片自己的原声：服务端从被字幕覆盖得最多的一段里截。"""
+
+    kind: Literal["original"]
+
+
+class DubbingAudioReference(CamelModel):
+    """参考音频取一个音频地址，只收本系统存储里的地址。"""
+
+    kind: Literal["audio"]
+    url: DownloadUrl
+
+
+DubbingReference = Annotated[
+    DubbingOriginalReference | DubbingAudioReference, Field(discriminator="kind")
+]
+
+
+class DubbingIn(CamelModel):
+    """给一条素材片配一种外语的受理输入：每句译文按 ``lines`` 的时间放，用参考音频的声音合成。
+
+    ``lines`` 按开始时间排好、互不重叠，都在素材片的时长之内（时长在受理时核对）。归属参数与
+    ``userName`` 的规则同字幕识别。"""
+
+    source_job_id: uuid.UUID
+    locale: TargetLocale
+    lines: Annotated[
+        list[DubbingLine],
+        Field(
+            min_length=1,
+            max_length=MAX_DUBBING_LINES,
+            description=(
+                f"每句的 text 最多 {MAX_DUBBING_LINE_CHARS} 字，"
+                f"所有 text 加起来最多 {MAX_DUBBING_TOTAL_CHARS} 字"
+            ),
+        ),
+    ]
+    reference: DubbingReference
+    user_name: UserName | None = None
+
+    conversation_id: uuid.UUID | None = None
+    task_id: uuid.UUID | None = None
+    metadata: Metadata | None = None
+
+    @field_validator("lines")
+    @classmethod
+    def _ordered_without_overlap(cls, value: list[DubbingLine]) -> list[DubbingLine]:
+        for index in range(1, len(value)):
+            if value[index].start_ms < value[index - 1].end_ms:
+                raise ValueError(f"第 {index + 1} 句和上一句重叠或没按开始时间排好")
+        return value
+
+    @field_validator("lines")
+    @classmethod
+    def _within_limits(cls, value: list[DubbingLine]) -> list[DubbingLine]:
+        for index, line in enumerate(value, start=1):
+            if len(line.text) > MAX_DUBBING_LINE_CHARS:
+                raise ValueError(f"第 {index} 句超过 {MAX_DUBBING_LINE_CHARS} 字")
+        total = sum(len(line.text) for line in value)
+        if total > MAX_DUBBING_TOTAL_CHARS:
+            raise ValueError(f"一次最多 {MAX_DUBBING_TOTAL_CHARS} 字，这一次有 {total} 字")
+        return value
+
+
+class DubbingRequest(CamelModel):
+    kind: ClassVar[GenerationKind] = KIND_DUBBING
+    operation: ClassVar[GenerationOperation] = OPERATION_GENERATE
+
+    video_url: DownloadUrl
+    video_duration_ms: Annotated[int, Field(ge=1)]
+    locale: TargetLocale
+    lines: Annotated[list[DubbingLine], Field(min_length=1)]
+    reference: DubbingReference
+
+
+class DubbedLine(CamelModel):
+    """配好的一句：``index`` 是它在请求 ``lines`` 里的位置，``speed`` 是加速的倍数（1 是原速），
+    ``trimmed`` 表示加速到上限也放不下、截掉了尾巴。"""
+
+    index: Annotated[int, Field(ge=0)]
+    speed: Annotated[float, Field(ge=1)]
+    trimmed: bool
+
+
 MAX_MUSIC_PROMPT_CHARS: Final = 3000
 
 MusicPrompt = Annotated[str, Field(min_length=1, max_length=MAX_MUSIC_PROMPT_CHARS)]
@@ -543,6 +652,7 @@ class GenerationOut(CamelModel):
     duration_ms: int | None
     clip_stage: ClipStage | None
     sentences: list[SubtitleSentence] | None = None
+    dubbed_lines: list[DubbedLine] | None = None
     created_at: datetime
     finished_at: datetime | None = None
 
@@ -569,6 +679,7 @@ def generation_out(job: GenerationJob, *, source_address: str | None) -> Generat
         duration_ms=job.output.duration_ms,
         clip_stage=_clip_stage(job),
         sentences=None if job.output.sentences is None else list(job.output.sentences),
+        dubbed_lines=None if job.output.dubbed_lines is None else list(job.output.dubbed_lines),
         created_at=job.created_at,
         finished_at=job.finished_at,
     )
@@ -714,11 +825,15 @@ __all__ = [
     "COLUMN_FIELDS",
     "IMAGE_MAX_REFERENCES",
     "KIND_AUDIO",
+    "KIND_DUBBING",
     "KIND_IMAGE",
     "KIND_SUBTITLE",
     "KIND_VIDEO",
     "KIND_WHOLE_FILM",
     "MAX_COMPOSE_SEGMENTS",
+    "MAX_DUBBING_LINES",
+    "MAX_DUBBING_LINE_CHARS",
+    "MAX_DUBBING_TOTAL_CHARS",
     "MAX_METADATA_CHARS",
     "MAX_MODEL_CHARS",
     "MAX_MUSIC_PROMPT_CHARS",
@@ -747,6 +862,13 @@ __all__ = [
     "ComposeSegment",
     "ComposeSegmentIn",
     "DownloadUrl",
+    "DubbedLine",
+    "DubbingAudioReference",
+    "DubbingIn",
+    "DubbingLine",
+    "DubbingOriginalReference",
+    "DubbingReference",
+    "DubbingRequest",
     "GenerationEnvelope",
     "GenerationKind",
     "GenerationOperation",

@@ -5,6 +5,7 @@ from typing import Literal, Protocol
 
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import (
+    DubbedLine,
     ImageGenerationIn,
     SubtitleSentence,
     VideoEnhanceRequest,
@@ -61,6 +62,7 @@ class ProviderSubmission:
     output_url: str | None = None
     duration_ms: int | None = None
     sentences: tuple[SubtitleSentence, ...] | None = None
+    dubbed_lines: tuple[DubbedLine, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -204,7 +204,9 @@ class GenerationQueue:
                 await self._repo.mark_completed(
                     job.id,
                     output=GenerationOutput(
-                        url=submission.output_url, duration_ms=submission.duration_ms
+                        url=submission.output_url,
+                        duration_ms=submission.duration_ms,
+                        dubbed_lines=submission.dubbed_lines,
                     ),
                     provider_status=submission.provider_status,
                     provider_task_id=submission.provider_task_id,

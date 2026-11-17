@@ -20,6 +20,9 @@ class MediaPaths:
 
         return f"{OSS_ROOT}/generated-music/{job_id}.{ext}"
 
+    def generated_dubbing(self, *, job_id: uuid.UUID, ext: str) -> str:
+        return f"{OSS_ROOT}/generated-dubbing/{job_id}.{ext}"
+
     def video_master(self, *, job_id: uuid.UUID, ext: str) -> str:
         return f"{OSS_ROOT}/video-masters/{job_id}.{ext}"
 
