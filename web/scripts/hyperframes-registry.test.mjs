@@ -141,6 +141,7 @@ describe('hf:registry', () => {
         'compositions/fixture-sidecar/fixture-sidecar.html',
         'compositions/fixture-sidecar/assets/fixture-sidecar.json',
       ],
+      'fixture-passthrough': ['compositions/fixtures/fixture-passthrough.html'],
     })
     for (const path of published.items.flatMap((item) => item.files)) {
       expect(existsSync(join(out, version, path)), path).toBe(true)

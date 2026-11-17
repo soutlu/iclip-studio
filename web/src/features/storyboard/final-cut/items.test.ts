@@ -62,6 +62,7 @@ describe('组件、块页签的分类和搜索', () => {
     expect(titles(filterItems(fixtureCatalog, chip('component', '全部'), ''))).toEqual([
       '测试叠加',
       '测试可填项',
+      '测试点穿',
     ])
     expect(titles(filterItems(fixtureCatalog, chip('block', '全部'), ''))).toEqual([
       '测试画面',
@@ -79,7 +80,10 @@ describe('组件、块页签的分类和搜索', () => {
       '示例品牌 片尾',
       '测试旁挂文件',
     ])
-    expect(titles(filterItems(fixtureCatalog, chip('component', '效果'), ''))).toEqual(['测试叠加'])
+    expect(titles(filterItems(fixtureCatalog, chip('component', '效果'), ''))).toEqual([
+      '测试叠加',
+      '测试点穿',
+    ])
   })
 
   it('搜索匹配名字、说明和分类名，去掉两头空白；只在选中的分类里找', () => {

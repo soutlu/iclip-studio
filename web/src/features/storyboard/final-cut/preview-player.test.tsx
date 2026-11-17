@@ -23,6 +23,7 @@ const FILM: PreviewFilm = {
   locale: null,
   filesRevision: 0,
   captions: null,
+  layers: [],
 }
 const MOVE: JsonPatchOp = { op: 'replace', path: '/elements/v1/timing/start', value: 3 }
 

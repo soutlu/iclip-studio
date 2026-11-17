@@ -125,6 +125,20 @@
       "variables": [],
       "thumbnail": "fixture-sidecar.svg",
       "fonts": []
+    },
+    {
+      "name": "fixture-passthrough",
+      "kind": "component",
+      "title": "测试点穿",
+      "description": "4 秒的绿色徽标，组件根不接收指针",
+      "category": "effects",
+      "placement": null,
+      "src": "compositions/fixtures/fixture-passthrough.html",
+      "size": null,
+      "duration": 4,
+      "variables": [],
+      "thumbnail": "fixture-passthrough.svg",
+      "fonts": []
     }
   ],
   "excluded": []

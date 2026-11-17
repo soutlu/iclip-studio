@@ -1010,6 +1010,63 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
     audio({ id: 'm', duration: 8_000 }),
   ]
 
+  it('画面上改组件里的一层：打开工程时读进它的文件，不改不重写；挪写进组件文件（SDK moveElement），缩放写行内宽高，一步撤销；<html> 前的说明留着', async () => {
+    const conversation = crypto.randomUUID()
+    const path = 'final-cut/compositions/fixtures/fixture-fields.html'
+    const component = `<!doctype html>
+<!-- 测试组件的说明 -->
+<html><head></head><body>
+<div id="root" data-composition-id="fixture-fields"><div id="ff-text" class="ff-text">字</div></div>
+</body></html>
+`
+    putMockWorkspaceFile(conversation, path, component)
+    const { result } = await open(
+      putMockProjectMain(conversation, mainFile([host()], CANVAS)),
+      10,
+      conversation,
+    )
+    const layer = result.current.film?.layers.find(
+      (each) => each.scope === 'title-1' && each.selector === '#ff-text',
+    )
+    if (layer === undefined) throw new Error('没有认出组件里的层')
+    expect(layer).toMatchObject({
+      file: 'compositions/fixtures/fixture-fields.html',
+      clip: 'title-1',
+    })
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(mockWorkspaceFile(conversation, path)?.content).toBe(component)
+
+    act(() =>
+      result.current.editLayers([
+        {
+          file: layer.file,
+          element: layer.element.hfId,
+          move: { x: 10, y: -20 },
+          styles: { width: '300px', boxSizing: 'border-box' },
+        },
+      ]),
+    )
+    await waitFor(() => expect(mockWorkspaceFile(conversation, path)?.content).toContain('data-x'))
+    const saved = mockWorkspaceFile(conversation, path)?.content ?? ''
+    expect(saved.startsWith('<!doctype html>\n<!-- 测试组件的说明 -->\n<html')).toBe(true)
+    const tag = /<div [^>]*id="ff-text"[^>]*>/.exec(saved)?.[0] ?? ''
+    expect(tag).toContain('data-x="10"')
+    expect(tag).toContain('data-y="-20"')
+    expect(tag).toContain('data-hf-edit-base-x="0"')
+    expect(tag).toContain('style="width: 300px; box-sizing: border-box"')
+
+    act(() => result.current.undo())
+    await waitFor(() =>
+      expect(mockWorkspaceFile(conversation, path)?.content).not.toContain('data-x'),
+    )
+    const undone = /<div [^>]*id="ff-text"[^>]*>/.exec(
+      mockWorkspaceFile(conversation, path)?.content ?? '',
+    )?.[0]
+    expect(undone).not.toContain('data-hf-edit-base-x')
+    expect(undone).not.toContain('width')
+    expect(result.current.film?.canUndo).toBe(false)
+  })
+
   it('打开带三种片段的工程：三种片段都读出来，工程总长算到音频片段的结尾', async () => {
     const { result } = await openWith(stacked())
     expect(result.current.film?.clips).toEqual(stacked())

@@ -1,5 +1,6 @@
 import type { JsonPatchOp } from '@hyperframes/sdk'
 import { describe, expect, it } from 'vitest'
+import type { CanvasLayer } from './canvas-layers'
 import { FONT_BLOCK_END, FONT_BLOCK_START } from './composition/film'
 import { previewSync, type PreviewCaptions, type PreviewFilm } from './preview-sync'
 import type { PatchChange } from './undo-history'
@@ -13,6 +14,7 @@ const SHOWN: PreviewFilm = {
   locale: null,
   filesRevision: 0,
   captions: null,
+  layers: [],
 }
 
 const main = (...patches: JsonPatchOp[]): PatchChange => ({
@@ -82,6 +84,16 @@ describe('能直接打进去的', () => {
       ],
     ],
     ['叠放次序', [{ op: 'replace', path: '/elements/v1/inlineStyles/zIndex', value: '3' }]],
+    [
+      '画面上挪视频（SDK moveElement）、缩放、转',
+      [
+        { op: 'add', path: '/elements/v1/attributes/data-hf-edit-base-x', value: '0' },
+        { op: 'add', path: '/elements/v1/attributes/data-x', value: '12' },
+        { op: 'add', path: '/elements/v1/inlineStyles/width', value: '300px' },
+        { op: 'add', path: '/elements/v1/inlineStyles/boxSizing', value: 'border-box' },
+        { op: 'add', path: '/elements/v1/inlineStyles/rotate', value: '15deg' },
+      ],
+    ],
   ])('%s', (_name, patches) => {
     expect(previewSync(SHOWN, next(main(...patches)))).toEqual({
       kind: 'live',
@@ -105,6 +117,64 @@ describe('能直接打进去的', () => {
     expect(previewSync(SHOWN, next(main(first), longer))).toEqual({
       kind: 'live',
       patches: [first, ...longer.patches],
+      captions: [],
+    })
+  })
+})
+
+describe('组件文件里改了的层', () => {
+  const CARD = 'compositions/card.html'
+  const layer = (scope: string, hfId: string, selector: string, index = 0): CanvasLayer => ({
+    key: `${scope}\n${selector}\n${index}`,
+    scope,
+    selector,
+    index,
+    count: 2,
+    file: CARD,
+    clip: scope,
+    host: false,
+    locked: false,
+    element: { hfId, tag: 'div', attributes: {} },
+  })
+  // 同一个条目加了两次：两个宿主挂着同一个组件文件
+  const LAYERS = [
+    layer('h1', 'hf-a', '.word'),
+    layer('h2', 'hf-a', '.word'),
+    layer('h1', 'hf-b', '.word', 1),
+  ]
+  const card = (...patches: JsonPatchOp[]): PatchChange => ({
+    file: CARD,
+    patches,
+    inversePatches: [],
+  })
+  const shown = { ...SHOWN, layers: LAYERS }
+
+  it('改行内样式、挪的属性：按层表找到每个宿主下的那一处，样式换成 CSS 的写法，去掉的是 null', () => {
+    const step = card(
+      { op: 'add', path: '/elements/hf-a/attributes/data-x', value: '10' },
+      { op: 'add', path: '/elements/hf-a/inlineStyles/boxSizing', value: 'border-box' },
+      { op: 'remove', path: '/elements/hf-a/inlineStyles/rotate' },
+    )
+    const written = {
+      styles: { 'box-sizing': 'border-box', rotate: null },
+      attributes: { 'data-x': '10' },
+    }
+    expect(previewSync(shown, { ...next(step), layers: LAYERS })).toEqual({
+      kind: 'live',
+      patches: [],
+      captions: [],
+      layers: [
+        { ref: { scope: 'h1', selector: '.word', index: 0 }, ...written },
+        { ref: { scope: 'h2', selector: '.word', index: 0 }, ...written },
+      ],
+    })
+  })
+
+  it('组件文件里别的改动不打、也不整份重新加载：存下以后工程文件变了再重新加载', () => {
+    const step = card({ op: 'replace', path: '/elements/hf-a/text', value: '新' })
+    expect(previewSync(shown, { ...next(step), layers: LAYERS })).toEqual({
+      kind: 'live',
+      patches: [],
       captions: [],
     })
   })
@@ -298,6 +368,19 @@ describe('字幕场景', () => {
       [
         '跟着视频片段走、换了所属的片段',
         [{ op: 'replace', path: '/elements/cap-1/attributes/data-caption-of', value: 'clip-2' }],
+      ],
+      [
+        '画面上挪、缩放、转一句',
+        [
+          { op: 'add', path: '/elements/cap-1/attributes/data-y', value: '-40' },
+          { op: 'add', path: '/elements/cap-1/attributes/data-hf-edit-base-y', value: '0' },
+          { op: 'add', path: '/elements/cap-1/inlineStyles/height', value: '80px' },
+          {
+            op: 'add',
+            path: '/elements/cap-1/inlineStyles/transform',
+            value: 'translateY(-50%) rotate(5deg)',
+          },
+        ],
       ],
       [
         '改一句的字色、字体（链接没变）',
