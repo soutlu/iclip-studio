@@ -1033,3 +1033,61 @@ async def test_pages_turn_on_an_inherited_anchor_and_reads_stop_at_the_boundary(
         await repo.get(newer.id, owner=forker)
     with pytest.raises(NotFound):
         await repo.get(too_late.id, owner=forker, inherited=inheritance)
+
+
+async def test_the_model_group_is_stored_and_the_report_appends_it_after_the_old_columns(
+    engine: AsyncEngine,
+) -> None:
+    repo = SqlGenerationRepository(engine)
+    owner = await make_user(engine)
+    grouped = await repo.create(
+        replace(
+            make_job(video_request(model="vendor-a-seedance-2-5"), owner_user_id=owner),
+            model_group="mkt",
+            upstream_model="mkt-seedance",
+        )
+    )
+    default = await repo.create(
+        make_job(video_request(model="vendor-a-seedance-2-0"), owner_user_id=owner)
+    )
+    for job in (grouped, default):
+        await repo.mark_completed(
+            job.id,
+            output=GenerationOutput(url=f"https://cdn.test/{job.id}.mp4"),
+            provider_status="ok",
+        )
+
+    read = await repo.get(grouped.id, owner=None)
+    assert (read.model_group, read.upstream_model) == ("mkt", "mkt-seedance")
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                "SELECT * FROM iclip.video_generation_report WHERE job_id IN (:grouped, :default)"
+            ),
+            {"grouped": grouped.id, "default": default.id},
+        )
+        columns = list(result.keys())
+        rows = {row.job_id: row for row in result}
+
+    assert columns == [
+        "user_email",
+        "user_name",
+        "job_id",
+        "started_at",
+        "finished_at",
+        "model",
+        "status",
+        "downloaded",
+        "model_group",
+        "upstream_model",
+    ], "原有列的名字和顺序不动，新列追加在末尾"
+    assert (
+        rows[grouped.id].model,
+        rows[grouped.id].model_group,
+        rows[grouped.id].upstream_model,
+    ) == ("vendor-a-seedance-2-5", "mkt", "mkt-seedance")
+    assert (
+        rows[default.id].model,
+        rows[default.id].model_group,
+        rows[default.id].upstream_model,
+    ) == ("vendor-a-seedance-2-0", None, "vendor-a-seedance-2-0"), "默认组发的就是原模型名"

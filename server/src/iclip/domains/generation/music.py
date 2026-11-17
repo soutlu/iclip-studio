@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Final
@@ -7,6 +8,7 @@ from typing import Any, Final
 import httpx
 
 from iclip.common.urls import is_http_url
+from iclip.domains.generation.model_groups import UNGROUPED, ModelGroups, group_key
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.provider import (
     ProviderError,
@@ -38,20 +40,28 @@ class QwenMusicProvider:
         endpoint: QwenEndpoint,
         *,
         object_store: PublicObjectStore,
+        model_groups: ModelGroups = UNGROUPED,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._endpoint = endpoint
         self._object_store = object_store
+        self._model_groups = model_groups
         self._transport = transport
 
     @property
     def name(self) -> str:
         return PROVIDER_NAME
 
+    def _endpoint_for(self, job: GenerationJob) -> QwenEndpoint:
+        group = self._model_groups.of(job)
+        if group is None:
+            return self._endpoint
+        return replace(self._endpoint, api_key=group_key(group, group.music_api_key, what=_LABEL))
+
     async def submit(self, job: GenerationJob) -> ProviderSubmission:
         request = request_of(job, MusicRequest, provider=PROVIDER_NAME)
         body = await post_to_qwen(
-            self._endpoint, _payload(request), label=_LABEL, transport=self._transport
+            self._endpoint_for(job), _payload(request), label=_LABEL, transport=self._transport
         )
         request_id = request_id_of(body, label=_LABEL)
         content, duration_ms = await self._normalized(_generated_url(body))

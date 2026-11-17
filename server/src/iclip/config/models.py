@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,7 +42,11 @@ VIDEO_SUBMIT_URL_ENV: Final = "VIDEO_SUBMIT_URL"
 
 VIDEO_ENHANCE_SUBMIT_URL_ENV: Final = "VIDEO_ENHANCE_SUBMIT_URL"
 
-QWEN_API_KEY_ENV: Final = "QWEN_API_KEY"
+QWEN_SUBTITLE_API_KEY_ENV: Final = "QWEN_SUBTITLE_API_KEY"
+
+QWEN_MUSIC_API_KEY_ENV: Final = "QWEN_MUSIC_API_KEY"
+
+_MODEL_GROUP_NAME: Final = re.compile(r"^[a-z][a-z0-9_]*$")
 
 PRODUCT_CATALOG_DATABASE_URL_ENV: Final = "PRODUCT_CATALOG_DATABASE_URL"
 
@@ -115,10 +120,6 @@ class MediaGenerationEnv(EnvSettings):
     video_api_key: RequiredEnv = Field(validation_alias="VIDEO_API_KEY")
     image_api_base: RequiredEnv = Field(validation_alias="IMAGE_API_BASE")
     video_enhance_submit_url: OptionalEnv = Field("", validation_alias=VIDEO_ENHANCE_SUBMIT_URL_ENV)
-
-
-class QwenEnv(EnvSettings):
-    api_key: RequiredEnv = Field(validation_alias=QWEN_API_KEY_ENV)
 
 
 class ProductCatalogEnv(EnvSettings):
@@ -292,6 +293,22 @@ class MediaGenerationSection(ConfigSection):
     music: MusicSection | None = None
 
 
+NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+
+class ModelGroupSection(ConfigSection):
+    """一个配置组：哪些 PMS 部门（用户直属部门的数字 id）用这一组的 key 与网关 model_id。
+
+    key 的值放在环境变量里，这里只写变量名；``video_models`` 是「产品模型名 → 该组网关 model_id」。
+    """
+
+    departments: tuple[int, ...]
+    video_api_key_env: NonEmptyText
+    subtitle_api_key_env: NonEmptyText | None = None
+    music_api_key_env: NonEmptyText | None = None
+    video_models: dict[NonEmptyText, NonEmptyText]
+
+
 class IclipStudioSection(ConfigSection):
     breakdown_concurrency: int | None = Field(default=None, ge=1)
 
@@ -315,7 +332,30 @@ class RuntimeConfig(BaseSettings):
     media_generation: MediaGenerationSection | None = None
     shot_video: ShotVideoSection | None = None
     iclip_studio: IclipStudioSection | None = None
+    model_groups: dict[str, ModelGroupSection] | None = None
     ops: OpsSection = OpsSection()
+
+    @field_validator("model_groups")
+    @classmethod
+    def _model_groups_well_formed(
+        cls, value: dict[str, ModelGroupSection] | None
+    ) -> dict[str, ModelGroupSection] | None:
+        if value is None:
+            return value
+        owners: dict[int, str] = {}
+        for name, group in value.items():
+            if _MODEL_GROUP_NAME.fullmatch(name) is None:
+                raise ValueError(
+                    f"model_groups 的组名 {name!r} 不合规：以小写字母开头，只用小写字母、数字和下划线"
+                )
+            for department in group.departments:
+                other = owners.setdefault(department, name)
+                if other != name:
+                    raise ValueError(
+                        f"部门 {department} 同时写在 model_groups.{other} 与 model_groups.{name} 里，"
+                        "一个部门只能属于一个组"
+                    )
+        return value
 
     @model_validator(mode="before")
     @classmethod
@@ -406,6 +446,25 @@ class ResolvedVideoEnhance:
 
 
 @dataclass(frozen=True, slots=True)
+class ResolvedModelGroup:
+    """配置组的归属：组名与它的部门 id，按配置里的先后排列。"""
+
+    name: str
+    departments: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedMediaModelGroup:
+    """配置组在媒体生成里用的 key 与网关 model_id；字幕、配乐没开通时对应的 key 为 ``None``。"""
+
+    name: str
+    video_api_key: str
+    video_models: Mapping[str, str]
+    subtitle_api_key: str | None
+    music_api_key: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedMediaGeneration:
     video_submit_url: str
     video_status_base_url: str
@@ -423,6 +482,7 @@ class ResolvedMediaGeneration:
     compose_concurrency: int | None
     subtitle: ResolvedQwenService | None
     music: ResolvedQwenService | None
+    model_groups: tuple[ResolvedMediaModelGroup, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -455,6 +515,7 @@ class ResolvedSettings:
     sso: ResolvedSso | None
     object_store: ObjectStoreEnv | None
     media_generation: ResolvedMediaGeneration | None
+    model_groups: tuple[ResolvedModelGroup, ...]
     shot_video: bool
     iclip_studio: ResolvedIclipStudio | None
     product_catalog: ResolvedProductCatalog | None
@@ -506,7 +567,10 @@ def _resolve_object_store() -> ObjectStoreEnv | None:
 
 
 def _resolve_media_generation(
-    section: MediaGenerationSection | None, *, object_store_on: bool
+    section: MediaGenerationSection | None,
+    *,
+    object_store_on: bool,
+    model_groups: Mapping[str, ModelGroupSection],
 ) -> ResolvedMediaGeneration | None:
     if section is None or not _switched_on(VIDEO_SUBMIT_URL_ENV):
         return None
@@ -516,13 +580,16 @@ def _resolve_media_generation(
             f"对象，否则库里存的是几天后就失效的签名地址。补上 {OSS_BUCKET_ENV} 那一组"
         )
     env = _from_env(MediaGenerationEnv)
+    enhance = _resolve_video_enhance(section.video.enhance, env.video_enhance_submit_url)
+    subtitle = _resolve_qwen_service(section.subtitle, QWEN_SUBTITLE_API_KEY_ENV)
+    music = _resolve_qwen_service(section.music, QWEN_MUSIC_API_KEY_ENV)
     return ResolvedMediaGeneration(
         video_submit_url=env.video_submit_url,
         video_status_base_url=env.video_status_base_url,
         video_api_key=env.video_api_key,
         video_model=section.video.model,
         video_allowed_models=section.video.allowed_models,
-        video_enhance=_resolve_video_enhance(section.video.enhance, env.video_enhance_submit_url),
+        video_enhance=enhance,
         image_models=tuple(
             ResolvedImageModel(
                 name=name,
@@ -540,9 +607,62 @@ def _resolve_media_generation(
         poll_interval_seconds=section.poll_interval_seconds,
         job_timeout_seconds=section.job_timeout_seconds,
         compose_concurrency=section.compose_concurrency,
-        subtitle=_resolve_qwen_service(section.subtitle),
-        music=_resolve_qwen_service(section.music),
+        subtitle=subtitle,
+        music=music,
+        model_groups=tuple(
+            _resolve_media_model_group(
+                name,
+                group,
+                video_models=frozenset(section.video.allowed_models),
+                enhance_model=None if enhance is None else enhance.model,
+                subtitle_on=subtitle is not None,
+                music_on=music is not None,
+            )
+            for name, group in model_groups.items()
+        ),
     )
+
+
+def _resolve_media_model_group(
+    name: str,
+    group: ModelGroupSection,
+    *,
+    video_models: frozenset[str],
+    enhance_model: str | None,
+    subtitle_on: bool,
+    music_on: bool,
+) -> ResolvedMediaModelGroup:
+    where = f"model_groups.{name}"
+    expected = video_models if enhance_model is None else video_models | {enhance_model}
+    which = "allowed_models 里的每个模型" + ("与高清版模型 enhance.model" if enhance_model else "")
+    missing = sorted(expected - group.video_models.keys())
+    if missing:
+        raise RuntimeError(
+            f"{where}.video_models 缺 {'、'.join(missing)}：要给{which}写上该组的 model_id"
+        )
+    extra = sorted(group.video_models.keys() - expected)
+    if extra:
+        raise RuntimeError(f"{where}.video_models 多了 {'、'.join(extra)}：只写{which}")
+    return ResolvedMediaModelGroup(
+        name=name,
+        video_api_key=_group_key(where, "video_api_key_env", group.video_api_key_env),
+        video_models=dict(group.video_models),
+        subtitle_api_key=_group_key(where, "subtitle_api_key_env", group.subtitle_api_key_env)
+        if subtitle_on
+        else None,
+        music_api_key=_group_key(where, "music_api_key_env", group.music_api_key_env)
+        if music_on
+        else None,
+    )
+
+
+def _group_key(where: str, field: str, env_name: str | None) -> str:
+    if env_name is None:
+        raise RuntimeError(f"{where}.{field} 没写：这项功能开通了，每个组都要指定自己的 key 变量名")
+    value = os.environ.get(env_name, "").strip()
+    if not value:
+        raise RuntimeError(f"{where}.{field} 指定的环境变量 {env_name} 没有值")
+    return value
 
 
 def _resolve_video_enhance(
@@ -563,13 +683,14 @@ def _resolve_video_enhance(
     )
 
 
-def _resolve_qwen_service(section: QwenServiceSection | None) -> ResolvedQwenService | None:
-    if section is None or not _switched_on(QWEN_API_KEY_ENV):
+def _resolve_qwen_service(
+    section: QwenServiceSection | None, key_env: str
+) -> ResolvedQwenService | None:
+    if section is None or not _switched_on(key_env):
         return None
-    env = _from_env(QwenEnv)
     return ResolvedQwenService(
         url=section.url,
-        api_key=env.api_key,
+        api_key=os.environ[key_env].strip(),
         concurrency=section.concurrency,
         timeout_seconds=section.timeout_seconds,
     )
@@ -633,8 +754,11 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
         )
 
     object_store = _resolve_object_store()
+    model_groups = config.model_groups or {}
     media_generation = _resolve_media_generation(
-        config.media_generation, object_store_on=object_store is not None
+        config.media_generation,
+        object_store_on=object_store is not None,
+        model_groups=model_groups,
     )
     return ResolvedSettings(
         app_name=config.app.name,
@@ -649,6 +773,10 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
         sso=sso,
         object_store=object_store,
         media_generation=media_generation,
+        model_groups=tuple(
+            ResolvedModelGroup(name=name, departments=group.departments)
+            for name, group in model_groups.items()
+        ),
         shot_video=config.shot_video is not None,
         iclip_studio=_resolve_iclip_studio(config.iclip_studio),
         product_catalog=_resolve_product_catalog(),

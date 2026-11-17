@@ -12,6 +12,7 @@ from iclip_video.shot_prompt import format_seconds
 
 from iclip.common.errors import Conflict, NotFound, ValidationFailed
 from iclip.domains.generation.clip_models import UpstreamMode, clip_model
+from iclip.domains.generation.model_groups import UNGROUPED, ModelGroups
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_FAILED,
@@ -130,8 +131,10 @@ class GenerationService:
         music: ProviderTarget | None = None,
         render: RenderClient | None = None,
         enhance: VideoEnhanceSpec | None = None,
+        model_groups: ModelGroups = UNGROUPED,
     ) -> None:
         self._repo = repo
+        self._model_groups = model_groups
         self._enhance = enhance
         self._render = render
         self._queue = queue
@@ -158,6 +161,9 @@ class GenerationService:
     async def submit_video(self, principal: Principal, request: VideoGenerationIn) -> GenerationJob:
         self._require_video_model(request.model)
         _require_user_name(request.user_name)
+        model_group, upstream_model = await self._model_groups.video_model_of(
+            principal.user_id, request.model
+        )
         return await self._accept(
             principal,
             request,
@@ -166,6 +172,8 @@ class GenerationService:
             task_id=request.task_id,
             metadata=request.metadata,
             shot_index=request.shot_index,
+            model_group=model_group,
+            upstream_model=upstream_model,
         )
 
     async def submit_video_edit(self, principal: Principal, request: VideoEditIn) -> GenerationJob:
@@ -239,6 +247,9 @@ class GenerationService:
             range_start_ms=request.range_start_ms,
             range_end_ms=request.range_end_ms,
         )
+        model_group, upstream_model = await self._model_groups.video_model_of(
+            principal.user_id, request.model
+        )
         return await self._accept(
             principal,
             edit,
@@ -249,6 +260,8 @@ class GenerationService:
             shot_index=base.shot_index,
             root_job_id=base.root_job_id or base.id,
             source_job_id=base.id,
+            model_group=model_group,
+            upstream_model=upstream_model,
         )
 
     async def submit_video_compose(
@@ -391,6 +404,8 @@ class GenerationService:
         shot_index: int | None,
         root_job_id: uuid.UUID | None = None,
         source_job_id: uuid.UUID | None = None,
+        model_group: str | None = None,
+        upstream_model: str | None = None,
     ) -> GenerationJob:
         created = await self._queue_new(
             _pending_job(
@@ -404,6 +419,8 @@ class GenerationService:
                 shot_index=shot_index,
                 root_job_id=root_job_id,
                 source_job_id=source_job_id,
+                model_group=model_group,
+                upstream_model=upstream_model,
             )
         )
         await self._note_conversation_active(created)
@@ -462,6 +479,7 @@ class GenerationService:
                 metadata=request.metadata,
                 shot_index=None,
                 source_job_id=video.id,
+                model_group=await self._model_groups.group_of(principal.user_id),
             )
         )
 
@@ -523,6 +541,7 @@ class GenerationService:
                 task_id=request.task_id,
                 metadata=request.metadata,
                 shot_index=None,
+                model_group=await self._model_groups.group_of(principal.user_id),
             )
         )
 
@@ -591,6 +610,9 @@ class GenerationService:
                 return existing
         if request.user_name is None:
             raise ValidationFailed("user_name 必填")
+        model_group, upstream_model = await self._model_groups.video_model_of(
+            principal.user_id, enhance.model
+        )
         return await self._queue_new(
             _pending_job(
                 VideoEnhanceRequest(
@@ -608,6 +630,8 @@ class GenerationService:
                 metadata=None,
                 shot_index=source.shot_index,
                 source_job_id=source.id,
+                model_group=model_group,
+                upstream_model=upstream_model,
             )
         )
 
@@ -848,6 +872,8 @@ def _pending_job(
     shot_index: int | None,
     root_job_id: uuid.UUID | None = None,
     source_job_id: uuid.UUID | None = None,
+    model_group: str | None = None,
+    upstream_model: str | None = None,
 ) -> GenerationJob:
     now = datetime.now(UTC)
     return GenerationJob(
@@ -873,6 +899,8 @@ def _pending_job(
         created_at=now,
         submitted_at=None,
         finished_at=None,
+        model_group=model_group,
+        upstream_model=upstream_model,
     )
 
 

@@ -20,6 +20,7 @@ from iclip.domains.generation.image_upstream import (
     GatewayImageProvider,
     GatewayImageSettings,
 )
+from iclip.domains.generation.model_groups import UNGROUPED, ModelGroups
 from iclip.domains.generation.models import STATUS_SUBMITTING
 from iclip.domains.generation.music import MUSIC_MODEL, QwenMusicProvider
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
@@ -111,6 +112,7 @@ def build_generation_module(
     music: QwenServiceConfig | None = None,
     render: RenderSetup | None = None,
     video_enhance: VideoEnhanceSpec | None = None,
+    model_groups: ModelGroups = UNGROUPED,
     video_transport: httpx.AsyncBaseTransport | None = None,
     image_transport: httpx.AsyncBaseTransport | None = None,
     subtitle_transport: httpx.AsyncBaseTransport | None = None,
@@ -127,7 +129,7 @@ def build_generation_module(
         raise RuntimeError("高清版的提交地址与模型、档位要一起给：缺一样超分就提交不出去")
     settings = queue_settings or GenerationQueueSettings()
     report_stage = _clip_stage_reporter(repo)
-    video_provider = HttpVideoProvider(video, transport=video_transport)
+    video_provider = HttpVideoProvider(video, model_groups=model_groups, transport=video_transport)
     compose_provider = FfmpegComposeProvider(
         object_store=object_store, report_stage=report_stage, codec=media_codec, fetch_url=fetch_url
     )
@@ -147,7 +149,10 @@ def build_generation_module(
     subtitle_target: ProviderTarget | None = None
     if subtitles is not None:
         subtitle_provider = QwenSubtitleProvider(
-            subtitles.endpoint, fetch_url=fetch_url, transport=subtitle_transport
+            subtitles.endpoint,
+            fetch_url=fetch_url,
+            model_groups=model_groups,
+            transport=subtitle_transport,
         )
         subtitle_lanes = (ProviderLane(subtitle_provider, subtitles.concurrency),)
         subtitle_target = ProviderTarget(provider=subtitle_provider.name, model=SUBTITLE_MODEL)
@@ -163,7 +168,10 @@ def build_generation_module(
     music_target: ProviderTarget | None = None
     if music is not None:
         music_provider = QwenMusicProvider(
-            music.endpoint, object_store=object_store, transport=music_transport
+            music.endpoint,
+            object_store=object_store,
+            model_groups=model_groups,
+            transport=music_transport,
         )
         music_lanes = (ProviderLane(music_provider, music.concurrency),)
         music_target = ProviderTarget(provider=music_provider.name, model=MUSIC_MODEL)
@@ -211,6 +219,7 @@ def build_generation_module(
         music=music_target,
         render=None if render is None else render.client,
         enhance=video_enhance,
+        model_groups=model_groups,
     )
     return GenerationModule(
         routers=(create_generations_router(service, act_as=act_as),),
