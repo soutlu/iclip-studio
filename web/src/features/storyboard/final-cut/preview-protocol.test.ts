@@ -11,7 +11,17 @@ describe('预览页地址', () => {
 
 describe('编辑器发给预览页的命令', () => {
   it.each([
-    { type: 'load', html: '<!doctype html>', runtimeSrc: 'https://p.test/runtime.js' },
+    { type: 'load', html: '<!doctype html>', runtimeSrc: 'https://p.test/runtime.js', seq: 1 },
+    {
+      type: 'patch',
+      seq: 2,
+      patches: [
+        { op: 'replace', path: '/elements/v1/timing/start', value: 3 },
+        { op: 'remove', path: '/elements/v2' },
+        { op: 'add', path: '/elements/v3', value: { html: '<video></video>', parentId: 'film' } },
+      ],
+    },
+    { type: 'patch', seq: 3, patches: [] },
     { type: 'unload' },
     { type: 'play' },
     { type: 'pause' },
@@ -24,7 +34,12 @@ describe('编辑器发给预览页的命令', () => {
   })
 
   it.each([
-    { type: 'load', html: '<!doctype html>' },
+    { type: 'load', html: '<!doctype html>', seq: 1 },
+    { type: 'load', html: '<!doctype html>', runtimeSrc: 'https://p.test/runtime.js' },
+    { type: 'patch', patches: [] },
+    { type: 'patch', seq: 1, patches: [{ op: 'move', path: '/elements/v1', from: '/x' }] },
+    { type: 'patch', seq: 1, patches: [{ op: 'remove' }] },
+    { type: 'patch', seq: 1, patches: '[]' },
     { type: 'seek', ms: -1, seq: 1 },
     { type: 'seek', ms: 0 },
     { type: 'seek', ms: 0, seq: 0.5 },
@@ -42,7 +57,9 @@ describe('编辑器发给预览页的命令', () => {
 describe('预览页发给编辑器的消息', () => {
   it.each([
     { type: 'ready' },
-    { type: 'loaded', duration: 12.5 },
+    { type: 'loaded', duration: 12.5, seq: 1 },
+    { type: 'patched', duration: 9, seq: 2 },
+    { type: 'needsLoad', seq: 3 },
     { type: 'time', ms: 1500, seq: 0 },
     { type: 'playing', playing: false },
     { type: 'buffering', buffering: true },
@@ -54,7 +71,11 @@ describe('预览页发给编辑器的消息', () => {
   })
 
   it.each([
-    { type: 'loaded', duration: Number.POSITIVE_INFINITY },
+    { type: 'loaded', duration: Number.POSITIVE_INFINITY, seq: 1 },
+    { type: 'loaded', duration: 12.5 },
+    { type: 'patched', duration: 9, seq: 2, patches: [] },
+    { type: 'needsLoad', seq: 1, reason: '<img src=x onerror=alert(1)>' },
+    { type: 'needsLoad', seq: '1' },
     { type: 'time', ms: 1.5, seq: 0 },
     { type: 'time', ms: '1500', seq: 0 },
     { type: 'time', ms: 1500 },

@@ -3,13 +3,14 @@ import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { servePreviewPages } from '@/testing/preview-page'
+import type { JsonPatchOp } from '@hyperframes/sdk'
 import {
   PreviewPlayer,
   type PlaybackSettings,
   type PreviewControl,
-  type PreviewFilm,
   type PreviewPageAddress,
 } from './preview-player'
+import type { PreviewFilm } from './preview-sync'
 
 const ORIGIN = 'https://preview.example.com'
 const TOKEN = 'token/1'
@@ -17,8 +18,29 @@ const PAGE: PreviewPageAddress = { kind: 'ready', origin: ORIGIN, token: TOKEN }
 const FILM: PreviewFilm = {
   html: '<!doctype html><html><head></head><body></body></html>',
   runtimeSrc: `${ORIGIN}/hyperframes/v1/vendor/runtime.js`,
+  revision: 1,
+  step: null,
+  foreign: false,
+  filesRevision: 0,
 }
-const EDITED: PreviewFilm = { ...FILM, html: FILM.html.replace('<body>', '<body><p></p>') }
+const MOVE: JsonPatchOp = { op: 'replace', path: '/elements/v1/timing/start', value: 3 }
+
+/** `film` 的下一份：主文件做了一步 `patches`。 */
+const edited = (film: PreviewFilm, ...patches: JsonPatchOp[]): PreviewFilm => ({
+  ...film,
+  html: film.html.replace('<body>', '<body><p></p>'),
+  revision: film.revision + 1,
+  step: [{ file: 'index.html', patches, inversePatches: [] }],
+})
+const EDITED = edited(FILM, MOVE)
+
+/** 预览页收到的整份加载命令。 */
+const loadOf = (film: PreviewFilm, seq: number) => ({
+  type: 'load',
+  html: film.html,
+  runtimeSrc: film.runtimeSrc,
+  seq,
+})
 const PLAYBACK: PlaybackSettings = { rate: 1, muted: false, loop: false }
 
 const handlers = () => ({
@@ -129,13 +151,12 @@ describe('发给预览页', () => {
     expect(served.latest().commands).toEqual([
       { type: 'playback', ...PLAYBACK },
       { type: 'size', width: 180, height: 320 },
-      { type: 'load', ...FILM },
+      loadOf(FILM, 1),
     ])
 
+    // 预览页还没报装好：改动整份重发
     view.rerender(preview(on, { film: EDITED }))
-    await waitFor(() =>
-      expect(served.latest().commands.at(-1)).toEqual({ type: 'load', ...EDITED }),
-    )
+    await waitFor(() => expect(served.latest().commands.at(-1)).toEqual(loadOf(EDITED, 2)))
     view.rerender(preview(on, { film: EDITED, playback: { rate: 2, muted: true, loop: true } }))
     await waitFor(() =>
       expect(served.latest().commands.at(-1)).toEqual({
@@ -178,7 +199,7 @@ describe('发给预览页', () => {
     const on = handlers()
     const view = render(preview(on))
     await waitFor(() => expect(commandTypes()).toContain('load'))
-    await report({ type: 'loaded', duration: 4 })
+    await report({ type: 'loaded', duration: 4, seq: 1 })
     await waitFor(() => expect(on.control.current).not.toBeNull())
 
     view.rerender(preview(on, { film: undefined }))
@@ -192,6 +213,83 @@ describe('发给预览页', () => {
     render(preview(on, { film: undefined }))
     await waitFor(() => expect(commandTypes()).toContain('unload'))
     expect(on.control.current).toBeNull()
+  })
+})
+
+describe('一步编辑打补丁还是整份重新加载', () => {
+  /** 嵌好预览页、发出第一份并报它装好了。 */
+  const openLoaded = async () => {
+    const on = handlers()
+    const view = render(preview(on))
+    await waitFor(() => expect(commandTypes()).toContain('load'))
+    await report({ type: 'loaded', duration: 4, seq: 1 })
+    const rerender = (film: PreviewFilm) => view.rerender(preview(on, { film }))
+    return { rerender }
+  }
+  const lastCommand = () => served.latest().commands.at(-1)
+
+  it('装好以后能直接打进去的编辑发补丁，带着接下去的序号；连着几步一样', async () => {
+    const { rerender } = await openLoaded()
+    rerender(EDITED)
+    await waitFor(() => expect(lastCommand()).toEqual({ type: 'patch', seq: 2, patches: [MOVE] }))
+    const hidden: JsonPatchOp = {
+      op: 'add',
+      path: '/elements/v1/attributes/data-hidden',
+      value: '',
+    }
+    rerender(edited(EDITED, hidden))
+    await waitFor(() => expect(lastCommand()).toEqual({ type: 'patch', seq: 3, patches: [hidden] }))
+    expect(commandTypes().filter((type) => type === 'load')).toHaveLength(1)
+  })
+
+  it('打不进去的编辑整份重新加载；它报装好之前的编辑也整份重新加载', async () => {
+    const { rerender } = await openLoaded()
+    const values = edited(FILM, {
+      op: 'replace',
+      path: '/elements/h1/attributes/data-variable-values',
+      value: '{}',
+    })
+    rerender(values)
+    await waitFor(() => expect(lastCommand()).toEqual(loadOf(values, 2)))
+
+    const next = edited(values, MOVE)
+    rerender(next)
+    await waitFor(() => expect(lastCommand()).toEqual(loadOf(next, 3)))
+
+    await report({ type: 'loaded', duration: 4, seq: 3 })
+    const after = edited(next, MOVE)
+    rerender(after)
+    await waitFor(() => expect(lastCommand()).toEqual({ type: 'patch', seq: 4, patches: [MOVE] }))
+  })
+
+  it('预览页报打不进去：整份重发当前这一份；已经整份重发过以后报的不管', async () => {
+    const { rerender } = await openLoaded()
+    rerender(EDITED)
+    await waitFor(() => expect(lastCommand()).toMatchObject({ type: 'patch', seq: 2 }))
+
+    await report({ type: 'needsLoad', seq: 2 })
+    await waitFor(() => expect(lastCommand()).toEqual(loadOf(EDITED, 3)))
+    const sent = served.latest().commands.length
+    await report({ type: 'needsLoad', seq: 2 })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(served.latest().commands).toHaveLength(sent)
+  })
+
+  it('打完的报告不影响接着打', async () => {
+    const { rerender } = await openLoaded()
+    rerender(EDITED)
+    await waitFor(() => expect(lastCommand()).toMatchObject({ type: 'patch', seq: 2 }))
+    await report({ type: 'patched', duration: 4, seq: 2 })
+    rerender(edited(EDITED, MOVE))
+    await waitFor(() => expect(lastCommand()).toMatchObject({ type: 'patch', seq: 3 }))
+  })
+
+  it('预览页重新就绪：整份重发', async () => {
+    const { rerender } = await openLoaded()
+    await report({ type: 'ready' })
+    await waitFor(() => expect(lastCommand()).toEqual(loadOf(FILM, 1)))
+    rerender(EDITED)
+    await waitFor(() => expect(lastCommand()).toEqual(loadOf(EDITED, 2)))
   })
 })
 

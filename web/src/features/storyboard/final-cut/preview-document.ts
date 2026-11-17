@@ -3,6 +3,7 @@ import { variableValuesOf } from './composition/film'
 import { escapeAttribute } from './composition/html'
 import { LOCALE_BINDINGS, localeBindingsOf, localizedHostValues } from './composition/locale-text'
 import type { LocaleValues } from './locales'
+import { withPreviewMediaTags } from './preview-media'
 
 const withBaseHref = (html: string, baseHref: string): string => {
   const head = /<head[^>]*>/i.exec(html)
@@ -11,15 +12,11 @@ const withBaseHref = (html: string, baseHref: string): string => {
   return `${html.slice(0, at)}\n<base href="${escapeAttribute(baseHref)}">${html.slice(at)}`
 }
 
-// 只改预览，存着的文件不动。preload 写 none 时运行时按播放位置调 load()，一次只加载用得到的片段；
-// 写 metadata 会一开始就下载，运行时之后设成 none 也停不下来，几个文件会一起抢带宽。
-// 音频片段在文件里不写 preload，这里补上。
 const withPreviewMedia = (html: string): string =>
-  html
-    .replaceAll('<video ', '<video crossorigin="anonymous" ')
-    .replaceAll('preload="auto"', 'preload="none"')
-    .replaceAll('<audio ', '<audio crossorigin="anonymous" preload="none" ')
-    .replace(/<head[^>]*>/i, '$&\n<meta name="hyperframes-studio-preview" content="1">')
+  withPreviewMediaTags(html).replace(
+    /<head[^>]*>/i,
+    '$&\n<meta name="hyperframes-studio-preview" content="1">',
+  )
 
 /** 主文件根（`<html>` 上的 `data-composition-variables`）声明的变量，id → 默认值；写法不对时当作没声明。 */
 const declaredVariables = (root: Element): Map<string, unknown> => {

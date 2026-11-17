@@ -1,5 +1,12 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { finalCutPreviewPlayer, openConversation, openFinalCut, widenWorkbench } from './helpers'
+import {
+  finalCutPreviewPlayer,
+  isMarkedFinalCutPreviewPlayer,
+  markFinalCutPreviewPlayer,
+  openConversation,
+  openFinalCut,
+  widenWorkbench,
+} from './helpers'
 
 const CONVERSATION = '无图分镜草稿'
 
@@ -136,6 +143,50 @@ const readyPlayer = async (editor: Locator) => {
       ),
     )
     .toBe(true)
+}
+
+/**
+ * 让预览的播放器停到第 `seconds` 秒，读出这时出画面的视频片段（看得见、画面已加载）的片段编号；没停到那一秒
+ * （比如跳不过运行库的结尾）时是 null。直接让播放器跳，只用来读预览里的那一份。
+ */
+const picturesAt = (editor: Locator, seconds: number) =>
+  finalCutPreviewPlayer(editor).evaluate(async (element, at) => {
+    const player = element as HTMLElement & {
+      iframeElement: HTMLIFrameElement
+      currentTime: number
+      seek: (seconds: number) => void
+    }
+    player.seek(at)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    if (Math.abs(player.currentTime - at) > 0.05) return null
+    const page = player.iframeElement.contentDocument
+    return [...(page?.querySelectorAll<HTMLVideoElement>('video.picture') ?? [])]
+      .filter((video) => {
+        const style = page?.defaultView?.getComputedStyle(video)
+        return style?.display !== 'none' && style?.visibility !== 'hidden' && video.readyState >= 2
+      })
+      .map((video) => video.getAttribute('data-hf-id'))
+  }, seconds)
+
+/** 预览的播放器现在播到第几秒。 */
+const previewTime = (editor: Locator) =>
+  finalCutPreviewPlayer(editor).evaluate(
+    (element) => (element as HTMLElement & { currentTime: number }).currentTime,
+  )
+
+const dragBy = async (page: Page, locator: Locator, dx: number) => {
+  const { x, y } = await centerOf(locator)
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + dx, y, { steps: 6 })
+  await page.mouse.up()
+}
+
+/** 存下来的主文件里第 `at` 个视频片段（按起点排）的起点和时长（秒）。 */
+const savedTimingOf = async (page: Page, at: number) => {
+  const saved = (await savedClips(page))[at] ?? ''
+  const [, start, duration] = /，([\d.]+) 秒起，([\d.]+) 秒$/.exec(saved) ?? []
+  return { start: Number(start), duration: Number(duration) }
 }
 
 const previewVideo = (editor: Locator) =>
@@ -943,7 +994,7 @@ test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来�
   await page.keyboard.press('Enter')
   await expect.poll(() => savedClips(page)).toHaveLength(1)
   await readyPlayer(editor)
-  // 改动 final-cut 后预览会换一个播放器：看正在显示的那个
+  await markFinalCutPreviewPlayer(editor)
   const picture = finalCutPreviewPlayer(editor).frameLocator('iframe').locator('video.picture')
   /** 存下来的主文件里有几个隐藏的片段。 */
   const savedHidden = () =>
@@ -958,17 +1009,95 @@ test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来�
     }, conversationIdOf(page))
   await expect(picture).not.toHaveCSS('display', 'none')
 
+  // 隐藏、显示都直接改到正在播的预览里，不换播放器
   await editor.getByRole('button', { name: '隐藏画面 1', exact: true }).click()
   await expect.poll(savedHidden).toBe(1)
-  // 隐藏的片段不进预览
-  await expect(picture).toHaveCount(0, { timeout: PREVIEW_SWAP_MS })
+  await expect(picture).toHaveCSS('display', 'none')
   await expect(editor.getByRole('group', { name: /，已隐藏$/ })).toHaveCount(1)
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
 
   const eye = editor.getByRole('button', { name: '显示画面 1', exact: true })
   await expect(eye).toHaveAttribute('aria-pressed', 'false')
   await eye.click()
   await expect.poll(savedHidden).toBe(0)
   await expect(picture).not.toHaveCSS('display', 'none')
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
+})
+
+/** 打开编辑器，从「镜头」页签接上镜头 1、镜头 3（各 1 秒），等预览装好。 */
+const openTwoClips = async (page: Page) => {
+  const { editor, materials } = await openWith(page, [1])
+  for (const [at, shot] of [1, 3].entries()) {
+    await shotOf(materials, 1, 'A', shot).click()
+    await page.keyboard.press('Enter')
+    await expect.poll(() => savedClips(page)).toHaveLength(at + 1)
+  }
+  await readyPlayer(editor)
+  const row = editor.getByRole('group', { name: '画面 1', exact: true })
+  const clipIds = await row
+    .locator('[data-clip-id]')
+    .evaluateAll((clips) => clips.map((clip) => clip.getAttribute('data-clip-id') ?? ''))
+  return { editor, materials, row, clipIds }
+}
+
+test('挪视频片段：预览不换播放器，片段在新的时间出画面；撤销回来也对', async ({ page }) => {
+  const { editor, row, clipIds } = await openTwoClips(page)
+  const [first, second] = clipIds
+  await expect.poll(() => picturesAt(editor, 1.5)).toEqual([second])
+  await markFinalCutPreviewPlayer(editor)
+
+  // 往后挪、总长变长：直接打进去，跳得到新的结尾
+  await dragBy(page, row.locator('[data-clip-id]').nth(1), 200)
+  await expect.poll(async () => (await savedTimingOf(page, 1)).start).toBeGreaterThan(2)
+  const { start } = await savedTimingOf(page, 1)
+  await expect.poll(() => picturesAt(editor, start + 0.5)).toEqual([second])
+  await expect.poll(() => picturesAt(editor, 1.5)).toEqual([])
+  await expect.poll(() => picturesAt(editor, 0.5)).toEqual([first])
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
+
+  // 撤销回来总长变短，整份重新加载：画面照样对
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(() => savedTimingOf(page, 1)).toEqual({ start: 1, duration: 1 })
+  await expect.poll(() => picturesAt(editor, 1.5)).toEqual([second])
+  await expect.poll(() => picturesAt(editor, 0.5)).toEqual([first])
+})
+
+test('播着挪视频片段：播放不停、不换播放器', async ({ page }) => {
+  const { editor, row } = await openTwoClips(page)
+  const transport = editor.getByRole('group', { name: '播放控制' })
+  // 只有 2 秒：循环着放，挪的时候还在放
+  await transport.getByRole('button', { name: '循环播放' }).click()
+  await markFinalCutPreviewPlayer(editor)
+  await transport.getByRole('button', { name: '播放', exact: true }).click()
+  await expect(transport.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
+
+  await dragBy(page, row.locator('[data-clip-id]').nth(1), 200)
+  await expect.poll(async () => (await savedTimingOf(page, 1)).start).toBeGreaterThan(2)
+  await expect(transport.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
+  const before = await previewTime(editor)
+  await expect.poll(() => previewTime(editor)).not.toBe(before)
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
+  await transport.getByRole('button', { name: '暂停', exact: true }).click()
+})
+
+test('从「镜头」页签加一个镜头：预览不换播放器，新片段在它的时间出画面', async ({ page }) => {
+  const { editor, materials } = await openWith(page, [1])
+  await shotOf(materials, 1, 'A', 1).click()
+  await page.keyboard.press('Enter')
+  await expect.poll(() => savedClips(page)).toHaveLength(1)
+  await readyPlayer(editor)
+  await markFinalCutPreviewPlayer(editor)
+
+  await shotOf(materials, 1, 'A', 3).click()
+  await page.keyboard.press('Enter')
+  await expect.poll(() => savedClips(page)).toHaveLength(2)
+  const added = await editor
+    .getByRole('group', { name: '画面 1', exact: true })
+    .locator('[data-clip-id]')
+    .nth(1)
+    .getAttribute('data-clip-id')
+  await expect.poll(() => picturesAt(editor, 1.5)).toEqual([added])
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
 })
 
 test('行多了只有轨道区上下滚：行头跟着各行走，看不见的行落不上去', async ({ page }) => {
@@ -1878,20 +2007,26 @@ test('配乐静音、画面行隐藏以后再改别的，预览照常换成改�
   page,
 }) => {
   const { editor } = await openWithKinds(page)
-  // 改动 final-cut 后预览会换一个播放器：看正在显示的那个
+  // 要整份重新加载的改动会换一个播放器：看正在显示的那个
   const preview = () => finalCutPreviewPlayer(editor).frameLocator('iframe')
   await expect(preview().locator('#title-1')).toHaveCount(1)
 
-  // 配乐 1 和镜头 1 都盖着第 0 秒，静音、隐藏以后预览里没有它们
+  // 配乐 1 和镜头 1 都盖着第 0 秒，静音、隐藏以后预览里的它们都带着隐藏标记
   await editor.getByRole('button', { name: '静音配乐', exact: true }).click()
-  await expect(preview().locator('audio')).toHaveCount(0, { timeout: PREVIEW_SWAP_MS })
+  await expect(preview().locator('audio:not([data-hidden])')).toHaveCount(0)
   await editor.getByRole('button', { name: '隐藏画面 2', exact: true }).click()
-  await expect(preview().locator('video')).toHaveCount(0, { timeout: PREVIEW_SWAP_MS })
+  await expect(preview().locator('video:not([data-hidden])')).toHaveCount(0)
 
-  // 之后每次改动，预览都不用等它们
   await editor.getByRole('button', { name: /^选中：标题，/ }).click()
   await page.keyboard.press('Delete')
-  await expect(preview().locator('#title-1')).toHaveCount(0, { timeout: PREVIEW_SWAP_MS })
+  await expect(preview().locator('#title-1')).toHaveCount(0)
+
+  // 撤销删除要整份重新加载：换上来的那一份里没有隐藏的片段，不用等它们加载
+  await markFinalCutPreviewPlayer(editor)
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(preview().locator('#title-1')).toHaveCount(1, { timeout: PREVIEW_SWAP_MS })
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(false)
+  await expect(preview().locator('audio, video')).toHaveCount(0)
 })
 
 test('组件那一行在画面行上面：Enter 接的镜头落在画面区第一行，波纹删除补位的也是它；预览里的音频读得出来', async ({

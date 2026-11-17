@@ -13,6 +13,7 @@ import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MediaFallback } from '@/shared/ui/media-fallback'
 import { StageBackdrop } from '../components/stage-backdrop'
 import { previewPageUrl, zPreviewEvent, type PreviewCommand } from './preview-protocol'
+import { previewSync, type PreviewFilm } from './preview-sync'
 
 export type PreviewControl = {
   play: () => void
@@ -33,9 +34,6 @@ export type PreviewPageAddress =
   | { kind: 'pending' }
   | { kind: 'ready'; origin: string; token: string }
   | { kind: 'failed'; message: string; onRetry: () => void }
-
-/** 交给预览页的一份 final-cut：整份预览文档，和预览域名下的运行库地址（见 `previewRuntimeSrc`）。 */
-export type PreviewFilm = { html: string; runtimeSrc: string }
 
 type PreviewPlayerProps = {
   page: PreviewPageAddress
@@ -60,6 +58,12 @@ type Link = { src: string; target: Window; origin: string }
 
 /** 要发的命令；跳转是第几次，发出去的时候才编号。 */
 type Outgoing = Exclude<PreviewCommand, { type: 'seek' }> | { type: 'seek'; ms: number }
+
+/**
+ * 发给当前预览页的 final-cut：`film` 是最后发出的那一份、`seq` 是它的序号；`loadSeq` 是最后一次整份加载的序号，
+ * 预览页报这一份装好（`loaded`）之前 `loaded` 是 false，这期间的改动都整份重新加载。
+ */
+type Sync = { film: PreviewFilm; seq: number; loadSeq: number; loaded: boolean }
 
 /**
  * final-cut 预览：把预览域名下的预览页嵌进来，按消息协议（preview-protocol.ts）让它加载、播放，
@@ -104,6 +108,8 @@ export function PreviewPlayer({
   const bufferingRef = useRef(false)
   // 就绪之前记下了「在放」：按钮先算在放、舞台先转圈，和第一份 final-cut 装好之前一样
   const earlyPlayRef = useRef(false)
+  // 发给当前预览页的 final-cut；预览页换了一个、或者 final-cut 没了时是 null
+  const syncRef = useRef<Sync | null>(null)
 
   const post = useCallback((command: Outgoing) => {
     const outbox = outboxRef.current
@@ -115,6 +121,29 @@ export function PreviewPlayer({
       command.type === 'seek' ? { ...command, seq: (outbox.seq += 1) } : command
     outbox.target.target.postMessage(sent, outbox.target.origin)
   }, [])
+  const load = useCallback(
+    (film: PreviewFilm) => {
+      const seq = (syncRef.current?.seq ?? 0) + 1
+      syncRef.current = { film, seq, loadSeq: seq, loaded: false }
+      post({ type: 'load', html: film.html, runtimeSrc: film.runtimeSrc, seq })
+    },
+    [post],
+  )
+  /** 把 `film` 交给预览页：能直接打进去的打补丁，别的整份重新加载（见 `previewSync`）。 */
+  const show = useCallback(
+    (film: PreviewFilm) => {
+      const sync = syncRef.current
+      const how = previewSync(sync?.loaded === true ? sync.film : null, film)
+      if (sync === null || how.kind === 'reload') {
+        load(film)
+        return
+      }
+      const seq = sync.seq + 1
+      syncRef.current = { ...sync, film, seq }
+      post({ type: 'patch', seq, patches: [...how.patches] })
+    },
+    [load, post],
+  )
   const reportBuffering = useCallback((buffering: boolean) => {
     bufferingRef.current = buffering
     callbacksRef.current.onBuffering?.(buffering)
@@ -143,16 +172,28 @@ export function PreviewPlayer({
         case 'ready': {
           const next = { src, target, origin }
           const { queue } = outboxRef.current
-          // 报一次就绪就是新加载的一份预览页，跳转从头数
+          // 报一次就绪就是新加载的一份预览页，跳转从头数，final-cut 要整份重发
           outboxRef.current = { target: next, queue: [], seq: 0 }
+          syncRef.current = null
           earlyPlayRef.current = false
           for (const command of queue) post(command)
           setReadyLink(next)
           return
         }
-        case 'loaded':
+        case 'loaded': {
+          const sync = syncRef.current
+          if (sync !== null && received.seq === sync.loadSeq) sync.loaded = true
           setShownAt(src)
           return
+        }
+        case 'patched':
+          return
+        case 'needsLoad': {
+          // 在那以后已经整份重发过的不用再发
+          const sync = syncRef.current
+          if (sync !== null && received.seq > sync.loadSeq) load(sync.film)
+          return
+        }
         case 'time':
           if (received.seq === outboxRef.current.seq) on.onTime(received.ms)
           return
@@ -177,9 +218,10 @@ export function PreviewPlayer({
     return () => {
       window.removeEventListener('message', receive)
       outboxRef.current = { target: null, queue: [], seq: 0 }
+      syncRef.current = null
       if (bufferingRef.current) reportBuffering(false)
     }
-  }, [src, origin, post, reportBuffering])
+  }, [src, origin, post, load, reportBuffering])
 
   const { rate, muted, loop } = playback
   useEffect(() => {
@@ -192,17 +234,18 @@ export function PreviewPlayer({
 
   useEffect(() => {
     if (film !== undefined) {
-      if (link !== null) post({ type: 'load', html: film.html, runtimeSrc: film.runtimeSrc })
+      if (link !== null) show(film)
       return
     }
     if (link !== null) {
+      syncRef.current = null
       post({ type: 'unload' })
       return
     }
     // 预览页还没就绪：排着的命令作废，记下的「在放」收回
     outboxRef.current.queue = []
     if (earlyPlayRef.current) playEarly(false)
-  }, [link, film, post, playEarly])
+  }, [link, film, post, show, playEarly])
 
   const shown = src !== undefined && shownAt === src
   const controllable = src !== undefined && (film !== undefined || shown)

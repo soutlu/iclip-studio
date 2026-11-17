@@ -91,7 +91,12 @@ import { onRow, topTrack, voiceRowFor, type Landing, type Renumbering } from './
 import { detachedVideoChanges, mergedVideoChanges, type SoundPair } from './sound-pair'
 import { newClipZ, restackedZ } from './stacking'
 import type { TranslationSource } from './translation'
-import { createUndoHistory, type PatchChange, type UndoHistory } from './undo-history'
+import {
+  createUndoHistory,
+  type PatchChange,
+  type UndoHistory,
+  type UndoStep,
+} from './undo-history'
 import type { StackingDirection } from './vendor/hyperframes-studio/player/components/timelineStackingSync'
 
 export type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'failed'; message: string }
@@ -121,6 +126,13 @@ export type FilmView = {
   bindings: ReadonlyMap<string, LocaleBindings>
   canUndo: boolean
   canRedo: boolean
+  /** 第几份：会话每换一份加 1。 */
+  revision: number
+  /**
+   * 从上一份（`revision - 1`）到这一份做的那一步编辑（编辑动作、撤销、重做）里各文件的改动，按发生的先后；
+   * 不是编辑换的（打开、换语言、换成别处改的那一份……）时是 null。
+   */
+  step: UndoStep | null
 }
 
 /** 要放进工程的一段素材；起点由现有内容决定，接在画面那一行的末尾。 */
@@ -401,13 +413,14 @@ const writeTotal = (main: Composition, scene: Composition | undefined) => {
 /**
  * 工程现在的样子（显示语言 `locale` 的字），和各文件现在的内容（路径 → 内容）：主文件只重算 `<head>` 里的
  * 字体块（SDK 改不了 `<head>`），字按原文和所有值表里的字一起算，存出的内容和显示哪种语言无关；别的文件照
- * 各自存出的写。
+ * 各自存出的写。`change` 是这一份的序号和从上一份来的那一步（见 `FilmView`）。
  */
 const viewOf = (
   project: Project,
   catalog: ComponentCatalog,
   history: UndoHistory,
   locale: LocaleCode,
+  change: Pick<FilmView, 'revision' | 'step'>,
 ): { view: FilmView; present: Map<string, string> } => {
   const main = mainOf(project)
   const scene = sceneOf(project)
@@ -450,6 +463,7 @@ const viewOf = (
     bindings: hostBindingsOf(main, clips),
     canUndo: history.canUndo(),
     canRedo: history.canRedo(),
+    ...change,
   }
   return { view, present }
 }
@@ -662,14 +676,25 @@ export function useFilmSession(
   useLayoutEffect(() => {
     noticeRef.current = onNotice
   })
+  const revisionRef = useRef(0)
+  // 上次读过以后做完的编辑（编辑动作、撤销、重做）里的改动，下次读的那一份带着（见 `FilmView.step`）
+  const doneRef = useRef<UndoStep | null>(null)
 
   /** 改动都从这里发出，改完读一遍现在的样子。 */
   const show = useCallback(() => {
     const project = projectRef.current
-    const shown = project === null ? null : viewOf(project, catalog, history, localeRef.current)
+    const change = { revision: (revisionRef.current += 1), step: doneRef.current }
+    doneRef.current = null
+    const shown =
+      project === null ? null : viewOf(project, catalog, history, localeRef.current, change)
     presentRef.current = shown?.present ?? new Map()
     setFilm(shown?.view ?? null)
   }, [catalog, history])
+
+  /** 记下做完的一步编辑，交给下次读的那一份；读之前又做了几步时接在后面。 */
+  const done = useCallback((step: UndoStep) => {
+    doneRef.current = [...(doneRef.current ?? []), ...step]
+  }, [])
 
   const collect = useCallback((change: PatchChange) => {
     stepRef.current?.push(change)
@@ -696,8 +721,9 @@ export function useFilmSession(
         stepRef.current = null
       }
       history.record(step)
+      done(step)
     },
-    [history],
+    [history, done],
   )
 
   /**
@@ -708,6 +734,7 @@ export function useFilmSession(
     (project: Project | null, stored: boolean) => {
       disposeAll(projectRef.current)
       history.clear()
+      doneRef.current = null
       projectRef.current = project
       if (project === null || !tablesOf(project).has(localeRef.current))
         localeRef.current = SOURCE_LOCALE
@@ -1606,6 +1633,7 @@ export function useFilmSession(
       const project = projectRef.current
       if (project === null || (locale !== SOURCE_LOCALE && !tablesOf(project).has(locale))) return
       localeRef.current = locale
+      doneRef.current = null
       show()
     },
     [show],
@@ -1685,6 +1713,7 @@ export function useFilmSession(
       void restore(project, before)
       return
     }
+    done(changes)
     show()
   }
 

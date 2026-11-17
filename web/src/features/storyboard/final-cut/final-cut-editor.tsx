@@ -103,6 +103,7 @@ import {
   type PreviewControl,
   type PreviewPageAddress,
 } from './preview-player'
+import type { PreviewFilm } from './preview-sync'
 import { PreviewTransport } from './preview-transport'
 import { aroundPlayhead } from './selection'
 import {
@@ -757,9 +758,9 @@ function EditorBody({
   const tokens = preview.latest
   const { filesRevision } = session
   // 预览页拿到的就是当前的主文件（没存的改动也在里面），工程文件凭最新的令牌从预览域名取，
-  // 运行库从预览域名下的组件库取，和预览页同源。工程里别的文件变了时换一份对象，让预览重新加载
+  // 运行库从预览域名下的组件库取，和预览页同源。怎么换到预览里（打补丁还是整份重新加载）见 previewSync
   const previewFilm = useMemo(
-    () =>
+    (): PreviewFilm | undefined =>
       film === null || film.clips.length === 0 || tokens === undefined
         ? undefined
         : {
@@ -769,6 +770,9 @@ function EditorBody({
               film.locale.values,
             ),
             runtimeSrc: previewRuntimeSrc(catalog, tokens.origin),
+            revision: film.revision,
+            step: film.step,
+            foreign: film.locale.values !== null,
             filesRevision,
           },
     [film, catalog, tokens, filesRevision],
