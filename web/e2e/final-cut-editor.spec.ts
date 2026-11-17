@@ -2449,6 +2449,127 @@ test('AI 配音：English 下点音色「原声」，配音行出现和字幕对
   await expect.poll(sounds).toEqual({ muted: false, dubs: 0 })
 })
 
+test('逐句配音：English 下给第二句选资料库的音色，只发这一句、带这个音色，主文件记着这句的选择；给第一句选「不配音」，它的配音片段没了，撤销后回来', async ({
+  page,
+}) => {
+  test.setTimeout(120_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await serveSavedCaptions(page)
+  // 和上一条一样：加一段镜头、识别出两句、加 English 翻好，用「原声」配好
+  const panel = await openConversation(page, '工具过程展示')
+  const editor = await openFinalCut(panel)
+  const group = editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+  await group.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
+  await group.getByRole('slider', { name: '裁剪结尾' }).focus()
+  for (let second = 0; second < 6; second += 1) await page.keyboard.press('Shift+ArrowRight')
+  const added = mainSaved(page, 1)
+  await page.keyboard.press('Enter')
+  await added
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '字幕·配音' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕·配音' })
+  const recognized = page.waitForRequest(
+    (request) =>
+      (savedFileOf(request, CAPTIONS_FILE)?.match(/data-caption-of/g) ?? []).length === 2,
+  )
+  await tab.getByRole('button', { name: '识别字幕', exact: true }).click()
+  await recognized
+  await editor
+    .getByRole('group', { name: '语言' })
+    .getByRole('button', { name: '添加语言' })
+    .click()
+  await page.getByRole('menuitem', { name: 'English（EN）' }).click()
+  const translated = page.waitForRequest(
+    (request) => (savedFileOf(request, ENGLISH_FILE)?.match(/\[EN\]/g) ?? []).length === 2,
+  )
+  await tab.getByRole('button', { name: '翻译', exact: true }).click()
+  await translated
+  const dubTags = (html: string) => [...html.matchAll(/<audio [^>]*data-dub-of="[^"]+"[^>]*>/g)]
+  const dubbed = mainSavedWith(page, (html) => dubTags(html).length === 2)
+  await tab
+    .getByRole('group', { name: 'AI 配音音色' })
+    .getByRole('button', { name: '原声', exact: true })
+    .click()
+  // 两句的配音片段配的字幕，按开始排
+  const captions = dubTags(htmlOf(await dubbed))
+    .map(([tag]) => ({
+      caption: / data-dub-of="([^"]+)"/.exec(tag)?.[1] ?? '',
+      start: Number(/ data-start="([\d.]+)"/.exec(tag)?.[1]),
+    }))
+    .toSorted((left, right) => left.start - right.start)
+    .map((dub) => dub.caption)
+  const [first = '', second = ''] = captions
+  const dubRow = editor.getByRole('group', { name: '配音', exact: true })
+  await expect(dubRow.getByRole('group', { name: /^配音 · \[EN\] / })).toHaveCount(2)
+  const lineChip = (index: number) =>
+    tab
+      .getByRole('list', { name: '字幕' })
+      .getByRole('listitem')
+      .nth(index)
+      .getByRole('button', { name: /^本句配音：/ })
+  await expect(lineChip(1)).toHaveAccessibleName('本句配音：原声，跟随整体音色')
+
+  // 第二句选 Emma：只发这一句（最后一句，不带上限），参考是这个音色
+  const asked = page.waitForRequest(
+    (request) => request.method() === 'POST' && request.url().endsWith('/api/generations/dubbings'),
+  )
+  let referenceId: string | null = null
+  const lineVoiced = mainSavedWith(page, (html) => {
+    const modes = jsonAttribute(html, 'data-voice-modes') as
+      { en?: { lines?: Record<string, unknown> } } | undefined
+    const wanted = JSON.stringify({ [second]: { voice: referenceId } })
+    return (
+      referenceId !== null &&
+      dubTags(html).length === 2 &&
+      JSON.stringify(modes?.en?.lines) === wanted
+    )
+  })
+  await lineChip(1).click()
+  await page.getByRole('menuitemradio', { name: 'Emma' }).click()
+  const body = (await asked).postDataJSON() as {
+    lines: { startMs: number; slotEndMs?: number }[]
+    reference: { kind: string; referenceId?: string }
+  }
+  expect(body.lines).toHaveLength(1)
+  expect(body.lines[0]?.startMs).toBe(2_400)
+  expect(body.lines[0]).not.toHaveProperty('slotEndMs')
+  expect(body.reference.kind).toBe('reference_audio')
+  referenceId = body.reference.referenceId ?? null
+  expect(referenceId).toMatch(/^[0-9a-f-]{36}$/)
+  await lineVoiced
+  await expect(lineChip(1)).toHaveAccessibleName('本句配音：Emma')
+  await expect(dubRow.getByRole('group', { name: /^配音 · \[EN\] / })).toHaveCount(2)
+
+  // 第一句「不配音」：不发起，它的配音片段没了；撤销后回来
+  const requests: string[] = []
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/api/generations/dubbings'))
+      requests.push(request.url())
+  })
+  const unvoiced = mainSavedWith(
+    page,
+    (html) => dubTags(html).length === 1 && !html.includes(`data-dub-of="${first}"`),
+  )
+  await lineChip(0).click()
+  await page.getByRole('menuitemradio', { name: '不配音' }).click()
+  expect(jsonAttribute(htmlOf(await unvoiced), 'data-voice-modes')).toMatchObject({
+    en: { lines: { [first]: { dub: false } } },
+  })
+  await expect(dubRow.getByRole('group', { name: /^配音 · \[EN\] / })).toHaveCount(1)
+  await expect(lineChip(0)).toHaveAccessibleName('本句配音：不配音')
+  const restored = mainSavedWith(page, (html) => dubTags(html).length === 2)
+  await editor
+    .getByRole('toolbar', { name: '剪辑工具' })
+    .getByRole('button', { name: '撤销' })
+    .click()
+  await restored
+  await expect(dubRow.getByRole('group', { name: /^配音 · \[EN\] / })).toHaveCount(2)
+  await expect(lineChip(0)).toHaveAccessibleName('本句配音：原声，跟随整体音色')
+  expect(requests).toEqual([])
+})
+
 type PreviewPlayer = HTMLElement & { iframeElement: HTMLIFrameElement }
 
 /** 画面区里第 `row` 行的片段 `name` 的选中按钮。 */

@@ -114,26 +114,32 @@ async def lay_audio_track(
     """把几段音频按位置铺成一条 ``total_ms`` 长的音轨（没铺到的地方是静音），编码同背景音乐（AAC、
     立体声、``AUDIO_RATE``），返回成品的时长（毫秒）。
 
-    ``placements`` 要按 ``start_ms`` 排好、首尾相接：每段的结尾就是下一段的开始，最后一段结尾是
-    ``total_ms``。长度按采样点数截、补，所以成品的长度只差 AAC 编码的分帧。"""
+    ``placements`` 要按 ``start_ms`` 排好、互不重叠，都在 ``total_ms`` 以内；段与段之间、最后一段
+    之后补静音。长度按采样点数截、补，所以成品的长度只差 AAC 编码的分帧。"""
 
     if not placements:
         raise ValueError("没有要铺的音频")
     for current, following in pairwise(placements):
-        if current.start_ms + current.length_ms != following.start_ms:
-            raise ValueError("要铺的音频没有首尾相接")
-    last = placements[-1]
-    if last.start_ms + last.length_ms != total_ms:
-        raise ValueError("要铺的音频没有铺到音轨结尾")
+        if current.start_ms + current.length_ms > following.start_ms:
+            raise ValueError("要铺的音频重叠或没按开始排好")
+    end_ms = placements[-1].start_ms + placements[-1].length_ms
+    if end_ms > total_ms:
+        raise ValueError("要铺的音频超出了音轨结尾")
     chains: list[str] = []
     labels: list[str] = []
-    lead = _samples(placements[0].start_ms)
-    if lead > 0:
-        silence = f"anullsrc=r={AUDIO_RATE}:cl={AUDIO_LAYOUT},atrim=end_sample={lead}"
-        chains.append(f"{silence},{_UNIFORM}[lead]")
-        labels.append("[lead]")
+
+    def silence(ms: int, name: str) -> None:
+        samples = _samples(ms)
+        if samples > 0:
+            source = f"anullsrc=r={AUDIO_RATE}:cl={AUDIO_LAYOUT},atrim=end_sample={samples}"
+            chains.append(f"{source},{_UNIFORM}[{name}]")
+            labels.append(f"[{name}]")
+
     inputs: list[str] = []
+    cursor_ms = 0
     for index, placement in enumerate(placements):
+        silence(placement.start_ms - cursor_ms, f"gap{index}")
+        cursor_ms = placement.start_ms + placement.length_ms
         length = _samples(placement.length_ms)
         steps = [_UNIFORM]
         if placement.speed != 1.0:
@@ -146,6 +152,7 @@ async def lay_audio_track(
         chains.append(f"[{index}:a]{','.join(steps)}[c{index}]")
         labels.append(f"[c{index}]")
         inputs += ["-i", str(placement.clip)]
+    silence(total_ms - end_ms, "tail")
     chains.append(f"{''.join(labels)}concat=n={len(labels)}:v=0:a=1[out]")
     await run(
         [

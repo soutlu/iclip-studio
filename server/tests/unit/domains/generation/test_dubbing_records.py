@@ -29,6 +29,7 @@ from iclip.domains.generation.schemas import (
     DubbingOriginalReference,
     DubbingReference,
     DubbingRequest,
+    DubbingSpeechSpan,
     DubbingUploadReference,
     DubbingVoiceReference,
 )
@@ -404,6 +405,7 @@ def _line(start: int, end: int, text: str = "Hi") -> dict[str, Any]:
         [_line(index * 800, index * 800 + 400, "a" * 500) for index in range(9)],
         [_line(0, 1_000), _line(TAKE_MS, TAKE_MS + 10)],
         [_line(0, 1_000), _line(7_000, TAKE_MS + 100)],
+        [{**_line(1_000, 2_000), "slotEndMs": 1_000}],
     ],
     ids=[
         "一句都没有",
@@ -417,6 +419,7 @@ def _line(start: int, end: int, text: str = "Hi") -> dict[str, Any]:
         "总字数超",
         "开始不在素材片里",
         "结尾超出素材片",
+        "上限不晚于开始",
     ],
 )
 async def test_lines_that_break_the_rules_are_rejected(lines: list[dict[str, Any]]) -> None:
@@ -438,6 +441,55 @@ async def test_a_line_may_end_a_hair_past_the_take_like_an_edit_range() -> None:
     response = await post(world, me, body(take, lines=[_line(7_000, TAKE_MS + 50)]))
 
     assert response.status_code == 202, response.text
+
+
+def _span(start: int, end: int) -> dict[str, Any]:
+    return {"startMs": start, "endMs": end}
+
+
+async def test_the_speech_spans_of_an_original_reference_are_recorded() -> None:
+    me = uuid.uuid4()
+    take = completed_take(owner_user_id=me)
+    world = build_world([take])
+    spans = [_span(0, 1_500), _span(2_000, 6_000)]
+
+    response = await post(world, me, body(take, reference={"kind": "original", "spans": spans}))
+
+    assert response.status_code == 202, response.text
+    (dubbing,) = world.dubbings()
+    assert isinstance(dubbing.request, DubbingRequest)
+    assert dubbing.request.reference == DubbingOriginalReference(
+        kind="original",
+        spans=[
+            DubbingSpeechSpan(start_ms=0, end_ms=1_500),
+            DubbingSpeechSpan(start_ms=2_000, end_ms=6_000),
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    "spans",
+    [
+        [_span(1_000, 1_000)],
+        [_span(0, 2_000), _span(1_500, 3_000)],
+        [_span(3_000, 4_000), _span(0, 1_000)],
+        [_span(0, 1_000), _span(TAKE_MS, TAKE_MS + 10)],
+        [_span(0, 1_000), _span(7_000, TAKE_MS + 100)],
+        [_span(index * 10, index * 10 + 5) for index in range(MAX_DUBBING_LINES + 1)],
+    ],
+    ids=["没有长度", "重叠", "没按时间排", "开始不在素材片里", "结尾超出素材片", "超段数"],
+)
+async def test_speech_spans_that_break_the_rules_are_rejected(
+    spans: list[dict[str, Any]],
+) -> None:
+    me = uuid.uuid4()
+    take = completed_take(owner_user_id=me)
+    world = build_world([take])
+
+    response = await post(world, me, body(take, reference={"kind": "original", "spans": spans}))
+
+    assert response.status_code == 422, response.text
+    assert world.dubbings() == []
 
 
 async def test_a_finished_dubbing_reads_back_its_track_and_per_line_results() -> None:

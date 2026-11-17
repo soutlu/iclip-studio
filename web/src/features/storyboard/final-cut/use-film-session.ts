@@ -75,11 +75,13 @@ import {
   voiceModeOf,
   voiceModesAttribute,
   voiceModesOf,
+  voiceModesWithout,
   voiceSettingOf,
+  type LineVoices,
   type VoiceMode,
   type VoiceSetting,
 } from './composition/voices'
-import { shownIn, type NewDub } from './dubbing'
+import { dubsOf, shownIn, type NewDub } from './dubbing'
 import {
   copyItemFiles,
   createProjectFile,
@@ -153,6 +155,8 @@ export type FilmView = {
   durationMs: number
   /** 当前显示的语言配音用的音色（参考音频的编号，见 `voices.ts`）；null 是原声的音色，原文也是 null。 */
   dubVoice: string | null
+  /** 当前显示的语言里各句自己的配音选择（见 `voices.ts`）；原文下是空的。 */
+  voiceLines: LineVoices
   /** 字幕写法不对时的原因（见 `captionsProblem`），导出前要先改好。 */
   captionsProblem: string | undefined
   /** 字幕场景文件的路径（相对工程根）和现在的内容（没存的改动也在里面）；工程里还没有时是 null。 */
@@ -568,6 +572,7 @@ const viewOf = (
     links: new Map(clips.flatMap((clip) => (clip.link === null ? [] : [[clip.id, clip.link]]))),
     durationMs: latestEnd(main, scene),
     dubVoice: voiceSettingOf(voiceModesIn(main), shown.code).voice,
+    voiceLines: voiceSettingOf(voiceModesIn(main), shown.code).lines,
     captionsProblem: captionsProblem(
       present.get(project.captionsPath) ?? null,
       captionsHostOf(main)?.attributes,
@@ -672,7 +677,7 @@ class CaptionsBlocked extends Error {
   }
 }
 
-/** 删掉一句字幕：场景里它的元素、主文件根上它的变量，和各语言值表里它的值。 */
+/** 删掉一句字幕：场景里它的元素、主文件根上它的变量、各语言值表里它的值，和各语言里它自己的配音选择。 */
 const removeCaption = (
   main: Composition,
   scene: Composition,
@@ -682,6 +687,11 @@ const removeCaption = (
   scene.removeElement(caption.id)
   if (declares(main, caption.variable)) main.removeVariableDeclaration(caption.variable)
   for (const table of tables) table.set(caption.variable, null)
+  const root = rootOf(main)
+  const modes = voiceModesIn(main)
+  const kept = voiceModesWithout(modes, caption.id)
+  if (root !== undefined && kept !== modes)
+    main.setAttribute(root.id, VOICE_MODES, voiceModesAttribute(kept))
 }
 
 /**
@@ -712,14 +722,26 @@ const followClips = (
 /** 主文件根上记的各语言人声设置（见 `voices.ts`）。 */
 const voiceModesIn = (main: Composition) => voiceModesOf(rootOf(main)?.attributes[VOICE_MODES])
 
-/** 把语言 `locale` 的人声设置改成 `change` 给的样子（没给的那一项不动）；已经是这样时不动。 */
-const writeVoice = (main: Composition, locale: LocaleCode, change: Partial<VoiceSetting>) => {
-  const root = rootOf(main)
+/** 语言 `locale` 的人声设置按 `update` 改以后 `data-voice-modes` 要写的值；和现在一样时是 undefined。 */
+const voiceChange = (
+  main: Composition,
+  locale: LocaleCode,
+  update: (setting: VoiceSetting) => VoiceSetting,
+): string | null | undefined => {
   const modes = voiceModesIn(main)
-  const current = voiceSettingOf(modes, locale)
-  const next = { ...current, ...change }
-  if (root === undefined || (next.mode === current.mode && next.voice === current.voice)) return
-  main.setAttribute(root.id, VOICE_MODES, voiceModesAttribute(modes, locale, next))
+  const next = voiceModesAttribute({ ...modes, [locale]: update(voiceSettingOf(modes, locale)) })
+  return next === voiceModesAttribute(modes) ? undefined : next
+}
+
+/** 把语言 `locale` 的人声设置按 `update` 改；写出来和现在一样时不动。 */
+const writeVoice = (
+  main: Composition,
+  locale: LocaleCode,
+  update: (setting: VoiceSetting) => VoiceSetting,
+) => {
+  const root = rootOf(main)
+  const next = voiceChange(main, locale, update)
+  if (root !== undefined && next !== undefined) main.setAttribute(root.id, VOICE_MODES, next)
 }
 
 /**
@@ -1986,22 +2008,44 @@ export function useFilmSession(
     (locale: LocaleCode, mode: VoiceMode) => {
       const project = projectRef.current
       if (project === null || voiceModeOf(voiceModesIn(mainOf(project)), locale) === mode) return
-      edit((main) => writeVoice(main, locale, { mode }))
+      edit((main) => writeVoice(main, locale, (setting) => ({ ...setting, mode })))
     },
     [edit],
   )
 
   /**
+   * 不生成配音、只改语言 `locale` 的人声设置（`update`，比如一句改成不配音、换音色时没有句子要重配），同时删掉这种
+   * 语言里配 `unvoiced` 这几句字幕的配音片段，算一步撤销；什么都不变时不动工程。
+   */
+  const changeVoice = useCallback(
+    (
+      locale: LocaleCode,
+      update: (setting: VoiceSetting) => VoiceSetting,
+      unvoiced: readonly string[] = [],
+    ) => {
+      const project = projectRef.current
+      const main = project === null ? undefined : mainOf(project)
+      if (main === undefined) return
+      const removed = dubsOf(clipsOf(main, catalog), locale, unvoiced)
+      if (removed.length === 0 && voiceChange(main, locale, update) === undefined) return
+      edit((engine) => {
+        for (const id of removed) engine.removeElement(id)
+        writeVoice(engine, locale, update)
+      })
+    },
+    [catalog, edit],
+  )
+
+  /**
    * 写进语言 `locale` 生成好的配音，算一步撤销：`plan` 拿到这一刻的片段（含字幕和所有语言的配音片段），答复要换掉
    * 的配音片段和要加的配音片段。换掉的先删，加的一起放进第一条这几段时间都空着的「配音」行（见 `dubRowFor`，
-   * 只看这种语言 AI 配音时显示的片段），写在根下第一个；这种语言的人声设置改成 AI 配音。答复加了几个；一个都不加时不动
-   * 工程，答 0。
-   * `voice` 是生成用的音色（参考音频的编号，null 是原声的音色），和 AI 配音一起记进这种语言的人声设置。
+   * 只看这种语言 AI 配音时显示的片段），写在根下第一个；这种语言的人声设置按 `update` 改（发起时定的：换整种语言的
+   * 音色、记下一句的选择……），并改成 AI 配音。答复加了几个；一个都不加时不动工程，答 0。
    */
   const addDubs = useCallback(
     (
       locale: LocaleCode,
-      voice: string | null,
+      update: (setting: VoiceSetting) => VoiceSetting,
       plan: (clips: readonly FilmClip[]) => {
         removed: readonly string[]
         added: readonly NewDub[]
@@ -2042,7 +2086,7 @@ export function useFilmSession(
               fxChain: null,
             }),
           )
-        writeVoice(engine, locale, { mode: 'dub', voice })
+        writeVoice(engine, locale, (setting) => ({ ...update(setting), mode: 'dub' }))
       })
       return added.length
     },
@@ -2187,6 +2231,7 @@ export function useFilmSession(
     setFollowsLocale,
     fillLocale,
     setVoiceMode,
+    changeVoice,
     addDubs,
     setLocale,
     addLocale,

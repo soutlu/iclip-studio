@@ -345,6 +345,57 @@
   background: var(--color-surface-container-high);
 }
 
+/* 其它语言下每句右上的配音小块：保留原声时是淡色「原声」标签；AI 配音时出声的句子用强调色浅底，自己选过音色的
+   再加一圈描边，不配音的回到淡色。排在删除钮前面 */
+.wf-line-voice {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 120px;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  white-space: nowrap;
+}
+
+.wf-line-voice.is-voiced {
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.wf-line-voice.is-own {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+
+.wf-line-voice.is-unvoiced {
+  background: var(--color-surface-container-high);
+  box-shadow: none;
+  color: var(--color-on-surface-muted);
+}
+
+.wf-line-voice.is-unvoiced:hover {
+  color: var(--color-on-surface);
+}
+
+.wf-line-voice[aria-disabled='true'] {
+  background: var(--color-surface-container-high);
+  box-shadow: none;
+  color: var(--state-disabled-content);
+}
+
+.wf-line-voice-name {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
 /* 「字幕 / 组件文字」两段切换：一条浅底槽，当前那段是浮起的白块 */
 .wf-captions-views {
   display: grid;

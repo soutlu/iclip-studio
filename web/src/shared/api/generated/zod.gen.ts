@@ -907,17 +907,29 @@ export const zDubbedLine = z.object({
  */
 export const zDubbingLine = z.object({
   endMs: z.int().gte(0),
+  slotEndMs: z.int().gte(0).nullish(),
   startMs: z.int().gte(0),
   text: z.string().min(1),
 })
 
 /**
+ * DubbingSpeechSpan
+ *
+ * 素材片里有人说话的一段：起止（毫秒，与 ``lines`` 同一口径）。
+ */
+export const zDubbingSpeechSpan = z.object({
+  endMs: z.int().gte(0),
+  startMs: z.int().gte(0),
+})
+
+/**
  * DubbingOriginalReference
  *
- * 参考音频取素材片自己的原声：服务端从被字幕覆盖得最多的一段里截。
+ * 参考音频取素材片自己的原声：服务端从被说话时段覆盖得最多的一段里截。
  */
 export const zDubbingOriginalReference = z.object({
   kind: z.literal('original'),
+  spans: z.array(zDubbingSpeechSpan).max(200).nullish(),
 })
 
 /**

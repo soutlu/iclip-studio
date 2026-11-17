@@ -445,6 +445,14 @@ class DubbingLine(CamelModel):
     start_ms: Annotated[int, Field(ge=0)]
     end_ms: Annotated[int, Field(ge=0)]
     text: Annotated[str, Field(min_length=1)]
+    # 只配其中几句时，后面还有别的句子（别的音色配的、这次不配的）要占位置；早先存下的请求没有它。
+    slot_end_ms: Annotated[
+        int | None,
+        Field(
+            ge=0,
+            description="这句最晚占到哪儿（毫秒）；不写时占到下一句开始，最后一句到素材片结尾",
+        ),
+    ] = None
 
     _check_text = field_validator("text")(nonblank)
 
@@ -452,13 +460,51 @@ class DubbingLine(CamelModel):
     def _end_after_start(self) -> DubbingLine:
         if self.end_ms <= self.start_ms:
             raise ValueError("end_ms 必须晚于 start_ms")
+        if self.slot_end_ms is not None and self.slot_end_ms <= self.start_ms:
+            raise ValueError("slot_end_ms 必须晚于 start_ms")
+        return self
+
+
+class DubbingSpeechSpan(CamelModel):
+    """素材片里有人说话的一段：起止（毫秒，与 ``lines`` 同一口径）。"""
+
+    start_ms: Annotated[int, Field(ge=0)]
+    end_ms: Annotated[int, Field(ge=0)]
+
+    @model_validator(mode="after")
+    def _end_after_start(self) -> DubbingSpeechSpan:
+        if self.end_ms <= self.start_ms:
+            raise ValueError("end_ms 必须晚于 start_ms")
         return self
 
 
 class DubbingOriginalReference(CamelModel):
-    """参考音频取素材片自己的原声：服务端从被字幕覆盖得最多的一段里截。"""
+    """参考音频取素材片自己的原声：服务端从被说话时段覆盖得最多的一段里截。"""
 
     kind: Literal["original"]
+    # 早先存下的请求没有它；没写时按 lines 算说话时段。
+    spans: Annotated[
+        list[DubbingSpeechSpan] | None,
+        Field(
+            max_length=MAX_DUBBING_LINES,
+            description=(
+                "这条素材片里有人说话的时段，按开始时间排好、互不重叠、在素材片时长之内；"
+                "截原声参考按它算，不写时按 lines 算"
+            ),
+        ),
+    ] = None
+
+    @field_validator("spans")
+    @classmethod
+    def _ordered_without_overlap(
+        cls, value: list[DubbingSpeechSpan] | None
+    ) -> list[DubbingSpeechSpan] | None:
+        if value is None:
+            return value
+        for index in range(1, len(value)):
+            if value[index].start_ms < value[index - 1].end_ms:
+                raise ValueError(f"第 {index + 1} 段说话时段和上一段重叠或没按开始时间排好")
+        return value
 
 
 class DubbingVoiceReferenceIn(CamelModel):
@@ -915,6 +961,7 @@ __all__ = [
     "DubbingReference",
     "DubbingReferenceIn",
     "DubbingRequest",
+    "DubbingSpeechSpan",
     "DubbingUploadReference",
     "DubbingUploadReferenceIn",
     "DubbingVoiceReference",

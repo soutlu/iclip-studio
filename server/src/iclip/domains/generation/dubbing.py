@@ -79,9 +79,20 @@ class ReferenceWindow:
     speech_ms: int
 
 
-def reference_window(lines: Sequence[DubbingLine], duration_ms: int) -> ReferenceWindow:
-    """在 ``[0, duration_ms)`` 里找一段不超过 ``MAX_REFERENCE_MS``、被 ``lines`` 覆盖得最多的连续
-    时段，覆盖一样多取最早的；再把两头没被覆盖的部分收掉。一句都碰不到时 ``speech_ms`` 为 0。"""
+class Timed(Protocol):
+    """有起止（毫秒）的一段：要配的一句，或一段说话时段。"""
+
+    @property
+    def start_ms(self) -> int: ...
+
+    @property
+    def end_ms(self) -> int: ...
+
+
+def reference_window(lines: Sequence[Timed], duration_ms: int) -> ReferenceWindow:
+    """在 ``[0, duration_ms)`` 里找一段不超过 ``MAX_REFERENCE_MS``、被 ``lines``（按开始排好、互不
+    重叠）覆盖得最多的连续时段，覆盖一样多取最早的；再把两头没被覆盖的部分收掉。一段都碰不到时
+    ``speech_ms`` 为 0。"""
 
     span = min(MAX_REFERENCE_MS, duration_ms)
     latest = duration_ms - span
@@ -105,17 +116,18 @@ def reference_window(lines: Sequence[DubbingLine], duration_ms: int) -> Referenc
     )
 
 
-def _covered(lines: Sequence[DubbingLine], start: int, end: int) -> int:
+def _covered(lines: Sequence[Timed], start: int, end: int) -> int:
     return sum(max(0, min(line.end_ms, end) - max(line.start_ms, start)) for line in lines)
 
 
 def line_slots(lines: Sequence[DubbingLine], duration_ms: int) -> tuple[int, ...]:
-    """每句能占的长度（毫秒）：从它开始到下一句开始，最后一句到视频结尾。"""
+    """每句能占的长度（毫秒）：从它开始到下一句开始，最后一句到视频结尾；写了 ``slot_end_ms`` 的
+    不超过它。"""
 
-    starts = [line.start_ms for line in lines]
+    ends = [*(line.start_ms for line in lines[1:]), duration_ms]
     return tuple(
-        following - start
-        for start, following in zip(starts, [*starts[1:], duration_ms], strict=True)
+        (end if line.slot_end_ms is None else min(end, line.slot_end_ms)) - line.start_ms
+        for line, end in zip(lines, ends, strict=True)
     )
 
 
@@ -233,7 +245,8 @@ class DubbingProvider:
             start_ms, length_ms = 0, MAX_REFERENCE_MS
             silent = "参考音频里没有声音，换一段参考音频"
         else:
-            window = reference_window(request.lines, request.video_duration_ms)
+            speech = request.reference.spans or request.lines
+            window = reference_window(speech, request.video_duration_ms)
             if window.speech_ms < MIN_REFERENCE_SPEECH_MS:
                 raise ProviderError(
                     "原声里说话太少，换一段参考音频",

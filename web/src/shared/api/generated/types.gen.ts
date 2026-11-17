@@ -2048,6 +2048,12 @@ export type DubbingLine = {
    */
   endMs: number
   /**
+   * Slotendms
+   *
+   * 这句最晚占到哪儿（毫秒）；不写时占到下一句开始，最后一句到素材片结尾
+   */
+  slotEndMs?: number | null
+  /**
    * Startms
    */
   startMs: number
@@ -2060,13 +2066,35 @@ export type DubbingLine = {
 /**
  * DubbingOriginalReference
  *
- * 参考音频取素材片自己的原声：服务端从被字幕覆盖得最多的一段里截。
+ * 参考音频取素材片自己的原声：服务端从被说话时段覆盖得最多的一段里截。
  */
 export type DubbingOriginalReference = {
   /**
    * Kind
    */
   kind: 'original'
+  /**
+   * Spans
+   *
+   * 这条素材片里有人说话的时段，按开始时间排好、互不重叠、在素材片时长之内；截原声参考按它算，不写时按 lines 算
+   */
+  spans?: Array<DubbingSpeechSpan> | null
+}
+
+/**
+ * DubbingSpeechSpan
+ *
+ * 素材片里有人说话的一段：起止（毫秒，与 ``lines`` 同一口径）。
+ */
+export type DubbingSpeechSpan = {
+  /**
+   * Endms
+   */
+  endMs: number
+  /**
+   * Startms
+   */
+  startMs: number
 }
 
 /**
