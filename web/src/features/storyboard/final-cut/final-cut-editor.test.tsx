@@ -1758,6 +1758,7 @@ describe('final-cut 编辑器 · 导出', () => {
 
   const exportOf = (state: object) => ({
     id: EXPORT_ID,
+    locale: null,
     status: 'queued',
     progress: null,
     queuePosition: null,
@@ -4024,6 +4025,49 @@ describe('final-cut 编辑器 · 语言', () => {
       within(panel()).getByRole('textbox', { name: '字幕文字 00:01.00 – 00:02.00' }),
     ).toHaveValue('字幕 b2')
     expect(within(row).getByRole('group', { name: /^字幕 a1，1\.0 秒$/ })).toBeVisible()
+  })
+
+  it('切到 English 点「导出」：导出 English 版，提示里提醒还有几条没翻；发起时带上语言，状态写这次导出的语言；中文时带 null', async () => {
+    const exportId = '22222222-3333-4444-8555-666666666666'
+    const bodies: unknown[] = []
+    // 中文那次答「还没导出过」，按钮留在「导出」；English 那次答渲染中、记着 English
+    server.use(
+      http.post('*/api/conversations/:conversationId/whole-film/exports', async ({ request }) => {
+        bodies.push(await request.json())
+        return HttpResponse.json({ exportId }, { status: 202 })
+      }),
+      http.get('*/api/conversations/:conversationId/whole-film/exports/latest', () =>
+        HttpResponse.json({
+          export:
+            bodies.length < 2
+              ? null
+              : {
+                  id: exportId,
+                  locale: 'en',
+                  status: 'rendering',
+                  progress: 0.4,
+                  queuePosition: null,
+                  error: null,
+                  downloadUrl: null,
+                },
+        }),
+      ),
+    )
+    const user = await open()
+    const exportButton = () => within(toolbar()).getByRole('button', { name: '导出' })
+    await user.click(exportButton())
+    await waitFor(() => expect(bodies).toEqual([{ locale: null }]))
+    await waitFor(() => expect(exportButton()).not.toHaveAttribute('aria-disabled'))
+
+    await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
+    // 两句字幕 English 翻了一句
+    await user.hover(exportButton())
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      /^导出 English 版；有 1 条文字未翻译，导出后显示中文$/,
+    )
+    await user.click(exportButton())
+    await waitFor(() => expect(bodies).toEqual([{ locale: null }, { locale: 'en' }]))
+    expect(await screen.findByText('正在渲染 English 版 40%')).toHaveAttribute('role', 'status')
   })
 })
 

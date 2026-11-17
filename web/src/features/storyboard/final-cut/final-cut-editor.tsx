@@ -1205,7 +1205,11 @@ function EditorBody({
             <ExportControl
               blocked={exportBlocked}
               onCancel={() => void exporting.cancel()}
-              onStart={() => void exporting.start()}
+              onStart={() => void exporting.start(locale.code)}
+              target={{
+                locale: locale.code,
+                untranslated: pending === undefined ? 0 : pending.entries.length + pending.tooLong,
+              }}
               view={exporting.view}
             />
           }

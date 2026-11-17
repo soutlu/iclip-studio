@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type * as z from 'zod'
 import type { ExportQueue } from './jobs'
+import { localizeProject } from './locale'
 import type { Logger } from './log'
 import { MAIN_FILE, mediaAddresses, projectProblem } from './project'
 import { disallowedMediaHosts, parseRequest, zExportRequest } from './request'
@@ -100,11 +101,30 @@ async function createExport(req: IncomingMessage, res: ServerResponse, context: 
     fail(res, 400, 'media-host-not-allowed', `素材地址的主机不在允许范围：${rejected.join('、')}`)
     return
   }
+  let files = request.files
+  let variables: Record<string, unknown> | null = null
+  if (request.locale) {
+    const localized = localizeProject(request.files, request.locale)
+    if (!localized.ok) {
+      fail(res, 400, 'invalid-locale', localized.message)
+      return
+    }
+    // 只记条数：值表里的字不进日志
+    if (localized.value.dropped > 0)
+      context.logger.warn('值表里有主文件没声明的变量，已去掉', {
+        exportId: request.id,
+        locale: request.locale,
+        count: localized.value.dropped,
+      })
+    files = localized.value.files
+    variables = localized.value.variables
+  }
   const accepted = context.queue.submit({
     id: request.id,
     conversationId: request.conversationId,
-    files: request.files,
+    files,
     media: downloads,
+    variables,
     vendorDir: context.vendorDir,
     upload: request.upload,
   })

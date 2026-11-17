@@ -192,6 +192,7 @@ async def test_an_export_hands_the_project_as_it_is_to_the_render_service_and_is
     assert conversation["completedAt"] is not None, "导出不是动手创作，不抹收尾标记"
     assert await latest(client, mine) == {
         "id": export_id,
+        "locale": None,
         "status": "queued",
         "progress": None,
         "queuePosition": None,
@@ -213,6 +214,7 @@ async def test_an_export_hands_the_project_as_it_is_to_the_render_service_and_is
         OWN_BUCKET_URL: {"url": f"https://{INTERNAL_HOST}/iclip/agent/videos/composed.mp4"},
         UNKNOWN_MUSIC_URL: {"url": UNKNOWN_MUSIC_URL},
     }, "主文件里每个素材地址都有下载地址：本桶对象换成内网地址，别处的原样"
+    assert payload["locale"] is None, "没有请求体导出中文"
     upload = urlsplit(payload["upload"]["url"])
     assert (upload.netloc, upload.path) == (INTERNAL_HOST, f"/{key}")
     expires = datetime.fromtimestamp(int(parse_qs(upload.query)["Expires"][0]), UTC)
@@ -224,6 +226,7 @@ async def test_an_export_hands_the_project_as_it_is_to_the_render_service_and_is
     render.advance(export_id, status="rendering", progress=0.4, queuePosition=None)
     assert await latest(client, mine) == {
         "id": export_id,
+        "locale": None,
         "status": "rendering",
         "progress": 0.4,
         "queuePosition": None,
@@ -241,6 +244,7 @@ async def test_an_export_hands_the_project_as_it_is_to_the_render_service_and_is
     assert (done.status, done.output.url) == (STATUS_COMPLETED, f"{PUBLIC}/{key}")
     assert await latest(client, mine) == {
         "id": export_id,
+        "locale": None,
         "status": "done",
         "progress": None,
         "queuePosition": None,
@@ -293,6 +297,68 @@ async def test_an_empty_final_cut_is_refused_and_leaves_no_record(
         {"detail": "final-cut 暂无内容，无法导出"},
     )
     assert await latest(client, mine) is None
+    assert render.submitted == []
+
+
+async def test_a_foreign_locale_export_is_recorded_answered_and_handed_over_with_its_locale(
+    client: httpx.AsyncClient,
+    pg_url: str,
+    generations: SqlGenerationRepository,
+    render: StubRender,
+    queue: GenerationQueue,
+) -> None:
+    await login_as_editor(client, pg_url)
+    mine = await new_conversation(client)
+    film = main_file()
+    table = '{\n  "cap_a1": "Hello"\n}\n'
+    await put_project_file(client, mine, "index.html", film)
+    await put_project_file(client, mine, "locales/en.json", table)
+
+    started = await client.post(exports_url(mine), json={"locale": "en"})
+
+    assert started.status_code == 202, started.text
+    export_id = started.json()["exportId"]
+    pending = await record(generations, export_id)
+    assert isinstance(pending.request, WholeFilmRequest)
+    assert pending.request.locale == "en"
+    shown = await latest(client, mine)
+    assert shown is not None
+    assert (shown["id"], shown["locale"]) == (export_id, "en")
+
+    await queue.run_submit(export_id)
+
+    (payload,) = render.submitted
+    assert payload["locale"] == "en"
+    assert sorted(payload["files"], key=lambda file: file["path"]) == [
+        {"path": "index.html", "content": film},
+        {"path": "locales/en.json", "content": table},
+    ], "值表跟着工程交出去，渲染服务自己读"
+
+
+async def test_a_locale_without_its_table_or_that_is_not_supported_is_refused(
+    client: httpx.AsyncClient, pg_url: str, render: StubRender
+) -> None:
+    await login_as_editor(client, pg_url)
+    mine = await new_conversation(client)
+    await put_project_file(client, mine, "index.html", main_file())
+    await put_project_file(client, mine, "locales/en.json", "{}\n")
+
+    missing = await client.post(exports_url(mine), json={"locale": "de"})
+    unsupported = await client.post(exports_url(mine), json={"locale": "ja"})
+    source = await client.post(exports_url(mine), json={"locale": "zh"})
+
+    assert (missing.status_code, missing.json()) == (
+        422,
+        {"detail": "final-cut 里没有这种语言的语言文件，无法导出这种语言的版本"},
+    )
+    assert (unsupported.status_code, source.status_code) == (422, 422)
+    assert await latest(client, mine) is None, "被拒的都不留记录"
+
+    chinese = await client.post(exports_url(mine), json={"locale": None})
+    assert chinese.status_code == 202, chinese.text
+    shown = await latest(client, mine)
+    assert shown is not None
+    assert shown["locale"] is None
     assert render.submitted == []
 
 

@@ -7,6 +7,8 @@ const PROJECT_MAIN_PATH = 'final-cut/index.html'
 
 type MockExport = {
   id: string
+  /** 导出的外语，中文是 null。 */
+  locale: string | null
   reads: number
   cancelled: boolean
 }
@@ -29,6 +31,7 @@ export const resetMockWholeFilm = () => {
 const exportOut = (found: MockExport) => {
   const base = {
     id: found.id,
+    locale: found.locale,
     error: null,
     downloadUrl: null,
   }
@@ -73,14 +76,29 @@ export const wholeFilmHandlers = [
     })
   }),
 
-  http.post('*/api/conversations/:conversationId/whole-film/exports', ({ params }) => {
-    const conversationId = String(params['conversationId'])
-    if (mockProjectMain(conversationId) === undefined)
-      return HttpResponse.json({ detail: 'final-cut 暂无内容，无法导出' }, { status: 422 })
-    const exportId = crypto.randomUUID()
-    latestExports.set(conversationId, { id: exportId, reads: 0, cancelled: false })
-    return HttpResponse.json({ exportId }, { status: 202 })
-  }),
+  http.post(
+    '*/api/conversations/:conversationId/whole-film/exports',
+    async ({ params, request }) => {
+      const conversationId = String(params['conversationId'])
+      if (mockProjectMain(conversationId) === undefined)
+        return HttpResponse.json({ detail: 'final-cut 暂无内容，无法导出' }, { status: 422 })
+      // 请求体可以不带，不带和 locale 为 null 都是中文
+      const raw = await request.text()
+      const locale =
+        raw === '' ? null : ((JSON.parse(raw) as { locale?: string | null }).locale ?? null)
+      if (
+        locale !== null &&
+        mockWorkspaceFile(conversationId, `final-cut/locales/${locale}.json`) === undefined
+      )
+        return HttpResponse.json(
+          { detail: 'final-cut 里没有这种语言的语言文件，无法导出这种语言的版本' },
+          { status: 422 },
+        )
+      const exportId = crypto.randomUUID()
+      latestExports.set(conversationId, { id: exportId, locale, reads: 0, cancelled: false })
+      return HttpResponse.json({ exportId }, { status: 202 })
+    },
+  ),
 
   http.get('*/api/conversations/:conversationId/whole-film/exports/latest', ({ params }) => {
     const found = latestExports.get(String(params['conversationId']))

@@ -8,7 +8,7 @@ import structlog
 
 from iclip.app.runtime_workspace import WorkspaceFiles
 from iclip.common.errors import NotFound
-from iclip.common.final_cut import PROJECT_DIR, media_addresses
+from iclip.common.final_cut import PROJECT_DIR, TargetLocale, media_addresses
 from iclip.domains.conversations.models import (
     WholeFilmExport,
     WholeFilmExportError,
@@ -89,9 +89,15 @@ class WholeFilmExportAdapter:
         self._render = render
 
     async def start(
-        self, principal: Principal, *, conversation_id: uuid.UUID, main_file: str
+        self,
+        principal: Principal,
+        *,
+        conversation_id: uuid.UUID,
+        main_file: str,
+        locale: TargetLocale | None,
     ) -> uuid.UUID:
-        """记一条成片记录排队：主文件里的素材按输出地址对上生成记录的记进去，对不上的不记。"""
+        """记一条成片记录排队：主文件里的素材按输出地址对上生成记录的记进去，对不上的不记；
+        导出哪种外语（``locale``）也记进去。"""
 
         addresses = media_addresses(main_file)
         records = await self._generations.earliest_by_outputs(
@@ -110,7 +116,7 @@ class WholeFilmExportAdapter:
         job = await self._generation.submit_whole_film(
             principal,
             conversation_id=conversation_id,
-            request=WholeFilmRequest(videos=videos, audios=audios),
+            request=WholeFilmRequest(videos=videos, audios=audios, locale=locale),
         )
         return job.id
 
@@ -140,6 +146,9 @@ class WholeFilmExportAdapter:
             raise FinalCutRenderUnavailable(str(exc)) from exc
 
     async def _export_of(self, job: GenerationJob) -> WholeFilmExport:
+        request = job.request
+        if not isinstance(request, WholeFilmRequest):
+            raise RuntimeError(f"成片记录 {job.id} 没有成片导出的请求")
         status: WholeFilmExportStatus = "queued"
         progress: float | None = None
         queue_position: int | None = None
@@ -163,6 +172,7 @@ class WholeFilmExportAdapter:
                 error = WholeFilmExportError(code=job.error_code, message=job.error_message)
         return WholeFilmExport(
             id=job.id,
+            locale=request.locale,
             status=status,
             progress=progress,
             queue_position=queue_position,

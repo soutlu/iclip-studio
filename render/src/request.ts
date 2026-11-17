@@ -21,10 +21,15 @@ export const zExportRequest = z.object({
     .min(1),
   /** 主文件里写的素材地址 → 渲染服务去下载的地址。 */
   media: z.record(z.string(), z.object({ url: zHttpUrl })),
+  /** 导出哪种外语的版本，规则见 locale.ts；null 或不带是中文。 */
+  locale: z.enum(['en', 'de', 'es', 'fr']).nullish(),
   upload: z.object({ url: zHttpUrl, headers: z.record(z.string(), z.string()) }),
 })
 
 export type ExportRequest = z.infer<typeof zExportRequest>
+
+/** final-cut 支持的外语。 */
+export type ExportLocale = NonNullable<ExportRequest['locale']>
 
 export function parseRequest<T>(
   schema: z.ZodType<T>,

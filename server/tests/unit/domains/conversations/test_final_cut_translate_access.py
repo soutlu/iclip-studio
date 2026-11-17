@@ -13,6 +13,7 @@ import pytest
 from pydantic import ValidationError
 
 from iclip.common.errors import NotFound, PermissionDenied
+from iclip.common.final_cut import TargetLocale
 from iclip.domains.conversations.api import create_final_cut_project_router
 from iclip.domains.conversations.final_cut_project import FinalCutProject, PreviewTokens
 from iclip.domains.conversations.final_cut_translation import (
@@ -22,7 +23,6 @@ from iclip.domains.conversations.final_cut_translation import (
     MAX_TRANSLATION_TOTAL_CHARS,
     FinalCutText,
     FinalCutTranslator,
-    TargetLocale,
 )
 from iclip.domains.conversations.models import Conversation
 from iclip.domains.conversations.repository import AgentPreviewStore, ConversationRepository

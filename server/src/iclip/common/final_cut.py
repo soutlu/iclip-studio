@@ -1,4 +1,4 @@
-"""final-cut 工程在工作区里的位置，和从主文件里取素材地址。"""
+"""final-cut 工程在工作区里的位置、它支持的外语，和从主文件里取素材地址。"""
 
 from __future__ import annotations
 
@@ -9,6 +9,16 @@ from typing import Final, Literal
 PROJECT_DIR: Final = "final-cut"
 
 MAIN_FILE: Final = "index.html"
+
+TargetLocale = Literal["en", "de", "es", "fr"]
+"""final-cut 支持的外语。原文是中文，中文没有值表；每种外语一份值表，见 ``locale_path``。"""
+
+
+def locale_path(locale: TargetLocale) -> str:
+    """一种外语的值表在工程里的路径（相对工程根）。"""
+
+    return f"locales/{locale}.json"
+
 
 MediaKind = Literal["video", "audio"]
 
@@ -46,4 +56,12 @@ def media_addresses(html: str) -> tuple[MediaAddress, ...]:
     return tuple(MediaAddress(url=url, kind=kind) for url, kind in collector.found.items())
 
 
-__all__ = ["MAIN_FILE", "PROJECT_DIR", "MediaAddress", "MediaKind", "media_addresses"]
+__all__ = [
+    "MAIN_FILE",
+    "PROJECT_DIR",
+    "MediaAddress",
+    "MediaKind",
+    "TargetLocale",
+    "locale_path",
+    "media_addresses",
+]

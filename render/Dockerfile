@@ -1,4 +1,5 @@
-# 成片渲染服务镜像（iclip-render）。构建上下文为仓库根（和别的镜像一样），只用到 render/。
+# 成片渲染服务镜像（iclip-render）。构建上下文为仓库根（和别的镜像一样），用到 render/ 和前端的
+# final-cut 主文件写法（web/src/features/storyboard/final-cut/composition/，打包进 dist）。
 # 镜像里不带组件库：部署时把组件库目录挂到 RENDER_REGISTRY_ROOT（见 deploy/compose.yaml）。
 #
 #   docker build --platform linux/amd64 -f render/Dockerfile -t iclip-render .
@@ -20,6 +21,8 @@ COPY render/package.json render/pnpm-lock.yaml render/pnpm-workspace.yaml render
 RUN npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")" \
     && pnpm install --frozen-lockfile
 COPY render/ ./
+# 渲染服务按语言导出时和编辑器预览共用 composition/ 里的写法，放在和仓库里一样的相对位置
+COPY web/src/features/storyboard/final-cut/composition/ /app/web/src/features/storyboard/final-cut/composition/
 RUN pnpm build && pnpm prune --prod
 
 # ---------------------------------------------------------------- 运行

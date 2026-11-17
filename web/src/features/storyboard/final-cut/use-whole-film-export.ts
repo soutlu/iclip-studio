@@ -9,6 +9,7 @@ import {
   startWholeFilmExport,
   wholeFilmQueryKeys,
 } from './final-cut.api'
+import type { LocaleCode } from './locales'
 
 const POLL_MS = 1_500
 
@@ -25,13 +26,20 @@ const FAILURE_TEXT: Record<string, string> = {
   'lint-failed': 'final-cut 未通过导出前检查，无法导出',
 }
 
+/** 一次导出的是哪种外语的版本，中文是 null。 */
+export type ExportLocale = WholeFilmExportOut['locale']
+
+/**
+ * 导出现在的样子。提交中、进行中和完成的带着这次导出的语言（`locale`）：提交中的是点「导出」那一刻编辑器显示的
+ * 语言，之后的取接口答的，导出后切了语言也不变。
+ */
 export type ExportView =
   | { kind: 'idle' }
-  | { kind: 'starting' }
-  | { kind: 'queued'; ahead: number | null }
-  | { kind: 'rendering'; progress: number | null }
-  | { kind: 'uploading' }
-  | { kind: 'done'; exportId: string; downloadUrl: string }
+  | { kind: 'starting'; locale: ExportLocale }
+  | { kind: 'queued'; ahead: number | null; locale: ExportLocale }
+  | { kind: 'rendering'; progress: number | null; locale: ExportLocale }
+  | { kind: 'uploading'; locale: ExportLocale }
+  | { kind: 'done'; exportId: string; downloadUrl: string; locale: ExportLocale }
   | { kind: 'failed'; message: string }
   | { kind: 'cancelled' }
 
@@ -46,15 +54,20 @@ const failureText = (error: WholeFilmExportOut['error']) =>
 const viewOf = (state: WholeFilmExportOut): ExportView => {
   switch (state.status) {
     case 'queued':
-      return { kind: 'queued', ahead: state.queuePosition }
+      return { kind: 'queued', ahead: state.queuePosition, locale: state.locale }
     case 'rendering':
-      return { kind: 'rendering', progress: state.progress }
+      return { kind: 'rendering', progress: state.progress, locale: state.locale }
     case 'uploading':
-      return { kind: 'uploading' }
+      return { kind: 'uploading', locale: state.locale }
     case 'done':
       return state.downloadUrl === null
         ? { kind: 'failed', message: '导出已完成，但未获取到下载地址；请重新导出' }
-        : { kind: 'done', exportId: state.id, downloadUrl: state.downloadUrl }
+        : {
+            kind: 'done',
+            exportId: state.id,
+            downloadUrl: state.downloadUrl,
+            locale: state.locale,
+          }
     case 'failed':
       return { kind: 'failed', message: failureText(state.error) }
     case 'cancelled':
@@ -63,8 +76,8 @@ const viewOf = (state: WholeFilmExportOut): ExportView => {
 }
 
 /**
- * 这段对话最近一次导出的样子，发起和取消导出。发起前先等 `settle` 把没存的改动存完，它答 false
- * （没存成）就不发起。
+ * 这段对话最近一次导出的样子，发起和取消导出。发起时给出导出哪种语言（编辑器当前显示的）；发起前先等 `settle`
+ * 把没存的改动存完，它答 false（没存成）就不发起。
  */
 export function useWholeFilmExport(conversationId: string, settle: () => Promise<boolean>) {
   const [local, setLocal] = useState<ExportView | null>(null)
@@ -91,14 +104,14 @@ export function useWholeFilmExport(conversationId: string, settle: () => Promise
         ? { kind: 'idle' }
         : viewOf(current))
 
-  const start = async () => {
-    setLocal({ kind: 'starting' })
+  const start = async (locale: LocaleCode) => {
+    setLocal({ kind: 'starting', locale: locale === 'zh' ? null : locale })
     if (!(await settle())) {
       setLocal(null)
       return
     }
     try {
-      await startWholeFilmExport(conversationId)
+      await startWholeFilmExport(conversationId, locale)
       await latest.refetch()
       setLocal(null)
     } catch (error) {

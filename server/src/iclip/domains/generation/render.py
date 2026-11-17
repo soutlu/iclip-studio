@@ -16,7 +16,9 @@ from iclip.domains.generation.provider import (
     ProviderError,
     ProviderProgress,
     ProviderSubmission,
+    request_of,
 )
+from iclip.domains.generation.schemas import WholeFilmRequest
 from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ServerUploadSigner
 
@@ -173,8 +175,9 @@ class RenderProvider:
 
     async def submit(self, job: GenerationJob) -> ProviderSubmission:
         """把这段对话 final-cut 工程此刻的样子交给渲染服务：全部文件、主文件里每个素材地址的下载
-        地址和成片的上传签名。"""
+        地址、导出哪种外语（``locale``，中文是 null）和成片的上传签名。"""
 
+        request = request_of(job, WholeFilmRequest, provider=PROVIDER_NAME)
         if job.conversation_id is None:
             raise ProviderError(
                 "成片导出记录没有对话",
@@ -201,6 +204,7 @@ class RenderProvider:
                 address.url: {"url": self._fetch_url(address.url)}
                 for address in media_addresses(main)
             },
+            "locale": request.locale,
             "upload": {"url": upload.url, "headers": dict(upload.headers)},
         }
         try:

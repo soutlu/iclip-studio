@@ -7,6 +7,7 @@ import type {
   FinalCutTranslationsOut,
   MusicIn,
   SubtitleIn,
+  WholeFilmExportIn,
 } from '@/shared/api/generated/types.gen'
 import {
   zCancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponse as zExportCancelled,
@@ -279,12 +280,16 @@ export const projectFilesBase = (origin: string, token: string): string =>
 const exportsPath = (conversationId: string) =>
   `${conversationPath(conversationId)}/whole-film/exports`
 
-/** 按工作区里现在的 final-cut 发起一次导出，答复导出 id。 */
-export const startWholeFilmExport = (conversationId: string) =>
-  apiFetch(exportsPath(conversationId), zWholeFilmExportStartedOut, {
+/** 按工作区里现在的 final-cut 发起一次导出，导出 `locale` 这种语言的版本，答复导出 id。 */
+export const startWholeFilmExport = (conversationId: string, locale: LocaleCode) => {
+  // 中文是源语言，接口里写 null
+  const body: WholeFilmExportIn = { locale: locale === 'zh' ? null : locale }
+  return apiFetch(exportsPath(conversationId), zWholeFilmExportStartedOut, {
+    body,
     fallbackErrorMessage: '成片导出失败',
     method: 'POST',
   })
+}
 
 export const readLatestWholeFilmExport = async (conversationId: string, signal: AbortSignal) =>
   (

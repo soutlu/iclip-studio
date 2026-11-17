@@ -11,12 +11,12 @@ from typing import Any, Final
 import structlog
 
 from iclip.common.errors import ModelUnavailable
+from iclip.common.final_cut import TargetLocale
 from iclip.domains.conversations.final_cut_translation import (
     ERROR_MODEL_CALL_FAILED,
     ERROR_MODEL_FAILED,
     FinalCutText,
     FinalCutTranslationFailed,
-    TargetLocale,
 )
 from iclip.platform.runtime_api.client import RuntimeClient
 from iclip.platform.video_breakdown.model import ArkBreakdownModel

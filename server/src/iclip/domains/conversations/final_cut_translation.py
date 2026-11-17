@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final, Literal, Protocol
 
-TargetLocale = Literal["en", "de", "es", "fr"]
+from iclip.common.final_cut import TargetLocale
 
 TranslationErrorCode = Literal["model_call_failed", "model_failed"]
 
@@ -65,6 +65,5 @@ __all__ = [
     "FinalCutText",
     "FinalCutTranslationFailed",
     "FinalCutTranslator",
-    "TargetLocale",
     "TranslationErrorCode",
 ]
