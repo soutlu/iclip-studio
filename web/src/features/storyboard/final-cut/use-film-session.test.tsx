@@ -1,3 +1,4 @@
+import { parseAutomation, sampleAutomationLane } from '@hyperframes/core/audio-automation'
 import { openComposition, type Composition } from '@hyperframes/sdk'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { delay, http, HttpResponse } from 'msw'
@@ -1152,7 +1153,9 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
       link: null,
       syncOrigin: null,
       dub: null,
+      audioGroup: null,
       fxCarve: null,
+      fxChain: null,
     })
     expect(result.current.film?.durationMs).toBe(10_000)
     await waitFor(() => expect(saves).toHaveLength(1))
@@ -3027,16 +3030,19 @@ describe('useFilmSession · 字幕', () => {
   })
 })
 
-describe('useFilmSession · 压低配乐', () => {
+describe('useFilmSession · 智能调音', () => {
+  const elementOf = (result: Session, id: string) =>
+    new DOMParser().parseFromString(result.current.film?.html ?? '', 'text/html').getElementById(id)
   const attributesOf = (result: Session, id: string) => {
-    const page = new DOMParser().parseFromString(result.current.film?.html ?? '', 'text/html')
-    const element = page.getElementById(id)
+    const element = elementOf(result, id)
     return {
       carve: element?.getAttribute('data-fx-carve') ?? null,
       chain: element?.getAttribute('data-fx-chain') ?? null,
       automation: element?.getAttribute('data-automation') ?? null,
     }
   }
+  const groupOf = (result: Session, id: string) =>
+    elementOf(result, id)?.getAttribute('data-audio-group') ?? null
   const measured = {
     bands: [{ freq: 1_000, gainDb: -6, q: 1.4 }],
     carved: {
@@ -3050,19 +3056,20 @@ describe('useFilmSession · 压低配乐', () => {
     ],
     voiceMix: new Float32Array(48_000),
   }
-  const settings = { enabled: true, sources: ['v'], strength: 0.25 }
+  const settings = { enabled: true, sources: ['voice'], strength: 0.25 }
 
-  it('设置、效果链、曲线一起写进配乐片段，算一步撤销；关掉时设置留着，生成的去掉', async () => {
+  it('压低：设置、效果链、曲线写进配乐片段，人声一起放进人声组，算一步撤销；关掉时设置留着，生成的去掉', async () => {
     const saves = recordSaves()
     const { result } = await openWith([video({ id: 'v' }), audio({ id: 'm', duration: 2_000 })])
-    act(() => result.current.setCarve('m', settings, measured))
+    act(() => result.current.setCarve('m', settings, measured, ['v']))
     const on = attributesOf(result, 'm')
     expect(JSON.parse(on.carve ?? '')).toEqual(settings)
     expect(on.chain).toContain('"fromCarve":true')
     expect(on.automation).toContain('.gain')
+    expect(groupOf(result, 'v')).toBe('voice')
     await waitFor(() => expect(saves).toHaveLength(1))
 
-    act(() => result.current.setCarve('m', { ...settings, enabled: false }, null))
+    act(() => result.current.setCarve('m', { ...settings, enabled: false }, null, []))
     expect(attributesOf(result, 'm')).toEqual({
       carve: JSON.stringify({ ...settings, enabled: false }),
       chain: null,
@@ -3072,10 +3079,92 @@ describe('useFilmSession · 压低配乐', () => {
     expect(attributesOf(result, 'm')).toEqual(on)
     act(() => result.current.undo())
     expect(attributesOf(result, 'm')).toEqual({ carve: null, chain: null, automation: null })
+    expect(groupOf(result, 'v')).toBeNull()
     expect(result.current.film?.canUndo).toBe(false)
 
     const before = result.current.film?.html
-    act(() => result.current.setCarve('gone', settings, measured))
+    act(() => result.current.setCarve('gone', settings, measured, []))
     expect(result.current.film?.html).toBe(before)
+  })
+
+  // 前一秒很轻、后一秒很响的声音（在素材时钟上，48 kHz）
+  const uneven = Float32Array.from(
+    { length: 96_000 },
+    (_, i) => Math.sin(i / 7) * (i < 48_000 ? 0.02 : 0.5),
+  )
+
+  it('平稳音量：节点、曲线写进片段，留着压低生成的，算一步撤销；声音已经平稳时不写', async () => {
+    const { result } = await openWith([video({ id: 'v' }), audio({ id: 'm', duration: 2_000 })])
+    act(() => result.current.setCarve('m', settings, measured, ['v']))
+    const carved = attributesOf(result, 'm')
+
+    let written: boolean | undefined
+    act(() => {
+      written = result.current.setLeveller('m', { samples: uneven, rate: 1 })
+    })
+    expect(written).toBe(true)
+    const levelled = attributesOf(result, 'm')
+    expect(levelled.chain).toMatch(/"fromCarve":true.*"fromLeveller":true/)
+    const { lanes } = JSON.parse(levelled.automation ?? '') as { lanes: { target: string }[] }
+    expect(lanes.length).toBeGreaterThan(1)
+    expect(result.current.film?.html).not.toContain('data-fx-leveller')
+
+    act(() => {
+      result.current.setLeveller('m', null)
+    })
+    expect(attributesOf(result, 'm')).toEqual(carved)
+    act(() => result.current.undo())
+    expect(attributesOf(result, 'm')).toEqual(levelled)
+    act(() => result.current.undo())
+    expect(attributesOf(result, 'm')).toEqual(carved)
+
+    const before = result.current.film?.html
+    const steady = Float32Array.from({ length: 96_000 }, (_, i) => Math.sin(i / 7) * 0.3)
+    act(() => {
+      written = result.current.setLeveller('m', { samples: steady, rate: 1 })
+    })
+    expect(written).toBe(false)
+    expect(result.current.film?.html).toBe(before)
+  })
+
+  it('切开带曲线的片段：前半段的曲线只到切点，后半段的从切点起、时间从 0 开始，算一步撤销', async () => {
+    const { result } = await openWith([video({ id: 'v' }), audio({ id: 'm', duration: 2_000 })])
+    act(() => result.current.setCarve('m', settings, measured, ['v']))
+    const whole = attributesOf(result, 'm')
+    const lanesOf = (automation: string | null) => parseAutomation(automation ?? '').lanes
+    act(() =>
+      result.current.split([
+        {
+          id: 'm',
+          first: { start: 0, duration: 500, mediaStart: 0 },
+          second: { start: 500, duration: 1_500, mediaStart: 500 },
+        },
+      ]),
+    )
+    const second = result.current.film?.clips.find(
+      (clip) => clip.kind === 'audio' && clip.id !== 'm',
+    )
+    const original = lanesOf(whole.automation)
+    const firstLanes = lanesOf(attributesOf(result, 'm').automation)
+    const secondLanes = lanesOf(attributesOf(result, second?.id ?? '').automation)
+    expect(original.length).toBeGreaterThan(0)
+    original.forEach((lane, index) => {
+      // 前半段到切点为止，值和原来一样；后半段第 t 秒是原来的第 0.5 + t 秒
+      expect(firstLanes[index]?.points.at(-1)?.t).toBe(0.5)
+      expect(firstLanes[index]?.points.every((point) => point.t <= 0.5)).toBe(true)
+      expect(secondLanes[index]?.points[0]?.t).toBe(0)
+      for (const t of [0, 0.25, 0.5, 1]) {
+        expect(sampleAutomationLane(firstLanes[index] ?? lane, Math.min(t, 0.5))).toBeCloseTo(
+          sampleAutomationLane(lane, Math.min(t, 0.5)),
+          6,
+        )
+        expect(sampleAutomationLane(secondLanes[index] ?? lane, t)).toBeCloseTo(
+          sampleAutomationLane(lane, 0.5 + t),
+          6,
+        )
+      }
+    })
+    act(() => result.current.undo())
+    expect(attributesOf(result, 'm')).toEqual(whole)
   })
 })

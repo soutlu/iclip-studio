@@ -2,6 +2,7 @@ import { use, useCallback, useEffect, useLayoutEffect, useRef, useState } from '
 import { HF_AUDIO_AUTOMATION_ATTR } from '@hyperframes/core/audio-automation'
 import { HF_AUDIO_CARVE_ATTR } from '@hyperframes/core/audio-carve'
 import { HF_AUDIO_FX_ATTR } from '@hyperframes/core/audio-fx'
+import { HF_AUDIO_GROUP_ATTR } from '@hyperframes/core/audio-groups'
 import { writeClipTiming } from '@hyperframes/core/composition-contract'
 import { mintLinkId, relinkSplitHalves } from '@hyperframes/core/media-link'
 import type { Composition, ElementSnapshot, JsonPatchOp } from '@hyperframes/sdk'
@@ -16,8 +17,11 @@ import {
   type NewCaption,
 } from './caption-edit'
 import type { PlacementChanges, PlacementStyles } from './canvas-geometry'
+import { VOICE_GROUP } from './audio-role'
 import { carveAttributes, type CarveMeasurement, type CarveSettings } from './carve'
+import { splitAutomation } from './clip-automation'
 import { rippleStarts, withLinkedStarts, type Cut, type Links, type Timing } from './clip-edit'
+import { levellerAttributes, type LevellerMeasurement } from './leveller'
 import {
   CAPTION_OWNER,
   CAPTIONS_PATH,
@@ -691,6 +695,14 @@ const writeVoiceMode = (main: Composition, locale: LocaleCode, mode: VoiceMode) 
  * 换上新的编号、后半段的起止和入点，紧跟在原元素后面；链接名照引擎的规则重新取，随语言的字段换成按新编号取的
  * 根变量，不和前半段共用。按在根下的先后排，依次加进去时前面加的不会挪动后面要加的位置。找不到根或片段时是 null。
  */
+/** 片段在切点切开时前后两半的曲线（见 `splitAutomation`）；没有曲线时是 null。 */
+const automationHalves = (attribute: (name: string) => string | undefined, cut: Cut) =>
+  splitAutomation(
+    attribute(HF_AUDIO_AUTOMATION_ATTR),
+    attribute(HF_AUDIO_FX_ATTR),
+    cut.first.duration / 1000,
+  )
+
 function splitHalves(
   engine: Composition,
   cuts: readonly Cut[],
@@ -717,6 +729,8 @@ function splitHalves(
     const inPoint = String(cut.second.mediaStart / 1000)
     if (kinds.get(cut.id) === 'host') half.setAttribute('data-playback-start', inPoint)
     else half.setAttribute('data-media-start', inPoint)
+    const lanes = automationHalves((name) => original.getAttribute(name) ?? undefined, cut)
+    if (lanes !== null) half.setAttribute(HF_AUDIO_AUTOMATION_ATTR, lanes.second)
     const bindings = Object.entries(
       localeBindingsOf(half.getAttribute(LOCALE_BINDINGS) ?? undefined),
     ).map(([field, from]) => [field, from, localeVariableId(id, field)] as const)
@@ -1107,6 +1121,9 @@ export function useFilmSession(
             hidden: false,
             link: null,
             syncOrigin: null,
+            audioGroup: null,
+            fxCarve: null,
+            fxChain: null,
           })
           engine.addElement(root.id, 0, element)
           end += video.duration
@@ -1212,7 +1229,9 @@ export function useFilmSession(
           link: null,
           syncOrigin: null,
           dub: null,
+          audioGroup: null,
           fxCarve: null,
+          fxChain: null,
         })
         engine.addElement(root.id, 0, element)
       })
@@ -1463,11 +1482,16 @@ export function useFilmSession(
   )
 
   /**
-   * 写配乐片段 `id` 的压低设置 `settings` 和它生成的效果链、曲线（`measured` 见 `carveAttributes`），三个属性
-   * 一起算一步撤销。片段不在工程里、属性都已经是这些值时不动工程。
+   * 写片段 `id` 的压低设置 `settings` 和它生成的效果链、曲线（`measured` 见 `carveAttributes`），`grouped` 里的
+   * 片段一起放进人声组（见 `carvePlan`），算一步撤销。片段不在工程里、属性都已经是这些值时不动工程。
    */
   const setCarve = useCallback(
-    (id: string, settings: CarveSettings, measured: CarveMeasurement | null) => {
+    (
+      id: string,
+      settings: CarveSettings,
+      measured: CarveMeasurement | null,
+      grouped: readonly string[],
+    ) => {
       const project = projectRef.current
       const element = project === null ? null : mainOf(project).getElement(id)
       if (element === null) return
@@ -1481,10 +1505,39 @@ export function useFilmSession(
         [HF_AUDIO_FX_ATTR]: chain,
         [HF_AUDIO_AUTOMATION_ATTR]: automation,
       }).filter(([name, value]) => (element.attributes[name] ?? null) !== value)
-      if (changed.length === 0) return
+      if (changed.length === 0 && grouped.length === 0) return
       edit((main) => {
         for (const [name, value] of changed) main.setAttribute(id, name, value)
+        for (const voice of grouped) main.setAttribute(voice, HF_AUDIO_GROUP_ATTR, VOICE_GROUP)
       })
+    },
+    [edit],
+  )
+
+  /**
+   * 给片段 `id` 写上平稳音量生成的效果链节点和曲线（见 `levellerAttributes`），算一步撤销；`measured` 是 null 时
+   * 关掉（去掉生成的节点、曲线）。答复写没写：量出来声音已经平稳、没什么可调时不写，答 false。
+   */
+  const setLeveller = useCallback(
+    (id: string, measured: LevellerMeasurement | null) => {
+      const project = projectRef.current
+      const element = project === null ? null : mainOf(project).getElement(id)
+      if (element === null) return false
+      const written = levellerAttributes(
+        element.attributes[HF_AUDIO_FX_ATTR],
+        element.attributes[HF_AUDIO_AUTOMATION_ATTR],
+        measured,
+      )
+      if (written === null) return false
+      const changed = Object.entries({
+        [HF_AUDIO_FX_ATTR]: written.chain,
+        [HF_AUDIO_AUTOMATION_ATTR]: written.automation,
+      }).filter(([name, value]) => (element.attributes[name] ?? null) !== value)
+      if (changed.length > 0)
+        edit((main) => {
+          for (const [name, value] of changed) main.setAttribute(id, name, value)
+        })
+      return true
     },
     [edit],
   )
@@ -1560,7 +1613,10 @@ export function useFilmSession(
             link: name,
             syncOrigin: name,
             dub: null,
+            // 分离出来的还是这段视频的声音，声音角色跟着它
+            audioGroup: video.audioGroup,
             fxCarve: null,
+            fxChain: null,
           }),
         )
         for (const [attribute, value] of Object.entries(detachedVideoChanges(name)))
@@ -1614,7 +1670,7 @@ export function useFilmSession(
   /**
    * 切开几个片段（`cuts` 由 `clip-edit.ts` 里的切开函数算好），算一步撤销：前半段还是原来的片段、只改时长，
    * 后半段是它的整份复制、紧跟在它后面，随语言的字段的根变量连同各语言的值复制一份给它；切的是视频片段时，
-   * 从切点起的字幕改成属于后半段（见 `splitOwners`）。
+   * 从切点起的字幕改成属于后半段（见 `splitOwners`）；片段上的音频曲线在切点分成两半（见 `splitAutomation`）。
    * 有一个后半段写不进去（比如元素里带着脚本）时都不切，提示原因。
    */
   const split = useCallback(
@@ -1646,6 +1702,11 @@ export function useFilmSession(
           }
           // 链接的片段切在同一处：SDK 把时长带给结尾对齐的链接片段时，带过去的也正好是切点
           for (const cut of cuts) current.setTiming(cut.id, { duration: cut.first.duration / 1000 })
+          for (const cut of cuts) {
+            const attributes = current.getElement(cut.id)?.attributes ?? {}
+            const lanes = automationHalves((name) => attributes[name], cut)
+            if (lanes !== null) current.setAttribute(cut.id, HF_AUDIO_AUTOMATION_ATTR, lanes.first)
+          }
           for (const [id, owner] of owners) scene?.setAttribute(id, CAPTION_OWNER, owner)
         })
       } catch (error) {
@@ -1873,7 +1934,9 @@ export function useFilmSession(
               link: null,
               syncOrigin: null,
               dub: { locale, caption, trimmed },
+              audioGroup: null,
               fxCarve: null,
+              fxChain: null,
             }),
           )
         writeVoiceMode(engine, locale, 'dub')
@@ -2005,6 +2068,7 @@ export function useFilmSession(
     setValues,
     setAttributes,
     setCarve,
+    setLeveller,
     removeClips,
     split,
     detach,

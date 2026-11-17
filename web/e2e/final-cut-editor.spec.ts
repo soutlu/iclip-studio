@@ -922,6 +922,72 @@ test('属性：音频片段拉满音量、打开循环播放写进文件；视�
     .toBeCloseTo(2 * (before.outPoint - before.inPoint), 1)
 })
 
+test('智能调音：把配乐的角色改成人声、打开自动平稳音量，存下的音频片段在人声组里，带着平稳音量的节点和曲线', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const inspector = editor.getByRole('tabpanel', { name: '属性' })
+  const first = mainSaved(page, 1)
+  await editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  await first
+
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '配乐' }).click()
+  const added = mainSavedWith(page, (html) => savedAudio(html).length === 1)
+  await side
+    .getByRole('list', { name: '音频' })
+    .getByRole('button', { name: '轻快原声吉他，适合秋季穿搭', exact: true })
+    .click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '加到播放头' }).click()
+  await added
+  await editor
+    .getByRole('group', { name: '配乐', exact: true })
+    .getByRole('button', { name: /^选中：轻快原声吉他/ })
+    .click()
+  await expect(inspector.getByRole('heading', { name: '智能调音' })).toBeVisible()
+  // 选中配乐时会先分析一次人声（自动压低），分析完开关才能动
+  await expect(inspector.getByText('正在分析声音')).toHaveCount(0)
+
+  const regrouped = mainSavedWith(
+    page,
+    (html) => savedAttribute(html, 'audio', 'data-audio-group') === 'voice',
+  )
+  await inspector.getByRole('button', { name: '角色：配乐' }).click()
+  await page.getByRole('menuitemradio', { name: /^人声/ }).click()
+  await regrouped
+  await expect(inspector.getByRole('button', { name: '角色：人声' })).toBeVisible()
+
+  const levelled = mainSavedWith(page, (html) =>
+    (savedAttribute(html, 'audio', 'data-fx-chain') ?? '').includes('fromLeveller'),
+  )
+  await inspector.getByRole('switch', { name: '自动平稳人声音量' }).click()
+  const html = htmlOf(await levelled)
+  const attribute = (name: string) =>
+    (savedAttribute(html, 'audio', name) ?? '').replaceAll('&quot;', '"')
+  expect(attribute('data-audio-group')).toBe('voice')
+  expect(html).not.toContain('data-fx-leveller')
+  const leveller = (
+    JSON.parse(attribute('data-fx-chain')) as {
+      nodes: { id: string; type: string; fromLeveller?: boolean }[]
+    }
+  ).nodes.find((node) => node.fromLeveller === true)
+  expect(leveller?.type).toBe('gain')
+  const lanes = (JSON.parse(attribute('data-automation')) as { lanes: { target: string }[] }).lanes
+  expect(lanes.map((lane) => lane.target)).toContain(`fx.${leveller?.id ?? ''}.gain`)
+  await expect(inspector.getByRole('switch', { name: '自动平稳人声音量' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  )
+})
+
 test('在贴片卡片上按 ] 选中片段：侧栏切到「属性」，焦点交还编辑器，Delete 照常删掉；选中没了回到贴片页签', async ({
   page,
 }) => {

@@ -3,22 +3,27 @@ import { parseAudioFxChain, serializeAudioFxChain } from '@hyperframes/core/audi
 import { parseAutomation, serializeAutomation } from '@hyperframes/core/audio-automation'
 import { describe, expect, it } from 'vitest'
 import { audio, video } from '@/testing/final-cut'
+import { roleOf } from './audio-role'
 import {
   CARVE_SAMPLE_RATE,
   carveAttributes,
   carveOf,
-  carveOffered,
+  carvePlan,
   carveVoices,
   measureCarve,
   nextCarve,
   switchedCarve,
   type CarveDecode,
 } from './carve'
-import type { AudioClip } from './composition/film'
+import type { MediaClip } from './composition/film'
 
 const BED = audio({ id: 'bed', start: 0, duration: 4_000, src: 'https://media.test/bed.mp3' })
 
-const withCarve = (settings: object): AudioClip => ({ ...BED, fxCarve: JSON.stringify(settings) })
+const withCarve = <T extends MediaClip>(clip: T, settings: object): T => ({
+  ...clip,
+  fxCarve: JSON.stringify(settings),
+})
+const ids = (clips: readonly MediaClip[]) => clips.map((clip) => clip.id)
 
 const original = audio({ id: 'orig', syncOrigin: 'lk-1', link: 'lk-1', duration: 2_000 })
 const dubEn = audio({
@@ -28,8 +33,25 @@ const dubEn = audio({
   dub: { locale: 'en', caption: 'cap-1', trimmed: false },
 })
 
+describe('声音角色', () => {
+  it('没写角色组时按声音从哪来算：普通音频是配乐，视频、分离出来的原声、配音是人声', () => {
+    expect([BED, video(), original, dubEn].map(roleOf)).toEqual([
+      'music',
+      'voice',
+      'voice',
+      'voice',
+    ])
+  })
+
+  it('写了角色组的照组：配乐可以改成人声，视频可以改成音效；别的组名按声音从哪来算', () => {
+    expect(roleOf(audio({ audioGroup: 'voice' }))).toBe('voice')
+    expect(roleOf(video({ audioGroup: 'sfx' }))).toBe('sfx')
+    expect(roleOf(audio({ audioGroup: 'narration' }))).toBe('music')
+  })
+})
+
 describe('谁是人声', () => {
-  it('没关原声的视频、分离出来的原声、所有语言的配音算；关了原声的视频、配乐不算', () => {
+  it('角色是人声、有声音的算：没关原声的视频、分离出来的原声、所有语言的配音；关了原声的视频、配乐不算', () => {
     const clips = [
       BED,
       video({ id: 'loud', duration: 2_000 }),
@@ -39,69 +61,115 @@ describe('谁是人声', () => {
       audio({ id: 'dub-de', dub: { locale: 'de', caption: 'cap-1', trimmed: false } }),
       audio({ id: 'other-music', duration: 4_000 }),
     ]
-    expect(carveVoices(BED, clips).map((clip) => clip.id)).toEqual([
-      'loud',
-      'orig',
-      'dub-en',
-      'dub-de',
-    ])
+    expect(ids(carveVoices(BED, clips))).toEqual(['loud', 'orig', 'dub-en', 'dub-de'])
   })
 
-  it('时间上和配乐不重叠的、隐藏的不算', () => {
+  it('改了角色就跟着变：配乐改成人声算，视频改成音效不算', () => {
+    const clips = [
+      BED,
+      video({ id: 'sfx', duration: 2_000, audioGroup: 'sfx' }),
+      audio({ id: 'talk', duration: 2_000, audioGroup: 'voice' }),
+    ]
+    expect(ids(carveVoices(BED, clips))).toEqual(['talk'])
+  })
+
+  it('时间上和它不重叠的、隐藏的、它自己不算', () => {
     const clips = [
       BED,
       video({ id: 'after', start: 4_000, duration: 1_000 }),
       video({ id: 'hidden', duration: 1_000, hidden: true }),
       video({ id: 'edge', start: 3_900, duration: 1_000 }),
     ]
-    expect(carveVoices(BED, clips).map((clip) => clip.id)).toEqual(['edge'])
+    expect(ids(carveVoices(BED, clips))).toEqual(['edge'])
+    const talk = video({ id: 'talk', duration: 4_000 })
+    expect(ids(carveVoices(talk, [talk, ...clips]))).toEqual(['edge'])
   })
 })
 
 describe('不用用户动手时的设置', () => {
-  const voices = [BED, video({ id: 'loud', duration: 2_000 }), dubEn]
+  const loud = video({ id: 'loud', duration: 2_000 })
+  const voices = [BED, loud, dubEn]
 
-  it('没设置过、有重叠的人声：默认开，压这些人声，强度用默认值', () => {
-    expect(nextCarve(BED, voices)).toEqual({ ...DEFAULT_CARVE, sources: ['loud', 'dub-en'] })
-    expect(carveOffered(BED, voices)).toBe(true)
+  it('配乐、音效没设置过、有重叠的人声：默认开，压人声组，强度用默认值', () => {
+    expect(nextCarve(BED, voices)).toEqual({ ...DEFAULT_CARVE, sources: ['voice'] })
+    const sfx = audio({ id: 'whoosh', duration: 4_000, audioGroup: 'sfx' })
+    expect(nextCarve(sfx, [sfx, loud])).toEqual({ ...DEFAULT_CARVE, sources: ['voice'] })
   })
 
-  it('没设置过、没有重叠的人声：不动，也不显示', () => {
+  it('没有重叠的人声、或者自己是人声时：不自动打开', () => {
     expect(nextCarve(BED, [BED])).toBeNull()
-    expect(carveOffered(BED, [BED])).toBe(false)
+    expect(nextCarve(loud, voices)).toBeNull()
   })
 
   it('用户关掉以后不再自动打开', () => {
-    const off = switchedCarve(withCarve({ ...DEFAULT_CARVE, sources: ['loud'] }), voices, false)
-    expect(off).toEqual({ ...DEFAULT_CARVE, enabled: false, sources: ['loud'] })
-    expect(nextCarve(withCarve(off), voices)).toBeNull()
+    const off = switchedCarve(
+      withCarve(BED, { ...DEFAULT_CARVE, sources: ['voice'] }),
+      voices,
+      false,
+    )
+    expect(off).toEqual({ ...DEFAULT_CARVE, enabled: false, sources: ['voice'] })
+    expect(nextCarve(withCarve(BED, off), voices)).toBeNull()
   })
 
-  it('压的人声删了一个：去掉删了的；都删了：换成现在重叠的人声，没有就空着', () => {
-    const bed = withCarve({ enabled: true, sources: ['loud', 'gone'], strength: 0.5 })
+  it('人声组里还有片段：不动（后来加的人声、改了角色的不自动重新分析）', () => {
+    const grouped = [BED, { ...loud, audioGroup: 'voice' }, dubEn]
+    const bed = withCarve(BED, { enabled: true, sources: ['voice'], strength: 0.25 })
+    expect(nextCarve(bed, grouped)).toBeNull()
+  })
+
+  it('名单里的没了：去掉没了的；都没了：有重叠的人声换成人声组，没有就空着', () => {
+    const bed = withCarve(BED, { enabled: true, sources: ['loud', 'gone'], strength: 0.5 })
     expect(nextCarve(bed, voices)).toEqual({ enabled: true, sources: ['loud'], strength: 0.5 })
-    const allGone = withCarve({ enabled: true, sources: ['gone'], strength: 0.5 })
-    expect(nextCarve(allGone, voices)).toEqual({
-      enabled: true,
-      sources: ['loud', 'dub-en'],
-      strength: 0.5,
-    })
+    // 人声组里一个片段都没有了
+    const allGone = withCarve(BED, { enabled: true, sources: ['voice'], strength: 0.5 })
+    expect(nextCarve(allGone, voices)).toEqual({ enabled: true, sources: ['voice'], strength: 0.5 })
     expect(nextCarve(allGone, [allGone])).toEqual({ enabled: true, sources: [], strength: 0.5 })
   })
 
-  it('压的人声都还在：不动（后来加的人声不自动加进去）', () => {
-    const bed = withCarve({ enabled: true, sources: ['loud'], strength: 0.25 })
-    expect(nextCarve(bed, voices)).toBeNull()
-  })
-
-  it('打开时压现在重叠的人声，强度留着之前的；写法不对的设置当作没设置过', () => {
-    const off = withCarve({ enabled: false, sources: [], strength: 0.6 })
+  it('打开时压人声组，强度留着之前的；人声也能打开；写法不对的设置当作没设置过', () => {
+    const off = withCarve(BED, { enabled: false, sources: [], strength: 0.6 })
     expect(switchedCarve(off, voices, true)).toEqual({
       enabled: true,
-      sources: ['loud', 'dub-en'],
+      sources: ['voice'],
       strength: 0.6,
     })
+    expect(switchedCarve(loud, voices, true)).toEqual({ ...DEFAULT_CARVE, sources: ['voice'] })
     expect(carveOf({ ...BED, fxCarve: '{oops' })).toBeNull()
+  })
+})
+
+describe('压哪些人声', () => {
+  const settings = { ...DEFAULT_CARVE, sources: ['voice'] }
+
+  it('压人声组：重叠的、还没归组的人声一起放进组；量组里重叠的人声，不含自己，别的组的不算', () => {
+    const clips = [
+      BED,
+      video({ id: 'inferred', duration: 2_000 }),
+      audio({ id: 'member', duration: 2_000, audioGroup: 'voice' }),
+      audio({ id: 'far', start: 5_000, duration: 1_000, audioGroup: 'voice' }),
+      audio({ id: 'other', duration: 2_000, syncOrigin: 'lk', audioGroup: 'narration' }),
+    ]
+    const plan = carvePlan(BED, settings, clips)
+    expect(plan.grouped).toEqual(['inferred'])
+    expect(ids(plan.voices)).toEqual(['inferred', 'member'])
+
+    const talk = clips[2] as MediaClip
+    expect(ids(carvePlan(talk, settings, clips).voices)).toEqual(['inferred'])
+  })
+
+  it('人声改成别的角色就不在名单里了；旧文件里写片段编号的照旧认', () => {
+    const changed = [BED, audio({ id: 'member', duration: 2_000, audioGroup: 'music' })]
+    expect(carvePlan(BED, settings, changed).voices).toEqual([])
+    const legacy = { ...DEFAULT_CARVE, sources: ['loud'] }
+    const clips = [BED, video({ id: 'loud' }), video({ id: 'quiet' })]
+    expect(carvePlan(BED, legacy, clips)).toEqual({ grouped: [], voices: [clips[1]] })
+  })
+
+  it('关着时什么都不量、不归组', () => {
+    expect(carvePlan(BED, { ...settings, enabled: false }, [BED, video()])).toEqual({
+      grouped: [],
+      voices: [],
+    })
   })
 })
 

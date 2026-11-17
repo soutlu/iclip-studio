@@ -1,6 +1,5 @@
 import { useId, type ReactNode } from 'react'
 import { RATE_RANGE } from '@hyperframes/core/audio-automation'
-import { DEFAULT_CARVE } from '@hyperframes/core/audio-carve'
 import {
   AUDIO_GAIN_FADER_MAX,
   AUDIO_GAIN_FADER_MIN,
@@ -13,7 +12,6 @@ import { Switch } from '@/shared/ui/switch'
 import type { MediaClip } from './composition/film'
 import { SliderControl } from './inspector-controls'
 import { originalSoundBlocked, originalSoundChanges, type AttributeChanges } from './original-sound'
-import type { MusicCarve } from './use-music-carve'
 import {
   parseGainInput,
   parseRateInput,
@@ -141,72 +139,6 @@ export function MediaMix({
         {fade('data-fade-out', fadeOut, fadeIn)}
         <RateRow onChange={onChange} onEditing={onEditing} rate={playbackRate} />
       </div>
-    </section>
-  )
-}
-
-// 强度照参照的工作台：0–1，每格 0.05，显示成百分比
-const STRENGTH_STEPS = 20
-const strengthText = (strength: number) => `${Math.round(strength * 100)}%`
-const PERCENT = /^(\d+(?:\.\d+)?)\s*%?$/
-
-/**
- * 配乐片段的「有人说话时自动压低」：标题行右边是开关，开着时下面是强度。拖强度时只动这里，松手（或按一下方向键）
- * 才交出去；分析人声期间开关和强度都不能改。
- */
-export function CarveSection({
-  carve,
-  onEditing,
-}: {
-  carve: MusicCarve
-  onEditing: (editing: boolean) => void
-}) {
-  const titleId = useId()
-  const on = carve.settings?.enabled === true
-  const strength = carve.settings?.strength ?? DEFAULT_CARVE.strength
-  return (
-    <section className="wf-prop-section">
-      <div className="wf-prop-title-row">
-        <h4 className="wf-prop-title" id={titleId}>
-          有人说话时自动压低
-        </h4>
-        {carve.analysing ? (
-          <span className="wf-prop-subtitle" role="status">
-            正在分析人声
-          </span>
-        ) : null}
-        <span className="wf-prop-switch">
-          <Switch
-            aria-labelledby={titleId}
-            blockedReason={carve.analysing ? '正在分析人声，请稍候' : undefined}
-            checked={on}
-            onCheckedChange={carve.setEnabled}
-          />
-        </span>
-      </div>
-      {on ? (
-        <div className="wf-prop-rows">
-          <Row disabled={carve.analysing} label="强度">
-            <SliderControl
-              disabled={carve.analysing}
-              format={(position) => strengthText(position / STRENGTH_STEPS)}
-              label="强度"
-              max={STRENGTH_STEPS}
-              min={0}
-              onCommit={(position) => carve.setStrength(position / STRENGTH_STEPS)}
-              onEditing={onEditing}
-              onText={(text) => {
-                const typed = PERCENT.exec(text)?.[1]
-                if (typed === undefined) return false
-                carve.setStrength(Math.min(100, Number(typed)) / 100)
-                return true
-              }}
-              position={Math.round(strength * STRENGTH_STEPS)}
-              text={strengthText(strength)}
-            />
-          </Row>
-        </div>
-      ) : null}
     </section>
   )
 }

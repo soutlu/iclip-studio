@@ -39,7 +39,7 @@ import {
 import type { ClipBox } from './canvas-geometry'
 import { CanvasOverlay, type CanvasNudge } from './canvas-overlay'
 import { CaptionsTab } from './captions-tab'
-import { isCarveBed } from './carve'
+import { canCarve } from './carve'
 import { decodeForCarve } from './carve-decode'
 import {
   linkedPartners,
@@ -149,7 +149,7 @@ import {
 import { useCaptionRecognition, type RecognitionOutcome } from './use-caption-recognition'
 import { useDubbing, type DubbingOutcome, type DubbingTarget } from './use-dubbing'
 import { useFilmSession, type NewAudio } from './use-film-session'
-import { useMusicCarve } from './use-music-carve'
+import { useSmartMix } from './use-smart-mix'
 import { useTranslation } from './use-translation'
 import { useWholeFilmExport } from './use-whole-film-export'
 import {
@@ -527,14 +527,19 @@ function EditorBody({
   // 「属性」页签不在时也要管：选中一段配乐就按它的规则默认打开压低
   const allClips = useMemo(() => [...clips, ...(film?.unshownDubs ?? [])], [clips, film])
   const [onlySelected] = selectedClips
-  const musicCarve = useMusicCarve({
-    bed:
-      selectedClips.length === 1 && onlySelected !== undefined && isCarveBed(onlySelected)
+  const smartMix = useSmartMix({
+    clip:
+      selectedClips.length === 1 && onlySelected !== undefined && canCarve(onlySelected)
         ? onlySelected
         : undefined,
     clips: allClips,
     decode: decodeForCarve,
-    write: session.setCarve,
+    writeCarve: session.setCarve,
+    writeLeveller: session.setLeveller,
+    writeRole: (id, role) => {
+      leaveMaterial()
+      session.setAttributes([id], { 'data-audio-group': role })
+    },
     onNotice: notice,
   })
   const silentSource = (src: string) => audioTracks.get(src) === false
@@ -1401,7 +1406,7 @@ function EditorBody({
               soundControls={soundControls}
               sourceMs={sourceMs}
               sourceName={(src) => sourceNames.get(src)}
-              musicCarve={musicCarve}
+              smartMix={smartMix}
             />
           </TabsContent>
         </TabsRoot>

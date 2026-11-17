@@ -16,7 +16,8 @@ import { Keys, Tool } from './editor-toolbar'
 import { ITEM_KIND_LABEL } from './items'
 import type { ShownLocale } from './locales'
 import type { KeyframeStates } from './material-media'
-import { CarveSection, MediaMix, RateRow } from './media-mix'
+import { MediaMix, RateRow } from './media-mix'
+import { SmartMixSection } from './smart-mix-section'
 import type { AttributeChanges } from './original-sound'
 import {
   DETACH_LABEL,
@@ -30,7 +31,7 @@ import {
   type SoundPair,
 } from './sound-pair'
 import { SourceTrim } from './source-trim'
-import type { MusicCarve } from './use-music-carve'
+import type { SmartMix } from './use-smart-mix'
 
 type Values = Readonly<Record<string, VariableValue>>
 
@@ -78,8 +79,8 @@ type Props = {
   soundControls: SoundControls
   /** 焦点进出「属性」里输数值的框：在里面时 Esc 归输入框，放弃刚输入的。 */
   onTextEditing: (editing: boolean) => void
-  /** 选中的是一段配乐时它的「自动压低」；别的时候是 undefined。 */
-  musicCarve: MusicCarve | undefined
+  /** 选中的是一个有声片段时它的「智能调音」；别的时候是 undefined。 */
+  smartMix: SmartMix | undefined
 }
 
 /** 片段的种类；组件或块的片段按条目在组件库里的种类写，「其他」片段不写。 */
@@ -161,7 +162,7 @@ function ClipInspector({
   texts,
   soundControls,
   onTextEditing,
-  musicCarve,
+  smartMix,
 }: Omit<Props, 'selected'> & { clip: FilmClip }) {
   const fonts = Object.keys(catalog.fonts).toSorted()
   const sound = clip.kind === 'audio'
@@ -253,9 +254,9 @@ function ClipInspector({
                 silent={clip.kind === 'video' && silentSource(clip.src)}
               />
             )}
-            {musicCarve?.offered === true ? (
-              <CarveSection carve={musicCarve} onEditing={onTextEditing} />
-            ) : null}
+            {smartMix === undefined ? null : (
+              <SmartMixSection mix={smartMix} onEditing={onTextEditing} />
+            )}
           </>
         ) : (
           <>
