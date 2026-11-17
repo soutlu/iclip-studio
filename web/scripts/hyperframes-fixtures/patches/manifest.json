@@ -5,6 +5,7 @@
     "compositions/fixtures/fixture-overlay.html": { "replaces": null },
     "compositions/fixtures/fixture-fields.html": { "replaces": null },
     "compositions/fixtures/fixture-brand-card.html": { "replaces": null },
+    "compositions/fixtures/fixture-passthrough.html": { "replaces": null },
     "compositions/fixture-sidecar/fixture-sidecar.html": { "replaces": null },
     "compositions/fixture-sidecar/assets/fixture-sidecar.json": { "replaces": null }
   }

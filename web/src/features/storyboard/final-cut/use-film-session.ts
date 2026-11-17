@@ -16,8 +16,8 @@ import {
   type CaptionFollowRefusal,
   type NewCaption,
 } from './caption-edit'
-import type { PlacementChanges, PlacementStyles } from './canvas-geometry'
 import { VOICE_GROUP } from './audio-role'
+import { canvasLayersOf, type CanvasLayer, type Mount } from './canvas-layers'
 import { carveAttributes, type CarveMeasurement, type CarveSettings } from './carve'
 import { splitAutomation } from './clip-automation'
 import { rippleStarts, withLinkedStarts, type Cut, type Links, type Timing } from './clip-edit'
@@ -161,8 +161,11 @@ export type FilmView = {
   locales: readonly LocaleCode[]
   /** 组件或块的片段里随语言的文字字段（片段编号 → 字段到根变量），没有随语言字段的片段不在里面。 */
   bindings: ReadonlyMap<string, LocaleBindings>
-  /** 视频片段、组件或块的片段在画面上的摆放：行内样式里的位移、角度、缩放（片段编号 → 写着的那几样）。 */
-  placements: ReadonlyMap<string, PlacementStyles>
+  /**
+   * 画面上能编辑的层和组件或块的宿主（见 canvas-layers.ts）：主文件、字幕场景和打开着的组件文件里的，按它们
+   * 现在的内容（没存的改动也在里面）。
+   */
+  layers: readonly CanvasLayer[]
   canUndo: boolean
   canRedo: boolean
   /** 第几份：会话每换一份加 1。 */
@@ -172,6 +175,17 @@ export type FilmView = {
    * 不是编辑换的（打开、换语言、换成别处改的那一份……）时是 null。
    */
   step: UndoStep | null
+}
+
+/**
+ * 在画面上改一层：它写在哪个文件（相对工程根）、文件里的编号（`data-hf-id`）；`move` 是 SDK `moveElement` 写的
+ * `data-x` / `data-y`，`styles` 是要改的行内样式（SDK 的属性名，null 是去掉）。
+ */
+export type LayerEdit = {
+  file: string
+  element: string
+  move?: { x: number; y: number }
+  styles?: Readonly<Record<string, string | null>>
 }
 
 /** 要放进工程的一段素材；起点由现有内容决定，接在画面那一行的末尾。 */
@@ -204,7 +218,22 @@ const openEngine = async (
     content = null
     if (origin !== ORIGIN_APPLY_PATCHES) onChange({ file, patches, inversePatches })
   })
-  return { engine, content: () => (content ??= engine.serialize()) }
+  const keep = file === PROJECT_MAIN ? '' : prologOf(html)
+  return { engine, content: () => (content ??= withProlog(keep, engine.serialize())) }
+}
+
+const HTML_START = /<html[\s>]/i
+
+/** 完整网页写法的文件 `<html>` 前面那段（文档类型、许可说明之类的注释）；没有 `<html>` 时是空串。 */
+const prologOf = (html: string): string => {
+  const at = html.search(HTML_START)
+  return at < 0 ? '' : html.slice(0, at)
+}
+
+/** SDK 存出的网页换回原文件 `<html>` 前面那段：SDK 存出时会丢掉 `<html>` 前的注释。 */
+const withProlog = (prolog: string, serialized: string): string => {
+  const at = serialized.search(HTML_START)
+  return prolog === '' || at < 0 ? serialized : `${prolog}${serialized.slice(at)}`
 }
 
 /**
@@ -405,23 +434,14 @@ const writeDefault = (main: Composition, variable: string, label: string, text: 
 const bindingsOf = (main: Composition, id: string): LocaleBindings =>
   localeBindingsOf(main.getElement(id)?.attributes[LOCALE_BINDINGS])
 
-/** 视频片段、组件或块的片段行内样式里的摆放（见 `FilmView.placements`）。 */
-const placementsOf = (
-  main: Composition,
-  clips: readonly FilmClip[],
-): Map<string, PlacementStyles> =>
-  new Map(
-    clips.flatMap((clip) => {
-      if (clip.kind !== 'video' && clip.kind !== 'host') return []
-      const styles = main.getElement(clip.id)?.inlineStyles ?? {}
-      const placement: PlacementStyles = {}
-      for (const name of ['translate', 'rotate', 'scale'] as const) {
-        const value = styles[name]
-        if (value !== undefined) placement[name] = value
-      }
-      return [[clip.id, placement] as const]
-    }),
-  )
+/** 主文件根下挂载着文件的宿主（组件或块的片段、字幕宿主），按文件里的先后。 */
+const mountsOf = (main: Composition): Mount[] =>
+  (rootOf(main)?.children ?? []).flatMap((element) => {
+    const file = element.attributes['data-composition-src']
+    return file === undefined
+      ? []
+      : [{ host: element.id, file, captions: isCaptionsHost(element.attributes) }]
+  })
 
 /** 有随语言字段的组件或块的片段各自的字段（见 `FilmView.bindings`）。 */
 const hostBindingsOf = (
@@ -551,7 +571,7 @@ const viewOf = (
     locale: shown,
     locales: [...tables.keys()],
     bindings: hostBindingsOf(main, clips),
-    placements: placementsOf(main, clips),
+    layers: canvasLayersOf(html, mountsOf(main), present),
     canUndo: history.canUndo(),
     canRedo: history.canRedo(),
     ...change,
@@ -559,7 +579,10 @@ const viewOf = (
   return { view, present }
 }
 
-/** 工作区里存着的各文件（路径相对工程根 → 文件，不存在的是 null）：主文件、字幕场景和各语言值表。 */
+/**
+ * 工作区里存着的各文件（路径相对工程根 → 文件，不存在的是 null）：主文件、字幕场景、各语言值表和组件或块的
+ * 宿主挂载的文件。
+ */
 const storedFilesOf = (stored: StoredProject | null): Map<string, StoredFile | null> =>
   new Map<string, StoredFile | null>(
     stored === null
@@ -568,6 +591,7 @@ const storedFilesOf = (stored: StoredProject | null): Map<string, StoredFile | n
           [PROJECT_MAIN, stored.main],
           [stored.captionsPath, stored.captions],
           ...[...stored.locales].map(([code, file]) => [localePath(code), file] as const),
+          ...stored.components,
         ],
   )
 
@@ -981,9 +1005,16 @@ export function useFilmSession(
       const stored = await readProject(conversationId)
       await settled()
       const storedFiles = storedFilesOf(stored)
-      const files = projectRef.current?.files
+      const project = projectRef.current
+      const files = project?.files
+      // 组件文件只在存着的主文件还挂着它时才比：宿主删掉以后它不在读到的工程里，不算别处删了它
+      const mounted = (path: string) =>
+        path === PROJECT_MAIN ||
+        path === project?.captionsPath ||
+        localeOfPath(path) !== undefined ||
+        storedFiles.has(path)
       const paths = new Set([
-        ...(files?.keys() ?? [PROJECT_MAIN]),
+        ...[...(files?.keys() ?? [PROJECT_MAIN])].filter(mounted),
         ...[...storedFiles.keys()].filter((path) => localeOfPath(path) !== undefined),
       ])
       const external = [...paths].some((path) => {
@@ -1058,6 +1089,25 @@ export function useFilmSession(
   )
 
   useEffect(() => () => disposeAll(projectRef.current), [])
+
+  /**
+   * 把宿主挂载的文件 `path`（相对工程根）打开进工程（画面上改里面的层要写它），不进撤销；已经打开着、工作区里
+   * 没有时不动。打开时按 SDK 存出的样子记成已存，不改就不重写。
+   */
+  const openMounted = useCallback(
+    async (project: Project, path: string) => {
+      if (project.files.has(path)) return
+      const stored = await readProjectFile(conversationId, path)
+      if (stored === null || project.files.has(path)) return
+      const doc = await openDoc(path, stored.content, collect)
+      if (projectRef.current !== project || project.files.has(path)) {
+        docOps(doc).dispose()
+        return
+      }
+      project.files.set(path, { doc, version: stored.version, saved: docOps(doc).serialize() })
+    },
+    [collect, conversationId],
+  )
 
   /** 还没有工程时按 `canvas` 用模板建一份；连着加两次也只建一份，后一次等前一次建好。 */
   const projectFor = useCallback(
@@ -1156,6 +1206,12 @@ export function useFilmSession(
         return false
       }
       const project = await projectFor(canvas)
+      try {
+        await openMounted(project, item.src)
+      } catch (error) {
+        noticeRef.current(errorMessageOf(error, '贴片和场景读取失败'))
+        return false
+      }
       const engine = mainOf(project)
       const root = rootOf(engine)
       if (root === undefined) return false
@@ -1195,7 +1251,7 @@ export function useFilmSession(
       show()
       return true
     },
-    [catalog, conversationId, projectFor, perform, show],
+    [catalog, conversationId, openMounted, projectFor, perform, show],
   )
 
   /**
@@ -1367,17 +1423,28 @@ export function useFilmSession(
   )
 
   /**
-   * 在画面上挪、缩放、转了几个片段：各自行内样式里的位移、角度、缩放改成 `changes` 里给的（null 是去掉，没给的
-   * 不动），算一步撤销。
+   * 在画面上挪、缩放、转了几层：各自写进它所在的文件（写法见 layer-edits.ts），算一步撤销。文件没打开着时那一层
+   * 不写。
    */
-  const setPlacements = useCallback(
-    (changes: PlacementChanges) => {
-      edit((main) => {
-        for (const [id, styles] of changes) main.setStyle(id, styles)
+  const editLayers = useCallback(
+    (writes: readonly LayerEdit[]) => {
+      const project = projectRef.current
+      if (project === null) return
+      edit(() => {
+        for (const { file, element, move, styles } of writes) {
+          const engine = engineAt(project, file)
+          if (engine === undefined) continue
+          if (move !== undefined)
+            engine.dispatch({ type: 'moveElement', target: element, x: move.x, y: move.y })
+          if (styles !== undefined) engine.setStyle(element, styles)
+        }
       })
     },
     [edit],
   )
+
+  /** 工程里文件 `path`（相对工程根）现在的内容（没存的改动也在里面）；没打开着时是 undefined。 */
+  const contentOf = useCallback((path: string) => presentRef.current.get(path), [])
 
   /** 组件或块的片段 `id`；不在工程里时是 undefined。 */
   const hostClip = useCallback(
@@ -2064,7 +2131,8 @@ export function useFilmSession(
     moveClip,
     restart,
     setHidden,
-    setPlacements,
+    editLayers,
+    contentOf,
     setValues,
     setAttributes,
     setCarve,

@@ -53,7 +53,7 @@ describe('组件、块页签 · 列出和筛选', () => {
   it('组件页签只列组件、块页签只列块，字幕不列', async () => {
     await renderTab('component')
     expect(screen.getByRole('list', { name: '贴片' })).toBeInTheDocument()
-    expect(cardNames()).toEqual(['测试叠加，4 秒', '测试可填项，5 秒'])
+    expect(cardNames()).toEqual(['测试叠加，4 秒', '测试可填项，5 秒', '测试点穿，4 秒'])
   })
 
   it('块页签的卡片：封面、时长、名字、分类', async () => {
@@ -95,7 +95,7 @@ describe('组件、块页签 · 列出和筛选', () => {
       .map((element) => element.textContent)
     expect(chipNames).toEqual(['全部', '效果', '文字效果'])
     await user.click(within(chips).getByRole('radio', { name: '效果' }))
-    expect(cardNames()).toEqual(['测试叠加，4 秒'])
+    expect(cardNames()).toEqual(['测试叠加，4 秒', '测试点穿，4 秒'])
   })
 
   it('搜索按名字、说明、分类名筛；没有结果时说明一句', async () => {

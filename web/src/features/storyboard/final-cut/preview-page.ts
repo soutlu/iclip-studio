@@ -8,20 +8,32 @@ import {
 import { apiFetch } from '@/shared/api/client'
 import { zFinalCutPreviewHostOut } from '@/shared/api/generated/zod.gen'
 import { mergeSpans, sameSpans, spansOf, windowSpans, type TimeSpan } from '@/shared/lib/time-spans'
+import { applyPositionEdits } from '@hyperframes/core/runtime/position-edits'
 import { FONT_BLOCK_START } from './composition/film'
 import {
-  captionBoxOf,
-  clipBoxOf,
+  drawDraft,
   elementOf,
+  elementsAt,
+  endDraft,
   hideText,
-  isCaptionElement,
-  poseElement,
+  layerElement,
+  measureLayer,
+  ownerOf,
+  refOf,
   showText,
+  startDraft,
   textSpotAt,
+  writeLayer,
+  type Drafting,
   type HiddenText,
 } from './preview-canvas'
 import { withPreviewMediaPatches } from './preview-media'
-import { zPreviewCommand, type PreviewCommand, type PreviewEvent } from './preview-protocol'
+import {
+  zPreviewCommand,
+  type LayerRef,
+  type PreviewCommand,
+  type PreviewEvent,
+} from './preview-protocol'
 import { secondsToFrame, STUDIO_PREVIEW_FPS } from './vendor/hyperframes-studio/player/lib/time'
 
 // 预览页：预览域名下的一个独立页面，播放器和 final-cut 都在这里运行。编辑器只经消息控制它（见 preview-protocol.ts）。
@@ -289,24 +301,74 @@ export const createPreviewPage = (
   // 换上来的播放器的副本会话；打补丁出过错、收到新的一份时作废，到下一份换上来之前都是 null
   let replica: Replica | null = null
   let disposed = false
-  // 编辑器要量的片段（`layout` 命令）和上一次报出去的结果
-  let layout: { seq: number; ids: readonly string[]; reported: string } | null = null
+  // 编辑器给的层表（`layers` 命令），按「宿主、选择器、第几个」查它在表里的位置
+  let table: (LayerRef & { count: number })[] = []
+  let tableIndex = new Map<string, number>()
+  // 编辑器要量的层（`watch` 命令）和上一次报出去的结果
+  let watched: { seq: number; layers: readonly number[]; reported: string } | null = null
+  // 拖动中的层（表里的位置 → 开始时的样子）
+  const drafts = new Map<number, Drafting>()
   // 原地改字时藏起来的文字
   let hiddenText: HiddenText | null = null
 
-  /** 量编辑器要的片段，和上一次报的不一样时报出去。 */
+  const refKey = (ref: LayerRef) => `${ref.scope ?? ''}\n${ref.selector}\n${ref.index}`
+
+  /** 表里第 `at` 层在正在播的那一份里的元素；没有时是 null。 */
+  const layerAt = (page: Document, at: number) => {
+    const ref = table[at]
+    return ref === undefined ? null : layerElement(page, ref)
+  }
+
+  /** 量编辑器要的层，和上一次报的不一样时报出去。 */
   const reportLayout = () => {
     const page = active?.iframeElement.contentDocument ?? null
-    if (layout === null || page === null) return
-    const boxes = layout.ids.map((id) => {
-      const element = elementOf(page, id)
-      if (element === null) return null
-      return isCaptionElement(element) ? captionBoxOf(element) : clipBoxOf(element)
+    if (watched === null || page === null) return
+    const items = watched.layers.map((at) => {
+      const element = layerAt(page, at)
+      return element === null ? null : measureLayer(page, element, true)
     })
-    const reported = JSON.stringify(boxes)
-    if (reported === layout.reported) return
-    layout.reported = reported
-    send({ type: 'layout', seq: layout.seq, boxes })
+    const reported = JSON.stringify(items)
+    if (reported === watched.reported) return
+    watched.reported = reported
+    send({ type: 'measured', seq: watched.seq, items })
+  }
+
+  /** 画布上 (`x`, `y`) 处从上往下能选中的层，按表认（表里没有、数不对的是 -1）。 */
+  const pickAt = (seq: number, x: number, y: number) => {
+    const page = active?.iframeElement.contentDocument ?? null
+    const stack =
+      page === null
+        ? []
+        : elementsAt(page, { x, y }).flatMap((element) => {
+            const ref = refOf(page, element)
+            const at = ref === null ? undefined : tableIndex.get(refKey(ref))
+            const known = at !== undefined && layerAt(page, at) === element ? at : -1
+            const measure = measureLayer(page, element, known >= 0)
+            if (measure === null) return []
+            const owner = ownerOf(element)
+            const ownerRef = owner === null ? null : refOf(page, owner)
+            return [
+              {
+                layer: known,
+                owner: ownerRef === null ? -1 : (tableIndex.get(refKey(ownerRef)) ?? -1),
+                measure,
+              },
+            ]
+          })
+    send({ type: 'picked', seq, stack })
+  }
+
+  /** 组件文件里改了的层直接改，之后按 `data-x` / `data-y` 重新摆一遍（撤销到没挪过时也摆回原处）。 */
+  const writeLayers = (
+    page: Document,
+    layers: Extract<PreviewCommand, { type: 'patch' }>['layers'],
+  ) => {
+    for (const { ref, styles, attributes } of layers ?? []) {
+      const at = tableIndex.get(refKey(ref))
+      const element = at === undefined ? null : layerAt(page, at)
+      if (element !== null) writeLayer(element, styles, attributes)
+    }
+    applyPositionEdits(page, { force: true })
   }
 
   const dropReplica = () => {
@@ -421,6 +483,8 @@ export const createPreviewPage = (
     // 第一份装好之前记下的「在放」一直报着在等；交给新播放器重新判断
     if (first && wantsPlay) send({ type: 'buffering', buffering: false })
     active = next
+    // 拖动中的层在旧的那一份里
+    drafts.clear()
     dropReplica()
     replica = nextReplica
     applyPlayback(next, playback)
@@ -501,6 +565,7 @@ export const createPreviewPage = (
     patches: readonly JsonPatchOp[],
     captions: readonly JsonPatchOp[],
     fonts: string | undefined,
+    layers: Extract<PreviewCommand, { type: 'patch' }>['layers'],
   ) => {
     const player = active
     const page = player?.iframeElement.contentDocument ?? null
@@ -524,6 +589,7 @@ export const createPreviewPage = (
       extendRuntime(player, patches)
       current.comp.applyPatches(withPreviewMediaPatches(patches))
       if (captions.length > 0) current.captions?.applyPatches(captions)
+      writeLayers(page, layers)
     } catch (error) {
       console.error('预览页打补丁失败，整份重新加载', error)
       dropReplica()
@@ -552,7 +618,7 @@ export const createPreviewPage = (
         return
       }
       case 'patch':
-        patch(command.seq, command.patches, command.captions ?? [], command.fonts)
+        patch(command.seq, command.patches, command.captions ?? [], command.fonts, command.layers)
         return
       case 'unload':
         cancelPending()
@@ -588,15 +654,39 @@ export const createPreviewPage = (
         clip.load()
         return
       }
-      case 'layout':
-        layout = { seq: command.seq, ids: command.ids, reported: '' }
+      case 'layers':
+        table = command.entries
+        tableIndex = new Map(command.entries.map((entry, at) => [refKey(entry), at]))
+        if (watched !== null) watched.reported = ''
         reportLayout()
         return
-      case 'pose': {
+      case 'watch':
+        watched = { seq: command.seq, layers: command.layers, reported: '' }
+        reportLayout()
+        return
+      case 'pick':
+        pickAt(command.seq, command.x, command.y)
+        return
+      case 'draft': {
         const page = active?.iframeElement.contentDocument ?? null
-        const element = page === null ? null : elementOf(page, command.id)
-        const { translate, rotate, scale } = command
-        if (element !== null) poseElement(element, { translate, rotate, scale })
+        let draft = drafts.get(command.layer)
+        if (page !== null && draft === undefined) {
+          const element = layerAt(page, command.layer)
+          if (element !== null) {
+            draft = startDraft(page, element)
+            drafts.set(command.layer, draft)
+          }
+        }
+        if (page === null || draft === undefined) return
+        const moved = drawDraft(page, draft, command.move, command.styles, command.pin)
+        send({ type: 'drafted', seq: command.seq, ...moved })
+        return
+      }
+      case 'draftEnd': {
+        const draft = drafts.get(command.layer)
+        drafts.delete(command.layer)
+        if (draft !== undefined) endDraft(draft, command.keep)
+        reportLayout()
         return
       }
       case 'editText': {

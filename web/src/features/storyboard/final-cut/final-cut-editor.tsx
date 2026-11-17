@@ -36,7 +36,7 @@ import {
   recognizedCaptions,
   type Sentence,
 } from './caption-edit'
-import type { ClipBox } from './canvas-geometry'
+import type { LayerMeasure } from './preview-protocol'
 import { CanvasOverlay, type CanvasNudge } from './canvas-overlay'
 import { CaptionsTab } from './captions-tab'
 import { canCarve } from './carve'
@@ -850,19 +850,26 @@ function EditorBody({
               scene: scene.content,
               captions: previewCaptionsOf(film.clips, film.locale),
             },
+      layers: film.layers,
     }
   }, [film, catalog, tokens, filesRevision])
   const playBlocked = empty ? EMPTY_TEXT : undefined
 
-  // 画面上的编辑：视频片段和组件或块的片段可以在画面上点选、挪、缩放、转，字幕可以点选、改字，预览量出它们的框
-  const canvasIds = useMemo(
+  // 画面上的编辑：预览按层表认层（见 canvas-layers.ts），编辑层要量的层由它自己定
+  const layerTable = useMemo(
     () =>
-      clips.flatMap((clip) =>
-        clip.kind === 'video' || clip.kind === 'host' || clip.kind === 'caption' ? [clip.id] : [],
-      ),
-    [clips],
+      (film?.layers ?? []).map(({ scope, selector, index, count }) => ({
+        scope,
+        selector,
+        index,
+        count,
+      })),
+    [film?.layers],
   )
-  const [canvasBoxes, setCanvasBoxes] = useState<ReadonlyMap<string, ClipBox>>(() => new Map())
+  const [watchedLayers, setWatchedLayers] = useState<readonly number[]>([])
+  const [layerMeasures, setLayerMeasures] = useState<ReadonlyMap<number, LayerMeasure>>(
+    () => new Map(),
+  )
   const [textTarget, setTextTarget] = useState<TextTarget | null>(null)
 
   const exporting = useWholeFilmExport(conversationId, session.settle)
@@ -1109,25 +1116,27 @@ function EditorBody({
     film === null || materialView !== null ? null : (
       <CanvasOverlay
         bindings={film.bindings}
-        boxes={canvasBoxes}
         canvas={film.canvas}
         catalog={catalog}
         clips={clips}
+        contentOf={session.contentOf}
         controlRef={previewRef}
         frameMs={frameMs}
+        layers={film.layers}
         locale={locale}
+        measures={layerMeasures}
         nudgeRef={canvasNudgeRef}
         onCaptionText={setCaptionText}
+        onEdit={(edits) => {
+          leaveMaterial()
+          session.editLayers(edits)
+        }}
         onGesture={setGesturing}
         onNotice={notice}
-        onPlace={(changes) => {
-          leaveMaterial()
-          session.setPlacements(changes)
-        }}
         onSelect={setSelectedIds}
         onText={itemTexts.onText}
         onTextClose={() => setTextTarget(null)}
-        placements={film.placements}
+        onWatch={setWatchedLayers}
         revision={film.revision}
         selected={selected}
         textTarget={textTarget}
@@ -1153,17 +1162,18 @@ function EditorBody({
           controlRef={previewRef}
           film={previewFilm}
           height={film?.canvas.height ?? DEFAULT_CANVAS.height}
-          layoutIds={canvasIds}
+          layers={layerTable}
           message={playBlocked}
           onBuffered={setBuffered}
           onBuffering={setBuffering}
-          onLayout={setCanvasBoxes}
+          onMeasured={setLayerMeasures}
           onPlaying={setPlaying}
           onTextTarget={setTextTarget}
           onTime={setPlayheadMs}
           overlay={canvasOverlay}
           page={previewPage}
           playback={playback}
+          watch={watchedLayers}
           width={film?.canvas.width ?? DEFAULT_CANVAS.width}
         >
           {buffering ? <MediaBuffering /> : null}

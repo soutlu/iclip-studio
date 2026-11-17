@@ -1,8 +1,12 @@
+import { EDIT_BASE_X_ATTR, EDIT_BASE_Y_ATTR } from '@hyperframes/core/runtime/position-edits'
 import type { JsonPatchOp } from '@hyperframes/sdk'
+import type { CanvasLayer } from './canvas-layers'
 import { CAPTION_OWNER } from './composition/captions'
 import { FONT_BLOCK_END, FONT_BLOCK_START, PROJECT_MAIN } from './composition/film'
+import { cssName } from './layer-edits'
 import { localeOfPath, SOURCE_LOCALE, valueIdOf, type Language } from './locales'
 import { PREVIEW_VARIABLES } from './preview-document'
+import type { LayerRef } from './preview-protocol'
 import type { PatchChange, UndoStep } from './undo-history'
 
 /** 预览里的一句字幕：它读的根变量，和它显示的字（原文以外的语言是值表里的字，没翻的是原文）。 */
@@ -34,17 +38,28 @@ export type PreviewFilm = {
   filesRevision: number
   /** 字幕场景；工程里还没有时是 null。 */
   captions: PreviewCaptions | null
+  /** 画面上的层（见 canvas-layers.ts）：组件文件里改了的层按它找到画面里的那几处。 */
+  layers: readonly CanvasLayer[]
+}
+
+/** 组件文件里改了的一层：画面里的哪一处，行内样式（CSS 的写法）和属性改成什么（null 是去掉）。 */
+export type LayerWrite = {
+  ref: LayerRef
+  styles: Record<string, string | null>
+  attributes: Record<string, string | null>
 }
 
 /**
  * 换上一份 final-cut 的办法：把主文件的补丁（`patches`）和字幕场景的补丁（`captions`）直接打进正在播的那一份，
- * 字体块里的中文字体规则变了时先换成 `fonts`（`<style>` 的内容）；或者整份重新加载。
+ * 字体块里的中文字体规则变了时先换成 `fonts`（`<style>` 的内容），组件文件里改了的层直接改（`layers`）；或者
+ * 整份重新加载。
  */
 export type PreviewSync =
   | {
       kind: 'live'
       patches: readonly JsonPatchOp[]
       captions: readonly JsonPatchOp[]
+      layers?: readonly LayerWrite[]
       fonts?: string
     }
   | { kind: 'reload' }
@@ -77,11 +92,21 @@ const escapePointer = (segment: string) => segment.replaceAll('~', '~0').replace
 /** `/elements/<编号>` 和它下面一层的 `/<种类>/<名字>`（改字是 `/text`，没有名字）。 */
 const ELEMENT = /^\/elements\/([^/]+)(?:\/([^/]+)(?:\/(.+))?)?$/
 
+// 画面上挪、缩放、转一层写的（见 layer-edits.ts）：挪是 SDK `moveElement` 的这几个属性，打完预览页按它们重新摆
+const POSITION_ATTRIBUTES = ['data-x', 'data-y', EDIT_BASE_X_ATTR, EDIT_BASE_Y_ATTR]
+// 缩放、转写的行内样式（SDK 的属性名）：浏览器直接按行内样式画
+const GEOMETRY_STYLES = [
+  ...['width', 'height', 'boxSizing', 'minWidth', 'minHeight', 'maxWidth', 'maxHeight'],
+  ...['flexBasis', 'flexGrow', 'flexShrink', 'display', 'rotate', 'transform'],
+]
+
 // 实测过打进去和重新加载效果一样的几种改动；别的（贴片、场景宿主的值、脚本……）运行库只在加载时读
 const LIVE_TIMING = new Set(['start', 'duration', 'trackIndex'])
-const LIVE_ATTRIBUTES = new Set(['data-hidden', 'data-media-start', 'data-volume', 'muted'])
-// 画面上挪、缩放、转片段写的三样（见 canvas-geometry.ts）也是：浏览器直接按行内样式画
-const LIVE_STYLES = new Set(['zIndex', 'translate', 'rotate', 'scale'])
+const LIVE_ATTRIBUTES = new Set([
+  ...['data-hidden', 'data-media-start', 'data-volume', 'muted'],
+  ...POSITION_ATTRIBUTES,
+])
+const LIVE_STYLES = new Set(['zIndex', ...GEOMETRY_STYLES])
 
 const htmlOf = (value: unknown) =>
   typeof value === 'object' && value !== null && 'html' in value && typeof value.html === 'string'
@@ -131,12 +156,13 @@ const isLiveMain = (
 
 const SCENE_TIMING = new Set(['start', 'duration'])
 // 一句的字体、字色（见 captions.ts 的 `captionStyles`）：浏览器直接按行内样式画；字体用到新的样式表链接时
-// `<head>` 变了，照旧整份重新加载
-const SCENE_STYLES = new Set(['color', 'fontFamily'])
+// `<head>` 变了，照旧整份重新加载。画面上挪、缩放、转一句也是
+const SCENE_STYLES = new Set(['color', 'fontFamily', ...GEOMETRY_STYLES])
+const SCENE_ATTRIBUTES = new Set([CAPTION_OWNER, ...POSITION_ATTRIBUTES])
 
 /**
  * 字幕场景的这条补丁能不能直接打：加、删一句（加的不能是要运行库挂载的宿主），改一句的起止、字、属于哪个片段、
- * 字体和字色。
+ * 字体和字色，在画面上挪、缩放、转一句。
  */
 const isLiveScene = (patch: JsonPatchOp) => {
   const element = ELEMENT.exec(patch.path)
@@ -157,7 +183,7 @@ const isLiveScene = (patch: JsonPatchOp) => {
     case 'text':
       return name === ''
     case 'attributes':
-      return name === CAPTION_OWNER
+      return SCENE_ATTRIBUTES.has(name)
     case 'inlineStyles':
       return SCENE_STYLES.has(name)
     default:
@@ -233,6 +259,12 @@ export function previewSync(shown: PreviewFilm | null, next: PreviewFilm): Previ
   )
   const patches: JsonPatchOp[] = []
   const captions: JsonPatchOp[] = []
+  const layers: LayerWrite[] = []
+  const mounted = new Set(
+    next.layers.flatMap((layer) =>
+      layer.scope === null || layer.file === next.captions?.path ? [] : [layer.file],
+    ),
+  )
   for (const change of step) {
     if (change.file === PROJECT_MAIN) {
       if (
@@ -248,6 +280,10 @@ export function previewSync(shown: PreviewFilm | null, next: PreviewFilm): Previ
       captions.push(...change.patches)
       continue
     }
+    if (mounted.has(change.file)) {
+      layers.push(...layerWrites(change, next.layers))
+      continue
+    }
     const locale = localeOfPath(change.file)
     if (
       locale === undefined ||
@@ -259,7 +295,40 @@ export function previewSync(shown: PreviewFilm | null, next: PreviewFilm): Previ
   if (foreign && next.captions !== null)
     captions.push(...localizedTexts(shown.captions, next.captions, captions))
   const fonts = fontStyleOf(next.html)
-  return fonts === fontStyleOf(shown.html) || fonts === undefined
-    ? { kind: 'live', patches, captions }
-    : { kind: 'live', patches, captions, fonts }
+  return {
+    kind: 'live',
+    patches,
+    captions,
+    ...(layers.length === 0 ? {} : { layers }),
+    ...(fonts === fontStyleOf(shown.html) || fonts === undefined ? {} : { fonts }),
+  }
+}
+
+/**
+ * 组件文件的这一步改动里，改层的行内样式、属性的那些：按层表找到画面里的每一处（同一个条目加了几次，几个宿主
+ * 挂着同一个文件），各改一次。别的改动不打：预览里这份组件是从工程里取的，存下以后工程文件变了整份重新加载。
+ */
+function layerWrites(change: PatchChange, table: readonly CanvasLayer[]): LayerWrite[] {
+  const byElement = new Map<
+    string,
+    { styles: Record<string, string | null>; attributes: Record<string, string | null> }
+  >()
+  for (const patch of change.patches) {
+    const element = ELEMENT.exec(patch.path)
+    if (element === null) continue
+    const [, id = '', kind, name = ''] = element
+    if (kind !== 'inlineStyles' && kind !== 'attributes') continue
+    const written = byElement.get(unescapePointer(id)) ?? { styles: {}, attributes: {} }
+    const value = patch.op === 'remove' || typeof patch.value !== 'string' ? null : patch.value
+    const field = unescapePointer(name)
+    if (kind === 'inlineStyles') written.styles[cssName(field)] = value
+    else written.attributes[field] = value
+    byElement.set(unescapePointer(id), written)
+  }
+  return table.flatMap((layer) => {
+    const written = layer.file === change.file ? byElement.get(layer.element.hfId) : undefined
+    return written === undefined || layer.scope === null
+      ? []
+      : [{ ref: { scope: layer.scope, selector: layer.selector, index: layer.index }, ...written }]
+  })
 }

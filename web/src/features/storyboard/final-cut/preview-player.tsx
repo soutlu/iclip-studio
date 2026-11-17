@@ -12,16 +12,38 @@ import type { TimeSpan } from '@/shared/lib/time-spans'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MediaFallback } from '@/shared/ui/media-fallback'
 import { StageBackdrop } from '../components/stage-backdrop'
-import type { ClipBox, Point, Rect } from './canvas-geometry'
-import { previewPageUrl, zPreviewEvent, type PreviewCommand } from './preview-protocol'
+import type { Point } from './canvas-geometry'
+import type { Rect } from './preview-canvas'
+import {
+  previewPageUrl,
+  zPreviewEvent,
+  type LayerMeasure,
+  type LayerRef,
+  type PreviewCommand,
+} from './preview-protocol'
 import { previewSync, type PreviewFilm } from './preview-sync'
+
+/** 画布上一处从上往下能选中的一层（见预览协议的 `picked`）。 */
+export type PickedLayer = { layer: number; owner: number; measure: LayerMeasure }
 
 export type PreviewControl = {
   play: () => void
   pause: () => void
   seek: (ms: number) => void
-  /** 拖动中先在预览里把片段 `id` 摆成 `styles`（见预览协议的 `pose`）。 */
-  pose: (id: string, styles: PoseStyles) => void
+  /** 画布上 `point` 处从上往下能选中的层（`layers` 表里的位置）；预览页换了、没答时是空的。 */
+  pick: (point: Point) => Promise<readonly PickedLayer[]>
+  /**
+   * 拖动中先在预览里摆一层（`layers` 表里的位置，见预览协议的 `draft`）；答复它的位移最后加了多少（父元素里的
+   * 像素，`pin` 时含挪回中心的那一下），预览页换了、没答时是 null。
+   */
+  draft: (
+    layer: number,
+    move: Point,
+    styles: Readonly<Record<string, string | null>>,
+    pin: boolean,
+  ) => Promise<Point | null>
+  /** 拖动结束：`keep` 时留着摆好的样子（接着提交），不然摆回去。 */
+  draftEnd: (layer: number, keep: boolean) => void
   /**
    * 在片段 `id` 里找画布上 `point` 处的文字字段（`fields` 里的一个；字幕给它自己的编号和变量），结果报给
    * `onTextTarget`。
@@ -30,9 +52,6 @@ export type PreviewControl = {
   /** 改完字，藏起来的文字显示回来；`text` 不是 null 时先换成它。 */
   endText: (text: string | null) => void
 }
-
-/** 片段行内的位移、角度、缩放，null 是没写。 */
-export type PoseStyles = Record<'translate' | 'rotate' | 'scale', string | null>
 
 /** 原地改字找到的文字：片段 `id` 的文字字段 `field`，在画布上的框和字号（像素）。 */
 export type TextTarget = { id: string; field: string; rect: Rect; fontSize: number }
@@ -66,9 +85,11 @@ type PreviewPlayerProps = {
   onMediaSettled?: (() => void) | undefined
   onBuffering?: ((buffering: boolean) => void) | undefined
   onBuffered?: ((spans: readonly TimeSpan[]) => void) | undefined
-  /** 画面上要编辑的片段：预览量出它们的布局框报给 `onLayout`（只有量得到的）。 */
-  layoutIds?: readonly string[] | undefined
-  onLayout?: ((boxes: ReadonlyMap<string, ClipBox>) => void) | undefined
+  /** 画面上的层（见 canvas-layers.ts）：`watch`、`pick`、`draft` 按它在这张表里的位置说是哪一层。 */
+  layers?: readonly (LayerRef & { count: number })[] | undefined
+  /** 要量的层（`layers` 里的位置）：预览量出来报给 `onMeasured`（只有量得到的）。 */
+  watch?: readonly number[] | undefined
+  onMeasured?: ((items: ReadonlyMap<number, LayerMeasure>) => void) | undefined
   /** `editText` 的结果；没找到文字时是 null。 */
   onTextTarget?: ((target: TextTarget | null) => void) | undefined
   /** 盖在画面上、和画面一样大的一层（画面上的编辑）；超出画面的部分不裁掉。 */
@@ -106,8 +127,9 @@ export function PreviewPlayer({
   onMediaSettled,
   onBuffering,
   onBuffered,
-  layoutIds,
-  onLayout,
+  layers,
+  watch,
+  onMeasured,
   onTextTarget,
   overlay,
   children,
@@ -119,7 +141,7 @@ export function PreviewPlayer({
     onMediaSettled,
     onBuffering,
     onBuffered,
-    onLayout,
+    onMeasured,
     onTextTarget,
   })
   useLayoutEffect(() => {
@@ -129,12 +151,18 @@ export function PreviewPlayer({
       onMediaSettled,
       onBuffering,
       onBuffered,
-      onLayout,
+      onMeasured,
       onTextTarget,
     }
   })
-  // 最后一次要量的片段和最后一次找文字，预览页报回来时按序号对上
-  const layoutRef = useRef<{ seq: number; ids: readonly string[] }>({ seq: 0, ids: [] })
+  // 最后一次要量的层和最后一次找文字，预览页报回来时按序号对上
+  const watchRef = useRef<{ seq: number; layers: readonly number[] }>({ seq: 0, layers: [] })
+  // 等预览页回答的 `pick`、`draft`（序号 → 收到回答时做什么）
+  const answersRef = useRef({
+    seq: 0,
+    picks: new Map<number, (stack: readonly PickedLayer[]) => void>(),
+    drafts: new Map<number, (moved: Point | null) => void>(),
+  })
   const textRef = useRef<{ seq: number; id: string; fields: readonly string[] }>({
     seq: 0,
     id: '',
@@ -201,6 +229,7 @@ export function PreviewPlayer({
         patches: [...how.patches],
         ...(how.captions.length === 0 ? {} : { captions: [...how.captions] }),
         ...(how.fonts === undefined ? {} : { fonts: how.fonts }),
+        ...(how.layers === undefined ? {} : { layers: [...how.layers] }),
       })
     },
     [load, post],
@@ -221,6 +250,7 @@ export function PreviewPlayer({
   useEffect(() => {
     if (src === undefined || origin === undefined) return
     outboxRef.current = { target: null, queue: [], seq: 0 }
+    const { picks, drafts } = answersRef.current
     const receive = (event: MessageEvent) => {
       const target = frameRef.current?.contentWindow
       if (event.origin !== origin || target === null || target === undefined) return
@@ -273,15 +303,27 @@ export function PreviewPlayer({
         case 'clipFailed':
           setClipFailed(received.failed)
           return
-        case 'layout': {
-          const { seq, ids } = layoutRef.current
+        case 'measured': {
+          const { seq, layers: watched } = watchRef.current
           if (received.seq !== seq) return
-          const boxes = new Map<string, ClipBox>()
-          received.boxes.forEach((box, at) => {
-            const id = ids[at]
-            if (box !== null && id !== undefined) boxes.set(id, box)
+          const items = new Map<number, LayerMeasure>()
+          received.items.forEach((item, at) => {
+            const layer = watched[at]
+            if (item !== null && layer !== undefined) items.set(layer, item)
           })
-          on.onLayout?.(boxes)
+          on.onMeasured?.(items)
+          return
+        }
+        case 'picked': {
+          const answers = answersRef.current.picks
+          answers.get(received.seq)?.(received.stack)
+          answers.delete(received.seq)
+          return
+        }
+        case 'drafted': {
+          const answers = answersRef.current.drafts
+          answers.get(received.seq)?.({ x: received.x, y: received.y })
+          answers.delete(received.seq)
           return
         }
         case 'textTarget': {
@@ -302,6 +344,11 @@ export function PreviewPlayer({
       outboxRef.current = { target: null, queue: [], seq: 0 }
       syncRef.current = null
       if (bufferingRef.current) reportBuffering(false)
+      // 换了预览页：还在等的回答不会来了
+      for (const answer of picks.values()) answer([])
+      for (const answer of drafts.values()) answer(null)
+      picks.clear()
+      drafts.clear()
     }
   }, [src, origin, post, load, reportBuffering])
 
@@ -314,15 +361,21 @@ export function PreviewPlayer({
     if (link !== null) post({ type: 'size', width, height })
   }, [link, width, height, post])
 
-  // 片段编号里不会有 NUL；没给要量的片段时不发
-  const layoutKey = layoutIds?.join('\0')
+  // 层表变了才重发；要量的层跟在它后面发（按表里的位置说）
+  const tableKey = layers === undefined ? undefined : JSON.stringify(layers)
   useEffect(() => {
-    if (link === null || layoutKey === undefined) return
-    const ids = layoutKey === '' ? [] : layoutKey.split('\0')
-    const seq = layoutRef.current.seq + 1
-    layoutRef.current = { seq, ids }
-    post({ type: 'layout', seq, ids })
-  }, [link, layoutKey, post])
+    if (link === null || tableKey === undefined) return
+    const entries = JSON.parse(tableKey) as (LayerRef & { count: number })[]
+    post({ type: 'layers', entries })
+  }, [link, tableKey, post])
+  const watchKey = watch?.join(',')
+  useEffect(() => {
+    if (link === null || watchKey === undefined) return
+    const watched = watchKey === '' ? [] : watchKey.split(',').map(Number)
+    const seq = watchRef.current.seq + 1
+    watchRef.current = { seq, layers: watched }
+    post({ type: 'watch', seq, layers: watched })
+  }, [link, watchKey, tableKey, post])
 
   useEffect(() => {
     if (film !== undefined) {
@@ -359,7 +412,21 @@ export function PreviewPlayer({
         early(false)
         post({ type: 'seek', ms })
       },
-      pose: (id, styles) => post({ type: 'pose', id, ...styles }),
+      pick: ({ x, y }) =>
+        new Promise((resolve) => {
+          const answers = answersRef.current
+          const seq = (answers.seq += 1)
+          answers.picks.set(seq, resolve)
+          post({ type: 'pick', seq, x, y })
+        }),
+      draft: (layer, move, styles, pin) =>
+        new Promise((resolve) => {
+          const answers = answersRef.current
+          const seq = (answers.seq += 1)
+          answers.drafts.set(seq, resolve)
+          post({ type: 'draft', seq, layer, move, styles: { ...styles }, pin })
+        }),
+      draftEnd: (layer, keep) => post({ type: 'draftEnd', layer, keep }),
       editText: (id, { x, y }, fields) => {
         const seq = textRef.current.seq + 1
         textRef.current = { seq, id, fields }
