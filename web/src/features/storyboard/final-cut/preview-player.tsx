@@ -125,7 +125,12 @@ export function PreviewPlayer({
     (film: PreviewFilm) => {
       const seq = (syncRef.current?.seq ?? 0) + 1
       syncRef.current = { film, seq, loadSeq: seq, loaded: false }
-      post({ type: 'load', html: film.html, runtimeSrc: film.runtimeSrc, seq })
+      const { html, runtimeSrc, captions } = film
+      post(
+        captions === null
+          ? { type: 'load', html, runtimeSrc, seq }
+          : { type: 'load', html, runtimeSrc, captions: captions.scene, seq },
+      )
     },
     [post],
   )
@@ -140,7 +145,13 @@ export function PreviewPlayer({
       }
       const seq = sync.seq + 1
       syncRef.current = { ...sync, film, seq }
-      post({ type: 'patch', seq, patches: [...how.patches] })
+      post({
+        type: 'patch',
+        seq,
+        patches: [...how.patches],
+        ...(how.captions.length === 0 ? {} : { captions: [...how.captions] }),
+        ...(how.fonts === undefined ? {} : { fonts: how.fonts }),
+      })
     },
     [load, post],
   )

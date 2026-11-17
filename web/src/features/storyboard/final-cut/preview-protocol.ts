@@ -26,20 +26,29 @@ const zPatchOp = z.strictObject({
 /** 编辑器发给预览页的命令。 */
 export const zPreviewCommand = z.discriminatedUnion('type', [
   /**
-   * 换上一份 final-cut：`html` 是整份预览文档，`runtimeSrc` 是预览域名下的运行库地址。`seq` 和 `patch` 的共用一个
-   * 计数，是这是编辑器发给这个预览页的第几份 final-cut。
+   * 换上一份 final-cut：`html` 是整份预览文档，`runtimeSrc` 是预览域名下的运行库地址，`captions` 是放进文档里的
+   * 字幕场景文件（没有字幕场景时不给）。`seq` 和 `patch` 的共用一个计数，是这是编辑器发给这个预览页的第几份
+   * final-cut。
    */
   z.strictObject({
     type: z.literal('load'),
     html: z.string(),
     runtimeSrc: z.string(),
+    captions: z.string().optional(),
     seq: zSeq,
   }),
   /**
-   * 把主文件一步编辑的补丁直接打进正在播的那一份；`seq` 要正好是预览页上一份的下一个，对不上或打不进去时
-   * 预览页报 `needsLoad`。
+   * 把一步编辑的补丁直接打进正在播的那一份：`patches` 是主文件的，`captions` 是字幕场景的（没有时不给），先打
+   * 主文件的；`fonts` 是字体块里新的中文字体规则（`<style>` 的内容，没变时不给），打补丁之前先换上。`seq` 要正好
+   * 是预览页上一份的下一个，对不上或打不进去时预览页报 `needsLoad`。
    */
-  z.strictObject({ type: z.literal('patch'), seq: zSeq, patches: z.array(zPatchOp) }),
+  z.strictObject({
+    type: z.literal('patch'),
+    seq: zSeq,
+    patches: z.array(zPatchOp),
+    captions: z.array(zPatchOp).optional(),
+    fonts: z.string().optional(),
+  }),
   /** final-cut 没有内容了：停下，正在加载的那份不再换上来。 */
   z.strictObject({ type: z.literal('unload') }),
   z.strictObject({ type: z.literal('play') }),

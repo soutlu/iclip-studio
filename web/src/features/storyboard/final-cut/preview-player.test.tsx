@@ -20,8 +20,9 @@ const FILM: PreviewFilm = {
   runtimeSrc: `${ORIGIN}/hyperframes/v1/vendor/runtime.js`,
   revision: 1,
   step: null,
-  foreign: false,
+  locale: null,
   filesRevision: 0,
+  captions: null,
 }
 const MOVE: JsonPatchOp = { op: 'replace', path: '/elements/v1/timing/start', value: 3 }
 
@@ -240,6 +241,48 @@ describe('一步编辑打补丁还是整份重新加载', () => {
     rerender(edited(EDITED, hidden))
     await waitFor(() => expect(lastCommand()).toEqual({ type: 'patch', seq: 3, patches: [hidden] }))
     expect(commandTypes().filter((type) => type === 'load')).toHaveLength(1)
+  })
+
+  it('有字幕场景时：整份加载带着场景文件，字幕的改动和主文件的补丁分开发', async () => {
+    const SCENE = 'compositions/captions.html'
+    const withCaptions: PreviewFilm = {
+      ...FILM,
+      captions: {
+        path: SCENE,
+        scene: '<template><div id="root"></div></template>',
+        captions: new Map([['cap-1', { variable: 'cap_1', text: '你好' }]]),
+      },
+    }
+    const on = handlers()
+    const view = render(preview(on, { film: withCaptions }))
+    await waitFor(() =>
+      expect(served.latest().commands.find((command) => command.type === 'load')).toEqual({
+        ...loadOf(withCaptions, 1),
+        captions: '<template><div id="root"></div></template>',
+      }),
+    )
+    await report({ type: 'loaded', duration: 4, seq: 1 })
+
+    const retimed: JsonPatchOp = { op: 'replace', path: '/elements/cap-1/timing/start', value: 1 }
+    view.rerender(
+      preview(on, {
+        film: {
+          ...edited(withCaptions, MOVE),
+          step: [
+            { file: 'index.html', patches: [MOVE], inversePatches: [] },
+            { file: SCENE, patches: [retimed], inversePatches: [] },
+          ],
+        },
+      }),
+    )
+    await waitFor(() =>
+      expect(lastCommand()).toEqual({
+        type: 'patch',
+        seq: 2,
+        patches: [MOVE],
+        captions: [retimed],
+      }),
+    )
   })
 
   it('打不进去的编辑整份重新加载；它报装好之前的编辑也整份重新加载', async () => {

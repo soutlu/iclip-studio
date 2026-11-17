@@ -140,6 +140,8 @@ export type FilmView = {
   durationMs: number
   /** 字幕写法不对时的原因（见 `captionsProblem`），导出前要先改好。 */
   captionsProblem: string | undefined
+  /** 字幕场景文件的路径（相对工程根）和现在的内容（没存的改动也在里面）；工程里还没有时是 null。 */
+  captionsScene: { path: string; content: string } | null
   /**
    * 当前显示的语言和它的值表（原文时是 null）。`clips` 里字幕的 `text` 总是原文，名字取这种语言的字
    * （还没翻的取原文）；预览按值表套上这种语言。
@@ -492,6 +494,7 @@ const viewOf = (
     locale === SOURCE_LOCALE || table === undefined
       ? SOURCE_SHOWN
       : { code: locale, values: table.values() }
+  const sceneContent = present.get(project.captionsPath)
   const view: FilmView = {
     html,
     canvas: canvasOf(main),
@@ -511,6 +514,8 @@ const viewOf = (
       present.get(project.captionsPath) ?? null,
       captionsHostOf(main)?.attributes,
     ),
+    captionsScene:
+      sceneContent === undefined ? null : { path: project.captionsPath, content: sceneContent },
     locale: shown,
     locales: [...tables.keys()],
     bindings: hostBindingsOf(main, clips),
@@ -714,8 +719,8 @@ type Options = {
  * 编辑对话工作区里的 final-cut 工程：打开读到的主文件 `final-cut/index.html`、它的字幕场景文件和各语言的值表
  * （有时；`initial` 见 `readProject`，是 null 时还没有工程），改动停下 `debounceMs` 毫秒后把改了的文件整份保存
  * （主文件第一次新建、之后按版本号写；别的文件先存，主文件最后存）。打开着的文件有一个在别处被改了、或保存时
- * 版本对不上，就都换上工作区里的那一份、放弃本地没存的改动；工程里主文件和值表以外的文件变了时 `filesRevision`
- * 加 1，预览据此重新加载。当前显示的语言打开时是原文。
+ * 版本对不上，就都换上工作区里的那一份、放弃本地没存的改动；工程里主文件、字幕场景和值表以外的文件变了时
+ * `filesRevision` 加 1，预览据此重新加载。当前显示的语言打开时是原文。
  */
 export function useFilmSession(
   conversationId: string,
@@ -870,7 +875,7 @@ export function useFilmSession(
   const saveNow = useCallback(async (): Promise<'saved' | 'clean' | 'reloaded' | 'failed'> => {
     await settled()
     const present = presentRef.current
-    // 字幕场景先存、主文件后存：主文件挂载着场景，先存主文件的话预览可能取到还没存的场景
+    // 字幕场景先存、主文件后存：主文件挂载着场景，先存主文件的话导出可能取到还没存的场景
     const writes = [...(projectRef.current?.files ?? [])]
       .flatMap(([path, file]) => {
         const content = present.get(path)
@@ -957,11 +962,18 @@ export function useFilmSession(
           )
         )
           void checkStored()
-        // 字幕场景存好以后也要让预览重新加载：预览从工作区取它。值表预览不取，语言的值随主文件一起发过去
+        // 预览从工作区取的文件变了要重新加载；打开着的字幕场景和语言的值随主文件一起发给预览，不用
+        const project = projectRef.current
+        const sent =
+          project !== null && project.files.has(project.captionsPath)
+            ? `${PROJECT_DIR}/${project.captionsPath}`
+            : undefined
         if (
           changes.some(
             (change) =>
-              change.path !== PROJECT_MAIN_PATH && projectLocaleOf(change.path) === undefined,
+              change.path !== PROJECT_MAIN_PATH &&
+              change.path !== sent &&
+              projectLocaleOf(change.path) === undefined,
           )
         )
           setFilesRevision((revision) => revision + 1)

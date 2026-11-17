@@ -391,6 +391,9 @@ describe('useFilmSession · 文件变化的通知', () => {
     expect(result.current.filesRevision).toBe(0)
     notify('final-cut/compositions/fixtures/fixture-fields.html')
     expect(result.current.filesRevision).toBe(1)
+    // 没打开字幕场景（工程里还没有它）：预览从工作区取它，它出现了也要重新加载
+    notify(`final-cut/${CAPTIONS_PATH}`)
+    expect(result.current.filesRevision).toBe(2)
     await new Promise((resolve) => setTimeout(resolve, 30))
     expect(reads.count).toBe(0)
     expect(result.current.film?.clips).toEqual([video()])
@@ -2035,6 +2038,18 @@ describe('useFilmSession · 字幕', () => {
     act(async () => {
       await result.current.settle()
     })
+
+  it('打开着的字幕场景：现在的内容交给预览（含没存的改动），它存了预览不用重新加载', async () => {
+    const { result, notify } = await openCaptioned([video()], [line('a1', 0, 1_000, '第一句')])
+    act(() => result.current.setCaptionText('cap-a1', '没存的字', null))
+    expect(result.current.film?.captionsScene).toEqual({
+      path: CAPTIONS_PATH,
+      content: expect.stringContaining('>没存的字</div>'),
+    })
+    notify(SCENE_PATH)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(result.current.filesRevision).toBe(0)
+  })
 
   it('加第一句：先建好空的场景文件，再一步写上宿主、根上的变量和这句字幕；场景先存、主文件后存', async () => {
     const conversation = crypto.randomUUID()

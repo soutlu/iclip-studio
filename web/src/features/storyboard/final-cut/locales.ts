@@ -113,7 +113,8 @@ export function localeValuesFile(values: LocaleValues): string {
 
 const pointer = (id: string) => `/${id.replaceAll('~', '~0').replaceAll('/', '~1')}`
 
-const idOf = (path: string): string => {
+/** 值表补丁的路径 `path` 改的是哪个变量；不是顶层的键时抛错。 */
+export const valueIdOf = (path: string): string => {
   if (!path.startsWith('/') || path.indexOf('/', 1) !== -1)
     throw new Error(`值表的补丁只改顶层的键：${path}`)
   return path.slice(1).replaceAll('~1', '/').replaceAll('~0', '~')
@@ -169,7 +170,7 @@ export function openValueTable(
     applyPatches: (patches) => {
       const next = { ...current }
       for (const patch of patches) {
-        const id = idOf(patch.path)
+        const id = valueIdOf(patch.path)
         if (patch.op === 'remove') delete next[id]
         else next[id] = patch.value
       }

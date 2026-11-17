@@ -178,6 +178,8 @@ export type LocaleControls = {
   current: Language
   present: readonly LocaleCode[]
   onSwitch: (code: Language) => void
+  /** 加不了语言时的原因（还没有工程）；能加时是 undefined。 */
+  addBlocked: string | undefined
   /** 加一种语言并切过去。 */
   onAdd: (code: LocaleCode) => void
 }
@@ -196,9 +198,9 @@ const SOURCE_BUTTON: LocaleButton = {
 
 /**
  * 语言切换：原文和工程里有的语言各一个按钮（原文写「原文」，别的写语言代码），当前的高亮；最后的「+」点开
- * 列出还没加的语言，选一个加上并切过去，都加了时不显示。
+ * 列出还没加的语言，选一个加上并切过去，都加了时不显示，加不了时置灰。
  */
-function LocaleBar({ current, present, onSwitch, onAdd }: LocaleControls) {
+function LocaleBar({ current, present, onSwitch, addBlocked, onAdd }: LocaleControls) {
   const buttons: LocaleButton[] = [
     SOURCE_BUTTON,
     ...LOCALES.filter(({ code }) => present.includes(code)).map((locale) => ({
@@ -229,8 +231,40 @@ function LocaleBar({ current, present, onSwitch, onAdd }: LocaleControls) {
           </TooltipContent>
         </TooltipRoot>
       ))}
-      {addable.length === 0 ? null : <AddLocale addable={addable} onAdd={onAdd} />}
+      {addBlocked !== undefined ? (
+        <BlockedAddLocale reason={addBlocked} />
+      ) : addable.length === 0 ? null : (
+        <AddLocale addable={addable} onAdd={onAdd} />
+      )}
     </div>
+  )
+}
+
+/** 加不了语言时的「+」：置灰，点了只说明原因（和 `Tool` 置灰时一样）。 */
+function BlockedAddLocale({ reason }: { reason: string }) {
+  const [hint, setHint] = useState(false)
+  return (
+    <TooltipRoot onOpenChange={setHint} open={hint}>
+      <TooltipTrigger
+        asChild
+        onClick={(event) => {
+          event.preventDefault()
+          setHint(true)
+        }}
+      >
+        <button
+          aria-disabled
+          aria-label="添加语言"
+          className="wf-locale-add ui-state ui-focus"
+          type="button"
+        >
+          <Icon decorative name="add" size="xs" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="wf-tip" side="top">
+        {reason}
+      </TooltipContent>
+    </TooltipRoot>
   )
 }
 
@@ -303,8 +337,8 @@ type EditorToolbarProps = {
   /** 「适应宽度」时一秒画多少像素，缩放的档位和滑杆都以它为准。 */
   fitPps: number
   onZoom: (zoom: Zoom) => void
-  /** 语言切换，排在吸附、波纹编辑后面；还没有工程时是 undefined，不显示。 */
-  locales: LocaleControls | undefined
+  /** 语言切换，排在吸附、波纹编辑后面。 */
+  locales: LocaleControls
   /** 排在右边那组最后的控件（导出）。 */
   actions: ReactNode
 }
@@ -419,12 +453,8 @@ export function EditorToolbar({
               : '波纹编辑已关闭：删除片段后保留空档'
           }
         />
-        {locales === undefined ? null : (
-          <>
-            <span aria-hidden="true" className="wf-divider" />
-            <LocaleBar {...locales} />
-          </>
-        )}
+        <span aria-hidden="true" className="wf-divider" />
+        <LocaleBar {...locales} />
       </div>
       <div className="wf-toolbar-group">
         <Tool
