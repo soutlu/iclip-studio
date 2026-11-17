@@ -22,6 +22,7 @@ import { carveAttributes, type CarveMeasurement, type CarveSettings } from './ca
 import { splitAutomation } from './clip-automation'
 import { rippleStarts, withLinkedStarts, type Cut, type Links, type Timing } from './clip-edit'
 import { levellerAttributes, type LevellerMeasurement } from './leveller'
+import { fxEditAttributes, type ChainChange } from './mix-fx'
 import {
   CAPTION_OWNER,
   CAPTIONS_PATH,
@@ -1617,6 +1618,32 @@ export function useFilmSession(
   )
 
   /**
+   * 按 `change` 改片段 `id` 的效果链（音色风格、均衡、升降调、自己加的效果，见 `fxEditAttributes`），算一步撤销。
+   * 片段不在工程里、改完和原来一样时不动工程。
+   */
+  const setFx = useCallback(
+    (id: string, change: ChainChange) => {
+      const project = projectRef.current
+      const element = project === null ? null : mainOf(project).getElement(id)
+      if (element === null) return
+      const written = fxEditAttributes(
+        element.attributes[HF_AUDIO_FX_ATTR],
+        element.attributes[HF_AUDIO_AUTOMATION_ATTR],
+        change,
+      )
+      const changed = Object.entries({
+        [HF_AUDIO_FX_ATTR]: written.chain,
+        [HF_AUDIO_AUTOMATION_ATTR]: written.automation,
+      }).filter(([name, value]) => (element.attributes[name] ?? null) !== value)
+      if (changed.length === 0) return
+      edit((main) => {
+        for (const [name, value] of changed) main.setAttribute(id, name, value)
+      })
+    },
+    [edit],
+  )
+
+  /**
    * 删掉几个片段；`ripple` 为真时主轨里后面的片段往前补上，联动的伙伴挪同样的时间差。删一句字幕是删掉
    * 场景里它的元素、主文件根上它的变量和各语言值表里它的值；删掉最后一句时场景文件和宿主都留着。
    * 删组件或块的片段时它随语言的字段的根变量和各语言值表里的值一起删掉。答复删了没有（见 `edit`）。
@@ -2146,6 +2173,7 @@ export function useFilmSession(
     setAttributes,
     setCarve,
     setLeveller,
+    setFx,
     removeClips,
     split,
     detach,

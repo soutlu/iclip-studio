@@ -988,6 +988,80 @@ test('智能调音：把配乐的角色改成人声、打开自动平稳音量�
   )
 })
 
+test('音色风格与精细调音：给配乐选一个预设、调一段均衡、加一个效果，存下的音频片段的效果链里三样都在', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const inspector = editor.getByRole('tabpanel', { name: '属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '配乐' }).click()
+  const added = mainSavedWith(page, (html) => savedAudio(html).length === 1)
+  await side
+    .getByRole('list', { name: '音频' })
+    .getByRole('button', { name: '轻快原声吉他，适合秋季穿搭', exact: true })
+    .click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '加到播放头' }).click()
+  await added
+  await editor
+    .getByRole('group', { name: '配乐', exact: true })
+    .getByRole('button', { name: /^选中：轻快原声吉他/ })
+    .click()
+  await expect(inspector.getByRole('heading', { name: '智能调音' })).toBeVisible()
+
+  type Node = { type: string; fromPreset?: string; fromEq?: string; params?: { gain?: number } }
+  const chainOf = (html: string) =>
+    (
+      JSON.parse(
+        (savedAttribute(html, 'audio', 'data-fx-chain') ?? '{"nodes":[]}').replaceAll(
+          '&quot;',
+          '"',
+        ),
+      ) as { nodes: Node[] }
+    ).nodes
+  const style = inspector.getByRole('radiogroup', { name: '音色风格' })
+  const styled = mainSavedWith(page, (html) =>
+    chainOf(html).some((node) => node.fromPreset === 'room-natural'),
+  )
+  await style.getByRole('radio', { name: '自然空间' }).click()
+  await styled
+  await expect(style.getByRole('radio', { name: '自然空间' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  )
+
+  await inspector.getByRole('button', { name: /^精细调音/ }).click()
+  const toned = mainSavedWith(page, (html) =>
+    chainOf(html).some((node) => node.fromEq !== undefined && node.params?.gain === -6),
+  )
+  await inspector.getByRole('button', { name: '高频 4kHz 0.0dB，点击可直接输入' }).click()
+  await inspector.getByRole('textbox', { name: '高频 4kHz' }).fill('-6')
+  await inspector.getByRole('textbox', { name: '高频 4kHz' }).press('Enter')
+  await toned
+
+  const limited = mainSavedWith(page, (html) =>
+    chainOf(html).some((node) => node.type === 'truepeak'),
+  )
+  await inspector.getByRole('button', { name: /添加效果/ }).click()
+  await page.getByRole('menuitem', { name: /^防爆音峰值限制/ }).click()
+  const nodes = chainOf(htmlOf(await limited))
+  expect(
+    nodes.filter((node) => node.fromPreset === 'room-natural').map((node) => node.type),
+  ).toEqual(['reverb'])
+  expect(nodes.filter((node) => node.fromEq !== undefined).map((node) => node.type)).toEqual([
+    'lowshelf',
+    'peaking',
+    'highshelf',
+  ])
+  expect(nodes.at(-1)).toMatchObject({ type: 'truepeak' })
+  await expect(inspector.getByRole('group', { name: '防爆音峰值限制' })).toBeVisible()
+  await expect(inspector.getByRole('button', { name: /^精细调音/ })).toContainText(
+    '均衡 · 1 个效果',
+  )
+})
+
 test('在贴片卡片上按 ] 选中片段：侧栏切到「属性」，焦点交还编辑器，Delete 照常删掉；选中没了回到贴片页签', async ({
   page,
 }) => {
