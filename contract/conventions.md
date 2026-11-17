@@ -175,7 +175,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 ### 成片导出
 
 业务规则见 [CONTEXT.md「成片导出」](../docs/CONTEXT.md#术语)。以下三个接口仅限对话创建者本人调用（服务器未配置渲染服务时统一返回 `422`）：
-- **发起导出** `POST /conversations/{id}/whole-film/exports`：请求体可选，`{ locale }` 是导出哪种语言的版本，只认 `zh`、`en`、`de`、`es`、`fr`，别的值返回 `422`；不带请求体或 `locale` 为 `null` 导出原文。工作区里还没有主文件 `final-cut/index.html` 返回 `422`（「final-cut 暂无内容，无法导出」）；要导的语言在工程里没有值表 `final-cut/locales/<语言>.json` 返回 `422`（「final-cut 里没有这种语言的语言文件，无法导出这种语言的版本」）。受理后创建一条 `whole_film` 生成记录排入渲染队列，返回 `202 { exportId }`；记录里存导出的语言，和主文件里 `<video>`、`<audio>` 的素材地址按输出地址对上的生成记录（同一个地址对上多条取最早建的那条），对不上的地址不记，也不拒绝导出；各语言的配音片段也是 `<audio>`，都算在里面，交给渲染服务时也都给下载地址，渲染服务只下载导出的那种语言用到的。工程本身不存进记录：队列把记录交给渲染服务时才读工作区里的整个 `final-cut/` 目录（含值表），导出的就是那一刻的工程和值表；那时主文件已经不在了，记录记为失败（`FINAL_CUT_EMPTY`）。值表那时已经删掉或写法不对、值的类型和主文件里的声明对不上时，渲染服务不收，记录记为失败（`RENDER_REJECTED`，原因写在 `error.message` 里）。
+- **发起导出** `POST /conversations/{id}/whole-film/exports`：请求体可选，`{ locale }` 是导出哪种语言的版本，只认 `zh`、`en`、`de`、`es`、`fr`，别的值返回 `422`；不带请求体或 `locale` 为 `null` 导出原文。工作区里还没有主文件 `final-cut/index.html` 返回 `422`（「final-cut 暂无内容，无法导出」）；要导的语言在工程里没有值表 `final-cut/locales/<语言>.json` 返回 `422`（「final-cut 里没有这种语言的语言文件，无法导出这种语言的版本」）。受理后创建一条 `whole_film` 生成记录排入渲染队列，返回 `202 { exportId }`；记录里存导出的语言，和主文件里素材地址对上的来源：`<video>` 按输出地址对生成记录（同一个地址对上多条取最早建的那条），记成 `videos: [{ jobId, url }]`；`<audio>` 先对本对话（含分叉继承）的生成记录，再对本对话（含分叉继承）的上传（同一个地址取最早的那条），记成 `audios: [{ sourceKind: "generation" | "upload", sourceId, url }]`；对不上的地址不记，也不拒绝导出；各语言的配音片段也是 `<audio>`，都算在里面，交给渲染服务时也都给下载地址，渲染服务只下载导出的那种语言用到的。工程本身不存进记录：队列把记录交给渲染服务时才读工作区里的整个 `final-cut/` 目录（含值表），导出的就是那一刻的工程和值表；那时主文件已经不在了，记录记为失败（`FINAL_CUT_EMPTY`）。值表那时已经删掉或写法不对、值的类型和主文件里的声明对不上时，渲染服务不收，记录记为失败（`RENDER_REJECTED`，原因写在 `error.message` 里）。
 - **查询最新导出进度** `GET .../whole-film/exports/latest`：返回该对话下最新一次导出的状态 `{ export: { id, locale, status, progress, queuePosition, error, downloadUrl } }`（从未导出过则 `export` 为 `null`；`locale` 是这次导出的语言，原文为 `null`；`status` 取值为 `queued | rendering | uploading | done | failed | cancelled`）。
 - **取消导出** `DELETE .../whole-film/exports/{exportId}`：取消排队中或正在渲染的导出任务（返回 `204`；如果刚好卡在向渲染服务提交的那一瞬间返回 `409`；如果渲染服务连不上返回 `502`）。
 
@@ -195,7 +195,7 @@ final-cut 工程是对话工作区里的 `final-cut/` 目录。工程里的脚�
 
 `POST /conversations/{id}:fork` 从指定对话的第 `turn` 轮分叉出一段归属于当前调用者的新对话（需具备 `agent:run` 权限且能看到源对话，**治理者也可以从已删除的对话分叉**）：
 - 请求体为 `{ turn, title?, agentId?, collectionId? }`。如果源对话还有正在运行、等待审批或排队的消息，返回 `409`；如果 `turn` 超出范围或源对话从未运行过，返回 `422`。
-- **复制与继承的内容**：新对话会复制源对话截至第 `turn` 轮的聊天历史和当时的工作区文件（版本号重置为 1）；不会复制源对话关联的需求单。源对话已生成的视频记录不会复制行数据，而是由新对话**按血缘只读继承**（调用 `GET /generations?conversationId=新对话ID` 时会一并列出，可直接下载或拿来剪辑，但不能对继承来的旧轮次点重新生成）。
+- **复制与继承的内容**：新对话会复制源对话截至第 `turn` 轮的聊天历史和当时的工作区文件（版本号重置为 1）；不会复制源对话关联的需求单。源对话已生成的视频记录不会复制行数据，而是由新对话**按血缘只读继承**（调用 `GET /generations?conversationId=新对话ID` 时会一并列出，可直接下载或拿来剪辑，但不能对继承来的旧轮次点重新生成）。源对话在分叉时刻以前挂上的上传也一样按血缘继承，`GET /conversations/新对话ID/uploads` 会一并列出。
 
 ### 做同款
 
@@ -214,7 +214,7 @@ final-cut 工程是对话工作区里的 `final-cut/` 目录。工程里的脚�
 ### 附件
 
 - 发消息时 `content` 里的图片和视频附件只接收合法的 `http://` 或 `https://` 链接（本地文件请先走 §10 直传获取链接）。
-- **外部图片自动转存**：因为后续给模型生成缩略图、查宽高和裁剪都依赖本系统 OSS 的图片处理参数，如果消息里传入的图片链接不是本系统 OSS 的纯净链接（比如是外部网站链接，或者带有过期签名 Query 参数），服务端在接收消息前会自动去公网下载这张图片（仅限 80/443 端口、最多跟随 3 次重定向、30 秒超时），转存为发送者本人的一条上传记录，并把消息里的链接替换成新地址；如果下载或校验失败，整条消息直接返回 `422`。视频附件不做自动转存。
+- **外部图片自动转存**：因为后续给模型生成缩略图、查宽高和裁剪都依赖本系统 OSS 的图片处理参数，如果消息里传入的图片链接不是本系统 OSS 的纯净链接（比如是外部网站链接，或者带有过期签名 Query 参数），服务端在接收消息前会自动去公网下载这张图片（仅限 80/443 端口、最多跟随 3 次重定向、30 秒超时），转存为发送者本人的一条上传（记进上传台账，宽高读图片头），并把消息里的链接替换成新地址；如果下载或校验失败，整条消息直接返回 `422`。视频附件不做自动转存。
 
 ---
 
@@ -248,22 +248,24 @@ final-cut 工程是对话工作区里的 `final-cut/` 目录。工程里的脚�
 
 客户端文件直传分两步完成（文件大小、格式与图片宽高限制见 [uploads/models.py](../server/src/iclip/domains/uploads/models.py)）：
 1. **获取直传签名 `POST /uploads/sign`**：返回 `uploadId`、限时上传地址 `upload.url` 和必须原样携带的请求头 `upload.headers`（里面签入了 `Content-Type` 和审计元数据 `x-oss-meta-*`，前端 PUT 上传到 OSS 时少传或改传任何一个 Header 都会被 OSS 拒绝并返回 `403`）。
-2. **确认上传完成 `POST /uploads/{uploadId}/confirm`**：服务端检查 OSS 桶内文件的真实类型和大小（文件还没传上去返回 `409`，格式或大小超限返回 `422`），通过后生成一条 `operation: "upload"` 的记录并返回永久公开地址 `{ url, contentType, sizeBytes }`（重复调用 `confirm` 幂等返回同一结果）：
-   - **相同视频自动去重**：确认视频文件时，服务端会根据 OSS 对象的 MD5 查找是否已有完全相同的视频；如果以前有人传过，会直接返回最早那份视频的 `url` 并删掉刚传的重复文件，但仍会在当前用户名下记一条上传记录。
-   - **上传音乐关联对话**：只有上传音频文件时，才允许在 `confirm` 请求体中传入 `conversationId`（必须是自己的未删除对话，否则返回 `404` / `403`），关联后即可在该对话的 final-cut 里选作背景音乐。
+2. **确认上传完成 `POST /uploads/{uploadId}/confirm`**：服务端检查 OSS 桶内文件的真实类型和大小（文件还没传上去返回 `409`，格式或大小超限返回 `422`），通过后在上传台账里记一条（不是生成记录），返回这条上传 `{ id, kind, url, contentType, sizeBytes, durationMs, width, height, conversationId, createdAt }`，`url` 是永久公开地址；重复调用 `confirm` 原样返回记过的那条，第二次的请求体不改它：
+   - **记什么**：`sizeBytes`、`contentType` 取 OSS 报的；图片在请求体里带上签名时报的 `width` / `height`（两个都给才记，越界返回 `422`），别的种类不记宽高；确认时不量时长，`durationMs` 为空，前端要用时自己从文件里读。台账建立以前的旧上传 `contentType`、`sizeBytes` 也为空。
+   - **相同视频自动去重**：确认视频文件时，服务端会根据 OSS 对象的 MD5 查找是否已有完全相同的视频；如果以前有人传过，会直接返回最早那份视频的 `url` 并删掉刚传的重复文件，但仍会在当前用户名下记一条上传。
+   - **关联对话**：任何种类的上传都可以在 `confirm` 请求体中传入 `conversationId`（必须是自己的未删除对话，否则返回 `404` / `403`）。挂在对话上的音频即可在该对话的 final-cut 里选用。
+3. **列对话的上传 `GET /conversations/{id}/uploads`**（`generation:read`）：挂在这段对话上的上传，含经分叉继承来的（源对话在分叉时刻以前挂上的），新的在前，`?kind=image|video|audio` 按种类筛；分页同生成记录列表（`limit`，上一页最后一条的 `id` 作 `before`）。看不见这段对话返回 `404`。
 
 ---
 
 ## 11. 媒体生成 (Generations)
 
-系统共有 8 个异步生成提交接口（受理成功后均返回 `202`），任务状态每次变化都会通过 WebSocket 推送 `event.generation.changed` 帧。11 种生成记录的完整分类见 [CONTEXT.md「生成任务」](../docs/CONTEXT.md#术语)。
+系统共有 8 个异步生成提交接口（受理成功后均返回 `202`），任务状态每次变化都会通过 WebSocket 推送 `event.generation.changed` 帧。10 种生成记录的完整分类见 [CONTEXT.md「生成任务」](../docs/CONTEXT.md#术语)。
 
 | 提交接口 | 记录类型 (`kind` / `operation`) | 核心参数、校验规则与产物说明 |
 |---|---|---|
 | `POST /generations/video` | `video` / `generate`（出片） | 字段与上游视频异步接口保持一致（`snake_case`），额外支持传入 `conversation_id`、`task_id`、镜头组编号 `shot_index`、`metadata`，以及二选一的纯文本 `prompt` 或结构化分镜 `shot`（服务端会按固定模板拼成不超过 4000 字的 `prompt` 发给上游，参考图/视频/音频各不超过 30 个）。支持通过 `GET /generations/video/{task_id}` 按上游格式轮询状态 |
-| `POST /generations/video-edits` | `video` / `generate`（局部编辑段） | 基于一条已完成的素材片（`sourceJobId`），替换其中 `[rangeStartMs, rangeEndMs]` 区间（结束时间允许超出原片最多 50 毫秒）。不传参考视频时为**图生模式**（传 1 张图作首帧、2 张作首尾帧、3 张以上作参考图）；传入 1 条本人上传的视频时为**视频编辑模式**（服务端会根据 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py) 自动补齐模型所需的前缀或参数） |
+| `POST /generations/video-edits` | `video` / `generate`（局部编辑段） | 基于一条已完成的素材片（`sourceJobId`），替换其中 `[rangeStartMs, rangeEndMs]` 区间（结束时间允许超出原片最多 50 毫秒）。不传参考视频时为**图生模式**（传 1 张图作首帧、2 张作首尾帧、3 张以上作参考图）；传入 1 条本人上传的视频、或资料库里一条没移除的参考视频的地址时为**视频编辑模式**（服务端会根据 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py) 自动补齐模型所需的前缀或参数） |
 | `POST /generations/video-composites` | `video` / `compose`（视频合成） | 传入基底素材片 `baseJobId` 和 1～100 段片段列表 `segments: [{ sourceJobId, start, end? }]`（每段必须取自该基底本身、或基于该基底生成的已完成编辑段）。服务端在本地用 ffmpeg 重新编码拼接（自动对齐原片的画幅与帧率），合成期间可通过 `clipStage`（`fetching | processing | uploading`）查看当前阶段 |
-| `POST /generations/image` | `image` / `generate`（生图 / 帧图编辑） | 模型、画幅、分辨率和可选的渠道 `channel` 必须在 `GET /generations/image-models` 声明的范围内。如果是基于已有图片修图（帧图编辑），传入底图地址 `sourceUrl`（服务端会优先在本对话/继承图片或本人上传记录里查找并关联 `sourceJobId`，找不到则记录为外部底图地址） |
+| `POST /generations/image` | `image` / `generate`（生图 / 帧图编辑） | 模型、画幅、分辨率和可选的渠道 `channel` 必须在 `GET /generations/image-models` 声明的范围内。如果是基于已有图片修图（帧图编辑），传入底图地址 `sourceUrl`（服务端在本对话及继承来的生成图片里查找并关联 `sourceJobId`，找不到——包括上传的图片——则记录为外部底图地址） |
 | `POST /generations/subtitles` | `subtitle` / `generate`（字幕识别） | 识别指定素材片（`sourceJobId`）原片的口播字幕（素材片生成完成时不会识别，只有调用本接口才识别）。识别结果保存在 `sentences: [{ startMs, endMs, text, speaker, words }]` 中；如果视频没有音轨或全程无人说话，任务同样正常完成（`completed`），`sentences` 为空数组 `[]` |
 | `POST /generations/dubbings` | `dubbing` / `generate`（配音） | 给指定素材片（`sourceJobId`，规则同字幕识别）配一种外语（`locale`）。`lines: [{ startMs, endMs, text }]` 是每句译文在素材片里的起止（与字幕的 `sentences` 同一口径），按开始时间排好、不重叠、在素材片时长之内；`reference` 是 `{ kind: "original" }`（从原声里截被 `lines` 覆盖得最多、不超过 10 秒的一段，覆盖不到 3 秒任务失败）或 `{ kind: "audio", url }`（只收本系统存储里的地址，取前 10 秒）。每句放在它的开始，能占到下一句开始（最后一句到视频结尾）；合成出来更长时先加速、最多 1.25 倍，还放不下就截尾并淡出。产物是和素材片等长的一条 m4a 音轨（`outputUrl`），每句的结果在 `dubbedLines: [{ index, speed, trimmed }]`。未装配语音合成服务时答 `422` |
 | `POST /generations/music` | `audio` / `generate`（生成背景音乐） | 必须传入关联的对话 `conversationId` 和提示词 `prompt`（1～3000 字，前端默认填入制作页的 `musicDescription`）。服务端调用千问音乐模型后，会自动切除首尾静音、统一响度并转存为 m4a 文件，同时记录实测时长 `durationMs` |

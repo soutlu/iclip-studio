@@ -20,7 +20,9 @@ from iclip.domains.generation.models import (
     STATUS_FAILED,
     STATUS_SUBMITTED,
     GenerationJob,
+    inherited_through,
 )
+from iclip.domains.generation.ports import ConversationLineage
 from iclip.domains.generation.render import (
     CANCELLED,
     RENDER_STAGES,
@@ -41,6 +43,7 @@ from iclip.domains.generation.schemas import (
 )
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.public import Principal
+from iclip.domains.uploads.service import UploadService
 from iclip.platform.runtime_api.client import RuntimeUnavailable
 from iclip.platform.runtime_api.file_store.namespace import namespace_for
 
@@ -82,10 +85,14 @@ class WholeFilmExportAdapter:
         *,
         generation: GenerationService,
         generations: GenerationRepository,
+        uploads: UploadService,
+        lineage: ConversationLineage,
         render: RenderClient,
     ) -> None:
         self._generation = generation
         self._generations = generations
+        self._uploads = uploads
+        self._lineage = lineage
         self._render = render
 
     async def start(
@@ -96,23 +103,39 @@ class WholeFilmExportAdapter:
         main_file: str,
         locale: TargetLocale | None,
     ) -> uuid.UUID:
-        """记一条成片记录排队：主文件里的素材按输出地址对上生成记录的记进去，对不上的不记；
-        导出哪种语言（``locale``，None 是原文）也记进去。"""
+        """记一条成片记录排队，导出哪种语言（``locale``，None 是原文）也记进去。主文件里的素材按地址
+        对来源，对不上的不记：``<video>`` 对生成记录；``<audio>`` 先对本对话（含分叉继承）的生成记录，
+        再对本对话（含分叉继承）的上传。"""
 
         addresses = media_addresses(main_file)
         records = await self._generations.earliest_by_outputs(
             [address.url for address in addresses]
         )
+        inheritance = await self._lineage.ancestry(conversation_id)
+        audio_urls = [address.url for address in addresses if address.kind != "video"]
+        uploads = await self._uploads.conversation_uploads_at(conversation_id, audio_urls)
         videos: list[WholeFilmVideoSource] = []
         audios: list[WholeFilmAudioSource] = []
         for address in addresses:
             record = records.get(address.url)
-            if record is None:
-                continue
             if address.kind == "video":
-                videos.append(WholeFilmVideoSource(job_id=record.id, url=address.url))
-            else:
-                audios.append(WholeFilmAudioSource(job_id=record.id, url=address.url))
+                if record is not None:
+                    videos.append(WholeFilmVideoSource(job_id=record.id, url=address.url))
+                continue
+            if record is not None and (
+                record.conversation_id == conversation_id or inherited_through(record, inheritance)
+            ):
+                audios.append(
+                    WholeFilmAudioSource(
+                        source_kind="generation", source_id=record.id, url=address.url
+                    )
+                )
+                continue
+            upload = uploads.get(address.url)
+            if upload is not None:
+                audios.append(
+                    WholeFilmAudioSource(source_kind="upload", source_id=upload.id, url=address.url)
+                )
         job = await self._generation.submit_whole_film(
             principal,
             conversation_id=conversation_id,

@@ -50,7 +50,6 @@ from iclip.domains.generation.schemas import (
     KIND_VIDEO,
     OPERATION_CUT,
     OPERATION_GENERATE,
-    OPERATION_UPLOAD,
     DubbingLine,
     DubbingOriginalReference,
     DubbingReference,
@@ -349,15 +348,6 @@ def make_music(**fields: Any) -> GenerationJob:
     return make_job(MusicRequest(model="qwen-audio-3.1-tts-next", prompt=MUSIC_PROMPT), **fields)
 
 
-def make_upload(*, kind: GenerationKind = KIND_IMAGE, **fields: Any) -> GenerationJob:
-    fields.setdefault("status", STATUS_COMPLETED)
-    fields.setdefault("finished_at", datetime.now(UTC))
-    fields.setdefault(
-        "output", GenerationOutput(url=f"https://cdn.test/iclip/agent/uploads/{uuid.uuid4()}.png")
-    )
-    return make_job(kind=kind, operation=OPERATION_UPLOAD, **fields)
-
-
 def make_cut(grid: GenerationJob, **fields: Any) -> GenerationJob:
     fields.setdefault("status", STATUS_COMPLETED)
     fields.setdefault("finished_at", datetime.now(UTC))
@@ -399,7 +389,6 @@ class InMemoryGenerationRepository:
         owner: uuid.UUID | None,
         conversation_id: uuid.UUID | None,
         inherited: Inheritance = (),
-        operation: GenerationOperation | None = None,
     ) -> GenerationJob | None:
         found = [
             job
@@ -407,7 +396,6 @@ class InMemoryGenerationRepository:
             if job.kind == kind
             and job.status == STATUS_COMPLETED
             and job.output.url == output_url
-            and (operation is None or job.operation == operation)
             and (
                 (
                     (owner is None or job.owner_user_id == owner)
@@ -425,16 +413,6 @@ class InMemoryGenerationRepository:
             if job.status == STATUS_COMPLETED and url is not None and url in urls:
                 found.setdefault(url, job)
         return found
-
-    async def find_video_upload_by_md5(self, content_md5: str) -> GenerationJob | None:
-        found = [
-            job
-            for job in self.jobs.values()
-            if job.output.content_md5 == content_md5
-            and job.kind == KIND_VIDEO
-            and job.operation == OPERATION_UPLOAD
-        ]
-        return min(found, key=lambda job: (job.created_at, job.id), default=None)
 
     async def latest_reference_trial(self, reference_id: uuid.UUID) -> GenerationJob | None:
         found = [
@@ -748,6 +726,7 @@ def film_image_service(
         act_as=ActAs(InMemoryUserRepository()),
         clear_completion=_keep_completion,
         lineage=lineage or FixedLineage(),
+        reference_clips=ReferenceClips(),
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",
@@ -785,6 +764,16 @@ class FixedLineage:
 
     async def readable(self, principal: Principal, conversation_id: uuid.UUID) -> bool:
         return self._readable
+
+
+class ReferenceClips:
+    """局部编辑参考片段的替身：只认给定的地址。"""
+
+    def __init__(self, usable: Collection[str] = ()) -> None:
+        self._usable = frozenset(usable)
+
+    async def __call__(self, principal: Principal, url: str) -> bool:
+        return url in self._usable
 
 
 class FakeMediaProbe:
@@ -877,6 +866,7 @@ __all__ = [
     "FixedLineage",
     "InMemoryGenerationRepository",
     "MemoryObjectStore",
+    "ReferenceClips",
     "ScriptedProvider",
     "build_queue",
     "compose_request",
@@ -892,7 +882,6 @@ __all__ = [
     "make_job",
     "make_music",
     "make_subtitle",
-    "make_upload",
     "plant_old_job",
     "stored_request",
     "video_request",

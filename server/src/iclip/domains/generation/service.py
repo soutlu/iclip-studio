@@ -26,7 +26,11 @@ from iclip.domains.generation.models import (
     is_base_master,
     is_finished_edit,
 )
-from iclip.domains.generation.ports import ConversationLineage, RemoteMediaProbe
+from iclip.domains.generation.ports import (
+    ConversationLineage,
+    ReferenceClipCheck,
+    RemoteMediaProbe,
+)
 from iclip.domains.generation.provider import ImageModelSpec
 from iclip.domains.generation.queue import GenerationQueue
 from iclip.domains.generation.render import CANCELLED, CANCELLED_MESSAGE, RenderClient
@@ -40,7 +44,6 @@ from iclip.domains.generation.schemas import (
     OPERATION_CUT,
     OPERATION_GENERATE,
     OPERATION_RENDER,
-    OPERATION_UPLOAD,
     ComposeSegment,
     DubbingAudioReference,
     DubbingIn,
@@ -126,6 +129,7 @@ class GenerationService:
         clear_completion: ClearCompletion,
         lineage: ConversationLineage,
         media_probe: RemoteMediaProbe,
+        reference_clips: ReferenceClipCheck,
         subtitles: ProviderTarget | None = None,
         dubbing: DubbingTarget | None = None,
         music: ProviderTarget | None = None,
@@ -147,6 +151,7 @@ class GenerationService:
         self._clear_completion = clear_completion
         self._lineage = lineage
         self._media_probe = media_probe
+        self._reference_clips = reference_clips
         self._subtitles = subtitles
         self._dubbing = dubbing
         self._music = music
@@ -212,24 +217,19 @@ class GenerationService:
             aspect_ratio = await self._original_aspect_ratio(
                 principal, base, request.conversation_id
             )
-        clip = None
+        clip_url = None
         if request.reference_video_urls:
             (clip_url,) = request.reference_video_urls
-            clip = await self._repo.find_by_output(
-                clip_url,
-                kind=KIND_VIDEO,
-                owner=principal.user_id,
-                conversation_id=None,
-                operation=OPERATION_UPLOAD,
-            )
-            if clip is None:
-                raise ValidationFailed("reference_video_urls 必须是调用者本人上传的一段视频")
+            if not await self._reference_clips(principal, clip_url):
+                raise ValidationFailed(
+                    "reference_video_urls 必须是调用者本人上传的视频，或资料库里的一条参考视频"
+                )
         base_ms = base.output.duration_ms
         if base_ms is None:
             base_ms = await self._probe_duration(base.output.url, what="基底", job_id=base.id)
         _check_edit_range(request.range_start_ms, request.range_end_ms, base_ms)
-        if clip is not None and spec.edit is not None:
-            clip_ms = await self._probe_duration(clip.output.url, what="参考片段", job_id=clip.id)
+        if clip_url is not None and spec.edit is not None:
+            clip_ms = await self._probe_duration(clip_url, what="参考片段", job_id=None)
             if not spec.edit.min_seconds * 1000 <= clip_ms <= spec.edit.max_seconds * 1000:
                 raise ValidationFailed(
                     f"{request.model} 编辑参考时长必须为 "
@@ -336,7 +336,7 @@ class GenerationService:
             )
         return ratio
 
-    async def _probe_duration(self, url: str | None, *, what: str, job_id: uuid.UUID) -> int:
+    async def _probe_duration(self, url: str | None, *, what: str, job_id: uuid.UUID | None) -> int:
         if url is None:
             raise RuntimeError(f"生成记录 {job_id} 核对过却没有产物地址")
         try:
@@ -366,30 +366,20 @@ class GenerationService:
             source_job_id=base_id,
         )
 
-    async def find_upload(self, principal: Principal, url: str) -> GenerationJob | None:
-        return await self._repo.find_by_output(
-            url,
-            kind=KIND_IMAGE,
-            owner=visible_owner_incl_act_as(principal),
-            conversation_id=None,
-            operation=OPERATION_UPLOAD,
-        )
-
     async def _resolve_base(
         self, principal: Principal, url: str | None, conversation_id: uuid.UUID | None
     ) -> tuple[uuid.UUID | None, str | None]:
+        """底图是这段对话（或继承来）的一张生成图时记来源；别的地址（上传的图、外链）原样记下。"""
+
         if url is None:
             return None, None
-        owner = visible_owner_incl_act_as(principal)
         found = await self._repo.find_by_output(
             url,
             kind=KIND_IMAGE,
-            owner=owner,
+            owner=visible_owner_incl_act_as(principal),
             conversation_id=conversation_id,
             inherited=await self._inheritance(principal, conversation_id),
         )
-        if found is None:
-            found = await self.find_upload(principal, url)
         return (None, url) if found is None else (found.id, None)
 
     async def _accept(
@@ -910,66 +900,9 @@ def _require_user_name(user_name: str | None) -> None:
         raise ValidationFailed("user_name 必填")
 
 
-@dataclass(frozen=True, slots=True)
-class UploadRecord:
-    url: str
-    object_upload_id: uuid.UUID
-
-
 class SettledRecords:
     def __init__(self, repo: GenerationRepository) -> None:
         self._repo = repo
-
-    async def record_upload(
-        self,
-        principal: Principal,
-        *,
-        upload_id: uuid.UUID,
-        kind: GenerationKind,
-        url: str,
-        content_md5: str | None,
-        conversation_id: uuid.UUID | None,
-    ) -> UploadRecord:
-        first = (
-            None if content_md5 is None else await self._repo.find_video_upload_by_md5(content_md5)
-        )
-        created = await self._repo.create_settled(
-            [
-                _settled_job(
-                    principal,
-                    job_id=upload_id,
-                    kind=kind,
-                    operation=OPERATION_UPLOAD,
-                    url=url if first is None else _settled_url(first),
-                    conversation_id=conversation_id,
-                    content_md5=content_md5,
-                )
-            ]
-        )
-        if created:
-            (job,) = created
-            return UploadRecord(
-                url=_settled_url(job), object_upload_id=upload_id if first is None else first.id
-            )
-        return await self._upload_record(await self._repo.get(upload_id, owner=None))
-
-    async def recorded_upload(self, upload_id: uuid.UUID) -> UploadRecord | None:
-        try:
-            job = await self._repo.get(upload_id, owner=None)
-        except NotFound:
-            return None
-        return await self._upload_record(job)
-
-    async def _upload_record(self, job: GenerationJob) -> UploadRecord:
-        if job.operation != OPERATION_UPLOAD:
-            raise RuntimeError(f"上传 {job.id} 撞上了一条 {job.kind} / {job.operation} 记录")
-        url = _settled_url(job)
-        if job.output.content_md5 is None:
-            return UploadRecord(url=url, object_upload_id=job.id)
-        first = await self._repo.find_video_upload_by_md5(job.output.content_md5)
-        if first is None:
-            raise RuntimeError(f"上传 {job.id} 按自己的 MD5 找不到视频上传记录")
-        return UploadRecord(url=url, object_upload_id=first.id)
 
     async def record_cuts(
         self, principal: Principal, grid_job_id: uuid.UUID, urls: Sequence[str]
@@ -1009,7 +942,6 @@ def _settled_job(
     conversation_id: uuid.UUID | None = None,
     task_id: uuid.UUID | None = None,
     source_job_id: uuid.UUID | None = None,
-    content_md5: str | None = None,
 ) -> GenerationJob:
     now = datetime.now(UTC)
     return GenerationJob(
@@ -1026,19 +958,13 @@ def _settled_job(
         status=STATUS_COMPLETED,
         provider_task_id=None,
         provider_status=None,
-        output=GenerationOutput(url=url, content_md5=content_md5),
+        output=GenerationOutput(url=url),
         error_code=None,
         error_message=None,
         created_at=now,
         submitted_at=None,
         finished_at=now,
     )
-
-
-def _settled_url(job: GenerationJob) -> str:
-    if job.output.url is None:
-        raise RuntimeError(f"记录 {job.id} 创建即完成却没有产物地址")
-    return job.output.url
 
 
 __all__ = [
@@ -1048,7 +974,6 @@ __all__ = [
     "GenerationService",
     "ProviderTarget",
     "SettledRecords",
-    "UploadRecord",
     "VideoEnhanceSpec",
     "VideoEnhancements",
 ]

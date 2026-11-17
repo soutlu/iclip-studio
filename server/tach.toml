@@ -115,6 +115,7 @@ depends_on = [
     "iclip.platform.media",
     "iclip.platform.object_store",
     "iclip.platform.outbound",
+    "iclip.platform.paging",
     "iclip.domains.identity",
 ]
 
@@ -134,7 +135,7 @@ depends_on = [
 path = "iclip.domains.tagging"
 depends_on = ["iclip.common", "iclip.domains.identity"]
 
-# 参考视频的拆解、上传记录都是端口，由组合根接到视频拆解与生成域上；标签经 tagging。
+# 参考视频的拆解、上传记录都是端口，由组合根接到视频拆解与上传域上；标签经 tagging。
 [[modules]]
 path = "iclip.domains.references"
 depends_on = [

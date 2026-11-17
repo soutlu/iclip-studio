@@ -16,7 +16,6 @@ from tests.helpers.generation import (
     image_request,
     make_cut,
     make_job,
-    make_upload,
 )
 
 Announced = tuple[
@@ -106,13 +105,12 @@ async def test_settled_rows_are_announced_once_when_they_land() -> None:
     live = _RecordingConnections()
     repo = AnnouncingGenerationRepository(InMemoryGenerationRepository(), live)
     grid = make_job(image_request(), conversation_id=uuid.uuid4())
-    cell = make_cut(grid)
-    upload = make_upload(owner_user_id=grid.owner_user_id)
+    cell, other_cell = make_cut(grid), make_cut(grid)
 
-    await repo.create_settled([cell, upload])
-    await repo.create_settled([upload])
+    await repo.create_settled([cell, other_cell])
+    await repo.create_settled([other_cell])
 
     assert [(one[1], one[2], one[4], one[5]) for one in live.announced] == [
         (grid.conversation_id, cell.id, "cut", "completed"),
-        (None, upload.id, "upload", "completed"),
+        (grid.conversation_id, other_cell.id, "cut", "completed"),
     ]

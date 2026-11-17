@@ -37,7 +37,6 @@ class AnnouncingGenerationRepository:
         owner: uuid.UUID | None,
         conversation_id: uuid.UUID | None,
         inherited: Inheritance = (),
-        operation: GenerationOperation | None = None,
     ) -> GenerationJob | None:
         return await self._inner.find_by_output(
             output_url,
@@ -45,14 +44,10 @@ class AnnouncingGenerationRepository:
             owner=owner,
             conversation_id=conversation_id,
             inherited=inherited,
-            operation=operation,
         )
 
     async def earliest_by_outputs(self, urls: Collection[str]) -> Mapping[str, GenerationJob]:
         return await self._inner.earliest_by_outputs(urls)
-
-    async def find_video_upload_by_md5(self, content_md5: str) -> GenerationJob | None:
-        return await self._inner.find_video_upload_by_md5(content_md5)
 
     async def latest_reference_trial(self, reference_id: uuid.UUID) -> GenerationJob | None:
         return await self._inner.latest_reference_trial(reference_id)

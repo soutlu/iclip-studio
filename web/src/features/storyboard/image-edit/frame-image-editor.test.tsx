@@ -5,6 +5,7 @@ import { useState, type ComponentProps } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Toaster, toast } from '@/shared/ui/toast'
 import { pasteFilesIntoComposer, pasteTextIntoComposer } from '@/testing/editor'
+import { makeMediaUpload } from '@/testing/media-upload'
 import { mockAuthUser } from '@/testing/mocks/auth-user'
 import { loginAs } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
@@ -93,7 +94,7 @@ function stallUpload() {
   server.use(
     http.post('*/api/uploads/:uploadId/confirm', async () => {
       await held
-      return HttpResponse.json({ contentType: 'image/png', sizeBytes: 5, url: UPLOADED })
+      return HttpResponse.json(makeMediaUpload({ url: UPLOADED }))
     }),
   )
   return () => release()

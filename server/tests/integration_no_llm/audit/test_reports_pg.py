@@ -29,7 +29,6 @@ from iclip.domains.generation.schemas import (
     OPERATION_ENHANCE,
     OPERATION_GENERATE,
     OPERATION_RENDER,
-    OPERATION_UPLOAD,
 )
 from iclip.domains.tracking.models import VIDEO_DOWNLOADED
 from iclip.platform.db.engine import build_engine
@@ -820,17 +819,16 @@ async def test_videos_of_an_owner_without_username_count_overall_only(
     assert [(shot.shot, shot.attempts) for shot in executions[conversation_id].shots] == [(1, 1)]
 
 
-async def test_uploads_and_cuts_do_not_count_toward_any_metric(
+async def test_cuts_do_not_count_toward_any_metric(
     reports: FreshReports, service: AuditService, seed: Seed, engine: AsyncEngine
 ) -> None:
     before = await reports.overall(Scope(since=EVER))
     before_users = await reports.by_user(Scope(since=EVER))
     before_executions = await executions_by_id(service)
-    grid, cell, upload = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    grid, cell = uuid.uuid4(), uuid.uuid4()
     at = ago(hours=1)
     async with engine.begin() as conn:
         for job_id, conversation_id, kind, operation, request, source in (
-            (upload, None, KIND_VIDEO, OPERATION_UPLOAD, None, None),
             (grid, seed.c1, KIND_IMAGE, OPERATION_GENERATE, '{"prompt": "p"}', None),
             (cell, seed.c1, KIND_IMAGE, OPERATION_CUT, None, grid),
         ):
@@ -1275,16 +1273,6 @@ async def test_audio_records_do_not_count_toward_any_metric(
         }
         for status in (STATUS_COMPLETED, STATUS_FAILED, STATUS_SUBMITTED)
     ]
-    rows.append(
-        {
-            "conversation_id": None,
-            "operation": OPERATION_UPLOAD,
-            "request": None,
-            "status": STATUS_COMPLETED,
-            "output": json.dumps({"url": "https://example.test/u.mp3"}),
-            "finished_at": at,
-        }
-    )
     async with engine.begin() as conn:
         for row in rows:
             await conn.execute(

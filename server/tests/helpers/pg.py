@@ -25,6 +25,7 @@ APP_TABLES = (
     "iclip.tasks",
     "iclip.task_assignees",
     "iclip.generation_jobs",
+    "iclip.media_uploads",
     "iclip.tracking_events",
     "iclip.inspiration_videos",
     "iclip.reference_videos",

@@ -5089,7 +5089,6 @@
               "generate",
               "compose",
               "cut",
-              "upload",
               "render",
               "enhance"
             ],
@@ -12655,7 +12654,7 @@
       },
       "UploadConfirmIn": {
         "additionalProperties": false,
-        "description": "确认上传时可选的请求体：替谁确认，音乐挂到哪段对话。",
+        "description": "确认上传时可选的请求体：替谁确认，挂到哪段对话，图片多大（签名时报的那两个数）。",
         "properties": {
           "conversationId": {
             "anyOf": [
@@ -12669,6 +12668,18 @@
             ],
             "title": "Conversationid"
           },
+          "height": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
           "userName": {
             "anyOf": [
               {
@@ -12681,34 +12692,21 @@
               }
             ],
             "title": "Username"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
           }
         },
         "title": "UploadConfirmIn",
-        "type": "object"
-      },
-      "UploadConfirmedOut": {
-        "additionalProperties": false,
-        "description": "确认后交回的地址与桶里读到的事实；``url`` 从此就是这个文件的身份。",
-        "properties": {
-          "contentType": {
-            "title": "Contenttype",
-            "type": "string"
-          },
-          "sizeBytes": {
-            "title": "Sizebytes",
-            "type": "integer"
-          },
-          "url": {
-            "title": "Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "url",
-          "contentType",
-          "sizeBytes"
-        ],
-        "title": "UploadConfirmedOut",
         "type": "object"
       },
       "UploadInstruction": {
@@ -12744,6 +12742,116 @@
           "expiresAt"
         ],
         "title": "UploadInstruction",
+        "type": "object"
+      },
+      "UploadOut": {
+        "additionalProperties": false,
+        "description": "上传台账里的一条。``url`` 从此就是这个文件的身份；视频按 MD5 去重时是最早那份的地址。\n\n``contentType`` 与 ``sizeBytes`` 只有台账建立以前的旧上传为空。``width`` / ``height`` 是图片\n确认时报的宽高，没报的、别的种类为空。确认上传不量时长，``durationMs`` 为空。",
+        "properties": {
+          "contentType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contenttype"
+          },
+          "conversationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversationid"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationms"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "image",
+              "video",
+              "audio"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "sizeBytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sizebytes"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "url",
+          "contentType",
+          "sizeBytes",
+          "durationMs",
+          "width",
+          "height",
+          "conversationId",
+          "createdAt"
+        ],
+        "title": "UploadOut",
         "type": "object"
       },
       "UploadSignIn": {
@@ -12805,6 +12913,23 @@
           "upload"
         ],
         "title": "UploadTicketOut",
+        "type": "object"
+      },
+      "UploadsPageOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UploadOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "UploadsPageOut",
         "type": "object"
       },
       "UsageOut": {
@@ -18569,6 +18694,112 @@
         ]
       }
     },
+    "/conversations/{conversation_id}/uploads": {
+      "get": {
+        "description": "挂在这段对话上的上传，新的在前；含经分叉继承来的（祖先对话在分叉时刻以前挂上的）。\n\n读不到这段对话 ``404``。``kind`` 按种类筛。用上一页最后一条的 ``id`` 作 ``before`` 往后翻，\n``before`` 指的上传不存在也是 ``404``。",
+        "operationId": "list_conversation_uploads_conversations__conversation_id__uploads_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "image",
+                    "video",
+                    "audio"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadsPageOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "List Conversation Uploads",
+        "tags": [
+          "uploads"
+        ]
+      }
+    },
     "/conversations/{conversation_id}/whole-film/exports": {
       "post": {
         "description": "按 final-cut 导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；\n还没有主文件 ``final-cut/index.html``、要导的语言没有值表 ``final-cut/locales/<语言>.json``、\n没开通都是 422。没有请求体或 ``locale`` 为 null 时导出原文。主文件里的素材按输出地址对上\n生成记录的记进导出记录，对不上的不记、也不拒绝。导出的是交给渲染服务那一刻的工程。",
@@ -19257,7 +19488,7 @@
     },
     "/generations": {
       "get": {
-        "description": "给了 ``conversationId`` / ``taskId`` / ``shotIndex`` / ``rootJobId`` / ``sourceJobId`` 就\n只列那段对话、那张需求单下、那个镜号、以那条为原作或直接来源的记录；``kind`` /\n``operation`` 按种类与操作筛。按对话列时含这段对话经分叉继承的记录（调用方读得到这段\n对话才算），其余可见性口径不变。\n\n``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。\n\n按属主列会看到上传记录，按对话列图片会看到切图记录；只要调模型的，按 ``operation=generate`` 筛。\n素材片的字幕记录是种类 ``subtitle``、来源是那条素材片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。\n一段对话的背景音乐按 ``kind=audio`` 与 ``conversationId`` 找，生成的与确认时挂到这段对话的上传\n都在里面；没挂对话的上传按属主列。",
+        "description": "给了 ``conversationId`` / ``taskId`` / ``shotIndex`` / ``rootJobId`` / ``sourceJobId`` 就\n只列那段对话、那张需求单下、那个镜号、以那条为原作或直接来源的记录；``kind`` /\n``operation`` 按种类与操作筛。按对话列时含这段对话经分叉继承的记录（调用方读得到这段\n对话才算），其余可见性口径不变。\n\n``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。\n\n生成记录只记生成，对话的上传在 ``GET /conversations/{id}/uploads`` 里列。按对话列图片会看到\n切图记录；只要调模型的，按 ``operation=generate`` 筛。素材片的字幕记录是种类 ``subtitle``、\n来源是那条素材片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。一段对话生成的背景音乐按\n``kind=audio`` 与 ``conversationId`` 找。",
         "operationId": "list_generations_generations_get",
         "parameters": [
           {
@@ -19360,7 +19591,6 @@
                     "generate",
                     "compose",
                     "cut",
-                    "upload",
                     "render",
                     "enhance"
                   ],
@@ -19537,7 +19767,7 @@
     },
     "/generations/image": {
       "post": {
-        "description": "提交一次图片生成。``userName`` 的规则与视频相同。\n\n帧图编辑带 ``sourceUrl``（底图地址）：先在本对话及它继承的图片里找，再找调用方可见的上传，\n找到记 ``sourceJobId``，找不到记外部地址；回来的 ``sourceUrl`` 都是这个地址。它不进\n``request``、不发上游。",
+        "description": "提交一次图片生成。``userName`` 的规则与视频相同。\n\n帧图编辑带 ``sourceUrl``（底图地址）：在本对话及它继承的生成图片里找，找到记\n``sourceJobId``，找不到（上传的图、外链）记这个地址；回来的 ``sourceUrl`` 都是这个地址。它不进\n``request``、不发上游。",
         "operationId": "submit_image_generations_image_post",
         "requestBody": {
           "content": {
@@ -19823,7 +20053,7 @@
     },
     "/generations/video-edits": {
       "post": {
-        "description": "为素材片上的区间生成替换片段。参考视频为空时图生，有一条时编辑；模型与两种模式的时长\n能力由 video-models 声明。图生必须引用图片并指定整秒时长；编辑参考须为本人上传的视频，\n实测时长要满足模型限制，seconds 固定为 -1。不合格 422、不入队。\n\nsource_job_id 与 range_start_ms / range_end_ms 记下基底与替换区间，使用基底媒体时间，\n独立于生成时长。基底须为本对话自己的或继承来的已完成素材片，区间须在其时长之内。\nuser_name 的规则同出片。",
+        "description": "为素材片上的区间生成替换片段。参考视频为空时图生，有一条时编辑；模型与两种模式的时长\n能力由 video-models 声明。图生必须引用图片并指定整秒时长；编辑参考须为本人上传的视频\n或资料库里一条没移除的参考视频，实测时长要满足模型限制，seconds 固定为 -1。不合格 422、不入队。\n\nsource_job_id 与 range_start_ms / range_end_ms 记下基底与替换区间，使用基底媒体时间，\n独立于生成时长。基底须为本对话自己的或继承来的已完成素材片，区间须在其时长之内。\nuser_name 的规则同出片。",
         "operationId": "submit_video_edit_generations_video_edits_post",
         "requestBody": {
           "content": {
@@ -20009,7 +20239,7 @@
     },
     "/generations/{job_id}": {
       "get": {
-        "description": "一条可见的生成记录。上传记录的 id 就是确认上传时的 ``uploadId``。",
+        "description": "一条可见的生成记录。",
         "operationId": "get_generation_generations__job_id__get",
         "parameters": [
           {
@@ -25068,7 +25298,7 @@
     },
     "/uploads/{upload_id}/confirm": {
       "post": {
-        "description": "按桶里的对象核对类型与大小，通过后记一条上传记录（id 就是 ``uploadId``），交回地址。\n同一个视频文件已经传过，交回最早那份的地址。\n\n请求体可选。``userName`` 给了按替人办事换主体（浏览器只能写自己），不给就记在当前主体名下。\n``conversationId`` 把音乐挂到那段对话：别的类型 422，对话看不见 404，不是属主或已删除 403。\n可重复调：记过就交回记录上的地址，返回同一条记录，第二次的 ``userName`` 与\n``conversationId`` 都不改记录。",
+        "description": "按桶里的对象核对类型与大小，通过后记进上传台账（id 就是 ``uploadId``）：大小、内容类型与\nMD5 取对象存储报的，时长不量。同一个视频文件已经传过，交回最早那份的地址。\n\n请求体可选。``userName`` 给了按替人办事换主体（浏览器只能写自己），不给就记在当前主体名下。\n``conversationId`` 把这次上传挂到那段对话（任何种类都行）：对话看不见 404，不是属主或已删除\n403。``width`` / ``height`` 是图片签名时报的宽高，两个都给才记，越界 422；别的种类不记。\n可重复调：记过就原样交回那一条，第二次的请求体都不改记录。",
         "operationId": "confirm_upload_uploads__upload_id__confirm_post",
         "parameters": [
           {
@@ -25104,7 +25334,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UploadConfirmedOut"
+                  "$ref": "#/components/schemas/UploadOut"
                 }
               }
             },

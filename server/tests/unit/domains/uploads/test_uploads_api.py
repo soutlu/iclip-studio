@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from io import BytesIO
 from typing import NoReturn
 
@@ -19,7 +20,8 @@ from iclip.domains.uploads.models import (
     MAX_BYTES,
     MAX_LONG_EDGE_PIXELS,
     MIN_SHORT_EDGE_PIXELS,
-    MediaKind,
+    Inheritance,
+    MediaUpload,
 )
 from iclip.domains.uploads.service import UploadService
 from iclip.platform.object_store.direct_upload import API_KEY_HEADER, UPLOADER_HEADER
@@ -29,7 +31,7 @@ from iclip.platform.outbound.guard import FetchFailed
 from tests.helpers.app import app_with_principal
 from tests.helpers.identity import InMemoryUserRepository
 from tests.helpers.media import multi_picture_jpeg
-from tests.helpers.uploads import FakeBucket
+from tests.helpers.uploads import FakeBucket, InMemoryUploadRepository
 
 
 def uploader(user_id: uuid.UUID | None = None, *, api_key_id: uuid.UUID | None = None) -> Principal:
@@ -42,39 +44,6 @@ def uploader(user_id: uuid.UUID | None = None, *, api_key_id: uuid.UUID | None =
         username="tester",
         key_name=None if api_key_id is None else "gateway",
     )
-
-
-@dataclass(frozen=True)
-class Recorded:
-    url: str
-    object_upload_id: uuid.UUID
-
-
-RecordCall = tuple[Principal, uuid.UUID, MediaKind, str, str | None]
-
-
-@dataclass
-class RecordedUploads:
-    calls: list[RecordCall] = field(default_factory=list[RecordCall])
-    rows: dict[uuid.UUID, Recorded] = field(default_factory=dict[uuid.UUID, Recorded])
-    earlier: Recorded | None = None
-
-    async def record(
-        self,
-        principal: Principal,
-        *,
-        upload_id: uuid.UUID,
-        kind: MediaKind,
-        url: str,
-        content_md5: str | None,
-        conversation_id: uuid.UUID | None,
-    ) -> Recorded:
-        assert conversation_id is None, "挂对话的确认在集成测试里覆盖"
-        self.calls.append((principal, upload_id, kind, url, content_md5))
-        return self.rows.setdefault(upload_id, self.earlier or Recorded(url, upload_id))
-
-    async def find(self, upload_id: uuid.UUID) -> Recorded | None:
-        return self.rows.get(upload_id)
 
 
 @dataclass
@@ -94,18 +63,31 @@ async def no_conversation(_principal: Principal, _conversation_id: uuid.UUID) ->
     raise AssertionError("挂对话的确认在集成测试里覆盖")
 
 
+class NoLineage:
+    async def ancestry(self, conversation_id: uuid.UUID) -> Inheritance:
+        raise AssertionError("列上传在集成测试里覆盖")
+
+    async def readable(self, principal: Principal, conversation_id: uuid.UUID) -> bool:
+        raise AssertionError("列上传在集成测试里覆盖")
+
+
+def upload_service(
+    bucket: FakeBucket, repo: InMemoryUploadRepository, *, fetch: FakeFetch | None = None
+) -> UploadService:
+    return UploadService(
+        bucket,
+        repo,
+        fetch=fetch or FakeFetch(),
+        conversation_writable=no_conversation,
+        lineage=NoLineage(),
+    )
+
+
 def build_test_app(
-    bucket: FakeBucket, *, granted: Principal | None, recorded: RecordedUploads | None = None
+    bucket: FakeBucket, *, granted: Principal | None, repo: InMemoryUploadRepository | None = None
 ) -> FastAPI:
     app = app_with_principal(granted)
-    records = recorded or RecordedUploads()
-    service = UploadService(
-        bucket,
-        record=records.record,
-        find_recorded=records.find,
-        fetch=FakeFetch(),
-        conversation_writable=no_conversation,
-    )
+    service = upload_service(bucket, repo or InMemoryUploadRepository())
     app.include_router(create_uploads_router(service, act_as=ActAs(InMemoryUserRepository())))
     return app
 
@@ -129,8 +111,10 @@ async def sign(
     return await http.post("/uploads/sign", json=body)
 
 
-async def confirm(http: httpx.AsyncClient, upload_id: str) -> httpx.Response:
-    return await http.post(f"/uploads/{upload_id}/confirm")
+async def confirm(
+    http: httpx.AsyncClient, upload_id: str, body: dict[str, object] | None = None
+) -> httpx.Response:
+    return await http.post(f"/uploads/{upload_id}/confirm", json=body)
 
 
 @pytest.mark.parametrize("path", ["/uploads/sign", f"/uploads/{uuid.uuid4()}/confirm"])
@@ -223,10 +207,78 @@ async def test_video_needs_no_size() -> None:
         assert (await sign(http, "video/mp4", width=None, height=None)).status_code == 200
 
 
+@pytest.mark.parametrize(
+    ("content_type", "ext", "width", "height"),
+    [
+        ("image/png", "png", 1200, 1600),
+        ("video/mp4", "mp4", None, None),
+        ("audio/mpeg", "mp3", None, None),
+    ],
+    ids=["图片记报上来的宽高", "视频不记宽高", "音频不记宽高"],
+)
+async def test_confirming_records_what_the_bucket_reports_and_the_images_reported_size(
+    content_type: str, ext: str, width: int | None, height: int | None
+) -> None:
+    bucket, repo = FakeBucket(), InMemoryUploadRepository()
+    me = uuid.uuid4()
+    app = build_test_app(bucket, granted=uploader(me), repo=repo)
+    async with client(app) as http:
+        upload_id = (await sign(http, content_type)).json()["uploadId"]
+        key = f"iclip/agent/uploads/{upload_id}.{ext}"
+        bucket.put(key, content_type=content_type, size_bytes=4096)
+        response = await confirm(http, upload_id, {"width": 1200, "height": 1600})
+
+    assert response.status_code == 200, response.text
+    stored = repo.rows[uuid.UUID(upload_id)]
+    assert response.json() == {
+        "id": upload_id,
+        "kind": stored.kind,
+        "url": bucket.public_url(key),
+        "contentType": content_type,
+        "sizeBytes": 4096,
+        "durationMs": None,
+        "width": width,
+        "height": height,
+        "conversationId": None,
+        "createdAt": stored.created_at.isoformat().replace("+00:00", "Z"),
+    }
+    assert (stored.owner_user_id, stored.duration_ms, stored.width, stored.height) == (
+        me,
+        None,
+        width,
+        height,
+    ), "确认时不量时长"
+
+
+async def test_an_image_confirmed_without_its_size_is_recorded_without_one() -> None:
+    bucket, repo = FakeBucket(), InMemoryUploadRepository()
+    app = build_test_app(bucket, granted=uploader(), repo=repo)
+    async with client(app) as http:
+        upload_id = (await sign(http)).json()["uploadId"]
+        bucket.put(f"iclip/agent/uploads/{upload_id}.jpg", content_type="image/jpeg")
+        response = await confirm(http, upload_id)
+
+    assert response.status_code == 200, response.text
+    assert (response.json()["width"], response.json()["height"]) == (None, None)
+
+
+async def test_an_image_size_out_of_range_at_confirm_is_refused_and_not_recorded() -> None:
+    bucket, repo = FakeBucket(), InMemoryUploadRepository()
+    app = build_test_app(bucket, granted=uploader(), repo=repo)
+    async with client(app) as http:
+        upload_id = (await sign(http)).json()["uploadId"]
+        bucket.put(f"iclip/agent/uploads/{upload_id}.jpg", content_type="image/jpeg")
+        response = await confirm(
+            http, upload_id, {"width": MIN_SHORT_EDGE_PIXELS - 1, "height": 1600}
+        )
+
+    assert response.status_code == 422
+    assert repo.rows == {}
+
+
 async def test_music_over_its_own_limit_is_refused() -> None:
-    bucket = FakeBucket()
-    recorded = RecordedUploads()
-    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
+    bucket, repo = FakeBucket(), InMemoryUploadRepository()
+    app = build_test_app(bucket, granted=uploader(), repo=repo)
     async with client(app) as http:
         upload_id = (await sign(http, "audio/mpeg", width=None, height=None)).json()["uploadId"]
         bucket.put(
@@ -239,13 +291,12 @@ async def test_music_over_its_own_limit_is_refused() -> None:
     assert MAX_BYTES["audio"] == 50 * 1024 * 1024
     assert response.status_code == 422
     assert "50MB" in response.json()["detail"]
-    assert recorded.calls == [], "核对不过不记录"
+    assert repo.rows == {}, "核对不过不记录"
 
 
 async def test_oversized_upload_is_refused() -> None:
-    bucket = FakeBucket()
-    recorded = RecordedUploads()
-    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
+    bucket, repo = FakeBucket(), InMemoryUploadRepository()
+    app = build_test_app(bucket, granted=uploader(), repo=repo)
     async with client(app) as http:
         upload_id = (await sign(http)).json()["uploadId"]
         bucket.put(
@@ -256,20 +307,19 @@ async def test_oversized_upload_is_refused() -> None:
         response = await confirm(http, upload_id)
 
     assert response.status_code == 422
-    assert recorded.calls == [], "核对不过不记录"
+    assert repo.rows == {}, "核对不过不记录"
 
 
 async def test_unexpected_type_in_the_bucket_is_refused() -> None:
-    bucket = FakeBucket()
-    recorded = RecordedUploads()
-    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
+    bucket, repo = FakeBucket(), InMemoryUploadRepository()
+    app = build_test_app(bucket, granted=uploader(), repo=repo)
     async with client(app) as http:
         upload_id = (await sign(http)).json()["uploadId"]
         bucket.put(f"iclip/agent/uploads/{upload_id}.jpg", content_type="application/pdf")
         response = await confirm(http, upload_id)
 
     assert response.status_code == 422
-    assert recorded.calls == [], "核对不过不记录"
+    assert repo.rows == {}, "核对不过不记录"
 
 
 MD5_ETAG = "0123456789ABCDEF0123456789ABCDEF"
@@ -290,9 +340,8 @@ MD5_ETAG = "0123456789ABCDEF0123456789ABCDEF"
 async def test_ineligible_uploads_are_recorded_without_md5(
     content_type: str, ext: str, etag: str | None, object_type: str | None
 ) -> None:
-    bucket = FakeBucket()
-    recorded = RecordedUploads()
-    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
+    bucket, repo = FakeBucket(), InMemoryUploadRepository()
+    app = build_test_app(bucket, granted=uploader(), repo=repo)
     async with client(app) as http:
         upload_id = (await sign(http, content_type)).json()["uploadId"]
         key = f"iclip/agent/uploads/{upload_id}.{ext}"
@@ -301,22 +350,37 @@ async def test_ineligible_uploads_are_recorded_without_md5(
 
     assert response.status_code == 200, response.text
     assert response.json()["url"] == bucket.public_url(key)
-    ((_, _, _, _, content_md5),) = recorded.calls
-    assert content_md5 is None
+    assert repo.rows[uuid.UUID(upload_id)].content_md5 is None
 
 
-def seed_earlier(bucket: FakeBucket, *, size_bytes: int = 70) -> Recorded:
+async def seed_earlier(bucket: FakeBucket, repo: InMemoryUploadRepository) -> MediaUpload:
     first = uuid.uuid4()
     key = f"iclip/agent/uploads/{first}.mp4"
-    bucket.put(key, content_type="video/mp4", size_bytes=size_bytes, etag=MD5_ETAG)
-    return Recorded(bucket.public_url(key), first)
+    bucket.put(key, content_type="video/mp4", size_bytes=70, etag=MD5_ETAG)
+    return await repo.insert(
+        MediaUpload(
+            id=first,
+            owner_user_id=uuid.uuid4(),
+            api_key_id=None,
+            conversation_id=None,
+            kind="video",
+            url=bucket.public_url(key),
+            content_type="video/mp4",
+            size_bytes=70,
+            duration_ms=30_000,
+            width=1080,
+            height=1920,
+            content_md5=MD5_ETAG.lower(),
+            created_at=datetime.now(UTC),
+        )
+    )
 
 
 async def test_a_duplicate_hands_back_the_earlier_address_and_drops_this_copy() -> None:
-    bucket = FakeBucket()
-    earlier = seed_earlier(bucket)
-    recorded = RecordedUploads(earlier=earlier)
-    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
+    bucket, repo = FakeBucket(), InMemoryUploadRepository()
+    earlier = await seed_earlier(bucket, repo)
+    me = uuid.uuid4()
+    app = build_test_app(bucket, granted=uploader(me), repo=repo)
     async with client(app) as http:
         upload_id = (await sign(http, "video/quicktime")).json()["uploadId"]
         key = f"iclip/agent/uploads/{upload_id}.mov"
@@ -324,17 +388,72 @@ async def test_a_duplicate_hands_back_the_earlier_address_and_drops_this_copy() 
         response = await confirm(http, upload_id)
 
     assert response.status_code == 200, response.text
-    assert response.json() == {"url": earlier.url, "contentType": "video/mp4", "sizeBytes": 70}
+    body = response.json()
+    assert (body["id"], body["url"], body["contentType"], body["sizeBytes"]) == (
+        upload_id,
+        earlier.url,
+        "video/mp4",
+        70,
+    )
     assert key not in bucket.objects, "本次的对象删掉了"
-    assert f"iclip/agent/uploads/{earlier.object_upload_id}.mp4" in bucket.objects
+    assert f"iclip/agent/uploads/{earlier.id}.mp4" in bucket.objects
+    mine = repo.rows[uuid.UUID(upload_id)]
+    assert (mine.owner_user_id, mine.url, mine.content_md5) == (
+        me,
+        earlier.url,
+        earlier.content_md5,
+    )
+
+
+class LateRepository(InMemoryUploadRepository):
+    """第一次按 id 读时还没看到那条：同一个 uploadId 的另一次确认正好在这之后记下了它。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.missed = False
+
+    async def get(self, upload_id: uuid.UUID) -> MediaUpload | None:
+        if not self.missed:
+            self.missed = True
+            return None
+        return await super().get(upload_id)
+
+
+async def test_a_concurrent_confirm_of_the_same_video_keeps_its_object() -> None:
+    bucket, repo = FakeBucket(), LateRepository()
+    me = uploader()
+    upload_id = uuid.uuid4()
+    key = f"iclip/agent/uploads/{upload_id}.mp4"
+    bucket.put(key, content_type="video/mp4", etag=MD5_ETAG)
+    first = await repo.insert(
+        MediaUpload(
+            id=upload_id,
+            owner_user_id=me.user_id,
+            api_key_id=None,
+            conversation_id=None,
+            kind="video",
+            url=bucket.public_url(key),
+            content_type="video/mp4",
+            size_bytes=1024,
+            duration_ms=None,
+            width=None,
+            height=None,
+            content_md5=MD5_ETAG.lower(),
+            created_at=datetime.now(UTC),
+        )
+    )
+
+    confirmed = await upload_service(bucket, repo).confirm(me, upload_id)
+
+    assert confirmed == first
+    assert key in bucket.objects, "找到的是自己，不当重复的那份删掉"
 
 
 async def test_a_copy_that_cannot_be_dropped_still_confirms_and_leaves_a_warning() -> None:
-    bucket = FakeBucket()
+    bucket, repo = FakeBucket(), InMemoryUploadRepository()
     bucket.delete_fails = True
-    earlier = seed_earlier(bucket)
-    recorded = RecordedUploads(earlier=earlier)
-    app = build_test_app(bucket, granted=uploader(), recorded=recorded)
+    earlier = await seed_earlier(bucket, repo)
+    app = build_test_app(bucket, granted=uploader(), repo=repo)
     async with client(app) as http:
         upload_id = (await sign(http, "video/mp4", width=None, height=None)).json()["uploadId"]
         key = f"iclip/agent/uploads/{upload_id}.mp4"
@@ -361,24 +480,17 @@ def picture(width: int = 1200, height: int = 1600, fmt: str = "PNG") -> bytes:
 
 
 def importer(
-    fetch: FakeFetch, *, bucket: FakeBucket | None = None, records: RecordedUploads | None = None
-) -> tuple[UploadService, FakeBucket, RecordedUploads]:
+    fetch: FakeFetch, *, bucket: FakeBucket | None = None
+) -> tuple[UploadService, FakeBucket, InMemoryUploadRepository]:
     bucket = bucket or FakeBucket()
-    records = records or RecordedUploads()
-    service = UploadService(
-        bucket,
-        record=records.record,
-        find_recorded=records.find,
-        fetch=fetch,
-        conversation_writable=no_conversation,
-    )
-    return service, bucket, records
+    repo = InMemoryUploadRepository()
+    return upload_service(bucket, repo, fetch=fetch), bucket, repo
 
 
 async def test_an_imported_image_is_stored_with_audit_metadata_and_recorded_as_an_upload() -> None:
     me, key_id, upload_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     fetch = FakeFetch(body=picture())
-    service, bucket, records = importer(fetch)
+    service, bucket, repo = importer(fetch)
     principal = uploader(me, api_key_id=key_id)
 
     url = await service.import_image(principal, EXTERNAL, upload_id=upload_id)
@@ -391,34 +503,51 @@ async def test_an_imported_image_is_stored_with_audit_metadata_and_recorded_as_a
         picture(),
         {UPLOADER_HEADER: str(me), API_KEY_HEADER: str(key_id)},
     )
-    assert records.calls == [(principal, upload_id, "image", url, None)]
+    stored = repo.rows[upload_id]
+    assert (
+        stored.owner_user_id,
+        stored.api_key_id,
+        stored.conversation_id,
+        stored.kind,
+        stored.url,
+        stored.content_type,
+        stored.size_bytes,
+        stored.width,
+        stored.height,
+        stored.duration_ms,
+    ) == (me, key_id, None, "image", url, "image/png", len(picture()), 1200, 1600, None)
 
 
 async def test_a_multi_picture_jpeg_from_a_phone_is_stored_as_jpg() -> None:
     upload_id = uuid.uuid4()
-    service, bucket, records = importer(FakeFetch(body=multi_picture_jpeg()))
+    service, bucket, repo = importer(FakeFetch(body=multi_picture_jpeg()))
 
     url = await service.import_image(uploader(), EXTERNAL, upload_id=upload_id)
 
     object_key = f"iclip/agent/uploads/{upload_id}.jpg"
     assert url == f"https://cdn.test/{object_key}"
     assert bucket.objects[object_key].content_type == "image/jpeg"
-    assert [call[2] for call in records.calls] == ["image"]
+    assert (repo.rows[upload_id].kind, repo.rows[upload_id].content_type) == (
+        "image",
+        "image/jpeg",
+    )
 
 
 async def test_an_upload_already_recorded_is_handed_back_without_downloading() -> None:
     upload_id = uuid.uuid4()
     fetch = FakeFetch(body=picture())
-    records = RecordedUploads()
-    records.rows[upload_id] = Recorded("https://cdn.test/iclip/agent/uploads/x.png", upload_id)
-    service, bucket, _ = importer(fetch, records=records)
+    service, bucket, repo = importer(fetch)
+    await service.import_image(uploader(), EXTERNAL, upload_id=upload_id)
+    first_url = repo.rows[upload_id].url
+    fetch.calls.clear()
+    bucket.written.clear()
 
     url = await service.import_image(uploader(), EXTERNAL, upload_id=upload_id)
 
-    assert url == "https://cdn.test/iclip/agent/uploads/x.png"
+    assert url == first_url
     assert fetch.calls == []
     assert bucket.written == {}
-    assert records.calls == []
+    assert list(repo.rows) == [upload_id]
 
 
 @pytest.mark.parametrize(
@@ -445,21 +574,21 @@ async def test_an_upload_already_recorded_is_handed_back_without_downloading() -
 async def test_an_image_that_does_not_pass_is_refused_and_nothing_is_kept(
     fetch: FakeFetch, reason: str
 ) -> None:
-    service, bucket, records = importer(fetch)
+    service, bucket, repo = importer(fetch)
 
     with pytest.raises(ValidationFailed, match=reason):
         await service.import_image(uploader(), EXTERNAL, upload_id=uuid.uuid4())
 
     assert bucket.written == {}
-    assert records.calls == []
+    assert repo.rows == {}
 
 
 async def test_a_bucket_write_failure_stays_an_object_store_error() -> None:
     bucket = FakeBucket()
     bucket.put_fails = True
-    service, _, records = importer(FakeFetch(body=picture()), bucket=bucket)
+    service, _, repo = importer(FakeFetch(body=picture()), bucket=bucket)
 
     with pytest.raises(ObjectStoreUnavailable):
         await service.import_image(uploader(), EXTERNAL, upload_id=uuid.uuid4())
 
-    assert records.calls == []
+    assert repo.rows == {}

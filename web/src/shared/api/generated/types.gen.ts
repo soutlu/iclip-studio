@@ -2924,7 +2924,7 @@ export type GenerationOut = {
   /**
    * Operation
    */
-  operation: 'generate' | 'compose' | 'cut' | 'upload' | 'render' | 'enhance'
+  operation: 'generate' | 'compose' | 'cut' | 'render' | 'enhance'
   /**
    * Outputurl
    */
@@ -6751,7 +6751,7 @@ export type TurnUsage = {
 /**
  * UploadConfirmIn
  *
- * 确认上传时可选的请求体：替谁确认，音乐挂到哪段对话。
+ * 确认上传时可选的请求体：替谁确认，挂到哪段对话，图片多大（签名时报的那两个数）。
  */
 export type UploadConfirmIn = {
   /**
@@ -6759,29 +6759,17 @@ export type UploadConfirmIn = {
    */
   conversationId?: string | null
   /**
+   * Height
+   */
+  height?: number | null
+  /**
    * Username
    */
   userName?: string | null
-}
-
-/**
- * UploadConfirmedOut
- *
- * 确认后交回的地址与桶里读到的事实；``url`` 从此就是这个文件的身份。
- */
-export type UploadConfirmedOut = {
   /**
-   * Contenttype
+   * Width
    */
-  contentType: string
-  /**
-   * Sizebytes
-   */
-  sizeBytes: number
-  /**
-   * Url
-   */
-  url: string
+  width?: number | null
 }
 
 /**
@@ -6811,6 +6799,57 @@ export type UploadInstruction = {
    * Url
    */
   url: string
+}
+
+/**
+ * UploadOut
+ *
+ * 上传台账里的一条。``url`` 从此就是这个文件的身份；视频按 MD5 去重时是最早那份的地址。
+ *
+ * ``contentType`` 与 ``sizeBytes`` 只有台账建立以前的旧上传为空。``width`` / ``height`` 是图片
+ * 确认时报的宽高，没报的、别的种类为空。确认上传不量时长，``durationMs`` 为空。
+ */
+export type UploadOut = {
+  /**
+   * Contenttype
+   */
+  contentType: string | null
+  /**
+   * Conversationid
+   */
+  conversationId: string | null
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Durationms
+   */
+  durationMs: number | null
+  /**
+   * Height
+   */
+  height: number | null
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Kind
+   */
+  kind: 'image' | 'video' | 'audio'
+  /**
+   * Sizebytes
+   */
+  sizeBytes: number | null
+  /**
+   * Url
+   */
+  url: string
+  /**
+   * Width
+   */
+  width: number | null
 }
 
 /**
@@ -6847,6 +6886,16 @@ export type UploadTicketOut = {
    * Uploadid
    */
   uploadId: string
+}
+
+/**
+ * UploadsPageOut
+ */
+export type UploadsPageOut = {
+  /**
+   * Items
+   */
+  items: Array<UploadOut>
 }
 
 /**
@@ -9803,6 +9852,51 @@ export type RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostRespon
 export type RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponse =
   RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponses[keyof RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponses]
 
+export type ListConversationUploadsConversationsConversationIdUploadsGetData = {
+  body?: never
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: {
+    /**
+     * Limit
+     */
+    limit?: number
+    /**
+     * Kind
+     */
+    kind?: 'image' | 'video' | 'audio' | null
+    /**
+     * Before
+     */
+    before?: string | null
+  }
+  url: '/conversations/{conversation_id}/uploads'
+}
+
+export type ListConversationUploadsConversationsConversationIdUploadsGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ListConversationUploadsConversationsConversationIdUploadsGetError =
+  ListConversationUploadsConversationsConversationIdUploadsGetErrors[keyof ListConversationUploadsConversationsConversationIdUploadsGetErrors]
+
+export type ListConversationUploadsConversationsConversationIdUploadsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: UploadsPageOut
+}
+
+export type ListConversationUploadsConversationsConversationIdUploadsGetResponse =
+  ListConversationUploadsConversationsConversationIdUploadsGetResponses[keyof ListConversationUploadsConversationsConversationIdUploadsGetResponses]
+
 export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostData = {
   /**
    * Body
@@ -10218,7 +10312,7 @@ export type ListGenerationsGenerationsGetData = {
     /**
      * Operation
      */
-    operation?: 'generate' | 'compose' | 'cut' | 'upload' | 'render' | 'enhance' | null
+    operation?: 'generate' | 'compose' | 'cut' | 'render' | 'enhance' | null
     /**
      * Rootjobid
      *
@@ -13177,7 +13271,7 @@ export type ConfirmUploadUploadsUploadIdConfirmPostResponses = {
   /**
    * Successful Response
    */
-  200: UploadConfirmedOut
+  200: UploadOut
 }
 
 export type ConfirmUploadUploadsUploadIdConfirmPostResponse =

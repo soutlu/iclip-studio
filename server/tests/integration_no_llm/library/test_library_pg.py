@@ -25,7 +25,6 @@ from iclip.domains.generation.schemas import (
     OPERATION_ENHANCE,
     OPERATION_GENERATE,
     OPERATION_RENDER,
-    OPERATION_UPLOAD,
     VideoEnhanceRequest,
     request_to_payload,
 )
@@ -688,36 +687,6 @@ async def test_a_reference_test_video_is_not_a_card(
     assert await ids(reports, Scope()) == [take, *before]
 
 
-async def test_a_video_upload_is_not_a_card_or_a_version(
-    engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
-) -> None:
-    before = await ids(reports, Scope())
-    before_c1 = shape(await reports.groups_of(seed.c1))
-    upload = uuid.uuid4()
-    async with engine.begin() as conn:
-        await conn.execute(
-            text(
-                "INSERT INTO iclip.generation_jobs (id, owner_user_id, kind, operation,"
-                " status, output, created_at, finished_at)"
-                " VALUES (:id, :owner, :kind, :operation, :status, CAST(:output AS jsonb),"
-                " :at, :at)"
-            ),
-            {
-                "id": upload,
-                "owner": seed.nora,
-                "kind": KIND_VIDEO,
-                "operation": OPERATION_UPLOAD,
-                "status": STATUS_COMPLETED,
-                "output": json.dumps({"url": url("uploaded")}),
-                "at": at(300),
-            },
-        )
-
-    assert await ids(reports, Scope()) == before
-    assert await reports.card_of(upload) is None
-    assert shape(await reports.groups_of(seed.c1)) == before_c1
-
-
 async def test_subtitle_records_are_not_cards_or_versions(
     engine: AsyncEngine, reports: PgLibraryReports, seed: Seed
 ) -> None:
@@ -761,45 +730,33 @@ async def test_audio_records_are_not_cards_or_versions(
 ) -> None:
     before = await ids(reports, Scope())
     before_c1 = shape(await reports.groups_of(seed.c1))
-    generated, uploaded = uuid.uuid4(), uuid.uuid4()
+    generated = uuid.uuid4()
     async with engine.begin() as conn:
-        for record, conversation, operation, request, duration_ms in (
-            (
-                generated,
-                seed.c1,
-                OPERATION_GENERATE,
-                json.dumps({"model": "m", "prompt": "轻快"}),
-                30_000,
+        await conn.execute(
+            text(
+                "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
+                " operation, provider, request, status, output,"
+                " created_at, finished_at)"
+                " VALUES (:id, :owner, :conversation, :kind, :operation, 'qwen_music',"
+                " CAST(:request AS jsonb), :status, CAST(:output AS jsonb), :at, :at)"
             ),
-            (uploaded, None, OPERATION_UPLOAD, None, None),
-        ):
-            await conn.execute(
-                text(
-                    "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
-                    " operation, provider, request, status, output,"
-                    " created_at, finished_at)"
-                    " VALUES (:id, :owner, :conversation, :kind, :operation, 'qwen_music',"
-                    " CAST(:request AS jsonb), :status, CAST(:output AS jsonb), :at, :at)"
+            {
+                "id": generated,
+                "owner": seed.nora,
+                "conversation": seed.c1,
+                "kind": KIND_AUDIO,
+                "operation": OPERATION_GENERATE,
+                "request": json.dumps({"model": "m", "prompt": "轻快"}),
+                "status": STATUS_COMPLETED,
+                "output": json.dumps(
+                    {"url": f"https://example.test/{generated}.m4a", "duration_ms": 30_000}
                 ),
-                {
-                    "id": record,
-                    "owner": seed.nora,
-                    "conversation": conversation,
-                    "kind": KIND_AUDIO,
-                    "operation": operation,
-                    "request": request,
-                    "status": STATUS_COMPLETED,
-                    "output": json.dumps(
-                        {"url": f"https://example.test/{record}.m4a"}
-                        | ({} if duration_ms is None else {"duration_ms": duration_ms})
-                    ),
-                    "at": at(500),
-                },
-            )
+                "at": at(500),
+            },
+        )
 
     assert await ids(reports, Scope()) == before
     assert await reports.card_of(generated) is None
-    assert await reports.card_of(uploaded) is None
     assert shape(await reports.groups_of(seed.c1)) == before_c1
 
 

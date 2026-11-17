@@ -29,6 +29,7 @@ from tests.helpers.generation import (
     FixedLineage,
     InMemoryGenerationRepository,
     MemoryObjectStore,
+    ReferenceClips,
     image_request,
     make_job,
     video_request,
@@ -80,6 +81,7 @@ def build(
         act_as=ActAs(InMemoryUserRepository()),
         clear_completion=_keep_completion,
         lineage=FixedLineage(),
+        reference_clips=ReferenceClips(),
         video=video,
         video_enhance=video_enhance,
         video_transport=video_transport,
@@ -146,6 +148,7 @@ async def test_a_model_can_declare_its_own_task_routes() -> None:
         act_as=ActAs(InMemoryUserRepository()),
         clear_completion=_keep_completion,
         lineage=FixedLineage(),
+        reference_clips=ReferenceClips(),
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",

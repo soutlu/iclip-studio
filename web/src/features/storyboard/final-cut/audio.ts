@@ -1,22 +1,68 @@
 import { z } from 'zod'
+import type { MediaUpload } from '@/shared/api/media-upload'
 import { formatDateTime } from '@/shared/lib/date-time'
 import type { GenerationJob } from '../storyboard.api'
 import type { AudioClip, FilmClip } from './composition/film'
 import { isMusicRow, rowBusy, rowsOf, type RowTarget } from './placement'
 
+/**
+ * 音频面板里的一条：这段对话生成的音乐，或挂在这段对话上的音频上传。`title` 是列表里的名字，
+ * 加进 final-cut 的音频片段也叫这个；上传的总是已就绪，只有生成的会失败、能重新生成。
+ */
+export type ConversationAudio = {
+  id: string
+  title: string
+  status: GenerationJob['status']
+  url: string | null
+  durationMs: number | null
+  errorMessage: string | null
+  generated: boolean
+  createdAt: string
+}
+
 const promptOf = (job: GenerationJob): string | undefined =>
   z.object({ prompt: z.string().min(1) }).safeParse(job.request).data?.prompt
 
-/** 音频在列表里的名字，加进 final-cut 的音频片段也叫这个：生成的取描述，上传的写上传时间。 */
-export const audioTitleOf = (job: GenerationJob): string =>
-  job.operation === 'upload'
-    ? `上传的音乐 · ${formatDateTime(job.createdAt)}`
-    : (promptOf(job) ?? '生成的音乐')
+/** 生成的音乐：名字取描述。 */
+export const generatedAudio = (job: GenerationJob): ConversationAudio => ({
+  id: job.id,
+  title: promptOf(job) ?? '生成的音乐',
+  status: job.status,
+  url: job.outputUrl,
+  durationMs: job.durationMs,
+  errorMessage: job.errorMessage,
+  generated: true,
+  createdAt: job.createdAt,
+})
+
+/** 上传的音频：名字写上传时间。 */
+export const uploadedAudio = (upload: MediaUpload): ConversationAudio => ({
+  id: upload.id,
+  title: `上传的音乐 · ${formatDateTime(upload.createdAt)}`,
+  status: 'completed',
+  url: upload.url,
+  durationMs: upload.durationMs,
+  errorMessage: null,
+  generated: false,
+  createdAt: upload.createdAt,
+})
+
+/** 生成的和上传的合成一张表，新的在前。 */
+export const conversationAudio = (
+  jobs: readonly GenerationJob[],
+  uploads: readonly MediaUpload[],
+): ConversationAudio[] =>
+  [...jobs.map(generatedAudio), ...uploads.map(uploadedAudio)].sort(
+    (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt),
+  )
 
 /** 名字里含有 `query`（不分大小写，去掉两头空白）的音频，按原来的先后。 */
-export const filterAudio = (jobs: readonly GenerationJob[], query: string): GenerationJob[] => {
+export const filterAudio = (
+  items: readonly ConversationAudio[],
+  query: string,
+): ConversationAudio[] => {
   const keyword = query.trim().toLowerCase()
-  return jobs.filter((job) => audioTitleOf(job).toLowerCase().includes(keyword))
+  return items.filter((item) => item.title.toLowerCase().includes(keyword))
 }
 
 /** 时长写成「分:秒」，秒四舍五入。 */

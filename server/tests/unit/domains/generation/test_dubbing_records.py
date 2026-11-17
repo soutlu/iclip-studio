@@ -41,6 +41,7 @@ from tests.helpers.generation import (
     FakeMediaProbe,
     FixedLineage,
     InMemoryGenerationRepository,
+    ReferenceClips,
     ScriptedProvider,
     make_dubbing,
     make_edit,
@@ -127,6 +128,7 @@ def build_world(
         clear_completion=keep,
         lineage=FixedLineage(),
         media_probe=probe,
+        reference_clips=ReferenceClips(),
         dubbing=dubbing,
         model_groups=model_groups,
     )

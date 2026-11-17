@@ -4,7 +4,9 @@ import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { pasteTextIntoComposer } from '@/testing/editor'
+import type { MediaUpload } from '@/shared/api/media-upload'
 import { makeGenerationJob } from '@/testing/generation-job'
+import { makeMediaUpload } from '@/testing/media-upload'
 import { addMockConversation } from '@/testing/mocks/conversations'
 import { seedMockFilm } from '@/testing/mocks/film'
 import { server } from '@/testing/mocks/server'
@@ -18,7 +20,7 @@ import type { FilmClip } from './composition/film'
 
 const durations = vi.hoisted(() => new Map<string, number>())
 
-// 上传的音频记录上没有时长，从文件里读：这里的文件只有时长、没有声音
+// 上传的音频不记时长，从文件里读：这里的文件只有时长、没有声音
 vi.mock('mediabunny', async () => {
   const { createMediaReaderMock } = await import('@/testing/media-reader')
   class AudioSampleSink {
@@ -64,9 +66,31 @@ const night = musicJob({
   durationMs: 168_000,
 })
 
-const openTab = async (records: GenerationJob[], clips: FilmClip[] = []) => {
+const uploadedMusic = (overrides: Partial<MediaUpload> = {}) =>
+  makeMediaUpload({
+    contentType: 'audio/mpeg',
+    durationMs: null,
+    height: null,
+    kind: 'audio',
+    url: UPLOAD_URL,
+    width: null,
+    ...overrides,
+  })
+
+/** 打开音频页签：`records` 是这段对话生成的音乐；给了 `uploads` 就按它答上传列表，不给就用模拟台账。 */
+const openTab = async (
+  records: GenerationJob[],
+  clips: FilmClip[] = [],
+  uploads?: MediaUpload[],
+) => {
   const conversation = addMockConversation('音频页签')
   server.use(http.get('*/api/generations', () => HttpResponse.json({ items: records })))
+  if (uploads !== undefined)
+    server.use(
+      http.get('*/api/conversations/:conversationId/uploads', () =>
+        HttpResponse.json({ items: uploads }),
+      ),
+    )
   const props = {
     onAdd: vi.fn(),
     onCarry: vi.fn(),
@@ -79,7 +103,7 @@ const openTab = async (records: GenerationJob[], clips: FilmClip[] = []) => {
       <AudioTab active clips={clips} conversationId={conversation.id} {...props} />
     </EditorRoot>,
   )
-  if (records.length > 0) await screen.findByRole('list', { name: '音频' })
+  if (records.length + (uploads?.length ?? 0) > 0) await screen.findByRole('list', { name: '音频' })
   return { ...props, conversation }
 }
 
@@ -166,15 +190,37 @@ describe('音频栏 · 列表', () => {
     },
   )
 
-  it('上传的音频记录上没有时长：从文件里读出来显示，加进 final-cut 也按它', async () => {
-    const user = userEvent.setup()
-    const uploaded = makeGenerationJob({
-      kind: 'audio',
-      operation: 'upload',
-      outputUrl: UPLOAD_URL,
-      request: {},
+  it('列出这段对话生成的音乐和挂在这段对话上的音频上传，新的在前', async () => {
+    const asked: [string, string | null][] = []
+    const upload = uploadedMusic({ createdAt: '2026-09-01T13:00:00Z' })
+    server.use(
+      http.get('*/api/conversations/:conversationId/uploads', ({ params, request }) => {
+        asked.push([
+          String(params['conversationId']),
+          new URL(request.url).searchParams.get('kind'),
+        ])
+        return HttpResponse.json({ items: [upload] })
+      }),
+    )
+    const { conversation } = await openTab([
+      { ...guitar, createdAt: '2026-09-01T12:00:00Z' },
+      { ...night, createdAt: '2026-09-01T14:00:00Z' },
+    ])
+
+    const rows = within(list()).getAllByRole('button', {
+      name: /^(轻快原声吉他|城市夜景氛围|上传的音乐 · .*)$/,
     })
-    const { onAdd } = await openTab([uploaded])
+    expect(rows.map((row) => row.getAttribute('aria-label'))).toEqual([
+      '城市夜景氛围',
+      expect.stringMatching(/^上传的音乐 · /),
+      '轻快原声吉他',
+    ])
+    expect(asked).toContainEqual([conversation.id, 'audio'])
+  })
+
+  it('上传的音频不记时长：从文件里读出来显示，加进 final-cut 也按它', async () => {
+    const user = userEvent.setup()
+    const { onAdd } = await openTab([], [], [uploadedMusic()])
     const [title] = within(list()).getAllByText(/^上传的音乐 · /)
     expect(await within(list()).findByText('00:12')).toBeInTheDocument()
     act(() => rowButton(title?.textContent ?? '').focus())
@@ -331,20 +377,12 @@ describe('音频栏 · 加进 final-cut', () => {
 })
 
 describe('音频栏 · 导入', () => {
-  const confirmsInto = (records: GenerationJob[]) => {
+  /** 记下确认上传时带的请求体；确认本身交给模拟台账，导入的音频从它列出来。 */
+  const recordConfirms = () => {
     const confirms: unknown[] = []
     server.use(
-      http.post('*/api/uploads/:uploadId/confirm', async ({ params, request }) => {
+      http.post('*/api/uploads/:uploadId/confirm', async ({ request }) => {
         confirms.push(await request.clone().json())
-        records.push(
-          makeGenerationJob({
-            id: String(params['uploadId']),
-            kind: 'audio',
-            operation: 'upload',
-            outputUrl: UPLOAD_URL,
-            request: {},
-          }),
-        )
         return undefined
       }),
     )
@@ -354,9 +392,8 @@ describe('音频栏 · 导入', () => {
 
   it('点「导入音频」选文件：传到这段对话下，列表里多一条', async () => {
     const user = userEvent.setup()
-    const records = [guitar]
-    const confirms = confirmsInto(records)
-    const { conversation } = await openTab(records)
+    const confirms = recordConfirms()
+    const { conversation } = await openTab([guitar])
     expect(screen.getByLabelText('选择音频文件')).toHaveAttribute(
       'accept',
       expect.stringContaining('audio/mpeg'),
@@ -368,9 +405,8 @@ describe('音频栏 · 导入', () => {
   })
 
   it('文件拖到音频栏上也导入', async () => {
-    const records = [guitar]
-    const confirms = confirmsInto(records)
-    const { conversation } = await openTab(records)
+    const confirms = recordConfirms()
+    const { conversation } = await openTab([guitar])
     fireEvent.drop(list(), {
       dataTransfer: {
         types: ['Files'],

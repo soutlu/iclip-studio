@@ -27,14 +27,17 @@ from iclip.domains.generation.schemas import (
     KIND_WHOLE_FILM,
     OPERATION_ENHANCE,
     OPERATION_RENDER,
+    WholeFilmAudioSource,
     WholeFilmRequest,
     WholeFilmVideoSource,
 )
 from iclip.domains.generation.video import PROVIDER_NAME as VIDEO_PROVIDER_NAME
+from iclip.domains.uploads.infra_sql import SqlUploadRepository
+from iclip.domains.uploads.models import MediaUpload
 from tests.helpers.app import make_client
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.fork_lineage import complete, finished, make_user, open_conversation
-from tests.helpers.generation import make_enhancement, make_job, video_request
+from tests.helpers.generation import make_enhancement, make_job, make_music, video_request
 from tests.helpers.render import StubRender
 from tests.helpers.whole_film import build_whole_film_app
 
@@ -149,6 +152,56 @@ async def submitted_hours_ago(engine: AsyncEngine, job_id: uuid.UUID, hours: int
             ),
             {"id": job_id, "hours": hours},
         )
+
+
+async def _attached_upload(
+    engine: AsyncEngine, owner: uuid.UUID, conversation_id: uuid.UUID | None, url: str
+) -> MediaUpload:
+    return await SqlUploadRepository(engine).insert(
+        MediaUpload(
+            id=uuid.uuid4(),
+            owner_user_id=owner,
+            api_key_id=None,
+            conversation_id=conversation_id,
+            kind="audio",
+            url=url,
+            content_type="audio/mpeg",
+            size_bytes=10,
+            duration_ms=30_000,
+            width=None,
+            height=None,
+            content_md5=None,
+            created_at=datetime.now(UTC),
+        )
+    )
+
+
+async def test_audio_is_matched_to_this_conversations_records_first_then_its_uploads(
+    client: httpx.AsyncClient,
+    pg_url: str,
+    generations: SqlGenerationRepository,
+    engine: AsyncEngine,
+) -> None:
+    owner = uuid.UUID(await login_as_editor(client, pg_url))
+    mine, other = await new_conversation(client), await new_conversation(client)
+    music = await finished(generations, owner, mine, "music", make_music().request)
+    elsewhere = await finished(generations, owner, other, "elsewhere", make_music().request)
+    uploaded = await _attached_upload(engine, owner, mine, f"{PUBLIC}/iclip/agent/uploads/a.mp3")
+    loose = await _attached_upload(engine, owner, None, f"{PUBLIC}/iclip/agent/uploads/b.mp3")
+    urls = (music.output.url or "", uploaded.url, elsewhere.output.url or "", loose.url)
+    await put_project_file(client, mine, "index.html", main_file(audios=urls))
+
+    started = await client.post(exports_url(mine))
+
+    assert started.status_code == 202, started.text
+    exported = await record(generations, started.json()["exportId"])
+    assert exported.request == WholeFilmRequest(
+        videos=[],
+        audios=[
+            WholeFilmAudioSource(source_kind="generation", source_id=music.id, url=urls[0]),
+            WholeFilmAudioSource(source_kind="upload", source_id=uploaded.id, url=uploaded.url),
+        ],
+    ), "别的对话的生成记录、没挂在这段对话上的上传都不记"
 
 
 async def test_an_export_hands_the_project_as_it_is_to_the_render_service_and_is_kept_public(

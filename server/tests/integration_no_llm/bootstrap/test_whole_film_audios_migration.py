@@ -91,7 +91,9 @@ def test_old_export_records_get_an_audio_list_in_place_of_music(migrated_pg: str
         WholeFilmRequest(
             videos=whole_film_request(source).videos,
             audios=[
-                WholeFilmAudioSource(job_id=uuid.UUID(MUSIC["jobId"]), url=MUSIC["url"]),
+                WholeFilmAudioSource(
+                    source_kind="generation", source_id=uuid.UUID(MUSIC["jobId"]), url=MUSIC["url"]
+                ),
             ],
         ),
     ], "music 是 null 的换成空列表，带配乐的换成只有它的列表，照新形状读得出来"

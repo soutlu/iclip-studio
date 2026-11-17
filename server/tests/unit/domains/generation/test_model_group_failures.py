@@ -36,6 +36,7 @@ from tests.helpers.generation import (
     FixedLineage,
     InMemoryGenerationRepository,
     MemoryObjectStore,
+    ReferenceClips,
     make_dubbing,
     make_job,
     make_music,
@@ -72,6 +73,7 @@ def _module(repo: InMemoryGenerationRepository, sent: list[httpx.Request]) -> Ge
         act_as=ActAs(InMemoryUserRepository()),
         clear_completion=_keep_completion,
         lineage=FixedLineage(),
+        reference_clips=ReferenceClips(),
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",

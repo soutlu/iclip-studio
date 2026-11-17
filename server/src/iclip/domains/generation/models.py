@@ -37,7 +37,6 @@ class GenerationOutput(SnakeModel):
     url: str | None = None
     watermark_url: str | None = None
     duration_ms: int | None = None
-    content_md5: str | None = None
     sentences: tuple[SubtitleSentence, ...] | None = None
     dubbed_lines: tuple[DubbedLine, ...] | None = None
 

@@ -41,6 +41,7 @@ from iclip.app.logging import configure_logging
 from iclip.app.preview_host import PreviewHostSplit
 from iclip.app.prompt_attachments import PromptAttachmentImporter
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter, build_reference_breakdown
+from iclip.app.reference_clips import UsableReferenceClips
 from iclip.app.reference_test_video import GenerationTestVideos
 from iclip.app.runtime_events import RuntimeEvents
 from iclip.app.runtime_internal import (
@@ -101,12 +102,12 @@ from iclip.domains.generation.module import (
     QwenServiceConfig,
     build_generation_module,
 )
-from iclip.domains.generation.ports import ConversationLineage
+from iclip.domains.generation.ports import ConversationLineage, ReferenceClipCheck
 from iclip.domains.generation.queue import GenerationQueueSettings, queue_dsn
 from iclip.domains.generation.qwen import QwenEndpoint
 from iclip.domains.generation.render import RenderClient, RenderSetup
 from iclip.domains.generation.repository import GenerationRepository
-from iclip.domains.generation.schemas import KIND_VIDEO, OPERATION_UPLOAD
+from iclip.domains.generation.schemas import KIND_VIDEO
 from iclip.domains.generation.service import ClearCompletion, SettledRecords, VideoEnhanceSpec
 from iclip.domains.generation.speech import QwenSpeechSynthesizer
 from iclip.domains.generation.video import VideoProviderSettings
@@ -146,6 +147,7 @@ from iclip.domains.tasks.infra_sql import SqlTaskRepository
 from iclip.domains.tasks.module import build_tasks_module
 from iclip.domains.tracking.infra_sql import SqlTrackingRepository
 from iclip.domains.tracking.module import build_tracking_module
+from iclip.domains.uploads.infra_sql import SqlUploadRepository
 from iclip.domains.uploads.module import UploadsModule, build_uploads_module
 from iclip.domains.uploads.service import FetchBytes
 from iclip.platform.db.engine import build_engine
@@ -271,6 +273,7 @@ def _generation_module(
     act_as: ActAs,
     clear_completion: ClearCompletion,
     lineage: ConversationLineage,
+    reference_clips: ReferenceClipCheck,
     object_store: PublicObjectStore,
     queue_connector: procrastinate.BaseConnector,
     media_codec: MediaCodec,
@@ -286,6 +289,7 @@ def _generation_module(
         act_as=act_as,
         clear_completion=clear_completion,
         lineage=lineage,
+        reference_clips=reference_clips,
         video=VideoProviderSettings(
             submit_url=settings.video_submit_url,
             status_base_url=settings.video_status_base_url,
@@ -477,6 +481,24 @@ def build_app(
         SqlGenerationRepository(active_engine), live_connections
     )
     settled_records = SettledRecords(generation_repo)
+    fork_lineage = ForkLineageAdapter(
+        conversations=conversation_repo, readable=conversation_readable
+    )
+
+    async def conversation_writable(principal: Principal, conversation_id: uuid.UUID) -> object:
+        return await conversations.service.workspace_writable(principal, conversation_id)
+
+    uploads: UploadsModule | None = None
+    if public_objects is not None:
+        uploads = build_uploads_module(
+            public_objects,
+            SqlUploadRepository(active_engine),
+            act_as=identity.act_as,
+            fetch=image_fetcher if image_fetcher is not None else public_fetcher.fetch,
+            conversation_writable=conversation_writable,
+            lineage=fork_lineage,
+        )
+    reference_store = SqlReferenceStore(active_engine)
 
     connector: procrastinate.BaseConnector | None = None
     if settings.media_generation is not None or settings.iclip_studio is not None:
@@ -503,6 +525,8 @@ def build_app(
             raise RuntimeError("媒体生成已启用却没建队列连接器；上面的条件漏了媒体生成")
         if codec is None or compose_concurrency is None:
             raise RuntimeError("媒体生成已启用却没选编解码；ffmpeg_required 应当已包含媒体生成")
+        if uploads is None:
+            raise RuntimeError("媒体生成已启用却没装上传；有对象存储就该装上")
         render: RenderSetup | None = None
         if render_client is not None:
             if server_uploads is None:
@@ -518,9 +542,8 @@ def build_app(
             generation_repo,
             act_as=identity.act_as,
             clear_completion=clear_conversation_completion,
-            lineage=ForkLineageAdapter(
-                conversations=conversation_repo, readable=conversation_readable
-            ),
+            lineage=fork_lineage,
+            reference_clips=UsableReferenceClips(uploads.service, reference_store),
             object_store=public_objects,
             queue_connector=connector,
             media_codec=codec,
@@ -532,15 +555,10 @@ def build_app(
         )
 
     async def own_video_upload(principal: Principal, upload_id: uuid.UUID) -> str | None:
-        try:
-            job = await generation_repo.get(upload_id, owner=principal.user_id)
-        except NotFound:
-            return None
-        if job.kind != KIND_VIDEO or job.operation != OPERATION_UPLOAD:
-            return None
-        return job.output.url
+        if uploads is None:
+            raise RuntimeError("没有对象存储时资料库不收上传，不该来查上传")
+        return await uploads.service.own_video(principal, upload_id)
 
-    reference_store = SqlReferenceStore(active_engine)
     breakdown_setup: BreakdownSetup | None = None
     tagging_setup: TaggingSetup | None = None
     if settings.iclip_studio is not None and connector is not None:
@@ -670,9 +688,13 @@ def build_app(
             generation=generation.service if generation is not None else None,
         ),
         exports=None
-        if render_client is None or generation is None
+        if render_client is None or generation is None or uploads is None
         else WholeFilmExportAdapter(
-            generation=generation.service, generations=generation_repo, render=render_client
+            generation=generation.service,
+            generations=generation_repo,
+            uploads=uploads.service,
+            lineage=fork_lineage,
+            render=render_client,
         ),
         generate_title=runtime_ports.generate_title,
         model_group_of=model_group_of,
@@ -694,17 +716,6 @@ def build_app(
         conversations.service,
         sso_redirect_url=settings.sso.redirect_url if settings.sso is not None else None,
     )
-    uploads: UploadsModule | None = None
-    if public_objects is not None:
-        uploads = build_uploads_module(
-            public_objects,
-            act_as=identity.act_as,
-            record=settled_records.record_upload,
-            find_recorded=settled_records.recorded_upload,
-            fetch=image_fetcher if image_fetcher is not None else public_fetcher.fetch,
-            conversation_writable=conversations.service.workspace_writable,
-        )
-
     turn_naming = TurnNaming(conversations.service)
 
     @asynccontextmanager

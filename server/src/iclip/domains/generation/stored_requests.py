@@ -18,7 +18,6 @@ from iclip.domains.generation.schemas import (
     OPERATION_ENHANCE,
     OPERATION_GENERATE,
     OPERATION_RENDER,
-    OPERATION_UPLOAD,
     READ_BACK_CONTEXT,
     DubbingRequest,
     ImageGenerationIn,
@@ -56,14 +55,7 @@ _ADAPTERS: Final[Mapping[tuple[str, str], TypeAdapter[Any]]] = {
 
 _EDIT: Final[TypeAdapter[Any]] = TypeAdapter(VideoEditRequest)
 
-_WITHOUT_REQUEST: Final = frozenset(
-    {
-        (KIND_IMAGE, OPERATION_CUT),
-        (KIND_IMAGE, OPERATION_UPLOAD),
-        (KIND_VIDEO, OPERATION_UPLOAD),
-        (KIND_AUDIO, OPERATION_UPLOAD),
-    }
-)
+_WITHOUT_REQUEST: Final = frozenset({(KIND_IMAGE, OPERATION_CUT)})
 
 
 def request_from_payload(

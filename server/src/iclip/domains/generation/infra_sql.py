@@ -51,7 +51,6 @@ from iclip.domains.generation.schemas import (
     KIND_VIDEO,
     OPERATION_ENHANCE,
     OPERATION_GENERATE,
-    OPERATION_UPLOAD,
     SubtitleSentence,
     request_to_payload,
 )
@@ -175,13 +174,6 @@ generation_jobs_table = Table(
         postgresql_where=text("(output ->> 'url'::text) IS NOT NULL"),
     ),
     Index(
-        "ix_generation_jobs_video_upload_md5",
-        text("(output ->> 'content_md5'::text)"),
-        "created_at",
-        "id",
-        postgresql_where=text("kind = 'video'::text AND operation = 'upload'::text"),
-    ),
-    Index(
         "ix_generation_jobs_reference_trial",
         text("(metadata ->> 'referenceId'::text)"),
         "created_at",
@@ -196,10 +188,6 @@ type _Columns = ReadOnlyColumnCollection[str, KeyedColumnElement[Any]]
 
 def _json_text(column: KeyedColumnElement[Any], key: str) -> ColumnElement[str]:
     return column.op("->>", return_type=Text())(literal_column(f"'{key}'"))
-
-
-def _sql_literal(value: str) -> ColumnElement[str]:
-    return literal_column(f"'{value}'", Text())
 
 
 _OUTPUT_URL: Final = _json_text(_JOBS.output, "url")
@@ -278,7 +266,6 @@ class SqlGenerationRepository:
         owner: uuid.UUID | None,
         conversation_id: uuid.UUID | None,
         inherited: Inheritance = (),
-        operation: GenerationOperation | None = None,
     ) -> GenerationJob | None:
         hits = (
             select(generation_jobs_table)
@@ -293,12 +280,14 @@ class SqlGenerationRepository:
             if conversation_id is None
             else cols.conversation_id == conversation_id
         )
-        stmt = select(hits).where(
-            cols.kind == kind, cols.status == STATUS_COMPLETED, _visible(cols, own, inherited)
+        stmt = (
+            select(hits)
+            .where(
+                cols.kind == kind, cols.status == STATUS_COMPLETED, _visible(cols, own, inherited)
+            )
+            .order_by(cols.created_at, cols.id)
+            .limit(1)
         )
-        if operation is not None:
-            stmt = stmt.where(cols.operation == operation)
-        stmt = stmt.order_by(cols.created_at, cols.id).limit(1)
         async with self._engine.connect() as conn:
             row = (await conn.execute(stmt)).mappings().one_or_none()
         return None if row is None else _job_from_row(row)
@@ -316,21 +305,6 @@ class SqlGenerationRepository:
             rows = (await conn.execute(stmt)).mappings().all()
         jobs = (_job_from_row(row) for row in rows)
         return {job.output.url: job for job in jobs if job.output.url is not None}
-
-    async def find_video_upload_by_md5(self, content_md5: str) -> GenerationJob | None:
-        stmt = (
-            select(generation_jobs_table)
-            .where(
-                _json_text(_JOBS.output, "content_md5") == content_md5,
-                _JOBS.kind == _sql_literal(KIND_VIDEO),
-                _JOBS.operation == _sql_literal(OPERATION_UPLOAD),
-            )
-            .order_by(_JOBS.created_at, _JOBS.id)
-            .limit(1)
-        )
-        async with self._engine.connect() as conn:
-            row = (await conn.execute(stmt)).mappings().one_or_none()
-        return None if row is None else _job_from_row(row)
 
     async def latest_reference_trial(self, reference_id: uuid.UUID) -> GenerationJob | None:
         stmt = (
