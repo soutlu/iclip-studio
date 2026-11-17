@@ -849,9 +849,12 @@ function EditorBody({
   }, [film, catalog, tokens, filesRevision])
   const playBlocked = empty ? EMPTY_TEXT : undefined
 
-  // 画面上的编辑：视频片段和组件或块的片段可以在画面上点选、挪、缩放、转，预览量出它们的布局框
+  // 画面上的编辑：视频片段和组件或块的片段可以在画面上点选、挪、缩放、转，字幕可以点选、改字，预览量出它们的框
   const canvasIds = useMemo(
-    () => clips.flatMap((clip) => (clip.kind === 'video' || clip.kind === 'host' ? [clip.id] : [])),
+    () =>
+      clips.flatMap((clip) =>
+        clip.kind === 'video' || clip.kind === 'host' || clip.kind === 'caption' ? [clip.id] : [],
+      ),
     [clips],
   )
   const [canvasBoxes, setCanvasBoxes] = useState<ReadonlyMap<string, ClipBox>>(() => new Map())
@@ -1109,6 +1112,7 @@ function EditorBody({
         frameMs={frameMs}
         locale={locale}
         nudgeRef={canvasNudgeRef}
+        onCaptionText={setCaptionText}
         onGesture={setGesturing}
         onNotice={notice}
         onPlace={(changes) => {
@@ -1387,6 +1391,10 @@ function EditorBody({
               onAttributes={setClipAttributes}
               locale={locale}
               onCaptionText={setCaptionText}
+              onCaptionStyle={(id, changes) => {
+                leaveMaterial()
+                session.setCaptionStyle(id, changes)
+              }}
               texts={itemTexts}
               selected={selectedClips}
               silentSource={silentSource}

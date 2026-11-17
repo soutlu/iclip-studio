@@ -1572,6 +1572,14 @@
   outline: none;
 }
 
+/* 字幕：多行、居中，和画面上的字幕一样排 */
+.wf-canvas-text.is-multiline {
+  overflow: hidden;
+  line-height: 1.3;
+  text-align: center;
+  resize: none;
+}
+
 /* ---- 播放条：贴在预览底部，final-cut 和素材两种预览共用 ---- */
 
 .wf-transport {

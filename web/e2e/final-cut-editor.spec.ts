@@ -2600,3 +2600,240 @@ test('画面上双击贴片的文字原地改：回车写进可填项的值，�
   expect(await savesWithin(page, 800)).toBe(0)
   await expect.poll(shownText).toBe('画面上改的字|')
 })
+
+test('画面上正显示着字幕时点贴片：选中的还是贴片，铺满画面的字幕宿主不挡', async ({ page }) => {
+  const { editor, layer } = await openWithCard(page)
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '字幕' }).click()
+  const added = page.waitForRequest(
+    (request) => savedFileOf(request, CAPTIONS_FILE)?.includes('>新字幕</div>') === true,
+  )
+  await side
+    .getByRole('tabpanel', { name: '字幕' })
+    .getByRole('button', { name: '在播放头处加一句' })
+    .click()
+  await added
+  // 加上的那句选中着、显示着：画面上框住了它，说明预览量到了它的框
+  await expect(layer.getByRole('img', { name: '选中：新字幕' })).toBeVisible()
+
+  const player = await readyPlayer(editor)
+  const spot = await canvasSpot(layer, player, CARD)
+  await page.mouse.click(spot.x, spot.y)
+  await expect(clipButton(editor, 2, '测试可填项')).toHaveAttribute('aria-pressed', 'true')
+  await expect(layer.getByRole('img', { name: '选中：测试可填项' })).toBeVisible()
+  await expect(layer.getByRole('img', { name: '选中：新字幕' })).toHaveCount(0)
+})
+
+/** 存出的字幕场景里写着 `text` 的那句字幕的编号。 */
+const captionIdOf = (scene: string, text: string) =>
+  new RegExp(`<div [^>]*id="(cap-[^"]+)"[^>]*>${text}</div>`).exec(scene)?.[1] ?? ''
+
+/**
+ * 打开 final-cut 编辑器，放进整条镜头 1，加两句字幕「第一句」（0–2 秒）、「第二句」（2–4 秒），播放头停在 2 秒
+ * （显示着第二句），侧栏停在「字幕」页签；返回编辑器、侧栏、编辑层、正在显示的播放器和两句的编号。
+ */
+const openWithCaptions = async (page: Page) => {
+  test.setTimeout(90_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const group = editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+  await group.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
+  await group.getByRole('slider', { name: '裁剪结尾' }).focus()
+  for (let second = 0; second < 6; second += 1) await page.keyboard.press('Shift+ArrowRight')
+  const added = mainSaved(page, 1)
+  await page.keyboard.press('Enter')
+  await added
+
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '字幕' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕' })
+  const sceneWith = (text: string) =>
+    page.waitForRequest((request) => savedFileOf(request, CAPTIONS_FILE)?.includes(text) === true)
+  const addButton = tab.getByRole('button', { name: '在播放头处加一句' })
+  const firstAdded = sceneWith('>新字幕</div>')
+  await addButton.click()
+  await firstAdded
+  const firstNamed = sceneWith('>第一句</div>')
+  await tab.getByRole('textbox', { name: '字幕文字 00:00.00 – 00:02.00' }).fill('第一句')
+  await firstNamed
+
+  // 在时间线上点一下这句（焦点到时间线上），播放头挪到 2 秒再加一句
+  const row = editor.getByRole('group', { name: '字幕', exact: true })
+  await row
+    .getByRole('group', { name: /^第一句，/ })
+    .getByRole('button', { name: /^选中：/ })
+    .click()
+  await stepPlayhead(page, editor, 0, 20)
+  const secondAdded = sceneWith('>新字幕</div>')
+  await addButton.click()
+  await secondAdded
+  const bothNamed = sceneWith('>第二句</div>')
+  await tab.getByRole('textbox', { name: '字幕文字 00:02.00 – 00:04.00' }).fill('第二句')
+  const scene = savedFileOf(await bothNamed, CAPTIONS_FILE) ?? ''
+  const player = await readyPlayer(editor)
+  return {
+    editor,
+    side,
+    layer: editor.getByRole('group', { name: '预览画面', exact: true }),
+    player,
+    row,
+    first: captionIdOf(scene, '第一句'),
+    second: captionIdOf(scene, '第二句'),
+  }
+}
+
+/** 预览里各句字幕的字、算出来的字色、透明度和看不看得到（按编号）；换播放器的那一刻是 null。 */
+const previewCaptions = (editor: Locator) =>
+  finalCutPreviewPlayer(editor).evaluateAll((elements) => {
+    if (elements.length !== 1) return null
+    const [element] = elements as PreviewPlayer[]
+    const page = element?.iframeElement.contentDocument
+    return Object.fromEntries(
+      [...(page?.querySelectorAll<HTMLElement>('.caption') ?? [])].map((caption) => {
+        const style = caption.ownerDocument.defaultView?.getComputedStyle(caption)
+        return [
+          caption.id,
+          {
+            // <br> 和 pre-line 下的换行都读成 \n
+            text: caption.innerText,
+            color: style?.color,
+            font: style?.fontFamily.split(',')[0]?.replace(/["']/g, '').trim(),
+            opacity: caption.style.opacity,
+            shown: style?.visibility !== 'hidden' && caption.getBoundingClientRect().height > 0,
+          },
+        ]
+      }),
+    )
+  })
+
+test('字幕的字体和颜色：选中一句在「属性」里改颜色，预览里只有这一句变色、不换播放器；改字体后预览里换成这个字体，存下的场景里写在这一句上', async ({
+  page,
+}) => {
+  const { editor, side, row, first, second } = await openWithCaptions(page)
+  await expect
+    .poll(async () => (await previewCaptions(editor))?.[second])
+    .toMatchObject({ text: '第二句', color: 'rgb(255, 255, 255)', shown: true })
+  await markFinalCutPreviewPlayer(editor)
+
+  await row
+    .getByRole('group', { name: /^第二句，/ })
+    .getByRole('button', { name: /^选中：/ })
+    .click()
+  await side.getByRole('tab', { name: '属性' }).click()
+  const inspector = side.getByRole('tabpanel', { name: '属性' })
+  const colored = page.waitForRequest((request) =>
+    new RegExp(`<div style="color: #ff3366" id="${second}"`).test(
+      savedFileOf(request, CAPTIONS_FILE) ?? '',
+    ),
+  )
+  const hex = inspector.getByRole('textbox', { name: '颜色' })
+  await hex.fill('#ff3366')
+  await colored
+  await expect
+    .poll(async () => {
+      const captions = await previewCaptions(editor)
+      return [captions?.[second]?.color, captions?.[first]?.color]
+    })
+    .toEqual(['rgb(255, 51, 102)', 'rgb(255, 255, 255)'])
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
+
+  // 字体：要链上新的字体样式表，预览可以整份重新加载；换上来以后这一句是这个字体、颜色还在
+  const fonted = page.waitForRequest((request) =>
+    new RegExp(
+      `<div style="color: #ff3366; font-family: 'Playfair Display', '[^']+', sans-serif" id="${second}"`,
+    ).test(savedFileOf(request, CAPTIONS_FILE) ?? ''),
+  )
+  await inspector.getByRole('button', { name: '字体：默认' }).click()
+  await page.getByRole('menuitemradio', { name: 'Playfair Display' }).click()
+  await fonted
+  await expect
+    .poll(async () => {
+      const captions = await previewCaptions(editor)
+      return [
+        captions?.[second]?.font,
+        captions?.[second]?.color,
+        captions?.[first]?.font === 'Playfair Display',
+      ]
+    })
+    .toEqual(['Playfair Display', 'rgb(255, 51, 102)', false])
+})
+
+test('画面上的字幕：点正在显示的那句选中它（下面的视频选中着时也是；时间线上也选中，只框住字、没有缩放和旋转把手），点在字旁边的空处点不中它；双击原地改字，回车写进这一句，Esc 放弃', async ({
+  page,
+}) => {
+  const { editor, layer, player, row, second } = await openWithCaptions(page)
+  const captionButton = row
+    .getByRole('group', { name: /^第二句，/ })
+    .getByRole('button', { name: /^选中：/ })
+  // 在时间线上点一下再按 Esc：焦点在时间线上、什么都没选中
+  await captionButton.click()
+  await page.keyboard.press('Escape')
+  await expect(captionButton).toHaveAttribute('aria-pressed', 'false')
+  const selector = `[data-hf-id="${second}"]`
+  const spot = await canvasSpot(layer, player, selector)
+
+  await page.mouse.click(spot.x, spot.y)
+  await expect(captionButton).toHaveAttribute('aria-pressed', 'true')
+  const frame = layer.getByRole('img', { name: '选中：第二句' })
+  await expect(frame).toBeVisible()
+  await expect(layer.getByRole('button', { name: '旋转' })).toHaveCount(0)
+  // 框比整行宽的字幕元素窄：只框住字
+  const canvas = await boxOf(layer)
+  const element = await previewRect(player, selector)
+  expect((await boxOf(frame)).width).toBeLessThan(element.width * canvas.width * 0.5)
+
+  // 同一行、字旁边的空处（还在整行宽的字幕元素里）：点不中字幕
+  await page.waitForTimeout(700)
+  await page.mouse.click(canvas.x + canvas.width * 0.08, spot.y)
+  await expect(captionButton).toHaveAttribute('aria-pressed', 'false')
+  await expect(frame).toHaveCount(0)
+
+  // 压在下面的视频选中着时，点一下字幕也是选中字幕
+  const videoButton = clipButton(editor, 1, 'A · 镜头 1')
+  await videoButton.click()
+  await expect(videoButton).toHaveAttribute('aria-pressed', 'true')
+  await page.waitForTimeout(700)
+  await page.mouse.click(spot.x, spot.y)
+  await expect(captionButton).toHaveAttribute('aria-pressed', 'true')
+  await expect(videoButton).toHaveAttribute('aria-pressed', 'false')
+
+  // 双击原地改：改的时候预览里这句藏起来
+  await page.mouse.dblclick(spot.x, spot.y)
+  await expect(captionButton).toHaveAttribute('aria-pressed', 'true')
+  const input = layer.getByRole('textbox', { name: '字幕' })
+  await expect(input).toBeFocused()
+  await expect(input).toHaveValue('第二句')
+  await expect.poll(async () => (await previewCaptions(editor))?.[second]?.opacity).toBe('0')
+
+  const renamed = page.waitForRequest((request) =>
+    new RegExp(`id="${second}"[^>]*>画面上改的<br>字幕</div>`).test(
+      savedFileOf(request, CAPTIONS_FILE) ?? '',
+    ),
+  )
+  const mainRenamed = mainSavedWith(page, (html) => html.includes('画面上改的\\n字幕'))
+  await input.fill('画面上改的')
+  await page.keyboard.press('Shift+Enter')
+  await page.keyboard.type('字幕')
+  await page.keyboard.press('Enter')
+  await renamed
+  await mainRenamed
+  await expect(input).toHaveCount(0)
+  await expect
+    .poll(async () => (await previewCaptions(editor))?.[second])
+    .toMatchObject({ text: '画面上改的\n字幕', opacity: '' })
+
+  // 再双击、改了按 Esc：不写，字还是刚才的
+  const fresh = await canvasSpot(layer, finalCutPreviewPlayer(editor), selector)
+  await page.mouse.dblclick(fresh.x, fresh.y)
+  await expect(input).toHaveValue('画面上改的\n字幕')
+  await input.fill('不要的字')
+  await page.keyboard.press('Escape')
+  await expect(input).toHaveCount(0)
+  expect(await savesWithin(page, 800)).toBe(0)
+  await expect
+    .poll(async () => (await previewCaptions(editor))?.[second])
+    .toMatchObject({ text: '画面上改的\n字幕', opacity: '' })
+})

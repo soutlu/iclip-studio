@@ -111,13 +111,16 @@ export interface OtherClip extends ClipBase {
 /**
  * 一句字幕：字幕场景文件里的一个带时间的元素（见 `captions.ts`），不在主文件里。`text` 是它的字，
  * 存在主文件根上的变量 `variable` 的默认值里。`owner` 是它属于的视频片段（识别出来的字幕跟着这个片段走），
- * 手动加的字幕是 null。
+ * 手动加的字幕是 null。`font`、`color` 是这一句自己设的字体族和字色（元素的行内样式，所有语言共用），
+ * 没设时是 null，用字幕的默认样式。
  */
 export interface CaptionClip extends ClipBase {
   kind: 'caption'
   text: string
   variable: string
   owner: string | null
+  font: string | null
+  color: string | null
 }
 
 export const isMediaClip = (clip: FilmClip): clip is MediaClip =>
@@ -422,8 +425,8 @@ export function hostElement(
 }
 
 /**
- * 工程要声明的字体：用到的条目自带的字体族，加上字体类可填项取到的字体族；中文字体按可填项里的文字、
- * 条目里出现的字和字幕的字声明（字幕用的就是中文字体）。组件库里没有的字体族不声明。
+ * 工程要声明的字体：用到的条目自带的字体族，加上字体类可填项取到的字体族和字幕设的字体族；中文字体按可填项里
+ * 的文字、条目里出现的字和字幕的字声明（字幕默认用的就是中文字体）。组件库里没有的字体族不声明。
  */
 function fontsOf(
   clips: readonly FilmClip[],
@@ -433,7 +436,10 @@ function fontsOf(
   let text = ''
   const used = new Set<string>()
   for (const clip of clips) {
-    if (clip.kind === 'caption') text += clip.text
+    if (clip.kind === 'caption') {
+      text += clip.text
+      if (clip.font !== null) families.add(clip.font)
+    }
     if (clip.kind !== 'host') continue
     text += Object.values(clip.values)
       .filter((value) => typeof value === 'string')

@@ -21,7 +21,7 @@ type Values = Readonly<Record<string, VariableValue>>
 // 照参照的工作台：改可填项停下 300 毫秒再写进 final-cut
 const COMMIT_DELAY_MS = 300
 
-const HEX_COLOR = /^#[0-9a-f]{6}$/i
+export const HEX_COLOR = /^#[0-9a-f]{6}$/i
 
 /** 文字字段分语言要用的：显示着的语言、哪些字段随语言、工程里加没加语言，改字和切换「固定 / 随语言」。 */
 export type TextLocale = {
@@ -264,7 +264,7 @@ function VariableControl({ id, variable, current, fonts, onChange, onEditing }: 
 }
 
 /** 下拉：和输入框同高的浅底条，点开是全站的单选菜单。 */
-function Dropdown({
+export function Dropdown({
   id,
   label,
   value,
@@ -306,21 +306,26 @@ function Dropdown({
 
 /**
  * 颜色：浅底条，左边是色块加小箭头（点开取色板），右边是能直接输入的十六进制。
- * 取色板拖动中只动这里的色块和文字，松手才算改了。
+ * 取色板拖动中只动这里的色块和文字，松手才算改了。给了 `complete` 时输入框里只有写完整的值才算改了，
+ * 没写完的留在框里，失焦时显示回现在的取值。
  */
-function ColorField({
+export function ColorField({
   id,
   label,
   current,
   onChange,
+  complete,
 }: {
   id: string
   label: string
   current: string
   onChange: (value: string) => void
+  complete?: (value: string) => boolean
 }) {
   // 拖动中的颜色，连同开始拖时的取值：取值被撤销、输入改掉以后不再用它
   const [dragged, setDragged] = useState<{ from: string; to: string } | null>(null)
+  // 还没写完整的输入，连同开始输入时的取值
+  const [typed, setTyped] = useState<{ from: string; text: string } | null>(null)
   const shown = dragged !== null && dragged.from === current ? dragged.to : current
   // 文字框里还没写完整时取色板先从黑色开始，照参照的工作台
   // design-allow -- 取色板的值只能是十六进制写法，没法引用颜色变量
@@ -349,9 +354,18 @@ function ColorField({
         autoComplete="off"
         className="wf-prop-hex"
         id={id}
-        onChange={(event) => onChange(event.target.value)}
+        onBlur={() => setTyped(null)}
+        onChange={(event) => {
+          const text = event.target.value
+          if (complete === undefined) {
+            onChange(text)
+            return
+          }
+          setTyped({ from: current, text })
+          if (complete(text)) onChange(text)
+        }}
         spellCheck={false}
-        value={shown}
+        value={typed !== null && typed.from === current ? typed.text : shown}
       />
     </span>
   )

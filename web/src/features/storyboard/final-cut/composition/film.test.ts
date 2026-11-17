@@ -352,24 +352,35 @@ describe('<head> 里的字体块', () => {
     expect(covers(html, 'Noto Sans SC', '上')).toBe(false)
   })
 
+  const caption: FilmClip = {
+    kind: 'caption',
+    id: 'cap-a1',
+    label: '字幕',
+    start: 0,
+    duration: 2000,
+    track: 0,
+    hidden: false,
+    link: null,
+    text: '字幕\n两行',
+    variable: 'cap_a1',
+    owner: null,
+    font: null,
+    color: null,
+  }
+
   it('字幕的字按字幕用的中文字体声明了粗体和常规两种字形', () => {
-    const caption: FilmClip = {
-      kind: 'caption',
-      id: 'cap-a1',
-      label: '字幕',
-      start: 0,
-      duration: 2000,
-      track: 0,
-      hidden: false,
-      link: null,
-      text: '字幕\n两行',
-      variable: 'cap_a1',
-      owner: null,
-    }
     const html = withFonts([video(), caption])
     for (const char of '字幕两行') expect(covers(html, catalog.cjk.family, char)).toBe(true)
     expect(html).toContain('font-weight:700;src:url(vendor/fonts/noto-cjk-700.woff2)')
     expect(covers(html, catalog.cjk.family, '上')).toBe(false)
+    expect(html).not.toContain(LINK)
+  })
+
+  it('一句字幕设了组件库里的字体：链上它的字体，并按它出中文孪生规则；组件库里没有的字体不链', () => {
+    const html = withFonts([video(), { ...caption, font: 'Playfair Display' }])
+    expect(html.split(LINK)).toHaveLength(2)
+    expect(covers(html, 'Playfair Display', '字')).toBe(true)
+    expect(withFonts([video(), { ...caption, font: 'Comic Sans MS' }])).not.toContain('<link ')
   })
 
   it('没有组件或块的片段时只声明西文基本字符', () => {

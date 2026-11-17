@@ -9,6 +9,7 @@ import {
   captionsHostElement,
   captionsProblem,
   captionsScene,
+  captionStyles,
   captionVariable,
   isCaptionsHost,
 } from './captions'
@@ -87,6 +88,43 @@ describe('字幕场景文件', () => {
     expect(tagOf(scene.serialize(), 'cap-a1')).toContain('data-caption-of="clip-1"')
     const reread = readCaptions(await openComposition(scene.serialize()))
     expect(reread.map((caption) => caption.owner)).toEqual(['clip-1', null])
+  })
+
+  it('一句设了字体和字色：写在它元素的行内样式上，存回去再读还认得；别的句和没设过的是 null（默认样式）', async () => {
+    const scene = await openComposition(captionsScene(CANVAS, fixtureCatalog, [first, second]))
+    expect(readCaptions(scene).map(({ font, color }) => ({ font, color }))).toEqual([
+      { font: null, color: null },
+      { font: null, color: null },
+    ])
+    scene.setStyle(
+      'cap-a1',
+      captionStyles({ font: 'Playfair Display', color: '#ff3366' }, fixtureCatalog),
+    )
+    const saved = scene.serialize()
+    expect(saved).toContain(
+      `<div style="font-family: 'Playfair Display', '${fixtureCatalog.cjk.family}', sans-serif; color: #ff3366" id="cap-a1"`,
+    )
+    const reread = await openComposition(saved)
+    expect(readCaptions(reread).map(({ font, color }) => ({ font, color }))).toEqual([
+      { font: 'Playfair Display', color: '#ff3366' },
+      { font: null, color: null },
+    ])
+
+    // 改回默认：去掉行内样式，只改给了的那一样
+    reread.setStyle('cap-a1', captionStyles({ font: null }, fixtureCatalog))
+    expect(readCaptions(reread)[0]).toMatchObject({ font: null, color: '#ff3366' })
+  })
+
+  it('字体只能是组件库里的字体族，字色只能是 #rrggbb', () => {
+    expect(() => captionStyles({ font: 'Comic Sans MS' }, fixtureCatalog)).toThrow(
+      '组件库里没有字体「Comic Sans MS」',
+    )
+    expect(() => captionStyles({ color: 'red' }, fixtureCatalog)).toThrow()
+    expect(captionStyles({ color: '#00FF00' }, fixtureCatalog)).toEqual({ color: '#00FF00' })
+    expect(captionStyles({ font: null, color: null }, fixtureCatalog)).toEqual({
+      fontFamily: null,
+      color: null,
+    })
   })
 
   it('字幕的样子写在场景里：字体是组件库的中文字体，后面只跟通用字体', () => {

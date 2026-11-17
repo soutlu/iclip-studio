@@ -22,7 +22,10 @@ export type PreviewControl = {
   seek: (ms: number) => void
   /** 拖动中先在预览里把片段 `id` 摆成 `styles`（见预览协议的 `pose`）。 */
   pose: (id: string, styles: PoseStyles) => void
-  /** 在片段 `id` 里找画布上 `point` 处的文字字段（`fields` 里的一个），结果报给 `onTextTarget`。 */
+  /**
+   * 在片段 `id` 里找画布上 `point` 处的文字字段（`fields` 里的一个；字幕给它自己的编号和变量），结果报给
+   * `onTextTarget`。
+   */
   editText: (id: string, point: Point, fields: readonly string[]) => void
   /** 改完字，藏起来的文字显示回来；`text` 不是 null 时先换成它。 */
   endText: (text: string | null) => void
