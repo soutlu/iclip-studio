@@ -136,7 +136,7 @@ describe('预览按语言放人声', () => {
     `<audio id="en1" class="clip audio" data-start="0.5" data-duration="1" src="en.m4a" data-locale="en" data-dub-of="cap-a1"></audio>\n` +
     `<audio id="de1" class="clip audio" data-start="0.5" data-duration="1" src="de.m4a" data-locale="de" data-dub-of="cap-a1"></audio>\n` +
     `</div>\n</body>\n</html>\n`
-  const html = root('{"en":"dub"}')
+  const html = root('{"en":{"mode":"dub","voice":null}}')
   const page = (locale: Parameters<typeof previewDocument>[2]) =>
     new DOMParser().parseFromString(
       previewDocument(html, 'https://preview.test/', locale),

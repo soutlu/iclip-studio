@@ -15,20 +15,22 @@ export type DubbingOutcome =
 export type DubbingTarget = DubbingRequest & { sourceJobId: string }
 
 /**
- * 一次生成：哪种语言、各条素材片，还在发起时 `submitting` 为真；`jobs` 是发起成功的素材片 → 配音记录，`failed`
- * 是发起不了的素材片 → 原因。
+ * 一次生成：哪种语言、用的音色、各条素材片，还在发起时 `submitting` 为真；`jobs` 是发起成功的素材片 → 配音记录，
+ * `failed` 是发起不了的素材片 → 原因。
  */
 type Run = {
   locale: LocaleCode
+  voice: string | null
   targets: readonly DubbingTarget[]
   submitting: boolean
   jobs: ReadonlyMap<string, string>
   failed: ReadonlyMap<string, string>
 }
 
-/** 结束了的一次生成：哪种语言、各条素材片，素材片 → 结果。 */
-type Finished = {
+/** 结束了的一次生成：哪种语言、用的音色（null 是原声的音色）、各条素材片，素材片 → 结果。 */
+export type DubbingDone = {
   locale: LocaleCode
+  voice: string | null
   targets: readonly DubbingTarget[]
   outcomes: ReadonlyMap<string, DubbingOutcome>
 }
@@ -77,18 +79,12 @@ const outcomesOf = (
 }
 
 /**
- * 「AI 配音」的生成：给一种语言的几条素材片各发起一次配音（参考音频用原声；付费的发起只在 `start` 里做），
- * 轮询各自的配音记录（照生成记录的写法），全部有了结果后调一次 `onDone`（语言、各条素材片、素材片 → 结果）。
- * 发起时接口答错（比如 422 没开通）的那条算失败，原因是接口给的说明。生成中再调 `start` 不做任何事。
+ * 「AI 配音」的生成：用一个音色（参考音频库里的音色，null 是从各条素材片的原声里取）给一种语言的几条素材片各发起
+ * 一次配音（付费的发起只在 `start` 里做），轮询各自的配音记录（照生成记录的写法），全部有了结果后调一次 `onDone`
+ * （语言、音色、各条素材片、素材片 → 结果）。发起时接口答错（比如 422 没开通）的那条算失败，原因是接口给的说明。
+ * 生成中再调 `start` 不做任何事。
  */
-export function useDubbing(
-  conversationId: string,
-  onDone: (
-    locale: LocaleCode,
-    targets: readonly DubbingTarget[],
-    outcomes: ReadonlyMap<string, DubbingOutcome>,
-  ) => void,
-) {
+export function useDubbing(conversationId: string, onDone: (done: DubbingDone) => void) {
   const queryClient = useQueryClient()
   const [run, setRun] = useState<Run | null>(null)
   // 状态要到下一次渲染才变：连点两下时靠它挡住第二次发起
@@ -98,11 +94,15 @@ export function useDubbing(
     queries: watched.map((target) => dubbingJobsQuery(conversationId, target.sourceJobId)),
   })
 
-  const start = async (locale: LocaleCode, targets: readonly DubbingTarget[]) => {
+  const start = async (
+    locale: LocaleCode,
+    voice: string | null,
+    targets: readonly DubbingTarget[],
+  ) => {
     if (busyRef.current || targets.length === 0) return
     busyRef.current = true
     const empty = new Map<string, string>()
-    setRun({ locale, targets, submitting: true, jobs: empty, failed: empty })
+    setRun({ locale, voice, targets, submitting: true, jobs: empty, failed: empty })
     const jobs = new Map<string, string>()
     const failed = new Map<string, string>()
     await Promise.all(
@@ -113,7 +113,10 @@ export function useDubbing(
             sourceJobId,
             locale,
             lines: lines.map(({ startMs, endMs, text }) => ({ startMs, endMs, text })),
-            reference: { kind: 'original' },
+            reference:
+              voice === null
+                ? { kind: 'original' }
+                : { kind: 'reference_audio', referenceId: voice },
           })
           jobs.set(sourceJobId, job.id)
           queryClient.setQueryData(
@@ -125,19 +128,19 @@ export function useDubbing(
         }
       }),
     )
-    setRun({ locale, targets, submitting: false, jobs, failed })
+    setRun({ locale, voice, targets, submitting: false, jobs, failed })
   }
 
   // 全部有了结果：这次生成结束，结果交给下面的副作用调 `onDone`
-  const [finished, setFinished] = useState<Finished | null>(null)
+  const [finished, setFinished] = useState<DubbingDone | null>(null)
   const outcomes = run === null || run.submitting ? undefined : outcomesOf(run, results)
   if (run !== null && outcomes !== undefined) {
     setRun(null)
-    setFinished({ locale: run.locale, targets: run.targets, outcomes })
+    setFinished({ locale: run.locale, voice: run.voice, targets: run.targets, outcomes })
   }
-  const deliver = useEffectEvent((done: Finished) => {
+  const deliver = useEffectEvent((done: DubbingDone) => {
     busyRef.current = false
-    onDone(done.locale, done.targets, done.outcomes)
+    onDone(done)
   })
   useEffect(() => {
     if (finished !== null) deliver(finished)

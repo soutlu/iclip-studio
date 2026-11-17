@@ -12,7 +12,9 @@ import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { MEDIA_AUDIO_ACCEPT, uploadMediaFile } from '@/shared/api/media-upload'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
+import { useAudition } from '@/shared/ui/audition'
 import { Button, IconButton } from '@/shared/ui/button'
+import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { Composer, type ComposerHandle } from '@/shared/ui/composer'
 import { Input } from '@/shared/ui/field'
 import { useFileDropTarget } from '@/shared/ui/file-drop'
@@ -31,6 +33,7 @@ import { filmViewQuery } from '../film/film.api'
 import { isRunningStatus } from '../shots'
 import type { GenerationJob } from '../storyboard.api'
 import { durationLabel, filterAudio, firstAudioClipOf, type ConversationAudio } from './audio'
+import { AudioLibrary } from './audio-library'
 import type { CarryPoint } from './items-tab'
 import type { FilmClip } from './composition/film'
 import { useEditorEscape } from './editor-keys'
@@ -94,6 +97,9 @@ function MusicStatus({ status }: { status: GenerationJob['status'] }) {
 const isReady = (audio: ConversationAudio): audio is ConversationAudio & { url: string } =>
   audio.status === 'completed' && audio.url !== null
 
+/** 页签里的两块：这段对话的音频，参考音频库里的配乐和音效。 */
+type AudioView = 'conversation' | 'library'
+
 export function AudioTab({
   conversationId,
   active,
@@ -132,41 +138,42 @@ export function AudioTab({
     return { label: item.title, src: item.url, mediaStart: 0, duration }
   }
 
-  // 同一时间只播一条：所有行共用一个播放器
-  const [playing, setPlaying] = useState<string | null>(null)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  useEffect(
-    () => () => {
-      audioRef.current?.pause()
-    },
-    [],
-  )
-  // 选中片段时侧栏自动切到「属性」，这个页签只是藏起来、没有卸掉：试听要跟着停，不然声音在放、控件却看不见
-  const [wasActive, setWasActive] = useState(active)
-  if (wasActive !== active) {
-    setWasActive(active)
-    if (!active) setPlaying(null)
-  }
-  useEffect(() => {
-    if (!active) audioRef.current?.pause()
-  }, [active])
-  const toggle = (item: ConversationAudio & { url: string }) => {
-    const audio = audioRef.current ?? new Audio()
-    if (audioRef.current === null) {
-      audio.addEventListener('ended', () => setPlaying(null))
-      audioRef.current = audio
-    }
-    if (playing === item.id) {
-      audio.pause()
-      setPlaying(null)
-      return
-    }
-    audio.setAttribute('src', item.url)
-    setPlaying(item.id)
-    audio.play().catch(() => {
-      setPlaying(null)
-      onNotice('音频试听失败，请重试')
-    })
+  // 「本对话」和「音频库」两块：搜索框共用，本对话的按名字筛，音频库的按它去搜
+  const [view, setView] = useState<AudioView>('conversation')
+  // 选中片段时侧栏自动切到「属性」，这个页签只是藏起来、没有卸掉：试听要跟着停，不然声音在放、控件却看不见；
+  // 切到「音频库」时本对话的试听也停
+  const { playing, toggle } = useAudition({
+    active: active && view === 'conversation',
+    onError: () => onNotice('音频试听失败，请重试'),
+  })
+  const rowFor = (
+    item: ConversationAudio,
+    ready: NewAudio | string,
+    audition: { playing: boolean; onToggle: () => void },
+  ) => {
+    const used = item.url === null ? undefined : firstAudioClipOf(clips, item.url)
+    return (
+      <AudioRow
+        addable={ready}
+        audio={item}
+        conversationId={conversationId}
+        key={item.id}
+        onAdd={() => (typeof ready === 'string' ? onNotice(ready) : onAdd(ready))}
+        onCarry={(point) => {
+          if (typeof ready !== 'string') onCarry(ready, point)
+        }}
+        onDrop={(point) => {
+          if (typeof ready !== 'string') onDrop(ready, point)
+        }}
+        onNotice={onNotice}
+        onReveal={() => {
+          if (used !== undefined) onReveal(used.id)
+        }}
+        onToggle={audition.onToggle}
+        playing={audition.playing}
+        used={used !== undefined}
+      />
+    )
   }
 
   const [uploading, setUploading] = useState(false)
@@ -189,17 +196,60 @@ export function AudioTab({
     onDirectory: () => onNotice('拖入的是文件夹，无法导入；请拖入音频文件'),
   })
 
+  const search = (
+    <Input
+      aria-label="搜索音频"
+      leadingIcon="search"
+      onChange={(event) => setQuery(event.currentTarget.value)}
+      placeholder="搜索音频"
+      type="search"
+      value={query}
+      wrapperClassName="wf-audio-search"
+    />
+  )
+  const views = (
+    <ChipGroup
+      aria-label="音频来源"
+      className="wf-audio-views"
+      onValueChange={(value) => {
+        if (value === 'conversation' || value === 'library') setView(value)
+      }}
+      type="single"
+      value={view}
+      variant="segmented"
+    >
+      <FilterChip value="conversation" variant="segmented">
+        本对话
+      </FilterChip>
+      <FilterChip value="library" variant="segmented">
+        音频库
+      </FilterChip>
+    </ChipGroup>
+  )
+  if (view === 'library')
+    return (
+      <div className="wf-audio">
+        {search}
+        {views}
+        <AudioLibrary
+          active={active}
+          onNotice={onNotice}
+          query={query}
+          renderRow={(item, audition) =>
+            rowFor(
+              item,
+              { label: item.title, src: item.url, mediaStart: 0, duration: item.durationMs },
+              audition,
+            )
+          }
+        />
+      </div>
+    )
+
   return (
     <div className={cn('wf-audio', drop.dragOver && 'is-over')} {...drop.dragHandlers}>
-      <Input
-        aria-label="搜索音频"
-        leadingIcon="search"
-        onChange={(event) => setQuery(event.currentTarget.value)}
-        placeholder="搜索音频"
-        type="search"
-        value={query}
-        wrapperClassName="wf-audio-search"
-      />
+      {search}
+      {views}
       <div className="wf-audio-actions">
         <GenerateMusic conversationId={conversationId} onNotice={onNotice}>
           <Button className="wf-audio-action" leadingIcon="sparkles" size="md" variant="primary">
@@ -253,34 +303,14 @@ export function AudioTab({
         </p>
       ) : (
         <ul aria-label="音频" className="wf-audio-list">
-          {shown.map((item) => {
-            const used = item.url === null ? undefined : firstAudioClipOf(clips, item.url)
-            const ready = addable(item)
-            return (
-              <AudioRow
-                addable={ready}
-                audio={item}
-                conversationId={conversationId}
-                key={item.id}
-                onAdd={() => (typeof ready === 'string' ? onNotice(ready) : onAdd(ready))}
-                onCarry={(point) => {
-                  if (typeof ready !== 'string') onCarry(ready, point)
-                }}
-                onDrop={(point) => {
-                  if (typeof ready !== 'string') onDrop(ready, point)
-                }}
-                onNotice={onNotice}
-                onReveal={() => {
-                  if (used !== undefined) onReveal(used.id)
-                }}
-                onToggle={() => {
-                  if (isReady(item)) toggle(item)
-                }}
-                playing={playing === item.id}
-                used={used !== undefined}
-              />
-            )
-          })}
+          {shown.map((item) =>
+            rowFor(item, addable(item), {
+              playing: playing === item.id,
+              onToggle: () => {
+                if (isReady(item)) toggle(item.id, item.url)
+              },
+            }),
+          )}
         </ul>
       )}
     </div>

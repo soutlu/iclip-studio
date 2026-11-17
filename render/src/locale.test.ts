@@ -226,16 +226,17 @@ describe('按语言放人声', () => {
     `  ${VIDEO}\n  ${MUSIC}\n  ${DETACHED}\n  ${dub('en', 'd-en')}\n  ${dub('de', 'd-de')}\n</div>\n</body>\n</html>\n`
   const without = (html: string, ...parts: string[]) =>
     parts.reduce((left, part) => left.replace(`\n  ${part}`, ''), html)
+  const EN_DUB = '{"en":{"mode":"dub","voice":null}}'
 
   it('原文：配音片段都去掉，原声照常，别的字一个不动', () => {
-    const html = film('{"en":"dub"}')
+    const html = film(EN_DUB)
     expect(withLocalizedVoices(html, null)).toBe(
       without(html, dub('en', 'd-en'), dub('de', 'd-de')),
     )
   })
 
   it('AI 配音：只留这种语言的配音，视频关掉原声、分离出来的原声去掉，配乐不动', () => {
-    const html = film('{"en":"dub"}')
+    const html = film(EN_DUB)
     expect(withLocalizedVoices(html, 'en')).toBe(
       without(html, DETACHED, dub('de', 'd-de')).replace(
         ' data-has-audio="true" playsinline>',
@@ -245,7 +246,7 @@ describe('按语言放人声', () => {
   })
 
   it('保留原声：这种语言的配音也去掉，原声照常', () => {
-    const html = film('{"en":"dub"}')
+    const html = film(EN_DUB)
     expect(withLocalizedVoices(html, 'de')).toBe(
       without(html, dub('en', 'd-en'), dub('de', 'd-de')),
     )
@@ -255,7 +256,7 @@ describe('按语言放人声', () => {
   })
 
   it('按语言导出用上它：原文去掉配音，English 用 English 的配音', () => {
-    const main = film('{"en":"dub"}')
+    const main = film(EN_DUB)
     const project = [
       { path: 'index.html', content: main },
       { path: 'locales/en.json', content: '{}' },

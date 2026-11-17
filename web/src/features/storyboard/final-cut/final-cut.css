@@ -141,6 +141,21 @@
   font-size: var(--text-label);
 }
 
+/* 「本对话 / 音频库」两块切换，音频库里「配乐 / 音效」两类 */
+.wf-audio-views,
+.wf-audio-kinds {
+  flex: none;
+  margin: 10px 12px 0;
+}
+
+.wf-audio-kinds {
+  margin-bottom: 8px;
+}
+
+.wf-audio-more {
+  list-style: none;
+}
+
 .wf-audio-actions {
   display: grid;
   flex: none;
@@ -372,7 +387,7 @@
   margin-top: 0;
 }
 
-/* 其它语言下的「人声」一行：名字在左，「保留原声 / AI 配音」两个胶囊，有配音时右边是「重新生成」 */
+/* 其它语言下的「人声」一行：名字在左，「保留原声」胶囊，有配音时右边是「重新生成」 */
 .wf-captions-voice {
   display: flex;
   flex: none;
@@ -417,8 +432,71 @@
   color: var(--state-disabled-content);
 }
 
+/* AI 配音的音色小块：一行排开，放不下时左右滑动（不显示滚动条） */
+.wf-captions-voices {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  margin: 6px 12px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.wf-captions-voice-chip {
+  display: inline-flex;
+  height: 24px;
+  max-width: 160px;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-caption);
+}
+
+.wf-captions-voice-chip.is-picked {
+  background: var(--color-on-surface);
+  color: var(--color-surface);
+  font-weight: 600;
+}
+
+.wf-captions-voice-play {
+  flex: none;
+  margin-left: 2px;
+  color: inherit;
+}
+
+.wf-captions-voice-pick {
+  overflow: hidden;
+  height: 100%;
+  min-width: 0;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-captions-voice-play + .wf-captions-voice-pick {
+  padding-left: 2px;
+}
+
+.wf-captions-voice-chip:not(.is-picked) .wf-captions-voice-pick[aria-disabled='true'] {
+  color: var(--state-disabled-content);
+}
+
+.wf-captions-voices-alert {
+  flex: none;
+  margin: 4px 12px 0;
+}
+
 .wf-captions-voice + .wf-captions-actions,
-.wf-captions-voice + .wf-captions-note {
+.wf-captions-voice + .wf-captions-note,
+.wf-captions-voices + .wf-captions-actions,
+.wf-captions-voices + .wf-captions-note,
+.wf-captions-voices-alert + .wf-captions-actions,
+.wf-captions-voices-alert + .wf-captions-note {
   margin-top: 8px;
 }
 

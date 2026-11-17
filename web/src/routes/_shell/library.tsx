@@ -4,12 +4,14 @@ import {
   HitCasesRoute,
   LibraryRoute,
   LibraryTabsList,
+  ReferenceAudiosRoute,
   ReferencesRoute,
   WholeFilmsRoute,
   useLibraryTaggingRefresh,
   type HitCaseScope,
   type HitCaseTarget,
   type LibraryScope,
+  type ReferenceAudioScope,
   type ReferenceScope,
   type WholeFilmScope,
 } from '@/features/library'
@@ -18,9 +20,11 @@ import { TabsContent, TabsRoot } from '@/shared/ui/tabs'
 import {
   hitCaseScopeFromSearch,
   librarySearchSchema,
+  referenceAudioScopeFromSearch,
   referenceScopeFromSearch,
   scopeFromSearch,
   searchFromHitCaseScope,
+  searchFromReferenceAudioScope,
   searchFromReferenceScope,
   searchFromScope,
   searchFromTab,
@@ -52,6 +56,8 @@ function LibraryPage() {
     void navigate({ replace: true, search: searchFromScope(next) })
   const setReferenceScope = (next: ReferenceScope) =>
     void navigate({ replace: true, search: searchFromReferenceScope(next) })
+  const setReferenceAudioScope = (next: ReferenceAudioScope) =>
+    void navigate({ replace: true, search: searchFromReferenceAudioScope(next) })
   const setWholeFilmScope = (next: WholeFilmScope) =>
     void navigate({ replace: true, search: searchFromWholeFilmScope(next) })
   const setHitCaseScope = (next: HitCaseScope) =>
@@ -116,6 +122,13 @@ function LibraryPage() {
           onScopeChange={setReferenceScope}
           referenceId={search.reference ?? null}
           scope={referenceScopeFromSearch(search)}
+          tabs={<LibraryTabsList />}
+        />
+      </TabsContent>
+      <TabsContent className={TAB_CONTENT_CLASS} tabIndex={-1} value="audios">
+        <ReferenceAudiosRoute
+          onScopeChange={setReferenceAudioScope}
+          scope={referenceAudioScopeFromSearch(search)}
           tabs={<LibraryTabsList />}
         />
       </TabsContent>

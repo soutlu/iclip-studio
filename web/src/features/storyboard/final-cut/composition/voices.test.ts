@@ -4,8 +4,12 @@ import {
   voiceModeOf,
   voiceModesAttribute,
   voiceModesOf,
+  voiceSettingOf,
   type VoiceElement,
+  type VoiceSetting,
 } from './voices'
+
+const DUB: VoiceSetting = { mode: 'dub', voice: null }
 
 const video = (extra: Record<string, string> = {}): VoiceElement => ({
   tag: 'video',
@@ -27,14 +31,14 @@ const MUTED = { muted: 'true', 'data-has-audio': null }
 
 describe('localizedVoices', () => {
   it('原文：配音片段都去掉，原声照常', () => {
-    expect(localizedVoices(ELEMENTS, { en: 'dub' }, null)).toEqual([
+    expect(localizedVoices(ELEMENTS, { en: DUB }, null)).toEqual([
       { index: 3, remove: true },
       { index: 4, remove: true },
     ])
   })
 
   it('AI 配音：只留这种语言的配音，视频关掉原声，分离出来的原声去掉；配乐、贴片不动', () => {
-    expect(localizedVoices(ELEMENTS, { en: 'dub' }, 'en')).toEqual([
+    expect(localizedVoices(ELEMENTS, { en: DUB }, 'en')).toEqual([
       { index: 0, remove: false, attributes: MUTED },
       { index: 1, remove: true },
       { index: 4, remove: true },
@@ -42,11 +46,15 @@ describe('localizedVoices', () => {
   })
 
   it('AI 配音时本来就关了原声的视频不动', () => {
-    expect(localizedVoices([video({ muted: '' })], { en: 'dub' }, 'en')).toEqual([])
+    expect(localizedVoices([video({ muted: '' })], { en: DUB }, 'en')).toEqual([])
   })
 
-  it('保留原声：这种语言的配音也去掉，原声照常', () => {
-    expect(localizedVoices(ELEMENTS, { en: 'dub' }, 'de')).toEqual([
+  it('保留原声：这种语言的配音也去掉，原声照常；记着音色也一样', () => {
+    expect(localizedVoices(ELEMENTS, { en: DUB }, 'de')).toEqual([
+      { index: 3, remove: true },
+      { index: 4, remove: true },
+    ])
+    expect(localizedVoices(ELEMENTS, { en: { mode: 'original', voice: 'v-1' } }, 'en')).toEqual([
       { index: 3, remove: true },
       { index: 4, remove: true },
     ])
@@ -62,18 +70,36 @@ describe('localizedVoices', () => {
 })
 
 describe('人声设置的读写', () => {
-  it('只认写成 dub 的语言；没写、写法不对时都是保留原声，原文总是保留原声', () => {
-    const modes = voiceModesOf('{"en":"dub","de":"original","fr":1}')
-    expect(modes).toEqual({ en: 'dub' })
+  it('每种语言写着设置和音色（null 是原声的音色）；没写、写法不对时都是保留原声、原声的音色', () => {
+    const modes = voiceModesOf(
+      '{"en":{"mode":"dub","voice":null},"es":{"mode":"original","voice":"v-1"},' +
+        '"zh":{"mode":"dub","voice":"v-2"},"de":"dub","fr":1,"ja":{"mode":"dub"},' +
+        '"ko":{"mode":"loud","voice":"v"},"it":{"mode":"dub","voice":""}}',
+    )
+    expect(modes).toEqual({
+      en: DUB,
+      es: { mode: 'original', voice: 'v-1' },
+      zh: { mode: 'dub', voice: 'v-2' },
+    })
     expect(voiceModeOf(modes, 'en')).toBe('dub')
-    expect(voiceModeOf(modes, 'de')).toBe('original')
+    expect(voiceModeOf(modes, 'es')).toBe('original')
+    expect(voiceSettingOf(modes, 'zh')).toEqual({ mode: 'dub', voice: 'v-2' })
+    expect(voiceSettingOf(modes, 'de')).toEqual({ mode: 'original', voice: null })
     expect(voiceModeOf(modes, null)).toBe('original')
     for (const json of [undefined, '', '[]', 'null', '{oops'])
       expect(voiceModesOf(json)).toEqual({})
   })
 
-  it('改一种语言的设置：别的语言不动；都保留原声时去掉这个属性', () => {
-    expect(voiceModesAttribute({ en: 'dub' }, 'de', 'dub')).toBe('{"en":"dub","de":"dub"}')
-    expect(voiceModesAttribute({ en: 'dub' }, 'en', 'original')).toBeNull()
+  it('改一种语言的设置：别的语言不动；保留原声时音色还记着；都是默认设置时去掉这个属性', () => {
+    expect(voiceModesAttribute({ en: DUB }, 'de', DUB)).toBe(
+      '{"en":{"mode":"dub","voice":null},"de":{"mode":"dub","voice":null}}',
+    )
+    expect(voiceModesAttribute({ en: DUB }, 'en', { mode: 'original', voice: null })).toBeNull()
+    expect(voiceModesAttribute({ en: DUB }, 'en', { mode: 'original', voice: 'v-1' })).toBe(
+      '{"en":{"mode":"original","voice":"v-1"}}',
+    )
+    expect(voiceModesAttribute({ en: { mode: 'dub', voice: 'v-1' } }, 'de', DUB)).toBe(
+      '{"en":{"mode":"dub","voice":"v-1"},"de":{"mode":"dub","voice":null}}',
+    )
   })
 })

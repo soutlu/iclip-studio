@@ -2223,7 +2223,7 @@ test('翻译：加上 English 后点「翻译」，字幕和贴片里随语言�
   await expect.poll(shown).toEqual({ caption: '[EN] 新字幕', host: '[EN] 示例文字' })
 })
 
-test('AI 配音：English 下点「AI 配音」，配音行出现和字幕对齐的配音片段，预览里视频静音、配音在；保留原声时原声回来、配音片段不显示；原文下没有配音', async ({
+test('AI 配音：English 下点音色「原声」，配音行出现和字幕对齐的配音片段，预览里视频静音、配音在；保留原声时原声回来、配音片段不显示；选资料库的音色重新生成；原文下没有配音', async ({
   page,
 }) => {
   test.setTimeout(120_000)
@@ -2274,8 +2274,9 @@ test('AI 配音：English 下点「AI 配音」，配音行出现和字幕对齐
     'aria-pressed',
     'true',
   )
+  const voices = tab.getByRole('group', { name: 'AI 配音音色' })
   const dubbed = mainSavedWith(page, (html) => (html.match(/data-dub-of=/g) ?? []).length === 2)
-  await voice.getByRole('button', { name: 'AI 配音' }).click()
+  await voices.getByRole('button', { name: '原声', exact: true }).click()
   const html = htmlOf(await dubbed)
   const dubs = [...html.matchAll(/<audio [^>]*data-dub-of="[^"]+"[^>]*>/g)].map(([tag]) => ({
     start: Number(/ data-start="([\d.]+)"/.exec(tag)?.[1]),
@@ -2286,7 +2287,7 @@ test('AI 配音：English 下点「AI 配音」，配音行出现和字幕对齐
     { start: 0.3, mediaStart: 0.3, locale: 'en' },
     { start: 2.4, mediaStart: 2.4, locale: 'en' },
   ])
-  await expect(voice.getByRole('button', { name: 'AI 配音' })).toHaveAttribute(
+  await expect(voices.getByRole('button', { name: '原声', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
@@ -2330,10 +2331,10 @@ test('AI 配音：English 下点「AI 配音」，配音行出现和字幕对齐
   await expect(editor.getByRole('group', { name: /^配音 · / })).toHaveCount(0)
   await expect(dubRow).toHaveCount(0)
 
-  // 切回 AI 配音：不重新生成，配音片段回来；撤销后又藏起来
+  // 再点配好的音色「原声」：不重新生成，配音片段回来；撤销后又藏起来
   const requested = dubbingRequests.length
   expect(requested).toBeGreaterThan(0)
-  await voice.getByRole('button', { name: 'AI 配音' }).click()
+  await voices.getByRole('button', { name: '原声', exact: true }).click()
   await expect(dubRow.getByRole('group', { name: /^配音 · \[EN\] / })).toHaveCount(2)
   await expect.poll(sounds).toEqual({ muted: true, dubs: 2 })
   expect(dubbingRequests).toHaveLength(requested)
@@ -2344,9 +2345,30 @@ test('AI 配音：English 下点「AI 配音」，配音行出现和字幕对齐
   await expect(editor.getByRole('group', { name: /^配音 · / })).toHaveCount(0)
   await expect.poll(sounds).toEqual({ muted: false, dubs: 0 })
 
-  // 原文：时间线和预览里都没有配音
-  await voice.getByRole('button', { name: 'AI 配音' }).click()
+  // 选资料库里的一个音色：用它重新生成，换掉原来的配音，主文件记着这个音色
+  const emma = voices.getByRole('button', { name: 'Emma', exact: true })
+  const asked = page.waitForRequest(
+    (request) => request.method() === 'POST' && request.url().endsWith('/api/generations/dubbings'),
+  )
+  // 配音要几秒才配好，存主文件在拿到音色编号之后
+  let referenceId: string | null = null
+  const regenerated = mainSavedWith(
+    page,
+    (saved) =>
+      referenceId !== null &&
+      saved.includes(referenceId) &&
+      (saved.match(/data-dub-of=/g) ?? []).length === 2,
+  )
+  await emma.click()
+  const reference = ((await asked).postDataJSON() as { reference: unknown }).reference
+  expect(reference).toMatchObject({ kind: 'reference_audio' })
+  referenceId = (reference as { referenceId: string }).referenceId
+  expect(referenceId).toMatch(/^[0-9a-f-]{36}$/)
+  await regenerated
+  await expect(emma).toHaveAttribute('aria-pressed', 'true')
   await expect.poll(sounds).toEqual({ muted: true, dubs: 2 })
+
+  // 原文：时间线和预览里都没有配音
   await languages.getByRole('button', { name: '原文' }).click()
   await expect(editor.getByRole('group', { name: /^配音 · / })).toHaveCount(0)
   await expect.poll(sounds).toEqual({ muted: false, dubs: 0 })
