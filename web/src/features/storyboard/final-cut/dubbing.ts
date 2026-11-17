@@ -7,6 +7,7 @@ import {
   type FilmClip,
   type VideoClip,
 } from './composition/film'
+import type { VoiceMode } from './composition/voices'
 import {
   phraseWith,
   SOURCE_NAME,
@@ -17,13 +18,14 @@ import {
 } from './locales'
 
 /**
- * 在语言 `locale` 下显示的片段：配音片段只显示这种语言的，原文下一个都不显示（也就没有配音行）；别的片段都显示。
- * 时间线、行名和同一行不能重叠都按显示着的片段算，不同语言的配音在同一行同一时间不算重叠。
+ * 在语言 `locale`（人声设置 `mode`）下显示的片段：配音片段只在这种语言 AI 配音时显示这种语言的，保留原声时、
+ * 原文下一个都不显示（也就没有配音行）；别的片段都显示。时间线、行名和同一行不能重叠都按显示着的片段算，
+ * 不同语言的配音在同一行同一时间不算重叠。
  */
 export const shownIn =
-  (locale: Language) =>
+  (locale: Language, mode: VoiceMode) =>
   (clip: FilmClip): boolean =>
-    !isDubClip(clip) || clip.dub.locale === locale
+    !isDubClip(clip) || (mode === 'dub' && clip.dub.locale === locale)
 
 /** 要配的一句：在素材片视频里的起止（毫秒）和译文，`caption` 是它配的那句字幕。 */
 export type DubLine = DubbingLine & { caption: string }

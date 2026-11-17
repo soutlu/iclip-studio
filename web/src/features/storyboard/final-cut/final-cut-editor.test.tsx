@@ -4932,22 +4932,28 @@ describe('final-cut 编辑器 · 配音', () => {
     expect(savedModes()).toBeNull()
   })
 
-  it('保留原声、AI 配音来回切：写在主文件根上，各一步撤销；保留原声时配音片段标「不出声」；原文下看不到配音片段', async () => {
+  it('保留原声、AI 配音来回切：写在主文件根上，各一步撤销；保留原声时时间线上不显示这种语言的配音片段；原文下看不到配音片段', async () => {
     const user = await open()
-    serveDubbings()
+    const sent = serveDubbings()
     await user.click(voiceButton('AI 配音'))
     await waitSaved(() => expect(savedDubs()).toHaveLength(3))
-    const row = () => screen.getByRole('group', { name: '配音' })
+    const dubClips = () => screen.queryAllByRole('group', { name: /^配音 · / })
+    expect(dubClips()).toHaveLength(3)
 
     await user.click(voiceButton('保留原声'))
     await waitSaved(() => expect(savedModes()).toBeNull())
-    expect(
-      within(row()).getByRole('group', { name: /^配音 · B two，1\.5 秒，不出声$/ }),
-    ).toBeVisible()
+    expect(dubClips()).toHaveLength(0)
+    expect(screen.queryByRole('group', { name: '配音' })).toBeNull()
+    expect(savedDubs()).toHaveLength(3)
     // 有配音时点「AI 配音」只是切回去，不再生成
     await user.click(voiceButton('AI 配音'))
     await waitSaved(() => expect(savedModes()).toBe('{"en":"dub"}'))
     expect(savedDubs()).toHaveLength(3)
+    expect(sent).toHaveLength(2)
+    expect(dubClips()).toHaveLength(3)
+    await user.click(undoButton())
+    await waitSaved(() => expect(savedModes()).toBeNull())
+    expect(dubClips()).toHaveLength(0)
 
     await user.click(within(languages()).getByRole('button', { name: '原文' }))
     await waitFor(() =>

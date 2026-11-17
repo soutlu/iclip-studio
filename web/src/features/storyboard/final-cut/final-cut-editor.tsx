@@ -603,8 +603,8 @@ function EditorBody({
     'track' in row
       ? { track: row.track, renumber: undefined }
       : rowOpeningAmong(
-          [...clips, ...(film?.unshownDubs ?? [])],
-          shownIn(locale.code),
+          allClips,
+          shownIn(locale.code, film?.voiceMode ?? 'original'),
           row.zone,
           row.insertAt,
           movedId,
@@ -1044,7 +1044,8 @@ function EditorBody({
       ? undefined
       : {
           mode: film.voiceMode,
-          dubbed: film.clips.some(isDubClip),
+          // 保留原声时这种语言的配音片段藏着，也算有配音：再点「AI 配音」只是切回去，不重新生成
+          dubbed: allClips.some((clip) => isDubClip(clip) && clip.dub.locale === target.code),
           generating: dubbing.generating,
           generateBlocked: dubbingBlocked,
           onMode: (mode: VoiceMode) => {
@@ -1460,7 +1461,6 @@ function EditorBody({
         <FilmTimeline
           clips={clips}
           untranslated={untranslated}
-          dubsSilent={locale.values !== null && film?.voiceMode === 'original'}
           links={links}
           onSplit={split}
           tool={tool}

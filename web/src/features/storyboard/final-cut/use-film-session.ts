@@ -129,10 +129,13 @@ export type FilmView = {
   canvas: Canvas
   /**
    * 主文件根下所有带时间的元素（字幕宿主除外），按它们在文件里的先后；后面跟着字幕场景里的各句字幕，
-   * 按它们在场景里的先后。配音片段只有当前显示的语言的（见 `shownIn`）。
+   * 按它们在场景里的先后。配音片段只有当前显示的语言 AI 配音时的（见 `shownIn`）。
    */
   clips: readonly FilmClip[]
-  /** 没显示的配音片段（别的语言的；原文下是所有的）：新开一行时它们也要跟着重新编号（见 `rowOpeningAmong`）。 */
+  /**
+   * 没显示的配音片段（别的语言的、当前语言保留原声时这种语言的；原文下是所有的）：新开一行时它们也要跟着重新编号
+   * （见 `rowOpeningAmong`）。
+   */
   unshownDubs: readonly FilmClip[]
   /** 当前显示的语言的人声设置（见 `voices.ts`）；原文总是保留原声。 */
   voiceMode: VoiceMode
@@ -516,10 +519,12 @@ const viewOf = (
       ? SOURCE_SHOWN
       : { code: locale, values: table.values() }
   const sceneContent = present.get(project.captionsPath)
+  const voiceMode = voiceModeOf(voiceModesIn(main), shown.code)
+  const shownHere = shownIn(shown.code, voiceMode)
   const view: FilmView = {
     html,
     canvas: canvasOf(main),
-    clips: clips.filter(shownIn(shown.code)).map((clip) =>
+    clips: clips.filter(shownHere).map((clip) =>
       shown.values !== null && clip.kind === 'caption'
         ? {
             ...clip,
@@ -527,8 +532,8 @@ const viewOf = (
           }
         : clip,
     ),
-    unshownDubs: clips.filter((clip) => !shownIn(shown.code)(clip)),
-    voiceMode: voiceModeOf(voiceModesIn(main), shown.code),
+    unshownDubs: clips.filter((clip) => !shownHere(clip)),
+    voiceMode,
     links: new Map(clips.flatMap((clip) => (clip.link === null ? [] : [[clip.id, clip.link]]))),
     durationMs: latestEnd(main, scene),
     captionsProblem: captionsProblem(
@@ -1797,7 +1802,7 @@ export function useFilmSession(
   /**
    * 写进语言 `locale` 生成好的配音，算一步撤销：`plan` 拿到这一刻的片段（含字幕和所有语言的配音片段），答复要换掉
    * 的配音片段和要加的配音片段。换掉的先删，加的一起放进第一条这几段时间都空着的「配音」行（见 `dubRowFor`，
-   * 只看这种语言下显示的片段），写在根下第一个；这种语言的人声设置改成 AI 配音。答复加了几个；一个都不加时不动
+   * 只看这种语言 AI 配音时显示的片段），写在根下第一个；这种语言的人声设置改成 AI 配音。答复加了几个；一个都不加时不动
    * 工程，答 0。
    */
   const addDubs = useCallback(
@@ -1816,7 +1821,11 @@ export function useFilmSession(
       if (added.length === 0) return 0
       edit((engine) => {
         for (const id of removed) engine.removeElement(id)
-        const { track, renumber } = dubRowFor(clipsOf(engine, catalog), added, shownIn(locale))
+        const { track, renumber } = dubRowFor(
+          clipsOf(engine, catalog),
+          added,
+          shownIn(locale, 'dub'),
+        )
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
         for (const { caption, trimmed, ...dub } of added)
           engine.addElement(

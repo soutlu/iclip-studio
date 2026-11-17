@@ -101,8 +101,6 @@ type FilmTimelineProps = {
   clips: readonly FilmClip[]
   /** 显示着其它语言时还没翻的字幕：片段上写的是原文，右边标一个「原文」。 */
   untranslated: ReadonlySet<string>
-  /** 显示着的语言保留原声：配音片段不出声，右边标一个「不出声」。 */
-  dubsSilent: boolean
   /** 片段的链接名：链接的片段一起切。 */
   links: Links
   /**
@@ -164,12 +162,9 @@ const seconds = (ms: number) => (ms / 1000).toFixed(1)
 /** 其它语言里还没翻的字幕：片段上写的是原文，标出来。 */
 const SOURCE_TEXT_BADGE: SoundBadge = { text: SOURCE_NAME, tone: 'muted' }
 
-/** 配音片段的小标：这种语言保留原声时不出声；生成时截了尾的提示一下。 */
-const dubBadgeOf = (clip: FilmClip, silent: boolean): SoundBadge | undefined => {
-  if (!isDubClip(clip)) return undefined
-  if (silent) return { text: '不出声', tone: 'muted' }
-  return clip.dub.trimmed ? { text: '截短', tone: 'offset' } : undefined
-}
+/** 配音片段的小标：生成时截了尾的提示一下。 */
+const dubBadgeOf = (clip: FilmClip): SoundBadge | undefined =>
+  isDubClip(clip) && clip.dub.trimmed ? { text: '截短', tone: 'offset' } : undefined
 
 /** 开着压低的配乐片段的小标；静音（隐藏）的不出声，不标。 */
 const carveBadgeOf = (clip: FilmClip): SoundBadge | undefined =>
@@ -761,7 +756,6 @@ const keyOf = (row: RowKey) => `${row.zone}-${row.track}`
 export function FilmTimeline({
   clips,
   untranslated,
-  dubsSilent,
   links,
   tool,
   onSplit,
@@ -1189,7 +1183,7 @@ export function FilmTimeline({
                           groupFor={(kind) => editGroup(clip, selected, clips, kind)}
                           badge={
                             soundBadgeOf(clip, clips) ??
-                            dubBadgeOf(clip, dubsSilent) ??
+                            dubBadgeOf(clip) ??
                             carveBadgeOf(clip) ??
                             (untranslated.has(clip.id) ? SOURCE_TEXT_BADGE : undefined)
                           }
