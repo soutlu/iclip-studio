@@ -43,6 +43,7 @@ from iclip.domains.generation.schemas import (
 )
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.public import Principal
+from iclip.domains.references.infra_sql import SqlReferenceLookup
 from iclip.domains.uploads.service import UploadService
 from iclip.platform.runtime_api.client import RuntimeUnavailable
 from iclip.platform.runtime_api.file_store.namespace import namespace_for
@@ -86,12 +87,14 @@ class WholeFilmExportAdapter:
         generation: GenerationService,
         generations: GenerationRepository,
         uploads: UploadService,
+        references: SqlReferenceLookup,
         lineage: ConversationLineage,
         render: RenderClient,
     ) -> None:
         self._generation = generation
         self._generations = generations
         self._uploads = uploads
+        self._references = references
         self._lineage = lineage
         self._render = render
 
@@ -104,8 +107,8 @@ class WholeFilmExportAdapter:
         locale: TargetLocale | None,
     ) -> uuid.UUID:
         """记一条成片记录排队，导出哪种语言（``locale``，None 是原文）也记进去。主文件里的素材按地址
-        对来源，对不上的不记：``<video>`` 对生成记录；``<audio>`` 先对本对话（含分叉继承）的生成记录，
-        再对本对话（含分叉继承）的上传。"""
+        对来源，对不上的不记：``<video>`` 对生成记录；``<audio>`` 依次对本对话（含分叉继承）的生成记录、
+        本对话（含分叉继承）的上传、参考音频库，先对上的算。"""
 
         addresses = media_addresses(main_file)
         records = await self._generations.earliest_by_outputs(
@@ -114,6 +117,7 @@ class WholeFilmExportAdapter:
         inheritance = await self._lineage.ancestry(conversation_id)
         audio_urls = [address.url for address in addresses if address.kind != "video"]
         uploads = await self._uploads.conversation_uploads_at(conversation_id, audio_urls)
+        references = await self._references.audio_ids_at(audio_urls)
         videos: list[WholeFilmVideoSource] = []
         audios: list[WholeFilmAudioSource] = []
         for address in addresses:
@@ -135,6 +139,14 @@ class WholeFilmExportAdapter:
             if upload is not None:
                 audios.append(
                     WholeFilmAudioSource(source_kind="upload", source_id=upload.id, url=address.url)
+                )
+                continue
+            reference_id = references.get(address.url)
+            if reference_id is not None:
+                audios.append(
+                    WholeFilmAudioSource(
+                        source_kind="reference", source_id=reference_id, url=address.url
+                    )
                 )
         job = await self._generation.submit_whole_film(
             principal,

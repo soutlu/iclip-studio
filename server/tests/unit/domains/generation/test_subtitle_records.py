@@ -33,15 +33,16 @@ from tests.helpers.generation import (
     FAKE_VIDEO_PROVIDER,
     QUEUE_SETTINGS,
     FakeMediaProbe,
+    FakeReferenceAssets,
     FixedLineage,
     InMemoryGenerationRepository,
-    ReferenceClips,
     ScriptedProvider,
     image_request,
     make_composite,
     make_edit,
     make_job,
     make_subtitle,
+    trial_request,
     video_request,
 )
 from tests.helpers.identity import InMemoryUserRepository
@@ -130,7 +131,7 @@ def build_world(
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
         media_probe=FakeMediaProbe(),
-        reference_clips=ReferenceClips(),
+        references=FakeReferenceAssets(),
         subtitles=subtitles,
     )
     return World(store, queue, connector, service, asr, cleared)
@@ -352,7 +353,9 @@ async def test_a_video_the_caller_cannot_read_here_is_404(case: str) -> None:
     assert world.subtitles() == []
 
 
-@pytest.mark.parametrize("kind", ["编辑段", "图片", "没完成的出片", "失败的出片", "字幕记录"])
+@pytest.mark.parametrize(
+    "kind", ["编辑段", "图片", "没完成的出片", "失败的出片", "字幕记录", "试生成"]
+)
 async def test_a_readable_record_that_is_not_a_master_is_rejected(kind: str) -> None:
     me = uuid.uuid4()
     take = completed_take(owner_user_id=me)
@@ -370,6 +373,12 @@ async def test_a_readable_record_that_is_not_a_master_is_rejected(kind: str) -> 
         "失败的出片": make_job(video_request(), owner_user_id=me, status=STATUS_FAILED),
         "字幕记录": make_subtitle(
             take, status=STATUS_COMPLETED, output=GenerationOutput(sentences=SENTENCES)
+        ),
+        "试生成": make_job(
+            trial_request(),
+            status=STATUS_COMPLETED,
+            output=GenerationOutput(url=TAKE_URL),
+            finished_at=datetime.now(UTC),
         ),
     }[kind]
     target = replace(target, owner_user_id=me, conversation_id=None)

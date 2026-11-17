@@ -41,14 +41,9 @@ from iclip.domains.tagging.public import (
 
 _COMPOSE: Final = "compose"
 
-_INDEXED_MASTER: Final = """g.kind = 'video' AND g.status = 'completed' AND (g.output ->> 'url') IS NOT NULL
+# 素材片：没有来源的出片或合成；试生成（operation = 'trial'）不算。
+_MASTER: Final = """g.kind = 'video' AND g.status = 'completed' AND (g.output ->> 'url') IS NOT NULL
       AND ((g.operation = 'generate' AND g.source_job_id IS NULL) OR g.operation = 'compose')"""
-
-_MASTER: Final = (
-    _INDEXED_MASTER
-    + """
-      AND NOT (coalesce(g.metadata, '{}') ? 'referenceId')"""
-)
 
 _OUTPUT_COLUMNS: Final = """(g.output ->> 'url') AS output_url,
            (g.output ->> 'watermark_url') AS watermark_output_url,
@@ -71,13 +66,13 @@ _DANGLING: Final = f"""
 master_conversations AS (
     (SELECT g.conversation_id AS id
      FROM iclip.generation_jobs g
-     WHERE g.conversation_id IS NOT NULL AND {_INDEXED_MASTER}
+     WHERE g.conversation_id IS NOT NULL AND {_MASTER}
      ORDER BY g.conversation_id
      LIMIT 1)
     UNION ALL
     SELECT (SELECT g.conversation_id
             FROM iclip.generation_jobs g
-            WHERE g.conversation_id > m.id AND {_INDEXED_MASTER}
+            WHERE g.conversation_id > m.id AND {_MASTER}
             ORDER BY g.conversation_id
             LIMIT 1)
     FROM master_conversations m

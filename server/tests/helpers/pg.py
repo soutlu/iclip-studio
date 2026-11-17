@@ -28,7 +28,9 @@ APP_TABLES = (
     "iclip.media_uploads",
     "iclip.tracking_events",
     "iclip.inspiration_videos",
+    "iclip.references",
     "iclip.reference_videos",
+    "iclip.reference_audios",
     "iclip.library_entries",
     "iclip.library_entry_tags",
 )

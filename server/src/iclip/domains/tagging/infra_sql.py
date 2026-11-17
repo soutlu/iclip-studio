@@ -79,12 +79,8 @@ library_entries_table = Table(
     metadata_obj,
     Column("id", Uuid, primary_key=True),
     Column("kind", Text, nullable=False),
-    Column(
-        "reference_id",
-        Uuid,
-        ForeignKey(f"{DB_SCHEMA}.reference_videos.id", ondelete="CASCADE"),
-        nullable=True,
-    ),
+    # 参考资产主表 references.id，不设外键：参考资产只软删除。
+    Column("reference_id", Uuid, nullable=True),
     Column(
         "job_id",
         Uuid,
@@ -190,12 +186,13 @@ WITH RECURSIVE closure(ancestor, tag_id) AS (
 )
 SELECT c.ancestor AS tag_id,
        count(DISTINCT e.id) FILTER (
-           WHERE e.kind = :reference AND r.deleted_at IS NULL) AS n_references,
+           WHERE e.kind = :reference AND r.id IS NOT NULL AND r.deleted_at IS NULL
+       ) AS n_references,
        count(DISTINCT e.id) FILTER (WHERE e.kind = :hit_case) AS n_hit_cases
 FROM closure c
 JOIN iclip.library_entry_tags et ON et.tag_id = c.tag_id
 JOIN iclip.library_entries e ON e.id = et.entry_id
-LEFT JOIN iclip.reference_videos r ON r.id = e.reference_id
+LEFT JOIN iclip.references r ON r.id = e.reference_id AND r.kind = 'video'
 GROUP BY c.ancestor""")
 
 _CLEAR_AI: Final = text(f"""{_DIMENSION_OF}

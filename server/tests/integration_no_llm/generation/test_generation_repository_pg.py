@@ -48,6 +48,7 @@ from tests.helpers.generation import (
     make_edit,
     make_job,
     make_subtitle,
+    trial_request,
     video_request,
 )
 from tests.helpers.identity import InMemoryUserRepository
@@ -738,29 +739,22 @@ async def test_an_output_with_an_unknown_key_fails_to_read(engine: AsyncEngine) 
         await repo.get(take.id, owner=owner)
 
 
-async def test_the_latest_reference_trial_is_the_newest_video_take_for_it_by_anyone(
+async def test_a_trial_is_stored_as_its_own_operation_and_read_back_like_a_take(
     engine: AsyncEngine,
 ) -> None:
     repo = SqlGenerationRepository(engine)
-    owner, other = await make_user(engine), await make_user(engine)
-    reference, unrelated = uuid.uuid4(), uuid.uuid4()
-    tag = {"referenceId": str(reference)}
-    older = await repo.create(make_job(video_request(), owner_user_id=owner, metadata=tag))
-    newest = await repo.create(make_job(video_request(), owner_user_id=other, metadata=tag))
-    await repo.create(make_job(image_request(), owner_user_id=owner, metadata=tag))
-    await repo.create(
-        make_job(video_request(), owner_user_id=owner, metadata={"referenceId": str(unrelated)})
-    )
-    async with engine.begin() as conn:
-        await conn.execute(
-            text("UPDATE iclip.generation_jobs SET created_at = :at WHERE id = :id"),
-            {"at": datetime.now(UTC) - timedelta(hours=1), "id": older.id},
-        )
+    owner = await make_user(engine)
+    trial = await repo.create(make_job(trial_request(), owner_user_id=owner))
+    take = await repo.create(make_job(video_request(), owner_user_id=owner))
 
-    found = await repo.latest_reference_trial(reference)
+    read = await repo.get(trial.id, owner=owner)
+    takes = await repo.list_for_owner(owner=owner, limit=10, operation="generate")
+    trials = await repo.list_for_owner(owner=owner, limit=10, operation="trial")
 
-    assert found is not None and found.id == newest.id
-    assert await repo.latest_reference_trial(uuid.uuid4()) is None
+    assert (read.kind, read.operation) == ("video", "trial")
+    assert read.request == trial_request()
+    assert [job.id for job in takes] == [take.id], "按 generate 筛不含试生成"
+    assert [job.id for job in trials] == [trial.id]
 
 
 async def test_a_record_is_found_by_its_address_within_the_conversation_and_what_it_inherits(
@@ -990,7 +984,8 @@ async def test_the_model_group_is_stored_and_the_report_appends_it_after_the_old
     default = await repo.create(
         make_job(video_request(model="vendor-a-seedance-2-0"), owner_user_id=owner)
     )
-    for job in (grouped, default):
+    trial = await repo.create(make_job(trial_request(), owner_user_id=owner))
+    for job in (grouped, default, trial):
         await repo.mark_completed(
             job.id,
             output=GenerationOutput(url=f"https://cdn.test/{job.id}.mp4"),
@@ -1002,9 +997,10 @@ async def test_the_model_group_is_stored_and_the_report_appends_it_after_the_old
     async with engine.connect() as conn:
         result = await conn.execute(
             text(
-                "SELECT * FROM iclip.video_generation_report WHERE job_id IN (:grouped, :default)"
+                "SELECT * FROM iclip.video_generation_report"
+                " WHERE job_id IN (:grouped, :default, :trial)"
             ),
-            {"grouped": grouped.id, "default": default.id},
+            {"grouped": grouped.id, "default": default.id, "trial": trial.id},
         )
         columns = list(result.keys())
         rows = {row.job_id: row for row in result}
@@ -1020,7 +1016,13 @@ async def test_the_model_group_is_stored_and_the_report_appends_it_after_the_old
         "downloaded",
         "model_group",
         "upstream_model",
+        "trial",
     ], "原有列的名字和顺序不动，新列追加在末尾"
+    assert {job_id: row.trial for job_id, row in rows.items()} == {
+        grouped.id: False,
+        default.id: False,
+        trial.id: True,
+    }, "试生成也统计，单列标出"
     assert (
         rows[grouped.id].model,
         rows[grouped.id].model_group,

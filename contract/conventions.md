@@ -19,12 +19,13 @@
 - **请求来源检查**：`POST`、`PUT`、`PATCH`、`DELETE` 请求与 WebSocket 握手带了 `Origin` 头时，它的主机和端口必须等于请求的 `Host`，或者它在配置 `security.cors_allow_origins` 里；否则写请求返回 `403`（`{ detail }`），在所有路由之前生效，WebSocket 握手以 `1008` 关闭。`Origin: null` 与同站的其他子域名（包括预览域名）都不放行；不带 `Origin` 的请求（非浏览器的调用方，如 API Key 调用方与运行时的内部回调）不受影响。
 - **接口权限声明**：每个接口需要什么权限，直接看 `openapi.json` 中该接口的 `security` 字段（数组各项之间为「或」关系，内部的 scopes 为必须同时具备的权限名；空数组代表只需登录；无 `security` 代表公开接口；`POST /auth/logout` 仅限浏览器 Cookie 调用）。
 - **修改用户时的防越权检查**：调用 `PATCH /users/{id}` 修改他人账号（包括仅启停账号）时，如果对方现有的权限、或修改后的权限里包含当前操作者自己没有的权限，接口会返回 `403`。尝试修改自己的权限或停用自己会返回 `400`。
-- **代指定用户操作（`users:act_as`）**：持有 `users:act_as` 权限的 API Key，在调用以下 6 个写接口时传入目标用户名，即可将数据直接记在该用户名下：
+- **代指定用户操作（`users:act_as`）**：持有 `users:act_as` 权限的 API Key，在调用以下 7 个写接口时传入目标用户名，即可将数据直接记在该用户名下：
   - `POST /conversations`（`userName`）
   - `POST /tasks`（`userName`）
   - `POST /conversations/{id}/prompts`（`user_name`）
   - `POST /generations/*`（`user_name` 或 `userName`）
-  - `POST /references/{id}/test-generations`（`userName`）
+  - `POST /references/videos/{id}/test-generations`（`userName`）
+  - `POST /references/audios`（`userName`）
   - `POST /uploads/{uploadId}/confirm`（`userName`）
   - 注意：如果是普通浏览器登录用户调用这些接口，这些字段只能填自己的用户名，填别人会返回 `422`。
 
@@ -175,7 +176,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 ### 成片导出
 
 业务规则见 [CONTEXT.md「成片导出」](../docs/CONTEXT.md#术语)。以下三个接口仅限对话创建者本人调用（服务器未配置渲染服务时统一返回 `422`）：
-- **发起导出** `POST /conversations/{id}/whole-film/exports`：请求体可选，`{ locale }` 是导出哪种语言的版本，只认 `zh`、`en`、`de`、`es`、`fr`，别的值返回 `422`；不带请求体或 `locale` 为 `null` 导出原文。工作区里还没有主文件 `final-cut/index.html` 返回 `422`（「final-cut 暂无内容，无法导出」）；要导的语言在工程里没有值表 `final-cut/locales/<语言>.json` 返回 `422`（「final-cut 里没有这种语言的语言文件，无法导出这种语言的版本」）。受理后创建一条 `whole_film` 生成记录排入渲染队列，返回 `202 { exportId }`；记录里存导出的语言，和主文件里素材地址对上的来源：`<video>` 按输出地址对生成记录（同一个地址对上多条取最早建的那条），记成 `videos: [{ jobId, url }]`；`<audio>` 先对本对话（含分叉继承）的生成记录，再对本对话（含分叉继承）的上传（同一个地址取最早的那条），记成 `audios: [{ sourceKind: "generation" | "upload", sourceId, url }]`；对不上的地址不记，也不拒绝导出；各语言的配音片段也是 `<audio>`，都算在里面，交给渲染服务时也都给下载地址，渲染服务只下载导出的那种语言用到的。工程本身不存进记录：队列把记录交给渲染服务时才读工作区里的整个 `final-cut/` 目录（含值表），导出的就是那一刻的工程和值表；那时主文件已经不在了，记录记为失败（`FINAL_CUT_EMPTY`）。值表那时已经删掉或写法不对、值的类型和主文件里的声明对不上时，渲染服务不收，记录记为失败（`RENDER_REJECTED`，原因写在 `error.message` 里）。
+- **发起导出** `POST /conversations/{id}/whole-film/exports`：请求体可选，`{ locale }` 是导出哪种语言的版本，只认 `zh`、`en`、`de`、`es`、`fr`，别的值返回 `422`；不带请求体或 `locale` 为 `null` 导出原文。工作区里还没有主文件 `final-cut/index.html` 返回 `422`（「final-cut 暂无内容，无法导出」）；要导的语言在工程里没有值表 `final-cut/locales/<语言>.json` 返回 `422`（「final-cut 里没有这种语言的语言文件，无法导出这种语言的版本」）。受理后创建一条 `whole_film` 生成记录排入渲染队列，返回 `202 { exportId }`；记录里存导出的语言，和主文件里素材地址对上的来源：`<video>` 按输出地址对生成记录（同一个地址对上多条取最早建的那条），记成 `videos: [{ jobId, url }]`；`<audio>` 依次对本对话（含分叉继承）的生成记录、本对话（含分叉继承）的上传、参考音频库里没移除的参考音频，先对上的算（同一处对上多条取最早的那条），记成 `audios: [{ sourceKind: "generation" | "upload" | "reference", sourceId, url }]`；对不上的地址不记，也不拒绝导出；各语言的配音片段也是 `<audio>`，都算在里面，交给渲染服务时也都给下载地址，渲染服务只下载导出的那种语言用到的。工程本身不存进记录：队列把记录交给渲染服务时才读工作区里的整个 `final-cut/` 目录（含值表），导出的就是那一刻的工程和值表；那时主文件已经不在了，记录记为失败（`FINAL_CUT_EMPTY`）。值表那时已经删掉或写法不对、值的类型和主文件里的声明对不上时，渲染服务不收，记录记为失败（`RENDER_REJECTED`，原因写在 `error.message` 里）。
 - **查询最新导出进度** `GET .../whole-film/exports/latest`：返回该对话下最新一次导出的状态 `{ export: { id, locale, status, progress, queuePosition, error, downloadUrl } }`（从未导出过则 `export` 为 `null`；`locale` 是这次导出的语言，原文为 `null`；`status` 取值为 `queued | rendering | uploading | done | failed | cancelled`）。
 - **取消导出** `DELETE .../whole-film/exports/{exportId}`：取消排队中或正在渲染的导出任务（返回 `204`；如果刚好卡在向渲染服务提交的那一瞬间返回 `409`；如果渲染服务连不上返回 `502`）。
 
@@ -258,16 +259,16 @@ final-cut 工程是对话工作区里的 `final-cut/` 目录。工程里的脚�
 
 ## 11. 媒体生成 (Generations)
 
-系统共有 8 个异步生成提交接口（受理成功后均返回 `202`），任务状态每次变化都会通过 WebSocket 推送 `event.generation.changed` 帧。10 种生成记录的完整分类见 [CONTEXT.md「生成任务」](../docs/CONTEXT.md#术语)。
+系统共有 8 个异步生成提交接口（受理成功后均返回 `202`），任务状态每次变化都会通过 WebSocket 推送 `event.generation.changed` 帧。11 种生成记录的完整分类见 [CONTEXT.md「生成任务」](../docs/CONTEXT.md#术语)；参考视频的试生成（`video` / `trial`）由 `POST /references/videos/{id}/test-generations` 提交，见[参考资产](#14-参考资产-references)。
 
 | 提交接口 | 记录类型 (`kind` / `operation`) | 核心参数、校验规则与产物说明 |
 |---|---|---|
-| `POST /generations/video` | `video` / `generate`（出片） | 字段与上游视频异步接口保持一致（`snake_case`），额外支持传入 `conversation_id`、`task_id`、镜头组编号 `shot_index`、`metadata`，以及二选一的纯文本 `prompt` 或结构化分镜 `shot`（服务端会按固定模板拼成不超过 4000 字的 `prompt` 发给上游，参考图/视频/音频各不超过 30 个）。支持通过 `GET /generations/video/{task_id}` 按上游格式轮询状态 |
+| `POST /generations/video` | `video` / `generate`（出片） | 字段与上游视频异步接口保持一致（`snake_case`），额外支持传入 `conversation_id`、`task_id`、镜头组编号 `shot_index`、`metadata`，以及二选一的纯文本 `prompt` 或结构化分镜 `shot`（服务端会按固定模板拼成不超过 4000 字的 `prompt` 发给上游，参考图/视频/音频各不超过 30 个）。可选的 `reference_ids` 是这次用到的参考资产 id，有一条不在资料库或已移除就返回 `422`，原样记进请求、不发上游。支持通过 `GET /generations/video/{task_id}` 按上游格式轮询状态（出片、试生成与编辑段都能查） |
 | `POST /generations/video-edits` | `video` / `generate`（局部编辑段） | 基于一条已完成的素材片（`sourceJobId`），替换其中 `[rangeStartMs, rangeEndMs]` 区间（结束时间允许超出原片最多 50 毫秒）。不传参考视频时为**图生模式**（传 1 张图作首帧、2 张作首尾帧、3 张以上作参考图）；传入 1 条本人上传的视频、或资料库里一条没移除的参考视频的地址时为**视频编辑模式**（服务端会根据 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py) 自动补齐模型所需的前缀或参数） |
 | `POST /generations/video-composites` | `video` / `compose`（视频合成） | 传入基底素材片 `baseJobId` 和 1～100 段片段列表 `segments: [{ sourceJobId, start, end? }]`（每段必须取自该基底本身、或基于该基底生成的已完成编辑段）。服务端在本地用 ffmpeg 重新编码拼接（自动对齐原片的画幅与帧率），合成期间可通过 `clipStage`（`fetching | processing | uploading`）查看当前阶段 |
 | `POST /generations/image` | `image` / `generate`（生图 / 帧图编辑） | 模型、画幅、分辨率和可选的渠道 `channel` 必须在 `GET /generations/image-models` 声明的范围内。如果是基于已有图片修图（帧图编辑），传入底图地址 `sourceUrl`（服务端在本对话及继承来的生成图片里查找并关联 `sourceJobId`，找不到——包括上传的图片——则记录为外部底图地址） |
 | `POST /generations/subtitles` | `subtitle` / `generate`（字幕识别） | 识别指定素材片（`sourceJobId`）原片的口播字幕（素材片生成完成时不会识别，只有调用本接口才识别）。识别结果保存在 `sentences: [{ startMs, endMs, text, speaker, words }]` 中；如果视频没有音轨或全程无人说话，任务同样正常完成（`completed`），`sentences` 为空数组 `[]` |
-| `POST /generations/dubbings` | `dubbing` / `generate`（配音） | 给指定素材片（`sourceJobId`，规则同字幕识别）配一种外语（`locale`）。`lines: [{ startMs, endMs, text }]` 是每句译文在素材片里的起止（与字幕的 `sentences` 同一口径），按开始时间排好、不重叠、在素材片时长之内；`reference` 是 `{ kind: "original" }`（从原声里截被 `lines` 覆盖得最多、不超过 10 秒的一段，覆盖不到 3 秒任务失败）或 `{ kind: "audio", url }`（只收本系统存储里的地址，取前 10 秒）。每句放在它的开始，能占到下一句开始（最后一句到视频结尾）；合成出来更长时先加速、最多 1.25 倍，还放不下就截尾并淡出。产物是和素材片等长的一条 m4a 音轨（`outputUrl`），每句的结果在 `dubbedLines: [{ index, speed, trimmed }]`。未装配语音合成服务时答 `422` |
+| `POST /generations/dubbings` | `dubbing` / `generate`（配音） | 给指定素材片（`sourceJobId`，规则同字幕识别）配一种外语（`locale`）。`lines: [{ startMs, endMs, text }]` 是每句译文在素材片里的起止（与字幕的 `sentences` 同一口径），按开始时间排好、不重叠、在素材片时长之内；`reference` 三选一：`{ kind: "original" }`（从原声里截被 `lines` 覆盖得最多、不超过 10 秒的一段，覆盖不到 3 秒任务失败）、`{ kind: "reference_audio", referenceId }`（参考音频库里一条没移除的音色）、`{ kind: "upload", uploadId }`（调用者本人的一条音频上传），后两种取前 10 秒，不合要求返回 `422`。记录的 `request.reference` 存 `{ kind, url?, transcript?, referenceId?, uploadId? }`：用到的地址、音色的台词（台词不发给语音合成）与来源 id。每句放在它的开始，能占到下一句开始（最后一句到视频结尾）；合成出来更长时先加速、最多 1.25 倍，还放不下就截尾并淡出。产物是和素材片等长的一条 m4a 音轨（`outputUrl`），每句的结果在 `dubbedLines: [{ index, speed, trimmed }]`。未装配语音合成服务时答 `422` |
 | `POST /generations/music` | `audio` / `generate`（生成背景音乐） | 必须传入关联的对话 `conversationId` 和提示词 `prompt`（1～3000 字，前端默认填入制作页的 `musicDescription`）。服务端调用千问音乐模型后，会自动切除首尾静音、统一响度并转存为 m4a 文件，同时记录实测时长 `durationMs` |
 | `POST /generations/video-enhancements` | `video` / `enhance`（超分高清版） | 传入 `{ sourceJobId, resolution: "720p" | "1080p", userName }`。**不限制源视频是谁生成的**，任何人都可以对素材片或已导出的成片发起超分（只允许提升到比源视频更高的分辨率档位）。同一源视频的同一档位只要已有未失败的记录，就会直接幂等返回该记录。可通过 `GET /generations/{id}/enhancements` 查询某条视频可做的超分档位与各档最新状态 |
 
@@ -293,10 +294,15 @@ final-cut 工程是对话工作区里的 `final-cut/` 目录。工程里的脚�
   - 卡详情返回按镜头组排列的所有历史版本 `groups[]`（有镜号的组按镜号从小到大排在前面，无镜号的排在后面；组内按完成先后编为第 1..N 版），以及布尔值 `canMakeSame`（只要该卡关联了对话，且对话工作区里有 `film.icml` 或 `video_shot.json`，`canMakeSame` 就为 `true`，任何浏览者都可以点它做同款）。
 - **成片列表 `GET /library/whole-films`**：按对话聚合展示全站已导出的完整成片（不含分叉继承），每张卡直接返回该对话下所有的导出版本 `versions[]`。
 
-## 14. 参考视频 (References)
+## 14. 参考资产 (References)
 
-灵感库中的外部参考视频及其拆解报告（定义见 [CONTEXT.md「参考视频」](../docs/CONTEXT.md#术语)）：
-- **上传添加 `POST /references`**：传入本人已确认上传的视频 `uploadId`。如果是新视频则返回 `201` 并排入后台拆解队列；如果该视频以前已经有人传过，则直接返回已有记录（`200`）不再重复拆解；如果该视频以前被移除过，则会恢复显示并将所属人更新为本次上传者。
+参考资产分参考视频与参考音频两组接口，定义见 [CONTEXT.md「参考资产」](../docs/CONTEXT.md#术语)。读接口与改、删接口要 `generation:read`，入库要 `uploads:write`，重拆、重新打标与试生成要 `generation:submit`；改与删只给属主或治理者，别人的返回 `403`。
+
+### 参考视频 `/references/videos`
+
+灵感库中的参考视频及其拆解报告：
+- **列表 `GET /references/videos`**：按标签 `tags`、属主 `userName`、拆解全文关键词 `q`、建立时间 `[since, until)` 筛选，`cursor` 翻页，`total` 只在第一页给；`GET /references/videos/filters` 给名下有参考视频的属主与条数。
+- **入库 `POST /references/videos`**：`uploadId`（本人的一条视频上传）与 `sourceJobId`（调用者看得到的一条已完成的素材片）给且只给一个。如果是新视频则返回 `201` 并排入后台拆解队列；如果这个地址已经在资料库里，则直接返回已有记录（`200`）不再重复拆解；如果以前被移除过，则会恢复显示并将所属人与来源更新为这一次的。同一个地址同时加只会建出一条。别人的上传、种类不对、看不到或不是素材片的都返回 `404`。
 - **拆解状态与错误码**：`breakdownStatus` 取值为 `pending | running | completed | failed`。如果重拆失败，原有的拆解报告 `document` 会保留，并在 `errorCode` 中返回具体原因供前端展示对应提示语：
   - `video_unreadable`：视频文件无法打开或损坏，建议换一条视频。
   - `model_call_failed`：模型调用临时失败（限流、网络波动、5xx 或返回格式截断），重新点一次拆解通常可恢复。
@@ -304,9 +310,17 @@ final-cut 工程是对话工作区里的 `final-cut/` 目录。工程里的脚�
   - `model_unavailable`：后台未启用拆解模型，需联系管理员开启。
   - `timeout`：拆解执行超过 20 分钟未结束。
 - **编辑拆解、重拆与试生成**（仅创建者本人、治理者或代办 Key 可修改）：
-  - `PATCH /references/{id}`：带上版本号 `version` 修改拆解 Markdown 正文（正在排队或拆解中时返回 `409`）。
-  - `POST .../breakdowns`（重新拆解，成功后会覆盖人工改过的正文并自动触发重新打标）与 `POST .../tagging`（按当前拆解报告重新打标）。
-  - `POST .../test-generations`：仅根据当前拆解报告的文字拼出提示词，生成一条 wan3 480p 测试视频，用来对照检验拆解报告写得全不全（拆解未完成或上一次试生成还在跑时返回 `409`；如果之后又修改了拆解报告，详情里的 `testVideo.stale` 会变为 `true` 提示已过时）。
+  - `PATCH /references/videos/{id}`：带上版本号 `version` 修改拆解 Markdown 正文（版本对不上、正在排队或拆解中时返回 `409`）。
+  - `PUT .../tags`（整份替换标签）、`POST .../breakdowns`（重新拆解，成功后会覆盖人工改过的正文并自动触发重新打标）与 `POST .../tagging`（按当前拆解报告重新打标）。
+  - `POST .../test-generations`：仅根据当前拆解报告的文字拼出提示词，生成一条 wan3 480p 测试视频，用来对照检验拆解报告写得全不全（拆解未完成或上一次试生成还在跑时返回 `409`；如果之后又修改了拆解报告，详情里的 `testVideo.stale` 会变为 `true` 提示已过时）。试生成是一条 `video` / `trial` 的生成记录，`testVideo.jobId` 是它的 id；它不是素材片，不能拿来识别字幕、配音或做高清版，但照常能下载。
+  - `DELETE /references/videos/{id}`：移除（软删除）；对话里按地址拆解时仍会用它的拆解，但不会把它放回资料库。
+
+### 参考音频 `/references/audios`
+
+音色（`voice`）、配乐（`bgm`）与音效（`sfx`），不拆解、不打标：
+- **列表 `GET /references/audios`**：按子类 `audioKind`、语种 `locale`、属主 `userName`、关键词 `q`（匹配标题、备注与台词）、建立时间 `[since, until)` 筛选，`cursor` 翻页，`total` 只在第一页给；`GET /references/audios/filters` 给每个子类的条数（没有的是 0）与属主条数。
+- **入库 `POST /references/audios`**：`uploadId`（本人的一条音频上传）与 `sourceJobId`（调用者看得到的一条已完成的背景音乐）给且只给一个，外加 `title`、`audioKind`，可选 `description`、`locale`（只认 `zh`、`en`、`de`、`es`、`fr`）、`transcript`（只有音色能填）。每次都新建一条（`201`）。服务端入库时按地址量时长写进 `durationMs`：量不出来、音色不在 3 到 30 秒之间返回 `422`；配乐与音效时长大于 0 即可。来源对不上返回 `404`。
+- **改与删**：`PATCH /references/audios/{id}` 改 `title`、`description`、`locale`、`transcript`，给了的才改，给 `null` 清空（标题不能清空），不是音色却要留台词返回 `422`；`DELETE` 软删除，已经用它配好的音不受影响。
 
 ## 15. 资料库标签 (Library Tags)
 

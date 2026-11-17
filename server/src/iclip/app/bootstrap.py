@@ -31,6 +31,7 @@ from iclip.app.conversation_workspace import (
 from iclip.app.errors import install_error_handlers
 from iclip.app.final_cut_translation import build_final_cut_translator
 from iclip.app.generation_live import AnnouncingGenerationRepository
+from iclip.app.generation_references import GenerationReferenceAssets
 from iclip.app.image_generations import GenerationsAdapter
 from iclip.app.library_tagging import (
     HitCaseTreatments,
@@ -41,7 +42,7 @@ from iclip.app.logging import configure_logging
 from iclip.app.preview_host import PreviewHostSplit
 from iclip.app.prompt_attachments import PromptAttachmentImporter
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter, build_reference_breakdown
-from iclip.app.reference_clips import UsableReferenceClips
+from iclip.app.reference_sources import ProbedDuration, ReferenceMediaSources
 from iclip.app.reference_test_video import GenerationTestVideos
 from iclip.app.runtime_events import RuntimeEvents
 from iclip.app.runtime_internal import (
@@ -102,7 +103,7 @@ from iclip.domains.generation.module import (
     QwenServiceConfig,
     build_generation_module,
 )
-from iclip.domains.generation.ports import ConversationLineage, ReferenceClipCheck
+from iclip.domains.generation.ports import ConversationLineage, ReferenceAssets
 from iclip.domains.generation.queue import GenerationQueueSettings, queue_dsn
 from iclip.domains.generation.qwen import QwenEndpoint
 from iclip.domains.generation.render import RenderClient, RenderSetup
@@ -136,9 +137,13 @@ from iclip.domains.library.reports_pg import PgLibraryReports
 from iclip.domains.mcp_servers.module import build_mcp_servers_module
 from iclip.domains.model_providers.module import build_model_providers_module
 from iclip.domains.products.catalog_pg import PgStyleDirectory
-from iclip.domains.references.infra_sql import SqlReferenceStore
+from iclip.domains.references.infra_sql import (
+    SqlReferenceAudioStore,
+    SqlReferenceLookup,
+    SqlReferenceStore,
+)
 from iclip.domains.references.module import BreakdownSetup, build_references_module
-from iclip.domains.references.repository import VideoBreakdowns
+from iclip.domains.references.repository import MediaDuration, VideoBreakdowns
 from iclip.domains.skills.module import build_skills_module
 from iclip.domains.tagging.infra_sql import SqlTagStore
 from iclip.domains.tagging.module import TaggingSetup, build_tagging_module
@@ -253,15 +258,12 @@ def _qwen_service(resolved: ResolvedQwenService | None) -> QwenServiceConfig | N
     )
 
 
-def _dubbing(
-    resolved: ResolvedQwenService | None, owns_url: Callable[[str], bool]
-) -> DubbingSetup | None:
+def _dubbing(resolved: ResolvedQwenService | None) -> DubbingSetup | None:
     service = _qwen_service(resolved)
     if service is None:
         return None
     return DubbingSetup(
         synthesizer=QwenSpeechSynthesizer(service.endpoint),
-        owns_url=owns_url,
         concurrency=service.concurrency,
     )
 
@@ -273,13 +275,12 @@ def _generation_module(
     act_as: ActAs,
     clear_completion: ClearCompletion,
     lineage: ConversationLineage,
-    reference_clips: ReferenceClipCheck,
+    references: ReferenceAssets,
     object_store: PublicObjectStore,
     queue_connector: procrastinate.BaseConnector,
     media_codec: MediaCodec,
     compose_concurrency: int,
     fetch_url: Callable[[str], str],
-    owns_url: Callable[[str], bool],
     render: RenderSetup | None,
     model_group_of: ModelGroupOf,
 ) -> GenerationModule:
@@ -289,7 +290,7 @@ def _generation_module(
         act_as=act_as,
         clear_completion=clear_completion,
         lineage=lineage,
-        reference_clips=reference_clips,
+        references=references,
         video=VideoProviderSettings(
             submit_url=settings.video_submit_url,
             status_base_url=settings.video_status_base_url,
@@ -327,7 +328,7 @@ def _generation_module(
             compose_concurrency=compose_concurrency,
         ),
         subtitles=_qwen_service(settings.subtitle),
-        dubbing=_dubbing(settings.speech, owns_url),
+        dubbing=_dubbing(settings.speech),
         music=_qwen_service(settings.music),
         render=render,
         model_groups=ModelGroups(
@@ -364,6 +365,7 @@ def build_app(
     media_codec: MediaCodec | None = None,
     runtime_transport: httpx.AsyncBaseTransport | None = None,
     media_probe: UrlProber | None = None,
+    reference_duration: MediaDuration | None = None,
 ) -> FastAPI:
     settings = resolve_settings(config)
     if settings.db_schema != DB_SCHEMA:
@@ -499,6 +501,7 @@ def build_app(
             lineage=fork_lineage,
         )
     reference_store = SqlReferenceStore(active_engine)
+    reference_lookup = SqlReferenceLookup(active_engine)
 
     connector: procrastinate.BaseConnector | None = None
     if settings.media_generation is not None or settings.iclip_studio is not None:
@@ -543,21 +546,15 @@ def build_app(
             act_as=identity.act_as,
             clear_completion=clear_conversation_completion,
             lineage=fork_lineage,
-            reference_clips=UsableReferenceClips(uploads.service, reference_store),
+            references=GenerationReferenceAssets(uploads.service, reference_lookup),
             object_store=public_objects,
             queue_connector=connector,
             media_codec=codec,
             compose_concurrency=compose_concurrency,
             fetch_url=fetch_url,
-            owns_url=owns_url,
             render=render,
             model_group_of=model_group_of,
         )
-
-    async def own_video_upload(principal: Principal, upload_id: uuid.UUID) -> str | None:
-        if uploads is None:
-            raise RuntimeError("没有对象存储时资料库不收上传，不该来查上传")
-        return await uploads.service.own_video(principal, upload_id)
 
     breakdown_setup: BreakdownSetup | None = None
     tagging_setup: TaggingSetup | None = None
@@ -587,8 +584,14 @@ def build_app(
     )
     references = build_references_module(
         reference_store,
+        SqlReferenceAudioStore(active_engine),
         act_as=identity.act_as,
-        own_video_upload=own_video_upload,
+        sources=ReferenceMediaSources(
+            uploads.service if uploads is not None else None, generation_repo
+        ),
+        duration=reference_duration
+        if reference_duration is not None
+        else ProbedDuration(fetch_url),
         breakdown=breakdown_setup,
         tagging=tagging.service,
         uploads_available=public_objects is not None,
@@ -693,6 +696,7 @@ def build_app(
             generation=generation.service,
             generations=generation_repo,
             uploads=uploads.service,
+            references=reference_lookup,
             lineage=fork_lineage,
             render=render_client,
         ),

@@ -33,10 +33,10 @@ from iclip.domains.identity.acting import ActAs
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.fetch_url import as_is
 from tests.helpers.generation import (
+    FakeReferenceAssets,
     FixedLineage,
     InMemoryGenerationRepository,
     MemoryObjectStore,
-    ReferenceClips,
     make_dubbing,
     make_job,
     make_music,
@@ -73,7 +73,7 @@ def _module(repo: InMemoryGenerationRepository, sent: list[httpx.Request]) -> Ge
         act_as=ActAs(InMemoryUserRepository()),
         clear_completion=_keep_completion,
         lineage=FixedLineage(),
-        reference_clips=ReferenceClips(),
+        references=FakeReferenceAssets(),
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",
@@ -96,7 +96,6 @@ def _module(repo: InMemoryGenerationRepository, sent: list[httpx.Request]) -> Ge
         music=qwen,
         dubbing=DubbingSetup(
             synthesizer=QwenSpeechSynthesizer(qwen.endpoint, transport=transport),
-            owns_url=lambda _url: True,
             concurrency=1,
         ),
         model_groups=ModelGroups((MKT,), group_of=_nobody_is_grouped),

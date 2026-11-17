@@ -62,7 +62,8 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
 
         正文可以直接给 ``prompt``，也可以给结构化的 ``shot`` 由服务端拼成 ``prompt``；记录里
         两者都存，``shot`` 不发上游。``shot_index`` 是镜头组编号，落记录的列。``user_name``：
-        API key 调用方必填、照收；浏览器会话可省略，填登录用户名。
+        API key 调用方必填、照收；浏览器会话可省略，填登录用户名。``reference_ids`` 可选，是这次
+        用到的参考资产，有一条不在资料库或已移除就 422；原样记进请求，不发上游。
         """
 
         user_name = resolve_user_name(principal, body.user_name)
@@ -142,7 +143,9 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         到视频结尾）；合成出来更长时先加速，最多 1.25 倍，还放不下就截掉尾巴并淡出。拼成一条和
         素材片等长的音轨，地址在 ``outputUrl``，每句的倍数和是否截掉在 ``dubbedLines``。参考音频是
         ``original`` 时从原声里截被 ``lines`` 覆盖得最多的一段（不超过 10 秒），覆盖不到 3 秒记录
-        失败；是 ``audio`` 时取 ``url`` 的前 10 秒，``url`` 只收本系统存储里的地址，别的 422。
+        失败；是 ``reference_audio`` 时取参考音频库里那条音色（要没移除、是音色，否则 422），是
+        ``upload`` 时取调用者本人那条音频上传（否则 422），都取前 10 秒。记录的 ``request.reference``
+        里记着用到的地址，音色另记 ``referenceId`` 与台词，上传另记 ``uploadId``。
 
         ``sourceJobId`` 的规则同字幕识别：读不到 404，不是素材片 422。``lines`` 不合规、超出上限或
         超出素材片的时长 422。配音没开通 422。``userName`` 的规则同出片，只用来替人办事，不进
@@ -246,7 +249,8 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         ``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。
 
         生成记录只记生成，对话的上传在 ``GET /conversations/{id}/uploads`` 里列。按对话列图片会看到
-        切图记录；只要调模型的，按 ``operation=generate`` 筛。素材片的字幕记录是种类 ``subtitle``、
+        切图记录；只要调模型的，按 ``operation=generate`` 筛。参考视频的试生成是 ``operation=trial``，
+        按 ``generate`` 筛时不在里面。素材片的字幕记录是种类 ``subtitle``、
         来源是那条素材片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。一段对话生成的背景音乐按
         ``kind=audio`` 与 ``conversationId`` 找。
         """

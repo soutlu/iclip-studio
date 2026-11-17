@@ -26,7 +26,7 @@ from iclip.config import (
     VideoGenerationSection,
 )
 from iclip.config.models import IclipStudioSection, ShotVideoSection
-from iclip.domains.generation.schemas import DubbingAudioReference, DubbingIn, DubbingLine
+from iclip.domains.generation.schemas import DubbingIn, DubbingLine, DubbingOriginalReference
 from iclip.domains.identity.models import Principal
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE, VIDEOTOOLBOX, MediaCodec
@@ -256,17 +256,13 @@ DUBBING_SUBMISSION = DubbingIn(
     source_job_id=uuid.uuid4(),
     locale="en",
     lines=[DubbingLine(start_ms=0, end_ms=1000, text="Hello")],
-    reference=DubbingAudioReference(kind="audio", url="https://elsewhere.test/voice.wav"),
+    reference=DubbingOriginalReference(kind="original"),
 )
 
 
-@pytest.mark.parametrize(
-    ("configured", "refusal"),
-    [(True, "参考音频只能用本系统存储里的地址"), (False, "配音没有开通")],
-    ids=["开通", "没开通"],
-)
+@pytest.mark.parametrize("configured", [True, False], ids=["开通", "没开通"])
 async def test_startup_says_when_dubbing_is_off_and_the_section_switches_it_on(
-    local_media_env: None, monkeypatch: pytest.MonkeyPatch, configured: bool, refusal: str
+    local_media_env: None, monkeypatch: pytest.MonkeyPatch, configured: bool
 ) -> None:
     config = config_with_media()
     assert config.media_generation is not None
@@ -294,9 +290,10 @@ async def test_startup_says_when_dubbing_is_off_and_the_section_switches_it_on(
     off = [log for log in logs if log["event"] == "配音未启用"]
     assert len(off) == (0 if configured else 1)
     assert response.status_code == 401, "入口挂着，没登录先 401"
-    # 开通时受理走到下一道检查（注入的测试桶不认任何地址）；没开通时直接拒绝，接口答 422。
-    with pytest.raises(ValidationFailed, match=refusal):
-        await app.state.generation.service.submit_dubbing(PRINCIPAL, DUBBING_SUBMISSION)
+    if not configured:
+        # 没开通时受理前就拒绝，接口答 422；开通时下一道检查要读库，这里不连库。
+        with pytest.raises(ValidationFailed, match="配音没有开通"):
+            await app.state.generation.service.submit_dubbing(PRINCIPAL, DUBBING_SUBMISSION)
 
 
 def config_with(*, media: bool, shot_video: bool, studio: bool) -> RuntimeConfig:

@@ -20,7 +20,7 @@ from iclip.domains.generation.model_groups import UNGROUPED, ModelGroups
 from iclip.domains.generation.models import STATUS_SUBMITTING
 from iclip.domains.generation.music import MUSIC_MODEL, QwenMusicProvider
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
-from iclip.domains.generation.ports import ConversationLineage, ReferenceClipCheck
+from iclip.domains.generation.ports import ConversationLineage, ReferenceAssets
 from iclip.domains.generation.processing import FfmpegComposeProvider, ReportStage
 from iclip.domains.generation.provider import GenerationProvider, ImageModelSpec
 from iclip.domains.generation.queue import (
@@ -40,7 +40,6 @@ from iclip.domains.generation.schemas import ClipStage
 from iclip.domains.generation.seedream import SEEDREAM_V5_PRO
 from iclip.domains.generation.service import (
     ClearCompletion,
-    DubbingTarget,
     GenerationService,
     ProviderTarget,
     VideoEnhanceSpec,
@@ -70,11 +69,9 @@ class QwenServiceConfig:
 
 @dataclass(frozen=True, slots=True)
 class DubbingSetup:
-    """配音的装配：语音合成服务，和哪些地址算本系统存储里的（参考音频只收这些），以及配音队列
-    每个进程同时跑几条。不给就是没开通。"""
+    """配音的装配：语音合成服务，以及配音队列每个进程同时跑几条。不给就是没开通。"""
 
     synthesizer: SpeechSynthesizer
-    owns_url: Callable[[str], bool]
     concurrency: int
 
 
@@ -92,7 +89,7 @@ def build_generation_module(
     act_as: ActAs,
     clear_completion: ClearCompletion,
     lineage: ConversationLineage,
-    reference_clips: ReferenceClipCheck,
+    references: ReferenceAssets,
     video: VideoProviderSettings,
     video_default_model: str,
     video_allowed_models: tuple[str, ...],
@@ -156,7 +153,7 @@ def build_generation_module(
         subtitle_lanes = (ProviderLane(subtitle_provider, subtitles.concurrency),)
         subtitle_target = ProviderTarget(provider=subtitle_provider.name, model=SUBTITLE_MODEL)
     dubbing_lanes: tuple[ProviderLane, ...] = ()
-    dubbing_target: DubbingTarget | None = None
+    dubbing_target: str | None = None
     if dubbing is not None:
         dubbing_provider = DubbingProvider(
             dubbing.synthesizer,
@@ -165,7 +162,7 @@ def build_generation_module(
             model_groups=model_groups,
         )
         dubbing_lanes = (ProviderLane(dubbing_provider, dubbing.concurrency),)
-        dubbing_target = DubbingTarget(provider=dubbing_provider.name, owns_url=dubbing.owns_url)
+        dubbing_target = dubbing_provider.name
     music_lanes: tuple[ProviderLane, ...] = ()
     music_target: ProviderTarget | None = None
     if music is not None:
@@ -216,9 +213,9 @@ def build_generation_module(
         clear_completion=clear_completion,
         lineage=lineage,
         media_probe=_FetchingProbe(fetch_url),
-        reference_clips=reference_clips,
+        references=references,
         subtitles=subtitle_target,
-        dubbing=dubbing_target,
+        dubbing_provider=dubbing_target,
         music=music_target,
         render=None if render is None else render.client,
         enhance=video_enhance,

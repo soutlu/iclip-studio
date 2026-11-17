@@ -834,6 +834,20 @@ export type AttemptBucketOut = {
 }
 
 /**
+ * AudioKindCountOut
+ */
+export type AudioKindCountOut = {
+  /**
+   * Audiokind
+   */
+  audioKind: 'voice' | 'bgm' | 'sfx'
+  /**
+   * Count
+   */
+  count: number
+}
+
+/**
  * AuditExecutionsOut
  */
 export type AuditExecutionsOut = {
@@ -1968,22 +1982,6 @@ export type DubbedLine = {
 }
 
 /**
- * DubbingAudioReference
- *
- * 参考音频取一个音频地址，只收本系统存储里的地址。
- */
-export type DubbingAudioReference = {
-  /**
-   * Kind
-   */
-  kind: 'audio'
-  /**
-   * Url
-   */
-  url: string
-}
-
-/**
  * DubbingIn
  *
  * 给一条素材片配一种外语的受理输入：每句译文按 ``lines`` 的时间放，用参考音频的声音合成。
@@ -2020,8 +2018,11 @@ export type DubbingIn = {
         kind: 'original'
       } & DubbingOriginalReference)
     | ({
-        kind: 'audio'
-      } & DubbingAudioReference)
+        kind: 'reference_audio'
+      } & DubbingVoiceReferenceIn)
+    | ({
+        kind: 'upload'
+      } & DubbingUploadReferenceIn)
   /**
    * Sourcejobid
    */
@@ -2066,6 +2067,38 @@ export type DubbingOriginalReference = {
    * Kind
    */
   kind: 'original'
+}
+
+/**
+ * DubbingUploadReferenceIn
+ *
+ * 参考音频取调用者本人的一条音频上传。
+ */
+export type DubbingUploadReferenceIn = {
+  /**
+   * Kind
+   */
+  kind: 'upload'
+  /**
+   * Uploadid
+   */
+  uploadId: string
+}
+
+/**
+ * DubbingVoiceReferenceIn
+ *
+ * 参考音频取参考音频库里一条没移除的音色。
+ */
+export type DubbingVoiceReferenceIn = {
+  /**
+   * Kind
+   */
+  kind: 'reference_audio'
+  /**
+   * Referenceid
+   */
+  referenceId: string
 }
 
 /**
@@ -2924,7 +2957,7 @@ export type GenerationOut = {
   /**
    * Operation
    */
-  operation: 'generate' | 'compose' | 'cut' | 'render' | 'enhance'
+  operation: 'generate' | 'compose' | 'cut' | 'render' | 'enhance' | 'trial'
   /**
    * Outputurl
    */
@@ -4827,23 +4860,169 @@ export type ProviderOptionOut = {
 }
 
 /**
- * ReferenceCreateIn
+ * ReferenceAudioCreateIn
+ *
+ * 把一段音频放进参考音频库：调用者本人的一条音频上传（``uploadId``），或调用者看得到的一条已完成
+ * 的背景音乐（``sourceJobId``）。台词只有音色能填。
  */
-export type ReferenceCreateIn = {
+export type ReferenceAudioCreateIn = {
+  /**
+   * Audiokind
+   */
+  audioKind: 'voice' | 'bgm' | 'sfx'
+  /**
+   * Description
+   */
+  description?: string | null
+  /**
+   * Locale
+   */
+  locale?: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
+  /**
+   * Sourcejobid
+   */
+  sourceJobId?: string | null
+  /**
+   * Title
+   */
+  title: string
+  /**
+   * Transcript
+   */
+  transcript?: string | null
   /**
    * Uploadid
    */
-  uploadId: string
+  uploadId?: string | null
+  /**
+   * Username
+   */
+  userName?: string | null
 }
 
 /**
- * ReferenceFiltersOut
+ * ReferenceAudioFiltersOut
  */
-export type ReferenceFiltersOut = {
+export type ReferenceAudioFiltersOut = {
+  /**
+   * Audiokinds
+   */
+  audioKinds: Array<AudioKindCountOut>
   /**
    * Owners
    */
   owners: Array<OwnerCountOut>
+}
+
+/**
+ * ReferenceAudioOut
+ *
+ * 一条参考音频。
+ */
+export type ReferenceAudioOut = {
+  /**
+   * Audiokind
+   */
+  audioKind: 'voice' | 'bgm' | 'sfx'
+  /**
+   * Canedit
+   */
+  canEdit: boolean
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Description
+   */
+  description: string | null
+  /**
+   * Durationms
+   */
+  durationMs: number
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Locale
+   */
+  locale: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
+  /**
+   * Sourcejobid
+   */
+  sourceJobId: string | null
+  /**
+   * Title
+   */
+  title: string
+  /**
+   * Transcript
+   */
+  transcript: string | null
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+  /**
+   * Uploadid
+   */
+  uploadId: string | null
+  /**
+   * Url
+   */
+  url: string
+  /**
+   * Username
+   */
+  userName: string | null
+}
+
+/**
+ * ReferenceAudioUpdateIn
+ *
+ * 改一条参考音频：给了的字段才改，``description`` / ``locale`` / ``transcript`` 给 ``null`` 是
+ * 清空；标题不能清空。台词只有音色能填。
+ */
+export type ReferenceAudioUpdateIn = {
+  /**
+   * Description
+   */
+  description?: string | null
+  /**
+   * Locale
+   */
+  locale?: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
+  /**
+   * Title
+   */
+  title?: string | null
+  /**
+   * Transcript
+   */
+  transcript?: string | null
+}
+
+/**
+ * ReferenceAudiosOut
+ */
+export type ReferenceAudiosOut = {
+  /**
+   * Canupload
+   */
+  canUpload: boolean
+  /**
+   * Items
+   */
+  items: Array<ReferenceAudioOut>
+  /**
+   * Nextcursor
+   */
+  nextCursor: string | null
+  /**
+   * Total
+   */
+  total: number | null
 }
 
 /**
@@ -4859,19 +5038,30 @@ export type ReferenceTagsIn = {
 }
 
 /**
- * ReferenceUpdateIn
+ * ReferenceVideoCreateIn
  *
- * 改拆解正文。
+ * 把一条视频放进资料库：调用者本人的一条视频上传（``uploadId``），或调用者看得到的一条已完成的
+ * 素材片（``sourceJobId``）。
  */
-export type ReferenceUpdateIn = {
+export type ReferenceVideoCreateIn = {
   /**
-   * Document
+   * Sourcejobid
    */
-  document: string
+  sourceJobId?: string | null
   /**
-   * Version
+   * Uploadid
    */
-  version: number
+  uploadId?: string | null
+}
+
+/**
+ * ReferenceVideoFiltersOut
+ */
+export type ReferenceVideoFiltersOut = {
+  /**
+   * Owners
+   */
+  owners: Array<OwnerCountOut>
 }
 
 /**
@@ -5003,6 +5193,22 @@ export type ReferenceVideoOut = {
    * Videourl
    */
   videoUrl: string
+}
+
+/**
+ * ReferenceVideoUpdateIn
+ *
+ * 改拆解正文。
+ */
+export type ReferenceVideoUpdateIn = {
+  /**
+   * Document
+   */
+  document: string
+  /**
+   * Version
+   */
+  version: number
 }
 
 /**
@@ -6191,6 +6397,10 @@ export type TestVideoOut = {
    */
   errorMessage: string | null
   /**
+   * Jobid
+   */
+  jobId: string
+  /**
    * Stale
    */
   stale: boolean
@@ -7335,7 +7545,8 @@ export type VideoEnhancementsOut = {
  *
  * 只拦本系统能判的：模型在允许表里（受理层）、地址是 http(s)、秒数不小于 -1、``shot``
  * 自身对得上（图片引用不越界、编号与正文一致）。画幅、分辨率、时长范围、素材规格由上游
- * 按模型判，这里不复制一份。
+ * 按模型判，这里不复制一份。``reference_ids`` 是这次用到的参考资产，受理时核对都在资料库里、
+ * 没移除，只记进请求快照，不发给上游。
  */
 export type VideoGenerationIn = {
   /**
@@ -7374,6 +7585,10 @@ export type VideoGenerationIn = {
    * Reference Audio Urls
    */
   reference_audio_urls?: Array<string>
+  /**
+   * Reference Ids
+   */
+  reference_ids?: Array<string>
   /**
    * Reference Image Urls
    */
@@ -10312,7 +10527,7 @@ export type ListGenerationsGenerationsGetData = {
     /**
      * Operation
      */
-    operation?: 'generate' | 'compose' | 'cut' | 'render' | 'enhance' | null
+    operation?: 'generate' | 'compose' | 'cut' | 'render' | 'enhance' | 'trial' | null
     /**
      * Rootjobid
      *
@@ -12038,7 +12253,207 @@ export type UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNameP
 export type UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchResponse =
   UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchResponses[keyof UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchResponses]
 
-export type ListReferencesReferencesGetData = {
+export type ListReferenceAudiosReferencesAudiosGetData = {
+  body?: never
+  path?: never
+  query?: {
+    /**
+     * Audiokind
+     */
+    audioKind?: 'voice' | 'bgm' | 'sfx' | null
+    /**
+     * Locale
+     */
+    locale?: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
+    /**
+     * Username
+     */
+    userName?: string | null
+    /**
+     * Q
+     */
+    q?: string | null
+    /**
+     * Since
+     */
+    since?: string | null
+    /**
+     * Until
+     */
+    until?: string | null
+    /**
+     * Limit
+     */
+    limit?: number
+    /**
+     * Cursor
+     */
+    cursor?: string | null
+  }
+  url: '/references/audios'
+}
+
+export type ListReferenceAudiosReferencesAudiosGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ListReferenceAudiosReferencesAudiosGetError =
+  ListReferenceAudiosReferencesAudiosGetErrors[keyof ListReferenceAudiosReferencesAudiosGetErrors]
+
+export type ListReferenceAudiosReferencesAudiosGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceAudiosOut
+}
+
+export type ListReferenceAudiosReferencesAudiosGetResponse =
+  ListReferenceAudiosReferencesAudiosGetResponses[keyof ListReferenceAudiosReferencesAudiosGetResponses]
+
+export type CreateReferenceAudioReferencesAudiosPostData = {
+  body: ReferenceAudioCreateIn
+  path?: never
+  query?: never
+  url: '/references/audios'
+}
+
+export type CreateReferenceAudioReferencesAudiosPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateReferenceAudioReferencesAudiosPostError =
+  CreateReferenceAudioReferencesAudiosPostErrors[keyof CreateReferenceAudioReferencesAudiosPostErrors]
+
+export type CreateReferenceAudioReferencesAudiosPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: ReferenceAudioOut
+}
+
+export type CreateReferenceAudioReferencesAudiosPostResponse =
+  CreateReferenceAudioReferencesAudiosPostResponses[keyof CreateReferenceAudioReferencesAudiosPostResponses]
+
+export type ReferenceAudioFiltersReferencesAudiosFiltersGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/references/audios/filters'
+}
+
+export type ReferenceAudioFiltersReferencesAudiosFiltersGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceAudioFiltersOut
+}
+
+export type ReferenceAudioFiltersReferencesAudiosFiltersGetResponse =
+  ReferenceAudioFiltersReferencesAudiosFiltersGetResponses[keyof ReferenceAudioFiltersReferencesAudiosFiltersGetResponses]
+
+export type RemoveReferenceAudioReferencesAudiosReferenceIdDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Reference Id
+     */
+    reference_id: string
+  }
+  query?: never
+  url: '/references/audios/{reference_id}'
+}
+
+export type RemoveReferenceAudioReferencesAudiosReferenceIdDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type RemoveReferenceAudioReferencesAudiosReferenceIdDeleteError =
+  RemoveReferenceAudioReferencesAudiosReferenceIdDeleteErrors[keyof RemoveReferenceAudioReferencesAudiosReferenceIdDeleteErrors]
+
+export type RemoveReferenceAudioReferencesAudiosReferenceIdDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  204: void
+}
+
+export type RemoveReferenceAudioReferencesAudiosReferenceIdDeleteResponse =
+  RemoveReferenceAudioReferencesAudiosReferenceIdDeleteResponses[keyof RemoveReferenceAudioReferencesAudiosReferenceIdDeleteResponses]
+
+export type GetReferenceAudioReferencesAudiosReferenceIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Reference Id
+     */
+    reference_id: string
+  }
+  query?: never
+  url: '/references/audios/{reference_id}'
+}
+
+export type GetReferenceAudioReferencesAudiosReferenceIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type GetReferenceAudioReferencesAudiosReferenceIdGetError =
+  GetReferenceAudioReferencesAudiosReferenceIdGetErrors[keyof GetReferenceAudioReferencesAudiosReferenceIdGetErrors]
+
+export type GetReferenceAudioReferencesAudiosReferenceIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceAudioOut
+}
+
+export type GetReferenceAudioReferencesAudiosReferenceIdGetResponse =
+  GetReferenceAudioReferencesAudiosReferenceIdGetResponses[keyof GetReferenceAudioReferencesAudiosReferenceIdGetResponses]
+
+export type UpdateReferenceAudioReferencesAudiosReferenceIdPatchData = {
+  body: ReferenceAudioUpdateIn
+  path: {
+    /**
+     * Reference Id
+     */
+    reference_id: string
+  }
+  query?: never
+  url: '/references/audios/{reference_id}'
+}
+
+export type UpdateReferenceAudioReferencesAudiosReferenceIdPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateReferenceAudioReferencesAudiosReferenceIdPatchError =
+  UpdateReferenceAudioReferencesAudiosReferenceIdPatchErrors[keyof UpdateReferenceAudioReferencesAudiosReferenceIdPatchErrors]
+
+export type UpdateReferenceAudioReferencesAudiosReferenceIdPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceAudioOut
+}
+
+export type UpdateReferenceAudioReferencesAudiosReferenceIdPatchResponse =
+  UpdateReferenceAudioReferencesAudiosReferenceIdPatchResponses[keyof UpdateReferenceAudioReferencesAudiosReferenceIdPatchResponses]
+
+export type ListReferenceVideosReferencesVideosGetData = {
   body?: never
   path?: never
   query?: {
@@ -12071,74 +12486,74 @@ export type ListReferencesReferencesGetData = {
      */
     cursor?: string | null
   }
-  url: '/references'
+  url: '/references/videos'
 }
 
-export type ListReferencesReferencesGetErrors = {
+export type ListReferenceVideosReferencesVideosGetErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type ListReferencesReferencesGetError =
-  ListReferencesReferencesGetErrors[keyof ListReferencesReferencesGetErrors]
+export type ListReferenceVideosReferencesVideosGetError =
+  ListReferenceVideosReferencesVideosGetErrors[keyof ListReferenceVideosReferencesVideosGetErrors]
 
-export type ListReferencesReferencesGetResponses = {
+export type ListReferenceVideosReferencesVideosGetResponses = {
   /**
    * Successful Response
    */
   200: ReferenceVideosOut
 }
 
-export type ListReferencesReferencesGetResponse =
-  ListReferencesReferencesGetResponses[keyof ListReferencesReferencesGetResponses]
+export type ListReferenceVideosReferencesVideosGetResponse =
+  ListReferenceVideosReferencesVideosGetResponses[keyof ListReferenceVideosReferencesVideosGetResponses]
 
-export type CreateReferenceReferencesPostData = {
-  body: ReferenceCreateIn
+export type CreateReferenceVideoReferencesVideosPostData = {
+  body: ReferenceVideoCreateIn
   path?: never
   query?: never
-  url: '/references'
+  url: '/references/videos'
 }
 
-export type CreateReferenceReferencesPostErrors = {
+export type CreateReferenceVideoReferencesVideosPostErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type CreateReferenceReferencesPostError =
-  CreateReferenceReferencesPostErrors[keyof CreateReferenceReferencesPostErrors]
+export type CreateReferenceVideoReferencesVideosPostError =
+  CreateReferenceVideoReferencesVideosPostErrors[keyof CreateReferenceVideoReferencesVideosPostErrors]
 
-export type CreateReferenceReferencesPostResponses = {
+export type CreateReferenceVideoReferencesVideosPostResponses = {
   /**
    * Successful Response
    */
   201: ReferenceVideoOut
 }
 
-export type CreateReferenceReferencesPostResponse =
-  CreateReferenceReferencesPostResponses[keyof CreateReferenceReferencesPostResponses]
+export type CreateReferenceVideoReferencesVideosPostResponse =
+  CreateReferenceVideoReferencesVideosPostResponses[keyof CreateReferenceVideoReferencesVideosPostResponses]
 
-export type ReferenceFiltersReferencesFiltersGetData = {
+export type ReferenceVideoFiltersReferencesVideosFiltersGetData = {
   body?: never
   path?: never
   query?: never
-  url: '/references/filters'
+  url: '/references/videos/filters'
 }
 
-export type ReferenceFiltersReferencesFiltersGetResponses = {
+export type ReferenceVideoFiltersReferencesVideosFiltersGetResponses = {
   /**
    * Successful Response
    */
-  200: ReferenceFiltersOut
+  200: ReferenceVideoFiltersOut
 }
 
-export type ReferenceFiltersReferencesFiltersGetResponse =
-  ReferenceFiltersReferencesFiltersGetResponses[keyof ReferenceFiltersReferencesFiltersGetResponses]
+export type ReferenceVideoFiltersReferencesVideosFiltersGetResponse =
+  ReferenceVideoFiltersReferencesVideosFiltersGetResponses[keyof ReferenceVideoFiltersReferencesVideosFiltersGetResponses]
 
-export type RemoveReferenceReferencesReferenceIdDeleteData = {
+export type RemoveReferenceVideoReferencesVideosReferenceIdDeleteData = {
   body?: never
   path: {
     /**
@@ -12147,30 +12562,30 @@ export type RemoveReferenceReferencesReferenceIdDeleteData = {
     reference_id: string
   }
   query?: never
-  url: '/references/{reference_id}'
+  url: '/references/videos/{reference_id}'
 }
 
-export type RemoveReferenceReferencesReferenceIdDeleteErrors = {
+export type RemoveReferenceVideoReferencesVideosReferenceIdDeleteErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type RemoveReferenceReferencesReferenceIdDeleteError =
-  RemoveReferenceReferencesReferenceIdDeleteErrors[keyof RemoveReferenceReferencesReferenceIdDeleteErrors]
+export type RemoveReferenceVideoReferencesVideosReferenceIdDeleteError =
+  RemoveReferenceVideoReferencesVideosReferenceIdDeleteErrors[keyof RemoveReferenceVideoReferencesVideosReferenceIdDeleteErrors]
 
-export type RemoveReferenceReferencesReferenceIdDeleteResponses = {
+export type RemoveReferenceVideoReferencesVideosReferenceIdDeleteResponses = {
   /**
    * Successful Response
    */
   204: void
 }
 
-export type RemoveReferenceReferencesReferenceIdDeleteResponse =
-  RemoveReferenceReferencesReferenceIdDeleteResponses[keyof RemoveReferenceReferencesReferenceIdDeleteResponses]
+export type RemoveReferenceVideoReferencesVideosReferenceIdDeleteResponse =
+  RemoveReferenceVideoReferencesVideosReferenceIdDeleteResponses[keyof RemoveReferenceVideoReferencesVideosReferenceIdDeleteResponses]
 
-export type GetReferenceReferencesReferenceIdGetData = {
+export type GetReferenceVideoReferencesVideosReferenceIdGetData = {
   body?: never
   path: {
     /**
@@ -12179,31 +12594,31 @@ export type GetReferenceReferencesReferenceIdGetData = {
     reference_id: string
   }
   query?: never
-  url: '/references/{reference_id}'
+  url: '/references/videos/{reference_id}'
 }
 
-export type GetReferenceReferencesReferenceIdGetErrors = {
+export type GetReferenceVideoReferencesVideosReferenceIdGetErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type GetReferenceReferencesReferenceIdGetError =
-  GetReferenceReferencesReferenceIdGetErrors[keyof GetReferenceReferencesReferenceIdGetErrors]
+export type GetReferenceVideoReferencesVideosReferenceIdGetError =
+  GetReferenceVideoReferencesVideosReferenceIdGetErrors[keyof GetReferenceVideoReferencesVideosReferenceIdGetErrors]
 
-export type GetReferenceReferencesReferenceIdGetResponses = {
+export type GetReferenceVideoReferencesVideosReferenceIdGetResponses = {
   /**
    * Successful Response
    */
   200: ReferenceVideoOut
 }
 
-export type GetReferenceReferencesReferenceIdGetResponse =
-  GetReferenceReferencesReferenceIdGetResponses[keyof GetReferenceReferencesReferenceIdGetResponses]
+export type GetReferenceVideoReferencesVideosReferenceIdGetResponse =
+  GetReferenceVideoReferencesVideosReferenceIdGetResponses[keyof GetReferenceVideoReferencesVideosReferenceIdGetResponses]
 
-export type UpdateReferenceReferencesReferenceIdPatchData = {
-  body: ReferenceUpdateIn
+export type UpdateReferenceVideoReferencesVideosReferenceIdPatchData = {
+  body: ReferenceVideoUpdateIn
   path: {
     /**
      * Reference Id
@@ -12211,30 +12626,30 @@ export type UpdateReferenceReferencesReferenceIdPatchData = {
     reference_id: string
   }
   query?: never
-  url: '/references/{reference_id}'
+  url: '/references/videos/{reference_id}'
 }
 
-export type UpdateReferenceReferencesReferenceIdPatchErrors = {
+export type UpdateReferenceVideoReferencesVideosReferenceIdPatchErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type UpdateReferenceReferencesReferenceIdPatchError =
-  UpdateReferenceReferencesReferenceIdPatchErrors[keyof UpdateReferenceReferencesReferenceIdPatchErrors]
+export type UpdateReferenceVideoReferencesVideosReferenceIdPatchError =
+  UpdateReferenceVideoReferencesVideosReferenceIdPatchErrors[keyof UpdateReferenceVideoReferencesVideosReferenceIdPatchErrors]
 
-export type UpdateReferenceReferencesReferenceIdPatchResponses = {
+export type UpdateReferenceVideoReferencesVideosReferenceIdPatchResponses = {
   /**
    * Successful Response
    */
   200: ReferenceVideoOut
 }
 
-export type UpdateReferenceReferencesReferenceIdPatchResponse =
-  UpdateReferenceReferencesReferenceIdPatchResponses[keyof UpdateReferenceReferencesReferenceIdPatchResponses]
+export type UpdateReferenceVideoReferencesVideosReferenceIdPatchResponse =
+  UpdateReferenceVideoReferencesVideosReferenceIdPatchResponses[keyof UpdateReferenceVideoReferencesVideosReferenceIdPatchResponses]
 
-export type RerunReferenceReferencesReferenceIdBreakdownsPostData = {
+export type RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostData = {
   body?: never
   path: {
     /**
@@ -12243,30 +12658,30 @@ export type RerunReferenceReferencesReferenceIdBreakdownsPostData = {
     reference_id: string
   }
   query?: never
-  url: '/references/{reference_id}/breakdowns'
+  url: '/references/videos/{reference_id}/breakdowns'
 }
 
-export type RerunReferenceReferencesReferenceIdBreakdownsPostErrors = {
+export type RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type RerunReferenceReferencesReferenceIdBreakdownsPostError =
-  RerunReferenceReferencesReferenceIdBreakdownsPostErrors[keyof RerunReferenceReferencesReferenceIdBreakdownsPostErrors]
+export type RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostError =
+  RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostErrors[keyof RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostErrors]
 
-export type RerunReferenceReferencesReferenceIdBreakdownsPostResponses = {
+export type RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostResponses = {
   /**
    * Successful Response
    */
   200: ReferenceVideoOut
 }
 
-export type RerunReferenceReferencesReferenceIdBreakdownsPostResponse =
-  RerunReferenceReferencesReferenceIdBreakdownsPostResponses[keyof RerunReferenceReferencesReferenceIdBreakdownsPostResponses]
+export type RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostResponse =
+  RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostResponses[keyof RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostResponses]
 
-export type RetagReferenceReferencesReferenceIdTaggingPostData = {
+export type RetagReferenceVideoReferencesVideosReferenceIdTaggingPostData = {
   body?: never
   path: {
     /**
@@ -12275,30 +12690,30 @@ export type RetagReferenceReferencesReferenceIdTaggingPostData = {
     reference_id: string
   }
   query?: never
-  url: '/references/{reference_id}/tagging'
+  url: '/references/videos/{reference_id}/tagging'
 }
 
-export type RetagReferenceReferencesReferenceIdTaggingPostErrors = {
+export type RetagReferenceVideoReferencesVideosReferenceIdTaggingPostErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type RetagReferenceReferencesReferenceIdTaggingPostError =
-  RetagReferenceReferencesReferenceIdTaggingPostErrors[keyof RetagReferenceReferencesReferenceIdTaggingPostErrors]
+export type RetagReferenceVideoReferencesVideosReferenceIdTaggingPostError =
+  RetagReferenceVideoReferencesVideosReferenceIdTaggingPostErrors[keyof RetagReferenceVideoReferencesVideosReferenceIdTaggingPostErrors]
 
-export type RetagReferenceReferencesReferenceIdTaggingPostResponses = {
+export type RetagReferenceVideoReferencesVideosReferenceIdTaggingPostResponses = {
   /**
    * Successful Response
    */
   200: ReferenceVideoOut
 }
 
-export type RetagReferenceReferencesReferenceIdTaggingPostResponse =
-  RetagReferenceReferencesReferenceIdTaggingPostResponses[keyof RetagReferenceReferencesReferenceIdTaggingPostResponses]
+export type RetagReferenceVideoReferencesVideosReferenceIdTaggingPostResponse =
+  RetagReferenceVideoReferencesVideosReferenceIdTaggingPostResponses[keyof RetagReferenceVideoReferencesVideosReferenceIdTaggingPostResponses]
 
-export type ReplaceReferenceTagsReferencesReferenceIdTagsPutData = {
+export type ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutData = {
   body: ReferenceTagsIn
   path: {
     /**
@@ -12307,30 +12722,30 @@ export type ReplaceReferenceTagsReferencesReferenceIdTagsPutData = {
     reference_id: string
   }
   query?: never
-  url: '/references/{reference_id}/tags'
+  url: '/references/videos/{reference_id}/tags'
 }
 
-export type ReplaceReferenceTagsReferencesReferenceIdTagsPutErrors = {
+export type ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type ReplaceReferenceTagsReferencesReferenceIdTagsPutError =
-  ReplaceReferenceTagsReferencesReferenceIdTagsPutErrors[keyof ReplaceReferenceTagsReferencesReferenceIdTagsPutErrors]
+export type ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutError =
+  ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutErrors[keyof ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutErrors]
 
-export type ReplaceReferenceTagsReferencesReferenceIdTagsPutResponses = {
+export type ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutResponses = {
   /**
    * Successful Response
    */
   200: ReferenceVideoOut
 }
 
-export type ReplaceReferenceTagsReferencesReferenceIdTagsPutResponse =
-  ReplaceReferenceTagsReferencesReferenceIdTagsPutResponses[keyof ReplaceReferenceTagsReferencesReferenceIdTagsPutResponses]
+export type ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutResponse =
+  ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutResponses[keyof ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutResponses]
 
-export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostData = {
+export type StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostData = {
   body: TestVideoIn
   path: {
     /**
@@ -12339,28 +12754,28 @@ export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostData 
     reference_id: string
   }
   query?: never
-  url: '/references/{reference_id}/test-generations'
+  url: '/references/videos/{reference_id}/test-generations'
 }
 
-export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostErrors = {
+export type StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostError =
-  StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostErrors[keyof StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostErrors]
+export type StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostError =
+  StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostErrors[keyof StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostErrors]
 
-export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponses = {
+export type StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostResponses = {
   /**
    * Successful Response
    */
   200: ReferenceVideoOut
 }
 
-export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponse =
-  StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponses[keyof StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponses]
+export type StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostResponse =
+  StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostResponses[keyof StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostResponses]
 
 export type ListSkillsSkillsGetData = {
   body?: never

@@ -32,6 +32,8 @@ from iclip.domains.generation.schemas import (
     WholeFilmVideoSource,
 )
 from iclip.domains.generation.video import PROVIDER_NAME as VIDEO_PROVIDER_NAME
+from iclip.domains.references.infra_sql import SqlReferenceAudioStore
+from iclip.domains.references.models import NewReferenceAudio
 from iclip.domains.uploads.infra_sql import SqlUploadRepository
 from iclip.domains.uploads.models import MediaUpload
 from tests.helpers.app import make_client
@@ -202,6 +204,61 @@ async def test_audio_is_matched_to_this_conversations_records_first_then_its_upl
             WholeFilmAudioSource(source_kind="upload", source_id=uploaded.id, url=uploaded.url),
         ],
     ), "别的对话的生成记录、没挂在这段对话上的上传都不记"
+
+
+async def _library_audio(engine: AsyncEngine, owner: uuid.UUID, url: str) -> uuid.UUID:
+    audio = await SqlReferenceAudioStore(engine).insert(
+        NewReferenceAudio(
+            url=url,
+            title="配乐",
+            description=None,
+            duration_ms=30_000,
+            owner_user_id=owner,
+            api_key_id=None,
+            upload_id=None,
+            source_job_id=None,
+            audio_kind="bgm",
+            locale=None,
+            transcript=None,
+        )
+    )
+    return audio.id
+
+
+async def test_audio_falls_back_to_the_reference_audio_library_after_records_and_uploads(
+    client: httpx.AsyncClient,
+    pg_url: str,
+    generations: SqlGenerationRepository,
+    engine: AsyncEngine,
+) -> None:
+    owner = uuid.UUID(await login_as_editor(client, pg_url))
+    mine, other = await new_conversation(client), await new_conversation(client)
+    music = await finished(generations, owner, mine, "music", make_music().request)
+    elsewhere = await finished(generations, owner, other, "elsewhere", make_music().request)
+    uploaded = await _attached_upload(engine, owner, mine, f"{PUBLIC}/iclip/agent/uploads/a.mp3")
+    library_only = f"{PUBLIC}/iclip/agent/uploads/lib.mp3"
+    removed = f"{PUBLIC}/iclip/agent/uploads/gone.mp3"
+    for url in (music.output.url or "", uploaded.url):
+        await _library_audio(engine, owner, url)
+    from_other_conversation = await _library_audio(engine, owner, elsewhere.output.url or "")
+    in_library = await _library_audio(engine, owner, library_only)
+    assert await SqlReferenceAudioStore(engine).remove(await _library_audio(engine, owner, removed))
+    urls = (music.output.url or "", uploaded.url, elsewhere.output.url or "", library_only, removed)
+    await put_project_file(client, mine, "index.html", main_file(audios=urls))
+
+    started = await client.post(exports_url(mine))
+
+    assert started.status_code == 202, started.text
+    exported = await record(generations, started.json()["exportId"])
+    assert isinstance(exported.request, WholeFilmRequest)
+    assert exported.request.audios == [
+        WholeFilmAudioSource(source_kind="generation", source_id=music.id, url=urls[0]),
+        WholeFilmAudioSource(source_kind="upload", source_id=uploaded.id, url=uploaded.url),
+        WholeFilmAudioSource(
+            source_kind="reference", source_id=from_other_conversation, url=urls[2]
+        ),
+        WholeFilmAudioSource(source_kind="reference", source_id=in_library, url=library_only),
+    ], "同一地址先认本对话的生成记录，再认本对话的上传，最后才认参考音频库；移除了的不认"
 
 
 async def test_an_export_hands_the_project_as_it_is_to_the_render_service_and_is_kept_public(

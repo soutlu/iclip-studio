@@ -25,8 +25,8 @@ from iclip.domains.generation.provider import (
 )
 from iclip.domains.generation.schemas import (
     DubbedLine,
-    DubbingAudioReference,
     DubbingLine,
+    DubbingOriginalReference,
     DubbingRequest,
 )
 from iclip.platform.media.audio import (
@@ -227,7 +227,7 @@ class DubbingProvider:
 
     async def _reference(self, request: DubbingRequest, root: Path) -> bytes:
         dest = root / "reference.wav"
-        if isinstance(request.reference, DubbingAudioReference):
+        if not isinstance(request.reference, DubbingOriginalReference):
             source = root / "reference-source"
             await self._download(request.reference.url, source, max_bytes=MAX_AUDIO_BYTES)
             start_ms, length_ms = 0, MAX_REFERENCE_MS

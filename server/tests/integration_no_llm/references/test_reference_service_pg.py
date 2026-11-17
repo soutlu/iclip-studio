@@ -12,9 +12,12 @@ from iclip.common.errors import Conflict, NotFound, ValidationFailed
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ROLE_PERMISSIONS
 from iclip.domains.references.infra_sql import SqlReferenceStore
-from iclip.domains.references.models import ReferenceVideo
-from iclip.domains.references.repository import OwnVideoUpload
-from iclip.domains.references.schemas import ReferenceTagsIn, ReferenceUpdateIn
+from iclip.domains.references.models import ReferenceKind, ReferenceVideo
+from iclip.domains.references.schemas import (
+    ReferenceTagsIn,
+    ReferenceVideoCreateIn,
+    ReferenceVideoUpdateIn,
+)
 from iclip.domains.references.service import ReferenceService
 from tests.helpers.references import (
     DOCUMENT,
@@ -61,11 +64,25 @@ class BrokenQueue:
         raise ConnectionError("队列连不上")
 
 
-def uploads_of(owned: Mapping[tuple[uuid.UUID, uuid.UUID], str]) -> OwnVideoUpload:
-    async def own_video_upload(who: Principal, upload_id: uuid.UUID) -> str | None:
-        return owned.get((who.user_id, upload_id))
+class OwnedUploads:
+    """``MediaSources`` 的替身：只认给定的（属主, 上传 id）视频上传。"""
 
-    return own_video_upload
+    def __init__(self, owned: Mapping[tuple[uuid.UUID, uuid.UUID], str]) -> None:
+        self._owned = dict(owned)
+
+    async def upload_url(
+        self, principal: Principal, upload_id: uuid.UUID, *, kind: ReferenceKind
+    ) -> str | None:
+        return self._owned.get((principal.user_id, upload_id)) if kind == "video" else None
+
+    async def generation_url(
+        self, principal: Principal, job_id: uuid.UUID, *, kind: ReferenceKind
+    ) -> str | None:
+        return None
+
+
+def upload(upload_id: uuid.UUID) -> ReferenceVideoCreateIn:
+    return ReferenceVideoCreateIn(upload_id=upload_id)
 
 
 def service(
@@ -77,7 +94,7 @@ def service(
 ) -> ReferenceService:
     return ReferenceService(
         SqlReferenceStore(engine),
-        own_video_upload=uploads_of(owned or {}),
+        sources=OwnedUploads(owned or {}),
         queue=queue,
         tagging=tagging_service(engine, tagging or RecordingTaggingQueue()),
         uploads_available=True,
@@ -97,8 +114,8 @@ async def test_creating_twice_from_the_same_video_makes_one_row_and_one_breakdow
         engine, queue, owned={(maya, first_upload): VIDEO, (sara, second_upload): VIDEO}
     )
 
-    created, was_new = await references.create(principal(maya), first_upload)
-    again, again_new = await references.create(principal(sara), second_upload)
+    created, was_new = await references.create(principal(maya), upload(first_upload))
+    again, again_new = await references.create(principal(sara), upload(second_upload))
 
     assert (was_new, again_new) == (True, False)
     assert again.id == created.id
@@ -116,11 +133,11 @@ async def test_a_queue_that_cannot_take_it_leaves_the_row_failed_not_stuck(
     engine: AsyncEngine,
 ) -> None:
     maya = await plant_user(engine, "maya")
-    upload = uuid.uuid4()
-    references = service(engine, BrokenQueue(), owned={(maya, upload): VIDEO})
+    upload_id = uuid.uuid4()
+    references = service(engine, BrokenQueue(), owned={(maya, upload_id): VIDEO})
 
     with pytest.raises(ConnectionError):
-        await references.create(principal(maya), upload)
+        await references.create(principal(maya), upload(upload_id))
 
     (item,) = (await references.list(principal(maya))).items
     assert (item.breakdown_status, item.error_code) == ("failed", "model_call_failed")
@@ -130,17 +147,20 @@ async def test_an_edit_with_a_stale_version_conflicts(engine: AsyncEngine) -> No
     maya = await plant_user(engine, "maya")
     reference_id = await plant_reference(engine, owner=maya)
     references = service(engine, RecordingQueue(SqlReferenceStore(engine)))
+    before = await reference_row(engine, reference_id)
 
     edited = await references.update(
-        principal(maya), reference_id, ReferenceUpdateIn(version=1, document="改过的拆解")
+        principal(maya), reference_id, ReferenceVideoUpdateIn(version=1, document="改过的拆解")
     )
     assert (edited.version, edited.document) == (2, "改过的拆解")
+    assert edited.updated_at > before["updated_at"], "改拆解同时改主表的更新时间"
 
     with pytest.raises(Conflict):
         await references.update(
-            principal(maya), reference_id, ReferenceUpdateIn(version=1, document="又改")
+            principal(maya), reference_id, ReferenceVideoUpdateIn(version=1, document="又改")
         )
-    assert (await reference_row(engine, reference_id))["document"] == "改过的拆解"
+    after = await reference_row(engine, reference_id)
+    assert (after["document"], after["version"]) == ("改过的拆解", 2)
 
 
 @pytest.mark.parametrize("status", ["pending", "running"])
@@ -156,7 +176,7 @@ async def test_edits_and_reruns_conflict_while_breaking_down(
         await references.update(
             principal(maya),
             reference_id,
-            ReferenceUpdateIn(version=1, document="改"),
+            ReferenceVideoUpdateIn(version=1, document="改"),
         )
     with pytest.raises(Conflict):
         await references.rerun(principal(maya), reference_id)
@@ -193,17 +213,18 @@ async def test_a_removed_video_leaves_the_list_but_its_breakdown_is_still_used(
     outcome = await references.ensure(principal(maya), VIDEO)
     assert outcome.document == DOCUMENT
     assert queue.enqueued == []
+    assert (await references.list(principal(maya))).items == [], "对话里拆解不把它放回资料库"
 
 
 async def test_uploading_a_removed_video_again_brings_it_back(engine: AsyncEngine) -> None:
     maya = await plant_user(engine, "maya")
-    upload = uuid.uuid4()
+    upload_id = uuid.uuid4()
     reference_id = await plant_reference(engine, owner=maya)
     queue = RecordingQueue(SqlReferenceStore(engine))
-    references = service(engine, queue, owned={(maya, upload): VIDEO})
+    references = service(engine, queue, owned={(maya, upload_id): VIDEO})
     await references.remove(principal(maya), reference_id)
 
-    back, created = await references.create(principal(maya), upload)
+    back, created = await references.create(principal(maya), upload(upload_id))
 
     assert (back.id, created, back.document) == (reference_id, False, DOCUMENT)
     assert [item.id for item in (await references.list(principal(maya))).items] == [reference_id]
@@ -212,16 +233,19 @@ async def test_uploading_a_removed_video_again_brings_it_back(engine: AsyncEngin
 
 async def test_someone_else_uploading_a_removed_video_takes_it_over(engine: AsyncEngine) -> None:
     maya, sara = await plant_user(engine, "maya"), await plant_user(engine, "sara")
-    upload = uuid.uuid4()
+    upload_id = uuid.uuid4()
     reference_id = await plant_reference(engine, owner=maya)
     queue = RecordingQueue(SqlReferenceStore(engine))
-    references = service(engine, queue, owned={(sara, upload): VIDEO})
+    references = service(engine, queue, owned={(sara, upload_id): VIDEO})
     await references.remove(principal(maya), reference_id)
 
-    back, created = await references.create(principal(sara), upload)
+    back, created = await references.create(principal(sara), upload(upload_id))
 
     assert (back.id, created, back.document) == (reference_id, False, DOCUMENT)
     assert (back.user_name, back.can_edit) == ("sara", True)
+    assert (await reference_row(engine, reference_id))["upload_id"] == upload_id, (
+        "恢复时来源换成这一次的上传"
+    )
     assert (await references.get(principal(maya), reference_id)).can_edit is False
     assert queue.enqueued == []
 
@@ -285,9 +309,18 @@ class LockstepStore(SqlReferenceStore):
         owner: uuid.UUID,
         requested_by: uuid.UUID,
         api_key_id: uuid.UUID | None,
+        upload_id: uuid.UUID | None = None,
+        source_job_id: uuid.UUID | None = None,
+        restore: bool,
     ) -> tuple[ReferenceVideo, bool]:
         found = await super().ensure_row(
-            video_url, owner=owner, requested_by=requested_by, api_key_id=api_key_id
+            video_url,
+            owner=owner,
+            requested_by=requested_by,
+            api_key_id=api_key_id,
+            upload_id=upload_id,
+            source_job_id=source_job_id,
+            restore=restore,
         )
         await self._both_read.wait()
         return found
@@ -301,7 +334,7 @@ async def test_two_ensures_of_a_failed_video_put_it_back_in_line_once(engine: As
     queue = RecordingQueue(SqlReferenceStore(engine), finish_with="重拆的")
     references = ReferenceService(
         LockstepStore(engine),
-        own_video_upload=uploads_of({}),
+        sources=OwnedUploads({}),
         queue=queue,
         tagging=tagging_service(engine, RecordingTaggingQueue()),
         uploads_available=True,

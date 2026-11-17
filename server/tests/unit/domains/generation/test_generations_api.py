@@ -39,9 +39,9 @@ from tests.helpers.generation import (
     SHOT_IMAGE_URLS,
     SHOT_PROMPT,
     FakeMediaProbe,
+    FakeReferenceAssets,
     FixedLineage,
     InMemoryGenerationRepository,
-    ReferenceClips,
     build_queue,
     edit_range,
     external_base,
@@ -130,6 +130,7 @@ def build_test_app(
     users: InMemoryUserRepository | None = None,
     video_models: tuple[str, ...] = VIDEO_MODELS,
     clips: Collection[str] = (CLIP_URL,),
+    listed: Collection[uuid.UUID] = (),
 ) -> FastAPI:
     app = app_with_principal(granted)
     cleared = ClearedCompletions()
@@ -156,7 +157,7 @@ def build_test_app(
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
         media_probe=probe,
-        reference_clips=ReferenceClips(clips),
+        references=FakeReferenceAssets(clips, listed=listed),
     )
     app.include_router(
         create_generations_router(service, act_as=ActAs(users or InMemoryUserRepository()))
@@ -203,6 +204,24 @@ async def test_video_submit_rejects_other_models_before_persisting_or_queueing(m
     assert response.status_code == 422
     assert "vendor-a-seedance-2-5" in response.json()["detail"]
     assert repo.jobs == {}
+
+
+async def test_reference_ids_must_all_be_listed_and_are_kept_in_the_request() -> None:
+    listed, missing = uuid.uuid4(), uuid.uuid4()
+    repo = InMemoryGenerationRepository()
+    app = build_test_app(repo, granted=principal("generation:submit"), listed=[listed])
+    async with client(app) as http:
+        refused = await http.post(
+            "/generations/video", json={**VIDEO_BODY, "reference_ids": [str(listed), str(missing)]}
+        )
+        accepted = await http.post(
+            "/generations/video", json={**VIDEO_BODY, "reference_ids": [str(listed)]}
+        )
+
+    assert refused.status_code == 422, refused.text
+    assert str(missing) in refused.json()["detail"]
+    assert accepted.status_code == 202, accepted.text
+    assert stored_request(only_job(repo)).model_dump()["reference_ids"] == [listed]
 
 
 async def test_video_model_is_required_like_upstream() -> None:

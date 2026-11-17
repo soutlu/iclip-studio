@@ -34,6 +34,7 @@ from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import WholeFilmRequest
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.public import Principal
+from iclip.domains.references.infra_sql import SqlReferenceLookup
 from iclip.domains.uploads.service import UploadService
 from iclip.platform.object_store.store import SignedUpload
 from tests.helpers.film import UnusedFilmPage
@@ -221,11 +222,19 @@ class Uploads:
         return {}
 
 
+class References:
+    """参考音频库：对不上任何素材。"""
+
+    async def audio_ids_at(self, urls: Sequence[str]) -> dict[str, uuid.UUID]:
+        return {}
+
+
 def adapter(generation: RecordingGeneration, generations: Generations) -> WholeFilmExportAdapter:
     return WholeFilmExportAdapter(
         generation=cast("GenerationService", generation),
         generations=cast("GenerationRepository", generations),
         uploads=cast("UploadService", Uploads()),
+        references=cast("SqlReferenceLookup", References()),
         lineage=FixedLineage(),
         render=cast("RenderClient", object()),
     )

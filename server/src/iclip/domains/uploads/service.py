@@ -235,11 +235,13 @@ class UploadService:
             conversation_id, urls, inherited=await self._lineage.ancestry(conversation_id)
         )
 
-    async def own_video(self, principal: Principal, upload_id: uuid.UUID) -> str | None:
-        """调用者本人这条视频上传的地址；不是本人的、不是视频或没有这条时为 None。"""
+    async def own_upload(
+        self, principal: Principal, upload_id: uuid.UUID, *, kind: MediaKind
+    ) -> str | None:
+        """调用者本人这条 ``kind`` 上传的地址；不是本人的、种类不对或没有这条时为 None。"""
 
         upload = await self._repo.get(upload_id)
-        if upload is None or upload.kind != "video" or upload.owner_user_id != principal.user_id:
+        if upload is None or upload.kind != kind or upload.owner_user_id != principal.user_id:
             return None
         return upload.url
 

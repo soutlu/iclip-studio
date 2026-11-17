@@ -111,22 +111,34 @@ async def login_as(client: httpx.AsyncClient, pg_url: str, username: str, role: 
     return uuid.UUID((await client.get("/users/me")).json()["user"]["id"])
 
 
-async def trial_jobs(pg_url: str, reference_id: uuid.UUID) -> list[dict[str, Any]]:
+async def trial_jobs(pg_url: str) -> list[dict[str, Any]]:
+    """库里所有的试生成记录，按建立先后。"""
+
     async with connected(pg_url) as conn:
         rows = await conn.execute(
             text(
-                "SELECT owner_user_id, kind, operation, status, request, metadata,"
+                "SELECT id, owner_user_id, kind, operation, status, request, metadata,"
                 " conversation_id, shot_index FROM iclip.generation_jobs"
-                " WHERE metadata @> CAST(:tag AS jsonb) ORDER BY created_at"
-            ),
-            {"tag": json.dumps({"referenceId": str(reference_id)})},
+                " WHERE operation = 'trial' ORDER BY created_at"
+            )
         )
         return [dict(row) for row in rows.mappings()]
+
+
+async def latest_trial_of(pg_url: str, reference_id: uuid.UUID) -> uuid.UUID | None:
+    async with connected(pg_url) as conn:
+        found = await conn.execute(
+            text("SELECT test_job_id FROM iclip.reference_videos WHERE reference_id = :id"),
+            {"id": reference_id},
+        )
+        return found.scalar_one()
 
 
 async def settle(
     pg_url: str, reference_id: uuid.UUID, *, output_url: str | None = None, **columns: str
 ) -> None:
+    """改这条参考视频最新的一次试生成。"""
+
     assignments = [f"{name} = :{name}" for name in columns]
     if output_url is not None:
         assignments.append("output = CAST(:output AS jsonb)")
@@ -134,18 +146,15 @@ async def settle(
         await conn.execute(
             text(
                 f"UPDATE iclip.generation_jobs SET {', '.join(assignments)}, finished_at = now()"
-                " WHERE metadata @> CAST(:tag AS jsonb)"
+                " WHERE id = (SELECT test_job_id FROM iclip.reference_videos"
+                " WHERE reference_id = :reference_id)"
             ),
-            {
-                **columns,
-                "output": json.dumps({"url": output_url}),
-                "tag": json.dumps({"referenceId": str(reference_id)}),
-            },
+            {**columns, "output": json.dumps({"url": output_url}), "reference_id": reference_id},
         )
 
 
 def path(reference_id: uuid.UUID) -> str:
-    return f"/references/{reference_id}/test-generations"
+    return f"/references/videos/{reference_id}/test-generations"
 
 
 async def issue_key(client: httpx.AsyncClient, permissions: list[str]) -> str:
@@ -178,15 +187,16 @@ async def test_the_owner_submits_one_wan3_video_from_the_breakdown(
         None,
         False,
     )
-    (job,) = await trial_jobs(pg_url, reference_id)
+    (job,) = await trial_jobs(pg_url)
     assert (job["owner_user_id"], job["kind"], job["operation"], job["status"]) == (
         maya,
         "video",
-        "generate",
+        "trial",
         "pending",
     )
-    assert (job["conversation_id"], job["shot_index"]) == (None, None)
-    assert job["metadata"] == {"referenceId": str(reference_id)}
+    assert (job["conversation_id"], job["shot_index"], job["metadata"]) == (None, None, None)
+    assert await latest_trial_of(pg_url, reference_id) == job["id"], "参考视频记着这次试生成"
+    assert test_video["jobId"] == str(job["id"])
     request = job["request"]
     assert request["model"] == "wan3.0-video-prime"
     assert request["resolution"] == "480p"
@@ -206,13 +216,13 @@ async def test_a_governor_submits_for_someone_elses_in_their_own_name(
     ada = await login_as(http, pg_url, "ada", "admin")
     submitted = await http.post(path(reference_id), json={"aspectRatio": "9:16"})
     await login_as(http, pg_url, "maya", "editor")
-    seen_by_owner = (await http.get(f"/references/{reference_id}")).json()["testVideo"]
+    seen_by_owner = (await http.get(f"/references/videos/{reference_id}")).json()["testVideo"]
     by_owner_meanwhile = await http.post(path(reference_id), json={"aspectRatio": "16:9"})
     await login_as(http, pg_url, "sara", "editor")
-    seen_by_reader = (await http.get(f"/references/{reference_id}")).json()["testVideo"]
+    seen_by_reader = (await http.get(f"/references/videos/{reference_id}")).json()["testVideo"]
 
     assert submitted.status_code == 200, submitted.text
-    (job,) = await trial_jobs(pg_url, reference_id)
+    (job,) = await trial_jobs(pg_url)
     assert (job["owner_user_id"], job["request"]["user_name"]) == (ada, "ada")
     assert seen_by_owner["status"] == "running"
     assert seen_by_owner == seen_by_reader == submitted.json()["testVideo"]
@@ -232,7 +242,7 @@ async def test_others_who_cannot_edit_it_may_not_submit(
 
     assert (by_editor.status_code, by_viewer.status_code) == (403, 403)
     assert by_editor.json()["detail"] == "只有它的属主或治理者能试生成这条参考视频"
-    assert await trial_jobs(pg_url, reference_id) == []
+    assert await trial_jobs(pg_url) == []
 
 
 async def test_a_key_without_act_as_may_not_submit_for_someone_elses(
@@ -249,7 +259,7 @@ async def test_a_key_without_act_as_may_not_submit_for_someone_elses(
         )
 
     assert response.status_code == 403, response.text
-    assert await trial_jobs(pg_url, reference_id) == []
+    assert await trial_jobs(pg_url) == []
 
 
 async def test_an_act_as_key_submits_in_the_named_owners_name(
@@ -266,7 +276,7 @@ async def test_an_act_as_key_submits_in_the_named_owners_name(
         )
 
     assert response.status_code == 200, response.text
-    (job,) = await trial_jobs(pg_url, reference_id)
+    (job,) = await trial_jobs(pg_url)
     assert (job["owner_user_id"], job["request"]["user_name"]) == (maya, "maya")
 
 
@@ -285,7 +295,7 @@ async def test_a_key_must_give_a_user_name(
 
     assert unnamed.status_code == 422, unnamed.text
     assert named.status_code == 200, named.text
-    (job,) = await trial_jobs(pg_url, reference_id)
+    (job,) = await trial_jobs(pg_url)
     assert (job["owner_user_id"], job["request"]["user_name"]) == (logan, "partner-user")
 
 
@@ -329,7 +339,7 @@ async def test_one_test_video_at_a_time(
     assert (first.status_code, while_waiting.status_code) == (200, 409)
     assert after_failing.status_code == 200, after_failing.text
     assert after_failing.json()["testVideo"]["status"] == "running"
-    jobs = await trial_jobs(pg_url, reference_id)
+    jobs = await trial_jobs(pg_url)
     assert [job["request"]["aspect_ratio"] for job in jobs] == ["9:16", "16:9"]
 
 
@@ -350,8 +360,7 @@ async def test_a_breakdown_that_cannot_make_a_prompt_is_422(
     ]
 
     assert [one.status_code for one in responses] == [422, 422]
-    assert await trial_jobs(pg_url, incomplete) == []
-    assert await trial_jobs(pg_url, too_long) == []
+    assert await trial_jobs(pg_url) == []
 
 
 async def test_the_detail_follows_the_generation_record(
@@ -359,7 +368,7 @@ async def test_the_detail_follows_the_generation_record(
 ) -> None:
     maya = await login_as(http, pg_url, "maya", "editor")
     reference_id = await plant_reference(engine, owner=maya, document=FULL)
-    before = (await http.get(f"/references/{reference_id}")).json()
+    before = (await http.get(f"/references/videos/{reference_id}")).json()
     assert before["testVideo"] is None
     await http.post(path(reference_id), json={"aspectRatio": "9:16"})
 
@@ -367,9 +376,9 @@ async def test_the_detail_follows_the_generation_record(
         pg_url, reference_id, status="completed", output_url="https://cdn.example.test/t.mp4"
     )
     await login_as(http, pg_url, "sara", "editor")
-    completed = (await http.get(f"/references/{reference_id}")).json()["testVideo"]
+    completed = (await http.get(f"/references/videos/{reference_id}")).json()["testVideo"]
     await settle(pg_url, reference_id, status="failed", error_message="upstream said no")
-    failed = (await http.get(f"/references/{reference_id}")).json()["testVideo"]
+    failed = (await http.get(f"/references/videos/{reference_id}")).json()["testVideo"]
 
     assert (completed["status"], completed["url"], completed["stale"]) == (
         "completed",
@@ -386,7 +395,7 @@ async def test_stale_follows_the_prompt_the_breakdown_makes(
     reference_id = await plant_reference(engine, owner=maya, document=FULL)
     await http.post(path(reference_id), json={"aspectRatio": "9:16"})
     await settle(pg_url, reference_id, status="completed", output_url="https://cdn.test/t.mp4")
-    detail = f"/references/{reference_id}"
+    detail = f"/references/videos/{reference_id}"
 
     current = (await http.get(detail)).json()
     tags_only = await http.put(f"{detail}/tags", json={"tagIds": []})

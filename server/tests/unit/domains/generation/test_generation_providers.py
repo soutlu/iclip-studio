@@ -130,6 +130,7 @@ async def test_video_submit_sends_protocol_payload_and_key(
             reference_image_urls=["https://example.test/first.png"],
             reference_video_urls=["https://example.test/reference.mp4"],
             reference_audio_urls=["https://example.test/reference.wav"],
+            reference_ids=[uuid.uuid4()],
             generate_audio=generate_audio,
             conversation_id=uuid.uuid4(),
             metadata={"path": "video_shot.json", "shot": 2},
@@ -153,7 +154,7 @@ async def test_video_submit_sends_protocol_payload_and_key(
     }
     if generate_audio is not None:
         expected_payload["generate_audio"] = generate_audio
-    assert seen["body"] == expected_payload, "请求原样转发：没给的不发，归属字段不发"
+    assert seen["body"] == expected_payload, "请求原样转发：没给的不发，归属字段与参考资产 id 不发"
 
 
 async def test_video_submit_forwards_the_assembled_prompt_but_not_the_shot() -> None:

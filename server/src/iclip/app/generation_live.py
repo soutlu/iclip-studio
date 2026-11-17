@@ -49,9 +49,6 @@ class AnnouncingGenerationRepository:
     async def earliest_by_outputs(self, urls: Collection[str]) -> Mapping[str, GenerationJob]:
         return await self._inner.earliest_by_outputs(urls)
 
-    async def latest_reference_trial(self, reference_id: uuid.UUID) -> GenerationJob | None:
-        return await self._inner.latest_reference_trial(reference_id)
-
     async def output_urls(self, ids: Collection[uuid.UUID]) -> Mapping[uuid.UUID, str]:
         return await self._inner.output_urls(ids)
 

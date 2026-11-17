@@ -53,7 +53,7 @@ const recordListQueries = () => {
   const queries: URLSearchParams[] = []
   server.events.on('request:start', ({ request }) => {
     const url = new URL(request.url)
-    if (url.pathname.endsWith('/api/references')) queries.push(url.searchParams)
+    if (url.pathname.endsWith('/api/references/videos')) queries.push(url.searchParams)
   })
   return queries
 }
@@ -150,7 +150,7 @@ describe('参考视频列表', () => {
 
   it('canUpload 为假：没有上传按钮、选文件入口，空列表也不是拖放区', async () => {
     server.use(
-      http.get('*/api/references', () =>
+      http.get('*/api/references/videos', () =>
         HttpResponse.json({ canUpload: false, items: [], nextCursor: null, total: 0 }),
       ),
     )
@@ -351,7 +351,7 @@ describe('上传参考视频', () => {
     await waitFor(() =>
       expect(screen.getAllByRole('article', { name: '拆解完成后自动打标签' })).toHaveLength(2),
     )
-    const created = writes.filter((write) => write.path === '/references')
+    const created = writes.filter((write) => write.path === '/references/videos')
     expect(created).toHaveLength(2)
     expect(
       created.every((write) => typeof (write.body as { uploadId?: unknown }).uploadId === 'string'),
@@ -369,7 +369,9 @@ describe('上传参考视频', () => {
     expect(writes).toEqual([])
 
     pasteFilesIntoComposer(document.body, [video()])
-    await waitFor(() => expect(writes.some((write) => write.path === '/references')).toBe(true))
+    await waitFor(() =>
+      expect(writes.some((write) => write.path === '/references/videos')).toBe(true),
+    )
     expect(await screen.findByRole('article', { name: '拆解完成后自动打标签' })).toBeVisible()
   })
 
@@ -394,7 +396,7 @@ describe('上传参考视频', () => {
     expect(screen.queryByText('松开鼠标上传视频')).not.toBeInTheDocument()
     expect(await screen.findByText('仅支持 MP4 或 MOV 视频，其他文件无法上传')).toBeVisible()
     await waitFor(() =>
-      expect(writes.filter((write) => write.path === '/references')).toHaveLength(1),
+      expect(writes.filter((write) => write.path === '/references/videos')).toHaveLength(1),
     )
   })
 })
@@ -434,7 +436,7 @@ describe('参考视频详情', () => {
     expect(writes.at(-1)).toEqual({
       body: { tagIds: tags('AMZ', '短靴', '动态上身展示') },
       method: 'PUT',
-      path: `/references/${row.id}/tags`,
+      path: `/references/videos/${row.id}/tags`,
     })
 
     await user.click(within(dialog).getByRole('button', { name: '添加内容结构' }))
@@ -525,7 +527,10 @@ describe('参考视频详情', () => {
     await user.click(confirm)
 
     expect(await within(dialog).findByText(/正在打标/)).toBeVisible()
-    expect(writes.at(-1)).toMatchObject({ method: 'POST', path: `/references/${row.id}/tagging` })
+    expect(writes.at(-1)).toMatchObject({
+      method: 'POST',
+      path: `/references/videos/${row.id}/tagging`,
+    })
     expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument()
   })
 
@@ -556,7 +561,7 @@ describe('参考视频详情', () => {
 
   it('改标签时正在打标（409）：提示一句并读回最新的', async () => {
     server.use(
-      http.put('*/api/references/:id/tags', () =>
+      http.put('*/api/references/videos/:id/tags', () =>
         HttpResponse.json({ detail: '正在打标' }, { status: 409 }),
       ),
     )
@@ -571,7 +576,7 @@ describe('参考视频详情', () => {
 
   it('保存时版本对不上（409）：底栏原地提示，编辑框里的修改留着；「取消」收起提示接着编辑，「刷新」读回最新的', async () => {
     server.use(
-      http.patch('*/api/references/:id', () =>
+      http.patch('*/api/references/videos/:id', () =>
         HttpResponse.json({ detail: 'version mismatch' }, { status: 409 }),
       ),
     )
@@ -637,7 +642,7 @@ describe('参考视频详情', () => {
     expect(await within(dialog).findByText(/排队中/)).toBeVisible()
     expect(writes.at(-1)).toMatchObject({
       method: 'POST',
-      path: `/references/${row.id}/breakdowns`,
+      path: `/references/videos/${row.id}/breakdowns`,
     })
     expect(within(dialog).getByRole('button', { name: '编辑拆解' })).toBeDisabled()
     await user.click(within(dialog).getByRole('button', { name: '更多操作' }))
@@ -659,7 +664,7 @@ describe('参考视频详情', () => {
     await user.click(within(dialog).getByRole('button', { name: '移除' }))
 
     await waitFor(() => expect(onReference).toHaveBeenLastCalledWith(null))
-    expect(writes.at(-1)).toMatchObject({ method: 'DELETE', path: `/references/${row.id}` })
+    expect(writes.at(-1)).toMatchObject({ method: 'DELETE', path: `/references/videos/${row.id}` })
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
@@ -697,6 +702,7 @@ describe('参考视频详情', () => {
     const TEST_VIDEO = {
       createdAt: '2026-09-23T11:30:00Z',
       errorMessage: null,
+      jobId: '5ef00000-0000-4000-8000-000000009001',
       stale: false,
       status: 'completed',
       url: 'https://assets.example.com/test.mp4',
@@ -735,7 +741,11 @@ describe('参考视频详情', () => {
         const status = await within(dialog).findByRole('status')
         expect(status).toHaveTextContent(/试生成中 · \d+:\d{2}/)
         expect(testWrites(writes)).toEqual([
-          { body: { aspectRatio }, method: 'POST', path: `/references/${row.id}/test-generations` },
+          {
+            body: { aspectRatio },
+            method: 'POST',
+            path: `/references/videos/${row.id}/test-generations`,
+          },
         ])
         expect(within(dialog).queryByRole('button', { name: '试生成' })).not.toBeInTheDocument()
       },
@@ -743,7 +753,7 @@ describe('参考视频详情', () => {
 
     it('提交失败：toast 显示后端给的原因', async () => {
       server.use(
-        http.post('*/api/references/:id/test-generations', () =>
+        http.post('*/api/references/videos/:id/test-generations', () =>
           HttpResponse.json({ detail: '上一次试生成尚未结束' }, { status: 409 }),
         ),
       )
@@ -785,16 +795,17 @@ describe('参考视频详情', () => {
       const user = userEvent.setup()
       const row = addMockReference({ document: '# 出场元素\n\n第一版拆解', userName: 'Maya.Cheng' })
       server.use(
-        http.get('*/api/references/:id', ({ params }) =>
+        http.get('*/api/references/videos/:id', ({ params }) =>
           params['id'] === row.id ? HttpResponse.json({ ...row, canEdit: true }) : undefined,
         ),
-        http.post('*/api/references/:id/test-generations', () =>
+        http.post('*/api/references/videos/:id/test-generations', () =>
           HttpResponse.json({
             ...row,
             canEdit: true,
             testVideo: {
               createdAt: new Date().toISOString(),
               errorMessage: null,
+              jobId: '5ef00000-0000-4000-8000-000000009002',
               stale: false,
               status: 'running',
               url: null,
@@ -816,7 +827,7 @@ describe('参考视频详情', () => {
         {
           body: { aspectRatio: '9:16' },
           method: 'POST',
-          path: `/references/${row.id}/test-generations`,
+          path: `/references/videos/${row.id}/test-generations`,
         },
       ])
     })
@@ -861,7 +872,7 @@ describe('参考视频详情', () => {
         {
           body: { aspectRatio: '9:16' },
           method: 'POST',
-          path: `/references/${row.id}/test-generations`,
+          path: `/references/videos/${row.id}/test-generations`,
         },
       ])
     })
