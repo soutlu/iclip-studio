@@ -14,7 +14,7 @@ from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.render import PROVIDER_NAME
 from iclip.platform.db.engine import build_engine
 from tests.helpers.fork_lineage import make_user, open_conversation
-from tests.helpers.generation import make_job, whole_film_request
+from tests.helpers.generation import make_job, plant_old_job, whole_film_request
 from tests.helpers.pg import connected, reset_database
 
 SERVER_DIR = Path(__file__).resolve().parents[3]
@@ -29,13 +29,14 @@ async def _plant_old_record(url: str, source: uuid.UUID) -> uuid.UUID:
     try:
         owner = await make_user(engine)
         conversation = (await open_conversation(SqlConversationRepository(engine), owner)).id
-        export = await SqlGenerationRepository(engine).create(
+        export_id = await plant_old_job(
+            engine,
             make_job(
                 whole_film_request(source),
                 owner_user_id=owner,
                 conversation_id=conversation,
                 provider=PROVIDER_NAME,
-            )
+            ),
         )
         async with engine.begin() as conn:
             await conn.execute(
@@ -43,9 +44,9 @@ async def _plant_old_record(url: str, source: uuid.UUID) -> uuid.UUID:
                     "UPDATE iclip.generation_jobs"
                     " SET request = request || jsonb_build_object('revision', 3) WHERE id = :id"
                 ),
-                {"id": export.id},
+                {"id": export_id},
             )
-        return export.id
+        return export_id
     finally:
         await engine.dispose()
 

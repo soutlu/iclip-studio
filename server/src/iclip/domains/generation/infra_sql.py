@@ -104,6 +104,8 @@ generation_jobs_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("submitted_at", DateTime(timezone=True), nullable=True),
     Column("finished_at", DateTime(timezone=True), nullable=True),
+    Column("model_group", Text, nullable=True),
+    Column("upstream_model", Text, nullable=True),
     Index("ix_generation_jobs_owner_created", "owner_user_id", "created_at", "id"),
     Index(
         "ix_generation_jobs_conversation_kind_created",
@@ -243,6 +245,8 @@ class SqlGenerationRepository:
                             created_at=func.now(),
                             submitted_at=None,
                             finished_at=None,
+                            model_group=job.model_group,
+                            upstream_model=job.upstream_model,
                         )
                         .returning(generation_jobs_table)
                     )
@@ -637,6 +641,8 @@ def _settled_values(job: GenerationJob) -> dict[str, Any]:
         "created_at": func.now(),
         "submitted_at": None,
         "finished_at": func.now(),
+        "model_group": job.model_group,
+        "upstream_model": job.upstream_model,
     }
 
 
@@ -685,6 +691,8 @@ def _job_from_row(row: RowMapping) -> GenerationJob:
         created_at=row["created_at"],
         submitted_at=row["submitted_at"],
         finished_at=row["finished_at"],
+        model_group=row["model_group"],
+        upstream_model=row["upstream_model"],
     )
 
 

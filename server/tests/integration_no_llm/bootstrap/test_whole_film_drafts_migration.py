@@ -16,7 +16,7 @@ from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.render import PROVIDER_NAME
 from iclip.platform.db.engine import build_engine
 from tests.helpers.fork_lineage import make_user, open_conversation
-from tests.helpers.generation import make_job, whole_film_request
+from tests.helpers.generation import make_job, plant_old_job, whole_film_request
 from tests.helpers.pg import connected, reset_database
 
 SERVER_DIR = Path(__file__).resolve().parents[3]
@@ -62,13 +62,14 @@ async def _plant_before_the_migration(url: str, source: uuid.UUID) -> uuid.UUID:
     engine = build_engine(url)
     try:
         owner, conversation = await _owner_and_conversation(engine)
-        export = await SqlGenerationRepository(engine).create(
+        export_id = await plant_old_job(
+            engine,
             make_job(
                 whole_film_request(source),
                 owner_user_id=owner,
                 conversation_id=conversation,
                 provider=PROVIDER_NAME,
-            )
+            ),
         )
         old_keys = {"document": {"layer0": [], "overlays": []}, "subtitles": []}
         async with engine.begin() as conn:
@@ -77,7 +78,7 @@ async def _plant_before_the_migration(url: str, source: uuid.UUID) -> uuid.UUID:
                     "UPDATE iclip.generation_jobs"
                     " SET request = request || CAST(:old AS jsonb) WHERE id = :id"
                 ),
-                {"old": json.dumps(old_keys), "id": export.id},
+                {"old": json.dumps(old_keys), "id": export_id},
             )
             await conn.execute(
                 text(
@@ -87,7 +88,7 @@ async def _plant_before_the_migration(url: str, source: uuid.UUID) -> uuid.UUID:
                 ),
                 {"conversation": conversation, "owner": owner},
             )
-        return export.id
+        return export_id
     finally:
         await engine.dispose()
 

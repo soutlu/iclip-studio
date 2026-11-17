@@ -57,7 +57,8 @@ from iclip.app.shot_media import CutRecordsAdapter, FrameBoardsAdapter, GridCuts
 from iclip.app.whole_film_exports import WholeFilmExportAdapter, final_cut_reader
 from iclip.common.errors import NotFound
 from iclip.config import (
-    QWEN_API_KEY_ENV,
+    QWEN_MUSIC_API_KEY_ENV,
+    QWEN_SUBTITLE_API_KEY_ENV,
     ObjectStoreEnv,
     ResolvedMediaGeneration,
     ResolvedProductCatalog,
@@ -93,6 +94,7 @@ from iclip.domains.conversations.service import (
     ConversationActivity,
 )
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
+from iclip.domains.generation.model_groups import ModelGroup, ModelGroups
 from iclip.domains.generation.models import InFlightPhase
 from iclip.domains.generation.module import (
     GenerationModule,
@@ -100,7 +102,7 @@ from iclip.domains.generation.module import (
     QwenServiceConfig,
     build_generation_module,
 )
-from iclip.domains.generation.ports import ConversationLineage
+from iclip.domains.generation.ports import ConversationLineage, ModelGroupOf
 from iclip.domains.generation.queue import GenerationQueueSettings, queue_dsn
 from iclip.domains.generation.qwen import QwenEndpoint
 from iclip.domains.generation.render import RenderClient, RenderSetup
@@ -117,7 +119,12 @@ from iclip.domains.identity.middleware import (
 )
 from iclip.domains.identity.module import SsoRuntime, build_identity_module
 from iclip.domains.identity.pms import PmsUserClient
-from iclip.domains.identity.public import ActAs, Principal
+from iclip.domains.identity.public import (
+    ActAs,
+    DepartmentGroup,
+    ModelGroupResolver,
+    Principal,
+)
 from iclip.domains.identity.sso import SsoVerifier
 from iclip.domains.inspirations.infra_sql import PgInspirationVideos
 from iclip.domains.inspirations.module import build_inspirations_module
@@ -257,6 +264,7 @@ def _generation_module(
     compose_concurrency: int,
     fetch_url: Callable[[str], str],
     render: RenderSetup | None,
+    model_group_of: ModelGroupOf,
 ) -> GenerationModule:
     enhance = settings.video_enhance
     return build_generation_module(
@@ -303,6 +311,19 @@ def _generation_module(
         subtitles=_qwen_service(settings.subtitle),
         music=_qwen_service(settings.music),
         render=render,
+        model_groups=ModelGroups(
+            tuple(
+                ModelGroup(
+                    name=group.name,
+                    video_api_key=group.video_api_key,
+                    video_models=group.video_models,
+                    subtitle_api_key=group.subtitle_api_key,
+                    music_api_key=group.music_api_key,
+                )
+                for group in settings.model_groups
+            ),
+            group_of=model_group_of,
+        ),
     )
 
 
@@ -396,13 +417,13 @@ def build_app(
         _logger.warning(
             "字幕识别未启用",
             media_generation=settings.media_generation is not None,
-            requires=f"media_generation.subtitle 段与千问AI平台的 API Key {QWEN_API_KEY_ENV}",
+            requires=f"media_generation.subtitle 段与千问AI平台的 API Key {QWEN_SUBTITLE_API_KEY_ENV}",
         )
     if settings.media_generation is None or settings.media_generation.music is None:
         _logger.warning(
             "音乐生成未启用",
             media_generation=settings.media_generation is not None,
-            requires=f"media_generation.music 段与千问AI平台的 API Key {QWEN_API_KEY_ENV}",
+            requires=f"media_generation.music 段与千问AI平台的 API Key {QWEN_MUSIC_API_KEY_ENV}",
         )
     http_client = httpx.AsyncClient(follow_redirects=True)
     public_http_client = public_client(timeout=TOTAL_TIMEOUT_SECONDS)
@@ -478,6 +499,13 @@ def build_app(
             compose_concurrency=compose_concurrency,
             fetch_url=fetch_url,
             render=render,
+            model_group_of=ModelGroupResolver(
+                identity.users,
+                tuple(
+                    DepartmentGroup(name=group.name, departments=frozenset(group.departments))
+                    for group in settings.model_groups
+                ),
+            ).group_of,
         )
 
     async def own_video_upload(principal: Principal, upload_id: uuid.UUID) -> str | None:

@@ -74,6 +74,8 @@ CREATE DATABASE iclip OWNER iclip;
   - **重要提醒**：请将 `CREDENTIAL_ENCRYPTION_KEYS` 与数据库备份分开妥善保管；一旦丢失，数据库里已保存的所有模型 API Key 和 MCP 配置都将无法解密，只能重新录入。
   - 如果服务器是与 OSS 同地域的阿里云 ECS，建议配置 `OSS_INTERNAL_ENDPOINT` 走内网高速读写；
   - 如需开启视频超分（高清版），配置 `VIDEO_ENHANCE_SUBMIT_URL` 并在 `config.yaml` 中配置 `media_generation.video.enhance`；
+  - 如需开启素材片字幕识别，配置 `QWEN_SUBTITLE_API_KEY` 并在 `config.yaml` 中配置 `media_generation.subtitle`；如需开启生成背景音乐，配置 `QWEN_MUSIC_API_KEY` 并配置 `media_generation.music`。两项各用各的 key，只配了一项就只开通那一项；
+  - 如需按部门区分媒体生成用的 key 与视频网关 model_id，见[配置组](#配置组)；
   - 如需开启成片导出（导出经渲染服务），配置 `FINAL_CUT_RENDER_URL=http://render:8080` 以及 `RENDER_ALLOWED_MEDIA_HOSTS`（填入本系统 OSS 域名和上游视频生成域名，多个域名用逗号分隔）。
   - 使用 final-cut 编辑器还要配置 `FINAL_CUT_PREVIEW_ORIGIN=https://<预览域名>`，编辑器的预览在这个域名下的预览页里运行，不配置时预览无法加载；预览域名取应用域名下的一个子域名。预览域名的解析与 HTTPS 证书要和应用域名一样指到 `web` 容器，由同一套 Nginx 把页面交给前端、把 `/api/` 转给后端，转发时原样带上 `Host`（后端按它区分两个域名）。
 - `configs/config.yaml` 与 `configs/runtime.yaml`：从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制生成 `runtime.yaml`，回调地址保持 `http://server:7788`（插件启用条件见[内部接口与视频插件包](architecture.md#内部接口与视频插件包)，接入其他系统见运行时项目的 `docs/apps.md`）。
@@ -190,6 +192,40 @@ rsync -a <本机输出目录>/catalog.json <服务器>:<部署目录>/components
 
 - **修改模型、Agent、技能库与 MCP 服务**：直接在网页后台修改并保存/发布，下一次对话运行会自动加载最新配置，无需重启容器（已有对话锁定的 Agent 版本不受影响，见运行时项目的 `docs/architecture.md`「对话固定版本与每次运行装配」）。
 - **修改 `configs/*.yaml` 或 `.env`**：修改后必须执行 `docker compose up -d` 重新创建容器才能生效（单纯执行 `docker compose restart` 不会重新读取 `.env`）。
+
+### 配置组
+
+配置组让不同部门的人在出片、编辑段、高清版、字幕识别和生成背景音乐时用各自的 key，并把产品模型名换成该组在视频网关上的 model_id。用户怎么归组、什么时候定组，见 [CONTEXT.md](CONTEXT.md) 的「配置组」。配置写在 `configs/config.yaml` 的顶层段 `model_groups`，key 的值放在 `.env`，配置段里只写变量名：
+
+```yaml
+model_groups:
+  mkt:                                   # 组名：小写字母开头，只用小写字母、数字和下划线
+    departments: [101, 102]              # 用户直属部门的 PMS 数字 id，可以是空列表
+    video_api_key_env: VIDEO_API_KEY_MKT # 该组视频 key 的变量名，必填
+    subtitle_api_key_env: QWEN_SUBTITLE_API_KEY_MKT # 开通了字幕识别时必填
+    music_api_key_env: QWEN_MUSIC_API_KEY_MKT       # 开通了生成背景音乐时必填
+    video_models:                        # 产品模型名 → 该组网关的 model_id
+      vendor-b-seedance-2-0: <该组的 model_id>
+      vendor-b-seedance-2-5: <该组的 model_id>
+      wan3.0-video-prime: <该组的 model_id>
+      video-enhance: <该组的 model_id>   # 键是 media_generation.video.enhance.model 的值；只在开通了高清版时写，没开通时写了会启动报错
+```
+
+- **不写这一段就不分组**：所有人走默认组，视频用 `VIDEO_API_KEY`，字幕识别用 `QWEN_SUBTITLE_API_KEY`，生成背景音乐用 `QWEN_MUSIC_API_KEY`，视频网关收到的是产品模型名。
+- **启动时校验**：组名不合规、同一个部门写进了两个组、`video_models` 的键不正好是 `allowed_models`（开通了高清版时再加上 `enhance.model` 的值）、对照的值为空、key 变量没写或没有值，后端都拒绝启动并指出是哪一组的哪一项。字幕识别或生成背景音乐没开通时，不检查对应的 key；媒体生成没开通时，不检查 key 与 `video_models` 的模型名（组名、部门、必填项与值不能为空照样检查）。
+- **改配置的生效范围**：组在受理时定下并记在生成记录上，所以改配置只影响之后受理的任务。记录上的组已从配置删掉、或该组缺了要用的 key 时，这条任务直接失败，错误信息写明组名和缺的项。
+
+日常操作都是改 `configs/config.yaml` 或 `.env` 后执行 `docker compose up -d`：
+
+- **给已有组加部门**：把部门 id 加进该组的 `departments`。一个部门只能在一个组里，要从别的组挪过来时先从那个组删掉。
+- **新增组**：在 `.env` 里加上该组的 key，在 `model_groups` 里加上组，`video_models` 写全。
+- **换 key**：只改 `.env` 里该变量的值，变量名不变。该组在途任务后续的轮询会用新 key。
+- **删组**：先把该组的 `departments` 清空并执行 `docker compose up -d`，组里的人之后受理的任务走默认组；等该组的在途任务都结束（下面的查询返回 0），再从 `model_groups` 删掉这个组、从 `.env` 删掉它的 key，最后执行一次 `docker compose up -d`：
+  ```sql
+  SELECT count(*) FROM iclip.generation_jobs
+   WHERE model_group = '<组名>' AND status IN ('pending', 'submitting', 'submitted');
+  ```
+- **找出没分到组的人**：在 `iclip.video_generation_report` 里查 `model_group` 为空的记录（只看配好分组之后的，更早的记录都没有组名），按 `user_email` / `user_name` 找到这些人，再用 `GET /users` 查他们的 `departments[].id`，把部门加进对应的组。
 
 ### 换密钥加密钥匙
 

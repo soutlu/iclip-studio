@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import uuid
 from collections.abc import Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
 from procrastinate.testing import InMemoryConnector
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.config import (
     ImageGenerationSection,
@@ -63,6 +66,7 @@ from iclip.domains.generation.schemas import (
     VideoGenerationIn,
     WholeFilmRequest,
     WholeFilmVideoSource,
+    request_to_payload,
 )
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.generation.stored_requests import GenerationRequest
@@ -836,6 +840,35 @@ class MemoryObjectStore:
         return f"{self.base}/{object_key}"
 
 
+async def plant_old_job(engine: AsyncEngine, job: GenerationJob) -> uuid.UUID:
+    """在迁移到较早版本的库上种一条生成记录，只写基线就有的列。
+
+    迁移测试停在旧版本时，当前仓储会写之后迁移才加的列，所以这里按列名直接插入。
+    """
+
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO iclip.generation_jobs"
+                " (id, owner_user_id, conversation_id, kind, operation, provider, request,"
+                " status, created_at)"
+                " VALUES (:id, :owner, :conversation, :kind, :operation, :provider,"
+                " CAST(:request AS jsonb), :status, now())"
+            ),
+            {
+                "id": job.id,
+                "owner": job.owner_user_id,
+                "conversation": job.conversation_id,
+                "kind": job.kind,
+                "operation": job.operation,
+                "provider": job.provider,
+                "request": json.dumps(request_to_payload(job.request)),
+                "status": job.status,
+            },
+        )
+    return job.id
+
+
 __all__ = [
     "MEDIA_ENVS",
     "MUSIC_PROMPT",
@@ -860,6 +893,7 @@ __all__ = [
     "make_music",
     "make_subtitle",
     "make_upload",
+    "plant_old_job",
     "stored_request",
     "video_request",
     "whole_film_request",
