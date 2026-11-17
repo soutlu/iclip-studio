@@ -8,6 +8,7 @@ import {
 import { apiFetch } from '@/shared/api/client'
 import { zFinalCutPreviewHostOut } from '@/shared/api/generated/zod.gen'
 import { mergeSpans, sameSpans, spansOf, windowSpans, type TimeSpan } from '@/shared/lib/time-spans'
+import { FONT_BLOCK_START } from './composition/film'
 import { withPreviewMediaPatches } from './preview-media'
 import { zPreviewCommand, type PreviewCommand, type PreviewEvent } from './preview-protocol'
 import { secondsToFrame, STUDIO_PREVIEW_FPS } from './vendor/hyperframes-studio/player/lib/time'
@@ -86,24 +87,54 @@ const failedClipOf = (player: PlayerElement | null) => {
 }
 
 /**
- * 播放器里那一份 final-cut 的副本会话：打开的就是播放器加载的那份文档，元素的 `data-hf-id` 一一对上；
- * 给它打补丁时 SDK 的预览适配器把同样的补丁打进播放器里正在播的文档。`seq` 是它现在是第几份。
+ * 播放器里那一份 final-cut 的副本会话：`comp` 打开的就是播放器加载的那份文档，`captions` 打开的是放进文档里的
+ * 字幕场景文件（没有时是 null），元素的 `data-hf-id` 都和播放器里的一一对上；给它们打补丁时 SDK 的预览适配器
+ * 把同样的补丁打进播放器里正在播的文档。`seq` 是它现在是第几份。
  */
-type Replica = { comp: Composition; seq: number; dispose: () => void }
+type Replica = {
+  comp: Composition
+  captions: Composition | null
+  seq: number
+  dispose: () => void
+}
 
-const openReplica = async (player: PlayerElement, html: string, seq: number) => {
+/** 用 `html` 开一个副本会话，补丁经 SDK 的预览适配器同步进 `player`；答复会话和停止同步的函数。 */
+const openSynced = async (player: PlayerElement, html: string) => {
   const adapter = createIframePreviewAdapter(player.iframeElement)
   const comp = await openComposition(html, { preview: adapter, history: false })
   const detach = adapter.attachSync(comp)
-  const replica: Replica = {
+  return {
     comp,
-    seq,
     dispose: () => {
       detach()
       comp.dispose()
     },
   }
-  return replica
+}
+
+const openReplica = async (
+  player: PlayerElement,
+  html: string,
+  captions: string | undefined,
+  seq: number,
+): Promise<Replica> => {
+  const main = await openSynced(player, html)
+  let scene: Awaited<ReturnType<typeof openSynced>> | null = null
+  try {
+    scene = captions === undefined ? null : await openSynced(player, captions)
+  } catch (error) {
+    main.dispose()
+    throw error
+  }
+  return {
+    comp: main.comp,
+    captions: scene?.comp ?? null,
+    seq,
+    dispose: () => {
+      scene?.dispose()
+      main.dispose()
+    },
+  }
 }
 
 const ELEMENT_PATH = /^\/elements\/([^/]+)(\/.*)?$/
@@ -169,6 +200,23 @@ const extendRuntime = (player: PlayerElement, patches: readonly JsonPatchOp[]) =
       source: window,
     }),
   )
+}
+
+const FONT_MARKER = FONT_BLOCK_START.replace(/^<!--|-->$/g, '').trim()
+
+const isStyle = (node: Node): node is HTMLStyleElement => node.nodeName === 'STYLE'
+
+/** `page` 的 `<head>` 里字体块的中文字体规则（开始标记之后、结束标记之前的那个 `<style>`）；没有时是 null。 */
+const fontStyleIn = (page: Document): HTMLStyleElement | null => {
+  const walker = page.createTreeWalker(page.head, NodeFilter.SHOW_COMMENT)
+  while (walker.nextNode()) {
+    if (walker.currentNode.nodeValue?.trim() !== FONT_MARKER) continue
+    for (let node = walker.currentNode.nextSibling; node !== null; node = node.nextSibling) {
+      if (node.nodeType === Node.COMMENT_NODE) return null
+      if (isStyle(node)) return node
+    }
+  }
+  return null
 }
 
 const isMedia = (element: Element | undefined): element is HTMLMediaElement =>
@@ -353,7 +401,7 @@ export const createPreviewPage = (
     pending = null
   }
 
-  const load = (html: string, runtimeSrc: string, seq: number) => {
+  const load = (html: string, runtimeSrc: string, captions: string | undefined, seq: number) => {
     swapping = true
     active?.pause()
     // 每次用到时再读：新页加载、等它稳定的这段时间里还可能挪过位置（挪的是旧播放器或记下的起点）
@@ -387,7 +435,7 @@ export const createPreviewPage = (
       if (job.cancelled) return
       let nextReplica: Replica | null = null
       try {
-        nextReplica = await openReplica(next, html, seq)
+        nextReplica = await openReplica(next, html, captions, seq)
       } catch (error) {
         // 没有副本会话时每次改动都报 needsLoad、整份重新加载
         console.error('预览页打不开 final-cut 的副本会话', error)
@@ -404,25 +452,38 @@ export const createPreviewPage = (
     })()
   }
 
-  /** 把第 `seq` 份的补丁打进正在播的那一份；打不了时报 `needsLoad`，副本会话作废，等整份重新加载。 */
-  const patch = (seq: number, patches: readonly JsonPatchOp[]) => {
+  /**
+   * 把第 `seq` 份的补丁（主文件的 `patches`、字幕场景的 `captions`）打进正在播的那一份，`fonts` 是新的中文字体
+   * 规则时先换上（浏览器按新规则取字形）；打不了时报 `needsLoad`，副本会话作废，等整份重新加载。
+   */
+  const patch = (
+    seq: number,
+    patches: readonly JsonPatchOp[],
+    captions: readonly JsonPatchOp[],
+    fonts: string | undefined,
+  ) => {
     const player = active
     const page = player?.iframeElement.contentDocument ?? null
     const current = replica
+    const fontStyle = page === null || fonts === undefined ? null : fontStyleIn(page)
     if (
       player === null ||
       page === null ||
       current === null ||
       seq !== current.seq + 1 ||
-      !targetsPresent(page, patches)
+      (captions.length > 0 && current.captions === null) ||
+      (fonts !== undefined && fontStyle === null) ||
+      !targetsPresent(page, [...patches, ...captions])
     ) {
       dropReplica()
       send({ type: 'needsLoad', seq })
       return
     }
     try {
+      if (fontStyle !== null && fonts !== undefined) fontStyle.textContent = fonts
       extendRuntime(player, patches)
       current.comp.applyPatches(withPreviewMediaPatches(patches))
+      if (captions.length > 0) current.captions?.applyPatches(captions)
     } catch (error) {
       console.error('预览页打补丁失败，整份重新加载', error)
       dropReplica()
@@ -445,12 +506,12 @@ export const createPreviewPage = (
         cancelPending()
         // 正在播的那一份要被换掉，补丁不再往里打
         dropReplica()
-        const { html, runtimeSrc, seq } = command
-        scheduled = setTimeout(() => load(html, runtimeSrc, seq), RELOAD_DELAY_MS)
+        const { html, runtimeSrc, captions, seq } = command
+        scheduled = setTimeout(() => load(html, runtimeSrc, captions, seq), RELOAD_DELAY_MS)
         return
       }
       case 'patch':
-        patch(command.seq, command.patches)
+        patch(command.seq, command.patches, command.captions ?? [], command.fonts)
         return
       case 'unload':
         cancelPending()

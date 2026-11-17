@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   previewDocument,
+  withCaptionsScene,
   withLocalizedHosts,
   withoutHiddenClips,
   withPreviewVariables,
@@ -212,5 +213,47 @@ describe('隐藏的片段不进预览', () => {
   it('预览文档的根下只剩没隐藏的片段', () => {
     const html = previewDocument(`${head}${open}${hidden}${shown}${close}`, 'https://preview.test/')
     expect(rootChildren(html)).toEqual(['v1', 't1'])
+  })
+})
+
+describe('字幕场景放进预览文档', () => {
+  const host =
+    '<div id="captions" class="clip" data-track-kind="captions" data-composition-id="captions" data-composition-src="compositions/captions.html"></div>'
+  const main = (children: string) =>
+    `<!doctype html>\n<html>\n<head>\n<meta charset="utf-8">\n</head>\n<body><div id="film" data-composition-id="film">${children}</div></body>\n</html>\n`
+  const SCENE =
+    '<template>\n<style>.caption{color:#fff}</style>\n<div id="root" data-composition-id="captions"><div id="cap-1" class="clip caption" data-var-text="cap_1">还没存的字</div></div>\n</template>\n'
+  const templateOf = (html: string) =>
+    new DOMParser()
+      .parseFromString(html, 'text/html')
+      .querySelector<HTMLTemplateElement>('template#captions-template')
+
+  it('按字幕宿主挂载的场景 id 放一个模板，内容是场景文件 <template> 里的那些；宿主和场景文件的地址不动', () => {
+    const html = withCaptionsScene(main(`<video id="v1"></video>${host}`), SCENE)
+    const template = templateOf(html)
+    expect(template?.content.querySelector('style')?.textContent).toBe('.caption{color:#fff}')
+    expect(template?.content.getElementById('cap-1')?.textContent).toBe('还没存的字')
+    const film = new DOMParser().parseFromString(html, 'text/html')
+    expect(film.getElementById('captions')?.getAttribute('data-composition-src')).toBe(
+      'compositions/captions.html',
+    )
+    expect(html).toMatch(/^<!doctype html>\n<html/)
+  })
+
+  it('没有字幕场景、没有字幕宿主时原样返回', () => {
+    const withHost = main(host)
+    expect(withCaptionsScene(withHost, null)).toBe(withHost)
+    const bare = main('<video id="v1"></video>')
+    expect(withCaptionsScene(bare, SCENE)).toBe(bare)
+  })
+
+  it('预览文档里带着模板；字幕宿主隐藏着时不带', () => {
+    expect(
+      templateOf(previewDocument(main(host), 'https://preview.test/', undefined, SCENE)),
+    ).not.toBeNull()
+    const hiddenHost = host.replace('<div ', '<div data-hidden ')
+    expect(
+      templateOf(previewDocument(main(hiddenHost), 'https://preview.test/', undefined, SCENE)),
+    ).toBeNull()
   })
 })

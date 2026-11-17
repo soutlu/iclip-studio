@@ -5,6 +5,8 @@ import {
   markFinalCutPreviewPlayer,
   openConversation,
   openFinalCut,
+  pauseMockResponses,
+  releaseMockResponses,
 } from './helpers'
 
 /**
@@ -1610,6 +1612,112 @@ test('字幕：在「字幕」页签加一句、改字，字幕文件和主文�
       }, captionId),
     )
     .toEqual({ text: '改过的字幕', shown: true, low: true, onTop: true })
+})
+
+/**
+ * 预览里正在显示的播放器里的那句字幕：字、起点、播放头这一刻看不看得到，和字里的中文是不是都有加载好的网页字体
+ * （粗体）的字形；换播放器的那一刻或没有字幕时是 null。
+ */
+const previewCaption = (editor: Locator) =>
+  finalCutPreviewPlayer(editor).evaluateAll((elements) => {
+    if (elements.length !== 1) return null
+    const [element] = elements as (HTMLElement & { iframeElement: HTMLIFrameElement })[]
+    const caption = element?.iframeElement.contentDocument?.querySelector('.caption')
+    if (caption === null || caption === undefined) return null
+    const style = caption.ownerDocument.defaultView?.getComputedStyle(caption)
+    const faces = [...caption.ownerDocument.fonts].filter(
+      (face) => face.status === 'loaded' && face.weight === '700',
+    )
+    const covers = (face: FontFace, code: number) =>
+      face.unicodeRange.split(',').some((range) => {
+        const [from = '', to = from] = range.trim().replace(/^U\+/i, '').split('-')
+        return parseInt(from, 16) <= code && code <= parseInt(to, 16)
+      })
+    const text = caption.textContent
+    return {
+      text,
+      start: caption.getAttribute('data-start'),
+      shown:
+        style?.visibility !== 'hidden' &&
+        style?.display !== 'none' &&
+        caption.getBoundingClientRect().height > 0,
+      glyphs: [...text]
+        .map((char) => char.codePointAt(0) ?? 0)
+        .filter((code) => code > 0x7e)
+        .every((code) => faces.some((face) => covers(face, code))),
+    }
+  })
+
+test('字幕的改动直接打进预览：改一句的字、挪一句都不换播放器，还没存时预览里已经是新的；撤销回来也对', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  // 预览里的字幕场景是编辑器发过去的那一份，不从预览域名取工作区里存着的
+  const sceneFetched: string[] = []
+  page.on('request', (request) => {
+    if (request.url().includes(`/files/${CAPTIONS_FILE}`)) sceneFetched.push(request.url())
+  })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const toolbar = editor.getByRole('toolbar', { name: '剪辑工具' })
+  const group = editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+  await group.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
+  // 整条素材放进 final-cut：字幕在它里面挪，总长不变
+  await group.getByRole('slider', { name: '裁剪结尾' }).focus()
+  for (let second = 0; second < 6; second += 1) await page.keyboard.press('Shift+ArrowRight')
+  const added = mainSaved(page, 1)
+  await page.keyboard.press('Enter')
+  await added
+
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '字幕' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕' })
+  const created = page.waitForRequest(
+    (request) => savedFileOf(request, CAPTIONS_FILE)?.includes('>新字幕</div>') === true,
+  )
+  await tab.getByRole('button', { name: '在播放头处加一句' }).click()
+  await created
+  // 第一句连着字幕宿主一起加进来，整份重新加载一次
+  await readyPlayer(editor)
+  await expect
+    .poll(() => previewCaption(editor))
+    .toEqual({ text: '新字幕', start: '0', shown: true, glyphs: true })
+  await markFinalCutPreviewPlayer(editor)
+
+  // 之后的改动都存不下去，预览里看到的只能是编辑器手里没存的那一份
+  await pauseMockResponses(page, '/workspace/file')
+  // 「龙」是新字形：字体块跟着变，新的中文字体规则随补丁换进预览
+  await tab.getByRole('textbox', { name: '字幕文字 00:00.00 – 00:02.00' }).fill('新字幕龙')
+  await expect
+    .poll(() => previewCaption(editor))
+    .toEqual({ text: '新字幕龙', start: '0', shown: true, glyphs: true })
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
+
+  const body = editor
+    .getByRole('group', { name: '字幕', exact: true })
+    .getByRole('group', { name: /^新字幕龙，/ })
+    .getByRole('button', { name: /^选中：/ })
+  await dragClip(page, body, 60)
+  await expect.poll(async () => Number((await previewCaption(editor))?.start)).toBeGreaterThan(0)
+  // 播放头还在 0 秒：挪走以后这一刻看不到
+  await expect.poll(async () => (await previewCaption(editor))?.shown).toBe(false)
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
+
+  // 撤销两步：先挪回 0 秒，再回到原来的字
+  await toolbar.getByRole('button', { name: '撤销' }).click()
+  await expect
+    .poll(() => previewCaption(editor))
+    .toEqual({ text: '新字幕龙', start: '0', shown: true, glyphs: true })
+  await toolbar.getByRole('button', { name: '撤销' }).click()
+  await expect
+    .poll(() => previewCaption(editor))
+    .toEqual({ text: '新字幕', start: '0', shown: true, glyphs: true })
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
+  expect(sceneFetched).toEqual([])
+  await releaseMockResponses(page, '/workspace/file')
 })
 
 /** 存出的字幕场景里各句的起点和时长（秒），按文件里的先后。 */

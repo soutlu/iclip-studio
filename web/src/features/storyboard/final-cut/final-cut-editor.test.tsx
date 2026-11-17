@@ -4085,6 +4085,18 @@ describe('final-cut 编辑器 · 语言', () => {
     expect(mockWorkspaceFile(CONVERSATION, 'final-cut/locales/zh.json')?.content).toBe('{}\n')
   })
 
+  it('还没有工程时「添加语言」置灰，点了只说明原因', async () => {
+    const user = userEvent.setup()
+    await openEditor()
+    const add = within(languages()).getByRole('button', { name: '添加语言' })
+    expect(add).toHaveAttribute('aria-disabled', 'true')
+    await user.click(add)
+    expect(
+      (await screen.findAllByText('final-cut 暂无内容，无法添加语言；请先加入内容')).length,
+    ).toBeGreaterThan(0)
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
   it('所有语言都加了：不显示「+」', async () => {
     await putFilm([video({ src: URL_A, duration: 2_000 })])
     for (const code of ['zh', 'en', 'de', 'es', 'fr'])

@@ -13,6 +13,7 @@ import {
   type FakeParentMedia,
 } from '@/testing/hyperframes-player'
 import { server } from '@/testing/mocks/server'
+import { FONT_BLOCK_END, FONT_BLOCK_START } from './composition/film'
 import { bootPreviewPage, createPreviewPage, type PreviewPage } from './preview-page'
 import type { PreviewCommand, PreviewEvent } from './preview-protocol'
 
@@ -72,19 +73,29 @@ const createPage = () => {
   const send = (command: PreviewCommand) => page.handle(command)
   // 和编辑器一样：整份加载、打补丁共用一个序号
   let seq = 0
-  const load = (html: string) => send({ type: 'load', html, runtimeSrc: RUNTIME, seq: (seq += 1) })
+  const load = (html: string, captions?: string) =>
+    send(
+      captions === undefined
+        ? { type: 'load', html, runtimeSrc: RUNTIME, seq: (seq += 1) }
+        : { type: 'load', html, runtimeSrc: RUNTIME, captions, seq: (seq += 1) },
+    )
   const patch = (patches: PatchCommand['patches'], at = (seq += 1)) =>
     send({ type: 'patch', seq: at, patches })
-  return { page, mount, sent, playerOf, of, buffering, playing, send, load, patch }
+  /** 一步编辑里字幕场景的补丁 `captions`（和主文件的 `patches`）。 */
+  const patchCaptions = (
+    captions: NonNullable<PatchCommand['captions']>,
+    patches: PatchCommand['patches'] = [],
+  ) => send({ type: 'patch', seq: (seq += 1), patches, captions })
+  return { page, mount, sent, playerOf, of, buffering, playing, send, load, patch, patchCaptions }
 }
 
 const firstLoaded = (opened: ReturnType<typeof createPage>) =>
   waitFor(() => expect(opened.of('loaded')).toHaveLength(1))
 
-const openPage = async (html = film()) => {
+const openPage = async (html = film(), captions?: string) => {
   const opened = createPage()
   opened.send({ type: 'size', width: 180, height: 320 })
-  opened.load(html)
+  opened.load(html, captions)
   await firstLoaded(opened)
   /** 换一份 final-cut，等它换上来。 */
   const showFilm = async (next: string) => {
@@ -554,6 +565,88 @@ describe('一步编辑的补丁直接打进正在播的那一份', () => {
     patch([{ op: 'replace', path: '/elements/b/timing/start', value: 3 }])
     expect(of('needsLoad')).toEqual([{ type: 'needsLoad', seq: 3 }])
     expect(inPlayer('b')).toHaveAttribute('data-start', '2')
+  })
+
+  it('带着新的中文字体规则：先换掉播放器里字体块的 <style>，再打补丁；没有字体块时不打，报要整份重新加载', async () => {
+    const opened = await openPage(stage(CLIPS))
+    const player = opened.playerOf()
+    // 测试用的播放器只放 <body>：照真播放器的样子把字体块写进 <head>
+    const head = player.iframeElement.contentDocument?.head
+    if (head === undefined) throw new Error('预览里没有页面')
+    head.innerHTML = `${FONT_BLOCK_START}\n<style>@font-face{a}</style>\n${FONT_BLOCK_END}`
+    opened.send({
+      type: 'patch',
+      seq: 2,
+      patches: [{ op: 'replace', path: '/elements/b/timing/start', value: 3 }],
+      fonts: '@font-face{b}',
+    })
+    const page = opened.playerOf().iframeElement.contentDocument
+    expect(opened.playerOf()).toBe(player)
+    expect(page?.head.querySelector('style')?.textContent).toBe('@font-face{b}')
+    expect(page?.getElementById('b')).toHaveAttribute('data-start', '3')
+    expect(opened.of('patched').map((event) => event.seq)).toEqual([2])
+
+    const bare = await openPage(stage(CLIPS))
+    bare.send({ type: 'patch', seq: 2, patches: [], fonts: '@font-face{b}' })
+    expect(bare.of('needsLoad')).toEqual([{ type: 'needsLoad', seq: 2 }])
+  })
+
+  describe('字幕场景', () => {
+    const caption = (text: string) =>
+      `<div id="cap-1" data-hf-id="cap-1" class="clip caption" data-start="0" data-duration="2" data-var-text="cap_1">${text}</div>`
+    const sceneRoot = (text: string) =>
+      `<div id="root" data-hf-id="root" data-composition-id="captions" data-no-timeline>${caption(text)}</div>`
+    const SCENE = `<template>\n<style></style>\n${sceneRoot('你好')}\n</template>\n`
+    // 运行库加载时把场景挂进字幕宿主，字照根变量写（这里是英文）
+    const MOUNTED =
+      CLIPS +
+      `<div id="captions" data-hf-id="captions" data-composition-id="captions" data-start="0" data-duration="4">${sceneRoot('Hello')}</div>`
+
+    it('字幕场景的补丁经场景的副本会话打进播放器里挂着的那一份，不换播放器；主文件的照打', async () => {
+      const opened = await openPage(stage(MOUNTED), SCENE)
+      const player = opened.playerOf()
+      const inPlayer = (id: string) =>
+        opened.playerOf().iframeElement.contentDocument?.querySelector(`[data-hf-id="${id}"]`)
+      opened.patchCaptions(
+        [
+          { op: 'replace', path: '/elements/cap-1/timing/start', value: 1 },
+          { op: 'replace', path: '/elements/cap-1/text', value: 'Hi\nthere' },
+        ],
+        [{ op: 'replace', path: '/elements/b/timing/start', value: 3 }],
+      )
+      expect(opened.playerOf()).toBe(player)
+      expect(inPlayer('cap-1')).toHaveAttribute('data-start', '1')
+      expect(inPlayer('cap-1')?.innerHTML).toBe('Hi<br>there')
+      expect(inPlayer('b')).toHaveAttribute('data-start', '3')
+      expect(opened.of('patched').map((event) => event.seq)).toEqual([2])
+
+      opened.patchCaptions([
+        {
+          op: 'add',
+          path: '/elements/cap-2',
+          value: {
+            html: '<div id="cap-2" data-hf-id="cap-2" class="clip caption" data-start="2" data-duration="1">再见</div>',
+            parentId: 'root',
+            siblingIndex: 1,
+          },
+        },
+        { op: 'remove', path: '/elements/cap-1' },
+      ])
+      expect(inPlayer('cap-2')?.closest('[data-hf-id="captions"]')).not.toBeNull()
+      expect(inPlayer('cap-1')).toBeNull()
+      expect(opened.of('needsLoad')).toEqual([])
+    })
+
+    it('这一份没带字幕场景、或要改的那句不在播放器里：不打，报要整份重新加载', async () => {
+      const bare = await openPage(stage(MOUNTED))
+      bare.patchCaptions([{ op: 'replace', path: '/elements/cap-1/text', value: 'Hi' }])
+      expect(bare.of('needsLoad')).toEqual([{ type: 'needsLoad', seq: 2 }])
+
+      const opened = await openPage(stage(CLIPS), SCENE)
+      opened.patchCaptions([{ op: 'replace', path: '/elements/cap-1/text', value: 'Hi' }])
+      expect(opened.of('needsLoad')).toEqual([{ type: 'needsLoad', seq: 2 }])
+      expect(opened.of('patched')).toEqual([])
+    })
   })
 })
 

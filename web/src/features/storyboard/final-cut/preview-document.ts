@@ -1,3 +1,4 @@
+import { isCaptionsHost } from './composition/captions'
 import type { ComponentCatalog } from './composition/catalog'
 import { variableValuesOf } from './composition/film'
 import { escapeAttribute } from './composition/html'
@@ -63,6 +64,31 @@ export function withoutHiddenClips(html: string): string {
   return serialize(film)
 }
 
+const attributesOf = (element: Element) =>
+  Object.fromEntries([...element.attributes].map((each) => [each.name, each.value]))
+
+/**
+ * 把字幕场景 `scene`（编辑器手里现在的那一份，没存的改动也在里面）放进主文件：`<body>` 末尾加一个
+ * `<template id="<字幕宿主的 data-composition-id>-template">`，内容是场景文件 `<template>` 里的那些。运行库挂载
+ * 宿主时先找这个模板，找到就不去取工程里存着的场景文件（运行库 0.9.59 的做法，没有写进文档，升级要复查）。
+ * `scene` 是 null、主文件根下没有字幕宿主时原样返回。
+ */
+export function withCaptionsScene(html: string, scene: string | null): string {
+  if (scene === null) return html
+  const film = parse(html)
+  const host = [...(film.querySelector('[data-composition-id]')?.children ?? [])].find((child) =>
+    isCaptionsHost(attributesOf(child)),
+  )
+  const id = host?.getAttribute('data-composition-id')
+  if (id === null || id === undefined || id === '') return html
+  const source = parse(scene)
+  const template = film.createElement('template')
+  template.id = `${id}-template`
+  template.innerHTML = source.querySelector('template')?.innerHTML ?? source.body.innerHTML
+  film.body.append(template)
+  return serialize(film)
+}
+
 /**
  * 预览一种语言时（`values` 是它的值表，原文时是 null，不改）：随语言的字段的字并进各宿主的
  * `data-variable-values`（规则见 `localizedHostValues`）。没有宿主要改时原样返回。
@@ -118,6 +144,9 @@ function withLocalizedVoices(html: string, locale: Language): string {
   return serialize(film)
 }
 
+/** `withPreviewVariables` 插的那段脚本带的属性。 */
+export const PREVIEW_VARIABLES = 'data-hf-preview-variables'
+
 /**
  * 预览套上一种语言的值（`values` 是它的值表，原文时是 null，不插）：照官方编辑器，在 `<head>` 开头插一段脚本，
  * 运行库加载时按全局变量 `__hfVariables` 取变量的值。只放主文件根上声明过的 id；`<` 写成转义，值里的
@@ -130,7 +159,7 @@ export function withPreviewVariables(html: string, values: LocaleValues | null):
   const json = JSON.stringify(used).replaceAll('<', '\\u003c')
   return html.replace(
     /<head[^>]*>/i,
-    (head) => `${head}\n<script data-hf-preview-variables>window.__hfVariables=${json};</script>`,
+    (head) => `${head}\n<script ${PREVIEW_VARIABLES}>window.__hfVariables=${json};</script>`,
   )
 }
 
@@ -139,20 +168,25 @@ export const catalogBase = (catalog: ComponentCatalog, origin: string) =>
   `${origin}/hyperframes/${catalog.version}/`
 
 /**
- * 预览用的那一份：去掉隐藏的片段（见 `withoutHiddenClips`），套上显示着的语言 `locale`（贴片、场景的字见
- * `withLocalizedHosts`，人声见 `withLocalizedVoices`，字幕的字见 `withPreviewVariables`），加上基准地址和
- * 预览专用的媒体加载方式。文件里的相对地址（组件文件、`vendor/`）都按 `baseHref` 取。
+ * 预览用的那一份：去掉隐藏的片段（见 `withoutHiddenClips`），放进字幕场景 `captionsScene`（见
+ * `withCaptionsScene`），套上显示着的语言 `locale`（贴片、场景的字见 `withLocalizedHosts`，人声见
+ * `withLocalizedVoices`，字幕的字见 `withPreviewVariables`），加上基准地址和预览专用的媒体加载方式。
+ * 文件里的相对地址（组件文件、`vendor/`）都按 `baseHref` 取。
  */
 export const previewDocument = (
   html: string,
   baseHref: string,
   locale: ShownLocale = SOURCE_SHOWN,
+  captionsScene: string | null = null,
 ): string =>
   withPreviewVariables(
     withBaseHref(
       withPreviewMedia(
         withLocalizedVoices(
-          withLocalizedHosts(withoutHiddenClips(html), locale.values),
+          withLocalizedHosts(
+            withCaptionsScene(withoutHiddenClips(html), captionsScene),
+            locale.values,
+          ),
           locale.code,
         ),
       ),

@@ -72,8 +72,10 @@ import {
   phraseWith,
   SOURCE_NAME,
   SOURCE_SHOWN,
+  translationOf,
   type Language,
   type LocaleCode,
+  type ShownLocale,
 } from './locales'
 import { MaterialArea } from './material-area'
 import {
@@ -159,6 +161,7 @@ const ADDING_ITEM_TEXT = '上一个贴片或场景正在加入 final-cut，请�
 const ADDING_AUDIO_TEXT = '上一条音频正在加入 final-cut，请稍后再试'
 const EMPTY_EXPORT_TEXT = 'final-cut 暂无内容，无法导出；请先加入内容'
 const NO_FILM_CAPTION_TEXT = 'final-cut 暂无内容，无法加字幕；请先加入镜头'
+const NO_FILM_LOCALE_TEXT = 'final-cut 暂无内容，无法添加语言；请先加入内容'
 const READING_TAKES_TEXT = '正在读取素材片，请稍后再识别字幕'
 const RECOGNIZING_TEXT = '正在识别字幕，请等待识别完成'
 const READING_TAKES_DUBBING_TEXT = '正在读取素材片，请稍后再生成配音'
@@ -167,6 +170,24 @@ const NO_TAKES_DUBBING_TEXT = '找不到视频片段用的素材片记录，无�
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 const NO_LINKS: Links = new Map()
 const NO_BINDINGS: ReadonlyMap<string, LocaleBindings> = new Map()
+
+/** 预览里的各句字幕（见 `PreviewCaptions`）：显示的字是 `locale` 值表里的字，没翻的是原文。 */
+const previewCaptionsOf = (clips: readonly FilmClip[], locale: ShownLocale) =>
+  new Map(
+    clips.flatMap((clip) =>
+      clip.kind === 'caption'
+        ? [
+            [
+              clip.id,
+              {
+                variable: clip.variable,
+                text: translationOf(locale.values, clip.variable) ?? clip.text,
+              },
+            ] as const,
+          ]
+        : [],
+    ),
+  )
 
 /** 侧栏的目录页签：镜头、贴片、场景、配乐、字幕。 */
 type CatalogTab = 'shots' | ItemKind | 'audio' | 'captions'
@@ -773,26 +794,33 @@ function EditorBody({
         : { kind: 'pending' }
   const tokens = preview.latest
   const { filesRevision } = session
-  // 预览页拿到的就是当前的主文件（没存的改动也在里面），工程文件凭最新的令牌从预览域名取，
+  // 预览页拿到的就是当前的主文件和字幕场景（没存的改动也在里面），别的工程文件凭最新的令牌从预览域名取，
   // 运行库从预览域名下的组件库取，和预览页同源。怎么换到预览里（打补丁还是整份重新加载）见 previewSync
-  const previewFilm = useMemo(
-    (): PreviewFilm | undefined =>
-      film === null || film.clips.length === 0 || tokens === undefined
-        ? undefined
-        : {
-            html: previewDocument(
-              film.html,
-              projectFilesBase(tokens.origin, tokens.token),
-              film.locale,
-            ),
-            runtimeSrc: previewRuntimeSrc(catalog, tokens.origin),
-            revision: film.revision,
-            step: film.step,
-            foreign: film.locale.values !== null,
-            filesRevision,
-          },
-    [film, catalog, tokens, filesRevision],
-  )
+  const previewFilm = useMemo((): PreviewFilm | undefined => {
+    if (film === null || film.clips.length === 0 || tokens === undefined) return undefined
+    const scene = film.captionsScene
+    return {
+      html: previewDocument(
+        film.html,
+        projectFilesBase(tokens.origin, tokens.token),
+        film.locale,
+        scene?.content ?? null,
+      ),
+      runtimeSrc: previewRuntimeSrc(catalog, tokens.origin),
+      revision: film.revision,
+      step: film.step,
+      locale: film.locale.code,
+      filesRevision,
+      captions:
+        scene === null
+          ? null
+          : {
+              path: scene.path,
+              scene: scene.content,
+              captions: previewCaptionsOf(film.clips, film.locale),
+            },
+    }
+  }, [film, catalog, tokens, filesRevision])
   const playBlocked = empty ? EMPTY_TEXT : undefined
 
   const exporting = useWholeFilmExport(conversationId, session.settle)
@@ -1341,22 +1369,19 @@ function EditorBody({
             'refusal' in playheadCut ? SPLIT_REFUSAL_TEXT[playheadCut.refusal] : undefined
           }
           tool={tool}
-          locales={
-            film === null
-              ? undefined
-              : {
-                  current: locale.code,
-                  present: film.locales,
-                  onSwitch: (code) => {
-                    leaveMaterial()
-                    session.setLocale(code)
-                  },
-                  onAdd: (code) => {
-                    leaveMaterial()
-                    void session.addLocale(code)
-                  },
-                }
-          }
+          locales={{
+            current: locale.code,
+            present: film?.locales ?? [],
+            addBlocked: film === null ? NO_FILM_LOCALE_TEXT : undefined,
+            onSwitch: (code) => {
+              leaveMaterial()
+              session.setLocale(code)
+            },
+            onAdd: (code) => {
+              leaveMaterial()
+              void session.addLocale(code)
+            },
+          }}
           onZoomToSelection={zoomToSelection}
           onRipple={() => setRipple((on) => !on)}
           onSnap={() => setSnap((on) => !on)}
