@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Final, Literal
@@ -13,6 +14,15 @@ MAIN_FILE: Final = "index.html"
 TargetLocale = Literal["zh", "en", "de", "es", "fr"]
 """final-cut 能加的语言。原文是视频自带的语言（什么语言都行，不用声明），没有值表，接口里写 null；
 能加的每种语言一份值表，见 ``locale_path``。"""
+
+LANGUAGE_NAMES: Final[Mapping[TargetLocale, str]] = {
+    "zh": "中文",
+    "en": "英语",
+    "de": "德语",
+    "es": "西班牙语",
+    "fr": "法语",
+}
+"""每种能加的语言的中文名，写进给模型的提示词（翻译、配音）里。"""
 
 
 def locale_path(locale: TargetLocale) -> str:
@@ -59,6 +69,7 @@ def media_addresses(html: str) -> tuple[MediaAddress, ...]:
 
 
 __all__ = [
+    "LANGUAGE_NAMES",
     "MAIN_FILE",
     "PROJECT_DIR",
     "MediaAddress",

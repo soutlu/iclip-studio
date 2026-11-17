@@ -14,7 +14,8 @@ from iclip.domains.identity.public import ModelGroupOf
 class ModelGroup:
     """一个配置组在媒体生成里用的 key 与网关 model_id。
 
-    ``video_models`` 是「产品模型名 → 该组网关 model_id」；字幕、配乐没开通时对应的 key 为 ``None``。
+    ``video_models`` 是「产品模型名 → 该组网关 model_id」；字幕、配乐、配音没开通时对应的 key 为
+    ``None``。
     """
 
     name: str
@@ -22,6 +23,7 @@ class ModelGroup:
     video_models: Mapping[str, str]
     subtitle_api_key: str | None = None
     music_api_key: str | None = None
+    dubbing_api_key: str | None = None
 
 
 class ModelGroups:

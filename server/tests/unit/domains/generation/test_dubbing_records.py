@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
 
 from iclip.domains.generation.api import create_generations_router
+from iclip.domains.generation.model_groups import UNGROUPED, ModelGroup, ModelGroups
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     GenerationJob,
@@ -93,6 +94,7 @@ def build_world(
     dubbing: DubbingTarget | None = DUBBING,
     submission: ProviderSubmission | None = None,
     durations: dict[str, int] | None = None,
+    model_groups: ModelGroups = UNGROUPED,
 ) -> World:
     store = InMemoryGenerationRepository(jobs)
     providers = (
@@ -126,6 +128,7 @@ def build_world(
         lineage=FixedLineage(),
         media_probe=probe,
         dubbing=dubbing,
+        model_groups=model_groups,
     )
     return World(store, queue, connector, service, probe)
 
@@ -214,6 +217,26 @@ async def test_dubbing_a_take_records_the_lines_reference_and_video_length_and_q
         reference=DubbingOriginalReference(kind="original"),
     )
     assert len(world.submits_to(FAKE_DUBBING_PROVIDER)) == 1
+
+
+@pytest.mark.parametrize("group", ["mkt", None], ids=["grouped", "default"])
+async def test_a_dubbing_records_the_owners_model_group_on_acceptance(group: str | None) -> None:
+    me = uuid.uuid4()
+    take = completed_take(owner_user_id=me)
+
+    async def group_of(user_id: uuid.UUID) -> str | None:
+        return group if user_id == me else None
+
+    groups = ModelGroups(
+        (ModelGroup(name="mkt", video_api_key="vk-mkt", video_models={}),), group_of=group_of
+    )
+    world = build_world([take], model_groups=groups)
+
+    response = await post(world, me, body(take))
+
+    assert response.status_code == 202, response.text
+    (dubbing,) = world.dubbings()
+    assert dubbing.model_group == group
 
 
 async def test_a_take_without_a_recorded_length_is_measured_before_accepting() -> None:

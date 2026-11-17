@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 
+from iclip.common.urls import is_http_url
 from iclip.domains.generation.provider import ProviderError
 from iclip.domains.generation.upstream import post_json
 
@@ -46,4 +47,19 @@ def request_id_of(body: Mapping[str, Any], *, label: str) -> str:
     return request_id
 
 
-__all__ = ["QwenEndpoint", "post_to_qwen", "request_id_of"]
+def audio_url_of(body: Mapping[str, Any], *, label: str) -> str:
+    """音频生成接口（``SpeechSynthesizer``）响应里生成结果的下载地址 ``output.audio.url``。"""
+
+    output = body.get("output")
+    audio = output.get("audio") if isinstance(output, Mapping) else None
+    url = audio.get("url") if isinstance(audio, Mapping) else None
+    if not isinstance(url, str) or not is_http_url(url):
+        raise ProviderError(
+            f"{label}接口的响应里没有音频地址（output.audio.url）",
+            code="PROVIDER_MALFORMED",
+            retryable=False,
+        )
+    return url
+
+
+__all__ = ["QwenEndpoint", "audio_url_of", "post_to_qwen", "request_id_of"]

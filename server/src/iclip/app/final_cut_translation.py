@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
 import structlog
 
 from iclip.common.errors import ModelUnavailable
-from iclip.common.final_cut import TargetLocale
+from iclip.common.final_cut import LANGUAGE_NAMES, TargetLocale
 from iclip.domains.conversations.final_cut_translation import (
     ERROR_MODEL_CALL_FAILED,
     ERROR_MODEL_FAILED,
@@ -32,14 +32,6 @@ TRANSLATE_REASONING_EFFORT: Final = "low"
 TRANSLATE_MAX_OUTPUT_TOKENS: Final = 65_536
 
 TRANSLATE_TIMEOUT_SECONDS: Final = 180.0
-
-LANGUAGE_NAMES: Final[Mapping[TargetLocale, str]] = {
-    "zh": "中文",
-    "en": "英语",
-    "de": "德语",
-    "es": "西班牙语",
-    "fr": "法语",
-}
 
 _SYSTEM_PROMPT: Final = (
     "你会拿到一个 JSON 对象，entries 里每一条有 id 和 text。text 是一条短视频里的一句字幕或一段"
@@ -199,7 +191,6 @@ def build_final_cut_translator(runtime: RuntimeClient) -> ArkFinalCutTranslator:
 
 
 __all__ = [
-    "LANGUAGE_NAMES",
     "TRANSLATE_MAX_OUTPUT_TOKENS",
     "TRANSLATE_MODEL",
     "TRANSLATE_REASONING_EFFORT",

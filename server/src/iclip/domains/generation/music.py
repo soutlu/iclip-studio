@@ -7,7 +7,6 @@ from typing import Any, Final
 
 import httpx
 
-from iclip.common.urls import is_http_url
 from iclip.domains.generation.model_groups import UNGROUPED, ModelGroups, group_key
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.provider import (
@@ -16,7 +15,12 @@ from iclip.domains.generation.provider import (
     ProviderSubmission,
     request_of,
 )
-from iclip.domains.generation.qwen import QwenEndpoint, post_to_qwen, request_id_of
+from iclip.domains.generation.qwen import (
+    QwenEndpoint,
+    audio_url_of,
+    post_to_qwen,
+    request_id_of,
+)
 from iclip.domains.generation.schemas import MusicRequest
 from iclip.platform.media.audio import normalize_music
 from iclip.platform.media.errors import MediaError
@@ -64,7 +68,7 @@ class QwenMusicProvider:
             self._endpoint_for(job), _payload(request), label=_LABEL, transport=self._transport
         )
         request_id = request_id_of(body, label=_LABEL)
-        content, duration_ms = await self._normalized(_generated_url(body))
+        content, duration_ms = await self._normalized(audio_url_of(body, label=_LABEL))
         try:
             stored = await self._object_store.put_public_object(
                 object_key=MEDIA_PATHS.generated_music(job_id=job.id, ext=_EXT),
@@ -123,19 +127,6 @@ def _payload(request: MusicRequest) -> dict[str, Any]:
             "channels": request.channels,
         },
     }
-
-
-def _generated_url(body: dict[str, Any]) -> str:
-    output = body.get("output")
-    audio = output.get("audio") if isinstance(output, dict) else None
-    url = audio.get("url") if isinstance(audio, dict) else None
-    if not isinstance(url, str) or not is_http_url(url):
-        raise ProviderError(
-            "音乐生成接口的响应里没有音频地址（output.audio.url）",
-            code="PROVIDER_MALFORMED",
-            retryable=False,
-        )
-    return url
 
 
 __all__ = ["MUSIC_MODEL", "PROVIDER_NAME", "QwenMusicProvider"]

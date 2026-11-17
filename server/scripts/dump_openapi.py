@@ -16,6 +16,7 @@ PLACEHOLDER_ENV = {
     "OSS_ENDPOINT": "https://placeholder.invalid",
     "OSS_PUBLIC_URL_BASE": "https://placeholder.invalid/public",
     "PRODUCT_CATALOG_DATABASE_URL": "postgresql+asyncpg://placeholder:placeholder@127.0.0.1:5432/placeholder",
+    "QWEN_DUBBING_API_KEY": "openapi-dump-placeholder",
     "QWEN_MUSIC_API_KEY": "openapi-dump-placeholder",
     "QWEN_SUBTITLE_API_KEY": "openapi-dump-placeholder",
     "RUNTIME_APP_KEY": "openapi-dump-placeholder-runtime-key-0123456789",

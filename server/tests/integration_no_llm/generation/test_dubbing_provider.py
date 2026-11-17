@@ -4,9 +4,10 @@ import io
 import math
 import re
 import subprocess
+import uuid
 import wave
 from array import array
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -21,6 +22,7 @@ from iclip.domains.generation.dubbing import (
     DubbingProvider,
     reference_window,
 )
+from iclip.domains.generation.model_groups import UNGROUPED, ModelGroup, ModelGroups
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_FAILED,
@@ -101,6 +103,7 @@ class Synthesis:
     text: str
     reference: bytes
     locale: TargetLocale
+    api_key: str | None
 
 
 class CharTimedSynthesizer:
@@ -109,8 +112,10 @@ class CharTimedSynthesizer:
     def __init__(self) -> None:
         self.calls: list[Synthesis] = []
 
-    async def synthesize(self, text: str, *, reference: bytes, locale: TargetLocale) -> bytes:
-        self.calls.append(Synthesis(text=text, reference=reference, locale=locale))
+    async def synthesize(
+        self, text: str, *, reference: bytes, locale: TargetLocale, api_key: str | None
+    ) -> bytes:
+        self.calls.append(Synthesis(text=text, reference=reference, locale=locale, api_key=api_key))
         return tone(len(text) * MS_PER_CHAR, silence_ms=TAIL_MS)
 
 
@@ -142,10 +147,18 @@ def take() -> GenerationJob:
 
 
 def provider(
-    files: Files, synthesizer: CharTimedSynthesizer, store: MemoryObjectStore
+    files: Files,
+    synthesizer: CharTimedSynthesizer,
+    store: MemoryObjectStore,
+    *,
+    model_groups: ModelGroups = UNGROUPED,
 ) -> DubbingProvider:
     return DubbingProvider(
-        synthesizer, object_store=store, fetch_url=as_is, transport=files.transport()
+        synthesizer,
+        object_store=store,
+        fetch_url=as_is,
+        model_groups=model_groups,
+        transport=files.transport(),
     )
 
 
@@ -245,6 +258,7 @@ async def test_each_line_is_fitted_into_its_place_on_a_track_as_long_as_the_take
     assert mean_volume_db(track, 5_960, 6_000) < heard[(5_700, 5_900)] - 6, "截掉的那句末尾淡出"
     assert [call.text for call in synthesizer.calls] == [item.text for item in lines]
     assert {call.locale for call in synthesizer.calls} == {"en"}
+    assert {call.api_key for call in synthesizer.calls} == {None}, "默认组用合成服务自己的 key"
     assert wav_shape(synthesizer.calls[0].reference) == WavShape(
         channels=1, rate=RATE, duration_ms=MAX_REFERENCE_MS
     ), "参考音频只取前 10 秒"
@@ -302,3 +316,33 @@ async def test_an_original_without_an_audio_track_fails_on_the_reference() -> No
 
     assert raised.value.code == "DUBBING_REFERENCE_SILENT"
     assert synthesizer.calls == []
+
+
+async def _nobody_is_grouped(_user_id: uuid.UUID) -> str | None:
+    return None
+
+
+async def test_every_line_is_synthesized_with_the_records_group_key() -> None:
+    groups = ModelGroups(
+        (
+            ModelGroup(
+                name="mkt", video_api_key="vk-mkt", video_models={}, dubbing_api_key="dub-mkt"
+            ),
+        ),
+        group_of=_nobody_is_grouped,
+    )
+    job = replace(
+        make_dubbing(
+            take(),
+            [line(0, 1_000, 3), line(1_500, 2_500, 3)],
+            duration_ms=3_000,
+            reference=DubbingAudioReference(kind="audio", url=VOICE_URL),
+        ),
+        model_group="mkt",
+    )
+    files = Files({VOICE_URL: tone(5_000, frequency=220)})
+    synthesizer = CharTimedSynthesizer()
+
+    await provider(files, synthesizer, MemoryObjectStore(), model_groups=groups).submit(job)
+
+    assert [call.api_key for call in synthesizer.calls] == ["dub-mkt", "dub-mkt"]
