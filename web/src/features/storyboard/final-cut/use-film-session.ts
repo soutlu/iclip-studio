@@ -142,6 +142,13 @@ export type NewVideo = Pick<VideoClip, 'label' | 'src' | 'mediaStart' | 'duratio
 export type NewAudio = Pick<AudioClip, 'label' | 'src' | 'mediaStart' | 'duration'>
 
 /**
+ * SDK 打开的一个文件：引擎，和它存出的内容 `content`。内容只在引擎报了改动（编辑、应用补丁）以后才重新存出：
+ * 一批操作抛出时 SDK 整批退回、不报改动，退回后的文件和之前一样，但重新存出的字可能不一样（删掉的元素放回去时
+ * 旁边的换行没跟回来、去掉又加回的属性换了位置），按存出的字比就会把被拒的编辑当成改动存一版。
+ */
+type OpenedEngine = { engine: Composition; content: () => string }
+
+/**
  * 打开工程里的文件 `file`（相对工程根的路径），引擎的每次改动带上文件报给 `onChange`。撤销由会话自己管：
  * 关掉 SDK 自带的，撤销重做时应用补丁引起的改动不报。SDK 的编辑引擎只在打开 final-cut 编辑器时才用得到，
  * 单独成块按需加载。
@@ -150,20 +157,23 @@ const openEngine = async (
   html: string,
   file: string,
   onChange: (change: PatchChange) => void,
-): Promise<Composition> => {
+): Promise<OpenedEngine> => {
   const { openComposition, ORIGIN_APPLY_PATCHES } = await import('@hyperframes/sdk')
   const engine = await openComposition(html, { history: false })
+  let content: string | null = null
   engine.on('patch', ({ patches, inversePatches, origin }) => {
+    content = null
     if (origin !== ORIGIN_APPLY_PATCHES) onChange({ file, patches, inversePatches })
   })
-  return engine
+  return { engine, content: () => (content ??= engine.serialize()) }
 }
 
 /**
- * 打开着的一个工程文件的内容。几种文件的区别都收在这里：主文件、字幕场景用 SDK 打开（`composition`），语言值表
- * 是 JSON（`values`，见 `openValueTable`）。保存、冲突、撤销重做都只经 `docOps` 用它们共有的那几样。
+ * 打开着的一个工程文件的内容。几种文件的区别都收在这里：主文件、字幕场景用 SDK 打开（`composition`，见
+ * `OpenedEngine`），语言值表是 JSON（`values`，见 `openValueTable`）。保存、冲突、撤销重做都只经 `docOps` 用它们
+ * 共有的那几样。
  */
-type FileDoc = { kind: 'composition'; engine: Composition } | { kind: 'values'; table: ValueTable }
+type FileDoc = ({ kind: 'composition' } & OpenedEngine) | { kind: 'values'; table: ValueTable }
 
 /** 每种文件都有的：存出内容、应用撤销重做的补丁、一批操作（里面抛出时整批退回）、关掉。 */
 type DocOps = {
@@ -173,7 +183,16 @@ type DocOps = {
   dispose: () => void
 }
 
-const docOps = (doc: FileDoc): DocOps => (doc.kind === 'composition' ? doc.engine : doc.table)
+const docOps = (doc: FileDoc): DocOps => {
+  if (doc.kind === 'values') return doc.table
+  const { engine, content } = doc
+  return {
+    serialize: content,
+    applyPatches: (patches) => engine.applyPatches(patches),
+    batch: (change) => engine.batch(change),
+    dispose: () => engine.dispose(),
+  }
+}
 
 /** 按路径打开工程文件 `path`（相对工程根）：语言值表读成值表，别的用 SDK 打开；改动带上文件报给 `onChange`。 */
 const openDoc = async (
@@ -183,7 +202,7 @@ const openDoc = async (
 ): Promise<FileDoc> => {
   const locale = localeOfPath(path)
   if (locale === undefined)
-    return { kind: 'composition', engine: await openEngine(content, path, onChange) }
+    return { kind: 'composition', ...(await openEngine(content, path, onChange)) }
   const table = openValueTable(parseLocaleValues(content, locale), (patches, inversePatches) =>
     onChange({ file: path, patches, inversePatches }),
   )
@@ -216,6 +235,13 @@ const mainOf = (project: Project): Composition => {
 
 const sceneOf = (project: Project): Composition | undefined =>
   engineAt(project, project.captionsPath)
+
+/** 打开着的文件 `path`（相对工程根）现在的内容（见 `OpenedEngine`）。 */
+const contentOf = (project: Project, path: string): string => {
+  const file = project.files.get(path)
+  if (file === undefined) throw new Error(`final-cut 工程里没有打开 ${path}`)
+  return docOps(file.doc).serialize()
+}
 
 /** 工程里各外语的值表，按 `LOCALES` 的先后。 */
 const tablesOf = (project: Project): Map<LocaleCode, ValueTable> => {
@@ -430,7 +456,7 @@ const viewOf = (
     .flatMap((table) => Object.values(table.values()))
     .filter((value) => typeof value === 'string')
     .join('')
-  const html = withFontBlock(main.serialize(), clips, catalog, localeText)
+  const html = withFontBlock(contentOf(project, PROJECT_MAIN), clips, catalog, localeText)
   const present = new Map(
     [...project.files].map(([path, file]) => [
       path,
@@ -1515,15 +1541,15 @@ export function useFilmSession(
           stored = await readProjectFile(conversationId, path)
           if (stored === null) throw error
         }
-        const engine = await openEngine(stored.content, path, collect)
+        const scene = await openEngine(stored.content, path, collect)
         if (projectRef.current !== project) {
-          engine.dispose()
+          scene.engine.dispose()
           return undefined
         }
         // 打开后 SDK 存出的样子当作已存的那一份，不然一打开就算有改动
-        const doc: FileDoc = { kind: 'composition', engine }
-        project.files.set(path, { doc, version: stored.version, saved: engine.serialize() })
-        return engine
+        const doc: FileDoc = { kind: 'composition', ...scene }
+        project.files.set(path, { doc, version: stored.version, saved: scene.content() })
+        return scene.engine
       })().finally(() => {
         creatingCaptionsRef.current = null
       })

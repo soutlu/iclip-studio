@@ -2401,6 +2401,39 @@ describe('useFilmSession · 字幕', () => {
     expect(result.current.film?.canUndo).toBe(false)
   })
 
+  it('整步不做的编辑里删过片段、字幕和变量：过了自动保存的时间，主文件、字幕场景、值表都不存新版本', async () => {
+    const conversation = crypto.randomUUID()
+    const EN_PATH = 'final-cut/locales/en.json'
+    const stored = await putCaptioned(
+      conversation,
+      [
+        video({ duration: 2_000 }),
+        video({ id: 'clip-2', label: 'B · 镜头 1', src: OTHER_SRC, start: 2_000 }),
+      ],
+      [
+        line('m1', 600, 400, '手动加的'),
+        line('c3', 1_200, 300, '不挡路的'),
+        { ...line('b2', 2_500, 500, '后一段的'), owner: 'clip-2' },
+      ],
+    )
+    putMockWorkspaceFile(conversation, EN_PATH, '{"cap_m1": "Manual", "cap_c3": "Clear"}')
+    const versions = () =>
+      [MAIN_PATH, SCENE_PATH, EN_PATH].map((path) => mockWorkspaceFile(conversation, path)?.version)
+    const before = versions()
+    const { result, onNotice } = await open(stored, 10, conversation)
+
+    // 删掉不挡路的那句和前一段视频、开着波纹编辑：后一段补到 0 秒，它的字幕挪到 0.5–1 秒，压到手动加的那句
+    act(() => {
+      result.current.removeClips(['cap-c3', 'clip-1'], true)
+    })
+    expect(onNotice).toHaveBeenCalledWith(CAPTION_FOLLOW_REFUSAL_TEXT)
+    expect(captionsOf(result).map((caption) => caption.id)).toEqual(['cap-m1', 'cap-c3', 'cap-b2'])
+    await act(() => new Promise((resolve) => setTimeout(resolve, 100)))
+    // 再把会话认为没存的都存掉：被拒的编辑不算没存
+    await saveAll(result)
+    expect(versions()).toEqual(before)
+  })
+
   describe('语言', () => {
     const EN_PATH = 'final-cut/locales/en.json'
     const DE_PATH = 'final-cut/locales/de.json'

@@ -12,10 +12,14 @@ export const MenuRadioGroup = DropdownMenu.RadioGroup
 /** 本身没有外观的菜单项：配合 `asChild` 把一个按钮放进菜单的方向键导航。 */
 export const MenuBareItem = DropdownMenu.Item
 
-// 下拉菜单和右键菜单的置灰项（`disabled` 或 `aria-disabled`）都只由 ui-state 画，条目不再自写一套
+// 下拉菜单和右键菜单的置灰项（`disabled` 或 `aria-disabled`）都只由 ui-state 画，条目不再自写一套；
+// 条目里自带颜色的图标和快捷键按 `DIMMED_WITH_ITEM` 跟着变暗
 const ITEM_CLASS =
   // design-allow -- Radix 用 .focus() 移动高亮，浏览器默认框会和 ui-focus 的焦点环叠一起
-  'ui-state ui-focus flex h-(--control-height-sm) cursor-pointer items-center gap-2 rounded-sm px-2 text-body outline-none select-none'
+  'group/menu-item ui-state ui-focus flex h-(--control-height-sm) cursor-pointer items-center gap-2 rounded-sm px-2 text-body outline-none select-none'
+
+// Radix 置灰的条目也写 aria-disabled，和 ui-state 认的是同一个
+const DIMMED_WITH_ITEM = 'group-aria-disabled/menu-item:text-disabled-text'
 
 const SEPARATOR_CLASS = 'mx-2 my-1 h-px bg-hairline'
 
@@ -72,7 +76,7 @@ function ItemBody({
     <>
       {icon ? (
         <Icon
-          className={cn('shrink-0', !destructive && 'text-on-surface-variant')}
+          className={cn('shrink-0', !destructive && ['text-on-surface-variant', DIMMED_WITH_ITEM])}
           decorative
           name={icon}
           size="sm"
@@ -80,12 +84,22 @@ function ItemBody({
       ) : null}
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {trailing === undefined ? null : (
-        <span className="ml-4 flex shrink-0 items-center text-label text-on-surface-variant tabular-nums">
+        <span
+          className={cn(
+            'ml-4 flex shrink-0 items-center text-label text-on-surface-variant tabular-nums',
+            DIMMED_WITH_ITEM,
+          )}
+        >
           {trailing}
         </span>
       )}
       {shortcut?.length ? (
-        <span className="ml-4 flex shrink-0 items-center gap-1 text-label text-on-surface-variant">
+        <span
+          className={cn(
+            'ml-4 flex shrink-0 items-center gap-1 text-label text-on-surface-variant',
+            DIMMED_WITH_ITEM,
+          )}
+        >
           {shortcut.map((key) => (
             <span key={key}>{key}</span>
           ))}
