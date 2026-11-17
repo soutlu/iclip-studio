@@ -1106,7 +1106,7 @@ export function useFilmSession(
   /**
    * 改工程里已有的东西：`change` 拿到主文件、字幕场景（没有时是 undefined）和各语言的值表，里面的几步和工程总长
    * 一起算一步撤销。属于视频片段的字幕在同一步里跟着它走（见 `followVideos`）；跟着挪会和别的字幕重叠时整步
-   * 不做，提示原因。
+   * 不做，提示原因。答复这一步做了没有：没有工程、整步不做时是 false。
    */
   const edit = useCallback(
     (
@@ -1115,11 +1115,12 @@ export function useFilmSession(
         scene: Composition | undefined,
         tables: ReadonlyMap<LocaleCode, ValueTable>,
       ) => void,
-    ) => {
+    ): boolean => {
       const project = projectRef.current
-      if (project === null) return
+      if (project === null) return false
       const main = mainOf(project)
       const tables = tablesOf(project)
+      let applied = true
       try {
         perform(project, () => {
           const scene = sceneOf(project)
@@ -1131,8 +1132,10 @@ export function useFilmSession(
         // 一批操作里抛出时引擎已经整批退回
         if (!(error instanceof CaptionsBlocked)) throw error
         noticeRef.current(CAPTION_FOLLOW_REFUSAL_TEXT)
+        applied = false
       }
       show()
+      return applied
     },
     [catalog, perform, show],
   )
@@ -1143,7 +1146,7 @@ export function useFilmSession(
    * 算进 `timings`。
    */
   const retime = useCallback(
-    (timings: ReadonlyMap<string, Timing>) =>
+    (timings: ReadonlyMap<string, Timing>) => {
       edit((engine, scene) => {
         const kinds = new Map(clipsOf(engine, catalog).map((clip) => [clip.id, clip.kind]))
         const captions = captionsById(engine, scene)
@@ -1159,7 +1162,8 @@ export function useFilmSession(
               engine.setAttribute(id, 'data-media-start', inPoint)
           }
         })
-      }),
+      })
+    },
     [catalog, edit],
   )
 
@@ -1176,7 +1180,7 @@ export function useFilmSession(
       direction: StackingDirection | null,
       renumber: Renumbering = NO_RENUMBERING,
       starts: ReadonlyMap<string, number> = NO_STARTS,
-    ) =>
+    ) => {
       edit((engine, scene) => {
         const captions = captionsById(engine, scene)
         for (const [other, next] of renumber) engine.setTiming(other, { trackIndex: next })
@@ -1189,19 +1193,21 @@ export function useFilmSession(
         // 按挪完的样子算：一起挪的片段的新起点、别的片段的新行号都已写进去
         const z = restackedZ(clipsOf(engine, catalog), id, direction)
         if (z !== undefined) engine.setStyle(id, { zIndex: z > 0 ? String(z) : null })
-      }),
+      })
+    },
     [catalog, edit],
   )
 
   /** 把几个片段各自挪到新的起点（合拢空档），联动的伙伴挪同样的时间差，一起算一步撤销。 */
   const restart = useCallback(
-    (starts: ReadonlyMap<string, number>) =>
+    (starts: ReadonlyMap<string, number>) => {
       edit((engine) => {
         const all = withLinkedStarts(starts, clipsOf(engine, catalog))
         keepingLinks(engine, () => {
           for (const [id, start] of all) setOwnTiming(engine, id, { start: start / 1000 })
         })
-      }),
+      })
+    },
     [catalog, edit],
   )
 
@@ -1210,14 +1216,15 @@ export function useFilmSession(
    * 所有字幕一起。
    */
   const setHidden = useCallback(
-    (ids: readonly string[], hidden: boolean) =>
+    (ids: readonly string[], hidden: boolean) => {
       edit((engine, scene) => {
         const captions = captionsById(engine, scene)
         const host = captionsHostOf(engine)?.id
         const targets = new Set(ids.map((id) => (captions.has(id) ? host : id)))
         for (const id of targets)
           if (id !== undefined) engine.setAttribute(id, 'data-hidden', hidden ? '' : null)
-      }),
+      })
+    },
     [edit],
   )
 
@@ -1326,7 +1333,7 @@ export function useFilmSession(
   /**
    * 删掉几个片段；`ripple` 为真时主轨里后面的片段往前补上，联动的伙伴挪同样的时间差。删一句字幕是删掉
    * 场景里它的元素、主文件根上它的变量和各语言值表里它的值；删掉最后一句时场景文件和宿主都留着。
-   * 删组件或块的片段时它随语言的字段的根变量和各语言值表里的值一起删掉。
+   * 删组件或块的片段时它随语言的字段的根变量和各语言值表里的值一起删掉。答复删了没有（见 `edit`）。
    */
   const removeClips = useCallback(
     (ids: readonly string[], ripple: boolean) =>
@@ -1356,7 +1363,8 @@ export function useFilmSession(
   /**
    * 把视频片段 `videoId` 的原声分离成一个音频片段，算一步撤销：视频片段关掉原声、声音属性搬走，原声片段
    * 和它同一个地址、同样的起止、入点、速度，写在文件里紧挨着它前面，放进「人声」行（见 `voiceRowFor`）；
-   * 两段写上同一个新的链接名，也当出处，联动着。返回原声片段的编号；片段不是视频片段时不动工程。
+   * 两段写上同一个新的链接名，也当出处，联动着。返回原声片段的编号；片段不是视频片段时不动工程，整步不做时
+   * （见 `edit`）也没有编号。
    */
   const detach = useCallback(
     (videoId: string): string | undefined => {
@@ -1371,7 +1379,7 @@ export function useFilmSession(
       const { track, renumber } = voiceRowFor(clips, video.start, video.duration)
       const index = root.children.findIndex((child) => child.id === videoId)
       let added: string | undefined
-      edit((current) => {
+      const applied = edit((current) => {
         for (const [id, next] of renumber) current.setTiming(id, { trackIndex: next })
         added = current.addElement(
           root.id,
@@ -1397,22 +1405,22 @@ export function useFilmSession(
         for (const [attribute, value] of Object.entries(detachedVideoChanges(name)))
           current.setAttribute(videoId, attribute, value ?? null)
       })
-      return added
+      return applied ? added : undefined
     },
     [catalog, edit],
   )
 
   /**
    * 把分离出来的原声合并回视频片段，算一步撤销：原声上的声音属性写回视频片段，视频片段打开原声、去掉链接名
-   * 和出处，原声片段删掉。能不能合并由调用方按 `mergeBlocked` 先查。
+   * 和出处，原声片段删掉。能不能合并由调用方按 `mergeBlocked` 先查。答复合并了没有（见 `edit`）。
    */
   const merge = useCallback(
-    ({ video, audio }: SoundPair) => {
+    ({ video, audio }: SoundPair): boolean => {
       const project = projectRef.current
       const element = project === null ? null : mainOf(project).getElement(audio.id)
-      if (element === null) return
+      if (element === null) return false
       const changes: AttributeChanges = mergedVideoChanges(element.attributes)
-      edit((current) => {
+      return edit((current) => {
         for (const [attribute, value] of Object.entries(changes))
           current.setAttribute(video.id, attribute, value ?? null)
         current.removeElement(audio.id)
@@ -1423,20 +1431,22 @@ export function useFilmSession(
 
   /** 打开（两段写上一个新的链接名）或关掉（两段去掉链接名）一对的联动，算一步撤销。 */
   const setLinked = useCallback(
-    ({ video, audio }: SoundPair, linked: boolean) =>
+    ({ video, audio }: SoundPair, linked: boolean) => {
       edit((engine) => {
         const name = linked ? newLinkName(engine) : null
         for (const id of [video.id, audio.id]) engine.setAttribute(id, LINK, name)
-      }),
+      })
+    },
     [edit],
   )
 
   /** 对齐口型：只把原声片段 `audioId` 挪到 `startMs`（由 `resyncPlan` 算好），联动不变，算一步撤销。 */
   const resync = useCallback(
-    (audioId: string, startMs: number) =>
+    (audioId: string, startMs: number) => {
       edit((engine) =>
         keepingLinks(engine, () => setOwnTiming(engine, audioId, { start: startMs / 1000 })),
-      ),
+      )
+    },
     [edit],
   )
 

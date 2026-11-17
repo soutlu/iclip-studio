@@ -571,7 +571,9 @@ describe('useFilmSession · 编辑', () => {
   it('删掉一个片段、开着波纹编辑：后面的片段往前补上；撤销回来', async () => {
     const saves = recordSaves()
     const { result } = await openThree()
-    act(() => result.current.removeClips(['b'], true))
+    act(() => {
+      result.current.removeClips(['b'], true)
+    })
     expect(spans(result)).toEqual([
       [video().src, 0, 2_000],
       [video().src, 2_000, 1_500],
@@ -587,7 +589,9 @@ describe('useFilmSession · 编辑', () => {
 
   it('删掉一个片段、关着波纹编辑：留下空档', async () => {
     const { result } = await openThree()
-    act(() => result.current.removeClips(['b'], false))
+    act(() => {
+      result.current.removeClips(['b'], false)
+    })
     expect(spans(result)).toEqual([
       [video().src, 0, 2_000],
       [video().src, 3_000, 1_500],
@@ -596,7 +600,9 @@ describe('useFilmSession · 编辑', () => {
 
   it('把几个片段一起挪到新的起点（合拢空档）：算一步撤销，工程总长跟着变', async () => {
     const { result } = await openThree()
-    act(() => result.current.removeClips(['b'], false))
+    act(() => {
+      result.current.removeClips(['b'], false)
+    })
     act(() => result.current.restart(new Map([['c', 2_000]])))
     expect(spans(result)).toEqual([
       [video().src, 0, 2_000],
@@ -739,7 +745,9 @@ describe('useFilmSession · 编辑', () => {
     const added = videosOf(result).find((clip) => !['low', 'a', 'b'].includes(clip.id))
     expect(added).toMatchObject({ track: 1, start: 3_000 })
 
-    act(() => result.current.removeClips(['a'], true))
+    act(() => {
+      result.current.removeClips(['a'], true)
+    })
     expect(layout(result)).toEqual([
       [added?.id, 1, 1_000, 4],
       ['low', 2, 0, 0],
@@ -919,7 +927,9 @@ describe('useFilmSession · 编辑', () => {
 
   it('把片段全删掉：工程还在，只是没有画面', async () => {
     const { result } = await openThree()
-    act(() => result.current.removeClips(['a', 'b', 'c'], true))
+    act(() => {
+      result.current.removeClips(['a', 'b', 'c'], true)
+    })
     expect(spans(result)).toEqual([])
     expect(result.current.film?.durationMs).toBe(0)
     expect(result.current.film?.html).toMatch(/id="film"[^>]*data-duration="0"/)
@@ -1258,7 +1268,9 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
   it('删掉组件或块的片段：从文件里去掉；撤销回来', async () => {
     const saves = recordSaves()
     const { result } = await openWith(stacked())
-    act(() => result.current.removeClips(['k'], false))
+    act(() => {
+      result.current.removeClips(['k'], false)
+    })
     expect(kinds(result)).toEqual([
       ['p', 'video', 1, 0, 2_000],
       ['m', 'audio', 0, 0, 8_000],
@@ -1303,7 +1315,9 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
     expect(result.current.film?.clips).toEqual(stacked())
     expect(result.current.film?.canUndo).toBe(false)
 
-    act(() => result.current.removeClips(['k'], false))
+    act(() => {
+      result.current.removeClips(['k'], false)
+    })
     const removed = result.current.film?.html
     act(() => result.current.setValues('k', { text: '晚到的改动' }))
     expect(result.current.film?.html).toBe(removed)
@@ -1381,7 +1395,9 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
   it('删掉音频片段：工程总长按剩下的片段算；撤销回来', async () => {
     const saves = recordSaves()
     const { result } = await openWith(stacked())
-    act(() => result.current.removeClips(['m'], true))
+    act(() => {
+      result.current.removeClips(['m'], true)
+    })
     expect(kinds(result)).toEqual([
       ['k', 'host', 0, 0, 3_000],
       ['p', 'video', 1, 0, 2_000],
@@ -1405,7 +1421,9 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
     expect(added).toMatchObject({ track: 0, start: 4_000 })
 
     // 声音区第 0 行的音频片段不跟着补
-    act(() => result.current.removeClips(['k'], true))
+    act(() => {
+      result.current.removeClips(['k'], true)
+    })
     expect(kinds(result)).toEqual([
       [added?.id, 'video', 0, 1_000, 1_500],
       ['p', 'video', 1, 0, 2_000],
@@ -1455,7 +1473,9 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
     )
     expect(tagOf(saves[0]?.html, 'note')).not.toMatch(/data-(media|playback)-start/)
 
-    act(() => result.current.removeClips([id], false))
+    act(() => {
+      result.current.removeClips([id], false)
+    })
     expect(result.current.film?.clips.map((clip) => clip.kind)).toEqual(['video'])
     expect(result.current.film?.durationMs).toBe(2_000)
   })
@@ -1768,7 +1788,9 @@ describe('useFilmSession · 分离音频、合并回视频、联动', () => {
     const saves = recordSaves()
     const before = pairFilm({ audio: { volume: 2, fadeOut: 400 } })
     const { result } = await openWith(before)
-    act(() => result.current.merge(pairIn(result, 'a')))
+    act(() => {
+      result.current.merge(pairIn(result, 'a'))
+    })
     await waitFor(() => expect(saves).toHaveLength(1))
     const elements = savedElements(saves[0]?.html)
     expect(elements.map((element) => element['id'])).toEqual(['v', 'm'])
@@ -1888,7 +1910,9 @@ describe('useFilmSession · 分离音频、合并回视频、联动', () => {
     act(() => result.current.restart(new Map([['v', 1_000]])))
     expect(clipOf(result, 'a').start).toBe(1_000)
     act(() => result.current.undo())
-    act(() => result.current.removeClips(['x'], true))
+    act(() => {
+      result.current.removeClips(['x'], true)
+    })
     expect([clipOf(result, 'v').start, clipOf(result, 'a').start]).toEqual([1_000, 1_000])
     expect(clipOf(result, 'a').link).toBe('lk-1')
 
@@ -2091,7 +2115,9 @@ describe('useFilmSession · 字幕', () => {
     await add(result, piece({ duration: 2_000 }))
     expect(hostLength()).toBe('5')
     const added = videosOf(result).find((clip) => clip.id !== 'clip-1')?.id ?? ''
-    act(() => result.current.removeClips([added, 'clip-1'], false))
+    act(() => {
+      result.current.removeClips([added, 'clip-1'], false)
+    })
     expect(result.current.film?.durationMs).toBe(2_000)
     expect(hostLength()).toBe('2')
     act(() =>
@@ -2134,7 +2160,9 @@ describe('useFilmSession · 字幕', () => {
       [video()],
       [line('a1', 0, 1_000, '第一句'), line('b2', 1_000, 1_000, '第二句')],
     )
-    act(() => result.current.removeClips(['cap-a1'], true))
+    act(() => {
+      result.current.removeClips(['cap-a1'], true)
+    })
     expect(captionsOf(result).map((caption) => caption.id)).toEqual(['cap-b2'])
     expect(variablesIn(result.current.film?.html)).toEqual({ cap_b2: '第二句' })
     expect(videosOf(result)).toEqual([video()])
@@ -2142,7 +2170,9 @@ describe('useFilmSession · 字幕', () => {
     expect(captionsOf(result).map((caption) => caption.text)).toEqual(['第一句', '第二句'])
     expect(variablesIn(result.current.film?.html)).toEqual({ cap_a1: '第一句', cap_b2: '第二句' })
     act(() => result.current.redo())
-    act(() => result.current.removeClips(['cap-b2'], false))
+    act(() => {
+      result.current.removeClips(['cap-b2'], false)
+    })
     expect(captionsOf(result)).toEqual([])
     await saveAll(result)
     expect(sceneCaptions(storedScene(conversation))).toEqual([])
@@ -2509,7 +2539,9 @@ describe('useFilmSession · 字幕', () => {
           [DE_PATH]: '{"cap_a1": "Eins"}',
         },
       )
-      act(() => result.current.removeClips(['cap-a1'], false))
+      act(() => {
+        result.current.removeClips(['cap-a1'], false)
+      })
       await saveAll(result)
       expect(storedValues(conversation, EN_PATH)).toEqual({ cap_b2: 'Two' })
       expect(storedValues(conversation, DE_PATH)).toEqual({})
@@ -2518,7 +2550,9 @@ describe('useFilmSession · 字幕', () => {
       expect(storedValues(conversation, EN_PATH)).toEqual({ cap_a1: 'One', cap_b2: 'Two' })
       expect(storedValues(conversation, DE_PATH)).toEqual({ cap_a1: 'Eins' })
 
-      act(() => result.current.removeClips(['clip-1'], false))
+      act(() => {
+        result.current.removeClips(['clip-1'], false)
+      })
       expect(captionsOf(result).map((caption) => caption.id)).toEqual(['cap-a1'])
       await saveAll(result)
       expect(storedValues(conversation, EN_PATH)).toEqual({ cap_a1: 'One' })
@@ -2848,7 +2882,9 @@ describe('useFilmSession · 字幕', () => {
         },
         { t1: { text: '新品上市' } },
       )
-      act(() => result.current.removeClips(['t1'], false))
+      act(() => {
+        result.current.removeClips(['t1'], false)
+      })
       expect(variablesIn(html(result))).toEqual({})
       await saveAll(result)
       expect(storedValues(conversation, EN_PATH)).toEqual({ other: 'x' })

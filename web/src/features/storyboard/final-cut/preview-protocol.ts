@@ -76,7 +76,8 @@ export const zPreviewEvent = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('needsLoad'), seq: zSeq }),
   /**
    * 播放到 final-cut 的第 `ms` 毫秒；`seq` 是报这个时刻时预览页处理到的那次跳转。编辑器跳转时自己先把播放头
-   * 放过去，跳转之前报出、还在路上的时刻要丢掉，不然播放头会先跳回去再过来。
+   * 放过去，跳转之前报出、还在路上的时刻要丢掉，不然播放头会先跳回去再过来。跳转以后到再次播放（或换上新的
+   * 播放器）之前不报，这期间播放头由编辑器定。
    */
   z.strictObject({
     type: z.literal('time'),

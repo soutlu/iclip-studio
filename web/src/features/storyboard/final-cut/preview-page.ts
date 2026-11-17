@@ -223,6 +223,10 @@ export const createPreviewPage = (
   let failed = false
   // 处理到的最后一次跳转，报时刻时带上
   let seekSeq = 0
+  // 跳转以后到再次播放（或换上新的播放器）之前不报时刻，播放头由编辑器定（它跳转时自己放过去了）。
+  // 运行库报回时刻是异步的：连着跳转时，上一次跳转的时刻可能在处理完这一次以后才到，带着这一次的序号
+  // 报出去会把播放头拉回去
+  let seekHeld = false
   // 换上来的播放器的副本会话；打补丁出过错、收到新的一份时作废，到下一份换上来之前都是 null
   let replica: Replica | null = null
   let disposed = false
@@ -300,7 +304,7 @@ export const createPreviewPage = (
     }
     const onTimeUpdate = (event: Event) => {
       const seconds = (event as CustomEvent<{ currentTime: number }>).detail.currentTime
-      send({ type: 'time', ms: Math.round(seconds * 1000), seq: seekSeq })
+      if (!seekHeld) send({ type: 'time', ms: Math.round(seconds * 1000), seq: seekSeq })
       syncMedia()
       reportFailure()
     }
@@ -334,6 +338,8 @@ export const createPreviewPage = (
     replica = nextReplica
     applyPlayback(next, playback)
     applySize(next)
+    // 旧播放器拆掉了，它还在路上的跳转时刻不会再来；新播放器停在哪（总长变短时收在结尾）照常报给编辑器
+    seekHeld = false
     attach(next)
     reportFailure()
     send({ type: 'loaded', duration: next.duration, seq })
@@ -451,6 +457,7 @@ export const createPreviewPage = (
         if (active !== null || wantsPlay) setWantsPlay(false)
         return
       case 'play':
+        seekHeld = false
         if (active !== null && active.currentTime >= active.duration) active.seek(0)
         setWantsPlay(true)
         return
@@ -459,6 +466,7 @@ export const createPreviewPage = (
         return
       case 'seek':
         seekSeq = command.seq
+        seekHeld = true
         setWantsPlay(false)
         if (active === null) startAt = frameSeconds(command.ms)
         else active.seek(frameSeconds(command.ms))
