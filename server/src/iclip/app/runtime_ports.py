@@ -82,8 +82,10 @@ class RuntimeServicePorts:
             default=found.default,
         )
 
-    async def generate_title(self, user_text: str) -> str | None:
-        return (await self._client.generate_title(TitleIn(text=user_text))).title
+    async def generate_title(self, user_text: str, model_group: str | None) -> str | None:
+        return (
+            await self._client.generate_title(TitleIn(text=user_text, model_group=model_group))
+        ).title
 
     async def activities(
         self, conversation_ids: Sequence[uuid.UUID]

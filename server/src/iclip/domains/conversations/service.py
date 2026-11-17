@@ -36,6 +36,7 @@ from iclip.domains.conversations.schemas import DEFAULT_TITLE, MAX_TITLE_CHARS, 
 from iclip.domains.identity.public import (
     AGENT_MANAGE_PERMISSION,
     MANAGE_PERMISSION,
+    ModelGroupOf,
     Principal,
     visible_owner_incl_act_as,
 )
@@ -105,7 +106,8 @@ LatestMasterUrls = Callable[[Sequence[uuid.UUID]], Awaitable[Mapping[uuid.UUID, 
 
 VideoProgressOf = Callable[[uuid.UUID | None], Awaitable[Mapping[uuid.UUID, VideoPhase]]]
 
-GenerateTitle = Callable[[str], Awaitable[str | None]]
+# (用户这轮说的话, 配置组) → 标题；配置组为空即默认组，起不出标题答 None。
+GenerateTitle = Callable[[str, str | None], Awaitable[str | None]]
 
 AnnounceTitle = Callable[[uuid.UUID, uuid.UUID, str], None]
 
@@ -350,6 +352,7 @@ class ConversationService:
         film: ConversationFilm,
         exports: WholeFilmExports | None,
         generate_title: GenerateTitle,
+        model_group_of: ModelGroupOf,
         announce_title: AnnounceTitle,
         activities_of: ActivitiesOf,
         busy_conversation_ids: BusyConversationIds,
@@ -376,6 +379,7 @@ class ConversationService:
         self._latest_master_urls = latest_master_urls
         self._video_progress_of = video_progress_of
         self._generate_title = generate_title
+        self._model_group_of = model_group_of
         self._announce_title = announce_title
         self._list_collections = list_collections
         self._list_derived_files = list_derived_files
@@ -905,7 +909,9 @@ class ConversationService:
         conversation = await self._repo.get(conversation_id, owner=None)
         if conversation.title_kind != "default":
             return
-        title = await self._generate_title(user_text)
+        title = await self._generate_title(
+            user_text, await self._model_group_of(conversation.owner_user_id)
+        )
         if title is None:
             return
         async with self._row_lock(conversation_id):

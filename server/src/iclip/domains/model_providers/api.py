@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from typing import Annotated
 
 from fastapi import APIRouter, Response
+from pydantic import BaseModel
 
+from iclip.common.errors import ValidationFailed
 from iclip.domains.identity.public import Principal, require_permission
 from iclip.platform.runtime_admin import admin_path, relay
 from iclip.platform.runtime_api.client import RuntimeClient
@@ -32,8 +35,34 @@ from iclip.platform.runtime_api.config.model_providers.schemas import (
 _MANAGE = "model:manage"
 
 
-def create_model_providers_router(runtime: RuntimeClient) -> APIRouter:
+class ModelGroupsOut(BaseModel):
+    """``config.yaml`` 里配置的组名，按配置里的先后；没配时为空。"""
+
+    groups: list[str]
+
+
+def create_model_providers_router(
+    runtime: RuntimeClient, *, model_groups: Sequence[str]
+) -> APIRouter:
+    """``model_groups`` 是部署配置里的组名（按配置顺序），密钥只能归进这些组。"""
+
     router = APIRouter(prefix="/model-providers", tags=["model-providers"])
+    configured = tuple(model_groups)
+
+    def check_group(group: str | None) -> None:
+        if group is not None and group not in configured:
+            choices = "、".join(configured) or "无"
+            raise ValidationFailed(
+                f"配置组 {group} 不在部署配置的 model_groups 里，可选的组：{choices}"
+            )
+
+    @router.get("/groups", response_model=ModelGroupsOut)
+    async def model_groups_configured(
+        principal: Annotated[Principal, require_permission(_MANAGE)],
+    ) -> ModelGroupsOut:
+        """部署配置里的配置组名，按配置里的先后；密钥可以归进其中一个组，不归组即默认组。"""
+
+        return ModelGroupsOut(groups=list(configured))
 
     @router.get("/declarations", response_model=DeclarationsOut)
     async def model_provider_declarations(
@@ -96,8 +125,10 @@ def create_model_providers_router(runtime: RuntimeClient) -> APIRouter:
         body: CredentialCreateIn,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """新建一把密钥，不试连；供应商的第一把成为默认密钥。"""
+        """新建一把密钥，不试连；供应商的第一把成为默认密钥。``modelGroup`` 给了就归进这个配置组，
+        组不在部署配置里 422。"""
 
+        check_group(body.model_group)
         return await relay(
             runtime,
             "POST",
@@ -129,8 +160,10 @@ def create_model_providers_router(runtime: RuntimeClient) -> APIRouter:
         body: CredentialUpdateIn,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """改名或改字段，不试连。"""
+        """改名、改字段或改配置组，不试连。``modelGroup`` 不给不动，给 ``null`` 清掉，给值改成这个组；
+        组不在部署配置里 422。"""
 
+        check_group(body.model_group)
         return await relay(
             runtime,
             "PATCH",
@@ -255,4 +288,4 @@ def create_default_models_router(runtime: RuntimeClient) -> APIRouter:
     return router
 
 
-__all__ = ["create_default_models_router", "create_model_providers_router"]
+__all__ = ["ModelGroupsOut", "create_default_models_router", "create_model_providers_router"]

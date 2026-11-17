@@ -71,7 +71,12 @@ class SourceText(Protocol):
 
 
 class Tagger(Protocol):
-    async def tag(self, text: str, dimensions: Sequence[TagNode]) -> tuple[uuid.UUID, ...]: ...
+    async def tag(
+        self, text: str, dimensions: Sequence[TagNode], *, model_group: str | None
+    ) -> tuple[uuid.UUID, ...]:
+        """按 ``dimensions`` 给 ``text`` 选标签；``model_group`` 是调模型用哪个配置组的密钥，``None`` 即
+        默认组。"""
+        ...
 
 
 class TaggingQueuePort(Protocol):

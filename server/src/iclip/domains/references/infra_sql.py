@@ -148,7 +148,7 @@ _CLAIM: Final = text("""
 UPDATE iclip.reference_videos
 SET breakdown_status = :running, started_at = now(), updated_at = now()
 WHERE id = :id AND breakdown_status = :pending
-RETURNING id, video_url, owner_user_id, started_at""")
+RETURNING id, video_url, owner_user_id, requested_by, started_at""")
 
 _FINISH: Final = text("""
 UPDATE iclip.reference_videos
@@ -361,6 +361,7 @@ class SqlReferenceStore:
             id=row["id"],
             video_url=row["video_url"],
             owner_user_id=row["owner_user_id"],
+            requested_by=row["requested_by"],
             started_at=row["started_at"],
         )
 

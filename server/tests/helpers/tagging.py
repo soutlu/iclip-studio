@@ -39,20 +39,22 @@ async def plant_entry(
     error: str | None = None,
     tags: Sequence[uuid.UUID] = (),
     started_minutes_ago: float | None = None,
+    created_by: uuid.UUID | None = None,
 ) -> uuid.UUID:
     entry_id = uuid.uuid4()
     async with engine.begin() as conn:
         await conn.execute(
             text(
                 "INSERT INTO iclip.library_entries"
-                " (id, kind, reference_id, tag_status, tag_error, tag_started_at)"
-                " VALUES (:id, 'reference', :reference_id, :status, :error,"
+                " (id, kind, reference_id, created_by, tag_status, tag_error, tag_started_at)"
+                " VALUES (:id, 'reference', :reference_id, :created_by, :status, :error,"
                 " CASE WHEN CAST(:started AS float8) IS NULL THEN NULL"
                 "      ELSE now() - make_interval(secs => CAST(:started AS float8) * 60) END)"
             ),
             {
                 "id": entry_id,
                 "reference_id": reference_id,
+                "created_by": created_by,
                 "status": status,
                 "error": error,
                 "started": started_minutes_ago,

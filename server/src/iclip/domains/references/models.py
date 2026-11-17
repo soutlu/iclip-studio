@@ -51,9 +51,12 @@ class ReferenceVideo:
 
 @dataclass(frozen=True, slots=True)
 class Claim:
+    """认领下来要拆的一条；``requested_by`` 是排上这次拆解的人，拆解按他的配置组调模型，为空即默认组。"""
+
     id: uuid.UUID
     video_url: str
     owner_user_id: uuid.UUID
+    requested_by: uuid.UUID | None
     started_at: datetime
 
 

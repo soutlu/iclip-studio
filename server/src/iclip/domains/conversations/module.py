@@ -41,7 +41,7 @@ from iclip.domains.conversations.service import (
     WorkspaceDocumentValidator,
     WriteDerivedFile,
 )
-from iclip.domains.identity.public import ActAs
+from iclip.domains.identity.public import ActAs, ModelGroupOf
 
 
 @dataclass(frozen=True)
@@ -69,6 +69,7 @@ def build_conversations_module(
     film: ConversationFilm,
     exports: WholeFilmExports | None,
     generate_title: GenerateTitle,
+    model_group_of: ModelGroupOf,
     announce_title: AnnounceTitle,
     activities_of: ActivitiesOf,
     busy_conversation_ids: BusyConversationIds,
@@ -97,6 +98,7 @@ def build_conversations_module(
         film=film,
         exports=exports,
         generate_title=generate_title,
+        model_group_of=model_group_of,
         announce_title=announce_title,
         activities_of=activities_of,
         busy_conversation_ids=busy_conversation_ids,
@@ -114,6 +116,7 @@ def build_conversations_module(
         preview_origin=preview_origin,
         tokens=preview_tokens,
         translator=final_cut_translator,
+        model_group_of=model_group_of,
     )
     return ConversationsModule(
         routers=(

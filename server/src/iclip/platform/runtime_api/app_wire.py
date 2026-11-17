@@ -7,6 +7,7 @@ from typing import Annotated, Any, Final, Literal, Self
 from pydantic import Field, model_validator
 
 from iclip.platform.runtime_api.file_store.store import FileEntry
+from iclip.platform.runtime_api.model_vocab import MODEL_GROUP_PATTERN
 from iclip.platform.runtime_api.transcript.wire import (
     Envelope,
     PromptId,
@@ -19,6 +20,14 @@ END_USER_HEADER: Final = "X-End-User"
 MAX_AGENT_ID_CHARS = 128
 
 AgentIdField = Annotated[str, Field(min_length=1, max_length=MAX_AGENT_ID_CHARS)]
+
+ModelGroupField = Annotated[
+    str,
+    Field(
+        pattern=MODEL_GROUP_PATTERN,
+        description="配置组：按它挑模型密钥，用供应商下归这个组的那把；不给即默认组。",
+    ),
+]
 
 
 class PreviewTargetIn(Envelope):
@@ -81,13 +90,16 @@ class SessionPromptIn(Envelope):
     """发一条消息：协议请求体（``PromptSubmission``）的 ``prompt_id`` 与 ``content``，加上这段会话用哪个
     agent 与这条消息替谁发。
 
-    属主是 ``X-End-User``；``user_name`` 由应用按它的规则定好，这里必填。
+    属主是 ``X-End-User``；``user_name`` 由应用按它的规则定好，这里必填。``model_group`` 是这条消息的
+    配置组：它的每次运行（含审批后续跑、后台任务与子 agent）都用这个组的密钥，组在要用的供应商下没有密钥时
+    不受理（409 ``agent_unavailable``）。
     """
 
     prompt_id: PromptId
     content: PromptParts
     user_name: Annotated[str, Field(min_length=1)]
     agent_id: AgentIdField
+    model_group: ModelGroupField | None = None
 
 
 class FilesOut(Envelope):
@@ -114,7 +126,11 @@ class AgentDirectoryOut(Envelope):
 
 
 class TitleIn(Envelope):
+    """用默认对话模型给一段对话起标题；``model_group`` 给了就用这个组的密钥，组在默认模型的供应商下没有密钥
+    时不起标题（``title`` 为空）。"""
+
     text: str
+    model_group: ModelGroupField | None = None
 
 
 class TitleOut(Envelope):
@@ -176,14 +192,17 @@ UPSTREAM_UNREACHABLE_CODE: Final = "upstream_unreachable"
 
 
 class ModelCallIn(Envelope):
-    """经运行时调一个代码里写定的模型：按（``declaration``，``model``）在配置页里找连接，``payload`` 是
-    上游接口的请求体，运行时只把它的 ``model`` 换成这个模型名，别的原样转发。"""
+    """经运行时调一个代码里写定的模型：按（``declaration``，``model``）在配置页里找连接，给了
+    ``model_group`` 用这个组的密钥；``payload`` 是上游接口的请求体，运行时只把它的 ``model`` 换成这个
+    模型名，别的原样转发。"""
 
     declaration: Annotated[str, Field(min_length=1)]
 
     model: Annotated[str, Field(min_length=1)]
 
     payload: dict[str, Any]
+
+    model_group: ModelGroupField | None = None
 
 
 MAX_STATS_SESSIONS: Final = 1000
@@ -296,6 +315,7 @@ __all__ = [
     "McpConnectionStateWire",
     "McpConnectionsOut",
     "ModelCallIn",
+    "ModelGroupField",
     "PreviewTargetIn",
     "PromptStatOut",
     "PromptStatsOut",

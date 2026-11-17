@@ -380,7 +380,7 @@ async def test_assemblies_are_reused_until_something_they_use_changes(
         conversation_id = await open_conversation(client)
 
     async def agent() -> object:
-        return (await runtime.for_conversation(conversation_id, AGENT_ID)).agent
+        return (await runtime.for_conversation(conversation_id, AGENT_ID, None)).agent
 
     first = await agent()
     assert await agent() is first, "什么都没变"
@@ -410,7 +410,7 @@ async def test_assemblies_are_reused_until_something_they_use_changes(
     await providers.update_model(
         seeded.provider_id, "llm", TEST_MODEL_NAME, ModelUpdateIn(context_size=4096)
     )
-    after_model = await runtime.for_conversation(conversation_id, AGENT_ID)
+    after_model = await runtime.for_conversation(conversation_id, AGENT_ID, None)
     assert after_model.agent is not after_key and after_model.context_window == 4096
 
     await services.agent_config.update("writer", AgentUpdateIn(description="写镜头"))
@@ -519,7 +519,9 @@ async def test_a_draft_preview_assembles_the_unpublished_draft(
         assert opened.status_code == 201, opened.text
 
         store = PgStepStore(engine)
-        resolved = await agent_runtime_of(app).for_conversation(str(opened.json()["id"]), AGENT_ID)
+        resolved = await agent_runtime_of(app).for_conversation(
+            str(opened.json()["id"]), AGENT_ID, None
+        )
         async with resolved.agent.run_stream_events(
             "试试", conversation_id="draft-1", run_id="draft-run-1"
         ) as events:

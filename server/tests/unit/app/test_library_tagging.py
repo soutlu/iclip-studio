@@ -325,10 +325,13 @@ async def test_the_call_sends_the_text_with_the_request_built_for_these_dimensio
     ark = FakeArk(tag=tag_answer({"d1": ["拖鞋"]}))
     _, tagger = ark_pipeline(ark)
 
-    assert await tagger.tag("一段拆解", [CATEGORY]) == (ids_of(CATEGORY)["拖鞋"],)
+    assert await tagger.tag("一段拆解", [CATEGORY], model_group="mkt") == (
+        ids_of(CATEGORY)["拖鞋"],
+    )
 
     (call,) = ark.calls
     assert (call["declaration"], call["model"]) == ("volcengine", TAG_MODEL)
+    assert call["model_group"] == "mkt"
     assert TAG_MODEL == "doubao-seed-2-1-lite-260915"
     assert call["read_timeout"] == TAG_TIMEOUT_SECONDS
     (sent,) = ark.tag_requests
@@ -355,5 +358,5 @@ async def test_call_failures_split_by_whether_another_try_may_help(
     _, tagger = ark_pipeline(FakeArk(tag=answer))
 
     with pytest.raises(TaggingFailed) as caught:
-        await tagger.tag("一段拆解", [CATEGORY])
+        await tagger.tag("一段拆解", [CATEGORY], model_group=None)
     assert caught.value.code == code

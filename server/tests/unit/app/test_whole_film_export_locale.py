@@ -121,6 +121,7 @@ def service_with(files: dict[str, str], exports: RecordingExports) -> Conversati
         film=UnusedFilmPage(),
         exports=exports,
         generate_title=_untouched,
+        model_group_of=_untouched,
         announce_title=_untouched,
         activities_of=_untouched,
         busy_conversation_ids=_untouched,

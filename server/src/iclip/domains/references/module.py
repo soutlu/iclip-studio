@@ -5,7 +5,7 @@ from typing import Any
 
 import procrastinate
 
-from iclip.domains.identity.public import ActAs
+from iclip.domains.identity.public import ActAs, ModelGroupOf
 from iclip.domains.references.api import create_references_router
 from iclip.domains.references.queue import ReferenceQueue, ReferenceQueueSettings
 from iclip.domains.references.repository import (
@@ -21,6 +21,7 @@ from iclip.domains.tagging.public import TaggingService
 @dataclass(frozen=True, slots=True)
 class BreakdownSetup:
     breakdowns: VideoBreakdowns
+    model_group_of: ModelGroupOf
     connector: procrastinate.BaseConnector
     concurrency: int
 
@@ -51,6 +52,7 @@ def build_references_module(
             store,
             breakdowns=breakdown.breakdowns,
             tagging=tagging,
+            model_group_of=breakdown.model_group_of,
             connector=breakdown.connector,
             settings=ReferenceQueueSettings(concurrency=breakdown.concurrency),
         )

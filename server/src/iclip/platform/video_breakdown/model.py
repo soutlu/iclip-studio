@@ -43,19 +43,23 @@ _FRAME_MIN_PIXELS: Final = 1_764
 
 
 class ArkBreakdownModel:
+    """经运行时的模型调用接口调一个写定的方舟模型。每次调用的 ``model_group`` 是这次用哪个配置组的密钥，
+    ``None`` 即默认组；由调用方按各自的规则算好传进来。"""
+
     def __init__(self, runtime: RuntimeClient, *, model: str) -> None:
         self._runtime = runtime
         self._model = model
 
-    async def from_sample(self, sample: SampledVideo) -> str:
-        return await self._ask(sampled_content(sample))
+    async def from_sample(self, sample: SampledVideo, *, model_group: str | None) -> str:
+        return await self._ask(sampled_content(sample), model_group=model_group)
 
-    async def from_url(self, video_url: str) -> str:
+    async def from_url(self, video_url: str, *, model_group: str | None) -> str:
         return await self._ask(
             [
                 {"type": "input_video", "video_url": video_url, "fps": NATIVE_FPS},
                 {"type": "input_text", "text": USER_MESSAGE},
-            ]
+            ],
+            model_group=model_group,
         )
 
     async def ask_text(
@@ -63,6 +67,7 @@ class ArkBreakdownModel:
         system: str,
         text: str,
         *,
+        model_group: str | None,
         reasoning_effort: str,
         max_output_tokens: int,
         text_format: dict[str, Any] | None = None,
@@ -70,6 +75,7 @@ class ArkBreakdownModel:
     ) -> str:
         return await self._ask(
             [{"type": "input_text", "text": text}],
+            model_group=model_group,
             system=system,
             reasoning_effort=reasoning_effort,
             max_output_tokens=max_output_tokens,
@@ -81,6 +87,7 @@ class ArkBreakdownModel:
         self,
         content: list[dict[str, Any]],
         *,
+        model_group: str | None,
         system: str = SYSTEM_PROMPT,
         reasoning_effort: str = REASONING_EFFORT,
         max_output_tokens: int = MAX_OUTPUT_TOKENS,
@@ -98,7 +105,7 @@ class ArkBreakdownModel:
         }
         if text_format is not None:
             payload["text"] = {"format": text_format}
-        response = await self._call(payload, timeout=timeout)
+        response = await self._call(payload, model_group=model_group, timeout=timeout)
         status = response.status_code
         if not 200 <= status < 300:
             raise BreakdownError(
@@ -111,10 +118,17 @@ class ArkBreakdownModel:
             raise BreakdownError("视频拆解接口返回的不是 JSON", retryable=True) from exc
         return _document(body)
 
-    async def _call(self, payload: dict[str, Any], *, timeout: float) -> ModelCallResponse:
+    async def _call(
+        self, payload: dict[str, Any], *, model_group: str | None, timeout: float
+    ) -> ModelCallResponse:
         try:
             return await self._runtime.model_call(
-                ModelCallIn(declaration=DECLARATION, model=self._model, payload=payload),
+                ModelCallIn(
+                    declaration=DECLARATION,
+                    model=self._model,
+                    payload=payload,
+                    model_group=model_group,
+                ),
                 timeout=_runtime_timeout(timeout),
             )
         except ModelUnavailable as exc:

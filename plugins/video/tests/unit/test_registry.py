@@ -299,9 +299,12 @@ async def test_video_parses_through_the_hosts_connection_at_call_time() -> None:
         assert connections.asked == [], "登记时不查连接"
         connections.connections[(DECLARATION, MODEL)] = ARK
 
-        assert await video.understanding.parse("https://cdn.test/ref.mp4") == "## 拆解"
+        assert (
+            await video.understanding.parse("https://cdn.test/ref.mp4", model_group="mkt")
+            == "## 拆解"
+        )
 
-    assert connections.asked == [(DECLARATION, MODEL)]
+    assert connections.asked == [(DECLARATION, MODEL, "mkt")]
     (request,) = seen
     assert str(request.url) == ARK.responses_url
     assert request.headers["Authorization"] == "Bearer sk-test-ark"

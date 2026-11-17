@@ -120,9 +120,9 @@ class ArkVideoUnderstanding:
         self._connection = connection
         self._timeout_seconds = timeout_seconds
 
-    async def parse(self, video_url: str) -> str:
+    async def parse(self, video_url: str, *, model_group: str | None) -> str:
         try:
-            connection = await self._connection(DECLARATION, MODEL)
+            connection = await self._connection(DECLARATION, MODEL, model_group)
         except ModelUnavailable as exc:
             raise VideoUnderstandingUnavailable(str(exc)) from exc
         payload: dict[str, Any] = {
@@ -198,7 +198,9 @@ def _excerpt(text: str, limit: int = 300) -> str:
 
 
 class VideoUnderstanding(Protocol):
-    async def parse(self, video_url: str) -> str: ...
+    async def parse(self, video_url: str, *, model_group: str | None) -> str:
+        """拆解一条视频，答拆解文档；``model_group`` 是取模型连接用的配置组，``None`` 即默认组。"""
+        ...
 
 
 __all__ = [

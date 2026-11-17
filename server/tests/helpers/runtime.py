@@ -160,7 +160,9 @@ class FixedAgents:
         self._agents = dict(agents)
         self._limits = dict(context_limits)
 
-    async def for_conversation(self, conversation_id: str, agent_id: str) -> RunAgent:
+    async def for_conversation(
+        self, conversation_id: str, agent_id: str, model_group: str | None
+    ) -> RunAgent:
         agent = self._agents.get(agent_id)
         if agent is None:
             raise AgentUnavailable(f"没有登记 agent {agent_id}")

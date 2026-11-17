@@ -737,9 +737,15 @@ export const zConversationsPageOut = z.object({
 
 /**
  * CredentialCreateIn
+ *
+ * ``modelGroup`` 给了就把这把密钥归进这个配置组；同一供应商下一个组最多一把。
  */
 export const zCredentialCreateIn = z.object({
   fields: z.record(z.string(), z.string()),
+  modelGroup: z
+    .string()
+    .regex(/^[a-z][a-z0-9_]*$/)
+    .nullish(),
   name: z.string(),
 })
 
@@ -770,11 +776,14 @@ export const zCredentialOptionOut = z.object({
 
 /**
  * CredentialOut
+ *
+ * ``modelGroup`` 是这把密钥归的配置组，为空即不归任何组。
  */
 export const zCredentialOut = z.object({
   createdAt: z.iso.datetime(),
   fields: z.record(z.string(), z.string()),
   id: z.uuid(),
+  modelGroup: z.string().nullable(),
   name: z.string(),
   updatedAt: z.iso.datetime(),
   usedBy: z.array(zAgentUsageOut),
@@ -795,10 +804,15 @@ export const zCredentialTestIn = z.object({
 /**
  * CredentialUpdateIn
  *
- * 不给或给 ``null`` 的项不动。
+ * ``name`` 与 ``fields`` 不给或给 ``null`` 都不动；``modelGroup`` 不给不动，给 ``null`` 清掉，给值改成
+ * 这个组。
  */
 export const zCredentialUpdateIn = z.object({
   fields: z.record(z.string(), z.string()).nullish(),
+  modelGroup: z
+    .string()
+    .regex(/^[a-z][a-z0-9_]*$/)
+    .nullish(),
   name: z.string().nullish(),
 })
 
@@ -1829,6 +1843,15 @@ export const zMetricFiltersIn = z.object({
     .union([z.number().gte(0), z.string().regex(/^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$/)])
     .nullish(),
   minViews: z.int().gte(0).nullish(),
+})
+
+/**
+ * ModelGroupsOut
+ *
+ * ``config.yaml`` 里配置的组名，按配置里的先后；没配时为空。
+ */
+export const zModelGroupsOut = z.object({
+  groups: z.array(z.string()),
 })
 
 /**
@@ -5122,6 +5145,11 @@ export const zCreateModelProviderModelProvidersPostResponse = zModelProviderOut
  * Successful Response
  */
 export const zModelProviderDeclarationsModelProvidersDeclarationsGetResponse = zDeclarationsOut
+
+/**
+ * Successful Response
+ */
+export const zModelGroupsConfiguredModelProvidersGroupsGetResponse = zModelGroupsOut
 
 export const zDeleteModelProviderModelProvidersProviderIdDeletePath = z.object({
   provider_id: z.uuid(),

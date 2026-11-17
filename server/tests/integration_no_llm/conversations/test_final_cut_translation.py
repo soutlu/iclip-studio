@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from tests.helpers.agents import CONVERSABLE_SEEDS, seed_agents
 from tests.helpers.app import make_client, make_runtime_config
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
+from tests.helpers.model_groups import MKT, MKT_DEPARTMENT, set_departments, with_model_groups
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.references import FakeArk, ark_translator, responses_body
 from tests.helpers.runtime_backed import build_backed_app, config_services_of
@@ -33,7 +34,7 @@ async def translate_app(
     base_env: None, engine: AsyncEngine, ark: FakeArk, tmp_path: Path
 ) -> FastAPI:
     built = build_backed_app(
-        make_runtime_config(),
+        with_model_groups(make_runtime_config(), {MKT: [MKT_DEPARTMENT]}),
         engine=engine,
         credential_probe=KeyCheckingProbe({GOOD_KEY}),
         skill_cache_dir=tmp_path / "skills",
@@ -90,6 +91,30 @@ async def test_the_owner_gets_translations_in_request_order_and_nothing_is_writt
     assert "德语" in sent["input"][0]["content"][0]["text"]
     files = (await client.get(f"{URL}/{mine}/workspace/files")).json()["files"]
     assert files == [], "翻译不写工作区"
+
+
+@pytest.mark.parametrize(
+    ("departments", "expected"),
+    [([MKT_DEPARTMENT], MKT), ([], None)],
+    ids=["owner_in_mkt", "owner_in_default_group"],
+)
+async def test_the_translation_uses_the_owners_model_group(
+    client: httpx.AsyncClient,
+    ark: FakeArk,
+    engine: AsyncEngine,
+    pg_url: str,
+    departments: list[int],
+    expected: str | None,
+) -> None:
+    owner = await login_as_editor(client, pg_url)
+    await set_departments(engine, owner, departments)
+    mine = await open_conversation(client)
+    raw = json.dumps({"translations": [{"id": "c1", "text": "A"}, {"id": "c2", "text": "B"}]})
+    ark.tag = httpx.Response(200, json=responses_body(raw))
+
+    assert (await translate(client, mine)).status_code == 200
+
+    assert [call["model_group"] for call in ark.calls] == [expected]
 
 
 async def test_only_the_owner_of_a_live_conversation_translates(

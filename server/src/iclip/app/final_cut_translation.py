@@ -148,11 +148,11 @@ class ArkFinalCutTranslator:
         self._model = model
 
     async def translate(
-        self, entries: Sequence[FinalCutText], *, locale: TargetLocale
+        self, entries: Sequence[FinalCutText], *, locale: TargetLocale, model_group: str | None
     ) -> tuple[FinalCutText, ...]:
         started = time.monotonic()
         try:
-            translated = await self._ask(entries, locale)
+            translated = await self._ask(entries, locale, model_group)
         except (FinalCutTranslationFailed, ModelUnavailable) as exc:
             _logger.warning(
                 "final-cut 翻译失败",
@@ -171,13 +171,14 @@ class ArkFinalCutTranslator:
         return translated
 
     async def _ask(
-        self, entries: Sequence[FinalCutText], locale: TargetLocale
+        self, entries: Sequence[FinalCutText], locale: TargetLocale, model_group: str | None
     ) -> tuple[FinalCutText, ...]:
         request = build_translation_request(entries, locale)
         try:
             raw = await self._model.ask_text(
                 request.system_prompt,
                 request.user_text,
+                model_group=model_group,
                 reasoning_effort=TRANSLATE_REASONING_EFFORT,
                 max_output_tokens=TRANSLATE_MAX_OUTPUT_TOKENS,
                 text_format=request.text_format,

@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import Final
 
 from iclip.domains.generation.models import GenerationJob
-from iclip.domains.generation.ports import ModelGroupOf
 from iclip.domains.generation.provider import ProviderError
+from iclip.domains.identity.public import ModelGroupOf
 
 
 @dataclass(frozen=True, slots=True)

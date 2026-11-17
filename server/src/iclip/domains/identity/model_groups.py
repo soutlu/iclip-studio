@@ -3,9 +3,16 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Protocol
 
 from iclip.common.errors import NotFound
 from iclip.domains.identity.repository import UserRepository
+
+
+class ModelGroupOf(Protocol):
+    """用户所在配置组的组名，默认组答 ``None``；组合根接到 ``ModelGroupResolver.group_of``。"""
+
+    async def __call__(self, user_id: uuid.UUID, /) -> str | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,4 +48,4 @@ class ModelGroupResolver:
         return None
 
 
-__all__ = ["DepartmentGroup", "ModelGroupResolver"]
+__all__ = ["DepartmentGroup", "ModelGroupOf", "ModelGroupResolver"]

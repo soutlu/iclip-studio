@@ -8,6 +8,7 @@ from typing import Final
 import procrastinate
 import structlog
 
+from iclip.domains.identity.public import ModelGroupOf
 from iclip.domains.references.models import BREAKDOWN_TIMEOUT_SECONDS, BreakdownFailed
 from iclip.domains.references.repository import ReferenceStore, VideoBreakdowns
 from iclip.domains.tagging.public import KIND_REFERENCE, EntryKey, TaggingService
@@ -36,12 +37,14 @@ class ReferenceQueue:
         *,
         breakdowns: VideoBreakdowns,
         tagging: TaggingService,
+        model_group_of: ModelGroupOf,
         connector: procrastinate.BaseConnector,
         settings: ReferenceQueueSettings | None = None,
     ) -> None:
         self._store = store
         self._breakdowns = breakdowns
         self._tagging = tagging
+        self._model_group_of = model_group_of
         self._settings = settings or ReferenceQueueSettings()
         self._app = procrastinate.App(connector=connector)
         self._worker: asyncio.Task[None] | None = None
@@ -64,8 +67,12 @@ class ReferenceQueue:
         if claim is None:
             _logger.info("参考视频不在排队中，不再拆", reference_id=reference_id)
             return
+        # 按排上这次拆解的人定组；没记下是谁时就是默认组，不退回属主。
+        model_group = (
+            None if claim.requested_by is None else await self._model_group_of(claim.requested_by)
+        )
         try:
-            document = await self._breakdowns.breakdown(claim.video_url)
+            document = await self._breakdowns.breakdown(claim.video_url, model_group=model_group)
         except BreakdownFailed as exc:
             written = await self._store.fail(claim, error_code=exc.code)
             _logger.warning(
