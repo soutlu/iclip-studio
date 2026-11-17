@@ -15,6 +15,7 @@ import httpx
 import structlog
 
 from iclip.common.final_cut import TargetLocale
+from iclip.domains.generation.model_groups import UNGROUPED, ModelGroups, group_key
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.provider import (
     ProviderError,
@@ -43,8 +44,6 @@ _logger = structlog.stdlib.get_logger(__name__)
 
 PROVIDER_NAME: Final = "dubbing"
 
-DUBBING_SUBMIT_CONCURRENCY: Final = 2
-
 MAX_REFERENCE_MS: Final = 10_000
 
 MIN_REFERENCE_SPEECH_MS: Final = 3_000
@@ -58,10 +57,13 @@ _CONTENT_TYPE: Final = "audio/mp4"
 
 
 class SpeechSynthesizer(Protocol):
-    async def synthesize(self, text: str, *, reference: bytes, locale: TargetLocale) -> bytes:
+    async def synthesize(
+        self, text: str, *, reference: bytes, locale: TargetLocale, api_key: str | None
+    ) -> bytes:
         """用 ``reference`` 的声音把 ``text`` 用 ``locale`` 这种语言念出来，返回一段音频。
 
-        ``reference`` 是不超过 10 秒的 WAV（单声道、16 位 PCM、48 kHz）。返回的音频格式不限，ffmpeg
+        ``reference`` 是不超过 10 秒的 WAV（单声道、16 位 PCM、48 kHz）。``api_key`` 是这条记录所在
+        配置组的配音 key，默认组为 ``None``，即用合成服务自己装配的 key。返回的音频格式不限，ffmpeg
         解得开就行；多长都可以，变速、截断由调用方按这句的位置做。合成失败抛 ``ProviderError``，
         这条配音记录随之失败、不自动重来。
         """
@@ -136,19 +138,29 @@ class DubbingProvider:
         *,
         object_store: PublicObjectStore,
         fetch_url: Callable[[str], str],
+        model_groups: ModelGroups = UNGROUPED,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._synthesizer = synthesizer
         self._object_store = object_store
         self._fetch_url = fetch_url
+        self._model_groups = model_groups
         self._transport = transport
 
     @property
     def name(self) -> str:
         return PROVIDER_NAME
 
+    def _api_key(self, job: GenerationJob) -> str | None:
+        group = self._model_groups.of(job)
+        if group is None:
+            return None
+        return group_key(group, group.dubbing_api_key, what="配音")
+
     async def submit(self, job: GenerationJob) -> ProviderSubmission:
         request = request_of(job, DubbingRequest, provider=PROVIDER_NAME)
+        # 先定 key 再下载素材：组配错了不白下整条视频。
+        api_key = self._api_key(job)
         with TemporaryDirectory(prefix="iclip-dubbing-") as tmp:
             root = Path(tmp)
             reference = await self._reference(request, root)
@@ -157,7 +169,9 @@ class DubbingProvider:
             dubbed: list[DubbedLine] = []
             for index, (line, slot_ms) in enumerate(zip(request.lines, slots, strict=True)):
                 clip = root / f"line-{index}.wav"
-                clip_ms = await self._synthesized(index, line.text, reference, request, clip)
+                clip_ms = await self._synthesized(
+                    index, line.text, reference, request, clip, api_key=api_key
+                )
                 fitted = fit_line(index, clip_ms, slot_ms)
                 dubbed.append(fitted)
                 placements.append(
@@ -250,9 +264,18 @@ class DubbingProvider:
             ) from exc
 
     async def _synthesized(
-        self, index: int, text: str, reference: bytes, request: DubbingRequest, dest: Path
+        self,
+        index: int,
+        text: str,
+        reference: bytes,
+        request: DubbingRequest,
+        dest: Path,
+        *,
+        api_key: str | None,
     ) -> int:
-        audio = await self._synthesizer.synthesize(text, reference=reference, locale=request.locale)
+        audio = await self._synthesizer.synthesize(
+            text, reference=reference, locale=request.locale, api_key=api_key
+        )
         raw = dest.with_suffix(".synthesized")
         raw.write_bytes(audio)
         try:
@@ -266,7 +289,6 @@ class DubbingProvider:
 
 
 __all__ = [
-    "DUBBING_SUBMIT_CONCURRENCY",
     "MAX_REFERENCE_MS",
     "MAX_SPEED",
     "MIN_REFERENCE_SPEECH_MS",

@@ -57,6 +57,7 @@ from iclip.app.shot_media import CutRecordsAdapter, FrameBoardsAdapter, GridCuts
 from iclip.app.whole_film_exports import WholeFilmExportAdapter, final_cut_reader
 from iclip.common.errors import NotFound
 from iclip.config import (
+    QWEN_DUBBING_API_KEY_ENV,
     QWEN_MUSIC_API_KEY_ENV,
     QWEN_SUBTITLE_API_KEY_ENV,
     ObjectStoreEnv,
@@ -97,6 +98,7 @@ from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.model_groups import ModelGroup, ModelGroups
 from iclip.domains.generation.models import InFlightPhase
 from iclip.domains.generation.module import (
+    DubbingSetup,
     GenerationModule,
     ImageModelConfig,
     QwenServiceConfig,
@@ -109,6 +111,7 @@ from iclip.domains.generation.render import RenderClient, RenderSetup
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import KIND_VIDEO, OPERATION_UPLOAD
 from iclip.domains.generation.service import ClearCompletion, SettledRecords, VideoEnhanceSpec
+from iclip.domains.generation.speech import QwenSpeechSynthesizer
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.accounts import CookieAuthSettings
 from iclip.domains.identity.infra_sql import DB_SCHEMA
@@ -252,6 +255,19 @@ def _qwen_service(resolved: ResolvedQwenService | None) -> QwenServiceConfig | N
     )
 
 
+def _dubbing(
+    resolved: ResolvedQwenService | None, owns_url: Callable[[str], bool]
+) -> DubbingSetup | None:
+    service = _qwen_service(resolved)
+    if service is None:
+        return None
+    return DubbingSetup(
+        synthesizer=QwenSpeechSynthesizer(service.endpoint),
+        owns_url=owns_url,
+        concurrency=service.concurrency,
+    )
+
+
 def _generation_module(
     settings: ResolvedMediaGeneration,
     repo: GenerationRepository,
@@ -264,6 +280,7 @@ def _generation_module(
     media_codec: MediaCodec,
     compose_concurrency: int,
     fetch_url: Callable[[str], str],
+    owns_url: Callable[[str], bool],
     render: RenderSetup | None,
     model_group_of: ModelGroupOf,
 ) -> GenerationModule:
@@ -310,6 +327,7 @@ def _generation_module(
             compose_concurrency=compose_concurrency,
         ),
         subtitles=_qwen_service(settings.subtitle),
+        dubbing=_dubbing(settings.dubbing, owns_url),
         music=_qwen_service(settings.music),
         render=render,
         model_groups=ModelGroups(
@@ -320,6 +338,7 @@ def _generation_module(
                     video_models=group.video_models,
                     subtitle_api_key=group.subtitle_api_key,
                     music_api_key=group.music_api_key,
+                    dubbing_api_key=group.dubbing_api_key,
                 )
                 for group in settings.model_groups
             ),
@@ -426,6 +445,12 @@ def build_app(
             media_generation=settings.media_generation is not None,
             requires=f"media_generation.music 段与千问AI平台的 API Key {QWEN_MUSIC_API_KEY_ENV}",
         )
+    if settings.media_generation is None or settings.media_generation.dubbing is None:
+        _logger.warning(
+            "配音未启用",
+            media_generation=settings.media_generation is not None,
+            requires=f"media_generation.dubbing 段与千问AI平台的 API Key {QWEN_DUBBING_API_KEY_ENV}",
+        )
     http_client = httpx.AsyncClient(follow_redirects=True)
     public_http_client = public_client(timeout=TOTAL_TIMEOUT_SECONDS)
     public_fetcher = PublicFetcher()
@@ -506,6 +531,7 @@ def build_app(
             media_codec=codec,
             compose_concurrency=compose_concurrency,
             fetch_url=fetch_url,
+            owns_url=owns_url,
             render=render,
             model_group_of=model_group_of,
         )

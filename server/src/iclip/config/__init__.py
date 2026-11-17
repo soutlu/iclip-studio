@@ -1,5 +1,6 @@
 from iclip.config.models import (
     OSS_BUCKET_ENV,
+    QWEN_DUBBING_API_KEY_ENV,
     QWEN_MUSIC_API_KEY_ENV,
     QWEN_SUBTITLE_API_KEY_ENV,
     RUNTIME_APP_KEY_ENV,
@@ -9,6 +10,7 @@ from iclip.config.models import (
     VIDEO_SUBMIT_URL_ENV,
     AppSection,
     DbSection,
+    DubbingSection,
     ImageGenerationSection,
     ImageModelSection,
     MediaGenerationSection,
@@ -40,6 +42,7 @@ from iclip.config.models import (
 
 __all__ = [
     "OSS_BUCKET_ENV",
+    "QWEN_DUBBING_API_KEY_ENV",
     "QWEN_MUSIC_API_KEY_ENV",
     "QWEN_SUBTITLE_API_KEY_ENV",
     "RUNTIME_APP_KEY_ENV",
@@ -49,6 +52,7 @@ __all__ = [
     "VIDEO_SUBMIT_URL_ENV",
     "AppSection",
     "DbSection",
+    "DubbingSection",
     "ImageGenerationSection",
     "ImageModelSection",
     "MediaGenerationSection",

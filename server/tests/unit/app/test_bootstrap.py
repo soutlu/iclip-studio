@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 import httpx
 import pytest
 from pydantic import ValidationError
@@ -7,9 +9,11 @@ from structlog.testing import capture_logs
 from structlog.typing import EventDict
 
 from iclip.app.bootstrap import build_app
+from iclip.common.errors import ValidationFailed
 from iclip.config import (
     AppSection,
     DbSection,
+    DubbingSection,
     ImageGenerationSection,
     ImageModelSection,
     MediaGenerationSection,
@@ -22,6 +26,8 @@ from iclip.config import (
     VideoGenerationSection,
 )
 from iclip.config.models import IclipStudioSection, ShotVideoSection
+from iclip.domains.generation.schemas import DubbingAudioReference, DubbingIn, DubbingLine
+from iclip.domains.identity.models import Principal
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE, VIDEOTOOLBOX, MediaCodec
 from tests.helpers.generation import MemoryObjectStore
@@ -236,6 +242,61 @@ async def test_startup_says_when_music_is_off_and_the_route_is_mounted_either_wa
     off = [log for log in logs if log["event"] == "音乐生成未启用"]
     assert len(off) == (0 if configured else 1)
     assert response.status_code == 401, "入口挂着，没登录先 401"
+
+
+PRINCIPAL = Principal(
+    kind="user",
+    user_id=uuid.uuid4(),
+    permissions=frozenset({"generation:submit"}),
+    audit_label="tester",
+    username="tester",
+)
+
+DUBBING_SUBMISSION = DubbingIn(
+    source_job_id=uuid.uuid4(),
+    locale="en",
+    lines=[DubbingLine(start_ms=0, end_ms=1000, text="Hello")],
+    reference=DubbingAudioReference(kind="audio", url="https://elsewhere.test/voice.wav"),
+)
+
+
+@pytest.mark.parametrize(
+    ("configured", "refusal"),
+    [(True, "参考音频只能用本系统存储里的地址"), (False, "配音没有开通")],
+    ids=["开通", "没开通"],
+)
+async def test_startup_says_when_dubbing_is_off_and_the_section_switches_it_on(
+    local_media_env: None, monkeypatch: pytest.MonkeyPatch, configured: bool, refusal: str
+) -> None:
+    config = config_with_media()
+    assert config.media_generation is not None
+    if configured:
+        monkeypatch.setenv("QWEN_DUBBING_API_KEY", "sk-dub")
+        config = config.model_copy(
+            update={
+                "media_generation": config.media_generation.model_copy(
+                    update={"dubbing": DubbingSection(url="https://tts.test/SpeechSynthesizer")}
+                )
+            }
+        )
+    with capture_logs() as logs:
+        app = build_app(
+            config,
+            engine=engine(),
+            object_store=MemoryObjectStore(),
+            media_codec=SOFTWARE,
+        )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post("/generations/dubbings", json={})
+
+    off = [log for log in logs if log["event"] == "配音未启用"]
+    assert len(off) == (0 if configured else 1)
+    assert response.status_code == 401, "入口挂着，没登录先 401"
+    # 开通时受理走到下一道检查（注入的测试桶不认任何地址）；没开通时直接拒绝，接口答 422。
+    with pytest.raises(ValidationFailed, match=refusal):
+        await app.state.generation.service.submit_dubbing(PRINCIPAL, DUBBING_SUBMISSION)
 
 
 def config_with(*, media: bool, shot_video: bool, studio: bool) -> RuntimeConfig:

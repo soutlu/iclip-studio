@@ -9,11 +9,7 @@ import httpx
 import procrastinate
 
 from iclip.domains.generation.api import create_generations_router
-from iclip.domains.generation.dubbing import (
-    DUBBING_SUBMIT_CONCURRENCY,
-    DubbingProvider,
-    SpeechSynthesizer,
-)
+from iclip.domains.generation.dubbing import DubbingProvider, SpeechSynthesizer
 from iclip.domains.generation.gpt_image import GPT_IMAGE_2_5
 from iclip.domains.generation.image_upstream import (
     GatewayImageModel,
@@ -74,10 +70,12 @@ class QwenServiceConfig:
 
 @dataclass(frozen=True, slots=True)
 class DubbingSetup:
-    """配音的装配：语音合成服务，和哪些地址算本系统存储里的（参考音频只收这些）。不给就是没开通。"""
+    """配音的装配：语音合成服务，和哪些地址算本系统存储里的（参考音频只收这些），以及配音队列
+    每个进程同时跑几条。不给就是没开通。"""
 
     synthesizer: SpeechSynthesizer
     owns_url: Callable[[str], bool]
+    concurrency: int
 
 
 @dataclass(frozen=True)
@@ -160,9 +158,12 @@ def build_generation_module(
     dubbing_target: DubbingTarget | None = None
     if dubbing is not None:
         dubbing_provider = DubbingProvider(
-            dubbing.synthesizer, object_store=object_store, fetch_url=fetch_url
+            dubbing.synthesizer,
+            object_store=object_store,
+            fetch_url=fetch_url,
+            model_groups=model_groups,
         )
-        dubbing_lanes = (ProviderLane(dubbing_provider, DUBBING_SUBMIT_CONCURRENCY),)
+        dubbing_lanes = (ProviderLane(dubbing_provider, dubbing.concurrency),)
         dubbing_target = DubbingTarget(provider=dubbing_provider.name, owns_url=dubbing.owns_url)
     music_lanes: tuple[ProviderLane, ...] = ()
     music_target: ProviderTarget | None = None

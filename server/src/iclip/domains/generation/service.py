@@ -523,6 +523,7 @@ class GenerationService:
                 metadata=request.metadata,
                 shot_index=None,
                 source_job_id=video.id,
+                model_group=await self._model_groups.group_of(principal.user_id),
             )
         )
 

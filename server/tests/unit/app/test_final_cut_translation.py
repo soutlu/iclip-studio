@@ -9,7 +9,6 @@ import pytest
 from structlog.testing import capture_logs
 
 from iclip.app.final_cut_translation import (
-    LANGUAGE_NAMES,
     TRANSLATE_MAX_OUTPUT_TOKENS,
     TRANSLATE_MODEL,
     TRANSLATE_REASONING_EFFORT,
@@ -18,7 +17,7 @@ from iclip.app.final_cut_translation import (
     parse_translation_answer,
 )
 from iclip.common.errors import ModelUnavailable
-from iclip.common.final_cut import TargetLocale
+from iclip.common.final_cut import LANGUAGE_NAMES, TargetLocale
 from iclip.domains.conversations.final_cut_translation import (
     FinalCutText,
     FinalCutTranslationFailed,

@@ -7,6 +7,7 @@ import httpx
 import pytest
 from procrastinate.testing import InMemoryConnector
 
+from iclip.domains.generation.dubbing import PROVIDER_NAME as DUBBING_PROVIDER
 from iclip.domains.generation.model_groups import ModelGroup, ModelGroups
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
@@ -15,6 +16,7 @@ from iclip.domains.generation.models import (
     GenerationOutput,
 )
 from iclip.domains.generation.module import (
+    DubbingSetup,
     GenerationModule,
     ImageModelConfig,
     QwenServiceConfig,
@@ -22,6 +24,8 @@ from iclip.domains.generation.module import (
 )
 from iclip.domains.generation.music import PROVIDER_NAME as MUSIC_PROVIDER
 from iclip.domains.generation.qwen import QwenEndpoint
+from iclip.domains.generation.schemas import DubbingLine
+from iclip.domains.generation.speech import QwenSpeechSynthesizer
 from iclip.domains.generation.subtitles import PROVIDER_NAME as SUBTITLE_PROVIDER
 from iclip.domains.generation.video import PROVIDER_NAME as VIDEO_PROVIDER
 from iclip.domains.generation.video import VideoProviderSettings
@@ -32,6 +36,7 @@ from tests.helpers.generation import (
     FixedLineage,
     InMemoryGenerationRepository,
     MemoryObjectStore,
+    make_dubbing,
     make_job,
     make_music,
     make_subtitle,
@@ -87,6 +92,11 @@ def _module(repo: InMemoryGenerationRepository, sent: list[httpx.Request]) -> Ge
         fetch_url=as_is,
         subtitles=qwen,
         music=qwen,
+        dubbing=DubbingSetup(
+            synthesizer=QwenSpeechSynthesizer(qwen.endpoint, transport=transport),
+            owns_url=lambda _url: True,
+            concurrency=1,
+        ),
         model_groups=ModelGroups((MKT,), group_of=_nobody_is_grouped),
         video_transport=transport,
         subtitle_transport=transport,
@@ -98,11 +108,21 @@ def _take() -> GenerationJob:
     return make_job(video_request(), provider=VIDEO_PROVIDER)
 
 
-def _subtitle() -> GenerationJob:
-    take = replace(
+def _completed_take() -> GenerationJob:
+    return replace(
         _take(), status=STATUS_COMPLETED, output=GenerationOutput(url="https://cdn.test/take.mp4")
     )
-    return replace(make_subtitle(take), provider=SUBTITLE_PROVIDER)
+
+
+def _subtitle() -> GenerationJob:
+    return replace(make_subtitle(_completed_take()), provider=SUBTITLE_PROVIDER)
+
+
+def _dubbing() -> GenerationJob:
+    lines = [DubbingLine(start_ms=0, end_ms=4_000, text="Hello")]
+    return replace(
+        make_dubbing(_completed_take(), lines, duration_ms=5_000), provider=DUBBING_PROVIDER
+    )
 
 
 @pytest.mark.parametrize(
@@ -120,8 +140,17 @@ def _subtitle() -> GenerationJob:
             "MODEL_GROUP_KEY_MISSING",
             "mkt",
         ),
+        (replace(_dubbing(), model_group="mkt"), "MODEL_GROUP_KEY_MISSING", "mkt"),
+        (replace(_dubbing(), model_group="retired"), "MODEL_GROUP_UNKNOWN", "retired"),
     ],
-    ids=["no_upstream_model", "group_gone", "no_subtitle_key", "no_music_key"],
+    ids=[
+        "no_upstream_model",
+        "group_gone",
+        "no_subtitle_key",
+        "no_music_key",
+        "no_dubbing_key",
+        "dubbing_group_gone",
+    ],
 )
 async def test_a_grouped_record_that_cannot_be_served_fails_without_calling_upstream(
     job: GenerationJob, code: str, names: str
