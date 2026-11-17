@@ -5,6 +5,13 @@ import { mkdir, readFile, readdir, rename, rm, stat, symlink, writeFile } from '
 import { dirname, join, posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import {
+  GENERIC_FAMILIES,
+  collectFontFamilyCustomProperties,
+  iterateFontFamilyDeclarations,
+  normalizeSystemFontPrimaryFamilies,
+  resolveFontFamilyDeclarationFamilies,
+} from '@hyperframes/core/fonts/embed'
 
 const run = promisify(execFile)
 
@@ -468,6 +475,91 @@ export function fontFaceDescriptors(text) {
     })
   }
   return result
+}
+
+const FONT_FACE_RULE = /@font-face\s*\{[^}]*\}/g
+const CSS_URL = /url\(\s*(['"]?)([^'")]+)\1\s*\)/g
+
+/**
+ * 文本里的每条 @font-face：字体名和规则，规则里的空白并成一个空格，相对地址改成相对 `cssPath` 的地址。
+ * 地址按 localReferences 的规则解析：样式表里和 `../` 开头的按文件位置，网页里其余的按基准地址（版本目录）。
+ *
+ * @param {string} text 组件库里的网页或样式表
+ * @param {string} path 这份文本相对版本目录的路径
+ * @param {string} cssPath 规则要写进的样式表相对版本目录的路径
+ * @returns {{ family: string, rule: string }[]}
+ */
+export function fontFaceRules(text, path, cssPath) {
+  const result = []
+  for (const [rule] of text.matchAll(FONT_FACE_RULE)) {
+    const family = cssValue(rule, 'font-family')
+    if (!family) continue
+    const rebased = rule.replace(/\s+/g, ' ').replace(CSS_URL, (whole, quote, reference) => {
+      if (/^(?:[a-z][a-z0-9+.-]*:|\/)/i.test(reference)) return whole
+      const resolved =
+        path.endsWith('.css') || reference.startsWith('../')
+          ? posix.normalize(posix.join(posix.dirname(path), reference))
+          : posix.normalize(reference.replace(/^\.\//, ''))
+      return `url(${quote}${posix.relative(posix.dirname(cssPath), resolved)}${quote})`
+    })
+    result.push({ family, rule: rebased })
+  }
+  return result
+}
+
+const CSS_WIDE_KEYWORDS = new Set(['inherit', 'initial', 'unset', 'revert', 'revert-layer'])
+const TEMPLATE_TAG = /<\/?template\b[^>]*>/gi
+
+/**
+ * 渲染器编译工程时要自己去找的字体名：组件文件里 font-family 写到的每个名字（含后备字体、var() 的缺省值，
+ * 以及渲染器给首选是通用字体族的声明补上的 Inter），除去通用字体族、文件里自带 @font-face 的和 `declared`。
+ * 渲染器对这些名字按内置别名表取内置字形，再去 Google Fonts 补字重；不在别名表里的直接去 Google Fonts 取。
+ * 名字照文件里的写法，不分大小写去重。
+ *
+ * @param {string} html 组件文件
+ * @param {Iterable<string>} declared 文件外已经有 @font-face 的字体名
+ * @returns {string[]}
+ */
+export function undeclaredFontFamilies(html, declared) {
+  // 渲染时 <template> 里的内容并进主文件，按普通内容读
+  const page = normalizeSystemFontPrimaryFamilies(html.replace(TEMPLATE_TAG, ''))
+  const known = new Set(
+    [...declared, ...fontFaceDescriptors(page).map((face) => face.family)].map((family) =>
+      family.toLowerCase(),
+    ),
+  )
+  const properties = collectFontFamilyCustomProperties(page)
+  const result = new Map()
+  for (const { declaration } of iterateFontFamilyDeclarations(page)) {
+    for (const family of resolveFontFamilyDeclarationFamilies(declaration, properties)) {
+      const key = family.toLowerCase()
+      if (known.has(key) || GENERIC_FAMILIES.has(key) || CSS_WIDE_KEYWORDS.has(key)) continue
+      if (key.startsWith('var(') || result.has(key)) continue
+      result.set(key, family)
+    }
+  }
+  return [...result.values()]
+}
+
+/**
+ * 在组件文件里第一个 <style> 或 <script> 前插入样式表链接，每个一行，缩进跟着那一行；渲染时组件里的链接会提到主文件里。
+ * 文件里没有 <style> 和 <script> 时返回 undefined。
+ *
+ * @param {string} html 组件文件
+ * @param {string[]} hrefs 相对组件文件的样式表地址
+ * @returns {string | undefined}
+ */
+export function withStylesheetLinks(html, hrefs) {
+  // 注释换成等长的空白：注释里的标签不算，位置也不变
+  const code = html.replace(HTML_COMMENT, (comment) => ' '.repeat(comment.length))
+  const at = code.search(/<(?:style|script)\b/i)
+  if (at === -1) return undefined
+  const lineStart = html.lastIndexOf('\n', at - 1) + 1
+  const indent = html.slice(lineStart, at)
+  const tags = hrefs.map((href) => `<link rel="stylesheet" href="${href}" />`)
+  return /^[ \t]*$/.test(indent)
+    ? `${html.slice(0, lineStart)}${tags.map((tag) => `${indent}${tag}\n`).join('')}${html.slice(lineStart)}`
+    : `${html.slice(0, at)}${tags.join('')}${html.slice(at)}`
 }
 
 export function twinDescriptors(descriptors) {

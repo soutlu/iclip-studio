@@ -2,7 +2,8 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, join, posix, relative, resolve } from 'node:path'
+import { resolveAliasDisplayName } from '@hyperframes/core/fonts/aliases'
 import {
   CDN_HOST_PATTERN,
   CJK_FONT,
@@ -19,6 +20,7 @@ import {
   cjkSlices,
   compositionTarget,
   fontFaceDescriptors,
+  fontFaceRules,
   fontFaces,
   fontPackage,
   installVersion,
@@ -37,7 +39,9 @@ import {
   sha256,
   sourceTree,
   twinDescriptors,
+  undeclaredFontFamilies,
   withAnimationLibrary,
+  withStylesheetLinks,
   withoutCjkStylesheet,
   writeAtomic,
 } from './hyperframes-shared.mjs'
@@ -229,12 +233,14 @@ async function assemble(temp, catalog, lock) {
     }
   }
   const registryFaces = []
+  const styledTexts = []
   for (const path of await listFiles(temp)) {
     if (!/\.(html?|css)$/i.test(path) || path.startsWith('vendor/npm/')) continue
     const text = await readFile(join(temp, path), 'utf8')
     const kept = withoutCjkStylesheet(text)
     if (kept !== text) await writeFile(join(temp, path), kept)
     registryFaces.push(...fontFaceDescriptors(kept))
+    styledTexts.push({ path, text: kept })
   }
   const twins = {}
   for (const [family, { css: cssPath, faces: localFaces }] of Object.entries(catalog.fonts)) {
@@ -249,8 +255,9 @@ async function assemble(temp, catalog, lock) {
       await writeOut(cssPath, `${css}\n`)
       continue
     }
+    const sameFamily = (name) => name.toLowerCase() === family.toLowerCase()
     const faces = googleFaces.get(family)
-    let latin = ''
+    let css
     if (faces) {
       const pkg = fontPackage(family)
       const dir = await openPackage(pkg.name, pkg.version)
@@ -264,15 +271,75 @@ async function assemble(temp, catalog, lock) {
         '../../npm',
       )
       for (const file of result.files) await copyFromPackage(pkg.name, pkg.version, dir, file)
-      latin = result.css
+      css = result.css
+    } else {
+      // 没有组件经 Google Fonts 引用这个字体：用组件文件里自带的 @font-face，同样的规则只留一条
+      const rules = styledTexts.flatMap(({ path, text }) =>
+        fontFaceRules(text, path, cssPath).filter((face) => sameFamily(face.family)),
+      )
+      css = [...new Set(rules.map((face) => face.rule))].join('\n')
     }
-    const descriptors = registryFaces.filter(
-      (face) => face.family.toLowerCase() === family.toLowerCase(),
-    )
-    if (descriptors.length === 0) throw new SyncError(`组件库里没有字体「${family}」的 @font-face`)
+    const descriptors = registryFaces.filter((face) => sameFamily(face.family))
+    if (descriptors.length === 0 || css === '')
+      throw new SyncError(`组件库里没有字体「${family}」的 @font-face`)
     twins[family] = twinDescriptors(descriptors)
-    await writeOut(cssPath, `${latin}\n`)
+    await writeOut(cssPath, `${css}\n`)
   }
+
+  // 组件文件里写到、却没有 @font-face 的字体名，渲染器会自己去找，内置别名表里的还会去 Google Fonts 补字重；
+  // 渲染时不连外网，组装时照它的别名表给这些名字配上本地的 Fontsource 字体，链进组件文件。
+  // 冒烟库没有组件目录（条目的 fonts），不做这一步
+  const undeclaredIn = async ({ src, fonts }) => {
+    const text = await readFile(join(temp, src), 'utf8')
+    const linked = []
+    for (const { resolved } of localReferences(text, src)) {
+      if (!resolved.endsWith('.css') || !existsSync(join(temp, resolved))) continue
+      const sheet = await readFile(join(temp, resolved), 'utf8')
+      linked.push(...fontFaceDescriptors(sheet).map((face) => face.family))
+    }
+    // 主文件只链组件目录里有的字体的样式表
+    const listed = fonts.filter((family) => Object.hasOwn(catalog.fonts, family))
+    return { text, families: undeclaredFontFamilies(text, [CJK_FONT.family, ...listed, ...linked]) }
+  }
+  const aliasSheets = new Map()
+  const aliasSheet = async (family, canonical) => {
+    const key = family.toLowerCase()
+    if (!aliasSheets.has(key)) {
+      const pkg = fontPackage(canonical)
+      const dir = await openPackage(pkg.name, pkg.version)
+      const metadata = JSON.parse(await readFile(join(dir, 'metadata.json'), 'utf8'))
+      const faces = metadata.styles.flatMap((style) =>
+        metadata.weights.map((weight) => ({ style, weight: String(weight) })),
+      )
+      const result = await fontFaces(family, faces, 'block', dir, pkg, isLatinSubset)
+      for (const file of result.files) await copyFromPackage(pkg.name, pkg.version, dir, file)
+      await copyLicense(pkg.name, pkg.version, dir)
+      // 临时文件名，整理时按内容摘要改名
+      const path = `vendor/fonts/alias-${key.replace(/[^a-z0-9]+/g, '-')}.css`
+      await writeOut(path, `${result.css}\n`)
+      aliasSheets.set(key, path)
+    }
+    return aliasSheets.get(key)
+  }
+  const unresolvedFonts = []
+  for (const item of smokeDir ? [] : catalog.items) {
+    const { text, families } = await undeclaredIn(item)
+    const hrefs = []
+    for (const family of families) {
+      const canonical = resolveAliasDisplayName(family)
+      if (canonical === undefined) unresolvedFonts.push(`${item.name} → ${family}`)
+      else hrefs.push(posix.relative(posix.dirname(item.src), await aliasSheet(family, canonical)))
+    }
+    if (hrefs.length === 0) continue
+    const linked = withStylesheetLinks(text, hrefs)
+    if (linked === undefined)
+      throw new SyncError(`${item.src} 里没有 <style> 或 <script>，链不进字体样式表`)
+    await writeFile(join(temp, item.src), linked)
+  }
+  if (unresolvedFonts.length > 0)
+    throw new SyncError(
+      `组件用到的字体没有 @font-face，渲染时会去外网取；在条目的 fonts 里写上它，或给它补上 @font-face：\n  ${unresolvedFonts.join('\n  ')}`,
+    )
 
   const thumbnailsDir = join(libraryDir, 'thumbnails')
   if (existsSync(thumbnailsDir)) {
@@ -287,6 +354,13 @@ async function assemble(temp, catalog, lock) {
   )
   await writeOut(FONT_TABLE, `${JSON.stringify({ slices: cjk.slices, twins, css })}\n`)
   await checkRelocated(temp, moved)
+  const stillUndeclared = []
+  for (const item of smokeDir ? [] : catalog.items) {
+    const { families } = await undeclaredIn(item)
+    if (families.length > 0) stillUndeclared.push(`${item.name} → ${families.join('、')}`)
+  }
+  if (stillUndeclared.length > 0)
+    throw new SyncError(`整理后仍有字体没有 @font-face：\n  ${stillUndeclared.join('\n  ')}`)
 
   const files = await listFiles(temp)
   const leftovers = []

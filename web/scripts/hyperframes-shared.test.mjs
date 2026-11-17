@@ -15,13 +15,16 @@ import {
   cjkSlices,
   componentChars,
   fontFaceDescriptors,
+  fontFaceRules,
   installVersion,
   localFontFaces,
   publishedCatalog,
   relocate,
   sha256,
   twinDescriptors,
+  undeclaredFontFamilies,
   withAnimationLibrary,
+  withStylesheetLinks,
   withoutCjkStylesheet,
 } from './hyperframes-shared.mjs'
 
@@ -179,6 +182,107 @@ describe('withAnimationLibrary', () => {
     expect(withAnimationLibrary(plain)).toBe(plain)
     const commented = '<div></div>\n<!-- gsap.to() 以前在这里 -->\n<script>void 0</script>'
     expect(withAnimationLibrary(commented)).toBe(commented)
+  })
+})
+
+describe('fontFaceRules', () => {
+  const CSS = 'vendor/fonts/families/caveat.css'
+
+  it('组件文件里的 @font-face：网页里的地址按版本目录解析，改成相对样式表的地址；空白并成一个空格', () => {
+    const html = [
+      '<style>',
+      '  @font-face {',
+      '    font-family: "Caveat";',
+      '    src: url("assets/fonts/caveat-700.woff2") format("woff2");',
+      '    font-weight: 700;',
+      '  }',
+      '  @font-face { font-family: Flex; src: url(vendor/npm/flex@1.0.0/flex.woff2) }',
+      '</style>',
+    ].join('\n')
+    expect(fontFaceRules(html, 'compositions/components/hw-boil.html', CSS)).toEqual([
+      {
+        family: 'Caveat',
+        rule: '@font-face { font-family: "Caveat"; src: url("../../../assets/fonts/caveat-700.woff2") format("woff2"); font-weight: 700; }',
+      },
+      {
+        family: 'Flex',
+        rule: '@font-face { font-family: Flex; src: url(../../npm/flex@1.0.0/flex.woff2) }',
+      },
+    ])
+  })
+
+  it('样式表里和 ../ 开头的地址按文件位置解析；带协议的和绝对地址原样', () => {
+    const rule = (text, path) => fontFaceRules(text, path, CSS).map((face) => face.rule)
+    expect(
+      rule("@font-face{font-family:'A';src:url('../fonts/a.woff2')}", 'compositions/x/x.html'),
+    ).toEqual(["@font-face{font-family:'A';src:url('../../../compositions/fonts/a.woff2')}"])
+    expect(rule("@font-face{font-family:'B';src:url(b.woff2)}", 'vendor/fonts/0123.css')).toEqual([
+      "@font-face{font-family:'B';src:url(../b.woff2)}",
+    ])
+    const fixed = "@font-face{font-family:'C';src:url(data:font/woff2;base64,AA),url(/c.woff2)}"
+    expect(rule(fixed, 'compositions/x.html')).toEqual([fixed])
+  })
+})
+
+describe('undeclaredFontFamilies', () => {
+  it('后备字体和 var() 的缺省值都算；通用字体族、文件里自带 @font-face 的、声明过的（不分大小写）不算', () => {
+    const html = `
+      <style>
+        @font-face { font-family: "Caveat"; src: url(assets/caveat.woff2) }
+        .title { font-family: "Caveat", cursive; }
+        .label { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+        .code { font-family: var(--mono, Menlo, Consolas), monospace; }
+        .brand { font-family: 'noto sans sc', sans-serif; }
+      </style>`
+    expect(undeclaredFontFamilies(html, ['Noto Sans SC', 'helvetica'])).toEqual([
+      'Helvetica Neue',
+      'Arial',
+      'Menlo',
+      'Consolas',
+    ])
+  })
+
+  it('首选是通用字体族的声明照渲染器的做法算上 Inter；<template> 里的内容照样读', () => {
+    const html =
+      '<template><div style="font-family: system-ui, sans-serif">x</div>' +
+      '<style>.a { font: 600 40px "Space Mono", monospace; }</style></template>'
+    expect(undeclaredFontFamilies(html, [])).toEqual(['Space Mono', 'Inter'])
+    expect(undeclaredFontFamilies('<style>.a { color: red }</style>', [])).toEqual([])
+  })
+})
+
+describe('withStylesheetLinks', () => {
+  const hrefs = ['../vendor/fonts/a.css', '../vendor/fonts/b.css']
+
+  it('在第一个 <style> 或 <script> 前一行一个链接，缩进跟着那一行；注释里的标签不算', () => {
+    const html = [
+      '<template>',
+      '  <!-- <style> 以前在这里 -->',
+      '  <div class="stage"></div>',
+      '  <style>',
+      '    .stage { font-family: Menlo; }',
+      '  </style>',
+      '</template>',
+    ].join('\n')
+    expect(withStylesheetLinks(html, hrefs)?.split('\n')).toEqual([
+      '<template>',
+      '  <!-- <style> 以前在这里 -->',
+      '  <div class="stage"></div>',
+      '  <link rel="stylesheet" href="../vendor/fonts/a.css" />',
+      '  <link rel="stylesheet" href="../vendor/fonts/b.css" />',
+      '  <style>',
+      '    .stage { font-family: Menlo; }',
+      '  </style>',
+      '</template>',
+    ])
+    expect(withStylesheetLinks('<div></div><script>void 0</script><style></style>', hrefs)).toBe(
+      '<div></div><link rel="stylesheet" href="../vendor/fonts/a.css" />' +
+        '<link rel="stylesheet" href="../vendor/fonts/b.css" /><script>void 0</script><style></style>',
+    )
+  })
+
+  it('没有 <style> 和 <script> 的文件：返回 undefined', () => {
+    expect(withStylesheetLinks('<div style="font-family: Menlo">x</div>', hrefs)).toBeUndefined()
   })
 })
 
