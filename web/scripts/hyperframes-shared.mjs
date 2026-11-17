@@ -5,13 +5,13 @@ import { mkdir, readFile, readdir, rename, rm, stat, symlink, writeFile } from '
 import { dirname, join, posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import * as fontEngine from '@hyperframes/core/fonts/embed'
 import {
-  GENERIC_FAMILIES,
-  collectFontFamilyCustomProperties,
-  iterateFontFamilyDeclarations,
-  normalizeSystemFontPrimaryFamilies,
-  resolveFontFamilyDeclarationFamilies,
-} from '@hyperframes/core/fonts/embed'
+  fontFaceDescriptors,
+  undeclaredFontFamilies as undeclaredWith,
+} from '../src/features/storyboard/final-cut/composition/font-families.ts'
+
+export { fontFaceDescriptors }
 
 const run = promisify(execFile)
 
@@ -28,14 +28,20 @@ export const FIXTURES_DIR = join(WEB_ROOT, 'scripts', 'hyperframes-fixtures')
 export const DEFAULT_OUT = join(WEB_ROOT, 'public', 'hyperframes')
 
 const LIBRARY_INPUTS = ['catalog.json', 'registry.lock.json', 'patches', 'thumbnails', 'fonts']
+// 组装用到的代码（相对 web/），改了就换版本
+const SCRIPT_INPUTS = [
+  'scripts/hyperframes-registry.mjs',
+  'scripts/hyperframes-shared.mjs',
+  'src/features/storyboard/final-cut/composition/font-families.ts',
+]
 
 export async function libraryVersion(library) {
   const hash = createHash('sha256')
   const add = (data) => hash.update(data).update('\0')
   add(HF_VERSION)
-  for (const script of ['hyperframes-registry.mjs', 'hyperframes-shared.mjs']) {
+  for (const script of SCRIPT_INPUTS) {
     add(script)
-    add(await readFile(join(WEB_ROOT, 'scripts', script)))
+    add(await readFile(join(WEB_ROOT, script)))
   }
   for (const entry of LIBRARY_INPUTS) {
     const path = join(library, entry)
@@ -454,29 +460,6 @@ export async function cjkSlices(packageDir, pkg) {
   return { slices, files }
 }
 
-const KEYWORD_WEIGHTS = { normal: '400', bold: '700' }
-const cssValue = (block, property) =>
-  new RegExp(`${property}\\s*:\\s*([^;}]+)`)
-    .exec(block)?.[1]
-    ?.trim()
-    .replace(/^['"]|['"]$/g, '')
-    .trim()
-
-export function fontFaceDescriptors(text) {
-  const result = []
-  for (const [, block] of text.matchAll(/@font-face\s*\{([^}]*)\}/g)) {
-    const family = cssValue(block, 'font-family')
-    if (!family) continue
-    const weight = cssValue(block, 'font-weight') ?? '400'
-    result.push({
-      family,
-      weight: KEYWORD_WEIGHTS[weight] ?? weight,
-      style: cssValue(block, 'font-style') ?? 'normal',
-    })
-  }
-  return result
-}
-
 const FONT_FACE_RULE = /@font-face\s*\{[^}]*\}/g
 const CSS_URL = /url\(\s*(['"]?)([^'")]+)\1\s*\)/g
 
@@ -492,7 +475,7 @@ const CSS_URL = /url\(\s*(['"]?)([^'")]+)\1\s*\)/g
 export function fontFaceRules(text, path, cssPath) {
   const result = []
   for (const [rule] of text.matchAll(FONT_FACE_RULE)) {
-    const family = cssValue(rule, 'font-family')
+    const family = fontFaceDescriptors(rule)[0]?.family
     if (!family) continue
     const rebased = rule.replace(/\s+/g, ' ').replace(CSS_URL, (whole, quote, reference) => {
       if (/^(?:[a-z][a-z0-9+.-]*:|\/)/i.test(reference)) return whole
@@ -507,39 +490,14 @@ export function fontFaceRules(text, path, cssPath) {
   return result
 }
 
-const CSS_WIDE_KEYWORDS = new Set(['inherit', 'initial', 'unset', 'revert', 'revert-layer'])
-const TEMPLATE_TAG = /<\/?template\b[^>]*>/gi
-
 /**
- * 渲染器编译工程时要自己去找的字体名：组件文件里 font-family 写到的每个名字（含后备字体、var() 的缺省值，
- * 以及渲染器给首选是通用字体族的声明补上的 Inter），除去通用字体族、文件里自带 @font-face 的和 `declared`。
- * 渲染器对这些名字按内置别名表取内置字形，再去 Google Fonts 补字重；不在别名表里的直接去 Google Fonts 取。
- * 名字照文件里的写法，不分大小写去重。
+ * 组件文件里渲染器要自己去找的字体名，判断方式见 composition/font-families.ts 的同名函数。
  *
  * @param {string} html 组件文件
  * @param {Iterable<string>} declared 文件外已经有 @font-face 的字体名
  * @returns {string[]}
  */
-export function undeclaredFontFamilies(html, declared) {
-  // 渲染时 <template> 里的内容并进主文件，按普通内容读
-  const page = normalizeSystemFontPrimaryFamilies(html.replace(TEMPLATE_TAG, ''))
-  const known = new Set(
-    [...declared, ...fontFaceDescriptors(page).map((face) => face.family)].map((family) =>
-      family.toLowerCase(),
-    ),
-  )
-  const properties = collectFontFamilyCustomProperties(page)
-  const result = new Map()
-  for (const { declaration } of iterateFontFamilyDeclarations(page)) {
-    for (const family of resolveFontFamilyDeclarationFamilies(declaration, properties)) {
-      const key = family.toLowerCase()
-      if (known.has(key) || GENERIC_FAMILIES.has(key) || CSS_WIDE_KEYWORDS.has(key)) continue
-      if (key.startsWith('var(') || result.has(key)) continue
-      result.set(key, family)
-    }
-  }
-  return [...result.values()]
-}
+export const undeclaredFontFamilies = (html, declared) => undeclaredWith(html, declared, fontEngine)
 
 /**
  * 在组件文件里第一个 <style> 或 <script> 前插入样式表链接，每个一行，缩进跟着那一行；渲染时组件里的链接会提到主文件里。

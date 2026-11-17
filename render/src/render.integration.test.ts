@@ -1198,6 +1198,37 @@ peer.createOffer().then((offer) => peer.setLocalDescription(offer)).catch(() => 
     expect(await readdir(workDir)).toEqual([])
   }, 60_000)
 
+  it('工程里用了没有声明的字体：以 font-missing 失败，带上字体名，不下载任何素材', async () => {
+    const workDir = join(dir, 'work-font')
+    const clip = `${origin}/clip.mp4`
+    const files = project([video({ src: clip, duration: 1000 })]).map((file) =>
+      file.path === 'index.html'
+        ? {
+            ...file,
+            content: file.content.replace(
+              '</head>',
+              '<style>.note { font-family: "Comic Sans MS", Papyrus, sans-serif; }</style></head>',
+            ),
+          }
+        : file,
+    )
+    const before = requests.length
+    await expect(
+      workerIn(workDir).render(
+        {
+          id: 'font-missing',
+          files,
+          media: new Map([[clip, clip]]),
+          variables: null,
+          vendorDir: VENDOR_DIR,
+        },
+        { signal: new AbortController().signal, onProgress: () => {} },
+      ),
+    ).rejects.toMatchObject({ code: 'font-missing', message: 'Comic Sans MS、Papyrus' })
+    expect(requests.slice(before)).toEqual([])
+    expect(await readdir(workDir)).toEqual([])
+  }, 60_000)
+
   it('工程检查只有警告时照常导出，警告记进日志；没有警告的工程不记', async () => {
     const [clip, tone] = [`${origin}/clip.mp4`, `${origin}/tone.m4a`]
     const render = async (id: string, files: ProjectFile[], media: string[]) => {

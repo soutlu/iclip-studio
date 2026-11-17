@@ -11,7 +11,7 @@ import {
   executeRenderJob,
   extractSafeRenderErrorCode,
 } from '@hyperframes/producer'
-import { declareLinkedFonts } from './fonts'
+import { declareLinkedFonts, undeclaredProjectFonts } from './fonts'
 import { ExportFailure, type ExportWorker, type RenderedFile } from './jobs'
 import { producerLogger, type Logger } from './log'
 import { MAIN_FILE, VENDOR_DIR, withLocalMedia, type ProjectFile } from './project'
@@ -133,6 +133,15 @@ async function checkProject(project: string, log: Logger): Promise<void> {
   }
 }
 
+/**
+ * 工程里用到、却没有 @font-face 声明的字体：渲染器会去外网取，渲染服务不让连外网，取不到就悄悄换成别的字体。
+ * 有这样的字体时以 `font-missing` 失败，message 是这些字体名，用「、」连接。
+ */
+async function checkFonts(project: string, files: readonly ProjectFile[]): Promise<void> {
+  const missing = await undeclaredProjectFonts(project, files)
+  if (missing.length > 0) throw new ExportFailure('font-missing', missing.join('、'))
+}
+
 export function createProducerWorker(options: RendererOptions): ExportWorker {
   const producerConfig = resolveConfig({ browserGpuMode: 'auto', chromePath: options.chromePath })
   return {
@@ -145,6 +154,8 @@ export function createProducerWorker(options: RendererOptions): ExportWorker {
       try {
         const project = join(dir, 'project')
         await writeProject(project, job.files, job.vendorDir)
+        // 先查字体：工程检查对一部分缺字体的情况也报错，但只给出规则名，这里能说出是哪些字体
+        await checkFonts(project, job.files)
         await checkProject(project, log)
         // 素材放进工程里新建的目录：目录名由 mkdtemp 取，不会和工程文件重名
         const mediaDir = await mkdtemp(join(project, 'media-'))

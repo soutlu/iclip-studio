@@ -1985,6 +1985,21 @@ describe('final-cut 编辑器 · 导出', () => {
     expect(screen.getByRole('button', { name: '导出' })).not.toHaveAttribute('aria-disabled')
   })
 
+  it('用到的字体不在组件库里：说出是哪些字体，可以重新导出', async () => {
+    serveLatest({
+      status: 'failed',
+      error: { code: 'font-missing', message: 'Comic Sans MS、Papyrus' },
+    })
+    putMockProjectMain(CONVERSATION, twoVideos())
+    await openEditor()
+    expect(
+      await screen.findByText(
+        '用到的字体 Comic Sans MS、Papyrus 不在可选字体里，无法导出；请换成可选字体后重新导出',
+      ),
+    ).toHaveAttribute('role', 'status')
+    expect(screen.getByRole('button', { name: '导出' })).not.toHaveAttribute('aria-disabled')
+  })
+
   it('渲染服务不收这份 final-cut：显示它给的原因', async () => {
     serveLatest({
       status: 'failed',
