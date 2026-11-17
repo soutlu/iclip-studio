@@ -23,7 +23,7 @@ class ModelGroup:
     video_models: Mapping[str, str]
     subtitle_api_key: str | None = None
     music_api_key: str | None = None
-    dubbing_api_key: str | None = None
+    speech_api_key: str | None = None
 
 
 class ModelGroups:

@@ -33,11 +33,11 @@ MANIFEST = (
     "PRODUCT_CATALOG_DATABASE_URL",
     "QWEN_SUBTITLE_API_KEY",
     "QWEN_MUSIC_API_KEY",
-    "QWEN_DUBBING_API_KEY",
+    "QWEN_SPEECH_API_KEY",
     "VIDEO_API_KEY_MKT",
     "QWEN_SUBTITLE_API_KEY_MKT",
     "QWEN_MUSIC_API_KEY_MKT",
-    "QWEN_DUBBING_API_KEY_MKT",
+    "QWEN_SPEECH_API_KEY_MKT",
     "VIDEO_API_KEY_ECOM",
     "FINAL_CUT_RENDER_URL",
     "FINAL_CUT_PREVIEW_ORIGIN",
@@ -361,7 +361,7 @@ SUBTITLE = """  subtitle:
 MUSIC = """  music:
     url: https://music.test/api/v1/services/audio/tts/SpeechSynthesizer
 """
-DUBBING = """  dubbing:
+SPEECH = """  speech:
     url: https://tts.test/api/v1/services/audio/tts/SpeechSynthesizer
 """
 
@@ -374,31 +374,31 @@ DUBBING = """  dubbing:
             {
                 "QWEN_SUBTITLE_API_KEY": "",
                 "QWEN_MUSIC_API_KEY": "   ",
-                "QWEN_DUBBING_API_KEY": " ",
+                "QWEN_SPEECH_API_KEY": " ",
             },
             (None, None, None),
         ),
         ({"QWEN_SUBTITLE_API_KEY": "sk-asr"}, ("sk-asr", None, None)),
         ({"QWEN_MUSIC_API_KEY": " sk-music "}, (None, "sk-music", None)),
-        ({"QWEN_DUBBING_API_KEY": "sk-dub"}, (None, None, "sk-dub")),
+        ({"QWEN_SPEECH_API_KEY": "sk-dub"}, (None, None, "sk-dub")),
         (
             {
                 "QWEN_SUBTITLE_API_KEY": "sk-asr",
                 "QWEN_MUSIC_API_KEY": "sk-music",
-                "QWEN_DUBBING_API_KEY": "sk-dub",
+                "QWEN_SPEECH_API_KEY": "sk-dub",
             },
             ("sk-asr", "sk-music", "sk-dub"),
         ),
     ],
-    ids=["unset", "blank", "subtitles-only", "music-only", "dubbing-only", "all"],
+    ids=["unset", "blank", "subtitles-only", "music-only", "speech-only", "all"],
 )
-def test_subtitles_music_and_dubbing_each_turn_on_with_their_own_key(
+def test_subtitles_music_and_speech_each_turn_on_with_their_own_key(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     keys: dict[str, str],
     expected: tuple[str | None, str | None, str | None],
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SUBTITLE + MUSIC + DUBBING))
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SUBTITLE + MUSIC + SPEECH))
     _media_env(monkeypatch)
     for name, value in keys.items():
         monkeypatch.setenv(name, value)
@@ -407,7 +407,7 @@ def test_subtitles_music_and_dubbing_each_turn_on_with_their_own_key(
     assert media is not None
     resolved = tuple(
         None if service is None else service.api_key
-        for service in (media.subtitle, media.music, media.dubbing)
+        for service in (media.subtitle, media.music, media.speech)
     )
     assert resolved == expected
 
@@ -418,9 +418,9 @@ def test_subtitles_music_and_dubbing_each_turn_on_with_their_own_key(
         ("", (False, False, False)),
         (SUBTITLE, (True, False, False)),
         (MUSIC, (False, True, False)),
-        (DUBBING, (False, False, True)),
+        (SPEECH, (False, False, True)),
     ],
-    ids=["none-configured", "subtitles-only", "music-only", "dubbing-only"],
+    ids=["none-configured", "subtitles-only", "music-only", "speech-only"],
 )
 def test_a_key_enables_only_a_configured_service(
     tmp_path: Path,
@@ -432,45 +432,45 @@ def test_a_key_enables_only_a_configured_service(
     _media_env(monkeypatch)
     monkeypatch.setenv("QWEN_SUBTITLE_API_KEY", "sk-asr")
     monkeypatch.setenv("QWEN_MUSIC_API_KEY", "sk-music")
-    monkeypatch.setenv("QWEN_DUBBING_API_KEY", "sk-dub")
+    monkeypatch.setenv("QWEN_SPEECH_API_KEY", "sk-dub")
     media = resolve_settings(config).media_generation
 
     assert media is not None
     assert (
         media.subtitle is not None,
         media.music is not None,
-        media.dubbing is not None,
+        media.speech is not None,
     ) == enabled
 
 
-def test_the_dubbing_section_needs_only_its_address(
+def test_the_speech_section_needs_only_its_address(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + DUBBING))
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SPEECH))
     _media_env(monkeypatch)
-    monkeypatch.setenv("QWEN_DUBBING_API_KEY", "sk-dub")
+    monkeypatch.setenv("QWEN_SPEECH_API_KEY", "sk-dub")
     media = resolve_settings(config).media_generation
 
-    assert media is not None and media.dubbing is not None
+    assert media is not None and media.speech is not None
     assert (
-        media.dubbing.url,
-        media.dubbing.api_key,
-        media.dubbing.concurrency,
-        media.dubbing.timeout_seconds,
+        media.speech.url,
+        media.speech.api_key,
+        media.speech.concurrency,
+        media.speech.timeout_seconds,
     ) == ("https://tts.test/api/v1/services/audio/tts/SpeechSynthesizer", "sk-dub", 2, 120.0)
 
 
 @pytest.mark.parametrize(
     "section",
     [
-        "  dubbing: {url: ''}\n",
-        "  dubbing: {}\n",
-        DUBBING + "    concurrency: 0\n",
-        DUBBING + "    timeout_seconds: 0\n",
+        "  speech: {url: ''}\n",
+        "  speech: {}\n",
+        SPEECH + "    concurrency: 0\n",
+        SPEECH + "    timeout_seconds: 0\n",
     ],
     ids=["empty-url", "no-url", "no-concurrency", "no-timeout"],
 )
-def test_the_dubbing_section_rejects_unusable_values(tmp_path: Path, section: str) -> None:
+def test_the_speech_section_rejects_unusable_values(tmp_path: Path, section: str) -> None:
     with pytest.raises(ValidationError):
         load_runtime_config(write(tmp_path, VALID + MEDIA + section))
 
@@ -651,7 +651,7 @@ model_groups:
     video_api_key_env: VIDEO_API_KEY_MKT
     subtitle_api_key_env: QWEN_SUBTITLE_API_KEY_MKT
     music_api_key_env: QWEN_MUSIC_API_KEY_MKT
-    dubbing_api_key_env: QWEN_DUBBING_API_KEY_MKT
+    speech_api_key_env: QWEN_SPEECH_API_KEY_MKT
     video_models:
       seedance: mkt-seedance
       seedance-other: mkt-seedance-other
@@ -667,7 +667,7 @@ GROUP_KEYS = {
     "VIDEO_API_KEY_MKT": "vk-mkt",
     "QWEN_SUBTITLE_API_KEY_MKT": "asr-mkt",
     "QWEN_MUSIC_API_KEY_MKT": "music-mkt",
-    "QWEN_DUBBING_API_KEY_MKT": "dub-mkt",
+    "QWEN_SPEECH_API_KEY_MKT": "dub-mkt",
     "VIDEO_API_KEY_ECOM": "vk-ecom",
 }
 
@@ -697,7 +697,7 @@ def test_model_groups_resolve_in_config_order_with_their_keys(
         "vk-mkt",
         {"seedance": "mkt-seedance", "seedance-other": "mkt-seedance-other"},
     )
-    assert (mkt.subtitle_api_key, mkt.music_api_key, mkt.dubbing_api_key) == (None, None, None), (
+    assert (mkt.subtitle_api_key, mkt.music_api_key, mkt.speech_api_key) == (None, None, None), (
         "字幕、配乐、配音没开通"
     )
     assert (ecom.name, ecom.video_api_key) == ("ecom", "vk-ecom")
@@ -819,9 +819,9 @@ def test_a_group_video_key_must_have_a_value(
     [
         (SUBTITLE, "QWEN_SUBTITLE_API_KEY", "subtitle_api_key_env", "QWEN_SUBTITLE_API_KEY_MKT"),
         (MUSIC, "QWEN_MUSIC_API_KEY", "music_api_key_env", "QWEN_MUSIC_API_KEY_MKT"),
-        (DUBBING, "QWEN_DUBBING_API_KEY", "dubbing_api_key_env", "QWEN_DUBBING_API_KEY_MKT"),
+        (SPEECH, "QWEN_SPEECH_API_KEY", "speech_api_key_env", "QWEN_SPEECH_API_KEY_MKT"),
     ],
-    ids=["subtitle", "music", "dubbing"],
+    ids=["subtitle", "music", "speech"],
 )
 def test_once_a_qwen_service_is_on_every_group_needs_its_key(
     tmp_path: Path,
@@ -851,6 +851,6 @@ def test_once_a_qwen_service_is_on_every_group_needs_its_key(
     keys = {
         "subtitle_api_key_env": mkt.subtitle_api_key,
         "music_api_key_env": mkt.music_api_key,
-        "dubbing_api_key_env": mkt.dubbing_api_key,
+        "speech_api_key_env": mkt.speech_api_key,
     }
     assert keys == {name: "sk-mkt" if name == field else None for name in keys}

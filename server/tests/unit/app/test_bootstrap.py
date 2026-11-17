@@ -13,7 +13,6 @@ from iclip.common.errors import ValidationFailed
 from iclip.config import (
     AppSection,
     DbSection,
-    DubbingSection,
     ImageGenerationSection,
     ImageModelSection,
     MediaGenerationSection,
@@ -21,6 +20,7 @@ from iclip.config import (
     OpsSection,
     RuntimeConfig,
     SecuritySection,
+    SpeechSection,
     SsoSection,
     SubtitleSection,
     VideoGenerationSection,
@@ -56,7 +56,7 @@ def base_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OSS_ACCESS_KEY_ID", "ak")
     monkeypatch.setenv("OSS_ACCESS_KEY_SECRET", "sk")
     monkeypatch.setenv("OSS_PUBLIC_URL_BASE", "https://cdn.test")
-    for name in (*MEDIA_ENVS, "QWEN_SUBTITLE_API_KEY", "QWEN_MUSIC_API_KEY"):
+    for name in (*MEDIA_ENVS, "QWEN_SUBTITLE_API_KEY", "QWEN_MUSIC_API_KEY", "QWEN_SPEECH_API_KEY"):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -271,11 +271,11 @@ async def test_startup_says_when_dubbing_is_off_and_the_section_switches_it_on(
     config = config_with_media()
     assert config.media_generation is not None
     if configured:
-        monkeypatch.setenv("QWEN_DUBBING_API_KEY", "sk-dub")
+        monkeypatch.setenv("QWEN_SPEECH_API_KEY", "sk-dub")
         config = config.model_copy(
             update={
                 "media_generation": config.media_generation.model_copy(
-                    update={"dubbing": DubbingSection(url="https://tts.test/SpeechSynthesizer")}
+                    update={"speech": SpeechSection(url="https://tts.test/SpeechSynthesizer")}
                 )
             }
         )
