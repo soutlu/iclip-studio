@@ -6,6 +6,10 @@ const CONVERSATION = '无图分镜草稿'
 // 这个文件里的用例各走一整段编辑流程，每次保存都要等一轮防抖；CI 上最长的几条会超过默认的 30 秒
 test.describe.configure({ timeout: 60_000 })
 
+// 有隐藏的片段时预览换成新文件的时限：隐藏的片段若还留在预览里，播放器要等它们加载、满 8 秒才换上来；
+// CI 的默认断言超时是 10 秒，拦不住这种回退，所以单写一个比 8 秒短的
+const PREVIEW_SWAP_MS = 6_000
+
 const conversationIdOf = (page: Page) => new URL(page.url()).pathname.split('/').at(-1) ?? ''
 
 /** 给这几组各出一条片；`sound` 为 false 时出的片没有音轨，`seconds` 是要的片长（不给按默认）。 */
@@ -956,8 +960,8 @@ test('行头的眼睛：隐藏这一行以后预览里不出画面，存下来�
 
   await editor.getByRole('button', { name: '隐藏画面 1', exact: true }).click()
   await expect.poll(savedHidden).toBe(1)
-  // 隐藏的视频不加载，新播放器要等它的「素材加载完」超时（8 秒）才换上来
-  await expect(picture).toHaveCSS('display', 'none', { timeout: 15_000 })
+  // 隐藏的片段不进预览
+  await expect(picture).toHaveCount(0, { timeout: PREVIEW_SWAP_MS })
   await expect(editor.getByRole('group', { name: /，已隐藏$/ })).toHaveCount(1)
 
   const eye = editor.getByRole('button', { name: '显示画面 1', exact: true })
@@ -1868,6 +1872,26 @@ test('声音行的喇叭：静音以后存下来的主文件里这一行的音�
   await expect
     .poll(() => savedKinds(page))
     .toEqual(['A · 镜头 1@画面1 0', '标题@画面0 0', '配乐 1@声音0 0', '配乐 2@声音0 5'])
+})
+
+test('配乐静音、画面行隐藏以后再改别的，预览照常换成改过的 final-cut，不用等隐藏的媒体加载', async ({
+  page,
+}) => {
+  const { editor } = await openWithKinds(page)
+  // 改动 final-cut 后预览会换一个播放器：看正在显示的那个
+  const preview = () => finalCutPreviewPlayer(editor).frameLocator('iframe')
+  await expect(preview().locator('#title-1')).toHaveCount(1)
+
+  // 配乐 1 和镜头 1 都盖着第 0 秒，静音、隐藏以后预览里没有它们
+  await editor.getByRole('button', { name: '静音配乐', exact: true }).click()
+  await expect(preview().locator('audio')).toHaveCount(0, { timeout: PREVIEW_SWAP_MS })
+  await editor.getByRole('button', { name: '隐藏画面 2', exact: true }).click()
+  await expect(preview().locator('video')).toHaveCount(0, { timeout: PREVIEW_SWAP_MS })
+
+  // 之后每次改动，预览都不用等它们
+  await editor.getByRole('button', { name: /^选中：标题，/ }).click()
+  await page.keyboard.press('Delete')
+  await expect(preview().locator('#title-1')).toHaveCount(0, { timeout: PREVIEW_SWAP_MS })
 })
 
 test('组件那一行在画面行上面：Enter 接的镜头落在画面区第一行，波纹删除补位的也是它；预览里的音频读得出来', async ({

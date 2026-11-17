@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { previewDocument, withLocalizedHosts, withPreviewVariables } from './preview-document'
+import {
+  previewDocument,
+  withLocalizedHosts,
+  withoutHiddenClips,
+  withPreviewVariables,
+} from './preview-document'
 
 const declarations = (ids: string[]) =>
   JSON.stringify(ids.map((id) => ({ id, type: 'string', label: '字幕', default: `${id} 原文` })))
@@ -101,5 +106,54 @@ describe('预览套上一种语言的值', () => {
     expect(previewDocument(film(['cap_a1']), 'https://preview.test/files/')).not.toContain(
       'data-hf-preview-variables',
     )
+  })
+})
+
+describe('隐藏的片段不进预览', () => {
+  const head =
+    `<!doctype html>\n<html data-composition-variables='[]'>\n<head>\n<meta charset="utf-8">\n` +
+    `<style>#film .picture{inset:0}</style>\n</head>\n<body>\n`
+  const open = `<div id="film" data-composition-id="film" data-no-timeline data-start="0" data-duration="8">\n`
+  const close = `</div>\n</body>\n</html>\n`
+  // 没隐藏的片段；宿主里面一层的元素带着隐藏标记，不在根下这一层
+  const shown =
+    `<video id="v1" class="clip picture" data-start="0" data-duration="4" src="a.mp4" preload="auto"></video>\n` +
+    `<div id="t1" class="clip component" data-composition-id="fixture-fields" data-composition-src="t.html">` +
+    `<span id="inner" data-hidden>里面的不动</span></div>\n`
+  const hidden =
+    `<video data-hidden="" id="v2" class="clip picture" data-start="0" data-duration="4" src="b.mp4" preload="auto"></video>\n` +
+    `<audio data-hidden="" id="music-1" class="clip audio" data-start="0" data-duration="8" src="m.mp3"></audio>\n` +
+    `<div data-hidden="" id="t2" class="clip component" data-composition-id="fixture-fields" data-composition-src="t.html"></div>\n` +
+    `<div id="captions" class="clip" data-track-kind="captions" data-composition-id="captions" data-composition-src="compositions/captions.html" data-hidden></div>\n`
+  const parsed = (html: string) => new DOMParser().parseFromString(html, 'text/html')
+  const rootChildren = (html: string) =>
+    [...(parsed(html).getElementById('film')?.children ?? [])].map((child) => child.id)
+
+  it('去掉根下这一层隐藏的视频、音频、贴片宿主和字幕宿主；没隐藏的、不在这一层的、文档类型和 <head> 都在', () => {
+    const html = withoutHiddenClips(`${head}${open}${hidden}${shown}${close}`)
+    expect(rootChildren(html)).toEqual(['v1', 't1'])
+    expect(html).toMatch(/^<!doctype html>\n<html/)
+    const film = parsed(html)
+    expect(film.getElementById('inner')).not.toBeNull()
+    expect(film.querySelector('head style')?.textContent).toBe('#film .picture{inset:0}')
+    expect(film.documentElement.getAttribute('data-composition-variables')).toBe('[]')
+  })
+
+  it('根外面带隐藏标记的元素不动', () => {
+    const html = withoutHiddenClips(
+      `${head}<div id="outside" data-hidden="">根外面</div>\n${open}${hidden}${shown}${close}`,
+    )
+    expect(parsed(html).getElementById('outside')).not.toBeNull()
+    expect(rootChildren(html)).toEqual(['v1', 't1'])
+  })
+
+  it('没有隐藏的片段时原样返回', () => {
+    const html = `${head}${open}${shown}${close}`
+    expect(withoutHiddenClips(html)).toBe(html)
+  })
+
+  it('预览文档的根下只剩没隐藏的片段', () => {
+    const html = previewDocument(`${head}${open}${hidden}${shown}${close}`, 'https://preview.test/')
+    expect(rootChildren(html)).toEqual(['v1', 't1'])
   })
 })

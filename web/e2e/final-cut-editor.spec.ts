@@ -1679,7 +1679,8 @@ test('字幕行：拖一句挪位置、拖结尾裁短，存下来的字幕场�
       if (elements.length !== 1) return null
       const [element] = elements as (HTMLElement & { iframeElement: HTMLIFrameElement })[]
       const caption = element?.iframeElement.contentDocument?.querySelector('.caption')
-      if (caption === null || caption === undefined) return null
+      // 隐藏的字幕宿主不进预览
+      if (caption === null || caption === undefined) return false
       const style = caption.ownerDocument.defaultView?.getComputedStyle(caption)
       const box = caption.getBoundingClientRect()
       return style?.visibility !== 'hidden' && style?.display !== 'none' && box.height > 0
