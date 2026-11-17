@@ -317,6 +317,44 @@ describe('配音片段跟着它配的那句字幕走', () => {
     ).toEqual(new Map([['de-a1', 1_500]]))
   })
 
+  it('挪了一个配音片段：它配的那句字幕挪同样的时间差，这句其它语言的配音再跟着字幕挪', () => {
+    const moved = after({ 'en-a1': { start: 800 } })
+    const plan = captionsFollowing(before, moved)
+    expect(plan).toEqual({ starts: new Map([['a1', 800]]), removed: [] })
+    if ('refusal' in plan) throw new Error('应该能挪')
+    const captioned = moved.map((clip) => ({
+      ...clip,
+      start: plan.starts.get(clip.id) ?? clip.start,
+    }))
+    expect(dubsFollowing(before, captioned)).toEqual({
+      starts: new Map([['de-a1', 800]]),
+      removed: [],
+    })
+  })
+
+  it('裁配音片段的开头（入点跟着变）、裁结尾：字幕不动', () => {
+    expect(
+      captionsFollowing(before, after({ 'en-a1': { start: 800, mediaStart: 300, duration: 700 } })),
+    ).toEqual({ starts: new Map(), removed: [] })
+    expect(captionsFollowing(before, after({ 'en-a1': { duration: 400 } }))).toEqual({
+      starts: new Map(),
+      removed: [],
+    })
+  })
+
+  it('配音片段挪过去，它的字幕会和别的字幕重叠：整步不做', () => {
+    expect(captionsFollowing(before, after({ 'en-a1': { start: 1_800 } }))).toEqual({
+      refusal: 'overlap',
+    })
+  })
+
+  it('配音片段挪过去，它的字幕会到 0 秒以前：整步不做', () => {
+    // 配音片段裁过开头，比字幕晚 0.3 秒开始：挪到 0.2 秒时字幕要到 -0.1 秒
+    const late = before.map((clip) => (clip.id === 'en-a1' ? { ...clip, start: 800 } : clip))
+    const moved = late.map((clip) => (clip.id === 'en-a1' ? { ...clip, start: 200 } : clip))
+    expect(captionsFollowing(late, moved)).toEqual({ refusal: 'early' })
+  })
+
   it('字幕删了：它的各语言配音一起删；裁剪字幕（开始不变）配音不动', () => {
     expect(dubsFollowing(before, after({ b2: { duration: 300 } }, ['a1']))).toEqual({
       starts: new Map(),

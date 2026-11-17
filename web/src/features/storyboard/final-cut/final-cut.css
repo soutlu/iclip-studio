@@ -762,6 +762,35 @@
   top: 10px;
 }
 
+/* 描述框下面、生成键左边的快捷描述，放不下时横向滚动 */
+.wf-generate-presets {
+  display: flex;
+  min-width: 0;
+  gap: 4px;
+  overflow-x: auto;
+  padding-left: 6px;
+  scrollbar-width: none;
+}
+
+.wf-generate-preset {
+  display: inline-flex;
+  height: 24px;
+  flex: none;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-variant);
+  cursor: pointer;
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  white-space: nowrap;
+}
+
+.wf-generate-preset:hover {
+  color: var(--color-on-surface);
+}
+
 /* ---- 属性：选中的片段的名字、种类、时长；下面平铺几段，段间一条细线，头部不动，几段在自己的滚动区里滚 ---- */
 
 .wf-side-body.is-props {

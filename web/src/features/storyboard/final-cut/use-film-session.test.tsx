@@ -2411,7 +2411,7 @@ describe('useFilmSession · 字幕', () => {
         new Map([['clip-1', { start: 3_000, duration: 2_000, mediaStart: 0 }]]),
       ),
     )
-    expect(onNotice).toHaveBeenCalledWith(CAPTION_FOLLOW_REFUSAL_TEXT)
+    expect(onNotice).toHaveBeenCalledWith(CAPTION_FOLLOW_REFUSAL_TEXT.overlap)
     expect(videosOf(result)[0]?.start).toBe(0)
     expect(captionsOf(result).map((caption) => caption.start)).toEqual([500, 3_500])
     expect(result.current.film?.html).toBe(before)
@@ -2443,7 +2443,7 @@ describe('useFilmSession · 字幕', () => {
     act(() => {
       result.current.removeClips(['cap-c3', 'clip-1'], true)
     })
-    expect(onNotice).toHaveBeenCalledWith(CAPTION_FOLLOW_REFUSAL_TEXT)
+    expect(onNotice).toHaveBeenCalledWith(CAPTION_FOLLOW_REFUSAL_TEXT.overlap)
     expect(captionsOf(result).map((caption) => caption.id)).toEqual(['cap-m1', 'cap-c3', 'cap-b2'])
     await act(() => new Promise((resolve) => setTimeout(resolve, 100)))
     // 再把会话认为没存的都存掉：被拒的编辑不算没存
