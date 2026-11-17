@@ -42,14 +42,14 @@ importers:
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@hyperframes/core':
-        specifier: 0.9.31
-        version: 0.9.31(@types/node@22.20.1)
+        specifier: 0.9.59
+        version: 0.9.59(@types/node@22.20.1)
       '@hyperframes/player':
-        specifier: 0.9.31
-        version: 0.9.31(@types/node@22.20.1)
+        specifier: 0.9.59
+        version: 0.9.59(@types/node@22.20.1)
       '@hyperframes/sdk':
-        specifier: 0.9.31
-        version: 0.9.31(@types/node@22.20.1)
+        specifier: 0.9.59
+        version: 0.9.59(@types/node@22.20.1)
       '@lezer/highlight':
         specifier: ^1.2.5
         version: 1.2.5
@@ -833,23 +833,23 @@ packages:
     resolution: {integrity: sha512-bV0Tgo9K4hfPCek+aMAn81RppFKv2ySDQeMoSZuvTASywNTnVJCArCZE2FWqpvIatKu7VMRLWlR1EazvVhDyhQ==}
     engines: {node: '>=18.18'}
 
-  '@hyperframes/core@0.9.31':
-    resolution: {integrity: sha512-N9hDXlGpL7felvO7WKIOnGK03ANrfh+o9UxQHj/7IaewOX3gBJaXgzTnwBAnAc0I2xh804SoL/h22liXbnW/zw==}
+  '@hyperframes/core@0.9.59':
+    resolution: {integrity: sha512-F8A1CzEN8jKZ9PHBPGM4iMBqnywkGkEXkYLlftLWATNBXVSW68hLfxWrFikV3HFKIKJBtNlj8TaDLtDkCKs3HA==}
 
-  '@hyperframes/lint@0.9.31':
-    resolution: {integrity: sha512-6LjJ/WhZhYru2LfwCWGrsjl2761XoFrfm8YzsFi8Q8SleT9OaChwJJEn+wdE20+OU1rrDlehq9uYCyQxGcZ9wQ==}
+  '@hyperframes/lint@0.9.59':
+    resolution: {integrity: sha512-F/rGAnhwAJkOvwf1XahoFR9RIbg9stvPuR3LWLia4Tmd+yjkGzuX/QS1sZLkNtdLjo2y125bqW1yp7zcqaF6tA==}
 
-  '@hyperframes/parsers@0.9.31':
-    resolution: {integrity: sha512-zbLD/LDaefevuLQH5viOrnzuYvTo5JruRAblXqb7lyBreRYszlg31tSTRzOlothMKNQXN6MQR6lVve4JOvTkKQ==}
+  '@hyperframes/parsers@0.9.59':
+    resolution: {integrity: sha512-tpCzlXbE+4zjzQiTeTCSYqTQcFbQMpMbkxbGiafV10dOnt93UOAszXiANwtsH21USuv7ecE3mDeEw8xR0Hffvw==}
 
-  '@hyperframes/player@0.9.31':
-    resolution: {integrity: sha512-hm6CJVp1dJuPKUhgxiUzRE8Jbyjrse/wavDPajqhYNrcQtvgc3BRNkDggE7rCBCF56fpT/br+YOfr6RkAO0u7Q==}
+  '@hyperframes/player@0.9.59':
+    resolution: {integrity: sha512-8kw2bvHGKw/bMzwbIkOvzaaLiU+S8hMwO6rKdkoelSebcV5TlyVzWxMKBN1CsJcxWq08HJI2EMfXY/ZCvILulw==}
 
-  '@hyperframes/sdk@0.9.31':
-    resolution: {integrity: sha512-GfZQ7xoN2lb8Mf9IgGUQ2UCVyxQTW1NihCyq+eVXm7jWGHSDDUz4qCltT6l1CiYlPtBm2d6/jSXfLuKusyxu/g==}
+  '@hyperframes/sdk@0.9.59':
+    resolution: {integrity: sha512-YrEOT4i408+TBjjQiBHfg4iHsEaH22hkcCsFH7L5+RAU6Urs98TVF7LA5B1tv7wZlzQRMPLx326jT7JljJzA0Q==}
 
-  '@hyperframes/studio-server@0.9.31':
-    resolution: {integrity: sha512-Zre6C97obv5DkIHT8lyb7xd8XurM4RTWc0Zhp0w7Pu1aSuA7MrNF9fE0mgueOEkkBO5Nt907WD61KpgSIFSirA==}
+  '@hyperframes/studio-server@0.9.59':
+    resolution: {integrity: sha512-Q/BkPlaoYedscrYZbnaQfKL/R5deNjv8A5WJAp6e1JIKpFruNIosfZqWrC/I177jub9G3sYbKqO+h1w+8QA0uQ==}
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -2941,11 +2941,6 @@ packages:
   css.escape@1.5.1:
     resolution: {integrity: sha512-YUifsXXuknHlUsmlgyY0PKzgPOr7/FjCePfHNt0jxm83wHZi44VDMQ7/fGNkjY3/jV1MC+1CmZbaHzugyeRtpg==}
 
-  cssesc@3.0.0:
-    resolution: {integrity: sha512-/Tb/JcjK111nNScGob5MNtsntNM1aCNUDipB/TkwZFhyDrrE47SOx/18wF2bbjgc3ZzCSKW1T5nt5EbFoAz/Vg==}
-    engines: {node: '>=4'}
-    hasBin: true
-
   cssom@0.5.0:
     resolution: {integrity: sha512-iKuQcq+NdHqlAcwUY0o/HL69XQrUaQdMjmStJ8JFmUaiiQErlhrmuigkg/CU4E2J0IyUKUrMAgl36TvN67MqTw==}
 
@@ -3506,8 +3501,8 @@ packages:
   hermes-parser@0.25.1:
     resolution: {integrity: sha512-6pEjquH3rqaI6cYAXYPcz9MS4rY6R4ngRgrgfDshRptUZIc3lw0MCIJIGDj9++mfySOuPTHB4nrSW99BCvOPIA==}
 
-  hono@4.13.13:
-    resolution: {integrity: sha512-CQ46U0ZkAGmbT/4UxdzzGJpacP2IeKgY4a5/tOI9AABbpOMfK739wfDXmv1usCk+3RkKj1hQy4/fjhiwa2xlrA==}
+  hono@4.13.18:
+    resolution: {integrity: sha512-H9q/E1XizaWstJxUW881dmLxEj+t/TrGGnyxINkm4+sK0qUwsMtFdo2BWI9Vs3cIS19MU6b6iCijoUoEf4f3DA==}
     engines: {node: '>=16.9.0'}
 
   html-encoding-sniffer@6.0.0:
@@ -4206,8 +4201,8 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
-  postcss-selector-parser@7.1.6:
-    resolution: {integrity: sha512-7qASPzhKF2l2KLboRZux8CCTRMdGiV08vWmyKzPz22qZ7ZjQBOeY7rNzNoCLSUiftJ7HUq0GERHmxw/t0dCdMw==}
+  postcss-selector-parser@7.2.1:
+    resolution: {integrity: sha512-GwxlMgTTXwIom+ebC7an3k6RaJDwklRQQnfiXsLPGicu8FYV/k/+1/9YY2OU2+r938H2t4X0TDxoif+HP2rjzQ==}
     engines: {node: '>=4'}
 
   postcss@8.5.26:
@@ -5824,12 +5819,12 @@ snapshots:
 
   '@humanwhocodes/retry@0.4.3': {}
 
-  '@hyperframes/core@0.9.31(@types/node@22.20.1)':
+  '@hyperframes/core@0.9.59(@types/node@22.20.1)':
     dependencies:
       '@chenglou/pretext': 0.0.5
-      '@hyperframes/lint': 0.9.31
-      '@hyperframes/parsers': 0.9.31
-      '@hyperframes/studio-server': 0.9.31(@types/node@22.20.1)
+      '@hyperframes/lint': 0.9.59
+      '@hyperframes/parsers': 0.9.59
+      '@hyperframes/studio-server': 0.9.59(@types/node@22.20.1)
       acorn: 8.18.0
       linkedom: 0.18.13
       postcss: 8.5.26
@@ -5840,20 +5835,20 @@ snapshots:
       - '@types/node'
       - canvas
 
-  '@hyperframes/lint@0.9.31':
+  '@hyperframes/lint@0.9.59':
     dependencies:
-      '@hyperframes/parsers': 0.9.31
+      '@hyperframes/parsers': 0.9.59
       acorn: 8.18.0
       acorn-walk: 8.3.5
       htmlparser2: 10.1.0
       ignore: 5.3.2
       linkedom: 0.18.13
       postcss: 8.5.26
-      postcss-selector-parser: 7.1.6
+      postcss-selector-parser: 7.2.1
     transitivePeerDependencies:
       - canvas
 
-  '@hyperframes/parsers@0.9.31':
+  '@hyperframes/parsers@0.9.59':
     dependencies:
       '@babel/parser': 7.29.8
       acorn: 8.18.0
@@ -5865,30 +5860,30 @@ snapshots:
     transitivePeerDependencies:
       - canvas
 
-  '@hyperframes/player@0.9.31(@types/node@22.20.1)':
+  '@hyperframes/player@0.9.59(@types/node@22.20.1)':
     dependencies:
-      '@hyperframes/core': 0.9.31(@types/node@22.20.1)
+      '@hyperframes/core': 0.9.59(@types/node@22.20.1)
     transitivePeerDependencies:
       - '@types/node'
       - canvas
 
-  '@hyperframes/sdk@0.9.31(@types/node@22.20.1)':
+  '@hyperframes/sdk@0.9.59(@types/node@22.20.1)':
     dependencies:
-      '@hyperframes/core': 0.9.31(@types/node@22.20.1)
-      '@hyperframes/parsers': 0.9.31
+      '@hyperframes/core': 0.9.59(@types/node@22.20.1)
+      '@hyperframes/parsers': 0.9.59
       linkedom: 0.18.13
     transitivePeerDependencies:
       - '@types/node'
       - canvas
 
-  '@hyperframes/studio-server@0.9.31(@types/node@22.20.1)':
+  '@hyperframes/studio-server@0.9.59(@types/node@22.20.1)':
     dependencies:
-      '@hyperframes/core': 0.9.31(@types/node@22.20.1)
-      '@hyperframes/parsers': 0.9.31
-      hono: 4.13.13
+      '@hyperframes/core': 0.9.59(@types/node@22.20.1)
+      '@hyperframes/parsers': 0.9.59
+      hono: 4.13.18
       linkedom: 0.18.13
       postcss: 8.5.26
-      postcss-selector-parser: 7.1.6
+      postcss-selector-parser: 7.2.1
     optionalDependencies:
       sharp: 0.35.5(@types/node@22.20.1)
     transitivePeerDependencies:
@@ -7800,8 +7795,6 @@ snapshots:
 
   css.escape@1.5.1: {}
 
-  cssesc@3.0.0: {}
-
   cssom@0.5.0: {}
 
   csstype@3.2.3: {}
@@ -8460,7 +8453,7 @@ snapshots:
     dependencies:
       hermes-estree: 0.25.1
 
-  hono@4.13.13: {}
+  hono@4.13.18: {}
 
   html-encoding-sniffer@6.0.0:
     dependencies:
@@ -9418,9 +9411,8 @@ snapshots:
     optionalDependencies:
       fsevents: 2.3.2
 
-  postcss-selector-parser@7.1.6:
+  postcss-selector-parser@7.2.1:
     dependencies:
-      cssesc: 3.0.0
       util-deprecate: 1.0.2
 
   postcss@8.5.26:

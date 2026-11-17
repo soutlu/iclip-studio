@@ -12,7 +12,7 @@ export interface ProjectFile {
 /** 工程的主文件：唯一的主时间线。 */
 export const MAIN_FILE = 'index.html'
 
-/** 工程里 `vendor/` 指向公共目录，由渲染服务放上，工程自己不能有这个名字的文件。 */
+/** 工程里的 `vendor/` 是渲染服务拷进来的公共目录，工程自己不能有这个名字的文件。 */
 export const VENDOR_DIR = 'vendor'
 
 const CONTROL = /\p{Cc}/u

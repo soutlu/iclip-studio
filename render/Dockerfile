@@ -5,8 +5,8 @@
 #   docker build --platform linux/amd64 -f render/Dockerfile -t iclip-render .
 #
 # 只出 linux/amd64：渲染用的 chrome-headless-shell（Chrome for Testing）没有 Linux arm64 版本。
-# 运行环境照 HyperFrames 自己的渲染镜像（packages/gcp-cloud-run/Dockerfile）：同一组系统库、
-# 固定版本的 ffmpeg 静态构建；Chrome 用 HyperFrames 0.9.31 命令行固定的版本。
+# 运行环境照引擎上游自己的渲染镜像（packages/gcp-cloud-run/Dockerfile）：同一组系统库、
+# 固定版本的 ffmpeg 静态构建；Chrome 用引擎 0.9.59 命令行固定的版本。
 
 ARG NODE_IMAGE=node:22.23.3-bookworm-slim
 
@@ -65,7 +65,7 @@ RUN curl -fsSL -o /tmp/ffmpeg.tar.xz "$FFMPEG_RELEASE/$FFMPEG_BUILD-linux64-gpl-
     && rm /tmp/ffmpeg.tar.xz \
     && ffmpeg -version | head -n1
 
-# chrome-headless-shell：HyperFrames 0.9.31 命令行固定的版本（packages/engine/src/services/chromeHostCeiling.ts）。
+# chrome-headless-shell：引擎 0.9.59 命令行固定的版本（packages/engine/src/services/chromeHostCeiling.ts）。
 ARG CHROME_HEADLESS_SHELL=152.0.7977.30
 RUN npx --yes @puppeteer/browsers install "chrome-headless-shell@$CHROME_HEADLESS_SHELL" --path /opt/puppeteer \
     && CHS="$(find /opt/puppeteer/chrome-headless-shell -name chrome-headless-shell -type f | head -n1)" \

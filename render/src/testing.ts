@@ -33,7 +33,7 @@ export const catalog: ComponentCatalog = {
   ...source,
   version: 'test-fixtures',
   runtime: {
-    hyperframes: 'vendor/hyperframes/0.9.31/hyperframe.runtime.iife.js',
+    hyperframes: 'vendor/hyperframes/0.9.59/hyperframe.runtime.iife.js',
     gsap: 'vendor/npm/gsap@3.14.2/dist/gsap.min.js',
   },
   cjk: {
