@@ -16,6 +16,17 @@ const zSeconds = z.number().nonnegative()
 
 const zSeq = z.number().int().nonnegative()
 
+/** 画布上的一个矩形（像素）。 */
+const zRect = z.strictObject({
+  x: z.number(),
+  y: z.number(),
+  width: z.number().nonnegative(),
+  height: z.number().nonnegative(),
+})
+
+/** 一个片段的布局框和框里有画面的部分（见 canvas-geometry.ts 的 `ClipBox`）。 */
+const zClipBox = z.strictObject({ box: zRect, content: zRect })
+
 /** 引擎的一条补丁（JSON Patch 的 add、remove、replace）。 */
 const zPatchOp = z.strictObject({
   op: z.enum(['add', 'remove', 'replace']),
@@ -69,6 +80,36 @@ export const zPreviewCommand = z.discriminatedUnion('type', [
   }),
   /** 重新加载播放头所在、加载失败的那段视频。 */
   z.strictObject({ type: z.literal('retry') }),
+  /**
+   * 画面上要编辑的片段（按 `data-hf-id`）：预览页量出它们的布局框报 `layout`，之后换了一份、打了补丁、播到别处
+   * 框变了时带着这个 `seq` 再报。
+   */
+  z.strictObject({ type: z.literal('layout'), seq: zSeq, ids: z.array(z.string()) }),
+  /**
+   * 拖动中先把正在播的那一份里片段 `id` 的行内位移、角度、缩放摆成这样（null 是去掉），不经副本会话。松手后
+   * 编辑器照常提交，补丁写的是同样的值；取消时编辑器把原来的值再摆回去。
+   */
+  z.strictObject({
+    type: z.literal('pose'),
+    id: z.string(),
+    translate: z.string().nullable(),
+    rotate: z.string().nullable(),
+    scale: z.string().nullable(),
+  }),
+  /**
+   * 原地改字：在片段 `id` 里找画布上 (`x`, `y`) 处的文字字段（`data-var-text` 是 `fields` 里的一个），找到了先藏起来
+   * （编辑器在上面放自己的输入框），报 `textTarget`。
+   */
+  z.strictObject({
+    type: z.literal('editText'),
+    seq: zSeq,
+    id: z.string(),
+    x: z.number(),
+    y: z.number(),
+    fields: z.array(z.string()),
+  }),
+  /** 改完字：藏起来的文字显示回来；`text` 不是 null 时先换成它，等新的一份换上来之前不闪回旧字。 */
+  z.strictObject({ type: z.literal('endText'), text: z.string().nullable() }),
 ])
 
 export type PreviewCommand = z.infer<typeof zPreviewCommand>
@@ -106,6 +147,19 @@ export const zPreviewEvent = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('mediaSettled') }),
   /** 播放头所在的那段视频是否加载失败。 */
   z.strictObject({ type: z.literal('clipFailed'), failed: z.boolean() }),
+  /** 第 `seq` 次 `layout` 要的各片段的布局框，和 `ids` 一一对应；不在页面上、没显示的是 null。 */
+  z.strictObject({ type: z.literal('layout'), seq: zSeq, boxes: z.array(zClipBox.nullable()) }),
+  /**
+   * 第 `seq` 次 `editText` 找到的文字：`field` 是它在 `fields` 里的第几个（找不到是 -1），框是它在画布上的位置，
+   * `fontSize` 是它在画布上的字号（像素，算上了缩放）。
+   */
+  z.strictObject({
+    type: z.literal('textTarget'),
+    seq: zSeq,
+    field: z.number().int().min(-1),
+    ...zRect.shape,
+    fontSize: z.number().nonnegative(),
+  }),
 ])
 
 export type PreviewEvent = z.infer<typeof zPreviewEvent>

@@ -1454,6 +1454,124 @@
   pointer-events: none;
 }
 
+/* ---- 画面上的编辑：一层和画面一样大、盖在画面上（位置由预览量出画面后给），选中框和把手可以伸到画面外面；
+   照稿子：白色细框、四角白色方块、框下面的白色圆形旋转把手，都按深底配色 ---- */
+
+.wf-canvas-slot {
+  position: absolute;
+}
+
+.wf-canvas-layer {
+  position: absolute;
+  inset: 0;
+  outline: none;
+  touch-action: none;
+}
+
+.wf-canvas-frame {
+  position: absolute;
+  border-radius: var(--radius-xs);
+  outline: 1.5px solid color-mix(in srgb, var(--color-on-scrim) 90%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-scrim) 25%, transparent);
+  pointer-events: none;
+}
+
+.wf-canvas-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  background: var(--color-on-scrim);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-scrim) 35%, transparent);
+  cursor: nwse-resize;
+  pointer-events: auto;
+}
+
+.wf-canvas-handle[data-corner='nw'] {
+  top: 0;
+  left: 0;
+}
+
+.wf-canvas-handle[data-corner='ne'] {
+  top: 0;
+  left: 100%;
+  cursor: nesw-resize;
+}
+
+.wf-canvas-handle[data-corner='se'] {
+  top: 100%;
+  left: 100%;
+}
+
+.wf-canvas-handle[data-corner='sw'] {
+  top: 100%;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.wf-canvas-rotate {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-on-scrim);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-scrim) 30%, transparent),
+    0 1px 3px color-mix(in srgb, var(--color-scrim) 28%, transparent);
+  color: var(--color-scrim);
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.wf-canvas-rotate:active {
+  cursor: grabbing;
+}
+
+/* 画面下面放不下时放到框上面 */
+.wf-canvas-rotate[data-above] {
+  top: auto;
+  bottom: calc(100% + 10px);
+}
+
+/* 转的时候框下面写着角度 */
+.wf-canvas-angle {
+  position: absolute;
+  top: calc(100% + 34px);
+  left: 50%;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-scrim) 75%, transparent);
+  color: var(--color-on-scrim);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  translate: -50% 0;
+  white-space: nowrap;
+}
+
+/* 原地改字：盖在藏起来的那段文字上，照稿子的白框、浅黑底 */
+.wf-canvas-text {
+  position: absolute;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--color-scrim) 26%, transparent);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--color-on-scrim) 92%, transparent);
+  color: var(--color-on-scrim);
+  field-sizing: content;
+  font-family: inherit;
+  line-height: 1;
+  outline: none;
+}
+
 /* ---- 播放条：贴在预览底部，final-cut 和素材两种预览共用 ---- */
 
 .wf-transport {

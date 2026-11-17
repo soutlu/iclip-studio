@@ -36,6 +36,8 @@ import {
   recognizedCaptions,
   type Sentence,
 } from './caption-edit'
+import type { ClipBox } from './canvas-geometry'
+import { CanvasOverlay, type CanvasNudge } from './canvas-overlay'
 import { CaptionsTab } from './captions-tab'
 import { isCarveBed } from './carve'
 import { decodeForCarve } from './carve-decode'
@@ -53,7 +55,7 @@ import { isDubClip, type Canvas, type CaptionClip, type FilmClip } from './compo
 import { textHosts, type LocaleBindings } from './composition/locale-text'
 import type { VoiceMode } from './composition/voices'
 import { dubbingRefusalText, dubbingRequests, dubClips, replacedDubs, shownIn } from './dubbing'
-import { isEditorKeyTarget, useEditorEscape, useEditorRoot } from './editor-keys'
+import { isEditorKeyTarget, onCanvasLayer, useEditorEscape, useEditorRoot } from './editor-keys'
 import { EditorRoot } from './editor-root'
 import { EditorToolbar, type EditTool } from './editor-toolbar'
 import { ExportControl } from './export-control'
@@ -115,6 +117,7 @@ import {
   type PlaybackSettings,
   type PreviewControl,
   type PreviewPageAddress,
+  type TextTarget,
 } from './preview-player'
 import type { PreviewFilm } from './preview-sync'
 import { PreviewTransport } from './preview-transport'
@@ -351,6 +354,8 @@ function EditorBody({
   const [buffering, setBuffering] = useState(false)
   const [buffered, setBuffered] = useState<readonly TimeSpan[]>([])
   const previewRef = useRef<PreviewControl | null>(null)
+  // 画面编辑层处理方向键的函数（见 CanvasOverlay）
+  const canvasNudgeRef = useRef<CanvasNudge | null>(null)
   const [range, setRange] = useState<MaterialRange | null>(null)
   const [playback, setPlayback] = useState<PlaybackSettings>({ rate: 1, muted: false, loop: false })
   const toggleMute = () => setPlayback((current) => ({ ...current, muted: !current.muted }))
@@ -774,6 +779,11 @@ function EditorBody({
       if (!event.repeat) command()
       return
     }
+    // 焦点在画面上时方向键挪画面上选中的片段；画面上没有选中的片段时照常挪播放头
+    if (onCanvasLayer(event.target) && canvasNudgeRef.current?.(event) === true) {
+      event.preventDefault()
+      return
+    }
     if (key !== 'ArrowLeft' && key !== 'ArrowRight') return
     if (event.target instanceof HTMLInputElement) return
     event.preventDefault()
@@ -838,6 +848,14 @@ function EditorBody({
     }
   }, [film, catalog, tokens, filesRevision])
   const playBlocked = empty ? EMPTY_TEXT : undefined
+
+  // 画面上的编辑：视频片段和组件或块的片段可以在画面上点选、挪、缩放、转，预览量出它们的布局框
+  const canvasIds = useMemo(
+    () => clips.flatMap((clip) => (clip.kind === 'video' || clip.kind === 'host' ? [clip.id] : [])),
+    [clips],
+  )
+  const [canvasBoxes, setCanvasBoxes] = useState<ReadonlyMap<string, ClipBox>>(() => new Map())
+  const [textTarget, setTextTarget] = useState<TextTarget | null>(null)
 
   const exporting = useWholeFilmExport(conversationId, session.settle)
   const exportBlocked = empty ? EMPTY_EXPORT_TEXT : film.captionsProblem
@@ -1078,6 +1096,34 @@ function EditorBody({
           onSeek: (ms: number) => materialPreviewRef.current?.seek(ms),
         }
 
+  const canvasOverlay =
+    film === null || materialView !== null ? null : (
+      <CanvasOverlay
+        bindings={film.bindings}
+        boxes={canvasBoxes}
+        canvas={film.canvas}
+        catalog={catalog}
+        clips={clips}
+        controlRef={previewRef}
+        frameMs={frameMs}
+        locale={locale}
+        nudgeRef={canvasNudgeRef}
+        onGesture={setGesturing}
+        onNotice={notice}
+        onPlace={(changes) => {
+          leaveMaterial()
+          session.setPlacements(changes)
+        }}
+        onSelect={setSelectedIds}
+        onText={itemTexts.onText}
+        onTextClose={() => setTextTarget(null)}
+        placements={film.placements}
+        revision={film.revision}
+        selected={selected}
+        textTarget={textTarget}
+      />
+    )
+
   if (session.opening)
     return (
       <p className="wf-state" role="status">
@@ -1097,11 +1143,15 @@ function EditorBody({
           controlRef={previewRef}
           film={previewFilm}
           height={film?.canvas.height ?? DEFAULT_CANVAS.height}
+          layoutIds={canvasIds}
           message={playBlocked}
           onBuffered={setBuffered}
           onBuffering={setBuffering}
+          onLayout={setCanvasBoxes}
           onPlaying={setPlaying}
+          onTextTarget={setTextTarget}
           onTime={setPlayheadMs}
+          overlay={canvasOverlay}
           page={previewPage}
           playback={playback}
           width={film?.canvas.width ?? DEFAULT_CANVAS.width}

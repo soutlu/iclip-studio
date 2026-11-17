@@ -26,6 +26,10 @@ export const isEditorKeyTarget = (event: KeyboardEvent, root: HTMLElement) =>
   !isTextEntry(event.target) &&
   event.target.closest('[role="tab"]') === null
 
+/** 按键的元素在不在画面编辑层上（见 CanvasOverlay）：这时方向键挪画面上选中的片段，不挪播放头。 */
+export const onCanvasLayer = (target: EventTarget | null): boolean =>
+  target instanceof Element && target.closest('[data-canvas-layer]') !== null
+
 /**
  * 编辑器里有一件事要先用掉 Esc（取消拖动、取消选中……）时用：`active` 期间焦点在编辑器里按 Esc，
  * 调 `onEscape`；同一下 Esc 只给先登记的那一件。焦点在编辑器里弹出的菜单、面板或对话框里时不抢：

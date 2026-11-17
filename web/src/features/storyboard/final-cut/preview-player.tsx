@@ -12,6 +12,7 @@ import type { TimeSpan } from '@/shared/lib/time-spans'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MediaFallback } from '@/shared/ui/media-fallback'
 import { StageBackdrop } from '../components/stage-backdrop'
+import type { ClipBox, Point, Rect } from './canvas-geometry'
 import { previewPageUrl, zPreviewEvent, type PreviewCommand } from './preview-protocol'
 import { previewSync, type PreviewFilm } from './preview-sync'
 
@@ -19,7 +20,19 @@ export type PreviewControl = {
   play: () => void
   pause: () => void
   seek: (ms: number) => void
+  /** 拖动中先在预览里把片段 `id` 摆成 `styles`（见预览协议的 `pose`）。 */
+  pose: (id: string, styles: PoseStyles) => void
+  /** 在片段 `id` 里找画布上 `point` 处的文字字段（`fields` 里的一个），结果报给 `onTextTarget`。 */
+  editText: (id: string, point: Point, fields: readonly string[]) => void
+  /** 改完字，藏起来的文字显示回来；`text` 不是 null 时先换成它。 */
+  endText: (text: string | null) => void
 }
+
+/** 片段行内的位移、角度、缩放，null 是没写。 */
+export type PoseStyles = Record<'translate' | 'rotate' | 'scale', string | null>
+
+/** 原地改字找到的文字：片段 `id` 的文字字段 `field`，在画布上的框和字号（像素）。 */
+export type TextTarget = { id: string; field: string; rect: Rect; fontSize: number }
 
 /** 编辑时怎么听、怎么放：只管预览，不写进主文件。 */
 export type PlaybackSettings = {
@@ -50,6 +63,13 @@ type PreviewPlayerProps = {
   onMediaSettled?: (() => void) | undefined
   onBuffering?: ((buffering: boolean) => void) | undefined
   onBuffered?: ((spans: readonly TimeSpan[]) => void) | undefined
+  /** 画面上要编辑的片段：预览量出它们的布局框报给 `onLayout`（只有量得到的）。 */
+  layoutIds?: readonly string[] | undefined
+  onLayout?: ((boxes: ReadonlyMap<string, ClipBox>) => void) | undefined
+  /** `editText` 的结果；没找到文字时是 null。 */
+  onTextTarget?: ((target: TextTarget | null) => void) | undefined
+  /** 盖在画面上、和画面一样大的一层（画面上的编辑）；超出画面的部分不裁掉。 */
+  overlay?: ReactNode
   children?: ReactNode
 }
 
@@ -83,12 +103,39 @@ export function PreviewPlayer({
   onMediaSettled,
   onBuffering,
   onBuffered,
+  layoutIds,
+  onLayout,
+  onTextTarget,
+  overlay,
   children,
 }: PreviewPlayerProps) {
   const frameRef = useRef<HTMLIFrameElement>(null)
-  const callbacksRef = useRef({ onTime, onPlaying, onMediaSettled, onBuffering, onBuffered })
+  const callbacksRef = useRef({
+    onTime,
+    onPlaying,
+    onMediaSettled,
+    onBuffering,
+    onBuffered,
+    onLayout,
+    onTextTarget,
+  })
   useLayoutEffect(() => {
-    callbacksRef.current = { onTime, onPlaying, onMediaSettled, onBuffering, onBuffered }
+    callbacksRef.current = {
+      onTime,
+      onPlaying,
+      onMediaSettled,
+      onBuffering,
+      onBuffered,
+      onLayout,
+      onTextTarget,
+    }
+  })
+  // 最后一次要量的片段和最后一次找文字，预览页报回来时按序号对上
+  const layoutRef = useRef<{ seq: number; ids: readonly string[] }>({ seq: 0, ids: [] })
+  const textRef = useRef<{ seq: number; id: string; fields: readonly string[] }>({
+    seq: 0,
+    id: '',
+    fields: [],
   })
 
   const origin = page.kind === 'ready' ? page.origin : undefined
@@ -223,6 +270,27 @@ export function PreviewPlayer({
         case 'clipFailed':
           setClipFailed(received.failed)
           return
+        case 'layout': {
+          const { seq, ids } = layoutRef.current
+          if (received.seq !== seq) return
+          const boxes = new Map<string, ClipBox>()
+          received.boxes.forEach((box, at) => {
+            const id = ids[at]
+            if (box !== null && id !== undefined) boxes.set(id, box)
+          })
+          on.onLayout?.(boxes)
+          return
+        }
+        case 'textTarget': {
+          const { seq, id, fields } = textRef.current
+          if (received.seq !== seq) return
+          const field = fields[received.field]
+          const { x, y, width, height, fontSize } = received
+          on.onTextTarget?.(
+            field === undefined ? null : { id, field, rect: { x, y, width, height }, fontSize },
+          )
+          return
+        }
       }
     }
     window.addEventListener('message', receive)
@@ -242,6 +310,16 @@ export function PreviewPlayer({
   useEffect(() => {
     if (link !== null) post({ type: 'size', width, height })
   }, [link, width, height, post])
+
+  // 片段编号里不会有 NUL；没给要量的片段时不发
+  const layoutKey = layoutIds?.join('\0')
+  useEffect(() => {
+    if (link === null || layoutKey === undefined) return
+    const ids = layoutKey === '' ? [] : layoutKey.split('\0')
+    const seq = layoutRef.current.seq + 1
+    layoutRef.current = { seq, ids }
+    post({ type: 'layout', seq, ids })
+  }, [link, layoutKey, post])
 
   useEffect(() => {
     if (film !== undefined) {
@@ -278,11 +356,39 @@ export function PreviewPlayer({
         early(false)
         post({ type: 'seek', ms })
       },
+      pose: (id, styles) => post({ type: 'pose', id, ...styles }),
+      editText: (id, { x, y }, fields) => {
+        const seq = textRef.current.seq + 1
+        textRef.current = { seq, id, fields }
+        post({ type: 'editText', seq, id, x, y, fields: [...fields] })
+      },
+      endText: (text) => post({ type: 'endText', text }),
     }
     return () => {
       controlRef.current = null
     }
   }, [controllable, controlRef, post, playEarly])
+
+  // 盖在画面上的那一层跟着画面的位置和大小：画面框裁掉超出的部分，这一层放在它外面
+  const hostRef = useRef<HTMLDivElement>(null)
+  const [hostBox, setHostBox] = useState<Rect | null>(null)
+  const overlaid = overlay !== undefined && overlay !== null && film !== undefined
+  useLayoutEffect(() => {
+    const host = hostRef.current
+    if (!overlaid || host === null) return
+    // 开始观察时就报一次现在的大小
+    const observer = new ResizeObserver(() =>
+      setHostBox({
+        x: host.offsetLeft,
+        y: host.offsetTop,
+        width: host.offsetWidth,
+        height: host.offsetHeight,
+      }),
+    )
+    observer.observe(host)
+    if (host.parentElement !== null) observer.observe(host.parentElement)
+    return () => observer.disconnect()
+  }, [overlaid])
 
   const failed = link !== null && clipFailed
   return (
@@ -293,6 +399,7 @@ export function PreviewPlayer({
           className="wf-player-host editor-preview stage-picture"
           data-failed={failed ? '' : undefined}
           hidden={film === undefined}
+          ref={hostRef}
           style={{ '--preview-ratio': width / height } as CSSProperties}
         >
           <div className="wf-player-slot">
@@ -313,6 +420,19 @@ export function PreviewPlayer({
             </div>
           ) : null}
         </div>
+        {overlaid && hostBox !== null ? (
+          <div
+            className="wf-canvas-slot"
+            style={{
+              left: hostBox.x,
+              top: hostBox.y,
+              width: hostBox.width,
+              height: hostBox.height,
+            }}
+          >
+            {overlay}
+          </div>
+        ) : null}
       </div>
       {children}
       {page.kind === 'failed' ? (

@@ -80,7 +80,8 @@ const ELEMENT = /^\/elements\/([^/]+)(?:\/([^/]+)(?:\/(.+))?)?$/
 // 实测过打进去和重新加载效果一样的几种改动；别的（贴片、场景宿主的值、脚本……）运行库只在加载时读
 const LIVE_TIMING = new Set(['start', 'duration', 'trackIndex'])
 const LIVE_ATTRIBUTES = new Set(['data-hidden', 'data-media-start', 'data-volume', 'muted'])
-const LIVE_STYLES = new Set(['zIndex'])
+// 画面上挪、缩放、转片段写的三样（见 canvas-geometry.ts）也是：浏览器直接按行内样式画
+const LIVE_STYLES = new Set(['zIndex', 'translate', 'rotate', 'scale'])
 
 const htmlOf = (value: unknown) =>
   typeof value === 'object' && value !== null && 'html' in value && typeof value.html === 'string'
