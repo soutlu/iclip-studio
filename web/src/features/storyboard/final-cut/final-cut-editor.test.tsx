@@ -3640,6 +3640,58 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
     expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
   })
 
+  it('选中一句改字体、改颜色：写在这句元素的行内样式上，别的句不动，主文件链上字体；各一步撤销', async () => {
+    const user = await open()
+    await user.click(bodyOf('第二句'))
+    const inspector = within(screen.getByRole('tabpanel', { name: '属性' }))
+    /** 存下来的字幕场景里各句元素的行内样式。 */
+    const savedStyles = () =>
+      Object.fromEntries(
+        [
+          ...new DOMParser()
+            .parseFromString(
+              (mockWorkspaceFile(CONVERSATION, SCENE)?.content ?? '').replace(/<\/?template>/g, ''),
+              'text/html',
+            )
+            .querySelectorAll('.caption'),
+        ].map((element) => [element.id, element.getAttribute('style')]),
+      )
+    const link = '<link rel="stylesheet" href="vendor/fonts/families/playfair-display.css">'
+
+    // 没设过：字体「默认」、颜色是默认的白色
+    await user.click(inspector.getByRole('button', { name: '字体：默认' }))
+    expect(screen.getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual([
+      '默认',
+      'Playfair Display',
+    ])
+    await user.click(screen.getByRole('menuitemradio', { name: 'Playfair Display' }))
+    await waitSaved(() =>
+      expect(savedStyles()).toEqual({
+        'cap-a1': null,
+        'cap-b2': `font-family: 'Playfair Display', '${fixtureCatalog.cjk.family}', sans-serif`,
+        'cap-c3': null,
+      }),
+    )
+    expect(savedFilm()).toContain(link)
+    expect(inspector.getByRole('button', { name: '字体：Playfair Display' })).toBeVisible()
+
+    const hex = inspector.getByRole('textbox', { name: '颜色' })
+    expect(hex).toHaveValue('#ffffff')
+    await user.clear(hex)
+    await user.type(hex, '#ff3366')
+    await waitSaved(() => expect(savedStyles()['cap-b2']).toMatch(/; color: #ff3366$/))
+    expect(savedStyles()['cap-b2']).toMatch(/^font-family: 'Playfair Display'/)
+    expect(savedStyles()['cap-a1']).toBeNull()
+
+    await user.click(undoButton())
+    await waitSaved(() => expect(savedStyles()['cap-b2']).toMatch(/^font-family:/))
+    expect(hex).toHaveValue('#ffffff')
+    await user.click(undoButton())
+    await waitSaved(() => expect(savedStyles()['cap-b2'] ?? '').toBe(''))
+    expect(savedFilm()).not.toContain(link)
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+  })
+
   it('停在「字幕」页签时在时间线上选中片段（字幕、视频都一样）不切走，选中的字幕在列表里标成当前；在页签里点一句的时间：选中它、播放头到它的开始', async () => {
     const user = await open()
     const side = screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })

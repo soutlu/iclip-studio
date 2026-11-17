@@ -10,9 +10,11 @@ import { zFinalCutPreviewHostOut } from '@/shared/api/generated/zod.gen'
 import { mergeSpans, sameSpans, spansOf, windowSpans, type TimeSpan } from '@/shared/lib/time-spans'
 import { FONT_BLOCK_START } from './composition/film'
 import {
+  captionBoxOf,
   clipBoxOf,
   elementOf,
   hideText,
+  isCaptionElement,
   poseElement,
   showText,
   textSpotAt,
@@ -298,7 +300,8 @@ export const createPreviewPage = (
     if (layout === null || page === null) return
     const boxes = layout.ids.map((id) => {
       const element = elementOf(page, id)
-      return element === null ? null : clipBoxOf(element)
+      if (element === null) return null
+      return isCaptionElement(element) ? captionBoxOf(element) : clipBoxOf(element)
     })
     const reported = JSON.stringify(boxes)
     if (reported === layout.reported) return
@@ -392,6 +395,9 @@ export const createPreviewPage = (
     for (const type of FAILURE_EVENTS) page.addEventListener(type, reportFailure, true)
     // 读到视频尺寸以后才知道画面放在框里哪一块
     page.addEventListener('loadedmetadata', reportLayout, true)
+    // 字幕的框按字量：换了字体、新字形下载好以后字的宽窄才定下来（jsdom 里没有 document.fonts）
+    const fonts = 'fonts' in page ? page.fonts : null
+    fonts?.addEventListener('loadingdone', reportLayout)
     syncActive = syncMedia
     detachActive = () => {
       if (buffering) send({ type: 'buffering', buffering: false })
@@ -400,6 +406,7 @@ export const createPreviewPage = (
       for (const type of MEDIA_EVENTS) page.removeEventListener(type, syncMedia, true)
       for (const type of FAILURE_EVENTS) page.removeEventListener(type, reportFailure, true)
       page.removeEventListener('loadedmetadata', reportLayout, true)
+      fonts?.removeEventListener('loadingdone', reportLayout)
       player.remove()
       syncActive = null
       detachActive = null

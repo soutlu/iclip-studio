@@ -299,6 +299,13 @@ describe('字幕场景', () => {
         '跟着视频片段走、换了所属的片段',
         [{ op: 'replace', path: '/elements/cap-1/attributes/data-caption-of', value: 'clip-2' }],
       ],
+      [
+        '改一句的字色、字体（链接没变）',
+        [
+          { op: 'add', path: '/elements/cap-1/inlineStyles/color', value: '#ff3366' },
+          { op: 'remove', path: '/elements/cap-1/inlineStyles/fontFamily' },
+        ],
+      ],
     ])('场景里%s：直接打', (_name, patches) => {
       expect(previewSync(SUBTITLED, after(SUBTITLED, SOURCE_TEXTS, scene(...patches)))).toEqual({
         kind: 'live',
@@ -366,7 +373,10 @@ describe('字幕场景', () => {
         '改读哪个变量',
         { op: 'replace', path: '/elements/cap-1/attributes/data-var-text', value: 'x' },
       ],
-      ['单句的样式', { op: 'replace', path: '/elements/cap-1/inlineStyles/color', value: 'red' }],
+      [
+        '单句字体、字色以外的样式',
+        { op: 'add', path: '/elements/cap-1/inlineStyles/fontSize', value: '20px' },
+      ],
       [
         '加要挂载的宿主',
         {

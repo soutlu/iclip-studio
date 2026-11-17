@@ -8,9 +8,10 @@ import type { PeaksState } from '../editing/media-analysis'
 import { sourceTrimmed, trimBounds, trimmed, type SourceLength, type Timing } from './clip-edit'
 import type { ComponentCatalog, VariableValue } from './composition/catalog'
 import { CaptionTextField, type CaptionTextChange } from './captions-tab'
+import { CAPTION_COLOR } from './composition/captions'
 import { isMediaClip, type CaptionClip, type FilmClip } from './composition/film'
 import type { LocaleBindings } from './composition/locale-text'
-import { ContentFields, type TextLocale } from './content-fields'
+import { ColorField, ContentFields, Dropdown, HEX_COLOR, type TextLocale } from './content-fields'
 import { Keys, Tool } from './editor-toolbar'
 import { ITEM_KIND_LABEL } from './items'
 import type { ShownLocale } from './locales'
@@ -32,6 +33,11 @@ import { SourceTrim } from './source-trim'
 import type { MusicCarve } from './use-music-carve'
 
 type Values = Readonly<Record<string, VariableValue>>
+
+type CaptionStyleChange = (
+  id: string,
+  changes: Partial<Pick<CaptionClip, 'font' | 'color'>>,
+) => void
 
 type Props = {
   /** 时间线上选中的片段。 */
@@ -62,6 +68,8 @@ type Props = {
   locale: ShownLocale
   /** 把字幕 `id` 在一种语言里的字改成 `text`，算一步撤销。 */
   onCaptionText: CaptionTextChange
+  /** 改字幕 `id` 的字体、字色（null 是回到默认），所有语言共用，算一步撤销。 */
+  onCaptionStyle: CaptionStyleChange
   /** 组件或块的片段的文字字段分语言（「内容与样式」用），`bindings` 是各片段随语言的字段。 */
   texts: Omit<TextLocale, 'locale' | 'bindings'> & {
     bindings: ReadonlyMap<string, LocaleBindings>
@@ -128,7 +136,7 @@ export function FilmInspector({ selected, ...rest }: Props) {
 /**
  * 选中一个片段：头部是名字、种类、时长和隐藏、删除，视频片段还有「分离音频」，分离出来的原声有「合并回视频」；
  * 字幕没有隐藏（只能在行头上整行隐藏）。下面平铺几段。视频片段、音频片段是「原片截取」和「音量与变速」，
- * 组件或块的片段是「显示时长」和「内容与样式」，字幕是「显示时长」和「内容」，「其他」片段只有「显示时长」。
+ * 组件或块的片段是「显示时长」和「内容与样式」，字幕是「显示时长」和「内容与样式」，「其他」片段只有「显示时长」。
  * 分离过原声的视频片段把「音量与变速」换成「画面变速」和原声去处的一块，分离出来的原声最上面多一条同步栏。
  * 配乐片段开着压低、或者有和它重叠的人声时，最下面是「有人说话时自动压低」。
  */
@@ -149,11 +157,13 @@ function ClipInspector({
   onAttributes,
   locale,
   onCaptionText,
+  onCaptionStyle,
   texts,
   soundControls,
   onTextEditing,
   musicCarve,
 }: Omit<Props, 'selected'> & { clip: FilmClip }) {
+  const fonts = Object.keys(catalog.fonts).toSorted()
   const sound = clip.kind === 'audio'
   const hideLabel = sound ? (clip.hidden ? '取消静音' : '静音') : clip.hidden ? '显示' : '隐藏'
   const hideIcon = sound
@@ -259,14 +269,20 @@ function ClipInspector({
             {clip.kind === 'host' ? (
               <ContentFields
                 clip={clip}
-                fonts={Object.keys(catalog.fonts).toSorted()}
+                fonts={fonts}
                 onEditing={onTextEditing}
                 onValues={onValues}
                 texts={{ ...texts, locale, bindings: texts.bindings.get(clip.id) ?? NO_BINDINGS }}
                 variables={catalog.items.find((item) => item.name === clip.item)?.variables ?? []}
               />
             ) : clip.kind === 'caption' ? (
-              <CaptionContent clip={clip} locale={locale} onText={onCaptionText} />
+              <CaptionContent
+                clip={clip}
+                fonts={fonts}
+                locale={locale}
+                onStyle={onCaptionStyle}
+                onText={onCaptionText}
+              />
             ) : null}
           </>
         )}
@@ -275,30 +291,74 @@ function ClipInspector({
   )
 }
 
-/** 字幕的「内容」：这句的字，和「字幕」页签里那条同一个文字框。 */
+/**
+ * 字幕的「内容与样式」：这句的字（和「字幕」页签里那条同一个文字框，改的是显示着的语言的字），这句的字体（组件库里
+ * 的字体，「默认」是字幕的默认字体）和字色。字体、字色所有语言共用，改了各算一步撤销。
+ */
 function CaptionContent({
   clip,
+  fonts,
   locale,
   onText,
+  onStyle,
 }: {
   clip: CaptionClip
+  fonts: readonly string[]
   locale: ShownLocale
   onText: CaptionTextChange
+  onStyle: CaptionStyleChange
 }) {
-  const id = useId()
+  const textId = useId()
+  const fontId = useId()
+  const colorId = useId()
   return (
     <section className="wf-prop-section">
-      <h4 className="wf-prop-title">
-        <label htmlFor={id}>内容</label>
-      </h4>
-      <CaptionTextField
-        caption={clip}
-        className="wf-prop-textarea"
-        id={id}
-        key={locale.code}
-        locale={locale}
-        onText={onText}
-      />
+      <h4 className="wf-prop-title">内容与样式</h4>
+      <div className="wf-prop-rows">
+        <div className="wf-prop-row is-content is-text">
+          <label className="wf-prop-label" htmlFor={textId}>
+            内容
+          </label>
+          <div>
+            <CaptionTextField
+              caption={clip}
+              className="wf-prop-textarea"
+              id={textId}
+              key={locale.code}
+              locale={locale}
+              onText={onText}
+            />
+          </div>
+        </div>
+        <div className="wf-prop-row is-content">
+          <label className="wf-prop-label" htmlFor={fontId}>
+            字体
+          </label>
+          <Dropdown
+            id={fontId}
+            label="字体"
+            onChange={(font) => onStyle(clip.id, { font: font === '' ? null : font })}
+            options={[
+              { value: '', label: '默认' },
+              ...fonts.map((font) => ({ value: font, label: font })),
+            ]}
+            // 组件库里没有的字体名和没设一样显示「默认」
+            value={clip.font !== null && fonts.includes(clip.font) ? clip.font : ''}
+          />
+        </div>
+        <div className="wf-prop-row is-content">
+          <label className="wf-prop-label" htmlFor={colorId}>
+            颜色
+          </label>
+          <ColorField
+            complete={(value) => HEX_COLOR.test(value)}
+            current={clip.color ?? CAPTION_COLOR}
+            id={colorId}
+            label="颜色"
+            onChange={(color) => onStyle(clip.id, { color })}
+          />
+        </div>
+      </div>
     </section>
   )
 }

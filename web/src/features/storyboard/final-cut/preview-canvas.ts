@@ -69,6 +69,31 @@ export const clipBoxOf = (element: Laid): ClipBox | null => {
   return { box: { x, y, width, height }, content }
 }
 
+/** 元素是不是一句字幕：在字幕宿主（`data-track-kind="captions"`）里面。 */
+export const isCaptionElement = (element: Laid): boolean =>
+  (element.parentElement?.closest('[data-track-kind="captions"]') ?? null) !== null
+
+/**
+ * 一句字幕在画布上的框：它的字真正占的那块（不是整行宽的元素），就是画面上看到的位置（字幕自己样式里的变换算在
+ * 里面）。字幕不在画面上挪，编辑器直接拿它点选、画框。没显示、没有字时是 null。
+ */
+export const captionBoxOf = (element: Laid): ClipBox | null => {
+  const root = filmRoot(element)
+  if (root === null || element.offsetParent === null) return null
+  const range = element.ownerDocument.createRange()
+  range.selectNodeContents(element)
+  const text = range.getBoundingClientRect()
+  if (text.width <= 0 || text.height <= 0) return null
+  const origin = root.getBoundingClientRect()
+  const box = {
+    x: text.left - origin.left,
+    y: text.top - origin.top,
+    width: text.width,
+    height: text.height,
+  }
+  return { box, content: { x: 0, y: 0, width: box.width, height: box.height } }
+}
+
 /** 拖动中把元素的行内位移、角度、缩放摆成 `styles`（null 是去掉）。 */
 export const poseElement = (
   element: Laid,
@@ -84,8 +109,8 @@ export const poseElement = (
 export type TextSpot = { element: Laid; field: number; rect: Rect; fontSize: number }
 
 /**
- * 片段 `host` 里画布上 `point` 处的文字字段（`data-var-text` 是 `fields` 里的一个、显示着的）；那里没有时，
- * 片段里只有一个这样的字段就是它，不然是 null。
+ * 片段 `host` 里画布上 `point` 处的文字字段（`data-var-text` 是 `fields` 里的一个、显示着的；一句字幕自己就是
+ * 这样的字段）；那里没有时，片段里只有一个这样的字段就是它，不然是 null。
  */
 export const textSpotAt = (
   host: Laid,
@@ -94,7 +119,10 @@ export const textSpotAt = (
 ): TextSpot | null => {
   const root = filmRoot(host)
   const origin = root?.getBoundingClientRect() ?? { left: 0, top: 0 }
-  const spots = [...host.querySelectorAll('[data-var-text]')].flatMap((element) => {
+  const candidates = host.matches('[data-var-text]')
+    ? [host]
+    : [...host.querySelectorAll('[data-var-text]')]
+  const spots = candidates.flatMap((element) => {
     const field = fields.indexOf(element.getAttribute('data-var-text') ?? '')
     if (field < 0 || !isLaid(element)) return []
     const bounds = element.getBoundingClientRect()
@@ -123,18 +151,23 @@ export const textSpotAt = (
   return inside ?? (spots.length === 1 ? (spots[0] ?? null) : null)
 }
 
-/** 原地改字时藏起来的那段文字，`visibility` 是它原来的行内写法。 */
-export type HiddenText = { element: Laid; visibility: string }
+/** 原地改字时藏起来的那段文字：藏的时候改的样式 `property`，和它原来的行内写法 `value`。 */
+export type HiddenText = { element: Laid; property: 'visibility' | 'opacity'; value: string }
 
+/**
+ * 藏起一段文字。一句字幕自己是带时间的片段，运行库按时间改它行内的 `visibility`，所以它用 `opacity` 藏；
+ * 组件里的文字用 `visibility`。
+ */
 export const hideText = (element: Laid): HiddenText => {
-  const hidden = { element, visibility: element.style.getPropertyValue('visibility') }
-  element.style.setProperty('visibility', 'hidden')
+  const property = element.hasAttribute('data-start') ? 'opacity' : 'visibility'
+  const hidden = { element, property, value: element.style.getPropertyValue(property) } as const
+  element.style.setProperty(property, property === 'opacity' ? '0' : 'hidden')
   return hidden
 }
 
 /** 显示回来；`text` 不是 null 时先换上这段字。 */
-export const showText = ({ element, visibility }: HiddenText, text: string | null) => {
+export const showText = ({ element, property, value }: HiddenText, text: string | null) => {
   if (text !== null) element.textContent = text
-  if (visibility === '') element.style.removeProperty('visibility')
-  else element.style.setProperty('visibility', visibility)
+  if (value === '') element.style.removeProperty(property)
+  else element.style.setProperty(property, value)
 }

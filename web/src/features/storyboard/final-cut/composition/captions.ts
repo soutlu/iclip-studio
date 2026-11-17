@@ -9,6 +9,8 @@ import { escapeAttribute, seconds } from './html'
  * （`<html>` 上的 `data-composition-variables`）声明的变量，每句一个。场景自己不声明变量、宿主不给取值：
  * 两处有一处写了，主文件根上的变量就整个到不了场景，字幕显示成元素里写的字。主文件根、宿主、场景根都带
  * `data-no-timeline`。
+ *
+ * 样式：场景里一条统一的样式（见 `captionStyle`）；一句设了字体、字色时写在它元素的行内样式上，所有语言共用。
  */
 
 /** 编辑器新建字幕场景文件时的路径（相对工程根）。 */
@@ -74,7 +76,7 @@ export const captionVariable = (caption: Pick<CaptionClip, 'variable' | 'text'>)
 
 // 字幕在画面里的颜色是作品内容，不是界面，不用界面的设计变量
 // design-allow -- 字幕的字色是作品内容
-const TEXT_COLOR = '#ffffff'
+export const CAPTION_COLOR = '#ffffff'
 // design-allow -- 字幕的描边色是作品内容
 const STROKE_COLOR = '#000000'
 // design-allow -- 字幕的投影色是作品内容
@@ -95,7 +97,7 @@ function captionStyle(canvas: Canvas, catalog: ComponentCatalog): string {
   transform: translateY(-50%);
   text-align: center;
   white-space: pre-line;
-  color: ${TEXT_COLOR};
+  color: ${CAPTION_COLOR};
   font-family: '${catalog.cjk.family}', sans-serif;
   font-weight: 700;
   font-size: ${size}px;
@@ -129,9 +131,20 @@ export function captionLabel(text: string): string {
   return name === '' ? VARIABLE_LABEL : name
 }
 
+/** 行内 `font-family` 里的首选字体族（去掉引号）；没写时是 null。 */
+const firstFamily = (value: string | undefined): string | null => {
+  const first =
+    value
+      ?.split(',')[0]
+      ?.trim()
+      .replace(/^['"]|['"]$/g, '') ?? ''
+  return first === '' ? null : first
+}
+
 /**
  * 把场景根下一个带时间的元素读成一句字幕：字取主文件根上它的变量的默认值（`texts`，变量 → 字），
  * 没有这个变量时取元素里写的字；名字见 `captionLabel`。`data-caption-of` 没写或是空的时不属于任何片段。
+ * 字体是行内 `font-family` 的首选字体族，字色是行内的 `color`，没写的是 null。
  */
 export function captionOf(
   element: ElementView,
@@ -154,7 +167,36 @@ export function captionOf(
     text,
     variable,
     owner: owner === undefined || owner === '' ? null : owner,
+    font: firstFamily(element.inlineStyles['fontFamily']),
+    color: element.inlineStyles['color'] ?? null,
   }
+}
+
+const HEX_COLOR = /^#[0-9a-f]{6}$/i
+
+/**
+ * 改一句字幕的样式时写到它元素上的行内样式（SDK 的属性名）：`changes` 里给了的那几样，null 是去掉、回到默认。
+ * 字体只能是组件库 `fonts` 里的字体族，写成 `'<字体族>', '<中文字体族>', sans-serif`（这个字体族没有的中文字形
+ * 退到组件库的中文字体）；字色只能是 `#rrggbb`。
+ *
+ * @throws Error 字体不在组件库里，或字色不是 `#rrggbb`
+ */
+export function captionStyles(
+  changes: Partial<Pick<CaptionClip, 'font' | 'color'>>,
+  catalog: ComponentCatalog,
+): Record<string, string | null> {
+  const styles: Record<string, string | null> = {}
+  const { font, color } = changes
+  if (font !== undefined) {
+    if (font !== null && !Object.hasOwn(catalog.fonts, font))
+      throw new Error(`组件库里没有字体「${font}」`)
+    styles['fontFamily'] = font === null ? null : `'${font}', '${catalog.cjk.family}', sans-serif`
+  }
+  if (color !== undefined) {
+    if (color !== null && !HEX_COLOR.test(color)) throw new Error(`字幕颜色写法不对：${color}`)
+    styles['color'] = color
+  }
+  return styles
 }
 
 export const CAPTIONS_PROBLEM_TEXT =

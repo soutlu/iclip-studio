@@ -4,6 +4,8 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ChangeEvent,
+  type KeyboardEvent,
   type MouseEvent,
   type PointerEvent,
   type RefObject,
@@ -30,7 +32,8 @@ import {
   type Point,
 } from './canvas-geometry'
 import type { ComponentCatalog } from './composition/catalog'
-import { itemNamed, type Canvas, type FilmClip, type HostClip } from './composition/film'
+import type { CaptionTextChange } from './captions-tab'
+import { itemNamed, type Canvas, type FilmClip } from './composition/film'
 import { fieldText, textFields, type LocaleBindings } from './composition/locale-text'
 import type { ItemTextChange } from './component-texts'
 import { useEditorEscape } from './editor-keys'
@@ -48,6 +51,9 @@ const ROTATE_ROOM = 32
 
 /** 画面上的一层：一个当前显示着、能编辑的片段，和它在画面上的样子。 */
 type Layer = { clip: FilmClip; placement: Placement; frame: Frame }
+
+/** 字幕不在画面上挪：它的框就是预览量到的位置。 */
+const UNPLACED: Placement = { x: 0, y: 0, angle: 0, scaleX: 1, scaleY: 1 }
 
 /** 拖动改的是哪一样：挪（位移）、角上的把手（缩放）、旋转把手（角度）。 */
 type GestureKind = 'move' | 'scale' | 'rotate'
@@ -112,6 +118,8 @@ type CanvasOverlayProps = {
   locale: ShownLocale
   bindings: ReadonlyMap<string, LocaleBindings>
   onText: ItemTextChange
+  /** 原地改了一句字幕的字（改的是显示着的这种语言的）。 */
+  onCaptionText: CaptionTextChange
   onNotice: (message: string) => void
   /** 编辑层放进这里一个处理方向键的函数：挪了选中的片段时答 true（这一下用掉了）。 */
   nudgeRef: RefObject<CanvasNudge | null>
@@ -121,9 +129,11 @@ type CanvasOverlayProps = {
 export type CanvasNudge = (event: { key: string; shiftKey: boolean; altKey: boolean }) => boolean
 
 /**
- * 盖在预览画面上的编辑层：点选视频、贴片、场景片段（和时间线上的选中是同一个），拖着挪、拖角上的把手等比缩放、
- * 拖旋转把手转（按住 Shift 吸到 15° 的整数倍），方向键挪 1 像素（Shift 10）；双击贴片、场景里的文字原地改。
- * 拖动中预览先跟着摆（见预览协议的 `pose`），松手写进主文件，算一步撤销。
+ * 盖在预览画面上的编辑层：点选视频、贴片、场景片段和正在显示的那句字幕（和时间线上的选中是同一个），拖着挪、
+ * 拖角上的把手等比缩放、拖旋转把手转（按住 Shift 吸到 15° 的整数倍），方向键挪 1 像素（Shift 10）；双击贴片、
+ * 场景里的文字或字幕原地改。拖动中预览先跟着摆（见预览协议的 `pose`），松手写进主文件，算一步撤销。
+ *
+ * 字幕只能点选、改字，不挪、不缩放、不转；点中它只看正在显示的那句的字占的那块（字幕宿主铺满画面，不算它）。
  */
 export function CanvasOverlay({
   canvas,
@@ -143,6 +153,7 @@ export function CanvasOverlay({
   locale,
   bindings,
   onText,
+  onCaptionText,
   onNotice,
   nudgeRef,
 }: CanvasOverlayProps) {
@@ -165,20 +176,32 @@ export function CanvasOverlay({
   const draftRef = useRef<Draft | null>(null)
   const lastPickRef = useRef<CanvasPick | null>(null)
 
+  const shownAt = (clip: FilmClip) =>
+    !clip.hidden && clip.start <= frameMs && frameMs < clip.start + clip.duration
+  // 正在显示的字幕叠在所有片段上面
+  const captionLayers: Layer[] = clips.flatMap((clip) => {
+    const box = boxes.get(clip.id)
+    if (clip.kind !== 'caption' || box === undefined || !shownAt(clip)) return []
+    return [{ clip, placement: UNPLACED, frame: frameOf(box, UNPLACED) }]
+  })
   // 显示着、量得到、摆放读得懂的片段，从最上面一层往下
-  const layers: Layer[] = topFirst(
-    clips.flatMap((clip) => {
-      if (clip.kind !== 'video' && clip.kind !== 'host') return []
-      const box = boxes.get(clip.id)
-      const shown = !clip.hidden && clip.start <= frameMs && frameMs < clip.start + clip.duration
-      if (box === undefined || !shown) return []
-      const written = placementOf(placements.get(clip.id) ?? {}, box.box)
-      if (written === null) return []
-      const placement = draft?.placements.get(clip.id) ?? written
-      return [{ clip, placement, frame: frameOf(box, placement), z: clip.z }]
-    }),
-  )
+  const layers: Layer[] = [
+    ...captionLayers,
+    ...topFirst(
+      clips.flatMap((clip) => {
+        if (clip.kind !== 'video' && clip.kind !== 'host') return []
+        const box = boxes.get(clip.id)
+        if (box === undefined || !shownAt(clip)) return []
+        const written = placementOf(placements.get(clip.id) ?? {}, box.box)
+        if (written === null) return []
+        const placement = draft?.placements.get(clip.id) ?? written
+        return [{ clip, placement, frame: frameOf(box, placement), z: clip.z }]
+      }),
+    ),
+  ]
   const framed = layers.filter((layer) => selected.has(layer.clip.id))
+  // 能在画面上挪的：选中的里面字幕以外的
+  const movable = framed.filter((layer) => layer.clip.kind !== 'caption')
 
   const toCanvas = (event: { clientX: number; clientY: number }): Point => {
     const rect = layerRef.current?.getBoundingClientRect()
@@ -251,7 +274,9 @@ export function CanvasOverlay({
     if (next !== selected) onSelect(next)
     const origins = new Map(
       layers.flatMap((layer) =>
-        next.has(layer.clip.id) ? [[layer.clip.id, layer.placement] as const] : [],
+        next.has(layer.clip.id) && layer.clip.kind !== 'caption'
+          ? [[layer.clip.id, layer.placement] as const]
+          : [],
       ),
     )
     gestureRef.current = {
@@ -266,12 +291,20 @@ export function CanvasOverlay({
     event.currentTarget.setPointerCapture(event.pointerId)
   }
 
-  /** 没拖动就松手：是一次点选。同一处很快再点一次时换成下一层（见 `pickAt`）。 */
+  /**
+   * 没拖动就松手：是一次点选。同一处很快再点一次时换成下一层（见 `pickAt`）。字幕在最上面时点一下就选中它，
+   * 不让压在下面、选中着的片段留着（按下时留着它，是为了按住能拖）。
+   */
   const clicked = (gesture: Extract<Gesture, { kind: 'move' }>, now: number) => {
     const { hits, picked, start, shift } = gesture
-    const id =
+    const cycled =
       pickAt(hits, new Set([picked]), lastPickRef.current, start, now, SAME_SPOT / (zoom || 1)) ??
       picked
+    const [top] = hits
+    const captionOnTop = layers.some(
+      (layer) => layer.clip.id === top && layer.clip.kind === 'caption',
+    )
+    const id = captionOnTop && top !== undefined && cycled === picked ? top : cycled
     lastPickRef.current = { point: start, at: now, id }
     if (id !== picked && !shift) onSelect(new Set([id]))
   }
@@ -347,11 +380,11 @@ export function CanvasOverlay({
     nudgeRef.current = (event) => {
       if (gestureRef.current !== null || event.altKey) return false
       const step = nudgeOf(event.key, event.shiftKey)
-      if (step === null || framed.length === 0) return false
+      if (step === null || movable.length === 0) return false
       commit(
         'move',
         new Map(
-          framed.map(({ clip, placement }) => [
+          movable.map(({ clip, placement }) => [
             clip.id,
             { ...placement, x: placement.x + step.x, y: placement.y + step.y },
           ]),
@@ -368,7 +401,13 @@ export function CanvasOverlay({
     const point = toCanvas(event)
     for (const layer of layers) {
       const { clip } = layer
-      if (clip.kind !== 'host' || !frameContains(layer.frame, point)) continue
+      if (!frameContains(layer.frame, point)) continue
+      if (clip.kind === 'caption') {
+        onSelect(new Set([clip.id]))
+        controlRef.current?.editText(clip.id, point, [clip.variable])
+        return
+      }
+      if (clip.kind !== 'host') continue
       const item = itemNamed(catalog, clip.item)
       const fields = item === undefined ? [] : textFields(item)
       if (fields.length === 0) continue
@@ -387,12 +426,14 @@ export function CanvasOverlay({
     onTextClose()
   }
 
-  const single = framed.length === 1 ? framed[0] : undefined
-  const textHost = clips.find(
-    (clip): clip is HostClip => clip.kind === 'host' && clip.id === textTarget?.id,
-  )
+  // 字幕不出缩放、旋转把手
+  const single = framed.length === 1 && framed[0]?.clip.kind !== 'caption' ? framed[0] : undefined
+  const textEdit =
+    textTarget === null
+      ? undefined
+      : textEditOf(textTarget, clips, { catalog, locale, bindings, onText, onCaptionText })
   // 改着字的片段没了（别处改了 final-cut）：不改了，藏起来的字显示回来
-  const orphanText = textTarget !== null && textHost === undefined
+  const orphanText = textTarget !== null && textEdit === undefined
   const dropText = useEffectEvent(() => {
     controlRef.current?.endText(null)
     onGesture(false)
@@ -418,6 +459,8 @@ export function CanvasOverlay({
     >
       {framed.map((layer) => {
         const { clip, frame } = layer
+        // 原地改着的字幕：框就是它的字，和输入框叠在一起，不画
+        if (clip.kind === 'caption' && textTarget?.id === clip.id) return null
         const below = (frame.cy + frame.height / 2) * zoom + ROTATE_ROOM
         return (
           <div
@@ -462,18 +505,14 @@ export function CanvasOverlay({
           </div>
         )
       })}
-      {textTarget !== null && textHost !== undefined ? (
+      {textTarget !== null && textEdit !== undefined ? (
         <CanvasText
-          bindings={bindings.get(textHost.id) ?? {}}
-          catalog={catalog}
-          clip={textHost}
           controlRef={controlRef}
+          edit={textEdit}
           key={`${textTarget.id}/${textTarget.field}`}
-          locale={locale}
           onClose={closeText}
           onGesture={onGesture}
           onNotice={onNotice}
-          onText={onText}
           target={textTarget}
           zoom={zoom}
         />
@@ -482,15 +521,70 @@ export function CanvasOverlay({
   )
 }
 
+/**
+ * 原地改的一段字：叫什么、一开始的字、不能改时的原因（其它语言下固定的字段），能不能换行（字幕），怎么写进去。
+ */
+type TextEdit = {
+  label: string
+  initial: string
+  pinned: string | undefined
+  multiline: boolean
+  save: (text: string) => void
+}
+
+/**
+ * 预览找到的那段字要怎么改：贴片、场景的文字字段和「属性」里改是同一个写法；字幕和「字幕」页签里改是同一个写法，
+ * 一开始是显示着的字（其它语言下没翻的是原文）。都是改这种语言的字。片段、字段不在了时是 undefined。
+ */
+function textEditOf(
+  target: TextTarget,
+  clips: readonly FilmClip[],
+  {
+    catalog,
+    locale,
+    bindings,
+    onText,
+    onCaptionText,
+  }: Pick<CanvasOverlayProps, 'catalog' | 'locale' | 'bindings' | 'onText' | 'onCaptionText'>,
+): TextEdit | undefined {
+  const clip = clips.find((each) => each.id === target.id)
+  if (clip?.kind === 'caption') {
+    const shown = translationOf(locale.values, clip.variable) ?? clip.text
+    return {
+      label: '字幕',
+      initial: shown,
+      pinned: undefined,
+      multiline: true,
+      save: (text) => onCaptionText(clip.id, text, locale.code),
+    }
+  }
+  if (clip?.kind !== 'host') return undefined
+  const field = itemNamed(catalog, clip.item)?.variables.find(
+    (variable) => variable.id === target.field,
+  )
+  if (field === undefined) return undefined
+  const source = fieldText(clip.values, field)
+  const variable = bindings.get(clip.id)?.[target.field]
+  return {
+    label: field.label,
+    initial:
+      locale.values === null || variable === undefined
+        ? source
+        : (translationOf(locale.values, variable) ?? source),
+    pinned:
+      locale.values !== null && variable === undefined
+        ? `「${field.label}」固定${SOURCE_NAME}，所有语言共用；请先在「属性」里点击「随语言」`
+        : undefined,
+    multiline: false,
+    save: (text) => onText(clip.id, field.id, text, locale.code),
+  }
+}
+
 type CanvasTextProps = {
-  clip: HostClip
+  edit: TextEdit
   target: TextTarget
   zoom: number
-  catalog: ComponentCatalog
-  locale: ShownLocale
-  bindings: LocaleBindings
   controlRef: RefObject<PreviewControl | null>
-  onText: ItemTextChange
   /** 改完了；`refocus` 时焦点回到画面上（回车、Esc），点到别处时不抢。 */
   onClose: (refocus: boolean) => void
   onGesture: (active: boolean) => void
@@ -498,35 +592,22 @@ type CanvasTextProps = {
 }
 
 /**
- * 原地改字的输入框：盖在预览里藏起来的那段文字上，回车或点到别处时写进去（和「属性」里改是同一个写法，其它语言下
- * 改的是这种语言的字），Esc 放弃。其它语言下固定的字段不能改，只说明原因。
+ * 原地改字的输入框：盖在预览里藏起来的那段文字上，回车或点到别处时写进去，Esc 放弃。能换行的（字幕）是多行框，
+ * Shift+回车换行。不能改的只说明原因。
  */
 function CanvasText({
-  clip,
+  edit,
   target,
   zoom,
-  catalog,
-  locale,
-  bindings,
   controlRef,
-  onText,
   onClose,
   onGesture,
   onNotice,
 }: CanvasTextProps) {
-  const field = itemNamed(catalog, clip.item)?.variables.find(
-    (variable) => variable.id === target.field,
-  )
-  const source = field === undefined ? '' : fieldText(clip.values, field)
-  const variable = bindings[target.field]
-  const pinned = locale.values !== null && variable === undefined
-  const initial =
-    locale.values === null || variable === undefined
-      ? source
-      : (translationOf(locale.values, variable) ?? source)
+  const { label, initial, pinned, multiline } = edit
   const [value, setValue] = useState(initial)
   const doneRef = useRef(false)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
 
   const close = (text: string | null, refocus: boolean) => {
     if (doneRef.current) return
@@ -538,21 +619,17 @@ function CanvasText({
   const save = (refocus: boolean) => {
     // Esc 放弃以后输入框被拿掉时也会失去焦点，那一下不写
     if (doneRef.current) return
-    if (field === undefined || value === initial) {
+    if (value === initial) {
       close(null, refocus)
       return
     }
-    onText(clip.id, field.id, value, locale.code)
+    edit.save(value)
     close(value, refocus)
   }
 
   const open = useEffectEvent(() => {
-    if (field === undefined) {
-      close(null, false)
-      return
-    }
-    if (pinned) {
-      onNotice(`「${field.label}」固定${SOURCE_NAME}，所有语言共用；请先在「属性」里点击「随语言」`)
+    if (pinned !== undefined) {
+      onNotice(pinned)
       close(null, true)
       return
     }
@@ -566,31 +643,34 @@ function CanvasText({
 
   useEditorEscape(true, () => close(null, true))
 
-  if (field === undefined || pinned) return null
+  if (pinned !== undefined) return null
   const { rect, fontSize } = target
-  return (
-    <input
-      aria-label={field.label}
-      autoComplete="off"
-      className="wf-canvas-text"
-      onBlur={() => save(false)}
-      onChange={(event) => setValue(event.target.value)}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter') return
-        event.preventDefault()
-        save(true)
-      }}
-      onPointerDown={(event) => event.stopPropagation()}
-      ref={inputRef}
-      spellCheck={false}
-      style={{
-        left: rect.x * zoom,
-        top: rect.y * zoom,
-        minWidth: rect.width * zoom,
-        height: rect.height * zoom,
-        fontSize: fontSize * zoom,
-      }}
-      value={value}
-    />
-  )
+  const props = {
+    'aria-label': label,
+    autoComplete: 'off',
+    className: multiline ? 'wf-canvas-text is-multiline' : 'wf-canvas-text',
+    onBlur: () => save(false),
+    onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setValue(event.target.value),
+    onKeyDown: (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      // 输入法还在拼字时的回车是选字
+      if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
+      if (multiline && event.shiftKey) return
+      event.preventDefault()
+      save(true)
+    },
+    onPointerDown: (event: PointerEvent<HTMLElement>) => event.stopPropagation(),
+    ref: inputRef,
+    spellCheck: false,
+    style: {
+      left: rect.x * zoom,
+      top: rect.y * zoom,
+      minWidth: rect.width * zoom,
+      // 字幕的框跟着行数长高
+      ...(multiline ? { minHeight: rect.height * zoom } : { height: rect.height * zoom }),
+      fontSize: fontSize * zoom,
+    },
+    value,
+  }
+  return multiline ? <textarea {...props} rows={1} /> : <input {...props} />
 }

@@ -13,6 +13,7 @@ export type Rect = { x: number; y: number; width: number; height: number }
 /**
  * 预览量出来的一个片段：`box` 是元素的布局框（不含行内的位移、角度和缩放），`content` 是框里真正有画面的部分，
  * 相对 `box` 的左上角（视频按 `object-fit: contain` 放进框里时两边或上下有空，别的元素就是整个框）。
+ * 一句字幕不在画面上挪，它的 `box` 是字在画面上占的那块（见 preview-canvas.ts 的 `captionBoxOf`）。
  */
 export type ClipBox = { box: Rect; content: Rect }
 

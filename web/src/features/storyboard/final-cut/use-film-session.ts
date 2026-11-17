@@ -26,6 +26,7 @@ import {
   captionsHostElement,
   captionsProblem,
   captionsScene,
+  captionStyles,
   captionVariable,
   isCaptionsHost,
 } from './composition/captions'
@@ -1768,6 +1769,27 @@ export function useFilmSession(
   )
 
   /**
+   * 改字幕 `id` 的字体、字色（`changes` 里给了的那几样，null 是回到默认，写法见 `captionStyles`），所有语言共用，
+   * 算一步撤销。和现在一样、字幕已经不在了时不动工程。
+   *
+   * @throws Error 字体不在组件库里，或字色不是 `#rrggbb`
+   */
+  const setCaptionStyle = useCallback(
+    (id: string, changes: Partial<Pick<CaptionClip, 'font' | 'color'>>) => {
+      const project = projectRef.current
+      const scene = project === null ? undefined : sceneOf(project)
+      const caption = project === null ? undefined : captionsById(mainOf(project), scene).get(id)
+      if (scene === undefined || caption === undefined) return
+      const styles = captionStyles(changes, catalog)
+      const changed =
+        (changes.font !== undefined && changes.font !== caption.font) ||
+        (changes.color !== undefined && changes.color !== caption.color)
+      if (changed) edit(() => scene.setStyle(id, styles))
+    },
+    [catalog, edit],
+  )
+
+  /**
    * 往语言 `locale` 的值表里一次写进几条（变量 → 字），算一步撤销。`pick` 拿到这一刻的片段、随语言的字段和这种
    * 语言的值表，答复要写的。答复写了几条；工程里没有这种语言、一条都不写时不动工程，答 0。
    */
@@ -1983,6 +2005,7 @@ export function useFilmSession(
     resync,
     addCaptions,
     setCaptionText,
+    setCaptionStyle,
     setItemText,
     setFollowsLocale,
     fillLocale,

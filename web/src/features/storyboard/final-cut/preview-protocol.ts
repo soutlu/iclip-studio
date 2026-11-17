@@ -81,8 +81,8 @@ export const zPreviewCommand = z.discriminatedUnion('type', [
   /** 重新加载播放头所在、加载失败的那段视频。 */
   z.strictObject({ type: z.literal('retry') }),
   /**
-   * 画面上要编辑的片段（按 `data-hf-id`）：预览页量出它们的布局框报 `layout`，之后换了一份、打了补丁、播到别处
-   * 框变了时带着这个 `seq` 再报。
+   * 画面上要编辑的片段（按 `data-hf-id`）：预览页量出它们的布局框报 `layout`（字幕报的是字在画面上占的那块），
+   * 之后换了一份、打了补丁、播到别处、字体加载好以后框变了时带着这个 `seq` 再报。
    */
   z.strictObject({ type: z.literal('layout'), seq: zSeq, ids: z.array(z.string()) }),
   /**
@@ -97,8 +97,8 @@ export const zPreviewCommand = z.discriminatedUnion('type', [
     scale: z.string().nullable(),
   }),
   /**
-   * 原地改字：在片段 `id` 里找画布上 (`x`, `y`) 处的文字字段（`data-var-text` 是 `fields` 里的一个），找到了先藏起来
-   * （编辑器在上面放自己的输入框），报 `textTarget`。
+   * 原地改字：在片段 `id` 里找画布上 (`x`, `y`) 处的文字字段（`data-var-text` 是 `fields` 里的一个；一句字幕自己就是
+   * 这样的字段），找到了先藏起来（编辑器在上面放自己的输入框），报 `textTarget`。
    */
   z.strictObject({
     type: z.literal('editText'),

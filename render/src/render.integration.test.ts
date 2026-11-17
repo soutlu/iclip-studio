@@ -782,6 +782,8 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       text: '字幕第一行\nSecond line',
       variable: 'cap_a1',
       owner: null,
+      font: null,
+      color: null,
     }
     /** 有字幕时：场景里的元素不写字，字只在主文件根上的变量里；读不到变量就画不出字。 */
     const files = async (captioned: boolean): Promise<ProjectFile[]> => {
@@ -877,6 +879,8 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       text: '字幕第一行',
       variable: 'cap_a1',
       owner: null,
+      font: null,
+      color: null,
     }
     // 照编辑器的写法：字幕的字只在根上的变量里；贴片的「文字」随语言，宿主记着根变量，根上声明它、默认值是原文
     const [main, ...others] = project(clips)
