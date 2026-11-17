@@ -540,6 +540,10 @@ function EditorBody({
       leaveMaterial()
       session.setAttributes([id], { 'data-audio-group': role })
     },
+    writeFx: (id, change) => {
+      leaveMaterial()
+      session.setFx(id, change)
+    },
     onNotice: notice,
   })
   const silentSource = (src: string) => audioTracks.get(src) === false

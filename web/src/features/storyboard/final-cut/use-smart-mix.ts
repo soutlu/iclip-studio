@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { HfAudioFxChain } from '@hyperframes/core/audio-fx'
 import { roleOf, type AudioRole } from './audio-role'
 import {
   canCarve,
   carveOf,
+  chainOf,
   carvePlan,
   measureCarve,
   nextCarve,
@@ -13,6 +15,7 @@ import {
 } from './carve'
 import type { FilmClip, MediaClip } from './composition/film'
 import { isLevelled, measureLevelling, type LevellerMeasurement } from './leveller'
+import type { ChainChange } from './mix-fx'
 
 /** 「属性」里选中的有声片段的「智能调音」。 */
 export type SmartMix = {
@@ -26,6 +29,10 @@ export type SmartMix = {
   setLevellerEnabled: (on: boolean) => void
   /** 正在分析声音：分析完才写进 final-cut，这期间开关和强度都不能改。 */
   analysing: boolean
+  /** 片段现在的效果链：音色风格、均衡、升降调、自己加的效果都从这里读（见 `mix-fx.ts`）。 */
+  chain: HfAudioFxChain
+  /** 改效果链：一次是一步撤销。 */
+  editChain: (change: ChainChange) => void
 }
 
 const CARVE_FAILED_TEXT = '自动压低没有生效：人声或配乐的声音读取失败，请重试'
@@ -55,6 +62,7 @@ const inputsKey = (clips: readonly MediaClip[]) =>
  * 量的时候片段动了就按新的样子重量；读不出声音时用 `onNotice` 提示，不写。两种分析一次只做一个。
  *
  * 同一个片段同样的自动改动一次会话里只做一次：撤销掉自动打开以后不会又被打开。`clips` 要含所有语言的配音片段。
+ * 音色风格、均衡、升降调、自己加的效果不用分析，直接交给 `writeFx`。
  */
 export function useSmartMix({
   clip,
@@ -63,6 +71,7 @@ export function useSmartMix({
   writeCarve,
   writeLeveller,
   writeRole,
+  writeFx,
   onNotice,
 }: {
   clip: MediaClip | undefined
@@ -76,6 +85,7 @@ export function useSmartMix({
   ) => void
   writeLeveller: (id: string, measured: LevellerMeasurement | null) => boolean
   writeRole: (id: string, role: AudioRole) => void
+  writeFx: (id: string, change: ChainChange) => void
   onNotice: (message: string) => void
 }): SmartMix | undefined {
   const [analysing, setAnalysing] = useState<string | null>(null)
@@ -220,5 +230,7 @@ export function useSmartMix({
     levelled: isLevelled(clip),
     setLevellerEnabled: (on) => void applyLeveller(clip.id, on),
     analysing: analysing === clip.id,
+    chain: chainOf(clip.fxChain ?? undefined),
+    editChain: (change) => writeFx(clip.id, change),
   }
 }

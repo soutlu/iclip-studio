@@ -1119,6 +1119,191 @@
   font-size: var(--text-caption);
 }
 
+/* 「音色风格」：小标题一行（右边「全部预设」），下面三列快捷小块 */
+.wf-mix-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wf-mix-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wf-mix-block-label {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+}
+
+.wf-mix-more,
+.wf-mix-link {
+  display: inline-flex;
+  height: 20px;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-caption);
+}
+
+.wf-mix-link {
+  margin-left: auto;
+}
+
+.wf-mix-tiles {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.wf-mix-tile {
+  height: 26px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-mix-tile.is-active {
+  background: var(--color-state-active);
+  box-shadow: inset 0 0 0 1px var(--color-outline);
+  color: var(--color-on-surface);
+  font-weight: 500;
+}
+
+/* 「全部预设」「添加效果」的浮层：两行一项，太长时在里面滚动 */
+.wf-mix-menu {
+  width: 248px;
+  max-height: min(320px, var(--radix-dropdown-menu-content-available-height));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.wf-mix-menu-label {
+  padding: 2px 8px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+
+/* 「精细调音」抽屉：一条细线隔开，标题行右边是摘要 */
+.wf-mix-fine {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-hairline);
+}
+
+.wf-mix-fine-toggle {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-caption);
+  text-align: left;
+}
+
+.wf-mix-fine-icon {
+  color: var(--color-on-surface-faint);
+  transition: rotate var(--dur-s) var(--ease);
+}
+
+.wf-mix-fine-icon.is-open {
+  rotate: 90deg;
+}
+
+.wf-mix-fine-summary {
+  margin-left: auto;
+  color: var(--color-on-surface-faint);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.wf-mix-fine-summary.is-tuned {
+  color: var(--color-on-surface);
+}
+
+.wf-mix-fine-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 均衡、升降调一行：名字一列 62px（「低频 200Hz」） */
+.wf-prop-row.is-tone {
+  grid-template-columns: 62px minmax(0, 1fr);
+}
+
+.wf-mix-pitch {
+  padding-top: 6px;
+  border-top: 1px solid var(--color-hairline);
+}
+
+.wf-mix-count {
+  color: var(--color-on-surface-muted);
+  font-family: var(--font-mono);
+  font-weight: 400;
+}
+
+.wf-mix-add {
+  display: inline-flex;
+  height: 22px;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding: 0 6px 0 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface);
+  font-size: var(--text-caption);
+  font-weight: 500;
+}
+
+/* 一个效果：开关、名字、移除一行，下面是参数；关掉时整块变淡 */
+.wf-mix-effect {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-high);
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+}
+
+.wf-mix-effect[data-off] > .wf-prop-row {
+  opacity: var(--state-disabled-content);
+}
+
+.wf-mix-effect-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wf-mix-effect-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--color-on-surface);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .wf-sound-actions {
   display: flex;
   align-items: center;

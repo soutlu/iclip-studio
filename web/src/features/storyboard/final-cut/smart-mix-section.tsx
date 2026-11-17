@@ -5,10 +5,15 @@ import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } fro
 import { Switch } from '@/shared/ui/switch'
 import { AUDIO_ROLES, isAudioRole } from './audio-role'
 import { SliderControl } from './inspector-controls'
+import { presetAmountOf, presetOf, withPreset, withPresetAmount } from './mix-fx'
+import { MixFineTune } from './smart-mix-fine-tune'
+import { MixStyle } from './smart-mix-style'
 import type { SmartMix } from './use-smart-mix'
 
 // 强度照参照的工作台：0–1，每格 0.05，显示成百分比
 const STRENGTH_STEPS = 20
+// 预设的混合强度照参照的工作台：0–1，每格 0.01
+const PRESET_AMOUNT_STEPS = 100
 const strengthText = (strength: number) => `${Math.round(strength * 100)}%`
 const PERCENT = /^(\d+(?:\.\d+)?)\s*%?$/
 
@@ -19,6 +24,9 @@ const BUSY_REASON = '正在分析声音，请稍候'
  * 「遇到其他人声时自动压低」；配乐、音效的主开关是「有人说话时自动压低」（开着时下面是压低幅度），下面一行是
  * 「同时开启自动平稳音量」。平稳音量只有开关（强度用默认值，照参照的工作台）。拖压低幅度时只动这里，松手（或按
  * 一下方向键）才交出去；分析声音期间开关和强度都不能改。
+ *
+ * 下面是「音色风格」（选了预设时多一行混合强度）和收起的「精细调音」（均衡、升降调、自己加的效果），都直接改
+ * 效果链，见 `mix-fx.ts`。
  */
 export function SmartMixSection({
   mix,
@@ -32,6 +40,7 @@ export function SmartMixSection({
   const levelOn = mix.levelled
   const blocked = mix.analysing ? BUSY_REASON : undefined
   const roleLabel = AUDIO_ROLES.find((r) => r.role === mix.role)?.label
+  const preset = presetOf(mix.chain)
   const carve = (
     <MixCard
       blockedReason={blocked}
@@ -105,6 +114,22 @@ export function SmartMixSection({
         label={voice ? '遇到其他人声时自动压低' : '同时开启自动平稳音量'}
         onChange={voice ? mix.setCarveEnabled : mix.setLevellerEnabled}
       />
+      <MixStyle
+        active={preset}
+        onPick={(next) => mix.editChain((chain) => withPreset(chain, next))}
+        role={mix.role}
+      />
+      {preset === null ? null : (
+        <StrengthRow
+          disabled={false}
+          label="混合强度"
+          onCommit={(amount) => mix.editChain((chain) => withPresetAmount(chain, amount))}
+          onEditing={onEditing}
+          steps={PRESET_AMOUNT_STEPS}
+          strength={presetAmountOf(mix.chain)}
+        />
+      )}
+      <MixFineTune chain={mix.chain} onChange={mix.editChain} onEditing={onEditing} />
     </section>
   )
 }
@@ -170,16 +195,19 @@ function ExtraSwitch({
   )
 }
 
+/** 0–1 的强度，显示成百分比；滑杆分 `steps` 格。 */
 function StrengthRow({
   label,
   strength,
   disabled,
+  steps = STRENGTH_STEPS,
   onCommit,
   onEditing,
 }: {
   label: string
   strength: number
   disabled: boolean
+  steps?: number
   onCommit: (strength: number) => void
   onEditing: (editing: boolean) => void
 }) {
@@ -188,11 +216,11 @@ function StrengthRow({
       <span className="wf-prop-label">{label}</span>
       <SliderControl
         disabled={disabled}
-        format={(position) => strengthText(position / STRENGTH_STEPS)}
+        format={(position) => strengthText(position / steps)}
         label={label}
-        max={STRENGTH_STEPS}
+        max={steps}
         min={0}
-        onCommit={(position) => onCommit(position / STRENGTH_STEPS)}
+        onCommit={(position) => onCommit(position / steps)}
         onEditing={onEditing}
         onText={(text) => {
           const typed = PERCENT.exec(text)?.[1]
@@ -200,7 +228,7 @@ function StrengthRow({
           onCommit(Math.min(100, Number(typed)) / 100)
           return true
         }}
-        position={Math.round(strength * STRENGTH_STEPS)}
+        position={Math.round(strength * steps)}
         text={strengthText(strength)}
       />
     </div>
