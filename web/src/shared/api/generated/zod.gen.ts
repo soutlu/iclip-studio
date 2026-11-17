@@ -3757,14 +3757,25 @@ export const zWholeFilmExportErrorOut = z.object({
 })
 
 /**
+ * WholeFilmExportIn
+ *
+ * 发起导出：``locale`` 是导出哪种外语的版本，不带或 null 导出中文。
+ */
+export const zWholeFilmExportIn = z.object({
+  locale: z.enum(['en', 'de', 'es', 'fr']).nullish(),
+})
+
+/**
  * WholeFilmExportOut
  *
- * 一次导出现在的样子。``downloadUrl`` 只在 ``done`` 时有，``error`` 只在 ``failed`` 时有。
+ * 一次导出现在的样子。``locale`` 是导出的哪种外语的版本，中文时是 null。``downloadUrl`` 只在
+ * ``done`` 时有，``error`` 只在 ``failed`` 时有。
  */
 export const zWholeFilmExportOut = z.object({
   downloadUrl: z.string().nullable(),
   error: zWholeFilmExportErrorOut.nullable(),
   id: z.uuid(),
+  locale: z.enum(['en', 'de', 'es', 'fr']).nullable(),
   progress: z.number().nullable(),
   queuePosition: z.int().nullable(),
   status: z.enum(['queued', 'rendering', 'uploading', 'done', 'failed', 'cancelled']),
@@ -4529,6 +4540,12 @@ export const zRegenerateConversationsConversationIdTurnsTurnIdRegeneratePostPath
  * Successful Response
  */
 export const zRegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponse = zPrompt
+
+/**
+ * Body
+ */
+export const zExportWholeFilmConversationsConversationIdWholeFilmExportsPostBody =
+  zWholeFilmExportIn.nullable()
 
 export const zExportWholeFilmConversationsConversationIdWholeFilmExportsPostPath = z.object({
   conversation_id: z.uuid(),

@@ -173,6 +173,7 @@ export function createProducerWorker(options: RendererOptions): ExportWorker {
           quality: 'standard',
           format: 'mp4',
           useGpu: options.gpuEncode,
+          ...(job.variables === null ? {} : { variables: { ...job.variables } }),
           producerConfig,
           logger: producerLogger(log),
         })

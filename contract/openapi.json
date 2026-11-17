@@ -14153,6 +14153,31 @@
         "title": "WholeFilmExportErrorOut",
         "type": "object"
       },
+      "WholeFilmExportIn": {
+        "additionalProperties": false,
+        "description": "发起导出：``locale`` 是导出哪种外语的版本，不带或 null 导出中文。",
+        "properties": {
+          "locale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "en",
+                  "de",
+                  "es",
+                  "fr"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          }
+        },
+        "title": "WholeFilmExportIn",
+        "type": "object"
+      },
       "WholeFilmExportLatestOut": {
         "additionalProperties": false,
         "description": "这段对话最新的一次导出；还没导出过为 null。",
@@ -14176,7 +14201,7 @@
       },
       "WholeFilmExportOut": {
         "additionalProperties": false,
-        "description": "一次导出现在的样子。``downloadUrl`` 只在 ``done`` 时有，``error`` 只在 ``failed`` 时有。",
+        "description": "一次导出现在的样子。``locale`` 是导出的哪种外语的版本，中文时是 null。``downloadUrl`` 只在\n``done`` 时有，``error`` 只在 ``failed`` 时有。",
         "properties": {
           "downloadUrl": {
             "anyOf": [
@@ -14203,6 +14228,23 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "en",
+                  "de",
+                  "es",
+                  "fr"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
           },
           "progress": {
             "anyOf": [
@@ -14241,6 +14283,7 @@
         },
         "required": [
           "id",
+          "locale",
           "status",
           "progress",
           "queuePosition",
@@ -18811,7 +18854,7 @@
     },
     "/conversations/{conversation_id}/whole-film/exports": {
       "post": {
-        "description": "按 final-cut 导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；\n还没有主文件 ``final-cut/index.html``、没开通都是 422。主文件里的素材按输出地址对上生成记录的\n记进导出记录，对不上的不记、也不拒绝。导出的是交给渲染服务那一刻的工程。",
+        "description": "按 final-cut 导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；\n还没有主文件 ``final-cut/index.html``、要导的外语没有值表 ``final-cut/locales/<语言>.json``、\n没开通都是 422。没有请求体或 ``locale`` 为 null 时导出中文。主文件里的素材按输出地址对上\n生成记录的记进导出记录，对不上的不记、也不拒绝。导出的是交给渲染服务那一刻的工程。",
         "operationId": "export_whole_film_conversations__conversation_id__whole_film_exports_post",
         "parameters": [
           {
@@ -18825,6 +18868,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/WholeFilmExportIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "content": {

@@ -71,6 +71,7 @@ from iclip.domains.conversations.whole_film_schemas import (
     FinalCutTranslationErrorOut,
     FinalCutTranslationsIn,
     FinalCutTranslationsOut,
+    WholeFilmExportIn,
     WholeFilmExportLatestOut,
     WholeFilmExportStartedOut,
     final_cut_translations_out,
@@ -482,12 +483,16 @@ def create_conversations_router(
     async def export_whole_film(
         conversation_id: uuid.UUID,
         principal: Annotated[Principal, require_permission("agent:run")],
+        body: WholeFilmExportIn | None = None,
     ) -> WholeFilmExportStartedOut:
         """按 final-cut 导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；
-        还没有主文件 ``final-cut/index.html``、没开通都是 422。主文件里的素材按输出地址对上生成记录的
-        记进导出记录，对不上的不记、也不拒绝。导出的是交给渲染服务那一刻的工程。"""
+        还没有主文件 ``final-cut/index.html``、要导的外语没有值表 ``final-cut/locales/<语言>.json``、
+        没开通都是 422。没有请求体或 ``locale`` 为 null 时导出中文。主文件里的素材按输出地址对上
+        生成记录的记进导出记录，对不上的不记、也不拒绝。导出的是交给渲染服务那一刻的工程。"""
 
-        export_id = await service.export_whole_film(principal, conversation_id)
+        export_id = await service.export_whole_film(
+            principal, conversation_id, locale=None if body is None else body.locale
+        )
         return WholeFilmExportStartedOut(export_id=export_id)
 
     @router.get(

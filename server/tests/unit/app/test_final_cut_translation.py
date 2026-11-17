@@ -18,10 +18,10 @@ from iclip.app.final_cut_translation import (
     parse_translation_answer,
 )
 from iclip.common.errors import ModelUnavailable
+from iclip.common.final_cut import TargetLocale
 from iclip.domains.conversations.final_cut_translation import (
     FinalCutText,
     FinalCutTranslationFailed,
-    TargetLocale,
 )
 from tests.helpers.references import FakeArk, ark_translator, model_unavailable, responses_body
 

@@ -20,11 +20,13 @@ const VENDOR_DIR = '/registry/vendor'
 let base: string
 let close: () => Promise<void>
 let renders: ReturnType<typeof manualWorker>['renders']
+let logLines: Record<string, unknown>[]
 
 beforeEach(async () => {
   const manual = manualWorker()
   renders = manual.renders
-  const { logger } = memoryLogger()
+  const { logger, lines } = memoryLogger()
+  logLines = lines
   const queue = new ExportQueue({ worker: manual.worker, logger, timeoutMs: 60_000 })
   const server = createExportServer({
     queue,
@@ -56,6 +58,16 @@ const withMain = (content: string, others: { path: string; content: string }[] =
   ...others,
 ]
 
+const attr = (value: unknown) => JSON.stringify(value).replaceAll('"', '&quot;')
+
+/** 根上声明了字幕变量和一个随语言字段的变量、贴片 t1 的「text」随语言的主文件。 */
+const BOUND_MAIN = `<!doctype html><html data-composition-variables="${attr([
+  { id: 'cap_a1', type: 'string', label: '字幕', default: '你好' },
+  { id: 'txt_t1_text', type: 'string', label: '文字', default: '标题' },
+])}"><head></head><body><div id="film" data-composition-id="film"><div id="t1" data-variable-values="${attr(
+  { text: '标题' },
+)}" data-locale-bindings="${attr({ text: 'txt_t1_text' })}"></div></div></body></html>`
+
 describe('渲染服务接口', () => {
   it('POST /exports 合法时答 202，可以查询任务的渲染状态', async () => {
     const response = await post(exportRequest())
@@ -83,10 +95,56 @@ describe('渲染服务接口', () => {
     const files = withMain(mainFile([video(), host({ track: 1 })]), [component])
     expect((await post(exportRequest({ files }))).status).toBe(202)
     await flush()
-    expect(renders[0]).toMatchObject({ files, vendorDir: VENDOR_DIR })
+    expect(renders[0]).toMatchObject({ files, variables: null, vendorDir: VENDOR_DIR })
     expect(renders[0]?.media).toEqual(
       new Map([[CLIP_URL, 'https://oss.example.com/clip.mp4?sig=1']]),
     )
+  })
+
+  it('中文（locale 是 null 或不带）：工程原样交给渲染，不给变量值，有值表也不读', async () => {
+    const files = withMain(BOUND_MAIN, [{ path: 'locales/en.json', content: '{"cap_a1":1}' }])
+    expect((await post({ ...exportRequest({ files }), locale: null })).status).toBe(202)
+    expect(
+      (await post(exportRequest({ files, id: '22222222-2222-4333-8444-555555555555' }))).status,
+    ).toBe(202)
+    await flush()
+    expect(renders[0]).toMatchObject({ files, variables: null })
+  })
+
+  it('按语言导出：主文件里随语言的宿主换成那种语言的字，变量值是校验过的值表；没声明的变量去掉，日志只记条数', async () => {
+    const table = '{"cap_a1":"Hello","txt_t1_text":"Title","stale_1":"旧的字"}'
+    const files = withMain(BOUND_MAIN, [{ path: 'locales/en.json', content: table }])
+
+    expect((await post({ ...exportRequest({ files }), locale: 'en' })).status).toBe(202)
+    await flush()
+
+    expect(renders[0]?.files).toEqual(
+      withMain(BOUND_MAIN.replace(attr({ text: '标题' }), attr({ text: 'Title' })), files.slice(1)),
+    )
+    expect(renders[0]?.variables).toEqual({ cap_a1: 'Hello', txt_t1_text: 'Title' })
+    const dropped = logLines.filter(
+      (line) => line['event'] === '值表里有主文件没声明的变量，已去掉',
+    )
+    expect(dropped).toMatchObject([{ level: 'warn', locale: 'en', count: 1 }])
+    expect(JSON.stringify(logLines)).not.toMatch(/旧的字|Hello|Title/)
+  })
+
+  it.each<[string, Record<string, unknown>, string]>([
+    ['工程里没有这种语言的值表', { locale: 'de' }, 'invalid-locale'],
+    ['值表里的值类型不对', { locale: 'en' }, 'invalid-locale'],
+    ['不认识的语言', { locale: 'ja' }, 'invalid-request'],
+    ['中文不用写成 zh', { locale: 'zh' }, 'invalid-request'],
+  ])('按语言导出时%s：答 400（%s），不排进队列', async (_, extra, code) => {
+    const files = withMain(BOUND_MAIN, [{ path: 'locales/en.json', content: '{"cap_a1":1}' }])
+    const response = await post({ ...exportRequest({ files }), ...extra })
+    expect(response.status).toBe(400)
+    const payload = (await response.json()) as { code: string; message: string }
+    expect(payload.code).toBe(code)
+    // 给用户看的说明不带语言代码
+    if (code === 'invalid-locale') expect(payload.message).not.toMatch(/\b(en|de|EN|DE)\b/)
+    expect(await (await fetch(`${base}/health`)).json()).toMatchObject({
+      queue: { running: 0, waiting: 0 },
+    })
   })
 
   it('主文件里有音频片段：音频也要给下载地址，隐藏的音频片段也一样', async () => {

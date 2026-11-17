@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
+from iclip.common.final_cut import TargetLocale
+
 TitleKind = Literal["default", "generated", "custom"]
 
 
@@ -73,6 +75,7 @@ class WholeFilmExportError:
 @dataclass(frozen=True, slots=True)
 class WholeFilmExport:
     id: uuid.UUID
+    locale: TargetLocale | None
     status: WholeFilmExportStatus
     progress: float | None
     queue_position: int | None

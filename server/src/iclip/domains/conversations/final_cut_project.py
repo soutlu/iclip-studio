@@ -17,13 +17,9 @@ from typing import Final
 from urllib.parse import quote
 
 from iclip.common.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
-from iclip.common.final_cut import PROJECT_DIR
+from iclip.common.final_cut import PROJECT_DIR, TargetLocale
 from iclip.common.urls import is_http_origin
-from iclip.domains.conversations.final_cut_translation import (
-    FinalCutText,
-    FinalCutTranslator,
-    TargetLocale,
-)
+from iclip.domains.conversations.final_cut_translation import FinalCutText, FinalCutTranslator
 from iclip.domains.conversations.service import (
     ConversationService,
     DerivedFileContent,

@@ -28,6 +28,11 @@ import {
   type FilmClip,
   type VideoClip,
 } from '../../web/src/features/storyboard/final-cut/composition/film'
+import {
+  LOCALE_BINDINGS,
+  localeVariable,
+  localeVariableId,
+} from '../../web/src/features/storyboard/final-cut/composition/locale-text'
 import { startBrowserGuard, type BrowserGuard } from './browser'
 import { ExportQueue } from './jobs'
 import type { ProjectFile } from './project'
@@ -356,7 +361,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     logger = memoryLogger().logger,
   ) =>
     workerIn(join(dir, 'work'), logger).render(
-      { id, files, media: mediaOf(media), vendorDir: VENDOR_DIR },
+      { id, files, media: mediaOf(media), variables: null, vendorDir: VENDOR_DIR },
       { signal: new AbortController().signal, onProgress: () => {} },
     )
 
@@ -438,6 +443,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
         id: 'cleanup-ok',
         files: project([video({ src: clip, duration: 1000 })]),
         media: mediaOf([clip]),
+        variables: null,
         vendorDir: VENDOR_DIR,
       },
       { signal: new AbortController().signal, onProgress: () => {} },
@@ -451,6 +457,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
           id: 'cleanup-failed',
           files: project([video({ src: `${origin}/missing.mp4`, duration: 1000 })]),
           media: mediaOf([`${origin}/missing.mp4`]),
+          variables: null,
           vendorDir: VENDOR_DIR,
         },
         { signal: new AbortController().signal, onProgress: () => {} },
@@ -470,6 +477,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
             { path: '../escape.html', content: 'x' },
           ],
           media: new Map(),
+          variables: null,
           vendorDir: VENDOR_DIR,
         },
         { signal: new AbortController().signal, onProgress: () => {} },
@@ -640,6 +648,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
           id: 'component-missing',
           files: files.slice(0, 1),
           media: new Map(),
+          variables: null,
           vendorDir: VENDOR_DIR,
         },
         { signal: new AbortController().signal, onProgress: () => {} },
@@ -843,6 +852,127 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(shown.warnings).toEqual([])
     expect(outside).toEqual([])
     expect(shown.log).not.toMatch(/fonts\.(googleapis|gstatic)\.com/)
+    expect(blockedHosts().filter((host) => /fonts\./.test(String(host)))).toEqual([])
+  }, 600_000)
+
+  it('按语言导出：同一个工程经接口导中文和 English，字幕和贴片里随语言的字换成英文；没有错误和警告，不去外网取字体', async () => {
+    const catalog = library as ComponentCatalog
+    const steps = `${origin}/steps.mp4`
+    const title = '成片标题'
+    const titleVariable = localeVariableId('title-1', 'text')
+    // 贴片在前 1 秒、字幕在后 1 秒，各取各的那一帧
+    const clips: FilmClip[] = [
+      video({ src: steps, duration: 2000, muted: true, z: 1 }),
+      host({ duration: 1000, values: { text: title, accent: '#2756ff' }, z: 2 }),
+    ]
+    const caption: CaptionClip = {
+      kind: 'caption',
+      id: 'cap-a1',
+      label: '字幕',
+      start: 1000,
+      duration: 1000,
+      track: 0,
+      hidden: false,
+      link: null,
+      text: '字幕第一行',
+      variable: 'cap_a1',
+      owner: null,
+    }
+    // 照编辑器的写法：字幕的字只在根上的变量里；贴片的「文字」随语言，宿主记着根变量，根上声明它、默认值是中文
+    const [main, ...others] = project(clips)
+    const session = await openComposition(main?.content ?? '')
+    session.addElement('film', 99, captionsHostElement(FRAME, 2000))
+    session.declareVariable(captionVariable(caption))
+    session.declareVariable(localeVariable(titleVariable, '文字', title))
+    session.setAttribute('title-1', LOCALE_BINDINGS, JSON.stringify({ text: titleVariable }))
+    const files: ProjectFile[] = [
+      {
+        path: 'index.html',
+        content: withFontBlock(session.serialize(), [...clips, caption], catalog),
+      },
+      { path: CAPTIONS_PATH, content: captionsScene(FRAME, catalog, [{ ...caption, text: '' }]) },
+      {
+        path: 'locales/en.json',
+        content: JSON.stringify({ cap_a1: 'Hello there', [titleVariable]: 'Big Title' }),
+      },
+      ...others,
+    ]
+    const titleArea = { x: 40, y: 240, width: 300, height: 74 }
+    const captionArea = { x: 64, y: 256, width: 512, height: 100 }
+
+    /** 经接口导出一次（两次的 `files` 一样，只差 `locale`），取上传的成片里贴片和字幕那两帧。 */
+    const exportIn = async (id: string, locale: 'en' | null) => {
+      const { logger, lines } = memoryLogger()
+      const queue = new ExportQueue({
+        worker: workerIn(join(dir, 'work'), logger),
+        logger,
+        timeoutMs: 5 * 60_000,
+      })
+      const service = createExportServer({
+        queue,
+        vendorDir: VENDOR_DIR,
+        allowedHosts: new Set([new URL(origin).host]),
+        logger,
+        health: () => ({ gpu: 'software', chrome: 'test' }),
+      })
+      await new Promise<void>((resolve) => service.listen(0, '127.0.0.1', resolve))
+      const api = `http://127.0.0.1:${(service.address() as AddressInfo).port}`
+      try {
+        const posted = await fetch(`${api}/exports`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id,
+            conversationId: '99999999-8888-4777-8666-555555555555',
+            files,
+            media: { [steps]: { url: steps } },
+            locale,
+            upload: { url: `${origin}/upload.mp4`, headers: { 'Content-Type': 'video/mp4' } },
+          }),
+        })
+        expect(posted.status).toBe(202)
+        let view: { status: string; error: unknown } | undefined
+        for (let attempt = 0; attempt < 600; attempt += 1) {
+          view = (await (await fetch(`${api}/exports/${id}`)).json()) as typeof view
+          if (view && ['done', 'failed', 'cancelled'].includes(view.status)) break
+          await new Promise((resolve) => setTimeout(resolve, 250))
+        }
+        expect(view?.error).toBeNull()
+        expect(view?.status).toBe('done')
+      } finally {
+        await new Promise<void>((resolve) => service.close(() => resolve()))
+      }
+      const received = join(dir, 'received.mp4')
+      return {
+        title: await frameAt(received, 0.5, titleArea),
+        caption: await frameAt(received, 1.5, captionArea),
+        warnings: lines.filter((line) => line['event'] === '工程检查有警告'),
+        log: JSON.stringify(lines),
+      }
+    }
+
+    // 渲染服务这边发出的请求：除了回环地址，一个都不该有
+    const requests = vi.spyOn(globalThis, 'fetch')
+    let chinese: Awaited<ReturnType<typeof exportIn>>
+    let english: Awaited<ReturnType<typeof exportIn>>
+    let urls: URL[]
+    try {
+      chinese = await exportIn('44444444-2222-4333-8444-555555555555', null)
+      english = await exportIn('55555555-2222-4333-8444-555555555555', 'en')
+    } finally {
+      urls = requests.mock.calls.map(
+        ([input]) => new URL(input instanceof Request ? input.url : String(input)),
+      )
+      requests.mockRestore()
+    }
+
+    // 同一份工程渲两次的差别在 2 以下；字换了之后两块都在 10 上下
+    expect(meanDifference(chinese.title, english.title)).toBeGreaterThan(5)
+    expect(meanDifference(chinese.caption, english.caption)).toBeGreaterThan(5)
+    expect(chinese.warnings).toEqual([])
+    expect(english.warnings).toEqual([])
+    expect(urls.filter((url) => url.hostname !== '127.0.0.1').map((url) => url.href)).toEqual([])
+    expect(english.log).not.toMatch(/fonts\.(googleapis|gstatic)\.com/)
     expect(blockedHosts().filter((host) => /fonts\./.test(String(host)))).toEqual([])
   }, 600_000)
 
@@ -1057,7 +1187,7 @@ peer.createOffer().then((offer) => peer.setLocalDescription(offer)).catch(() => 
     const before = requests.length
     await expect(
       workerIn(workDir).render(
-        { id: 'lint-error', files, media, vendorDir: VENDOR_DIR },
+        { id: 'lint-error', files, media, variables: null, vendorDir: VENDOR_DIR },
         { signal: new AbortController().signal, onProgress: () => {} },
       ),
     ).rejects.toMatchObject({

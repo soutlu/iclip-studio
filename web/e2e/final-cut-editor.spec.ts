@@ -1847,6 +1847,42 @@ test('语言：加上 English 切过去，给一句字幕写英文，存下的 E
   await expect.poll(captionText).toBe('新字幕')
 })
 
+test('按语言导出：切到 English 点「导出」，提示写导出 English 版，发出的请求带 locale en，导出的状态写 English 版', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const added = mainSaved(page, 1)
+  await editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  await added
+
+  const languages = editor.getByRole('group', { name: '语言' })
+  await languages.getByRole('button', { name: '添加语言' }).click()
+  await page.getByRole('menuitem', { name: 'English（EN）' }).click()
+  await expect(languages.getByRole('button', { name: 'English（EN）' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+
+  const toolbar = editor.getByRole('toolbar', { name: '剪辑工具' })
+  const exportButton = toolbar.getByRole('button', { name: '导出', exact: true })
+  await exportButton.hover()
+  await expect(page.getByRole('tooltip', { name: '导出 English 版' })).toBeVisible()
+  const started = page.waitForRequest(
+    (request) => request.url().endsWith('/whole-film/exports') && request.method() === 'POST',
+  )
+  await exportButton.click()
+  expect((await started).postDataJSON()).toEqual({ locale: 'en' })
+  await expect(editor.getByRole('status').filter({ hasText: /English 版/ })).toBeVisible()
+})
+
 /** 存出的主文件里一个属性的值（双引号里、`&quot;` 换回引号）；`tag` 是元素的开始标签。 */
 const jsonAttribute = (tag: string, name: string): unknown => {
   const value = new RegExp(` ${name}="([^"]*)"`).exec(tag)?.[1]

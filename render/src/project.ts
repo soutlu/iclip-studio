@@ -57,11 +57,17 @@ export function projectProblem(files: readonly ProjectFile[]): string | undefine
 
 const isElement = (node: Node): node is Element => 'tagName' in node
 
-function* mediaElements(node: Node): Generator<Element> {
-  if (isElement(node) && (node.tagName === 'video' || node.tagName === 'audio')) yield node
+/** `node` 下的全部元素（含 `<template>` 里的），按文件里的先后。 */
+export function* elementsOf(node: Node): Generator<Element> {
+  if (isElement(node)) yield node
   const children = 'childNodes' in node ? node.childNodes : []
-  for (const child of children) yield* mediaElements(child)
-  if (isElement(node) && 'content' in node) yield* mediaElements(node.content)
+  for (const child of children) yield* elementsOf(child)
+  if (isElement(node) && 'content' in node) yield* elementsOf(node.content)
+}
+
+function* mediaElements(node: Node): Generator<Element> {
+  for (const element of elementsOf(node))
+    if (element.tagName === 'video' || element.tagName === 'audio') yield element
 }
 
 /** 主文件里 `<video>`、`<audio>` 的 `src` 写的素材地址，不重复。 */
@@ -76,21 +82,36 @@ export function mediaAddresses(html: string): string[] {
 
 const escapeAttribute = (value: string) => value.replaceAll('&', '&amp;').replaceAll('"', '&quot;')
 
+/** 写进 HTML 的一个属性：`name="value"`，值里的 `&`、`"` 转义。 */
+export const attributeText = (name: string, value: string) => `${name}="${escapeAttribute(value)}"`
+
+/** 对 `html` 的一处改动：把 `[from, to)` 这段源码换成 `text`（`from === to` 时是插入）。 */
+export interface SourceEdit {
+  from: number
+  to: number
+  text: string
+}
+
+/** 按源码位置做完 `edits`（互不重叠），别的字一个不动。 */
+export function applyEdits(html: string, edits: readonly SourceEdit[]): string {
+  let edited = html
+  for (const { from, to, text } of edits.toSorted((a, b) => b.from - a.from))
+    edited = `${edited.slice(0, from)}${text}${edited.slice(to)}`
+  return edited
+}
+
 /**
  * 导出用的那一份主文件：`<video>`、`<audio>` 的 `src` 按 `paths`（文件里写的地址 → 本地路径）换掉，
  * 别的内容一个字不动。
  */
 export function withLocalMedia(html: string, paths: ReadonlyMap<string, string>): string {
-  const edits: { from: number; to: number; text: string }[] = []
+  const edits: SourceEdit[] = []
   for (const element of mediaElements(parse(html, { sourceCodeLocationInfo: true }))) {
     const src = element.attrs.find((attr) => attr.name === 'src')?.value
     const local = src === undefined ? undefined : paths.get(src)
     const at = element.sourceCodeLocation?.attrs?.['src']
     if (local === undefined || at === undefined) continue
-    edits.push({ from: at.startOffset, to: at.endOffset, text: `src="${escapeAttribute(local)}"` })
+    edits.push({ from: at.startOffset, to: at.endOffset, text: attributeText('src', local) })
   }
-  let localized = html
-  for (const { from, to, text } of edits.toSorted((a, b) => b.from - a.from))
-    localized = `${localized.slice(0, from)}${text}${localized.slice(to)}`
-  return localized
+  return applyEdits(html, edits)
 }

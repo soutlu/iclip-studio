@@ -7,16 +7,22 @@ from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
 
+from iclip.common.final_cut import TargetLocale
 from iclip.domains.conversations.final_cut_translation import (
     MAX_TRANSLATION_ENTRIES,
     MAX_TRANSLATION_ID_CHARS,
     MAX_TRANSLATION_TEXT_CHARS,
     MAX_TRANSLATION_TOTAL_CHARS,
     FinalCutText,
-    TargetLocale,
 )
 from iclip.domains.conversations.models import WholeFilmExport, WholeFilmExportStatus
 from iclip.domains.conversations.schemas import CamelModel
+
+
+class WholeFilmExportIn(CamelModel):
+    """发起导出：``locale`` 是导出哪种外语的版本，不带或 null 导出中文。"""
+
+    locale: TargetLocale | None = None
 
 
 class WholeFilmExportStartedOut(CamelModel):
@@ -31,9 +37,11 @@ class WholeFilmExportErrorOut(CamelModel):
 
 
 class WholeFilmExportOut(CamelModel):
-    """一次导出现在的样子。``downloadUrl`` 只在 ``done`` 时有，``error`` 只在 ``failed`` 时有。"""
+    """一次导出现在的样子。``locale`` 是导出的哪种外语的版本，中文时是 null。``downloadUrl`` 只在
+    ``done`` 时有，``error`` 只在 ``failed`` 时有。"""
 
     id: uuid.UUID
+    locale: TargetLocale | None
     status: WholeFilmExportStatus
     progress: float | None
     queue_position: int | None
@@ -155,6 +163,7 @@ def final_cut_translations_out(translated: Sequence[FinalCutText]) -> FinalCutTr
 def whole_film_export_out(export: WholeFilmExport) -> WholeFilmExportOut:
     return WholeFilmExportOut(
         id=export.id,
+        locale=export.locale,
         status=export.status,
         progress=export.progress,
         queue_position=export.queue_position,
@@ -176,6 +185,7 @@ __all__ = [
     "FinalCutTranslationsIn",
     "FinalCutTranslationsOut",
     "WholeFilmExportErrorOut",
+    "WholeFilmExportIn",
     "WholeFilmExportLatestOut",
     "WholeFilmExportOut",
     "WholeFilmExportStartedOut",

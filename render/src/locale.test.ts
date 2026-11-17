@@ -1,0 +1,184 @@
+import { describe, expect, it } from 'vitest'
+import {
+  checkLocaleValues,
+  localizeProject,
+  readLocaleTable,
+  rootDeclarations,
+  withLocalizedHosts,
+} from './locale'
+
+const attr = (value: unknown) => JSON.stringify(value).replaceAll('"', '&quot;')
+
+const DECLARATIONS = [
+  { id: 'cap_a1', type: 'string', label: '字幕', default: '你好' },
+  { id: 'txt_t1_text', type: 'string', label: '文字', default: '成片标题' },
+  { id: 'txt_t1_tag', type: 'string', label: '角标', default: '新品' },
+  {
+    id: 'mode',
+    type: 'enum',
+    label: '模式',
+    default: 'a',
+    options: [
+      { value: 'a', label: 'A' },
+      { value: 'b', label: 'B' },
+    ],
+  },
+]
+
+/** 一份主文件：随语言的贴片 t1、没有随语言字段的贴片 t2、字幕宿主；属性写法照编辑器写出的样子。 */
+const MAIN = `<!doctype html>
+<html data-composition-variables="${attr(DECLARATIONS)}">
+<head><meta charset="utf-8"></head>
+<body>
+<div id="film" data-composition-id="film">
+  <div id="t1" class="clip component" data-composition-src="compositions/a.html" data-variable-values="${attr({ text: '成片标题', tag: '新品', accent: '#ff0000' })}" data-locale-bindings="${attr({ text: 'txt_t1_text', tag: 'txt_t1_tag' })}"></div>
+  <div id="t2" class="clip component" data-composition-src="compositions/a.html" data-variable-values="${attr({ text: '固定的字' })}"></div>
+  <div id="captions" class="clip" data-track-kind="captions" data-composition-src="compositions/captions.html"></div>
+</div>
+</body>
+</html>
+`
+
+/** 值表里一个值的类型不对时的说明：只带变量 id 和该是什么类型。 */
+const wrongValue = (id: string, type: string) =>
+  `这种语言的语言文件里变量 ${id} 的值不对，应当是${type}，无法导出这种语言的版本；请在编辑器里改好这种语言的文字后再导出`
+
+const T1_BEFORE = `data-variable-values="${attr({ text: '成片标题', tag: '新品', accent: '#ff0000' })}"`
+
+const files = (table: string | null) => [
+  { path: 'index.html', content: MAIN },
+  { path: 'compositions/a.html', content: '<template></template>' },
+  ...(table === null ? [] : [{ path: 'locales/en.json', content: table }]),
+]
+
+describe('读值表', () => {
+  it('工程里的 locales/<语言>.json 是一个 JSON 对象', () => {
+    expect(readLocaleTable(files('{"cap_a1":"Hello"}'), 'en')).toEqual({
+      ok: true,
+      value: { cap_a1: 'Hello' },
+    })
+  })
+
+  it('工程里没有这种语言的值表、别的语言的不算', () => {
+    expect(readLocaleTable(files(null), 'en')).toEqual({
+      ok: false,
+      message: 'final-cut 里没有这种语言的语言文件，无法导出这种语言的版本',
+    })
+    expect(readLocaleTable(files('{}'), 'de')).toMatchObject({ ok: false })
+  })
+
+  it.each(['不是 JSON', '[]', '"Hello"', 'null'])('不是 JSON 对象（%s）', (content) => {
+    expect(readLocaleTable(files(content), 'en')).toEqual({
+      ok: false,
+      message:
+        '这种语言的语言文件写法不对，无法导出这种语言的版本；请把它改成变量 id 对应文字的 JSON 对象后再导出',
+    })
+  })
+})
+
+describe('根上的声明', () => {
+  it('读 <html> 上的 data-composition-variables，写法不对的声明不算', () => {
+    const html = `<html data-composition-variables="${attr([
+      ...DECLARATIONS.slice(0, 1),
+      { id: 'broken', type: 'string' },
+      { id: 'n', type: 'number', label: '数', default: 'x' },
+    ])}"><body></body></html>`
+    expect(rootDeclarations(html).map((declaration) => declaration.id)).toEqual(['cap_a1'])
+  })
+
+  it('没写或写法不对时当作没有声明', () => {
+    expect(rootDeclarations('<html><body></body></html>')).toEqual([])
+    expect(rootDeclarations('<html data-composition-variables="{"><body></body></html>')).toEqual(
+      [],
+    )
+  })
+})
+
+describe('校验值表', () => {
+  const declarations = rootDeclarations(MAIN)
+
+  it('没声明的变量去掉，记去掉了几条', () => {
+    expect(
+      checkLocaleValues({ cap_a1: 'Hello', old_1: 'Gone', old_2: 'Gone' }, declarations),
+    ).toEqual({ ok: true, value: { values: { cap_a1: 'Hello' }, dropped: 2 } })
+  })
+
+  it('类型不对整份不用，说明是哪个变量、应当是什么，不带值和语言代码', () => {
+    const checked = checkLocaleValues({ cap_a1: 42, old: 'x' }, declarations)
+    expect(checked).toEqual({ ok: false, message: wrongValue('cap_a1', '文字') })
+  })
+
+  it('不在可选范围里也整份不用', () => {
+    const checked = checkLocaleValues({ mode: '秘密的值' }, declarations)
+    expect(checked).toEqual({ ok: false, message: wrongValue('mode', '选项') })
+  })
+})
+
+describe('改宿主取值', () => {
+  const defaults = new Map(
+    rootDeclarations(MAIN).map((declaration) => [declaration.id, declaration.default]),
+  )
+
+  it('只改随语言的宿主：随语言的字段换成这种语言的字，没翻的用根变量的默认值，固定的字段照旧；别的字一个不动', () => {
+    const localized = withLocalizedHosts(MAIN, { txt_t1_text: 'Title' }, defaults)
+    const after = `data-variable-values="${attr({ text: 'Title', tag: '新品', accent: '#ff0000' })}"`
+
+    expect(localized).toBe(MAIN.replace(T1_BEFORE, after))
+  })
+
+  it('没有随语言的宿主时原样返回', () => {
+    const html = MAIN.replace(/ data-locale-bindings="[^"]*"/, '')
+    expect(withLocalizedHosts(html, { txt_t1_text: 'Title' }, defaults)).toBe(html)
+  })
+
+  it('宿主上没写取值时加上', () => {
+    const html = MAIN.replace(` ${T1_BEFORE}`, '')
+    const localized = withLocalizedHosts(html, { txt_t1_text: 'Title' }, defaults)
+    expect(localized).toBe(
+      html.replace(
+        '<div id="t1"',
+        `<div data-variable-values="${attr({ text: 'Title', tag: '新品' })}" id="t1"`,
+      ),
+    )
+  })
+
+  it('值里的引号、& 转义后写进属性', () => {
+    const localized = withLocalizedHosts(MAIN, { txt_t1_text: 'Tom & "Jerry"' }, defaults)
+    expect(localized).toContain(
+      `data-variable-values="{&quot;text&quot;:&quot;Tom &amp; \\&quot;Jerry\\&quot;&quot;,`,
+    )
+  })
+})
+
+describe('把工程变成一种外语的版本', () => {
+  it('主文件改好宿主取值，别的文件原样；变量值是校验过的值表', () => {
+    const table = '{"cap_a1":"Hello","txt_t1_text":"Title","stale":"x"}'
+    const localized = localizeProject(files(table), 'en')
+
+    expect(localized).toEqual({
+      ok: true,
+      value: {
+        files: [
+          {
+            path: 'index.html',
+            content: MAIN.replace(
+              T1_BEFORE,
+              `data-variable-values="${attr({ text: 'Title', tag: '新品', accent: '#ff0000' })}"`,
+            ),
+          },
+          ...files(table).slice(1),
+        ],
+        variables: { cap_a1: 'Hello', txt_t1_text: 'Title' },
+        dropped: 1,
+      },
+    })
+  })
+
+  it('值表读不了或校验不过时说明原因', () => {
+    expect(localizeProject(files(null), 'en')).toMatchObject({ ok: false })
+    expect(localizeProject(files('{"cap_a1":1}'), 'en')).toEqual({
+      ok: false,
+      message: wrongValue('cap_a1', '文字'),
+    })
+  })
+})

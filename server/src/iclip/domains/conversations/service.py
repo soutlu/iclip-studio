@@ -12,7 +12,7 @@ import structlog
 from iclip_video.film_view import FilmImagePrompt, FilmTextEdit, FilmView
 
 from iclip.common.errors import NotFound, PermissionDenied, ValidationFailed
-from iclip.common.final_cut import MAIN_FILE, PROJECT_DIR
+from iclip.common.final_cut import MAIN_FILE, PROJECT_DIR, TargetLocale, locale_path
 from iclip.domains.conversations.models import (
     IDLE_ACTIVITY,
     AgentPreview,
@@ -239,9 +239,14 @@ class FinalCutRenderUnavailable(Exception):
 
 class WholeFilmExports(Protocol):
     async def start(
-        self, principal: Principal, *, conversation_id: uuid.UUID, main_file: str
+        self,
+        principal: Principal,
+        *,
+        conversation_id: uuid.UUID,
+        main_file: str,
+        locale: TargetLocale | None,
     ) -> uuid.UUID:
-        """按 final-cut 主文件记一条导出排队，答复导出 id。"""
+        """按 final-cut 主文件记一条导出排队，答复导出 id。``locale`` 是导出哪种外语，None 是中文。"""
         ...
 
     async def latest(
@@ -255,6 +260,7 @@ class WholeFilmExports(Protocol):
 
 _EXPORTS_OFF = "成片导出没有开通"
 _FINAL_CUT_EMPTY = "final-cut 暂无内容，无法导出"
+_NO_LOCALE_TABLE = "final-cut 里没有这种语言的语言文件，无法导出这种语言的版本"
 
 
 class WorkspaceDocumentValidator(Protocol):
@@ -576,19 +582,27 @@ class ConversationService:
         )
 
     async def export_whole_film(
-        self, principal: Principal, conversation_id: uuid.UUID
+        self, principal: Principal, conversation_id: uuid.UUID, *, locale: TargetLocale | None
     ) -> uuid.UUID:
-        """按 final-cut 主文件记一条导出排队，答复导出 id。还没有主文件抛 ``ValidationFailed``。"""
+        """按 final-cut 主文件记一条导出排队，答复导出 id；``locale`` 是导出哪种外语，None 是中文。
+        还没有主文件、工程里没有这种外语的值表都抛 ``ValidationFailed``。"""
 
         conversation = await self._workspace_writable(principal, conversation_id)
         exports = self._require_exports()
-        main = await self._read_derived_file(
-            conversation.owner_user_id, conversation.id, f"{PROJECT_DIR}/{MAIN_FILE}"
-        )
+        owner = conversation.owner_user_id
+        main = await self._read_derived_file(owner, conversation.id, f"{PROJECT_DIR}/{MAIN_FILE}")
         if main is None:
             raise ValidationFailed(_FINAL_CUT_EMPTY)
+        if (
+            locale is not None
+            and await self._read_derived_file(
+                owner, conversation.id, f"{PROJECT_DIR}/{locale_path(locale)}"
+            )
+            is None
+        ):
+            raise ValidationFailed(_NO_LOCALE_TABLE)
         return await exports.start(
-            principal, conversation_id=conversation.id, main_file=main.content
+            principal, conversation_id=conversation.id, main_file=main.content, locale=locale
         )
 
     async def latest_whole_film_export(
