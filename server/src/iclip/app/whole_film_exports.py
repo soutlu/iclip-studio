@@ -97,7 +97,7 @@ class WholeFilmExportAdapter:
         locale: TargetLocale | None,
     ) -> uuid.UUID:
         """记一条成片记录排队：主文件里的素材按输出地址对上生成记录的记进去，对不上的不记；
-        导出哪种外语（``locale``）也记进去。"""
+        导出哪种语言（``locale``，None 是原文）也记进去。"""
 
         addresses = media_addresses(main_file)
         records = await self._generations.earliest_by_outputs(

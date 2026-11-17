@@ -23,12 +23,12 @@ const injected = (html: string): unknown => {
 }
 
 describe('预览套上一种语言的值', () => {
-  it('中文（没有值表）不插脚本，文件原样', () => {
+  it('原文（没有值表）不插脚本，文件原样', () => {
     const html = film(['cap_a1'])
     expect(withPreviewVariables(html, null)).toBe(html)
   })
 
-  it('外语：在 <head> 开头插脚本，只放主文件根上声明过的 id；没翻的句子不写', () => {
+  it('其它语言：在 <head> 开头插脚本，只放主文件根上声明过的 id；没翻的句子不写', () => {
     const html = withPreviewVariables(film(['cap_a1', 'cap_b2']), {
       cap_a1: 'Hello',
       cap_gone: 'Old line',
@@ -68,7 +68,7 @@ describe('预览套上一种语言的值', () => {
       return json === null || json === undefined ? null : JSON.parse(json)
     }
 
-    it('外语：宿主的取值里随语言的字段换成这种语言的字，没翻的用中文原文；固定的字段、别的宿主、字幕宿主不动', () => {
+    it('其它语言：宿主的取值里随语言的字段换成这种语言的字，没翻的用原文；固定的字段、别的宿主、字幕宿主不动', () => {
       const html = previewDocument(
         bound({ title: '早秋亚麻', brand: 'AUTUMN' }),
         'https://preview.test/files/',
@@ -85,7 +85,22 @@ describe('预览套上一种语言的值', () => {
       expect(injected(html)).toEqual({ txt_t1_title: 'Autumn Linen' })
     })
 
-    it('中文不改宿主；外语下没有随语言字段的文件原样', () => {
+    it('原文是英文、预览中文值表：随语言的字段和字幕的变量都是中文，没翻的用英文原文', () => {
+      const english = (values: Record<string, unknown>) =>
+        bound(values)
+          .replaceAll('早秋亚麻', 'Autumn Linen')
+          .replaceAll('松弛感', 'Easy fit')
+          .replaceAll('固定的字', 'Fixed')
+      const html = previewDocument(
+        english({ title: 'Autumn Linen', brand: 'AUTUMN' }),
+        'https://preview.test/files/',
+        { txt_t1_title: '早秋亚麻' },
+      )
+      expect(valuesOf(html, 't1')).toEqual({ title: '早秋亚麻', sub: 'Easy fit', brand: 'AUTUMN' })
+      expect(injected(html)).toEqual({ txt_t1_title: '早秋亚麻' })
+    })
+
+    it('原文不改宿主；其它语言下没有随语言字段的文件原样', () => {
       const html = bound({ title: '早秋亚麻' })
       expect(valuesOf(previewDocument(html, 'https://preview.test/files/'), 't1')).toEqual({
         title: '早秋亚麻',

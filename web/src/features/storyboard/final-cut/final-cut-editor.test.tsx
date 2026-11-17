@@ -4012,14 +4012,14 @@ describe('final-cut 编辑器 · 语言', () => {
     return user
   }
 
-  it('工具条上一排语言：中文和工程里有的语言，当前的高亮；「+」里列出还没加的语言，选一个就加上并切过去', async () => {
+  it('工具条上一排语言：原文和工程里有的语言，当前的高亮；「+」里列出还没加的语言（中文也在里面），选一个就加上并切过去', async () => {
     const user = await open()
     expect(
       within(languages())
         .getAllByRole('button')
         .map((button) => [button.textContent, button.getAttribute('aria-pressed')]),
     ).toEqual([
-      ['ZH', 'true'],
+      ['原文', 'true'],
       ['EN', 'false'],
       ['', null],
     ])
@@ -4029,30 +4029,30 @@ describe('final-cut 编辑器 · 语言', () => {
       within(menu)
         .getAllByRole('menuitem')
         .map((item) => item.textContent),
-    ).toEqual(['Deutsch（DE）', 'Español（ES）', 'Français（FR）'])
-    await user.click(within(menu).getByRole('menuitem', { name: 'Français（FR）' }))
+    ).toEqual(['中文（ZH）', 'Deutsch（DE）', 'Español（ES）', 'Français（FR）'])
+    await user.click(within(menu).getByRole('menuitem', { name: '中文（ZH）' }))
     await waitFor(() =>
-      expect(within(languages()).getByRole('button', { name: 'Français（FR）' })).toHaveAttribute(
+      expect(within(languages()).getByRole('button', { name: '中文（ZH）' })).toHaveAttribute(
         'aria-pressed',
         'true',
       ),
     )
-    expect(mockWorkspaceFile(CONVERSATION, 'final-cut/locales/fr.json')?.content).toBe('{}\n')
+    expect(mockWorkspaceFile(CONVERSATION, 'final-cut/locales/zh.json')?.content).toBe('{}\n')
   })
 
   it('所有语言都加了：不显示「+」', async () => {
     await putFilm([video({ src: URL_A, duration: 2_000 })])
-    for (const code of ['en', 'de', 'es', 'fr'])
+    for (const code of ['zh', 'en', 'de', 'es', 'fr'])
       putMockWorkspaceFile(CONVERSATION, `final-cut/locales/${code}.json`, '{}')
     await openEditor()
     expect(
       within(languages())
         .getAllByRole('button')
         .map((button) => button.textContent),
-    ).toEqual(['ZH', 'EN', 'DE', 'ES', 'FR'])
+    ).toEqual(['原文', 'ZH', 'EN', 'DE', 'ES', 'FR'])
   })
 
-  it('切到 English：预览套上 English 的值，字幕页签、时间线上是英文，没翻的显示原文并标出来，不能加字幕；切回中文都回来', async () => {
+  it('切到 English：预览套上 English 的值，字幕页签、时间线上是英文，没翻的显示原文并标出来，不能加字幕；切回原文都回来', async () => {
     const user = await open()
     expect(previewValues()).toBeUndefined()
     await user.click(within(side()).getByRole('tab', { name: '字幕' }))
@@ -4072,10 +4072,10 @@ describe('final-cut 编辑器 · 语言', () => {
     expect(add).toHaveAttribute('aria-disabled', 'true')
     await user.click(add)
     expect(
-      (await screen.findAllByText('当前语言是 English，无法加字幕；请先切换到中文')).length,
+      (await screen.findAllByText('当前语言是 English，无法加字幕；请先切换到「原文」')).length,
     ).toBeGreaterThan(0)
 
-    // 外语下写一句：存进 English 的值表，原文不变
+    // 其它语言下写一句：存进 English 的值表，原文不变
     await user.type(second, 'Line two')
     await waitSaved(() =>
       expect(JSON.parse(mockWorkspaceFile(CONVERSATION, EN_FILE)?.content ?? '')).toEqual({
@@ -4086,7 +4086,7 @@ describe('final-cut 编辑器 · 语言', () => {
     expect(savedVariableTexts()).toEqual(['字幕 a1', '字幕 b2'])
     await waitFor(() => expect(previewValues()).toEqual({ cap_a1: 'Line one', cap_b2: 'Line two' }))
 
-    await user.click(within(languages()).getByRole('button', { name: '中文（ZH）' }))
+    await user.click(within(languages()).getByRole('button', { name: '原文' }))
     await waitFor(() => expect(previewValues()).toBeUndefined())
     expect(
       within(panel()).getByRole('textbox', { name: '字幕文字 00:01.00 – 00:02.00' }),
@@ -4094,10 +4094,10 @@ describe('final-cut 编辑器 · 语言', () => {
     expect(within(row).getByRole('group', { name: /^字幕 a1，1\.0 秒$/ })).toBeVisible()
   })
 
-  it('切到 English 点「导出」：导出 English 版，提示里提醒还有几条没翻；发起时带上语言，状态写这次导出的语言；中文时带 null', async () => {
+  it('切到 English 点「导出」：导出 English 版，提示里提醒还有几条没翻；发起时带上语言，状态写这次导出的语言；原文时带 null', async () => {
     const exportId = '22222222-3333-4444-8555-666666666666'
     const bodies: unknown[] = []
-    // 中文那次答「还没导出过」，按钮留在「导出」；English 那次答渲染中、记着 English
+    // 原文那次答「还没导出过」，按钮留在「导出」；English 那次答渲染中、记着 English
     server.use(
       http.post('*/api/conversations/:conversationId/whole-film/exports', async ({ request }) => {
         bodies.push(await request.json())
@@ -4130,7 +4130,7 @@ describe('final-cut 编辑器 · 语言', () => {
     // 两句字幕 English 翻了一句
     await user.hover(exportButton())
     expect(await screen.findByRole('tooltip')).toHaveTextContent(
-      /^导出 English 版；有 1 条文字未翻译，导出后显示中文$/,
+      /^导出 English 版；有 1 条文字未翻译，导出后显示原文$/,
     )
     await user.click(exportButton())
     await waitFor(() => expect(bodies).toEqual([{ locale: null }, { locale: 'en' }]))
@@ -4204,7 +4204,7 @@ describe('final-cut 编辑器 · 贴片、场景的文字分语言', () => {
     return user
   }
 
-  it('「字幕」页签上面切换「字幕」「组件文字」，各带个数；「组件文字」每个贴片一块、每个文字字段一行，没有外语时不显示「固定 / 随语言」，改的是中文', async () => {
+  it('「字幕」页签上面切换「字幕」「组件文字」，各带个数；「组件文字」每个贴片一块、每个文字字段一行，没加语言时不显示「固定 / 随语言」，改的是原文', async () => {
     const user = await open()
     const views = within(panel()).getByRole('group', { name: '字幕或组件文字' })
     expect(
@@ -4234,7 +4234,7 @@ describe('final-cut 编辑器 · 贴片、场景的文字分语言', () => {
     await waitFor(() => expect(progress()).toHaveAttribute('aria-valuetext', '00:02.00 / 00:04.00'))
   })
 
-  it('加上 English：中文的字段随语言、西文的固定；外语下随语言的框里写英文存进值表、预览里那个贴片是英文，固定的只读；点「随语言」改成固定', async () => {
+  it('加上 English：文字字段都随语言（西文的也一样）；其它语言下随语言的框里写英文存进值表、预览里那个贴片是英文；改成固定的只读；点「随语言」改成固定', async () => {
     const user = await open()
     await user.click(
       within(within(panel()).getByRole('group', { name: '字幕或组件文字' })).getByRole('button', {
@@ -4249,16 +4249,25 @@ describe('final-cut 编辑器 · 贴片、场景的文字分语言', () => {
         'true',
       ),
     )
-    expect(within(texts()).getByRole('button', { name: '文字：随语言' })).toBeVisible()
-    expect(within(texts()).getByRole('button', { name: '文字：固定' })).toBeVisible()
+    expect(within(texts()).getAllByRole('button', { name: '文字：随语言' })).toHaveLength(2)
     await waitSaved(() => expect(savedHost('zh').bindings).toEqual({ text: 'txt_zh_text' }))
-    expect(savedHost('latin').bindings).toBeNull()
-    expect(savedVariableTexts()).toEqual(['新品上市'])
+    expect(savedHost('latin').bindings).toEqual({ text: 'txt_latin_text' })
+    expect(savedVariableTexts()).toHaveLength(2)
+    expect(savedVariableTexts()).toEqual(expect.arrayContaining(['新品上市', 'NEW IN · AW26']))
 
     const zh = within(texts()).getByRole('textbox', { name: '中文标题 文字' })
     expect(zh).toHaveValue('')
     expect(zh).toHaveAttribute('placeholder', '输入 English 文字…')
     expect(zh).toHaveAccessibleDescription('原文 新品上市')
+    expect(within(texts()).getByRole('textbox', { name: '季标 文字' })).toHaveAccessibleDescription(
+      '原文 NEW IN · AW26',
+    )
+
+    // 季标改成固定：所有语言共用原文、只读
+    const latinItem = within(texts()).getAllByRole('listitem')[1]
+    if (latinItem === undefined) throw new Error('没有季标那一块')
+    await user.click(within(latinItem).getByRole('button', { name: '文字：随语言' }))
+    await waitSaved(() => expect(savedHost('latin').bindings).toBeNull())
     const latin = within(texts()).getByRole('textbox', { name: '季标 文字' })
     expect(latin).toHaveValue('NEW IN · AW26')
     expect(latin).toHaveAttribute('readonly')
@@ -4278,7 +4287,7 @@ describe('final-cut 编辑器 · 贴片、场景的文字分语言', () => {
     expect(within(texts()).getAllByRole('button', { name: '文字：固定' })).toHaveLength(2)
   })
 
-  it('「属性」里的文字字段右边也有「固定 / 随语言」；外语下随语言的写这种语言，固定的只读', async () => {
+  it('「属性」里的文字字段右边也有「固定 / 随语言」；其它语言下随语言的写这种语言，固定的只读', async () => {
     const user = await open(true)
     await user.click(screen.getByRole('button', { name: /^选中：中文标题，/ }))
     await user.click(within(side()).getByRole('tab', { name: '属性' }))
@@ -4372,7 +4381,7 @@ describe('final-cut 编辑器 · 翻译', () => {
 
   const twoLines = [sceneLine('a1', 0, 1_000), sceneLine('b2', 1_000, 1_000)]
 
-  it('中文时没有「翻译」；English 下只翻还没翻的，固定的不翻，一次写进值表、一步撤销；都翻过了置灰说明原因', async () => {
+  it('原文时没有「翻译」；English 下只翻还没翻的，固定的不翻，一次写进值表、一步撤销；都翻过了置灰说明原因', async () => {
     const sent = serveTranslations()
     const user = await open(twoLines, { cap_a1: 'Line one' })
     expect(within(panel()).queryByRole('button', { name: '翻译' })).toBeNull()

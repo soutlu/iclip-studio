@@ -34,6 +34,7 @@ TRANSLATE_MAX_OUTPUT_TOKENS: Final = 65_536
 TRANSLATE_TIMEOUT_SECONDS: Final = 180.0
 
 LANGUAGE_NAMES: Final[Mapping[TargetLocale, str]] = {
+    "zh": "中文",
     "en": "英语",
     "de": "德语",
     "es": "西班牙语",
@@ -42,10 +43,10 @@ LANGUAGE_NAMES: Final[Mapping[TargetLocale, str]] = {
 
 _SYSTEM_PROMPT: Final = (
     "你会拿到一个 JSON 对象，entries 里每一条有 id 和 text。text 是一条短视频里的一句字幕或一段"
-    "画面文字，原文是中文。\n"
+    "画面文字，原文可能是任何语言。\n"
     "把每一条单独翻成{language}，用口语，简短，适合放在画面上。\n"
     "品牌名、产品型号、数字、价格、单位、网址、话题标签照原样写；原文里的换行原样保留。\n"
-    "原文本身已经是{language}，或者只是西文的品牌词时，原样返回。\n"
+    "原文本身已经是{language}，或者只是品牌名、型号这类不用翻的词时，原样返回。\n"
     "text 里只写译文，不加解释、引号或编号。每一条输入都用它原来的 id 返回一条，不多不少。"
 )
 

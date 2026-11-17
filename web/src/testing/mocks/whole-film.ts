@@ -7,7 +7,7 @@ const PROJECT_MAIN_PATH = 'final-cut/index.html'
 
 type MockExport = {
   id: string
-  /** 导出的外语，中文是 null。 */
+  /** 导出的语言，原文是 null。 */
   locale: string | null
   reads: number
   cancelled: boolean

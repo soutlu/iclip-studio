@@ -12,7 +12,14 @@ import {
 } from '@/shared/ui/menu'
 import { Slider } from '@/shared/ui/slider'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
-import { LOCALES, SOURCE_LOCALE, type LocaleCode } from './locales'
+import {
+  LOCALES,
+  phraseWith,
+  SOURCE_LOCALE,
+  SOURCE_NAME,
+  type Language,
+  type LocaleCode,
+} from './locales'
 import {
   FIT_ZOOM,
   nextZoom,
@@ -166,43 +173,59 @@ function ToolPicker({ tool, onTool, onSelectAround, splitBlocked, onSplit }: Too
 /** 切开的命令在下拉和片段右键菜单里都叫这个。 */
 export const SPLIT_LABEL = '在播放头处切开'
 
-/** 工具条上的语言切换：`current` 是显示着的语言，`present` 是工程里有值表的外语。 */
+/** 工具条上的语言切换：`current` 是显示着的语言，`present` 是工程里有值表的语言。 */
 export type LocaleControls = {
-  current: LocaleCode
+  current: Language
   present: readonly LocaleCode[]
-  onSwitch: (code: LocaleCode) => void
+  onSwitch: (code: Language) => void
   /** 加一种语言并切过去。 */
   onAdd: (code: LocaleCode) => void
 }
 
 const localeButtonName = ({ name, tag }: { name: string; tag: string }) => `${name}（${tag}）`
 
+/** 语言切换里的一个按钮：切到哪种语言，按钮上的字、无障碍名和提示。 */
+type LocaleButton = { code: Language; tag: string; label: string; tip: string }
+
+const SOURCE_BUTTON: LocaleButton = {
+  code: SOURCE_LOCALE,
+  tag: SOURCE_NAME,
+  label: SOURCE_NAME,
+  tip: `切换到${SOURCE_NAME}：预览和字幕显示${SOURCE_NAME}`,
+}
+
 /**
- * 语言切换：中文和工程里有的语言各一个代码按钮，当前的高亮；最后的「+」点开列出还没加的语言，选一个加上并
- * 切过去，都加了时不显示。
+ * 语言切换：原文和工程里有的语言各一个按钮（原文写「原文」，别的写语言代码），当前的高亮；最后的「+」点开
+ * 列出还没加的语言，选一个加上并切过去，都加了时不显示。
  */
 function LocaleBar({ current, present, onSwitch, onAdd }: LocaleControls) {
-  const shown = LOCALES.filter(({ code }) => code === SOURCE_LOCALE || present.includes(code))
-  const addable = LOCALES.filter(({ code }) => !shown.some((locale) => locale.code === code))
+  const buttons: LocaleButton[] = [
+    SOURCE_BUTTON,
+    ...LOCALES.filter(({ code }) => present.includes(code)).map((locale) => ({
+      code: locale.code,
+      tag: locale.tag,
+      label: localeButtonName(locale),
+      tip: `${phraseWith('切换到', locale.code, '：')}${phraseWith('预览和字幕显示', locale.code, '的字')}`,
+    })),
+  ]
+  const addable = LOCALES.filter(({ code }) => !present.includes(code))
   return (
     <div aria-label="语言" className="wf-locales" role="group">
-      {shown.map((locale) => (
-        <TooltipRoot key={locale.code}>
+      {buttons.map((button) => (
+        <TooltipRoot key={button.label}>
           <TooltipTrigger asChild>
             <button
-              aria-label={localeButtonName(locale)}
-              aria-pressed={locale.code === current}
+              aria-label={button.label}
+              aria-pressed={button.code === current}
               className="wf-locale ui-state ui-focus"
-              onClick={() => onSwitch(locale.code)}
+              onClick={() => onSwitch(button.code)}
               type="button"
             >
-              {locale.tag}
+              {button.tag}
             </button>
           </TooltipTrigger>
           <TooltipContent className="wf-tip" side="top">
-            {locale.code === SOURCE_LOCALE
-              ? '切换到中文：预览和字幕显示原文'
-              : `切换到 ${locale.name}：预览和字幕显示 ${locale.name} 的字`}
+            {button.tip}
           </TooltipContent>
         </TooltipRoot>
       ))}

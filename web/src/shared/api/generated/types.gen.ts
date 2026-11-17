@@ -2112,7 +2112,7 @@ export type DubbingIn = {
   /**
    * Locale
    */
-  locale: 'en' | 'de' | 'es' | 'fr'
+  locale: 'zh' | 'en' | 'de' | 'es' | 'fr'
   /**
    * Metadata
    */
@@ -2843,7 +2843,7 @@ export type FinalCutPreviewOut = {
 /**
  * FinalCutTextIn
  *
- * 一条要翻的中文：``id`` 是编辑器里变量的 id，``text`` 不能只有空白。
+ * 一条要翻的原文：``id`` 是编辑器里变量的 id，``text`` 不能只有空白。
  */
 export type FinalCutTextIn = {
   /**
@@ -2890,7 +2890,8 @@ export type FinalCutTranslationOut = {
 /**
  * FinalCutTranslationsIn
  *
- * 把一批中文短句翻成 ``targetLocale``。源语言固定是中文；``entries`` 里的 ``id`` 不能重复。
+ * 把一批原文短句翻成 ``targetLocale``。原文什么语言都行，不用声明；``entries`` 里的 ``id``
+ * 不能重复。
  */
 export type FinalCutTranslationsIn = {
   /**
@@ -2902,7 +2903,7 @@ export type FinalCutTranslationsIn = {
   /**
    * Targetlocale
    */
-  targetLocale: 'en' | 'de' | 'es' | 'fr'
+  targetLocale: 'zh' | 'en' | 'de' | 'es' | 'fr'
 }
 
 /**
@@ -7676,13 +7677,13 @@ export type WholeFilmExportErrorOut = {
 /**
  * WholeFilmExportIn
  *
- * 发起导出：``locale`` 是导出哪种外语的版本，不带或 null 导出中文。
+ * 发起导出：``locale`` 是导出哪种语言的版本，不带或 null 导出原文。
  */
 export type WholeFilmExportIn = {
   /**
    * Locale
    */
-  locale?: 'en' | 'de' | 'es' | 'fr' | null
+  locale?: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
 }
 
 /**
@@ -7697,7 +7698,7 @@ export type WholeFilmExportLatestOut = {
 /**
  * WholeFilmExportOut
  *
- * 一次导出现在的样子。``locale`` 是导出的哪种外语的版本，中文时是 null。``downloadUrl`` 只在
+ * 一次导出现在的样子。``locale`` 是导出的哪种语言的版本，原文时是 null。``downloadUrl`` 只在
  * ``done`` 时有，``error`` 只在 ``failed`` 时有。
  */
 export type WholeFilmExportOut = {
@@ -7713,7 +7714,7 @@ export type WholeFilmExportOut = {
   /**
    * Locale
    */
-  locale: 'en' | 'de' | 'es' | 'fr' | null
+  locale: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
   /**
    * Progress
    */

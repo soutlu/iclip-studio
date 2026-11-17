@@ -486,8 +486,8 @@ def create_conversations_router(
         body: WholeFilmExportIn | None = None,
     ) -> WholeFilmExportStartedOut:
         """按 final-cut 导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；
-        还没有主文件 ``final-cut/index.html``、要导的外语没有值表 ``final-cut/locales/<语言>.json``、
-        没开通都是 422。没有请求体或 ``locale`` 为 null 时导出中文。主文件里的素材按输出地址对上
+        还没有主文件 ``final-cut/index.html``、要导的语言没有值表 ``final-cut/locales/<语言>.json``、
+        没开通都是 422。没有请求体或 ``locale`` 为 null 时导出原文。主文件里的素材按输出地址对上
         生成记录的记进导出记录，对不上的不记、也不拒绝。导出的是交给渲染服务那一刻的工程。"""
 
         export_id = await service.export_whole_film(
@@ -704,7 +704,7 @@ def create_final_cut_project_router(project: FinalCutProject) -> APIRouter:
         body: FinalCutTranslationsIn,
         principal: Annotated[Principal, require_permission("agent:run")],
     ) -> FinalCutTranslationsOut | JSONResponse:
-        """把一批中文短句翻成一种外语，一次请求一次模型调用，同步答复；不落库、不写工作区。只有属主能翻：
+        """把一批原文短句（什么语言都行）翻成一种语言，一次请求一次模型调用，同步答复；不落库、不写工作区。只有属主能翻：
         看不见这段对话 404，看得见但不是属主、或看得见已删除的对话（治理者）403。语言、条数、长度不合规或
         ``id`` 重复 422。模型没启用 409，模型调用失败或回答不对 502，都带 ``code``。"""
 

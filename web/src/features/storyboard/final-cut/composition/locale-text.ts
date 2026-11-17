@@ -5,10 +5,10 @@ import { itemNamed, type FilmClip, type HostClip } from './film'
  * 贴片、场景里文字可填项的「固定 / 随语言」。
  *
  * 挂载的组件文件只读宿主自己的 `data-variable-values`，读不到主文件根上的变量。所以一个字段随语言时，主文件根上
- * 声明一个字符串变量（id 见 `localeVariableId`，默认值是这个字段的中文），宿主上的 `data-locale-bindings` 记着
- * 「字段 id → 根变量 id」；宿主的 `data-variable-values` 里照旧写中文。没记在里面的字段是固定的，所有语言都用
- * 宿主上写着的字。预览某种外语前先用 `localizedHostValues` 把这种语言的值并进各宿主的取值，以后按语言导出
- * 也用它。
+ * 声明一个字符串变量（id 见 `localeVariableId`，默认值是这个字段的原文），宿主上的 `data-locale-bindings` 记着
+ * 「字段 id → 根变量 id」；宿主的 `data-variable-values` 里照旧写原文。没记在里面的字段是固定的，所有语言都用
+ * 宿主上写着的字。预览原文以外的一种语言前先用 `localizedHostValues` 把这种语言的值并进各宿主的取值，按语言
+ * 导出也用它。
  */
 export const LOCALE_BINDINGS = 'data-locale-bindings'
 
@@ -59,22 +59,13 @@ export const fieldText = (
 /** 片段 `clipId` 的字段 `fieldId` 随语言时的根变量 id：带前缀，不和组件文件里的变量重名。 */
 export const localeVariableId = (clipId: string, fieldId: string) => `txt_${clipId}_${fieldId}`
 
-/** 随语言的字段在主文件根上的变量声明：默认值是这个字段的中文。 */
+/** 随语言的字段在主文件根上的变量声明：默认值是这个字段的原文。 */
 export const localeVariable = (id: string, label: string, text: string) => ({
   id,
   type: 'string' as const,
   label,
   default: text,
 })
-
-/**
- * 字段默认固定还是随语言：全是西文（ASCII 可见字符加 `·•—–`）且至少有一个字母的（英文标题、季标、品牌名）
- * 默认固定，别的（有中文的）默认随语言。
- */
-export function pinnedByDefault(text: string): boolean {
-  const trimmed = text.trim()
-  return trimmed !== '' && /^[\x20-\x7E·•—–]+$/.test(trimmed) && /[A-Za-z]/.test(trimmed)
-}
 
 /** 要按语言并值的一个宿主：编号、现在的取值和随语言的字段。 */
 export interface LocalizedHost {
@@ -84,7 +75,7 @@ export interface LocalizedHost {
 }
 
 /**
- * 一种外语下各宿主的取值：每个随语言的字段换成它的根变量在这种语言下的字——值表 `table` 里有（是字符串）就用，
+ * 原文以外的一种语言下各宿主的取值：每个随语言的字段换成它的根变量在这种语言下的字——值表 `table` 里有（是字符串）就用，
  * 没有用根变量的默认值 `defaults`（变量 id → 默认值）；两处都没有时这个字段照旧。答复只含有随语言字段的宿主
  * （编号 → 新的取值），别的宿主（含字幕宿主）不在里面、不要动。
  */

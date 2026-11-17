@@ -1,4 +1,5 @@
-"""final-cut 文字翻译：把一批中文短句（字幕、画面文字）翻成编辑器支持的一种外语，一次请求一次模型调用。"""
+"""final-cut 文字翻译：把一批原文短句（字幕、画面文字，什么语言都行）翻成编辑器能加的一种语言，一次请求
+一次模型调用。"""
 
 from __future__ import annotations
 
@@ -17,7 +18,8 @@ MAX_TRANSLATION_TEXT_CHARS: Final = 500
 MAX_TRANSLATION_ID_CHARS: Final = 128
 
 # 一批所有 text 加起来的字数上限，保证一次调用答得完、不被截断。超时（180 秒）比输出上限（65,536
-# token）先到，按它估：中文翻成西文约每字 1.5 个输出 token；200 条的 JSON 外壳和 id 约 2,000 token，
+# token）先到，按它估。原文不限语言，按最费的情况算：原文每字最多约 1.5 个输出 token（汉字这类一字一词的
+# 原文翻成西文时最多，西文原文每字远少于此）；200 条的 JSON 外壳和 id 约 2,000 token，
 # 低档思考约 2,000 token；吞吐按保守的每秒 60 token 算，180 秒约 10,800 token，留给译文约 6,800 token，
 # 约 4,500 字，取整到 4,000 字再留些余量。
 MAX_TRANSLATION_TOTAL_CHARS: Final = 4_000

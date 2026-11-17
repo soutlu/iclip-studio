@@ -855,7 +855,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(blockedHosts().filter((host) => /fonts\./.test(String(host)))).toEqual([])
   }, 600_000)
 
-  it('按语言导出：同一个工程经接口导中文和 English，字幕和贴片里随语言的字换成英文；没有错误和警告，不去外网取字体', async () => {
+  it('按语言导出：同一个工程（原文是中文）经接口导原文和 English，字幕和贴片里随语言的字换成英文；没有错误和警告，不去外网取字体', async () => {
     const catalog = library as ComponentCatalog
     const steps = `${origin}/steps.mp4`
     const title = '成片标题'
@@ -878,7 +878,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       variable: 'cap_a1',
       owner: null,
     }
-    // 照编辑器的写法：字幕的字只在根上的变量里；贴片的「文字」随语言，宿主记着根变量，根上声明它、默认值是中文
+    // 照编辑器的写法：字幕的字只在根上的变量里；贴片的「文字」随语言，宿主记着根变量，根上声明它、默认值是原文
     const [main, ...others] = project(clips)
     const session = await openComposition(main?.content ?? '')
     session.addElement('film', 99, captionsHostElement(FRAME, 2000))
@@ -953,11 +953,11 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
 
     // 渲染服务这边发出的请求：除了回环地址，一个都不该有
     const requests = vi.spyOn(globalThis, 'fetch')
-    let chinese: Awaited<ReturnType<typeof exportIn>>
+    let source: Awaited<ReturnType<typeof exportIn>>
     let english: Awaited<ReturnType<typeof exportIn>>
     let urls: URL[]
     try {
-      chinese = await exportIn('44444444-2222-4333-8444-555555555555', null)
+      source = await exportIn('44444444-2222-4333-8444-555555555555', null)
       english = await exportIn('55555555-2222-4333-8444-555555555555', 'en')
     } finally {
       urls = requests.mock.calls.map(
@@ -967,9 +967,9 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     }
 
     // 同一份工程渲两次的差别在 2 以下；字换了之后两块都在 10 上下
-    expect(meanDifference(chinese.title, english.title)).toBeGreaterThan(5)
-    expect(meanDifference(chinese.caption, english.caption)).toBeGreaterThan(5)
-    expect(chinese.warnings).toEqual([])
+    expect(meanDifference(source.title, english.title)).toBeGreaterThan(5)
+    expect(meanDifference(source.caption, english.caption)).toBeGreaterThan(5)
+    expect(source.warnings).toEqual([])
     expect(english.warnings).toEqual([])
     expect(urls.filter((url) => url.hostname !== '127.0.0.1').map((url) => url.href)).toEqual([])
     expect(english.log).not.toMatch(/fonts\.(googleapis|gstatic)\.com/)

@@ -37,7 +37,7 @@ export interface RenderJobInput {
   files: readonly ProjectFile[]
   /** 主文件里写的素材地址 → 去下载的地址。 */
   media: ReadonlyMap<string, string>
-  /** 交给渲染器的变量值：按语言导出时是那种语言校验过的值表，中文时是 null。 */
+  /** 交给渲染器的变量值：按语言导出时是那种语言校验过的值表，原文时是 null。 */
   variables: Readonly<Record<string, unknown>> | null
   /** 公共目录：工程里的 `vendor` 指向它。 */
   vendorDir: string

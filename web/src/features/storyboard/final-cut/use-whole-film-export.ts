@@ -9,7 +9,7 @@ import {
   startWholeFilmExport,
   wholeFilmQueryKeys,
 } from './final-cut.api'
-import type { LocaleCode } from './locales'
+import type { Language } from './locales'
 
 const POLL_MS = 1_500
 
@@ -26,7 +26,7 @@ const FAILURE_TEXT: Record<string, string> = {
   'lint-failed': 'final-cut 未通过导出前检查，无法导出',
 }
 
-/** 一次导出的是哪种外语的版本，中文是 null。 */
+/** 一次导出的是哪种语言的版本，原文是 null。 */
 export type ExportLocale = WholeFilmExportOut['locale']
 
 /**
@@ -104,8 +104,8 @@ export function useWholeFilmExport(conversationId: string, settle: () => Promise
         ? { kind: 'idle' }
         : viewOf(current))
 
-  const start = async (locale: LocaleCode) => {
-    setLocal({ kind: 'starting', locale: locale === 'zh' ? null : locale })
+  const start = async (locale: Language) => {
+    setLocal({ kind: 'starting', locale })
     if (!(await settle())) {
       setLocal(null)
       return

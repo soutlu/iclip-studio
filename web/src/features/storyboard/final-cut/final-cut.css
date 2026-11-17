@@ -311,7 +311,7 @@
   border-color: var(--color-on-surface);
 }
 
-/* 外语下文字框下面的原文：小号淡色，前面一个「原文」小标 */
+/* 其它语言下文字框下面的原文：小号淡色，前面一个「原文」小标 */
 .wf-caption-source {
   display: flex;
   align-items: baseline;
@@ -398,7 +398,7 @@
   white-space: nowrap;
 }
 
-/* 一个文字字段：名字一列，文字框和「固定 / 随语言」一行，外语下的说明排在下面 */
+/* 一个文字字段：名字一列，文字框和「固定 / 随语言」一行，其它语言下的说明排在下面 */
 .wf-text-row {
   display: grid;
   align-items: start;
@@ -411,7 +411,7 @@
   line-height: 28px;
 }
 
-/* 「属性」里的文字字段：外语下框下面有说明，名字和框顶对齐 */
+/* 「属性」里的文字字段：其它语言下框下面有说明，名字和框顶对齐 */
 .wf-prop-row.is-text {
   align-items: start;
 }

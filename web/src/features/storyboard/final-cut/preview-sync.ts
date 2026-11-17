@@ -12,7 +12,7 @@ export type PreviewFilm = {
   revision: number
   /** 从上一份到这一份的那一步编辑（见 `FilmView.step`）。 */
   step: UndoStep | null
-  /** 预览套着一种外语。 */
+  /** 预览套着原文以外的一种语言。 */
   foreign: boolean
   /** 工程里主文件和值表以外的文件变过几次；变了要整份重新加载。 */
   filesRevision: number

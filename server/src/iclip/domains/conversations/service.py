@@ -246,7 +246,7 @@ class WholeFilmExports(Protocol):
         main_file: str,
         locale: TargetLocale | None,
     ) -> uuid.UUID:
-        """按 final-cut 主文件记一条导出排队，答复导出 id。``locale`` 是导出哪种外语，None 是中文。"""
+        """按 final-cut 主文件记一条导出排队，答复导出 id。``locale`` 是导出哪种语言，None 是原文。"""
         ...
 
     async def latest(
@@ -584,8 +584,8 @@ class ConversationService:
     async def export_whole_film(
         self, principal: Principal, conversation_id: uuid.UUID, *, locale: TargetLocale | None
     ) -> uuid.UUID:
-        """按 final-cut 主文件记一条导出排队，答复导出 id；``locale`` 是导出哪种外语，None 是中文。
-        还没有主文件、工程里没有这种外语的值表都抛 ``ValidationFailed``。"""
+        """按 final-cut 主文件记一条导出排队，答复导出 id；``locale`` 是导出哪种语言，None 是原文。
+        还没有主文件、工程里没有这种语言的值表都抛 ``ValidationFailed``。"""
 
         conversation = await self._workspace_writable(principal, conversation_id)
         exports = self._require_exports()

@@ -7,7 +7,14 @@ import { BlockedReason } from '../components/blocked-reason'
 import { captionClock, captionsInOrder } from './caption-edit'
 import { ComponentTexts } from './component-texts'
 import type { CaptionClip } from './composition/film'
-import { captionIn, localeNamed, type LocaleCode, type ShownLocale } from './locales'
+import {
+  captionIn,
+  phraseWith,
+  SOURCE_LOCALE,
+  SOURCE_NAME,
+  type Language,
+  type ShownLocale,
+} from './locales'
 import { usePausedCommit } from './use-paused-commit'
 
 const ADD_LABEL = '在播放头处加一句'
@@ -15,9 +22,9 @@ const RECOGNIZE_LABEL = '识别字幕'
 const TRANSLATE_LABEL = '翻译'
 
 /** 改一句字幕在语言 `locale` 里的字（见 `useFilmSession` 的 `setCaptionText`）。 */
-export type CaptionTextChange = (id: string, text: string, locale: LocaleCode) => void
+export type CaptionTextChange = (id: string, text: string, locale: Language) => void
 
-/** 外语下的「翻译」：为什么现在不能点（给了就置灰，点了说明它），是不是在翻译中。 */
+/** 其它语言下的「翻译」：为什么现在不能点（给了就置灰，点了说明它），是不是在翻译中。 */
 type TranslateControl = {
   blocked: string | undefined
   translating: boolean
@@ -25,12 +32,12 @@ type TranslateControl = {
 }
 
 type CaptionsTabProps = {
-  /** 外语下的「翻译」；中文时是 undefined，不显示。 */
+  /** 其它语言下的「翻译」；原文时是 undefined，不显示。 */
   translate: TranslateControl | undefined
   captions: readonly CaptionClip[]
   /** 「组件文字」那一段（显示着的语言、选中的片段和这里共用）。 */
   texts: Omit<ComponentProps<typeof ComponentTexts>, 'locale' | 'selected'>
-  /** 显示着的语言：外语时文字框里是这种语言的字，旁边写着原文。 */
+  /** 显示着的语言：其它语言时文字框里是这种语言的字，旁边写着原文。 */
   locale: ShownLocale
   /** 编辑器里选中的片段：选中的字幕在列表里标出来。 */
   selected: ReadonlySet<string>
@@ -54,8 +61,8 @@ type CaptionsTabProps = {
 /**
  * 「字幕」页签：最上面在「字幕」和「组件文字」（见 `ComponentTexts`）两段之间切换，各写着有几个。「字幕」是识别
  * 字幕、在播放头处加一句，下面是按开始时间排的字幕列表，每句能直接改字、删掉，点时间选中它、跳到它的开始。
- * 编辑器里选中的字幕标成当前这一句；刚加的那一句焦点进它的文字框。识别中写着在识别几个片段。外语下改的是这种
- * 语言的字，最上面多一个「翻译」，两段里还没翻的一起翻。
+ * 编辑器里选中的字幕标成当前这一句；刚加的那一句焦点进它的文字框。识别中写着在识别几个片段。其它语言下改的是
+ * 这种语言的字，最上面多一个「翻译」，两段里还没翻的一起翻。
  */
 export function CaptionsTab({
   translate,
@@ -295,7 +302,7 @@ type CaptionTextFieldProps = {
 
 /**
  * 一句字幕的文字框（「字幕」页签和「属性」共用）：回车是换行，停下 300 毫秒再写进去（见 `usePausedCommit`）。
- * 外语下框里是这种语言的字，还没翻时是空的、占位字提示输入这种语言，下面写着原文。
+ * 其它语言下框里是这种语言的字，还没翻时是空的、占位字提示输入这种语言，下面写着原文。
  */
 export function CaptionTextField({ caption, locale, onText, ...field }: CaptionTextFieldProps) {
   const { draft, fieldProps } = usePausedCommit((text) => onText(caption.id, text, locale.code))
@@ -309,13 +316,15 @@ export function CaptionTextField({ caption, locale, onText, ...field }: CaptionT
         {...field}
         {...fieldProps}
         aria-describedby={foreign ? sourceId : undefined}
-        placeholder={foreign ? `输入 ${localeNamed(locale.code).name} 字幕…` : undefined}
+        placeholder={
+          locale.code === SOURCE_LOCALE ? undefined : phraseWith('输入', locale.code, '字幕…')
+        }
         rows={2}
         value={draft ?? shown.text}
       />
       {foreign ? (
         <p className="wf-caption-source" id={sourceId}>
-          <span className="wf-caption-source-tag">原文</span> {caption.text}
+          <span className="wf-caption-source-tag">{SOURCE_NAME}</span> {caption.text}
         </p>
       ) : null}
     </>

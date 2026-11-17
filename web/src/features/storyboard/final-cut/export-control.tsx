@@ -5,11 +5,11 @@ import { Button } from '@/shared/ui/button'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { VideoDownload } from '@/shared/ui/video-download'
 import { BlockedReason } from '../components/blocked-reason'
-import { localeNamed, type LocaleCode } from './locales'
+import { phraseWith, SOURCE_LOCALE, type Language } from './locales'
 import type { ExportLocale, ExportView } from './use-whole-film-export'
 
-/** 点「导出」导出的是哪种语言：编辑器当前显示的语言，和这种语言里还没翻的文字条数（中文时是 0）。 */
-type ExportTarget = { locale: LocaleCode; untranslated: number }
+/** 点「导出」导出的是哪种语言：编辑器当前显示的语言，和这种语言里还没翻的文字条数（原文时是 0）。 */
+type ExportTarget = { locale: Language; untranslated: number }
 
 type ExportControlProps = {
   view: ExportView
@@ -22,34 +22,36 @@ type ExportControlProps = {
 
 type Status = { text: string; tone: 'normal' | 'busy' | 'error' }
 
-/** 状态里写的「 English 版」（前面带空格，接在中文后面）；中文不写。 */
-const versionOf = (locale: ExportLocale) =>
-  locale === null ? '' : ` ${localeNamed(locale).name} 版`
+/** 状态里的一句话，`before` 和 `after` 之间写导出的是哪种语言的版本（「English 版」「中文版」）；原文不写。 */
+const withVersion = (before: string, locale: ExportLocale, after: string) =>
+  locale === SOURCE_LOCALE ? `${before}${after}` : phraseWith(before, locale, `版${after}`)
 
 const exportStatus = (view: ExportView): Status | undefined => {
   switch (view.kind) {
     case 'starting':
-      return { text: `正在提交${versionOf(view.locale)}导出…`, tone: 'normal' }
-    case 'queued': {
-      const version = versionOf(view.locale).trimStart()
+      return { text: withVersion('正在提交', view.locale, '导出…'), tone: 'normal' }
+    case 'queued':
       return {
-        text:
+        text: withVersion(
+          '',
+          view.locale,
           view.ahead === null || view.ahead === 0
-            ? `${version}排队中，即将开始`
-            : `${version}排队中，前方还有 ${view.ahead} 个导出`,
+            ? '排队中，即将开始'
+            : `排队中，前方还有 ${view.ahead} 个导出`,
+        ),
         tone: 'normal',
       }
-    }
     case 'rendering':
       return {
-        text:
-          view.progress === null
-            ? `正在渲染${versionOf(view.locale)}…`
-            : `正在渲染${versionOf(view.locale)} ${Math.round(view.progress * 100)}%`,
+        text: withVersion(
+          '正在渲染',
+          view.locale,
+          view.progress === null ? '…' : ` ${Math.round(view.progress * 100)}%`,
+        ),
         tone: 'normal',
       }
     case 'uploading':
-      return { text: `正在上传${versionOf(view.locale)}成片…`, tone: 'normal' }
+      return { text: withVersion('正在上传', view.locale, '成片…'), tone: 'normal' }
     case 'failed':
       return { text: view.message, tone: 'error' }
     case 'cancelled':
@@ -60,19 +62,19 @@ const exportStatus = (view: ExportView): Status | undefined => {
   }
 }
 
-/** 完成后状态里写导出的是哪种外语的版本；中文不写。高清版在做或失败时先说高清版。 */
+/** 完成后状态里写导出的是哪种语言的版本；原文不写。高清版在做或失败时先说高清版。 */
 const doneStatus = (view: ExportView): Status | undefined =>
-  view.kind === 'done' && view.locale !== null
-    ? { text: `已导出${versionOf(view.locale)}`, tone: 'normal' }
+  view.kind === 'done' && view.locale !== SOURCE_LOCALE
+    ? { text: withVersion('已导出', view.locale, ''), tone: 'normal' }
     : undefined
 
-/** 「导出」「重新导出」的提示：外语时说导出哪种语言的版本，还有没翻的文字时提醒一句；中文时没有。 */
+/** 「导出」「重新导出」的提示：其它语言时说导出哪种语言的版本，还有没翻的文字时提醒一句；原文时没有。 */
 const startHint = ({ locale, untranslated }: ExportTarget): string | undefined => {
-  if (locale === 'zh') return undefined
-  const version = `导出 ${localeNamed(locale).name} 版`
+  if (locale === SOURCE_LOCALE) return undefined
+  const version = withVersion('导出', locale, '')
   return untranslated === 0
     ? version
-    : `${version}；有 ${untranslated} 条文字未翻译，导出后显示中文`
+    : `${version}；有 ${untranslated} 条文字未翻译，导出后显示原文`
 }
 
 /** 被拦时说明原因（点了才出）；没被拦、有提示时悬停或聚焦显示提示。 */

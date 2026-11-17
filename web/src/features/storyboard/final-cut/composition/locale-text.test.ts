@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { localeBindingsOf, localizedHostValues, pinnedByDefault } from './locale-text'
+import { localeBindingsOf, localizedHostValues } from './locale-text'
 
 describe('localizedHostValues', () => {
   const defaults = new Map<string, unknown>([
@@ -53,14 +53,5 @@ describe('localeBindingsOf', () => {
     expect(localeBindingsOf('{"title":"txt_t1_title"}')).toEqual({ title: 'txt_t1_title' })
     for (const json of [undefined, '', '[]', 'null', '{"title":1}', '{oops'])
       expect(localeBindingsOf(json)).toEqual({})
-  })
-})
-
-describe('pinnedByDefault', () => {
-  it('全是西文且有字母的默认固定，有中文的、只有数字符号的默认随语言', () => {
-    for (const text of ['AUTUMN LINEN', 'NEW IN · AW26', 'iClip Studio', ' Brand — 2026 '])
-      expect(pinnedByDefault(text)).toBe(true)
-    for (const text of ['松弛感早秋亚麻系列', '¥ 299 · 透气垂顺', '100% 法国亚麻', '2026', ''])
-      expect(pinnedByDefault(text)).toBe(false)
   })
 })

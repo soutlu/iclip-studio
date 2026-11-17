@@ -140,33 +140,40 @@ def service_with(files: dict[str, str], exports: RecordingExports) -> Conversati
         pytest.param({"locale": None}, None, id="null-locale"),
         pytest.param({"locale": "en"}, "en", id="english"),
         pytest.param({"locale": "fr"}, "fr", id="french"),
+        pytest.param({"locale": "zh"}, "zh", id="chinese"),
     ],
 )
-def test_the_request_body_names_a_foreign_locale_or_none(
+def test_the_request_body_names_a_locale_or_none_for_the_source(
     body: dict[str, Any], locale: TargetLocale | None
 ) -> None:
     assert WholeFilmExportIn.model_validate(body).locale == locale
 
 
-@pytest.mark.parametrize("locale", ["zh", "ja", "EN", ""])
+@pytest.mark.parametrize("locale", ["ja", "ZH", "EN", ""])
 def test_a_locale_the_editor_does_not_support_is_refused(locale: str) -> None:
     with pytest.raises(ValidationError):
         WholeFilmExportIn.model_validate({"locale": locale})
 
 
-async def test_a_foreign_export_starts_when_the_project_has_that_locales_table() -> None:
+async def test_a_locale_export_starts_when_the_project_has_that_locales_table() -> None:
     exports = RecordingExports()
     service = service_with(
-        {"final-cut/index.html": MAIN, "final-cut/locales/en.json": "{}"}, exports
+        {
+            "final-cut/index.html": MAIN,
+            "final-cut/locales/en.json": "{}",
+            "final-cut/locales/zh.json": "{}",
+        },
+        exports,
     )
 
     await service.export_whole_film(OWNER, LIVE.id, locale="en")
+    await service.export_whole_film(OWNER, LIVE.id, locale="zh")
     await service.export_whole_film(OWNER, LIVE.id, locale=None)
 
-    assert exports.started == [(MAIN, "en"), (MAIN, None)]
+    assert exports.started == [(MAIN, "en"), (MAIN, "zh"), (MAIN, None)]
 
 
-async def test_a_foreign_export_without_that_locales_table_is_refused_before_recording() -> None:
+async def test_a_locale_export_without_that_locales_table_is_refused_before_recording() -> None:
     exports = RecordingExports()
     service = service_with(
         {"final-cut/index.html": MAIN, "final-cut/locales/en.json": "{}"}, exports
@@ -266,5 +273,5 @@ async def test_the_render_service_is_told_which_locale_to_render(
     await provider.submit(job)
 
     (payload,) = render.submitted
-    assert "locale" in payload, "中文也带上这个键，写 null"
+    assert "locale" in payload, "原文也带上这个键，写 null"
     assert payload["locale"] == locale

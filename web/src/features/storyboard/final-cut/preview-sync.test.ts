@@ -152,7 +152,7 @@ describe('要整份重新加载的', () => {
     ).toEqual({ kind: 'reload' })
   })
 
-  it('外语', () => {
+  it('原文以外的语言', () => {
     expect(previewSync(SHOWN, { ...next(movement), foreign: true })).toEqual({ kind: 'reload' })
     expect(previewSync({ ...SHOWN, foreign: true }, next(movement))).toEqual({ kind: 'reload' })
   })

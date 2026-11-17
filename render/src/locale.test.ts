@@ -150,7 +150,7 @@ describe('改宿主取值', () => {
   })
 })
 
-describe('把工程变成一种外语的版本', () => {
+describe('把工程变成一种语言的版本', () => {
   it('主文件改好宿主取值，别的文件原样；变量值是校验过的值表', () => {
     const table = '{"cap_a1":"Hello","txt_t1_text":"Title","stale":"x"}'
     const localized = localizeProject(files(table), 'en')
@@ -170,6 +170,34 @@ describe('把工程变成一种外语的版本', () => {
         ],
         variables: { cap_a1: 'Hello', txt_t1_text: 'Title' },
         dropped: 1,
+      },
+    })
+  })
+
+  it('原文是英文、加的是中文：随语言的字段换成中文值表里的字，没翻的用英文原文；变量值是中文值表', () => {
+    const english = MAIN.replaceAll('你好', 'Hello')
+      .replaceAll('成片标题', 'Film title')
+      .replaceAll('新品', 'New')
+    const chinese = {
+      path: 'locales/zh.json',
+      content: '{"cap_a1":"你好","txt_t1_text":"成片标题"}',
+    }
+
+    expect(localizeProject([{ path: 'index.html', content: english }, chinese], 'zh')).toEqual({
+      ok: true,
+      value: {
+        files: [
+          {
+            path: 'index.html',
+            content: english.replace(
+              attr({ text: 'Film title', tag: 'New', accent: '#ff0000' }),
+              attr({ text: '成片标题', tag: 'New', accent: '#ff0000' }),
+            ),
+          },
+          chinese,
+        ],
+        variables: { cap_a1: '你好', txt_t1_text: '成片标题' },
+        dropped: 0,
       },
     })
   })

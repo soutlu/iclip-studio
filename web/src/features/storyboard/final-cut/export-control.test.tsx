@@ -40,14 +40,14 @@ const EMPTY_TEXT = 'final-cut 暂无内容，无法导出；请先加入内容'
 
 type Target = ComponentProps<typeof ExportControl>['target']
 
-const CHINESE: Target = { locale: 'zh', untranslated: 0 }
+const SOURCE: Target = { locale: null, untranslated: 0 }
 
 const renderControl = (
   view: ExportView,
   {
     blocked,
     onStart = () => {},
-    target = CHINESE,
+    target = SOURCE,
   }: { blocked?: string; onStart?: () => void; target?: Target } = {},
 ) =>
   renderWithProviders(
@@ -219,17 +219,28 @@ describe('ExportControl · 语言', () => {
     },
     { view: { kind: 'uploading', locale: 'es' } as const, text: '正在上传 Español 版成片…' },
     { view: { kind: 'uploading', locale: null } as const, text: '正在上传成片…' },
-  ])('进行中的状态写这次导出的语言，中文不写（$text）', async ({ view, text }) => {
+    { view: { kind: 'starting', locale: 'zh' } as const, text: '正在提交中文版导出…' },
+    { view: { kind: 'queued', ahead: 0, locale: 'zh' } as const, text: '中文版排队中，即将开始' },
+    {
+      view: { kind: 'rendering', progress: 0.4, locale: 'zh' } as const,
+      text: '正在渲染中文版 40%',
+    },
+    { view: { kind: 'rendering', progress: null, locale: null } as const, text: '正在渲染…' },
+  ])('进行中的状态写这次导出的语言，原文不写（$text）', async ({ view, text }) => {
     // 状态跟着这次导出走，不看编辑器现在显示的语言
-    await renderControl(view, { target: CHINESE })
+    await renderControl(view, { target: SOURCE })
     expect(screen.getByRole('status')).toHaveTextContent(new RegExp(`^${text}$`))
   })
 
-  it('外语的导出完成后状态写「已导出 English 版」；高清版在做时先说高清版；中文完成不写', async () => {
+  it('其它语言的导出完成后状态写「已导出 English 版」；高清版在做时先说高清版；原文完成不写', async () => {
     serveTiers([])
     const { unmount } = await renderControl({ ...DONE, locale: 'en' })
     expect(await screen.findByRole('status')).toHaveTextContent(/^已导出 English 版$/)
     unmount()
+
+    const chinese = await renderControl({ ...DONE, locale: 'zh' })
+    expect(await screen.findByRole('status')).toHaveTextContent(/^已导出中文版$/)
+    chinese.unmount()
 
     serveTiers([{ job: enhanceJob('submitted'), resolution: '1080p' }])
     await renderControl({ ...DONE, locale: 'en' })
@@ -242,7 +253,7 @@ describe('ExportControl · 语言', () => {
     { view: { kind: 'idle' } as const, button: '导出' },
     { view: { ...DONE, locale: 'en' } as const, button: '重新导出' },
   ])(
-    '当前是外语：「$button」的提示写导出哪种语言的版本，有没翻的文字时提醒条数，照样能导',
+    '当前是其它语言：「$button」的提示写导出哪种语言的版本，有没翻的文字时提醒条数，照样能导',
     async ({ view, button }) => {
       serveTiers([])
       const user = userEvent.setup()
@@ -252,21 +263,31 @@ describe('ExportControl · 语言', () => {
       expect(await screen.findByRole('tooltip')).toHaveTextContent(/^导出 English 版$/)
       unmount()
 
-      await renderControl(view, { onStart, target: { locale: 'en', untranslated: 3 } })
+      const untranslated = await renderControl(view, {
+        onStart,
+        target: { locale: 'en', untranslated: 3 },
+      })
       const start = screen.getByRole('button', { name: new RegExp(`^${button}$`) })
       await user.hover(start)
       expect(await screen.findByRole('tooltip')).toHaveTextContent(
-        /^导出 English 版；有 3 条文字未翻译，导出后显示中文$/,
+        /^导出 English 版；有 3 条文字未翻译，导出后显示原文$/,
       )
       expect(start).not.toHaveAttribute('aria-disabled')
       await user.click(start)
       expect(onStart).toHaveBeenCalledTimes(1)
+      untranslated.unmount()
+
+      await renderControl(view, { onStart, target: { locale: 'zh', untranslated: 2 } })
+      await user.hover(screen.getByRole('button', { name: new RegExp(`^${button}$`) }))
+      expect(await screen.findByRole('tooltip')).toHaveTextContent(
+        /^导出中文版；有 2 条文字未翻译，导出后显示原文$/,
+      )
     },
   )
 
-  it('当前是中文没有提示；被拦时只说拦的原因', async () => {
+  it('当前是原文没有提示；被拦时只说拦的原因', async () => {
     const user = userEvent.setup()
-    const { unmount } = await renderControl({ kind: 'idle' }, { target: CHINESE })
+    const { unmount } = await renderControl({ kind: 'idle' }, { target: SOURCE })
     await user.hover(screen.getByRole('button', { name: '导出' }))
     await new Promise((resolve) => setTimeout(resolve, 500))
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
