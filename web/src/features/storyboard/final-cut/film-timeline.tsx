@@ -71,14 +71,19 @@ import {
 } from './placement'
 import { boxBetween, marqueeMode, marqueeSelection, type Box } from './selection'
 import { soundActionFor, soundBadgeOf, type SoundBadge, type SoundControls } from './sound-pair'
+import { BeatMarks } from './beat-marks'
 import {
-  msToPx,
-  pxToMs,
-  snapMs,
-  snapSpanStartMs,
-  snapTargets,
-  type TimelineScale,
-} from './timeline-scale'
+  beatsToSnap,
+  clipBeats,
+  isBeatSource,
+  shownBeats,
+  snapEdgeToBeats,
+  snapSpanToBeats,
+  timelineBeats,
+  type BeatGrid,
+  type TimelineBeat,
+} from './music-beats'
+import { msToPx, pxToMs, snapTargets, type TimelineScale } from './timeline-scale'
 import { clipLevel, volumePointsOf, type EnvelopePoint } from './volume-envelope'
 
 /** 素材拖进来时落在哪：哪一行（或新开的一行）、final-cut 的第几毫秒。 */
@@ -122,8 +127,10 @@ type FilmTimelineProps = {
   ghost: DropGhost | null
   /** 选中的片段。 */
   selected: ReadonlySet<string>
-  /** 拖动和裁剪时要不要吸到别的片段的两端和播放头上。 */
+  /** 拖动和裁剪时要不要吸到别的片段的两端和播放头上，都没吸上时再吸配乐的节拍。 */
   snap: boolean
+  /** 配乐算出来的节拍，按音频地址；还没算出来、算不出来的不在里面。 */
+  beats: ReadonlyMap<string, BeatGrid>
   /** 视频片段、音频片段素材的总长（毫秒），还没读到时是 undefined；裁结尾时不超出它。 */
   sourceMs: SourceLength
   /** 换成这些选中的片段（空的就是全部取消）。 */
@@ -440,6 +447,10 @@ type TimelineClipProps = {
   cover: string | null
   peaks: PeaksState
   snap: boolean
+  /** 这个片段是配乐、算出了节拍时它那首的节拍，画在片段上；别的片段是 undefined。 */
+  beatGrid: BeatGrid | undefined
+  /** 各个配乐片段画出来、能吸上去的节拍，按片段编号。 */
+  snapBeats: ReadonlyMap<string, readonly TimelineBeat[]>
   playheadMs: number
   /** 拖动中吸上了哪个时间点（毫秒），画一条线；没吸上或松手后是 null。 */
   onGuide: (ms: number | null) => void
@@ -483,6 +494,8 @@ function TimelineClip({
   cover,
   peaks,
   snap,
+  beatGrid,
+  snapBeats,
   playheadMs,
   onGuide,
   onFollow,
@@ -574,19 +587,21 @@ function TimelineClip({
     const members = gesture.group
     const at = timeAt(event.clientX)
     const { kind } = gesture
-    // 开着吸附时：没在动的片段的两端和播放头是能吸上去的点（一起动的片段拖动前的边不算）
+    // 开着吸附时：没在动的片段的两端和播放头是能吸上去的点（一起动的片段拖动前的边不算）；
+    // 都没吸上时再吸没在动的配乐的节拍（配乐自己不吸自己的节拍）
     const targets = snap
       ? snapTargets(
           clips.filter((other) => !members.has(other.id)),
           playheadMs,
         )
       : null
+    const beats = snap ? beatsToSnap(snapBeats, members) : []
     if (kind === 'move') {
       const wanted = Math.max(0, at - gesture.grabMs)
       const snapped =
         targets === null
           ? { ms: wanted, guideMs: null }
-          : snapSpanStartMs(wanted, clip.duration, targets, pps)
+          : snapSpanToBeats(wanted, clip.duration, targets, beats, pps)
       // 指针在哪一行上，片段就去它自己的区里对着的那一行；在两行之间就在那里新开一行；都不是就留在原来的行
       const row = rowAt(event.clientY, true, zoneOf(clip)) ?? rowKeyOf(clip)
       const plan = movePlan(clips, clip, members, snapped.ms, row)
@@ -597,7 +612,8 @@ function TimelineClip({
       // 吸上去的位置被别的片段占了、又挪开了，就不画吸附线
       onGuide(plan.start === snapped.ms ? snapped.guideMs : null)
     } else {
-      const snapped = targets === null ? { ms: at, guideMs: null } : snapMs(at, targets, pps)
+      const snapped =
+        targets === null ? { ms: at, guideMs: null } : snapEdgeToBeats(at, targets, beats, pps)
       const timings = trimTo(clip, members, kind, snapped.ms)
       const next = timings.get(clip.id) ?? timingOf(clip)
       gesture.timing = next
@@ -741,6 +757,13 @@ function TimelineClip({
               waveRef={waveRef}
             />
           )}
+          {clip.kind === 'audio' && beatGrid !== undefined ? (
+            <BeatMarks
+              beats={shownBeats(clipBeats({ ...clip, ...timing }, beatGrid), pps)}
+              pps={pps}
+              startMs={timing.start}
+            />
+          ) : null}
           {selected && trimmable
             ? (['start', 'end'] as const).map((edge) => {
                 const bounds = trimRange(clip, groupFor(edge), edge)
@@ -836,6 +859,7 @@ export function FilmTimeline({
   ghost,
   selected,
   snap,
+  beats,
   sourceMs,
   onSelect,
   onGesture,
@@ -882,6 +906,7 @@ export function FilmTimeline({
   const trimTo = (clip: FilmClip, group: ReadonlySet<string>, edge: Edge, edgeMs: number) =>
     groupTrimmed(membersOf(group), edge, edgeMs - edgeAt(timingOf(clip), edge), clips, sourceMs)
   const { pps, contentWidth } = scale
+  const snapBeats = timelineBeats(clips, beats, pps)
   const rows = rowsOf(clips)
   // 还没有片段时也留一行（画面区的第 0 行），镜头拖得进来
   const shown = namedRows<Row>(rows.length === 0 ? [{ zone: 'visual', track: 0, clips: [] }] : rows)
@@ -1291,6 +1316,8 @@ export function FilmTimeline({
                           rowAt={rowAt}
                           selected={shownSelection.has(clip.id)}
                           snap={snap}
+                          beatGrid={isBeatSource(clip) ? beats.get(clip.src) : undefined}
+                          snapBeats={snapBeats}
                           trimmable={!razor}
                           trimRange={trimRange}
                           trimTo={trimTo}

@@ -39,8 +39,9 @@ import {
 import type { LayerMeasure } from './preview-protocol'
 import { CanvasOverlay, type CanvasNudge } from './canvas-overlay'
 import { CaptionsTab } from './captions-tab'
-import { canCarve } from './carve'
-import { decodeForCarve } from './carve-decode'
+import { analyseBeats } from './beat-analysis'
+import { canCarve, CARVE_SAMPLE_RATE } from './carve'
+import { cachedDecode, decodeForCarve } from './carve-decode'
 import {
   linkedPartners,
   playheadSplit,
@@ -164,6 +165,7 @@ import {
 import { useCaptionRecognition, type RecognitionOutcome } from './use-caption-recognition'
 import { useDubbing, type DubbingDone } from './use-dubbing'
 import { useFilmSession, type NewAudio } from './use-film-session'
+import { useMusicBeats } from './use-music-beats'
 import { useSmartMix } from './use-smart-mix'
 import { useTranslation } from './use-translation'
 import { useWholeFilmExport } from './use-whole-film-export'
@@ -546,13 +548,20 @@ function EditorBody({
   // 「属性」页签不在时也要管：选中一段配乐就按它的规则默认打开压低
   const allClips = useMemo(() => [...clips, ...(film?.unshownDubs ?? [])], [clips, film])
   const [onlySelected] = selectedClips
+  // 智能调音和配乐节拍读同一份声音：同一个地址只读一次
+  const [decodeAudio] = useState(() => cachedDecode(decodeForCarve))
+  const readBeats = useCallback(
+    async (src: string) => analyseBeats(await decodeAudio(src), CARVE_SAMPLE_RATE),
+    [decodeAudio],
+  )
+  const musicBeats = useMusicBeats(clips, readBeats, sourceMs)
   const smartMix = useSmartMix({
     clip:
       selectedClips.length === 1 && onlySelected !== undefined && canCarve(onlySelected)
         ? onlySelected
         : undefined,
     clips: allClips,
-    decode: decodeForCarve,
+    decode: decodeAudio,
     writeCarve: session.setCarve,
     writeLeveller: session.setLeveller,
     writeRole: (id, role) => {
@@ -1663,6 +1672,7 @@ function EditorBody({
           scrollRequest={scrollRequest}
           selected={selected}
           snap={snap}
+          beats={musicBeats}
           sourceMs={sourceMs}
           totalMs={total}
         />

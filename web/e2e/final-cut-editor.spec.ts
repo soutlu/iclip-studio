@@ -1401,6 +1401,62 @@ test('默认缩放下选中 1 秒的片段：按在正中拖是挪动、不是�
   expect(after).toMatchObject({ duration: whole.duration, mediaStart: whole.mediaStart })
 })
 
+test('节拍吸附：加一首配乐，片段上画出算出来的节拍；把视频片段拖到一拍旁边松手，开头落在这一拍上', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const added = mainSaved(page, 1)
+  await editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  await added
+
+  // 音频库里这首配乐每 0.5 秒一下鼓点：加到播放头（0 秒），在浏览器里算出节拍画在片段上
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '配乐' }).click()
+  const withMusic = mainSavedWith(page, (html) => savedAudio(html).length === 1)
+  await side
+    .getByRole('list', { name: '音频' })
+    .getByRole('button', { name: '轻快原声吉他，适合秋季穿搭', exact: true })
+    .click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '加到播放头' }).click()
+  await withMusic
+  const music = editor
+    .getByRole('group', { name: '配乐', exact: true })
+    .getByRole('group', { name: /^轻快原声吉他，适合秋季穿搭，/ })
+  const marks = music.getByTestId('beat-marks')
+  await expect(marks).toBeVisible({ timeout: 15_000 })
+
+  // 挑视频片段结尾往后第一拍，把片段拖到它右边 3 像素处：够不着别的片段的边和播放头，只有节拍
+  const clip = editor.getByRole('group', { name: '画面 1', exact: true }).getByRole('group')
+  const box = await clip.boundingBox()
+  if (box === null) throw new Error('片段还没排好')
+  const beatXs = await marks
+    .locator('span')
+    .evaluateAll((spans) => spans.map((span) => span.getBoundingClientRect().left))
+  const beatX = beatXs.find((x) => x > box.x + box.width + 40)
+  if (beatX === undefined) throw new Error('没有画出节拍')
+  const y = box.y + box.height / 2
+  await page.mouse.move(box.x + box.width / 2, y)
+  await page.mouse.down()
+  await page.mouse.move(beatX + 3 + box.width / 2, y, { steps: 8 })
+  await expect(editor.getByTestId('snap-guide')).toBeVisible()
+  const moved = mainSavedWith(page, (html) => (savedVideoTimings(html)[0]?.start ?? 0) > 0)
+  await page.mouse.up()
+  const [after] = savedVideoTimings(htmlOf(await moved))
+  if (after === undefined) throw new Error('没有存下片段')
+  // 落在节拍上：片段的左边对着那一拍，开头是鼓点的时间（每 0.5 秒一下，节拍差几毫秒）
+  const landed = await clip.boundingBox()
+  expect(Math.abs((landed?.x ?? 0) - beatX)).toBeLessThan(1.5)
+  expect(Math.abs(after.start * 2 - Math.round(after.start * 2))).toBeLessThan(0.04)
+})
+
 test('分离音频：存下来多一个原声片段、两段属性对；联动着拖原声两段一起挪；关掉联动单独挪出现错开，对齐画面回到同步；合并回视频', async ({
   page,
 }) => {
