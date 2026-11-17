@@ -3916,7 +3916,11 @@ describe('final-cut 编辑器 · 字幕跟着视频片段走', () => {
     )
     const user = userEvent.setup()
     await openEditor()
-    const clipsBefore = savedClips()
+    const savedVersions = () => [
+      savedVersion(),
+      mockWorkspaceFile(CONVERSATION, SCENE_FILE)?.version,
+    ]
+    const versionsBefore = savedVersions()
     const [first] = videoBodies()
     if (first === undefined) throw new Error('没有视频片段')
     await user.click(first)
@@ -3931,14 +3935,9 @@ describe('final-cut 编辑器 · 字幕跟着视频片段走', () => {
     expect(videoBodies()).toHaveLength(2)
     expect(videoBodies()[0]).toHaveAttribute('aria-pressed', 'true')
     expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
-    // 引擎退回这一步时片段之间的换行没有回来，过了自动保存的等待时间主文件会被存一次；
-    // 等它存完再比：存下的片段和字幕都还是原样
+    // 过了自动保存的等待时间也不存：主文件和字幕场景都还是原来那一版
     await act(() => new Promise((resolve) => setTimeout(resolve, 1_500)))
-    expect(savedClips()).toEqual(clipsBefore)
-    expect(timingsOf()).toEqual([
-      ['字幕 m1', 0.6],
-      ['字幕 b2', 2.5],
-    ])
+    expect(savedVersions()).toEqual(versionsBefore)
   })
 
   it('切开以后挪后半段：切点以后的字幕跟着后半段走，切点以前的留在原处', async () => {
