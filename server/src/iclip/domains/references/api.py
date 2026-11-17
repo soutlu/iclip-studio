@@ -6,26 +6,33 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Response, status
 
+from iclip.common.final_cut import TargetLocale
 from iclip.domains.identity.public import (
     ActAs,
     Principal,
     require_permission,
     resolve_user_name,
 )
+from iclip.domains.references.models import AudioKind
 from iclip.domains.references.schemas import (
-    ReferenceCreateIn,
-    ReferenceFiltersOut,
+    ReferenceAudioCreateIn,
+    ReferenceAudioFiltersOut,
+    ReferenceAudioOut,
+    ReferenceAudiosOut,
+    ReferenceAudioUpdateIn,
     ReferenceTagsIn,
-    ReferenceUpdateIn,
+    ReferenceVideoCreateIn,
+    ReferenceVideoFiltersOut,
     ReferenceVideoOut,
     ReferenceVideosOut,
+    ReferenceVideoUpdateIn,
     TestVideoIn,
 )
-from iclip.domains.references.service import ReferenceService
+from iclip.domains.references.service import ReferenceAudioService, ReferenceService
 from iclip.platform.paging import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
 
 
-def create_references_router(
+def create_reference_videos_router(
     service: ReferenceService,
     *,
     act_as: ActAs,
@@ -34,10 +41,10 @@ def create_references_router(
     retaggable: bool,
     testable: bool,
 ) -> APIRouter:
-    router = APIRouter(prefix="/references", tags=["references"])
+    router = APIRouter(prefix="/references/videos", tags=["references"])
 
     @router.get("", response_model=ReferenceVideosOut)
-    async def list_references(
+    async def list_reference_videos(
         principal: Annotated[Principal, require_permission("generation:read")],
         tags: Annotated[list[uuid.UUID] | None, Query()] = None,
         user_name: Annotated[str | None, Query(alias="userName", max_length=150)] = None,
@@ -65,35 +72,35 @@ def create_references_router(
             cursor=cursor,
         )
 
-    @router.get("/filters", response_model=ReferenceFiltersOut)
-    async def reference_filters(
+    @router.get("/filters", response_model=ReferenceVideoFiltersOut)
+    async def reference_video_filters(
         _: Annotated[Principal, require_permission("generation:read")],
-    ) -> ReferenceFiltersOut:
+    ) -> ReferenceVideoFiltersOut:
         """名下有参考视频的属主，各带条数；只数没移除的，不受筛选影响。"""
 
         return await service.filters()
 
     @router.get("/{reference_id}", response_model=ReferenceVideoOut)
-    async def get_reference(
+    async def get_reference_video(
         principal: Annotated[Principal, require_permission("generation:read")],
         reference_id: uuid.UUID,
     ) -> ReferenceVideoOut:
-        """一条参考视频连同当前拆解；移除了是 ``404``。"""
+        """一条参考视频连同当前拆解与最新一次试生成；移除了是 ``404``。"""
 
         return await service.get(principal, reference_id)
 
     @router.patch("/{reference_id}", response_model=ReferenceVideoOut)
-    async def update_reference(
+    async def update_reference_video(
         principal: Annotated[Principal, require_permission("generation:read")],
         reference_id: uuid.UUID,
-        body: ReferenceUpdateIn,
+        body: ReferenceVideoUpdateIn,
     ) -> ReferenceVideoOut:
         """属主改拆解正文，版本加一。版本对不上或正在拆解是 ``409``，别人的是 ``403``。"""
 
         return await service.update(principal, reference_id, body)
 
     @router.put("/{reference_id}/tags", response_model=ReferenceVideoOut)
-    async def replace_reference_tags(
+    async def replace_reference_video_tags(
         principal: Annotated[Principal, require_permission("generation:read")],
         reference_id: uuid.UUID,
         body: ReferenceTagsIn,
@@ -104,7 +111,7 @@ def create_references_router(
         return await service.replace_tags(principal, reference_id, body)
 
     @router.delete("/{reference_id}", status_code=status.HTTP_204_NO_CONTENT)
-    async def remove_reference(
+    async def remove_reference_video(
         principal: Annotated[Principal, require_permission("generation:read")],
         reference_id: uuid.UUID,
     ) -> None:
@@ -115,17 +122,19 @@ def create_references_router(
     if uploadable:
 
         @router.post("", response_model=ReferenceVideoOut, status_code=status.HTTP_201_CREATED)
-        async def create_reference(
+        async def create_reference_video(
             principal: Annotated[Principal, require_permission("uploads:write")],
-            body: ReferenceCreateIn,
+            body: ReferenceVideoCreateIn,
             response: Response,
         ) -> ReferenceVideoOut:
-            """把调用者自己的一条视频上传放进资料库，新建的排上第一次拆解（``201``）。
+            """把调用者自己的一条视频上传（``uploadId``），或调用者看得到的一条已完成的素材片
+            （``sourceJobId``）放进资料库，新建的排上第一次拆解（``201``）。
 
-            同一条视频已在表里就交回那一行（``200``），不再拆；移除过的回到资料库。别人的上传、
-            不是视频的上传、不存在的 ``uploadId`` 都是 ``404``。"""
+            同一个地址已在资料库就交回那一条（``200``），不再拆；移除过的回到资料库，属主换成调用者。
+            同一个地址同时加只会建出一条。别人的上传、不是视频的上传、看不到或不是素材片的生成记录、
+            不存在的 id 都是 ``404``；两个都给或都不给是 ``422``。"""
 
-            created_row, created = await service.create(principal, body.upload_id)
+            created_row, created = await service.create(principal, body)
             if not created:
                 response.status_code = status.HTTP_200_OK
             return created_row
@@ -133,7 +142,7 @@ def create_references_router(
     if rerunnable:
 
         @router.post("/{reference_id}/breakdowns", response_model=ReferenceVideoOut)
-        async def rerun_reference(
+        async def rerun_reference_video(
             principal: Annotated[
                 Principal, require_permission("generation:read", "generation:submit")
             ],
@@ -146,7 +155,7 @@ def create_references_router(
     if retaggable:
 
         @router.post("/{reference_id}/tagging", response_model=ReferenceVideoOut)
-        async def retag_reference(
+        async def retag_reference_video(
             principal: Annotated[
                 Principal, require_permission("generation:read", "generation:submit")
             ],
@@ -167,8 +176,8 @@ def create_references_router(
             reference_id: uuid.UUID,
             body: TestVideoIn,
         ) -> ReferenceVideoOut:
-            """属主或治理者按当前拆解拼一段提示词，生成一条视频与原片对照，记在发起人名下，答复
-            带上这次试生成的整行。
+            """属主或治理者按当前拆解拼一段提示词，生成一条视频与原片对照，记在发起人名下（一条
+            ``operation=trial`` 的生成记录，不算素材片），答复带上这次试生成。
 
             ``userName`` 同媒体生成。别人的是 ``403``；拆解还没完成、上一次试生成（不论谁发起）
             还没结束是 ``409``；拆解格式不全拼不出提示词、或拼出来超过字数上限是 ``422``。"""
@@ -182,4 +191,99 @@ def create_references_router(
     return router
 
 
-__all__ = ["create_references_router"]
+def create_reference_audios_router(
+    service: ReferenceAudioService, *, act_as: ActAs, uploadable: bool
+) -> APIRouter:
+    router = APIRouter(prefix="/references/audios", tags=["references"])
+
+    @router.get("", response_model=ReferenceAudiosOut)
+    async def list_reference_audios(
+        principal: Annotated[Principal, require_permission("generation:read")],
+        audio_kind: Annotated[AudioKind | None, Query(alias="audioKind")] = None,
+        locale: TargetLocale | None = None,
+        user_name: Annotated[str | None, Query(alias="userName", max_length=150)] = None,
+        q: Annotated[str | None, Query(max_length=100)] = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        limit: Annotated[int, Query(ge=1, le=MAX_LIST_LIMIT)] = DEFAULT_LIST_LIMIT,
+        cursor: str | None = None,
+    ) -> ReferenceAudiosOut:
+        """全站没移除的参考音频，建立晚的排前面。
+
+        ``audioKind`` 筛子类（``voice`` 音色、``bgm`` 配乐、``sfx`` 音效）；``locale`` 筛语种；
+        ``userName`` 筛属主；``q`` 按字面包含匹配标题、备注与台词；时间窗 ``[since, until)`` 作用在
+        建立时刻上。``total`` 只在第一页给。"""
+
+        return await service.list(
+            principal,
+            audio_kind=audio_kind,
+            locale=locale,
+            user_name=user_name,
+            q=q,
+            since=since,
+            until=until,
+            limit=limit,
+            cursor=cursor,
+        )
+
+    @router.get("/filters", response_model=ReferenceAudioFiltersOut)
+    async def reference_audio_filters(
+        _: Annotated[Principal, require_permission("generation:read")],
+    ) -> ReferenceAudioFiltersOut:
+        """每个子类的条数（没有的是 0）与名下有参考音频的属主，各带条数；只数没移除的。"""
+
+        return await service.filters()
+
+    @router.get("/{reference_id}", response_model=ReferenceAudioOut)
+    async def get_reference_audio(
+        principal: Annotated[Principal, require_permission("generation:read")],
+        reference_id: uuid.UUID,
+    ) -> ReferenceAudioOut:
+        """一条参考音频；移除了是 ``404``。"""
+
+        return await service.get(principal, reference_id)
+
+    @router.patch("/{reference_id}", response_model=ReferenceAudioOut)
+    async def update_reference_audio(
+        principal: Annotated[Principal, require_permission("generation:read")],
+        reference_id: uuid.UUID,
+        body: ReferenceAudioUpdateIn,
+    ) -> ReferenceAudioOut:
+        """属主或治理者改标题、备注、语种、台词；给了的才改，给 ``null`` 清空（标题不能清空）。
+        不是音色却要留着台词是 ``422``，别人的是 ``403``。"""
+
+        return await service.update(principal, reference_id, body)
+
+    @router.delete("/{reference_id}", status_code=status.HTTP_204_NO_CONTENT)
+    async def remove_reference_audio(
+        principal: Annotated[Principal, require_permission("generation:read")],
+        reference_id: uuid.UUID,
+    ) -> None:
+        """属主或治理者把它从参考音频库移除；已经用它配好的音不受影响。别人的是 ``403``。"""
+
+        await service.remove(principal, reference_id)
+
+    if uploadable:
+
+        @router.post("", response_model=ReferenceAudioOut, status_code=status.HTTP_201_CREATED)
+        async def create_reference_audio(
+            principal: Annotated[Principal, require_permission("uploads:write")],
+            body: ReferenceAudioCreateIn,
+        ) -> ReferenceAudioOut:
+            """把调用者自己的一条音频上传（``uploadId``），或调用者看得到的一条已完成的背景音乐
+            （``sourceJobId``）放进参考音频库，每次都新建一条（``201``）。
+
+            入库时按地址量时长：量不出来 ``422``；音色（``voice``）要在 3 到 30 秒之间，别的子类
+            大于 0 即可，不合规 ``422``。台词 ``transcript`` 只有音色能填，``locale`` 只认 ``zh``、
+            ``en``、``de``、``es``、``fr``。别人的上传、不是音频的上传、看不到或不是背景音乐的生成
+            记录、不存在的 id 都是 ``404``。``userName`` 同媒体生成，持 ``users:act_as`` 时替那个人
+            放进去。"""
+
+            user_name = resolve_user_name(principal, body.user_name)
+            principal = await act_as(principal, user_name)
+            return await service.create(principal, body)
+
+    return router
+
+
+__all__ = ["create_reference_audios_router", "create_reference_videos_router"]

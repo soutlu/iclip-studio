@@ -42,7 +42,7 @@ describe('createReference', () => {
   ])('按上传 id 建行；%i 表示 created=%s', async (status, created) => {
     let body: unknown
     server.use(
-      http.post('*/api/references', async ({ request }) => {
+      http.post('*/api/references/videos', async ({ request }) => {
         body = await request.json()
         return HttpResponse.json(reference, { status })
       }),
@@ -75,7 +75,7 @@ describe('useReference', () => {
   const watch = (current: () => ReferenceDetail) => {
     const counter = { reads: 0 }
     server.use(
-      http.get('*/api/references/:id', () => {
+      http.get('*/api/references/videos/:id', () => {
         counter.reads += 1
         return HttpResponse.json(current())
       }),
@@ -94,6 +94,7 @@ describe('useReference', () => {
       let testVideo: TestVideo = {
         createdAt: '2026-09-23T12:00:00Z',
         errorMessage: null,
+        jobId: '5ef00000-0000-4000-8000-000000009001',
         stale: false,
         status: 'running',
         url: null,

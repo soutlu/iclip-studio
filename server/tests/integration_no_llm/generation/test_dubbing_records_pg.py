@@ -13,8 +13,8 @@ from iclip.domains.generation.models import (
 )
 from iclip.domains.generation.schemas import (
     DubbedLine,
-    DubbingAudioReference,
     DubbingLine,
+    DubbingUploadReference,
     generation_out,
 )
 from tests.helpers.fork_lineage import make_user
@@ -56,11 +56,12 @@ async def test_a_dubbing_record_round_trips_its_request_track_and_per_line_resul
     owner = await make_user(engine)
     conversation = uuid.uuid4()
     take = await completed_take(repo, owner, conversation)
+    upload_id = uuid.uuid4()
     job = make_dubbing(
         take,
         LINES,
         duration_ms=3_000,
-        reference=DubbingAudioReference(kind="audio", url=VOICE_URL),
+        reference=DubbingUploadReference(kind="upload", upload_id=upload_id, url=VOICE_URL),
     )
 
     created = await repo.create(job)
@@ -90,4 +91,8 @@ async def test_a_dubbing_record_round_trips_its_request_track_and_per_line_resul
         {"index": 0, "speed": 1.125, "trimmed": False},
         {"index": 1, "speed": 1.25, "trimmed": True},
     ]
-    assert out["request"]["reference"] == {"kind": "audio", "url": VOICE_URL}
+    assert out["request"]["reference"] == {
+        "kind": "upload",
+        "uploadId": str(upload_id),
+        "url": VOICE_URL,
+    }

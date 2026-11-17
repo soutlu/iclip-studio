@@ -18,18 +18,21 @@ from iclip.domains.generation.models import (
     GenerationOutput,
 )
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
+from iclip.domains.generation.ports import VoiceSample
 from iclip.domains.generation.provider import ProviderSubmission
 from iclip.domains.generation.queue import GenerationQueue, ProviderLane, submit_queue
 from iclip.domains.generation.schemas import (
     MAX_DUBBING_LINE_CHARS,
     MAX_DUBBING_LINES,
     DubbedLine,
-    DubbingAudioReference,
     DubbingLine,
     DubbingOriginalReference,
+    DubbingReference,
     DubbingRequest,
+    DubbingUploadReference,
+    DubbingVoiceReference,
 )
-from iclip.domains.generation.service import DubbingTarget, GenerationService
+from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.models import Principal
 from tests.helpers.app import app_with_principal
@@ -39,34 +42,29 @@ from tests.helpers.generation import (
     FAKE_VIDEO_PROVIDER,
     QUEUE_SETTINGS,
     FakeMediaProbe,
+    FakeReferenceAssets,
     FixedLineage,
     InMemoryGenerationRepository,
-    ReferenceClips,
     ScriptedProvider,
     make_dubbing,
     make_edit,
     make_job,
     make_music,
+    trial_request,
     video_request,
 )
 from tests.helpers.identity import InMemoryUserRepository
 
 TAKE_URL = "https://cdn.example.test/iclip/agent/video-masters/take.mp4"
 TAKE_MS = 8_000
-OWN_BASE = "https://cdn.example.test/"
 DUBBING_URL = "https://cdn.example.test/iclip/agent/generated-dubbing/d.m4a"
+VOICE_URL = "https://cdn.example.test/iclip/agent/uploads/voice.wav"
+UPLOAD_URL = "https://cdn.example.test/iclip/agent/uploads/mine.m4a"
 
 LINES: list[dict[str, Any]] = [
     {"startMs": 500, "endMs": 2_000, "text": "Hello there."},
     {"startMs": 2_500, "endMs": 5_000, "text": "These shoes are light."},
 ]
-
-
-def owns(url: str) -> bool:
-    return url.startswith(OWN_BASE)
-
-
-DUBBING = DubbingTarget(provider=FAKE_DUBBING_PROVIDER, owns_url=owns)
 
 
 @dataclass
@@ -92,7 +90,8 @@ class World:
 def build_world(
     jobs: list[GenerationJob],
     *,
-    dubbing: DubbingTarget | None = DUBBING,
+    dubbing: str | None = FAKE_DUBBING_PROVIDER,
+    references: FakeReferenceAssets | None = None,
     submission: ProviderSubmission | None = None,
     durations: dict[str, int] | None = None,
     model_groups: ModelGroups = UNGROUPED,
@@ -128,8 +127,8 @@ def build_world(
         clear_completion=keep,
         lineage=FixedLineage(),
         media_probe=probe,
-        reference_clips=ReferenceClips(),
-        dubbing=dubbing,
+        references=references or FakeReferenceAssets(),
+        dubbing_provider=dubbing,
         model_groups=model_groups,
     )
     return World(store, queue, connector, service, probe)
@@ -257,28 +256,73 @@ async def test_a_take_without_a_recorded_length_is_measured_before_accepting() -
     assert world.probe.probed == [TAKE_URL, TAKE_URL]
 
 
+VOICE_ID = uuid.UUID("00000000-0000-4000-8000-00000000a0ce")
+UPLOAD_ID = uuid.UUID("00000000-0000-4000-8000-0000000001ad")
+
+
+def _assets(me: uuid.UUID) -> FakeReferenceAssets:
+    return FakeReferenceAssets(
+        voices={VOICE_ID: VoiceSample(url=VOICE_URL, transcript="你好，欢迎光临。")},
+        audio_uploads={(me, UPLOAD_ID): UPLOAD_URL},
+    )
+
+
 @pytest.mark.parametrize(
-    ("url", "status"),
+    ("reference", "recorded"),
     [
-        (f"{OWN_BASE}iclip/agent/uploads/voice.wav", 202),
-        ("https://elsewhere.test/voice.wav", 422),
+        ({"kind": "original"}, DubbingOriginalReference(kind="original")),
+        (
+            {"kind": "reference_audio", "referenceId": str(VOICE_ID)},
+            DubbingVoiceReference(
+                kind="reference_audio",
+                reference_id=VOICE_ID,
+                url=VOICE_URL,
+                transcript="你好，欢迎光临。",
+            ),
+        ),
+        (
+            {"kind": "upload", "uploadId": str(UPLOAD_ID)},
+            DubbingUploadReference(kind="upload", upload_id=UPLOAD_ID, url=UPLOAD_URL),
+        ),
     ],
-    ids=["本系统存储里的", "外部地址"],
+    ids=["原声", "参考音频库的音色", "本人的音频上传"],
 )
-async def test_a_reference_audio_must_be_stored_in_this_system(url: str, status: int) -> None:
+async def test_each_kind_of_reference_is_recorded_with_the_address_it_resolves_to(
+    reference: dict[str, str], recorded: DubbingReference
+) -> None:
     me = uuid.uuid4()
     take = completed_take(owner_user_id=me)
-    world = build_world([take])
+    world = build_world([take], references=_assets(me))
 
-    response = await post(world, me, body(take, reference={"kind": "audio", "url": url}))
+    response = await post(world, me, body(take, reference=reference))
 
-    assert response.status_code == status, response.text
-    if status == 202:
-        (dubbing,) = world.dubbings()
-        assert isinstance(dubbing.request, DubbingRequest)
-        assert dubbing.request.reference == DubbingAudioReference(kind="audio", url=url)
-    else:
-        assert world.dubbings() == []
+    assert response.status_code == 202, response.text
+    (dubbing,) = world.dubbings()
+    assert isinstance(dubbing.request, DubbingRequest)
+    assert dubbing.request.reference == recorded
+    assert response.json()["generation"]["request"]["reference"] == recorded.model_dump(
+        mode="json", by_alias=True
+    )
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        {"kind": "reference_audio", "referenceId": str(uuid.uuid4())},
+        {"kind": "upload", "uploadId": str(uuid.uuid4())},
+        {"kind": "audio", "url": VOICE_URL},
+    ],
+    ids=["不在库里、移除了或不是音色", "不是本人的音频上传", "旧的按地址给"],
+)
+async def test_a_reference_that_does_not_resolve_is_rejected(reference: dict[str, str]) -> None:
+    me = uuid.uuid4()
+    take = completed_take(owner_user_id=me)
+    world = build_world([take], references=_assets(me))
+
+    response = await post(world, me, body(take, reference=reference))
+
+    assert response.status_code == 422, response.text
+    assert world.dubbings() == []
 
 
 async def test_dubbing_is_refused_when_no_speech_synthesizer_is_wired() -> None:
@@ -306,13 +350,19 @@ async def test_a_video_the_caller_cannot_read_is_404(case: str) -> None:
     assert world.dubbings() == []
 
 
-@pytest.mark.parametrize("kind", ["编辑段", "背景音乐", "配音记录"])
+@pytest.mark.parametrize("kind", ["编辑段", "背景音乐", "配音记录", "试生成"])
 async def test_a_readable_record_that_is_not_a_master_is_rejected(kind: str) -> None:
     me = uuid.uuid4()
     take = completed_take(owner_user_id=me)
     target = {
         "编辑段": replace(
             make_edit(take), status=STATUS_COMPLETED, output=GenerationOutput(url=TAKE_URL)
+        ),
+        "试生成": make_job(
+            trial_request(),
+            status=STATUS_COMPLETED,
+            output=GenerationOutput(url=TAKE_URL, duration_ms=TAKE_MS),
+            finished_at=datetime.now(UTC),
         ),
         "背景音乐": make_music(
             status=STATUS_COMPLETED, output=GenerationOutput(url=DUBBING_URL, duration_ms=TAKE_MS)

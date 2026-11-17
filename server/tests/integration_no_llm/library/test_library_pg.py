@@ -25,6 +25,7 @@ from iclip.domains.generation.schemas import (
     OPERATION_ENHANCE,
     OPERATION_GENERATE,
     OPERATION_RENDER,
+    OPERATION_TRIAL,
     VideoEnhanceRequest,
     request_to_payload,
 )
@@ -276,7 +277,7 @@ async def _video(
     url_name: str | None = None,
     status: str = STATUS_COMPLETED,
     request: dict[str, Any] | None = None,
-    metadata: dict[str, Any] | None = None,
+    operation: str = OPERATION_GENERATE,
 ) -> None:
     name = url_name or str(video_id)
     body: dict[str, Any] = {
@@ -292,19 +293,18 @@ async def _video(
         text(
             "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
             " operation, provider, request, status, shot_index, output, created_at,"
-            " finished_at, metadata)"
+            " finished_at)"
             " VALUES (:id, :owner, :conversation_id, :kind, :operation, 'test',"
             " CAST(:request AS jsonb), :status, :shot, CAST(:output AS jsonb), :created_at,"
-            " :finished_at, CAST(:metadata AS jsonb))"
+            " :finished_at)"
         ),
         {
             "id": video_id,
             "owner": owner,
             "conversation_id": conversation_id,
             "kind": KIND_VIDEO,
-            "operation": OPERATION_GENERATE,
+            "operation": operation,
             "request": json.dumps(body),
-            "metadata": None if metadata is None else json.dumps(metadata),
             "status": status,
             "shot": shot,
             "output": json.dumps({"url": url(name), "watermark_url": url(f"{name}-wm")})
@@ -669,7 +669,7 @@ async def test_a_reference_test_video_is_not_a_card(
     before = await ids(reports, Scope())
     trial, take = uuid.uuid4(), uuid.uuid4()
     async with engine.begin() as conn:
-        for job_id, metadata in ((trial, {"referenceId": str(uuid.uuid4())}), (take, {"k": 1})):
+        for job_id, operation in ((trial, OPERATION_TRIAL), (take, OPERATION_GENERATE)):
             await _video(
                 conn,
                 job_id,
@@ -679,7 +679,7 @@ async def test_a_reference_test_video_is_not_a_card(
                 shot=None,
                 created=190,
                 finished=200,
-                metadata=metadata,
+                operation=operation,
             )
 
     assert await reports.card_of(trial) is None
@@ -832,7 +832,7 @@ async def test_a_trial_is_never_a_face(
                 shot=1,
                 created=190,
                 finished=200,
-                metadata={"referenceId": str(uuid.uuid4())},
+                operation=OPERATION_TRIAL,
             )
 
     assert await ids(reports, Scope()) == before

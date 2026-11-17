@@ -16,7 +16,7 @@ from iclip.app.reference_test_video import TEST_VIDEO_MODEL
 from iclip.config import RuntimeConfig, VideoGenerationSection
 from iclip.config.models import IclipStudioSection
 from iclip.domains.identity.public import Principal
-from iclip.domains.references.models import TestVideoJob
+from iclip.domains.references.models import ReferenceKind, TestVideoJob
 from iclip.domains.references.test_prompt import TestPrompt
 from iclip.platform.media.errors import MediaError
 from iclip.platform.runtime_api.client import RuntimeClient
@@ -55,19 +55,40 @@ def config_with_studio_and_media() -> RuntimeConfig:
 
 
 class NoTestVideos:
-    async def latest(self, reference_id: uuid.UUID) -> TestVideoJob | None:
+    async def job(self, job_id: uuid.UUID) -> TestVideoJob | None:
         return None
 
     async def submit(
         self,
         principal: Principal,
-        reference_id: uuid.UUID,
         prompt: TestPrompt,
         aspect_ratio: str,
         *,
         user_name: str,
-    ) -> None:
+    ) -> uuid.UUID:
         raise AssertionError("这里不该提交试生成")
+
+
+class NoMediaSources:
+    async def upload_url(
+        self, principal: Principal, upload_id: uuid.UUID, *, kind: ReferenceKind
+    ) -> str | None:
+        raise AssertionError("这里不该查上传")
+
+    async def generation_url(
+        self, principal: Principal, job_id: uuid.UUID, *, kind: ReferenceKind
+    ) -> str | None:
+        raise AssertionError("这里不该查生成记录")
+
+
+class FixedDurations:
+    """按地址答时长的替身；没给的地址量不出来。"""
+
+    def __init__(self, durations: Mapping[str, int] | None = None) -> None:
+        self.durations = dict(durations or {})
+
+    async def __call__(self, url: str, /) -> int | None:
+        return self.durations.get(url)
 
 
 async def upload_video(client: httpx.AsyncClient, bucket: MemoryObjectStore) -> str:
@@ -82,6 +103,22 @@ async def upload_video(client: httpx.AsyncClient, bucket: MemoryObjectStore) -> 
     confirmed = await client.post(f"/uploads/{upload_id}/confirm")
     assert confirmed.status_code == 200, confirmed.text
     return str(upload_id)
+
+
+async def upload_audio(client: httpx.AsyncClient, bucket: MemoryObjectStore) -> tuple[str, str]:
+    """调用者传一段音频并确认，答（上传 id, 地址）。"""
+
+    signed = await client.post("/uploads/sign", json={"contentType": "audio/mpeg"})
+    assert signed.status_code == 200, signed.text
+    upload_id = signed.json()["uploadId"]
+    await bucket.put_public_object(
+        object_key=f"iclip/agent/uploads/{upload_id}.mp3",
+        content=b"x" * 10,
+        content_type="audio/mpeg",
+    )
+    confirmed = await client.post(f"/uploads/{upload_id}/confirm")
+    assert confirmed.status_code == 200, confirmed.text
+    return str(upload_id), str(confirmed.json()["url"])
 
 
 VIDEO = "https://cdn.example.test/iclip/agent/uploads/ref.mp4"
@@ -228,36 +265,45 @@ async def plant_reference(
     async with engine.begin() as conn:
         await conn.execute(
             text(
-                "INSERT INTO iclip.reference_videos (id, video_url, owner_user_id, requested_by,"
-                " breakdown_status, error_code, document, started_at, created_at)"
-                " VALUES (:id, :url, :owner, :requested_by,"
-                " :status, :error_code, :document,"
+                "INSERT INTO iclip.references (id, kind, url, owner_user_id, created_at)"
+                " VALUES (:id, 'video', :url, :owner,"
+                " now() - make_interval(secs => CAST(:created AS float8) * 60))"
+            ),
+            {"id": reference_id, "url": video_url, "owner": owner, "created": created_minutes_ago},
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO iclip.reference_videos (reference_id, requested_by,"
+                " breakdown_status, error_code, document, started_at)"
+                " VALUES (:id, :requested_by, :status, :error_code, :document,"
                 " CASE WHEN CAST(:started AS float8) IS NULL THEN NULL"
                 "      ELSE now() - make_interval(secs => CAST(:started AS float8) * 60)"
-                " END,"
-                " now() - make_interval(secs => CAST(:created AS float8) * 60))"
+                " END)"
             ),
             {
                 "id": reference_id,
-                "url": video_url,
-                "owner": owner,
                 "requested_by": requested_by,
                 "status": status,
                 "error_code": error_code,
                 "document": document,
                 "started": started_minutes_ago,
-                "created": created_minutes_ago,
             },
         )
     return reference_id
 
 
 async def reference_row(engine: AsyncEngine, reference_id: uuid.UUID) -> dict[str, Any]:
+    """主表与视频子表合起来的一行；``video_url`` 是主表的地址。"""
+
     async with engine.connect() as conn:
         row = (
             (
                 await conn.execute(
-                    text("SELECT * FROM iclip.reference_videos WHERE id = :id"),
+                    text(
+                        "SELECT r.*, r.url AS video_url, v.* FROM iclip.references r"
+                        " JOIN iclip.reference_videos v ON v.reference_id = r.id"
+                        " WHERE r.id = :id"
+                    ),
                     {"id": reference_id},
                 )
             )
@@ -275,6 +321,8 @@ __all__ = [
     "VIDEO",
     "FakeArk",
     "FakeSampler",
+    "FixedDurations",
+    "NoMediaSources",
     "NoTestVideos",
     "ark_pipeline",
     "ark_runtime",
@@ -288,5 +336,6 @@ __all__ = [
     "reference_row",
     "responses_body",
     "tag_answer",
+    "upload_audio",
     "upload_video",
 ]

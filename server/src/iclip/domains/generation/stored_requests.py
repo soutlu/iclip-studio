@@ -18,6 +18,7 @@ from iclip.domains.generation.schemas import (
     OPERATION_ENHANCE,
     OPERATION_GENERATE,
     OPERATION_RENDER,
+    OPERATION_TRIAL,
     READ_BACK_CONTEXT,
     DubbingRequest,
     ImageGenerationIn,
@@ -27,11 +28,13 @@ from iclip.domains.generation.schemas import (
     VideoEditRequest,
     VideoEnhanceRequest,
     VideoGenerationIn,
+    VideoTrialRequest,
     WholeFilmRequest,
 )
 
 GenerationRequest = (
     VideoGenerationIn
+    | VideoTrialRequest
     | VideoEditRequest
     | ImageGenerationIn
     | VideoComposeRequest
@@ -44,6 +47,7 @@ GenerationRequest = (
 
 _ADAPTERS: Final[Mapping[tuple[str, str], TypeAdapter[Any]]] = {
     (KIND_VIDEO, OPERATION_GENERATE): TypeAdapter(VideoGenerationIn),
+    (KIND_VIDEO, OPERATION_TRIAL): TypeAdapter(VideoTrialRequest),
     (KIND_IMAGE, OPERATION_GENERATE): TypeAdapter(ImageGenerationIn),
     (KIND_VIDEO, OPERATION_COMPOSE): TypeAdapter(VideoComposeRequest),
     (KIND_SUBTITLE, OPERATION_GENERATE): TypeAdapter(SubtitleRequest),

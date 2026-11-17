@@ -20,6 +20,7 @@ from tests.helpers.references import (
     DOCUMENT,
     FakeArk,
     FakeSampler,
+    NoMediaSources,
     NoTestVideos,
     ark_pipeline,
     model_unavailable,
@@ -58,10 +59,6 @@ def make_queue(
 
 def ark_breakdowns(ark: FakeArk, *, sampler: FakeSampler | None = None) -> VideoBreakdowns:
     return ark_pipeline(ark, sampler=sampler)[0]
-
-
-async def no_uploads(principal: Principal, upload_id: uuid.UUID) -> str | None:
-    raise AssertionError("这里不该读上传记录")
 
 
 async def pending_row(engine: AsyncEngine) -> tuple[uuid.UUID, uuid.UUID, set[uuid.UUID]]:
@@ -132,7 +129,7 @@ async def test_a_successful_rerun_queues_tagging_again(engine: AsyncEngine) -> N
 
     references = ReferenceService(
         store,
-        own_video_upload=no_uploads,
+        sources=NoMediaSources(),
         queue=queue,
         tagging=tagging_service(engine, tagging),
         uploads_available=False,
@@ -300,13 +297,11 @@ async def test_a_late_result_does_not_overwrite_a_row_that_timed_out_and_was_rer
         await conn.execute(
             text(
                 "UPDATE iclip.reference_videos SET breakdown_status = 'failed',"
-                " error_code = 'timeout' WHERE id = :id"
+                " error_code = 'timeout' WHERE reference_id = :id"
             ),
             {"id": reference_id},
         )
-    assert await store.requeue(
-        reference_id, from_failed_only=False, requested_by=owner, api_key_id=None
-    )
+    assert await store.requeue(reference_id, from_failed_only=False, requested_by=owner)
     second = await store.claim(reference_id)
     assert second is not None
 

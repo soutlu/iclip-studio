@@ -33,8 +33,9 @@ from iclip.domains.generation.provider import ProviderError
 from iclip.domains.generation.queue import GenerationQueue, ProviderLane
 from iclip.domains.generation.schemas import (
     DubbedLine,
-    DubbingAudioReference,
     DubbingLine,
+    DubbingUploadReference,
+    DubbingVoiceReference,
 )
 from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.fetch_url import as_is
@@ -205,7 +206,9 @@ async def test_each_line_is_fitted_into_its_place_on_a_track_as_long_as_the_take
         take(),
         lines,
         duration_ms=8_000,
-        reference=DubbingAudioReference(kind="audio", url=VOICE_URL),
+        reference=DubbingVoiceReference(
+            kind="reference_audio", reference_id=uuid.uuid4(), url=VOICE_URL, transcript="你好"
+        ),
     )
     files = Files({VOICE_URL: tone(15_000, frequency=220)})
     synthesizer = CharTimedSynthesizer()
@@ -336,7 +339,7 @@ async def test_every_line_is_synthesized_with_the_records_group_key() -> None:
             take(),
             [line(0, 1_000, 3), line(1_500, 2_500, 3)],
             duration_ms=3_000,
-            reference=DubbingAudioReference(kind="audio", url=VOICE_URL),
+            reference=DubbingUploadReference(kind="upload", upload_id=uuid.uuid4(), url=VOICE_URL),
         ),
         model_group="mkt",
     )

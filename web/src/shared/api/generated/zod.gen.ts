@@ -315,6 +315,14 @@ export const zAttemptBucketOut = z.object({
 })
 
 /**
+ * AudioKindCountOut
+ */
+export const zAudioKindCountOut = z.object({
+  audioKind: z.enum(['voice', 'bgm', 'sfx']),
+  count: z.int(),
+})
+
+/**
  * Body_auth_cookie_login_auth_login_post
  */
 export const zBodyAuthCookieLoginAuthLoginPost = z.object({
@@ -893,16 +901,6 @@ export const zDubbedLine = z.object({
 })
 
 /**
- * DubbingAudioReference
- *
- * 参考音频取一个音频地址，只收本系统存储里的地址。
- */
-export const zDubbingAudioReference = z.object({
-  kind: z.literal('audio'),
-  url: z.string().min(1).max(2000),
-})
-
-/**
  * DubbingLine
  *
  * 要配的一句：在素材片视频里的起止（毫秒，与字幕记录的 ``sentences`` 同一口径）与译文。
@@ -923,6 +921,26 @@ export const zDubbingOriginalReference = z.object({
 })
 
 /**
+ * DubbingUploadReferenceIn
+ *
+ * 参考音频取调用者本人的一条音频上传。
+ */
+export const zDubbingUploadReferenceIn = z.object({
+  kind: z.literal('upload'),
+  uploadId: z.uuid(),
+})
+
+/**
+ * DubbingVoiceReferenceIn
+ *
+ * 参考音频取参考音频库里一条没移除的音色。
+ */
+export const zDubbingVoiceReferenceIn = z.object({
+  kind: z.literal('reference_audio'),
+  referenceId: z.uuid(),
+})
+
+/**
  * DubbingIn
  *
  * 给一条素材片配一种外语的受理输入：每句译文按 ``lines`` 的时间放，用参考音频的声音合成。
@@ -935,7 +953,11 @@ export const zDubbingIn = z.object({
   lines: z.array(zDubbingLine).min(1).max(200),
   locale: z.enum(['zh', 'en', 'de', 'es', 'fr']),
   metadata: z.record(z.string(), z.unknown()).nullish(),
-  reference: z.discriminatedUnion('kind', [zDubbingOriginalReference, zDubbingAudioReference]),
+  reference: z.discriminatedUnion('kind', [
+    zDubbingOriginalReference,
+    zDubbingVoiceReferenceIn,
+    zDubbingUploadReferenceIn,
+  ]),
   sourceJobId: z.uuid(),
   taskId: z.uuid().nullish(),
   userName: z.string().min(1).max(200).nullish(),
@@ -2040,17 +2062,73 @@ export const zModelOptionsOut = z.object({
 })
 
 /**
- * ReferenceCreateIn
+ * ReferenceAudioCreateIn
+ *
+ * 把一段音频放进参考音频库：调用者本人的一条音频上传（``uploadId``），或调用者看得到的一条已完成
+ * 的背景音乐（``sourceJobId``）。台词只有音色能填。
  */
-export const zReferenceCreateIn = z.object({
-  uploadId: z.uuid(),
+export const zReferenceAudioCreateIn = z.object({
+  audioKind: z.enum(['voice', 'bgm', 'sfx']),
+  description: z.string().min(1).max(2000).nullish(),
+  locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullish(),
+  sourceJobId: z.uuid().nullish(),
+  title: z.string().min(1).max(200),
+  transcript: z.string().min(1).max(2000).nullish(),
+  uploadId: z.uuid().nullish(),
+  userName: z.string().min(1).max(200).nullish(),
 })
 
 /**
- * ReferenceFiltersOut
+ * ReferenceAudioFiltersOut
  */
-export const zReferenceFiltersOut = z.object({
+export const zReferenceAudioFiltersOut = z.object({
+  audioKinds: z.array(zAudioKindCountOut),
   owners: z.array(zOwnerCountOut),
+})
+
+/**
+ * ReferenceAudioOut
+ *
+ * 一条参考音频。
+ */
+export const zReferenceAudioOut = z.object({
+  audioKind: z.enum(['voice', 'bgm', 'sfx']),
+  canEdit: z.boolean(),
+  createdAt: z.iso.datetime(),
+  description: z.string().nullable(),
+  durationMs: z.int(),
+  id: z.uuid(),
+  locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullable(),
+  sourceJobId: z.uuid().nullable(),
+  title: z.string(),
+  transcript: z.string().nullable(),
+  updatedAt: z.iso.datetime(),
+  uploadId: z.uuid().nullable(),
+  url: z.string(),
+  userName: z.string().nullable(),
+})
+
+/**
+ * ReferenceAudioUpdateIn
+ *
+ * 改一条参考音频：给了的字段才改，``description`` / ``locale`` / ``transcript`` 给 ``null`` 是
+ * 清空；标题不能清空。台词只有音色能填。
+ */
+export const zReferenceAudioUpdateIn = z.object({
+  description: z.string().min(1).max(2000).nullish(),
+  locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullish(),
+  title: z.string().min(1).max(200).nullish(),
+  transcript: z.string().min(1).max(2000).nullish(),
+})
+
+/**
+ * ReferenceAudiosOut
+ */
+export const zReferenceAudiosOut = z.object({
+  canUpload: z.boolean(),
+  items: z.array(zReferenceAudioOut),
+  nextCursor: z.string().nullable(),
+  total: z.int().nullable(),
 })
 
 /**
@@ -2063,13 +2141,21 @@ export const zReferenceTagsIn = z.object({
 })
 
 /**
- * ReferenceUpdateIn
+ * ReferenceVideoCreateIn
  *
- * 改拆解正文。
+ * 把一条视频放进资料库：调用者本人的一条视频上传（``uploadId``），或调用者看得到的一条已完成的
+ * 素材片（``sourceJobId``）。
  */
-export const zReferenceUpdateIn = z.object({
-  document: z.string().min(1),
-  version: z.int(),
+export const zReferenceVideoCreateIn = z.object({
+  sourceJobId: z.uuid().nullish(),
+  uploadId: z.uuid().nullish(),
+})
+
+/**
+ * ReferenceVideoFiltersOut
+ */
+export const zReferenceVideoFiltersOut = z.object({
+  owners: z.array(zOwnerCountOut),
 })
 
 /**
@@ -2094,6 +2180,16 @@ export const zReferenceVideoItemOut = z.object({
   userName: z.string().nullable(),
   version: z.int(),
   videoUrl: z.string(),
+})
+
+/**
+ * ReferenceVideoUpdateIn
+ *
+ * 改拆解正文。
+ */
+export const zReferenceVideoUpdateIn = z.object({
+  document: z.string().min(1),
+  version: z.int(),
 })
 
 /**
@@ -2529,7 +2625,7 @@ export const zGenerationOut = z.object({
   id: z.uuid(),
   kind: z.enum(['video', 'image', 'subtitle', 'dubbing', 'audio', 'whole_film']),
   metadata: z.record(z.string(), z.unknown()).nullable(),
-  operation: z.enum(['generate', 'compose', 'cut', 'render', 'enhance']),
+  operation: z.enum(['generate', 'compose', 'cut', 'render', 'enhance', 'trial']),
   outputUrl: z.string().nullable(),
   rangeEndMs: z.int().nullish(),
   rangeStartMs: z.int().nullish(),
@@ -2854,6 +2950,7 @@ export const zTestVideoIn = z.object({
 export const zTestVideoOut = z.object({
   createdAt: z.iso.datetime(),
   errorMessage: z.string().nullable(),
+  jobId: z.uuid(),
   stale: z.boolean(),
   status: z.enum(['running', 'completed', 'failed']),
   url: z.string().nullable(),
@@ -3729,7 +3826,8 @@ export const zVideoShotIn = z.object({
  *
  * 只拦本系统能判的：模型在允许表里（受理层）、地址是 http(s)、秒数不小于 -1、``shot``
  * 自身对得上（图片引用不越界、编号与正文一致）。画幅、分辨率、时长范围、素材规格由上游
- * 按模型判，这里不复制一份。
+ * 按模型判，这里不复制一份。``reference_ids`` 是这次用到的参考资产，受理时核对都在资料库里、
+ * 没移除，只记进请求快照，不发给上游。
  */
 export const zVideoGenerationIn = z.object({
   aspect_ratio: z.string().min(1).max(20).nullish(),
@@ -3740,6 +3838,7 @@ export const zVideoGenerationIn = z.object({
   prompt: z.string().min(1).max(4000).nullish(),
   provider_options: z.record(z.string(), z.unknown()).nullish(),
   reference_audio_urls: z.array(z.string()).max(30).optional().default([]),
+  reference_ids: z.array(z.uuid()).max(30).optional().default([]),
   reference_image_urls: z.array(z.string()).max(30).optional().default([]),
   reference_video_urls: z.array(z.string()).max(30).optional().default([]),
   resolution: z.string().min(1).max(50).nullish(),
@@ -4685,7 +4784,7 @@ export const zListGenerationsGenerationsGetQuery = z.object({
   taskId: z.uuid().nullish(),
   shotIndex: z.int().gte(1).nullish(),
   kind: z.enum(['video', 'image', 'subtitle', 'dubbing', 'audio', 'whole_film']).nullish(),
-  operation: z.enum(['generate', 'compose', 'cut', 'render', 'enhance']).nullish(),
+  operation: z.enum(['generate', 'compose', 'cut', 'render', 'enhance', 'trial']).nullish(),
   rootJobId: z.uuid().nullish(),
   sourceJobId: z.uuid().nullish(),
   metadata: z.string().nullish(),
@@ -5195,7 +5294,64 @@ export const zUpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNam
 export const zUpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchResponse =
   zProviderModelOut
 
-export const zListReferencesReferencesGetQuery = z.object({
+export const zListReferenceAudiosReferencesAudiosGetQuery = z.object({
+  audioKind: z.enum(['voice', 'bgm', 'sfx']).nullish(),
+  locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullish(),
+  userName: z.string().max(150).nullish(),
+  q: z.string().max(100).nullish(),
+  since: z.iso.datetime().nullish(),
+  until: z.iso.datetime().nullish(),
+  limit: z.int().gte(1).lte(100).optional().default(20),
+  cursor: z.string().nullish(),
+})
+
+/**
+ * Successful Response
+ */
+export const zListReferenceAudiosReferencesAudiosGetResponse = zReferenceAudiosOut
+
+export const zCreateReferenceAudioReferencesAudiosPostBody = zReferenceAudioCreateIn
+
+/**
+ * Successful Response
+ */
+export const zCreateReferenceAudioReferencesAudiosPostResponse = zReferenceAudioOut
+
+/**
+ * Successful Response
+ */
+export const zReferenceAudioFiltersReferencesAudiosFiltersGetResponse = zReferenceAudioFiltersOut
+
+export const zRemoveReferenceAudioReferencesAudiosReferenceIdDeletePath = z.object({
+  reference_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zRemoveReferenceAudioReferencesAudiosReferenceIdDeleteResponse = z.void()
+
+export const zGetReferenceAudioReferencesAudiosReferenceIdGetPath = z.object({
+  reference_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zGetReferenceAudioReferencesAudiosReferenceIdGetResponse = zReferenceAudioOut
+
+export const zUpdateReferenceAudioReferencesAudiosReferenceIdPatchBody = zReferenceAudioUpdateIn
+
+export const zUpdateReferenceAudioReferencesAudiosReferenceIdPatchPath = z.object({
+  reference_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zUpdateReferenceAudioReferencesAudiosReferenceIdPatchResponse = zReferenceAudioOut
+
+export const zListReferenceVideosReferencesVideosGetQuery = z.object({
   tags: z.array(z.uuid()).nullish(),
   userName: z.string().max(150).nullish(),
   q: z.string().max(100).nullish(),
@@ -5208,88 +5364,91 @@ export const zListReferencesReferencesGetQuery = z.object({
 /**
  * Successful Response
  */
-export const zListReferencesReferencesGetResponse = zReferenceVideosOut
+export const zListReferenceVideosReferencesVideosGetResponse = zReferenceVideosOut
 
-export const zCreateReferenceReferencesPostBody = zReferenceCreateIn
-
-/**
- * Successful Response
- */
-export const zCreateReferenceReferencesPostResponse = zReferenceVideoOut
+export const zCreateReferenceVideoReferencesVideosPostBody = zReferenceVideoCreateIn
 
 /**
  * Successful Response
  */
-export const zReferenceFiltersReferencesFiltersGetResponse = zReferenceFiltersOut
+export const zCreateReferenceVideoReferencesVideosPostResponse = zReferenceVideoOut
 
-export const zRemoveReferenceReferencesReferenceIdDeletePath = z.object({
+/**
+ * Successful Response
+ */
+export const zReferenceVideoFiltersReferencesVideosFiltersGetResponse = zReferenceVideoFiltersOut
+
+export const zRemoveReferenceVideoReferencesVideosReferenceIdDeletePath = z.object({
   reference_id: z.uuid(),
 })
 
 /**
  * Successful Response
  */
-export const zRemoveReferenceReferencesReferenceIdDeleteResponse = z.void()
+export const zRemoveReferenceVideoReferencesVideosReferenceIdDeleteResponse = z.void()
 
-export const zGetReferenceReferencesReferenceIdGetPath = z.object({
+export const zGetReferenceVideoReferencesVideosReferenceIdGetPath = z.object({
   reference_id: z.uuid(),
 })
 
 /**
  * Successful Response
  */
-export const zGetReferenceReferencesReferenceIdGetResponse = zReferenceVideoOut
+export const zGetReferenceVideoReferencesVideosReferenceIdGetResponse = zReferenceVideoOut
 
-export const zUpdateReferenceReferencesReferenceIdPatchBody = zReferenceUpdateIn
+export const zUpdateReferenceVideoReferencesVideosReferenceIdPatchBody = zReferenceVideoUpdateIn
 
-export const zUpdateReferenceReferencesReferenceIdPatchPath = z.object({
+export const zUpdateReferenceVideoReferencesVideosReferenceIdPatchPath = z.object({
   reference_id: z.uuid(),
 })
 
 /**
  * Successful Response
  */
-export const zUpdateReferenceReferencesReferenceIdPatchResponse = zReferenceVideoOut
+export const zUpdateReferenceVideoReferencesVideosReferenceIdPatchResponse = zReferenceVideoOut
 
-export const zRerunReferenceReferencesReferenceIdBreakdownsPostPath = z.object({
+export const zRerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostPath = z.object({
   reference_id: z.uuid(),
 })
 
 /**
  * Successful Response
  */
-export const zRerunReferenceReferencesReferenceIdBreakdownsPostResponse = zReferenceVideoOut
+export const zRerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostResponse =
+  zReferenceVideoOut
 
-export const zRetagReferenceReferencesReferenceIdTaggingPostPath = z.object({
+export const zRetagReferenceVideoReferencesVideosReferenceIdTaggingPostPath = z.object({
   reference_id: z.uuid(),
 })
 
 /**
  * Successful Response
  */
-export const zRetagReferenceReferencesReferenceIdTaggingPostResponse = zReferenceVideoOut
+export const zRetagReferenceVideoReferencesVideosReferenceIdTaggingPostResponse = zReferenceVideoOut
 
-export const zReplaceReferenceTagsReferencesReferenceIdTagsPutBody = zReferenceTagsIn
+export const zReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutBody = zReferenceTagsIn
 
-export const zReplaceReferenceTagsReferencesReferenceIdTagsPutPath = z.object({
+export const zReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutPath = z.object({
   reference_id: z.uuid(),
 })
 
 /**
  * Successful Response
  */
-export const zReplaceReferenceTagsReferencesReferenceIdTagsPutResponse = zReferenceVideoOut
+export const zReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutResponse =
+  zReferenceVideoOut
 
-export const zStartReferenceTestVideoReferencesReferenceIdTestGenerationsPostBody = zTestVideoIn
+export const zStartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostBody =
+  zTestVideoIn
 
-export const zStartReferenceTestVideoReferencesReferenceIdTestGenerationsPostPath = z.object({
+export const zStartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostPath = z.object({
   reference_id: z.uuid(),
 })
 
 /**
  * Successful Response
  */
-export const zStartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponse =
+export const zStartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostResponse =
   zReferenceVideoOut
 
 /**

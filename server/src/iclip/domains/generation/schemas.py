@@ -57,6 +57,7 @@ OPERATION_COMPOSE: Final = "compose"
 OPERATION_CUT: Final = "cut"
 OPERATION_RENDER: Final = "render"
 OPERATION_ENHANCE: Final = "enhance"
+OPERATION_TRIAL: Final = "trial"
 
 ClipStage = Literal["fetching", "processing", "uploading"]
 
@@ -83,7 +84,9 @@ COLUMN_FIELDS: Final = frozenset({"conversation_id", "task_id", "metadata", "sho
 
 RECORD_ONLY_FIELDS: Final = frozenset({"source_url", "range_start_ms", "range_end_ms"})
 
-NOT_FORWARDED_FIELDS: Final = COLUMN_FIELDS | RECORD_ONLY_FIELDS | frozenset({"shot"})
+NOT_FORWARDED_FIELDS: Final = (
+    COLUMN_FIELDS | RECORD_ONLY_FIELDS | frozenset({"shot", "reference_ids"})
+)
 
 READ_BACK_CONTEXT: Final = "read_back"
 
@@ -211,7 +214,8 @@ class VideoGenerationIn(SnakeModel):
 
     只拦本系统能判的：模型在允许表里（受理层）、地址是 http(s)、秒数不小于 -1、``shot``
     自身对得上（图片引用不越界、编号与正文一致）。画幅、分辨率、时长范围、素材规格由上游
-    按模型判，这里不复制一份。
+    按模型判，这里不复制一份。``reference_ids`` 是这次用到的参考资产，受理时核对都在资料库里、
+    没移除，只记进请求快照，不发给上游。
     """
 
     kind: ClassVar[GenerationKind] = KIND_VIDEO
@@ -224,6 +228,7 @@ class VideoGenerationIn(SnakeModel):
     reference_image_urls: MediaUrls = []
     reference_video_urls: MediaUrls = []
     reference_audio_urls: MediaUrls = []
+    reference_ids: Annotated[list[uuid.UUID], Field(max_length=MAX_REFERENCE_URLS)] = []
     generate_audio: bool | None = None
     resolution: Annotated[str, Field(min_length=1, max_length=50)] | None = None
     aspect_ratio: Annotated[str, Field(min_length=1, max_length=20)] | None = None
@@ -259,6 +264,13 @@ class VideoGenerationIn(SnakeModel):
             raise ValueError("prompt 与 shot 拼出的正文不一致，二者只传一个")
         object.__setattr__(self, "prompt", assembled)
         return self
+
+
+class VideoTrialRequest(VideoGenerationIn):
+    """参考视频的试生成：照拆解拼的提示词出一条视频和原片对照。上游、配置组与请求快照都和出片一样，
+    只是记成 ``trial``，不算素材片。"""
+
+    operation: ClassVar[GenerationOperation] = OPERATION_TRIAL
 
 
 class VideoEditRequest(VideoGenerationIn):
@@ -449,15 +461,42 @@ class DubbingOriginalReference(CamelModel):
     kind: Literal["original"]
 
 
-class DubbingAudioReference(CamelModel):
-    """参考音频取一个音频地址，只收本系统存储里的地址。"""
+class DubbingVoiceReferenceIn(CamelModel):
+    """参考音频取参考音频库里一条没移除的音色。"""
 
-    kind: Literal["audio"]
+    kind: Literal["reference_audio"]
+    reference_id: uuid.UUID
+
+
+class DubbingUploadReferenceIn(CamelModel):
+    """参考音频取调用者本人的一条音频上传。"""
+
+    kind: Literal["upload"]
+    upload_id: uuid.UUID
+
+
+DubbingReferenceIn = Annotated[
+    DubbingOriginalReference | DubbingVoiceReferenceIn | DubbingUploadReferenceIn,
+    Field(discriminator="kind"),
+]
+
+
+class DubbingVoiceReference(DubbingVoiceReferenceIn):
+    """记进配音记录的音色：受理时读到的地址与台词。台词只是记下，不发给语音合成。"""
+
+    url: DownloadUrl
+    transcript: str | None = None
+
+
+class DubbingUploadReference(DubbingUploadReferenceIn):
+    """记进配音记录的音频上传与它的地址。"""
+
     url: DownloadUrl
 
 
 DubbingReference = Annotated[
-    DubbingOriginalReference | DubbingAudioReference, Field(discriminator="kind")
+    DubbingOriginalReference | DubbingVoiceReference | DubbingUploadReference,
+    Field(discriminator="kind"),
 ]
 
 
@@ -480,7 +519,7 @@ class DubbingIn(CamelModel):
             ),
         ),
     ]
-    reference: DubbingReference
+    reference: DubbingReferenceIn
     user_name: UserName | None = None
 
     conversation_id: uuid.UUID | None = None
@@ -565,12 +604,12 @@ class WholeFilmVideoSource(CamelModel):
     url: DownloadUrl
 
 
-WholeFilmAudioSourceKind = Literal["generation", "upload"]
+WholeFilmAudioSourceKind = Literal["generation", "upload", "reference"]
 
 
 class WholeFilmAudioSource(CamelModel):
     """``<audio>`` 的素材出自哪里：``generation`` 时 ``sourceId`` 是一条生成记录，``upload`` 时是一条
-    上传。"""
+    上传，``reference`` 时是参考音频库里的一条。"""
 
     source_kind: WholeFilmAudioSourceKind
     source_id: uuid.UUID
@@ -579,7 +618,8 @@ class WholeFilmAudioSource(CamelModel):
 
 class WholeFilmRequest(CamelModel):
     """一条成片导出记录的请求：发起导出时 final-cut 主文件里对上了来源的素材（``<video>`` 对生成记录，
-    ``<audio>`` 先对生成记录、再对本对话的上传），和导出哪种语言的版本（``locale``，None 是原文）。
+    ``<audio>`` 依次对本对话的生成记录、本对话的上传、参考音频库），和导出哪种语言的版本（``locale``，
+    None 是原文）。
     工程本身不存在这里，交给渲染服务时才从工作区读。"""
 
     kind: ClassVar[GenerationKind] = KIND_WHOLE_FILM
@@ -853,6 +893,7 @@ __all__ = [
     "OPERATION_ENHANCE",
     "OPERATION_GENERATE",
     "OPERATION_RENDER",
+    "OPERATION_TRIAL",
     "READ_BACK_CONTEXT",
     "RECORD_ONLY_FIELDS",
     "STATUS_COMPLETED",
@@ -868,12 +909,16 @@ __all__ = [
     "ComposeSegmentIn",
     "DownloadUrl",
     "DubbedLine",
-    "DubbingAudioReference",
     "DubbingIn",
     "DubbingLine",
     "DubbingOriginalReference",
     "DubbingReference",
+    "DubbingReferenceIn",
     "DubbingRequest",
+    "DubbingUploadReference",
+    "DubbingUploadReferenceIn",
+    "DubbingVoiceReference",
+    "DubbingVoiceReferenceIn",
     "GenerationEnvelope",
     "GenerationKind",
     "GenerationOperation",
@@ -911,6 +956,7 @@ __all__ = [
     "VideoTaskOut",
     "VideoTaskResult",
     "VideoTaskStatus",
+    "VideoTrialRequest",
     "WholeFilmAudioSource",
     "WholeFilmAudioSourceKind",
     "WholeFilmRequest",

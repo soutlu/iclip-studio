@@ -28,7 +28,7 @@ from iclip.domains.generation.models import (
 )
 from iclip.domains.generation.ports import (
     ConversationLineage,
-    ReferenceClipCheck,
+    ReferenceAssets,
     RemoteMediaProbe,
 )
 from iclip.domains.generation.provider import ImageModelSpec
@@ -44,11 +44,16 @@ from iclip.domains.generation.schemas import (
     OPERATION_CUT,
     OPERATION_GENERATE,
     OPERATION_RENDER,
+    OPERATION_TRIAL,
     ComposeSegment,
-    DubbingAudioReference,
     DubbingIn,
     DubbingLine,
+    DubbingOriginalReference,
+    DubbingReference,
     DubbingRequest,
+    DubbingUploadReference,
+    DubbingVoiceReference,
+    DubbingVoiceReferenceIn,
     GenerationKind,
     GenerationOperation,
     GenerationStatus,
@@ -89,14 +94,6 @@ class ProviderTarget:
 
 
 @dataclass(frozen=True, slots=True)
-class DubbingTarget:
-    """配音交给哪个 provider，和哪些地址算本系统存储里的（参考音频只收这些）。"""
-
-    provider: str
-    owns_url: Callable[[str], bool]
-
-
-@dataclass(frozen=True, slots=True)
 class VideoEnhanceSpec:
     model: str
     resolutions: tuple[VideoEnhanceResolution, ...]
@@ -129,9 +126,9 @@ class GenerationService:
         clear_completion: ClearCompletion,
         lineage: ConversationLineage,
         media_probe: RemoteMediaProbe,
-        reference_clips: ReferenceClipCheck,
+        references: ReferenceAssets,
         subtitles: ProviderTarget | None = None,
-        dubbing: DubbingTarget | None = None,
+        dubbing_provider: str | None = None,
         music: ProviderTarget | None = None,
         render: RenderClient | None = None,
         enhance: VideoEnhanceSpec | None = None,
@@ -151,9 +148,9 @@ class GenerationService:
         self._clear_completion = clear_completion
         self._lineage = lineage
         self._media_probe = media_probe
-        self._reference_clips = reference_clips
+        self._references = references
         self._subtitles = subtitles
-        self._dubbing = dubbing
+        self._dubbing_provider = dubbing_provider
         self._music = music
 
     async def _inheritance(
@@ -164,8 +161,16 @@ class GenerationService:
         return await self._lineage.ancestry(conversation_id)
 
     async def submit_video(self, principal: Principal, request: VideoGenerationIn) -> GenerationJob:
+        """受理一次出片；传进来的是 ``VideoTrialRequest`` 时记成试生成，别的都一样。"""
+
         self._require_video_model(request.model)
         _require_user_name(request.user_name)
+        if request.reference_ids:
+            unlisted = await self._references.unlisted(request.reference_ids)
+            if unlisted:
+                raise ValidationFailed(
+                    f"reference_ids 里这些参考不在资料库里或已移除：{'、'.join(map(str, unlisted))}"
+                )
         model_group, upstream_model = await self._model_groups.video_model_of(
             principal.user_id, request.model
         )
@@ -220,7 +225,7 @@ class GenerationService:
         clip_url = None
         if request.reference_video_urls:
             (clip_url,) = request.reference_video_urls
-            if not await self._reference_clips(principal, clip_url):
+            if not await self._references.usable_clip(principal, clip_url):
                 raise ValidationFailed(
                     "reference_video_urls 必须是调用者本人上传的视频，或资料库里的一条参考视频"
                 )
@@ -479,13 +484,9 @@ class GenerationService:
         return self._subtitles
 
     async def submit_dubbing(self, principal: Principal, request: DubbingIn) -> GenerationJob:
-        if self._dubbing is None:
+        if self._dubbing_provider is None:
             raise ValidationFailed("配音没有开通，暂时不能配音")
-        reference = request.reference
-        if isinstance(reference, DubbingAudioReference) and not self._dubbing.owns_url(
-            reference.url
-        ):
-            raise ValidationFailed("参考音频只能用本系统存储里的地址")
+        reference = await self._dubbing_reference(principal, request)
         video, video_url = await self._readable_master(
             principal,
             request.source_job_id,
@@ -507,7 +508,7 @@ class GenerationService:
                 ),
                 owner_user_id=principal.user_id,
                 api_key_id=principal.api_key_id,
-                provider=self._dubbing.provider,
+                provider=self._dubbing_provider,
                 conversation_id=request.conversation_id,
                 task_id=request.task_id,
                 metadata=request.metadata,
@@ -516,6 +517,29 @@ class GenerationService:
                 model_group=await self._model_groups.group_of(principal.user_id),
             )
         )
+
+    async def _dubbing_reference(
+        self, principal: Principal, request: DubbingIn
+    ) -> DubbingReference:
+        """把请求里的参考换成记进记录的样子：音色读出地址与台词，上传读出地址。"""
+
+        reference = request.reference
+        if isinstance(reference, DubbingOriginalReference):
+            return reference
+        if isinstance(reference, DubbingVoiceReferenceIn):
+            voice = await self._references.voice(reference.reference_id)
+            if voice is None:
+                raise ValidationFailed("参考音频要用参考音频库里一条没移除的音色")
+            return DubbingVoiceReference(
+                kind="reference_audio",
+                reference_id=reference.reference_id,
+                url=voice.url,
+                transcript=voice.transcript,
+            )
+        url = await self._references.own_audio_upload(principal, reference.upload_id)
+        if url is None:
+            raise ValidationFailed("参考音频要用调用者本人的一条音频上传")
+        return DubbingUploadReference(kind="upload", upload_id=reference.upload_id, url=url)
 
     async def submit_music(self, principal: Principal, request: MusicIn) -> GenerationJob:
         if self._music is None:
@@ -747,7 +771,7 @@ class GenerationService:
 
     async def get_video(self, principal: Principal, job_id: uuid.UUID) -> GenerationJob:
         job = await self.get(principal, job_id)
-        if job.kind != KIND_VIDEO or job.operation != OPERATION_GENERATE:
+        if job.kind != KIND_VIDEO or job.operation not in (OPERATION_GENERATE, OPERATION_TRIAL):
             raise NotFound(f"没有这个视频任务: {job_id}")
         return job
 
@@ -969,7 +993,6 @@ def _settled_job(
 
 __all__ = [
     "ClearCompletion",
-    "DubbingTarget",
     "EnhanceTier",
     "GenerationService",
     "ProviderTarget",

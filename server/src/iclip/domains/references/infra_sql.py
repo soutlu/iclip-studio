@@ -1,33 +1,41 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import Any, Final
 
 from sqlalchemy import (
-    CheckConstraint,
     Column,
     DateTime,
-    ForeignKey,
     Index,
     Integer,
     MetaData,
     Table,
     Text,
-    UniqueConstraint,
+    TextClause,
     Uuid,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from iclip.domains.references.models import (
+    AUDIO_KINDS,
+    AUDIO_VOICE,
+    KIND_AUDIO,
+    KIND_VIDEO,
     STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_PENDING,
     STATUS_RUNNING,
+    AudioKind,
+    AudioScope,
+    AudioText,
     BreakdownErrorCode,
     Claim,
+    NewReferenceAudio,
+    ReferenceAudio,
     ReferenceCursor,
     ReferenceVideo,
     Scope,
@@ -43,158 +51,330 @@ DB_SCHEMA: Final = "iclip"
 
 metadata_obj = MetaData(schema=DB_SCHEMA)
 
+# 三张表上都不设外键与取值约束：种类、子类、拆解状态等取值只在应用层校验（见 models）。
+# 主表与子表一对一，按 reference_id 对上；列表与详情只认两边都有的。
+references_table = Table(
+    "references",
+    metadata_obj,
+    Column("id", Uuid, primary_key=True),
+    Column("kind", Text, nullable=False),
+    Column("title", Text, nullable=False, server_default=text("''")),
+    Column("description", Text, nullable=True),
+    Column("url", Text, nullable=False),
+    Column("duration_ms", Integer, nullable=True),
+    Column("owner_user_id", Uuid, nullable=False),
+    Column("api_key_id", Uuid, nullable=True),
+    Column("upload_id", Uuid, nullable=True),
+    Column("source_job_id", Uuid, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
+    Column("deleted_at", DateTime(timezone=True), nullable=True),
+    Index(
+        "ix_references_listed",
+        "kind",
+        text("created_at DESC"),
+        "id",
+        postgresql_where=text("deleted_at IS NULL"),
+    ),
+    Index(
+        "ix_references_owner", "owner_user_id", "kind", postgresql_where=text("deleted_at IS NULL")
+    ),
+    Index("ix_references_url", "kind", "url"),
+)
+
 reference_videos_table = Table(
     "reference_videos",
     metadata_obj,
-    Column("id", Uuid, primary_key=True),
-    Column("video_url", Text, nullable=False),
-    Column(
-        "owner_user_id",
-        Uuid,
-        ForeignKey(f"{DB_SCHEMA}.users.id", name="fk_reference_videos_owner"),
-        nullable=False,
-    ),
+    Column("reference_id", Uuid, primary_key=True),
     Column("breakdown_status", Text, nullable=False),
     Column("error_code", Text, nullable=True),
     Column("document", Text, nullable=True),
     Column("version", Integer, nullable=False, server_default=text("1")),
     Column("requested_by", Uuid, nullable=True),
-    Column("api_key_id", Uuid, nullable=True),
     Column("started_at", DateTime(timezone=True), nullable=True),
-    Column("created_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
-    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=text("now()")),
-    Column("deleted_at", DateTime(timezone=True), nullable=True),
-    UniqueConstraint("video_url", name="uq_reference_videos_video_url"),
-    CheckConstraint(
-        "breakdown_status IN ('pending', 'running', 'completed', 'failed')",
-        name="ck_reference_videos_status",
-    ),
+    Column("test_job_id", Uuid, nullable=True),
+    Column("meta", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     Index(
-        "ix_reference_videos_listed",
-        text("created_at DESC"),
-        "id",
-        postgresql_where=text("deleted_at IS NULL"),
+        "ix_reference_videos_running",
+        "started_at",
+        postgresql_where=text("breakdown_status = 'running'"),
     ),
 )
 
-_ROW: Final = f"""
-SELECT r.id, r.video_url, r.owner_user_id, u.username AS owner_user_name,
-       r.breakdown_status, r.error_code, r.document, r.version, r.created_at,
-       r.updated_at, r.deleted_at, {entry_columns_sql()}
-FROM iclip.reference_videos r
+reference_audios_table = Table(
+    "reference_audios",
+    metadata_obj,
+    Column("reference_id", Uuid, primary_key=True),
+    Column("audio_kind", Text, nullable=False),
+    Column("locale", Text, nullable=True),
+    Column("transcript", Text, nullable=True),
+    Column("meta", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Index("ix_reference_audios_kind", "audio_kind", "reference_id"),
+)
+
+# 同一个地址的参考视频按地址排队新建与恢复，代替唯一约束；两个键：命名空间与地址。
+_LOCK_VIDEO_URL: Final = text(
+    "SELECT pg_advisory_xact_lock(hashtext('iclip.references.video'), hashtext(:url))"
+)
+
+_VIDEO_ROW: Final = f"""
+SELECT r.id, r.url AS video_url, r.owner_user_id, u.username AS owner_user_name,
+       r.upload_id, r.source_job_id, v.breakdown_status, v.error_code, v.document, v.version,
+       v.test_job_id, r.created_at, r.updated_at, r.deleted_at, {entry_columns_sql()}
+FROM iclip.references r
+JOIN iclip.reference_videos v ON v.reference_id = r.id
 JOIN iclip.users u ON u.id = r.owner_user_id
 {entry_join_sql(kind=KIND_REFERENCE, subject_expr="r.id")}"""
 
-_BY_ID: Final = text(f"{_ROW}\nWHERE r.id = :id")
-_BY_URL: Final = text(f"{_ROW}\nWHERE r.video_url = :video_url")
+_VIDEO_BY_ID: Final = text(f"{_VIDEO_ROW}\nWHERE r.id = :id AND r.kind = '{KIND_VIDEO}'")
 
-_LISTED_AT: Final = text("""
-SELECT EXISTS (
-    SELECT 1 FROM iclip.reference_videos
-    WHERE video_url = :video_url AND deleted_at IS NULL
-)
-""")
+_VIDEO_ID_AT: Final = text(f"""
+SELECT r.id FROM iclip.references r
+JOIN iclip.reference_videos v ON v.reference_id = r.id
+WHERE r.kind = '{KIND_VIDEO}' AND r.url = :url
+ORDER BY r.created_at, r.id
+LIMIT 1""")
 
-_INSERT: Final = text("""
-INSERT INTO iclip.reference_videos
-    (id, video_url, owner_user_id, breakdown_status, requested_by, api_key_id)
-VALUES (:id, :video_url, :owner, :pending, :requested_by, :api_key_id)
-ON CONFLICT (video_url) DO NOTHING
-RETURNING id""")
+_INSERT_REFERENCE: Final = text("""
+INSERT INTO iclip.references
+    (id, kind, title, description, url, duration_ms, owner_user_id, api_key_id, upload_id,
+     source_job_id)
+VALUES (:id, :kind, :title, :description, :url, :duration_ms, :owner, :api_key_id, :upload_id,
+        :source_job_id)""")
 
-_FILTER: Final = r"""
-WHERE r.deleted_at IS NULL
+_INSERT_VIDEO: Final = text("""
+INSERT INTO iclip.reference_videos (reference_id, breakdown_status, requested_by)
+VALUES (:id, :pending, :requested_by)""")
+
+_RESTORE_VIDEO: Final = text(f"""
+UPDATE iclip.references
+SET deleted_at = NULL, owner_user_id = :owner, api_key_id = :api_key_id, upload_id = :upload_id,
+    source_job_id = :source_job_id, updated_at = now()
+WHERE id = :id AND kind = '{KIND_VIDEO}' AND deleted_at IS NOT NULL""")
+
+_VIDEO_FILTER: Final = rf"""
+WHERE r.kind = '{KIND_VIDEO}' AND r.deleted_at IS NULL
   AND (CAST(:user_name AS text) IS NULL OR u.username = CAST(:user_name AS text))
-  AND (CAST(:pattern AS text) IS NULL OR r.document ILIKE CAST(:pattern AS text) ESCAPE '\')
+  AND (CAST(:pattern AS text) IS NULL OR v.document ILIKE CAST(:pattern AS text) ESCAPE '\')
   AND (CAST(:since AS timestamptz) IS NULL OR r.created_at >= CAST(:since AS timestamptz))
   AND (CAST(:until AS timestamptz) IS NULL OR r.created_at < CAST(:until AS timestamptz))"""
 
-
-def _list_statement(tag_filter: str) -> Any:
-    return text(f"""{_ROW}{_FILTER}{tag_filter}
+_PAGE: Final = """
   AND (CAST(:after_at AS timestamptz) IS NULL
        OR (r.created_at, r.id) < (CAST(:after_at AS timestamptz), CAST(:after_id AS uuid)))
 ORDER BY r.created_at DESC, r.id DESC
-LIMIT :limit""")
+LIMIT :limit"""
 
 
-def _count_statement(tag_filter: str) -> Any:
+def _video_list_statement(tag_filter: str) -> TextClause:
+    return text(f"{_VIDEO_ROW}{_VIDEO_FILTER}{tag_filter}{_PAGE}")
+
+
+def _video_count_statement(tag_filter: str) -> TextClause:
     return text(f"""
-SELECT count(*) FROM iclip.reference_videos r
-JOIN iclip.users u ON u.id = r.owner_user_id{_FILTER}{tag_filter}""")
+SELECT count(*) FROM iclip.references r
+JOIN iclip.reference_videos v ON v.reference_id = r.id
+JOIN iclip.users u ON u.id = r.owner_user_id{_VIDEO_FILTER}{tag_filter}""")
 
 
-_OWNER_COUNTS: Final = text("""
+def _owner_counts(child: str, kind: str) -> TextClause:
+    return text(f"""
 SELECT u.username, count(*) AS n
-FROM iclip.reference_videos r
+FROM iclip.references r
+JOIN iclip.{child} c ON c.reference_id = r.id
 JOIN iclip.users u ON u.id = r.owner_user_id
-WHERE r.deleted_at IS NULL
+WHERE r.kind = '{kind}' AND r.deleted_at IS NULL
 GROUP BY u.username
 ORDER BY n DESC, u.username""")
 
-_UPDATE: Final = text("""
-UPDATE iclip.reference_videos
-SET document = :document, version = version + 1, updated_at = now()
-WHERE id = :id AND deleted_at IS NULL AND version = :version
-  AND breakdown_status IN (:completed, :failed)
-RETURNING version""")
 
-_REQUEUE: Final = text("""
-UPDATE iclip.reference_videos
-SET breakdown_status = :pending, requested_by = :requested_by, api_key_id = :api_key_id,
-    updated_at = now()
-WHERE id = :id AND breakdown_status = ANY(CAST(:from_statuses AS text[]))
-RETURNING id""")
+_VIDEO_OWNER_COUNTS: Final = _owner_counts("reference_videos", KIND_VIDEO)
 
-_ABANDON: Final = text("""
-UPDATE iclip.reference_videos
-SET breakdown_status = :failed, error_code = 'model_call_failed', updated_at = now()
-WHERE id = :id AND breakdown_status = :pending""")
 
-_CLAIM: Final = text("""
-UPDATE iclip.reference_videos
-SET breakdown_status = :running, started_at = now(), updated_at = now()
-WHERE id = :id AND breakdown_status = :pending
-RETURNING id, video_url, owner_user_id, requested_by, started_at""")
+def _touching(update: str, returning: str) -> TextClause:
+    """改视频子表的同一条语句里把主表的 ``updated_at`` 也改掉；``update`` 要 ``RETURNING`` 出
+    ``reference_id``。"""
 
-_FINISH: Final = text("""
-UPDATE iclip.reference_videos
-SET breakdown_status = :completed, document = :document,
-    error_code = NULL, version = version + 1, updated_at = now()
-WHERE id = :id AND breakdown_status = :running AND started_at = :started_at
-RETURNING id""")
+    return text(f"""
+WITH changed AS ({update}),
+touched AS (
+    UPDATE iclip.references r SET updated_at = now()
+    FROM changed c WHERE r.id = c.reference_id
+)
+SELECT {returning} FROM changed""")
 
-_FAIL: Final = text("""
-UPDATE iclip.reference_videos
-SET breakdown_status = :failed, error_code = :error_code, updated_at = now()
-WHERE id = :id AND breakdown_status = :running AND started_at = :started_at
-RETURNING id""")
 
-_TIME_OUT: Final = text("""
-UPDATE iclip.reference_videos
-SET breakdown_status = :failed, error_code = 'timeout', updated_at = now()
-WHERE breakdown_status = :running
-  AND started_at < now() - make_interval(secs => :seconds)
-RETURNING id""")
+_UPDATE_DOCUMENT: Final = _touching(
+    """
+    UPDATE iclip.reference_videos v
+    SET document = :document, version = v.version + 1
+    FROM iclip.references r
+    WHERE v.reference_id = :id AND r.id = v.reference_id AND r.deleted_at IS NULL
+      AND v.version = :version AND v.breakdown_status IN (:completed, :failed)
+    RETURNING v.reference_id, v.version""",
+    "version",
+)
 
-_RESTORE: Final = text("""
-UPDATE iclip.reference_videos
-SET deleted_at = NULL, owner_user_id = :owner, updated_at = now()
-WHERE id = :id AND deleted_at IS NOT NULL""")
+_REQUEUE: Final = _touching(
+    """
+    UPDATE iclip.reference_videos
+    SET breakdown_status = :pending, requested_by = :requested_by
+    WHERE reference_id = :id AND breakdown_status = ANY(CAST(:from_statuses AS text[]))
+    RETURNING reference_id""",
+    "reference_id",
+)
 
-_REMOVE: Final = text("""
-UPDATE iclip.reference_videos
+_ABANDON: Final = _touching(
+    """
+    UPDATE iclip.reference_videos
+    SET breakdown_status = :failed, error_code = 'model_call_failed'
+    WHERE reference_id = :id AND breakdown_status = :pending
+    RETURNING reference_id""",
+    "reference_id",
+)
+
+_CLAIM: Final = _touching(
+    """
+    UPDATE iclip.reference_videos v
+    SET breakdown_status = :running, started_at = now()
+    FROM iclip.references r
+    WHERE v.reference_id = :id AND r.id = v.reference_id AND v.breakdown_status = :pending
+    RETURNING v.reference_id, r.url, r.owner_user_id, v.requested_by, v.started_at""",
+    "reference_id, url, owner_user_id, requested_by, started_at",
+)
+
+_FINISH: Final = _touching(
+    """
+    UPDATE iclip.reference_videos
+    SET breakdown_status = :completed, document = :document,
+        error_code = NULL, version = version + 1
+    WHERE reference_id = :id AND breakdown_status = :running AND started_at = :started_at
+    RETURNING reference_id""",
+    "reference_id",
+)
+
+_FAIL: Final = _touching(
+    """
+    UPDATE iclip.reference_videos
+    SET breakdown_status = :failed, error_code = :error_code
+    WHERE reference_id = :id AND breakdown_status = :running AND started_at = :started_at
+    RETURNING reference_id""",
+    "reference_id",
+)
+
+_TIME_OUT: Final = _touching(
+    """
+    UPDATE iclip.reference_videos
+    SET breakdown_status = :failed, error_code = 'timeout'
+    WHERE breakdown_status = :running
+      AND started_at < now() - make_interval(secs => :seconds)
+    RETURNING reference_id""",
+    "reference_id",
+)
+
+_SET_TEST_JOB: Final = text("""
+UPDATE iclip.reference_videos SET test_job_id = :job_id WHERE reference_id = :id""")
+
+
+def _remove_statement(kind: str) -> TextClause:
+    return text(f"""
+UPDATE iclip.references
 SET deleted_at = now(), updated_at = now()
-WHERE id = :id AND deleted_at IS NULL
+WHERE id = :id AND kind = '{kind}' AND deleted_at IS NULL
 RETURNING id""")
 
 
-def _row_of(row: RowMapping) -> ReferenceVideo:
+_REMOVE_VIDEO: Final = _remove_statement(KIND_VIDEO)
+_REMOVE_AUDIO: Final = _remove_statement(KIND_AUDIO)
+
+_AUDIO_ROW: Final = """
+SELECT r.id, r.url, r.title, r.description, r.duration_ms, r.owner_user_id,
+       u.username AS owner_user_name, r.upload_id, r.source_job_id, a.audio_kind, a.locale,
+       a.transcript, r.created_at, r.updated_at, r.deleted_at
+FROM iclip.references r
+JOIN iclip.reference_audios a ON a.reference_id = r.id
+JOIN iclip.users u ON u.id = r.owner_user_id"""
+
+_AUDIO_BY_ID: Final = text(f"{_AUDIO_ROW}\nWHERE r.id = :id AND r.kind = '{KIND_AUDIO}'")
+
+_INSERT_AUDIO: Final = text("""
+INSERT INTO iclip.reference_audios (reference_id, audio_kind, locale, transcript)
+VALUES (:id, :audio_kind, :locale, :transcript)""")
+
+_AUDIO_FILTER: Final = rf"""
+WHERE r.kind = '{KIND_AUDIO}' AND r.deleted_at IS NULL
+  AND (CAST(:audio_kind AS text) IS NULL OR a.audio_kind = CAST(:audio_kind AS text))
+  AND (CAST(:locale AS text) IS NULL OR a.locale = CAST(:locale AS text))
+  AND (CAST(:user_name AS text) IS NULL OR u.username = CAST(:user_name AS text))
+  AND (CAST(:pattern AS text) IS NULL
+       OR r.title ILIKE CAST(:pattern AS text) ESCAPE '\'
+       OR r.description ILIKE CAST(:pattern AS text) ESCAPE '\'
+       OR a.transcript ILIKE CAST(:pattern AS text) ESCAPE '\')
+  AND (CAST(:since AS timestamptz) IS NULL OR r.created_at >= CAST(:since AS timestamptz))
+  AND (CAST(:until AS timestamptz) IS NULL OR r.created_at < CAST(:until AS timestamptz))"""
+
+_AUDIO_LIST: Final = text(f"{_AUDIO_ROW}{_AUDIO_FILTER}{_PAGE}")
+
+_AUDIO_COUNT: Final = text(f"""
+SELECT count(*) FROM iclip.references r
+JOIN iclip.reference_audios a ON a.reference_id = r.id
+JOIN iclip.users u ON u.id = r.owner_user_id{_AUDIO_FILTER}""")
+
+_AUDIO_KIND_COUNTS: Final = text(f"""
+SELECT a.audio_kind, count(*) AS n
+FROM iclip.references r
+JOIN iclip.reference_audios a ON a.reference_id = r.id
+WHERE r.kind = '{KIND_AUDIO}' AND r.deleted_at IS NULL
+GROUP BY a.audio_kind""")
+
+_AUDIO_OWNER_COUNTS: Final = _owner_counts("reference_audios", KIND_AUDIO)
+
+_UPDATE_AUDIO_MAIN: Final = text(f"""
+UPDATE iclip.references
+SET title = :title, description = :description, updated_at = now()
+WHERE id = :id AND kind = '{KIND_AUDIO}' AND deleted_at IS NULL
+RETURNING id""")
+
+_UPDATE_AUDIO_CHILD: Final = text("""
+UPDATE iclip.reference_audios SET locale = :locale, transcript = :transcript
+WHERE reference_id = :id""")
+
+_LISTED_VIDEO_AT: Final = text(f"""
+SELECT EXISTS (
+    SELECT 1 FROM iclip.references r
+    JOIN iclip.reference_videos v ON v.reference_id = r.id
+    WHERE r.kind = '{KIND_VIDEO}' AND r.url = :url AND r.deleted_at IS NULL
+)""")
+
+_LISTED_IDS: Final = text(f"""
+SELECT r.id FROM iclip.references r
+LEFT JOIN iclip.reference_videos v ON v.reference_id = r.id
+LEFT JOIN iclip.reference_audios a ON a.reference_id = r.id
+WHERE r.id = ANY(CAST(:ids AS uuid[])) AND r.deleted_at IS NULL
+  AND ((r.kind = '{KIND_VIDEO}' AND v.reference_id IS NOT NULL)
+       OR (r.kind = '{KIND_AUDIO}' AND a.reference_id IS NOT NULL))""")
+
+_VOICE: Final = text(f"""
+SELECT r.url, a.transcript FROM iclip.references r
+JOIN iclip.reference_audios a ON a.reference_id = r.id
+WHERE r.id = :id AND r.kind = '{KIND_AUDIO}' AND r.deleted_at IS NULL
+  AND a.audio_kind = '{AUDIO_VOICE}'""")
+
+_AUDIO_IDS_AT: Final = text(f"""
+SELECT DISTINCT ON (r.url) r.url, r.id FROM iclip.references r
+JOIN iclip.reference_audios a ON a.reference_id = r.id
+WHERE r.kind = '{KIND_AUDIO}' AND r.url = ANY(CAST(:urls AS text[])) AND r.deleted_at IS NULL
+ORDER BY r.url, r.created_at, r.id""")
+
+
+def _video_of(row: RowMapping) -> ReferenceVideo:
     return ReferenceVideo(
         id=row["id"],
         video_url=row["video_url"],
         owner_user_id=row["owner_user_id"],
         owner_user_name=row["owner_user_name"],
+        upload_id=row["upload_id"],
+        source_job_id=row["source_job_id"],
         tag_ids=tuple(row["tag_ids"]),
         tag_status=row["tag_status"],
         tag_error=row["tag_error"],
@@ -202,21 +382,63 @@ def _row_of(row: RowMapping) -> ReferenceVideo:
         error_code=row["error_code"],
         document=row["document"],
         version=row["version"],
+        test_job_id=row["test_job_id"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         deleted_at=row["deleted_at"],
     )
 
 
-def _like_pattern(q: str) -> str:
+def _audio_of(row: RowMapping) -> ReferenceAudio:
+    return ReferenceAudio(
+        id=row["id"],
+        url=row["url"],
+        title=row["title"],
+        description=row["description"],
+        duration_ms=row["duration_ms"],
+        owner_user_id=row["owner_user_id"],
+        owner_user_name=row["owner_user_name"],
+        upload_id=row["upload_id"],
+        source_job_id=row["source_job_id"],
+        audio_kind=row["audio_kind"],
+        locale=row["locale"],
+        transcript=row["transcript"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        deleted_at=row["deleted_at"],
+    )
+
+
+def _like_pattern(q: str | None) -> str | None:
+    if q is None:
+        return None
     escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"%{escaped}%"
 
 
-def _scope_params(scope: Scope) -> dict[str, Any]:
+def _page_params(after: ReferenceCursor | None, limit: int) -> dict[str, Any]:
+    return {
+        "after_at": after.at if after else None,
+        "after_id": after.reference_id if after else None,
+        "limit": limit,
+    }
+
+
+def _video_scope_params(scope: Scope) -> dict[str, Any]:
     return {
         "user_name": scope.user_name,
-        "pattern": None if scope.q is None else _like_pattern(scope.q),
+        "pattern": _like_pattern(scope.q),
+        "since": scope.since,
+        "until": scope.until,
+    }
+
+
+def _audio_scope_params(scope: AudioScope) -> dict[str, Any]:
+    return {
+        "audio_kind": scope.audio_kind,
+        "locale": scope.locale,
+        "user_name": scope.user_name,
+        "pattern": _like_pattern(scope.q),
         "since": scope.since,
         "until": scope.until,
     }
@@ -229,11 +451,13 @@ def _tag_filter(scope: Scope) -> tuple[str, dict[str, Any]]:
 async def _one(conn: AsyncConnection, statement: Any, params: Mapping[str, Any]) -> RowMapping:
     row = (await conn.execute(statement, dict(params))).mappings().first()
     if row is None:
-        raise RuntimeError("刚写下或刚认出的参考视频读不回来")
+        raise RuntimeError("刚写下或刚认出的参考资产读不回来")
     return row
 
 
 class SqlReferenceStore:
+    """参考视频的读写。"""
+
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
@@ -244,64 +468,67 @@ class SqlReferenceStore:
         owner: uuid.UUID,
         requested_by: uuid.UUID,
         api_key_id: uuid.UUID | None,
+        upload_id: uuid.UUID | None = None,
+        source_job_id: uuid.UUID | None = None,
+        restore: bool,
     ) -> tuple[ReferenceVideo, bool]:
+        lineage = {
+            "owner": owner,
+            "api_key_id": api_key_id,
+            "upload_id": upload_id,
+            "source_job_id": source_job_id,
+        }
         async with self._engine.begin() as conn:
-            inserted = (
+            await conn.execute(_LOCK_VIDEO_URL, {"url": video_url})
+            found = (await conn.execute(_VIDEO_ID_AT, {"url": video_url})).scalar_one_or_none()
+            reference_id = found if found is not None else uuid.uuid4()
+            if found is None:
                 await conn.execute(
-                    _INSERT,
+                    _INSERT_REFERENCE,
                     {
-                        "id": uuid.uuid4(),
-                        "video_url": video_url,
-                        "owner": owner,
-                        "pending": STATUS_PENDING,
-                        "requested_by": requested_by,
-                        "api_key_id": api_key_id,
+                        **lineage,
+                        "id": reference_id,
+                        "kind": KIND_VIDEO,
+                        "title": "",
+                        "description": None,
+                        "url": video_url,
+                        "duration_ms": None,
                     },
                 )
-            ).first()
-            row = await _one(conn, _BY_URL, {"video_url": video_url})
-        return _row_of(row), inserted is not None
+                await conn.execute(
+                    _INSERT_VIDEO,
+                    {"id": reference_id, "pending": STATUS_PENDING, "requested_by": requested_by},
+                )
+            elif restore:
+                await conn.execute(_RESTORE_VIDEO, {**lineage, "id": reference_id})
+            row = await _one(conn, _VIDEO_BY_ID, {"id": reference_id})
+        return _video_of(row), found is None
 
     async def get(self, reference_id: uuid.UUID) -> ReferenceVideo | None:
         async with self._engine.connect() as conn:
-            row = (await conn.execute(_BY_ID, {"id": reference_id})).mappings().first()
-        return None if row is None else _row_of(row)
-
-    async def listed_at(self, video_url: str) -> bool:
-        """资料库里有没有这个地址的一条没移除的参考视频。"""
-
-        async with self._engine.connect() as conn:
-            return bool((await conn.execute(_LISTED_AT, {"video_url": video_url})).scalar_one())
+            row = (await conn.execute(_VIDEO_BY_ID, {"id": reference_id})).mappings().first()
+        return None if row is None else _video_of(row)
 
     async def list(
         self, scope: Scope, *, limit: int, after: ReferenceCursor | None
     ) -> Sequence[ReferenceVideo]:
         tag_filter, tag_params = _tag_filter(scope)
-        params = {
-            **_scope_params(scope),
-            **tag_params,
-            "after_at": after.at if after else None,
-            "after_id": after.reference_id if after else None,
-            "limit": limit,
-        }
+        params = {**_video_scope_params(scope), **tag_params, **_page_params(after, limit)}
         async with self._engine.connect() as conn:
-            rows = (await conn.execute(_list_statement(tag_filter), params)).mappings().all()
-        return [_row_of(row) for row in rows]
+            rows = (await conn.execute(_video_list_statement(tag_filter), params)).mappings().all()
+        return [_video_of(row) for row in rows]
 
     async def count(self, scope: Scope) -> int:
         tag_filter, tag_params = _tag_filter(scope)
+        params = {**_video_scope_params(scope), **tag_params}
         async with self._engine.connect() as conn:
             return int(
-                (
-                    await conn.execute(
-                        _count_statement(tag_filter), {**_scope_params(scope), **tag_params}
-                    )
-                ).scalar_one()
+                (await conn.execute(_video_count_statement(tag_filter), params)).scalar_one()
             )
 
     async def owner_counts(self) -> Sequence[tuple[str, int]]:
         async with self._engine.connect() as conn:
-            rows = await conn.execute(_OWNER_COUNTS)
+            rows = await conn.execute(_VIDEO_OWNER_COUNTS)
             return [(str(row[0]), int(row[1])) for row in rows]
 
     async def update(
@@ -314,7 +541,7 @@ class SqlReferenceStore:
         async with self._engine.begin() as conn:
             row = (
                 await conn.execute(
-                    _UPDATE,
+                    _UPDATE_DOCUMENT,
                     {
                         "id": reference_id,
                         "version": version,
@@ -332,7 +559,6 @@ class SqlReferenceStore:
         *,
         from_failed_only: bool,
         requested_by: uuid.UUID,
-        api_key_id: uuid.UUID | None,
     ) -> bool:
         from_statuses = [STATUS_FAILED] if from_failed_only else [STATUS_COMPLETED, STATUS_FAILED]
         async with self._engine.begin() as conn:
@@ -343,7 +569,6 @@ class SqlReferenceStore:
                         "id": reference_id,
                         "pending": STATUS_PENDING,
                         "requested_by": requested_by,
-                        "api_key_id": api_key_id,
                         "from_statuses": from_statuses,
                     },
                 )
@@ -371,8 +596,8 @@ class SqlReferenceStore:
         if row is None:
             return None
         return Claim(
-            id=row["id"],
-            video_url=row["video_url"],
+            id=row["reference_id"],
+            video_url=row["url"],
             owner_user_id=row["owner_user_id"],
             requested_by=row["requested_by"],
             started_at=row["started_at"],
@@ -424,14 +649,148 @@ class SqlReferenceStore:
             ).all()
         return len(rows)
 
-    async def restore(self, reference_id: uuid.UUID, *, owner: uuid.UUID) -> None:
+    async def set_test_job(self, reference_id: uuid.UUID, job_id: uuid.UUID) -> None:
         async with self._engine.begin() as conn:
-            await conn.execute(_RESTORE, {"id": reference_id, "owner": owner})
+            await conn.execute(_SET_TEST_JOB, {"id": reference_id, "job_id": job_id})
 
     async def remove(self, reference_id: uuid.UUID) -> bool:
         async with self._engine.begin() as conn:
-            row = (await conn.execute(_REMOVE, {"id": reference_id})).first()
+            row = (await conn.execute(_REMOVE_VIDEO, {"id": reference_id})).first()
         return row is not None
 
 
-__all__ = ["DB_SCHEMA", "SqlReferenceStore", "metadata_obj", "reference_videos_table"]
+class SqlReferenceAudioStore:
+    """参考音频的读写。"""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        self._engine = engine
+
+    async def insert(self, audio: NewReferenceAudio) -> ReferenceAudio:
+        reference_id = uuid.uuid4()
+        async with self._engine.begin() as conn:
+            await conn.execute(
+                _INSERT_REFERENCE,
+                {
+                    "id": reference_id,
+                    "kind": KIND_AUDIO,
+                    "title": audio.title,
+                    "description": audio.description,
+                    "url": audio.url,
+                    "duration_ms": audio.duration_ms,
+                    "owner": audio.owner_user_id,
+                    "api_key_id": audio.api_key_id,
+                    "upload_id": audio.upload_id,
+                    "source_job_id": audio.source_job_id,
+                },
+            )
+            await conn.execute(
+                _INSERT_AUDIO,
+                {
+                    "id": reference_id,
+                    "audio_kind": audio.audio_kind,
+                    "locale": audio.locale,
+                    "transcript": audio.transcript,
+                },
+            )
+            row = await _one(conn, _AUDIO_BY_ID, {"id": reference_id})
+        return _audio_of(row)
+
+    async def get(self, reference_id: uuid.UUID) -> ReferenceAudio | None:
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(_AUDIO_BY_ID, {"id": reference_id})).mappings().first()
+        return None if row is None else _audio_of(row)
+
+    async def list(
+        self, scope: AudioScope, *, limit: int, after: ReferenceCursor | None
+    ) -> Sequence[ReferenceAudio]:
+        params = {**_audio_scope_params(scope), **_page_params(after, limit)}
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(_AUDIO_LIST, params)).mappings().all()
+        return [_audio_of(row) for row in rows]
+
+    async def count(self, scope: AudioScope) -> int:
+        async with self._engine.connect() as conn:
+            return int((await conn.execute(_AUDIO_COUNT, _audio_scope_params(scope))).scalar_one())
+
+    async def kind_counts(self) -> Sequence[tuple[AudioKind, int]]:
+        async with self._engine.connect() as conn:
+            counted = {str(row[0]): int(row[1]) for row in await conn.execute(_AUDIO_KIND_COUNTS)}
+        return [(kind, counted.get(kind, 0)) for kind in AUDIO_KINDS]
+
+    async def owner_counts(self) -> Sequence[tuple[str, int]]:
+        async with self._engine.connect() as conn:
+            rows = await conn.execute(_AUDIO_OWNER_COUNTS)
+            return [(str(row[0]), int(row[1])) for row in rows]
+
+    async def update(self, reference_id: uuid.UUID, text: AudioText) -> bool:
+        async with self._engine.begin() as conn:
+            updated = (
+                await conn.execute(
+                    _UPDATE_AUDIO_MAIN,
+                    {"id": reference_id, "title": text.title, "description": text.description},
+                )
+            ).first()
+            if updated is None:
+                return False
+            await conn.execute(
+                _UPDATE_AUDIO_CHILD,
+                {"id": reference_id, "locale": text.locale, "transcript": text.transcript},
+            )
+        return True
+
+    async def remove(self, reference_id: uuid.UUID) -> bool:
+        async with self._engine.begin() as conn:
+            row = (await conn.execute(_REMOVE_AUDIO, {"id": reference_id})).first()
+        return row is not None
+
+
+class SqlReferenceLookup:
+    """按地址或 id 核对参考资产，供生成与成片导出用。"""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        self._engine = engine
+
+    async def listed_video_at(self, url: str) -> bool:
+        """资料库里有没有这个地址的一条没移除的参考视频。"""
+
+        async with self._engine.connect() as conn:
+            return bool((await conn.execute(_LISTED_VIDEO_AT, {"url": url})).scalar_one())
+
+    async def unlisted(self, reference_ids: Sequence[uuid.UUID]) -> tuple[uuid.UUID, ...]:
+        """``reference_ids`` 里不在资料库、或已经移除的那些，按原顺序。"""
+
+        if not reference_ids:
+            return ()
+        async with self._engine.connect() as conn:
+            listed = {
+                row[0] for row in await conn.execute(_LISTED_IDS, {"ids": list(reference_ids)})
+            }
+        return tuple(one for one in dict.fromkeys(reference_ids) if one not in listed)
+
+    async def voice(self, reference_id: uuid.UUID) -> tuple[str, str | None] | None:
+        """一条没移除的音色的地址与台词；不存在、移除了或不是音色时为 None。"""
+
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(_VOICE, {"id": reference_id})).first()
+        return None if row is None else (str(row[0]), row[1])
+
+    async def audio_ids_at(self, urls: Collection[str]) -> Mapping[str, uuid.UUID]:
+        """每个地址对上的最早一条没移除的参考音频；对不上的地址不在答复里。"""
+
+        if not urls:
+            return {}
+        async with self._engine.connect() as conn:
+            rows = await conn.execute(_AUDIO_IDS_AT, {"urls": list(urls)})
+            return {str(row[0]): row[1] for row in rows}
+
+
+__all__ = [
+    "DB_SCHEMA",
+    "SqlReferenceAudioStore",
+    "SqlReferenceLookup",
+    "SqlReferenceStore",
+    "metadata_obj",
+    "reference_audios_table",
+    "reference_videos_table",
+    "references_table",
+]

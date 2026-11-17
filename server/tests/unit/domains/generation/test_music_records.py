@@ -35,9 +35,9 @@ from tests.helpers.generation import (
     MUSIC_PROMPT,
     QUEUE_SETTINGS,
     FakeMediaProbe,
+    FakeReferenceAssets,
     FixedLineage,
     InMemoryGenerationRepository,
-    ReferenceClips,
     ScriptedProvider,
     make_music,
 )
@@ -114,7 +114,7 @@ def build_world(
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
         media_probe=FakeMediaProbe(),
-        reference_clips=ReferenceClips(),
+        references=FakeReferenceAssets(),
         subtitles=ProviderTarget(provider=FAKE_SUBTITLE_PROVIDER, model="qwen-audio-3.1-asr-flash"),
         music=music,
     )

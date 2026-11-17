@@ -98,7 +98,7 @@
 
 - **按主机名划分预览域名（[app/preview_host.py](../server/src/iclip/app/preview_host.py)）**：最外层的中间件按 `Host` 区分应用域名与 final-cut 预览域名，预览域名上只放行 final-cut 预览地址，别的主机上预览地址一律 `404`，不依赖各路由自己声明（规则见 [conventions「final-cut 工程与预览域名」](../contract/conventions.md#final-cut-工程与预览域名)）。
 - **写请求的来源检查（`WriteOriginCheck`）**：紧挨在按主机名划分的那一层之内、CORS 与登录态解析之外，`POST`、`PUT`、`PATCH`、`DELETE` 请求的 `Origin` 不被放行时直接 `403`，不依赖各路由自己声明；判定规则与 `/ws` 握手共用 [identity/middleware.py](../server/src/iclip/domains/identity/middleware.py) 的 `origin_allowed`（规则见 [conventions §2](../contract/conventions.md#2-双主体认证-dual-principals)）。
-- **统一鉴权与代指定用户操作（`ActAs`）**：所有 HTTP 和 WebSocket 请求由 `PrincipalMiddleware` 统一解析登录 Cookie 或 API Key（`/internal/runtime/` 内部接口与凭令牌访问的 `/final-cut/preview/` 预览地址除外），接口所需权限通过 FastAPI `Security` 直接声明在路由上。对于支持 `users:act_as` 的 6 个写接口（建对话、建需求单、发消息、提交生成、参考视频试生成、确认上传），在拿到请求体后会调用 [identity/acting.py](../server/src/iclip/domains/identity/acting.py) 的 `ActAs` 完成归属用户切换。
+- **统一鉴权与代指定用户操作（`ActAs`）**：所有 HTTP 和 WebSocket 请求由 `PrincipalMiddleware` 统一解析登录 Cookie 或 API Key（`/internal/runtime/` 内部接口与凭令牌访问的 `/final-cut/preview/` 预览地址除外），接口所需权限通过 FastAPI `Security` 直接声明在路由上。对于支持 `users:act_as` 的 7 个写接口（建对话、建需求单、发消息、提交生成、参考视频试生成、加参考音频、确认上传），在拿到请求体后会调用 [identity/acting.py](../server/src/iclip/domains/identity/acting.py) 的 `ActAs` 完成归属用户切换。
 - **模块间解耦**：`domains/` 下的各个业务模块互不直接导入对方的内部实现，需要跨模块协作时（例如发消息时自动把外部图片附件转存为上传记录、查询分叉对话的祖先出片记录、做同款时复制制作文件），一律由模块声明接口协议（Protocol），再由 `app/` 组合根注入适配器将两边接起来。
 - **出网下载与地址检查**：组合根建好只连公网的出网下载器与客户端（lifespan 结束时关闭）。发消息时转存外部图片附件，以及制作页在插入、选用图片与按文件生图、出片时检查图片地址（[app/conversation_film.py](../server/src/iclip/app/conversation_film.py)），都经出网下载器发起。取帧拼板（[app/shot_media.py](../server/src/iclip/app/shot_media.py)）与参考视频拆解要下载的视频地址可能是模型给的：本系统 OSS 桶里的对象换成内网地址、经普通的共用 HTTP 客户端下载，其他地址经只连公网的客户端原样下载。拆解遇到这类外部地址时先下载到本地、再在本地文件上探时长，不把远程地址交给 ffprobe（它会自己跟随跳转）。
 
@@ -125,7 +125,16 @@
 - **直传**：`POST /uploads/sign` 签出带属主审计元数据的限时直传地址，前端直接 PUT 到对象存储；`POST /uploads/{id}/confirm` 按桶里的对象核对类型与大小后记一条（大小、内容类型与 MD5 取对象存储报的，图片宽高取签名时报的那两个数，不量时长，不需要 ffmpeg）。视频按对象的 MD5 去重：有更早的同一份就记那一份的地址并删掉这次传的对象。
 - **转存**：发消息时外部图片附件经出网下载器下载、读图片头核对后存进桶，同样记一条上传（`app/prompt_attachments.py` 调上传域）。
 - **表上不设约束**：`media_uploads` 没有外键与取值约束，种类等取值只在应用层校验（[uploads/models.py](../server/src/iclip/domains/uploads/models.py)）。
-- **谁来用**：对话的上传列表 `GET /conversations/{id}/uploads` 按分叉血缘带上继承来的上传；参考视频入库、局部编辑的参考片段（`app/reference_clips.py`）与成片导出的音频来源（`app/whole_film_exports.py`）都经组合根调上传域，生成域与参考视频域不依赖上传域。
+- **谁来用**：对话的上传列表 `GET /conversations/{id}/uploads` 按分叉血缘带上继承来的上传；参考资产入库（`app/reference_sources.py`）、局部编辑的参考片段与配音的参考音频（`app/generation_references.py`）、成片导出的音频来源（`app/whole_film_exports.py`）都经组合根调上传域，生成域与参考资产域不依赖上传域。
+
+### 参考资产
+
+参考视频与参考音频归 `domains/references/`，一张主表 `iclip.references`（id、种类、标题、备注、地址、时长、属主、来源上传 `upload_id` 或来源生成记录 `source_job_id`、软删除）加两张一对一的子表：`reference_videos`（拆解状态、拆解报告、版本、最新一次试生成 `test_job_id`）与 `reference_audios`（子类 `voice` / `bgm` / `sfx`、语种、台词）。子表各带一个 `meta jsonb` 留着放以后的扩展属性。
+- **表上不设约束**：三张表都没有外键与取值约束；种类、子类与拆解状态只在应用层校验（[references/models.py](../server/src/iclip/domains/references/models.py)）。主表与子表在同一个事务里写，列表与详情只认两边都有的。
+- **同一地址只有一条参考视频**：没有唯一约束，新增与恢复都先按地址拿事务级咨询锁 `pg_advisory_xact_lock(命名空间, 地址)` 再查重。参考音频不去重。
+- **入库时量音频时长**：上传台账不量时长，参考音频入库时由组合根用 ffprobe 按地址量（`app/reference_sources.py`）。
+- **改拆解**：视频子表的改动与主表的 `updated_at` 在同一条语句里一起改。
+- **谁来用**：资料库条目 `library_entries.reference_id` 指着主表（只有参考视频打标）；生成域经 `ReferenceAssets` 端口（`app/generation_references.py`）核对局部编辑的参考片段、出片的 `reference_ids` 与配音的音色；成片导出按地址对参考音频库。试生成提交成 `operation=trial` 的视频生成，记录 id 写回 `test_job_id`（`app/reference_test_video.py`）。
 
 ### 生成、拆解与打标队列
 
@@ -133,10 +142,10 @@
 
 1. **媒体生成队列（`domains/generation/`）**：生成记录 `iclip.generation_jobs` 只记生成与加工，不记上传（见[上传台账](#上传台账)）。
    - **宫格切图**：同步处理完直接写入数据库（状态即 `completed`），不进异步队列。
-   - **视频生成（出片、局部编辑段、超分高清版）**：异步提交给上游视频网关并轮询结果；不同视频模型族的参数拼装规则集中在 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py)。
+   - **视频生成（出片、参考视频的试生成、局部编辑段、超分高清版）**：异步提交给上游视频网关并轮询结果；试生成和出片走同一个通道、同一套配置组规则，只是记成 `operation=trial`。不同视频模型族的参数拼装规则集中在 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py)。
    - **视频剪辑合成（`compose`）**：在本地调用 ffmpeg 将多段视频裁剪、重编码拼接后上传 OSS。
    - **字幕识别（`subtitle`）与背景音乐生成（`audio`）**：各自拥有独立的队列通道。素材片生成完成时不会识别字幕，只有调用 `POST /generations/subtitles` 才排入一条字幕识别任务（抽取音频调用千问 ASR `qwen-audio-3.1-asr-flash`）；背景音乐则调用千问 TTS `qwen-audio-3.1-tts-next`，下载音频后用 ffmpeg 切除首尾静音、统一响度并转存为 m4a。
-   - **配音（`dubbing`）**：独立通道。截参考音频、逐句变速或截尾、拼成和素材片等长的音轨都在本地用 ffmpeg 做，只有逐句合成交给语音合成协议（`SpeechSynthesizer`，[generation/dubbing.py](../server/src/iclip/domains/generation/dubbing.py)）。合成用的是和背景音乐同一个千问 TTS `qwen-audio-3.1-tts-next`（[generation/speech.py](../server/src/iclip/domains/generation/speech.py)）：每句一次请求，截出的参考音频以 data URI 随请求带上，提示词里用 `@voice1` 引用它并写明用哪种语言念。没有配 `media_generation.speech` 段或配音的千问 API Key `QWEN_SPEECH_API_KEY` 时配音没有开通，提交接口答 `422`。
+   - **配音（`dubbing`）**：独立通道。截参考音频、逐句变速或截尾、拼成和素材片等长的音轨都在本地用 ffmpeg 做，只有逐句合成交给语音合成协议（`SpeechSynthesizer`，[generation/dubbing.py](../server/src/iclip/domains/generation/dubbing.py)）。合成用的是和背景音乐同一个千问 TTS `qwen-audio-3.1-tts-next`（[generation/speech.py](../server/src/iclip/domains/generation/speech.py)）：每句一次请求，截出的参考音频以 data URI 随请求带上，提示词里用 `@voice1` 引用它并写明用哪种语言念；参考音色的台词只记进配音记录，不发给合成服务。没有配 `media_generation.speech` 段或配音的千问 API Key `QWEN_SPEECH_API_KEY` 时配音没有开通，提交接口答 `422`。
    - **成片导出（`whole_film`）**：独立通道，转发给成片渲染服务处理（见[成片渲染服务](#成片渲染服务)）。
 2. **参考视频拆解队列（`domains/references/`，队列名 `references`）**：
    - 调用 `BreakdownRunner`（60 秒以内的视频在本地按每秒 10 帧抽帧并提取音轨，超过 60 秒的视频直接传 URL 让上游抽帧），然后通过运行时的 `/v1/model-calls/responses` 接口调用火山方舟模型生成拆解报告。

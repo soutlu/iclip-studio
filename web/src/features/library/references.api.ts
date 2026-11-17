@@ -9,13 +9,13 @@ import {
 import type { z } from 'zod'
 import { apiFetch, apiFetchWithResponse, ApiError } from '@/shared/api/client'
 import {
-  zReferenceFiltersOut,
-  zRemoveReferenceReferencesReferenceIdDeleteResponse,
+  zReferenceVideoFiltersOut,
+  zRemoveReferenceVideoReferencesVideosReferenceIdDeleteResponse,
   zReferenceVideoOut,
   zReferenceVideosOut,
   zTestVideoIn,
   type zReferenceTagsIn,
-  type zReferenceUpdateIn,
+  type zReferenceVideoUpdateIn,
   type zReferenceVideoItemOut,
 } from '@/shared/api/generated/zod.gen'
 import { aspectValueOf } from '@/shared/lib/aspect-ratio'
@@ -30,7 +30,7 @@ import { libraryTagQueryKeys } from './library-tags.api'
 export type ReferencesPage = z.output<typeof zReferenceVideosOut>
 export type ReferenceItem = z.output<typeof zReferenceVideoItemOut>
 export type ReferenceDetail = z.output<typeof zReferenceVideoOut>
-export type ReferenceUpdate = z.input<typeof zReferenceUpdateIn>
+export type ReferenceUpdate = z.input<typeof zReferenceVideoUpdateIn>
 type ReferenceTagsIn = z.input<typeof zReferenceTagsIn>
 export type BreakdownStatus = ReferenceItem['breakdownStatus']
 export type BreakdownError = NonNullable<ReferenceItem['errorCode']>
@@ -112,7 +112,7 @@ export const useReferences = (scope: ReferenceScope, enabled = true) =>
     gcTime: 30 * 60_000,
     queryFn: ({ pageParam, signal }) =>
       apiFetch(
-        `/references?${referenceSearchParams(scope, pageParam).toString()}`,
+        `/references/videos?${referenceSearchParams(scope, pageParam).toString()}`,
         zReferenceVideosOut,
         { fallbackErrorMessage: READ_LIST_FAILED, signal },
       ),
@@ -126,14 +126,14 @@ export const useReferences = (scope: ReferenceScope, enabled = true) =>
 export const useReferenceFilters = () =>
   useQuery({
     queryFn: ({ signal }) =>
-      apiFetch('/references/filters', zReferenceFiltersOut, {
+      apiFetch('/references/videos/filters', zReferenceVideoFiltersOut, {
         fallbackErrorMessage: '读取筛选项失败',
         signal,
       }),
     queryKey: referenceQueryKeys.filters,
   })
 
-const referencePath = (id: string) => `/references/${encodeURIComponent(id)}`
+const referencePath = (id: string) => `/references/videos/${encodeURIComponent(id)}`
 
 export const referenceDetailOptions = (id: string | null) =>
   queryOptions({
@@ -171,7 +171,7 @@ export const useReference = (id: string | null) => useQuery(referenceDetailOptio
 export const createReference = async (
   uploadId: string,
 ): Promise<{ reference: ReferenceDetail; created: boolean }> => {
-  const { data, response } = await apiFetchWithResponse('/references', zReferenceVideoOut, {
+  const { data, response } = await apiFetchWithResponse('/references/videos', zReferenceVideoOut, {
     body: { uploadId },
     fallbackErrorMessage: '添加到资料库失败',
     method: 'POST',
@@ -257,7 +257,7 @@ export const useRemoveReference = (id: string) => {
   const settle = useSettle()
   return useMutation({
     mutationFn: () =>
-      apiFetch(referencePath(id), zRemoveReferenceReferencesReferenceIdDeleteResponse, {
+      apiFetch(referencePath(id), zRemoveReferenceVideoReferencesVideosReferenceIdDeleteResponse, {
         fallbackErrorMessage: '移除失败',
         method: 'DELETE',
       }),

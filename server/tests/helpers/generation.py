@@ -19,7 +19,6 @@ from iclip.config import (
     VideoGenerationSection,
 )
 from iclip.domains.generation.models import (
-    REFERENCE_TRIAL_KEY,
     STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_PENDING,
@@ -35,6 +34,7 @@ from iclip.domains.generation.models import (
     inherited_through,
 )
 from iclip.domains.generation.module import ImageModelConfig, build_generation_module
+from iclip.domains.generation.ports import VoiceSample
 from iclip.domains.generation.provider import (
     ProviderError,
     ProviderProgress,
@@ -49,7 +49,6 @@ from iclip.domains.generation.schemas import (
     KIND_SUBTITLE,
     KIND_VIDEO,
     OPERATION_CUT,
-    OPERATION_GENERATE,
     DubbingLine,
     DubbingOriginalReference,
     DubbingReference,
@@ -63,6 +62,7 @@ from iclip.domains.generation.schemas import (
     VideoEnhanceRequest,
     VideoEnhanceResolution,
     VideoGenerationIn,
+    VideoTrialRequest,
     WholeFilmRequest,
     WholeFilmVideoSource,
     request_to_payload,
@@ -96,6 +96,12 @@ def video_request(**overrides: Any) -> VideoGenerationIn:
     }
     fields.update(overrides)
     return VideoGenerationIn(**fields)
+
+
+def trial_request(**overrides: Any) -> VideoTrialRequest:
+    """参考视频的试生成：和出片同一个请求形状，记成 ``trial``。"""
+
+    return VideoTrialRequest(**video_request(**overrides).model_dump())
 
 
 def edit_request(**overrides: Any) -> VideoEditRequest:
@@ -414,17 +420,6 @@ class InMemoryGenerationRepository:
                 found.setdefault(url, job)
         return found
 
-    async def latest_reference_trial(self, reference_id: uuid.UUID) -> GenerationJob | None:
-        found = [
-            job
-            for job in self.jobs.values()
-            if job.metadata is not None
-            and job.metadata.get(REFERENCE_TRIAL_KEY) == str(reference_id)
-            and job.kind == KIND_VIDEO
-            and job.operation == OPERATION_GENERATE
-        ]
-        return max(found, key=lambda job: (job.created_at, job.id), default=None)
-
     async def output_urls(self, ids: Collection[uuid.UUID]) -> Mapping[uuid.UUID, str]:
         urls: dict[uuid.UUID, str] = {}
         for job_id in ids:
@@ -726,7 +721,7 @@ def film_image_service(
         act_as=ActAs(InMemoryUserRepository()),
         clear_completion=_keep_completion,
         lineage=lineage or FixedLineage(),
-        reference_clips=ReferenceClips(),
+        references=FakeReferenceAssets(),
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",
@@ -766,14 +761,33 @@ class FixedLineage:
         return self._readable
 
 
-class ReferenceClips:
-    """局部编辑参考片段的替身：只认给定的地址。"""
+class FakeReferenceAssets:
+    """参考资产与上传的替身：只认给定的参考片段地址、资料库 id、音色与（属主, 上传 id）的音频上传。"""
 
-    def __init__(self, usable: Collection[str] = ()) -> None:
+    def __init__(
+        self,
+        usable: Collection[str] = (),
+        *,
+        listed: Collection[uuid.UUID] = (),
+        voices: Mapping[uuid.UUID, VoiceSample] | None = None,
+        audio_uploads: Mapping[tuple[uuid.UUID, uuid.UUID], str] | None = None,
+    ) -> None:
         self._usable = frozenset(usable)
+        self._listed = frozenset(listed)
+        self._voices = dict(voices or {})
+        self._audio_uploads = dict(audio_uploads or {})
 
-    async def __call__(self, principal: Principal, url: str) -> bool:
+    async def usable_clip(self, principal: Principal, url: str) -> bool:
         return url in self._usable
+
+    async def unlisted(self, reference_ids: Sequence[uuid.UUID]) -> tuple[uuid.UUID, ...]:
+        return tuple(one for one in reference_ids if one not in self._listed)
+
+    async def voice(self, reference_id: uuid.UUID) -> VoiceSample | None:
+        return self._voices.get(reference_id)
+
+    async def own_audio_upload(self, principal: Principal, upload_id: uuid.UUID) -> str | None:
+        return self._audio_uploads.get((principal.user_id, upload_id))
 
 
 class FakeMediaProbe:
@@ -863,10 +877,10 @@ __all__ = [
     "MUSIC_PROMPT",
     "QUEUE_SETTINGS",
     "FakeMediaProbe",
+    "FakeReferenceAssets",
     "FixedLineage",
     "InMemoryGenerationRepository",
     "MemoryObjectStore",
-    "ReferenceClips",
     "ScriptedProvider",
     "build_queue",
     "compose_request",
@@ -884,6 +898,7 @@ __all__ = [
     "make_subtitle",
     "plant_old_job",
     "stored_request",
+    "trial_request",
     "video_request",
     "whole_film_request",
 ]

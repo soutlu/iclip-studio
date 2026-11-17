@@ -1511,6 +1511,30 @@
         "title": "AttemptBucketOut",
         "type": "object"
       },
+      "AudioKindCountOut": {
+        "additionalProperties": false,
+        "properties": {
+          "audioKind": {
+            "enum": [
+              "voice",
+              "bgm",
+              "sfx"
+            ],
+            "title": "Audiokind",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "audioKind",
+          "count"
+        ],
+        "title": "AudioKindCountOut",
+        "type": "object"
+      },
       "AuditExecutionsOut": {
         "additionalProperties": false,
         "properties": {
@@ -3463,29 +3487,6 @@
         "title": "DubbedLine",
         "type": "object"
       },
-      "DubbingAudioReference": {
-        "additionalProperties": false,
-        "description": "参考音频取一个音频地址，只收本系统存储里的地址。",
-        "properties": {
-          "kind": {
-            "const": "audio",
-            "title": "Kind",
-            "type": "string"
-          },
-          "url": {
-            "maxLength": 2000,
-            "minLength": 1,
-            "title": "Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "kind",
-          "url"
-        ],
-        "title": "DubbingAudioReference",
-        "type": "object"
-      },
       "DubbingIn": {
         "additionalProperties": false,
         "description": "给一条素材片配一种外语的受理输入：每句译文按 ``lines`` 的时间放，用参考音频的声音合成。\n\n``lines`` 按开始时间排好、互不重叠，都在素材片的时长之内（时长在受理时核对）。归属参数与\n``userName`` 的规则同字幕识别。",
@@ -3538,8 +3539,9 @@
           "reference": {
             "discriminator": {
               "mapping": {
-                "audio": "#/components/schemas/DubbingAudioReference",
-                "original": "#/components/schemas/DubbingOriginalReference"
+                "original": "#/components/schemas/DubbingOriginalReference",
+                "reference_audio": "#/components/schemas/DubbingVoiceReferenceIn",
+                "upload": "#/components/schemas/DubbingUploadReferenceIn"
               },
               "propertyName": "kind"
             },
@@ -3548,7 +3550,10 @@
                 "$ref": "#/components/schemas/DubbingOriginalReference"
               },
               {
-                "$ref": "#/components/schemas/DubbingAudioReference"
+                "$ref": "#/components/schemas/DubbingVoiceReferenceIn"
+              },
+              {
+                "$ref": "#/components/schemas/DubbingUploadReferenceIn"
               }
             ],
             "title": "Reference"
@@ -3635,6 +3640,50 @@
           "kind"
         ],
         "title": "DubbingOriginalReference",
+        "type": "object"
+      },
+      "DubbingUploadReferenceIn": {
+        "additionalProperties": false,
+        "description": "参考音频取调用者本人的一条音频上传。",
+        "properties": {
+          "kind": {
+            "const": "upload",
+            "title": "Kind",
+            "type": "string"
+          },
+          "uploadId": {
+            "format": "uuid",
+            "title": "Uploadid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "uploadId"
+        ],
+        "title": "DubbingUploadReferenceIn",
+        "type": "object"
+      },
+      "DubbingVoiceReferenceIn": {
+        "additionalProperties": false,
+        "description": "参考音频取参考音频库里一条没移除的音色。",
+        "properties": {
+          "kind": {
+            "const": "reference_audio",
+            "title": "Kind",
+            "type": "string"
+          },
+          "referenceId": {
+            "format": "uuid",
+            "title": "Referenceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "referenceId"
+        ],
+        "title": "DubbingVoiceReferenceIn",
         "type": "object"
       },
       "ErrorModel": {
@@ -5090,7 +5139,8 @@
               "compose",
               "cut",
               "render",
-              "enhance"
+              "enhance",
+              "trial"
             ],
             "title": "Operation",
             "type": "string"
@@ -8895,24 +8945,124 @@
         "title": "ProviderOptionOut",
         "type": "object"
       },
-      "ReferenceCreateIn": {
+      "ReferenceAudioCreateIn": {
         "additionalProperties": false,
+        "description": "把一段音频放进参考音频库：调用者本人的一条音频上传（``uploadId``），或调用者看得到的一条已完成\n的背景音乐（``sourceJobId``）。台词只有音色能填。",
         "properties": {
-          "uploadId": {
-            "format": "uuid",
-            "title": "Uploadid",
+          "audioKind": {
+            "enum": [
+              "voice",
+              "bgm",
+              "sfx"
+            ],
+            "title": "Audiokind",
             "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "zh",
+                  "en",
+                  "de",
+                  "es",
+                  "fr"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "sourceJobId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcejobid"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "transcript": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcript"
+          },
+          "uploadId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploadid"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
           }
         },
         "required": [
-          "uploadId"
+          "title",
+          "audioKind"
         ],
-        "title": "ReferenceCreateIn",
+        "title": "ReferenceAudioCreateIn",
         "type": "object"
       },
-      "ReferenceFiltersOut": {
+      "ReferenceAudioFiltersOut": {
         "additionalProperties": false,
         "properties": {
+          "audioKinds": {
+            "items": {
+              "$ref": "#/components/schemas/AudioKindCountOut"
+            },
+            "title": "Audiokinds",
+            "type": "array"
+          },
           "owners": {
             "items": {
               "$ref": "#/components/schemas/OwnerCountOut"
@@ -8922,9 +9072,260 @@
           }
         },
         "required": [
+          "audioKinds",
           "owners"
         ],
-        "title": "ReferenceFiltersOut",
+        "title": "ReferenceAudioFiltersOut",
+        "type": "object"
+      },
+      "ReferenceAudioOut": {
+        "additionalProperties": false,
+        "description": "一条参考音频。",
+        "properties": {
+          "audioKind": {
+            "enum": [
+              "voice",
+              "bgm",
+              "sfx"
+            ],
+            "title": "Audiokind",
+            "type": "string"
+          },
+          "canEdit": {
+            "title": "Canedit",
+            "type": "boolean"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "durationMs": {
+            "title": "Durationms",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "zh",
+                  "en",
+                  "de",
+                  "es",
+                  "fr"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "sourceJobId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcejobid"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "transcript": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcript"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "uploadId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploadid"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "title",
+          "description",
+          "durationMs",
+          "audioKind",
+          "locale",
+          "transcript",
+          "userName",
+          "uploadId",
+          "sourceJobId",
+          "canEdit",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ReferenceAudioOut",
+        "type": "object"
+      },
+      "ReferenceAudioUpdateIn": {
+        "additionalProperties": false,
+        "description": "改一条参考音频：给了的字段才改，``description`` / ``locale`` / ``transcript`` 给 ``null`` 是\n清空；标题不能清空。台词只有音色能填。",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "zh",
+                  "en",
+                  "de",
+                  "es",
+                  "fr"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "transcript": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcript"
+          }
+        },
+        "title": "ReferenceAudioUpdateIn",
+        "type": "object"
+      },
+      "ReferenceAudiosOut": {
+        "additionalProperties": false,
+        "properties": {
+          "canUpload": {
+            "title": "Canupload",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenceAudioOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor",
+          "total",
+          "canUpload"
+        ],
+        "title": "ReferenceAudiosOut",
         "type": "object"
       },
       "ReferenceTagsIn": {
@@ -8946,25 +9347,53 @@
         "title": "ReferenceTagsIn",
         "type": "object"
       },
-      "ReferenceUpdateIn": {
+      "ReferenceVideoCreateIn": {
         "additionalProperties": false,
-        "description": "改拆解正文。",
+        "description": "把一条视频放进资料库：调用者本人的一条视频上传（``uploadId``），或调用者看得到的一条已完成的\n素材片（``sourceJobId``）。",
         "properties": {
-          "document": {
-            "minLength": 1,
-            "title": "Document",
-            "type": "string"
+          "sourceJobId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcejobid"
           },
-          "version": {
-            "title": "Version",
-            "type": "integer"
+          "uploadId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploadid"
+          }
+        },
+        "title": "ReferenceVideoCreateIn",
+        "type": "object"
+      },
+      "ReferenceVideoFiltersOut": {
+        "additionalProperties": false,
+        "properties": {
+          "owners": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerCountOut"
+            },
+            "title": "Owners",
+            "type": "array"
           }
         },
         "required": [
-          "version",
-          "document"
+          "owners"
         ],
-        "title": "ReferenceUpdateIn",
+        "title": "ReferenceVideoFiltersOut",
         "type": "object"
       },
       "ReferenceVideoItemOut": {
@@ -9250,6 +9679,27 @@
           "testVideo"
         ],
         "title": "ReferenceVideoOut",
+        "type": "object"
+      },
+      "ReferenceVideoUpdateIn": {
+        "additionalProperties": false,
+        "description": "改拆解正文。",
+        "properties": {
+          "document": {
+            "minLength": 1,
+            "title": "Document",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "document"
+        ],
+        "title": "ReferenceVideoUpdateIn",
         "type": "object"
       },
       "ReferenceVideosOut": {
@@ -11395,6 +11845,11 @@
             ],
             "title": "Errormessage"
           },
+          "jobId": {
+            "format": "uuid",
+            "title": "Jobid",
+            "type": "string"
+          },
           "stale": {
             "title": "Stale",
             "type": "boolean"
@@ -11421,6 +11876,7 @@
           }
         },
         "required": [
+          "jobId",
           "status",
           "url",
           "errorMessage",
@@ -13738,7 +14194,7 @@
       },
       "VideoGenerationIn": {
         "additionalProperties": false,
-        "description": "一次视频生成的输入。字段照上游异步接口，外加归属字段、坐标 ``metadata`` 与结构化的 ``shot``。\n\n只拦本系统能判的：模型在允许表里（受理层）、地址是 http(s)、秒数不小于 -1、``shot``\n自身对得上（图片引用不越界、编号与正文一致）。画幅、分辨率、时长范围、素材规格由上游\n按模型判，这里不复制一份。",
+        "description": "一次视频生成的输入。字段照上游异步接口，外加归属字段、坐标 ``metadata`` 与结构化的 ``shot``。\n\n只拦本系统能判的：模型在允许表里（受理层）、地址是 http(s)、秒数不小于 -1、``shot``\n自身对得上（图片引用不越界、编号与正文一致）。画幅、分辨率、时长范围、素材规格由上游\n按模型判，这里不复制一份。``reference_ids`` 是这次用到的参考资产，受理时核对都在资料库里、\n没移除，只记进请求快照，不发给上游。",
         "properties": {
           "aspect_ratio": {
             "anyOf": [
@@ -13826,6 +14282,16 @@
             },
             "maxItems": 30,
             "title": "Reference Audio Urls",
+            "type": "array"
+          },
+          "reference_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 30,
+            "title": "Reference Ids",
             "type": "array"
           },
           "reference_image_urls": {
@@ -19488,7 +19954,7 @@
     },
     "/generations": {
       "get": {
-        "description": "给了 ``conversationId`` / ``taskId`` / ``shotIndex`` / ``rootJobId`` / ``sourceJobId`` 就\n只列那段对话、那张需求单下、那个镜号、以那条为原作或直接来源的记录；``kind`` /\n``operation`` 按种类与操作筛。按对话列时含这段对话经分叉继承的记录（调用方读得到这段\n对话才算），其余可见性口径不变。\n\n``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。\n\n生成记录只记生成，对话的上传在 ``GET /conversations/{id}/uploads`` 里列。按对话列图片会看到\n切图记录；只要调模型的，按 ``operation=generate`` 筛。素材片的字幕记录是种类 ``subtitle``、\n来源是那条素材片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。一段对话生成的背景音乐按\n``kind=audio`` 与 ``conversationId`` 找。",
+        "description": "给了 ``conversationId`` / ``taskId`` / ``shotIndex`` / ``rootJobId`` / ``sourceJobId`` 就\n只列那段对话、那张需求单下、那个镜号、以那条为原作或直接来源的记录；``kind`` /\n``operation`` 按种类与操作筛。按对话列时含这段对话经分叉继承的记录（调用方读得到这段\n对话才算），其余可见性口径不变。\n\n``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。\n\n生成记录只记生成，对话的上传在 ``GET /conversations/{id}/uploads`` 里列。按对话列图片会看到\n切图记录；只要调模型的，按 ``operation=generate`` 筛。参考视频的试生成是 ``operation=trial``，\n按 ``generate`` 筛时不在里面。素材片的字幕记录是种类 ``subtitle``、\n来源是那条素材片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。一段对话生成的背景音乐按\n``kind=audio`` 与 ``conversationId`` 找。",
         "operationId": "list_generations_generations_get",
         "parameters": [
           {
@@ -19592,7 +20058,8 @@
                     "compose",
                     "cut",
                     "render",
-                    "enhance"
+                    "enhance",
+                    "trial"
                   ],
                   "type": "string"
                 },
@@ -19716,7 +20183,7 @@
     },
     "/generations/dubbings": {
       "post": {
-        "description": "给一条素材片配一种外语，另起一条配音记录（种类 ``dubbing``）。\n\n用参考音频的声音把 ``lines`` 每句译文合成出来，放在这句的开始，能占到下一句开始（最后一句\n到视频结尾）；合成出来更长时先加速，最多 1.25 倍，还放不下就截掉尾巴并淡出。拼成一条和\n素材片等长的音轨，地址在 ``outputUrl``，每句的倍数和是否截掉在 ``dubbedLines``。参考音频是\n``original`` 时从原声里截被 ``lines`` 覆盖得最多的一段（不超过 10 秒），覆盖不到 3 秒记录\n失败；是 ``audio`` 时取 ``url`` 的前 10 秒，``url`` 只收本系统存储里的地址，别的 422。\n\n``sourceJobId`` 的规则同字幕识别：读不到 404，不是素材片 422。``lines`` 不合规、超出上限或\n超出素材片的时长 422。配音没开通 422。``userName`` 的规则同出片，只用来替人办事，不进\n``request``。",
+        "description": "给一条素材片配一种外语，另起一条配音记录（种类 ``dubbing``）。\n\n用参考音频的声音把 ``lines`` 每句译文合成出来，放在这句的开始，能占到下一句开始（最后一句\n到视频结尾）；合成出来更长时先加速，最多 1.25 倍，还放不下就截掉尾巴并淡出。拼成一条和\n素材片等长的音轨，地址在 ``outputUrl``，每句的倍数和是否截掉在 ``dubbedLines``。参考音频是\n``original`` 时从原声里截被 ``lines`` 覆盖得最多的一段（不超过 10 秒），覆盖不到 3 秒记录\n失败；是 ``reference_audio`` 时取参考音频库里那条音色（要没移除、是音色，否则 422），是\n``upload`` 时取调用者本人那条音频上传（否则 422），都取前 10 秒。记录的 ``request.reference``\n里记着用到的地址，音色另记 ``referenceId`` 与台词，上传另记 ``uploadId``。\n\n``sourceJobId`` 的规则同字幕识别：读不到 404，不是素材片 422。``lines`` 不合规、超出上限或\n超出素材片的时长 422。配音没开通 422。``userName`` 的规则同出片，只用来替人办事，不进\n``request``。",
         "operationId": "submit_dubbing_generations_dubbings_post",
         "requestBody": {
           "content": {
@@ -19951,7 +20418,7 @@
     },
     "/generations/video": {
       "post": {
-        "description": "提交一次视频生成。请求体照上游异步接口，外加 conversation_id / task_id / shot_index /\nmetadata。\n\n正文可以直接给 ``prompt``，也可以给结构化的 ``shot`` 由服务端拼成 ``prompt``；记录里\n两者都存，``shot`` 不发上游。``shot_index`` 是镜头组编号，落记录的列。``user_name``：\nAPI key 调用方必填、照收；浏览器会话可省略，填登录用户名。",
+        "description": "提交一次视频生成。请求体照上游异步接口，外加 conversation_id / task_id / shot_index /\nmetadata。\n\n正文可以直接给 ``prompt``，也可以给结构化的 ``shot`` 由服务端拼成 ``prompt``；记录里\n两者都存，``shot`` 不发上游。``shot_index`` 是镜头组编号，落记录的列。``user_name``：\nAPI key 调用方必填、照收；浏览器会话可省略，填登录用户名。``reference_ids`` 可选，是这次\n用到的参考资产，有一条不在资料库或已移除就 422；原样记进请求，不发上游。",
         "operationId": "submit_video_generations_video_post",
         "requestBody": {
           "content": {
@@ -22971,10 +23438,449 @@
         ]
       }
     },
-    "/references": {
+    "/references/audios": {
+      "get": {
+        "description": "全站没移除的参考音频，建立晚的排前面。\n\n``audioKind`` 筛子类（``voice`` 音色、``bgm`` 配乐、``sfx`` 音效）；``locale`` 筛语种；\n``userName`` 筛属主；``q`` 按字面包含匹配标题、备注与台词；时间窗 ``[since, until)`` 作用在\n建立时刻上。``total`` 只在第一页给。",
+        "operationId": "list_reference_audios_references_audios_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "audioKind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "voice",
+                    "bgm",
+                    "sfx"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Audiokind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "locale",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "zh",
+                    "en",
+                    "de",
+                    "es",
+                    "fr"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Locale"
+            }
+          },
+          {
+            "in": "query",
+            "name": "userName",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 150,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Username"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceAudiosOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "List Reference Audios",
+        "tags": [
+          "references"
+        ]
+      },
+      "post": {
+        "description": "把调用者自己的一条音频上传（``uploadId``），或调用者看得到的一条已完成的背景音乐\n（``sourceJobId``）放进参考音频库，每次都新建一条（``201``）。\n\n入库时按地址量时长：量不出来 ``422``；音色（``voice``）要在 3 到 30 秒之间，别的子类\n大于 0 即可，不合规 ``422``。台词 ``transcript`` 只有音色能填，``locale`` 只认 ``zh``、\n``en``、``de``、``es``、``fr``。别人的上传、不是音频的上传、看不到或不是背景音乐的生成\n记录、不存在的 id 都是 ``404``。``userName`` 同媒体生成，持 ``users:act_as`` 时替那个人\n放进去。",
+        "operationId": "create_reference_audio_references_audios_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceAudioCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceAudioOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "uploads:write"
+            ]
+          },
+          {
+            "BearerToken": [
+              "uploads:write"
+            ]
+          }
+        ],
+        "summary": "Create Reference Audio",
+        "tags": [
+          "references"
+        ]
+      }
+    },
+    "/references/audios/filters": {
+      "get": {
+        "description": "每个子类的条数（没有的是 0）与名下有参考音频的属主，各带条数；只数没移除的。",
+        "operationId": "reference_audio_filters_references_audios_filters_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceAudioFiltersOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Reference Audio Filters",
+        "tags": [
+          "references"
+        ]
+      }
+    },
+    "/references/audios/{reference_id}": {
+      "delete": {
+        "description": "属主或治理者把它从参考音频库移除；已经用它配好的音不受影响。别人的是 ``403``。",
+        "operationId": "remove_reference_audio_references_audios__reference_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Reference Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Remove Reference Audio",
+        "tags": [
+          "references"
+        ]
+      },
+      "get": {
+        "description": "一条参考音频；移除了是 ``404``。",
+        "operationId": "get_reference_audio_references_audios__reference_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Reference Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceAudioOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Get Reference Audio",
+        "tags": [
+          "references"
+        ]
+      },
+      "patch": {
+        "description": "属主或治理者改标题、备注、语种、台词；给了的才改，给 ``null`` 清空（标题不能清空）。\n不是音色却要留着台词是 ``422``，别人的是 ``403``。",
+        "operationId": "update_reference_audio_references_audios__reference_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Reference Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceAudioUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceAudioOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Update Reference Audio",
+        "tags": [
+          "references"
+        ]
+      }
+    },
+    "/references/videos": {
       "get": {
         "description": "全站没移除的参考视频，建立晚的排前面。\n\n``tags`` 可以重复给：同一维度里命中任一即算，不同维度都要命中，选了上级也算它的下级；不存在\n的标签是 ``422``。``userName`` 筛属主；``q`` 按字面包含匹配拆解全文；时间窗\n``[since, until)`` 作用在建立时刻上。``total`` 只在第一页给。",
-        "operationId": "list_references_references_get",
+        "operationId": "list_reference_videos_references_videos_get",
         "parameters": [
           {
             "in": "query",
@@ -23127,19 +24033,19 @@
             ]
           }
         ],
-        "summary": "List References",
+        "summary": "List Reference Videos",
         "tags": [
           "references"
         ]
       },
       "post": {
-        "description": "把调用者自己的一条视频上传放进资料库，新建的排上第一次拆解（``201``）。\n\n同一条视频已在表里就交回那一行（``200``），不再拆；移除过的回到资料库。别人的上传、\n不是视频的上传、不存在的 ``uploadId`` 都是 ``404``。",
-        "operationId": "create_reference_references_post",
+        "description": "把调用者自己的一条视频上传（``uploadId``），或调用者看得到的一条已完成的素材片\n（``sourceJobId``）放进资料库，新建的排上第一次拆解（``201``）。\n\n同一个地址已在资料库就交回那一条（``200``），不再拆；移除过的回到资料库，属主换成调用者。\n同一个地址同时加只会建出一条。别人的上传、不是视频的上传、看不到或不是素材片的生成记录、\n不存在的 id 都是 ``404``；两个都给或都不给是 ``422``。",
+        "operationId": "create_reference_video_references_videos_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ReferenceCreateIn"
+                "$ref": "#/components/schemas/ReferenceVideoCreateIn"
               }
             }
           },
@@ -23179,22 +24085,22 @@
             ]
           }
         ],
-        "summary": "Create Reference",
+        "summary": "Create Reference Video",
         "tags": [
           "references"
         ]
       }
     },
-    "/references/filters": {
+    "/references/videos/filters": {
       "get": {
         "description": "名下有参考视频的属主，各带条数；只数没移除的，不受筛选影响。",
-        "operationId": "reference_filters_references_filters_get",
+        "operationId": "reference_video_filters_references_videos_filters_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ReferenceFiltersOut"
+                  "$ref": "#/components/schemas/ReferenceVideoFiltersOut"
                 }
               }
             },
@@ -23213,16 +24119,16 @@
             ]
           }
         ],
-        "summary": "Reference Filters",
+        "summary": "Reference Video Filters",
         "tags": [
           "references"
         ]
       }
     },
-    "/references/{reference_id}": {
+    "/references/videos/{reference_id}": {
       "delete": {
         "description": "属主把它从资料库移除；对话里按地址仍能用它的拆解。别人的是 ``403``。",
-        "operationId": "remove_reference_references__reference_id__delete",
+        "operationId": "remove_reference_video_references_videos__reference_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -23262,14 +24168,14 @@
             ]
           }
         ],
-        "summary": "Remove Reference",
+        "summary": "Remove Reference Video",
         "tags": [
           "references"
         ]
       },
       "get": {
-        "description": "一条参考视频连同当前拆解；移除了是 ``404``。",
-        "operationId": "get_reference_references__reference_id__get",
+        "description": "一条参考视频连同当前拆解与最新一次试生成；移除了是 ``404``。",
+        "operationId": "get_reference_video_references_videos__reference_id__get",
         "parameters": [
           {
             "in": "path",
@@ -23316,14 +24222,14 @@
             ]
           }
         ],
-        "summary": "Get Reference",
+        "summary": "Get Reference Video",
         "tags": [
           "references"
         ]
       },
       "patch": {
         "description": "属主改拆解正文，版本加一。版本对不上或正在拆解是 ``409``，别人的是 ``403``。",
-        "operationId": "update_reference_references__reference_id__patch",
+        "operationId": "update_reference_video_references_videos__reference_id__patch",
         "parameters": [
           {
             "in": "path",
@@ -23340,7 +24246,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ReferenceUpdateIn"
+                "$ref": "#/components/schemas/ReferenceVideoUpdateIn"
               }
             }
           },
@@ -23380,16 +24286,16 @@
             ]
           }
         ],
-        "summary": "Update Reference",
+        "summary": "Update Reference Video",
         "tags": [
           "references"
         ]
       }
     },
-    "/references/{reference_id}/breakdowns": {
+    "/references/videos/{reference_id}/breakdowns": {
       "post": {
         "description": "属主重新拆解：重新排队，拆成就覆盖拆解并重新打标，失败保留原来的。正在拆是 ``409``。",
-        "operationId": "rerun_reference_references__reference_id__breakdowns_post",
+        "operationId": "rerun_reference_video_references_videos__reference_id__breakdowns_post",
         "parameters": [
           {
             "in": "path",
@@ -23438,16 +24344,16 @@
             ]
           }
         ],
-        "summary": "Rerun Reference",
+        "summary": "Rerun Reference Video",
         "tags": [
           "references"
         ]
       }
     },
-    "/references/{reference_id}/tagging": {
+    "/references/videos/{reference_id}/tagging": {
       "post": {
         "description": "属主按当前拆解重新打标：AI 维度整组重写，人工维度不动。拆解还没完成或正在打标是\n``409``，别人的是 ``403``。",
-        "operationId": "retag_reference_references__reference_id__tagging_post",
+        "operationId": "retag_reference_video_references_videos__reference_id__tagging_post",
         "parameters": [
           {
             "in": "path",
@@ -23496,16 +24402,16 @@
             ]
           }
         ],
-        "summary": "Retag Reference",
+        "summary": "Retag Reference Video",
         "tags": [
           "references"
         ]
       }
     },
-    "/references/{reference_id}/tags": {
+    "/references/videos/{reference_id}/tags": {
       "put": {
         "description": "属主整份替换各维度的标签。正在打标是 ``409``；不存在的标签或给了维度是 ``422``；别人的\n是 ``403``。",
-        "operationId": "replace_reference_tags_references__reference_id__tags_put",
+        "operationId": "replace_reference_video_tags_references_videos__reference_id__tags_put",
         "parameters": [
           {
             "in": "path",
@@ -23562,16 +24468,16 @@
             ]
           }
         ],
-        "summary": "Replace Reference Tags",
+        "summary": "Replace Reference Video Tags",
         "tags": [
           "references"
         ]
       }
     },
-    "/references/{reference_id}/test-generations": {
+    "/references/videos/{reference_id}/test-generations": {
       "post": {
-        "description": "属主或治理者按当前拆解拼一段提示词，生成一条视频与原片对照，记在发起人名下，答复\n带上这次试生成的整行。\n\n``userName`` 同媒体生成。别人的是 ``403``；拆解还没完成、上一次试生成（不论谁发起）\n还没结束是 ``409``；拆解格式不全拼不出提示词、或拼出来超过字数上限是 ``422``。",
-        "operationId": "start_reference_test_video_references__reference_id__test_generations_post",
+        "description": "属主或治理者按当前拆解拼一段提示词，生成一条视频与原片对照，记在发起人名下（一条\n``operation=trial`` 的生成记录，不算素材片），答复带上这次试生成。\n\n``userName`` 同媒体生成。别人的是 ``403``；拆解还没完成、上一次试生成（不论谁发起）\n还没结束是 ``409``；拆解格式不全拼不出提示词、或拼出来超过字数上限是 ``422``。",
+        "operationId": "start_reference_test_video_references_videos__reference_id__test_generations_post",
         "parameters": [
           {
             "in": "path",

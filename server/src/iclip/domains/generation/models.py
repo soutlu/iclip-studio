@@ -26,8 +26,6 @@ from iclip.domains.generation.stored_requests import GenerationRequest
 
 TERMINAL_STATUSES: Final = frozenset({STATUS_COMPLETED, STATUS_FAILED})
 
-REFERENCE_TRIAL_KEY: Final = "referenceId"
-
 InFlightPhase = Literal["queued", "running"]
 
 Inheritance = Sequence[tuple[uuid.UUID, datetime]]
@@ -102,7 +100,6 @@ def is_finished_edit(job: GenerationJob) -> bool:
 
 
 __all__ = [
-    "REFERENCE_TRIAL_KEY",
     "STATUS_COMPLETED",
     "STATUS_FAILED",
     "STATUS_PENDING",
