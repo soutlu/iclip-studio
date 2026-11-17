@@ -9,6 +9,15 @@ import { apiFetch } from '@/shared/api/client'
 import { zFinalCutPreviewHostOut } from '@/shared/api/generated/zod.gen'
 import { mergeSpans, sameSpans, spansOf, windowSpans, type TimeSpan } from '@/shared/lib/time-spans'
 import { FONT_BLOCK_START } from './composition/film'
+import {
+  clipBoxOf,
+  elementOf,
+  hideText,
+  poseElement,
+  showText,
+  textSpotAt,
+  type HiddenText,
+} from './preview-canvas'
 import { withPreviewMediaPatches } from './preview-media'
 import { zPreviewCommand, type PreviewCommand, type PreviewEvent } from './preview-protocol'
 import { secondsToFrame, STUDIO_PREVIEW_FPS } from './vendor/hyperframes-studio/player/lib/time'
@@ -278,6 +287,24 @@ export const createPreviewPage = (
   // 换上来的播放器的副本会话；打补丁出过错、收到新的一份时作废，到下一份换上来之前都是 null
   let replica: Replica | null = null
   let disposed = false
+  // 编辑器要量的片段（`layout` 命令）和上一次报出去的结果
+  let layout: { seq: number; ids: readonly string[]; reported: string } | null = null
+  // 原地改字时藏起来的文字
+  let hiddenText: HiddenText | null = null
+
+  /** 量编辑器要的片段，和上一次报的不一样时报出去。 */
+  const reportLayout = () => {
+    const page = active?.iframeElement.contentDocument ?? null
+    if (layout === null || page === null) return
+    const boxes = layout.ids.map((id) => {
+      const element = elementOf(page, id)
+      return element === null ? null : clipBoxOf(element)
+    })
+    const reported = JSON.stringify(boxes)
+    if (reported === layout.reported) return
+    layout.reported = reported
+    send({ type: 'layout', seq: layout.seq, boxes })
+  }
 
   const dropReplica = () => {
     replica?.dispose()
@@ -355,12 +382,16 @@ export const createPreviewPage = (
       if (!seekHeld) send({ type: 'time', ms: Math.round(seconds * 1000), seq: seekSeq })
       syncMedia()
       reportFailure()
+      // 播到别处时片段可能显示出来或藏起来
+      reportLayout()
     }
     const onEnded = () => setWantsPlay(false)
     player.addEventListener('timeupdate', onTimeUpdate)
     player.addEventListener('ended', onEnded)
     for (const type of MEDIA_EVENTS) page.addEventListener(type, syncMedia, true)
     for (const type of FAILURE_EVENTS) page.addEventListener(type, reportFailure, true)
+    // 读到视频尺寸以后才知道画面放在框里哪一块
+    page.addEventListener('loadedmetadata', reportLayout, true)
     syncActive = syncMedia
     detachActive = () => {
       if (buffering) send({ type: 'buffering', buffering: false })
@@ -368,6 +399,7 @@ export const createPreviewPage = (
       player.removeEventListener('ended', onEnded)
       for (const type of MEDIA_EVENTS) page.removeEventListener(type, syncMedia, true)
       for (const type of FAILURE_EVENTS) page.removeEventListener(type, reportFailure, true)
+      page.removeEventListener('loadedmetadata', reportLayout, true)
       player.remove()
       syncActive = null
       detachActive = null
@@ -391,6 +423,7 @@ export const createPreviewPage = (
     attach(next)
     reportFailure()
     send({ type: 'loaded', duration: next.duration, seq })
+    reportLayout()
   }
 
   const cancelPending = () => {
@@ -497,6 +530,7 @@ export const createPreviewPage = (
     syncActive?.()
     reportFailure()
     send({ type: 'patched', duration: player.duration, seq })
+    reportLayout()
   }
 
   const handle = (command: PreviewCommand) => {
@@ -547,6 +581,51 @@ export const createPreviewPage = (
         clip.load()
         return
       }
+      case 'layout':
+        layout = { seq: command.seq, ids: command.ids, reported: '' }
+        reportLayout()
+        return
+      case 'pose': {
+        const page = active?.iframeElement.contentDocument ?? null
+        const element = page === null ? null : elementOf(page, command.id)
+        const { translate, rotate, scale } = command
+        if (element !== null) poseElement(element, { translate, rotate, scale })
+        return
+      }
+      case 'editText': {
+        if (hiddenText !== null) showText(hiddenText, null)
+        hiddenText = null
+        const page = active?.iframeElement.contentDocument ?? null
+        const host = page === null ? null : elementOf(page, command.id)
+        const spot =
+          host === null ? null : textSpotAt(host, command.fields, { x: command.x, y: command.y })
+        if (spot === null) {
+          send({
+            type: 'textTarget',
+            seq: command.seq,
+            field: -1,
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+            fontSize: 0,
+          })
+          return
+        }
+        hiddenText = hideText(spot.element)
+        send({
+          type: 'textTarget',
+          seq: command.seq,
+          field: spot.field,
+          ...spot.rect,
+          fontSize: spot.fontSize,
+        })
+        return
+      }
+      case 'endText':
+        if (hiddenText !== null) showText(hiddenText, command.text)
+        hiddenText = null
+        return
     }
   }
 

@@ -1,7 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ColorPicker } from './color-picker'
 
 /** 像调用方那样把拖动中报出来的颜色传回去。 */
@@ -107,5 +107,37 @@ describe('ColorPicker', () => {
     expect(screen.getByRole('button', { name: '#34D399' })).toHaveAttribute('aria-pressed', 'true')
     await user.keyboard('{Escape}')
     expect(panel).not.toBeInTheDocument()
+  })
+
+  describe('取色笔', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it('浏览器没有取色笔时不显示按钮', async () => {
+      await open()
+      expect(screen.queryByRole('button', { name: '从画面取色' })).not.toBeInTheDocument()
+    })
+
+    it('取到的颜色换成大写提交一次；按 Esc 不取了什么都不报', async () => {
+      const picks = [
+        () => Promise.resolve({ sRGBHex: '#12ab34' }),
+        () => Promise.reject(new DOMException('取消', 'AbortError')),
+      ]
+      vi.stubGlobal(
+        'EyeDropper',
+        class {
+          open = () => picks.shift()?.() ?? Promise.reject(new Error('多开了一次'))
+        },
+      )
+      const { user, onChange, onCommit } = await open()
+      const dropper = screen.getByRole('button', { name: '从画面取色' })
+      await user.click(dropper)
+      await waitFor(() => expect(onCommit.mock.calls).toEqual([['#12AB34']]))
+      await user.click(dropper)
+      await waitFor(() => expect(picks).toHaveLength(0))
+      expect(onCommit).toHaveBeenCalledTimes(1)
+      expect(onChange).not.toHaveBeenCalled()
+    })
   })
 })

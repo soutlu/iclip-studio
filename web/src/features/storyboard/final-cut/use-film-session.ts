@@ -14,6 +14,7 @@ import {
   splitOwners,
   type NewCaption,
 } from './caption-edit'
+import type { PlacementChanges, PlacementStyles } from './canvas-geometry'
 import { carveAttributes, type CarveMeasurement, type CarveSettings } from './carve'
 import { rippleStarts, withLinkedStarts, type Cut, type Links, type Timing } from './clip-edit'
 import {
@@ -151,6 +152,8 @@ export type FilmView = {
   locales: readonly LocaleCode[]
   /** 组件或块的片段里随语言的文字字段（片段编号 → 字段到根变量），没有随语言字段的片段不在里面。 */
   bindings: ReadonlyMap<string, LocaleBindings>
+  /** 视频片段、组件或块的片段在画面上的摆放：行内样式里的位移、角度、缩放（片段编号 → 写着的那几样）。 */
+  placements: ReadonlyMap<string, PlacementStyles>
   canUndo: boolean
   canRedo: boolean
   /** 第几份：会话每换一份加 1。 */
@@ -393,6 +396,24 @@ const writeDefault = (main: Composition, variable: string, label: string, text: 
 const bindingsOf = (main: Composition, id: string): LocaleBindings =>
   localeBindingsOf(main.getElement(id)?.attributes[LOCALE_BINDINGS])
 
+/** 视频片段、组件或块的片段行内样式里的摆放（见 `FilmView.placements`）。 */
+const placementsOf = (
+  main: Composition,
+  clips: readonly FilmClip[],
+): Map<string, PlacementStyles> =>
+  new Map(
+    clips.flatMap((clip) => {
+      if (clip.kind !== 'video' && clip.kind !== 'host') return []
+      const styles = main.getElement(clip.id)?.inlineStyles ?? {}
+      const placement: PlacementStyles = {}
+      for (const name of ['translate', 'rotate', 'scale'] as const) {
+        const value = styles[name]
+        if (value !== undefined) placement[name] = value
+      }
+      return [[clip.id, placement] as const]
+    }),
+  )
+
 /** 有随语言字段的组件或块的片段各自的字段（见 `FilmView.bindings`）。 */
 const hostBindingsOf = (
   main: Composition,
@@ -519,6 +540,7 @@ const viewOf = (
     locale: shown,
     locales: [...tables.keys()],
     bindings: hostBindingsOf(main, clips),
+    placements: placementsOf(main, clips),
     canUndo: history.canUndo(),
     canRedo: history.canRedo(),
     ...change,
@@ -1311,6 +1333,19 @@ export function useFilmSession(
     [edit],
   )
 
+  /**
+   * 在画面上挪、缩放、转了几个片段：各自行内样式里的位移、角度、缩放改成 `changes` 里给的（null 是去掉，没给的
+   * 不动），算一步撤销。
+   */
+  const setPlacements = useCallback(
+    (changes: PlacementChanges) => {
+      edit((main) => {
+        for (const [id, styles] of changes) main.setStyle(id, styles)
+      })
+    },
+    [edit],
+  )
+
   /** 组件或块的片段 `id`；不在工程里时是 undefined。 */
   const hostClip = useCallback(
     (id: string): HostClip | undefined => {
@@ -1927,6 +1962,7 @@ export function useFilmSession(
     moveClip,
     restart,
     setHidden,
+    setPlacements,
     setValues,
     setAttributes,
     setCarve,
