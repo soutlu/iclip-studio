@@ -457,6 +457,13 @@ function AudioRow({
 
 const isMissing = (error: unknown) => error instanceof ApiError && error.status === 404
 
+/** 描述框下面的快捷描述：点一下把描述换成它。 */
+const MUSIC_PRESETS = [
+  { label: '木吉他', prompt: '轻快温暖的原声木吉他，松弛早秋亚麻氛围' },
+  { label: '都市轻快', prompt: '松弛都市轻节奏，柔和电钢琴' },
+  { label: '极简钢琴', prompt: '清澈极简钢琴尾奏，温暖留白' },
+] as const
+
 /** 点 `children` 弹出生成音乐的输入框；`initialPrompt` 是重新生成时沿用的描述。 */
 export function GenerateMusic({
   conversationId,
@@ -515,6 +522,12 @@ export function GenerateMusic({
     if (composer !== null && pristine) fill(composer)
   }, [composer, pristine, suggested])
 
+  const fillPreset = (prompt: string) => {
+    setTyped(prompt)
+    composer?.restore({ media: [], parts: [{ kind: 'text', text: prompt }], text: '' })
+    composer?.focus()
+  }
+
   const generate = async (prompt: string) => {
     if (reason !== undefined) return
     setSubmitting(true)
@@ -558,6 +571,20 @@ export function GenerateMusic({
           ariaLabel="音乐描述"
           attachmentsEnabled={false}
           className="wf-generate-composer"
+          leading={
+            <div aria-label="快捷描述" className="wf-generate-presets" role="group">
+              {MUSIC_PRESETS.map((preset) => (
+                <button
+                  className="wf-generate-preset ui-state ui-focus"
+                  key={preset.label}
+                  onClick={() => fillPreset(preset.prompt)}
+                  type="button"
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          }
           onChange={(parts) =>
             setTyped(parts.map((part) => (part.kind === 'text' ? part.text : '')).join(''))
           }
@@ -577,6 +604,7 @@ export function GenerateMusic({
             pendingLabel: '正在提交',
             size: 'sm',
           }}
+          toolbarClassNames={{ leading: 'min-w-0' }}
         />
       </PopupSurface>
     </PopupRoot>

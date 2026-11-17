@@ -63,17 +63,31 @@ const overlaps = (left: Span, right: Span) => left.start < endOf(right) && right
 
 const isCaption = (clip: FilmClip): clip is CaptionClip => clip.kind === 'caption'
 
-export const CAPTION_FOLLOW_REFUSAL_TEXT =
-  '字幕跟着视频片段挪动后会和别的字幕重叠，无法完成这次编辑；请先挪开或删掉挡住的字幕'
+/** 字幕跟着挪做不到的原因：会和别的字幕重叠；跟着配音片段挪会早于 0 秒。 */
+export type CaptionFollowRefusal = 'overlap' | 'early'
 
-/** 一步编辑里属于视频片段的字幕要怎么跟着走：挪到的新起点（编号 → 毫秒）、要删掉的字幕；做不到时是原因。 */
+export const CAPTION_FOLLOW_REFUSAL_TEXT: Readonly<Record<CaptionFollowRefusal, string>> = {
+  overlap: '字幕跟着挪动后会和别的字幕重叠，无法完成这次编辑；请先挪开或删掉挡住的字幕',
+  early: '字幕跟着配音片段挪动后会早于 0 秒，无法完成这次编辑；请把配音片段往后挪',
+}
+
+/** 一步编辑里字幕要怎么跟着走：挪到的新起点（编号 → 毫秒）、要删掉的字幕；做不到时是原因。 */
 export type CaptionFollow =
-  { starts: ReadonlyMap<string, number>; removed: readonly string[] } | { refusal: 'overlap' }
+  | { starts: ReadonlyMap<string, number>; removed: readonly string[] }
+  | { refusal: CaptionFollowRefusal }
+
+/** 改了开始、没改入点：是挪动（怎么挪的都算），不是裁开头。答复挪了多少，不是挪动时是 undefined。 */
+const shiftOf = (
+  was: { start: number; mediaStart: number },
+  now: { start: number; mediaStart: number },
+) =>
+  now.start !== was.start && now.mediaStart === was.mediaStart ? now.start - was.start : undefined
 
 /**
- * 对比一步编辑前后的片段（`before`、`after`，都含字幕），属于视频片段的字幕（`owner`）跟着它走：
- * - 视频片段改了开始、没改入点（挪动，怎么挪的都算）：它的字幕挪同样的时间差，早于 0 的收在 0；
- *   这一步里自己也改了开始的字幕（比如和它一起选中拖动）按它自己的；
+ * 对比一步编辑前后的片段（`before`、`after`，都含字幕和配音片段），字幕跟着挪：
+ * - 配音片段挪了：它配的那句字幕挪同样的时间差，挪到 0 秒以前时整步不做；
+ * - 属于视频片段的字幕（`owner`）：视频片段挪了，它的字幕挪同样的时间差，早于 0 的收在 0；
+ * - 这一步里自己也改了开始的字幕（比如和它一起选中拖动）按它自己的；
  * - 视频片段没了：它的字幕删掉；
  * - 裁剪、改入点、改速度、切开：字幕不动（切开后的归属见 `splitOwners`）。
  * 挪完会和别的字幕重叠时整步都不做，答复原因。
@@ -85,25 +99,39 @@ export function captionsFollowing(
   const now = new Map(after.map((clip) => [clip.id, clip]))
   const was = new Map(before.map((clip) => [clip.id, clip]))
   const shifts = new Map<string, number>()
+  const dubShifts = new Map<string, number>()
   const gone = new Set<string>()
   for (const clip of before) {
-    if (clip.kind !== 'video') continue
     const next = now.get(clip.id)
-    if (next?.kind !== 'video') gone.add(clip.id)
-    else if (next.start !== clip.start && next.mediaStart === clip.mediaStart)
-      shifts.set(clip.id, next.start - clip.start)
+    if (clip.kind === 'video') {
+      if (next?.kind !== 'video') gone.add(clip.id)
+      else {
+        const shift = shiftOf(clip, next)
+        if (shift !== undefined) shifts.set(clip.id, shift)
+      }
+    } else if (isDubClip(clip) && next?.kind === 'audio') {
+      const shift = shiftOf(clip, next)
+      if (shift !== undefined && !dubShifts.has(clip.dub.caption))
+        dubShifts.set(clip.dub.caption, shift)
+    }
   }
   const captions = after.filter(isCaption)
   const removed = captions
     .filter((caption) => caption.owner !== null && gone.has(caption.owner))
     .map((caption) => caption.id)
+  const dropped = new Set(removed)
   const starts = new Map<string, number>()
   for (const caption of captions) {
+    if (dropped.has(caption.id) || was.get(caption.id)?.start !== caption.start) continue
+    const byDub = dubShifts.get(caption.id)
+    if (byDub !== undefined) {
+      if (caption.start + byDub < 0) return { refusal: 'early' }
+      starts.set(caption.id, caption.start + byDub)
+      continue
+    }
     const shift = caption.owner === null ? undefined : shifts.get(caption.owner)
-    if (shift === undefined || was.get(caption.id)?.start !== caption.start) continue
-    starts.set(caption.id, Math.max(0, caption.start + shift))
+    if (shift !== undefined) starts.set(caption.id, Math.max(0, caption.start + shift))
   }
-  const dropped = new Set(removed)
   const final = captions
     .filter((caption) => !dropped.has(caption.id))
     .map((caption) => ({
@@ -121,8 +149,9 @@ export function captionsFollowing(
 
 /**
  * 对比一步编辑前后的片段（`before`、`after`，都含字幕和所有语言的配音片段），配音片段跟着它配的那句字幕走：
- * 字幕改了开始（跟着视频片段挪，或者自己被挪），它的各语言配音挪同样的时间差，早于 0 的收在 0；这一步里自己
- * 也改了开始的配音片段按它自己的。字幕删掉了，它的配音一起删。答复挪到的新起点和要删的配音片段。
+ * 字幕改了开始（跟着视频片段或配音片段挪，或者自己被挪），它的各语言配音挪同样的时间差，早于 0 的收在 0；
+ * 这一步里自己也改了开始的配音片段（比如被挪动、带着字幕挪的那一个）按它自己的。字幕删掉了，它的配音一起删。
+ * 答复挪到的新起点和要删的配音片段。
  */
 export function dubsFollowing(
   before: readonly FilmClip[],

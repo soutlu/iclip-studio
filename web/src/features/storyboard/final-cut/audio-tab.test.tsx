@@ -559,6 +559,32 @@ describe('生成音乐的输入框', () => {
     )
   })
 
+  it('点描述框下面的快捷描述：描述换成它，原样提交', async () => {
+    const conversation = addMockConversation('成片配乐')
+    const bodies = recordMusicBodies()
+    const { user, popover, editor, submit } = await openGenerate(conversation.id)
+    const presets = within(popover).getByRole('group', { name: '快捷描述' })
+    expect(
+      within(presets)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['木吉他', '都市轻快', '极简钢琴'])
+
+    pasteTextIntoComposer(editor, '轻快的原声吉他')
+    await waitFor(() => expect(editor).toHaveTextContent('轻快的原声吉他'))
+    await user.click(within(presets).getByRole('button', { name: '都市轻快' }))
+    await waitFor(() => expect(editor).toHaveTextContent(/^松弛都市轻节奏，柔和电钢琴$/))
+    expect(editor).toHaveFocus()
+    await waitFor(() => expect(submit).toBeEnabled())
+    await user.click(submit)
+
+    await waitFor(() =>
+      expect(bodies).toEqual([
+        { conversationId: conversation.id, prompt: '松弛都市轻节奏，柔和电钢琴', taskId: null },
+      ]),
+    )
+  })
+
   it('描述超过 3000 字时不可提交，也不截断已输入的内容', async () => {
     const conversation = addMockConversation('成片配乐')
     const bodies = recordMusicBodies()

@@ -3746,9 +3746,13 @@ const sceneLine = (key: string, start: number, duration: number, owner: string |
 const CAPTION_CANVAS = { width: 720, height: 1280 }
 const SCENE_FILE = `final-cut/${CAPTIONS_PATH}`
 
-/** 工作区里放一份工程：主文件按 `clips` 写；有 `lines` 时照编辑器用 SDK 写的样子加上字幕宿主、变量和场景文件。 */
-const putFilm = async (clips: FilmClip[], lines: SceneLine[] = []) => {
+/**
+ * 工作区里放一份工程：主文件按 `clips` 写；有 `lines` 时照编辑器用 SDK 写的样子加上字幕宿主、变量和场景文件；
+ * 给了 `voiceModes` 时写进主文件根上的人声设置。
+ */
+const putFilm = async (clips: FilmClip[], lines: SceneLine[] = [], voiceModes?: string) => {
   const main = await openComposition(mainFile(clips, CAPTION_CANVAS))
+  if (voiceModes !== undefined) main.setAttribute('film', 'data-voice-modes', voiceModes)
   if (lines.length > 0) {
     const end = Math.max(...[...clips, ...lines].map((clip) => clip.start + clip.duration))
     main.addElement('film', 99, captionsHostElement(CAPTION_CANVAS, end))
@@ -4037,7 +4041,7 @@ describe('final-cut 编辑器 · 识别字幕', () => {
   })
 })
 
-describe('final-cut 编辑器 · 字幕跟着视频片段走', () => {
+describe('final-cut 编辑器 · 字幕跟着视频片段、配音片段走', () => {
   /** 画面 1：视频 0–4 秒；字幕：它的两句 0.5–1 秒、2.5–3 秒，手动加的一句 6–7 秒。 */
   const open = async () => {
     await putFilm(
@@ -4171,7 +4175,7 @@ describe('final-cut 编辑器 · 字幕跟着视频片段走', () => {
     await user.keyboard('{Delete}')
     expect(
       await screen.findByText(
-        '字幕跟着视频片段挪动后会和别的字幕重叠，无法完成这次编辑；请先挪开或删掉挡住的字幕',
+        '字幕跟着挪动后会和别的字幕重叠，无法完成这次编辑；请先挪开或删掉挡住的字幕',
       ),
     ).toBeVisible()
     expect(videoBodies()).toHaveLength(2)
@@ -4218,6 +4222,75 @@ describe('final-cut 编辑器 · 字幕跟着视频片段走', () => {
         ['字幕 m3', 6],
       ]),
     )
+  })
+
+  it('English 下拖配音片段：它配的那句字幕和这句别的语言的配音挪同样的时间，视频片段不动；一步撤销都回去', async () => {
+    const dub = (id: string, locale: string, caption: string, start: number) =>
+      audio({
+        id,
+        label: `配音 ${id}`,
+        src: `https://media.test/${id}.m4a`,
+        start,
+        duration: 500,
+        dub: { locale, caption, trimmed: false },
+      })
+    await putFilm(
+      [
+        video({ label: 'A · 镜头 1', src: URL_A, duration: 4_000 }),
+        dub('en-a1', 'en', 'cap-a1', 500),
+        dub('de-a1', 'de', 'cap-a1', 500),
+        dub('en-b2', 'en', 'cap-b2', 2_500),
+      ],
+      [sceneLine('a1', 500, 500, 'clip-1'), sceneLine('b2', 2_500, 500, 'clip-1')],
+      // 保留原声时这种语言的配音片段不显示，先切到 AI 配音
+      '{"en":"dub"}',
+    )
+    putMockWorkspaceFile(CONVERSATION, 'final-cut/locales/en.json', '{"cap_a1": "A one"}')
+    const user = userEvent.setup()
+    await openEditor()
+    await user.click(
+      within(within(toolbar()).getByRole('group', { name: '语言' })).getByRole('button', {
+        name: 'English（EN）',
+      }),
+    )
+    const dubStarts = () =>
+      [
+        ...new DOMParser()
+          .parseFromString(savedFilm(), 'text/html')
+          .querySelectorAll('audio[data-dub-of]'),
+      ].map((element) => [element.id, Number(element.getAttribute('data-start'))])
+    const row = await screen.findByRole('group', { name: '配音' })
+    const [first] = within(row).getAllByRole('button', { name: /^选中：/ })
+    if (first === undefined) throw new Error('没有配音片段')
+
+    // 0.5 秒挪到 1.2 秒
+    drag(first, 120)
+    await waitSaved(() =>
+      expect(dubStarts()).toEqual([
+        ['en-a1', 1.2],
+        ['de-a1', 1.2],
+        ['en-b2', 2.5],
+      ]),
+    )
+    expect(timingsOf()).toEqual([
+      ['字幕 a1', 1.2],
+      ['字幕 b2', 2.5],
+    ])
+    expect(savedClips()[0]).toContain('data-start="0"')
+
+    await user.click(undoButton())
+    await waitSaved(() =>
+      expect(dubStarts()).toEqual([
+        ['en-a1', 0.5],
+        ['de-a1', 0.5],
+        ['en-b2', 2.5],
+      ]),
+    )
+    expect(timingsOf()).toEqual([
+      ['字幕 a1', 0.5],
+      ['字幕 b2', 2.5],
+    ])
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
   })
 })
 

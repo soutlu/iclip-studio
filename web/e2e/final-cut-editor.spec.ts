@@ -2227,6 +2227,23 @@ test('AI 配音：English 下点「AI 配音」，配音行出现和字幕对齐
   const dubRow = editor.getByRole('group', { name: '配音', exact: true })
   await expect(dubRow.getByRole('group', { name: /^配音 · \[EN\] / })).toHaveCount(2)
 
+  // 往右拖第二句的配音片段：它配的那句字幕挪同样的时间，第一句不动
+  const dubStartsOf = (saved: string) =>
+    [...saved.matchAll(/<audio [^>]*data-dub-of="[^"]+"[^>]*>/g)]
+      .map(([tag]) => Number(/ data-start="([\d.]+)"/.exec(tag)?.[1]))
+      .toSorted((left, right) => left - right)
+  const dubMoved = mainSavedWith(page, (saved) => (dubStartsOf(saved)[1] ?? 0) > 2.4)
+  const captionMoved = page.waitForRequest((request) => {
+    const scene = savedFileOf(request, CAPTIONS_FILE)
+    return scene !== null && (savedCaptionLines(scene)[1]?.start ?? 0) > 2.4
+  })
+  await dragClip(page, dubRow.getByRole('button', { name: /^选中：配音 · \[EN\] 车流/ }), 120)
+  const movedDub = dubStartsOf(htmlOf(await dubMoved))[1] ?? 0
+  const captionLines = savedCaptionLines(savedFileOf(await captionMoved, CAPTIONS_FILE) ?? '')
+  expect(movedDub).toBeGreaterThan(2.4)
+  expect(captionLines[0]?.start).toBe(0.3)
+  expect(captionLines[1]?.start).toBeCloseTo(movedDub, 3)
+
   // 预览：视频关了原声，English 的配音音轨在；改了以后会换播放器，等只剩一个再看
   const player = await readyPlayer(editor)
   const sounds = () =>

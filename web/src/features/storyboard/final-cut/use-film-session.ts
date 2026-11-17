@@ -12,6 +12,7 @@ import {
   captionsFollowing,
   dubsFollowing,
   splitOwners,
+  type CaptionFollowRefusal,
   type NewCaption,
 } from './caption-edit'
 import type { PlacementChanges, PlacementStyles } from './canvas-geometry'
@@ -627,8 +628,15 @@ const SPLIT_FAILED_TEXT = '片段里带有无法复制的内容，无法切开'
 /** 有一个后半段没能原样加进去（引擎不收这段 HTML）：整次切开退回去。 */
 class HalfRejected extends Error {}
 
-/** 字幕跟着视频片段挪了会和别的字幕重叠：整步编辑退回去。 */
-class CaptionsBlocked extends Error {}
+/** 字幕跟着挪做不到（见 `captionsFollowing`）：整步编辑退回去。 */
+class CaptionsBlocked extends Error {
+  readonly reason: CaptionFollowRefusal
+
+  constructor(reason: CaptionFollowRefusal) {
+    super(reason)
+    this.reason = reason
+  }
+}
 
 /** 删掉一句字幕：场景里它的元素、主文件根上它的变量，和各语言值表里它的值。 */
 const removeCaption = (
@@ -643,11 +651,11 @@ const removeCaption = (
 }
 
 /**
- * 一步编辑做完以后，属于视频片段的字幕跟着它走（规则见 `captionsFollowing`，`before` 是这一步之前的片段）：
- * 挪字幕的起点、删掉没了的视频片段的字幕（见 `removeCaption`）。会重叠时抛出 `CaptionsBlocked`。
+ * 一步编辑做完以后，字幕跟着挪了的视频片段、配音片段走（规则见 `captionsFollowing`，`before` 是这一步之前的
+ * 片段）：挪字幕的起点、删掉没了的视频片段的字幕（见 `removeCaption`）。做不到时抛出 `CaptionsBlocked`。
  * 然后各语言的配音片段跟着它配的那句字幕走（见 `dubsFollowing`）。
  */
-const followVideos = (
+const followClips = (
   main: Composition,
   scene: Composition,
   tables: Iterable<ValueTable>,
@@ -655,7 +663,7 @@ const followVideos = (
   catalog: ComponentCatalog,
 ) => {
   const plan = captionsFollowing(before, allClipsOf(main, scene, catalog))
-  if ('refusal' in plan) throw new CaptionsBlocked()
+  if ('refusal' in plan) throw new CaptionsBlocked(plan.refusal)
   const captions = captionsById(main, scene)
   for (const [id, start] of plan.starts) setOwnTiming(scene, id, { start: start / 1000 })
   for (const id of plan.removed) {
@@ -1216,7 +1224,7 @@ export function useFilmSession(
 
   /**
    * 改工程里已有的东西：`change` 拿到主文件、字幕场景（没有时是 undefined）和各语言的值表，里面的几步和工程总长
-   * 一起算一步撤销。属于视频片段的字幕在同一步里跟着它走（见 `followVideos`）；跟着挪会和别的字幕重叠时整步
+   * 一起算一步撤销。字幕在同一步里跟着挪了的视频片段、配音片段走（见 `followClips`）；跟着挪做不到时整步
    * 不做，提示原因。答复这一步做了没有：没有工程、整步不做时是 false。
    */
   const edit = useCallback(
@@ -1237,12 +1245,12 @@ export function useFilmSession(
           const scene = sceneOf(project)
           const before = allClipsOf(main, scene, catalog)
           change(main, scene, tables)
-          if (scene !== undefined) followVideos(main, scene, tables.values(), before, catalog)
+          if (scene !== undefined) followClips(main, scene, tables.values(), before, catalog)
         })
       } catch (error) {
         // 一批操作里抛出时引擎已经整批退回
         if (!(error instanceof CaptionsBlocked)) throw error
-        noticeRef.current(CAPTION_FOLLOW_REFUSAL_TEXT)
+        noticeRef.current(CAPTION_FOLLOW_REFUSAL_TEXT[error.reason])
         applied = false
       }
       show()
