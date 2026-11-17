@@ -467,11 +467,11 @@ function EditorBody({
     return state?.kind === 'ready' ? Math.round(state.peaks.duration * 1000) : undefined
   }
   const [ripple, setRipple] = useState(true)
-  // 删掉联动着的片段时，联动的伙伴一起删
+  // 删掉联动着的片段时，联动的伙伴一起删。被拒（字幕会重叠）时选中照旧，删掉了才清选中
   const removeSelected = () => {
     leaveMaterial()
-    clearSelection()
-    session.removeClips([...selected, ...linkedPartners(selected, clips)], ripple)
+    if (session.removeClips([...selected, ...linkedPartners(selected, clips)], ripple))
+      clearSelection()
   }
   // 「属性」和时间线上片段的右键菜单共用这几个操作
   const hideClip = (id: string, hidden: boolean) => {
@@ -495,8 +495,7 @@ function EditorBody({
       if (action.kind === 'none' || action.blocked !== undefined) return
       leaveMaterial()
       if (action.kind === 'merge') {
-        session.merge(action.pair)
-        setSelectedIds(new Set([action.pair.video.id]))
+        if (session.merge(action.pair)) setSelectedIds(new Set([action.pair.video.id]))
         return
       }
       const added = session.detach(action.video.id)

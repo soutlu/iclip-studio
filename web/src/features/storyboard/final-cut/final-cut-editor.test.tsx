@@ -1465,6 +1465,24 @@ describe('final-cut 编辑器 · 播放', () => {
     expect(within(transport()).getByText('/ 00:03.50')).toBeVisible()
   })
 
+  it('连着按方向键按几下走几步：预览晚报回来的上一次跳转的时刻不把播放头拉回去', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await act(() => new Promise((resolve) => setTimeout(resolve, 500)))
+
+    editorRoot().focus()
+    await user.keyboard('{ArrowRight}{ArrowRight}')
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    // 真播放器的时刻由运行库异步报回：第一次跳转的时刻在预览页处理完第二次跳转以后才到
+    previewPlayer().dispatchEvent(new CustomEvent('timeupdate', { detail: { currentTime: 0.1 } }))
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)))
+    expect(progress()).toHaveAttribute('aria-valuetext', '00:00.20 / 00:03.50')
+
+    await user.keyboard('{ArrowRight}')
+    expect(progress()).toHaveAttribute('aria-valuetext', '00:00.30 / 00:03.50')
+  })
+
   it('预览素材时播放条显示素材的时间和原作总长，在进度条上跳转夹在选区里、不离开素材；取消选中后回到 final-cut 的时间', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     const user = userEvent.setup()
@@ -3884,6 +3902,43 @@ describe('final-cut 编辑器 · 字幕跟着视频片段走', () => {
     await user.click(undoButton())
     await waitSaved(() => expect(timingsOf()).toHaveLength(3))
     expect(savedClips()).toHaveLength(1)
+  })
+
+  it('开着波纹编辑删视频片段，后一段的字幕跟着补上来会压到别的字幕：不删，提示原因，片段还选中着', async () => {
+    // 画面 1：视频 0–2 秒、2–4 秒；后一段的一句 2.5–3 秒，手动加的一句 0.6–1 秒。
+    // 删掉前一段时后一段补到 0 秒，它的字幕挪到 0.5–1 秒，压到手动加的那句
+    await putFilm(
+      [
+        video({ src: URL_A, duration: 2_000 }),
+        video({ id: 'clip-2', label: 'B · 镜头 1', src: URL_B, start: 2_000, duration: 2_000 }),
+      ],
+      [sceneLine('m1', 600, 400), sceneLine('b2', 2_500, 500, 'clip-2')],
+    )
+    const user = userEvent.setup()
+    await openEditor()
+    const clipsBefore = savedClips()
+    const [first] = videoBodies()
+    if (first === undefined) throw new Error('没有视频片段')
+    await user.click(first)
+    expect(first).toHaveAttribute('aria-pressed', 'true')
+
+    await user.keyboard('{Delete}')
+    expect(
+      await screen.findByText(
+        '字幕跟着视频片段挪动后会和别的字幕重叠，无法完成这次编辑；请先挪开或删掉挡住的字幕',
+      ),
+    ).toBeVisible()
+    expect(videoBodies()).toHaveLength(2)
+    expect(videoBodies()[0]).toHaveAttribute('aria-pressed', 'true')
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+    // 引擎退回这一步时片段之间的换行没有回来，过了自动保存的等待时间主文件会被存一次；
+    // 等它存完再比：存下的片段和字幕都还是原样
+    await act(() => new Promise((resolve) => setTimeout(resolve, 1_500)))
+    expect(savedClips()).toEqual(clipsBefore)
+    expect(timingsOf()).toEqual([
+      ['字幕 m1', 0.6],
+      ['字幕 b2', 2.5],
+    ])
   })
 
   it('切开以后挪后半段：切点以后的字幕跟着后半段走，切点以前的留在原处', async () => {

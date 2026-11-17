@@ -157,13 +157,28 @@ describe('运行库、尺寸、倍速', () => {
 })
 
 describe('时钟跟着画面走', () => {
-  it('播放器报出的时刻换算成毫秒报出去，带着处理到的那次跳转', async () => {
+  it('播放器报出的时刻换算成毫秒报出去，带着处理到的那次跳转；跳转以后到再次播放之前不报', async () => {
     const { of, playerOf, send } = await openPage()
     playerOf().seek(1.5)
     expect(of('time').at(-1)).toEqual({ type: 'time', ms: 1500, seq: 0 })
 
+    // 跳转以后、再次播放之前不报：播放头由编辑器定，晚到的上一次跳转的时刻不会带着这次的序号报出去
+    const reported = of('time').length
     send({ type: 'seek', ms: 1000, seq: 3 })
-    expect(of('time').at(-1)).toEqual({ type: 'time', ms: 1000, seq: 3 })
+    playerOf().seek(0.5)
+    expect(of('time')).toHaveLength(reported)
+
+    send({ type: 'play' })
+    playerOf().seek(1.2)
+    expect(of('time').at(-1)).toEqual({ type: 'time', ms: 1200, seq: 3 })
+  })
+
+  it('跳转以后换上新的播放器：新播放器停在哪照常报出去（总长变短时收在结尾）', async () => {
+    const { of, playerOf, send, showFilm } = await openPage()
+    send({ type: 'seek', ms: 3500, seq: 1 })
+    await showFilm(film('<p></p>'))
+    playerOf().seek(3)
+    expect(of('time').at(-1)).toEqual({ type: 'time', ms: 3000, seq: 1 })
   })
 
   it('数据足够时直接放，不转圈', async () => {
