@@ -2270,7 +2270,8 @@ describe('final-cut 编辑器 · 属性', () => {
 
     await pick(user, '配乐')
     expect(within(inspector()).getByText('音频')).toBeVisible()
-    expect(sections()).toEqual(['原片截取', '音量与变速'])
+    // 配乐和有声音的视频片段重叠：下面还有压低配乐那一段
+    expect(sections()).toEqual(['原片截取', '音量与变速', '有人说话时自动压低'])
     expect(within(inspector()).getByRole('switch', { name: '循环播放' })).toBeVisible()
     await user.click(within(inspector()).getByRole('button', { name: '静音' }))
     await waitSaved(() => expect(savedTag('music-1')).toMatch(/^<audio data-hidden=""/))
@@ -2948,6 +2949,135 @@ describe('final-cut 编辑器 · 属性', () => {
     expect(within(transport()).getByRole('button', { name: '静音' })).toBeVisible()
     await pastDelay()
     expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  describe('有人说话时自动压低', () => {
+    const MUSIC = 'https://media.test/audio/music.mp3'
+    const carveSwitch = () =>
+      within(inspector()).getByRole('switch', { name: '有人说话时自动压低' })
+    const savedAttribute = (id: string, name: string) =>
+      new RegExp(` ${name}="([^"]*)"`).exec(savedTag(id))?.[1]?.replaceAll('&quot;', '"')
+    const savedCarve = (id: string): unknown =>
+      JSON.parse(savedAttribute(id, 'data-fx-carve') ?? 'null')
+    const musicClip = () => screen.getByRole('button', { name: /^选中：配乐，/ })
+    // 各素材地址被取了几次
+    let fetched: string[] = []
+
+    beforeEach(() => {
+      fetched = []
+      // 人声：1 kHz 的声音；配乐：噪声。文件内容直接是解好的采样，离线音频上下文原样读出来
+      const rate = 48_000
+      const voice = Float32Array.from(
+        { length: 2 * rate },
+        (_, i) => Math.sin((2 * Math.PI * 1_000 * i) / rate) * 0.3,
+      )
+      const music = Float32Array.from(
+        { length: 4 * rate },
+        (_, i) => ((i * 7_919) % 97) / 160 - 0.3,
+      )
+      vi.stubGlobal(
+        'OfflineAudioContext',
+        class {
+          decodeAudioData(data: ArrayBuffer) {
+            return Promise.resolve({ getChannelData: () => new Float32Array(data) })
+          }
+        },
+      )
+      const serve = (url: string, samples: Float32Array<ArrayBuffer>) =>
+        http.get(url, () => {
+          fetched.push(url)
+          return HttpResponse.arrayBuffer(samples.buffer)
+        })
+      server.use(serve(URL_A, voice), serve(MUSIC, music))
+    })
+
+    afterEach(() => vi.unstubAllGlobals())
+
+    it('选中和有声视频重叠的配乐：默认打开，设置和效果链写进配乐，时间线上标「自动压低」；关掉后不再自动打开', async () => {
+      const user = await openWith([
+        video({ src: URL_A, duration: 2_000 }),
+        audio({ duration: 4_000 }),
+      ])
+      await pick(user, '配乐')
+      await waitFor(() => expect(carveSwitch()).toHaveAttribute('aria-checked', 'true'))
+      expect(musicClip()).toHaveAccessibleName('选中：配乐，4.0 秒，自动压低')
+      await waitSaved(() => expect(savedAttribute('music-1', 'data-fx-chain')).toContain('peaking'))
+      expect(savedCarve('music-1')).toEqual({ enabled: true, sources: ['clip-1'], strength: 0.25 })
+      expect(savedAttribute('music-1', 'data-automation')).toContain('.gain')
+
+      await user.click(carveSwitch())
+      await waitSaved(() => expect(savedCarve('music-1')).toMatchObject({ enabled: false }))
+      expect(savedAttribute('music-1', 'data-fx-chain')).toBeUndefined()
+      expect(musicClip()).toHaveAccessibleName('选中：配乐，4.0 秒')
+      await pick(user, 'A · 镜头 1')
+      await pick(user, '配乐')
+      await pastDelay()
+      expect(carveSwitch()).toHaveAttribute('aria-checked', 'false')
+      expect(within(inspector()).queryByRole('slider', { name: '强度' })).toBeNull()
+
+      // 再打开，改强度：一个素材地址只读一次声音
+      await user.click(carveSwitch())
+      await waitFor(() => expect(carveSwitch()).toHaveAttribute('aria-checked', 'true'))
+      await user.click(
+        within(inspector()).getByRole('button', { name: '强度 25%，点击可直接输入' }),
+      )
+      const box = within(inspector()).getByRole('textbox', { name: '强度' })
+      await user.clear(box)
+      await user.type(box, '50{Enter}')
+      await waitSaved(() => expect(savedCarve('music-1')).toMatchObject({ strength: 0.5 }))
+      expect(within(inspector()).getByRole('slider', { name: '强度' })).toHaveAttribute(
+        'aria-valuetext',
+        '50%',
+      )
+      expect(fetched.toSorted()).toEqual([MUSIC, URL_A])
+    })
+
+    it('自动打开以后撤销：回到没设置过，不会又自动打开', async () => {
+      const user = await openWith([
+        video({ src: URL_A, duration: 2_000 }),
+        audio({ duration: 4_000 }),
+      ])
+      await pick(user, '配乐')
+      await waitSaved(() => expect(savedCarve('music-1')).toMatchObject({ enabled: true }))
+      await user.click(undoButton())
+      await waitSaved(() => expect(savedCarve('music-1')).toBeNull())
+      await pastDelay()
+      expect(savedCarve('music-1')).toBeNull()
+      expect(carveSwitch()).toHaveAttribute('aria-checked', 'false')
+      expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+    })
+
+    it('分离出来的原声上没有这一项；配乐读不出声音时提示，不写', async () => {
+      server.use(
+        http.get(MUSIC, () => {
+          fetched.push(MUSIC)
+          return new HttpResponse(null, { status: 404 })
+        }),
+      )
+      const user = await openWith([
+        video({ src: URL_A, duration: 2_000, muted: true, link: 'lk-1', syncOrigin: 'lk-1' }),
+        audio({
+          id: 'orig',
+          label: '原声',
+          src: URL_A,
+          duration: 2_000,
+          link: 'lk-1',
+          syncOrigin: 'lk-1',
+        }),
+        audio({ duration: 4_000, track: 1 }),
+      ])
+      await pick(user, '原声')
+      expect(sections()).not.toContain('有人说话时自动压低')
+      await pick(user, '配乐')
+      expect(
+        (await screen.findAllByText('自动压低没有生效：人声或配乐的声音读取失败，请重试')).length,
+      ).toBeGreaterThan(0)
+      expect(carveSwitch()).toHaveAttribute('aria-checked', 'false')
+      await pastDelay()
+      expect(savedTag('music-1')).not.toContain('data-fx-carve')
+      // 只分析了一次：读失败以后不会一直重试
+      expect(fetched).toEqual([URL_A, MUSIC])
+    })
   })
 })
 

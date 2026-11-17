@@ -1149,6 +1149,7 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
       link: null,
       syncOrigin: null,
       dub: null,
+      fxCarve: null,
     })
     expect(result.current.film?.durationMs).toBe(10_000)
     await waitFor(() => expect(saves).toHaveLength(1))
@@ -3008,5 +3009,58 @@ describe('useFilmSession · 字幕', () => {
       expect(variablesIn(html(result))).toEqual({ txt_t1_text: '新品上市' })
       expect(result.current.film?.locale.values).toEqual({ txt_t1_text: 'New in' })
     })
+  })
+})
+
+describe('useFilmSession · 压低配乐', () => {
+  const attributesOf = (result: Session, id: string) => {
+    const page = new DOMParser().parseFromString(result.current.film?.html ?? '', 'text/html')
+    const element = page.getElementById(id)
+    return {
+      carve: element?.getAttribute('data-fx-carve') ?? null,
+      chain: element?.getAttribute('data-fx-chain') ?? null,
+      automation: element?.getAttribute('data-automation') ?? null,
+    }
+  }
+  const measured = {
+    bands: [{ freq: 1_000, gainDb: -6, q: 1.4 }],
+    carved: {
+      version: 1,
+      nodes: [{ type: 'peaking', enabled: true, params: { frequency: 1_000, gain: -6, q: 1.4 } }],
+    },
+    duck: [
+      { t: 0, v: 0 },
+      { t: 0.5, v: -6 },
+      { t: 1, v: 0 },
+    ],
+    voiceMix: new Float32Array(48_000),
+  }
+  const settings = { enabled: true, sources: ['v'], strength: 0.25 }
+
+  it('设置、效果链、曲线一起写进配乐片段，算一步撤销；关掉时设置留着，生成的去掉', async () => {
+    const saves = recordSaves()
+    const { result } = await openWith([video({ id: 'v' }), audio({ id: 'm', duration: 2_000 })])
+    act(() => result.current.setCarve('m', settings, measured))
+    const on = attributesOf(result, 'm')
+    expect(JSON.parse(on.carve ?? '')).toEqual(settings)
+    expect(on.chain).toContain('"fromCarve":true')
+    expect(on.automation).toContain('.gain')
+    await waitFor(() => expect(saves).toHaveLength(1))
+
+    act(() => result.current.setCarve('m', { ...settings, enabled: false }, null))
+    expect(attributesOf(result, 'm')).toEqual({
+      carve: JSON.stringify({ ...settings, enabled: false }),
+      chain: null,
+      automation: null,
+    })
+    act(() => result.current.undo())
+    expect(attributesOf(result, 'm')).toEqual(on)
+    act(() => result.current.undo())
+    expect(attributesOf(result, 'm')).toEqual({ carve: null, chain: null, automation: null })
+    expect(result.current.film?.canUndo).toBe(false)
+
+    const before = result.current.film?.html
+    act(() => result.current.setCarve('gone', settings, measured))
+    expect(result.current.film?.html).toBe(before)
   })
 })

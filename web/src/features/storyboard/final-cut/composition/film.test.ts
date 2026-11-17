@@ -197,6 +197,13 @@ describe('按标签认片段', () => {
     )
     expect(readBack(html)).toMatchObject([{ link: null, syncOrigin: null }])
   })
+
+  it('压低配乐的设置原样读写；没写时是 null', () => {
+    const fxCarve = '{"enabled":true,"sources":["clip-1"],"strength":0.25}'
+    const clips = [video(), audio({ fxCarve })]
+    expect(readBack(mainFile(clips, CANVAS))).toEqual(clips)
+    expect(audioElement(audio())).not.toContain('data-fx-carve')
+  })
 })
 
 describe('组件或块的片段的摆放和字体（宿主元素的行内样式）', () => {
