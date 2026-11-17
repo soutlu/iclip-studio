@@ -7,6 +7,7 @@ import { TranscriptConnectionContext } from '@/shared/transcript/transcript-cont
 import {
   CAPTION_FOLLOW_REFUSAL_TEXT,
   captionsFollowing,
+  dubsFollowing,
   splitOwners,
   type NewCaption,
 } from './caption-edit'
@@ -58,6 +59,14 @@ import {
   type LocaleBindings,
 } from './composition/locale-text'
 import {
+  VOICE_MODES,
+  voiceModeOf,
+  voiceModesAttribute,
+  voiceModesOf,
+  type VoiceMode,
+} from './composition/voices'
+import { shownIn, type NewDub } from './dubbing'
+import {
   copyItemFiles,
   createProjectFile,
   holdProjectReads,
@@ -88,7 +97,14 @@ import {
   type ValueTable,
 } from './locales'
 import type { AttributeChanges } from './original-sound'
-import { onRow, topTrack, voiceRowFor, type Landing, type Renumbering } from './placement'
+import {
+  dubRowFor,
+  onRow,
+  originalRowFor,
+  topTrack,
+  type Landing,
+  type Renumbering,
+} from './placement'
 import { detachedVideoChanges, mergedVideoChanges, type SoundPair } from './sound-pair'
 import { newClipZ, restackedZ } from './stacking'
 import type { TranslationSource } from './translation'
@@ -108,9 +124,13 @@ export type FilmView = {
   canvas: Canvas
   /**
    * 主文件根下所有带时间的元素（字幕宿主除外），按它们在文件里的先后；后面跟着字幕场景里的各句字幕，
-   * 按它们在场景里的先后。
+   * 按它们在场景里的先后。配音片段只有当前显示的语言的（见 `shownIn`）。
    */
   clips: readonly FilmClip[]
+  /** 没显示的配音片段（别的语言的；原文下是所有的）：新开一行时它们也要跟着重新编号（见 `rowOpeningAmong`）。 */
+  unshownDubs: readonly FilmClip[]
+  /** 当前显示的语言的人声设置（见 `voices.ts`）；原文总是保留原声。 */
+  voiceMode: VoiceMode
   /** 带链接（`data-link`）的片段各自的链接名。 */
   links: Links
   durationMs: number
@@ -471,17 +491,16 @@ const viewOf = (
   const view: FilmView = {
     html,
     canvas: canvasOf(main),
-    clips:
-      shown.values === null
-        ? clips
-        : clips.map((clip) =>
-            clip.kind === 'caption'
-              ? {
-                  ...clip,
-                  label: captionLabel(translationOf(shown.values, clip.variable) ?? clip.text),
-                }
-              : clip,
-          ),
+    clips: clips.filter(shownIn(shown.code)).map((clip) =>
+      shown.values !== null && clip.kind === 'caption'
+        ? {
+            ...clip,
+            label: captionLabel(translationOf(shown.values, clip.variable) ?? clip.text),
+          }
+        : clip,
+    ),
+    unshownDubs: clips.filter((clip) => !shownIn(shown.code)(clip)),
+    voiceMode: voiceModeOf(voiceModesIn(main), shown.code),
     links: new Map(clips.flatMap((clip) => (clip.link === null ? [] : [[clip.id, clip.link]]))),
     durationMs: latestEnd(main, scene),
     captionsProblem: captionsProblem(
@@ -589,6 +608,7 @@ const removeCaption = (
 /**
  * 一步编辑做完以后，属于视频片段的字幕跟着它走（规则见 `captionsFollowing`，`before` 是这一步之前的片段）：
  * 挪字幕的起点、删掉没了的视频片段的字幕（见 `removeCaption`）。会重叠时抛出 `CaptionsBlocked`。
+ * 然后各语言的配音片段跟着它配的那句字幕走（见 `dubsFollowing`）。
  */
 const followVideos = (
   main: Composition,
@@ -605,6 +625,20 @@ const followVideos = (
     const caption = captions.get(id)
     if (caption !== undefined) removeCaption(main, scene, tables, caption)
   }
+  const dubs = dubsFollowing(before, allClipsOf(main, scene, catalog))
+  for (const [id, start] of dubs.starts) setOwnTiming(main, id, { start: start / 1000 })
+  for (const id of dubs.removed) main.removeElement(id)
+}
+
+/** 主文件根上记的各语言人声设置（见 `voices.ts`）。 */
+const voiceModesIn = (main: Composition) => voiceModesOf(rootOf(main)?.attributes[VOICE_MODES])
+
+/** 把语言 `locale` 的人声设置写成 `mode`；已经是这样时不动。 */
+const writeVoiceMode = (main: Composition, locale: LocaleCode, mode: VoiceMode) => {
+  const root = rootOf(main)
+  const modes = voiceModesIn(main)
+  if (root === undefined || voiceModeOf(modes, locale) === mode) return
+  main.setAttribute(root.id, VOICE_MODES, voiceModesAttribute(modes, locale, mode))
 }
 
 /**
@@ -1125,6 +1159,7 @@ export function useFilmSession(
           hidden: false,
           link: null,
           syncOrigin: null,
+          dub: null,
         })
         engine.addElement(root.id, 0, element)
       })
@@ -1393,7 +1428,7 @@ export function useFilmSession(
 
   /**
    * 把视频片段 `videoId` 的原声分离成一个音频片段，算一步撤销：视频片段关掉原声、声音属性搬走，原声片段
-   * 和它同一个地址、同样的起止、入点、速度，写在文件里紧挨着它前面，放进「人声」行（见 `voiceRowFor`）；
+   * 和它同一个地址、同样的起止、入点、速度，写在文件里紧挨着它前面，放进「原声」行（见 `originalRowFor`）；
    * 两段写上同一个新的链接名，也当出处，联动着。返回原声片段的编号；片段不是视频片段时不动工程，整步不做时
    * （见 `edit`）也没有编号。
    */
@@ -1407,7 +1442,7 @@ export function useFilmSession(
       const video = clips.find((clip) => clip.id === videoId)
       if (video?.kind !== 'video') return undefined
       const name = newLinkName(engine)
-      const { track, renumber } = voiceRowFor(clips, video.start, video.duration)
+      const { track, renumber } = originalRowFor(clips, video)
       const index = root.children.findIndex((child) => child.id === videoId)
       let added: string | undefined
       const applied = edit((current) => {
@@ -1431,6 +1466,7 @@ export function useFilmSession(
             hidden: video.hidden,
             link: name,
             syncOrigin: name,
+            dub: null,
           }),
         )
         for (const [attribute, value] of Object.entries(detachedVideoChanges(name)))
@@ -1668,6 +1704,65 @@ export function useFilmSession(
     [catalog, edit],
   )
 
+  /** 把语言 `locale` 的人声设置改成 `mode`（见 `voices.ts`），算一步撤销；已经是这样时不动工程。 */
+  const setVoiceMode = useCallback(
+    (locale: LocaleCode, mode: VoiceMode) => {
+      const project = projectRef.current
+      if (project === null || voiceModeOf(voiceModesIn(mainOf(project)), locale) === mode) return
+      edit((main) => writeVoiceMode(main, locale, mode))
+    },
+    [edit],
+  )
+
+  /**
+   * 写进语言 `locale` 生成好的配音，算一步撤销：`plan` 拿到这一刻的片段（含字幕和所有语言的配音片段），答复要换掉
+   * 的配音片段和要加的配音片段。换掉的先删，加的一起放进第一条这几段时间都空着的「配音」行（见 `dubRowFor`，
+   * 只看这种语言下显示的片段），写在根下第一个；这种语言的人声设置改成 AI 配音。答复加了几个；一个都不加时不动
+   * 工程，答 0。
+   */
+  const addDubs = useCallback(
+    (
+      locale: LocaleCode,
+      plan: (clips: readonly FilmClip[]) => {
+        removed: readonly string[]
+        added: readonly NewDub[]
+      },
+    ): number => {
+      const project = projectRef.current
+      const main = project === null ? undefined : mainOf(project)
+      const root = main === undefined ? undefined : rootOf(main)
+      if (project === null || main === undefined || root === undefined) return 0
+      const { removed, added } = plan(allClipsOf(main, sceneOf(project), catalog))
+      if (added.length === 0) return 0
+      edit((engine) => {
+        for (const id of removed) engine.removeElement(id)
+        const { track, renumber } = dubRowFor(clipsOf(engine, catalog), added, shownIn(locale))
+        for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
+        for (const { caption, trimmed, ...dub } of added)
+          engine.addElement(
+            root.id,
+            0,
+            audioElement({
+              ...dub,
+              id: newClipId(),
+              track,
+              volume: 1,
+              fadeIn: 0,
+              fadeOut: 0,
+              loop: false,
+              hidden: false,
+              link: null,
+              syncOrigin: null,
+              dub: { locale, caption, trimmed },
+            }),
+          )
+        writeVoiceMode(engine, locale, 'dub')
+      })
+      return added.length
+    },
+    [catalog, edit],
+  )
+
   /** 切换显示的语言（不进撤销、不改文件）；工程里没有这种语言的值表时不切。 */
   const setLocale = useCallback(
     (locale: Language) => {
@@ -1799,6 +1894,8 @@ export function useFilmSession(
     setItemText,
     setFollowsLocale,
     fillLocale,
+    setVoiceMode,
+    addDubs,
     setLocale,
     addLocale,
     undo: () => step('undo'),

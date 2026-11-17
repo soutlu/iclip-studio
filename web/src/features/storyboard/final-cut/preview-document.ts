@@ -2,7 +2,8 @@ import type { ComponentCatalog } from './composition/catalog'
 import { variableValuesOf } from './composition/film'
 import { escapeAttribute } from './composition/html'
 import { LOCALE_BINDINGS, localeBindingsOf, localizedHostValues } from './composition/locale-text'
-import type { LocaleValues } from './locales'
+import { localizedVoices, VOICE_MODES, voiceModesOf } from './composition/voices'
+import { SOURCE_SHOWN, type Language, type LocaleValues, type ShownLocale } from './locales'
 import { withPreviewMediaTags } from './preview-media'
 
 const withBaseHref = (html: string, baseHref: string): string => {
@@ -86,6 +87,38 @@ export function withLocalizedHosts(html: string, values: LocaleValues | null): s
 }
 
 /**
+ * 按显示着的语言 `locale`（原文是 null）放人声：规则见 `localizedVoices`（别的语言的配音片段去掉，AI 配音时
+ * 原声关掉）。没有要改的时原样返回。
+ */
+function withLocalizedVoices(html: string, locale: Language): string {
+  const film = parse(html)
+  const root = film.querySelector('[data-composition-id]')
+  if (root === null) return html
+  const children = [...root.children]
+  const changes = localizedVoices(
+    children.map((child) => ({
+      tag: child.localName,
+      attributes: Object.fromEntries([...child.attributes].map((each) => [each.name, each.value])),
+    })),
+    voiceModesOf(root.getAttribute(VOICE_MODES) ?? undefined),
+    locale,
+  )
+  if (changes.length === 0) return html
+  for (const change of changes) {
+    const element = children[change.index]
+    if (element === undefined) continue
+    if (change.remove) {
+      element.remove()
+      continue
+    }
+    for (const [name, value] of Object.entries(change.attributes))
+      if (value === null) element.removeAttribute(name)
+      else element.setAttribute(name, value)
+  }
+  return serialize(film)
+}
+
+/**
  * 预览套上一种语言的值（`values` 是它的值表，原文时是 null，不插）：照官方编辑器，在 `<head>` 开头插一段脚本，
  * 运行库加载时按全局变量 `__hfVariables` 取变量的值。只放主文件根上声明过的 id；`<` 写成转义，值里的
  * `</script>` 不会提前结束脚本。
@@ -106,18 +139,26 @@ export const catalogBase = (catalog: ComponentCatalog, origin: string) =>
   `${origin}/hyperframes/${catalog.version}/`
 
 /**
- * 预览用的那一份：去掉隐藏的片段（见 `withoutHiddenClips`），加上基准地址、预览专用的媒体加载方式和
- * 语言的值（`values`：贴片、场景的字见 `withLocalizedHosts`，字幕的字见 `withPreviewVariables`）。
- * 文件里的相对地址（组件文件、`vendor/`）都按 `baseHref` 取。
+ * 预览用的那一份：去掉隐藏的片段（见 `withoutHiddenClips`），套上显示着的语言 `locale`（贴片、场景的字见
+ * `withLocalizedHosts`，人声见 `withLocalizedVoices`，字幕的字见 `withPreviewVariables`），加上基准地址和
+ * 预览专用的媒体加载方式。文件里的相对地址（组件文件、`vendor/`）都按 `baseHref` 取。
  */
 export const previewDocument = (
   html: string,
   baseHref: string,
-  values: LocaleValues | null = null,
+  locale: ShownLocale = SOURCE_SHOWN,
 ): string =>
   withPreviewVariables(
-    withBaseHref(withPreviewMedia(withLocalizedHosts(withoutHiddenClips(html), values)), baseHref),
-    values,
+    withBaseHref(
+      withPreviewMedia(
+        withLocalizedVoices(
+          withLocalizedHosts(withoutHiddenClips(html), locale.values),
+          locale.code,
+        ),
+      ),
+      baseHref,
+    ),
+    locale.values,
   )
 
 /**

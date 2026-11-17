@@ -1209,8 +1209,8 @@ test('分离音频：存下来多一个原声片段、两段属性对；联动�
   })
   expect(shot).not.toHaveProperty('data-has-audio')
   expect(shot).not.toHaveProperty('data-volume')
-  // 原声在声音区新开的「人声」行里，分离完选中的是它
-  const voiceRow = editor.getByRole('group', { name: '人声', exact: true })
+  // 原声在声音区新开的「原声」行里，分离完选中的是它
+  const voiceRow = editor.getByRole('group', { name: '原声', exact: true })
   const voiceClip = voiceRow.getByRole('group', { name: /· 原声，/ })
   await expect(voiceClip).toHaveAccessibleName(/，联动$/)
   await expect(inspector.getByTestId('sync-status')).toHaveText('与画面口型同步')
@@ -1268,7 +1268,7 @@ test('分离音频：存下来多一个原声片段、两段属性对；联动�
   expect(back).toMatchObject({ 'data-has-audio': 'true', 'data-volume': '1' })
   expect(back).not.toHaveProperty('muted')
   expect(back).not.toHaveProperty('data-sync-origin')
-  await expect(editor.getByRole('group', { name: '人声', exact: true })).toHaveCount(0)
+  await expect(editor.getByRole('group', { name: '原声', exact: true })).toHaveCount(0)
 })
 
 test('地址带着 ?artifact=final-cut 时直接打开编辑器；正在对话框里打字时不抢焦点', async ({
@@ -2047,4 +2047,96 @@ test('翻译：加上 English 后点「翻译」，字幕和贴片里随语言�
       }
     }, id)
   await expect.poll(shown).toEqual({ caption: '[EN] 新字幕', host: '[EN] 示例文字' })
+})
+
+test('AI 配音：English 下点「AI 配音」，配音行出现和字幕对齐的配音片段，预览里视频静音、配音在；保留原声时原声回来；原文下没有配音', async ({
+  page,
+}) => {
+  test.setTimeout(120_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await serveSavedCaptions(page)
+  // 这段对话里还没有字幕识别记录：先识别出两句，配音按它们配
+  const panel = await openConversation(page, '工具过程展示')
+  const editor = await openFinalCut(panel)
+  const group = editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+  await group.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
+  await group.getByRole('slider', { name: '裁剪结尾' }).focus()
+  for (let second = 0; second < 6; second += 1) await page.keyboard.press('Shift+ArrowRight')
+  const added = mainSaved(page, 1)
+  await page.keyboard.press('Enter')
+  await added
+
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '字幕·配音' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕·配音' })
+  const recognized = page.waitForRequest(
+    (request) =>
+      (savedFileOf(request, CAPTIONS_FILE)?.match(/data-caption-of/g) ?? []).length === 2,
+  )
+  await tab.getByRole('button', { name: '识别字幕', exact: true }).click()
+  await recognized
+  // 原文下没有人声设置
+  await expect(tab.getByRole('group', { name: '人声设置' })).toHaveCount(0)
+
+  const languages = editor.getByRole('group', { name: '语言' })
+  await languages.getByRole('button', { name: '添加语言' }).click()
+  await page.getByRole('menuitem', { name: 'English（EN）' }).click()
+  const translated = page.waitForRequest(
+    (request) => (savedFileOf(request, ENGLISH_FILE)?.match(/\[EN\]/g) ?? []).length === 2,
+  )
+  await tab.getByRole('button', { name: '翻译', exact: true }).click()
+  await translated
+
+  // AI 配音：每句一个配音片段，起点和字幕一样，从这句在素材里的开始放
+  const voice = tab.getByRole('group', { name: '人声设置' })
+  await expect(voice.getByRole('button', { name: '保留原声' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  const dubbed = mainSavedWith(page, (html) => (html.match(/data-dub-of=/g) ?? []).length === 2)
+  await voice.getByRole('button', { name: 'AI 配音' }).click()
+  const html = htmlOf(await dubbed)
+  const dubs = [...html.matchAll(/<audio [^>]*data-dub-of="[^"]+"[^>]*>/g)].map(([tag]) => ({
+    start: Number(/ data-start="([\d.]+)"/.exec(tag)?.[1]),
+    mediaStart: Number(/ data-media-start="([\d.]+)"/.exec(tag)?.[1]),
+    locale: / data-locale="([^"]+)"/.exec(tag)?.[1],
+  }))
+  expect(dubs.toSorted((left, right) => left.start - right.start)).toEqual([
+    { start: 0.3, mediaStart: 0.3, locale: 'en' },
+    { start: 2.4, mediaStart: 2.4, locale: 'en' },
+  ])
+  await expect(voice.getByRole('button', { name: 'AI 配音' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  const dubRow = editor.getByRole('group', { name: '配音', exact: true })
+  await expect(dubRow.getByRole('group', { name: /^配音 · \[EN\] / })).toHaveCount(2)
+
+  // 预览：视频关了原声，English 的配音音轨在；改了以后会换播放器，等只剩一个再看
+  const player = await readyPlayer(editor)
+  const sounds = () =>
+    player.evaluateAll((elements) => {
+      if (elements.length !== 1) return null
+      const [element] = elements as (HTMLElement & { iframeElement: HTMLIFrameElement })[]
+      const document = element?.iframeElement.contentDocument
+      return {
+        muted: document?.querySelector('video')?.hasAttribute('muted') ?? null,
+        dubs: document?.querySelectorAll('audio[data-locale="en"]').length ?? null,
+      }
+    })
+  await expect.poll(sounds).toEqual({ muted: true, dubs: 2 })
+
+  // 保留原声：配音不出声（预览里没有配音音轨），原声回来
+  await voice.getByRole('button', { name: '保留原声' }).click()
+  await expect.poll(sounds).toEqual({ muted: false, dubs: 0 })
+  await expect(dubRow.getByRole('group', { name: /，不出声$/ })).toHaveCount(2)
+
+  // 原文：时间线和预览里都没有配音
+  await voice.getByRole('button', { name: 'AI 配音' }).click()
+  await expect.poll(sounds).toEqual({ muted: true, dubs: 2 })
+  await languages.getByRole('button', { name: '原文' }).click()
+  await expect(editor.getByRole('group', { name: /^配音 · / })).toHaveCount(0)
+  await expect.poll(sounds).toEqual({ muted: false, dubs: 0 })
 })

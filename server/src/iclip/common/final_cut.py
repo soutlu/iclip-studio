@@ -49,7 +49,8 @@ class _MediaCollector(HTMLParser):
 
 def media_addresses(html: str) -> tuple[MediaAddress, ...]:
     """主文件里 ``<video>``、``<audio>`` 的 ``src`` 写的素材地址，按出现先后、不重复；同一个地址
-    先出现在哪种元素上就算哪种。规则同渲染服务的 ``mediaAddresses``（``render/src/project.ts``）。"""
+    先出现在哪种元素上就算哪种。规则同渲染服务的 ``mediaAddresses``（``render/src/project.ts``）。
+    各语言的配音片段也是 ``<audio>``，都算在里面；渲染服务只下载导出的那种语言用到的。"""
 
     collector = _MediaCollector()
     collector.feed(html)

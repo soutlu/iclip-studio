@@ -101,6 +101,7 @@ export const audio = (overrides: Partial<AudioClip> = {}): AudioClip => ({
   hidden: false,
   link: null,
   syncOrigin: null,
+  dub: null,
   ...overrides,
 })
 

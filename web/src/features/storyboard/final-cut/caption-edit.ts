@@ -2,6 +2,7 @@ import type { SubtitleSentence } from '@/shared/api/generated/types.gen'
 import type { Cut } from './clip-edit'
 import {
   isDetachedAudio,
+  isDubClip,
   MIN_CLIP_MS,
   type CaptionClip,
   type FilmClip,
@@ -116,6 +117,31 @@ export function captionsFollowing(
       final.some((other) => other.id !== moved.id && overlaps(moved, other)),
   )
   return clash ? { refusal: 'overlap' } : { starts, removed }
+}
+
+/**
+ * 对比一步编辑前后的片段（`before`、`after`，都含字幕和所有语言的配音片段），配音片段跟着它配的那句字幕走：
+ * 字幕改了开始（跟着视频片段挪，或者自己被挪），它的各语言配音挪同样的时间差，早于 0 的收在 0；这一步里自己
+ * 也改了开始的配音片段按它自己的。字幕删掉了，它的配音一起删。答复挪到的新起点和要删的配音片段。
+ */
+export function dubsFollowing(
+  before: readonly FilmClip[],
+  after: readonly FilmClip[],
+): { starts: ReadonlyMap<string, number>; removed: readonly string[] } {
+  const was = new Map(before.map((clip) => [clip.id, clip]))
+  const now = new Map(after.map((clip) => [clip.id, clip]))
+  const starts = new Map<string, number>()
+  const removed: string[] = []
+  for (const clip of after) {
+    if (!isDubClip(clip)) continue
+    const old = was.get(clip.dub.caption)
+    if (old?.kind !== 'caption') continue
+    const current = now.get(clip.dub.caption)
+    if (current === undefined) removed.push(clip.id)
+    else if (current.start !== old.start && was.get(clip.id)?.start === clip.start)
+      starts.set(clip.id, Math.max(0, clip.start + current.start - old.start))
+  }
+  return { starts, removed }
 }
 
 /**

@@ -2,6 +2,7 @@ import { queryOptions, useQuery, type QueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ApiError, apiFetch, UserFacingError } from '@/shared/api/client'
 import type {
+  DubbingIn,
   FinalCutPreviewOut,
   FinalCutTranslationsIn,
   FinalCutTranslationsOut,
@@ -60,6 +61,8 @@ export const wholeFilmQueryKeys = {
     [...storyboardQueryKeys.conversation(conversationId), 'audio'] as const,
   subtitles: (conversationId: string, sourceJobId: string) =>
     [...storyboardQueryKeys.conversation(conversationId), 'subtitle', sourceJobId] as const,
+  dubbings: (conversationId: string, sourceJobId: string) =>
+    [...storyboardQueryKeys.conversation(conversationId), 'dubbing', sourceJobId] as const,
   preview: (conversationId: string) => ['whole-film', 'preview', conversationId] as const,
   task: (conversationId: string) => ['whole-film', 'task', conversationId] as const,
 }
@@ -361,6 +364,29 @@ export const submitSubtitles = async (body: SubtitleIn): Promise<GenerationJob> 
     await apiFetch('/generations/subtitles', zGenerationEnvelope, {
       body,
       fallbackErrorMessage: '字幕识别提交失败',
+      method: 'POST',
+    })
+  ).generation
+
+/** 一条素材片（`sourceJobId`）的配音记录，新的在前；有没配完的就隔一会儿再读。 */
+export const dubbingJobsQuery = (conversationId: string, sourceJobId: string) =>
+  queryOptions({
+    queryKey: wholeFilmQueryKeys.dubbings(conversationId, sourceJobId),
+    queryFn: ({ signal }) =>
+      readAllGenerations(
+        { conversationId, kind: 'dubbing', sourceJobId },
+        signal,
+        '读取配音记录失败',
+      ),
+    refetchInterval: ({ state }) => generationsRefetchInterval(state.data ?? []),
+  })
+
+/** 发起给一条素材片配一种语言（付费的上游服务），答复排队中的配音记录。 */
+export const submitDubbing = async (body: DubbingIn): Promise<GenerationJob> =>
+  (
+    await apiFetch('/generations/dubbings', zGenerationEnvelope, {
+      body,
+      fallbackErrorMessage: '配音生成提交失败',
       method: 'POST',
     })
   ).generation

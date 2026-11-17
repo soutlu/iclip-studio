@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import type {
+  DubbedLine,
   FinalCutTranslationsOut,
   ImageGenerationIn,
   MusicIn,
@@ -9,7 +10,7 @@ import type {
   VideoGenerationIn,
   VideoShotIn,
 } from '@/shared/api/generated/types.gen'
-import { zFinalCutTranslationsIn, zSubtitleIn } from '@/shared/api/generated/zod.gen'
+import { zDubbingIn, zFinalCutTranslationsIn, zSubtitleIn } from '@/shared/api/generated/zod.gen'
 // ?no-inline 阻止 Vite 将小体积媒体资源内联为 data URI。
 import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
 import sampleLongUrl from '../fixtures/sample-video-long.mp4?no-inline'
@@ -203,8 +204,9 @@ type MockJob = {
   createdAt: string
   errorMessage?: string
   id: string
-  kind?: 'video' | 'image' | 'subtitle' | 'audio'
+  kind?: 'video' | 'image' | 'subtitle' | 'dubbing' | 'audio'
   sentences?: SubtitleSentence[]
+  dubbedLines?: DubbedLine[]
   operation?: 'generate' | 'compose' | 'upload'
   outputUrl?: string
   prompt: string
@@ -242,6 +244,7 @@ const job = (spec: MockJob) => ({
   finishedAt: spec.status === 'completed' || spec.status === 'failed' ? spec.createdAt : null,
   durationMs: spec.durationMs ?? null,
   sentences: spec.sentences ?? null,
+  dubbedLines: spec.dubbedLines ?? null,
   clipStage: null,
   watermarkOutputUrl: spec.watermarkOutputUrl ?? null,
 })
@@ -1175,6 +1178,35 @@ export const workspaceHandlers = [
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
 
+  // 配音：几秒后配好，产物是和素材片等长的一条音轨（地址由音频处理器答复），每句都原速放下
+  http.post('*/api/generations/dubbings', async ({ request }) => {
+    const parsed = zDubbingIn.safeParse(await request.json())
+    if (!parsed.success) {
+      return HttpResponse.json({ detail: '配音参数无效' }, { status: 422 })
+    }
+    const body = parsed.data
+    const source = findJob(body.conversationId, body.sourceJobId)
+    if (source === undefined) {
+      return HttpResponse.json({ detail: '来源不存在或不在这段对话里' }, { status: 404 })
+    }
+    if (!isFinishedTake(source)) {
+      return HttpResponse.json({ detail: '只能给素材片配音：已完成的出片或合成' }, { status: 422 })
+    }
+    const created = acceptGeneration({
+      kind: 'dubbing',
+      prompt: '',
+      request: { locale: body.locale, lines: body.lines, reference: body.reference },
+      conversationId: body.conversationId ?? null,
+      taskId: body.taskId ?? null,
+      metadata: body.metadata ?? null,
+      sourceJobId: source.id,
+      outputUrl: `${MOCK_MUSIC_URL}?dubbing=${crypto.randomUUID()}`,
+      durationMs: source.durationMs ?? VIDEO_MS,
+      dubbedLines: body.lines.map((_, index) => ({ index, speed: 1, trimmed: false })),
+    })
+    return HttpResponse.json({ generation: created }, { status: 202 })
+  }),
+
   http.post('*/api/generations/music', async ({ request }) => {
     const body = (await request.json()) as MusicIn
     const created = acceptGeneration({
@@ -1197,7 +1229,7 @@ export const workspaceHandlers = [
 ]
 
 function acceptGeneration(spec: {
-  kind: 'image' | 'video' | 'audio' | 'subtitle'
+  kind: 'image' | 'video' | 'audio' | 'subtitle' | 'dubbing'
   operation?: 'generate' | 'compose'
   prompt: string
   request: Record<string, unknown>
@@ -1214,6 +1246,7 @@ function acceptGeneration(spec: {
   watermarkOutputUrl?: string
   durationMs?: number
   sentences?: SubtitleSentence[]
+  dubbedLines?: DubbedLine[]
 }) {
   const created = job({
     createdAt: new Date().toISOString(),
@@ -1240,6 +1273,7 @@ function acceptGeneration(spec: {
     created.watermarkOutputUrl = spec.watermarkOutputUrl ?? null
     created.durationMs = spec.durationMs ?? null
     created.sentences = spec.sentences ?? null
+    created.dubbedLines = spec.dubbedLines ?? null
     created.finishedAt = new Date().toISOString()
     created.status = 'completed'
     timers.delete(timer)

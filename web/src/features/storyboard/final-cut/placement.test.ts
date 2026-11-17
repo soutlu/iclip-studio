@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { audio, caption, host, video } from '@/testing/final-cut'
-import type { FilmClip } from './composition/film'
+import { isDubClip, type FilmClip } from './composition/film'
 import {
   landingOn,
   musicRowTarget,
   rowHidden,
   namedRows,
   rowOpening,
+  rowOpeningAmong,
   rowsOf,
   targetIn,
   topTrack,
-  voiceRowFor,
+  dubRowFor,
+  originalRowFor,
   type Aim,
   type Row,
   type Zone,
@@ -27,6 +29,9 @@ const shot = video({ id: 'p', start: 0, duration: 3_000, track: 1 })
 const music = audio({ id: 'm', start: 0, duration: 4_000, track: 0 })
 const voice = audio({ id: 'v', start: 1_000, duration: 1_000, track: 1 })
 const mixed = [voice, shot, music, title]
+/** 一句字幕在语言 `locale` 下的配音片段，在声音区第 `track` 行。 */
+const dubbed = (id: string, locale: string, track: number, start: number) =>
+  audio({ id, start, duration: 1_000, track, dub: { locale, caption: id, trimmed: false } })
 
 const layout = (film: readonly FilmClip[]) =>
   rowsOf(film).map((row) => [row.zone, row.track, row.clips.map((clip) => clip.id)])
@@ -82,14 +87,12 @@ describe('行名', () => {
     expect(names([])).toEqual([])
   })
 
-  it('全是分离出来的原声的行叫「人声」，排在配乐行上面；人声行、配乐行各自编号', () => {
+  it('全是分离出来的原声的行叫「原声」，全是配音片段的行叫「配音」，别的叫「配乐」；各自编号', () => {
     const spoken = (id: string, track: number) =>
       audio({ id, start: 0, duration: 1_000, track, link: 'lk-1', syncOrigin: 'lk-1' })
-    expect(names(rowsOf([first, spoken('v1', 0), { ...music, track: 1 }]))).toEqual([
-      '画面 1',
-      '人声',
-      '配乐',
-    ])
+    expect(
+      names(rowsOf([first, dubbed('en-1', 'en', 0, 0), spoken('v1', 1), { ...music, track: 2 }])),
+    ).toEqual(['画面 1', '配音', '原声', '配乐'])
     expect(
       names(
         rowsOf([
@@ -100,15 +103,19 @@ describe('行名', () => {
           { ...voice, track: 3 },
         ]),
       ),
-    ).toEqual(['画面 1', '人声 1', '人声 2', '配乐 1', '配乐 2'])
-    // 分离出来的原声和别的音频混在一行：是配乐行
+    ).toEqual(['画面 1', '原声 1', '原声 2', '配乐 1', '配乐 2'])
+    // 分离出来的原声和别的音频（含配音）混在一行：是配乐行
     expect(names(rowsOf([first, spoken('v1', 0), { ...voice, track: 0, start: 3_000 }]))).toEqual([
+      '画面 1',
+      '配乐',
+    ])
+    expect(names(rowsOf([first, spoken('v1', 0), dubbed('en-1', 'en', 0, 3_000)]))).toEqual([
       '画面 1',
       '配乐',
     ])
   })
 
-  it('分离出来的原声放进第一条这段时间空着的人声行；都占着、或还没有人声行时在声音区最上面新开一行', () => {
+  it('分离出来的原声放进第一条这段时间空着的原声行；都占着、或还没有原声行时在配音行下面（没有配音行就是声音区最上面）新开一行', () => {
     const spoken = (id: string, track: number, start: number) =>
       audio({ id, start, duration: 1_000, track, link: id, syncOrigin: id })
     const film = [
@@ -117,12 +124,13 @@ describe('行名', () => {
       spoken('v2', 1, 2_000),
       { ...music, track: 2, start: 3_000 },
     ]
-    // 第一条人声行 0–1 秒占着，第二条空着
-    expect(voiceRowFor(film, 500, 1_000)).toEqual({ track: 1, renumber: new Map() })
-    // 第一条人声行 2–3 秒空着
-    expect(voiceRowFor(film, 2_000, 1_000)).toEqual({ track: 0, renumber: new Map() })
-    // 两条人声行在 0.5–2.5 秒都占着：最上面新开一行，原来的声音行往下排一号
-    expect(voiceRowFor(film, 500, 2_000)).toEqual({
+    const span = (start: number, duration: number) => ({ start, duration })
+    // 第一条原声行 0–1 秒占着，第二条空着
+    expect(originalRowFor(film, span(500, 1_000))).toEqual({ track: 1, renumber: new Map() })
+    // 第一条原声行 2–3 秒空着
+    expect(originalRowFor(film, span(2_000, 1_000))).toEqual({ track: 0, renumber: new Map() })
+    // 两条原声行在 0.5–2.5 秒都占着：最上面新开一行，原来的声音行往下排一号
+    expect(originalRowFor(film, span(500, 2_000))).toEqual({
       track: 0,
       renumber: new Map([
         ['v1', 1],
@@ -131,19 +139,85 @@ describe('行名', () => {
       ]),
     })
     // 只有配乐行，空着也不进去：在它上面新开一行
-    expect(voiceRowFor([first, music], 5_000, 1_000)).toEqual({
+    expect(originalRowFor([first, music], span(5_000, 1_000))).toEqual({
       track: 0,
       renumber: new Map([['m', 1]]),
     })
     // 还没有声音行：新开第一行
-    expect(voiceRowFor([first], 0, 1_000)).toEqual({ track: 0, renumber: new Map() })
+    expect(originalRowFor([first], span(0, 1_000))).toEqual({ track: 0, renumber: new Map() })
+    // 有配音行：配音行空着也不进去，在它下面新开一行
+    expect(
+      originalRowFor(
+        [first, dubbed('de-1', 'de', 0, 5_000), { ...music, track: 1 }],
+        span(0, 1_000),
+      ),
+    ).toEqual({ track: 1, renumber: new Map([['m', 2]]) })
   })
 
-  it('配乐拖进声音区：对着人声行或在人声行之间、上面新开一行时，改成在最后一条人声行下面新开一行', () => {
+  it('配音片段放进第一条这几段时间都空着的配音行，占没占着只看显示着的那种语言；没有时在声音区最上面新开一行', () => {
+    const film = [
+      first,
+      dubbed('en-1', 'en', 0, 0),
+      dubbed('de-1', 'de', 0, 2_000),
+      { ...music, track: 1 },
+    ]
+    const english = (clip: FilmClip) => !isDubClip(clip) || clip.dub.locale === 'en'
+    // 2–3 秒只有德语的配音：显示英语时这一行空着
+    expect(dubRowFor(film, [{ start: 2_000, duration: 1_000 }], english)).toEqual({
+      track: 0,
+      renumber: new Map(),
+    })
+    // 0–1 秒有英语的配音：最上面新开一行，所有语言的配音一起往下排
+    expect(dubRowFor(film, [{ start: 500, duration: 1_000 }], english)).toEqual({
+      track: 0,
+      renumber: new Map([
+        ['en-1', 1],
+        ['de-1', 1],
+        ['m', 2],
+      ]),
+    })
+    // 原声行、配乐行空着也不进去：在它们上面新开一行
+    const spoken = audio({ id: 'v1', start: 5_000, duration: 1_000, track: 0, syncOrigin: 'v1' })
+    expect(dubRowFor([first, spoken], [{ start: 0, duration: 1_000 }], english)).toEqual({
+      track: 0,
+      renumber: new Map([['v1', 1]]),
+    })
+  })
+
+  it('别的语言的配音不显示时新开一行：没显示的配音行也跟着重新编号，不和新行、别的行撞号', () => {
+    const source = (clip: FilmClip) => !isDubClip(clip)
+    const english = (clip: FilmClip) => !isDubClip(clip) || clip.dub.locale === 'en'
+    // 只有 English 的配音在声音区第 0 行：原文下在声音区最下面新开一行（加配乐），排在配音行后面
+    expect(rowOpeningAmong([first, dubbed('en-1', 'en', 0, 0)], source, 'audio', 1)).toEqual({
+      track: 1,
+      renumber: new Map(),
+    })
+    // 配音第 0 行、配乐第 1 行：原文下在配乐上面新开一行，配音行不动、配乐往下排
+    const film = [first, dubbed('en-1', 'en', 0, 0), { ...music, track: 1 }]
+    expect(rowOpeningAmong(film, source, 'audio', 1)).toEqual({
+      track: 1,
+      renumber: new Map([['m', 2]]),
+    })
+    // English 下看得见配音行：在它上面新开一行，配音、配乐都往下排
+    expect(rowOpeningAmong(film, english, 'audio', 1)).toEqual({
+      track: 0,
+      renumber: new Map([
+        ['en-1', 1],
+        ['m', 2],
+      ]),
+    })
+  })
+
+  it('配乐拖进声音区：对着原声行、配音行或在它们之间、上面新开一行时，改成在它们最后一条下面新开一行', () => {
     const spoken = (id: string, track: number) =>
       audio({ id, start: 0, duration: 1_000, track, syncOrigin: id })
-    // 画面 1、人声 1、人声 2、配乐（时间线上第 0–3 行）
-    const rows = rowsOf([first, spoken('v1', 0), spoken('v2', 1), { ...music, track: 2 }])
+    // 画面 1、配音、原声、配乐（时间线上第 0–3 行）
+    const rows = rowsOf([
+      first,
+      dubbed('en-1', 'en', 0, 0),
+      spoken('v2', 1),
+      { ...music, track: 2 },
+    ])
     const below = { zone: 'audio', insertAt: 3 } as const
     expect(musicRowTarget(rows, { zone: 'audio', track: 0 })).toEqual(below)
     expect(musicRowTarget(rows, { zone: 'audio', track: 1 })).toEqual(below)
@@ -159,7 +233,7 @@ describe('行名', () => {
       zone: 'visual',
       track: 0,
     })
-    // 没有人声行时不改
+    // 没有原声行、配音行时不改
     expect(musicRowTarget(rowsOf([first, music]), { zone: 'audio', insertAt: 1 })).toEqual({
       zone: 'audio',
       insertAt: 1,

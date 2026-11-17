@@ -5,6 +5,7 @@ import {
   readLocaleTable,
   rootDeclarations,
   withLocalizedHosts,
+  withLocalizedVoices,
 } from './locale'
 
 const attr = (value: unknown) => JSON.stringify(value).replaceAll('"', '&quot;')
@@ -208,5 +209,66 @@ describe('把工程变成一种语言的版本', () => {
       ok: false,
       message: wrongValue('cap_a1', '文字'),
     })
+  })
+})
+
+describe('按语言放人声', () => {
+  const VIDEO =
+    '<video id="c1" class="clip picture" data-start="0" data-duration="4" src="https://m.test/a.mp4" data-has-audio="true" playsinline></video>'
+  const MUSIC =
+    '<audio id="m1" class="clip audio" data-start="0" data-duration="8" src="https://m.test/music.mp3"></audio>'
+  const DETACHED =
+    '<audio id="v1" class="clip audio" data-start="0" data-duration="4" src="https://m.test/b.mp4" data-sync-origin="pair-1"></audio>'
+  const dub = (locale: string, id: string) =>
+    `<audio id="${id}" class="clip audio" data-start="0.3" data-duration="1.7" src="https://m.test/dub-${locale}.m4a" data-media-start="0.3" data-locale="${locale}" data-dub-of="cap-a1"></audio>`
+  const film = (modes: string | null) =>
+    `<!doctype html>\n<html>\n<head></head>\n<body>\n<div id="film" data-composition-id="film"${modes === null ? '' : ` data-voice-modes="${attr(JSON.parse(modes))}"`}>\n` +
+    `  ${VIDEO}\n  ${MUSIC}\n  ${DETACHED}\n  ${dub('en', 'd-en')}\n  ${dub('de', 'd-de')}\n</div>\n</body>\n</html>\n`
+  const without = (html: string, ...parts: string[]) =>
+    parts.reduce((left, part) => left.replace(`\n  ${part}`, ''), html)
+
+  it('原文：配音片段都去掉，原声照常，别的字一个不动', () => {
+    const html = film('{"en":"dub"}')
+    expect(withLocalizedVoices(html, null)).toBe(
+      without(html, dub('en', 'd-en'), dub('de', 'd-de')),
+    )
+  })
+
+  it('AI 配音：只留这种语言的配音，视频关掉原声、分离出来的原声去掉，配乐不动', () => {
+    const html = film('{"en":"dub"}')
+    expect(withLocalizedVoices(html, 'en')).toBe(
+      without(html, DETACHED, dub('de', 'd-de')).replace(
+        ' data-has-audio="true" playsinline>',
+        ' playsinline muted="true">',
+      ),
+    )
+  })
+
+  it('保留原声：这种语言的配音也去掉，原声照常', () => {
+    const html = film('{"en":"dub"}')
+    expect(withLocalizedVoices(html, 'de')).toBe(
+      without(html, dub('en', 'd-en'), dub('de', 'd-de')),
+    )
+    expect(withLocalizedVoices(film(null), 'en')).toBe(
+      without(film(null), dub('en', 'd-en'), dub('de', 'd-de')),
+    )
+  })
+
+  it('按语言导出用上它：原文去掉配音，English 用 English 的配音', () => {
+    const main = film('{"en":"dub"}')
+    const project = [
+      { path: 'index.html', content: main },
+      { path: 'locales/en.json', content: '{}' },
+    ]
+    const source = localizeProject(project, null)
+    expect(source).toMatchObject({ ok: true, value: { variables: null, dropped: 0 } })
+    expect(source.ok && source.value.files[0]?.content).toBe(
+      without(main, dub('en', 'd-en'), dub('de', 'd-de')),
+    )
+    const english = localizeProject(project, 'en')
+    const content = english.ok ? (english.value.files[0]?.content ?? '') : ''
+    expect(content).toContain(dub('en', 'd-en'))
+    expect(content).not.toContain('d-de')
+    expect(content).not.toContain('data-sync-origin')
   })
 })

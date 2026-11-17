@@ -72,7 +72,7 @@ describe('预览套上一种语言的值', () => {
       const html = previewDocument(
         bound({ title: '早秋亚麻', brand: 'AUTUMN' }),
         'https://preview.test/files/',
-        { txt_t1_title: 'Autumn Linen' },
+        { code: 'en', values: { txt_t1_title: 'Autumn Linen' } },
       )
       expect(valuesOf(html, 't1')).toEqual({
         title: 'Autumn Linen',
@@ -94,7 +94,7 @@ describe('预览套上一种语言的值', () => {
       const html = previewDocument(
         english({ title: 'Autumn Linen', brand: 'AUTUMN' }),
         'https://preview.test/files/',
-        { txt_t1_title: '早秋亚麻' },
+        { code: 'zh', values: { txt_t1_title: '早秋亚麻' } },
       )
       expect(valuesOf(html, 't1')).toEqual({ title: '早秋亚麻', sub: 'Easy fit', brand: 'AUTUMN' })
       expect(injected(html)).toEqual({ txt_t1_title: '早秋亚麻' })
@@ -113,7 +113,8 @@ describe('预览套上一种语言的值', () => {
 
   it('预览文档：脚本排在 <head> 最前面，基准地址和媒体加载方式照旧', () => {
     const html = previewDocument(film(['cap_a1']), 'https://preview.test/files/', {
-      cap_a1: 'Hello',
+      code: 'en',
+      values: { cap_a1: 'Hello' },
     })
     expect(html).toMatch(
       /<head>\n<script data-hf-preview-variables>[^\n]*<\/script>\n<base href="https:\/\/preview\.test\/files\/">/,
@@ -121,6 +122,47 @@ describe('预览套上一种语言的值', () => {
     expect(previewDocument(film(['cap_a1']), 'https://preview.test/files/')).not.toContain(
       'data-hf-preview-variables',
     )
+  })
+})
+
+describe('预览按语言放人声', () => {
+  const root = (modes: string) =>
+    `<!doctype html>\n<html>\n<head>\n<meta charset="utf-8">\n</head>\n<body>\n` +
+    `<div id="film" data-composition-id="film" data-voice-modes='${modes}'>\n` +
+    `<video id="v1" class="clip picture" data-start="0" data-duration="4" src="a.mp4" data-has-audio="true" preload="auto"></video>\n` +
+    `<audio id="o1" class="clip audio" data-start="0" data-duration="4" src="b.mp4" data-sync-origin="pair"></audio>\n` +
+    `<audio id="m1" class="clip audio" data-start="0" data-duration="4" src="music.mp3"></audio>\n` +
+    `<audio id="en1" class="clip audio" data-start="0.5" data-duration="1" src="en.m4a" data-locale="en" data-dub-of="cap-a1"></audio>\n` +
+    `<audio id="de1" class="clip audio" data-start="0.5" data-duration="1" src="de.m4a" data-locale="de" data-dub-of="cap-a1"></audio>\n` +
+    `</div>\n</body>\n</html>\n`
+  const html = root('{"en":"dub"}')
+  const page = (locale: Parameters<typeof previewDocument>[2]) =>
+    new DOMParser().parseFromString(
+      previewDocument(html, 'https://preview.test/', locale),
+      'text/html',
+    )
+  const sounds = (document: Document) =>
+    [...document.querySelectorAll('video, audio')].map((element) => element.id)
+
+  it('原文：配音片段都不在，原声照常', () => {
+    const document = page(undefined)
+    expect(sounds(document)).toEqual(['v1', 'o1', 'm1'])
+    expect(document.getElementById('v1')?.hasAttribute('muted')).toBe(false)
+  })
+
+  it('AI 配音的语言：只有这种语言的配音，视频关掉原声、分离出来的原声不在，配乐照常；配音按预览的方式加载', () => {
+    const document = page({ code: 'en', values: {} })
+    expect(sounds(document)).toEqual(['v1', 'm1', 'en1'])
+    const video = document.getElementById('v1')
+    expect(video?.getAttribute('muted')).toBe('true')
+    expect(video?.hasAttribute('data-has-audio')).toBe(false)
+    expect(document.getElementById('en1')?.getAttribute('crossorigin')).toBe('anonymous')
+  })
+
+  it('保留原声的语言：配音片段都不在，原声照常', () => {
+    const document = page({ code: 'de', values: {} })
+    expect(sounds(document)).toEqual(['v1', 'o1', 'm1'])
+    expect(document.getElementById('v1')?.hasAttribute('muted')).toBe(false)
   })
 })
 

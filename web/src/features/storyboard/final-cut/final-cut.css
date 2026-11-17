@@ -372,6 +372,56 @@
   margin-top: 0;
 }
 
+/* 其它语言下的「人声」一行：名字在左，「保留原声 / AI 配音」两个胶囊，有配音时右边是「重新生成」 */
+.wf-captions-voice {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 12px 0;
+}
+
+.wf-captions-voice-label {
+  flex: none;
+  margin-right: 2px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+}
+
+.wf-captions-voice-mode,
+.wf-captions-voice-redo {
+  display: inline-flex;
+  height: 24px;
+  flex: none;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+}
+
+.wf-captions-voice-mode[aria-pressed='true'] {
+  background: var(--color-on-surface);
+  color: var(--color-surface);
+  font-weight: 600;
+}
+
+.wf-captions-voice-redo {
+  margin-left: auto;
+}
+
+.wf-captions-voice-mode[aria-disabled='true']:not([aria-pressed='true']),
+.wf-captions-voice-redo[aria-disabled='true'] {
+  color: var(--state-disabled-content);
+}
+
+.wf-captions-voice + .wf-captions-actions,
+.wf-captions-voice + .wf-captions-note {
+  margin-top: 8px;
+}
+
 .wf-captions-views + .wf-captions-actions,
 .wf-captions-views + .wf-captions-note,
 .wf-captions-views + .wf-caption-list {

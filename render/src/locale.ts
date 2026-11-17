@@ -4,13 +4,18 @@ import {
   type CompositionVariable,
   type CompositionVariableType,
 } from '@hyperframes/core/variables'
-import { parse } from 'parse5'
+import { parse, type DefaultTreeAdapterTypes } from 'parse5'
 import { variableValuesOf } from '../../web/src/features/storyboard/final-cut/composition/film'
 import {
   LOCALE_BINDINGS,
   localeBindingsOf,
   localizedHostValues,
 } from '../../web/src/features/storyboard/final-cut/composition/locale-text'
+import {
+  localizedVoices,
+  VOICE_MODES,
+  voiceModesOf,
+} from '../../web/src/features/storyboard/final-cut/composition/voices'
 import {
   applyEdits,
   attributeText,
@@ -25,7 +30,7 @@ import type { ExportLocale } from './request'
  * 按语言导出：final-cut 的原文是视频自带的语言（主文件根上变量的默认值，没有值表），能加的每种语言一份值表
  * `locales/<语言>.json`（变量 id → 这种语言的值）。导出一种语言时规则和编辑器预览这种语言一样：字幕的字是主文件
  * 根上的变量，值交给渲染器；贴片、场景里随语言的字段由 `localizedHostValues`（和预览同一个函数）并进宿主的
- * `data-variable-values`。
+ * `data-variable-values`；人声由 `localizedVoices`（也和预览同一个函数）定，原文也要用它去掉配音片段。
  */
 
 /** 成功时的结果，或说明哪里不对的一句话（会给用户看，不带值表里的字）。 */
@@ -159,21 +164,91 @@ export function withLocalizedHosts(
   return applyEdits(html, edits)
 }
 
-/** 按 `locale` 导出时交给渲染的：改好宿主取值的工程文件、给渲染器的变量值，和值表里去掉了几条没声明的。 */
+type Element = DefaultTreeAdapterTypes.Element
+
+/** 去掉 `[from, to)` 这段源码（一个元素或属性）时连同它前面的空白一起去掉。 */
+const withLeadingSpace = (html: string, from: number, to: number) => {
+  let start = from
+  while (start > 0 && /\s/.test(html[start - 1] ?? '')) start -= 1
+  return { from: start, to }
+}
+
+/**
+ * 主文件按导出的语言 `locale`（原文是 null）放人声：规则见 `localizedVoices`（和预览同一个函数），别的语言的
+ * 配音片段去掉，AI 配音时原声关掉。只改要改的元素，别的字一个不动。
+ */
+export function withLocalizedVoices(html: string, locale: ExportLocale | null): string {
+  const root = [...elementsOf(parse(html, { sourceCodeLocationInfo: true }))].find((element) =>
+    element.attrs.some((attr) => attr.name === 'data-composition-id'),
+  )
+  if (root === undefined) return html
+  const children = root.childNodes.filter((node): node is Element => 'tagName' in node)
+  const changes = localizedVoices(
+    children.map((child) => ({
+      tag: child.tagName,
+      attributes: Object.fromEntries(child.attrs.map((attr) => [attr.name, attr.value])),
+    })),
+    voiceModesOf(root.attrs.find((attr) => attr.name === VOICE_MODES)?.value),
+    locale,
+  )
+  const edits: SourceEdit[] = []
+  for (const change of changes) {
+    const child = children[change.index]
+    const location = child?.sourceCodeLocation
+    if (child === undefined || location?.startTag === undefined) continue
+    if (change.remove) {
+      edits.push({ text: '', ...withLeadingSpace(html, location.startOffset, location.endOffset) })
+      continue
+    }
+    // 新加的属性写在开始标签的结尾：去掉的属性都在它前面，按位置倒着改时不会挪动它们
+    const end = location.startTag.endOffset - 1
+    const after = html[end - 1] === '/' ? end - 1 : end
+    for (const [name, value] of Object.entries(change.attributes)) {
+      const at = location.attrs?.[name]
+      if (value === null) {
+        if (at !== undefined)
+          edits.push({ text: '', ...withLeadingSpace(html, at.startOffset, at.endOffset) })
+      } else if (at === undefined)
+        edits.push({ from: after, to: after, text: ` ${attributeText(name, value)}` })
+      else edits.push({ from: at.startOffset, to: at.endOffset, text: attributeText(name, value) })
+    }
+  }
+  return applyEdits(html, edits)
+}
+
+/**
+ * 按 `locale` 导出时交给渲染的：改好主文件的工程文件、给渲染器的变量值（原文时是 null），和值表里去掉了几条
+ * 没声明的。
+ */
 export interface LocalizedProject {
   files: ProjectFile[]
-  variables: Record<string, unknown>
+  variables: Record<string, unknown> | null
   dropped: number
 }
 
-/** 把工程变成 `locale` 的版本：读值表、按主文件根上的声明校验、改宿主取值。工程要有主文件。 */
+const withMain = (files: readonly ProjectFile[], content: string): ProjectFile[] =>
+  files.map((file) => (file.path === MAIN_FILE ? { path: file.path, content } : file))
+
+/**
+ * 把工程变成 `locale`（原文是 null）的版本：主文件按这种语言放人声（见 `withLocalizedVoices`）；原文以外的语言
+ * 还要读值表、按主文件根上的声明校验、改宿主取值。工程要有主文件。
+ */
 export function localizeProject(
   files: readonly ProjectFile[],
-  locale: ExportLocale,
+  locale: ExportLocale | null,
 ): Checked<LocalizedProject> {
+  const main = files.find((file) => file.path === MAIN_FILE)?.content ?? ''
+  if (locale === null)
+    return {
+      ok: true,
+      value: {
+        files: withMain(files, withLocalizedVoices(main, null)),
+        variables: null,
+        dropped: 0,
+      },
+    }
   const table = readLocaleTable(files, locale)
   if (!table.ok) return table
-  const main = files.find((file) => file.path === MAIN_FILE)?.content ?? ''
   const declarations = rootDeclarations(main)
   const checked = checkLocaleValues(table.value, declarations)
   if (!checked.ok) return checked
@@ -186,9 +261,7 @@ export function localizeProject(
   return {
     ok: true,
     value: {
-      files: files.map((file) =>
-        file.path === MAIN_FILE ? { path: file.path, content: localizedMain } : file,
-      ),
+      files: withMain(files, withLocalizedVoices(localizedMain, locale)),
       variables: values,
       dropped,
     },
