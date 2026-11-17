@@ -148,7 +148,12 @@ beforeEach(() => {
 
 afterEach(() => previewPages.stop())
 
-type PreviewPlayerElement = HTMLElement & { playbackRate: number; muted: boolean; loop: boolean }
+type PreviewPlayerElement = HTMLElement & {
+  playbackRate: number
+  muted: boolean
+  loop: boolean
+  iframeElement: HTMLIFrameElement
+}
 
 /** 预览页里换上来的那个播放器；新的还在底下加载时也只认已经换上来的。 */
 const previewPlayer = () => {
@@ -1547,9 +1552,14 @@ describe('final-cut 编辑器 · 播放', () => {
     )
     expect(lastLoad().html).not.toContain('/hyperframes/test-fixtures/"')
 
+    // 加的片段直接打进预览里正在播的那一份
     await user.click(await shot(/^生成 B 镜头 1，/))
     await user.keyboard('{Enter}')
-    await waitFor(() => expect(lastLoad().html).toContain(`src="${URL_B}"`))
+    await waitFor(() =>
+      expect(
+        previewPlayer().iframeElement.contentDocument?.querySelector(`video[src="${URL_B}"]`),
+      ).not.toBeNull(),
+    )
     // 这时还没存：工作区里还是打开时的那一份
     expect(mockProjectMain(CONVERSATION)?.version).toBe(stored.version)
   })
@@ -1664,7 +1674,7 @@ describe('final-cut 编辑器 · 播放条设置', () => {
     )
   })
 
-  it('选 2×：素材预览和 final-cut 预览都是 2×，改动 final-cut 换了播放器还是 2×', async () => {
+  it('选 2×：素材预览和 final-cut 预览都是 2×，加进 final-cut 的片段直接打进预览，还是 2×', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     const user = userEvent.setup()
     await openEditor()
@@ -1681,7 +1691,10 @@ describe('final-cut 编辑器 · 播放条设置', () => {
     const old = player()
     await user.keyboard('{Enter}')
     await waitSaved(() => expect(savedClips()).toHaveLength(3))
-    await waitFor(() => expect(player()).not.toBe(old))
+    await waitFor(() =>
+      expect(player().iframeElement.contentDocument?.querySelectorAll('video')).toHaveLength(3),
+    )
+    expect(player()).toBe(old)
     expect(player().playbackRate).toBe(2)
   })
 

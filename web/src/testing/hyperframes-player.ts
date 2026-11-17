@@ -70,7 +70,7 @@ class FakeHyperframesPlayer extends HTMLElement {
     if (name !== 'srcdoc') return
     this.loadedRuntimeSrc = this.getAttribute('runtime-src')
     this.painted = false
-    this.#showVideos(srcdoc ?? '')
+    this.#showFilm(srcdoc ?? '')
     queueMicrotask(() => {
       const page = this.iframeElement.contentDocument
       if (page !== null) this._media.setupFromIframe(page)
@@ -80,37 +80,37 @@ class FakeHyperframesPlayer extends HTMLElement {
     })
   }
 
-  #showVideos(srcdoc: string) {
+  /** 把 final-cut 的 `<body>` 原样放进 iframe（补丁按 `data-hf-id` 找得到元素），视频的加载状态由用例控制。 */
+  #showFilm(srcdoc: string) {
     const page = this.iframeElement.contentDocument
     if (page === null) return
     const parsed = new DOMParser().parseFromString(srcdoc, 'text/html')
     page.body.replaceChildren(
-      ...[...parsed.querySelectorAll('video')].map((source) => {
-        const video = page.importNode(source)
-        const url = source.getAttribute('src') ?? ''
-        Object.defineProperties(video, {
-          networkState: { get: () => (downloadingVideos.has(url) ? NETWORK_LOADING : 0) },
-          readyState: {
-            get: () =>
-              starvedVideos.has(url)
-                ? HTMLMediaElement.HAVE_METADATA
-                : HTMLMediaElement.HAVE_ENOUGH_DATA,
-          },
-          error: { get: () => (failedVideos.has(url) ? { code: 4 } : null) },
-          buffered: {
-            get: () => {
-              const ranges = bufferedVideos.get(url) ?? []
-              return {
-                length: ranges.length,
-                start: (at: number) => ranges[at]?.[0],
-                end: (at: number) => ranges[at]?.[1],
-              }
-            },
-          },
-        })
-        return video
-      }),
+      ...[...parsed.body.childNodes].map((node) => page.importNode(node, true)),
     )
+    for (const video of page.querySelectorAll('video')) {
+      const url = video.getAttribute('src') ?? ''
+      Object.defineProperties(video, {
+        networkState: { get: () => (downloadingVideos.has(url) ? NETWORK_LOADING : 0) },
+        readyState: {
+          get: () =>
+            starvedVideos.has(url)
+              ? HTMLMediaElement.HAVE_METADATA
+              : HTMLMediaElement.HAVE_ENOUGH_DATA,
+        },
+        error: { get: () => (failedVideos.has(url) ? { code: 4 } : null) },
+        buffered: {
+          get: () => {
+            const ranges = bufferedVideos.get(url) ?? []
+            return {
+              length: ranges.length,
+              start: (at: number) => ranges[at]?.[0],
+              end: (at: number) => ranges[at]?.[1],
+            }
+          },
+        },
+      })
+    }
   }
 
   play() {

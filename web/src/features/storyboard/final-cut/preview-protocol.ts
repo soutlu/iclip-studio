@@ -16,10 +16,30 @@ const zSeconds = z.number().nonnegative()
 
 const zSeq = z.number().int().nonnegative()
 
+/** 引擎的一条补丁（JSON Patch 的 add、remove、replace）。 */
+const zPatchOp = z.strictObject({
+  op: z.enum(['add', 'remove', 'replace']),
+  path: z.string(),
+  value: z.unknown().optional(),
+})
+
 /** 编辑器发给预览页的命令。 */
 export const zPreviewCommand = z.discriminatedUnion('type', [
-  /** 换上一份 final-cut：`html` 是整份预览文档，`runtimeSrc` 是预览域名下的运行库地址。 */
-  z.strictObject({ type: z.literal('load'), html: z.string(), runtimeSrc: z.string() }),
+  /**
+   * 换上一份 final-cut：`html` 是整份预览文档，`runtimeSrc` 是预览域名下的运行库地址。`seq` 和 `patch` 的共用一个
+   * 计数，是这是编辑器发给这个预览页的第几份 final-cut。
+   */
+  z.strictObject({
+    type: z.literal('load'),
+    html: z.string(),
+    runtimeSrc: z.string(),
+    seq: zSeq,
+  }),
+  /**
+   * 把主文件一步编辑的补丁直接打进正在播的那一份；`seq` 要正好是预览页上一份的下一个，对不上或打不进去时
+   * 预览页报 `needsLoad`。
+   */
+  z.strictObject({ type: z.literal('patch'), seq: zSeq, patches: z.array(zPatchOp) }),
   /** final-cut 没有内容了：停下，正在加载的那份不再换上来。 */
   z.strictObject({ type: z.literal('unload') }),
   z.strictObject({ type: z.literal('play') }),
@@ -48,8 +68,12 @@ export type PreviewCommand = z.infer<typeof zPreviewCommand>
 export const zPreviewEvent = z.discriminatedUnion('type', [
   /** 预览页确认了应用的来源，开始收命令。 */
   z.strictObject({ type: z.literal('ready') }),
-  /** 一份 final-cut 加载好、换了上来；`duration` 是它的秒数。 */
-  z.strictObject({ type: z.literal('loaded'), duration: zSeconds }),
+  /** 第 `seq` 份 final-cut 加载好、换了上来；`duration` 是它的秒数。 */
+  z.strictObject({ type: z.literal('loaded'), duration: zSeconds, seq: zSeq }),
+  /** 第 `seq` 份的补丁打进了正在播的那一份；`duration` 是打完以后的秒数。 */
+  z.strictObject({ type: z.literal('patched'), duration: zSeconds, seq: zSeq }),
+  /** 第 `seq` 份的补丁没有打（序号对不上、要改的元素不在、打的时候出错），要整份重新加载。 */
+  z.strictObject({ type: z.literal('needsLoad'), seq: zSeq }),
   /**
    * 播放到 final-cut 的第 `ms` 毫秒；`seq` 是报这个时刻时预览页处理到的那次跳转。编辑器跳转时自己先把播放头
    * 放过去，跳转之前报出、还在路上的时刻要丢掉，不然播放头会先跳回去再过来。

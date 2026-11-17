@@ -13,8 +13,10 @@ import {
   type FakeParentMedia,
 } from '@/testing/hyperframes-player'
 import { server } from '@/testing/mocks/server'
-import { bootPreviewPage, createPreviewPage } from './preview-page'
+import { bootPreviewPage, createPreviewPage, type PreviewPage } from './preview-page'
 import type { PreviewCommand, PreviewEvent } from './preview-protocol'
+
+type PatchCommand = Extract<PreviewCommand, { type: 'patch' }>
 
 const RUNTIME = 'https://preview.example.com/hyperframes/v1/vendor/runtime.js'
 
@@ -42,6 +44,8 @@ type Player = HTMLElement & {
 }
 
 const mounts: HTMLElement[] = []
+// 用例结束时还在加载的那一份不再换上来
+const pages: PreviewPage[] = []
 
 const newMount = () => {
   const mount = document.createElement('div')
@@ -55,6 +59,7 @@ const createPage = () => {
   const mount = newMount()
   const sent: PreviewEvent[] = []
   const page = createPreviewPage(mount, (event) => sent.push(event))
+  pages.push(page)
   const playerOf = () => {
     const player = mount.querySelector('hyperframes-player')
     if (player === null) throw new Error('没有播放器')
@@ -65,8 +70,12 @@ const createPage = () => {
   const buffering = () => of('buffering').map((event) => event.buffering)
   const playing = () => of('playing').map((event) => event.playing)
   const send = (command: PreviewCommand) => page.handle(command)
-  const load = (html: string) => send({ type: 'load', html, runtimeSrc: RUNTIME })
-  return { page, mount, sent, playerOf, of, buffering, playing, send, load }
+  // 和编辑器一样：整份加载、打补丁共用一个序号
+  let seq = 0
+  const load = (html: string) => send({ type: 'load', html, runtimeSrc: RUNTIME, seq: (seq += 1) })
+  const patch = (patches: PatchCommand['patches'], at = (seq += 1)) =>
+    send({ type: 'patch', seq: at, patches })
+  return { page, mount, sent, playerOf, of, buffering, playing, send, load, patch }
 }
 
 const firstLoaded = (opened: ReturnType<typeof createPage>) =>
@@ -94,6 +103,7 @@ afterEach(() => {
   downloadingVideos.clear()
   bufferedVideos.clear()
   clearFailedVideos()
+  for (const page of pages.splice(0)) page.dispose()
   for (const mount of mounts.splice(0)) mount.remove()
 })
 
@@ -138,9 +148,11 @@ describe('运行库、尺寸、倍速', () => {
     expect(playerOf()).toMatchObject({ playbackRate: 2, muted: true, loop: true })
   })
 
-  it('换上来时报出 final-cut 的秒数', async () => {
+  it('换上来时报出 final-cut 的秒数和它是第几份', async () => {
     const { of } = await openPage()
-    expect(of('loaded')).toEqual([{ type: 'loaded', duration: expect.any(Number) as number }])
+    expect(of('loaded')).toEqual([
+      { type: 'loaded', duration: expect.any(Number) as number, seq: 1 },
+    ])
   })
 })
 
@@ -357,6 +369,176 @@ describe('第一份 final-cut 装好之前', () => {
     await new Promise((resolve) => setTimeout(resolve, 400))
     expect(opened.of('loaded')).toEqual([])
     expect(opened.mount.querySelector('hyperframes-player')).toBeNull()
+  })
+})
+
+describe('一步编辑的补丁直接打进正在播的那一份', () => {
+  // 编辑器存出的主文件里每个元素都写着 data-hf-id
+  const stage = (clips: string) =>
+    '<!doctype html><html><head></head><body>' +
+    `<div id="film" data-hf-id="film" data-composition-id="film" data-start="0" data-duration="4">${clips}</div>` +
+    '</body></html>'
+  const CLIPS =
+    `<video id="a" data-hf-id="a" src="${FIRST}" data-start="0" data-duration="2"></video>` +
+    `<video id="b" data-hf-id="b" src="${SECOND}" data-start="2" data-duration="2"></video>`
+
+  const openLive = async () => {
+    const opened = await openPage(stage(CLIPS))
+    const inPlayer = (id: string) => {
+      const element = opened.playerOf().iframeElement.contentDocument?.getElementById(id)
+      if (element === null || element === undefined) throw new Error(`预览里没有 ${id}`)
+      return element as HTMLMediaElement
+    }
+    return { ...opened, inPlayer }
+  }
+
+  it('不换播放器，补丁改到播放器里的那一份上，报出打完的秒数', async () => {
+    const { of, inPlayer, patch, playerOf } = await openLive()
+    const player = playerOf()
+    patch([
+      { op: 'replace', path: '/elements/b/timing/start', value: 3 },
+      { op: 'add', path: '/elements/a/attributes/data-hidden', value: '' },
+    ])
+    expect(playerOf()).toBe(player)
+    expect(inPlayer('b')).toHaveAttribute('data-start', '3')
+    expect(inPlayer('a')).toHaveAttribute('data-hidden', '')
+    expect(of('patched')).toEqual([{ type: 'patched', duration: player.duration, seq: 2 }])
+    expect(of('needsLoad')).toEqual([])
+
+    // 下一步接着打，删掉的也删掉
+    patch([{ op: 'remove', path: '/elements/a' }])
+    expect(playerOf().iframeElement.contentDocument?.getElementById('a')).toBeNull()
+    expect(of('patched').map((event) => event.seq)).toEqual([2, 3])
+  })
+
+  it('总长改长：先让运行库把时间线加长（那时根上还是原来的总长），再打补丁', async () => {
+    const { inPlayer, patch, playerOf } = await openLive()
+    const page = playerOf().iframeElement.contentWindow
+    if (page === null) throw new Error('预览里没有窗口')
+    const received: { data: unknown; rootDuration: string | null }[] = []
+    page.addEventListener('message', (event) => {
+      received.push({
+        data: event.data as unknown,
+        rootDuration: inPlayer('film').getAttribute('data-duration'),
+      })
+    })
+    patch([
+      { op: 'replace', path: '/elements/b/timing/start', value: 6 },
+      { op: 'replace', path: '/metadata/duration', value: 8 },
+    ])
+    expect(received).toEqual([
+      {
+        data: {
+          source: 'hf-parent',
+          type: 'control',
+          action: 'set-root-duration',
+          durationSeconds: 8,
+        },
+        rootDuration: '4',
+      },
+    ])
+    expect(inPlayer('film')).toHaveAttribute('data-duration', '8')
+  })
+
+  it('停着时打完原地跳一下让画面重画；在放时不跳', async () => {
+    const { patch, playerOf, send } = await openLive()
+    playerOf().seek(1.5)
+    const seek = vi.spyOn(playerOf(), 'seek')
+    patch([{ op: 'replace', path: '/elements/b/timing/start', value: 3 }])
+    expect(seek).toHaveBeenCalledExactlyOnceWith(1.5)
+
+    send({ type: 'play' })
+    seek.mockClear()
+    patch([{ op: 'replace', path: '/elements/b/timing/start', value: 2.5 }])
+    expect(seek).not.toHaveBeenCalled()
+    expect(playerOf().paused).toBe(false)
+  })
+
+  it('加进来的视频、音频照预览的规则加载，预览静音时跟着静音', async () => {
+    const { inPlayer, patch, send } = await openLive()
+    send({ type: 'playback', rate: 1, muted: true, loop: false })
+    patch([
+      {
+        op: 'add',
+        path: '/elements/c',
+        value: {
+          html: `<video id="c" data-hf-id="c" src="${SECOND}" data-start="4" data-duration="1" preload="auto"></video>`,
+          parentId: 'film',
+          siblingIndex: 0,
+        },
+      },
+      {
+        op: 'add',
+        path: '/elements/d',
+        value: {
+          html: '<audio id="d" data-hf-id="d" src="https://oss/d.m4a" data-start="0" data-duration="4"></audio>',
+          parentId: 'film',
+          siblingIndex: 0,
+        },
+      },
+    ])
+    expect(inPlayer('c')).toHaveAttribute('crossorigin', 'anonymous')
+    expect(inPlayer('c')).toHaveAttribute('preload', 'none')
+    expect(inPlayer('d')).toHaveAttribute('crossorigin', 'anonymous')
+    expect(inPlayer('d')).toHaveAttribute('preload', 'none')
+    expect([inPlayer('c').muted, inPlayer('d').muted]).toEqual([true, true])
+  })
+
+  it('改了片段的静音，播放器里那段的声音跟着变；预览静音时一直静音', async () => {
+    const { inPlayer, patch, send } = await openLive()
+    patch([{ op: 'add', path: '/elements/a/attributes/muted', value: 'true' }])
+    expect(inPlayer('a').muted).toBe(true)
+    patch([{ op: 'remove', path: '/elements/a/attributes/muted' }])
+    expect(inPlayer('a').muted).toBe(false)
+
+    send({ type: 'playback', rate: 1, muted: true, loop: false })
+    inPlayer('a').muted = true
+    patch([{ op: 'add', path: '/elements/a/attributes/muted', value: 'true' }])
+    patch([{ op: 'remove', path: '/elements/a/attributes/muted' }])
+    expect(inPlayer('a').muted).toBe(true)
+  })
+
+  it('序号对不上：不打，报要整份重新加载；之后的也不打，新的一份换上来以后照常', async () => {
+    const { of, inPlayer, load, patch, playerOf } = await openLive()
+    patch([{ op: 'replace', path: '/elements/b/timing/start', value: 3 }], 3)
+    expect(of('needsLoad')).toEqual([{ type: 'needsLoad', seq: 3 }])
+    patch([{ op: 'replace', path: '/elements/b/timing/start', value: 3 }], 2)
+    expect(of('needsLoad').map((event) => event.seq)).toEqual([3, 2])
+    expect(inPlayer('b')).toHaveAttribute('data-start', '2')
+    expect(of('patched')).toEqual([])
+
+    const old = playerOf()
+    load(stage(CLIPS))
+    await waitFor(() => expect(playerOf()).not.toBe(old))
+    patch([{ op: 'replace', path: '/elements/b/timing/start', value: 3 }])
+    expect(inPlayer('b')).toHaveAttribute('data-start', '3')
+    expect(of('patched')).toHaveLength(1)
+  })
+
+  it('要改的片段不在播放器里（加载时去掉的隐藏片段）：不打，报要整份重新加载', async () => {
+    const { of, patch } = await openLive()
+    patch([{ op: 'remove', path: '/elements/gone/attributes/data-hidden' }])
+    expect(of('needsLoad')).toEqual([{ type: 'needsLoad', seq: 2 }])
+    expect(of('patched')).toEqual([])
+  })
+
+  it('打的时候出错：报要整份重新加载', async () => {
+    const { of, patch } = await openLive()
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    // 属性名里有空格，写进文档时抛错
+    patch([{ op: 'add', path: '/elements/a/attributes/bad name', value: '' }])
+    expect(of('needsLoad')).toEqual([{ type: 'needsLoad', seq: 2 }])
+    expect(of('patched')).toEqual([])
+    expect(logged).toHaveBeenCalled()
+    logged.mockRestore()
+  })
+
+  it('收到新的一份以后、换上来之前的补丁不打', async () => {
+    const { inPlayer, load, of, patch } = await openLive()
+    load(stage(CLIPS))
+    patch([{ op: 'replace', path: '/elements/b/timing/start', value: 3 }])
+    expect(of('needsLoad')).toEqual([{ type: 'needsLoad', seq: 3 }])
+    expect(inPlayer('b')).toHaveAttribute('data-start', '2')
   })
 })
 
@@ -656,7 +838,7 @@ describe('拆掉', () => {
 
 describe('启动', () => {
   const APP = 'https://studio.example.com'
-  const LOAD: PreviewCommand = { type: 'load', html: film(), runtimeSrc: RUNTIME }
+  const LOAD: PreviewCommand = { type: 'load', html: film(), runtimeSrc: RUNTIME, seq: 1 }
   const hostLookups: string[] = []
   const answerHost = (status: number) =>
     server.use(

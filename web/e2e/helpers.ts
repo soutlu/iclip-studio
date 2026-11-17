@@ -55,8 +55,8 @@ export const widenWorkbench = async (page: Page) => {
 
 /** final-cut 编辑器里嵌着的预览页（预览域名下），播放器和 final-cut 都在它里面。 */
 /**
- * 预览里正在显示的那个播放器。改了 final-cut 预览会换一个播放器重新加载，新的那个装好之前对读屏隐藏，
- * 换的那一刻页面里有两个：只认没隐藏的那一个。
+ * 预览里正在显示的那个播放器。改了 final-cut 能直接打进去的改动不换播放器，别的改动预览会换一个播放器
+ * 重新加载，新的那个装好之前对读屏隐藏，换的那一刻页面里有两个：只认没隐藏的那一个。
  */
 export const finalCutPreviewPlayer = (editor: Locator) =>
   editor
@@ -64,6 +64,19 @@ export const finalCutPreviewPlayer = (editor: Locator) =>
     .locator('iframe')
     .contentFrame()
     .locator('hyperframes-player:not([aria-hidden="true"])')
+
+const PLAYER_MARK = 'data-e2e-mark'
+
+/** 给正在显示的播放器做个记号：之后还是带记号的那个，就是没换过播放器。 */
+export const markFinalCutPreviewPlayer = (editor: Locator) =>
+  finalCutPreviewPlayer(editor).evaluate(
+    (element, mark) => element.setAttribute(mark, ''),
+    PLAYER_MARK,
+  )
+
+/** 正在显示的播放器是不是做过记号的那个。 */
+export const isMarkedFinalCutPreviewPlayer = (editor: Locator) =>
+  finalCutPreviewPlayer(editor).evaluate((element, mark) => element.hasAttribute(mark), PLAYER_MARK)
 
 export const openStoryboardShot = async (panel: Locator, index: number) => {
   await panel.getByRole('button', { name: /展开镜头组列表/ }).click()

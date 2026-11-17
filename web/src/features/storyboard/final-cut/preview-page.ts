@@ -1,7 +1,14 @@
 import '@hyperframes/player'
+import {
+  createIframePreviewAdapter,
+  openComposition,
+  type Composition,
+  type JsonPatchOp,
+} from '@hyperframes/sdk'
 import { apiFetch } from '@/shared/api/client'
 import { zFinalCutPreviewHostOut } from '@/shared/api/generated/zod.gen'
 import { mergeSpans, sameSpans, spansOf, windowSpans, type TimeSpan } from '@/shared/lib/time-spans'
+import { withPreviewMediaPatches } from './preview-media'
 import { zPreviewCommand, type PreviewCommand, type PreviewEvent } from './preview-protocol'
 import { secondsToFrame, STUDIO_PREVIEW_FPS } from './vendor/hyperframes-studio/player/lib/time'
 
@@ -78,6 +85,112 @@ const failedClipOf = (player: PlayerElement | null) => {
   return clip !== undefined && clip.error !== null ? clip : null
 }
 
+/**
+ * 播放器里那一份 final-cut 的副本会话：打开的就是播放器加载的那份文档，元素的 `data-hf-id` 一一对上；
+ * 给它打补丁时 SDK 的预览适配器把同样的补丁打进播放器里正在播的文档。`seq` 是它现在是第几份。
+ */
+type Replica = { comp: Composition; seq: number; dispose: () => void }
+
+const openReplica = async (player: PlayerElement, html: string, seq: number) => {
+  const adapter = createIframePreviewAdapter(player.iframeElement)
+  const comp = await openComposition(html, { preview: adapter, history: false })
+  const detach = adapter.attachSync(comp)
+  const replica: Replica = {
+    comp,
+    seq,
+    dispose: () => {
+      detach()
+      comp.dispose()
+    },
+  }
+  return replica
+}
+
+const ELEMENT_PATH = /^\/elements\/([^/]+)(\/.*)?$/
+
+// JSON Pointer 里的 `~1`、`~0` 是 `/`、`~`
+const unescapePointer = (segment: string) => segment.replaceAll('~1', '/').replaceAll('~0', '~')
+
+const hfIdsOf = (page: Document) =>
+  new Set(
+    [...page.querySelectorAll('[data-hf-id]')].map((element) => element.getAttribute('data-hf-id')),
+  )
+
+const parentIdOf = (value: unknown) =>
+  typeof value === 'object' &&
+  value !== null &&
+  'parentId' in value &&
+  typeof value.parentId === 'string'
+    ? value.parentId
+    : undefined
+
+/**
+ * 补丁要改的元素在 `page` 里是不是都在（按补丁的先后算上前面加、删的）。SDK 遇到找不到的元素不报错、直接跳过，
+ * 比如加载时去掉了的隐藏片段，所以打之前先查。
+ */
+const targetsPresent = (page: Document, patches: readonly JsonPatchOp[]) => {
+  const present = hfIdsOf(page)
+  return patches.every((patch) => {
+    const matched = ELEMENT_PATH.exec(patch.path)
+    if (matched === null) return true
+    const id = unescapePointer(matched[1] ?? '')
+    if (matched[2] !== undefined) return present.has(id)
+    if (patch.op === 'remove') return present.delete(id)
+    const parent = parentIdOf(patch.value)
+    if (
+      (patch.op === 'replace' && !present.has(id)) ||
+      (parent !== undefined && !present.has(parent))
+    )
+      return false
+    present.add(id)
+    return true
+  })
+}
+
+/**
+ * 补丁要把总长改长时，先告诉播放器里的运行库：它的时间线只在加载时按根上的 `data-duration` 定长，根上的属性后来变了
+ * 它不跟着，跳不到、也放不到原来的结尾以后。它的 set-root-duration 控制消息只认比根上写的更长的值，所以要在补丁
+ * 改根之前、同步派发（`postMessage` 要等下一轮，那时根已经改了）。
+ */
+const extendRuntime = (player: PlayerElement, patches: readonly JsonPatchOp[]) => {
+  const duration = patches.findLast(
+    (patch) => patch.path === '/metadata/duration' && patch.op !== 'remove',
+  )?.value
+  const page = player.iframeElement.contentWindow as (Window & typeof globalThis) | null
+  if (typeof duration !== 'number' || page === null) return
+  page.dispatchEvent(
+    new page.MessageEvent('message', {
+      data: {
+        source: 'hf-parent',
+        type: 'control',
+        action: 'set-root-duration',
+        durationSeconds: duration,
+      },
+      source: window,
+    }),
+  )
+}
+
+const isMedia = (element: Element | undefined): element is HTMLMediaElement =>
+  element?.tagName === 'VIDEO' || element?.tagName === 'AUDIO'
+
+/**
+ * 补丁加进来的、改了 `muted` 属性的视频和音频照运行库的规则重算 `.muted`（预览静音或者元素自己写着静音）：
+ * 运行库只在加载和切换静音时算，属性变了不跟着变。
+ */
+const syncMuted = (page: Document, patches: readonly JsonPatchOp[], muted: boolean) => {
+  for (const patch of patches) {
+    const matched = ELEMENT_PATH.exec(patch.path)
+    const added = matched?.[2] === undefined && patch.op !== 'remove'
+    if (matched === null || !(added || matched[2] === '/attributes/muted')) continue
+    const id = unescapePointer(matched[1] ?? '')
+    const media = [...page.querySelectorAll('[data-hf-id]')].find(
+      (element) => element.getAttribute('data-hf-id') === id,
+    )
+    if (isMedia(media)) media.muted = muted || media.hasAttribute('muted')
+  }
+}
+
 export type PreviewPage = {
   handle: (command: PreviewCommand) => void
   /** 拆掉播放器和所有监听，之后不再发消息。 */
@@ -88,7 +201,7 @@ export type PreviewPage = {
  * 在 `mount` 里放播放器、按命令换 final-cut 和播放，状态经 `send` 报出去。
  *
  * 换 final-cut 时新播放器先在底下加载，画好、停稳以后才换上来；第一份装好之前的播放、跳转先记下，
- * 装好后照着办。
+ * 装好后照着办。一步编辑的补丁（`patch`）经副本会话直接打进正在播的那一份，不换播放器。
  */
 export const createPreviewPage = (
   mount: HTMLElement,
@@ -110,7 +223,14 @@ export const createPreviewPage = (
   let failed = false
   // 处理到的最后一次跳转，报时刻时带上
   let seekSeq = 0
+  // 换上来的播放器的副本会话；打补丁出过错、收到新的一份时作废，到下一份换上来之前都是 null
+  let replica: Replica | null = null
   let disposed = false
+
+  const dropReplica = () => {
+    replica?.dispose()
+    replica = null
+  }
 
   const reportFailure = () => {
     const now = failedClipOf(active) !== null
@@ -204,17 +324,19 @@ export const createPreviewPage = (
     syncMedia()
   }
 
-  const activate = (next: PlayerElement) => {
+  const activate = (next: PlayerElement, nextReplica: Replica | null, seq: number) => {
     const first = active === null
     detachActive?.()
     // 第一份装好之前记下的「在放」一直报着在等；交给新播放器重新判断
     if (first && wantsPlay) send({ type: 'buffering', buffering: false })
     active = next
+    dropReplica()
+    replica = nextReplica
     applyPlayback(next, playback)
     applySize(next)
     attach(next)
     reportFailure()
-    send({ type: 'loaded', duration: next.duration })
+    send({ type: 'loaded', duration: next.duration, seq })
   }
 
   const cancelPending = () => {
@@ -225,7 +347,7 @@ export const createPreviewPage = (
     pending = null
   }
 
-  const load = (html: string, runtimeSrc: string) => {
+  const load = (html: string, runtimeSrc: string, seq: number) => {
     swapping = true
     active?.pause()
     // 每次用到时再读：新页加载、等它稳定的这段时间里还可能挪过位置（挪的是旧播放器或记下的起点）
@@ -257,12 +379,57 @@ export const createPreviewPage = (
       next.seek(settledAt)
       for (let frame = 0; frame < SETTLE_FRAMES; frame++) await nextFrame()
       if (job.cancelled) return
+      let nextReplica: Replica | null = null
+      try {
+        nextReplica = await openReplica(next, html, seq)
+      } catch (error) {
+        // 没有副本会话时每次改动都报 needsLoad、整份重新加载
+        console.error('预览页打不开 final-cut 的副本会话', error)
+      }
+      if (job.cancelled) {
+        nextReplica?.dispose()
+        return
+      }
       if (resumeAt() !== settledAt) next.seek(resumeAt())
       pending = null
       next.classList.remove('is-pending')
       next.removeAttribute('aria-hidden')
-      activate(next)
+      activate(next, nextReplica, seq)
     })()
+  }
+
+  /** 把第 `seq` 份的补丁打进正在播的那一份；打不了时报 `needsLoad`，副本会话作废，等整份重新加载。 */
+  const patch = (seq: number, patches: readonly JsonPatchOp[]) => {
+    const player = active
+    const page = player?.iframeElement.contentDocument ?? null
+    const current = replica
+    if (
+      player === null ||
+      page === null ||
+      current === null ||
+      seq !== current.seq + 1 ||
+      !targetsPresent(page, patches)
+    ) {
+      dropReplica()
+      send({ type: 'needsLoad', seq })
+      return
+    }
+    try {
+      extendRuntime(player, patches)
+      current.comp.applyPatches(withPreviewMediaPatches(patches))
+    } catch (error) {
+      console.error('预览页打补丁失败，整份重新加载', error)
+      dropReplica()
+      send({ type: 'needsLoad', seq })
+      return
+    }
+    current.seq = seq
+    syncMuted(page, patches, playback.muted)
+    // 停着时运行库不重画，原地跳一下
+    if (player.paused) player.seek(player.currentTime)
+    syncActive?.()
+    reportFailure()
+    send({ type: 'patched', duration: player.duration, seq })
   }
 
   const handle = (command: PreviewCommand) => {
@@ -270,10 +437,15 @@ export const createPreviewPage = (
     switch (command.type) {
       case 'load': {
         cancelPending()
-        const { html, runtimeSrc } = command
-        scheduled = setTimeout(() => load(html, runtimeSrc), RELOAD_DELAY_MS)
+        // 正在播的那一份要被换掉，补丁不再往里打
+        dropReplica()
+        const { html, runtimeSrc, seq } = command
+        scheduled = setTimeout(() => load(html, runtimeSrc, seq), RELOAD_DELAY_MS)
         return
       }
+      case 'patch':
+        patch(command.seq, command.patches)
+        return
       case 'unload':
         cancelPending()
         if (active !== null || wantsPlay) setWantsPlay(false)
@@ -315,6 +487,7 @@ export const createPreviewPage = (
       disposed = true
       cancelPending()
       detachActive?.()
+      dropReplica()
       active = null
     },
   }

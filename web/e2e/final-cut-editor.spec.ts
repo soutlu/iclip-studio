@@ -1,5 +1,11 @@
 import { expect, test, type Locator, type Page, type Request } from '@playwright/test'
-import { finalCutPreviewPlayer, openConversation, openFinalCut } from './helpers'
+import {
+  finalCutPreviewPlayer,
+  isMarkedFinalCutPreviewPlayer,
+  markFinalCutPreviewPlayer,
+  openConversation,
+  openFinalCut,
+} from './helpers'
 
 /**
  * 保存工程里文件 `path`（相对工程根）的请求里写的内容：第一次走「新建工程文件」，之后按版本写工作区文件；
@@ -309,13 +315,22 @@ test('播放条：倍速和静音对素材、final-cut 都生效且换播放器�
   await loop.click()
   await expect(loop).toHaveAttribute('aria-pressed', 'true')
 
-  // 改动 final-cut 后换了播放器：倍速、静音、循环都还在
+  // 再加一段（直接打进正在播的预览）：倍速、静音、循环都还在，加进来的片段也静音
   const second = mainSaved(page, 2)
   await materials.getByRole('button', { name: /^生成 A 镜头 3，/ }).click()
   await page.keyboard.press('Enter')
   await second
   await expect.poll(settings).toEqual({ rate: 2, muted: true, loop: true, clips: 2 })
   await readyPlayer(editor)
+  await expect
+    .poll(() =>
+      player.evaluate((element: PlayerSettings) =>
+        [...(element.iframeElement.contentDocument?.querySelectorAll('video') ?? [])].map(
+          (video) => video.muted,
+        ),
+      ),
+    )
+    .toEqual([true, true])
 
   // 循环开着：从结尾前一点开始放，放到结尾回到开头接着放
   await transport.getByRole('slider', { name: '播放进度' }).focus()
@@ -529,7 +544,9 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
   const text = inspector.getByRole('textbox', { name: '文字' })
   await expect(text).toHaveValue('示例文字')
 
-  // 分两下输入，中间停过提交的时间：预览换了一份，焦点还在框里
+  // 分两下输入，中间停过提交的时间：预览换了一份，焦点还在框里。贴片的字运行库只在加载时读，整份重新加载
+  await readyPlayer(editor)
+  await markFinalCutPreviewPlayer(editor)
   await text.fill('新的')
   await page.waitForTimeout(600)
   const renamed = mainSavedWith(
@@ -548,6 +565,7 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
       }, placed?.id ?? ''),
     )
     .toBe('新的标题')
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(false)
 
   const length = inspector.getByRole('textbox', { name: '显示时长' })
   await expect(length).toHaveValue('5.00')

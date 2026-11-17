@@ -477,6 +477,35 @@ describe('useFilmSession · 编辑', () => {
     expect(result.current.film?.canUndo).toBe(false)
   })
 
+  it('每一份带着序号和从上一份来的那一步：编辑、撤销是这一步的改动，换语言这类不是编辑换的没有', async () => {
+    const { result } = await openThree()
+    const opened = result.current.film
+    expect(opened?.step).toBeNull()
+    const revision = opened?.revision ?? 0
+    const lengthOfB = (duration: number) =>
+      new Map([['b', { start: 2_000, duration, mediaStart: 0 }]])
+    const durationOfB = (seconds: number) =>
+      expect.objectContaining({ path: '/elements/b/timing/duration', value: seconds }) as unknown
+
+    act(() => result.current.retime(lengthOfB(500)))
+    expect(result.current.film?.revision).toBe(revision + 1)
+    expect(result.current.film?.step).toEqual([
+      expect.objectContaining({
+        file: 'index.html',
+        patches: expect.arrayContaining([durationOfB(0.5)]) as unknown,
+      }),
+    ])
+
+    act(() => result.current.undo())
+    expect(result.current.film?.revision).toBe(revision + 2)
+    expect(result.current.film?.step).toEqual([
+      expect.objectContaining({ patches: expect.arrayContaining([durationOfB(1)]) as unknown }),
+    ])
+
+    act(() => result.current.setLocale('zh'))
+    expect(result.current.film).toMatchObject({ revision: revision + 3, step: null })
+  })
+
   it('同一个片段连着很快改两次：算两步撤销，撤销一次只退回一次', async () => {
     const { result } = await openThree()
     const lengthOfB = (duration: number) =>
