@@ -15,7 +15,6 @@ from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip_video.shot_document import SHOTS_PATH
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from iclip.app.brand_templates import template_font_prober
 from iclip.app.conversation_film import ConversationFilmAdapter
 from iclip.app.conversation_fork import ForkLineageAdapter
 from iclip.app.conversation_same_style import (
@@ -76,8 +75,6 @@ from iclip.domains.agents.transcript_api import (
 from iclip.domains.audit.module import build_audit_module
 from iclip.domains.audit.reports_pg import PgAuditReports
 from iclip.domains.audit.runtime_facts import RuntimeStats
-from iclip.domains.brand_templates.infra_sql import SqlBrandTemplateStore
-from iclip.domains.brand_templates.module import BrandTemplatesModule, build_brand_templates_module
 from iclip.domains.collections.infra_sql import SqlCollectionRepository
 from iclip.domains.collections.module import build_collections_module
 from iclip.domains.conversations.final_cut_project import (
@@ -154,7 +151,6 @@ from iclip.domains.uploads.service import FetchBytes
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import MediaCodec, detect_codec
 from iclip.platform.media.fetch import MediaDownloads
-from iclip.platform.media.fonts import ProbeFont
 from iclip.platform.media.process import ffmpeg_available
 from iclip.platform.object_store.oss import (
     OssObjectStore,
@@ -361,7 +357,6 @@ def build_app(
     reference_breakdowns: VideoBreakdowns | None = None,
     library_tagger: Tagger | None = None,
     final_cut_translator: FinalCutTranslator | None = None,
-    brand_font_probe: ProbeFont | None = None,
     media_codec: MediaCodec | None = None,
     runtime_transport: httpx.AsyncBaseTransport | None = None,
     media_probe: UrlProber | None = None,
@@ -544,16 +539,6 @@ def build_app(
         if job.kind != KIND_VIDEO or job.operation != OPERATION_UPLOAD:
             return None
         return job.output.url
-
-    brand_templates: BrandTemplatesModule | None = None
-    if generation is not None:
-        if public_objects is None:
-            raise RuntimeError("品牌资源已启用却没有对象存储")
-        brand_templates = build_brand_templates_module(
-            SqlBrandTemplateStore(active_engine),
-            objects=public_objects,
-            probe_font=brand_font_probe or template_font_prober(http_client, fetch_url),
-        )
 
     reference_store = SqlReferenceStore(active_engine)
     breakdown_setup: BreakdownSetup | None = None
@@ -793,9 +778,6 @@ def build_app(
         app.include_router(router)
     for router in tagging.routers:
         app.include_router(router)
-    if brand_templates is not None:
-        for router in brand_templates.routers:
-            app.include_router(router)
     for router in tracking.routers:
         app.include_router(router)
     for router in skills.routers:

@@ -30,8 +30,6 @@ APP_TABLES = (
     "iclip.reference_videos",
     "iclip.library_entries",
     "iclip.library_entry_tags",
-    "iclip.brand_templates",
-    "iclip.brand_profiles",
 )
 
 AGENT_RUNTIME_TABLES = (

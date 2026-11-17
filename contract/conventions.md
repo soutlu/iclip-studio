@@ -290,7 +290,6 @@ final-cut 工程是对话工作区里的 `final-cut/` 目录。工程里的脚�
   - 列表按每张素材卡最新一条自有素材片的完成时间（`face.finishedAt`）倒序分页，支持按作者 `userName`、完成时间范围 `since` / `until`、横竖屏 `orientation`（`portrait | landscape`）和关键词 `q`（匹配提示词正文与对话标题）筛选。
   - 卡详情返回按镜头组排列的所有历史版本 `groups[]`（有镜号的组按镜号从小到大排在前面，无镜号的排在后面；组内按完成先后编为第 1..N 版），以及布尔值 `canMakeSame`（只要该卡关联了对话，且对话工作区里有 `film.icml` 或 `video_shot.json`，`canMakeSame` 就为 `true`，任何浏览者都可以点它做同款）。
 - **成片列表 `GET /library/whole-films`**：按对话聚合展示全站已导出的完整成片（不含分叉继承），每张卡直接返回该对话下所有的导出版本 `versions[]`。
-- **品牌字体模板 `/brand-templates`**（需开启媒体生成功能）：管理员通过 `/brand-templates/fonts/sign` 和 `.../confirm` 上传不超过 32 MiB 的静态 TTF/OTF 字体文件；前端通过 `GET .../{id}/font-info` 获取字体族名与包含的 Unicode 字符范围（如果渲染或预览时发现缺字或字体加载失败，必须明确报错提示，禁止悄悄回退成系统默认字体）。
 
 ## 14. 参考视频 (References)
 
