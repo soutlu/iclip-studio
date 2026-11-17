@@ -144,11 +144,6 @@ depends_on = [
     "iclip.domains.tagging",
 ]
 
-# 品牌资源的视频上传记录、视频与字体探测是端口，由组合根接上；生成域不依赖它。
-[[modules]]
-path = "iclip.domains.brand_templates"
-depends_on = ["iclip.common", "iclip.platform.media", "iclip.platform.object_store", "iclip.domains.identity"]
-
 # 技能库、模型供应商、MCP 服务与 agent 配置的业务在运行时服务，这里只留转给它的接口路由。
 [[modules]]
 path = "iclip.domains.model_providers"
@@ -203,7 +198,6 @@ depends_on = [
     "iclip.domains.library",
     "iclip.domains.references",
     "iclip.domains.tagging",
-    "iclip.domains.brand_templates",
     "iclip.domains.tracking",
     "iclip.domains.skills",
     "iclip.domains.model_providers",

@@ -344,70 +344,6 @@ export const zBodyImportSkillSkillsImportPost = z.object({
 })
 
 /**
- * BrandFontConfirmIn
- */
-export const zBrandFontConfirmIn = z.object({
-  brand: z.string().min(1).max(100).nullish(),
-  name: z.string().min(1).max(100),
-})
-
-/**
- * BrandFontSignIn
- */
-export const zBrandFontSignIn = z.object({
-  contentType: z.enum(['font/ttf', 'font/otf']),
-})
-
-/**
- * BrandFontUnicodeRange
- */
-export const zBrandFontUnicodeRange = z.object({
-  end: z.int(),
-  start: z.int(),
-})
-
-/**
- * BrandFontInfoOut
- */
-export const zBrandFontInfoOut = z.object({
-  family: z.string(),
-  style: z.enum(['normal', 'italic', 'oblique']),
-  unicodeRanges: z.array(zBrandFontUnicodeRange),
-  weight: z.int(),
-})
-
-/**
- * BrandTemplateOut
- */
-export const zBrandTemplateOut = z.object({
-  brand: z.string().nullable(),
-  createdAt: z.iso.datetime(),
-  disabledAt: z.iso.datetime().nullable(),
-  id: z.uuid(),
-  kind: z.string(),
-  name: z.string(),
-  url: z.string(),
-})
-
-/**
- * BrandTemplateUpdateIn
- *
- * 改名、停用或恢复使用；不给的那一项不动，至少给一项。
- */
-export const zBrandTemplateUpdateIn = z.object({
-  brand: z.string().min(1).max(100).nullish(),
-  disabled: z.boolean().nullish(),
-  name: z.string().min(1).max(100).nullish(),
-})
-
-/**
- * BrandTemplatesOut
- */
-export const zBrandTemplatesOut = z.object({
-  items: z.array(zBrandTemplateOut),
-})
-
-/**
  * CapToolConfig
  *
  * 挂一个插件：``toolset`` 是插件的登记名，``parameters`` 按插件自己的参数校验。
@@ -4148,55 +4084,6 @@ export const zAuthorizeAuthSsoAuthorizeGetResponse = zSsoAuthorizeOut
 export const zCallbackAuthSsoCallbackGetQuery = z.object({
   jwt: z.string(),
 })
-
-export const zListBrandTemplatesBrandTemplatesGetQuery = z.object({
-  kind: z.string().nullish(),
-  brand: z.string().nullish(),
-  includeDisabled: z.boolean().optional().default(false),
-})
-
-/**
- * Successful Response
- */
-export const zListBrandTemplatesBrandTemplatesGetResponse = zBrandTemplatesOut
-
-export const zSignFontBrandTemplatesFontsSignPostBody = zBrandFontSignIn
-
-/**
- * Successful Response
- */
-export const zSignFontBrandTemplatesFontsSignPostResponse = zUploadTicketOut
-
-export const zConfirmFontBrandTemplatesFontsUploadIdConfirmPostBody = zBrandFontConfirmIn
-
-export const zConfirmFontBrandTemplatesFontsUploadIdConfirmPostPath = z.object({
-  upload_id: z.uuid(),
-})
-
-/**
- * Successful Response
- */
-export const zConfirmFontBrandTemplatesFontsUploadIdConfirmPostResponse = zBrandTemplateOut
-
-export const zUpdateBrandTemplateBrandTemplatesTemplateIdPatchBody = zBrandTemplateUpdateIn
-
-export const zUpdateBrandTemplateBrandTemplatesTemplateIdPatchPath = z.object({
-  template_id: z.uuid(),
-})
-
-/**
- * Successful Response
- */
-export const zUpdateBrandTemplateBrandTemplatesTemplateIdPatchResponse = zBrandTemplateOut
-
-export const zFontInfoBrandTemplatesTemplateIdFontInfoGetPath = z.object({
-  template_id: z.uuid(),
-})
-
-/**
- * Successful Response
- */
-export const zFontInfoBrandTemplatesTemplateIdFontInfoGetResponse = zBrandFontInfoOut
 
 export const zListCollectionsCollectionsGetQuery = z.object({
   scope: z.enum(['me', 'all']).optional().default('me'),

@@ -236,7 +236,6 @@ jobs:
               tests/integration_no_llm/uploads
               tests/integration_no_llm/platform
               tests/integration_no_llm/plugins
-              tests/integration_no_llm/brand_templates
           - group: configuration-audit
             tests: >-
               tests/integration_no_llm/agent_config
@@ -265,7 +264,6 @@ jobs:
               --ignore=tests/integration_no_llm/uploads
               --ignore=tests/integration_no_llm/platform
               --ignore=tests/integration_no_llm/plugins
-              --ignore=tests/integration_no_llm/brand_templates
     defaults:
       run:
         working-directory: server
