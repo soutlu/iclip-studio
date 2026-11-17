@@ -249,6 +249,13 @@ describe('undeclaredFontFamilies', () => {
     expect(undeclaredFontFamilies(html, [])).toEqual(['Space Mono', 'Inter'])
     expect(undeclaredFontFamilies('<style>.a { color: red }</style>', [])).toEqual([])
   })
+
+  it('不在别名表里的名字照样算；只用声明过的字体时一个不算', () => {
+    const html = `<div style='font-family: "Comic Sans MS", sans-serif'>x</div>
+      <style>.title { font-family: 'DM Sans', sans-serif; }</style>`
+    expect(undeclaredFontFamilies(html, ['DM Sans'])).toEqual(['Comic Sans MS'])
+    expect(undeclaredFontFamilies(html, ['DM Sans', 'Comic Sans MS'])).toEqual([])
+  })
 })
 
 describe('withStylesheetLinks', () => {

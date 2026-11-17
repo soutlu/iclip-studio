@@ -5,6 +5,7 @@ export type ExportStatus = 'queued' | 'rendering' | 'uploading' | 'done' | 'fail
 
 export type FailureCode =
   | 'lint-failed'
+  | 'font-missing'
   | 'render-failed'
   | 'upload-failed'
   | 'media-unreachable'

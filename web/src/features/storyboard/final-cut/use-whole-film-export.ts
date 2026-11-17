@@ -46,10 +46,13 @@ export type ExportView =
 const isRunning = (status: WholeFilmExportOut['status']) =>
   status === 'queued' || status === 'rendering' || status === 'uploading'
 
-const failureText = (error: WholeFilmExportOut['error']) =>
-  error?.code === 'RENDER_REJECTED'
-    ? `成片导出失败：${error.message}`
-    : (FAILURE_TEXT[error?.code ?? ''] ?? '成片导出失败，请重新导出')
+const failureText = (error: WholeFilmExportOut['error']) => {
+  if (error?.code === 'RENDER_REJECTED') return `成片导出失败：${error.message}`
+  // 渲染服务给的 message 是缺的字体名，用「、」连接
+  if (error?.code === 'font-missing')
+    return `用到的字体 ${error.message} 不在可选字体里，无法导出；请换成可选字体后重新导出`
+  return FAILURE_TEXT[error?.code ?? ''] ?? '成片导出失败，请重新导出'
+}
 
 const viewOf = (state: WholeFilmExportOut): ExportView => {
   switch (state.status) {
