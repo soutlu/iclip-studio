@@ -4441,7 +4441,7 @@ describe('final-cut 编辑器 · 字幕跟着视频片段、配音片段走', ()
       ],
       [sceneLine('a1', 500, 500, 'clip-1'), sceneLine('b2', 2_500, 500, 'clip-1')],
       // 保留原声时这种语言的配音片段不显示，先切到 AI 配音
-      '{"en":"dub"}',
+      '{"en":{"mode":"dub","voice":null}}',
     )
     putMockWorkspaceFile(CONVERSATION, 'final-cut/locales/en.json', '{"cap_a1": "A one"}')
     const user = userEvent.setup()
