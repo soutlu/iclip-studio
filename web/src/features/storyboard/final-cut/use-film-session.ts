@@ -90,6 +90,7 @@ import type { AttributeChanges } from './original-sound'
 import { onRow, topTrack, voiceRowFor, type Landing, type Renumbering } from './placement'
 import { detachedVideoChanges, mergedVideoChanges, type SoundPair } from './sound-pair'
 import { newClipZ, restackedZ } from './stacking'
+import type { TranslationSource } from './translation'
 import { createUndoHistory, type PatchChange, type UndoHistory } from './undo-history'
 import type { StackingDirection } from './vendor/hyperframes-studio/player/components/timelineStackingSync'
 
@@ -327,6 +328,18 @@ const writeDefault = (main: Composition, variable: string, label: string, text: 
 const bindingsOf = (main: Composition, id: string): LocaleBindings =>
   localeBindingsOf(main.getElement(id)?.attributes[LOCALE_BINDINGS])
 
+/** 有随语言字段的组件或块的片段各自的字段（见 `FilmView.bindings`）。 */
+const hostBindingsOf = (
+  main: Composition,
+  clips: readonly FilmClip[],
+): Map<string, LocaleBindings> =>
+  new Map(
+    clips.flatMap((clip) => {
+      const bindings = clip.kind === 'host' ? bindingsOf(main, clip.id) : {}
+      return Object.keys(bindings).length === 0 ? [] : [[clip.id, bindings] as const]
+    }),
+  )
+
 const writeBindings = (main: Composition, id: string, bindings: LocaleBindings) =>
   main.setAttribute(id, LOCALE_BINDINGS, localeBindingsAttribute(bindings))
 
@@ -434,12 +447,7 @@ const viewOf = (
     ),
     locale: shown,
     locales: [...tables.keys()],
-    bindings: new Map(
-      clips.flatMap((clip) => {
-        const bindings = clip.kind === 'host' ? bindingsOf(main, clip.id) : {}
-        return Object.keys(bindings).length === 0 ? [] : [[clip.id, bindings]]
-      }),
-    ),
+    bindings: hostBindingsOf(main, clips),
     canUndo: history.canUndo(),
     canRedo: history.canRedo(),
   }
@@ -1570,6 +1578,28 @@ export function useFilmSession(
     [edit],
   )
 
+  /**
+   * 往语言 `locale` 的值表里一次写进几条（变量 → 字），算一步撤销。`pick` 拿到这一刻的片段、随语言的字段和这种
+   * 语言的值表，答复要写的。答复写了几条；工程里没有这种语言、一条都不写时不动工程，答 0。
+   */
+  const fillLocale = useCallback(
+    (locale: LocaleCode, pick: (now: TranslationSource) => ReadonlyMap<string, string>): number => {
+      const project = projectRef.current
+      const table = project === null ? undefined : tablesOf(project).get(locale)
+      if (project === null || table === undefined) return 0
+      const main = mainOf(project)
+      const clips = allClipsOf(main, sceneOf(project), catalog)
+      const writes = pick({ clips, bindings: hostBindingsOf(main, clips), values: table.values() })
+      // 一条都不写时不记一步（写总长也会报改动）
+      if (writes.size === 0) return 0
+      edit(() => {
+        for (const [variable, text] of writes) table.set(variable, text)
+      })
+      return writes.size
+    },
+    [catalog, edit],
+  )
+
   /** 切换显示的语言（不进撤销、不改文件）；工程里没有这种语言的值表时不切。 */
   const setLocale = useCallback(
     (locale: LocaleCode) => {
@@ -1698,6 +1728,7 @@ export function useFilmSession(
     setCaptionText,
     setItemText,
     setFollowsLocale,
+    fillLocale,
     setLocale,
     addLocale,
     undo: () => step('undo'),

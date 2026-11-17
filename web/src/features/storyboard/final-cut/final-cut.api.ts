@@ -1,7 +1,13 @@
 import { queryOptions, useQuery, type QueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ApiError, apiFetch, UserFacingError } from '@/shared/api/client'
-import type { FinalCutPreviewOut, MusicIn, SubtitleIn } from '@/shared/api/generated/types.gen'
+import type {
+  FinalCutPreviewOut,
+  FinalCutTranslationsIn,
+  FinalCutTranslationsOut,
+  MusicIn,
+  SubtitleIn,
+} from '@/shared/api/generated/types.gen'
 import {
   zCancelWholeFilmExportConversationsConversationIdWholeFilmExportsExportIdDeleteResponse as zExportCancelled,
   zConversationEnvelope,
@@ -9,6 +15,8 @@ import {
   zConversationFilesOut,
   zFinalCutFileCreatedOut,
   zFinalCutPreviewOut,
+  zFinalCutTranslationErrorOut,
+  zFinalCutTranslationsOut,
   zGenerationEnvelope,
   zLatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetResponse as zLatestExport,
   zWholeFilmExportStartedOut,
@@ -345,6 +353,43 @@ export const submitSubtitles = async (body: SubtitleIn): Promise<GenerationJob> 
       method: 'POST',
     })
   ).generation
+
+const TRANSLATE_FAILED_TEXT = {
+  model_unavailable: '翻译服务暂不可用，请稍后再试',
+  model_call_failed: '翻译失败，请点击「翻译」重试',
+  model_failed: '翻译失败，请稍后再试',
+} as const
+
+/**
+ * 把一批中文翻成一种外语（付费的上游服务，一次请求一次模型调用），答复每条的译文。失败时按接口答的 `code`
+ * 说明能不能重试；别的失败不把服务端的说明给用户看。
+ */
+export const translateTexts = async (
+  conversationId: string,
+  body: FinalCutTranslationsIn,
+  signal?: AbortSignal,
+): Promise<FinalCutTranslationsOut> => {
+  try {
+    return await apiFetch(
+      `${conversationPath(conversationId)}/final-cut/translations`,
+      zFinalCutTranslationsOut,
+      {
+        body,
+        fallbackErrorMessage: '翻译失败',
+        method: 'POST',
+        ...(signal === undefined ? {} : { signal }),
+      },
+    )
+  } catch (error) {
+    // 状态 0 是没连上、答复不对，说明是客户端写的，照原样
+    if (!(error instanceof ApiError) || error.status === 0) throw error
+    const failure = zFinalCutTranslationErrorOut.safeParse(error.body)
+    throw new UserFacingError(
+      failure.success ? TRANSLATE_FAILED_TEXT[failure.data.code] : '翻译失败，请重试',
+      { cause: error },
+    )
+  }
+}
 
 /** 重新读这段对话的音频；给了 `job` 先把它放到列表最前面，不用等读回来就看得到。 */
 export const refreshConversationMusic = (

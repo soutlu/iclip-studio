@@ -1921,3 +1921,75 @@ test('贴片的文字随语言：加上 English 时主文件里宿主记着根�
     }, id)
   await expect.poll(shownText).toBe('Hello there')
 })
+
+test('翻译：加上 English 后点「翻译」，字幕和贴片里随语言的文字一次翻好，存下的 English 值表里是译文，预览里显示译文', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await serveSavedCaptions(page)
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const first = mainSaved(page, 1)
+  await editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  await first
+
+  // 播放头处加一个带文字可填项的贴片、一句字幕
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '贴片' }).click()
+  await side.getByRole('searchbox', { name: '搜索贴片' }).fill('可填项')
+  const card = side.getByRole('group', { name: '测试可填项，5 秒' })
+  const added = mainSavedWith(page, (html) => savedItem(html, '测试可填项') !== null)
+  await card.hover()
+  await card.getByRole('button', { name: '加到播放头' }).click()
+  const id = savedItem(htmlOf(await added), '测试可填项')?.id ?? ''
+  expect(id).not.toBe('')
+  await side.getByRole('tab', { name: '字幕' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕' })
+  const sceneCreated = page.waitForRequest(
+    (request) => savedFileOf(request, CAPTIONS_FILE)?.includes('data-var-text') === true,
+  )
+  await tab.getByRole('button', { name: '在播放头处加一句' }).click()
+  const scene = savedFileOf(await sceneCreated, CAPTIONS_FILE) ?? ''
+  const variable = / data-var-text="([^"]+)"/.exec(scene)?.[1] ?? ''
+  expect(variable).not.toBe('')
+  // 中文时没有「翻译」
+  await expect(tab.getByRole('button', { name: '翻译', exact: true })).toHaveCount(0)
+
+  const languages = editor.getByRole('group', { name: '语言' })
+  const created = page.waitForRequest((request) => savedFileOf(request, ENGLISH_FILE) !== null)
+  await languages.getByRole('button', { name: '添加语言' }).click()
+  await page.getByRole('menuitem', { name: 'English（EN）' }).click()
+  await created
+
+  const translated = page.waitForRequest(
+    (request) => savedFileOf(request, ENGLISH_FILE)?.includes('[EN]') === true,
+  )
+  await tab.getByRole('button', { name: '翻译', exact: true }).click()
+  expect(JSON.parse(savedFileOf(await translated, ENGLISH_FILE) ?? '')).toEqual({
+    [variable]: '[EN] 新字幕',
+    [`txt_${id}_text`]: '[EN] 示例文字',
+  })
+  await expect(tab.getByRole('textbox', { name: '字幕文字 00:00.00 – 00:02.00' })).toHaveValue(
+    '[EN] 新字幕',
+  )
+
+  // 预览：第 0 秒字幕和贴片都是译文；改了值以后预览会换一个播放器重新加载，等只剩一个再看
+  const player = await readyPlayer(editor)
+  const shown = () =>
+    player.evaluateAll((elements, hostId) => {
+      if (elements.length !== 1) return null
+      const [element] = elements as (HTMLElement & { iframeElement: HTMLIFrameElement })[]
+      const document = element?.iframeElement.contentDocument
+      return {
+        caption: document?.querySelector('.caption')?.textContent ?? null,
+        host: document?.getElementById(hostId)?.querySelector('.ff-text')?.textContent ?? null,
+      }
+    }, id)
+  await expect.poll(shown).toEqual({ caption: '[EN] 新字幕', host: '[EN] 示例文字' })
+})
