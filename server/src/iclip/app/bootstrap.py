@@ -102,7 +102,7 @@ from iclip.domains.generation.module import (
     QwenServiceConfig,
     build_generation_module,
 )
-from iclip.domains.generation.ports import ConversationLineage, ModelGroupOf
+from iclip.domains.generation.ports import ConversationLineage
 from iclip.domains.generation.queue import GenerationQueueSettings, queue_dsn
 from iclip.domains.generation.qwen import QwenEndpoint
 from iclip.domains.generation.render import RenderClient, RenderSetup
@@ -122,6 +122,7 @@ from iclip.domains.identity.pms import PmsUserClient
 from iclip.domains.identity.public import (
     ActAs,
     DepartmentGroup,
+    ModelGroupOf,
     ModelGroupResolver,
     Principal,
 )
@@ -467,6 +468,13 @@ def build_app(
 
     if render_client is not None and settings.media_generation is None:
         raise RuntimeError("成片导出已启用却没开媒体生成；resolve_settings 应当已拒绝这种配置")
+    model_group_of = ModelGroupResolver(
+        identity.users,
+        tuple(
+            DepartmentGroup(name=group.name, departments=frozenset(group.departments))
+            for group in settings.model_groups
+        ),
+    ).group_of
     generation: GenerationModule | None = None
     if settings.media_generation is not None:
         if public_objects is None:
@@ -499,13 +507,7 @@ def build_app(
             compose_concurrency=compose_concurrency,
             fetch_url=fetch_url,
             render=render,
-            model_group_of=ModelGroupResolver(
-                identity.users,
-                tuple(
-                    DepartmentGroup(name=group.name, departments=frozenset(group.departments))
-                    for group in settings.model_groups
-                ),
-            ).group_of,
+            model_group_of=model_group_of,
         )
 
     async def own_video_upload(principal: Principal, upload_id: uuid.UUID) -> str | None:
@@ -536,11 +538,13 @@ def build_app(
         breakdown_setup = BreakdownSetup(
             breakdowns=reference_breakdowns
             or build_reference_breakdown(runtime_client, model_url_downloads, codec),
+            model_group_of=model_group_of,
             connector=connector,
             concurrency=breakdown_concurrency,
         )
         tagging_setup = TaggingSetup(
             tagger=library_tagger or build_library_tagger(runtime_client),
+            model_group_of=model_group_of,
             connector=connector,
         )
     library_reports = PgLibraryReports(active_engine)
@@ -619,7 +623,9 @@ def build_app(
 
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
     skills = build_skills_module(runtime_client, identity.users.display_names)
-    model_providers = build_model_providers_module(runtime_client)
+    model_providers = build_model_providers_module(
+        runtime_client, model_groups=tuple(group.name for group in settings.model_groups)
+    )
     agent_config = build_agent_config_module(runtime_client, identity.users.display_names)
 
     audit = build_audit_module(PgAuditReports(active_engine, RuntimeStats(runtime_client)))
@@ -658,6 +664,7 @@ def build_app(
             generation=generation.service, generations=generation_repo, render=render_client
         ),
         generate_title=runtime_ports.generate_title,
+        model_group_of=model_group_of,
         announce_title=live_connections.announce_title,
         announce_row=live_connections.announce_session_row,
         announce_deleted=live_connections.announce_session_deleted,
@@ -778,6 +785,7 @@ def build_app(
             runtime_client,
             conversations.service,
             act_as=identity.act_as,
+            model_group_of=model_group_of,
             allowed_origins=settings.security.cors_allow_origins,
             live=live_connections,
             import_attachments=(

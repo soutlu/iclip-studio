@@ -183,12 +183,15 @@ class ArkTagger:
     def __init__(self, model: ArkBreakdownModel) -> None:
         self._model = model
 
-    async def tag(self, text: str, dimensions: Sequence[TagNode]) -> tuple[uuid.UUID, ...]:
+    async def tag(
+        self, text: str, dimensions: Sequence[TagNode], *, model_group: str | None
+    ) -> tuple[uuid.UUID, ...]:
         request = build_tag_request(dimensions)
         try:
             raw = await self._model.ask_text(
                 request.system_prompt,
                 text,
+                model_group=model_group,
                 reasoning_effort=TAG_REASONING_EFFORT,
                 max_output_tokens=TAG_MAX_OUTPUT_TOKENS,
                 text_format=request.text_format,

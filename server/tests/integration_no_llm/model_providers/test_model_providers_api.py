@@ -81,6 +81,7 @@ async def stored_fields(engine: AsyncEngine, credential_id: str) -> dict[str, st
 
 ENDPOINTS: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("GET", "/model-providers/declarations", None),
+    ("GET", "/model-providers/groups", None),
     ("GET", "/model-providers", None),
     ("POST", "/model-providers", {"name": "x", "provider": "bailian", "label": "x"}),
     ("PATCH", "/model-providers/{pid}", {"label": "x"}),

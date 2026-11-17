@@ -386,6 +386,7 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
             film=UnusedFilmPage(),
             exports=None,
             generate_title=_untouched,
+            model_group_of=_untouched,
             announce_title=_untouched,
             activities_of=_untouched,
             busy_conversation_ids=_untouched,

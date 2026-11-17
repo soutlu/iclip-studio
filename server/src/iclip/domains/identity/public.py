@@ -7,7 +7,7 @@ from iclip.domains.identity.middleware import (
     require_permission,
     websocket_principal,
 )
-from iclip.domains.identity.model_groups import DepartmentGroup, ModelGroupResolver
+from iclip.domains.identity.model_groups import DepartmentGroup, ModelGroupOf, ModelGroupResolver
 from iclip.domains.identity.models import Principal, UserAccount
 from iclip.domains.identity.rbac import (
     ACT_AS_PERMISSION,
@@ -28,6 +28,7 @@ __all__ = [
     "ROLES",
     "ActAs",
     "DepartmentGroup",
+    "ModelGroupOf",
     "ModelGroupResolver",
     "Principal",
     "UserAccount",

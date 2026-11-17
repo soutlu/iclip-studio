@@ -13,11 +13,12 @@ class BreakdownRunner:
         self._model = model
         self._sampler = sampler
 
-    async def run(self, video_url: str) -> str:
+    async def run(self, video_url: str, *, model_group: str | None) -> str:
+        """拆一条视频；``model_group`` 是这次调模型用哪个配置组的密钥，``None`` 即默认组。"""
         sampled = await self._sampler.sample_up_to(video_url, max_seconds=SAMPLED_MAX_SECONDS)
         if sampled is not None:
-            return await self._model.from_sample(sampled)
-        return await self._model.from_url(video_url)
+            return await self._model.from_sample(sampled, model_group=model_group)
+        return await self._model.from_url(video_url, model_group=model_group)
 
 
 __all__ = ["SAMPLED_MAX_SECONDS", "BreakdownRunner"]

@@ -118,6 +118,7 @@ def build(*, task_present: bool = True, collection_present: bool = True) -> Conv
         film=UnusedFilmPage(),
         exports=None,
         generate_title=_untouched,
+        model_group_of=_untouched,
         announce_title=_untouched,
         activities_of=_untouched,
         busy_conversation_ids=_untouched,

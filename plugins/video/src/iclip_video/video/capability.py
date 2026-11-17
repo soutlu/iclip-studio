@@ -9,6 +9,7 @@ from agent_runtime.harness.files import write_or_retry
 from agent_runtime.harness.materials import require_http
 from agent_runtime.plugins.base import CapPlugin
 from agent_runtime.plugins.workspace.capability import Workspace
+from agent_runtime.run_deps import AgentRunDeps
 from agent_runtime.transcript.display import DisplayFn, GenericDisplay, url_filename
 from pydantic_ai import ModelRetry, ToolFailed
 from pydantic_ai.capabilities import CapabilityOrdering
@@ -85,7 +86,9 @@ class VideoToolset(FunctionToolset[AgentDepsT]):
         files, namespace = self._workspace(ctx)
         path = video_doc_path(video_url)
         try:
-            content = await self._cap.understanding.parse(video_url)
+            content = await self._cap.understanding.parse(
+                video_url, model_group=_deps(ctx).model_group
+            )
         except VideoUnderstandingUnavailable as exc:
             raise ToolFailed(
                 f"拆解失败：{exc}。不要重试，告诉用户需要管理员在配置页启用这个模型。"
@@ -101,6 +104,15 @@ class VideoToolset(FunctionToolset[AgentDepsT]):
 
     def _workspace(self, ctx: RunContext[AgentDepsT]) -> tuple[FileStore, str]:
         return self._cap.space.store, self._cap.space.resolve(ctx)
+
+
+def _deps(ctx: RunContext[Any]) -> AgentRunDeps:
+    deps = ctx.deps
+    if not isinstance(deps, AgentRunDeps):
+        raise RuntimeError(
+            f"这次运行的 deps 是 {type(deps).__name__}，不是 AgentRunDeps——运行身份没有注入进来。"
+        )
+    return deps
 
 
 def _video_name(args: Any) -> str | None:

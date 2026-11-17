@@ -224,7 +224,7 @@ RETURNING id""")
 _CLAIM: Final = text("""
 UPDATE iclip.library_entries SET tag_status = :running, tag_started_at = now()
 WHERE id = :id AND tag_status = :pending
-RETURNING id, kind, reference_id, job_id, tag_started_at""")
+RETURNING id, kind, reference_id, job_id, created_by, tag_started_at""")
 
 _FINISH: Final = text("""
 UPDATE iclip.library_entries SET tag_status = :completed, tag_error = NULL
@@ -464,7 +464,12 @@ class SqlTagStore:
             )
         if row is None:
             return None
-        return Claim(entry_id=row["id"], key=_key_of(row), started_at=row["tag_started_at"])
+        return Claim(
+            entry_id=row["id"],
+            key=_key_of(row),
+            created_by=row["created_by"],
+            started_at=row["tag_started_at"],
+        )
 
     async def finish(self, claim: Claim, tag_ids: Collection[uuid.UUID]) -> bool:
         async with self._engine.begin() as conn:

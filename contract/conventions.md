@@ -338,6 +338,7 @@ final-cut 工程是对话工作区里的 `final-cut/` 目录。工程里的脚�
 - **连通性测试（不保存数据，测试失败也返回 HTTP `200`，通过响应体内的 `{ ok, elapsedMs, reason }` 判断结果）**：
   - `POST .../credentials/test`：用表单里填写的密钥字段（或已有密钥 ID）对该供应商第一个启用的 `llm` 模型发一条最小测试请求（如果该供应商下还没有启用任何 `llm` 模型，返回 `422`）。
   - `POST .../models/test`：用指定密钥（不传则用默认密钥）单独测试某一个 `llm` 模型是否可用。
+- **密钥的配置组**：密钥带 `modelGroup`（概念见 [CONTEXT.md「配置组」](../docs/CONTEXT.md#术语)），`null` 即不归组。`GET /model-providers/groups` 按部署配置的顺序返回可选的组名 `{ groups }`（没配时为空数组）。新建密钥时 `modelGroup` 可省（不归组）；`PATCH .../credentials/{id}` 不传 `modelGroup` 就不动，传 `null` 清掉，传组名改组。组名不在部署配置里返回 `422`（`detail` 写明组名与可选的组）；同一供应商下这个组已有别的密钥也是 `422`。
 - **删除与停用保护（冲突返回 `409`）**：供应商的默认密钥不能直接删除（需先将默认密钥切换到另一把）；被设为全局默认模型（`PUT /default-models/{type}`）的模型不能停用或删除；正在被任何 Agent 草稿或当前版本引用的供应商、模型、密钥均不能停用或删除。
 
 ## 19. Agent 配置 (Agents)
@@ -361,6 +362,15 @@ final-cut 工程是对话工作区里的 `final-cut/` 目录。工程里的脚�
 ## 20. 运行时服务 (Agent Runtime)
 
 运行时服务的接口（`/v1/*`）只供业务后端在服务端调用，不对浏览器开放。接口定义以运行时项目的 `openapi.json` 为准，应用密钥、模型调用、实时流与回调等协议见运行时项目的 `docs/protocol.md`。
+
+### 配置组
+
+后端调运行时的三处带 `model_group`，值是后端按 [CONTEXT.md「配置组」](../docs/CONTEXT.md#术语) 的规则算出的组名，默认组不带（`null`）：
+- **发消息** `POST /v1/sessions/{id}/prompts`：对话属主的组（测试预览是预览的创建者）。重新生成不带，运行时沿用原消息的组。
+- **起标题** `POST /v1/titles`：对话属主的组。
+- **模型调用** `POST /v1/model-calls/responses`：final-cut 翻译用对话属主的组，参考视频拆解用这次拆解记下的触发人（`reference_videos.requested_by`）的组，资料库打标用条目创建人（`library_entries.created_by`）的组；记下的人为空时不带。
+
+视频插件在运行里取模型连接时，配置组取自这次运行的 `AgentRunDeps.model_group`。
 
 ### 跨版本兼容
 

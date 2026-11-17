@@ -134,12 +134,13 @@ def test_unusable_answers_fail_without_falling_back_to_the_source(raw: str, reas
 async def test_the_call_goes_to_the_translation_model_with_the_built_request() -> None:
     ark = FakeArk(tag=ark_answer(answer(("t2", "B"), ("t1", "A"), ("t3", "Nike Air"))))
 
-    translated = await ark_translator(ark).translate(ENTRIES, locale="es")
+    translated = await ark_translator(ark).translate(ENTRIES, locale="es", model_group="mkt")
 
     assert [one.id for one in translated] == ["t1", "t2", "t3"]
     assert [one.text for one in translated] == ["A", "B", "Nike Air"]
     (call,) = ark.calls
     assert (call["declaration"], call["model"]) == ("volcengine", TRANSLATE_MODEL)
+    assert call["model_group"] == "mkt"
     assert call["read_timeout"] == TRANSLATE_TIMEOUT_SECONDS
     sent = call["payload"]
     expected = build_translation_request(ENTRIES, "es")
@@ -167,7 +168,7 @@ async def test_call_failures_split_by_whether_another_try_may_help(
     reply: httpx.Response | Exception, code: str
 ) -> None:
     with pytest.raises(FinalCutTranslationFailed) as caught:
-        await ark_translator(FakeArk(tag=reply)).translate(ENTRIES, locale="en")
+        await ark_translator(FakeArk(tag=reply)).translate(ENTRIES, locale="en", model_group=None)
 
     assert caught.value.code == code
     assert "busy" not in str(caught.value) and "rejected" not in str(caught.value), (
@@ -184,7 +185,7 @@ async def test_call_failures_split_by_whether_another_try_may_help(
 )
 async def test_logs_carry_counts_and_codes_but_never_the_texts(reply: httpx.Response) -> None:
     with capture_logs() as logs, contextlib.suppress(FinalCutTranslationFailed):
-        await ark_translator(FakeArk(tag=reply)).translate(ENTRIES, locale="es")
+        await ark_translator(FakeArk(tag=reply)).translate(ENTRIES, locale="es", model_group=None)
 
     (event,) = [one for one in logs if str(one["event"]).startswith("final-cut 翻译")]
     assert (event["locale"], event["count"]) == ("es", 3)
@@ -195,6 +196,8 @@ async def test_logs_carry_counts_and_codes_but_never_the_texts(reply: httpx.Resp
 
 async def test_a_model_that_is_not_enabled_is_reported_as_unavailable() -> None:
     with pytest.raises(ModelUnavailable) as caught:
-        await ark_translator(FakeArk(tag=model_unavailable())).translate(ENTRIES, locale="fr")
+        await ark_translator(FakeArk(tag=model_unavailable())).translate(
+            ENTRIES, locale="fr", model_group=None
+        )
 
     assert caught.value.code == "model_unavailable"

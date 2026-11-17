@@ -2926,6 +2926,7 @@
       },
       "CredentialCreateIn": {
         "additionalProperties": false,
+        "description": "``modelGroup`` 给了就把这把密钥归进这个配置组；同一供应商下一个组最多一把。",
         "properties": {
           "fields": {
             "additionalProperties": {
@@ -2933,6 +2934,18 @@
             },
             "title": "Fields",
             "type": "object"
+          },
+          "modelGroup": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelgroup"
           },
           "name": {
             "title": "Name",
@@ -3028,6 +3041,7 @@
       },
       "CredentialOut": {
         "additionalProperties": false,
+        "description": "``modelGroup`` 是这把密钥归的配置组，为空即不归任何组。",
         "properties": {
           "createdAt": {
             "format": "date-time",
@@ -3045,6 +3059,17 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "modelGroup": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelgroup"
           },
           "name": {
             "title": "Name",
@@ -3067,6 +3092,7 @@
           "id",
           "name",
           "fields",
+          "modelGroup",
           "usedBy",
           "createdAt",
           "updatedAt"
@@ -3110,7 +3136,7 @@
       },
       "CredentialUpdateIn": {
         "additionalProperties": false,
-        "description": "不给或给 ``null`` 的项不动。",
+        "description": "``name`` 与 ``fields`` 不给或给 ``null`` 都不动；``modelGroup`` 不给不动，给 ``null`` 清掉，给值改成\n这个组。",
         "properties": {
           "fields": {
             "anyOf": [
@@ -3125,6 +3151,18 @@
               }
             ],
             "title": "Fields"
+          },
+          "modelGroup": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelgroup"
           },
           "name": {
             "anyOf": [
@@ -7801,6 +7839,23 @@
           "tokensPerDelivery"
         ],
         "title": "MetricsOut",
+        "type": "object"
+      },
+      "ModelGroupsOut": {
+        "description": "``config.yaml`` 里配置的组名，按配置里的先后；没配时为空。",
+        "properties": {
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Groups",
+            "type": "array"
+          }
+        },
+        "required": [
+          "groups"
+        ],
+        "title": "ModelGroupsOut",
         "type": "object"
       },
       "ModelOptionOut": {
@@ -18473,7 +18528,7 @@
         ]
       },
       "post": {
-        "description": "发一条消息。``prompt_id`` 由客户端铸，重发同一个不会多起一次运行。\n\n``user_name`` 是这条消息替谁发的：API key 调用方必须给，浏览器会话默认是登录用户名。\n\n图片附件的地址挂不上 OSS 处理参数时，受理前先转存进本桶、记成发消息那个人的一条上传，\n消息里存新地址；转存失败是 422，说明第几张附件。",
+        "description": "发一条消息。``prompt_id`` 由客户端铸，重发同一个不会多起一次运行。\n\n``user_name`` 是这条消息替谁发的：API key 调用方必须给，浏览器会话默认是登录用户名。\n\n图片附件的地址挂不上 OSS 处理参数时，受理前先转存进本桶、记成发消息那个人的一条上传，\n消息里存新地址；转存失败是 422，说明第几张附件。\n\n这条消息的运行用对话属主所在配置组的模型密钥；组在要用的某个供应商下没有密钥时 409\n``agent_unavailable``。",
         "operationId": "submit_conversations__conversation_id__prompts_post",
         "parameters": [
           {
@@ -22540,6 +22595,40 @@
         ]
       }
     },
+    "/model-providers/groups": {
+      "get": {
+        "description": "部署配置里的配置组名，按配置里的先后；密钥可以归进其中一个组，不归组即默认组。",
+        "operationId": "model_groups_configured_model_providers_groups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelGroupsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Model Groups Configured",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
     "/model-providers/{provider_id}": {
       "delete": {
         "description": "删一个供应商连同它的密钥与模型；有 agent 的草稿或当前版本写着它、或它有默认模型是 409。",
@@ -22655,7 +22744,7 @@
     },
     "/model-providers/{provider_id}/credentials": {
       "post": {
-        "description": "新建一把密钥，不试连；供应商的第一把成为默认密钥。",
+        "description": "新建一把密钥，不试连；供应商的第一把成为默认密钥。``modelGroup`` 给了就归进这个配置组，\n组不在部署配置里 422。",
         "operationId": "create_provider_credential_model_providers__provider_id__credentials_post",
         "parameters": [
           {
@@ -22844,7 +22933,7 @@
         ]
       },
       "patch": {
-        "description": "改名或改字段，不试连。",
+        "description": "改名、改字段或改配置组，不试连。``modelGroup`` 不给不动，给 ``null`` 清掉，给值改成这个组；\n组不在部署配置里 422。",
         "operationId": "update_provider_credential_model_providers__provider_id__credentials__credential_id__patch",
         "parameters": [
           {

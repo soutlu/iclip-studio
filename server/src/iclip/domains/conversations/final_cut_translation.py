@@ -48,9 +48,10 @@ class FinalCutTranslationFailed(Exception):
 
 class FinalCutTranslator(Protocol):
     async def translate(
-        self, entries: Sequence[FinalCutText], *, locale: TargetLocale
+        self, entries: Sequence[FinalCutText], *, locale: TargetLocale, model_group: str | None
     ) -> tuple[FinalCutText, ...]:
-        """把 ``entries`` 翻成 ``locale``，按请求的顺序每个 id 恰好一条。
+        """把 ``entries`` 翻成 ``locale``，按请求的顺序每个 id 恰好一条；``model_group`` 是调模型用哪个
+        配置组的密钥，``None`` 即默认组。
 
         模型没启用抛 ``ModelUnavailable``；调用失败或回答不对抛 ``FinalCutTranslationFailed``。
         """

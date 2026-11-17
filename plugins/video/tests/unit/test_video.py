@@ -59,8 +59,10 @@ def tools(capability: Video[object]) -> VideoToolset[object]:
     return capability.get_toolset()
 
 
-def make_deps() -> AgentRunDeps:
-    return AgentRunDeps(user_id=USER, conversation_id="thread-1", user_name="logan")
+def make_deps(*, model_group: str | None = None) -> AgentRunDeps:
+    return AgentRunDeps(
+        user_id=USER, conversation_id="thread-1", user_name="logan", model_group=model_group
+    )
 
 
 def make_context(deps: object) -> RunContext[object]:
@@ -180,6 +182,15 @@ async def test_an_unavailable_model_is_final_and_asks_for_an_admin(
         f"拆解失败：{reason}。不要重试，告诉用户需要管理员在配置页启用这个模型。"
     )
     assert await files.read(NAMESPACE, video_doc_path(VIDEO)) is None
+
+
+@pytest.mark.parametrize("model_group", ["mkt", None], ids=["grouped", "default_group"])
+async def test_the_runs_model_group_goes_to_the_understanding(
+    tools: VideoToolset[object], understanding: FakeUnderstanding, model_group: str | None
+) -> None:
+    await tools.video_parser(make_context(make_deps(model_group=model_group)), VIDEO)
+
+    assert understanding.model_groups == [model_group]
 
 
 async def test_missing_run_identity_is_a_bug_not_a_retry(tools: VideoToolset[object]) -> None:

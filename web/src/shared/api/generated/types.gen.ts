@@ -1643,6 +1643,8 @@ export type ConversationsPageOut = {
 
 /**
  * CredentialCreateIn
+ *
+ * ``modelGroup`` 给了就把这把密钥归进这个配置组；同一供应商下一个组最多一把。
  */
 export type CredentialCreateIn = {
   /**
@@ -1651,6 +1653,10 @@ export type CredentialCreateIn = {
   fields: {
     [key: string]: string
   }
+  /**
+   * Modelgroup
+   */
+  modelGroup?: string | null
   /**
    * Name
    */
@@ -1713,6 +1719,8 @@ export type CredentialOptionOut = {
 
 /**
  * CredentialOut
+ *
+ * ``modelGroup`` 是这把密钥归的配置组，为空即不归任何组。
  */
 export type CredentialOut = {
   /**
@@ -1729,6 +1737,10 @@ export type CredentialOut = {
    * Id
    */
   id: string
+  /**
+   * Modelgroup
+   */
+  modelGroup: string | null
   /**
    * Name
    */
@@ -1766,7 +1778,8 @@ export type CredentialTestIn = {
 /**
  * CredentialUpdateIn
  *
- * 不给或给 ``null`` 的项不动。
+ * ``name`` 与 ``fields`` 不给或给 ``null`` 都不动；``modelGroup`` 不给不动，给 ``null`` 清掉，给值改成
+ * 这个组。
  */
 export type CredentialUpdateIn = {
   /**
@@ -1775,6 +1788,10 @@ export type CredentialUpdateIn = {
   fields?: {
     [key: string]: string
   } | null
+  /**
+   * Modelgroup
+   */
+  modelGroup?: string | null
   /**
    * Name
    */
@@ -4268,6 +4285,18 @@ export type MetricsOut = {
   readonly tokensPerDelivery: number | null
   upstreamSeconds: SpreadOut | null
   usage: UsageOut
+}
+
+/**
+ * ModelGroupsOut
+ *
+ * ``config.yaml`` 里配置的组名，按配置里的先后；没配时为空。
+ */
+export type ModelGroupsOut = {
+  /**
+   * Groups
+   */
+  groups: Array<string>
 }
 
 /**
@@ -11838,6 +11867,23 @@ export type ModelProviderDeclarationsModelProvidersDeclarationsGetResponses = {
 
 export type ModelProviderDeclarationsModelProvidersDeclarationsGetResponse =
   ModelProviderDeclarationsModelProvidersDeclarationsGetResponses[keyof ModelProviderDeclarationsModelProvidersDeclarationsGetResponses]
+
+export type ModelGroupsConfiguredModelProvidersGroupsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/model-providers/groups'
+}
+
+export type ModelGroupsConfiguredModelProvidersGroupsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ModelGroupsOut
+}
+
+export type ModelGroupsConfiguredModelProvidersGroupsGetResponse =
+  ModelGroupsConfiguredModelProvidersGroupsGetResponses[keyof ModelGroupsConfiguredModelProvidersGroupsGetResponses]
 
 export type DeleteModelProviderModelProvidersProviderIdDeleteData = {
   body?: never

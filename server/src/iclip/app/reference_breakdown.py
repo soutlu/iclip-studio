@@ -28,9 +28,9 @@ class ArkVideoBreakdowns:
     def __init__(self, breakdown: BreakdownRunner) -> None:
         self._breakdown = breakdown
 
-    async def breakdown(self, video_url: str) -> str:
+    async def breakdown(self, video_url: str, *, model_group: str | None) -> str:
         try:
-            return await self._breakdown.run(video_url)
+            return await self._breakdown.run(video_url, model_group=model_group)
         except MediaError as exc:
             raise BreakdownFailed(str(exc), code=ERROR_VIDEO_UNREADABLE) from exc
         except BreakdownModelUnavailable as exc:

@@ -86,13 +86,14 @@ def breakdown_with(
 async def test_the_call_goes_through_the_runtimes_model_call_with_a_longer_wait(
     upstream: Upstream,
 ) -> None:
-    await breakdown_with(FakeSampler(seconds=5), upstream).run(VIDEO)
+    await breakdown_with(FakeSampler(seconds=5), upstream).run(VIDEO, model_group="mkt")
 
     (call,) = upstream.calls
     assert str(call.url) == f"{RUNTIME}/v1/model-calls/responses"
     assert call.headers["Authorization"] == f"Bearer {APP_KEY}"
     body = json.loads(call.content)
     assert (body["declaration"], body["model"]) == ("volcengine", "doubao-seed-2-1-lite-260915")
+    assert body["model_group"] == "mkt"
     assert call.extensions["timeout"]["read"] > 900
 
 
@@ -106,7 +107,7 @@ async def test_short_video_is_sent_frame_by_frame_with_timestamps_then_audio(
 ) -> None:
     breakdown = breakdown_with(FakeSampler(seconds=12.9), upstream)
 
-    assert await breakdown.run(VIDEO) == DOCUMENT, "模型写的原文原样交回"
+    assert await breakdown.run(VIDEO, model_group=None) == DOCUMENT, "模型写的原文原样交回"
 
     (request,) = upstream.requests
     assert request["model"] == "doubao-seed-2-1-lite-260915"
@@ -130,7 +131,7 @@ async def test_short_video_is_sent_frame_by_frame_with_timestamps_then_audio(
 
 
 async def test_video_without_an_audio_track_sends_no_audio_part(upstream: Upstream) -> None:
-    await breakdown_with(FakeSampler(seconds=5, audio=None), upstream).run(VIDEO)
+    await breakdown_with(FakeSampler(seconds=5, audio=None), upstream).run(VIDEO, model_group=None)
 
     assert "input_audio" not in [part["type"] for part in user_content(upstream)]
 
@@ -141,7 +142,7 @@ async def test_videos_over_a_minute_are_sent_by_address(
 ) -> None:
     sampler = FakeSampler(seconds=seconds)
 
-    await breakdown_with(sampler, upstream).run(VIDEO)
+    await breakdown_with(sampler, upstream).run(VIDEO, model_group=None)
 
     assert bool(sampler.sampled) is sampled
     if not sampled:
@@ -168,7 +169,7 @@ async def test_an_unusable_answer_is_worth_another_breakdown(
     upstream.response = response
 
     with pytest.raises(BreakdownError) as raised:
-        await breakdown_with(FakeSampler(seconds=5), upstream).run(VIDEO)
+        await breakdown_with(FakeSampler(seconds=5), upstream).run(VIDEO, model_group=None)
 
     assert raised.value.retryable
 
@@ -177,7 +178,7 @@ async def test_a_rejected_request_is_not_worth_another_breakdown(upstream: Upstr
     upstream.response = httpx.Response(400, text="payload too large")
 
     with pytest.raises(BreakdownError) as raised:
-        await breakdown_with(FakeSampler(seconds=5), upstream).run(VIDEO)
+        await breakdown_with(FakeSampler(seconds=5), upstream).run(VIDEO, model_group=None)
 
     assert not raised.value.retryable
 
@@ -189,7 +190,7 @@ async def test_a_timeout_is_not_worth_another_breakdown() -> None:
     breakdown = breakdown_with(FakeSampler(seconds=5), transport=httpx.MockTransport(hang))
 
     with pytest.raises(BreakdownError) as raised:
-        await breakdown.run(VIDEO)
+        await breakdown.run(VIDEO, model_group=None)
 
     assert not raised.value.retryable
 
@@ -200,7 +201,7 @@ async def test_the_runtime_timing_out_on_ark_is_not_worth_another_breakdown(
     upstream.response = httpx.Response(504, json={"detail": "超时", "code": "upstream_timeout"})
 
     with pytest.raises(BreakdownError) as raised:
-        await breakdown_with(FakeSampler(seconds=5), upstream).run(VIDEO)
+        await breakdown_with(FakeSampler(seconds=5), upstream).run(VIDEO, model_group=None)
 
     assert not raised.value.retryable
     assert not isinstance(raised.value, BreakdownModelUnavailable)
@@ -213,7 +214,7 @@ async def test_an_unreachable_runtime_is_worth_another_breakdown() -> None:
     breakdown = breakdown_with(FakeSampler(seconds=5), transport=httpx.MockTransport(refuse))
 
     with pytest.raises(BreakdownError) as raised:
-        await breakdown.run(VIDEO)
+        await breakdown.run(VIDEO, model_group=None)
 
     assert raised.value.retryable
 
@@ -225,7 +226,7 @@ async def test_a_model_not_enabled_on_the_config_page_is_its_own_final_failure(
     upstream.response = httpx.Response(409, json={"detail": reason, "code": "model_unavailable"})
 
     with pytest.raises(BreakdownModelUnavailable, match=r"没有启用的模型") as raised:
-        await breakdown_with(FakeSampler(seconds=5), upstream).run(VIDEO)
+        await breakdown_with(FakeSampler(seconds=5), upstream).run(VIDEO, model_group=None)
 
     assert not raised.value.retryable
     assert str(raised.value) == reason
@@ -238,6 +239,6 @@ async def test_a_video_that_cannot_be_read_fails_before_the_model_is_called(
     sampler.error = MediaError("ffprobe 失败（退出码 1）")
 
     with pytest.raises(MediaError):
-        await breakdown_with(sampler, upstream).run(VIDEO)
+        await breakdown_with(sampler, upstream).run(VIDEO, model_group=None)
 
     assert not upstream.requests

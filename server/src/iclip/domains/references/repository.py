@@ -69,7 +69,9 @@ class ReferenceStore(Protocol):
 
 
 class VideoBreakdowns(Protocol):
-    async def breakdown(self, video_url: str) -> str: ...
+    async def breakdown(self, video_url: str, *, model_group: str | None) -> str:
+        """拆一条视频，答拆解报告；``model_group`` 是调模型用哪个配置组的密钥，``None`` 即默认组。"""
+        ...
 
 
 OwnVideoUpload = Callable[[Principal, uuid.UUID], Awaitable[str | None]]

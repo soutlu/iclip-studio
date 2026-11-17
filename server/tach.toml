@@ -152,7 +152,7 @@ depends_on = ["iclip.common", "iclip.platform.media", "iclip.platform.object_sto
 # 技能库、模型供应商、MCP 服务与 agent 配置的业务在运行时服务，这里只留转给它的接口路由。
 [[modules]]
 path = "iclip.domains.model_providers"
-depends_on = ["iclip.domains.identity", "iclip.platform.runtime_admin", "iclip.platform.runtime_api"]
+depends_on = ["iclip.common", "iclip.domains.identity", "iclip.platform.runtime_admin", "iclip.platform.runtime_api"]
 
 [[modules]]
 path = "iclip.domains.mcp_servers"

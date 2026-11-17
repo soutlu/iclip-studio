@@ -92,10 +92,14 @@ class RecordingTranslator:
         self.calls: list[tuple[tuple[FinalCutText, ...], TargetLocale]] = []
 
     async def translate(
-        self, entries: Sequence[FinalCutText], *, locale: TargetLocale
+        self, entries: Sequence[FinalCutText], *, locale: TargetLocale, model_group: str | None
     ) -> tuple[FinalCutText, ...]:
         self.calls.append((tuple(entries), locale))
         return tuple(FinalCutText(id=one.id, text=f"{locale}:{one.text}") for one in entries)
+
+
+async def _default_group(_user_id: uuid.UUID) -> str | None:
+    return None
 
 
 def project(translator: FinalCutTranslator) -> FinalCutProject:
@@ -114,6 +118,7 @@ def project(translator: FinalCutTranslator) -> FinalCutProject:
         film=UnusedFilmPage(),
         exports=None,
         generate_title=_untouched,
+        model_group_of=_untouched,
         announce_title=_untouched,
         activities_of=_untouched,
         busy_conversation_ids=_untouched,
@@ -131,6 +136,7 @@ def project(translator: FinalCutTranslator) -> FinalCutProject:
         preview_origin=None,
         tokens=PreviewTokens("unit-test-secret"),
         translator=translator,
+        model_group_of=_default_group,
     )
 
 

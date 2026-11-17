@@ -107,12 +107,23 @@ const mockDeclarations: DeclarationOut[] = [
   }),
 ]
 
+/** 部署配置里的配置组，按配置顺序。 */
+export const mockModelGroups = ['mkt', 'ecom'] as const
+
 const credential = (
   id: string,
   name: string,
   minutesAgo: number,
   fields: Record<string, string>,
-): MockCredential => ({ createdAt: ago(minutesAgo), fields, id, name, updatedAt: ago(minutesAgo) })
+  modelGroup: string | null = null,
+): MockCredential => ({
+  createdAt: ago(minutesAgo),
+  fields,
+  id,
+  modelGroup,
+  name,
+  updatedAt: ago(minutesAgo),
+})
 
 const llm = (
   name: string,
@@ -129,10 +140,13 @@ const seedProviders = (): MockProvider[] => [
         api_key: 'sk-mock-main-DEMO',
         base_url: BAILIAN_URL,
       }),
-      credential(uuid(2, 2), '创作团队', 60 * 24 * 31, {
-        api_key: 'sk-mock-team-7F2A',
-        base_url: BAILIAN_URL,
-      }),
+      credential(
+        uuid(2, 2),
+        '创作团队',
+        60 * 24 * 31,
+        { api_key: 'sk-mock-team-7F2A', base_url: BAILIAN_URL },
+        'mkt',
+      ),
     ],
     custom: [
       llm('qwen3.8-max', 262_144, ['low', 'medium', 'high']),
@@ -342,6 +356,10 @@ export const modelProviderHandlers = (usage: Usage) => {
       HttpResponse.json({ declarations: mockDeclarations }),
     ),
 
+    http.get('*/api/model-providers/groups', () =>
+      HttpResponse.json({ groups: [...mockModelGroups] }),
+    ),
+
     http.post('*/api/model-providers', async ({ request }) => {
       const body = (await request.json()) as ModelProviderCreateIn
       if (!/^[a-z0-9-]{1,64}$/.test(body.name))
@@ -445,7 +463,7 @@ export const modelProviderHandlers = (usage: Usage) => {
       const fields = withDefaults(provider, body.fields)
       const problem = checkFields(provider, fields)
       if (problem !== null) return detail(problem, 422)
-      const created = credential(crypto.randomUUID(), name, 0, fields)
+      const created = credential(crypto.randomUUID(), name, 0, fields, body.modelGroup ?? null)
       provider.credentials.push(created)
       provider.defaultCredentialId ??= created.id
       const out = toOut(provider).credentials.find((item) => item.id === created.id)
@@ -476,6 +494,7 @@ export const modelProviderHandlers = (usage: Usage) => {
           )
         }
         if (name !== undefined) saved.name = name
+        if (body.modelGroup !== undefined) saved.modelGroup = body.modelGroup
         saved.updatedAt = new Date().toISOString()
         return HttpResponse.json(toOut(provider).credentials.find((item) => item.id === saved.id))
       },

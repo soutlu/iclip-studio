@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,9 +16,14 @@ class ModelProvidersModule:
     routers: tuple[Any, ...]
 
 
-def build_model_providers_module(runtime: RuntimeClient) -> ModelProvidersModule:
+def build_model_providers_module(
+    runtime: RuntimeClient, *, model_groups: Sequence[str]
+) -> ModelProvidersModule:
     return ModelProvidersModule(
-        routers=(create_model_providers_router(runtime), create_default_models_router(runtime)),
+        routers=(
+            create_model_providers_router(runtime, model_groups=model_groups),
+            create_default_models_router(runtime),
+        ),
     )
 
 

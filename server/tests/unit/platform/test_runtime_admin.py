@@ -73,7 +73,7 @@ async def client(runtime: Runtime, names: Names) -> AsyncGenerator[httpx.AsyncCl
         "http://runtime.test", KEY, transport=httpx.MockTransport(runtime)
     ) as runtime_client:
         app.include_router(create_skills_router(runtime_client, names))
-        app.include_router(create_model_providers_router(runtime_client))
+        app.include_router(create_model_providers_router(runtime_client, model_groups=()))
         app.include_router(create_agent_config_router(runtime_client, names))
         async with make_client(app) as http:
             yield http

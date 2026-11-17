@@ -419,6 +419,9 @@ function ProviderDetail({
                   </span>
                 )}
                 {isDefault ? <CardBadge>默认</CardBadge> : null}
+                {credential.modelGroup === null ? null : (
+                  <CardBadge>{`配置组 ${credential.modelGroup}`}</CardBadge>
+                )}
                 <span className="flex-1" />
                 <UsageAvatars users={credential.usedBy} />
                 <RowActions>

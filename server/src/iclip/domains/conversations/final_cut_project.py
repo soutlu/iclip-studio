@@ -26,7 +26,7 @@ from iclip.domains.conversations.service import (
     ReadDerivedFile,
     WriteDerivedFile,
 )
-from iclip.domains.identity.public import Principal
+from iclip.domains.identity.public import ModelGroupOf, Principal
 
 FINAL_CUT_PREVIEW_PREFIX: Final = "/final-cut/preview"
 
@@ -160,6 +160,7 @@ class FinalCutProject:
         preview_origin: str | None,
         tokens: PreviewTokens,
         translator: FinalCutTranslator,
+        model_group_of: ModelGroupOf,
     ) -> None:
         self._conversations = conversations
         self._read_file = read_file
@@ -167,6 +168,7 @@ class FinalCutProject:
         self._preview_origin = preview_origin
         self._tokens = tokens
         self._translator = translator
+        self._model_group_of = model_group_of
 
     async def open_preview(
         self, principal: Principal, conversation_id: uuid.UUID, *, app_origin: str | None
@@ -246,13 +248,18 @@ class FinalCutProject:
         entries: Sequence[FinalCutText],
     ) -> tuple[FinalCutText, ...]:
         """属主把一批原文短句翻成 ``locale``，答复按请求的顺序每个 id 恰好一条。不落库、不写工作区。
+        调模型用属主所在配置组的密钥。
 
         看不见这段对话 404，看得见但不是属主或对话已删除 403，这两种都不调模型。模型没启用抛
         ``ModelUnavailable``，调用失败或回答不对抛 ``FinalCutTranslationFailed``。
         """
 
-        await self._conversations.workspace_writable(principal, conversation_id)
-        return await self._translator.translate(entries, locale=locale)
+        conversation = await self._conversations.workspace_writable(principal, conversation_id)
+        return await self._translator.translate(
+            entries,
+            locale=locale,
+            model_group=await self._model_group_of(conversation.owner_user_id),
+        )
 
     def _grant(self, token: str) -> PreviewGrant:
         grant = self._tokens.verify(token, now=datetime.now(UTC))

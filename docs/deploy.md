@@ -195,7 +195,7 @@ rsync -a <本机输出目录>/catalog.json <服务器>:<部署目录>/components
 
 ### 配置组
 
-配置组让不同部门的人在出片、编辑段、高清版、字幕识别和生成背景音乐时用各自的 key，并把产品模型名换成该组在视频网关上的 model_id。用户怎么归组、什么时候定组，见 [CONTEXT.md](CONTEXT.md) 的「配置组」。配置写在 `configs/config.yaml` 的顶层段 `model_groups`，key 的值放在 `.env`，配置段里只写变量名：
+配置组让不同部门的人在出片、编辑段、高清版、字幕识别和生成背景音乐时用各自的 key，并把产品模型名换成该组在视频网关上的 model_id；发消息、起标题、翻译、拆解和打标这些大模型调用也用该组的大模型密钥。用户怎么归组、各项按谁定组，见 [CONTEXT.md](CONTEXT.md) 的「配置组」。组和媒体生成的 key 写在 `configs/config.yaml` 的顶层段 `model_groups`，key 的值放在 `.env`，配置段里只写变量名；大模型密钥在配置页的「模型与供应商」里给密钥选组：
 
 ```yaml
 model_groups:
@@ -214,12 +214,20 @@ model_groups:
 - **不写这一段就不分组**：所有人走默认组，视频用 `VIDEO_API_KEY`，字幕识别用 `QWEN_SUBTITLE_API_KEY`，生成背景音乐用 `QWEN_MUSIC_API_KEY`，视频网关收到的是产品模型名。
 - **启动时校验**：组名不合规、同一个部门写进了两个组、`video_models` 的键不正好是 `allowed_models`（开通了高清版时再加上 `enhance.model` 的值）、对照的值为空、key 变量没写或没有值，后端都拒绝启动并指出是哪一组的哪一项。字幕识别或生成背景音乐没开通时，不检查对应的 key；媒体生成没开通时，不检查 key 与 `video_models` 的模型名（组名、部门、必填项与值不能为空照样检查）。
 - **改配置的生效范围**：组在受理时定下并记在生成记录上，所以改配置只影响之后受理的任务。记录上的组已从配置删掉、或该组缺了要用的 key 时，这条任务直接失败，错误信息写明组名和缺的项。
+- **配置页只能选配置里的组**：给密钥选组的下拉框列出 `model_groups` 里的组名和「默认」；组在某个供应商下没有大模型密钥时，组里的人发消息会被拦下，所以先配好密钥、再让组里有人。
 
-日常操作都是改 `configs/config.yaml` 或 `.env` 后执行 `docker compose up -d`：
+**上线步骤**（第一次启用配置组，或新增一个组）：
+
+1. 在 `configs/config.yaml` 写好各组，`departments` 先留空 `[]`；把各组的 key 写进 `.env`；执行 `docker compose up -d`。这时还没有人在组里，大家照旧走默认组。
+2. 用 `root` 账号在配置页的「模型与供应商」里，给各组要用到的每个供应商添加一把密钥，「配置组」选这个组。
+3. 回到 `configs/config.yaml` 填上各组的 `departments`，再执行 `docker compose up -d`。
+
+日常操作除换大模型密钥外，都是改 `configs/config.yaml` 或 `.env` 后执行 `docker compose up -d`：
 
 - **给已有组加部门**：把部门 id 加进该组的 `departments`。一个部门只能在一个组里，要从别的组挪过来时先从那个组删掉。
-- **新增组**：在 `.env` 里加上该组的 key，在 `model_groups` 里加上组，`video_models` 写全。
+- **新增组**：按上面的上线步骤加，`video_models` 写全。
 - **换 key**：只改 `.env` 里该变量的值，变量名不变。该组在途任务后续的轮询会用新 key。
+- **换大模型密钥**：在配置页的「模型与供应商」里编辑归这个组的那把密钥，不用改配置、不用重启。
 - **删组**：先把该组的 `departments` 清空并执行 `docker compose up -d`，组里的人之后受理的任务走默认组；等该组的在途任务都结束（下面的查询返回 0），再从 `model_groups` 删掉这个组、从 `.env` 删掉它的 key，最后执行一次 `docker compose up -d`：
   ```sql
   SELECT count(*) FROM iclip.generation_jobs

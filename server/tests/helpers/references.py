@@ -216,6 +216,7 @@ async def plant_reference(
     engine: AsyncEngine,
     *,
     owner: uuid.UUID,
+    requested_by: uuid.UUID | None = None,
     video_url: str = VIDEO,
     status: str = "completed",
     document: str | None = DOCUMENT,
@@ -227,9 +228,9 @@ async def plant_reference(
     async with engine.begin() as conn:
         await conn.execute(
             text(
-                "INSERT INTO iclip.reference_videos (id, video_url, owner_user_id,"
+                "INSERT INTO iclip.reference_videos (id, video_url, owner_user_id, requested_by,"
                 " breakdown_status, error_code, document, started_at, created_at)"
-                " VALUES (:id, :url, :owner,"
+                " VALUES (:id, :url, :owner, :requested_by,"
                 " :status, :error_code, :document,"
                 " CASE WHEN CAST(:started AS float8) IS NULL THEN NULL"
                 "      ELSE now() - make_interval(secs => CAST(:started AS float8) * 60)"
@@ -240,6 +241,7 @@ async def plant_reference(
                 "id": reference_id,
                 "url": video_url,
                 "owner": owner,
+                "requested_by": requested_by,
                 "status": status,
                 "error_code": error_code,
                 "document": document,
