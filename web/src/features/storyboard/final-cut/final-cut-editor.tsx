@@ -47,8 +47,10 @@ import {
 } from './clip-edit'
 import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
 import type { CatalogItem } from './composition/catalog'
-import type { Canvas, CaptionClip, FilmClip } from './composition/film'
+import { isDubClip, type Canvas, type CaptionClip, type FilmClip } from './composition/film'
 import { textHosts, type LocaleBindings } from './composition/locale-text'
+import type { VoiceMode } from './composition/voices'
+import { dubbingRefusalText, dubbingRequests, dubClips, replacedDubs, shownIn } from './dubbing'
 import { isEditorKeyTarget, useEditorEscape, useEditorRoot } from './editor-keys'
 import { EditorRoot } from './editor-root'
 import { EditorToolbar, type EditTool } from './editor-toolbar'
@@ -65,7 +67,14 @@ import {
   type ItemKind,
 } from './items'
 import { ItemsTab } from './items-tab'
-import { captionIn, phraseWith, SOURCE_NAME, SOURCE_SHOWN, type Language } from './locales'
+import {
+  captionIn,
+  phraseWith,
+  SOURCE_NAME,
+  SOURCE_SHOWN,
+  type Language,
+  type LocaleCode,
+} from './locales'
 import { MaterialArea } from './material-area'
 import {
   takeDurationMs,
@@ -91,7 +100,7 @@ import {
   landingOn,
   musicRowTarget,
   onRow,
-  rowOpening,
+  rowOpeningAmong,
   rowsOf,
   type RowTarget,
   type Zone,
@@ -131,6 +140,7 @@ import {
   translationsToWrite,
 } from './translation'
 import { useCaptionRecognition, type RecognitionOutcome } from './use-caption-recognition'
+import { useDubbing, type DubbingOutcome, type DubbingTarget } from './use-dubbing'
 import { useFilmSession, type NewAudio } from './use-film-session'
 import { useTranslation } from './use-translation'
 import { useWholeFilmExport } from './use-whole-film-export'
@@ -151,6 +161,8 @@ const EMPTY_EXPORT_TEXT = 'final-cut 暂无内容，无法导出；请先加入�
 const NO_FILM_CAPTION_TEXT = 'final-cut 暂无内容，无法加字幕；请先加入镜头'
 const READING_TAKES_TEXT = '正在读取素材片，请稍后再识别字幕'
 const RECOGNIZING_TEXT = '正在识别字幕，请等待识别完成'
+const READING_TAKES_DUBBING_TEXT = '正在读取素材片，请稍后再生成配音'
+const NO_TAKES_DUBBING_TEXT = '找不到视频片段用的素材片记录，无法生成配音'
 // 还没有 final-cut 时先放组件或块：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 const NO_LINKS: Links = new Map()
@@ -529,7 +541,7 @@ function EditorBody({
   const landingAt = (clientX: number, clientY: number, duration: number, zone: Zone = 'visual') => {
     const point = timelineRef.current?.locate(clientX, clientY, zone) ?? null
     if (point === null) return null
-    // 拖进声音区的只有配乐：不进人声行
+    // 拖进声音区的只有配乐：不进配音行、原声行
     const row = zone === 'audio' ? musicRowTarget(rowsOf(clips), point.row) : point.row
     const snapped = snap
       ? snapSpanStartMs(point.timeMs, duration, snapTargets(clips, playhead), scale.pps)
@@ -548,7 +560,13 @@ function EditorBody({
   const trackFor = (row: RowTarget, movedId?: string) =>
     'track' in row
       ? { track: row.track, renumber: undefined }
-      : rowOpening(clips, row.zone, row.insertAt, movedId)
+      : rowOpeningAmong(
+          [...clips, ...(film?.unshownDubs ?? [])],
+          shownIn(locale.code),
+          row.zone,
+          row.insertAt,
+          movedId,
+        )
 
   /** 把素材里的一段放进 final-cut：给了 `at` 放在那里，没给就接在主轨的末尾。 */
   const place = (chosen: MaterialRange, at?: { row: RowTarget; start: number }) => {
@@ -765,7 +783,7 @@ function EditorBody({
             html: previewDocument(
               film.html,
               projectFilesBase(tokens.origin, tokens.token),
-              film.locale.values,
+              film.locale,
             ),
             runtimeSrc: previewRuntimeSrc(catalog, tokens.origin),
             revision: film.revision,
@@ -895,6 +913,87 @@ function EditorBody({
       notice(`${entries.length - written} 条在翻译期间已修改或删除，未写入译文`)
     if (tooLong > 0) notice(`${tooLong} 条超过 ${TRANSLATION_LIMITS.text} 字，未翻译；请手动填写`)
   }
+  // 其它语言下的「AI 配音」：给有已翻译字幕的素材片各生成一条配音，全部有了结果后按那时的 final-cut 一步建成
+  // 各句的配音片段、切到 AI 配音
+  const dubbingPlan =
+    film === null || target === undefined
+      ? undefined
+      : dubbingRequests(film.clips, target.values, (src) => takeDurationMs(keyframes.get(src)))
+  const dubbingTargets =
+    dubbingPlan === undefined || 'refusal' in dubbingPlan
+      ? []
+      : dubbingPlan.requests.flatMap((request) => {
+          const sourceJobId = takeOf(request.src)
+          return sourceJobId === undefined ? [] : [{ ...request, sourceJobId }]
+        })
+  const dubbingBlocked =
+    dubbingPlan === undefined || target === undefined
+      ? undefined
+      : videos.isPending
+        ? READING_TAKES_DUBBING_TEXT
+        : 'refusal' in dubbingPlan
+          ? dubbingRefusalText(dubbingPlan.refusal, target.code)
+          : dubbingTargets.length === 0
+            ? NO_TAKES_DUBBING_TEXT
+            : undefined
+  const sourceName = (src: string) =>
+    sourceNames.get(src) ?? clips.find((clip) => clip.kind === 'video' && clip.src === src)?.label
+  const writeDubs = (
+    code: LocaleCode,
+    targets: readonly DubbingTarget[],
+    outcomes: ReadonlyMap<string, DubbingOutcome>,
+  ) => {
+    const ready = targets.flatMap((each) => {
+      const outcome = outcomes.get(each.sourceJobId)
+      const url = outcome?.kind === 'ready' ? outcome.job.outputUrl : null
+      return outcome?.kind !== 'ready' || url === null
+        ? []
+        : [
+            {
+              request: each,
+              track: {
+                url,
+                durationMs: outcome.job.durationMs,
+                lines: outcome.job.dubbedLines ?? [],
+              },
+            },
+          ]
+    })
+    let trimmed = 0
+    const added = session.addDubs(code, (current) => {
+      const made = ready.flatMap(({ request, track }) => dubClips(current, request, track))
+      trimmed = made.filter((dub) => dub.trimmed).length
+      return {
+        removed: ready.flatMap(({ request }) => replacedDubs(current, code, request.src)),
+        added: made,
+      }
+    })
+    if (added > 0) notice(phraseWith(`已生成 ${added} 句`, code, '配音'))
+    if (trimmed > 0) notice(`${trimmed} 句配音太长，已截短`)
+    for (const each of targets) {
+      const outcome = outcomes.get(each.sourceJobId)
+      if (outcome?.kind === 'failed')
+        notice(`${sourceName(each.src) ?? '素材片'} 的配音生成失败：${outcome.message}`)
+    }
+  }
+  const dubbing = useDubbing(conversationId, writeDubs)
+  const voice =
+    film === null || target === undefined
+      ? undefined
+      : {
+          mode: film.voiceMode,
+          dubbed: film.clips.some(isDubClip),
+          generating: dubbing.generating,
+          generateBlocked: dubbingBlocked,
+          onMode: (mode: VoiceMode) => {
+            leaveMaterial()
+            session.setVoiceMode(target.code, mode)
+          },
+          onGenerate: () => {
+            if (dubbingBlocked === undefined) void dubbing.start(target.code, dubbingTargets)
+          },
+        }
+
   // 贴片、场景的文字：「组件文字」和「属性」共用
   const itemTexts = {
     bindings: film?.bindings ?? NO_BINDINGS,
@@ -1009,7 +1108,7 @@ function EditorBody({
               配乐
             </TabsTrigger>
             <TabsTrigger className={SIDE_TAB_CLASS} value="captions">
-              字幕
+              字幕·配音
             </TabsTrigger>
             <TabsTrigger className={cn(SIDE_TAB_CLASS, 'wf-side-tab-props')} value="props">
               属性
@@ -1160,6 +1259,7 @@ function EditorBody({
               recognizeBlocked={recognizeBlocked}
               recognizing={recognition.recognizing}
               selected={selected}
+              voice={voice}
               translate={
                 pending === undefined
                   ? undefined
@@ -1268,6 +1368,7 @@ function EditorBody({
         <FilmTimeline
           clips={clips}
           untranslated={untranslated}
+          dubsSilent={locale.values !== null && film?.voiceMode === 'original'}
           links={links}
           onSplit={split}
           tool={tool}

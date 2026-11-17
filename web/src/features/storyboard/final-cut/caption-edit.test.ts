@@ -5,6 +5,7 @@ import {
   captionsFollowing,
   captionSpot,
   captionsInOrder,
+  dubsFollowing,
   placeCaptions,
   recognitionTargets,
   recognizedCaptions,
@@ -282,5 +283,44 @@ describe('字幕跟着它的视频片段走', () => {
     expect(splitOwners(clips, plan.cuts, new Map([['v1', 'v1-half']]))).toEqual(
       new Map([['late', 'v1-half']]),
     )
+  })
+})
+
+describe('配音片段跟着它配的那句字幕走', () => {
+  const dub = (id: string, locale: string, of: string, start: number) =>
+    audio({ id, start, duration: 1_000, dub: { locale, caption: of, trimmed: false } })
+  const before: FilmClip[] = [
+    captionClip({ id: 'a1', start: 500, duration: 1_000, owner: 'v1' }),
+    captionClip({ id: 'b2', start: 2_000, duration: 1_000, owner: 'v1' }),
+    dub('en-a1', 'en', 'a1', 500),
+    dub('de-a1', 'de', 'a1', 500),
+    dub('en-b2', 'en', 'b2', 2_000),
+    // 配的那句本来就不在：不跟着谁
+    dub('en-gone', 'en', 'missing', 5_000),
+  ]
+  const after = (changes: Record<string, Partial<FilmClip>>, dropped: string[] = []) =>
+    before
+      .filter((clip) => !dropped.includes(clip.id))
+      .map((clip) => ({ ...clip, ...changes[clip.id] }) as FilmClip)
+
+  it('字幕挪了：各语言的配音挪同样的时间差，早于 0 的收在 0；自己也挪了的按自己的', () => {
+    expect(dubsFollowing(before, after({ a1: { start: 0 }, b2: { start: 3_000 } }))).toEqual({
+      starts: new Map([
+        ['en-a1', 0],
+        ['de-a1', 0],
+        ['en-b2', 3_000],
+      ]),
+      removed: [],
+    })
+    expect(
+      dubsFollowing(before, after({ a1: { start: 1_500 }, 'en-a1': { start: 200 } })).starts,
+    ).toEqual(new Map([['de-a1', 1_500]]))
+  })
+
+  it('字幕删了：它的各语言配音一起删；裁剪字幕（开始不变）配音不动', () => {
+    expect(dubsFollowing(before, after({ b2: { duration: 300 } }, ['a1']))).toEqual({
+      starts: new Map(),
+      removed: ['en-a1', 'de-a1'],
+    })
   })
 })

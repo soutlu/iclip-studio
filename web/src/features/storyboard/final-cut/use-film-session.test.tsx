@@ -1148,6 +1148,7 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
       hidden: false,
       link: null,
       syncOrigin: null,
+      dub: null,
     })
     expect(result.current.film?.durationMs).toBe(10_000)
     await waitFor(() => expect(saves).toHaveLength(1))
@@ -1696,7 +1697,7 @@ describe('useFilmSession · 分离音频、合并回视频、联动', () => {
   })
   const music = audio({ id: 'm', start: 0, duration: 6_000 })
 
-  /** 分离过原声、联动着的一对（2–4 秒，入点 1 秒），原声在人声行（声音区第 0 行），配乐在第 1 行。 */
+  /** 分离过原声、联动着的一对（2–4 秒，入点 1 秒），原声在原声行（声音区第 0 行），配乐在第 1 行。 */
   const pairFilm = (overrides: { video?: Partial<VideoClip>; audio?: Partial<AudioClip> } = {}) => [
     audio({
       id: 'a',
@@ -1723,7 +1724,7 @@ describe('useFilmSession · 分离音频、合并回视频、联动', () => {
     audio({ id: 'm', start: 0, duration: 8_000, track: 1 }),
   ]
 
-  it('分离：原声片段写在视频前面、照抄地址起止入点速度和声音属性，视频关掉原声、去掉声音属性，两段同一个链接名和出处；声音区最上面新开人声行；一步撤销', async () => {
+  it('分离：原声片段写在视频前面、照抄地址起止入点速度和声音属性，视频关掉原声、去掉声音属性，两段同一个链接名和出处；声音区最上面新开原声行；一步撤销', async () => {
     const saves = recordSaves()
     const { result } = await openWith([shot, music])
     let added: string | undefined
@@ -1759,7 +1760,7 @@ describe('useFilmSession · 分离音频、合并回视频、联动', () => {
     })
     for (const gone of ['data-has-audio', 'data-volume', 'data-fade-in'])
       expect(second).not.toHaveProperty(gone)
-    // 原来的配乐往下排一号，行名是「人声」「配乐」
+    // 原来的配乐往下排一号，行名是「原声」「配乐」
     expect(third).toMatchObject({ id: 'm', 'data-track-index': '1' })
     expect(pairIn(result, added)).toMatchObject({ linked: true, offsetMs: 0 })
 
@@ -1768,7 +1769,7 @@ describe('useFilmSession · 分离音频、合并回视频、联动', () => {
     expect(result.current.film?.canUndo).toBe(false)
   })
 
-  it('分离：隐藏着的视频分离出的原声也隐藏；有空着的人声行时放进去，不新开行', async () => {
+  it('分离：隐藏着的视频分离出的原声也隐藏；有空着的原声行时放进去，不新开行', async () => {
     const { result } = await openWith([
       ...pairFilm(),
       video({ id: 'w', start: 5_000, duration: 1_000, hidden: true }),

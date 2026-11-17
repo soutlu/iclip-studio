@@ -48,7 +48,7 @@ import {
 } from './clip-edit'
 import { ClipMenuItems } from './clip-menu'
 import { thumbnailUrl, type ComponentCatalog } from './component-catalog'
-import { isMediaClip, type FilmClip } from './composition/film'
+import { isDubClip, isMediaClip, type FilmClip } from './composition/film'
 import { useEditorEscape, useEditorRoot } from './editor-keys'
 import type { EditTool } from './editor-toolbar'
 import { SOURCE_NAME } from './locales'
@@ -100,6 +100,8 @@ type FilmTimelineProps = {
   clips: readonly FilmClip[]
   /** 显示着其它语言时还没翻的字幕：片段上写的是原文，右边标一个「原文」。 */
   untranslated: ReadonlySet<string>
+  /** 显示着的语言保留原声：配音片段不出声，右边标一个「不出声」。 */
+  dubsSilent: boolean
   /** 片段的链接名：链接的片段一起切。 */
   links: Links
   /**
@@ -160,6 +162,13 @@ const seconds = (ms: number) => (ms / 1000).toFixed(1)
 
 /** 其它语言里还没翻的字幕：片段上写的是原文，标出来。 */
 const SOURCE_TEXT_BADGE: SoundBadge = { text: SOURCE_NAME, tone: 'muted' }
+
+/** 配音片段的小标：这种语言保留原声时不出声；生成时截了尾的提示一下。 */
+const dubBadgeOf = (clip: FilmClip, silent: boolean): SoundBadge | undefined => {
+  if (!isDubClip(clip)) return undefined
+  if (silent) return { text: '不出声', tone: 'muted' }
+  return clip.dub.trimmed ? { text: '截短', tone: 'offset' } : undefined
+}
 
 // 指针离一条空行（待新开的那一行）的上下边这么近也算在它上面
 const ROW_REACH_PX = 3
@@ -745,6 +754,7 @@ const keyOf = (row: RowKey) => `${row.zone}-${row.track}`
 export function FilmTimeline({
   clips,
   untranslated,
+  dubsSilent,
   links,
   tool,
   onSplit,
@@ -1172,6 +1182,7 @@ export function FilmTimeline({
                           groupFor={(kind) => editGroup(clip, selected, clips, kind)}
                           badge={
                             soundBadgeOf(clip, clips) ??
+                            dubBadgeOf(clip, dubsSilent) ??
                             (untranslated.has(clip.id) ? SOURCE_TEXT_BADGE : undefined)
                           }
                           key={clip.id}

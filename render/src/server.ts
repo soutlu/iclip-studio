@@ -86,7 +86,21 @@ async function createExport(req: IncomingMessage, res: ServerResponse, context: 
     fail(res, 400, 'invalid-project', problem)
     return
   }
-  const main = request.files.find((file) => file.path === MAIN_FILE)?.content ?? ''
+  const localized = localizeProject(request.files, request.locale ?? null)
+  if (!localized.ok) {
+    fail(res, 400, 'invalid-locale', localized.message)
+    return
+  }
+  const { files, variables, dropped } = localized.value
+  // 只记条数：值表里的字不进日志
+  if (dropped > 0)
+    context.logger.warn('值表里有主文件没声明的变量，已去掉', {
+      exportId: request.id,
+      locale: request.locale,
+      count: dropped,
+    })
+  // 按导出的那种语言的主文件取素材：别的语言的配音不用下载
+  const main = files.find((file) => file.path === MAIN_FILE)?.content ?? ''
   const downloads = new Map<string, string>()
   for (const address of mediaAddresses(main)) {
     const download = request.media[address]?.url
@@ -100,24 +114,6 @@ async function createExport(req: IncomingMessage, res: ServerResponse, context: 
   if (rejected.length > 0) {
     fail(res, 400, 'media-host-not-allowed', `素材地址的主机不在允许范围：${rejected.join('、')}`)
     return
-  }
-  let files = request.files
-  let variables: Record<string, unknown> | null = null
-  if (request.locale) {
-    const localized = localizeProject(request.files, request.locale)
-    if (!localized.ok) {
-      fail(res, 400, 'invalid-locale', localized.message)
-      return
-    }
-    // 只记条数：值表里的字不进日志
-    if (localized.value.dropped > 0)
-      context.logger.warn('值表里有主文件没声明的变量，已去掉', {
-        exportId: request.id,
-        locale: request.locale,
-        count: localized.value.dropped,
-      })
-    files = localized.value.files
-    variables = localized.value.variables
   }
   const accepted = context.queue.submit({
     id: request.id,

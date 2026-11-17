@@ -402,7 +402,7 @@ const syncText = (offsetMs: number | null, unit: string) =>
       : `错开 ${offsetText(offsetMs, unit)}`
 
 /**
- * 分离过原声的视频片段：原声去了「人声」行，同步状态，「定位分离原声」、错开时「对齐口型」、「合并」。
+ * 分离过原声的视频片段：原声去了「原声」行，同步状态，「定位分离原声」、错开时「对齐口型」、「合并」。
  */
 function DetachedCard({
   pair,
@@ -422,7 +422,7 @@ function DetachedCard({
             aria-hidden="true"
             className={cn('wf-sound-dot', pair.offsetMs !== 0 && 'is-warning')}
           />
-          <h4 className="wf-prop-title">原声已分离至「人声」行</h4>
+          <h4 className="wf-prop-title">原声已分离至「原声」行</h4>
           <span
             className={cn('wf-sound-status', pair.offsetMs !== 0 && 'is-warning')}
             data-testid="sync-status"

@@ -78,7 +78,24 @@ export interface HostClip extends ClipBase {
 export interface AudioClip extends MediaBase {
   kind: 'audio'
   loop: boolean
+  /** 是一句字幕的配音时它是哪种语言、配的哪句（见 `AudioDub`）；别的音频片段是 null。 */
+  dub: AudioDub | null
 }
+
+/**
+ * 配音片段：一句字幕在一种语言下的配音，是一个普通的音频片段，放在「配音」行上、和那句字幕对齐。`locale` 是
+ * `data-locale`，`caption` 是 `data-dub-of`（它配的那句字幕的编号），两个都写了才算配音；`trimmed` 是
+ * `data-dub-trimmed`，生成时这句加速到上限也放不下、截掉了尾巴。哪种语言下出不出声见 `voices.ts`。
+ */
+export interface AudioDub {
+  locale: string
+  caption: string
+  trimmed: boolean
+}
+
+/** 一句字幕的配音片段：带 `data-locale` 和 `data-dub-of` 的音频片段。 */
+export const isDubClip = (clip: FilmClip): clip is AudioClip & { dub: AudioDub } =>
+  clip.kind === 'audio' && clip.dub !== null
 
 /** 别的带时间的元素（手写的文字、目录里查不到的宿主等）：只能挪动、裁两端、换行、隐藏和删除。 */
 export interface OtherClip extends ClipBase {
@@ -224,8 +241,20 @@ export function clipOf(
   })
   if (element.tag === 'video')
     return { kind: 'video', ...common, ...media(), muted: attributes['muted'] !== undefined, z }
-  if (element.tag === 'audio')
-    return { kind: 'audio', ...common, ...media(), loop: attributes['loop'] !== undefined }
+  if (element.tag === 'audio') {
+    const locale = nameOf(attributes['data-locale'])
+    const caption = nameOf(attributes['data-dub-of'])
+    return {
+      kind: 'audio',
+      ...common,
+      ...media(),
+      loop: attributes['loop'] !== undefined,
+      dub:
+        locale === null || caption === null
+          ? null
+          : { locale, caption, trimmed: attributes['data-dub-trimmed'] !== undefined },
+    }
+  }
   const item = attributes['data-composition-id']
   const src = attributes['data-composition-src']
   if (item !== undefined && src !== undefined && itemNamed(catalog, item) !== undefined)
@@ -296,7 +325,7 @@ export function videoElement(clip: Omit<VideoClip, 'kind'>): string {
   })
 }
 
-/** 新加的音频片段。 */
+/** 新加的音频片段；配音片段带上语言、配的哪句和截没截尾。 */
 export function audioElement(clip: Omit<AudioClip, 'kind'>): string {
   return element('audio', {
     'data-hidden': clip.hidden ? '' : undefined,
@@ -304,6 +333,9 @@ export function audioElement(clip: Omit<AudioClip, 'kind'>): string {
     class: 'clip audio',
     ...mediaAttributes(clip),
     loop: clip.loop ? 'true' : undefined,
+    'data-locale': clip.dub?.locale,
+    'data-dub-of': clip.dub?.caption,
+    'data-dub-trimmed': clip.dub?.trimmed === true ? '' : undefined,
   })
 }
 

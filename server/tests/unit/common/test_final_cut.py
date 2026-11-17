@@ -40,3 +40,21 @@ def test_keeps_raw_ampersands_that_look_like_entity_names() -> None:
     url = "https://a.test/x.mp4?a=1&timestamp=2&region=cn&copy=3"
 
     assert media_addresses(f'<video src="{url}"></video>') == (MediaAddress(url=url, kind="video"),)
+
+
+def test_lists_dubs_of_every_locale_as_audio() -> None:
+    english = "https://media.iclip.test/dubbings/en.m4a"
+    german = "https://media.iclip.test/dubbings/de.m4a"
+    html = (
+        '<div data-composition-id="film" data-voice-modes="{&quot;en&quot;:&quot;dub&quot;}">'
+        f'<video src="{CLIP_URL}" muted></video>'
+        f'<audio src="{english}" data-locale="en" data-dub-of="cap-a1"></audio>'
+        f'<audio src="{german}" data-locale="de" data-dub-of="cap-a1"></audio>'
+        "</div>"
+    )
+
+    assert media_addresses(html) == (
+        MediaAddress(url=CLIP_URL, kind="video"),
+        MediaAddress(url=english, kind="audio"),
+        MediaAddress(url=german, kind="audio"),
+    )

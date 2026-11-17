@@ -7,6 +7,7 @@ import { BlockedReason } from '../components/blocked-reason'
 import { captionClock, captionsInOrder } from './caption-edit'
 import { ComponentTexts } from './component-texts'
 import type { CaptionClip } from './composition/film'
+import type { VoiceMode } from './composition/voices'
 import {
   captionIn,
   phraseWith,
@@ -31,9 +32,25 @@ type TranslateControl = {
   onTranslate: () => void
 }
 
+/**
+ * 其它语言下的人声设置：`mode` 是现在的设置，`dubbed` 是这种语言已经有配音片段，`generating` 是正在给几条
+ * 素材片生成配音（没在生成时是 0），`generateBlocked` 是现在为什么不能生成配音。
+ */
+export type VoiceControl = {
+  mode: VoiceMode
+  dubbed: boolean
+  generating: number
+  generateBlocked: string | undefined
+  onMode: (mode: VoiceMode) => void
+  /** 生成这种语言的配音（已有配音时换掉）。 */
+  onGenerate: () => void
+}
+
 type CaptionsTabProps = {
   /** 其它语言下的「翻译」；原文时是 undefined，不显示。 */
   translate: TranslateControl | undefined
+  /** 其它语言下的人声设置；原文时是 undefined，不显示。 */
+  voice: VoiceControl | undefined
   captions: readonly CaptionClip[]
   /** 「组件文字」那一段（显示着的语言、选中的片段和这里共用）。 */
   texts: Omit<ComponentProps<typeof ComponentTexts>, 'locale' | 'selected'>
@@ -59,13 +76,14 @@ type CaptionsTabProps = {
 }
 
 /**
- * 「字幕」页签：最上面在「字幕」和「组件文字」（见 `ComponentTexts`）两段之间切换，各写着有几个。「字幕」是识别
+ * 「字幕·配音」页签：最上面在「字幕」和「组件文字」（见 `ComponentTexts`）两段之间切换，各写着有几个。「字幕」是识别
  * 字幕、在播放头处加一句，下面是按开始时间排的字幕列表，每句能直接改字、删掉，点时间选中它、跳到它的开始。
  * 编辑器里选中的字幕标成当前这一句；刚加的那一句焦点进它的文字框。识别中写着在识别几个片段。其它语言下改的是
- * 这种语言的字，最上面多一个「翻译」，两段里还没翻的一起翻。
+ * 这种语言的字，最上面多一个「翻译」，两段里还没翻的一起翻；「字幕」里多一行人声设置（见 `VoiceRow`）。
  */
 export function CaptionsTab({
   translate,
+  voice,
   captions,
   texts,
   locale,
@@ -127,6 +145,7 @@ export function CaptionsTab({
           </button>
         ))}
       </div>
+      {view === 'captions' && voice !== undefined ? <VoiceRow voice={voice} /> : null}
       {view === 'texts' ? (
         <ComponentTexts {...texts} locale={locale} selected={selected} />
       ) : (
@@ -150,6 +169,68 @@ export function CaptionsTab({
   )
 }
 
+const GENERATING_TEXT = '正在生成配音，请等待生成完成'
+
+/**
+ * 其它语言下的「人声」一行：「保留原声」和「AI 配音」二选一，当前的高亮。这种语言还没有配音时点「AI 配音」是生成
+ * 配音（生成完自动用上），有配音时是切过去；有配音时旁边多一个「重新生成」。生成中写着在给几条素材片配音。
+ */
+function VoiceRow({ voice }: { voice: VoiceControl }) {
+  const { mode, dubbed, generating, generateBlocked, onMode, onGenerate } = voice
+  const busy = generating > 0 ? GENERATING_TEXT : undefined
+  const redoBlocked = busy ?? generateBlocked
+  const dubBlocked = dubbed ? busy : redoBlocked
+  return (
+    <>
+      <div aria-label="人声设置" className="wf-captions-voice" role="group">
+        <span className="wf-captions-voice-label">人声</span>
+        <button
+          aria-pressed={mode === 'original'}
+          className="wf-captions-voice-mode ui-state ui-focus"
+          onClick={() => onMode('original')}
+          type="button"
+        >
+          保留原声
+        </button>
+        <BlockedReason reason={dubBlocked}>
+          <button
+            aria-disabled={dubBlocked === undefined ? undefined : true}
+            aria-pressed={mode === 'dub'}
+            className="wf-captions-voice-mode ui-state ui-focus"
+            onClick={() => {
+              if (dubBlocked !== undefined) return
+              if (dubbed) onMode('dub')
+              else onGenerate()
+            }}
+            type="button"
+          >
+            {generating > 0 ? '配音中…' : 'AI 配音'}
+          </button>
+        </BlockedReason>
+        {dubbed ? (
+          <BlockedReason reason={redoBlocked}>
+            <button
+              aria-disabled={redoBlocked === undefined ? undefined : true}
+              className="wf-captions-voice-redo ui-state ui-focus"
+              onClick={() => {
+                if (redoBlocked === undefined) onGenerate()
+              }}
+              type="button"
+            >
+              重新生成
+            </button>
+          </BlockedReason>
+        ) : null}
+      </div>
+      {generating > 0 ? (
+        <p className="wf-captions-note" role="status">
+          正在为 {generating} 条素材片生成配音，可继续编辑
+        </p>
+      ) : null}
+    </>
+  )
+}
+
 /** 「字幕」那一段：识别、加一句的按钮和字幕列表。 */
 function CaptionsView({
   captions,
@@ -165,7 +246,7 @@ function CaptionsView({
   onText,
   onRemove,
   onPick,
-}: Omit<CaptionsTabProps, 'texts' | 'problem' | 'onAdd' | 'translate'> & {
+}: Omit<CaptionsTabProps, 'texts' | 'problem' | 'onAdd' | 'translate' | 'voice'> & {
   add: () => Promise<void>
   /** 焦点要进的那一句（刚加的）。 */
   focusing: string | null

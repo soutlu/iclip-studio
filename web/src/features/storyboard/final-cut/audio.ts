@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { formatDateTime } from '@/shared/lib/date-time'
 import type { GenerationJob } from '../storyboard.api'
 import type { AudioClip, FilmClip } from './composition/film'
-import { isVoiceRow, rowBusy, rowsOf, type RowTarget } from './placement'
+import { isMusicRow, rowBusy, rowsOf, type RowTarget } from './placement'
 
 const promptOf = (job: GenerationJob): string | undefined =>
   z.object({ prompt: z.string().min(1) }).safeParse(job.request).data?.prompt
@@ -35,9 +35,9 @@ export const firstAudioClipOf = (clips: readonly FilmClip[], src: string): Audio
     )
 
 /**
- * 点「加到播放头」时音频片段放在哪：从 `startMs` 起、长 `durationMs`。配乐不进「人声」行：
- * 放在第一条配乐行；它在这段时间已经有片段时，在它下面紧挨着新开一行；还没有配乐行时在人声行下面
- * （没有人声行就是声音区最下面）新开一行。
+ * 点「加到播放头」时音频片段放在哪：从 `startMs` 起、长 `durationMs`。配乐不进「配音」行和「原声」行：
+ * 放在第一条配乐行；它在这段时间已经有片段时，在它下面紧挨着新开一行；还没有配乐行时在声音区最下面
+ * （配音行、原声行下面）新开一行。
  */
 export const audioPlayheadSpot = (
   clips: readonly FilmClip[],
@@ -46,9 +46,9 @@ export const audioPlayheadSpot = (
 ): { row: RowTarget; start: number } => {
   const rows = rowsOf(clips)
   // insertAt 数的是时间线上从上往下的第几行，画面区的行也算在里面
-  const at = rows.findIndex((row) => row.zone === 'audio' && !isVoiceRow(row))
+  const at = rows.findIndex(isMusicRow)
   const top = rows[at]
-  // 没有配乐行时声音区只剩人声行，最下面就是人声行下面
+  // 没有配乐行时声音区只剩配音行、原声行，最下面就是它们下面
   if (top === undefined) return { row: { zone: 'audio', insertAt: rows.length }, start: startMs }
   return {
     row: rowBusy(top, startMs, durationMs)
