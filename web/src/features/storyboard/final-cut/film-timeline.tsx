@@ -46,7 +46,7 @@ import {
   type SourceLength,
   type Timing,
 } from './clip-edit'
-import { carveOf, isCarveBed } from './carve'
+import { canCarve, carveOf } from './carve'
 import { ClipMenuItems } from './clip-menu'
 import { thumbnailUrl, type ComponentCatalog } from './component-catalog'
 import { isDubClip, isMediaClip, type FilmClip } from './composition/film'
@@ -166,9 +166,9 @@ const SOURCE_TEXT_BADGE: SoundBadge = { text: SOURCE_NAME, tone: 'muted' }
 const dubBadgeOf = (clip: FilmClip): SoundBadge | undefined =>
   isDubClip(clip) && clip.dub.trimmed ? { text: '截短', tone: 'offset' } : undefined
 
-/** 开着压低的配乐片段的小标；静音（隐藏）的不出声，不标。 */
+/** 开着自动压低的有声片段的小标；静音（隐藏）的不出声，不标。 */
 const carveBadgeOf = (clip: FilmClip): SoundBadge | undefined =>
-  isCarveBed(clip) && !clip.hidden && carveOf(clip)?.enabled === true
+  canCarve(clip) && !clip.hidden && carveOf(clip)?.enabled === true
     ? { text: '自动压低', tone: 'linked' }
     : undefined
 

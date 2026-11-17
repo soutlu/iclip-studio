@@ -980,6 +980,67 @@
   box-shadow: inset 0 0 0 0.5px var(--color-hairline);
 }
 
+/* 「智能调音」：标题行右边的角色按钮，主开关的一块（浅底圆角），下面另一项的一行 */
+.wf-mix-role {
+  display: inline-flex;
+  height: 22px;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding: 0 6px 0 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface);
+  font-size: var(--text-caption);
+  font-weight: 500;
+}
+
+.wf-mix-role-name {
+  color: var(--color-on-surface-muted);
+  font-weight: 400;
+}
+
+.wf-mix-role-option {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.wf-mix-role-description {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  white-space: normal;
+}
+
+.wf-mix-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container);
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+}
+
+.wf-mix-card-title {
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 500;
+}
+
+.wf-mix-extra {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px;
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-caption);
+}
+
 .wf-sound-actions {
   display: flex;
   align-items: center;

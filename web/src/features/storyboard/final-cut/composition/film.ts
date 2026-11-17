@@ -39,6 +39,11 @@ interface ClipBase {
  * 时长 × 速度），`fadeIn` / `fadeOut` 是声音淡入淡出的毫秒数。
  * `syncOrigin`（`data-sync-origin`）相同的视频片段和音频片段出自同一个文件（分离出来的原声和它的画面），
  * 解除联动后也留着，用来算两段错开了多少；没有时是 null。
+ *
+ * 智能调音用到的几项，都是属性原样的文字，没写时是 null：`audioGroup` 是 `data-audio-group`（片段属于哪个
+ * 声音组，声音角色就是组，见 `audio-role.ts`），`fxCarve` 是 `data-fx-carve`（自动压低的设置，JSON，读法见
+ * `carve.ts`，播放和导出不认它），`fxChain` 是 `data-fx-chain`（效果链，JSON；自动压低、自动平稳音量生成的节点
+ * 都在里面，预览和导出按它和曲线 `data-automation` 放）。
  */
 interface MediaBase extends ClipBase {
   src: string
@@ -48,6 +53,9 @@ interface MediaBase extends ClipBase {
   fadeIn: number
   fadeOut: number
   syncOrigin: string | null
+  audioGroup: string | null
+  fxCarve: string | null
+  fxChain: string | null
 }
 
 /**
@@ -80,11 +88,6 @@ export interface AudioClip extends MediaBase {
   loop: boolean
   /** 是一句字幕的配音时它是哪种语言、配的哪句（见 `AudioDub`）；别的音频片段是 null。 */
   dub: AudioDub | null
-  /**
-   * 压低配乐的设置：`data-fx-carve` 原样的文字（JSON，读法见 `carve.ts`），没写时是 null。只记设置，播放和导出
-   * 认的是它生成的效果链 `data-fx-chain` 和曲线 `data-automation`。
-   */
-  fxCarve: string | null
 }
 
 /**
@@ -155,6 +158,7 @@ export type ClipAttribute =
   | 'data-variable-values'
   | 'data-link'
   | 'data-sync-origin'
+  | 'data-audio-group'
 
 /** 一个元素在读片段时用得到的部分（SDK 的元素快照里有）：`attributes` 不含 `style`、`class`。 */
 export interface ElementView {
@@ -246,6 +250,9 @@ export function clipOf(
     fadeIn: millisecondsOr(attributes['data-fade-in'], 0),
     fadeOut: millisecondsOr(attributes['data-fade-out'], 0),
     syncOrigin: nameOf(attributes['data-sync-origin']),
+    audioGroup: nameOf(attributes['data-audio-group']),
+    fxCarve: nameOf(attributes['data-fx-carve']),
+    fxChain: nameOf(attributes['data-fx-chain']),
   })
   if (element.tag === 'video')
     return { kind: 'video', ...common, ...media(), muted: attributes['muted'] !== undefined, z }
@@ -261,7 +268,6 @@ export function clipOf(
         locale === null || caption === null
           ? null
           : { locale, caption, trimmed: attributes['data-dub-trimmed'] !== undefined },
-      fxCarve: nameOf(attributes['data-fx-carve']),
     }
   }
   const item = attributes['data-composition-id']
@@ -317,6 +323,9 @@ const mediaAttributes = (clip: MediaBase) => ({
   'data-fade-in': unlessZero(clip.fadeIn),
   'data-fade-out': unlessZero(clip.fadeOut),
   'data-sync-origin': clip.syncOrigin ?? undefined,
+  'data-audio-group': clip.audioGroup ?? undefined,
+  'data-fx-carve': clip.fxCarve ?? undefined,
+  'data-fx-chain': clip.fxChain ?? undefined,
 })
 
 /** 新加的视频片段：有声音时带 `data-has-audio`，静音时换成 `muted`。 */
@@ -345,7 +354,6 @@ export function audioElement(clip: Omit<AudioClip, 'kind'>): string {
     'data-locale': clip.dub?.locale,
     'data-dub-of': clip.dub?.caption,
     'data-dub-trimmed': clip.dub?.trimmed === true ? '' : undefined,
-    'data-fx-carve': clip.fxCarve ?? undefined,
   })
 }
 

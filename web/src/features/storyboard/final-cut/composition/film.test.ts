@@ -179,6 +179,9 @@ describe('按标签认片段', () => {
         z: 0,
         link: null,
         syncOrigin: null,
+        audioGroup: null,
+        fxCarve: null,
+        fxChain: null,
       },
     ])
   })
@@ -198,11 +201,16 @@ describe('按标签认片段', () => {
     expect(readBack(html)).toMatchObject([{ link: null, syncOrigin: null }])
   })
 
-  it('压低配乐的设置原样读写；没写时是 null', () => {
-    const fxCarve = '{"enabled":true,"sources":["clip-1"],"strength":0.25}'
-    const clips = [video(), audio({ fxCarve })]
+  it('智能调音的声音组、压低设置和效果链在视频、音频片段上原样读写；没写时是 null', () => {
+    const fxCarve = '{"enabled":true,"sources":["voice"],"strength":0.25}'
+    const fxChain = '{"version":1,"nodes":[{"type":"gain","id":"n1","fromLeveller":true}]}'
+    const clips = [
+      video({ audioGroup: 'voice', fxCarve, fxChain }),
+      audio({ audioGroup: 'music', fxCarve }),
+    ]
     expect(readBack(mainFile(clips, CANVAS))).toEqual(clips)
-    expect(audioElement(audio())).not.toContain('data-fx-carve')
+    for (const written of [audioElement(audio()), videoElement(video())])
+      expect(written).not.toMatch(/data-audio-group|data-fx-carve|data-fx-chain/)
   })
 })
 
