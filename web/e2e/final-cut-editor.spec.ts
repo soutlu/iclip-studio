@@ -2157,12 +2157,17 @@ test('翻译：加上 English 后点「翻译」，字幕和贴片里随语言�
   await expect.poll(shown).toEqual({ caption: '[EN] 新字幕', host: '[EN] 示例文字' })
 })
 
-test('AI 配音：English 下点「AI 配音」，配音行出现和字幕对齐的配音片段，预览里视频静音、配音在；保留原声时原声回来；原文下没有配音', async ({
+test('AI 配音：English 下点「AI 配音」，配音行出现和字幕对齐的配音片段，预览里视频静音、配音在；保留原声时原声回来、配音片段不显示；原文下没有配音', async ({
   page,
 }) => {
   test.setTimeout(120_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   await serveSavedCaptions(page)
+  const dubbingRequests: string[] = []
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().includes('/api/generations/dubbings'))
+      dubbingRequests.push(request.url())
+  })
   // 这段对话里还没有字幕识别记录：先识别出两句，配音按它们配
   const panel = await openConversation(page, '工具过程展示')
   const editor = await openFinalCut(panel)
@@ -2236,10 +2241,25 @@ test('AI 配音：English 下点「AI 配音」，配音行出现和字幕对齐
     })
   await expect.poll(sounds).toEqual({ muted: true, dubs: 2 })
 
-  // 保留原声：配音不出声（预览里没有配音音轨），原声回来
+  // 保留原声：配音不出声（预览里没有配音音轨），时间线上也没有配音片段和配音行，原声回来
   await voice.getByRole('button', { name: '保留原声' }).click()
   await expect.poll(sounds).toEqual({ muted: false, dubs: 0 })
-  await expect(dubRow.getByRole('group', { name: /，不出声$/ })).toHaveCount(2)
+  await expect(editor.getByRole('group', { name: /^配音 · / })).toHaveCount(0)
+  await expect(dubRow).toHaveCount(0)
+
+  // 切回 AI 配音：不重新生成，配音片段回来；撤销后又藏起来
+  const requested = dubbingRequests.length
+  expect(requested).toBeGreaterThan(0)
+  await voice.getByRole('button', { name: 'AI 配音' }).click()
+  await expect(dubRow.getByRole('group', { name: /^配音 · \[EN\] / })).toHaveCount(2)
+  await expect.poll(sounds).toEqual({ muted: true, dubs: 2 })
+  expect(dubbingRequests).toHaveLength(requested)
+  await editor
+    .getByRole('toolbar', { name: '剪辑工具' })
+    .getByRole('button', { name: '撤销' })
+    .click()
+  await expect(editor.getByRole('group', { name: /^配音 · / })).toHaveCount(0)
+  await expect.poll(sounds).toEqual({ muted: false, dubs: 0 })
 
   // 原文：时间线和预览里都没有配音
   await voice.getByRole('button', { name: 'AI 配音' }).click()
