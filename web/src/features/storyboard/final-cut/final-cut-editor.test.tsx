@@ -3343,7 +3343,7 @@ describe('final-cut 编辑器 · 属性', () => {
         savedAttribute(id, 'data-automation') ?? '{"version":1,"lanes":[]}',
       ).lanes.find((lane) => lane.target === 'volume')?.points
 
-    it('波形音量关键帧：打开加平的一条、重置回平的、关掉去掉曲线，各算一步撤销；开没开从文件里读', async () => {
+    it('波形音量关键帧：打开加平的一条、关掉去掉曲线，各算一步撤销；开没开从文件里读', async () => {
       const user = await openWith([video({ src: URL_A, duration: 2_000 })])
       await pick(user, 'A · 镜头 1')
       await pastDelay()
@@ -3365,14 +3365,6 @@ describe('final-cut 编辑器 · 属性', () => {
         '关键帧',
       )
 
-      // 在时间线上用键盘把开头的点调低一格，再重置回平的
-      const first = screen.getByRole('slider', { name: '音量关键帧 1' })
-      first.focus()
-      await user.keyboard('{ArrowDown}')
-      await waitSaved(() => expect(volumeLane('clip-1')?.[0]?.v).toBeLessThan(1))
-      await user.click(within(inspector()).getByRole('button', { name: '重置' }))
-      await waitSaved(() => expect(volumeLane('clip-1')?.[0]?.v).toBe(1))
-
       await user.click(toggle())
       await waitSaved(() => expect(savedTag('clip-1')).not.toContain('data-automation'))
       expect(toggle()).toHaveAttribute('aria-checked', 'false')
@@ -3381,11 +3373,38 @@ describe('final-cut 编辑器 · 属性', () => {
       await waitSaved(() => expect(volumeLane('clip-1')?.[0]?.v).toBe(1))
       expect(toggle()).toHaveAttribute('aria-checked', 'true')
       await user.click(undoButton())
-      await waitSaved(() => expect(volumeLane('clip-1')?.[0]?.v).toBeLessThan(1))
-      await user.click(undoButton())
-      await user.click(undoButton())
       await waitSaved(() => expect(savedTag('clip-1')).not.toContain('data-automation'))
       expect(toggle()).toHaveAttribute('aria-checked', 'false')
+    })
+
+    it('波形音量关键帧的「重置」：调过的曲线换回平的一条，算一步撤销', async () => {
+      const dipped = JSON.stringify({
+        version: 1,
+        lanes: [
+          {
+            target: 'volume',
+            points: [
+              { t: 0, v: 0.5 },
+              { t: 2, v: 1 },
+            ],
+          },
+        ],
+      })
+      const user = await openWith([video({ src: URL_A, duration: 2_000, automation: dipped })])
+      await pick(user, 'A · 镜头 1')
+      await pastDelay()
+      await user.click(within(inspector()).getByRole('button', { name: /^精细调音/ }))
+      expect(control('波形音量关键帧')).toHaveAttribute('aria-checked', 'true')
+
+      await user.click(within(inspector()).getByRole('button', { name: '重置' }))
+      await waitSaved(() =>
+        expect(volumeLane('clip-1')).toEqual([
+          { t: 0, v: 1 },
+          { t: 2, v: 1 },
+        ]),
+      )
+      await user.click(undoButton())
+      await waitSaved(() => expect(volumeLane('clip-1')?.[0]?.v).toBe(0.5))
     })
 
     it('时间线上的音量关键帧：没选中的片段只画线、改不了；选中后每个点是滑杆，方向键调音量、Delete 删中间的点，各一步撤销', async () => {
