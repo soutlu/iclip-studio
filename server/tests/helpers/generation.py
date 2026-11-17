@@ -41,12 +41,17 @@ from iclip.domains.generation.queue import GenerationQueue, GenerationQueueSetti
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import (
     KIND_AUDIO,
+    KIND_DUBBING,
     KIND_IMAGE,
     KIND_SUBTITLE,
     KIND_VIDEO,
     OPERATION_CUT,
     OPERATION_GENERATE,
     OPERATION_UPLOAD,
+    DubbingLine,
+    DubbingOriginalReference,
+    DubbingReference,
+    DubbingRequest,
     ImageGenerationIn,
     MusicRequest,
     SubtitleRequest,
@@ -74,6 +79,7 @@ from tests.helpers.identity import InMemoryUserRepository
 FAKE_VIDEO_PROVIDER = "video_fake"
 FAKE_IMAGE_PROVIDER = "image_fake"
 FAKE_SUBTITLE_PROVIDER = "subtitle_fake"
+FAKE_DUBBING_PROVIDER = "dubbing_fake"
 FAKE_MUSIC_PROVIDER = "music_fake"
 
 
@@ -193,6 +199,8 @@ def make_job(
         if row_kind == KIND_VIDEO
         else FAKE_SUBTITLE_PROVIDER
         if row_kind == KIND_SUBTITLE
+        else FAKE_DUBBING_PROVIDER
+        if row_kind == KIND_DUBBING
         else FAKE_MUSIC_PROVIDER
         if row_kind == KIND_AUDIO
         else FAKE_IMAGE_PROVIDER
@@ -272,6 +280,30 @@ def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
     fields.setdefault("task_id", video.task_id)
     return make_job(
         SubtitleRequest(model="qwen-audio-3.1-asr-flash", video_url=video.output.url),
+        source_job_id=video.id,
+        **fields,
+    )
+
+
+def make_dubbing(
+    video: GenerationJob,
+    lines: Sequence[DubbingLine],
+    *,
+    duration_ms: int,
+    reference: DubbingReference | None = None,
+    **fields: Any,
+) -> GenerationJob:
+    assert video.output.url is not None, "只给有地址的素材片配音"
+    fields.setdefault("owner_user_id", video.owner_user_id)
+    fields.setdefault("conversation_id", video.conversation_id)
+    return make_job(
+        DubbingRequest(
+            video_url=video.output.url,
+            video_duration_ms=duration_ms,
+            locale="en",
+            lines=list(lines),
+            reference=reference or DubbingOriginalReference(kind="original"),
+        ),
         source_job_id=video.id,
         **fields,
     )
@@ -821,6 +853,7 @@ __all__ = [
     "image_request",
     "make_composite",
     "make_cut",
+    "make_dubbing",
     "make_edit",
     "make_enhancement",
     "make_job",

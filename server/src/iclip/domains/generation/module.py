@@ -9,6 +9,11 @@ import httpx
 import procrastinate
 
 from iclip.domains.generation.api import create_generations_router
+from iclip.domains.generation.dubbing import (
+    DUBBING_SUBMIT_CONCURRENCY,
+    DubbingProvider,
+    SpeechSynthesizer,
+)
 from iclip.domains.generation.gpt_image import GPT_IMAGE_2_5
 from iclip.domains.generation.image_upstream import (
     GatewayImageModel,
@@ -38,6 +43,7 @@ from iclip.domains.generation.schemas import ClipStage
 from iclip.domains.generation.seedream import SEEDREAM_V5_PRO
 from iclip.domains.generation.service import (
     ClearCompletion,
+    DubbingTarget,
     GenerationService,
     ProviderTarget,
     VideoEnhanceSpec,
@@ -63,6 +69,14 @@ class ImageModelConfig:
 class QwenServiceConfig:
     endpoint: QwenEndpoint
     concurrency: int
+
+
+@dataclass(frozen=True, slots=True)
+class DubbingSetup:
+    """配音的装配：语音合成服务，和哪些地址算本系统存储里的（参考音频只收这些）。不给就是没开通。"""
+
+    synthesizer: SpeechSynthesizer
+    owns_url: Callable[[str], bool]
 
 
 @dataclass(frozen=True)
@@ -93,6 +107,7 @@ def build_generation_module(
     fetch_url: Callable[[str], str],
     queue_settings: GenerationQueueSettings | None = None,
     subtitles: QwenServiceConfig | None = None,
+    dubbing: DubbingSetup | None = None,
     music: QwenServiceConfig | None = None,
     render: RenderSetup | None = None,
     video_enhance: VideoEnhanceSpec | None = None,
@@ -136,6 +151,14 @@ def build_generation_module(
         )
         subtitle_lanes = (ProviderLane(subtitle_provider, subtitles.concurrency),)
         subtitle_target = ProviderTarget(provider=subtitle_provider.name, model=SUBTITLE_MODEL)
+    dubbing_lanes: tuple[ProviderLane, ...] = ()
+    dubbing_target: DubbingTarget | None = None
+    if dubbing is not None:
+        dubbing_provider = DubbingProvider(
+            dubbing.synthesizer, object_store=object_store, fetch_url=fetch_url
+        )
+        dubbing_lanes = (ProviderLane(dubbing_provider, DUBBING_SUBMIT_CONCURRENCY),)
+        dubbing_target = DubbingTarget(provider=dubbing_provider.name, owns_url=dubbing.owns_url)
     music_lanes: tuple[ProviderLane, ...] = ()
     music_target: ProviderTarget | None = None
     if music is not None:
@@ -164,6 +187,7 @@ def build_generation_module(
                 for provider, model in zip(image_providers, image_models, strict=True)
             ),
             *subtitle_lanes,
+            *dubbing_lanes,
             *music_lanes,
             *render_lanes,
         ),
@@ -183,6 +207,7 @@ def build_generation_module(
         lineage=lineage,
         media_probe=_FetchingProbe(fetch_url),
         subtitles=subtitle_target,
+        dubbing=dubbing_target,
         music=music_target,
         render=None if render is None else render.client,
         enhance=video_enhance,
@@ -251,6 +276,7 @@ def _image_provider(
 
 __all__ = [
     "IMAGE_MODEL_SPECS",
+    "DubbingSetup",
     "GenerationModule",
     "ImageModelConfig",
     "QwenServiceConfig",

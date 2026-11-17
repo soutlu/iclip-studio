@@ -8,6 +8,7 @@ from pydantic import TypeAdapter
 from iclip.common.errors import ValidationFailed
 from iclip.domains.generation.schemas import (
     KIND_AUDIO,
+    KIND_DUBBING,
     KIND_IMAGE,
     KIND_SUBTITLE,
     KIND_VIDEO,
@@ -19,6 +20,7 @@ from iclip.domains.generation.schemas import (
     OPERATION_RENDER,
     OPERATION_UPLOAD,
     READ_BACK_CONTEXT,
+    DubbingRequest,
     ImageGenerationIn,
     MusicRequest,
     SubtitleRequest,
@@ -35,6 +37,7 @@ GenerationRequest = (
     | ImageGenerationIn
     | VideoComposeRequest
     | SubtitleRequest
+    | DubbingRequest
     | MusicRequest
     | WholeFilmRequest
     | VideoEnhanceRequest
@@ -45,6 +48,7 @@ _ADAPTERS: Final[Mapping[tuple[str, str], TypeAdapter[Any]]] = {
     (KIND_IMAGE, OPERATION_GENERATE): TypeAdapter(ImageGenerationIn),
     (KIND_VIDEO, OPERATION_COMPOSE): TypeAdapter(VideoComposeRequest),
     (KIND_SUBTITLE, OPERATION_GENERATE): TypeAdapter(SubtitleRequest),
+    (KIND_DUBBING, OPERATION_GENERATE): TypeAdapter(DubbingRequest),
     (KIND_AUDIO, OPERATION_GENERATE): TypeAdapter(MusicRequest),
     (KIND_WHOLE_FILM, OPERATION_RENDER): TypeAdapter(WholeFilmRequest),
     (KIND_VIDEO, OPERATION_ENHANCE): TypeAdapter(VideoEnhanceRequest),

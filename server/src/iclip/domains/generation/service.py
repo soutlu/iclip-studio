@@ -41,6 +41,10 @@ from iclip.domains.generation.schemas import (
     OPERATION_RENDER,
     OPERATION_UPLOAD,
     ComposeSegment,
+    DubbingAudioReference,
+    DubbingIn,
+    DubbingLine,
+    DubbingRequest,
     GenerationKind,
     GenerationOperation,
     GenerationStatus,
@@ -81,6 +85,14 @@ class ProviderTarget:
 
 
 @dataclass(frozen=True, slots=True)
+class DubbingTarget:
+    """配音交给哪个 provider，和哪些地址算本系统存储里的（参考音频只收这些）。"""
+
+    provider: str
+    owns_url: Callable[[str], bool]
+
+
+@dataclass(frozen=True, slots=True)
 class VideoEnhanceSpec:
     model: str
     resolutions: tuple[VideoEnhanceResolution, ...]
@@ -114,6 +126,7 @@ class GenerationService:
         lineage: ConversationLineage,
         media_probe: RemoteMediaProbe,
         subtitles: ProviderTarget | None = None,
+        dubbing: DubbingTarget | None = None,
         music: ProviderTarget | None = None,
         render: RenderClient | None = None,
         enhance: VideoEnhanceSpec | None = None,
@@ -132,6 +145,7 @@ class GenerationService:
         self._lineage = lineage
         self._media_probe = media_probe
         self._subtitles = subtitles
+        self._dubbing = dubbing
         self._music = music
 
     async def _inheritance(
@@ -315,7 +329,7 @@ class GenerationService:
         try:
             return await self._media_probe.duration_ms(url)
         except MediaError as exc:
-            _logger.warning("编辑段受理时探不出时长", what=what, job_id=job_id, error=str(exc))
+            _logger.warning("受理时探不出时长", what=what, job_id=job_id, error=str(exc))
             raise ValidationFailed(f"读不出{what}的时长，请稍后重试") from exc
 
     def _require_video_model(self, model: str) -> None:
@@ -408,22 +422,38 @@ class GenerationService:
             raise
         return created
 
-    async def submit_subtitle(self, principal: Principal, request: SubtitleIn) -> GenerationJob:
-        subtitles = self._require_subtitles()
+    async def _readable_master(
+        self,
+        principal: Principal,
+        source_job_id: uuid.UUID,
+        conversation_id: uuid.UUID | None,
+        *,
+        refusal: str,
+    ) -> tuple[GenerationJob, str]:
         video = await conversation_record(
             self._repo,
             principal,
-            request.source_job_id,
-            conversation_id=request.conversation_id,
-            inheritance=await self._inheritance(principal, request.conversation_id),
+            source_job_id,
+            conversation_id=conversation_id,
+            inheritance=await self._inheritance(principal, conversation_id),
         )
         if video is None:
-            raise NotFound(f"没有这次生成: {request.source_job_id}")
+            raise NotFound(f"没有这次生成: {source_job_id}")
         if not is_base_master(video) or video.output.url is None:
-            raise ValidationFailed("只能识别素材片：已完成的出片或合成")
+            raise ValidationFailed(refusal)
+        return video, video.output.url
+
+    async def submit_subtitle(self, principal: Principal, request: SubtitleIn) -> GenerationJob:
+        subtitles = self._require_subtitles()
+        video, video_url = await self._readable_master(
+            principal,
+            request.source_job_id,
+            request.conversation_id,
+            refusal="只能识别素材片：已完成的出片或合成",
+        )
         return await self._queue_new(
             _pending_job(
-                SubtitleRequest(model=subtitles.model, video_url=video.output.url),
+                SubtitleRequest(model=subtitles.model, video_url=video_url),
                 owner_user_id=principal.user_id,
                 api_key_id=principal.api_key_id,
                 provider=subtitles.provider,
@@ -439,6 +469,44 @@ class GenerationService:
         if self._subtitles is None:
             raise ValidationFailed("字幕识别没有开通，暂时不能识别")
         return self._subtitles
+
+    async def submit_dubbing(self, principal: Principal, request: DubbingIn) -> GenerationJob:
+        if self._dubbing is None:
+            raise ValidationFailed("配音没有开通，暂时不能配音")
+        reference = request.reference
+        if isinstance(reference, DubbingAudioReference) and not self._dubbing.owns_url(
+            reference.url
+        ):
+            raise ValidationFailed("参考音频只能用本系统存储里的地址")
+        video, video_url = await self._readable_master(
+            principal,
+            request.source_job_id,
+            request.conversation_id,
+            refusal="只能给素材片配音：已完成的出片或合成",
+        )
+        duration_ms = video.output.duration_ms
+        if duration_ms is None:
+            duration_ms = await self._probe_duration(video_url, what="素材片", job_id=video.id)
+        _check_dubbing_lines(request.lines, duration_ms)
+        return await self._queue_new(
+            _pending_job(
+                DubbingRequest(
+                    video_url=video_url,
+                    video_duration_ms=duration_ms,
+                    locale=request.locale,
+                    lines=request.lines,
+                    reference=reference,
+                ),
+                owner_user_id=principal.user_id,
+                api_key_id=principal.api_key_id,
+                provider=self._dubbing.provider,
+                conversation_id=request.conversation_id,
+                task_id=request.task_id,
+                metadata=request.metadata,
+                shot_index=None,
+                source_job_id=video.id,
+            )
+        )
 
     async def submit_music(self, principal: Principal, request: MusicIn) -> GenerationJob:
         if self._music is None:
@@ -740,6 +808,21 @@ def _short_edge_of(resolution: str | None) -> int | None:
     return None if matched is None else int(matched.group(1))
 
 
+def _check_dubbing_lines(lines: Sequence[DubbingLine], video_ms: int) -> None:
+    # lines 已按开始时间排好、互不重叠，核对最后一句就够了。
+    position, last = len(lines), lines[-1]
+    if last.start_ms >= video_ms:
+        raise ValidationFailed(
+            f"第 {position} 句的开始 {format_seconds(last.start_ms / 1000)} 秒不在素材片之内，"
+            f"素材片只有 {format_seconds(video_ms / 1000)} 秒"
+        )
+    if exceeds_source(last.end_ms, video_ms):
+        raise ValidationFailed(
+            f"第 {position} 句的结尾 {format_seconds(last.end_ms / 1000)} 秒超出了素材片的时长 "
+            f"{format_seconds(video_ms / 1000)} 秒"
+        )
+
+
 def _check_edit_range(start_ms: int, end_ms: int, base_ms: int) -> None:
     if start_ms >= base_ms:
         raise ValidationFailed(
@@ -931,6 +1014,7 @@ def _settled_url(job: GenerationJob) -> str:
 
 __all__ = [
     "ClearCompletion",
+    "DubbingTarget",
     "EnhanceTier",
     "GenerationService",
     "ProviderTarget",

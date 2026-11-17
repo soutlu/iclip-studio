@@ -3624,6 +3624,206 @@
         "title": "DraftFileWriteIn",
         "type": "object"
       },
+      "DubbedLine": {
+        "additionalProperties": false,
+        "description": "配好的一句：``index`` 是它在请求 ``lines`` 里的位置，``speed`` 是加速的倍数（1 是原速），\n``trimmed`` 表示加速到上限也放不下、截掉了尾巴。",
+        "properties": {
+          "index": {
+            "minimum": 0.0,
+            "title": "Index",
+            "type": "integer"
+          },
+          "speed": {
+            "minimum": 1.0,
+            "title": "Speed",
+            "type": "number"
+          },
+          "trimmed": {
+            "title": "Trimmed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "index",
+          "speed",
+          "trimmed"
+        ],
+        "title": "DubbedLine",
+        "type": "object"
+      },
+      "DubbingAudioReference": {
+        "additionalProperties": false,
+        "description": "参考音频取一个音频地址，只收本系统存储里的地址。",
+        "properties": {
+          "kind": {
+            "const": "audio",
+            "title": "Kind",
+            "type": "string"
+          },
+          "url": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "url"
+        ],
+        "title": "DubbingAudioReference",
+        "type": "object"
+      },
+      "DubbingIn": {
+        "additionalProperties": false,
+        "description": "给一条素材片配一种外语的受理输入：每句译文按 ``lines`` 的时间放，用参考音频的声音合成。\n\n``lines`` 按开始时间排好、互不重叠，都在素材片的时长之内（时长在受理时核对）。归属参数与\n``userName`` 的规则同字幕识别。",
+        "properties": {
+          "conversationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversationid"
+          },
+          "lines": {
+            "description": "每句的 text 最多 500 字，所有 text 加起来最多 4000 字",
+            "items": {
+              "$ref": "#/components/schemas/DubbingLine"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Lines",
+            "type": "array"
+          },
+          "locale": {
+            "enum": [
+              "en",
+              "de",
+              "es",
+              "fr"
+            ],
+            "title": "Locale",
+            "type": "string"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "reference": {
+            "discriminator": {
+              "mapping": {
+                "audio": "#/components/schemas/DubbingAudioReference",
+                "original": "#/components/schemas/DubbingOriginalReference"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DubbingOriginalReference"
+              },
+              {
+                "$ref": "#/components/schemas/DubbingAudioReference"
+              }
+            ],
+            "title": "Reference"
+          },
+          "sourceJobId": {
+            "format": "uuid",
+            "title": "Sourcejobid",
+            "type": "string"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taskid"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "sourceJobId",
+          "locale",
+          "lines",
+          "reference"
+        ],
+        "title": "DubbingIn",
+        "type": "object"
+      },
+      "DubbingLine": {
+        "additionalProperties": false,
+        "description": "要配的一句：在素材片视频里的起止（毫秒，与字幕记录的 ``sentences`` 同一口径）与译文。",
+        "properties": {
+          "endMs": {
+            "minimum": 0.0,
+            "title": "Endms",
+            "type": "integer"
+          },
+          "startMs": {
+            "minimum": 0.0,
+            "title": "Startms",
+            "type": "integer"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "startMs",
+          "endMs",
+          "text"
+        ],
+        "title": "DubbingLine",
+        "type": "object"
+      },
+      "DubbingOriginalReference": {
+        "additionalProperties": false,
+        "description": "参考音频取素材片自己的原声：服务端从被字幕覆盖得最多的一段里截。",
+        "properties": {
+          "kind": {
+            "const": "original",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "DubbingOriginalReference",
+        "type": "object"
+      },
       "ErrorModel": {
         "properties": {
           "detail": {
@@ -4993,6 +5193,20 @@
             "title": "Createdat",
             "type": "string"
           },
+          "dubbedLines": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DubbedLine"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dubbedlines"
+          },
           "durationMs": {
             "anyOf": [
               {
@@ -5037,6 +5251,7 @@
               "video",
               "image",
               "subtitle",
+              "dubbing",
               "audio",
               "whole_film"
             ],
@@ -19619,6 +19834,7 @@
                     "video",
                     "image",
                     "subtitle",
+                    "dubbing",
                     "audio",
                     "whole_film"
                   ],
@@ -19764,6 +19980,57 @@
           }
         ],
         "summary": "List Generations"
+      }
+    },
+    "/generations/dubbings": {
+      "post": {
+        "description": "给一条素材片配一种外语，另起一条配音记录（种类 ``dubbing``）。\n\n用参考音频的声音把 ``lines`` 每句译文合成出来，放在这句的开始，能占到下一句开始（最后一句\n到视频结尾）；合成出来更长时先加速，最多 1.25 倍，还放不下就截掉尾巴并淡出。拼成一条和\n素材片等长的音轨，地址在 ``outputUrl``，每句的倍数和是否截掉在 ``dubbedLines``。参考音频是\n``original`` 时从原声里截被 ``lines`` 覆盖得最多的一段（不超过 10 秒），覆盖不到 3 秒记录\n失败；是 ``audio`` 时取 ``url`` 的前 10 秒，``url`` 只收本系统存储里的地址，别的 422。\n\n``sourceJobId`` 的规则同字幕识别：读不到 404，不是素材片 422。``lines`` 不合规、超出上限或\n超出素材片的时长 422。配音没开通 422。``userName`` 的规则同出片，只用来替人办事，不进\n``request``。",
+        "operationId": "submit_dubbing_generations_dubbings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DubbingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Submit Dubbing"
       }
     },
     "/generations/image": {

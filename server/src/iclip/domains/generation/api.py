@@ -10,6 +10,7 @@ from pydantic import TypeAdapter, ValidationError
 from iclip.common.errors import ValidationFailed, validation_error_detail
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import (
+    DubbingIn,
     GenerationEnvelope,
     GenerationKind,
     GenerationOperation,
@@ -128,6 +129,29 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         user_name = resolve_user_name(principal, body.user_name)
         principal = await act_as(principal, user_name)
         job = await service.submit_subtitle(principal, body)
+        return await envelope(job)
+
+    @router.post("/dubbings", response_model=GenerationEnvelope, status_code=202)
+    async def submit_dubbing(
+        body: DubbingIn,
+        principal: Annotated[Principal, require_permission("generation:submit")],
+    ) -> GenerationEnvelope:
+        """给一条素材片配一种外语，另起一条配音记录（种类 ``dubbing``）。
+
+        用参考音频的声音把 ``lines`` 每句译文合成出来，放在这句的开始，能占到下一句开始（最后一句
+        到视频结尾）；合成出来更长时先加速，最多 1.25 倍，还放不下就截掉尾巴并淡出。拼成一条和
+        素材片等长的音轨，地址在 ``outputUrl``，每句的倍数和是否截掉在 ``dubbedLines``。参考音频是
+        ``original`` 时从原声里截被 ``lines`` 覆盖得最多的一段（不超过 10 秒），覆盖不到 3 秒记录
+        失败；是 ``audio`` 时取 ``url`` 的前 10 秒，``url`` 只收本系统存储里的地址，别的 422。
+
+        ``sourceJobId`` 的规则同字幕识别：读不到 404，不是素材片 422。``lines`` 不合规、超出上限或
+        超出素材片的时长 422。配音没开通 422。``userName`` 的规则同出片，只用来替人办事，不进
+        ``request``。
+        """
+
+        user_name = resolve_user_name(principal, body.user_name)
+        principal = await act_as(principal, user_name)
+        job = await service.submit_dubbing(principal, body)
         return await envelope(job)
 
     @router.post("/video-enhancements", response_model=GenerationEnvelope, status_code=202)

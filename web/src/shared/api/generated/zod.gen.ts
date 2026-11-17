@@ -931,6 +931,67 @@ export const zDraftFileWriteIn = z.object({
 })
 
 /**
+ * DubbedLine
+ *
+ * 配好的一句：``index`` 是它在请求 ``lines`` 里的位置，``speed`` 是加速的倍数（1 是原速），
+ * ``trimmed`` 表示加速到上限也放不下、截掉了尾巴。
+ */
+export const zDubbedLine = z.object({
+  index: z.int().gte(0),
+  speed: z.number().gte(1),
+  trimmed: z.boolean(),
+})
+
+/**
+ * DubbingAudioReference
+ *
+ * 参考音频取一个音频地址，只收本系统存储里的地址。
+ */
+export const zDubbingAudioReference = z.object({
+  kind: z.literal('audio'),
+  url: z.string().min(1).max(2000),
+})
+
+/**
+ * DubbingLine
+ *
+ * 要配的一句：在素材片视频里的起止（毫秒，与字幕记录的 ``sentences`` 同一口径）与译文。
+ */
+export const zDubbingLine = z.object({
+  endMs: z.int().gte(0),
+  startMs: z.int().gte(0),
+  text: z.string().min(1),
+})
+
+/**
+ * DubbingOriginalReference
+ *
+ * 参考音频取素材片自己的原声：服务端从被字幕覆盖得最多的一段里截。
+ */
+export const zDubbingOriginalReference = z.object({
+  kind: z.literal('original'),
+})
+
+/**
+ * DubbingIn
+ *
+ * 给一条素材片配一种外语的受理输入：每句译文按 ``lines`` 的时间放，用参考音频的声音合成。
+ *
+ * ``lines`` 按开始时间排好、互不重叠，都在素材片的时长之内（时长在受理时核对）。归属参数与
+ * ``userName`` 的规则同字幕识别。
+ */
+export const zDubbingIn = z.object({
+  conversationId: z.uuid().nullish(),
+  lines: z.array(zDubbingLine).min(1).max(200),
+  locale: z.enum(['en', 'de', 'es', 'fr']),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
+  reference: z.discriminatedUnion('kind', [zDubbingOriginalReference, zDubbingAudioReference]),
+  sourceJobId: z.uuid(),
+  taskId: z.uuid().nullish(),
+  userName: z.string().min(1).max(200).nullish(),
+})
+
+/**
  * ErrorModel
  */
 export const zErrorModel = z.object({
@@ -2501,11 +2562,12 @@ export const zSubtitleSentence = z.object({
 export const zGenerationOut = z.object({
   clipStage: z.enum(['fetching', 'processing', 'uploading']).nullable(),
   createdAt: z.iso.datetime(),
+  dubbedLines: z.array(zDubbedLine).nullish(),
   durationMs: z.int().nullable(),
   errorMessage: z.string().nullable(),
   finishedAt: z.iso.datetime().nullish(),
   id: z.uuid(),
-  kind: z.enum(['video', 'image', 'subtitle', 'audio', 'whole_film']),
+  kind: z.enum(['video', 'image', 'subtitle', 'dubbing', 'audio', 'whole_film']),
   metadata: z.record(z.string(), z.unknown()).nullable(),
   operation: z.enum(['generate', 'compose', 'cut', 'upload', 'render', 'enhance']),
   outputUrl: z.string().nullable(),
@@ -4677,7 +4739,7 @@ export const zListGenerationsGenerationsGetQuery = z.object({
   conversationId: z.uuid().nullish(),
   taskId: z.uuid().nullish(),
   shotIndex: z.int().gte(1).nullish(),
-  kind: z.enum(['video', 'image', 'subtitle', 'audio', 'whole_film']).nullish(),
+  kind: z.enum(['video', 'image', 'subtitle', 'dubbing', 'audio', 'whole_film']).nullish(),
   operation: z.enum(['generate', 'compose', 'cut', 'upload', 'render', 'enhance']).nullish(),
   rootJobId: z.uuid().nullish(),
   sourceJobId: z.uuid().nullish(),
@@ -4689,6 +4751,13 @@ export const zListGenerationsGenerationsGetQuery = z.object({
  * Successful Response
  */
 export const zListGenerationsGenerationsGetResponse = zGenerationsPageOut
+
+export const zSubmitDubbingGenerationsDubbingsPostBody = zDubbingIn
+
+/**
+ * Successful Response
+ */
+export const zSubmitDubbingGenerationsDubbingsPostResponse = zGenerationEnvelope
 
 export const zSubmitImageGenerationsImagePostBody = zImageGenerationIn
 

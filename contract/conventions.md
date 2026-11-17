@@ -255,7 +255,7 @@ final-cut 工程是对话工作区里的 `final-cut/` 目录。工程里的脚�
 
 ## 11. 媒体生成 (Generations)
 
-系统共有 7 个异步生成提交接口（受理成功后均返回 `202`），任务状态每次变化都会通过 WebSocket 推送 `event.generation.changed` 帧。10 种生成记录的完整分类见 [CONTEXT.md「生成任务」](../docs/CONTEXT.md#术语)。
+系统共有 8 个异步生成提交接口（受理成功后均返回 `202`），任务状态每次变化都会通过 WebSocket 推送 `event.generation.changed` 帧。11 种生成记录的完整分类见 [CONTEXT.md「生成任务」](../docs/CONTEXT.md#术语)。
 
 | 提交接口 | 记录类型 (`kind` / `operation`) | 核心参数、校验规则与产物说明 |
 |---|---|---|
@@ -264,6 +264,7 @@ final-cut 工程是对话工作区里的 `final-cut/` 目录。工程里的脚�
 | `POST /generations/video-composites` | `video` / `compose`（视频合成） | 传入基底素材片 `baseJobId` 和 1～100 段片段列表 `segments: [{ sourceJobId, start, end? }]`（每段必须取自该基底本身、或基于该基底生成的已完成编辑段）。服务端在本地用 ffmpeg 重新编码拼接（自动对齐原片的画幅与帧率），合成期间可通过 `clipStage`（`fetching | processing | uploading`）查看当前阶段 |
 | `POST /generations/image` | `image` / `generate`（生图 / 帧图编辑） | 模型、画幅、分辨率和可选的渠道 `channel` 必须在 `GET /generations/image-models` 声明的范围内。如果是基于已有图片修图（帧图编辑），传入底图地址 `sourceUrl`（服务端会优先在本对话/继承图片或本人上传记录里查找并关联 `sourceJobId`，找不到则记录为外部底图地址） |
 | `POST /generations/subtitles` | `subtitle` / `generate`（字幕识别） | 识别指定素材片（`sourceJobId`）原片的口播字幕（素材片生成完成时不会识别，只有调用本接口才识别）。识别结果保存在 `sentences: [{ startMs, endMs, text, speaker, words }]` 中；如果视频没有音轨或全程无人说话，任务同样正常完成（`completed`），`sentences` 为空数组 `[]` |
+| `POST /generations/dubbings` | `dubbing` / `generate`（配音） | 给指定素材片（`sourceJobId`，规则同字幕识别）配一种外语（`locale`）。`lines: [{ startMs, endMs, text }]` 是每句译文在素材片里的起止（与字幕的 `sentences` 同一口径），按开始时间排好、不重叠、在素材片时长之内；`reference` 是 `{ kind: "original" }`（从原声里截被 `lines` 覆盖得最多、不超过 10 秒的一段，覆盖不到 3 秒任务失败）或 `{ kind: "audio", url }`（只收本系统存储里的地址，取前 10 秒）。每句放在它的开始，能占到下一句开始（最后一句到视频结尾）；合成出来更长时先加速、最多 1.25 倍，还放不下就截尾并淡出。产物是和素材片等长的一条 m4a 音轨（`outputUrl`），每句的结果在 `dubbedLines: [{ index, speed, trimmed }]`。未装配语音合成服务时答 `422` |
 | `POST /generations/music` | `audio` / `generate`（生成背景音乐） | 必须传入关联的对话 `conversationId` 和提示词 `prompt`（1～3000 字，前端默认填入制作页的 `musicDescription`）。服务端调用千问音乐模型后，会自动切除首尾静音、统一响度并转存为 m4a 文件，同时记录实测时长 `durationMs` |
 | `POST /generations/video-enhancements` | `video` / `enhance`（超分高清版） | 传入 `{ sourceJobId, resolution: "720p" | "1080p", userName }`。**不限制源视频是谁生成的**，任何人都可以对素材片或已导出的成片发起超分（只允许提升到比源视频更高的分辨率档位）。同一源视频的同一档位只要已有未失败的记录，就会直接幂等返回该记录。可通过 `GET /generations/{id}/enhancements` 查询某条视频可做的超分档位与各档最新状态 |
 
