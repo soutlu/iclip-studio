@@ -54,7 +54,6 @@ import {
   localeBindingsOf,
   localeVariable,
   localeVariableId,
-  pinnedByDefault,
   textFields,
   type LocaleBindings,
 } from './composition/locale-text'
@@ -81,7 +80,9 @@ import {
   openValueTable,
   parseLocaleValues,
   SOURCE_LOCALE,
+  SOURCE_SHOWN,
   translationOf,
+  type Language,
   type LocaleCode,
   type ShownLocale,
   type ValueTable,
@@ -116,11 +117,11 @@ export type FilmView = {
   /** 字幕写法不对时的原因（见 `captionsProblem`），导出前要先改好。 */
   captionsProblem: string | undefined
   /**
-   * 当前显示的语言和它的值表（中文时是 null）。`clips` 里字幕的 `text` 总是原文，名字取这种语言的字
+   * 当前显示的语言和它的值表（原文时是 null）。`clips` 里字幕的 `text` 总是原文，名字取这种语言的字
    * （还没翻的取原文）；预览按值表套上这种语言。
    */
   locale: ShownLocale
-  /** 工程里有值表的外语，按 `LOCALES` 的先后。 */
+  /** 工程里有值表的语言，按 `LOCALES` 的先后。 */
   locales: readonly LocaleCode[]
   /** 组件或块的片段里随语言的文字字段（片段编号 → 字段到根变量），没有随语言字段的片段不在里面。 */
   bindings: ReadonlyMap<string, LocaleBindings>
@@ -218,7 +219,7 @@ type OpenFile = { doc: FileDoc; version: number | null; saved: string | null }
 /**
  * 会话打开着的工程：`files` 是路径（相对工程根）到文件，主文件在 `PROJECT_MAIN`。`captionsPath` 是字幕场景
  * 文件的路径（主文件里字幕宿主挂载的那个；没有宿主时是编辑器新建它的位置），文件打开着时在 `files` 里。
- * 各外语的值表在 `locales/<语言>.json`。
+ * 各语言的值表在 `locales/<语言>.json`。
  */
 type Project = { files: Map<string, OpenFile>; captionsPath: string }
 
@@ -243,7 +244,7 @@ const contentOf = (project: Project, path: string): string => {
   return docOps(file.doc).serialize()
 }
 
-/** 工程里各外语的值表，按 `LOCALES` 的先后。 */
+/** 工程里各语言的值表，按 `LOCALES` 的先后。 */
 const tablesOf = (project: Project): Map<LocaleCode, ValueTable> => {
   const tables = new Map<LocaleCode, ValueTable>()
   for (const { code } of LOCALES) {
@@ -403,17 +404,16 @@ const pinField = (main: Composition, tables: Iterable<ValueTable>, id: string, f
   for (const table of tables) table.set(variable, null)
 }
 
-/** 片段 `clip` 按默认规则（见 `pinnedByDefault`）该随语言、现在还固定着的文字字段。 */
+/**
+ * 片段 `clip` 现在还固定着的文字字段：文字字段默认都随语言（品牌名、型号这类翻译时原样给回），
+ * 要所有语言共用一份的由用户改成固定。
+ */
 const followingByDefault = (
   main: Composition,
-  clip: Pick<HostClip, 'id' | 'values'>,
+  clip: Pick<HostClip, 'id'>,
   item: CatalogItem,
 ): CatalogVariable[] =>
-  textFields(item).filter(
-    (field) =>
-      !pinnedByDefault(fieldText(clip.values, field)) &&
-      bindingsOf(main, clip.id)[field.id] === undefined,
-  )
+  textFields(item).filter((field) => bindingsOf(main, clip.id)[field.id] === undefined)
 
 /** 工程总长（毫秒）：主文件根下的片段（字幕宿主除外）和各句字幕里最晚的结尾。 */
 const latestEnd = (main: Composition, scene: Composition | undefined): number => {
@@ -445,7 +445,7 @@ const viewOf = (
   project: Project,
   catalog: ComponentCatalog,
   history: UndoHistory,
-  locale: LocaleCode,
+  locale: Language,
   change: Pick<FilmView, 'revision' | 'step'>,
 ): { view: FilmView; present: Map<string, string> } => {
   const main = mainOf(project)
@@ -463,7 +463,11 @@ const viewOf = (
       path === PROJECT_MAIN ? html : docOps(file.doc).serialize(),
     ]),
   )
-  const shown: ShownLocale = { code: locale, values: tables.get(locale)?.values() ?? null }
+  const table = locale === SOURCE_LOCALE ? undefined : tables.get(locale)
+  const shown: ShownLocale =
+    locale === SOURCE_LOCALE || table === undefined
+      ? SOURCE_SHOWN
+      : { code: locale, values: table.values() }
   const view: FilmView = {
     html,
     canvas: canvasOf(main),
@@ -673,7 +677,7 @@ type Options = {
  * （有时；`initial` 见 `readProject`，是 null 时还没有工程），改动停下 `debounceMs` 毫秒后把改了的文件整份保存
  * （主文件第一次新建、之后按版本号写；别的文件先存，主文件最后存）。打开着的文件有一个在别处被改了、或保存时
  * 版本对不上，就都换上工作区里的那一份、放弃本地没存的改动；工程里主文件和值表以外的文件变了时 `filesRevision`
- * 加 1，预览据此重新加载。当前显示的语言打开时是中文。
+ * 加 1，预览据此重新加载。当前显示的语言打开时是原文。
  */
 export function useFilmSession(
   conversationId: string,
@@ -694,7 +698,7 @@ export function useFilmSession(
   // 正在加的语言：建好值表文件、放进工程之前，检查别处的改动要等它
   const addingLocaleRef = useRef<Promise<void> | null>(null)
   // 当前显示的语言：编辑器自己的状态，不存进文件
-  const localeRef = useRef<LocaleCode>(SOURCE_LOCALE)
+  const localeRef = useRef<Language>(SOURCE_LOCALE)
   // 各文件现在的内容（路径 → 内容），和 `saved` 不一样的就是没存的
   const presentRef = useRef<ReadonlyMap<string, string>>(new Map())
   const inFlightRef = useRef<Promise<void> | null>(null)
@@ -754,7 +758,7 @@ export function useFilmSession(
 
   /**
    * 换上一份工程（null 是还没有工程），撤销记录清空；`stored` 为真时各文件现在的内容就是工作区里存着的那一份。
-   * 当前语言的值表不在新的工程里时回到中文。
+   * 当前语言的值表不在新的工程里时回到原文。
    */
   const install = useCallback(
     (project: Project | null, stored: boolean) => {
@@ -762,7 +766,8 @@ export function useFilmSession(
       history.clear()
       doneRef.current = null
       projectRef.current = project
-      if (project === null || !tablesOf(project).has(localeRef.current))
+      const locale = localeRef.current
+      if (project === null || (locale !== SOURCE_LOCALE && !tablesOf(project).has(locale)))
         localeRef.current = SOURCE_LOCALE
       show()
       if (stored && project !== null)
@@ -1029,7 +1034,7 @@ export function useFilmSession(
 
   /**
    * 把组件库的一个条目放进工程：先把条目的文件拷进工程，再从 `at` 那一行的那个时间放起（调用方保证那里空着），
-   * 可填项取 `values`，时长取条目的时长。工程里有外语时，文字字段按默认规则随语言（见 `followingByDefault`）。
+   * 可填项取 `values`，时长取条目的时长。工程里加了语言时，文字字段都随语言（见 `followingByDefault`）。
    * `renumber` 同 `addVideos`。
    * 叠在最上面，写在根下第一个。还没有工程时先按 `canvas` 建一份。文件拷不进来时提示原因，不动工程。
    */
@@ -1081,7 +1086,7 @@ export function useFilmSession(
         )
         engine.addElement(root.id, 0, element)
         if (tablesOf(project).size > 0)
-          for (const field of followingByDefault(engine, { id, values }, item))
+          for (const field of followingByDefault(engine, { id }, item))
             followLocale(engine, { id, values }, field)
       })
       show()
@@ -1266,7 +1271,7 @@ export function useFilmSession(
   )
 
   /**
-   * 把组件或块的片段 `id` 的可填项取值整个换成 `values`（中文），宿主上的字体变量跟着重算，随语言的字段的根变量
+   * 把组件或块的片段 `id` 的可填项取值整个换成 `values`（原文），宿主上的字体变量跟着重算，随语言的字段的根变量
    * 默认值跟着改成新的字，算一步撤销。片段已经不在工程里（比如改完还没提交就删掉了）时不动工程。
    */
   const setValues = useCallback(
@@ -1288,12 +1293,12 @@ export function useFilmSession(
   )
 
   /**
-   * 把片段 `id` 的文字字段 `fieldId` 在语言 `locale` 里的字改成 `text`，算一步撤销。中文改的是宿主的取值
-   * （见 `setValues`）；外语下随语言的字段改的是那种语言值表里它的根变量的值（`text` 是空的时去掉，回到用中文），
-   * 固定的字段不改。字没变、片段不在了时不动工程。
+   * 把片段 `id` 的文字字段 `fieldId` 在语言 `locale` 里的字改成 `text`，算一步撤销。原文改的是宿主的取值
+   * （见 `setValues`）；其它语言下随语言的字段改的是那种语言值表里它的根变量的值（`text` 是空的时去掉，回到用
+   * 原文），固定的字段不改。字没变、片段不在了时不动工程。
    */
   const setItemText = useCallback(
-    (id: string, fieldId: string, text: string, locale: LocaleCode) => {
+    (id: string, fieldId: string, text: string, locale: Language) => {
       const project = projectRef.current
       const clip = hostClip(id)
       const field = itemNamed(catalog, clip?.item ?? '')?.variables.find((v) => v.id === fieldId)
@@ -1611,12 +1616,12 @@ export function useFilmSession(
   )
 
   /**
-   * 把字幕 `id` 在语言 `locale` 里的字改成 `text`，算一步撤销。中文改的是原文：主文件根上它的变量的默认值改成它
-   * （还没声明时声明上），场景里那个元素的字也改成一样的。外语改的是那种语言的值表里这个变量的值，`text` 是
-   * 空的时从值表里去掉（回到用原文），原文不动。字没变、字幕已经不在了、没有这种语言时不动工程。
+   * 把字幕 `id` 在语言 `locale` 里的字改成 `text`，算一步撤销。原文改的是主文件根上它的变量的默认值（还没声明时
+   * 声明上），场景里那个元素的字也改成一样的。其它语言改的是那种语言的值表里这个变量的值，`text` 是空的时从
+   * 值表里去掉（回到用原文），原文不动。字没变、字幕已经不在了、没有这种语言时不动工程。
    */
   const setCaptionText = useCallback(
-    (id: string, text: string, locale: LocaleCode) => {
+    (id: string, text: string, locale: Language) => {
       const project = projectRef.current
       const scene = project === null ? undefined : sceneOf(project)
       const caption = project === null ? undefined : captionsById(mainOf(project), scene).get(id)
@@ -1665,7 +1670,7 @@ export function useFilmSession(
 
   /** 切换显示的语言（不进撤销、不改文件）；工程里没有这种语言的值表时不切。 */
   const setLocale = useCallback(
-    (locale: LocaleCode) => {
+    (locale: Language) => {
       const project = projectRef.current
       if (project === null || (locale !== SOURCE_LOCALE && !tablesOf(project).has(locale))) return
       localeRef.current = locale
@@ -1677,14 +1682,14 @@ export function useFilmSession(
 
   /**
    * 加一种语言并切过去：在工作区里建一份空的值表（不进撤销）；建的时候已经有了（409）就用工作区里的那一份。
-   * 这是工程里的第一种外语时，接着把所有组件或块的片段的文字字段按默认规则改成随语言（见 `followingByDefault`），
+   * 这是工程里加的第一种语言时，接着把所有组件或块的片段的文字字段都改成随语言（见 `followingByDefault`），
    * 这一步单独算一步撤销（撤销后值表还在，字段都是固定的）。工程里已经有这种语言时直接切过去。建不了时提示原因，
    * 不切。
    */
   const addLocale = useCallback(
     async (locale: LocaleCode) => {
       const project = projectRef.current
-      if (project === null || locale === SOURCE_LOCALE) return
+      if (project === null) return
       const path = localePath(locale)
       if (!project.files.has(path)) {
         const first = tablesOf(project).size === 0

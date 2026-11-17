@@ -983,7 +983,7 @@ export const zDubbingOriginalReference = z.object({
 export const zDubbingIn = z.object({
   conversationId: z.uuid().nullish(),
   lines: z.array(zDubbingLine).min(1).max(200),
-  locale: z.enum(['en', 'de', 'es', 'fr']),
+  locale: z.enum(['zh', 'en', 'de', 'es', 'fr']),
   metadata: z.record(z.string(), z.unknown()).nullish(),
   reference: z.discriminatedUnion('kind', [zDubbingOriginalReference, zDubbingAudioReference]),
   sourceJobId: z.uuid(),
@@ -1310,7 +1310,7 @@ export const zFinalCutPreviewOut = z.object({
 /**
  * FinalCutTextIn
  *
- * 一条要翻的中文：``id`` 是编辑器里变量的 id，``text`` 不能只有空白。
+ * 一条要翻的原文：``id`` 是编辑器里变量的 id，``text`` 不能只有空白。
  */
 export const zFinalCutTextIn = z.object({
   id: z.string().min(1).max(128),
@@ -1339,11 +1339,12 @@ export const zFinalCutTranslationOut = z.object({
 /**
  * FinalCutTranslationsIn
  *
- * 把一批中文短句翻成 ``targetLocale``。源语言固定是中文；``entries`` 里的 ``id`` 不能重复。
+ * 把一批原文短句翻成 ``targetLocale``。原文什么语言都行，不用声明；``entries`` 里的 ``id``
+ * 不能重复。
  */
 export const zFinalCutTranslationsIn = z.object({
   entries: z.array(zFinalCutTextIn).min(1).max(200),
-  targetLocale: z.enum(['en', 'de', 'es', 'fr']),
+  targetLocale: z.enum(['zh', 'en', 'de', 'es', 'fr']),
 })
 
 /**
@@ -3821,23 +3822,23 @@ export const zWholeFilmExportErrorOut = z.object({
 /**
  * WholeFilmExportIn
  *
- * 发起导出：``locale`` 是导出哪种外语的版本，不带或 null 导出中文。
+ * 发起导出：``locale`` 是导出哪种语言的版本，不带或 null 导出原文。
  */
 export const zWholeFilmExportIn = z.object({
-  locale: z.enum(['en', 'de', 'es', 'fr']).nullish(),
+  locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullish(),
 })
 
 /**
  * WholeFilmExportOut
  *
- * 一次导出现在的样子。``locale`` 是导出的哪种外语的版本，中文时是 null。``downloadUrl`` 只在
+ * 一次导出现在的样子。``locale`` 是导出的哪种语言的版本，原文时是 null。``downloadUrl`` 只在
  * ``done`` 时有，``error`` 只在 ``failed`` 时有。
  */
 export const zWholeFilmExportOut = z.object({
   downloadUrl: z.string().nullable(),
   error: zWholeFilmExportErrorOut.nullable(),
   id: z.uuid(),
-  locale: z.enum(['en', 'de', 'es', 'fr']).nullable(),
+  locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullable(),
   progress: z.number().nullable(),
   queuePosition: z.int().nullable(),
   status: z.enum(['queued', 'rendering', 'uploading', 'done', 'failed', 'cancelled']),

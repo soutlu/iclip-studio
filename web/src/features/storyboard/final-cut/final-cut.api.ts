@@ -31,7 +31,14 @@ import {
 import { CAPTIONS_PATH, isCaptionsHost } from './composition/captions'
 import type { CatalogItem, ComponentCatalog } from './composition/catalog'
 import { PROJECT_MAIN } from './composition/film'
-import { LOCALES, localeOfPath, localePath, parseLocaleValues, type LocaleCode } from './locales'
+import {
+  LOCALES,
+  localeOfPath,
+  localePath,
+  parseLocaleValues,
+  type Language,
+  type LocaleCode,
+} from './locales'
 
 /** final-cut 工程在对话工作区里的目录。 */
 export const PROJECT_DIR = 'final-cut'
@@ -155,7 +162,7 @@ export const holdProjectReads = (conversationId: string, saving: Promise<unknown
 /**
  * 工作区里存着的工程：主文件，和字幕场景文件（`captions`，不存在时是 null）。`captionsPath` 是字幕场景文件的
  * 路径：主文件里字幕宿主挂载的那个，没有宿主时是编辑器新建它的位置；`hosted` 是主文件里有没有字幕宿主。
- * `locales` 是工程里有的各外语的值表（语言 → 文件），按 `LOCALES` 的先后。
+ * `locales` 是工程里有的各语言的值表（语言 → 文件），按 `LOCALES` 的先后。
  */
 export type StoredProject = {
   main: StoredFile
@@ -165,7 +172,7 @@ export type StoredProject = {
   locales: ReadonlyMap<LocaleCode, StoredFile>
 }
 
-/** 工程里有值表的外语：`final-cut/locales/` 下认识的语言的值表，按 `LOCALES` 的先后。 */
+/** 工程里有值表的语言：`final-cut/locales/` 下认识的语言的值表，按 `LOCALES` 的先后。 */
 const storedLocales = async (conversationId: string, signal?: AbortSignal) => {
   const { files } = await apiFetch(
     `${conversationPath(conversationId)}/workspace/files`,
@@ -176,7 +183,7 @@ const storedLocales = async (conversationId: string, signal?: AbortSignal) => {
   return LOCALES.flatMap(({ code }) => (found.has(code) ? [code] : []))
 }
 
-/** 工作区里的路径 `path` 是不是工程里哪种外语的值表（见 `localeOfPath`）。 */
+/** 工作区里的路径 `path` 是不是工程里哪种语言的值表（见 `localeOfPath`）。 */
 export const projectLocaleOf = (path: string): LocaleCode | undefined =>
   path.startsWith(`${PROJECT_DIR}/`) ? localeOfPath(path.slice(PROJECT_DIR.length + 1)) : undefined
 
@@ -280,10 +287,9 @@ export const projectFilesBase = (origin: string, token: string): string =>
 const exportsPath = (conversationId: string) =>
   `${conversationPath(conversationId)}/whole-film/exports`
 
-/** 按工作区里现在的 final-cut 发起一次导出，导出 `locale` 这种语言的版本，答复导出 id。 */
-export const startWholeFilmExport = (conversationId: string, locale: LocaleCode) => {
-  // 中文是源语言，接口里写 null
-  const body: WholeFilmExportIn = { locale: locale === 'zh' ? null : locale }
+/** 按工作区里现在的 final-cut 发起一次导出，导出 `locale` 这种语言（原文是 null）的版本，答复导出 id。 */
+export const startWholeFilmExport = (conversationId: string, locale: Language) => {
+  const body: WholeFilmExportIn = { locale }
   return apiFetch(exportsPath(conversationId), zWholeFilmExportStartedOut, {
     body,
     fallbackErrorMessage: '成片导出失败',
@@ -366,7 +372,7 @@ const TRANSLATE_FAILED_TEXT = {
 } as const
 
 /**
- * 把一批中文翻成一种外语（付费的上游服务，一次请求一次模型调用），答复每条的译文。失败时按接口答的 `code`
+ * 把一批原文翻成一种语言（付费的上游服务，一次请求一次模型调用），答复每条的译文。失败时按接口答的 `code`
  * 说明能不能重试；别的失败不把服务端的说明给用户看。
  */
 export const translateTexts = async (

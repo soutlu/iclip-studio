@@ -1,4 +1,4 @@
-"""final-cut 工程在工作区里的位置、它支持的外语，和从主文件里取素材地址。"""
+"""final-cut 工程在工作区里的位置、它能加的语言，和从主文件里取素材地址。"""
 
 from __future__ import annotations
 
@@ -10,12 +10,13 @@ PROJECT_DIR: Final = "final-cut"
 
 MAIN_FILE: Final = "index.html"
 
-TargetLocale = Literal["en", "de", "es", "fr"]
-"""final-cut 支持的外语。原文是中文，中文没有值表；每种外语一份值表，见 ``locale_path``。"""
+TargetLocale = Literal["zh", "en", "de", "es", "fr"]
+"""final-cut 能加的语言。原文是视频自带的语言（什么语言都行，不用声明），没有值表，接口里写 null；
+能加的每种语言一份值表，见 ``locale_path``。"""
 
 
 def locale_path(locale: TargetLocale) -> str:
-    """一种外语的值表在工程里的路径（相对工程根）。"""
+    """一种语言的值表在工程里的路径（相对工程根）。"""
 
     return f"locales/{locale}.json"
 

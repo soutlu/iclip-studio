@@ -3,14 +3,14 @@ import { zFinalCutTextIn } from '@/shared/api/generated/zod.gen'
 import type { ComponentCatalog } from './composition/catalog'
 import { itemNamed, type FilmClip } from './composition/film'
 import { fieldText, type LocaleBindings } from './composition/locale-text'
-import { translationOf, type LocaleValues } from './locales'
+import { phraseWith, translationOf, type LocaleCode, type LocaleValues } from './locales'
 
-/** 一条要翻的中文：`id` 是它的变量（字幕的变量、随语言字段的根变量），`text` 是原文。 */
+/** 一条要翻的原文：`id` 是它的变量（字幕的变量、随语言字段的根变量），`text` 是原文。 */
 export type TranslationEntry = FinalCutTextIn
 
 const textLimit = (): number => {
   const max = zFinalCutTextIn.shape.text.maxLength
-  if (max === null) throw new Error('合同里一条要翻的中文没有字数上限')
+  if (max === null) throw new Error('合同里一条要翻的原文没有字数上限')
   return max
 }
 
@@ -30,7 +30,7 @@ export type TranslationSource = {
 }
 
 /**
- * 一种外语里要翻的文字：`total` 是能翻的条数（有原文的字幕和随语言的字段，翻没翻都算），`entries` 是其中还没翻
+ * 一种语言里要翻的文字：`total` 是能翻的条数（有原文的字幕和随语言的字段，翻没翻都算），`entries` 是其中还没翻
  * 的（值表里没有这个变量），`tooLong` 是还没翻但原文超过单条上限、不发的条数。固定的字段、原文是空白的不算。
  */
 export function pendingTranslations(
@@ -105,11 +105,11 @@ export function translationsToWrite(
 }
 
 /**
- * 为什么现在不能点「翻译」；能点时是 undefined。`plan` 是 `pendingTranslations` 的结果，`name` 是这种语言的名字。
+ * 为什么现在不能点「翻译」；能点时是 undefined。`plan` 是 `pendingTranslations` 的结果，`code` 是要翻成的语言。
  */
 export function translateBlocked(
   plan: { entries: readonly unknown[]; tooLong: number; total: number },
-  name: string,
+  code: LocaleCode,
   translating: boolean,
   limits: TranslationLimits = TRANSLATION_LIMITS,
 ): string | undefined {
@@ -118,5 +118,5 @@ export function translateBlocked(
   if (plan.total === 0) return '暂无可翻译的字幕或文字；请先加字幕，或把贴片、场景的文字改为随语言'
   if (plan.tooLong > 0)
     return `还没翻译的 ${plan.tooLong} 条超过 ${limits.text} 字，无法自动翻译；请手动填写`
-  return `${name} 的字幕和文字都已翻译；要重新翻译哪一句，请先清空那一句`
+  return phraseWith('', code, '的字幕和文字都已翻译；要重新翻译哪一句，请先清空那一句')
 }

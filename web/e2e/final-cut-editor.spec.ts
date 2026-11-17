@@ -1794,7 +1794,7 @@ test('识别字幕：点「识别字幕」发起一次识别，识别完写进�
 
 const ENGLISH_FILE = 'locales/en.json'
 
-test('语言：加上 English 切过去，给一句字幕写英文，存下的 English 值表对、预览里显示英文；切回中文显示原文', async ({
+test('语言：加上 English 切过去，给一句字幕写英文，存下的 English 值表对、预览里显示英文；切回原文显示原文', async ({
   page,
 }) => {
   test.setTimeout(90_000)
@@ -1833,7 +1833,7 @@ test('语言：加上 English 切过去，给一句字幕写英文，存下的 E
     'true',
   )
 
-  // 外语下框里是空的、占位字提示输入英文，下面写着原文；加一句置灰
+  // 其它语言下框里是空的、占位字提示输入英文，下面写着原文；加一句置灰
   const field = tab.getByRole('textbox', { name: '字幕文字 00:00.00 – 00:02.00' })
   await expect(field).toHaveValue('')
   await expect(field).toHaveAttribute('placeholder', '输入 English 字幕…')
@@ -1861,7 +1861,7 @@ test('语言：加上 English 切过去，给一句字幕写英文，存下的 E
     })
   await expect.poll(captionText).toBe('Hello world')
 
-  await languages.getByRole('button', { name: '中文（ZH）' }).click()
+  await languages.getByRole('button', { name: '原文' }).click()
   await expect(field).toHaveValue('新字幕')
   await expect.poll(captionText).toBe('新字幕')
 })
@@ -1908,7 +1908,7 @@ const jsonAttribute = (tag: string, name: string): unknown => {
   return value === undefined ? undefined : JSON.parse(value.replaceAll('&quot;', '"'))
 }
 
-test('贴片的文字随语言：加上 English 时主文件里宿主记着根变量、根上声明了它，在「组件文字」里给中文字段写英文，English 值表里是英文，预览里贴片显示英文', async ({
+test('贴片的文字随语言：加上 English 时主文件里宿主记着根变量、根上声明了它，在「组件文字」里给原文是中文的字段写英文，English 值表里是英文，预览里贴片显示英文', async ({
   page,
 }) => {
   test.setTimeout(90_000)
@@ -1935,12 +1935,12 @@ test('贴片的文字随语言：加上 English 时主文件里宿主记着根�
   expect(id).not.toBe('')
   const variable = `txt_${id}_text`
 
-  // 加上 English：没填的「文字」用的是中文默认值，按默认规则随语言
+  // 加上 English：没填的「文字」用的是条目的中文默认值，按默认规则随语言
   const languages = editor.getByRole('group', { name: '语言' })
   const bound = mainSavedWith(page, (html) => html.includes(variable))
   await languages.getByRole('button', { name: '添加语言' }).click()
   await page.getByRole('menuitem', { name: 'English（EN）' }).click()
-  // 存下的主文件：宿主记着字段对应的根变量、取值照旧（没填），根上声明了这个变量、默认值是中文
+  // 存下的主文件：宿主记着字段对应的根变量、取值照旧（没填），根上声明了这个变量、默认值是原文
   const saved = htmlOf(await bound)
   const tag = new RegExp(`<div [^>]*\\bid="${id}"[^>]*>`).exec(saved)?.[0] ?? ''
   expect(jsonAttribute(tag, 'data-locale-bindings')).toEqual({ text: variable })
@@ -2013,7 +2013,7 @@ test('翻译：加上 English 后点「翻译」，字幕和贴片里随语言�
   const scene = savedFileOf(await sceneCreated, CAPTIONS_FILE) ?? ''
   const variable = / data-var-text="([^"]+)"/.exec(scene)?.[1] ?? ''
   expect(variable).not.toBe('')
-  // 中文时没有「翻译」
+  // 原文时没有「翻译」
   await expect(tab.getByRole('button', { name: '翻译', exact: true })).toHaveCount(0)
 
   const languages = editor.getByRole('group', { name: '语言' })

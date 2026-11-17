@@ -573,7 +573,7 @@ class WholeFilmAudioSource(CamelModel):
 
 class WholeFilmRequest(CamelModel):
     """一条成片导出记录的请求：发起导出时 final-cut 主文件里对上了生成记录的素材（``<video>`` 的、
-    ``<audio>`` 的），和导出哪种外语的版本（``locale``，None 是中文）。工程本身不存在这里，交给渲染
+    ``<audio>`` 的），和导出哪种语言的版本（``locale``，None 是原文）。工程本身不存在这里，交给渲染
     服务时才从工作区读。"""
 
     kind: ClassVar[GenerationKind] = KIND_WHOLE_FILM

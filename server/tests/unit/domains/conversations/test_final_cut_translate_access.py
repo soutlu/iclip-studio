@@ -172,7 +172,7 @@ def body(**overrides: Any) -> dict[str, Any]:
     return {"targetLocale": "fr", "entries": [{"id": "a", "text": "你好"}]} | overrides
 
 
-@pytest.mark.parametrize("locale", ["en", "de", "es", "fr"])
+@pytest.mark.parametrize("locale", ["zh", "en", "de", "es", "fr"])
 def test_each_supported_locale_is_accepted(locale: str) -> None:
     parsed = FinalCutTranslationsIn.model_validate(body(targetLocale=locale))
 
@@ -218,7 +218,6 @@ def test_one_character_over_the_total_limit_refuses_the_whole_batch() -> None:
 @pytest.mark.parametrize(
     "overrides",
     [
-        pytest.param({"targetLocale": "zh"}, id="source-language"),
         pytest.param({"targetLocale": "ja"}, id="unsupported-locale"),
         pytest.param({"targetLocale": None}, id="no-locale"),
         pytest.param({"entries": []}, id="no-entries"),

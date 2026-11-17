@@ -20,7 +20,7 @@ from iclip.domains.conversations.schemas import CamelModel
 
 
 class WholeFilmExportIn(CamelModel):
-    """发起导出：``locale`` 是导出哪种外语的版本，不带或 null 导出中文。"""
+    """发起导出：``locale`` 是导出哪种语言的版本，不带或 null 导出原文。"""
 
     locale: TargetLocale | None = None
 
@@ -37,7 +37,7 @@ class WholeFilmExportErrorOut(CamelModel):
 
 
 class WholeFilmExportOut(CamelModel):
-    """一次导出现在的样子。``locale`` 是导出的哪种外语的版本，中文时是 null。``downloadUrl`` 只在
+    """一次导出现在的样子。``locale`` 是导出的哪种语言的版本，原文时是 null。``downloadUrl`` 只在
     ``done`` 时有，``error`` 只在 ``failed`` 时有。"""
 
     id: uuid.UUID
@@ -85,7 +85,7 @@ class FinalCutFileCreatedOut(CamelModel):
 
 
 class FinalCutTextIn(CamelModel):
-    """一条要翻的中文：``id`` 是编辑器里变量的 id，``text`` 不能只有空白。"""
+    """一条要翻的原文：``id`` 是编辑器里变量的 id，``text`` 不能只有空白。"""
 
     id: Annotated[str, Field(min_length=1, max_length=MAX_TRANSLATION_ID_CHARS)]
     text: Annotated[str, Field(min_length=1, max_length=MAX_TRANSLATION_TEXT_CHARS)]
@@ -99,7 +99,8 @@ class FinalCutTextIn(CamelModel):
 
 
 class FinalCutTranslationsIn(CamelModel):
-    """把一批中文短句翻成 ``targetLocale``。源语言固定是中文；``entries`` 里的 ``id`` 不能重复。"""
+    """把一批原文短句翻成 ``targetLocale``。原文什么语言都行，不用声明；``entries`` 里的 ``id``
+    不能重复。"""
 
     target_locale: TargetLocale
     entries: Annotated[

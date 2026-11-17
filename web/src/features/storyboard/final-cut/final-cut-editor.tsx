@@ -65,7 +65,7 @@ import {
   type ItemKind,
 } from './items'
 import { ItemsTab } from './items-tab'
-import { captionIn, localeNamed, SOURCE_LOCALE, type LocaleCode, type ShownLocale } from './locales'
+import { captionIn, phraseWith, SOURCE_NAME, SOURCE_SHOWN, type Language } from './locales'
 import { MaterialArea } from './material-area'
 import {
   takeDurationMs,
@@ -155,7 +155,6 @@ const RECOGNIZING_TEXT = '正在识别字幕，请等待识别完成'
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 const NO_LINKS: Links = new Map()
 const NO_BINDINGS: ReadonlyMap<string, LocaleBindings> = new Map()
-const SOURCE_SHOWN: ShownLocale = { code: SOURCE_LOCALE, values: null }
 
 /** 侧栏的目录页签：镜头、贴片、场景、配乐、字幕。 */
 type CatalogTab = 'shots' | ItemKind | 'audio' | 'captions'
@@ -787,7 +786,7 @@ function EditorBody({
     film === null
       ? NO_FILM_CAPTION_TEXT
       : locale.values !== null
-        ? `当前语言是 ${localeNamed(locale.code).name}，无法加字幕；请先切换到中文`
+        ? phraseWith('当前语言是', locale.code, `，无法加字幕；请先切换到「${SOURCE_NAME}」`)
         : 'refusal' in captionAt
           ? CAPTION_REFUSAL_TEXT[captionAt.refusal]
           : undefined
@@ -863,26 +862,27 @@ function EditorBody({
       void recognition.start(recognizable.targets)
   }
   // 「字幕」页签和「属性」里改字幕的字：改的是文字框所在的那种语言
-  const setCaptionText = (id: string, text: string, code: LocaleCode) => {
+  const setCaptionText = (id: string, text: string, code: Language) => {
     leaveMaterial()
     session.setCaptionText(id, text, code)
   }
-  // 外语下的「翻译」：点的那一刻还没翻的一起发，全部翻好后按写入那一刻的样子一步写进那种语言的值表
+  // 其它语言下的「翻译」：点的那一刻还没翻的一起发，全部翻好后按写入那一刻的样子一步写进那种语言的值表
   const translation = useTranslation(conversationId)
+  const target = locale.values === null ? undefined : locale
   const pending =
-    film === null || locale.values === null
+    film === null || target === undefined
       ? undefined
       : pendingTranslations(
-          { clips: film.clips, bindings: film.bindings, values: locale.values },
+          { clips: film.clips, bindings: film.bindings, values: target.values },
           catalog,
         )
   const translateBlockedText =
-    pending === undefined
+    pending === undefined || target === undefined
       ? undefined
-      : translateBlocked(pending, localeNamed(locale.code).name, translation.translating)
+      : translateBlocked(pending, target.code, translation.translating)
   const translate = async () => {
-    if (pending === undefined || translateBlockedText !== undefined || locale.code === 'zh') return
-    const code = locale.code
+    if (pending === undefined || target === undefined || translateBlockedText !== undefined) return
+    const { code } = target
     const { entries, tooLong } = pending
     const outcome = await translation.start(code, entries)
     if (outcome.kind === 'failed') notice(outcome.message)
@@ -899,7 +899,7 @@ function EditorBody({
   const itemTexts = {
     bindings: film?.bindings ?? NO_BINDINGS,
     multilingual: (film?.locales.length ?? 0) > 0,
-    onText: (id: string, field: string, text: string, code: LocaleCode) => {
+    onText: (id: string, field: string, text: string, code: Language) => {
       leaveMaterial()
       session.setItemText(id, field, text, code)
     },

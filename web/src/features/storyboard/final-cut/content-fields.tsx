@@ -23,11 +23,11 @@ const COMMIT_DELAY_MS = 300
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i
 
-/** 文字字段分语言要用的：显示着的语言、哪些字段随语言、工程里有没有外语，改字和切换「固定 / 随语言」。 */
+/** 文字字段分语言要用的：显示着的语言、哪些字段随语言、工程里加没加语言，改字和切换「固定 / 随语言」。 */
 export type TextLocale = {
   locale: ShownLocale
   bindings: LocaleBindings
-  /** 工程里有外语：这时文字字段右边才有「固定 / 随语言」。 */
+  /** 工程里加了语言：这时文字字段右边才有「固定 / 随语言」。 */
   multilingual: boolean
   onText: ItemTextChange
   onFollow: FollowChange
@@ -36,7 +36,7 @@ export type TextLocale = {
 /**
  * 「内容与样式」：条目的可填项，一项一行。改了先留在这里，停下 300 毫秒再整串写进片段；
  * 几项一起改时合成一次写。焦点离开这一段、换选中的片段时把没写的立刻写进去。滑杆、取色板拖动中只动控件自己，
- * 松手才算改了。外语下文字字段换成这种语言的文字框（见 `HostTextField`），单独写进去。
+ * 松手才算改了。其它语言下文字字段换成这种语言的文字框（见 `HostTextField`），单独写进去。
  */
 export function ContentFields({
   clip,
@@ -144,7 +144,8 @@ type ControlProps = {
 }
 
 /**
- * 文字可填项：中文下是输入框，和别的可填项一起写；外语下换成这种语言的文字框。有外语时右边是「固定 / 随语言」。
+ * 文字可填项：原文下是输入框，和别的可填项一起写；其它语言下换成这种语言的文字框。加了语言时右边是「固定 /
+ * 随语言」。
  */
 function TextRow({
   clip,

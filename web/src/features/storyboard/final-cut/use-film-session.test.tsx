@@ -502,7 +502,7 @@ describe('useFilmSession · 编辑', () => {
       expect.objectContaining({ patches: expect.arrayContaining([durationOfB(1)]) as unknown }),
     ])
 
-    act(() => result.current.setLocale('zh'))
+    act(() => result.current.setLocale(null))
     expect(result.current.film).toMatchObject({ revision: revision + 3, step: null })
   })
 
@@ -2133,7 +2133,7 @@ describe('useFilmSession · 字幕', () => {
       [video()],
       [line('a1', 0, 1_000, '第一句')],
     )
-    act(() => result.current.setCaptionText('cap-a1', '改过的\n两行', 'zh'))
+    act(() => result.current.setCaptionText('cap-a1', '改过的\n两行', null))
     expect(captionsOf(result)[0]?.text).toBe('改过的\n两行')
     expect(variablesIn(result.current.film?.html)).toEqual({ cap_a1: '改过的\n两行' })
     await saveAll(result)
@@ -2141,7 +2141,7 @@ describe('useFilmSession · 字幕', () => {
       ['cap-a1', 0, 1, 'cap_a1', '改过的\n两行'],
     ])
     // 字没变时不记一步
-    act(() => result.current.setCaptionText('cap-a1', '改过的\n两行', 'zh'))
+    act(() => result.current.setCaptionText('cap-a1', '改过的\n两行', null))
     act(() => result.current.undo())
     expect(variablesIn(result.current.film?.html)).toEqual({ cap_a1: '第一句' })
     expect(result.current.film?.canUndo).toBe(false)
@@ -2243,7 +2243,7 @@ describe('useFilmSession · 字幕', () => {
     // 别处把场景文件和主文件都改了：场景里只剩另一句，主文件里换成它的变量
     const theirs = [line('z9', 500, 1_000, '别处写的')]
     await putCaptioned(conversation, [video({ duration: 4_000 })], theirs)
-    act(() => result.current.setCaptionText('cap-a1', '本地改的', 'zh'))
+    act(() => result.current.setCaptionText('cap-a1', '本地改的', null))
     await waitFor(() => expect(onNotice).toHaveBeenCalledOnce())
     expect(onNotice).toHaveBeenCalledWith(
       'final-cut 已在别处修改，已切换到最新版本；未保存的改动已放弃',
@@ -2262,7 +2262,7 @@ describe('useFilmSession · 字幕', () => {
       [video()],
       [line('a1', 0, 1_000, '第一句')],
     )
-    act(() => result.current.setCaptionText('cap-a1', '本地改的', 'zh'))
+    act(() => result.current.setCaptionText('cap-a1', '本地改的', null))
     putMockWorkspaceFile(
       conversation,
       SCENE_PATH,
@@ -2303,12 +2303,12 @@ describe('useFilmSession · 字幕', () => {
   it('字幕的名字就是它的字：换行和连着的空白合成一个空格，字照旧带着换行', async () => {
     const { result } = await openCaptioned([video()], [line('a1', 0, 1_000, '第一句')])
     expect(captionsOf(result)[0]?.label).toBe('第一句')
-    act(() => result.current.setCaptionText('cap-a1', ' 改过的\n\n两  行 ', 'zh'))
+    act(() => result.current.setCaptionText('cap-a1', ' 改过的\n\n两  行 ', null))
     expect(captionsOf(result)[0]).toMatchObject({
       label: '改过的 两 行',
       text: ' 改过的\n\n两  行 ',
     })
-    act(() => result.current.setCaptionText('cap-a1', ' \n ', 'zh'))
+    act(() => result.current.setCaptionText('cap-a1', ' \n ', null))
     expect(captionsOf(result)[0]?.label).toBe('字幕')
   })
 
@@ -2469,11 +2469,11 @@ describe('useFilmSession · 字幕', () => {
         },
       )
       expect(result.current.film?.locales).toEqual(['en'])
-      expect(result.current.film?.locale).toEqual({ code: 'zh', values: null })
+      expect(result.current.film?.locale).toEqual({ code: null, values: null })
       expect(captionsOf(result).map((caption) => caption.label)).toEqual(['第一句', '第二句'])
       // 工程里没有的语言切不过去
       act(() => result.current.setLocale('fr'))
-      expect(result.current.film?.locale.code).toBe('zh')
+      expect(result.current.film?.locale.code).toBeNull()
       act(() => result.current.setLocale('en'))
       expect(result.current.film?.locale).toEqual({
         code: 'en',
@@ -2527,7 +2527,7 @@ describe('useFilmSession · 字幕', () => {
       expect(onNotice).not.toHaveBeenCalled()
     })
 
-    it('外语下改字：写进那种语言的值表，原文（变量的默认值、场景里的字）不动；一次一步撤销；清空时从值表里去掉', async () => {
+    it('其它语言下改字：写进那种语言的值表，原文（变量的默认值、场景里的字）不动；一次一步撤销；清空时从值表里去掉', async () => {
       const { result, conversation } = await openLocalized([line('a1', 0, 1_000, '第一句')], {
         [EN_PATH]: '{}',
       })
@@ -2555,8 +2555,8 @@ describe('useFilmSession · 字幕', () => {
       await saveAll(result)
       expect(mockWorkspaceFile(conversation, EN_PATH)?.content).toBe('{}\n')
 
-      // 中文照旧改原文，值表不动
-      act(() => result.current.setCaptionText('cap-a1', '改过的', 'zh'))
+      // 原文照旧改原文，值表不动
+      act(() => result.current.setCaptionText('cap-a1', '改过的', null))
       expect(captionsOf(result)[0]).toMatchObject({ text: '改过的', label: '改过的' })
       expect(result.current.film?.locale.values).toEqual({})
     })
@@ -2609,7 +2609,7 @@ describe('useFilmSession · 字幕', () => {
         catalog,
       )
       const html = () => result.current.film?.html ?? ''
-      // 中文显示着也带上德文的字
+      // 原文显示着也带上德文的字
       expect(html()).toContain('latin-ext-700.woff2')
       expect(html()).toContain('cjk-700.woff2')
       act(() => result.current.setCaptionText('cap-a1', 'Grusse', 'de'))
@@ -2618,6 +2618,41 @@ describe('useFilmSession · 字幕', () => {
       expect(mockProjectMain(conversation)?.content).not.toContain('latin-ext-700.woff2')
       act(() => result.current.undo())
       expect(html()).toContain('latin-ext-700.woff2')
+    })
+
+    it('原文是英文、加了中文：读到中文值表，切到中文时字幕的名字是中文；字体块带上中文的字形，原文显示着也带', async () => {
+      const catalog = {
+        ...fixtureCatalog,
+        cjk: {
+          family: 'Noto Sans SC',
+          slices: [
+            { range: 'U+4e00-9fff', files: { '700': 'vendor/fonts/cjk-700.woff2' } },
+            { range: 'U+0020-007e', files: { '700': 'vendor/fonts/latin-700.woff2' } },
+          ],
+        },
+      }
+      const { result, conversation } = await openLocalized(
+        [line('a1', 0, 1_000, 'First line'), line('b2', 1_000, 1_000, 'Second line')],
+        { 'final-cut/locales/zh.json': '{"cap_a1": "第一句"}' },
+        catalog,
+      )
+      const html = () => result.current.film?.html ?? ''
+      expect(result.current.film?.locales).toEqual(['zh'])
+      expect(result.current.film?.locale).toEqual({ code: null, values: null })
+      expect(html()).toContain('cjk-700.woff2')
+
+      act(() => result.current.setLocale('zh'))
+      expect(captionsOf(result).map((caption) => [caption.label, caption.text])).toEqual([
+        ['第一句', 'First line'],
+        ['Second line', 'Second line'],
+      ])
+      act(() => result.current.setCaptionText('cap-a1', '', 'zh'))
+      expect(html()).not.toContain('cjk-700.woff2')
+      act(() => result.current.setCaptionText('cap-b2', '第二句', 'zh'))
+      expect(html()).toContain('cjk-700.woff2')
+      await saveAll(result)
+      expect(mockProjectMain(conversation)?.content).toContain('cjk-700.woff2')
+      expect(storedValues(conversation, 'final-cut/locales/zh.json')).toEqual({ cap_b2: '第二句' })
     })
 
     it('值表存的时候版本对不上（409）：整个工程换成工作区里的那一份，提示，撤销记录清空', async () => {
@@ -2641,7 +2676,7 @@ describe('useFilmSession · 字幕', () => {
       )
       const writes = recordWrites()
       act(() => result.current.setLocale('en'))
-      act(() => result.current.setLocale('zh'))
+      act(() => result.current.setLocale(null))
       act(() => result.current.setLocale('en'))
       await saveAll(result)
       expect(writes).toEqual([])
@@ -2712,7 +2747,7 @@ describe('useFilmSession · 字幕', () => {
       return { conversation, ...(await open(stored, 10, conversation)) }
     }
 
-    it('加第一种外语：有中文的文字字段随语言（根上声明变量、默认值是现在的中文，宿主记下），全是西文的固定；一步撤销，值表还在；再加一种不再改', async () => {
+    it('加第一种语言：文字字段都随语言（根上声明变量、默认值是现在的原文，宿主记下），西文的也一样；一步撤销，值表还在；再加一种不再改', async () => {
       const { result, conversation } = await openTexts([
         host({ id: 'zh', values: { text: '新品上市' } }),
         host({ id: 'latin', values: { text: 'NEW IN · AW26' } }),
@@ -2728,7 +2763,7 @@ describe('useFilmSession · 字幕', () => {
       })
       expect(hostIn(html(result), 'latin')).toEqual({
         values: { text: 'NEW IN · AW26' },
-        bindings: null,
+        bindings: { text: 'txt_latin_text' },
       })
       expect(hostIn(html(result), 'blank')).toEqual({
         values: {},
@@ -2736,11 +2771,13 @@ describe('useFilmSession · 字幕', () => {
       })
       expect(variablesIn(html(result))).toEqual({
         txt_zh_text: '新品上市',
+        txt_latin_text: 'NEW IN · AW26',
         txt_blank_text: '示例文字',
       })
       expect(result.current.film?.bindings).toEqual(
         new Map([
           ['zh', { text: 'txt_zh_text' }],
+          ['latin', { text: 'txt_latin_text' }],
           ['blank', { text: 'txt_blank_text' }],
         ]),
       )
@@ -2761,13 +2798,14 @@ describe('useFilmSession · 字幕', () => {
       })
       expect(variablesIn(html(result))).toEqual({
         txt_zh_text: '新品上市',
+        txt_latin_text: 'NEW IN · AW26',
         txt_blank_text: '示例文字',
       })
       act(() => result.current.undo())
       expect(variablesIn(html(result))).toEqual({})
     })
 
-    it('有外语以后新加的贴片按默认规则随语言，没有外语时加的不随语言', async () => {
+    it('加了语言以后新加的贴片随语言（西文的也一样），没加语言时加的不随语言', async () => {
       const { result } = await openTexts([video()])
       const fields = fixtureItem('fixture-fields')
       const addAt = async (values: Record<string, string>, start: number) => {
@@ -2787,8 +2825,9 @@ describe('useFilmSession · 字幕', () => {
       // 加 English 时已有的那个跟着改成随语言
       expect(hostIn(html(result), before)?.bindings).toEqual({ text: `txt_${before}_text` })
       expect(hostIn(html(result), chinese)?.bindings).toEqual({ text: `txt_${chinese}_text` })
-      expect(hostIn(html(result), latin)?.bindings).toBeNull()
+      expect(hostIn(html(result), latin)?.bindings).toEqual({ text: `txt_${latin}_text` })
       expect(variablesIn(html(result))[`txt_${chinese}_text`]).toBe('早秋新品')
+      expect(variablesIn(html(result))[`txt_${latin}_text`]).toBe('AUTUMN LINEN')
       // 加贴片和它的绑定是一步
       act(() => result.current.undo())
       expect(hostIn(html(result), latin)).toBeUndefined()
@@ -2827,13 +2866,13 @@ describe('useFilmSession · 字幕', () => {
       expect(variablesIn(html(result))).toEqual({})
     })
 
-    it('中文下改随语言的字段：宿主的取值和根变量的默认值一起改，一步撤销；固定的字段只改宿主的取值', async () => {
+    it('原文下改随语言的字段：宿主的取值和根变量的默认值一起改，一步撤销；固定的字段只改宿主的取值', async () => {
       const { result } = await openTexts(
         [host({ id: 't1', values: { text: '新品上市' } }), host({ id: 't2', start: 2_000 })],
         { [EN_PATH]: '{}' },
         { t1: { text: '新品上市' } },
       )
-      act(() => result.current.setItemText('t1', 'text', '早秋新品', 'zh'))
+      act(() => result.current.setItemText('t1', 'text', '早秋新品', null))
       expect(hostIn(html(result), 't1')?.values).toEqual({ text: '早秋新品' })
       expect(variablesIn(html(result))).toEqual({ txt_t1_text: '早秋新品' })
       // 「内容与样式」整串写进来时也一样
@@ -2844,12 +2883,12 @@ describe('useFilmSession · 字幕', () => {
       expect(hostIn(html(result), 't1')?.values).toEqual({ text: '新品上市' })
       expect(variablesIn(html(result))).toEqual({ txt_t1_text: '新品上市' })
 
-      act(() => result.current.setItemText('t2', 'text', '固定的字', 'zh'))
+      act(() => result.current.setItemText('t2', 'text', '固定的字', null))
       expect(hostIn(html(result), 't2')).toEqual({ values: { text: '固定的字' }, bindings: null })
       expect(variablesIn(html(result))).toEqual({ txt_t1_text: '新品上市' })
     })
 
-    it('外语下改随语言的字段写进那种语言的值表，清空就去掉；中文原文不动；固定的字段不能改', async () => {
+    it('其它语言下改随语言的字段写进那种语言的值表，清空就去掉；原文不动；固定的字段不能改', async () => {
       const { result, conversation } = await openTexts(
         [host({ id: 't1', values: { text: '新品上市' } }), host({ id: 't2', start: 2_000 })],
         { [EN_PATH]: '{}' },

@@ -101,7 +101,7 @@ describe('渲染服务接口', () => {
     )
   })
 
-  it('中文（locale 是 null 或不带）：工程原样交给渲染，不给变量值，有值表也不读', async () => {
+  it('原文（locale 是 null 或不带）：工程原样交给渲染，不给变量值，有值表也不读', async () => {
     const files = withMain(BOUND_MAIN, [{ path: 'locales/en.json', content: '{"cap_a1":1}' }])
     expect((await post({ ...exportRequest({ files }), locale: null })).status).toBe(202)
     expect(
@@ -133,7 +133,7 @@ describe('渲染服务接口', () => {
     ['工程里没有这种语言的值表', { locale: 'de' }, 'invalid-locale'],
     ['值表里的值类型不对', { locale: 'en' }, 'invalid-locale'],
     ['不认识的语言', { locale: 'ja' }, 'invalid-request'],
-    ['中文不用写成 zh', { locale: 'zh' }, 'invalid-request'],
+    ['工程里没有中文的值表', { locale: 'zh' }, 'invalid-locale'],
   ])('按语言导出时%s：答 400（%s），不排进队列', async (_, extra, code) => {
     const files = withMain(BOUND_MAIN, [{ path: 'locales/en.json', content: '{"cap_a1":1}' }])
     const response = await post({ ...exportRequest({ files }), ...extra })

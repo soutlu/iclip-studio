@@ -131,22 +131,23 @@ describe('写回', () => {
 
 describe('「翻译」为什么不能点', () => {
   it('有要翻的时能点；翻译中不能点', () => {
-    expect(translateBlocked({ entries: [1], tooLong: 0, total: 1 }, 'English', false)).toBe(
-      undefined,
-    )
-    expect(translateBlocked({ entries: [1], tooLong: 0, total: 1 }, 'English', true)).toBe(
+    expect(translateBlocked({ entries: [1], tooLong: 0, total: 1 }, 'en', false)).toBe(undefined)
+    expect(translateBlocked({ entries: [1], tooLong: 0, total: 1 }, 'en', true)).toBe(
       '翻译中，可继续编辑',
     )
   })
 
-  it('都翻过了、剩下的都超长、什么都没有：各写原因', () => {
-    expect(translateBlocked({ entries: [], tooLong: 0, total: 2 }, 'English', false)).toBe(
+  it('都翻过了、剩下的都超长、什么都没有：各写原因；语言名照中文排版接进句子', () => {
+    expect(translateBlocked({ entries: [], tooLong: 0, total: 2 }, 'en', false)).toBe(
       'English 的字幕和文字都已翻译；要重新翻译哪一句，请先清空那一句',
     )
-    expect(translateBlocked({ entries: [], tooLong: 2, total: 3 }, 'English', false)).toBe(
+    expect(translateBlocked({ entries: [], tooLong: 0, total: 2 }, 'zh', false)).toBe(
+      '中文的字幕和文字都已翻译；要重新翻译哪一句，请先清空那一句',
+    )
+    expect(translateBlocked({ entries: [], tooLong: 2, total: 3 }, 'en', false)).toBe(
       '还没翻译的 2 条超过 500 字，无法自动翻译；请手动填写',
     )
-    expect(translateBlocked({ entries: [], tooLong: 0, total: 0 }, 'English', false)).toBe(
+    expect(translateBlocked({ entries: [], tooLong: 0, total: 0 }, 'en', false)).toBe(
       '暂无可翻译的字幕或文字；请先加字幕，或把贴片、场景的文字改为随语言',
     )
   })

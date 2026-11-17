@@ -6,18 +6,25 @@ import { captionClock } from './caption-edit'
 import type { CatalogVariable, ComponentCatalog } from './composition/catalog'
 import { itemNamed, type HostClip } from './composition/film'
 import { fieldText, textFields, type LocaleBindings } from './composition/locale-text'
-import { localeNamed, translationOf, type LocaleCode, type ShownLocale } from './locales'
+import {
+  phraseWith,
+  SOURCE_LOCALE,
+  SOURCE_NAME,
+  translationOf,
+  type Language,
+  type ShownLocale,
+} from './locales'
 import { usePausedCommit } from './use-paused-commit'
 
 /** 改片段 `id` 的文字字段 `fieldId` 在语言 `locale` 里的字（见 `useFilmSession` 的 `setItemText`）。 */
-export type ItemTextChange = (id: string, fieldId: string, text: string, locale: LocaleCode) => void
+export type ItemTextChange = (id: string, fieldId: string, text: string, locale: Language) => void
 
 /** 把片段 `id` 的文字字段 `fieldId` 改成随语言（`follow`）或固定。 */
 export type FollowChange = (id: string, fieldId: string, follow: boolean) => void
 
 const NO_BINDINGS: LocaleBindings = {}
 
-const PINNED_NOTE = '固定原文，所有语言共用；点击「随语言」可分别修改'
+const PINNED_NOTE = `固定${SOURCE_NAME}，所有语言共用；点击「随语言」可分别修改`
 
 /** 文字字段右边的「固定 / 随语言」：写着现在是哪种，点一下换成另一种。 */
 export function FollowToggle({
@@ -43,7 +50,9 @@ export function FollowToggle({
         </button>
       </TooltipTrigger>
       <TooltipContent className="wf-tip" side="top">
-        {follows ? '各语言分别填写；点击改为固定原文' : '所有语言共用原文；点击改为随语言'}
+        {follows
+          ? `各语言分别填写；点击改为固定${SOURCE_NAME}`
+          : `所有语言共用${SOURCE_NAME}；点击改为随语言`}
       </TooltipContent>
     </TooltipRoot>
   )
@@ -63,8 +72,8 @@ type HostTextFieldProps = {
 }
 
 /**
- * 组件或块的片段的一个文字字段（「组件文字」和「属性」外语下共用），停下 300 毫秒再写进去。中文下改的是原文；
- * 外语下随语言的字段框里是这种语言的字，还没翻时是空的、占位字提示输入这种语言，下面写着原文；固定的字段只读，
+ * 组件或块的片段的一个文字字段（「组件文字」和「属性」其它语言下共用），停下 300 毫秒再写进去。原文下改的是
+ * 原文；其它语言下随语言的字段框里是这种语言的字，还没翻时是空的、占位字提示输入这种语言，下面写着原文；固定的字段只读，
  * 下面说明它所有语言共用。说明排在框和右边的按钮下面（见 `.wf-text-note`）。
  */
 export function HostTextField({
@@ -91,7 +100,11 @@ export function HostTextField({
         {...(pinned ? {} : fieldProps)}
         aria-describedby={foreign ? noteId : undefined}
         autoComplete="off"
-        placeholder={foreign && !pinned ? `输入 ${localeNamed(locale.code).name} 文字…` : undefined}
+        placeholder={
+          locale.code !== SOURCE_LOCALE && !pinned
+            ? phraseWith('输入', locale.code, '文字…')
+            : undefined
+        }
         readOnly={pinned}
         value={draft ?? shown}
       />
@@ -101,7 +114,7 @@ export function HostTextField({
             PINNED_NOTE
           ) : (
             <>
-              <span className="wf-caption-source-tag">原文</span> {source}
+              <span className="wf-caption-source-tag">{SOURCE_NAME}</span> {source}
             </>
           )}
         </p>
@@ -116,7 +129,7 @@ type ComponentTextsProps = {
   catalog: ComponentCatalog
   bindings: ReadonlyMap<string, LocaleBindings>
   locale: ShownLocale
-  /** 工程里有外语：这时才显示「固定 / 随语言」。 */
+  /** 工程里加了语言：这时才显示「固定 / 随语言」。 */
   multilingual: boolean
   selected: ReadonlySet<string>
   onText: ItemTextChange
@@ -127,7 +140,7 @@ type ComponentTextsProps = {
 
 /**
  * 「字幕」页签的「组件文字」：每个有文字字段的贴片、场景一块（名字、开始时间），每个文字字段一行（名字、文字框，
- * 有外语时右边是「固定 / 随语言」）。焦点进一块时选中那个片段，点名字还让播放头跳到它的开始。
+ * 加了语言时右边是「固定 / 随语言」）。焦点进一块时选中那个片段，点名字还让播放头跳到它的开始。
  */
 export function ComponentTexts({
   hosts,

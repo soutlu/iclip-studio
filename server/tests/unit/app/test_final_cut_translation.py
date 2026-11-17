@@ -40,13 +40,30 @@ def ark_answer(raw: str, *, status: str = "completed") -> httpx.Response:
     return httpx.Response(200, json=responses_body(raw, status=status))
 
 
-@pytest.mark.parametrize("locale", ["en", "de", "es", "fr"])
-def test_the_system_prompt_names_the_target_language(locale: TargetLocale) -> None:
+@pytest.mark.parametrize("locale", ["zh", "en", "de", "es", "fr"])
+def test_the_system_prompt_names_the_target_language_and_no_other(locale: TargetLocale) -> None:
     request = build_translation_request(ENTRIES, locale)
 
     assert LANGUAGE_NAMES[locale] in request.system_prompt
     others = [name for key, name in LANGUAGE_NAMES.items() if key != locale]
-    assert not any(name in request.system_prompt for name in others)
+    assert not any(name in request.system_prompt for name in others), "提示词不假定原文是哪种语言"
+
+
+def test_an_english_source_can_be_translated_into_chinese() -> None:
+    english = (
+        FinalCutText(id="t1", text="Only $199 today"),
+        FinalCutText(id="t2", text="Line one\nLine two"),
+    )
+
+    request = build_translation_request(english, "zh")
+
+    assert LANGUAGE_NAMES["zh"] in request.system_prompt
+    assert json.loads(request.user_text) == {
+        "entries": [
+            {"id": "t1", "text": "Only $199 today"},
+            {"id": "t2", "text": "Line one\nLine two"},
+        ]
+    }
 
 
 def test_the_request_carries_every_entry_with_its_newlines_and_limits_answer_ids() -> None:

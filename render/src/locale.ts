@@ -22,9 +22,10 @@ import {
 import type { ExportLocale } from './request'
 
 /**
- * 按语言导出：final-cut 的原文是中文，每种外语一份值表 `locales/<语言>.json`（变量 id → 这种语言的值）。导出
- * 一种外语时规则和编辑器预览这种语言一样：字幕的字是主文件根上的变量，值交给渲染器；贴片、场景里随语言的
- * 字段由 `localizedHostValues`（和预览同一个函数）并进宿主的 `data-variable-values`。
+ * 按语言导出：final-cut 的原文是视频自带的语言（主文件根上变量的默认值，没有值表），能加的每种语言一份值表
+ * `locales/<语言>.json`（变量 id → 这种语言的值）。导出一种语言时规则和编辑器预览这种语言一样：字幕的字是主文件
+ * 根上的变量，值交给渲染器；贴片、场景里随语言的字段由 `localizedHostValues`（和预览同一个函数）并进宿主的
+ * `data-variable-values`。
  */
 
 /** 成功时的结果，或说明哪里不对的一句话（会给用户看，不带值表里的字）。 */
@@ -32,7 +33,7 @@ export type Checked<T> = { ok: true; value: T } | { ok: false; message: string }
 
 const VALUES_ATTRIBUTE = 'data-variable-values'
 
-/** 一种外语的值表在工程里的路径（相对工程根）。 */
+/** 一种语言的值表在工程里的路径（相对工程根）。 */
 export const localePath = (locale: ExportLocale) => `locales/${locale}.json`
 
 /** 从工程文件里读 `locale` 的值表：要有这个文件，内容是一个 JSON 对象。 */
@@ -117,7 +118,7 @@ export function checkLocaleValues(
 }
 
 /**
- * 主文件里贴片、场景的宿主换成一种外语的取值：只重写有随语言字段（`data-locale-bindings`）的宿主的
+ * 主文件里贴片、场景的宿主换成一种语言的取值：只重写有随语言字段（`data-locale-bindings`）的宿主的
  * `data-variable-values`，规则见 `localizedHostValues`（`values` 是校验过的值表，`defaults` 是根上变量的
  * 默认值）。字幕宿主、没有随语言字段的宿主不动，别的字一个不动。
  */

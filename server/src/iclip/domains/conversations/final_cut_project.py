@@ -245,7 +245,7 @@ class FinalCutProject:
         locale: TargetLocale,
         entries: Sequence[FinalCutText],
     ) -> tuple[FinalCutText, ...]:
-        """属主把一批中文短句翻成 ``locale``，答复按请求的顺序每个 id 恰好一条。不落库、不写工作区。
+        """属主把一批原文短句翻成 ``locale``，答复按请求的顺序每个 id 恰好一条。不落库、不写工作区。
 
         看不见这段对话 404，看得见但不是属主或对话已删除 403，这两种都不调模型。模型没启用抛
         ``ModelUnavailable``，调用失败或回答不对抛 ``FinalCutTranslationFailed``。

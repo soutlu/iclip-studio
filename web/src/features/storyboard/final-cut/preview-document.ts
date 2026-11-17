@@ -63,7 +63,7 @@ export function withoutHiddenClips(html: string): string {
 }
 
 /**
- * 预览一种外语时（`values` 是它的值表，中文时是 null，不改）：随语言的字段的字并进各宿主的
+ * 预览一种语言时（`values` 是它的值表，原文时是 null，不改）：随语言的字段的字并进各宿主的
  * `data-variable-values`（规则见 `localizedHostValues`）。没有宿主要改时原样返回。
  */
 export function withLocalizedHosts(html: string, values: LocaleValues | null): string {
@@ -86,7 +86,7 @@ export function withLocalizedHosts(html: string, values: LocaleValues | null): s
 }
 
 /**
- * 预览套上一种语言的值（`values` 是它的值表，中文时是 null，不插）：照官方编辑器，在 `<head>` 开头插一段脚本，
+ * 预览套上一种语言的值（`values` 是它的值表，原文时是 null，不插）：照官方编辑器，在 `<head>` 开头插一段脚本，
  * 运行库加载时按全局变量 `__hfVariables` 取变量的值。只放主文件根上声明过的 id；`<` 写成转义，值里的
  * `</script>` 不会提前结束脚本。
  */

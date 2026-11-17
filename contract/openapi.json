@@ -3702,6 +3702,7 @@
           },
           "locale": {
             "enum": [
+              "zh",
               "en",
               "de",
               "es",
@@ -4957,7 +4958,7 @@
       },
       "FinalCutTextIn": {
         "additionalProperties": false,
-        "description": "一条要翻的中文：``id`` 是编辑器里变量的 id，``text`` 不能只有空白。",
+        "description": "一条要翻的原文：``id`` 是编辑器里变量的 id，``text`` 不能只有空白。",
         "properties": {
           "id": {
             "maxLength": 128,
@@ -5025,7 +5026,7 @@
       },
       "FinalCutTranslationsIn": {
         "additionalProperties": false,
-        "description": "把一批中文短句翻成 ``targetLocale``。源语言固定是中文；``entries`` 里的 ``id`` 不能重复。",
+        "description": "把一批原文短句翻成 ``targetLocale``。原文什么语言都行，不用声明；``entries`` 里的 ``id``\n不能重复。",
         "properties": {
           "entries": {
             "description": "所有 text 加起来最多 4000 字，超了要分批发",
@@ -5039,6 +5040,7 @@
           },
           "targetLocale": {
             "enum": [
+              "zh",
               "en",
               "de",
               "es",
@@ -14370,12 +14372,13 @@
       },
       "WholeFilmExportIn": {
         "additionalProperties": false,
-        "description": "发起导出：``locale`` 是导出哪种外语的版本，不带或 null 导出中文。",
+        "description": "发起导出：``locale`` 是导出哪种语言的版本，不带或 null 导出原文。",
         "properties": {
           "locale": {
             "anyOf": [
               {
                 "enum": [
+                  "zh",
                   "en",
                   "de",
                   "es",
@@ -14416,7 +14419,7 @@
       },
       "WholeFilmExportOut": {
         "additionalProperties": false,
-        "description": "一次导出现在的样子。``locale`` 是导出的哪种外语的版本，中文时是 null。``downloadUrl`` 只在\n``done`` 时有，``error`` 只在 ``failed`` 时有。",
+        "description": "一次导出现在的样子。``locale`` 是导出的哪种语言的版本，原文时是 null。``downloadUrl`` 只在\n``done`` 时有，``error`` 只在 ``failed`` 时有。",
         "properties": {
           "downloadUrl": {
             "anyOf": [
@@ -14448,6 +14451,7 @@
             "anyOf": [
               {
                 "enum": [
+                  "zh",
                   "en",
                   "de",
                   "es",
@@ -18259,7 +18263,7 @@
     },
     "/conversations/{conversation_id}/final-cut/translations": {
       "post": {
-        "description": "把一批中文短句翻成一种外语，一次请求一次模型调用，同步答复；不落库、不写工作区。只有属主能翻：\n看不见这段对话 404，看得见但不是属主、或看得见已删除的对话（治理者）403。语言、条数、长度不合规或\n``id`` 重复 422。模型没启用 409，模型调用失败或回答不对 502，都带 ``code``。",
+        "description": "把一批原文短句（什么语言都行）翻成一种语言，一次请求一次模型调用，同步答复；不落库、不写工作区。只有属主能翻：\n看不见这段对话 404，看得见但不是属主、或看得见已删除的对话（治理者）403。语言、条数、长度不合规或\n``id`` 重复 422。模型没启用 409，模型调用失败或回答不对 502，都带 ``code``。",
         "operationId": "translate_final_cut_texts_conversations__conversation_id__final_cut_translations_post",
         "parameters": [
           {
@@ -19069,7 +19073,7 @@
     },
     "/conversations/{conversation_id}/whole-film/exports": {
       "post": {
-        "description": "按 final-cut 导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；\n还没有主文件 ``final-cut/index.html``、要导的外语没有值表 ``final-cut/locales/<语言>.json``、\n没开通都是 422。没有请求体或 ``locale`` 为 null 时导出中文。主文件里的素材按输出地址对上\n生成记录的记进导出记录，对不上的不记、也不拒绝。导出的是交给渲染服务那一刻的工程。",
+        "description": "按 final-cut 导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；\n还没有主文件 ``final-cut/index.html``、要导的语言没有值表 ``final-cut/locales/<语言>.json``、\n没开通都是 422。没有请求体或 ``locale`` 为 null 时导出原文。主文件里的素材按输出地址对上\n生成记录的记进导出记录，对不上的不记、也不拒绝。导出的是交给渲染服务那一刻的工程。",
         "operationId": "export_whole_film_conversations__conversation_id__whole_film_exports_post",
         "parameters": [
           {
