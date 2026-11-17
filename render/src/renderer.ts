@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -88,8 +88,7 @@ async function downloadMedia(
 }
 
 /**
- * 把工程文件写进 `project`：每个路径都要落在 `project` 里面。写完再放上指向公共目录的 `vendor`，
- * 写文件时不会经过它写到公共目录里去。
+ * 把工程文件写进 `project`：每个路径都要落在 `project` 里面。再把公共目录整个拷成工程里的 `vendor`。
  */
 async function writeProject(project: string, files: readonly ProjectFile[], vendorDir: string) {
   const root = resolve(project)
@@ -100,7 +99,9 @@ async function writeProject(project: string, files: readonly ProjectFile[], vend
     await mkdir(dirname(target), { recursive: true })
     await writeFile(target, file.content, { flag: 'wx' })
   }
-  await symlink(vendorDir, join(root, VENDOR_DIR))
+  // 拷贝而不用软链：渲染器只取工程目录里的文件，软链到工程外的取不到；放行工程外文件的开关又不放
+  // glb、wasm 这类类型。dereference：公共目录里有软链时拷它指向的内容，不把链接原样拷进工程
+  await cp(vendorDir, join(root, VENDOR_DIR), { recursive: true, dereference: true })
 }
 
 /**

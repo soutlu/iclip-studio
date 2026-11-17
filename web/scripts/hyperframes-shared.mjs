@@ -8,10 +8,10 @@ import { promisify } from 'node:util'
 
 const run = promisify(execFile)
 
-export const HF_VERSION = '0.9.31'
+export const HF_VERSION = '0.9.59'
 export const TARBALL = {
   url: `https://codeload.github.com/heygen-com/hyperframes/tar.gz/refs/tags/v${HF_VERSION}`,
-  sha256: '2a237209ea7b5bcf106b05eec368c87e0bb0981ed66e7ddd0f572fa764f788ed',
+  sha256: 'a7ec92846b26737124d73891ac772cd940b36a4eb31d099b8741813a16315888',
   root: `hyperframes-${HF_VERSION}`,
 }
 
