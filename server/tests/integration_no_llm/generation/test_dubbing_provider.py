@@ -326,7 +326,7 @@ async def test_every_line_is_synthesized_with_the_records_group_key() -> None:
     groups = ModelGroups(
         (
             ModelGroup(
-                name="mkt", video_api_key="vk-mkt", video_models={}, dubbing_api_key="dub-mkt"
+                name="mkt", video_api_key="vk-mkt", video_models={}, speech_api_key="dub-mkt"
             ),
         ),
         group_of=_nobody_is_grouped,

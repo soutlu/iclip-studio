@@ -56,8 +56,8 @@ from iclip.app.shot_media import CutRecordsAdapter, FrameBoardsAdapter, GridCuts
 from iclip.app.whole_film_exports import WholeFilmExportAdapter, final_cut_reader
 from iclip.common.errors import NotFound
 from iclip.config import (
-    QWEN_DUBBING_API_KEY_ENV,
     QWEN_MUSIC_API_KEY_ENV,
+    QWEN_SPEECH_API_KEY_ENV,
     QWEN_SUBTITLE_API_KEY_ENV,
     ObjectStoreEnv,
     ResolvedMediaGeneration,
@@ -323,7 +323,7 @@ def _generation_module(
             compose_concurrency=compose_concurrency,
         ),
         subtitles=_qwen_service(settings.subtitle),
-        dubbing=_dubbing(settings.dubbing, owns_url),
+        dubbing=_dubbing(settings.speech, owns_url),
         music=_qwen_service(settings.music),
         render=render,
         model_groups=ModelGroups(
@@ -334,7 +334,7 @@ def _generation_module(
                     video_models=group.video_models,
                     subtitle_api_key=group.subtitle_api_key,
                     music_api_key=group.music_api_key,
-                    dubbing_api_key=group.dubbing_api_key,
+                    speech_api_key=group.speech_api_key,
                 )
                 for group in settings.model_groups
             ),
@@ -440,11 +440,11 @@ def build_app(
             media_generation=settings.media_generation is not None,
             requires=f"media_generation.music 段与千问AI平台的 API Key {QWEN_MUSIC_API_KEY_ENV}",
         )
-    if settings.media_generation is None or settings.media_generation.dubbing is None:
+    if settings.media_generation is None or settings.media_generation.speech is None:
         _logger.warning(
             "配音未启用",
             media_generation=settings.media_generation is not None,
-            requires=f"media_generation.dubbing 段与千问AI平台的 API Key {QWEN_DUBBING_API_KEY_ENV}",
+            requires=f"media_generation.speech 段与千问AI平台的 API Key {QWEN_SPEECH_API_KEY_ENV}",
         )
     http_client = httpx.AsyncClient(follow_redirects=True)
     public_http_client = public_client(timeout=TOTAL_TIMEOUT_SECONDS)

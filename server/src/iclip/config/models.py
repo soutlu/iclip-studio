@@ -46,7 +46,7 @@ QWEN_SUBTITLE_API_KEY_ENV: Final = "QWEN_SUBTITLE_API_KEY"
 
 QWEN_MUSIC_API_KEY_ENV: Final = "QWEN_MUSIC_API_KEY"
 
-QWEN_DUBBING_API_KEY_ENV: Final = "QWEN_DUBBING_API_KEY"
+QWEN_SPEECH_API_KEY_ENV: Final = "QWEN_SPEECH_API_KEY"
 
 _MODEL_GROUP_NAME: Final = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -285,7 +285,7 @@ class MusicSection(QwenServiceSection):
     timeout_seconds: float = Field(default=300.0, gt=0)
 
 
-class DubbingSection(QwenServiceSection):
+class SpeechSection(QwenServiceSection):
     concurrency: int = Field(default=2, gt=0)
     timeout_seconds: float = Field(default=120.0, gt=0)
 
@@ -298,7 +298,7 @@ class MediaGenerationSection(ConfigSection):
     compose_concurrency: int | None = Field(default=None, ge=1)
     subtitle: SubtitleSection | None = None
     music: MusicSection | None = None
-    dubbing: DubbingSection | None = None
+    speech: SpeechSection | None = None
 
 
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -314,7 +314,7 @@ class ModelGroupSection(ConfigSection):
     video_api_key_env: NonEmptyText
     subtitle_api_key_env: NonEmptyText | None = None
     music_api_key_env: NonEmptyText | None = None
-    dubbing_api_key_env: NonEmptyText | None = None
+    speech_api_key_env: NonEmptyText | None = None
     video_models: dict[NonEmptyText, NonEmptyText]
 
 
@@ -471,7 +471,7 @@ class ResolvedMediaModelGroup:
     video_models: Mapping[str, str]
     subtitle_api_key: str | None
     music_api_key: str | None
-    dubbing_api_key: str | None
+    speech_api_key: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -492,7 +492,7 @@ class ResolvedMediaGeneration:
     compose_concurrency: int | None
     subtitle: ResolvedQwenService | None
     music: ResolvedQwenService | None
-    dubbing: ResolvedQwenService | None
+    speech: ResolvedQwenService | None
     model_groups: tuple[ResolvedMediaModelGroup, ...]
 
 
@@ -594,7 +594,7 @@ def _resolve_media_generation(
     enhance = _resolve_video_enhance(section.video.enhance, env.video_enhance_submit_url)
     subtitle = _resolve_qwen_service(section.subtitle, QWEN_SUBTITLE_API_KEY_ENV)
     music = _resolve_qwen_service(section.music, QWEN_MUSIC_API_KEY_ENV)
-    dubbing = _resolve_qwen_service(section.dubbing, QWEN_DUBBING_API_KEY_ENV)
+    speech = _resolve_qwen_service(section.speech, QWEN_SPEECH_API_KEY_ENV)
     return ResolvedMediaGeneration(
         video_submit_url=env.video_submit_url,
         video_status_base_url=env.video_status_base_url,
@@ -621,7 +621,7 @@ def _resolve_media_generation(
         compose_concurrency=section.compose_concurrency,
         subtitle=subtitle,
         music=music,
-        dubbing=dubbing,
+        speech=speech,
         model_groups=tuple(
             _resolve_media_model_group(
                 name,
@@ -630,7 +630,7 @@ def _resolve_media_generation(
                 enhance_model=None if enhance is None else enhance.model,
                 subtitle_on=subtitle is not None,
                 music_on=music is not None,
-                dubbing_on=dubbing is not None,
+                speech_on=speech is not None,
             )
             for name, group in model_groups.items()
         ),
@@ -645,7 +645,7 @@ def _resolve_media_model_group(
     enhance_model: str | None,
     subtitle_on: bool,
     music_on: bool,
-    dubbing_on: bool,
+    speech_on: bool,
 ) -> ResolvedMediaModelGroup:
     where = f"model_groups.{name}"
     expected = video_models if enhance_model is None else video_models | {enhance_model}
@@ -668,8 +668,8 @@ def _resolve_media_model_group(
         music_api_key=_group_key(where, "music_api_key_env", group.music_api_key_env)
         if music_on
         else None,
-        dubbing_api_key=_group_key(where, "dubbing_api_key_env", group.dubbing_api_key_env)
-        if dubbing_on
+        speech_api_key=_group_key(where, "speech_api_key_env", group.speech_api_key_env)
+        if speech_on
         else None,
     )
 

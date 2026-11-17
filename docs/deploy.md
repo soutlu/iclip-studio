@@ -74,7 +74,7 @@ CREATE DATABASE iclip OWNER iclip;
   - **重要提醒**：请将 `CREDENTIAL_ENCRYPTION_KEYS` 与数据库备份分开妥善保管；一旦丢失，数据库里已保存的所有模型 API Key 和 MCP 配置都将无法解密，只能重新录入。
   - 如果服务器是与 OSS 同地域的阿里云 ECS，建议配置 `OSS_INTERNAL_ENDPOINT` 走内网高速读写；
   - 如需开启视频超分（高清版），配置 `VIDEO_ENHANCE_SUBMIT_URL` 并在 `config.yaml` 中配置 `media_generation.video.enhance`；
-  - 如需开启素材片字幕识别，配置 `QWEN_SUBTITLE_API_KEY` 并在 `config.yaml` 中配置 `media_generation.subtitle`；如需开启生成背景音乐，配置 `QWEN_MUSIC_API_KEY` 并配置 `media_generation.music`；如需开启 final-cut 配音，配置 `QWEN_DUBBING_API_KEY` 并配置 `media_generation.dubbing`（`url` 填音频生成接口地址 `https://maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer`，`concurrency`、`timeout_seconds` 可不写）。三项各用各的 key，只配了哪项就只开通哪项；
+  - 如需开启素材片字幕识别，配置 `QWEN_SUBTITLE_API_KEY` 并在 `config.yaml` 中配置 `media_generation.subtitle`；如需开启生成背景音乐，配置 `QWEN_MUSIC_API_KEY` 并配置 `media_generation.music`；如需开启 final-cut 配音，配置 `QWEN_SPEECH_API_KEY` 并配置 `media_generation.speech`（`url` 填音频生成接口地址 `https://maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer`，`concurrency`、`timeout_seconds` 可不写）。三项各用各的 key，只配了哪项就只开通哪项；
   - 如需按部门区分媒体生成用的 key 与视频网关 model_id，见[配置组](#配置组)；
   - 如需开启成片导出（导出经渲染服务），配置 `FINAL_CUT_RENDER_URL=http://render:8080` 以及 `RENDER_ALLOWED_MEDIA_HOSTS`（填入本系统 OSS 域名和上游视频生成域名，多个域名用逗号分隔）。
   - 使用 final-cut 编辑器还要配置 `FINAL_CUT_PREVIEW_ORIGIN=https://<预览域名>`，编辑器的预览在这个域名下的预览页里运行，不配置时预览无法加载；预览域名取应用域名下的一个子域名。预览域名的解析与 HTTPS 证书要和应用域名一样指到 `web` 容器，由同一套 Nginx 把页面交给前端、把 `/api/` 转给后端，转发时原样带上 `Host`（后端按它区分两个域名）。
@@ -204,7 +204,7 @@ model_groups:
     video_api_key_env: VIDEO_API_KEY_MKT # 该组视频 key 的变量名，必填
     subtitle_api_key_env: QWEN_SUBTITLE_API_KEY_MKT # 开通了字幕识别时必填
     music_api_key_env: QWEN_MUSIC_API_KEY_MKT       # 开通了生成背景音乐时必填
-    dubbing_api_key_env: QWEN_DUBBING_API_KEY_MKT   # 开通了配音时必填
+    speech_api_key_env: QWEN_SPEECH_API_KEY_MKT     # 开通了配音时必填
     video_models:                        # 产品模型名 → 该组网关的 model_id
       vendor-b-seedance-2-0: <该组的 model_id>
       vendor-b-seedance-2-5: <该组的 model_id>
@@ -212,7 +212,7 @@ model_groups:
       video-enhance: <该组的 model_id>   # 键是 media_generation.video.enhance.model 的值；只在开通了高清版时写，没开通时写了会启动报错
 ```
 
-- **不写这一段就不分组**：所有人走默认组，视频用 `VIDEO_API_KEY`，字幕识别用 `QWEN_SUBTITLE_API_KEY`，生成背景音乐用 `QWEN_MUSIC_API_KEY`，配音用 `QWEN_DUBBING_API_KEY`，视频网关收到的是产品模型名。
+- **不写这一段就不分组**：所有人走默认组，视频用 `VIDEO_API_KEY`，字幕识别用 `QWEN_SUBTITLE_API_KEY`，生成背景音乐用 `QWEN_MUSIC_API_KEY`，配音用 `QWEN_SPEECH_API_KEY`，视频网关收到的是产品模型名。
 - **启动时校验**：组名不合规、同一个部门写进了两个组、`video_models` 的键不正好是 `allowed_models`（开通了高清版时再加上 `enhance.model` 的值）、对照的值为空、key 变量没写或没有值，后端都拒绝启动并指出是哪一组的哪一项。字幕识别、生成背景音乐或配音没开通时，不检查对应的 key；媒体生成没开通时，不检查 key 与 `video_models` 的模型名（组名、部门、必填项与值不能为空照样检查）。
 - **改配置的生效范围**：组在受理时定下并记在生成记录上，所以改配置只影响之后受理的任务。记录上的组已从配置删掉、或该组缺了要用的 key 时，这条任务直接失败，错误信息写明组名和缺的项。
 - **配置页只能选配置里的组**：给密钥选组的下拉框列出 `model_groups` 里的组名和「默认」；组在某个供应商下没有大模型密钥时，组里的人发消息会被拦下，所以先配好密钥、再让组里有人。

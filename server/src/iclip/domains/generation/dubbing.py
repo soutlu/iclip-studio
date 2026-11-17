@@ -155,7 +155,7 @@ class DubbingProvider:
         group = self._model_groups.of(job)
         if group is None:
             return None
-        return group_key(group, group.dubbing_api_key, what="配音")
+        return group_key(group, group.speech_api_key, what="配音")
 
     async def submit(self, job: GenerationJob) -> ProviderSubmission:
         request = request_of(job, DubbingRequest, provider=PROVIDER_NAME)
