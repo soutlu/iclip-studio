@@ -2,9 +2,11 @@
  * 按语言放人声。原文永远用原声；加的每种语言有一个人声设置，记在主文件根上的 `data-voice-modes`：
  * - 保留原声（`original`）：这种语言的配音片段不出声，原声照常；
  * - AI 配音（`dub`）：这种语言的配音片段出声，原视频的声音（视频片段的原声、分离出来的原声片段）都不出声。
- * 每种语言还记着配音用的音色：参考音频库里一个音色的编号，或者从素材片的原声里取（null）。写法是
- * `{ "<语言>": { "mode": "dub" | "original", "voice": "<音色>" | null } }`；没写的语言、写法不对的语言都是保留原声、
- * 原声的音色。
+ * 每种语言还记着配音用的音色：参考音频库里一个音色的编号，或者从素材片的原声里取（null）；各句可以有自己的
+ * 选择（按字幕编号记）：用某个音色（null 是原声的音色），或者不配音，没记的句子跟着这种语言的音色。写法是
+ * `{ "<语言>": { "mode": "dub" | "original", "voice": "<音色>" | null,
+ *   "lines": { "<字幕编号>": { "voice": "<音色>" | null } | { "dub": false } } } }`，`lines` 空着时不写；没写的语言、
+ * 写法不对的语言都是保留原声、原声的音色，写法不对的句子当没选过。
  * 配音片段是带 `data-locale`、`data-dub-of` 的普通 `<audio>`（见 `film.ts` 的 `AudioDub`）。预览和按语言导出都用
  * `localizedVoices` 按这条规则改主文件。
  */
@@ -12,22 +14,45 @@ export const VOICE_MODES = 'data-voice-modes'
 
 export type VoiceMode = 'original' | 'dub'
 
-/** 一种语言的人声设置：出不出配音，配音用哪个音色（null 是从原声里取）。 */
-export type VoiceSetting = { mode: VoiceMode; voice: string | null }
+/** 一句自己的选择：用某个音色（null 是原声的音色），或者不配音。 */
+export type LineVoice = { voice: string | null } | { dub: false }
+
+/** 各句自己的选择：字幕编号 → 选择；没有的句子跟着这种语言的音色。 */
+export type LineVoices = Readonly<Record<string, LineVoice>>
+
+/** 一种语言的人声设置：出不出配音，配音用哪个音色（null 是从原声里取），各句自己的选择。 */
+export type VoiceSetting = { mode: VoiceMode; voice: string | null; lines: LineVoices }
 
 /** 各语言的人声设置；没有的语言是保留原声、原声的音色。 */
 export type VoiceModes = Readonly<Record<string, VoiceSetting>>
 
 const NO_MODES: VoiceModes = {}
 
-const DEFAULT_SETTING: VoiceSetting = { mode: 'original', voice: null }
+const NO_LINES: LineVoices = {}
+
+const DEFAULT_SETTING: VoiceSetting = { mode: 'original', voice: null, lines: NO_LINES }
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const isVoice = (value: unknown): value is string | null =>
+  value === null || (typeof value === 'string' && value !== '')
+
+const lineVoiceOf = (value: unknown): LineVoice | undefined => {
+  if (!isRecord(value)) return undefined
+  if (value['dub'] === false) return { dub: false }
+  return 'voice' in value && isVoice(value['voice']) ? { voice: value['voice'] } : undefined
+}
 
 const settingOf = (value: unknown): VoiceSetting | undefined => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
-  const { mode, voice } = value as Record<string, unknown>
-  if (mode !== 'dub' && mode !== 'original') return undefined
-  if (voice !== null && (typeof voice !== 'string' || voice === '')) return undefined
-  return { mode, voice }
+  if (!isRecord(value)) return undefined
+  const { mode, voice, lines } = value
+  if ((mode !== 'dub' && mode !== 'original') || !isVoice(voice)) return undefined
+  const chosen = Object.entries(isRecord(lines) ? lines : {}).flatMap(([caption, each]) => {
+    const line = lineVoiceOf(each)
+    return line === undefined ? [] : [[caption, line] as const]
+  })
+  return { mode, voice, lines: chosen.length === 0 ? NO_LINES : Object.fromEntries(chosen) }
 }
 
 /** 读 `data-voice-modes` 的值；没写或不是 JSON 对象时都是默认设置，写法不对的语言也是。 */
@@ -57,18 +82,50 @@ export const voiceModeOf = (modes: VoiceModes, locale: string | null): VoiceMode
   voiceSettingOf(modes, locale).mode
 
 /**
- * `data-voice-modes` 改成语言 `locale` 用 `setting` 以后要写的值：默认设置（保留原声、原声的音色）不写；各语言都是
- * 默认设置时是 null（去掉这个属性）。
+ * 一句在这种语言（人声设置 `setting`）下用的音色：自己选过的按它的，没选过的跟着这种语言的音色；null 是原声的
+ * 音色，undefined 是不配音。
  */
-export function voiceModesAttribute(
-  modes: VoiceModes,
-  locale: string,
+export function voiceOfLine(
+  setting: Pick<VoiceSetting, 'voice' | 'lines'>,
+  caption: string,
+): string | null | undefined {
+  const own = Object.hasOwn(setting.lines, caption) ? setting.lines[caption] : undefined
+  if (own === undefined) return setting.voice
+  return 'voice' in own ? own.voice : undefined
+}
+
+/** 把一句的选择改成 `line`（null 是去掉它自己的选择，跟着这种语言的音色）。 */
+export function withLineVoice(
   setting: VoiceSetting,
-): string | null {
+  caption: string,
+  line: LineVoice | null,
+): VoiceSetting {
+  const others = Object.fromEntries(Object.entries(setting.lines).filter(([id]) => id !== caption))
+  return { ...setting, lines: line === null ? others : { ...others, [caption]: line } }
+}
+
+/** 删掉一句字幕以后的人声设置：各语言里它的选择都去掉；哪种语言都没记着它时就是 `modes` 本身。 */
+export function voiceModesWithout(modes: VoiceModes, caption: string): VoiceModes {
+  if (!Object.values(modes).some(({ lines }) => Object.hasOwn(lines, caption))) return modes
+  return Object.fromEntries(
+    Object.entries(modes).map(([locale, setting]) => [
+      locale,
+      withLineVoice(setting, caption, null),
+    ]),
+  )
+}
+
+/**
+ * `data-voice-modes` 要写的值：默认设置（保留原声、原声的音色、没有哪句自己选过）的语言不写，`lines` 空着时不写；
+ * 各语言都是默认设置时是 null（去掉这个属性）。
+ */
+export function voiceModesAttribute(modes: VoiceModes): string | null {
   const next = Object.fromEntries(
-    Object.entries({ ...modes, [locale]: setting }).flatMap(([each, { mode, voice }]) =>
-      mode === 'original' && voice === null ? [] : [[each, { mode, voice }] as const],
-    ),
+    Object.entries(modes).flatMap(([locale, { mode, voice, lines }]) => {
+      const chosen = Object.keys(lines).length > 0
+      if (mode === 'original' && voice === null && !chosen) return []
+      return [[locale, chosen ? { mode, voice, lines } : { mode, voice }] as const]
+    }),
   )
   return Object.keys(next).length === 0 ? null : JSON.stringify(next)
 }

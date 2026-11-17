@@ -337,6 +337,7 @@ export type {
   DubbingIn,
   DubbingLine,
   DubbingOriginalReference,
+  DubbingSpeechSpan,
   DubbingUploadReferenceIn,
   DubbingVoiceReferenceIn,
   EditConversationFilmTextConversationsConversationIdFilmTextPatchData,

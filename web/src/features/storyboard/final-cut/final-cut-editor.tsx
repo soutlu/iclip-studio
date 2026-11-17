@@ -53,8 +53,24 @@ import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
 import type { CatalogItem } from './composition/catalog'
 import { isDubClip, type Canvas, type CaptionClip, type FilmClip } from './composition/film'
 import { textHosts, type LocaleBindings } from './composition/locale-text'
-import type { VoiceMode } from './composition/voices'
-import { dubbingRefusalText, dubbingRequests, dubClips, replacedDubs, shownIn } from './dubbing'
+import {
+  voiceOfLine,
+  withLineVoice,
+  type LineVoice,
+  type LineVoices,
+  type VoiceMode,
+  type VoiceSetting,
+} from './composition/voices'
+import {
+  dubbingRefusalText,
+  dubbingRequests,
+  dubClips,
+  dubsOf,
+  lineRefusals,
+  lineRefusalText,
+  shownIn,
+  type VoiceOfCaption,
+} from './dubbing'
 import { isEditorKeyTarget, onCanvasLayer, useEditorEscape, useEditorRoot } from './editor-keys'
 import { EditorRoot } from './editor-root'
 import { EditorToolbar, type EditTool } from './editor-toolbar'
@@ -172,10 +188,12 @@ const READING_TAKES_TEXT = '正在读取素材片，请稍后再识别字幕'
 const RECOGNIZING_TEXT = '正在识别字幕，请等待识别完成'
 const READING_TAKES_DUBBING_TEXT = '正在读取素材片，请稍后再生成配音'
 const NO_TAKES_DUBBING_TEXT = '找不到视频片段用的素材片记录，无法生成配音'
+const ALL_UNVOICED_TEXT = '每句都选了「不配音」，无需重新生成'
 // 还没有 final-cut 时先放组件或块：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 const NO_LINKS: Links = new Map()
 const NO_BINDINGS: ReadonlyMap<string, LocaleBindings> = new Map()
+const NO_LINE_VOICES: LineVoices = {}
 
 /** 预览里的各句字幕（见 `PreviewCaptions`）：显示的字是 `locale` 值表里的字，没翻的是原文。 */
 const previewCaptionsOf = (clips: readonly FilmClip[], locale: ShownLocale) =>
@@ -994,40 +1012,79 @@ function EditorBody({
       notice(`${entries.length - written} 条在翻译期间已修改或删除，未写入译文`)
     if (tooLong > 0) notice(`${tooLong} 条超过 ${TRANSLATION_LIMITS.text} 字，未翻译；请手动填写`)
   }
-  // 其它语言下的「AI 配音」：给有已翻译字幕的素材片各生成一条配音，全部有了结果后按那时的 final-cut 一步建成
-  // 各句的配音片段、切到 AI 配音
-  const dubbingPlan =
-    film === null || target === undefined
-      ? undefined
-      : dubbingRequests(film.clips, target.values, (src) => takeDurationMs(keyframes.get(src)))
-  const dubbingTargets =
-    dubbingPlan === undefined || 'refusal' in dubbingPlan
-      ? []
-      : dubbingPlan.requests.flatMap((request) => {
-          const sourceJobId = takeOf(request.src)
-          return sourceJobId === undefined ? [] : [{ ...request, sourceJobId }]
-        })
-  const dubbingBlocked =
-    dubbingPlan === undefined || target === undefined
+  // 其它语言下的「AI 配音」：按句子挑、按素材片和音色分组发起（见 `dubbingRequests`），全部有了结果后按那时的
+  // final-cut 一步建成配好的那几句的配音片段（换掉它们原来的）、切到 AI 配音，人声设置按发起时定的改
+  const voiceLines = film?.voiceLines ?? NO_LINE_VOICES
+  const languageVoice = film?.dubVoice ?? null
+  const follows = (caption: string) => !Object.hasOwn(voiceLines, caption)
+  /** 每句现在用的音色：自己选过的按它的，别的跟着 `voice`（默认是这种语言现在的音色）。 */
+  const voicesWith =
+    (voice: string | null = languageVoice): VoiceOfCaption =>
+    (caption) =>
+      voiceOfLine({ voice, lines: voiceLines }, caption)
+  /** 按 `voiceOf` 排好、`picked` 挑中的配音请求，对上各自素材片的生成记录；`requested` 是对上之前有几次。 */
+  const dubbingPlan = (voiceOf: VoiceOfCaption, picked?: (caption: string) => boolean) => {
+    if (film === null || target === undefined) return undefined
+    const sourceMs = (src: string) => takeDurationMs(keyframes.get(src))
+    const plan = dubbingRequests(film.clips, target.values, sourceMs, voiceOf, picked)
+    if ('refusal' in plan) return plan
+    const targets = plan.requests.flatMap((request) => {
+      const sourceJobId = takeOf(request.src)
+      return sourceJobId === undefined ? [] : [{ ...request, sourceJobId }]
+    })
+    return { targets, requested: plan.requests.length }
+  }
+  /** 照 `plan` 发起前为什么不能发起；`requested` 为 0 时没有要配的句子，交给调用方决定。 */
+  const planBlocked = (plan: ReturnType<typeof dubbingPlan>) =>
+    plan === undefined || target === undefined
       ? undefined
       : videos.isPending
         ? READING_TAKES_DUBBING_TEXT
-        : 'refusal' in dubbingPlan
-          ? dubbingRefusalText(dubbingPlan.refusal, target.code)
-          : dubbingTargets.length === 0
+        : 'refusal' in plan
+          ? dubbingRefusalText(plan.refusal, target.code)
+          : plan.requested > 0 && plan.targets.length === 0
             ? NO_TAKES_DUBBING_TEXT
             : undefined
+  // 换整种语言的音色只重配跟着它的句子；「重新生成」重配要配音的每一句，各用各的音色
+  const followingPlan = dubbingPlan(voicesWith(), follows)
+  const everyPlan = dubbingPlan(voicesWith())
+  const dubbingBlocked = planBlocked(followingPlan)
+  const redoBlocked =
+    planBlocked(everyPlan) ??
+    (everyPlan !== undefined && 'requested' in everyPlan && everyPlan.requested === 0
+      ? ALL_UNVOICED_TEXT
+      : undefined)
+  // 各句能不能单独配：按每句都配音时排得进请求、素材片对得上的算
+  const unmutedPlan = dubbingPlan(() => languageVoice)
+  const lineBlocked = new Map(
+    film === null || target === undefined
+      ? []
+      : [
+          ...lineRefusals(
+            film.clips,
+            target.values,
+            new Set(
+              unmutedPlan === undefined || 'refusal' in unmutedPlan
+                ? []
+                : unmutedPlan.targets.flatMap(({ lines }) => lines.map((line) => line.caption)),
+            ),
+            (src) => takeOf(src) !== undefined,
+          ),
+        ].map(([caption, refusal]) => [
+          caption,
+          videos.isPending ? READING_TAKES_DUBBING_TEXT : lineRefusalText(refusal, target.code),
+        ]),
+  )
   const sourceName = (src: string) =>
     sourceNames.get(src) ?? clips.find((clip) => clip.kind === 'video' && clip.src === src)?.label
-  const writeDubs = ({ locale: code, voice: chosen, targets, outcomes }: DubbingDone) => {
-    const ready = targets.flatMap((each) => {
-      const outcome = outcomes.get(each.sourceJobId)
-      const url = outcome?.kind === 'ready' ? outcome.job.outputUrl : null
-      return outcome?.kind !== 'ready' || url === null
+  const writeDubs = ({ locale: code, update, results }: DubbingDone) => {
+    const ready = results.flatMap(({ target: request, outcome }) => {
+      const url = outcome.kind === 'ready' ? outcome.job.outputUrl : null
+      return outcome.kind !== 'ready' || url === null
         ? []
         : [
             {
-              request: each,
+              request,
               track: {
                 url,
                 durationMs: outcome.job.durationMs,
@@ -1037,21 +1094,23 @@ function EditorBody({
           ]
     })
     let trimmed = 0
-    const added = session.addDubs(code, chosen, (current) => {
+    const added = session.addDubs(code, update, (current) => {
       const made = ready.flatMap(({ request, track }) => dubClips(current, request, track))
       trimmed = made.filter((dub) => dub.trimmed).length
       return {
-        removed: ready.flatMap(({ request }) => replacedDubs(current, code, request.src)),
+        removed: dubsOf(
+          current,
+          code,
+          ready.flatMap(({ request }) => request.lines.map((line) => line.caption)),
+        ),
         added: made,
       }
     })
     if (added > 0) notice(phraseWith(`已生成 ${added} 句`, code, '配音'))
     if (trimmed > 0) notice(`${trimmed} 句配音太长，已截短`)
-    for (const each of targets) {
-      const outcome = outcomes.get(each.sourceJobId)
-      if (outcome?.kind === 'failed')
-        notice(`${sourceName(each.src) ?? '素材片'} 的配音生成失败：${outcome.message}`)
-    }
+    for (const { target: request, outcome } of results)
+      if (outcome.kind === 'failed')
+        notice(`${sourceName(request.src) ?? '素材片'} 的配音生成失败：${outcome.message}`)
   }
   const dubbing = useDubbing(conversationId, writeDubs)
   // 资料库里的音色：语种对上这种语言的，或者没设语种的
@@ -1077,13 +1136,59 @@ function EditorBody({
           dubbed: allClips.some((clip) => isDubClip(clip) && clip.dub.locale === target.code),
           generating: dubbing.generating,
           generateBlocked: dubbingBlocked,
+          redoBlocked,
+          lines: voiceLines,
+          lineBlocked,
           onMode: (mode: VoiceMode) => {
             leaveMaterial()
             session.setVoiceMode(target.code, mode)
           },
           onGenerate: (chosen: string | null) => {
-            if (dubbingBlocked === undefined)
-              void dubbing.start(target.code, chosen, dubbingTargets)
+            const plan = dubbingPlan(voicesWith(chosen), follows)
+            if (planBlocked(plan) !== undefined || plan === undefined || 'refusal' in plan) return
+            // 没有跟着整种语言音色的句子：不用重配，只记下音色
+            if (plan.requested === 0) {
+              leaveMaterial()
+              session.changeVoice(target.code, (setting) => ({
+                ...setting,
+                mode: 'dub',
+                voice: chosen,
+              }))
+            } else
+              void dubbing.start(target.code, plan.targets, (setting) => ({
+                ...setting,
+                voice: chosen,
+              }))
+          },
+          onRedo: () => {
+            if (redoBlocked === undefined && everyPlan !== undefined && 'targets' in everyPlan)
+              void dubbing.start(target.code, everyPlan.targets, (setting) => setting)
+          },
+          onLine: (caption: string, line: LineVoice | null) => {
+            if (lineBlocked.has(caption)) return
+            const update = (setting: VoiceSetting) => withLineVoice(setting, caption, line)
+            if (line !== null && 'dub' in line) {
+              leaveMaterial()
+              session.changeVoice(target.code, update, [caption])
+              return
+            }
+            const voice = line === null ? languageVoice : line.voice
+            // 实际用的音色没变、这句已有配音：只改记着的选择，不重新生成
+            const dubbedLine = allClips.some(
+              (clip) =>
+                isDubClip(clip) && clip.dub.locale === target.code && clip.dub.caption === caption,
+            )
+            if (dubbedLine && voicesWith()(caption) === voice) {
+              leaveMaterial()
+              session.changeVoice(target.code, update)
+              return
+            }
+            const plan = dubbingPlan(
+              (each) => (each === caption ? voice : voicesWith()(each)),
+              (each) => each === caption,
+            )
+            if (plan !== undefined && 'targets' in plan)
+              void dubbing.start(target.code, plan.targets, update)
           },
         }
 

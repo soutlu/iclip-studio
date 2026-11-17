@@ -51,6 +51,7 @@ from iclip.domains.generation.schemas import (
     DubbingOriginalReference,
     DubbingReference,
     DubbingRequest,
+    DubbingSpeechSpan,
     DubbingUploadReference,
     DubbingVoiceReference,
     DubbingVoiceReferenceIn,
@@ -496,7 +497,9 @@ class GenerationService:
         duration_ms = video.output.duration_ms
         if duration_ms is None:
             duration_ms = await self._probe_duration(video_url, what="素材片", job_id=video.id)
-        _check_dubbing_lines(request.lines, duration_ms)
+        _check_within_take(request.lines, duration_ms, what="句")
+        if isinstance(request.reference, DubbingOriginalReference) and request.reference.spans:
+            _check_within_take(request.reference.spans, duration_ms, what="段说话时段")
         return await self._queue_new(
             _pending_job(
                 DubbingRequest(
@@ -847,17 +850,19 @@ def _short_edge_of(resolution: str | None) -> int | None:
     return None if matched is None else int(matched.group(1))
 
 
-def _check_dubbing_lines(lines: Sequence[DubbingLine], video_ms: int) -> None:
-    # lines 已按开始时间排好、互不重叠，核对最后一句就够了。
-    position, last = len(lines), lines[-1]
+def _check_within_take(
+    spans: Sequence[DubbingLine] | Sequence[DubbingSpeechSpan], video_ms: int, *, what: str
+) -> None:
+    # 都已按开始时间排好、互不重叠，核对最后一个就够了；`what` 是「第 N」后面的说法。
+    position, last = len(spans), spans[-1]
     if last.start_ms >= video_ms:
         raise ValidationFailed(
-            f"第 {position} 句的开始 {format_seconds(last.start_ms / 1000)} 秒不在素材片之内，"
+            f"第 {position} {what}的开始 {format_seconds(last.start_ms / 1000)} 秒不在素材片之内，"
             f"素材片只有 {format_seconds(video_ms / 1000)} 秒"
         )
     if exceeds_source(last.end_ms, video_ms):
         raise ValidationFailed(
-            f"第 {position} 句的结尾 {format_seconds(last.end_ms / 1000)} 秒超出了素材片的时长 "
+            f"第 {position} {what}的结尾 {format_seconds(last.end_ms / 1000)} 秒超出了素材片的时长 "
             f"{format_seconds(video_ms / 1000)} 秒"
         )
 

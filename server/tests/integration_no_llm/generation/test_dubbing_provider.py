@@ -34,6 +34,8 @@ from iclip.domains.generation.queue import GenerationQueue, ProviderLane
 from iclip.domains.generation.schemas import (
     DubbedLine,
     DubbingLine,
+    DubbingOriginalReference,
+    DubbingSpeechSpan,
     DubbingUploadReference,
     DubbingVoiceReference,
 )
@@ -268,6 +270,47 @@ async def test_each_line_is_fitted_into_its_place_on_a_track_as_long_as_the_take
     assert files.requested == [VOICE_URL], "参考音频给了地址就不取视频"
 
 
+async def test_a_line_stops_at_its_slot_end_and_the_next_line_still_starts_where_it_says(
+    tmp_path: Path,
+) -> None:
+    # 第一句合成 2400 毫秒，只能占到 2 秒（1500 毫秒）：1.25 倍也放不下，截到 2 秒；之后到第二句开始是静音。
+    lines = [
+        DubbingLine(start_ms=500, end_ms=1_500, text="a" * 20, slot_end_ms=2_000),
+        line(4_000, 4_500, 5),  # 900 放进 2000：原速，音在 4–4.5 秒
+    ]
+    job = make_dubbing(
+        take(),
+        lines,
+        duration_ms=6_000,
+        reference=DubbingUploadReference(kind="upload", upload_id=uuid.uuid4(), url=VOICE_URL),
+    )
+    store = MemoryObjectStore()
+
+    submission = await provider(
+        Files({VOICE_URL: tone(5_000, frequency=220)}), CharTimedSynthesizer(), store
+    ).submit(job)
+
+    assert submission.dubbed_lines == (
+        DubbedLine(index=0, speed=1.25, trimmed=True),
+        DubbedLine(index=1, speed=1.0, trimmed=False),
+    )
+    track = tmp_path / "dubbing.m4a"
+    track.write_bytes(store.objects[f"iclip/agent/generated-dubbing/{job.id}.m4a"][0])
+    assert abs(duration_ms(track) - 6_000) <= LENGTH_TOLERANCE_MS
+    heard = {
+        span: mean_volume_db(track, *span)
+        for span in [(700, 1_800), (2_100, 3_900), (4_100, 4_400), (5_000, 5_900)]
+    }
+    assert [span for span, db in heard.items() if db > AUDIBLE_DB] == [
+        (700, 1_800),
+        (4_100, 4_400),
+    ], heard
+    assert [span for span, db in heard.items() if db < SILENT_DB] == [
+        (2_100, 3_900),
+        (5_000, 5_900),
+    ], heard
+
+
 async def test_the_original_voice_is_cut_from_the_stretch_with_the_most_speech() -> None:
     lines = [line(500, 1_500, 5), line(6_000, 9_000, 5), line(9_200, 11_800, 5)]
     job = make_dubbing(take(), lines, duration_ms=12_000)
@@ -282,6 +325,29 @@ async def test_the_original_voice_is_cut_from_the_stretch_with_the_most_speech()
     assert (shape.channels, shape.rate) == (1, RATE)
     assert abs(shape.duration_ms - (window.end_ms - window.start_ms)) <= LENGTH_TOLERANCE_MS
     assert submission.dubbed_lines is not None and len(submission.dubbed_lines) == 3
+
+
+async def test_one_short_line_takes_the_original_voice_from_the_speech_spans() -> None:
+    # 这次只配一句 1 秒的话（只按它算不到 3 秒会失败）；说话时段覆盖得最多的 10 秒在 6–11.8 秒
+    spans = [
+        DubbingSpeechSpan(start_ms=500, end_ms=1_500),
+        DubbingSpeechSpan(start_ms=6_000, end_ms=9_000),
+        DubbingSpeechSpan(start_ms=9_200, end_ms=11_800),
+    ]
+    job = make_dubbing(
+        take(),
+        [line(500, 1_500, 5)],
+        duration_ms=12_000,
+        reference=DubbingOriginalReference(kind="original", spans=spans),
+    )
+    files = Files({VIDEO_URL: video(seconds=12)})
+    synthesizer = CharTimedSynthesizer()
+
+    submission = await provider(files, synthesizer, MemoryObjectStore()).submit(job)
+
+    assert submission.dubbed_lines == (DubbedLine(index=0, speed=1.0, trimmed=False),)
+    shape = wav_shape(synthesizer.calls[0].reference)
+    assert abs(shape.duration_ms - (11_800 - 6_000)) <= LENGTH_TOLERANCE_MS
 
 
 async def test_too_little_speech_in_the_original_fails_the_record_without_synthesizing() -> None:

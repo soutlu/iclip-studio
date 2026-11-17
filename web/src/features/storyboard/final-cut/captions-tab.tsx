@@ -1,14 +1,17 @@
 import { useEffect, useId, useRef, useState, type ComponentProps, type Ref } from 'react'
+import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { useAudition } from '@/shared/ui/audition'
 import { Button, IconButton } from '@/shared/ui/button'
 import { Textarea } from '@/shared/ui/field'
 import { InlineAlert } from '@/shared/ui/inline-alert'
+import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
+import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { BlockedReason } from '../components/blocked-reason'
 import { captionClock, captionsInOrder } from './caption-edit'
 import { ComponentTexts } from './component-texts'
 import type { CaptionClip } from './composition/film'
-import type { VoiceMode } from './composition/voices'
+import type { LineVoice, LineVoices, VoiceMode } from './composition/voices'
 import {
   captionIn,
   phraseWith,
@@ -39,7 +42,8 @@ export type VoiceOption = { id: string; name: string; url: string }
 /**
  * 其它语言下的人声设置：`mode` 是现在的设置，`voice` 是记着的配音音色（null 是原声的音色），`voices` 是资料库里
  * 这种语言能用的音色，`voicesProblem` 是它们读不出来的原因；`dubbed` 是这种语言已经有配音片段，`generating` 是正在
- * 给几条素材片生成配音（没在生成时是 0），`generateBlocked` 是现在为什么不能生成配音。
+ * 给几条素材片生成配音（没在生成时是 0），`generateBlocked` 是现在为什么不能换音色生成配音，`redoBlocked` 是为什么
+ * 不能重新生成。`lines` 是各句自己的选择（没有的跟着这种语言的音色），`lineBlocked` 是各句为什么不能单独配音。
  */
 export type VoiceControl = {
   mode: VoiceMode
@@ -49,9 +53,19 @@ export type VoiceControl = {
   dubbed: boolean
   generating: number
   generateBlocked: string | undefined
+  redoBlocked: string | undefined
+  lines: LineVoices
+  lineBlocked: ReadonlyMap<string, string>
   onMode: (mode: VoiceMode) => void
-  /** 用音色 `voice`（null 是原声的音色）生成这种语言的配音（已有配音时换掉）。 */
+  /** 把这种语言的音色换成 `voice`（null 是原声的音色），重配跟着它的句子（已有配音时换掉）。 */
   onGenerate: (voice: string | null) => void
+  /** 要配音的句子各用各的音色重新生成。 */
+  onRedo: () => void
+  /**
+   * 改一句的选择（null 是跟着这种语言的音色）：选音色时只重配这一句（实际用的音色没变、已有配音时只改选择），
+   * 不配音时删掉它的配音。
+   */
+  onLine: (caption: string, line: LineVoice | null) => void
 }
 
 type CaptionsTabProps = {
@@ -179,6 +193,7 @@ export function CaptionsTab({
           recognizeBlocked={recognizeBlocked}
           recognizing={recognizing}
           selected={selected}
+          voice={voice}
         />
       )}
     </div>
@@ -190,10 +205,10 @@ const GENERATING_TEXT = '正在生成配音，请等待生成完成'
 const ORIGINAL_VOICE = '原声'
 
 /**
- * 其它语言下的人声设置：第一行是「保留原声」，有配音时右边多一个「重新生成」（用记着的音色）；第二行是 AI 配音的
- * 音色小块：「原声」（从素材片的原声里取）在前，后面是资料库里的音色（能试听）。保留原声和选中的音色二选一，当前的
- * 高亮。点一个音色：这种语言已有用它配好的配音时只切过去，不然用它生成配音（生成完自动用上，已有配音时换掉）。
- * 生成中写着在给几条素材片配音。
+ * 其它语言下的人声设置：第一行是「保留原声」，有配音时右边多一个「重新生成」（要配音的句子各用各的音色）；第二行是
+ * AI 配音的音色小块：「原声」（从素材片的原声里取）在前，后面是资料库里的音色（能试听）。保留原声和选中的音色二选一，
+ * 当前的高亮。点一个音色：这种语言已有用它配好的配音时只切过去，不然把它当这种语言的音色、重配跟着它的句子（生成完
+ * 自动用上，已有配音时换掉）。生成中写着在给几条素材片配音。
  */
 function VoiceRow({
   voice,
@@ -205,16 +220,16 @@ function VoiceRow({
   onNotice: (message: string) => void
 }) {
   const { mode, voice: current, voices, voicesProblem, dubbed, generating } = voice
-  const { generateBlocked, onMode, onGenerate } = voice
+  const { generateBlocked, onMode, onGenerate, onRedo } = voice
   const { playing, toggle } = useAudition({
     active,
     onError: () => onNotice('音色试听失败，请重试'),
   })
   const busy = generating > 0 ? GENERATING_TEXT : undefined
-  const redoBlocked = busy ?? generateBlocked
+  const redoBlocked = busy ?? voice.redoBlocked
   const switchesOnly = (id: string | null) => dubbed && id === current
   const chipOf = (id: string | null, name: string) => {
-    const blocked = switchesOnly(id) ? busy : redoBlocked
+    const blocked = switchesOnly(id) ? busy : (busy ?? generateBlocked)
     return {
       blocked,
       name,
@@ -244,7 +259,7 @@ function VoiceRow({
               aria-disabled={redoBlocked === undefined ? undefined : true}
               className="wf-captions-voice-redo ui-state ui-focus"
               onClick={() => {
-                if (redoBlocked === undefined) onGenerate(current)
+                if (redoBlocked === undefined) onRedo()
               }}
               type="button"
             >
@@ -322,6 +337,106 @@ function VoiceChip({ name, picked, blocked, onPick, audition }: VoiceChipProps) 
   )
 }
 
+const FOLLOW = 'follow'
+const ORIGINAL = 'original'
+const UNVOICED = 'unvoiced'
+const UNVOICED_NAME = '不配音'
+// 记着的音色已不在资料库里（移除了，或还没读到）
+const LIBRARY_VOICE_NAME = '资料库音色'
+
+/** 菜单里一项的值 → 这句的选择（null 是跟着这种语言的音色）。 */
+const lineVoiceOfValue = (value: string): LineVoice | null =>
+  value === FOLLOW
+    ? null
+    : value === UNVOICED
+      ? { dub: false }
+      : { voice: value === ORIGINAL ? null : value.slice('voice:'.length) }
+
+/** 这句的选择 → 菜单里打勾的那一项。 */
+const valueOfLineVoice = (line: LineVoice | undefined): string =>
+  line === undefined
+    ? FOLLOW
+    : 'dub' in line
+      ? UNVOICED
+      : line.voice === null
+        ? ORIGINAL
+        : `voice:${line.voice}`
+
+/**
+ * 一句字幕在其它语言下的配音小块。保留原声时只是一个「原声」标签；AI 配音时写着这句现在的音色（跟着这种语言的
+ * 音色时是它，原声的音色写「原声」），不配音写「不配音」，自己选过的和跟着的样子不一样。点开菜单选：「跟随整体
+ * 音色」、「原声」、资料库里的音色、「不配音」，现在的选择打勾。这句配不了音、有配音在生成时置灰，点了说明原因。
+ */
+function LineVoiceChip({ caption, voice }: { caption: string; voice: VoiceControl }) {
+  const [open, setOpen] = useState(false)
+  const [hint, setHint] = useState(false)
+  if (voice.mode === 'original') return <span className="wf-line-voice">{ORIGINAL_VOICE}</span>
+  const own = Object.hasOwn(voice.lines, caption) ? voice.lines[caption] : undefined
+  const chosen = own ?? { voice: voice.voice }
+  const unvoiced = 'dub' in chosen
+  const name =
+    'dub' in chosen
+      ? UNVOICED_NAME
+      : chosen.voice === null
+        ? ORIGINAL_VOICE
+        : (voice.voices.find((each) => each.id === chosen.voice)?.name ?? LIBRARY_VOICE_NAME)
+  const label = `本句配音：${name}${own === undefined ? '，跟随整体音色' : ''}`
+  const blocked = voice.generating > 0 ? GENERATING_TEXT : voice.lineBlocked.get(caption)
+  const chip = (
+    <button
+      aria-disabled={blocked === undefined ? undefined : true}
+      aria-label={label}
+      className={cn(
+        'wf-line-voice is-voiced ui-state ui-focus',
+        own !== undefined && 'is-own',
+        unvoiced && 'is-unvoiced',
+      )}
+      type="button"
+    >
+      <span className="wf-line-voice-name">{name}</span>
+      <Icon decorative name="expand" size="xs" />
+    </button>
+  )
+  if (blocked !== undefined) return <BlockedReason reason={blocked}>{chip}</BlockedReason>
+  const picked = valueOfLineVoice(own)
+  return (
+    <MenuRoot
+      onOpenChange={(next) => {
+        setOpen(next)
+        setHint(false)
+      }}
+      open={open}
+    >
+      {/* 和工具条的下拉一样：菜单开着时不出提示 */}
+      <TooltipRoot onOpenChange={setHint} open={hint && !open}>
+        <MenuTrigger asChild>
+          <TooltipTrigger asChild>{chip}</TooltipTrigger>
+        </MenuTrigger>
+        <TooltipContent className="wf-tip" side="top">
+          切换本句配音音色或不配音
+        </TooltipContent>
+      </TooltipRoot>
+      <MenuSurface align="end">
+        <MenuRadioGroup
+          onValueChange={(value) => {
+            if (value !== picked) voice.onLine(caption, lineVoiceOfValue(value))
+          }}
+          value={picked}
+        >
+          <MenuRadioItem value={FOLLOW}>跟随整体音色</MenuRadioItem>
+          <MenuRadioItem value={ORIGINAL}>{ORIGINAL_VOICE}</MenuRadioItem>
+          {voice.voices.map((each) => (
+            <MenuRadioItem key={each.id} value={`voice:${each.id}`}>
+              {each.name}
+            </MenuRadioItem>
+          ))}
+          <MenuRadioItem value={UNVOICED}>{UNVOICED_NAME}</MenuRadioItem>
+        </MenuRadioGroup>
+      </MenuSurface>
+    </MenuRoot>
+  )
+}
+
 /** 「字幕」那一段：识别、加一句的按钮和字幕列表。 */
 function CaptionsView({
   captions,
@@ -337,10 +452,8 @@ function CaptionsView({
   onText,
   onRemove,
   onPick,
-}: Omit<
-  CaptionsTabProps,
-  'texts' | 'problem' | 'onAdd' | 'translate' | 'voice' | 'active' | 'onNotice'
-> & {
+  voice,
+}: Omit<CaptionsTabProps, 'texts' | 'problem' | 'onAdd' | 'translate' | 'active' | 'onNotice'> & {
   add: () => Promise<void>
   /** 焦点要进的那一句（刚加的）。 */
   focusing: string | null
@@ -400,6 +513,7 @@ function CaptionsView({
               onRemove={() => onRemove(caption.id)}
               onSeek={() => onPick(caption)}
               onText={onText}
+              voice={voice}
             />
           ))}
         </ol>
@@ -418,9 +532,11 @@ type CaptionRowProps = {
   onText: CaptionTextChange
   onRemove: () => void
   onSeek: () => void
+  /** 其它语言下的人声设置：右上多一个这句的配音小块（见 `LineVoiceChip`）；原文时是 undefined。 */
+  voice: VoiceControl | undefined
 }
 
-/** 一句字幕：起止时间、删除钮和文字框。 */
+/** 一句字幕：起止时间、这句的配音（其它语言下）、删除钮和文字框。 */
 function CaptionRow({
   caption,
   locale,
@@ -430,6 +546,7 @@ function CaptionRow({
   onText,
   onRemove,
   onSeek,
+  voice,
 }: CaptionRowProps) {
   const fieldRef = useRef<HTMLTextAreaElement | null>(null)
   useEffect(() => {
@@ -449,6 +566,7 @@ function CaptionRow({
         <button className="wf-caption-time" onClick={onSeek} type="button">
           {range}
         </button>
+        {voice === undefined ? null : <LineVoiceChip caption={caption.id} voice={voice} />}
         <IconButton label={`删除 ${range} 的字幕`} name="delete" onClick={onRemove} size="xs" />
       </div>
       <CaptionTextField

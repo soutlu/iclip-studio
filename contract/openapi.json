@@ -3607,6 +3607,19 @@
             "title": "Endms",
             "type": "integer"
           },
+          "slotEndMs": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "这句最晚占到哪儿（毫秒）；不写时占到下一句开始，最后一句到素材片结尾",
+            "title": "Slotendms"
+          },
           "startMs": {
             "minimum": 0.0,
             "title": "Startms",
@@ -3628,18 +3641,56 @@
       },
       "DubbingOriginalReference": {
         "additionalProperties": false,
-        "description": "参考音频取素材片自己的原声：服务端从被字幕覆盖得最多的一段里截。",
+        "description": "参考音频取素材片自己的原声：服务端从被说话时段覆盖得最多的一段里截。",
         "properties": {
           "kind": {
             "const": "original",
             "title": "Kind",
             "type": "string"
+          },
+          "spans": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DubbingSpeechSpan"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "这条素材片里有人说话的时段，按开始时间排好、互不重叠、在素材片时长之内；截原声参考按它算，不写时按 lines 算",
+            "title": "Spans"
           }
         },
         "required": [
           "kind"
         ],
         "title": "DubbingOriginalReference",
+        "type": "object"
+      },
+      "DubbingSpeechSpan": {
+        "additionalProperties": false,
+        "description": "素材片里有人说话的一段：起止（毫秒，与 ``lines`` 同一口径）。",
+        "properties": {
+          "endMs": {
+            "minimum": 0.0,
+            "title": "Endms",
+            "type": "integer"
+          },
+          "startMs": {
+            "minimum": 0.0,
+            "title": "Startms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "startMs",
+          "endMs"
+        ],
+        "title": "DubbingSpeechSpan",
         "type": "object"
       },
       "DubbingUploadReferenceIn": {
@@ -20183,7 +20234,7 @@
     },
     "/generations/dubbings": {
       "post": {
-        "description": "给一条素材片配一种外语，另起一条配音记录（种类 ``dubbing``）。\n\n用参考音频的声音把 ``lines`` 每句译文合成出来，放在这句的开始，能占到下一句开始（最后一句\n到视频结尾）；合成出来更长时先加速，最多 1.25 倍，还放不下就截掉尾巴并淡出。拼成一条和\n素材片等长的音轨，地址在 ``outputUrl``，每句的倍数和是否截掉在 ``dubbedLines``。参考音频是\n``original`` 时从原声里截被 ``lines`` 覆盖得最多的一段（不超过 10 秒），覆盖不到 3 秒记录\n失败；是 ``reference_audio`` 时取参考音频库里那条音色（要没移除、是音色，否则 422），是\n``upload`` 时取调用者本人那条音频上传（否则 422），都取前 10 秒。记录的 ``request.reference``\n里记着用到的地址，音色另记 ``referenceId`` 与台词，上传另记 ``uploadId``。\n\n``sourceJobId`` 的规则同字幕识别：读不到 404，不是素材片 422。``lines`` 不合规、超出上限或\n超出素材片的时长 422。配音没开通 422。``userName`` 的规则同出片，只用来替人办事，不进\n``request``。",
+        "description": "给一条素材片配一种外语，另起一条配音记录（种类 ``dubbing``）。\n\n用参考音频的声音把 ``lines`` 每句译文合成出来，放在这句的开始，能占到下一句开始（最后一句\n到视频结尾），写了 ``slotEndMs`` 的不超过它；合成出来更长时先加速，最多 1.25 倍，还放不下\n就截掉尾巴并淡出；没占到的地方是静音。拼成一条和\n素材片等长的音轨，地址在 ``outputUrl``，每句的倍数和是否截掉在 ``dubbedLines``。参考音频是\n``original`` 时从原声里截被说话时段（``spans``，不写时是 ``lines``）覆盖得最多的一段（不超过\n10 秒），覆盖不到 3 秒记录失败，``spans`` 的规则同 ``lines``，超出素材片的时长 422；是 ``reference_audio`` 时取参考音频库里那条音色（要没移除、是音色，否则 422），是\n``upload`` 时取调用者本人那条音频上传（否则 422），都取前 10 秒。记录的 ``request.reference``\n里记着用到的地址，音色另记 ``referenceId`` 与台词，上传另记 ``uploadId``。\n\n``sourceJobId`` 的规则同字幕识别：读不到 404，不是素材片 422。``lines`` 不合规、超出上限或\n超出素材片的时长 422。配音没开通 422。``userName`` 的规则同出片，只用来替人办事，不进\n``request``。",
         "operationId": "submit_dubbing_generations_dubbings_post",
         "requestBody": {
           "content": {

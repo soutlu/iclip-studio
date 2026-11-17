@@ -59,6 +59,16 @@ def test_each_line_may_run_up_to_the_next_line_and_the_last_to_the_end() -> None
     )
 
 
+def test_a_line_with_a_slot_end_stops_there_or_at_the_next_line_whichever_is_earlier() -> None:
+    capped = [
+        DubbingLine(start_ms=500, end_ms=1_000, text="a", slot_end_ms=1_800),
+        DubbingLine(start_ms=2_000, end_ms=2_500, text="b", slot_end_ms=9_000),
+        DubbingLine(start_ms=4_000, end_ms=4_800, text="c", slot_end_ms=5_000),
+    ]
+
+    assert line_slots(capped, 6_000) == (1_300, 2_000, 1_000)
+
+
 @pytest.mark.parametrize(
     ("clip_ms", "slot_ms", "expected"),
     [
