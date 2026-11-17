@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { HfAutomation } from '@hyperframes/core/audio-automation'
 import type { HfAudioFxChain } from '@hyperframes/core/audio-fx'
 import { roleOf, type AudioRole } from './audio-role'
 import {
@@ -16,6 +17,7 @@ import {
 import type { FilmClip, MediaClip } from './composition/film'
 import { isLevelled, measureLevelling, type LevellerMeasurement } from './leveller'
 import type { ChainChange } from './mix-fx'
+import { volumePointsOf, withEnvelope, withFlatEnvelope } from './volume-envelope'
 
 /** 「属性」里选中的有声片段的「智能调音」。 */
 export type SmartMix = {
@@ -33,7 +35,16 @@ export type SmartMix = {
   chain: HfAudioFxChain
   /** 改效果链：一次是一步撤销。 */
   editChain: (change: ChainChange) => void
+  /** 开着波形音量关键帧：片段的曲线里有音量曲线（见 `volume-envelope.ts`）。 */
+  envelope: boolean
+  /** 打开（没有音量曲线时加平的一条）或关掉（去掉音量曲线），一步撤销。 */
+  setEnvelope: (on: boolean) => void
+  /** 音量曲线换回平的一条，一步撤销。 */
+  resetEnvelope: () => void
 }
+
+/** 改片段曲线（`data-automation`）的一步：拿现在的曲线，给出改好的。 */
+export type AutomationChange = (automation: HfAutomation) => HfAutomation
 
 const CARVE_FAILED_TEXT = '自动压低没有生效：人声或配乐的声音读取失败，请重试'
 const LEVEL_FAILED_TEXT = '自动平稳音量没有生效：声音读取失败，请重试'
@@ -62,7 +73,7 @@ const inputsKey = (clips: readonly MediaClip[]) =>
  * 量的时候片段动了就按新的样子重量；读不出声音时用 `onNotice` 提示，不写。两种分析一次只做一个。
  *
  * 同一个片段同样的自动改动一次会话里只做一次：撤销掉自动打开以后不会又被打开。`clips` 要含所有语言的配音片段。
- * 音色风格、均衡、升降调、自己加的效果不用分析，直接交给 `writeFx`。
+ * 音色风格、均衡、升降调、自己加的效果不用分析，直接交给 `writeFx`；波形音量关键帧的开关、重置交给 `writeAutomation`。
  */
 export function useSmartMix({
   clip,
@@ -72,6 +83,7 @@ export function useSmartMix({
   writeLeveller,
   writeRole,
   writeFx,
+  writeAutomation,
   onNotice,
 }: {
   clip: MediaClip | undefined
@@ -86,6 +98,7 @@ export function useSmartMix({
   writeLeveller: (id: string, measured: LevellerMeasurement | null) => boolean
   writeRole: (id: string, role: AudioRole) => void
   writeFx: (id: string, change: ChainChange) => void
+  writeAutomation: (id: string, change: AutomationChange) => void
   onNotice: (message: string) => void
 }): SmartMix | undefined {
   const [analysing, setAnalysing] = useState<string | null>(null)
@@ -232,5 +245,10 @@ export function useSmartMix({
     analysing: analysing === clip.id,
     chain: chainOf(clip.fxChain ?? undefined),
     editChain: (change) => writeFx(clip.id, change),
+    envelope: volumePointsOf(clip.automation) !== null,
+    setEnvelope: (on) =>
+      writeAutomation(clip.id, (automation) => withEnvelope(automation, on, clip.duration / 1000)),
+    resetEnvelope: () =>
+      writeAutomation(clip.id, (automation) => withFlatEnvelope(automation, clip.duration / 1000)),
   }
 }

@@ -66,6 +66,7 @@ export const video = (overrides: Partial<VideoClip> = {}): VideoClip => ({
   audioGroup: null,
   fxCarve: null,
   fxChain: null,
+  automation: null,
   ...overrides,
 })
 
@@ -108,6 +109,7 @@ export const audio = (overrides: Partial<AudioClip> = {}): AudioClip => ({
   audioGroup: null,
   fxCarve: null,
   fxChain: null,
+  automation: null,
   ...overrides,
 })
 

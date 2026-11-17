@@ -1,5 +1,5 @@
 import { use, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { HF_AUDIO_AUTOMATION_ATTR } from '@hyperframes/core/audio-automation'
+import { HF_AUDIO_AUTOMATION_ATTR, type HfAutomation } from '@hyperframes/core/audio-automation'
 import { HF_AUDIO_CARVE_ATTR } from '@hyperframes/core/audio-carve'
 import { HF_AUDIO_FX_ATTR } from '@hyperframes/core/audio-fx'
 import { HF_AUDIO_GROUP_ATTR } from '@hyperframes/core/audio-groups'
@@ -18,7 +18,13 @@ import {
 } from './caption-edit'
 import { VOICE_GROUP } from './audio-role'
 import { canvasLayersOf, type CanvasLayer, type Mount } from './canvas-layers'
-import { carveAttributes, type CarveMeasurement, type CarveSettings } from './carve'
+import {
+  automationOf,
+  automationText,
+  carveAttributes,
+  type CarveMeasurement,
+  type CarveSettings,
+} from './carve'
 import { splitAutomation } from './clip-automation'
 import { rippleStarts, withLinkedStarts, type Cut, type Links, type Timing } from './clip-edit'
 import { levellerAttributes, type LevellerMeasurement } from './leveller'
@@ -1204,6 +1210,7 @@ export function useFilmSession(
             audioGroup: null,
             fxCarve: null,
             fxChain: null,
+            automation: null,
           })
           engine.addElement(root.id, 0, element)
           end += video.duration
@@ -1318,6 +1325,7 @@ export function useFilmSession(
           audioGroup: null,
           fxCarve: null,
           fxChain: null,
+          automation: null,
         })
         engine.addElement(root.id, 0, element)
       })
@@ -1666,6 +1674,25 @@ export function useFilmSession(
   )
 
   /**
+   * 按 `change` 改片段 `id` 的曲线 `data-automation`（波形音量关键帧，见 `volume-envelope.ts`），算一步撤销；
+   * 改完一条曲线都没有时去掉这个属性。片段不在工程里、改完和原来一样时不动工程。
+   */
+  const setAutomation = useCallback(
+    (id: string, change: (automation: HfAutomation) => HfAutomation) => {
+      const project = projectRef.current
+      const element = project === null ? null : mainOf(project).getElement(id)
+      if (element === null) return
+      const before = element.attributes[HF_AUDIO_AUTOMATION_ATTR] ?? null
+      const after = automationText(change(automationOf(before ?? undefined)))
+      if (after === before) return
+      edit((main) => {
+        main.setAttribute(id, HF_AUDIO_AUTOMATION_ATTR, after)
+      })
+    },
+    [edit],
+  )
+
+  /**
    * 删掉几个片段；`ripple` 为真时主轨里后面的片段往前补上，联动的伙伴挪同样的时间差。删一句字幕是删掉
    * 场景里它的元素、主文件根上它的变量和各语言值表里它的值；删掉最后一句时场景文件和宿主都留着。
    * 删组件或块的片段时它随语言的字段的根变量和各语言值表里的值一起删掉。答复删了没有（见 `edit`）。
@@ -1740,6 +1767,7 @@ export function useFilmSession(
             audioGroup: video.audioGroup,
             fxCarve: null,
             fxChain: null,
+            automation: null,
           }),
         )
         for (const [attribute, value] of Object.entries(detachedVideoChanges(name)))
@@ -2084,6 +2112,7 @@ export function useFilmSession(
               audioGroup: null,
               fxCarve: null,
               fxChain: null,
+              automation: null,
             }),
           )
         writeVoice(engine, locale, (setting) => ({ ...update(setting), mode: 'dub' }))
@@ -2218,6 +2247,7 @@ export function useFilmSession(
     setCarve,
     setLeveller,
     setFx,
+    setAutomation,
     removeClips,
     split,
     detach,

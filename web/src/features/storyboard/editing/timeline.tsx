@@ -334,7 +334,19 @@ function Frame({ src, style }: { src: string; style: CSSProperties }) {
   )
 }
 
-export function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) {
+/**
+ * 一段素材的波形。`level` 给了时，每一处的高低再乘上它在那里的值（参数是这一处在这段里的位置，0 到 1），用来让
+ * 波形跟着音量、淡入淡出变高变矮；不给时按素材原样画。
+ */
+export function Wave({
+  part,
+  state,
+  level,
+}: {
+  part: PlaySegment
+  state: PeaksState
+  level?: (fraction: number) => number
+}) {
   const body = (() => {
     switch (state.kind) {
       case 'loading':
@@ -349,7 +361,8 @@ export function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) 
         const count = Math.max(1, Math.ceil(part.end * rate) - from)
         let path = ''
         for (let at = 0; at < count; at += 1) {
-          const height = Math.max(4, (peaks[from + at] ?? 0) * 92)
+          const scaled = (peaks[from + at] ?? 0) * 92 * (level?.((at + 0.5) / count) ?? 1)
+          const height = Math.max(4, Math.min(100, scaled))
           path += `M${at + 0.5} ${50 - height / 2}v${height}`
         }
         return (

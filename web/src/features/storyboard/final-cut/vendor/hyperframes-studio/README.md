@@ -20,7 +20,7 @@
 | `components/editor/snapEngine.ts` | 全文引入 | 预览画布上拖拽元素的中心线与四边吸附参考线计算 |
 | `components/editor/audioInspectorInput.ts` | 全文引入 | 取自 `v0.9.31`（提交 `cf900546`）：右侧栏「媒体」里直接输入的增益、速度、秒数怎么读 |
 | `components/editor/propertyPanelHelpers.ts` | 部分摘录 | 取自 `v0.9.31`（提交 `cf900546`）：只保留 `formatNumericValue`（速度的显示和写法，两位小数） |
-| `player/components/automationLaneGeometry.ts` | 部分摘录 | 取自 `v0.9.31`（提交 `cf900546`）：只保留 `toUnit`、`fromUnit`（速度滑杆按对数走的换算） |
+| `player/components/automationLaneGeometry.ts` | 部分摘录 | 取自 `v0.9.31`（提交 `cf900546`）：只保留 `toUnit`、`fromUnit`（速度滑杆按对数走的换算）；另从 `v0.9.59`（提交 `028ab755`）取 `POINT_MERGE_SEC`、`MIN_POINT_GAP_SEC`（时间线上音量关键帧加点时的合并距离、点与点的最小间隔） |
 | `components/editor/clipAudioClock.ts` | 部分摘录 | 取自 `v0.9.59`（提交 `028ab755`）：去掉 `readClipClock`（读属性的那一半），保留按入点、速度、时长取出片段实际放的那段声音 |
 | `components/editor/useFxCarveNodes.ts` | 部分摘录 | 取自 `v0.9.59`（提交 `028ab755`）：去掉 `CarveClip`、`measureCarve`（工作台自己取文件、解码的那一半），保留压低配乐分析结果变成效果链节点和自动化曲线的 `mintCarveNodes`、`carveLanes` |
 | `components/editor/carveOutput.ts` | 部分摘录 | 取自 `v0.9.59`（提交 `028ab755`）：只保留 `withoutCarveLanes`（重新分析时去掉上一次压低配乐写的曲线） |

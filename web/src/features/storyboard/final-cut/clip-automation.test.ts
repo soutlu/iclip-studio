@@ -85,6 +85,39 @@ describe('切开片段时曲线分成两半', () => {
       )
   })
 
+  it('音量关键帧：切在压低的那一段中间，前半段到切点为止、后半段从切点的值接着放，两半各自两头有点', () => {
+    const volume = {
+      target: 'volume',
+      points: [
+        { t: 0, v: 1 },
+        { t: 1, v: 0.25 },
+        { t: 3, v: 0.25 },
+        { t: 4, v: 1 },
+      ],
+    }
+    const halves = splitAutomation(text([volume]), undefined, 3.5)
+    expect(lanesOf(halves?.first)).toEqual([
+      {
+        target: 'volume',
+        points: [
+          { t: 0, v: 1 },
+          { t: 1, v: 0.25 },
+          { t: 3, v: 0.25 },
+          { t: 3.5, v: 0.625 },
+        ],
+      },
+    ])
+    expect(lanesOf(halves?.second)).toEqual([
+      {
+        target: 'volume',
+        points: [
+          { t: 0, v: 0.625 },
+          { t: 0.5, v: 1 },
+        ],
+      },
+    ])
+  })
+
   it('没有曲线、读不出时不动', () => {
     expect(splitAutomation(undefined, chain, 1)).toBeNull()
     expect(splitAutomation('{oops', chain, 1)).toBeNull()

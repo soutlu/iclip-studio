@@ -3,6 +3,7 @@ import {
   useEffect,
   useEffectEvent,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -47,9 +48,10 @@ import {
   type Timing,
 } from './clip-edit'
 import { canCarve, carveOf } from './carve'
+import { ClipEnvelope } from './clip-envelope'
 import { ClipMenuItems } from './clip-menu'
 import { thumbnailUrl, type ComponentCatalog } from './component-catalog'
-import { isDubClip, isMediaClip, type FilmClip } from './composition/film'
+import { isDubClip, isMediaClip, type FilmClip, type MediaClip } from './composition/film'
 import { useEditorEscape, useEditorRoot } from './editor-keys'
 import type { EditTool } from './editor-toolbar'
 import { SOURCE_NAME } from './locales'
@@ -77,6 +79,7 @@ import {
   snapTargets,
   type TimelineScale,
 } from './timeline-scale'
+import { clipLevel, volumePointsOf, type EnvelopePoint } from './volume-envelope'
 
 /** 素材拖进来时落在哪：哪一行（或新开的一行）、final-cut 的第几毫秒。 */
 export type TimelinePoint = { row: RowTarget; timeMs: number }
@@ -140,6 +143,8 @@ type FilmTimelineProps = {
   onMove: (id: string, row: RowTarget, start: number, starts: ReadonlyMap<string, number>) => void
   /** 把几个片段各自挪到新的起点（合拢空档用）。 */
   onRestart: (starts: ReadonlyMap<string, number>) => void
+  /** 选中的片段波形上改了音量曲线：换成这些点，一步撤销。 */
+  onEnvelope: (id: string, points: readonly EnvelopePoint[]) => void
   /** 把 `row` 这一行的片段一起隐藏（`hidden` 为真，声音区的行就是静音）或显示回来。 */
   onHide: (row: RowKey, hidden: boolean) => void
   /** 片段右键菜单：隐藏或显示一个片段（音频片段就是静音）。 */
@@ -322,11 +327,17 @@ function ClipContent({
   timing,
   cover,
   peaks,
+  wave,
+  waveRef,
 }: {
   clip: FilmClip
   timing: Timing
   cover: string | null
   peaks: PeaksState
+  /** 有声片段的波形：高低乘多少、是不是不出声（画灰），有没有音量曲线。 */
+  wave: ClipWave
+  /** 波形那一块：音量曲线叠在它上面。 */
+  waveRef: RefObject<HTMLSpanElement | null>
 }) {
   const name = <span className="wf-clip-name">{clip.label}</span>
   if (clip.kind === 'other') return name
@@ -350,13 +361,14 @@ function ClipContent({
     start: timing.mediaStart / 1000,
     end: (timing.mediaStart + timing.duration * clip.playbackRate) / 1000,
   }
+  const waveClass = cn(wave.silent && 'is-silent', wave.envelope && 'has-envelope')
   if (clip.kind === 'audio')
     return (
       <>
         <Icon className="wf-clip-icon" decorative name="music" size="xs" />
         {name}
-        <span className="wf-clip-sound">
-          <Wave part={part} state={peaks} />
+        <span className={cn('wf-clip-sound', waveClass)} ref={waveRef}>
+          <Wave level={wave.level} part={part} state={peaks} />
         </span>
       </>
     )
@@ -367,13 +379,27 @@ function ClipContent({
         <Frames part={part} />
       </span>
       {peaks.kind === 'ready' ? (
-        <span className="wf-clip-wave">
-          <Wave part={part} state={peaks} />
+        <span className={cn('wf-clip-wave', waveClass)} ref={waveRef}>
+          <Wave level={wave.level} part={part} state={peaks} />
         </span>
       ) : null}
     </>
   )
 }
+
+type ClipWave = {
+  level: (fraction: number) => number
+  silent: boolean
+  envelope: boolean
+}
+
+// 不出声的片段的波形照原型画矮
+const SILENT_LEVEL = 0.22
+
+const NO_POINTS: readonly EnvelopePoint[] = []
+
+/** 片段不出声：隐藏了（音频片段就是静音，整行静音也是），或者视频片段关了原声。 */
+const isSilent = (clip: MediaClip) => clip.hidden || (clip.kind === 'video' && clip.muted)
 
 type TimelineClipProps = {
   clip: FilmClip
@@ -430,6 +456,8 @@ type TimelineClipProps = {
   onRetime: (timings: ReadonlyMap<string, Timing>) => void
   /** 把片段换到另一行的 `start` 处，`starts` 是一起挪的片段各自的新起点。 */
   onMove: (id: string, row: RowTarget, start: number, starts: ReadonlyMap<string, number>) => void
+  /** 片段的音量曲线改成这些点（波形音量关键帧），一步撤销。 */
+  onEnvelope: (id: string, points: readonly EnvelopePoint[]) => void
 }
 
 /**
@@ -464,9 +492,17 @@ function TimelineClip({
   onSelect,
   onRetime,
   onMove,
+  onEnvelope,
 }: TimelineClipProps) {
   const editorRoot = useEditorRoot()
   const rootRef = useRef<HTMLDivElement>(null)
+  const waveRef = useRef<HTMLSpanElement>(null)
+  const media = isMediaClip(clip) ? clip : null
+  const automation = media?.automation ?? null
+  const saved = useMemo(() => volumePointsOf(automation), [automation])
+  // 拖音量曲线中的样子：波形和线都按它画
+  const [envelopeDraft, setEnvelopeDraft] = useState<EnvelopePoint[] | null>(null)
+  const envelopePoints = envelopeDraft ?? saved
   const gestureRef = useRef<Gesture | null>(null)
   const clickAfterDrag = useClickAfterDrag()
   const [preview, setPreview] = useState<Preview>()
@@ -483,6 +519,14 @@ function TimelineClip({
         : `0 ${target.getBoundingClientRect().top - own.getBoundingClientRect().top}px`
   })
   const timing = preview?.timing ?? following?.timings.get(clip.id) ?? timingOf(clip)
+  const durationSec = timing.duration / 1000
+  const silent = media !== null && isSilent(media)
+  const levelAt = media === null ? null : clipLevel(media, durationSec, envelopePoints)
+  const wave: ClipWave = {
+    level: (fraction) => (silent ? SILENT_LEVEL : (levelAt?.(fraction * durationSec) ?? 1)),
+    silent,
+    envelope: saved !== null,
+  }
   // 音频片段隐藏就是静音，小标上已经写着
   const state = badge === undefined ? (clip.hidden ? '，已隐藏' : '') : `，${badge.text}`
   const name = `${clip.label}，${seconds(timing.duration)} 秒${state}`
@@ -665,13 +709,38 @@ function TimelineClip({
             onPointerUp={release}
             type="button"
           >
-            <ClipContent clip={clip} cover={cover} peaks={peaks} timing={timing} />
+            <ClipContent
+              clip={clip}
+              cover={cover}
+              peaks={peaks}
+              timing={timing}
+              wave={wave}
+              waveRef={waveRef}
+            />
             {badge === undefined ? null : (
               <span aria-hidden="true" className="wf-clip-badge" data-tone={badge.tone}>
                 {badge.text}
               </span>
             )}
+            {saved === null || silent ? null : (
+              <span aria-hidden="true" className="wf-clip-badge wf-clip-keyframes">
+                关键帧
+              </span>
+            )}
           </button>
+          {media === null || envelopePoints === null ? null : (
+            <ClipEnvelope
+              clipRef={rootRef}
+              durationSec={durationSec}
+              editable={selected && trimmable}
+              onCommit={(points) => onEnvelope(clip.id, points)}
+              onDraft={setEnvelopeDraft}
+              onGesture={onGesture}
+              points={envelopePoints}
+              saved={saved ?? NO_POINTS}
+              waveRef={waveRef}
+            />
+          )}
           {selected && trimmable
             ? (['start', 'end'] as const).map((edge) => {
                 const bounds = trimRange(clip, groupFor(edge), edge)
@@ -775,6 +844,7 @@ export function FilmTimeline({
   onRetime,
   onMove,
   onRestart,
+  onEnvelope,
   onHide,
   onHideClip,
   onAttributes,
@@ -1206,6 +1276,7 @@ export function FilmTimeline({
                           }
                           onGesture={onGesture}
                           onGuide={setClipGuideMs}
+                          onEnvelope={onEnvelope}
                           onMove={onMove}
                           onOpening={setClipOpening}
                           onRetime={onRetime}

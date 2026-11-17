@@ -43,7 +43,8 @@ interface ClipBase {
  * 智能调音用到的几项，都是属性原样的文字，没写时是 null：`audioGroup` 是 `data-audio-group`（片段属于哪个
  * 声音组，声音角色就是组，见 `audio-role.ts`），`fxCarve` 是 `data-fx-carve`（自动压低的设置，JSON，读法见
  * `carve.ts`，播放和导出不认它），`fxChain` 是 `data-fx-chain`（效果链，JSON；自动压低、自动平稳音量生成的节点
- * 都在里面，预览和导出按它和曲线 `data-automation` 放）。
+ * 都在里面，预览和导出按它和曲线 `data-automation` 放），`automation` 是 `data-automation`（曲线，JSON；片段音量的
+ * 关键帧、压低和平稳音量推效果节点的曲线都在里面，读法见 `volume-envelope.ts`）。
  */
 interface MediaBase extends ClipBase {
   src: string
@@ -56,6 +57,7 @@ interface MediaBase extends ClipBase {
   audioGroup: string | null
   fxCarve: string | null
   fxChain: string | null
+  automation: string | null
 }
 
 /**
@@ -253,6 +255,7 @@ export function clipOf(
     audioGroup: nameOf(attributes['data-audio-group']),
     fxCarve: nameOf(attributes['data-fx-carve']),
     fxChain: nameOf(attributes['data-fx-chain']),
+    automation: nameOf(attributes['data-automation']),
   })
   if (element.tag === 'video')
     return { kind: 'video', ...common, ...media(), muted: attributes['muted'] !== undefined, z }
@@ -326,6 +329,7 @@ const mediaAttributes = (clip: MediaBase) => ({
   'data-audio-group': clip.audioGroup ?? undefined,
   'data-fx-carve': clip.fxCarve ?? undefined,
   'data-fx-chain': clip.fxChain ?? undefined,
+  'data-automation': clip.automation ?? undefined,
 })
 
 /** 新加的视频片段：有声音时带 `data-has-audio`，静音时换成 `muted`。 */
