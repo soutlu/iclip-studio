@@ -43,6 +43,28 @@ const declaredVariables = (root: Element): Map<string, unknown> => {
 
 const parse = (html: string) => new DOMParser().parseFromString(html, 'text/html')
 
+// 写回时带上文档类型：少了它预览会按怪异模式排版
+const serialize = (film: Document): string => {
+  const doctype = film.doctype === null ? '' : `<!doctype ${film.doctype.name}>\n`
+  return `${doctype}${film.documentElement.outerHTML}\n`
+}
+
+/**
+ * 去掉主文件根（最外层带 `data-composition-id` 的元素）下这一层带 `data-hidden` 的片段；没有时原样返回。
+ * 只给预览用：播放器报「画好了」之前要等盖着第 0 秒的视频、音频都加载好（最多 8 秒），它不看隐藏标记，
+ * 而运行库不一定加载隐藏的媒体，等不到时每次换文件都白等满 8 秒。隐藏的片段本来就不显示、不出声，
+ * 总长写在根上，去掉不影响播放。
+ */
+export function withoutHiddenClips(html: string): string {
+  const film = parse(html)
+  const hidden = [...(film.querySelector('[data-composition-id]')?.children ?? [])].filter(
+    (child) => child.hasAttribute('data-hidden'),
+  )
+  if (hidden.length === 0) return html
+  for (const clip of hidden) clip.remove()
+  return serialize(film)
+}
+
 /**
  * 预览一种外语时（`values` 是它的值表，中文时是 null，不改）：随语言的字段的字并进各宿主的
  * `data-variable-values`（规则见 `localizedHostValues`）。没有宿主要改时原样返回。
@@ -63,9 +85,7 @@ export function withLocalizedHosts(html: string, values: LocaleValues | null): s
   if (localized.size === 0) return html
   for (const [index, next] of localized)
     elements[Number(index)]?.setAttribute('data-variable-values', JSON.stringify(next))
-  // 写回时带上文档类型：少了它预览会按怪异模式排版
-  const doctype = film.doctype === null ? '' : `<!doctype ${film.doctype.name}>\n`
-  return `${doctype}${film.documentElement.outerHTML}\n`
+  return serialize(film)
 }
 
 /**
@@ -89,9 +109,9 @@ export const catalogBase = (catalog: ComponentCatalog, origin: string) =>
   `${origin}/hyperframes/${catalog.version}/`
 
 /**
- * 预览用的那一份：文件加上基准地址、预览专用的媒体加载方式和语言的值（`values`：贴片、场景的字见
- * `withLocalizedHosts`，字幕的字见 `withPreviewVariables`）。文件里的相对地址（组件文件、`vendor/`）都按
- * `baseHref` 取。
+ * 预览用的那一份：去掉隐藏的片段（见 `withoutHiddenClips`），加上基准地址、预览专用的媒体加载方式和
+ * 语言的值（`values`：贴片、场景的字见 `withLocalizedHosts`，字幕的字见 `withPreviewVariables`）。
+ * 文件里的相对地址（组件文件、`vendor/`）都按 `baseHref` 取。
  */
 export const previewDocument = (
   html: string,
@@ -99,7 +119,7 @@ export const previewDocument = (
   values: LocaleValues | null = null,
 ): string =>
   withPreviewVariables(
-    withBaseHref(withPreviewMedia(withLocalizedHosts(html, values)), baseHref),
+    withBaseHref(withPreviewMedia(withLocalizedHosts(withoutHiddenClips(html), values)), baseHref),
     values,
   )
 
