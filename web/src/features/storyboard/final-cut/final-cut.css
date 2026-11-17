@@ -368,6 +368,10 @@
   font-variant-numeric: tabular-nums;
 }
 
+.wf-captions-translate + .wf-captions-views {
+  margin-top: 0;
+}
+
 .wf-captions-views + .wf-captions-actions,
 .wf-captions-views + .wf-captions-note,
 .wf-captions-views + .wf-caption-list {

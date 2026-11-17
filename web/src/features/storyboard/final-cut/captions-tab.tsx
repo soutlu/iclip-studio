@@ -12,11 +12,21 @@ import { usePausedCommit } from './use-paused-commit'
 
 const ADD_LABEL = '在播放头处加一句'
 const RECOGNIZE_LABEL = '识别字幕'
+const TRANSLATE_LABEL = '翻译'
 
 /** 改一句字幕在语言 `locale` 里的字（见 `useFilmSession` 的 `setCaptionText`）。 */
 export type CaptionTextChange = (id: string, text: string, locale: LocaleCode) => void
 
+/** 外语下的「翻译」：为什么现在不能点（给了就置灰，点了说明它），是不是在翻译中。 */
+type TranslateControl = {
+  blocked: string | undefined
+  translating: boolean
+  onTranslate: () => void
+}
+
 type CaptionsTabProps = {
+  /** 外语下的「翻译」；中文时是 undefined，不显示。 */
+  translate: TranslateControl | undefined
   captions: readonly CaptionClip[]
   /** 「组件文字」那一段（显示着的语言、选中的片段和这里共用）。 */
   texts: Omit<ComponentProps<typeof ComponentTexts>, 'locale' | 'selected'>
@@ -45,9 +55,10 @@ type CaptionsTabProps = {
  * 「字幕」页签：最上面在「字幕」和「组件文字」（见 `ComponentTexts`）两段之间切换，各写着有几个。「字幕」是识别
  * 字幕、在播放头处加一句，下面是按开始时间排的字幕列表，每句能直接改字、删掉，点时间选中它、跳到它的开始。
  * 编辑器里选中的字幕标成当前这一句；刚加的那一句焦点进它的文字框。识别中写着在识别几个片段。外语下改的是这种
- * 语言的字。
+ * 语言的字，最上面多一个「翻译」，两段里还没翻的一起翻。
  */
 export function CaptionsTab({
+  translate,
   captions,
   texts,
   locale,
@@ -77,6 +88,24 @@ export function CaptionsTab({
     <div className="wf-captions">
       {problem === undefined ? null : (
         <InlineAlert className="wf-captions-alert" message={problem} />
+      )}
+      {translate === undefined ? null : (
+        <div className="wf-captions-actions wf-captions-translate">
+          <BlockedReason reason={translate.blocked}>
+            <Button
+              aria-disabled={translate.blocked === undefined ? undefined : true}
+              className="wf-captions-action"
+              leadingIcon="sparkles"
+              onClick={() => {
+                if (translate.blocked === undefined) translate.onTranslate()
+              }}
+              size="md"
+              variant="outlined"
+            >
+              {translate.translating ? '翻译中…' : TRANSLATE_LABEL}
+            </Button>
+          </BlockedReason>
+        </div>
       )}
       <div aria-label="字幕或组件文字" className="wf-captions-views" role="group">
         {views.map((each) => (
@@ -129,7 +158,7 @@ function CaptionsView({
   onText,
   onRemove,
   onPick,
-}: Omit<CaptionsTabProps, 'texts' | 'problem' | 'onAdd'> & {
+}: Omit<CaptionsTabProps, 'texts' | 'problem' | 'onAdd' | 'translate'> & {
   add: () => Promise<void>
   /** 焦点要进的那一句（刚加的）。 */
   focusing: string | null

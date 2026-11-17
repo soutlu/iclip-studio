@@ -3,6 +3,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { FinalCutTranslationsIn } from '@/shared/api/generated/types.gen'
 import { Toaster } from '@/shared/ui/toast'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { starvedVideos } from '@/testing/hyperframes-player'
@@ -4185,5 +4186,205 @@ describe('final-cut 编辑器 · 贴片、场景的文字分语言', () => {
     expect(pinned).toHaveValue('新品上市')
     expect(pinned).toHaveAttribute('readonly')
     expect(within(inspector()).getByRole('button', { name: '文字：固定' })).toBeVisible()
+  })
+})
+
+describe('final-cut 编辑器 · 翻译', () => {
+  const EN_FILE = 'final-cut/locales/en.json'
+  const TRANSLATIONS_URL = '*/api/conversations/:conversationId/final-cut/translations'
+  const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
+  const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
+  const translateButton = () => within(panel()).getByRole('button', { name: /^(翻译|翻译中…)$/ })
+  const savedEnglish = (): unknown =>
+    JSON.parse(mockWorkspaceFile(CONVERSATION, EN_FILE)?.content ?? 'null')
+
+  /**
+   * 换上翻译接口：记下每次请求，译文照模拟环境写成「[EN] 原文」。`fail` 给第几次请求（从 0 数）答失败，
+   * `hold` 了结之前不答。
+   */
+  const serveTranslations = (
+    fail?: (index: number) => Response | undefined,
+    hold?: Promise<void>,
+  ) => {
+    const sent: FinalCutTranslationsIn[] = []
+    server.use(
+      http.post(TRANSLATIONS_URL, async ({ request }) => {
+        const body = (await request.json()) as FinalCutTranslationsIn
+        sent.push(body)
+        await hold
+        const failure = fail?.(sent.length - 1)
+        if (failure !== undefined) return failure
+        return HttpResponse.json({
+          translations: body.entries.map((entry) => ({
+            id: entry.id,
+            text: `[${body.targetLocale.toUpperCase()}] ${entry.text}`,
+          })),
+        })
+      }),
+    )
+    return sent
+  }
+
+  /**
+   * 工程：一段视频，两个贴片（中文标题随语言、英文季标固定），字幕 `lines`；English 的值表是 `english`。
+   * 打开编辑器，切到「字幕」页签。
+   */
+  const open = async (lines: SceneLine[], english: Record<string, string>) => {
+    await putFilm(
+      [
+        video({ src: URL_A, duration: 2_000 }),
+        host({ id: 'zh', label: '中文标题', start: 0, track: 1, values: { text: '新品上市' } }),
+        host({ id: 'latin', label: '季标', start: 0, track: 2, values: { text: 'NEW IN' } }),
+      ],
+      lines,
+    )
+    const main = await openComposition(mockProjectMain(CONVERSATION)?.content ?? '')
+    main.declareVariable({ id: 'txt_zh_text', type: 'string', label: '文字', default: '新品上市' })
+    main.setAttribute('zh', 'data-locale-bindings', '{"text":"txt_zh_text"}')
+    putMockProjectMain(CONVERSATION, main.serialize())
+    putMockWorkspaceFile(CONVERSATION, EN_FILE, JSON.stringify(english))
+    const user = userEvent.setup()
+    await openEditor()
+    await previewSettled()
+    await user.click(
+      within(
+        screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
+      ).getByRole('tab', { name: '字幕' }),
+    )
+    return user
+  }
+
+  const toEnglish = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
+    await waitFor(() => expect(translateButton()).toBeVisible())
+  }
+
+  const twoLines = [sceneLine('a1', 0, 1_000), sceneLine('b2', 1_000, 1_000)]
+
+  it('中文时没有「翻译」；English 下只翻还没翻的，固定的不翻，一次写进值表、一步撤销；都翻过了置灰说明原因', async () => {
+    const sent = serveTranslations()
+    const user = await open(twoLines, { cap_a1: 'Line one' })
+    expect(within(panel()).queryByRole('button', { name: '翻译' })).toBeNull()
+
+    await toEnglish(user)
+    await user.click(translateButton())
+    await waitSaved(() =>
+      expect(savedEnglish()).toEqual({
+        cap_a1: 'Line one',
+        cap_b2: '[EN] 字幕 b2',
+        txt_zh_text: '[EN] 新品上市',
+      }),
+    )
+    expect(sent).toEqual([
+      {
+        targetLocale: 'en',
+        entries: [
+          { id: 'txt_zh_text', text: '新品上市' },
+          { id: 'cap_b2', text: '字幕 b2' },
+        ],
+      },
+    ])
+    expect(await screen.findByText('已翻译 2 条')).toBeVisible()
+    expect(
+      within(panel()).getByRole('textbox', { name: '字幕文字 00:01.00 – 00:02.00' }),
+    ).toHaveValue('[EN] 字幕 b2')
+
+    expect(translateButton()).toHaveAttribute('aria-disabled', 'true')
+    await user.click(translateButton())
+    expect(
+      (await screen.findAllByText('English 的字幕和文字都已翻译；要重新翻译哪一句，请先清空那一句'))
+        .length,
+    ).toBeGreaterThan(0)
+    expect(sent).toHaveLength(1)
+
+    await user.click(undoButton())
+    await waitSaved(() => expect(savedEnglish()).toEqual({ cap_a1: 'Line one' }))
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+    expect(translateButton()).not.toHaveAttribute('aria-disabled')
+  })
+
+  it('翻译中按钮写「翻译中…」并置灰，连点只发一次，照常能编辑；翻译期间填了的那句不覆盖，别的写进去', async () => {
+    let release = () => {}
+    const hold = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const sent = serveTranslations(undefined, hold)
+    const user = await open(twoLines, { cap_a1: 'Line one' })
+    await toEnglish(user)
+    await user.click(translateButton())
+    await waitFor(() => expect(translateButton()).toHaveTextContent('翻译中…'))
+    expect(translateButton()).toHaveAttribute('aria-disabled', 'true')
+    await user.click(translateButton())
+
+    await user.type(
+      within(panel()).getByRole('textbox', { name: '字幕文字 00:01.00 – 00:02.00' }),
+      'Mine',
+    )
+    await waitSaved(() => expect(savedEnglish()).toEqual({ cap_a1: 'Line one', cap_b2: 'Mine' }))
+    release()
+    await waitSaved(() =>
+      expect(savedEnglish()).toEqual({
+        cap_a1: 'Line one',
+        cap_b2: 'Mine',
+        txt_zh_text: '[EN] 新品上市',
+      }),
+    )
+    expect(sent).toHaveLength(1)
+    expect(await screen.findByText('已翻译 1 条')).toBeVisible()
+    expect(await screen.findByText('1 条在翻译期间已修改或删除，未写入译文')).toBeVisible()
+    expect(translateButton()).toHaveTextContent('翻译')
+  })
+
+  it('分两批发、第二批失败：整次不写，按接口答的原因提示，按钮恢复可点', async () => {
+    // 十句各 450 字：合计超过 4000 字，前八句一批、后两句一批
+    const lines = Array.from({ length: 10 }, (_, index) => ({
+      ...sceneLine(`l${index}`, index * 200, 200),
+      text: `${index}`.padEnd(450, '字'),
+    }))
+    const sent = serveTranslations((index) =>
+      index === 1
+        ? HttpResponse.json({ code: 'model_call_failed', detail: '上游限流' }, { status: 502 })
+        : undefined,
+    )
+    const user = await open(lines, { txt_zh_text: 'New in' })
+    await toEnglish(user)
+    await user.click(translateButton())
+    expect(await screen.findByText('翻译失败，请点击「翻译」重试')).toBeVisible()
+    expect(sent.map((body) => body.entries.length)).toEqual([8, 2])
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+    expect(savedEnglish()).toEqual({ txt_zh_text: 'New in' })
+    expect(translateButton()).toHaveTextContent('翻译')
+    expect(translateButton()).not.toHaveAttribute('aria-disabled')
+  })
+
+  it('没有启用翻译用的模型（409）：提示翻译服务暂不可用', async () => {
+    serveTranslations(() =>
+      HttpResponse.json({ code: 'model_unavailable', detail: '未配置' }, { status: 409 }),
+    )
+    const user = await open(twoLines, {})
+    await toEnglish(user)
+    await user.click(translateButton())
+    expect(await screen.findByText('翻译服务暂不可用，请稍后再试')).toBeVisible()
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('超过 500 字的那句不发，写完提示跳过了几条；剩下的都超长时置灰说明原因', async () => {
+    const sent = serveTranslations()
+    const user = await open(
+      [{ ...sceneLine('a1', 0, 1_000), text: '长'.repeat(501) }, sceneLine('b2', 1_000, 1_000)],
+      { txt_zh_text: 'New in' },
+    )
+    await toEnglish(user)
+    await user.click(translateButton())
+    await waitSaved(() =>
+      expect(savedEnglish()).toEqual({ cap_b2: '[EN] 字幕 b2', txt_zh_text: 'New in' }),
+    )
+    expect(sent.map((body) => body.entries.map((entry) => entry.id))).toEqual([['cap_b2']])
+    expect(await screen.findByText('1 条超过 500 字，未翻译；请手动填写')).toBeVisible()
+    expect(translateButton()).toHaveAttribute('aria-disabled', 'true')
+    await user.click(translateButton())
+    expect(
+      (await screen.findAllByText('还没翻译的 1 条超过 500 字，无法自动翻译；请手动填写')).length,
+    ).toBeGreaterThan(0)
   })
 })

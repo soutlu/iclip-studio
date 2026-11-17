@@ -123,8 +123,15 @@ import {
   zoomToClips,
   type Zoom,
 } from './timeline-scale'
+import {
+  pendingTranslations,
+  TRANSLATION_LIMITS,
+  translateBlocked,
+  translationsToWrite,
+} from './translation'
 import { useCaptionRecognition, type RecognitionOutcome } from './use-caption-recognition'
 import { useFilmSession, type NewAudio } from './use-film-session'
+import { useTranslation } from './use-translation'
 import { useWholeFilmExport } from './use-whole-film-export'
 import {
   projectFilesBase,
@@ -857,6 +864,34 @@ function EditorBody({
     leaveMaterial()
     session.setCaptionText(id, text, code)
   }
+  // 外语下的「翻译」：点的那一刻还没翻的一起发，全部翻好后按写入那一刻的样子一步写进那种语言的值表
+  const translation = useTranslation(conversationId)
+  const pending =
+    film === null || locale.values === null
+      ? undefined
+      : pendingTranslations(
+          { clips: film.clips, bindings: film.bindings, values: locale.values },
+          catalog,
+        )
+  const translateBlockedText =
+    pending === undefined
+      ? undefined
+      : translateBlocked(pending, localeNamed(locale.code).name, translation.translating)
+  const translate = async () => {
+    if (pending === undefined || translateBlockedText !== undefined || locale.code === 'zh') return
+    const code = locale.code
+    const { entries, tooLong } = pending
+    const outcome = await translation.start(code, entries)
+    if (outcome.kind === 'failed') notice(outcome.message)
+    if (outcome.kind !== 'done') return
+    const written = session.fillLocale(code, (now) =>
+      translationsToWrite(entries, outcome.translations, pendingTranslations(now, catalog).entries),
+    )
+    if (written > 0) notice(`已翻译 ${written} 条`)
+    if (written < entries.length)
+      notice(`${entries.length - written} 条在翻译期间已修改或删除，未写入译文`)
+    if (tooLong > 0) notice(`${tooLong} 条超过 ${TRANSLATION_LIMITS.text} 字，未翻译；请手动填写`)
+  }
   // 贴片、场景的文字：「组件文字」和「属性」共用
   const itemTexts = {
     bindings: film?.bindings ?? NO_BINDINGS,
@@ -1122,6 +1157,15 @@ function EditorBody({
               recognizeBlocked={recognizeBlocked}
               recognizing={recognition.recognizing}
               selected={selected}
+              translate={
+                pending === undefined
+                  ? undefined
+                  : {
+                      blocked: translateBlockedText,
+                      translating: translation.translating,
+                      onTranslate: () => void translate(),
+                    }
+              }
             />
           </TabsContent>
           <TabsContent className="wf-side-body is-props" value="props">
