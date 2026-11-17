@@ -31,6 +31,7 @@ from tests.helpers.generation import (
     FakeMediaProbe,
     FixedLineage,
     InMemoryGenerationRepository,
+    ReferenceClips,
     build_queue,
     image_request,
     make_composite,
@@ -38,7 +39,6 @@ from tests.helpers.generation import (
     make_enhancement,
     make_job,
     make_subtitle,
-    make_upload,
     video_request,
     whole_film_request,
 )
@@ -107,6 +107,7 @@ def build_app(
         clear_completion=cleared.record,
         lineage=FixedLineage(),
         media_probe=FakeMediaProbe(),
+        reference_clips=ReferenceClips(),
         enhance=enhance,
     )
     app.include_router(
@@ -256,7 +257,6 @@ def _ineligible() -> list[tuple[str, Callable[[GenerationJob], GenerationJob]]]:
         ),
         ("unfinished_take", lambda _: take(status=STATUS_SUBMITTED, output=GenerationOutput())),
         ("failed_take", lambda _: take(status=STATUS_FAILED, output=GenerationOutput())),
-        ("video_upload", lambda _: make_upload(kind="video")),
         (
             "image",
             lambda _: make_job(

@@ -34,9 +34,10 @@ from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import WholeFilmRequest
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.public import Principal
+from iclip.domains.uploads.service import UploadService
 from iclip.platform.object_store.store import SignedUpload
 from tests.helpers.film import UnusedFilmPage
-from tests.helpers.generation import make_job
+from tests.helpers.generation import FixedLineage, make_job
 from tests.helpers.render import StubRender
 
 NOW = datetime(2026, 11, 16, 12, 0, tzinfo=UTC)
@@ -211,10 +212,21 @@ class Generations:
         return [] if self._latest is None else [self._latest]
 
 
+class Uploads:
+    """上传：对不上任何素材。"""
+
+    async def conversation_uploads_at(
+        self, conversation_id: uuid.UUID, urls: Sequence[str]
+    ) -> dict[str, object]:
+        return {}
+
+
 def adapter(generation: RecordingGeneration, generations: Generations) -> WholeFilmExportAdapter:
     return WholeFilmExportAdapter(
         generation=cast("GenerationService", generation),
         generations=cast("GenerationRepository", generations),
+        uploads=cast("UploadService", Uploads()),
+        lineage=FixedLineage(),
         render=cast("RenderClient", object()),
     )
 

@@ -2,20 +2,24 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Collection, Mapping
+from datetime import UTC, datetime
 from typing import Final, Protocol
 
 import structlog
 
-from iclip.common.errors import Conflict, ValidationFailed
+from iclip.common.errors import Conflict, NotFound, ValidationFailed
 from iclip.domains.identity.public import Principal
 from iclip.domains.uploads.models import (
     MAX_BYTES,
     MAX_LONG_EDGE_PIXELS,
     MIN_SHORT_EDGE_PIXELS,
     UPLOAD_TYPES,
-    ConfirmedUpload,
+    Inheritance,
     MediaKind,
+    MediaUpload,
 )
+from iclip.domains.uploads.repository import UploadRepository
 from iclip.domains.uploads.schemas import UploadSignIn
 from iclip.platform.media.image import read_image_header
 from iclip.platform.object_store.direct_upload import (
@@ -27,6 +31,7 @@ from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import ObjectStoreUnavailable, PublicBucket, StoredObject
 from iclip.platform.outbound.fetch import FetchTooLarge
 from iclip.platform.outbound.guard import FetchFailed
+from iclip.platform.paging import check_limit
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -36,54 +41,35 @@ _NORMAL_OBJECT: Final = "Normal"
 _MD5_HEX: Final = re.compile(r"[0-9a-fA-F]{32}")
 
 
-class RecordedUpload(Protocol):
-    @property
-    def url(self) -> str: ...
-
-    @property
-    def object_upload_id(self) -> uuid.UUID: ...
-
-
-class RecordUpload(Protocol):
-    async def __call__(
-        self,
-        principal: Principal,
-        *,
-        upload_id: uuid.UUID,
-        kind: MediaKind,
-        url: str,
-        content_md5: str | None,
-        conversation_id: uuid.UUID | None,
-    ) -> RecordedUpload: ...
-
-
 class ConversationWritable(Protocol):
     async def __call__(self, principal: Principal, conversation_id: uuid.UUID, /) -> object: ...
-
-
-class FindRecordedUpload(Protocol):
-    async def __call__(self, upload_id: uuid.UUID) -> RecordedUpload | None: ...
 
 
 class FetchBytes(Protocol):
     async def __call__(self, url: str, *, max_bytes: int) -> bytes: ...
 
 
+class UploadLineage(Protocol):
+    async def ancestry(self, conversation_id: uuid.UUID) -> Inheritance: ...
+
+    async def readable(self, principal: Principal, conversation_id: uuid.UUID) -> bool: ...
+
+
 class UploadService:
     def __init__(
         self,
         objects: PublicBucket,
+        repo: UploadRepository,
         *,
-        record: RecordUpload,
-        find_recorded: FindRecordedUpload,
         fetch: FetchBytes,
         conversation_writable: ConversationWritable,
+        lineage: UploadLineage,
     ) -> None:
         self._objects = objects
-        self._record = record
-        self._find_recorded = find_recorded
+        self._repo = repo
         self._fetch = fetch
         self._conversation_writable = conversation_writable
+        self._lineage = lineage
 
     def sign_upload(self, principal: Principal, body: UploadSignIn) -> UploadTicket:
         kind, ext, normalized = _accepted_type(body.content_type)
@@ -107,36 +93,61 @@ class UploadService:
         upload_id: uuid.UUID,
         *,
         conversation_id: uuid.UUID | None = None,
-    ) -> ConfirmedUpload:
-        recorded = await self._find_recorded(upload_id)
-        if recorded is None:
-            found = await self._objects.find_object(
-                prefix=MEDIA_PATHS.upload_prefix(upload_id=upload_id)
-            )
-            if found is None:
-                raise Conflict("这个文件还没传上来，传完再确认")
-            kind = _checked_kind(found)
-            if conversation_id is not None:
-                if kind != "audio":
-                    raise ValidationFailed("只有音乐能挂到对话上")
-                await self._conversation_writable(principal, conversation_id)
-            recorded = await self._record(
-                principal,
-                upload_id=upload_id,
-                kind=kind,
-                url=self._objects.public_url(found.object_key),
-                content_md5=_content_md5(kind, found),
+        width: int | None = None,
+        height: int | None = None,
+    ) -> MediaUpload:
+        """核对桶里的对象后记进台账；记过的原样交回，不再改它。
+
+        大小、内容类型与 MD5 取对象存储报的；图片的宽高取调用方报的（签名时报过的那两个数，
+        越界 ``ValidationFailed``），别的种类不记宽高。时长不量。
+        """
+
+        recorded = await self._repo.get(upload_id)
+        if recorded is not None:
+            return recorded
+        found = await self._objects.find_object(
+            prefix=MEDIA_PATHS.upload_prefix(upload_id=upload_id)
+        )
+        if found is None:
+            raise Conflict("这个文件还没传上来，传完再确认")
+        kind = _checked_kind(found)
+        if kind == "image" and width is not None and height is not None:
+            _check_dimensions(width, height)
+        else:
+            width = height = None
+        if conversation_id is not None:
+            await self._conversation_writable(principal, conversation_id)
+        content_md5 = _content_md5(kind, found)
+        earlier = (
+            None if content_md5 is None else await self._repo.earliest_video_with_md5(content_md5)
+        )
+        url = self._objects.public_url(found.object_key) if earlier is None else earlier.url
+        stored = await self._repo.insert(
+            MediaUpload(
+                id=upload_id,
+                owner_user_id=principal.user_id,
+                api_key_id=principal.api_key_id,
                 conversation_id=conversation_id,
+                kind=kind,
+                url=url,
+                # 去重时地址是最早那份的，类型也按那份记（同一份内容，扩展名可能不同）
+                content_type=(earlier.content_type if earlier is not None else None)
+                or found.content_type,
+                size_bytes=found.size_bytes,
+                duration_ms=None,
+                width=width,
+                height=height,
+                content_md5=content_md5,
+                created_at=datetime.now(UTC),
             )
-            if recorded.object_upload_id == upload_id:
-                return ConfirmedUpload(
-                    url=recorded.url, content_type=found.content_type, size_bytes=found.size_bytes
-                )
+        )
+        # 同一个 uploadId 并发确认时，后到的那次按 MD5 会找到先到那次刚记下的自己，那不是重复的另一份
+        if earlier is not None and earlier.id != upload_id:
             await self._discard_duplicate(found.object_key, upload_id=upload_id)
-        return await self._describe(recorded)
+        return stored
 
     async def import_image(self, principal: Principal, url: str, *, upload_id: uuid.UUID) -> str:
-        recorded = await self._find_recorded(upload_id)
+        recorded = await self._repo.get(upload_id)
         if recorded is not None:
             return recorded.url
         limit = MAX_BYTES["image"]
@@ -166,25 +177,74 @@ class UploadService:
             content_type=header.mime,
             metadata=audit_metadata(user_id=principal.user_id, api_key_id=principal.api_key_id),
         )
-        recorded = await self._record(
-            principal,
-            upload_id=upload_id,
-            kind="image",
-            url=stored,
-            content_md5=None,
-            conversation_id=None,
+        recorded = await self._repo.insert(
+            MediaUpload(
+                id=upload_id,
+                owner_user_id=principal.user_id,
+                api_key_id=principal.api_key_id,
+                conversation_id=None,
+                kind="image",
+                url=stored,
+                content_type=header.mime,
+                size_bytes=len(content),
+                duration_ms=None,
+                width=header.width,
+                height=header.height,
+                content_md5=None,
+                created_at=datetime.now(UTC),
+            )
         )
         return recorded.url
 
-    async def _describe(self, recorded: RecordedUpload) -> ConfirmedUpload:
-        found = await self._objects.find_object(
-            prefix=MEDIA_PATHS.upload_prefix(upload_id=recorded.object_upload_id)
+    async def conversation_uploads(
+        self,
+        principal: Principal,
+        conversation_id: uuid.UUID,
+        *,
+        limit: int,
+        kind: MediaKind | None = None,
+        before: uuid.UUID | None = None,
+    ) -> tuple[MediaUpload, ...]:
+        """挂在这段对话上的上传，含经分叉继承来的（祖先对话在分叉时刻以前挂上的），新的在前。
+
+        读不到这段对话 ``NotFound``；``before`` 指的上传不存在也是 ``NotFound``。
+        """
+
+        check_limit(limit)
+        if not await self._lineage.readable(principal, conversation_id):
+            raise NotFound(f"没有这段对话: {conversation_id}")
+        anchor = None
+        if before is not None:
+            anchor = await self._repo.get(before)
+            if anchor is None:
+                raise NotFound(f"没有这条上传: {before}")
+        return await self._repo.list_in_conversation(
+            conversation_id,
+            limit=limit,
+            kind=kind,
+            before=anchor,
+            inherited=await self._lineage.ancestry(conversation_id),
         )
-        if found is None:
-            raise Conflict("这个地址上的文件已经不在了，重新上传一次")
-        return ConfirmedUpload(
-            url=recorded.url, content_type=found.content_type, size_bytes=found.size_bytes
+
+    async def conversation_uploads_at(
+        self, conversation_id: uuid.UUID, urls: Collection[str]
+    ) -> Mapping[str, MediaUpload]:
+        """这段对话（含分叉继承）里每个地址对上的最早那条上传；对不上的地址不在答复里。"""
+
+        return await self._repo.earliest_in_conversation(
+            conversation_id, urls, inherited=await self._lineage.ancestry(conversation_id)
         )
+
+    async def own_video(self, principal: Principal, upload_id: uuid.UUID) -> str | None:
+        """调用者本人这条视频上传的地址；不是本人的、不是视频或没有这条时为 None。"""
+
+        upload = await self._repo.get(upload_id)
+        if upload is None or upload.kind != "video" or upload.owner_user_id != principal.user_id:
+            return None
+        return upload.url
+
+    async def owns_video_at(self, principal: Principal, url: str) -> bool:
+        return await self._repo.owned_video_at(principal.user_id, url)
 
     async def _discard_duplicate(self, object_key: str, *, upload_id: uuid.UUID) -> None:
         try:
@@ -240,8 +300,6 @@ def _check_dimensions(width: int, height: int) -> None:
 __all__ = [
     "ConversationWritable",
     "FetchBytes",
-    "FindRecordedUpload",
-    "RecordUpload",
-    "RecordedUpload",
+    "UploadLineage",
     "UploadService",
 ]

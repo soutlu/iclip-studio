@@ -88,6 +88,13 @@ JOIN iclip.users u ON u.id = r.owner_user_id
 _BY_ID: Final = text(f"{_ROW}\nWHERE r.id = :id")
 _BY_URL: Final = text(f"{_ROW}\nWHERE r.video_url = :video_url")
 
+_LISTED_AT: Final = text("""
+SELECT EXISTS (
+    SELECT 1 FROM iclip.reference_videos
+    WHERE video_url = :video_url AND deleted_at IS NULL
+)
+""")
+
 _INSERT: Final = text("""
 INSERT INTO iclip.reference_videos
     (id, video_url, owner_user_id, breakdown_status, requested_by, api_key_id)
@@ -259,6 +266,12 @@ class SqlReferenceStore:
         async with self._engine.connect() as conn:
             row = (await conn.execute(_BY_ID, {"id": reference_id})).mappings().first()
         return None if row is None else _row_of(row)
+
+    async def listed_at(self, video_url: str) -> bool:
+        """资料库里有没有这个地址的一条没移除的参考视频。"""
+
+        async with self._engine.connect() as conn:
+            return bool((await conn.execute(_LISTED_AT, {"video_url": video_url})).scalar_one())
 
     async def list(
         self, scope: Scope, *, limit: int, after: ReferenceCursor | None

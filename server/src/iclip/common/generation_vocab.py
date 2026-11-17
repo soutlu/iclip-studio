@@ -4,7 +4,7 @@ from typing import Literal
 
 GenerationKind = Literal["video", "image", "subtitle", "dubbing", "audio", "whole_film"]
 
-GenerationOperation = Literal["generate", "compose", "cut", "upload", "render", "enhance"]
+GenerationOperation = Literal["generate", "compose", "cut", "render", "enhance"]
 
 GenerationStatus = Literal["pending", "submitting", "submitted", "completed", "failed"]
 

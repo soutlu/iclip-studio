@@ -18,7 +18,7 @@ import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
 import { VIDEO_MODELS } from '../video-models'
 import { MOCK_MUSIC_SECONDS, MOCK_MUSIC_URL } from './audio'
-import { isMockVideoUpload, onMockUploadConfirmed } from './uploads'
+import { addMockUpload, isMockVideoUpload } from './uploads'
 
 const FRAME_A =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='320'%3E%3Crect width='180' height='320' fill='%23e4ded2'/%3E%3Ccircle cx='90' cy='120' r='38' fill='%23a8742a'/%3E%3Crect x='60' y='170' width='60' height='110' fill='%236b5330'/%3E%3C/svg%3E"
@@ -207,7 +207,7 @@ type MockJob = {
   kind?: 'video' | 'image' | 'subtitle' | 'dubbing' | 'audio'
   sentences?: SubtitleSentence[]
   dubbedLines?: DubbedLine[]
-  operation?: 'generate' | 'compose' | 'upload'
+  operation?: 'generate' | 'compose'
   outputUrl?: string
   prompt: string
   request?: Record<string, unknown>
@@ -777,23 +777,6 @@ const addRecord = (conversationId: string, record: MockRecord) => {
   return record
 }
 
-onMockUploadConfirmed(({ uploadId, url, contentType, conversationId }) => {
-  if (conversationId === null || !contentType.startsWith('audio/')) return
-  if (findJob(conversationId, uploadId) !== undefined) return
-  addRecord(
-    conversationId,
-    job({
-      createdAt: new Date().toISOString(),
-      id: uploadId,
-      kind: 'audio',
-      operation: 'upload',
-      outputUrl: url,
-      prompt: '',
-      status: 'completed',
-    }),
-  )
-})
-
 export const seedMockMusic = (conversationId: string) => {
   const generated = addRecord(
     conversationId,
@@ -808,19 +791,20 @@ export const seedMockMusic = (conversationId: string) => {
       status: 'completed',
     }),
   )
-  const uploaded = addRecord(
+  // 上传的音频不记时长，界面从文件里读
+  const uploaded = addMockUpload({
+    contentType: 'audio/mpeg',
     conversationId,
-    job({
-      createdAt: '2026-09-01T12:05:00Z',
-      id: crypto.randomUUID(),
-      kind: 'audio',
-      operation: 'upload',
-      // 每条记录的产物地址各不相同（编辑器按地址认出 final-cut 里用着哪一条），都由同一个音频处理器答复
-      outputUrl: `${MOCK_MUSIC_URL}?upload`,
-      prompt: '',
-      status: 'completed',
-    }),
-  )
+    createdAt: '2026-09-01T12:05:00Z',
+    durationMs: null,
+    height: null,
+    id: crypto.randomUUID(),
+    kind: 'audio',
+    sizeBytes: 1024,
+    // 每条的地址各不相同（编辑器按地址认出 final-cut 里用着哪一条），都由同一个音频处理器答复
+    url: `${MOCK_MUSIC_URL}?upload`,
+    width: null,
+  })
   return { generated, uploaded }
 }
 

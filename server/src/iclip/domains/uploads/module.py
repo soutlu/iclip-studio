@@ -5,11 +5,11 @@ from typing import Any
 
 from iclip.domains.identity.public import ActAs
 from iclip.domains.uploads.api import create_uploads_router
+from iclip.domains.uploads.repository import UploadRepository
 from iclip.domains.uploads.service import (
     ConversationWritable,
     FetchBytes,
-    FindRecordedUpload,
-    RecordUpload,
+    UploadLineage,
     UploadService,
 )
 from iclip.platform.object_store.store import PublicBucket
@@ -24,19 +24,19 @@ class UploadsModule:
 
 def build_uploads_module(
     objects: PublicBucket,
+    repo: UploadRepository,
     *,
     act_as: ActAs,
-    record: RecordUpload,
-    find_recorded: FindRecordedUpload,
     fetch: FetchBytes,
     conversation_writable: ConversationWritable,
+    lineage: UploadLineage,
 ) -> UploadsModule:
     service = UploadService(
         objects,
-        record=record,
-        find_recorded=find_recorded,
+        repo,
         fetch=fetch,
         conversation_writable=conversation_writable,
+        lineage=lineage,
     )
     return UploadsModule(routers=(create_uploads_router(service, act_as=act_as),), service=service)
 

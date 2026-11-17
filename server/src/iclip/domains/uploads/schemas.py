@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Annotated, Final
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from pydantic.alias_generators import to_camel
 
-from iclip.domains.uploads.models import ConfirmedUpload
+from iclip.domains.uploads.models import MediaKind, MediaUpload
 
 MAX_USER_NAME_CHARS: Final = 200
 
@@ -26,7 +27,7 @@ class UploadSignIn(CamelModel):
 
 
 class UploadConfirmIn(CamelModel):
-    """确认上传时可选的请求体：替谁确认，音乐挂到哪段对话。"""
+    """确认上传时可选的请求体：替谁确认，挂到哪段对话，图片多大（签名时报的那两个数）。"""
 
     user_name: (
         Annotated[
@@ -36,26 +37,53 @@ class UploadConfirmIn(CamelModel):
         | None
     ) = None
     conversation_id: uuid.UUID | None = None
+    width: int | None = Field(default=None, ge=1)
+    height: int | None = Field(default=None, ge=1)
 
 
-class UploadConfirmedOut(CamelModel):
-    """确认后交回的地址与桶里读到的事实；``url`` 从此就是这个文件的身份。"""
+class UploadOut(CamelModel):
+    """上传台账里的一条。``url`` 从此就是这个文件的身份；视频按 MD5 去重时是最早那份的地址。
 
+    ``contentType`` 与 ``sizeBytes`` 只有台账建立以前的旧上传为空。``width`` / ``height`` 是图片
+    确认时报的宽高，没报的、别的种类为空。确认上传不量时长，``durationMs`` 为空。
+    """
+
+    id: uuid.UUID
+    kind: MediaKind
     url: str
-    content_type: str
-    size_bytes: int
+    content_type: str | None
+    size_bytes: int | None
+    duration_ms: int | None
+    width: int | None
+    height: int | None
+    conversation_id: uuid.UUID | None
+    created_at: datetime
 
 
-def confirmed_out(confirmed: ConfirmedUpload) -> UploadConfirmedOut:
-    return UploadConfirmedOut(
-        url=confirmed.url, content_type=confirmed.content_type, size_bytes=confirmed.size_bytes
+class UploadsPageOut(CamelModel):
+    items: list[UploadOut]
+
+
+def upload_out(upload: MediaUpload) -> UploadOut:
+    return UploadOut(
+        id=upload.id,
+        kind=upload.kind,
+        url=upload.url,
+        content_type=upload.content_type,
+        size_bytes=upload.size_bytes,
+        duration_ms=upload.duration_ms,
+        width=upload.width,
+        height=upload.height,
+        conversation_id=upload.conversation_id,
+        created_at=upload.created_at,
     )
 
 
 __all__ = [
     "MAX_USER_NAME_CHARS",
     "UploadConfirmIn",
-    "UploadConfirmedOut",
+    "UploadOut",
     "UploadSignIn",
-    "confirmed_out",
+    "UploadsPageOut",
+    "upload_out",
 ]

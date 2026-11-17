@@ -30,7 +30,7 @@ import { useStableValue } from '../editing/use-stable-value'
 import { filmViewQuery } from '../film/film.api'
 import { isRunningStatus } from '../shots'
 import type { GenerationJob } from '../storyboard.api'
-import { audioTitleOf, durationLabel, filterAudio, firstAudioClipOf } from './audio'
+import { durationLabel, filterAudio, firstAudioClipOf, type ConversationAudio } from './audio'
 import type { CarryPoint } from './items-tab'
 import type { FilmClip } from './composition/film'
 import { useEditorEscape } from './editor-keys'
@@ -91,8 +91,8 @@ function MusicStatus({ status }: { status: GenerationJob['status'] }) {
   )
 }
 
-const isReady = (job: GenerationJob): job is GenerationJob & { outputUrl: string } =>
-  job.status === 'completed' && job.outputUrl !== null
+const isReady = (audio: ConversationAudio): audio is ConversationAudio & { url: string } =>
+  audio.status === 'completed' && audio.url !== null
 
 export function AudioTab({
   conversationId,
@@ -106,30 +106,30 @@ export function AudioTab({
 }: AudioTabProps) {
   const queryClient = useQueryClient()
   const music = useConversationMusic(conversationId)
-  const jobs = music.data ?? []
+  const items = music.data ?? []
   const [query, setQuery] = useState('')
-  const shown = filterAudio(jobs, query)
+  const shown = filterAudio(items, query)
 
-  // 上传的音频记录上没有时长：和时间线一样从音频文件里读
+  // 上传的音频不记时长：和时间线一样从音频文件里读
   const unmeasured = useStableValue(
-    jobs.flatMap((job) => (isReady(job) && job.durationMs === null ? [job.outputUrl] : [])),
+    items.flatMap((item) => (isReady(item) && item.durationMs === null ? [item.url] : [])),
   )
   const peaks = useAudioPeaks(unmeasured)
   /** 加进 final-cut 的样子；还加不了时是加不了的原因。 */
-  const addable = (job: GenerationJob): NewAudio | string => {
-    if (!isReady(job))
-      return job.status === 'failed'
+  const addable = (item: ConversationAudio): NewAudio | string => {
+    if (!isReady(item))
+      return item.status === 'failed'
         ? '音乐生成失败，无法加入 final-cut；请重新生成'
         : '音乐尚未生成完成，无法加入 final-cut；请等待生成完成'
-    const state = job.durationMs === null ? peaks.get(job.outputUrl) : undefined
+    const state = item.durationMs === null ? peaks.get(item.url) : undefined
     const duration =
-      job.durationMs ??
+      item.durationMs ??
       (state?.kind === 'ready' ? Math.round(state.peaks.duration * 1000) : undefined)
     if (duration === undefined)
       return state === undefined || state.kind === 'loading'
         ? '正在读取音频时长，请稍后加入 final-cut'
         : '音频时长读取失败，无法加入 final-cut'
-    return { label: audioTitleOf(job), src: job.outputUrl, mediaStart: 0, duration }
+    return { label: item.title, src: item.url, mediaStart: 0, duration }
   }
 
   // 同一时间只播一条：所有行共用一个播放器
@@ -150,19 +150,19 @@ export function AudioTab({
   useEffect(() => {
     if (!active) audioRef.current?.pause()
   }, [active])
-  const toggle = (job: GenerationJob & { outputUrl: string }) => {
+  const toggle = (item: ConversationAudio & { url: string }) => {
     const audio = audioRef.current ?? new Audio()
     if (audioRef.current === null) {
       audio.addEventListener('ended', () => setPlaying(null))
       audioRef.current = audio
     }
-    if (playing === job.id) {
+    if (playing === item.id) {
       audio.pause()
       setPlaying(null)
       return
     }
-    audio.setAttribute('src', job.outputUrl)
-    setPlaying(job.id)
+    audio.setAttribute('src', item.url)
+    setPlaying(item.id)
     audio.play().catch(() => {
       setPlaying(null)
       onNotice('音频试听失败，请重试')
@@ -243,7 +243,7 @@ export function AudioTab({
         <p className="wf-audio-note" role="status">
           正在读取音频…
         </p>
-      ) : jobs.length === 0 ? (
+      ) : items.length === 0 ? (
         <p className="wf-audio-note" role="status">
           暂无音频，请点击「生成音乐」或「导入音频」
         </p>
@@ -253,15 +253,15 @@ export function AudioTab({
         </p>
       ) : (
         <ul aria-label="音频" className="wf-audio-list">
-          {shown.map((job) => {
-            const used = job.outputUrl === null ? undefined : firstAudioClipOf(clips, job.outputUrl)
-            const ready = addable(job)
+          {shown.map((item) => {
+            const used = item.url === null ? undefined : firstAudioClipOf(clips, item.url)
+            const ready = addable(item)
             return (
               <AudioRow
                 addable={ready}
+                audio={item}
                 conversationId={conversationId}
-                job={job}
-                key={job.id}
+                key={item.id}
                 onAdd={() => (typeof ready === 'string' ? onNotice(ready) : onAdd(ready))}
                 onCarry={(point) => {
                   if (typeof ready !== 'string') onCarry(ready, point)
@@ -274,9 +274,9 @@ export function AudioTab({
                   if (used !== undefined) onReveal(used.id)
                 }}
                 onToggle={() => {
-                  if (isReady(job)) toggle(job)
+                  if (isReady(item)) toggle(item)
                 }}
-                playing={playing === job.id}
+                playing={playing === item.id}
                 used={used !== undefined}
               />
             )
@@ -290,7 +290,7 @@ export function AudioTab({
 type Press = { pointerId: number; originX: number; originY: number; moved: boolean }
 
 type AudioRowProps = {
-  job: GenerationJob
+  audio: ConversationAudio
   conversationId: string
   addable: NewAudio | string
   used: boolean
@@ -304,7 +304,7 @@ type AudioRowProps = {
 }
 
 function AudioRow({
-  job,
+  audio,
   conversationId,
   addable,
   used,
@@ -316,9 +316,9 @@ function AudioRow({
   onReveal,
   onNotice,
 }: AudioRowProps) {
-  const title = audioTitleOf(job)
-  const ready = isReady(job)
-  const durationMs = typeof addable === 'string' ? job.durationMs : addable.duration
+  const title = audio.title
+  const ready = isReady(audio)
+  const durationMs = typeof addable === 'string' ? audio.durationMs : addable.duration
   const pressRef = useRef<Press | null>(null)
   const clickAfterDrag = useClickAfterDrag()
   const [lifting, setLifting] = useState(false)
@@ -406,7 +406,7 @@ function AudioRow({
           size="sm"
         />
       ) : (
-        <MusicStatus status={job.status} />
+        <MusicStatus status={audio.status} />
       )}
       <span className="wf-song-text">
         <span className="wf-song-title" title={title}>
@@ -420,9 +420,9 @@ function AudioRow({
           </span>
         ) : null}
       </span>
-      {job.status === 'failed' ? (
+      {audio.status === 'failed' ? (
         <span className="wf-song-actions">
-          {job.operation === 'generate' ? (
+          {audio.generated ? (
             <GenerateMusic
               conversationId={conversationId}
               initialPrompt={title}
@@ -442,9 +442,9 @@ function AudioRow({
               collisionPadding={16}
               sideOffset={6}
             >
-              <strong>{statusLabel(job.status)}</strong>
-              {job.errorMessage !== null ? (
-                <p className="wf-music-error">{job.errorMessage}</p>
+              <strong>{statusLabel(audio.status)}</strong>
+              {audio.errorMessage !== null ? (
+                <p className="wf-music-error">{audio.errorMessage}</p>
               ) : null}
               <p>{title}</p>
             </PopupSurface>

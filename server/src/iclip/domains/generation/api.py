@@ -78,8 +78,8 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         principal: Annotated[Principal, require_permission("generation:submit")],
     ) -> GenerationEnvelope:
         """为素材片上的区间生成替换片段。参考视频为空时图生，有一条时编辑；模型与两种模式的时长
-        能力由 video-models 声明。图生必须引用图片并指定整秒时长；编辑参考须为本人上传的视频，
-        实测时长要满足模型限制，seconds 固定为 -1。不合格 422、不入队。
+        能力由 video-models 声明。图生必须引用图片并指定整秒时长；编辑参考须为本人上传的视频
+        或资料库里一条没移除的参考视频，实测时长要满足模型限制，seconds 固定为 -1。不合格 422、不入队。
 
         source_job_id 与 range_start_ms / range_end_ms 记下基底与替换区间，使用基底媒体时间，
         独立于生成时长。基底须为本对话自己的或继承来的已完成素材片，区间须在其时长之内。
@@ -200,8 +200,8 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
     ) -> GenerationEnvelope:
         """提交一次图片生成。``userName`` 的规则与视频相同。
 
-        帧图编辑带 ``sourceUrl``（底图地址）：先在本对话及它继承的图片里找，再找调用方可见的上传，
-        找到记 ``sourceJobId``，找不到记外部地址；回来的 ``sourceUrl`` 都是这个地址。它不进
+        帧图编辑带 ``sourceUrl``（底图地址）：在本对话及它继承的生成图片里找，找到记
+        ``sourceJobId``，找不到（上传的图、外链）记这个地址；回来的 ``sourceUrl`` 都是这个地址。它不进
         ``request``、不发上游。
         """
 
@@ -245,10 +245,10 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
 
         ``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。
 
-        按属主列会看到上传记录，按对话列图片会看到切图记录；只要调模型的，按 ``operation=generate`` 筛。
-        素材片的字幕记录是种类 ``subtitle``、来源是那条素材片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。
-        一段对话的背景音乐按 ``kind=audio`` 与 ``conversationId`` 找，生成的与确认时挂到这段对话的上传
-        都在里面；没挂对话的上传按属主列。
+        生成记录只记生成，对话的上传在 ``GET /conversations/{id}/uploads`` 里列。按对话列图片会看到
+        切图记录；只要调模型的，按 ``operation=generate`` 筛。素材片的字幕记录是种类 ``subtitle``、
+        来源是那条素材片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。一段对话生成的背景音乐按
+        ``kind=audio`` 与 ``conversationId`` 找。
         """
 
         jobs = await service.list_recent(
@@ -340,7 +340,7 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         job_id: uuid.UUID,
         principal: Annotated[Principal, require_permission("generation:read")],
     ) -> GenerationEnvelope:
-        """一条可见的生成记录。上传记录的 id 就是确认上传时的 ``uploadId``。"""
+        """一条可见的生成记录。"""
 
         return await envelope(await service.get(principal, job_id))
 

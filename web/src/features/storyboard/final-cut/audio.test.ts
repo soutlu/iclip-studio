@@ -1,39 +1,73 @@
 import { describe, expect, it } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { audio, host, video } from '@/testing/final-cut'
+import type { MediaUpload } from '@/shared/api/media-upload'
 import {
   audioPlayheadSpot,
-  audioTitleOf,
+  conversationAudio,
   durationLabel,
   filterAudio,
   firstAudioClipOf,
+  generatedAudio,
 } from './audio'
 import { rowOpening } from './placement'
 
-const generated = (prompt: string) =>
-  makeGenerationJob({ kind: 'audio', request: { prompt, model: 'music' } })
+const generated = (prompt: string, createdAt = '2026-09-01T12:00:00Z') =>
+  makeGenerationJob({ kind: 'audio', request: { prompt, model: 'music' }, createdAt })
+
+const uploaded = (createdAt: string, durationMs: number | null = null): MediaUpload => ({
+  contentType: 'audio/mpeg',
+  conversationId: crypto.randomUUID(),
+  createdAt,
+  durationMs,
+  height: null,
+  id: crypto.randomUUID(),
+  kind: 'audio',
+  sizeBytes: 1024,
+  url: `https://cdn.test/${createdAt}.mp3`,
+  width: null,
+})
 
 describe('音频的名字和筛选', () => {
   it('生成的音乐叫它的描述，上传的写上传时间，没有描述的叫「生成的音乐」', () => {
-    expect(audioTitleOf(generated('轻快原声吉他'))).toBe('轻快原声吉他')
-    expect(audioTitleOf(makeGenerationJob({ kind: 'audio', request: {} }))).toBe('生成的音乐')
-    expect(
-      audioTitleOf(
-        makeGenerationJob({
-          kind: 'audio',
-          operation: 'upload',
-          createdAt: '2026-09-01T12:05:00Z',
-        }),
-      ),
-    ).toMatch(/^上传的音乐 · .*2026/)
+    const [song, untitled, upload] = conversationAudio(
+      [
+        generated('轻快原声吉他', '2026-09-01T12:10:00Z'),
+        makeGenerationJob({ kind: 'audio', request: {}, createdAt: '2026-09-01T12:06:00Z' }),
+      ],
+      [uploaded('2026-09-01T12:05:00Z')],
+    )
+    expect(song?.title).toBe('轻快原声吉他')
+    expect(untitled?.title).toBe('生成的音乐')
+    expect(upload?.title).toMatch(/^上传的音乐 · .*2026/)
+  })
+
+  it('生成的和上传的合成一张表，新的在前；上传的总是已就绪、不能重新生成，有时长才带上', () => {
+    const early = uploaded('2026-09-01T11:00:00Z', 30_000)
+    const late = uploaded('2026-09-01T13:00:00Z')
+    const song = generated('轻快吉他', '2026-09-01T12:00:00Z')
+
+    const merged = conversationAudio([song], [early, late])
+
+    expect(merged.map((item) => item.id)).toEqual([late.id, song.id, early.id])
+    expect(merged.map((item) => [item.generated, item.status, item.url, item.durationMs])).toEqual([
+      [false, 'completed', late.url, null],
+      [true, song.status, song.outputUrl, song.durationMs],
+      [false, 'completed', early.url, 30_000],
+    ])
   })
 
   it('按名字筛，去掉两头空白、西文不分大小写，按原来的先后', () => {
-    const jobs = [generated('City Night 夜景'), generated('轻快吉他'), generated('city walk')]
-    expect(filterAudio(jobs, '  CITY ').map(audioTitleOf)).toEqual(['City Night 夜景', 'city walk'])
-    expect(filterAudio(jobs, '吉他').map(audioTitleOf)).toEqual(['轻快吉他'])
-    expect(filterAudio(jobs, '钢琴')).toEqual([])
-    expect(filterAudio(jobs, '')).toEqual(jobs)
+    const items = [generated('City Night 夜景'), generated('轻快吉他'), generated('city walk')].map(
+      generatedAudio,
+    )
+    expect(filterAudio(items, '  CITY ').map((item) => item.title)).toEqual([
+      'City Night 夜景',
+      'city walk',
+    ])
+    expect(filterAudio(items, '吉他').map((item) => item.title)).toEqual(['轻快吉他'])
+    expect(filterAudio(items, '钢琴')).toEqual([])
+    expect(filterAudio(items, '')).toEqual(items)
   })
 
   it('时长写成分:秒', () => {

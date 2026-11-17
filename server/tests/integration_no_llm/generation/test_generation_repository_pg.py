@@ -23,7 +23,6 @@ from iclip.domains.generation.models import (
     STATUS_SUBMITTING,
     GenerationJob,
     GenerationKind,
-    GenerationOperation,
     GenerationOutput,
 )
 from iclip.domains.generation.schemas import SubtitleSentence
@@ -49,7 +48,6 @@ from tests.helpers.generation import (
     make_edit,
     make_job,
     make_subtitle,
-    make_upload,
     video_request,
 )
 from tests.helpers.identity import InMemoryUserRepository
@@ -643,23 +641,23 @@ async def test_settled_rows_land_once_on_the_database_clock_without_a_request(
     owner = await make_user(engine)
     stale = datetime.now(UTC) - timedelta(days=365)
     grid = await finished(repo, owner, uuid.uuid4(), "grid", image_request())
-    upload = make_upload(owner_user_id=owner, created_at=stale, finished_at=stale)
-    cells = [make_cut(grid), make_cut(grid)]
+    first = make_cut(grid, created_at=stale, finished_at=stale)
+    cells = [first, make_cut(grid)]
 
-    landed = await repo.create_settled([upload, *cells])
+    landed = await repo.create_settled(cells)
     again = await repo.create_settled(
-        [replace(upload, output=GenerationOutput(url="https://example.test/replaced.png"))]
+        [replace(first, output=GenerationOutput(url="https://example.test/replaced.png"))]
     )
 
-    assert [job.id for job in landed] == [upload.id, *(cell.id for cell in cells)]
+    assert [job.id for job in landed] == [cell.id for cell in cells]
     assert again == ()
-    stored = await repo.get(upload.id, owner=None)
+    stored = await repo.get(first.id, owner=None)
     assert (stored.operation, stored.request, stored.output.url) == (
-        "upload",
+        "cut",
         None,
-        upload.output.url,
+        first.output.url,
     )
-    assert {job.provider for job in landed} == {None}, "上传与切图不交给执行方"
+    assert {job.provider for job in landed} == {None}, "切图不交给执行方"
     assert stored.created_at == stored.finished_at
     assert stored.created_at > stale + timedelta(days=1), "应用传进来的时刻被数据库改写了"
     async with engine.connect() as conn:
@@ -667,34 +665,11 @@ async def test_settled_rows_land_once_on_the_database_clock_without_a_request(
             await conn.execute(
                 text(
                     "SELECT bool_and(request IS NULL) FROM iclip.generation_jobs "
-                    "WHERE operation IN ('cut', 'upload')"
+                    "WHERE operation = 'cut'"
                 )
             )
         ).scalar_one()
     assert nulls is True, "没有请求落的是 SQL NULL，不是 JSON null"
-
-
-_MD5 = "0123456789abcdef0123456789abcdef"
-
-
-async def test_a_video_upload_is_found_by_its_md5_earliest_first_across_owners(
-    engine: AsyncEngine,
-) -> None:
-    repo = SqlGenerationRepository(engine)
-    sara, logan = await make_user(engine), await make_user(engine)
-    other = "f" * 32
-    first = _video_upload(sara, _MD5)
-    later = _video_upload(logan, _MD5)
-    await repo.create_settled([make_upload(kind="video", owner_user_id=logan)])
-    await repo.create_settled([_video_upload(logan, other)])
-    await repo.create_settled([first])
-    await repo.create_settled([later])
-
-    found = await repo.find_video_upload_by_md5(_MD5)
-
-    assert found is not None
-    assert (found.id, found.owner_user_id, found.output.content_md5) == (first.id, sara, _MD5)
-    assert await repo.find_video_upload_by_md5("e" * 32) is None
 
 
 async def test_an_output_round_trips_and_stores_only_its_present_top_level_keys(
@@ -788,14 +763,6 @@ async def test_the_latest_reference_trial_is_the_newest_video_take_for_it_by_any
     assert await repo.latest_reference_trial(uuid.uuid4()) is None
 
 
-def _video_upload(owner: uuid.UUID, md5: str) -> GenerationJob:
-    return make_upload(
-        kind="video",
-        owner_user_id=owner,
-        output=GenerationOutput(url=f"https://example.test/{uuid.uuid4()}.mp4", content_md5=md5),
-    )
-
-
 async def test_a_record_is_found_by_its_address_within_the_conversation_and_what_it_inherits(
     engine: AsyncEngine,
 ) -> None:
@@ -814,22 +781,6 @@ async def test_a_record_is_found_by_its_address_within_the_conversation_and_what
         repo,
         await repo.create(make_job(image_request(), owner_user_id=forker)),
         "https://example.test/loose.png",
-    )
-    (upload,) = await repo.create_settled(
-        [
-            make_upload(
-                owner_user_id=forker, output=GenerationOutput(url="https://example.test/upload.png")
-            )
-        ]
-    )
-    (clip,) = await repo.create_settled(
-        [
-            make_upload(
-                kind="video",
-                owner_user_id=forker,
-                output=GenerationOutput(url="https://example.test/clip.mp4"),
-            )
-        ]
     )
     watermarked = await finished(repo, forker, copy.id, "watermarked", image_request())
     broken = await repo.create(
@@ -863,7 +814,6 @@ async def test_a_record_is_found_by_its_address_within_the_conversation_and_what
         *,
         owner: uuid.UUID | None = forker,
         conversation_id: uuid.UUID | None = copy.id,
-        operation: GenerationOperation | None = None,
         kind: GenerationKind = "image",
     ) -> uuid.UUID | None:
         assert job_url is not None
@@ -873,7 +823,6 @@ async def test_a_record_is_found_by_its_address_within_the_conversation_and_what
             owner=owner,
             conversation_id=conversation_id,
             inherited=inheritance if conversation_id == copy.id else (),
-            operation=operation,
         )
         return None if found is None else found.id
 
@@ -889,16 +838,7 @@ async def test_a_record_is_found_by_its_address_within_the_conversation_and_what
     assert await find(own.output.url, owner=None) == own.id, "不限属主就读得到"
     assert await find(loose.output.url) is None, "没有对话的行不在这段对话里"
     assert await find(loose.output.url, conversation_id=None) == loose.id
-    assert await find(upload.output.url, conversation_id=None, operation="upload") == upload.id
-    assert await find(loose.output.url, conversation_id=None, operation="upload") is None
     assert await find(take.output.url, kind="video") == take.id, "按种类找，视频也找得到"
-    clip_url = clip.output.url
-    assert await find(clip_url, conversation_id=None, operation="upload", kind="video") == clip.id
-    assert await find(clip_url, conversation_id=None, operation="upload") is None, "图片里没有它"
-    assert (
-        await find(clip_url, owner=stranger, conversation_id=None, operation="upload", kind="video")
-        is None
-    ), "别人的上传按属主筛掉"
 
 
 async def test_output_urls_answer_only_for_rows_that_have_one(engine: AsyncEngine) -> None:

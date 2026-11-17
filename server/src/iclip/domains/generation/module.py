@@ -20,7 +20,7 @@ from iclip.domains.generation.model_groups import UNGROUPED, ModelGroups
 from iclip.domains.generation.models import STATUS_SUBMITTING
 from iclip.domains.generation.music import MUSIC_MODEL, QwenMusicProvider
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
-from iclip.domains.generation.ports import ConversationLineage
+from iclip.domains.generation.ports import ConversationLineage, ReferenceClipCheck
 from iclip.domains.generation.processing import FfmpegComposeProvider, ReportStage
 from iclip.domains.generation.provider import GenerationProvider, ImageModelSpec
 from iclip.domains.generation.queue import (
@@ -92,6 +92,7 @@ def build_generation_module(
     act_as: ActAs,
     clear_completion: ClearCompletion,
     lineage: ConversationLineage,
+    reference_clips: ReferenceClipCheck,
     video: VideoProviderSettings,
     video_default_model: str,
     video_allowed_models: tuple[str, ...],
@@ -215,6 +216,7 @@ def build_generation_module(
         clear_completion=clear_completion,
         lineage=lineage,
         media_probe=_FetchingProbe(fetch_url),
+        reference_clips=reference_clips,
         subtitles=subtitle_target,
         dubbing=dubbing_target,
         music=music_target,

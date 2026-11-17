@@ -35,6 +35,7 @@ from tests.helpers.generation import (
     FakeMediaProbe,
     FixedLineage,
     InMemoryGenerationRepository,
+    ReferenceClips,
     ScriptedProvider,
     image_request,
     make_composite,
@@ -129,6 +130,7 @@ def build_world(
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
         media_probe=FakeMediaProbe(),
+        reference_clips=ReferenceClips(),
         subtitles=subtitles,
     )
     return World(store, queue, connector, service, asr, cleared)

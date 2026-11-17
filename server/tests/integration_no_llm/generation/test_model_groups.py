@@ -39,6 +39,7 @@ from tests.helpers.generation import (
     FixedLineage,
     InMemoryGenerationRepository,
     MemoryObjectStore,
+    ReferenceClips,
     video_request,
 )
 from tests.helpers.identity import InMemoryUserRepository, department, make_account
@@ -168,6 +169,7 @@ def _module(
         act_as=ActAs(users),
         clear_completion=_keep_completion,
         lineage=FixedLineage(),
+        reference_clips=ReferenceClips(),
         video=VideoProviderSettings(
             submit_url=VIDEO_SUBMIT_URL,
             status_base_url=VIDEO_STATUS_URL,

@@ -105,7 +105,7 @@
 ### 成片渲染服务
 
 - **final-cut 工程不经后端检查**：编辑器直接读写对话工作区里的 `final-cut/` 目录，后端只按令牌把工程文件给预览域名、导出时把整个工程原样交给渲染服务（见 [conventions「final-cut 工程与预览域名」](../contract/conventions.md#final-cut-工程与预览域名)）；工程里的脚本只在预览域名和渲染服务里运行。
-- **后端排队与调度（[generation/render.py](../server/src/iclip/domains/generation/render.py)）**：用户点击导出后，对话模块读 final-cut 的主文件，把其中按输出地址对上了生成记录的素材存为一条 `whole_film` 生成任务，放入异步队列的专属通道（lane）；对不上的素材不记、也不拒绝。队列任务这时才读对话工作区里的整个 `final-cut/` 目录（读工程的回调在应用层装配，生成域不依赖对话域），通过内网 HTTP（`FINAL_CUT_RENDER_URL`）把工程文件连同「主文件里每个素材地址 → 下载地址」的对应表和预签名的 OSS 上传地址发给渲染服务，并轮询进度、取消（总超时与上传签名有效期均为 6 小时）。
+- **后端排队与调度（[generation/render.py](../server/src/iclip/domains/generation/render.py)）**：用户点击导出后，对话模块读 final-cut 的主文件，把其中按地址对上了来源的素材（`<video>` 对生成记录；`<audio>` 先对本对话含分叉继承的生成记录，再对本对话含分叉继承的上传，记成 `{sourceKind, sourceId, url}`）存为一条 `whole_film` 生成任务，放入异步队列的专属通道（lane）；对不上的素材不记、也不拒绝。队列任务这时才读对话工作区里的整个 `final-cut/` 目录（读工程的回调在应用层装配，生成域不依赖对话域），通过内网 HTTP（`FINAL_CUT_RENDER_URL`）把工程文件连同「主文件里每个素材地址 → 下载地址」的对应表和预签名的 OSS 上传地址发给渲染服务，并轮询进度、取消（总超时与上传签名有效期均为 6 小时）。
 - **独立 Node 渲染服务（[render/](../render/package.json)）**：运行在内网（无鉴权），挂载与前端相同的组件库目录（`RENDER_REGISTRY_ROOT`）。`POST /exports` 只收 `Content-Type: application/json`，别的类型答 `415`：渲染页面里的脚本能访问回环地址上的本服务，要求 JSON 类型后浏览器的跨源请求过不了预检，页面没法替人发起导出。请求体是 final-cut 工程的文本文件（路径 + 内容）、「主文件里的素材地址 → 下载地址」的对应表、导出哪种语言（`locale`，原文为 `null`）和预签名的 OSS 上传地址；路径不合规（空段、`.`、`..`、以 `/` 开头或结尾、反斜杠、控制字符、以 `vendor` 开头）、缺主文件、主文件里的素材没给下载地址都答 `400`。按原文以外的语言导出时受理前先读这种语言的值表、按主文件根上的声明校验、改好导出用的那份主文件里贴片和场景宿主的取值（和编辑器预览共用 `composition/` 里同一个合并函数，打包时一起打进去），值表缺失、写法不对或值的类型不对也答 `400`（规则见 [conventions「final-cut 的主文件」](../contract/conventions.md#final-cut-的主文件)）。之后在内存队列中按先进先出顺序单任务执行：把工程文件写进临时目录、把公共目录整个拷成工程里的 `vendor`（渲染器只取工程目录里的文件）→ 查主文件和它挂载的文件里用到、却没有 `@font-face` 声明的字体（`font-family` 写到的每个名字，含后备字体、`var()` 的缺省值和渲染器给首选通用字体族补上的 Inter；任何一个网页里的 `@font-face` 和它链接的工程内样式表都算声明）：渲染器会去外网取这些字体，取不到就悄悄换成别的字体，所以有就以 `font-missing` 失败、不下载素材，`message` 是缺的字体名（用「、」连接），编辑器据此提示换字体；判断方式和组件库组装共用 [composition/font-families.ts](../web/src/features/storyboard/final-cut/composition/font-families.ts)。这一步排在工程检查前面：工程检查对一部分缺字体的情况也报错，但说不出是哪些字体 → 用 `@hyperframes/core/lint` 的 `lintProject` 按 studio 规则检查整个工程（主文件和它挂载的组件文件），有错误就以 `lint-failed` 失败、不下载素材，只有警告时记日志照常渲染 → 把素材下载到工程里新建的目录（只从素材白名单里的主机下载），只在导出用的那份主文件里把素材地址换成本地路径 → 启动无头浏览器按 30 fps 渲染出 MP4（组件文件只从工程取；按原文以外的语言导出时把校验后的值表作为变量值交给渲染器）→ 通过预签名地址上传到 OSS，用完删掉临时目录。渲染用的浏览器经启动脚本启动，所有不是回环地址的请求都交给服务在回环地址上开的一个一律拒绝的代理，WebRTC 也不许绕过代理直连：页面连不了回环以外的地址（包括链路本地地址），被拦的主机记 warn 日志，这些请求在页面里就是加载失败，不让导出失败。如果渲染服务重启，内存中正在进行的任务会丢失，后端轮询发现后会将其标记为 `RENDER_LOST` 失败，提示用户重新导出。
 
 ### 后端的持久化与迁移
@@ -119,12 +119,20 @@
 | **资料库聚合查询（`domains/library/reports_pg.py`）** | 不单独建冗余表，而是跨「生成记录、对话、用户」三张表实时聚合计算素材卡封面与分叉继承关系；爆款素材库直接关联标签域的条目表与生成记录表 |
 | **审计统计报表（`domains/audit/reports_pg.py`）** | 不建持久表。每个审计请求先用短查询拿到需要的对话 ID，再在不占用数据库连接的情况下通过 `runtime_facts.py` 调用运行时的 `/v1/stats/*` 接口拉取会话、运行耗时与 Token 消耗记录，最后在一个事务里把这些记录与 `iclip` 的生成记录写入事务级临时表，该请求的全部指标 SQL 都在这个事务里读这些临时表 |
 
+### 上传台账
+
+上传归 `domains/uploads/`，记在自己的表 `iclip.media_uploads` 里，不进生成记录：
+- **直传**：`POST /uploads/sign` 签出带属主审计元数据的限时直传地址，前端直接 PUT 到对象存储；`POST /uploads/{id}/confirm` 按桶里的对象核对类型与大小后记一条（大小、内容类型与 MD5 取对象存储报的，图片宽高取签名时报的那两个数，不量时长，不需要 ffmpeg）。视频按对象的 MD5 去重：有更早的同一份就记那一份的地址并删掉这次传的对象。
+- **转存**：发消息时外部图片附件经出网下载器下载、读图片头核对后存进桶，同样记一条上传（`app/prompt_attachments.py` 调上传域）。
+- **表上不设约束**：`media_uploads` 没有外键与取值约束，种类等取值只在应用层校验（[uploads/models.py](../server/src/iclip/domains/uploads/models.py)）。
+- **谁来用**：对话的上传列表 `GET /conversations/{id}/uploads` 按分叉血缘带上继承来的上传；参考视频入库、局部编辑的参考片段（`app/reference_clips.py`）与成片导出的音频来源（`app/whole_film_exports.py`）都经组合根调上传域，生成域与参考视频域不依赖上传域。
+
 ### 生成、拆解与打标队列
 
 后端的三个异步任务队列（媒体生成、参考视频拆解、资料库打标）共用同一个 procrastinate 数据库连接器，随后端服务一同启停，且**所有队列任务均不开启自动重试**：
 
-1. **媒体生成队列（`domains/generation/`）**：
-   - **宫格切图与文件上传**：同步处理完直接写入数据库（状态即 `completed`），不进异步队列。
+1. **媒体生成队列（`domains/generation/`）**：生成记录 `iclip.generation_jobs` 只记生成与加工，不记上传（见[上传台账](#上传台账)）。
+   - **宫格切图**：同步处理完直接写入数据库（状态即 `completed`），不进异步队列。
    - **视频生成（出片、局部编辑段、超分高清版）**：异步提交给上游视频网关并轮询结果；不同视频模型族的参数拼装规则集中在 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py)。
    - **视频剪辑合成（`compose`）**：在本地调用 ffmpeg 将多段视频裁剪、重编码拼接后上传 OSS。
    - **字幕识别（`subtitle`）与背景音乐生成（`audio`）**：各自拥有独立的队列通道。素材片生成完成时不会识别字幕，只有调用 `POST /generations/subtitles` 才排入一条字幕识别任务（抽取音频调用千问 ASR `qwen-audio-3.1-asr-flash`）；背景音乐则调用千问 TTS `qwen-audio-3.1-tts-next`，下载音频后用 ffmpeg 切除首尾静音、统一响度并转存为 m4a。

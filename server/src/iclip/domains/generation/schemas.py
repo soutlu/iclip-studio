@@ -55,7 +55,6 @@ KIND_WHOLE_FILM: Final = "whole_film"
 OPERATION_GENERATE: Final = "generate"
 OPERATION_COMPOSE: Final = "compose"
 OPERATION_CUT: Final = "cut"
-OPERATION_UPLOAD: Final = "upload"
 OPERATION_RENDER: Final = "render"
 OPERATION_ENHANCE: Final = "enhance"
 
@@ -566,15 +565,22 @@ class WholeFilmVideoSource(CamelModel):
     url: DownloadUrl
 
 
+WholeFilmAudioSourceKind = Literal["generation", "upload"]
+
+
 class WholeFilmAudioSource(CamelModel):
-    job_id: uuid.UUID
+    """``<audio>`` 的素材出自哪里：``generation`` 时 ``sourceId`` 是一条生成记录，``upload`` 时是一条
+    上传。"""
+
+    source_kind: WholeFilmAudioSourceKind
+    source_id: uuid.UUID
     url: DownloadUrl
 
 
 class WholeFilmRequest(CamelModel):
-    """一条成片导出记录的请求：发起导出时 final-cut 主文件里对上了生成记录的素材（``<video>`` 的、
-    ``<audio>`` 的），和导出哪种语言的版本（``locale``，None 是原文）。工程本身不存在这里，交给渲染
-    服务时才从工作区读。"""
+    """一条成片导出记录的请求：发起导出时 final-cut 主文件里对上了来源的素材（``<video>`` 对生成记录，
+    ``<audio>`` 先对生成记录、再对本对话的上传），和导出哪种语言的版本（``locale``，None 是原文）。
+    工程本身不存在这里，交给渲染服务时才从工作区读。"""
 
     kind: ClassVar[GenerationKind] = KIND_WHOLE_FILM
     operation: ClassVar[GenerationOperation] = OPERATION_RENDER
@@ -847,7 +853,6 @@ __all__ = [
     "OPERATION_ENHANCE",
     "OPERATION_GENERATE",
     "OPERATION_RENDER",
-    "OPERATION_UPLOAD",
     "READ_BACK_CONTEXT",
     "RECORD_ONLY_FIELDS",
     "STATUS_COMPLETED",
@@ -907,6 +912,7 @@ __all__ = [
     "VideoTaskResult",
     "VideoTaskStatus",
     "WholeFilmAudioSource",
+    "WholeFilmAudioSourceKind",
     "WholeFilmRequest",
     "WholeFilmVideoSource",
     "generation_out",

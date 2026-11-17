@@ -23,12 +23,14 @@ import {
   zLatestWholeFilmExportConversationsConversationIdWholeFilmExportsLatestGetResponse as zLatestExport,
   zWholeFilmExportStartedOut,
 } from '@/shared/api/generated/zod.gen'
+import { readConversationUploads } from '@/shared/api/media-upload'
 import {
   generationsRefetchInterval,
   readAllGenerations,
   storyboardQueryKeys,
   type GenerationJob,
 } from '../storyboard.api'
+import { conversationAudio, generatedAudio, type ConversationAudio } from './audio'
 import { CAPTIONS_PATH, isCaptionsHost } from './composition/captions'
 import type { CatalogItem, ComponentCatalog } from './composition/catalog'
 import { PROJECT_MAIN } from './composition/film'
@@ -314,12 +316,17 @@ export const cancelWholeFilmExport = (conversationId: string, exportId: string) 
     method: 'DELETE',
   })
 
-/** 这段对话的音频记录（生成的音乐和上传的音频），新的在前；有没生成完的就隔一会儿再读。 */
+/** 这段对话的音频（生成的音乐和挂在这段对话上的音频上传），新的在前；有没生成完的就隔一会儿再读。 */
 export const useConversationMusic = (conversationId: string) =>
   useQuery({
     queryKey: wholeFilmQueryKeys.music(conversationId),
-    queryFn: ({ signal }) =>
-      readAllGenerations({ conversationId, kind: 'audio' }, signal, '读取音频失败'),
+    queryFn: async ({ signal }) => {
+      const [jobs, uploads] = await Promise.all([
+        readAllGenerations({ conversationId, kind: 'audio' }, signal, '读取音频失败'),
+        readConversationUploads(conversationId, 'audio', signal, '读取音频失败'),
+      ])
+      return conversationAudio(jobs, uploads)
+    },
     refetchInterval: ({ state }) => generationsRefetchInterval(state.data ?? []),
   })
 
@@ -436,8 +443,8 @@ export const refreshConversationMusic = (
 ) => {
   const key = wholeFilmQueryKeys.music(conversationId)
   if (job !== undefined)
-    queryClient.setQueryData<GenerationJob[]>(key, (previous) => [
-      job,
+    queryClient.setQueryData<ConversationAudio[]>(key, (previous) => [
+      generatedAudio(job),
       ...(previous ?? []).filter((item) => item.id !== job.id),
     ])
   return queryClient.invalidateQueries({ queryKey: key })
