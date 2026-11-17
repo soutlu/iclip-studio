@@ -255,6 +255,15 @@ describe('按语言放人声', () => {
     )
   })
 
+  it('原文的旁白（只写了配哪句的配音片段）：原文、保留原声时留着，AI 配音时去掉', () => {
+    const NARRATION =
+      '<audio id="n1" class="clip audio" data-start="2" data-duration="1.5" src="https://m.test/narration.m4a" data-dub-of="cap-n1" data-dub-voice="v-1"></audio>'
+    const html = film(EN_DUB).replace(`\n  ${MUSIC}`, `\n  ${MUSIC}\n  ${NARRATION}`)
+    expect(withLocalizedVoices(html, null)).toContain(NARRATION)
+    expect(withLocalizedVoices(html, 'de')).toContain(NARRATION)
+    expect(withLocalizedVoices(html, 'en')).not.toContain(NARRATION)
+  })
+
   it('按语言导出用上它：原文去掉配音，English 用 English 的配音', () => {
     const main = film(EN_DUB)
     const project = [

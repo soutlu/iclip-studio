@@ -96,9 +96,9 @@ describe('谁的节拍', () => {
     expect(isBeatSource(audio())).toBe(true)
     expect(isBeatSource(audio({ hidden: true }))).toBe(false)
     expect(isBeatSource(audio({ audioGroup: 'voice' }))).toBe(false)
-    expect(isBeatSource(audio({ dub: { locale: 'en', caption: 'c1', trimmed: false } }))).toBe(
-      false,
-    )
+    expect(
+      isBeatSource(audio({ dub: { locale: 'en', caption: 'c1', trimmed: false, voice: null } })),
+    ).toBe(false)
     expect(isBeatSource(video())).toBe(false)
     expect([
       ...timelineBeats([audio({ hidden: true }), audio({ id: 'music-2' })], grids, 100).keys(),

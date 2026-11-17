@@ -31,7 +31,13 @@ const voice = audio({ id: 'v', start: 1_000, duration: 1_000, track: 1 })
 const mixed = [voice, shot, music, title]
 /** 一句字幕在语言 `locale` 下的配音片段，在声音区第 `track` 行。 */
 const dubbed = (id: string, locale: string, track: number, start: number) =>
-  audio({ id, start, duration: 1_000, track, dub: { locale, caption: id, trimmed: false } })
+  audio({
+    id,
+    start,
+    duration: 1_000,
+    track,
+    dub: { locale, caption: id, trimmed: false, voice: null },
+  })
 
 const layout = (film: readonly FilmClip[]) =>
   rowsOf(film).map((row) => [row.zone, row.track, row.clips.map((clip) => clip.id)])

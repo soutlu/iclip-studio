@@ -46,6 +46,7 @@ from iclip.domains.generation.schemas import (
     KIND_AUDIO,
     KIND_DUBBING,
     KIND_IMAGE,
+    KIND_SPEECH,
     KIND_SUBTITLE,
     KIND_VIDEO,
     OPERATION_CUT,
@@ -209,7 +210,7 @@ def make_job(
         else FAKE_SUBTITLE_PROVIDER
         if row_kind == KIND_SUBTITLE
         else FAKE_DUBBING_PROVIDER
-        if row_kind == KIND_DUBBING
+        if row_kind in (KIND_DUBBING, KIND_SPEECH)
         else FAKE_MUSIC_PROVIDER
         if row_kind == KIND_AUDIO
         else FAKE_IMAGE_PROVIDER

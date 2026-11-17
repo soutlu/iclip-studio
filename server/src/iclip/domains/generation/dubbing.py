@@ -1,4 +1,5 @@
-"""配音：用参考音频的声音把每句译文合成出来，按原字幕的时间放好，拼成一条和素材片等长的音轨。
+"""配音：用参考音频的声音把每句译文合成出来，按原字幕的时间放好，拼成一条和素材片等长的音轨；按文字合成
+一段语音（``SpeechRequest``）也在这里，是只有一句、不对着素材片的配音。
 
 合成那一步交给 ``SpeechSynthesizer``；截参考音频、对齐、拼音轨都在本地用 ffmpeg 做。"""
 
@@ -28,6 +29,7 @@ from iclip.domains.generation.schemas import (
     DubbingLine,
     DubbingOriginalReference,
     DubbingRequest,
+    SpeechRequest,
 )
 from iclip.platform.media.audio import (
     AudioPlacement,
@@ -58,16 +60,25 @@ _CONTENT_TYPE: Final = "audio/mp4"
 
 class SpeechSynthesizer(Protocol):
     async def synthesize(
-        self, text: str, *, reference: bytes, locale: TargetLocale, api_key: str | None
+        self, text: str, *, reference: bytes, locale: TargetLocale | None, api_key: str | None
     ) -> bytes:
-        """用 ``reference`` 的声音把 ``text`` 用 ``locale`` 这种语言念出来，返回一段音频。
+        """用 ``reference`` 的声音把 ``text`` 念出来（给了 ``locale`` 时用这种语言念），返回一段音频。
 
         ``reference`` 是不超过 10 秒的 WAV（单声道、16 位 PCM、48 kHz）。``api_key`` 是这条记录所在
         配置组的配音 key，默认组为 ``None``，即用合成服务自己装配的 key。返回的音频格式不限，ffmpeg
         解得开就行；多长都可以，变速、截断由调用方按这句的位置做。合成失败抛 ``ProviderError``，
-        这条配音记录随之失败、不自动重来。
+        这条记录随之失败、不自动重来。
         """
         ...
+
+
+@dataclass(frozen=True, slots=True)
+class _Layout:
+    """要铺成音轨的各句、每句的结果和音轨总长（毫秒）。"""
+
+    placements: list[AudioPlacement]
+    dubbed: list[DubbedLine]
+    total_ms: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,35 +181,21 @@ class DubbingProvider:
         return group_key(group, group.speech_api_key, what="配音")
 
     async def submit(self, job: GenerationJob) -> ProviderSubmission:
-        request = request_of(job, DubbingRequest, provider=PROVIDER_NAME)
+        request = request_of(job, (DubbingRequest, SpeechRequest), provider=PROVIDER_NAME)
         # 先定 key 再下载素材：组配错了不白下整条视频。
         api_key = self._api_key(job)
         with TemporaryDirectory(prefix="iclip-dubbing-") as tmp:
             root = Path(tmp)
-            reference = await self._reference(request, root)
-            slots = line_slots(request.lines, request.video_duration_ms)
-            placements: list[AudioPlacement] = []
-            dubbed: list[DubbedLine] = []
-            for index, (line, slot_ms) in enumerate(zip(request.lines, slots, strict=True)):
-                clip = root / f"line-{index}.wav"
-                clip_ms = await self._synthesized(
-                    index, line.text, reference, request, clip, api_key=api_key
-                )
-                fitted = fit_line(index, clip_ms, slot_ms)
-                dubbed.append(fitted)
-                placements.append(
-                    AudioPlacement(
-                        clip=clip,
-                        start_ms=line.start_ms,
-                        length_ms=slot_ms,
-                        speed=fitted.speed,
-                        fade_out_ms=TRIM_FADE_MS if fitted.trimmed else 0,
-                    )
-                )
+            if isinstance(request, SpeechRequest):
+                reference = await self._sample(request.reference.url, root)
+                layout = await self._speech(request, reference, root, api_key=api_key)
+            else:
+                reference = await self._take_reference(request, root)
+                layout = await self._lines(request, reference, root, api_key=api_key)
             track = root / f"dubbing.{_EXT}"
             try:
                 duration_ms = await lay_audio_track(
-                    placements, total_ms=request.video_duration_ms, dest=track
+                    layout.placements, total_ms=layout.total_ms, dest=track
                 )
             except MediaError as exc:
                 raise ProviderError(
@@ -215,9 +212,11 @@ class DubbingProvider:
             raise ProviderError(
                 f"配音已合成但存不进桶: {exc}", code="OUTPUT_STORE_FAILED", retryable=False
             ) from exc
+        dubbed = layout.dubbed
         _logger.info(
             "配音已合成",
             job_id=job.id,
+            kind=job.kind,
             lines=len(dubbed),
             sped_up=sum(1 for line in dubbed if line.speed > 1),
             trimmed=sum(1 for line in dubbed if line.trimmed),
@@ -237,26 +236,91 @@ class DubbingProvider:
             retryable=False,
         )
 
-    async def _reference(self, request: DubbingRequest, root: Path) -> bytes:
-        dest = root / "reference.wav"
-        if not isinstance(request.reference, DubbingOriginalReference):
-            source = root / "reference-source"
-            await self._download(request.reference.url, source, max_bytes=MAX_AUDIO_BYTES)
-            start_ms, length_ms = 0, MAX_REFERENCE_MS
-            silent = "参考音频里没有声音，换一段参考音频"
-        else:
-            speech = request.reference.spans or request.lines
-            window = reference_window(speech, request.video_duration_ms)
-            if window.speech_ms < MIN_REFERENCE_SPEECH_MS:
-                raise ProviderError(
-                    "原声里说话太少，换一段参考音频",
-                    code="DUBBING_REFERENCE_TOO_SHORT",
-                    retryable=False,
+    async def _lines(
+        self, request: DubbingRequest, reference: bytes, root: Path, *, api_key: str | None
+    ) -> _Layout:
+        """每句放在它的开始、占满它的位置，音轨和素材片等长。"""
+
+        slots = line_slots(request.lines, request.video_duration_ms)
+        placements: list[AudioPlacement] = []
+        dubbed: list[DubbedLine] = []
+        for index, (line, slot_ms) in enumerate(zip(request.lines, slots, strict=True)):
+            clip = root / f"line-{index}.wav"
+            clip_ms = await self._synthesized(
+                index, line.text, reference, request.locale, clip, api_key=api_key
+            )
+            fitted = fit_line(index, clip_ms, slot_ms)
+            dubbed.append(fitted)
+            placements.append(
+                AudioPlacement(
+                    clip=clip,
+                    start_ms=line.start_ms,
+                    length_ms=slot_ms,
+                    speed=fitted.speed,
+                    fade_out_ms=TRIM_FADE_MS if fitted.trimmed else 0,
                 )
-            source = root / "source.mp4"
-            await self._download(request.video_url, source, max_bytes=MAX_VIDEO_BYTES)
-            start_ms, length_ms = window.start_ms, window.end_ms - window.start_ms
-            silent = "素材片没有音轨，换一段参考音频"
+            )
+        return _Layout(placements=placements, dubbed=dubbed, total_ms=request.video_duration_ms)
+
+    async def _speech(
+        self, request: SpeechRequest, reference: bytes, root: Path, *, api_key: str | None
+    ) -> _Layout:
+        """一句从 0 放起；有上限时照配音每句的规则放进上限，但不补静音到上限：念多长（加速后）就多长。"""
+
+        clip = root / "line-0.wav"
+        clip_ms = await self._synthesized(
+            0, request.text, reference, request.locale, clip, api_key=api_key
+        )
+        limit_ms = clip_ms if request.max_duration_ms is None else request.max_duration_ms
+        fitted = fit_line(0, clip_ms, limit_ms)
+        length_ms = min(limit_ms, math.ceil(clip_ms / fitted.speed))
+        placement = AudioPlacement(
+            clip=clip,
+            start_ms=0,
+            length_ms=length_ms,
+            speed=fitted.speed,
+            fade_out_ms=TRIM_FADE_MS if fitted.trimmed else 0,
+        )
+        return _Layout(placements=[placement], dubbed=[fitted], total_ms=length_ms)
+
+    async def _take_reference(self, request: DubbingRequest, root: Path) -> bytes:
+        if not isinstance(request.reference, DubbingOriginalReference):
+            return await self._sample(request.reference.url, root)
+        speech = request.reference.spans or request.lines
+        window = reference_window(speech, request.video_duration_ms)
+        if window.speech_ms < MIN_REFERENCE_SPEECH_MS:
+            raise ProviderError(
+                "原声里说话太少，换一段参考音频",
+                code="DUBBING_REFERENCE_TOO_SHORT",
+                retryable=False,
+            )
+        source = root / "source.mp4"
+        await self._download(request.video_url, source, max_bytes=MAX_VIDEO_BYTES)
+        return await self._cut(
+            source,
+            root,
+            start_ms=window.start_ms,
+            length_ms=window.end_ms - window.start_ms,
+            silent="素材片没有音轨，换一段参考音频",
+        )
+
+    async def _sample(self, url: str, root: Path) -> bytes:
+        """参考音频库的音色、音频上传：取前 ``MAX_REFERENCE_MS``。"""
+
+        source = root / "reference-source"
+        await self._download(url, source, max_bytes=MAX_AUDIO_BYTES)
+        return await self._cut(
+            source,
+            root,
+            start_ms=0,
+            length_ms=MAX_REFERENCE_MS,
+            silent="参考音频里没有声音，换一段参考音频",
+        )
+
+    async def _cut(
+        self, source: Path, root: Path, *, start_ms: int, length_ms: int, silent: str
+    ) -> bytes:
+        dest = root / "reference.wav"
         try:
             await extract_audio_clip(source, dest=dest, start_ms=start_ms, duration_ms=length_ms)
         except NoAudioStream as exc:
@@ -281,13 +345,13 @@ class DubbingProvider:
         index: int,
         text: str,
         reference: bytes,
-        request: DubbingRequest,
+        locale: TargetLocale | None,
         dest: Path,
         *,
         api_key: str | None,
     ) -> int:
         audio = await self._synthesizer.synthesize(
-            text, reference=reference, locale=request.locale, api_key=api_key
+            text, reference=reference, locale=locale, api_key=api_key
         )
         raw = dest.with_suffix(".synthesized")
         raw.write_bytes(audio)

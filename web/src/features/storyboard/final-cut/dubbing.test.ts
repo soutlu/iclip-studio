@@ -2,13 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { audio, caption, video } from '@/testing/final-cut'
 import type { FilmClip } from './composition/film'
 import {
+  dubbingPlanOf,
   dubbingRequests,
   dubClips,
   dubsOf,
   lineRefusals,
+  narrationDubs,
+  narrationRequests,
+  shownIn,
   type DubbingRequest,
   type VoiceOfCaption,
 } from './dubbing'
+import { SOURCE_LOCALE } from './locales'
 
 const A = 'https://media.test/videos/a.mp4'
 const B = 'https://media.test/videos/b.mp4'
@@ -137,13 +142,153 @@ describe('配好的配音建成配音片段', () => {
 
   it('换掉的只是配好的那几句在这种语言下的配音片段', () => {
     const dub = (id: string, of: string, locale = 'en') =>
-      audio({ id, dub: { locale, caption: of, trimmed: false } })
+      audio({ id, dub: { locale, caption: of, trimmed: false, voice: null } })
     const clips = [...CLIPS, dub('d1', 'c1'), dub('d2', 'c2'), dub('d2-de', 'c2', 'de')]
     expect(dubsOf(clips, 'en', ['c2'])).toEqual(['d2'])
   })
 })
 
+/** 原文的旁白片段：配 `of` 这句，合成用的音色是 `voice`。 */
+const narrationOf = (of: string, voice: string | null = 'v-own') =>
+  audio({ id: `n-${of}`, dub: { locale: null, caption: of, trimmed: false, voice } })
+
+/** 在 `CLIPS` 上加两句旁白：n1（3.6 秒，夹在素材 A 最后一句和素材 B 那句之间）和 n2（8 秒，最后一句）。 */
+const NARRATED: FilmClip[] = [
+  ...CLIPS,
+  caption({ id: 'n1', variable: 'vn1', start: 3_600, duration: 300 }),
+  caption({ id: 'n2', variable: 'vn2', start: 8_000, duration: 500 }),
+  narrationOf('n1'),
+  narrationOf('n2'),
+]
+const NARRATED_VALUES = { ...VALUES, vn1: 'narr one', vn2: 'narr two' }
+
+describe('各语言下显示哪些配音片段', () => {
+  const narration = narrationOf('n1')
+  const english = audio({
+    id: 'd',
+    dub: { locale: 'en', caption: 'c1', trimmed: false, voice: null },
+  })
+
+  it('原文下显示旁白，不显示其它语言的配音', () => {
+    expect([narration, english].filter(shownIn(SOURCE_LOCALE, 'original'))).toEqual([narration])
+  })
+
+  it('保留原声的语言下显示旁白', () => {
+    expect([narration, english].filter(shownIn('en', 'original'))).toEqual([narration])
+  })
+
+  it('AI 配音的语言下只显示这种语言的配音，不显示旁白', () => {
+    expect([narration, english].filter(shownIn('en', 'dub'))).toEqual([english])
+  })
+})
+
+describe('旁白要配的句子', () => {
+  const lines = (voiceOf: VoiceOfCaption, picked?: (caption: string) => boolean) =>
+    narrationRequests(NARRATED, NARRATED_VALUES, voiceOf, picked).lines
+
+  it('用这种语言的字；最晚占到它后面下一句要配音的字幕开始，最后一句不限', () => {
+    expect(lines(everyLine)).toEqual([
+      { caption: 'n1', text: 'narr one', voice: 'v-own', maxMs: 900 },
+      { caption: 'n2', text: 'narr two', voice: 'v-own' },
+    ])
+  })
+
+  it('音色：自己选的、跟着这种语言的按它，取到「原声」时用旁白记着的音色', () => {
+    const voiceOf: VoiceOfCaption = (id) => (id === 'n1' ? 'emma' : null)
+    expect(lines(voiceOf).map(({ caption: id, voice }) => ({ id, voice }))).toEqual([
+      { id: 'n1', voice: 'emma' },
+      { id: 'n2', voice: 'v-own' },
+    ])
+  })
+
+  it('不配音的句子不配，也不占位', () => {
+    const voiceOf: VoiceOfCaption = (id) => (id === 'c5' || id === 'n2' ? undefined : null)
+    expect(lines(voiceOf)).toEqual([{ caption: 'n1', text: 'narr one', voice: 'v-own' }])
+  })
+
+  it('没翻的句子不配，也不占位', () => {
+    const values = { ...NARRATED_VALUES, v5: '', vn2: '' }
+    expect(narrationRequests(NARRATED, values, everyLine).lines).toEqual([
+      { caption: 'n1', text: 'narr one', voice: 'v-own' },
+    ])
+  })
+
+  it('只挑一句：只配这一句，上限照所有要配的句子算', () => {
+    expect(lines(everyLine, (id) => id === 'n1')).toEqual([
+      { caption: 'n1', text: 'narr one', voice: 'v-own', maxMs: 900 },
+    ])
+  })
+})
+
+describe('一种语言下的配音：素材片和旁白一起', () => {
+  const onlyNarration = [
+    caption({ id: 'n1', variable: 'vn1', start: 0, duration: 500 }),
+    narrationOf('n1'),
+  ]
+
+  it('有视频片段和旁白：两种都在', () => {
+    const plan = dubbingPlanOf(NARRATED, NARRATED_VALUES, noLength, everyLine)
+    if ('refusal' in plan) throw new Error(plan.refusal)
+    expect(plan.requests).toHaveLength(2)
+    expect(plan.narrations.map((line) => line.caption)).toEqual(['n1', 'n2'])
+  })
+
+  it('没有视频片段、只有翻了的旁白：只配旁白', () => {
+    expect(dubbingPlanOf(onlyNarration, { vn1: 'hi' }, noLength, everyLine)).toEqual({
+      requests: [],
+      narrations: [{ caption: 'n1', text: 'hi', voice: 'v-own' }],
+    })
+  })
+
+  it('没有视频片段、旁白没翻：原因是没翻', () => {
+    expect(dubbingPlanOf(onlyNarration, {}, noLength, everyLine)).toEqual({
+      refusal: 'untranslated',
+    })
+  })
+
+  it('没有视频片段也没有旁白：原因照素材片的', () => {
+    expect(dubbingPlanOf([], {}, noLength, everyLine)).toEqual({ refusal: 'empty' })
+  })
+})
+
+describe('其它语言给旁白配好的音建成配音片段', () => {
+  const audioOf = (durationMs: number | null) => ({ url: 'n.m4a', durationMs, trimmed: false })
+
+  it('和字幕对齐、从音频开头放，长度是音频的长度，有上限时不超过它', () => {
+    expect(
+      narrationDubs(NARRATED, [
+        { line: { caption: 'n1', text: 'a', voice: 'v', maxMs: 900 }, audio: audioOf(950) },
+        { line: { caption: 'n2', text: 'b', voice: 'v' }, audio: audioOf(1_800) },
+      ]).map(({ caption: id, start, duration, mediaStart, src }) => ({
+        id,
+        start,
+        duration,
+        mediaStart,
+        src,
+      })),
+    ).toEqual([
+      { id: 'n1', start: 3_600, duration: 900, mediaStart: 0, src: 'n.m4a' },
+      { id: 'n2', start: 8_000, duration: 1_800, mediaStart: 0, src: 'n.m4a' },
+    ])
+  })
+
+  it('字幕已经不在了的不建', () => {
+    expect(
+      narrationDubs(CLIPS, [
+        { line: { caption: 'n1', text: 'a', voice: 'v' }, audio: audioOf(1_000) },
+      ]),
+    ).toEqual([])
+  })
+})
+
 describe('各句为什么配不了音', () => {
+  it('有旁白的句子翻了就配得了，没翻的说没翻', () => {
+    const values = { ...NARRATED_VALUES, vn2: '' }
+    const refusals = lineRefusals(NARRATED, values, new Set(), () => true)
+    expect(refusals.has('n1')).toBe(false)
+    expect(refusals.get('n2')).toBe('untranslated')
+  })
+
   it('不属于视频片段、还没翻、素材片对不上生成记录的句子各有原因；配得了的不在里面', () => {
     const values = { v1: 'one', v2: 'two', v3: 'three', v4: 'four', v6: 'six' }
     const dubbable = new Set(['c1', 'c2', 'c3', 'c4'])

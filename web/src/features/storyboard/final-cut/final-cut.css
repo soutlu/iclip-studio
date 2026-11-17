@@ -557,6 +557,74 @@
   margin-top: 8px;
 }
 
+/* 原文下「旁白配音」展开的一块：文案框、音色小块，最下面一行音色名在左、「插入配音与字幕」在右 */
+.wf-narration {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 12px 8px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container);
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+}
+
+/* 两个类压过文字框自带的圆角、内边距和字号，和字幕列表里的文字框一样 */
+.wf-narration .wf-narration-text {
+  min-height: 0;
+  padding: 4px 8px;
+  border-color: transparent;
+  border-radius: var(--radius-xs);
+  background: var(--color-top-layer);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  resize: none;
+}
+
+.wf-narration .wf-narration-text:focus {
+  border-color: var(--color-on-surface);
+}
+
+.wf-narration-voices {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.wf-narration-note {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+}
+
+.wf-narration-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wf-narration-voice {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 两个类压过按钮自带的高度、内边距和字号 */
+.wf-narration-foot .wf-narration-insert {
+  height: 24px;
+  flex: none;
+  padding: 0 10px;
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+
 /* 「组件文字」一块的头：名字在左、开始时间在右，点了选中、跳到它的开始 */
 .wf-caption-time.wf-text-head {
   display: flex;

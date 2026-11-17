@@ -146,12 +146,13 @@ export type FilmView = {
   canvas: Canvas
   /**
    * 主文件根下所有带时间的元素（字幕宿主除外），按它们在文件里的先后；后面跟着字幕场景里的各句字幕，
-   * 按它们在场景里的先后。配音片段只有当前显示的语言 AI 配音时的（见 `shownIn`）。
+   * 按它们在场景里的先后。配音片段只有当前显示的语言 AI 配音时这种语言的，和原文下、保留原声时的旁白（见
+   * `shownIn`）。
    */
   clips: readonly FilmClip[]
   /**
-   * 没显示的配音片段（别的语言的、当前语言保留原声时这种语言的；原文下是所有的）：新开一行时它们也要跟着重新编号
-   * （见 `rowOpeningAmong`）。
+   * 没显示的配音片段（别的语言的、当前语言保留原声时这种语言的、AI 配音时原文的旁白；原文下是其它语言所有的）：
+   * 新开一行时它们也要跟着重新编号（见 `rowOpeningAmong`）。
    */
   unshownDubs: readonly FilmClip[]
   /** 当前显示的语言的人声设置（见 `voices.ts`）；原文总是保留原声。 */
@@ -723,6 +724,51 @@ const followClips = (
   const dubs = dubsFollowing(before, allClipsOf(main, scene, catalog))
   for (const [id, start] of dubs.starts) setOwnTiming(main, id, { start: start / 1000 })
   for (const id of dubs.removed) main.removeElement(id)
+}
+
+/** 要加的一个配音片段，和它记着的音色（只有旁白记，见 `AudioDub`）。 */
+type VoicedDub = NewDub & { voice: string | null }
+
+/**
+ * 把一批配音片段（语言 `locale`，旁白是原文）写在根下第一个，一起放进第一条这几段时间都空着的「配音」行（见
+ * `dubRowFor`，只看这种语言下它们显示时显示着的片段）。一个都没有时不动。
+ */
+const addDubElements = (
+  engine: Composition,
+  catalog: ComponentCatalog,
+  rootId: string,
+  locale: Language,
+  dubs: readonly VoicedDub[],
+) => {
+  if (dubs.length === 0) return
+  const { track, renumber } = dubRowFor(
+    clipsOf(engine, catalog),
+    dubs,
+    shownIn(locale, locale === SOURCE_LOCALE ? 'original' : 'dub'),
+  )
+  for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
+  for (const { caption, trimmed, voice, ...dub } of dubs)
+    engine.addElement(
+      rootId,
+      0,
+      audioElement({
+        ...dub,
+        id: newClipId(),
+        track,
+        volume: 1,
+        fadeIn: 0,
+        fadeOut: 0,
+        loop: false,
+        hidden: false,
+        link: null,
+        syncOrigin: null,
+        dub: { locale, caption, trimmed, voice },
+        audioGroup: null,
+        fxCarve: null,
+        fxChain: null,
+        automation: null,
+      }),
+    )
 }
 
 /** 主文件根上记的各语言人声设置（见 `voices.ts`）。 */
@@ -1908,12 +1954,14 @@ export function useFilmSession(
   /**
    * 加几句字幕，一起算一步撤销：先准备好字幕场景文件（还没有时建一份空的），再按那时工程里的片段（含字幕）
    * 用 `captionsFor` 算出要加的句子，场景里各按开始时间排进它的元素，主文件根上各声明一个变量；主文件里还没有
-   * 字幕宿主时加在根下最后。答复新字幕的编号（按 `captionsFor` 给的先后；一句都没有时是空的、不动工程）；
-   * 还没有工程、场景文件建不了时不动工程（建不了时提示原因），答复 undefined。
+   * 字幕宿主时加在根下最后。给了 `narration` 时每句再加一个和它对齐的旁白片段（原文下的配音片段，地址、名字、
+   * 音色是给的），放进「配音」行（见 `addDubElements`），同一步撤销。答复新字幕的编号（按 `captionsFor` 给的先后；
+   * 一句都没有时是空的、不动工程）；还没有工程、场景文件建不了时不动工程（建不了时提示原因），答复 undefined。
    */
   const addCaptions = useCallback(
     async (
       captionsFor: (clips: readonly FilmClip[]) => readonly NewCaption[],
+      narration?: { src: string; label: string; voice: string },
     ): Promise<string[] | undefined> => {
       const project = projectRef.current
       if (project === null) return undefined
@@ -1950,6 +1998,22 @@ export function useFilmSession(
           )
           main.declareVariable(captionVariable(caption))
         }
+        if (narration !== undefined)
+          addDubElements(
+            main,
+            catalog,
+            root.id,
+            SOURCE_LOCALE,
+            captions.map(({ id, start, duration }) => ({
+              ...narration,
+              caption: id,
+              start,
+              duration,
+              mediaStart: 0,
+              playbackRate: 1,
+              trimmed: false,
+            })),
+          )
       })
       show()
       return captions.map((caption) => caption.id)
@@ -2066,9 +2130,10 @@ export function useFilmSession(
 
   /**
    * 写进语言 `locale` 生成好的配音，算一步撤销：`plan` 拿到这一刻的片段（含字幕和所有语言的配音片段），答复要换掉
-   * 的配音片段和要加的配音片段。换掉的先删，加的一起放进第一条这几段时间都空着的「配音」行（见 `dubRowFor`，
-   * 只看这种语言 AI 配音时显示的片段），写在根下第一个；这种语言的人声设置按 `update` 改（发起时定的：换整种语言的
-   * 音色、记下一句的选择……），并改成 AI 配音。答复加了几个；一个都不加时不动工程，答 0。
+   * 的配音片段、要加的素材片的配音片段（`added`）和旁白的配音片段（`narrated`）。换掉的先删；加的两种各一批，
+   * 先后各自放进第一条这几段时间都空着的「配音」行（见 `addDubElements`；素材片的配音占到下一句，会盖住夹在中间的
+   * 旁白，所以分开放），写在根下第一个；这种语言的人声设置按 `update` 改（发起时定的：换整种语言的音色、记下一句的
+   * 选择……），并改成 AI 配音。答复加了几个；一个都不加时不动工程，答 0。
    */
   const addDubs = useCallback(
     (
@@ -2077,47 +2142,23 @@ export function useFilmSession(
       plan: (clips: readonly FilmClip[]) => {
         removed: readonly string[]
         added: readonly NewDub[]
+        narrated: readonly NewDub[]
       },
     ): number => {
       const project = projectRef.current
       const main = project === null ? undefined : mainOf(project)
       const root = main === undefined ? undefined : rootOf(main)
       if (project === null || main === undefined || root === undefined) return 0
-      const { removed, added } = plan(allClipsOf(main, sceneOf(project), catalog))
-      if (added.length === 0) return 0
+      const { removed, added, narrated } = plan(allClipsOf(main, sceneOf(project), catalog))
+      if (added.length + narrated.length === 0) return 0
+      const unvoiced = (dubs: readonly NewDub[]) => dubs.map((dub) => ({ ...dub, voice: null }))
       edit((engine) => {
         for (const id of removed) engine.removeElement(id)
-        const { track, renumber } = dubRowFor(
-          clipsOf(engine, catalog),
-          added,
-          shownIn(locale, 'dub'),
-        )
-        for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
-        for (const { caption, trimmed, ...dub } of added)
-          engine.addElement(
-            root.id,
-            0,
-            audioElement({
-              ...dub,
-              id: newClipId(),
-              track,
-              volume: 1,
-              fadeIn: 0,
-              fadeOut: 0,
-              loop: false,
-              hidden: false,
-              link: null,
-              syncOrigin: null,
-              dub: { locale, caption, trimmed },
-              audioGroup: null,
-              fxCarve: null,
-              fxChain: null,
-              automation: null,
-            }),
-          )
+        addDubElements(engine, catalog, root.id, locale, unvoiced(added))
+        addDubElements(engine, catalog, root.id, locale, unvoiced(narrated))
         writeVoice(engine, locale, (setting) => ({ ...update(setting), mode: 'dub' }))
       })
-      return added.length
+      return added.length + narrated.length
     },
     [catalog, edit],
   )

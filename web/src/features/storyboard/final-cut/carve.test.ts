@@ -30,7 +30,7 @@ const dubEn = audio({
   id: 'dub-en',
   start: 1_000,
   duration: 1_000,
-  dub: { locale: 'en', caption: 'cap-1', trimmed: false },
+  dub: { locale: 'en', caption: 'cap-1', trimmed: false, voice: null },
 })
 
 describe('声音角色', () => {
@@ -58,7 +58,7 @@ describe('谁是人声', () => {
       video({ id: 'mute', duration: 2_000, muted: true }),
       original,
       dubEn,
-      audio({ id: 'dub-de', dub: { locale: 'de', caption: 'cap-1', trimmed: false } }),
+      audio({ id: 'dub-de', dub: { locale: 'de', caption: 'cap-1', trimmed: false, voice: null } }),
       audio({ id: 'other-music', duration: 4_000 }),
     ]
     expect(ids(carveVoices(BED, clips))).toEqual(['loud', 'orig', 'dub-en', 'dub-de'])

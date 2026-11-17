@@ -65,12 +65,32 @@ describe('localizedVoices', () => {
     ])
   })
 
-  it('只写了语言或只写了配哪句的音频不算配音片段', () => {
-    const halfway = [
-      { tag: 'audio', attributes: { id: 'x', src: 'x.m4a', 'data-locale': 'en' } },
-      { tag: 'audio', attributes: { id: 'y', src: 'y.m4a', 'data-dub-of': 'cap-a1' } },
-    ]
-    expect(localizedVoices(halfway, {}, null)).toEqual([])
+  it('只写了语言、没写配哪句的音频不算配音片段', () => {
+    const halfway = [{ tag: 'audio', attributes: { id: 'x', src: 'x.m4a', 'data-locale': 'en' } }]
+    expect(localizedVoices(halfway, { en: DUB }, null)).toEqual([])
+  })
+
+  describe('原文的旁白（只写了配哪句、没写语言的配音片段）', () => {
+    const narration: VoiceElement = {
+      tag: 'audio',
+      attributes: { id: 'n', src: 'n.m4a', 'data-dub-of': 'cap-n', 'data-dub-voice': 'v-1' },
+    }
+    const elements = [video(), narration, dub('en')]
+
+    it('原文下出声', () => {
+      expect(localizedVoices(elements, { en: DUB }, null)).toEqual([{ index: 2, remove: true }])
+    })
+
+    it('保留原声的语言下出声', () => {
+      expect(localizedVoices(elements, { en: DUB }, 'de')).toEqual([{ index: 2, remove: true }])
+    })
+
+    it('AI 配音的语言下不出声，出声的是这种语言的配音', () => {
+      expect(localizedVoices(elements, { en: DUB }, 'en')).toEqual([
+        { index: 0, remove: false, attributes: MUTED },
+        { index: 1, remove: true },
+      ])
+    })
   })
 })
 

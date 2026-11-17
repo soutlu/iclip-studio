@@ -10,6 +10,7 @@ from iclip.domains.generation.schemas import (
     KIND_AUDIO,
     KIND_DUBBING,
     KIND_IMAGE,
+    KIND_SPEECH,
     KIND_SUBTITLE,
     KIND_VIDEO,
     KIND_WHOLE_FILM,
@@ -23,6 +24,7 @@ from iclip.domains.generation.schemas import (
     DubbingRequest,
     ImageGenerationIn,
     MusicRequest,
+    SpeechRequest,
     SubtitleRequest,
     VideoComposeRequest,
     VideoEditRequest,
@@ -40,6 +42,7 @@ GenerationRequest = (
     | VideoComposeRequest
     | SubtitleRequest
     | DubbingRequest
+    | SpeechRequest
     | MusicRequest
     | WholeFilmRequest
     | VideoEnhanceRequest
@@ -52,6 +55,7 @@ _ADAPTERS: Final[Mapping[tuple[str, str], TypeAdapter[Any]]] = {
     (KIND_VIDEO, OPERATION_COMPOSE): TypeAdapter(VideoComposeRequest),
     (KIND_SUBTITLE, OPERATION_GENERATE): TypeAdapter(SubtitleRequest),
     (KIND_DUBBING, OPERATION_GENERATE): TypeAdapter(DubbingRequest),
+    (KIND_SPEECH, OPERATION_GENERATE): TypeAdapter(SpeechRequest),
     (KIND_AUDIO, OPERATION_GENERATE): TypeAdapter(MusicRequest),
     (KIND_WHOLE_FILM, OPERATION_RENDER): TypeAdapter(WholeFilmRequest),
     (KIND_VIDEO, OPERATION_ENHANCE): TypeAdapter(VideoEnhanceRequest),

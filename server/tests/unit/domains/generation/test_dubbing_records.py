@@ -32,6 +32,7 @@ from iclip.domains.generation.schemas import (
     DubbingSpeechSpan,
     DubbingUploadReference,
     DubbingVoiceReference,
+    SpeechRequest,
 )
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.acting import ActAs
@@ -96,6 +97,7 @@ def build_world(
     submission: ProviderSubmission | None = None,
     durations: dict[str, int] | None = None,
     model_groups: ModelGroups = UNGROUPED,
+    lineage: FixedLineage | None = None,
 ) -> World:
     store = InMemoryGenerationRepository(jobs)
     providers = (
@@ -126,7 +128,7 @@ def build_world(
         image_models={"nano_banana_pro": NANO_BANANA_PRO.spec},
         image_default_model="nano_banana_pro",
         clear_completion=keep,
-        lineage=FixedLineage(),
+        lineage=lineage or FixedLineage(),
         media_probe=probe,
         references=references or FakeReferenceAssets(),
         dubbing_provider=dubbing,
@@ -538,3 +540,154 @@ async def test_a_finished_dubbing_reads_back_its_track_and_per_line_results() ->
     assert [item["id"] for item in as_music.json()["items"]] == [str(music.id)], (
         "配音不混进背景音乐"
     )
+
+
+def speech_body(**overrides: Any) -> dict[str, Any]:
+    return {
+        "text": "欢迎来到新品发布会",
+        "reference": {"kind": "reference_audio", "referenceId": str(VOICE_ID)},
+        **overrides,
+    }
+
+
+async def post_speech(world: World, me: uuid.UUID, payload: dict[str, Any]) -> httpx.Response:
+    async with client(world, principal("generation:submit", user_id=me)) as http:
+        return await http.post("/generations/speeches", json=payload)
+
+
+def speeches(world: World) -> list[GenerationJob]:
+    return [job for job in world.repo.jobs.values() if job.kind == "speech"]
+
+
+async def test_a_speech_records_text_voice_and_limit_on_the_dubbing_lane() -> None:
+    me, conversation = uuid.uuid4(), uuid.uuid4()
+    world = build_world([], references=_assets(me))
+
+    response = await post_speech(
+        world,
+        me,
+        speech_body(locale="en", maxDurationMs=2_500, conversationId=str(conversation)),
+    )
+
+    assert response.status_code == 202, response.text
+    (speech,) = speeches(world)
+    generation = response.json()["generation"]
+    assert (generation["id"], generation["kind"], generation["operation"]) == (
+        str(speech.id),
+        "speech",
+        "generate",
+    )
+    assert (speech.conversation_id, speech.source_job_id) == (conversation, None)
+    assert speech.request == SpeechRequest(
+        text="欢迎来到新品发布会",
+        locale="en",
+        reference=DubbingVoiceReference(
+            kind="reference_audio",
+            reference_id=VOICE_ID,
+            url=VOICE_URL,
+            transcript="你好，欢迎光临。",
+        ),
+        max_duration_ms=2_500,
+    )
+    assert len(world.submits_to(FAKE_DUBBING_PROVIDER)) == 1
+
+
+async def test_a_speech_without_a_locale_or_limit_records_neither() -> None:
+    me = uuid.uuid4()
+    world = build_world([], references=_assets(me))
+
+    response = await post_speech(world, me, speech_body())
+
+    assert response.status_code == 202, response.text
+    (speech,) = speeches(world)
+    assert isinstance(speech.request, SpeechRequest)
+    assert (speech.request.locale, speech.request.max_duration_ms) == (None, None)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"text": "a" * (MAX_DUBBING_LINE_CHARS + 1)},
+        {"text": "   "},
+        {"reference": {"kind": "reference_audio", "referenceId": str(uuid.uuid4())}},
+        {"reference": {"kind": "upload", "uploadId": str(UPLOAD_ID)}},
+        {"reference": {"kind": "original"}},
+        {"maxDurationMs": 0},
+    ],
+    ids=[
+        "超字数",
+        "只有空白",
+        "音色不在库里或已移除",
+        "上传不能当音色",
+        "没有原声可取",
+        "上限不是正数",
+    ],
+)
+async def test_a_speech_that_breaks_the_rules_is_rejected(overrides: dict[str, Any]) -> None:
+    me = uuid.uuid4()
+    world = build_world([], references=_assets(me))
+
+    response = await post_speech(world, me, speech_body(**overrides))
+
+    assert response.status_code == 422, response.text
+    assert speeches(world) == []
+
+
+async def test_a_speech_for_a_conversation_the_caller_cannot_read_is_404() -> None:
+    me = uuid.uuid4()
+    world = build_world([], references=_assets(me), lineage=FixedLineage(readable=False))
+
+    response = await post_speech(world, me, speech_body(conversationId=str(uuid.uuid4())))
+
+    assert response.status_code == 404, response.text
+    assert speeches(world) == []
+
+
+async def test_a_speech_is_refused_when_no_speech_synthesizer_is_wired() -> None:
+    me = uuid.uuid4()
+    world = build_world([], dubbing=None, references=_assets(me))
+
+    response = await post_speech(world, me, speech_body())
+
+    assert response.status_code == 422, response.text
+    assert "没有开通" in response.json()["detail"]
+    assert speeches(world) == []
+
+
+async def test_a_finished_speech_reads_back_its_audio_and_fit_in_the_conversations_list() -> None:
+    me, conversation = uuid.uuid4(), uuid.uuid4()
+    speech = make_job(
+        SpeechRequest(
+            text="Hi",
+            reference=DubbingVoiceReference(
+                kind="reference_audio", reference_id=VOICE_ID, url=VOICE_URL
+            ),
+            max_duration_ms=1_000,
+        ),
+        owner_user_id=me,
+        conversation_id=conversation,
+    )
+    world = build_world(
+        [speech],
+        submission=ProviderSubmission(
+            provider_task_id=str(speech.id),
+            provider_status="succeeded",
+            output_url=DUBBING_URL,
+            duration_ms=1_000,
+            dubbed_lines=(DubbedLine(index=0, speed=1.25, trimmed=True),),
+        ),
+    )
+
+    await world.queue.run_submit(str(speech.id))
+    async with client(world, principal("generation:read", user_id=me)) as http:
+        listed = await http.get(f"/generations?kind=speech&conversationId={conversation}")
+
+    assert listed.status_code == 200, listed.text
+    (item,) = listed.json()["items"]
+    assert (item["id"], item["status"], item["outputUrl"], item["durationMs"]) == (
+        str(speech.id),
+        STATUS_COMPLETED,
+        DUBBING_URL,
+        1_000,
+    )
+    assert item["dubbedLines"] == [{"index": 0, "speed": 1.25, "trimmed": True}]

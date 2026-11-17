@@ -891,8 +891,8 @@ export const zDraftFileWriteIn = z.object({
 /**
  * DubbedLine
  *
- * 配好的一句：``index`` 是它在请求 ``lines`` 里的位置，``speed`` 是加速的倍数（1 是原速），
- * ``trimmed`` 表示加速到上限也放不下、截掉了尾巴。
+ * 配好的一句：``index`` 是它在请求 ``lines`` 里的位置（合成一段语音时只有一句，是 0），``speed`` 是
+ * 加速的倍数（1 是原速），``trimmed`` 表示加速到上限也放不下、截掉了尾巴。
  */
 export const zDubbedLine = z.object({
   index: z.int().gte(0),
@@ -2420,6 +2420,25 @@ export const zSkillsOut = z.object({
 })
 
 /**
+ * SpeechIn
+ *
+ * 按文字合成一段语音的受理输入：用参考音频库里一个音色的声音把 ``text`` 念出来。
+ *
+ * ``locale`` 不给时不声明用哪种语言念（final-cut 的原文没有声明语言）。``maxDurationMs`` 给了时念出来
+ * 更长就照配音每句的规则先加速、再截尾。归属参数与 ``userName`` 的规则同配音。
+ */
+export const zSpeechIn = z.object({
+  conversationId: z.uuid().nullish(),
+  locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullish(),
+  maxDurationMs: z.int().gte(1).nullish(),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
+  reference: zDubbingVoiceReferenceIn,
+  taskId: z.uuid().nullish(),
+  text: z.string().min(1).max(500),
+  userName: z.string().min(1).max(200).nullish(),
+})
+
+/**
  * SpreadOut
  *
  * 一组时长样本的分布，单位秒。
@@ -2635,7 +2654,7 @@ export const zGenerationOut = z.object({
   errorMessage: z.string().nullable(),
   finishedAt: z.iso.datetime().nullish(),
   id: z.uuid(),
-  kind: z.enum(['video', 'image', 'subtitle', 'dubbing', 'audio', 'whole_film']),
+  kind: z.enum(['video', 'image', 'subtitle', 'dubbing', 'speech', 'audio', 'whole_film']),
   metadata: z.record(z.string(), z.unknown()).nullable(),
   operation: z.enum(['generate', 'compose', 'cut', 'render', 'enhance', 'trial']),
   outputUrl: z.string().nullable(),
@@ -4795,7 +4814,9 @@ export const zListGenerationsGenerationsGetQuery = z.object({
   conversationId: z.uuid().nullish(),
   taskId: z.uuid().nullish(),
   shotIndex: z.int().gte(1).nullish(),
-  kind: z.enum(['video', 'image', 'subtitle', 'dubbing', 'audio', 'whole_film']).nullish(),
+  kind: z
+    .enum(['video', 'image', 'subtitle', 'dubbing', 'speech', 'audio', 'whole_film'])
+    .nullish(),
   operation: z.enum(['generate', 'compose', 'cut', 'render', 'enhance', 'trial']).nullish(),
   rootJobId: z.uuid().nullish(),
   sourceJobId: z.uuid().nullish(),
@@ -4833,6 +4854,13 @@ export const zSubmitMusicGenerationsMusicPostBody = zMusicIn
  * Successful Response
  */
 export const zSubmitMusicGenerationsMusicPostResponse = zGenerationEnvelope
+
+export const zSubmitSpeechGenerationsSpeechesPostBody = zSpeechIn
+
+/**
+ * Successful Response
+ */
+export const zSubmitSpeechGenerationsSpeechesPostResponse = zGenerationEnvelope
 
 export const zSubmitSubtitleGenerationsSubtitlesPostBody = zSubtitleIn
 

@@ -28,7 +28,7 @@ _LABEL: Final = "配音合成"
 
 class QwenSpeechSynthesizer:
     """``SpeechSynthesizer`` 的实现：每句发一次请求，参考音频以 data URI 随请求带上，提示词里用
-    ``@voice1`` 引用它并写明用哪种语言念；再把模型给的临时地址上的音频取回来。"""
+    ``@voice1`` 引用它，给了语言时写明用哪种语言念；再把模型给的临时地址上的音频取回来。"""
 
     def __init__(
         self, endpoint: QwenEndpoint, *, transport: httpx.AsyncBaseTransport | None = None
@@ -37,7 +37,7 @@ class QwenSpeechSynthesizer:
         self._transport = transport
 
     async def synthesize(
-        self, text: str, *, reference: bytes, locale: TargetLocale, api_key: str | None
+        self, text: str, *, reference: bytes, locale: TargetLocale | None, api_key: str | None
     ) -> bytes:
         endpoint = self._endpoint if api_key is None else replace(self._endpoint, api_key=api_key)
         body = await post_to_qwen(
@@ -65,12 +65,13 @@ class QwenSpeechSynthesizer:
             return dest.read_bytes()
 
 
-def _payload(text: str, *, reference: bytes, locale: TargetLocale) -> dict[str, Any]:
+def _payload(text: str, *, reference: bytes, locale: TargetLocale | None) -> dict[str, Any]:
     voice = base64.b64encode(reference).decode("ascii")
+    language = "" if locale is None else f"用{LANGUAGE_NAMES[locale]}"
     return {
         "model": SPEECH_MODEL,
         "input": {
-            "text_prompt": f"@voice1 用{LANGUAGE_NAMES[locale]}说：“{text}”",
+            "text_prompt": f"@voice1 {language}说：“{text}”",
             "references": [{"audio_data": f"data:audio/wav;base64,{voice}"}],
             "format": SPEECH_FORMAT,
             "sample_rate": SPEECH_SAMPLE_RATE,

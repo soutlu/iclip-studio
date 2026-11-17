@@ -30,6 +30,7 @@ import { AudioTab } from './audio-tab'
 import {
   CAPTION_REFUSAL_TEXT,
   captionSpot,
+  narrationSpot,
   NEW_CAPTION_TEXT,
   RECOGNITION_REFUSAL_TEXT,
   recognitionTargets,
@@ -63,12 +64,13 @@ import {
   type VoiceSetting,
 } from './composition/voices'
 import {
+  dubbingPlanOf,
   dubbingRefusalText,
-  dubbingRequests,
   dubClips,
   dubsOf,
   lineRefusals,
   lineRefusalText,
+  narrationDubs,
   shownIn,
   type VoiceOfCaption,
 } from './dubbing'
@@ -91,10 +93,12 @@ import { ItemsTab } from './items-tab'
 import {
   captionIn,
   phraseWith,
+  SOURCE_LOCALE,
   SOURCE_NAME,
   SOURCE_SHOWN,
   translationOf,
   type Language,
+  type LocaleCode,
   type ShownLocale,
 } from './locales'
 import { MaterialArea } from './material-area'
@@ -192,6 +196,9 @@ const RECOGNIZING_TEXT = '正在识别字幕，请等待识别完成'
 const READING_TAKES_DUBBING_TEXT = '正在读取素材片，请稍后再生成配音'
 const NO_TAKES_DUBBING_TEXT = '找不到视频片段用的素材片记录，无法生成配音'
 const ALL_UNVOICED_TEXT = '每句都选了「不配音」，无需重新生成'
+const NO_FILM_NARRATION_TEXT = 'final-cut 暂无内容，无法插入旁白配音；请先加入镜头'
+const DUBBING_BUSY_TEXT = '正在生成配音，请等待生成完成'
+const NARRATION_UNREADABLE_TEXT = '旁白配音生成失败，请重试'
 // 还没有 final-cut 时先放组件或块：和 #41 之前的编辑器一样按竖版建
 const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 const NO_LINKS: Links = new Map()
@@ -1026,8 +1033,8 @@ function EditorBody({
       notice(`${entries.length - written} 条在翻译期间已修改或删除，未写入译文`)
     if (tooLong > 0) notice(`${tooLong} 条超过 ${TRANSLATION_LIMITS.text} 字，未翻译；请手动填写`)
   }
-  // 其它语言下的「AI 配音」：按句子挑、按素材片和音色分组发起（见 `dubbingRequests`），全部有了结果后按那时的
-  // final-cut 一步建成配好的那几句的配音片段（换掉它们原来的）、切到 AI 配音，人声设置按发起时定的改
+  // 其它语言下的「AI 配音」：按句子挑、按素材片和音色分组发起，旁白的句子各发一次（见 `dubbingPlanOf`），全部有了
+  // 结果后按那时的 final-cut 一步建成配好的那几句的配音片段（换掉它们原来的）、切到 AI 配音，人声设置按发起时定的改
   const voiceLines = film?.voiceLines ?? NO_LINE_VOICES
   const languageVoice = film?.dubVoice ?? null
   const follows = (caption: string) => !Object.hasOwn(voiceLines, caption)
@@ -1036,17 +1043,23 @@ function EditorBody({
     (voice: string | null = languageVoice): VoiceOfCaption =>
     (caption) =>
       voiceOfLine({ voice, lines: voiceLines }, caption)
-  /** 按 `voiceOf` 排好、`picked` 挑中的配音请求，对上各自素材片的生成记录；`requested` 是对上之前有几次。 */
+  /**
+   * 按 `voiceOf` 排好、`picked` 挑中的配音：素材片的请求对上各自素材片的生成记录，加上旁白的句子；`requested` 是
+   * 对上之前一共有几次请求、几句旁白。
+   */
   const dubbingPlan = (voiceOf: VoiceOfCaption, picked?: (caption: string) => boolean) => {
     if (film === null || target === undefined) return undefined
     const sourceMs = (src: string) => takeDurationMs(keyframes.get(src))
-    const plan = dubbingRequests(film.clips, target.values, sourceMs, voiceOf, picked)
+    const plan = dubbingPlanOf(allClips, target.values, sourceMs, voiceOf, picked)
     if ('refusal' in plan) return plan
-    const targets = plan.requests.flatMap((request) => {
+    const takes = plan.requests.flatMap((request) => {
       const sourceJobId = takeOf(request.src)
       return sourceJobId === undefined ? [] : [{ ...request, sourceJobId }]
     })
-    return { targets, requested: plan.requests.length }
+    return {
+      work: { takes, narrations: plan.narrations },
+      requested: plan.requests.length + plan.narrations.length,
+    }
   }
   /** 照 `plan` 发起前为什么不能发起；`requested` 为 0 时没有要配的句子，交给调用方决定。 */
   const planBlocked = (plan: ReturnType<typeof dubbingPlan>) =>
@@ -1056,7 +1069,7 @@ function EditorBody({
         ? READING_TAKES_DUBBING_TEXT
         : 'refusal' in plan
           ? dubbingRefusalText(plan.refusal, target.code)
-          : plan.requested > 0 && plan.targets.length === 0
+          : plan.requested > 0 && plan.work.takes.length + plan.work.narrations.length === 0
             ? NO_TAKES_DUBBING_TEXT
             : undefined
   // 换整种语言的音色只重配跟着它的句子；「重新生成」重配要配音的每一句，各用各的音色
@@ -1068,19 +1081,19 @@ function EditorBody({
     (everyPlan !== undefined && 'requested' in everyPlan && everyPlan.requested === 0
       ? ALL_UNVOICED_TEXT
       : undefined)
-  // 各句能不能单独配：按每句都配音时排得进请求、素材片对得上的算
+  // 各句能不能单独配：按每句都配音时排得进请求、素材片对得上的算，有旁白的句子翻了就能配
   const unmutedPlan = dubbingPlan(() => languageVoice)
   const lineBlocked = new Map(
     film === null || target === undefined
       ? []
       : [
           ...lineRefusals(
-            film.clips,
+            allClips,
             target.values,
             new Set(
               unmutedPlan === undefined || 'refusal' in unmutedPlan
                 ? []
-                : unmutedPlan.targets.flatMap(({ lines }) => lines.map((line) => line.caption)),
+                : unmutedPlan.work.takes.flatMap(({ lines }) => lines.map((line) => line.caption)),
             ),
             (src) => takeOf(src) !== undefined,
           ),
@@ -1091,7 +1104,52 @@ function EditorBody({
   )
   const sourceName = (src: string) =>
     sourceNames.get(src) ?? clips.find((clip) => clip.kind === 'video' && clip.src === src)?.label
-  const writeDubs = ({ locale: code, update, results }: DubbingDone) => {
+  // 原文下的旁白：合成好后在那时的播放头处（放不下往后找，见 `narrationSpot`）加一句字幕和对齐的旁白片段，一步撤销
+  const writeNarration = async ({ narrations }: DubbingDone) => {
+    for (const { line, outcome } of narrations) {
+      if (outcome.kind === 'failed') {
+        notice(`旁白配音生成失败：${outcome.message}`)
+        continue
+      }
+      const { outputUrl, durationMs } = outcome.job
+      if (outputUrl === null || durationMs === null) {
+        notice(NARRATION_UNREADABLE_TEXT)
+        continue
+      }
+      const [id] =
+        (await session.addCaptions(
+          (current) => [
+            {
+              ...narrationSpot(
+                current.filter((clip) => clip.kind === 'caption'),
+                playhead,
+                durationMs,
+              ),
+              text: line.text,
+              owner: null,
+            },
+          ],
+          { src: outputUrl, label: `旁白 · ${line.text}`, voice: line.voice },
+        )) ?? []
+      if (id === undefined) continue
+      notice('已加入旁白配音与字幕')
+    }
+  }
+  const writeLanguageDubs = (code: LocaleCode, { update, results, narrations }: DubbingDone) => {
+    const spoken = narrations.flatMap(({ line, outcome }) =>
+      outcome.kind !== 'ready' || outcome.job.outputUrl === null
+        ? []
+        : [
+            {
+              line,
+              audio: {
+                url: outcome.job.outputUrl,
+                durationMs: outcome.job.durationMs,
+                trimmed: (outcome.job.dubbedLines ?? []).some((each) => each.trimmed),
+              },
+            },
+          ],
+    )
     const ready = results.flatMap(({ target: request, outcome }) => {
       const url = outcome.kind === 'ready' ? outcome.job.outputUrl : null
       return outcome.kind !== 'ready' || url === null
@@ -1110,14 +1168,15 @@ function EditorBody({
     let trimmed = 0
     const added = session.addDubs(code, update, (current) => {
       const made = ready.flatMap(({ request, track }) => dubClips(current, request, track))
-      trimmed = made.filter((dub) => dub.trimmed).length
+      const narrated = narrationDubs(current, spoken)
+      trimmed = [...made, ...narrated].filter((dub) => dub.trimmed).length
       return {
-        removed: dubsOf(
-          current,
-          code,
-          ready.flatMap(({ request }) => request.lines.map((line) => line.caption)),
-        ),
+        removed: dubsOf(current, code, [
+          ...ready.flatMap(({ request }) => request.lines.map((line) => line.caption)),
+          ...spoken.flatMap(({ line }) => (line.caption === null ? [] : [line.caption])),
+        ]),
         added: made,
+        narrated,
       }
     })
     if (added > 0) notice(phraseWith(`已生成 ${added} 句`, code, '配音'))
@@ -1125,10 +1184,48 @@ function EditorBody({
     for (const { target: request, outcome } of results)
       if (outcome.kind === 'failed')
         notice(`${sourceName(request.src) ?? '素材片'} 的配音生成失败：${outcome.message}`)
+    for (const { outcome } of narrations)
+      if (outcome.kind === 'failed') notice(`旁白的配音生成失败：${outcome.message}`)
+  }
+  const writeDubs = (done: DubbingDone) => {
+    if (done.locale === SOURCE_LOCALE) void writeNarration(done)
+    else writeLanguageDubs(done.locale, done)
   }
   const dubbing = useDubbing(conversationId, writeDubs)
+  const dubbingBusy = dubbing.generating + dubbing.narrating > 0
+  // 原文下「旁白配音」展开着时也要读资料库的音色
+  const [narrationOpen, setNarrationOpen] = useState(false)
+  const libraryVoices = useLibraryVoices(target !== undefined || narrationOpen)
+  const voicesProblem = libraryVoices.isError
+    ? {
+        message: errorMessageOf(libraryVoices.error, '读取音色失败'),
+        onRetry: () => void libraryVoices.refetch(),
+      }
+    : undefined
+  // 原文下的「旁白配音」：资料库里的音色都能选（原文不声明语言）；合成走配音的同一条路，和配音共用「正在生成」
+  const narration =
+    target !== undefined
+      ? undefined
+      : {
+          open: narrationOpen,
+          onOpen: setNarrationOpen,
+          voices: libraryVoices.data?.map((each) => ({
+            id: each.id,
+            name: each.title,
+            url: each.url,
+          })),
+          voicesProblem,
+          generating: dubbingBusy,
+          blocked:
+            film === null ? NO_FILM_NARRATION_TEXT : dubbingBusy ? DUBBING_BUSY_TEXT : undefined,
+          onInsert: (text: string, voice: string) =>
+            void dubbing.start(
+              SOURCE_LOCALE,
+              { takes: [], narrations: [{ caption: null, text, voice }] },
+              (setting) => setting,
+            ),
+        }
   // 资料库里的音色：语种对上这种语言的，或者没设语种的
-  const libraryVoices = useLibraryVoices(target !== undefined)
   const voice =
     film === null || target === undefined
       ? undefined
@@ -1140,15 +1237,11 @@ function EditorBody({
               ? [{ id: each.id, name: each.title, url: each.url }]
               : [],
           ),
-          voicesProblem: libraryVoices.isError
-            ? {
-                message: errorMessageOf(libraryVoices.error, '读取音色失败'),
-                onRetry: () => void libraryVoices.refetch(),
-              }
-            : undefined,
+          voicesProblem,
           // 保留原声时这种语言的配音片段藏着，也算有配音：再点配它的音色只是切回去，不重新生成
           dubbed: allClips.some((clip) => isDubClip(clip) && clip.dub.locale === target.code),
           generating: dubbing.generating,
+          narrating: dubbing.narrating,
           generateBlocked: dubbingBlocked,
           redoBlocked,
           lines: voiceLines,
@@ -1169,14 +1262,14 @@ function EditorBody({
                 voice: chosen,
               }))
             } else
-              void dubbing.start(target.code, plan.targets, (setting) => ({
+              void dubbing.start(target.code, plan.work, (setting) => ({
                 ...setting,
                 voice: chosen,
               }))
           },
           onRedo: () => {
-            if (redoBlocked === undefined && everyPlan !== undefined && 'targets' in everyPlan)
-              void dubbing.start(target.code, everyPlan.targets, (setting) => setting)
+            if (redoBlocked === undefined && everyPlan !== undefined && 'work' in everyPlan)
+              void dubbing.start(target.code, everyPlan.work, (setting) => setting)
           },
           onLine: (caption: string, line: LineVoice | null) => {
             if (lineBlocked.has(caption)) return
@@ -1201,8 +1294,8 @@ function EditorBody({
               (each) => (each === caption ? voice : voicesWith()(each)),
               (each) => each === caption,
             )
-            if (plan !== undefined && 'targets' in plan)
-              void dubbing.start(target.code, plan.targets, update)
+            if (plan !== undefined && 'work' in plan)
+              void dubbing.start(target.code, plan.work, update)
           },
         }
 
@@ -1494,6 +1587,7 @@ function EditorBody({
                 },
               }}
               locale={locale}
+              narration={narration}
               onAdd={addCaption}
               onPick={(caption) => {
                 seek(caption.start)

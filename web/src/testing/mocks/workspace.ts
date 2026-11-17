@@ -10,7 +10,12 @@ import type {
   VideoGenerationIn,
   VideoShotIn,
 } from '@/shared/api/generated/types.gen'
-import { zDubbingIn, zFinalCutTranslationsIn, zSubtitleIn } from '@/shared/api/generated/zod.gen'
+import {
+  zDubbingIn,
+  zFinalCutTranslationsIn,
+  zSpeechIn,
+  zSubtitleIn,
+} from '@/shared/api/generated/zod.gen'
 // ?no-inline 阻止 Vite 将小体积媒体资源内联为 data URI。
 import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
 import sampleLongUrl from '../fixtures/sample-video-long.mp4?no-inline'
@@ -204,7 +209,7 @@ type MockJob = {
   createdAt: string
   errorMessage?: string
   id: string
-  kind?: 'video' | 'image' | 'subtitle' | 'dubbing' | 'audio'
+  kind?: 'video' | 'image' | 'subtitle' | 'dubbing' | 'speech' | 'audio'
   sentences?: SubtitleSentence[]
   dubbedLines?: DubbedLine[]
   operation?: 'generate' | 'compose'
@@ -1191,6 +1196,34 @@ export const workspaceHandlers = [
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
 
+  // 按文字合成一段语音（旁白配音）：几秒后合成好，按字数估一个长度，给了上限时不超过它
+  http.post('*/api/generations/speeches', async ({ request }) => {
+    const parsed = zSpeechIn.safeParse(await request.json())
+    if (!parsed.success) {
+      return HttpResponse.json({ detail: '合成参数无效' }, { status: 422 })
+    }
+    const body = parsed.data
+    const spokenMs = Math.max(1_000, body.text.length * 150)
+    const durationMs = Math.min(spokenMs, body.maxDurationMs ?? Infinity)
+    const created = acceptGeneration({
+      kind: 'speech',
+      prompt: '',
+      request: {
+        text: body.text,
+        locale: body.locale ?? null,
+        reference: body.reference,
+        maxDurationMs: body.maxDurationMs ?? null,
+      },
+      conversationId: body.conversationId ?? null,
+      taskId: body.taskId ?? null,
+      metadata: body.metadata ?? null,
+      outputUrl: `${MOCK_MUSIC_URL}?speech=${crypto.randomUUID()}`,
+      durationMs,
+      dubbedLines: [{ index: 0, speed: 1, trimmed: durationMs < spokenMs }],
+    })
+    return HttpResponse.json({ generation: created }, { status: 202 })
+  }),
+
   http.post('*/api/generations/music', async ({ request }) => {
     const body = (await request.json()) as MusicIn
     const created = acceptGeneration({
@@ -1213,7 +1246,7 @@ export const workspaceHandlers = [
 ]
 
 function acceptGeneration(spec: {
-  kind: 'image' | 'video' | 'audio' | 'subtitle' | 'dubbing'
+  kind: 'image' | 'video' | 'audio' | 'subtitle' | 'dubbing' | 'speech'
   operation?: 'generate' | 'compose'
   prompt: string
   request: Record<string, unknown>

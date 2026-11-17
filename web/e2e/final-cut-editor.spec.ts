@@ -2721,6 +2721,63 @@ test('逐句配音：English 下给第二句选资料库的音色，只发这一
   expect(requests).toEqual([])
 })
 
+test('旁白配音：原文下输入文案、选资料库的音色插入，按文字合成（不带语言），主文件里多一个旁白片段、字幕文件里多一句这段文案', async ({
+  page,
+}) => {
+  test.setTimeout(120_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await serveSavedCaptions(page)
+  const panel = await openConversation(page, '工具过程展示')
+  const editor = await openFinalCut(panel)
+  const added = mainSaved(page, 1)
+  await editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  await added
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '字幕·配音' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕·配音' })
+
+  await tab.getByRole('button', { name: '旁白配音' }).click()
+  const narration = tab.getByRole('group', { name: '旁白配音' })
+  await narration.getByRole('textbox', { name: '旁白文案' }).fill('欢迎来到新品发布会')
+  await narration
+    .getByRole('group', { name: '旁白音色' })
+    .getByRole('button', { name: 'Emma', exact: true })
+    .click()
+  const asked = page.waitForRequest(
+    (request) => request.method() === 'POST' && request.url().endsWith('/api/generations/speeches'),
+  )
+  const narrationTag = (html: string) =>
+    /<audio [^>]*data-dub-of="[^"]+"[^>]*>/.exec(html)?.[0] ?? null
+  const saved = mainSavedWith(page, (html) => narrationTag(html) !== null)
+  const sceneSaved = page.waitForRequest(
+    (request) => savedFileOf(request, CAPTIONS_FILE)?.includes('欢迎来到新品发布会') === true,
+  )
+  await narration.getByRole('button', { name: '插入配音与字幕' }).click()
+
+  const body = (await asked).postDataJSON() as Record<string, unknown>
+  expect(body).toMatchObject({
+    text: '欢迎来到新品发布会',
+    reference: { kind: 'reference_audio' },
+  })
+  expect(body).not.toHaveProperty('locale')
+  expect(body).not.toHaveProperty('maxDurationMs')
+  const referenceId = (body['reference'] as { referenceId?: string }).referenceId ?? ''
+  const tag = narrationTag(htmlOf(await saved)) ?? ''
+  expect(tag).not.toContain('data-locale')
+  expect(tag).toContain(`data-dub-voice="${referenceId}"`)
+  const caption = / data-dub-of="([^"]+)"/.exec(tag)?.[1] ?? ''
+  const scene = savedFileOf(await sceneSaved, CAPTIONS_FILE) ?? ''
+  expect(scene).toContain(`id="${caption}"`)
+  await expect(editor.getByRole('group', { name: '配音', exact: true })).toContainText(
+    '旁白 · 欢迎来到新品发布会',
+  )
+})
+
 type PreviewPlayer = HTMLElement & { iframeElement: HTMLIFrameElement }
 
 /** 画面区里第 `row` 行的片段 `name` 的选中按钮。 */

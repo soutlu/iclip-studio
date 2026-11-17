@@ -7,6 +7,7 @@ import type {
   FinalCutTranslationsIn,
   FinalCutTranslationsOut,
   MusicIn,
+  SpeechIn,
   SubtitleIn,
   WholeFilmExportIn,
 } from '@/shared/api/generated/types.gen'
@@ -66,6 +67,8 @@ export const wholeFilmQueryKeys = {
     [...storyboardQueryKeys.conversation(conversationId), 'subtitle', sourceJobId] as const,
   dubbings: (conversationId: string, sourceJobId: string) =>
     [...storyboardQueryKeys.conversation(conversationId), 'dubbing', sourceJobId] as const,
+  speeches: (conversationId: string) =>
+    [...storyboardQueryKeys.conversation(conversationId), 'speech'] as const,
   preview: (conversationId: string) => ['whole-film', 'preview', conversationId] as const,
   task: (conversationId: string) => ['whole-film', 'task', conversationId] as const,
 }
@@ -411,6 +414,25 @@ export const dubbingJobsQuery = (conversationId: string, sourceJobId: string) =>
 export const submitDubbing = async (body: DubbingIn): Promise<GenerationJob> =>
   (
     await apiFetch('/generations/dubbings', zGenerationEnvelope, {
+      body,
+      fallbackErrorMessage: '配音生成提交失败',
+      method: 'POST',
+    })
+  ).generation
+
+/** 这段对话按文字合成的语音（旁白配音）记录，新的在前；有没合成完的就隔一会儿再读。 */
+export const speechJobsQuery = (conversationId: string) =>
+  queryOptions({
+    queryKey: wholeFilmQueryKeys.speeches(conversationId),
+    queryFn: ({ signal }) =>
+      readAllGenerations({ conversationId, kind: 'speech' }, signal, '读取配音记录失败'),
+    refetchInterval: ({ state }) => generationsRefetchInterval(state.data ?? []),
+  })
+
+/** 发起按文字合成一段语音（付费的上游服务），答复排队中的记录。 */
+export const submitSpeech = async (body: SpeechIn): Promise<GenerationJob> =>
+  (
+    await apiFetch('/generations/speeches', zGenerationEnvelope, {
       body,
       fallbackErrorMessage: '配音生成提交失败',
       method: 'POST',

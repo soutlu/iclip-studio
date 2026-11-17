@@ -20,6 +20,7 @@ from iclip.domains.generation.schemas import (
     ImageModelsOut,
     Metadata,
     MusicIn,
+    SpeechIn,
     SubtitleIn,
     VideoComposeIn,
     VideoEditIn,
@@ -156,6 +157,26 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         user_name = resolve_user_name(principal, body.user_name)
         principal = await act_as(principal, user_name)
         job = await service.submit_dubbing(principal, body)
+        return await envelope(job)
+
+    @router.post("/speeches", response_model=GenerationEnvelope, status_code=202)
+    async def submit_speech(
+        body: SpeechIn,
+        principal: Annotated[Principal, require_permission("generation:submit")],
+    ) -> GenerationEnvelope:
+        """按文字合成一段语音（final-cut 的旁白配音），另起一条记录（种类 ``speech``）。
+
+        用参考音频库里那条音色（要没移除、是音色，否则 422；取前 10 秒）的声音把 ``text`` 念出来，给了
+        ``locale`` 时写明用这种语言念，不给时不写。给了 ``maxDurationMs`` 时念出来更长就先加速，最多
+        1.25 倍，还放不下就截到这个长度并淡出；不补静音，念多长（加速后）就多长。产物是一段 m4a
+        （``outputUrl``，时长在 ``durationMs``），加速了多少、截没截在 ``dubbedLines`` 唯一的一项里。
+        ``text`` 的字数上限同配音每句；给了 ``conversationId`` 却读不到这段对话 404；配音没开通 422。
+        ``userName`` 的规则同出片，只用来替人办事，不进 ``request``。
+        """
+
+        user_name = resolve_user_name(principal, body.user_name)
+        principal = await act_as(principal, user_name)
+        job = await service.submit_speech(principal, body)
         return await envelope(job)
 
     @router.post("/video-enhancements", response_model=GenerationEnvelope, status_code=202)

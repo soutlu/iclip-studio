@@ -145,7 +145,7 @@
    - **视频生成（出片、参考视频的试生成、局部编辑段、超分高清版）**：异步提交给上游视频网关并轮询结果；试生成和出片走同一个通道、同一套配置组规则，只是记成 `operation=trial`。不同视频模型族的参数拼装规则集中在 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py)。
    - **视频剪辑合成（`compose`）**：在本地调用 ffmpeg 将多段视频裁剪、重编码拼接后上传 OSS。
    - **字幕识别（`subtitle`）与背景音乐生成（`audio`）**：各自拥有独立的队列通道。素材片生成完成时不会识别字幕，只有调用 `POST /generations/subtitles` 才排入一条字幕识别任务（抽取音频调用千问 ASR `qwen-audio-3.1-asr-flash`）；背景音乐则调用千问 TTS `qwen-audio-3.1-tts-next`，下载音频后用 ffmpeg 切除首尾静音、统一响度并转存为 m4a。
-   - **配音（`dubbing`）**：独立通道。截参考音频、逐句变速或截尾、拼成和素材片等长的音轨都在本地用 ffmpeg 做，只有逐句合成交给语音合成协议（`SpeechSynthesizer`，[generation/dubbing.py](../server/src/iclip/domains/generation/dubbing.py)）。合成用的是和背景音乐同一个千问 TTS `qwen-audio-3.1-tts-next`（[generation/speech.py](../server/src/iclip/domains/generation/speech.py)）：每句一次请求，截出的参考音频以 data URI 随请求带上，提示词里用 `@voice1` 引用它并写明用哪种语言念；参考音色的台词只记进配音记录，不发给合成服务。没有配 `media_generation.speech` 段或配音的千问 API Key `QWEN_SPEECH_API_KEY` 时配音没有开通，提交接口答 `422`。
+   - **配音（`dubbing`）与合成语音（`speech`）**：独立通道，合成语音是只有一句、不对着素材片的配音，和配音走同一个通道、同一个合成服务。截参考音频、逐句变速或截尾、拼成和素材片等长的音轨都在本地用 ffmpeg 做，只有逐句合成交给语音合成协议（`SpeechSynthesizer`，[generation/dubbing.py](../server/src/iclip/domains/generation/dubbing.py)）。合成用的是和背景音乐同一个千问 TTS `qwen-audio-3.1-tts-next`（[generation/speech.py](../server/src/iclip/domains/generation/speech.py)）：每句一次请求，截出的参考音频以 data URI 随请求带上，提示词里用 `@voice1` 引用它并写明用哪种语言念；参考音色的台词只记进配音记录，不发给合成服务。没有配 `media_generation.speech` 段或配音的千问 API Key `QWEN_SPEECH_API_KEY` 时配音没有开通，提交接口答 `422`。
    - **成片导出（`whole_film`）**：独立通道，转发给成片渲染服务处理（见[成片渲染服务](#成片渲染服务)）。
 2. **参考视频拆解队列（`domains/references/`，队列名 `references`）**：
    - 调用 `BreakdownRunner`（60 秒以内的视频在本地按每秒 10 帧抽帧并提取音轨，超过 60 秒的视频直接传 URL 让上游抽帧），然后通过运行时的 `/v1/model-calls/responses` 接口调用火山方舟模型生成拆解报告。

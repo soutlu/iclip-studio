@@ -38,6 +38,7 @@ from iclip.domains.generation.schemas import (
     DubbingSpeechSpan,
     DubbingUploadReference,
     DubbingVoiceReference,
+    SpeechRequest,
 )
 from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.fetch_url import as_is
@@ -105,7 +106,7 @@ def wav_shape(content: bytes) -> WavShape:
 class Synthesis:
     text: str
     reference: bytes
-    locale: TargetLocale
+    locale: TargetLocale | None
     api_key: str | None
 
 
@@ -116,7 +117,7 @@ class CharTimedSynthesizer:
         self.calls: list[Synthesis] = []
 
     async def synthesize(
-        self, text: str, *, reference: bytes, locale: TargetLocale, api_key: str | None
+        self, text: str, *, reference: bytes, locale: TargetLocale | None, api_key: str | None
     ) -> bytes:
         self.calls.append(Synthesis(text=text, reference=reference, locale=locale, api_key=api_key))
         return tone(len(text) * MS_PER_CHAR, silence_ms=TAIL_MS)
@@ -415,3 +416,59 @@ async def test_every_line_is_synthesized_with_the_records_group_key() -> None:
     await provider(files, synthesizer, MemoryObjectStore(), model_groups=groups).submit(job)
 
     assert [call.api_key for call in synthesizer.calls] == ["dub-mkt", "dub-mkt"]
+
+
+def speech(chars: int, *, max_duration_ms: int | None = None) -> GenerationJob:
+    return make_job(
+        SpeechRequest(
+            text="a" * chars,
+            reference=DubbingVoiceReference(
+                kind="reference_audio", reference_id=uuid.uuid4(), url=VOICE_URL
+            ),
+            max_duration_ms=max_duration_ms,
+        )
+    )
+
+
+async def test_a_speech_without_a_limit_is_as_long_as_it_is_spoken(tmp_path: Path) -> None:
+    # 20 个字念 2000 毫秒，后面带 400 毫秒静音
+    job = speech(20)
+    files = Files({VOICE_URL: tone(15_000, frequency=220)})
+    synthesizer = CharTimedSynthesizer()
+    store = MemoryObjectStore()
+
+    submission = await provider(files, synthesizer, store).submit(job)
+
+    assert submission.dubbed_lines == (DubbedLine(index=0, speed=1.0, trimmed=False),)
+    assert submission.duration_ms is not None
+    assert abs(submission.duration_ms - 2_400) <= LENGTH_TOLERANCE_MS
+    key = f"iclip/agent/generated-dubbing/{job.id}.m4a"
+    assert submission.output_url == store.public_url(key)
+    assert [(call.text, call.locale) for call in synthesizer.calls] == [("a" * 20, None)]
+    assert wav_shape(synthesizer.calls[0].reference).duration_ms == MAX_REFERENCE_MS
+    assert files.requested == [VOICE_URL]
+
+
+@pytest.mark.parametrize(
+    ("limit_ms", "fitted"),
+    [
+        (2_000, DubbedLine(index=0, speed=1.2, trimmed=False)),
+        (1_500, DubbedLine(index=0, speed=1.25, trimmed=True)),
+    ],
+    ids=["加速放得下", "加速到上限也放不下就截尾"],
+)
+async def test_a_speech_longer_than_its_limit_is_sped_up_then_trimmed_to_the_limit(
+    tmp_path: Path, limit_ms: int, fitted: DubbedLine
+) -> None:
+    job = speech(20, max_duration_ms=limit_ms)
+    store = MemoryObjectStore()
+
+    submission = await provider(
+        Files({VOICE_URL: tone(5_000, frequency=220)}), CharTimedSynthesizer(), store
+    ).submit(job)
+
+    assert submission.dubbed_lines == (fitted,)
+    audio = tmp_path / "speech.m4a"
+    audio.write_bytes(store.objects[f"iclip/agent/generated-dubbing/{job.id}.m4a"][0])
+    assert abs(duration_ms(audio) - limit_ms) <= LENGTH_TOLERANCE_MS
+    assert mean_volume_db(audio, 100, 1_300) > AUDIBLE_DB

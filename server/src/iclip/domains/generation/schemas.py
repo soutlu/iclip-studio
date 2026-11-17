@@ -49,6 +49,7 @@ KIND_VIDEO: Final = "video"
 KIND_IMAGE: Final = "image"
 KIND_SUBTITLE: Final = "subtitle"
 KIND_DUBBING: Final = "dubbing"
+KIND_SPEECH: Final = "speech"
 KIND_AUDIO: Final = "audio"
 KIND_WHOLE_FILM: Final = "whole_film"
 
@@ -604,12 +605,47 @@ class DubbingRequest(CamelModel):
 
 
 class DubbedLine(CamelModel):
-    """配好的一句：``index`` 是它在请求 ``lines`` 里的位置，``speed`` 是加速的倍数（1 是原速），
-    ``trimmed`` 表示加速到上限也放不下、截掉了尾巴。"""
+    """配好的一句：``index`` 是它在请求 ``lines`` 里的位置（合成一段语音时只有一句，是 0），``speed`` 是
+    加速的倍数（1 是原速），``trimmed`` 表示加速到上限也放不下、截掉了尾巴。"""
 
     index: Annotated[int, Field(ge=0)]
     speed: Annotated[float, Field(ge=1)]
     trimmed: bool
+
+
+SpeechText = Annotated[str, Field(min_length=1, max_length=MAX_DUBBING_LINE_CHARS)]
+
+
+class SpeechIn(CamelModel):
+    """按文字合成一段语音的受理输入：用参考音频库里一个音色的声音把 ``text`` 念出来。
+
+    ``locale`` 不给时不声明用哪种语言念（final-cut 的原文没有声明语言）。``maxDurationMs`` 给了时念出来
+    更长就照配音每句的规则先加速、再截尾。归属参数与 ``userName`` 的规则同配音。"""
+
+    text: SpeechText
+    locale: TargetLocale | None = None
+    reference: DubbingVoiceReferenceIn
+    max_duration_ms: Annotated[
+        int | None,
+        Field(ge=1, description="最长多少毫秒；不写时念多长就是多长"),
+    ] = None
+    user_name: UserName | None = None
+
+    conversation_id: uuid.UUID | None = None
+    task_id: uuid.UUID | None = None
+    metadata: Metadata | None = None
+
+    _check_text = field_validator("text")(nonblank)
+
+
+class SpeechRequest(CamelModel):
+    kind: ClassVar[GenerationKind] = KIND_SPEECH
+    operation: ClassVar[GenerationOperation] = OPERATION_GENERATE
+
+    text: SpeechText
+    locale: TargetLocale | None = None
+    reference: DubbingVoiceReference
+    max_duration_ms: Annotated[int | None, Field(ge=1)] = None
 
 
 MAX_MUSIC_PROMPT_CHARS: Final = 3000
@@ -919,6 +955,7 @@ __all__ = [
     "KIND_AUDIO",
     "KIND_DUBBING",
     "KIND_IMAGE",
+    "KIND_SPEECH",
     "KIND_SUBTITLE",
     "KIND_VIDEO",
     "KIND_WHOLE_FILM",
@@ -979,6 +1016,8 @@ __all__ = [
     "MusicIn",
     "MusicRequest",
     "SnakeModel",
+    "SpeechIn",
+    "SpeechRequest",
     "SubtitleIn",
     "SubtitleRequest",
     "SubtitleSentence",
