@@ -2294,7 +2294,8 @@ test('AI 配音：English 下点音色「原声」，配音行出现和字幕对
   const dubRow = editor.getByRole('group', { name: '配音', exact: true })
   await expect(dubRow.getByRole('group', { name: /^配音 · \[EN\] / })).toHaveCount(2)
 
-  // 往右拖第二句的配音片段：它配的那句字幕挪同样的时间，第一句不动
+  // 往右拖第二句的配音片段：它配的那句字幕挪同样的时间，第一句不动。只拖一小段，这句还在视频里，
+  // 后面换音色重新生成时才配得出来
   const dubStartsOf = (saved: string) =>
     [...saved.matchAll(/<audio [^>]*data-dub-of="[^"]+"[^>]*>/g)]
       .map(([tag]) => Number(/ data-start="([\d.]+)"/.exec(tag)?.[1]))
@@ -2304,7 +2305,7 @@ test('AI 配音：English 下点音色「原声」，配音行出现和字幕对
     const scene = savedFileOf(request, CAPTIONS_FILE)
     return scene !== null && (savedCaptionLines(scene)[1]?.start ?? 0) > 2.4
   })
-  await dragClip(page, dubRow.getByRole('button', { name: /^选中：配音 · \[EN\] 车流/ }), 120)
+  await dragClip(page, dubRow.getByRole('button', { name: /^选中：配音 · \[EN\] 车流/ }), 30)
   const movedDub = dubStartsOf(htmlOf(await dubMoved))[1] ?? 0
   const captionLines = savedCaptionLines(savedFileOf(await captionMoved, CAPTIONS_FILE) ?? '')
   expect(movedDub).toBeGreaterThan(2.4)
