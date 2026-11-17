@@ -80,6 +80,11 @@ export interface AudioClip extends MediaBase {
   loop: boolean
   /** 是一句字幕的配音时它是哪种语言、配的哪句（见 `AudioDub`）；别的音频片段是 null。 */
   dub: AudioDub | null
+  /**
+   * 压低配乐的设置：`data-fx-carve` 原样的文字（JSON，读法见 `carve.ts`），没写时是 null。只记设置，播放和导出
+   * 认的是它生成的效果链 `data-fx-chain` 和曲线 `data-automation`。
+   */
+  fxCarve: string | null
 }
 
 /**
@@ -253,6 +258,7 @@ export function clipOf(
         locale === null || caption === null
           ? null
           : { locale, caption, trimmed: attributes['data-dub-trimmed'] !== undefined },
+      fxCarve: nameOf(attributes['data-fx-carve']),
     }
   }
   const item = attributes['data-composition-id']
@@ -336,6 +342,7 @@ export function audioElement(clip: Omit<AudioClip, 'kind'>): string {
     'data-locale': clip.dub?.locale,
     'data-dub-of': clip.dub?.caption,
     'data-dub-trimmed': clip.dub?.trimmed === true ? '' : undefined,
+    'data-fx-carve': clip.fxCarve ?? undefined,
   })
 }
 

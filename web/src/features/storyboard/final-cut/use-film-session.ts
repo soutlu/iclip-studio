@@ -1,4 +1,7 @@
 import { use, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { HF_AUDIO_AUTOMATION_ATTR } from '@hyperframes/core/audio-automation'
+import { HF_AUDIO_CARVE_ATTR } from '@hyperframes/core/audio-carve'
+import { HF_AUDIO_FX_ATTR } from '@hyperframes/core/audio-fx'
 import { writeClipTiming } from '@hyperframes/core/composition-contract'
 import { mintLinkId, relinkSplitHalves } from '@hyperframes/core/media-link'
 import type { Composition, ElementSnapshot, JsonPatchOp } from '@hyperframes/sdk'
@@ -11,6 +14,7 @@ import {
   splitOwners,
   type NewCaption,
 } from './caption-edit'
+import { carveAttributes, type CarveMeasurement, type CarveSettings } from './carve'
 import { rippleStarts, withLinkedStarts, type Cut, type Links, type Timing } from './clip-edit'
 import {
   CAPTION_OWNER,
@@ -1160,6 +1164,7 @@ export function useFilmSession(
           link: null,
           syncOrigin: null,
           dub: null,
+          fxCarve: null,
         })
         engine.addElement(root.id, 0, element)
       })
@@ -1397,6 +1402,33 @@ export function useFilmSession(
   )
 
   /**
+   * 写配乐片段 `id` 的压低设置 `settings` 和它生成的效果链、曲线（`measured` 见 `carveAttributes`），三个属性
+   * 一起算一步撤销。片段不在工程里、属性都已经是这些值时不动工程。
+   */
+  const setCarve = useCallback(
+    (id: string, settings: CarveSettings, measured: CarveMeasurement | null) => {
+      const project = projectRef.current
+      const element = project === null ? null : mainOf(project).getElement(id)
+      if (element === null) return
+      const { chain, automation } = carveAttributes(
+        element.attributes[HF_AUDIO_FX_ATTR],
+        element.attributes[HF_AUDIO_AUTOMATION_ATTR],
+        measured,
+      )
+      const changed = Object.entries({
+        [HF_AUDIO_CARVE_ATTR]: JSON.stringify(settings),
+        [HF_AUDIO_FX_ATTR]: chain,
+        [HF_AUDIO_AUTOMATION_ATTR]: automation,
+      }).filter(([name, value]) => (element.attributes[name] ?? null) !== value)
+      if (changed.length === 0) return
+      edit((main) => {
+        for (const [name, value] of changed) main.setAttribute(id, name, value)
+      })
+    },
+    [edit],
+  )
+
+  /**
    * 删掉几个片段；`ripple` 为真时主轨里后面的片段往前补上，联动的伙伴挪同样的时间差。删一句字幕是删掉
    * 场景里它的元素、主文件根上它的变量和各语言值表里它的值；删掉最后一句时场景文件和宿主都留着。
    * 删组件或块的片段时它随语言的字段的根变量和各语言值表里的值一起删掉。答复删了没有（见 `edit`）。
@@ -1467,6 +1499,7 @@ export function useFilmSession(
             link: name,
             syncOrigin: name,
             dub: null,
+            fxCarve: null,
           }),
         )
         for (const [attribute, value] of Object.entries(detachedVideoChanges(name)))
@@ -1754,6 +1787,7 @@ export function useFilmSession(
               link: null,
               syncOrigin: null,
               dub: { locale, caption, trimmed },
+              fxCarve: null,
             }),
           )
         writeVoiceMode(engine, locale, 'dub')
@@ -1883,6 +1917,7 @@ export function useFilmSession(
     setHidden,
     setValues,
     setAttributes,
+    setCarve,
     removeClips,
     split,
     detach,

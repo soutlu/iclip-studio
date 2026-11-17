@@ -46,6 +46,7 @@ import {
   type SourceLength,
   type Timing,
 } from './clip-edit'
+import { carveOf, isCarveBed } from './carve'
 import { ClipMenuItems } from './clip-menu'
 import { thumbnailUrl, type ComponentCatalog } from './component-catalog'
 import { isDubClip, isMediaClip, type FilmClip } from './composition/film'
@@ -169,6 +170,12 @@ const dubBadgeOf = (clip: FilmClip, silent: boolean): SoundBadge | undefined => 
   if (silent) return { text: '不出声', tone: 'muted' }
   return clip.dub.trimmed ? { text: '截短', tone: 'offset' } : undefined
 }
+
+/** 开着压低的配乐片段的小标；静音（隐藏）的不出声，不标。 */
+const carveBadgeOf = (clip: FilmClip): SoundBadge | undefined =>
+  isCarveBed(clip) && !clip.hidden && carveOf(clip)?.enabled === true
+    ? { text: '自动压低', tone: 'linked' }
+    : undefined
 
 // 指针离一条空行（待新开的那一行）的上下边这么近也算在它上面
 const ROW_REACH_PX = 3
@@ -381,7 +388,7 @@ type TimelineClipProps = {
   trimmable: boolean
   /** 拖这个片段挪动或裁 `kind` 这一端时一起动的片段，含它自己和跟着动的联动伙伴。 */
   groupFor: (kind: Gesture['kind']) => ReadonlySet<string>
-  /** 分离出来的原声、其它语言里还没翻的字幕右边的小标；没有时是 undefined。 */
+  /** 分离出来的原声、配音片段、开着压低的配乐、其它语言里还没翻的字幕右边的小标；没有时是 undefined。 */
   badge: SoundBadge | undefined
   /** 别的片段正带着一组片段拖动时，跟着动的片段的样子；没有时是 null。 */
   following: Following | null
@@ -1183,6 +1190,7 @@ export function FilmTimeline({
                           badge={
                             soundBadgeOf(clip, clips) ??
                             dubBadgeOf(clip, dubsSilent) ??
+                            carveBadgeOf(clip) ??
                             (untranslated.has(clip.id) ? SOURCE_TEXT_BADGE : undefined)
                           }
                           key={clip.id}

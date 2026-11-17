@@ -120,6 +120,7 @@ export function audio(overrides: Partial<AudioClip> = {}): AudioClip {
     link: null,
     syncOrigin: null,
     dub: null,
+    fxCarve: null,
     ...overrides,
   }
 }
