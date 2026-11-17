@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { MediaUpload } from '@/shared/api/media-upload'
+import type { ReferenceAudio } from '@/shared/api/reference-audios'
 import { formatDateTime } from '@/shared/lib/date-time'
 import type { GenerationJob } from '../storyboard.api'
 import type { AudioClip, FilmClip } from './composition/film'
@@ -45,6 +46,21 @@ export const uploadedAudio = (upload: MediaUpload): ConversationAudio => ({
   errorMessage: null,
   generated: false,
   createdAt: upload.createdAt,
+})
+
+/** 「音频库」里的一条：参考音频库里的配乐或音效，总是已就绪、量过时长。 */
+export type LibraryAudio = ConversationAudio & { url: string; durationMs: number }
+
+/** 参考音频库里的一条配乐或音效：名字用它的标题。 */
+export const libraryAudio = (audio: ReferenceAudio): LibraryAudio => ({
+  id: audio.id,
+  title: audio.title,
+  status: 'completed',
+  url: audio.url,
+  durationMs: audio.durationMs,
+  errorMessage: null,
+  generated: false,
+  createdAt: audio.createdAt,
 })
 
 /** 生成的和上传的合成一张表，新的在前。 */

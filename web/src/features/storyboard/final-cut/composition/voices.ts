@@ -1,8 +1,10 @@
 /**
- * 按语言放人声。原文永远用原声；加的每种语言有一个人声设置，记在主文件根上的 `data-voice-modes`
- * （`{ "<语言>": "dub" }`，没写的语言是保留原声）：
+ * 按语言放人声。原文永远用原声；加的每种语言有一个人声设置，记在主文件根上的 `data-voice-modes`：
  * - 保留原声（`original`）：这种语言的配音片段不出声，原声照常；
  * - AI 配音（`dub`）：这种语言的配音片段出声，原视频的声音（视频片段的原声、分离出来的原声片段）都不出声。
+ * 每种语言还记着配音用的音色：参考音频库里一个音色的编号，或者从素材片的原声里取（null）。写法是
+ * `{ "<语言>": { "mode": "dub" | "original", "voice": "<音色>" | null } }`；没写的语言、写法不对的语言都是保留原声、
+ * 原声的音色。
  * 配音片段是带 `data-locale`、`data-dub-of` 的普通 `<audio>`（见 `film.ts` 的 `AudioDub`）。预览和按语言导出都用
  * `localizedVoices` 按这条规则改主文件。
  */
@@ -10,12 +12,25 @@ export const VOICE_MODES = 'data-voice-modes'
 
 export type VoiceMode = 'original' | 'dub'
 
-/** 各语言的人声设置：只记 AI 配音的语言。 */
-export type VoiceModes = Readonly<Record<string, 'dub'>>
+/** 一种语言的人声设置：出不出配音，配音用哪个音色（null 是从原声里取）。 */
+export type VoiceSetting = { mode: VoiceMode; voice: string | null }
+
+/** 各语言的人声设置；没有的语言是保留原声、原声的音色。 */
+export type VoiceModes = Readonly<Record<string, VoiceSetting>>
 
 const NO_MODES: VoiceModes = {}
 
-/** 读 `data-voice-modes` 的值；没写或不是 JSON 对象时都是保留原声，值不是 `dub` 的语言也是。 */
+const DEFAULT_SETTING: VoiceSetting = { mode: 'original', voice: null }
+
+const settingOf = (value: unknown): VoiceSetting | undefined => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const { mode, voice } = value as Record<string, unknown>
+  if (mode !== 'dub' && mode !== 'original') return undefined
+  if (voice !== null && (typeof voice !== 'string' || voice === '')) return undefined
+  return { mode, voice }
+}
+
+/** 读 `data-voice-modes` 的值；没写或不是 JSON 对象时都是默认设置，写法不对的语言也是。 */
 export function voiceModesOf(json: string | undefined): VoiceModes {
   if (json === undefined) return NO_MODES
   let parsed: unknown
@@ -26,24 +41,35 @@ export function voiceModesOf(json: string | undefined): VoiceModes {
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return NO_MODES
   return Object.fromEntries(
-    Object.entries(parsed as Record<string, unknown>).flatMap(([locale, mode]) =>
-      mode === 'dub' ? [[locale, 'dub'] as const] : [],
-    ),
+    Object.entries(parsed as Record<string, unknown>).flatMap(([locale, value]) => {
+      const setting = settingOf(value)
+      return setting === undefined ? [] : [[locale, setting] as const]
+    }),
   )
 }
 
-/** 语言 `locale` 的人声设置；原文（null）总是保留原声。 */
-export const voiceModeOf = (modes: VoiceModes, locale: string | null): VoiceMode =>
-  locale !== null && Object.hasOwn(modes, locale) ? 'dub' : 'original'
+/** 语言 `locale` 的人声设置；原文（null）总是保留原声、原声的音色。 */
+export const voiceSettingOf = (modes: VoiceModes, locale: string | null): VoiceSetting =>
+  (locale === null || !Object.hasOwn(modes, locale) ? undefined : modes[locale]) ?? DEFAULT_SETTING
 
-/** `data-voice-modes` 改成语言 `locale` 用 `mode` 以后要写的值；没有 AI 配音的语言时是 null（去掉这个属性）。 */
+/** 语言 `locale` 出不出配音；原文（null）总是保留原声。 */
+export const voiceModeOf = (modes: VoiceModes, locale: string | null): VoiceMode =>
+  voiceSettingOf(modes, locale).mode
+
+/**
+ * `data-voice-modes` 改成语言 `locale` 用 `setting` 以后要写的值：默认设置（保留原声、原声的音色）不写；各语言都是
+ * 默认设置时是 null（去掉这个属性）。
+ */
 export function voiceModesAttribute(
   modes: VoiceModes,
   locale: string,
-  mode: VoiceMode,
+  setting: VoiceSetting,
 ): string | null {
-  const next = Object.fromEntries(Object.entries(modes).filter(([each]) => each !== locale))
-  if (mode === 'dub') next[locale] = 'dub'
+  const next = Object.fromEntries(
+    Object.entries({ ...modes, [locale]: setting }).flatMap(([each, { mode, voice }]) =>
+      mode === 'original' && voice === null ? [] : [[each, { mode, voice }] as const],
+    ),
+  )
   return Object.keys(next).length === 0 ? null : JSON.stringify(next)
 }
 

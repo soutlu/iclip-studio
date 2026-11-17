@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ComponentProps, type Ref } from 'react'
 import { cn } from '@/shared/lib/utils'
+import { useAudition } from '@/shared/ui/audition'
 import { Button, IconButton } from '@/shared/ui/button'
 import { Textarea } from '@/shared/ui/field'
 import { InlineAlert } from '@/shared/ui/inline-alert'
@@ -32,21 +33,32 @@ type TranslateControl = {
   onTranslate: () => void
 }
 
+/** 参考音频库里的一个音色：名字和试听用的地址。 */
+export type VoiceOption = { id: string; name: string; url: string }
+
 /**
- * 其它语言下的人声设置：`mode` 是现在的设置，`dubbed` 是这种语言已经有配音片段，`generating` 是正在给几条
- * 素材片生成配音（没在生成时是 0），`generateBlocked` 是现在为什么不能生成配音。
+ * 其它语言下的人声设置：`mode` 是现在的设置，`voice` 是记着的配音音色（null 是原声的音色），`voices` 是资料库里
+ * 这种语言能用的音色，`voicesProblem` 是它们读不出来的原因；`dubbed` 是这种语言已经有配音片段，`generating` 是正在
+ * 给几条素材片生成配音（没在生成时是 0），`generateBlocked` 是现在为什么不能生成配音。
  */
 export type VoiceControl = {
   mode: VoiceMode
+  voice: string | null
+  voices: readonly VoiceOption[]
+  voicesProblem: { message: string; onRetry: () => void } | undefined
   dubbed: boolean
   generating: number
   generateBlocked: string | undefined
   onMode: (mode: VoiceMode) => void
-  /** 生成这种语言的配音（已有配音时换掉）。 */
-  onGenerate: () => void
+  /** 用音色 `voice`（null 是原声的音色）生成这种语言的配音（已有配音时换掉）。 */
+  onGenerate: (voice: string | null) => void
 }
 
 type CaptionsTabProps = {
+  /** 这个页签是不是正显示着；被藏起来时停止试听音色。 */
+  active: boolean
+  /** 提示一句话（试听失败时）。 */
+  onNotice: (message: string) => void
   /** 其它语言下的「翻译」；原文时是 undefined，不显示。 */
   translate: TranslateControl | undefined
   /** 其它语言下的人声设置；原文时是 undefined，不显示。 */
@@ -82,6 +94,8 @@ type CaptionsTabProps = {
  * 这种语言的字，最上面多一个「翻译」，两段里还没翻的一起翻；「字幕」里多一行人声设置（见 `VoiceRow`）。
  */
 export function CaptionsTab({
+  active,
+  onNotice,
   translate,
   voice,
   captions,
@@ -145,7 +159,9 @@ export function CaptionsTab({
           </button>
         ))}
       </div>
-      {view === 'captions' && voice !== undefined ? <VoiceRow voice={voice} /> : null}
+      {view === 'captions' && voice !== undefined ? (
+        <VoiceRow active={active} onNotice={onNotice} voice={voice} />
+      ) : null}
       {view === 'texts' ? (
         <ComponentTexts {...texts} locale={locale} selected={selected} />
       ) : (
@@ -171,15 +187,45 @@ export function CaptionsTab({
 
 const GENERATING_TEXT = '正在生成配音，请等待生成完成'
 
+const ORIGINAL_VOICE = '原声'
+
 /**
- * 其它语言下的「人声」一行：「保留原声」和「AI 配音」二选一，当前的高亮。这种语言还没有配音时点「AI 配音」是生成
- * 配音（生成完自动用上），有配音时是切过去；有配音时旁边多一个「重新生成」。生成中写着在给几条素材片配音。
+ * 其它语言下的人声设置：第一行是「保留原声」，有配音时右边多一个「重新生成」（用记着的音色）；第二行是 AI 配音的
+ * 音色小块：「原声」（从素材片的原声里取）在前，后面是资料库里的音色（能试听）。保留原声和选中的音色二选一，当前的
+ * 高亮。点一个音色：这种语言已有用它配好的配音时只切过去，不然用它生成配音（生成完自动用上，已有配音时换掉）。
+ * 生成中写着在给几条素材片配音。
  */
-function VoiceRow({ voice }: { voice: VoiceControl }) {
-  const { mode, dubbed, generating, generateBlocked, onMode, onGenerate } = voice
+function VoiceRow({
+  voice,
+  active,
+  onNotice,
+}: {
+  voice: VoiceControl
+  active: boolean
+  onNotice: (message: string) => void
+}) {
+  const { mode, voice: current, voices, voicesProblem, dubbed, generating } = voice
+  const { generateBlocked, onMode, onGenerate } = voice
+  const { playing, toggle } = useAudition({
+    active,
+    onError: () => onNotice('音色试听失败，请重试'),
+  })
   const busy = generating > 0 ? GENERATING_TEXT : undefined
   const redoBlocked = busy ?? generateBlocked
-  const dubBlocked = dubbed ? busy : redoBlocked
+  const switchesOnly = (id: string | null) => dubbed && id === current
+  const chipOf = (id: string | null, name: string) => {
+    const blocked = switchesOnly(id) ? busy : redoBlocked
+    return {
+      blocked,
+      name,
+      onPick: () => {
+        if (blocked !== undefined) return
+        if (switchesOnly(id)) onMode('dub')
+        else onGenerate(id)
+      },
+      picked: mode === 'dub' && current === id,
+    }
+  }
   return (
     <>
       <div aria-label="人声设置" className="wf-captions-voice" role="group">
@@ -192,28 +238,13 @@ function VoiceRow({ voice }: { voice: VoiceControl }) {
         >
           保留原声
         </button>
-        <BlockedReason reason={dubBlocked}>
-          <button
-            aria-disabled={dubBlocked === undefined ? undefined : true}
-            aria-pressed={mode === 'dub'}
-            className="wf-captions-voice-mode ui-state ui-focus"
-            onClick={() => {
-              if (dubBlocked !== undefined) return
-              if (dubbed) onMode('dub')
-              else onGenerate()
-            }}
-            type="button"
-          >
-            {generating > 0 ? '配音中…' : 'AI 配音'}
-          </button>
-        </BlockedReason>
         {dubbed ? (
           <BlockedReason reason={redoBlocked}>
             <button
               aria-disabled={redoBlocked === undefined ? undefined : true}
               className="wf-captions-voice-redo ui-state ui-focus"
               onClick={() => {
-                if (redoBlocked === undefined) onGenerate()
+                if (redoBlocked === undefined) onGenerate(current)
               }}
               type="button"
             >
@@ -222,12 +253,72 @@ function VoiceRow({ voice }: { voice: VoiceControl }) {
           </BlockedReason>
         ) : null}
       </div>
+      <div aria-label="AI 配音音色" className="wf-captions-voices" role="group">
+        <VoiceChip {...chipOf(null, ORIGINAL_VOICE)} />
+        {voices.map((each) => (
+          <VoiceChip
+            key={each.id}
+            {...chipOf(each.id, each.name)}
+            audition={{
+              playing: playing === each.id,
+              onToggle: () => toggle(each.id, each.url),
+            }}
+          />
+        ))}
+      </div>
+      {voicesProblem === undefined ? null : (
+        <InlineAlert
+          action={{ label: '重试', onClick: voicesProblem.onRetry }}
+          className="wf-captions-voices-alert"
+          message={voicesProblem.message}
+        />
+      )}
       {generating > 0 ? (
         <p className="wf-captions-note" role="status">
           正在为 {generating} 条素材片生成配音，可继续编辑
         </p>
       ) : null}
     </>
+  )
+}
+
+type VoiceChipProps = {
+  name: string
+  picked: boolean
+  /** 为什么现在不能点；给了就置灰，点了说明它。 */
+  blocked: string | undefined
+  onPick: () => void
+  /** 资料库里的音色能试听；「原声」没有。 */
+  audition?: { playing: boolean; onToggle: () => void }
+}
+
+/** 一个音色小块：前面是试听钮（有的话），后面是音色的名字，点名字选它。 */
+function VoiceChip({ name, picked, blocked, onPick, audition }: VoiceChipProps) {
+  return (
+    <span className={cn('wf-captions-voice-chip', picked && 'is-picked')}>
+      {audition === undefined ? null : (
+        <IconButton
+          aria-pressed={audition.playing}
+          className="wf-captions-voice-play"
+          label={audition.playing ? `暂停试听：${name}` : `试听：${name}`}
+          name={audition.playing ? 'pause' : 'play'}
+          onClick={audition.onToggle}
+          size="xs"
+        />
+      )}
+      <BlockedReason reason={blocked}>
+        <button
+          aria-disabled={blocked === undefined ? undefined : true}
+          aria-pressed={picked}
+          className="wf-captions-voice-pick ui-state ui-focus"
+          onClick={onPick}
+          title={name}
+          type="button"
+        >
+          {name}
+        </button>
+      </BlockedReason>
+    </span>
   )
 }
 
@@ -246,7 +337,10 @@ function CaptionsView({
   onText,
   onRemove,
   onPick,
-}: Omit<CaptionsTabProps, 'texts' | 'problem' | 'onAdd' | 'translate' | 'voice'> & {
+}: Omit<
+  CaptionsTabProps,
+  'texts' | 'problem' | 'onAdd' | 'translate' | 'voice' | 'active' | 'onNotice'
+> & {
   add: () => Promise<void>
   /** 焦点要进的那一句（刚加的）。 */
   focusing: string | null

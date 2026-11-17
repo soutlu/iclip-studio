@@ -3,15 +3,18 @@ import {
   DEFAULT_HIT_CASE_SCOPE,
   DEFAULT_LIBRARY_SCOPE,
   DEFAULT_LIBRARY_TAB,
+  DEFAULT_REFERENCE_AUDIO_SCOPE,
   DEFAULT_REFERENCE_SCOPE,
   DEFAULT_WHOLE_FILM_SCOPE,
   LIBRARY_TAB_VALUES,
   type HitCaseScope,
   type LibraryScope,
   type LibraryTab,
+  type ReferenceAudioScope,
   type ReferenceScope,
   type WholeFilmScope,
 } from '@/features/library'
+import { zReferenceAudioOut } from '@/shared/api/generated/zod.gen'
 import {
   dateRangeFromSearch,
   dateRangeSearchFields,
@@ -27,6 +30,7 @@ export const librarySearchSchema = z.object({
   q: z.string().max(100).optional().catch(undefined),
   userName: z.string().min(1).optional().catch(undefined),
   tags: z.array(z.uuid()).min(1).optional().catch(undefined),
+  audioKind: zReferenceAudioOut.shape.audioKind.optional().catch(undefined),
   video: z.uuid().optional().catch(undefined),
   version: z.uuid().optional().catch(undefined),
   reference: z.uuid().optional().catch(undefined),
@@ -79,6 +83,20 @@ export function searchFromReferenceScope(scope: ReferenceScope): LibrarySearch {
     tab: 'references',
     tags: scope.tags.length === 0 ? undefined : [...scope.tags],
     userName: scope.userName ?? undefined,
+  }
+}
+
+export const referenceAudioScopeFromSearch = (search: LibrarySearch): ReferenceAudioScope => ({
+  audioKind: search.audioKind ?? DEFAULT_REFERENCE_AUDIO_SCOPE.audioKind,
+  q: search.q ?? DEFAULT_REFERENCE_AUDIO_SCOPE.q,
+})
+
+export function searchFromReferenceAudioScope(scope: ReferenceAudioScope): LibrarySearch {
+  const q = scope.q.trim()
+  return {
+    audioKind: scope.audioKind ?? undefined,
+    q: q === '' ? undefined : q,
+    tab: 'audios',
   }
 }
 

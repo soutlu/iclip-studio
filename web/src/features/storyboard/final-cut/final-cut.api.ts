@@ -1,4 +1,4 @@
-import { queryOptions, useQuery, type QueryClient } from '@tanstack/react-query'
+import { queryOptions, useInfiniteQuery, useQuery, type QueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ApiError, apiFetch, UserFacingError } from '@/shared/api/client'
 import type {
@@ -24,6 +24,7 @@ import {
   zWholeFilmExportStartedOut,
 } from '@/shared/api/generated/zod.gen'
 import { readConversationUploads } from '@/shared/api/media-upload'
+import { referenceAudiosQuery, voicesQuery } from '@/shared/api/reference-audios'
 import {
   generationsRefetchInterval,
   readAllGenerations,
@@ -340,6 +341,13 @@ export const useConversationMusic = (conversationId: string) =>
     },
     refetchInterval: ({ state }) => generationsRefetchInterval(state.data ?? []),
   })
+
+/** 参考音频库里的全部音色，建立晚的在前：「字幕·配音」里选配音的音色用；`enabled` 为假时不读。 */
+export const useLibraryVoices = (enabled: boolean) => useQuery({ ...voicesQuery(), enabled })
+
+/** 参考音频库里的配乐或音效，按 `q` 搜（匹配标题、备注），一页一页读：「配乐」页签的「音频库」用。 */
+export const useLibraryAudios = (audioKind: 'bgm' | 'sfx', q: string) =>
+  useInfiniteQuery(referenceAudiosQuery({ audioKind, q: q.trim() }))
 
 export const useConversationTaskId = (conversationId: string) =>
   useQuery({

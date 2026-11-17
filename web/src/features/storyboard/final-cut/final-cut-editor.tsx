@@ -78,7 +78,6 @@ import {
   SOURCE_SHOWN,
   translationOf,
   type Language,
-  type LocaleCode,
   type ShownLocale,
 } from './locales'
 import { MaterialArea } from './material-area'
@@ -147,7 +146,7 @@ import {
   translationsToWrite,
 } from './translation'
 import { useCaptionRecognition, type RecognitionOutcome } from './use-caption-recognition'
-import { useDubbing, type DubbingOutcome, type DubbingTarget } from './use-dubbing'
+import { useDubbing, type DubbingDone } from './use-dubbing'
 import { useFilmSession, type NewAudio } from './use-film-session'
 import { useSmartMix } from './use-smart-mix'
 import { useTranslation } from './use-translation'
@@ -155,6 +154,7 @@ import { useWholeFilmExport } from './use-whole-film-export'
 import {
   projectFilesBase,
   useFinalCutPreviewTokens,
+  useLibraryVoices,
   useProjectQuery,
   type StoredProject,
 } from './final-cut.api'
@@ -1015,11 +1015,7 @@ function EditorBody({
             : undefined
   const sourceName = (src: string) =>
     sourceNames.get(src) ?? clips.find((clip) => clip.kind === 'video' && clip.src === src)?.label
-  const writeDubs = (
-    code: LocaleCode,
-    targets: readonly DubbingTarget[],
-    outcomes: ReadonlyMap<string, DubbingOutcome>,
-  ) => {
+  const writeDubs = ({ locale: code, voice: chosen, targets, outcomes }: DubbingDone) => {
     const ready = targets.flatMap((each) => {
       const outcome = outcomes.get(each.sourceJobId)
       const url = outcome?.kind === 'ready' ? outcome.job.outputUrl : null
@@ -1037,7 +1033,7 @@ function EditorBody({
           ]
     })
     let trimmed = 0
-    const added = session.addDubs(code, (current) => {
+    const added = session.addDubs(code, chosen, (current) => {
       const made = ready.flatMap(({ request, track }) => dubClips(current, request, track))
       trimmed = made.filter((dub) => dub.trimmed).length
       return {
@@ -1054,12 +1050,26 @@ function EditorBody({
     }
   }
   const dubbing = useDubbing(conversationId, writeDubs)
+  // 资料库里的音色：语种对上这种语言的，或者没设语种的
+  const libraryVoices = useLibraryVoices(target !== undefined)
   const voice =
     film === null || target === undefined
       ? undefined
       : {
           mode: film.voiceMode,
-          // 保留原声时这种语言的配音片段藏着，也算有配音：再点「AI 配音」只是切回去，不重新生成
+          voice: film.dubVoice,
+          voices: (libraryVoices.data ?? []).flatMap((each) =>
+            each.locale === null || each.locale === target.code
+              ? [{ id: each.id, name: each.title, url: each.url }]
+              : [],
+          ),
+          voicesProblem: libraryVoices.isError
+            ? {
+                message: errorMessageOf(libraryVoices.error, '读取音色失败'),
+                onRetry: () => void libraryVoices.refetch(),
+              }
+            : undefined,
+          // 保留原声时这种语言的配音片段藏着，也算有配音：再点配它的音色只是切回去，不重新生成
           dubbed: allClips.some((clip) => isDubClip(clip) && clip.dub.locale === target.code),
           generating: dubbing.generating,
           generateBlocked: dubbingBlocked,
@@ -1067,8 +1077,9 @@ function EditorBody({
             leaveMaterial()
             session.setVoiceMode(target.code, mode)
           },
-          onGenerate: () => {
-            if (dubbingBlocked === undefined) void dubbing.start(target.code, dubbingTargets)
+          onGenerate: (chosen: string | null) => {
+            if (dubbingBlocked === undefined)
+              void dubbing.start(target.code, chosen, dubbingTargets)
           },
         }
 
@@ -1346,6 +1357,8 @@ function EditorBody({
             {...catalogPanel('captions')}
           >
             <CaptionsTab
+              active={sideTab === 'captions' && !collapsed}
+              onNotice={notice}
               addBlocked={captionBlocked}
               captions={captions}
               texts={{

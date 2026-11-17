@@ -4,7 +4,7 @@
 
 ## 组件与状态管理
 
-- **优先复用基础组件**：基础按钮、弹窗、输入框等优先使用 `src/shared/ui/` 中的组件；Toast 提示统一使用 `@/shared/ui/toast`；组件进退场动画统一使用 `tw-animate-css` 的 `animate-in` / `animate-out` 及设计系统 Token，不单独手写一套新的动画 Keyframes。
+- **优先复用基础组件**：基础按钮、弹窗、输入框等优先使用 `src/shared/ui/` 中的组件；Toast 提示统一使用 `@/shared/ui/toast`；列表里的音频试听统一使用 `@/shared/ui/audition` 的 `useAudition`（同一时间只放一条，所在区域藏起来或卸掉时停下）；组件进退场动画统一使用 `tw-animate-css` 的 `animate-in` / `animate-out` 及设计系统 Token，不单独手写一套新的动画 Keyframes。
 - **类型与样式约定**：组件 Props 声明明确的 TypeScript 类型（优先靠近组件定义，跨模块复用时再提取到公共文件）。列表渲染 `key` 必须使用稳定的业务 ID（不要用数组下标）。动态合并 `className` 统一使用 `cn()`，多变体组件样式使用 `cva` 定义。
 - **异步请求与自定义 Hook**：支持取消的查询需透传 `AbortSignal`；自定义 Hook 统一以 `use*` 命名并保持返回结构稳定。
 - **深浅色主题**：全局主题由 `src/app/theme.ts` 统一控制在 `<html>` 标签的 `.dark` 类名上；组件内部直接使用语义化主题 Token，不要各自维护一套独立的主题状态。

@@ -46,7 +46,8 @@ def test_lists_dubs_of_every_locale_as_audio() -> None:
     english = "https://media.iclip.test/dubbings/en.m4a"
     german = "https://media.iclip.test/dubbings/de.m4a"
     html = (
-        '<div data-composition-id="film" data-voice-modes="{&quot;en&quot;:&quot;dub&quot;}">'
+        '<div data-composition-id="film" data-voice-modes='
+        '"{&quot;en&quot;:{&quot;mode&quot;:&quot;dub&quot;,&quot;voice&quot;:null}}">'
         f'<video src="{CLIP_URL}" muted></video>'
         f'<audio src="{english}" data-locale="en" data-dub-of="cap-a1"></audio>'
         f'<audio src="{german}" data-locale="de" data-dub-of="cap-a1"></audio>'

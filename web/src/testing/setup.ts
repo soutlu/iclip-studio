@@ -17,6 +17,7 @@ import { resetMockMcpConnections } from './mocks/mcp-connections'
 import { resetMockMcpServers } from './mocks/mcp-servers'
 import { resetMockModelProviders } from './mocks/model-providers'
 import { resetMockClock } from './mocks/paging'
+import { resetMockReferenceAudios } from './mocks/reference-audios'
 import { resetMockReferences } from './mocks/references'
 import { server } from './mocks/server'
 import { resetMockSkills } from './mocks/skills'
@@ -137,6 +138,7 @@ afterEach(() => {
   resetMockLibraryTags()
   resetMockHitCases()
   resetMockModelProviders()
+  resetMockReferenceAudios()
   resetMockReferences()
   resetMockSession()
   resetMockSkills()

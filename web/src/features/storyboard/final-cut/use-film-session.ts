@@ -74,7 +74,9 @@ import {
   voiceModeOf,
   voiceModesAttribute,
   voiceModesOf,
+  voiceSettingOf,
   type VoiceMode,
+  type VoiceSetting,
 } from './composition/voices'
 import { shownIn, type NewDub } from './dubbing'
 import {
@@ -148,6 +150,8 @@ export type FilmView = {
   /** 带链接（`data-link`）的片段各自的链接名。 */
   links: Links
   durationMs: number
+  /** 当前显示的语言配音用的音色（参考音频的编号，见 `voices.ts`）；null 是原声的音色，原文也是 null。 */
+  dubVoice: string | null
   /** 字幕写法不对时的原因（见 `captionsProblem`），导出前要先改好。 */
   captionsProblem: string | undefined
   /** 字幕场景文件的路径（相对工程根）和现在的内容（没存的改动也在里面）；工程里还没有时是 null。 */
@@ -562,6 +566,7 @@ const viewOf = (
     voiceMode,
     links: new Map(clips.flatMap((clip) => (clip.link === null ? [] : [[clip.id, clip.link]]))),
     durationMs: latestEnd(main, scene),
+    dubVoice: voiceSettingOf(voiceModesIn(main), shown.code).voice,
     captionsProblem: captionsProblem(
       present.get(project.captionsPath) ?? null,
       captionsHostOf(main)?.attributes,
@@ -706,12 +711,14 @@ const followClips = (
 /** 主文件根上记的各语言人声设置（见 `voices.ts`）。 */
 const voiceModesIn = (main: Composition) => voiceModesOf(rootOf(main)?.attributes[VOICE_MODES])
 
-/** 把语言 `locale` 的人声设置写成 `mode`；已经是这样时不动。 */
-const writeVoiceMode = (main: Composition, locale: LocaleCode, mode: VoiceMode) => {
+/** 把语言 `locale` 的人声设置改成 `change` 给的样子（没给的那一项不动）；已经是这样时不动。 */
+const writeVoice = (main: Composition, locale: LocaleCode, change: Partial<VoiceSetting>) => {
   const root = rootOf(main)
   const modes = voiceModesIn(main)
-  if (root === undefined || voiceModeOf(modes, locale) === mode) return
-  main.setAttribute(root.id, VOICE_MODES, voiceModesAttribute(modes, locale, mode))
+  const current = voiceSettingOf(modes, locale)
+  const next = { ...current, ...change }
+  if (root === undefined || (next.mode === current.mode && next.voice === current.voice)) return
+  main.setAttribute(root.id, VOICE_MODES, voiceModesAttribute(modes, locale, next))
 }
 
 /**
@@ -1947,12 +1954,12 @@ export function useFilmSession(
     [catalog, edit],
   )
 
-  /** 把语言 `locale` 的人声设置改成 `mode`（见 `voices.ts`），算一步撤销；已经是这样时不动工程。 */
+  /** 把语言 `locale` 的人声设置改成 `mode`（见 `voices.ts`），音色不动，算一步撤销；已经是这样时不动工程。 */
   const setVoiceMode = useCallback(
     (locale: LocaleCode, mode: VoiceMode) => {
       const project = projectRef.current
       if (project === null || voiceModeOf(voiceModesIn(mainOf(project)), locale) === mode) return
-      edit((main) => writeVoiceMode(main, locale, mode))
+      edit((main) => writeVoice(main, locale, { mode }))
     },
     [edit],
   )
@@ -1962,10 +1969,12 @@ export function useFilmSession(
    * 的配音片段和要加的配音片段。换掉的先删，加的一起放进第一条这几段时间都空着的「配音」行（见 `dubRowFor`，
    * 只看这种语言 AI 配音时显示的片段），写在根下第一个；这种语言的人声设置改成 AI 配音。答复加了几个；一个都不加时不动
    * 工程，答 0。
+   * `voice` 是生成用的音色（参考音频的编号，null 是原声的音色），和 AI 配音一起记进这种语言的人声设置。
    */
   const addDubs = useCallback(
     (
       locale: LocaleCode,
+      voice: string | null,
       plan: (clips: readonly FilmClip[]) => {
         removed: readonly string[]
         added: readonly NewDub[]
@@ -2006,7 +2015,7 @@ export function useFilmSession(
               fxChain: null,
             }),
           )
-        writeVoiceMode(engine, locale, 'dub')
+        writeVoice(engine, locale, { mode: 'dub', voice })
       })
       return added.length
     },
