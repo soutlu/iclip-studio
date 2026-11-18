@@ -21,6 +21,7 @@ import type { GenerationJob } from '../storyboard.api'
 import {
   CAPTIONS_PATH,
   CAPTIONS_PROBLEM_TEXT,
+  captionFontSize,
   captionsHostElement,
   captionsScene,
   captionVariable,
@@ -4208,6 +4209,57 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
     expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
   })
 
+  /** 存下来的字幕场景里一句元素的行内样式；没有时是空的。 */
+  const sceneStyleOf = (id: string) =>
+    new DOMParser()
+      .parseFromString(
+        (mockWorkspaceFile(CONVERSATION, SCENE)?.content ?? '').replace(/<\/?template>/g, ''),
+        'text/html',
+      )
+      .getElementById(id)
+      ?.getAttribute('style') ?? ''
+  /** 选中第二句，在「属性」的「字号」里输入 `typed` 回车。 */
+  const typeFontSize = async (user: ReturnType<typeof userEvent.setup>, typed: string) => {
+    await user.click(bodyOf('第二句'))
+    const inspector = within(screen.getByRole('tabpanel', { name: '属性' }))
+    const size = captionFontSize(CANVAS)
+    expect(inspector.getByRole('slider', { name: '字号' })).toHaveAttribute(
+      'aria-valuetext',
+      `${size} px`,
+    )
+    await user.click(inspector.getByRole('button', { name: `字号 ${size} px，点击可直接输入` }))
+    await user.keyboard(`${typed}{Enter}`)
+    return inspector
+  }
+  const SIZED_60 =
+    'font-size: 60px; -webkit-text-stroke: 12px #000000; text-shadow: 0 2px 5px rgba(0, 0, 0, 0.45)'
+
+  it('选中一句改字号：这句的行内写上字号和跟着它的描边、投影，别的句不动；一步撤销', async () => {
+    const user = await open()
+    const inspector = await typeFontSize(user, '60')
+    await waitSaved(() => expect(sceneStyleOf('cap-b2')).toBe(SIZED_60))
+    expect(sceneStyleOf('cap-a1')).toBe('')
+    expect(inspector.getByRole('button', { name: '字号 60 px，点击可直接输入' })).toBeVisible()
+
+    await user.click(undoButton())
+    await waitSaved(() => expect(sceneStyleOf('cap-b2')).toBe(''))
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('双击字号的滑杆回到默认：字号、描边、投影一起去掉；输入超出范围时收进范围', async () => {
+    const user = await open()
+    const inspector = await typeFontSize(user, '500')
+    const size = captionFontSize(CANVAS)
+    await waitSaved(() => expect(sceneStyleOf('cap-b2')).toContain(`font-size: ${size * 2}px;`))
+
+    const slider = inspector.getByRole('slider', { name: '字号' })
+    fireEvent.doubleClick(
+      slider.parentElement?.closest<HTMLElement>('[data-orientation]') ?? slider,
+    )
+    await waitSaved(() => expect(sceneStyleOf('cap-b2')).toBe(''))
+    expect(slider).toHaveAttribute('aria-valuetext', `${size} px`)
+  })
+
   it('停在「字幕」页签时在时间线上选中片段（字幕、视频都一样）不切走，选中的字幕在列表里标成当前；在页签里点一句的时间：选中它、播放头到它的开始', async () => {
     const user = await open()
     const side = screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
@@ -5149,6 +5201,29 @@ describe('final-cut 编辑器 · 贴片、场景的文字分语言', () => {
     expect(pinned).toHaveValue('新品上市')
     expect(pinned).toHaveAttribute('readonly')
     expect(within(inspector()).getByRole('button', { name: '文字：固定' })).toBeVisible()
+  })
+
+  it('时间线上贴片片段写着「名字 · 文字」，文字是显示着的语言的（没翻的写原文）；改字、换语言后跟着变', async () => {
+    const user = await open(true)
+    // 片段的名字（读屏读的）还是原来的名字
+    const onClip = (name: string, text: string) =>
+      within(screen.getByRole('group', { name: new RegExp(`^${name}，`) })).getByText(text)
+    expect(onClip('中文标题', '中文标题 · 新品上市')).toBeVisible()
+    expect(onClip('季标', '季标 · NEW IN · AW26')).toBeVisible()
+
+    await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
+    expect(onClip('中文标题', '中文标题 · 新品上市')).toBeVisible()
+    await user.click(
+      within(within(panel()).getByRole('group', { name: '字幕或组件文字' })).getByRole('button', {
+        name: '组件文字 2',
+      }),
+    )
+    await user.type(within(texts()).getByRole('textbox', { name: '中文标题 文字' }), 'New in')
+    await waitSaved(() => expect(savedEnglish()).toEqual({ txt_zh_text: 'New in' }))
+    expect(onClip('中文标题', '中文标题 · New in')).toBeVisible()
+
+    await user.click(within(languages()).getByRole('button', { name: '原文' }))
+    expect(onClip('中文标题', '中文标题 · 新品上市')).toBeVisible()
   })
 })
 

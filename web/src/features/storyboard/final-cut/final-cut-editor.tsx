@@ -101,6 +101,7 @@ import {
   type LocaleCode,
   type ShownLocale,
 } from './locales'
+import { hostTextIn } from './host-text'
 import { MaterialArea } from './material-area'
 import {
   takeDurationMs,
@@ -321,6 +322,19 @@ function EditorBody({
         captions.filter((caption) => captionIn(locale, caption).untranslated).map((c) => c.id),
       ),
     [captions, locale],
+  )
+  // 贴片、场景片段上接在名字后面的文字：显示着的语言下的
+  const hostBindings = film?.bindings ?? NO_BINDINGS
+  const hostTexts = useMemo(
+    () =>
+      new Map(
+        clips.flatMap((clip) => {
+          if (clip.kind !== 'host') return []
+          const text = hostTextIn(locale, clip, catalog, hostBindings.get(clip.id) ?? {})
+          return text === null ? [] : [[clip.id, text] as const]
+        }),
+      ),
+    [clips, locale, catalog, hostBindings],
   )
   const empty = film === null || film.clips.length === 0
   const links = film?.links ?? NO_LINKS
@@ -1620,6 +1634,7 @@ function EditorBody({
               audioPeaks={audioPeaks}
               clips={clips}
               catalog={catalog}
+              canvas={film?.canvas ?? DEFAULT_CANVAS}
               keyframes={keyframes}
               onGesture={setGesturing}
               onHide={hideClip}
@@ -1714,6 +1729,7 @@ function EditorBody({
         <FilmTimeline
           clips={clips}
           untranslated={untranslated}
+          hostTexts={hostTexts}
           links={links}
           onSplit={split}
           tool={tool}

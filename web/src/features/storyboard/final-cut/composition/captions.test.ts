@@ -98,7 +98,7 @@ describe('字幕场景文件', () => {
     ])
     scene.setStyle(
       'cap-a1',
-      captionStyles({ font: 'Playfair Display', color: '#ff3366' }, fixtureCatalog),
+      captionStyles({ font: 'Playfair Display', color: '#ff3366' }, fixtureCatalog, CANVAS),
     )
     const saved = scene.serialize()
     expect(saved).toContain(
@@ -111,20 +111,60 @@ describe('字幕场景文件', () => {
     ])
 
     // 改回默认：去掉行内样式，只改给了的那一样
-    reread.setStyle('cap-a1', captionStyles({ font: null }, fixtureCatalog))
+    reread.setStyle('cap-a1', captionStyles({ font: null }, fixtureCatalog, CANVAS))
     expect(readCaptions(reread)[0]).toMatchObject({ font: null, color: '#ff3366' })
   })
 
   it('字体只能是组件库里的字体族，字色只能是 #rrggbb', () => {
-    expect(() => captionStyles({ font: 'Comic Sans MS' }, fixtureCatalog)).toThrow(
+    expect(() => captionStyles({ font: 'Comic Sans MS' }, fixtureCatalog, CANVAS)).toThrow(
       '组件库里没有字体「Comic Sans MS」',
     )
-    expect(() => captionStyles({ color: 'red' }, fixtureCatalog)).toThrow()
-    expect(captionStyles({ color: '#00FF00' }, fixtureCatalog)).toEqual({ color: '#00FF00' })
-    expect(captionStyles({ font: null, color: null }, fixtureCatalog)).toEqual({
+    expect(() => captionStyles({ color: 'red' }, fixtureCatalog, CANVAS)).toThrow()
+    expect(captionStyles({ color: '#00FF00' }, fixtureCatalog, CANVAS)).toEqual({
+      color: '#00FF00',
+    })
+    expect(captionStyles({ font: null, color: null }, fixtureCatalog, CANVAS)).toEqual({
       fontFamily: null,
       color: null,
     })
+  })
+
+  it('一句设了字号：行内写上字号和按它算的描边、投影，存回去再读还认得；回到默认时三样一起去掉，别的样式留着', async () => {
+    const scene = await openComposition(captionsScene(CANVAS, fixtureCatalog, [first, second]))
+    expect(readCaptions(scene).map((caption) => caption.fontSize)).toEqual([null, null])
+    scene.setStyle('cap-a1', captionStyles({ color: '#ff3366' }, fixtureCatalog, CANVAS))
+    scene.setStyle('cap-a1', captionStyles({ fontSize: 100 }, fixtureCatalog, CANVAS))
+    const saved = scene.serialize()
+    expect(saved).toContain(
+      '<div style="color: #ff3366; font-size: 100px; -webkit-text-stroke: 20px #000000; text-shadow: 0 3px 8px rgba(0, 0, 0, 0.45)" id="cap-a1"',
+    )
+    const reread = await openComposition(saved)
+    expect(readCaptions(reread).map((caption) => caption.fontSize)).toEqual([100, null])
+
+    reread.setStyle('cap-a1', captionStyles({ fontSize: null }, fixtureCatalog, CANVAS))
+    expect(reread.serialize()).toContain('<div style="color: #ff3366" id="cap-a1"')
+    expect(readCaptions(reread)[0]).toMatchObject({ fontSize: null, color: '#ff3366' })
+  })
+
+  it('字号是默认字号 0.5 倍到 2 倍之间的整数像素，超出、不是整数时报错', () => {
+    // 1080 宽时默认 56
+    expect(captionStyles({ fontSize: 28 }, fixtureCatalog, CANVAS)).toMatchObject({
+      fontSize: '28px',
+    })
+    expect(captionStyles({ fontSize: 112 }, fixtureCatalog, CANVAS)).toMatchObject({
+      fontSize: '112px',
+    })
+    for (const size of [27, 113, 40.5, Number.NaN])
+      expect(() => captionStyles({ fontSize: size }, fixtureCatalog, CANVAS)).toThrow(
+        '字幕字号要是 28 到 112 之间的整数像素',
+      )
+  })
+
+  it('行内的字号不是整数像素时读成默认（null）', async () => {
+    const scene = await openComposition(captionsScene(CANVAS, fixtureCatalog, [first, second]))
+    scene.setStyle('cap-a1', { fontSize: '2em' })
+    scene.setStyle('cap-b2', { fontSize: '40.5px' })
+    expect(readCaptions(scene).map((caption) => caption.fontSize)).toEqual([null, null])
   })
 
   it('字幕的样子写在场景里：字体是组件库的中文字体，后面只跟通用字体', () => {
@@ -132,6 +172,8 @@ describe('字幕场景文件', () => {
     expect(scene).toContain(`font-family: '${fixtureCatalog.cjk.family}', sans-serif;`)
     expect(scene).toContain('top: 86.5%;')
     expect(scene).toContain('font-size: 56px;')
+    expect(scene).toContain('-webkit-text-stroke: 11px #000000;')
+    expect(scene).toContain('text-shadow: 0 2px 4px rgba(0, 0, 0, 0.45);')
     expect(captionsScene({ width: 1920, height: 1080 }, fixtureCatalog)).toContain(
       'font-size: 100px;',
     )

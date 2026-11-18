@@ -8,11 +8,12 @@ import type { PeaksState } from '../editing/media-analysis'
 import { sourceTrimmed, trimBounds, trimmed, type SourceLength, type Timing } from './clip-edit'
 import type { ComponentCatalog, VariableValue } from './composition/catalog'
 import { CaptionTextField, type CaptionTextChange } from './captions-tab'
-import { CAPTION_COLOR } from './composition/captions'
-import { isMediaClip, type CaptionClip, type FilmClip } from './composition/film'
+import { CAPTION_COLOR, captionFontSize, captionFontSizeRange } from './composition/captions'
+import { isMediaClip, type Canvas, type CaptionClip, type FilmClip } from './composition/film'
 import type { LocaleBindings } from './composition/locale-text'
 import { ColorField, ContentFields, Dropdown, HEX_COLOR, type TextLocale } from './content-fields'
 import { Keys, Tool } from './editor-toolbar'
+import { SliderControl } from './inspector-controls'
 import { ITEM_KIND_LABEL } from './items'
 import type { ShownLocale } from './locales'
 import type { KeyframeStates } from './material-media'
@@ -37,7 +38,7 @@ type Values = Readonly<Record<string, VariableValue>>
 
 type CaptionStyleChange = (
   id: string,
-  changes: Partial<Pick<CaptionClip, 'font' | 'color'>>,
+  changes: Partial<Pick<CaptionClip, 'font' | 'color' | 'fontSize'>>,
 ) => void
 
 type Props = {
@@ -46,6 +47,8 @@ type Props = {
   /** final-cut 里所有的片段：改时间时按它们算落在哪。 */
   clips: readonly FilmClip[]
   catalog: ComponentCatalog
+  /** 画面尺寸：字幕的默认字号和能设的范围按它算。 */
+  canvas: Canvas
   sourceMs: SourceLength
   /** 视频素材的镜头读取状态：「原片截取」在素材总长读到之前写它读到哪了。 */
   keyframes: KeyframeStates
@@ -69,7 +72,7 @@ type Props = {
   locale: ShownLocale
   /** 把字幕 `id` 在一种语言里的字改成 `text`，算一步撤销。 */
   onCaptionText: CaptionTextChange
-  /** 改字幕 `id` 的字体、字色（null 是回到默认），所有语言共用，算一步撤销。 */
+  /** 改字幕 `id` 的字体、字色、字号（null 是回到默认），所有语言共用，算一步撤销。 */
   onCaptionStyle: CaptionStyleChange
   /** 组件或块的片段的文字字段分语言（「内容与样式」用），`bindings` 是各片段随语言的字段。 */
   texts: Omit<TextLocale, 'locale' | 'bindings'> & {
@@ -145,6 +148,7 @@ function ClipInspector({
   clip,
   clips,
   catalog,
+  canvas,
   sourceMs,
   keyframes,
   audioPeaks,
@@ -278,9 +282,11 @@ function ClipInspector({
               />
             ) : clip.kind === 'caption' ? (
               <CaptionContent
+                canvas={canvas}
                 clip={clip}
                 fonts={fonts}
                 locale={locale}
+                onEditing={onTextEditing}
                 onStyle={onCaptionStyle}
                 onText={onCaptionText}
               />
@@ -294,20 +300,24 @@ function ClipInspector({
 
 /**
  * 字幕的「内容与样式」：这句的字（和「字幕」页签里那条同一个文字框，改的是显示着的语言的字），这句的字体（组件库里
- * 的字体，「默认」是字幕的默认字体）和字色。字体、字色所有语言共用，改了各算一步撤销。
+ * 的字体，「默认」是字幕的默认字体）、字号和字色。字体、字号、字色所有语言共用，改了各算一步撤销。
  */
 function CaptionContent({
   clip,
+  canvas,
   fonts,
   locale,
   onText,
   onStyle,
+  onEditing,
 }: {
   clip: CaptionClip
+  canvas: Canvas
   fonts: readonly string[]
   locale: ShownLocale
   onText: CaptionTextChange
   onStyle: CaptionStyleChange
+  onEditing: (editing: boolean) => void
 }) {
   const textId = useId()
   const fontId = useId()
@@ -347,6 +357,12 @@ function CaptionContent({
             value={clip.font !== null && fonts.includes(clip.font) ? clip.font : ''}
           />
         </div>
+        <CaptionFontSize
+          canvas={canvas}
+          onChange={(fontSize) => onStyle(clip.id, { fontSize })}
+          onEditing={onEditing}
+          size={clip.fontSize}
+        />
         <div className="wf-prop-row is-content">
           <label className="wf-prop-label" htmlFor={colorId}>
             颜色
@@ -361,6 +377,56 @@ function CaptionContent({
         </div>
       </div>
     </section>
+  )
+}
+
+const pixelsText = (size: number) => `${size} px`
+
+/**
+ * 「字号」一行：滑杆从默认字号的 0.5 倍到 2 倍，默认处画一道刻度，双击回到默认；没设时显示默认字号。
+ * 输入的数超出范围时收进范围。写成默认字号就是回到默认（null）。
+ */
+function CaptionFontSize({
+  canvas,
+  size,
+  onChange,
+  onEditing,
+}: {
+  canvas: Canvas
+  /** 这句设的字号；没设时是 null。 */
+  size: number | null
+  onChange: (size: number | null) => void
+  onEditing: (editing: boolean) => void
+}) {
+  const fallback = captionFontSize(canvas)
+  const { min, max } = captionFontSizeRange(canvas)
+  const current = size ?? fallback
+  const write = (next: number) => {
+    const clamped = Math.min(max, Math.max(min, Math.round(next)))
+    onChange(clamped === fallback ? null : clamped)
+  }
+  return (
+    <div className="wf-prop-row is-content">
+      <span className="wf-prop-label">字号</span>
+      <SliderControl
+        format={pixelsText}
+        label="字号"
+        mark={fallback}
+        max={max}
+        min={min}
+        onCommit={write}
+        onDoubleClick={() => onChange(null)}
+        onEditing={onEditing}
+        onText={(text) => {
+          const typed = Number(text.replace(/px$/i, '').trim())
+          if (text === '' || !Number.isFinite(typed)) return false
+          write(typed)
+          return true
+        }}
+        position={current}
+        text={pixelsText(current)}
+      />
+    </div>
   )
 }
 

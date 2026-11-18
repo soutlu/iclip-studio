@@ -10,7 +10,7 @@ import { escapeAttribute, seconds } from './html'
  * 两处有一处写了，主文件根上的变量就整个到不了场景，字幕显示成元素里写的字。主文件根、宿主、场景根都带
  * `data-no-timeline`。
  *
- * 样式：场景里一条统一的样式（见 `captionStyle`）；一句设了字体、字色时写在它元素的行内样式上，所有语言共用。
+ * 样式：场景里一条统一的样式（见 `captionStyle`）；一句设了字体、字色、字号时写在它元素的行内样式上，所有语言共用。
  */
 
 /** 编辑器新建字幕场景文件时的路径（相对工程根）。 */
@@ -82,13 +82,26 @@ const STROKE_COLOR = '#000000'
 // design-allow -- 字幕的投影色是作品内容
 const SHADOW_COLOR = 'rgba(0, 0, 0, 0.45)'
 
+/** 字幕的默认字号（像素）：按画面宽度算，1080 宽时 56。 */
+export const captionFontSize = (canvas: Canvas): number => Math.round((canvas.width * 56) / 1080)
+
+/** 一句能设的字号（像素，整数）：默认字号的 0.5 倍到 2 倍。 */
+export const captionFontSizeRange = (canvas: Canvas): { min: number; max: number } => {
+  const size = captionFontSize(canvas)
+  return { min: Math.round(size * 0.5), max: size * 2 }
+}
+
+/** 字号 `size` 下的描边和投影：粗细、偏移按字号算，字号变了要跟着变。 */
+const strokeOf = (size: number) => `${Math.round(size * 0.2)}px ${STROKE_COLOR}`
+const shadowOf = (size: number) =>
+  `0 ${Math.max(1, Math.round(size * 0.03))}px ${Math.round(size * 0.08)}px ${SHADOW_COLOR}`
+
 /**
- * 字幕的样子：白色粗体、黑色描边（描边画在字后面）、居中，在画面 86.5% 高处，最宽 90%，字号按画面宽度算
- * （1080 宽时 56px）。字体用组件库的中文字体：主文件的字体块按字幕的字声明了它，没声明的字体导出时会去外网取。
+ * 字幕的样子：白色粗体、黑色描边（描边画在字后面）、居中，在画面 86.5% 高处，最宽 90%，字号见
+ * `captionFontSize`。字体用组件库的中文字体：主文件的字体块按字幕的字声明了它，没声明的字体导出时会去外网取。
  */
 function captionStyle(canvas: Canvas, catalog: ComponentCatalog): string {
-  const size = Math.round((canvas.width * 56) / 1080)
-  const shadow = `0 ${Math.max(1, Math.round(size * 0.03))}px ${Math.round(size * 0.08)}px`
+  const size = captionFontSize(canvas)
   return `[data-composition-id="${CAPTIONS_ID}"] .caption {
   position: absolute;
   left: 5%;
@@ -102,9 +115,9 @@ function captionStyle(canvas: Canvas, catalog: ComponentCatalog): string {
   font-weight: 700;
   font-size: ${size}px;
   line-height: 1.3;
-  -webkit-text-stroke: ${Math.round(size * 0.2)}px ${STROKE_COLOR};
+  -webkit-text-stroke: ${strokeOf(size)};
   paint-order: stroke fill;
-  text-shadow: ${shadow} ${SHADOW_COLOR};
+  text-shadow: ${shadowOf(size)};
 }`
 }
 
@@ -141,10 +154,18 @@ const firstFamily = (value: string | undefined): string | null => {
   return first === '' ? null : first
 }
 
+const PIXELS = /^(\d+)px$/
+
+/** 行内 `font-size` 的像素数；没写、不是整数像素时是 null。 */
+const pixelsOf = (value: string | undefined): number | null => {
+  const matched = value === undefined ? null : PIXELS.exec(value.trim())
+  return matched === null ? null : Number(matched[1])
+}
+
 /**
  * 把场景根下一个带时间的元素读成一句字幕：字取主文件根上它的变量的默认值（`texts`，变量 → 字），
  * 没有这个变量时取元素里写的字；名字见 `captionLabel`。`data-caption-of` 没写或是空的时不属于任何片段。
- * 字体是行内 `font-family` 的首选字体族，字色是行内的 `color`，没写的是 null。
+ * 字体是行内 `font-family` 的首选字体族，字色是行内的 `color`，字号是行内 `font-size` 的像素数，没写的是 null。
  */
 export function captionOf(
   element: ElementView,
@@ -169,6 +190,7 @@ export function captionOf(
     owner: owner === undefined || owner === '' ? null : owner,
     font: firstFamily(element.inlineStyles['fontFamily']),
     color: element.inlineStyles['color'] ?? null,
+    fontSize: pixelsOf(element.inlineStyles['fontSize']),
   }
 }
 
@@ -177,16 +199,18 @@ const HEX_COLOR = /^#[0-9a-f]{6}$/i
 /**
  * 改一句字幕的样式时写到它元素上的行内样式（SDK 的属性名）：`changes` 里给了的那几样，null 是去掉、回到默认。
  * 字体只能是组件库 `fonts` 里的字体族，写成 `'<字体族>', '<中文字体族>', sans-serif`（这个字体族没有的中文字形
- * 退到组件库的中文字体）；字色只能是 `#rrggbb`。
+ * 退到组件库的中文字体）；字色只能是 `#rrggbb`；字号是 `canvas` 上 `captionFontSizeRange` 里的整数像素，
+ * 描边和投影按它一起写、一起去掉。
  *
- * @throws Error 字体不在组件库里，或字色不是 `#rrggbb`
+ * @throws Error 字体不在组件库里，字色不是 `#rrggbb`，或字号不是范围里的整数
  */
 export function captionStyles(
-  changes: Partial<Pick<CaptionClip, 'font' | 'color'>>,
+  changes: Partial<Pick<CaptionClip, 'font' | 'color' | 'fontSize'>>,
   catalog: ComponentCatalog,
+  canvas: Canvas,
 ): Record<string, string | null> {
   const styles: Record<string, string | null> = {}
-  const { font, color } = changes
+  const { font, color, fontSize } = changes
   if (font !== undefined) {
     if (font !== null && !Object.hasOwn(catalog.fonts, font))
       throw new Error(`组件库里没有字体「${font}」`)
@@ -195,6 +219,15 @@ export function captionStyles(
   if (color !== undefined) {
     if (color !== null && !HEX_COLOR.test(color)) throw new Error(`字幕颜色写法不对：${color}`)
     styles['color'] = color
+  }
+  if (fontSize !== undefined) {
+    const { min, max } = captionFontSizeRange(canvas)
+    if (fontSize !== null && !(Number.isInteger(fontSize) && fontSize >= min && fontSize <= max))
+      throw new Error(`字幕字号要是 ${min} 到 ${max} 之间的整数像素：${fontSize}`)
+    styles['fontSize'] = fontSize === null ? null : `${fontSize}px`
+    // 键名照 SDK 把属性名转成驼峰的写法，存出来才是 -webkit-text-stroke
+    styles['WebkitTextStroke'] = fontSize === null ? null : strokeOf(fontSize)
+    styles['textShadow'] = fontSize === null ? null : shadowOf(fontSize)
   }
   return styles
 }
