@@ -1157,6 +1157,69 @@ test('波形音量关键帧：打开后在配乐的波形线上按下加一个�
   expect(volumeOf(shifted)).toHaveLength(2)
 })
 
+test('音量关键帧跟着裁剪走：配乐上加一个点，在时间线上裁掉开头 0.1 秒，存下的曲线整条往前挪 0.1 秒', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const inspector = editor.getByRole('tabpanel', { name: '属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '配乐' }).click()
+  const added = mainSavedWith(page, (html) => savedAudio(html).length === 1)
+  await side
+    .getByRole('list', { name: '音频' })
+    .getByRole('button', { name: '轻快原声吉他，适合秋季穿搭', exact: true })
+    .click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '加到播放头' }).click()
+  await added
+  const clip = editor
+    .getByRole('group', { name: '配乐', exact: true })
+    .getByRole('group', { name: /^轻快原声吉他/ })
+  await clip.getByRole('button', { name: /^选中：轻快原声吉他/ }).click()
+
+  type Point = { t: number; v: number }
+  const volumeOf = (html: string) =>
+    (
+      JSON.parse(
+        (savedAttribute(html, 'audio', 'data-automation') ?? '{"lanes":[]}').replaceAll(
+          '&quot;',
+          '"',
+        ),
+      ) as { lanes: { target: string; points: Point[] }[] }
+    ).lanes.find((lane) => lane.target === 'volume')?.points
+  await inspector.getByRole('button', { name: /^精细调音/ }).click()
+  const flat = mainSavedWith(page, (html) => volumeOf(html)?.length === 2)
+  await inspector.getByRole('switch', { name: '波形音量关键帧' }).click()
+  await flat
+
+  // 按在线上的 30% 处加一个点
+  const box = await clip.getByTestId('volume-envelope').boundingBox()
+  const end = await clip.getByRole('slider', { name: '音量关键帧 1' }).boundingBox()
+  if (box === null || end === null) throw new Error('量不到音量曲线的位置')
+  const inserted = mainSavedWith(page, (html) => volumeOf(html)?.length === 3)
+  await page.mouse.click(box.x + box.width * 0.3, end.y + end.height / 2)
+  const keyed = htmlOf(await inserted)
+  const before = volumeOf(keyed) ?? []
+  const startBefore = Number(savedAttribute(keyed, 'audio', 'data-start'))
+
+  const trimmed = mainSavedWith(
+    page,
+    (html) => Number(savedAttribute(html, 'audio', 'data-start')) > startBefore,
+  )
+  await clip.getByRole('slider', { name: '裁剪开头' }).focus()
+  await page.keyboard.press('ArrowRight')
+  const html = htmlOf(await trimmed)
+  expect(Number(savedAttribute(html, 'audio', 'data-start'))).toBeCloseTo(startBefore + 0.1, 3)
+  const after = volumeOf(html) ?? []
+  // 原来第 0 秒的点裁掉了、0 秒补一个，后面的点都早了 0.1 秒
+  expect(after).toHaveLength(3)
+  expect(after[0]?.t).toBe(0)
+  expect(after[1]?.t).toBeCloseTo((before[1]?.t ?? 0) - 0.1, 3)
+  expect(after[2]?.t).toBeCloseTo((before[2]?.t ?? 0) - 0.1, 3)
+})
+
 test('在贴片卡片上按 ] 选中片段：侧栏切到「属性」，焦点交还编辑器，Delete 照常删掉；选中没了回到贴片页签', async ({
   page,
 }) => {

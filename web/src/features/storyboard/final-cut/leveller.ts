@@ -65,11 +65,16 @@ export function levellerAttributes(
     ...point,
     t: Number(timeAtSourceTime(measured.rate, point.t).toFixed(3)),
   }))
+  const levelled = { ...lane, points }
+  // 已有的原位换掉：重新量出来一样时，写出来的也和原来一样
+  const replaced = lanes.some((other) => other.target === lane.target)
   return {
     chain: chainText(result.chain),
     automation: automationText({
       version: 1,
-      lanes: [...lanes.filter((other) => other.target !== lane.target), { ...lane, points }],
+      lanes: replaced
+        ? lanes.map((other) => (other.target === lane.target ? levelled : other))
+        : [...lanes, levelled],
     }),
   }
 }

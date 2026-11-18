@@ -3717,6 +3717,247 @@ describe('final-cut 编辑器 · 属性', () => {
       await user.click(undoButton())
       await waitSaved(() => expect(volumeLane('clip-1')?.[1]?.v).toBe(1))
     })
+
+    describe('曲线跟着编辑走', () => {
+      const dipped = JSON.stringify({
+        version: 1,
+        lanes: [
+          {
+            target: 'volume',
+            points: [
+              { t: 0, v: 1 },
+              { t: 1, v: 0.25 },
+              { t: 2, v: 1 },
+            ],
+          },
+        ],
+      })
+      const timedClip = (start: string, mediaStart: string) =>
+        new RegExp(`data-start="${start}"[^>]* data-media-start="${mediaStart}"`)
+
+      it('在时间线上裁左边：音量关键帧跟着平移，0 秒上补原曲线在那里的值；撤销一步都回去', async () => {
+        const user = await openWith([video({ src: URL_A, duration: 2_000, automation: dipped })])
+        await pick(user, 'A · 镜头 1')
+        within(screen.getByRole('group', { name: '画面 1' }))
+          .getByRole('slider', { name: '裁剪开头' })
+          .focus()
+        await user.keyboard('{ArrowRight}')
+        await waitSaved(() =>
+          expect(volumeLane('clip-1')).toEqual([
+            { t: 0, v: 0.925 },
+            { t: 0.9, v: 0.25 },
+            { t: 1.9, v: 1 },
+          ]),
+        )
+        expect(savedTag('clip-1')).toMatch(timedClip('0.1', '0.1'))
+
+        await user.click(undoButton())
+        await waitSaved(() => expect(savedTag('clip-1')).toMatch(timedClip('0', '0')))
+        expect(savedAttribute('clip-1', 'data-automation')).toBe(dipped)
+        expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+      })
+
+      it('改成 2 倍速：音量关键帧按比例压到一半的时间', async () => {
+        const user = await openWith([video({ src: URL_A, duration: 2_000, automation: dipped })])
+        await shot(/^生成 A 镜头 1，/)
+        await pick(user, 'A · 镜头 1')
+        await user.click(within(inspector()).getByRole('button', { name: /^倍速 1x，/ }))
+        const box = within(inspector()).getByRole('textbox', { name: '倍速' })
+        await user.clear(box)
+        await user.type(box, '2x{Enter}')
+        await waitSaved(() =>
+          expect(volumeLane('clip-1')).toEqual([
+            { t: 0, v: 1 },
+            { t: 0.5, v: 0.25 },
+            { t: 1, v: 1 },
+          ]),
+        )
+        expect(savedAttribute('clip-1', 'data-playback-rate')).toBe('2')
+      })
+
+      it('「原片截取」里把入点往前挪：平稳音量的曲线跟着内容往后移', async () => {
+        // 声音换成噪声：选中着时按新的入点重量，量出来已经平稳，不写，留下的就是跟着挪的曲线
+        server.use(
+          http.get(URL_A, () =>
+            HttpResponse.arrayBuffer(
+              Float32Array.from({ length: 4 * 48_000 }, (_, i) => ((i * 7_919) % 97) / 160 - 0.3)
+                .buffer,
+            ),
+          ),
+        )
+        const chain = JSON.stringify({
+          version: 1,
+          nodes: [{ type: 'gain', id: 'n1', enabled: true, fromLeveller: true, params: {} }],
+        })
+        const levelled = JSON.stringify({
+          version: 1,
+          lanes: [
+            {
+              target: 'fx.n1.gain',
+              points: [
+                { t: 0, v: 0 },
+                { t: 1, v: 6 },
+                { t: 2, v: 0 },
+              ],
+            },
+          ],
+        })
+        const user = await openWith([
+          video({
+            src: URL_A,
+            duration: 2_000,
+            mediaStart: 1_000,
+            fxChain: chain,
+            automation: levelled,
+          }),
+        ])
+        await shot(/^生成 A 镜头 1，/)
+        await pick(user, 'A · 镜头 1')
+        expect(control('自动平稳人声音量')).toHaveAttribute('aria-checked', 'true')
+        await waitFor(() =>
+          expect(within(inspector()).getByTestId('slip-summary')).toHaveTextContent('1.00 – 3.00s'),
+        )
+        within(inspector()).getByRole('slider', { name: '裁剪开头' }).focus()
+        await user.keyboard('{ArrowLeft}')
+        await waitSaved(() => expect(savedTag('clip-1')).toMatch(timedClip('0', '0.9')))
+        expect(
+          parseAutomation(savedAttribute('clip-1', 'data-automation') ?? '').lanes[0]?.points,
+        ).toEqual([
+          { t: 0.1, v: 0 },
+          { t: 1.1, v: 6 },
+          { t: 2.1, v: 0 },
+        ])
+      })
+
+      /** 视频 0–2 秒、配乐 0–4 秒：选中配乐默认打开压低，量好写进去；答复那时配乐的曲线。 */
+      const carvedMusic = async () => {
+        const user = await openWith([
+          video({ src: URL_A, duration: 2_000 }),
+          audio({ duration: 4_000 }),
+        ])
+        await pick(user, '配乐')
+        await waitSaved(() =>
+          expect(savedAttribute('music-1', 'data-fx-chain')).toContain('peaking'),
+        )
+        return { user, measured: savedAttribute('music-1', 'data-automation') }
+      }
+      /**
+       * 选中视频片段，在时间线上把它的结尾裁掉 1 秒（人声变了，不是整体挪动，压低不能靠平移跟上）；等存好。
+       * 量和写都在同一批微任务里做完，存下来的就是这一步以后的样子。
+       */
+      const trimVoice = async (user: ReturnType<typeof userEvent.setup>) => {
+        await pick(user, 'A · 镜头 1')
+        within(screen.getByRole('group', { name: '画面 1' }))
+          .getByRole('slider', { name: '裁剪结尾' })
+          .focus()
+        await user.keyboard('{Shift>}{ArrowLeft}{/Shift}')
+        await waitSaved(() => expect(savedTag('clip-1')).toContain('data-duration="1"'))
+      }
+      const redoButton = () => within(toolbar()).getByRole('button', { name: '重做' })
+      // 让选中以后的分析（声音已经读过，都在微任务里）做完
+      const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+      it('裁了人声以后再选中配乐：按人声现在的样子重新量压低，写进去；没选中时不重量', async () => {
+        const { user, measured } = await carvedMusic()
+        await trimVoice(user)
+        expect(savedAttribute('music-1', 'data-automation')).toBe(measured)
+
+        await pick(user, '配乐')
+        await waitSaved(() =>
+          expect(savedAttribute('music-1', 'data-automation')).not.toBe(measured),
+        )
+        expect(savedCarve('music-1')).toEqual({ enabled: true, sources: ['voice'], strength: 0.25 })
+      })
+
+      it('撤销掉重新量的那一步以后，同样的人声再选中配乐不再重量', async () => {
+        const { user, measured } = await carvedMusic()
+        await trimVoice(user)
+        await pick(user, '配乐')
+        await waitSaved(() =>
+          expect(savedAttribute('music-1', 'data-automation')).not.toBe(measured),
+        )
+        await user.click(undoButton())
+        expect(redoButton()).not.toHaveAttribute('aria-disabled', 'true')
+
+        // 重量过就会多一步、把重做清掉
+        await pick(user, 'A · 镜头 1')
+        await pick(user, '配乐')
+        await settled()
+        expect(redoButton()).not.toHaveAttribute('aria-disabled', 'true')
+        await waitSaved(() => expect(savedAttribute('music-1', 'data-automation')).toBe(measured))
+      })
+
+      it('人声改回原样时重量出来和原来一样：不写，重做还在', async () => {
+        const { user, measured } = await carvedMusic()
+        await trimVoice(user)
+        await pick(user, '配乐')
+        await waitSaved(() =>
+          expect(savedAttribute('music-1', 'data-automation')).not.toBe(measured),
+        )
+        // 撤销重量、再撤销裁剪：选中着的配乐按人声原来的样子重量，结果和原来一样
+        await user.click(undoButton())
+        await user.click(undoButton())
+        await settled()
+        expect(redoButton()).not.toHaveAttribute('aria-disabled', 'true')
+        await waitSaved(() => expect(savedTag('clip-1')).toContain('data-duration="2"'))
+        expect(savedAttribute('music-1', 'data-automation')).toBe(measured)
+      })
+
+      it('人声改回原样时确实重量过：重做裁剪以后又和上次量的不一样，再重量一次', async () => {
+        const { user, measured } = await carvedMusic()
+        await trimVoice(user)
+        await pick(user, '配乐')
+        await waitSaved(() =>
+          expect(savedAttribute('music-1', 'data-automation')).not.toBe(measured),
+        )
+        await user.click(undoButton())
+        await user.click(undoButton())
+        await settled()
+        // 没按原样重量的话，记着的还是裁过的人声，重做以后不会再量
+        await user.click(redoButton())
+        await waitSaved(() =>
+          expect(savedAttribute('music-1', 'data-automation')).not.toBe(measured),
+        )
+        expect(savedTag('clip-1')).toContain('data-duration="1"')
+      })
+
+      it('配乐和它压的人声一起选中、整体拖动：存下的压低曲线不变', async () => {
+        const carve = JSON.stringify({ enabled: true, sources: ['voice'], strength: 0.25 })
+        const chain = JSON.stringify({
+          version: 1,
+          nodes: [{ type: 'gain', id: 'n1', enabled: true, fromCarve: true, params: {} }],
+        })
+        const ducked = JSON.stringify({
+          version: 1,
+          lanes: [
+            {
+              target: 'fx.n1.gain',
+              points: [
+                { t: 0, v: 0 },
+                { t: 1, v: -6 },
+                { t: 2, v: 0 },
+              ],
+            },
+          ],
+        })
+        const user = await openWith([
+          video({ src: URL_A, duration: 2_000, audioGroup: 'voice' }),
+          audio({ duration: 4_000, fxCarve: carve, fxChain: chain, automation: ducked }),
+        ])
+        await pick(user, 'A · 镜头 1')
+        await user.keyboard('{Shift>}')
+        await pick(user, '配乐')
+        await user.keyboard('{/Shift}')
+        // 拖视频片段 1 秒（测试里一秒 100 像素），选中的两段一起挪
+        const body = screen.getByRole('button', { name: /^选中：A · 镜头 1，/ })
+        fireEvent.pointerDown(body, { button: 0, pointerId: 1, clientX: 10, clientY: 50 })
+        fireEvent.pointerMove(body, { pointerId: 1, clientX: 110, clientY: 50 })
+        fireEvent.pointerUp(body, { pointerId: 1, clientX: 110, clientY: 50 })
+        await waitSaved(() => expect(savedTag('music-1')).toContain('data-start="1"'))
+        expect(savedTag('clip-1')).toContain('data-start="1"')
+        expect(savedAttribute('music-1', 'data-automation')).toBe(ducked)
+      })
+    })
   })
 })
 

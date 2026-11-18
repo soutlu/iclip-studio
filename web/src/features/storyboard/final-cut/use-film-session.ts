@@ -26,7 +26,7 @@ import {
   type CarveMeasurement,
   type CarveSettings,
 } from './carve'
-import { splitAutomation } from './clip-automation'
+import { curvesFollowing, splitAutomation } from './clip-automation'
 import { rippleStarts, withLinkedStarts, type Cut, type Links, type Timing } from './clip-edit'
 import { levellerAttributes, type LevellerMeasurement } from './leveller'
 import { fxEditAttributes, type ChainChange } from './mix-fx'
@@ -1400,7 +1400,8 @@ export function useFilmSession(
   /**
    * 改工程里已有的东西：`change` 拿到主文件、字幕场景（没有时是 undefined）和各语言的值表，里面的几步和工程总长
    * 一起算一步撤销。字幕在同一步里跟着挪了的视频片段、配音片段走（见 `followClips`）；跟着挪做不到时整步
-   * 不做，提示原因。答复这一步做了没有：没有工程、整步不做时是 false。
+   * 不做，提示原因。挪了、裁了开头、改了入点或速度的有声片段，曲线在同一步里跟着改（见 `curvesFollowing`）。
+   * 答复这一步做了没有：没有工程、整步不做时是 false。
    */
   const edit = useCallback(
     (
@@ -1421,6 +1422,8 @@ export function useFilmSession(
           const before = allClipsOf(main, scene, catalog)
           change(main, scene, tables)
           if (scene !== undefined) followClips(main, scene, tables.values(), before, catalog)
+          for (const [id, automation] of curvesFollowing(before, clipsOf(main, catalog)))
+            main.setAttribute(id, HF_AUDIO_AUTOMATION_ATTR, automation)
         })
       } catch (error) {
         // 一批操作里抛出时引擎已经整批退回
