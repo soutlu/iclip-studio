@@ -5451,7 +5451,8 @@ describe('final-cut 编辑器 · 配音', () => {
   /**
    * 工程：素材 A 切成两半（0–2 秒、2–4 秒，后半段从素材的第 2 秒起），素材 B 一段（4–5.5 秒，从素材的第 0.5 秒
    * 起、2 倍速）；字幕 a1、d4 属于前半段，b2 属于后半段，c3 属于 B，e5 是手动加的。English 的值表是 `english`
-   * （默认翻了 a1、b2、c3、e5，没翻 d4）。打开编辑器，切到「字幕·配音」页签和 English。
+   * （默认翻了 a1、b2、c3、e5，没翻 d4）；`dubs` 是已有的配音片段，`modes` 是已有的人声设置。打开编辑器，切到
+   * 「字幕·配音」页签和 English。
    */
   const open = async (
     english: Record<string, string> = {
@@ -5460,6 +5461,7 @@ describe('final-cut 编辑器 · 配音', () => {
       cap_c3: 'C three',
       cap_e5: 'E five',
     },
+    { dubs = [], modes }: { dubs?: FilmClip[]; modes?: string } = {},
   ) => {
     await putFilm(
       [
@@ -5473,6 +5475,7 @@ describe('final-cut 编辑器 · 配音', () => {
           mediaStart: 500,
           playbackRate: 2,
         }),
+        ...dubs,
       ],
       [
         sceneLine('a1', 0, 1_000, 'clip-1'),
@@ -5481,6 +5484,7 @@ describe('final-cut 编辑器 · 配音', () => {
         sceneLine('c3', 4_200, 500, 'clip-3'),
         sceneLine('e5', 6_000, 500),
       ],
+      modes,
     )
     putMockWorkspaceFile(CONVERSATION, EN_FILE, JSON.stringify(english))
     const user = userEvent.setup()
@@ -5816,6 +5820,77 @@ describe('final-cut 编辑器 · 配音', () => {
     await waitSaved(() => expect(savedModes()).toBe('{"en":{"mode":"dub","voice":null}}'))
     await user.click(undoButton())
     await waitSaved(() => expect(savedModes()).toBe(unvoiced))
+  })
+
+  /**
+   * 第二句 d4 翻了、选了不配音，第一句 a1 已有一个 English 配音片段（0–2 秒，占过了 d4 的开始）；打开以后给 d4
+   * 选回跟随整体音色。
+   */
+  const voiceSkippedLine = async () => {
+    const user = await open(
+      { cap_a1: 'A one', cap_d4: 'D four', cap_b2: 'B two', cap_c3: 'C three' },
+      {
+        dubs: [
+          audio({
+            id: 'dub-a1',
+            label: '配音 · A one',
+            src: DUB_URL(TAKE_A),
+            duration: 2_000,
+            dub: { locale: 'en', caption: 'cap-a1', trimmed: false, voice: null },
+          }),
+        ],
+        modes: '{"en":{"mode":"dub","voice":null,"lines":{"cap-d4":{"dub":false}}}}',
+      },
+    )
+    const sent = serveDubbings()
+    await pickLineVoice(user, 1, '跟随整体音色')
+    await waitFor(() => expect(sent).toHaveLength(1))
+    return user
+  }
+
+  it('不配音的一句改回配音、配好以后：前一句的配音收短到它的开始、标成截短，两个片段在同一条配音行', async () => {
+    await voiceSkippedLine()
+    await waitSaved(() =>
+      expect(
+        savedDubs().map(({ caption, start, duration, trimmed }) => ({
+          caption,
+          start,
+          duration,
+          trimmed,
+        })),
+      ).toEqual([
+        { caption: 'cap-a1', start: 0, duration: 1.2, trimmed: true },
+        // 下一句 b2 在素材里从 2.5 秒开始，但前半段只到 2 秒
+        { caption: 'cap-d4', start: 1.2, duration: 0.8, trimmed: true },
+      ]),
+    )
+    expect(screen.queryByRole('group', { name: '配音 2' })).toBeNull()
+    expect(
+      within(screen.getByRole('group', { name: '配音' })).getAllByRole('group', {
+        name: /^配音 · /,
+      }),
+    ).toHaveLength(2)
+  })
+
+  it('不配音的一句改回配音、配好以后撤销一次：回到配之前，前一句的配音照原样', async () => {
+    const user = await voiceSkippedLine()
+    await waitSaved(() => expect(savedDubs()).toHaveLength(2))
+    await user.click(undoButton())
+    await waitSaved(() =>
+      expect(savedDubs()).toEqual([
+        {
+          caption: 'cap-a1',
+          locale: 'en',
+          start: 0,
+          duration: 2,
+          mediaStart: 0,
+          rate: null,
+          src: DUB_URL(TAKE_A),
+          trimmed: false,
+        },
+      ]),
+    )
+    expect(savedModes()).toBe('{"en":{"mode":"dub","voice":null,"lines":{"cap-d4":{"dub":false}}}}')
   })
 
   it('有句子单独选过时：换整种语言的音色只重配跟着它的句子；「重新生成」各用各的音色，不配音的不配', async () => {

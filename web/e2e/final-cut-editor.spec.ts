@@ -2778,6 +2778,85 @@ test('旁白配音：原文下输入文案、选资料库的音色插入，按�
   )
 })
 
+test('素材片的句子配音不压到后面的旁白上：English 下「重新生成」，素材片最后一句的上限是后面那句旁白字幕的开始', async ({
+  page,
+}) => {
+  test.setTimeout(120_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await serveSavedCaptions(page)
+  // 加一段 6 秒的镜头、识别出两句，再在后面插一句旁白（还在这个视频片段里）
+  const panel = await openConversation(page, '工具过程展示')
+  const editor = await openFinalCut(panel)
+  const group = editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+  await group.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
+  await group.getByRole('slider', { name: '裁剪结尾' }).focus()
+  for (let second = 0; second < 6; second += 1) await page.keyboard.press('Shift+ArrowRight')
+  const added = mainSaved(page, 1)
+  await page.keyboard.press('Enter')
+  await added
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '字幕·配音' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕·配音' })
+  const recognized = page.waitForRequest(
+    (request) =>
+      (savedFileOf(request, CAPTIONS_FILE)?.match(/data-caption-of/g) ?? []).length === 2,
+  )
+  await tab.getByRole('button', { name: '识别字幕', exact: true }).click()
+  await recognized
+
+  await tab.getByRole('button', { name: '旁白配音' }).click()
+  const narration = tab.getByRole('group', { name: '旁白配音' })
+  await narration.getByRole('textbox', { name: '旁白文案' }).fill('欢迎来到新品发布会')
+  await narration
+    .getByRole('group', { name: '旁白音色' })
+    .getByRole('button', { name: 'Emma', exact: true })
+    .click()
+  const narrated = page.waitForRequest(
+    (request) => savedFileOf(request, CAPTIONS_FILE)?.includes('欢迎来到新品发布会') === true,
+  )
+  await narration.getByRole('button', { name: '插入配音与字幕' }).click()
+  const lines = savedCaptionLines(savedFileOf(await narrated, CAPTIONS_FILE) ?? '')
+  const narrationStart = lines.find((line) => line.owner === null)?.start ?? 0
+  const lastOwned = Math.max(
+    ...lines.filter((line) => line.owner !== null).map((line) => line.start),
+  )
+  expect(narrationStart).toBeGreaterThan(lastOwned)
+
+  await editor
+    .getByRole('group', { name: '语言' })
+    .getByRole('button', { name: '添加语言' })
+    .click()
+  await page.getByRole('menuitem', { name: 'English（EN）' }).click()
+  const translated = page.waitForRequest(
+    (request) => (savedFileOf(request, ENGLISH_FILE)?.match(/\[EN\]/g) ?? []).length === 3,
+  )
+  await tab.getByRole('button', { name: '翻译', exact: true }).click()
+  await translated
+  // 先用「原声」配好：素材片两句和旁白一句
+  const englishDubs = (html: string) => (html.match(/<audio [^>]*data-locale="en"/g) ?? []).length
+  const dubbed = mainSavedWith(page, (html) => englishDubs(html) === 3)
+  await tab
+    .getByRole('group', { name: 'AI 配音音色' })
+    .getByRole('button', { name: '原声', exact: true })
+    .click()
+  await dubbed
+
+  const asked = page.waitForRequest(
+    (request) => request.method() === 'POST' && request.url().endsWith('/api/generations/dubbings'),
+  )
+  await tab
+    .getByRole('group', { name: '人声设置' })
+    .getByRole('button', { name: '重新生成' })
+    .click()
+  const body = (await asked).postDataJSON() as { lines: { startMs: number; slotEndMs?: number }[] }
+  expect(body.lines).toEqual([
+    expect.objectContaining({ startMs: 300, slotEndMs: 2_400 }),
+    expect.objectContaining({ startMs: 2_400, slotEndMs: Math.round(narrationStart * 1000) }),
+  ])
+})
+
 type PreviewPlayer = HTMLElement & { iframeElement: HTMLIFrameElement }
 
 /** 画面区里第 `row` 行的片段 `name` 的选中按钮。 */
