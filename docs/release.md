@@ -1,7 +1,7 @@
 # 发版与镜像发布指南
 
-本文说明正式发版、线上紧急热修与热修回流的操作步骤，以及 Docker 镜像的构建与发布机制。
-- **重要提醒**：创建或合并任何目标为 `main` 分支的 PR，都必须先获得开发者的明确确认（见 [AGENTS.md](../AGENTS.md#发版与热修)）。
+本文说明正式发版与线上紧急热修的操作步骤，以及 Docker 镜像的构建与发布机制。
+- **重要提醒**：打任何发版标签（`vX.Y.Z` 或 `runtime-vX.Y.Z`）前，都必须先获得开发者的明确确认（见 [AGENTS.md](../AGENTS.md#3-分支与交付)）。
 - 镜像打包完成后的服务器升级步骤，见[本地启动与服务器部署](deploy.md#服务器部署)。
 
 项目有两条发布线，各自发版、各自升级：
@@ -11,33 +11,39 @@
 | Git 标签 | `vX.Y.Z` | `runtime-vX.Y.Z` |
 | 打的镜像 | `iclip-server`、`iclip-web`、`iclip-render` | `iclip-runtime`（运行时 + 视频插件） |
 | 部署变量 | `IMAGE_TAG` | `RUNTIME_IMAGE_TAG` |
-| 打在哪个分支 | `main` | `develop` |
+| 打在哪个分支 | `main`（热修时可能是 `release/vX.Y`） | `main` |
 
 ---
 
 ## 发版与热修
 
-本节是应用版本的流程，运行时版本见[运行时发版](#运行时发版)。
+本节是应用版本的流程，运行时版本见[运行时发版](#运行时发版)。发版就是给通过全量 `ci` 的提交打标签。
 
-| 场景 | 分支方向 | 合并命令（均使用 `--merge` 保留合并节点，不用 Squash） |
-|---|---|---|
-| **正式发版** | `develop → main`（由开发者指定版本号后创建 PR） | 待 `ci` 通过且开发者确认后执行：`gh pr merge <n> --merge` |
-| **紧急热修（Hotfix）** | 从 `origin/main` 检出独立 Worktree 修复，PR 指向 `main` | 待 `ci` 通过且开发者确认后执行：`gh pr merge <n> --merge` |
-| **热修回流** | `main → develop`（把热修同步回开发分支） | 执行 `gh pr merge <n> --auto --merge`，`ci` 通过后自动合入 |
+| 场景 | 做法 |
+|---|---|
+| **正式发版** | 按[发版步骤](#发版步骤)给 `main` 上的提交打 `vX.Y.Z` |
+| **紧急热修，`main` 可以直接发** | 修复按日常流程合入 `main`，再按[发版步骤](#发版步骤)发一个新版本 |
+| **紧急热修，`main` 上有还不能发的改动** | 修复先按日常流程合入 `main`，再按[热修步骤](#热修步骤)在 `release/vX.Y` 上发版 |
 
-### 操作步骤
+### 发版步骤
 
-1. **手动合并 `main` 前核对 CI 状态**：
-   确保该 PR 最新提交的 `ci` 检查已输出 `completed success`：
+1. **在待发的提交上跑全量 `ci`**：
+   记下 `main` 的最新提交，手动触发 `ci`（手动触发总是全量检查）：
    ```bash
-   sha=$(gh api repos/{owner}/{repo}/pulls/<n> --jq .head.sha)
-   gh api "repos/{owner}/{repo}/commits/$sha/check-runs?check_name=ci" --jq '.check_runs[] | .status + " " + .conclusion'
+   git fetch origin
+   sha=$(git rev-parse origin/main)
+   gh workflow run ci.yml --ref main
    ```
-
-2. **打标签并创建 GitHub Release**：
-   PR 合入 `main` 后，确认 `main` 上的最新提交无误，执行以下命令创建 Release（会自动触发镜像打包流水线）：
+   等这次运行结束，确认它检查的提交（`headSha`）就是 `$sha`，且结论是 `success`：
    ```bash
-   gh release create vX.Y.Z --target main --title vX.Y.Z --generate-notes --notes-start-tag <上一个 vX.Y.Z>
+   gh run list --workflow ci.yml --event workflow_dispatch --branch main --limit 1 --json headSha,status,conclusion
+   ```
+   `headSha` 不等于 `$sha` 说明触发前 `main` 又合入了新提交，重新执行这一步。
+
+2. **打标签并创建 GitHub Release（须开发者确认）**：
+   给通过检查的这个提交（不是此刻 `main` 的最新提交）创建 Release，会自动推送标签并触发镜像打包流水线：
+   ```bash
+   gh release create vX.Y.Z --target "$sha" --title vX.Y.Z --generate-notes --notes-start-tag <上一个 vX.Y.Z>
    git fetch --tags
    ```
    - **版本号规则（`vX.Y.Z`）**：由开发者确定。`X` 代表重大架构重构或不兼容变更，`Y` 代表向下兼容的新功能，`Z` 代表问题修复（在 `v0.Y.Z` 阶段，较大改动递增 `Y`，日常修复递增 `Z`）。
@@ -48,27 +54,55 @@
    gh api "repos/{owner}/{repo}/actions/workflows/release-images.yml/runs?event=push&branch=vX.Y.Z" --jq 'first(.workflow_runs[]) | .status + " " + .conclusion'
    ```
 
+### 热修步骤
+
+用于 `main` 上有还不能发的改动、只想把修复发到线上版本的情况。`vX.Y` 取线上版本号的前两段。
+
+1. **修复先合入 `main`**：按日常流程提 PR 合入 `main`，记下它在 `main` 上的提交 `<修复提交>`。
+
+2. **从线上版本的标签切出热修分支**（同一个 `vX.Y` 已有热修分支时直接复用）：
+   ```bash
+   git fetch origin --tags
+   git push origin "<线上版本标签>^{commit}:refs/heads/release/vX.Y"
+   ```
+
+3. **把修复 cherry-pick 到热修分支并提 PR**：
+   ```bash
+   git worktree add .claude/worktrees/<任务名> -b <分支名> origin/release/vX.Y
+   cd .claude/worktrees/<任务名> && make runtime
+   git cherry-pick <修复提交>
+   git push -u origin HEAD
+   gh pr create --base release/vX.Y
+   gh pr merge <n> --auto --squash
+   ```
+   目标分支不是 `main`，`ci` 跑全量检查，通过后自动合入。
+
+4. **在热修分支上发版**：热修 PR 的 `ci` 已经是全量检查，合入后不用再手动触发。记下热修分支的最新提交，从[发版步骤](#发版步骤)第 2 步做起，`--notes-start-tag` 填线上版本标签：
+   ```bash
+   git fetch origin
+   sha=$(git rev-parse origin/release/vX.Y)
+   ```
+
 ---
 
 ## 运行时发版
 
-运行时和视频插件的改动都走这条线，不走 `main`，也不创建 GitHub Release，修复同样是合入 `develop` 后打新标签。版本号自成一条线，和应用版本号没有对应关系，`X.Y.Z` 的含义与应用版本相同。运行时镜像打包的运行时代码来自私有项目 Cue，版本由根目录的 `runtime.ref` 钉住。
+运行时和视频插件的改动都走这条线，不创建 GitHub Release，修复同样是合入 `main` 后打新标签。版本号自成一条线，和应用版本号没有对应关系，`X.Y.Z` 的含义与应用版本相同。运行时镜像打包的运行时代码来自私有项目 Cue，版本由根目录的 `runtime.ref` 钉住。
 
 1. **更新运行时版本（只改视频插件时跳过）**：
    - 先在 Cue 的 `main` 上打 `vX.Y.Z` 标签（Cue 自己的版本号）。
-   - 本仓库把 `runtime.ref` 改成这个标签，执行 `make runtime` 检出新版本，再分别在 `server/`、`plugins/video/`、`deploy/runtime-video/` 里执行 `uv lock`，然后按日常流程提 PR 合入 `develop`。
+   - 本仓库把 `runtime.ref` 改成这个标签，执行 `make runtime` 检出新版本，再分别在 `server/`、`plugins/video/`、`deploy/runtime-video/` 里执行 `uv lock`，然后按日常流程提 PR 合入 `main`。
 
 2. **确认后端已就绪**：
    打标签前确认视频插件用到的后端内部接口已经部署。两边谁先发的规则见[跨版本兼容](../contract/conventions.md#跨版本兼容)。
 
-3. **确认提交在 `develop` 上并推送标签**：
+3. **跑全量 `ci` 并推送标签（须开发者确认）**：
+   先按应用[发版步骤](#发版步骤)第 1 步在 `main` 上跑一次全量 `ci`，确认通过后给同一个提交 `$sha` 打标签：
    ```bash
-   git fetch origin
-   git merge-base --is-ancestor <提交> origin/develop
-   git tag runtime-vX.Y.Z <提交>
+   git tag runtime-vX.Y.Z "$sha"
    git push origin runtime-vX.Y.Z
    ```
-   `merge-base` 退出码非 0 说明提交不在 `develop` 上，不要打标签。镜像按该提交上的 `runtime.ref` 检出 Cue 打包。
+   镜像按该提交上的 `runtime.ref` 检出 Cue 打包。
 
 4. **等待镜像打包完成并上线**：
    推送标签只会触发构建镜像，不会自动部署到服务器。运行以下命令确认流水线输出 `completed success` 后，再按[升级运行时](deploy.md#升级运行时)更新线上环境：

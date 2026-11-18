@@ -47,8 +47,8 @@
 
 | 工作流 | 触发时机 | 执行内容 |
 |---|---|---|
-| [ci](.github/workflows/ci.yml) | 打开 PR、推送新提交、重新打开 PR 或修改目标分支（仅修改 PR 标题/正文或合并后的 push 不触发） | 1. 必查文档链接与 Git 历史密钥泄露。<br>2. 目标分支为 `develop` 时，按改动路径智能选择检查范围（`server` 依赖 `plugins/video`，两者都按 `runtime.ref` 检出的运行时安装：改了 `plugins/video` 或 `runtime.ref` 都查插件与 `server`；仅改 `web/*.md` 时只查前端格式；运行时自身的检查归 Cue）。<br>3. 目标为其他分支（含 `main`）时全量检查。所有结果汇总为 `ci` 状态 |
-| [cache-warm](.github/workflows/cache-warm.yml) | 推送到 `develop` 或 `main`（含 PR 合入）、手动触发 | 仅安装依赖并保存缓存，供后续 PR 加速恢复 |
+| [ci](.github/workflows/ci.yml) | 打开 PR、推送新提交、重新打开 PR 或修改目标分支（仅修改 PR 标题/正文或合并后的 push 不触发）；发版前手动触发（见[发版与镜像发布](docs/release.md)） | 1. 必查文档链接与 Git 历史密钥泄露。<br>2. 目标分支为 `main` 的 PR 按改动路径智能选择检查范围（`server` 依赖 `plugins/video`，两者都按 `runtime.ref` 检出的运行时安装：改了 `plugins/video` 或 `runtime.ref` 都查插件与 `server`；仅改 `web/*.md` 时只查前端格式；运行时自身的检查归 Cue）。<br>3. 目标为其他分支（`release/*`）的 PR 和手动触发都全量检查。所有结果汇总为 `ci` 状态 |
+| [cache-warm](.github/workflows/cache-warm.yml) | 推送到 `main`（含 PR 合入）、手动触发 | 仅安装依赖并保存缓存，供后续 PR 加速恢复 |
 | [release-images](.github/workflows/release-images.yml) | 推送 `vX.Y.Z` 或 `runtime-vX.Y.Z` 标签、手动指定分支触发 | `vX.Y.Z` 构建并上传后端、前端、渲染三个镜像，`runtime-vX.Y.Z` 只构建并上传运行时镜像，手动运行构建全部四个（见[发版与镜像发布](docs/release.md)） |
 
 ---
@@ -70,37 +70,37 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
 
 ## 3. 分支与交付
 
-仓库采用双主干分支模型：
-- **`develop`（日常开发分支）**：所有日常功能与修复均向 `develop` 提 PR，`ci` 检查通过后自动 Squash 合并。
-- **`main`（正式发版分支）**：只接收版本发布和紧急热修，**创建或合并指向 `main` 的 PR 必须先获得开发者明确确认**。
-- `main` 与 `develop` 均禁止直接 push、禁止强推（force push）、禁止删除。
+仓库采用单主干分支模型：
+- **`main`（唯一常驻分支）**：所有日常功能与修复均向 `main` 提 PR，`ci` 检查通过后自动 Squash 合并；仓库只允许 Squash 合并。
+- **`release/vX.Y`（热修分支）**：只在线上版本需要热修、而 `main` 上有还不能发的改动时，从线上版本的标签切出，切出后保留（见[发版与热修](docs/release.md#发版与热修)）。
+- `main` 与 `release/*` 均禁止删除、禁止强推（force push），只能通过 PR 合入，且必须通过 `ci`（不要求 PR 分支先追上目标分支的最新提交）。
+- **打发版标签（`vX.Y.Z` 或 `runtime-vX.Y.Z`）必须先获得开发者明确确认**。
 
 ### 日常开发流程（Worktree 模式）
 
-主目录常驻 `develop` 分支，不在主目录直接写代码或切分支；每个任务都在独立的 Git Worktree 中进行：
+主目录常驻 `main` 分支，不在主目录直接写代码或切分支；每个任务都在独立的 Git Worktree 中进行：
 
 1. **拉取最新代码并创建 Worktree**：
    ```bash
    git fetch origin
-   git worktree add .claude/worktrees/<任务名> -b <分支名> origin/develop
+   git worktree add .claude/worktrees/<任务名> -b <分支名> origin/main
    cd .claude/worktrees/<任务名> && make runtime
    ```
    - 新 Worktree 里没有运行时检出，Python 相关的检查和推送钩子都要用到它，所以建好后先执行 `make runtime`。
-   - 如果当前任务依赖另一个尚未合并的 PR `#N`，则基于那个 PR 的分支创建 Worktree，并在新 PR 描述中注明「依赖 #N」；等 `#N` 合并进 `develop` 后，执行 `git fetch origin && git rebase --onto origin/develop <被依赖分支名> && git push --force-with-lease`。
+   - 如果当前任务依赖另一个尚未合并的 PR `#N`，则基于那个 PR 的分支创建 Worktree，并在新 PR 描述中注明「依赖 #N」；等 `#N` 合并进 `main` 后，执行 `git fetch origin && git rebase --onto origin/main <被依赖分支名> && git push --force-with-lease`。
 
 2. **本地验证并提交**：按[命令与验证](#1-命令与验证)跑完相关检查后 `git commit`。
 
 3. **推送分支、创建 PR 并开启自动合并**：
    ```bash
    git push -u origin HEAD
-   gh pr create --base develop
+   gh pr create --base main
    gh pr merge <n> --auto --squash
    ```
-   - **注意 1**：开启自动合并前务必确认目标分支是 `develop`（`main` 分支没有配置必过状态检查，如果误指向 `main` 开自动合并会直接合入！若选错请先执行 `gh pr edit <n> --base develop`）。
-   - **注意 2**：PR 创建后尽量不要只修改标题或正文（GitHub 在只改标题/正文时不会重新触发 `ci`，会导致自动合并一直卡住；如果确实改了标题或正文，请运行 `gh pr update-branch <n>` 或推一个空提交重新触发 `ci`）。
+   - **注意**：PR 创建后尽量不要只修改标题或正文（GitHub 在只改标题/正文时不会重新触发 `ci`，会导致自动合并一直卡住；如果确实改了标题或正文，请运行 `gh pr update-branch <n>` 或推一个空提交重新触发 `ci`）。
 
 4. **等待 `ci` 通过与故障排查**：
-   - `ci` 通过后会自动 Squash 合入 `develop`。
+   - `ci` 通过后会自动 Squash 合入 `main`。
    - 如果 `ci` 失败，先查看失败 Job 的日志（前端 E2E 失败可下载 `playwright-e2e-*` 构建产物中的 trace 排查）。如果是与本次改动无关的偶发波动，只点 **Re-run failed jobs** 重跑失败项；如果是代码问题，直接推送新提交修复即可（自动合并保持开启）。
 
 5. **合并后清理 Worktree**：
@@ -113,7 +113,7 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
 
 ### 发版与热修
 
-`main` 代表已交付的应用版本。执行版本发布、线上紧急热修或热修回流 `develop` 前，请先阅读 [docs/release.md](docs/release.md#发版与热修)。
+已交付的版本以发版标签为准，`main` 的最新提交不一定已经发布。执行版本发布或线上紧急热修前，请先阅读 [docs/release.md](docs/release.md#发版与热修)。
 
 ---
 

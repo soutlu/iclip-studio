@@ -1,6 +1,6 @@
 name: ci
 run-name: >-
-  ${{ github.event.action == 'edited' && github.event.changes.base == null && format('PR #{0} metadata only - checks not run', github.event.pull_request.number) || format('PR #{0} checks for {1}', github.event.pull_request.number, github.base_ref) }}
+  ${{ github.event_name == 'workflow_dispatch' && format('Full checks for {0}', github.ref_name) || github.event.action == 'edited' && github.event.changes.base == null && format('PR #{0} metadata only - checks not run', github.event.pull_request.number) || format('PR #{0} checks for {1}', github.event.pull_request.number, github.base_ref) }}
 
 permissions:
   contents: read
@@ -8,6 +8,8 @@ permissions:
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
+  # 发版前在待发的提交上跑一次全量检查。
+  workflow_dispatch:
 
 # 修改目标分支会重新检查；标题、正文编辑使用独立组，避免取消正在执行的检查。
 concurrency:
@@ -58,8 +60,8 @@ jobs:
           web=true
           web_format=false
           render=true
-          # 只有 develop PR 按路径缩小范围；main 和其他目标分支都完整检查。
-          if [ "$BASE_REF" = develop ]; then
+          # 只有指向 main 的 PR 按路径缩小范围；指向其他分支的 PR 和手动触发（BASE_REF 为空）都完整检查。
+          if [ "$BASE_REF" = main ]; then
             if git diff --name-only --no-renames -z "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/ci-changed-files"; then
               video_plugins=false
               server=false
@@ -78,7 +80,7 @@ jobs:
                   render/*) scope=render ;;
                   web/*.md) scope=format ;;
                   web/*|design-system.html) scope=web ;;
-                  docs/*|*.md|.claude/*|.gitignore|.pre-commit-config.yaml) scope=docs ;;
+                  docs/*|*.md|.claude/*|.gitignore|.pre-commit-config.yaml|scripts/check-docs.py) scope=docs ;;
                   *) scope=all ;;
                 esac
                 case "$scope" in
@@ -487,8 +489,10 @@ jobs:
           exit 1
       - name: Summarize and require selected checks
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          MERGE_SHA: ${{ github.sha }}
+          CHECKED_SHA: ${{ github.sha }}
           BASE_REF: ${{ github.base_ref }}
           SCOPE_RESULT: ${{ needs.scope.result }}
           SECRETS_RESULT: ${{ needs.secrets.result }}
@@ -512,10 +516,16 @@ jobs:
           RENDER_UNIT_RESULT: ${{ needs.render_unit.result }}
         run: |
           {
-            printf 'PR 最新提交：%s\n\n' "$HEAD_SHA"
-            printf '检查的合并提交：%s\n\n' "$MERGE_SHA"
-            printf '目标分支：%s\n\n' "$BASE_REF"
-            if [ "$BASE_REF" = develop ]; then
+            # 手动触发没有 PR 信息，github.sha 就是所选分支的最新提交。
+            if [ "$EVENT_NAME" = workflow_dispatch ]; then
+              printf '检查的提交：%s\n\n' "$CHECKED_SHA"
+              printf '分支：%s\n\n' "$REF_NAME"
+            else
+              printf 'PR 最新提交：%s\n\n' "$HEAD_SHA"
+              printf '检查的合并提交：%s\n\n' "$CHECKED_SHA"
+              printf '目标分支：%s\n\n' "$BASE_REF"
+            fi
+            if [ "$BASE_REF" = main ]; then
               printf '检查模式：按变更范围。「需执行」为 false 表示本次变更不需要该检查；具体路径判定见 scope 日志。\n\n'
             else
               printf '检查模式：完整检查 plugins/video、server、web 和 render。\n\n'
