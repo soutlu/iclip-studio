@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Sequence
+from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 from typing import Final
 
@@ -32,6 +35,11 @@ _TRIM_MUSIC_SILENCE: Final = (
 
 _LOUDNESS_KEYS: Final = ("input_i", "input_tp", "input_lra", "input_thresh", "target_offset")
 
+# concat 要求各段的采样格式一致；静音段和变速段统一到同一种浮点格式。
+_UNIFORM: Final = (
+    f"aformat=sample_fmts=fltp:sample_rates={AUDIO_RATE}:channel_layouts={AUDIO_LAYOUT}"
+)
+
 
 async def extract_speech_audio(source: Path, *, dest: Path) -> None:
     if not source.is_file():
@@ -47,6 +55,119 @@ async def extract_speech_audio(source: Path, *, dest: Path) -> None:
         timeout=ENCODE_TIMEOUT_SECONDS,
     )  # fmt: skip
     check_output(dest, max_bytes=MAX_VIDEO_BYTES)
+
+
+async def extract_audio_clip(source: Path, *, dest: Path, start_ms: int, duration_ms: int) -> None:
+    """从 ``source`` 的第一条音轨截 ``[start_ms, start_ms + duration_ms)`` 一段，存成单声道 16 位
+    PCM 的 WAV（``AUDIO_RATE``）。没有音轨抛 ``NoAudioStream``。"""
+
+    if not source.is_file():
+        raise MediaError(f"要截音频的素材不在: {source.name}")
+    if not await has_audio_stream(source):
+        raise NoAudioStream(f"这条素材里没有音轨: {source.name}")
+    await run(
+        [
+            "ffmpeg", "-v", "error", "-y",
+            "-ss", f"{start_ms / 1000:.3f}", "-t", f"{duration_ms / 1000:.3f}", "-i", str(source),
+            "-map", "0:a:0", "-vn", "-ac", "1", "-ar", str(AUDIO_RATE),
+            "-c:a", "pcm_s16le", "-f", "wav", str(dest),
+        ],
+        timeout=ENCODE_TIMEOUT_SECONDS,
+    )  # fmt: skip
+    check_output(dest, max_bytes=MAX_AUDIO_BYTES)
+
+
+async def decode_audio(source: Path, *, dest: Path) -> int:
+    """把一段任意格式的音频解码成立体声 16 位 PCM 的 WAV（``AUDIO_RATE``），返回解码后的时长（毫秒）。
+    不是音频、没有音轨抛 ``MediaError``。"""
+
+    if not source.is_file():
+        raise MediaError(f"要解码的音频不在: {source.name}")
+    if not await has_audio_stream(source):
+        raise NoAudioStream(f"这段音频里没有音轨: {source.name}")
+    await run(
+        [
+            "ffmpeg", "-v", "error", "-y", "-i", str(source), "-map", "0:a:0", "-vn",
+            "-ac", "2", "-ar", str(AUDIO_RATE), "-c:a", "pcm_s16le", "-f", "wav", str(dest),
+        ],
+        timeout=ENCODE_TIMEOUT_SECONDS,
+    )  # fmt: skip
+    check_output(dest, max_bytes=MAX_AUDIO_BYTES)
+    return await probe_duration_ms(dest)
+
+
+@dataclass(frozen=True, slots=True)
+class AudioPlacement:
+    """音轨上的一段：``clip`` 放在 ``start_ms``，占到 ``start_ms + length_ms``；先按 ``speed`` 变速，
+    长出的截掉、短的补静音；``fade_out_ms`` 大于 0 时在这一段的结尾淡出。"""
+
+    clip: Path
+    start_ms: int
+    length_ms: int
+    speed: float = 1.0
+    fade_out_ms: int = 0
+
+
+async def lay_audio_track(
+    placements: Sequence[AudioPlacement], *, total_ms: int, dest: Path
+) -> int:
+    """把几段音频按位置铺成一条 ``total_ms`` 长的音轨（没铺到的地方是静音），编码同背景音乐（AAC、
+    立体声、``AUDIO_RATE``），返回成品的时长（毫秒）。
+
+    ``placements`` 要按 ``start_ms`` 排好、互不重叠，都在 ``total_ms`` 以内；段与段之间、最后一段
+    之后补静音。长度按采样点数截、补，所以成品的长度只差 AAC 编码的分帧。"""
+
+    if not placements:
+        raise ValueError("没有要铺的音频")
+    for current, following in pairwise(placements):
+        if current.start_ms + current.length_ms > following.start_ms:
+            raise ValueError("要铺的音频重叠或没按开始排好")
+    end_ms = placements[-1].start_ms + placements[-1].length_ms
+    if end_ms > total_ms:
+        raise ValueError("要铺的音频超出了音轨结尾")
+    chains: list[str] = []
+    labels: list[str] = []
+
+    def silence(ms: int, name: str) -> None:
+        samples = _samples(ms)
+        if samples > 0:
+            source = f"anullsrc=r={AUDIO_RATE}:cl={AUDIO_LAYOUT},atrim=end_sample={samples}"
+            chains.append(f"{source},{_UNIFORM}[{name}]")
+            labels.append(f"[{name}]")
+
+    inputs: list[str] = []
+    cursor_ms = 0
+    for index, placement in enumerate(placements):
+        silence(placement.start_ms - cursor_ms, f"gap{index}")
+        cursor_ms = placement.start_ms + placement.length_ms
+        length = _samples(placement.length_ms)
+        steps = [_UNIFORM]
+        if placement.speed != 1.0:
+            steps.append(f"atempo={placement.speed:.4f}")
+        steps.append(f"atrim=end_sample={length}")
+        fade = min(_samples(placement.fade_out_ms), length)
+        if fade > 0:
+            steps.append(f"afade=t=out:start_sample={length - fade}:nb_samples={fade}")
+        steps += [f"apad=whole_len={length}", _UNIFORM]
+        chains.append(f"[{index}:a]{','.join(steps)}[c{index}]")
+        labels.append(f"[c{index}]")
+        inputs += ["-i", str(placement.clip)]
+    silence(total_ms - end_ms, "tail")
+    chains.append(f"{''.join(labels)}concat=n={len(labels)}:v=0:a=1[out]")
+    await run(
+        [
+            "ffmpeg", "-v", "error", "-y", *inputs,
+            "-filter_complex", ";".join(chains), "-map", "[out]",
+            "-ac", "2", "-ar", str(AUDIO_RATE), *AUDIO_CODEC, "-movflags", "+faststart", str(dest),
+        ],
+        timeout=ENCODE_TIMEOUT_SECONDS,
+    )  # fmt: skip
+    check_output(dest, max_bytes=MAX_AUDIO_BYTES)
+    return await probe_duration_ms(dest)
+
+
+def _samples(ms: int) -> int:
+    return ms * AUDIO_RATE // 1000
 
 
 async def normalize_music(source: Path, *, dest: Path) -> int:
@@ -116,6 +237,10 @@ __all__ = [
     "MUSIC_TRUE_PEAK_DBTP",
     "SPEECH_BITRATE",
     "SPEECH_SAMPLE_RATE",
+    "AudioPlacement",
+    "decode_audio",
+    "extract_audio_clip",
     "extract_speech_audio",
+    "lay_audio_track",
     "normalize_music",
 ]

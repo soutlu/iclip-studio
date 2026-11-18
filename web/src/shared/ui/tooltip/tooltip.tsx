@@ -16,13 +16,19 @@ export const TooltipTrigger = Tooltip.Trigger
 const CONTENT_CLASS =
   'layer-popup max-w-64 rounded-xs bg-inverse-surface px-2 py-1 text-label text-inverse-on-surface shadow-[var(--shadow-2)] data-[state=closed]:animate-out data-[state=closed]:duration-(--dur-s) data-[state=closed]:ease-(--ease-accel) data-[state=closed]:fade-out data-[state=delayed-open]:animate-in data-[state=delayed-open]:duration-(--dur-m) data-[state=delayed-open]:ease-(--ease-decel) data-[state=delayed-open]:fade-in'
 
+type TooltipContentProps = ComponentPropsWithoutRef<typeof Tooltip.Content> & {
+  /** 提示挂到哪个元素里；不给就挂到 body。全屏时要挂进全屏的元素才看得见。 */
+  container?: HTMLElement | null
+}
+
 export function TooltipContent({
   className,
+  container = null,
   sideOffset = 6,
   ...props
-}: ComponentPropsWithoutRef<typeof Tooltip.Content>) {
+}: TooltipContentProps) {
   return (
-    <Tooltip.Portal>
+    <Tooltip.Portal container={container}>
       <Tooltip.Content
         className={cn(CONTENT_CLASS, className)}
         collisionPadding={8}

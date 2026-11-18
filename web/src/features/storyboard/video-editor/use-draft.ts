@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { toast } from '@/shared/ui/toast'
 import { readStoredJson, useStorageFailureNotice, writeStored } from '../editing/browser-storage'
 import {
-  EMPTY_DRAFT,
+  defaultDraft,
   isUsableDraft,
   restoreDraft,
   zDraft,
@@ -33,7 +33,8 @@ export function useDraft({ conversationId, rootJobId, source, latest, ready }: A
     setDraft(
       stored !== undefined && isUsableDraft(source, stored)
         ? stored
-        : ((latest === undefined ? undefined : restoreDraft(source, latest)) ?? EMPTY_DRAFT),
+        : ((latest === undefined ? undefined : restoreDraft(source, latest)) ??
+            defaultDraft(source)),
     )
   }
   return {

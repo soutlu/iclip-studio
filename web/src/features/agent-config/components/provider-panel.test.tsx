@@ -280,6 +280,76 @@ describe('密钥', () => {
   })
 })
 
+describe('配置组', () => {
+  const pickGroup = async (user: User, current: string) => {
+    await user.click(within(panel()).getByRole('button', { name: `配置组：${current}` }))
+    return within(await screen.findByRole('menu'))
+  }
+
+  it('添加密钥时下拉里是「默认」和部署配置里的组，默认选「默认」；选了组就带上组名提交，列表里写出组名', async () => {
+    const user = await renderPage()
+    await openProviders(user)
+    const sent = recordWrites()
+    await user.click(within(panel()).getByRole('button', { name: '添加密钥' }))
+    const form = formNamed('添加密钥')
+
+    const menu = await pickGroup(user, '默认')
+    expect(menu.getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual([
+      '默认',
+      'mkt',
+      'ecom',
+    ])
+    expect(menu.getByRole('menuitemradio', { name: '默认' })).toBeChecked()
+    await user.click(menu.getByRole('menuitemradio', { name: 'ecom' }))
+    expect(form.getByRole('button', { name: '配置组：ecom' })).toBeVisible()
+    await user.type(form.getByLabelText('名称'), '电商部')
+    await user.type(form.getByLabelText('API Key'), 'sk-ecom-0001')
+    await user.click(form.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(within(panel()).queryByRole('form')).toBeNull())
+    expect(sent.at(-1)).toMatchObject({
+      body: { modelGroup: 'ecom', name: '电商部' },
+      method: 'POST',
+      path: expect.stringMatching(/\/credentials$/),
+    })
+    expect(rowOf(within(panel()).getByText('电商部')).getByText('配置组 ecom')).toBeVisible()
+  })
+
+  it('编辑时显示密钥当前的组；改回「默认」只提交 modelGroup 为 null', async () => {
+    const user = await renderPage()
+    await openProviders(user)
+    const sent = recordWrites()
+    expect(rowOf(within(panel()).getByText('创作团队')).getByText('配置组 mkt')).toBeVisible()
+
+    await user.click(within(panel()).getByRole('button', { name: '编辑密钥 创作团队' }))
+    const form = formNamed('编辑密钥')
+    const menu = await pickGroup(user, 'mkt')
+    expect(menu.getByRole('menuitemradio', { name: 'mkt' })).toBeChecked()
+    await user.click(menu.getByRole('menuitemradio', { name: '默认' }))
+    await user.click(form.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(within(panel()).queryByRole('form')).toBeNull())
+    expect(sent).toEqual([
+      {
+        body: { modelGroup: null },
+        method: 'PATCH',
+        path: expect.stringMatching(/\/credentials\/[\w-]+$/),
+      },
+    ])
+    expect(rowOf(within(panel()).getByText('创作团队')).queryByText('配置组 mkt')).toBeNull()
+  })
+
+  it('部署配置里没有组时，下拉里只有「默认」', async () => {
+    server.use(http.get('*/api/model-providers/groups', () => HttpResponse.json({ groups: [] })))
+    const user = await renderPage()
+    await openProviders(user)
+    await user.click(within(panel()).getByRole('button', { name: '添加密钥' }))
+
+    const menu = await pickGroup(user, '默认')
+    expect(menu.getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual(['默认'])
+  })
+})
+
 describe('模型', () => {
   it('百炼的添加模型表单可选 responses 与 chat，默认 responses', async () => {
     const user = await renderPage()

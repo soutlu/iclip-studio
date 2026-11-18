@@ -22,13 +22,13 @@ from iclip.config import VideoGenerationSection
 from iclip.domains.conversations.infra_sql import (
     SqlAgentPreviewStore,
     SqlConversationRepository,
-    SqlWholeFilmDraftStore,
 )
 from iclip.domains.conversations.service import ConversationService
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob, GenerationOutput
-from iclip.domains.generation.schemas import KIND_VIDEO
 from iclip.domains.identity.public import Principal
+from iclip.domains.uploads.infra_sql import SqlUploadRepository
+from iclip.domains.uploads.models import MediaUpload
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.process import ffmpeg_available
@@ -41,7 +41,6 @@ from tests.helpers.generation import (
     MemoryObjectStore,
     config_with_media,
     make_job,
-    make_upload,
     video_request,
 )
 from tests.helpers.media import synthesize_video
@@ -385,10 +384,9 @@ async def test_start_moving_between_counting_and_seeding_voids_the_fork(
             write_derived_file=_untouched,
             document_validators={},
             film=UnusedFilmPage(),
-            drafts=SqlWholeFilmDraftStore(engine),
-            draft_references=_untouched,
             exports=None,
             generate_title=_untouched,
+            model_group_of=_untouched,
             announce_title=_untouched,
             activities_of=_untouched,
             busy_conversation_ids=_untouched,
@@ -553,12 +551,22 @@ async def test_a_fork_inherits_finished_takes_instead_of_copying_them(
         async with make_client(media_app) as client, serving({"clip.mp4": clip_bytes}) as media:
             owner = uuid.UUID(await login_as(client, pg_url, username="logan"))
             clip_url = media.url("clip.mp4")
-            await repo.create_settled(
-                [
-                    make_upload(
-                        kind=KIND_VIDEO, owner_user_id=owner, output=GenerationOutput(url=clip_url)
-                    )
-                ]
+            await SqlUploadRepository(engine).insert(
+                MediaUpload(
+                    id=uuid.uuid4(),
+                    owner_user_id=owner,
+                    api_key_id=None,
+                    conversation_id=None,
+                    kind="video",
+                    url=clip_url,
+                    content_type="video/mp4",
+                    size_bytes=len(clip_bytes),
+                    duration_ms=4000,
+                    width=160,
+                    height=120,
+                    content_md5=None,
+                    created_at=datetime.now(UTC),
+                )
             )
             source = await open_conversation(client)
             await seed_turns(pg_url, source, ["第一句"])

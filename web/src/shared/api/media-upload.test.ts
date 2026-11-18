@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { makeMediaUpload } from '@/testing/media-upload'
 import { server } from '@/testing/mocks/server'
 import { errorMessageOf, UserFacingError } from './client'
 import { checkUploadFile, uploadContentTypeOf, uploadMediaFile } from './media-upload'
@@ -44,8 +45,15 @@ describe('uploadMediaFile 视频', () => {
         })
       }),
       http.put(uploadUrl, () => new HttpResponse(null, { status: 200 })),
-      http.post('*/api/uploads/:uploadId/confirm', () =>
-        HttpResponse.json({ contentType: 'video/mp4', sizeBytes: 5, url: assetUrl }),
+      http.post('*/api/uploads/:uploadId/confirm', ({ params }) =>
+        HttpResponse.json(
+          makeMediaUpload({
+            contentType: 'video/mp4',
+            id: String(params['uploadId']),
+            kind: 'video',
+            url: assetUrl,
+          }),
+        ),
       ),
     )
   })
@@ -143,8 +151,8 @@ describe('uploadMediaFile 图片', () => {
         }
         return new HttpResponse(null, { status: 200 })
       }),
-      http.post('*/api/uploads/:uploadId/confirm', () =>
-        HttpResponse.json({ contentType: 'image/png', sizeBytes: 4, url: assetUrl }),
+      http.post('*/api/uploads/:uploadId/confirm', ({ params }) =>
+        HttpResponse.json(makeMediaUpload({ id: String(params['uploadId']), url: assetUrl })),
       ),
     )
   })
@@ -311,8 +319,18 @@ describe('uploadMediaFile 音乐', () => {
         putType = request.headers.get('Content-Type')
         return new HttpResponse(null, { status: 200 })
       }),
-      http.post('*/api/uploads/:uploadId/confirm', () =>
-        HttpResponse.json({ contentType: 'audio/mp4', sizeBytes: 5, url: uploadUrl }),
+      http.post('*/api/uploads/:uploadId/confirm', ({ params }) =>
+        HttpResponse.json(
+          makeMediaUpload({
+            contentType: 'audio/mp4',
+            durationMs: 30_000,
+            height: null,
+            id: String(params['uploadId']),
+            kind: 'audio',
+            url: uploadUrl,
+            width: null,
+          }),
+        ),
       ),
     )
   })

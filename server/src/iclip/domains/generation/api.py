@@ -10,6 +10,7 @@ from pydantic import TypeAdapter, ValidationError
 from iclip.common.errors import ValidationFailed, validation_error_detail
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.schemas import (
+    DubbingIn,
     GenerationEnvelope,
     GenerationKind,
     GenerationOperation,
@@ -19,6 +20,7 @@ from iclip.domains.generation.schemas import (
     ImageModelsOut,
     Metadata,
     MusicIn,
+    SpeechIn,
     SubtitleIn,
     VideoComposeIn,
     VideoEditIn,
@@ -61,7 +63,8 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
 
         正文可以直接给 ``prompt``，也可以给结构化的 ``shot`` 由服务端拼成 ``prompt``；记录里
         两者都存，``shot`` 不发上游。``shot_index`` 是镜头组编号，落记录的列。``user_name``：
-        API key 调用方必填、照收；浏览器会话可省略，填登录用户名。
+        API key 调用方必填、照收；浏览器会话可省略，填登录用户名。``reference_ids`` 可选，是这次
+        用到的参考资产，有一条不在资料库或已移除就 422；原样记进请求，不发上游。
         """
 
         user_name = resolve_user_name(principal, body.user_name)
@@ -77,8 +80,8 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         principal: Annotated[Principal, require_permission("generation:submit")],
     ) -> GenerationEnvelope:
         """为素材片上的区间生成替换片段。参考视频为空时图生，有一条时编辑；模型与两种模式的时长
-        能力由 video-models 声明。图生必须引用图片并指定整秒时长；编辑参考须为本人上传的视频，
-        实测时长要满足模型限制，seconds 固定为 -1。不合格 422、不入队。
+        能力由 video-models 声明。图生必须引用图片并指定整秒时长；编辑参考须为本人上传的视频
+        或资料库里一条没移除的参考视频，实测时长要满足模型限制，seconds 固定为 -1。不合格 422、不入队。
 
         source_job_id 与 range_start_ms / range_end_ms 记下基底与替换区间，使用基底媒体时间，
         独立于生成时长。基底须为本对话自己的或继承来的已完成素材片，区间须在其时长之内。
@@ -117,8 +120,8 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         body: SubtitleIn,
         principal: Annotated[Principal, require_permission("generation:submit")],
     ) -> GenerationEnvelope:
-        """手动识别一条素材片的口播，另起一条字幕记录（种类 ``subtitle``）；素材片完成时后台已自动识别
-        一次，这里用来补识别旧视频或识别失败后重来。结果在记录的 ``sentences`` 里。
+        """按需识别一条素材片的口播，另起一条字幕记录（种类 ``subtitle``）；素材片完成时不会识别，
+        只有调这个接口才识别。结果在记录的 ``sentences`` 里。
 
         ``sourceJobId`` 要是这段对话（``conversationId``）自己的或继承来的一条视频，读不到 404；读得到
         却不是素材片（已完成的出片或合成）422。字幕识别没开通 422。新记录的对话、需求单与 ``metadata``
@@ -128,6 +131,52 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         user_name = resolve_user_name(principal, body.user_name)
         principal = await act_as(principal, user_name)
         job = await service.submit_subtitle(principal, body)
+        return await envelope(job)
+
+    @router.post("/dubbings", response_model=GenerationEnvelope, status_code=202)
+    async def submit_dubbing(
+        body: DubbingIn,
+        principal: Annotated[Principal, require_permission("generation:submit")],
+    ) -> GenerationEnvelope:
+        """给一条素材片配一种外语，另起一条配音记录（种类 ``dubbing``）。
+
+        用参考音频的声音把 ``lines`` 每句译文合成出来，放在这句的开始，能占到下一句开始（最后一句
+        到视频结尾），写了 ``slotEndMs`` 的不超过它；合成出来更长时先加速，最多 1.25 倍，还放不下
+        就截掉尾巴并淡出；没占到的地方是静音。拼成一条和
+        素材片等长的音轨，地址在 ``outputUrl``，每句的倍数和是否截掉在 ``dubbedLines``。参考音频是
+        ``original`` 时从原声里截被说话时段（``spans``，不写时是 ``lines``）覆盖得最多的一段（不超过
+        10 秒），覆盖不到 3 秒记录失败，``spans`` 的规则同 ``lines``，超出素材片的时长 422；是 ``reference_audio`` 时取参考音频库里那条音色（要没移除、是音色，否则 422），是
+        ``upload`` 时取调用者本人那条音频上传（否则 422），都取前 10 秒。记录的 ``request.reference``
+        里记着用到的地址，音色另记 ``referenceId`` 与台词，上传另记 ``uploadId``。
+
+        ``sourceJobId`` 的规则同字幕识别：读不到 404，不是素材片 422。``lines`` 不合规、超出上限或
+        超出素材片的时长 422。配音没开通 422。``userName`` 的规则同出片，只用来替人办事，不进
+        ``request``。
+        """
+
+        user_name = resolve_user_name(principal, body.user_name)
+        principal = await act_as(principal, user_name)
+        job = await service.submit_dubbing(principal, body)
+        return await envelope(job)
+
+    @router.post("/speeches", response_model=GenerationEnvelope, status_code=202)
+    async def submit_speech(
+        body: SpeechIn,
+        principal: Annotated[Principal, require_permission("generation:submit")],
+    ) -> GenerationEnvelope:
+        """按文字合成一段语音（final-cut 的旁白配音），另起一条记录（种类 ``speech``）。
+
+        用参考音频库里那条音色（要没移除、是音色，否则 422；取前 10 秒）的声音把 ``text`` 念出来，给了
+        ``locale`` 时写明用这种语言念，不给时不写。给了 ``maxDurationMs`` 时念出来更长就先加速，最多
+        1.25 倍，还放不下就截到这个长度并淡出；不补静音，念多长（加速后）就多长。产物是一段 m4a
+        （``outputUrl``，时长在 ``durationMs``），加速了多少、截没截在 ``dubbedLines`` 唯一的一项里。
+        ``text`` 的字数上限同配音每句；给了 ``conversationId`` 却读不到这段对话 404；配音没开通 422。
+        ``userName`` 的规则同出片，只用来替人办事，不进 ``request``。
+        """
+
+        user_name = resolve_user_name(principal, body.user_name)
+        principal = await act_as(principal, user_name)
+        job = await service.submit_speech(principal, body)
         return await envelope(job)
 
     @router.post("/video-enhancements", response_model=GenerationEnvelope, status_code=202)
@@ -176,8 +225,8 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
     ) -> GenerationEnvelope:
         """提交一次图片生成。``userName`` 的规则与视频相同。
 
-        帧图编辑带 ``sourceUrl``（底图地址）：先在本对话及它继承的图片里找，再找调用方可见的上传，
-        找到记 ``sourceJobId``，找不到记外部地址；回来的 ``sourceUrl`` 都是这个地址。它不进
+        帧图编辑带 ``sourceUrl``（底图地址）：在本对话及它继承的生成图片里找，找到记
+        ``sourceJobId``，找不到（上传的图、外链）记这个地址；回来的 ``sourceUrl`` 都是这个地址。它不进
         ``request``、不发上游。
         """
 
@@ -221,10 +270,11 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
 
         ``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。
 
-        按属主列会看到上传记录，按对话列图片会看到切图记录；只要调模型的，按 ``operation=generate`` 筛。
-        素材片的字幕记录是种类 ``subtitle``、来源是那条素材片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。
-        一段对话的背景音乐按 ``kind=audio`` 与 ``conversationId`` 找，生成的与确认时挂到这段对话的上传
-        都在里面；没挂对话的上传按属主列。
+        生成记录只记生成，对话的上传在 ``GET /conversations/{id}/uploads`` 里列。按对话列图片会看到
+        切图记录；只要调模型的，按 ``operation=generate`` 筛。参考视频的试生成是 ``operation=trial``，
+        按 ``generate`` 筛时不在里面。素材片的字幕记录是种类 ``subtitle``、
+        来源是那条素材片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。一段对话生成的背景音乐按
+        ``kind=audio`` 与 ``conversationId`` 找。
         """
 
         jobs = await service.list_recent(
@@ -316,7 +366,7 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         job_id: uuid.UUID,
         principal: Annotated[Principal, require_permission("generation:read")],
     ) -> GenerationEnvelope:
-        """一条可见的生成记录。上传记录的 id 就是确认上传时的 ``uploadId``。"""
+        """一条可见的生成记录。"""
 
         return await envelope(await service.get(principal, job_id))
 

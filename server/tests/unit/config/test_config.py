@@ -31,9 +31,16 @@ MANIFEST = (
     "OSS_PUBLIC_URL_BASE",
     "OSS_INTERNAL_ENDPOINT",
     "PRODUCT_CATALOG_DATABASE_URL",
-    "QWEN_API_KEY",
-    "T_QWEN_KEY",
-    "WHOLE_FILM_RENDER_URL",
+    "QWEN_SUBTITLE_API_KEY",
+    "QWEN_MUSIC_API_KEY",
+    "QWEN_SPEECH_API_KEY",
+    "VIDEO_API_KEY_MKT",
+    "QWEN_SUBTITLE_API_KEY_MKT",
+    "QWEN_MUSIC_API_KEY_MKT",
+    "QWEN_SPEECH_API_KEY_MKT",
+    "VIDEO_API_KEY_ECOM",
+    "FINAL_CUT_RENDER_URL",
+    "FINAL_CUT_PREVIEW_ORIGIN",
     "RUNTIME_INTERNAL_TOKEN",
     "RUNTIME_URL",
     "RUNTIME_APP_KEY",
@@ -204,7 +211,7 @@ def test_optional_services_are_off_when_env_empty(
     assert settings.object_store is None
     assert settings.iclip_studio is None
     assert settings.product_catalog is None
-    assert settings.whole_film_render is None
+    assert settings.final_cut_render is None
     assert not settings.shot_tools_enabled
     assert not settings.ffmpeg_required
 
@@ -354,41 +361,118 @@ SUBTITLE = """  subtitle:
 MUSIC = """  music:
     url: https://music.test/api/v1/services/audio/tts/SpeechSynthesizer
 """
-
-
-@pytest.mark.parametrize("key", [None, "", "   "], ids=["unset", "empty", "blank"])
-def test_music_and_subtitles_are_off_without_the_shared_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, key: str | None
-) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SUBTITLE + MUSIC))
-    _media_env(monkeypatch)
-    if key is not None:
-        monkeypatch.setenv("QWEN_API_KEY", key)
-    media = resolve_settings(config).media_generation
-
-    assert media is not None and media.subtitle is None and media.music is None
+SPEECH = """  speech:
+    url: https://tts.test/api/v1/services/audio/tts/SpeechSynthesizer
+"""
 
 
 @pytest.mark.parametrize(
-    ("sections", "subtitle_enabled", "music_enabled"),
-    [("", False, False), (SUBTITLE, True, False), (MUSIC, False, True)],
-    ids=["neither-configured", "subtitles-only", "music-only"],
+    ("keys", "expected"),
+    [
+        ({}, (None, None, None)),
+        (
+            {
+                "QWEN_SUBTITLE_API_KEY": "",
+                "QWEN_MUSIC_API_KEY": "   ",
+                "QWEN_SPEECH_API_KEY": " ",
+            },
+            (None, None, None),
+        ),
+        ({"QWEN_SUBTITLE_API_KEY": "sk-asr"}, ("sk-asr", None, None)),
+        ({"QWEN_MUSIC_API_KEY": " sk-music "}, (None, "sk-music", None)),
+        ({"QWEN_SPEECH_API_KEY": "sk-dub"}, (None, None, "sk-dub")),
+        (
+            {
+                "QWEN_SUBTITLE_API_KEY": "sk-asr",
+                "QWEN_MUSIC_API_KEY": "sk-music",
+                "QWEN_SPEECH_API_KEY": "sk-dub",
+            },
+            ("sk-asr", "sk-music", "sk-dub"),
+        ),
+    ],
+    ids=["unset", "blank", "subtitles-only", "music-only", "speech-only", "all"],
 )
-def test_the_shared_key_enables_only_the_configured_services(
+def test_subtitles_music_and_speech_each_turn_on_with_their_own_key(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    sections: str,
-    subtitle_enabled: bool,
-    music_enabled: bool,
+    keys: dict[str, str],
+    expected: tuple[str | None, str | None, str | None],
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + sections))
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SUBTITLE + MUSIC + SPEECH))
     _media_env(monkeypatch)
-    monkeypatch.setenv("QWEN_API_KEY", "sk-qwen")
+    for name, value in keys.items():
+        monkeypatch.setenv(name, value)
     media = resolve_settings(config).media_generation
 
     assert media is not None
-    assert (media.subtitle is not None) == subtitle_enabled
-    assert (media.music is not None) == music_enabled
+    resolved = tuple(
+        None if service is None else service.api_key
+        for service in (media.subtitle, media.music, media.speech)
+    )
+    assert resolved == expected
+
+
+@pytest.mark.parametrize(
+    ("sections", "enabled"),
+    [
+        ("", (False, False, False)),
+        (SUBTITLE, (True, False, False)),
+        (MUSIC, (False, True, False)),
+        (SPEECH, (False, False, True)),
+    ],
+    ids=["none-configured", "subtitles-only", "music-only", "speech-only"],
+)
+def test_a_key_enables_only_a_configured_service(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sections: str,
+    enabled: tuple[bool, bool, bool],
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + sections))
+    _media_env(monkeypatch)
+    monkeypatch.setenv("QWEN_SUBTITLE_API_KEY", "sk-asr")
+    monkeypatch.setenv("QWEN_MUSIC_API_KEY", "sk-music")
+    monkeypatch.setenv("QWEN_SPEECH_API_KEY", "sk-dub")
+    media = resolve_settings(config).media_generation
+
+    assert media is not None
+    assert (
+        media.subtitle is not None,
+        media.music is not None,
+        media.speech is not None,
+    ) == enabled
+
+
+def test_the_speech_section_needs_only_its_address(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SPEECH))
+    _media_env(monkeypatch)
+    monkeypatch.setenv("QWEN_SPEECH_API_KEY", "sk-dub")
+    media = resolve_settings(config).media_generation
+
+    assert media is not None and media.speech is not None
+    assert (
+        media.speech.url,
+        media.speech.api_key,
+        media.speech.concurrency,
+        media.speech.timeout_seconds,
+    ) == ("https://tts.test/api/v1/services/audio/tts/SpeechSynthesizer", "sk-dub", 2, 120.0)
+
+
+@pytest.mark.parametrize(
+    "section",
+    [
+        "  speech: {url: ''}\n",
+        "  speech: {}\n",
+        SPEECH + "    concurrency: 0\n",
+        SPEECH + "    timeout_seconds: 0\n",
+    ],
+    ids=["empty-url", "no-url", "no-concurrency", "no-timeout"],
+)
+def test_the_speech_section_rejects_unusable_values(tmp_path: Path, section: str) -> None:
+    with pytest.raises(ValidationError):
+        load_runtime_config(write(tmp_path, VALID + MEDIA + section))
 
 
 @pytest.mark.parametrize("missing", ["OSS_ENDPOINT", "OSS_ACCESS_KEY_ID", "OSS_PUBLIC_URL_BASE"])
@@ -419,24 +503,24 @@ def _bucket_env(monkeypatch: pytest.MonkeyPatch) -> None:
             monkeypatch.setenv(name, value)
 
 
-def test_whole_film_render_is_off_until_its_url_is_set(
+def test_final_cut_render_is_off_until_its_url_is_set(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = load_runtime_config(write(tmp_path, VALID + MEDIA))
     _media_env(monkeypatch)
-    assert resolve_settings(config).whole_film_render is None
+    assert resolve_settings(config).final_cut_render is None
 
-    monkeypatch.setenv("WHOLE_FILM_RENDER_URL", " http://render:8080/ ")
-    render = resolve_settings(config).whole_film_render
+    monkeypatch.setenv("FINAL_CUT_RENDER_URL", " http://render:8080/ ")
+    render = resolve_settings(config).final_cut_render
     assert render is not None and render.url == "http://render:8080"
 
 
-def test_whole_film_render_without_a_bucket_or_media_generation_fails_loudly(
+def test_final_cut_render_without_a_bucket_or_media_generation_fails_loudly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = load_runtime_config(write(tmp_path, VALID))
     _core(monkeypatch)
-    monkeypatch.setenv("WHOLE_FILM_RENDER_URL", "http://render:8080")
+    monkeypatch.setenv("FINAL_CUT_RENDER_URL", "http://render:8080")
     with pytest.raises(RuntimeError, match="OSS_BUCKET") as neither:
         resolve_settings(config)
     assert "media_generation" in str(neither.value)
@@ -448,13 +532,53 @@ def test_whole_film_render_without_a_bucket_or_media_generation_fails_loudly(
 
 
 @pytest.mark.parametrize("bad", ["render:8080", "ftp://render", "http://"])
-def test_whole_film_render_url_must_be_http(
+def test_final_cut_render_url_must_be_http(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad: str
 ) -> None:
     config = load_runtime_config(write(tmp_path, VALID + MEDIA))
     _media_env(monkeypatch)
-    monkeypatch.setenv("WHOLE_FILM_RENDER_URL", bad)
-    with pytest.raises(ValidationError, match="WHOLE_FILM_RENDER_URL"):
+    monkeypatch.setenv("FINAL_CUT_RENDER_URL", bad)
+    with pytest.raises(ValidationError, match="FINAL_CUT_RENDER_URL"):
+        resolve_settings(config)
+
+
+@pytest.mark.parametrize(
+    ("given", "resolved"),
+    [
+        ("https://preview.app.example.com", "https://preview.app.example.com"),
+        (" http://preview.localhost:3014/ ", "http://preview.localhost:3014"),
+    ],
+)
+def test_final_cut_preview_origin_is_read_as_a_bare_origin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, given: str, resolved: str
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID))
+    _core(monkeypatch)
+    assert resolve_settings(config).final_cut_preview_origin is None
+
+    monkeypatch.setenv("FINAL_CUT_PREVIEW_ORIGIN", given)
+    assert resolve_settings(config).final_cut_preview_origin == resolved
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "preview.app.example.com",
+        "ftp://preview.app.example.com",
+        "https://preview.app.example.com/api",
+        "https://preview.app.example.com?x=1",
+        "https://user@preview.app.example.com",
+        "https://preview.app.example.com:port",
+        "null",
+    ],
+)
+def test_final_cut_preview_origin_must_be_http_host_and_port_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad: str
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID))
+    _core(monkeypatch)
+    monkeypatch.setenv("FINAL_CUT_PREVIEW_ORIGIN", bad)
+    with pytest.raises(ValidationError, match="FINAL_CUT_PREVIEW_ORIGIN"):
         resolve_settings(config)
 
 
@@ -518,3 +642,215 @@ def test_the_breakdown_model_is_no_longer_configured(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError, match="breakdown_model"):
         load_runtime_config(path)
+
+
+GROUPS = """
+model_groups:
+  mkt:
+    departments: [101, 102]
+    video_api_key_env: VIDEO_API_KEY_MKT
+    subtitle_api_key_env: QWEN_SUBTITLE_API_KEY_MKT
+    music_api_key_env: QWEN_MUSIC_API_KEY_MKT
+    speech_api_key_env: QWEN_SPEECH_API_KEY_MKT
+    video_models:
+      seedance: mkt-seedance
+      seedance-other: mkt-seedance-other
+  ecom:
+    departments: []
+    video_api_key_env: VIDEO_API_KEY_ECOM
+    video_models:
+      seedance: ecom-seedance
+      seedance-other: ecom-seedance-other
+"""
+
+GROUP_KEYS = {
+    "VIDEO_API_KEY_MKT": "vk-mkt",
+    "QWEN_SUBTITLE_API_KEY_MKT": "asr-mkt",
+    "QWEN_MUSIC_API_KEY_MKT": "music-mkt",
+    "QWEN_SPEECH_API_KEY_MKT": "dub-mkt",
+    "VIDEO_API_KEY_ECOM": "vk-ecom",
+}
+
+
+def _group_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    _media_env(monkeypatch)
+    for name, value in GROUP_KEYS.items():
+        monkeypatch.setenv(name, value)
+
+
+def test_model_groups_resolve_in_config_order_with_their_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + GROUPS))
+    _group_env(monkeypatch)
+
+    settings = resolve_settings(config)
+
+    assert [(group.name, group.departments) for group in settings.model_groups] == [
+        ("mkt", (101, 102)),
+        ("ecom", ()),
+    ]
+    assert settings.media_generation is not None
+    mkt, ecom = settings.media_generation.model_groups
+    assert (mkt.name, mkt.video_api_key, dict(mkt.video_models)) == (
+        "mkt",
+        "vk-mkt",
+        {"seedance": "mkt-seedance", "seedance-other": "mkt-seedance-other"},
+    )
+    assert (mkt.subtitle_api_key, mkt.music_api_key, mkt.speech_api_key) == (None, None, None), (
+        "字幕、配乐、配音没开通"
+    )
+    assert (ecom.name, ecom.video_api_key) == ("ecom", "vk-ecom")
+
+
+def test_no_model_groups_section_means_no_groups(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA))
+    _media_env(monkeypatch)
+
+    settings = resolve_settings(config)
+
+    assert settings.model_groups == ()
+    assert settings.media_generation is not None
+    assert settings.media_generation.model_groups == ()
+
+
+def test_group_keys_are_not_checked_while_media_generation_is_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + GROUPS))
+    _media_env(monkeypatch)
+    monkeypatch.delenv("VIDEO_SUBMIT_URL")
+
+    settings = resolve_settings(config)
+
+    assert settings.media_generation is None
+    assert [group.name for group in settings.model_groups] == ["mkt", "ecom"]
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (("  mkt:\n", "  Mkt:\n"), "Mkt"),
+        (("  mkt:\n", "  1mkt:\n"), "1mkt"),
+        (("  mkt:\n", "  mkt-a:\n"), "mkt-a"),
+        (("departments: []", "departments: [102]"), "部门 102"),
+        (("seedance: ecom-seedance\n", "seedance: ''\n"), "seedance"),
+        (("    video_api_key_env: VIDEO_API_KEY_ECOM\n", ""), "video_api_key_env"),
+    ],
+    ids=["upper_case", "leading_digit", "dash", "shared_department", "empty_model", "no_video_key"],
+)
+def test_malformed_model_groups_are_refused_naming_what_is_wrong(
+    tmp_path: Path, change: tuple[str, str], message: str
+) -> None:
+    content = VALID + MEDIA + GROUPS.replace(*change)
+
+    with pytest.raises(ValidationError, match=message):
+        load_runtime_config(write(tmp_path, content))
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (
+            ("      seedance-other: ecom-seedance-other\n", ""),
+            "model_groups.ecom.video_models 缺 seedance-other",
+        ),
+        (
+            ("seedance-other: ecom-seedance-other\n", "seedance-other: x\n      wan: y\n"),
+            "model_groups.ecom.video_models 多了 wan",
+        ),
+    ],
+    ids=["missing_model", "unknown_model"],
+)
+def test_video_models_must_cover_exactly_the_allowed_models(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: tuple[str, str], message: str
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + GROUPS.replace(*change)))
+    _group_env(monkeypatch)
+
+    with pytest.raises(RuntimeError, match=message):
+        resolve_settings(config)
+
+
+def test_video_models_must_also_name_the_enhance_model_once_enhance_is_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, _with_enhance() + GROUPS))
+    _group_env(monkeypatch)
+    assert resolve_settings(config).media_generation is not None, "高清版没开，不要求"
+
+    monkeypatch.setenv("VIDEO_ENHANCE_SUBMIT_URL", "https://video.test/videos/enhance/async")
+    with pytest.raises(RuntimeError, match=r"model_groups\.mkt\.video_models 缺 video-enhance"):
+        resolve_settings(config)
+
+    with_enhance = GROUPS.replace(
+        "seedance-other: mkt-seedance-other\n",
+        "seedance-other: mkt-seedance-other\n      video-enhance: mkt-enhance\n",
+    ).replace(
+        "seedance-other: ecom-seedance-other\n",
+        "seedance-other: ecom-seedance-other\n      video-enhance: ecom-enhance\n",
+    )
+    config = load_runtime_config(write(tmp_path, _with_enhance() + with_enhance))
+    media = resolve_settings(config).media_generation
+    assert media is not None
+    assert media.model_groups[0].video_models["video-enhance"] == "mkt-enhance"
+
+
+@pytest.mark.parametrize("value", [None, "", "  "], ids=["unset", "empty", "blank"])
+def test_a_group_video_key_must_have_a_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + GROUPS))
+    _group_env(monkeypatch)
+    monkeypatch.delenv("VIDEO_API_KEY_ECOM")
+    if value is not None:
+        monkeypatch.setenv("VIDEO_API_KEY_ECOM", value)
+
+    with pytest.raises(
+        RuntimeError, match=r"model_groups\.ecom\.video_api_key_env.*VIDEO_API_KEY_ECOM"
+    ):
+        resolve_settings(config)
+
+
+@pytest.mark.parametrize(
+    ("section", "default_key", "field", "group_env"),
+    [
+        (SUBTITLE, "QWEN_SUBTITLE_API_KEY", "subtitle_api_key_env", "QWEN_SUBTITLE_API_KEY_MKT"),
+        (MUSIC, "QWEN_MUSIC_API_KEY", "music_api_key_env", "QWEN_MUSIC_API_KEY_MKT"),
+        (SPEECH, "QWEN_SPEECH_API_KEY", "speech_api_key_env", "QWEN_SPEECH_API_KEY_MKT"),
+    ],
+    ids=["subtitle", "music", "speech"],
+)
+def test_once_a_qwen_service_is_on_every_group_needs_its_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    section: str,
+    default_key: str,
+    field: str,
+    group_env: str,
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + section + GROUPS))
+    _group_env(monkeypatch)
+    monkeypatch.setenv(default_key, "sk-default")
+
+    with pytest.raises(RuntimeError, match=f"model_groups.ecom.{field} 没写"):
+        resolve_settings(config)
+
+    only_mkt = GROUPS.split("  ecom:")[0]
+    config = load_runtime_config(write(tmp_path, VALID + MEDIA + section + only_mkt))
+    monkeypatch.setenv(group_env, " ")
+    with pytest.raises(RuntimeError, match=f"model_groups.mkt.{field}.*{group_env}"):
+        resolve_settings(config)
+
+    monkeypatch.setenv(group_env, "sk-mkt")
+    media = resolve_settings(config).media_generation
+    assert media is not None
+    (mkt,) = media.model_groups
+    keys = {
+        "subtitle_api_key_env": mkt.subtitle_api_key,
+        "music_api_key_env": mkt.music_api_key,
+        "speech_api_key_env": mkt.speech_api_key,
+    }
+    assert keys == {name: "sk-mkt" if name == field else None for name in keys}

@@ -88,6 +88,6 @@ async def test_counts_include_children_once_and_skip_removed_references(
 async def mark_removed(engine: AsyncEngine, reference_id: uuid.UUID) -> None:
     async with engine.begin() as conn:
         await conn.execute(
-            text("UPDATE iclip.reference_videos SET deleted_at = now() WHERE id = :id"),
+            text("UPDATE iclip.references SET deleted_at = now() WHERE id = :id"),
             {"id": reference_id},
         )

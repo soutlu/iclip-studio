@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, Literal
 
@@ -10,6 +10,7 @@ import structlog
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic.alias_generators import to_camel
 
+from iclip.common.final_cut import MAIN_FILE, media_addresses
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.provider import (
     ProviderError,
@@ -29,6 +30,7 @@ RENDER_TIMEOUT_SECONDS: Final = 6 * 3600
 
 RENDER_SUBMIT_CONCURRENCY: Final = 2
 
+# httpx 的超时按每一步读写算，不是整个请求的总时长：几十 MB 的工程照样传得完
 REQUEST_TIMEOUT_SECONDS: Final = 10.0
 
 EXPORT_CONTENT_TYPE: Final = "video/mp4"
@@ -36,6 +38,10 @@ EXPORT_CONTENT_TYPE: Final = "video/mp4"
 CANCELLED: Final = "CANCELLED"
 
 CANCELLED_MESSAGE: Final = "导出已取消"
+
+FINAL_CUT_EMPTY: Final = "FINAL_CUT_EMPTY"
+
+FINAL_CUT_EMPTY_MESSAGE: Final = "final-cut 暂无内容，无法导出"
 
 RenderStatus = Literal["queued", "rendering", "uploading", "done", "failed", "cancelled"]
 
@@ -52,6 +58,22 @@ class RenderRejected(Exception):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+class ProjectUnavailable(Exception):
+    """读不到对话工作区里的 final-cut 工程（工作区所在的服务连不上）。"""
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectFile:
+    """final-cut 工程的一个文件，路径相对工程根（主文件是 ``index.html``）。"""
+
+    path: str
+    content: str
+
+
+ReadProject = Callable[[uuid.UUID, uuid.UUID], Awaitable[Sequence[ProjectFile]]]
+"""按属主、对话读这段对话 final-cut 工程里的全部文件；读不到工作区抛 ``ProjectUnavailable``。"""
 
 
 class _CamelModel(BaseModel):
@@ -78,6 +100,8 @@ class RenderClient:
         )
 
     async def submit(self, payload: Mapping[str, Any]) -> None:
+        """交一次导出；渲染服务不收（400）抛 ``RenderRejected``。"""
+
         response = await self._send("POST", "/exports", json=payload)
         if response.status_code == 202:
             return
@@ -134,6 +158,7 @@ class RenderSetup:
     client: RenderClient
     uploads: ServerUploadSigner
     public_url: Callable[[str], str]
+    read_project: ReadProject
 
 
 class RenderProvider:
@@ -141,6 +166,7 @@ class RenderProvider:
         self._client = setup.client
         self._uploads = setup.uploads
         self._public_url = setup.public_url
+        self._read_project = setup.read_project
         self._fetch_url = fetch_url
 
     @property
@@ -148,6 +174,9 @@ class RenderProvider:
         return PROVIDER_NAME
 
     async def submit(self, job: GenerationJob) -> ProviderSubmission:
+        """把这段对话 final-cut 工程此刻的样子交给渲染服务：全部文件、主文件里每个素材地址的下载
+        地址、导出哪种语言（``locale``，原文是 null）和成片的上传签名。"""
+
         request = request_of(job, WholeFilmRequest, provider=PROVIDER_NAME)
         if job.conversation_id is None:
             raise ProviderError(
@@ -155,6 +184,13 @@ class RenderProvider:
                 code="PROVIDER_CONVERSATION_MISSING",
                 retryable=False,
             )
+        try:
+            files = await self._read_project(job.owner_user_id, job.conversation_id)
+        except ProjectUnavailable as exc:
+            raise ProviderError(str(exc), code="WORKSPACE_UNAVAILABLE", retryable=True) from exc
+        main = next((file.content for file in files if file.path == MAIN_FILE), None)
+        if main is None:
+            raise ProviderError(FINAL_CUT_EMPTY_MESSAGE, code=FINAL_CUT_EMPTY, retryable=False)
         upload = self._uploads.sign_server_upload(
             object_key=MEDIA_PATHS.whole_film(job_id=job.id),
             content_type=EXPORT_CONTENT_TYPE,
@@ -163,26 +199,12 @@ class RenderProvider:
         payload = {
             "id": str(job.id),
             "conversationId": str(job.conversation_id),
-            "document": request.document,
+            "files": [{"path": file.path, "content": file.content} for file in files],
             "media": {
-                "videos": {
-                    str(video.job_id): {"url": self._fetch_url(video.url)}
-                    for video in request.videos
-                },
-                "music": None
-                if request.music is None
-                else {"url": self._fetch_url(request.music.url)},
-                "subtitles": {
-                    str(found.source_job_id): {
-                        "subtitleJobId": str(found.subtitle_job_id),
-                        "sentences": [
-                            sentence.model_dump(mode="json", by_alias=True)
-                            for sentence in found.sentences
-                        ],
-                    }
-                    for found in request.subtitles
-                },
+                address.url: {"url": self._fetch_url(address.url)}
+                for address in media_addresses(main)
             },
+            "locale": request.locale,
             "upload": {"url": upload.url, "headers": dict(upload.headers)},
         }
         try:
@@ -232,11 +254,16 @@ __all__ = [
     "CANCELLED",
     "CANCELLED_MESSAGE",
     "EXPORT_CONTENT_TYPE",
+    "FINAL_CUT_EMPTY",
+    "FINAL_CUT_EMPTY_MESSAGE",
     "PROVIDER_NAME",
     "RENDER_STAGES",
     "RENDER_SUBMIT_CONCURRENCY",
     "RENDER_TIMEOUT_SECONDS",
     "REQUEST_TIMEOUT_SECONDS",
+    "ProjectFile",
+    "ProjectUnavailable",
+    "ReadProject",
     "RenderClient",
     "RenderExport",
     "RenderProblem",

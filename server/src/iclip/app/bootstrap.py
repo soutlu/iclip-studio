@@ -4,6 +4,7 @@ import uuid
 from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import Final
+from urllib.parse import urlsplit
 
 import httpx
 import procrastinate
@@ -14,7 +15,6 @@ from iclip_video.iclip_studio.film.film import FILM_PATH, RUN_PATH
 from iclip_video.shot_document import SHOTS_PATH
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from iclip.app.brand_templates import template_font_prober
 from iclip.app.conversation_film import ConversationFilmAdapter
 from iclip.app.conversation_fork import ForkLineageAdapter
 from iclip.app.conversation_same_style import (
@@ -29,7 +29,9 @@ from iclip.app.conversation_workspace import (
     validate_video_shots,
 )
 from iclip.app.errors import install_error_handlers
+from iclip.app.final_cut_translation import build_final_cut_translator
 from iclip.app.generation_live import AnnouncingGenerationRepository
+from iclip.app.generation_references import GenerationReferenceAssets
 from iclip.app.image_generations import GenerationsAdapter
 from iclip.app.library_tagging import (
     HitCaseTreatments,
@@ -37,8 +39,10 @@ from iclip.app.library_tagging import (
     build_library_tagger,
 )
 from iclip.app.logging import configure_logging
+from iclip.app.preview_host import PreviewHostSplit
 from iclip.app.prompt_attachments import PromptAttachmentImporter
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter, build_reference_breakdown
+from iclip.app.reference_sources import ProbedDuration, ReferenceMediaSources
 from iclip.app.reference_test_video import GenerationTestVideos
 from iclip.app.runtime_events import RuntimeEvents
 from iclip.app.runtime_internal import (
@@ -51,11 +55,12 @@ from iclip.app.runtime_internal import (
 from iclip.app.runtime_ports import RuntimeServicePorts
 from iclip.app.runtime_workspace import RuntimeFiles
 from iclip.app.shot_media import CutRecordsAdapter, FrameBoardsAdapter, GridCutsAdapter
-from iclip.app.whole_film_drafts import GenerationDraftReferences
-from iclip.app.whole_film_exports import WholeFilmExportAdapter
+from iclip.app.whole_film_exports import WholeFilmExportAdapter, final_cut_reader
 from iclip.common.errors import NotFound
 from iclip.config import (
-    QWEN_API_KEY_ENV,
+    QWEN_MUSIC_API_KEY_ENV,
+    QWEN_SPEECH_API_KEY_ENV,
+    QWEN_SUBTITLE_API_KEY_ENV,
     ObjectStoreEnv,
     ResolvedMediaGeneration,
     ResolvedProductCatalog,
@@ -72,14 +77,16 @@ from iclip.domains.agents.transcript_api import (
 from iclip.domains.audit.module import build_audit_module
 from iclip.domains.audit.reports_pg import PgAuditReports
 from iclip.domains.audit.runtime_facts import RuntimeStats
-from iclip.domains.brand_templates.infra_sql import SqlBrandTemplateStore
-from iclip.domains.brand_templates.module import BrandTemplatesModule, build_brand_templates_module
 from iclip.domains.collections.infra_sql import SqlCollectionRepository
 from iclip.domains.collections.module import build_collections_module
+from iclip.domains.conversations.final_cut_project import (
+    FINAL_CUT_PREVIEW_PREFIX,
+    PreviewTokens,
+)
+from iclip.domains.conversations.final_cut_translation import FinalCutTranslator
 from iclip.domains.conversations.infra_sql import (
     SqlAgentPreviewStore,
     SqlConversationRepository,
-    SqlWholeFilmDraftStore,
 )
 from iclip.domains.conversations.module import build_conversations_module
 from iclip.domains.conversations.service import (
@@ -87,27 +94,40 @@ from iclip.domains.conversations.service import (
     ConversationActivity,
 )
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
+from iclip.domains.generation.model_groups import ModelGroup, ModelGroups
 from iclip.domains.generation.models import InFlightPhase
 from iclip.domains.generation.module import (
+    DubbingSetup,
     GenerationModule,
     ImageModelConfig,
     QwenServiceConfig,
     build_generation_module,
 )
-from iclip.domains.generation.ports import ConversationLineage
+from iclip.domains.generation.ports import ConversationLineage, ReferenceAssets
 from iclip.domains.generation.queue import GenerationQueueSettings, queue_dsn
 from iclip.domains.generation.qwen import QwenEndpoint
 from iclip.domains.generation.render import RenderClient, RenderSetup
 from iclip.domains.generation.repository import GenerationRepository
-from iclip.domains.generation.schemas import KIND_VIDEO, OPERATION_UPLOAD
+from iclip.domains.generation.schemas import KIND_VIDEO
 from iclip.domains.generation.service import ClearCompletion, SettledRecords, VideoEnhanceSpec
+from iclip.domains.generation.speech import QwenSpeechSynthesizer
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.accounts import CookieAuthSettings
 from iclip.domains.identity.infra_sql import DB_SCHEMA
-from iclip.domains.identity.middleware import PrincipalMiddleware
+from iclip.domains.identity.middleware import (
+    PrincipalMiddleware,
+    WriteOriginCheck,
+    document_session_cookie,
+)
 from iclip.domains.identity.module import SsoRuntime, build_identity_module
 from iclip.domains.identity.pms import PmsUserClient
-from iclip.domains.identity.public import ActAs, Principal
+from iclip.domains.identity.public import (
+    ActAs,
+    DepartmentGroup,
+    ModelGroupOf,
+    ModelGroupResolver,
+    Principal,
+)
 from iclip.domains.identity.sso import SsoVerifier
 from iclip.domains.inspirations.infra_sql import PgInspirationVideos
 from iclip.domains.inspirations.module import build_inspirations_module
@@ -117,9 +137,13 @@ from iclip.domains.library.reports_pg import PgLibraryReports
 from iclip.domains.mcp_servers.module import build_mcp_servers_module
 from iclip.domains.model_providers.module import build_model_providers_module
 from iclip.domains.products.catalog_pg import PgStyleDirectory
-from iclip.domains.references.infra_sql import SqlReferenceStore
+from iclip.domains.references.infra_sql import (
+    SqlReferenceAudioStore,
+    SqlReferenceLookup,
+    SqlReferenceStore,
+)
 from iclip.domains.references.module import BreakdownSetup, build_references_module
-from iclip.domains.references.repository import VideoBreakdowns
+from iclip.domains.references.repository import MediaDuration, VideoBreakdowns
 from iclip.domains.skills.module import build_skills_module
 from iclip.domains.tagging.infra_sql import SqlTagStore
 from iclip.domains.tagging.module import TaggingSetup, build_tagging_module
@@ -128,12 +152,12 @@ from iclip.domains.tasks.infra_sql import SqlTaskRepository
 from iclip.domains.tasks.module import build_tasks_module
 from iclip.domains.tracking.infra_sql import SqlTrackingRepository
 from iclip.domains.tracking.module import build_tracking_module
+from iclip.domains.uploads.infra_sql import SqlUploadRepository
 from iclip.domains.uploads.module import UploadsModule, build_uploads_module
 from iclip.domains.uploads.service import FetchBytes
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import MediaCodec, detect_codec
 from iclip.platform.media.fetch import MediaDownloads
-from iclip.platform.media.fonts import ProbeFont
 from iclip.platform.media.process import ffmpeg_available
 from iclip.platform.object_store.oss import (
     OssObjectStore,
@@ -234,6 +258,16 @@ def _qwen_service(resolved: ResolvedQwenService | None) -> QwenServiceConfig | N
     )
 
 
+def _dubbing(resolved: ResolvedQwenService | None) -> DubbingSetup | None:
+    service = _qwen_service(resolved)
+    if service is None:
+        return None
+    return DubbingSetup(
+        synthesizer=QwenSpeechSynthesizer(service.endpoint),
+        concurrency=service.concurrency,
+    )
+
+
 def _generation_module(
     settings: ResolvedMediaGeneration,
     repo: GenerationRepository,
@@ -241,12 +275,14 @@ def _generation_module(
     act_as: ActAs,
     clear_completion: ClearCompletion,
     lineage: ConversationLineage,
+    references: ReferenceAssets,
     object_store: PublicObjectStore,
     queue_connector: procrastinate.BaseConnector,
     media_codec: MediaCodec,
     compose_concurrency: int,
     fetch_url: Callable[[str], str],
     render: RenderSetup | None,
+    model_group_of: ModelGroupOf,
 ) -> GenerationModule:
     enhance = settings.video_enhance
     return build_generation_module(
@@ -254,6 +290,7 @@ def _generation_module(
         act_as=act_as,
         clear_completion=clear_completion,
         lineage=lineage,
+        references=references,
         video=VideoProviderSettings(
             submit_url=settings.video_submit_url,
             status_base_url=settings.video_status_base_url,
@@ -291,8 +328,23 @@ def _generation_module(
             compose_concurrency=compose_concurrency,
         ),
         subtitles=_qwen_service(settings.subtitle),
+        dubbing=_dubbing(settings.speech),
         music=_qwen_service(settings.music),
         render=render,
+        model_groups=ModelGroups(
+            tuple(
+                ModelGroup(
+                    name=group.name,
+                    video_api_key=group.video_api_key,
+                    video_models=group.video_models,
+                    subtitle_api_key=group.subtitle_api_key,
+                    music_api_key=group.music_api_key,
+                    speech_api_key=group.speech_api_key,
+                )
+                for group in settings.model_groups
+            ),
+            group_of=model_group_of,
+        ),
     )
 
 
@@ -303,21 +355,26 @@ def build_app(
     sso_verifier: SsoVerifier | None = None,
     pms_client: PmsUserClient | None = None,
     object_store: PublicBucket | None = None,
-    whole_film_render_transport: httpx.AsyncBaseTransport | None = None,
+    final_cut_render_transport: httpx.AsyncBaseTransport | None = None,
     image_fetcher: FetchBytes | None = None,
     queue_connector: procrastinate.BaseConnector | None = None,
     product_catalog_engine: AsyncEngine | None = None,
     reference_breakdowns: VideoBreakdowns | None = None,
     library_tagger: Tagger | None = None,
-    brand_font_probe: ProbeFont | None = None,
+    final_cut_translator: FinalCutTranslator | None = None,
     media_codec: MediaCodec | None = None,
     runtime_transport: httpx.AsyncBaseTransport | None = None,
     media_probe: UrlProber | None = None,
+    reference_duration: MediaDuration | None = None,
 ) -> FastAPI:
     settings = resolve_settings(config)
     if settings.db_schema != DB_SCHEMA:
         raise RuntimeError(f"db.schema 当前固定为 {DB_SCHEMA}（declarative 元数据定义期绑定）")
-    configure_logging(settings.log_level, settings.log_format)
+    configure_logging(
+        settings.log_level,
+        settings.log_format,
+        token_path_prefixes=(FINAL_CUT_PREVIEW_PREFIX,),
+    )
     runtime_client = RuntimeClient(
         settings.runtime_service.url,
         settings.runtime_service.app_key,
@@ -355,8 +412,8 @@ def build_app(
     _require_ffmpeg(settings.ffmpeg_required)
     render_client = (
         None
-        if settings.whole_film_render is None
-        else RenderClient(settings.whole_film_render.url, transport=whole_film_render_transport)
+        if settings.final_cut_render is None
+        else RenderClient(settings.final_cut_render.url, transport=final_cut_render_transport)
     )
     codec = _media_codec(settings.ffmpeg_required, media_codec)
     compose_concurrency = (
@@ -385,13 +442,19 @@ def build_app(
         _logger.warning(
             "字幕识别未启用",
             media_generation=settings.media_generation is not None,
-            requires=f"media_generation.subtitle 段与千问AI平台的 API Key {QWEN_API_KEY_ENV}",
+            requires=f"media_generation.subtitle 段与千问AI平台的 API Key {QWEN_SUBTITLE_API_KEY_ENV}",
         )
     if settings.media_generation is None or settings.media_generation.music is None:
         _logger.warning(
             "音乐生成未启用",
             media_generation=settings.media_generation is not None,
-            requires=f"media_generation.music 段与千问AI平台的 API Key {QWEN_API_KEY_ENV}",
+            requires=f"media_generation.music 段与千问AI平台的 API Key {QWEN_MUSIC_API_KEY_ENV}",
+        )
+    if settings.media_generation is None or settings.media_generation.speech is None:
+        _logger.warning(
+            "配音未启用",
+            media_generation=settings.media_generation is not None,
+            requires=f"media_generation.speech 段与千问AI平台的 API Key {QWEN_SPEECH_API_KEY_ENV}",
         )
     http_client = httpx.AsyncClient(follow_redirects=True)
     public_http_client = public_client(timeout=TOTAL_TIMEOUT_SECONDS)
@@ -424,6 +487,25 @@ def build_app(
         SqlGenerationRepository(active_engine), live_connections
     )
     settled_records = SettledRecords(generation_repo)
+    fork_lineage = ForkLineageAdapter(
+        conversations=conversation_repo, readable=conversation_readable
+    )
+
+    async def conversation_writable(principal: Principal, conversation_id: uuid.UUID) -> object:
+        return await conversations.service.workspace_writable(principal, conversation_id)
+
+    uploads: UploadsModule | None = None
+    if public_objects is not None:
+        uploads = build_uploads_module(
+            public_objects,
+            SqlUploadRepository(active_engine),
+            act_as=identity.act_as,
+            fetch=image_fetcher if image_fetcher is not None else public_fetcher.fetch,
+            conversation_writable=conversation_writable,
+            lineage=fork_lineage,
+        )
+    reference_store = SqlReferenceStore(active_engine)
+    reference_lookup = SqlReferenceLookup(active_engine)
 
     connector: procrastinate.BaseConnector | None = None
     if settings.media_generation is not None or settings.iclip_studio is not None:
@@ -435,6 +517,13 @@ def build_app(
 
     if render_client is not None and settings.media_generation is None:
         raise RuntimeError("成片导出已启用却没开媒体生成；resolve_settings 应当已拒绝这种配置")
+    model_group_of = ModelGroupResolver(
+        identity.users,
+        tuple(
+            DepartmentGroup(name=group.name, departments=frozenset(group.departments))
+            for group in settings.model_groups
+        ),
+    ).group_of
     generation: GenerationModule | None = None
     if settings.media_generation is not None:
         if public_objects is None:
@@ -443,49 +532,34 @@ def build_app(
             raise RuntimeError("媒体生成已启用却没建队列连接器；上面的条件漏了媒体生成")
         if codec is None or compose_concurrency is None:
             raise RuntimeError("媒体生成已启用却没选编解码；ffmpeg_required 应当已包含媒体生成")
+        if uploads is None:
+            raise RuntimeError("媒体生成已启用却没装上传；有对象存储就该装上")
         render: RenderSetup | None = None
         if render_client is not None:
             if server_uploads is None:
                 raise RuntimeError("成片导出已启用却没有上传签名；注入的测试桶不支持成片导出")
             render = RenderSetup(
-                client=render_client, uploads=server_uploads, public_url=public_objects.public_url
+                client=render_client,
+                uploads=server_uploads,
+                public_url=public_objects.public_url,
+                read_project=final_cut_reader(workspace_files),
             )
         generation = _generation_module(
             settings.media_generation,
             generation_repo,
             act_as=identity.act_as,
             clear_completion=clear_conversation_completion,
-            lineage=ForkLineageAdapter(
-                conversations=conversation_repo, readable=conversation_readable
-            ),
+            lineage=fork_lineage,
+            references=GenerationReferenceAssets(uploads.service, reference_lookup),
             object_store=public_objects,
             queue_connector=connector,
             media_codec=codec,
             compose_concurrency=compose_concurrency,
             fetch_url=fetch_url,
             render=render,
+            model_group_of=model_group_of,
         )
 
-    async def own_video_upload(principal: Principal, upload_id: uuid.UUID) -> str | None:
-        try:
-            job = await generation_repo.get(upload_id, owner=principal.user_id)
-        except NotFound:
-            return None
-        if job.kind != KIND_VIDEO or job.operation != OPERATION_UPLOAD:
-            return None
-        return job.output.url
-
-    brand_templates: BrandTemplatesModule | None = None
-    if generation is not None:
-        if public_objects is None:
-            raise RuntimeError("品牌资源已启用却没有对象存储")
-        brand_templates = build_brand_templates_module(
-            SqlBrandTemplateStore(active_engine),
-            objects=public_objects,
-            probe_font=brand_font_probe or template_font_prober(http_client, fetch_url),
-        )
-
-    reference_store = SqlReferenceStore(active_engine)
     breakdown_setup: BreakdownSetup | None = None
     tagging_setup: TaggingSetup | None = None
     if settings.iclip_studio is not None and connector is not None:
@@ -494,11 +568,13 @@ def build_app(
         breakdown_setup = BreakdownSetup(
             breakdowns=reference_breakdowns
             or build_reference_breakdown(runtime_client, model_url_downloads, codec),
+            model_group_of=model_group_of,
             connector=connector,
             concurrency=breakdown_concurrency,
         )
         tagging_setup = TaggingSetup(
             tagger=library_tagger or build_library_tagger(runtime_client),
+            model_group_of=model_group_of,
             connector=connector,
         )
     library_reports = PgLibraryReports(active_engine)
@@ -512,8 +588,14 @@ def build_app(
     )
     references = build_references_module(
         reference_store,
+        SqlReferenceAudioStore(active_engine),
         act_as=identity.act_as,
-        own_video_upload=own_video_upload,
+        sources=ReferenceMediaSources(
+            uploads.service if uploads is not None else None, generation_repo
+        ),
+        duration=reference_duration
+        if reference_duration is not None
+        else ProbedDuration(fetch_url),
         breakdown=breakdown_setup,
         tagging=tagging.service,
         uploads_available=public_objects is not None,
@@ -577,7 +659,9 @@ def build_app(
 
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
     skills = build_skills_module(runtime_client, identity.users.display_names)
-    model_providers = build_model_providers_module(runtime_client)
+    model_providers = build_model_providers_module(
+        runtime_client, model_groups=tuple(group.name for group in settings.model_groups)
+    )
     agent_config = build_agent_config_module(runtime_client, identity.users.display_names)
 
     audit = build_audit_module(PgAuditReports(active_engine, RuntimeStats(runtime_client)))
@@ -610,16 +694,18 @@ def build_app(
             probe=media_probe if media_probe is not None else public_fetcher.probe,
             generation=generation.service if generation is not None else None,
         ),
-        drafts=SqlWholeFilmDraftStore(active_engine),
-        draft_references=GenerationDraftReferences(
-            generations=generation_repo, conversations=conversation_repo
-        ),
         exports=None
-        if render_client is None or generation is None
+        if render_client is None or generation is None or uploads is None
         else WholeFilmExportAdapter(
-            generation=generation.service, generations=generation_repo, render=render_client
+            generation=generation.service,
+            generations=generation_repo,
+            uploads=uploads.service,
+            references=reference_lookup,
+            lineage=fork_lineage,
+            render=render_client,
         ),
         generate_title=runtime_ports.generate_title,
+        model_group_of=model_group_of,
         announce_title=live_connections.announce_title,
         announce_row=live_connections.announce_session_row,
         announce_deleted=live_connections.announce_session_deleted,
@@ -629,23 +715,15 @@ def build_app(
         video_progress_of=video_progress_of,
         same_style_files=SAME_STYLE,
         same_style_source=LibrarySameStyleSource(library_reports),
+        preview_origin=settings.final_cut_preview_origin,
+        preview_tokens=PreviewTokens(settings.security.secret),
+        final_cut_translator=final_cut_translator or build_final_cut_translator(runtime_client),
     )
     mcp_servers = build_mcp_servers_module(
         runtime_client,
         conversations.service,
         sso_redirect_url=settings.sso.redirect_url if settings.sso is not None else None,
     )
-    uploads: UploadsModule | None = None
-    if public_objects is not None:
-        uploads = build_uploads_module(
-            public_objects,
-            act_as=identity.act_as,
-            record=settled_records.record_upload,
-            find_recorded=settled_records.recorded_upload,
-            fetch=image_fetcher if image_fetcher is not None else public_fetcher.fetch,
-            conversation_writable=conversations.service.workspace_writable,
-        )
-
     turn_naming = TurnNaming(conversations.service)
 
     @asynccontextmanager
@@ -689,6 +767,7 @@ def build_app(
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
     install_error_handlers(app)
+    document_session_cookie(app, secure=settings.security.cookie_secure)
     app.state.turn_naming = turn_naming
     app.state.runtime_events = runtime_events
 
@@ -718,9 +797,6 @@ def build_app(
         app.include_router(router)
     for router in tagging.routers:
         app.include_router(router)
-    if brand_templates is not None:
-        for router in brand_templates.routers:
-            app.include_router(router)
     for router in tracking.routers:
         app.include_router(router)
     for router in skills.routers:
@@ -736,6 +812,7 @@ def build_app(
             runtime_client,
             conversations.service,
             act_as=identity.act_as,
+            model_group_of=model_group_of,
             allowed_origins=settings.security.cors_allow_origins,
             live=live_connections,
             import_attachments=(
@@ -784,7 +861,7 @@ def build_app(
     app.add_middleware(
         PrincipalMiddleware,
         resolver=identity.resolver,
-        anonymous_prefixes=(f"{RUNTIME_INTERNAL_PREFIX}/",),
+        anonymous_prefixes=(f"{RUNTIME_INTERNAL_PREFIX}/", f"{FINAL_CUT_PREVIEW_PREFIX}/"),
     )
     if settings.security.cors_allow_origins:
         app.add_middleware(
@@ -794,6 +871,16 @@ def build_app(
             allow_methods=["*"],
             allow_headers=["*"],
         )
+    # 写请求的来源检查在 CORS 与登录态解析之外：来源不对的直接 403，不必先查凭证；预检请求是 OPTIONS，
+    # 不经它检查，仍由 CORS 直接答。它在按主机名的划分之内，预览域名上除预览地址外一律 404 的规则不受影响。
+    app.add_middleware(WriteOriginCheck, allowed_origins=settings.security.cors_allow_origins)
+    # 按主机名的划分是 final-cut 预览的安全边界，必须在 CORS、来源检查与登录态解析之外，最后注册。
+    preview_origin = settings.final_cut_preview_origin
+    app.add_middleware(
+        PreviewHostSplit,
+        preview_host=None if preview_origin is None else urlsplit(preview_origin).netloc,
+        preview_prefix=FINAL_CUT_PREVIEW_PREFIX,
+    )
 
     app.state.generation = generation
     return app

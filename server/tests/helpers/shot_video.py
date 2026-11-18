@@ -114,7 +114,7 @@ class FakeUnderstanding:
     error: Exception | None = None
     calls: list[str] = field(default_factory=list[str])
 
-    async def parse(self, video_url: str) -> str:
+    async def parse(self, video_url: str, *, model_group: str | None) -> str:
         self.calls.append(video_url)
         if self.error is not None:
             raise self.error

@@ -14,7 +14,6 @@ from iclip.domains.conversations.repository import (
     MISSING_TASK,
     AgentPreviewStore,
     ConversationRepository,
-    WholeFilmDraftStore,
 )
 from iclip.domains.conversations.service import ConversationService, SameStyleFiles
 from iclip.domains.identity.public import Principal
@@ -117,10 +116,9 @@ def build(*, task_present: bool = True, collection_present: bool = True) -> Conv
         write_derived_file=_untouched,
         document_validators={},
         film=UnusedFilmPage(),
-        drafts=cast("WholeFilmDraftStore", object()),
-        draft_references=_untouched,
         exports=None,
         generate_title=_untouched,
+        model_group_of=_untouched,
         announce_title=_untouched,
         activities_of=_untouched,
         busy_conversation_ids=_untouched,

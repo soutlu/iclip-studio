@@ -4,6 +4,7 @@ import json
 import uuid
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -13,6 +14,7 @@ import pytest
 from procrastinate.testing import InMemoryConnector
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from iclip.app.generation_references import GenerationReferenceAssets
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
@@ -25,33 +27,37 @@ from iclip.domains.generation.module import (
     ImageModelConfig,
     build_generation_module,
 )
+from iclip.domains.generation.ports import ReferenceAssets
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import (
-    KIND_VIDEO,
     VideoEditIn,
     VideoEditRequest,
     generation_out,
 )
-from iclip.domains.generation.service import SettledRecords
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.models import Principal
+from iclip.domains.references.infra_sql import SqlReferenceLookup, SqlReferenceStore
+from iclip.domains.uploads.infra_sql import SqlUploadRepository
+from iclip.domains.uploads.models import MediaKind, MediaUpload
+from iclip.domains.uploads.service import UploadService
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.fetch_url import as_is, rewriting
 from tests.helpers.fork_lineage import make_user
 from tests.helpers.generation import (
+    FakeReferenceAssets,
     FixedLineage,
     InMemoryGenerationRepository,
     MemoryObjectStore,
     make_job,
-    make_upload,
     stored_request,
     video_request,
 )
 from tests.helpers.identity import InMemoryUserRepository
 from tests.helpers.media import synthesize_video
 from tests.helpers.media_server import serving
+from tests.helpers.uploads import FakeBucket
 
 pytestmark = [
     pytest.mark.anyio,
@@ -79,6 +85,7 @@ def _edit_module(
     repo: GenerationRepository,
     sent: list[dict[str, Any]],
     *,
+    clips: ReferenceAssets,
     fetch_url: Callable[[str], str] = as_is,
 ) -> GenerationModule:
     def upstream(request: httpx.Request) -> httpx.Response:
@@ -90,6 +97,7 @@ def _edit_module(
         act_as=ActAs(InMemoryUserRepository()),
         clear_completion=_keep_completion,
         lineage=FixedLineage(),
+        references=clips,
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",
@@ -129,25 +137,20 @@ async def _run_edit(
     repo: InMemoryGenerationRepository, *, clip_seconds: int, start_ms: int, end_ms: int
 ) -> tuple[GenerationJob, list[dict[str, Any]], str]:
     sent: list[dict[str, Any]] = []
-    module = _edit_module(repo, sent)
     with TemporaryDirectory(prefix="edit-fixture-") as tmp:
         base = synthesize_video(Path(tmp) / "base.mp4", size="320x240", seconds=6, audio=True)
         clip = synthesize_video(
             Path(tmp) / "clip.mp4", size="320x240", seconds=clip_seconds, audio=True
         )
     async with serving({"base.mp4": base, "clip.mp4": clip}) as server:
+        module = _edit_module(repo, sent, clips=FakeReferenceAssets([server.url("clip.mp4")]))
         take = make_job(
             video_request(),
             status=STATUS_COMPLETED,
             owner_user_id=PRINCIPAL.user_id,
             output=GenerationOutput(url=server.url("base.mp4")),
         )
-        upload = make_upload(
-            kind=KIND_VIDEO,
-            owner_user_id=PRINCIPAL.user_id,
-            output=GenerationOutput(url=server.url("clip.mp4")),
-        )
-        repo.jobs.update({take.id: take, upload.id: upload})
+        repo.jobs[take.id] = take
         job = await module.service.submit_video_edit(
             PRINCIPAL, _edit_in(take.id, server.url("clip.mp4"), start_ms=start_ms, end_ms=end_ms)
         )
@@ -183,17 +186,19 @@ async def test_durations_are_probed_at_the_rewritten_addresses_and_upstream_gets
         base = synthesize_video(Path(tmp) / "base.mp4", size="320x240", seconds=4, audio=True)
         clip = synthesize_video(Path(tmp) / "clip.mp4", size="320x240", seconds=4, audio=True)
     async with serving({"iclip/agent/base.mp4": base, "iclip/agent/clip.mp4": clip}) as server:
-        module = _edit_module(repo, sent, fetch_url=rewriting(public, server.base_url))
+        module = _edit_module(
+            repo,
+            sent,
+            clips=FakeReferenceAssets([clip_url]),
+            fetch_url=rewriting(public, server.base_url),
+        )
         take = make_job(
             video_request(),
             status=STATUS_COMPLETED,
             owner_user_id=PRINCIPAL.user_id,
             output=GenerationOutput(url=base_url),
         )
-        upload = make_upload(
-            kind=KIND_VIDEO, owner_user_id=PRINCIPAL.user_id, output=GenerationOutput(url=clip_url)
-        )
-        repo.jobs.update({take.id: take, upload.id: upload})
+        repo.jobs[take.id] = take
         job = await module.service.submit_video_edit(
             PRINCIPAL, _edit_in(take.id, clip_url, start_ms=1000, end_ms=3000)
         )
@@ -208,15 +213,91 @@ async def test_durations_are_probed_at_the_rewritten_addresses_and_upstream_gets
     assert body["reference_video_urls"] == [clip_url], "交给上游的是公网地址"
 
 
+async def _never_fetch(url: str, *, max_bytes: int) -> bytes:
+    raise AssertionError("认参考片段不下载")
+
+
+async def _writable(_principal: Principal, _conversation_id: uuid.UUID) -> None:
+    return None
+
+
+def _usable_clips(engine: AsyncEngine) -> GenerationReferenceAssets:
+    uploads = UploadService(
+        FakeBucket(),
+        SqlUploadRepository(engine),
+        fetch=_never_fetch,
+        conversation_writable=_writable,
+        lineage=FixedLineage(),
+    )
+    return GenerationReferenceAssets(uploads, SqlReferenceLookup(engine))
+
+
+async def _record_upload(
+    engine: AsyncEngine, owner: uuid.UUID, url: str, *, kind: MediaKind = "video"
+) -> MediaUpload:
+    return await SqlUploadRepository(engine).insert(
+        MediaUpload(
+            id=uuid.uuid4(),
+            owner_user_id=owner,
+            api_key_id=None,
+            conversation_id=None,
+            kind=kind,
+            url=url,
+            content_type="video/mp4" if kind == "video" else "image/png",
+            size_bytes=10,
+            duration_ms=4000 if kind == "video" else None,
+            width=320,
+            height=240,
+            content_md5=CLIP_MD5 if kind == "video" else None,
+            created_at=datetime.now(UTC),
+        )
+    )
+
+
+CLIP = "https://cdn.test/iclip/agent/uploads/clip.mp4"
+
+
+@pytest.mark.parametrize(
+    ("planted", "usable"),
+    [
+        ("本人的视频上传", True),
+        ("别人的视频上传", False),
+        ("本人的图片上传", False),
+        ("资料库里的参考视频", True),
+        ("资料库里移除了的参考视频", False),
+        ("哪里都没有", False),
+    ],
+)
+async def test_a_reference_clip_is_an_own_video_upload_or_a_listed_reference_video(
+    engine: AsyncEngine, planted: str, usable: bool
+) -> None:
+    me, someone = await make_user(engine), await make_user(engine)
+    references = SqlReferenceStore(engine)
+    if planted == "本人的视频上传":
+        await _record_upload(engine, me, CLIP)
+    elif planted == "别人的视频上传":
+        await _record_upload(engine, someone, CLIP)
+    elif planted == "本人的图片上传":
+        await _record_upload(engine, me, CLIP, kind="image")
+    elif planted.startswith("资料库里"):
+        row, _ = await references.ensure_row(
+            CLIP, owner=someone, requested_by=someone, api_key_id=None, restore=True
+        )
+        if planted == "资料库里移除了的参考视频":
+            assert await references.remove(row.id)
+
+    found = await _usable_clips(engine).usable_clip(replace(PRINCIPAL, user_id=me), CLIP)
+    assert found is usable
+
+
 async def test_a_clip_someone_else_uploaded_first_still_counts_as_my_upload(
     engine: AsyncEngine,
 ) -> None:
     repo = SqlGenerationRepository(engine)
-    records = SettledRecords(repo)
     me = replace(PRINCIPAL, user_id=await make_user(engine))
-    other = replace(PRINCIPAL, user_id=await make_user(engine), username="sara")
+    other = await make_user(engine)
     sent: list[dict[str, Any]] = []
-    module = _edit_module(repo, sent)
+    module = _edit_module(repo, sent, clips=_usable_clips(engine))
     with TemporaryDirectory(prefix="edit-fixture-") as tmp:
         base = synthesize_video(Path(tmp) / "base.mp4", size="320x240", seconds=4, audio=True)
         clip = synthesize_video(Path(tmp) / "clip.mp4", size="320x240", seconds=4, audio=True)
@@ -227,32 +308,18 @@ async def test_a_clip_someone_else_uploaded_first_still_counts_as_my_upload(
             output=GenerationOutput(url=server.url("base.mp4")),
             provider_status="succeeded",
         )
-        theirs = await records.record_upload(
-            other,
-            upload_id=uuid.uuid4(),
-            kind=KIND_VIDEO,
-            url=server.url("clip.mp4"),
-            content_md5=CLIP_MD5,
-            conversation_id=None,
-        )
-        mine = await records.record_upload(
-            me,
-            upload_id=uuid.uuid4(),
-            kind=KIND_VIDEO,
-            url=server.url("my-copy.mp4"),
-            content_md5=CLIP_MD5,
-            conversation_id=None,
-        )
+        clip_url = server.url("clip.mp4")
+        await _record_upload(engine, other, clip_url)
+        await _record_upload(engine, me.user_id, clip_url)
         job = await module.service.submit_video_edit(
-            me, _edit_in(take.id, mine.url, start_ms=1000, end_ms=3000)
+            me, _edit_in(take.id, clip_url, start_ms=1000, end_ms=3000)
         )
         await module.queue.run_submit(str(job.id))
 
-    assert mine.url == theirs.url == server.url("clip.mp4"), "本人那条落的是先传那份的地址"
     edit = await repo.get(job.id, owner=None)
     assert edit.status == STATUS_SUBMITTED, edit.error_message
     (body,) = sent
-    assert body["reference_video_urls"] == [mine.url]
+    assert body["reference_video_urls"] == [clip_url]
 
 
 @pytest.mark.parametrize("clip_seconds", [4, 6], ids=["参考短于替换区间", "参考长于替换区间"])
@@ -264,7 +331,7 @@ async def test_a_reference_with_a_different_duration_is_submitted_without_rewrit
         repo, clip_seconds=clip_seconds, start_ms=1000, end_ms=6000
     )
 
-    assert len(repo.jobs) == 3, "基底、上传与编辑段均已落库"
+    assert len(repo.jobs) == 2, "基底与编辑段均已落库"
     assert edit.status == STATUS_SUBMITTED, edit.error_message
     assert edit.provider_task_id == "upstream-1", "编辑段经过队列提交并保存了上游任务"
     assert edit.source_job_id is not None
@@ -292,7 +359,7 @@ async def test_an_image_clip_goes_through_the_same_queue_as_a_first_frame_reques
     )
     repo.jobs[take.id] = take
     sent: list[dict[str, Any]] = []
-    module = _edit_module(repo, sent)
+    module = _edit_module(repo, sent, clips=FakeReferenceAssets())
     job = await module.service.submit_video_edit(
         PRINCIPAL,
         VideoEditIn(

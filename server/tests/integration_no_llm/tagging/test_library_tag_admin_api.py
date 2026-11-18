@@ -168,7 +168,9 @@ async def test_deep_values_can_be_assigned_filtered_counted_and_deleted(
         (first, [city["id"], commute["id"], walk["id"]]),
         (second, [walk["id"]]),
     ):
-        assigned = await client.put(f"/references/{reference_id}/tags", json={"tagIds": tags})
+        assigned = await client.put(
+            f"/references/videos/{reference_id}/tags", json={"tagIds": tags}
+        )
         assert assigned.status_code == 200, assigned.text
         assert set(assigned.json()["tagIds"]) == set(tags)
 
@@ -177,14 +179,14 @@ async def test_deep_values_can_be_assigned_filtered_counted_and_deleted(
         assert level["counts"] == {"references": 2, "hitCases": 0}
     assert tree["children"][0]["children"][0]["children"][0]["counts"]["references"] == 2
     for tag in (made, city, commute, walk):
-        listed = await client.get("/references", params={"tags": tag["id"]})
+        listed = await client.get("/references/videos", params={"tags": tag["id"]})
         assert listed.status_code == 200, listed.text
         assert {item["id"] for item in listed.json()["items"]} == {str(first), str(second)}
         assert listed.json()["total"] == 2
 
     assert (await client.delete(f"/library-tags/{commute['id']}")).status_code == 204
     for reference_id, expected in ((first, [city["id"]]), (second, [])):
-        response = await client.get(f"/references/{reference_id}")
+        response = await client.get(f"/references/videos/{reference_id}")
         assert response.status_code == 200, response.text
         assert response.json()["tagIds"] == expected
 

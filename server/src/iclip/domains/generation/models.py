@@ -15,6 +15,7 @@ from iclip.domains.generation.schemas import (
     STATUS_PENDING,
     STATUS_SUBMITTED,
     STATUS_SUBMITTING,
+    DubbedLine,
     GenerationKind,
     GenerationOperation,
     GenerationStatus,
@@ -25,8 +26,6 @@ from iclip.domains.generation.stored_requests import GenerationRequest
 
 TERMINAL_STATUSES: Final = frozenset({STATUS_COMPLETED, STATUS_FAILED})
 
-REFERENCE_TRIAL_KEY: Final = "referenceId"
-
 InFlightPhase = Literal["queued", "running"]
 
 Inheritance = Sequence[tuple[uuid.UUID, datetime]]
@@ -36,8 +35,8 @@ class GenerationOutput(SnakeModel):
     url: str | None = None
     watermark_url: str | None = None
     duration_ms: int | None = None
-    content_md5: str | None = None
     sentences: tuple[SubtitleSentence, ...] | None = None
+    dubbed_lines: tuple[DubbedLine, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +63,9 @@ class GenerationJob:
     shot_index: int | None = None
     root_job_id: uuid.UUID | None = None
     source_job_id: uuid.UUID | None = None
+    # 受理时按属主定下的配置组与发给视频网关的 model_id；默认组两者都为空，见 model_groups.py。
+    model_group: str | None = None
+    upstream_model: str | None = None
 
 
 def inherited_through(job: GenerationJob, inheritance: Inheritance) -> bool:
@@ -98,7 +100,6 @@ def is_finished_edit(job: GenerationJob) -> bool:
 
 
 __all__ = [
-    "REFERENCE_TRIAL_KEY",
     "STATUS_COMPLETED",
     "STATUS_FAILED",
     "STATUS_PENDING",

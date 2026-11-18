@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 import httpx
 from sqlalchemy import text
@@ -19,7 +19,6 @@ from iclip.domains.generation.schemas import (
     OPERATION_ENHANCE,
     OPERATION_GENERATE,
     OPERATION_RENDER,
-    OPERATION_UPLOAD,
     STATUS_PENDING,
 )
 from iclip.domains.tracking.models import VIDEO_DOWNLOADED
@@ -34,14 +33,13 @@ _JOBS: tuple[tuple[str, str, str, str, str | None, bool], ...] = (
     ("composite", KIND_VIDEO, OPERATION_COMPOSE, STATUS_COMPLETED, "video", True),
     ("enhancement", KIND_VIDEO, OPERATION_ENHANCE, STATUS_COMPLETED, "video", True),
     ("film", KIND_WHOLE_FILM, OPERATION_RENDER, STATUS_COMPLETED, None, True),
-    ("upload", KIND_VIDEO, OPERATION_UPLOAD, STATUS_COMPLETED, None, True),
     ("pending", KIND_VIDEO, OPERATION_GENERATE, STATUS_PENDING, None, False),
     ("failed", KIND_VIDEO, OPERATION_GENERATE, STATUS_FAILED, None, False),
     ("no_url", KIND_VIDEO, OPERATION_GENERATE, STATUS_COMPLETED, None, False),
     ("image", KIND_IMAGE, OPERATION_GENERATE, STATUS_COMPLETED, None, True),
-    ("music_upload", KIND_AUDIO, OPERATION_UPLOAD, STATUS_COMPLETED, None, True),
+    ("music", KIND_AUDIO, OPERATION_GENERATE, STATUS_COMPLETED, None, True),
 )
-DOWNLOADABLE = ("video", "edit", "composite", "enhancement", "film", "upload")
+DOWNLOADABLE = ("video", "edit", "composite", "enhancement", "film")
 
 
 async def login_as(client: httpx.AsyncClient, pg_url: str, username: str, role: str) -> uuid.UUID:
@@ -63,12 +61,9 @@ async def plant_jobs(pg_url: str, *, owner: uuid.UUID) -> dict[str, uuid.UUID]:
             {"id": conversation_id, "owner": owner},
         )
         for label, kind, operation, status, source, has_url in _JOBS:
-            upload = operation == OPERATION_UPLOAD
             enhancement = operation == OPERATION_ENHANCE
             request = (
-                None
-                if upload
-                else {
+                {
                     "segments": [
                         {
                             "sourceJobId": str(ids["edit"]),
@@ -103,15 +98,13 @@ async def plant_jobs(pg_url: str, *, owner: uuid.UUID) -> dict[str, uuid.UUID]:
                 {
                     "id": ids[label],
                     "owner": owner,
-                    "conversation_id": None if upload or enhancement else conversation_id,
+                    "conversation_id": None if enhancement else conversation_id,
                     "kind": kind,
                     "operation": operation,
-                    "request": None
-                    if request is None
-                    else json.dumps(
+                    "request": json.dumps(
                         request | ({"range_start_ms": 1000, "range_end_ms": 4000} if edit else {})
                     ),
-                    "finished_at": datetime.now(UTC) if upload else None,
+                    "finished_at": None,
                     "status": status,
                     "source": None if source is None else ids[source],
                     "root": None if source is None or enhancement else ids["video"],
@@ -171,9 +164,19 @@ async def test_anything_but_a_downloadable_video_is_the_same_404(
     owner = await login_as(client, pg_url, "nora", "editor")
     jobs = await plant_jobs(pg_url, owner=owner)
     refused = [jobs[label] for label, *_ in _JOBS if label not in DOWNLOADABLE]
+    uploaded_video = uuid.uuid4()
+    async with connected(pg_url) as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO iclip.media_uploads (id, owner_user_id, kind, url, content_type)"
+                " VALUES (:id, :owner, 'video', 'https://oss.example.test/up.mp4', 'video/mp4')"
+            ),
+            {"id": uploaded_video, "owner": owner},
+        )
 
     responses = [
-        await client.post(EVENTS, json=download(job_id)) for job_id in (*refused, uuid.uuid4())
+        await client.post(EVENTS, json=download(job_id))
+        for job_id in (*refused, uploaded_video, uuid.uuid4())
     ]
 
     assert [r.status_code for r in responses] == [404] * len(responses)

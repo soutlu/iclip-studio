@@ -45,7 +45,7 @@ class ConversationWorkspace:
         conversation_id: uuid.UUID,
         path: str,
         content: str,
-        expected_version: int,
+        expected_version: int | None,
     ) -> DerivedFileContent:
         try:
             if normalize_path(path) != path:

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import uuid
 from collections.abc import Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
 from procrastinate.testing import InMemoryConnector
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.config import (
     ImageGenerationSection,
@@ -16,7 +19,6 @@ from iclip.config import (
     VideoGenerationSection,
 )
 from iclip.domains.generation.models import (
-    REFERENCE_TRIAL_KEY,
     STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_PENDING,
@@ -32,6 +34,7 @@ from iclip.domains.generation.models import (
     inherited_through,
 )
 from iclip.domains.generation.module import ImageModelConfig, build_generation_module
+from iclip.domains.generation.ports import VoiceSample
 from iclip.domains.generation.provider import (
     ProviderError,
     ProviderProgress,
@@ -41,12 +44,16 @@ from iclip.domains.generation.queue import GenerationQueue, GenerationQueueSetti
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import (
     KIND_AUDIO,
+    KIND_DUBBING,
     KIND_IMAGE,
+    KIND_SPEECH,
     KIND_SUBTITLE,
     KIND_VIDEO,
     OPERATION_CUT,
-    OPERATION_GENERATE,
-    OPERATION_UPLOAD,
+    DubbingLine,
+    DubbingOriginalReference,
+    DubbingReference,
+    DubbingRequest,
     ImageGenerationIn,
     MusicRequest,
     SubtitleRequest,
@@ -56,8 +63,10 @@ from iclip.domains.generation.schemas import (
     VideoEnhanceRequest,
     VideoEnhanceResolution,
     VideoGenerationIn,
+    VideoTrialRequest,
     WholeFilmRequest,
     WholeFilmVideoSource,
+    request_to_payload,
 )
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.generation.stored_requests import GenerationRequest
@@ -74,6 +83,7 @@ from tests.helpers.identity import InMemoryUserRepository
 FAKE_VIDEO_PROVIDER = "video_fake"
 FAKE_IMAGE_PROVIDER = "image_fake"
 FAKE_SUBTITLE_PROVIDER = "subtitle_fake"
+FAKE_DUBBING_PROVIDER = "dubbing_fake"
 FAKE_MUSIC_PROVIDER = "music_fake"
 
 
@@ -87,6 +97,12 @@ def video_request(**overrides: Any) -> VideoGenerationIn:
     }
     fields.update(overrides)
     return VideoGenerationIn(**fields)
+
+
+def trial_request(**overrides: Any) -> VideoTrialRequest:
+    """参考视频的试生成：和出片同一个请求形状，记成 ``trial``。"""
+
+    return VideoTrialRequest(**video_request(**overrides).model_dump())
 
 
 def edit_request(**overrides: Any) -> VideoEditRequest:
@@ -193,6 +209,8 @@ def make_job(
         if row_kind == KIND_VIDEO
         else FAKE_SUBTITLE_PROVIDER
         if row_kind == KIND_SUBTITLE
+        else FAKE_DUBBING_PROVIDER
+        if row_kind in (KIND_DUBBING, KIND_SPEECH)
         else FAKE_MUSIC_PROVIDER
         if row_kind == KIND_AUDIO
         else FAKE_IMAGE_PROVIDER
@@ -277,16 +295,37 @@ def make_subtitle(video: GenerationJob, **fields: Any) -> GenerationJob:
     )
 
 
+def make_dubbing(
+    video: GenerationJob,
+    lines: Sequence[DubbingLine],
+    *,
+    duration_ms: int,
+    reference: DubbingReference | None = None,
+    **fields: Any,
+) -> GenerationJob:
+    assert video.output.url is not None, "只给有地址的素材片配音"
+    fields.setdefault("owner_user_id", video.owner_user_id)
+    fields.setdefault("conversation_id", video.conversation_id)
+    return make_job(
+        DubbingRequest(
+            video_url=video.output.url,
+            video_duration_ms=duration_ms,
+            locale="en",
+            lines=list(lines),
+            reference=reference or DubbingOriginalReference(kind="original"),
+        ),
+        source_job_id=video.id,
+        **fields,
+    )
+
+
 def whole_film_request(*sources: uuid.UUID) -> WholeFilmRequest:
     return WholeFilmRequest(
-        revision=1,
-        document={},
         videos=[
             WholeFilmVideoSource(job_id=source, url=f"https://cdn.test/videos/{source}.mp4")
             for source in sources
         ],
-        music=None,
-        subtitles=[],
+        audios=[],
     )
 
 
@@ -314,15 +353,6 @@ MUSIC_PROMPT = "纯音乐，轻快的城市流行节拍，适合鞋款种草短�
 def make_music(**fields: Any) -> GenerationJob:
     fields.setdefault("conversation_id", uuid.uuid4())
     return make_job(MusicRequest(model="qwen-audio-3.1-tts-next", prompt=MUSIC_PROMPT), **fields)
-
-
-def make_upload(*, kind: GenerationKind = KIND_IMAGE, **fields: Any) -> GenerationJob:
-    fields.setdefault("status", STATUS_COMPLETED)
-    fields.setdefault("finished_at", datetime.now(UTC))
-    fields.setdefault(
-        "output", GenerationOutput(url=f"https://cdn.test/iclip/agent/uploads/{uuid.uuid4()}.png")
-    )
-    return make_job(kind=kind, operation=OPERATION_UPLOAD, **fields)
 
 
 def make_cut(grid: GenerationJob, **fields: Any) -> GenerationJob:
@@ -366,7 +396,6 @@ class InMemoryGenerationRepository:
         owner: uuid.UUID | None,
         conversation_id: uuid.UUID | None,
         inherited: Inheritance = (),
-        operation: GenerationOperation | None = None,
     ) -> GenerationJob | None:
         found = [
             job
@@ -374,7 +403,6 @@ class InMemoryGenerationRepository:
             if job.kind == kind
             and job.status == STATUS_COMPLETED
             and job.output.url == output_url
-            and (operation is None or job.operation == operation)
             and (
                 (
                     (owner is None or job.owner_user_id == owner)
@@ -385,26 +413,13 @@ class InMemoryGenerationRepository:
         ]
         return min(found, key=lambda job: (job.created_at, job.id), default=None)
 
-    async def find_video_upload_by_md5(self, content_md5: str) -> GenerationJob | None:
-        found = [
-            job
-            for job in self.jobs.values()
-            if job.output.content_md5 == content_md5
-            and job.kind == KIND_VIDEO
-            and job.operation == OPERATION_UPLOAD
-        ]
-        return min(found, key=lambda job: (job.created_at, job.id), default=None)
-
-    async def latest_reference_trial(self, reference_id: uuid.UUID) -> GenerationJob | None:
-        found = [
-            job
-            for job in self.jobs.values()
-            if job.metadata is not None
-            and job.metadata.get(REFERENCE_TRIAL_KEY) == str(reference_id)
-            and job.kind == KIND_VIDEO
-            and job.operation == OPERATION_GENERATE
-        ]
-        return max(found, key=lambda job: (job.created_at, job.id), default=None)
+    async def earliest_by_outputs(self, urls: Collection[str]) -> Mapping[str, GenerationJob]:
+        found: dict[str, GenerationJob] = {}
+        for job in sorted(self.jobs.values(), key=lambda job: (job.created_at, job.id)):
+            url = job.output.url
+            if job.status == STATUS_COMPLETED and url is not None and url in urls:
+                found.setdefault(url, job)
+        return found
 
     async def output_urls(self, ids: Collection[uuid.UUID]) -> Mapping[uuid.UUID, str]:
         urls: dict[uuid.UUID, str] = {}
@@ -707,6 +722,7 @@ def film_image_service(
         act_as=ActAs(InMemoryUserRepository()),
         clear_completion=_keep_completion,
         lineage=lineage or FixedLineage(),
+        references=FakeReferenceAssets(),
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",
@@ -744,6 +760,35 @@ class FixedLineage:
 
     async def readable(self, principal: Principal, conversation_id: uuid.UUID) -> bool:
         return self._readable
+
+
+class FakeReferenceAssets:
+    """参考资产与上传的替身：只认给定的参考片段地址、资料库 id、音色与（属主, 上传 id）的音频上传。"""
+
+    def __init__(
+        self,
+        usable: Collection[str] = (),
+        *,
+        listed: Collection[uuid.UUID] = (),
+        voices: Mapping[uuid.UUID, VoiceSample] | None = None,
+        audio_uploads: Mapping[tuple[uuid.UUID, uuid.UUID], str] | None = None,
+    ) -> None:
+        self._usable = frozenset(usable)
+        self._listed = frozenset(listed)
+        self._voices = dict(voices or {})
+        self._audio_uploads = dict(audio_uploads or {})
+
+    async def usable_clip(self, principal: Principal, url: str) -> bool:
+        return url in self._usable
+
+    async def unlisted(self, reference_ids: Sequence[uuid.UUID]) -> tuple[uuid.UUID, ...]:
+        return tuple(one for one in reference_ids if one not in self._listed)
+
+    async def voice(self, reference_id: uuid.UUID) -> VoiceSample | None:
+        return self._voices.get(reference_id)
+
+    async def own_audio_upload(self, principal: Principal, upload_id: uuid.UUID) -> str | None:
+        return self._audio_uploads.get((principal.user_id, upload_id))
 
 
 class FakeMediaProbe:
@@ -799,11 +844,41 @@ class MemoryObjectStore:
         return f"{self.base}/{object_key}"
 
 
+async def plant_old_job(engine: AsyncEngine, job: GenerationJob) -> uuid.UUID:
+    """在迁移到较早版本的库上种一条生成记录，只写基线就有的列。
+
+    迁移测试停在旧版本时，当前仓储会写之后迁移才加的列，所以这里按列名直接插入。
+    """
+
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO iclip.generation_jobs"
+                " (id, owner_user_id, conversation_id, kind, operation, provider, request,"
+                " status, created_at)"
+                " VALUES (:id, :owner, :conversation, :kind, :operation, :provider,"
+                " CAST(:request AS jsonb), :status, now())"
+            ),
+            {
+                "id": job.id,
+                "owner": job.owner_user_id,
+                "conversation": job.conversation_id,
+                "kind": job.kind,
+                "operation": job.operation,
+                "provider": job.provider,
+                "request": json.dumps(request_to_payload(job.request)),
+                "status": job.status,
+            },
+        )
+    return job.id
+
+
 __all__ = [
     "MEDIA_ENVS",
     "MUSIC_PROMPT",
     "QUEUE_SETTINGS",
     "FakeMediaProbe",
+    "FakeReferenceAssets",
     "FixedLineage",
     "InMemoryGenerationRepository",
     "MemoryObjectStore",
@@ -816,13 +891,15 @@ __all__ = [
     "image_request",
     "make_composite",
     "make_cut",
+    "make_dubbing",
     "make_edit",
     "make_enhancement",
     "make_job",
     "make_music",
     "make_subtitle",
-    "make_upload",
+    "plant_old_job",
     "stored_request",
+    "trial_request",
     "video_request",
     "whole_film_request",
 ]

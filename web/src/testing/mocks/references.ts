@@ -1,10 +1,10 @@
 import { http, HttpResponse } from 'msw'
 import type { z } from 'zod'
 import type {
-  zReferenceFiltersOut,
   zReferenceTagsIn,
-  zReferenceUpdateIn,
+  zReferenceVideoFiltersOut,
   zReferenceVideoOut,
+  zReferenceVideoUpdateIn,
 } from '@/shared/api/generated/zod.gen'
 // ?no-inline 阻止 Vite 将小体积媒体资源内联为 data URI。
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
@@ -22,7 +22,7 @@ import { mockConfirmedUpload } from './uploads'
 
 type Reference = z.output<typeof zReferenceVideoOut>
 type TestVideo = NonNullable<Reference['testVideo']>
-type Filters = z.output<typeof zReferenceFiltersOut>
+type Filters = z.output<typeof zReferenceVideoFiltersOut>
 
 const tagIdsOf = (...names: string[]) => names.map(mockTagId)
 
@@ -136,6 +136,7 @@ const ago = (hours: number) => new Date(Date.now() - hours * HOUR_MS).toISOStrin
 const demoTestVideo = (overrides: Partial<TestVideo>): TestVideo => ({
   createdAt: ago(1),
   errorMessage: null,
+  jobId: idOf(9000),
   stale: false,
   status: 'completed',
   url: null,
@@ -362,7 +363,7 @@ const isBusy = (row: Row) => row.breakdownStatus === 'pending' || row.breakdownS
 const isTagBusy = (row: Row) => row.tagStatus === 'pending' || row.tagStatus === 'running'
 
 export const referenceHandlers = (viewer: () => string) => [
-  http.get('*/api/references', ({ request }) => {
+  http.get('*/api/references/videos', ({ request }) => {
     const query = new URL(request.url).searchParams
     const cursor = query.get('cursor')
     const tagMatch = mockTagMatcher(query.getAll('tags'))
@@ -386,9 +387,9 @@ export const referenceHandlers = (viewer: () => string) => [
     })
   }),
 
-  http.get('*/api/references/filters', () => HttpResponse.json(filtersOf(live()))),
+  http.get('*/api/references/videos/filters', () => HttpResponse.json(filtersOf(live()))),
 
-  http.post('*/api/references', async ({ request }) => {
+  http.post('*/api/references/videos', async ({ request }) => {
     const { uploadId } = (await request.json()) as { uploadId: string }
     const upload = mockConfirmedUpload(uploadId)
     if (upload === undefined || !upload.contentType.startsWith('video/'))
@@ -426,17 +427,17 @@ export const referenceHandlers = (viewer: () => string) => [
     return HttpResponse.json(publicOf(row, viewer()), { status: 201 })
   }),
 
-  http.get('*/api/references/:id', ({ params }) => {
+  http.get('*/api/references/videos/:id', ({ params }) => {
     const row = find(params['id'])
     return row === undefined ? NOT_FOUND() : HttpResponse.json(publicOf(row, viewer()))
   }),
 
-  http.patch('*/api/references/:id', async ({ params, request }) => {
+  http.patch('*/api/references/videos/:id', async ({ params, request }) => {
     const row = find(params['id'])
     if (row === undefined) return NOT_FOUND()
     if (row.userName !== viewer())
       return HttpResponse.json({ detail: '只有属主能改' }, { status: 403 })
-    const body = (await request.json()) as z.input<typeof zReferenceUpdateIn>
+    const body = (await request.json()) as z.input<typeof zReferenceVideoUpdateIn>
     if (body.document.trim() === '')
       return HttpResponse.json({ detail: [{ msg: '拆解不能为空' }] }, { status: 422 })
     if (body.version !== row.version || isBusy(row))
@@ -450,7 +451,7 @@ export const referenceHandlers = (viewer: () => string) => [
     return HttpResponse.json(publicOf(row, viewer()))
   }),
 
-  http.put('*/api/references/:id/tags', async ({ params, request }) => {
+  http.put('*/api/references/videos/:id/tags', async ({ params, request }) => {
     const row = find(params['id'])
     if (row === undefined) return NOT_FOUND()
     if (row.userName !== viewer())
@@ -463,7 +464,7 @@ export const referenceHandlers = (viewer: () => string) => [
     return HttpResponse.json(publicOf(row, viewer()))
   }),
 
-  http.post('*/api/references/:id/tagging', ({ params }) => {
+  http.post('*/api/references/videos/:id/tagging', ({ params }) => {
     const row = find(params['id'])
     if (row === undefined) return NOT_FOUND()
     if (row.userName !== viewer())
@@ -475,7 +476,7 @@ export const referenceHandlers = (viewer: () => string) => [
     return HttpResponse.json(publicOf(row, viewer()))
   }),
 
-  http.post('*/api/references/:id/breakdowns', ({ params }) => {
+  http.post('*/api/references/videos/:id/breakdowns', ({ params }) => {
     const row = find(params['id'])
     if (row === undefined) return NOT_FOUND()
     if (row.userName !== viewer())
@@ -485,7 +486,7 @@ export const referenceHandlers = (viewer: () => string) => [
     return HttpResponse.json(publicOf(row, viewer()))
   }),
 
-  http.post('*/api/references/:id/test-generations', ({ params }) => {
+  http.post('*/api/references/videos/:id/test-generations', ({ params }) => {
     const row = find(params['id'])
     if (row === undefined) return NOT_FOUND()
     if (!publicOf(row, viewer()).canEdit)
@@ -498,9 +499,11 @@ export const referenceHandlers = (viewer: () => string) => [
     if (row.testVideo?.status === 'running')
       return HttpResponse.json({ detail: '上一次试生成尚未结束' }, { status: 409 })
     row.testQueuedAt = Date.now()
+    seq += 1
     row.testVideo = {
       createdAt: new Date().toISOString(),
       errorMessage: null,
+      jobId: idOf(5000 + seq),
       stale: false,
       status: 'running',
       url: null,
@@ -508,7 +511,7 @@ export const referenceHandlers = (viewer: () => string) => [
     return HttpResponse.json(publicOf(row, viewer()))
   }),
 
-  http.delete('*/api/references/:id', ({ params }) => {
+  http.delete('*/api/references/videos/:id', ({ params }) => {
     const row = find(params['id'])
     if (row === undefined) return NOT_FOUND()
     if (row.userName !== viewer())

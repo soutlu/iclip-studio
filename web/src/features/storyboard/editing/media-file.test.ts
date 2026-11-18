@@ -51,7 +51,16 @@ vi.mock('mediabunny', () => {
       return timestamp === undefined ? null : { timestamp }
     }
   }
-  return { AudioSampleSink, EncodedPacketSink, Input, MP4: {}, QTFF: {}, UrlSource }
+  return {
+    AudioSampleSink,
+    EncodedPacketSink,
+    Input,
+    MP3: {},
+    MP4: {},
+    QTFF: {},
+    UrlSource,
+    WAVE: {},
+  }
 })
 
 describe('readKeyframes', () => {
@@ -79,7 +88,8 @@ describe('readAudioPeaks', () => {
     media.disposed = 0
   })
 
-  it('每秒 50 个峰值，各声道取最大的绝对值，整条最响的是 1', async () => {
+  it('每秒 50 个峰值，各声道取最大的绝对值，整条最响的是 1；带着音轨的时长', async () => {
+    media.duration = 0.06
     media.audio = [
       {
         timestamp: 0,
@@ -101,6 +111,7 @@ describe('readAudioPeaks', () => {
     expect(await readAudioPeaks('https://oss.example.com/take.mp4')).toEqual({
       rate: 50,
       peaks: [expect.closeTo(0.25), expect.closeTo(0.5), 1],
+      duration: 0.06,
     })
     expect(media.disposed).toBe(1)
   })

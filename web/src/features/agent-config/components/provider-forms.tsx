@@ -1,8 +1,10 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
+import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/field'
+import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { THINKING_LEVELS, type ThinkingLevel } from '@/shared/ui/thinking-level'
 import { formatContextSize } from '../agent-draft'
 import { MODEL_KIND_LABEL, MODEL_KINDS } from '../model-kinds'
@@ -11,6 +13,7 @@ import {
   useAddModel,
   useCreateCredential,
   useCreateProvider,
+  useModelGroups,
   useUpdateCredential,
   useUpdateModel,
   type Declaration,
@@ -222,6 +225,57 @@ function CredentialInputs({
   })
 }
 
+// 菜单里「默认」项的值；组名以小写字母开头，不会和它撞上
+const DEFAULT_GROUP = ''
+const DEFAULT_GROUP_LABEL = '默认'
+
+function ModelGroupPicker({
+  disabled,
+  id,
+  onChange,
+  options,
+  value,
+}: {
+  id: string
+  /** 可选的组名，按部署配置的顺序；「默认」不在里面。 */
+  options: readonly string[]
+  value: string | null
+  disabled: boolean
+  onChange: (group: string | null) => void
+}) {
+  const shown = value ?? DEFAULT_GROUP_LABEL
+  return (
+    <MenuRoot>
+      <MenuTrigger
+        aria-label={`配置组：${shown}`}
+        className={cn(
+          INPUT_CLASS,
+          // 和同一表单里的输入框同一副外框
+          'inline-flex w-full min-w-0 ui-state cursor-pointer items-center justify-between gap-2 border border-input-border text-body text-on-surface ui-focus disabled:cursor-not-allowed disabled:text-disabled-text data-[state=open]:border-on-surface',
+        )}
+        disabled={disabled}
+        id={id}
+      >
+        <span className="min-w-0 truncate tabular-nums">{shown}</span>
+        <Icon className="text-on-surface-faint" decorative name="expand" size="sm" />
+      </MenuTrigger>
+      <MenuSurface align="start" className="min-w-(--radix-dropdown-menu-trigger-width)">
+        <MenuRadioGroup
+          onValueChange={(picked) => onChange(picked === DEFAULT_GROUP ? null : picked)}
+          value={value ?? DEFAULT_GROUP}
+        >
+          <MenuRadioItem value={DEFAULT_GROUP}>{DEFAULT_GROUP_LABEL}</MenuRadioItem>
+          {options.map((group) => (
+            <MenuRadioItem key={group} value={group}>
+              <span className="min-w-0 truncate tabular-nums">{group}</span>
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+      </MenuSurface>
+    </MenuRoot>
+  )
+}
+
 export function ProviderCreateForm({
   declarations,
   onCancel,
@@ -346,9 +400,17 @@ export function CredentialForm({
   const baseId = useId()
   const createCredential = useCreateCredential()
   const updateCredential = useUpdateCredential()
+  const configuredGroups = useModelGroups().data ?? []
   const fields = declaration?.credentialFields ?? []
   const editing = credential !== null
+  const savedGroup = credential?.modelGroup ?? null
+  // 部署配置里删掉的组仍按原值显示，好让人看出来、改掉
+  const groupOptions =
+    savedGroup === null || configuredGroups.includes(savedGroup)
+      ? configuredGroups
+      : [...configuredGroups, savedGroup]
   const [name, setName] = useState(credential?.name ?? '')
+  const [group, setGroup] = useState<string | null>(savedGroup)
   const [values, setValues] = useState<Values>(() => initialValues(fields, credential))
   const [errors, setErrors] = useState<Errors>({})
   const [test, setTest] = useState<Test>(IDLE)
@@ -359,7 +421,8 @@ export function CredentialForm({
   const changed = changedFields(fields, values, credential)
   const nameChanged = name.trim() !== (credential?.name ?? '')
   const fieldsChanged = !editing || Object.keys(changed).length > 0
-  const canSave = (nameChanged || fieldsChanged) && !busy
+  const groupChanged = group !== savedGroup
+  const canSave = (nameChanged || fieldsChanged || groupChanged) && !busy
 
   const clearError = (key: string) => {
     setErrors(({ [key]: _dropped, ...rest }) => rest)
@@ -404,7 +467,11 @@ export function CredentialForm({
     try {
       if (credential === null)
         await createCredential.mutateAsync({
-          body: { fields: changed, name: name.trim() },
+          body: {
+            fields: changed,
+            name: name.trim(),
+            ...(group === null ? {} : { modelGroup: group }),
+          },
           providerId: provider.id,
         })
       else
@@ -412,6 +479,7 @@ export function CredentialForm({
           changes: {
             ...(nameChanged ? { name: name.trim() } : {}),
             ...(fieldsChanged ? { fields: changed } : {}),
+            ...(groupChanged ? { modelGroup: group } : {}),
           },
           id: credential.id,
           providerId: provider.id,
@@ -480,6 +548,18 @@ export function CredentialForm({
           }}
           values={values}
         />
+        <Field className="@min-[440px]:col-span-2" id={`${baseId}-group`} label="配置组">
+          <ModelGroupPicker
+            disabled={busy}
+            id={`${baseId}-group`}
+            onChange={(next) => {
+              setGroup(next)
+              setFormError(null)
+            }}
+            options={groupOptions}
+            value={group}
+          />
+        </Field>
       </div>
     </InlineForm>
   )

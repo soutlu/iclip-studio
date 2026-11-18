@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from iclip.platform.runtime_api.agent_usage import AgentUsageOut
@@ -12,7 +13,9 @@ from iclip.platform.runtime_api.config.model_providers.models import (
     ModelSource,
     ModelType,
 )
-from iclip.platform.runtime_api.model_vocab import ModelApi, ThinkingEffort
+from iclip.platform.runtime_api.model_vocab import MODEL_GROUP_PATTERN, ModelApi, ThinkingEffort
+
+ModelGroupField = Annotated[str, Field(pattern=MODEL_GROUP_PATTERN)]
 
 
 class CamelModel(BaseModel):
@@ -63,9 +66,12 @@ class ProviderModelOut(DeclaredModelOut):
 
 
 class CredentialOut(CamelModel):
+    """``modelGroup`` 是这把密钥归的配置组，为空即不归任何组。"""
+
     id: uuid.UUID
     name: str
     fields: dict[str, str]
+    model_group: str | None
     used_by: list[AgentUsageOut]
     created_at: datetime
     updated_at: datetime
@@ -103,15 +109,20 @@ class ModelProviderUpdateIn(CamelModel):
 
 
 class CredentialCreateIn(CamelModel):
+    """``modelGroup`` 给了就把这把密钥归进这个配置组；同一供应商下一个组最多一把。"""
+
     name: str
     fields: dict[str, str]
+    model_group: ModelGroupField | None = None
 
 
 class CredentialUpdateIn(CamelModel):
-    """不给或给 ``null`` 的项不动。"""
+    """``name`` 与 ``fields`` 不给或给 ``null`` 都不动；``modelGroup`` 不给不动，给 ``null`` 清掉，给值改成
+    这个组。"""
 
     name: str | None = None
     fields: dict[str, str] | None = None
+    model_group: ModelGroupField | None = None
 
 
 class CredentialTestIn(CamelModel):
@@ -219,6 +230,7 @@ __all__ = [
     "DefaultModelIn",
     "DefaultModelOut",
     "DefaultModelsOut",
+    "ModelGroupField",
     "ModelOptionOut",
     "ModelOptionsOut",
     "ModelProviderCreateIn",

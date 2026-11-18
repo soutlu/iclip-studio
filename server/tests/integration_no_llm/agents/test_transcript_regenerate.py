@@ -383,6 +383,7 @@ class _InsertFails(JobQueue):
         content: tuple[PromptContent, ...],
         now: datetime,
         locked_by: str,
+        model_group: str | None = None,
     ) -> Submission:
         raise RuntimeError("插入消息时库断了")
 

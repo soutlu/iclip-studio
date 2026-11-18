@@ -29,6 +29,7 @@ from tests.helpers.app import app_with_principal
 from tests.helpers.generation import (
     FAKE_VIDEO_PROVIDER,
     FakeMediaProbe,
+    FakeReferenceAssets,
     FixedLineage,
     InMemoryGenerationRepository,
     build_queue,
@@ -38,7 +39,7 @@ from tests.helpers.generation import (
     make_enhancement,
     make_job,
     make_subtitle,
-    make_upload,
+    trial_request,
     video_request,
     whole_film_request,
 )
@@ -107,6 +108,7 @@ def build_app(
         clear_completion=cleared.record,
         lineage=FixedLineage(),
         media_probe=FakeMediaProbe(),
+        references=FakeReferenceAssets(),
         enhance=enhance,
     )
     app.include_router(
@@ -256,7 +258,6 @@ def _ineligible() -> list[tuple[str, Callable[[GenerationJob], GenerationJob]]]:
         ),
         ("unfinished_take", lambda _: take(status=STATUS_SUBMITTED, output=GenerationOutput())),
         ("failed_take", lambda _: take(status=STATUS_FAILED, output=GenerationOutput())),
-        ("video_upload", lambda _: make_upload(kind="video")),
         (
             "image",
             lambda _: make_job(
@@ -271,6 +272,15 @@ def _ineligible() -> list[tuple[str, Callable[[GenerationJob], GenerationJob]]]:
             lambda base: film(base, status=STATUS_SUBMITTED, output=GenerationOutput()),
         ),
         ("enhancement", lambda base: make_enhancement(base, status=STATUS_COMPLETED)),
+        (
+            "trial",
+            lambda _: make_job(
+                trial_request(resolution="480p"),
+                status=STATUS_COMPLETED,
+                finished_at=NOW,
+                output=GenerationOutput(url="https://x/trial.mp4"),
+            ),
+        ),
     ]
 
 

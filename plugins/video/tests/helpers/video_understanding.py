@@ -8,9 +8,11 @@ class FakeUnderstanding:
     document: str = "## 4、逐镜拉片表\n**[00:00.000-00:03.800]** 中景……"
     error: Exception | None = None
     calls: list[str] = field(default_factory=list[str])
+    model_groups: list[str | None] = field(default_factory=list[str | None])
 
-    async def parse(self, video_url: str) -> str:
+    async def parse(self, video_url: str, *, model_group: str | None) -> str:
         self.calls.append(video_url)
+        self.model_groups.append(model_group)
         if self.error is not None:
             raise self.error
         return self.document

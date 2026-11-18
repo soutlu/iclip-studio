@@ -4,11 +4,17 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from iclip.domains.conversations.api import create_conversations_router, create_previews_router
+from iclip.domains.conversations.api import (
+    create_conversations_router,
+    create_final_cut_preview_router,
+    create_final_cut_project_router,
+    create_previews_router,
+)
+from iclip.domains.conversations.final_cut_project import FinalCutProject, PreviewTokens
+from iclip.domains.conversations.final_cut_translation import FinalCutTranslator
 from iclip.domains.conversations.repository import (
     AgentPreviewStore,
     ConversationRepository,
-    WholeFilmDraftStore,
 )
 from iclip.domains.conversations.service import (
     ActivitiesOf,
@@ -31,12 +37,11 @@ from iclip.domains.conversations.service import (
     SameStyleSource,
     TaskExists,
     VideoProgressOf,
-    WholeFilmDraftReferences,
     WholeFilmExports,
     WorkspaceDocumentValidator,
     WriteDerivedFile,
 )
-from iclip.domains.identity.public import ActAs
+from iclip.domains.identity.public import ActAs, ModelGroupOf
 
 
 @dataclass(frozen=True)
@@ -62,10 +67,9 @@ def build_conversations_module(
     write_derived_file: WriteDerivedFile,
     document_validators: Mapping[str, WorkspaceDocumentValidator],
     film: ConversationFilm,
-    drafts: WholeFilmDraftStore,
-    draft_references: WholeFilmDraftReferences,
     exports: WholeFilmExports | None,
     generate_title: GenerateTitle,
+    model_group_of: ModelGroupOf,
     announce_title: AnnounceTitle,
     activities_of: ActivitiesOf,
     busy_conversation_ids: BusyConversationIds,
@@ -75,6 +79,9 @@ def build_conversations_module(
     same_style_source: SameStyleSource,
     announce_row: AnnounceConversationRow,
     announce_deleted: AnnounceConversationDeleted,
+    preview_origin: str | None,
+    preview_tokens: PreviewTokens,
+    final_cut_translator: FinalCutTranslator,
 ) -> ConversationsModule:
     service = ConversationService(
         repo,
@@ -89,10 +96,9 @@ def build_conversations_module(
         write_derived_file=write_derived_file,
         document_validators=document_validators,
         film=film,
-        drafts=drafts,
-        draft_references=draft_references,
         exports=exports,
         generate_title=generate_title,
+        model_group_of=model_group_of,
         announce_title=announce_title,
         activities_of=activities_of,
         busy_conversation_ids=busy_conversation_ids,
@@ -103,10 +109,21 @@ def build_conversations_module(
         announce_row=announce_row,
         announce_deleted=announce_deleted,
     )
+    project = FinalCutProject(
+        service,
+        read_file=read_derived_file,
+        write_file=write_derived_file,
+        preview_origin=preview_origin,
+        tokens=preview_tokens,
+        translator=final_cut_translator,
+        model_group_of=model_group_of,
+    )
     return ConversationsModule(
         routers=(
             create_conversations_router(service, agents=list_agents, act_as=act_as),
             create_previews_router(service),
+            create_final_cut_project_router(project),
+            create_final_cut_preview_router(project),
         ),
         service=service,
     )

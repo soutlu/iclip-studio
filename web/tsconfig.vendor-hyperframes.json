@@ -1,5 +1,5 @@
 {
-  // 照抄来的 HyperFrames Studio 纯逻辑（src/features/storyboard/whole-film/vendor/hyperframes-studio，
+  // 照抄来的 HyperFrames Studio 纯逻辑（src/features/storyboard/final-cut/vendor/hyperframes-studio，
   // 见该目录的 README）。做法同 tsconfig.vendor.json：单独的 composite 项目，只出类型声明，
   // 引用方看到的是 .d.ts，下面放宽的几项不会漏进本仓自己的代码。
   //
@@ -16,9 +16,9 @@
     "noEmit": false,
     "declaration": true,
     "emitDeclarationOnly": true,
-    "rootDir": "./src/features/storyboard/whole-film/vendor/hyperframes-studio",
+    "rootDir": "./src/features/storyboard/final-cut/vendor/hyperframes-studio",
     "outDir": "./node_modules/.tmp/vendor-hyperframes-types"
   },
-  "include": ["src/features/storyboard/whole-film/vendor/hyperframes-studio"],
-  "exclude": ["src/features/storyboard/whole-film/vendor/hyperframes-studio/**/*.test.ts"]
+  "include": ["src/features/storyboard/final-cut/vendor/hyperframes-studio"],
+  "exclude": ["src/features/storyboard/final-cut/vendor/hyperframes-studio/**/*.test.ts"]
 }

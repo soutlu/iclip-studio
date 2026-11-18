@@ -1,267 +1,28 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Annotated, Final, Literal
+from typing import Annotated, Literal
 
-from pydantic import AfterValidator, Field, FiniteFloat, StringConstraints, model_validator
+from pydantic import Field, field_validator
 
+from iclip.common.final_cut import TargetLocale
+from iclip.domains.conversations.final_cut_translation import (
+    MAX_TRANSLATION_ENTRIES,
+    MAX_TRANSLATION_ID_CHARS,
+    MAX_TRANSLATION_TEXT_CHARS,
+    MAX_TRANSLATION_TOTAL_CHARS,
+    FinalCutText,
+)
 from iclip.domains.conversations.models import WholeFilmExport, WholeFilmExportStatus
 from iclip.domains.conversations.schemas import CamelModel
 
-MIN_CLIP_MS: Final = 100
-MAX_FILM_MS: Final = 120_000
-MAX_LAYER0_CLIPS: Final = MAX_FILM_MS // MIN_CLIP_MS
-MAX_OVERLAYS: Final = MAX_FILM_MS // MIN_CLIP_MS
-MAX_CAPTION_EDITS: Final = 1000
-MAX_CAPTION_TEXT_CHARS: Final = 500
-MAX_CLIP_ID_CHARS: Final = 64
-MAX_COMPONENT_CHARS: Final = 200
-MAX_VARIABLES: Final = 50
-MAX_VARIABLE_NAME_CHARS: Final = 64
-MAX_VARIABLE_TEXT_CHARS: Final = 500
-MAX_VOLUME: Final = 3.981072
-MAX_CANVAS_EDGE: Final = 4096
-
-
-def _not_blank(value: str) -> str:
-    if not value.strip():
-        raise ValueError("不能是空白")
-    return value
-
-
-ClipId = Annotated[
-    str, StringConstraints(min_length=1, max_length=MAX_CLIP_ID_CHARS), AfterValidator(_not_blank)
-]
-ComponentName = Annotated[
-    str,
-    StringConstraints(min_length=1, max_length=MAX_COMPONENT_CHARS),
-    AfterValidator(_not_blank),
-]
-VariableName = Annotated[
-    str,
-    StringConstraints(min_length=1, max_length=MAX_VARIABLE_NAME_CHARS),
-    AfterValidator(_not_blank),
-]
-VariableValue = bool | int | FiniteFloat | Annotated[str, Field(max_length=MAX_VARIABLE_TEXT_CHARS)]
-Variables = Annotated[dict[VariableName, VariableValue], Field(max_length=MAX_VARIABLES)]
-
-Ms = Annotated[int, Field(ge=0)]
-Index = Annotated[int, Field(ge=0)]
-ClipMs = Annotated[int, Field(ge=MIN_CLIP_MS)]
-Volume = Annotated[FiniteFloat, Field(ge=0, le=MAX_VOLUME)]
-Offset = Annotated[int, Field(ge=-MAX_CANVAS_EDGE, le=MAX_CANVAS_EDGE)]
-Scale = Annotated[FiniteFloat, Field(ge=0.1, le=10)]
-Degrees = Annotated[FiniteFloat, Field(gt=-180, le=180)]
-
-
-class WholeFilmCanvas(CamelModel):
-    width: Annotated[int, Field(ge=1, le=MAX_CANVAS_EDGE)]
-    height: Annotated[int, Field(ge=1, le=MAX_CANVAS_EDGE)]
-
-
-class WholeFilmVideoClip(CamelModel):
-    """画面轨上的一段素材片：取它自己媒体时间里从 ``playbackStart`` 起的 ``duration``。"""
-
-    id: ClipId
-    type: Literal["video"]
-    start: Ms
-    duration: ClipMs
-    playback_start: Ms
-    source_job_id: uuid.UUID
-    volume: Volume
-
-
-class WholeFilmComponentClip(CamelModel):
-    """画面轨上的一段组件，与视频段同等占时间；从组件自己时间里的 ``playbackStart`` 起播。"""
-
-    id: ClipId
-    type: Literal["component"]
-    start: Ms
-    duration: ClipMs
-    playback_start: Ms
-    component: ComponentName
-    variables: Variables
-
-
-WholeFilmClip = Annotated[WholeFilmVideoClip | WholeFilmComponentClip, Field(discriminator="type")]
-
-
-class WholeFilmCaptionEdit(CamelModel):
-    """用户改过字的一句：第 ``sentenceIndex`` 句（从 0 数）换成 ``text``。"""
-
-    subtitle_job_id: uuid.UUID
-    sentence_index: Index
-    text: Annotated[
-        str,
-        StringConstraints(min_length=1, max_length=MAX_CAPTION_TEXT_CHARS),
-        AfterValidator(_not_blank),
-    ]
-
-
-class WholeFilmCaptions(CamelModel):
-    """字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。
-    ``x``、``y``、``scale``、``rotation`` 是字幕在画面上挪开的位置、缩放与旋转，所有字幕共用一套；
-    ``pivotX``、``pivotY`` 是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，
-    编辑器在第一次离开原大、不转时写下。``variables`` 是字幕样式的可填项，同特效块；换样式时照样
-    保留，合成时只取当前样式声明过的项。"""
-
-    component: ComponentName
-    edits: Annotated[list[WholeFilmCaptionEdit], Field(max_length=MAX_CAPTION_EDITS)]
-    # 使用 default=[] 使 OpenAPI Schema 输出默认值（Pydantic 会自动深拷贝默认列表）。
-    variables: Variables = Field(default={})
-    hidden: bool = False
-    x: Offset = 0
-    y: Offset = 0
-    scale: Scale = 1
-    rotation: Degrees = 0
-    pivot_x: Offset = 0
-    pivot_y: Offset = 0
-
-
-class WholeFilmMusic(CamelModel):
-    """背景音乐从头铺到尾：``offset`` 是音乐文件里与成片 0 毫秒对齐的那一刻。"""
-
-    job_id: uuid.UUID
-    offset: Ms
-    volume: Volume
-
-
-class WholeFilmOverlay(CamelModel):
-    """特效轨上的一个组件，按成片时间放在 ``[start, start + duration)``，从组件自己时间里的
-    ``playbackStart`` 起播。
-
-    同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块
-    之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。
-    ``x``、``y``、``scale``、``rotation`` 是它在画面上挪开的位置、缩放与旋转；``pivotX``、``pivotY``
-    是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，编辑器在第一次离开原大、
-    不转时写下。"""
-
-    id: ClipId
-    component: ComponentName
-    start: Ms
-    duration: ClipMs
-    playback_start: Ms
-    track: Index
-    z_index: Index
-    variables: Variables
-    x: Offset = 0
-    y: Offset = 0
-    scale: Scale = 1
-    rotation: Degrees = 0
-    pivot_x: Offset = 0
-    pivot_y: Offset = 0
-
-
-class WholeFilmDocument(CamelModel):
-    """一段对话的成片草稿。"""
-
-    canvas: WholeFilmCanvas | None
-    layer0: Annotated[list[WholeFilmClip], Field(max_length=MAX_LAYER0_CLIPS)]
-    captions: WholeFilmCaptions
-    music: WholeFilmMusic | None
-    overlays: Annotated[list[WholeFilmOverlay], Field(max_length=MAX_OVERLAYS)]
-
-    @model_validator(mode="after")
-    def _check_timeline(self) -> WholeFilmDocument:
-        _check_ids(self)
-        _check_layer0(self.layer0)
-        _check_caption_edits(self.captions.edits)
-        _check_overlays(self.overlays)
-        return self
-
-    def total_ms(self) -> int:
-        overlay_end = max(
-            (overlay.start + overlay.duration for overlay in self.overlays), default=0
-        )
-        return max(sum(clip.duration for clip in self.layer0), overlay_end)
-
-    def video_sources(self) -> tuple[uuid.UUID, ...]:
-        return tuple(
-            dict.fromkeys(
-                clip.source_job_id for clip in self.layer0 if isinstance(clip, WholeFilmVideoClip)
-            )
-        )
-
-
-def _check_ids(document: WholeFilmDocument) -> None:
-    seen: set[str] = set()
-    for item in (*document.layer0, *document.overlays):
-        if item.id in seen:
-            raise ValueError(f"片段 id「{item.id}」重复了，画面轨与特效轨里的 id 不能相同")
-        seen.add(item.id)
-
-
-def _check_layer0(layer0: list[WholeFilmClip]) -> None:
-    end = 0
-    for index, clip in enumerate(layer0):
-        if clip.start != end:
-            expected = "0" if index == 0 else f"上一段的结尾 {end}"
-            raise ValueError(
-                f"画面轨第 {index + 1} 段从 {clip.start} 毫秒开始，应当从 {expected} 毫秒开始："
-                "画面轨从 0 起、首尾相接"
-            )
-        end += clip.duration
-    if end > MAX_FILM_MS:
-        raise ValueError(f"成片 {end} 毫秒，超过了 {MAX_FILM_MS} 毫秒的上限")
-
-
-def _check_caption_edits(edits: list[WholeFilmCaptionEdit]) -> None:
-    seen: set[tuple[uuid.UUID, int]] = set()
-    for edit in edits:
-        key = (edit.subtitle_job_id, edit.sentence_index)
-        if key in seen:
-            raise ValueError(
-                f"字幕记录 {edit.subtitle_job_id} 第 {edit.sentence_index} 句改了两次，只能留一份"
-            )
-        seen.add(key)
-
-
-def _check_overlays(overlays: list[WholeFilmOverlay]) -> None:
-    rows: dict[int, list[WholeFilmOverlay]] = {}
-    for overlay in overlays:
-        if overlay.start + overlay.duration > MAX_FILM_MS:
-            raise ValueError(
-                f"特效块「{overlay.id}」到 {overlay.start + overlay.duration} 毫秒结束，"
-                f"超过了 {MAX_FILM_MS} 毫秒的上限"
-            )
-        rows.setdefault(overlay.track, []).append(overlay)
-    for row in rows.values():
-        previous: WholeFilmOverlay | None = None
-        for overlay in sorted(row, key=lambda item: item.start):
-            if previous is not None and overlay.start < previous.start + previous.duration:
-                raise ValueError(
-                    f"特效块「{overlay.id}」与「{previous.id}」在同一行（第 {overlay.track + 1} 行）上重叠了"
-                )
-            previous = overlay
-
-
-class WholeFilmDraftIn(CamelModel):
-    """整份保存草稿。``revision`` 是读到的那一版，还没有草稿时是 0。"""
-
-    revision: Index
-    document: WholeFilmDocument
-
-
-class WholeFilmDraftOut(CamelModel):
-    """当前的草稿；还没存过时 ``revision`` 是 0，``document`` 与 ``updatedAt`` 为 null。"""
-
-    revision: int
-    document: WholeFilmDocument | None
-    updated_at: datetime | None
-
-
-class WholeFilmDraftSavedOut(CamelModel):
-    """保存后的新版本号与保存时刻。"""
-
-    revision: int
-    updated_at: datetime
-
 
 class WholeFilmExportIn(CamelModel):
-    """按当前草稿导出；``revision`` 是页面上那一版，不是服务端存的那一版就不导。"""
+    """发起导出：``locale`` 是导出哪种语言的版本，不带或 null 导出原文。"""
 
-    revision: Index
+    locale: TargetLocale | None = None
 
 
 class WholeFilmExportStartedOut(CamelModel):
@@ -276,9 +37,11 @@ class WholeFilmExportErrorOut(CamelModel):
 
 
 class WholeFilmExportOut(CamelModel):
-    """一次导出现在的样子。``downloadUrl`` 只在 ``done`` 时有，``error`` 只在 ``failed`` 时有。"""
+    """一次导出现在的样子。``locale`` 是导出的哪种语言的版本，原文时是 null。``downloadUrl`` 只在
+    ``done`` 时有，``error`` 只在 ``failed`` 时有。"""
 
     id: uuid.UUID
+    locale: TargetLocale | None
     status: WholeFilmExportStatus
     progress: float | None
     queue_position: int | None
@@ -292,9 +55,116 @@ class WholeFilmExportLatestOut(CamelModel):
     export: WholeFilmExportOut | None
 
 
+class FinalCutPreviewOut(CamelModel):
+    """预览令牌。预览页的地址由前端拼成 ``<origin>/api/final-cut/preview/<token>/…``。"""
+
+    origin: str
+    token: str
+    expires_at: datetime
+
+
+class FinalCutPreviewHostOut(CamelModel):
+    """发令牌时请求的 ``Origin``：预览页只接受来自这个来源的消息。"""
+
+    app_origin: str
+
+
+class FinalCutFileIn(CamelModel):
+    """在 final-cut 工程里新建一个文件。``path`` 相对工程根，如 ``index.html``。"""
+
+    path: Annotated[str, Field(min_length=1)]
+    content: str
+
+
+class FinalCutFileCreatedOut(CamelModel):
+    """新建的文件：``path`` 与请求里的相同（相对工程根），工作区里的路径是 ``final-cut/`` 加上它；
+    ``version`` 是工作区文件的版本号，之后用 ``PUT /conversations/{id}/workspace/file`` 修改。"""
+
+    path: str
+    version: int
+
+
+class FinalCutTextIn(CamelModel):
+    """一条要翻的原文：``id`` 是编辑器里变量的 id，``text`` 不能只有空白。"""
+
+    id: Annotated[str, Field(min_length=1, max_length=MAX_TRANSLATION_ID_CHARS)]
+    text: Annotated[str, Field(min_length=1, max_length=MAX_TRANSLATION_TEXT_CHARS)]
+
+    @field_validator("text")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("不能只有空白")
+        return value
+
+
+class FinalCutTranslationsIn(CamelModel):
+    """把一批原文短句翻成 ``targetLocale``。原文什么语言都行，不用声明；``entries`` 里的 ``id``
+    不能重复。"""
+
+    target_locale: TargetLocale
+    entries: Annotated[
+        list[FinalCutTextIn],
+        Field(
+            min_length=1,
+            max_length=MAX_TRANSLATION_ENTRIES,
+            description=f"所有 text 加起来最多 {MAX_TRANSLATION_TOTAL_CHARS} 字，超了要分批发",
+        ),
+    ]
+
+    @field_validator("entries")
+    @classmethod
+    def _unique_ids(cls, value: list[FinalCutTextIn]) -> list[FinalCutTextIn]:
+        seen: set[str] = set()
+        for entry in value:
+            if entry.id in seen:
+                raise ValueError(f"id {entry.id!r} 重复")
+            seen.add(entry.id)
+        return value
+
+    @field_validator("entries")
+    @classmethod
+    def _fits_one_call(cls, value: list[FinalCutTextIn]) -> list[FinalCutTextIn]:
+        total = sum(len(entry.text) for entry in value)
+        if total > MAX_TRANSLATION_TOTAL_CHARS:
+            raise ValueError(
+                f"一批最多 {MAX_TRANSLATION_TOTAL_CHARS} 字，这一批有 {total} 字，请分批翻译"
+            )
+        return value
+
+    def texts(self) -> tuple[FinalCutText, ...]:
+        return tuple(FinalCutText(id=entry.id, text=entry.text) for entry in self.entries)
+
+
+class FinalCutTranslationOut(CamelModel):
+    id: str
+    text: str
+
+
+class FinalCutTranslationsOut(CamelModel):
+    """译文：请求里的每个 ``id`` 恰好一条，顺序同请求。"""
+
+    translations: list[FinalCutTranslationOut]
+
+
+class FinalCutTranslationErrorOut(CamelModel):
+    """翻译失败：``model_unavailable`` 没有启用翻译用的模型（409）；``model_call_failed`` 模型调用
+    暂时失败，再试一次可能就好（502）；``model_failed`` 模型拒绝、等待超时或回答不对（502）。"""
+
+    detail: str
+    code: Literal["model_unavailable", "model_call_failed", "model_failed"]
+
+
+def final_cut_translations_out(translated: Sequence[FinalCutText]) -> FinalCutTranslationsOut:
+    return FinalCutTranslationsOut(
+        translations=[FinalCutTranslationOut(id=one.id, text=one.text) for one in translated]
+    )
+
+
 def whole_film_export_out(export: WholeFilmExport) -> WholeFilmExportOut:
     return WholeFilmExportOut(
         id=export.id,
+        locale=export.locale,
         status=export.status,
         progress=export.progress,
         queue_position=export.queue_position,
@@ -306,35 +176,20 @@ def whole_film_export_out(export: WholeFilmExport) -> WholeFilmExportOut:
 
 
 __all__ = [
-    "MAX_CANVAS_EDGE",
-    "MAX_CAPTION_EDITS",
-    "MAX_CAPTION_TEXT_CHARS",
-    "MAX_CLIP_ID_CHARS",
-    "MAX_COMPONENT_CHARS",
-    "MAX_FILM_MS",
-    "MAX_LAYER0_CLIPS",
-    "MAX_OVERLAYS",
-    "MAX_VARIABLES",
-    "MAX_VARIABLE_NAME_CHARS",
-    "MAX_VARIABLE_TEXT_CHARS",
-    "MAX_VOLUME",
-    "MIN_CLIP_MS",
-    "WholeFilmCanvas",
-    "WholeFilmCaptionEdit",
-    "WholeFilmCaptions",
-    "WholeFilmClip",
-    "WholeFilmComponentClip",
-    "WholeFilmDocument",
-    "WholeFilmDraftIn",
-    "WholeFilmDraftOut",
-    "WholeFilmDraftSavedOut",
+    "FinalCutFileCreatedOut",
+    "FinalCutFileIn",
+    "FinalCutPreviewHostOut",
+    "FinalCutPreviewOut",
+    "FinalCutTextIn",
+    "FinalCutTranslationErrorOut",
+    "FinalCutTranslationOut",
+    "FinalCutTranslationsIn",
+    "FinalCutTranslationsOut",
     "WholeFilmExportErrorOut",
     "WholeFilmExportIn",
     "WholeFilmExportLatestOut",
     "WholeFilmExportOut",
     "WholeFilmExportStartedOut",
-    "WholeFilmMusic",
-    "WholeFilmOverlay",
-    "WholeFilmVideoClip",
+    "final_cut_translations_out",
     "whole_film_export_out",
 ]

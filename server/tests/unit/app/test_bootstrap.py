@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 import httpx
 import pytest
 from pydantic import ValidationError
@@ -7,6 +9,7 @@ from structlog.testing import capture_logs
 from structlog.typing import EventDict
 
 from iclip.app.bootstrap import build_app
+from iclip.common.errors import ValidationFailed
 from iclip.config import (
     AppSection,
     DbSection,
@@ -17,11 +20,14 @@ from iclip.config import (
     OpsSection,
     RuntimeConfig,
     SecuritySection,
+    SpeechSection,
     SsoSection,
     SubtitleSection,
     VideoGenerationSection,
 )
 from iclip.config.models import IclipStudioSection, ShotVideoSection
+from iclip.domains.generation.schemas import DubbingIn, DubbingLine, DubbingOriginalReference
+from iclip.domains.identity.models import Principal
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE, VIDEOTOOLBOX, MediaCodec
 from tests.helpers.generation import MemoryObjectStore
@@ -50,7 +56,7 @@ def base_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OSS_ACCESS_KEY_ID", "ak")
     monkeypatch.setenv("OSS_ACCESS_KEY_SECRET", "sk")
     monkeypatch.setenv("OSS_PUBLIC_URL_BASE", "https://cdn.test")
-    for name in (*MEDIA_ENVS, "QWEN_API_KEY"):
+    for name in (*MEDIA_ENVS, "QWEN_SUBTITLE_API_KEY", "QWEN_MUSIC_API_KEY", "QWEN_SPEECH_API_KEY"):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -114,7 +120,7 @@ def test_media_generation_without_ffmpeg_fails_at_startup(
         build_app(config_with_media(), engine=engine(), object_store=MemoryObjectStore())
 
 
-def _keep_logging(_level: str, _fmt: str) -> None: ...
+def _keep_logging(_level: str, _fmt: str, *, token_path_prefixes: tuple[str, ...]) -> None: ...
 
 
 @pytest.fixture
@@ -181,7 +187,7 @@ async def test_startup_says_when_subtitles_are_off_and_the_route_is_mounted_eith
     config = config_with_media()
     assert config.media_generation is not None
     if configured:
-        monkeypatch.setenv("QWEN_API_KEY", "sk-qwen")
+        monkeypatch.setenv("QWEN_SUBTITLE_API_KEY", "sk-asr")
         config = config.model_copy(
             update={
                 "media_generation": config.media_generation.model_copy(
@@ -213,7 +219,7 @@ async def test_startup_says_when_music_is_off_and_the_route_is_mounted_either_wa
     config = config_with_media()
     assert config.media_generation is not None
     if configured:
-        monkeypatch.setenv("QWEN_API_KEY", "sk-qwen")
+        monkeypatch.setenv("QWEN_MUSIC_API_KEY", "sk-music")
         config = config.model_copy(
             update={
                 "media_generation": config.media_generation.model_copy(
@@ -236,6 +242,58 @@ async def test_startup_says_when_music_is_off_and_the_route_is_mounted_either_wa
     off = [log for log in logs if log["event"] == "音乐生成未启用"]
     assert len(off) == (0 if configured else 1)
     assert response.status_code == 401, "入口挂着，没登录先 401"
+
+
+PRINCIPAL = Principal(
+    kind="user",
+    user_id=uuid.uuid4(),
+    permissions=frozenset({"generation:submit"}),
+    audit_label="tester",
+    username="tester",
+)
+
+DUBBING_SUBMISSION = DubbingIn(
+    source_job_id=uuid.uuid4(),
+    locale="en",
+    lines=[DubbingLine(start_ms=0, end_ms=1000, text="Hello")],
+    reference=DubbingOriginalReference(kind="original"),
+)
+
+
+@pytest.mark.parametrize("configured", [True, False], ids=["开通", "没开通"])
+async def test_startup_says_when_dubbing_is_off_and_the_section_switches_it_on(
+    local_media_env: None, monkeypatch: pytest.MonkeyPatch, configured: bool
+) -> None:
+    config = config_with_media()
+    assert config.media_generation is not None
+    if configured:
+        monkeypatch.setenv("QWEN_SPEECH_API_KEY", "sk-dub")
+        config = config.model_copy(
+            update={
+                "media_generation": config.media_generation.model_copy(
+                    update={"speech": SpeechSection(url="https://tts.test/SpeechSynthesizer")}
+                )
+            }
+        )
+    with capture_logs() as logs:
+        app = build_app(
+            config,
+            engine=engine(),
+            object_store=MemoryObjectStore(),
+            media_codec=SOFTWARE,
+        )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post("/generations/dubbings", json={})
+
+    off = [log for log in logs if log["event"] == "配音未启用"]
+    assert len(off) == (0 if configured else 1)
+    assert response.status_code == 401, "入口挂着，没登录先 401"
+    if not configured:
+        # 没开通时受理前就拒绝，接口答 422；开通时下一道检查要读库，这里不连库。
+        with pytest.raises(ValidationFailed, match="配音没有开通"):
+            await app.state.generation.service.submit_dubbing(PRINCIPAL, DUBBING_SUBMISSION)
 
 
 def config_with(*, media: bool, shot_video: bool, studio: bool) -> RuntimeConfig:

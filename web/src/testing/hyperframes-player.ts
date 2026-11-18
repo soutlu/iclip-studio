@@ -52,9 +52,15 @@ class FakeHyperframesPlayer extends HTMLElement {
   readonly iframeElement = document.createElement('iframe')
   readonly _media = new FakeParentMedia()
   currentTime = 0
-  duration = Number.POSITIVE_INFINITY
+  // 足够长、放不到结尾；要测放到结尾的用例自己改短
+  duration = 3600
   paused = true
   painted = false
+  playbackRate = 1
+  muted = false
+  loop = false
+  /** 收到 srcdoc 那一刻的 `runtime-src`：真播放器这时按它把运行库写进预览页。 */
+  loadedRuntimeSrc: string | null = null
 
   connectedCallback() {
     this.append(this.iframeElement)
@@ -62,8 +68,9 @@ class FakeHyperframesPlayer extends HTMLElement {
 
   attributeChangedCallback(name: string, _old: string | null, srcdoc: string | null) {
     if (name !== 'srcdoc') return
+    this.loadedRuntimeSrc = this.getAttribute('runtime-src')
     this.painted = false
-    this.#showVideos(srcdoc ?? '')
+    this.#showFilm(srcdoc ?? '')
     queueMicrotask(() => {
       const page = this.iframeElement.contentDocument
       if (page !== null) this._media.setupFromIframe(page)
@@ -73,37 +80,37 @@ class FakeHyperframesPlayer extends HTMLElement {
     })
   }
 
-  #showVideos(srcdoc: string) {
+  /** 把 final-cut 的 `<body>` 原样放进 iframe（补丁按 `data-hf-id` 找得到元素），视频的加载状态由用例控制。 */
+  #showFilm(srcdoc: string) {
     const page = this.iframeElement.contentDocument
     if (page === null) return
     const parsed = new DOMParser().parseFromString(srcdoc, 'text/html')
     page.body.replaceChildren(
-      ...[...parsed.querySelectorAll('video')].map((source) => {
-        const video = page.importNode(source)
-        const url = source.getAttribute('src') ?? ''
-        Object.defineProperties(video, {
-          networkState: { get: () => (downloadingVideos.has(url) ? NETWORK_LOADING : 0) },
-          readyState: {
-            get: () =>
-              starvedVideos.has(url)
-                ? HTMLMediaElement.HAVE_METADATA
-                : HTMLMediaElement.HAVE_ENOUGH_DATA,
-          },
-          error: { get: () => (failedVideos.has(url) ? { code: 4 } : null) },
-          buffered: {
-            get: () => {
-              const ranges = bufferedVideos.get(url) ?? []
-              return {
-                length: ranges.length,
-                start: (at: number) => ranges[at]?.[0],
-                end: (at: number) => ranges[at]?.[1],
-              }
-            },
-          },
-        })
-        return video
-      }),
+      ...[...parsed.body.childNodes].map((node) => page.importNode(node, true)),
     )
+    for (const video of page.querySelectorAll('video')) {
+      const url = video.getAttribute('src') ?? ''
+      Object.defineProperties(video, {
+        networkState: { get: () => (downloadingVideos.has(url) ? NETWORK_LOADING : 0) },
+        readyState: {
+          get: () =>
+            starvedVideos.has(url)
+              ? HTMLMediaElement.HAVE_METADATA
+              : HTMLMediaElement.HAVE_ENOUGH_DATA,
+        },
+        error: { get: () => (failedVideos.has(url) ? { code: 4 } : null) },
+        buffered: {
+          get: () => {
+            const ranges = bufferedVideos.get(url) ?? []
+            return {
+              length: ranges.length,
+              start: (at: number) => ranges[at]?.[0],
+              end: (at: number) => ranges[at]?.[1],
+            }
+          },
+        },
+      })
+    }
   }
 
   play() {

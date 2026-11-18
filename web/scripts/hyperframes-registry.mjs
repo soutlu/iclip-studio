@@ -1,24 +1,29 @@
 #!/usr/bin/env node
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, join, posix, relative, resolve } from 'node:path'
+import { resolveAliasDisplayName } from '@hyperframes/core/fonts/aliases'
 import {
   CDN_HOST_PATTERN,
   CJK_FONT,
   DEFAULT_OUT,
   FIXTURES_DIR,
+  FONT_TABLE,
   HF_VERSION,
   IntegrityError,
   RUNTIME,
   SyncError,
   WEB_ROOT,
   checkCatalogFonts,
-  cjkTwinFaces,
+  checkRelocated,
+  cjkSlices,
   compositionTarget,
   fontFaceDescriptors,
+  fontFaceRules,
   fontFaces,
   fontPackage,
+  installVersion,
   installedFiles,
   isLatinSubset,
   libraryVersion,
@@ -27,10 +32,17 @@ import {
   localReferences,
   localize,
   npmPackage,
+  projectFiles,
   publishedCatalog,
   registryItems,
+  relocate,
   sha256,
   sourceTree,
+  twinDescriptors,
+  undeclaredFontFamilies,
+  withAnimationLibrary,
+  withStylesheetLinks,
+  withoutCjkStylesheet,
   writeAtomic,
 } from './hyperframes-shared.mjs'
 
@@ -167,13 +179,13 @@ async function assemble(temp, catalog, lock) {
   for (const [cssPath, fonts] of fontCss) {
     await writeFonts(cssPath, fonts.families, fonts.display, isLatinSubset)
   }
-  const cjkFaces = CJK_FONT.weights.map((weight) => ({ style: 'normal', weight: String(weight) }))
-  await writeFonts(
-    CJK_FONT.css,
-    [{ family: CJK_FONT.family, faces: cjkFaces }],
-    'block',
-    () => true,
-  )
+  const notoPackage = fontPackage(CJK_FONT.family)
+  const notoDir = await openPackage(notoPackage.name, notoPackage.version)
+  const cjk = await cjkSlices(notoDir, notoPackage)
+  for (const file of cjk.files) {
+    await copyFromPackage(notoPackage.name, notoPackage.version, notoDir, file)
+  }
+  await copyLicense(notoPackage.name, notoPackage.version, notoDir)
 
   const require = createRequire(import.meta.url)
   const corePackage = require.resolve('@hyperframes/core/package.json')
@@ -200,15 +212,17 @@ async function assemble(temp, catalog, lock) {
     await writeOut(target, patched.get(target))
   }
 
-  const componentFiles = smokeDir
-    ? items.filter(({ kind }) => kind === 'component').map(({ item }) => compositionTarget(item))
-    : catalog.items.filter((item) => item.kind === 'component').map((item) => item.src)
-  for (const target of componentFiles) {
+  const itemFiles = smokeDir
+    ? items.map(({ kind, item }) => ({ kind, target: compositionTarget(item) }))
+    : catalog.items.map((item) => ({ kind: item.kind, target: item.src }))
+  for (const { kind, target } of itemFiles) {
     const path = join(temp, target)
     if (!existsSync(path)) throw new SyncError(`组件目录里的 ${target} 不存在`)
     const text = await readFile(path, 'utf8')
-    const transparent = text.replace(COMPONENT_BACKGROUND, 'background: transparent;')
-    if (transparent !== text) await writeFile(path, transparent)
+    const transparent =
+      kind === 'component' ? text.replace(COMPONENT_BACKGROUND, 'background: transparent;') : text
+    const rewritten = withAnimationLibrary(transparent)
+    if (rewritten !== text) await writeFile(path, rewritten)
   }
 
   const googleFaces = new Map()
@@ -219,13 +233,16 @@ async function assemble(temp, catalog, lock) {
     }
   }
   const registryFaces = []
+  const styledTexts = []
   for (const path of await listFiles(temp)) {
-    if (/\.(html?|css)$/i.test(path) && !path.startsWith('vendor/npm/')) {
-      registryFaces.push(...fontFaceDescriptors(await readFile(join(temp, path), 'utf8')))
-    }
+    if (!/\.(html?|css)$/i.test(path) || path.startsWith('vendor/npm/')) continue
+    const text = await readFile(join(temp, path), 'utf8')
+    const kept = withoutCjkStylesheet(text)
+    if (kept !== text) await writeFile(join(temp, path), kept)
+    registryFaces.push(...fontFaceDescriptors(kept))
+    styledTexts.push({ path, text: kept })
   }
-  const notoPackage = fontPackage(CJK_FONT.family)
-  const notoDir = await openPackage(notoPackage.name, notoPackage.version)
+  const twins = {}
   for (const [family, { css: cssPath, faces: localFaces }] of Object.entries(catalog.fonts)) {
     if (localFaces !== undefined) {
       const css = await localFontFaces({
@@ -238,8 +255,9 @@ async function assemble(temp, catalog, lock) {
       await writeOut(cssPath, `${css}\n`)
       continue
     }
+    const sameFamily = (name) => name.toLowerCase() === family.toLowerCase()
     const faces = googleFaces.get(family)
-    let latin = ''
+    let css
     if (faces) {
       const pkg = fontPackage(family)
       const dir = await openPackage(pkg.name, pkg.version)
@@ -253,15 +271,75 @@ async function assemble(temp, catalog, lock) {
         '../../npm',
       )
       for (const file of result.files) await copyFromPackage(pkg.name, pkg.version, dir, file)
-      latin = result.css
+      css = result.css
+    } else {
+      // 没有组件经 Google Fonts 引用这个字体：用组件文件里自带的 @font-face，同样的规则只留一条
+      const rules = styledTexts.flatMap(({ path, text }) =>
+        fontFaceRules(text, path, cssPath).filter((face) => sameFamily(face.family)),
+      )
+      css = [...new Set(rules.map((face) => face.rule))].join('\n')
     }
-    const descriptors = registryFaces.filter(
-      (face) => face.family.toLowerCase() === family.toLowerCase(),
-    )
-    if (descriptors.length === 0) throw new SyncError(`组件库里没有字体「${family}」的 @font-face`)
-    const cjk = await cjkTwinFaces(family, descriptors, notoDir)
-    await writeOut(cssPath, `${[latin, cjk].filter(Boolean).join('\n')}\n`)
+    const descriptors = registryFaces.filter((face) => sameFamily(face.family))
+    if (descriptors.length === 0 || css === '')
+      throw new SyncError(`组件库里没有字体「${family}」的 @font-face`)
+    twins[family] = twinDescriptors(descriptors)
+    await writeOut(cssPath, `${css}\n`)
   }
+
+  // 组件文件里写到、却没有 @font-face 的字体名，渲染器会自己去找，内置别名表里的还会去 Google Fonts 补字重；
+  // 渲染时不连外网，组装时照它的别名表给这些名字配上本地的 Fontsource 字体，链进组件文件。
+  // 冒烟库没有组件目录（条目的 fonts），不做这一步
+  const undeclaredIn = async ({ src, fonts }) => {
+    const text = await readFile(join(temp, src), 'utf8')
+    const linked = []
+    for (const { resolved } of localReferences(text, src)) {
+      if (!resolved.endsWith('.css') || !existsSync(join(temp, resolved))) continue
+      const sheet = await readFile(join(temp, resolved), 'utf8')
+      linked.push(...fontFaceDescriptors(sheet).map((face) => face.family))
+    }
+    // 主文件只链组件目录里有的字体的样式表
+    const listed = fonts.filter((family) => Object.hasOwn(catalog.fonts, family))
+    return { text, families: undeclaredFontFamilies(text, [CJK_FONT.family, ...listed, ...linked]) }
+  }
+  const aliasSheets = new Map()
+  const aliasSheet = async (family, canonical) => {
+    const key = family.toLowerCase()
+    if (!aliasSheets.has(key)) {
+      const pkg = fontPackage(canonical)
+      const dir = await openPackage(pkg.name, pkg.version)
+      const metadata = JSON.parse(await readFile(join(dir, 'metadata.json'), 'utf8'))
+      const faces = metadata.styles.flatMap((style) =>
+        metadata.weights.map((weight) => ({ style, weight: String(weight) })),
+      )
+      const result = await fontFaces(family, faces, 'block', dir, pkg, isLatinSubset)
+      for (const file of result.files) await copyFromPackage(pkg.name, pkg.version, dir, file)
+      await copyLicense(pkg.name, pkg.version, dir)
+      // 临时文件名，整理时按内容摘要改名
+      const path = `vendor/fonts/alias-${key.replace(/[^a-z0-9]+/g, '-')}.css`
+      await writeOut(path, `${result.css}\n`)
+      aliasSheets.set(key, path)
+    }
+    return aliasSheets.get(key)
+  }
+  const unresolvedFonts = []
+  for (const item of smokeDir ? [] : catalog.items) {
+    const { text, families } = await undeclaredIn(item)
+    const hrefs = []
+    for (const family of families) {
+      const canonical = resolveAliasDisplayName(family)
+      if (canonical === undefined) unresolvedFonts.push(`${item.name} → ${family}`)
+      else hrefs.push(posix.relative(posix.dirname(item.src), await aliasSheet(family, canonical)))
+    }
+    if (hrefs.length === 0) continue
+    const linked = withStylesheetLinks(text, hrefs)
+    if (linked === undefined)
+      throw new SyncError(`${item.src} 里没有 <style> 或 <script>，链不进字体样式表`)
+    await writeFile(join(temp, item.src), linked)
+  }
+  if (unresolvedFonts.length > 0)
+    throw new SyncError(
+      `组件用到的字体没有 @font-face，渲染时会去外网取；在条目的 fonts 里写上它，或给它补上 @font-face：\n  ${unresolvedFonts.join('\n  ')}`,
+    )
 
   const thumbnailsDir = join(libraryDir, 'thumbnails')
   if (existsSync(thumbnailsDir)) {
@@ -269,6 +347,20 @@ async function assemble(temp, catalog, lock) {
       await writeOut(`thumbnails/${file}`, await readFile(join(thumbnailsDir, file)))
     }
   }
+
+  const { moved, renamed } = await relocate(temp)
+  const css = Object.fromEntries(
+    Object.entries(catalog.fonts).map(([family, font]) => [family, renamed.get(font.css)]),
+  )
+  await writeOut(FONT_TABLE, `${JSON.stringify({ slices: cjk.slices, twins, css })}\n`)
+  await checkRelocated(temp, moved)
+  const stillUndeclared = []
+  for (const item of smokeDir ? [] : catalog.items) {
+    const { families } = await undeclaredIn(item)
+    if (families.length > 0) stillUndeclared.push(`${item.name} → ${families.join('、')}`)
+  }
+  if (stillUndeclared.length > 0)
+    throw new SyncError(`整理后仍有字体没有 @font-face：\n  ${stillUndeclared.join('\n  ')}`)
 
   const files = await listFiles(temp)
   const leftovers = []
@@ -295,23 +387,32 @@ async function assemble(temp, catalog, lock) {
     }
   }
   if (missing.length > 0) throw new SyncError(`引用的文件不存在：\n  ${missing.join('\n  ')}`)
+  // 发布目录时还会按版本目录再列一遍；这里先查，条目专有目录里有非文本文件时不装出这个版本
+  await projectFiles(
+    catalog.items,
+    (path) => readFile(join(temp, path), 'utf8'),
+    (dir) => listFiles(temp, dir),
+  )
 
   return { npmLock, files }
 }
 
 const readJson = async (path) => JSON.parse(await readFile(path, 'utf8'))
 
-async function assembleInto(target, catalog, lock) {
-  const temp = `${target}.${process.pid}.tmp`
+/**
+ * 在输出目录里的临时目录组装，交给 `install(temp, result)` 发布；无论成败，最后删掉临时目录。
+ * 临时目录与输出目录在同一文件系统，发布时 vendor/ 的文件靠改名并入。
+ */
+async function assembleThen(catalog, lock, install) {
+  const temp = join(outDir, `.assemble.${process.pid}`)
   await rm(temp, { recursive: true, force: true })
   await mkdir(temp, { recursive: true })
   try {
     const result = await assemble(temp, catalog, lock)
-    await rename(temp, target)
+    await install(temp, result)
     return result
-  } catch (error) {
+  } finally {
     await rm(temp, { recursive: true, force: true })
-    throw error
   }
 }
 
@@ -332,16 +433,16 @@ async function main() {
   await mkdir(outDir, { recursive: true })
 
   if (updateLock) {
-    const scratch = join(outDir, `.update-lock.${process.pid}`)
-    const { npmLock } = await assembleInto(scratch, catalog, null)
-    const sorted = Object.fromEntries(
-      Object.entries(npmLock).sort(([a], [b]) => a.localeCompare(b)),
-    )
-    await writeFile(lockPath, `${JSON.stringify({ npm: sorted }, null, 2)}\n`)
-    console.log(`锁文件已更新：${displayPath(lockPath)}`)
-    const version = await libraryVersion(libraryDir)
-    if (existsSync(join(outDir, version))) await rm(scratch, { recursive: true, force: true })
-    else await rename(scratch, join(outDir, version))
+    let version
+    await assembleThen(catalog, null, async (temp, { npmLock }) => {
+      const sorted = Object.fromEntries(
+        Object.entries(npmLock).sort(([a], [b]) => a.localeCompare(b)),
+      )
+      await writeFile(lockPath, `${JSON.stringify({ npm: sorted }, null, 2)}\n`)
+      console.log(`锁文件已更新：${displayPath(lockPath)}`)
+      version = await libraryVersion(libraryDir)
+      if (!existsSync(join(outDir, version))) await installVersion(temp, outDir, version)
+    })
     await publishCatalog(catalog, version)
     return
   }
@@ -352,7 +453,9 @@ async function main() {
   if (existsSync(versionDir)) {
     console.log(`组件库 ${version} 已组装过，跳过：${displayPath(versionDir)}`)
   } else {
-    const { files } = await assembleInto(versionDir, catalog, await readJson(lockPath))
+    const { files } = await assembleThen(catalog, await readJson(lockPath), (temp) =>
+      installVersion(temp, outDir, version),
+    )
     console.log(`组件库已组装：${displayPath(versionDir)}（${files.length} 个文件）`)
   }
   await publishCatalog(catalog, version)
@@ -360,8 +463,11 @@ async function main() {
 
 async function publishCatalog(catalog, version) {
   const versionDir = join(outDir, version)
-  const published = await publishedCatalog(catalog, version, (src) =>
-    readFile(join(versionDir, src), 'utf8'),
+  const published = await publishedCatalog(
+    catalog,
+    version,
+    (path) => readFile(join(versionDir, path), 'utf8'),
+    (dir) => listFiles(versionDir, dir),
   )
   await writeAtomic(join(outDir, 'catalog.json'), `${JSON.stringify(published, null, 2)}\n`)
   console.log(`组件目录已写入：${displayPath(join(outDir, 'catalog.json'))}（version ${version}）`)

@@ -58,10 +58,10 @@ async def test_breakdowns_and_tagging_run_in_the_app_lifespan_without_media_gene
         async with make_client(app) as http:
             await login_as_editor(http, migrated_pg)
             upload_id = await upload_video(http, bucket)
-            created = (await http.post("/references", json={"uploadId": upload_id})).json()
+            created = (await http.post("/references/videos", json={"uploadId": upload_id})).json()
             detail = created
             for _ in range(200):
-                detail = (await http.get(f"/references/{created['id']}")).json()
+                detail = (await http.get(f"/references/videos/{created['id']}")).json()
                 if detail["tagStatus"] == "completed":
                     break
                 await asyncio.sleep(0.05)

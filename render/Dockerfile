@@ -1,11 +1,12 @@
-# 成片渲染服务镜像（iclip-render）。构建上下文为仓库根：要用 web/ 的成片合成构建与后端合同的
-# zod 生成物。镜像里不带组件库：部署时把组件库目录挂到 RENDER_REGISTRY_ROOT（见 deploy/compose.yaml）。
+# 成片渲染服务镜像（iclip-render）。构建上下文为仓库根（和别的镜像一样），用到 render/ 和前端的
+# final-cut 主文件写法（web/src/features/storyboard/final-cut/composition/，打包进 dist）。
+# 镜像里不带组件库：部署时把组件库目录挂到 RENDER_REGISTRY_ROOT（见 deploy/compose.yaml）。
 #
 #   docker build --platform linux/amd64 -f render/Dockerfile -t iclip-render .
 #
 # 只出 linux/amd64：渲染用的 chrome-headless-shell（Chrome for Testing）没有 Linux arm64 版本。
-# 运行环境照 HyperFrames 自己的渲染镜像（packages/gcp-cloud-run/Dockerfile）：同一组系统库、
-# 固定版本的 ffmpeg 静态构建；Chrome 用 HyperFrames 0.8.168 命令行固定的版本。
+# 运行环境照引擎上游自己的渲染镜像（packages/gcp-cloud-run/Dockerfile）：同一组系统库、
+# 固定版本的 ffmpeg 静态构建；Chrome 用引擎 0.9.59 命令行固定的版本。
 
 ARG NODE_IMAGE=node:22.23.3-bookworm-slim
 
@@ -20,8 +21,8 @@ COPY render/package.json render/pnpm-lock.yaml render/pnpm-workspace.yaml render
 RUN npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")" \
     && pnpm install --frozen-lockfile
 COPY render/ ./
-COPY web/src/features/storyboard/whole-film/ /app/web/src/features/storyboard/whole-film/
-COPY web/src/shared/api/generated/ /app/web/src/shared/api/generated/
+# 渲染服务按语言导出时和编辑器预览共用 composition/ 里的写法，放在和仓库里一样的相对位置
+COPY web/src/features/storyboard/final-cut/composition/ /app/web/src/features/storyboard/final-cut/composition/
 RUN pnpm build && pnpm prune --prod
 
 # ---------------------------------------------------------------- 运行
@@ -64,7 +65,7 @@ RUN curl -fsSL -o /tmp/ffmpeg.tar.xz "$FFMPEG_RELEASE/$FFMPEG_BUILD-linux64-gpl-
     && rm /tmp/ffmpeg.tar.xz \
     && ffmpeg -version | head -n1
 
-# chrome-headless-shell：HyperFrames 0.8.168 命令行（packages/cli/src/browser/manager.ts）固定的版本。
+# chrome-headless-shell：引擎 0.9.59 命令行固定的版本（packages/engine/src/services/chromeHostCeiling.ts）。
 ARG CHROME_HEADLESS_SHELL=152.0.7977.30
 RUN npx --yes @puppeteer/browsers install "chrome-headless-shell@$CHROME_HEADLESS_SHELL" --path /opt/puppeteer \
     && CHS="$(find /opt/puppeteer/chrome-headless-shell -name chrome-headless-shell -type f | head -n1)" \

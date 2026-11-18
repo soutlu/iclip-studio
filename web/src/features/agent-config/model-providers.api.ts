@@ -16,6 +16,7 @@ import {
   zDeclarationsOut,
   zDefaultModelOut,
   zDefaultModelsOut,
+  zModelGroupsOut,
   zModelProviderOut,
   zModelProvidersOut,
   zProbeOut,
@@ -39,6 +40,7 @@ const providerQueryKeys = {
   list: ['model-providers', 'list'] as const,
   declarations: ['model-providers', 'declarations'] as const,
   defaults: ['model-providers', 'defaults'] as const,
+  groups: ['model-providers', 'groups'] as const,
 }
 
 const providerPath = (id: string) => `/model-providers/${encodeURIComponent(id)}`
@@ -67,6 +69,19 @@ export const useProviderDeclarations = () =>
       }),
     queryKey: providerQueryKeys.declarations,
     select: (data) => data.declarations,
+    staleTime: Infinity,
+  })
+
+/** 部署配置里的配置组名，按配置顺序；只在部署时改，页面里不会变。 */
+export const useModelGroups = () =>
+  useQuery({
+    queryFn: ({ signal }) =>
+      apiFetch('/model-providers/groups', zModelGroupsOut, {
+        fallbackErrorMessage: '读取配置组失败',
+        signal,
+      }),
+    queryKey: providerQueryKeys.groups,
+    select: (data) => data.groups,
     staleTime: Infinity,
   })
 

@@ -1,12 +1,13 @@
 import { MOCK_STREAM_EPOCH } from '@/testing/mocks/transcript'
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useCallback, useState } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { addMockConversation } from '@/testing/mocks/conversations'
+import { loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
-import { sessionEnvelope } from '@/testing/ws'
 import { ShellChromeContext } from '@/shared/shell'
 import type { ArtifactEntry, ArtifactRendererProps } from './artifact'
 import { useOpenArtifact } from './artifact-search'
@@ -18,10 +19,9 @@ import { WorkbenchLayoutProvider } from './workbench-layout-provider'
 import { WorkbenchRegistryProvider } from './workbench-registry-provider'
 
 const CONVERSATION_ID = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'
+const OTHER_USER_ID = '7d3e2f1a-0b9c-4d8e-8f7a-6b5c4d3e2f1a'
 
-const Painted = ({ artifact, conversationTitle }: ArtifactRendererProps) => (
-  <p title={conversationTitle}>画着{artifact.title}</p>
-)
+const Painted = ({ artifact }: ArtifactRendererProps) => <p>画着{artifact.title}</p>
 
 const shotsEntry: ArtifactEntry = {
   autoOpen: true,
@@ -239,7 +239,7 @@ describe('WorkbenchHost 收起态', () => {
 
   it('只有普通文件时不自动展开；点开是选择页，选「文件」才画它，地址记下这件产物', async () => {
     serveFiles(['video/a.md'])
-    const { router, socket } = await renderHost()
+    const { router } = await renderHost()
 
     expect(await screen.findByRole('button', { name: '展开工作台' })).toBeVisible()
     expect(screen.queryByText('画着文件')).not.toBeInTheDocument()
@@ -248,18 +248,9 @@ describe('WorkbenchHost 收起态', () => {
     const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
     expect(screen.queryByText('画着文件')).not.toBeInTheDocument()
 
-    act(() => {
-      socket.deliver({
-        ...sessionEnvelope(CONVERSATION_ID),
-        payload: { title: '修改后的项目名' },
-        session_id: CONVERSATION_ID,
-        type: 'session.meta.updated',
-      })
-    })
     await userEvent.click(within(chooser).getByRole('button', { name: '文件' }))
 
     expect(await screen.findByText('画着文件')).toBeVisible()
-    expect(screen.getByText('画着文件')).toHaveAttribute('title', '修改后的项目名')
     expect(screen.getByRole('tab', { name: '文件', selected: true })).toBeVisible()
     expect(router.state.location.search).toMatchObject({ artifact: 'workspace' })
   })
@@ -477,5 +468,101 @@ describe('WorkbenchHost 展开态', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '从对话查看分镜' }))
     await waitFor(() => expect(painted).toBeVisible())
+  })
+})
+
+describe('WorkbenchHost · 只读时不显示的页签', () => {
+  beforeEach(() => {
+    loginAs(mockAuthUser)
+  })
+
+  /** 画出来时带上是不是只读：对话读到以后才算得出来。 */
+  const PaintedWithAccess = ({ artifact, readOnly }: ArtifactRendererProps) => (
+    <p>
+      画着{artifact.title}
+      {readOnly ? '（只读）' : '（可编辑）'}
+    </p>
+  )
+
+  const withAccess = (entry: ArtifactEntry): ArtifactEntry => ({
+    ...entry,
+    component: PaintedWithAccess,
+  })
+
+  const filmEntry: ArtifactEntry = {
+    autoOpen: true,
+    component: PaintedWithAccess,
+    icon: 'video',
+    label: '制作',
+    match: { path: 'film.icml' },
+    title: () => '制作',
+    type: 'film',
+  }
+
+  const editingEntry: ArtifactEntry = {
+    autoOpen: false,
+    component: PaintedWithAccess,
+    hiddenWhenReadOnly: true,
+    icon: 'video-type',
+    label: '剪辑',
+    match: { anyPath: ['video_shot.json', 'film.icml'] },
+    title: () => '剪辑',
+    type: 'editing',
+  }
+
+  const registry = () =>
+    registryWith(withAccess(shotsEntry), filmEntry, editingEntry, withAccess(workspaceEntry))
+
+  const tabNames = () => screen.getAllByRole('tab').map((tab) => tab.textContent)
+
+  it.each([
+    { files: ['video_shot.json'], first: '分镜', tabs: ['分镜', '剪辑', '文件'] },
+    { files: ['film.icml', 'notes.md'], first: '制作', tabs: ['制作', '剪辑', '文件'] },
+    {
+      files: ['video_shot.json', 'film.icml'],
+      first: '分镜',
+      tabs: ['分镜', '制作', '剪辑', '文件'],
+    },
+  ])('有 $files 时多一个页签，排在「文件」前面，不自动打开', async ({ files, first, tabs }) => {
+    serveFiles(files)
+    await renderHost(ROOMY, registry(), `/c/${CONVERSATION_ID}`)
+
+    expect(await screen.findByText(`画着${first}（可编辑）`)).toBeVisible()
+    await waitFor(() => expect(tabNames()).toEqual(tabs))
+    expect(screen.getByRole('tab', { name: '剪辑' })).toHaveAttribute('aria-selected', 'false')
+  })
+
+  it('分镜和工程文件都没有时没有这个页签，选择页里也不列', async () => {
+    serveFiles(['notes.md'])
+    await renderHost(ROOMY, registry(), `/c/${CONVERSATION_ID}`)
+
+    await userEvent.click(await screen.findByRole('button', { name: '展开工作台' }))
+    const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
+    await waitFor(() =>
+      expect(
+        within(chooser)
+          .getAllByRole('button')
+          .map((row) => row.textContent),
+      ).toEqual(['分镜暂无分镜，agent 交付后显示', '文件']),
+    )
+  })
+
+  it('带着地址直接打开它', async () => {
+    serveFiles(['video_shot.json'])
+    const { router } = await renderHost(ROOMY, registry(), `/c/${CONVERSATION_ID}?artifact=editing`)
+
+    expect(await screen.findByText('画着剪辑（可编辑）')).toBeVisible()
+    expect(screen.getByRole('tab', { name: '剪辑', selected: true })).toBeVisible()
+    expect(router.state.location.search).toMatchObject({ artifact: 'editing' })
+  })
+
+  it('只读查看别人的对话：没有这个页签，带着地址也打开不了，换成自动打开的那一个', async () => {
+    addMockConversation('别人的对话', undefined, OTHER_USER_ID, CONVERSATION_ID)
+    serveFiles(['video_shot.json', 'film.icml'])
+    await renderHost(ROOMY, registry(), `/c/${CONVERSATION_ID}?artifact=editing`)
+
+    expect(await screen.findByText('画着分镜（只读）')).toBeVisible()
+    expect(tabNames()).toEqual(['分镜', '制作', '文件'])
+    expect(screen.queryByText(/^画着剪辑/)).not.toBeInTheDocument()
   })
 })

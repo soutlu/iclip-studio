@@ -26,6 +26,7 @@ from pydantic import (
 )
 from pydantic.alias_generators import to_camel
 
+from iclip.common.final_cut import TargetLocale
 from iclip.common.generation_vocab import (
     GenerationKind,
     GenerationOperation,
@@ -47,15 +48,17 @@ STATUS_FAILED: Final = "failed"
 KIND_VIDEO: Final = "video"
 KIND_IMAGE: Final = "image"
 KIND_SUBTITLE: Final = "subtitle"
+KIND_DUBBING: Final = "dubbing"
+KIND_SPEECH: Final = "speech"
 KIND_AUDIO: Final = "audio"
 KIND_WHOLE_FILM: Final = "whole_film"
 
 OPERATION_GENERATE: Final = "generate"
 OPERATION_COMPOSE: Final = "compose"
 OPERATION_CUT: Final = "cut"
-OPERATION_UPLOAD: Final = "upload"
 OPERATION_RENDER: Final = "render"
 OPERATION_ENHANCE: Final = "enhance"
+OPERATION_TRIAL: Final = "trial"
 
 ClipStage = Literal["fetching", "processing", "uploading"]
 
@@ -82,7 +85,9 @@ COLUMN_FIELDS: Final = frozenset({"conversation_id", "task_id", "metadata", "sho
 
 RECORD_ONLY_FIELDS: Final = frozenset({"source_url", "range_start_ms", "range_end_ms"})
 
-NOT_FORWARDED_FIELDS: Final = COLUMN_FIELDS | RECORD_ONLY_FIELDS | frozenset({"shot"})
+NOT_FORWARDED_FIELDS: Final = (
+    COLUMN_FIELDS | RECORD_ONLY_FIELDS | frozenset({"shot", "reference_ids"})
+)
 
 READ_BACK_CONTEXT: Final = "read_back"
 
@@ -210,7 +215,8 @@ class VideoGenerationIn(SnakeModel):
 
     只拦本系统能判的：模型在允许表里（受理层）、地址是 http(s)、秒数不小于 -1、``shot``
     自身对得上（图片引用不越界、编号与正文一致）。画幅、分辨率、时长范围、素材规格由上游
-    按模型判，这里不复制一份。
+    按模型判，这里不复制一份。``reference_ids`` 是这次用到的参考资产，受理时核对都在资料库里、
+    没移除，只记进请求快照，不发给上游。
     """
 
     kind: ClassVar[GenerationKind] = KIND_VIDEO
@@ -223,6 +229,7 @@ class VideoGenerationIn(SnakeModel):
     reference_image_urls: MediaUrls = []
     reference_video_urls: MediaUrls = []
     reference_audio_urls: MediaUrls = []
+    reference_ids: Annotated[list[uuid.UUID], Field(max_length=MAX_REFERENCE_URLS)] = []
     generate_audio: bool | None = None
     resolution: Annotated[str, Field(min_length=1, max_length=50)] | None = None
     aspect_ratio: Annotated[str, Field(min_length=1, max_length=20)] | None = None
@@ -258,6 +265,13 @@ class VideoGenerationIn(SnakeModel):
             raise ValueError("prompt 与 shot 拼出的正文不一致，二者只传一个")
         object.__setattr__(self, "prompt", assembled)
         return self
+
+
+class VideoTrialRequest(VideoGenerationIn):
+    """参考视频的试生成：照拆解拼的提示词出一条视频和原片对照。上游、配置组与请求快照都和出片一样，
+    只是记成 ``trial``，不算素材片。"""
+
+    operation: ClassVar[GenerationOperation] = OPERATION_TRIAL
 
 
 class VideoEditRequest(VideoGenerationIn):
@@ -362,7 +376,7 @@ class VideoComposeRequest(CamelModel):
 
 
 class SubtitleIn(CamelModel):
-    """手动识别一条素材片的受理输入：补识别旧视频，或识别失败后另起一次。
+    """按需识别一条素材片的受理输入；识别失败后可以另起一次。
 
     归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别
     服务不收它，不进 ``request``。"""
@@ -418,6 +432,222 @@ class SubtitleSentence(CamelModel):
         return self
 
 
+# 与 final-cut 翻译一批的上限相同：配的就是那一批字幕的译文。
+MAX_DUBBING_LINES: Final = 200
+
+MAX_DUBBING_LINE_CHARS: Final = 500
+
+MAX_DUBBING_TOTAL_CHARS: Final = 4_000
+
+
+class DubbingLine(CamelModel):
+    """要配的一句：在素材片视频里的起止（毫秒，与字幕记录的 ``sentences`` 同一口径）与译文。"""
+
+    start_ms: Annotated[int, Field(ge=0)]
+    end_ms: Annotated[int, Field(ge=0)]
+    text: Annotated[str, Field(min_length=1)]
+    # 只配其中几句时，后面还有别的句子（别的音色配的、这次不配的）要占位置；早先存下的请求没有它。
+    slot_end_ms: Annotated[
+        int | None,
+        Field(
+            ge=0,
+            description="这句最晚占到哪儿（毫秒）；不写时占到下一句开始，最后一句到素材片结尾",
+        ),
+    ] = None
+
+    _check_text = field_validator("text")(nonblank)
+
+    @model_validator(mode="after")
+    def _end_after_start(self) -> DubbingLine:
+        if self.end_ms <= self.start_ms:
+            raise ValueError("end_ms 必须晚于 start_ms")
+        if self.slot_end_ms is not None and self.slot_end_ms <= self.start_ms:
+            raise ValueError("slot_end_ms 必须晚于 start_ms")
+        return self
+
+
+class DubbingSpeechSpan(CamelModel):
+    """素材片里有人说话的一段：起止（毫秒，与 ``lines`` 同一口径）。"""
+
+    start_ms: Annotated[int, Field(ge=0)]
+    end_ms: Annotated[int, Field(ge=0)]
+
+    @model_validator(mode="after")
+    def _end_after_start(self) -> DubbingSpeechSpan:
+        if self.end_ms <= self.start_ms:
+            raise ValueError("end_ms 必须晚于 start_ms")
+        return self
+
+
+class DubbingOriginalReference(CamelModel):
+    """参考音频取素材片自己的原声：服务端从被说话时段覆盖得最多的一段里截。"""
+
+    kind: Literal["original"]
+    # 早先存下的请求没有它；没写时按 lines 算说话时段。
+    spans: Annotated[
+        list[DubbingSpeechSpan] | None,
+        Field(
+            max_length=MAX_DUBBING_LINES,
+            description=(
+                "这条素材片里有人说话的时段，按开始时间排好、互不重叠、在素材片时长之内；"
+                "截原声参考按它算，不写时按 lines 算"
+            ),
+        ),
+    ] = None
+
+    @field_validator("spans")
+    @classmethod
+    def _ordered_without_overlap(
+        cls, value: list[DubbingSpeechSpan] | None
+    ) -> list[DubbingSpeechSpan] | None:
+        if value is None:
+            return value
+        for index in range(1, len(value)):
+            if value[index].start_ms < value[index - 1].end_ms:
+                raise ValueError(f"第 {index + 1} 段说话时段和上一段重叠或没按开始时间排好")
+        return value
+
+
+class DubbingVoiceReferenceIn(CamelModel):
+    """参考音频取参考音频库里一条没移除的音色。"""
+
+    kind: Literal["reference_audio"]
+    reference_id: uuid.UUID
+
+
+class DubbingUploadReferenceIn(CamelModel):
+    """参考音频取调用者本人的一条音频上传。"""
+
+    kind: Literal["upload"]
+    upload_id: uuid.UUID
+
+
+DubbingReferenceIn = Annotated[
+    DubbingOriginalReference | DubbingVoiceReferenceIn | DubbingUploadReferenceIn,
+    Field(discriminator="kind"),
+]
+
+
+class DubbingVoiceReference(DubbingVoiceReferenceIn):
+    """记进配音记录的音色：受理时读到的地址与台词。台词只是记下，不发给语音合成。"""
+
+    url: DownloadUrl
+    transcript: str | None = None
+
+
+class DubbingUploadReference(DubbingUploadReferenceIn):
+    """记进配音记录的音频上传与它的地址。"""
+
+    url: DownloadUrl
+
+
+DubbingReference = Annotated[
+    DubbingOriginalReference | DubbingVoiceReference | DubbingUploadReference,
+    Field(discriminator="kind"),
+]
+
+
+class DubbingIn(CamelModel):
+    """给一条素材片配一种外语的受理输入：每句译文按 ``lines`` 的时间放，用参考音频的声音合成。
+
+    ``lines`` 按开始时间排好、互不重叠，都在素材片的时长之内（时长在受理时核对）。归属参数与
+    ``userName`` 的规则同字幕识别。"""
+
+    source_job_id: uuid.UUID
+    locale: TargetLocale
+    lines: Annotated[
+        list[DubbingLine],
+        Field(
+            min_length=1,
+            max_length=MAX_DUBBING_LINES,
+            description=(
+                f"每句的 text 最多 {MAX_DUBBING_LINE_CHARS} 字，"
+                f"所有 text 加起来最多 {MAX_DUBBING_TOTAL_CHARS} 字"
+            ),
+        ),
+    ]
+    reference: DubbingReferenceIn
+    user_name: UserName | None = None
+
+    conversation_id: uuid.UUID | None = None
+    task_id: uuid.UUID | None = None
+    metadata: Metadata | None = None
+
+    @field_validator("lines")
+    @classmethod
+    def _ordered_without_overlap(cls, value: list[DubbingLine]) -> list[DubbingLine]:
+        for index in range(1, len(value)):
+            if value[index].start_ms < value[index - 1].end_ms:
+                raise ValueError(f"第 {index + 1} 句和上一句重叠或没按开始时间排好")
+        return value
+
+    @field_validator("lines")
+    @classmethod
+    def _within_limits(cls, value: list[DubbingLine]) -> list[DubbingLine]:
+        for index, line in enumerate(value, start=1):
+            if len(line.text) > MAX_DUBBING_LINE_CHARS:
+                raise ValueError(f"第 {index} 句超过 {MAX_DUBBING_LINE_CHARS} 字")
+        total = sum(len(line.text) for line in value)
+        if total > MAX_DUBBING_TOTAL_CHARS:
+            raise ValueError(f"一次最多 {MAX_DUBBING_TOTAL_CHARS} 字，这一次有 {total} 字")
+        return value
+
+
+class DubbingRequest(CamelModel):
+    kind: ClassVar[GenerationKind] = KIND_DUBBING
+    operation: ClassVar[GenerationOperation] = OPERATION_GENERATE
+
+    video_url: DownloadUrl
+    video_duration_ms: Annotated[int, Field(ge=1)]
+    locale: TargetLocale
+    lines: Annotated[list[DubbingLine], Field(min_length=1)]
+    reference: DubbingReference
+
+
+class DubbedLine(CamelModel):
+    """配好的一句：``index`` 是它在请求 ``lines`` 里的位置（合成一段语音时只有一句，是 0），``speed`` 是
+    加速的倍数（1 是原速），``trimmed`` 表示加速到上限也放不下、截掉了尾巴。"""
+
+    index: Annotated[int, Field(ge=0)]
+    speed: Annotated[float, Field(ge=1)]
+    trimmed: bool
+
+
+SpeechText = Annotated[str, Field(min_length=1, max_length=MAX_DUBBING_LINE_CHARS)]
+
+
+class SpeechIn(CamelModel):
+    """按文字合成一段语音的受理输入：用参考音频库里一个音色的声音把 ``text`` 念出来。
+
+    ``locale`` 不给时不声明用哪种语言念（final-cut 的原文没有声明语言）。``maxDurationMs`` 给了时念出来
+    更长就照配音每句的规则先加速、再截尾。归属参数与 ``userName`` 的规则同配音。"""
+
+    text: SpeechText
+    locale: TargetLocale | None = None
+    reference: DubbingVoiceReferenceIn
+    max_duration_ms: Annotated[
+        int | None,
+        Field(ge=1, description="最长多少毫秒；不写时念多长就是多长"),
+    ] = None
+    user_name: UserName | None = None
+
+    conversation_id: uuid.UUID | None = None
+    task_id: uuid.UUID | None = None
+    metadata: Metadata | None = None
+
+    _check_text = field_validator("text")(nonblank)
+
+
+class SpeechRequest(CamelModel):
+    kind: ClassVar[GenerationKind] = KIND_SPEECH
+    operation: ClassVar[GenerationOperation] = OPERATION_GENERATE
+
+    text: SpeechText
+    locale: TargetLocale | None = None
+    reference: DubbingVoiceReference
+    max_duration_ms: Annotated[int | None, Field(ge=1)] = None
+
+
 MAX_MUSIC_PROMPT_CHARS: Final = 3000
 
 MusicPrompt = Annotated[str, Field(min_length=1, max_length=MAX_MUSIC_PROMPT_CHARS)]
@@ -456,26 +686,30 @@ class WholeFilmVideoSource(CamelModel):
     url: DownloadUrl
 
 
-class WholeFilmMusicSource(CamelModel):
-    job_id: uuid.UUID
+WholeFilmAudioSourceKind = Literal["generation", "upload", "reference"]
+
+
+class WholeFilmAudioSource(CamelModel):
+    """``<audio>`` 的素材出自哪里：``generation`` 时 ``sourceId`` 是一条生成记录，``upload`` 时是一条
+    上传，``reference`` 时是参考音频库里的一条。"""
+
+    source_kind: WholeFilmAudioSourceKind
+    source_id: uuid.UUID
     url: DownloadUrl
 
 
-class WholeFilmSubtitles(CamelModel):
-    source_job_id: uuid.UUID
-    subtitle_job_id: uuid.UUID
-    sentences: tuple[SubtitleSentence, ...]
-
-
 class WholeFilmRequest(CamelModel):
+    """一条成片导出记录的请求：发起导出时 final-cut 主文件里对上了来源的素材（``<video>`` 对生成记录，
+    ``<audio>`` 依次对本对话的生成记录、本对话的上传、参考音频库），和导出哪种语言的版本（``locale``，
+    None 是原文）。
+    工程本身不存在这里，交给渲染服务时才从工作区读。"""
+
     kind: ClassVar[GenerationKind] = KIND_WHOLE_FILM
     operation: ClassVar[GenerationOperation] = OPERATION_RENDER
 
-    revision: int
-    document: dict[str, Any]
     videos: list[WholeFilmVideoSource]
-    music: WholeFilmMusicSource | None
-    subtitles: list[WholeFilmSubtitles]
+    audios: list[WholeFilmAudioSource]
+    locale: TargetLocale | None = None
 
 
 class VideoEnhanceIn(CamelModel):
@@ -546,6 +780,7 @@ class GenerationOut(CamelModel):
     duration_ms: int | None
     clip_stage: ClipStage | None
     sentences: list[SubtitleSentence] | None = None
+    dubbed_lines: list[DubbedLine] | None = None
     created_at: datetime
     finished_at: datetime | None = None
 
@@ -572,6 +807,7 @@ def generation_out(job: GenerationJob, *, source_address: str | None) -> Generat
         duration_ms=job.output.duration_ms,
         clip_stage=_clip_stage(job),
         sentences=None if job.output.sentences is None else list(job.output.sentences),
+        dubbed_lines=None if job.output.dubbed_lines is None else list(job.output.dubbed_lines),
         created_at=job.created_at,
         finished_at=job.finished_at,
     )
@@ -717,11 +953,16 @@ __all__ = [
     "COLUMN_FIELDS",
     "IMAGE_MAX_REFERENCES",
     "KIND_AUDIO",
+    "KIND_DUBBING",
     "KIND_IMAGE",
+    "KIND_SPEECH",
     "KIND_SUBTITLE",
     "KIND_VIDEO",
     "KIND_WHOLE_FILM",
     "MAX_COMPOSE_SEGMENTS",
+    "MAX_DUBBING_LINES",
+    "MAX_DUBBING_LINE_CHARS",
+    "MAX_DUBBING_TOTAL_CHARS",
     "MAX_METADATA_CHARS",
     "MAX_MODEL_CHARS",
     "MAX_MUSIC_PROMPT_CHARS",
@@ -735,7 +976,7 @@ __all__ = [
     "OPERATION_ENHANCE",
     "OPERATION_GENERATE",
     "OPERATION_RENDER",
-    "OPERATION_UPLOAD",
+    "OPERATION_TRIAL",
     "READ_BACK_CONTEXT",
     "RECORD_ONLY_FIELDS",
     "STATUS_COMPLETED",
@@ -750,6 +991,18 @@ __all__ = [
     "ComposeSegment",
     "ComposeSegmentIn",
     "DownloadUrl",
+    "DubbedLine",
+    "DubbingIn",
+    "DubbingLine",
+    "DubbingOriginalReference",
+    "DubbingReference",
+    "DubbingReferenceIn",
+    "DubbingRequest",
+    "DubbingSpeechSpan",
+    "DubbingUploadReference",
+    "DubbingUploadReferenceIn",
+    "DubbingVoiceReference",
+    "DubbingVoiceReferenceIn",
     "GenerationEnvelope",
     "GenerationKind",
     "GenerationOperation",
@@ -763,6 +1016,8 @@ __all__ = [
     "MusicIn",
     "MusicRequest",
     "SnakeModel",
+    "SpeechIn",
+    "SpeechRequest",
     "SubtitleIn",
     "SubtitleRequest",
     "SubtitleSentence",
@@ -787,9 +1042,10 @@ __all__ = [
     "VideoTaskOut",
     "VideoTaskResult",
     "VideoTaskStatus",
-    "WholeFilmMusicSource",
+    "VideoTrialRequest",
+    "WholeFilmAudioSource",
+    "WholeFilmAudioSourceKind",
     "WholeFilmRequest",
-    "WholeFilmSubtitles",
     "WholeFilmVideoSource",
     "generation_out",
     "nonblank",

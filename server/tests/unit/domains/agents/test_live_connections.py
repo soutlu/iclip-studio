@@ -37,7 +37,7 @@ def test_a_generation_without_a_conversation_omits_the_session_id() -> None:
         None,
         job_id=uuid.uuid4(),
         kind="image",
-        operation="upload",
+        operation="cut",
         status="completed",
         shot_index=None,
         metadata=None,

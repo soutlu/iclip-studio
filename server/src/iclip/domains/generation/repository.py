@@ -15,7 +15,7 @@ from iclip.domains.generation.models import (
     Inheritance,
     inherited_through,
 )
-from iclip.domains.generation.schemas import OPERATION_UPLOAD, SubtitleSentence
+from iclip.domains.generation.schemas import SubtitleSentence
 from iclip.domains.identity.public import Principal, visible_owner_incl_act_as
 
 
@@ -32,12 +32,12 @@ class GenerationRepository(Protocol):
         owner: uuid.UUID | None,
         conversation_id: uuid.UUID | None,
         inherited: Inheritance = (),
-        operation: GenerationOperation | None = None,
     ) -> GenerationJob | None: ...
 
-    async def find_video_upload_by_md5(self, content_md5: str) -> GenerationJob | None: ...
-
-    async def latest_reference_trial(self, reference_id: uuid.UUID) -> GenerationJob | None: ...
+    async def earliest_by_outputs(self, urls: Collection[str]) -> Mapping[str, GenerationJob]:
+        """每个输出地址对上的那条已完成记录，不分属主、对话和种类；对上多条时取最早建的那条，
+        对不上的地址不在答复里。"""
+        ...
 
     async def output_urls(self, ids: Collection[uuid.UUID]) -> Mapping[uuid.UUID, str]: ...
 
@@ -129,7 +129,6 @@ async def conversation_record(
     *,
     conversation_id: uuid.UUID | None,
     inheritance: Inheritance,
-    own_uploads: bool = False,
 ) -> GenerationJob | None:
     try:
         record = await repo.get(
@@ -138,12 +137,6 @@ async def conversation_record(
     except NotFound:
         return None
     if record.conversation_id == conversation_id or inherited_through(record, inheritance):
-        return record
-    if (
-        own_uploads
-        and record.operation == OPERATION_UPLOAD
-        and record.owner_user_id == principal.user_id
-    ):
         return record
     return None
 

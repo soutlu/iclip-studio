@@ -2,10 +2,8 @@
 **
 !render/
 !render/**
-!web/src/features/storyboard/whole-film/
-!web/src/features/storyboard/whole-film/**
-!web/src/shared/api/generated/
-!web/src/shared/api/generated/**
+!web/src/features/storyboard/final-cut/composition/
+!web/src/features/storyboard/final-cut/composition/**
 render/node_modules/
 render/dist/
 render/.cache/

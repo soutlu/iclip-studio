@@ -46,6 +46,7 @@ import {
   draftLineOf,
   isPicked,
   keepPlace,
+  moveBefore,
   outputOf,
   pickPart,
   previewPick,
@@ -489,7 +490,7 @@ function Editor({
 
   const toggleShot = (no: number) => {
     if (source !== undefined && draft !== undefined)
-      changeDraft(putShot(source, draft, no, !shotOn(source, draft, no)))
+      changeDraft(putShot(source, draft, no, !shotOn(draft, no)))
   }
 
   const togglePart = (editId: string, seg: number) => {
@@ -497,7 +498,7 @@ function Editor({
     if (isPicked(draft, editId, seg)) {
       if (selection?.kind === 'draft' && selection.id === partItemId(editId, seg))
         setSelection(undefined)
-      return changeDraft(unpickPart(draft, editId, seg))
+      return changeDraft(unpickPart(source, draft, editId, seg))
     }
     return changeDraft(pickPart(source, draft, editId, seg))
   }
@@ -532,6 +533,21 @@ function Editor({
     setTrimPreview(next)
     if (next?.kind === 'run') showSource(next.seek)
     else if (next !== undefined) setSeekRequest(next.seek)
+  }
+
+  const moveItem = (id: string, before: string | undefined) => {
+    if (draft === undefined) return
+    const next = moveBefore(draft, id, before)
+    const after = next === draft ? undefined : changeDraft(next)
+    if (after === undefined) return
+    setSelection({ kind: 'draft', id })
+    if (sourcePreview) showDraft(keepPlace(items, after, draftClock))
+  }
+
+  const stepItem = (id: string, direction: -1 | 1) => {
+    const rest = items.filter((item) => item.id !== id)
+    const slot = items.findIndex((item) => item.id === id) + direction
+    if (slot >= 0 && slot <= rest.length) moveItem(id, rest[slot]?.id)
   }
 
   const removeItem = (id: string) => {
@@ -744,6 +760,7 @@ function Editor({
         clockOn={sourcePreview ? 'source' : 'draft'}
         items={items}
         onClickPart={clickPart}
+        onMoveDraft={moveItem}
         onScrub={collapseCard}
         onSeek={seekDraft}
         onSelectDraft={(id) => selectDraft(id)}
@@ -755,12 +772,13 @@ function Editor({
         onTrimPreview={followTrim}
         onTrimRun={trimRun}
         peaksOf={peaksOf}
+        previewMove={(id, before) => draftItemsOf(source, moveBefore(draft, id, before))}
         previewPick={(editId, seg) => previewPick(source, draft, editId, seg)}
         previewTrim={(trimChange) => draftItemsOf(source, trimmedDraft(trimChange) ?? draft)}
         rootUrl={mediaUrl}
         selection={selection}
         selectionBoxRef={selectionBoxRef}
-        shotOn={(no) => shotOn(source, draft, no)}
+        shotOn={(no) => shotOn(draft, no)}
         shots={source.shots}
       />
     ) : !clipsView ? (
@@ -949,6 +967,24 @@ function Editor({
           ) {
             event.preventDefault()
             removeItem(selectedItem.id)
+            return
+          }
+          if (
+            (event.key === 'ArrowLeft' || event.key === 'ArrowRight') &&
+            event.altKey &&
+            selectedItem !== undefined &&
+            !event.defaultPrevented &&
+            isShortcutTarget(event)
+          ) {
+            event.preventDefault()
+            const dialog = event.currentTarget
+            const { id } = selectedItem
+            stepItem(id, event.key === 'ArrowLeft' ? -1 : 1)
+            requestAnimationFrame(() =>
+              dialog
+                .querySelector<HTMLElement>(`[data-draft-id="${CSS.escape(id)}"] button`)
+                ?.focus({ preventScroll: true }),
+            )
             return
           }
           if (

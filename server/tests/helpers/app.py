@@ -24,11 +24,15 @@ TEST_MODEL_NAME = "test-model"
 TEST_CREDENTIAL_KEY = base64.urlsafe_b64encode(b"test-credential-key-0123456789ab").decode()
 
 
-def make_runtime_config(*, cors_allow_origins: tuple[str, ...] = ()) -> RuntimeConfig:
+def make_runtime_config(
+    *, cors_allow_origins: tuple[str, ...] = (), cookie_secure: bool = False
+) -> RuntimeConfig:
     return RuntimeConfig(
         app=AppSection(name="iclip-test"),
         db=DbSection(schema="iclip"),
-        security=SecuritySection(cors_allow_origins=cors_allow_origins),
+        security=SecuritySection(
+            cors_allow_origins=cors_allow_origins, cookie_secure=cookie_secure
+        ),
         sso=SsoSection(app_name="iclip"),
         ops=OpsSection(log_level="WARNING"),
     )

@@ -9,6 +9,8 @@ import httpx
 
 @dataclass
 class StubRender:
+    """渲染服务的替身。``submitted`` 记下收到的每次导出的请求体；``reject`` 给了时导出一律答 400。"""
+
     exports: dict[str, dict[str, Any]] = field(default_factory=dict[str, dict[str, Any]])
     submitted: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
     cancelled: list[str] = field(default_factory=list[str])
@@ -43,6 +45,8 @@ class StubRender:
                 "error": None,
             }
             return httpx.Response(202, json={"id": payload["id"]})
+        if not path.startswith("/exports/"):
+            return httpx.Response(404, json={"code": "not-found", "message": "该接口不存在"})
         export_id = path.removeprefix("/exports/")
         if request.method == "DELETE":
             self.cancelled.append(export_id)

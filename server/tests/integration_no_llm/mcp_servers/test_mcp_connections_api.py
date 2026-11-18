@@ -189,7 +189,8 @@ async def test_member_connects_as_themselves_with_the_configured_callback(
     started = await member.post(
         "/mcp-connections/calc/authorize",
         params={"redirectUri": "https://evil.test/steal"},
-        headers={"Origin": "https://evil.test", "Referer": "https://evil.test/page"},
+        # Origin 要过写请求的来源检查，只能是请求自己的 Host；它与配置的回调地址不同。
+        headers={"Origin": "http://test", "Referer": "https://evil.test/page"},
         json={"redirectUri": "https://evil.test/steal"},
     )
     assert started.status_code == 200, started.text

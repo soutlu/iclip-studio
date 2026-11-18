@@ -1,6 +1,6 @@
 # ADR-0003：基于 HyperFrames 重构成片编辑器与服务端渲染导出
 
-- **状态**：已接受（2026-10-17）
+- **状态**：已接受（2026-10-17）；第 1、3、5–7 条已被 [ADR-0008](0008-final-cut-workspace-project.md) 取代（2026-11-15）
 - **影响范围**：[CONTEXT.md](../CONTEXT.md)（成片草稿、导出、生成任务、资料库、埋点事件）；[contract/openapi.json](../../contract/openapi.json)；[contract/conventions.md](../../contract/conventions.md) §6；[architecture.md](../architecture.md)；[deploy.md](../deploy.md)
 
 ## 背景

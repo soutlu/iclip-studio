@@ -130,7 +130,7 @@ export function WholeFilmsRoute({
           <ListEmpty>
             {filtered
               ? '暂无匹配的成片，请更换关键词或清除筛选'
-              : '暂无导出的成片，请在任务的成片编辑器中导出'}
+              : '暂无导出的成片，请在任务的 final-cut 编辑器中导出'}
           </ListEmpty>
         }
         items={loaded}

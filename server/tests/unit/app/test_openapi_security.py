@@ -18,6 +18,9 @@ PUBLIC = {
     ("post", "/auth/register"),
     ("get", "/auth/sso/authorize"),
     ("get", "/auth/sso/callback"),
+    # final-cut 预览：只在预览域名上开放，不看登录态，凭地址里的令牌取。
+    ("get", "/final-cut/preview/{token}/host"),
+    ("get", "/final-cut/preview/{token}/files/{path}"),
 }
 
 HTTP_METHODS = {"get", "put", "post", "delete", "patch", "options", "head", "trace"}

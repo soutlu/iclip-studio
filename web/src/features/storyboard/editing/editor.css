@@ -91,13 +91,14 @@
   display: contents;
 }
 
-/* 舞台左上角注明放的是哪条视频的哪一段（见 StageLabel）：成片页预览素材、编辑视频预览原片时用。 */
+/* 舞台左上角注明放的是哪条视频的哪一段（见 StageLabel）：编辑视频预览原片时用。 */
 .editor-stage-label {
   position: absolute;
   top: 16px;
   left: 16px;
   z-index: var(--z-local-2);
   display: inline-flex;
+  max-width: calc(100% - 32px);
   height: 26px;
   align-items: center;
   gap: 6px;
@@ -110,7 +111,19 @@
   white-space: nowrap;
 }
 
-.editor-stage-label > span {
+.editor-stage-label > svg,
+.editor-stage-label-time {
+  flex: none;
+}
+
+/* 舞台窄、放不下时收的是名字，时间和选区一直完整 */
+.editor-stage-label-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-stage-label-time {
   color: var(--color-on-surface-muted);
   font-variant-numeric: tabular-nums;
 }

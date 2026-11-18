@@ -73,8 +73,11 @@ class EntryKey:
 
 @dataclass(frozen=True, slots=True)
 class Claim:
+    """认领下来要打标的一条；``created_by`` 是条目的创建人，打标按他的配置组调模型，为空即默认组。"""
+
     entry_id: uuid.UUID
     key: EntryKey
+    created_by: uuid.UUID | None
     started_at: datetime
 
 

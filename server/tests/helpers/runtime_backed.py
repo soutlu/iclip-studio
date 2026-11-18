@@ -69,12 +69,17 @@ class LateASGITransport(httpx.AsyncBaseTransport):
 
 
 class OneUpgradeAtATime(ASGIWebSocketTransport):
-    def __init__(self, app: FastAPI) -> None:
+    """后端到运行时的传输；给了 ``record`` 就把后端发给运行时的每个普通 HTTP 请求记进去。"""
+
+    def __init__(self, app: FastAPI, *, record: list[httpx.Request] | None = None) -> None:
         super().__init__(app=app, raise_app_exceptions=False, initial_receive_timeout=10.0)
         self._upgrading: asyncio.Lock | None = None
+        self._record = record
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         if request.headers.get("upgrade") != "websocket":
+            if self._record is not None:
+                self._record.append(request)
             return await super().handle_async_request(request)
         if self._upgrading is None:
             self._upgrading = asyncio.Lock()
@@ -140,8 +145,10 @@ def build_backed_app(
     plugins: PluginRegistry | PluginBinder = standard_plugins,
     skill_cache_dir: Path | None = None,
     oauth_transport: httpx2.AsyncBaseTransport | None = None,
+    runtime_requests: list[httpx.Request] | None = None,
     **options: Any,
 ) -> FastAPI:
+    """后端与运行时一起装起来；给了 ``runtime_requests`` 就把后端发给运行时的普通请求记进去。"""
     options.setdefault("media_probe", ScriptedProbe())
     to_server = LateASGITransport()
     runtime = create_app(
@@ -154,7 +161,10 @@ def build_backed_app(
         oauth_transport=oauth_transport,
     )
     app = bootstrap.build_app(
-        config, engine=engine, runtime_transport=OneUpgradeAtATime(runtime), **options
+        config,
+        engine=engine,
+        runtime_transport=OneUpgradeAtATime(runtime, record=runtime_requests),
+        **options,
     )
     to_server.bind(app)
     app.state.runtime_service = runtime

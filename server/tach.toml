@@ -39,7 +39,7 @@ depends_on = ["iclip.platform.runtime_api"]
 path = "iclip.platform.shot_media"
 depends_on = ["iclip.platform.media"]
 
-# 视频拆解：抽帧取音轨与方舟模型适配器（经运行时服务的模型调用接口），供参考视频的拆解与资料库打标使用。
+# 视频拆解：抽帧取音轨与方舟模型适配器（经运行时服务的模型调用接口），供参考视频的拆解、资料库打标与 final-cut 翻译使用。
 [[modules]]
 path = "iclip.platform.video_breakdown"
 depends_on = ["iclip.common", "iclip.platform.media", "iclip.platform.runtime_api"]
@@ -115,6 +115,7 @@ depends_on = [
     "iclip.platform.media",
     "iclip.platform.object_store",
     "iclip.platform.outbound",
+    "iclip.platform.paging",
     "iclip.domains.identity",
 ]
 
@@ -134,7 +135,7 @@ depends_on = [
 path = "iclip.domains.tagging"
 depends_on = ["iclip.common", "iclip.domains.identity"]
 
-# 参考视频的拆解、上传记录都是端口，由组合根接到视频拆解与生成域上；标签经 tagging。
+# 参考资产（参考视频与参考音频）：拆解、上传与生成记录的来源、量时长都是端口，由组合根接到视频拆解、上传与生成域上；标签经 tagging。
 [[modules]]
 path = "iclip.domains.references"
 depends_on = [
@@ -144,15 +145,10 @@ depends_on = [
     "iclip.domains.tagging",
 ]
 
-# 品牌资源的视频上传记录、视频与字体探测是端口，由组合根接上；生成域不依赖它。
-[[modules]]
-path = "iclip.domains.brand_templates"
-depends_on = ["iclip.common", "iclip.platform.media", "iclip.platform.object_store", "iclip.domains.identity"]
-
 # 技能库、模型供应商、MCP 服务与 agent 配置的业务在运行时服务，这里只留转给它的接口路由。
 [[modules]]
 path = "iclip.domains.model_providers"
-depends_on = ["iclip.domains.identity", "iclip.platform.runtime_admin", "iclip.platform.runtime_api"]
+depends_on = ["iclip.common", "iclip.domains.identity", "iclip.platform.runtime_admin", "iclip.platform.runtime_api"]
 
 [[modules]]
 path = "iclip.domains.mcp_servers"
@@ -203,7 +199,6 @@ depends_on = [
     "iclip.domains.library",
     "iclip.domains.references",
     "iclip.domains.tagging",
-    "iclip.domains.brand_templates",
     "iclip.domains.tracking",
     "iclip.domains.skills",
     "iclip.domains.model_providers",

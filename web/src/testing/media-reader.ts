@@ -1,6 +1,6 @@
 export const createMediaReaderMock = (
   files: ReadonlyMap<string, { keyframes: readonly number[]; duration: number }>,
-  openAudioTrack: (url: string) => Promise<null> = () => Promise.resolve(null),
+  openAudioTrack: (url: string) => Promise<object | null> = () => Promise.resolve(null),
 ) => {
   class UrlSource {
     readonly url: string
@@ -38,5 +38,5 @@ export const createMediaReaderMock = (
       return timestamp === undefined ? null : { timestamp }
     }
   }
-  return { EncodedPacketSink, Input, MP4: {}, QTFF: {}, UrlSource }
+  return { EncodedPacketSink, Input, MP3: {}, MP4: {}, QTFF: {}, UrlSource, WAVE: {} }
 }

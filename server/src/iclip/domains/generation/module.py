@@ -9,16 +9,18 @@ import httpx
 import procrastinate
 
 from iclip.domains.generation.api import create_generations_router
+from iclip.domains.generation.dubbing import DubbingProvider, SpeechSynthesizer
 from iclip.domains.generation.gpt_image import GPT_IMAGE_2_5
 from iclip.domains.generation.image_upstream import (
     GatewayImageModel,
     GatewayImageProvider,
     GatewayImageSettings,
 )
-from iclip.domains.generation.models import STATUS_SUBMITTING, GenerationJob
+from iclip.domains.generation.model_groups import UNGROUPED, ModelGroups
+from iclip.domains.generation.models import STATUS_SUBMITTING
 from iclip.domains.generation.music import MUSIC_MODEL, QwenMusicProvider
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
-from iclip.domains.generation.ports import ConversationLineage
+from iclip.domains.generation.ports import ConversationLineage, ReferenceAssets
 from iclip.domains.generation.processing import FfmpegComposeProvider, ReportStage
 from iclip.domains.generation.provider import GenerationProvider, ImageModelSpec
 from iclip.domains.generation.queue import (
@@ -65,6 +67,14 @@ class QwenServiceConfig:
     concurrency: int
 
 
+@dataclass(frozen=True, slots=True)
+class DubbingSetup:
+    """配音的装配：语音合成服务，以及配音队列每个进程同时跑几条。不给就是没开通。"""
+
+    synthesizer: SpeechSynthesizer
+    concurrency: int
+
+
 @dataclass(frozen=True)
 class GenerationModule:
     routers: tuple[Any, ...]
@@ -79,6 +89,7 @@ def build_generation_module(
     act_as: ActAs,
     clear_completion: ClearCompletion,
     lineage: ConversationLineage,
+    references: ReferenceAssets,
     video: VideoProviderSettings,
     video_default_model: str,
     video_allowed_models: tuple[str, ...],
@@ -93,9 +104,11 @@ def build_generation_module(
     fetch_url: Callable[[str], str],
     queue_settings: GenerationQueueSettings | None = None,
     subtitles: QwenServiceConfig | None = None,
+    dubbing: DubbingSetup | None = None,
     music: QwenServiceConfig | None = None,
     render: RenderSetup | None = None,
     video_enhance: VideoEnhanceSpec | None = None,
+    model_groups: ModelGroups = UNGROUPED,
     video_transport: httpx.AsyncBaseTransport | None = None,
     image_transport: httpx.AsyncBaseTransport | None = None,
     subtitle_transport: httpx.AsyncBaseTransport | None = None,
@@ -112,7 +125,7 @@ def build_generation_module(
         raise RuntimeError("高清版的提交地址与模型、档位要一起给：缺一样超分就提交不出去")
     settings = queue_settings or GenerationQueueSettings()
     report_stage = _clip_stage_reporter(repo)
-    video_provider = HttpVideoProvider(video, transport=video_transport)
+    video_provider = HttpVideoProvider(video, model_groups=model_groups, transport=video_transport)
     compose_provider = FfmpegComposeProvider(
         object_store=object_store, report_stage=report_stage, codec=media_codec, fetch_url=fetch_url
     )
@@ -132,15 +145,32 @@ def build_generation_module(
     subtitle_target: ProviderTarget | None = None
     if subtitles is not None:
         subtitle_provider = QwenSubtitleProvider(
-            subtitles.endpoint, fetch_url=fetch_url, transport=subtitle_transport
+            subtitles.endpoint,
+            fetch_url=fetch_url,
+            model_groups=model_groups,
+            transport=subtitle_transport,
         )
         subtitle_lanes = (ProviderLane(subtitle_provider, subtitles.concurrency),)
         subtitle_target = ProviderTarget(provider=subtitle_provider.name, model=SUBTITLE_MODEL)
+    dubbing_lanes: tuple[ProviderLane, ...] = ()
+    dubbing_target: str | None = None
+    if dubbing is not None:
+        dubbing_provider = DubbingProvider(
+            dubbing.synthesizer,
+            object_store=object_store,
+            fetch_url=fetch_url,
+            model_groups=model_groups,
+        )
+        dubbing_lanes = (ProviderLane(dubbing_provider, dubbing.concurrency),)
+        dubbing_target = dubbing_provider.name
     music_lanes: tuple[ProviderLane, ...] = ()
     music_target: ProviderTarget | None = None
     if music is not None:
         music_provider = QwenMusicProvider(
-            music.endpoint, object_store=object_store, transport=music_transport
+            music.endpoint,
+            object_store=object_store,
+            model_groups=model_groups,
+            transport=music_transport,
         )
         music_lanes = (ProviderLane(music_provider, music.concurrency),)
         music_target = ProviderTarget(provider=music_provider.name, model=MUSIC_MODEL)
@@ -154,9 +184,6 @@ def build_generation_module(
             ),
         )
 
-    async def transcribe_completed(job: GenerationJob) -> None:
-        await service.transcribe_completed(job)
-
     queue = GenerationQueue(
         repo,
         lanes=(
@@ -167,12 +194,12 @@ def build_generation_module(
                 for provider, model in zip(image_providers, image_models, strict=True)
             ),
             *subtitle_lanes,
+            *dubbing_lanes,
             *music_lanes,
             *render_lanes,
         ),
         connector=queue_connector,
         settings=queue_settings,
-        on_completed=transcribe_completed if subtitle_target is not None else None,
     )
     service = GenerationService(
         repo,
@@ -186,10 +213,13 @@ def build_generation_module(
         clear_completion=clear_completion,
         lineage=lineage,
         media_probe=_FetchingProbe(fetch_url),
+        references=references,
         subtitles=subtitle_target,
+        dubbing_provider=dubbing_target,
         music=music_target,
         render=None if render is None else render.client,
         enhance=video_enhance,
+        model_groups=model_groups,
     )
     return GenerationModule(
         routers=(create_generations_router(service, act_as=act_as),),
@@ -255,6 +285,7 @@ def _image_provider(
 
 __all__ = [
     "IMAGE_MODEL_SPECS",
+    "DubbingSetup",
     "GenerationModule",
     "ImageModelConfig",
     "QwenServiceConfig",

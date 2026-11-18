@@ -21,7 +21,7 @@ from iclip.domains.identity.infra_sql import (
     SqlUserRepository,
     account_from_row,
 )
-from iclip.domains.identity.middleware import PrincipalResolver
+from iclip.domains.identity.middleware import PrincipalResolver, session_cookie_name
 from iclip.domains.identity.models import UserAccount
 from iclip.domains.identity.pms import PmsUserClient
 from iclip.domains.identity.service import IdentityService
@@ -69,7 +69,11 @@ def build_identity_module(
                 return None
             return account_from_row(user)
 
-    resolver = PrincipalResolver(read_session_user=read_session_user, service=service)
+    resolver = PrincipalResolver(
+        read_session_user=read_session_user,
+        service=service,
+        session_cookie_name=session_cookie_name(secure=auth.cookie_secure),
+    )
 
     routers: list[Any] = [
         *create_account_routers(sessions, auth),

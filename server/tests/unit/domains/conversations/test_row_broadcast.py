@@ -14,7 +14,6 @@ from iclip.domains.conversations.models import Conversation, ConversationActivit
 from iclip.domains.conversations.repository import (
     AgentPreviewStore,
     ConversationRepository,
-    WholeFilmDraftStore,
 )
 from iclip.domains.conversations.service import (
     ActivitiesOf,
@@ -224,6 +223,10 @@ async def _settle() -> None:
         await asyncio.sleep(0)
 
 
+async def _default_group(_user_id: uuid.UUID) -> str | None:
+    return None
+
+
 def build(
     repo: object,
     announced: Announced,
@@ -245,10 +248,9 @@ def build(
         write_derived_file=_untouched,
         document_validators={},
         film=UnusedFilmPage(),
-        drafts=cast("WholeFilmDraftStore", object()),
-        draft_references=_untouched,
         exports=None,
         generate_title=generate_title,
+        model_group_of=_default_group,
         announce_title=announced.title,
         activities_of=activities_of,
         busy_conversation_ids=_untouched,
@@ -349,7 +351,7 @@ async def test_generating_a_title_does_not_hold_up_a_rename() -> None:
     announced = Announced()
     gate = asyncio.Event()
 
-    async def slow_title(_: str) -> str | None:
+    async def slow_title(_text: str, _group: str | None) -> str | None:
         await gate.wait()
         return "模型起的名字"
 
@@ -371,7 +373,7 @@ async def test_a_default_title_is_generated_and_announced() -> None:
     repo = PlainRepo(row=existing)
     announced = Announced()
 
-    async def titled(_: str) -> str | None:
+    async def titled(_text: str, _group: str | None) -> str | None:
         return "春季新款视频"
 
     service = build(repo, announced, generate_title=titled)
@@ -386,7 +388,7 @@ async def test_a_title_that_could_not_be_generated_stays_default_for_the_next_tu
     repo = PlainRepo(row=existing)
     announced = Announced()
 
-    async def nothing(_: str) -> str | None:
+    async def nothing(_text: str, _group: str | None) -> str | None:
         return None
 
     service = build(repo, announced, generate_title=nothing)

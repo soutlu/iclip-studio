@@ -14,17 +14,19 @@
     "lint": "eslint . --max-warnings 0 && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "smoke": "node scripts/smoke-catalog.mjs"
+    "test": "vitest run"
   },
   "dependencies": {
-    "@hyperframes/engine": "0.8.168",
-    "@hyperframes/producer": "0.8.168",
+    "@hyperframes/core": "0.9.59",
+    "@hyperframes/engine": "0.9.59",
+    "@hyperframes/producer": "0.9.59",
+    "parse5": "8.0.1",
     "zod": "4.5.4"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@hyperframes/player": "0.8.168",
+    "@hyperframes/player": "0.9.59",
+    "@hyperframes/sdk": "0.9.59",
     "@playwright/test": "1.62.1",
     "@types/node": "22.20.1",
     "esbuild": "0.25.12",

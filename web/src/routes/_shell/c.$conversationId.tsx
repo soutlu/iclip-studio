@@ -16,7 +16,6 @@ const ConversationSearchSchema = z.object({
   shot: z.int().positive().optional().catch(undefined),
   take: z.string().optional().catch(undefined),
   video: z.string().min(1).optional().catch(undefined),
-  wholeFilm: z.literal(true).optional().catch(undefined),
 })
 
 export const Route = createFileRoute('/_shell/c/$conversationId')({

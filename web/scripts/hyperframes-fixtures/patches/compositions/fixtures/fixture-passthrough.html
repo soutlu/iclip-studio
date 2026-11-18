@@ -1,0 +1,51 @@
+<!doctype html>
+<!--
+  测试组件库：4 秒的组件（component），铺满所在位置。组件根写着 pointer-events: none（组件库里常见的写法，
+  播放时让画面点穿），里面左上方一块绿色徽标（.fp-badge），位置固定、没有动画。用来测画面上能点中、拖动这种
+  组件里的层。
+-->
+<html lang="zh-CN" data-composition-id="fixture-passthrough" data-composition-duration="4">
+  <head>
+    <meta charset="UTF-8" />
+  </head>
+  <body>
+    <template>
+      <div id="root" data-composition-id="fixture-passthrough" data-duration="4">
+        <style>
+          #root {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+          }
+          #root .fp-badge {
+            position: absolute;
+            left: 10%;
+            top: 20%;
+            width: 40%;
+            height: 15%;
+            background: #16a34a;
+          }
+        </style>
+        <div
+          id="fixture-passthrough-clip"
+          class="clip"
+          data-start="0"
+          data-duration="4"
+          data-track-index="0"
+        >
+          <div class="fp-badge"></div>
+        </div>
+        <script src="vendor/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+        <script>
+          ;(function () {
+            var tl = gsap.timeline({ paused: true })
+            tl.set({}, {}, 4)
+            window.__timelines = window.__timelines || {}
+            window.__timelines['fixture-passthrough'] = tl
+          })()
+        </script>
+      </div>
+    </template>
+  </body>
+</html>

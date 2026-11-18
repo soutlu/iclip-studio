@@ -1,5 +1,11 @@
 import { SubAgentPanel, agentCallOf } from '@/features/conversations'
-import { FILM_PATH, FilmPanel, SHOTS_PATH, StoryboardPanel } from '@/features/storyboard'
+import {
+  FILM_PATH,
+  FilmPanel,
+  FinalCutPanel,
+  SHOTS_PATH,
+  StoryboardPanel,
+} from '@/features/storyboard'
 import { WorkspaceFilesPanel } from '@/features/workspace'
 import { ArtifactRegistry } from '@/shared/workbench'
 
@@ -24,6 +30,17 @@ workbenchRegistry.register({
   match: { path: FILM_PATH },
   title: () => '制作',
   type: 'film',
+})
+
+workbenchRegistry.register({
+  autoOpen: false,
+  component: FinalCutPanel,
+  hiddenWhenReadOnly: true,
+  icon: 'video-type',
+  label: 'final-cut',
+  match: { anyPath: [SHOTS_PATH, FILM_PATH] },
+  title: () => 'final-cut',
+  type: 'final-cut',
 })
 
 workbenchRegistry.register({

@@ -1,5 +1,7 @@
 import { http, HttpResponse } from 'msw'
 import type {
+  DubbedLine,
+  FinalCutTranslationsOut,
   ImageGenerationIn,
   MusicIn,
   SubtitleSentence,
@@ -8,14 +10,20 @@ import type {
   VideoGenerationIn,
   VideoShotIn,
 } from '@/shared/api/generated/types.gen'
-import { zSubtitleIn } from '@/shared/api/generated/zod.gen'
+import {
+  zDubbingIn,
+  zFinalCutTranslationsIn,
+  zSpeechIn,
+  zSubtitleIn,
+} from '@/shared/api/generated/zod.gen'
 // ?no-inline 阻止 Vite 将小体积媒体资源内联为 data URI。
 import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
+import sampleLongUrl from '../fixtures/sample-video-long.mp4?no-inline'
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
 import { VIDEO_MODELS } from '../video-models'
 import { MOCK_MUSIC_SECONDS, MOCK_MUSIC_URL } from './audio'
-import { isMockVideoUpload, onMockUploadConfirmed } from './uploads'
+import { addMockUpload, isMockVideoUpload } from './uploads'
 
 const FRAME_A =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='320'%3E%3Crect width='180' height='320' fill='%23e4ded2'/%3E%3Ccircle cx='90' cy='120' r='38' fill='%23a8742a'/%3E%3Crect x='60' y='170' width='60' height='110' fill='%236b5330'/%3E%3C/svg%3E"
@@ -43,6 +51,8 @@ const VIDEO_URL = sampleVideoUrl
 const EDITED_URL = sampleEditedUrl
 const VIDEO_MS = 6000
 const EDITED_MS = 3000
+const LONG_VIDEO_URL = sampleLongUrl
+const LONG_VIDEO_MS = 20_000
 const WIDE_VIDEO_URL = sampleWideUrl
 
 const PREAMBLE = ['参考锁定：模特的服装与发型跟住 @Image1。', '剪辑形式：硬切。'].join('\n')
@@ -199,9 +209,10 @@ type MockJob = {
   createdAt: string
   errorMessage?: string
   id: string
-  kind?: 'video' | 'image' | 'subtitle' | 'audio'
+  kind?: 'video' | 'image' | 'subtitle' | 'dubbing' | 'speech' | 'audio'
   sentences?: SubtitleSentence[]
-  operation?: 'generate' | 'compose' | 'upload'
+  dubbedLines?: DubbedLine[]
+  operation?: 'generate' | 'compose'
   outputUrl?: string
   prompt: string
   request?: Record<string, unknown>
@@ -238,6 +249,7 @@ const job = (spec: MockJob) => ({
   finishedAt: spec.status === 'completed' || spec.status === 'failed' ? spec.createdAt : null,
   durationMs: spec.durationMs ?? null,
   sentences: spec.sentences ?? null,
+  dubbedLines: spec.dubbedLines ?? null,
   clipStage: null,
   watermarkOutputUrl: spec.watermarkOutputUrl ?? null,
 })
@@ -689,8 +701,73 @@ export const putMockWorkspaceFile = (conversationId: string, path: string, conte
   if (!generations.has(conversationId)) generations.set(conversationId, [])
   const version = (files.get(path)?.version ?? 0) + 1
   files.set(path, { content, updatedAt: new Date().toISOString(), version })
+  saveMockProjects()
   return version
 }
+
+/** 工作区里一个文件现在的内容和版本；没有时是 undefined。 */
+export const mockWorkspaceFile = (
+  conversationId: string,
+  path: string,
+): { content: string; version: number } | undefined => {
+  const file = workspaces.get(conversationId)?.get(path)
+  return file === undefined ? undefined : { content: file.content, version: file.version }
+}
+
+type MockFileChange = {
+  conversationId: string
+  path: string
+  change: 'created' | 'modified' | 'deleted'
+}
+
+const fileWatchers = new Set<(change: MockFileChange) => void>()
+
+/** final-cut 工程（`final-cut/`）里的文件每写一次都通知一次，编辑器自己的保存也一样（照后端）。 */
+export const watchMockProjectFiles = (watcher: (change: MockFileChange) => void) => {
+  fileWatchers.add(watcher)
+  return () => void fileWatchers.delete(watcher)
+}
+
+const PROJECT_PREFIX = 'final-cut/'
+
+const announceFile = (change: MockFileChange) => {
+  if (!change.path.startsWith(PROJECT_PREFIX)) return
+  saveMockProjects()
+  for (const watcher of fileWatchers) watcher(change)
+}
+
+// dev:mock 下 final-cut 工程的文件存进 sessionStorage，刷新页面后还在；只在浏览器里的 mock 打开
+const PROJECTS_STORAGE_KEY = 'cue.mock.final-cut-projects'
+let projectStorage: Storage | null = null
+
+function saveMockProjects() {
+  if (projectStorage === null) return
+  const stored: Record<string, Record<string, MockFile>> = {}
+  for (const [conversationId, files] of workspaces) {
+    const project = [...files].filter(([path]) => path.startsWith(PROJECT_PREFIX))
+    if (project.length > 0) stored[conversationId] = Object.fromEntries(project)
+  }
+  projectStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(stored))
+}
+
+/** 把存着的 final-cut 工程放回工作区，之后写 final-cut 工程时都存进 `storage`。在种好数据以后调用。 */
+export const persistMockProjects = (storage: Storage) => {
+  const stored = JSON.parse(storage.getItem(PROJECTS_STORAGE_KEY) ?? '{}') as Record<
+    string,
+    Record<string, MockFile>
+  >
+  for (const [conversationId, project] of Object.entries(stored)) {
+    const files = workspaces.get(conversationId) ?? new Map<string, MockFile>()
+    workspaces.set(conversationId, files)
+    for (const [path, file] of Object.entries(project)) files.set(path, file)
+  }
+  projectStorage = storage
+}
+
+/** 工程里的相对路径合不合规：照后端，不许空段、`.`、`..`、以 `/` 开头或结尾和反斜杠。 */
+const projectPathOk = (path: string) =>
+  !path.includes('\\') &&
+  !path.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')
 
 export const resetMockWorkspace = () => {
   for (const timer of timers) clearTimeout(timer)
@@ -704,23 +781,6 @@ const addRecord = (conversationId: string, record: MockRecord) => {
   generations.set(conversationId, [...(generations.get(conversationId) ?? []), record])
   return record
 }
-
-onMockUploadConfirmed(({ uploadId, url, contentType, conversationId }) => {
-  if (conversationId === null || !contentType.startsWith('audio/')) return
-  if (findJob(conversationId, uploadId) !== undefined) return
-  addRecord(
-    conversationId,
-    job({
-      createdAt: new Date().toISOString(),
-      id: uploadId,
-      kind: 'audio',
-      operation: 'upload',
-      outputUrl: url,
-      prompt: '',
-      status: 'completed',
-    }),
-  )
-})
 
 export const seedMockMusic = (conversationId: string) => {
   const generated = addRecord(
@@ -736,18 +796,20 @@ export const seedMockMusic = (conversationId: string) => {
       status: 'completed',
     }),
   )
-  const uploaded = addRecord(
+  // 上传的音频不记时长，界面从文件里读
+  const uploaded = addMockUpload({
+    contentType: 'audio/mpeg',
     conversationId,
-    job({
-      createdAt: '2026-09-01T12:05:00Z',
-      id: crypto.randomUUID(),
-      kind: 'audio',
-      operation: 'upload',
-      outputUrl: MOCK_MUSIC_URL,
-      prompt: '',
-      status: 'completed',
-    }),
-  )
+    createdAt: '2026-09-01T12:05:00Z',
+    durationMs: null,
+    height: null,
+    id: crypto.randomUUID(),
+    kind: 'audio',
+    sizeBytes: 1024,
+    // 每条的地址各不相同（编辑器按地址认出 final-cut 里用着哪一条），都由同一个音频处理器答复
+    url: `${MOCK_MUSIC_URL}?upload`,
+    width: null,
+  })
   return { generated, uploaded }
 }
 
@@ -823,9 +885,43 @@ export const workspaceHandlers = [
       version: file.version + 1,
     }
     files.set(body.path, written)
+    announceFile({
+      conversationId: String(params['conversationId']),
+      path: body.path,
+      change: 'modified',
+    })
     return HttpResponse.json({
       file: { content: written.content, path: body.path, version: written.version },
     })
+  }),
+
+  http.post('*/api/conversations/:conversationId/final-cut/files', async ({ params, request }) => {
+    const conversationId = String(params['conversationId'])
+    const body = (await request.json()) as { path: string; content: string }
+    if (!projectPathOk(body.path))
+      return HttpResponse.json({ detail: `路径 '${body.path}' 不合规` }, { status: 422 })
+    const path = `${PROJECT_PREFIX}${body.path}`
+    const files = workspaces.get(conversationId) ?? new Map<string, MockFile>()
+    workspaces.set(conversationId, files)
+    if (files.has(path))
+      return HttpResponse.json({ detail: 'final-cut 工程里已经有这个文件' }, { status: 409 })
+    files.set(path, { content: body.content, updatedAt: new Date().toISOString(), version: 1 })
+    announceFile({ conversationId, path, change: 'created' })
+    return HttpResponse.json({ path: body.path, version: 1 }, { status: 201 })
+  }),
+
+  // 模拟的译文是「[语言代码大写] 原文」，一眼看得出不是真翻的
+  http.post('*/api/conversations/:conversationId/final-cut/translations', async ({ request }) => {
+    const parsed = zFinalCutTranslationsIn.safeParse(await request.json())
+    if (!parsed.success) return HttpResponse.json({ detail: '翻译参数无效' }, { status: 422 })
+    const { targetLocale, entries } = parsed.data
+    const answer: FinalCutTranslationsOut = {
+      translations: entries.map((entry) => ({
+        id: entry.id,
+        text: `[${targetLocale.toUpperCase()}] ${entry.text}`,
+      })),
+    }
+    return HttpResponse.json(answer)
   }),
 
   http.get('*/api/generations/image-models', () =>
@@ -918,9 +1014,16 @@ export const workspaceHandlers = [
       conversationId: body.conversation_id ?? null,
       metadata: body.metadata ?? null,
       shotIndex: body.shot_index ?? null,
-      outputUrl: VIDEO_URL,
-      watermarkOutputUrl: VIDEO_URL,
-      durationMs: VIDEO_MS,
+      // 不生成声音时出的片没有音轨：借用编辑结果那个没有音轨的样片；要 20 秒的片时给 20 秒的长样片
+      ...(body.generate_audio === false
+        ? { outputUrl: EDITED_URL, watermarkOutputUrl: EDITED_URL, durationMs: EDITED_MS }
+        : body.seconds === LONG_VIDEO_MS / 1000
+          ? {
+              outputUrl: LONG_VIDEO_URL,
+              watermarkOutputUrl: LONG_VIDEO_URL,
+              durationMs: LONG_VIDEO_MS,
+            }
+          : { outputUrl: VIDEO_URL, watermarkOutputUrl: VIDEO_URL, durationMs: VIDEO_MS }),
     })
     return HttpResponse.json({ task_id: created.id }, { status: 202 })
   }),
@@ -1064,6 +1167,63 @@ export const workspaceHandlers = [
     return HttpResponse.json({ generation: created }, { status: 202 })
   }),
 
+  // 配音：几秒后配好，产物是和素材片等长的一条音轨（地址由音频处理器答复），每句都原速放下
+  http.post('*/api/generations/dubbings', async ({ request }) => {
+    const parsed = zDubbingIn.safeParse(await request.json())
+    if (!parsed.success) {
+      return HttpResponse.json({ detail: '配音参数无效' }, { status: 422 })
+    }
+    const body = parsed.data
+    const source = findJob(body.conversationId, body.sourceJobId)
+    if (source === undefined) {
+      return HttpResponse.json({ detail: '来源不存在或不在这段对话里' }, { status: 404 })
+    }
+    if (!isFinishedTake(source)) {
+      return HttpResponse.json({ detail: '只能给素材片配音：已完成的出片或合成' }, { status: 422 })
+    }
+    const created = acceptGeneration({
+      kind: 'dubbing',
+      prompt: '',
+      request: { locale: body.locale, lines: body.lines, reference: body.reference },
+      conversationId: body.conversationId ?? null,
+      taskId: body.taskId ?? null,
+      metadata: body.metadata ?? null,
+      sourceJobId: source.id,
+      outputUrl: `${MOCK_MUSIC_URL}?dubbing=${crypto.randomUUID()}`,
+      durationMs: source.durationMs ?? VIDEO_MS,
+      dubbedLines: body.lines.map((_, index) => ({ index, speed: 1, trimmed: false })),
+    })
+    return HttpResponse.json({ generation: created }, { status: 202 })
+  }),
+
+  // 按文字合成一段语音（旁白配音）：几秒后合成好，按字数估一个长度，给了上限时不超过它
+  http.post('*/api/generations/speeches', async ({ request }) => {
+    const parsed = zSpeechIn.safeParse(await request.json())
+    if (!parsed.success) {
+      return HttpResponse.json({ detail: '合成参数无效' }, { status: 422 })
+    }
+    const body = parsed.data
+    const spokenMs = Math.max(1_000, body.text.length * 150)
+    const durationMs = Math.min(spokenMs, body.maxDurationMs ?? Infinity)
+    const created = acceptGeneration({
+      kind: 'speech',
+      prompt: '',
+      request: {
+        text: body.text,
+        locale: body.locale ?? null,
+        reference: body.reference,
+        maxDurationMs: body.maxDurationMs ?? null,
+      },
+      conversationId: body.conversationId ?? null,
+      taskId: body.taskId ?? null,
+      metadata: body.metadata ?? null,
+      outputUrl: `${MOCK_MUSIC_URL}?speech=${crypto.randomUUID()}`,
+      durationMs,
+      dubbedLines: [{ index: 0, speed: 1, trimmed: durationMs < spokenMs }],
+    })
+    return HttpResponse.json({ generation: created }, { status: 202 })
+  }),
+
   http.post('*/api/generations/music', async ({ request }) => {
     const body = (await request.json()) as MusicIn
     const created = acceptGeneration({
@@ -1078,7 +1238,7 @@ export const workspaceHandlers = [
       },
       conversationId: body.conversationId,
       metadata: body.metadata ?? null,
-      outputUrl: MOCK_MUSIC_URL,
+      outputUrl: `${MOCK_MUSIC_URL}?generated=${crypto.randomUUID()}`,
       durationMs: MOCK_MUSIC_SECONDS * 1000,
     })
     return HttpResponse.json({ generation: created }, { status: 202 })
@@ -1086,7 +1246,7 @@ export const workspaceHandlers = [
 ]
 
 function acceptGeneration(spec: {
-  kind: 'image' | 'video' | 'audio' | 'subtitle'
+  kind: 'image' | 'video' | 'audio' | 'subtitle' | 'dubbing' | 'speech'
   operation?: 'generate' | 'compose'
   prompt: string
   request: Record<string, unknown>
@@ -1103,6 +1263,7 @@ function acceptGeneration(spec: {
   watermarkOutputUrl?: string
   durationMs?: number
   sentences?: SubtitleSentence[]
+  dubbedLines?: DubbedLine[]
 }) {
   const created = job({
     createdAt: new Date().toISOString(),
@@ -1129,6 +1290,7 @@ function acceptGeneration(spec: {
     created.watermarkOutputUrl = spec.watermarkOutputUrl ?? null
     created.durationMs = spec.durationMs ?? null
     created.sentences = spec.sentences ?? null
+    created.dubbedLines = spec.dubbedLines ?? null
     created.finishedAt = new Date().toISOString()
     created.status = 'completed'
     timers.delete(timer)

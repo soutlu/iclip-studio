@@ -1,6 +1,7 @@
 import type { z } from 'zod'
-import { apiFetch, NETWORK_FAILURE, UserFacingError } from './client'
-import { zUploadConfirmedOut, zUploadTicketOut } from './generated/zod.gen'
+import { ApiError, apiFetch, NETWORK_FAILURE, UserFacingError } from './client'
+import { zUploadOut, zUploadsPageOut, zUploadTicketOut } from './generated/zod.gen'
+import { drainPages } from './paging'
 
 const MIB = 1024 * 1024
 
@@ -151,10 +152,46 @@ export const uploadMediaFile = async (
     method: 'POST',
   })
   await putToStorage(ticket.upload, file, onProgress)
-  const confirmed = await apiFetch(`/uploads/${ticket.uploadId}/confirm`, zUploadConfirmedOut, {
-    ...(conversationId === undefined ? {} : { body: { conversationId } }),
+  // 图片的宽高在台账里记的就是签名时报的这两个数
+  const body = {
+    ...(conversationId === undefined ? {} : { conversationId }),
+    ...(signed.width === null || signed.height === null
+      ? {}
+      : { height: signed.height, width: signed.width }),
+  }
+  const confirmed = await apiFetch(`/uploads/${ticket.uploadId}/confirm`, zUploadOut, {
+    ...(Object.keys(body).length === 0 ? {} : { body }),
     fallbackErrorMessage: UPLOAD_FAILED,
     method: 'POST',
   })
-  return { uploadId: ticket.uploadId, url: confirmed.url }
+  return { uploadId: confirmed.id, url: confirmed.url }
 }
+
+/** 上传台账里的一条。 */
+export type MediaUpload = z.infer<typeof zUploadOut>
+
+const PAGE_LIMIT = 100
+
+/** 读完挂在这段对话上的上传（含分叉继承来的），`kind` 给了只读这一种，新的在前。 */
+export const readConversationUploads = (
+  conversationId: string,
+  kind: UploadKind | undefined,
+  signal: AbortSignal,
+  errorMessage: string,
+) =>
+  drainPages<MediaUpload, string>(async (before) => {
+    const params = new URLSearchParams({ limit: `${PAGE_LIMIT}` })
+    if (kind !== undefined) params.set('kind', kind)
+    if (before !== undefined) params.set('before', before)
+    const path = `/conversations/${encodeURIComponent(conversationId)}/uploads?${params}`
+    const page = await apiFetch(path, zUploadsPageOut, {
+      fallbackErrorMessage: errorMessage,
+      signal,
+    })
+    if (page.items.length < PAGE_LIMIT) return { items: page.items, next: null }
+    const last = page.items.at(-1)
+    if (last === undefined || last.id === before) {
+      throw new ApiError(0, `${errorMessage}：分页异常，请重试`)
+    }
+    return { items: page.items, next: last.id }
+  })

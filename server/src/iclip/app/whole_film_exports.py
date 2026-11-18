@@ -1,27 +1,34 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from typing import Final
 
 import structlog
 
-from iclip.common.errors import NotFound, ValidationFailed
+from iclip.app.runtime_workspace import WorkspaceFiles
+from iclip.common.errors import NotFound
+from iclip.common.final_cut import PROJECT_DIR, TargetLocale, media_addresses
 from iclip.domains.conversations.models import (
     WholeFilmExport,
     WholeFilmExportError,
     WholeFilmExportStatus,
 )
-from iclip.domains.conversations.service import WholeFilmRenderUnavailable
-from iclip.domains.conversations.whole_film_schemas import WholeFilmDocument
+from iclip.domains.conversations.service import FinalCutRenderUnavailable
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_SUBMITTED,
     GenerationJob,
+    inherited_through,
 )
+from iclip.domains.generation.ports import ConversationLineage
 from iclip.domains.generation.render import (
     CANCELLED,
     RENDER_STAGES,
+    ProjectFile,
+    ProjectUnavailable,
+    ReadProject,
     RenderClient,
     RenderExport,
     RenderStage,
@@ -29,21 +36,48 @@ from iclip.domains.generation.render import (
 )
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import (
-    KIND_SUBTITLE,
     KIND_WHOLE_FILM,
-    WholeFilmMusicSource,
+    WholeFilmAudioSource,
     WholeFilmRequest,
-    WholeFilmSubtitles,
     WholeFilmVideoSource,
 )
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.public import Principal
+from iclip.domains.references.infra_sql import SqlReferenceLookup
+from iclip.domains.uploads.service import UploadService
+from iclip.platform.runtime_api.client import RuntimeUnavailable
+from iclip.platform.runtime_api.file_store.namespace import namespace_for
 
 _logger = structlog.stdlib.get_logger(__name__)
 
-SUBTITLE_SCAN_LIMIT: Final = 50
-
 _NOT_THIS_EXPORT: Final = "没有这次导出"
+
+_PROJECT_PREFIX: Final = f"{PROJECT_DIR}/"
+
+
+def final_cut_reader(store: WorkspaceFiles) -> ReadProject:
+    """交给渲染服务时读工程：列出工作区 ``final-cut/`` 下的全部文件逐个读出，路径去掉这个前缀。"""
+
+    async def read_project(owner: uuid.UUID, conversation_id: uuid.UUID) -> Sequence[ProjectFile]:
+        namespace = namespace_for(owner, str(conversation_id))
+        files: list[ProjectFile] = []
+        try:
+            for entry in await store.entries(namespace, prefix=PROJECT_DIR):
+                if not entry.path.startswith(_PROJECT_PREFIX):
+                    continue
+                stored = await store.read(namespace, entry.path)
+                # 列出之后又删掉的文件不算在这一刻的工程里
+                if stored is not None:
+                    files.append(
+                        ProjectFile(
+                            path=entry.path.removeprefix(_PROJECT_PREFIX), content=stored.content
+                        )
+                    )
+        except RuntimeUnavailable as exc:
+            raise ProjectUnavailable("读不到对话工作区里的 final-cut，稍后再试") from exc
+        return files
+
+    return read_project
 
 
 class WholeFilmExportAdapter:
@@ -52,10 +86,16 @@ class WholeFilmExportAdapter:
         *,
         generation: GenerationService,
         generations: GenerationRepository,
+        uploads: UploadService,
+        references: SqlReferenceLookup,
+        lineage: ConversationLineage,
         render: RenderClient,
     ) -> None:
         self._generation = generation
         self._generations = generations
+        self._uploads = uploads
+        self._references = references
+        self._lineage = lineage
         self._render = render
 
     async def start(
@@ -63,53 +103,57 @@ class WholeFilmExportAdapter:
         principal: Principal,
         *,
         conversation_id: uuid.UUID,
-        revision: int,
-        document: WholeFilmDocument,
+        main_file: str,
+        locale: TargetLocale | None,
     ) -> uuid.UUID:
-        sources = document.video_sources()
-        music_id = None if document.music is None else document.music.job_id
-        wanted = (*sources, *(() if music_id is None else (music_id,)))
-        urls = await self._generations.output_urls(set(wanted))
-        for job_id in wanted:
-            if job_id not in urls:
-                raise ValidationFailed(f"记录 {job_id} 没有产物地址，导不出成片")
-        request = WholeFilmRequest(
-            revision=revision,
-            document=document.model_dump(mode="json", by_alias=True),
-            videos=[WholeFilmVideoSource(job_id=source, url=urls[source]) for source in sources],
-            music=None
-            if music_id is None
-            else WholeFilmMusicSource(job_id=music_id, url=urls[music_id]),
-            subtitles=await self._subtitles(sources),
-        )
-        job = await self._generation.submit_whole_film(
-            principal, conversation_id=conversation_id, request=request
-        )
-        return job.id
+        """记一条成片记录排队，导出哪种语言（``locale``，None 是原文）也记进去。主文件里的素材按地址
+        对来源，对不上的不记：``<video>`` 对生成记录；``<audio>`` 依次对本对话（含分叉继承）的生成记录、
+        本对话（含分叉继承）的上传、参考音频库，先对上的算。"""
 
-    async def _subtitles(self, sources: tuple[uuid.UUID, ...]) -> list[WholeFilmSubtitles]:
-        found: list[WholeFilmSubtitles] = []
-        for source in sources:
-            records = await self._generations.list_for_owner(
-                owner=None, limit=SUBTITLE_SCAN_LIMIT, kind=KIND_SUBTITLE, source_job_id=source
-            )
-            latest = next(
-                (
-                    record
-                    for record in records
-                    if record.status == STATUS_COMPLETED and record.output.sentences is not None
-                ),
-                None,
-            )
-            if latest is not None and latest.output.sentences is not None:
-                found.append(
-                    WholeFilmSubtitles(
-                        source_job_id=source,
-                        subtitle_job_id=latest.id,
-                        sentences=latest.output.sentences,
+        addresses = media_addresses(main_file)
+        records = await self._generations.earliest_by_outputs(
+            [address.url for address in addresses]
+        )
+        inheritance = await self._lineage.ancestry(conversation_id)
+        audio_urls = [address.url for address in addresses if address.kind != "video"]
+        uploads = await self._uploads.conversation_uploads_at(conversation_id, audio_urls)
+        references = await self._references.audio_ids_at(audio_urls)
+        videos: list[WholeFilmVideoSource] = []
+        audios: list[WholeFilmAudioSource] = []
+        for address in addresses:
+            record = records.get(address.url)
+            if address.kind == "video":
+                if record is not None:
+                    videos.append(WholeFilmVideoSource(job_id=record.id, url=address.url))
+                continue
+            if record is not None and (
+                record.conversation_id == conversation_id or inherited_through(record, inheritance)
+            ):
+                audios.append(
+                    WholeFilmAudioSource(
+                        source_kind="generation", source_id=record.id, url=address.url
                     )
                 )
-        return found
+                continue
+            upload = uploads.get(address.url)
+            if upload is not None:
+                audios.append(
+                    WholeFilmAudioSource(source_kind="upload", source_id=upload.id, url=address.url)
+                )
+                continue
+            reference_id = references.get(address.url)
+            if reference_id is not None:
+                audios.append(
+                    WholeFilmAudioSource(
+                        source_kind="reference", source_id=reference_id, url=address.url
+                    )
+                )
+        job = await self._generation.submit_whole_film(
+            principal,
+            conversation_id=conversation_id,
+            request=WholeFilmRequest(videos=videos, audios=audios, locale=locale),
+        )
+        return job.id
 
     async def latest(
         self, *, conversation_id: uuid.UUID, owner_user_id: uuid.UUID
@@ -134,9 +178,12 @@ class WholeFilmExportAdapter:
         try:
             await self._generation.cancel_whole_film(job)
         except RenderUnavailable as exc:
-            raise WholeFilmRenderUnavailable(str(exc)) from exc
+            raise FinalCutRenderUnavailable(str(exc)) from exc
 
     async def _export_of(self, job: GenerationJob) -> WholeFilmExport:
+        request = job.request
+        if not isinstance(request, WholeFilmRequest):
+            raise RuntimeError(f"成片记录 {job.id} 没有成片导出的请求")
         status: WholeFilmExportStatus = "queued"
         progress: float | None = None
         queue_position: int | None = None
@@ -160,6 +207,7 @@ class WholeFilmExportAdapter:
                 error = WholeFilmExportError(code=job.error_code, message=job.error_message)
         return WholeFilmExport(
             id=job.id,
+            locale=request.locale,
             status=status,
             progress=progress,
             queue_position=queue_position,
@@ -185,4 +233,4 @@ def _recorded_stage(provider_status: str | None) -> RenderStage:
     return "queued"
 
 
-__all__ = ["SUBTITLE_SCAN_LIMIT", "WholeFilmExportAdapter"]
+__all__ = ["WholeFilmExportAdapter", "final_cut_reader"]

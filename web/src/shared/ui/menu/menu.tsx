@@ -1,4 +1,4 @@
-import { DropdownMenu } from 'radix-ui'
+import { ContextMenu, DropdownMenu } from 'radix-ui'
 import type { ComponentProps, ComponentPropsWithoutRef, ReactNode } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -12,26 +12,37 @@ export const MenuRadioGroup = DropdownMenu.RadioGroup
 /** 本身没有外观的菜单项：配合 `asChild` 把一个按钮放进菜单的方向键导航。 */
 export const MenuBareItem = DropdownMenu.Item
 
+// 下拉菜单和右键菜单的置灰项（`disabled` 或 `aria-disabled`）都只由 ui-state 画，条目不再自写一套；
+// 条目里自带颜色的图标和快捷键按 `DIMMED_WITH_ITEM` 跟着变暗
 const ITEM_CLASS =
   // design-allow -- Radix 用 .focus() 移动高亮，浏览器默认框会和 ui-focus 的焦点环叠一起
-  'ui-state ui-focus flex h-(--control-height-sm) cursor-pointer items-center gap-2 rounded-sm px-2 text-body outline-none select-none'
+  'group/menu-item ui-state ui-focus flex h-(--control-height-sm) cursor-pointer items-center gap-2 rounded-sm px-2 text-body outline-none select-none'
+
+// Radix 置灰的条目也写 aria-disabled，和 ui-state 认的是同一个
+const DIMMED_WITH_ITEM = 'group-aria-disabled/menu-item:text-disabled-text'
+
+const SEPARATOR_CLASS = 'mx-2 my-1 h-px bg-hairline'
 
 export function MenuSeparator({
   className,
   ...props
 }: ComponentPropsWithoutRef<typeof DropdownMenu.Separator>) {
-  return (
-    <DropdownMenu.Separator className={cn('mx-2 my-1 h-px bg-hairline', className)} {...props} />
-  )
+  return <DropdownMenu.Separator className={cn(SEPARATOR_CLASS, className)} {...props} />
+}
+
+type MenuSurfaceProps = ComponentPropsWithoutRef<typeof DropdownMenu.Content> & {
+  /** 菜单挂到哪个元素里；不给就挂到 body。全屏时要挂进全屏的元素才看得见。 */
+  container?: HTMLElement | null
 }
 
 export function MenuSurface({
   className,
+  container = null,
   sideOffset = 4,
   ...props
-}: ComponentPropsWithoutRef<typeof DropdownMenu.Content>) {
+}: MenuSurfaceProps) {
   return (
-    <DropdownMenu.Portal>
+    <DropdownMenu.Portal container={container}>
       <DropdownMenu.Content
         className={cn(POPUP_SURFACE_CLASS, 'flex min-w-36 flex-col gap-0.5 p-1', className)}
         sideOffset={sideOffset}
@@ -41,11 +52,61 @@ export function MenuSurface({
   )
 }
 
-type MenuItemProps = ComponentPropsWithoutRef<typeof DropdownMenu.Item> & {
+/** 下拉菜单和右键菜单的条目共用的外观。 */
+type ItemLook = {
+  /** 删除之类的危险操作：文字用警示色。 */
   destructive?: boolean
-  icon?: Parameters<typeof Icon>[0]['name']
-  shortcut?: readonly string[]
+  icon?: IconName | undefined
+  /** 右边写的快捷键，一个键一格。 */
+  shortcut?: readonly string[] | undefined
   trailing?: ReactNode
+}
+
+const itemClass = (destructive: boolean, className: string | undefined) =>
+  cn(ITEM_CLASS, destructive ? 'text-error' : 'text-on-surface', className)
+
+function ItemBody({
+  children,
+  destructive = false,
+  icon,
+  shortcut,
+  trailing,
+}: ItemLook & { children: ReactNode }) {
+  return (
+    <>
+      {icon ? (
+        <Icon
+          className={cn('shrink-0', !destructive && ['text-on-surface-variant', DIMMED_WITH_ITEM])}
+          decorative
+          name={icon}
+          size="sm"
+        />
+      ) : null}
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+      {trailing === undefined ? null : (
+        <span
+          className={cn(
+            'ml-4 flex shrink-0 items-center text-label text-on-surface-variant tabular-nums',
+            DIMMED_WITH_ITEM,
+          )}
+        >
+          {trailing}
+        </span>
+      )}
+      {shortcut?.length ? (
+        <span
+          className={cn(
+            'ml-4 flex shrink-0 items-center gap-1 text-label text-on-surface-variant',
+            DIMMED_WITH_ITEM,
+          )}
+        >
+          {shortcut.map((key) => (
+            <span key={key}>{key}</span>
+          ))}
+        </span>
+      ) : null}
+    </>
+  )
 }
 
 export function MenuItem({
@@ -56,35 +117,57 @@ export function MenuItem({
   shortcut,
   trailing,
   ...props
-}: MenuItemProps) {
+}: ComponentPropsWithoutRef<typeof DropdownMenu.Item> & ItemLook) {
   return (
-    <DropdownMenu.Item
-      className={cn(ITEM_CLASS, destructive ? 'text-error' : 'text-on-surface', className)}
-      {...props}
-    >
-      {icon ? (
-        <Icon
-          className={cn('shrink-0', !destructive && 'text-on-surface-variant')}
-          decorative
-          name={icon}
-          size="sm"
-        />
-      ) : null}
-      <span className="min-w-0 flex-1 truncate">{children}</span>
-      {trailing === undefined ? null : (
-        <span className="ml-4 flex shrink-0 items-center text-label text-on-surface-variant tabular-nums">
-          {trailing}
-        </span>
-      )}
-      {shortcut?.length ? (
-        <span className="ml-4 flex shrink-0 items-center gap-1 text-label text-on-surface-variant">
-          {shortcut.map((key) => (
-            <span key={key}>{key}</span>
-          ))}
-        </span>
-      ) : null}
+    <DropdownMenu.Item className={itemClass(destructive, className)} {...props}>
+      <ItemBody destructive={destructive} icon={icon} shortcut={shortcut} trailing={trailing}>
+        {children}
+      </ItemBody>
     </DropdownMenu.Item>
   )
+}
+
+/** 右键菜单：样子和下拉菜单一样，在点右键的地方打开。把触发它的元素包在 `ContextMenuTrigger asChild` 里。 */
+export const ContextMenuRoot = ContextMenu.Root
+export const ContextMenuTrigger = ContextMenu.Trigger
+
+export function ContextMenuSurface({
+  className,
+  ...props
+}: ComponentPropsWithoutRef<typeof ContextMenu.Content>) {
+  return (
+    <ContextMenu.Portal>
+      <ContextMenu.Content
+        className={cn(POPUP_SURFACE_CLASS, 'flex min-w-36 flex-col gap-0.5 p-1', className)}
+        {...props}
+      />
+    </ContextMenu.Portal>
+  )
+}
+
+export function ContextMenuItem({
+  children,
+  className,
+  destructive = false,
+  icon,
+  shortcut,
+  trailing,
+  ...props
+}: ComponentPropsWithoutRef<typeof ContextMenu.Item> & ItemLook) {
+  return (
+    <ContextMenu.Item className={itemClass(destructive, className)} {...props}>
+      <ItemBody destructive={destructive} icon={icon} shortcut={shortcut} trailing={trailing}>
+        {children}
+      </ItemBody>
+    </ContextMenu.Item>
+  )
+}
+
+export function ContextMenuSeparator({
+  className,
+  ...props
+}: ComponentPropsWithoutRef<typeof ContextMenu.Separator>) {
+  return <ContextMenu.Separator className={cn(SEPARATOR_CLASS, className)} {...props} />
 }
 
 export function MenuRadioItem({

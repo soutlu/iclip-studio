@@ -1,17 +1,24 @@
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join, posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import * as fontEngine from '@hyperframes/core/fonts/embed'
+import {
+  fontFaceDescriptors,
+  undeclaredFontFamilies as undeclaredWith,
+} from '../src/features/storyboard/final-cut/composition/font-families.ts'
+
+export { fontFaceDescriptors }
 
 const run = promisify(execFile)
 
-export const HF_VERSION = '0.8.168'
+export const HF_VERSION = '0.9.59'
 export const TARBALL = {
   url: `https://codeload.github.com/heygen-com/hyperframes/tar.gz/refs/tags/v${HF_VERSION}`,
-  sha256: '6e0c38c6059c76410309d6b15914b416e6d9aec74faff96f55d16497345d20d3',
+  sha256: 'a7ec92846b26737124d73891ac772cd940b36a4eb31d099b8741813a16315888',
   root: `hyperframes-${HF_VERSION}`,
 }
 
@@ -21,14 +28,20 @@ export const FIXTURES_DIR = join(WEB_ROOT, 'scripts', 'hyperframes-fixtures')
 export const DEFAULT_OUT = join(WEB_ROOT, 'public', 'hyperframes')
 
 const LIBRARY_INPUTS = ['catalog.json', 'registry.lock.json', 'patches', 'thumbnails', 'fonts']
+// 组装用到的代码（相对 web/），改了就换版本
+const SCRIPT_INPUTS = [
+  'scripts/hyperframes-registry.mjs',
+  'scripts/hyperframes-shared.mjs',
+  'src/features/storyboard/final-cut/composition/font-families.ts',
+]
 
 export async function libraryVersion(library) {
   const hash = createHash('sha256')
   const add = (data) => hash.update(data).update('\0')
   add(HF_VERSION)
-  for (const script of ['hyperframes-registry.mjs', 'hyperframes-shared.mjs']) {
+  for (const script of SCRIPT_INPUTS) {
     add(script)
-    add(await readFile(join(WEB_ROOT, 'scripts', script)))
+    add(await readFile(join(WEB_ROOT, script)))
   }
   for (const entry of LIBRARY_INPUTS) {
     const path = join(library, entry)
@@ -46,14 +59,15 @@ export async function libraryVersion(library) {
 
 export const CJK_FONT = {
   family: 'Noto Sans SC',
-  css: 'vendor/fonts/noto-sans-sc.css',
   weights: [400, 700],
 }
 
+/** 版本目录里组装时写下的字体表：中文分片、各字体族的中文孪生描述与样式表路径，发布组件目录时读它。 */
+export const FONT_TABLE = 'fonts.json'
+
 export const RUNTIME = {
-  hyperframes: 'vendor/hyperframes/hyperframe.runtime.iife.js',
+  hyperframes: `vendor/hyperframes/${HF_VERSION}/hyperframe.runtime.iife.js`,
   gsap: 'vendor/npm/gsap@3.14.2/dist/gsap.min.js',
-  cjkFont: CJK_FONT.css,
 }
 
 export const sha256 = (data) => createHash('sha256').update(data).digest('hex')
@@ -245,6 +259,7 @@ function parseGoogleFonts(url) {
   return { display, families }
 }
 
+// 按来源地址起的临时文件名；写出内容后由 relocate 换成按内容摘要命名
 const googleFontsCss = (fonts) => `vendor/fonts/${sha256(JSON.stringify(fonts)).slice(0, 12)}.css`
 
 function resolveUrl(url) {
@@ -426,90 +441,128 @@ export async function fontFaces(
 
 export const isLatinSubset = (subset) => subset === 'latin' || subset === 'latin-ext'
 
-const CJK_BLOCKS = [
-  [0x2e80, 0x2fdf],
-  [0x3000, 0x30ff],
-  [0x3100, 0x31ff],
-  [0x3200, 0x33ff],
-  [0x3400, 0x4dbf],
-  [0x4e00, 0x9fff],
-  [0xf900, 0xfaff],
-  [0xfe10, 0xfe1f],
-  [0xfe30, 0xfe4f],
-  [0xff00, 0xffef],
-  [0x20000, 0x3134f],
-]
-
-function parseRanges(value) {
-  return value.split(',').map((part) => {
-    const [from, to] = part.trim().replace(/^U\+/i, '').split('-')
-    return [parseInt(from, 16), parseInt(to ?? from, 16)]
-  })
-}
-
-export function cjkUnicodeRange(value) {
-  const parts = []
-  for (const [from, to] of parseRanges(value)) {
-    for (const [blockFrom, blockTo] of CJK_BLOCKS) {
-      const start = Math.max(from, blockFrom)
-      const end = Math.min(to, blockTo)
-      if (start <= end) {
-        const hex = (code) => code.toString(16)
-        parts.push(start === end ? `U+${hex(start)}` : `U+${hex(start)}-${hex(end)}`)
-      }
+export async function cjkSlices(packageDir, pkg) {
+  const metadata = JSON.parse(await readFile(join(packageDir, 'metadata.json'), 'utf8'))
+  const unicode = JSON.parse(await readFile(join(packageDir, 'unicode.json'), 'utf8'))
+  const slices = []
+  const files = []
+  for (const [subset, range] of Object.entries(unicode)) {
+    const slice = subset.replace(/^\[(\d+)\]$/, '$1')
+    const byWeight = {}
+    for (const weight of CJK_FONT.weights) {
+      const file = `files/${metadata.id}-${slice}-${weight}-normal.woff2`
+      if (!existsSync(join(packageDir, file))) continue
+      files.push(file)
+      byWeight[weight] = npmPath(pkg.name, pkg.version, file)
     }
+    if (Object.keys(byWeight).length > 0) slices.push({ range, files: byWeight })
   }
-  return parts.length > 0 ? parts.join(',') : null
+  return { slices, files }
 }
 
-const KEYWORD_WEIGHTS = { normal: '400', bold: '700' }
-const cssValue = (block, property) =>
-  new RegExp(`${property}\\s*:\\s*([^;}]+)`)
-    .exec(block)?.[1]
-    ?.trim()
-    .replace(/^['"]|['"]$/g, '')
-    .trim()
+const FONT_FACE_RULE = /@font-face\s*\{[^}]*\}/g
+const CSS_URL = /url\(\s*(['"]?)([^'")]+)\1\s*\)/g
 
-export function fontFaceDescriptors(text) {
+/**
+ * 文本里的每条 @font-face：字体名和规则，规则里的空白并成一个空格，相对地址改成相对 `cssPath` 的地址。
+ * 地址按 localReferences 的规则解析：样式表里和 `../` 开头的按文件位置，网页里其余的按基准地址（版本目录）。
+ *
+ * @param {string} text 组件库里的网页或样式表
+ * @param {string} path 这份文本相对版本目录的路径
+ * @param {string} cssPath 规则要写进的样式表相对版本目录的路径
+ * @returns {{ family: string, rule: string }[]}
+ */
+export function fontFaceRules(text, path, cssPath) {
   const result = []
-  for (const [, block] of text.matchAll(/@font-face\s*\{([^}]*)\}/g)) {
-    const family = cssValue(block, 'font-family')
+  for (const [rule] of text.matchAll(FONT_FACE_RULE)) {
+    const family = fontFaceDescriptors(rule)[0]?.family
     if (!family) continue
-    const weight = cssValue(block, 'font-weight') ?? '400'
-    result.push({
-      family,
-      weight: KEYWORD_WEIGHTS[weight] ?? weight,
-      style: cssValue(block, 'font-style') ?? 'normal',
+    const rebased = rule.replace(/\s+/g, ' ').replace(CSS_URL, (whole, quote, reference) => {
+      if (/^(?:[a-z][a-z0-9+.-]*:|\/)/i.test(reference)) return whole
+      const resolved =
+        path.endsWith('.css') || reference.startsWith('../')
+          ? posix.normalize(posix.join(posix.dirname(path), reference))
+          : posix.normalize(reference.replace(/^\.\//, ''))
+      return `url(${quote}${posix.relative(posix.dirname(cssPath), resolved)}${quote})`
     })
+    result.push({ family, rule: rebased })
   }
   return result
 }
 
-export async function cjkTwinFaces(family, descriptors, notoDir) {
-  const pkg = fontPackage(CJK_FONT.family)
-  const metadata = JSON.parse(await readFile(join(notoDir, 'metadata.json'), 'utf8'))
-  const unicode = JSON.parse(await readFile(join(notoDir, 'unicode.json'), 'utf8'))
-  const slices = Object.entries(unicode).flatMap(([subset, value]) => {
-    const slice = /^\[(\d+)\]$/.exec(subset)?.[1]
-    const unicodeRange = slice === undefined ? null : cjkUnicodeRange(value)
-    return unicodeRange ? [{ slice, unicodeRange }] : []
-  })
-  const rules = []
+/**
+ * 组件文件里渲染器要自己去找的字体名，判断方式见 composition/font-families.ts 的同名函数。
+ *
+ * @param {string} html 组件文件
+ * @param {Iterable<string>} declared 文件外已经有 @font-face 的字体名
+ * @returns {string[]}
+ */
+export const undeclaredFontFamilies = (html, declared) => undeclaredWith(html, declared, fontEngine)
+
+/**
+ * 在组件文件里第一个 <style> 或 <script> 前插入样式表链接，每个一行，缩进跟着那一行；渲染时组件里的链接会提到主文件里。
+ * 文件里没有 <style> 和 <script> 时返回 undefined。
+ *
+ * @param {string} html 组件文件
+ * @param {string[]} hrefs 相对组件文件的样式表地址
+ * @returns {string | undefined}
+ */
+export function withStylesheetLinks(html, hrefs) {
+  // 注释换成等长的空白：注释里的标签不算，位置也不变
+  const code = html.replace(HTML_COMMENT, (comment) => ' '.repeat(comment.length))
+  const at = code.search(/<(?:style|script)\b/i)
+  if (at === -1) return undefined
+  const lineStart = html.lastIndexOf('\n', at - 1) + 1
+  const indent = html.slice(lineStart, at)
+  const tags = hrefs.map((href) => `<link rel="stylesheet" href="${href}" />`)
+  return /^[ \t]*$/.test(indent)
+    ? `${html.slice(0, lineStart)}${tags.map((tag) => `${indent}${tag}\n`).join('')}${html.slice(lineStart)}`
+    : `${html.slice(0, at)}${tags.join('')}${html.slice(at)}`
+}
+
+export function twinDescriptors(descriptors) {
   const seen = new Set()
+  const result = []
   for (const { weight, style } of descriptors) {
     const key = `${weight}/${style}`
     if (seen.has(key)) continue
     seen.add(key)
-    const notoWeight = Number.parseInt(weight, 10) < 550 ? 400 : 700
-    for (const { slice, unicodeRange } of slices) {
-      const file = `files/${metadata.id}-${slice}-${notoWeight}-normal.woff2`
-      rules.push(
-        `@font-face{font-family:'${family}';font-style:${style};font-display:block;font-weight:${weight};` +
-          `src:url(../../npm/${pkg.name}@${pkg.version}/${file}) format('woff2');unicode-range:${unicodeRange}}`,
-      )
-    }
+    result.push({ weight, style })
   }
-  return rules.join('\n')
+  return result
+}
+
+// 中文字体由主文件按用到的字声明；组件文件里链整份中文字体的那一行在组装时去掉
+const CJK_STYLESHEET_LINK =
+  /[ \t]*<link\b[^>]*\bhref="[^"]*vendor\/fonts\/noto-sans-sc\.css"[^>]*>\n?/g
+export const withoutCjkStylesheet = (html) => html.replace(CJK_STYLESHEET_LINK, '')
+
+const HTML_COMMENT = /<!--[\s\S]*?-->/g
+const NON_ASCII = /[\u0080-\u{10ffff}]/gu
+export function componentChars(text) {
+  const chars = new Set(text.replace(HTML_COMMENT, '').match(NON_ASCII))
+  return [...chars].sort((a, b) => a.codePointAt(0) - b.codePointAt(0)).join('')
+}
+
+const ANIMATION_LIBRARY_TAG = /<script\b[^>]*\bsrc="[^"]*\/gsap[^"]*"/i
+const USES_ANIMATION_LIBRARY = /\bgsap\./
+
+/**
+ * 组件文件用到动画库、自己却没引用它时，在它的第一段脚本前补上引用。
+ * 主文件不带脚本，组件单独放进 final-cut 时要靠自带的引用，不然它的脚本一运行就报错。
+ */
+export function withAnimationLibrary(html) {
+  // 注释换成等长的空白：注释里的脚本不算，位置也不变
+  const code = html.replace(HTML_COMMENT, (comment) => ' '.repeat(comment.length))
+  if (!USES_ANIMATION_LIBRARY.test(code) || ANIMATION_LIBRARY_TAG.test(code)) return html
+  const at = code.search(/<script\b/)
+  if (at === -1) return html
+  const tag = `<script src="${RUNTIME.gsap}"></script>`
+  const lineStart = html.lastIndexOf('\n', at - 1) + 1
+  const indent = html.slice(lineStart, at)
+  return /^[ \t]*$/.test(indent)
+    ? `${html.slice(0, lineStart)}${indent}${tag}\n${html.slice(lineStart)}`
+    : `${html.slice(0, at)}${tag}${html.slice(at)}`
 }
 
 export const FONT_VARIABLE = { id: 'font', type: 'font', label: '字体', default: '' }
@@ -527,20 +580,72 @@ export function checkCatalogFonts(fonts) {
   }
 }
 
-export async function publishedCatalog(catalog, version, compositionText) {
+/**
+ * 每个条目用进 final-cut 工程时要按原路径拷进工程的文件。第一项是条目的 src；src 所在目录（含子目录）里
+ * 没有别的条目时，这个目录归它专有，后面按路径顺序跟上目录下其余的文件。final-cut 工程只能放文本，
+ * 列出的文件里有含 NUL 字节的就抛 SyncError，一次列出所有这样的条目和文件。
+ *
+ * @param {{ name: string, src: string }[]} items 组件目录的条目
+ * @param {(path: string) => Promise<string>} libraryText 按相对版本目录的路径读文件
+ * @param {(dir: string) => Promise<string[]>} libraryFiles 列出版本目录里一个目录下（含子目录）的全部文件，路径相对版本目录
+ * @returns {Promise<Map<string, string[]>>} 条目名到文件清单
+ */
+export async function projectFiles(items, libraryText, libraryFiles) {
+  const result = new Map()
+  const binary = []
+  for (const item of items) {
+    const dir = posix.dirname(item.src)
+    const shared = items.some((other) => other !== item && other.src.startsWith(`${dir}/`))
+    const own = shared ? [] : (await libraryFiles(dir)).filter((path) => path !== item.src)
+    const files = [item.src, ...own]
+    for (const path of files) {
+      if ((await libraryText(path)).includes('\0')) binary.push(`${item.name} → ${path}`)
+    }
+    result.set(item.name, files)
+  }
+  if (binary.length > 0)
+    throw new SyncError(
+      `条目专有目录里有不是文本的文件（含 NUL 字节），final-cut 工程只能放文本：\n  ${binary.join('\n  ')}`,
+    )
+  return result
+}
+
+export async function publishedCatalog(catalog, version, libraryText, libraryFiles) {
+  const files = await projectFiles(catalog.items, libraryText, libraryFiles)
   const items = []
   for (const item of catalog.items) {
+    const text = await libraryText(item.src)
     const declared = item.variables.some((variable) => variable.id === FONT_VARIABLE.id)
-    items.push(
-      !declared && READS_FONT_VARIABLE.test(await compositionText(item.src))
-        ? { ...item, variables: [...item.variables, FONT_VARIABLE] }
-        : item,
-    )
+    items.push({
+      ...item,
+      variables:
+        !declared && READS_FONT_VARIABLE.test(text)
+          ? [...item.variables, FONT_VARIABLE]
+          : item.variables,
+      chars: componentChars(text),
+      files: files.get(item.name),
+    })
   }
+  const { slices, twins, css } = JSON.parse(await libraryText(FONT_TABLE))
   const fonts = Object.fromEntries(
-    Object.entries(catalog.fonts).map(([family, { faces: _faces, ...font }]) => [family, font]),
+    Object.entries(catalog.fonts).map(([family, { faces: _faces, ...font }]) => {
+      if (!Object.hasOwn(css, family))
+        throw new SyncError(`字体表中缺少字体「${family}」的样式表，请删除版本目录后重新组装`)
+      const published = { ...font, css: css[family] }
+      return [
+        family,
+        Object.hasOwn(twins, family) ? { ...published, cjk: twins[family] } : published,
+      ]
+    }),
   )
-  return { version, ...catalog, fonts, items }
+  return {
+    version,
+    ...catalog,
+    runtime: RUNTIME,
+    cjk: { family: CJK_FONT.family, slices },
+    fonts,
+    items,
+  }
 }
 
 const FONT_FORMATS = { woff2: 'woff2', woff: 'woff', ttf: 'truetype', otf: 'opentype' }
@@ -567,6 +672,163 @@ export async function localFontFaces({ family, faces, cssPath, libraryDir, outDi
     )
   }
   return rules.join('\n')
+}
+
+// 组装结果里留在版本目录的顶层目录；其余顶层目录（组件自带的图片、声音、字体、模型、脚本）挪进 vendor/files/
+const VERSION_DIRS = new Set(['compositions', 'thumbnails', 'vendor'])
+const OWN_FILES = 'vendor/files'
+// 第三方包原样拷贝的文件：其中的字符串不是组件库里的地址，不改写也不检查
+const isPackageFile = (path) =>
+  path.startsWith('vendor/npm/') || path.startsWith('vendor/hyperframes/')
+const isOwnFile = (path) => path.startsWith(`${OWN_FILES}/`)
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const alternation = (paths) => paths.map(escapeRegExp).join('|')
+// 地址前面紧挨着这些字符时不是地址的开头，比如 compositions/x/assets/a.png 里的 assets/a.png
+const NOT_ADDRESS_START = '(?<![\\w.@/-])'
+const lineOf = (text, offset) => text.slice(0, offset).split('\n').length
+
+/** 把一份文本里指向挪走文件的地址改成新位置；地址按 localReferences 的规则区分按基准地址还是按文件位置解析。 */
+function withMovedReferences(text, path, moved) {
+  if (moved.size === 0) return text
+  const dirs = [...new Set([...moved.keys()].map((file) => file.split('/')[0]))]
+  const address = new RegExp(
+    `${NOT_ADDRESS_START}((?:\\.{1,2}/)*)((?:${alternation(dirs)})/[^\\s"'\`()<>,;?#&\\\\]+)`,
+    'g',
+  )
+  return text.replace(address, (whole, prefix, rest) => {
+    const fileRelative = path.endsWith('.css') || prefix.startsWith('../')
+    const resolved = fileRelative
+      ? posix.normalize(posix.join(posix.dirname(path), prefix + rest))
+      : posix.normalize(rest)
+    const target = moved.get(resolved)
+    if (target === undefined) return whole
+    return fileRelative ? posix.relative(posix.dirname(path), target) : target
+  })
+}
+
+// 组装时生成的字体样式表，内容随字体包与组装写法变化：文件名带内容摘要
+function contentName(path, data) {
+  const hash = sha256(data).slice(0, 12)
+  if (/^vendor\/fonts\/families\/[^/]+\.css$/.test(path))
+    return path.replace(/\.css$/, `-${hash}.css`)
+  if (/^vendor\/fonts\/[^/]+\.css$/.test(path)) return `vendor/fonts/${hash}.css`
+  return undefined
+}
+
+/**
+ * 把组装目录整理成发布结构，使 vendor/ 下每个路径都对应唯一的内容（只增、不改、不删的前提）：
+ * 1. 除 compositions/、thumbnails/、vendor/ 以外的顶层目录整体挪到 vendor/files/<目录名>-<内容摘要>/，
+ *    条目文件与生成的样式表里指向这些文件的地址（src/href、url(...)、脚本字符串）改到新位置；
+ *    挪走的文件原样保留，内容摘要按原文计算。
+ * 2. 字体样式表改为按内容摘要命名，版本目录里引用它们的地址随之改写。
+ *
+ * @param {string} root 组装目录，vendor/ 位于其中
+ * @returns {Promise<{ moved: Map<string, string>, renamed: Map<string, string> }>} 挪走的文件与改名的样式表，旧路径到新路径
+ */
+export async function relocate(root) {
+  const moved = new Map()
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    if (!entry.isDirectory() || VERSION_DIRS.has(entry.name)) continue
+    const files = await listFiles(join(root, entry.name))
+    const hash = createHash('sha256')
+    for (const file of files) {
+      hash.update(file).update('\0')
+      hash.update(await readFile(join(root, entry.name, file))).update('\0')
+    }
+    const dir = `${OWN_FILES}/${entry.name}-${hash.digest('hex').slice(0, 12)}`
+    await mkdir(join(root, OWN_FILES), { recursive: true })
+    await rename(join(root, entry.name), join(root, dir))
+    for (const file of files) moved.set(`${entry.name}/${file}`, `${dir}/${file}`)
+  }
+
+  const texts = (await listFiles(root)).filter(
+    (path) => isTextFile(path) && !isPackageFile(path) && !isOwnFile(path),
+  )
+  for (const path of texts) {
+    const text = await readFile(join(root, path), 'utf8')
+    const rewritten = withMovedReferences(text, path, moved)
+    if (rewritten !== text) await writeFile(join(root, path), rewritten)
+  }
+
+  const renamed = new Map()
+  for (const path of texts) {
+    const data = await readFile(join(root, path))
+    const name = contentName(path, data)
+    if (name === undefined) continue
+    await rename(join(root, path), join(root, name))
+    renamed.set(path, name)
+  }
+  if (renamed.size > 0) {
+    const reference = new RegExp(alternation([...renamed.keys()]), 'g')
+    for (const path of texts.filter((file) => !file.startsWith('vendor/'))) {
+      const text = await readFile(join(root, path), 'utf8')
+      const rewritten = text.replace(reference, (old) => renamed.get(old))
+      if (rewritten !== text) await writeFile(join(root, path), rewritten)
+    }
+  }
+  return { moved, renamed }
+}
+
+/**
+ * 整理后的查漏：文本文件里仍有地址指向挪走文件的旧位置，或 vendor/ 里的网页、样式表引用了 vendor/ 以外的文件，
+ * 就抛 SyncError 并列出文件与位置。第三方包的文件不检查。
+ *
+ * @param {string} root 整理后的组装目录
+ * @param {Map<string, string>} moved relocate 返回的挪走的文件
+ */
+export async function checkRelocated(root, moved) {
+  const problems = []
+  const stale =
+    moved.size === 0
+      ? null
+      : new RegExp(`${NOT_ADDRESS_START}(?:\\.{1,2}/)*(${alternation([...moved.keys()])})`, 'g')
+  for (const path of await listFiles(root)) {
+    if (!isTextFile(path) || isPackageFile(path)) continue
+    const text = await readFile(join(root, path), 'utf8')
+    for (const match of stale === null ? [] : text.matchAll(stale)) {
+      problems.push(`${path}:${lineOf(text, match.index)} → ${match[1]}（仍指向旧位置）`)
+    }
+    if (!path.startsWith('vendor/') || !/\.(html?|css)$/i.test(path)) continue
+    for (const { reference, resolved } of localReferences(text, path)) {
+      if (!resolved.startsWith('vendor/'))
+        problems.push(`${path} → ${reference}（指向 vendor/ 以外的文件）`)
+    }
+  }
+  if (problems.length > 0) throw new SyncError(`查漏未通过：\n  ${problems.join('\n  ')}`)
+}
+
+/**
+ * 把组装目录发布成 `<out>/<version>/`：先把其中 vendor/ 的文件并入 `<out>/vendor/`（只增，不改、不删），
+ * 再把组装目录的 vendor/ 换成指向 ../vendor 的软链接，最后改名为版本目录。
+ * `<out>/vendor/` 里已有同一路径而内容不同的文件时抛 SyncError，此时 `<out>/` 不受任何改动。
+ *
+ * @param {string} root 组装目录，必须与 outDir 在同一文件系统（文件靠改名并入）
+ * @param {string} outDir 输出目录
+ * @param {string} version 版本号
+ */
+export async function installVersion(root, outDir, version) {
+  const source = join(root, 'vendor')
+  const shared = join(outDir, 'vendor')
+  const added = []
+  const conflicts = []
+  for (const file of await listFiles(source)) {
+    const target = join(shared, file)
+    if (!existsSync(target)) added.push(file)
+    else if (!(await readFile(target)).equals(await readFile(join(source, file))))
+      conflicts.push(`vendor/${file}`)
+  }
+  if (conflicts.length > 0) {
+    throw new SyncError(
+      `vendor/ 中已有同一路径、内容不同的文件，无法并入；共用文件的路径须随内容变化：\n  ${conflicts.join('\n  ')}`,
+    )
+  }
+  for (const file of added) {
+    await mkdir(dirname(join(shared, file)), { recursive: true })
+    await rename(join(source, file), join(shared, file))
+  }
+  await rm(source, { recursive: true, force: true })
+  await symlink('../vendor', source)
+  await rename(root, join(outDir, version))
 }
 
 export async function listFiles(root, dir = '') {

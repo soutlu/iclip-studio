@@ -54,20 +54,20 @@ def responses_body(status: str = "completed", text: str = "## 4、逐镜拉片�
 
 async def test_parser_takes_the_output_text_and_skips_reasoning() -> None:
     understanding = ark(lambda _: httpx.Response(200, json=responses_body()))
-    assert await understanding.parse(VIDEO) == "## 4、逐镜拉片表\n……"
+    assert await understanding.parse(VIDEO, model_group=None) == "## 4、逐镜拉片表\n……"
 
 
 @pytest.mark.parametrize("status", ["incomplete", "in_progress", "failed"])
 async def test_parser_refuses_a_response_that_did_not_finish(status: str) -> None:
     understanding = ark(lambda _: httpx.Response(200, json=responses_body(status=status)))
     with pytest.raises(VideoUnderstandingError, match=status):
-        await understanding.parse(VIDEO)
+        await understanding.parse(VIDEO, model_group=None)
 
 
 async def test_parser_refuses_an_empty_document() -> None:
     understanding = ark(lambda _: httpx.Response(200, json={"status": "completed", "output": []}))
     with pytest.raises(VideoUnderstandingError, match="没给出正文"):
-        await understanding.parse(VIDEO)
+        await understanding.parse(VIDEO, model_group=None)
 
 
 async def test_parser_reports_the_upstream_error_body() -> None:
@@ -75,13 +75,13 @@ async def test_parser_reports_the_upstream_error_body() -> None:
         lambda _: httpx.Response(400, json={"error": {"message": "video_url 取不到"}})
     )
     with pytest.raises(VideoUnderstandingError, match="400"):
-        await understanding.parse(VIDEO)
+        await understanding.parse(VIDEO, model_group=None)
 
 
 async def test_parser_refuses_a_non_json_body() -> None:
     understanding = ark(lambda _: httpx.Response(200, text="<html>502</html>"))
     with pytest.raises(VideoUnderstandingError, match="不是 JSON"):
-        await understanding.parse(VIDEO)
+        await understanding.parse(VIDEO, model_group=None)
 
 
 async def test_parser_sends_the_written_model_thinking_and_fps_to_the_resolved_connection() -> None:
@@ -92,9 +92,9 @@ async def test_parser_sends_the_written_model_thinking_and_fps_to_the_resolved_c
         return httpx.Response(200, json=responses_body())
 
     connections = FakeModelConnections({(DECLARATION, MODEL): RELAY})
-    await ark(handler, connections).parse(VIDEO)
+    await ark(handler, connections).parse(VIDEO, model_group="mkt")
 
-    assert connections.asked == [("volcengine", "doubao-seed-2-0-lite-260428")]
+    assert connections.asked == [("volcengine", "doubao-seed-2-0-lite-260428", "mkt")]
     (request,) = sent
     assert str(request.url) == RELAY.responses_url
     assert request.headers["Authorization"] == "Bearer sk-test-ark"
@@ -115,10 +115,10 @@ async def test_the_connection_is_looked_up_on_every_call() -> None:
 
     connections = FakeModelConnections({(DECLARATION, MODEL): RELAY})
     understanding = ark(handler, connections)
-    await understanding.parse(VIDEO)
+    await understanding.parse(VIDEO, model_group=None)
     moved = ModelConnection(responses_url="https://relay2.example/responses", api_key="sk-test-2")
     connections.connections[(DECLARATION, MODEL)] = moved
-    await understanding.parse(VIDEO)
+    await understanding.parse(VIDEO, model_group=None)
 
     assert urls == [RELAY.responses_url, moved.responses_url]
 
@@ -131,5 +131,5 @@ async def test_an_unavailable_model_is_its_own_failure_and_nothing_is_sent() -> 
         return httpx.Response(200, json=responses_body())
 
     with pytest.raises(VideoUnderstandingUnavailable, match=MODEL):
-        await ark(handler, FakeModelConnections()).parse(VIDEO)
+        await ark(handler, FakeModelConnections()).parse(VIDEO, model_group=None)
     assert sent == []

@@ -834,6 +834,20 @@ export type AttemptBucketOut = {
 }
 
 /**
+ * AudioKindCountOut
+ */
+export type AudioKindCountOut = {
+  /**
+   * Audiokind
+   */
+  audioKind: 'voice' | 'bgm' | 'sfx'
+  /**
+   * Count
+   */
+  count: number
+}
+
+/**
  * AuditExecutionsOut
  */
 export type AuditExecutionsOut = {
@@ -922,130 +936,6 @@ export type BodyImportSkillSkillsImportPost = {
    * 技能的 zip 压缩包
    */
   file: Blob | File
-}
-
-/**
- * BrandFontConfirmIn
- */
-export type BrandFontConfirmIn = {
-  /**
-   * Brand
-   */
-  brand?: string | null
-  /**
-   * Name
-   */
-  name: string
-}
-
-/**
- * BrandFontInfoOut
- */
-export type BrandFontInfoOut = {
-  /**
-   * Family
-   */
-  family: string
-  /**
-   * Style
-   */
-  style: 'normal' | 'italic' | 'oblique'
-  /**
-   * Unicoderanges
-   */
-  unicodeRanges: Array<BrandFontUnicodeRange>
-  /**
-   * Weight
-   */
-  weight: number
-}
-
-/**
- * BrandFontSignIn
- */
-export type BrandFontSignIn = {
-  /**
-   * Contenttype
-   */
-  contentType: 'font/ttf' | 'font/otf'
-}
-
-/**
- * BrandFontUnicodeRange
- */
-export type BrandFontUnicodeRange = {
-  /**
-   * End
-   */
-  end: number
-  /**
-   * Start
-   */
-  start: number
-}
-
-/**
- * BrandTemplateOut
- */
-export type BrandTemplateOut = {
-  /**
-   * Brand
-   */
-  brand: string | null
-  /**
-   * Createdat
-   */
-  createdAt: string
-  /**
-   * Disabledat
-   */
-  disabledAt: string | null
-  /**
-   * Id
-   */
-  id: string
-  /**
-   * Kind
-   */
-  kind: string
-  /**
-   * Name
-   */
-  name: string
-  /**
-   * Url
-   */
-  url: string
-}
-
-/**
- * BrandTemplateUpdateIn
- *
- * 改名、停用或恢复使用；不给的那一项不动，至少给一项。
- */
-export type BrandTemplateUpdateIn = {
-  /**
-   * Brand
-   */
-  brand?: string | null
-  /**
-   * Disabled
-   */
-  disabled?: boolean | null
-  /**
-   * Name
-   */
-  name?: string | null
-}
-
-/**
- * BrandTemplatesOut
- */
-export type BrandTemplatesOut = {
-  /**
-   * Items
-   */
-  items: Array<BrandTemplateOut>
 }
 
 /**
@@ -1643,6 +1533,8 @@ export type ConversationsPageOut = {
 
 /**
  * CredentialCreateIn
+ *
+ * ``modelGroup`` 给了就把这把密钥归进这个配置组；同一供应商下一个组最多一把。
  */
 export type CredentialCreateIn = {
   /**
@@ -1651,6 +1543,10 @@ export type CredentialCreateIn = {
   fields: {
     [key: string]: string
   }
+  /**
+   * Modelgroup
+   */
+  modelGroup?: string | null
   /**
    * Name
    */
@@ -1713,6 +1609,8 @@ export type CredentialOptionOut = {
 
 /**
  * CredentialOut
+ *
+ * ``modelGroup`` 是这把密钥归的配置组，为空即不归任何组。
  */
 export type CredentialOut = {
   /**
@@ -1729,6 +1627,10 @@ export type CredentialOut = {
    * Id
    */
   id: string
+  /**
+   * Modelgroup
+   */
+  modelGroup: string | null
   /**
    * Name
    */
@@ -1766,7 +1668,8 @@ export type CredentialTestIn = {
 /**
  * CredentialUpdateIn
  *
- * 不给或给 ``null`` 的项不动。
+ * ``name`` 与 ``fields`` 不给或给 ``null`` 都不动；``modelGroup`` 不给不动，给 ``null`` 清掉，给值改成
+ * 这个组。
  */
 export type CredentialUpdateIn = {
   /**
@@ -1775,6 +1678,10 @@ export type CredentialUpdateIn = {
   fields?: {
     [key: string]: string
   } | null
+  /**
+   * Modelgroup
+   */
+  modelGroup?: string | null
   /**
    * Name
    */
@@ -2051,6 +1958,175 @@ export type DraftFileWriteIn = {
    * Content
    */
   content: string
+}
+
+/**
+ * DubbedLine
+ *
+ * 配好的一句：``index`` 是它在请求 ``lines`` 里的位置（合成一段语音时只有一句，是 0），``speed`` 是
+ * 加速的倍数（1 是原速），``trimmed`` 表示加速到上限也放不下、截掉了尾巴。
+ */
+export type DubbedLine = {
+  /**
+   * Index
+   */
+  index: number
+  /**
+   * Speed
+   */
+  speed: number
+  /**
+   * Trimmed
+   */
+  trimmed: boolean
+}
+
+/**
+ * DubbingIn
+ *
+ * 给一条素材片配一种外语的受理输入：每句译文按 ``lines`` 的时间放，用参考音频的声音合成。
+ *
+ * ``lines`` 按开始时间排好、互不重叠，都在素材片的时长之内（时长在受理时核对）。归属参数与
+ * ``userName`` 的规则同字幕识别。
+ */
+export type DubbingIn = {
+  /**
+   * Conversationid
+   */
+  conversationId?: string | null
+  /**
+   * Lines
+   *
+   * 每句的 text 最多 500 字，所有 text 加起来最多 4000 字
+   */
+  lines: Array<DubbingLine>
+  /**
+   * Locale
+   */
+  locale: 'zh' | 'en' | 'de' | 'es' | 'fr'
+  /**
+   * Metadata
+   */
+  metadata?: {
+    [key: string]: unknown
+  } | null
+  /**
+   * Reference
+   */
+  reference:
+    | ({
+        kind: 'original'
+      } & DubbingOriginalReference)
+    | ({
+        kind: 'reference_audio'
+      } & DubbingVoiceReferenceIn)
+    | ({
+        kind: 'upload'
+      } & DubbingUploadReferenceIn)
+  /**
+   * Sourcejobid
+   */
+  sourceJobId: string
+  /**
+   * Taskid
+   */
+  taskId?: string | null
+  /**
+   * Username
+   */
+  userName?: string | null
+}
+
+/**
+ * DubbingLine
+ *
+ * 要配的一句：在素材片视频里的起止（毫秒，与字幕记录的 ``sentences`` 同一口径）与译文。
+ */
+export type DubbingLine = {
+  /**
+   * Endms
+   */
+  endMs: number
+  /**
+   * Slotendms
+   *
+   * 这句最晚占到哪儿（毫秒）；不写时占到下一句开始，最后一句到素材片结尾
+   */
+  slotEndMs?: number | null
+  /**
+   * Startms
+   */
+  startMs: number
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * DubbingOriginalReference
+ *
+ * 参考音频取素材片自己的原声：服务端从被说话时段覆盖得最多的一段里截。
+ */
+export type DubbingOriginalReference = {
+  /**
+   * Kind
+   */
+  kind: 'original'
+  /**
+   * Spans
+   *
+   * 这条素材片里有人说话的时段，按开始时间排好、互不重叠、在素材片时长之内；截原声参考按它算，不写时按 lines 算
+   */
+  spans?: Array<DubbingSpeechSpan> | null
+}
+
+/**
+ * DubbingSpeechSpan
+ *
+ * 素材片里有人说话的一段：起止（毫秒，与 ``lines`` 同一口径）。
+ */
+export type DubbingSpeechSpan = {
+  /**
+   * Endms
+   */
+  endMs: number
+  /**
+   * Startms
+   */
+  startMs: number
+}
+
+/**
+ * DubbingUploadReferenceIn
+ *
+ * 参考音频取调用者本人的一条音频上传。
+ */
+export type DubbingUploadReferenceIn = {
+  /**
+   * Kind
+   */
+  kind: 'upload'
+  /**
+   * Uploadid
+   */
+  uploadId: string
+}
+
+/**
+ * DubbingVoiceReferenceIn
+ *
+ * 参考音频取参考音频库里一条没移除的音色。
+ */
+export type DubbingVoiceReferenceIn = {
+  /**
+   * Kind
+   */
+  kind: 'reference_audio'
+  /**
+   * Referenceid
+   */
+  referenceId: string
 }
 
 /**
@@ -2654,6 +2730,149 @@ export type FilmViewOut = {
 }
 
 /**
+ * FinalCutFileCreatedOut
+ *
+ * 新建的文件：``path`` 与请求里的相同（相对工程根），工作区里的路径是 ``final-cut/`` 加上它；
+ * ``version`` 是工作区文件的版本号，之后用 ``PUT /conversations/{id}/workspace/file`` 修改。
+ */
+export type FinalCutFileCreatedOut = {
+  /**
+   * Path
+   */
+  path: string
+  /**
+   * Version
+   */
+  version: number
+}
+
+/**
+ * FinalCutFileIn
+ *
+ * 在 final-cut 工程里新建一个文件。``path`` 相对工程根，如 ``index.html``。
+ */
+export type FinalCutFileIn = {
+  /**
+   * Content
+   */
+  content: string
+  /**
+   * Path
+   */
+  path: string
+}
+
+/**
+ * FinalCutPreviewHostOut
+ *
+ * 发令牌时请求的 ``Origin``：预览页只接受来自这个来源的消息。
+ */
+export type FinalCutPreviewHostOut = {
+  /**
+   * Apporigin
+   */
+  appOrigin: string
+}
+
+/**
+ * FinalCutPreviewOut
+ *
+ * 预览令牌。预览页的地址由前端拼成 ``<origin>/api/final-cut/preview/<token>/…``。
+ */
+export type FinalCutPreviewOut = {
+  /**
+   * Expiresat
+   */
+  expiresAt: string
+  /**
+   * Origin
+   */
+  origin: string
+  /**
+   * Token
+   */
+  token: string
+}
+
+/**
+ * FinalCutTextIn
+ *
+ * 一条要翻的原文：``id`` 是编辑器里变量的 id，``text`` 不能只有空白。
+ */
+export type FinalCutTextIn = {
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * FinalCutTranslationErrorOut
+ *
+ * 翻译失败：``model_unavailable`` 没有启用翻译用的模型（409）；``model_call_failed`` 模型调用
+ * 暂时失败，再试一次可能就好（502）；``model_failed`` 模型拒绝、等待超时或回答不对（502）。
+ */
+export type FinalCutTranslationErrorOut = {
+  /**
+   * Code
+   */
+  code: 'model_unavailable' | 'model_call_failed' | 'model_failed'
+  /**
+   * Detail
+   */
+  detail: string
+}
+
+/**
+ * FinalCutTranslationOut
+ */
+export type FinalCutTranslationOut = {
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Text
+   */
+  text: string
+}
+
+/**
+ * FinalCutTranslationsIn
+ *
+ * 把一批原文短句翻成 ``targetLocale``。原文什么语言都行，不用声明；``entries`` 里的 ``id``
+ * 不能重复。
+ */
+export type FinalCutTranslationsIn = {
+  /**
+   * Entries
+   *
+   * 所有 text 加起来最多 4000 字，超了要分批发
+   */
+  entries: Array<FinalCutTextIn>
+  /**
+   * Targetlocale
+   */
+  targetLocale: 'zh' | 'en' | 'de' | 'es' | 'fr'
+}
+
+/**
+ * FinalCutTranslationsOut
+ *
+ * 译文：请求里的每个 ``id`` 恰好一条，顺序同请求。
+ */
+export type FinalCutTranslationsOut = {
+  /**
+   * Translations
+   */
+  translations: Array<FinalCutTranslationOut>
+}
+
+/**
  * FrameTarget
  */
 export type FrameTarget = {
@@ -2734,6 +2953,10 @@ export type GenerationOut = {
    */
   createdAt: string
   /**
+   * Dubbedlines
+   */
+  dubbedLines?: Array<DubbedLine> | null
+  /**
    * Durationms
    */
   durationMs: number | null
@@ -2752,7 +2975,7 @@ export type GenerationOut = {
   /**
    * Kind
    */
-  kind: 'video' | 'image' | 'subtitle' | 'audio' | 'whole_film'
+  kind: 'video' | 'image' | 'subtitle' | 'dubbing' | 'speech' | 'audio' | 'whole_film'
   /**
    * Metadata
    */
@@ -2762,7 +2985,7 @@ export type GenerationOut = {
   /**
    * Operation
    */
-  operation: 'generate' | 'compose' | 'cut' | 'upload' | 'render' | 'enhance'
+  operation: 'generate' | 'compose' | 'cut' | 'render' | 'enhance' | 'trial'
   /**
    * Outputurl
    */
@@ -4002,6 +4225,18 @@ export type MetricsOut = {
 }
 
 /**
+ * ModelGroupsOut
+ *
+ * ``config.yaml`` 里配置的组名，按配置里的先后；没配时为空。
+ */
+export type ModelGroupsOut = {
+  /**
+   * Groups
+   */
+  groups: Array<string>
+}
+
+/**
  * ModelOptionOut
  *
  * agent 能选的一个对话模型。
@@ -4653,23 +4888,169 @@ export type ProviderOptionOut = {
 }
 
 /**
- * ReferenceCreateIn
+ * ReferenceAudioCreateIn
+ *
+ * 把一段音频放进参考音频库：调用者本人的一条音频上传（``uploadId``），或调用者看得到的一条已完成
+ * 的背景音乐（``sourceJobId``）。台词只有音色能填。
  */
-export type ReferenceCreateIn = {
+export type ReferenceAudioCreateIn = {
+  /**
+   * Audiokind
+   */
+  audioKind: 'voice' | 'bgm' | 'sfx'
+  /**
+   * Description
+   */
+  description?: string | null
+  /**
+   * Locale
+   */
+  locale?: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
+  /**
+   * Sourcejobid
+   */
+  sourceJobId?: string | null
+  /**
+   * Title
+   */
+  title: string
+  /**
+   * Transcript
+   */
+  transcript?: string | null
   /**
    * Uploadid
    */
-  uploadId: string
+  uploadId?: string | null
+  /**
+   * Username
+   */
+  userName?: string | null
 }
 
 /**
- * ReferenceFiltersOut
+ * ReferenceAudioFiltersOut
  */
-export type ReferenceFiltersOut = {
+export type ReferenceAudioFiltersOut = {
+  /**
+   * Audiokinds
+   */
+  audioKinds: Array<AudioKindCountOut>
   /**
    * Owners
    */
   owners: Array<OwnerCountOut>
+}
+
+/**
+ * ReferenceAudioOut
+ *
+ * 一条参考音频。
+ */
+export type ReferenceAudioOut = {
+  /**
+   * Audiokind
+   */
+  audioKind: 'voice' | 'bgm' | 'sfx'
+  /**
+   * Canedit
+   */
+  canEdit: boolean
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Description
+   */
+  description: string | null
+  /**
+   * Durationms
+   */
+  durationMs: number
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Locale
+   */
+  locale: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
+  /**
+   * Sourcejobid
+   */
+  sourceJobId: string | null
+  /**
+   * Title
+   */
+  title: string
+  /**
+   * Transcript
+   */
+  transcript: string | null
+  /**
+   * Updatedat
+   */
+  updatedAt: string
+  /**
+   * Uploadid
+   */
+  uploadId: string | null
+  /**
+   * Url
+   */
+  url: string
+  /**
+   * Username
+   */
+  userName: string | null
+}
+
+/**
+ * ReferenceAudioUpdateIn
+ *
+ * 改一条参考音频：给了的字段才改，``description`` / ``locale`` / ``transcript`` 给 ``null`` 是
+ * 清空；标题不能清空。台词只有音色能填。
+ */
+export type ReferenceAudioUpdateIn = {
+  /**
+   * Description
+   */
+  description?: string | null
+  /**
+   * Locale
+   */
+  locale?: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
+  /**
+   * Title
+   */
+  title?: string | null
+  /**
+   * Transcript
+   */
+  transcript?: string | null
+}
+
+/**
+ * ReferenceAudiosOut
+ */
+export type ReferenceAudiosOut = {
+  /**
+   * Canupload
+   */
+  canUpload: boolean
+  /**
+   * Items
+   */
+  items: Array<ReferenceAudioOut>
+  /**
+   * Nextcursor
+   */
+  nextCursor: string | null
+  /**
+   * Total
+   */
+  total: number | null
 }
 
 /**
@@ -4685,19 +5066,30 @@ export type ReferenceTagsIn = {
 }
 
 /**
- * ReferenceUpdateIn
+ * ReferenceVideoCreateIn
  *
- * 改拆解正文。
+ * 把一条视频放进资料库：调用者本人的一条视频上传（``uploadId``），或调用者看得到的一条已完成的
+ * 素材片（``sourceJobId``）。
  */
-export type ReferenceUpdateIn = {
+export type ReferenceVideoCreateIn = {
   /**
-   * Document
+   * Sourcejobid
    */
-  document: string
+  sourceJobId?: string | null
   /**
-   * Version
+   * Uploadid
    */
-  version: number
+  uploadId?: string | null
+}
+
+/**
+ * ReferenceVideoFiltersOut
+ */
+export type ReferenceVideoFiltersOut = {
+  /**
+   * Owners
+   */
+  owners: Array<OwnerCountOut>
 }
 
 /**
@@ -4829,6 +5221,22 @@ export type ReferenceVideoOut = {
    * Videourl
    */
   videoUrl: string
+}
+
+/**
+ * ReferenceVideoUpdateIn
+ *
+ * 改拆解正文。
+ */
+export type ReferenceVideoUpdateIn = {
+  /**
+   * Document
+   */
+  document: string
+  /**
+   * Version
+   */
+  version: number
 }
 
 /**
@@ -5322,6 +5730,50 @@ export type SkillsOut = {
 }
 
 /**
+ * SpeechIn
+ *
+ * 按文字合成一段语音的受理输入：用参考音频库里一个音色的声音把 ``text`` 念出来。
+ *
+ * ``locale`` 不给时不声明用哪种语言念（final-cut 的原文没有声明语言）。``maxDurationMs`` 给了时念出来
+ * 更长就照配音每句的规则先加速、再截尾。归属参数与 ``userName`` 的规则同配音。
+ */
+export type SpeechIn = {
+  /**
+   * Conversationid
+   */
+  conversationId?: string | null
+  /**
+   * Locale
+   */
+  locale?: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
+  /**
+   * Maxdurationms
+   *
+   * 最长多少毫秒；不写时念多长就是多长
+   */
+  maxDurationMs?: number | null
+  /**
+   * Metadata
+   */
+  metadata?: {
+    [key: string]: unknown
+  } | null
+  reference: DubbingVoiceReferenceIn
+  /**
+   * Taskid
+   */
+  taskId?: string | null
+  /**
+   * Text
+   */
+  text: string
+  /**
+   * Username
+   */
+  userName?: string | null
+}
+
+/**
  * SpreadOut
  *
  * 一组时长样本的分布，单位秒。
@@ -5492,7 +5944,7 @@ export type SubagentConfig = {
 /**
  * SubtitleIn
  *
- * 手动识别一条素材片的受理输入：补识别旧视频，或识别失败后另起一次。
+ * 按需识别一条素材片的受理输入；识别失败后可以另起一次。
  *
  * 归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别
  * 服务不收它，不进 ``request``。
@@ -6016,6 +6468,10 @@ export type TestVideoOut = {
    * Errormessage
    */
   errorMessage: string | null
+  /**
+   * Jobid
+   */
+  jobId: string
   /**
    * Stale
    */
@@ -6577,7 +7033,7 @@ export type TurnUsage = {
 /**
  * UploadConfirmIn
  *
- * 确认上传时可选的请求体：替谁确认，音乐挂到哪段对话。
+ * 确认上传时可选的请求体：替谁确认，挂到哪段对话，图片多大（签名时报的那两个数）。
  */
 export type UploadConfirmIn = {
   /**
@@ -6585,29 +7041,17 @@ export type UploadConfirmIn = {
    */
   conversationId?: string | null
   /**
+   * Height
+   */
+  height?: number | null
+  /**
    * Username
    */
   userName?: string | null
-}
-
-/**
- * UploadConfirmedOut
- *
- * 确认后交回的地址与桶里读到的事实；``url`` 从此就是这个文件的身份。
- */
-export type UploadConfirmedOut = {
   /**
-   * Contenttype
+   * Width
    */
-  contentType: string
-  /**
-   * Sizebytes
-   */
-  sizeBytes: number
-  /**
-   * Url
-   */
-  url: string
+  width?: number | null
 }
 
 /**
@@ -6637,6 +7081,57 @@ export type UploadInstruction = {
    * Url
    */
   url: string
+}
+
+/**
+ * UploadOut
+ *
+ * 上传台账里的一条。``url`` 从此就是这个文件的身份；视频按 MD5 去重时是最早那份的地址。
+ *
+ * ``contentType`` 与 ``sizeBytes`` 只有台账建立以前的旧上传为空。``width`` / ``height`` 是图片
+ * 确认时报的宽高，没报的、别的种类为空。确认上传不量时长，``durationMs`` 为空。
+ */
+export type UploadOut = {
+  /**
+   * Contenttype
+   */
+  contentType: string | null
+  /**
+   * Conversationid
+   */
+  conversationId: string | null
+  /**
+   * Createdat
+   */
+  createdAt: string
+  /**
+   * Durationms
+   */
+  durationMs: number | null
+  /**
+   * Height
+   */
+  height: number | null
+  /**
+   * Id
+   */
+  id: string
+  /**
+   * Kind
+   */
+  kind: 'image' | 'video' | 'audio'
+  /**
+   * Sizebytes
+   */
+  sizeBytes: number | null
+  /**
+   * Url
+   */
+  url: string
+  /**
+   * Width
+   */
+  width: number | null
 }
 
 /**
@@ -6673,6 +7168,16 @@ export type UploadTicketOut = {
    * Uploadid
    */
   uploadId: string
+}
+
+/**
+ * UploadsPageOut
+ */
+export type UploadsPageOut = {
+  /**
+   * Items
+   */
+  items: Array<UploadOut>
 }
 
 /**
@@ -7112,7 +7617,8 @@ export type VideoEnhancementsOut = {
  *
  * 只拦本系统能判的：模型在允许表里（受理层）、地址是 http(s)、秒数不小于 -1、``shot``
  * 自身对得上（图片引用不越界、编号与正文一致）。画幅、分辨率、时长范围、素材规格由上游
- * 按模型判，这里不复制一份。
+ * 按模型判，这里不复制一份。``reference_ids`` 是这次用到的参考资产，受理时核对都在资料库里、
+ * 没移除，只记进请求快照，不发给上游。
  */
 export type VideoGenerationIn = {
   /**
@@ -7151,6 +7657,10 @@ export type VideoGenerationIn = {
    * Reference Audio Urls
    */
   reference_audio_urls?: Array<string>
+  /**
+   * Reference Ids
+   */
+  reference_ids?: Array<string>
   /**
    * Reference Image Urls
    */
@@ -7345,94 +7855,6 @@ export type VideoTaskResult = {
 }
 
 /**
- * WholeFilmCanvas
- */
-export type WholeFilmCanvas = {
-  /**
-   * Height
-   */
-  height: number
-  /**
-   * Width
-   */
-  width: number
-}
-
-/**
- * WholeFilmCaptionEdit
- *
- * 用户改过字的一句：第 ``sentenceIndex`` 句（从 0 数）换成 ``text``。
- */
-export type WholeFilmCaptionEdit = {
-  /**
-   * Sentenceindex
-   */
-  sentenceIndex: number
-  /**
-   * Subtitlejobid
-   */
-  subtitleJobId: string
-  /**
-   * Text
-   */
-  text: string
-}
-
-/**
- * WholeFilmCaptions
- *
- * 字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。
- * ``x``、``y``、``scale``、``rotation`` 是字幕在画面上挪开的位置、缩放与旋转，所有字幕共用一套；
- * ``pivotX``、``pivotY`` 是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，
- * 编辑器在第一次离开原大、不转时写下。``variables`` 是字幕样式的可填项，同特效块；换样式时照样
- * 保留，合成时只取当前样式声明过的项。
- */
-export type WholeFilmCaptions = {
-  /**
-   * Component
-   */
-  component: string
-  /**
-   * Edits
-   */
-  edits: Array<WholeFilmCaptionEdit>
-  /**
-   * Hidden
-   */
-  hidden?: boolean
-  /**
-   * Pivotx
-   */
-  pivotX?: number
-  /**
-   * Pivoty
-   */
-  pivotY?: number
-  /**
-   * Rotation
-   */
-  rotation?: number
-  /**
-   * Scale
-   */
-  scale?: number
-  /**
-   * Variables
-   */
-  variables?: {
-    [key: string]: boolean | number | number | string
-  }
-  /**
-   * X
-   */
-  x?: number
-  /**
-   * Y
-   */
-  y?: number
-}
-
-/**
  * WholeFilmCardOut
  *
  * 资料库「成片」的一张卡：一段对话自己的全部导出，不含继承来的。成片没有脚本，不能做同款。
@@ -7480,109 +7902,6 @@ export type WholeFilmCardsOut = {
 }
 
 /**
- * WholeFilmComponentClip
- *
- * 画面轨上的一段组件，与视频段同等占时间；从组件自己时间里的 ``playbackStart`` 起播。
- */
-export type WholeFilmComponentClip = {
-  /**
-   * Component
-   */
-  component: string
-  /**
-   * Duration
-   */
-  duration: number
-  /**
-   * Id
-   */
-  id: string
-  /**
-   * Playbackstart
-   */
-  playbackStart: number
-  /**
-   * Start
-   */
-  start: number
-  /**
-   * Type
-   */
-  type: 'component'
-  /**
-   * Variables
-   */
-  variables: {
-    [key: string]: boolean | number | number | string
-  }
-}
-
-/**
- * WholeFilmDocument
- *
- * 一段对话的成片草稿。
- */
-export type WholeFilmDocument = {
-  canvas: WholeFilmCanvas | null
-  captions: WholeFilmCaptions
-  /**
-   * Layer0
-   */
-  layer0: Array<WholeFilmVideoClip | WholeFilmComponentClip>
-  music: WholeFilmMusic | null
-  /**
-   * Overlays
-   */
-  overlays: Array<WholeFilmOverlay>
-}
-
-/**
- * WholeFilmDraftIn
- *
- * 整份保存草稿。``revision`` 是读到的那一版，还没有草稿时是 0。
- */
-export type WholeFilmDraftIn = {
-  document: WholeFilmDocument
-  /**
-   * Revision
-   */
-  revision: number
-}
-
-/**
- * WholeFilmDraftOut
- *
- * 当前的草稿；还没存过时 ``revision`` 是 0，``document`` 与 ``updatedAt`` 为 null。
- */
-export type WholeFilmDraftOut = {
-  document: WholeFilmDocument | null
-  /**
-   * Revision
-   */
-  revision: number
-  /**
-   * Updatedat
-   */
-  updatedAt: string | null
-}
-
-/**
- * WholeFilmDraftSavedOut
- *
- * 保存后的新版本号与保存时刻。
- */
-export type WholeFilmDraftSavedOut = {
-  /**
-   * Revision
-   */
-  revision: number
-  /**
-   * Updatedat
-   */
-  updatedAt: string
-}
-
-/**
  * WholeFilmExportErrorOut
  */
 export type WholeFilmExportErrorOut = {
@@ -7599,13 +7918,13 @@ export type WholeFilmExportErrorOut = {
 /**
  * WholeFilmExportIn
  *
- * 按当前草稿导出；``revision`` 是页面上那一版，不是服务端存的那一版就不导。
+ * 发起导出：``locale`` 是导出哪种语言的版本，不带或 null 导出原文。
  */
 export type WholeFilmExportIn = {
   /**
-   * Revision
+   * Locale
    */
-  revision: number
+  locale?: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
 }
 
 /**
@@ -7620,7 +7939,8 @@ export type WholeFilmExportLatestOut = {
 /**
  * WholeFilmExportOut
  *
- * 一次导出现在的样子。``downloadUrl`` 只在 ``done`` 时有，``error`` 只在 ``failed`` 时有。
+ * 一次导出现在的样子。``locale`` 是导出的哪种语言的版本，原文时是 null。``downloadUrl`` 只在
+ * ``done`` 时有，``error`` 只在 ``failed`` 时有。
  */
 export type WholeFilmExportOut = {
   /**
@@ -7632,6 +7952,10 @@ export type WholeFilmExportOut = {
    * Id
    */
   id: string
+  /**
+   * Locale
+   */
+  locale: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
   /**
    * Progress
    */
@@ -7659,99 +7983,6 @@ export type WholeFilmExportStartedOut = {
 }
 
 /**
- * WholeFilmMusic
- *
- * 背景音乐从头铺到尾：``offset`` 是音乐文件里与成片 0 毫秒对齐的那一刻。
- */
-export type WholeFilmMusic = {
-  /**
-   * Jobid
-   */
-  jobId: string
-  /**
-   * Offset
-   */
-  offset: number
-  /**
-   * Volume
-   */
-  volume: number
-}
-
-/**
- * WholeFilmOverlay
- *
- * 特效轨上的一个组件，按成片时间放在 ``[start, start + duration)``，从组件自己时间里的
- * ``playbackStart`` 起播。
- *
- * 同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块
- * 之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。
- * ``x``、``y``、``scale``、``rotation`` 是它在画面上挪开的位置、缩放与旋转；``pivotX``、``pivotY``
- * 是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，编辑器在第一次离开原大、
- * 不转时写下。
- */
-export type WholeFilmOverlay = {
-  /**
-   * Component
-   */
-  component: string
-  /**
-   * Duration
-   */
-  duration: number
-  /**
-   * Id
-   */
-  id: string
-  /**
-   * Pivotx
-   */
-  pivotX?: number
-  /**
-   * Pivoty
-   */
-  pivotY?: number
-  /**
-   * Playbackstart
-   */
-  playbackStart: number
-  /**
-   * Rotation
-   */
-  rotation?: number
-  /**
-   * Scale
-   */
-  scale?: number
-  /**
-   * Start
-   */
-  start: number
-  /**
-   * Track
-   */
-  track: number
-  /**
-   * Variables
-   */
-  variables: {
-    [key: string]: boolean | number | number | string
-  }
-  /**
-   * X
-   */
-  x?: number
-  /**
-   * Y
-   */
-  y?: number
-  /**
-   * Zindex
-   */
-  zIndex: number
-}
-
-/**
  * WholeFilmVersionOut
  *
  * 成片卡里的一版：这段对话的一次已完成导出。
@@ -7773,42 +8004,6 @@ export type WholeFilmVersionOut = {
    * Username
    */
   userName: string | null
-}
-
-/**
- * WholeFilmVideoClip
- *
- * 画面轨上的一段素材片：取它自己媒体时间里从 ``playbackStart`` 起的 ``duration``。
- */
-export type WholeFilmVideoClip = {
-  /**
-   * Duration
-   */
-  duration: number
-  /**
-   * Id
-   */
-  id: string
-  /**
-   * Playbackstart
-   */
-  playbackStart: number
-  /**
-   * Sourcejobid
-   */
-  sourceJobId: string
-  /**
-   * Start
-   */
-  start: number
-  /**
-   * Type
-   */
-  type: 'video'
-  /**
-   * Volume
-   */
-  volume: number
 }
 
 export type ListAgentsAgentsGetData = {
@@ -8658,169 +8853,6 @@ export type CallbackAuthSsoCallbackGetResponses = {
   200: unknown
 }
 
-export type ListBrandTemplatesBrandTemplatesGetData = {
-  body?: never
-  path?: never
-  query?: {
-    /**
-     * Kind
-     */
-    kind?: string | null
-    /**
-     * Brand
-     */
-    brand?: string | null
-    /**
-     * Includedisabled
-     */
-    includeDisabled?: boolean
-  }
-  url: '/brand-templates'
-}
-
-export type ListBrandTemplatesBrandTemplatesGetErrors = {
-  /**
-   * Validation Error
-   */
-  422: HttpValidationError
-}
-
-export type ListBrandTemplatesBrandTemplatesGetError =
-  ListBrandTemplatesBrandTemplatesGetErrors[keyof ListBrandTemplatesBrandTemplatesGetErrors]
-
-export type ListBrandTemplatesBrandTemplatesGetResponses = {
-  /**
-   * Successful Response
-   */
-  200: BrandTemplatesOut
-}
-
-export type ListBrandTemplatesBrandTemplatesGetResponse =
-  ListBrandTemplatesBrandTemplatesGetResponses[keyof ListBrandTemplatesBrandTemplatesGetResponses]
-
-export type SignFontBrandTemplatesFontsSignPostData = {
-  body: BrandFontSignIn
-  path?: never
-  query?: never
-  url: '/brand-templates/fonts/sign'
-}
-
-export type SignFontBrandTemplatesFontsSignPostErrors = {
-  /**
-   * Validation Error
-   */
-  422: HttpValidationError
-}
-
-export type SignFontBrandTemplatesFontsSignPostError =
-  SignFontBrandTemplatesFontsSignPostErrors[keyof SignFontBrandTemplatesFontsSignPostErrors]
-
-export type SignFontBrandTemplatesFontsSignPostResponses = {
-  /**
-   * Successful Response
-   */
-  200: UploadTicketOut
-}
-
-export type SignFontBrandTemplatesFontsSignPostResponse =
-  SignFontBrandTemplatesFontsSignPostResponses[keyof SignFontBrandTemplatesFontsSignPostResponses]
-
-export type ConfirmFontBrandTemplatesFontsUploadIdConfirmPostData = {
-  body: BrandFontConfirmIn
-  path: {
-    /**
-     * Upload Id
-     */
-    upload_id: string
-  }
-  query?: never
-  url: '/brand-templates/fonts/{upload_id}/confirm'
-}
-
-export type ConfirmFontBrandTemplatesFontsUploadIdConfirmPostErrors = {
-  /**
-   * Validation Error
-   */
-  422: HttpValidationError
-}
-
-export type ConfirmFontBrandTemplatesFontsUploadIdConfirmPostError =
-  ConfirmFontBrandTemplatesFontsUploadIdConfirmPostErrors[keyof ConfirmFontBrandTemplatesFontsUploadIdConfirmPostErrors]
-
-export type ConfirmFontBrandTemplatesFontsUploadIdConfirmPostResponses = {
-  /**
-   * Successful Response
-   */
-  201: BrandTemplateOut
-}
-
-export type ConfirmFontBrandTemplatesFontsUploadIdConfirmPostResponse =
-  ConfirmFontBrandTemplatesFontsUploadIdConfirmPostResponses[keyof ConfirmFontBrandTemplatesFontsUploadIdConfirmPostResponses]
-
-export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchData = {
-  body: BrandTemplateUpdateIn
-  path: {
-    /**
-     * Template Id
-     */
-    template_id: string
-  }
-  query?: never
-  url: '/brand-templates/{template_id}'
-}
-
-export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchErrors = {
-  /**
-   * Validation Error
-   */
-  422: HttpValidationError
-}
-
-export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchError =
-  UpdateBrandTemplateBrandTemplatesTemplateIdPatchErrors[keyof UpdateBrandTemplateBrandTemplatesTemplateIdPatchErrors]
-
-export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchResponses = {
-  /**
-   * Successful Response
-   */
-  200: BrandTemplateOut
-}
-
-export type UpdateBrandTemplateBrandTemplatesTemplateIdPatchResponse =
-  UpdateBrandTemplateBrandTemplatesTemplateIdPatchResponses[keyof UpdateBrandTemplateBrandTemplatesTemplateIdPatchResponses]
-
-export type FontInfoBrandTemplatesTemplateIdFontInfoGetData = {
-  body?: never
-  path: {
-    /**
-     * Template Id
-     */
-    template_id: string
-  }
-  query?: never
-  url: '/brand-templates/{template_id}/font-info'
-}
-
-export type FontInfoBrandTemplatesTemplateIdFontInfoGetErrors = {
-  /**
-   * Validation Error
-   */
-  422: HttpValidationError
-}
-
-export type FontInfoBrandTemplatesTemplateIdFontInfoGetError =
-  FontInfoBrandTemplatesTemplateIdFontInfoGetErrors[keyof FontInfoBrandTemplatesTemplateIdFontInfoGetErrors]
-
-export type FontInfoBrandTemplatesTemplateIdFontInfoGetResponses = {
-  /**
-   * Successful Response
-   */
-  200: BrandFontInfoOut
-}
-
-export type FontInfoBrandTemplatesTemplateIdFontInfoGetResponse =
-  FontInfoBrandTemplatesTemplateIdFontInfoGetResponses[keyof FontInfoBrandTemplatesTemplateIdFontInfoGetResponses]
-
 export type ListCollectionsCollectionsGetData = {
   body?: never
   path?: never
@@ -9638,6 +9670,110 @@ export type GenerateConversationFilmVideoConversationsConversationIdFilmVideoGen
 export type GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostResponse =
   GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostResponses[keyof GenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostResponses]
 
+export type CreateFinalCutFileConversationsConversationIdFinalCutFilesPostData = {
+  body: FinalCutFileIn
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/final-cut/files'
+}
+
+export type CreateFinalCutFileConversationsConversationIdFinalCutFilesPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateFinalCutFileConversationsConversationIdFinalCutFilesPostError =
+  CreateFinalCutFileConversationsConversationIdFinalCutFilesPostErrors[keyof CreateFinalCutFileConversationsConversationIdFinalCutFilesPostErrors]
+
+export type CreateFinalCutFileConversationsConversationIdFinalCutFilesPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: FinalCutFileCreatedOut
+}
+
+export type CreateFinalCutFileConversationsConversationIdFinalCutFilesPostResponse =
+  CreateFinalCutFileConversationsConversationIdFinalCutFilesPostResponses[keyof CreateFinalCutFileConversationsConversationIdFinalCutFilesPostResponses]
+
+export type OpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostData = {
+  body?: never
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/final-cut/preview'
+}
+
+export type OpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type OpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostError =
+  OpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostErrors[keyof OpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostErrors]
+
+export type OpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: FinalCutPreviewOut
+}
+
+export type OpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostResponse =
+  OpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostResponses[keyof OpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostResponses]
+
+export type TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostData = {
+  body: FinalCutTranslationsIn
+  path: {
+    /**
+     * Conversation Id
+     */
+    conversation_id: string
+  }
+  query?: never
+  url: '/conversations/{conversation_id}/final-cut/translations'
+}
+
+export type TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostErrors = {
+  /**
+   * code 为 model_unavailable：没有启用翻译用的模型
+   */
+  409: FinalCutTranslationErrorOut
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+  /**
+   * code 为 model_call_failed（可以再试）或 model_failed（模型拒绝、超时或回答不对）
+   */
+  502: FinalCutTranslationErrorOut
+}
+
+export type TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostError =
+  TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostErrors[keyof TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostErrors]
+
+export type TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostResponses = {
+  /**
+   * Successful Response
+   */
+  200: FinalCutTranslationsOut
+}
+
+export type TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostResponse =
+  TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostResponses[keyof TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostResponses]
+
 export type ApproveConversationsConversationIdInteractionsInteractionIdPostData = {
   body: ApprovalRequest
   path: {
@@ -10003,7 +10139,7 @@ export type RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostRespon
 export type RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponse =
   RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponses[keyof RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponses]
 
-export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetData = {
+export type ListConversationUploadsConversationsConversationIdUploadsGetData = {
   body?: never
   path: {
     /**
@@ -10011,64 +10147,48 @@ export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetData =
      */
     conversation_id: string
   }
-  query?: never
-  url: '/conversations/{conversation_id}/whole-film/draft'
-}
-
-export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetErrors = {
-  /**
-   * Validation Error
-   */
-  422: HttpValidationError
-}
-
-export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetError =
-  ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetErrors[keyof ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetErrors]
-
-export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponses = {
-  /**
-   * Successful Response
-   */
-  200: WholeFilmDraftOut
-}
-
-export type ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponse =
-  ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponses[keyof ReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponses]
-
-export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutData = {
-  body: WholeFilmDraftIn
-  path: {
+  query?: {
     /**
-     * Conversation Id
+     * Limit
      */
-    conversation_id: string
+    limit?: number
+    /**
+     * Kind
+     */
+    kind?: 'image' | 'video' | 'audio' | null
+    /**
+     * Before
+     */
+    before?: string | null
   }
-  query?: never
-  url: '/conversations/{conversation_id}/whole-film/draft'
+  url: '/conversations/{conversation_id}/uploads'
 }
 
-export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutErrors = {
+export type ListConversationUploadsConversationsConversationIdUploadsGetErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutError =
-  SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutErrors[keyof SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutErrors]
+export type ListConversationUploadsConversationsConversationIdUploadsGetError =
+  ListConversationUploadsConversationsConversationIdUploadsGetErrors[keyof ListConversationUploadsConversationsConversationIdUploadsGetErrors]
 
-export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponses = {
+export type ListConversationUploadsConversationsConversationIdUploadsGetResponses = {
   /**
    * Successful Response
    */
-  200: WholeFilmDraftSavedOut
+  200: UploadsPageOut
 }
 
-export type SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponse =
-  SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponses[keyof SaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponses]
+export type ListConversationUploadsConversationsConversationIdUploadsGetResponse =
+  ListConversationUploadsConversationsConversationIdUploadsGetResponses[keyof ListConversationUploadsConversationsConversationIdUploadsGetResponses]
 
 export type ExportWholeFilmConversationsConversationIdWholeFilmExportsPostData = {
-  body: WholeFilmExportIn
+  /**
+   * Body
+   */
+  body?: WholeFilmExportIn | null
   path: {
     /**
      * Conversation Id
@@ -10382,6 +10502,74 @@ export type SetDefaultModelDefaultModelsModelTypePutResponses = {
 export type SetDefaultModelDefaultModelsModelTypePutResponse =
   SetDefaultModelDefaultModelsModelTypePutResponses[keyof SetDefaultModelDefaultModelsModelTypePutResponses]
 
+export type ReadFinalCutPreviewFileFinalCutPreviewTokenFilesPathGetData = {
+  body?: never
+  path: {
+    /**
+     * Token
+     */
+    token: string
+    /**
+     * Path
+     */
+    path: string
+  }
+  query?: never
+  url: '/final-cut/preview/{token}/files/{path}'
+}
+
+export type ReadFinalCutPreviewFileFinalCutPreviewTokenFilesPathGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReadFinalCutPreviewFileFinalCutPreviewTokenFilesPathGetError =
+  ReadFinalCutPreviewFileFinalCutPreviewTokenFilesPathGetErrors[keyof ReadFinalCutPreviewFileFinalCutPreviewTokenFilesPathGetErrors]
+
+export type ReadFinalCutPreviewFileFinalCutPreviewTokenFilesPathGetResponses = {
+  /**
+   * 工程文件的原文，类型按扩展名给出
+   */
+  200: Blob | File
+}
+
+export type ReadFinalCutPreviewFileFinalCutPreviewTokenFilesPathGetResponse =
+  ReadFinalCutPreviewFileFinalCutPreviewTokenFilesPathGetResponses[keyof ReadFinalCutPreviewFileFinalCutPreviewTokenFilesPathGetResponses]
+
+export type ReadFinalCutPreviewHostFinalCutPreviewTokenHostGetData = {
+  body?: never
+  path: {
+    /**
+     * Token
+     */
+    token: string
+  }
+  query?: never
+  url: '/final-cut/preview/{token}/host'
+}
+
+export type ReadFinalCutPreviewHostFinalCutPreviewTokenHostGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ReadFinalCutPreviewHostFinalCutPreviewTokenHostGetError =
+  ReadFinalCutPreviewHostFinalCutPreviewTokenHostGetErrors[keyof ReadFinalCutPreviewHostFinalCutPreviewTokenHostGetErrors]
+
+export type ReadFinalCutPreviewHostFinalCutPreviewTokenHostGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: FinalCutPreviewHostOut
+}
+
+export type ReadFinalCutPreviewHostFinalCutPreviewTokenHostGetResponse =
+  ReadFinalCutPreviewHostFinalCutPreviewTokenHostGetResponses[keyof ReadFinalCutPreviewHostFinalCutPreviewTokenHostGetResponses]
+
 export type ListGenerationsGenerationsGetData = {
   body?: never
   path?: never
@@ -10407,11 +10595,11 @@ export type ListGenerationsGenerationsGetData = {
     /**
      * Kind
      */
-    kind?: 'video' | 'image' | 'subtitle' | 'audio' | 'whole_film' | null
+    kind?: 'video' | 'image' | 'subtitle' | 'dubbing' | 'speech' | 'audio' | 'whole_film' | null
     /**
      * Operation
      */
-    operation?: 'generate' | 'compose' | 'cut' | 'upload' | 'render' | 'enhance' | null
+    operation?: 'generate' | 'compose' | 'cut' | 'render' | 'enhance' | 'trial' | null
     /**
      * Rootjobid
      *
@@ -10457,6 +10645,33 @@ export type ListGenerationsGenerationsGetResponses = {
 
 export type ListGenerationsGenerationsGetResponse =
   ListGenerationsGenerationsGetResponses[keyof ListGenerationsGenerationsGetResponses]
+
+export type SubmitDubbingGenerationsDubbingsPostData = {
+  body: DubbingIn
+  path?: never
+  query?: never
+  url: '/generations/dubbings'
+}
+
+export type SubmitDubbingGenerationsDubbingsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SubmitDubbingGenerationsDubbingsPostError =
+  SubmitDubbingGenerationsDubbingsPostErrors[keyof SubmitDubbingGenerationsDubbingsPostErrors]
+
+export type SubmitDubbingGenerationsDubbingsPostResponses = {
+  /**
+   * Successful Response
+   */
+  202: GenerationEnvelope
+}
+
+export type SubmitDubbingGenerationsDubbingsPostResponse =
+  SubmitDubbingGenerationsDubbingsPostResponses[keyof SubmitDubbingGenerationsDubbingsPostResponses]
 
 export type SubmitImageGenerationsImagePostData = {
   body: ImageGenerationIn
@@ -10528,6 +10743,33 @@ export type SubmitMusicGenerationsMusicPostResponses = {
 
 export type SubmitMusicGenerationsMusicPostResponse =
   SubmitMusicGenerationsMusicPostResponses[keyof SubmitMusicGenerationsMusicPostResponses]
+
+export type SubmitSpeechGenerationsSpeechesPostData = {
+  body: SpeechIn
+  path?: never
+  query?: never
+  url: '/generations/speeches'
+}
+
+export type SubmitSpeechGenerationsSpeechesPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SubmitSpeechGenerationsSpeechesPostError =
+  SubmitSpeechGenerationsSpeechesPostErrors[keyof SubmitSpeechGenerationsSpeechesPostErrors]
+
+export type SubmitSpeechGenerationsSpeechesPostResponses = {
+  /**
+   * Successful Response
+   */
+  202: GenerationEnvelope
+}
+
+export type SubmitSpeechGenerationsSpeechesPostResponse =
+  SubmitSpeechGenerationsSpeechesPostResponses[keyof SubmitSpeechGenerationsSpeechesPostResponses]
 
 export type SubmitSubtitleGenerationsSubtitlesPostData = {
   body: SubtitleIn
@@ -11747,6 +11989,23 @@ export type ModelProviderDeclarationsModelProvidersDeclarationsGetResponses = {
 export type ModelProviderDeclarationsModelProvidersDeclarationsGetResponse =
   ModelProviderDeclarationsModelProvidersDeclarationsGetResponses[keyof ModelProviderDeclarationsModelProvidersDeclarationsGetResponses]
 
+export type ModelGroupsConfiguredModelProvidersGroupsGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/model-providers/groups'
+}
+
+export type ModelGroupsConfiguredModelProvidersGroupsGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ModelGroupsOut
+}
+
+export type ModelGroupsConfiguredModelProvidersGroupsGetResponse =
+  ModelGroupsConfiguredModelProvidersGroupsGetResponses[keyof ModelGroupsConfiguredModelProvidersGroupsGetResponses]
+
 export type DeleteModelProviderModelProvidersProviderIdDeleteData = {
   body?: never
   path: {
@@ -12093,7 +12352,207 @@ export type UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNameP
 export type UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchResponse =
   UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchResponses[keyof UpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchResponses]
 
-export type ListReferencesReferencesGetData = {
+export type ListReferenceAudiosReferencesAudiosGetData = {
+  body?: never
+  path?: never
+  query?: {
+    /**
+     * Audiokind
+     */
+    audioKind?: 'voice' | 'bgm' | 'sfx' | null
+    /**
+     * Locale
+     */
+    locale?: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
+    /**
+     * Username
+     */
+    userName?: string | null
+    /**
+     * Q
+     */
+    q?: string | null
+    /**
+     * Since
+     */
+    since?: string | null
+    /**
+     * Until
+     */
+    until?: string | null
+    /**
+     * Limit
+     */
+    limit?: number
+    /**
+     * Cursor
+     */
+    cursor?: string | null
+  }
+  url: '/references/audios'
+}
+
+export type ListReferenceAudiosReferencesAudiosGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type ListReferenceAudiosReferencesAudiosGetError =
+  ListReferenceAudiosReferencesAudiosGetErrors[keyof ListReferenceAudiosReferencesAudiosGetErrors]
+
+export type ListReferenceAudiosReferencesAudiosGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceAudiosOut
+}
+
+export type ListReferenceAudiosReferencesAudiosGetResponse =
+  ListReferenceAudiosReferencesAudiosGetResponses[keyof ListReferenceAudiosReferencesAudiosGetResponses]
+
+export type CreateReferenceAudioReferencesAudiosPostData = {
+  body: ReferenceAudioCreateIn
+  path?: never
+  query?: never
+  url: '/references/audios'
+}
+
+export type CreateReferenceAudioReferencesAudiosPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type CreateReferenceAudioReferencesAudiosPostError =
+  CreateReferenceAudioReferencesAudiosPostErrors[keyof CreateReferenceAudioReferencesAudiosPostErrors]
+
+export type CreateReferenceAudioReferencesAudiosPostResponses = {
+  /**
+   * Successful Response
+   */
+  201: ReferenceAudioOut
+}
+
+export type CreateReferenceAudioReferencesAudiosPostResponse =
+  CreateReferenceAudioReferencesAudiosPostResponses[keyof CreateReferenceAudioReferencesAudiosPostResponses]
+
+export type ReferenceAudioFiltersReferencesAudiosFiltersGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: '/references/audios/filters'
+}
+
+export type ReferenceAudioFiltersReferencesAudiosFiltersGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceAudioFiltersOut
+}
+
+export type ReferenceAudioFiltersReferencesAudiosFiltersGetResponse =
+  ReferenceAudioFiltersReferencesAudiosFiltersGetResponses[keyof ReferenceAudioFiltersReferencesAudiosFiltersGetResponses]
+
+export type RemoveReferenceAudioReferencesAudiosReferenceIdDeleteData = {
+  body?: never
+  path: {
+    /**
+     * Reference Id
+     */
+    reference_id: string
+  }
+  query?: never
+  url: '/references/audios/{reference_id}'
+}
+
+export type RemoveReferenceAudioReferencesAudiosReferenceIdDeleteErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type RemoveReferenceAudioReferencesAudiosReferenceIdDeleteError =
+  RemoveReferenceAudioReferencesAudiosReferenceIdDeleteErrors[keyof RemoveReferenceAudioReferencesAudiosReferenceIdDeleteErrors]
+
+export type RemoveReferenceAudioReferencesAudiosReferenceIdDeleteResponses = {
+  /**
+   * Successful Response
+   */
+  204: void
+}
+
+export type RemoveReferenceAudioReferencesAudiosReferenceIdDeleteResponse =
+  RemoveReferenceAudioReferencesAudiosReferenceIdDeleteResponses[keyof RemoveReferenceAudioReferencesAudiosReferenceIdDeleteResponses]
+
+export type GetReferenceAudioReferencesAudiosReferenceIdGetData = {
+  body?: never
+  path: {
+    /**
+     * Reference Id
+     */
+    reference_id: string
+  }
+  query?: never
+  url: '/references/audios/{reference_id}'
+}
+
+export type GetReferenceAudioReferencesAudiosReferenceIdGetErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type GetReferenceAudioReferencesAudiosReferenceIdGetError =
+  GetReferenceAudioReferencesAudiosReferenceIdGetErrors[keyof GetReferenceAudioReferencesAudiosReferenceIdGetErrors]
+
+export type GetReferenceAudioReferencesAudiosReferenceIdGetResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceAudioOut
+}
+
+export type GetReferenceAudioReferencesAudiosReferenceIdGetResponse =
+  GetReferenceAudioReferencesAudiosReferenceIdGetResponses[keyof GetReferenceAudioReferencesAudiosReferenceIdGetResponses]
+
+export type UpdateReferenceAudioReferencesAudiosReferenceIdPatchData = {
+  body: ReferenceAudioUpdateIn
+  path: {
+    /**
+     * Reference Id
+     */
+    reference_id: string
+  }
+  query?: never
+  url: '/references/audios/{reference_id}'
+}
+
+export type UpdateReferenceAudioReferencesAudiosReferenceIdPatchErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type UpdateReferenceAudioReferencesAudiosReferenceIdPatchError =
+  UpdateReferenceAudioReferencesAudiosReferenceIdPatchErrors[keyof UpdateReferenceAudioReferencesAudiosReferenceIdPatchErrors]
+
+export type UpdateReferenceAudioReferencesAudiosReferenceIdPatchResponses = {
+  /**
+   * Successful Response
+   */
+  200: ReferenceAudioOut
+}
+
+export type UpdateReferenceAudioReferencesAudiosReferenceIdPatchResponse =
+  UpdateReferenceAudioReferencesAudiosReferenceIdPatchResponses[keyof UpdateReferenceAudioReferencesAudiosReferenceIdPatchResponses]
+
+export type ListReferenceVideosReferencesVideosGetData = {
   body?: never
   path?: never
   query?: {
@@ -12126,74 +12585,74 @@ export type ListReferencesReferencesGetData = {
      */
     cursor?: string | null
   }
-  url: '/references'
+  url: '/references/videos'
 }
 
-export type ListReferencesReferencesGetErrors = {
+export type ListReferenceVideosReferencesVideosGetErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type ListReferencesReferencesGetError =
-  ListReferencesReferencesGetErrors[keyof ListReferencesReferencesGetErrors]
+export type ListReferenceVideosReferencesVideosGetError =
+  ListReferenceVideosReferencesVideosGetErrors[keyof ListReferenceVideosReferencesVideosGetErrors]
 
-export type ListReferencesReferencesGetResponses = {
+export type ListReferenceVideosReferencesVideosGetResponses = {
   /**
    * Successful Response
    */
   200: ReferenceVideosOut
 }
 
-export type ListReferencesReferencesGetResponse =
-  ListReferencesReferencesGetResponses[keyof ListReferencesReferencesGetResponses]
+export type ListReferenceVideosReferencesVideosGetResponse =
+  ListReferenceVideosReferencesVideosGetResponses[keyof ListReferenceVideosReferencesVideosGetResponses]
 
-export type CreateReferenceReferencesPostData = {
-  body: ReferenceCreateIn
+export type CreateReferenceVideoReferencesVideosPostData = {
+  body: ReferenceVideoCreateIn
   path?: never
   query?: never
-  url: '/references'
+  url: '/references/videos'
 }
 
-export type CreateReferenceReferencesPostErrors = {
+export type CreateReferenceVideoReferencesVideosPostErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type CreateReferenceReferencesPostError =
-  CreateReferenceReferencesPostErrors[keyof CreateReferenceReferencesPostErrors]
+export type CreateReferenceVideoReferencesVideosPostError =
+  CreateReferenceVideoReferencesVideosPostErrors[keyof CreateReferenceVideoReferencesVideosPostErrors]
 
-export type CreateReferenceReferencesPostResponses = {
+export type CreateReferenceVideoReferencesVideosPostResponses = {
   /**
    * Successful Response
    */
   201: ReferenceVideoOut
 }
 
-export type CreateReferenceReferencesPostResponse =
-  CreateReferenceReferencesPostResponses[keyof CreateReferenceReferencesPostResponses]
+export type CreateReferenceVideoReferencesVideosPostResponse =
+  CreateReferenceVideoReferencesVideosPostResponses[keyof CreateReferenceVideoReferencesVideosPostResponses]
 
-export type ReferenceFiltersReferencesFiltersGetData = {
+export type ReferenceVideoFiltersReferencesVideosFiltersGetData = {
   body?: never
   path?: never
   query?: never
-  url: '/references/filters'
+  url: '/references/videos/filters'
 }
 
-export type ReferenceFiltersReferencesFiltersGetResponses = {
+export type ReferenceVideoFiltersReferencesVideosFiltersGetResponses = {
   /**
    * Successful Response
    */
-  200: ReferenceFiltersOut
+  200: ReferenceVideoFiltersOut
 }
 
-export type ReferenceFiltersReferencesFiltersGetResponse =
-  ReferenceFiltersReferencesFiltersGetResponses[keyof ReferenceFiltersReferencesFiltersGetResponses]
+export type ReferenceVideoFiltersReferencesVideosFiltersGetResponse =
+  ReferenceVideoFiltersReferencesVideosFiltersGetResponses[keyof ReferenceVideoFiltersReferencesVideosFiltersGetResponses]
 
-export type RemoveReferenceReferencesReferenceIdDeleteData = {
+export type RemoveReferenceVideoReferencesVideosReferenceIdDeleteData = {
   body?: never
   path: {
     /**
@@ -12202,30 +12661,30 @@ export type RemoveReferenceReferencesReferenceIdDeleteData = {
     reference_id: string
   }
   query?: never
-  url: '/references/{reference_id}'
+  url: '/references/videos/{reference_id}'
 }
 
-export type RemoveReferenceReferencesReferenceIdDeleteErrors = {
+export type RemoveReferenceVideoReferencesVideosReferenceIdDeleteErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type RemoveReferenceReferencesReferenceIdDeleteError =
-  RemoveReferenceReferencesReferenceIdDeleteErrors[keyof RemoveReferenceReferencesReferenceIdDeleteErrors]
+export type RemoveReferenceVideoReferencesVideosReferenceIdDeleteError =
+  RemoveReferenceVideoReferencesVideosReferenceIdDeleteErrors[keyof RemoveReferenceVideoReferencesVideosReferenceIdDeleteErrors]
 
-export type RemoveReferenceReferencesReferenceIdDeleteResponses = {
+export type RemoveReferenceVideoReferencesVideosReferenceIdDeleteResponses = {
   /**
    * Successful Response
    */
   204: void
 }
 
-export type RemoveReferenceReferencesReferenceIdDeleteResponse =
-  RemoveReferenceReferencesReferenceIdDeleteResponses[keyof RemoveReferenceReferencesReferenceIdDeleteResponses]
+export type RemoveReferenceVideoReferencesVideosReferenceIdDeleteResponse =
+  RemoveReferenceVideoReferencesVideosReferenceIdDeleteResponses[keyof RemoveReferenceVideoReferencesVideosReferenceIdDeleteResponses]
 
-export type GetReferenceReferencesReferenceIdGetData = {
+export type GetReferenceVideoReferencesVideosReferenceIdGetData = {
   body?: never
   path: {
     /**
@@ -12234,31 +12693,31 @@ export type GetReferenceReferencesReferenceIdGetData = {
     reference_id: string
   }
   query?: never
-  url: '/references/{reference_id}'
+  url: '/references/videos/{reference_id}'
 }
 
-export type GetReferenceReferencesReferenceIdGetErrors = {
+export type GetReferenceVideoReferencesVideosReferenceIdGetErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type GetReferenceReferencesReferenceIdGetError =
-  GetReferenceReferencesReferenceIdGetErrors[keyof GetReferenceReferencesReferenceIdGetErrors]
+export type GetReferenceVideoReferencesVideosReferenceIdGetError =
+  GetReferenceVideoReferencesVideosReferenceIdGetErrors[keyof GetReferenceVideoReferencesVideosReferenceIdGetErrors]
 
-export type GetReferenceReferencesReferenceIdGetResponses = {
+export type GetReferenceVideoReferencesVideosReferenceIdGetResponses = {
   /**
    * Successful Response
    */
   200: ReferenceVideoOut
 }
 
-export type GetReferenceReferencesReferenceIdGetResponse =
-  GetReferenceReferencesReferenceIdGetResponses[keyof GetReferenceReferencesReferenceIdGetResponses]
+export type GetReferenceVideoReferencesVideosReferenceIdGetResponse =
+  GetReferenceVideoReferencesVideosReferenceIdGetResponses[keyof GetReferenceVideoReferencesVideosReferenceIdGetResponses]
 
-export type UpdateReferenceReferencesReferenceIdPatchData = {
-  body: ReferenceUpdateIn
+export type UpdateReferenceVideoReferencesVideosReferenceIdPatchData = {
+  body: ReferenceVideoUpdateIn
   path: {
     /**
      * Reference Id
@@ -12266,30 +12725,30 @@ export type UpdateReferenceReferencesReferenceIdPatchData = {
     reference_id: string
   }
   query?: never
-  url: '/references/{reference_id}'
+  url: '/references/videos/{reference_id}'
 }
 
-export type UpdateReferenceReferencesReferenceIdPatchErrors = {
+export type UpdateReferenceVideoReferencesVideosReferenceIdPatchErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type UpdateReferenceReferencesReferenceIdPatchError =
-  UpdateReferenceReferencesReferenceIdPatchErrors[keyof UpdateReferenceReferencesReferenceIdPatchErrors]
+export type UpdateReferenceVideoReferencesVideosReferenceIdPatchError =
+  UpdateReferenceVideoReferencesVideosReferenceIdPatchErrors[keyof UpdateReferenceVideoReferencesVideosReferenceIdPatchErrors]
 
-export type UpdateReferenceReferencesReferenceIdPatchResponses = {
+export type UpdateReferenceVideoReferencesVideosReferenceIdPatchResponses = {
   /**
    * Successful Response
    */
   200: ReferenceVideoOut
 }
 
-export type UpdateReferenceReferencesReferenceIdPatchResponse =
-  UpdateReferenceReferencesReferenceIdPatchResponses[keyof UpdateReferenceReferencesReferenceIdPatchResponses]
+export type UpdateReferenceVideoReferencesVideosReferenceIdPatchResponse =
+  UpdateReferenceVideoReferencesVideosReferenceIdPatchResponses[keyof UpdateReferenceVideoReferencesVideosReferenceIdPatchResponses]
 
-export type RerunReferenceReferencesReferenceIdBreakdownsPostData = {
+export type RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostData = {
   body?: never
   path: {
     /**
@@ -12298,30 +12757,30 @@ export type RerunReferenceReferencesReferenceIdBreakdownsPostData = {
     reference_id: string
   }
   query?: never
-  url: '/references/{reference_id}/breakdowns'
+  url: '/references/videos/{reference_id}/breakdowns'
 }
 
-export type RerunReferenceReferencesReferenceIdBreakdownsPostErrors = {
+export type RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type RerunReferenceReferencesReferenceIdBreakdownsPostError =
-  RerunReferenceReferencesReferenceIdBreakdownsPostErrors[keyof RerunReferenceReferencesReferenceIdBreakdownsPostErrors]
+export type RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostError =
+  RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostErrors[keyof RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostErrors]
 
-export type RerunReferenceReferencesReferenceIdBreakdownsPostResponses = {
+export type RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostResponses = {
   /**
    * Successful Response
    */
   200: ReferenceVideoOut
 }
 
-export type RerunReferenceReferencesReferenceIdBreakdownsPostResponse =
-  RerunReferenceReferencesReferenceIdBreakdownsPostResponses[keyof RerunReferenceReferencesReferenceIdBreakdownsPostResponses]
+export type RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostResponse =
+  RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostResponses[keyof RerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostResponses]
 
-export type RetagReferenceReferencesReferenceIdTaggingPostData = {
+export type RetagReferenceVideoReferencesVideosReferenceIdTaggingPostData = {
   body?: never
   path: {
     /**
@@ -12330,30 +12789,30 @@ export type RetagReferenceReferencesReferenceIdTaggingPostData = {
     reference_id: string
   }
   query?: never
-  url: '/references/{reference_id}/tagging'
+  url: '/references/videos/{reference_id}/tagging'
 }
 
-export type RetagReferenceReferencesReferenceIdTaggingPostErrors = {
+export type RetagReferenceVideoReferencesVideosReferenceIdTaggingPostErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type RetagReferenceReferencesReferenceIdTaggingPostError =
-  RetagReferenceReferencesReferenceIdTaggingPostErrors[keyof RetagReferenceReferencesReferenceIdTaggingPostErrors]
+export type RetagReferenceVideoReferencesVideosReferenceIdTaggingPostError =
+  RetagReferenceVideoReferencesVideosReferenceIdTaggingPostErrors[keyof RetagReferenceVideoReferencesVideosReferenceIdTaggingPostErrors]
 
-export type RetagReferenceReferencesReferenceIdTaggingPostResponses = {
+export type RetagReferenceVideoReferencesVideosReferenceIdTaggingPostResponses = {
   /**
    * Successful Response
    */
   200: ReferenceVideoOut
 }
 
-export type RetagReferenceReferencesReferenceIdTaggingPostResponse =
-  RetagReferenceReferencesReferenceIdTaggingPostResponses[keyof RetagReferenceReferencesReferenceIdTaggingPostResponses]
+export type RetagReferenceVideoReferencesVideosReferenceIdTaggingPostResponse =
+  RetagReferenceVideoReferencesVideosReferenceIdTaggingPostResponses[keyof RetagReferenceVideoReferencesVideosReferenceIdTaggingPostResponses]
 
-export type ReplaceReferenceTagsReferencesReferenceIdTagsPutData = {
+export type ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutData = {
   body: ReferenceTagsIn
   path: {
     /**
@@ -12362,30 +12821,30 @@ export type ReplaceReferenceTagsReferencesReferenceIdTagsPutData = {
     reference_id: string
   }
   query?: never
-  url: '/references/{reference_id}/tags'
+  url: '/references/videos/{reference_id}/tags'
 }
 
-export type ReplaceReferenceTagsReferencesReferenceIdTagsPutErrors = {
+export type ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type ReplaceReferenceTagsReferencesReferenceIdTagsPutError =
-  ReplaceReferenceTagsReferencesReferenceIdTagsPutErrors[keyof ReplaceReferenceTagsReferencesReferenceIdTagsPutErrors]
+export type ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutError =
+  ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutErrors[keyof ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutErrors]
 
-export type ReplaceReferenceTagsReferencesReferenceIdTagsPutResponses = {
+export type ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutResponses = {
   /**
    * Successful Response
    */
   200: ReferenceVideoOut
 }
 
-export type ReplaceReferenceTagsReferencesReferenceIdTagsPutResponse =
-  ReplaceReferenceTagsReferencesReferenceIdTagsPutResponses[keyof ReplaceReferenceTagsReferencesReferenceIdTagsPutResponses]
+export type ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutResponse =
+  ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutResponses[keyof ReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutResponses]
 
-export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostData = {
+export type StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostData = {
   body: TestVideoIn
   path: {
     /**
@@ -12394,28 +12853,28 @@ export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostData 
     reference_id: string
   }
   query?: never
-  url: '/references/{reference_id}/test-generations'
+  url: '/references/videos/{reference_id}/test-generations'
 }
 
-export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostErrors = {
+export type StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostErrors = {
   /**
    * Validation Error
    */
   422: HttpValidationError
 }
 
-export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostError =
-  StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostErrors[keyof StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostErrors]
+export type StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostError =
+  StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostErrors[keyof StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostErrors]
 
-export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponses = {
+export type StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostResponses = {
   /**
    * Successful Response
    */
   200: ReferenceVideoOut
 }
 
-export type StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponse =
-  StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponses[keyof StartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponses]
+export type StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostResponse =
+  StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostResponses[keyof StartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostResponses]
 
 export type ListSkillsSkillsGetData = {
   body?: never
@@ -13326,7 +13785,7 @@ export type ConfirmUploadUploadsUploadIdConfirmPostResponses = {
   /**
    * Successful Response
    */
-  200: UploadConfirmedOut
+  200: UploadOut
 }
 
 export type ConfirmUploadUploadsUploadIdConfirmPostResponse =

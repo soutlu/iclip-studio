@@ -18,6 +18,7 @@ import { backgroundShowcase, multipleBackgroundShowcase } from './background-sho
 import { toolShowcase } from './tool-showcase'
 import { markMockAwaitingApproval, markMockJustFinished, markMockShowcase } from './transcript'
 import {
+  persistMockProjects,
   seedMockMusic,
   seedMockReplicaWorkspace,
   seedMockSubtitles,
@@ -138,6 +139,8 @@ seedDemoTasks([
 if (window.localStorage.getItem('cue.mock.sidebar-large-collection') === 'true') {
   seedSidebarHistory()
 }
+
+persistMockProjects(window.sessionStorage)
 
 export const worker = setupWorker(...handlers)
 

@@ -8,6 +8,7 @@ from typing import Final
 import procrastinate
 import structlog
 
+from iclip.domains.identity.public import ModelGroupOf
 from iclip.domains.tagging.models import (
     AUTO_FILL_AI,
     ERROR_NO_SOURCE_TEXT,
@@ -39,12 +40,14 @@ class TaggingQueue:
         *,
         source_text: SourceText,
         tagger: Tagger,
+        model_group_of: ModelGroupOf,
         connector: procrastinate.BaseConnector,
         settings: TaggingQueueSettings | None = None,
     ) -> None:
         self._store = store
         self._source_text = source_text
         self._tagger = tagger
+        self._model_group_of = model_group_of
         self._settings = settings or TaggingQueueSettings()
         self._app = procrastinate.App(connector=connector)
         self._worker: asyncio.Task[None] | None = None
@@ -73,8 +76,16 @@ class TaggingQueue:
             _logger.warning("取不到打标用的文字", entry_id=claim.entry_id, written=written)
             return
         dimensions = [one for one in await self._store.tree() if one.auto_fill == AUTO_FILL_AI]
+        # 按条目的创建人定组；没有创建人时就是默认组。
+        model_group = (
+            None if claim.created_by is None else await self._model_group_of(claim.created_by)
+        )
         try:
-            tag_ids = await self._tagger.tag(text, dimensions) if dimensions else ()
+            tag_ids = (
+                await self._tagger.tag(text, dimensions, model_group=model_group)
+                if dimensions
+                else ()
+            )
         except TaggingFailed as exc:
             written = await self._store.fail(claim, error_code=exc.code)
             _logger.warning(

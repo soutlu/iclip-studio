@@ -1,13 +1,14 @@
 import { http, HttpResponse } from 'msw'
-import type { WholeFilmDocument } from '@/shared/api/generated/types.gen'
-import { zWholeFilmDraftIn, zWholeFilmExportIn } from '@/shared/api/generated/zod.gen'
+import { mockPreviewOrigin, mockPreviewToken } from './preview-token'
+import { mockWorkspaceFile, putMockWorkspaceFile } from './workspace'
 
-type StoredDraft = { revision: number; document: WholeFilmDocument; updatedAt: string }
-
-const drafts = new Map<string, StoredDraft>()
+/** final-cut 的主文件在工作区里的路径。 */
+const PROJECT_MAIN_PATH = 'final-cut/index.html'
 
 type MockExport = {
   id: string
+  /** 导出的语言，原文是 null。 */
+  locale: string | null
   reads: number
   cancelled: boolean
 }
@@ -23,17 +24,14 @@ const EXPORT_STEPS = [
   { status: 'uploading', progress: null, queuePosition: null },
 ] as const
 
-export const STALE_DRAFT_DETAIL = '成片草稿已经有更新的一版，重新读取后再改'
-export const STALE_EXPORT_DETAIL = '成片草稿已经有更新的一版，重新读取后再导出'
-
 export const resetMockWholeFilm = () => {
-  drafts.clear()
   latestExports.clear()
 }
 
 const exportOut = (found: MockExport) => {
   const base = {
     id: found.id,
+    locale: found.locale,
     error: null,
     downloadUrl: null,
   }
@@ -55,47 +53,49 @@ export const findMockWholeFilmExport = (exportId: string): { downloadUrl: string
   return found === undefined ? undefined : { downloadUrl: `/mock-exports/${found.id}.mp4` }
 }
 
-export const mockWholeFilmDraft = (conversationId: string): StoredDraft | undefined =>
-  drafts.get(conversationId)
+/** 工程主文件现在的内容和版本；还没有工程时是 undefined。 */
+export const mockProjectMain = (conversationId: string) =>
+  mockWorkspaceFile(conversationId, PROJECT_MAIN_PATH)
 
-export const putMockWholeFilmDraft = (conversationId: string, document: WholeFilmDocument) => {
-  const revision = (drafts.get(conversationId)?.revision ?? 0) + 1
-  const stored = { revision, document, updatedAt: new Date().toISOString() }
-  drafts.set(conversationId, stored)
-  return stored
-}
+/** 把工程主文件写成 `html`（没有就建），答复写进去的内容和版本。 */
+export const putMockProjectMain = (conversationId: string, html: string) => ({
+  content: html,
+  version: putMockWorkspaceFile(conversationId, PROJECT_MAIN_PATH, html),
+})
+
+const PREVIEW_TOKEN_TTL_MS = 3600_000
 
 export const wholeFilmHandlers = [
-  http.get('*/api/conversations/:conversationId/whole-film/draft', ({ params }) => {
-    const stored = drafts.get(String(params['conversationId']))
-    return HttpResponse.json(stored ?? { revision: 0, document: null, updatedAt: null })
-  }),
-
-  http.put('*/api/conversations/:conversationId/whole-film/draft', async ({ params, request }) => {
-    const conversationId = String(params['conversationId'])
-    const parsed = zWholeFilmDraftIn.safeParse(await request.json())
-    if (!parsed.success) return HttpResponse.json({ detail: 'document: 形状不对' }, { status: 422 })
-    const current = drafts.get(conversationId)?.revision ?? 0
-    if (parsed.data.revision !== current)
-      return HttpResponse.json({ detail: STALE_DRAFT_DETAIL }, { status: 409 })
-    const stored = putMockWholeFilmDraft(conversationId, parsed.data.document)
-    return HttpResponse.json({ revision: stored.revision, updatedAt: stored.updatedAt })
+  // 预览页在另一个主机名上，应用页的 MSW 管不到它：它取应用来源、取工程文件走 mock 开发服务器的中间件
+  http.post('*/api/conversations/:conversationId/final-cut/preview', ({ request }) => {
+    const appOrigin = new URL(request.url).origin
+    return HttpResponse.json({
+      origin: mockPreviewOrigin(appOrigin),
+      token: mockPreviewToken(appOrigin),
+      expiresAt: new Date(Date.now() + PREVIEW_TOKEN_TTL_MS).toISOString(),
+    })
   }),
 
   http.post(
     '*/api/conversations/:conversationId/whole-film/exports',
     async ({ params, request }) => {
       const conversationId = String(params['conversationId'])
-      const parsed = zWholeFilmExportIn.safeParse(await request.json())
-      if (!parsed.success)
-        return HttpResponse.json({ detail: 'revision: 形状不对' }, { status: 422 })
-      const stored = drafts.get(conversationId)
-      if (parsed.data.revision !== (stored?.revision ?? 0))
-        return HttpResponse.json({ detail: STALE_EXPORT_DETAIL }, { status: 409 })
-      if (!stored?.document.layer0.some((clip) => clip.type === 'video'))
-        return HttpResponse.json({ detail: '画面轨里还没有视频，无法导出' }, { status: 422 })
+      if (mockProjectMain(conversationId) === undefined)
+        return HttpResponse.json({ detail: 'final-cut 暂无内容，无法导出' }, { status: 422 })
+      // 请求体可以不带，不带和 locale 为 null 都是中文
+      const raw = await request.text()
+      const locale =
+        raw === '' ? null : ((JSON.parse(raw) as { locale?: string | null }).locale ?? null)
+      if (
+        locale !== null &&
+        mockWorkspaceFile(conversationId, `final-cut/locales/${locale}.json`) === undefined
+      )
+        return HttpResponse.json(
+          { detail: 'final-cut 里没有这种语言的语言文件，无法导出这种语言的版本' },
+          { status: 422 },
+        )
       const exportId = crypto.randomUUID()
-      latestExports.set(conversationId, { id: exportId, reads: 0, cancelled: false })
+      latestExports.set(conversationId, { id: exportId, locale, reads: 0, cancelled: false })
       return HttpResponse.json({ exportId }, { status: 202 })
     },
   ),

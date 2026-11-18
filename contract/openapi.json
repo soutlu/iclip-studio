@@ -1511,6 +1511,30 @@
         "title": "AttemptBucketOut",
         "type": "object"
       },
+      "AudioKindCountOut": {
+        "additionalProperties": false,
+        "properties": {
+          "audioKind": {
+            "enum": [
+              "voice",
+              "bgm",
+              "sfx"
+            ],
+            "title": "Audiokind",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "audioKind",
+          "count"
+        ],
+        "title": "AudioKindCountOut",
+        "type": "object"
+      },
       "AuditExecutionsOut": {
         "additionalProperties": false,
         "properties": {
@@ -1668,232 +1692,6 @@
           "file"
         ],
         "title": "Body_import_skill_skills_import_post",
-        "type": "object"
-      },
-      "BrandFontConfirmIn": {
-        "additionalProperties": false,
-        "properties": {
-          "brand": {
-            "anyOf": [
-              {
-                "maxLength": 100,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Brand"
-          },
-          "name": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "title": "BrandFontConfirmIn",
-        "type": "object"
-      },
-      "BrandFontInfoOut": {
-        "additionalProperties": false,
-        "properties": {
-          "family": {
-            "title": "Family",
-            "type": "string"
-          },
-          "style": {
-            "enum": [
-              "normal",
-              "italic",
-              "oblique"
-            ],
-            "title": "Style",
-            "type": "string"
-          },
-          "unicodeRanges": {
-            "items": {
-              "$ref": "#/components/schemas/BrandFontUnicodeRange"
-            },
-            "title": "Unicoderanges",
-            "type": "array"
-          },
-          "weight": {
-            "title": "Weight",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "family",
-          "weight",
-          "style",
-          "unicodeRanges"
-        ],
-        "title": "BrandFontInfoOut",
-        "type": "object"
-      },
-      "BrandFontSignIn": {
-        "additionalProperties": false,
-        "properties": {
-          "contentType": {
-            "enum": [
-              "font/ttf",
-              "font/otf"
-            ],
-            "title": "Contenttype",
-            "type": "string"
-          }
-        },
-        "required": [
-          "contentType"
-        ],
-        "title": "BrandFontSignIn",
-        "type": "object"
-      },
-      "BrandFontUnicodeRange": {
-        "additionalProperties": false,
-        "properties": {
-          "end": {
-            "title": "End",
-            "type": "integer"
-          },
-          "start": {
-            "title": "Start",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "start",
-          "end"
-        ],
-        "title": "BrandFontUnicodeRange",
-        "type": "object"
-      },
-      "BrandTemplateOut": {
-        "additionalProperties": false,
-        "properties": {
-          "brand": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Brand"
-          },
-          "createdAt": {
-            "format": "date-time",
-            "title": "Createdat",
-            "type": "string"
-          },
-          "disabledAt": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Disabledat"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "kind": {
-            "title": "Kind",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "url": {
-            "title": "Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "brand",
-          "name",
-          "url",
-          "createdAt",
-          "disabledAt"
-        ],
-        "title": "BrandTemplateOut",
-        "type": "object"
-      },
-      "BrandTemplateUpdateIn": {
-        "additionalProperties": false,
-        "description": "改名、停用或恢复使用；不给的那一项不动，至少给一项。",
-        "properties": {
-          "brand": {
-            "anyOf": [
-              {
-                "maxLength": 100,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Brand"
-          },
-          "disabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Disabled"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "maxLength": 100,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          }
-        },
-        "title": "BrandTemplateUpdateIn",
-        "type": "object"
-      },
-      "BrandTemplatesOut": {
-        "additionalProperties": false,
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/BrandTemplateOut"
-            },
-            "title": "Items",
-            "type": "array"
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "title": "BrandTemplatesOut",
         "type": "object"
       },
       "CapToolConfig": {
@@ -2926,6 +2724,7 @@
       },
       "CredentialCreateIn": {
         "additionalProperties": false,
+        "description": "``modelGroup`` 给了就把这把密钥归进这个配置组；同一供应商下一个组最多一把。",
         "properties": {
           "fields": {
             "additionalProperties": {
@@ -2933,6 +2732,18 @@
             },
             "title": "Fields",
             "type": "object"
+          },
+          "modelGroup": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelgroup"
           },
           "name": {
             "title": "Name",
@@ -3028,6 +2839,7 @@
       },
       "CredentialOut": {
         "additionalProperties": false,
+        "description": "``modelGroup`` 是这把密钥归的配置组，为空即不归任何组。",
         "properties": {
           "createdAt": {
             "format": "date-time",
@@ -3045,6 +2857,17 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "modelGroup": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelgroup"
           },
           "name": {
             "title": "Name",
@@ -3067,6 +2890,7 @@
           "id",
           "name",
           "fields",
+          "modelGroup",
           "usedBy",
           "createdAt",
           "updatedAt"
@@ -3110,7 +2934,7 @@
       },
       "CredentialUpdateIn": {
         "additionalProperties": false,
-        "description": "不给或给 ``null`` 的项不动。",
+        "description": "``name`` 与 ``fields`` 不给或给 ``null`` 都不动；``modelGroup`` 不给不动，给 ``null`` 清掉，给值改成\n这个组。",
         "properties": {
           "fields": {
             "anyOf": [
@@ -3125,6 +2949,18 @@
               }
             ],
             "title": "Fields"
+          },
+          "modelGroup": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelgroup"
           },
           "name": {
             "anyOf": [
@@ -3622,6 +3458,283 @@
           "baseHash"
         ],
         "title": "DraftFileWriteIn",
+        "type": "object"
+      },
+      "DubbedLine": {
+        "additionalProperties": false,
+        "description": "配好的一句：``index`` 是它在请求 ``lines`` 里的位置（合成一段语音时只有一句，是 0），``speed`` 是\n加速的倍数（1 是原速），``trimmed`` 表示加速到上限也放不下、截掉了尾巴。",
+        "properties": {
+          "index": {
+            "minimum": 0.0,
+            "title": "Index",
+            "type": "integer"
+          },
+          "speed": {
+            "minimum": 1.0,
+            "title": "Speed",
+            "type": "number"
+          },
+          "trimmed": {
+            "title": "Trimmed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "index",
+          "speed",
+          "trimmed"
+        ],
+        "title": "DubbedLine",
+        "type": "object"
+      },
+      "DubbingIn": {
+        "additionalProperties": false,
+        "description": "给一条素材片配一种外语的受理输入：每句译文按 ``lines`` 的时间放，用参考音频的声音合成。\n\n``lines`` 按开始时间排好、互不重叠，都在素材片的时长之内（时长在受理时核对）。归属参数与\n``userName`` 的规则同字幕识别。",
+        "properties": {
+          "conversationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversationid"
+          },
+          "lines": {
+            "description": "每句的 text 最多 500 字，所有 text 加起来最多 4000 字",
+            "items": {
+              "$ref": "#/components/schemas/DubbingLine"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Lines",
+            "type": "array"
+          },
+          "locale": {
+            "enum": [
+              "zh",
+              "en",
+              "de",
+              "es",
+              "fr"
+            ],
+            "title": "Locale",
+            "type": "string"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "reference": {
+            "discriminator": {
+              "mapping": {
+                "original": "#/components/schemas/DubbingOriginalReference",
+                "reference_audio": "#/components/schemas/DubbingVoiceReferenceIn",
+                "upload": "#/components/schemas/DubbingUploadReferenceIn"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DubbingOriginalReference"
+              },
+              {
+                "$ref": "#/components/schemas/DubbingVoiceReferenceIn"
+              },
+              {
+                "$ref": "#/components/schemas/DubbingUploadReferenceIn"
+              }
+            ],
+            "title": "Reference"
+          },
+          "sourceJobId": {
+            "format": "uuid",
+            "title": "Sourcejobid",
+            "type": "string"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taskid"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "sourceJobId",
+          "locale",
+          "lines",
+          "reference"
+        ],
+        "title": "DubbingIn",
+        "type": "object"
+      },
+      "DubbingLine": {
+        "additionalProperties": false,
+        "description": "要配的一句：在素材片视频里的起止（毫秒，与字幕记录的 ``sentences`` 同一口径）与译文。",
+        "properties": {
+          "endMs": {
+            "minimum": 0.0,
+            "title": "Endms",
+            "type": "integer"
+          },
+          "slotEndMs": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "这句最晚占到哪儿（毫秒）；不写时占到下一句开始，最后一句到素材片结尾",
+            "title": "Slotendms"
+          },
+          "startMs": {
+            "minimum": 0.0,
+            "title": "Startms",
+            "type": "integer"
+          },
+          "text": {
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "startMs",
+          "endMs",
+          "text"
+        ],
+        "title": "DubbingLine",
+        "type": "object"
+      },
+      "DubbingOriginalReference": {
+        "additionalProperties": false,
+        "description": "参考音频取素材片自己的原声：服务端从被说话时段覆盖得最多的一段里截。",
+        "properties": {
+          "kind": {
+            "const": "original",
+            "title": "Kind",
+            "type": "string"
+          },
+          "spans": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DubbingSpeechSpan"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "这条素材片里有人说话的时段，按开始时间排好、互不重叠、在素材片时长之内；截原声参考按它算，不写时按 lines 算",
+            "title": "Spans"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "DubbingOriginalReference",
+        "type": "object"
+      },
+      "DubbingSpeechSpan": {
+        "additionalProperties": false,
+        "description": "素材片里有人说话的一段：起止（毫秒，与 ``lines`` 同一口径）。",
+        "properties": {
+          "endMs": {
+            "minimum": 0.0,
+            "title": "Endms",
+            "type": "integer"
+          },
+          "startMs": {
+            "minimum": 0.0,
+            "title": "Startms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "startMs",
+          "endMs"
+        ],
+        "title": "DubbingSpeechSpan",
+        "type": "object"
+      },
+      "DubbingUploadReferenceIn": {
+        "additionalProperties": false,
+        "description": "参考音频取调用者本人的一条音频上传。",
+        "properties": {
+          "kind": {
+            "const": "upload",
+            "title": "Kind",
+            "type": "string"
+          },
+          "uploadId": {
+            "format": "uuid",
+            "title": "Uploadid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "uploadId"
+        ],
+        "title": "DubbingUploadReferenceIn",
+        "type": "object"
+      },
+      "DubbingVoiceReferenceIn": {
+        "additionalProperties": false,
+        "description": "参考音频取参考音频库里一条没移除的音色。",
+        "properties": {
+          "kind": {
+            "const": "reference_audio",
+            "title": "Kind",
+            "type": "string"
+          },
+          "referenceId": {
+            "format": "uuid",
+            "title": "Referenceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "referenceId"
+        ],
+        "title": "DubbingVoiceReferenceIn",
         "type": "object"
       },
       "ErrorModel": {
@@ -4673,6 +4786,207 @@
         "title": "FilmViewOut",
         "type": "object"
       },
+      "FinalCutFileCreatedOut": {
+        "additionalProperties": false,
+        "description": "新建的文件：``path`` 与请求里的相同（相对工程根），工作区里的路径是 ``final-cut/`` 加上它；\n``version`` 是工作区文件的版本号，之后用 ``PUT /conversations/{id}/workspace/file`` 修改。",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "version"
+        ],
+        "title": "FinalCutFileCreatedOut",
+        "type": "object"
+      },
+      "FinalCutFileIn": {
+        "additionalProperties": false,
+        "description": "在 final-cut 工程里新建一个文件。``path`` 相对工程根，如 ``index.html``。",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "path": {
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "title": "FinalCutFileIn",
+        "type": "object"
+      },
+      "FinalCutPreviewHostOut": {
+        "additionalProperties": false,
+        "description": "发令牌时请求的 ``Origin``：预览页只接受来自这个来源的消息。",
+        "properties": {
+          "appOrigin": {
+            "title": "Apporigin",
+            "type": "string"
+          }
+        },
+        "required": [
+          "appOrigin"
+        ],
+        "title": "FinalCutPreviewHostOut",
+        "type": "object"
+      },
+      "FinalCutPreviewOut": {
+        "additionalProperties": false,
+        "description": "预览令牌。预览页的地址由前端拼成 ``<origin>/api/final-cut/preview/<token>/…``。",
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "origin",
+          "token",
+          "expiresAt"
+        ],
+        "title": "FinalCutPreviewOut",
+        "type": "object"
+      },
+      "FinalCutTextIn": {
+        "additionalProperties": false,
+        "description": "一条要翻的原文：``id`` 是编辑器里变量的 id，``text`` 不能只有空白。",
+        "properties": {
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ],
+        "title": "FinalCutTextIn",
+        "type": "object"
+      },
+      "FinalCutTranslationErrorOut": {
+        "additionalProperties": false,
+        "description": "翻译失败：``model_unavailable`` 没有启用翻译用的模型（409）；``model_call_failed`` 模型调用\n暂时失败，再试一次可能就好（502）；``model_failed`` 模型拒绝、等待超时或回答不对（502）。",
+        "properties": {
+          "code": {
+            "enum": [
+              "model_unavailable",
+              "model_call_failed",
+              "model_failed"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail",
+          "code"
+        ],
+        "title": "FinalCutTranslationErrorOut",
+        "type": "object"
+      },
+      "FinalCutTranslationOut": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ],
+        "title": "FinalCutTranslationOut",
+        "type": "object"
+      },
+      "FinalCutTranslationsIn": {
+        "additionalProperties": false,
+        "description": "把一批原文短句翻成 ``targetLocale``。原文什么语言都行，不用声明；``entries`` 里的 ``id``\n不能重复。",
+        "properties": {
+          "entries": {
+            "description": "所有 text 加起来最多 4000 字，超了要分批发",
+            "items": {
+              "$ref": "#/components/schemas/FinalCutTextIn"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Entries",
+            "type": "array"
+          },
+          "targetLocale": {
+            "enum": [
+              "zh",
+              "en",
+              "de",
+              "es",
+              "fr"
+            ],
+            "title": "Targetlocale",
+            "type": "string"
+          }
+        },
+        "required": [
+          "targetLocale",
+          "entries"
+        ],
+        "title": "FinalCutTranslationsIn",
+        "type": "object"
+      },
+      "FinalCutTranslationsOut": {
+        "additionalProperties": false,
+        "description": "译文：请求里的每个 ``id`` 恰好一条，顺序同请求。",
+        "properties": {
+          "translations": {
+            "items": {
+              "$ref": "#/components/schemas/FinalCutTranslationOut"
+            },
+            "title": "Translations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "translations"
+        ],
+        "title": "FinalCutTranslationsOut",
+        "type": "object"
+      },
       "FrameTarget": {
         "additionalProperties": false,
         "properties": {
@@ -4793,6 +5107,20 @@
             "title": "Createdat",
             "type": "string"
           },
+          "dubbedLines": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DubbedLine"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dubbedlines"
+          },
           "durationMs": {
             "anyOf": [
               {
@@ -4837,6 +5165,8 @@
               "video",
               "image",
               "subtitle",
+              "dubbing",
+              "speech",
               "audio",
               "whole_film"
             ],
@@ -4860,9 +5190,9 @@
               "generate",
               "compose",
               "cut",
-              "upload",
               "render",
-              "enhance"
+              "enhance",
+              "trial"
             ],
             "title": "Operation",
             "type": "string"
@@ -7386,6 +7716,23 @@
         "title": "MetricsOut",
         "type": "object"
       },
+      "ModelGroupsOut": {
+        "description": "``config.yaml`` 里配置的组名，按配置里的先后；没配时为空。",
+        "properties": {
+          "groups": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Groups",
+            "type": "array"
+          }
+        },
+        "required": [
+          "groups"
+        ],
+        "title": "ModelGroupsOut",
+        "type": "object"
+      },
       "ModelOptionOut": {
         "additionalProperties": false,
         "description": "agent 能选的一个对话模型。",
@@ -8650,24 +8997,124 @@
         "title": "ProviderOptionOut",
         "type": "object"
       },
-      "ReferenceCreateIn": {
+      "ReferenceAudioCreateIn": {
         "additionalProperties": false,
+        "description": "把一段音频放进参考音频库：调用者本人的一条音频上传（``uploadId``），或调用者看得到的一条已完成\n的背景音乐（``sourceJobId``）。台词只有音色能填。",
         "properties": {
-          "uploadId": {
-            "format": "uuid",
-            "title": "Uploadid",
+          "audioKind": {
+            "enum": [
+              "voice",
+              "bgm",
+              "sfx"
+            ],
+            "title": "Audiokind",
             "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "zh",
+                  "en",
+                  "de",
+                  "es",
+                  "fr"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "sourceJobId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcejobid"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "transcript": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcript"
+          },
+          "uploadId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploadid"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
           }
         },
         "required": [
-          "uploadId"
+          "title",
+          "audioKind"
         ],
-        "title": "ReferenceCreateIn",
+        "title": "ReferenceAudioCreateIn",
         "type": "object"
       },
-      "ReferenceFiltersOut": {
+      "ReferenceAudioFiltersOut": {
         "additionalProperties": false,
         "properties": {
+          "audioKinds": {
+            "items": {
+              "$ref": "#/components/schemas/AudioKindCountOut"
+            },
+            "title": "Audiokinds",
+            "type": "array"
+          },
           "owners": {
             "items": {
               "$ref": "#/components/schemas/OwnerCountOut"
@@ -8677,9 +9124,260 @@
           }
         },
         "required": [
+          "audioKinds",
           "owners"
         ],
-        "title": "ReferenceFiltersOut",
+        "title": "ReferenceAudioFiltersOut",
+        "type": "object"
+      },
+      "ReferenceAudioOut": {
+        "additionalProperties": false,
+        "description": "一条参考音频。",
+        "properties": {
+          "audioKind": {
+            "enum": [
+              "voice",
+              "bgm",
+              "sfx"
+            ],
+            "title": "Audiokind",
+            "type": "string"
+          },
+          "canEdit": {
+            "title": "Canedit",
+            "type": "boolean"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "durationMs": {
+            "title": "Durationms",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "zh",
+                  "en",
+                  "de",
+                  "es",
+                  "fr"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "sourceJobId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcejobid"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "transcript": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcript"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "uploadId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploadid"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "title",
+          "description",
+          "durationMs",
+          "audioKind",
+          "locale",
+          "transcript",
+          "userName",
+          "uploadId",
+          "sourceJobId",
+          "canEdit",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ReferenceAudioOut",
+        "type": "object"
+      },
+      "ReferenceAudioUpdateIn": {
+        "additionalProperties": false,
+        "description": "改一条参考音频：给了的字段才改，``description`` / ``locale`` / ``transcript`` 给 ``null`` 是\n清空；标题不能清空。台词只有音色能填。",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "zh",
+                  "en",
+                  "de",
+                  "es",
+                  "fr"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "transcript": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcript"
+          }
+        },
+        "title": "ReferenceAudioUpdateIn",
+        "type": "object"
+      },
+      "ReferenceAudiosOut": {
+        "additionalProperties": false,
+        "properties": {
+          "canUpload": {
+            "title": "Canupload",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenceAudioOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "required": [
+          "items",
+          "nextCursor",
+          "total",
+          "canUpload"
+        ],
+        "title": "ReferenceAudiosOut",
         "type": "object"
       },
       "ReferenceTagsIn": {
@@ -8701,25 +9399,53 @@
         "title": "ReferenceTagsIn",
         "type": "object"
       },
-      "ReferenceUpdateIn": {
+      "ReferenceVideoCreateIn": {
         "additionalProperties": false,
-        "description": "改拆解正文。",
+        "description": "把一条视频放进资料库：调用者本人的一条视频上传（``uploadId``），或调用者看得到的一条已完成的\n素材片（``sourceJobId``）。",
         "properties": {
-          "document": {
-            "minLength": 1,
-            "title": "Document",
-            "type": "string"
+          "sourceJobId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcejobid"
           },
-          "version": {
-            "title": "Version",
-            "type": "integer"
+          "uploadId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploadid"
+          }
+        },
+        "title": "ReferenceVideoCreateIn",
+        "type": "object"
+      },
+      "ReferenceVideoFiltersOut": {
+        "additionalProperties": false,
+        "properties": {
+          "owners": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerCountOut"
+            },
+            "title": "Owners",
+            "type": "array"
           }
         },
         "required": [
-          "version",
-          "document"
+          "owners"
         ],
-        "title": "ReferenceUpdateIn",
+        "title": "ReferenceVideoFiltersOut",
         "type": "object"
       },
       "ReferenceVideoItemOut": {
@@ -9005,6 +9731,27 @@
           "testVideo"
         ],
         "title": "ReferenceVideoOut",
+        "type": "object"
+      },
+      "ReferenceVideoUpdateIn": {
+        "additionalProperties": false,
+        "description": "改拆解正文。",
+        "properties": {
+          "document": {
+            "minLength": 1,
+            "title": "Document",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "document"
+        ],
+        "title": "ReferenceVideoUpdateIn",
         "type": "object"
       },
       "ReferenceVideosOut": {
@@ -9876,6 +10623,107 @@
         "title": "SkillsOut",
         "type": "object"
       },
+      "SpeechIn": {
+        "additionalProperties": false,
+        "description": "按文字合成一段语音的受理输入：用参考音频库里一个音色的声音把 ``text`` 念出来。\n\n``locale`` 不给时不声明用哪种语言念（final-cut 的原文没有声明语言）。``maxDurationMs`` 给了时念出来\n更长就照配音每句的规则先加速、再截尾。归属参数与 ``userName`` 的规则同配音。",
+        "properties": {
+          "conversationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversationid"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "zh",
+                  "en",
+                  "de",
+                  "es",
+                  "fr"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "maxDurationMs": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "最长多少毫秒；不写时念多长就是多长",
+            "title": "Maxdurationms"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "reference": {
+            "$ref": "#/components/schemas/DubbingVoiceReferenceIn"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taskid"
+          },
+          "text": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "text",
+          "reference"
+        ],
+        "title": "SpeechIn",
+        "type": "object"
+      },
       "SpreadOut": {
         "additionalProperties": false,
         "description": "一组时长样本的分布，单位秒。",
@@ -10176,7 +11024,7 @@
       },
       "SubtitleIn": {
         "additionalProperties": false,
-        "description": "手动识别一条素材片的受理输入：补识别旧视频，或识别失败后另起一次。\n\n归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别\n服务不收它，不进 ``request``。",
+        "description": "按需识别一条素材片的受理输入；识别失败后可以另起一次。\n\n归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别\n服务不收它，不进 ``request``。",
         "properties": {
           "conversationId": {
             "anyOf": [
@@ -11150,6 +11998,11 @@
             ],
             "title": "Errormessage"
           },
+          "jobId": {
+            "format": "uuid",
+            "title": "Jobid",
+            "type": "string"
+          },
           "stale": {
             "title": "Stale",
             "type": "boolean"
@@ -11176,6 +12029,7 @@
           }
         },
         "required": [
+          "jobId",
           "status",
           "url",
           "errorMessage",
@@ -12409,7 +13263,7 @@
       },
       "UploadConfirmIn": {
         "additionalProperties": false,
-        "description": "确认上传时可选的请求体：替谁确认，音乐挂到哪段对话。",
+        "description": "确认上传时可选的请求体：替谁确认，挂到哪段对话，图片多大（签名时报的那两个数）。",
         "properties": {
           "conversationId": {
             "anyOf": [
@@ -12423,6 +13277,18 @@
             ],
             "title": "Conversationid"
           },
+          "height": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
           "userName": {
             "anyOf": [
               {
@@ -12435,34 +13301,21 @@
               }
             ],
             "title": "Username"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
           }
         },
         "title": "UploadConfirmIn",
-        "type": "object"
-      },
-      "UploadConfirmedOut": {
-        "additionalProperties": false,
-        "description": "确认后交回的地址与桶里读到的事实；``url`` 从此就是这个文件的身份。",
-        "properties": {
-          "contentType": {
-            "title": "Contenttype",
-            "type": "string"
-          },
-          "sizeBytes": {
-            "title": "Sizebytes",
-            "type": "integer"
-          },
-          "url": {
-            "title": "Url",
-            "type": "string"
-          }
-        },
-        "required": [
-          "url",
-          "contentType",
-          "sizeBytes"
-        ],
-        "title": "UploadConfirmedOut",
         "type": "object"
       },
       "UploadInstruction": {
@@ -12498,6 +13351,116 @@
           "expiresAt"
         ],
         "title": "UploadInstruction",
+        "type": "object"
+      },
+      "UploadOut": {
+        "additionalProperties": false,
+        "description": "上传台账里的一条。``url`` 从此就是这个文件的身份；视频按 MD5 去重时是最早那份的地址。\n\n``contentType`` 与 ``sizeBytes`` 只有台账建立以前的旧上传为空。``width`` / ``height`` 是图片\n确认时报的宽高，没报的、别的种类为空。确认上传不量时长，``durationMs`` 为空。",
+        "properties": {
+          "contentType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contenttype"
+          },
+          "conversationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversationid"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "durationMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Durationms"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "image",
+              "video",
+              "audio"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "sizeBytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sizebytes"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "url",
+          "contentType",
+          "sizeBytes",
+          "durationMs",
+          "width",
+          "height",
+          "conversationId",
+          "createdAt"
+        ],
+        "title": "UploadOut",
         "type": "object"
       },
       "UploadSignIn": {
@@ -12559,6 +13522,23 @@
           "upload"
         ],
         "title": "UploadTicketOut",
+        "type": "object"
+      },
+      "UploadsPageOut": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UploadOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "UploadsPageOut",
         "type": "object"
       },
       "UsageOut": {
@@ -13367,7 +14347,7 @@
       },
       "VideoGenerationIn": {
         "additionalProperties": false,
-        "description": "一次视频生成的输入。字段照上游异步接口，外加归属字段、坐标 ``metadata`` 与结构化的 ``shot``。\n\n只拦本系统能判的：模型在允许表里（受理层）、地址是 http(s)、秒数不小于 -1、``shot``\n自身对得上（图片引用不越界、编号与正文一致）。画幅、分辨率、时长范围、素材规格由上游\n按模型判，这里不复制一份。",
+        "description": "一次视频生成的输入。字段照上游异步接口，外加归属字段、坐标 ``metadata`` 与结构化的 ``shot``。\n\n只拦本系统能判的：模型在允许表里（受理层）、地址是 http(s)、秒数不小于 -1、``shot``\n自身对得上（图片引用不越界、编号与正文一致）。画幅、分辨率、时长范围、素材规格由上游\n按模型判，这里不复制一份。``reference_ids`` 是这次用到的参考资产，受理时核对都在资料库里、\n没移除，只记进请求快照，不发给上游。",
         "properties": {
           "aspect_ratio": {
             "anyOf": [
@@ -13455,6 +14435,16 @@
             },
             "maxItems": 30,
             "title": "Reference Audio Urls",
+            "type": "array"
+          },
+          "reference_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 30,
+            "title": "Reference Ids",
             "type": "array"
           },
           "reference_image_urls": {
@@ -13836,158 +14826,6 @@
         "title": "VideoTaskResult",
         "type": "object"
       },
-      "WholeFilmCanvas": {
-        "additionalProperties": false,
-        "properties": {
-          "height": {
-            "maximum": 4096.0,
-            "minimum": 1.0,
-            "title": "Height",
-            "type": "integer"
-          },
-          "width": {
-            "maximum": 4096.0,
-            "minimum": 1.0,
-            "title": "Width",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "width",
-          "height"
-        ],
-        "title": "WholeFilmCanvas",
-        "type": "object"
-      },
-      "WholeFilmCaptionEdit": {
-        "additionalProperties": false,
-        "description": "用户改过字的一句：第 ``sentenceIndex`` 句（从 0 数）换成 ``text``。",
-        "properties": {
-          "sentenceIndex": {
-            "minimum": 0.0,
-            "title": "Sentenceindex",
-            "type": "integer"
-          },
-          "subtitleJobId": {
-            "format": "uuid",
-            "title": "Subtitlejobid",
-            "type": "string"
-          },
-          "text": {
-            "maxLength": 500,
-            "minLength": 1,
-            "title": "Text",
-            "type": "string"
-          }
-        },
-        "required": [
-          "subtitleJobId",
-          "sentenceIndex",
-          "text"
-        ],
-        "title": "WholeFilmCaptionEdit",
-        "type": "object"
-      },
-      "WholeFilmCaptions": {
-        "additionalProperties": false,
-        "description": "字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。\n``x``、``y``、``scale``、``rotation`` 是字幕在画面上挪开的位置、缩放与旋转，所有字幕共用一套；\n``pivotX``、``pivotY`` 是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，\n编辑器在第一次离开原大、不转时写下。``variables`` 是字幕样式的可填项，同特效块；换样式时照样\n保留，合成时只取当前样式声明过的项。",
-        "properties": {
-          "component": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Component",
-            "type": "string"
-          },
-          "edits": {
-            "items": {
-              "$ref": "#/components/schemas/WholeFilmCaptionEdit"
-            },
-            "maxItems": 1000,
-            "title": "Edits",
-            "type": "array"
-          },
-          "hidden": {
-            "default": false,
-            "title": "Hidden",
-            "type": "boolean"
-          },
-          "pivotX": {
-            "default": 0,
-            "maximum": 4096.0,
-            "minimum": -4096.0,
-            "title": "Pivotx",
-            "type": "integer"
-          },
-          "pivotY": {
-            "default": 0,
-            "maximum": 4096.0,
-            "minimum": -4096.0,
-            "title": "Pivoty",
-            "type": "integer"
-          },
-          "rotation": {
-            "default": 0,
-            "exclusiveMinimum": -180.0,
-            "maximum": 180.0,
-            "title": "Rotation",
-            "type": "number"
-          },
-          "scale": {
-            "default": 1,
-            "maximum": 10.0,
-            "minimum": 0.1,
-            "title": "Scale",
-            "type": "number"
-          },
-          "variables": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "number"
-                },
-                {
-                  "maxLength": 500,
-                  "type": "string"
-                }
-              ]
-            },
-            "default": {},
-            "maxProperties": 50,
-            "propertyNames": {
-              "maxLength": 64,
-              "minLength": 1
-            },
-            "title": "Variables",
-            "type": "object"
-          },
-          "x": {
-            "default": 0,
-            "maximum": 4096.0,
-            "minimum": -4096.0,
-            "title": "X",
-            "type": "integer"
-          },
-          "y": {
-            "default": 0,
-            "maximum": 4096.0,
-            "minimum": -4096.0,
-            "title": "Y",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "component",
-          "edits"
-        ],
-        "title": "WholeFilmCaptions",
-        "type": "object"
-      },
       "WholeFilmCardOut": {
         "additionalProperties": false,
         "description": "资料库「成片」的一张卡：一段对话自己的全部导出，不含继承来的。成片没有脚本，不能做同款。",
@@ -14086,229 +14924,6 @@
         "title": "WholeFilmCardsOut",
         "type": "object"
       },
-      "WholeFilmComponentClip": {
-        "additionalProperties": false,
-        "description": "画面轨上的一段组件，与视频段同等占时间；从组件自己时间里的 ``playbackStart`` 起播。",
-        "properties": {
-          "component": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Component",
-            "type": "string"
-          },
-          "duration": {
-            "minimum": 100.0,
-            "title": "Duration",
-            "type": "integer"
-          },
-          "id": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          },
-          "playbackStart": {
-            "minimum": 0.0,
-            "title": "Playbackstart",
-            "type": "integer"
-          },
-          "start": {
-            "minimum": 0.0,
-            "title": "Start",
-            "type": "integer"
-          },
-          "type": {
-            "const": "component",
-            "title": "Type",
-            "type": "string"
-          },
-          "variables": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "number"
-                },
-                {
-                  "maxLength": 500,
-                  "type": "string"
-                }
-              ]
-            },
-            "maxProperties": 50,
-            "propertyNames": {
-              "maxLength": 64,
-              "minLength": 1
-            },
-            "title": "Variables",
-            "type": "object"
-          }
-        },
-        "required": [
-          "id",
-          "type",
-          "start",
-          "duration",
-          "playbackStart",
-          "component",
-          "variables"
-        ],
-        "title": "WholeFilmComponentClip",
-        "type": "object"
-      },
-      "WholeFilmDocument": {
-        "additionalProperties": false,
-        "description": "一段对话的成片草稿。",
-        "properties": {
-          "canvas": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WholeFilmCanvas"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "captions": {
-            "$ref": "#/components/schemas/WholeFilmCaptions"
-          },
-          "layer0": {
-            "items": {
-              "discriminator": {
-                "mapping": {
-                  "component": "#/components/schemas/WholeFilmComponentClip",
-                  "video": "#/components/schemas/WholeFilmVideoClip"
-                },
-                "propertyName": "type"
-              },
-              "oneOf": [
-                {
-                  "$ref": "#/components/schemas/WholeFilmVideoClip"
-                },
-                {
-                  "$ref": "#/components/schemas/WholeFilmComponentClip"
-                }
-              ]
-            },
-            "maxItems": 1200,
-            "title": "Layer0",
-            "type": "array"
-          },
-          "music": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WholeFilmMusic"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "overlays": {
-            "items": {
-              "$ref": "#/components/schemas/WholeFilmOverlay"
-            },
-            "maxItems": 1200,
-            "title": "Overlays",
-            "type": "array"
-          }
-        },
-        "required": [
-          "canvas",
-          "layer0",
-          "captions",
-          "music",
-          "overlays"
-        ],
-        "title": "WholeFilmDocument",
-        "type": "object"
-      },
-      "WholeFilmDraftIn": {
-        "additionalProperties": false,
-        "description": "整份保存草稿。``revision`` 是读到的那一版，还没有草稿时是 0。",
-        "properties": {
-          "document": {
-            "$ref": "#/components/schemas/WholeFilmDocument"
-          },
-          "revision": {
-            "minimum": 0.0,
-            "title": "Revision",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "revision",
-          "document"
-        ],
-        "title": "WholeFilmDraftIn",
-        "type": "object"
-      },
-      "WholeFilmDraftOut": {
-        "additionalProperties": false,
-        "description": "当前的草稿；还没存过时 ``revision`` 是 0，``document`` 与 ``updatedAt`` 为 null。",
-        "properties": {
-          "document": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WholeFilmDocument"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "revision": {
-            "title": "Revision",
-            "type": "integer"
-          },
-          "updatedAt": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updatedat"
-          }
-        },
-        "required": [
-          "revision",
-          "document",
-          "updatedAt"
-        ],
-        "title": "WholeFilmDraftOut",
-        "type": "object"
-      },
-      "WholeFilmDraftSavedOut": {
-        "additionalProperties": false,
-        "description": "保存后的新版本号与保存时刻。",
-        "properties": {
-          "revision": {
-            "title": "Revision",
-            "type": "integer"
-          },
-          "updatedAt": {
-            "format": "date-time",
-            "title": "Updatedat",
-            "type": "string"
-          }
-        },
-        "required": [
-          "revision",
-          "updatedAt"
-        ],
-        "title": "WholeFilmDraftSavedOut",
-        "type": "object"
-      },
       "WholeFilmExportErrorOut": {
         "additionalProperties": false,
         "properties": {
@@ -14330,17 +14945,27 @@
       },
       "WholeFilmExportIn": {
         "additionalProperties": false,
-        "description": "按当前草稿导出；``revision`` 是页面上那一版，不是服务端存的那一版就不导。",
+        "description": "发起导出：``locale`` 是导出哪种语言的版本，不带或 null 导出原文。",
         "properties": {
-          "revision": {
-            "minimum": 0.0,
-            "title": "Revision",
-            "type": "integer"
+          "locale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "zh",
+                  "en",
+                  "de",
+                  "es",
+                  "fr"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
           }
         },
-        "required": [
-          "revision"
-        ],
         "title": "WholeFilmExportIn",
         "type": "object"
       },
@@ -14367,7 +14992,7 @@
       },
       "WholeFilmExportOut": {
         "additionalProperties": false,
-        "description": "一次导出现在的样子。``downloadUrl`` 只在 ``done`` 时有，``error`` 只在 ``failed`` 时有。",
+        "description": "一次导出现在的样子。``locale`` 是导出的哪种语言的版本，原文时是 null。``downloadUrl`` 只在\n``done`` 时有，``error`` 只在 ``failed`` 时有。",
         "properties": {
           "downloadUrl": {
             "anyOf": [
@@ -14394,6 +15019,24 @@
             "format": "uuid",
             "title": "Id",
             "type": "string"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "enum": [
+                  "zh",
+                  "en",
+                  "de",
+                  "es",
+                  "fr"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
           },
           "progress": {
             "anyOf": [
@@ -14432,6 +15075,7 @@
         },
         "required": [
           "id",
+          "locale",
           "status",
           "progress",
           "queuePosition",
@@ -14455,158 +15099,6 @@
           "exportId"
         ],
         "title": "WholeFilmExportStartedOut",
-        "type": "object"
-      },
-      "WholeFilmMusic": {
-        "additionalProperties": false,
-        "description": "背景音乐从头铺到尾：``offset`` 是音乐文件里与成片 0 毫秒对齐的那一刻。",
-        "properties": {
-          "jobId": {
-            "format": "uuid",
-            "title": "Jobid",
-            "type": "string"
-          },
-          "offset": {
-            "minimum": 0.0,
-            "title": "Offset",
-            "type": "integer"
-          },
-          "volume": {
-            "maximum": 3.981072,
-            "minimum": 0.0,
-            "title": "Volume",
-            "type": "number"
-          }
-        },
-        "required": [
-          "jobId",
-          "offset",
-          "volume"
-        ],
-        "title": "WholeFilmMusic",
-        "type": "object"
-      },
-      "WholeFilmOverlay": {
-        "additionalProperties": false,
-        "description": "特效轨上的一个组件，按成片时间放在 ``[start, start + duration)``，从组件自己时间里的\n``playbackStart`` 起播。\n\n同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块\n之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。\n``x``、``y``、``scale``、``rotation`` 是它在画面上挪开的位置、缩放与旋转；``pivotX``、``pivotY``\n是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，编辑器在第一次离开原大、\n不转时写下。",
-        "properties": {
-          "component": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Component",
-            "type": "string"
-          },
-          "duration": {
-            "minimum": 100.0,
-            "title": "Duration",
-            "type": "integer"
-          },
-          "id": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          },
-          "pivotX": {
-            "default": 0,
-            "maximum": 4096.0,
-            "minimum": -4096.0,
-            "title": "Pivotx",
-            "type": "integer"
-          },
-          "pivotY": {
-            "default": 0,
-            "maximum": 4096.0,
-            "minimum": -4096.0,
-            "title": "Pivoty",
-            "type": "integer"
-          },
-          "playbackStart": {
-            "minimum": 0.0,
-            "title": "Playbackstart",
-            "type": "integer"
-          },
-          "rotation": {
-            "default": 0,
-            "exclusiveMinimum": -180.0,
-            "maximum": 180.0,
-            "title": "Rotation",
-            "type": "number"
-          },
-          "scale": {
-            "default": 1,
-            "maximum": 10.0,
-            "minimum": 0.1,
-            "title": "Scale",
-            "type": "number"
-          },
-          "start": {
-            "minimum": 0.0,
-            "title": "Start",
-            "type": "integer"
-          },
-          "track": {
-            "minimum": 0.0,
-            "title": "Track",
-            "type": "integer"
-          },
-          "variables": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "number"
-                },
-                {
-                  "maxLength": 500,
-                  "type": "string"
-                }
-              ]
-            },
-            "maxProperties": 50,
-            "propertyNames": {
-              "maxLength": 64,
-              "minLength": 1
-            },
-            "title": "Variables",
-            "type": "object"
-          },
-          "x": {
-            "default": 0,
-            "maximum": 4096.0,
-            "minimum": -4096.0,
-            "title": "X",
-            "type": "integer"
-          },
-          "y": {
-            "default": 0,
-            "maximum": 4096.0,
-            "minimum": -4096.0,
-            "title": "Y",
-            "type": "integer"
-          },
-          "zIndex": {
-            "minimum": 0.0,
-            "title": "Zindex",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "id",
-          "component",
-          "start",
-          "duration",
-          "playbackStart",
-          "track",
-          "zIndex",
-          "variables"
-        ],
-        "title": "WholeFilmOverlay",
         "type": "object"
       },
       "WholeFilmVersionOut": {
@@ -14646,60 +15138,6 @@
           "userName"
         ],
         "title": "WholeFilmVersionOut",
-        "type": "object"
-      },
-      "WholeFilmVideoClip": {
-        "additionalProperties": false,
-        "description": "画面轨上的一段素材片：取它自己媒体时间里从 ``playbackStart`` 起的 ``duration``。",
-        "properties": {
-          "duration": {
-            "minimum": 100.0,
-            "title": "Duration",
-            "type": "integer"
-          },
-          "id": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          },
-          "playbackStart": {
-            "minimum": 0.0,
-            "title": "Playbackstart",
-            "type": "integer"
-          },
-          "sourceJobId": {
-            "format": "uuid",
-            "title": "Sourcejobid",
-            "type": "string"
-          },
-          "start": {
-            "minimum": 0.0,
-            "title": "Start",
-            "type": "integer"
-          },
-          "type": {
-            "const": "video",
-            "title": "Type",
-            "type": "string"
-          },
-          "volume": {
-            "maximum": 3.981072,
-            "minimum": 0.0,
-            "title": "Volume",
-            "type": "number"
-          }
-        },
-        "required": [
-          "id",
-          "type",
-          "start",
-          "duration",
-          "playbackStart",
-          "sourceJobId",
-          "volume"
-        ],
-        "title": "WholeFilmVideoClip",
         "type": "object"
       }
     },
@@ -16308,337 +16746,6 @@
           }
         },
         "summary": "Callback"
-      }
-    },
-    "/brand-templates": {
-      "get": {
-        "description": "品牌资源，建立晚的排前面；默认只列在用的，按 ``kind`` 与 ``brand`` 筛选。\n\n``includeDisabled`` 连停用的一起列，只限治理者，别人带上是 ``403``。",
-        "operationId": "list_brand_templates_brand_templates_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "kind",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Kind"
-            }
-          },
-          {
-            "in": "query",
-            "name": "brand",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Brand"
-            }
-          },
-          {
-            "in": "query",
-            "name": "includeDisabled",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Includedisabled",
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BrandTemplatesOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "SessionCookie": [
-              "generation:read"
-            ]
-          },
-          {
-            "BearerToken": [
-              "generation:read"
-            ]
-          }
-        ],
-        "summary": "List Brand Templates",
-        "tags": [
-          "brand-templates"
-        ]
-      }
-    },
-    "/brand-templates/fonts/sign": {
-      "post": {
-        "operationId": "sign_font_brand_templates_fonts_sign_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BrandFontSignIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UploadTicketOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "SessionCookie": [
-              "users:manage",
-              "uploads:write"
-            ]
-          },
-          {
-            "BearerToken": [
-              "users:manage",
-              "uploads:write"
-            ]
-          }
-        ],
-        "summary": "Sign Font",
-        "tags": [
-          "brand-templates"
-        ]
-      }
-    },
-    "/brand-templates/fonts/{upload_id}/confirm": {
-      "post": {
-        "operationId": "confirm_font_brand_templates_fonts__upload_id__confirm_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "upload_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Upload Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BrandFontConfirmIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BrandTemplateOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "SessionCookie": [
-              "users:manage",
-              "uploads:write"
-            ]
-          },
-          {
-            "BearerToken": [
-              "users:manage",
-              "uploads:write"
-            ]
-          }
-        ],
-        "summary": "Confirm Font",
-        "tags": [
-          "brand-templates"
-        ]
-      }
-    },
-    "/brand-templates/{template_id}": {
-      "patch": {
-        "description": "改名、停用或恢复使用；不删。没有这条是 ``404``。",
-        "operationId": "update_brand_template_brand_templates__template_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "template_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Template Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BrandTemplateUpdateIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BrandTemplateOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "SessionCookie": [
-              "users:manage"
-            ]
-          },
-          {
-            "BearerToken": [
-              "users:manage"
-            ]
-          }
-        ],
-        "summary": "Update Brand Template",
-        "tags": [
-          "brand-templates"
-        ]
-      }
-    },
-    "/brand-templates/{template_id}/font-info": {
-      "get": {
-        "operationId": "font_info_brand_templates__template_id__font_info_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "template_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Template Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BrandFontInfoOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "SessionCookie": [
-              "generation:read"
-            ]
-          },
-          {
-            "BearerToken": [
-              "generation:read"
-            ]
-          }
-        ],
-        "summary": "Font Info",
-        "tags": [
-          "brand-templates"
-        ]
       }
     },
     "/collections": {
@@ -18274,6 +18381,214 @@
         ]
       }
     },
+    "/conversations/{conversation_id}/final-cut/files": {
+      "post": {
+        "description": "在 final-cut 工程里新建一个文件，写进工作区的 ``final-cut/<path>``。只有属主能建：看不见这段\n对话 404，看得见但不是属主、或看得见已删除的对话（治理者）403；路径不合规 422；文件已存在\n409，不覆盖。",
+        "operationId": "create_final_cut_file_conversations__conversation_id__final_cut_files_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinalCutFileIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalCutFileCreatedOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:run"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:run"
+            ]
+          }
+        ],
+        "summary": "Create Final Cut File",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/final-cut/preview": {
+      "post": {
+        "description": "给能读这段对话的人发一张 1 小时的 final-cut 预览令牌；可见范围同读工作区文件。\n\n令牌里签进对话的属主、对话、失效时刻与这次请求的 ``Origin``。看不见这段对话 404；\n没配置预览域名、请求没带合规的 ``Origin`` 都是 422。",
+        "operationId": "open_final_cut_preview_conversations__conversation_id__final_cut_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalCutPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:read"
+            ]
+          }
+        ],
+        "summary": "Open Final Cut Preview",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/conversations/{conversation_id}/final-cut/translations": {
+      "post": {
+        "description": "把一批原文短句（什么语言都行）翻成一种语言，一次请求一次模型调用，同步答复；不落库、不写工作区。只有属主能翻：\n看不见这段对话 404，看得见但不是属主、或看得见已删除的对话（治理者）403。语言、条数、长度不合规或\n``id`` 重复 422。模型没启用 409，模型调用失败或回答不对 502，都带 ``code``。",
+        "operationId": "translate_final_cut_texts_conversations__conversation_id__final_cut_translations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinalCutTranslationsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalCutTranslationsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalCutTranslationErrorOut"
+                }
+              }
+            },
+            "description": "code 为 model_unavailable：没有启用翻译用的模型"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalCutTranslationErrorOut"
+                }
+              }
+            },
+            "description": "code 为 model_call_failed（可以再试）或 model_failed（模型拒绝、超时或回答不对）"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "agent:run"
+            ]
+          },
+          {
+            "BearerToken": [
+              "agent:run"
+            ]
+          }
+        ],
+        "summary": "Translate Final Cut Texts",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
     "/conversations/{conversation_id}/interactions/{interaction_id}": {
       "post": {
         "description": "对一张审批卡点同意或拒绝。\n\n决定记下就返回 204：那次运行已经以「等审批」结束了，凑齐这一批之后服务端自己起续跑。\n重复点同一个决定照样 204；改主意是 409；卡不在等回应的那几张里是 404。",
@@ -18400,7 +18715,7 @@
         ]
       },
       "post": {
-        "description": "发一条消息。``prompt_id`` 由客户端铸，重发同一个不会多起一次运行。\n\n``user_name`` 是这条消息替谁发的：API key 调用方必须给，浏览器会话默认是登录用户名。\n\n图片附件的地址挂不上 OSS 处理参数时，受理前先转存进本桶、记成发消息那个人的一条上传，\n消息里存新地址；转存失败是 422，说明第几张附件。",
+        "description": "发一条消息。``prompt_id`` 由客户端铸，重发同一个不会多起一次运行。\n\n``user_name`` 是这条消息替谁发的：API key 调用方必须给，浏览器会话默认是登录用户名。\n\n图片附件的地址挂不上 OSS 处理参数时，受理前先转存进本桶、记成发消息那个人的一条上传，\n消息里存新地址；转存失败是 422，说明第几张附件。\n\n这条消息的运行用对话属主所在配置组的模型密钥；组在要用的某个供应商下没有密钥时 409\n``agent_unavailable``。",
         "operationId": "submit_conversations__conversation_id__prompts_post",
         "parameters": [
           {
@@ -18998,10 +19313,10 @@
         ]
       }
     },
-    "/conversations/{conversation_id}/whole-film/draft": {
+    "/conversations/{conversation_id}/uploads": {
       "get": {
-        "description": "读这段对话的成片草稿；可见范围同读工作区文件。还没存过答复 ``revision`` 0、\n``document`` 与 ``updatedAt`` 为 null。",
-        "operationId": "read_whole_film_draft_conversations__conversation_id__whole_film_draft_get",
+        "description": "挂在这段对话上的上传，新的在前；含经分叉继承来的（祖先对话在分叉时刻以前挂上的）。\n\n读不到这段对话 ``404``。``kind`` 按种类筛。用上一页最后一条的 ``id`` 作 ``before`` 往后翻，\n``before`` 指的上传不存在也是 ``404``。",
+        "operationId": "list_conversation_uploads_conversations__conversation_id__uploads_get",
         "parameters": [
           {
             "in": "path",
@@ -19012,6 +19327,56 @@
               "title": "Conversation Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "image",
+                    "video",
+                    "audio"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
           }
         ],
         "responses": {
@@ -19019,7 +19384,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WholeFilmDraftOut"
+                  "$ref": "#/components/schemas/UploadsPageOut"
                 }
               }
             },
@@ -19039,88 +19404,24 @@
         "security": [
           {
             "SessionCookie": [
-              "agent:read"
+              "generation:read"
             ]
           },
           {
             "BearerToken": [
-              "agent:read"
+              "generation:read"
             ]
           }
         ],
-        "summary": "Read Whole Film Draft",
+        "summary": "List Conversation Uploads",
         "tags": [
-          "conversations"
-        ]
-      },
-      "put": {
-        "description": "整份保存成片草稿，答复新的版本号。只有属主能存；``revision`` 不是当前那一版（还没有\n草稿是 0）是 409；文档不合规矩、引用的记录不是这段对话的是 422。",
-        "operationId": "save_whole_film_draft_conversations__conversation_id__whole_film_draft_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "conversation_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Conversation Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WholeFilmDraftIn"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WholeFilmDraftSavedOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "SessionCookie": [
-              "agent:run"
-            ]
-          },
-          {
-            "BearerToken": [
-              "agent:run"
-            ]
-          }
-        ],
-        "summary": "Save Whole Film Draft",
-        "tags": [
-          "conversations"
+          "uploads"
         ]
       }
     },
     "/conversations/{conversation_id}/whole-film/exports": {
       "post": {
-        "description": "按当前草稿导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；\n``revision`` 不是存着的那一版 409；画面轨没有内容、用到的记录没有产物地址、没开通都是 422。\n渲染服务不收这份草稿不在这里答，那条记录记为失败（``RENDER_REJECTED``）。",
+        "description": "按 final-cut 导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；\n还没有主文件 ``final-cut/index.html``、要导的语言没有值表 ``final-cut/locales/<语言>.json``、\n没开通都是 422。没有请求体或 ``locale`` 为 null 时导出原文。主文件里的素材按输出地址对上\n生成记录的记进导出记录，对不上的不记、也不拒绝。导出的是交给渲染服务那一刻的工程。",
         "operationId": "export_whole_film_conversations__conversation_id__whole_film_exports_post",
         "parameters": [
           {
@@ -19138,11 +19439,18 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/WholeFilmExportIn"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/WholeFilmExportIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "202": {
@@ -19703,9 +20011,103 @@
         ]
       }
     },
+    "/final-cut/preview/{token}/files/{path}": {
+      "get": {
+        "description": "取 final-cut 工程里的一个文件：``vendor/`` 开头的 307 转到同主机的 ``/hyperframes/vendor/…``，\n其余原文给出工作区的 ``final-cut/<path>``。路径带 ``..``、以 ``/`` 开头、带反斜杠或文件不存在\n都是 404。",
+        "operationId": "read_final_cut_preview_file_final_cut_preview__token__files__path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {}
+            },
+            "description": "工程文件的原文，类型按扩展名给出"
+          },
+          "307": {
+            "description": "公共库的文件，转到同主机的 /hyperframes/vendor/…"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Final Cut Preview File",
+        "tags": [
+          "final-cut-preview"
+        ]
+      }
+    },
+    "/final-cut/preview/{token}/host": {
+      "get": {
+        "description": "发令牌时请求的 ``Origin``，预览页只接受来自这个来源的消息。",
+        "operationId": "read_final_cut_preview_host_final_cut_preview__token__host_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalCutPreviewHostOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Final Cut Preview Host",
+        "tags": [
+          "final-cut-preview"
+        ]
+      }
+    },
     "/generations": {
       "get": {
-        "description": "给了 ``conversationId`` / ``taskId`` / ``shotIndex`` / ``rootJobId`` / ``sourceJobId`` 就\n只列那段对话、那张需求单下、那个镜号、以那条为原作或直接来源的记录；``kind`` /\n``operation`` 按种类与操作筛。按对话列时含这段对话经分叉继承的记录（调用方读得到这段\n对话才算），其余可见性口径不变。\n\n``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。\n\n按属主列会看到上传记录，按对话列图片会看到切图记录；只要调模型的，按 ``operation=generate`` 筛。\n素材片的字幕记录是种类 ``subtitle``、来源是那条素材片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。\n一段对话的背景音乐按 ``kind=audio`` 与 ``conversationId`` 找，生成的与确认时挂到这段对话的上传\n都在里面；没挂对话的上传按属主列。",
+        "description": "给了 ``conversationId`` / ``taskId`` / ``shotIndex`` / ``rootJobId`` / ``sourceJobId`` 就\n只列那段对话、那张需求单下、那个镜号、以那条为原作或直接来源的记录；``kind`` /\n``operation`` 按种类与操作筛。按对话列时含这段对话经分叉继承的记录（调用方读得到这段\n对话才算），其余可见性口径不变。\n\n``metadata`` 在查询串里是一段 JSON 对象，按包含匹配筛（分镜页拿它按镜头组与帧查图片）。\n\n生成记录只记生成，对话的上传在 ``GET /conversations/{id}/uploads`` 里列。按对话列图片会看到\n切图记录；只要调模型的，按 ``operation=generate`` 筛。参考视频的试生成是 ``operation=trial``，\n按 ``generate`` 筛时不在里面。素材片的字幕记录是种类 ``subtitle``、\n来源是那条素材片，按 ``kind=subtitle`` 与 ``sourceJobId`` 找。一段对话生成的背景音乐按\n``kind=audio`` 与 ``conversationId`` 找。",
         "operationId": "list_generations_generations_get",
         "parameters": [
           {
@@ -19784,6 +20186,8 @@
                     "video",
                     "image",
                     "subtitle",
+                    "dubbing",
+                    "speech",
                     "audio",
                     "whole_film"
                   ],
@@ -19807,9 +20211,9 @@
                     "generate",
                     "compose",
                     "cut",
-                    "upload",
                     "render",
-                    "enhance"
+                    "enhance",
+                    "trial"
                   ],
                   "type": "string"
                 },
@@ -19931,9 +20335,60 @@
         "summary": "List Generations"
       }
     },
+    "/generations/dubbings": {
+      "post": {
+        "description": "给一条素材片配一种外语，另起一条配音记录（种类 ``dubbing``）。\n\n用参考音频的声音把 ``lines`` 每句译文合成出来，放在这句的开始，能占到下一句开始（最后一句\n到视频结尾），写了 ``slotEndMs`` 的不超过它；合成出来更长时先加速，最多 1.25 倍，还放不下\n就截掉尾巴并淡出；没占到的地方是静音。拼成一条和\n素材片等长的音轨，地址在 ``outputUrl``，每句的倍数和是否截掉在 ``dubbedLines``。参考音频是\n``original`` 时从原声里截被说话时段（``spans``，不写时是 ``lines``）覆盖得最多的一段（不超过\n10 秒），覆盖不到 3 秒记录失败，``spans`` 的规则同 ``lines``，超出素材片的时长 422；是 ``reference_audio`` 时取参考音频库里那条音色（要没移除、是音色，否则 422），是\n``upload`` 时取调用者本人那条音频上传（否则 422），都取前 10 秒。记录的 ``request.reference``\n里记着用到的地址，音色另记 ``referenceId`` 与台词，上传另记 ``uploadId``。\n\n``sourceJobId`` 的规则同字幕识别：读不到 404，不是素材片 422。``lines`` 不合规、超出上限或\n超出素材片的时长 422。配音没开通 422。``userName`` 的规则同出片，只用来替人办事，不进\n``request``。",
+        "operationId": "submit_dubbing_generations_dubbings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DubbingIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Submit Dubbing"
+      }
+    },
     "/generations/image": {
       "post": {
-        "description": "提交一次图片生成。``userName`` 的规则与视频相同。\n\n帧图编辑带 ``sourceUrl``（底图地址）：先在本对话及它继承的图片里找，再找调用方可见的上传，\n找到记 ``sourceJobId``，找不到记外部地址；回来的 ``sourceUrl`` 都是这个地址。它不进\n``request``、不发上游。",
+        "description": "提交一次图片生成。``userName`` 的规则与视频相同。\n\n帧图编辑带 ``sourceUrl``（底图地址）：在本对话及它继承的生成图片里找，找到记\n``sourceJobId``，找不到（上传的图、外链）记这个地址；回来的 ``sourceUrl`` 都是这个地址。它不进\n``request``、不发上游。",
         "operationId": "submit_image_generations_image_post",
         "requestBody": {
           "content": {
@@ -20064,9 +20519,60 @@
         "summary": "Submit Music"
       }
     },
+    "/generations/speeches": {
+      "post": {
+        "description": "按文字合成一段语音（final-cut 的旁白配音），另起一条记录（种类 ``speech``）。\n\n用参考音频库里那条音色（要没移除、是音色，否则 422；取前 10 秒）的声音把 ``text`` 念出来，给了\n``locale`` 时写明用这种语言念，不给时不写。给了 ``maxDurationMs`` 时念出来更长就先加速，最多\n1.25 倍，还放不下就截到这个长度并淡出；不补静音，念多长（加速后）就多长。产物是一段 m4a\n（``outputUrl``，时长在 ``durationMs``），加速了多少、截没截在 ``dubbedLines`` 唯一的一项里。\n``text`` 的字数上限同配音每句；给了 ``conversationId`` 却读不到这段对话 404；配音没开通 422。\n``userName`` 的规则同出片，只用来替人办事，不进 ``request``。",
+        "operationId": "submit_speech_generations_speeches_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeechIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Submit Speech"
+      }
+    },
     "/generations/subtitles": {
       "post": {
-        "description": "手动识别一条素材片的口播，另起一条字幕记录（种类 ``subtitle``）；素材片完成时后台已自动识别\n一次，这里用来补识别旧视频或识别失败后重来。结果在记录的 ``sentences`` 里。\n\n``sourceJobId`` 要是这段对话（``conversationId``）自己的或继承来的一条视频，读不到 404；读得到\n却不是素材片（已完成的出片或合成）422。字幕识别没开通 422。新记录的对话、需求单与 ``metadata``\n取请求；``userName`` 的规则同出片，只用来替人办事，不进 ``request``。",
+        "description": "按需识别一条素材片的口播，另起一条字幕记录（种类 ``subtitle``）；素材片完成时不会识别，\n只有调这个接口才识别。结果在记录的 ``sentences`` 里。\n\n``sourceJobId`` 要是这段对话（``conversationId``）自己的或继承来的一条视频，读不到 404；读得到\n却不是素材片（已完成的出片或合成）422。字幕识别没开通 422。新记录的对话、需求单与 ``metadata``\n取请求；``userName`` 的规则同出片，只用来替人办事，不进 ``request``。",
         "operationId": "submit_subtitle_generations_subtitles_post",
         "requestBody": {
           "content": {
@@ -20117,7 +20623,7 @@
     },
     "/generations/video": {
       "post": {
-        "description": "提交一次视频生成。请求体照上游异步接口，外加 conversation_id / task_id / shot_index /\nmetadata。\n\n正文可以直接给 ``prompt``，也可以给结构化的 ``shot`` 由服务端拼成 ``prompt``；记录里\n两者都存，``shot`` 不发上游。``shot_index`` 是镜头组编号，落记录的列。``user_name``：\nAPI key 调用方必填、照收；浏览器会话可省略，填登录用户名。",
+        "description": "提交一次视频生成。请求体照上游异步接口，外加 conversation_id / task_id / shot_index /\nmetadata。\n\n正文可以直接给 ``prompt``，也可以给结构化的 ``shot`` 由服务端拼成 ``prompt``；记录里\n两者都存，``shot`` 不发上游。``shot_index`` 是镜头组编号，落记录的列。``user_name``：\nAPI key 调用方必填、照收；浏览器会话可省略，填登录用户名。``reference_ids`` 可选，是这次\n用到的参考资产，有一条不在资料库或已移除就 422；原样记进请求，不发上游。",
         "operationId": "submit_video_generations_video_post",
         "requestBody": {
           "content": {
@@ -20219,7 +20725,7 @@
     },
     "/generations/video-edits": {
       "post": {
-        "description": "为素材片上的区间生成替换片段。参考视频为空时图生，有一条时编辑；模型与两种模式的时长\n能力由 video-models 声明。图生必须引用图片并指定整秒时长；编辑参考须为本人上传的视频，\n实测时长要满足模型限制，seconds 固定为 -1。不合格 422、不入队。\n\nsource_job_id 与 range_start_ms / range_end_ms 记下基底与替换区间，使用基底媒体时间，\n独立于生成时长。基底须为本对话自己的或继承来的已完成素材片，区间须在其时长之内。\nuser_name 的规则同出片。",
+        "description": "为素材片上的区间生成替换片段。参考视频为空时图生，有一条时编辑；模型与两种模式的时长\n能力由 video-models 声明。图生必须引用图片并指定整秒时长；编辑参考须为本人上传的视频\n或资料库里一条没移除的参考视频，实测时长要满足模型限制，seconds 固定为 -1。不合格 422、不入队。\n\nsource_job_id 与 range_start_ms / range_end_ms 记下基底与替换区间，使用基底媒体时间，\n独立于生成时长。基底须为本对话自己的或继承来的已完成素材片，区间须在其时长之内。\nuser_name 的规则同出片。",
         "operationId": "submit_video_edit_generations_video_edits_post",
         "requestBody": {
           "content": {
@@ -20405,7 +20911,7 @@
     },
     "/generations/{job_id}": {
       "get": {
-        "description": "一条可见的生成记录。上传记录的 id 就是确认上传时的 ``uploadId``。",
+        "description": "一条可见的生成记录。",
         "operationId": "get_generation_generations__job_id__get",
         "parameters": [
           {
@@ -22434,6 +22940,40 @@
         ]
       }
     },
+    "/model-providers/groups": {
+      "get": {
+        "description": "部署配置里的配置组名，按配置里的先后；密钥可以归进其中一个组，不归组即默认组。",
+        "operationId": "model_groups_configured_model_providers_groups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelGroupsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "model:manage"
+            ]
+          },
+          {
+            "BearerToken": [
+              "model:manage"
+            ]
+          }
+        ],
+        "summary": "Model Groups Configured",
+        "tags": [
+          "model-providers"
+        ]
+      }
+    },
     "/model-providers/{provider_id}": {
       "delete": {
         "description": "删一个供应商连同它的密钥与模型；有 agent 的草稿或当前版本写着它、或它有默认模型是 409。",
@@ -22549,7 +23089,7 @@
     },
     "/model-providers/{provider_id}/credentials": {
       "post": {
-        "description": "新建一把密钥，不试连；供应商的第一把成为默认密钥。",
+        "description": "新建一把密钥，不试连；供应商的第一把成为默认密钥。``modelGroup`` 给了就归进这个配置组，\n组不在部署配置里 422。",
         "operationId": "create_provider_credential_model_providers__provider_id__credentials_post",
         "parameters": [
           {
@@ -22738,7 +23278,7 @@
         ]
       },
       "patch": {
-        "description": "改名或改字段，不试连。",
+        "description": "改名、改字段或改配置组，不试连。``modelGroup`` 不给不动，给 ``null`` 清掉，给值改成这个组；\n组不在部署配置里 422。",
         "operationId": "update_provider_credential_model_providers__provider_id__credentials__credential_id__patch",
         "parameters": [
           {
@@ -23103,10 +23643,449 @@
         ]
       }
     },
-    "/references": {
+    "/references/audios": {
+      "get": {
+        "description": "全站没移除的参考音频，建立晚的排前面。\n\n``audioKind`` 筛子类（``voice`` 音色、``bgm`` 配乐、``sfx`` 音效）；``locale`` 筛语种；\n``userName`` 筛属主；``q`` 按字面包含匹配标题、备注与台词；时间窗 ``[since, until)`` 作用在\n建立时刻上。``total`` 只在第一页给。",
+        "operationId": "list_reference_audios_references_audios_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "audioKind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "voice",
+                    "bgm",
+                    "sfx"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Audiokind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "locale",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "zh",
+                    "en",
+                    "de",
+                    "es",
+                    "fr"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Locale"
+            }
+          },
+          {
+            "in": "query",
+            "name": "userName",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 150,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Username"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceAudiosOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "List Reference Audios",
+        "tags": [
+          "references"
+        ]
+      },
+      "post": {
+        "description": "把调用者自己的一条音频上传（``uploadId``），或调用者看得到的一条已完成的背景音乐\n（``sourceJobId``）放进参考音频库，每次都新建一条（``201``）。\n\n入库时按地址量时长：量不出来 ``422``；音色（``voice``）要在 3 到 30 秒之间，别的子类\n大于 0 即可，不合规 ``422``。台词 ``transcript`` 只有音色能填，``locale`` 只认 ``zh``、\n``en``、``de``、``es``、``fr``。别人的上传、不是音频的上传、看不到或不是背景音乐的生成\n记录、不存在的 id 都是 ``404``。``userName`` 同媒体生成，持 ``users:act_as`` 时替那个人\n放进去。",
+        "operationId": "create_reference_audio_references_audios_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceAudioCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceAudioOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "uploads:write"
+            ]
+          },
+          {
+            "BearerToken": [
+              "uploads:write"
+            ]
+          }
+        ],
+        "summary": "Create Reference Audio",
+        "tags": [
+          "references"
+        ]
+      }
+    },
+    "/references/audios/filters": {
+      "get": {
+        "description": "每个子类的条数（没有的是 0）与名下有参考音频的属主，各带条数；只数没移除的。",
+        "operationId": "reference_audio_filters_references_audios_filters_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceAudioFiltersOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Reference Audio Filters",
+        "tags": [
+          "references"
+        ]
+      }
+    },
+    "/references/audios/{reference_id}": {
+      "delete": {
+        "description": "属主或治理者把它从参考音频库移除；已经用它配好的音不受影响。别人的是 ``403``。",
+        "operationId": "remove_reference_audio_references_audios__reference_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Reference Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Remove Reference Audio",
+        "tags": [
+          "references"
+        ]
+      },
+      "get": {
+        "description": "一条参考音频；移除了是 ``404``。",
+        "operationId": "get_reference_audio_references_audios__reference_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Reference Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceAudioOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Get Reference Audio",
+        "tags": [
+          "references"
+        ]
+      },
+      "patch": {
+        "description": "属主或治理者改标题、备注、语种、台词；给了的才改，给 ``null`` 清空（标题不能清空）。\n不是音色却要留着台词是 ``422``，别人的是 ``403``。",
+        "operationId": "update_reference_audio_references_audios__reference_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Reference Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReferenceAudioUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceAudioOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:read"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:read"
+            ]
+          }
+        ],
+        "summary": "Update Reference Audio",
+        "tags": [
+          "references"
+        ]
+      }
+    },
+    "/references/videos": {
       "get": {
         "description": "全站没移除的参考视频，建立晚的排前面。\n\n``tags`` 可以重复给：同一维度里命中任一即算，不同维度都要命中，选了上级也算它的下级；不存在\n的标签是 ``422``。``userName`` 筛属主；``q`` 按字面包含匹配拆解全文；时间窗\n``[since, until)`` 作用在建立时刻上。``total`` 只在第一页给。",
-        "operationId": "list_references_references_get",
+        "operationId": "list_reference_videos_references_videos_get",
         "parameters": [
           {
             "in": "query",
@@ -23259,19 +24238,19 @@
             ]
           }
         ],
-        "summary": "List References",
+        "summary": "List Reference Videos",
         "tags": [
           "references"
         ]
       },
       "post": {
-        "description": "把调用者自己的一条视频上传放进资料库，新建的排上第一次拆解（``201``）。\n\n同一条视频已在表里就交回那一行（``200``），不再拆；移除过的回到资料库。别人的上传、\n不是视频的上传、不存在的 ``uploadId`` 都是 ``404``。",
-        "operationId": "create_reference_references_post",
+        "description": "把调用者自己的一条视频上传（``uploadId``），或调用者看得到的一条已完成的素材片\n（``sourceJobId``）放进资料库，新建的排上第一次拆解（``201``）。\n\n同一个地址已在资料库就交回那一条（``200``），不再拆；移除过的回到资料库，属主换成调用者。\n同一个地址同时加只会建出一条。别人的上传、不是视频的上传、看不到或不是素材片的生成记录、\n不存在的 id 都是 ``404``；两个都给或都不给是 ``422``。",
+        "operationId": "create_reference_video_references_videos_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ReferenceCreateIn"
+                "$ref": "#/components/schemas/ReferenceVideoCreateIn"
               }
             }
           },
@@ -23311,22 +24290,22 @@
             ]
           }
         ],
-        "summary": "Create Reference",
+        "summary": "Create Reference Video",
         "tags": [
           "references"
         ]
       }
     },
-    "/references/filters": {
+    "/references/videos/filters": {
       "get": {
         "description": "名下有参考视频的属主，各带条数；只数没移除的，不受筛选影响。",
-        "operationId": "reference_filters_references_filters_get",
+        "operationId": "reference_video_filters_references_videos_filters_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ReferenceFiltersOut"
+                  "$ref": "#/components/schemas/ReferenceVideoFiltersOut"
                 }
               }
             },
@@ -23345,16 +24324,16 @@
             ]
           }
         ],
-        "summary": "Reference Filters",
+        "summary": "Reference Video Filters",
         "tags": [
           "references"
         ]
       }
     },
-    "/references/{reference_id}": {
+    "/references/videos/{reference_id}": {
       "delete": {
         "description": "属主把它从资料库移除；对话里按地址仍能用它的拆解。别人的是 ``403``。",
-        "operationId": "remove_reference_references__reference_id__delete",
+        "operationId": "remove_reference_video_references_videos__reference_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -23394,14 +24373,14 @@
             ]
           }
         ],
-        "summary": "Remove Reference",
+        "summary": "Remove Reference Video",
         "tags": [
           "references"
         ]
       },
       "get": {
-        "description": "一条参考视频连同当前拆解；移除了是 ``404``。",
-        "operationId": "get_reference_references__reference_id__get",
+        "description": "一条参考视频连同当前拆解与最新一次试生成；移除了是 ``404``。",
+        "operationId": "get_reference_video_references_videos__reference_id__get",
         "parameters": [
           {
             "in": "path",
@@ -23448,14 +24427,14 @@
             ]
           }
         ],
-        "summary": "Get Reference",
+        "summary": "Get Reference Video",
         "tags": [
           "references"
         ]
       },
       "patch": {
         "description": "属主改拆解正文，版本加一。版本对不上或正在拆解是 ``409``，别人的是 ``403``。",
-        "operationId": "update_reference_references__reference_id__patch",
+        "operationId": "update_reference_video_references_videos__reference_id__patch",
         "parameters": [
           {
             "in": "path",
@@ -23472,7 +24451,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ReferenceUpdateIn"
+                "$ref": "#/components/schemas/ReferenceVideoUpdateIn"
               }
             }
           },
@@ -23512,16 +24491,16 @@
             ]
           }
         ],
-        "summary": "Update Reference",
+        "summary": "Update Reference Video",
         "tags": [
           "references"
         ]
       }
     },
-    "/references/{reference_id}/breakdowns": {
+    "/references/videos/{reference_id}/breakdowns": {
       "post": {
         "description": "属主重新拆解：重新排队，拆成就覆盖拆解并重新打标，失败保留原来的。正在拆是 ``409``。",
-        "operationId": "rerun_reference_references__reference_id__breakdowns_post",
+        "operationId": "rerun_reference_video_references_videos__reference_id__breakdowns_post",
         "parameters": [
           {
             "in": "path",
@@ -23570,16 +24549,16 @@
             ]
           }
         ],
-        "summary": "Rerun Reference",
+        "summary": "Rerun Reference Video",
         "tags": [
           "references"
         ]
       }
     },
-    "/references/{reference_id}/tagging": {
+    "/references/videos/{reference_id}/tagging": {
       "post": {
         "description": "属主按当前拆解重新打标：AI 维度整组重写，人工维度不动。拆解还没完成或正在打标是\n``409``，别人的是 ``403``。",
-        "operationId": "retag_reference_references__reference_id__tagging_post",
+        "operationId": "retag_reference_video_references_videos__reference_id__tagging_post",
         "parameters": [
           {
             "in": "path",
@@ -23628,16 +24607,16 @@
             ]
           }
         ],
-        "summary": "Retag Reference",
+        "summary": "Retag Reference Video",
         "tags": [
           "references"
         ]
       }
     },
-    "/references/{reference_id}/tags": {
+    "/references/videos/{reference_id}/tags": {
       "put": {
         "description": "属主整份替换各维度的标签。正在打标是 ``409``；不存在的标签或给了维度是 ``422``；别人的\n是 ``403``。",
-        "operationId": "replace_reference_tags_references__reference_id__tags_put",
+        "operationId": "replace_reference_video_tags_references_videos__reference_id__tags_put",
         "parameters": [
           {
             "in": "path",
@@ -23694,16 +24673,16 @@
             ]
           }
         ],
-        "summary": "Replace Reference Tags",
+        "summary": "Replace Reference Video Tags",
         "tags": [
           "references"
         ]
       }
     },
-    "/references/{reference_id}/test-generations": {
+    "/references/videos/{reference_id}/test-generations": {
       "post": {
-        "description": "属主或治理者按当前拆解拼一段提示词，生成一条视频与原片对照，记在发起人名下，答复\n带上这次试生成的整行。\n\n``userName`` 同媒体生成。别人的是 ``403``；拆解还没完成、上一次试生成（不论谁发起）\n还没结束是 ``409``；拆解格式不全拼不出提示词、或拼出来超过字数上限是 ``422``。",
-        "operationId": "start_reference_test_video_references__reference_id__test_generations_post",
+        "description": "属主或治理者按当前拆解拼一段提示词，生成一条视频与原片对照，记在发起人名下（一条\n``operation=trial`` 的生成记录，不算素材片），答复带上这次试生成。\n\n``userName`` 同媒体生成。别人的是 ``403``；拆解还没完成、上一次试生成（不论谁发起）\n还没结束是 ``409``；拆解格式不全拼不出提示词、或拼出来超过字数上限是 ``422``。",
+        "operationId": "start_reference_test_video_references_videos__reference_id__test_generations_post",
         "parameters": [
           {
             "in": "path",
@@ -25430,7 +26409,7 @@
     },
     "/uploads/{upload_id}/confirm": {
       "post": {
-        "description": "按桶里的对象核对类型与大小，通过后记一条上传记录（id 就是 ``uploadId``），交回地址。\n同一个视频文件已经传过，交回最早那份的地址。\n\n请求体可选。``userName`` 给了按替人办事换主体（浏览器只能写自己），不给就记在当前主体名下。\n``conversationId`` 把音乐挂到那段对话：别的类型 422，对话看不见 404，不是属主或已删除 403。\n可重复调：记过就交回记录上的地址，返回同一条记录，第二次的 ``userName`` 与\n``conversationId`` 都不改记录。",
+        "description": "按桶里的对象核对类型与大小，通过后记进上传台账（id 就是 ``uploadId``）：大小、内容类型与\nMD5 取对象存储报的，时长不量。同一个视频文件已经传过，交回最早那份的地址。\n\n请求体可选。``userName`` 给了按替人办事换主体（浏览器只能写自己），不给就记在当前主体名下。\n``conversationId`` 把这次上传挂到那段对话（任何种类都行）：对话看不见 404，不是属主或已删除\n403。``width`` / ``height`` 是图片签名时报的宽高，两个都给才记，越界 422；别的种类不记。\n可重复调：记过就原样交回那一条，第二次的请求体都不改记录。",
         "operationId": "confirm_upload_uploads__upload_id__confirm_post",
         "parameters": [
           {
@@ -25466,7 +26445,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UploadConfirmedOut"
+                  "$ref": "#/components/schemas/UploadOut"
                 }
               }
             },

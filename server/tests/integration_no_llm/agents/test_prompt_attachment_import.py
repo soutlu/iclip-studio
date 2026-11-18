@@ -124,10 +124,7 @@ async def queued_image_urls(pg_url: str, conversation_id: str) -> list[list[str]
 async def image_uploads(pg_url: str) -> list[tuple[uuid.UUID, str]]:
     async with connected(pg_url) as conn:
         rows = await conn.execute(
-            text(
-                "SELECT owner_user_id, output ->> 'url' FROM iclip.generation_jobs "
-                "WHERE operation = 'upload' AND kind = 'image'"
-            )
+            text("SELECT owner_user_id, url FROM iclip.media_uploads WHERE kind = 'image'")
         )
         return [(row[0], row[1]) for row in rows]
 

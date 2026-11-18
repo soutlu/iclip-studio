@@ -1,14 +1,16 @@
 import { execFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 import {
   detectGpuEncoder,
   resolveBrowserGpuMode,
   resolveHeadlessShellPath,
 } from '@hyperframes/engine'
+import { startBrowserGuard } from './browser'
 import { ConfigError, loadConfig } from './config'
 import { ExportQueue } from './jobs'
-import { loadLibrary } from './library'
 import { createLogger } from './log'
 import { restrictFetch } from './network'
 import { createProducerWorker } from './renderer'
@@ -31,29 +33,38 @@ async function main(): Promise<void> {
   const logger = createLogger(config.logLevel)
   restrictFetch(config.allowedHosts, logger)
 
-  const chromePath = resolveHeadlessShellPath()
-  if (!chromePath) {
+  const browser = resolveHeadlessShellPath()
+  if (!browser) {
     logger.error('找不到 chrome-headless-shell', {
       hint: '设置 PRODUCER_HEADLESS_SHELL_PATH 或用 @puppeteer/browsers 安装',
     })
     process.exit(1)
   }
+  // 启动脚本放在 workDir 里：先清空 workDir 再写
+  await rm(config.workDir, { recursive: true, force: true })
+  const { chromePath } = await startBrowserGuard(browser, join(config.workDir, 'browser'), logger)
   const chrome = (await run(chromePath, ['--version'])).stdout.trim()
   const gpu = await resolveBrowserGpuMode('auto', { chromePath })
   const encoder = await detectGpuEncoder()
   logger.info('渲染环境', {
     chrome,
-    chromePath,
+    chromePath: browser,
     gpu,
     videoEncoder: encoder ?? 'libx264（软件）',
     registryRoot: config.registryRoot,
   })
   if (gpu === 'software') logger.warn('浏览器使用软件渲染', { reason: '探测不到可用的 GPU' })
 
-  await rm(config.workDir, { recursive: true, force: true })
+  const vendorDir = join(config.registryRoot, 'vendor')
+  if (!existsSync(vendorDir)) {
+    logger.error('组件库里没有公共目录', { vendorDir, hint: '检查 RENDER_REGISTRY_ROOT 的挂载' })
+    process.exit(1)
+  }
+
   const queue = new ExportQueue({
     worker: createProducerWorker({
       workDir: config.workDir,
+      chromePath,
       gpuEncode: encoder !== null,
       logger,
     }),
@@ -65,7 +76,7 @@ async function main(): Promise<void> {
 
   const server = createExportServer({
     queue,
-    library: () => loadLibrary(config.registryRoot),
+    vendorDir,
     allowedHosts: config.allowedHosts,
     logger,
     health: () => ({ gpu, chrome }),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import AsyncGenerator
 
@@ -9,11 +10,13 @@ from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from iclip.domains.generation.infra_sql import SqlGenerationRepository
+from iclip.domains.generation.models import GenerationJob, GenerationOutput
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.app import make_client, make_runtime_config
 from tests.helpers.auth import register_and_login, set_roles_in_db
-from tests.helpers.generation import MemoryObjectStore
+from tests.helpers.generation import MemoryObjectStore, make_job, trial_request, video_request
 from tests.helpers.pg import reset_database
 from tests.helpers.references import (
     STUDIO_ENVS,
@@ -21,6 +24,8 @@ from tests.helpers.references import (
     ark_pipeline,
     config_with_studio,
     plant_reference,
+    plant_user,
+    reference_row,
     upload_video,
 )
 from tests.helpers.runtime_backed import build_backed_app
@@ -76,8 +81,20 @@ async def login_as(client: httpx.AsyncClient, pg_url: str, username: str, role: 
     assert logged_in.status_code == 204, logged_in.text
 
 
+async def finished(repo: SqlGenerationRepository, job: GenerationJob, url: str) -> GenerationJob:
+    created = await repo.create(job)
+    await repo.mark_completed(
+        created.id, output=GenerationOutput(url=url), provider_status="succeeded"
+    )
+    return created
+
+
 async def test_anonymous_is_401(http: httpx.AsyncClient) -> None:
-    for path in ("/references", "/references/filters", f"/references/{uuid.uuid4()}"):
+    for path in (
+        "/references/videos",
+        "/references/videos/filters",
+        f"/references/videos/{uuid.uuid4()}",
+    ):
         assert (await http.get(path)).status_code == 401
 
 
@@ -87,9 +104,9 @@ async def test_an_own_video_upload_becomes_one_reference(
     await login_as(http, pg_url, "maya", "editor")
     upload_id = await upload_video(http, bucket)
 
-    created = await http.post("/references", json={"uploadId": upload_id})
-    again = await http.post("/references", json={"uploadId": upload_id})
-    listed = await http.get("/references")
+    created = await http.post("/references/videos", json={"uploadId": upload_id})
+    again = await http.post("/references/videos", json={"uploadId": upload_id})
+    listed = await http.get("/references/videos")
 
     assert created.status_code == 201, created.text
     assert again.status_code == 200, again.text
@@ -101,6 +118,53 @@ async def test_an_own_video_upload_becomes_one_reference(
     assert (page["total"], page["canUpload"]) == (1, True)
     assert [item["id"] for item in page["items"]] == [body["id"]]
     assert "document" not in page["items"][0]
+
+
+async def test_adding_the_same_video_twice_at_once_makes_one_reference(
+    http: httpx.AsyncClient, pg_url: str, bucket: MemoryObjectStore
+) -> None:
+    await login_as(http, pg_url, "maya", "editor")
+    upload_id = await upload_video(http, bucket)
+
+    first, second = await asyncio.gather(
+        http.post("/references/videos", json={"uploadId": upload_id}),
+        http.post("/references/videos", json={"uploadId": upload_id}),
+    )
+    listed = (await http.get("/references/videos")).json()
+
+    assert sorted((first.status_code, second.status_code)) == [200, 201]
+    assert first.json()["id"] == second.json()["id"]
+    assert listed["total"] == 1
+
+
+async def test_a_finished_take_the_caller_can_see_becomes_a_reference(
+    http: httpx.AsyncClient, pg_url: str, engine: AsyncEngine
+) -> None:
+    await login_as(http, pg_url, "maya", "editor")
+    maya = uuid.UUID((await http.get("/users/me")).json()["user"]["id"])
+    sara = await plant_user(engine, "sara")
+    repo = SqlGenerationRepository(engine)
+    take_url = "https://cdn.example.test/iclip/agent/video-masters/take.mp4"
+    mine = await finished(repo, make_job(video_request(), owner_user_id=maya), take_url)
+    theirs = await finished(
+        repo, make_job(video_request(), owner_user_id=sara), "https://cdn.example.test/s.mp4"
+    )
+    trial = await finished(
+        repo, make_job(trial_request(), owner_user_id=maya), "https://cdn.example.test/t.mp4"
+    )
+
+    created = await http.post("/references/videos", json={"sourceJobId": str(mine.id)})
+    others = await http.post("/references/videos", json={"sourceJobId": str(theirs.id)})
+    not_a_take = await http.post("/references/videos", json={"sourceJobId": str(trial.id)})
+    both = await http.post(
+        "/references/videos", json={"sourceJobId": str(mine.id), "uploadId": str(uuid.uuid4())}
+    )
+
+    assert created.status_code == 201, created.text
+    assert created.json()["videoUrl"] == take_url
+    assert (others.status_code, not_a_take.status_code, both.status_code) == (404, 404, 422)
+    row = await reference_row(engine, uuid.UUID(created.json()["id"]))
+    assert (row["source_job_id"], row["upload_id"]) == (mine.id, None)
 
 
 async def test_someone_elses_or_a_non_video_upload_is_404(
@@ -117,10 +181,10 @@ async def test_someone_elses_or_a_non_video_upload_is_404(
     )
     assert (await http.post(f"/uploads/{image_id}/confirm")).status_code == 200
 
-    image = await http.post("/references", json={"uploadId": image_id})
-    missing = await http.post("/references", json={"uploadId": str(uuid.uuid4())})
+    image = await http.post("/references/videos", json={"uploadId": image_id})
+    missing = await http.post("/references/videos", json={"uploadId": str(uuid.uuid4())})
     await login_as(http, pg_url, "sara", "editor")
-    others = await http.post("/references", json={"uploadId": mayas})
+    others = await http.post("/references/videos", json={"uploadId": mayas})
 
     assert (image.status_code, missing.status_code, others.status_code) == (404, 404, 404)
 
@@ -130,8 +194,8 @@ async def test_only_the_owner_edits_and_removes(
 ) -> None:
     await login_as(http, pg_url, "maya", "editor")
     upload_id = await upload_video(http, bucket)
-    reference = (await http.post("/references", json={"uploadId": upload_id})).json()
-    path = f"/references/{reference['id']}"
+    reference = (await http.post("/references/videos", json={"uploadId": upload_id})).json()
+    path = f"/references/videos/{reference['id']}"
     edit = {"version": 1, "document": "改过"}
     tags = {"tagIds": []}
 
@@ -151,7 +215,7 @@ async def test_only_the_owner_edits_and_removes(
     assert (await http.put(f"{path}/tags", json=tags)).status_code == 200
     assert (await http.delete(path)).status_code == 204
     assert (await http.get(path)).status_code == 404
-    assert (await http.get("/references")).json()["items"] == []
+    assert (await http.get("/references/videos")).json()["items"] == []
 
 
 async def test_tags_take_only_values_of_the_tree(
@@ -160,7 +224,7 @@ async def test_tags_take_only_values_of_the_tree(
     await login_as(http, pg_url, "maya", "editor")
     maya = uuid.UUID((await http.get("/users/me")).json()["user"]["id"])
     reference_id = await plant_reference(engine, owner=maya)
-    path = f"/references/{reference_id}/tags"
+    path = f"/references/videos/{reference_id}/tags"
     dimension = await tag_id(engine, "品类")
     runner = await tag_id(engine, "品类", "跑鞋")
     amz = await tag_id(engine, "平台&渠道", "AMZ")
@@ -168,8 +232,8 @@ async def test_tags_take_only_values_of_the_tree(
     unknown = await http.put(path, json={"tagIds": [str(uuid.uuid4())]})
     whole_dimension = await http.put(path, json={"tagIds": [str(dimension)]})
     replaced = await http.put(path, json={"tagIds": [str(runner), str(amz)]})
-    filtered = await http.get("/references", params={"tags": [str(dimension), str(amz)]})
-    bad_filter = await http.get("/references", params={"tags": [str(uuid.uuid4())]})
+    filtered = await http.get("/references/videos", params={"tags": [str(dimension), str(amz)]})
+    bad_filter = await http.get("/references/videos", params={"tags": [str(uuid.uuid4())]})
 
     assert (unknown.status_code, whole_dimension.status_code) == (422, 422)
     assert replaced.status_code == 200, replaced.text
@@ -185,7 +249,7 @@ async def test_tags_cannot_change_while_tagging_and_retagging_queues(
     maya = uuid.UUID((await http.get("/users/me")).json()["user"]["id"])
     reference_id = await plant_reference(engine, owner=maya)
     await plant_entry(engine, reference_id, status="completed")
-    path = f"/references/{reference_id}"
+    path = f"/references/videos/{reference_id}"
 
     retagged = await http.post(f"{path}/tagging")
     again = await http.post(f"{path}/tagging")
@@ -201,12 +265,12 @@ async def test_a_viewer_reads_but_cannot_upload_or_rerun(
 ) -> None:
     await login_as(http, pg_url, "maya", "editor")
     upload_id = await upload_video(http, bucket)
-    reference = (await http.post("/references", json={"uploadId": upload_id})).json()
+    reference = (await http.post("/references/videos", json={"uploadId": upload_id})).json()
 
     await login_as(http, pg_url, "vera", "viewer")
-    listed = await http.get("/references")
-    filters = await http.get("/references/filters")
-    rerun = await http.post(f"/references/{reference['id']}/breakdowns")
+    listed = await http.get("/references/videos")
+    filters = await http.get("/references/videos/filters")
+    rerun = await http.post(f"/references/videos/{reference['id']}/breakdowns")
 
     assert (listed.status_code, listed.json()["canUpload"]) == (200, False)
     assert filters.status_code == 200
@@ -219,11 +283,11 @@ async def test_without_media_generation_there_is_no_test_video(
 ) -> None:
     await login_as(http, pg_url, "maya", "editor")
     upload_id = await upload_video(http, bucket)
-    reference = (await http.post("/references", json={"uploadId": upload_id})).json()
+    reference = (await http.post("/references/videos", json={"uploadId": upload_id})).json()
 
-    detail = await http.get(f"/references/{reference['id']}")
+    detail = await http.get(f"/references/videos/{reference['id']}")
     submitted = await http.post(
-        f"/references/{reference['id']}/test-generations", json={"aspectRatio": "9:16"}
+        f"/references/videos/{reference['id']}/test-generations", json={"aspectRatio": "9:16"}
     )
 
     assert (detail.status_code, detail.json()["testVideo"]) == (200, None)
@@ -256,9 +320,9 @@ async def test_without_an_object_store_uploads_are_off_but_reruns_still_work(
             reference_id = await plant_reference(
                 engine, owner=maya, status="failed", error_code="model_call_failed"
             )
-            listed = await client.get("/references")
-            created = await client.post("/references", json={"uploadId": str(uuid.uuid4())})
-            rerun = await client.post(f"/references/{reference_id}/breakdowns")
+            listed = await client.get("/references/videos")
+            created = await client.post("/references/videos", json={"uploadId": str(uuid.uuid4())})
+            rerun = await client.post(f"/references/videos/{reference_id}/breakdowns")
     finally:
         await engine.dispose()
 
@@ -281,11 +345,13 @@ async def test_without_breakdown_configured_only_reads_are_mounted(
             await set_roles_in_db(migrated_pg, "maya@example.com", ["editor"])
             maya = uuid.UUID((await client.get("/users/me")).json()["user"]["id"])
             reference_id = await plant_reference(engine, owner=maya)
-            listed = await client.get("/references")
-            created = await client.post("/references", json={"uploadId": str(uuid.uuid4())})
-            rerun = await client.post(f"/references/{uuid.uuid4()}/breakdowns")
-            retag = await client.post(f"/references/{reference_id}/tagging")
-            tagged = await client.put(f"/references/{reference_id}/tags", json={"tagIds": []})
+            listed = await client.get("/references/videos")
+            created = await client.post("/references/videos", json={"uploadId": str(uuid.uuid4())})
+            rerun = await client.post(f"/references/videos/{uuid.uuid4()}/breakdowns")
+            retag = await client.post(f"/references/videos/{reference_id}/tagging")
+            tagged = await client.put(
+                f"/references/videos/{reference_id}/tags", json={"tagIds": []}
+            )
             tree = await client.get("/library-tags")
     finally:
         await engine.dispose()

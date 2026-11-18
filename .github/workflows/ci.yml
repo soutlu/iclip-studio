@@ -90,10 +90,9 @@ jobs:
                   format) web_format=true ;;
                   all) video_plugins=true; server=true; web=true; render=true ;;
                 esac
-                # 渲染服务打包 web 的成片合成构建与后端合同的 zod 生成物，测试用 web 组装的测试组件库，
-                # 它们变了也要查渲染服务。
+                # 渲染服务打包 web 的 final-cut 主文件写法，测试用 web 组装的测试组件库，它们变了也要查渲染服务。
                 case "$path" in
-                  web/src/features/storyboard/whole-film/composition/*|web/scripts/hyperframes-*|web/src/shared/api/generated/*)
+                  web/src/features/storyboard/final-cut/composition/*|web/scripts/hyperframes-*)
                     render=true ;;
                 esac
                 printf '%-6s %s\n' "$scope" "$path"
@@ -221,7 +220,6 @@ jobs:
           - group: conversations
             tests: >-
               tests/integration_no_llm/conversations
-              --ignore=tests/integration_no_llm/conversations/test_whole_film_draft.py
               --ignore=tests/integration_no_llm/conversations/test_whole_film_export.py
           - group: services
             tests: >-
@@ -234,12 +232,10 @@ jobs:
               tests/integration_no_llm/references
           - group: media
             tests: >-
-              tests/integration_no_llm/conversations/test_whole_film_draft.py
               tests/integration_no_llm/conversations/test_whole_film_export.py
               tests/integration_no_llm/uploads
               tests/integration_no_llm/platform
               tests/integration_no_llm/plugins
-              tests/integration_no_llm/brand_templates
           - group: configuration-audit
             tests: >-
               tests/integration_no_llm/agent_config
@@ -268,7 +264,6 @@ jobs:
               --ignore=tests/integration_no_llm/uploads
               --ignore=tests/integration_no_llm/platform
               --ignore=tests/integration_no_llm/plugins
-              --ignore=tests/integration_no_llm/brand_templates
     defaults:
       run:
         working-directory: server

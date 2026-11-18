@@ -11,7 +11,8 @@ from typing import Any, Literal, Protocol
 import structlog
 from iclip_video.film_view import FilmImagePrompt, FilmTextEdit, FilmView
 
-from iclip.common.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from iclip.common.errors import NotFound, PermissionDenied, ValidationFailed
+from iclip.common.final_cut import MAIN_FILE, PROJECT_DIR, TargetLocale, locale_path
 from iclip.domains.conversations.models import (
     IDLE_ACTIVITY,
     AgentPreview,
@@ -19,7 +20,6 @@ from iclip.domains.conversations.models import (
     ConversationActivity,
     PreviewHeader,
     VideoPhase,
-    WholeFilmDraft,
     WholeFilmExport,
 )
 from iclip.domains.conversations.repository import (
@@ -31,13 +31,12 @@ from iclip.domains.conversations.repository import (
     DeletedFilter,
     PageCursor,
     StateFilter,
-    WholeFilmDraftStore,
 )
 from iclip.domains.conversations.schemas import DEFAULT_TITLE, MAX_TITLE_CHARS, conversation_out
-from iclip.domains.conversations.whole_film_schemas import WholeFilmDocument
 from iclip.domains.identity.public import (
     AGENT_MANAGE_PERMISSION,
     MANAGE_PERMISSION,
+    ModelGroupOf,
     Principal,
     visible_owner_incl_act_as,
 )
@@ -107,7 +106,8 @@ LatestMasterUrls = Callable[[Sequence[uuid.UUID]], Awaitable[Mapping[uuid.UUID, 
 
 VideoProgressOf = Callable[[uuid.UUID | None], Awaitable[Mapping[uuid.UUID, VideoPhase]]]
 
-GenerateTitle = Callable[[str], Awaitable[str | None]]
+# (用户这轮说的话, 配置组) → 标题；配置组为空即默认组，起不出标题答 None。
+GenerateTitle = Callable[[str, str | None], Awaitable[str | None]]
 
 AnnounceTitle = Callable[[uuid.UUID, uuid.UUID, str], None]
 
@@ -165,7 +165,10 @@ ListDerivedFiles = Callable[[uuid.UUID, uuid.UUID], Awaitable[Sequence[DerivedFi
 
 ReadDerivedFile = Callable[[uuid.UUID, uuid.UUID, str], Awaitable[DerivedFileContent | None]]
 
-WriteDerivedFile = Callable[[uuid.UUID, uuid.UUID, str, str, int], Awaitable[DerivedFileContent]]
+# 最后一项是期望的版本号；None 表示不比版本、直接写入。
+WriteDerivedFile = Callable[
+    [uuid.UUID, uuid.UUID, str, str, int | None], Awaitable[DerivedFileContent]
+]
 
 
 class ConversationFilm(Protocol):
@@ -232,13 +235,7 @@ class ConversationFilm(Protocol):
     ) -> uuid.UUID: ...
 
 
-class WholeFilmDraftReferences(Protocol):
-    async def __call__(
-        self, principal: Principal, conversation_id: uuid.UUID, document: WholeFilmDocument
-    ) -> None: ...
-
-
-class WholeFilmRenderUnavailable(Exception):
+class FinalCutRenderUnavailable(Exception):
     pass
 
 
@@ -248,9 +245,11 @@ class WholeFilmExports(Protocol):
         principal: Principal,
         *,
         conversation_id: uuid.UUID,
-        revision: int,
-        document: WholeFilmDocument,
-    ) -> uuid.UUID: ...
+        main_file: str,
+        locale: TargetLocale | None,
+    ) -> uuid.UUID:
+        """按 final-cut 主文件记一条导出排队，答复导出 id。``locale`` 是导出哪种语言，None 是原文。"""
+        ...
 
     async def latest(
         self, *, conversation_id: uuid.UUID, owner_user_id: uuid.UUID
@@ -262,6 +261,8 @@ class WholeFilmExports(Protocol):
 
 
 _EXPORTS_OFF = "成片导出没有开通"
+_FINAL_CUT_EMPTY = "final-cut 暂无内容，无法导出"
+_NO_LOCALE_TABLE = "final-cut 里没有这种语言的语言文件，无法导出这种语言的版本"
 
 
 class WorkspaceDocumentValidator(Protocol):
@@ -349,10 +350,9 @@ class ConversationService:
         write_derived_file: WriteDerivedFile,
         document_validators: Mapping[str, WorkspaceDocumentValidator],
         film: ConversationFilm,
-        drafts: WholeFilmDraftStore,
-        draft_references: WholeFilmDraftReferences,
         exports: WholeFilmExports | None,
         generate_title: GenerateTitle,
+        model_group_of: ModelGroupOf,
         announce_title: AnnounceTitle,
         activities_of: ActivitiesOf,
         busy_conversation_ids: BusyConversationIds,
@@ -366,8 +366,6 @@ class ConversationService:
         self._repo = repo
         self._previews = previews
         self._runtime = runtime
-        self._drafts = drafts
-        self._draft_references = draft_references
         self._exports = exports
         self._same_style_files = same_style_files
         self._same_style_source = same_style_source
@@ -381,6 +379,7 @@ class ConversationService:
         self._latest_master_urls = latest_master_urls
         self._video_progress_of = video_progress_of
         self._generate_title = generate_title
+        self._model_group_of = model_group_of
         self._announce_title = announce_title
         self._list_collections = list_collections
         self._list_derived_files = list_derived_files
@@ -586,48 +585,28 @@ class ConversationService:
             run_version=run_version,
         )
 
-    async def whole_film_draft(
-        self, principal: Principal, conversation_id: uuid.UUID
-    ) -> tuple[WholeFilmDraft, WholeFilmDocument] | None:
-        conversation = await self._readable(principal, conversation_id)
-        found = await self._drafts.get(conversation.id)
-        if found is None:
-            return None
-        return found, WholeFilmDocument.model_validate(found.document)
-
-    async def save_whole_film_draft(
-        self,
-        principal: Principal,
-        conversation_id: uuid.UUID,
-        *,
-        revision: int,
-        document: WholeFilmDocument,
-    ) -> WholeFilmDraft:
-        conversation = await self._workspace_writable(principal, conversation_id)
-        await self._draft_references(principal, conversation.id, document)
-        saved = await self._drafts.save(
-            conversation.id,
-            document=document.model_dump(mode="json", by_alias=True),
-            revision=revision,
-            updated_by=principal.user_id,
-        )
-        if saved is None:
-            raise Conflict("成片草稿已经有更新的一版，重新读取后再改")
-        return saved
-
     async def export_whole_film(
-        self, principal: Principal, conversation_id: uuid.UUID, *, revision: int
+        self, principal: Principal, conversation_id: uuid.UUID, *, locale: TargetLocale | None
     ) -> uuid.UUID:
+        """按 final-cut 主文件记一条导出排队，答复导出 id；``locale`` 是导出哪种语言，None 是原文。
+        还没有主文件、工程里没有这种语言的值表都抛 ``ValidationFailed``。"""
+
         conversation = await self._workspace_writable(principal, conversation_id)
         exports = self._require_exports()
-        found = await self._drafts.get(conversation.id)
-        if (found.revision if found is not None else 0) != revision:
-            raise Conflict("成片草稿已经有更新的一版，重新读取后再导出")
-        document = None if found is None else WholeFilmDocument.model_validate(found.document)
-        if document is None or not document.layer0:
-            raise ValidationFailed("画面轨里还没有内容，导不出成片")
+        owner = conversation.owner_user_id
+        main = await self._read_derived_file(owner, conversation.id, f"{PROJECT_DIR}/{MAIN_FILE}")
+        if main is None:
+            raise ValidationFailed(_FINAL_CUT_EMPTY)
+        if (
+            locale is not None
+            and await self._read_derived_file(
+                owner, conversation.id, f"{PROJECT_DIR}/{locale_path(locale)}"
+            )
+            is None
+        ):
+            raise ValidationFailed(_NO_LOCALE_TABLE)
         return await exports.start(
-            principal, conversation_id=conversation.id, revision=revision, document=document
+            principal, conversation_id=conversation.id, main_file=main.content, locale=locale
         )
 
     async def latest_whole_film_export(
@@ -930,7 +909,9 @@ class ConversationService:
         conversation = await self._repo.get(conversation_id, owner=None)
         if conversation.title_kind != "default":
             return
-        title = await self._generate_title(user_text)
+        title = await self._generate_title(
+            user_text, await self._model_group_of(conversation.owner_user_id)
+        )
         if title is None:
             return
         async with self._row_lock(conversation_id):
@@ -1062,6 +1043,7 @@ __all__ = [
     "DeletedFilter",
     "DerivedFile",
     "DerivedFileContent",
+    "FinalCutRenderUnavailable",
     "LatestMasterUrls",
     "ListAgents",
     "ListCollections",
@@ -1074,9 +1056,7 @@ __all__ = [
     "SidebarGroup",
     "TaskExists",
     "VideoProgressOf",
-    "WholeFilmDraftReferences",
     "WholeFilmExports",
-    "WholeFilmRenderUnavailable",
     "WorkspaceDocumentValidator",
     "WriteDerivedFile",
 ]

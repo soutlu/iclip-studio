@@ -13,6 +13,7 @@ import { createPortal } from 'react-dom'
 import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import type { TimeSpan } from '@/shared/lib/time-spans'
+import { useElementSize } from '@/shared/lib/use-element-size'
 import { cn } from '@/shared/lib/utils'
 import { bubbleAlign } from './bubble-align'
 import type { PeaksState } from './media-analysis'
@@ -35,6 +36,12 @@ type TimelineRulerProps = {
   clockAt: (clientX: number) => number
   onSeek: (clock: number) => void
   onScrub: () => void
+  /** 悬停、按住拖动时在时间尺上方出不出写着时间的气泡；不出时悬停照样画虚线。默认出。 */
+  timeBubble?: boolean | undefined
+  /** 给了时按住拖动定位改调它（可以吸附），键盘定位照旧调 `onSeek`。 */
+  onPointerSeek?: ((clock: number) => void) | undefined
+  /** 按住拖动定位松手或被取消。 */
+  onSeekEnd?: (() => void) | undefined
 }
 
 export function TimelineRuler({
@@ -48,6 +55,9 @@ export function TimelineRuler({
   clockAt,
   onSeek,
   onScrub,
+  timeBubble = true,
+  onPointerSeek,
+  onSeekEnd,
 }: TimelineRulerProps) {
   const [seekByPointer, setSeekByPointer] = useState(false)
   const [seeking, setSeeking] = useState(false)
@@ -92,7 +102,8 @@ export function TimelineRuler({
   const ticks = Array.from({ length: Math.floor(scale / tickStep) + 1 }, (_, at) => at * tickStep)
   const boundedTime = Math.max(0, Math.min(total, currentTime))
   const seekPointer = (event: PointerEvent<HTMLInputElement>) => {
-    onSeek(previewAt(event))
+    const seek = onPointerSeek ?? onSeek
+    seek(previewAt(event))
   }
   const finishSeek = (event: PointerEvent<HTMLInputElement>) => {
     if (seekPointerRef.current !== event.pointerId) return
@@ -100,6 +111,7 @@ export function TimelineRuler({
     setSeeking(false)
     setPreview(null)
     releasePointer(event)
+    onSeekEnd?.()
   }
   return (
     <>
@@ -176,7 +188,7 @@ export function TimelineRuler({
           type="range"
           value={boundedTime}
         />
-        {preview === null
+        {preview === null || !timeBubble
           ? null
           : createPortal(
               <span
@@ -202,8 +214,28 @@ export function TimelineRuler({
   )
 }
 
-export function TimelinePlayhead({ style }: { style: CSSProperties }) {
-  return <span aria-hidden="true" className="timeline-playhead" style={style} />
+/**
+ * 播放头，不接收指针。编辑器自己让人按住竖线拖着定位时给出 `dragging`（final-cut），拖着时头画成按下的样子；
+ * 不给时（编辑视频）没有这个状态。
+ */
+export function TimelinePlayhead({
+  style,
+  dragging,
+}: {
+  style: CSSProperties
+  dragging?: boolean | undefined
+}) {
+  if (dragging === undefined)
+    return <span aria-hidden="true" className="timeline-playhead" style={style} />
+  return (
+    <span
+      aria-hidden="true"
+      className="timeline-playhead"
+      data-dragging={dragging ? '' : undefined}
+      data-testid="timeline-playhead"
+      style={style}
+    />
+  )
 }
 
 type LimitBubbleProps = {
@@ -237,32 +269,46 @@ export function LimitBubble({ text, left, viewportRef }: LimitBubbleProps) {
 
 const MAX_FRAMES = 24
 const FRAME_STEP = 0.5
+const FRAME_SNAP = FRAME_STEP / 2
+const MIN_FRAME_PX = 48
 
-const frameStepOf = (length: number) => {
+/** 一张缩略图盖多少秒素材：从 0.5 秒起翻倍，到每张至少 `MIN_FRAME_PX` 宽、整段不超过 `MAX_FRAMES` 张为止。 */
+const frameStepOf = (length: number, width: number) => {
   let step = FRAME_STEP
-  while (Math.ceil(length / step) + 1 > MAX_FRAMES) step *= 2
+  while (step * width < MIN_FRAME_PX * length || Math.ceil(length / step) + 1 > MAX_FRAMES)
+    step *= 2
   return step
 }
 
-export function Frames({ part }: { part: PlaySegment }) {
-  const length = Math.max(0, part.end - part.start)
-  const step = frameStepOf(length)
+/**
+ * 格子对齐在素材时间的整格上，裁剪时中间的格子不动；每格取它落在这一段里那一截的正中，
+ * 图不会来自这一段以外的画面。
+ */
+const frameCells = (part: PlaySegment, step: number) => {
   const first = Math.floor(part.start / step)
   const last = Math.max(first, Math.ceil(part.end / step) - 1)
-  const cells = Array.from({ length: last - first + 1 }).flatMap((_, at) => {
+  return Array.from({ length: last - first + 1 }).flatMap((_, at) => {
     const from = (first + at) * step
-    const src = videoSnapshotUrl(part.mediaUrl, 96, from + step / 2)
+    const shown = (Math.max(from, part.start) + Math.min(from + step, part.end)) / 2
+    const src = videoSnapshotUrl(part.mediaUrl, 96, Math.round(shown / FRAME_SNAP) * FRAME_SNAP)
     return src === undefined ? [] : [{ from, src }]
   })
+}
+
+export function Frames({ part }: { part: PlaySegment }) {
+  const [frames, { width }] = useElementSize<HTMLSpanElement>()
+  const length = Math.max(0, part.end - part.start)
+  const step = width > 0 ? frameStepOf(length, width) : undefined
+  const cells = step === undefined ? [] : frameCells(part, step)
   const percent = (seconds: number) => `${length > 0 ? (seconds / length) * 100 : 0}%`
   return (
-    <span className="timeline-frames">
-      {cells.length === 0 ? (
+    <span className="timeline-frames" ref={frames}>
+      {step === undefined ? null : cells.length === 0 ? (
         <Icon decorative name="video" size="sm" />
       ) : (
         cells.map(({ from, src }) => (
           <Frame
-            key={src}
+            key={`${from} ${src}`}
             src={src}
             style={{
               left: percent(from - part.start),
@@ -319,7 +365,19 @@ function Frame({ src, style }: { src: string; style: CSSProperties }) {
   )
 }
 
-export function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) {
+/**
+ * 一段素材的波形。`level` 给了时，每一处的高低再乘上它在那里的值（参数是这一处在这段里的位置，0 到 1），用来让
+ * 波形跟着音量、淡入淡出变高变矮；不给时按素材原样画。
+ */
+export function Wave({
+  part,
+  state,
+  level,
+}: {
+  part: PlaySegment
+  state: PeaksState
+  level?: (fraction: number) => number
+}) {
   const body = (() => {
     switch (state.kind) {
       case 'loading':
@@ -334,7 +392,8 @@ export function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) 
         const count = Math.max(1, Math.ceil(part.end * rate) - from)
         let path = ''
         for (let at = 0; at < count; at += 1) {
-          const height = Math.max(4, (peaks[from + at] ?? 0) * 92)
+          const scaled = (peaks[from + at] ?? 0) * 92 * (level?.((at + 0.5) / count) ?? 1)
+          const height = Math.max(4, Math.min(100, scaled))
           path += `M${at + 0.5} ${50 - height / 2}v${height}`
         }
         return (
@@ -351,6 +410,7 @@ export function Wave({ part, state }: { part: PlaySegment; state: PeaksState }) 
 type TrimHandleProps = {
   edge: Edge
   value: number
+  /** 这一端能拖到的范围（秒）；往后没有上限时 `max` 是无穷大，这时不写最大值。 */
   bounds: { min: number; max: number }
   valueText: string
   pressed: boolean
@@ -378,7 +438,7 @@ export function TrimHandle({
   return (
     <button
       aria-label={edge === 'start' ? '裁剪开头' : '裁剪结尾'}
-      aria-valuemax={roundSeconds(bounds.max)}
+      aria-valuemax={Number.isFinite(bounds.max) ? roundSeconds(bounds.max) : undefined}
       aria-valuemin={roundSeconds(bounds.min)}
       aria-valuenow={roundSeconds(value)}
       aria-valuetext={valueText}

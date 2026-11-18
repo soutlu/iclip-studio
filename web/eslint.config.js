@@ -58,7 +58,7 @@ export default tseslint.config(
       'docs',
       // vendor 按上游风格维护、不套本仓 lint，维护约定见各目录 README。
       'src/shared/transcript/vendor/**',
-      'src/features/storyboard/whole-film/vendor/hyperframes-studio/**',
+      'src/features/storyboard/final-cut/vendor/hyperframes-studio/**',
     ],
   },
 
@@ -238,6 +238,17 @@ export default tseslint.config(
     files: ['src/routes/**/*'],
     rules: {
       'react-refresh/only-export-components': 'off',
+    },
+  },
+
+  // ── final-cut 预览的 iframe：嵌的是预览域名下的预览页，和应用不同源 ───────
+  // 这条规则防的是被嵌页面和外层同源时自己拆掉 sandbox；预览页在另一个域名下，拆不掉。
+  // allow-same-origin 不能去：预览页要保留自己的来源才能取文件、让播放器读到 final-cut。
+  // sandbox 本身也不能去：没有它，final-cut 里的脚本能把整个应用页面带到别的网站。
+  {
+    files: ['src/features/storyboard/final-cut/preview-player.tsx'],
+    rules: {
+      '@eslint-react/dom-no-unsafe-iframe-sandbox': 'off',
     },
   },
 

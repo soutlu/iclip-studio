@@ -1,4 +1,5 @@
-export type AudioPeaks = { rate: number; peaks: number[] }
+/** 一条音轨的波形：每秒 `rate` 个峰值；`duration` 是这条音轨的时长（秒）。 */
+export type AudioPeaks = { rate: number; peaks: number[]; duration: number }
 
 const PEAKS_PER_SECOND = 50
 
@@ -11,20 +12,14 @@ export const peakCollector = () => {
         if (bucket >= 0) peaks[bucket] = Math.max(peaks[bucket] ?? 0, Math.abs(samples[frame] ?? 0))
       }
     },
-    result(): AudioPeaks {
+    result(duration: number): AudioPeaks {
       const filled = Array.from(peaks, (peak) => peak ?? 0)
       const loudest = Math.max(0, ...filled)
       return {
         rate: PEAKS_PER_SECOND,
         peaks: loudest === 0 ? filled : filled.map((peak) => peak / loudest),
+        duration,
       }
     },
   }
-}
-
-export const audioBufferPeaks = (buffer: AudioBuffer): AudioPeaks => {
-  const collector = peakCollector()
-  for (let channel = 0; channel < buffer.numberOfChannels; channel += 1)
-    collector.add(buffer.getChannelData(channel), 0, buffer.sampleRate)
-  return collector.result()
 }

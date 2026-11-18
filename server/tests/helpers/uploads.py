@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+import uuid
+from collections.abc import Collection, Mapping
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 
+from iclip.domains.uploads.models import Inheritance, MediaKind, MediaUpload
 from iclip.platform.object_store.store import ObjectStoreUnavailable, StoredObject
 
 
@@ -64,4 +68,50 @@ class FakeBucket:
         return f"{self.base}/{object_key}"
 
 
-__all__ = ["FakeBucket"]
+class InMemoryUploadRepository:
+    """上传台账的替身：按 id 存，记下的时间依次往后。按对话列、按地址对在集成测试里覆盖。"""
+
+    def __init__(self) -> None:
+        self.rows: dict[uuid.UUID, MediaUpload] = {}
+
+    async def insert(self, upload: MediaUpload) -> MediaUpload:
+        if upload.id not in self.rows:
+            stamp = datetime(2026, 11, 1, tzinfo=UTC) + timedelta(seconds=len(self.rows))
+            self.rows[upload.id] = replace(upload, created_at=stamp)
+        return self.rows[upload.id]
+
+    async def get(self, upload_id: uuid.UUID) -> MediaUpload | None:
+        return self.rows.get(upload_id)
+
+    async def earliest_video_with_md5(self, content_md5: str) -> MediaUpload | None:
+        found = [
+            row
+            for row in self.rows.values()
+            if row.kind == "video" and row.content_md5 == content_md5
+        ]
+        return min(found, key=lambda row: (row.created_at, row.id), default=None)
+
+    async def owned_video_at(self, owner: uuid.UUID, url: str) -> bool:
+        return any(
+            row.kind == "video" and row.owner_user_id == owner and row.url == url
+            for row in self.rows.values()
+        )
+
+    async def list_in_conversation(
+        self,
+        conversation_id: uuid.UUID,
+        *,
+        limit: int,
+        kind: MediaKind | None = None,
+        before: MediaUpload | None = None,
+        inherited: Inheritance = (),
+    ) -> tuple[MediaUpload, ...]:
+        raise AssertionError("列对话的上传在集成测试里覆盖")
+
+    async def earliest_in_conversation(
+        self, conversation_id: uuid.UUID, urls: Collection[str], *, inherited: Inheritance = ()
+    ) -> Mapping[str, MediaUpload]:
+        raise AssertionError("按地址对对话的上传在集成测试里覆盖")
+
+
+__all__ = ["FakeBucket", "InMemoryUploadRepository"]

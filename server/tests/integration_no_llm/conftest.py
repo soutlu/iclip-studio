@@ -153,23 +153,36 @@ def _build_app(
 
 
 @pytest.fixture
+def cors_allow_origins() -> tuple[str, ...]:
+    return ()
+
+
+@pytest.fixture
+def cookie_secure() -> bool:
+    return False
+
+
+@pytest.fixture
 async def app(
     base_env: None,
     engine: AsyncEngine,
     agent_seeds: tuple[AgentSeed, ...],
     models: Mapping[str, Model],
     runtime_plugins: PluginRegistry | PluginBinder,
+    cors_allow_origins: tuple[str, ...],
+    cookie_secure: bool,
     tmp_path: Path,
 ) -> FastAPI:
-    built = _build_app(make_runtime_config(), engine, models, runtime_plugins, tmp_path / "skills")
+    built = _build_app(
+        make_runtime_config(cors_allow_origins=cors_allow_origins, cookie_secure=cookie_secure),
+        engine,
+        models,
+        runtime_plugins,
+        tmp_path / "skills",
+    )
     if agent_seeds:
         await seed_agents(config_services_of(built), engine, agent_seeds)
     return built
-
-
-@pytest.fixture
-def cors_allow_origins() -> tuple[str, ...]:
-    return ()
 
 
 @pytest.fixture

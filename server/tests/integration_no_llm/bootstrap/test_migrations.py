@@ -4,7 +4,6 @@ from typing import Any
 
 from sqlalchemy import Column, MetaData, inspect, text
 
-from iclip.domains.brand_templates.infra_sql import metadata_obj as brand_templates_metadata
 from iclip.domains.collections.infra_sql import metadata_obj as collections_metadata
 from iclip.domains.conversations.infra_sql import metadata_obj as conversations_metadata
 from iclip.domains.generation.infra_sql import generation_jobs_table
@@ -15,6 +14,7 @@ from iclip.domains.references.infra_sql import metadata_obj as references_metada
 from iclip.domains.tagging.infra_sql import metadata_obj as tagging_metadata
 from iclip.domains.tasks.infra_sql import metadata_obj as tasks_metadata
 from iclip.domains.tracking.infra_sql import metadata_obj as tracking_metadata
+from iclip.domains.uploads.infra_sql import metadata_obj as uploads_metadata
 from iclip.platform.db.engine import build_engine
 
 _MODULE_METADATA: tuple[MetaData, ...] = (
@@ -27,7 +27,7 @@ _MODULE_METADATA: tuple[MetaData, ...] = (
     tracking_metadata,
     references_metadata,
     tagging_metadata,
-    brand_templates_metadata,
+    uploads_metadata,
 )
 
 

@@ -4,9 +4,11 @@ import {
   AudioSampleSink,
   EncodedPacketSink,
   Input,
+  MP3,
   MP4,
   QTFF,
   UrlSource,
+  WAVE,
   type AudioSample,
   type InputAudioTrack,
 } from 'mediabunny'
@@ -17,8 +19,9 @@ import type { KeyframeIndex } from './keyframe-segments'
 
 const METADATA_ONLY = { metadataOnly: true } as const
 
+// 音频记录除了 M4A 还有 MP3、WAV（生成的配乐、上传的音乐），final-cut 的音频片段要读得出它们的波形
 export const openInput = (url: string) =>
-  new Input({ source: new UrlSource(url), formats: [MP4, QTFF] })
+  new Input({ source: new UrlSource(url), formats: [MP4, QTFF, MP3, WAVE] })
 
 export const asUserFacing = (cause: unknown, message: string): UserFacingError =>
   cause instanceof UserFacingError ? cause : new UserFacingError(message, { cause })
@@ -98,7 +101,7 @@ export const readAudioTrack = async <T>(
 export const readAudioPeaks = (url: string): Promise<AudioPeaks | null> =>
   readAudioTrack(
     url,
-    async ({ samples }) => {
+    async ({ samples, duration }) => {
       const collector = peakCollector()
       for await (const sample of samples) {
         const plane = new Float32Array(sample.numberOfFrames)
@@ -107,7 +110,7 @@ export const readAudioPeaks = (url: string): Promise<AudioPeaks | null> =>
           collector.add(plane, sample.timestamp, sample.sampleRate)
         }
       }
-      return collector.result()
+      return collector.result(await duration())
     },
     { failure: '原声读取失败，请稍后重试' },
   )

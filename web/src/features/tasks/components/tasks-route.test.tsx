@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { stubIntersectionObserver } from '@/testing/intersection-observer'
+import { makeMediaUpload } from '@/testing/media-upload'
 import { server } from '@/testing/mocks/server'
 import { ApiError } from '@/shared/api/client'
 import { zTaskInputsOutput } from '@/shared/api/generated/zod.gen'
@@ -509,11 +510,7 @@ describe('TasksRoute 编辑与上传', () => {
       http.post('*/api/uploads/:uploadId/confirm', async ({ params }) => {
         const id = String(params['uploadId'])
         await (id === ids[0] ? productReady : modelReady)
-        return HttpResponse.json({
-          contentType: 'image/png',
-          sizeBytes: 100,
-          url: `http://localhost/mock-oss/${id}`,
-        })
+        return HttpResponse.json(makeMediaUpload({ id, url: `http://localhost/mock-oss/${id}` }))
       }),
     )
     const user = userEvent.setup()

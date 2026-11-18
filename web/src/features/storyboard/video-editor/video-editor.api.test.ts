@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { errorMessageOf, UserFacingError } from '@/shared/api/client'
 import { makeGenerationJob } from '@/testing/generation-job'
+import { makeMediaUpload } from '@/testing/media-upload'
 import { server } from '@/testing/mocks/server'
 import { VIDEO_CLIP_MODELS } from '@/testing/video-models'
 import { submitClipGeneration } from './video-editor.api'
@@ -152,6 +153,7 @@ vi.mock('mediabunny', () => {
     canEncodeVideo: () => Promise.resolve(true),
     EncodedPacketSink,
     Input,
+    MP3: {},
     MP4: {},
     Mp4OutputFormat,
     Output,
@@ -160,6 +162,7 @@ vi.mock('mediabunny', () => {
     UrlSource,
     VideoSampleSink,
     VideoSampleSource,
+    WAVE: {},
   }
 })
 
@@ -205,7 +208,15 @@ describe('submitClipGeneration', () => {
       }),
       http.put(uploadUrl, () => new HttpResponse(null, { status: 200 })),
       http.post('*/api/uploads/:uploadId/confirm', () =>
-        HttpResponse.json({ contentType: 'video/mp4', sizeBytes: 16, url: clipUrl }),
+        HttpResponse.json(
+          makeMediaUpload({
+            contentType: 'video/mp4',
+            durationMs: 4000,
+            id: uploadId,
+            kind: 'video',
+            url: clipUrl,
+          }),
+        ),
       ),
       http.post('*/api/generations/video-edits', async ({ request }) => {
         edited = await request.json()

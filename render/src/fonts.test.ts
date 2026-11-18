@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { declareLinkedFonts } from './fonts'
+import { declareLinkedFonts, undeclaredProjectFonts } from './fonts'
 
 let registry: string
 
@@ -10,8 +10,8 @@ beforeEach(async () => {
   registry = await mkdtemp(join(tmpdir(), 'iclip-render-fonts-'))
   await mkdir(join(registry, 'vendor/fonts/families'), { recursive: true })
   await writeFile(
-    join(registry, 'vendor/fonts/noto-sans-sc.css'),
-    "@font-face{font-family:'Noto Sans SC';src:url(../npm/noto/a.woff2) format('woff2')}\n",
+    join(registry, 'vendor/fonts/families/dm-sans.css'),
+    "@font-face{font-family:'DM Sans';src:url(../../npm/dm-sans/a.woff2) format('woff2')}\n",
   )
   await writeFile(
     join(registry, 'vendor/fonts/families/inter.css'),
@@ -30,21 +30,21 @@ const page = (head: string) => `<!doctype html><html><head>${head}</head><body><
 describe('declareLinkedFonts', () => {
   it('每个字体 CSS 的 link 前内联它每个字体的第一条 @font-face，url() 改成相对合成页；link 保留', async () => {
     const links =
-      '<link rel="stylesheet" href="vendor/fonts/noto-sans-sc.css">\n' +
+      '<link rel="stylesheet" href="vendor/fonts/families/dm-sans.css">\n' +
       '<link rel="stylesheet" href="vendor/fonts/families/inter.css">\n' +
       '<link rel="stylesheet" href="compositions/components/x.css">'
     const output = await declareLinkedFonts(page(links), registry)
 
     expect(output).toMatch(/<style>@font-face\{font-family:'Inter'/)
-    expect(output).toContain('url(vendor/npm/noto/a.woff2)')
+    expect(output).toContain('url(vendor/npm/dm-sans/a.woff2)')
     expect(output).toContain('url(vendor/npm/inter/latin-600.woff2)')
     expect(output).not.toContain('latin-700')
     expect(output).not.toContain('base64,AAAA')
     expect(output.match(/<link rel="stylesheet"/g)).toHaveLength(3)
-    expect(output.indexOf("'Noto Sans SC'")).toBeLessThan(
-      output.indexOf('href="vendor/fonts/noto-sans-sc.css"'),
+    expect(output.indexOf("'DM Sans'")).toBeLessThan(
+      output.indexOf('href="vendor/fonts/families/dm-sans.css"'),
     )
-    expect(output.indexOf('href="vendor/fonts/noto-sans-sc.css"')).toBeLessThan(
+    expect(output.indexOf('href="vendor/fonts/families/dm-sans.css"')).toBeLessThan(
       output.indexOf("'Inter'"),
     )
     expect(output.indexOf("'Inter'")).toBeLessThan(
@@ -57,5 +57,44 @@ describe('declareLinkedFonts', () => {
     await expect(declareLinkedFonts(html, registry)).rejects.toThrow(
       'vendor/fonts/families/anton.css',
     )
+  })
+})
+
+describe('undeclaredProjectFonts', () => {
+  const host = (src: string) => `<div data-composition-src="${src}"></div>`
+
+  it('任何挂载的网页里的 @font-face 和链接的样式表对所有网页都算；没挂载的文件不查', async () => {
+    const main = page(
+      '<link rel="stylesheet" href="vendor/fonts/families/dm-sans.css">' +
+        "<style>@font-face{font-family:'Noto Sans SC';src:url(vendor/cjk.woff2)}" +
+        ".t{font-family:'DM Sans',sans-serif}</style>",
+    ).replace('<body>', `<body>${host('compositions/a/a.html')}`)
+    const component =
+      '<template><style>.x{font-family:"Noto Sans SC","DM Sans",sans-serif}' +
+      '.y{font-family:"Comic Sans MS",cursive}</style></template>'
+    const files = [
+      { path: 'index.html', content: main },
+      { path: 'compositions/a/a.html', content: component },
+      { path: 'compositions/stray.html', content: '<style>.z{font-family:Papyrus}</style>' },
+    ]
+    expect(await undeclaredProjectFonts(registry, files)).toEqual(['Comic Sans MS'])
+  })
+
+  it('组件文件链接的样式表先按它所在目录找，再按工程根找；首选通用字体族时渲染器补的 Inter 也要有声明', async () => {
+    const files = (link: string) => [
+      { path: 'index.html', content: page('').replace('<body>', `<body>${host('c/x/x.html')}`) },
+      {
+        path: 'c/x/x.html',
+        content: `${link}<style>.a{font-family:system-ui,sans-serif}</style>`,
+      },
+    ]
+    const sheet = (href: string) => `<link rel="stylesheet" href="${href}">`
+    expect(await undeclaredProjectFonts(registry, files(''))).toEqual(['Inter'])
+    expect(
+      await undeclaredProjectFonts(registry, files(sheet('../../vendor/fonts/families/inter.css'))),
+    ).toEqual([])
+    expect(
+      await undeclaredProjectFonts(registry, files(sheet('vendor/fonts/families/inter.css'))),
+    ).toEqual([])
   })
 })

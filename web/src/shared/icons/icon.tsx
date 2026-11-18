@@ -68,6 +68,7 @@ import {
   PanelLeft,
   PanelRight,
   Pencil,
+  Pipette,
   Play,
   Pause,
   Sun,
@@ -96,6 +97,7 @@ import {
   ZoomIn,
   ZoomOut,
   Magnet,
+  FoldHorizontal,
   MoveHorizontal,
   Sparkles,
   Blend,
@@ -120,6 +122,11 @@ import {
   List,
   ListOrdered,
   ListTree,
+  Maximize,
+  Minimize,
+  Keyboard,
+  MousePointer2,
+  Scan,
 } from 'lucide-react'
 import type { LucideProps } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
@@ -319,6 +326,7 @@ const ICONS = {
   zoom: ZoomIn,
   'zoom-out': ZoomOut,
   snap: Magnet,
+  ripple: FoldHorizontal,
   fit: MoveHorizontal,
   sparkles: Sparkles,
   blend: Blend,
@@ -326,6 +334,7 @@ const ICONS = {
   film: Film,
   layers: Layers,
   rotate: RotateCw,
+  eyedropper: Pipette,
   manage: SlidersHorizontal,
   provider: Cloud,
   timeout: Timer,
@@ -345,6 +354,12 @@ const ICONS = {
   italic: Italic,
   'bullet-list': List,
   'ordered-list': ListOrdered,
+  loop: Repeat,
+  fullscreen: Maximize,
+  'exit-fullscreen': Minimize,
+  shortcuts: Keyboard,
+  'select-tool': MousePointer2,
+  'zoom-selection': Scan,
 } as const
 
 export type IconName = keyof typeof ICONS

@@ -29,6 +29,7 @@ from tests.helpers.hit_cases import (
     plant_material,
     plant_treatment,
 )
+from tests.helpers.model_groups import MKT, GroupBook
 from tests.helpers.references import (
     DOCUMENT,
     FakeArk,
@@ -41,7 +42,9 @@ from tests.helpers.references import (
 from tests.helpers.tagging import add_tag, delete_tag, entry_of, plant_entry, tag_id
 
 
-def make_queue(engine: AsyncEngine, tagger: Tagger) -> TaggingQueue:
+def make_queue(
+    engine: AsyncEngine, tagger: Tagger, *, groups: GroupBook | None = None
+) -> TaggingQueue:
     return TaggingQueue(
         SqlTagStore(engine),
         source_text=LibrarySourceText(
@@ -50,6 +53,7 @@ def make_queue(engine: AsyncEngine, tagger: Tagger) -> TaggingQueue:
             treatments=HitCaseTreatments(WorkspaceOver(PgFileStore(engine))),
         ),
         tagger=tagger,
+        model_group_of=groups or GroupBook(),
         connector=InMemoryConnector(),
     )
 
@@ -94,6 +98,28 @@ async def test_ai_dimensions_are_rewritten_and_manual_ones_kept(engine: AsyncEng
         await tag_id(engine, "品类", "跑鞋"),
         await tag_id(engine, "内容结构", "开箱测评型", "对比测评"),
     }, "选了小类就不留大类；旧的 AI 标签换掉，人工的留着"
+
+
+@pytest.mark.parametrize(
+    ("creator", "expected"),
+    [("rex", MKT), ("nobody", None)],
+    ids=["creator_grouped", "no_creator_is_default"],
+)
+async def test_tagging_calls_the_model_with_the_entry_creators_group(
+    engine: AsyncEngine, creator: str, expected: str | None
+) -> None:
+    owner = await plant_user(engine, "maya")
+    rex = await plant_user(engine, "rex")
+    reference_id = await plant_reference(engine, owner=owner)
+    entry_id = await plant_entry(
+        engine, reference_id, status="pending", created_by=rex if creator == "rex" else None
+    )
+    ark = FakeArk()
+    groups = GroupBook({owner: "owners_group", rex: MKT})
+
+    await make_queue(engine, ark_tagger(ark), groups=groups).run_tagging(str(entry_id))
+
+    assert [call["model_group"] for call in ark.calls] == [expected]
 
 
 async def test_three_level_choices_are_written_without_ancestors_and_keep_manual_tags(
@@ -252,7 +278,9 @@ class DeletingTagger:
         self._doomed = doomed
         self._kept = kept
 
-    async def tag(self, text: str, dimensions: Sequence[TagNode]) -> tuple[uuid.UUID, ...]:
+    async def tag(
+        self, text: str, dimensions: Sequence[TagNode], *, model_group: str | None
+    ) -> tuple[uuid.UUID, ...]:
         await delete_tag(self._engine, self._doomed)
         return (self._doomed, self._kept)
 

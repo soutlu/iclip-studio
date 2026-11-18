@@ -2,6 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { makeMediaUpload } from '@/testing/media-upload'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { TaskMediaField } from './task-media-field'
@@ -14,8 +15,7 @@ describe('TaskMediaField', () => {
   const changes: string[][] = []
   const busy: boolean[] = []
   const imageFile = (name = '商品.png') => new File(['image'], name, { type: 'image/png' })
-  const confirmed = () =>
-    HttpResponse.json({ contentType: 'image/png', sizeBytes: 5, url: assetUrl })
+  const confirmed = () => HttpResponse.json(makeMediaUpload({ id: uploadId, url: assetUrl }))
 
   beforeEach(() => {
     changes.length = 0

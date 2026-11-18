@@ -1,6 +1,6 @@
 import type { KeyboardEvent } from 'react'
 
-export const isTextEntry = (target: EventTarget) =>
+export const isTextEntry = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   (target.isContentEditable ||
     target instanceof HTMLTextAreaElement ||

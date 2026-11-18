@@ -38,6 +38,7 @@ import {
 } from './conversations'
 import { byCreatedDesc, mockCreatedAt, pageByCreated } from './paging'
 import { libraryTagHandlers } from './library-tags'
+import { referenceAudioHandlers } from './reference-audios'
 import { forgetMockReferenceTags, mockReferenceTagSets, referenceHandlers } from './references'
 import { skillHandlers } from './skills'
 import { transcriptHandlers } from './transcript'
@@ -504,6 +505,7 @@ export const handlers = [
   ...libraryHandlers,
 
   ...referenceHandlers(() => (currentUser ?? mockAuthUser).username),
+  ...referenceAudioHandlers(() => (currentUser ?? mockAuthUser).username),
   ...hitCaseHandlers(() => (currentUser ?? mockAuthUser).username),
   ...libraryTagHandlers(
     () => ({ hitCases: mockHitCaseTagSets(), references: mockReferenceTagSets() }),

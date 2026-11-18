@@ -1,11 +1,15 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/testing/main.development.ts", "scripts/*.mjs"],
+  "entry": [
+    "src/testing/main.development.ts",
+    "src/features/storyboard/final-cut/preview-page-entry.ts",
+    "scripts/*.mjs"
+  ],
   "project": ["src/**/*.{ts,tsx}", "scripts/**/*.mjs", "vite/**/*.ts"],
   "ignore": [
     "src/shared/api/generated/**",
     "src/shared/transcript/vendor/**",
-    "src/features/storyboard/whole-film/vendor/hyperframes-studio/**"
+    "src/features/storyboard/final-cut/vendor/hyperframes-studio/**"
   ],
   "ignoreDependencies": ["tw-animate-css", "tailwindcss", "lint-staged", "misans"],
   "ignoreExportsUsedInFile": true

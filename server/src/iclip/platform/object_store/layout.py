@@ -20,6 +20,9 @@ class MediaPaths:
 
         return f"{OSS_ROOT}/generated-music/{job_id}.{ext}"
 
+    def generated_dubbing(self, *, job_id: uuid.UUID, ext: str) -> str:
+        return f"{OSS_ROOT}/generated-dubbing/{job_id}.{ext}"
+
     def video_master(self, *, job_id: uuid.UUID, ext: str) -> str:
         return f"{OSS_ROOT}/video-masters/{job_id}.{ext}"
 
@@ -43,13 +46,6 @@ class MediaPaths:
 
     def upload_prefix(self, *, upload_id: uuid.UUID) -> str:
         return f"{OSS_ROOT}/uploads/{upload_id}."
-
-    def font_upload(self, *, user_id: uuid.UUID, upload_id: uuid.UUID, ext: str) -> str:
-
-        return f"{self.font_upload_prefix(user_id=user_id, upload_id=upload_id)}{ext}"
-
-    def font_upload_prefix(self, *, user_id: uuid.UUID, upload_id: uuid.UUID) -> str:
-        return f"{OSS_ROOT}/brand-fonts/{user_id}/{upload_id}."
 
 
 MEDIA_PATHS: Final = MediaPaths()

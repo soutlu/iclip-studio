@@ -1,9 +1,4 @@
 {
-  "runtime": {
-    "hyperframes": "vendor/hyperframes/hyperframe.runtime.iife.js",
-    "gsap": "vendor/npm/gsap@3.14.2/dist/gsap.min.js",
-    "cjkFont": "vendor/fonts/noto-sans-sc.css"
-  },
   "fonts": {
     "Playfair Display": {
       "css": "vendor/fonts/families/playfair-display.css",
@@ -17,7 +12,7 @@
     { "id": "effects", "label": "效果" },
     { "id": "text-effects", "label": "文字效果" },
     { "id": "social", "label": "社交" },
-    { "id": "scenes", "label": "场景" }
+    { "id": "scenes", "label": "通用" }
   ],
   "items": [
     {
@@ -84,7 +79,18 @@
             { "value": "700", "label": "加粗" }
           ]
         },
-        { "id": "accent", "type": "color", "label": "底色", "default": "#2756ff" }
+        { "id": "accent", "type": "color", "label": "底色", "default": "#2756ff" },
+        {
+          "id": "size",
+          "type": "number",
+          "label": "字号",
+          "default": 96,
+          "min": 48,
+          "max": 144,
+          "step": 4,
+          "unit": "px"
+        },
+        { "id": "shadow", "type": "boolean", "label": "阴影", "default": false }
       ],
       "thumbnail": "fixture-fields.svg",
       "fonts": []
@@ -105,6 +111,34 @@
       ],
       "thumbnail": "fixture-brand-card.svg",
       "fonts": ["Playfair Display"]
+    },
+    {
+      "name": "fixture-sidecar",
+      "kind": "block",
+      "title": "测试旁挂文件",
+      "description": "2 秒的青色底，卡片上的字从同目录的数据文件读",
+      "category": "scenes",
+      "placement": null,
+      "src": "compositions/fixture-sidecar/fixture-sidecar.html",
+      "size": { "width": 1920, "height": 1080 },
+      "duration": 2,
+      "variables": [],
+      "thumbnail": "fixture-sidecar.svg",
+      "fonts": []
+    },
+    {
+      "name": "fixture-passthrough",
+      "kind": "component",
+      "title": "测试点穿",
+      "description": "4 秒的绿色徽标，组件根不接收指针",
+      "category": "effects",
+      "placement": null,
+      "src": "compositions/fixtures/fixture-passthrough.html",
+      "size": null,
+      "duration": 4,
+      "variables": [],
+      "thumbnail": "fixture-passthrough.svg",
+      "fonts": []
     }
   ],
   "excluded": []

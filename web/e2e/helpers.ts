@@ -11,6 +11,73 @@ export const openConversation = async (page: Page, title: string, { mobile = fal
   return page.getByRole('complementary', { name: '工作台' })
 }
 
+/** 点工作台里的「final-cut」页签打开 final-cut 编辑器，等它读完主文件；返回编辑器的根节点。 */
+export const openFinalCut = async (panel: Locator) => {
+  await panel.getByRole('tab', { name: 'final-cut', exact: true }).click()
+  const editor = panel.getByRole('group', { name: 'final-cut 编辑器', exact: true })
+  await expect(editor.getByRole('toolbar', { name: '剪辑工具' })).toBeVisible()
+  return editor
+}
+
+const CHAT_MIN = 400
+
+const widthOf = async (locator: Locator) => (await locator.boundingBox())?.width ?? Number.NaN
+
+/**
+ * 收起侧边栏、把对话收到最窄（400），工作台尽量宽，final-cut 编辑器里放得下更多东西。在对话里、工作台
+ * 并排展开时调用；不调用时是默认布局。
+ */
+export const widenWorkbench = async (page: Page) => {
+  const chat = page.getByRole('main')
+  const before = await widthOf(chat)
+  await page.getByRole('button', { name: '折叠侧边栏' }).click()
+  // 侧边栏收起有过渡，对话区跟着变宽：等它的宽度停下来再量
+  let last = before
+  await expect
+    .poll(async () => {
+      const width = await widthOf(chat)
+      const still = width === last && width !== before
+      last = width
+      return still
+    })
+    .toBe(true)
+  const handle = await page.getByRole('button', { name: '调整工作台宽度' }).boundingBox()
+  if (handle === null) throw new Error('外框布局还没排好')
+  const x = handle.x + handle.width / 2
+  const y = handle.y + handle.height / 2
+  // 正好收到 400：再往左对话会被收进去一截
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x - (last - CHAT_MIN), y, { steps: 10 })
+  await page.mouse.up()
+  await expect.poll(() => widthOf(chat)).toBeCloseTo(CHAT_MIN, 0)
+}
+
+/** final-cut 编辑器里嵌着的预览页（预览域名下），播放器和 final-cut 都在它里面。 */
+/**
+ * 预览里正在显示的那个播放器。改了 final-cut 能直接打进去的改动不换播放器，别的改动预览会换一个播放器
+ * 重新加载，新的那个装好之前对读屏隐藏，换的那一刻页面里有两个：只认没隐藏的那一个。
+ */
+export const finalCutPreviewPlayer = (editor: Locator) =>
+  editor
+    .getByRole('region', { name: '预览' })
+    .locator('iframe')
+    .contentFrame()
+    .locator('hyperframes-player:not([aria-hidden="true"])')
+
+const PLAYER_MARK = 'data-e2e-mark'
+
+/** 给正在显示的播放器做个记号：之后还是带记号的那个，就是没换过播放器。 */
+export const markFinalCutPreviewPlayer = (editor: Locator) =>
+  finalCutPreviewPlayer(editor).evaluate(
+    (element, mark) => element.setAttribute(mark, ''),
+    PLAYER_MARK,
+  )
+
+/** 正在显示的播放器是不是做过记号的那个。 */
+export const isMarkedFinalCutPreviewPlayer = (editor: Locator) =>
+  finalCutPreviewPlayer(editor).evaluate((element, mark) => element.hasAttribute(mark), PLAYER_MARK)
+
 export const openStoryboardShot = async (panel: Locator, index: number) => {
   await panel.getByRole('button', { name: /展开镜头组列表/ }).click()
   const list = panel.page().getByRole('menu', { name: '镜头组列表', exact: true })

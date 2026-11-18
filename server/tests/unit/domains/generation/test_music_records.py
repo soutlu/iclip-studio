@@ -35,6 +35,7 @@ from tests.helpers.generation import (
     MUSIC_PROMPT,
     QUEUE_SETTINGS,
     FakeMediaProbe,
+    FakeReferenceAssets,
     FixedLineage,
     InMemoryGenerationRepository,
     ScriptedProvider,
@@ -95,17 +96,11 @@ def build_world(
     composer = ScriptedProvider(name=FAKE_MUSIC_PROVIDER, submission=music_submission)
     connector = InMemoryConnector()
     cleared = _ClearedCompletions()
-    holder: dict[str, GenerationService] = {}
-
-    async def on_completed(job: GenerationJob) -> None:
-        await holder["service"].transcribe_completed(job)
-
     queue = GenerationQueue(
         store,
         lanes=tuple(ProviderLane(provider, 1) for provider in (*doubles, composer)),
         connector=connector,
         settings=QUEUE_SETTINGS,
-        on_completed=on_completed,
     )
     service = GenerationService(
         store,
@@ -119,10 +114,10 @@ def build_world(
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
         media_probe=FakeMediaProbe(),
+        references=FakeReferenceAssets(),
         subtitles=ProviderTarget(provider=FAKE_SUBTITLE_PROVIDER, model="qwen-audio-3.1-asr-flash"),
         music=music,
     )
-    holder["service"] = service
     return World(store, queue, connector, service, composer, cleared)
 
 
@@ -316,7 +311,6 @@ async def test_generated_music_completes_with_its_address_and_duration_and_nothi
     )
     assert stored.provider_task_id == "req-7"
     assert world.tasks("generation.poll") == [], "同步出结果，没有轮询"
-    assert world.kind("subtitle") == [], "音频记录完成不识别字幕"
     assert world.cleared.calls == []
 
 

@@ -179,7 +179,7 @@
   pointer-events: none;
 }
 
-/* 拖到边界停住时把手旁的说明（成片总长上限、这段的开头结尾、最短）：两个编辑器共用，压在标尺上、以把手为中心；
+/* 拖到边界停住时把手旁的说明（final-cut 总长上限、这段的开头结尾、最短）：两个编辑器共用，压在标尺上、以把手为中心；
    把手贴近时间线可视范围两端时收回来。横向位置由编辑器给。 */
 .timeline-limit-bubble {
   position: absolute;
@@ -207,7 +207,7 @@
   translate: -100% 0;
 }
 
-/* 轨道上的开关（成片的字幕开关、编辑视频的小眼睛）：开着是按下态，浅墨底、深色图标；关着无底、灰色；
+/* 轨道上的开关（final-cut 的字幕开关、编辑视频的小眼睛）：开着是按下态，浅墨底、深色图标；关着无底、灰色；
    悬停图标变深。键盘焦点也用浅墨底表示，不加外框，保持紧凑轨道的尺寸。 */
 .timeline-toggle {
   color: var(--color-on-surface-muted);
@@ -317,13 +317,15 @@
 }
 
 .timeline-ruler:has(.timeline-seek:focus-visible:not([data-pointer]), .timeline-seek[data-seeking])
-  ~ .timeline-playhead::before {
+  ~ .timeline-playhead::before,
+.timeline-playhead[data-dragging]::before {
   border-color: transparent;
   background: var(--color-on-surface);
 }
 
 .timeline-ruler:has(.timeline-seek:focus-visible:not([data-pointer]), .timeline-seek[data-seeking])
-  ~ .timeline-playhead::after {
+  ~ .timeline-playhead::after,
+.timeline-playhead[data-dragging]::after {
   background: var(--color-surface-container-lowest);
 }
 

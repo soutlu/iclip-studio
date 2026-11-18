@@ -5,7 +5,22 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 from iclip.common.errors import NotFound
-from iclip.domains.identity.models import ApiKeyRecord, Principal, UserAccount
+from iclip.domains.identity.models import ApiKeyRecord, PmsDepartment, Principal, UserAccount
+
+
+def department(department_id: int, *, parent_id: int | None = None) -> PmsDepartment:
+    return PmsDepartment(
+        id=department_id,
+        uid=f"dept-{department_id}",
+        name=f"部门 {department_id}",
+        parent_id=parent_id,
+        parent_uid="" if parent_id is None else f"dept-{parent_id}",
+        leader_user_id=None,
+        leader_user_uid="",
+        source="pms",
+        type="department",
+        order=None,
+    )
 
 
 def make_account(
@@ -16,6 +31,7 @@ def make_account(
     is_active: bool = True,
     username: str | None = "logan",
     email: str = "logan@example.com",
+    departments: tuple[PmsDepartment, ...] = (),
 ) -> UserAccount:
     return UserAccount(
         id=user_id or uuid.uuid4(),
@@ -28,7 +44,7 @@ def make_account(
         is_active=is_active,
         city="",
         job_title="",
-        departments=(),
+        departments=departments,
         created_at=datetime.now(UTC),
         last_login_at=None,
     )

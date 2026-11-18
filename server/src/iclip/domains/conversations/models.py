@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
+
+from iclip.common.final_cut import TargetLocale
 
 TitleKind = Literal["default", "generated", "custom"]
 
@@ -62,15 +63,6 @@ IDLE_ACTIVITY = ConversationActivity()
 VideoPhase = Literal["queued", "running"]
 
 
-@dataclass(frozen=True, slots=True)
-class WholeFilmDraft:
-    conversation_id: uuid.UUID
-    document: Mapping[str, Any]
-    revision: int
-    updated_by: uuid.UUID
-    updated_at: datetime
-
-
 WholeFilmExportStatus = Literal["queued", "rendering", "uploading", "done", "failed", "cancelled"]
 
 
@@ -83,6 +75,7 @@ class WholeFilmExportError:
 @dataclass(frozen=True, slots=True)
 class WholeFilmExport:
     id: uuid.UUID
+    locale: TargetLocale | None
     status: WholeFilmExportStatus
     progress: float | None
     queue_position: int | None
@@ -99,7 +92,6 @@ __all__ = [
     "PreviewHeader",
     "TitleKind",
     "VideoPhase",
-    "WholeFilmDraft",
     "WholeFilmExport",
     "WholeFilmExportError",
     "WholeFilmExportStatus",

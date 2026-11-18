@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.middleware import (
+    origin_allowed,
     require_authenticated,
     require_permission,
-    websocket_origin_allowed,
     websocket_principal,
 )
+from iclip.domains.identity.model_groups import DepartmentGroup, ModelGroupOf, ModelGroupResolver
 from iclip.domains.identity.models import Principal, UserAccount
 from iclip.domains.identity.rbac import (
     ACT_AS_PERMISSION,
@@ -26,14 +27,17 @@ __all__ = [
     "PERMISSIONS",
     "ROLES",
     "ActAs",
+    "DepartmentGroup",
+    "ModelGroupOf",
+    "ModelGroupResolver",
     "Principal",
     "UserAccount",
     "effective_permissions",
+    "origin_allowed",
     "require_authenticated",
     "require_permission",
     "resolve_user_name",
     "visible_owner",
     "visible_owner_incl_act_as",
-    "websocket_origin_allowed",
     "websocket_principal",
 ]

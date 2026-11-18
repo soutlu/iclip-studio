@@ -17,7 +17,14 @@
 HOST=127.0.0.1 PORT=3015 VITE_BACKEND_PROXY_TARGET=http://127.0.0.1:7789 pnpm dev
 ```
 
-### 成片组件库与 Mock 模式
+### final-cut 预览沙箱域名
 
-- **指定正式组件库**：`pnpm dev` 启动前默认会把仓库自带的测试组件库打包到 `public/hyperframes/`；如果需要加载本地的正式成片组件库，可指定 `HYPERFRAMES_LIBRARY=<组件库源目录> pnpm dev`。
+`final-cut` 编辑器的预览运行在独立预览域名的沙箱页（`/final-cut-preview.html`）中（规则见 [conventions「预览域名」](../contract/conventions.md#final-cut-工程与预览域名)）。本地利用 `localhost` 与 `127.0.0.1`（同端口）区分主应用与预览两个站点：
+
+- **`pnpm dev`**：将根目录 `.env` 中的 `FINAL_CUT_PREVIEW_ORIGIN` 设为主应用所用主机名之外的另一个（例如用 `http://localhost:3013` 访问应用时，设为 `http://127.0.0.1:3013`）；未配置时预览无法加载。
+- **`pnpm dev:mock`**：无需配置，开发服务器会自动切换到另一主机名托管预览页并响应来源核对请求。
+
+### 组件库与 Mock 模式
+
+- **指定正式组件库**：`pnpm dev` 启动前默认会把仓库自带的测试组件库打包到 `public/hyperframes/`；如需加载本地正式组件库，可指定 `HYPERFRAMES_LIBRARY=<组件库源目录> pnpm dev`。
 - **纯前端 Mock 模式（`pnpm dev:mock`）**：不连接真实后端，使用 MSW 模拟数据。在主目录运行时默认端口为 `3014`，在 Git Worktree 中运行时会根据路径自动分配 `3100–3899` 之间的固定端口（启动日志会打印实际地址，也可通过 `PORT=3015 pnpm dev:mock` 手动指定）。

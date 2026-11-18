@@ -7,11 +7,13 @@ from typing import Any
 
 from starlette.testclient import TestClient
 
+from iclip.domains.identity.middleware import session_cookie_name
 from tests.helpers.auth import set_roles_in_db
 
 AGENT_ID = "storyboard"
 PASSWORD = "password-123"
-SESSION_COOKIE = "iclip_session"
+# 测试用的配置不开 cookie_secure。
+SESSION_COOKIE = session_cookie_name(secure=False)
 
 
 def sign_in(tc: TestClient, pg_url: str) -> None:

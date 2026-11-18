@@ -12,6 +12,7 @@ from iclip_video.shot_prompt import format_seconds
 
 from iclip.common.errors import Conflict, NotFound, ValidationFailed
 from iclip.domains.generation.clip_models import UpstreamMode, clip_model
+from iclip.domains.generation.model_groups import UNGROUPED, ModelGroups
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_FAILED,
@@ -25,7 +26,11 @@ from iclip.domains.generation.models import (
     is_base_master,
     is_finished_edit,
 )
-from iclip.domains.generation.ports import ConversationLineage, RemoteMediaProbe
+from iclip.domains.generation.ports import (
+    ConversationLineage,
+    ReferenceAssets,
+    RemoteMediaProbe,
+)
 from iclip.domains.generation.provider import ImageModelSpec
 from iclip.domains.generation.queue import GenerationQueue
 from iclip.domains.generation.render import CANCELLED, CANCELLED_MESSAGE, RenderClient
@@ -39,14 +44,25 @@ from iclip.domains.generation.schemas import (
     OPERATION_CUT,
     OPERATION_GENERATE,
     OPERATION_RENDER,
-    OPERATION_UPLOAD,
+    OPERATION_TRIAL,
     ComposeSegment,
+    DubbingIn,
+    DubbingLine,
+    DubbingOriginalReference,
+    DubbingReference,
+    DubbingRequest,
+    DubbingSpeechSpan,
+    DubbingUploadReference,
+    DubbingVoiceReference,
+    DubbingVoiceReferenceIn,
     GenerationKind,
     GenerationOperation,
     GenerationStatus,
     ImageGenerationIn,
     MusicIn,
     MusicRequest,
+    SpeechIn,
+    SpeechRequest,
     SubtitleIn,
     SubtitleRequest,
     VideoComposeIn,
@@ -113,12 +129,16 @@ class GenerationService:
         clear_completion: ClearCompletion,
         lineage: ConversationLineage,
         media_probe: RemoteMediaProbe,
+        references: ReferenceAssets,
         subtitles: ProviderTarget | None = None,
+        dubbing_provider: str | None = None,
         music: ProviderTarget | None = None,
         render: RenderClient | None = None,
         enhance: VideoEnhanceSpec | None = None,
+        model_groups: ModelGroups = UNGROUPED,
     ) -> None:
         self._repo = repo
+        self._model_groups = model_groups
         self._enhance = enhance
         self._render = render
         self._queue = queue
@@ -131,7 +151,9 @@ class GenerationService:
         self._clear_completion = clear_completion
         self._lineage = lineage
         self._media_probe = media_probe
+        self._references = references
         self._subtitles = subtitles
+        self._dubbing_provider = dubbing_provider
         self._music = music
 
     async def _inheritance(
@@ -142,8 +164,19 @@ class GenerationService:
         return await self._lineage.ancestry(conversation_id)
 
     async def submit_video(self, principal: Principal, request: VideoGenerationIn) -> GenerationJob:
+        """受理一次出片；传进来的是 ``VideoTrialRequest`` 时记成试生成，别的都一样。"""
+
         self._require_video_model(request.model)
         _require_user_name(request.user_name)
+        if request.reference_ids:
+            unlisted = await self._references.unlisted(request.reference_ids)
+            if unlisted:
+                raise ValidationFailed(
+                    f"reference_ids 里这些参考不在资料库里或已移除：{'、'.join(map(str, unlisted))}"
+                )
+        model_group, upstream_model = await self._model_groups.video_model_of(
+            principal.user_id, request.model
+        )
         return await self._accept(
             principal,
             request,
@@ -152,6 +185,8 @@ class GenerationService:
             task_id=request.task_id,
             metadata=request.metadata,
             shot_index=request.shot_index,
+            model_group=model_group,
+            upstream_model=upstream_model,
         )
 
     async def submit_video_edit(self, principal: Principal, request: VideoEditIn) -> GenerationJob:
@@ -190,24 +225,19 @@ class GenerationService:
             aspect_ratio = await self._original_aspect_ratio(
                 principal, base, request.conversation_id
             )
-        clip = None
+        clip_url = None
         if request.reference_video_urls:
             (clip_url,) = request.reference_video_urls
-            clip = await self._repo.find_by_output(
-                clip_url,
-                kind=KIND_VIDEO,
-                owner=principal.user_id,
-                conversation_id=None,
-                operation=OPERATION_UPLOAD,
-            )
-            if clip is None:
-                raise ValidationFailed("reference_video_urls 必须是调用者本人上传的一段视频")
+            if not await self._references.usable_clip(principal, clip_url):
+                raise ValidationFailed(
+                    "reference_video_urls 必须是调用者本人上传的视频，或资料库里的一条参考视频"
+                )
         base_ms = base.output.duration_ms
         if base_ms is None:
             base_ms = await self._probe_duration(base.output.url, what="基底", job_id=base.id)
         _check_edit_range(request.range_start_ms, request.range_end_ms, base_ms)
-        if clip is not None and spec.edit is not None:
-            clip_ms = await self._probe_duration(clip.output.url, what="参考片段", job_id=clip.id)
+        if clip_url is not None and spec.edit is not None:
+            clip_ms = await self._probe_duration(clip_url, what="参考片段", job_id=None)
             if not spec.edit.min_seconds * 1000 <= clip_ms <= spec.edit.max_seconds * 1000:
                 raise ValidationFailed(
                     f"{request.model} 编辑参考时长必须为 "
@@ -219,11 +249,16 @@ class GenerationService:
             user_name=request.user_name,
             reference_image_urls=request.reference_image_urls,
             reference_video_urls=request.reference_video_urls,
+            # 不带分辨率时由上游自己定档，和原片不是一档的话合成时就得缩放。
+            resolution=await self._original_resolution(base),
             aspect_ratio=aspect_ratio,
             seconds=request.seconds,
             provider_options=options,
             range_start_ms=request.range_start_ms,
             range_end_ms=request.range_end_ms,
+        )
+        model_group, upstream_model = await self._model_groups.video_model_of(
+            principal.user_id, request.model
         )
         return await self._accept(
             principal,
@@ -235,6 +270,8 @@ class GenerationService:
             shot_index=base.shot_index,
             root_job_id=base.root_job_id or base.id,
             source_job_id=base.id,
+            model_group=model_group,
+            upstream_model=upstream_model,
         )
 
     async def submit_video_compose(
@@ -309,13 +346,13 @@ class GenerationService:
             )
         return ratio
 
-    async def _probe_duration(self, url: str | None, *, what: str, job_id: uuid.UUID) -> int:
+    async def _probe_duration(self, url: str | None, *, what: str, job_id: uuid.UUID | None) -> int:
         if url is None:
             raise RuntimeError(f"生成记录 {job_id} 核对过却没有产物地址")
         try:
             return await self._media_probe.duration_ms(url)
         except MediaError as exc:
-            _logger.warning("编辑段受理时探不出时长", what=what, job_id=job_id, error=str(exc))
+            _logger.warning("受理时探不出时长", what=what, job_id=job_id, error=str(exc))
             raise ValidationFailed(f"读不出{what}的时长，请稍后重试") from exc
 
     def _require_video_model(self, model: str) -> None:
@@ -339,30 +376,20 @@ class GenerationService:
             source_job_id=base_id,
         )
 
-    async def find_upload(self, principal: Principal, url: str) -> GenerationJob | None:
-        return await self._repo.find_by_output(
-            url,
-            kind=KIND_IMAGE,
-            owner=visible_owner_incl_act_as(principal),
-            conversation_id=None,
-            operation=OPERATION_UPLOAD,
-        )
-
     async def _resolve_base(
         self, principal: Principal, url: str | None, conversation_id: uuid.UUID | None
     ) -> tuple[uuid.UUID | None, str | None]:
+        """底图是这段对话（或继承来）的一张生成图时记来源；别的地址（上传的图、外链）原样记下。"""
+
         if url is None:
             return None, None
-        owner = visible_owner_incl_act_as(principal)
         found = await self._repo.find_by_output(
             url,
             kind=KIND_IMAGE,
-            owner=owner,
+            owner=visible_owner_incl_act_as(principal),
             conversation_id=conversation_id,
             inherited=await self._inheritance(principal, conversation_id),
         )
-        if found is None:
-            found = await self.find_upload(principal, url)
         return (None, url) if found is None else (found.id, None)
 
     async def _accept(
@@ -377,6 +404,8 @@ class GenerationService:
         shot_index: int | None,
         root_job_id: uuid.UUID | None = None,
         source_job_id: uuid.UUID | None = None,
+        model_group: str | None = None,
+        upstream_model: str | None = None,
     ) -> GenerationJob:
         created = await self._queue_new(
             _pending_job(
@@ -390,6 +419,8 @@ class GenerationService:
                 shot_index=shot_index,
                 root_job_id=root_job_id,
                 source_job_id=source_job_id,
+                model_group=model_group,
+                upstream_model=upstream_model,
             )
         )
         await self._note_conversation_active(created)
@@ -408,22 +439,38 @@ class GenerationService:
             raise
         return created
 
-    async def submit_subtitle(self, principal: Principal, request: SubtitleIn) -> GenerationJob:
-        subtitles = self._require_subtitles()
+    async def _readable_master(
+        self,
+        principal: Principal,
+        source_job_id: uuid.UUID,
+        conversation_id: uuid.UUID | None,
+        *,
+        refusal: str,
+    ) -> tuple[GenerationJob, str]:
         video = await conversation_record(
             self._repo,
             principal,
-            request.source_job_id,
-            conversation_id=request.conversation_id,
-            inheritance=await self._inheritance(principal, request.conversation_id),
+            source_job_id,
+            conversation_id=conversation_id,
+            inheritance=await self._inheritance(principal, conversation_id),
         )
         if video is None:
-            raise NotFound(f"没有这次生成: {request.source_job_id}")
+            raise NotFound(f"没有这次生成: {source_job_id}")
         if not is_base_master(video) or video.output.url is None:
-            raise ValidationFailed("只能识别素材片：已完成的出片或合成")
+            raise ValidationFailed(refusal)
+        return video, video.output.url
+
+    async def submit_subtitle(self, principal: Principal, request: SubtitleIn) -> GenerationJob:
+        subtitles = self._require_subtitles()
+        video, video_url = await self._readable_master(
+            principal,
+            request.source_job_id,
+            request.conversation_id,
+            refusal="只能识别素材片：已完成的出片或合成",
+        )
         return await self._queue_new(
             _pending_job(
-                SubtitleRequest(model=subtitles.model, video_url=video.output.url),
+                SubtitleRequest(model=subtitles.model, video_url=video_url),
                 owner_user_id=principal.user_id,
                 api_key_id=principal.api_key_id,
                 provider=subtitles.provider,
@@ -432,23 +479,7 @@ class GenerationService:
                 metadata=request.metadata,
                 shot_index=None,
                 source_job_id=video.id,
-            )
-        )
-
-    async def transcribe_completed(self, job: GenerationJob) -> None:
-        if self._subtitles is None or not is_base_master(job) or job.output.url is None:
-            return
-        await self._queue_new(
-            _pending_job(
-                SubtitleRequest(model=self._subtitles.model, video_url=job.output.url),
-                owner_user_id=job.owner_user_id,
-                api_key_id=job.api_key_id,
-                provider=self._subtitles.provider,
-                conversation_id=job.conversation_id,
-                task_id=job.task_id,
-                metadata=None,
-                shot_index=None,
-                source_job_id=job.id,
+                model_group=await self._model_groups.group_of(principal.user_id),
             )
         )
 
@@ -456,6 +487,101 @@ class GenerationService:
         if self._subtitles is None:
             raise ValidationFailed("字幕识别没有开通，暂时不能识别")
         return self._subtitles
+
+    async def submit_dubbing(self, principal: Principal, request: DubbingIn) -> GenerationJob:
+        dubbing_provider = self._require_dubbing()
+        reference = await self._dubbing_reference(principal, request)
+        video, video_url = await self._readable_master(
+            principal,
+            request.source_job_id,
+            request.conversation_id,
+            refusal="只能给素材片配音：已完成的出片或合成",
+        )
+        duration_ms = video.output.duration_ms
+        if duration_ms is None:
+            duration_ms = await self._probe_duration(video_url, what="素材片", job_id=video.id)
+        _check_within_take(request.lines, duration_ms, what="句")
+        if isinstance(request.reference, DubbingOriginalReference) and request.reference.spans:
+            _check_within_take(request.reference.spans, duration_ms, what="段说话时段")
+        return await self._queue_new(
+            _pending_job(
+                DubbingRequest(
+                    video_url=video_url,
+                    video_duration_ms=duration_ms,
+                    locale=request.locale,
+                    lines=request.lines,
+                    reference=reference,
+                ),
+                owner_user_id=principal.user_id,
+                api_key_id=principal.api_key_id,
+                provider=dubbing_provider,
+                conversation_id=request.conversation_id,
+                task_id=request.task_id,
+                metadata=request.metadata,
+                shot_index=None,
+                source_job_id=video.id,
+                model_group=await self._model_groups.group_of(principal.user_id),
+            )
+        )
+
+    async def submit_speech(self, principal: Principal, request: SpeechIn) -> GenerationJob:
+        """按文字合成一段语音，和配音同一个通道。给了对话时要读得到它。"""
+
+        dubbing_provider = self._require_dubbing()
+        reference = await self._voice_reference(request.reference)
+        if request.conversation_id is not None and not await self._lineage.readable(
+            principal, request.conversation_id
+        ):
+            raise NotFound(f"没有这段对话: {request.conversation_id}")
+        return await self._queue_new(
+            _pending_job(
+                SpeechRequest(
+                    text=request.text,
+                    locale=request.locale,
+                    reference=reference,
+                    max_duration_ms=request.max_duration_ms,
+                ),
+                owner_user_id=principal.user_id,
+                api_key_id=principal.api_key_id,
+                provider=dubbing_provider,
+                conversation_id=request.conversation_id,
+                task_id=request.task_id,
+                metadata=request.metadata,
+                shot_index=None,
+                model_group=await self._model_groups.group_of(principal.user_id),
+            )
+        )
+
+    def _require_dubbing(self) -> str:
+        if self._dubbing_provider is None:
+            raise ValidationFailed("配音没有开通，暂时不能配音")
+        return self._dubbing_provider
+
+    async def _dubbing_reference(
+        self, principal: Principal, request: DubbingIn
+    ) -> DubbingReference:
+        """把请求里的参考换成记进记录的样子：音色读出地址与台词，上传读出地址。"""
+
+        reference = request.reference
+        if isinstance(reference, DubbingOriginalReference):
+            return reference
+        if isinstance(reference, DubbingVoiceReferenceIn):
+            return await self._voice_reference(reference)
+        url = await self._references.own_audio_upload(principal, reference.upload_id)
+        if url is None:
+            raise ValidationFailed("参考音频要用调用者本人的一条音频上传")
+        return DubbingUploadReference(kind="upload", upload_id=reference.upload_id, url=url)
+
+    async def _voice_reference(self, reference: DubbingVoiceReferenceIn) -> DubbingVoiceReference:
+        voice = await self._references.voice(reference.reference_id)
+        if voice is None:
+            raise ValidationFailed("参考音频要用参考音频库里一条没移除的音色")
+        return DubbingVoiceReference(
+            kind="reference_audio",
+            reference_id=reference.reference_id,
+            url=voice.url,
+            transcript=voice.transcript,
+        )
 
     async def submit_music(self, principal: Principal, request: MusicIn) -> GenerationJob:
         if self._music is None:
@@ -472,6 +598,7 @@ class GenerationService:
                 task_id=request.task_id,
                 metadata=request.metadata,
                 shot_index=None,
+                model_group=await self._model_groups.group_of(principal.user_id),
             )
         )
 
@@ -540,6 +667,9 @@ class GenerationService:
                 return existing
         if request.user_name is None:
             raise ValidationFailed("user_name 必填")
+        model_group, upstream_model = await self._model_groups.video_model_of(
+            principal.user_id, enhance.model
+        )
         return await self._queue_new(
             _pending_job(
                 VideoEnhanceRequest(
@@ -557,6 +687,8 @@ class GenerationService:
                 metadata=None,
                 shot_index=source.shot_index,
                 source_job_id=source.id,
+                model_group=model_group,
+                upstream_model=upstream_model,
             )
         )
 
@@ -600,6 +732,9 @@ class GenerationService:
             if first is None or not is_base_master(first):
                 return None
             video = first
+        return _short_edge_of(await self._original_resolution(video))
+
+    async def _original_resolution(self, video: GenerationJob) -> str | None:
         if video.operation == OPERATION_COMPOSE:
             if video.root_job_id is None:
                 return None
@@ -609,7 +744,7 @@ class GenerationService:
             video = root
         if not isinstance(video.request, VideoGenerationIn):
             return None
-        return _short_edge_of(video.request.resolution)
+        return video.request.resolution
 
     async def _find(self, job_id: uuid.UUID) -> GenerationJob | None:
         try:
@@ -681,7 +816,7 @@ class GenerationService:
 
     async def get_video(self, principal: Principal, job_id: uuid.UUID) -> GenerationJob:
         job = await self.get(principal, job_id)
-        if job.kind != KIND_VIDEO or job.operation != OPERATION_GENERATE:
+        if job.kind != KIND_VIDEO or job.operation not in (OPERATION_GENERATE, OPERATION_TRIAL):
             raise NotFound(f"没有这个视频任务: {job_id}")
         return job
 
@@ -757,6 +892,23 @@ def _short_edge_of(resolution: str | None) -> int | None:
     return None if matched is None else int(matched.group(1))
 
 
+def _check_within_take(
+    spans: Sequence[DubbingLine] | Sequence[DubbingSpeechSpan], video_ms: int, *, what: str
+) -> None:
+    # 都已按开始时间排好、互不重叠，核对最后一个就够了；`what` 是「第 N」后面的说法。
+    position, last = len(spans), spans[-1]
+    if last.start_ms >= video_ms:
+        raise ValidationFailed(
+            f"第 {position} {what}的开始 {format_seconds(last.start_ms / 1000)} 秒不在素材片之内，"
+            f"素材片只有 {format_seconds(video_ms / 1000)} 秒"
+        )
+    if exceeds_source(last.end_ms, video_ms):
+        raise ValidationFailed(
+            f"第 {position} {what}的结尾 {format_seconds(last.end_ms / 1000)} 秒超出了素材片的时长 "
+            f"{format_seconds(video_ms / 1000)} 秒"
+        )
+
+
 def _check_edit_range(start_ms: int, end_ms: int, base_ms: int) -> None:
     if start_ms >= base_ms:
         raise ValidationFailed(
@@ -782,6 +934,8 @@ def _pending_job(
     shot_index: int | None,
     root_job_id: uuid.UUID | None = None,
     source_job_id: uuid.UUID | None = None,
+    model_group: str | None = None,
+    upstream_model: str | None = None,
 ) -> GenerationJob:
     now = datetime.now(UTC)
     return GenerationJob(
@@ -807,6 +961,8 @@ def _pending_job(
         created_at=now,
         submitted_at=None,
         finished_at=None,
+        model_group=model_group,
+        upstream_model=upstream_model,
     )
 
 
@@ -815,66 +971,9 @@ def _require_user_name(user_name: str | None) -> None:
         raise ValidationFailed("user_name 必填")
 
 
-@dataclass(frozen=True, slots=True)
-class UploadRecord:
-    url: str
-    object_upload_id: uuid.UUID
-
-
 class SettledRecords:
     def __init__(self, repo: GenerationRepository) -> None:
         self._repo = repo
-
-    async def record_upload(
-        self,
-        principal: Principal,
-        *,
-        upload_id: uuid.UUID,
-        kind: GenerationKind,
-        url: str,
-        content_md5: str | None,
-        conversation_id: uuid.UUID | None,
-    ) -> UploadRecord:
-        first = (
-            None if content_md5 is None else await self._repo.find_video_upload_by_md5(content_md5)
-        )
-        created = await self._repo.create_settled(
-            [
-                _settled_job(
-                    principal,
-                    job_id=upload_id,
-                    kind=kind,
-                    operation=OPERATION_UPLOAD,
-                    url=url if first is None else _settled_url(first),
-                    conversation_id=conversation_id,
-                    content_md5=content_md5,
-                )
-            ]
-        )
-        if created:
-            (job,) = created
-            return UploadRecord(
-                url=_settled_url(job), object_upload_id=upload_id if first is None else first.id
-            )
-        return await self._upload_record(await self._repo.get(upload_id, owner=None))
-
-    async def recorded_upload(self, upload_id: uuid.UUID) -> UploadRecord | None:
-        try:
-            job = await self._repo.get(upload_id, owner=None)
-        except NotFound:
-            return None
-        return await self._upload_record(job)
-
-    async def _upload_record(self, job: GenerationJob) -> UploadRecord:
-        if job.operation != OPERATION_UPLOAD:
-            raise RuntimeError(f"上传 {job.id} 撞上了一条 {job.kind} / {job.operation} 记录")
-        url = _settled_url(job)
-        if job.output.content_md5 is None:
-            return UploadRecord(url=url, object_upload_id=job.id)
-        first = await self._repo.find_video_upload_by_md5(job.output.content_md5)
-        if first is None:
-            raise RuntimeError(f"上传 {job.id} 按自己的 MD5 找不到视频上传记录")
-        return UploadRecord(url=url, object_upload_id=first.id)
 
     async def record_cuts(
         self, principal: Principal, grid_job_id: uuid.UUID, urls: Sequence[str]
@@ -914,7 +1013,6 @@ def _settled_job(
     conversation_id: uuid.UUID | None = None,
     task_id: uuid.UUID | None = None,
     source_job_id: uuid.UUID | None = None,
-    content_md5: str | None = None,
 ) -> GenerationJob:
     now = datetime.now(UTC)
     return GenerationJob(
@@ -931,7 +1029,7 @@ def _settled_job(
         status=STATUS_COMPLETED,
         provider_task_id=None,
         provider_status=None,
-        output=GenerationOutput(url=url, content_md5=content_md5),
+        output=GenerationOutput(url=url),
         error_code=None,
         error_message=None,
         created_at=now,
@@ -940,19 +1038,12 @@ def _settled_job(
     )
 
 
-def _settled_url(job: GenerationJob) -> str:
-    if job.output.url is None:
-        raise RuntimeError(f"记录 {job.id} 创建即完成却没有产物地址")
-    return job.output.url
-
-
 __all__ = [
     "ClearCompletion",
     "EnhanceTier",
     "GenerationService",
     "ProviderTarget",
     "SettledRecords",
-    "UploadRecord",
     "VideoEnhanceSpec",
     "VideoEnhancements",
 ]

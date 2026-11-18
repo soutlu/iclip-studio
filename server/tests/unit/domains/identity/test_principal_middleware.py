@@ -38,6 +38,7 @@ async def test_an_internal_path_never_looks_up_an_api_key() -> None:
     resolver = PrincipalResolver(
         read_session_user=_no_session_user,
         service=IdentityService(InMemoryUserRepository(), api_keys),
+        session_cookie_name="iclip_session",
     )
     app = PrincipalMiddleware(
         _echo_principal, resolver=resolver, anonymous_prefixes=(INTERNAL_PREFIX,)

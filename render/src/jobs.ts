@@ -1,8 +1,16 @@
 import type { Logger } from './log'
+import type { ProjectFile } from './project'
 
 export type ExportStatus = 'queued' | 'rendering' | 'uploading' | 'done' | 'failed' | 'cancelled'
 
-export type FailureCode = 'render-failed' | 'upload-failed' | 'media-unreachable' | 'timeout'
+export type FailureCode =
+  | 'lint-failed'
+  | 'font-missing'
+  | 'render-failed'
+  | 'upload-failed'
+  | 'media-unreachable'
+  | 'media-mismatch'
+  | 'timeout'
 
 export class ExportFailure extends Error {
   readonly code: FailureCode
@@ -26,9 +34,14 @@ export interface UploadTarget {
 
 export interface RenderJobInput {
   id: string
-  registryDir: string
-  mediaUrls: string[]
-  compose(mediaPaths: Readonly<Record<string, string>>): string
+  /** final-cut 工程的文件，已经查过（见 `projectProblem`）；按语言导出时主文件已经改好（见 `localizeProject`）。 */
+  files: readonly ProjectFile[]
+  /** 主文件里写的素材地址 → 去下载的地址。 */
+  media: ReadonlyMap<string, string>
+  /** 交给渲染器的变量值：按语言导出时是那种语言校验过的值表，原文时是 null。 */
+  variables: Readonly<Record<string, unknown>> | null
+  /** 公共目录：工程里的 `vendor` 指向它。 */
+  vendorDir: string
 }
 
 export interface ExportWorker {
@@ -190,9 +203,10 @@ export class ExportQueue {
       rendered = await this.worker.render(
         {
           id: input.id,
-          registryDir: input.registryDir,
-          mediaUrls: input.mediaUrls,
-          compose: input.compose,
+          files: input.files,
+          media: input.media,
+          variables: input.variables,
+          vendorDir: input.vendorDir,
         },
         {
           signal: controller.signal,

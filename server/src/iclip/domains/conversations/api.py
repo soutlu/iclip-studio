@@ -4,10 +4,17 @@ import uuid
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Final
 
-from fastapi import APIRouter, HTTPException, Path, Query, Response
+from fastapi import APIRouter, HTTPException, Path, Query, Request, Response
+from fastapi.responses import JSONResponse, RedirectResponse
 
+from iclip.domains.conversations.final_cut_project import (
+    FINAL_CUT_PREVIEW_PREFIX,
+    FinalCutProject,
+    PreviewRedirect,
+)
+from iclip.domains.conversations.final_cut_translation import FinalCutTranslationFailed
 from iclip.domains.conversations.models import Conversation, ConversationActivity
 from iclip.domains.conversations.schemas import (
     MAX_AGENT_ID_CHARS,
@@ -52,17 +59,22 @@ from iclip.domains.conversations.service import (
     ConversationPage,
     ConversationService,
     DeletedFilter,
+    FinalCutRenderUnavailable,
     ListAgents,
     ListState,
-    WholeFilmRenderUnavailable,
 )
 from iclip.domains.conversations.whole_film_schemas import (
-    WholeFilmDraftIn,
-    WholeFilmDraftOut,
-    WholeFilmDraftSavedOut,
+    FinalCutFileCreatedOut,
+    FinalCutFileIn,
+    FinalCutPreviewHostOut,
+    FinalCutPreviewOut,
+    FinalCutTranslationErrorOut,
+    FinalCutTranslationsIn,
+    FinalCutTranslationsOut,
     WholeFilmExportIn,
     WholeFilmExportLatestOut,
     WholeFilmExportStartedOut,
+    final_cut_translations_out,
     whole_film_export_out,
 )
 from iclip.domains.identity.public import (
@@ -79,7 +91,7 @@ from iclip.platform.paging import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
 def _render_unavailable_as_502() -> Generator[None]:
     try:
         yield
-    except WholeFilmRenderUnavailable as exc:
+    except FinalCutRenderUnavailable as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
@@ -463,36 +475,6 @@ def create_conversations_router(
         )
         return FilmJobOut(job_id=job_id)
 
-    @router.get("/{conversation_id}/whole-film/draft", response_model=WholeFilmDraftOut)
-    async def read_whole_film_draft(
-        conversation_id: uuid.UUID,
-        principal: Annotated[Principal, require_permission("agent:read")],
-    ) -> WholeFilmDraftOut:
-        """读这段对话的成片草稿；可见范围同读工作区文件。还没存过答复 ``revision`` 0、
-        ``document`` 与 ``updatedAt`` 为 null。"""
-
-        found = await service.whole_film_draft(principal, conversation_id)
-        if found is None:
-            return WholeFilmDraftOut(revision=0, document=None, updated_at=None)
-        draft, document = found
-        return WholeFilmDraftOut(
-            revision=draft.revision, document=document, updated_at=draft.updated_at
-        )
-
-    @router.put("/{conversation_id}/whole-film/draft", response_model=WholeFilmDraftSavedOut)
-    async def save_whole_film_draft(
-        conversation_id: uuid.UUID,
-        body: WholeFilmDraftIn,
-        principal: Annotated[Principal, require_permission("agent:run")],
-    ) -> WholeFilmDraftSavedOut:
-        """整份保存成片草稿，答复新的版本号。只有属主能存；``revision`` 不是当前那一版（还没有
-        草稿是 0）是 409；文档不合规矩、引用的记录不是这段对话的是 422。"""
-
-        saved = await service.save_whole_film_draft(
-            principal, conversation_id, revision=body.revision, document=body.document
-        )
-        return WholeFilmDraftSavedOut(revision=saved.revision, updated_at=saved.updated_at)
-
     @router.post(
         "/{conversation_id}/whole-film/exports",
         response_model=WholeFilmExportStartedOut,
@@ -500,15 +482,16 @@ def create_conversations_router(
     )
     async def export_whole_film(
         conversation_id: uuid.UUID,
-        body: WholeFilmExportIn,
         principal: Annotated[Principal, require_permission("agent:run")],
+        body: WholeFilmExportIn | None = None,
     ) -> WholeFilmExportStartedOut:
-        """按当前草稿导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；
-        ``revision`` 不是存着的那一版 409；画面轨没有内容、用到的记录没有产物地址、没开通都是 422。
-        渲染服务不收这份草稿不在这里答，那条记录记为失败（``RENDER_REJECTED``）。"""
+        """按 final-cut 导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；
+        还没有主文件 ``final-cut/index.html``、要导的语言没有值表 ``final-cut/locales/<语言>.json``、
+        没开通都是 422。没有请求体或 ``locale`` 为 null 时导出原文。主文件里的素材按输出地址对上
+        生成记录的记进导出记录，对不上的不记、也不拒绝。导出的是交给渲染服务那一刻的工程。"""
 
         export_id = await service.export_whole_film(
-            principal, conversation_id, revision=body.revision
+            principal, conversation_id, locale=None if body is None else body.locale
         )
         return WholeFilmExportStartedOut(export_id=export_id)
 
@@ -632,4 +615,154 @@ def create_previews_router(service: ConversationService) -> APIRouter:
     return router
 
 
-__all__ = ["create_conversations_router", "create_previews_router"]
+_PREVIEW_CONTENT_TYPES: Final = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".mjs": "text/javascript; charset=utf-8",
+    ".json": "application/json",
+    ".svg": "image/svg+xml",
+    ".txt": "text/plain; charset=utf-8",
+}
+
+_OCTET_STREAM: Final = "application/octet-stream"
+
+_PREVIEW_FILE_HEADERS: Final = {
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+}
+
+
+def _preview_content_type(path: str) -> str:
+    name = path.rsplit("/", 1)[-1]
+    _, dot, extension = name.rpartition(".")
+    if not dot:
+        return _OCTET_STREAM
+    return _PREVIEW_CONTENT_TYPES.get(f".{extension.lower()}", _OCTET_STREAM)
+
+
+def create_final_cut_project_router(project: FinalCutProject) -> APIRouter:
+    """应用域名上的三个接口：发 final-cut 预览令牌、在 final-cut 工程里新建文件、翻译 final-cut 里的字。"""
+
+    router = APIRouter(prefix="/conversations", tags=["conversations"])
+
+    @router.post("/{conversation_id}/final-cut/preview", response_model=FinalCutPreviewOut)
+    async def open_final_cut_preview(
+        conversation_id: uuid.UUID,
+        request: Request,
+        principal: Annotated[Principal, require_permission("agent:read")],
+    ) -> FinalCutPreviewOut:
+        """给能读这段对话的人发一张 1 小时的 final-cut 预览令牌；可见范围同读工作区文件。
+
+        令牌里签进对话的属主、对话、失效时刻与这次请求的 ``Origin``。看不见这段对话 404；
+        没配置预览域名、请求没带合规的 ``Origin`` 都是 422。"""
+
+        ticket = await project.open_preview(
+            principal, conversation_id, app_origin=request.headers.get("origin")
+        )
+        return FinalCutPreviewOut(
+            origin=ticket.origin, token=ticket.token, expires_at=ticket.expires_at
+        )
+
+    @router.post(
+        "/{conversation_id}/final-cut/files",
+        response_model=FinalCutFileCreatedOut,
+        status_code=201,
+    )
+    async def create_final_cut_file(
+        conversation_id: uuid.UUID,
+        body: FinalCutFileIn,
+        principal: Annotated[Principal, require_permission("agent:run")],
+    ) -> FinalCutFileCreatedOut:
+        """在 final-cut 工程里新建一个文件，写进工作区的 ``final-cut/<path>``。只有属主能建：看不见这段
+        对话 404，看得见但不是属主、或看得见已删除的对话（治理者）403；路径不合规 422；文件已存在
+        409，不覆盖。"""
+
+        created = await project.create_file(
+            principal, conversation_id, path=body.path, content=body.content
+        )
+        return FinalCutFileCreatedOut(path=body.path, version=created.version)
+
+    @router.post(
+        "/{conversation_id}/final-cut/translations",
+        response_model=FinalCutTranslationsOut,
+        responses={
+            409: {
+                "model": FinalCutTranslationErrorOut,
+                "description": "code 为 model_unavailable：没有启用翻译用的模型",
+            },
+            502: {
+                "model": FinalCutTranslationErrorOut,
+                "description": "code 为 model_call_failed（可以再试）或 model_failed（模型拒绝、"
+                "超时或回答不对）",
+            },
+        },
+    )
+    async def translate_final_cut_texts(
+        conversation_id: uuid.UUID,
+        body: FinalCutTranslationsIn,
+        principal: Annotated[Principal, require_permission("agent:run")],
+    ) -> FinalCutTranslationsOut | JSONResponse:
+        """把一批原文短句（什么语言都行）翻成一种语言，一次请求一次模型调用，同步答复；不落库、不写工作区。只有属主能翻：
+        看不见这段对话 404，看得见但不是属主、或看得见已删除的对话（治理者）403。语言、条数、长度不合规或
+        ``id`` 重复 422。模型没启用 409，模型调用失败或回答不对 502，都带 ``code``。"""
+
+        try:
+            translated = await project.translate(
+                principal, conversation_id, locale=body.target_locale, entries=body.texts()
+            )
+        except FinalCutTranslationFailed as exc:
+            return JSONResponse(
+                status_code=502,
+                content=FinalCutTranslationErrorOut(detail=str(exc), code=exc.code).model_dump(),
+            )
+        return final_cut_translations_out(translated)
+
+    return router
+
+
+def create_final_cut_preview_router(project: FinalCutProject) -> APIRouter:
+    """预览域名上的地址：不看登录态，只认地址里的令牌；令牌不对或过期 403。"""
+
+    router = APIRouter(prefix=FINAL_CUT_PREVIEW_PREFIX, tags=["final-cut-preview"])
+
+    @router.get("/{token}/host", response_model=FinalCutPreviewHostOut)
+    async def read_final_cut_preview_host(token: str) -> FinalCutPreviewHostOut:
+        """发令牌时请求的 ``Origin``，预览页只接受来自这个来源的消息。"""
+
+        return FinalCutPreviewHostOut(app_origin=project.app_origin(token))
+
+    @router.get(
+        "/{token}/files/{path:path}",
+        response_class=Response,
+        responses={
+            200: {
+                "description": "工程文件的原文，类型按扩展名给出",
+                "content": {_OCTET_STREAM: {}},
+            },
+            307: {"description": "公共库的文件，转到同主机的 /hyperframes/vendor/…"},
+        },
+    )
+    async def read_final_cut_preview_file(token: str, path: str) -> Response:
+        """取 final-cut 工程里的一个文件：``vendor/`` 开头的 307 转到同主机的 ``/hyperframes/vendor/…``，
+        其余原文给出工作区的 ``final-cut/<path>``。路径带 ``..``、以 ``/`` 开头、带反斜杠或文件不存在
+        都是 404。"""
+
+        found = await project.preview_file(token, path)
+        if isinstance(found, PreviewRedirect):
+            return RedirectResponse(found.location, status_code=307)
+        return Response(
+            content=found.content.encode(),
+            headers={**_PREVIEW_FILE_HEADERS, "Content-Type": _preview_content_type(path)},
+        )
+
+    return router
+
+
+__all__ = [
+    "create_conversations_router",
+    "create_final_cut_preview_router",
+    "create_final_cut_project_router",
+    "create_previews_router",
+]

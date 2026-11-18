@@ -15,10 +15,12 @@ from iclip.domains.references.models import BREAKDOWN_TIMEOUT_SECONDS
 from iclip.domains.references.queue import QUEUE, ReferenceQueue
 from iclip.domains.references.repository import VideoBreakdowns
 from iclip.domains.references.service import ReferenceService
+from tests.helpers.model_groups import MKT, GroupBook
 from tests.helpers.references import (
     DOCUMENT,
     FakeArk,
     FakeSampler,
+    NoMediaSources,
     NoTestVideos,
     ark_pipeline,
     model_unavailable,
@@ -44,21 +46,19 @@ def make_queue(
     tagging: RecordingTaggingQueue,
     *,
     connector: InMemoryConnector | None = None,
+    groups: GroupBook | None = None,
 ) -> ReferenceQueue:
     return ReferenceQueue(
         SqlReferenceStore(engine),
         breakdowns=breakdowns,
         tagging=tagging_service(engine, tagging),
+        model_group_of=groups or GroupBook(),
         connector=connector or InMemoryConnector(),
     )
 
 
 def ark_breakdowns(ark: FakeArk, *, sampler: FakeSampler | None = None) -> VideoBreakdowns:
     return ark_pipeline(ark, sampler=sampler)[0]
-
-
-async def no_uploads(principal: Principal, upload_id: uuid.UUID) -> str | None:
-    raise AssertionError("这里不该读上传记录")
 
 
 async def pending_row(engine: AsyncEngine) -> tuple[uuid.UUID, uuid.UUID, set[uuid.UUID]]:
@@ -92,6 +92,33 @@ async def test_a_breakdown_writes_the_document_and_queues_tagging_without_touchi
     assert tagging.enqueued == [entry_id]
 
 
+@pytest.mark.parametrize(
+    ("requester", "expected"),
+    [("rex", MKT), ("nobody", None)],
+    ids=["requester_grouped", "no_requester_falls_to_default_not_owner"],
+)
+async def test_the_breakdown_calls_the_model_with_the_requesters_group(
+    engine: AsyncEngine, requester: str, expected: str | None
+) -> None:
+    owner = await plant_user(engine, "maya")
+    rex = await plant_user(engine, "rex")
+    reference_id = await plant_reference(
+        engine,
+        owner=owner,
+        requested_by=rex if requester == "rex" else None,
+        status="pending",
+        document=None,
+    )
+    ark = FakeArk()
+    groups = GroupBook({owner: "owners_group", rex: MKT})
+
+    await make_queue(
+        engine, ark_breakdowns(ark), RecordingTaggingQueue(), groups=groups
+    ).run_breakdown(str(reference_id))
+
+    assert [call["model_group"] for call in ark.calls] == [expected]
+
+
 async def test_a_successful_rerun_queues_tagging_again(engine: AsyncEngine) -> None:
     owner = await plant_user(engine, "maya")
     reference_id = await plant_reference(engine, owner=owner)
@@ -102,7 +129,7 @@ async def test_a_successful_rerun_queues_tagging_again(engine: AsyncEngine) -> N
 
     references = ReferenceService(
         store,
-        own_video_upload=no_uploads,
+        sources=NoMediaSources(),
         queue=queue,
         tagging=tagging_service(engine, tagging),
         uploads_available=False,
@@ -270,13 +297,11 @@ async def test_a_late_result_does_not_overwrite_a_row_that_timed_out_and_was_rer
         await conn.execute(
             text(
                 "UPDATE iclip.reference_videos SET breakdown_status = 'failed',"
-                " error_code = 'timeout' WHERE id = :id"
+                " error_code = 'timeout' WHERE reference_id = :id"
             ),
             {"id": reference_id},
         )
-    assert await store.requeue(
-        reference_id, from_failed_only=False, requested_by=owner, api_key_id=None
-    )
+    assert await store.requeue(reference_id, from_failed_only=False, requested_by=owner)
     second = await store.claim(reference_id)
     assert second is not None
 
@@ -292,7 +317,7 @@ async def test_a_task_that_raises_is_not_run_again(engine: AsyncEngine) -> None:
     calls: list[str] = []
 
     class Crashing:
-        async def breakdown(self, video_url: str) -> str:
+        async def breakdown(self, video_url: str, *, model_group: str | None) -> str:
             calls.append(video_url)
             raise RuntimeError("进程里出了没料到的错")
 

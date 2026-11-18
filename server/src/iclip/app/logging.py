@@ -13,7 +13,7 @@ LogFormat = Literal["console", "json"]
 
 SERVICE_NAME = "后端"
 
-QUIET_LOGGERS = ("procrastinate", "httpx")
+QUIET_LOGGERS = ("procrastinate", "httpx", "watchfiles")
 
 _SERVICE_WIDTH = 6
 
@@ -21,8 +21,27 @@ _CONSOLE_LOGGER_NAMES = {"uvicorn.error": "uvicorn"}
 
 _WEBSOCKETS_LINES = frozenset({"connection open", "connection closed"})
 
+# uvicorn 的原文；带进程号或目录的几句只有开头固定，所以按开头匹配。
+_UVICORN_LIFECYCLE_LINES = (
+    "Will watch for changes in these directories",
+    "Started reloader process",
+    "Stopping reloader process",
+    "Started server process",
+    "Finished server process",
+    "Waiting for application startup.",
+    "Waiting for application shutdown.",
+    "Application shutdown complete.",
+    "Shutting down",
+)
 
-def configure_logging(level: str, fmt: LogFormat) -> None:
+_WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def configure_logging(
+    level: str, fmt: LogFormat, *, token_path_prefixes: tuple[str, ...] = ()
+) -> None:
+    """配置根日志。``token_path_prefixes`` 里每个路径前缀的下一段是凭证，访问日志里写成 ``***``。"""
+
     shared: list[Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_logger_name,
@@ -46,7 +65,9 @@ def configure_logging(level: str, fmt: LogFormat) -> None:
             processors=[structlog.stdlib.ProcessorFormatter.remove_processors_meta, *tail],
         )
     )
-    handler.addFilter(_keep_record)
+    handler.addFilter(
+        _RecordFilter(console=fmt == "console", token_path_prefixes=token_path_prefixes)
+    )
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level)
@@ -92,15 +113,41 @@ def _display_width(text: str) -> int:
     return sum(2 if unicodedata.east_asian_width(char) in ("W", "F") else 1 for char in text)
 
 
-def _keep_record(record: logging.LogRecord) -> bool:
-    if record.name == "uvicorn.access":
+class _RecordFilter(logging.Filter):
+    def __init__(self, *, console: bool, token_path_prefixes: tuple[str, ...]) -> None:
+        super().__init__()
+        self._console = console
+        self._token_path_prefixes = token_path_prefixes
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.name == "uvicorn.access":
+            return self._keeps_access(record)
+        if record.name == "uvicorn.error" and isinstance(record.msg, str):
+            if record.msg in _WEBSOCKETS_LINES:
+                return False
+            return not (self._console and record.msg.startswith(_UVICORN_LIFECYCLE_LINES))
+        return True
+
+    def _keeps_access(self, record: logging.LogRecord) -> bool:
         args = record.args
-        return not (
-            isinstance(args, tuple) and len(args) == 5 and args[2] == "/healthz" and args[4] == 200
-        )
-    if record.name == "uvicorn.error":
-        return record.msg not in _WEBSOCKETS_LINES
-    return True
+        if not (isinstance(args, tuple) and len(args) == 5):
+            return True
+        client, method, path, version, status = args
+        if path == "/healthz" and status == 200:
+            return False
+        routine = method not in _WRITE_METHODS and isinstance(status, int) and status < 400
+        if self._console and routine:
+            return False
+        if isinstance(path, str):
+            record.args = (client, method, self._without_token(path), version, status)
+        return True
+
+    def _without_token(self, path: str) -> str:
+        for prefix in self._token_path_prefixes:
+            if path.startswith(f"{prefix}/"):
+                _token, slash, rest = path[len(prefix) + 1 :].partition("/")
+                return f"{prefix}/***{slash}{rest}"
+        return path
 
 
 __all__ = ["QUIET_LOGGERS", "SERVICE_NAME", "LogFormat", "configure_logging"]

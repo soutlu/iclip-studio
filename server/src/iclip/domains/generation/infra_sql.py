@@ -33,7 +33,6 @@ from sqlalchemy.sql.elements import KeyedColumnElement
 
 from iclip.common.errors import NotFound, ValidationFailed
 from iclip.domains.generation.models import (
-    REFERENCE_TRIAL_KEY,
     STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_PENDING,
@@ -48,10 +47,7 @@ from iclip.domains.generation.models import (
     Inheritance,
 )
 from iclip.domains.generation.schemas import (
-    KIND_VIDEO,
     OPERATION_ENHANCE,
-    OPERATION_GENERATE,
-    OPERATION_UPLOAD,
     SubtitleSentence,
     request_to_payload,
 )
@@ -104,6 +100,8 @@ generation_jobs_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("submitted_at", DateTime(timezone=True), nullable=True),
     Column("finished_at", DateTime(timezone=True), nullable=True),
+    Column("model_group", Text, nullable=True),
+    Column("upstream_model", Text, nullable=True),
     Index("ix_generation_jobs_owner_created", "owner_user_id", "created_at", "id"),
     Index(
         "ix_generation_jobs_conversation_kind_created",
@@ -172,19 +170,6 @@ generation_jobs_table = Table(
         postgresql_using="hash",
         postgresql_where=text("(output ->> 'url'::text) IS NOT NULL"),
     ),
-    Index(
-        "ix_generation_jobs_video_upload_md5",
-        text("(output ->> 'content_md5'::text)"),
-        "created_at",
-        "id",
-        postgresql_where=text("kind = 'video'::text AND operation = 'upload'::text"),
-    ),
-    Index(
-        "ix_generation_jobs_reference_trial",
-        text("(metadata ->> 'referenceId'::text)"),
-        "created_at",
-        postgresql_where=text("(metadata ->> 'referenceId'::text) IS NOT NULL"),
-    ),
 )
 
 _JOBS = generation_jobs_table.c
@@ -194,10 +179,6 @@ type _Columns = ReadOnlyColumnCollection[str, KeyedColumnElement[Any]]
 
 def _json_text(column: KeyedColumnElement[Any], key: str) -> ColumnElement[str]:
     return column.op("->>", return_type=Text())(literal_column(f"'{key}'"))
-
-
-def _sql_literal(value: str) -> ColumnElement[str]:
-    return literal_column(f"'{value}'", Text())
 
 
 _OUTPUT_URL: Final = _json_text(_JOBS.output, "url")
@@ -243,6 +224,8 @@ class SqlGenerationRepository:
                             created_at=func.now(),
                             submitted_at=None,
                             finished_at=None,
+                            model_group=job.model_group,
+                            upstream_model=job.upstream_model,
                         )
                         .returning(generation_jobs_table)
                     )
@@ -274,7 +257,6 @@ class SqlGenerationRepository:
         owner: uuid.UUID | None,
         conversation_id: uuid.UUID | None,
         inherited: Inheritance = (),
-        operation: GenerationOperation | None = None,
     ) -> GenerationJob | None:
         hits = (
             select(generation_jobs_table)
@@ -289,45 +271,31 @@ class SqlGenerationRepository:
             if conversation_id is None
             else cols.conversation_id == conversation_id
         )
-        stmt = select(hits).where(
-            cols.kind == kind, cols.status == STATUS_COMPLETED, _visible(cols, own, inherited)
-        )
-        if operation is not None:
-            stmt = stmt.where(cols.operation == operation)
-        stmt = stmt.order_by(cols.created_at, cols.id).limit(1)
-        async with self._engine.connect() as conn:
-            row = (await conn.execute(stmt)).mappings().one_or_none()
-        return None if row is None else _job_from_row(row)
-
-    async def find_video_upload_by_md5(self, content_md5: str) -> GenerationJob | None:
         stmt = (
-            select(generation_jobs_table)
+            select(hits)
             .where(
-                _json_text(_JOBS.output, "content_md5") == content_md5,
-                _JOBS.kind == _sql_literal(KIND_VIDEO),
-                _JOBS.operation == _sql_literal(OPERATION_UPLOAD),
+                cols.kind == kind, cols.status == STATUS_COMPLETED, _visible(cols, own, inherited)
             )
-            .order_by(_JOBS.created_at, _JOBS.id)
+            .order_by(cols.created_at, cols.id)
             .limit(1)
         )
         async with self._engine.connect() as conn:
             row = (await conn.execute(stmt)).mappings().one_or_none()
         return None if row is None else _job_from_row(row)
 
-    async def latest_reference_trial(self, reference_id: uuid.UUID) -> GenerationJob | None:
+    async def earliest_by_outputs(self, urls: Collection[str]) -> Mapping[str, GenerationJob]:
+        if not urls:
+            return {}
         stmt = (
             select(generation_jobs_table)
-            .where(
-                _json_text(_JOBS.metadata, REFERENCE_TRIAL_KEY) == str(reference_id),
-                _JOBS.kind == KIND_VIDEO,
-                _JOBS.operation == OPERATION_GENERATE,
-            )
-            .order_by(_JOBS.created_at.desc(), _JOBS.id.desc())
-            .limit(1)
+            .where(_OUTPUT_URL.in_(list(urls)), _JOBS.status == STATUS_COMPLETED)
+            .distinct(_OUTPUT_URL)
+            .order_by(_OUTPUT_URL, _JOBS.created_at, _JOBS.id)
         )
         async with self._engine.connect() as conn:
-            row = (await conn.execute(stmt)).mappings().one_or_none()
-        return None if row is None else _job_from_row(row)
+            rows = (await conn.execute(stmt)).mappings().all()
+        jobs = (_job_from_row(row) for row in rows)
+        return {job.output.url: job for job in jobs if job.output.url is not None}
 
     async def output_urls(self, ids: Collection[uuid.UUID]) -> Mapping[uuid.UUID, str]:
         if not ids:
@@ -623,6 +591,8 @@ def _settled_values(job: GenerationJob) -> dict[str, Any]:
         "created_at": func.now(),
         "submitted_at": None,
         "finished_at": func.now(),
+        "model_group": job.model_group,
+        "upstream_model": job.upstream_model,
     }
 
 
@@ -671,6 +641,8 @@ def _job_from_row(row: RowMapping) -> GenerationJob:
         created_at=row["created_at"],
         submitted_at=row["submitted_at"],
         finished_at=row["finished_at"],
+        model_group=row["model_group"],
+        upstream_model=row["upstream_model"],
     )
 
 

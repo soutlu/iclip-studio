@@ -20,19 +20,19 @@ APP_TABLES = (
     "iclip.oauth_accounts",
     "iclip.api_keys",
     "iclip.conversations",
-    "iclip.whole_film_drafts",
     "iclip.agent_previews",
     "iclip.collections",
     "iclip.tasks",
     "iclip.task_assignees",
     "iclip.generation_jobs",
+    "iclip.media_uploads",
     "iclip.tracking_events",
     "iclip.inspiration_videos",
+    "iclip.references",
     "iclip.reference_videos",
+    "iclip.reference_audios",
     "iclip.library_entries",
     "iclip.library_entry_tags",
-    "iclip.brand_templates",
-    "iclip.brand_profiles",
 )
 
 AGENT_RUNTIME_TABLES = (

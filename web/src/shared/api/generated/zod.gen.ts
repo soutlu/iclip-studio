@@ -315,6 +315,14 @@ export const zAttemptBucketOut = z.object({
 })
 
 /**
+ * AudioKindCountOut
+ */
+export const zAudioKindCountOut = z.object({
+  audioKind: z.enum(['voice', 'bgm', 'sfx']),
+  count: z.int(),
+})
+
+/**
  * Body_auth_cookie_login_auth_login_post
  */
 export const zBodyAuthCookieLoginAuthLoginPost = z.object({
@@ -341,70 +349,6 @@ export const zBodyImportAgentsAgentsImportPost = z.object({
  */
 export const zBodyImportSkillSkillsImportPost = z.object({
   file: z.string(),
-})
-
-/**
- * BrandFontConfirmIn
- */
-export const zBrandFontConfirmIn = z.object({
-  brand: z.string().min(1).max(100).nullish(),
-  name: z.string().min(1).max(100),
-})
-
-/**
- * BrandFontSignIn
- */
-export const zBrandFontSignIn = z.object({
-  contentType: z.enum(['font/ttf', 'font/otf']),
-})
-
-/**
- * BrandFontUnicodeRange
- */
-export const zBrandFontUnicodeRange = z.object({
-  end: z.int(),
-  start: z.int(),
-})
-
-/**
- * BrandFontInfoOut
- */
-export const zBrandFontInfoOut = z.object({
-  family: z.string(),
-  style: z.enum(['normal', 'italic', 'oblique']),
-  unicodeRanges: z.array(zBrandFontUnicodeRange),
-  weight: z.int(),
-})
-
-/**
- * BrandTemplateOut
- */
-export const zBrandTemplateOut = z.object({
-  brand: z.string().nullable(),
-  createdAt: z.iso.datetime(),
-  disabledAt: z.iso.datetime().nullable(),
-  id: z.uuid(),
-  kind: z.string(),
-  name: z.string(),
-  url: z.string(),
-})
-
-/**
- * BrandTemplateUpdateIn
- *
- * 改名、停用或恢复使用；不给的那一项不动，至少给一项。
- */
-export const zBrandTemplateUpdateIn = z.object({
-  brand: z.string().min(1).max(100).nullish(),
-  disabled: z.boolean().nullish(),
-  name: z.string().min(1).max(100).nullish(),
-})
-
-/**
- * BrandTemplatesOut
- */
-export const zBrandTemplatesOut = z.object({
-  items: z.array(zBrandTemplateOut),
 })
 
 /**
@@ -737,9 +681,15 @@ export const zConversationsPageOut = z.object({
 
 /**
  * CredentialCreateIn
+ *
+ * ``modelGroup`` 给了就把这把密钥归进这个配置组；同一供应商下一个组最多一把。
  */
 export const zCredentialCreateIn = z.object({
   fields: z.record(z.string(), z.string()),
+  modelGroup: z
+    .string()
+    .regex(/^[a-z][a-z0-9_]*$/)
+    .nullish(),
   name: z.string(),
 })
 
@@ -770,11 +720,14 @@ export const zCredentialOptionOut = z.object({
 
 /**
  * CredentialOut
+ *
+ * ``modelGroup`` 是这把密钥归的配置组，为空即不归任何组。
  */
 export const zCredentialOut = z.object({
   createdAt: z.iso.datetime(),
   fields: z.record(z.string(), z.string()),
   id: z.uuid(),
+  modelGroup: z.string().nullable(),
   name: z.string(),
   updatedAt: z.iso.datetime(),
   usedBy: z.array(zAgentUsageOut),
@@ -795,10 +748,15 @@ export const zCredentialTestIn = z.object({
 /**
  * CredentialUpdateIn
  *
- * 不给或给 ``null`` 的项不动。
+ * ``name`` 与 ``fields`` 不给或给 ``null`` 都不动；``modelGroup`` 不给不动，给 ``null`` 清掉，给值改成
+ * 这个组。
  */
 export const zCredentialUpdateIn = z.object({
   fields: z.record(z.string(), z.string()).nullish(),
+  modelGroup: z
+    .string()
+    .regex(/^[a-z][a-z0-9_]*$/)
+    .nullish(),
   name: z.string().nullish(),
 })
 
@@ -928,6 +886,93 @@ export const zDraftFileRenameIn = z.object({
 export const zDraftFileWriteIn = z.object({
   baseHash: z.string().nullable(),
   content: z.string(),
+})
+
+/**
+ * DubbedLine
+ *
+ * 配好的一句：``index`` 是它在请求 ``lines`` 里的位置（合成一段语音时只有一句，是 0），``speed`` 是
+ * 加速的倍数（1 是原速），``trimmed`` 表示加速到上限也放不下、截掉了尾巴。
+ */
+export const zDubbedLine = z.object({
+  index: z.int().gte(0),
+  speed: z.number().gte(1),
+  trimmed: z.boolean(),
+})
+
+/**
+ * DubbingLine
+ *
+ * 要配的一句：在素材片视频里的起止（毫秒，与字幕记录的 ``sentences`` 同一口径）与译文。
+ */
+export const zDubbingLine = z.object({
+  endMs: z.int().gte(0),
+  slotEndMs: z.int().gte(0).nullish(),
+  startMs: z.int().gte(0),
+  text: z.string().min(1),
+})
+
+/**
+ * DubbingSpeechSpan
+ *
+ * 素材片里有人说话的一段：起止（毫秒，与 ``lines`` 同一口径）。
+ */
+export const zDubbingSpeechSpan = z.object({
+  endMs: z.int().gte(0),
+  startMs: z.int().gte(0),
+})
+
+/**
+ * DubbingOriginalReference
+ *
+ * 参考音频取素材片自己的原声：服务端从被说话时段覆盖得最多的一段里截。
+ */
+export const zDubbingOriginalReference = z.object({
+  kind: z.literal('original'),
+  spans: z.array(zDubbingSpeechSpan).max(200).nullish(),
+})
+
+/**
+ * DubbingUploadReferenceIn
+ *
+ * 参考音频取调用者本人的一条音频上传。
+ */
+export const zDubbingUploadReferenceIn = z.object({
+  kind: z.literal('upload'),
+  uploadId: z.uuid(),
+})
+
+/**
+ * DubbingVoiceReferenceIn
+ *
+ * 参考音频取参考音频库里一条没移除的音色。
+ */
+export const zDubbingVoiceReferenceIn = z.object({
+  kind: z.literal('reference_audio'),
+  referenceId: z.uuid(),
+})
+
+/**
+ * DubbingIn
+ *
+ * 给一条素材片配一种外语的受理输入：每句译文按 ``lines`` 的时间放，用参考音频的声音合成。
+ *
+ * ``lines`` 按开始时间排好、互不重叠，都在素材片的时长之内（时长在受理时核对）。归属参数与
+ * ``userName`` 的规则同字幕识别。
+ */
+export const zDubbingIn = z.object({
+  conversationId: z.uuid().nullish(),
+  lines: z.array(zDubbingLine).min(1).max(200),
+  locale: z.enum(['zh', 'en', 'de', 'es', 'fr']),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
+  reference: z.discriminatedUnion('kind', [
+    zDubbingOriginalReference,
+    zDubbingVoiceReferenceIn,
+    zDubbingUploadReferenceIn,
+  ]),
+  sourceJobId: z.uuid(),
+  taskId: z.uuid().nullish(),
+  userName: z.string().min(1).max(200).nullish(),
 })
 
 /**
@@ -1203,6 +1248,96 @@ export const zFilmViewOut = z.object({
  */
 export const zFilmViewEnvelope = z.object({
   film: zFilmViewOut,
+})
+
+/**
+ * FinalCutFileCreatedOut
+ *
+ * 新建的文件：``path`` 与请求里的相同（相对工程根），工作区里的路径是 ``final-cut/`` 加上它；
+ * ``version`` 是工作区文件的版本号，之后用 ``PUT /conversations/{id}/workspace/file`` 修改。
+ */
+export const zFinalCutFileCreatedOut = z.object({
+  path: z.string(),
+  version: z.int(),
+})
+
+/**
+ * FinalCutFileIn
+ *
+ * 在 final-cut 工程里新建一个文件。``path`` 相对工程根，如 ``index.html``。
+ */
+export const zFinalCutFileIn = z.object({
+  content: z.string(),
+  path: z.string().min(1),
+})
+
+/**
+ * FinalCutPreviewHostOut
+ *
+ * 发令牌时请求的 ``Origin``：预览页只接受来自这个来源的消息。
+ */
+export const zFinalCutPreviewHostOut = z.object({
+  appOrigin: z.string(),
+})
+
+/**
+ * FinalCutPreviewOut
+ *
+ * 预览令牌。预览页的地址由前端拼成 ``<origin>/api/final-cut/preview/<token>/…``。
+ */
+export const zFinalCutPreviewOut = z.object({
+  expiresAt: z.iso.datetime(),
+  origin: z.string(),
+  token: z.string(),
+})
+
+/**
+ * FinalCutTextIn
+ *
+ * 一条要翻的原文：``id`` 是编辑器里变量的 id，``text`` 不能只有空白。
+ */
+export const zFinalCutTextIn = z.object({
+  id: z.string().min(1).max(128),
+  text: z.string().min(1).max(500),
+})
+
+/**
+ * FinalCutTranslationErrorOut
+ *
+ * 翻译失败：``model_unavailable`` 没有启用翻译用的模型（409）；``model_call_failed`` 模型调用
+ * 暂时失败，再试一次可能就好（502）；``model_failed`` 模型拒绝、等待超时或回答不对（502）。
+ */
+export const zFinalCutTranslationErrorOut = z.object({
+  code: z.enum(['model_unavailable', 'model_call_failed', 'model_failed']),
+  detail: z.string(),
+})
+
+/**
+ * FinalCutTranslationOut
+ */
+export const zFinalCutTranslationOut = z.object({
+  id: z.string(),
+  text: z.string(),
+})
+
+/**
+ * FinalCutTranslationsIn
+ *
+ * 把一批原文短句翻成 ``targetLocale``。原文什么语言都行，不用声明；``entries`` 里的 ``id``
+ * 不能重复。
+ */
+export const zFinalCutTranslationsIn = z.object({
+  entries: z.array(zFinalCutTextIn).min(1).max(200),
+  targetLocale: z.enum(['zh', 'en', 'de', 'es', 'fr']),
+})
+
+/**
+ * FinalCutTranslationsOut
+ *
+ * 译文：请求里的每个 ``id`` 恰好一条，顺序同请求。
+ */
+export const zFinalCutTranslationsOut = z.object({
+  translations: z.array(zFinalCutTranslationOut),
 })
 
 /**
@@ -1681,6 +1816,15 @@ export const zMetricFiltersIn = z.object({
 })
 
 /**
+ * ModelGroupsOut
+ *
+ * ``config.yaml`` 里配置的组名，按配置里的先后；没配时为空。
+ */
+export const zModelGroupsOut = z.object({
+  groups: z.array(z.string()),
+})
+
+/**
  * ModelOptionOut
  *
  * agent 能选的一个对话模型。
@@ -1930,17 +2074,73 @@ export const zModelOptionsOut = z.object({
 })
 
 /**
- * ReferenceCreateIn
+ * ReferenceAudioCreateIn
+ *
+ * 把一段音频放进参考音频库：调用者本人的一条音频上传（``uploadId``），或调用者看得到的一条已完成
+ * 的背景音乐（``sourceJobId``）。台词只有音色能填。
  */
-export const zReferenceCreateIn = z.object({
-  uploadId: z.uuid(),
+export const zReferenceAudioCreateIn = z.object({
+  audioKind: z.enum(['voice', 'bgm', 'sfx']),
+  description: z.string().min(1).max(2000).nullish(),
+  locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullish(),
+  sourceJobId: z.uuid().nullish(),
+  title: z.string().min(1).max(200),
+  transcript: z.string().min(1).max(2000).nullish(),
+  uploadId: z.uuid().nullish(),
+  userName: z.string().min(1).max(200).nullish(),
 })
 
 /**
- * ReferenceFiltersOut
+ * ReferenceAudioFiltersOut
  */
-export const zReferenceFiltersOut = z.object({
+export const zReferenceAudioFiltersOut = z.object({
+  audioKinds: z.array(zAudioKindCountOut),
   owners: z.array(zOwnerCountOut),
+})
+
+/**
+ * ReferenceAudioOut
+ *
+ * 一条参考音频。
+ */
+export const zReferenceAudioOut = z.object({
+  audioKind: z.enum(['voice', 'bgm', 'sfx']),
+  canEdit: z.boolean(),
+  createdAt: z.iso.datetime(),
+  description: z.string().nullable(),
+  durationMs: z.int(),
+  id: z.uuid(),
+  locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullable(),
+  sourceJobId: z.uuid().nullable(),
+  title: z.string(),
+  transcript: z.string().nullable(),
+  updatedAt: z.iso.datetime(),
+  uploadId: z.uuid().nullable(),
+  url: z.string(),
+  userName: z.string().nullable(),
+})
+
+/**
+ * ReferenceAudioUpdateIn
+ *
+ * 改一条参考音频：给了的字段才改，``description`` / ``locale`` / ``transcript`` 给 ``null`` 是
+ * 清空；标题不能清空。台词只有音色能填。
+ */
+export const zReferenceAudioUpdateIn = z.object({
+  description: z.string().min(1).max(2000).nullish(),
+  locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullish(),
+  title: z.string().min(1).max(200).nullish(),
+  transcript: z.string().min(1).max(2000).nullish(),
+})
+
+/**
+ * ReferenceAudiosOut
+ */
+export const zReferenceAudiosOut = z.object({
+  canUpload: z.boolean(),
+  items: z.array(zReferenceAudioOut),
+  nextCursor: z.string().nullable(),
+  total: z.int().nullable(),
 })
 
 /**
@@ -1953,13 +2153,21 @@ export const zReferenceTagsIn = z.object({
 })
 
 /**
- * ReferenceUpdateIn
+ * ReferenceVideoCreateIn
  *
- * 改拆解正文。
+ * 把一条视频放进资料库：调用者本人的一条视频上传（``uploadId``），或调用者看得到的一条已完成的
+ * 素材片（``sourceJobId``）。
  */
-export const zReferenceUpdateIn = z.object({
-  document: z.string().min(1),
-  version: z.int(),
+export const zReferenceVideoCreateIn = z.object({
+  sourceJobId: z.uuid().nullish(),
+  uploadId: z.uuid().nullish(),
+})
+
+/**
+ * ReferenceVideoFiltersOut
+ */
+export const zReferenceVideoFiltersOut = z.object({
+  owners: z.array(zOwnerCountOut),
 })
 
 /**
@@ -1984,6 +2192,16 @@ export const zReferenceVideoItemOut = z.object({
   userName: z.string().nullable(),
   version: z.int(),
   videoUrl: z.string(),
+})
+
+/**
+ * ReferenceVideoUpdateIn
+ *
+ * 改拆解正文。
+ */
+export const zReferenceVideoUpdateIn = z.object({
+  document: z.string().min(1),
+  version: z.int(),
 })
 
 /**
@@ -2202,6 +2420,25 @@ export const zSkillsOut = z.object({
 })
 
 /**
+ * SpeechIn
+ *
+ * 按文字合成一段语音的受理输入：用参考音频库里一个音色的声音把 ``text`` 念出来。
+ *
+ * ``locale`` 不给时不声明用哪种语言念（final-cut 的原文没有声明语言）。``maxDurationMs`` 给了时念出来
+ * 更长就照配音每句的规则先加速、再截尾。归属参数与 ``userName`` 的规则同配音。
+ */
+export const zSpeechIn = z.object({
+  conversationId: z.uuid().nullish(),
+  locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullish(),
+  maxDurationMs: z.int().gte(1).nullish(),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
+  reference: zDubbingVoiceReferenceIn,
+  taskId: z.uuid().nullish(),
+  text: z.string().min(1).max(500),
+  userName: z.string().min(1).max(200).nullish(),
+})
+
+/**
  * SpreadOut
  *
  * 一组时长样本的分布，单位秒。
@@ -2362,7 +2599,7 @@ export const zAgentVersionDetailOut = z.object({
 /**
  * SubtitleIn
  *
- * 手动识别一条素材片的受理输入：补识别旧视频，或识别失败后另起一次。
+ * 按需识别一条素材片的受理输入；识别失败后可以另起一次。
  *
  * 归属参数与别的提交端点一样；``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙），识别
  * 服务不收它，不进 ``request``。
@@ -2412,13 +2649,14 @@ export const zSubtitleSentence = z.object({
 export const zGenerationOut = z.object({
   clipStage: z.enum(['fetching', 'processing', 'uploading']).nullable(),
   createdAt: z.iso.datetime(),
+  dubbedLines: z.array(zDubbedLine).nullish(),
   durationMs: z.int().nullable(),
   errorMessage: z.string().nullable(),
   finishedAt: z.iso.datetime().nullish(),
   id: z.uuid(),
-  kind: z.enum(['video', 'image', 'subtitle', 'audio', 'whole_film']),
+  kind: z.enum(['video', 'image', 'subtitle', 'dubbing', 'speech', 'audio', 'whole_film']),
   metadata: z.record(z.string(), z.unknown()).nullable(),
-  operation: z.enum(['generate', 'compose', 'cut', 'upload', 'render', 'enhance']),
+  operation: z.enum(['generate', 'compose', 'cut', 'render', 'enhance', 'trial']),
   outputUrl: z.string().nullable(),
   rangeEndMs: z.int().nullish(),
   rangeStartMs: z.int().nullish(),
@@ -2743,6 +2981,7 @@ export const zTestVideoIn = z.object({
 export const zTestVideoOut = z.object({
   createdAt: z.iso.datetime(),
   errorMessage: z.string().nullable(),
+  jobId: z.uuid(),
   stale: z.boolean(),
   status: z.enum(['running', 'completed', 'failed']),
   url: z.string().nullable(),
@@ -2902,22 +3141,13 @@ export const zTurnUsage = z.object({
 /**
  * UploadConfirmIn
  *
- * 确认上传时可选的请求体：替谁确认，音乐挂到哪段对话。
+ * 确认上传时可选的请求体：替谁确认，挂到哪段对话，图片多大（签名时报的那两个数）。
  */
 export const zUploadConfirmIn = z.object({
   conversationId: z.uuid().nullish(),
+  height: z.int().gte(1).nullish(),
   userName: z.string().min(1).max(200).nullish(),
-})
-
-/**
- * UploadConfirmedOut
- *
- * 确认后交回的地址与桶里读到的事实；``url`` 从此就是这个文件的身份。
- */
-export const zUploadConfirmedOut = z.object({
-  contentType: z.string(),
-  sizeBytes: z.int(),
-  url: z.string(),
+  width: z.int().gte(1).nullish(),
 })
 
 /**
@@ -2933,6 +3163,27 @@ export const zUploadInstruction = z.object({
   headers: z.record(z.string(), z.string()),
   method: z.literal('PUT').optional().default('PUT'),
   url: z.string(),
+})
+
+/**
+ * UploadOut
+ *
+ * 上传台账里的一条。``url`` 从此就是这个文件的身份；视频按 MD5 去重时是最早那份的地址。
+ *
+ * ``contentType`` 与 ``sizeBytes`` 只有台账建立以前的旧上传为空。``width`` / ``height`` 是图片
+ * 确认时报的宽高，没报的、别的种类为空。确认上传不量时长，``durationMs`` 为空。
+ */
+export const zUploadOut = z.object({
+  contentType: z.string().nullable(),
+  conversationId: z.uuid().nullable(),
+  createdAt: z.iso.datetime(),
+  durationMs: z.int().nullable(),
+  height: z.int().nullable(),
+  id: z.uuid(),
+  kind: z.enum(['image', 'video', 'audio']),
+  sizeBytes: z.int().nullable(),
+  url: z.string(),
+  width: z.int().nullable(),
 })
 
 /**
@@ -2957,6 +3208,13 @@ export const zUploadSignIn = z.object({
 export const zUploadTicketOut = z.object({
   upload: zUploadInstruction,
   uploadId: z.uuid(),
+})
+
+/**
+ * UploadsPageOut
+ */
+export const zUploadsPageOut = z.object({
+  items: z.array(zUploadOut),
 })
 
 /**
@@ -3599,7 +3857,8 @@ export const zVideoShotIn = z.object({
  *
  * 只拦本系统能判的：模型在允许表里（受理层）、地址是 http(s)、秒数不小于 -1、``shot``
  * 自身对得上（图片引用不越界、编号与正文一致）。画幅、分辨率、时长范围、素材规格由上游
- * 按模型判，这里不复制一份。
+ * 按模型判，这里不复制一份。``reference_ids`` 是这次用到的参考资产，受理时核对都在资料库里、
+ * 没移除，只记进请求快照，不发给上游。
  */
 export const zVideoGenerationIn = z.object({
   aspect_ratio: z.string().min(1).max(20).nullish(),
@@ -3610,6 +3869,7 @@ export const zVideoGenerationIn = z.object({
   prompt: z.string().min(1).max(4000).nullish(),
   provider_options: z.record(z.string(), z.unknown()).nullish(),
   reference_audio_urls: z.array(z.string()).max(30).optional().default([]),
+  reference_ids: z.array(z.uuid()).max(30).optional().default([]),
   reference_image_urls: z.array(z.string()).max(30).optional().default([]),
   reference_video_urls: z.array(z.string()).max(30).optional().default([]),
   resolution: z.string().min(1).max(50).nullish(),
@@ -3660,75 +3920,6 @@ export const zVideoTaskOut = z.object({
 })
 
 /**
- * WholeFilmCanvas
- */
-export const zWholeFilmCanvas = z.object({
-  height: z.int().gte(1).lte(4096),
-  width: z.int().gte(1).lte(4096),
-})
-
-/**
- * WholeFilmCaptionEdit
- *
- * 用户改过字的一句：第 ``sentenceIndex`` 句（从 0 数）换成 ``text``。
- */
-export const zWholeFilmCaptionEdit = z.object({
-  sentenceIndex: z.int().gte(0),
-  subtitleJobId: z.uuid(),
-  text: z.string().min(1).max(500),
-})
-
-/**
- * WholeFilmCaptions
- *
- * 字幕轨。``hidden`` 是关掉全部字幕：预览与导出都不放字幕，样式与改过的字照样保留。
- * ``x``、``y``、``scale``、``rotation`` 是字幕在画面上挪开的位置、缩放与旋转，所有字幕共用一套；
- * ``pivotX``、``pivotY`` 是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，
- * 编辑器在第一次离开原大、不转时写下。``variables`` 是字幕样式的可填项，同特效块；换样式时照样
- * 保留，合成时只取当前样式声明过的项。
- */
-export const zWholeFilmCaptions = z.object({
-  component: z.string().min(1).max(200),
-  edits: z.array(zWholeFilmCaptionEdit).max(1000),
-  hidden: z.boolean().optional().default(false),
-  pivotX: z.int().gte(-4096).lte(4096).optional().default(0),
-  pivotY: z.int().gte(-4096).lte(4096).optional().default(0),
-  rotation: z.number().gt(-180).lte(180).optional().default(0),
-  scale: z.number().gte(0.1).lte(10).optional().default(1),
-  variables: z
-    .record(z.string(), z.union([z.boolean(), z.int(), z.number(), z.string().max(500)]))
-    .optional()
-    .default({}),
-  x: z.int().gte(-4096).lte(4096).optional().default(0),
-  y: z.int().gte(-4096).lte(4096).optional().default(0),
-})
-
-/**
- * WholeFilmComponentClip
- *
- * 画面轨上的一段组件，与视频段同等占时间；从组件自己时间里的 ``playbackStart`` 起播。
- */
-export const zWholeFilmComponentClip = z.object({
-  component: z.string().min(1).max(200),
-  duration: z.int().gte(100),
-  id: z.string().min(1).max(64),
-  playbackStart: z.int().gte(0),
-  start: z.int().gte(0),
-  type: z.literal('component'),
-  variables: z.record(z.string(), z.union([z.boolean(), z.int(), z.number(), z.string().max(500)])),
-})
-
-/**
- * WholeFilmDraftSavedOut
- *
- * 保存后的新版本号与保存时刻。
- */
-export const zWholeFilmDraftSavedOut = z.object({
-  revision: z.int(),
-  updatedAt: z.iso.datetime(),
-})
-
-/**
  * WholeFilmExportErrorOut
  */
 export const zWholeFilmExportErrorOut = z.object({
@@ -3739,21 +3930,23 @@ export const zWholeFilmExportErrorOut = z.object({
 /**
  * WholeFilmExportIn
  *
- * 按当前草稿导出；``revision`` 是页面上那一版，不是服务端存的那一版就不导。
+ * 发起导出：``locale`` 是导出哪种语言的版本，不带或 null 导出原文。
  */
 export const zWholeFilmExportIn = z.object({
-  revision: z.int().gte(0),
+  locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullish(),
 })
 
 /**
  * WholeFilmExportOut
  *
- * 一次导出现在的样子。``downloadUrl`` 只在 ``done`` 时有，``error`` 只在 ``failed`` 时有。
+ * 一次导出现在的样子。``locale`` 是导出的哪种语言的版本，原文时是 null。``downloadUrl`` 只在
+ * ``done`` 时有，``error`` 只在 ``failed`` 时有。
  */
 export const zWholeFilmExportOut = z.object({
   downloadUrl: z.string().nullable(),
   error: zWholeFilmExportErrorOut.nullable(),
   id: z.uuid(),
+  locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullable(),
   progress: z.number().nullable(),
   queuePosition: z.int().nullable(),
   status: z.enum(['queued', 'rendering', 'uploading', 'done', 'failed', 'cancelled']),
@@ -3775,46 +3968,6 @@ export const zWholeFilmExportLatestOut = z.object({
  */
 export const zWholeFilmExportStartedOut = z.object({
   exportId: z.uuid(),
-})
-
-/**
- * WholeFilmMusic
- *
- * 背景音乐从头铺到尾：``offset`` 是音乐文件里与成片 0 毫秒对齐的那一刻。
- */
-export const zWholeFilmMusic = z.object({
-  jobId: z.uuid(),
-  offset: z.int().gte(0),
-  volume: z.number().gte(0).lte(3.981072),
-})
-
-/**
- * WholeFilmOverlay
- *
- * 特效轨上的一个组件，按成片时间放在 ``[start, start + duration)``，从组件自己时间里的
- * ``playbackStart`` 起播。
- *
- * 同 HyperFrames：``track`` 只是显示的行，数小的显示在上面，同一行里不重叠；``zIndex`` 是特效块
- * 之间的叠放次序，大的在上，相同时数组里后面的在上。两者不必一致，渲染只看 ``zIndex``。
- * ``x``、``y``、``scale``、``rotation`` 是它在画面上挪开的位置、缩放与旋转；``pivotX``、``pivotY``
- * 是缩放与旋转的转轴（画面像素，挪开之前的坐标）：原大、不转时不起作用，编辑器在第一次离开原大、
- * 不转时写下。
- */
-export const zWholeFilmOverlay = z.object({
-  component: z.string().min(1).max(200),
-  duration: z.int().gte(100),
-  id: z.string().min(1).max(64),
-  pivotX: z.int().gte(-4096).lte(4096).optional().default(0),
-  pivotY: z.int().gte(-4096).lte(4096).optional().default(0),
-  playbackStart: z.int().gte(0),
-  rotation: z.number().gt(-180).lte(180).optional().default(0),
-  scale: z.number().gte(0.1).lte(10).optional().default(1),
-  start: z.int().gte(0),
-  track: z.int().gte(0),
-  variables: z.record(z.string(), z.union([z.boolean(), z.int(), z.number(), z.string().max(500)])),
-  x: z.int().gte(-4096).lte(4096).optional().default(0),
-  y: z.int().gte(-4096).lte(4096).optional().default(0),
-  zIndex: z.int().gte(0),
 })
 
 /**
@@ -3850,55 +4003,6 @@ export const zWholeFilmCardsOut = z.object({
   items: z.array(zWholeFilmCardOut),
   nextCursor: z.string().nullable(),
   total: z.int().nullable(),
-})
-
-/**
- * WholeFilmVideoClip
- *
- * 画面轨上的一段素材片：取它自己媒体时间里从 ``playbackStart`` 起的 ``duration``。
- */
-export const zWholeFilmVideoClip = z.object({
-  duration: z.int().gte(100),
-  id: z.string().min(1).max(64),
-  playbackStart: z.int().gte(0),
-  sourceJobId: z.uuid(),
-  start: z.int().gte(0),
-  type: z.literal('video'),
-  volume: z.number().gte(0).lte(3.981072),
-})
-
-/**
- * WholeFilmDocument
- *
- * 一段对话的成片草稿。
- */
-export const zWholeFilmDocument = z.object({
-  canvas: zWholeFilmCanvas.nullable(),
-  captions: zWholeFilmCaptions,
-  layer0: z.array(z.union([zWholeFilmVideoClip, zWholeFilmComponentClip])).max(1200),
-  music: zWholeFilmMusic.nullable(),
-  overlays: z.array(zWholeFilmOverlay).max(1200),
-})
-
-/**
- * WholeFilmDraftIn
- *
- * 整份保存草稿。``revision`` 是读到的那一版，还没有草稿时是 0。
- */
-export const zWholeFilmDraftIn = z.object({
-  document: zWholeFilmDocument,
-  revision: z.int().gte(0),
-})
-
-/**
- * WholeFilmDraftOut
- *
- * 当前的草稿；还没存过时 ``revision`` 是 0，``document`` 与 ``updatedAt`` 为 null。
- */
-export const zWholeFilmDraftOut = z.object({
-  document: zWholeFilmDocument.nullable(),
-  revision: z.int(),
-  updatedAt: z.iso.datetime().nullable(),
 })
 
 /**
@@ -4129,55 +4233,6 @@ export const zAuthorizeAuthSsoAuthorizeGetResponse = zSsoAuthorizeOut
 export const zCallbackAuthSsoCallbackGetQuery = z.object({
   jwt: z.string(),
 })
-
-export const zListBrandTemplatesBrandTemplatesGetQuery = z.object({
-  kind: z.string().nullish(),
-  brand: z.string().nullish(),
-  includeDisabled: z.boolean().optional().default(false),
-})
-
-/**
- * Successful Response
- */
-export const zListBrandTemplatesBrandTemplatesGetResponse = zBrandTemplatesOut
-
-export const zSignFontBrandTemplatesFontsSignPostBody = zBrandFontSignIn
-
-/**
- * Successful Response
- */
-export const zSignFontBrandTemplatesFontsSignPostResponse = zUploadTicketOut
-
-export const zConfirmFontBrandTemplatesFontsUploadIdConfirmPostBody = zBrandFontConfirmIn
-
-export const zConfirmFontBrandTemplatesFontsUploadIdConfirmPostPath = z.object({
-  upload_id: z.uuid(),
-})
-
-/**
- * Successful Response
- */
-export const zConfirmFontBrandTemplatesFontsUploadIdConfirmPostResponse = zBrandTemplateOut
-
-export const zUpdateBrandTemplateBrandTemplatesTemplateIdPatchBody = zBrandTemplateUpdateIn
-
-export const zUpdateBrandTemplateBrandTemplatesTemplateIdPatchPath = z.object({
-  template_id: z.uuid(),
-})
-
-/**
- * Successful Response
- */
-export const zUpdateBrandTemplateBrandTemplatesTemplateIdPatchResponse = zBrandTemplateOut
-
-export const zFontInfoBrandTemplatesTemplateIdFontInfoGetPath = z.object({
-  template_id: z.uuid(),
-})
-
-/**
- * Successful Response
- */
-export const zFontInfoBrandTemplatesTemplateIdFontInfoGetResponse = zBrandFontInfoOut
 
 export const zListCollectionsCollectionsGetQuery = z.object({
   scope: z.enum(['me', 'all']).optional().default('me'),
@@ -4444,6 +4499,42 @@ export const zGenerateConversationFilmVideoConversationsConversationIdFilmVideoG
 export const zGenerateConversationFilmVideoConversationsConversationIdFilmVideoGenerationsPostResponse =
   zFilmJobOut
 
+export const zCreateFinalCutFileConversationsConversationIdFinalCutFilesPostBody = zFinalCutFileIn
+
+export const zCreateFinalCutFileConversationsConversationIdFinalCutFilesPostPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zCreateFinalCutFileConversationsConversationIdFinalCutFilesPostResponse =
+  zFinalCutFileCreatedOut
+
+export const zOpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostPath = z.object({
+  conversation_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zOpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostResponse =
+  zFinalCutPreviewOut
+
+export const zTranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostBody =
+  zFinalCutTranslationsIn
+
+export const zTranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostPath =
+  z.object({
+    conversation_id: z.uuid(),
+  })
+
+/**
+ * Successful Response
+ */
+export const zTranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostResponse =
+  zFinalCutTranslationsOut
+
 export const zApproveConversationsConversationIdInteractionsInteractionIdPostBody = zApprovalRequest
 
 export const zApproveConversationsConversationIdInteractionsInteractionIdPostPath = z.object({
@@ -4572,30 +4663,26 @@ export const zRegenerateConversationsConversationIdTurnsTurnIdRegeneratePostPath
  */
 export const zRegenerateConversationsConversationIdTurnsTurnIdRegeneratePostResponse = zPrompt
 
-export const zReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetPath = z.object({
+export const zListConversationUploadsConversationsConversationIdUploadsGetPath = z.object({
   conversation_id: z.uuid(),
+})
+
+export const zListConversationUploadsConversationsConversationIdUploadsGetQuery = z.object({
+  limit: z.int().gte(1).lte(100).optional().default(20),
+  kind: z.enum(['image', 'video', 'audio']).nullish(),
+  before: z.uuid().nullish(),
 })
 
 /**
  * Successful Response
  */
-export const zReadWholeFilmDraftConversationsConversationIdWholeFilmDraftGetResponse =
-  zWholeFilmDraftOut
-
-export const zSaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutBody = zWholeFilmDraftIn
-
-export const zSaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutPath = z.object({
-  conversation_id: z.uuid(),
-})
+export const zListConversationUploadsConversationsConversationIdUploadsGetResponse = zUploadsPageOut
 
 /**
- * Successful Response
+ * Body
  */
-export const zSaveWholeFilmDraftConversationsConversationIdWholeFilmDraftPutResponse =
-  zWholeFilmDraftSavedOut
-
 export const zExportWholeFilmConversationsConversationIdWholeFilmExportsPostBody =
-  zWholeFilmExportIn
+  zWholeFilmExportIn.nullable()
 
 export const zExportWholeFilmConversationsConversationIdWholeFilmExportsPostPath = z.object({
   conversation_id: z.uuid(),
@@ -4703,13 +4790,34 @@ export const zSetDefaultModelDefaultModelsModelTypePutPath = z.object({
  */
 export const zSetDefaultModelDefaultModelsModelTypePutResponse = zDefaultModelOut
 
+export const zReadFinalCutPreviewFileFinalCutPreviewTokenFilesPathGetPath = z.object({
+  token: z.string(),
+  path: z.string(),
+})
+
+/**
+ * 工程文件的原文，类型按扩展名给出
+ */
+export const zReadFinalCutPreviewFileFinalCutPreviewTokenFilesPathGetResponse = z.string()
+
+export const zReadFinalCutPreviewHostFinalCutPreviewTokenHostGetPath = z.object({
+  token: z.string(),
+})
+
+/**
+ * Successful Response
+ */
+export const zReadFinalCutPreviewHostFinalCutPreviewTokenHostGetResponse = zFinalCutPreviewHostOut
+
 export const zListGenerationsGenerationsGetQuery = z.object({
   limit: z.int().gte(1).lte(100).optional().default(20),
   conversationId: z.uuid().nullish(),
   taskId: z.uuid().nullish(),
   shotIndex: z.int().gte(1).nullish(),
-  kind: z.enum(['video', 'image', 'subtitle', 'audio', 'whole_film']).nullish(),
-  operation: z.enum(['generate', 'compose', 'cut', 'upload', 'render', 'enhance']).nullish(),
+  kind: z
+    .enum(['video', 'image', 'subtitle', 'dubbing', 'speech', 'audio', 'whole_film'])
+    .nullish(),
+  operation: z.enum(['generate', 'compose', 'cut', 'render', 'enhance', 'trial']).nullish(),
   rootJobId: z.uuid().nullish(),
   sourceJobId: z.uuid().nullish(),
   metadata: z.string().nullish(),
@@ -4720,6 +4828,13 @@ export const zListGenerationsGenerationsGetQuery = z.object({
  * Successful Response
  */
 export const zListGenerationsGenerationsGetResponse = zGenerationsPageOut
+
+export const zSubmitDubbingGenerationsDubbingsPostBody = zDubbingIn
+
+/**
+ * Successful Response
+ */
+export const zSubmitDubbingGenerationsDubbingsPostResponse = zGenerationEnvelope
 
 export const zSubmitImageGenerationsImagePostBody = zImageGenerationIn
 
@@ -4739,6 +4854,13 @@ export const zSubmitMusicGenerationsMusicPostBody = zMusicIn
  * Successful Response
  */
 export const zSubmitMusicGenerationsMusicPostResponse = zGenerationEnvelope
+
+export const zSubmitSpeechGenerationsSpeechesPostBody = zSpeechIn
+
+/**
+ * Successful Response
+ */
+export const zSubmitSpeechGenerationsSpeechesPostResponse = zGenerationEnvelope
 
 export const zSubmitSubtitleGenerationsSubtitlesPostBody = zSubtitleIn
 
@@ -5084,6 +5206,11 @@ export const zCreateModelProviderModelProvidersPostResponse = zModelProviderOut
  */
 export const zModelProviderDeclarationsModelProvidersDeclarationsGetResponse = zDeclarationsOut
 
+/**
+ * Successful Response
+ */
+export const zModelGroupsConfiguredModelProvidersGroupsGetResponse = zModelGroupsOut
+
 export const zDeleteModelProviderModelProvidersProviderIdDeletePath = z.object({
   provider_id: z.uuid(),
 })
@@ -5207,7 +5334,64 @@ export const zUpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNam
 export const zUpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNamePatchResponse =
   zProviderModelOut
 
-export const zListReferencesReferencesGetQuery = z.object({
+export const zListReferenceAudiosReferencesAudiosGetQuery = z.object({
+  audioKind: z.enum(['voice', 'bgm', 'sfx']).nullish(),
+  locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullish(),
+  userName: z.string().max(150).nullish(),
+  q: z.string().max(100).nullish(),
+  since: z.iso.datetime().nullish(),
+  until: z.iso.datetime().nullish(),
+  limit: z.int().gte(1).lte(100).optional().default(20),
+  cursor: z.string().nullish(),
+})
+
+/**
+ * Successful Response
+ */
+export const zListReferenceAudiosReferencesAudiosGetResponse = zReferenceAudiosOut
+
+export const zCreateReferenceAudioReferencesAudiosPostBody = zReferenceAudioCreateIn
+
+/**
+ * Successful Response
+ */
+export const zCreateReferenceAudioReferencesAudiosPostResponse = zReferenceAudioOut
+
+/**
+ * Successful Response
+ */
+export const zReferenceAudioFiltersReferencesAudiosFiltersGetResponse = zReferenceAudioFiltersOut
+
+export const zRemoveReferenceAudioReferencesAudiosReferenceIdDeletePath = z.object({
+  reference_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zRemoveReferenceAudioReferencesAudiosReferenceIdDeleteResponse = z.void()
+
+export const zGetReferenceAudioReferencesAudiosReferenceIdGetPath = z.object({
+  reference_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zGetReferenceAudioReferencesAudiosReferenceIdGetResponse = zReferenceAudioOut
+
+export const zUpdateReferenceAudioReferencesAudiosReferenceIdPatchBody = zReferenceAudioUpdateIn
+
+export const zUpdateReferenceAudioReferencesAudiosReferenceIdPatchPath = z.object({
+  reference_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zUpdateReferenceAudioReferencesAudiosReferenceIdPatchResponse = zReferenceAudioOut
+
+export const zListReferenceVideosReferencesVideosGetQuery = z.object({
   tags: z.array(z.uuid()).nullish(),
   userName: z.string().max(150).nullish(),
   q: z.string().max(100).nullish(),
@@ -5220,88 +5404,91 @@ export const zListReferencesReferencesGetQuery = z.object({
 /**
  * Successful Response
  */
-export const zListReferencesReferencesGetResponse = zReferenceVideosOut
+export const zListReferenceVideosReferencesVideosGetResponse = zReferenceVideosOut
 
-export const zCreateReferenceReferencesPostBody = zReferenceCreateIn
-
-/**
- * Successful Response
- */
-export const zCreateReferenceReferencesPostResponse = zReferenceVideoOut
+export const zCreateReferenceVideoReferencesVideosPostBody = zReferenceVideoCreateIn
 
 /**
  * Successful Response
  */
-export const zReferenceFiltersReferencesFiltersGetResponse = zReferenceFiltersOut
+export const zCreateReferenceVideoReferencesVideosPostResponse = zReferenceVideoOut
 
-export const zRemoveReferenceReferencesReferenceIdDeletePath = z.object({
+/**
+ * Successful Response
+ */
+export const zReferenceVideoFiltersReferencesVideosFiltersGetResponse = zReferenceVideoFiltersOut
+
+export const zRemoveReferenceVideoReferencesVideosReferenceIdDeletePath = z.object({
   reference_id: z.uuid(),
 })
 
 /**
  * Successful Response
  */
-export const zRemoveReferenceReferencesReferenceIdDeleteResponse = z.void()
+export const zRemoveReferenceVideoReferencesVideosReferenceIdDeleteResponse = z.void()
 
-export const zGetReferenceReferencesReferenceIdGetPath = z.object({
+export const zGetReferenceVideoReferencesVideosReferenceIdGetPath = z.object({
   reference_id: z.uuid(),
 })
 
 /**
  * Successful Response
  */
-export const zGetReferenceReferencesReferenceIdGetResponse = zReferenceVideoOut
+export const zGetReferenceVideoReferencesVideosReferenceIdGetResponse = zReferenceVideoOut
 
-export const zUpdateReferenceReferencesReferenceIdPatchBody = zReferenceUpdateIn
+export const zUpdateReferenceVideoReferencesVideosReferenceIdPatchBody = zReferenceVideoUpdateIn
 
-export const zUpdateReferenceReferencesReferenceIdPatchPath = z.object({
+export const zUpdateReferenceVideoReferencesVideosReferenceIdPatchPath = z.object({
   reference_id: z.uuid(),
 })
 
 /**
  * Successful Response
  */
-export const zUpdateReferenceReferencesReferenceIdPatchResponse = zReferenceVideoOut
+export const zUpdateReferenceVideoReferencesVideosReferenceIdPatchResponse = zReferenceVideoOut
 
-export const zRerunReferenceReferencesReferenceIdBreakdownsPostPath = z.object({
+export const zRerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostPath = z.object({
   reference_id: z.uuid(),
 })
 
 /**
  * Successful Response
  */
-export const zRerunReferenceReferencesReferenceIdBreakdownsPostResponse = zReferenceVideoOut
+export const zRerunReferenceVideoReferencesVideosReferenceIdBreakdownsPostResponse =
+  zReferenceVideoOut
 
-export const zRetagReferenceReferencesReferenceIdTaggingPostPath = z.object({
+export const zRetagReferenceVideoReferencesVideosReferenceIdTaggingPostPath = z.object({
   reference_id: z.uuid(),
 })
 
 /**
  * Successful Response
  */
-export const zRetagReferenceReferencesReferenceIdTaggingPostResponse = zReferenceVideoOut
+export const zRetagReferenceVideoReferencesVideosReferenceIdTaggingPostResponse = zReferenceVideoOut
 
-export const zReplaceReferenceTagsReferencesReferenceIdTagsPutBody = zReferenceTagsIn
+export const zReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutBody = zReferenceTagsIn
 
-export const zReplaceReferenceTagsReferencesReferenceIdTagsPutPath = z.object({
+export const zReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutPath = z.object({
   reference_id: z.uuid(),
 })
 
 /**
  * Successful Response
  */
-export const zReplaceReferenceTagsReferencesReferenceIdTagsPutResponse = zReferenceVideoOut
+export const zReplaceReferenceVideoTagsReferencesVideosReferenceIdTagsPutResponse =
+  zReferenceVideoOut
 
-export const zStartReferenceTestVideoReferencesReferenceIdTestGenerationsPostBody = zTestVideoIn
+export const zStartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostBody =
+  zTestVideoIn
 
-export const zStartReferenceTestVideoReferencesReferenceIdTestGenerationsPostPath = z.object({
+export const zStartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostPath = z.object({
   reference_id: z.uuid(),
 })
 
 /**
  * Successful Response
  */
-export const zStartReferenceTestVideoReferencesReferenceIdTestGenerationsPostResponse =
+export const zStartReferenceTestVideoReferencesVideosReferenceIdTestGenerationsPostResponse =
   zReferenceVideoOut
 
 /**
@@ -5579,7 +5766,7 @@ export const zConfirmUploadUploadsUploadIdConfirmPostPath = z.object({
 /**
  * Successful Response
  */
-export const zConfirmUploadUploadsUploadIdConfirmPostResponse = zUploadConfirmedOut
+export const zConfirmUploadUploadsUploadIdConfirmPostResponse = zUploadOut
 
 export const zListUsersUsersGetQuery = z.object({
   page: z.int().gte(1).optional().default(1),

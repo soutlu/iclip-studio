@@ -616,7 +616,7 @@ describe('灵感库做同款', () => {
     loginAs(mockAuthUser)
     const reference = addMockReference({ videoUrl: 'https://example.com/unavailable.mp4' })
     server.use(
-      http.get('*/api/references/:id', () =>
+      http.get('*/api/references/videos/:id', () =>
         HttpResponse.json({ detail: '参考视频已移除' }, { status: 404 }),
       ),
     )

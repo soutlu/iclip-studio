@@ -211,16 +211,12 @@ const storeWholeEdit = () =>
   window.localStorage.setItem(
     draftStorageKey(CONVERSATION, ROOT_ID),
     JSON.stringify({
-      picks: [0, 1, 2].map((at) => ({
-        editId: EDIT_ID,
-        seg: at + 1,
-        t0: at,
-        t1: at + 1,
-        seq: at + 1,
-      })),
-      toggles: [],
-      cuts: [],
-      seq: 3,
+      entries: [
+        ...[1, 2].map((no) => ({ kind: 'shot', no, t0: no - 1, t1: no })),
+        ...[1, 2, 3].map((seg) => ({ kind: 'edit', editId: EDIT_ID, seg, t0: seg - 1, t1: seg })),
+        ...[5, 6, 7, 8].map((no) => ({ kind: 'shot', no, t0: no - 1, t1: no })),
+      ],
+      closed: [],
     }),
   )
 const draftTrack = () => screen.getByRole('group', { name: '草稿' })
@@ -297,8 +293,49 @@ describe('时间线缩略图限量排队', () => {
   const mediaOf = (name: string) => `https://bucket.oss-cn-hangzhou.aliyuncs.com/${name}.mp4`
   const timesOf = (images: readonly HTMLImageElement[]) =>
     images.map((image) => Number(/t_(\d+),/.exec(image.getAttribute('src') ?? '')?.[1]))
-  const framesOf = (mediaUrl: string) => <Frames part={{ mediaUrl, start: 1, end: 4 }} />
+  const framesOf = (mediaUrl: string, start = 1, end = 4) => (
+    <Frames part={{ mediaUrl, start, end }} />
+  )
   const imagesIn = (container: HTMLElement) => [...container.querySelectorAll('img')]
+  const layOut = (width: number) =>
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      bottom: 40,
+      height: 40,
+      left: 0,
+      right: width,
+      top: 0,
+      width,
+      x: 0,
+      y: 0,
+    } as DOMRect)
+
+  beforeEach(() => {
+    layOut(600)
+  })
+
+  it('画得窄时拉大间隔：每张至少 48 像素宽', async () => {
+    layOut(96)
+    const viewport = stubIntersectionObserver()
+    const view = render(framesOf(mediaOf('narrow'), 0, 8))
+    await viewport.scroll(true)
+    expect(timesOf(imagesIn(view.container))).toEqual([2000, 6000])
+  })
+
+  it('两头不在整格上时，图取自这一段以内', async () => {
+    layOut(56)
+    const viewport = stubIntersectionObserver()
+    const view = render(framesOf(mediaOf('edges'), 3.2, 5))
+    await viewport.scroll(true)
+    expect(timesOf(imagesIn(view.container))).toEqual([3500, 4500])
+  })
+
+  it('还没有宽度时不请求', async () => {
+    layOut(0)
+    const viewport = stubIntersectionObserver()
+    const view = render(framesOf(mediaOf('unsized')))
+    await viewport.scroll(true)
+    expect(imagesIn(view.container)).toEqual([])
+  })
 
   it('全部进入可视区时只请求 3 张，一张加载完才出下一张', async () => {
     const viewport = stubIntersectionObserver()
@@ -1334,8 +1371,16 @@ describe('草稿与编辑轨', () => {
     expect(screen.getByRole('slider', { name: '裁剪结尾' })).toBeVisible()
     const stored = JSON.parse(
       window.localStorage.getItem(draftStorageKey(CONVERSATION, ROOT_ID)) ?? '{}',
-    ) as { picks: unknown[] }
-    expect(stored.picks).toHaveLength(1)
+    ) as { entries: { kind: string }[] }
+    expect(stored.entries.map((entry) => entry.kind)).toEqual([
+      'shot',
+      'shot',
+      'edit',
+      'shot',
+      'shot',
+      'shot',
+      'shot',
+    ])
 
     await user.click(block(PART_1))
     expect(draftNames()).toEqual(shotsOnly([1, 2, 3, 4, 5, 6, 7, 8]))
@@ -1461,6 +1506,42 @@ describe('草稿与编辑轨', () => {
 
     await user.click(shotEye(2))
     expect(draftNames()).toEqual(shotsOnly([1, 2, 3, 4, 5, 6, 7, 8]))
+  })
+
+  it('选中草稿里一块按 Alt+方向键挪一格：选中、焦点和播放头都跟着它，到头不再动；合成按新的先后提交', async () => {
+    serveChain([])
+    let segments: unknown
+    server.use(
+      http.post('*/api/generations/video-composites', async ({ request }) => {
+        segments = ((await request.clone().json()) as { segments: unknown }).segments
+      }),
+    )
+    const user = userEvent.setup()
+    await renderEditor()
+    await originalTrack()
+    const shot2 = () => within(draftTrack()).getByRole('button', { name: '镜头 2 · 1.0 秒 · 原片' })
+    await user.click(shot2())
+    expect(composeButton()).toBeDisabled()
+
+    await user.keyboard('{Alt>}{ArrowRight}{/Alt}')
+    expect(draftNames()).toEqual(shotsOnly([1, 3, 2, 4, 5, 6, 7, 8]))
+    expect(shot2()).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() => expect(shot2()).toHaveFocus())
+    await waitFor(() => expect(playhead()).toHaveValue('2'))
+    expect(controls()).toHaveTextContent('共 8.0 秒')
+
+    await user.keyboard('{Alt>}{ArrowLeft}{ArrowLeft}{ArrowLeft}{/Alt}')
+    expect(draftNames()).toEqual(shotsOnly([2, 1, 3, 4, 5, 6, 7, 8]))
+    await waitFor(() => expect(shot2()).toHaveFocus())
+
+    await user.click(composeButton())
+    await waitFor(() =>
+      expect(segments).toEqual([
+        { sourceJobId: ROOT_ID, start: 1, end: 2 },
+        { sourceJobId: ROOT_ID, start: 0, end: 1 },
+        { sourceJobId: ROOT_ID, start: 2, end: 8 },
+      ]),
+    )
   })
 
   it('拖草稿块的左、右把手：拖动中草稿不存，松手或丢失捕获都只保存一次并更新总长', async () => {
@@ -1620,10 +1701,8 @@ describe('草稿与编辑轨', () => {
     window.localStorage.setItem(
       draftStorageKey(CONVERSATION, ROOT_ID),
       JSON.stringify({
-        picks: [{ editId: 'gone', seg: 1, t0: 0, t1: 1, seq: 1 }],
-        toggles: [],
-        cuts: [],
-        seq: 1,
+        entries: [{ kind: 'edit', editId: 'gone', seg: 1, t0: 0, t1: 1 }],
+        closed: [],
       }),
     )
     serveChain([

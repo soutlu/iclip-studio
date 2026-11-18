@@ -471,6 +471,10 @@
   pointer-events: none;
 }
 
+.video-editor-timeline-block.is-lifted {
+  opacity: 0;
+}
+
 /* 草稿那一条：拖放时量指针在不在草稿上，编辑段的落点占位也摆在这里面。 */
 .video-editor-timeline-drop {
   position: absolute;
