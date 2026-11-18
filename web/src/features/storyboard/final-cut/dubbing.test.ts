@@ -6,6 +6,7 @@ import {
   dubbingRequests,
   dubClips,
   dubsOf,
+  dubsOverlapped,
   lineRefusals,
   narrationDubs,
   narrationRequests,
@@ -217,6 +218,79 @@ describe('旁白要配的句子', () => {
     expect(lines(everyLine, (id) => id === 'n1')).toEqual([
       { caption: 'n1', text: 'narr one', voice: 'v-own', maxMs: 900 },
     ])
+  })
+})
+
+describe('素材片的句子最晚占到时间线上后面那句旁白的开始', () => {
+  /** 各素材片请求里各句的上限，按字幕编号。 */
+  const slotEnds = (
+    clips: readonly FilmClip[],
+    values = NARRATED_VALUES,
+    voiceOf: VoiceOfCaption = everyLine,
+  ) => {
+    const result = dubbingRequests(clips, values, noLength, voiceOf)
+    if ('refusal' in result) throw new Error(result.refusal)
+    return Object.fromEntries(
+      result.requests.flatMap(({ lines }) => lines.map((line) => [line.caption, line.slotEndMs])),
+    )
+  }
+
+  it('后面夹着一句要配音的旁白时，占到旁白字幕的开始；不比这条素材片上下一句晚', () => {
+    // n1 在 3.6 秒，c4 是素材 A 最后一句、素材 A 的视频片段到 4 秒
+    expect(slotEnds(NARRATED)).toMatchObject({ c3: 3_000, c4: 3_600, c5: undefined })
+  })
+
+  it('变速的片段：旁白的开始按入点和速度换算到素材片里', () => {
+    const clips = [
+      video({ id: 'vx', src: A, duration: 3_000, mediaStart: 500, playbackRate: 2 }),
+      caption({ id: 'x1', variable: 'v1', start: 0, duration: 500, owner: 'vx' }),
+      caption({ id: 'n1', variable: 'vn1', start: 1_000, duration: 500 }),
+      narrationOf('n1'),
+    ]
+    expect(slotEnds(clips)).toEqual({ x1: 2_500 })
+  })
+
+  it('旁白没翻、选了不配音时不算', () => {
+    expect(slotEnds(NARRATED, { ...NARRATED_VALUES, vn1: '' })).toMatchObject({ c4: undefined })
+    expect(
+      slotEnds(NARRATED, NARRATED_VALUES, (id) => (id === 'n1' ? undefined : null)),
+    ).toMatchObject({ c4: undefined })
+  })
+
+  it('旁白在这句的视频片段结尾以后时不算', () => {
+    // n2 在 8 秒，c5 所在的素材 B 的视频片段到 6 秒
+    expect(slotEnds(NARRATED)).toMatchObject({ c5: undefined })
+  })
+})
+
+describe('新配好的配音收短压住它的已有配音', () => {
+  /** 语言 `locale` 配 `of` 这句的配音片段，`start`–`start + duration` 毫秒。 */
+  const dub = (id: string, of: string, start: number, duration: number, locale = 'en') =>
+    audio({ id, start, duration, dub: { locale, caption: of, trimmed: false, voice: null } })
+
+  it('别的句子的配音压在新片段的开始上：收到新片段的开始；没压住的不动', () => {
+    const clips = [dub('d1', 'c1', 0, 2_000), dub('d3', 'c3', 2_500, 1_000)]
+    expect(dubsOverlapped(clips, 'en', [{ caption: 'c2', start: 1_200 }])).toEqual(
+      new Map([['d1', 1_200]]),
+    )
+  })
+
+  it('同一句的、别的语言的不算', () => {
+    const clips = [dub('d1', 'c1', 0, 2_000), dub('d1-de', 'c2', 0, 2_000, 'de')]
+    expect(dubsOverlapped(clips, 'en', [{ caption: 'c1', start: 1_200 }])).toEqual(new Map())
+  })
+
+  it('原文的旁白只和原文的比', () => {
+    // 旁白片段 n-n1 在 0–2 秒
+    const clips = [narrationOf('n1'), dub('d1', 'c1', 0, 2_000)]
+    expect(dubsOverlapped(clips, null, [{ caption: 'n2', start: 500 }])).toEqual(
+      new Map([['n-n1', 500]]),
+    )
+  })
+
+  it('收短后不到最短长度的不动', () => {
+    const clips = [dub('d1', 'c1', 1_000, 2_000)]
+    expect(dubsOverlapped(clips, 'en', [{ caption: 'c2', start: 1_050 }])).toEqual(new Map())
   })
 })
 

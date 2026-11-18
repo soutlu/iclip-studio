@@ -32,7 +32,8 @@ export const shownIn =
 
 /**
  * 要配的一句：在素材片视频里的起止（毫秒）、译文和最晚占到哪儿（`slotEndMs`：这条素材片上下一句要配音的字幕的
- * 开始，不管它用哪个音色；后面没有了就不写），`caption` 是它配的那句字幕。
+ * 开始，和时间线上它后面下一句有旁白要配音的字幕的开始，取早的，不管它们用哪个音色；都没有就不写），`caption`
+ * 是它配的那句字幕。
  */
 export type DubLine = DubbingLine & { caption: string }
 
@@ -107,6 +108,36 @@ export function lineRefusals(
 
 const ALL_LINES = () => true
 
+/**
+ * 一种语言（值表 `values`）下要配音的字幕，按开始排好：属于视频片段或有旁白（`clips` 要含原文的旁白片段）、
+ * 翻了、`voiceOf` 没说不配音的，不管它用哪个音色。`narrated` 是其中有旁白的。
+ */
+const voicedCaptions = (
+  clips: readonly FilmClip[],
+  values: LocaleValues,
+  voiceOf: VoiceOfCaption,
+): { voiced: CaptionClip[]; narrated: ReadonlySet<string> } => {
+  const narrated = new Set(clips.filter(isNarration).map((clip) => clip.dub.caption))
+  const videos = new Set(clips.flatMap((clip) => (clip.kind === 'video' ? [clip.id] : [])))
+  const voiced = clips
+    .filter(isCaption)
+    .filter(
+      (caption) =>
+        (videos.has(caption.owner ?? '') || narrated.has(caption.id)) &&
+        (translationOf(values, caption.variable)?.trim() ?? '') !== '' &&
+        voiceOf(caption.id) !== undefined,
+    )
+    .toSorted((a, b) => a.start - b.start)
+  return { voiced, narrated }
+}
+
+/** 时间线上 `start` 以后开始的下一句（`voiced` 按开始排好），只看 `which` 挑的；没有时是 undefined。 */
+const nextVoiced = (
+  voiced: readonly CaptionClip[],
+  start: number,
+  which: (caption: CaptionClip) => boolean = ALL_LINES,
+): CaptionClip | undefined => voiced.find((other) => other.start > start && which(other))
+
 /** 说话时段按开始排好，重叠的并成一段（同一段素材用在两个视频片段里时会重叠），没有长度的不要。 */
 const mergedSpans = (spans: readonly DubbingSpeechSpan[]): DubbingSpeechSpan[] => {
   const merged: DubbingSpeechSpan[] = []
@@ -124,9 +155,10 @@ const mergedSpans = (spans: readonly DubbingSpeechSpan[]): DubbingSpeechSpan[] =
  * 一种语言（值表 `values`）下的配音请求：每条素材片取用它的视频片段名下的字幕（识别出来、属于这个片段的），
  * 用这种语言的字，没翻的不配，`voiceOf` 说不配音的不配。字幕的时间换算到素材片视频里：
  * `入点 + (字幕时间 − 片段开始) × 速度`，收在 0 到素材片总长（`sourceMs`，读不到时不收）之间；按开始排好，
- * 和前一句重叠的从前一句结尾开始，不到最短长度的不要；每句最晚占到这条素材片上下一句的开始。排好以后只留
- * `picked` 挑中的句子，按素材片和音色分成几次请求（没有挑中的句子时是空的）。每次请求带着这条素材片的说话时段：
- * 全部字幕按同样的换算，按开始排好，重叠的并成一段。一句都没翻时答复原因。
+ * 和前一句重叠的从前一句结尾开始，不到最短长度的不要；每句最晚占到这条素材片上下一句的开始，和时间线上它后面
+ * 下一句有旁白要配音的字幕（见 `narrationRequests`）的开始按同样的换算，取早的；那句旁白在这句的视频片段结尾以后
+ * 时不算。排好以后只留 `picked` 挑中的句子，按素材片和音色分成几次请求（没有挑中的句子时是空的）。每次请求带着
+ * 这条素材片的说话时段：全部字幕按同样的换算，按开始排好，重叠的并成一段。一句都没翻时答复原因。
  */
 export function dubbingRequests(
   clips: readonly FilmClip[],
@@ -142,6 +174,9 @@ export function dubbingRequests(
   if (owned.length === 0) return { refusal: 'uncaptioned' }
   const bySource = new Map<string, DubLine[]>()
   const spoken = new Map<string, DubbingSpeechSpan[]>()
+  const { voiced, narrated } = voicedCaptions(clips, values, voiceOf)
+  // 各句到时间线上下一句旁白的开始在素材片里是多少毫秒
+  const beforeNarration = new Map<string, number>()
   let translated = false
   for (const caption of owned) {
     const video = owners.get(caption.owner ?? '')
@@ -157,6 +192,9 @@ export function dubbingRequests(
     if (text === '') continue
     translated = true
     if (voiceOf(caption.id) === undefined) continue
+    const narration = nextVoiced(voiced, caption.start, (other) => narrated.has(other.id))
+    if (narration !== undefined && narration.start < video.start + video.duration)
+      beforeNarration.set(caption.id, at(narration.start))
     const line = { ...span, text, caption: caption.id }
     bySource.set(video.src, [...(bySource.get(video.src) ?? []), line])
   }
@@ -172,10 +210,13 @@ export function dubbingRequests(
     for (const [index, line] of kept.entries()) {
       const voice = voiceOf(line.caption)
       if (!picked(line.caption) || voice === undefined) continue
-      const following = kept[index + 1]
+      const slotEndMs = Math.min(
+        kept[index + 1]?.startMs ?? Infinity,
+        beforeNarration.get(line.caption) ?? Infinity,
+      )
       const key = JSON.stringify([src, voice])
       const group = groups.get(key) ?? { src, voice, lines: [], spans }
-      group.lines.push(following === undefined ? line : { ...line, slotEndMs: following.startMs })
+      group.lines.push(slotEndMs === Infinity ? line : { ...line, slotEndMs })
       groups.set(key, group)
     }
   }
@@ -213,24 +254,15 @@ export function narrationRequests(
   const voices = new Map(
     clips.filter(isNarration).map((clip) => [clip.dub.caption, clip.dub.voice] as const),
   )
-  const videos = new Set(clips.flatMap((clip) => (clip.kind === 'video' ? [clip.id] : [])))
   const textOf = (caption: CaptionClip) => translationOf(values, caption.variable)?.trim() ?? ''
-  const voiced = clips
-    .filter(isCaption)
-    .filter(
-      (caption) =>
-        (videos.has(caption.owner ?? '') || voices.has(caption.id)) &&
-        textOf(caption) !== '' &&
-        voiceOf(caption.id) !== undefined,
-    )
-    .toSorted((a, b) => a.start - b.start)
+  const { voiced } = voicedCaptions(clips, values, voiceOf)
   const narrated = clips.filter(isCaption).filter((caption) => voices.has(caption.id))
   const lines = voiced.flatMap((caption): NarrationLine[] => {
     const own = voices.get(caption.id)
     if (own === undefined || !picked(caption.id)) return []
     const voice = voiceOf(caption.id) ?? own
     if (voice === null) return []
-    const next = voiced.find((other) => other.start > caption.start)
+    const next = nextVoiced(voiced, caption.start)
     const line = { caption: caption.id, text: textOf(caption), voice }
     return [next === undefined ? line : { ...line, maxMs: next.start - caption.start }]
   })
@@ -318,7 +350,7 @@ export function dubClips(
     const caption = byId.get(line.caption)
     const video = caption?.kind === 'caption' ? byId.get(caption.owner ?? '') : undefined
     if (caption === undefined || video?.kind !== 'video') return []
-    // 请求里的下一句不会早于 `slotEndMs`（它是这条素材片上下一句要配的开始），和后端的取法一样
+    // 请求里的下一句不会早于 `slotEndMs`（它不晚于这条素材片上下一句要配的开始），和后端的取法一样
     const slotEnd = line.slotEndMs ?? track.durationMs ?? line.endMs
     const duration = Math.min(
       Math.round((slotEnd - line.startMs) / video.playbackRate),
@@ -350,4 +382,27 @@ export function dubsOf(
   return clips
     .filter((clip) => isDubClip(clip) && clip.dub.locale === locale && wanted.has(clip.dub.caption))
     .map((clip) => clip.id)
+}
+
+/**
+ * 语言 `locale`（原文是 null）里新加 `added` 这几个配音片段时，要收短的已有配音片段（编号 → 收到多长，毫秒）：
+ * `clips` 里这种语言、配别的句子的配音片段，开始得比一个新片段早、结尾超过它的开始时，收到新片段的开始（压住几个
+ * 时收到最早的那个）；收短后不到最短长度的不收。只在时间线上截尾，不重新合成。
+ */
+export function dubsOverlapped(
+  clips: readonly FilmClip[],
+  locale: string | null,
+  added: readonly Pick<NewDub, 'caption' | 'start'>[],
+): ReadonlyMap<string, number> {
+  const captions = new Set(added.map((dub) => dub.caption))
+  const trims = new Map<string, number>()
+  for (const clip of clips) {
+    if (!isDubClip(clip) || clip.dub.locale !== locale || captions.has(clip.dub.caption)) continue
+    const covered = added
+      .filter((dub) => clip.start < dub.start && dub.start < clip.start + clip.duration)
+      .map((dub) => dub.start - clip.start)
+    const duration = Math.min(...covered)
+    if (covered.length > 0 && duration >= MIN_CLIP_MS) trims.set(clip.id, duration)
+  }
+  return trims
 }

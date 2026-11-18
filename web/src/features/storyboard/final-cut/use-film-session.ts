@@ -87,7 +87,7 @@ import {
   type VoiceMode,
   type VoiceSetting,
 } from './composition/voices'
-import { dubsOf, shownIn, type NewDub } from './dubbing'
+import { dubsOf, dubsOverlapped, shownIn, type NewDub } from './dubbing'
 import {
   copyItemFiles,
   createProjectFile,
@@ -731,7 +731,8 @@ type VoicedDub = NewDub & { voice: string | null }
 
 /**
  * 把一批配音片段（语言 `locale`，旁白是原文）写在根下第一个，一起放进第一条这几段时间都空着的「配音」行（见
- * `dubRowFor`，只看这种语言下它们显示时显示着的片段）。一个都没有时不动。
+ * `dubRowFor`，只看这种语言下它们显示时显示着的片段）。先把这种语言里压在它们开始上的已有配音片段收短、标成截了
+ * 尾（见 `dubsOverlapped`），再找行。一个都没有时不动。
  */
 const addDubElements = (
   engine: Composition,
@@ -741,6 +742,10 @@ const addDubElements = (
   dubs: readonly VoicedDub[],
 ) => {
   if (dubs.length === 0) return
+  for (const [id, duration] of dubsOverlapped(clipsOf(engine, catalog), locale, dubs)) {
+    setOwnTiming(engine, id, { duration: duration / 1000 })
+    engine.setAttribute(id, 'data-dub-trimmed', '')
+  }
   const { track, renumber } = dubRowFor(
     clipsOf(engine, catalog),
     dubs,
@@ -2131,9 +2136,9 @@ export function useFilmSession(
   /**
    * 写进语言 `locale` 生成好的配音，算一步撤销：`plan` 拿到这一刻的片段（含字幕和所有语言的配音片段），答复要换掉
    * 的配音片段、要加的素材片的配音片段（`added`）和旁白的配音片段（`narrated`）。换掉的先删；加的两种各一批，
-   * 先后各自放进第一条这几段时间都空着的「配音」行（见 `addDubElements`；素材片的配音占到下一句，会盖住夹在中间的
-   * 旁白，所以分开放），写在根下第一个；这种语言的人声设置按 `update` 改（发起时定的：换整种语言的音色、记下一句的
-   * 选择……），并改成 AI 配音。答复加了几个；一个都不加时不动工程，答 0。
+   * 先后各自放进第一条这几段时间都空着的「配音」行（见 `addDubElements`：压在新片段开始上的已有配音片段先收短），
+   * 写在根下第一个；这种语言的人声设置按 `update` 改（发起时定的：换整种语言的音色、记下一句的选择……），并改成
+   * AI 配音。答复加了几个；一个都不加时不动工程，答 0。
    */
   const addDubs = useCallback(
     (
