@@ -201,6 +201,16 @@ const centerOf = async (locator: Locator) => {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
 }
 
+/**
+ * 在时间尺最右边点一下，播放头停到 final-cut 的结尾。在穿过没选中的片段的竖线上按住拖开是拖播放头，要拖的
+ * 片段没选中、又正好在竖线下面时先把播放头挪开。
+ */
+const parkPlayheadAtEnd = async (page: Page, editor: Locator) => {
+  const ruler = await editor.getByRole('slider', { name: '时间线播放位置' }).boundingBox()
+  if (ruler === null) throw new Error('时间尺尚未布局')
+  await page.mouse.click(ruler.x + ruler.width - 2, ruler.y + ruler.height / 2)
+}
+
 test('「镜头」页签上下滚动后能选择后面的镜头组与末尾镜头', async ({ page }) => {
   const { materials } = await openWith(page, [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7])
   // 窗口矮一些，十几条原作放不下
@@ -968,6 +978,8 @@ test('换行：把片段拖到最下面的空行新开一行，再拖回去；�
   await page.mouse.click(firstBox.x + 10, ruler.y + ruler.height / 2)
   await expect.poll(previewStack).toEqual(['A · 镜头 1@0', 'A · 镜头 3@1'])
 
+  // 播放头刚停在片段上，竖线挡着片段的正中
+  await parkPlayheadAtEnd(page, editor)
   await dragTo(secondRow.locator('[data-clip-id]'), await middleY(firstRow))
   await expect.poll(savedLayout).toEqual(['A · 镜头 3@0 z0', 'A · 镜头 1@0 z1'])
   await expect(secondRow).toHaveCount(0)
@@ -1046,7 +1058,8 @@ test('挪视频片段：预览不换播放器，片段在新的时间出画面�
   await expect.poll(() => picturesAt(editor, 1.5)).toEqual([second])
   await markFinalCutPreviewPlayer(editor)
 
-  // 往后挪、总长变长：直接打进去，跳得到新的结尾
+  // 往后挪、总长变长：直接打进去，跳得到新的结尾。播放头停在 1.5 秒，竖线挡着第二个片段的正中，先挪开
+  await parkPlayheadAtEnd(page, editor)
   await dragBy(page, row.locator('[data-clip-id]').nth(1), 200)
   await expect.poll(async () => (await savedTimingOf(page, 1)).start).toBeGreaterThan(2)
   const { start } = await savedTimingOf(page, 1)
@@ -1994,7 +2007,7 @@ test('声音行的喇叭：静音以后存下来的主文件里这一行的音�
   await expect
     .poll(() => savedKinds(page))
     .toEqual(['A · 镜头 1@画面1 0', '标题@画面0 0', '配乐 1@声音0 0 隐藏', '配乐 2@声音0 5 隐藏'])
-  await expect(editor.getByRole('group', { name: /^配乐 \d，.*，已隐藏$/ })).toHaveCount(2)
+  await expect(editor.getByRole('group', { name: /^配乐 \d，.*，已静音$/ })).toHaveCount(2)
   const speaker = editor.getByRole('button', { name: '取消静音配乐', exact: true })
   await expect(speaker).toHaveAttribute('aria-pressed', 'false')
   await speaker.click()

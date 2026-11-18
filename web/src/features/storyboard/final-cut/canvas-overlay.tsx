@@ -11,6 +11,7 @@ import {
   type RefObject,
 } from 'react'
 import { Icon } from '@/shared/icons'
+import { hoverOf, hoverProbe, type HoverProbe } from './canvas-hover'
 import type { CanvasLayer } from './canvas-layers'
 import {
   frameContains,
@@ -50,6 +51,9 @@ const DRAG_SLOP = 3
 
 /** 同一处再点一次换下一层时，两次离得多近（屏幕像素）算同一处。 */
 const SAME_SPOT = 4
+
+/** 指针在画面上挪动时，最多隔这么久（毫秒）问一次预览页指针下是哪一层。 */
+const HOVER_INTERVAL = 80
 
 /** 旋转把手离选中框底边的空间（屏幕像素）：画面下面放不下时放到框上面。 */
 const ROTATE_ROOM = 32
@@ -115,6 +119,8 @@ type CanvasOverlayProps = {
   contentOf: (file: string) => string | undefined
   /** 画面停在第几毫秒（显示着哪些片段按它算）。 */
   frameMs: number
+  /** 正在播放：这时指针移上去不框层。 */
+  playing: boolean
   /** final-cut 换了一份时变；拖到一半换了就取消这次拖动。 */
   revision: number
   selected: ReadonlySet<string>
@@ -169,6 +175,7 @@ const layerName = (layer: CanvasLayer, clip: FilmClip | undefined): string => {
  * Shift 吸到 15° 的整数倍），焦点在画面上时方向键挪 1 像素（Shift 10）；写法见 layer-edits.ts，写进这一层所在的
  * 文件。时间线上选中组件或块的片段时画面上框住宿主、没有把手，宿主本身不能改；锁定的、脚本生成的、动画脚本驱动的层
  * 也不能改，拖的时候说明原因。双击贴片、场景里的文字或字幕原地改。拖动中预览先跟着摆，松手写进去，算一步撤销。
+ * 停着时指针移到一层上，在它周围画一圈细框（点下去选中的就是它），能原地改字的层光标是输入光标。
  */
 export function CanvasOverlay({
   canvas,
@@ -178,6 +185,7 @@ export function CanvasOverlay({
   onWatch,
   contentOf,
   frameMs,
+  playing,
   revision,
   selected,
   controlRef,
@@ -295,6 +303,66 @@ export function CanvasOverlay({
       y: (event.clientY - (rect?.top ?? 0)) / scale,
     }
   }
+
+  // 悬停：预览页答复的指针下的层，和问的时候画面停在哪一刻、是哪一份 final-cut（变了就不算数，等指针再动）
+  const stamp = `${frameMs}/${revision}`
+  const stampRef = useRef(stamp)
+  useLayoutEffect(() => {
+    stampRef.current = stamp
+  }, [stamp])
+  const [hovering, setHovering] = useState<{
+    stack: readonly PickedLayer[]
+    stamp: string
+  } | null>(null)
+  const probeRef = useRef<HoverProbe | null>(null)
+  useEffect(() => {
+    const probe = hoverProbe(
+      (point: Point) => {
+        const asked = stampRef.current
+        const pick = controlRef.current?.pick(point) ?? Promise.resolve([])
+        return pick.then((stack) => ({ stack, stamp: asked }))
+      },
+      setHovering,
+      HOVER_INTERVAL,
+    )
+    probeRef.current = probe
+    return () => {
+      probe.stop()
+      probeRef.current = null
+    }
+  }, [controlRef])
+  const unhover = () => {
+    probeRef.current?.stop()
+    setHovering(null)
+  }
+  /** 字幕的一句自己那一层：在最上面时点一下就选中它（见 `clicked`）。 */
+  const isCaption = (layer: CanvasLayer) =>
+    clipOf.get(layer.clip)?.kind === 'caption' && layer.element.hfId === layer.clip
+  /** 能原地改字的层：字幕这一句，或者贴片、场景里绑着文字可填项的元素。 */
+  const isText = (layer: CanvasLayer) => {
+    if (isCaption(layer)) return true
+    const clip = clipOf.get(layer.clip)
+    const field = layer.element.attributes['data-var-text']
+    if (clip?.kind !== 'host' || field === undefined) return false
+    const item = itemNamed(catalog, clip.item)
+    return item !== undefined && textFields(item).some((each) => each.id === field)
+  }
+  const hovered =
+    hovering === null ||
+    hovering.stamp !== stamp ||
+    playing ||
+    draft !== null ||
+    textTarget !== null
+      ? null
+      : hoverOf(hovering.stack, layers, new Set(shown.map((each) => each.layer.key)), {
+          isText,
+          winsOnTop: isCaption,
+        })
+  // 选中着的脚本生成的层已经框着
+  const hover =
+    hovered !== null && !(hovered.generated && generatedShown?.clip === hovered.clip)
+      ? hovered
+      : null
 
   const showDraft = (next: Draft | null) => {
     draftRef.current = next
@@ -420,6 +488,7 @@ export function CanvasOverlay({
     // 前一下已经松开、还在等答复时可以再按（很快连点）
     const waiting = current?.kind === 'press' && current.released !== null
     if (event.button !== 0 || (current !== null && !waiting)) return
+    unhover()
     // 按在把手上（只有一层选中时才有）
     const handle =
       event.target instanceof Element
@@ -459,10 +528,7 @@ export function CanvasOverlay({
       chosen
     const [top] = hits
     const topLayer = top === undefined ? undefined : layers[indexOf.get(top) ?? -1]
-    const captionOnTop =
-      topLayer !== undefined &&
-      clipOf.get(topLayer.clip)?.kind === 'caption' &&
-      topLayer.element.hfId === topLayer.clip
+    const captionOnTop = topLayer !== undefined && isCaption(topLayer)
     const key = captionOnTop && top !== undefined && cycled === chosen ? top : cycled
     lastPickRef.current = { point: start, at: now, id: key }
     if (key === chosen || shift) return
@@ -542,7 +608,14 @@ export function CanvasOverlay({
 
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
     const gesture = gestureRef.current
-    if (gesture === null) return
+    if (gesture === null) {
+      // 在把手上时框选中着的那一层的把手，不问下面是哪一层
+      const onHandle =
+        event.target instanceof Element && event.target.closest('[data-handle]') !== null
+      if (playing || event.pointerType === 'touch' || onHandle) unhover()
+      else probeRef.current?.move(toCanvas(event))
+      return
+    }
     const point = toCanvas(event)
     if (gesture.kind === 'press') {
       gesture.last = point
@@ -762,16 +835,26 @@ export function CanvasOverlay({
       aria-label="预览画面"
       className="wf-canvas-layer"
       data-canvas-layer=""
+      data-hover-text={hover?.text === true ? '' : undefined}
       onDoubleClick={onDoubleClick}
       onLostPointerCapture={onPointerUp}
       onPointerCancel={cancel}
       onPointerDown={onPointerDown}
+      onPointerLeave={unhover}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       ref={layerRef}
       role="group"
       tabIndex={-1}
     >
+      {hover === null ? null : (
+        <div
+          aria-hidden="true"
+          className="wf-canvas-hover"
+          data-testid="canvas-hover"
+          style={frameStyle(hover.frame)}
+        />
+      )}
       {shown.map((each) => {
         const { at, layer, measure } = each
         // 原地改着的字幕：框和输入框叠在一起，不画

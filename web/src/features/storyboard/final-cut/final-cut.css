@@ -2043,6 +2043,18 @@
   pointer-events: none;
 }
 
+/* 指针停着的那一层（点下去会选中它）：比选中框淡、细；能原地改字的层是输入光标 */
+.wf-canvas-hover {
+  position: absolute;
+  border-radius: var(--radius-xs);
+  outline: 1px solid color-mix(in srgb, var(--color-on-scrim) 45%, transparent);
+  pointer-events: none;
+}
+
+.wf-canvas-layer[data-hover-text] {
+  cursor: text;
+}
+
 .wf-canvas-handle {
   position: absolute;
   width: 8px;
@@ -3387,6 +3399,12 @@
   translate: -0.5px 0;
   border-left: 1px solid var(--color-on-surface);
   pointer-events: none;
+}
+
+/* 指针停在播放头的竖线上（不在把手、音量曲线上）或正拖着它：左右拖的光标 */
+.wf-lanes[data-on-playhead],
+.wf-lanes[data-on-playhead] * {
+  cursor: ew-resize;
 }
 
 /* 剃刀：各行上是十字光标，一条竖线跟着指针贯穿所有行 */

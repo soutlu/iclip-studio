@@ -405,6 +405,36 @@ test('播放条：倍速和静音对素材、final-cut 都生效且换播放器�
   await expect.poll(async () => [await boxOf(preview), await boxOf(transport)]).toEqual(before)
 })
 
+test('预览素材时在时间线上点选片段：素材预览收起，回到 final-cut 的预览、画面上能编辑', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const materials = editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+  const added = mainSaved(page, 1)
+  await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
+  await page.keyboard.press('Enter')
+  await added
+  await readyPlayer(editor)
+
+  const material = editor.getByRole('region', { name: /^素材 · / })
+  await materials.getByRole('button', { name: /^生成 A 镜头 2，/ }).click()
+  await expect(material).toBeVisible()
+  await expect(editor.getByRole('group', { name: '预览画面' })).toHaveCount(0)
+
+  const clip = editor
+    .getByRole('group', { name: '画面 1', exact: true })
+    .getByRole('button', { name: /^选中：/ })
+  await clip.click()
+  await expect(clip).toHaveAttribute('aria-pressed', 'true')
+  await expect(material).toHaveCount(0)
+  await expect(editor.getByRole('group', { name: '预览画面' })).toBeVisible()
+})
+
 /** 存下来的主文件里名字是 `title` 的组件或块的片段的属性；没有时是 null。 */
 const savedItem = (html: string, title: string) => {
   const tag = [...html.matchAll(/<div [^>]*data-composition-src="[^"]*"[^>]*>/g)]
@@ -1658,6 +1688,47 @@ test('节拍：从素材栏拖一个镜头到一拍旁边松手，开头落在�
   const reloaded = await openFinalCut(await openConversation(page, '夜景延时素材生成'))
   await expect(marksOf(reloaded)).toBeVisible({ timeout: 15_000 })
   expect(await decodes()).toBe(0)
+})
+
+test('按住播放头的竖线拖到片段结尾旁边：吸到结尾、亮吸附线；按住穿过片段的竖线不选中片段、不框选', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const added = mainSaved(page, 1)
+  await editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  await added
+
+  // 播放头在 0 秒，竖线穿过片段的开头：在片段那一行的高度按住竖线，拖到片段结尾左边 3 像素（片段的结尾就是
+  // final-cut 的结尾，拖过头会停在结尾上，看不出吸没吸）
+  const lane = editor.getByRole('group', { name: '画面 1', exact: true })
+  const box = await lane.getByRole('group').boundingBox()
+  const playhead = editor.getByTestId('timeline-playhead')
+  const line = await playhead.boundingBox()
+  if (box === null || line === null) throw new Error('时间线还没排好')
+  const y = box.y + box.height / 2
+  // 片段画得比时长窄 2 像素：结尾在框的右边再往右 2 像素
+  const end = box.x + box.width + 2
+  await page.mouse.move(line.x + line.width / 2, y)
+  await page.mouse.down()
+  await page.mouse.move(end - 3, y, { steps: 8 })
+  await expect(editor.getByTestId('snap-guide')).toBeVisible()
+  await expect(editor.getByTestId('marquee')).toHaveCount(0)
+  await page.mouse.up()
+  await expect(editor.getByTestId('snap-guide')).toHaveCount(0)
+  const landed = await playhead.boundingBox()
+  expect(Math.abs((landed?.x ?? 0) + (landed?.width ?? 0) / 2 - end)).toBeLessThan(1.5)
+  await expect(lane.getByRole('button', { name: /^选中：/ })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  )
 })
 
 test('分离音频：存下来多一个原声片段、两段属性对；联动着拖原声两段一起挪；关掉联动单独挪出现错开，对齐画面回到同步；合并回视频', async ({

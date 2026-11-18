@@ -437,6 +437,12 @@ function EditorBody({
     setPlayheadMs(ms)
     previewRef.current?.seek(ms)
   }
+  /** 点选时间线上的片段后把播放头挪进它里面：一次普通的定位，正在播 final-cut 时从新位置接着播（照原型）。 */
+  const jumpInto = (ms: number) => {
+    const resume = playing
+    seek(ms)
+    if (resume) previewRef.current?.play()
+  }
   const togglePlay = () => {
     if (materialView !== null) {
       materialPreviewRef.current?.toggle()
@@ -497,19 +503,32 @@ function EditorBody({
   const [textEditing, setTextEditing] = useState(false)
   // 时间线上点下去做什么：B 在切开和选择之间来回换，V、A 回到选择，Esc 取消选中以后也回到选择
   const [tool, setTool] = useState<EditTool>('select')
-  // Esc 先退全屏（浏览器多半自己退，按键还是传到页面时才轮到这里），再取消选中，再回到选择工具；
+  // Esc 先退全屏（浏览器多半自己退，按键还是传到页面时才轮到这里），再退出素材预览，再取消选中，再回到选择工具；
   // 都没有时不用掉这一下
   useEditorEscape(
-    fullscreen || textEditing || (!gesturing && (selected.size > 0 || tool === 'razor')),
+    fullscreen ||
+      textEditing ||
+      (!gesturing && (materialView !== null || selected.size > 0 || tool === 'razor')),
     () => {
       if (fullscreen) exitFullscreen()
       else if (textEditing) return
+      else if (materialView !== null) leaveMaterial()
       else if (selected.size > 0) clearSelection()
       else setTool('select')
     },
   )
+  /** 在时间线上换选中：选中了片段时回到 final-cut 的预览（素材预览里看不到选中的片段，画面上也改不了它）。 */
+  const selectOnTimeline = (ids: ReadonlySet<string>) => {
+    if (ids.size > 0) leaveMaterial()
+    setSelectedIds(ids)
+  }
   const selectAround = (side: 'left' | 'right') =>
-    setSelectedIds(new Set(aroundPlayhead(clips, playhead, side)))
+    selectOnTimeline(new Set(aroundPlayhead(clips, playhead, side)))
+  /** 双击时间线上的片段：只选中它，侧栏切到「属性」（停在别的页签时也切）。 */
+  const inspectClip = (id: string) => {
+    selectOnTimeline(new Set([id]))
+    setSideTab('props')
+  }
   const split = (cuts: readonly Cut[]) => {
     if (cuts.length === 0) return
     leaveMaterial()
@@ -1399,6 +1418,7 @@ function EditorBody({
         onText={itemTexts.onText}
         onTextClose={() => setTextTarget(null)}
         onWatch={setWatchedLayers}
+        playing={playing}
         revision={film.revision}
         selected={selected}
         textTarget={textTarget}
@@ -1767,8 +1787,10 @@ function EditorBody({
             session.retime(timings)
           }}
           onGesture={setGesturing}
+          onInspect={inspectClip}
+          onJump={jumpInto}
           onSeek={seek}
-          onSelect={setSelectedIds}
+          onSelect={selectOnTimeline}
           onViewportWidth={setViewportWidth}
           playheadMs={playhead}
           scale={scale}

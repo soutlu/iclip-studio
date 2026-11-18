@@ -117,6 +117,12 @@ describe('时间线吸附', () => {
     expect(snapSpanStartMs(2_500, 300, targets, PPS)).toEqual({ ms: 2_500, guideMs: null })
   })
 
+  it('拖的就是播放头时不给播放头：只吸片段的两端', () => {
+    const edges = snapTargets([{ id: 'a', start: 0, duration: 2_000 }], null)
+    expect(snapMs(3_260, edges, PPS)).toEqual({ ms: 3_260, guideMs: null })
+    expect(snapMs(2_050, edges, PPS)).toEqual({ ms: 2_000, guideMs: 2_000 })
+  })
+
   it('放得越大，吸附的范围换成时间越小', () => {
     expect(snapMs(2_050, targets, 400).guideMs).toBeNull()
     expect(snapMs(2_015, targets, 400)).toEqual({ ms: 2_000, guideMs: 2_000 })

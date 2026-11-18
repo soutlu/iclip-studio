@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { aroundPlayhead, boxBetween, marqueeMode, marqueeSelection, movingWith } from './selection'
+import {
+  aroundPlayhead,
+  boxBetween,
+  marqueeMode,
+  marqueeSelection,
+  movingWith,
+  playheadInto,
+} from './selection'
 
 describe('框选', () => {
   // 两行：第一行 a、b，第二行 c；每个片段 40 像素高
@@ -61,6 +68,31 @@ describe('选中播放头左边、右边的片段', () => {
 
   it('右边是结尾晚于播放头的：正好在播放头结束的不算', () => {
     expect(aroundPlayhead(clips, 2_000, 'right')).toEqual(['across', 'at-start', 'after'])
+  })
+})
+
+describe('点选片段后播放头挪进去', () => {
+  // 片段在 2–5 秒
+  const clip = { start: 2_000, duration: 3_000 }
+
+  it('播放头本来就在片段里（含两端）：不动', () => {
+    expect(playheadInto(3_000, clip)).toBeNull()
+    expect(playheadInto(2_000, clip)).toBeNull()
+    expect(playheadInto(5_000, clip)).toBeNull()
+  })
+
+  it('播放头在片段前面或后面：挪到离开头 0.8 秒处', () => {
+    expect(playheadInto(500, clip)).toBe(2_800)
+    expect(playheadInto(9_000, clip)).toBe(2_800)
+  })
+
+  it('片段不到 1.6 秒：挪到正中', () => {
+    expect(playheadInto(0, { start: 2_000, duration: 1_000 })).toBe(2_500)
+  })
+
+  it('很短的片段：不超过结尾前 0.05 秒，也不早于开头', () => {
+    expect(playheadInto(0, { start: 2_000, duration: 80 })).toBe(2_030)
+    expect(playheadInto(0, { start: 2_000, duration: 40 })).toBe(2_000)
   })
 })
 

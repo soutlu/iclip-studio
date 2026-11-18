@@ -537,6 +537,292 @@ describe('final-cut 编辑器 · 时间线', () => {
     await waitSaved(() => expect(savedClips()[1]).toMatch(timed('2', '3', '0')))
     expect(within(transport()).getByText('/ 00:05.00')).toBeVisible()
   })
+
+  /** 发给预览页的最后一次跳转（毫秒）。 */
+  const lastSeekMs = () => {
+    const seek = previewPages.latest().commands.findLast((command) => command.type === 'seek')
+    return seek?.type === 'seek' ? seek.ms : undefined
+  }
+  /**
+   * 播放头的竖线量出来在横坐标 `x` 处（默认 0，播放头在 0 秒；测试里一秒 100 像素）。测试里没有排版，竖线量不到
+   * 高度时各行上不算按在竖线上。
+   */
+  const placeLine = (x = 0) =>
+    vi.spyOn(screen.getByTestId('timeline-playhead'), 'getBoundingClientRect').mockReturnValue({
+      x: x - 1,
+      y: 0,
+      left: x - 1,
+      right: x + 1,
+      top: 0,
+      bottom: 400,
+      width: 2,
+      height: 400,
+      toJSON: () => ({}),
+    })
+  /**
+   * 在第一个片段的身体上按住穿过它的竖线（播放头在 0 秒），拖到第 `ms` 毫秒处（测试里一秒 100 像素），不松手；
+   * 返回松手。
+   */
+  const dragPlayhead = (ms: number) => {
+    placeLine()
+    const body = clip(/2\.0 秒$/)
+    fireEvent.pointerDown(body, { button: 0, pointerId: 1, clientX: 0, clientY: 60 })
+    fireEvent.pointerMove(body, { pointerId: 1, clientX: ms / 10, clientY: 60 })
+    return () => fireEvent.pointerUp(body, { pointerId: 1, clientX: ms / 10, clientY: 60 })
+  }
+
+  it('按住播放头拖到片段的边附近：吸到边上，画吸附线，松手后吸附线收起', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    await openEditor()
+    const release = dragPlayhead(2_060)
+    expect(screen.getByTestId('snap-guide')).toHaveStyle({ left: '200px' })
+    await waitFor(() => expect(lastSeekMs()).toBe(2_000))
+    release()
+    expect(screen.queryByTestId('snap-guide')).toBeNull()
+  })
+
+  it('关掉吸附再拖播放头：停在拖到的地方，不画吸附线', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await user.click(within(toolbar()).getByRole('button', { name: '吸附' }))
+    dragPlayhead(2_060)
+    expect(screen.queryByTestId('snap-guide')).toBeNull()
+    await waitFor(() => expect(lastSeekMs()).toBe(2_060))
+  })
+
+  it('播放头停在选中片段的开头：按开头的把手拖是裁剪，播放头不动', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await user.click(clip(/2\.0 秒$/))
+    placeLine()
+    const start = within(timeline()).getByRole('slider', { name: '裁剪开头' })
+    fireEvent.pointerDown(start, { button: 0, pointerId: 1, clientX: 0, clientY: 60 })
+    fireEvent.pointerMove(start, { pointerId: 1, clientX: 30, clientY: 60 })
+    fireEvent.pointerUp(start, { pointerId: 1, clientX: 30, clientY: 60 })
+    await waitSaved(() => expect(savedClips()[0]).toContain('data-start="0.3" data-duration="1.7"'))
+    expect(progress()).toHaveAttribute('aria-valuetext', '00:00.00 / 00:03.50')
+  })
+
+  it('音量关键帧的点在播放头的竖线下面：按住拖的是这个点，播放头不动', async () => {
+    const lane = JSON.stringify({
+      version: 1,
+      lanes: [
+        {
+          target: 'volume',
+          points: [
+            { t: 0, v: 2 },
+            { t: 2, v: 2 },
+          ],
+        },
+      ],
+    })
+    putMockProjectMain(
+      CONVERSATION,
+      mainFile([video({ src: URL_A, duration: 2_000, automation: lane })], {
+        width: 720,
+        height: 1280,
+      }),
+    )
+    const user = userEvent.setup()
+    await openEditor()
+    await user.click(clip(/2\.0 秒$/))
+    placeLine()
+    const point = within(timeline()).getByRole('slider', { name: '音量关键帧 1' })
+    fireEvent.pointerDown(point, { button: 0, pointerId: 1, clientX: 0, clientY: 10 })
+    fireEvent.pointerMove(point, { pointerId: 1, clientX: 0, clientY: 40 })
+    fireEvent.pointerUp(point, { pointerId: 1, clientX: 0, clientY: 40 })
+    /** 存下的主文件里视频片段音量曲线开头那个点的音量。 */
+    const firstGain = () =>
+      parseAutomation(
+        new DOMParser()
+          .parseFromString(savedFilm(), 'text/html')
+          .getElementById('clip-1')
+          ?.getAttribute('data-automation') ?? '{"version":1,"lanes":[]}',
+      ).lanes.find((each) => each.target === 'volume')?.points[0]?.v
+    await waitSaved(() => expect(firstGain()).not.toBe(2))
+    expect(progress()).toHaveAttribute('aria-valuetext', '00:00.00 / 00:02.00')
+  })
+
+  it('右键按在播放头的竖线上：出下面那个片段的菜单', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    await openEditor()
+    placeLine()
+    const body = clip(/2\.0 秒$/)
+    fireEvent.pointerDown(body, { button: 2, pointerId: 1, pointerType: 'mouse', clientX: 0 })
+    fireEvent.contextMenu(body, { clientX: 0 })
+    expect(await screen.findByRole('menu', { name: 'A · 镜头 1' })).toBeVisible()
+    // 右键没有按住竖线：播放头没有在拖
+    expect(screen.getByTestId('timeline-playhead')).not.toHaveAttribute('data-dragging')
+  })
+
+  it('播放头在选中的片段里：按住片段身体上竖线的位置拖，挪的是片段', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    // 点选第二个片段（2–3.5 秒），播放头挪到它正中 2.75 秒
+    await user.click(clip(/1\.5 秒$/))
+    await waitFor(() => expect(lastSeekMs()).toBe(2_750))
+    placeLine(275)
+    // 测试里片段的左边量成 0：拖 300 像素就是想挪到第 3 秒
+    const body = clip(/1\.5 秒$/)
+    fireEvent.pointerDown(body, { button: 0, pointerId: 1, clientX: 275, clientY: 60 })
+    fireEvent.pointerMove(body, { pointerId: 1, clientX: 575, clientY: 60 })
+    fireEvent.pointerUp(body, { pointerId: 1, clientX: 575, clientY: 60 })
+    await waitSaved(() => expect(savedClips()[1]).toContain('data-start="3"'))
+    expect(lastSeekMs()).toBe(2_750)
+  })
+
+  it('在竖线上点一下没选中的片段：选中它，播放头不动', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    await openEditor()
+    placeLine()
+    const body = clip(/2\.0 秒$/)
+    fireEvent.pointerDown(body, { button: 0, pointerId: 1, clientX: 0, clientY: 60 })
+    fireEvent.pointerUp(body, { pointerId: 1, clientX: 0, clientY: 60 })
+    expect(body).toHaveAttribute('aria-pressed', 'true')
+    expect(playheadText()).toBe('00:00.00')
+  })
+
+  it('在竖线上点一下空白处：取消选中', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await user.click(clip(/2\.0 秒$/))
+    expect(clip(/2\.0 秒$/)).toHaveAttribute('aria-pressed', 'true')
+    placeLine()
+    fireEvent.pointerDown(timeline(), { button: 0, pointerId: 1, clientX: 0, clientY: 60 })
+    fireEvent.pointerUp(timeline(), { pointerId: 1, clientX: 0, clientY: 60 })
+    expect(clip(/2\.0 秒$/)).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('在竖线上按住：挪过一点点不动播放头，拖开了才拖播放头', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    await openEditor()
+    placeLine()
+    const body = clip(/2\.0 秒$/)
+    const before = lastSeekMs()
+    fireEvent.pointerDown(body, { button: 0, pointerId: 1, clientX: 0, clientY: 60 })
+    fireEvent.pointerMove(body, { pointerId: 1, clientX: 3, clientY: 60 })
+    expect(screen.getByTestId('timeline-playhead')).not.toHaveAttribute('data-dragging')
+    expect(lastSeekMs()).toBe(before)
+    fireEvent.pointerMove(body, { pointerId: 1, clientX: 50, clientY: 60 })
+    expect(screen.getByTestId('timeline-playhead')).toHaveAttribute('data-dragging')
+    await waitFor(() => expect(lastSeekMs()).toBe(500))
+  })
+
+  /** 时间线上播放位置的读数。 */
+  const playheadText = () =>
+    screen.getByRole('slider', { name: '时间线播放位置' }).getAttribute('aria-valuetext')
+
+  it('点选播放头不在里面的片段：播放头挪进去（离开头 0.8 秒，短片段到正中）', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    // 第二个片段在 2–3.5 秒，不到 1.6 秒：挪到正中 2.75 秒
+    await user.click(clip(/1\.5 秒$/))
+    await waitFor(() => expect(lastSeekMs()).toBe(2_750))
+  })
+
+  it('正在播放时点选播放头不在里面的片段：跳过去以后接着播', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await previewSettled()
+    await user.click(within(transport()).getByRole('button', { name: '播放' }))
+    expect(await within(transport()).findByRole('button', { name: '暂停' })).toBeVisible()
+    await user.click(clip(/1\.5 秒$/))
+    await waitFor(() => {
+      const commands = previewPages.latest().commands
+      const seek = commands.findLastIndex((command) => command.type === 'seek')
+      expect(commands[seek]).toMatchObject({ type: 'seek', ms: 2_750 })
+      expect(commands.slice(seek + 1).map((command) => command.type)).toContain('play')
+    })
+  })
+
+  it('拖动片段：松手后的那一下点击不算点选，播放头不动', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    await openEditor()
+    // 第二个片段往后拖到 4 秒（测试里一秒 100 像素）
+    const body = clip(/1\.5 秒$/)
+    fireEvent.pointerDown(body, { button: 0, pointerId: 1, clientX: 10, clientY: 60 })
+    fireEvent.pointerMove(body, { pointerId: 1, clientX: 410, clientY: 60 })
+    fireEvent.pointerUp(body, { pointerId: 1, clientX: 410, clientY: 60 })
+    fireEvent.click(body)
+    await waitSaved(() => expect(savedClips()[1]).toContain('data-start="4"'))
+    expect(playheadText()).toBe('00:00.00')
+  })
+
+  it('按住 Shift 加选播放头不在里面的片段：播放头不动', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await user.keyboard('{Shift>}')
+    await user.click(clip(/1\.5 秒$/))
+    await user.keyboard('{/Shift}')
+    expect(clip(/1\.5 秒$/)).toHaveAttribute('aria-pressed', 'true')
+    expect(playheadText()).toBe('00:00.00')
+  })
+
+  it('指针移到时间尺上：画一条虚线，不出写着时间的气泡', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    await openEditor()
+    fireEvent.pointerMove(screen.getByRole('slider', { name: '时间线播放位置' }), {
+      clientX: 120,
+      pointerType: 'mouse',
+    })
+    expect(screen.getByTestId('timeline-hover-guide')).toBeInTheDocument()
+    expect(screen.queryByText('预览')).toBeNull()
+  })
+
+  it('静音的配乐片段上有「已静音」小标', async () => {
+    putMockProjectMain(
+      CONVERSATION,
+      mainFile([video({ src: URL_A, duration: 2_000 }), audio({ duration: 2_000, hidden: true })], {
+        width: 720,
+        height: 1280,
+      }),
+    )
+    await openEditor()
+    const music = within(screen.getByRole('group', { name: '配乐' })).getByRole('group')
+    expect(music).toHaveAccessibleName('配乐，2.0 秒，已静音')
+    expect(within(music).getByText('已静音')).toBeVisible()
+  })
+
+  it('双击时间线上的片段：选中它，停在「字幕·配音」时也切到「属性」', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    const side = screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+    await user.click(within(side).getByRole('tab', { name: '字幕·配音' }))
+    await user.dblClick(clip(/2\.0 秒$/))
+    expect(clip(/2\.0 秒$/)).toHaveAttribute('aria-pressed', 'true')
+    expect(within(side).getByRole('tab', { name: '属性' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  const materialPreview = () =>
+    screen.queryByRole('region', { name: '素材 · 镜头组 1 · 生成 A · 镜头 2' })
+
+  it('预览素材时在时间线上选中片段：回到 final-cut 的预览', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await user.click(await shot(/^生成 A 镜头 2，/))
+    expect(materialPreview()).toBeInTheDocument()
+    await user.click(clip(/1\.5 秒$/))
+    expect(materialPreview()).toBeNull()
+  })
+
+  it('预览素材时按 Esc：退出素材预览', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await user.click(await shot(/^生成 A 镜头 2，/))
+    expect(materialPreview()).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(materialPreview()).toBeNull()
+  })
 })
 
 describe('final-cut 编辑器 · 多选', () => {
@@ -616,7 +902,9 @@ describe('final-cut 编辑器 · 多选', () => {
     const user = await openThree()
     await act(() => new Promise((resolve) => setTimeout(resolve, 500)))
     await user.click(clip('A · 镜头 2'))
-    // 播放头挪到 2 秒：A 镜头 1 正好在这里结束，B 镜头 1 正好从这里开始
+    // 点选把播放头挪进了 A 镜头 2，先放回 0 秒，再挪到 2 秒：A 镜头 1 正好在这里结束，B 镜头 1 正好从这里开始
+    progress().focus()
+    await user.keyboard('{Home}')
     editorRoot().focus()
     await user.keyboard('{Shift>}{ArrowRight}{ArrowRight}{/Shift}')
     expect(within(transport()).getByText('00:02.00')).toBeVisible()
@@ -1272,6 +1560,11 @@ describe('final-cut 编辑器 · 切开', () => {
     editorRoot().focus()
     await user.keyboard('{ArrowRight}'.repeat(tenths))
   }
+  /** 点选片段会把播放头挪进片段里：用进度条把它放回 0.8 秒（在 A 镜头 1 里、不在 B 镜头 1 里）。 */
+  const playheadBack = async (user: ReturnType<typeof userEvent.setup>) => {
+    progress().focus()
+    await user.keyboard(`{Home}${'{ArrowRight}'.repeat(8)}`)
+  }
   const picker = (name: string) =>
     within(toolbar()).getByRole('button', { name: `选择工具：${name}` })
   // 测试里时间线没有宽度，按一秒 100 像素排：横坐标 x 就是第 x × 10 毫秒
@@ -1316,6 +1609,7 @@ describe('final-cut 编辑器 · 切开', () => {
     await playheadTo(user, 8)
     expect(fireEvent.keyDown(editorRoot(), { key: 's' })).toBe(false)
     await user.click(body('B · 镜头 1'))
+    await playheadBack(user)
     editorRoot().focus()
     expect(fireEvent.keyDown(editorRoot(), { key: 's' })).toBe(false)
     await user.keyboard('{Shift>}')
@@ -1352,6 +1646,7 @@ describe('final-cut 编辑器 · 切开', () => {
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
 
     await user.click(body('B · 镜头 1'))
+    await playheadBack(user)
     await user.click(picker('选择'))
     await user.hover(item())
     expect(await screen.findByRole('tooltip')).toHaveTextContent(

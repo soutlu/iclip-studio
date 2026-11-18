@@ -317,13 +317,15 @@
 }
 
 .timeline-ruler:has(.timeline-seek:focus-visible:not([data-pointer]), .timeline-seek[data-seeking])
-  ~ .timeline-playhead::before {
+  ~ .timeline-playhead::before,
+.timeline-playhead[data-dragging]::before {
   border-color: transparent;
   background: var(--color-on-surface);
 }
 
 .timeline-ruler:has(.timeline-seek:focus-visible:not([data-pointer]), .timeline-seek[data-seeking])
-  ~ .timeline-playhead::after {
+  ~ .timeline-playhead::after,
+.timeline-playhead[data-dragging]::after {
   background: var(--color-surface-container-lowest);
 }
 

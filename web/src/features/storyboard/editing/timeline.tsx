@@ -36,6 +36,12 @@ type TimelineRulerProps = {
   clockAt: (clientX: number) => number
   onSeek: (clock: number) => void
   onScrub: () => void
+  /** 悬停、按住拖动时在时间尺上方出不出写着时间的气泡；不出时悬停照样画虚线。默认出。 */
+  timeBubble?: boolean | undefined
+  /** 给了时按住拖动定位改调它（可以吸附），键盘定位照旧调 `onSeek`。 */
+  onPointerSeek?: ((clock: number) => void) | undefined
+  /** 按住拖动定位松手或被取消。 */
+  onSeekEnd?: (() => void) | undefined
 }
 
 export function TimelineRuler({
@@ -49,6 +55,9 @@ export function TimelineRuler({
   clockAt,
   onSeek,
   onScrub,
+  timeBubble = true,
+  onPointerSeek,
+  onSeekEnd,
 }: TimelineRulerProps) {
   const [seekByPointer, setSeekByPointer] = useState(false)
   const [seeking, setSeeking] = useState(false)
@@ -93,7 +102,8 @@ export function TimelineRuler({
   const ticks = Array.from({ length: Math.floor(scale / tickStep) + 1 }, (_, at) => at * tickStep)
   const boundedTime = Math.max(0, Math.min(total, currentTime))
   const seekPointer = (event: PointerEvent<HTMLInputElement>) => {
-    onSeek(previewAt(event))
+    const seek = onPointerSeek ?? onSeek
+    seek(previewAt(event))
   }
   const finishSeek = (event: PointerEvent<HTMLInputElement>) => {
     if (seekPointerRef.current !== event.pointerId) return
@@ -101,6 +111,7 @@ export function TimelineRuler({
     setSeeking(false)
     setPreview(null)
     releasePointer(event)
+    onSeekEnd?.()
   }
   return (
     <>
@@ -177,7 +188,7 @@ export function TimelineRuler({
           type="range"
           value={boundedTime}
         />
-        {preview === null
+        {preview === null || !timeBubble
           ? null
           : createPortal(
               <span
@@ -203,8 +214,28 @@ export function TimelineRuler({
   )
 }
 
-export function TimelinePlayhead({ style }: { style: CSSProperties }) {
-  return <span aria-hidden="true" className="timeline-playhead" style={style} />
+/**
+ * 播放头，不接收指针。编辑器自己让人按住竖线拖着定位时给出 `dragging`（final-cut），拖着时头画成按下的样子；
+ * 不给时（编辑视频）没有这个状态。
+ */
+export function TimelinePlayhead({
+  style,
+  dragging,
+}: {
+  style: CSSProperties
+  dragging?: boolean | undefined
+}) {
+  if (dragging === undefined)
+    return <span aria-hidden="true" className="timeline-playhead" style={style} />
+  return (
+    <span
+      aria-hidden="true"
+      className="timeline-playhead"
+      data-dragging={dragging ? '' : undefined}
+      data-testid="timeline-playhead"
+      style={style}
+    />
+  )
 }
 
 type LimitBubbleProps = {
