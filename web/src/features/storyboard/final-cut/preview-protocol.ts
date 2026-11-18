@@ -47,13 +47,15 @@ const zFrame = z.strictObject({
 })
 
 /**
- * 量出来的一层：画布上的样子 `frame`；布局宽高 `width`、`height`（不算变换）；父元素里一像素在画布上的样子
+ * 量出来的一层：画布上的样子 `frame`；看得见的那一块 `visible`（它自己的 `inset()` 裁切、裁掉它的祖先和画布都算上，
+ * 和 `frame` 同一个角度，见 canvas-visible.ts；什么都看不见时是 null）；布局宽高 `width`、`height`（不算变换）；父元素里一像素在画布上的样子
  * `parent`（2×2 线性变换）；它自己的 `rotate`（度）；变换里有没有位移 `translating`；是不是行内元素
  * `inline`；父元素的弹性方向 `flex`（0 不是弹性布局、1 横排、2 竖排）；三样能不能改，和不能改时的原因
  * `refusal`（见 layer-abilities.ts）。
  */
 const zMeasure = z.strictObject({
   frame: zFrame,
+  visible: zFrame.nullable(),
   width: z.number().nonnegative(),
   height: z.number().nonnegative(),
   parent: z.strictObject({ a: z.number(), b: z.number(), c: z.number(), d: z.number() }),
@@ -144,6 +146,11 @@ export const zPreviewCommand = z.discriminatedUnion('type', [
   /** 画布上 (`x`, `y`) 处从上往下能选中的层（规则见运行库的 `pointerTargets`），报 `picked`。 */
   z.strictObject({ type: z.literal('pick'), seq: zSeq, x: z.number(), y: z.number() }),
   /**
+   * 开始挪 `layers`（`layers` 表里的位置）：量出挪的时候吸附用的矩形，报 `snapRects`。在这一下的第一个 `draft`
+   * 之前发，量的是它们还在原处的样子。
+   */
+  z.strictObject({ type: z.literal('snap'), seq: zSeq, layers: z.array(zSeq) }),
+  /**
    * 拖动中先把正在播的那一份里的一层（`layers` 表里的位置）摆成这样，不经副本会话：行内样式改成 `styles`，
    * 位移在拖动开始时的上面加 `move`（父元素里的像素）。`pin` 时再挪一下让它的中心回到拖动开始时的地方（缩放），
    * 报 `drafted`。
@@ -231,6 +238,16 @@ export const zPreviewEvent = z.discriminatedUnion('type', [
         measure: zMeasure,
       }),
     ),
+  }),
+  /**
+   * 第 `seq` 次 `snap` 的矩形（画布像素）：`moving` 是要挪的那几层合起来的框（都找不到时是 null），`targets` 是能
+   * 吸过去的别的层（运行库的 `snapCandidates`，宿主和它里面的不算）。每个框都按那个元素自己的 `inset()` 裁切收窄。
+   */
+  z.strictObject({
+    type: z.literal('snapRects'),
+    seq: zSeq,
+    moving: zRect.nullable(),
+    targets: z.array(zRect),
   }),
   /** 第 `seq` 次 `draft` 以后这一层的位移在拖动开始时的上面加了多少（父元素里的像素，含挪回中心的那一下）。 */
   z.strictObject({ type: z.literal('drafted'), seq: zSeq, x: z.number(), y: z.number() }),

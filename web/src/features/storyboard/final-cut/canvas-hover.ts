@@ -1,9 +1,10 @@
 import type { Frame, Point } from './canvas-geometry'
 import type { CanvasLayer } from './canvas-layers'
+import { drawnFrame } from './canvas-visible'
 import type { PickedLayer } from './preview-player'
 
 /**
- * 指针停着的地方框哪一层：它的框、属于哪个片段，是不是脚本生成的层（表里没有），能不能原地改字。
+ * 指针停着的地方框哪一层：它画出来的框（看得见的那一块，见 canvas-visible.ts）、属于哪个片段，是不是脚本生成的层（表里没有），能不能原地改字。
  */
 export type Hover = { frame: Frame; clip: string; generated: boolean; text: boolean }
 
@@ -31,11 +32,11 @@ export function hoverOf(
   const [top] = stack
   const owner = top === undefined ? undefined : layers[top.owner]
   if (top !== undefined && top.layer < 0 && owner !== undefined)
-    return { frame: top.measure.frame, clip: owner.clip, generated: true, text: false }
+    return { frame: drawnFrame(top.measure), clip: owner.clip, generated: true, text: false }
   const [hit] = known
   if (hit === undefined) return null
   return {
-    frame: hit.measure.frame,
+    frame: drawnFrame(hit.measure),
     clip: hit.layer.clip,
     generated: false,
     text: isText(hit.layer),

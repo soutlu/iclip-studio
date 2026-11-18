@@ -13,6 +13,7 @@ import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MediaFallback } from '@/shared/ui/media-fallback'
 import { StageBackdrop } from '../components/stage-backdrop'
 import type { Point } from './canvas-geometry'
+import type { SnapRects } from './canvas-snap'
 import type { Rect } from './preview-canvas'
 import {
   previewPageUrl,
@@ -32,6 +33,11 @@ export type PreviewControl = {
   seek: (ms: number) => void
   /** 画布上 `point` 处从上往下能选中的层（`layers` 表里的位置）；预览页换了、没答时是空的。 */
   pick: (point: Point) => Promise<readonly PickedLayer[]>
+  /**
+   * 开始挪 `layers`（`layers` 表里的位置）时吸附用的矩形（见预览协议的 `snap`）；要在这一下的第一个 `draft` 之前
+   * 问。都找不到、预览页换了、没答时是 null。
+   */
+  snapRects: (layers: readonly number[]) => Promise<SnapRects | null>
   /**
    * 拖动中先在预览里摆一层（`layers` 表里的位置，见预览协议的 `draft`）；答复它的位移最后加了多少（父元素里的
    * 像素，`pin` 时含挪回中心的那一下），预览页换了、没答时是 null。
@@ -157,10 +163,11 @@ export function PreviewPlayer({
   })
   // 最后一次要量的层和最后一次找文字，预览页报回来时按序号对上
   const watchRef = useRef<{ seq: number; layers: readonly number[] }>({ seq: 0, layers: [] })
-  // 等预览页回答的 `pick`、`draft`（序号 → 收到回答时做什么）
+  // 等预览页回答的 `pick`、`snap`、`draft`（序号 → 收到回答时做什么）
   const answersRef = useRef({
     seq: 0,
     picks: new Map<number, (stack: readonly PickedLayer[]) => void>(),
+    snaps: new Map<number, (rects: SnapRects | null) => void>(),
     drafts: new Map<number, (moved: Point | null) => void>(),
   })
   const textRef = useRef<{ seq: number; id: string; fields: readonly string[] }>({
@@ -250,7 +257,7 @@ export function PreviewPlayer({
   useEffect(() => {
     if (src === undefined || origin === undefined) return
     outboxRef.current = { target: null, queue: [], seq: 0 }
-    const { picks, drafts } = answersRef.current
+    const { picks, snaps, drafts } = answersRef.current
     const receive = (event: MessageEvent) => {
       const target = frameRef.current?.contentWindow
       if (event.origin !== origin || target === null || target === undefined) return
@@ -320,6 +327,13 @@ export function PreviewPlayer({
           answers.delete(received.seq)
           return
         }
+        case 'snapRects': {
+          const answers = answersRef.current.snaps
+          const { moving, targets } = received
+          answers.get(received.seq)?.(moving === null ? null : { moving, targets })
+          answers.delete(received.seq)
+          return
+        }
         case 'drafted': {
           const answers = answersRef.current.drafts
           answers.get(received.seq)?.({ x: received.x, y: received.y })
@@ -346,8 +360,10 @@ export function PreviewPlayer({
       if (bufferingRef.current) reportBuffering(false)
       // 换了预览页：还在等的回答不会来了
       for (const answer of picks.values()) answer([])
+      for (const answer of snaps.values()) answer(null)
       for (const answer of drafts.values()) answer(null)
       picks.clear()
+      snaps.clear()
       drafts.clear()
     }
   }, [src, origin, post, load, reportBuffering])
@@ -418,6 +434,13 @@ export function PreviewPlayer({
           const seq = (answers.seq += 1)
           answers.picks.set(seq, resolve)
           post({ type: 'pick', seq, x, y })
+        }),
+      snapRects: (layers) =>
+        new Promise((resolve) => {
+          const answers = answersRef.current
+          const seq = (answers.seq += 1)
+          answers.snaps.set(seq, resolve)
+          post({ type: 'snap', seq, layers: [...layers] })
         }),
       draft: (layer, move, styles, pin) =>
         new Promise((resolve) => {

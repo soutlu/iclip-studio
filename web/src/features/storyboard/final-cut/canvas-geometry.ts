@@ -10,7 +10,8 @@ export type Frame = { cx: number; cy: number; width: number; height: number; ang
 
 const radians = (degrees: number) => (degrees * Math.PI) / 180
 
-const rotated = ({ x, y }: Point, degrees: number): Point => {
+/** 向量 (`x`, `y`) 顺时针转 `degrees` 度。 */
+export const rotated = ({ x, y }: Point, degrees: number): Point => {
   const cos = Math.cos(radians(degrees))
   const sin = Math.sin(radians(degrees))
   return { x: x * cos - y * sin, y: x * sin + y * cos }
