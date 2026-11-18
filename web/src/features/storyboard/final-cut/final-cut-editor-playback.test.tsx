@@ -81,6 +81,8 @@ describe('final-cut 编辑器 · 播放', () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     const user = userEvent.setup()
     await openEditor()
+    // 下面要往预览的播放器上发事件：等它换上来，不靠固定的等待
+    await previewSettled()
     await act(() => new Promise((resolve) => setTimeout(resolve, 500)))
 
     editorRoot().focus()
