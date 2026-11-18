@@ -150,21 +150,21 @@ const variableOf = (path: string): string | undefined => {
 /**
  * 主文件的这条补丁能不能直接打。字幕的根变量能：各句的字由场景里它自己的字显示，运行库加载以后不再读根变量，
  * 打进去只为副本会话和编辑器对得上。调音的属性能，只要片段在预览的那一份（`preview`）里：别的语言的配音片段、
- * 隐藏的片段不在。原文以外的语言下别的都不行（套语言改过发出去的那一份，不是引擎补丁），只有调音的这一步
- * （`mixing`）里的总长能：每步编辑都重写一次总长，套语言不改根上的总长。
+ * 隐藏的片段不在。总长没变（`totalKept`）时能：编辑器每步都重写一次总长，没变的这条什么都不改。原文以外的
+ * 语言下别的都不行（套语言改过发出去的那一份，不是引擎补丁）。
  */
 const isLiveMain = (
   patch: JsonPatchOp,
   foreign: boolean,
   captionVariables: ReadonlySet<string>,
   preview: string,
-  mixing: boolean,
+  totalKept: boolean,
 ) => {
   const variable = variableOf(patch.path)
   if (variable !== undefined) return captionVariables.has(variable)
   const mixTarget = mixTargetOf(patch.path)
   if (mixTarget !== undefined) return preview.includes(` data-hf-id="${mixTarget}"`)
-  if (patch.path === '/metadata/duration') return !foreign || mixing
+  if (patch.path === '/metadata/duration') return !foreign || totalKept
   if (foreign) return false
   const element = ELEMENT.exec(patch.path)
   if (element === null) return false
@@ -240,6 +240,12 @@ const shortens = (change: PatchChange) => {
   return typeof after !== 'number' || typeof before !== 'number' || after < before
 }
 
+/** 这一步写了总长、但和原来一样。 */
+const keepsTotal = (change: PatchChange) => {
+  const after = durationIn(change.patches)
+  return typeof after === 'number' && after === durationIn(change.inversePatches)
+}
+
 const variablesOf = (captions: PreviewCaptions | null) =>
   [...(captions?.captions.values() ?? [])].map((caption) => caption.variable)
 
@@ -304,11 +310,11 @@ export function previewSync(shown: PreviewFilm | null, next: PreviewFilm): Previ
   )
   for (const change of step) {
     if (change.file === PROJECT_MAIN) {
-      const mixing = change.patches.some((patch) => mixTargetOf(patch.path) !== undefined)
+      const kept = keepsTotal(change)
       if (
         shortens(change) ||
         !change.patches.every((patch) =>
-          isLiveMain(patch, foreign, captionVariables, next.html, mixing),
+          isLiveMain(patch, foreign, captionVariables, next.html, kept),
         )
       )
         return RELOAD
