@@ -248,6 +248,25 @@ describe('useFilmSession · 读存', () => {
     expect(saves).toHaveLength(2)
   })
 
+  it('一次保存在途时又有几处要存：它回来后只再存一次，不当成别处改的', async () => {
+    const saves = recordSaves(80)
+    const { result, onNotice } = await open()
+    await add(result, piece())
+    await waitFor(() => expect(saves).toHaveLength(1))
+    await add(result, piece({ mediaStart: 2_000 }))
+    let stored = false
+    await act(async () => {
+      result.current.flush()
+      stored = await result.current.settle()
+    })
+    expect(stored).toBe(true)
+    await settled(result)
+    expect(saves).toHaveLength(2)
+    expect(saves[1]?.expectedVersion).toBe(1)
+    expect(saves[1]?.html.match(/<video /g)).toHaveLength(2)
+    expect(onNotice).not.toHaveBeenCalled()
+  })
+
   it('别处已存过更新的一版（写的时候 409）：换成那一版、清空历史，并提示', async () => {
     const stored = putMockProjectMain(CONVERSATION, mainFile([video()], CANVAS))
     const newer = video({ mediaStart: 500, duration: 3_000 })

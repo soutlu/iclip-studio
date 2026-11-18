@@ -1043,7 +1043,10 @@ export function useFilmSession(
   )
 
   const saveNow = useCallback(async (): Promise<'saved' | 'clean' | 'reloaded' | 'failed'> => {
-    await settled()
+    // 在途的那次回来时可能有几处都在等它：醒来后先看别处是不是已经开始存了，是就接着等。从这里看完到
+    // 下面记下 `inFlightRef` 之间没有 await，同一时刻只有一次保存在写
+    do await settled()
+    while (inFlightRef.current !== null || addingLocaleRef.current !== null)
     const present = presentRef.current
     // 字幕场景先存、主文件后存：主文件挂载着场景，先存主文件的话导出可能取到还没存的场景
     const writes = [...(projectRef.current?.files ?? [])]
