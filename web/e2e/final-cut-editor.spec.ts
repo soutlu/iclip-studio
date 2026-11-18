@@ -3415,6 +3415,12 @@ const stepPlayhead = async (page: Page, editor: Locator, from: number, steps: nu
   }
 }
 
+/**
+ * 等 `check` 通过，量预览里的元素时用。预览重新加载的那一下元素不在，`previewRect` 会报错；
+ * `expect.poll` 遇到报错直接失败，这里报错也接着重试，到点才失败。
+ */
+const settles = (check: () => Promise<void>) => expect(check).toPass({ timeout: 10_000 })
+
 /** 预览里 final-cut 中 `selector` 那个元素的框，按画面的宽高算成 0–1 的比例。 */
 const previewRect = (player: Locator, selector: string) =>
   player.evaluate((element: PreviewPlayer, query) => {
@@ -3595,9 +3601,9 @@ test('画面上拖动贴片里的字：拖动中预览跟着动，松手写进�
   await page.mouse.move(spot.x + 40, spot.y + 20, { steps: 4 })
   // 还没松手：预览里已经挪过去了
   const canvas = await boxOf(layer)
-  await expect
-    .poll(async () => ((await previewRect(player, TEXT)).x - before.x) * canvas.width)
-    .toBeCloseTo(40, 0)
+  await settles(async () =>
+    expect(((await previewRect(player, TEXT)).x - before.x) * canvas.width).toBeCloseTo(40, 0),
+  )
   await page.mouse.up()
   // 拖的距离（画布像素）换成组件里的像素
   const saved = savedElement(await moved, 'ff-text')
@@ -3609,12 +3615,11 @@ test('画面上拖动贴片里的字：拖动中预览跟着动，松手写进�
   expect(styleOf(saved)).toEqual({})
   expect(mainSaves).toBe(0)
   // 存下以后预览重新取组件文件：还在挪过去的地方
-  await expect
-    .poll(
-      async () =>
-        ((await previewRect(finalCutPreviewPlayer(editor), TEXT)).x - before.x) * canvas.width,
-    )
-    .toBeCloseTo(40, 0)
+  await settles(async () =>
+    expect(
+      ((await previewRect(finalCutPreviewPlayer(editor), TEXT)).x - before.x) * canvas.width,
+    ).toBeCloseTo(40, 0),
+  )
 
   // 焦点在画面上：方向键挪选中的这一层（画布上 1 像素），不挪播放头
   const step = 1 / scale
@@ -3641,13 +3646,13 @@ test('画面上拖动贴片里的字：拖动中预览跟着动，松手写进�
     .getByRole('button', { name: '撤销' })
   for (let count = 0; count < 3; count += 1) await undo.click()
   await undone
-  await expect
-    .poll(async () =>
+  await settles(async () =>
+    expect(
       Math.abs(
         ((await previewRect(finalCutPreviewPlayer(editor), TEXT)).x - before.x) * canvas.width,
       ),
-    )
-    .toBeLessThan(0.5)
+    ).toBeLessThan(0.5),
+  )
   expect(mainSaves).toBe(0)
 })
 
@@ -3675,7 +3680,7 @@ test('其它语言下画面上挪贴片里的一层直接打进预览：存下�
   const canvas = await boxOf(layer)
   const shift = async () =>
     ((await previewRect(finalCutPreviewPlayer(editor), TEXT)).x - before.x) * canvas.width
-  await expect.poll(shift).toBeLessThan(-5)
+  await settles(async () => expect(await shift()).toBeLessThan(-5))
   const live = await shift()
   expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
 
@@ -3728,9 +3733,11 @@ test('画面上缩放贴片里的字：拖右下角的把手往外，以中心�
   expect(styleOf(saved)['scale']).toBeUndefined()
   // 布局从左上角长大，中心挪回原处的那一下照挪写
   expect(Number(saved?.['data-x'])).toBeLessThan(0)
-  await expect
-    .poll(async () => (await previewRect(finalCutPreviewPlayer(editor), TEXT)).width / before.width)
-    .toBeCloseTo(ratio, 1)
+  await settles(async () =>
+    expect(
+      (await previewRect(finalCutPreviewPlayer(editor), TEXT)).width / before.width,
+    ).toBeCloseTo(ratio, 1),
+  )
   const after = await previewRect(finalCutPreviewPlayer(editor), TEXT)
   const canvas = await boxOf(layer)
   expect(
@@ -3833,12 +3840,11 @@ test('组件根不接收指针时里面的层照样点得中、拖得动：选�
   expect(Math.abs(Number(/data-y="([^"]+)"/.exec(badge)?.[1]) - 20 / zoom)).toBeLessThan(0.5)
   expect(mainSaves).toBe(0)
   const canvas = await boxOf(layer)
-  await expect
-    .poll(
-      async () =>
-        ((await previewRect(finalCutPreviewPlayer(editor), BADGE)).x - before.x) * canvas.width,
-    )
-    .toBeCloseTo(40, 0)
+  await settles(async () =>
+    expect(
+      ((await previewRect(finalCutPreviewPlayer(editor), BADGE)).x - before.x) * canvas.width,
+    ).toBeCloseTo(40, 0),
+  )
 })
 
 test('动画脚本驱动的层拖不了：点贴片的色底选中它、没有缩放把手，拖它说明原因、什么都不写', async ({
@@ -4182,13 +4188,12 @@ test('画面上的字幕按句改：点正在显示的那句选中它（下面�
   expect(Math.abs(Number(savedElement(scene, second)?.['data-y']) + 60 / zoom)).toBeLessThan(0.5)
   expect(savedElement(scene, first)?.['data-y']).toBeUndefined()
   const canvas = await boxOf(layer)
-  await expect
-    .poll(
-      async () =>
-        ((await previewRect(finalCutPreviewPlayer(editor), selector)).y - secondBefore.y) *
+  await settles(async () =>
+    expect(
+      ((await previewRect(finalCutPreviewPlayer(editor), selector)).y - secondBefore.y) *
         canvas.height,
-    )
-    .toBeCloseTo(-60, 0)
+    ).toBeCloseTo(-60, 0),
+  )
   expect(await previewRect(finalCutPreviewPlayer(editor), `[data-hf-id="${first}"]`)).toEqual(
     firstBefore,
   )
