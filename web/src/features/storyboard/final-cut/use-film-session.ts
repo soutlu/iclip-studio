@@ -17,6 +17,7 @@ import {
   type NewCaption,
 } from './caption-edit'
 import { VOICE_GROUP } from './audio-role'
+import { BEATS_DIR } from './beat-file'
 import { canvasLayersOf, type CanvasLayer, type Mount } from './canvas-layers'
 import {
   automationOf,
@@ -1026,6 +1027,12 @@ export function useFilmSession(
       await (inFlightRef.current ?? addingLocaleRef.current)
   }, [])
 
+  /** 工作区里已经有这份工程（主文件存过了）：编辑器自己往工程里加的旁挂文件（比如节拍文件）这时才写。 */
+  const hasStoredProject = useCallback(
+    () => (projectRef.current?.files.get(PROJECT_MAIN)?.version ?? null) !== null,
+    [],
+  )
+
   /** 换上工作区里现在的那一份 `stored`，放弃本地没存的改动并提示。 */
   const adoptStored = useCallback(
     async (stored: StoredProject | null) => {
@@ -1132,7 +1139,8 @@ export function useFilmSession(
           )
         )
           void checkStored()
-        // 预览从工作区取的文件变了要重新加载；打开着的字幕场景和语言的值随主文件一起发给预览，不用
+        // 预览从工作区取的文件变了要重新加载；打开着的字幕场景和语言的值随主文件一起发给预览，不用；
+        // 节拍文件预览不读，也不用
         const project = projectRef.current
         const sent =
           project !== null && project.files.has(project.captionsPath)
@@ -1143,7 +1151,8 @@ export function useFilmSession(
             (change) =>
               change.path !== PROJECT_MAIN_PATH &&
               change.path !== sent &&
-              projectLocaleOf(change.path) === undefined,
+              projectLocaleOf(change.path) === undefined &&
+              !change.path.startsWith(`${PROJECT_DIR}/${BEATS_DIR}/`),
           )
         )
           setFilesRevision((revision) => revision + 1)
@@ -2317,6 +2326,7 @@ export function useFilmSession(
     undo: () => step('undo'),
     redo: () => step('redo'),
     save,
+    hasStoredProject,
     flush: () => void saveNow(),
     /** 等没存的改动存完；存好了（或本来就没有要存的）答 true，存失败或换成了别处改的那一份答 false。 */
     settle: async () => {

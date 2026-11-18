@@ -8,7 +8,7 @@ import { isBeatSource, type BeatGrid } from './music-beats'
 const LONGEST_SOURCE_MS = 15 * 60 * 1000
 
 /**
- * 时间线上配乐（见 `isBeatSource`）的节拍，按音频地址。在后台一首一首地算（`read` 读声音并分析），
+ * 时间线上配乐（见 `isBeatSource`）的节拍，按音频地址。在后台一首一首地取（`read` 读存着的节拍或读声音来算），
  * 同一个地址只算一次；算的时候不挡操作。读不到声音、没有稳定的节拍的地址就没有节拍，不提示。
  * 素材长度（`sourceMs`）已知、超过 15 分钟的不算。
  */

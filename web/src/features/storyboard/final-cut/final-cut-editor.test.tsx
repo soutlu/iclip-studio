@@ -26,9 +26,11 @@ import {
   captionsScene,
   captionVariable,
 } from './composition/captions'
+import { beatFileContent, parseBeatFile } from './beat-file'
 import type { CaptionClip, FilmClip } from './composition/film'
 import { FinalCutEditor } from './final-cut-editor'
 import { eqBandsOf, ownEffects, presetOf } from './mix-fx'
+import type { BeatGrid } from './music-beats'
 
 const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: number }>())
 // 素材有没有音轨：在 `sounds` 里的有，在 `unreadable` 里的读音轨时出错，别的没有
@@ -767,7 +769,10 @@ describe('final-cut 编辑器 · 吸到配乐的节拍', () => {
     )
   })
 
+  // 读配乐声音的次数：算节拍要先读声音
+  let musicReads = 0
   beforeEach(() => {
+    musicReads = 0
     vi.stubGlobal(
       'OfflineAudioContext',
       class {
@@ -776,13 +781,18 @@ describe('final-cut 编辑器 · 吸到配乐的节拍', () => {
         }
       },
     )
-    server.use(http.get(MUSIC, () => HttpResponse.arrayBuffer(drums.slice().buffer)))
+    server.use(
+      http.get(MUSIC, () => {
+        musicReads += 1
+        return HttpResponse.arrayBuffer(drums.slice().buffer)
+      }),
+    )
   })
 
   afterEach(() => vi.unstubAllGlobals())
 
   // 视频片段在 0–1.2 秒（挪动时结尾离节拍远，只有开头吸），配乐在声音区 0–8 秒
-  const open = async () => {
+  const seed = () =>
     putMockProjectMain(
       CONVERSATION,
       mainFile(
@@ -793,6 +803,8 @@ describe('final-cut 编辑器 · 吸到配乐的节拍', () => {
         { width: 720, height: 1280 },
       ),
     )
+  const open = async () => {
+    seed()
     const user = userEvent.setup()
     await openEditor()
     return user
@@ -846,6 +858,154 @@ describe('final-cut 编辑器 · 吸到配乐的节拍', () => {
     expect(screen.queryByTestId('snap-guide')).toBeNull()
     release()
     await waitSaved(() => expect(savedStart()).toBe((beat - 20) / 1000))
+  })
+
+  // 配乐的节拍文件（工作区里的路径）：按地址的路径起名
+  const BEAT_FILE = 'final-cut/beats/audio/music.mp3.json'
+
+  it('工程里有这首配乐的节拍文件：不读声音、不算，画出文件里的节拍', async () => {
+    // 文件里是每 0.4 秒一拍（和鼓点不一样），画出来的是文件里的
+    const stored: BeatGrid = {
+      beats: Array.from({ length: 20 }, (_, index) => index * 0.4),
+      downbeats: Array.from({ length: 5 }, (_, index) => index * 1.6),
+      seconds: 8,
+    }
+    putMockWorkspaceFile(CONVERSATION, BEAT_FILE, beatFileContent(MUSIC, stored))
+    await open()
+    const beats = await beatsDrawn()
+    expect(new Set(beats.slice(1).map((ms, i) => ms - (beats[i] ?? 0)))).toEqual(new Set([400]))
+    expect(musicReads).toBe(0)
+  })
+
+  it('工程里还没有节拍文件：算出来以后新建一份，存的就是画出来的节拍', async () => {
+    await open()
+    const beats = await beatsDrawn()
+    await waitFor(() => expect(mockWorkspaceFile(CONVERSATION, BEAT_FILE)).toBeDefined())
+    const stored = parseBeatFile(mockWorkspaceFile(CONVERSATION, BEAT_FILE)?.content ?? '')
+    expect(stored?.beats.map((seconds) => Math.round(seconds * 1000))).toEqual(beats)
+    expect(musicReads).toBe(1)
+  })
+
+  it('新建节拍文件不算一步撤销、不存主文件，预览不因为它重新加载', async () => {
+    seed()
+    const { socket } = await openEditor()
+    await previewSettled()
+    await waitFor(() => expect(mockWorkspaceFile(CONVERSATION, BEAT_FILE)).toBeDefined())
+    const loads = () =>
+      previewPages.latest().commands.filter((command) => command.type === 'load').length
+    const before = loads()
+    // 工作区照常通知节拍文件新建了
+    act(() =>
+      socket.deliver({
+        payload: { changes: [{ change: 'created', path: BEAT_FILE }] },
+        session_id: CONVERSATION,
+        timestamp: '2026-11-17T08:00:00+00:00',
+        type: 'event.fs.changed',
+      }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(loads()).toBe(before)
+    expect(within(toolbar()).getByRole('button', { name: '撤销' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    expect(savedVersion()).toBe(1)
+  })
+})
+
+describe('final-cut 编辑器 · 从素材栏拖进来吸节拍', () => {
+  const MUSIC = 'https://media.test/audio/music.mp3'
+  // 素材片的第一个镜头 1.2 秒：落在节拍上时结尾离别的节拍远，只有开头吸
+  const URL_SHORT = 'https://media.test/take-short.mp4'
+  const TAKE_SHORT = 'dddddddd-eeee-4fff-8000-111111111111'
+  files.set(URL_SHORT, { keyframes: [0, 1.2], duration: 3 })
+  const shortTake = makeGenerationJob({
+    id: TAKE_SHORT,
+    createdAt: '2026-09-01T10:00:00Z',
+    outputUrl: URL_SHORT,
+    shotIndex: 1,
+    durationMs: 3000,
+  })
+  // 存好的节拍：每 0.5 秒一拍，不用算
+  const grid: BeatGrid = {
+    beats: Array.from({ length: 16 }, (_, index) => index * 0.5),
+    downbeats: Array.from({ length: 4 }, (_, index) => index * 2),
+    seconds: 8,
+  }
+
+  // 视频片段 0–1.2 秒，配乐在声音区 0–8 秒；测试里一秒 100 像素
+  const open = async () => {
+    putMockProjectMain(
+      CONVERSATION,
+      mainFile([video({ src: URL_A, duration: 1_200 }), audio({ src: MUSIC, duration: 8_000 })], {
+        width: 720,
+        height: 1280,
+      }),
+    )
+    putMockWorkspaceFile(
+      CONVERSATION,
+      'final-cut/beats/audio/music.mp3.json',
+      beatFileContent(MUSIC, grid),
+    )
+    const user = userEvent.setup()
+    await openEditor([shortTake])
+    await within(screen.getByRole('group', { name: /^配乐，/ })).findByTestId(
+      'beat-marks',
+      {},
+      { timeout: 4000 },
+    )
+    return user
+  }
+
+  /**
+   * jsdom 不排版：给时间线量出来的位置（时间区从 0 起，各行 40 像素高、从 100 往下排），返回视频片段那一行正中的
+   * 高度。
+   */
+  const layOutTimeline = () => {
+    const tracks = document.querySelector<HTMLElement>('.wf-tracks')
+    if (tracks === null) throw new Error('时间线还没画出来')
+    Object.defineProperty(tracks, 'clientWidth', { configurable: true, value: 5_000 })
+    Object.defineProperty(tracks, 'clientHeight', { configurable: true, value: 1_000 })
+    for (const [index, lane] of [...document.querySelectorAll('.wf-lane')].entries()) {
+      const top = 100 + index * 50
+      const box = { top, bottom: top + 40, left: 0, right: 5_000, width: 5_000, height: 40 }
+      Object.defineProperty(lane, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => ({ ...box, x: 0, y: top }),
+      })
+    }
+    const lane = document.querySelector('[data-clip-id="clip-1"]')?.closest('.wf-lane')
+    if (lane === null || lane === undefined) throw new Error('视频片段不在时间线上')
+    return lane.getBoundingClientRect().top + 20
+  }
+
+  /** 把素材片的第一个镜头拖到时间线视频那一行的第 `ms` 毫秒处松手。 */
+  const dropShotAt = async (ms: number) => {
+    const button = await shot(/^生成 A 镜头 1，/)
+    const y = layOutTimeline()
+    const x = ms / 10
+    fireEvent.pointerDown(button, { button: 0, pointerId: 1, clientX: 0, clientY: 0 })
+    fireEvent.pointerMove(button, { pointerId: 1, clientX: x, clientY: y })
+    fireEvent.pointerUp(button, { pointerId: 1, clientX: x, clientY: y })
+  }
+  const droppedStart = () =>
+    Number(
+      new RegExp(`<video [^>]*src="${URL_SHORT}"[^>]*>`)
+        .exec(savedFilm())?.[0]
+        .match(/data-start="([\d.]+)"/)?.[1],
+    )
+
+  it('拖一个镜头到节拍附近松手：开头正好落在节拍上', async () => {
+    await open()
+    await dropShotAt(2_480)
+    await waitSaved(() => expect(droppedStart()).toBe(2.5))
+  })
+
+  it('关掉吸附：不吸节拍，落在松手的位置', async () => {
+    const user = await open()
+    await user.click(within(toolbar()).getByRole('button', { name: '吸附' }))
+    await dropShotAt(2_480)
+    await waitSaved(() => expect(droppedStart()).toBe(2.48))
   })
 })
 
