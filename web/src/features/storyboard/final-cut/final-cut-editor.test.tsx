@@ -544,14 +544,15 @@ describe('final-cut 编辑器 · 时间线', () => {
     return seek?.type === 'seek' ? seek.ms : undefined
   }
   /**
-   * 播放头的竖线量出来在横坐标 0 处（播放头在 0 秒）。测试里没有排版，竖线量不到高度时各行上不算按在竖线上。
+   * 播放头的竖线量出来在横坐标 `x` 处（默认 0，播放头在 0 秒；测试里一秒 100 像素）。测试里没有排版，竖线量不到
+   * 高度时各行上不算按在竖线上。
    */
-  const placeLine = () =>
+  const placeLine = (x = 0) =>
     vi.spyOn(screen.getByTestId('timeline-playhead'), 'getBoundingClientRect').mockReturnValue({
-      x: -1,
+      x: x - 1,
       y: 0,
-      left: -1,
-      right: 1,
+      left: x - 1,
+      right: x + 1,
       top: 0,
       bottom: 400,
       width: 2,
@@ -654,6 +655,61 @@ describe('final-cut 编辑器 · 时间线', () => {
     expect(await screen.findByRole('menu', { name: 'A · 镜头 1' })).toBeVisible()
     // 右键没有按住竖线：播放头没有在拖
     expect(screen.getByTestId('timeline-playhead')).not.toHaveAttribute('data-dragging')
+  })
+
+  it('播放头在选中的片段里：按住片段身体上竖线的位置拖，挪的是片段', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    // 点选第二个片段（2–3.5 秒），播放头挪到它正中 2.75 秒
+    await user.click(clip(/1\.5 秒$/))
+    await waitFor(() => expect(lastSeekMs()).toBe(2_750))
+    placeLine(275)
+    // 测试里片段的左边量成 0：拖 300 像素就是想挪到第 3 秒
+    const body = clip(/1\.5 秒$/)
+    fireEvent.pointerDown(body, { button: 0, pointerId: 1, clientX: 275, clientY: 60 })
+    fireEvent.pointerMove(body, { pointerId: 1, clientX: 575, clientY: 60 })
+    fireEvent.pointerUp(body, { pointerId: 1, clientX: 575, clientY: 60 })
+    await waitSaved(() => expect(savedClips()[1]).toContain('data-start="3"'))
+    expect(lastSeekMs()).toBe(2_750)
+  })
+
+  it('在竖线上点一下没选中的片段：选中它，播放头不动', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    await openEditor()
+    placeLine()
+    const body = clip(/2\.0 秒$/)
+    fireEvent.pointerDown(body, { button: 0, pointerId: 1, clientX: 0, clientY: 60 })
+    fireEvent.pointerUp(body, { pointerId: 1, clientX: 0, clientY: 60 })
+    expect(body).toHaveAttribute('aria-pressed', 'true')
+    expect(playheadText()).toBe('00:00.00')
+  })
+
+  it('在竖线上点一下空白处：取消选中', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await user.click(clip(/2\.0 秒$/))
+    expect(clip(/2\.0 秒$/)).toHaveAttribute('aria-pressed', 'true')
+    placeLine()
+    fireEvent.pointerDown(timeline(), { button: 0, pointerId: 1, clientX: 0, clientY: 60 })
+    fireEvent.pointerUp(timeline(), { pointerId: 1, clientX: 0, clientY: 60 })
+    expect(clip(/2\.0 秒$/)).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('在竖线上按住：挪过一点点不动播放头，拖开了才拖播放头', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    await openEditor()
+    placeLine()
+    const body = clip(/2\.0 秒$/)
+    const before = lastSeekMs()
+    fireEvent.pointerDown(body, { button: 0, pointerId: 1, clientX: 0, clientY: 60 })
+    fireEvent.pointerMove(body, { pointerId: 1, clientX: 3, clientY: 60 })
+    expect(screen.getByTestId('timeline-playhead')).not.toHaveAttribute('data-dragging')
+    expect(lastSeekMs()).toBe(before)
+    fireEvent.pointerMove(body, { pointerId: 1, clientX: 50, clientY: 60 })
+    expect(screen.getByTestId('timeline-playhead')).toHaveAttribute('data-dragging')
+    await waitFor(() => expect(lastSeekMs()).toBe(500))
   })
 
   /** 时间线上播放位置的读数。 */

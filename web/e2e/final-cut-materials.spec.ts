@@ -202,8 +202,8 @@ const centerOf = async (locator: Locator) => {
 }
 
 /**
- * 在时间尺最右边点一下，播放头停到 final-cut 的结尾。按住穿过片段的播放头竖线是拖播放头，要按着拖的片段
- * 正好在竖线下面时先把播放头挪开。
+ * 在时间尺最右边点一下，播放头停到 final-cut 的结尾。在穿过没选中的片段的竖线上按住拖开是拖播放头，要拖的
+ * 片段没选中、又正好在竖线下面时先把播放头挪开。
  */
 const parkPlayheadAtEnd = async (page: Page, editor: Locator) => {
   const ruler = await editor.getByRole('slider', { name: '时间线播放位置' }).boundingBox()
@@ -1344,13 +1344,6 @@ test('多选：Shift 点选两个片段一起删掉再撤销回来；框选跨�
     if (box === null) throw new Error('元素尚未布局')
     return box
   }
-  /**
-   * 点选镜头 `shot`，点在片段左边四分之一处：点选过的 1 秒的片段播放头停在它正中，正中按到的是播放头的竖线。
-   */
-  const pickShot = async (shot: number) => {
-    const box = await boxOf(clipOf(shot))
-    await clipOf(shot).click({ position: { x: box.width / 4, y: box.height / 2 } })
-  }
 
   // 选中着片段、又开着选择工具的菜单时按 Esc：先关菜单，选中不变
   await clipOf(3).click()
@@ -1395,7 +1388,7 @@ test('多选：Shift 点选两个片段一起删掉再撤销回来；框选跨�
     await expect(editor.getByTestId('marquee')).toBeVisible()
   }
   // 框选中途按 Esc：只取消这次框选，原来的选中不变
-  await pickShot(1)
+  await clipOf(1).click()
   await frameFromTo()
   await expect.poll(selectedShots).toEqual([3, 4])
   await page.keyboard.press('Escape')
@@ -1423,7 +1416,7 @@ test('多选：Shift 点选两个片段一起删掉再撤销回来；框选跨�
   await expect.poll(async () => (await savedClips(page)).sort()).toEqual([...before].sort())
 
   // 点时间尺只挪播放头、不动选中；] 选中播放头右边的片段，跨着播放头的镜头 3 也算
-  await pickShot(1)
+  await clipOf(1).click()
   const ruler = editor.getByRole('slider', { name: '时间线播放位置' })
   const rulerBox = await boxOf(ruler)
   await page.mouse.click(to.x, rulerBox.y + rulerBox.height / 2)

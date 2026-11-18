@@ -205,11 +205,23 @@ const ROW_REACH_PX = 3
 // 在各行上离播放头的竖线这么近（像素）按下就是按住了竖线（照原型，两边各 6 像素）
 const PLAYHEAD_REACH = 6
 
+/** 按下的元素所在的片段（片段的身体、把手、音量曲线都算）；不在片段上时是 undefined。 */
+const clipIdAt = (target: EventTarget): string | undefined =>
+  target instanceof Element
+    ? target.closest<HTMLElement>('[data-clip-id]')?.dataset['clipId']
+    : undefined
+
 /**
- * 竖线上让给它们的精确的小目标：裁剪把手、音量曲线的线（按下加一个点）和点。播放头常常正停在片段的边上，
- * 这时把手大半在竖线底下。曲线的线和点只在能改时接收指针，不能改时按到的是片段，归竖线。
+ * 在竖线上按下、还没拖开的这一下：没挪过 `DRAG_THRESHOLD` 就松手当作点了下面的东西（`clip` 是下面的片段，
+ * 空白处是 null），挪过了才开始拖播放头（`started`）。
  */
-const PRECISE_TARGETS = '.timeline-handle, .wf-envelope-hit, .wf-envelope-point'
+type PlayheadPress = {
+  pointerId: number
+  originX: number
+  originY: number
+  clip: string | null
+  started: boolean
+}
 
 // 时间区左右留的空，露出开头的播放头和两端的把手；不算进能排时间的宽度。只在这里定，时间区的外边距用它
 const INSET = { left: 8, right: 6 }
@@ -1263,15 +1275,15 @@ export function FilmTimeline({
   const endScrub = () => setClipGuideMs(null)
 
   /**
-   * 各行上按左键是不是按住了播放头的竖线：离画出来的竖线不到 `PLAYHEAD_REACH` 像素，而且不是按在精确的小目标上
-   * （裁剪把手、能改的音量曲线的线和点），那些照原来的操作走。竖线还没排版（量不到高度）时不算；切开工具下竖线不能
-   * 拖，点击归剃刀；final-cut 是空的时也不能拖。竖线本身不接收指针，按位置在这里判断，所以右键照常落到下面的片段
-   * 或空档上。
+   * 各行上按左键是不是按在了播放头的竖线上：离画出来的竖线不到 `PLAYHEAD_REACH` 像素，而且不是按在选中的片段上。
+   * 选中的片段整个优先（身体、把手、音量曲线都算；把手只画在选中的片段上，曲线也只在选中时能改）：点选后播放头
+   * 常常跳到指针下面，再按照样是拖这个片段、双击它。竖线还没排版（量不到高度）时不算；切开工具下竖线不能拖，点击
+   * 归剃刀；final-cut 是空的时也不能拖。竖线本身不接收指针，按位置在这里判断，所以右键照常落到下面的片段或空档上。
    */
   const onPlayheadLine = (event: { clientX: number; target: EventTarget }) => {
     if (razor || totalMs <= 0) return false
-    if (event.target instanceof Element && event.target.closest(PRECISE_TARGETS) !== null)
-      return false
+    const under = clipIdAt(event.target)
+    if (under !== undefined && selected.has(under)) return false
     const line = rulerBarRef.current?.querySelector('.timeline-playhead')?.getBoundingClientRect()
     return (
       line !== undefined &&
@@ -1280,33 +1292,61 @@ export function FilmTimeline({
     )
   }
 
-  // 按住播放头的竖线拖动定位；指针停在竖线上（不在精确的小目标上）时光标是左右拖的样子
-  const scrubPointerRef = useRef<number | null>(null)
+  // 按住播放头的竖线拖动定位；指针停在竖线上（不在选中的片段上）时光标是左右拖的样子
+  const playheadPressRef = useRef<PlayheadPress | null>(null)
   const [scrubbing, setScrubbing] = useState(false)
   const [overPlayhead, setOverPlayhead] = useState(false)
   const pressPlayhead = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || !inLanes(event) || !onPlayheadLine(event)) return
-    // 按住竖线不选中下面的片段、不开始框选
-    event.preventDefault()
+    // 按在竖线上先不给下面的片段、框选，拖开了才拖播放头，没拖开就松手当作点了下面的东西
     event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
-    scrubPointerRef.current = event.pointerId
-    setScrubbing(true)
-    scrubTo(timeAt(event.clientX))
+    playheadPressRef.current = {
+      pointerId: event.pointerId,
+      originX: event.clientX,
+      originY: event.clientY,
+      clip: clipIdAt(event.target) ?? null,
+      started: false,
+    }
   }
-  /** 拖着竖线时跟着指针定位，答 true（这一下用掉了）。 */
+  /** 按着竖线挪：挪过阈值才开始拖播放头，之后跟着指针定位。答 true（这一下用掉了）。 */
   const dragPlayhead = (event: PointerEvent<HTMLDivElement>) => {
-    if (scrubPointerRef.current !== event.pointerId) return false
+    const press = playheadPressRef.current
+    if (press === null || press.pointerId !== event.pointerId) return false
+    if (!press.started) {
+      const moved = Math.hypot(event.clientX - press.originX, event.clientY - press.originY)
+      if (moved <= DRAG_THRESHOLD) return true
+      press.started = true
+      setScrubbing(true)
+    }
     scrubTo(timeAt(event.clientX))
     return true
   }
-  /** 松开或取消拖竖线，答 true（这一下用掉了）。 */
+  /**
+   * 松开按着竖线的这一下：拖过的收起；没拖开的当作点了下面的东西，片段照点选的规则选中（Shift、⌘、Ctrl 照常是
+   * 加减选中），空白处照点空白处取消选中。答 true（这一下用掉了）。
+   */
   const releasePlayhead = (event: PointerEvent<HTMLDivElement>) => {
-    if (scrubPointerRef.current !== event.pointerId) return false
-    scrubPointerRef.current = null
+    const press = playheadPressRef.current
+    if (press === null || press.pointerId !== event.pointerId) return false
+    playheadPressRef.current = null
     releasePointer(event)
-    setScrubbing(false)
-    endScrub()
+    if (press.started) {
+      setScrubbing(false)
+      endScrub()
+    } else if (press.clip === null) onSelect(new Set())
+    else pick(press.clip, togglesSelection(event), true)
+    return true
+  }
+  /** 按着竖线的这一下被取消：拖过的收起，没拖开的什么都不做。答 true（这一下用掉了）。 */
+  const cancelPlayhead = (event: PointerEvent<HTMLDivElement>) => {
+    const press = playheadPressRef.current
+    if (press === null || press.pointerId !== event.pointerId) return false
+    playheadPressRef.current = null
+    if (press.started) {
+      setScrubbing(false)
+      endScrub()
+    }
     return true
   }
   const hoverPlayhead = (event: PointerEvent<HTMLDivElement>) =>
@@ -1368,7 +1408,7 @@ export function FilmTimeline({
             className={cn('wf-lanes', razor && 'is-razor')}
             data-on-playhead={overPlayhead || scrubbing ? '' : undefined}
             onPointerCancel={(event) => {
-              if (!releasePlayhead(event)) dropFraming()
+              if (!cancelPlayhead(event)) dropFraming()
             }}
             onPointerDown={pressLanes}
             onPointerDownCapture={pressPlayhead}
