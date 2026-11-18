@@ -2077,6 +2077,30 @@ async def test_first_frames_and_edits_leave_the_aspect_ratio_to_the_gateway(
     assert stored_request(only_new(repo, seeded)).model_dump()["aspect_ratio"] is None
 
 
+@pytest.mark.parametrize("base_role", ["take", "composite"])
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"reference_image_urls": ["https://cdn.test/first.png"]},
+        {"reference_video_urls": [CLIP_URL], "seconds": -1},
+    ],
+    ids=["图生", "视频编辑"],
+)
+async def test_an_edit_is_generated_at_the_originals_resolution(
+    base_role: str, fields: dict[str, object]
+) -> None:
+    repo = InMemoryGenerationRepository()
+    base = seed_portrait_base(repo, base_role)
+    original = repo.jobs[base.root_job_id or base.id]
+    repo.jobs[original.id] = replace(original, request=video_request(resolution="1080p"))
+    seeded = set(repo.jobs)
+
+    response = await post_image_clip(repo, base, **fields)
+
+    assert response.status_code == 202, response.text
+    assert stored_request(only_new(repo, seeded)).model_dump()["resolution"] == "1080p"
+
+
 @pytest.mark.parametrize("ratio", [None, "adaptive"])
 async def test_reference_images_are_rejected_when_the_original_has_no_concrete_ratio(
     ratio: str | None,
