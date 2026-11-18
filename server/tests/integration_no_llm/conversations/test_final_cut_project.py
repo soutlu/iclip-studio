@@ -341,6 +341,9 @@ async def test_missing_and_irregular_paths_are_404_and_vendor_redirects(
     assert quoted.headers["location"] == (
         "/hyperframes/vendor/%E5%AD%97%E4%BD%93/%E6%80%9D%E6%BA%90%20%E9%BB%91%E4%BD%93.woff2"
     )
+    versioned = await preview.get(f"{base}/vendor/npm/gsap@3.14.2/dist/gsap.min.js")
+    assert versioned.status_code == 307
+    assert versioned.headers["location"] == "/hyperframes/vendor/npm/gsap@3.14.2/dist/gsap.min.js"
 
 
 async def seed_turn(pg_url: str, conversation_id: str) -> None:
