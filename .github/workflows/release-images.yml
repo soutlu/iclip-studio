@@ -1,13 +1,13 @@
 name: release-images
 
 # GitHub 构建镜像，直接上传到 ACR；GHCR 只保存跨版本共享的 BuildKit 构建缓存，运行时镜像不用。
-# 正式发布只由版本标签触发；手动运行只验证分支，不更新 latest。
+# 正式发布只由 vX.Y.Z 标签触发，每次构建全部四个镜像；手动运行只验证分支，不更新 latest。
 permissions:
   contents: read
 
 on:
   push:
-    tags: ["v*", "runtime-v*"]
+    tags: ["v*"]
   workflow_dispatch:
 
 concurrency:
@@ -38,16 +38,13 @@ jobs:
         run: |
           case "$GITHUB_EVENT_NAME:$GITHUB_REF_TYPE" in
             push:tag)
-              if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                services='["server","web","render"]'
-              elif [[ "$GITHUB_REF_NAME" =~ ^runtime-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                services='["runtime"]'
-              else
-                echo "::error::Release tags must use vX.Y.Z or runtime-vX.Y.Z"
-                echo "准备失败：版本标签必须符合 vX.Y.Z（应用版本）或 runtime-vX.Y.Z（运行时版本）格式。" >> "$GITHUB_STEP_SUMMARY"
+              if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "::error::Release tags must use vX.Y.Z"
+                echo "准备失败：版本标签必须符合 vX.Y.Z 格式。" >> "$GITHUB_STEP_SUMMARY"
                 exit 1
               fi
               tag=$GITHUB_REF_NAME
+              services='["server","web","render","runtime"]'
               release=true
               ;;
             workflow_dispatch:branch)
@@ -230,32 +227,24 @@ jobs:
       cancel-in-progress: false
       queue: max
     steps:
+      # 只为下面的 git ls-remote 提供带凭证的 origin，检出哪个提交无关紧要。
       - uses: actions/checkout@v7
-        with:
-          ref: main
       - name: Check current release
         id: current
         shell: bash
         env:
-          RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         run: |
-          if [[ "$RELEASE_TAG" == runtime-v* ]]; then
-            newest=$(git ls-remote --tags --refs --sort=v:refname origin 'runtime-v*' \
-              | sed 's|.*refs/tags/||' \
-              | grep -E '^runtime-v[0-9]+\.[0-9]+\.[0-9]+$' \
-              | tail -n 1)
-            if [ "$newest" = "$RELEASE_TAG" ]; then
-              echo "publish=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "publish=false" >> "$GITHUB_OUTPUT"
-              printf '跳过 latest：该版本不是最大的运行时版本（`%s`），保留版本标签。\n' "$newest" >> "$GITHUB_STEP_SUMMARY"
-            fi
-          elif [ "$(git rev-parse HEAD)" = "$RELEASE_COMMIT" ]; then
+          # 只比 vX.Y.Z 格式的标签：仓库里留着的 runtime-v* 等其他标签不参与。
+          newest=$(git ls-remote --tags --refs --sort=v:refname origin 'v*' \
+            | sed 's|.*refs/tags/||' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | tail -n 1)
+          if [ "$newest" = "$RELEASE_TAG" ]; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           else
             echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "跳过 latest：该版本提交不是 main 的最新提交，保留版本标签。" >> "$GITHUB_STEP_SUMMARY"
+            printf '跳过 latest：该版本不是版本号最大的标签（`%s`），保留版本标签。\n' "$newest" >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Install Skopeo
         if: steps.current.outputs.publish == 'true'
