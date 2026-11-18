@@ -39,6 +39,7 @@ function Harness({
   return (
     <FilmInspector
       audioPeaks={new Map()}
+      canvas={{ width: 1080, height: 1920 }}
       catalog={fixtureCatalog}
       clips={clips}
       keyframes={new Map()}
