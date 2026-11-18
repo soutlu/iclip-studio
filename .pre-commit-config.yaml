@@ -1,3 +1,5 @@
+# 没写 stages 的钩子只在提交时跑；推送时只跑下面标了 pre-push 的 pyright。
+default_stages: [pre-commit]
 repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
@@ -5,27 +7,42 @@ repos:
       - id: gitleaks
         stages: [pre-commit]
         args: [--config=.gitleaks.toml, --ignore-gitleaks-allow]
+  # ruff 只处理暂存的 Python 文件。每个项目用自己虚拟环境里的 ruff，在项目目录里按项目内路径运行，
+  # 与 make lint / make format-check 用同一份配置；--force-exclude 让配置里的排除规则对显式传入的文件也生效。
   - repo: local
     hooks:
-      - id: python-ruff-check
-        name: server + plugins/video ruff check --fix
-        entry: bash -c 'cd server && uv run ruff check --fix . && cd ../plugins/video && uv run ruff check --fix .'
+      - id: server-ruff-check
+        name: server ruff check --fix
+        entry: bash -c 'cd server && uv run ruff check --fix --force-exclude "${@#server/}"' --
         language: system
-        pass_filenames: false
-        files: ^(server|plugins)/
-      - id: python-ruff-format
-        name: server + plugins/video ruff format
-        entry: bash -c 'cd server && uv run ruff format . && cd ../plugins/video && uv run ruff format .'
+        types_or: [python, pyi]
+        files: ^server/
+      - id: video-plugins-ruff-check
+        name: plugins/video ruff check --fix
+        entry: bash -c 'cd plugins/video && uv run ruff check --fix --force-exclude "${@#plugins/video/}"' --
         language: system
-        pass_filenames: false
-        files: ^(server|plugins)/
+        types_or: [python, pyi]
+        files: ^plugins/video/
+      - id: server-ruff-format
+        name: server ruff format
+        entry: bash -c 'cd server && uv run ruff format --force-exclude "${@#server/}"' --
+        language: system
+        types_or: [python, pyi]
+        files: ^server/
+      - id: video-plugins-ruff-format
+        name: plugins/video ruff format
+        entry: bash -c 'cd plugins/video && uv run ruff format --force-exclude "${@#plugins/video/}"' --
+        language: system
+        types_or: [python, pyi]
+        files: ^plugins/video/
       - id: web-lint-staged
         name: web lint-staged
         entry: bash -c 'cd web && pnpm lint-staged'
         language: system
         pass_filenames: false
         files: ^web/
-  # pre-push 运行 pyright；完整检查由 CI 执行。
+  # pre-push 在推送的改动涉及对应项目时运行 pyright，检查整个项目（server 依赖 plugins/video，两边的改动都触发）；
+  # 完整检查由 CI 执行。
   - repo: local
     hooks:
       - id: server-typecheck-push
@@ -33,10 +50,12 @@ repos:
         entry: bash -c 'cd server && uv run pyright'
         language: system
         pass_filenames: false
+        files: ^(server|plugins/video)/
         stages: [pre-push]
       - id: video-plugins-typecheck-push
         name: plugins/video pyright (pre-push)
         entry: bash -c 'cd plugins/video && uv run pyright'
         language: system
         pass_filenames: false
+        files: ^plugins/video/
         stages: [pre-push]
