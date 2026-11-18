@@ -370,7 +370,11 @@ def build_app(
     settings = resolve_settings(config)
     if settings.db_schema != DB_SCHEMA:
         raise RuntimeError(f"db.schema 当前固定为 {DB_SCHEMA}（declarative 元数据定义期绑定）")
-    configure_logging(settings.log_level, settings.log_format)
+    configure_logging(
+        settings.log_level,
+        settings.log_format,
+        token_path_prefixes=(FINAL_CUT_PREVIEW_PREFIX,),
+    )
     runtime_client = RuntimeClient(
         settings.runtime_service.url,
         settings.runtime_service.app_key,

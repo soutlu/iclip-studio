@@ -120,7 +120,7 @@ def test_media_generation_without_ffmpeg_fails_at_startup(
         build_app(config_with_media(), engine=engine(), object_store=MemoryObjectStore())
 
 
-def _keep_logging(_level: str, _fmt: str) -> None: ...
+def _keep_logging(_level: str, _fmt: str, *, token_path_prefixes: tuple[str, ...]) -> None: ...
 
 
 @pytest.fixture

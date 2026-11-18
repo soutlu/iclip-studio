@@ -44,9 +44,9 @@ def kolkata_time() -> Iterator[None]:
         time.tzset()
 
 
-def _access(path: str, status: int) -> None:
+def _access(path: str, status: int, method: str = "GET") -> None:
     logging.getLogger("uvicorn.access").info(
-        '%s - "%s %s HTTP/%s" %d', "127.0.0.1:50000", "GET", path, "1.1", status
+        '%s - "%s %s HTTP/%s" %d', "127.0.0.1:50000", method, path, "1.1", status
     )
 
 
@@ -71,12 +71,12 @@ def test_console_line_starts_with_local_time_and_service(
 def test_console_shows_uvicorn_error_as_uvicorn(capsys: pytest.CaptureFixture[str]) -> None:
     configure_logging("INFO", "console")
 
-    logging.getLogger("uvicorn.error").info("Started server process [%d]", 42)
-    _access("/api/conversations", 200)
+    logging.getLogger("uvicorn.error").info("Application startup complete.")
+    _access("/conversations", 404)
 
-    started, access = capsys.readouterr().err.splitlines()
-    assert started.endswith("Started server process [42] [uvicorn]")
-    assert "uvicorn.error" not in started
+    ready, access = capsys.readouterr().err.splitlines()
+    assert ready.endswith("Application startup complete. [uvicorn]")
+    assert "uvicorn.error" not in ready
     assert access.endswith("[uvicorn.access]")
 
 
@@ -88,26 +88,100 @@ def test_routine_noise_is_dropped_in_both_formats(
 
     _access("/healthz", 200)
     _access("/healthz", 503)
-    _access("/api/conversations", 200)
     ws = logging.getLogger("uvicorn.error")
     ws.info('%s - "WebSocket %s" [accepted]', "127.0.0.1:50000", "/ws")
     ws.info("connection open")
     ws.info("connection closed")
     logging.getLogger("procrastinate.worker").info("Starting job")
     logging.getLogger("procrastinate.worker").warning("Job failed")
+    logging.getLogger("watchfiles.main").info("%d change%s detected", 3, "s")
 
     lines = capsys.readouterr().err.splitlines()
-    assert len(lines) == 4
+    assert len(lines) == 3
     texts = [json.loads(line)["event"] for line in lines] if fmt == "json" else lines
     err = "\n".join(texts)
     assert '"GET /healthz HTTP/1.1" 503' in err
     assert '"GET /healthz HTTP/1.1" 200' not in err
-    assert '"GET /api/conversations HTTP/1.1" 200' in err
     assert '"WebSocket /ws" [accepted]' in err
     assert "connection open" not in err
     assert "connection closed" not in err
     assert "Starting job" not in err
     assert "Job failed" in err
+    assert "changes detected" not in err
+
+
+def test_console_shows_only_writes_and_failures_among_access_lines(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure_logging("INFO", "console")
+
+    _access("/conversations", 200)
+    _access("/assets/cover.png", 304)
+    _access("/conversations/c1/prompts", 202, "POST")
+    _access("/conversations/c1", 204, "DELETE")
+    _access("/conversations/c1/files/notes.md", 404)
+
+    posted, deleted, missing = capsys.readouterr().err.splitlines()
+    assert '"POST /conversations/c1/prompts HTTP/1.1" 202' in posted
+    assert '"DELETE /conversations/c1 HTTP/1.1" 204' in deleted
+    assert '"GET /conversations/c1/files/notes.md HTTP/1.1" 404' in missing
+
+
+def test_console_hides_uvicorn_lifecycle_lines(capsys: pytest.CaptureFixture[str]) -> None:
+    configure_logging("INFO", "console")
+
+    server = logging.getLogger("uvicorn.error")
+    server.info("Will watch for changes in these directories: %s", ["/srv/src"])
+    server.info("Uvicorn running on %s://%s:%d (Press CTRL+C to quit)", "http", "localhost", 7788)
+    server.info("Started reloader process [41] using WatchFiles")
+    server.info("Started server process [%d]", 42)
+    server.info("Waiting for application startup.")
+    server.info("Application startup complete.")
+    server.warning("%s detected changes in %s. Reloading...", "WatchFiles", "'src/app.py'")
+    server.info("Shutting down")
+    server.info("Waiting for application shutdown.")
+    server.info("Application shutdown complete.")
+    server.info("Finished server process [%d]", 42)
+    server.info("Stopping reloader process [41]")
+
+    running, ready, reloading = capsys.readouterr().err.splitlines()
+    assert "Uvicorn running on http://localhost:7788" in running
+    assert "Application startup complete." in ready
+    assert "WatchFiles detected changes in 'src/app.py'. Reloading..." in reloading
+
+
+def test_json_keeps_routine_access_and_lifecycle_lines(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure_logging("INFO", "json")
+
+    _access("/conversations", 200)
+    logging.getLogger("uvicorn.error").info("Waiting for application startup.")
+
+    events = [json.loads(line)["event"] for line in capsys.readouterr().err.splitlines()]
+    assert events == [
+        '127.0.0.1:50000 - "GET /conversations HTTP/1.1" 200',
+        "Waiting for application startup.",
+    ]
+
+
+@pytest.mark.parametrize("fmt", ["console", "json"])
+def test_token_in_the_path_is_masked_in_both_formats(
+    capsys: pytest.CaptureFixture[str], fmt: LogFormat
+) -> None:
+    configure_logging("INFO", fmt, token_path_prefixes=("/final-cut/preview",))
+
+    _access("/final-cut/preview/ticket-1/files/index.html", 404)
+    _access("/final-cut/preview/ticket-1", 404)
+    _access("/conversations/c1/final-cut/preview", 200, "POST")
+
+    lines = capsys.readouterr().err.splitlines()
+    texts = [json.loads(line)["event"] for line in lines] if fmt == "json" else lines
+    err = "\n".join(texts)
+    assert "ticket-1" not in err
+    assert '"GET /final-cut/preview/***/files/index.html HTTP/1.1" 404' in err
+    assert '"GET /final-cut/preview/*** HTTP/1.1" 404' in err
+    assert '"POST /conversations/c1/final-cut/preview HTTP/1.1" 200' in err
 
 
 def test_reconfiguring_does_not_stack_handlers_or_filters(
