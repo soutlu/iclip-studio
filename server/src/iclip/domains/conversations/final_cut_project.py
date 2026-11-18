@@ -36,6 +36,9 @@ VENDOR_DIR: Final = "vendor/"
 
 VENDOR_ROUTE: Final = "/hyperframes/vendor/"
 
+# 这些字符在 URL 路径里本来合法，转码后按字面找文件的静态服务器就找不到（如版本号前的 @）。
+_PATH_SAFE_CHARS: Final = "/:@!$&'()*+,;="
+
 _TOKEN_KEY_PURPOSE: Final = b"iclip/final-cut-preview-token/v1"
 
 
@@ -212,7 +215,8 @@ class FinalCutProject:
             raise NotFound(_NO_FILE)
         if checked.startswith(VENDOR_DIR):
             return PreviewRedirect(
-                location=VENDOR_ROUTE + quote(checked.removeprefix(VENDOR_DIR), safe="/")
+                location=VENDOR_ROUTE
+                + quote(checked.removeprefix(VENDOR_DIR), safe=_PATH_SAFE_CHARS)
             )
         found = await self._read_file(
             grant.owner_user_id, grant.conversation_id, f"{PROJECT_DIR}/{checked}"
