@@ -619,3 +619,82 @@ describe('字幕场景', () => {
     })
   })
 })
+
+describe('智能调音', () => {
+  const CLIPS = '<video id="v1" data-hf-id="v1"></video><audio id="a1" data-hf-id="a1"></audio>'
+  /** 预览那一份里有 `v1`、`a1` 的 `shown`（套着语言 `locale`），和它的下一份（这一步改了 `patches`）。 */
+  const films = (patches: JsonPatchOp[], locale: PreviewFilm['locale'] = null) => {
+    const html = SHOWN.html.replace('<div id="film">', `<div id="film">${CLIPS}`)
+    const shown: PreviewFilm = { ...SHOWN, html, locale }
+    return [shown, { ...shown, revision: shown.revision + 1, step: [main(...patches)] }] as const
+  }
+  const attribute = (id: string, name: string, value?: string): JsonPatchOp =>
+    value === undefined
+      ? { op: 'remove', path: `/elements/${id}/attributes/${name}` }
+      : { op: 'replace', path: `/elements/${id}/attributes/${name}`, value }
+
+  it.each<[string, JsonPatchOp[]]>([
+    [
+      '音色风格、均衡、升降调、效果（效果链和曲线）',
+      [attribute('a1', 'data-fx-chain', '{}'), attribute('a1', 'data-automation', '{}')],
+    ],
+    ['拖音量关键帧', [attribute('v1', 'data-automation', '{}')]],
+    ['关掉音量关键帧（去掉曲线）', [attribute('v1', 'data-automation')]],
+    [
+      '平稳音量（效果链和曲线）',
+      [
+        { op: 'add', path: '/elements/a1/attributes/data-fx-chain', value: '{}' },
+        { op: 'add', path: '/elements/a1/attributes/data-automation', value: '{}' },
+      ],
+    ],
+    [
+      '自动压低：设置、效果链、曲线，人声放进人声组',
+      [
+        attribute('a1', 'data-fx-carve', '{}'),
+        attribute('a1', 'data-fx-chain', '{}'),
+        attribute('a1', 'data-automation', '{}'),
+        attribute('v1', 'data-audio-group', 'voice'),
+      ],
+    ],
+    ['声音角色', [attribute('a1', 'data-audio-group', 'sfx')]],
+  ])('原地打：%s', (_name, patches) => {
+    const [shown, next] = films(patches)
+    expect(previewSync(shown, next)).toEqual({ kind: 'live', patches, captions: [] })
+  })
+
+  it('要改的片段不在预览那一份里（别的语言的配音片段、隐藏的片段）：整份重新加载', () => {
+    const [shown, next] = films([
+      attribute('a1', 'data-fx-carve', '{}'),
+      attribute('dub-en', 'data-audio-group', 'voice'),
+    ])
+    expect(previewSync(shown, next)).toEqual({ kind: 'reload' })
+  })
+
+  it('原文以外的语言下照样原地打；片段不在、或者同一步里有别的改动时整份重新加载', () => {
+    const fx = attribute('a1', 'data-fx-chain', '{}')
+    const [shown, next] = films([fx], 'en')
+    expect(previewSync(shown, next)).toEqual({ kind: 'live', patches: [fx], captions: [] })
+    // 编辑器每步都重写一次总长
+    const total = totalChange(8, 8)
+    const withTotal: PatchChange = {
+      file: 'index.html',
+      patches: [fx, ...total.patches],
+      inversePatches: total.inversePatches,
+    }
+    expect(previewSync(shown, { ...next, step: [withTotal] })).toEqual({
+      kind: 'live',
+      patches: withTotal.patches,
+      captions: [],
+    })
+    // 不是调音的一步，只有总长时照旧整份重新加载
+    expect(previewSync(shown, { ...next, step: [total] })).toEqual({ kind: 'reload' })
+
+    const [, absent] = films([attribute('dub-de', 'data-fx-chain', '{}')], 'en')
+    expect(previewSync(shown, absent)).toEqual({ kind: 'reload' })
+    const [, moved] = films(
+      [fx, { op: 'replace', path: '/elements/a1/timing/start', value: 3 }],
+      'en',
+    )
+    expect(previewSync(shown, moved)).toEqual({ kind: 'reload' })
+  })
+})

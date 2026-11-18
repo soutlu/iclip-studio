@@ -1,4 +1,6 @@
 import '@hyperframes/player'
+import { HF_AUDIO_AUTOMATION_ATTR } from '@hyperframes/core/audio-automation'
+import { HF_AUDIO_FX_ATTR } from '@hyperframes/core/audio-fx'
 import {
   createIframePreviewAdapter,
   openComposition,
@@ -261,6 +263,26 @@ const syncMuted = (page: Document, patches: readonly JsonPatchOp[], muted: boole
     if (isMedia(media)) media.muted = muted || media.hasAttribute('muted')
   }
 }
+
+const PROCESSING_ATTRIBUTES = new Set([
+  `/attributes/${HF_AUDIO_FX_ATTR}`,
+  `/attributes/${HF_AUDIO_AUTOMATION_ATTR}`,
+])
+
+/**
+ * 补丁有没有给视频加上效果链、曲线。没有它们的视频运行库让元素自己出声，只在排播放时判断要不要接进 Web Audio，
+ * 播着加上时要原地跳一下重新排，不然听不到效果。
+ */
+const addsProcessingToVideo = (page: Document, patches: readonly JsonPatchOp[]) =>
+  patches.some((patch) => {
+    const matched = ELEMENT_PATH.exec(patch.path)
+    if (patch.op !== 'add' || matched === null || !PROCESSING_ATTRIBUTES.has(matched[2] ?? ''))
+      return false
+    const id = unescapePointer(matched[1] ?? '')
+    return [...page.querySelectorAll('video[data-hf-id]')].some(
+      (video) => video.getAttribute('data-hf-id') === id,
+    )
+  })
 
 export type PreviewPage = {
   handle: (command: PreviewCommand) => void
@@ -598,8 +620,8 @@ export const createPreviewPage = (
     }
     current.seq = seq
     syncMuted(page, patches, playback.muted)
-    // 停着时运行库不重画，原地跳一下
-    if (player.paused) player.seek(player.currentTime)
+    // 停着时运行库不重画，原地跳一下；在放时只为视频新加的效果跳（声音断一下，实测约 0.1 秒）
+    if (player.paused || addsProcessingToVideo(page, patches)) player.seek(player.currentTime)
     syncActive?.()
     reportFailure()
     send({ type: 'patched', duration: player.duration, seq })
