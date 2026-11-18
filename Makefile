@@ -1,6 +1,6 @@
 # 项目命令入口。
 
-.PHONY: runtime setup dev up lint format format-check typecheck tach test check contract contract-check docs-check lock-check db-upgrade test-external web-check hooks
+.PHONY: runtime runtime-bump setup dev up lint format format-check typecheck tach test check contract contract-sync contract-check docs-check lock-check lock-sync db-upgrade test-external web-check hooks wt-new wt-clean
 
 # 把运行时项目 Cue 按 runtime.ref 钉住的版本检出到 runtime/（不进本仓库），需要 Cue 的读权限。
 # runtime/ 已存在却不是 Git 检出时报错退出，不替人删除。
@@ -11,6 +11,13 @@ runtime:
 	fi
 	git -C runtime fetch --tags
 	git -C runtime -c advice.detachedHead=false checkout "$$(cat runtime.ref)"
+
+# 换运行时版本：make runtime-bump REF=vA.B.C。把 runtime.ref 改成 REF，检出新版本，再重锁三个锁文件。
+runtime-bump:
+	@if [ -z "$(REF)" ]; then echo '用法：make runtime-bump REF=vA.B.C' >&2; exit 1; fi
+	printf '%s\n' '$(REF)' > runtime.ref
+	$(MAKE) runtime
+	$(MAKE) lock-sync
 
 setup: runtime
 	cd plugins/video && uv sync
@@ -68,9 +75,21 @@ lock-check:
 	cd deploy/runtime-video && uv lock --check
 	python3 scripts/check-locks.py
 
-# 导出后端的 contract/openapi.json；导出后运行 web 的 pnpm contract:generate，更新前端类型与 zod schema。
+# 重锁视频插件、后端与运行时镜像三个锁，把运行时镜像锁里与后端共有的包对齐到后端的版本，再核对。
+lock-sync:
+	cd plugins/video && uv lock
+	cd server && uv lock
+	cd deploy/runtime-video && uv lock
+	python3 scripts/check-locks.py --fix
+	$(MAKE) lock-check
+
+# 导出后端的 contract/openapi.json；要连同前端类型一起更新用 make contract-sync。
 contract:
 	cd server && uv run python scripts/dump_openapi.py
+
+# 导出后端合同，再运行 web 的 pnpm contract:generate，更新前端类型与 zod schema。
+contract-sync: contract
+	cd web && pnpm contract:generate
 
 contract-check:
 	cd server && uv run python scripts/dump_openapi.py --check
@@ -88,3 +107,26 @@ web-check:
 
 hooks:
 	cd server && uv run pre-commit install -t pre-commit -t pre-push
+
+# 在主目录执行：make wt-new NAME=<任务名> [BRANCH=<分支名>]。从 origin/main 建 .claude/worktrees/<NAME>
+# （BRANCH 缺省用 NAME），再在里面检出运行时。
+wt-new:
+	@if [ -z "$(NAME)" ]; then echo '用法：make wt-new NAME=<任务名> [BRANCH=<分支名>]' >&2; exit 1; fi
+	@if [ "$$(git rev-parse --git-dir)" != .git ]; then echo 'make wt-new 要在主目录执行' >&2; exit 1; fi
+	git fetch origin
+	git worktree add '.claude/worktrees/$(NAME)' -b '$(or $(BRANCH),$(NAME))' origin/main
+	$(MAKE) -C '.claude/worktrees/$(NAME)' runtime
+
+# 在主目录执行：make wt-clean NAME=<任务名>。Worktree 没有未提交的改动、它的分支的 PR 已经 MERGED，
+# 才拉取主目录、移除 Worktree 并删本地分支；任何一项不满足就报错退出，什么都不删。
+wt-clean:
+	@if [ -z "$(NAME)" ]; then echo '用法：make wt-clean NAME=<任务名>' >&2; exit 1; fi
+	@if [ "$$(git rev-parse --git-dir)" != .git ]; then echo 'make wt-clean 要在主目录执行' >&2; exit 1; fi
+	@dir='.claude/worktrees/$(NAME)'; \
+	[ -d "$$dir" ] && [ "$$(git -C "$$dir" rev-parse --show-toplevel)" = "$$(cd "$$dir" && pwd -P)" ] \
+		|| { echo "$$dir 不是 Worktree" >&2; exit 1; }; \
+	branch=$$(git -C "$$dir" symbolic-ref --short HEAD) || { echo "$$dir 不在任何分支上" >&2; exit 1; }; \
+	if [ -n "$$(git -C "$$dir" status --porcelain)" ]; then echo "$$dir 有未提交的改动" >&2; exit 1; fi; \
+	state=$$(gh pr view "$$branch" --json state --jq .state) || { echo "查不到分支 $$branch 的 PR" >&2; exit 1; }; \
+	if [ "$$state" != MERGED ]; then echo "分支 $$branch 的 PR 状态是 $$state，不是 MERGED" >&2; exit 1; fi; \
+	set -ex; git pull --ff-only; git worktree remove "$$dir"; git branch -D "$$branch"

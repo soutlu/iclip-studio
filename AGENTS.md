@@ -16,6 +16,7 @@
 |---|---|
 | `make setup` | 先执行 `make runtime`，再安装后端、视频插件、前端与渲染服务依赖 |
 | `make runtime` | 按 `runtime.ref` 把运行时项目 Cue 检出到 `runtime/`，需要能读私有仓库 `soutlu/Cue`；`runtime/` 已存在但不是 Git 检出时报错退出，需先手动移走 |
+| `make runtime-bump REF=vA.B.C` | 把 `runtime.ref` 改成 `REF`，检出这个版本，再执行 `make lock-sync` |
 | `make dev` | 启动视频后端与 Agent 运行时服务（环境准备见[本地启动](docs/deploy.md#本地启动)） |
 | `make db-upgrade` | 执行后端与运行时两边的 Alembic 数据库迁移（服务启动时不会自动建表） |
 | `make check` | 运行全套静态检查与常规测试（包含 `plugins/video/`、`server/` 的 lint、格式、类型检查、依赖边界、单测/集成测试，以及 OpenAPI 合同、锁文件与文档链接检查）。CI 会自动跑，本地无需全量执行 |
@@ -23,9 +24,13 @@
 | `make test` | 运行 `plugins/video/` 与 `server/` 的单元测试及不依赖真实大模型的集成测试 |
 | `make test-external` | 运行需要真实外部服务凭证的测试（环境配置与跳过规则见[测试规范](docs/test-design.md)） |
 | `make contract` | 导出视频后端的 `contract/openapi.json` |
+| `make contract-sync` | 导出 `contract/openapi.json`，再在 `web/` 生成前端类型与 Zod Schema（`pnpm contract:generate`） |
 | `make docs-check` | 检查全仓 Markdown 相对路径链接是否有效、文中提到的 `make` 目标是否存在 |
 | `make lock-check` | 检查运行时部署镜像的锁文件 `deploy/runtime-video/uv.lock` 是否与项目依赖一致，并确保与 `server/uv.lock` 中的共有包版本完全一致 |
+| `make lock-sync` | 重锁 `plugins/video/`、`server/`、`deploy/runtime-video/` 三个锁文件，把运行时部署镜像锁里与后端共有的包对齐到后端的版本，再执行 `make lock-check`；对不齐时报错退出 |
 | `make hooks` | 安装本地 Git `pre-commit` / `pre-push` 钩子 |
+| `make wt-new NAME=<任务名> [BRANCH=<分支名>]` | 在主目录执行：从 `origin/main` 建 `.claude/worktrees/<任务名>`（分支名缺省同任务名），并在里面执行 `make runtime` |
+| `make wt-clean NAME=<任务名>` | 在主目录执行：确认该 Worktree 没有未提交的改动、它的分支的 PR 已 `MERGED` 后，`git pull --ff-only`、移除 Worktree 并删除本地分支；任一条件不满足就报错退出，什么都不删 |
 
 > 注：`make up` 调用的是开发者本机自用的 `scripts/dev-up.sh`（不入库）；新克隆的仓库请按[本地启动](docs/deploy.md#本地启动)的步骤启动。
 
@@ -34,9 +39,9 @@
 本地只跑与本次改动直接相关的检查，通过后再推送；耗时的生产构建与全量 E2E 测试交给 CI 执行：
 
 - **修改 Python 代码（`server/`、`plugins/video/`）**：提交前执行 `make lint`、`make format-check` 和 `make typecheck`，并运行与改动直接相关的 `pytest` 用例。
-  - 如果改了 HTTP 接口，额外运行 `make contract`；
+  - 如果改了 HTTP 接口，额外运行 `make contract-sync`；
   - 如果改了模块间的导入关系，额外运行 `make tach`；
-  - 如果改了 Python 依赖包，额外运行 `make lock-check`。
+  - 如果改了 Python 依赖包，额外运行 `make lock-sync`。
 - **修改成片渲染服务（`render/`，或其引用的前端 final-cut 主文件写法、组件目录）**：在 `render/` 目录下执行 `pnpm lint`、`pnpm typecheck` 和 `pnpm test`（若本机未安装 `chrome-headless-shell`，真实渲染集成测试会自动跳过，需在汇报中说明）。
 - **纯文档修改**：运行 `make docs-check`；若修改了 `web/` 目录下的 Markdown，还需在 `web/` 下运行 `pnpm format:check`。
 - **修改 SSO / PMS 登录接入**：必须在本地完整走通一次真实的登录回调流程。
@@ -57,7 +62,7 @@
 
 - **领域概念统一**：前后端共用同一套领域术语与系统不变量，以 [docs/CONTEXT.md](docs/CONTEXT.md) 为准。
 - **接口合同先行**：对外 HTTP 接口路径、字段、状态码与权限由后端路由定义，导出至 [contract/openapi.json](contract/openapi.json)；OpenAPI 无法表达的跨端约定记录在 [contract/conventions.md](contract/conventions.md)。
-- **修改接口的标准顺序**：先改后端实现 → 根目录运行 `make contract` 导出合同 → 在 `web/` 目录运行 `pnpm contract:generate` 生成前端类型与 Zod Schema（前端直接消费生成物，禁止手写接口 Schema）。
+- **修改接口的标准顺序**：先改后端实现 → 根目录运行 `make contract-sync` 导出合同并生成前端类型与 Zod Schema（前端直接消费生成物，禁止手写接口 Schema）。
 - **设计系统 Token**：基础视觉 Token 以 [design-system.html](design-system.html) 为准。修改 Token 时先改规范文件，再同步 CSS，并通过 `pnpm lint:design` 检查；UI 验收截图统一放在 `.artifacts/design-qa/`。
 - **不掩盖错误**：严禁通过 `@ts-ignore`、`# type: ignore`、关闭 lint 规则或放宽检查配置来让报错消失；必须直接修复代码实现。
 - **结构化日志规范**：Python 统一使用 `structlog.stdlib.get_logger(__name__)`。日志事件写简短固定的中文短句，动态变量通过关键字参数传入（禁止使用 f-string 或 `%s` 拼接日志正文）。第三方库的日志噪音统一在 [app/logging.py](server/src/iclip/app/logging.py) 的 `QUIET_LOGGERS` 中压低。
@@ -80,13 +85,11 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
 
 主目录常驻 `main` 分支，不在主目录直接写代码或切分支；每个任务都在独立的 Git Worktree 中进行：
 
-1. **拉取最新代码并创建 Worktree**：
+1. **拉取最新代码并创建 Worktree**：在主目录执行
    ```bash
-   git fetch origin
-   git worktree add .claude/worktrees/<任务名> -b <分支名> origin/main
-   cd .claude/worktrees/<任务名> && make runtime
+   make wt-new NAME=<任务名> BRANCH=<分支名>
    ```
-   - 新 Worktree 里没有运行时检出，Python 相关的检查和推送钩子都要用到它，所以建好后先执行 `make runtime`。
+   - 它会在 Worktree 里检出运行时，Python 相关的检查都要用到。只改前端、渲染服务或文档的 Worktree 不用检出运行时（推送钩子只在推送里有 Python 改动时才跑类型检查），可以直接 `git fetch origin && git worktree add .claude/worktrees/<任务名> -b <分支名> origin/main`。
    - 如果当前任务依赖另一个尚未合并的 PR `#N`，则基于那个 PR 的分支创建 Worktree，并在新 PR 描述中注明「依赖 #N」；等 `#N` 合并进 `main` 后，执行 `git fetch origin && git rebase --onto origin/main <被依赖分支名> && git push --force-with-lease`。
 
 2. **本地验证并提交**：按[命令与验证](#1-命令与验证)跑完相关检查后 `git commit`。
@@ -103,12 +106,9 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
    - `ci` 通过后会自动 Squash 合入 `main`。
    - 如果 `ci` 失败，先查看失败 Job 的日志（前端 E2E 失败可下载 `playwright-e2e-*` 构建产物中的 trace 排查）。如果是与本次改动无关的偶发波动，只点 **Re-run failed jobs** 重跑失败项；如果是代码问题，直接推送新提交修复即可（自动合并保持开启）。
 
-5. **合并后清理 Worktree**：
-   确认 `gh pr view <n> --json state` 状态为 `MERGED` 且无未提交代码后，回到主目录清理：
+5. **合并后清理 Worktree**：回到主目录执行
    ```bash
-   git pull --ff-only
-   git worktree remove .claude/worktrees/<任务名>
-   git branch -D <分支名>
+   make wt-clean NAME=<任务名>
    ```
 
 ### 发版与热修

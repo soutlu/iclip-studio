@@ -91,7 +91,7 @@
 
 1. **更新运行时版本（只改视频插件时跳过）**：
    - 先在 Cue 的 `main` 上打 `vX.Y.Z` 标签（Cue 自己的版本号）。
-   - 本仓库把 `runtime.ref` 改成这个标签，执行 `make runtime` 检出新版本，再分别在 `server/`、`plugins/video/`、`deploy/runtime-video/` 里执行 `uv lock`，然后按日常流程提 PR 合入 `main`。
+   - 本仓库执行 `make runtime-bump REF=vX.Y.Z`（这个标签），然后按日常流程提 PR 合入 `main`。
 
 2. **确认后端已就绪**：
    打标签前确认视频插件用到的后端内部接口已经部署。两边谁先发的规则见[跨版本兼容](../contract/conventions.md#跨版本兼容)。
