@@ -87,7 +87,7 @@
 | `iclip-server` | 应用版本 | [server/Dockerfile](../server/Dockerfile) | 视频业务后端（构建上下文包含 `server/` 与 `plugins/video/`，不含运行时） |
 | `iclip-runtime` | 运行时版本 | [deploy/runtime-video/Dockerfile](../deploy/runtime-video/Dockerfile) | Agent 运行时服务（安装部署包 `deploy/runtime-video`，将按 `runtime.ref` 检出的 `runtime/` 与 `plugins/video` 打包在一起） |
 | `iclip-web` | 应用版本 | [web/Dockerfile](../web/Dockerfile) | 前端静态资源与 Nginx（通过 [web/nginx.conf](../web/nginx.conf) 将 `/api` 转发给后端；不含组件库，组件库独立挂载，见[发布组件库](deploy.md#发布组件库)） |
-| `iclip-render` | 应用版本 | [render/Dockerfile](../render/Dockerfile) | 成片渲染服务（编入前端合成代码与合同类型；因 Chrome Headless Shell 仅提供 x86_64 Linux 包，该镜像固定为 `linux/amd64` 架构） |
+| `iclip-render` | 应用版本 | [render/Dockerfile](../render/Dockerfile) | 成片渲染服务（编入前端 final-cut 主文件写法 `composition/`；因 Chrome Headless Shell 仅提供 x86_64 Linux 包，该镜像固定为 `linux/amd64` 架构） |
 
 ### 标签与缓存策略
 

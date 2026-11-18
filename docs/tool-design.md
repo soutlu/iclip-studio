@@ -37,7 +37,7 @@
 - **前置参数校验放 `args_validator`**：像媒体地址、已挂载的技能这类单工具入参范围检查，统一放在 `args_validator` 中拦截，不要散落在工具主体代码里。地址不在参数里、要从工程文件读出来的（`check_film`、`generate_images`）在工具主体里检查，`check_film` 把不能用的地址列进问题清单。共用的地址校验在运行时项目的 `src/agent_runtime/harness/materials.py`：
   - `require_http` 只检查地址形状是否为合法的 HTTP(S) 链接。
   - 提交类工具用 `require_media` 检查链接能否打开、类型是否正确。有不能用的地址时抛 `ModelRetry`，按位置称呼（如「第 2 组第 1 张」）逐条列出称呼与原因，让模型换地址，不回显地址。
-  - 读取类工具不做这项检查（规则见 [CONTEXT.md「媒体地址」](CONTEXT.md#术语)）。
+  - 读取类工具不做这项检查（规则见 [CONTEXT.md「媒体地址」](CONTEXT.md#媒体地址media-address)）。
 - **正确区分三种异常**：
   - `ModelRetry("...")`：模型传错了参数格式或漏了前置步骤，让模型根据提示修正参数后重试。
   - `ToolFailed("...")`：外部服务报错或业务条件不满足（例如后台未启用对应模型），直接结束本次调用并把原因返回给模型，不消耗模型的参数纠错重试次数。

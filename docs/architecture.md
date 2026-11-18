@@ -15,24 +15,24 @@
 | **运行时服务**（端口 `7790`） | 运行时项目 Cue，按 `runtime.ref` 检出到 `runtime/`（`agent_runtime`） | 负责所有跟 Agent 相关的事：管理配置（技能库、模型供应商、MCP 服务、Agent 版本）、维护会话与消息队列、驱动大模型运行、推送聊天流（Transcript）、读写工作区文件、统计 Token 用量。数据存于 `agent_runtime` schema |
 | **视频插件包**（装入运行时镜像） | [plugins/video/](../plugins/video/pyproject.toml)（`iclip_video`） | 为 Agent 提供视频领域的专属工具集（如视频理解、视频拆解、生成分镜图、校验工程文件）。需要调用视频后端能力时，通过 HTTP 调用后端的内部接口 |
 | **视频后端**（端口 `7788`） | [server/](../server/pyproject.toml)（`iclip`） | 浏览器唯一访问的入口（BFF）：负责用户登录与权限校验、管理业务侧的对话列表、处理视频生成/参考视频拆解/资料库/成片导出等业务逻辑。数据存于 `iclip` schema |
-| **成片渲染服务**（内网 `8080`） | [render/](../render/package.json)（Node.js） | 导出时接收 final-cut 工程的文件，在无头浏览器中渲染成 MP4 并上传到对象存储 |
+| **成片渲染服务**（内网 `8080`） | [render/](../render/package.json)（Node.js） | 导出时接收 `final-cut` 工程文件，在离线沙箱化的无头浏览器中渲染为 MP4 并上传对象存储 |
 
 **依赖方向与隔离原则：**
 - **单向代码依赖**：`视频插件包` 的插件依赖 `运行时`（装插件包的可选依赖 `runtime`）；`运行时` 不依赖任何业务包。`视频后端` 只用 `视频插件包` 里的视频格式代码，不装可选依赖 `runtime`，生产环境不安装运行时：调运行时的客户端与接口形状由后端自己留一份（见[客户端库](#客户端库)），两边只通过 HTTP 通信。
-- **同库不同 Schema**：后端和运行时连接同一个 PostgreSQL 数据库，但严格按 Schema 隔离（后端用 `iclip`，运行时用 `agent_runtime`）。两个 Schema 之间不建数据库外键，代码里也绝不跨 Schema 读写对方的表（由两边的架构测试强制检查）。表结构的变更各管各的：后端的 Alembic 迁移管 `iclip` 与 `public`（见[后端的持久化与迁移](#后端的持久化与迁移)），运行时自己的 Alembic 迁移管 `agent_runtime`（见运行时项目 Cue 的 `docs/architecture.md`），版本表也各放在自己的 Schema 里。
-- **单进程运行限制**：目前后端和运行时都采用单进程（单 Worker）模式部署，因为实时消息流投影、事件广播和 WebSocket 连接池都维护在进程内存中。若未来扩展为多实例部署，需先引入跨实例连接路由。
+- **同库不同 Schema**：后端和运行时连接同一个 PostgreSQL 数据库，但严格按 Schema 隔离（后端用 `iclip`，运行时用 `agent_runtime`）。两个 Schema 之间不建数据库外键，代码里也绝不跨 Schema 读写对方的表（由两边的架构测试强制检查）。表结构变更各管各的：后端 Alembic 迁移管 `iclip` 与 `public`（见[后端的持久化与迁移](#后端的持久化与迁移)），运行时 Alembic 迁移管 `agent_runtime`（见运行时项目 Cue 的 `docs/architecture.md`），版本表各自存放在所属 Schema 内。
+- **单进程运行限制**：目前后端和运行时均采用单进程（单 Worker）模式部署，因为实时消息流投影、事件广播和 WebSocket 连接池维护在进程内存中。若未来扩展为多实例部署，需先引入跨实例连接路由。
 
 **视频后端与运行时之间的 4 条通信通道：**
-1. **应用接口 `/v1`**：视频后端作为应用 `video`，通过自己那份 Python [客户端](#客户端库)调用运行时，完成创建会话、发消息、读聊天记录、读写工作区文件、拉取首页可用 Agent 列表、自动起标题和拉取统计数据（接口见运行时项目的 `docs/protocol.md`，后端的做法见[调运行时](#调运行时)）。
-2. **管理接口 `/v1/admin`**：对应管理后台的「技能库、模型供应商、MCP 服务、Agent 配置」四组接口，由视频后端先做权限校验和参数检查，再原样转发给运行时处理。
-3. **生命周期回调与内部接口 `/internal/runtime/`**：运行时在「开跑前检查、运行开始、对话轮次开始」三个时机回调视频后端；同时视频插件在执行抽帧、生图、拆解时也会调用后端的这套内部接口（统一使用环境变量 `RUNTIME_INTERNAL_TOKEN` 鉴权，详见[内部接口与视频插件包](#内部接口与视频插件包)）。
-4. **两条 WebSocket 实时流**：运行时提供「应用事件流 `/v1/events`」（推送所有会话的忙闲变化）和「对话内容流 `/v1/ws`」（推送某段对话的打字机输出与文件变更），视频后端接收后转发给前端浏览器的 `/ws` 连接（详见[浏览器连接与事件流](#浏览器连接与事件流)）。
+1. **应用接口 `/v1`**：视频后端作为应用 `video`，通过自有的 Python [客户端](#客户端库)调用运行时，完成创建会话、发消息、读聊天记录、读写工作区文件、拉取首页可用 Agent 列表、自动起标题、模型代理调用和统计拉取（接口见运行时项目的 `docs/protocol.md`，后端封装见[调运行时](#调运行时)）。
+2. **管理接口 `/v1/admin`**：对应管理后台的「技能库、模型供应商、MCP 服务、Agent 配置」四组接口，由视频后端先做权限校验和参数检查，再转发给运行时处理。
+3. **生命周期回调与内部接口 `/internal/runtime/`**：运行时在「开跑前检查、运行开始、对话轮次开始」三个时机回调视频后端；视频插件执行抽帧、生图、拆解时同样调用这套内部接口（统一使用环境变量 `RUNTIME_INTERNAL_TOKEN` 鉴权，详见[内部接口与视频插件包](#内部接口与视频插件包)）。
+4. **两条 WebSocket 实时流**：运行时提供「应用事件流 `/v1/events`」（推送所有会话的忙闲变化）和「对话内容流 `/v1/ws`」（推送某段对话的流式输出与文件变更），视频后端接收后代理转发给前端浏览器的 `/ws` 连接（详见[浏览器连接与事件流](#浏览器连接与事件流)）。
 
 ---
 
 ## 2. 运行时服务
 
-运行时单独部署，只部署一份，视频后端与其他应用都经 HTTP 调它。运行时的模块、接口与运行机制见运行时项目的 `docs/architecture.md` 与 `docs/protocol.md`，新应用接入见运行时项目的 `docs/apps.md`。视频后端怎么调运行时见[客户端库](#客户端库)与[调运行时](#调运行时)。
+运行时单独部署一份，视频后端与其他应用均经 HTTP 调用。运行时的模块、接口与运行机制见运行时项目的 `docs/architecture.md` 与 `docs/protocol.md`，新应用接入见 `docs/apps.md`。
 
 ---
 
@@ -40,130 +40,107 @@
 
 ### 后端的模块
 
-视频后端是一个基于 FastAPI 的模块化单体应用，`app/` 目录是唯一的装配中心（组合根）。以下路径均相对 `server/src/iclip/`（模块边界由 [server/tach.toml](../server/tach.toml) 和[架构测试](../server/tests/unit/architecture/test_architecture.py)守护）：
+视频后端是基于 FastAPI 的模块化单体应用，`app/` 目录是唯一的装配中心（组合根）。以下路径均相对 `server/src/iclip/`（模块边界由 [server/tach.toml](../server/tach.toml) 和[架构测试](../server/tests/unit/architecture/test_architecture.py)守护）：
 
 | 目录 | 职责说明 |
 |---|---|
-| `domains/` | 各业务模块（用户权限、对话、生成任务、参考视频、资料库、标签、需求单、上传、审计等）的业务逻辑、接口路由与数据库操作（`infra_sql.py`） |
-| `platform/` | 通用技术底座：数据库连接池、OSS 对象存储、ffmpeg 音视频处理与硬件加速探测（`platform/media/`）、视频抽帧拼板与九宫格切图（`platform/shot_media/`）、视频拆解抽帧与火山方舟调用适配（`platform/video_breakdown/`）、后端自己的出网层（[platform/outbound/](../server/src/iclip/platform/outbound/__init__.py)，基于 `httpx-secure` 提供只连公网的客户端、下载器与制作页用的媒体地址检查）、调运行时的客户端与接口形状（`platform/runtime_api/`，见[客户端库](#客户端库)）、统一错误映射与管理接口转发（`platform/runtime_admin.py`） |
+| `domains/` | 各业务模块（用户权限、对话、生成任务、参考资产、资料库、标签、需求单、上传、审计等）的业务逻辑、接口路由与数据库操作（`infra_sql.py`） |
+| `platform/` | 通用技术底座：数据库连接池、OSS 对象存储、ffmpeg 音视频处理与硬件加速探测（`platform/media/`）、视频抽帧拼板与九宫格切图（`platform/shot_media/`）、视频拆解抽帧与火山方舟调用适配（`platform/video_breakdown/`）、基于 `httpx-secure` 的公网出网客户端与下载器（[platform/outbound/](../server/src/iclip/platform/outbound/__init__.py)）、运行时客户端与接口形状（`platform/runtime_api/`）、统一错误映射与管理接口转发（`platform/runtime_admin.py`） |
 | `common/` | 跨层共用的基础枚举与纯函数规则（如生成任务类型、状态枚举、领域错误类、地址判定） |
 | `config/` | 配置文件模型（[config/models.py](../server/src/iclip/config/models.py)）、环境变量解析与功能开启条件检查 |
 | `app/` | 组合根（[app/bootstrap.py](../server/src/iclip/app/bootstrap.py)）以及连接不同业务模块或跨服务调用的适配器 |
 
 ### 后端的配置与装配
 
-- 服务启动时通过 `--config`（或环境变量 `CONFIG_FILE`）读取 `config.yaml`，并结合环境变量由 `resolve_settings()` 一次性完成校验；业务模块内部不再直接读取环境变量。
-- **启动期自动探测硬件编码器（[platform/media/codec.py](../server/src/iclip/platform/media/codec.py)）**：只要开启了需要本地處理视频的功能（抽帧出图、视频剪辑合成、参考视频拆解），后端在启动时会自动按 `Apple VideoToolbox → NVIDIA NVENC → 软件 libx264` 的顺序实际试编一小段视频，选出可用的最快编码器注入各模块；如果未手动指定队列并发数，硬件加速时默认并发为 4，纯软件编码时默认为 2。
+- 服务启动时通过 `--config`（或环境变量 `CONFIG_FILE`）读取 `config.yaml`，结合环境变量由 `resolve_settings()` 一次性完成校验；业务模块内部不再直接读取环境变量。
+- **启动期自动探测硬件编码器（[platform/media/codec.py](../server/src/iclip/platform/media/codec.py)）**：只要开启了需要本地处理视频的功能（抽帧出图、视频剪辑合成、参考视频拆解），后端在启动时自动按 `Apple VideoToolbox → NVIDIA NVENC → 软件 libx264` 顺序实际试编一小段视频，选出可用的最快编码器注入各模块；未手动指定并发数时，硬件加速默认并发为 4，纯软件编码默认为 2。
 
 ### 客户端库
 
-运行时只部署一份，各应用都经 HTTP 调它。视频后端不安装运行时，调运行时的代码是自己的一份 [platform/runtime_api/](../server/src/iclip/platform/runtime_api/__init__.py)：客户端 `RuntimeClient` 加上后端用到的请求体、答复体、实时帧与回调请求体。
-- **手工同步**：`platform/runtime_api/<路径>` 从运行时项目的 `src/agent_runtime/<路径>` 复制而来，只留后端用到的定义，定义本身原样不改；错误类与地址判定归后端自己（`iclip/common/`）。后端要用运行时新增的接口或字段时，按同名文件对比后手工同步；读取方忽略不认识的字段，运行时可以先于后端升级（见 [conventions §20「跨版本兼容」](../contract/conventions.md#跨版本兼容)）。
-- **参考客户端**：运行时自己的 `agent_runtime/client/` 是运行时自测用的参考客户端，也是后端那份的来源；客户端的行为（异常还原、管理接口透传、WebSocket 心跳与前向兼容）见运行时项目 Cue 的 `docs/architecture.md`「客户端库」。
+视频后端不安装运行时包，调用运行时的代码维护在自有的 [platform/runtime_api/](../server/src/iclip/platform/runtime_api/__init__.py) 中（包含 `RuntimeClient` 及后端实际用到的请求/响应模型、实时帧与回调结构）：
+- **手工按需同步**：`platform/runtime_api/<路径>` 从运行时项目 `src/agent_runtime/<路径>` 按同名文件复制裁剪，定义保持原样（错误类与地址判定归后端 `iclip/common/`）。需要使用运行时新增接口或字段时手工对比同步；读取方忽略未知字段，支持运行时先于后端升级（见 [conventions §20「跨版本兼容」](../contract/conventions.md#跨版本兼容)）。
+- **参考客户端**：运行时自测用的 `agent_runtime/client/` 是后端客户端的蓝本（异常还原、管理接口透传与 WebSocket 心跳细节见运行时项目的 `docs/architecture.md`）。
 
 ### 调运行时
 
-后端在组合根中维护一个全局的 `RuntimeClient`（通过环境变量 `RUNTIME_URL` 和 `RUNTIME_APP_KEY` 向运行时证明自己是应用 `video`）：
-- **转发管理后台接口**：技能库、模型供应商、MCP 服务与 Agent 配置四组路由在验完权限后，由 `platform/runtime_admin.py` 转发给运行时的 `/v1/admin`。由于运行时只存用户 ID、不存用户名，对于返回结果中包含 `createdBy` / `updatedBy` 的接口，后端会批量查询一次用户表，把创建人/修改人的显示名称补齐后再返回给前端。
-- **对话与工作区操作**：通过 `app/runtime_ports.py` 和 `app/runtime_workspace.py` 调用运行时的会话与文件接口，并在请求头 `X-End-User` 中传入该对话的所属用户 ID。新建对话时严格遵守**「先在运行时开好会话，再在后端落对话记录」**的顺序，防止出现没有底层会话的空壳对话。
-- **管理测试预览**：后端在 `iclip.agent_previews` 表中记录每个管理员在每个 Agent 下当前的预览会话 ID，并在 `ConversationService` 中集中检查权限（必须是创建者本人且当前仍拥有 `agent:manage` 权限）。在测试预览中调用工具生成的图片，视频插件会自动清空其业务对话归属，避免污染正式对话列表。
-- **运行时不可用兜底**：当运行时服务连不上、超时或报错时，后端统一向前端返回 `503` 错误信封，并将具体原因写入服务端日志。
+后端在组合根维护全局 `RuntimeClient`（凭 `RUNTIME_URL` 和 `RUNTIME_APP_KEY` 标识为应用 `video`）：
+- **转发管理后台接口**：技能库、模型供应商、MCP 服务与 Agent 配置四组路由验权后，由 `platform/runtime_admin.py` 转发至运行时 `/v1/admin`；对含 `createdBy` / `updatedBy` 的响应，后端批量查询用户表补齐显示名后返回前端。
+- **对话与工作区操作**：通过 `app/runtime_ports.py` 和 `app/runtime_workspace.py` 调用会话与文件接口，请求头 `X-End-User` 传对话所属用户 ID。新建对话严格遵守**「先在运行时建好会话，再在后端落对话记录」**的顺序，防止产生无底层会话的空壳对话。
+- **管理测试预览**：后端在 `iclip.agent_previews` 表记录每位管理员在各 Agent 下的当前预览会话 ID，并在 `ConversationService` 集中验权（限创建者本人且仍持 `agent:manage`）。预览中调用工具生成的图片自动清空业务对话归属，不污染正式列表。
+- **运行时不可用兜底**：运行时连接失败、超时或报错时，后端统一向前端返回 `503` 错误信封（`final-cut` 翻译除外，返回带错误码的 `502`）并记录服务端日志。
 
 ### 浏览器连接与事件流
 
-前端浏览器只与视频后端建立一条 `/ws` WebSocket 连接，由后端在背后代理运行时的实时流：
-- **按对话鉴权并透传内容流**：每当浏览器连上 `/ws`，后端就同步与运行时建立一条 `/v1/ws` 连接。前端发来 `subscribe_v2` 订阅某段对话时，后端先检查该用户有没有权限看这段对话；无权查看的直接原地返回 `not_found`，有权查看的则转发给运行时，并将运行时后续发来的聊天流（`transcript.reset` / `ops`）和文件变更帧原样透传给浏览器。任何一端断开，后端都会以 `1001` 状态码关闭浏览器连接，让前端触发重连。
-- **消费全局事件流（[app/runtime_events.py](../server/src/iclip/app/runtime_events.py)）**：后端启动一个常驻后台任务连接运行时的 `/v1/events`，收到会话忙闲变化（`event.session.work_changed`，排除测试预览）后，自动推送给该对话的创建者以及在线的治理者。**断线防漂移机制**：一旦后端与运行时的事件流断开或重连成功，后端会主动以 `1001` 踢掉当时所有的浏览器 WebSocket 连接，强制前端重连并重新拉取对话列表，避免断线期间漏掉状态变化。
+前端浏览器只与视频后端建立一条 `/ws` WebSocket 连接，由后端代理运行时的实时流：
+- **按对话鉴权并透传内容流**：浏览器连上 `/ws` 时，后端同步与运行时建立一条 `/v1/ws` 连接。收到 `subscribe_v2` 时先校验对话查看权限，无权查看直接在 `ack.payload.not_found` 回报，有权查看则转发至运行时并原样透传后续 `transcript.reset` / `ops` 与文件变更帧；任一端断开均以 `1001` 关闭浏览器连接触发重连。
+- **消费全局事件流（[app/runtime_events.py](../server/src/iclip/app/runtime_events.py)）**：常驻后台任务连接运行时的 `/v1/events`，收到正式会话忙闲变化（`event.session.work_changed`）后推送给对话创建者及在线治理者。**断线防漂移机制**：后端与运行时的事件流一旦断开或重连成功，主动以 `1001` 踢掉所有浏览器 WebSocket 连接，强制前端重连并重拉对话列表。
 
 ### 内部接口与视频插件包
 
-后端在 `/internal/runtime/` 下提供了一组仅供运行时和视频插件调用的内部接口（通过 `RUNTIME_INTERNAL_TOKEN` 鉴权，协议见 [conventions §21](../contract/conventions.md#21-后端给运行时的内部接口)）。
-
-内置的 6 个插件职责与后端配合方式如下：
+后端在 `/internal/runtime/` 下提供仅供运行时与视频插件调用的内部接口（凭 `RUNTIME_INTERNAL_TOKEN` 鉴权，协议见 [conventions §21](../contract/conventions.md#21-后端给运行时的内部接口)）。6 个内置插件分工如下：
 
 | 插件名称 | 启用方式 | 依赖插件 | 功能说明与后端配合方式 |
 |---|---|---|---|
 | `workspace` | 始终启用（内置于运行时） | 无 | 提供工作区文件的查看、创建与修改工具 |
-| `video` | 始终启用（无需配置） | `workspace` | 提供 `video_parser` 工具：直接通过运行时托管的火山方舟连接进行视频内容理解，不经过视频后端 |
-| `video_shots` | 始终启用 | `workspace` | 提供 `write_video_shots` 工具：校验并生成标准分镜表 `video_shot.json`，交付前检查每张镜头帧的地址 |
-| `iclip_studio` | 始终启用 | `workspace` | 提供 `check_film` 工具：校验 AI 导演编写的工程文件 `film.icml` 与运行文件 `film.icrun` |
-| `shot_video` | 在 `runtime.yaml` 配置 `shot_video` 段 | `workspace`, `video` | 提供视频抽帧与分镜生图工具：由于插件内不做重度媒体处理，它会通过内部接口调用后端的 `app/shot_media.py`（抽帧拼板、宫格切图）与 `app/image_generations.py`（按渠道顺序调用图片模型） |
-| `video_breakdown` | 在 `runtime.yaml` 配置 `video_breakdown` 段 | `workspace` | 提供 `breakdown_video` 工具：作为**后台异步工具（`BackgroundTools`）**运行，通过内部接口调用后端的 `app/reference_breakdown.py` 查询或触发参考视频拆解队列 |
+| `video` | 始终启用（无需配置） | `workspace` | 提供 `video_parser` 工具：直接通过运行时托管的火山方舟连接理解视频，不经过视频后端 |
+| `video_shots` | 始终启用 | `workspace` | 提供 `write_video_shots` 工具：校验并生成标准分镜表 `video_shot.json`，交付前校验镜头帧地址 |
+| `iclip_studio` | 始终启用 | `workspace` | 提供 `check_film` 工具：校验导演工程文件 `film.icml` 与运行文件 `film.icrun` |
+| `shot_video` | 在 `runtime.yaml` 配置 `shot_video` 段 | `workspace`, `video` | 提供视频抽帧与分镜生图工具：通过内部接口调用后端 `app/shot_media.py`（抽帧拼板、宫格切图）与 `app/image_generations.py`（按渠道顺序调用图片模型） |
+| `video_breakdown` | 在 `runtime.yaml` 配置 `video_breakdown` 段 | `workspace` | 提供 `breakdown_video` **后台异步工具（`BackgroundTools`）**：通过内部接口调用后端 `app/reference_breakdown.py` 查询或触发参考视频拆解队列 |
 
-- **运行时镜像**：生产环境的运行时镜像（[deploy/runtime-video/Dockerfile](../deploy/runtime-video/Dockerfile)）安装的是组合包 [deploy/runtime-video](../deploy/runtime-video/pyproject.toml)，它把 `runtime` 和 `plugins/video` 打包在了一起；运行时启动时按配置的 `plugins.factory` 加载视频插件包。
-- **启动期双向检查**：如果运行时配置启用了 `shot_video` 或 `video_breakdown`，在启动时会自动请求后端的 `/internal/runtime/plugins/services` 接口，确认后端已经配好对应的图片模型、OSS、ffmpeg 和拆解服务；如果后端没配齐，运行时会直接报错拒绝启动，避免运行期才发现工具不可用。
-- **后台异步工具机制（`BackgroundTools`）**：模型调用 `breakdown_video` 后会立刻收到一条「已启动拆解」的回执并可以继续和用户聊别的事；等后端拆解完成后，结果会作为一条新消息自动发给模型。如果拆解还没跑完这段对话就被用户中止或异常结束，下次发消息开跑前，系统会自动把当初那条回执替换成「已中断（`interrupted`）」标记，保证历史记录和界面上的任务卡片都能正确收尾。
+- **运行时镜像与启动期双向检查**：生产运行时镜像安装组合包 [deploy/runtime-video](../deploy/runtime-video/pyproject.toml)（打包 `runtime` 与 `plugins/video`）。启用 `shot_video` 或 `video_breakdown` 时，运行时启动阶段自动请求后端 `/internal/runtime/plugins/services` 核对图片模型、OSS、ffmpeg 与拆解服务是否就绪，未配齐则拒绝启动。
+- **后台异步工具收尾（`BackgroundTools`）**：`breakdown_video` 调用后立即返回「已启动」回执，拆解完成后将结果作为新消息送回模型；若拆解未完对话即中止或异常结束，下次开跑前自动将原回执替换为 `interrupted` 标记。
 
 ### 身份与模块协作
 
-- **按主机名划分预览域名（[app/preview_host.py](../server/src/iclip/app/preview_host.py)）**：最外层的中间件按 `Host` 区分应用域名与 final-cut 预览域名，预览域名上只放行 final-cut 预览地址，别的主机上预览地址一律 `404`，不依赖各路由自己声明（规则见 [conventions「final-cut 工程与预览域名」](../contract/conventions.md#final-cut-工程与预览域名)）。
-- **写请求的来源检查（`WriteOriginCheck`）**：紧挨在按主机名划分的那一层之内、CORS 与登录态解析之外，`POST`、`PUT`、`PATCH`、`DELETE` 请求的 `Origin` 不被放行时直接 `403`，不依赖各路由自己声明；判定规则与 `/ws` 握手共用 [identity/middleware.py](../server/src/iclip/domains/identity/middleware.py) 的 `origin_allowed`（规则见 [conventions §2](../contract/conventions.md#2-双主体认证-dual-principals)）。
-- **统一鉴权与代指定用户操作（`ActAs`）**：所有 HTTP 和 WebSocket 请求由 `PrincipalMiddleware` 统一解析登录 Cookie 或 API Key（`/internal/runtime/` 内部接口与凭令牌访问的 `/final-cut/preview/` 预览地址除外），接口所需权限通过 FastAPI `Security` 直接声明在路由上。对于支持 `users:act_as` 的 7 个写接口（建对话、建需求单、发消息、提交生成、参考视频试生成、加参考音频、确认上传），在拿到请求体后会调用 [identity/acting.py](../server/src/iclip/domains/identity/acting.py) 的 `ActAs` 完成归属用户切换。
-- **模块间解耦**：`domains/` 下的各个业务模块互不直接导入对方的内部实现，需要跨模块协作时（例如发消息时自动把外部图片附件转存为上传记录、查询分叉对话的祖先出片记录、做同款时复制制作文件），一律由模块声明接口协议（Protocol），再由 `app/` 组合根注入适配器将两边接起来。
-- **出网下载与地址检查**：组合根建好只连公网的出网下载器与客户端（lifespan 结束时关闭）。发消息时转存外部图片附件，以及制作页在插入、选用图片与按文件生图、出片时检查图片地址（[app/conversation_film.py](../server/src/iclip/app/conversation_film.py)），都经出网下载器发起。取帧拼板（[app/shot_media.py](../server/src/iclip/app/shot_media.py)）与参考视频拆解要下载的视频地址可能是模型给的：本系统 OSS 桶里的对象换成内网地址、经普通的共用 HTTP 客户端下载，其他地址经只连公网的客户端原样下载。拆解遇到这类外部地址时先下载到本地、再在本地文件上探时长，不把远程地址交给 ffprobe（它会自己跟随跳转）。
+- **中间件洋葱圈顺序**：最外层 [app/preview_host.py](../server/src/iclip/app/preview_host.py) 按请求 `Host` 隔离应用域名与 `final-cut` 预览域名（见 [conventions「预览域名」](../contract/conventions.md#final-cut-工程与预览域名)）→ 紧内层 `WriteOriginCheck` 在路由与鉴权前校验写请求 `Origin`（见 [conventions §2](../contract/conventions.md#2-双主体认证-dual-principals)）→ CORS → `PrincipalMiddleware` 统一解析登录 Cookie 或 API Key（`/internal/runtime/` 与 `/final-cut/preview/` 除外）。支持 `users:act_as` 的 7 个写接口在解析请求体后调用 [identity/acting.py](../server/src/iclip/domains/identity/acting.py) 的 `ActAs` 切换数据归属。
+- **模块间协议解耦**：`domains/` 下各业务模块互不直接导入内部实现，跨模块协作（如附件自动转存上传、查询分叉祖先记录、做同款复制文件、生成任务校验参考资产）一律由模块声明 `Protocol`，在 `app/` 组合根注入适配器连接。
+- **出网下载与地址校验**：组合根维护只连公网的出网下载器与客户端。外部图片附件转存及制作页图片地址校验（[app/conversation_film.py](../server/src/iclip/app/conversation_film.py)）均经出网下载器发起；抽帧拼板（[app/shot_media.py](../server/src/iclip/app/shot_media.py)）与参考视频拆解拉取视频时，本系统 OSS 对象走内网地址与普通客户端，其余外部地址走公网隔离客户端先下载到本地再交由 `ffprobe` 探测（避免 `ffprobe` 自行跟随重定向）。
 
 ### 成片渲染服务
 
-- **final-cut 工程不经后端检查**：编辑器直接读写对话工作区里的 `final-cut/` 目录，后端只按令牌把工程文件给预览域名、导出时把整个工程原样交给渲染服务（见 [conventions「final-cut 工程与预览域名」](../contract/conventions.md#final-cut-工程与预览域名)）；工程里的脚本只在预览域名和渲染服务里运行。
-- **后端排队与调度（[generation/render.py](../server/src/iclip/domains/generation/render.py)）**：用户点击导出后，对话模块读 final-cut 的主文件，把其中按地址对上了来源的素材（`<video>` 对生成记录；`<audio>` 先对本对话含分叉继承的生成记录，再对本对话含分叉继承的上传，记成 `{sourceKind, sourceId, url}`）存为一条 `whole_film` 生成任务，放入异步队列的专属通道（lane）；对不上的素材不记、也不拒绝。队列任务这时才读对话工作区里的整个 `final-cut/` 目录（读工程的回调在应用层装配，生成域不依赖对话域），通过内网 HTTP（`FINAL_CUT_RENDER_URL`）把工程文件连同「主文件里每个素材地址 → 下载地址」的对应表和预签名的 OSS 上传地址发给渲染服务，并轮询进度、取消（总超时与上传签名有效期均为 6 小时）。
-- **独立 Node 渲染服务（[render/](../render/package.json)）**：运行在内网（无鉴权），挂载与前端相同的组件库目录（`RENDER_REGISTRY_ROOT`）。`POST /exports` 只收 `Content-Type: application/json`，别的类型答 `415`：渲染页面里的脚本能访问回环地址上的本服务，要求 JSON 类型后浏览器的跨源请求过不了预检，页面没法替人发起导出。请求体是 final-cut 工程的文本文件（路径 + 内容）、「主文件里的素材地址 → 下载地址」的对应表、导出哪种语言（`locale`，原文为 `null`）和预签名的 OSS 上传地址；路径不合规（空段、`.`、`..`、以 `/` 开头或结尾、反斜杠、控制字符、以 `vendor` 开头）、缺主文件、主文件里的素材没给下载地址都答 `400`。按原文以外的语言导出时受理前先读这种语言的值表、按主文件根上的声明校验、改好导出用的那份主文件里贴片和场景宿主的取值（和编辑器预览共用 `composition/` 里同一个合并函数，打包时一起打进去），值表缺失、写法不对或值的类型不对也答 `400`（规则见 [conventions「final-cut 的主文件」](../contract/conventions.md#final-cut-的主文件)）。之后在内存队列中按先进先出顺序单任务执行：把工程文件写进临时目录、把公共目录整个拷成工程里的 `vendor`（渲染器只取工程目录里的文件）→ 查主文件和它挂载的文件里用到、却没有 `@font-face` 声明的字体（`font-family` 写到的每个名字，含后备字体、`var()` 的缺省值和渲染器给首选通用字体族补上的 Inter；任何一个网页里的 `@font-face` 和它链接的工程内样式表都算声明）：渲染器会去外网取这些字体，取不到就悄悄换成别的字体，所以有就以 `font-missing` 失败、不下载素材，`message` 是缺的字体名（用「、」连接），编辑器据此提示换字体；判断方式和组件库组装共用 [composition/font-families.ts](../web/src/features/storyboard/final-cut/composition/font-families.ts)。这一步排在工程检查前面：工程检查对一部分缺字体的情况也报错，但说不出是哪些字体 → 用 `@hyperframes/core/lint` 的 `lintProject` 按 studio 规则检查整个工程（主文件和它挂载的组件文件），有错误就以 `lint-failed` 失败、不下载素材，只有警告时记日志照常渲染 → 把素材下载到工程里新建的目录（只从素材白名单里的主机下载），只在导出用的那份主文件里把素材地址换成本地路径 → 启动无头浏览器按 30 fps 渲染出 MP4（组件文件只从工程取；按原文以外的语言导出时把校验后的值表作为变量值交给渲染器）→ 通过预签名地址上传到 OSS，用完删掉临时目录。渲染用的浏览器经启动脚本启动，所有不是回环地址的请求都交给服务在回环地址上开的一个一律拒绝的代理，WebRTC 也不许绕过代理直连：页面连不了回环以外的地址（包括链路本地地址），被拦的主机记 warn 日志，这些请求在页面里就是加载失败，不让导出失败。如果渲染服务重启，内存中正在进行的任务会丢失，后端轮询发现后会将其标记为 `RENDER_LOST` 失败，提示用户重新导出。
+- **工程透传与沙箱边界**：编辑器直接读写工作区 `final-cut/` 目录，后端不解析或清洗工程脚本，仅按签名令牌向预览域名提供文件，并在导出时将工程原样交给渲染服务（[ADR-0008](adr/0008-final-cut-workspace-project.md)）。
+- **后端排队与调度（[app/whole_film_exports.py](../server/src/iclip/app/whole_film_exports.py)、[generation/render.py](../server/src/iclip/domains/generation/render.py)）**：发起导出时，后端提取主文件素材地址匹配血缘来源（`<video>` 匹配生成记录；`<audio>` 依次匹配本对话含分叉继承的生成记录、本对话含继承的上传、参考音频库未移除记录）创建 `whole_film` 生成任务入队。队列执行时才通过组合根回调读取实时 `final-cut/` 全目录，连同素材下载地址映射与预签名 OSS 上传地址经内网 HTTP（`FINAL_CUT_RENDER_URL`）提交渲染服务并轮询进度（总超时与签名有效期均为 6 小时）。
+- **独立 Node 渲染服务（[render/](../render/package.json)）**：运行于内网（无鉴权），只读挂载共享组件库目录（`RENDER_REGISTRY_ROOT`）：
+  1. **入队前校验**：`POST /exports` 仅接收 `Content-Type: application/json`（其余返回 `415` 触发浏览器跨源预检拦截，防止渲染页内脚本访问回环端口伪造导出请求）；校验工程路径规范、主文件存在性、多语言值表合法性（复用前端 [composition/](../web/src/features/storyboard/final-cut/composition/film.ts) 的 `localizedHostValues` 与 `localizedVoices` 生成目标语言主文件）及素材域名白名单（`RENDER_ALLOWED_MEDIA_HOSTS`），不合规返回 `400`。
+  2. **单任务渲染流水线**：内存队列先进先出执行——写出临时工程并拷入 `vendor/` 公共目录 → 扫描未声明 `@font-face` 的字体族（复用 [font-families.ts](../web/src/features/storyboard/final-cut/composition/font-families.ts)，缺失即报 `font-missing` 列出字体名，防止渲染器外联拉取或静默替换字体）→ 调用 `@hyperframes/core/lint` 的 `lintProject`（`studio` 规则）检查工程（有 error 报 `lint-failed`，仅 warning 记日志放行）→ 下载目标语言实际引用的素材并替换为本地路径 → 启动无头 Chrome 按 30 fps 渲染 MP4 并上传 OSS，完成后清理临时目录。
+  3. **浏览器离线沙箱与重启兜底**：渲染浏览器经启动脚本将一切非回环请求导向本地拒绝代理并禁用 WebRTC 直连，彻底阻断外网与链路本地访问（被拦请求记 warn 日志，页面内按加载失败处理）。若渲染服务重启丢失内存任务，后端轮询自动将其标记为 `RENDER_LOST` 失败。
 
 ### 后端的持久化与迁移
 
-业务表位于 `iclip` schema，异步队列调度表（procrastinate）位于 `public` schema，这两个 Schema 的表结构演进均通过 [server/migrations/versions/](../server/migrations/versions/) 下的 Alembic 脚本管理，`agent_runtime` 不归后端的迁移管：
+业务表位于 `iclip` schema，异步队列调度表（procrastinate）位于 `public` schema，均通过 [server/migrations/versions/](../server/migrations/versions/) 的 Alembic 脚本管理（`agent_runtime` 归运行时自身迁移管理）：
 
 | 模块 / 报表视图 | 存储与查询机制 |
 |---|---|
-| **常规业务模块** | 各业务模块在自己的 `domains/*/infra_sql.py` 中维护自有数据表；外部 PDM 商品款目录通过 `domains/products/catalog_pg.py` 的独立只读连接池查询 |
-| **资料库标签（`domains/tagging/`）** | 独立维护标签树、被打标条目与关联关系三张表（见 [ADR-0006](adr/0006-library-tags-as-data.md)、[ADR-0007](adr/0007-library-tag-value-depth.md)）。管理员修改标签树结构时，会先获取数据库事务级咨询锁（Advisory Lock），再校验全树是否重名或超出层级/数量上限 |
-| **资料库聚合查询（`domains/library/reports_pg.py`）** | 不单独建冗余表，而是跨「生成记录、对话、用户」三张表实时聚合计算素材卡封面与分叉继承关系；爆款素材库直接关联标签域的条目表与生成记录表 |
-| **审计统计报表（`domains/audit/reports_pg.py`）** | 不建持久表。每个审计请求先用短查询拿到需要的对话 ID，再在不占用数据库连接的情况下通过 `runtime_facts.py` 调用运行时的 `/v1/stats/*` 接口拉取会话、运行耗时与 Token 消耗记录，最后在一个事务里把这些记录与 `iclip` 的生成记录写入事务级临时表，该请求的全部指标 SQL 都在这个事务里读这些临时表 |
-
-### 上传台账
-
-上传归 `domains/uploads/`，记在自己的表 `iclip.media_uploads` 里，不进生成记录：
-- **直传**：`POST /uploads/sign` 签出带属主审计元数据的限时直传地址，前端直接 PUT 到对象存储；`POST /uploads/{id}/confirm` 按桶里的对象核对类型与大小后记一条（大小、内容类型与 MD5 取对象存储报的，图片宽高取签名时报的那两个数，不量时长，不需要 ffmpeg）。视频按对象的 MD5 去重：有更早的同一份就记那一份的地址并删掉这次传的对象。
-- **转存**：发消息时外部图片附件经出网下载器下载、读图片头核对后存进桶，同样记一条上传（`app/prompt_attachments.py` 调上传域）。
-- **表上不设约束**：`media_uploads` 没有外键与取值约束，种类等取值只在应用层校验（[uploads/models.py](../server/src/iclip/domains/uploads/models.py)）。
-- **谁来用**：对话的上传列表 `GET /conversations/{id}/uploads` 按分叉血缘带上继承来的上传；参考资产入库（`app/reference_sources.py`）、局部编辑的参考片段与配音的参考音频（`app/generation_references.py`）、成片导出的音频来源（`app/whole_film_exports.py`）都经组合根调上传域，生成域与参考资产域不依赖上传域。
-
-### 参考资产
-
-参考视频与参考音频归 `domains/references/`，一张主表 `iclip.references`（id、种类、标题、备注、地址、时长、属主、来源上传 `upload_id` 或来源生成记录 `source_job_id`、软删除）加两张一对一的子表：`reference_videos`（拆解状态、拆解报告、版本、最新一次试生成 `test_job_id`）与 `reference_audios`（子类 `voice` / `bgm` / `sfx`、语种、台词）。子表各带一个 `meta jsonb` 留着放以后的扩展属性。
-- **表上不设约束**：三张表都没有外键与取值约束；种类、子类与拆解状态只在应用层校验（[references/models.py](../server/src/iclip/domains/references/models.py)）。主表与子表在同一个事务里写，列表与详情只认两边都有的。
-- **同一地址只有一条参考视频**：没有唯一约束，新增与恢复都先按地址拿事务级咨询锁 `pg_advisory_xact_lock(命名空间, 地址)` 再查重。参考音频不去重。
-- **入库时量音频时长**：上传台账不量时长，参考音频入库时由组合根用 ffprobe 按地址量（`app/reference_sources.py`）。
-- **改拆解**：视频子表的改动与主表的 `updated_at` 在同一条语句里一起改。
-- **谁来用**：资料库条目 `library_entries.reference_id` 指着主表（只有参考视频打标）；生成域经 `ReferenceAssets` 端口（`app/generation_references.py`）核对局部编辑的参考片段、出片的 `reference_ids` 与配音的音色；成片导出按地址对参考音频库。试生成提交成 `operation=trial` 的视频生成，记录 id 写回 `test_job_id`（`app/reference_test_video.py`）。
+| **常规业务模块** | 各模块在自有的 `domains/*/infra_sql.py` 中维护数据表；外部 PDM 款目录通过 `domains/products/catalog_pg.py` 的独立只读连接池查询 |
+| **上传台账（`domains/uploads/`）** | 独立维护 `iclip.media_uploads` 表（与 `generation_jobs` 分离），记录前端直传与消息外部图片转存；表级不设外键与 CHECK 约束，枚举在应用层校验（[uploads/models.py](../server/src/iclip/domains/uploads/models.py)），视频确认时按 OSS 对象 MD5 去重；生成、参考资产与成片导出均经 `app/` 组合根解耦调用 |
+| **参考资产（`domains/references/`）** | 采用 `iclip.references` 主表 + `reference_videos` / `reference_audios` 一对一子表（无表级外键与 CHECK 约束，同事务读写，视频子表改动同步刷新主表 `updated_at`）。参考视频新增与恢复通过 `pg_advisory_xact_lock` 按 URL 串行去重；参考音频不去重，入库时在组合根用 `ffprobe` 实测时长；资料库标签关联主表（仅视频打标），试生成任务 ID 写回 `test_job_id` |
+| **资料库标签（`domains/tagging/`）** | 独立维护标签树、被打标条目与关联关系三张表（见 [ADR-0006](adr/0006-library-tags-as-data.md)、[ADR-0007](adr/0007-library-tag-value-depth.md)）；修改标签树结构时先获取事务级咨询锁再校验重名与层级/数量上限 |
+| **资料库聚合查询（`domains/library/reports_pg.py`）** | 不建冗余表，跨「生成记录、对话、用户」三表实时聚合素材卡封面与分叉继承关系；爆款素材库直接关联标签域条目表与生成记录表 |
+| **审计统计报表（`domains/audit/reports_pg.py`）** | 不建持久表。先短查询获取对话 ID，释放连接后经 `runtime_facts.py` 调运行时 `/v1/stats/*` 拉取会话耗时与 Token 记录，再于单事务内写入事务级临时表供全部指标 SQL 汇总 |
 
 ### 生成、拆解与打标队列
 
-后端的三个异步任务队列（媒体生成、参考视频拆解、资料库打标）共用同一个 procrastinate 数据库连接器，随后端服务一同启停，且**所有队列任务均不开启自动重试**：
+后端三个异步任务队列共用同一个 procrastinate 连接器，随服务一同启停，且**所有队列任务均不开启自动重试**：
 
-1. **媒体生成队列（`domains/generation/`）**：生成记录 `iclip.generation_jobs` 只记生成与加工，不记上传（见[上传台账](#上传台账)）。
-   - **宫格切图**：同步处理完直接写入数据库（状态即 `completed`），不进异步队列。
-   - **视频生成（出片、参考视频的试生成、局部编辑段、超分高清版）**：异步提交给上游视频网关并轮询结果；试生成和出片走同一个通道、同一套配置组规则，只是记成 `operation=trial`。不同视频模型族的参数拼装规则集中在 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py)。
-   - **视频剪辑合成（`compose`）**：在本地调用 ffmpeg 将多段视频裁剪、重编码拼接后上传 OSS。
-   - **字幕识别（`subtitle`）与背景音乐生成（`audio`）**：各自拥有独立的队列通道。素材片生成完成时不会识别字幕，只有调用 `POST /generations/subtitles` 才排入一条字幕识别任务（抽取音频调用千问 ASR `qwen-audio-3.1-asr-flash`）；背景音乐则调用千问 TTS `qwen-audio-3.1-tts-next`，下载音频后用 ffmpeg 切除首尾静音、统一响度并转存为 m4a。
-   - **配音（`dubbing`）与合成语音（`speech`）**：独立通道，合成语音是只有一句、不对着素材片的配音，和配音走同一个通道、同一个合成服务。截参考音频、逐句变速或截尾、拼成和素材片等长的音轨都在本地用 ffmpeg 做，只有逐句合成交给语音合成协议（`SpeechSynthesizer`，[generation/dubbing.py](../server/src/iclip/domains/generation/dubbing.py)）。合成用的是和背景音乐同一个千问 TTS `qwen-audio-3.1-tts-next`（[generation/speech.py](../server/src/iclip/domains/generation/speech.py)）：每句一次请求，截出的参考音频以 data URI 随请求带上，提示词里用 `@voice1` 引用它并写明用哪种语言念；参考音色的台词只记进配音记录，不发给合成服务。没有配 `media_generation.speech` 段或配音的千问 API Key `QWEN_SPEECH_API_KEY` 时配音没有开通，提交接口答 `422`。
-   - **成片导出（`whole_film`）**：独立通道，转发给成片渲染服务处理（见[成片渲染服务](#成片渲染服务)）。
+1. **媒体生成队列（`domains/generation/`）**：`iclip.generation_jobs` 仅记录生成与加工任务，不记上传（见[后端的持久化与迁移](#后端的持久化与迁移)）。
+   - **宫格切图**：同步切分完成后直接落库为 `completed`，不进异步队列。
+   - **视频生成（出片、参考视频试生成、局部编辑段、超分高清版）**：异步提交上游视频网关并轮询结果（试生成与出片共用通道与配置组规则，记为 `operation=trial`）；各模型族参数拼装集中在 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py)。
+   - **视频剪辑合成（`compose`）**：本地调用 ffmpeg 裁剪、重编码拼接后上传 OSS。
+   - **字幕识别（`subtitle`）与背景音乐生成（`audio`）**：各自独立通道。字幕识别仅在调用 `POST /generations/subtitles` 时入队（抽取音频调千问 ASR `qwen-audio-3.1-asr-flash`）；背景音乐调千问 TTS `qwen-audio-3.1-tts-next`，经 ffmpeg 切除首尾静音、统一响度后转存 m4a。
+   - **配音（`dubbing`）与合成语音（`speech`）**：共用独立通道与 `SpeechSynthesizer` 协议（[generation/dubbing.py](../server/src/iclip/domains/generation/dubbing.py)、[generation/speech.py](../server/src/iclip/domains/generation/speech.py)）。参考音频截取、逐句变速/截尾与等长音轨拼接均在本地由 ffmpeg 完成；逐句语音合成调用千问 TTS `qwen-audio-3.1-tts-next`（参考音频以 data URI 传入并在提示词中以 `@voice1` 引用，音色台词仅落库不发上游；未配置 `media_generation.speech` 或 `QWEN_SPEECH_API_KEY` 时提交接口返回 `422`）。
+   - **成片导出（`whole_film`）**：独立通道，转发给[成片渲染服务](#成片渲染服务)处理。
 2. **参考视频拆解队列（`domains/references/`，队列名 `references`）**：
-   - 调用 `BreakdownRunner`（60 秒以内的视频在本地按每秒 10 帧抽帧并提取音轨，超过 60 秒的视频直接传 URL 让上游抽帧），然后通过运行时的 `/v1/model-calls/responses` 接口调用火山方舟模型生成拆解报告。
-   - **错误分类映射**：
-     - `model_unavailable`：运行时返回 `409 model_unavailable`（后台未配置或未启用拆解模型）。
-     - `model_call_failed`（可重试错误）：火山方舟返回 429 限流或 5xx 错误、网络连不上、或返回的内容不是完整合法的 JSON。
-     - `model_failed`（不可重试错误）：其余 4xx 报错、调用超时或应用凭证被拒。
-     - `timeout`：后台定时任务每分钟扫描一次，将处于「拆解中」超过 20 分钟的任务强制收尾为超时。
-   - 拆解报告成功写回数据库后，会自动排入一次 AI 打标任务。
+   - 调用 `BreakdownRunner`（≤ 60 秒视频本地按 10 fps 抽帧并提音轨，> 60 秒直接传 URL），经运行时 `/v1/model-calls/responses` 调用火山方舟模型生成拆解报告，成功后自动排入 AI 打标任务。
+   - **错误分类与超时**：后台未启用模型映射为 `model_unavailable`；429 / 5xx / 网络异常 / JSON 截断映射为可重试的 `model_call_failed`；其余 4xx / 超时 / 凭证被拒映射为 `model_failed`；定时任务每分钟扫描并将运行超 20 分钟的任务强制收尾为 `timeout`。
 3. **资料库 AI 打标队列（`domains/tagging/`，队列名 `tagging`）**：
-   - 读取参考视频的拆解报告（或爆款素材所属对话工作区里的 `treatment.md`），把当前标签树中所有开启了 `auto_fill=ai` 的维度动态拼装成 JSON Schema，通过运行时调用火山方舟模型打标。
-   - 拿到结果后，在单个事务内清空该条目原有的 AI 维度标签并写入新选中的标签（人工维度的标签保持不动）。后台定时任务每分钟将超过 10 分钟仍未结束的打标任务收尾为 `timeout`。
+   - 读取拆解报告或 `treatment.md`，将开启 `auto_fill=ai` 的维度动态拼装为 JSON Schema 经运行时调用火山方舟模型打标，在单事务内整组替换 AI 维度标签（人工维度不变）；定时任务每分钟将超 10 分钟未完的任务收尾为 `timeout`。
 
 ---
 
 ## 4. 日志
 
-视频后端（[app/logging.py](../server/src/iclip/app/logging.py)）与运行时服务（运行时项目的 `src/agent_runtime/http/logging.py`）采用完全一致的 `structlog` 日志配置：
+视频后端（[app/logging.py](../server/src/iclip/app/logging.py)）与运行时服务（运行时项目的 `src/agent_runtime/http/logging.py`）采用一致的 `structlog` 配置：
 - 本地开发（Console 格式）打印本地时间并标明服务名（「后端」或「运行时」）；线上环境（JSON 格式）输出 ISO UTC 时间戳。
-- 自动屏蔽正常的 `/healthz` 健康检查请求日志和 WebSocket 重复连接日志，并通过 `QUIET_LOGGERS` 压低第三方库的无关日志噪音。
-- 每个请求的 `request_id` 和当前登录身份 `principal` 通过 `contextvars` 自动绑定到上下文中，业务代码打日志只需写固定中文短句和关键变量（见 [AGENTS.md](../AGENTS.md)）。
+- 自动屏蔽正常的 `/healthz` 健康检查日志和 WebSocket 重复连接日志，并通过 `QUIET_LOGGERS` 压低第三方库噪音。
+- 每个请求的 `request_id` 和当前登录身份 `principal` 通过 `contextvars` 自动绑定，业务代码打日志只需写固定中文短句和关键变量（见 [AGENTS.md](../AGENTS.md)）。
