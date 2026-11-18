@@ -102,6 +102,7 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
    gh pr create --base main
    gh pr merge <n> --auto --squash
    ```
+   - **升级顺序**：改动要求应用和运行时按特定先后升级时（哪种改动谁在先，见[跨版本兼容](contract/conventions.md#跨版本兼容)），在 PR 说明里单独写一行 `升级顺序：先升级应用` 或 `升级顺序：先升级运行时`，发版时据此选升级命令的顺序参数。
    - **注意**：PR 创建后尽量不要只修改标题或正文（GitHub 在只改标题/正文时不会重新触发 `ci`，会导致自动合并一直卡住；如果确实改了标题或正文，请运行 `gh pr update-branch <n>` 或推一个空提交重新触发 `ci`）。
 
 4. **等待 `ci` 通过与故障排查**：
