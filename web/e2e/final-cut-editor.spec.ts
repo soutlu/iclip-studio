@@ -50,6 +50,18 @@ const readyPlayer = async (editor: Locator) => {
   return player
 }
 
+/** 等预览里只有一个播放器（没有正在底下加载的新一份），而且画好了。 */
+const settledPlayer = async (editor: Locator) => {
+  await expect(
+    editor
+      .getByRole('region', { name: '预览' })
+      .locator('iframe')
+      .contentFrame()
+      .locator('hyperframes-player'),
+  ).toHaveCount(1)
+  return readyPlayer(editor)
+}
+
 const RUNTIME_FILE = '/hyperframe.runtime.iife.js'
 
 /** 播放器预览页里装的运行库脚本地址。 */
@@ -2456,6 +2468,135 @@ test('语言：加上 English 切过去，给一句字幕写英文，存下的 E
   await expect.poll(captionText).toBe('新字幕')
 })
 
+test('其它语言下改一句的译文直接打进预览：不换播放器，这一句显示新的字；切走再切回来整份重新加载后也是它', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await serveSavedCaptions(page)
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const added = mainSaved(page, 1)
+  await editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  await added
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '字幕' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕' })
+  const sceneCreated = page.waitForRequest(
+    (request) => savedFileOf(request, CAPTIONS_FILE)?.includes('data-var-text') === true,
+  )
+  await tab.getByRole('button', { name: '在播放头处加一句' }).click()
+  await sceneCreated
+  const languages = editor.getByRole('group', { name: '语言' })
+  const created = page.waitForRequest((request) => savedFileOf(request, ENGLISH_FILE) !== null)
+  await languages.getByRole('button', { name: '添加语言' }).click()
+  await page.getByRole('menuitem', { name: 'English（EN）' }).click()
+  await created
+  const field = tab.getByRole('textbox', { name: '字幕文字 00:00.00 – 00:02.00' })
+  const written = page.waitForRequest(
+    (request) => savedFileOf(request, ENGLISH_FILE)?.includes('Hello world') === true,
+  )
+  await field.fill('Hello world')
+  await written
+  const shownText = async () => (await previewCaption(editor))?.text
+  await expect.poll(shownText).toBe('Hello world')
+  await settledPlayer(editor)
+  await markFinalCutPreviewPlayer(editor)
+
+  await field.fill('Hello again')
+  await expect.poll(shownText).toBe('Hello again')
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
+
+  // 同样的文件整份重新加载（切到原文再切回来）：显示的还是这句译文
+  await languages.getByRole('button', { name: '原文' }).click()
+  await expect.poll(shownText).toBe('新字幕')
+  await languages.getByRole('button', { name: 'English（EN）' }).click()
+  await expect.poll(shownText).toBe('Hello again')
+})
+
+test('其它语言下挪一句、裁一句、改一句的字色直接打进预览：不换播放器，这一句的起止和字色是新的、字还是译文；整份重新加载后一样', async ({
+  page,
+}) => {
+  await serveSavedCaptions(page)
+  const { editor, side, row, second } = await openWithCaptions(page)
+  const languages = editor.getByRole('group', { name: '语言' })
+  await languages.getByRole('button', { name: '添加语言' }).click()
+  await page.getByRole('menuitem', { name: 'English（EN）' }).click()
+  const translated = page.waitForRequest(
+    (request) => (savedFileOf(request, ENGLISH_FILE)?.match(/\[EN\]/g) ?? []).length === 2,
+  )
+  await side
+    .getByRole('tabpanel', { name: '字幕' })
+    .getByRole('button', { name: '翻译', exact: true })
+    .click()
+  await translated
+  /** 预览里第二句的字、字色和起止（播放头不在它里面时也读得到）；换播放器的那一刻是 null。 */
+  const shownSecond = () =>
+    finalCutPreviewPlayer(editor).evaluateAll((elements, id) => {
+      if (elements.length !== 1) return null
+      const [element] = elements as PreviewPlayer[]
+      const found = element?.iframeElement.contentDocument?.getElementById(id)
+      if (found === null || found === undefined) return null
+      return {
+        text: found.textContent,
+        color: found.ownerDocument.defaultView?.getComputedStyle(found).color,
+        start: found.getAttribute('data-start'),
+        duration: found.getAttribute('data-duration'),
+      }
+    }, second)
+  await expect
+    .poll(shownSecond)
+    .toEqual({ text: '[EN] 第二句', color: 'rgb(255, 255, 255)', start: '2', duration: '2' })
+  await settledPlayer(editor)
+  await markFinalCutPreviewPlayer(editor)
+
+  const sceneSavedWith = (check: (scene: string) => boolean) =>
+    page.waitForRequest((request) => {
+      const scene = savedFileOf(request, CAPTIONS_FILE)
+      return scene !== null && check(scene)
+    })
+  const timingOf = (scene: string) =>
+    savedCaptionTimings(scene).find((timing) => timing.start >= 2) ?? { start: 0, duration: 0 }
+  const clip = row.getByRole('group', { name: /第二句，/ })
+  const moved = sceneSavedWith((scene) => timingOf(scene).start > 2)
+  await dragClip(page, clip.getByRole('button', { name: /^选中：/ }), 30)
+  const after = timingOf(savedFileOf(await moved, CAPTIONS_FILE) ?? '')
+  const trimmed = sceneSavedWith((scene) => timingOf(scene).duration < 2)
+  await dragClip(page, clip.getByRole('slider', { name: '裁剪结尾' }), -20)
+  const shorter = timingOf(savedFileOf(await trimmed, CAPTIONS_FILE) ?? '')
+  expect(shorter.start).toBe(after.start)
+
+  await clip.getByRole('button', { name: /^选中：/ }).click()
+  await side.getByRole('tab', { name: '属性' }).click()
+  const colored = sceneSavedWith((scene) =>
+    new RegExp(`<div style="color: #ff3366" id="${second}"`).test(scene),
+  )
+  await side
+    .getByRole('tabpanel', { name: '属性' })
+    .getByRole('textbox', { name: '颜色' })
+    .fill('#ff3366')
+  await colored
+  const live = {
+    text: '[EN] 第二句',
+    color: 'rgb(255, 51, 102)',
+    start: String(shorter.start),
+    duration: String(shorter.duration),
+  }
+  await expect.poll(shownSecond).toEqual(live)
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
+
+  // 同样的文件整份重新加载（切到原文再切回来）：和直接打进去的一样
+  await languages.getByRole('button', { name: '原文' }).click()
+  await expect.poll(async () => (await shownSecond())?.text).toBe('第二句')
+  await languages.getByRole('button', { name: 'English（EN）' }).click()
+  await expect.poll(shownSecond).toEqual(live)
+})
+
 test('按语言导出：切到 English 点「导出」，提示写导出 English 版，发出的请求带 locale en，导出的状态写 English 版', async ({
   page,
 }) => {
@@ -3437,6 +3578,43 @@ test('画面上拖动贴片里的字：拖动中预览跟着动，松手写进�
     )
     .toBeLessThan(0.5)
   expect(mainSaves).toBe(0)
+})
+
+test('其它语言下画面上挪贴片里的一层直接打进预览：存下之前不换播放器、预览里已经挪过去；存下以后整份重新加载，还在挪过去的地方', async ({
+  page,
+}) => {
+  await serveSavedCard(page)
+  const { editor, layer } = await openWithCard(page)
+  const languages = editor.getByRole('group', { name: '语言' })
+  // 加第一种语言时文字字段改成随语言，主文件变了，预览整份重新加载一次：等存下、新的播放器换上来、没有在加载的
+  const bound = mainSavedWith(page, (html) => html.includes('data-locale-bindings'))
+  await languages.getByRole('button', { name: '添加语言' }).click()
+  await page.getByRole('menuitem', { name: 'English（EN）' }).click()
+  await bound
+  const player = await settledPlayer(editor)
+  const before = await previewRect(player, TEXT)
+  const spot = await canvasSpot(layer, player, TEXT)
+  await page.mouse.click(spot.x, spot.y)
+  await expect(layer.getByRole('img', { name: '选中：测试可填项 · ff-text' })).toBeVisible()
+  await markFinalCutPreviewPlayer(editor)
+
+  // 存不下去：预览里看到的只能是直接打进去的
+  await pauseMockResponses(page, '/workspace/file')
+  await page.keyboard.press('Shift+ArrowLeft')
+  const canvas = await boxOf(layer)
+  const shift = async () =>
+    ((await previewRect(finalCutPreviewPlayer(editor), TEXT)).x - before.x) * canvas.width
+  await expect.poll(shift).toBeLessThan(-5)
+  const live = await shift()
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
+
+  // 存下以后预览重新取组件文件、整份重新加载：和直接打进去的一样
+  const nudged = cardSavedWith(page, 'ff-text', (saved) => saved?.['data-x'] !== undefined)
+  await releaseMockResponses(page, '/workspace/file')
+  await nudged
+  await expect.poll(() => isMarkedFinalCutPreviewPlayer(editor)).toBe(false)
+  await readyPlayer(editor)
+  await expect.poll(shift).toBeCloseTo(live, 0)
 })
 
 /** 预览里 `selector` 那个元素的布局宽高（不算变换）。 */

@@ -551,6 +551,20 @@ describe('字幕场景', () => {
       ).toEqual({ kind: 'live', patches: [], captions: [textOf('cap-1', '你好')] })
     })
 
+    it('编辑器每步都重写的总长：没变时照打，变了时整份重新加载', () => {
+      const edit = values('en', { op: 'replace', path: '/cap_1', value: 'Hi' })
+      const texts = { 'cap-1': 'Hi', 'cap-2': '再见' }
+      const kept = totalChange(8, 8)
+      expect(previewSync(SHOWN_EN, nextEn(texts, edit, kept))).toEqual({
+        kind: 'live',
+        patches: kept.patches,
+        captions: [textOf('cap-1', 'Hi')],
+      })
+      expect(previewSync(SHOWN_EN, nextEn(texts, edit, totalChange(8, 9)))).toEqual({
+        kind: 'reload',
+      })
+    })
+
     it('挪一句：只打挪的补丁', () => {
       const retime: JsonPatchOp = { op: 'replace', path: '/elements/cap-2/timing/start', value: 6 }
       expect(
@@ -686,8 +700,14 @@ describe('智能调音', () => {
       patches: withTotal.patches,
       captions: [],
     })
-    // 不是调音的一步，只有总长时照旧整份重新加载
-    expect(previewSync(shown, { ...next, step: [total] })).toEqual({ kind: 'reload' })
+    // 总长变了：这种语言下整份重新加载
+    const longer = totalChange(8, 9)
+    expect(
+      previewSync(shown, {
+        ...next,
+        step: [{ ...longer, patches: [fx, ...longer.patches] }],
+      }),
+    ).toEqual({ kind: 'reload' })
 
     const [, absent] = films([attribute('dub-de', 'data-fx-chain', '{}')], 'en')
     expect(previewSync(shown, absent)).toEqual({ kind: 'reload' })
