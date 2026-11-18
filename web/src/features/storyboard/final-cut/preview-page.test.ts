@@ -480,6 +480,25 @@ describe('一步编辑的补丁直接打进正在播的那一份', () => {
     expect(playerOf().paused).toBe(false)
   })
 
+  it('在放时给视频第一次加上效果链或曲线：原地跳一下，接着放；改值、换组不跳', async () => {
+    const { patch, playerOf, send } = await openLive()
+    send({ type: 'play' })
+    playerOf().seek(1.5)
+    const seek = vi.spyOn(playerOf(), 'seek')
+    patch([{ op: 'add', path: '/elements/a/attributes/data-fx-chain', value: '{}' }])
+    expect(seek).toHaveBeenCalledExactlyOnceWith(1.5)
+    patch([{ op: 'add', path: '/elements/b/attributes/data-automation', value: '{}' }])
+    expect(seek).toHaveBeenCalledTimes(2)
+    expect(playerOf().paused).toBe(false)
+
+    seek.mockClear()
+    patch([
+      { op: 'replace', path: '/elements/a/attributes/data-fx-chain', value: '{"version":1}' },
+      { op: 'add', path: '/elements/a/attributes/data-audio-group', value: 'voice' },
+    ])
+    expect(seek).not.toHaveBeenCalled()
+  })
+
   it('加进来的视频、音频照预览的规则加载，预览静音时跟着静音', async () => {
     const { inPlayer, patch, send } = await openLive()
     send({ type: 'playback', rate: 1, muted: true, loop: false })

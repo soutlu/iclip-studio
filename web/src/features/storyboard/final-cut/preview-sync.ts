@@ -1,3 +1,7 @@
+import { HF_AUDIO_AUTOMATION_ATTR } from '@hyperframes/core/audio-automation'
+import { HF_AUDIO_CARVE_ATTR } from '@hyperframes/core/audio-carve'
+import { HF_AUDIO_FX_ATTR } from '@hyperframes/core/audio-fx'
+import { HF_AUDIO_GROUP_ATTR } from '@hyperframes/core/audio-groups'
 import { EDIT_BASE_X_ATTR, EDIT_BASE_Y_ATTR } from '@hyperframes/core/runtime/position-edits'
 import type { JsonPatchOp } from '@hyperframes/sdk'
 import type { CanvasLayer } from './canvas-layers'
@@ -108,6 +112,26 @@ const LIVE_ATTRIBUTES = new Set([
 ])
 const LIVE_STYLES = new Set(['zIndex', ...GEOMETRY_STYLES])
 
+// 调音写的属性，实测打进去（播着、停着、撤销，值变了、第一次出现、去掉）和重新加载一样：效果链、曲线运行库在播的
+// 片段上自己跟，视频第一次有它们时预览页原地跳一下（见 preview-page.ts）；片段上的组没有自己的效果，换组声音不变；
+// 压低设置运行库不读。套语言不改这几个属性，原文以外的语言下也能打
+const MIX_ATTRIBUTES = new Set([
+  HF_AUDIO_FX_ATTR,
+  HF_AUDIO_AUTOMATION_ATTR,
+  HF_AUDIO_GROUP_ATTR,
+  HF_AUDIO_CARVE_ATTR,
+])
+
+/** 补丁改的调音属性在哪个片段上；不是调音属性时是 undefined。 */
+const mixTargetOf = (path: string): string | undefined => {
+  const element = ELEMENT.exec(path)
+  if (element === null) return undefined
+  const [, id = '', kind, name = ''] = element
+  return kind === 'attributes' && MIX_ATTRIBUTES.has(unescapePointer(name))
+    ? unescapePointer(id)
+    : undefined
+}
+
 const htmlOf = (value: unknown) =>
   typeof value === 'object' && value !== null && 'html' in value && typeof value.html === 'string'
     ? value.html
@@ -125,15 +149,19 @@ const variableOf = (path: string): string | undefined => {
 
 /**
  * 主文件的这条补丁能不能直接打。字幕的根变量能：各句的字由场景里它自己的字显示，运行库加载以后不再读根变量，
- * 打进去只为副本会话和编辑器对得上。原文以外的语言下别的都不行（套语言改过发出去的那一份，不是引擎补丁）。
+ * 打进去只为副本会话和编辑器对得上。调音的属性能，只要片段在预览的那一份（`preview`）里：别的语言的配音片段、
+ * 隐藏的片段不在。原文以外的语言下别的都不行（套语言改过发出去的那一份，不是引擎补丁）。
  */
 const isLiveMain = (
   patch: JsonPatchOp,
   foreign: boolean,
   captionVariables: ReadonlySet<string>,
+  preview: string,
 ) => {
   const variable = variableOf(patch.path)
   if (variable !== undefined) return captionVariables.has(variable)
+  const mixTarget = mixTargetOf(patch.path)
+  if (mixTarget !== undefined) return preview.includes(` data-hf-id="${mixTarget}"`)
   if (foreign) return false
   if (patch.path === '/metadata/duration') return true
   const element = ELEMENT.exec(patch.path)
@@ -276,7 +304,7 @@ export function previewSync(shown: PreviewFilm | null, next: PreviewFilm): Previ
     if (change.file === PROJECT_MAIN) {
       if (
         shortens(change) ||
-        !change.patches.every((patch) => isLiveMain(patch, foreign, captionVariables))
+        !change.patches.every((patch) => isLiveMain(patch, foreign, captionVariables, next.html))
       )
         return RELOAD
       patches.push(...change.patches)

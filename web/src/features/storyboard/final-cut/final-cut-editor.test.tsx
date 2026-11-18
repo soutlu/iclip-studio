@@ -3555,6 +3555,29 @@ describe('final-cut 编辑器 · 属性', () => {
       await waitSaved(() => expect(savedTag('clip-1')).not.toContain('data-fx-chain'))
     })
 
+    it('调一段均衡：改动直接打进正在播的预览，不重新加载', async () => {
+      const user = await openVoiceClip()
+      await previewSettled()
+      const loads = () =>
+        previewPages.latest().commands.filter((command) => command.type === 'load').length
+      const before = loads()
+      const player = previewPlayer()
+      await user.click(fineTune())
+
+      await typeStrength(user, '中频 1kHz', '0.0dB', '2')
+      await waitFor(() =>
+        expect(
+          player.iframeElement.contentDocument
+            ?.querySelector('[data-hf-id="clip-1"]')
+            ?.getAttribute('data-fx-chain'),
+        ).toContain('peaking'),
+      )
+      expect(previewPlayer()).toBe(player)
+      expect(loads()).toBe(before)
+      // 等存完：没存完的保存会落到下一条用例的工程上
+      await waitSaved(() => expect(eqGains()).toEqual([0, 2, 0]))
+    })
+
     it('升降调以后点右上「归零」：一起清掉，是一步撤销', async () => {
       const user = await openVoiceClip()
       await user.click(fineTune())

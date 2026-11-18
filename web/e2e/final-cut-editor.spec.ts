@@ -1062,6 +1062,49 @@ test('音色风格与精细调音：给配乐选一个预设、调一段均衡�
   )
 })
 
+test('调音直接打进预览：给配乐选一个音色风格，预览不换播放器，预览里这段配乐带着新的效果链', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const inspector = editor.getByRole('tabpanel', { name: '属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '配乐' }).click()
+  const added = mainSavedWith(page, (html) => savedAudio(html).length === 1)
+  await side
+    .getByRole('list', { name: '音频' })
+    .getByRole('button', { name: '轻快原声吉他，适合秋季穿搭', exact: true })
+    .click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '加到播放头' }).click()
+  await added
+  await editor
+    .getByRole('group', { name: '配乐', exact: true })
+    .getByRole('button', { name: /^选中：轻快原声吉他/ })
+    .click()
+  await expect(inspector.getByRole('heading', { name: '智能调音' })).toBeVisible()
+  await expect(inspector.getByText('正在分析声音')).toHaveCount(0)
+  await readyPlayer(editor)
+  await markFinalCutPreviewPlayer(editor)
+
+  await inspector
+    .getByRole('radiogroup', { name: '音色风格' })
+    .getByRole('radio', { name: '自然空间' })
+    .click()
+  await expect
+    .poll(() =>
+      finalCutPreviewPlayer(editor).evaluate(
+        (element: HTMLElement & { iframeElement: HTMLIFrameElement }) =>
+          element.iframeElement.contentDocument
+            ?.querySelector('audio')
+            ?.getAttribute('data-fx-chain') ?? '',
+      ),
+    )
+    .toContain('"fromPreset":"room-natural"')
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
+})
+
 test('波形音量关键帧：打开后在配乐的波形线上按下加一个点往下拖，存下的主文件里这条曲线中间变小；撤销一步回到平的', async ({
   page,
 }) => {
