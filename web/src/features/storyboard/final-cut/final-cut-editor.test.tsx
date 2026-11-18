@@ -125,11 +125,18 @@ const serveGenerations = (records: GenerationJob[]) => {
   )
 }
 
+// 编辑器停手 800 毫秒才保存。用例里传 10 毫秒（和 use-film-session 自己的用例一样），等保存不用真等；
+// 看「改了还没存」那一段的用例在打开编辑器前调 `keepRealSaveDelay()`，用回真实的时长
+let saveDelay: { saveDelayMs?: number } = { saveDelayMs: 10 }
+const keepRealSaveDelay = () => {
+  saveDelay = {}
+}
+
 const openEditor = async (records: GenerationJob[] = takes) => {
   serveGenerations(records)
   const editor = (
     <>
-      <FinalCutEditor conversationId={CONVERSATION} />
+      <FinalCutEditor conversationId={CONVERSATION} {...saveDelay} />
       <Toaster />
     </>
   )
@@ -150,6 +157,7 @@ const editorRoot = () => screen.getByRole('group', { name: 'final-cut 编辑器'
 let previewPages: ReturnType<typeof servePreviewPages>
 
 beforeEach(() => {
+  saveDelay = { saveDelayMs: 10 }
   previewPages = servePreviewPages({ run: true })
 })
 
@@ -189,7 +197,7 @@ const savedVersion = () => mockProjectMain(CONVERSATION)?.version
 const WRITE_URL = '*/api/conversations/:conversationId/workspace/file'
 const CREATE_URL = '*/api/conversations/:conversationId/final-cut/files'
 const savedClips = () => savedFilm().match(/<video [^>]*>/g) ?? []
-// 保存是真实的 800 毫秒延迟；一条用例里存四五次就接近默认的 5 秒上限，CI 上会超时
+// 一条用例要开整个编辑器、走完一串操作，上限放宽到 15 秒
 vi.setConfig({ testTimeout: 15_000 })
 
 const waitSaved = (check: () => void) => waitFor(check, { timeout: 4000 })
@@ -2115,6 +2123,7 @@ describe('final-cut 编辑器 · 播放', () => {
   }
 
   it('预览页拿到的是当前的主文件（没存的改动也在里面），<base> 指向凭令牌取工程文件的地址', async () => {
+    keepRealSaveDelay()
     const stored = putMockProjectMain(
       CONVERSATION,
       mainFile([video({ src: URL_A, duration: 2_000 })], { width: 720, height: 1280 }),
@@ -2461,6 +2470,7 @@ describe('final-cut 编辑器 · 导出', () => {
   }
 
   it('加了素材马上导出：先把 final-cut 存好，再发起导出', async () => {
+    keepRealSaveDelay()
     const user = userEvent.setup()
     const mainAtStart = trackStarts()
     serveLatest(null, DONE)
@@ -2484,6 +2494,7 @@ describe('final-cut 编辑器 · 导出', () => {
   })
 
   it('改动没存进去：不发起导出，说明保存失败的原因', async () => {
+    keepRealSaveDelay()
     const user = userEvent.setup()
     const mainAtStart = trackStarts()
     let attempts = 0
@@ -4497,6 +4508,7 @@ describe('final-cut 编辑器 · 切走再切回', () => {
   }
 
   it('改完马上切走、保存还没回来时切回：等保存完才读主文件，读到改过的，接着改照常保存', async () => {
+    keepRealSaveDelay()
     putMockProjectMain(
       CONVERSATION,
       mainFile(
@@ -4530,6 +4542,7 @@ describe('final-cut 编辑器 · 切走再切回', () => {
   })
 
   it('一次保存还在途时又改了一处再切走：切回时等两次保存都完成才读主文件', async () => {
+    keepRealSaveDelay()
     putMockProjectMain(
       CONVERSATION,
       mainFile(
