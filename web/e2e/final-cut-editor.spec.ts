@@ -3416,8 +3416,8 @@ const stepPlayhead = async (page: Page, editor: Locator, from: number, steps: nu
 }
 
 /**
- * 等 `check` 通过，量预览里的元素时用。预览重新加载的那一下元素不在，`previewRect` 会报错；
- * `expect.poll` 遇到报错直接失败，这里报错也接着重试，到点才失败。
+ * 轮询断言预览画布内的元素位置。预览重载瞬间元素可能短暂不存在导致 `previewRect` 抛错，
+ * 用 `toPass` 忽略中间异常持续重试直至超时（`expect.poll` 遇抛错会立即失败）。
  */
 const settles = (check: () => Promise<void>) => expect(check).toPass({ timeout: 10_000 })
 

@@ -34,7 +34,7 @@
 make db-upgrade   # 执行后端与运行时两边的 Alembic 数据库迁移（如果库里已有重要数据请先备份）
 make dev          # 先启动视频后端 (:7788)，健康检查通过后自动启动运行时服务 (:7790)
 ```
-- **已有的本地库**：运行时的迁移报表已存在时，说明该库尚未打基线标记，见[升级运行时](#升级运行时)第 2 步；本地在 `server/` 目录下执行 `uv run --env-file ../.env python -m agent_runtime.admin stamp-baseline`。
+- **已有的本地库**：若运行 `make db-upgrade` 提示运行时的数据库表已存在，说明该库尚未写入迁移基线标记（见[升级运行时](#升级运行时)）；先在 `server/` 目录下执行 `uv run --env-file ../.env python -m agent_runtime.admin stamp-baseline`，再重新执行 `make db-upgrade`。
 - **初始化后台配置**：新库刚启动时还没有任何模型和 Agent。请使用 root 账号登录网页后台，在「配置页」中接入模型供应商、创建并发布技能与 Agent（如需使用视频理解、参考视频拆解、自动打标或 `final-cut` 翻译功能，请按下方[服务器部署](#服务器部署)第 6 步接入火山方舟）。
 
 ### 4. 启动前端开发服务（另开终端）
@@ -127,57 +127,47 @@ curl http://localhost/api/healthz
 - `<版本号>/`：该版本的组件文件、封面与字体表，内部 `vendor` 为指向 `../vendor` 的软链接。
 - `catalog.json`：当前生效的组件目录索引，指向目标版本号。
 
-在仓库根目录执行（目标位置是部署目录的 `components/`，可以写成 `<服务器>:<部署目录>/components`，也可以是本机路径）：
+在仓库根目录执行（目标位置为部署目录的 `components/`，支持 `<服务器>:<部署目录>/components` 或本机路径）：
 
 ```bash
 scripts/publish-components.sh <私有组件库本地路径> <本机输出目录> <服务器>:<部署目录>/components
 ```
 
-- **本机输出目录要长期保留、每次复用**：打包对 `vendor/` 已有文件的保护靠的是它里面已有的 `vendor/`，每次换新目录就失去了这层保护。
-- **上传前先核对目标位置**：`vendor/` 里凡是目标位置已经有、内容却不一样的文件，一个都不覆盖；发现就列出来报错退出，什么都不传。
-- **按顺序上传**：先补 `vendor/` 里目标位置没有的文件（不删、不改目标位置已有的文件），再传 `<版本号>/`，最后原子替换 `catalog.json`，前端和渲染服务切到新版本时它引用的文件都已就位。
+- **固定复用 `<本机输出目录>`**：打包时会比对该目录内已有的 `vendor/`，拦截同路径但内容变化的文件；每次更换空目录会失去这层本地保护。
+- **脚本自动预检与原子切换**：脚本先比对目标位置已有的 `vendor/` 文件（发现内容不一致即列出冲突并中止，不传输任何文件）；校验通过后依次增量补齐 `vendor/`、上传 `<版本号>/`，最后原子替换 `catalog.json`，确保切换瞬间被引用的文件均已就绪。
 
 ### 升级
 
-> **只能从 v0.16.3 或之后的版本直接升级**。后端迁移基线为 v0.16.3 的迁移头；更早的库请先按 v0.16.3 部署文档迁移至该版本，再执行本节步骤。
+> - **迁移基线要求**：只能从 `v0.16.3` 或之后的版本直接升级（更早的库须先按 `v0.16.3` 部署文档升至该版本）。
+> - **首次升级到统一 `vX.Y.Z` 运行时镜像前**：先将服务器部署目录中的 `upgrade.sh` 替换为新版本标签上的 [deploy/upgrade.sh](../deploy/upgrade.sh)（保留可执行权限），旧脚本不识别 `vX.Y.Z` 格式的运行时版本号。
 
-每个版本都打全部四个镜像，镜像标签都是 `vX.Y.Z`（见[发版与镜像发布](release.md)）。服务器 `.env` 里应用（`server`、`web`、`render`）的版本记在 `IMAGE_TAG`，运行时（`runtime`）的版本记在 `RUNTIME_IMAGE_TAG`，两边可以分开升级；一个版本要不要升级运行时、用哪条升级命令、要对照哪些配置文件，看这个版本 GitHub Release 说明里的上线前摘要（见[发版步骤](release.md#发版步骤)）。
+每个版本标签 `vX.Y.Z` 均包含全部四个镜像（见[发版与镜像发布](release.md)）。服务器 `.env` 通过 `IMAGE_TAG`（`server / web / render`）和 `RUNTIME_IMAGE_TAG`（`runtime`）分开记录版本，支持独立或同时升级；具体升级范围与需核对的配置文件见该版本 GitHub Release 的上线前摘要。
 
-> **升级到第一个带运行时镜像的 `vX.Y.Z` 版本之前**，先把部署目录里的 `upgrade.sh` 换成该版本标签上的 [deploy/upgrade.sh](../deploy/upgrade.sh)（保留可执行权限）：旧脚本不认 `vX.Y.Z` 格式的运行时版本号。
+升级前先对照新版本标签上的 [compose.yaml](../deploy/compose.yaml)、[配置模型](../server/src/iclip/config/models.py) 与 [runtime.example.yaml](../deploy/runtime.example.yaml) 补齐新增配置项，再在部署目录执行 `./upgrade.sh`：
 
-升级统一在部署目录执行 `./upgrade.sh`（[deploy/upgrade.sh](../deploy/upgrade.sh)），先对照新版本标签上的 [compose.yaml](../deploy/compose.yaml)、[配置模型](../server/src/iclip/config/models.py) 和 [runtime.example.yaml](../deploy/runtime.example.yaml) 补齐新增配置项，再按要升级的一边选用法：
-
-| 用法 | 升级什么 |
+| 用法 | 升级范围 |
 |---|---|
-| `./upgrade.sh app vX.Y.Z` | 只升级应用，`runtime` 容器不动（见[升级应用](#升级应用)） |
-| `./upgrade.sh runtime vX.Y.Z [--stamp-baseline]` | 只升级运行时（见[升级运行时](#升级运行时)） |
-| `./upgrade.sh all vX.Y.Z --app-first`<br>`./upgrade.sh all vX.Y.Z --runtime-first` | 两边都升级到同一个版本（见[两边一起升级](#两边一起升级)） |
+| `./upgrade.sh app vX.Y.Z` | 仅升级应用（`server / web / render`），`runtime` 容器不动（见[升级应用](#升级应用)） |
+| `./upgrade.sh runtime vX.Y.Z [--stamp-baseline]` | 仅升级运行时（见[升级运行时](#升级运行时)） |
+| `./upgrade.sh all vX.Y.Z --app-first`<br>`./upgrade.sh all vX.Y.Z --runtime-first` | 按指定先后顺序将两边升至同一版本（见[两边一起升级](#两边一起升级)） |
 
-每一边的升级过程相同：脚本先拉取目标镜像并只读核对 Alembic 版本（已通过 DMS 提前完成迁移的环境将直接切换镜像；仍需迁移则先在目标镜像内执行迁移再写入 `.env`）。拉取、核对或迁移失败时 `.env` 不变；写入版本后若重启或健康检查失败，脚本会打印旧版本号与回滚重启命令（见[回滚](#回滚)）。升级成功后自动清理无标签悬空镜像，保留带标签旧镜像供回退。
-
-`.env` 须同时写明 `IMAGE_TAG` 和 `RUNTIME_IMAGE_TAG`（缺省均为 `latest`）。首次升级应用时若 `.env` 尚未配置 `RUNTIME_IMAGE_TAG`，脚本会自动读取运行中 `runtime` 容器的当前标签补入 `.env`（若容器未运行或标签为 `latest` 则报错退出，需手动在 `.env` 里写上运行时当前的版本）。
+**通用执行流程**：拉取目标镜像 → 只读核对对应 Schema 的 Alembic 版本（已在目标版本则跳过迁移，否则在目标镜像内执行迁移） → 更新 `.env` 版本号 → 重启对应容器并等待健康检查通过（最长 180 秒） → 清理无标签悬空镜像（保留旧版标签镜像供回滚）。拉取、核对或迁移失败时，`.env` 与运行中容器均保持不变；写入 `.env` 后若重启或健康检查失败，脚本会自动打印回滚步骤（见[回滚](#回滚)）。
 
 #### 升级应用
-
-升级后端、前端和渲染服务，`runtime` 容器不动：
 
 ```bash
 ./upgrade.sh app vX.Y.Z
 ```
 
-脚本依次执行：拉取 `server / web / render` 目标镜像 → 核对并按需执行 `iclip.alembic_version` 迁移 → 更新 `.env` 中的 `IMAGE_TAG`（及按需补齐 `RUNTIME_IMAGE_TAG`）→ 重启三容器并等待健康检查通过（最长 180 秒）。
+仅升级 `server`、`web`、`render`（核对 `iclip.alembic_version`），`runtime` 容器不重启。`.env` 须同时明确记录 `IMAGE_TAG` 与 `RUNTIME_IMAGE_TAG`（缺省均为 `latest`）：若首次升级应用时 `.env` 未配置 `RUNTIME_IMAGE_TAG`，脚本会自动读取运行中 `runtime` 容器的版本标签写入 `.env`（读不到或标签为 `latest` 时报错退出，需手动补填）。
 
 #### 升级运行时
-
-仅升级 `runtime` 容器（运行时 + 视频插件）：
 
 ```bash
 ./upgrade.sh runtime vX.Y.Z
 ```
 
-既有数据库**首次**升级到运行时独立管迁移的版本时，须在命令末尾追加 `--stamp-baseline` 先写入基线版本标记（仅写版本表、不改表结构；此后升级不再加该参数；漏加报错回滚后补上重跑即可）。`--stamp-baseline` 只能跟 `runtime` 一起用。
-
-脚本全程携带 `--no-deps` 单独操作 `runtime` 容器：拉取目标镜像 → 核对 `agent_runtime.alembic_version` 并按需执行 `stamp-baseline` / `migrate` → 更新 `.env` 的 `RUNTIME_IMAGE_TAG` → 重启容器并等待健康检查通过（最长 180 秒）。
+全程携带 `--no-deps` 单独升级 `runtime` 容器（核对 `agent_runtime.alembic_version`）。既有数据库**首次**升级到运行时独立管迁移的版本时，须在末尾追加 `--stamp-baseline` 写入基线标记（仅写版本表，此后升级不再加；若漏加，迁移会在修改 `.env` 前直接报错退出，补上参数重跑即可）。
 
 #### 两边一起升级
 
@@ -186,29 +176,26 @@ scripts/publish-components.sh <私有组件库本地路径> <本机输出目录>
 ./upgrade.sh all vX.Y.Z --runtime-first  # 先升级运行时，成功后再升级应用
 ```
 
-先后顺序必须写明，按这个版本包含的改动对照[跨版本兼容](../contract/conventions.md#跨版本兼容)的升级顺序选；那几种改动都没有时两个顺序都可以。脚本按顺序把两边各按单独升级的步骤做一遍。前一边失败时后一边不会开始，按前一边的提示回滚即可；后一边失败时，前一边已经升级完成，脚本会列出哪一边升级完成（从哪个版本到哪个版本）、哪一边没有完成，以及两边分别怎么回滚。
+必须显式指定先后顺序：对照 Release 说明与[跨版本兼容](../contract/conventions.md#跨版本兼容)选择（无特定顺序要求时任选其一）。脚本按指定顺序分两步执行：第一步失败时第二步不会启动；第二步失败时第一步已完成，脚本会明确列出两边当前状态与分步回滚命令。
 
-运行时要带 `--stamp-baseline` 的那一次（见[升级运行时](#升级运行时)）不能用 `all`，两边分开执行：
-
-```bash
-./upgrade.sh runtime vX.Y.Z --stamp-baseline
-./upgrade.sh app vX.Y.Z
-```
-
-该带而没带时不会改坏东西：运行时的迁移在写 `.env` 之前报错，那一边的版本和容器都不变，补上参数重跑即可。
+> **注**：运行时首次需带 `--stamp-baseline` 时不能使用 `all`，请分两条命令依次执行：
+> ```bash
+> ./upgrade.sh runtime vX.Y.Z --stamp-baseline
+> ./upgrade.sh app vX.Y.Z
+> ```
 
 #### 回滚
 
-脚本失败时打印的回滚提示就是下面的做法：把 `.env` 里的版本变量改回升级前的值（升级前没有这一行就删掉），再重启那一边：
+按升级失败提示修改 `.env` 中的版本变量（若升级前无该行则删除），再重启对应服务：
 
-| 回滚哪一边 | `.env` 里改的变量 | 重启命令 |
+| 回滚对象 | `.env` 变量 | 重启命令 |
 |---|---|---|
 | 应用 | `IMAGE_TAG` | `docker compose up -d server web render` |
 | 运行时 | `RUNTIME_IMAGE_TAG` | `docker compose up -d --no-deps runtime` |
 
-两边都要回滚时，先回滚后升级的那一边。
+两边均需回滚时，遵循**后升先退**原则（先回滚第二步升级的一端，再回滚第一步升级的一端）。
 
-这种回滚只换回镜像，已执行的数据库迁移不会回退，所以只适用于后端迁移符合[只增不删](architecture.md#后端的持久化与迁移)规则的版本。做不到的版本（PR 说明里写明），回滚镜像之前要先处理数据库。
+上述操作仅回退容器镜像，不会自动回退已执行的数据库迁移，因此仅适用于数据库迁移兼容旧版代码（[只增不删](architecture.md#后端的持久化与迁移)）的版本；若本版包含非兼容迁移（PR 说明与发版摘要会提示），回滚镜像前须先手工处理数据库。
 
 ### 修改线上配置
 

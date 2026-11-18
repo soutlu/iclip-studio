@@ -44,12 +44,10 @@ runs:
       shell: bash
       working-directory: web
       run: pnpm exec playwright install chromium
-    # 不跑 install-deps：它每次 apt-get update 再装一串用不到的外文字体。浏览器要的系统库 runner 镜像
-    # 随 Chrome 已经装齐，缺库时 Playwright 启动会报出库名；镜像没有中文字体，只补文泉驿正黑。
-    # 不用 apt-get install：它常在 dpkg 开始前停顿 1～2.5 分钟。改为缓存用户级字体目录，未命中时
-    # 用 apt-get download 取包（不需要 sudo，也不等 dpkg 锁）再解包。缓存 key 只写字体自己的版本号：
-    # 各个 Ubuntu 版本里包的修订号不同（0.9.45-8、0.9.45-8build1……），字体文件是同一份。未命中时取
-    # runner 这个 Ubuntu 版本提供的那一版，字体版本号和 key 对不上就报错。
+    # 中文字体准备策略：
+    # 1. 不跑 playwright install-deps（runner 已随 Chrome 装齐系统库，install-deps 会拉取大量无关外文字体）。
+    # 2. 不用 apt-get install（常在等待 dpkg 锁时卡顿 1～2.5 分钟），改用 apt-get download + dpkg-deb 免锁解包到用户字体目录。
+    # 3. 缓存 key 只固定上游版本号 0.9.45，跨不同 Ubuntu 包修订号（如 0.9.45-8、0.9.45-8build1）共用同一份字体缓存。
     - uses: actions/cache@v4
       if: inputs.playwright == 'true'
       id: cjk-font

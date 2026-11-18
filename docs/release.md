@@ -4,64 +4,64 @@
 - **重要提醒**：打发版标签 `vX.Y.Z` 前，必须先获得开发者的明确确认（见 [AGENTS.md](../AGENTS.md#3-分支与交付)）。
 - 镜像打包完成后的服务器升级步骤，见[升级](deploy.md#升级)。
 
-一个 `vX.Y.Z` 标签打全部四个镜像，镜像标签都是 `vX.Y.Z`（见[标签与缓存策略](#标签与缓存策略)）。服务器上应用（`iclip-server`、`iclip-web`、`iclip-render`，部署变量 `IMAGE_TAG`）和运行时（`iclip-runtime`，运行时 + 视频插件，部署变量 `RUNTIME_IMAGE_TAG`）的版本分开记，可以分开升级。
+每次推送 `vX.Y.Z` 标签都会并行构建全部四个镜像（标签均为 `vX.Y.Z`，见[标签与缓存策略](#标签与缓存策略)）。线上服务器分开记录版本并支持独立升级：
+- **应用**（`IMAGE_TAG`）：`iclip-server`、`iclip-web`、`iclip-render`
+- **运行时**（`RUNTIME_IMAGE_TAG`）：`iclip-runtime`（运行时 + 视频插件）
 
 ---
 
 ## 发版与热修
 
-发版就是给通过全量 `ci` 的提交打标签。
+发版即给通过全量 `ci` 的提交打版本标签。
 
 | 场景 | 做法 |
 |---|---|
 | **正式发版** | 按[发版步骤](#发版步骤)给 `main` 上的提交打 `vX.Y.Z` |
-| **紧急热修，`main` 可以直接发** | 修复按日常流程合入 `main`，再按[发版步骤](#发版步骤)发一个新版本 |
-| **紧急热修，`main` 上有还不能发的改动** | 修复先按日常流程合入 `main`，再按[热修步骤](#热修步骤)在 `release/vX.Y` 上发版 |
+| **紧急热修（`main` 可直接发）** | 修复按日常流程合入 `main`，再按[发版步骤](#发版步骤)发新版本 |
+| **紧急热修（`main` 含暂不发布的改动）** | 修复先按日常流程合入 `main`，再按[热修步骤](#热修步骤)在 `release/vX.Y` 上发版 |
 
 ### 发版步骤
 
-1. **准备：看上线前摘要，在待发的提交上跑全量 `ci`**：
+1. **准备：查看上线前摘要并运行全量 `ci`**：
    ```bash
    make release-check                    # 发 main 的最新提交
    make release-check REF=release/vX.Y   # 发热修分支的最新提交
    ```
-   它拉取远端，取分支的最新提交作为待发的提交，打印从上一个版本标签（从这个提交往回能到达的最近的 `vX.Y.Z`）到它的上线前摘要：
-   - 提交数；
-   - 运行时要不要升级：`runtime.ref`、`plugins/video/`、`deploy/runtime-video/` 有改动就要升级。运行时自己的迁移在运行时项目 Cue 里，摘要看不到；
-   - 新增的后端迁移，按关键字标出疑似删除或改动已有结构的操作（`downgrade()` 不看）。这只是提示，可能有漏有误，迁移规则见[后端的持久化与迁移](architecture.md#后端的持久化与迁移)；
-   - 改动过的配置与编排文件，升级前要在服务器上对照；
-   - 建议的升级命令。两边都要升级时摘要不替你选先后：看这段范围里各 PR 说明中的「升级顺序」一行（写法见 [AGENTS.md](../AGENTS.md#3-分支与交付)），用 `gh pr list --state merged --search '"升级顺序" in:body' --json number,title,mergedAt` 能列出写了这一行的 PR。
+   命令会拉取远端分支最新提交，对比该分支上一个 `vX.Y.Z` 标签打印**上线前摘要**（仅在本地查看摘要、不联网触发可用 `bash scripts/release.sh summary <提交>`）：
+   - **提交数**：本次包含的提交数量。
+   - **运行时是否需升级**：`runtime.ref`、`plugins/video/`、`deploy/runtime-video/` 有改动时需升级（运行时自身的数据库迁移在私有项目 Cue 中维护，需前往 Cue 对照）。
+   - **后端迁移**：列出新增迁移文件，并按关键字提示疑似删改已有结构的操作（以迁移源码为准，规则见[后端的持久化与迁移](architecture.md#后端的持久化与迁移)）。
+   - **配置与编排变更**：列出有改动的配置与编排文件，升级前需在服务器上对照补齐。
+   - **建议升级命令**：两边均需升级时，需结合本批 PR 说明中的「升级顺序」（写法见 [AGENTS.md](../AGENTS.md#3-分支与交付)，可用 `gh pr list --state merged --search '"升级顺序" in:body' --json number,title,mergedAt` 检索）确定先后参数。
 
-   然后确认这个提交有一次成功的手动触发的全量 `ci`（手动触发总是全量检查）：已有就直接用，没有就在该分支上触发一次并等它结束。这次运行检查的不是待发的提交（触发前分支又进了新提交）或运行没有成功时报错退出，处理后重新执行。最后打印第二步的命令，带着这个提交的完整哈希。
-
-   只看摘要、不触发任何东西：`bash scripts/release.sh summary <提交>`。
-
-   第一个带运行时镜像的 `vX.Y.Z` 版本两边都要升级：服务器上的运行时还在 `runtime-v*` 标签的镜像上，摘要里的运行时判断对它不适用。
+   随后命令检查该提交是否已有成功的手动全量 `ci`（无则自动触发并等待完成；若期间分支合入新提交或检查失败则报错退出，处理后重跑即可），最后输出带完整提交哈希的第二步命令。
 
 2. **打标签并创建 GitHub Release（须开发者确认）**：
-   把摘要给开发者看，由开发者确定版本号，再执行第一步最后打印的命令：
+   将摘要交由开发者确认并定下版本号后，执行第一步末尾输出的命令：
    ```bash
    make release VERSION=vX.Y.Z SHA=<提交>
    ```
-   它先校验版本号是 `vX.Y.Z` 格式、这个标签本地和远端都还不存在、这个提交有成功的手动全量 `ci`，任何一项不满足都报错退出，什么都不建。通过后给这个提交（不是此刻分支的最新提交）创建 Release，自动推送标签并触发镜像打包流水线；Release 说明是这一版的上线前摘要，加上从上一个版本标签起自动生成的变更列表。
+   命令再次核验版本号、标签唯一性与该提交的全量 `ci` 状态（任一不通过即中止），锁定该提交创建 GitHub Release（自动填入上线前摘要与变更列表），推送标签触发镜像流水线。
    - **版本号规则（`vX.Y.Z`）**：由开发者确定。`X` 代表重大架构重构或不兼容变更，`Y` 代表向下兼容的新功能，`Z` 代表问题修复（在 `v0.Y.Z` 阶段，较大改动递增 `Y`，日常修复递增 `Z`）。
 
 3. **等待镜像打包完成并上线**：
-   创建 Release 只会触发构建镜像，不会自动部署到服务器。用 `make release` 最后打印的命令确认流水线输出 `completed success` 后，再按 Release 说明里的升级命令和[升级](deploy.md#升级)更新线上环境。
+   创建 Release 只触发镜像构建，不会自动部署。运行 `make release` 末尾打印的查询命令确认流水线输出 `completed success` 后，按 Release 说明中的升级命令及[升级](deploy.md#升级)更新线上环境。
+
+> **首次切换至统一标签注意**：升级到第一个包含运行时镜像的 `vX.Y.Z` 版本时，线上运行时仍停留在旧的 `runtime-v*` 镜像上，无论摘要是否提示运行时变更，均须同时升级应用与运行时（并先更新服务器上的 `upgrade.sh`，见[升级](deploy.md#升级)）。
 
 ### 热修步骤
 
-用于 `main` 上有还不能发的改动、只想把修复发到线上版本的情况。`vX.Y` 取线上版本号的前两段。
+用于 `main` 含有暂不发布的改动、仅需将修复合入线上版本的场景（`vX.Y` 取线上版本号前两段）：
 
-1. **修复先合入 `main`**：按日常流程提 PR 合入 `main`，记下它在 `main` 上的提交 `<修复提交>`。
+1. **修复先合入 `main`**：按日常流程提 PR 合入 `main`，记下合并后的 `<修复提交>`。
 
-2. **从线上版本的标签切出热修分支**（同一个 `vX.Y` 已有热修分支时直接复用）：
+2. **从线上版本标签切出热修分支**（同一 `vX.Y` 已有该分支时直接复用）：
    ```bash
    git fetch origin --tags
    git push origin "<线上版本标签>^{commit}:refs/heads/release/vX.Y"
    ```
 
-3. **把修复 cherry-pick 到热修分支并提 PR**：
+3. **将修复 cherry-pick 到热修分支并提 PR**：
    ```bash
    git worktree add .claude/worktrees/<任务名> -b <分支名> origin/release/vX.Y
    cd .claude/worktrees/<任务名> && make runtime
@@ -70,14 +70,14 @@
    gh pr create --base release/vX.Y
    gh pr merge <n> --auto --squash
    ```
-   目标分支不是 `main`，`ci` 跑全量检查，通过后自动合入。
+   因目标分支不是 `main`，PR 会自动执行全量 `ci` 并在通过后合入。
 
-4. **在热修分支上发版**：按[发版步骤](#发版步骤)执行，第一步用 `make release-check REF=release/vX.Y`，摘要和变更列表都从线上版本标签算起。
-   手动触发的 `ci` 和标签触发的镜像流水线都用该提交里的工作流文件：从 v0.17.x 及更早的标签切出的热修分支上，`ci` 不支持手动触发，`make release-check` 触发时会报错；在这样的分支上打标签也只构建三个应用镜像，不构建运行时镜像。这样的分支不走发版步骤：热修 PR 的 `ci` 已经是全量检查，合入后直接给热修分支的最新提交创建 Release（须开发者确认），服务器上只升级应用：
-   ```bash
-   git fetch origin
-   gh release create vX.Y.Z --target "$(git rev-parse origin/release/vX.Y)" --title vX.Y.Z --generate-notes --notes-start-tag <线上版本标签>
-   ```
+4. **在热修分支上发版**：按[发版步骤](#发版步骤)执行，第一步指定 `make release-check REF=release/vX.Y`（摘要与变更列表均从线上版本标签算起）。
+   > **注**：从 `v0.17.x` 及更早标签切出的热修分支仍携带旧版流水线（不支持手动触发 `ci`，且只构建三个应用镜像）。此类分支跳过 `make release-check`，待热修 PR 的全量 `ci` 通过并合入后，经开发者确认直接创建 Release，线上仅升级应用：
+   > ```bash
+   > git fetch origin
+   > gh release create vX.Y.Z --target "$(git rev-parse origin/release/vX.Y)" --title vX.Y.Z --generate-notes --notes-start-tag <线上版本标签>
+   > ```
 
 ### 换运行时版本
 

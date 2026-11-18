@@ -1043,8 +1043,8 @@ export function useFilmSession(
   )
 
   const saveNow = useCallback(async (): Promise<'saved' | 'clean' | 'reloaded' | 'failed'> => {
-    // 在途的那次回来时可能有几处都在等它：醒来后先看别处是不是已经开始存了，是就接着等。从这里看完到
-    // 下面记下 `inFlightRef` 之间没有 await，同一时刻只有一次保存在写
+    // 多处同时等待同一次在途保存时，唤醒后需循环确认无其他调用方抢先发起新保存；
+    // 退出循环至下方写入 `inFlightRef` 之间无 `await`，保证同一时刻只有一次保存在写。
     do await settled()
     while (inFlightRef.current !== null || addingLocaleRef.current !== null)
     const present = presentRef.current
