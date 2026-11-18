@@ -3553,6 +3553,66 @@ test('字幕的字体和颜色：选中一句在「属性」里改颜色，预�
     .toEqual(['Playfair Display', 'rgb(255, 51, 102)', false])
 })
 
+test('字幕的字号：选中一句在「属性」里改字号，预览里只有这一句换成新字号、描边跟着变粗，不换播放器；存下的场景里这一句写着字号、描边和投影', async ({
+  page,
+}) => {
+  const { editor, side, row, first, second } = await openWithCaptions(page)
+  /** 预览里各句字幕算出来的字号和描边粗细（像素，按编号）；换播放器的那一刻是 null。 */
+  const previewSizes = () =>
+    finalCutPreviewPlayer(editor).evaluateAll((elements) => {
+      if (elements.length !== 1) return null
+      const [element] = elements as PreviewPlayer[]
+      const page = element?.iframeElement.contentDocument
+      return Object.fromEntries(
+        [...(page?.querySelectorAll<HTMLElement>('.caption') ?? [])].map((caption) => {
+          const style = caption.ownerDocument.defaultView?.getComputedStyle(caption)
+          return [
+            caption.id,
+            {
+              size: Number.parseFloat(style?.fontSize ?? ''),
+              stroke: Number.parseFloat(style?.getPropertyValue('-webkit-text-stroke-width') ?? ''),
+            },
+          ]
+        }),
+      )
+    })
+  await expect.poll(async () => (await previewSizes())?.[second]?.size).toBeGreaterThan(0)
+  await markFinalCutPreviewPlayer(editor)
+
+  await row
+    .getByRole('group', { name: /^第二句，/ })
+    .getByRole('button', { name: /^选中：/ })
+    .click()
+  await side.getByRole('tab', { name: '属性' }).click()
+  const inspector = side.getByRole('tabpanel', { name: '属性' })
+  const readout = inspector.getByRole('button', { name: /^字号 \d+ px，点击可直接输入$/ })
+  const fallback = Number(
+    /字号 (\d+) px/.exec((await readout.getAttribute('aria-label')) ?? '')?.[1],
+  )
+  const before = (await previewSizes())?.[second]
+  expect(before?.size).toBe(fallback)
+  const size = Math.round(fallback * 1.5)
+  const saved = page.waitForRequest((request) =>
+    new RegExp(
+      `<div style="font-size: ${size}px; -webkit-text-stroke: \\d+px #000000; text-shadow: 0 \\d+px \\d+px rgba\\(0, 0, 0, 0\\.45\\)" id="${second}"`,
+    ).test(savedFileOf(request, CAPTIONS_FILE) ?? ''),
+  )
+  await readout.click()
+  await page.keyboard.type(String(size))
+  await page.keyboard.press('Enter')
+  await saved
+
+  await expect
+    .poll(async () => {
+      const sizes = await previewSizes()
+      return [sizes?.[second]?.size, sizes?.[first]?.size]
+    })
+    .toEqual([size, fallback])
+  const after = (await previewSizes())?.[second]
+  expect(after?.stroke).toBeGreaterThan(before?.stroke ?? Number.POSITIVE_INFINITY)
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
+})
+
 test('画面上的字幕按句改：点正在显示的那句选中它（下面的视频选中着时也是），带缩放、旋转把手；拖它写进字幕场景里这一句，别的句不动；双击原地改字，回车写进这一句，Esc 放弃', async ({
   page,
 }) => {

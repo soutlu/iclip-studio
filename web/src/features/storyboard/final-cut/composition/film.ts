@@ -123,8 +123,8 @@ export interface OtherClip extends ClipBase {
 /**
  * 一句字幕：字幕场景文件里的一个带时间的元素（见 `captions.ts`），不在主文件里。`text` 是它的字，
  * 存在主文件根上的变量 `variable` 的默认值里。`owner` 是它属于的视频片段（识别出来的字幕跟着这个片段走），
- * 手动加的字幕是 null。`font`、`color` 是这一句自己设的字体族和字色（元素的行内样式，所有语言共用），
- * 没设时是 null，用字幕的默认样式。
+ * 手动加的字幕是 null。`font`、`color`、`fontSize` 是这一句自己设的字体族、字色和字号（像素）（元素的行内样式，
+ * 所有语言共用），没设时是 null，用字幕的默认样式。
  */
 export interface CaptionClip extends ClipBase {
   kind: 'caption'
@@ -133,6 +133,7 @@ export interface CaptionClip extends ClipBase {
   owner: string | null
   font: string | null
   color: string | null
+  fontSize: number | null
 }
 
 export const isMediaClip = (clip: FilmClip): clip is MediaClip =>

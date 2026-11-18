@@ -389,6 +389,22 @@ describe('字幕场景', () => {
           { op: 'remove', path: '/elements/cap-1/inlineStyles/fontFamily' },
         ],
       ],
+      [
+        '改一句的字号（描边、投影跟着改）',
+        [
+          { op: 'add', path: '/elements/cap-1/inlineStyles/fontSize', value: '80px' },
+          {
+            op: 'add',
+            path: '/elements/cap-1/inlineStyles/WebkitTextStroke',
+            value: '16px #000000',
+          },
+          {
+            op: 'add',
+            path: '/elements/cap-1/inlineStyles/textShadow',
+            value: '0 2px 6px rgba(0, 0, 0, 0.45)',
+          },
+        ],
+      ],
     ])('场景里%s：直接打', (_name, patches) => {
       expect(previewSync(SUBTITLED, after(SUBTITLED, SOURCE_TEXTS, scene(...patches)))).toEqual({
         kind: 'live',
@@ -457,8 +473,8 @@ describe('字幕场景', () => {
         { op: 'replace', path: '/elements/cap-1/attributes/data-var-text', value: 'x' },
       ],
       [
-        '单句字体、字色以外的样式',
-        { op: 'add', path: '/elements/cap-1/inlineStyles/fontSize', value: '20px' },
+        '单句字体、字色、字号以外的样式',
+        { op: 'add', path: '/elements/cap-1/inlineStyles/letterSpacing', value: '2px' },
       ],
       [
         '加要挂载的宿主',

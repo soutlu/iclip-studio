@@ -13,8 +13,10 @@ import { openComposition } from '@hyperframes/sdk'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   CAPTIONS_PATH,
+  captionFontSize,
   captionsHostElement,
   captionsScene,
+  captionStyles,
   captionVariable,
 } from '../../web/src/features/storyboard/final-cut/composition/captions'
 import type { ComponentCatalog } from '../../web/src/features/storyboard/final-cut/composition/catalog'
@@ -784,6 +786,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       owner: null,
       font: null,
       color: null,
+      fontSize: null,
     }
     /** 有字幕时：场景里的元素不写字，字只在主文件根上的变量里；读不到变量就画不出字。 */
     const files = async (captioned: boolean): Promise<ProjectFile[]> => {
@@ -857,6 +860,74 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(blockedHosts().filter((host) => /fonts\./.test(String(host)))).toEqual([])
   }, 600_000)
 
+  it('字幕的字号：一句设成 2 倍字号，导出里这句的字明显变大，描边跟着变粗', async () => {
+    const catalog = library as ComponentCatalog
+    const steps = `${origin}/steps.mp4`
+    const clips = [video({ src: steps, duration: 2000, muted: true, z: 1 })]
+    const caption: CaptionClip = {
+      kind: 'caption',
+      id: 'cap-a1',
+      label: '字幕变大',
+      start: 0,
+      duration: 2000,
+      track: 0,
+      hidden: false,
+      link: null,
+      text: '字幕变大',
+      variable: 'cap_a1',
+      owner: null,
+      font: null,
+      color: null,
+      fontSize: null,
+    }
+    // 照编辑器的写法：字号写在场景里这一句的行内样式上
+    const files = async (fontSize: number | null): Promise<ProjectFile[]> => {
+      const [main, ...others] = project(clips)
+      const session = await openComposition(main?.content ?? '')
+      session.addElement('film', 99, captionsHostElement(FRAME, 2000))
+      session.declareVariable(captionVariable(caption))
+      const scene = await openComposition(captionsScene(FRAME, catalog, [{ ...caption, text: '' }]))
+      if (fontSize !== null) scene.setStyle(caption.id, captionStyles({ fontSize }, catalog, FRAME))
+      return [
+        {
+          path: 'index.html',
+          content: withFontBlock(session.serialize(), [...clips, caption], catalog),
+        },
+        { path: CAPTIONS_PATH, content: scene.serialize() },
+        ...others,
+      ]
+    }
+    // 画面下部整条：2 倍字号的一行也在里面，底色是红的
+    const area = { x: 0, y: 240, width: 640, height: 120 }
+    const render = async (id: string, fontSize: number | null) => {
+      const rendered = await renderProject(id, await files(fontSize), [steps])
+      try {
+        const pixels = await frameAt(rendered.file, 1, area)
+        let white = 0
+        let black = 0
+        const rows = new Set<number>()
+        for (let offset = 0; offset < pixels.length; offset += 3) {
+          const [r = 0, g = 0, b = 0] = pixels.subarray(offset, offset + 3)
+          if (r > 220 && g > 220 && b > 220) {
+            white += 1
+            rows.add(Math.floor(offset / 3 / area.width))
+          } else if (r < 40 && g < 40 && b < 40) black += 1
+        }
+        return { white, black, rows: rows.size }
+      } finally {
+        await rendered.cleanup()
+      }
+    }
+    const normal = await render('caption-size-default', null)
+    const large = await render('caption-size-large', captionFontSize(FRAME) * 2)
+
+    expect(normal.white).toBeGreaterThan(100)
+    // 字高约翻倍、白字面积约四倍，描边粗细也翻倍
+    expect(large.rows).toBeGreaterThan(normal.rows * 1.6)
+    expect(large.white).toBeGreaterThan(normal.white * 2.5)
+    expect(large.black).toBeGreaterThan(normal.black * 2)
+  }, 600_000)
+
   it('按语言导出：同一个工程（原文是中文）经接口导原文和 English，字幕和贴片里随语言的字换成英文；没有错误和警告，不去外网取字体', async () => {
     const catalog = library as ComponentCatalog
     const steps = `${origin}/steps.mp4`
@@ -881,6 +952,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       owner: null,
       font: null,
       color: null,
+      fontSize: null,
     }
     // 照编辑器的写法：字幕的字只在根上的变量里；贴片的「文字」随语言，宿主记着根变量，根上声明它、默认值是原文
     const [main, ...others] = project(clips)

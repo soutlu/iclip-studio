@@ -109,6 +109,8 @@ type FilmTimelineProps = {
   clips: readonly FilmClip[]
   /** 显示着其它语言时还没翻的字幕：片段上写的是原文，右边标一个「原文」。 */
   untranslated: ReadonlySet<string>
+  /** 组件或块的片段在显示着的语言下的文字，片段上写成「名字 · 文字」；没有文字的不在里面。 */
+  hostTexts: ReadonlyMap<string, string>
   /** 片段的链接名：链接的片段一起切。 */
   links: Links
   /**
@@ -326,13 +328,14 @@ const movePlan = (
 }
 
 /**
- * 片段里画什么：视频片段是铺满的画面，读出原声后底部叠一条波形；组件或块的片段是小封面和名字；
- * 字幕是文字记号和名字（就是这句的字）；音频片段是音符、名字和整段波形；「其他」片段只有名字。
+ * 片段里画什么：视频片段是铺满的画面，读出原声后底部叠一条波形；组件或块的片段是小封面和「名字 · 文字」
+ * （没有文字时只有名字）；字幕是文字记号和名字（就是这句的字）；音频片段是音符、名字和整段波形；「其他」片段只有名字。
  */
 function ClipContent({
   clip,
   timing,
   cover,
+  text,
   peaks,
   wave,
   waveRef,
@@ -340,6 +343,7 @@ function ClipContent({
   clip: FilmClip
   timing: Timing
   cover: string | null
+  text: string | undefined
   peaks: PeaksState
   /** 有声片段的波形：高低乘多少、是不是不出声（画灰），有没有音量曲线。 */
   wave: ClipWave
@@ -359,7 +363,9 @@ function ClipContent({
     return (
       <>
         {cover === null ? null : <img alt="" className="wf-clip-cover" src={cover} />}
-        {name}
+        <span className="wf-clip-name">
+          {text === undefined ? clip.label : `${clip.label} · ${text}`}
+        </span>
       </>
     )
   // 片段上画的是它用掉的那段素材：final-cut 里的时长 × 速度
@@ -445,6 +451,8 @@ type TimelineClipProps = {
   ) => ReadonlyMap<string, Timing>
   /** 组件或块的片段上的小封面；没有时是 null。 */
   cover: string | null
+  /** 组件或块的片段接在名字后面的文字；没有时是 undefined。 */
+  text: string | undefined
   peaks: PeaksState
   snap: boolean
   /** 这个片段是配乐、算出了节拍时它那首的节拍，画在片段上；别的片段是 undefined。 */
@@ -492,6 +500,7 @@ function TimelineClip({
   trimRange,
   trimTo,
   cover,
+  text,
   peaks,
   snap,
   beatGrid,
@@ -728,6 +737,7 @@ function TimelineClip({
             <ClipContent
               clip={clip}
               cover={cover}
+              text={text}
               peaks={peaks}
               timing={timing}
               wave={wave}
@@ -848,6 +858,7 @@ const keyOf = (row: RowKey) => `${row.zone}-${row.track}`
 export function FilmTimeline({
   clips,
   untranslated,
+  hostTexts,
   links,
   tool,
   onSplit,
@@ -1274,6 +1285,7 @@ export function FilmTimeline({
                           clips={clips}
                           contentRef={contentRef}
                           cover={clip.kind === 'host' ? thumbnailUrl(catalog, clip.item) : null}
+                          text={hostTexts.get(clip.id)}
                           following={following}
                           groupFor={(kind) => editGroup(clip, selected, clips, kind)}
                           badge={

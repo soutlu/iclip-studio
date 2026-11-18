@@ -2060,21 +2060,22 @@ export function useFilmSession(
   )
 
   /**
-   * 改字幕 `id` 的字体、字色（`changes` 里给了的那几样，null 是回到默认，写法见 `captionStyles`），所有语言共用，
-   * 算一步撤销。和现在一样、字幕已经不在了时不动工程。
+   * 改字幕 `id` 的字体、字色、字号（`changes` 里给了的那几样，null 是回到默认，写法见 `captionStyles`），所有语言
+   * 共用，算一步撤销。和现在一样、字幕已经不在了时不动工程。
    *
-   * @throws Error 字体不在组件库里，或字色不是 `#rrggbb`
+   * @throws Error 字体不在组件库里，字色不是 `#rrggbb`，或字号不在范围里
    */
   const setCaptionStyle = useCallback(
-    (id: string, changes: Partial<Pick<CaptionClip, 'font' | 'color'>>) => {
+    (id: string, changes: Partial<Pick<CaptionClip, 'font' | 'color' | 'fontSize'>>) => {
       const project = projectRef.current
       const scene = project === null ? undefined : sceneOf(project)
       const caption = project === null ? undefined : captionsById(mainOf(project), scene).get(id)
-      if (scene === undefined || caption === undefined) return
-      const styles = captionStyles(changes, catalog)
+      if (project === null || scene === undefined || caption === undefined) return
+      const styles = captionStyles(changes, catalog, canvasOf(mainOf(project)))
       const changed =
         (changes.font !== undefined && changes.font !== caption.font) ||
-        (changes.color !== undefined && changes.color !== caption.color)
+        (changes.color !== undefined && changes.color !== caption.color) ||
+        (changes.fontSize !== undefined && changes.fontSize !== caption.fontSize)
       if (changed) edit(() => scene.setStyle(id, styles))
     },
     [catalog, edit],

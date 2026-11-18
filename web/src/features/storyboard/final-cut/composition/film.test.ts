@@ -390,6 +390,7 @@ describe('<head> 里的字体块', () => {
     owner: null,
     font: null,
     color: null,
+    fontSize: null,
   }
 
   it('字幕的字按字幕用的中文字体声明了粗体和常规两种字形', () => {

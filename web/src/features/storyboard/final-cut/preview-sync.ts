@@ -155,14 +155,21 @@ const isLiveMain = (
 }
 
 const SCENE_TIMING = new Set(['start', 'duration'])
-// 一句的字体、字色（见 captions.ts 的 `captionStyles`）：浏览器直接按行内样式画；字体用到新的样式表链接时
-// `<head>` 变了，照旧整份重新加载。画面上挪、缩放、转一句也是
-const SCENE_STYLES = new Set(['color', 'fontFamily', ...GEOMETRY_STYLES])
+// 一句的字体、字色、字号和跟着字号的描边、投影（见 captions.ts 的 `captionStyles`）：浏览器直接按行内样式画；
+// 字体用到新的样式表链接时 `<head>` 变了，照旧整份重新加载。画面上挪、缩放、转一句也是
+const SCENE_STYLES = new Set([
+  'color',
+  'fontFamily',
+  'fontSize',
+  'WebkitTextStroke',
+  'textShadow',
+  ...GEOMETRY_STYLES,
+])
 const SCENE_ATTRIBUTES = new Set([CAPTION_OWNER, ...POSITION_ATTRIBUTES])
 
 /**
  * 字幕场景的这条补丁能不能直接打：加、删一句（加的不能是要运行库挂载的宿主），改一句的起止、字、属于哪个片段、
- * 字体和字色，在画面上挪、缩放、转一句。
+ * 字体、字色和字号，在画面上挪、缩放、转一句。
  */
 const isLiveScene = (patch: JsonPatchOp) => {
   const element = ELEMENT.exec(patch.path)
