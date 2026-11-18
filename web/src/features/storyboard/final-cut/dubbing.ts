@@ -384,25 +384,30 @@ export function dubsOf(
     .map((clip) => clip.id)
 }
 
+/** 收掉不超过这么多毫秒时不标截尾：时间换算取整的误差，听不出来。 */
+const ROUNDING_SLACK_MS = 20
+
 /**
- * 语言 `locale`（原文是 null）里新加 `added` 这几个配音片段时，要收短的已有配音片段（编号 → 收到多长，毫秒）：
- * `clips` 里这种语言、配别的句子的配音片段，开始得比一个新片段早、结尾超过它的开始时，收到新片段的开始（压住几个
- * 时收到最早的那个）；收短后不到最短长度的不收。只在时间线上截尾，不重新合成。
+ * 语言 `locale`（原文是 null）里新加 `added` 这几个配音片段时，要收短的已有配音片段（编号 → 收到多长（毫秒）和
+ * 要不要标成截了尾）：`clips` 里这种语言、配别的句子的配音片段，开始得比一个新片段早、结尾超过它的开始时，收到新
+ * 片段的开始（压住几个时收到最早的那个）；收短后不到最短长度的不收；收掉的不超过 `ROUNDING_SLACK_MS` 时照样收短、
+ * 但不标。只在时间线上截尾，不重新合成。
  */
 export function dubsOverlapped(
   clips: readonly FilmClip[],
   locale: string | null,
   added: readonly Pick<NewDub, 'caption' | 'start'>[],
-): ReadonlyMap<string, number> {
+): ReadonlyMap<string, { duration: number; trimmed: boolean }> {
   const captions = new Set(added.map((dub) => dub.caption))
-  const trims = new Map<string, number>()
+  const trims = new Map<string, { duration: number; trimmed: boolean }>()
   for (const clip of clips) {
     if (!isDubClip(clip) || clip.dub.locale !== locale || captions.has(clip.dub.caption)) continue
     const covered = added
       .filter((dub) => clip.start < dub.start && dub.start < clip.start + clip.duration)
       .map((dub) => dub.start - clip.start)
     const duration = Math.min(...covered)
-    if (covered.length > 0 && duration >= MIN_CLIP_MS) trims.set(clip.id, duration)
+    if (covered.length > 0 && duration >= MIN_CLIP_MS)
+      trims.set(clip.id, { duration, trimmed: clip.duration - duration > ROUNDING_SLACK_MS })
   }
   return trims
 }

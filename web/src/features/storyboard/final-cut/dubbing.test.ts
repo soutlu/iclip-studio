@@ -268,10 +268,17 @@ describe('新配好的配音收短压住它的已有配音', () => {
   const dub = (id: string, of: string, start: number, duration: number, locale = 'en') =>
     audio({ id, start, duration, dub: { locale, caption: of, trimmed: false, voice: null } })
 
-  it('别的句子的配音压在新片段的开始上：收到新片段的开始；没压住的不动', () => {
+  it('别的句子的配音压在新片段的开始上：收到新片段的开始、标成截了尾；没压住的不动', () => {
     const clips = [dub('d1', 'c1', 0, 2_000), dub('d3', 'c3', 2_500, 1_000)]
     expect(dubsOverlapped(clips, 'en', [{ caption: 'c2', start: 1_200 }])).toEqual(
-      new Map([['d1', 1_200]]),
+      new Map([['d1', { duration: 1_200, trimmed: true }]]),
+    )
+  })
+
+  it('只收掉取整误差那么一点（1 毫秒）：照样收短，不标截尾', () => {
+    const clips = [dub('d1', 'c1', 400, 602)]
+    expect(dubsOverlapped(clips, 'en', [{ caption: 'n1', start: 1_001 }])).toEqual(
+      new Map([['d1', { duration: 601, trimmed: false }]]),
     )
   })
 
@@ -284,7 +291,7 @@ describe('新配好的配音收短压住它的已有配音', () => {
     // 旁白片段 n-n1 在 0–2 秒
     const clips = [narrationOf('n1'), dub('d1', 'c1', 0, 2_000)]
     expect(dubsOverlapped(clips, null, [{ caption: 'n2', start: 500 }])).toEqual(
-      new Map([['n-n1', 500]]),
+      new Map([['n-n1', { duration: 500, trimmed: true }]]),
     )
   })
 

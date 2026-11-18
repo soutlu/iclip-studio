@@ -731,8 +731,8 @@ type VoicedDub = NewDub & { voice: string | null }
 
 /**
  * 把一批配音片段（语言 `locale`，旁白是原文）写在根下第一个，一起放进第一条这几段时间都空着的「配音」行（见
- * `dubRowFor`，只看这种语言下它们显示时显示着的片段）。先把这种语言里压在它们开始上的已有配音片段收短、标成截了
- * 尾（见 `dubsOverlapped`），再找行。一个都没有时不动。
+ * `dubRowFor`，只看这种语言下它们显示时显示着的片段）。先把这种语言里压在它们开始上的已有配音片段收短、该标的
+ * 标成截了尾（见 `dubsOverlapped`），再找行。一个都没有时不动。
  */
 const addDubElements = (
   engine: Composition,
@@ -742,9 +742,11 @@ const addDubElements = (
   dubs: readonly VoicedDub[],
 ) => {
   if (dubs.length === 0) return
-  for (const [id, duration] of dubsOverlapped(clipsOf(engine, catalog), locale, dubs)) {
+  const overlapped = dubsOverlapped(clipsOf(engine, catalog), locale, dubs)
+  for (const [id, { duration, trimmed }] of overlapped) {
     setOwnTiming(engine, id, { duration: duration / 1000 })
-    engine.setAttribute(id, 'data-dub-trimmed', '')
+    // 原来就标了截尾的不去掉
+    if (trimmed) engine.setAttribute(id, 'data-dub-trimmed', '')
   }
   const { track, renumber } = dubRowFor(
     clipsOf(engine, catalog),
