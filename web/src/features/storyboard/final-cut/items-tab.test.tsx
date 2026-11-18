@@ -43,6 +43,8 @@ const renderTab = async (kind: ItemKind) => {
 
 const grid = () => screen.getByRole('list')
 const card = (name: string | RegExp) => within(grid()).getByRole('group', { name })
+/** 盖满整张卡的按钮：点、按 Enter、拖都落在它上面。 */
+const cardButton = (name: RegExp) => within(card(name)).getByRole('button', { name })
 const cardNames = () =>
   within(grid())
     .getAllByRole('group')
@@ -124,18 +126,50 @@ describe('组件、块页签 · 列出和筛选', () => {
 })
 
 describe('组件、块页签 · 加进 final-cut', () => {
-  it('点卡片上的「加到播放头」：交出这个条目', async () => {
+  it('点一下卡片：交出这个条目', async () => {
     const user = userEvent.setup()
     const { onAdd, onCarry } = await renderTab('component')
-    await user.click(within(card(/^测试叠加/)).getByRole('button', { name: '加到播放头' }))
+    await user.click(cardButton(/^测试叠加/))
     expect(onAdd).toHaveBeenCalledTimes(1)
     expect(onAdd.mock.calls[0]?.[0].name).toBe('fixture-overlay')
     expect(onCarry).not.toHaveBeenCalled()
   })
 
+  it('点卡片封面右下角的「+」：交出这个条目，只交一次', async () => {
+    const user = userEvent.setup()
+    const { onAdd } = await renderTab('component')
+    const plus = within(card(/^测试叠加/)).getByRole('button', { name: '加到播放头' })
+    expect(plus).toHaveAttribute('tabindex', '-1')
+    await user.click(plus)
+    expect(onAdd).toHaveBeenCalledTimes(1)
+    expect(onAdd.mock.calls[0]?.[0].name).toBe('fixture-overlay')
+  })
+
+  it('焦点在卡片上按 Enter：交出这个条目', async () => {
+    const user = userEvent.setup()
+    const { onAdd } = await renderTab('block')
+    const scene = cardButton(/^测试画面/)
+    expect(scene).toHaveAttribute('aria-keyshortcuts', 'Enter')
+    act(() => scene.focus())
+    await user.keyboard('{Enter}')
+    expect(onAdd).toHaveBeenCalledTimes(1)
+    expect(onAdd.mock.calls[0]?.[0].name).toBe('fixture-scene')
+  })
+
+  it('拖出去松手：只落一次，松手后浏览器补的那次点击不再加一个', async () => {
+    const { onAdd, onDrop } = await renderTab('block')
+    const scene = cardButton(/^测试画面/)
+    fireEvent.pointerDown(scene, { pointerId: 1, button: 0, clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(scene, { pointerId: 1, clientX: 300, clientY: 500 })
+    fireEvent.pointerUp(scene, { pointerId: 1, clientX: 320, clientY: 510 })
+    fireEvent.click(scene)
+    expect(onDrop).toHaveBeenCalledTimes(1)
+    expect(onAdd).not.toHaveBeenCalled()
+  })
+
   it('按住卡片拖出去：拖过一小段才算拖，一路交出指针的位置，松手时交出落点', async () => {
     const { onCarry, onDrop } = await renderTab('block')
-    const scene = card(/^测试画面/)
+    const scene = cardButton(/^测试画面/)
     fireEvent.pointerDown(scene, { pointerId: 1, button: 0, clientX: 10, clientY: 10 })
     fireEvent.pointerMove(scene, { pointerId: 1, clientX: 10 + DRAG_THRESHOLD, clientY: 10 })
     expect(onCarry).not.toHaveBeenCalled()
@@ -155,10 +189,9 @@ describe('组件、块页签 · 加进 final-cut', () => {
   it('拖到一半按 Esc：取消这次拖动，松手不交落点', async () => {
     const user = userEvent.setup()
     const { onCarry, onDrop } = await renderTab('block')
-    const scene = card(/^测试画面/)
+    const scene = cardButton(/^测试画面/)
     fireEvent.pointerDown(scene, { pointerId: 1, button: 0, clientX: 10, clientY: 10 })
-    // 卡片本身不可聚焦，浏览器按下时把焦点交给编辑器的根节点
-    act(() => screen.getByRole('group', { name: 'final-cut 编辑器' }).focus())
+    act(() => scene.focus())
     fireEvent.pointerMove(scene, { pointerId: 1, clientX: 300, clientY: 500 })
     await user.keyboard('{Escape}')
     expect(onCarry).toHaveBeenLastCalledWith(
@@ -230,7 +263,7 @@ describe('组件、块页签 · 悬停预览', () => {
     hover(/^测试画面/)
     await elapse(HOVER_PREVIEW_DELAY_MS)
     expect(players()).toHaveLength(1)
-    const scene = card(/^测试画面/)
+    const scene = cardButton(/^测试画面/)
     fireEvent.pointerDown(scene, { pointerId: 1, button: 0, clientX: 10, clientY: 10 })
     fireEvent.pointerMove(scene, { pointerId: 1, clientX: 40, clientY: 10 })
     expect(players()).toHaveLength(0)

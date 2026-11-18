@@ -412,7 +412,7 @@ const savedItem = (html: string, title: string) => {
   }
 }
 
-test('块页签搜到块点「加到播放头」、组件页签拖一个组件到时间线上，预览里画出来，撤销回去', async ({
+test('块页签搜到块点一下卡片加入、组件页签拖一个组件到时间线上，预览里画出来，撤销回去', async ({
   page,
 }) => {
   test.setTimeout(60_000)
@@ -437,14 +437,12 @@ test('块页签搜到块点「加到播放头」、组件页签拖一个组件�
   await expect(cards).toHaveCount(1)
   const scene = cards.first()
   await expect(scene).toHaveAccessibleName('测试画面，6 秒')
-  const add = scene.getByRole('button', { name: '加到播放头' })
-  await expect(add).toHaveCSS('opacity', '0')
-  await scene.hover()
-  await expect(add).toHaveCSS('opacity', '1')
+  // 封面右下角的「+」不用悬停也在
+  await expect(scene.getByRole('button', { name: '加到播放头' })).toBeVisible()
 
-  // 播放头在 0：第一行这时有视频片段，块放进它下面新开的一行
+  // 点一下卡片（不是「+」）就加入。播放头在 0：第一行这时有视频片段，块放进它下面新开的一行
   const added = mainSavedWith(page, (html) => savedItem(html, '测试画面') !== null)
-  await add.click()
+  await scene.click()
   const placed = savedItem(htmlOf(await added), '测试画面')
   expect(placed).toMatchObject({ item: 'fixture-scene', start: 0, duration: 6, track: 1 })
   await expect(
@@ -679,7 +677,7 @@ const savedAudio = (html: string) =>
     })
     .toSorted((left, right) => left.start - right.start)
 
-test('音频栏：试听只播一条，右键加到播放头新开声音行、final-cut 变长，拖一条到声音行的空处，生成一条音乐，撤销回去', async ({
+test('音频栏：试听只播一条，点一下没用过的一行加到播放头新开声音行、final-cut 变长，拖一条到声音行的空处，生成一条音乐，撤销回去', async ({
   page,
 }) => {
   test.setTimeout(60_000)
@@ -722,22 +720,21 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、fi
   await page.keyboard.press('Shift+ArrowRight')
   await expect(progress).toHaveAttribute('aria-valuetext', /^00:01\.00 \//)
   const added = mainSavedWith(page, (html) => savedAudio(html).length === 1)
-  await guitar
-    .getByRole('button', { name: '轻快原声吉他，适合秋季穿搭', exact: true })
-    .click({ button: 'right' })
-  await page.getByRole('menuitem', { name: '加到播放头' }).click()
+  await expect(guitar.getByRole('button', { name: /^放入配乐行：/ })).toBeVisible()
+  await guitar.getByRole('button', { name: '轻快原声吉他，适合秋季穿搭', exact: true }).click()
   expect(savedAudio(htmlOf(await added))).toEqual([
     { label: '轻快原声吉他，适合秋季穿搭', start: 1, duration: 30, track: 0 },
   ])
   const soundRow = editor.getByRole('group', { name: '配乐', exact: true })
   const music = soundRow.getByRole('group', { name: '轻快原声吉他，适合秋季穿搭，30.0 秒' })
   await expect(music).toBeVisible()
-  await expect(guitar).toContainText('00:30 · 已使用')
+  await expect(guitar).toContainText('使用中')
+  await expect(guitar.getByRole('button', { name: /^放入配乐行：/ })).toHaveCount(0)
   await expect(progress).toHaveAttribute('aria-valuetext', '00:01.00 / 00:31.00')
   expect(videoSeconds).toBeLessThan(31)
 
-  // 点「已使用」的那一行：选中它对应的片段，侧栏跟着切到「属性」；再点回「配乐」，选中不变
-  await guitar.getByRole('button', { name: '轻快原声吉他，适合秋季穿搭，已使用' }).click()
+  // 点「使用中」的那一行：选中它对应的片段，不再加一个，侧栏跟着切到「属性」；再点回「配乐」，选中不变
+  await guitar.getByRole('button', { name: '轻快原声吉他，适合秋季穿搭，使用中' }).click()
   await expect(music.getByRole('button', { name: /^选中：/ })).toHaveAttribute(
     'aria-pressed',
     'true',
@@ -791,7 +788,7 @@ test('音频栏：试听只播一条，右键加到播放头新开声音行、fi
   expect(savedAudio(htmlOf(await undone))).toEqual([
     { label: '轻快原声吉他，适合秋季穿搭', start: 1, duration: 30, track: 0 },
   ])
-  await expect(uploaded).not.toContainText('已使用')
+  await expect(uploaded).not.toContainText('使用中')
 })
 
 /** 存下来的主文件里第一个 `tag` 片段上的属性 `name`；不写值的属性是空串，没有这个属性时是 undefined。 */

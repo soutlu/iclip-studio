@@ -45,21 +45,25 @@ const rateAt = (position: number) => fromUnit(RATE_RANGE, position / RATE_STEPS)
 const ratePosition = (rate: number) => Math.round(toUnit(RATE_RANGE, rate) * RATE_STEPS)
 
 /**
- * 「音量与变速」：标题行右边是视频片段的「关闭原声」或音频片段的「循环播放」，下面是音量、淡入、淡出、倍速。
- * 换算和上下限照参照的工作台；拖滑杆时只动这里，松手（或按一下方向键）才写进 final-cut，一次算一步撤销。
- * 关闭原声后前三行变淡、不能操作。改倍速不改片段在 final-cut 里的时长，用掉的素材跟着变长或变短。
+ * 「音量与变速」：标题行右边是视频片段的「关闭原声」、分离出来的原声的「静音此段」（给了 `onMute` 时）或别的音频片段的
+ * 「循环播放」，下面是音量、淡入、淡出、倍速。换算和上下限照参照的工作台；拖滑杆时只动这里，松手（或按一下方向键）才
+ * 写进 final-cut，一次算一步撤销。关闭原声后前三行变淡、不能操作。改倍速不改片段在 final-cut 里的时长，用掉的素材
+ * 跟着变长或变短。
  */
 export function MediaMix({
   clip,
   silent,
   onChange,
   onEditing,
+  onMute,
 }: {
   clip: MediaClip
   /** 视频片段的素材确认没有声音。 */
   silent: boolean
   onChange: (changes: AttributeChanges) => void
   onEditing: (editing: boolean) => void
+  /** 「静音此段」改成开或关：静音就是片段的隐藏标记（`clip.hidden`）。 */
+  onMute?: ((muted: boolean) => void) | undefined
 }) {
   const switchId = useId()
   const { volume, playbackRate, duration, fadeIn, fadeOut } = clip
@@ -96,8 +100,12 @@ export function MediaMix({
       <div className="wf-prop-title-row">
         <h4 className="wf-prop-title">音量与变速</h4>
         <span className="wf-prop-switch">
-          <label htmlFor={switchId}>{clip.kind === 'audio' ? '循环播放' : '关闭原声'}</label>
-          {clip.kind === 'audio' ? (
+          <label htmlFor={switchId}>
+            {onMute !== undefined ? '静音此段' : clip.kind === 'audio' ? '循环播放' : '关闭原声'}
+          </label>
+          {onMute !== undefined ? (
+            <Switch checked={clip.hidden} id={switchId} onCheckedChange={onMute} />
+          ) : clip.kind === 'audio' ? (
             <Switch
               checked={clip.loop}
               id={switchId}

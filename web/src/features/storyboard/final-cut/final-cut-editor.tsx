@@ -29,6 +29,7 @@ import { audioPlayheadSpot } from './audio'
 import { AudioTab } from './audio-tab'
 import {
   CAPTION_REFUSAL_TEXT,
+  captionsFocus,
   captionSpot,
   narrationSpot,
   NEW_CAPTION_TEXT,
@@ -77,7 +78,7 @@ import {
 } from './dubbing'
 import { isEditorKeyTarget, onCanvasLayer, useEditorEscape, useEditorRoot } from './editor-keys'
 import { EditorRoot } from './editor-root'
-import { EditorToolbar, type EditTool } from './editor-toolbar'
+import { EditorToolbar, type EditTool, type LocaleControls } from './editor-toolbar'
 import { ExportControl } from './export-control'
 import { FilmInspector } from './film-inspector'
 import { FilmTimeline, type DropGhost, type TimelineHandle } from './film-timeline'
@@ -1331,6 +1332,21 @@ function EditorBody({
       session.setFollowsLocale(id, field, follow)
     },
   }
+  const hostsWithText = textHosts(clips, catalog)
+  // 语言切换和添加：工具条上和「字幕·配音」页签顶部共用这一份
+  const localeControls: LocaleControls = {
+    current: locale.code,
+    present: film?.locales ?? [],
+    addBlocked: film === null ? NO_FILM_LOCALE_TEXT : undefined,
+    onSwitch: (code) => {
+      leaveMaterial()
+      session.setLocale(code)
+    },
+    onAdd: (code) => {
+      leaveMaterial()
+      void session.addLocale(code)
+    },
+  }
 
   const viewedMaterial =
     materialView === null ? undefined : materials.byJob.get(materialView.range.jobId)
@@ -1598,7 +1614,7 @@ function EditorBody({
               captions={captions}
               texts={{
                 ...itemTexts,
-                hosts: textHosts(clips, catalog),
+                hosts: hostsWithText,
                 catalog,
                 onPick: (clip, jump) => {
                   if (jump) seek(clip.start)
@@ -1606,6 +1622,8 @@ function EditorBody({
                 },
               }}
               locale={locale}
+              locales={localeControls}
+              focus={captionsFocus(selectedClips, new Set(hostsWithText.map((host) => host.id)))}
               narration={narration}
               onAdd={addCaption}
               onPick={(caption) => {
@@ -1667,6 +1685,7 @@ function EditorBody({
               sourceMs={sourceMs}
               sourceName={(src) => sourceNames.get(src)}
               smartMix={smartMix}
+              onOpenCaptions={() => openSideTab('captions')}
             />
           </TabsContent>
         </TabsRoot>
@@ -1710,19 +1729,7 @@ function EditorBody({
             'refusal' in playheadCut ? SPLIT_REFUSAL_TEXT[playheadCut.refusal] : undefined
           }
           tool={tool}
-          locales={{
-            current: locale.code,
-            present: film?.locales ?? [],
-            addBlocked: film === null ? NO_FILM_LOCALE_TEXT : undefined,
-            onSwitch: (code) => {
-              leaveMaterial()
-              session.setLocale(code)
-            },
-            onAdd: (code) => {
-              leaveMaterial()
-              void session.addLocale(code)
-            },
-          }}
+          locales={localeControls}
           onZoomToSelection={zoomToSelection}
           onRipple={() => setRipple((on) => !on)}
           onSnap={() => setSnap((on) => !on)}

@@ -22,7 +22,7 @@ type AudioLibraryProps = {
   /** 搜索框里的字：停下来一会儿后按它搜音频库（匹配标题、备注）。 */
   query: string
   onNotice: (message: string) => void
-  /** 画出一行：这条音频和它的试听状态。加进 final-cut、拖动和「已使用」都由画行的那边管。 */
+  /** 画出一行：这条音频和它的试听状态。加进 final-cut、拖动和「使用中」都由画行的那边管。 */
   renderRow: (
     audio: LibraryAudio,
     audition: { playing: boolean; onToggle: () => void },

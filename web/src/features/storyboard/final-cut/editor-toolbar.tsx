@@ -186,33 +186,50 @@ export type LocaleControls = {
 
 const localeButtonName = ({ name, tag }: { name: string; tag: string }) => `${name}（${tag}）`
 
-/** 语言切换里的一个按钮：切到哪种语言，按钮上的字、无障碍名和提示。 */
-type LocaleButton = { code: Language; tag: string; label: string; tip: string }
+/** 语言切换里的一个按钮：切到哪种语言，按钮上的字（工具条上写代码、侧栏里写名字）、无障碍名和提示。 */
+type LocaleButton = { code: Language; tag: string; name: string; label: string; tip: string }
 
 const SOURCE_BUTTON: LocaleButton = {
   code: SOURCE_LOCALE,
   tag: SOURCE_NAME,
+  name: SOURCE_NAME,
   label: SOURCE_NAME,
   tip: `切换到${SOURCE_NAME}：预览和字幕显示${SOURCE_NAME}`,
 }
 
 /**
- * 语言切换：原文和工程里有的语言各一个按钮（原文写「原文」，别的写语言代码），当前的高亮；最后的「+」点开
- * 列出还没加的语言，选一个加上并切过去，都加了时不显示，加不了时置灰。
+ * 语言切换：原文和工程里有的语言各一个按钮（原文写「原文」，别的在工具条上写语言代码、在侧栏里写语言的名字），
+ * 当前的高亮；最后的「+」点开列出还没加的语言，选一个加上并切过去，都加了时不显示，加不了时置灰。工具条上的
+ * （`inPanel` 不给）菜单往上弹；「字幕·配音」页签顶部的（`inPanel`）是一排小块，菜单往下弹。两处切换、添加的是
+ * 同一份 `LocaleControls`。
  */
-function LocaleBar({ current, present, onSwitch, addBlocked, onAdd }: LocaleControls) {
+export function LocaleBar({
+  current,
+  present,
+  onSwitch,
+  addBlocked,
+  onAdd,
+  inPanel = false,
+}: LocaleControls & { inPanel?: boolean }) {
   const buttons: LocaleButton[] = [
     SOURCE_BUTTON,
     ...LOCALES.filter(({ code }) => present.includes(code)).map((locale) => ({
       code: locale.code,
       tag: locale.tag,
+      name: locale.name,
       label: localeButtonName(locale),
       tip: `${phraseWith('切换到', locale.code, '：')}${phraseWith('预览和字幕显示', locale.code, '的字')}`,
     })),
   ]
   const addable = LOCALES.filter(({ code }) => !present.includes(code))
+  const side = inPanel ? 'bottom' : 'top'
   return (
-    <div aria-label="语言" className="wf-locales" role="group">
+    // 侧栏里的这一组不能叫「语言」：按名字找工具条上那一组时会把它也找到
+    <div
+      aria-label={inPanel ? '原文与译文' : '语言'}
+      className={cn('wf-locales', inPanel && 'is-panel')}
+      role="group"
+    >
       {buttons.map((button) => (
         <TooltipRoot key={button.label}>
           <TooltipTrigger asChild>
@@ -223,25 +240,28 @@ function LocaleBar({ current, present, onSwitch, addBlocked, onAdd }: LocaleCont
               onClick={() => onSwitch(button.code)}
               type="button"
             >
-              {button.tag}
+              {inPanel ? button.name : button.tag}
             </button>
           </TooltipTrigger>
-          <TooltipContent className="wf-tip" side="top">
+          <TooltipContent className="wf-tip" side={side}>
             {button.tip}
           </TooltipContent>
         </TooltipRoot>
       ))}
       {addBlocked !== undefined ? (
-        <BlockedAddLocale reason={addBlocked} />
+        <BlockedAddLocale reason={addBlocked} side={side} />
       ) : addable.length === 0 ? null : (
-        <AddLocale addable={addable} onAdd={onAdd} />
+        <AddLocale addable={addable} onAdd={onAdd} side={side} />
       )}
     </div>
   )
 }
 
+/** 菜单和提示往哪边弹。 */
+type PopSide = 'top' | 'bottom'
+
 /** 加不了语言时的「+」：置灰，点了只说明原因（和 `Tool` 置灰时一样）。 */
-function BlockedAddLocale({ reason }: { reason: string }) {
+function BlockedAddLocale({ reason, side }: { reason: string; side: PopSide }) {
   const [hint, setHint] = useState(false)
   return (
     <TooltipRoot onOpenChange={setHint} open={hint}>
@@ -261,7 +281,7 @@ function BlockedAddLocale({ reason }: { reason: string }) {
           <Icon decorative name="add" size="xs" />
         </button>
       </TooltipTrigger>
-      <TooltipContent className="wf-tip" side="top">
+      <TooltipContent className="wf-tip" side={side}>
         {reason}
       </TooltipContent>
     </TooltipRoot>
@@ -271,9 +291,11 @@ function BlockedAddLocale({ reason }: { reason: string }) {
 function AddLocale({
   addable,
   onAdd,
+  side,
 }: {
   addable: readonly (typeof LOCALES)[number][]
   onAdd: (code: LocaleCode) => void
+  side: PopSide
 }) {
   const [open, setOpen] = useState(false)
   const [hint, setHint] = useState(false)
@@ -294,11 +316,11 @@ function AddLocale({
             </button>
           </TooltipTrigger>
         </MenuTrigger>
-        <TooltipContent className="wf-tip" side="top">
+        <TooltipContent className="wf-tip" side={side}>
           添加语言
         </TooltipContent>
       </TooltipRoot>
-      <MenuSurface align="start" side="top">
+      <MenuSurface align="start" side={side}>
         {addable.map((locale) => (
           <MenuItem key={locale.code} onSelect={() => onAdd(locale.code)}>
             {localeButtonName(locale)}

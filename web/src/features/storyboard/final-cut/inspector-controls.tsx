@@ -20,6 +20,7 @@ export function SliderControl({
   onText,
   onEditing,
   onDoubleClick,
+  onDrag,
 }: {
   label: string
   min: number
@@ -37,6 +38,8 @@ export function SliderControl({
   onText: (text: string) => boolean
   onEditing: (editing: boolean) => void
   onDoubleClick?: () => void
+  /** 拖到了 `position` 这一格（还没松手），给要跟着拖动变的旁边的东西用。 */
+  onDrag?: (position: number) => void
 }) {
   // 拖到的格数，连同开始拖时的取值：取值被撤销、输入改掉以后不再用它
   const [dragged, setDragged] = useState<{ from: number; to: number } | null>(null)
@@ -51,7 +54,10 @@ export function SliderControl({
         mark={mark}
         max={max}
         min={min}
-        onChange={(to) => setDragged({ from: position, to })}
+        onChange={(to) => {
+          setDragged({ from: position, to })
+          onDrag?.(to)
+        }}
         onCommit={(to) => {
           setDragged(null)
           onCommit(to)

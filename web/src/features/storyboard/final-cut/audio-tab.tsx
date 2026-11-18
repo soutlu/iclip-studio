@@ -47,19 +47,22 @@ import {
 
 const MAX_PROMPT_CHARS = 3000
 
+/** final-cut 里用着的那一行行尾写的字。 */
+const USED_LABEL = '使用中'
+
 type AudioTabProps = {
   conversationId: string
   /** 这个页签是不是正显示着；被藏起来时停止试听。 */
   active: boolean
   /** final-cut 里现有的片段：看哪条音频用着、用在哪个片段上。 */
   clips: readonly FilmClip[]
-  /** 右键「加到播放头」或按 Enter。 */
+  /** 点没用过的一行或它行尾的「+」、右键「加到播放头」或按 Enter。 */
   onAdd: (audio: NewAudio) => void
   /** 拖着一行移动；null 是拖动取消了。 */
   onCarry: (audio: NewAudio, point: CarryPoint | null) => void
   /** 拖着一行松手。 */
   onDrop: (audio: NewAudio, point: CarryPoint) => void
-  /** 点 final-cut 里用着的那一行：选中它对应的片段。 */
+  /** 点 final-cut 里用着的那一行：选中最早用它的那个片段。 */
   onReveal: (clipId: string) => void
   onNotice: (message: string) => void
 }
@@ -396,19 +399,20 @@ function AudioRow({
   }
   useEditorEscape(lifting, cancel)
 
+  // 还加不了的行点了什么都不做，按 Enter、右键时才说明原因
+  const addsOnClick = typeof addable !== 'string'
   return (
-    <li
-      className={cn('wf-song', used && 'is-used', lifting && 'is-lifting')}
-      title={ready ? '拖到时间线上可加入 final-cut，右键可选择「加到播放头」' : undefined}
-    >
+    <li className={cn('wf-song', used && 'is-used', lifting && 'is-lifting')}>
       <ContextMenuRoot>
         <ContextMenuTrigger asChild>
           <button
             aria-keyshortcuts="Enter"
-            aria-label={used ? `${title}，已使用` : title}
-            className="wf-song-select"
+            aria-label={used ? `${title}，${USED_LABEL}` : title}
+            className={cn('wf-song-select', !addsOnClick && !used && 'is-inert')}
             onClick={() => {
-              if (!clickAfterDrag.take() && used) onReveal()
+              if (clickAfterDrag.take()) return
+              if (used) onReveal()
+              else if (addsOnClick) onAdd()
             }}
             onKeyDown={(event) => {
               if (event.key !== 'Enter') return
@@ -442,14 +446,24 @@ function AudioRow({
         <span className="wf-song-title" title={title}>
           {title}
         </span>
-        {ready && (durationMs !== null || used) ? (
-          <span className="wf-song-meta">
-            {[durationMs === null ? null : durationLabel(durationMs), used ? '已使用' : null]
-              .filter((part) => part !== null)
-              .join(' · ')}
-          </span>
+        {ready && durationMs !== null ? (
+          <span className="wf-song-meta">{durationLabel(durationMs)}</span>
         ) : null}
       </span>
+      {used ? (
+        <span className="wf-song-used">{USED_LABEL}</span>
+      ) : addsOnClick ? (
+        // 整行已能用 Enter 加入，「+」不再占一个 Tab 停靠点
+        <IconButton
+          className="wf-song-add"
+          label={`放入配乐行：${title}`}
+          name="add"
+          onClick={onAdd}
+          size="xs"
+          tabIndex={-1}
+          tooltip="放入配乐行"
+        />
+      ) : null}
       {audio.status === 'failed' ? (
         <span className="wf-song-actions">
           {audio.generated ? (
