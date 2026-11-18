@@ -236,16 +236,23 @@ export function carveAttributes(
   measured: CarveMeasurement | null,
 ): { chain: string | null; automation: string | null } {
   const before = chainOf(chain)
-  const carried = withoutCarveLanes(automationOf(automation), before)
+  const all = automationOf(automation).lanes
+  const carried = withoutCarveLanes({ version: 1, lanes: all }, before).lanes
   if (measured === null)
     return {
       chain: chainText({ version: 1, nodes: before.nodes.filter((node) => !node.fromCarve) }),
-      automation: automationText(carried),
+      automation: automationText({ version: 1, lanes: carried }),
     }
   const { next, carvedNodes, duckNode } = mintCarveNodes(before, measured.carved, measured.duck)
   const lanes = carveLanes(carvedNodes, duckNode, measured.duck, measured.voiceMix, measured.bands)
+  // 新的曲线放在原来压低曲线的位置：重新量出来一样时，写出来的也和原来一样
+  const at = all.findIndex((lane) => !carried.includes(lane))
+  const split = at < 0 ? carried.length : at
   return {
     chain: chainText(next),
-    automation: automationText({ version: 1, lanes: [...carried.lanes, ...lanes] }),
+    automation: automationText({
+      version: 1,
+      lanes: [...carried.slice(0, split), ...lanes, ...carried.slice(split)],
+    }),
   }
 }
