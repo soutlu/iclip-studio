@@ -1,6 +1,6 @@
 # 项目命令入口。
 
-.PHONY: runtime runtime-bump setup dev up lint format format-check typecheck tach test check contract contract-sync contract-check docs-check lock-check lock-sync db-upgrade test-external web-check hooks wt-new wt-clean
+.PHONY: runtime runtime-bump setup dev up lint format format-check typecheck tach test check contract contract-sync contract-check docs-check lock-check lock-sync db-upgrade test-external web-check hooks wt-new wt-clean release-check release
 
 # 把运行时项目 Cue 按 runtime.ref 钉住的版本检出到 runtime/（不进本仓库），需要 Cue 的读权限。
 # runtime/ 已存在却不是 Git 检出时报错退出，不替人删除。
@@ -130,3 +130,13 @@ wt-clean:
 	state=$$(gh pr view "$$branch" --json state --jq .state) || { echo "查不到分支 $$branch 的 PR" >&2; exit 1; }; \
 	if [ "$$state" != MERGED ]; then echo "分支 $$branch 的 PR 状态是 $$state，不是 MERGED" >&2; exit 1; fi; \
 	set -ex; git pull --ff-only; git worktree remove "$$dir"; git branch -D "$$branch"
+
+# 发版第一步：make release-check [REF=<分支>]（缺省 main）。打印上一个版本标签到分支最新提交的上线前摘要，
+# 确认这个提交有成功的手动全量 ci（没有就触发并等它结束），最后打印第二步的命令。
+release-check:
+	bash scripts/release.sh check '$(or $(REF),main)'
+
+# 发版第二步：make release VERSION=vX.Y.Z SHA=<提交>。校验通过后给这个提交创建 GitHub Release，
+# 推送标签并触发镜像流水线。
+release:
+	bash scripts/release.sh tag '$(VERSION)' '$(SHA)'
