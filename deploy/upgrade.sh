@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# 服务器上升级应用或运行时：拉镜像、核对并按需迁移、更新版本号、重启、等健康。
+# 服务器上升级应用、运行时或两边：拉镜像、核对并按需迁移、更新版本号、重启、等健康。
 # 与 compose.yaml 放在同一部署目录，在该目录执行。步骤说明见仓库 docs/deploy.md「升级」。
 
 set -euo pipefail
@@ -10,9 +10,12 @@ HEALTH_TIMEOUT=180
 usage() {
   cat >&2 <<'EOF'
 用法：
-  ./upgrade.sh app vX.Y.Z                                  升级后端、前端与渲染服务，运行时不动
-  ./upgrade.sh runtime runtime-vX.Y.Z [--stamp-baseline]   只升级运行时
+  ./upgrade.sh app vX.Y.Z                            只升级后端、前端与渲染服务，运行时不动
+  ./upgrade.sh runtime vX.Y.Z [--stamp-baseline]     只升级运行时
       --stamp-baseline 只在第一次升到运行时自己管迁移的版本时用一次
+  ./upgrade.sh all vX.Y.Z --app-first|--runtime-first
+                                                     两边都升级到 vX.Y.Z，先升参数里写的那一边，
+                                                     成功后再升另一边；先后顺序必须写明
 EOF
   exit 2
 }
@@ -20,6 +23,38 @@ EOF
 die() {
   echo "错误：$*" >&2
   exit 1
+}
+
+# 按升级对象设置名称、.env 里的版本变量、跑迁移的服务、要拉的镜像与重启参数。
+configure() {
+  case $1 in
+    app)
+      label=应用
+      var=IMAGE_TAG
+      migration_service=server
+      services=(server web render)
+      up_args=(server web render)
+      ;;
+    runtime)
+      label=运行时
+      var=RUNTIME_IMAGE_TAG
+      migration_service=runtime
+      services=(runtime)
+      up_args=(--no-deps runtime)
+      ;;
+  esac
+}
+
+# 打印把一边恢复到升级前版本的两步：$1 版本变量，$2 升级前的值（空表示原来没有这一行），其余为重启参数。
+restore_steps() {
+  local key=$1 value=$2
+  shift 2
+  if [[ -n $value ]]; then
+    echo "  1. 把 .env 里的 ${key} 改回 ${value}" >&2
+  else
+    echo "  1. 删掉 .env 里的 ${key} 这一行（升级前没有，缺省为 latest）" >&2
+  fi
+  echo "  2. docker compose up -d $*" >&2
 }
 
 # 读 .env 里某个变量的值；没有这一行或值为空都输出空串。
@@ -116,13 +151,62 @@ PY
 rollback_hint() {
   echo >&2
   echo "升级没有完成。请按以下步骤恢复 .env 中的 ${var} 并重启：" >&2
-  if [[ -n $old ]]; then
-    echo "  1. 把 .env 里的 ${var} 改回 ${old}" >&2
-  else
-    echo "  1. 删掉 .env 里的 ${var} 这一行（升级前没有，缺省为 latest）" >&2
-  fi
-  echo "  2. docker compose up -d ${up_args[*]}" >&2
+  restore_steps "$var" "$old" "${up_args[@]}"
   echo "数据库迁移不会自动回退，已执行的迁移需要另行处理。" >&2
+}
+
+# 两边都升级：每一半都用单边升级跑一遍。放在子进程里跑，单边升级的 set -e 与失败提示保持原样。
+# $1 先升的一边，$2 后升的一边。
+upgrade_all() {
+  local first=$1 second=$2 first_label first_var first_old second_label second_var second_old now
+  local -a first_up second_up
+  configure "$first"
+  first_label=$label first_var=$var first_up=("${up_args[@]}")
+  configure "$second"
+  second_label=$label second_var=$var second_up=("${up_args[@]}")
+
+  first_old=$(env_get "$first_var")
+  echo "== 先升级${first_label}"
+  if ! bash "$0" "$first" "$version"; then
+    echo >&2
+    echo "${first_label}没有升级完成（见上方提示），${second_label}没有开始升级。" >&2
+    exit 1
+  fi
+
+  # 后一半的旧版本在前一半完成后再读：首次升级应用时会替运行时补上 RUNTIME_IMAGE_TAG。
+  second_old=$(env_get "$second_var")
+  echo "== 再升级${second_label}"
+  if ! bash "$0" "$second" "$version"; then
+    now=$(env_get "$second_var")
+    echo >&2
+    echo "两边没有都升级完成：" >&2
+    echo "  ${first_label}已升级完成：${first_var} ${first_old:-（未设置，缺省 latest）} → ${version}" >&2
+    # 后一半的 .env 在升级前已是目标版本（例如上次失败后重跑）时，看不出它走到了哪一步，也不知道更早的版本。
+    if [[ $second_old == "$version" ]]; then
+      echo "  ${second_label}没有升级完成（见上方提示）；.env 里的 ${second_var} 升级前就已是 ${version}" >&2
+    elif [[ $now == "$second_old" ]]; then
+      echo "  ${second_label}没有升级：.env 里的 ${second_var} 没有改动（仍是 ${second_old:-未设置，缺省 latest}），容器没有重启" >&2
+    else
+      echo "  ${second_label}没有升级完成：${second_var} 已写成 ${now}，但重启或健康检查失败（见上方提示）" >&2
+    fi
+    echo >&2
+    echo "要回滚的话，先回滚${second_label}、再回滚${first_label}：" >&2
+    if [[ $second_old == "$version" ]]; then
+      echo "${second_label}：" >&2
+      echo "  1. 把 .env 里的 ${second_var} 改成升级到 ${version} 之前用的版本" >&2
+      echo "  2. docker compose up -d ${second_up[*]}" >&2
+    elif [[ $now == "$second_old" ]]; then
+      echo "${second_label}：不用处理，.env 和容器都没有动" >&2
+    else
+      echo "${second_label}：" >&2
+      restore_steps "$second_var" "$second_old" "${second_up[@]}"
+    fi
+    echo "${first_label}：" >&2
+    restore_steps "$first_var" "$first_old" "${first_up[@]}"
+    echo "数据库迁移不会自动回退，已执行的迁移需要另行处理。" >&2
+    exit 1
+  fi
+  echo "两边都已升级到 ${version}"
 }
 
 wait_healthy() {
@@ -155,26 +239,21 @@ wait_running() {
 [[ $# -ge 2 ]] || usage
 target=$1
 version=$2
+[[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || usage
 stamp_baseline=false
 case $target in
   app)
-    [[ $# -eq 2 && $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || usage
-    var=IMAGE_TAG
-    migration_service=server
-    services=(server web render)
-    up_args=(server web render)
+    [[ $# -eq 2 ]] || usage
     ;;
   runtime)
-    [[ $version =~ ^runtime-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || usage
     if [[ $# -eq 3 && $3 == --stamp-baseline ]]; then
       stamp_baseline=true
     elif [[ $# -ne 2 ]]; then
       usage
     fi
-    var=RUNTIME_IMAGE_TAG
-    migration_service=runtime
-    services=(runtime)
-    up_args=(--no-deps runtime)
+    ;;
+  all)
+    [[ $# -eq 3 && ($3 == --app-first || $3 == --runtime-first) ]] || usage
     ;;
   *)
     usage
@@ -186,6 +265,17 @@ esac
 
 # 版本号以 .env 为准：shell 里导出的同名变量会盖过 .env，让后面的迁移与重启用错版本。
 unset IMAGE_TAG RUNTIME_IMAGE_TAG
+
+if [[ $target == all ]]; then
+  if [[ $3 == --app-first ]]; then
+    upgrade_all app runtime
+  else
+    upgrade_all runtime app
+  fi
+  exit 0
+fi
+
+configure "$target"
 
 # compose 里 RUNTIME_IMAGE_TAG 缺省为 latest，.env 不写的话升级应用时拉取会把运行时带到最新，
 # 所以准备在切换应用版本前把运行时当前在用的版本写进 .env。

@@ -54,7 +54,7 @@
 |---|---|---|
 | [ci](.github/workflows/ci.yml) | 打开 PR、推送新提交、重新打开 PR 或修改目标分支（仅修改 PR 标题/正文或合并后的 push 不触发）；发版前手动触发（见[发版与镜像发布](docs/release.md)） | 1. 必查文档链接与 Git 历史密钥泄露。<br>2. 目标分支为 `main` 的 PR 按改动路径智能选择检查范围（`server` 依赖 `plugins/video`，两者都按 `runtime.ref` 检出的运行时安装：改了 `plugins/video` 或 `runtime.ref` 都查插件与 `server`；仅改 `web/*.md` 时只查前端格式；运行时自身的检查归 Cue）。<br>3. 目标为其他分支（`release/*`）的 PR 和手动触发都全量检查。所有结果汇总为 `ci` 状态 |
 | [cache-warm](.github/workflows/cache-warm.yml) | 推送到 `main`（含 PR 合入）、手动触发 | 仅安装依赖并保存缓存，供后续 PR 加速恢复 |
-| [release-images](.github/workflows/release-images.yml) | 推送 `vX.Y.Z` 或 `runtime-vX.Y.Z` 标签、手动指定分支触发 | `vX.Y.Z` 构建并上传后端、前端、渲染三个镜像，`runtime-vX.Y.Z` 只构建并上传运行时镜像，手动运行构建全部四个（见[发版与镜像发布](docs/release.md)） |
+| [release-images](.github/workflows/release-images.yml) | 推送 `vX.Y.Z` 标签、手动指定分支触发 | 构建并上传后端、运行时、前端、渲染全部四个镜像（见[发版与镜像发布](docs/release.md)） |
 
 ---
 
@@ -79,7 +79,7 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
 - **`main`（唯一常驻分支）**：所有日常功能与修复均向 `main` 提 PR，`ci` 检查通过后自动 Squash 合并；仓库只允许 Squash 合并。
 - **`release/vX.Y`（热修分支）**：只在线上版本需要热修、而 `main` 上有还不能发的改动时，从线上版本的标签切出，切出后保留（见[发版与热修](docs/release.md#发版与热修)）。
 - `main` 与 `release/*` 均禁止删除、禁止强推（force push），只能通过 PR 合入，且必须通过 `ci`（不要求 PR 分支先追上目标分支的最新提交）。
-- **打发版标签（`vX.Y.Z` 或 `runtime-vX.Y.Z`）必须先获得开发者明确确认**。
+- **打发版标签（`vX.Y.Z`）必须先获得开发者明确确认**。
 
 ### 日常开发流程（Worktree 模式）
 
