@@ -4,6 +4,7 @@ import { ColorPicker } from '@/shared/ui/color-picker'
 import { Input } from '@/shared/ui/field'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { Switch } from '@/shared/ui/switch'
+import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import {
   FollowToggle,
   HostTextField,
@@ -14,7 +15,7 @@ import type { CatalogVariable, VariableValue } from './composition/catalog'
 import type { HostClip } from './composition/film'
 import type { LocaleBindings } from './composition/locale-text'
 import { SliderControl } from './inspector-controls'
-import type { ShownLocale } from './locales'
+import { languageName, type Language, type ShownLocale } from './locales'
 
 type Values = Readonly<Record<string, VariableValue>>
 
@@ -34,9 +35,37 @@ export type TextLocale = {
 }
 
 /**
+ * 「内容与样式」的标题行：标题右边一个小块写着显示着的语言，点它打开「字幕·配音」页签（在那里切换、添加语言）。
+ * 贴片、场景和字幕的「内容与样式」共用。
+ */
+export function ContentTitle({ locale, onLocale }: { locale: Language; onLocale: () => void }) {
+  const name = languageName(locale)
+  return (
+    <div className="wf-prop-title-row">
+      <h4 className="wf-prop-title">内容与样式</h4>
+      <TooltipRoot>
+        <TooltipTrigger asChild>
+          <button
+            aria-label={`显示的语言：${name}`}
+            className="wf-prop-locale ui-state ui-focus"
+            onClick={onLocale}
+            type="button"
+          >
+            {name}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="wf-tip" side="top">
+          在「字幕·配音」中切换
+        </TooltipContent>
+      </TooltipRoot>
+    </div>
+  )
+}
+
+/**
  * 「内容与样式」：条目的可填项，一项一行。改了先留在这里，停下 300 毫秒再整串写进片段；
  * 几项一起改时合成一次写。焦点离开这一段、换选中的片段时把没写的立刻写进去。滑杆、取色板拖动中只动控件自己，
- * 松手才算改了。其它语言下文字字段换成这种语言的文字框（见 `HostTextField`），单独写进去。
+ * 松手才算改了。其它语言下文字字段换成这种语言的文字框（见 `HostTextField`），单独写进去。标题行见 `ContentTitle`。
  */
 export function ContentFields({
   clip,
@@ -45,6 +74,7 @@ export function ContentFields({
   onValues,
   onEditing,
   texts,
+  onLocale,
 }: {
   clip: HostClip
   variables: readonly CatalogVariable[]
@@ -52,6 +82,8 @@ export function ContentFields({
   onValues: (id: string, values: Values) => void
   onEditing: (editing: boolean) => void
   texts: TextLocale
+  /** 点标题右边的语言小块。 */
+  onLocale: () => void
 }) {
   const [pending, setPending] = useState<Values>({})
   const pendingRef = useRef<Values>({})
@@ -91,7 +123,7 @@ export function ContentFields({
 
   return (
     <section className="wf-prop-section">
-      <h4 className="wf-prop-title">内容与样式</h4>
+      <ContentTitle locale={texts.locale.code} onLocale={onLocale} />
       {variables.length === 0 ? (
         <p className="wf-inspector-note">暂无可填项</p>
       ) : (

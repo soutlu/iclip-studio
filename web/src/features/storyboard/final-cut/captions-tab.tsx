@@ -8,11 +8,12 @@ import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { BlockedReason } from '../components/blocked-reason'
-import { captionClock, captionsInOrder } from './caption-edit'
+import { captionClock, captionsInOrder, type CaptionsView } from './caption-edit'
 import { ComponentTexts } from './component-texts'
 import type { CaptionClip } from './composition/film'
 import type { LineVoice, LineVoices, VoiceMode } from './composition/voices'
 import { NARRATION_TEXT_LIMIT } from './dubbing'
+import { LocaleBar, type LocaleControls } from './editor-toolbar'
 import {
   captionIn,
   phraseWith,
@@ -108,8 +109,12 @@ type CaptionsTabProps = {
   texts: Omit<ComponentProps<typeof ComponentTexts>, 'locale' | 'selected'>
   /** 显示着的语言：其它语言时文字框里是这种语言的字，旁边写着原文。 */
   locale: ShownLocale
-  /** 编辑器里选中的片段：选中的字幕在列表里标出来。 */
+  /** 最上面的语言切换和添加，和工具条上的是同一份。 */
+  locales: LocaleControls
+  /** 编辑器里选中的片段的编号。 */
   selected: ReadonlySet<string>
+  /** 选中的片段在这里对应什么（见 `captionsFocus`）：列表里标出哪几句，选中变了时切到哪一段。 */
+  focus: { lines: ReadonlySet<string>; view: CaptionsView | undefined }
   /** 为什么现在不能在播放头处加一句；给了就把按钮置灰，点了说明它。 */
   addBlocked: string | undefined
   /** 正在识别几个视频片段的字幕；没在识别时是 0。 */
@@ -128,11 +133,14 @@ type CaptionsTabProps = {
 }
 
 /**
- * 「字幕·配音」页签：最上面在「字幕」和「组件文字」（见 `ComponentTexts`）两段之间切换，各写着有几个。「字幕」是识别
- * 字幕、在播放头处加一句，原文下还有「旁白配音」（见 `NarrationPanel`），下面是按开始时间排的字幕列表，每句能直接
- * 改字、删掉，点时间选中它、跳到它的开始。编辑器里选中的字幕标成当前这一句；刚加的那一句焦点进它的文字框。识别中
- * 写着在识别几个片段。其它语言下改的是这种语言的字，最上面多一个「翻译」，两段里还没翻的一起翻；「字幕」里多一行
- * 人声设置（见 `VoiceRow`）。
+ * 「字幕·配音」页签：最上面一排语言小块（见 `LocaleBar`），下面在「字幕」和「组件文字」（见 `ComponentTexts`）两段之间
+ * 切换，各写着有几个。「字幕」是识别字幕、在播放头处加一句，原文下还有「旁白配音」（见 `NarrationPanel`），下面是按
+ * 开始时间排的字幕列表，每句能直接改字、删掉，点时间选中它、跳到它的开始。编辑器里选中的字幕、选中的配音片段配的
+ * 那句标成当前这一句；刚加的那一句焦点进它的文字框。识别中写着在识别几个片段。其它语言下改的是这种语言的字，多一个
+ * 「翻译」，两段里还没翻的一起翻；「字幕」里多一行人声设置（见 `VoiceRow`）。
+ *
+ * 两段跟着选中走：选中变了的那一下，选中字幕或配音片段时切到「字幕」，选中有文字的贴片、场景时切到「组件文字」；
+ * 之后用户自己切了另一段就听用户的，等下一次选中变了再切。
  */
 export function CaptionsTab({
   active,
@@ -143,7 +151,9 @@ export function CaptionsTab({
   captions,
   texts,
   locale,
+  locales,
   selected,
+  focus,
   addBlocked,
   recognizing,
   recognizeBlocked,
@@ -155,7 +165,13 @@ export function CaptionsTab({
   onPick,
 }: CaptionsTabProps) {
   const [focusing, setFocusing] = useState<string | null>(null)
-  const [view, setView] = useState<'captions' | 'texts'>('captions')
+  const [view, setView] = useState<CaptionsView>(focus.view ?? 'captions')
+  const selectionKey = [...selected].sort().join(' ')
+  const [seenSelection, setSeenSelection] = useState(selectionKey)
+  if (selectionKey !== seenSelection) {
+    setSeenSelection(selectionKey)
+    if (focus.view !== undefined) setView(focus.view)
+  }
   const add = async () => {
     if (addBlocked !== undefined) return
     const id = await onAdd()
@@ -167,6 +183,7 @@ export function CaptionsTab({
   ] as const
   return (
     <div className="wf-captions">
+      <LocaleBar {...locales} inPanel />
       {problem === undefined ? null : (
         <InlineAlert className="wf-captions-alert" message={problem} />
       )}
@@ -213,6 +230,7 @@ export function CaptionsTab({
           addBlocked={addBlocked}
           captions={captions}
           focusing={focusing}
+          lines={focus.lines}
           locale={locale}
           narration={narration}
           onFocused={() => setFocusing(null)}
@@ -223,7 +241,6 @@ export function CaptionsTab({
           onText={onText}
           recognizeBlocked={recognizeBlocked}
           recognizing={recognizing}
-          selected={selected}
           voice={voice}
         />
       )}
@@ -483,7 +500,7 @@ function CaptionsView({
   onNotice,
   captions,
   locale,
-  selected,
+  lines,
   addBlocked,
   recognizing,
   recognizeBlocked,
@@ -496,8 +513,13 @@ function CaptionsView({
   onPick,
   voice,
   narration,
-}: Omit<CaptionsTabProps, 'texts' | 'problem' | 'onAdd' | 'translate'> & {
+}: Omit<
+  CaptionsTabProps,
+  'texts' | 'problem' | 'onAdd' | 'translate' | 'locales' | 'selected' | 'focus'
+> & {
   add: () => Promise<void>
+  /** 标成当前的那几句。 */
+  lines: ReadonlySet<string>
   /** 焦点要进的那一句（刚加的）。 */
   focusing: string | null
   onFocused: () => void
@@ -563,7 +585,7 @@ function CaptionsView({
           {captionsInOrder(captions).map((caption) => (
             <CaptionRow
               caption={caption}
-              current={selected.has(caption.id)}
+              current={lines.has(caption.id)}
               focus={caption.id === focusing}
               key={caption.id}
               locale={locale}

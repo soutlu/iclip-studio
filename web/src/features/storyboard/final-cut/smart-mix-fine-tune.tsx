@@ -4,6 +4,7 @@ import type { HfAudioFxChain } from '@hyperframes/core/audio-fx'
 import { cn } from '@/shared/lib/utils'
 import { Icon } from '@/shared/icons'
 import { Switch } from '@/shared/ui/switch'
+import { eqCurvePath } from './eq-curve'
 import { parseParamText } from './fx-params'
 import { SliderControl } from './inspector-controls'
 import {
@@ -116,7 +117,45 @@ function MixEnvelope({
   )
 }
 
-/** 「三段均衡与升降调」：低、中、高三段（频率照 core）和升降调；双击滑杆归零，右上「归零」全部清掉。 */
+// 频响小图的大小（像素）
+const CURVE_WIDTH = 76
+const CURVE_HEIGHT = 18
+
+/** 标题行右边的频响小图：按三段的增益画一条平滑的线（见 `eqCurvePath`），纯装饰。 */
+function EqCurve({ bands }: { bands: readonly { frequency: number; gain: number }[] }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className="wf-eq-curve"
+      height={CURVE_HEIGHT}
+      viewBox={`0 0 ${CURVE_WIDTH} ${CURVE_HEIGHT}`}
+      width={CURVE_WIDTH}
+    >
+      <line
+        className="wf-eq-curve-zero"
+        x1={0}
+        x2={CURVE_WIDTH}
+        y1={CURVE_HEIGHT / 2}
+        y2={CURVE_HEIGHT / 2}
+      />
+      <path
+        className="wf-eq-curve-line"
+        d={eqCurvePath(bands, {
+          width: CURVE_WIDTH,
+          height: CURVE_HEIGHT,
+          rangeDb: HF_AUDIO_EQ_RANGE_DB,
+          inset: 2.5,
+        })}
+        data-testid="eq-curve"
+      />
+    </svg>
+  )
+}
+
+/**
+ * 「三段均衡与升降调」：低、中、高三段（频率照 core）和升降调；双击滑杆归零，右上「归零」全部清掉。标题行右边的
+ * 频响小图跟着三段的增益变，拖滑杆时就跟着拖到的值。
+ */
 function MixTone({
   chain,
   onChange,
@@ -130,19 +169,29 @@ function MixTone({
   const pitch = pitchOf(chain)
   const tuned = pitch !== 0 || bands.some((band) => band.gain !== 0)
   const gainSteps = HF_AUDIO_EQ_RANGE_DB / EQ_STEP
+  // 正在拖的那一段拖到的增益，连同开始拖时的增益：增益被撤销、改掉以后不再用它
+  const [dragged, setDragged] = useState<{ band: string; from: number; gain: number } | null>(null)
+  const drawn = bands.map((band) =>
+    dragged !== null && dragged.band === band.name && dragged.from === band.gain
+      ? { ...band, gain: dragged.gain }
+      : band,
+  )
   return (
     <div className="wf-mix-card">
       <div className="wf-prop-title-row">
         <span className="wf-mix-card-title">三段均衡与升降调</span>
-        {tuned ? (
-          <button
-            className="wf-mix-link ui-state ui-focus"
-            onClick={() => onChange(withoutTone)}
-            type="button"
-          >
-            归零
-          </button>
-        ) : null}
+        <span className="wf-eq-head">
+          <EqCurve bands={drawn} />
+          {tuned ? (
+            <button
+              className="wf-mix-link ui-state ui-focus"
+              onClick={() => onChange(withoutTone)}
+              type="button"
+            >
+              归零
+            </button>
+          ) : null}
+        </span>
       </div>
       {bands.map((band) => {
         const label = `${EQ_BAND_NAMES[band.name] ?? band.name} ${hzText(band.frequency)}`
@@ -156,7 +205,17 @@ function MixTone({
               mark={gainSteps}
               max={gainSteps * 2}
               min={0}
-              onCommit={(position) => write((position - gainSteps) * EQ_STEP)}
+              onCommit={(position) => {
+                setDragged(null)
+                write((position - gainSteps) * EQ_STEP)
+              }}
+              onDrag={(position) =>
+                setDragged({
+                  band: band.name,
+                  from: band.gain,
+                  gain: (position - gainSteps) * EQ_STEP,
+                })
+              }
               onDoubleClick={() => write(0)}
               onEditing={onEditing}
               onText={(text) => {

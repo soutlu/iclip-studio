@@ -29,6 +29,10 @@ export type Language = LocaleCode | typeof SOURCE_LOCALE
 const localeNamed = (code: LocaleCode) =>
   LOCALES.find((locale) => locale.code === code) ?? LOCALES[0]
 
+/** 界面上一种语言的名字：原文写「原文」，别的写 `LOCALES` 里的名字。 */
+export const languageName = (code: Language): string =>
+  code === SOURCE_LOCALE ? SOURCE_NAME : localeNamed(code).name
+
 const HAN = /\p{Script=Han}/u
 
 /**

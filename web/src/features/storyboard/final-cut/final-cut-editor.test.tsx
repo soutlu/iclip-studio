@@ -2285,8 +2285,9 @@ describe('final-cut 编辑器 · 组件、块页签', () => {
     within(within(side()).getByRole('list'))
       .getAllByRole('group')
       .map((element) => element.getAttribute('aria-label'))
+  // 点一下卡片就加到播放头
   const addAtPlayhead = (user: ReturnType<typeof userEvent.setup>, name: RegExp) =>
-    user.click(within(itemCard(name)).getByRole('button', { name: '加到播放头' }))
+    user.click(within(itemCard(name)).getByRole('button', { name }))
   const savedItems = () => savedFilm().match(/<div [^>]*class="clip component"[^>]*>/g) ?? []
   const previewHtml = () => previewPlayer().getAttribute('srcdoc') ?? ''
   const playerUp = previewSettled

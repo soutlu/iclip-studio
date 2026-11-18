@@ -9,9 +9,23 @@ import { sourceTrimmed, trimBounds, trimmed, type SourceLength, type Timing } fr
 import type { ComponentCatalog, VariableValue } from './composition/catalog'
 import { CaptionTextField, type CaptionTextChange } from './captions-tab'
 import { CAPTION_COLOR, captionFontSize, captionFontSizeRange } from './composition/captions'
-import { isMediaClip, type Canvas, type CaptionClip, type FilmClip } from './composition/film'
+import {
+  isDetachedAudio,
+  isDubClip,
+  isMediaClip,
+  type Canvas,
+  type CaptionClip,
+  type FilmClip,
+} from './composition/film'
 import type { LocaleBindings } from './composition/locale-text'
-import { ColorField, ContentFields, Dropdown, HEX_COLOR, type TextLocale } from './content-fields'
+import {
+  ColorField,
+  ContentFields,
+  ContentTitle,
+  Dropdown,
+  HEX_COLOR,
+  type TextLocale,
+} from './content-fields'
 import { Keys, Tool } from './editor-toolbar'
 import { SliderControl } from './inspector-controls'
 import { ITEM_KIND_LABEL } from './items'
@@ -84,11 +98,14 @@ type Props = {
   onTextEditing: (editing: boolean) => void
   /** 选中的是一个有声片段时它的「智能调音」；别的时候是 undefined。 */
   smartMix: SmartMix | undefined
+  /** 点「内容与样式」标题右边的语言小块：打开「字幕·配音」页签。 */
+  onOpenCaptions: () => void
 }
 
-/** 片段的种类；组件或块的片段按条目在组件库里的种类写，「其他」片段不写。 */
+/** 片段的种类；配音片段（含旁白）写「AI 配音」，组件或块的片段按条目在组件库里的种类写，「其他」片段不写。 */
 const kindLabel = (clip: FilmClip, catalog: ComponentCatalog): string | undefined => {
   if (clip.kind === 'video') return '视频'
+  if (isDubClip(clip)) return 'AI 配音'
   if (clip.kind === 'audio') return clip.syncOrigin === null ? '音频' : '分离原声'
   if (clip.kind === 'caption') return '字幕'
   if (clip.kind === 'other') return undefined
@@ -167,6 +184,7 @@ function ClipInspector({
   soundControls,
   onTextEditing,
   smartMix,
+  onOpenCaptions,
 }: Omit<Props, 'selected'> & { clip: FilmClip }) {
   const fonts = Object.keys(catalog.fonts).toSorted()
   const sound = clip.kind === 'audio'
@@ -255,6 +273,8 @@ function ClipInspector({
                 clip={clip}
                 onChange={(changes) => onAttributes(clip.id, changes)}
                 onEditing={onTextEditing}
+                // 分离出来的原声：右上是「静音此段」，和头部的静音按钮是同一个隐藏标记
+                onMute={isDetachedAudio(clip) ? (muted) => onHide(clip.id, muted) : undefined}
                 silent={clip.kind === 'video' && silentSource(clip.src)}
               />
             )}
@@ -276,6 +296,7 @@ function ClipInspector({
                 clip={clip}
                 fonts={fonts}
                 onEditing={onTextEditing}
+                onLocale={onOpenCaptions}
                 onValues={onValues}
                 texts={{ ...texts, locale, bindings: texts.bindings.get(clip.id) ?? NO_BINDINGS }}
                 variables={catalog.items.find((item) => item.name === clip.item)?.variables ?? []}
@@ -287,6 +308,7 @@ function ClipInspector({
                 fonts={fonts}
                 locale={locale}
                 onEditing={onTextEditing}
+                onLocale={onOpenCaptions}
                 onStyle={onCaptionStyle}
                 onText={onCaptionText}
               />
@@ -307,6 +329,7 @@ function CaptionContent({
   canvas,
   fonts,
   locale,
+  onLocale,
   onText,
   onStyle,
   onEditing,
@@ -315,6 +338,7 @@ function CaptionContent({
   canvas: Canvas
   fonts: readonly string[]
   locale: ShownLocale
+  onLocale: () => void
   onText: CaptionTextChange
   onStyle: CaptionStyleChange
   onEditing: (editing: boolean) => void
@@ -324,7 +348,7 @@ function CaptionContent({
   const colorId = useId()
   return (
     <section className="wf-prop-section">
-      <h4 className="wf-prop-title">内容与样式</h4>
+      <ContentTitle locale={locale.code} onLocale={onLocale} />
       <div className="wf-prop-rows">
         <div className="wf-prop-row is-content is-text">
           <label className="wf-prop-label" htmlFor={textId}>

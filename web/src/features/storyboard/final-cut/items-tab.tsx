@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
+import { IconButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/field'
-import { DRAG_THRESHOLD, releasePointer } from '../editing/timeline-drag'
+import { DRAG_THRESHOLD, releasePointer, useClickAfterDrag } from '../editing/timeline-drag'
 import { thumbnailUrl } from './component-catalog'
 import type { CatalogItem, ComponentCatalog } from './composition/catalog'
 import { useEditorEscape } from './editor-keys'
@@ -33,7 +34,7 @@ type ItemsTabProps = {
   onFilterChange: (filter: ItemFilter) => void
   /** 页面的源，悬停预览按它找组件库的文件。 */
   origin: string
-  /** 点「加到播放头」。 */
+  /** 点卡片或卡片上的「+」、焦点在卡片上按 Enter：加到播放头。 */
   onAdd: (item: CatalogItem) => void
   /** 拖着卡片移动；null 是拖动取消了。 */
   onCarry: (item: CatalogItem, point: CarryPoint | null) => void
@@ -153,13 +154,15 @@ function ItemCard({
   onHoverEnd,
 }: CardProps) {
   const pressRef = useRef<Press | null>(null)
+  const clickAfterDrag = useClickAfterDrag()
   const [lifting, setLifting] = useState(false)
   const thumbnail = thumbnailUrl(catalog, item.name)
+  const name = item.duration === null ? item.title : `${item.title}，${String(item.duration)} 秒`
 
-  const press = (event: PointerEvent<HTMLDivElement>) => {
-    // 按在「加到播放头」上不起拖：抓住指针以后按钮收不到点击
-    if (event.button !== 0 || (event.target as Element).closest('button') !== null) return
+  const press = (event: PointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return
     event.currentTarget.setPointerCapture(event.pointerId)
+    clickAfterDrag.reset()
     pressRef.current = {
       pointerId: event.pointerId,
       originX: event.clientX,
@@ -167,7 +170,7 @@ function ItemCard({
       moved: false,
     }
   }
-  const move = (event: PointerEvent<HTMLDivElement>) => {
+  const move = (event: PointerEvent<HTMLButtonElement>) => {
     const current = pressRef.current
     if (current === null || current.pointerId !== event.pointerId) return
     if (!current.moved) {
@@ -179,16 +182,22 @@ function ItemCard({
     }
     onCarry({ clientX: event.clientX, clientY: event.clientY })
   }
-  const release = (event: PointerEvent<HTMLDivElement>) => {
+  const release = (event: PointerEvent<HTMLButtonElement>) => {
     const current = pressRef.current
     if (current === null || current.pointerId !== event.pointerId) return
     releasePointer(event)
     pressRef.current = null
     setLifting(false)
-    if (current.moved) onDrop({ clientX: event.clientX, clientY: event.clientY })
+    if (!current.moved) return
+    // 松手后浏览器还会补一次点击，不能当成点了卡片再加一个
+    clickAfterDrag.swallow()
+    onDrop({ clientX: event.clientX, clientY: event.clientY })
   }
   const cancel = () => {
-    if (pressRef.current?.moved === true) onCarry(null)
+    if (pressRef.current?.moved === true) {
+      clickAfterDrag.swallow()
+      onCarry(null)
+    }
     pressRef.current = null
     setLifting(false)
   }
@@ -196,20 +205,33 @@ function ItemCard({
 
   return (
     <div
-      aria-label={
-        item.duration === null ? item.title : `${item.title}，${String(item.duration)} 秒`
-      }
+      aria-label={name}
       className={cn('wf-item', lifting && 'is-lifting')}
-      onPointerCancel={cancel}
-      onPointerDown={press}
       onPointerEnter={(event) => {
         if (event.pointerType === 'mouse') onHoverStart()
       }}
       onPointerLeave={onHoverEnd}
-      onPointerMove={move}
-      onPointerUp={release}
       role="group"
     >
+      {/* 整张卡是一个按钮：点、按 Enter 加到播放头，按住拖到时间线；「+」叠在它上面 */}
+      <button
+        aria-keyshortcuts="Enter"
+        aria-label={name}
+        className="wf-item-select"
+        onClick={() => {
+          if (!clickAfterDrag.take()) onAdd()
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter') return
+          event.preventDefault()
+          onAdd()
+        }}
+        onPointerCancel={cancel}
+        onPointerDown={press}
+        onPointerMove={move}
+        onPointerUp={release}
+        type="button"
+      />
       <span className="wf-item-frame">
         <span className="wf-item-thumb">
           {thumbnail === null ? (
@@ -226,11 +248,15 @@ function ItemCard({
             {durationText(item.duration)}
           </span>
         )}
-        {/* 和别处悬停才出的操作一样：指针停在卡片上、焦点在按钮上或触屏时显示 */}
-        <button className="wf-item-add ui-focus" onClick={onAdd} type="button">
-          <Icon decorative name="add" size="xs" />
-          加到播放头
-        </button>
+        {/* 整张卡已能用 Enter 加入，「+」不再占一个 Tab 停靠点 */}
+        <IconButton
+          className="wf-item-add"
+          label="加到播放头"
+          name="add"
+          onClick={onAdd}
+          size="xs"
+          tabIndex={-1}
+        />
       </span>
       <span className="wf-item-name">{item.title}</span>
       <span className="wf-item-meta">{categoryLabel(catalog, item)}</span>

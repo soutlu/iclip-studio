@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { audio, caption as captionClip, video } from '@/testing/final-cut'
+import { audio, caption as captionClip, host, video } from '@/testing/final-cut'
 import {
   captionClock,
+  captionsFocus,
   captionsFollowing,
   captionSpot,
   captionsInOrder,
@@ -377,5 +378,39 @@ describe('配音片段跟着它配的那句字幕走', () => {
       starts: new Map(),
       removed: ['en-a1', 'de-a1'],
     })
+  })
+})
+
+describe('选中的片段在「字幕·配音」里对应什么', () => {
+  const dubOf = (id: string, of: string, locale: string | null) =>
+    audio({ id, dub: { locale, caption: of, trimmed: false, voice: null } })
+  const texted = new Set(['title-1'])
+
+  it('选中字幕：标出这一句，切到「字幕」', () => {
+    const focus = captionsFocus([captionClip({ id: 'a1' })], texted)
+    expect([...focus.lines]).toEqual(['a1'])
+    expect(focus.view).toBe('captions')
+  })
+
+  it('选中其它语言的配音片段、旁白片段：标出它们配的那句，切到「字幕」', () => {
+    const focus = captionsFocus([dubOf('en-a1', 'a1', 'en'), dubOf('n-b2', 'b2', null)], texted)
+    expect([...focus.lines]).toEqual(['a1', 'b2'])
+    expect(focus.view).toBe('captions')
+  })
+
+  it('选中有文字的贴片、场景：不标字幕，切到「组件文字」；同时选中了字幕时还是「字幕」', () => {
+    expect(captionsFocus([host({ id: 'title-1' })], texted)).toEqual({
+      lines: new Set(),
+      view: 'texts',
+    })
+    expect(captionsFocus([host({ id: 'title-1' }), captionClip({ id: 'a1' })], texted).view).toBe(
+      'captions',
+    )
+  })
+
+  it('选中没有文字的贴片、视频片段、配乐或什么都没选：不切', () => {
+    expect(captionsFocus([host({ id: 'plain' })], texted).view).toBeUndefined()
+    expect(captionsFocus([video(), audio()], texted).view).toBeUndefined()
+    expect(captionsFocus([], texted)).toEqual({ lines: new Set(), view: undefined })
   })
 })

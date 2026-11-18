@@ -149,7 +149,7 @@ describe('音频栏 · 列表', () => {
     expect(within(rowOf('轻快原声吉他')).getByText('00:30')).toBeInTheDocument()
     expect(within(rowOf('城市夜景氛围')).getByText('02:48')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '试听：轻快原声吉他' })).toBeInTheDocument()
-    expect(screen.queryByText(/已使用/)).toBeNull()
+    expect(screen.queryByText('使用中')).toBeNull()
 
     const search = screen.getByRole('searchbox', { name: '搜索音频' })
     expect(search).toHaveAttribute('placeholder', '搜索音频')
@@ -174,13 +174,16 @@ describe('音频栏 · 列表', () => {
     ['submitted', '生成中', '音乐尚未生成完成，无法加入 final-cut；请等待生成完成'],
     ['failed', '生成失败', '音乐生成失败，无法加入 final-cut；请重新生成'],
   ] as const)(
-    '%s 显示「%s」，不能试听，按 Enter、右键都加不进 final-cut',
+    '%s 显示「%s」，不能试听，没有「+」，点了不加；按 Enter、右键都加不进 final-cut',
     async (status, label, why) => {
       const user = userEvent.setup()
       const { onAdd, onNotice } = await openTab([musicJob({ status })])
       expect(screen.getByRole('img', { name: label })).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: '试听：轻快电子节奏' })).toBeNull()
+      expect(screen.queryByRole('button', { name: /^放入配乐行：/ })).toBeNull()
 
+      await user.click(rowButton('轻快电子节奏'))
+      expect(onNotice).not.toHaveBeenCalled()
       act(() => rowButton('轻快电子节奏').focus())
       await user.keyboard('{Enter}')
       fireEvent.contextMenu(rowButton('轻快电子节奏'))
@@ -286,20 +289,22 @@ describe('音频栏 · 试听', () => {
   })
 })
 
-describe('音频栏 · 已使用', () => {
-  it('final-cut 里用着的那条标「已使用」，点这一行选中它最早的那个片段；没用到的点了什么也不做', async () => {
+describe('音频栏 · 使用中', () => {
+  it('final-cut 里用着的那条行尾写「使用中」、没有「+」；点这一行选中它最早的那个片段，不再加一个', async () => {
     const user = userEvent.setup()
     const clips = [
       audio({ id: 'late', src: GUITAR_URL, start: 8000 }),
       audio({ id: 'early', src: GUITAR_URL, start: 1000, track: 1 }),
     ]
     const { onReveal, onAdd } = await openTab([guitar, night], clips)
-    expect(within(rowOf('轻快原声吉他')).getByText('00:30 · 已使用')).toBeInTheDocument()
-    expect(within(rowOf('城市夜景氛围')).queryByText(/已使用/)).toBeNull()
+    expect(within(rowOf('轻快原声吉他')).getByText('使用中')).toBeInTheDocument()
+    expect(within(rowOf('轻快原声吉他')).getByText('00:30')).toBeInTheDocument()
+    expect(
+      within(rowOf('轻快原声吉他')).queryByRole('button', { name: /^放入配乐行：/ }),
+    ).toBeNull()
+    expect(within(rowOf('城市夜景氛围')).queryByText('使用中')).toBeNull()
 
-    await user.click(rowButton('城市夜景氛围'))
-    expect(onReveal).not.toHaveBeenCalled()
-    await user.click(rowButton('轻快原声吉他，已使用'))
+    await user.click(rowButton('轻快原声吉他，使用中'))
     expect(onReveal).toHaveBeenCalledExactlyOnceWith('early')
     expect(onAdd).not.toHaveBeenCalled()
   })
@@ -312,6 +317,23 @@ describe('音频栏 · 加进 final-cut', () => {
     mediaStart: 0,
     duration: 30_000,
   }
+
+  it('点一下没用过的那一行：加入整条音频', async () => {
+    const user = userEvent.setup()
+    const { onAdd, onReveal } = await openTab([guitar])
+    await user.click(rowButton('轻快原声吉他'))
+    expect(onAdd).toHaveBeenCalledExactlyOnceWith(whole)
+    expect(onReveal).not.toHaveBeenCalled()
+  })
+
+  it('点行尾的「+」：加入整条音频，只加一次', async () => {
+    const user = userEvent.setup()
+    const { onAdd } = await openTab([guitar])
+    const plus = screen.getByRole('button', { name: '放入配乐行：轻快原声吉他' })
+    expect(plus).toHaveAttribute('tabindex', '-1')
+    await user.click(plus)
+    expect(onAdd).toHaveBeenCalledExactlyOnceWith(whole)
+  })
 
   it('右键只有「加到播放头」，选它加入整条音频', async () => {
     const user = userEvent.setup()
@@ -340,7 +362,7 @@ describe('音频栏 · 加进 final-cut', () => {
 
   it('按住一行拖出去：移动时报告指针位置，松手时交给时间线；松手后不算点了这一行', async () => {
     const { onCarry, onDrop, onReveal } = await openTab([guitar], [audio({ src: GUITAR_URL })])
-    const row = rowButton('轻快原声吉他，已使用')
+    const row = rowButton('轻快原声吉他，使用中')
     fireEvent.pointerDown(row, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
     fireEvent.pointerMove(row, { pointerId: 1, clientX: 10 + DRAG_THRESHOLD, clientY: 10 })
     expect(onCarry).not.toHaveBeenCalled()

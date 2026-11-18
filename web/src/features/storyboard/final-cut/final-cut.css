@@ -747,16 +747,20 @@
   opacity: 0.4;
 }
 
-/* 整行是一个按钮：拖到时间线、右键、按 Enter 都落在它上面；试听键和别的按钮叠在它上面 */
+/* 整行是一个按钮：点、拖到时间线、右键、按 Enter 都落在它上面；试听键和别的按钮叠在它上面 */
 .wf-song-select {
   position: absolute;
   inset: 0;
   border: 0;
   border-radius: inherit;
   background: transparent;
-  cursor: grab;
+  cursor: pointer;
   touch-action: none;
   user-select: none;
+}
+
+.wf-song-select.is-inert {
+  cursor: default;
 }
 
 .wf-song.is-lifting .wf-song-select {
@@ -775,8 +779,50 @@
 
 .wf-song-play,
 .wf-song-text,
-.wf-song-actions {
+.wf-song-actions,
+.wf-song-used,
+.wf-song-add {
   position: relative;
+}
+
+/* 用着的那一行行尾：主色浅底的「使用中」 */
+.wf-song-used {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  color: var(--color-primary);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: var(--text-caption--line-height);
+  pointer-events: none;
+}
+
+/* 没用过的那一行行尾的「+」：平时浅灰圆钮，指针停在这一行上时反色，停在它自己上时换成主色 */
+.wf-song .wf-song-add {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-high);
+  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+  color: var(--color-on-surface-variant);
+  transition:
+    background-color var(--dur-s) var(--ease),
+    color var(--dur-s) var(--ease),
+    transform var(--dur-s) var(--ease);
+}
+
+.wf-song:hover .wf-song-add {
+  background: var(--color-on-surface);
+  box-shadow: none;
+  color: var(--color-surface);
+}
+
+.wf-song .wf-song-add:hover {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  transform: scale(1.1);
 }
 
 .wf-song .wf-song-play {
@@ -1088,6 +1134,23 @@
   font-weight: 600;
 }
 
+/* 「内容与样式」标题右边：显示着的语言，主色浅底，点它打开「字幕·配音」 */
+.wf-prop-locale {
+  display: inline-flex;
+  height: 20px;
+  flex: none;
+  align-items: center;
+  margin-left: auto;
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 30%, transparent);
+  color: var(--color-primary);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 .wf-prop-subtitle {
   min-width: 0;
   overflow: hidden;
@@ -1271,6 +1334,38 @@
 
 .wf-mix-link {
   margin-left: auto;
+}
+
+/* 「三段均衡与升降调」标题行右边：频响小图，有调整时后面跟「归零」 */
+.wf-eq-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.wf-eq-head .wf-mix-link {
+  margin-left: 0;
+}
+
+.wf-eq-curve {
+  flex: none;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-highest);
+}
+
+.wf-eq-curve-zero {
+  stroke: var(--color-outline-variant);
+  stroke-width: 1;
+}
+
+.wf-eq-curve-line {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
 }
 
 .wf-mix-tiles {
@@ -2359,21 +2454,45 @@
 }
 
 .wf-item {
+  position: relative;
   display: flex;
   width: 100%;
   min-width: 0;
   flex-direction: column;
   gap: 5px;
   border-radius: var(--radius-xs);
-  cursor: grab;
   text-align: left;
-  touch-action: none;
   user-select: none;
 }
 
 .wf-item.is-lifting {
   opacity: 0.4;
+}
+
+/* 整张卡是一个按钮：点、按 Enter、拖都落在它上面；封面、名字不接指针，只有「+」叠在它上面 */
+.wf-item-select {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.wf-item.is-lifting .wf-item-select {
   cursor: grabbing;
+}
+
+.wf-item-select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-focus-ring);
+}
+
+.wf-item-frame,
+.wf-item-name,
+.wf-item-meta {
+  pointer-events: none;
 }
 
 .wf-item-frame {
@@ -2437,38 +2556,36 @@
   pointer-events: none;
 }
 
-/* 悬停才出：指针停在卡片上、焦点在按钮上时显示，触屏一直显示；拖着卡片时不显示 */
-.wf-item-add {
+/* 封面右下角的「+」：平时是封面上一枚半透明的深色圆钮，指针停在卡片上时变成实底，停在它自己上时换成主色 */
+.wf-item .wf-item-add {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  display: inline-flex;
-  height: 26px;
-  align-items: center;
-  gap: 3px;
-  padding: 0 10px 0 7px;
+  right: 4px;
+  bottom: 4px;
+  width: 22px;
+  height: 22px;
   border-radius: var(--radius-full);
-  background: var(--color-top-layer);
+  background: color-mix(in srgb, var(--color-scrim) 45%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--color-on-scrim) 20%, transparent);
+  color: var(--color-on-scrim);
+  pointer-events: auto;
+  backdrop-filter: blur(8px);
+  transition:
+    background-color var(--dur-s) var(--ease),
+    color var(--dur-s) var(--ease),
+    transform var(--dur-s) var(--ease);
+}
+
+/* 封面不分深浅色，悬停的实底也不随主题换：一直是白底深色加号 */
+.wf-item:hover:not(.is-lifting) .wf-item-add {
+  background: var(--color-on-scrim);
   box-shadow: var(--shadow-2);
-  color: var(--color-on-surface);
-  cursor: pointer;
-  font-size: var(--text-label);
-  font-weight: 500;
-  opacity: 0;
-  transform: translate(-50%, -50%);
-  transition: opacity var(--dur-s) var(--ease);
-  white-space: nowrap;
+  color: var(--color-scrim);
 }
 
-.wf-item:hover:not(.is-lifting) .wf-item-add,
-.wf-item-add:focus-visible {
-  opacity: 1;
-}
-
-@media (hover: none) {
-  .wf-item-add {
-    opacity: 1;
-  }
+.wf-item .wf-item-add:hover {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  transform: scale(1.1);
 }
 
 .wf-item-name {
@@ -2652,6 +2769,41 @@
 
 .wf-locale-add[data-state='open'] {
   background: var(--color-state-active);
+}
+
+/* 「字幕·配音」页签顶部的语言：一排小块，写语言的名字，样子同下面的人声小块；放不下时左右滑动 */
+.wf-locales.is-panel {
+  display: flex;
+  height: auto;
+  gap: 4px;
+  margin: 10px 12px 0;
+  padding: 0;
+  overflow-x: auto;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  scrollbar-width: none;
+}
+
+.wf-locales.is-panel .wf-locale,
+.wf-locales.is-panel .wf-locale-add {
+  height: 24px;
+  background: var(--color-surface-container-high);
+}
+
+.wf-locales.is-panel .wf-locale {
+  padding: 0 10px;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.wf-locales.is-panel .wf-locale[aria-pressed='true'] {
+  background: var(--color-on-surface);
+  color: var(--color-surface);
+}
+
+.wf-locales.is-panel .wf-locale-add {
+  width: 24px;
 }
 
 /* 选择工具：当前工具的图标后面跟一个小箭头，点开是下拉菜单 */
