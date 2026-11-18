@@ -5,6 +5,7 @@ import {
   msToPx,
   snapMs,
   snapSpanStartMs,
+  snapTargets,
   type Snapped,
   type SnapTargets,
 } from './timeline-scale'
@@ -125,3 +126,23 @@ export function snapSpanToBeats(
   if (snapped.guideMs !== null || beats.length === 0) return snapped
   return snapSpanStartMs(startMs, durationMs, beatSnapTargets(beats), pps / BEAT_REACH)
 }
+
+/**
+ * 从侧栏拖进来、长 `durationMs` 的东西吸附，返回它的开头：和挪动片段一样先吸 `clips` 的两端和播放头，都没吸上才吸
+ * 配乐的节拍（`grids` 按音频地址，见 `timelineBeats`）。拖进来的还不在时间线上，所有配乐的节拍都能吸。
+ */
+export const snapDropToBeats = (
+  startMs: number,
+  durationMs: number,
+  clips: readonly FilmClip[],
+  playheadMs: number,
+  grids: ReadonlyMap<string, BeatGrid>,
+  pps: number,
+): Snapped =>
+  snapSpanToBeats(
+    startMs,
+    durationMs,
+    snapTargets(clips, playheadMs),
+    beatsToSnap(timelineBeats(clips, grids, pps), new Set()),
+    pps,
+  )

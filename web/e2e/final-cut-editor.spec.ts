@@ -1457,6 +1457,94 @@ test('节拍吸附：加一首配乐，片段上画出算出来的节拍；把�
   expect(Math.abs(after.start * 2 - Math.round(after.start * 2))).toBeLessThan(0.04)
 })
 
+test('节拍：从素材栏拖一个镜头到一拍旁边松手，开头落在这一拍上；算出的节拍存进工程，刷新后直接读文件、不再解码配乐', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  // 数这一页解了几次声音：算节拍要先把配乐整个解出来
+  await page.addInitScript(() => {
+    const counter = window as unknown as { audioDecodes: number }
+    counter.audioDecodes = 0
+    window.OfflineAudioContext = class extends OfflineAudioContext {
+      override decodeAudioData(...args: Parameters<BaseAudioContext['decodeAudioData']>) {
+        counter.audioDecodes += 1
+        return super.decodeAudioData(...args)
+      }
+    }
+  })
+  const decodes = () =>
+    page.evaluate(() => (window as unknown as { audioDecodes: number }).audioDecodes)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await openFinalCut(panel)
+  const takes = editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+  const added = mainSaved(page, 1)
+  await takes.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
+  await page.keyboard.press('Enter')
+  await added
+
+  // 加一首配乐：算出节拍画在片段上，节拍文件建进工程的 beats/ 下
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '配乐' }).click()
+  const withMusic = mainSavedWith(page, (html) => savedAudio(html).length === 1)
+  const beatFile = page.waitForRequest(
+    (request) =>
+      request.method() === 'POST' &&
+      request.url().includes('/final-cut/files') &&
+      (request.postDataJSON() as { path: string }).path.startsWith('beats/'),
+  )
+  await side
+    .getByRole('list', { name: '音频' })
+    .getByRole('button', { name: '轻快原声吉他，适合秋季穿搭', exact: true })
+    .click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '加到播放头' }).click()
+  await withMusic
+  const marksOf = (where: Locator) =>
+    where
+      .getByRole('group', { name: '配乐', exact: true })
+      .getByRole('group', { name: /^轻快原声吉他，适合秋季穿搭，/ })
+      .getByTestId('beat-marks')
+  const marks = marksOf(editor)
+  await expect(marks).toBeVisible({ timeout: 15_000 })
+  expect((await (await beatFile).response())?.status()).toBe(201)
+  expect(await decodes()).toBeGreaterThan(0)
+
+  // 从「镜头」页签拖镜头 2 到视频片段结尾往后第一拍的右边 3 像素处松手：只够得着节拍
+  await side.getByRole('tab', { name: '镜头' }).click()
+  const row = editor.getByRole('group', { name: '画面 1', exact: true })
+  const first = await row.getByRole('group').first().boundingBox()
+  const lane = await row.boundingBox()
+  const from = await takes.getByRole('button', { name: /^生成 A 镜头 2，/ }).boundingBox()
+  if (first === null || lane === null || from === null) throw new Error('尚未布局')
+  const beatXs = await marks
+    .locator('span')
+    .evaluateAll((spans) => spans.map((span) => span.getBoundingClientRect().left))
+  const beatX = beatXs.find((x) => x > first.x + first.width + 40)
+  if (beatX === undefined) throw new Error('没有画出节拍')
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(from.x + from.width / 2 + 10, from.y + from.height / 2 - 10, { steps: 3 })
+  await page.mouse.move(beatX + 3, lane.y + lane.height / 2, { steps: 8 })
+  await expect(row.getByTestId('drop-ghost')).toBeVisible()
+  await expect(editor.getByTestId('snap-guide')).toBeVisible()
+  const dropped = mainSavedWith(page, (html) => savedVideoTimings(html).length === 2)
+  await page.mouse.up()
+  const placed = savedVideoTimings(htmlOf(await dropped)).find((timing) => timing.start > 0)
+  if (placed === undefined) throw new Error('没有存下拖进来的镜头')
+  // 落在节拍上：左边对着那一拍，开头是鼓点的时间（每 0.5 秒一下，节拍差几毫秒）
+  const landed = await row.getByRole('group').nth(1).boundingBox()
+  expect(Math.abs((landed?.x ?? 0) - beatX)).toBeLessThan(1.5)
+  expect(Math.abs(placed.start * 2 - Math.round(placed.start * 2))).toBeLessThan(0.04)
+
+  // 刷新再打开：节拍从工程里的文件读，画出来了，配乐一次都没解
+  await page.reload()
+  const reloaded = await openFinalCut(await openConversation(page, '夜景延时素材生成'))
+  await expect(marksOf(reloaded)).toBeVisible({ timeout: 15_000 })
+  expect(await decodes()).toBe(0)
+})
+
 test('分离音频：存下来多一个原声片段、两段属性对；联动着拖原声两段一起挪；关掉联动单独挪出现错开，对齐画面回到同步；合并回视频', async ({
   page,
 }) => {

@@ -5,6 +5,7 @@ import {
   clipBeats,
   isBeatSource,
   shownBeats,
+  snapDropToBeats,
   snapEdgeToBeats,
   snapSpanToBeats,
   timelineBeats,
@@ -112,5 +113,29 @@ describe('谁的节拍', () => {
       100,
     )
     expect(beatsToSnap(beats, new Set(['music-1']))).toEqual([5_000, 5_500, 6_000])
+  })
+})
+
+describe('从侧栏拖进来时吸附', () => {
+  // 视频片段 0–2.1 秒，配乐 0–10 秒（每 0.5 秒一拍），播放头在 9 秒；一秒 100 像素
+  const clips = [video({ duration: 2_100 }), audio({ duration: 10_000 })]
+  const grids = new Map([['https://media.test/audio/music.mp3', steady]])
+
+  it('片段的边先于节拍：够得着边时吸边，哪怕节拍更近', () => {
+    expect(snapDropToBeats(2_030, 300, clips, 9_000, grids, 100)).toEqual({
+      ms: 2_100,
+      guideMs: 2_100,
+    })
+  })
+
+  it('够不着边和播放头时吸配乐的节拍；还没算出节拍时不吸', () => {
+    expect(snapDropToBeats(3_480, 300, clips, 9_000, grids, 100)).toEqual({
+      ms: 3_500,
+      guideMs: 3_500,
+    })
+    expect(snapDropToBeats(3_480, 300, clips, 9_000, new Map(), 100)).toEqual({
+      ms: 3_480,
+      guideMs: null,
+    })
   })
 })

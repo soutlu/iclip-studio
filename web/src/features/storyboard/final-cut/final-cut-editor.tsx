@@ -41,6 +41,7 @@ import type { LayerMeasure } from './preview-protocol'
 import { CanvasOverlay, type CanvasNudge } from './canvas-overlay'
 import { CaptionsTab } from './captions-tab'
 import { analyseBeats } from './beat-analysis'
+import { projectBeats } from './beat-file'
 import { canCarve, CARVE_SAMPLE_RATE } from './carve'
 import { cachedDecode, decodeForCarve } from './carve-decode'
 import {
@@ -113,6 +114,7 @@ import {
   type KeyframeStates,
 } from './material-media'
 import { MaterialPreview, type MaterialPreviewControl, type MaterialView } from './material-preview'
+import { snapDropToBeats } from './music-beats'
 import type { AttributeChanges } from './original-sound'
 import {
   materialCatalog,
@@ -152,15 +154,7 @@ import {
   type SoundControls,
 } from './sound-pair'
 import { rowMoveDirection } from './stacking'
-import {
-  FIT_ZOOM,
-  snapSpanStartMs,
-  snapTargets,
-  timelineScale,
-  zoomScrollLeft,
-  zoomToClips,
-  type Zoom,
-} from './timeline-scale'
+import { FIT_ZOOM, timelineScale, zoomScrollLeft, zoomToClips, type Zoom } from './timeline-scale'
 import {
   pendingTranslations,
   TRANSLATION_LIMITS,
@@ -176,10 +170,13 @@ import { useTranslation } from './use-translation'
 import { useWholeFilmExport } from './use-whole-film-export'
 import { withVolumePoints } from './volume-envelope'
 import {
+  createProjectFile,
   projectFilesBase,
+  readProjectFile,
   useFinalCutPreviewTokens,
   useLibraryVoices,
   useProjectQuery,
+  writeProjectFile,
   type StoredProject,
 } from './final-cut.api'
 import './final-cut.css'
@@ -569,11 +566,19 @@ function EditorBody({
   // 「属性」页签不在时也要管：选中一段配乐就按它的规则默认打开压低
   const allClips = useMemo(() => [...clips, ...(film?.unshownDubs ?? [])], [clips, film])
   const [onlySelected] = selectedClips
-  // 智能调音和配乐节拍读同一份声音：同一个地址只读一次
+  // 智能调音和算配乐节拍读同一份声音：同一个地址只读一次。工程里存着节拍文件的配乐不读声音，
+  // 只有智能调音真要分析时才读
   const [decodeAudio] = useState(() => cachedDecode(decodeForCarve))
+  const { hasStoredProject } = session
   const readBeats = useCallback(
-    async (src: string) => analyseBeats(await decodeAudio(src), CARVE_SAMPLE_RATE),
-    [decodeAudio],
+    (src: string) =>
+      projectBeats(src, async (each) => analyseBeats(await decodeAudio(each), CARVE_SAMPLE_RATE), {
+        read: (path) => readProjectFile(conversationId, path),
+        create: (path, content) => createProjectFile(conversationId, path, content),
+        write: (path, content, version) => writeProjectFile(conversationId, path, content, version),
+        writable: hasStoredProject,
+      }),
+    [conversationId, decodeAudio, hasStoredProject],
   )
   const musicBeats = useMusicBeats(clips, readBeats, sourceMs)
   const smartMix = useSmartMix({
@@ -639,8 +644,8 @@ function EditorBody({
   }
   const [snap, setSnap] = useState(true)
   /**
-   * 拖着的素材、组件、块或音频（长 `duration` 毫秒，放进 `zone` 区）会落在哪：
-   * 开着吸附时先吸到别的片段的两端或播放头上，再避开同一行的片段。
+   * 拖着的素材、组件、块或音频（长 `duration` 毫秒，放进 `zone` 区）会落在哪：开着吸附时先吸到别的片段的两端或
+   * 播放头上，都没吸上再吸配乐的节拍，然后避开同一行的片段。
    */
   const landingAt = (clientX: number, clientY: number, duration: number, zone: Zone = 'visual') => {
     const point = timelineRef.current?.locate(clientX, clientY, zone) ?? null
@@ -648,7 +653,7 @@ function EditorBody({
     // 拖进声音区的只有配乐：不进配音行、原声行
     const row = zone === 'audio' ? musicRowTarget(rowsOf(clips), point.row) : point.row
     const snapped = snap
-      ? snapSpanStartMs(point.timeMs, duration, snapTargets(clips, playhead), scale.pps)
+      ? snapDropToBeats(point.timeMs, duration, clips, playhead, musicBeats, scale.pps)
       : { ms: point.timeMs, guideMs: null }
     // 新开的一行上没有别的片段，放在哪里都不会重叠
     const start = 'track' in row ? landingOn(clips, row, snapped.ms, duration).start : snapped.ms
