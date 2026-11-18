@@ -20,37 +20,34 @@
 
 ### 发版步骤
 
-1. **在待发的提交上跑全量 `ci`**：
-   记下 `main` 的最新提交，手动触发 `ci`（手动触发总是全量检查）：
+1. **准备：看上线前摘要，在待发的提交上跑全量 `ci`**：
    ```bash
-   git fetch origin
-   sha=$(git rev-parse origin/main)
-   gh workflow run ci.yml --ref main
+   make release-check                    # 发 main 的最新提交
+   make release-check REF=release/vX.Y   # 发热修分支的最新提交
    ```
-   等这次运行结束，确认它检查的提交（`headSha`）就是 `$sha`，且结论是 `success`：
-   ```bash
-   gh run list --workflow ci.yml --event workflow_dispatch --branch main --limit 1 --json headSha,status,conclusion
-   ```
-   `headSha` 不等于 `$sha` 说明触发前 `main` 又合入了新提交，重新执行这一步。
+   它拉取远端，取分支的最新提交作为待发的提交，打印从上一个版本标签（从这个提交往回能到达的最近的 `vX.Y.Z`）到它的上线前摘要：
+   - 提交数；
+   - 运行时要不要升级：`runtime.ref`、`plugins/video/`、`deploy/runtime-video/` 有改动就要升级。运行时自己的迁移在运行时项目 Cue 里，摘要看不到；
+   - 新增的后端迁移，按关键字标出疑似删除或改动已有结构的操作（`downgrade()` 不看）。这只是提示，可能有漏有误，迁移规则见[后端的持久化与迁移](architecture.md#后端的持久化与迁移)；
+   - 改动过的配置与编排文件，升级前要在服务器上对照；
+   - 建议的升级命令。
+
+   然后确认这个提交有一次成功的手动触发的全量 `ci`（手动触发总是全量检查）：已有就直接用，没有就在该分支上触发一次并等它结束。这次运行检查的不是待发的提交（触发前分支又进了新提交）或运行没有成功时报错退出，处理后重新执行。最后打印第二步的命令，带着这个提交的完整哈希。
+
+   只看摘要、不触发任何东西：`bash scripts/release.sh summary <提交>`。
+
+   第一个带运行时镜像的 `vX.Y.Z` 版本两边都要升级：服务器上的运行时还在 `runtime-v*` 标签的镜像上，摘要里的运行时判断对它不适用。
 
 2. **打标签并创建 GitHub Release（须开发者确认）**：
-   给通过检查的这个提交（不是此刻 `main` 的最新提交）创建 Release，会自动推送标签并触发镜像打包流水线：
+   把摘要给开发者看，由开发者确定版本号，再执行第一步最后打印的命令：
    ```bash
-   gh release create vX.Y.Z --target "$sha" --title vX.Y.Z --generate-notes --notes-start-tag <上一个 vX.Y.Z>
-   git fetch --tags
+   make release VERSION=vX.Y.Z SHA=<提交>
    ```
+   它先校验版本号是 `vX.Y.Z` 格式、这个标签本地和远端都还不存在、这个提交有成功的手动全量 `ci`，任何一项不满足都报错退出，什么都不建。通过后给这个提交（不是此刻分支的最新提交）创建 Release，自动推送标签并触发镜像打包流水线；Release 说明是这一版的上线前摘要，加上从上一个版本标签起自动生成的变更列表。
    - **版本号规则（`vX.Y.Z`）**：由开发者确定。`X` 代表重大架构重构或不兼容变更，`Y` 代表向下兼容的新功能，`Z` 代表问题修复（在 `v0.Y.Z` 阶段，较大改动递增 `Y`，日常修复递增 `Z`）。
 
 3. **等待镜像打包完成并上线**：
-   创建 Release 只会触发构建镜像，不会自动部署到服务器。运行以下命令确认流水线输出 `completed success` 后，再按[升级](deploy.md#升级)更新线上环境：
-   ```bash
-   gh api "repos/{owner}/{repo}/actions/workflows/release-images.yml/runs?event=push&branch=vX.Y.Z" --jq 'first(.workflow_runs[]) | .status + " " + .conclusion'
-   ```
-   运行时只在上一个版本标签以来 `runtime.ref`、`plugins/video/`、`deploy/runtime-video/` 有改动时升级，有输出就是有改动：
-   ```bash
-   git diff --stat <上一个 vX.Y.Z> vX.Y.Z -- runtime.ref plugins/video deploy/runtime-video
-   ```
-   第一个带运行时镜像的 `vX.Y.Z` 版本两边都要升级：服务器上的运行时还在 `runtime-v*` 标签的镜像上，上面的判断对它不适用。
+   创建 Release 只会触发构建镜像，不会自动部署到服务器。用 `make release` 最后打印的命令确认流水线输出 `completed success` 后，再按 Release 说明里的升级命令和[升级](deploy.md#升级)更新线上环境。
 
 ### 热修步骤
 
@@ -75,12 +72,12 @@
    ```
    目标分支不是 `main`，`ci` 跑全量检查，通过后自动合入。
 
-4. **在热修分支上发版**：热修 PR 的 `ci` 已经是全量检查，合入后不用再手动触发。记下热修分支的最新提交，从[发版步骤](#发版步骤)第 2 步做起，`--notes-start-tag` 填线上版本标签：
+4. **在热修分支上发版**：按[发版步骤](#发版步骤)执行，第一步用 `make release-check REF=release/vX.Y`，摘要和变更列表都从线上版本标签算起。
+   手动触发的 `ci` 和标签触发的镜像流水线都用该提交里的工作流文件：从 v0.17.x 及更早的标签切出的热修分支上，`ci` 不支持手动触发，`make release-check` 触发时会报错；在这样的分支上打标签也只构建三个应用镜像，不构建运行时镜像。这样的分支不走发版步骤：热修 PR 的 `ci` 已经是全量检查，合入后直接给热修分支的最新提交创建 Release（须开发者确认），服务器上只升级应用：
    ```bash
    git fetch origin
-   sha=$(git rev-parse origin/release/vX.Y)
+   gh release create vX.Y.Z --target "$(git rev-parse origin/release/vX.Y)" --title vX.Y.Z --generate-notes --notes-start-tag <线上版本标签>
    ```
-   标签触发的是该提交里的流水线：从 v0.17.x 及更早的标签切出的热修分支上打标签，只构建三个应用镜像，不构建运行时镜像。
 
 ### 换运行时版本
 

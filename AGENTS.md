@@ -31,6 +31,8 @@
 | `make hooks` | 安装本地 Git `pre-commit` / `pre-push` 钩子 |
 | `make wt-new NAME=<任务名> [BRANCH=<分支名>]` | 在主目录执行：从 `origin/main` 建 `.claude/worktrees/<任务名>`（分支名缺省同任务名），并在里面执行 `make runtime` |
 | `make wt-clean NAME=<任务名>` | 在主目录执行：确认该 Worktree 没有未提交的改动、它的分支的 PR 已 `MERGED` 后，`git pull --ff-only`、移除 Worktree 并删除本地分支；任一条件不满足就报错退出，什么都不删 |
+| `make release-check [REF=<分支>]` | 发版第一步：打印上一个版本标签到该分支（缺省 `main`）最新提交的上线前摘要，确认这个提交有成功的手动全量 `ci`（没有就触发并等它结束），最后打印第二步的命令（见[发版步骤](docs/release.md#发版步骤)） |
+| `make release VERSION=vX.Y.Z SHA=<提交>` | 发版第二步，须开发者先确认：校验通过后给该提交创建 GitHub Release，推送标签并触发镜像流水线；任一校验不通过就报错退出，什么都不建 |
 
 > 注：`make up` 调用的是开发者本机自用的 `scripts/dev-up.sh`（不入库）；新克隆的仓库请按[本地启动](docs/deploy.md#本地启动)的步骤启动。
 
