@@ -24,7 +24,7 @@ setup: runtime
 # 源码改动各自重载。
 dev:
 	@trap 'kill 0' INT TERM EXIT; \
-	(cd server && uv run --env-file ../.env python -m iclip.main --config configs/config.yaml --reload --reload-dir . --reload-dir ../runtime/src --reload-dir ../plugins/video/src) & \
+	(cd server && uv run --env-file ../.env python -m iclip.main --config configs/config.yaml --reload --reload-dir src --reload-dir ../plugins/video/src) & \
 	for _ in $$(seq 1 60); do curl -sf http://localhost:7788/healthz >/dev/null && break; sleep 1; done; \
 	curl -sf http://localhost:7788/healthz >/dev/null || { echo '后端 60 秒内没能通过 /healthz，往上翻它打出来的报错' >&2; exit 1; }; \
 	(cd server && uv run --env-file ../.env python -m agent_runtime.main --config configs/runtime.yaml --reload --reload-dir ../runtime/src --reload-dir ../plugins/video/src) & \

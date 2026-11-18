@@ -78,7 +78,7 @@ CREATE DATABASE iclip OWNER iclip;
   - 按部门区分媒体生成与大模型密钥：见[配置组](#配置组)；
   - 开启成片导出：配置 `FINAL_CUT_RENDER_URL=http://render:8080` 及 `RENDER_ALLOWED_MEDIA_HOSTS`（填入本系统 OSS 域名和上游视频生成域名，多个域名用逗号分隔）；
   - 开启 `final-cut` 预览沙箱：配置 `FINAL_CUT_PREVIEW_ORIGIN=https://<预览子域名>`（未配置则编辑器预览无法加载）。预览子域名的 DNS 解析与 HTTPS 证书须与主应用域名一样指向 `web` 容器，由同一套 Nginx 托管前端页面并将 `/api/` 原样保留 `Host` 转发给后端。
-- `configs/config.yaml` 与 `configs/runtime.yaml`：从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制生成 `runtime.yaml`，回调地址保持 `http://server:7788`（插件启用条件见[内部接口与视频插件包](architecture.md#内部接口与视频插件包)，接入其他系统见运行时项目的 `docs/apps.md`）。
+- `configs/config.yaml` 与 `configs/runtime.yaml`：从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制生成 `runtime.yaml`，回调地址保持 `http://server:7788`（插件启用条件见[内部接口与视频插件包](architecture.md#内部接口与视频插件包)，接入其他系统见运行时项目的 `docs/apps.md`）。两份配置的 `ops.log_format` 都设为 `json`：默认的 Console 格式会省略例行的访问日志（见[日志](architecture.md#4-日志)）。
 - `components/`：外置组件库挂载目录（镜像内不包含组件库，按下方[发布组件库](#发布组件库)上传）。
 
 ### 4. 执行数据库迁移并启动容器
