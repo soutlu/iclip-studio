@@ -129,15 +129,17 @@ type Span = { id: string; start: number; duration: number }
 
 export type SnapTargets = readonly TimelineSnapTarget[]
 
-/** 能吸上去的时间点：别的片段的两端和播放头。`spans` 里不要带正在拖的那个片段。 */
-export const snapTargets = (spans: readonly Span[], playheadMs: number): SnapTargets =>
+/**
+ * 能吸上去的时间点：别的片段的两端和播放头（拖的就是播放头时给 null）。`spans` 里不要带正在拖的那个片段。
+ */
+export const snapTargets = (spans: readonly Span[], playheadMs: number | null): SnapTargets =>
   collectTimelineSnapTargets({
     elements: spans.map((span) => ({
       id: span.id,
       start: span.start / 1000,
       duration: span.duration / 1000,
     })),
-    playheadTime: playheadMs / 1000,
+    playheadTime: playheadMs === null ? null : playheadMs / 1000,
     beatTimes: [],
   })
 

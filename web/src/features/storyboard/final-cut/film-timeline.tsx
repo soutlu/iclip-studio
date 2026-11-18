@@ -69,7 +69,7 @@ import {
   type RowTarget,
   type Zone,
 } from './placement'
-import { boxBetween, marqueeMode, marqueeSelection, type Box } from './selection'
+import { boxBetween, marqueeMode, marqueeSelection, playheadInto, type Box } from './selection'
 import { soundActionFor, soundBadgeOf, type SoundBadge, type SoundControls } from './sound-pair'
 import { BeatMarks } from './beat-marks'
 import {
@@ -137,6 +137,8 @@ type FilmTimelineProps = {
   sourceMs: SourceLength
   /** 换成这些选中的片段（空的就是全部取消）。 */
   onSelect: (ids: ReadonlySet<string>) => void
+  /** 双击了一个片段：只选中它，侧栏切到「属性」。 */
+  onInspect: (id: string) => void
   /** 开始或结束框选、拖片段；中途按 Esc 由时间线自己取消。 */
   onGesture: (active: boolean) => void
   /** 正在拖片段、框选或拖「原片截取」：这时点右键不出菜单，不打断它。 */
@@ -167,6 +169,8 @@ type FilmTimelineProps = {
   /** 片段右键菜单：分离音频、合并回视频、联动、对齐口型、选中另一段。 */
   soundControls: SoundControls
   onSeek: (ms: number) => void
+  /** 点选片段后把播放头挪进它里面：一次普通的定位，正在播放时接着播。 */
+  onJump: (ms: number) => void
   onViewportWidth: (width: number) => void
   handleRef: RefObject<TimelineHandle | null>
 }
@@ -175,6 +179,15 @@ const seconds = (ms: number) => (ms / 1000).toFixed(1)
 
 /** 其它语言里还没翻的字幕：片段上写的是原文，标出来。 */
 const SOURCE_TEXT_BADGE: SoundBadge = { text: SOURCE_NAME, tone: 'muted' }
+
+/**
+ * 静音（隐藏）的音频片段的小标，照原型：配乐行的写「已静音」，配音写「静音」（分离出来的原声由 `soundBadgeOf`
+ * 标）。静音的片段只标这一个。
+ */
+const mutedBadgeOf = (clip: FilmClip): SoundBadge | undefined =>
+  clip.kind === 'audio' && clip.hidden
+    ? { text: isDubClip(clip) ? '静音' : '已静音', tone: 'muted' }
+    : undefined
 
 /** 配音片段的小标：生成时截了尾的提示一下。 */
 const dubBadgeOf = (clip: FilmClip): SoundBadge | undefined =>
@@ -188,6 +201,15 @@ const carveBadgeOf = (clip: FilmClip): SoundBadge | undefined =>
 
 // 指针离一条空行（待新开的那一行）的上下边这么近也算在它上面
 const ROW_REACH_PX = 3
+
+// 在各行上离播放头的竖线这么近（像素）按下就是按住了竖线（照原型，两边各 6 像素）
+const PLAYHEAD_REACH = 6
+
+/**
+ * 竖线上让给它们的精确的小目标：裁剪把手、音量曲线的线（按下加一个点）和点。播放头常常正停在片段的边上，
+ * 这时把手大半在竖线底下。曲线的线和点只在能改时接收指针，不能改时按到的是片段，归竖线。
+ */
+const PRECISE_TARGETS = '.timeline-handle, .wf-envelope-hit, .wf-envelope-point'
 
 // 时间区左右留的空，露出开头的播放头和两端的把手；不算进能排时间的宽度。只在这里定，时间区的外边距用它
 const INSET = { left: 8, right: 6 }
@@ -411,6 +433,8 @@ const SILENT_LEVEL = 0.22
 
 const NO_POINTS: readonly EnvelopePoint[] = []
 
+const NOTHING: ReadonlySet<string> = new Set()
+
 /** 片段不出声：隐藏了（音频片段就是静音，整行静音也是），或者视频片段关了原声。 */
 const isSilent = (clip: MediaClip) => clip.hidden || (clip.kind === 'video' && clip.muted)
 
@@ -470,8 +494,13 @@ type TimelineClipProps = {
   gesturing: boolean
   /** 右键菜单里的几项。 */
   menu: ReactNode
-  /** 点了这个片段：`toggle` 为真时是把它加进选中或移出去，否则只选它。 */
-  onSelect: (id: string, toggle: boolean) => void
+  /**
+   * 选中这个片段：`toggle` 为真时是把它加进选中或移出去，否则只选它。`clicked` 是点了一下（不是拖完松手、
+   * 不是点右键）。
+   */
+  onSelect: (id: string, toggle: boolean, clicked: boolean) => void
+  /** 双击了这个片段（切开工具下不算）。 */
+  onInspect: (id: string) => void
   onRetime: (timings: ReadonlyMap<string, Timing>) => void
   /** 把片段换到另一行的 `start` 处，`starts` 是一起挪的片段各自的新起点。 */
   onMove: (id: string, row: RowTarget, start: number, starts: ReadonlyMap<string, number>) => void
@@ -512,6 +541,7 @@ function TimelineClip({
   gesturing,
   menu,
   onSelect,
+  onInspect,
   onRetime,
   onMove,
   onEnvelope,
@@ -712,7 +742,7 @@ function TimelineClip({
           data-clip-id={clip.id}
           onContextMenu={(event) => {
             if (gesturing) event.preventDefault()
-            else if (!selected) onSelect(clip.id, false)
+            else if (!selected) onSelect(clip.id, false, false)
           }}
           ref={rootRef}
           role="group"
@@ -726,8 +756,10 @@ function TimelineClip({
             aria-pressed={selected}
             className="wf-clip-body ui-focus"
             onClick={(event) => {
-              if (!clickAfterDrag.take()) onSelect(clip.id, togglesSelection(event))
+              if (!clickAfterDrag.take()) onSelect(clip.id, togglesSelection(event), true)
             }}
+            // 切开工具下不能裁剪（`trimmable` 为假），点击归剃刀，双击也不打开「属性」
+            onDoubleClick={trimmable ? () => onInspect(clip.id) : undefined}
             onPointerCancel={finish}
             onPointerDown={(event) => press(event, 'move')}
             onPointerMove={drag}
@@ -873,6 +905,7 @@ export function FilmTimeline({
   beats,
   sourceMs,
   onSelect,
+  onInspect,
   onGesture,
   gesturing,
   scrollRequest,
@@ -887,6 +920,7 @@ export function FilmTimeline({
   silentSource,
   soundControls,
   onSeek,
+  onJump,
   onViewportWidth,
   handleRef,
 }: FilmTimelineProps) {
@@ -1067,9 +1101,13 @@ export function FilmTimeline({
   }
 
   // 带着 Shift、⌘ 或 Ctrl 点片段：逐个加进选中或移出去；直接点：只选这一个
-  const pick = (id: string, toggle: boolean) => {
+  // 点一下只选中一个片段时，播放头不在它里面就挪进去（照原型）；拖完松手、右键选中、加减选中不挪
+  const pick = (id: string, toggle: boolean, clicked: boolean) => {
     if (!toggle) {
       onSelect(new Set([id]))
+      const clip = clips.find((each) => each.id === id)
+      const into = clicked && clip !== undefined ? playheadInto(playheadMs, clip) : null
+      if (into !== null) onJump(into)
       return
     }
     const next = new Set(selected)
@@ -1210,6 +1248,72 @@ export function FilmTimeline({
     dropFraming()
   }
 
+  /**
+   * 按住播放头或时间尺拖到 `ms` 处定位（照原型）：开着吸附时吸到片段的两端，都没吸上时再吸配乐的节拍，吸上时画
+   * 吸附线；播放头自己不是吸附的目标。键盘定位不经过这里，不吸。
+   */
+  const scrubTo = (ms: number) => {
+    const at = Math.max(0, Math.min(totalMs, ms))
+    const snapped = snap
+      ? snapEdgeToBeats(at, snapTargets(clips, null), beatsToSnap(snapBeats, NOTHING), pps)
+      : { ms: at, guideMs: null }
+    setClipGuideMs(snapped.guideMs)
+    onSeek(snapped.ms)
+  }
+  const endScrub = () => setClipGuideMs(null)
+
+  /**
+   * 各行上按左键是不是按住了播放头的竖线：离画出来的竖线不到 `PLAYHEAD_REACH` 像素，而且不是按在精确的小目标上
+   * （裁剪把手、能改的音量曲线的线和点），那些照原来的操作走。竖线还没排版（量不到高度）时不算；切开工具下竖线不能
+   * 拖，点击归剃刀；final-cut 是空的时也不能拖。竖线本身不接收指针，按位置在这里判断，所以右键照常落到下面的片段
+   * 或空档上。
+   */
+  const onPlayheadLine = (event: { clientX: number; target: EventTarget }) => {
+    if (razor || totalMs <= 0) return false
+    if (event.target instanceof Element && event.target.closest(PRECISE_TARGETS) !== null)
+      return false
+    const line = rulerBarRef.current?.querySelector('.timeline-playhead')?.getBoundingClientRect()
+    return (
+      line !== undefined &&
+      line.height > 0 &&
+      Math.abs(event.clientX - (line.left + line.width / 2)) <= PLAYHEAD_REACH
+    )
+  }
+
+  // 按住播放头的竖线拖动定位；指针停在竖线上（不在精确的小目标上）时光标是左右拖的样子
+  const scrubPointerRef = useRef<number | null>(null)
+  const [scrubbing, setScrubbing] = useState(false)
+  const [overPlayhead, setOverPlayhead] = useState(false)
+  const pressPlayhead = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || !inLanes(event) || !onPlayheadLine(event)) return
+    // 按住竖线不选中下面的片段、不开始框选
+    event.preventDefault()
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    scrubPointerRef.current = event.pointerId
+    setScrubbing(true)
+    scrubTo(timeAt(event.clientX))
+  }
+  /** 拖着竖线时跟着指针定位，答 true（这一下用掉了）。 */
+  const dragPlayhead = (event: PointerEvent<HTMLDivElement>) => {
+    if (scrubPointerRef.current !== event.pointerId) return false
+    scrubTo(timeAt(event.clientX))
+    return true
+  }
+  /** 松开或取消拖竖线，答 true（这一下用掉了）。 */
+  const releasePlayhead = (event: PointerEvent<HTMLDivElement>) => {
+    if (scrubPointerRef.current !== event.pointerId) return false
+    scrubPointerRef.current = null
+    releasePointer(event)
+    setScrubbing(false)
+    endScrub()
+    return true
+  }
+  const hoverPlayhead = (event: PointerEvent<HTMLDivElement>) =>
+    setOverPlayhead(
+      !gesturing && event.pointerType !== 'touch' && inLanes(event) && onPlayheadLine(event),
+    )
+
   return (
     <div className="wf-tracks" ref={scrollRef}>
       <div className="wf-track-inner">
@@ -1245,21 +1349,37 @@ export function FilmTimeline({
               clockAt={(clientX) => timeAt(clientX) / 1000}
               currentTime={playheadMs / 1000}
               disabled={totalMs <= 0}
+              onPointerSeek={(clock) => scrubTo(Math.round(clock * 1000))}
               onScrub={() => {}}
               onSeek={(clock) => onSeek(Math.round(clock * 1000))}
+              onSeekEnd={endScrub}
               scale={contentWidth / pps}
               tickScale={scale.viewSeconds}
+              timeBubble={false}
               total={totalMs / 1000}
               viewportRef={scrollRef}
             />
-            <TimelinePlayhead style={{ left: msToPx(Math.min(playheadMs, totalMs), pps) }} />
+            <TimelinePlayhead
+              dragging={scrubbing}
+              style={{ left: msToPx(Math.min(playheadMs, totalMs), pps) }}
+            />
           </div>
           <div
             className={cn('wf-lanes', razor && 'is-razor')}
-            onPointerCancel={dropFraming}
+            data-on-playhead={overPlayhead || scrubbing ? '' : undefined}
+            onPointerCancel={(event) => {
+              if (!releasePlayhead(event)) dropFraming()
+            }}
             onPointerDown={pressLanes}
-            onPointerMove={dragLanes}
-            onPointerUp={releaseLanes}
+            onPointerDownCapture={pressPlayhead}
+            onPointerLeave={() => setOverPlayhead(false)}
+            onPointerMove={(event) => {
+              hoverPlayhead(event)
+              if (!dragPlayhead(event)) dragLanes(event)
+            }}
+            onPointerUp={(event) => {
+              if (!releasePlayhead(event)) releaseLanes(event)
+            }}
             {...(razor ? razorLanes : {})}
           >
             {shown.map((row, at) => (
@@ -1290,6 +1410,7 @@ export function FilmTimeline({
                           groupFor={(kind) => editGroup(clip, selected, clips, kind)}
                           badge={
                             soundBadgeOf(clip, clips) ??
+                            mutedBadgeOf(clip) ??
                             dubBadgeOf(clip) ??
                             carveBadgeOf(clip) ??
                             (untranslated.has(clip.id) ? SOURCE_TEXT_BADGE : undefined)
@@ -1318,6 +1439,7 @@ export function FilmTimeline({
                           onOpening={setClipOpening}
                           onRetime={onRetime}
                           onSelect={pick}
+                          onInspect={onInspect}
                           peaks={
                             isMediaClip(clip)
                               ? (peaks.get(clip.src) ?? { kind: 'loading' })

@@ -50,6 +50,20 @@ export const movingWith = (selected: ReadonlySet<string>, id: string): ReadonlyS
   selected.size > 1 && selected.has(id) ? selected : new Set([id])
 
 /**
+ * 在时间线上点一下选中 `clip` 以后播放头去哪（毫秒，照原型）：本来就在片段里（含两端）时不动，答 null；在外面时
+ * 挪到离开头 0.8 秒处，片段不到 1.6 秒时挪到正中，都不超过结尾前 0.05 秒（也不早于开头）。取到 10 毫秒。
+ */
+export const playheadInto = (
+  playheadMs: number,
+  clip: { start: number; duration: number },
+): number | null => {
+  const end = clip.start + clip.duration
+  if (playheadMs >= clip.start && playheadMs <= end) return null
+  const into = Math.min(end - 50, clip.start + Math.min(800, clip.duration / 2))
+  return Math.max(clip.start, Math.round(into / 10) * 10)
+}
+
+/**
  * 播放头左边或右边的片段，所有行一起：左边是起点早于播放头的，右边是结尾晚于播放头的；
  * 跨着播放头的两边都算，正好从播放头开始的不算左边、正好在播放头结束的不算右边。
  */
