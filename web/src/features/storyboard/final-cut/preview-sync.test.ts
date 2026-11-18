@@ -674,6 +674,20 @@ describe('智能调音', () => {
     const fx = attribute('a1', 'data-fx-chain', '{}')
     const [shown, next] = films([fx], 'en')
     expect(previewSync(shown, next)).toEqual({ kind: 'live', patches: [fx], captions: [] })
+    // 编辑器每步都重写一次总长
+    const total = totalChange(8, 8)
+    const withTotal: PatchChange = {
+      file: 'index.html',
+      patches: [fx, ...total.patches],
+      inversePatches: total.inversePatches,
+    }
+    expect(previewSync(shown, { ...next, step: [withTotal] })).toEqual({
+      kind: 'live',
+      patches: withTotal.patches,
+      captions: [],
+    })
+    // 不是调音的一步，只有总长时照旧整份重新加载
+    expect(previewSync(shown, { ...next, step: [total] })).toEqual({ kind: 'reload' })
 
     const [, absent] = films([attribute('dub-de', 'data-fx-chain', '{}')], 'en')
     expect(previewSync(shown, absent)).toEqual({ kind: 'reload' })

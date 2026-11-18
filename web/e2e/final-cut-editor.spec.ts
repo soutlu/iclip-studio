@@ -2794,6 +2794,97 @@ test('AI 配音：English 下点音色「原声」，配音行出现和字幕对
   await expect.poll(sounds).toEqual({ muted: false, dubs: 0 })
 })
 
+test('配音片段调音直接打进预览：English 下 AI 配音，给一个配音片段选音色风格，预览不换播放器，预览里和存下的这个配音片段都带着新的效果链', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await serveSavedCaptions(page)
+  // 和上一条一样：加一段镜头、识别出两句、加 English 翻好，用「原声」配好
+  const panel = await openConversation(page, '工具过程展示')
+  const editor = await openFinalCut(panel)
+  const group = editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+  await group.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
+  await group.getByRole('slider', { name: '裁剪结尾' }).focus()
+  for (let second = 0; second < 6; second += 1) await page.keyboard.press('Shift+ArrowRight')
+  const added = mainSaved(page, 1)
+  await page.keyboard.press('Enter')
+  await added
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '字幕·配音' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕·配音' })
+  const recognized = page.waitForRequest(
+    (request) =>
+      (savedFileOf(request, CAPTIONS_FILE)?.match(/data-caption-of/g) ?? []).length === 2,
+  )
+  await tab.getByRole('button', { name: '识别字幕', exact: true }).click()
+  await recognized
+  await editor
+    .getByRole('group', { name: '语言' })
+    .getByRole('button', { name: '添加语言' })
+    .click()
+  await page.getByRole('menuitem', { name: 'English（EN）' }).click()
+  const translated = page.waitForRequest(
+    (request) => (savedFileOf(request, ENGLISH_FILE)?.match(/\[EN\]/g) ?? []).length === 2,
+  )
+  await tab.getByRole('button', { name: '翻译', exact: true }).click()
+  await translated
+  const dubTags = (html: string) => [...html.matchAll(/<audio [^>]*data-dub-of="[^"]+"[^>]*>/g)]
+  const dubbed = mainSavedWith(page, (html) => dubTags(html).length === 2)
+  await tab
+    .getByRole('group', { name: 'AI 配音音色' })
+    .getByRole('button', { name: '原声', exact: true })
+    .click()
+  await dubbed
+  const dubRow = editor.getByRole('group', { name: '配音', exact: true })
+  await expect(dubRow.getByRole('group', { name: /^配音 · \[EN\] / })).toHaveCount(2)
+
+  await dubRow
+    .getByRole('button', { name: /^选中：配音 · \[EN\] / })
+    .first()
+    .click()
+  // 选中配音片段时侧栏停在「字幕·配音」
+  await side.getByRole('tab', { name: '属性' }).click()
+  const inspector = editor.getByRole('tabpanel', { name: '属性' })
+  await expect(inspector.getByRole('heading', { name: '智能调音' })).toBeVisible()
+  await expect(inspector.getByText('正在分析声音')).toHaveCount(0)
+  await readyPlayer(editor)
+  await markFinalCutPreviewPlayer(editor)
+
+  // 存下的主文件里带着这个预设的配音片段（`data-hf-id`）
+  const styledIds = (html: string) =>
+    dubTags(html)
+      .map(([tag]) => tag.replaceAll('&quot;', '"'))
+      .filter((tag) => tag.includes('"fromPreset":"voice-clean"'))
+      .map((tag) => / data-hf-id="([^"]+)"/.exec(tag)?.[1] ?? '')
+  const styled = mainSavedWith(page, (html) => styledIds(html).length === 1)
+  await inspector
+    .getByRole('radiogroup', { name: '音色风格' })
+    .getByRole('radio', { name: '纯净人声' })
+    .click()
+  const [saved = ''] = styledIds(htmlOf(await styled))
+  expect(saved).not.toBe('')
+  await expect
+    .poll(() =>
+      finalCutPreviewPlayer(editor).evaluate(
+        (element: HTMLElement & { iframeElement: HTMLIFrameElement }) =>
+          [
+            ...(element.iframeElement.contentDocument?.querySelectorAll<HTMLAudioElement>(
+              'audio[data-locale="en"]',
+            ) ?? []),
+          ]
+            .filter((audio) =>
+              (audio.getAttribute('data-fx-chain') ?? '').includes('"fromPreset":"voice-clean"'),
+            )
+            .map((audio) => audio.getAttribute('data-hf-id')),
+      ),
+    )
+    .toEqual([saved])
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
+})
+
 test('逐句配音：English 下给第二句选资料库的音色，只发这一句、带这个音色，主文件记着这句的选择；给第一句选「不配音」，它的配音片段没了，撤销后回来', async ({
   page,
 }) => {
