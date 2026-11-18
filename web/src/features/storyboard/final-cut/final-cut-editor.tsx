@@ -238,8 +238,8 @@ const watchFullscreen = (notify: () => void) => {
 const fullscreenElementOf = () => document.fullscreenElement ?? null
 
 /**
- * 工作台「final-cut」页签里的 final-cut 编辑器，填满页签内容区。`saveDelayMs` 是改动停下多久后保存，
- * 不传用 `useFilmSession` 默认的时长；用例里传短的，等保存不用真等。
+ * 工作台「final-cut」页签编辑器（填满页签内容区）。
+ * `saveDelayMs` 控制停手后自动保存的防抖毫秒数（缺省使用 `useFilmSession` 默认值，测试中可传入短延迟加速验证）。
  */
 export function FinalCutEditor({
   conversationId,

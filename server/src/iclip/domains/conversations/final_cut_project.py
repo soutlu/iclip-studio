@@ -36,7 +36,7 @@ VENDOR_DIR: Final = "vendor/"
 
 VENDOR_ROUTE: Final = "/hyperframes/vendor/"
 
-# 这些字符在 URL 路径里本来合法，转码后按字面找文件的静态服务器就找不到（如版本号前的 @）。
+# 保留 URL 路径中的合法符号（如 gsap@3.14.2 中的 @）不被百分号编码，避免静态文件服务按字面寻址时 404。
 _PATH_SAFE_CHARS: Final = "/:@!$&'()*+,;="
 
 _TOKEN_KEY_PURPOSE: Final = b"iclip/final-cut-preview-token/v1"

@@ -1,9 +1,7 @@
 import { createMediaReaderMock } from './media-reader'
 
-// final-cut 编辑器用例里 `mediabunny` 的替身读的素材。各用例文件的 `vi.mock` 工厂经动态 import 取这个模块，
-// 用例辅助（final-cut-editor.tsx）往里登记，同一个用例文件里两边拿到的是同一个模块实例。
-// 单独成一个模块、只依赖 media-reader：替身的工厂只要这几个集合，不用跟着 final-cut-editor.tsx
-// 把编辑器也加载进来
+// 存放 `mediabunny` 测试替身的模拟素材表。
+// 独立拆出此文件且不依赖编辑器组件，以便各测试文件的 `vi.mock` 工厂动态加载时保持轻量，同时与 `final-cut-editor.tsx` 共享同一模块实例。
 
 /** 各素材地址的关键帧（秒）和时长（秒）。 */
 export const files = new Map<string, { keyframes: number[]; duration: number }>()

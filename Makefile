@@ -25,10 +25,9 @@ setup: runtime
 	cd web && pnpm install && pnpm hf:registry
 	cd render && pnpm install
 
-# 起后端（7788）与运行时服务（7790），Ctrl-C 两个一起停。运行时等后端答了健康检查才起：配了 shot_video 或
-# video_breakdown 时它启动就向后端核对插件服务。后端启动失败时 --reload 的监督进程不退出，所以最多等 60 秒，
-# 超时连同后端一起退出。两个都用后端的虚拟环境（它的 dev 组可编辑地装着运行时检出 runtime/ 与 plugins/video/），
-# 源码改动各自重载。
+# 启动后端（7788）与运行时（7790），Ctrl-C 一并停止。
+# 运行时启动期会向后端核对插件服务，故须等待后端 /healthz 就绪（最长 60 秒，超时连同后端监督进程一并退出）。
+# 两者共用后端虚拟环境（dev 依赖组已可编辑安装 runtime/ 与 plugins/video/），各自按源码目录热重载。
 dev:
 	@trap 'kill 0' INT TERM EXIT; \
 	(cd server && uv run --env-file ../.env python -m iclip.main --config configs/config.yaml --reload --reload-dir src --reload-dir ../plugins/video/src) & \
@@ -108,8 +107,7 @@ web-check:
 hooks:
 	cd server && uv run pre-commit install -t pre-commit -t pre-push
 
-# 在主目录执行：make wt-new NAME=<任务名> [BRANCH=<分支名>]。从 origin/main 建 .claude/worktrees/<NAME>
-# （BRANCH 缺省用 NAME），再在里面检出运行时。
+# 在主目录执行：make wt-new NAME=<任务名> [BRANCH=<分支名>]。基于 origin/main 创建工作树（分支缺省同名）并检出运行时。
 wt-new:
 	@if [ -z "$(NAME)" ]; then echo '用法：make wt-new NAME=<任务名> [BRANCH=<分支名>]' >&2; exit 1; fi
 	@if [ "$$(git rev-parse --git-dir)" != .git ]; then echo 'make wt-new 要在主目录执行' >&2; exit 1; fi
@@ -117,8 +115,7 @@ wt-new:
 	git worktree add '.claude/worktrees/$(NAME)' -b '$(or $(BRANCH),$(NAME))' origin/main
 	$(MAKE) -C '.claude/worktrees/$(NAME)' runtime
 
-# 在主目录执行：make wt-clean NAME=<任务名>。Worktree 没有未提交的改动、它的分支的 PR 已经 MERGED，
-# 才拉取主目录、移除 Worktree 并删本地分支；任何一项不满足就报错退出，什么都不删。
+# 在主目录执行：make wt-clean NAME=<任务名>。确认工作树干净且对应 PR 已 MERGED 后，同步 main 并移除工作树与本地分支。
 wt-clean:
 	@if [ -z "$(NAME)" ]; then echo '用法：make wt-clean NAME=<任务名>' >&2; exit 1; fi
 	@if [ "$$(git rev-parse --git-dir)" != .git ]; then echo 'make wt-clean 要在主目录执行' >&2; exit 1; fi
@@ -131,12 +128,10 @@ wt-clean:
 	if [ "$$state" != MERGED ]; then echo "分支 $$branch 的 PR 状态是 $$state，不是 MERGED" >&2; exit 1; fi; \
 	set -ex; git pull --ff-only; git worktree remove "$$dir"; git branch -D "$$branch"
 
-# 发版第一步：make release-check [REF=<分支>]（缺省 main）。打印上一个版本标签到分支最新提交的上线前摘要，
-# 确认这个提交有成功的手动全量 ci（没有就触发并等它结束），最后打印第二步的命令。
+# 发版第一步：make release-check [REF=<分支>]（缺省 main）。输出待发提交的上线前摘要，确保通过手动全量 ci 并打印发版命令。
 release-check:
 	bash scripts/release.sh check '$(or $(REF),main)'
 
-# 发版第二步：make release VERSION=vX.Y.Z SHA=<提交>。校验通过后给这个提交创建 GitHub Release，
-# 推送标签并触发镜像流水线。
+# 发版第二步：make release VERSION=vX.Y.Z SHA=<提交>。校验通过后创建 GitHub Release 并推送标签触发镜像构建。
 release:
 	bash scripts/release.sh tag '$(VERSION)' '$(SHA)'

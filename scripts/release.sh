@@ -19,7 +19,7 @@ die() {
   exit 1
 }
 
-# 从提交往回能到达的、最近的 vX.Y.Z 标签（runtime-v* 等其他格式不算）。提交本身就是版本标签时报错。
+# 查找从指定提交可回溯到的最近一个 vX.Y.Z 标签（忽略 runtime-v* 等其他标签）；若该提交自身已打版本标签则报错。
 previous_tag() {
   local sha=$1 tag
   tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude 'v*[!0-9.]*' "$sha" 2>/dev/null) ||
@@ -29,8 +29,7 @@ previous_tag() {
   printf '%s\n' "$tag"
 }
 
-# 打印迁移文件里按关键字看像是删除或改动已有结构的行。downgrade() 的函数体本来就是删除，不看；
-# 模块级的 SQL 常量要看，upgrade() 常把语句写在常量里再执行（常量也可能只给 downgrade() 用，宁可多报）。
+# 扫描迁移文件中疑似删改已有结构的行（跳过 downgrade() 函数体；保留模块级 SQL 常量以防漏报）。
 risky_lines() {
   git show "$1" | awk '
     /^def downgrade/ { skip = 1; next }
@@ -51,25 +50,25 @@ summary() {
   prev=$(previous_tag "$sha")
   count=$(git rev-list --count "$prev..$sha")
 
-  echo "## 上线前要看的摘要"
+  echo "## 上线前摘要"
   echo
-  echo "对比范围：\`$prev\` 到 \`${sha:0:12}\`，共 $count 个提交。"
+  echo "对比范围：\`$prev\` → \`${sha:0:12}\`（共 $count 个提交）"
   echo
 
   echo "### 运行时"
   echo
   local runtime_changed=false
   if git diff --quiet "$prev" "$sha" -- "${RUNTIME_PATHS[@]}"; then
-    echo "不用升级：\`runtime.ref\`、\`plugins/video/\`、\`deploy/runtime-video/\` 都没有改动。"
+    echo "无需升级（\`runtime.ref\`、\`plugins/video/\`、\`deploy/runtime-video/\` 均无改动）。"
   else
     runtime_changed=true
-    echo "要升级，有改动的是："
+    echo "需要升级，变更项："
     for file in "${RUNTIME_PATHS[@]}"; do
       git diff --quiet "$prev" "$sha" -- "$file" && continue
       if [ "$file" = runtime.ref ]; then
-        old=$(git show "$prev:runtime.ref" 2>/dev/null || echo '（没有这个文件）')
+        old=$(git show "$prev:runtime.ref" 2>/dev/null || echo '（无）')
         new=$(git show "$sha:runtime.ref")
-        echo "- \`runtime.ref\`：\`$old\` → \`$new\`。运行时自己的迁移在运行时项目 Cue 里，这里看不到，到它那边对照这两个版本之间的迁移。"
+        echo "- \`runtime.ref\`：\`$old\` → \`$new\`（请前往 Cue 仓库核对这两个版本之间的迁移）"
       else
         echo "- \`$file/\`：$(git diff --name-only "$prev" "$sha" -- "$file" | wc -l | tr -d ' ') 个文件"
       fi
@@ -82,9 +81,9 @@ summary() {
   local added risky=""
   added=$(git diff --name-only --diff-filter=A "$prev" "$sha" -- "$MIGRATIONS" | grep '\.py$' || true)
   if [ -z "$added" ]; then
-    echo "没有新增迁移。"
+    echo "无新增迁移。"
   else
-    echo "新增的迁移："
+    echo "新增迁移："
     for file in $added; do
       echo "- \`${file##*/}\`"
       local lines
@@ -95,12 +94,12 @@ summary() {
   changed=$(git diff --name-only --diff-filter=MDR "$prev" "$sha" -- "$MIGRATIONS" || true)
   if [ -n "$changed" ]; then
     echo
-    echo "改动了已有的迁移文件（已在线上跑过的迁移不会重跑）："
+    echo "已修改或删除的历史迁移文件（线上已执行过的迁移不会重跑）："
     for file in $changed; do echo "- \`$file\`"; done
   fi
   if [ -n "$risky" ]; then
     echo
-    echo "**以下迁移按关键字看有删除或改动已有结构的操作**（只是按关键字匹配的提示，不看 \`downgrade()\`，可能有漏有误，以迁移代码为准）。这样的版本跑完迁移后上一个版本的代码可能用不了，回滚镜像前要先处理数据库（规则见 \`docs/architecture.md\`「后端的持久化与迁移」）："
+    echo "**以下迁移包含疑似删改已有结构的关键字**（自动扫描提示，请以迁移源码为准；若确属非兼容迁移，回滚镜像前须先处理数据库，见 \`docs/architecture.md\`「后端的持久化与迁移」）："
     echo
     printf '%s' "$risky"
   fi
@@ -113,17 +112,17 @@ summary() {
     git diff --quiet "$prev" "$sha" -- "$file" || configs="$configs- \`$file\`"$'\n'
   done
   if [ -z "$configs" ]; then
-    echo "都没有改动。"
+    echo "无改动。"
   else
-    echo "有改动，升级前在服务器上对照新版本补齐："
+    echo "以下文件有改动，升级前请在服务器上对照补齐："
     printf '%s' "$configs"
   fi
   echo
 
-  echo "### 建议的升级命令"
+  echo "### 建议升级命令"
   echo
   if [ "$runtime_changed" = true ]; then
-    echo "\`./upgrade.sh all $version --app-first\` 或 \`./upgrade.sh all $version --runtime-first\`，顺序按 \`contract/conventions.md\`「跨版本兼容」的升级顺序选。"
+    echo "\`./upgrade.sh all $version --app-first\` 或 \`./upgrade.sh all $version --runtime-first\`（按 PR 说明与 \`contract/conventions.md\`「跨版本兼容」选择顺序）"
   else
     echo "\`./upgrade.sh app $version\`"
   fi
@@ -201,7 +200,7 @@ tag() {
   case $rc in
     0) die "标签 $version 远端已经存在" ;;
     2) ;;
-    *) die "查不了远端标签（git ls-remote 退出码 ${rc}）" ;;
+    *) die "无法查询远端标签（git ls-remote 退出码 ${rc}）" ;;
   esac
   [ -n "$(successful_run "$sha")" ] || die "提交 $sha 没有成功的手动全量 ci，先执行 make release-check"
 

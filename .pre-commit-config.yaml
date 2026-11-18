@@ -41,8 +41,8 @@ repos:
         language: system
         pass_filenames: false
         files: ^web/
-  # pre-push 在推送的改动涉及对应项目时运行 pyright，检查整个项目（server 依赖 plugins/video，两边的改动都触发）；
-  # 完整检查由 CI 执行。
+  # pre-push：仅在推送改动涉及 Python 代码或 runtime.ref 时运行对应项目的 pyright
+  # （server 依赖 plugins/video，两边改动均触发 server 检查）；其余检查由 CI 执行。
   - repo: local
     hooks:
       - id: server-typecheck-push
@@ -50,12 +50,12 @@ repos:
         entry: bash -c 'cd server && uv run pyright'
         language: system
         pass_filenames: false
-        files: ^(server|plugins/video)/
+        files: ^(server|plugins/video)/|^runtime\.ref$
         stages: [pre-push]
       - id: video-plugins-typecheck-push
         name: plugins/video pyright (pre-push)
         entry: bash -c 'cd plugins/video && uv run pyright'
         language: system
         pass_filenames: false
-        files: ^plugins/video/
+        files: ^plugins/video/|^runtime\.ref$
         stages: [pre-push]

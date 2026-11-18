@@ -14,25 +14,25 @@
 
 | 命令 | 用途 |
 |---|---|
-| `make setup` | 先执行 `make runtime`，再安装后端、视频插件、前端与渲染服务依赖 |
-| `make runtime` | 按 `runtime.ref` 把运行时项目 Cue 检出到 `runtime/`，需要能读私有仓库 `soutlu/Cue`；`runtime/` 已存在但不是 Git 检出时报错退出，需先手动移走 |
-| `make runtime-bump REF=vA.B.C` | 把 `runtime.ref` 改成 `REF`，检出这个版本，再执行 `make lock-sync` |
+| `make setup` | 执行 `make runtime`，并安装后端、视频插件、前端与渲染服务依赖 |
+| `make runtime` | 按 `runtime.ref` 将私有仓库 `soutlu/Cue` 检出到 `runtime/`（若目录已存在但非 Git 检出则报错退出） |
+| `make runtime-bump REF=vA.B.C` | 将 `runtime.ref` 更新为 `REF`，检出对应版本并执行 `make lock-sync` |
 | `make dev` | 启动视频后端与 Agent 运行时服务（环境准备见[本地启动](docs/deploy.md#本地启动)） |
 | `make db-upgrade` | 执行后端与运行时两边的 Alembic 数据库迁移（服务启动时不会自动建表） |
-| `make check` | 运行全套静态检查与常规测试（包含 `plugins/video/`、`server/` 的 lint、格式、类型检查、依赖边界、单测/集成测试，以及 OpenAPI 合同、锁文件与文档链接检查）。CI 会自动跑，本地无需全量执行 |
-| `make web-check` | 运行前端全套检查（`pnpm ci:check`）。CI 会自动跑，本地无需全量执行 |
+| `make check` | 运行 Python 全套静态检查、单测/集成测试及合同、锁文件与文档检查（CI 自动执行，本地无需全量跑） |
+| `make web-check` | 运行前端全套检查 `pnpm ci:check`（CI 自动执行，本地无需全量跑） |
 | `make test` | 运行 `plugins/video/` 与 `server/` 的单元测试及不依赖真实大模型的集成测试 |
 | `make test-external` | 运行需要真实外部服务凭证的测试（环境配置与跳过规则见[测试规范](docs/test-design.md)） |
-| `make contract` | 导出视频后端的 `contract/openapi.json` |
-| `make contract-sync` | 导出 `contract/openapi.json`，再在 `web/` 生成前端类型与 Zod Schema（`pnpm contract:generate`） |
-| `make docs-check` | 检查全仓 Markdown 相对路径链接是否有效、文中提到的 `make` 目标是否存在 |
-| `make lock-check` | 检查运行时部署镜像的锁文件 `deploy/runtime-video/uv.lock` 是否与项目依赖一致，并确保与 `server/uv.lock` 中的共有包版本完全一致 |
-| `make lock-sync` | 重锁 `plugins/video/`、`server/`、`deploy/runtime-video/` 三个锁文件，把运行时部署镜像锁里与后端共有的包对齐到后端的版本，再执行 `make lock-check`；对不齐时报错退出 |
+| `make contract` | 仅导出视频后端的 `contract/openapi.json` |
+| `make contract-sync` | 导出 `contract/openapi.json`，并在 `web/` 生成前端类型与 Zod Schema（`pnpm contract:generate`） |
+| `make docs-check` | 检查全仓 Markdown 相对路径链接、标题锚点与文中提到的 `make` 目标 |
+| `make lock-check` | 校验 `deploy/runtime-video/uv.lock` 与项目依赖一致，且与 `server/uv.lock` 共有包版本一致 |
+| `make lock-sync` | 重锁 `plugins/video/`、`server/`、`deploy/runtime-video/`，将共有包对齐到后端版本并执行 `make lock-check` |
 | `make hooks` | 安装本地 Git `pre-commit` / `pre-push` 钩子 |
-| `make wt-new NAME=<任务名> [BRANCH=<分支名>]` | 在主目录执行：从 `origin/main` 建 `.claude/worktrees/<任务名>`（分支名缺省同任务名），并在里面执行 `make runtime` |
-| `make wt-clean NAME=<任务名>` | 在主目录执行：确认该 Worktree 没有未提交的改动、它的分支的 PR 已 `MERGED` 后，`git pull --ff-only`、移除 Worktree 并删除本地分支；任一条件不满足就报错退出，什么都不删 |
-| `make release-check [REF=<分支>]` | 发版第一步：打印上一个版本标签到该分支（缺省 `main`）最新提交的上线前摘要，确认这个提交有成功的手动全量 `ci`（没有就触发并等它结束），最后打印第二步的命令（见[发版步骤](docs/release.md#发版步骤)） |
-| `make release VERSION=vX.Y.Z SHA=<提交>` | 发版第二步，须开发者先确认：校验通过后给该提交创建 GitHub Release，推送标签并触发镜像流水线；任一校验不通过就报错退出，什么都不建 |
+| `make wt-new NAME=<任务名> [BRANCH=<分支名>]` | 在主目录执行：基于 `origin/main` 创建 `.claude/worktrees/<任务名>`（分支缺省同名）并检出运行时 |
+| `make wt-clean NAME=<任务名>` | 在主目录执行：核对工作树干净且对应 PR 已 `MERGED` 后，同步 `main` 并清理工作树与本地分支 |
+| `make release-check [REF=<分支>]` | 发版第一步：输出待发提交的上线前摘要，确保其通过手动全量 `ci`，并打印发版命令（见[发版步骤](docs/release.md#发版步骤)） |
+| `make release VERSION=vX.Y.Z SHA=<提交>` | 发版第二步（须开发者先确认）：校验通过后为指定提交创建 GitHub Release 并触发镜像构建 |
 
 > 注：`make up` 调用的是开发者本机自用的 `scripts/dev-up.sh`（不入库）；新克隆的仓库请按[本地启动](docs/deploy.md#本地启动)的步骤启动。
 
@@ -54,7 +54,7 @@
 
 | 工作流 | 触发时机 | 执行内容 |
 |---|---|---|
-| [ci](.github/workflows/ci.yml) | 打开 PR、推送新提交、重新打开 PR 或修改目标分支（仅修改 PR 标题/正文或合并后的 push 不触发）；发版前手动触发（见[发版与镜像发布](docs/release.md)） | 1. 必查文档链接与 Git 历史密钥泄露。<br>2. 目标分支为 `main` 的 PR 按改动路径智能选择检查范围（`server` 依赖 `plugins/video`，两者都按 `runtime.ref` 检出的运行时安装：改了 `plugins/video` 或 `runtime.ref` 都查插件与 `server`；仅改 `web/*.md` 时只查前端格式；运行时自身的检查归 Cue）。<br>3. 目标为其他分支（`release/*`）的 PR 和手动触发都全量检查。所有结果汇总为 `ci` 状态 |
+| [ci](.github/workflows/ci.yml) | 打开/重开 PR、推送新提交、修改目标分支（仅改标题/正文或合并后的 push 不触发）；发版前手动触发（见[发版与镜像发布](docs/release.md)） | 1. 必查文档链接与 Git 历史密钥泄露。<br>2. 目标为 `main` 的 PR 按改动路径裁剪检查范围：改 `plugins/video` 或 `runtime.ref` 会联动检查插件与 `server`；仅改 `web/*.md` 只查前端格式（运行时自身检查归 Cue）。<br>3. 目标为 `release/*` 的 PR 与手动触发均执行全量检查，最终汇总为 `ci` 状态 |
 | [cache-warm](.github/workflows/cache-warm.yml) | 推送到 `main`（含 PR 合入）、手动触发 | 仅安装依赖并保存缓存，供后续 PR 加速恢复 |
 | [release-images](.github/workflows/release-images.yml) | 推送 `vX.Y.Z` 标签、手动指定分支触发 | 构建并上传后端、运行时、前端、渲染全部四个镜像（见[发版与镜像发布](docs/release.md)） |
 
@@ -87,12 +87,16 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
 
 主目录常驻 `main` 分支，不在主目录直接写代码或切分支；每个任务都在独立的 Git Worktree 中进行：
 
-1. **拉取最新代码并创建 Worktree**：在主目录执行
-   ```bash
-   make wt-new NAME=<任务名> BRANCH=<分支名>
-   ```
-   - 它会在 Worktree 里检出运行时，Python 相关的检查都要用到。只改前端、渲染服务或文档的 Worktree 不用检出运行时（推送钩子只在推送里有 Python 改动时才跑类型检查），可以直接 `git fetch origin && git worktree add .claude/worktrees/<任务名> -b <分支名> origin/main`。
-   - 如果当前任务依赖另一个尚未合并的 PR `#N`，则基于那个 PR 的分支创建 Worktree，并在新 PR 描述中注明「依赖 #N」；等 `#N` 合并进 `main` 后，执行 `git fetch origin && git rebase --onto origin/main <被依赖分支名> && git push --force-with-lease`。
+1. **拉取最新代码并创建 Worktree**（在主目录执行）：
+   - **涉及后端、视频插件或 `runtime.ref`**（需检出运行时供 Python 检查使用）：
+     ```bash
+     make wt-new NAME=<任务名> BRANCH=<分支名>
+     ```
+   - **仅修改前端、渲染服务或文档**（无需检出运行时，推送钩子亦不会触发 Python 检查）：
+     ```bash
+     git fetch origin && git worktree add .claude/worktrees/<任务名> -b <分支名> origin/main
+     ```
+   - **依赖尚未合并的 PR `#N`**：基于该 PR 分支创建 Worktree，并在新 PR 描述注明「依赖 #N」；待 `#N` 合入 `main` 后，执行 `git fetch origin && git rebase --onto origin/main <被依赖分支名> && git push --force-with-lease`。
 
 2. **本地验证并提交**：按[命令与验证](#1-命令与验证)跑完相关检查后 `git commit`。
 
@@ -140,7 +144,7 @@ _logger.warning("生成任务提交失败", job_id=job.id, code=exc.code)
 | [docs/adr/](docs/adr/) | 新增或调整架构决策前 | 已拍板的重大架构决策与取舍（编写规范见目录内 README） |
 | [docs/deploy.md](docs/deploy.md) | 本地启动、服务器部署或升级时 | 本地环境搭建、服务器部署、版本升级与密钥轮换步骤变化时更新 |
 | [docs/release.md](docs/release.md) | 发版、热修或修改镜像打包流水线时 | 发版/热修操作流程、版本号规范与 Docker 镜像构建流水线变化时更新 |
-| [contract/openapi.json](contract/openapi.json) | 调用或修改后端接口前 | 后端路由变更后由 `make contract` 自动导出 |
+| [contract/openapi.json](contract/openapi.json) | 调用或修改后端接口前 | 后端路由变更后由 `make contract-sync`（或 `make contract`）导出 |
 | [contract/conventions.md](contract/conventions.md) | 修改接口或跨端实时协议前 | OpenAPI 无法表达的认证、状态机、错误码与 WebSocket 协议变化时更新 |
 | [design-system.html](design-system.html) | 修改视觉 Token 或组件样式前 | 基础设计 Token 变化时更新 |
 | [web/README.md](web/README.md) | 启动前端开发服务器前 | 前端开发服务器端口与代理环境变量变化时更新 |

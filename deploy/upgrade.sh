@@ -155,8 +155,8 @@ rollback_hint() {
   echo "数据库迁移不会自动回退，已执行的迁移需要另行处理。" >&2
 }
 
-# 两边都升级：每一半都用单边升级跑一遍。放在子进程里跑，单边升级的 set -e 与失败提示保持原样。
-# $1 先升的一边，$2 后升的一边。
+# 同时升级应用与运行时：在独立子进程中按指定顺序分别执行单边升级（保留单边升级自身的错误退出与提示）。
+# $1 第一步升级的一端，$2 第二步升级的一端。
 upgrade_all() {
   local first=$1 second=$2 first_label first_var first_old second_label second_var second_old now
   local -a first_up second_up
@@ -169,34 +169,34 @@ upgrade_all() {
   echo "== 先升级${first_label}"
   if ! bash "$0" "$first" "$version"; then
     echo >&2
-    echo "${first_label}没有升级完成（见上方提示），${second_label}没有开始升级。" >&2
+    echo "${first_label}升级未完成（见上方提示），${second_label}未启动升级。" >&2
     exit 1
   fi
 
-  # 后一半的旧版本在前一半完成后再读：首次升级应用时会替运行时补上 RUNTIME_IMAGE_TAG。
+  # 第二步的旧版本须在第一步完成后读取（首次升级应用会自动补填 .env 中的 RUNTIME_IMAGE_TAG）。
   second_old=$(env_get "$second_var")
   echo "== 再升级${second_label}"
   if ! bash "$0" "$second" "$version"; then
     now=$(env_get "$second_var")
     echo >&2
-    echo "两边没有都升级完成：" >&2
-    echo "  ${first_label}已升级完成：${first_var} ${first_old:-（未设置，缺省 latest）} → ${version}" >&2
-    # 后一半的 .env 在升级前已是目标版本（例如上次失败后重跑）时，看不出它走到了哪一步，也不知道更早的版本。
+    echo "升级中断（${first_label}已完成，${second_label}未完成）：" >&2
+    echo "  ${first_label}已完成：${first_var} ${first_old:-（未设置，缺省 latest）} → ${version}" >&2
+    # 若第二步升级前 .env 已是目标版本（如上次失败后重跑），无法从 .env 反推更早版本号。
     if [[ $second_old == "$version" ]]; then
-      echo "  ${second_label}没有升级完成（见上方提示）；.env 里的 ${second_var} 升级前就已是 ${version}" >&2
+      echo "  ${second_label}未完成（见上方提示）；.env 中的 ${second_var} 在本次执行前就已是 ${version}" >&2
     elif [[ $now == "$second_old" ]]; then
-      echo "  ${second_label}没有升级：.env 里的 ${second_var} 没有改动（仍是 ${second_old:-未设置，缺省 latest}），容器没有重启" >&2
+      echo "  ${second_label}未变更：.env 中的 ${second_var} 仍为 ${second_old:-（未设置，缺省 latest）}，容器未重启" >&2
     else
-      echo "  ${second_label}没有升级完成：${second_var} 已写成 ${now}，但重启或健康检查失败（见上方提示）" >&2
+      echo "  ${second_label}未完成：${second_var} 已写入 ${now}，但重启或健康检查失败（见上方提示）" >&2
     fi
     echo >&2
-    echo "要回滚的话，先回滚${second_label}、再回滚${first_label}：" >&2
+    echo "如需整体回滚，请先回滚${second_label}，再回滚${first_label}：" >&2
     if [[ $second_old == "$version" ]]; then
       echo "${second_label}：" >&2
-      echo "  1. 把 .env 里的 ${second_var} 改成升级到 ${version} 之前用的版本" >&2
+      echo "  1. 把 .env 里的 ${second_var} 改回升级到 ${version} 之前的版本" >&2
       echo "  2. docker compose up -d ${second_up[*]}" >&2
     elif [[ $now == "$second_old" ]]; then
-      echo "${second_label}：不用处理，.env 和容器都没有动" >&2
+      echo "${second_label}：无需处理（.env 与容器均未变动）" >&2
     else
       echo "${second_label}：" >&2
       restore_steps "$second_var" "$second_old" "${second_up[@]}"

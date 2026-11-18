@@ -92,8 +92,8 @@ export const serveGenerations = (records: GenerationJob[]) => {
   )
 }
 
-// 编辑器停手 800 毫秒才保存。用例里传 10 毫秒（和 use-film-session 自己的用例一样），等保存不用真等；
-// 看「改了还没存」那一段的用例在打开编辑器前调 `keepRealSaveDelay()`，用回真实的时长
+// 编辑器默认停手 800 毫秒后保存；测试默认改为 10 毫秒以省去空等。
+// 需要验证「修改后尚未落盘」中间态的用例，在打开编辑器前调用 `keepRealSaveDelay()` 恢复真实延迟。
 let saveDelay: { saveDelayMs?: number } = { saveDelayMs: 10 }
 export const keepRealSaveDelay = () => {
   saveDelay = {}
@@ -139,7 +139,7 @@ type PreviewPlayerElement = HTMLElement & {
   iframeElement: HTMLIFrameElement
 }
 
-/** 预览页里换上来的那个播放器；新的还在底下加载时也只认已经换上来的。 */
+/** 获取当前已就绪的预览播放器（排除仍在后台加载的 `.is-pending` 实例）。 */
 export const previewPlayer = () => {
   const found = previewPages
     .latest()
@@ -148,7 +148,7 @@ export const previewPlayer = () => {
   return found
 }
 
-/** 等预览页换上一份 final-cut、新加载的都换了上来。 */
+/** 等待预览页完成播放器加载与实例切换。 */
 export const previewSettled = () =>
   waitFor(() => {
     expect(previewPages.latest().mount?.querySelectorAll('hyperframes-player')).toHaveLength(1)
