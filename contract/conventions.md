@@ -272,7 +272,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 | 提交接口 | 记录类型 (`kind` / `operation`) | 核心参数、校验规则与产物说明 |
 |---|---|---|
 | `POST /generations/video` | `video` / `generate`（出片） | 字段与上游异步接口一致（`snake_case`），支持附加 `conversation_id`、`task_id`、`shot_index`、`metadata`、可选 `reference_ids`（须均为未移除的在库参考资产，否则 `422`；仅落库归因、不发上游），以及二选一的 `prompt` 或结构化 `shot`（服务端拼装为 ≤ 4000 字提示词，参考图/视频/音频各 ≤ 30 个）。`GET /generations/video/{task_id}` 支持按上游格式轮询出片、试生成与编辑段 |
-| `POST /generations/video-edits` | `video` / `generate`（局部编辑段） | 基于已完成素材片（`sourceJobId`）替换 `[rangeStartMs, rangeEndMs]` 区间（结束时间允许超出原片最多 50 ms）。不传参考视频为**图生模式**（1 张首帧、2 张首尾帧、≥3 张参考图）；传入 1 条本人视频上传或未移除在库参考视频地址为**视频编辑模式**（按 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py) 拼装模型参数） |
+| `POST /generations/video-edits` | `video` / `generate`（局部编辑段） | 基于已完成素材片（`sourceJobId`）替换 `[rangeStartMs, rangeEndMs]` 区间（结束时间允许超出原片最多 50 ms）。不传参考视频为**图生模式**（1 张首帧、2 张首尾帧、≥3 张参考图）；传入 1 条本人视频上传或未移除在库参考视频地址为**视频编辑模式**（按 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py) 拼装模型参数）。不接收分辨率：两种模式都按最初出片请求里的 `resolution` 发给上游，最初出片没带时同样不带 |
 | `POST /generations/video-composites` | `video` / `compose`（视频合成） | 传入基底素材片 `baseJobId` 与 1～100 段 `segments: [{ sourceJobId, start, end? }]`（须取自该基底本身或基于该基底完成的编辑段），本地 ffmpeg 对齐画幅帧率重编码拼接，期间通过 `clipStage`（`fetching | processing | uploading`）反馈阶段 |
 | `POST /generations/image` | `image` / `generate`（生图 / 帧图编辑） | 模型、画幅、分辨率与可选 `channel` 须在 `GET /generations/image-models` 声明范围内。帧图编辑传入 `sourceUrl` 时，在本对话及继承生成图片中匹配关联 `sourceJobId`，未命中（含上传图片）记为外部底图地址 |
 | `POST /generations/subtitles` | `subtitle` / `generate`（字幕识别） | 按需识别指定素材片（`sourceJobId`）口播字幕，结果存于 `sentences: [{ startMs, endMs, text, speaker, words }]`；无音轨或无人说话同样正常完成（`sentences` 为 `[]`） |

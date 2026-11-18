@@ -249,6 +249,8 @@ class GenerationService:
             user_name=request.user_name,
             reference_image_urls=request.reference_image_urls,
             reference_video_urls=request.reference_video_urls,
+            # 不带分辨率时由上游自己定档，和原片不是一档的话合成时就得缩放。
+            resolution=await self._original_resolution(base),
             aspect_ratio=aspect_ratio,
             seconds=request.seconds,
             provider_options=options,
@@ -730,6 +732,9 @@ class GenerationService:
             if first is None or not is_base_master(first):
                 return None
             video = first
+        return _short_edge_of(await self._original_resolution(video))
+
+    async def _original_resolution(self, video: GenerationJob) -> str | None:
         if video.operation == OPERATION_COMPOSE:
             if video.root_job_id is None:
                 return None
@@ -739,7 +744,7 @@ class GenerationService:
             video = root
         if not isinstance(video.request, VideoGenerationIn):
             return None
-        return _short_edge_of(video.request.resolution)
+        return video.request.resolution
 
     async def _find(self, job_id: uuid.UUID) -> GenerationJob | None:
         try:
