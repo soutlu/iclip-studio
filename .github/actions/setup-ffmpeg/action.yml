@@ -8,27 +8,46 @@ runs:
       id: image
       shell: bash
       run: |
-        printf 'key=%s-%s-%s\n' "${ImageOS:?}" "${ImageVersion:?}" "$(dpkg --print-architecture)" >> "$GITHUB_OUTPUT"
-    # 依赖包取决于镜像中已安装的系统库，不能跨镜像版本恢复。
-    - uses: actions/cache@v4
+        printf 'platform=%s-%s\n' "${ImageOS:?}" "$(dpkg --print-architecture)" >> "$GITHUB_OUTPUT"
+        printf 'version=%s\n' "${ImageVersion:?}" >> "$GITHUB_OUTPUT"
+    # 要哪些依赖包取决于镜像里预装的系统库，所以缓存按镜像版本存。同一系统的各个镜像版本要的包通常一样：
+    # 没有本镜像版本的那份时，先拿别的版本存下的来装，装不上再现场下载。有的 runner 连的软件源很慢，
+    # 现场下载要十几分钟。
+    - uses: actions/cache/restore@v4
       id: packages
       with:
         path: ~/.cache/ffmpeg-debs/*.deb
-        key: ffmpeg-debs-${{ steps.image.outputs.key }}-${{ hashFiles('.github/actions/setup-ffmpeg/action.yml') }}
-    - name: Download ffmpeg packages
-      if: steps.packages.outputs.cache-hit != 'true'
+        key: ffmpeg-debs-${{ steps.image.outputs.platform }}-${{ hashFiles('.github/actions/setup-ffmpeg/action.yml') }}-${{ steps.image.outputs.version }}
+        restore-keys: |
+          ffmpeg-debs-${{ steps.image.outputs.platform }}-${{ hashFiles('.github/actions/setup-ffmpeg/action.yml') }}-
+    - name: Install ffmpeg packages
+      id: install
       shell: bash
       run: |
-        mkdir -p "$HOME/.cache/ffmpeg-debs"
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq --no-install-recommends --download-only \
-          -o Dir::Cache::archives="$HOME/.cache/ffmpeg-debs" ffmpeg
-    - name: Install cached ffmpeg packages
-      shell: bash
-      run: |
-        sudo apt-get install -y -qq --no-install-recommends --no-download \
-          -o Dir::Cache::archives="$HOME/.cache/ffmpeg-debs" \
-          "$HOME"/.cache/ffmpeg-debs/*.deb
+        archives="$HOME/.cache/ffmpeg-debs"
+        mkdir -p "$archives"
+        install_cached() {
+          sudo apt-get install -y -qq --no-install-recommends --no-download \
+            -o Dir::Cache::archives="$archives" "$archives"/*.deb
+        }
+        if compgen -G "$archives/*.deb" > /dev/null && install_cached; then
+          echo "downloaded=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        echo "::notice::没有能直接装上的 ffmpeg 安装包缓存，改为现场下载"
+        rm -f "$archives"/*.deb
+        # 不带 -qq：下载慢的时候从日志里看得出慢在哪、多快
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends --download-only \
+          -o Dir::Cache::archives="$archives" ffmpeg
+        install_cached
+        echo "downloaded=true" >> "$GITHUB_OUTPUT"
+    # 只有现场下载过才存：用别的镜像版本的那份装上了，就不再存一份一样的
+    - uses: actions/cache/save@v4
+      if: steps.install.outputs.downloaded == 'true'
+      with:
+        path: ~/.cache/ffmpeg-debs/*.deb
+        key: ${{ steps.packages.outputs.cache-primary-key }}
     - name: Verify media tools
       shell: bash
       run: |
