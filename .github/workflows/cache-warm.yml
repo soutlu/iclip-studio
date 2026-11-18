@@ -27,7 +27,8 @@ jobs:
 
   server:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 没有能用的 ffmpeg 安装包缓存、又分到软件源慢的 runner 时，现场下载要十几分钟；中途超时缓存就存不下来。
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-server
