@@ -5,6 +5,7 @@ import {
   individualRotateDegrees,
   isCompositionHost,
   pointerTargets,
+  snapCandidates,
 } from '@hyperframes/core/runtime/editing-port'
 import {
   composeTranslate,
@@ -13,8 +14,11 @@ import {
 } from '@hyperframes/core/runtime/position-edits'
 import { gsapOwns, layerAbilities, type RuntimeTimeline } from './layer-abilities'
 import type { Point } from './canvas-geometry'
+import type { SnapRects } from './canvas-snap'
+import { canvasBox, visibleFrame, type ClipBox } from './canvas-visible'
 import { toLocal, type Linear } from './layer-edits'
 import type { LayerFrame, LayerMeasure, LayerRef } from './preview-protocol'
+import { hugRectForClipPath } from './vendor/hyperframes-studio/components/editor/domEditOverlayCrop'
 
 /** 画布上的一个矩形（像素）。 */
 export type Rect = { x: number; y: number; width: number; height: number }
@@ -130,35 +134,107 @@ const paintedMatrix = (view: Window, element: Laid): DOMMatrix | null => {
   return matrix
 }
 
-/** 元素在画布上的样子：四个角经它和祖先的变换（运行库 `elementCornerPoints`），换成相对根的画布像素。 */
-export const frameOfElement = (page: Document, element: Laid): LayerFrame | null => {
-  const view = page.defaultView
-  const root = pageRoot(page)
-  if (view === null || root === null) return null
+type Corners = { nw: Point; ne: Point; se: Point; sw: Point }
+
+/**
+ * 元素边框盒的四个角在画布上的位置（相对根 `origin`）：经它和祖先的变换（运行库 `elementCornerPoints`）；认不出
+ * 变换时按它的外框。
+ */
+const cornersOf = (view: Window, origin: DOMRect, element: Laid): Corners => {
   const matrix = paintedMatrix(view, element)
   const corners =
     matrix === null
       ? null
       : elementCornerPoints(view, element, { matrix, cs: view.getComputedStyle(element) })
-  const origin = root.getBoundingClientRect()
-  if (corners === null) {
-    const box = element.getBoundingClientRect()
-    return {
-      cx: box.left + box.width / 2 - origin.left,
-      cy: box.top + box.height / 2 - origin.top,
-      width: box.width,
-      height: box.height,
-      angle: 0,
-    }
-  }
-  const { nw, ne, se, sw } = corners
+  const at = (point: Point) => ({ x: point.x - origin.left, y: point.y - origin.top })
+  if (corners !== null)
+    return { nw: at(corners.nw), ne: at(corners.ne), se: at(corners.se), sw: at(corners.sw) }
+  const box = element.getBoundingClientRect()
   return {
-    cx: (nw.x + ne.x + se.x + sw.x) / 4 - origin.left,
-    cy: (nw.y + ne.y + se.y + sw.y) / 4 - origin.top,
+    nw: at({ x: box.left, y: box.top }),
+    ne: at({ x: box.right, y: box.top }),
+    se: at({ x: box.right, y: box.bottom }),
+    sw: at({ x: box.left, y: box.bottom }),
+  }
+}
+
+/** 元素在画布上的样子：四个角经它和祖先的变换（运行库 `elementCornerPoints`），换成相对根的画布像素。 */
+export const frameOfElement = (page: Document, element: Laid): LayerFrame | null => {
+  const view = page.defaultView
+  const root = pageRoot(page)
+  if (view === null || root === null) return null
+  const { nw, ne, se, sw } = cornersOf(view, root.getBoundingClientRect(), element)
+  return {
+    cx: (nw.x + ne.x + se.x + sw.x) / 4,
+    cy: (nw.y + ne.y + se.y + sw.y) / 4,
     width: Math.hypot(ne.x - nw.x, ne.y - nw.y),
     height: Math.hypot(sw.x - nw.x, sw.y - nw.y),
     angle: (Math.atan2(ne.y - nw.y, ne.x - nw.x) * 180) / Math.PI,
   }
+}
+
+/** 元素自己的 `clip-path`：先看行内写的，没有时看算出来的（照工作台 `readElementClipPath`）。 */
+const ownClipPath = (view: Window, element: Laid): string =>
+  element.style.getPropertyValue('clip-path').trim() ||
+  view.getComputedStyle(element).clipPath.trim()
+
+/**
+ * 元素裁掉里面内容的框：`overflow-x`、`overflow-y` 不是 `visible` 的方向上，内边距盒（边框以内）在画布上的四个角；
+ * 两个方向都不裁、行内元素（`overflow` 管不到）时是 null。
+ */
+const clipBoxOf = (view: Window, origin: DOMRect, element: Laid): ClipBox | null => {
+  const style = view.getComputedStyle(element)
+  const x = style.overflowX !== 'visible'
+  const y = style.overflowY !== 'visible'
+  if ((!x && !y) || style.display === 'inline' || style.display === 'contents') return null
+  const { nw, ne, sw } = cornersOf(view, origin, element)
+  const width = element.offsetWidth
+  const height = element.offsetHeight
+  // 元素里 (u, v) 处在画布上的位置：边框盒四个角之间按比例取
+  const at = (u: number, v: number): Point => {
+    const ru = width > 0 ? u / width : 0
+    const rv = height > 0 ? v / height : 0
+    return {
+      x: nw.x + (ne.x - nw.x) * ru + (sw.x - nw.x) * rv,
+      y: nw.y + (ne.y - nw.y) * ru + (sw.y - nw.y) * rv,
+    }
+  }
+  const left = element.clientLeft
+  const top = element.clientTop
+  const right = left + element.clientWidth
+  const bottom = top + element.clientHeight
+  return { corners: [at(left, top), at(right, top), at(right, bottom), at(left, bottom)], x, y }
+}
+
+/**
+ * 一层看得见的那一块（见 canvas-visible.ts）：它自己的 `inset()` 裁切，往上到 final-cut 根（含）每个 `overflow`
+ * 不是 `visible` 的祖先的内边距盒，和画布。`frame` 是量出来的它在画布上的样子。
+ */
+const visibleOf = (
+  view: Window,
+  root: Laid,
+  element: Laid,
+  frame: LayerFrame,
+): LayerFrame | null => {
+  const origin = root.getBoundingClientRect()
+  const clips: ClipBox[] = []
+  for (let node = element.parentElement; node !== null; node = node.parentElement) {
+    const clip = isLaid(node) ? clipBoxOf(view, origin, node) : null
+    if (clip !== null) clips.push(clip)
+    if (node === root) break
+  }
+  const width = Number(root.getAttribute('data-width'))
+  const height = Number(root.getAttribute('data-height'))
+  if (width > 0 && height > 0) clips.push(canvasBox(width, height))
+  return visibleFrame(
+    frame,
+    {
+      clipPath: ownClipPath(view, element),
+      scaleX: element.offsetWidth > 0 ? frame.width / element.offsetWidth : 1,
+      scaleY: element.offsetHeight > 0 ? frame.height / element.offsetHeight : 1,
+    },
+    clips,
+  )
 }
 
 /** 父元素里一像素在画布上的样子（父元素和祖先的变换的线性部分）。 */
@@ -182,7 +258,8 @@ export const measureLayer = (
   const view = page.defaultView as
     (Window & { __timelines?: Record<string, RuntimeTimeline> }) | null
   const frame = frameOfElement(page, element)
-  if (view === null || frame === null) return null
+  const root = pageRoot(page)
+  if (view === null || frame === null || root === null) return null
   const style = view.getComputedStyle(element)
   const own =
     style.transform === 'none' || style.transform === '' ? null : new DOMMatrix(style.transform)
@@ -204,6 +281,7 @@ export const measureLayer = (
   })
   return {
     frame,
+    visible: visibleOf(view, root, element, frame),
     width: element.offsetWidth,
     height: element.offsetHeight,
     parent: parentLinear(page, element),
@@ -216,6 +294,49 @@ export const measureLayer = (
     turn: abilities.rotate,
     refusal: abilities.refusal,
   }
+}
+
+/**
+ * 吸附用的一个元素的框（画布像素）：外框按它自己的 `inset()` 裁切收窄（照工作台 `toVisibleOverlayRect`），裁切的
+ * 像素按它画在画布上的缩放换算。
+ */
+const snapRectOf = (view: Window, origin: DOMRect, element: Laid): Rect => {
+  const box = element.getBoundingClientRect()
+  const { a, b, c, d } = paintedMatrix(view, element) ?? IDENTITY
+  const scaleX = Math.hypot(a, b)
+  const scaleY = scaleX > 0 ? Math.abs(a * d - b * c) / scaleX : 1
+  const hugged = hugRectForClipPath(
+    {
+      left: box.left - origin.left,
+      top: box.top - origin.top,
+      width: box.width,
+      height: box.height,
+      editScaleX: scaleX,
+      editScaleY: scaleY,
+    },
+    ownClipPath(view, element),
+  )
+  return { x: hugged.left, y: hugged.top, width: hugged.width, height: hugged.height }
+}
+
+/**
+ * 挪 `moving` 这几个元素时吸附用的矩形（见 canvas-snap.ts）：它们合起来的框，和能吸过去的别的元素的框（运行库的
+ * `snapCandidates`：从 final-cut 根往下，跳过宿主和它里面的、挪的这几个和它们里面的、没显示的）。一个都没有时是 null。
+ */
+export const snapRectsOf = (page: Document, moving: readonly Laid[]): SnapRects | null => {
+  const view = page.defaultView
+  const root = pageRoot(page)
+  if (view === null || root === null || moving.length === 0) return null
+  const origin = root.getBoundingClientRect()
+  const boxes = moving.map((element) => snapRectOf(view, origin, element))
+  const left = Math.min(...boxes.map((box) => box.x))
+  const top = Math.min(...boxes.map((box) => box.y))
+  const right = Math.max(...boxes.map((box) => box.x + box.width))
+  const bottom = Math.max(...boxes.map((box) => box.y + box.height))
+  const targets = snapCandidates(root, new Set<HTMLElement>(moving))
+    .filter(isLaid)
+    .map((element) => snapRectOf(view, origin, element))
+  return { moving: { x: left, y: top, width: right - left, height: bottom - top }, targets }
 }
 
 // 组件根上的 `pointer-events: none`（挂载时落到它的内层根上）是给播放用的，却会传给整棵子树。照运行库取元素时的

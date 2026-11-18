@@ -18,6 +18,8 @@
 | `player/components/timelineCollision.ts` | 全文引入 | 取自 `v0.9.31`（提交 `cf900546`）：同行就近落位（`resolveNearestFreeStart`）、片段只落在所属分区（`resolveZoneDropPlacement`、`clampTrackToZone`、`isInsertAllowedForZone`）与区间重叠判断；注释附加 `design-allow` 避免设计门禁误判上游问题编号 |
 | `player/components/timelineStackingSync.ts` | 全文引入 | 画面区片段跨行移动后重算叠放顺序（`computeStackingPatches`） |
 | `components/editor/snapEngine.ts` | 全文引入 | 预览画布上拖拽元素的中心线与四边吸附参考线计算 |
+| `components/editor/clipPathHelpers.ts` | 部分摘录 | 取自 `v0.9.59`（提交 `028ab755`）：仅保留 `inset()` 裁切的解析（`parseInsetClipPathSides` 及其两个类型），移除取值拼写与格式化 |
+| `components/editor/domEditOverlayCrop.ts` | 部分摘录 | 取自 `v0.9.59`（提交 `028ab755`）：仅保留按元素自己的 `inset()` 裁切收窄框的纯计算（`cropRectFromInsets`、`hugRectForClipPath`），移除裁切暂解、读元素样式、拖动裁切与带角度的裁切框 |
 | `components/editor/audioInspectorInput.ts` | 全文引入 | 取自 `v0.9.31`（提交 `cf900546`）：属性面板中增益、速度与秒数输入的解析 |
 | `components/editor/propertyPanelHelpers.ts` | 部分摘录 | 取自 `v0.9.31`（提交 `cf900546`）：仅保留 `formatNumericValue`（速度两位小数格式化） |
 | `player/components/automationLaneGeometry.ts` | 部分摘录 | 取自 `v0.9.31`（提交 `cf900546`）的 `toUnit`、`fromUnit`（速度滑杆对数换算），以及 `v0.9.59`（提交 `028ab755`）的 `POINT_MERGE_SEC`、`MIN_POINT_GAP_SEC`（音量关键帧合并距离与最小间隔） |

@@ -25,6 +25,7 @@ const UNDER_POINTER: PickedLayer = {
   owner: -1,
   measure: {
     frame: { cx: 360, cy: 640, width: 720, height: 1280, angle: 0 },
+    visible: { cx: 360, cy: 640, width: 720, height: 1280, angle: 0 },
     width: 720,
     height: 1280,
     parent: { a: 1, b: 0, c: 0, d: 1 },
@@ -45,6 +46,7 @@ const preview: PreviewControl = {
   pause: () => {},
   seek: () => {},
   pick: () => Promise.resolve([UNDER_POINTER]),
+  snapRects: () => Promise.resolve(null),
   draft: () => Promise.resolve(null),
   draftEnd: () => {},
   editText: () => {},

@@ -3847,6 +3847,121 @@ test('组件根不接收指针时里面的层照样点得中、拖得动：选�
   )
 })
 
+test('画面上拖贴片里的字靠近画面中线：拖动中画出贯穿画面的对齐线，松手正好落在中线上、线消失；按住 Alt 拖不吸、不画线', async ({
+  page,
+}) => {
+  await serveSavedCard(page)
+  const { editor, layer, player } = await openWithCard(page)
+  const width = await player.evaluate((element: PreviewPlayer) =>
+    Number(element.iframeElement.contentDocument?.getElementById('film')?.dataset['width']),
+  )
+  const canvas = await boxOf(layer)
+  const zoom = canvas.width / width
+  const middle = canvas.x + canvas.width / 2
+  /** 字的中心在中线右边多少（画布像素）。 */
+  const offCentre = async () => {
+    const rect = await previewRect(finalCutPreviewPlayer(editor), TEXT)
+    return (rect.x + rect.width / 2 - 0.5) * width
+  }
+  const frame = layer.getByRole('img', { name: '选中：测试可填项 · ff-text' })
+  const frameCentre = async () => {
+    const box = await boxOf(frame)
+    return box.x + box.width / 2
+  }
+  const guides = layer.getByTestId('canvas-guide')
+  const spot = await canvasSpot(layer, player, TEXT)
+  await page.mouse.click(spot.x, spot.y)
+  await expect(frame).toBeVisible()
+
+  // 中心拖到中线右边 2 个屏幕像素：拖动中有一条贯穿画面的竖线在中线上，框已经吸到正中
+  const snapped = cardSavedWith(page, 'ff-text', (saved) => saved?.['data-x'] !== undefined)
+  await page.mouse.move(spot.x, spot.y)
+  await page.mouse.down()
+  await page.mouse.move(middle + 2, spot.y, { steps: 8 })
+  await expect(guides.first()).toBeVisible()
+  const lines = await guides.evaluateAll((elements) =>
+    elements.map((element) => {
+      const { x, width: lineWidth, height } = element.getBoundingClientRect()
+      return { x, width: lineWidth, height }
+    }),
+  )
+  expect(
+    lines.some(
+      (line) =>
+        Math.abs(line.x - middle) < 1 &&
+        line.width <= 1.5 &&
+        Math.abs(line.height - canvas.height) < 1,
+    ),
+  ).toBe(true)
+  await expect.poll(frameCentre).toBeCloseTo(middle, 0)
+  await page.mouse.up()
+  const centred = Number(savedElement(await snapped, 'ff-text')?.['data-x'])
+  await expect(guides).toHaveCount(0)
+  await settles(async () => expect(Math.abs(await offCentre())).toBeLessThan(0.01))
+
+  // 按住 Alt 从正中拖开再拖回中线右边 3 个屏幕像素：不吸，没有线，松手就停在那里
+  const from = await canvasSpot(layer, finalCutPreviewPlayer(editor), TEXT)
+  const loose = cardSavedWith(page, 'ff-text', (saved) => Number(saved?.['data-x']) !== centred)
+  await page.keyboard.down('Alt')
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 40, from.y, { steps: 4 })
+  await page.mouse.move(from.x + 3, from.y, { steps: 4 })
+  await expect.poll(frameCentre).toBeCloseTo(middle + 3, 0)
+  await expect(guides).toHaveCount(0)
+  await page.mouse.up()
+  await page.keyboard.up('Alt')
+  await loose
+  await settles(async () => expect(Math.abs((await offCentre()) - 3 / zoom)).toBeLessThan(0.5))
+})
+
+test('画面上被外面一层裁掉的层：悬停框、选中框只框看得见的那一块（裁切窗里），不伸出窗外和画面', async ({
+  page,
+}) => {
+  const { layer, player } = await openWithCard(page, {
+    search: '点穿',
+    title: '测试点穿',
+    seconds: 4,
+  })
+  const canvas = await boxOf(layer)
+  const onPage = async (selector: string) => {
+    const rect = await previewRect(player, selector)
+    return {
+      x: canvas.x + rect.x * canvas.width,
+      y: canvas.y + rect.y * canvas.height,
+      width: rect.width * canvas.width,
+      height: rect.height * canvas.height,
+    }
+  }
+  const shown = await onPage(`${CARD} .fp-window`)
+  const whole = await onPage(`${CARD} .fp-wide`)
+  // 琥珀色底比窗大得多：整块的框伸出窗外
+  expect(whole.width).toBeGreaterThan(shown.width * 1.5)
+  expect(whole.height).toBeGreaterThan(shown.height * 1.5)
+  /** 画出来的框就是窗：不伸出窗外，也不伸出画面。 */
+  const fitsWindow = (box: { x: number; y: number; width: number; height: number }) => {
+    expect(Math.abs(box.x - shown.x)).toBeLessThan(1.5)
+    expect(Math.abs(box.y - shown.y)).toBeLessThan(1.5)
+    expect(Math.abs(box.width - shown.width)).toBeLessThan(1.5)
+    expect(Math.abs(box.height - shown.height)).toBeLessThan(1.5)
+    expect(box.x).toBeGreaterThanOrEqual(canvas.x - 0.5)
+    expect(box.y).toBeGreaterThanOrEqual(canvas.y - 0.5)
+    expect(box.x + box.width).toBeLessThanOrEqual(canvas.x + canvas.width + 0.5)
+    expect(box.y + box.height).toBeLessThanOrEqual(canvas.y + canvas.height + 0.5)
+  }
+  const spot = { x: shown.x + shown.width / 2, y: shown.y + shown.height / 2 }
+
+  await page.mouse.move(spot.x, spot.y)
+  const hover = layer.getByTestId('canvas-hover')
+  await expect(hover).toBeVisible()
+  fitsWindow(await boxOf(hover))
+
+  await page.mouse.click(spot.x, spot.y)
+  const frame = layer.getByRole('img', { name: '选中：测试点穿 · fp-wide' })
+  await expect(frame).toBeVisible()
+  fitsWindow(await boxOf(frame))
+})
+
 test('动画脚本驱动的层拖不了：点贴片的色底选中它、没有缩放把手，拖它说明原因、什么都不写', async ({
   page,
 }) => {

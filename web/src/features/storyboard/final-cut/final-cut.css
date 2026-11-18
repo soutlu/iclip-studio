@@ -2136,6 +2136,45 @@
   white-space: nowrap;
 }
 
+/* 挪的时候吸附画的参考线：贯穿画面的对齐线和等距标记（标着画布像素的间距），只是看的；用琥珀色和白色的选中框分开 */
+.wf-canvas-guides {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.wf-canvas-guide {
+  position: absolute;
+  background: var(--color-tertiary-fixed-dim);
+}
+
+.wf-canvas-spacing {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0 dashed color-mix(in srgb, var(--color-tertiary-fixed-dim) 75%, transparent);
+}
+
+.wf-canvas-spacing[data-axis='x'] {
+  border-inline-width: 1px;
+}
+
+.wf-canvas-spacing[data-axis='y'] {
+  border-block-width: 1px;
+}
+
+.wf-canvas-spacing > span {
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-scrim) 75%, transparent);
+  color: var(--color-tertiary-fixed-dim);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* 原地改字：盖在藏起来的那段文字上，照稿子的白框、浅黑底 */
 .wf-canvas-text {
   position: absolute;

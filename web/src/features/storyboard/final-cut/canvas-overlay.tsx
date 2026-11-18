@@ -23,6 +23,8 @@ import {
   type Frame,
   type Point,
 } from './canvas-geometry'
+import { snapDrag, type SnapGuides, type SnapRects } from './canvas-snap'
+import { drawnFrame, followFrame } from './canvas-visible'
 import type { CaptionTextChange } from './captions-tab'
 import type { ComponentCatalog } from './composition/catalog'
 import { itemNamed, type Canvas, type FilmClip } from './composition/film'
@@ -76,6 +78,8 @@ type Gesture =
       start: Point
       last: Point
       shift: boolean
+      /** 指针最后一次动时按着 Alt（不吸附）。 */
+      alt: boolean
       released: number | null
     }
   | {
@@ -87,6 +91,11 @@ type Gesture =
       hits: readonly string[]
       picked: string
       shift: boolean
+      /** 指针最后到的地方、那时按没按着 Alt：吸附用的矩形回来时按它重新摆一次。 */
+      last: Point
+      alt: boolean
+      /** 吸附用的矩形（见 canvas-snap.ts）：开始挪时问预览页，回来之前、量不到时是 null。 */
+      snap: SnapRects | null
     }
   | {
       kind: 'resize'
@@ -97,12 +106,16 @@ type Gesture =
     }
   | { kind: 'rotate'; start: Point; target: Shown; rotation: RotationTarget }
 
-/** 拖动中的样子：各层（表里的位置）现在的画面样子；挪、缩放时还有要提交的位移、样式。 */
+/**
+ * 拖动中的样子：各层（表里的位置）现在的画面样子；挪、缩放时还有要提交的位移、样式；挪的时候吸附画的参考线
+ * （没有时 null）。
+ */
 type Draft = {
   kind: 'move' | 'resize' | 'rotate'
   frames: ReadonlyMap<number, Frame>
   moves: ReadonlyMap<number, Point>
   styles: Readonly<Record<string, string>> | null
+  guides: SnapGuides | null
 }
 
 type CanvasOverlayProps = {
@@ -427,6 +440,9 @@ export function CanvasOverlay({
         hits: [],
         picked: '',
         shift: press.shift,
+        last: press.last,
+        alt: press.alt,
+        snap: null,
       }
       return move
     }
@@ -444,6 +460,9 @@ export function CanvasOverlay({
         hits,
         picked: host.layer.key,
         shift: press.shift,
+        last: press.last,
+        alt: press.alt,
+        snap: null,
       }
       return move
     }
@@ -475,6 +494,9 @@ export function CanvasOverlay({
       hits,
       picked: hit.layer.key,
       shift: press.shift,
+      last: press.last,
+      alt: press.alt,
+      snap: null,
     }
     return move
   }
@@ -505,6 +527,7 @@ export function CanvasOverlay({
       start: point,
       last: point,
       shift: event.shiftKey,
+      alt: event.altKey,
       released: null,
     }
     gestureRef.current = press
@@ -537,11 +560,14 @@ export function CanvasOverlay({
     select(new Set([layer.clip]), { clip: layer.clip, layer: key })
   }
 
-  /** 挪的这一下拖到 `point`。 */
-  const dragTo = (gesture: Extract<Gesture, { kind: 'move' }>, point: Point) => {
-    const delta = { x: point.x - gesture.start.x, y: point.y - gesture.start.y }
+  /** 挪的这一下拖到 `point`；`alt` 是按着 Alt（不吸附）。 */
+  const dragTo = (gesture: Extract<Gesture, { kind: 'move' }>, point: Point, alt: boolean) => {
+    gesture.last = point
+    gesture.alt = alt
+    const pointer = { x: point.x - gesture.start.x, y: point.y - gesture.start.y }
     if (!gesture.moved) {
-      if (gesture.targets.length === 0 || Math.hypot(delta.x, delta.y) * zoom < DRAG_SLOP) return
+      if (gesture.targets.length === 0 || Math.hypot(pointer.x, pointer.y) * zoom < DRAG_SLOP)
+        return
       gesture.moved = true
       onGesture(true)
       const refusal = gesture.targets
@@ -550,9 +576,27 @@ export function CanvasOverlay({
       if (refusal !== undefined) {
         gesture.blocked = true
         onNotice(refusal)
+      } else {
+        // 在这一下的第一个草稿之前问，量的是它们还在原处的样子；回来以后按指针最后到的地方重新摆一次
+        void controlRef.current
+          ?.snapRects(gesture.targets.map((target) => target.at))
+          .then((rects) => {
+            if (gestureRef.current !== gesture || rects === null) return
+            gesture.snap = rects
+            dragTo(gesture, gesture.last, gesture.alt)
+          })
       }
     }
     if (gesture.blocked) return
+    const [single, ...others] = gesture.targets
+    const { delta, guides } = snapDrag({
+      delta: pointer,
+      zoom,
+      rects: gesture.snap,
+      canvas,
+      alt,
+      angle: single !== undefined && others.length === 0 ? single.measure.frame.angle : null,
+    })
     const frames = new Map<number, Frame>()
     const moves = new Map<number, Point>()
     for (const { at, measure } of gesture.targets) {
@@ -565,7 +609,7 @@ export function CanvasOverlay({
       })
       void controlRef.current?.draft(at, local, {}, false)
     }
-    showDraft({ kind: 'move', frames, moves, styles: null })
+    showDraft({ kind: 'move', frames, moves, styles: null, guides })
   }
 
   const onHandleDown = (event: PointerEvent<HTMLElement>, kind: 'resize' | 'rotate', at: Shown) => {
@@ -619,10 +663,11 @@ export function CanvasOverlay({
     const point = toCanvas(event)
     if (gesture.kind === 'press') {
       gesture.last = point
+      gesture.alt = event.altKey
       return
     }
     if (gesture.kind === 'move') {
-      dragTo(gesture, point)
+      dragTo(gesture, point, event.altKey)
       return
     }
     const { at, measure } = gesture.target
@@ -640,6 +685,7 @@ export function CanvasOverlay({
         frames: new Map([[at, frame]]),
         moves: new Map([[at, { x: 0, y: 0 }]]),
         styles,
+        guides: null,
       }
       showDraft(next)
       const reply = controlRef.current?.draft(at, { x: 0, y: 0 }, cssStyles(styles), true)
@@ -661,6 +707,7 @@ export function CanvasOverlay({
       frames: new Map([[at, { ...measure.frame, angle }]]),
       moves: new Map(),
       styles,
+      guides: null,
     })
   }
 
@@ -697,7 +744,7 @@ export function CanvasOverlay({
   ) => {
     if (live) {
       gestureRef.current = move
-      dragTo(move, press.last)
+      dragTo(move, press.last, press.alt)
     }
     if (press.released === null) return
     if (live) gestureRef.current = null
@@ -859,7 +906,12 @@ export function CanvasOverlay({
         const { at, layer, measure } = each
         // 原地改着的字幕：框和输入框叠在一起，不画
         if (textTarget?.id === layer.element.hfId) return null
-        const frame = draft?.frames.get(at) ?? measure.frame
+        // 画在看得见的那一块上；拖动中跟着这一层的草稿走
+        const drafted = draft?.frames.get(at)
+        const frame =
+          drafted === undefined
+            ? drawnFrame(measure)
+            : followFrame(drawnFrame(measure), measure.frame, drafted)
         const below = (frame.cy + frame.height / 2) * zoom + ROTATE_ROOM
         return (
           <div
@@ -908,9 +960,10 @@ export function CanvasOverlay({
           aria-label="选中：脚本生成的层"
           className="wf-canvas-frame"
           role="img"
-          style={frameStyle(generatedShown.measure.frame)}
+          style={frameStyle(drawnFrame(generatedShown.measure))}
         />
       )}
+      {draft === null || draft.guides === null ? null : <CanvasGuides guides={draft.guides} />}
       {textTarget !== null && textEdit !== undefined ? (
         <CanvasText
           controlRef={controlRef}
@@ -923,6 +976,41 @@ export function CanvasOverlay({
           zoom={zoom}
         />
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * 挪的时候吸附画的参考线（见 canvas-snap.ts）：贯穿画面的对齐线，和标着间距（画布像素）的等距标记。只是看的，
+ * 不接收指针。
+ */
+function CanvasGuides({ guides }: { guides: SnapGuides }) {
+  return (
+    <div aria-hidden="true" className="wf-canvas-guides">
+      {guides.lines.map((line) => (
+        <div
+          className="wf-canvas-guide"
+          data-testid="canvas-guide"
+          key={line.key}
+          style={{ left: line.left, top: line.top, width: line.width, height: line.height }}
+        />
+      ))}
+      {guides.spacings.map((spacing) => (
+        <div
+          className="wf-canvas-spacing"
+          data-axis={spacing.axis}
+          data-testid="canvas-spacing"
+          key={spacing.key}
+          style={{
+            left: spacing.left,
+            top: spacing.top,
+            width: spacing.width,
+            height: spacing.height,
+          }}
+        >
+          <span>{spacing.gap}</span>
+        </div>
+      ))}
     </div>
   )
 }

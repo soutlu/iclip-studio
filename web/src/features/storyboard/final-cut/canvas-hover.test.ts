@@ -19,6 +19,7 @@ const layer = (key: string, clip: string, host = false): CanvasLayer => ({
 
 const measure = (cx: number): LayerMeasure => ({
   frame: { cx, cy: 50, width: 20, height: 10, angle: 0 },
+  visible: { cx, cy: 50, width: 20, height: 10, angle: 0 },
   width: 20,
   height: 10,
   parent: { a: 1, b: 0, c: 0, d: 1 },

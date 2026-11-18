@@ -23,6 +23,7 @@ import {
   ownerOf,
   refOf,
   showText,
+  snapRectsOf,
   startDraft,
   textSpotAt,
   writeLayer,
@@ -689,6 +690,23 @@ export const createPreviewPage = (
       case 'pick':
         pickAt(command.seq, command.x, command.y)
         return
+      case 'snap': {
+        const page = active?.iframeElement.contentDocument ?? null
+        const rects =
+          page === null
+            ? null
+            : snapRectsOf(
+                page,
+                command.layers.flatMap((at) => layerAt(page, at) ?? []),
+              )
+        send({
+          type: 'snapRects',
+          seq: command.seq,
+          moving: rects?.moving ?? null,
+          targets: rects === null ? [] : [...rects.targets],
+        })
+        return
+      }
       case 'draft': {
         const page = active?.iframeElement.contentDocument ?? null
         let draft = drafts.get(command.layer)
