@@ -237,8 +237,14 @@ const watchFullscreen = (notify: () => void) => {
 
 const fullscreenElementOf = () => document.fullscreenElement ?? null
 
-/** 工作台「final-cut」页签里的 final-cut 编辑器，填满页签内容区。 */
-export function FinalCutEditor({ conversationId }: Pick<ArtifactRendererProps, 'conversationId'>) {
+/**
+ * 工作台「final-cut」页签里的 final-cut 编辑器，填满页签内容区。`saveDelayMs` 是改动停下多久后保存，
+ * 不传用 `useFilmSession` 默认的时长；用例里传短的，等保存不用真等。
+ */
+export function FinalCutEditor({
+  conversationId,
+  saveDelayMs,
+}: Pick<ArtifactRendererProps, 'conversationId'> & { saveDelayMs?: number }) {
   const projectQuery = useProjectQuery(conversationId)
   const catalogQuery = useComponentCatalog()
   const keysRef = useRef<((event: KeyboardEvent) => void) | null>(null)
@@ -255,6 +261,7 @@ export function FinalCutEditor({ conversationId }: Pick<ArtifactRendererProps, '
           conversationId={conversationId}
           initial={projectQuery.data}
           keysRef={keysRef}
+          saveDelayMs={saveDelayMs}
         />
       ) : failed !== undefined ? (
         <div className="wf-state">
@@ -295,15 +302,20 @@ function EditorBody({
   initial,
   catalog,
   keysRef,
+  saveDelayMs,
 }: {
   conversationId: string
   initial: StoredProject | null
   catalog: ComponentCatalog
   keysRef: RefObject<((event: KeyboardEvent) => void) | null>
+  saveDelayMs: number | undefined
 }) {
   const root = useEditorRoot()
   const notice = useCallback((message: string) => toast.info(message), [])
-  const session = useFilmSession(conversationId, initial, catalog, { onNotice: notice })
+  const session = useFilmSession(conversationId, initial, catalog, {
+    debounceMs: saveDelayMs,
+    onNotice: notice,
+  })
   const { film } = session
   // 字幕也在时间线上（单独一行）：选中、吸附、切开这些都算它们，各种片段怎么处理由各自的计算管；
   // 「字幕」页签只列字幕

@@ -875,7 +875,7 @@ function splitHalves(
 }
 
 type Options = {
-  debounceMs?: number
+  debounceMs?: number | undefined
   onNotice: (message: string) => void
 }
 
