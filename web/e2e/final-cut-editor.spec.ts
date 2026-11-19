@@ -2129,6 +2129,46 @@ test('新建工程、加镜头和一个贴片：条目文件拷进工程，刷�
     .toBe(true)
 })
 
+test('新建工程后在「属性」里把画面尺寸改成横屏：存下的主文件根上是 1920×1080，刷新页面后仍是横屏', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await createFinalCut(panel)
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '属性' }).click()
+  const sizes = side.getByRole('group', { name: '画面尺寸' })
+  await expect(sizes.getByRole('button', { name: '竖屏 9:16' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+
+  const saved = mainSavedWith(page, (html) =>
+    /<div [^>]*id="film"[^>]*data-width="1920" data-height="1080"/.test(html),
+  )
+  await sizes.getByRole('button', { name: '横屏 16:9' }).click()
+  const html = htmlOf(await saved)
+  expect(html).toContain('<meta name="viewport" content="width=1920, height=1080">')
+
+  // 等这次保存有了答复再刷新：请求刚发出就刷新，这一版还没存下来
+  await (await saved).response()
+  await page.reload()
+  const reloaded = await openFinalCut(await openConversation(page, '夜景延时素材生成'))
+  const reloadedSide = reloaded.getByRole('complementary', {
+    name: '镜头、贴片、场景、配乐、字幕和属性',
+  })
+  await reloadedSide.getByRole('tab', { name: '属性' }).click()
+  const reloadedSizes = reloadedSide.getByRole('group', { name: '画面尺寸' })
+  await expect(reloadedSizes.getByRole('button', { name: '横屏 16:9' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await expect(reloadedSizes.getByRole('button', { name: '竖屏 9:16' })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  )
+})
+
 const CAPTIONS_FILE = 'compositions/captions.html'
 
 /** mock 的预览域名不存工程文件（只转到组件库里的同名文件）：字幕场景照后端，答复编辑器最近存下的那一份。 */

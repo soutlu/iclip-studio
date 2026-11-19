@@ -1821,6 +1821,7 @@ function EditorBody({
               catalog={catalog}
               canvas={film.canvas}
               keyframes={keyframes}
+              onCanvas={session.resize}
               onGesture={setGesturing}
               onHide={hideClip}
               onRemove={removeSelected}

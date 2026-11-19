@@ -56,6 +56,7 @@ import {
   itemNamed,
   PROJECT_MAIN,
   videoElement,
+  withCanvasSize,
   withFontBlock,
   type AudioClip,
   type Canvas,
@@ -102,6 +103,7 @@ import {
   type StoredProject,
 } from './final-cut.api'
 import { itemDurationMs } from './items'
+import { refittedHostStyles } from './layer-edits'
 import {
   LOCALES,
   localeOfPath,
@@ -371,6 +373,20 @@ const canvasOf = (main: Composition): Canvas => {
 }
 
 /**
+ * 文件 `engine` 的根改成 `canvas` 的宽高（SDK 的 `setCompositionMetadata`：改 `data-width` / `data-height`，运行库按
+ * 它们定根的大小）。SDK 改宽高时总在根上写行内宽高，撤销时只把它改回旧值、不去掉；根上原来没写行内宽高时先写上、
+ * 改完再去掉，撤销时三步倒着退回，根逐字回到原样。
+ */
+const resizeRoot = (engine: Composition, canvas: Canvas) => {
+  const root = rootOf(engine)
+  if (root === undefined) return
+  const bare = root.inlineStyles['width'] === undefined && root.inlineStyles['height'] === undefined
+  if (bare) engine.setStyle(root.id, { width: `${canvas.width}px`, height: `${canvas.height}px` })
+  engine.dispatch({ type: 'setCompositionMetadata', width: canvas.width, height: canvas.height })
+  if (bare) engine.setStyle(root.id, { width: null, height: null })
+}
+
+/**
  * 主文件根下所有带时间的元素（字幕宿主除外）读成的片段，按它们在文件里的先后。不存出文件，一批操作中间也能用。
  */
 const clipsOf = (main: Composition, catalog: ComponentCatalog): FilmClip[] => {
@@ -526,8 +542,9 @@ const writeTotal = (main: Composition, scene: Composition | undefined) => {
 
 /**
  * 工程现在的样子（显示语言 `locale` 的字），和各文件现在的内容（路径 → 内容）：主文件只重算 `<head>` 里的
- * 字体块（SDK 改不了 `<head>`），字按原文和所有值表里的字一起算，存出的内容和显示哪种语言无关；别的文件照
- * 各自存出的写。`change` 是这一份的序号和从上一份来的那一步（见 `FilmView`）。
+ * 字体块和写死的画面尺寸（SDK 改不了 `<head>`）。字体块的字按原文和所有值表里的字一起算，存出的内容和显示哪种语言
+ * 无关；画面尺寸按根上的算，撤销根的改动时跟着回去。别的文件照各自存出的写。`change` 是这一份的序号和从上一份来的
+ * 那一步（见 `FilmView`）。
  */
 const viewOf = (
   project: Project,
@@ -544,7 +561,11 @@ const viewOf = (
     .flatMap((table) => Object.values(table.values()))
     .filter((value) => typeof value === 'string')
     .join('')
-  const html = withFontBlock(contentOf(project, PROJECT_MAIN), clips, catalog, localeText)
+  const canvas = canvasOf(main)
+  const html = withCanvasSize(
+    withFontBlock(contentOf(project, PROJECT_MAIN), clips, catalog, localeText),
+    canvas,
+  )
   const present = new Map(
     [...project.files].map(([path, file]) => [
       path,
@@ -561,7 +582,7 @@ const viewOf = (
   const shownHere = shownIn(shown.code, voiceMode)
   const view: FilmView = {
     html,
-    canvas: canvasOf(main),
+    canvas,
     clips: clips.filter(shownHere).map((clip) =>
       shown.values !== null && clip.kind === 'caption'
         ? {
@@ -1482,6 +1503,33 @@ export function useFilmSession(
     [edit],
   )
 
+  /**
+   * 把画面尺寸改成 `canvas`，算一步撤销：主文件和字幕场景的根改成新的宽高（见 `resizeRoot`；主文件 `<head>` 里写死的
+   * 尺寸存出时跟着根重算，见 `viewOf`），贴片和场景的宿主按新画面重摆（见 `refittedHostStyles`）。视频不用动：画面
+   * 等比放、留黑边。和现在一样、工程还没打开时不动工程。
+   *
+   * 字幕宿主上写的宽高不改：SDK 不让改宿主的 `data-width` / `data-height`（保留属性），运行库挂载字幕场景时按场景根的
+   * 宽高重写宿主，宿主本身铺满画面。
+   */
+  const resize = useCallback(
+    (canvas: Canvas) => {
+      const project = projectRef.current
+      if (project === null) return
+      const before = canvasOf(mainOf(project))
+      if (before.width === canvas.width && before.height === canvas.height) return
+      edit((main, scene) => {
+        resizeRoot(main, canvas)
+        if (scene !== undefined) resizeRoot(scene, canvas)
+        for (const { host, captions } of mountsOf(main)) {
+          const inline = main.getElement(host)?.inlineStyles
+          if (!captions && inline !== undefined)
+            main.setStyle(host, refittedHostStyles(inline, before, canvas))
+        }
+      })
+    },
+    [edit],
+  )
+
   /** 工程里文件 `path`（相对工程根）现在的内容（没存的改动也在里面）；没打开着时是 undefined。 */
   const contentOf = useCallback((path: string) => presentRef.current.get(path), [])
 
@@ -2237,6 +2285,7 @@ export function useFilmSession(
     restart,
     setHidden,
     editLayers,
+    resize,
     contentOf,
     setValues,
     setAttributes,

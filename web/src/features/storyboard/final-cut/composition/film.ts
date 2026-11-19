@@ -4,8 +4,8 @@ import { escapeAttribute, seconds } from './html'
 
 /**
  * final-cut 工程的主文件 `index.html`：工程目录里唯一的主时间线。根下面每个带时间的元素是时间线上的一个片段；
- * 文件可以由编辑器写，也可以手写。编辑器只改片段、根上的总长和 `<html>` 上声明的字幕变量，`<head>` 里
- * 只重算带标记的字体块（见 `withFontBlock`），别的内容原样留着。
+ * 文件可以由编辑器写，也可以手写。编辑器只改片段、根上的总长和画面尺寸、`<html>` 上声明的字幕变量，`<head>` 里
+ * 只重算带标记的字体块（见 `withFontBlock`）和写死的画面尺寸（见 `withCanvasSize`），别的内容原样留着。
  */
 export interface Canvas {
   width: number
@@ -376,6 +376,10 @@ export function audioElement(clip: Omit<AudioClip, 'kind'>): string {
 
 const round4 = (value: number) => String(Math.round(value * 10_000) / 10_000)
 
+/** 尺寸是 `size` 的东西按原比例缩到放得下画面 `canvas` 的倍数。 */
+export const fitScale = (size: Canvas, canvas: Canvas): number =>
+  Math.min(canvas.width / size.width, canvas.height / size.height)
+
 /**
  * 条目在画面里怎么摆：没写尺寸或和画面一样大时铺满（由主文件里 `.component` 的样式管，这里不写）；
  * 写了别的尺寸时按原比例缩到放得下、居中。
@@ -383,7 +387,7 @@ const round4 = (value: number) => String(Math.round(value * 10_000) / 10_000)
 export function itemLayout(item: CatalogItem, canvas: Canvas): Record<string, string> {
   const { size } = item
   if (size === null || (size.width === canvas.width && size.height === canvas.height)) return {}
-  const scale = Math.min(canvas.width / size.width, canvas.height / size.height)
+  const scale = fitScale(size, canvas)
   return {
     left: '50%',
     top: '50%',
@@ -533,6 +537,34 @@ export const FILM_ID = 'film'
 /** 「新建 final-cut」按默认模版建工程时的画面尺寸：竖版。 */
 export const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 
+/** `<head>` 里的视口：画面多大。 */
+const viewportOf = ({ width, height }: Canvas) =>
+  `<meta name="viewport" content="width=${width}, height=${height}">`
+
+/** 铺满画面的样式（`html,body`、根、`.component`）里写死的宽高。 */
+const fillingOf = ({ width, height }: Canvas) => `width:${width}px;height:${height}px`
+
+const VIEWPORT = /<meta name="viewport" content="width=\d+, height=\d+">/
+const FILLING = new RegExp(
+  `(\\n(?:html,body|#${FILM_ID}|#${FILM_ID} \\.component)\\{[^}\\n]*?)width:\\d+px;height:\\d+px`,
+  'g',
+)
+
+/**
+ * 主文件 `<head>` 里写死的画面尺寸换成 `canvas`：`emptyProject` 写的视口和铺满画面的几条样式。画面尺寸以根上的
+ * `data-width` / `data-height` 为准，存出时按它重算这几处；手写的、写法和 `emptyProject` 不一样的 `<head>` 原样留着。
+ * 没有 `</head>` 时原样返回。
+ */
+export function withCanvasSize(html: string, canvas: Canvas): string {
+  const headEnd = html.search(/<\/head\s*>/i)
+  if (headEnd < 0) return html
+  const head = html
+    .slice(0, headEnd)
+    .replace(VIEWPORT, () => viewportOf(canvas))
+    .replace(FILLING, (_, rule: string) => `${rule}${fillingOf(canvas)}`)
+  return `${head}${html.slice(headEnd)}`
+}
+
 /**
  * 新建工程时的主文件：根上的属性照空的 final-cut 写，`<head>` 里带动画库、摆放片段的样式和空的字体块。
  * `children` 是根下面一开始就有的元素，`durationMs` 是根上写的总长。
@@ -544,18 +576,19 @@ export function emptyProject(
   durationMs = 0,
 ): string {
   const { width, height } = canvas
+  const filling = fillingOf(canvas)
   return `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=${width}, height=${height}">
+${viewportOf(canvas)}
 <script src="${escapeAttribute(catalog.runtime.gsap)}"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:${width}px;height:${height}px;overflow:hidden;background:black;font-family:'${catalog.cjk.family}',sans-serif}
-#${FILM_ID}{position:relative;width:${width}px;height:${height}px;overflow:hidden;background:black}
+html,body{${filling};overflow:hidden;background:black;font-family:'${catalog.cjk.family}',sans-serif}
+#${FILM_ID}{position:relative;${filling};overflow:hidden;background:black}
 #${FILM_ID} .picture{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
-#${FILM_ID} .component{position:absolute;left:0;top:0;width:${width}px;height:${height}px}
+#${FILM_ID} .component{position:absolute;left:0;top:0;${filling}}
 </style>
 ${FONT_BLOCK_START}
 ${FONT_BLOCK_END}

@@ -125,6 +125,34 @@ describe('final-cut 编辑器 · 属性', () => {
     expect(screen.queryByRole('tabpanel', { name: '属性' })).toBeNull()
   })
 
+  it('没选中时「属性」里有「画面尺寸」：720×1280 的工程两种都不按下、写着现在的尺寸；点横屏后预览变成横的，横屏按下', async () => {
+    const user = await openWith([video()])
+    await user.click(sideTab('属性'))
+    const sizes = within(inspector()).getByRole('group', { name: '画面尺寸' })
+    const portrait = within(sizes).getByRole('button', { name: '竖屏 9:16' })
+    const landscape = within(sizes).getByRole('button', { name: '横屏 16:9' })
+    expect(portrait).toHaveAttribute('aria-pressed', 'false')
+    expect(landscape).toHaveAttribute('aria-pressed', 'false')
+    expect(within(inspector()).getByText('720×1280')).toBeVisible()
+    const previewSize = () =>
+      previewPages.latest().commands.findLast((command) => command.type === 'size')
+    await waitFor(() => expect(previewSize()).toMatchObject({ width: 720, height: 1280 }))
+
+    await user.click(landscape)
+    expect(landscape).toHaveAttribute('aria-pressed', 'true')
+    expect(portrait).toHaveAttribute('aria-pressed', 'false')
+    expect(within(inspector()).queryByText('720×1280')).toBeNull()
+    await waitFor(() => expect(previewSize()).toMatchObject({ width: 1920, height: 1080 }))
+    await waitSaved(() =>
+      expect(savedFilm()).toMatch(/<div [^>]*id="film"[^>]*data-width="1920" data-height="1080"/),
+    )
+
+    await user.click(portrait)
+    expect(portrait).toHaveAttribute('aria-pressed', 'true')
+    expect(landscape).toHaveAttribute('aria-pressed', 'false')
+    await waitFor(() => expect(previewSize()).toMatchObject({ width: 1080, height: 1920 }))
+  })
+
   it('组件或块的片段：头部是名字、种类和时长，下面平铺「显示时长」「内容与样式」，没有手风琴', async () => {
     const user = await openWith([host({ start: 1_000, duration: 3_500 })])
     await pick(user, '测试可填项')
