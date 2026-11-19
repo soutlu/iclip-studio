@@ -168,21 +168,21 @@ describe('final-cut 编辑器 · 属性', () => {
     )
   })
 
-  it('视频片段、音频片段是「原片截取」「音量与变速」和「智能调音」，开关分别是「关闭原声」「循环播放」；音频片段的隐藏叫静音', async () => {
+  it('视频片段、音频片段是「原片截取」「声音与节奏」和「智能调音」，开关分别是「关闭原声」「循环播放」；音频片段的隐藏叫静音', async () => {
     const user = await openWith([
       video({ src: URL_A, duration: 2_000 }),
       audio({ duration: 4_000 }),
     ])
     await pick(user, 'A · 镜头 1')
     expect(within(inspector()).getByText('视频')).toBeVisible()
-    expect(sections()).toEqual(['原片截取', '音量与变速', '智能调音'])
+    expect(sections()).toEqual(['原片截取', '声音与节奏', '智能调音'])
     expect(within(inspector()).getByRole('switch', { name: '关闭原声' })).toBeVisible()
     expect(within(inspector()).getByRole('button', { name: '隐藏' })).toBeVisible()
     expect(within(inspector()).queryByRole('textbox')).toBeNull()
 
     await pick(user, '配乐')
     expect(within(inspector()).getByText('音频')).toBeVisible()
-    expect(sections()).toEqual(['原片截取', '音量与变速', '智能调音'])
+    expect(sections()).toEqual(['原片截取', '声音与节奏', '智能调音'])
     expect(within(inspector()).getByRole('switch', { name: '循环播放' })).toBeVisible()
     await user.click(within(inspector()).getByRole('button', { name: '静音' }))
     await waitSaved(() => expect(savedTag('music-1')).toMatch(/^<audio data-hidden=""/))
@@ -617,7 +617,7 @@ describe('final-cut 编辑器 · 属性', () => {
     })
   })
 
-  describe('音量与变速', () => {
+  describe('声音与节奏', () => {
     const slider = (name: string) => within(inspector()).getByRole('slider', { name })
     /** 滑杆的点按区：按下、双击都在它上面。 */
     const track = (name: string) =>
@@ -640,7 +640,7 @@ describe('final-cut 编辑器 · 属性', () => {
     const savedAttribute = (id: string, name: string) =>
       new RegExp(` ${name}(?:="([^"]*)")?[ >]`).exec(savedTag(id))?.[1]
 
-    it('音频片段：音量、淡入、淡出、倍速，标题行右边是「循环播放」；数值照参照的换算显示', async () => {
+    it('音频片段：音量、淡入、淡出，标题行右边是「循环播放」和倍速（点开是倍速滑杆）；数值照参照的换算显示', async () => {
       const user = await openWith([
         audio({
           duration: 4_000,
@@ -651,6 +651,7 @@ describe('final-cut 编辑器 · 属性', () => {
         }),
       ])
       await pick(user, '配乐')
+      await user.click(within(inspector()).getByRole('button', { name: '倍速：2x' }))
       const labels = within(inspector())
         .getAllByText(/^(音量|淡入|淡出|倍速)$/)
         .map((label) => label.textContent)
@@ -723,8 +724,16 @@ describe('final-cut 编辑器 · 属性', () => {
       const user = await openWith([video({ src: URL_A, duration: 2_000 })])
       await shot(/^生成 A 镜头 1，/)
       await pick(user, 'A · 镜头 1')
+      await user.click(within(inspector()).getByRole('button', { name: '倍速：1x' }))
       expect(slider('倍速')).toHaveAttribute('aria-valuenow', '500')
       expect(readout('倍速')).toHaveTextContent('1x')
+      // 倍速浮层里的数值框按 Esc 放弃输入，片段还选中着
+      await type(user, '倍速', '3')
+      await user.keyboard('{Escape}')
+      expect(within(inspector()).getByRole('button', { name: '倍速：1x' })).toBeVisible()
+      await pastDelay()
+      expect(savedTag('clip-1')).not.toContain('data-playback-rate')
+      await user.click(within(inspector()).getByRole('button', { name: '倍速：1x' }))
       await press(user, '倍速', '{End}')
       await waitSaved(() => expect(savedAttribute('clip-1', 'data-playback-rate')).toBe('10'))
       await press(user, '倍速', '{Home}')
@@ -773,6 +782,7 @@ describe('final-cut 编辑器 · 属性', () => {
         expect(slider(name)).toHaveAttribute('aria-disabled', 'true')
         expect(readout(name)).toBeDisabled()
       }
+      await user.click(within(inspector()).getByRole('button', { name: '倍速：1x' }))
       expect(slider('倍速')).not.toHaveAttribute('aria-disabled')
       const volume = savedAttribute('clip-1', 'data-volume')
       await press(user, '音量', '{End}')
@@ -845,7 +855,7 @@ describe('final-cut 编辑器 · 属性', () => {
     expect(savedTag('title-1')).not.toBe('')
   })
 
-  it('原片截取、音量与变速的滑杆上按 Delete、M 不动时间线，按方向键只改这一项', async () => {
+  it('原片截取、声音与节奏的滑杆上按 Delete、M 不动时间线，按方向键只改这一项', async () => {
     const user = await openWith([video({ src: URL_A, duration: 2_000 })])
     await shot(/^生成 A 镜头 1，/)
     await pick(user, 'A · 镜头 1')
@@ -854,6 +864,7 @@ describe('final-cut 编辑器 · 属性', () => {
     await waitFor(() => expect(panel.getByRole('slider', { name: '裁剪结尾' })).toBeVisible())
     panel.getByRole('slider', { name: '裁剪结尾' }).focus()
     await user.keyboard('{Delete}{Backspace}m')
+    await user.click(panel.getByRole('button', { name: '倍速：1x' }))
     panel.getByRole('slider', { name: '倍速' }).focus()
     await user.keyboard('{Delete}{Backspace}m')
     expect(clipButton()).toHaveAttribute('aria-pressed', 'true')
@@ -1166,15 +1177,15 @@ describe('final-cut 编辑器 · 属性', () => {
       return user
     }
 
-    it('选预设、从全部预设里换一个：各是一步撤销，链上只有现在这个预设的节点', async () => {
+    it('选预设、从更多风格里换一个：各是一步撤销，链上只有现在这个预设的节点', async () => {
       const user = await openVoiceClip()
       expect(styleTile('原声')).toHaveAttribute('aria-checked', 'true')
 
       await user.click(styleTile('纯净人声'))
       await waitSaved(() => expect(presetOf(fxChain())).toBe('voice-clean'))
       expect(styleTile('纯净人声')).toHaveAttribute('aria-checked', 'true')
-      // 从全部预设里换一个：只剩它的节点，快捷小块的最后一个换成它
-      await user.click(within(inspector()).getByRole('button', { name: '全部预设 (22)' }))
+      // 从更多风格里换一个：只剩它的节点，快捷小块的最后一个换成它
+      await user.click(within(inspector()).getByRole('button', { name: '更多风格' }))
       await user.click(screen.getByRole('menuitemradio', { name: /^花栗鼠/ }))
       await waitSaved(() => expect(presetOf(fxChain())).toBe('chipmunk'))
       expect(fxChain().nodes.every((node) => node.fromPreset === 'chipmunk')).toBe(true)
@@ -1433,6 +1444,7 @@ describe('final-cut 编辑器 · 属性', () => {
         const user = await openWith([video({ src: URL_A, duration: 2_000, automation: dipped })])
         await shot(/^生成 A 镜头 1，/)
         await pick(user, 'A · 镜头 1')
+        await user.click(within(inspector()).getByRole('button', { name: '倍速：1x' }))
         await user.click(within(inspector()).getByRole('button', { name: /^倍速 1x，/ }))
         const box = within(inspector()).getByRole('textbox', { name: '倍速' })
         await user.clear(box)

@@ -1727,7 +1727,7 @@ describe('final-cut 编辑器 · 分离音频', () => {
     }),
   ]
 
-  it('选中有声音的视频片段点「分离音频」：声音区最上面多一条「原声」行、选中原声，同步栏写口型同步、小标写联动；⇧⌘B 合并回视频', async () => {
+  it('选中有声音的视频片段点「分离音频」：声音区最上面多一条「原声」行、选中原声，同步卡写口型同步、小标写联动；⇧⌘B 合并回视频', async () => {
     const user = await openWith([
       video({ src: URL_A, duration: 2_000 }),
       audio({ start: 0, duration: 4_000 }),
@@ -1771,7 +1771,7 @@ describe('final-cut 编辑器 · 分离音频', () => {
     expect(savedTags()).toHaveLength(1)
   })
 
-  it('原声单独挪开了：时间线小标和同步栏写错开多少，视频片段那边合并置灰；「对齐画面」挪回去，联动仍关着', async () => {
+  it('原声单独挪开了：时间线小标和同步卡写错开多少，视频片段那边合并置灰；「对齐画面」挪回去，联动仍关着', async () => {
     const user = await openWith(pair(400))
     expect(clipOf('A · 镜头 1 · 原声')).toHaveAccessibleName(/，错开 \+0\.40s$/)
 
@@ -1797,7 +1797,8 @@ describe('final-cut 编辑器 · 分离音频', () => {
   it('联动开着：改原声的倍速两段一起改；删掉其中一段时两段都删', async () => {
     const user = await openWith(pair())
     await select(user, 'A · 镜头 1 · 原声')
-    await user.click(within(inspector()).getByRole('button', { name: /^倍速 1x/ }))
+    await user.click(within(inspector()).getByRole('button', { name: '倍速：1x' }))
+    await user.click(within(inspector()).getByRole('button', { name: /^倍速 1x，/ }))
     await user.keyboard('2{Enter}')
     await waitSaved(() =>
       expect(savedTags().map((tag) => tag.includes('data-playback-rate="2"'))).toEqual([
