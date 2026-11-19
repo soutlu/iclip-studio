@@ -377,16 +377,26 @@ describe('final-cut 编辑器 · 贴片、场景的文字分语言', () => {
     expect(within(inspector()).getByRole('button', { name: '文字：固定' })).toBeVisible()
   })
 
-  it('时间线上贴片片段写着「名字 · 文字」，文字是显示着的语言的（没翻的写原文）；改字、换语言后跟着变', async () => {
+  it('时间线上贴片片段不写字，悬停提示写着「名字 · 文字」，文字是显示着的语言的（没翻的写原文）；改字、换语言后跟着变', async () => {
     const user = await open(true)
-    // 片段的名字（读屏读的）还是原来的名字
-    const onClip = (name: string, text: string) =>
-      within(screen.getByRole('group', { name: new RegExp(`^${name}，`) })).getByText(text)
-    expect(onClip('中文标题', '中文标题 · 新品上市')).toBeVisible()
-    expect(onClip('季标', '季标 · NEW IN · AW26')).toBeVisible()
+    // 片段的名字（读屏读的）还是原来的名字；片段上不写字，名字和文字在悬停提示里
+    const tipOf = async (name: string) => {
+      const clip = screen.getByRole('group', { name: new RegExp(`^${name}，`) })
+      expect(clip).toHaveTextContent(/^$/)
+      const body = within(clip).getByRole('button', { name: new RegExp(`^选中：${name}，`) })
+      await user.hover(body)
+      const tip = (await screen.findByRole('tooltip')).textContent
+      // jsdom 里指针移开时提示还留在离开的缓冲区里，按 Esc 收起
+      await user.unhover(body)
+      await user.keyboard('{Escape}')
+      await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull())
+      return tip
+    }
+    expect(await tipOf('中文标题')).toBe('中文标题 · 新品上市')
+    expect(await tipOf('季标')).toBe('季标 · NEW IN · AW26')
 
     await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
-    expect(onClip('中文标题', '中文标题 · 新品上市')).toBeVisible()
+    expect(await tipOf('中文标题')).toBe('中文标题 · 新品上市')
     await user.click(
       within(within(panel()).getByRole('group', { name: '字幕或组件文字' })).getByRole('button', {
         name: '组件文字 2',
@@ -394,10 +404,10 @@ describe('final-cut 编辑器 · 贴片、场景的文字分语言', () => {
     )
     await user.type(within(texts()).getByRole('textbox', { name: '中文标题 文字' }), 'New in')
     await waitSaved(() => expect(savedEnglish()).toEqual({ txt_zh_text: 'New in' }))
-    expect(onClip('中文标题', '中文标题 · New in')).toBeVisible()
+    expect(await tipOf('中文标题')).toBe('中文标题 · New in')
 
     await user.click(within(languages()).getByRole('button', { name: '原文' }))
-    expect(onClip('中文标题', '中文标题 · 新品上市')).toBeVisible()
+    expect(await tipOf('中文标题')).toBe('中文标题 · 新品上市')
   })
 })
 

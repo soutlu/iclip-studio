@@ -1345,9 +1345,9 @@ test('多选：Shift 点选两个片段一起删掉再撤销回来；框选跨�
     return box
   }
 
-  // 选中着片段、又开着选择工具的菜单时按 Esc：先关菜单，选中不变
+  // 选中着片段、又开着剪辑命令的菜单时按 Esc：先关菜单，选中不变
   await clipOf(3).click()
-  await toolbar.getByRole('button', { name: /^选择工具/ }).click()
+  await toolbar.getByRole('button', { name: '更多剪辑命令' }).click()
   await expect(page.getByRole('menu')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.getByRole('menu')).toHaveCount(0)
@@ -1424,11 +1424,12 @@ test('多选：Shift 点选两个片段一起删掉再撤销回来；框选跨�
   await page.keyboard.press(']')
   await expect.poll(selectedShots).toEqual([3, 4])
 
-  // 缩放到选中：读数变成百分比；镜头 3 到镜头 4 这一段完整露出，起点离时间区左边 24 像素
-  await expect(toolbar.getByText('适应', { exact: true })).toBeVisible()
+  // 缩放到选中：缩放滑杆的读数变成百分比；镜头 3 到镜头 4 这一段完整露出，起点离时间区左边 24 像素
+  const zoom = toolbar.getByRole('slider', { name: '时间线缩放' })
+  await expect(zoom).toHaveAttribute('aria-valuetext', '适应')
   const fitted = await boxOf(firstRow)
   await toolbar.getByRole('button', { name: '缩放到选中的片段' }).click()
-  await expect(toolbar.getByText(/^\d+%$/)).toBeVisible()
+  await expect(zoom).toHaveAttribute('aria-valuetext', /^\d+%$/)
   const start = await boxOf(clipOf(3))
   const end = await boxOf(clipOf(4))
   expect(Math.abs(start.x - fitted.x - 24)).toBeLessThan(1.5)
@@ -1727,31 +1728,34 @@ test('缩放时播放头留在屏幕上原来的地方；滚到看不见它以�
     .toBe(true)
   expect(Math.abs(resting - (row.x + row.width * 0.3))).toBeLessThan(2)
 
-  // 放大两档、再缩小一档：播放头在屏幕上不动
-  await toolbar.getByRole('button', { name: '放大时间线' }).click()
-  await expect(toolbar.getByText('200%')).toBeVisible()
+  // 滑杆放大两档、再缩小一档：播放头在屏幕上不动
+  const zoom = toolbar.getByRole('slider', { name: '时间线缩放' })
+  const zoomed = async (key: 'PageUp' | 'PageDown') => {
+    const before = await zoom.getAttribute('aria-valuetext')
+    await zoom.press(key)
+    await expect(zoom).not.toHaveAttribute('aria-valuetext', before ?? '')
+  }
+  await zoomed('PageUp')
   await expect.poll(playheadX).toBeCloseTo(resting, 0)
-  await toolbar.getByRole('button', { name: '放大时间线' }).click()
-  await expect(toolbar.getByText('400%')).toBeVisible()
+  await zoomed('PageUp')
   await expect.poll(playheadX).toBeCloseTo(resting, 0)
-  await toolbar.getByRole('button', { name: '缩小时间线' }).click()
-  await expect(toolbar.getByText('200%')).toBeVisible()
+  await zoomed('PageDown')
   await expect.poll(playheadX).toBeCloseTo(resting, 0)
 
-  // 横向滚到最右边，播放头滚出去了；再缩小一档，它回到时间区中间
+  // 横向滚到最右边，播放头滚出去了；点「适应宽度」整条排得下，它回到原处
   await tracks.evaluate((element) => {
     element.scrollLeft = element.scrollWidth
   })
   expect(await playheadX()).toBeLessThan(row.x)
-  await toolbar.getByRole('button', { name: '缩小时间线' }).click()
-  await expect(toolbar.getByText('100%')).toBeVisible()
+  await toolbar.getByRole('button', { name: '适应宽度' }).click()
+  await expect(zoom).toHaveAttribute('aria-valuetext', '适应')
   await expect.poll(async () => Math.abs((await playheadX()) - resting)).toBeLessThan(2)
-  await toolbar.getByRole('button', { name: '放大时间线' }).click()
+  // 放大一档、滚到最右边，再放大一档：播放头不在看得见的地方，缩放后它回到时间区中间
+  await zoomed('PageUp')
   await tracks.evaluate((element) => {
     element.scrollLeft = element.scrollWidth
   })
-  await toolbar.getByRole('button', { name: '放大时间线' }).click()
-  await expect(toolbar.getByText('400%')).toBeVisible()
+  await zoomed('PageUp')
   await expect
     .poll(async () => Math.abs((await playheadX()) - (row.x + row.width / 2)))
     .toBeLessThan(16)
