@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import type { z } from 'zod'
+import type { UserModelGroupIn, UserPatchIn } from '@/shared/api/generated/types.gen'
 import {
   zConversationIn,
   zTaskCreateIn,
@@ -23,7 +24,7 @@ import {
   mockMcpConnectionState,
 } from './mcp-connections'
 import { mcpServerHandlers, mockMcpUserServers } from './mcp-servers'
-import { modelProviderHandlers } from './model-providers'
+import { mockModelGroups, modelProviderHandlers } from './model-providers'
 import { mockAuthUser, mockGovernor } from './auth-user'
 import {
   addMockCollection,
@@ -149,7 +150,11 @@ export const resetMockTasks = () => {
 
 export const mockUsers: MockUser[] = []
 
-export const addMockUser = (displayName: string, id = crypto.randomUUID()) => {
+export const addMockUser = (
+  displayName: string,
+  id = crypto.randomUUID(),
+  overrides: Partial<MockUser> = {},
+) => {
   const user: MockUser = {
     ...mockAuthUser,
     displayName,
@@ -158,13 +163,32 @@ export const addMockUser = (displayName: string, id = crypto.randomUUID()) => {
     permissions: [PERMISSION.agentRead, PERMISSION.agentRun],
     roles: ['editor'],
     username: id.slice(0, 8),
+    ...overrides,
   }
   mockUsers.push(user)
   return user
 }
 
+// 「设置 → 用户」里改的角色和配置组按用户 id 记在这里，不改共用的 mock 账号对象
+const mockUserEdits = new Map<string, Partial<MockUser>>()
+
+const listedUsers = () =>
+  [mockAuthUser, mockGovernor, ...mockUsers].map((user) => ({
+    ...user,
+    ...mockUserEdits.get(user.id),
+  }))
+
+const editMockUser = (id: string, changes: Partial<MockUser>) => {
+  if (!listedUsers().some((user) => user.id === id)) {
+    return HttpResponse.json({ detail: '没有这个用户' }, { status: 404 })
+  }
+  mockUserEdits.set(id, { ...mockUserEdits.get(id), ...changes })
+  return HttpResponse.json({ user: listedUsers().find((user) => user.id === id) })
+}
+
 export const resetMockUsers = () => {
   mockUsers.length = 0
+  mockUserEdits.clear()
 }
 
 const auditScope = (query: URLSearchParams) => {
@@ -209,13 +233,35 @@ export const handlers = [
     const query = new URL(request.url).searchParams
     const page = Number(query.get('page') ?? 1)
     const pageSize = Number(query.get('pageSize') ?? 200)
-    const items = [mockAuthUser, mockGovernor, ...mockUsers]
+    const items = listedUsers()
     return HttpResponse.json({
       items: items.slice((page - 1) * pageSize, page * pageSize),
       page,
       pageSize,
       total: items.length,
     })
+  }),
+
+  http.patch<{ id: string }>('*/api/users/:id', async ({ params, request }) => {
+    if (params.id === activeUserId()) {
+      return HttpResponse.json({ detail: '不能修改自己的授权' }, { status: 400 })
+    }
+    const body = (await request.json()) as UserPatchIn
+    return editMockUser(params.id, body.roles ? { roles: body.roles } : {})
+  }),
+
+  http.put<{ id: string }>('*/api/users/:id/model-group', async ({ params, request }) => {
+    const { modelGroup } = (await request.json()) as UserModelGroupIn
+    const configured: readonly string[] = mockModelGroups
+    if (modelGroup !== null && !configured.includes(modelGroup)) {
+      return HttpResponse.json(
+        {
+          detail: `配置组 ${modelGroup} 不在部署配置的 model_groups 里，可选的组：${configured.join('、')}`,
+        },
+        { status: 422 },
+      )
+    }
+    return editMockUser(params.id, { modelGroup })
   }),
 
   http.get('*/api/conversations/audit', ({ request }) => {

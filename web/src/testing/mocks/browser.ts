@@ -10,6 +10,7 @@ import {
   handlers,
   mockGovernor,
   shareMockSession,
+  type MockUser,
 } from './handlers'
 import { mcpExpiredShowcase, seedMockMcpConnections } from './mcp-connections'
 import { seedDemoTasks } from './demo-tasks'
@@ -110,7 +111,43 @@ const governorDone = addMockConversation(
 governorDone.activity = { ...governorDone.activity, lastTurnReason: 'completed' }
 governorDone.lastRunId = 'run-governor-1'
 
-const wang = addMockUser('小王')
+const department = (id: number, name: string) => ({
+  id,
+  leaderUserId: null,
+  leaderUserUid: '',
+  name,
+  order: null,
+  parentId: null,
+  parentUid: '',
+  source: 'feishu',
+  type: 'department',
+  uid: `od-${id}`,
+})
+
+const wang = addMockUser('小王', undefined, { departments: [department(1, '内容中心')] })
+
+// 「设置 → 用户」的样例：不同角色和配置组，一个长名字看折行，人数够列表滚动
+const sampleUsers: [string, Partial<MockUser>][] = [
+  ['李思远', { departments: [department(2, '市场部')], modelGroup: 'mkt', roles: ['admin'] }],
+  ['陈晓', { departments: [department(3, '电商运营部')], modelGroup: 'ecom' }],
+  ['赵一鸣', { roles: ['viewer'] }],
+  [
+    '欧阳慕容雪晴',
+    {
+      departments: [
+        department(4, '华东区域新零售事业部内容中心短视频组'),
+        department(1, '内容中心'),
+      ],
+      modelGroup: 'mkt',
+    },
+  ],
+  ['周宁', { departments: [department(2, '市场部')], roles: ['viewer', 'editor'] }],
+  ['孙悦', { departments: [department(3, '电商运营部')], modelGroup: 'ecom', roles: ['viewer'] }],
+  ['吴桐', { departments: [department(1, '内容中心')] }],
+  ['郑佳', { roles: ['viewer'] }],
+  ['冯磊', { departments: [department(2, '市场部')], roles: ['admin'] }],
+]
+for (const [displayName, overrides] of sampleUsers) addMockUser(displayName, undefined, overrides)
 const wangRunning = addMockConversation('小王 · 秋季新品短片', undefined, wang.id)
 wangRunning.activity = { busy: true, lastTurnReason: null, pendingInteraction: 'none' }
 const wangDone = addMockConversation(

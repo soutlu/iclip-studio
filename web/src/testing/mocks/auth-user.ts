@@ -1,3 +1,4 @@
+import type { CueAuthUser } from '@/shared/auth/cue-auth.types'
 import { PERMISSION } from '@/shared/auth/permissions'
 
 const EDITOR_PERMISSIONS: string[] = [
@@ -13,7 +14,10 @@ const EDITOR_PERMISSIONS: string[] = [
   PERMISSION.tasksWrite,
 ]
 
-export const mockAuthUser = {
+/** 接口里的用户记录；mock 账号都有用户名。 */
+type MockAuthUser = Omit<CueAuthUser, 'username'> & { username: string }
+
+export const mockAuthUser: MockAuthUser = {
   avatarUrl: '',
   city: '',
   createdAt: null,
