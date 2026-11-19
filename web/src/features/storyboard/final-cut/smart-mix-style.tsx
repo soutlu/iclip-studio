@@ -1,11 +1,6 @@
 import { useId } from 'react'
-import {
-  audioFxPresetsByFamily,
-  HF_AUDIO_FX_PRESET_FAMILIES,
-  HF_AUDIO_FX_PRESETS,
-} from '@hyperframes/core/audio-fx-presets'
 import { cn } from '@/shared/lib/utils'
-import { Icon } from '@/shared/icons'
+import { Icon, type IconName } from '@/shared/icons'
 import {
   MenuRadioGroup,
   MenuRadioItem,
@@ -16,16 +11,33 @@ import {
 } from '@/shared/ui/menu'
 import type { AudioRole } from './audio-role'
 import { PRESET_FAMILY_NAMES, PRESET_NAMES } from './mix-fx-names'
-import { quickPresets } from './mix-fx'
+import { morePresets, quickPresets } from './mix-fx'
 
 // 菜单的单选值要是文字：「原声」用一个不会是预设编号的值
 const ORIGINAL = ''
 
 const presetLabel = (id: string) => PRESET_NAMES[id]?.label ?? id
 
+// 快捷小块上的图标：有专门图形的预设用自己的，别的和「原声」一样画一条声波
+const PRESET_ICONS: Readonly<Record<string, IconName>> = {
+  'lofi-tape': 'final-cut-preset-lofi-tape',
+  'room-natural': 'final-cut-preset-room-natural',
+  'room-tight': 'final-cut-preset-room-tight',
+  'rumble-cut': 'final-cut-preset-rumble-cut',
+  'harsh-tame': 'final-cut-preset-harsh-tame',
+  'voice-clean': 'final-cut-voice',
+  'voice-broadcast': 'final-cut-preset-voice-broadcast',
+  'voice-warm': 'final-cut-preset-voice-warm',
+  hall: 'final-cut-preset-hall',
+  'slap-echo': 'final-cut-preset-slap-echo',
+}
+
+const presetIcon = (id: string | null): IconName =>
+  (id === null ? undefined : PRESET_ICONS[id]) ?? 'final-cut-preset-original'
+
 /**
- * 「音色风格」：一排快捷小块（「原声」加这个角色常用的五个预设），右上「全部预设 (N)」点开按四类列出所有预设。
- * 单选，现在选中的是 `active`（null 是「原声」），选了交给 `onPick`。
+ * 「音色风格」：三列快捷小块（「原声」加这个角色常用的五个预设，图标加名字），右上「更多风格」点开按四类列出
+ * 小块里没有的预设，向上展开。单选，现在选中的是 `active`（null 是「原声」），选了交给 `onPick`。
  */
 export function MixStyle({
   role,
@@ -40,40 +52,37 @@ export function MixStyle({
   const tiles = [null, ...quickPresets(role, active)]
   return (
     <div className="wf-mix-block">
-      <div className="wf-mix-block-head">
-        <span className="wf-mix-block-label" id={labelId}>
+      <div className="wf-prop-title-row">
+        <span className="wf-prop-label" id={labelId}>
           音色风格
         </span>
         <MenuRoot>
           <MenuTrigger asChild>
-            <button className="wf-chip-btn ui-state ui-focus" type="button">
-              全部预设 ({HF_AUDIO_FX_PRESETS.length})
+            <button className="wf-chip-btn wf-mix-more ui-state ui-focus" type="button">
+              更多风格
               <Icon decorative name="final-cut-expand" size="xs" />
             </button>
           </MenuTrigger>
-          <MenuSurface align="end" aria-label="全部预设" className="wf-menu wf-mix-menu">
-            <MenuRadioGroup
-              onValueChange={(value) => onPick(value === ORIGINAL ? null : value)}
-              value={active ?? ORIGINAL}
-            >
-              <MenuRadioItem value={ORIGINAL}>原声（无风格预设）</MenuRadioItem>
-              {HF_AUDIO_FX_PRESET_FAMILIES.map((family) => (
+          <MenuSurface align="end" aria-label="更多风格" className="wf-menu wf-mix-menu" side="top">
+            {/* 小块里的都不在这里，单选的值仍是现在的预设：选中的那个在小块上 */}
+            <MenuRadioGroup onValueChange={onPick} value={active ?? ORIGINAL}>
+              {morePresets(role, active).map(({ family, ids }, index) => (
                 <div
                   aria-label={PRESET_FAMILY_NAMES[family]}
                   className="contents"
                   key={family}
                   role="group"
                 >
-                  <MenuSeparator />
+                  {index > 0 ? <MenuSeparator /> : null}
                   <div aria-hidden className="wf-mix-menu-label">
                     {PRESET_FAMILY_NAMES[family]}
                   </div>
-                  {audioFxPresetsByFamily(family).map((preset) => (
-                    <MenuRadioItem className="h-auto py-1.5" key={preset.id} value={preset.id}>
+                  {ids.map((id) => (
+                    <MenuRadioItem className="h-auto py-1.5" key={id} value={id}>
                       <span className="wf-mix-role-option">
-                        <span>{presetLabel(preset.id)}</span>
+                        <span>{presetLabel(id)}</span>
                         <span className="wf-mix-role-description">
-                          {PRESET_NAMES[preset.id]?.description}
+                          {PRESET_NAMES[id]?.description}
                         </span>
                       </span>
                     </MenuRadioItem>
@@ -98,7 +107,8 @@ export function MixStyle({
               role="radio"
               type="button"
             >
-              {id === null ? '原声' : presetLabel(id)}
+              <Icon decorative name={presetIcon(id)} size="sm" />
+              <span className="wf-mix-tile-name">{id === null ? '原声' : presetLabel(id)}</span>
             </button>
           )
         })}

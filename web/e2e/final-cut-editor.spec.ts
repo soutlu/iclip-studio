@@ -948,7 +948,8 @@ test('属性：音频片段拉满音量、打开循环播放写进文件；视�
     page,
     (html) => savedAttribute(html, 'video', 'data-playback-rate') === '2',
   )
-  await inspector.getByRole('button', { name: /^倍速 1x/ }).click()
+  await inspector.getByRole('button', { name: '倍速：1x' }).click()
+  await inspector.getByRole('button', { name: /^倍速 1x，/ }).click()
   await inspector.getByRole('textbox', { name: '倍速' }).fill('2')
   await inspector.getByRole('textbox', { name: '倍速' }).press('Enter')
   const html = htmlOf(await faster)

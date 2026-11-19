@@ -70,7 +70,7 @@ function Harness({
 const head = () => screen.getByRole('banner')
 
 describe('属性 · 分离出来的原声', () => {
-  it('「音量与变速」右上是「静音此段」，和头部的静音按钮是同一个状态', async () => {
+  it('「声音与节奏」右上是「静音此段」，和头部的静音按钮是同一个状态', async () => {
     const user = userEvent.setup()
     await renderWithProviders(<Harness initial={[VIDEO, ORIGINAL]} selectedId="orig" />)
     const mute = screen.getByRole('switch', { name: '静音此段' })

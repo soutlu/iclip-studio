@@ -4,13 +4,16 @@ import {
   serializeAudioFxChain,
   type HfAudioFxChain,
 } from '@hyperframes/core/audio-fx'
+import { HF_AUDIO_FX_PRESETS } from '@hyperframes/core/audio-fx-presets'
 import { describe, expect, it } from 'vitest'
+import type { AudioRole } from './audio-role'
 import { CARVE_SAMPLE_RATE, chainOf } from './carve'
 import { levellerAttributes } from './leveller'
 import {
   eqBandsOf,
   fineTuneSummary,
   fxEditAttributes,
+  morePresets,
   ownEffects,
   pitchOf,
   presetAmountOf,
@@ -103,6 +106,21 @@ describe('音色风格：单选的预设', () => {
     expect(quickPresets('sfx', null)).toEqual(quickPresets('music', null))
     expect(quickPresets('music', 'hall')).toEqual(quickPresets('music', null))
     expect(quickPresets('music', 'monster').at(-1)).toBe('monster')
+  })
+
+  it('更多风格：去掉快捷小块里已有的（连同换进小块的那个），剩下的按类列，空了的类不列', () => {
+    const listed = (role: AudioRole, active: string | null) =>
+      morePresets(role, active).flatMap(({ ids }) => ids)
+    const all = HF_AUDIO_FX_PRESETS.map((preset) => preset.id)
+    for (const role of ['voice', 'music'] as const) {
+      const tiles = quickPresets(role, null)
+      expect(listed(role, null).toSorted()).toEqual(
+        all.filter((id) => !tiles.includes(id)).toSorted(),
+      )
+    }
+    expect(listed('music', 'monster')).not.toContain('monster')
+    expect(listed('music', 'monster')).toContain('radio-am')
+    expect(morePresets('voice', null).every(({ ids }) => ids.length > 0)).toBe(true)
   })
 })
 

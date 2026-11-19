@@ -4,6 +4,7 @@ import { Icon } from '@/shared/icons'
 import { IconButton } from '@/shared/ui/button'
 import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { Switch } from '@/shared/ui/switch'
+import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { Dropdown } from './content-fields'
 import {
   paramAt,
@@ -29,8 +30,8 @@ const effectLabel = (type: string) =>
   EFFECT_NAMES[type]?.label ?? getAudioFxDef(type)?.label ?? type
 
 /**
- * 「串联效果器链」：用户自己加的效果，按加进去的顺序一行一个（开关、名字、移除，下面是它的参数）；压低、平稳音量、
- * 均衡、预设、升降调的节点不在这里。右上「+ 添加效果」点开能加的几种。参数照 core 的定义一个个列出来。
+ * 「串联效果器链」：用户自己加的效果，按加进去的顺序一块一个（序号、名字、开关、移除，下面是它的参数）；压低、
+ * 平稳音量、均衡、预设、升降调的节点不在这里。右上「+」点开能加的几种。参数照 core 的定义一个个列出来。
  */
 export function MixEffects({
   chain,
@@ -43,18 +44,28 @@ export function MixEffects({
 }) {
   const effects = ownEffects(chain)
   return (
-    <div className="wf-card">
+    <div className="wf-mix-sub">
       <div className="wf-prop-title-row">
-        <span className="wf-mix-card-title">
+        <span className="wf-mix-heading">
           串联效果器链 <span className="wf-mix-count">({effects.length})</span>
         </span>
         <MenuRoot>
-          <MenuTrigger asChild>
-            <button className="wf-chip-btn wf-mix-add ui-state ui-focus" type="button">
-              + 添加效果
-              <Icon decorative name="final-cut-expand" size="xs" />
-            </button>
-          </MenuTrigger>
+          <TooltipRoot>
+            <TooltipTrigger asChild>
+              <MenuTrigger asChild>
+                <button
+                  aria-label="添加效果"
+                  className="wf-tool wf-mix-add ui-state ui-focus"
+                  type="button"
+                >
+                  <Icon decorative name="final-cut-add" size="sm" />
+                </button>
+              </MenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent className="wf-tip" side="top">
+              添加效果
+            </TooltipContent>
+          </TooltipRoot>
           <MenuSurface align="end" aria-label="添加效果" className="wf-menu wf-mix-menu">
             {ADDABLE_EFFECTS.map((type) => (
               <MenuItem
@@ -84,6 +95,10 @@ export function MixEffects({
             role="group"
           >
             <div className="wf-mix-effect-head">
+              <span aria-hidden="true" className="wf-mix-effect-index">
+                {String(index + 1).padStart(2, '0')}
+              </span>
+              <span className="wf-mix-effect-name">{name}</span>
               <Switch
                 aria-label={`启用：${name}`}
                 checked={on}
@@ -91,7 +106,6 @@ export function MixEffects({
                   onChange((current) => withEffectEnabled(current, index, next))
                 }
               />
-              <span className="wf-mix-effect-name">{name}</span>
               <IconButton
                 label={`移除效果：${name}`}
                 name="final-cut-close"
@@ -118,7 +132,7 @@ export function MixEffects({
   )
 }
 
-/** 一个参数一行：数字是滑杆（范围、步长、单位照 core），枚举是下拉。 */
+/** 一个参数：数字是一条滑杆（范围、步长、单位照 core），枚举是名字在左、下拉在右的一行。 */
 function ParamRow({
   effect,
   param,
@@ -141,7 +155,7 @@ function ParamRow({
       label: names?.options?.[param.key]?.[option.value] ?? option.label,
     }))
     return (
-      <div className="wf-prop-row is-content">
+      <div className="wf-prop-field">
         <label className="wf-prop-label" htmlFor={id}>
           {label}
         </label>
@@ -157,24 +171,21 @@ function ParamRow({
   }
   const current = typeof value === 'number' ? value : param.default
   return (
-    <div className="wf-prop-row is-content">
-      <span className="wf-prop-label">{label}</span>
-      <SliderControl
-        format={(position) => paramText(param, paramAt(param, position))}
-        label={label}
-        max={paramPositions(param)}
-        min={0}
-        onCommit={(position) => onCommit(paramAt(param, position))}
-        onEditing={onEditing}
-        onText={(text) => {
-          const typed = parseParamText(text)
-          if (typed === null) return false
-          onCommit(snapParam(param, typed))
-          return true
-        }}
-        position={paramPosition(param, current)}
-        text={paramText(param, current)}
-      />
-    </div>
+    <SliderControl
+      format={(position) => paramText(param, paramAt(param, position))}
+      label={label}
+      max={paramPositions(param)}
+      min={0}
+      onCommit={(position) => onCommit(paramAt(param, position))}
+      onEditing={onEditing}
+      onText={(text) => {
+        const typed = parseParamText(text)
+        if (typed === null) return false
+        onCommit(snapParam(param, typed))
+        return true
+      }}
+      position={paramPosition(param, current)}
+      text={paramText(param, current)}
+    />
   )
 }
