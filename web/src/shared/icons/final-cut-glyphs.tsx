@@ -179,6 +179,8 @@ export const FINAL_CUT_GLYPHS = {
       <path d="m9.5 13.6 1.85 1.85 3.65-3.8" />
     </>,
   ),
+  // 「配乐」页签里 final-cut 正用着的那条音频
+  'final-cut-in-use': glyph(<path d="m5.2 12.6 4.4 4.4 9.2-9.6" />),
 
   // 播放控制
   'final-cut-play': glyph(
