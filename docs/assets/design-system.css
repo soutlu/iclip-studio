@@ -513,8 +513,9 @@ h1 {
 }
 
 .mp-well span.is-on {
+  border: 1px solid var(--color-card-edge);
   background: var(--color-card);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+  box-shadow: var(--shadow-xs);
   color: var(--color-on-surface);
   font-weight: 600;
 }
@@ -947,42 +948,15 @@ h1 {
   font-size: var(--text-caption);
 }
 
-.copy-table {
-  width: 100%;
-  margin-top: 24px;
-  border-collapse: collapse;
-  border-top: 1px solid var(--pg-line-strong);
-  font-size: var(--text-label);
+.rule-list a {
+  color: var(--p40);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--p40) 34%, transparent);
+  text-underline-offset: 2px;
 }
 
-.copy-table th,
-.copy-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--pg-line);
-  text-align: left;
-  vertical-align: top;
-}
-
-.copy-table th {
-  background: var(--n96);
-  color: var(--pg-ink);
-  font-size: var(--text-caption);
-  font-weight: 600;
-}
-
-.copy-table td:first-child {
-  width: 120px;
-  color: var(--pg-ink);
-  font-weight: 600;
-}
-
-.copy-table td:nth-child(2) {
-  color: var(--pg-ink-secondary);
-}
-
-.copy-table td:nth-child(3) {
-  color: var(--pg-ink-tertiary);
-  font-size: var(--text-caption);
+.rule-list a:hover {
+  text-decoration-color: currentcolor;
 }
 
 .footer {

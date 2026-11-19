@@ -47,7 +47,7 @@
   font-size: var(--text-label);
   font-variant-numeric: tabular-nums;
   font-weight: 500;
-  line-height: var(--text-label-line);
+  line-height: var(--text-label--line-height);
   transition: opacity var(--dur-m) var(--ease);
 }
 

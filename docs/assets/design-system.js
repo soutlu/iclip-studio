@@ -86,17 +86,21 @@ const semanticGroups = [
   {
     id: "tones",
     title: "Categorical & media tones",
-    description: "低饱和分类/媒体语义色（明暗成对换档，深浅均 ≥ AA；轨道、图标、图表、资产卡共用）",
+    description: "低饱和分类/媒体语义色（明暗成对换档，在卡片与凹槽底上均 ≥ AA；主要用于线条、波形与双色图标，实底徽标配 --color-on-tone）",
     families: [
       {
         name: "5 Tones",
         items: [
-          ["Slate · 镜头/原声", "tone-slate", "on-scrim"],
-          ["Teal · 配乐/字幕", "tone-teal", "on-scrim"],
-          ["Umber · 人声/稿件", "tone-umber", "on-scrim"],
-          ["Copper · 贴片/指向", "tone-copper", "on-scrim"],
-          ["Ochre · 场景/包络", "tone-ochre", "on-scrim"],
+          ["Slate · 镜头/原声", "tone-slate", "on-tone"],
+          ["Teal · 配乐/字幕", "tone-teal", "on-tone"],
+          ["Umber · 人声/稿件", "tone-umber", "on-tone"],
+          ["Copper · 贴片/指向", "tone-copper", "on-tone"],
+          ["Ochre · 场景/包络", "tone-ochre", "on-tone"],
         ],
+      },
+      {
+        name: "Pairing",
+        items: [["On Tone · 分类实底配字", "on-tone", "tone-slate"]],
       },
     ],
   },
@@ -267,8 +271,7 @@ const makeTokenCell = ([label, role, foreground], theme) => {
     `复制语义 token ${semanticToken}，${theme === "light" ? "浅色" : "深色"}映射 ${referenceLabel(`color-${role}`, theme)}`,
   );
   cell.style.setProperty("--cell-bg", `var(${semanticToken})`);
-  const fgRole = theme === "dark" && role.startsWith("tone-") ? "on-primary" : foreground;
-  cell.style.setProperty("--cell-fg", `var(--color-${fgRole})`);
+  cell.style.setProperty("--cell-fg", `var(--color-${foreground})`);
   cell.innerHTML = `
     <strong>${label}</strong>
     <code>${semanticToken}</code>

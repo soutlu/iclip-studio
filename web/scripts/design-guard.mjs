@@ -36,9 +36,21 @@ const RULES = [
   },
   {
     id: 'tailwind-default-shadow',
-    desc: 'Tailwind 默认阴影档（海拔只有 shadow-1 / 2 / 3 三档）',
+    desc: 'Tailwind 默认阴影档（应使用 shadow-1 / 2 / 3 / card / control-well 或 shadow-[var(--shadow-xs)]）',
     ext: ['.ts', '.tsx'],
     re: /(?:^|[\s'"`])shadow-(?:xs|sm|md|lg|xl|2xl)\b/g,
+  },
+  {
+    id: 'disallowed-font-weight-tsx',
+    desc: '超规字重（界面只用 400 font-normal / 500 font-medium / 600 font-semibold，禁用 650 与 700+）',
+    ext: ['.ts', '.tsx'],
+    re: /(?:^|[\s'"`:])font-(?:bold|extrabold|black|\[(?:650|[789]\d\d)\])\b/g,
+  },
+  {
+    id: 'disallowed-font-weight-css',
+    desc: 'CSS 超规字重（界面只用 400 / 500 / 600，禁用 bold / 650 / 700+）',
+    ext: ['.css'],
+    re: /font-weight:\s*(?:bold|bolder|650|[789]00)\b/g,
   },
   {
     id: 'tailwind-default-motion',

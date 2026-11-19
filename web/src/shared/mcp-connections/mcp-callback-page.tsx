@@ -168,7 +168,7 @@ function LinkMark({ outcome }: { outcome: Outcome['kind'] }) {
   const badge = BADGE[outcome]
   return (
     <div aria-hidden className="flex items-center">
-      <span className="grid size-12 shrink-0 place-items-center rounded-md bg-inverse-surface font-home-display text-title-lg font-bold text-inverse-on-surface italic">
+      <span className="grid size-12 shrink-0 place-items-center rounded-md bg-inverse-surface font-home-display text-title-lg font-semibold text-inverse-on-surface italic">
         i
       </span>
       <span className="relative w-16 border-t-[1.5px] border-dashed border-outline-variant">

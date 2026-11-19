@@ -107,12 +107,13 @@
         --color-on-secondary-fixed-variant: var(--n30);
         --color-on-tertiary-fixed: var(--t10);
         --color-on-tertiary-fixed-variant: var(--t30);
-        /* 低饱和分类/媒体语义色（明暗成对换档，深浅均达标 WCAG AA；轨道、双色图标、图表与资产徽标共用） */
-        --color-tone-slate: #375971;   /* 石板蓝：镜头 / 原声波形 / 图表次序列 / 图片分析 */
-        --color-tone-teal: #2f7768;    /* 松烟青：配乐波形 / 字幕 / 参考帧 / 音频韵律 */
-        --color-tone-umber: #8a6646;   /* 陶土棕：旁白人声 / 故事板稿件 / 暖调文档 */
-        --color-tone-copper: #b85324;  /* 赤陶橘：贴片图形 / 标注箭头 / 视觉指向 */
+        /* 低饱和分类/媒体语义色（明暗成对换档，在卡片与凹槽底上均达标 WCAG AA；轨道波形、双色图标与图表序列共用） */
+        --color-tone-slate: #375971;   /* 石板蓝：镜头 / 原声波形 / 图表次序列 */
+        --color-tone-teal: #2b6f60;    /* 松烟青：配乐波形 / 字幕 / 音频韵律 */
+        --color-tone-umber: #7e5c3e;   /* 陶土棕：旁白人声 / 暖调稿件 */
+        --color-tone-copper: #a6481c;  /* 赤陶橘：贴片图形 / 视觉指向 */
         --color-tone-ochre: var(--color-tertiary); /* 琥珀金：场景 / 避让包络线 / 吸附 / 警告 */
+        --color-on-tone: var(--n100);  /* 分类实底徽标配字（纯中性） */
         /* 状态层：透明度是契约，颜色随 on-surface 自动适配明暗 */
         --state-hover: 0.05;
         --state-hover-subtle: 0.03;
@@ -164,17 +165,8 @@
         --color-chip-border: var(--color-hairline);
         --color-thumb-fallback: var(--n80);
         --color-badge-border: var(--color-hairline);
-        --color-header-btn-bg: var(--n90);
-        --color-agent-log-bg: var(--n90);
-        --color-suggestion-bg: color-mix(in srgb, var(--color-on-surface) 5%, transparent);
-        --color-suggestion-border: var(--color-hairline);
-        --color-suggestion-badge: color-mix(in srgb, var(--color-on-surface) 20%, transparent);
 
         /* 聊天（软卡片转发至 --color-card / --shadow-card） */
-        --color-chat-panel-bg: var(--color-surface);
-        --color-chat-panel-bg-start: var(--n100);
-        --color-chat-panel-bg-end: var(--n95);
-        --color-chat-panel-border: var(--color-hairline);
         --color-chat-card-bg: var(--color-surface-container-lowest);
         --color-chat-soft-card: var(--color-card);
         --color-chat-soft-card-edge: var(--color-card-edge);
@@ -184,12 +176,9 @@
         --color-chat-muted-text: var(--color-on-surface-faint);
         --color-chat-user-bg: var(--color-surface-container-low);
         --color-chat-inline-bg: color-mix(in srgb, var(--n70) 10%, transparent);
-        --color-chat-inline-border: var(--color-hairline);
         --color-chat-chip-bg: color-mix(in srgb, var(--n70) 9%, transparent);
-        --color-chat-chip-border: var(--color-hairline);
         --color-chat-code-bg: color-mix(in srgb, var(--n70) 9%, transparent);
         --color-chat-code-block-bg: var(--n95);
-        --color-chat-code-border: var(--color-hairline);
         --color-chat-link-text: var(--color-primary);
         --color-chat-link-border: color-mix(in srgb, var(--color-primary) 34%, transparent);
         --color-chat-status-success: var(--color-primary);
@@ -197,39 +186,21 @@
         --color-chat-status-running: var(--color-primary);
         --color-chat-hairline: var(--color-hairline);
         --color-chat-scrollbar-thumb: color-mix(in srgb, var(--color-on-surface) 12%, transparent);
-        --shadow-chat-panel: 0 20px 48px rgba(0, 0, 0, 0.18);
         --shadow-hairline-bottom: inset 0 -1px 0 var(--color-hairline);
 
-        /* 画布与故事板工作台（文字与分隔线统一归位至纯中性语义） */
-        --color-canvas-card-bg: var(--color-surface-container-lowest);
-        --color-canvas-card-text: var(--color-on-surface);
-        --color-canvas-label-text: var(--n50);
+        /* 故事板与放映舞台（浅深皆为暗场舞台，画面是视觉重心） */
         --color-storyboard-stage: #161616;
         --color-storyboard-stage-line: color-mix(in srgb, var(--n100) 6%, transparent);
-        --shadow-storyboard-media: 0 1px 2px rgba(0, 0, 0, 0.07), 0 10px 22px -12px rgba(0, 0, 0, 0.2);
-        --shadow-storyboard-hero: 0 2px 4px rgba(0, 0, 0, 0.08), 0 18px 34px -14px rgba(0, 0, 0, 0.28);
-        --shadow-storyboard-sidebar-left: 12px 0 24px -18px color-mix(in srgb, var(--color-on-surface) 28%, transparent);
-        --shadow-storyboard-sidebar-right: -12px 0 24px -18px color-mix(in srgb, var(--color-on-surface) 28%, transparent);
-        --storyboard-node-shadow: 0 35px 96px rgba(0, 0, 0, 0.22);
-        --storyboard-node-surface: var(--n99);
-        --storyboard-node-selected-surface: var(--n95);
-        --storyboard-node-border: var(--storyboard-node-surface);
-        --storyboard-node-cover-bg: var(--storyboard-node-surface);
-        --storyboard-node-preview-bg: var(--storyboard-node-surface);
-        --storyboard-node-screen-empty: var(--storyboard-node-surface);
-        --storyboard-node-script-surface: var(--storyboard-node-surface);
-        --storyboard-node-tool-surface: var(--storyboard-node-surface);
-        --storyboard-node-panel-divider: var(--color-hairline);
-        --storyboard-node-ink: var(--color-on-surface);
-        --storyboard-node-muted: color-mix(in srgb, var(--color-on-surface) 44%, transparent);
-        --storyboard-node-muted-strong: color-mix(in srgb, var(--color-on-surface) 56%, transparent);
-        --storyboard-node-preview-tool-text: color-mix(in srgb, var(--color-on-surface) 74%, transparent);
 
-        /* 数据看板（卡片转发至 --color-card / --shadow-card） */
+        /* 数据看板与图表（卡片转发至 --color-card / --shadow-card；分类色转发至 --color-tone-*） */
         --color-dashboard-bg: var(--n96);
         --color-dashboard-card: var(--color-card);
         --color-dashboard-card-edge: var(--color-card-edge);
         --shadow-dashboard-card: var(--shadow-card);
+        --color-chart-1: var(--color-primary);
+        --color-chart-2: var(--color-tone-slate);
+        --color-chart-3: var(--color-tone-ochre);
+        --color-chart-4: var(--color-tone-teal);
         --color-chart-grid: color-mix(in srgb, var(--color-on-surface) 7%, transparent);
         --color-chart-inactive: color-mix(in srgb, var(--color-on-surface) 4%, transparent);
         --color-chart-neutral: var(--n80);
@@ -261,89 +232,14 @@
         --color-code-literal: #1d6f7d;
         --color-code-guide: color-mix(in srgb, var(--color-on-surface) 9%, transparent);
 
-        /* 存量内容别名转发（已接入 ② 层 --color-tone-*，随主题自动换档） */
-        --color-reference-image: var(--n50);
-        --color-reference-video: var(--color-tone-slate);
-        --color-reference-audio: var(--color-primary);
-        --color-reference-note: var(--color-tone-ochre);
-        --color-reference-arrow: var(--color-tone-copper);
-        --color-reference-brush: var(--color-tone-umber);
-        --color-reference-frame: var(--color-tone-teal);
-        --color-on-reference: var(--color-on-primary);
-        --color-chart-1: var(--color-primary);
-        --color-chart-2: var(--color-tone-slate);
-        --color-chart-3: var(--color-tone-ochre);
-        --color-chart-4: var(--color-tone-teal);
-        --color-artifact-brief: var(--color-tone-ochre);
-        --color-artifact-image-analysis: var(--color-tone-slate);
-        --color-artifact-markdown: var(--n50);
-        --color-artifact-storyboard: var(--color-tone-umber);
-        --color-artifact-ui-card: var(--color-tone-copper);
-        --color-artifact-video-prompt: var(--color-tone-teal);
-        --color-artifact-rail-bg: #101318;
-
         /* ===== ③ 媒体遮罩（压在影像画面上，明暗不变） ===== */
-        --storyboard-node-timeline-badge: rgba(10, 10, 10, 0.68);
-        --storyboard-node-empty-preview-bg: var(--n0);
         --color-on-scrim: var(--n100);
         --media-scrim-cover: linear-gradient(180deg, rgba(0, 0, 0, 0.16) 0%, rgba(0, 0, 0, 0.52) 100%);
         --media-scrim-photo: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.72) 100%);
         --media-scrim-photo-strong: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.24) 28%, rgba(0, 0, 0, 0.82) 100%);
-        --media-vignette: radial-gradient(circle at center, rgba(255, 255, 255, 0.18) 0%, rgba(0, 0, 0, 0.02) 36%, rgba(0, 0, 0, 0.26) 100%);
-        --media-gloss: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(0, 0, 0, 0.16) 100%);
-
-        /* ===== 存量特化纸面与监控浮窗（后续迁出至模块局部样式；新功能禁止新增此类全局色） ===== */
-        --color-brief-surface: #f7f1e8;
-        --color-brief-surface-bright: #fffdf8;
-        --color-brief-surface-muted: rgba(255, 255, 255, 0.66);
-        --color-brief-border: rgba(124, 112, 95, 0.18);
-        --color-brief-ink: #1f2522;
-        --color-brief-ink-secondary: #4c5550;
-        --color-brief-ink-soft: #5d655f;
-        --color-brief-amber: #6b4e16;
-        --color-brief-amber-soft: rgba(248, 224, 168, 0.28);
-        --color-brief-sage: #29543a;
-        --color-brief-sage-soft: rgba(74, 124, 89, 0.12);
-        --color-brief-danger: #8f2f2c;
-        --color-brief-danger-soft: rgba(184, 50, 48, 0.1);
-        --color-brief-board-1: #f3a8b8;
-        --color-brief-board-2: #eee8d2;
-        --color-brief-board-3: #92b88e;
-        --color-brief-board-4: #f8f0c4;
-        --color-brief-board-5: #ffcd00;
-        --color-brief-board-white: var(--n100);
-        --color-sb-table-background: #faf6f0;
-        --color-sb-table-surface: #f5f1ea;
-        --color-sb-table-prompt-surface: rgba(255, 255, 255, 0.82);
-        --color-sb-table-line: rgba(116, 121, 110, 0.2);
-        --color-sb-table-badge-border: rgba(116, 121, 110, 0.16);
-        --color-sb-table-text: #121614;
-        --color-sb-table-text-secondary: #1f2522;
-        --color-sb-table-tertiary: #4a3818;
-        --color-sb-table-tertiary-soft: rgba(112, 92, 48, 0.12);
-        --color-sb-table-danger: #8f2f2c;
-        --color-sb-table-danger-soft: rgba(184, 50, 48, 0.12);
-        --color-sb-table-stage-hook-bg: rgba(112, 92, 48, 0.14);
-        --color-sb-table-stage-hook-text: #3d2c11;
-        --color-sb-table-stage-proof-bg: rgba(37, 82, 145, 0.12);
-        --color-sb-table-stage-proof-text: #183a64;
-        --color-sb-table-stage-demo-bg: rgba(74, 124, 89, 0.14);
-        --color-sb-table-stage-demo-text: #1f462b;
-        --color-sb-table-stage-closure-bg: rgba(31, 37, 34, 0.08);
-        --color-sb-table-stage-closure-text: #1f2522;
-        --color-sb-table-stage-neutral-bg: rgba(74, 124, 89, 0.1);
-        --color-sb-table-stage-neutral-text: #254332;
-        --storyboards-monitor-bg: rgba(21, 24, 29, 0.96);
-        --storyboards-monitor-border: rgba(216, 177, 106, 0.28);
-        --storyboards-monitor-gold: #d8b16a;
-        --storyboards-monitor-complete: #3ecf8e;
-        --storyboards-monitor-running: #2dd4bf;
-        --storyboards-monitor-line: #363c48;
-        --storyboards-monitor-muted: #9aa0ab;
-        --storyboards-monitor-text: #f0ede4;
 
         /* ===== ④ 尺度 ===== */
-        /* 字阶（--text-ui 13/18 覆盖高密度工作台与属性面板；-line 为存量 CSS 别名） */
+        /* 字阶（--text-ui 13/18 覆盖高密度工作台与属性面板） */
         --text-caption: 11px; --text-caption--line-height: 16px;
         --text-label: 12px; --text-label--line-height: 16px;
         --text-body-sm: 12px; --text-body-sm--line-height: 16px;
@@ -355,16 +251,6 @@
         --text-headline-lg: 32px; --text-headline-lg--line-height: 40px;
         --text-display-sm: 45px; --text-display-sm--line-height: 52px;
         --text-display: 57px; --text-display--line-height: 64px;
-        --text-canvas-label: 18px; --text-canvas-body: 20px; --text-canvas-body-lg: 22px;
-        --text-canvas-title-sm: 24px; --text-canvas-title: 26px; --text-canvas-title-lg: 28px;
-        --text-display-line: var(--text-display--line-height, 64px);
-        --text-headline-line: var(--text-headline--line-height, 36px);
-        --text-title-line: var(--text-title--line-height, 24px);
-        --text-body-line: var(--text-body--line-height, 20px);
-        --text-ui-line: var(--text-ui--line-height, 18px);
-        --text-body-sm-line: var(--text-body-sm--line-height, 16px);
-        --text-label-line: var(--text-label--line-height, 16px);
-        --text-caption-line: var(--text-caption--line-height, 16px);
         /* 圆角（严守 4px 同心嵌套步进） */
         --radius-none:0; --radius-xs:4px; --radius-sm:8px; --radius-md:12px; --radius-lg:16px;
         --radius-xl:20px; --radius-2xl:28px; --radius-3xl:32px; --radius-4xl:48px; --radius-full:9999px;
@@ -404,7 +290,6 @@
         --layout-app-sidebar-collapsed-width: 56px;
         --layout-app-content-rail-width: 40px;
         --layout-app-resize-handle-width: 8px;
-        --layout-app-right-panel-width: 460px;
         --layout-app-workbench-width: 820px;
         --layout-app-workbench-min-width: 560px;
         --layout-app-chat-min-width: 400px;
@@ -412,19 +297,6 @@
         --layout-list-page-gutter: clamp(32px, calc(7.8571vw - 81.143px), 120px);
         --layout-list-page-max: 2400px;
         --layout-dialog-header-height: 52px;
-        --layout-project-header-height: 72px;
-        --layout-project-header-inline-start: 24px;
-        --layout-project-header-inline-end: 24px;
-        --layout-project-stage-padding: 20px;
-        --layout-project-composer-max: 582px;
-        --layout-project-composer-min: 0px;
-        --layout-project-composer-fluid: calc(100vw - 32px);
-        --layout-project-header-max-left: 375px;
-        --layout-project-agent-log-width: 280px;
-        --layout-project-agent-log-viewport-height: clamp(220px, 40vh, 320px);
-        --layout-project-composer-panel-reserve: 180px;
-        --layout-project-chat-panel-bottom-safe-area: calc(var(--layout-project-stage-padding) + var(--layout-project-composer-panel-reserve) + var(--layout-project-stage-padding));
-        --layout-project-chat-panel-height-offset: calc(var(--layout-project-header-height) + var(--layout-project-stage-padding) + var(--layout-project-chat-panel-bottom-safe-area));
         font-family: var(--font-cue-ui);
       }
 
@@ -470,12 +342,13 @@
         --shadow-card: none;
         --color-control-well: var(--n4);
         --shadow-control-well: inset 0 1px 3px rgba(0, 0, 0, 0.45);
-        /* 低饱和分类/媒体语义色（深色卡面 #202020 上全员 ≥ 5.4:1） */
+        /* 低饱和分类/媒体语义色（深色卡面 #202020 上全员 ≥ 5.4:1，配字转纯中性深墨 n10） */
         --color-tone-slate: #6d9ab8;
         --color-tone-teal: #56b39f;
         --color-tone-umber: #c49c78;
         --color-tone-copper: #e28658;
         --color-tone-ochre: var(--t70);
+        --color-on-tone: var(--n10);
         /* 反色与通用领域换档 */
         --color-inverse-surface: var(--n90);
         --color-inverse-on-surface: var(--n20);
@@ -486,24 +359,11 @@
         --color-danger-border: var(--e60);
         --color-danger-text: var(--e80);
         --color-thumb-fallback: var(--n30);
-        --color-header-btn-bg: var(--n22);
-        --color-agent-log-bg: var(--n22);
-        --color-chat-panel-bg-start: var(--n12);
-        --color-chat-panel-bg-end: var(--n6);
         --color-chat-muted-text: var(--color-on-surface-faint);
         --color-chat-user-bg: var(--color-surface-container-high);
         --color-chat-code-block-bg: var(--n12);
-        --shadow-chat-panel: 0 20px 48px rgba(0, 0, 0, 0.5);
-        --color-canvas-label-text: var(--n60);
         --color-storyboard-stage: #0a0a0a;
         --color-storyboard-stage-line: color-mix(in srgb, var(--n100) 8%, transparent);
-        --shadow-storyboard-media: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 22px -12px rgba(0, 0, 0, 0.6);
-        --shadow-storyboard-hero: 0 2px 4px rgba(0, 0, 0, 0.3), 0 18px 34px -14px rgba(0, 0, 0, 0.7);
-        --shadow-storyboard-sidebar-left: 12px 0 24px -18px rgba(0, 0, 0, 0.6);
-        --shadow-storyboard-sidebar-right: -12px 0 24px -18px rgba(0, 0, 0, 0.6);
-        --storyboard-node-shadow: 0 35px 96px rgba(0, 0, 0, 0.6);
-        --storyboard-node-surface: var(--n12);
-        --storyboard-node-selected-surface: var(--n17);
         --color-dashboard-bg: var(--n6);
         --color-chart-neutral: var(--n40);
         --color-chart-ghost: var(--n50);
@@ -681,7 +541,7 @@
             </li>
             <li>
               <strong>分类与媒体语义色（tone-*）</strong>
-              凡落在 UI 表面的内容分类、时间线波形、工作台双色图标与图表分组，统一消费明暗成对的 5 槽 <code>--color-tone-*</code>（<code>slate / teal / umber / copper / ochre</code>），深浅模式均满足 WCAG AA；禁止为单一新页面另造私有色表。
+              凡落在 UI 表面的时间线波形、工作台双色图标、片段标签与图表分组，统一消费明暗成对的 5 槽 <code>--color-tone-*</code>（<code>slate / teal / umber / copper / ochre</code>），在卡片与凹陷槽底色上均满足 WCAG AA；主要用于线条、波形与双色图标内填充，不做大面积浅色铺底，小尺寸实底徽标统一配纯中性 <code>--color-on-tone</code>；禁止为单一新页面另造私有色表。
             </li>
             <li>
               <strong>镜头点缀色（accent-1…8）</strong>
@@ -725,13 +585,13 @@
               <code>--text-display-*</code>
             </header>
             <div class="type-styles" data-columns="2">
-              <div class="type-style" style="--sample-size: var(--text-display); --sample-line: var(--text-display--line-height); --sample-tracking: -0.04em; font-family: var(--font-home-display); font-style: italic;">
-                <strong>创作</strong>
-                <div><code>display · 57 / 64 · 400</code><span>首页与品牌展示标题（Serif）</span></div>
+              <div class="type-style" style="--sample-size: var(--text-display); --sample-line: var(--text-display--line-height); --sample-tracking: -0.04em; --sample-weight: 600; font-family: var(--font-home-display); font-style: italic;">
+                <strong>iClip</strong>
+                <div><code>display · 57 / 64 · 600</code><span>首页与品牌展示标题（Serif Italic）</span></div>
               </div>
-              <div class="type-style" style="--sample-size: var(--text-display-sm); --sample-line: var(--text-display-sm--line-height); --sample-tracking: -0.035em; font-family: var(--font-home-display); font-style: italic;">
-                <strong>创作</strong>
-                <div><code>display-sm · 45 / 52 · 400</code><span>紧凑展示标题</span></div>
+              <div class="type-style" style="--sample-size: var(--text-display-sm); --sample-line: var(--text-display-sm--line-height); --sample-tracking: -0.035em; --sample-weight: 600; font-family: var(--font-home-display); font-style: italic;">
+                <strong>iClip</strong>
+                <div><code>display-sm · 45 / 52 · 600</code><span>紧凑展示标题</span></div>
               </div>
             </div>
           </article>
@@ -826,7 +686,7 @@
           </article>
 
           <p class="type-source-note">
-            界面字重严格限定为 <code>400</code>（正文）、<code>500</code>（控件与交互项）、<code>600</code>（标题与标签），不使用 <code>650</code> 或 <code>700+</code>。另保留 <code>--text-canvas-*</code>（18px–28px）专供缩放故事板画布与放大阅读态，常规界面不得调用。
+            界面字重严格限定为 <code>400</code>（正文）、<code>500</code>（控件与交互项）、<code>600</code>（标题、标签与展示衬线体），不使用 <code>650</code> 或 <code>700+</code>，由 <code>pnpm lint:design</code> 自动门禁检查。
           </p>
         </div>
       </section>
@@ -972,8 +832,8 @@
               <div class="motion-row"><code>--breakpoint-md</code><span>中等 → 展开窗口</span><b>840px</b></div>
               <div class="motion-row"><code>--breakpoint-lg</code><span>宽屏工作台</span><b>1280px</b></div>
               <div class="motion-row"><code>app-sidebar</code><span>展开 264 / 收起 56</span><b>200–400</b></div>
-              <div class="motion-row"><code>right-panel</code><span>右侧功能栏默认宽</span><b>460px</b></div>
-              <div class="motion-row"><code>project-header</code><span>项目页顶栏高度</span><b>72px</b></div>
+              <div class="motion-row"><code>app-workbench</code><span>工作台默认 820 / 下限 560</span><b>chat ≥400</b></div>
+              <div class="motion-row"><code>dialog-header</code><span>标准弹窗顶栏高度</span><b>52px</b></div>
               <div class="motion-row"><code>home-read-max</code><span>阅读区最大行宽</span><b>760px</b></div>
             </div>
             <p class="type-source-note">列表页左右边距随视口平滑插值（32px–120px）；<code>final-cut</code> 编辑器保持桌面固定布局，不做窄屏折行。</p>
@@ -1006,52 +866,10 @@
             界面统一使用中文（固定功能名 <code>final-cut</code> 除外，与中文相邻两侧各留一个空格）；严禁向用户展示原始工具函数名、内部 ID、文件路径或 JSON 字段。
           </li>
           <li>
-            <strong>书面语与标点口径（ADR-0001）</strong>
-            保持冷静、直接、可执行的书面语，不使用感叹号、颜文字或空泛安抚；数量与限制写具体数字，引用界面按钮原名用直角引号「」；单句提示末尾不加句号，原因与操作建议之间用分号隔开，多句说明每句以句号结尾。
+            <strong>书面语与标点口径（单一事实源）</strong>
+            保持冷静、直接、可执行的书面语，不使用感叹号、颜文字或空泛安抚；数量与限制写具体数字，引用界面按钮原名用直角引号「」；单句提示末尾不加句号，原因与操作建议之间用分号隔开。六类提示标准句式详见 <a href="./web/docs/frontend-implementation.md">前端实现规范 · 界面文字</a> 与 <a href="./docs/adr/0001-ui-copy-formal-register.md">ADR-0001</a>。
           </li>
         </ul>
-
-        <table class="copy-table" aria-label="界面提示文案标准示例">
-          <thead>
-            <tr>
-              <th>提示类型</th>
-              <th>推荐写法</th>
-              <th>要点</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>前置阻止</td>
-              <td>时长不足 1 秒，无法生成视频；请点击相邻的段一并选中</td>
-              <td>先写具体原因，分号后给明确动作</td>
-            </tr>
-            <tr>
-              <td>操作失败</td>
-              <td>分镜保存失败，请重试保存</td>
-              <td>直述结果 + 下一步，不堆砌报错码</td>
-            </tr>
-            <tr>
-              <td>进行中</td>
-              <td>AI 生成中，关闭窗口不影响生成</td>
-              <td>消除等待焦虑，不加省略号泛滥</td>
-            </tr>
-            <tr>
-              <td>操作完成</td>
-              <td>已复制</td>
-              <td>极简确认，单句末尾不加句号</td>
-            </tr>
-            <tr>
-              <td>空状态</td>
-              <td>暂无可编辑的图片，请先在版本中选择一张已生成的图片</td>
-              <td>说明现状并指明去哪里完成前置步骤</td>
-            </tr>
-            <tr>
-              <td>操作引导</td>
-              <td>描述画面与动作，输入 @ 引用首帧，也可粘贴或拖入图片</td>
-              <td>动词开头，直接告诉用户能做什么</td>
-            </tr>
-          </tbody>
-        </table>
       </section>
 
       <footer class="footer">
