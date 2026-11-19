@@ -2,50 +2,65 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import Protocol
 
-from iclip.common.errors import NotFound
+import structlog
+
+from iclip.common.errors import ModelGroupUnavailable, NotFound, ValidationFailed
+from iclip.domains.identity.models import UserAccount
 from iclip.domains.identity.repository import UserRepository
+
+_logger = structlog.stdlib.get_logger(__name__)
 
 
 class ModelGroupOf(Protocol):
-    """用户所在配置组的组名，默认组答 ``None``；组合根接到 ``ModelGroupResolver.group_of``。"""
+    """用户所在配置组的组名，默认组答 ``None``；组合根接到 ``ModelGroupAssignments.group_of``。"""
 
     async def __call__(self, user_id: uuid.UUID, /) -> str | None: ...
 
 
-@dataclass(frozen=True, slots=True)
-class DepartmentGroup:
-    """一个配置组的归属：组名与它包含的 PMS 部门数字 id。"""
+class ModelGroupAssignments:
+    """谁在哪个配置组：root 给用户选的组名存在用户上，没选即默认组。
 
-    name: str
-    departments: frozenset[int]
-
-
-class ModelGroupResolver:
-    """按用户直属部门找他所在的配置组。
-
-    部门 id 精确匹配，不看上级部门；命中多个组时取 ``groups`` 里排在前面的那个；不命中或没有部门时
-    答 ``None``，即默认组。
+    ``configured`` 是部署配置里的组名，按配置里的先后；改组即时生效，不用重启。
     """
 
-    def __init__(self, users: UserRepository, groups: Sequence[DepartmentGroup]) -> None:
+    def __init__(self, users: UserRepository, configured: Sequence[str]) -> None:
         self._users = users
-        self._groups = tuple(groups)
+        self._configured = tuple(configured)
 
     async def group_of(self, user_id: uuid.UUID) -> str | None:
-        """用户所在配置组的组名，默认组答 ``None``。用户不存在时抛 ``NotFound``。"""
-        if not self._groups:
-            return None
+        """用户所在配置组的组名，默认组答 ``None``。
+
+        Raises:
+            NotFound: 用户不存在。
+            ModelGroupUnavailable: 用户存的组已不在部署配置里（不回退默认组）。
+        """
         account = await self._users.get(user_id)
         if account is None:
             raise NotFound(f"没有这个用户: {user_id}")
-        departments = {department.id for department in account.departments}
-        for group in self._groups:
-            if not departments.isdisjoint(group.departments):
-                return group.name
-        return None
+        group = account.model_group
+        if group is not None and group not in self._configured:
+            _logger.warning("用户所在的配置组已不在部署配置里", user_id=str(user_id), group=group)
+            raise ModelGroupUnavailable(f"你所在的配置组 {group} 已不在部署配置里，请联系管理员")
+        return group
+
+    async def assign(self, user_id: uuid.UUID, group: str | None) -> UserAccount:
+        """把用户放进 ``group``，``None`` 即放回默认组。
+
+        Raises:
+            ValidationFailed: 组名不在部署配置里。
+            NotFound: 用户不存在。
+        """
+        if group is not None and group not in self._configured:
+            choices = "、".join(self._configured) or "无"
+            raise ValidationFailed(
+                f"配置组 {group} 不在部署配置的 model_groups 里，可选的组：{choices}"
+            )
+        updated = await self._users.set_model_group(user_id, group)
+        if updated is None:
+            raise NotFound("用户不存在")
+        return updated
 
 
-__all__ = ["DepartmentGroup", "ModelGroupOf", "ModelGroupResolver"]
+__all__ = ["ModelGroupAssignments", "ModelGroupOf"]

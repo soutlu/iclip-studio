@@ -305,12 +305,11 @@ NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_lengt
 
 
 class ModelGroupSection(ConfigSection):
-    """一个配置组：哪些 PMS 部门（用户直属部门的数字 id）用这一组的 key 与网关 model_id。
+    """一个配置组的媒体 key 与网关 model_id；谁在哪个组由 root 在网页上选，存在数据库里。
 
     key 的值放在环境变量里，这里只写变量名；``video_models`` 是「产品模型名 → 该组网关 model_id」。
     """
 
-    departments: tuple[int, ...]
     video_api_key_env: NonEmptyText
     subtitle_api_key_env: NonEmptyText | None = None
     music_api_key_env: NonEmptyText | None = None
@@ -351,19 +350,11 @@ class RuntimeConfig(BaseSettings):
     ) -> dict[str, ModelGroupSection] | None:
         if value is None:
             return value
-        owners: dict[int, str] = {}
-        for name, group in value.items():
+        for name in value:
             if _MODEL_GROUP_NAME.fullmatch(name) is None:
                 raise ValueError(
                     f"model_groups 的组名 {name!r} 不合规：以小写字母开头，只用小写字母、数字和下划线"
                 )
-            for department in group.departments:
-                other = owners.setdefault(department, name)
-                if other != name:
-                    raise ValueError(
-                        f"部门 {department} 同时写在 model_groups.{other} 与 model_groups.{name} 里，"
-                        "一个部门只能属于一个组"
-                    )
         return value
 
     @model_validator(mode="before")
@@ -455,14 +446,6 @@ class ResolvedVideoEnhance:
 
 
 @dataclass(frozen=True, slots=True)
-class ResolvedModelGroup:
-    """配置组的归属：组名与它的部门 id，按配置里的先后排列。"""
-
-    name: str
-    departments: tuple[int, ...]
-
-
-@dataclass(frozen=True, slots=True)
 class ResolvedMediaModelGroup:
     """配置组在媒体生成里用的 key 与网关 model_id；字幕、配乐、配音没开通时对应的 key 为 ``None``。"""
 
@@ -526,7 +509,8 @@ class ResolvedSettings:
     sso: ResolvedSso | None
     object_store: ObjectStoreEnv | None
     media_generation: ResolvedMediaGeneration | None
-    model_groups: tuple[ResolvedModelGroup, ...]
+    model_groups: tuple[str, ...]
+    """部署配置里的配置组名，按配置里的先后。"""
     shot_video: bool
     iclip_studio: ResolvedIclipStudio | None
     product_catalog: ResolvedProductCatalog | None
@@ -791,10 +775,7 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
         sso=sso,
         object_store=object_store,
         media_generation=media_generation,
-        model_groups=tuple(
-            ResolvedModelGroup(name=name, departments=group.departments)
-            for name, group in model_groups.items()
-        ),
+        model_groups=tuple(model_groups),
         shot_video=config.shot_video is not None,
         iclip_studio=_resolve_iclip_studio(config.iclip_studio),
         product_catalog=_resolve_product_catalog(),

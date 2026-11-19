@@ -318,14 +318,16 @@ def create_transcript_router(
         消息里存新地址；转存失败是 422，说明第几张附件。
 
         这条消息的运行用对话属主所在配置组的模型密钥；组在要用的某个供应商下没有密钥时 409
-        ``agent_unavailable``。
+        ``agent_unavailable``，属主存的组已不在部署配置里时 409 ``model_group_unavailable``。
         """
 
         user_name = resolve_user_name(principal, body.user_name)
         principal = await act_as(principal, user_name)
         agent_id = await _writable(principal, conversation_id)
+        # 能写这段对话的只有属主本人（预览也一样），所以属主就是 principal。先定组再转存附件，
+        # 组失效时不留下转存的上传。
+        model_group = await model_group_of(principal.user_id)
         content = await _imported(principal, conversation_id, body.prompt_id, body.content)
-        # 能写这段对话的只有属主本人（预览也一样），所以属主就是 principal。
         return await runtime.submit_prompt(
             uuid.UUID(conversation_id),
             SessionPromptIn(
@@ -333,7 +335,7 @@ def create_transcript_router(
                 content=content,
                 user_name=user_name,
                 agent_id=agent_id,
-                model_group=await model_group_of(principal.user_id),
+                model_group=model_group,
             ),
             owner=principal.user_id,
         )

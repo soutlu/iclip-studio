@@ -22,7 +22,7 @@ from tests.helpers.app import (
     settled,
 )
 from tests.helpers.auth import login_as_editor, set_direct_permissions_in_db
-from tests.helpers.model_groups import MKT, MKT_DEPARTMENT, set_departments, with_model_groups
+from tests.helpers.model_groups import MKT, set_model_group_in_db, with_model_groups
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.runtime_backed import build_backed_app, config_services_of
 
@@ -41,7 +41,7 @@ async def app(
     base_env: None, engine: AsyncEngine, tmp_path: Path, runtime_requests: list[httpx.Request]
 ) -> FastAPI:
     built = build_backed_app(
-        with_model_groups(make_runtime_config(), {MKT: [MKT_DEPARTMENT]}),
+        with_model_groups(make_runtime_config(), [MKT]),
         engine=engine,
         build_model=model_builder({TEST_MODEL_NAME: TestModel()}),
         credential_probe=KeyCheckingProbe({GOOD_KEY}),
@@ -69,22 +69,13 @@ def sent_groups(requests: list[httpx.Request], path: str) -> list[Any]:
     ]
 
 
-@pytest.mark.parametrize(
-    ("departments", "expected"),
-    [([MKT_DEPARTMENT], MKT), ([], None)],
-    ids=["owner_in_mkt", "owner_in_default_group"],
-)
+@pytest.mark.parametrize("group", [MKT, None], ids=["owner_in_mkt", "owner_in_default_group"])
 async def test_a_prompt_and_the_title_it_triggers_carry_the_owners_group(
-    app: FastAPI,
-    engine: AsyncEngine,
-    pg_url: str,
-    runtime_requests: list[httpx.Request],
-    departments: list[int],
-    expected: str | None,
+    app: FastAPI, pg_url: str, runtime_requests: list[httpx.Request], group: str | None
 ) -> None:
     async with make_client(app) as client:
         owner = await login_as_editor(client, pg_url)
-        await set_departments(engine, owner, departments)
+        await set_model_group_in_db(pg_url, owner, group)
         conversation_id = await new_conversation(client, AGENT_ID)
 
         sent = await client.post(f"/conversations/{conversation_id}/prompts", json=PROMPT)
@@ -92,16 +83,34 @@ async def test_a_prompt_and_the_title_it_triggers_carry_the_owners_group(
         await settled(client, conversation_id)
         await app.state.turn_naming.wait()
 
-    assert sent_groups(runtime_requests, f"/v1/sessions/{conversation_id}/prompts") == [expected]
-    assert sent_groups(runtime_requests, "/v1/titles") == [expected]
+    assert sent_groups(runtime_requests, f"/v1/sessions/{conversation_id}/prompts") == [group]
+    assert sent_groups(runtime_requests, "/v1/titles") == [group]
 
 
-async def test_a_preview_prompt_carries_the_previewers_group(
-    app: FastAPI, engine: AsyncEngine, pg_url: str, runtime_requests: list[httpx.Request]
+async def test_a_prompt_from_an_owner_whose_group_left_the_config_is_refused(
+    app: FastAPI, pg_url: str, runtime_requests: list[httpx.Request]
 ) -> None:
     async with make_client(app) as client:
         owner = await login_as_editor(client, pg_url)
-        await set_departments(engine, owner, [MKT_DEPARTMENT])
+        conversation_id = await new_conversation(client, AGENT_ID)
+        await set_model_group_in_db(pg_url, owner, "retired")
+
+        sent = await client.post(f"/conversations/{conversation_id}/prompts", json=PROMPT)
+
+    assert sent.status_code == 409, sent.text
+    assert sent.json()["code"] == "model_group_unavailable"
+    assert "retired" in sent.json()["detail"]
+    assert sent_groups(runtime_requests, f"/v1/sessions/{conversation_id}/prompts") == [], (
+        "不悄悄按默认组发给运行时"
+    )
+
+
+async def test_a_preview_prompt_carries_the_previewers_group(
+    app: FastAPI, pg_url: str, runtime_requests: list[httpx.Request]
+) -> None:
+    async with make_client(app) as client:
+        owner = await login_as_editor(client, pg_url)
+        await set_model_group_in_db(pg_url, owner, MKT)
         await set_direct_permissions_in_db(pg_url, "logan@example.com", ["agent:manage"])
         opened = await client.post(f"/agents/{AGENT_ID}/previews")
         assert opened.status_code == 201, opened.text

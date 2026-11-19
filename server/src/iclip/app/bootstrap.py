@@ -123,9 +123,7 @@ from iclip.domains.identity.module import SsoRuntime, build_identity_module
 from iclip.domains.identity.pms import PmsUserClient
 from iclip.domains.identity.public import (
     ActAs,
-    DepartmentGroup,
     ModelGroupOf,
-    ModelGroupResolver,
     Principal,
 )
 from iclip.domains.identity.sso import SsoVerifier
@@ -403,6 +401,7 @@ def build_app(
         )
         if settings.sso is not None
         else None,
+        model_groups=settings.model_groups,
         sso_verifier=sso_verifier,
         pms_client=pms_client,
     )
@@ -517,13 +516,7 @@ def build_app(
 
     if render_client is not None and settings.media_generation is None:
         raise RuntimeError("成片导出已启用却没开媒体生成；resolve_settings 应当已拒绝这种配置")
-    model_group_of = ModelGroupResolver(
-        identity.users,
-        tuple(
-            DepartmentGroup(name=group.name, departments=frozenset(group.departments))
-            for group in settings.model_groups
-        ),
-    ).group_of
+    model_group_of = identity.model_groups.group_of
     generation: GenerationModule | None = None
     if settings.media_generation is not None:
         if public_objects is None:
@@ -660,7 +653,7 @@ def build_app(
     tracking = build_tracking_module(SqlTrackingRepository(active_engine))
     skills = build_skills_module(runtime_client, identity.users.display_names)
     model_providers = build_model_providers_module(
-        runtime_client, model_groups=tuple(group.name for group in settings.model_groups)
+        runtime_client, model_groups=settings.model_groups
     )
     agent_config = build_agent_config_module(runtime_client, identity.users.display_names)
 

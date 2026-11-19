@@ -25,6 +25,7 @@ export const mockAuthUser = {
   isActive: true,
   jobTitle: '',
   lastLoginAt: null,
+  modelGroup: null,
   permissions: EDITOR_PERMISSIONS,
   roles: ['editor'],
   username: 'tester',

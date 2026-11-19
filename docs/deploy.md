@@ -75,7 +75,7 @@ CREATE DATABASE iclip OWNER iclip;
   - 若服务器是与 OSS 同地域的阿里云 ECS，建议配置 `OSS_INTERNAL_ENDPOINT` 走内网高速读写；
   - 开启视频超分（高清版）：配置 `VIDEO_ENHANCE_SUBMIT_URL` 及 `config.yaml` 的 `media_generation.video.enhance`；
   - 按需开启千问音频能力（三项独立开关，配置对应环境变量与 `config.yaml` 子段即启用）：素材片字幕识别配 `QWEN_SUBTITLE_API_KEY` + `media_generation.subtitle`；生成背景音乐配 `QWEN_MUSIC_API_KEY` + `media_generation.music`；`final-cut` 配音与旁白配 `QWEN_SPEECH_API_KEY` + `media_generation.speech`（`url` 填 `https://maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer`，`concurrency` 与 `timeout_seconds` 可省）；
-  - 按部门区分媒体生成与大模型密钥：见[配置组](#配置组)；
+  - 按用户区分媒体生成与大模型密钥：见[配置组](#配置组)；
   - 开启成片导出：配置 `FINAL_CUT_RENDER_URL=http://render:8080` 及 `RENDER_ALLOWED_MEDIA_HOSTS`（填入本系统 OSS 域名和上游视频生成域名，多个域名用逗号分隔）；
   - 开启 `final-cut` 预览沙箱：配置 `FINAL_CUT_PREVIEW_ORIGIN=https://<预览子域名>`（未配置则编辑器预览无法加载）。预览子域名的 DNS 解析与 HTTPS 证书须与主应用域名一样指向 `web` 容器，由同一套 Nginx 托管前端页面并将 `/api/` 原样保留 `Host` 转发给后端。
 - `configs/config.yaml` 与 `configs/runtime.yaml`：从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制生成 `runtime.yaml`，回调地址保持 `http://server:7788`（插件启用条件见[内部接口与视频插件包](architecture.md#内部接口与视频插件包)，接入其他系统见运行时项目的 `docs/apps.md`）。两份配置的 `ops.log_format` 都设为 `json`：默认的 Console 格式会省略例行的访问日志（见[日志](architecture.md#4-日志)）。
@@ -204,12 +204,11 @@ scripts/publish-components.sh <私有组件库本地路径> <本机输出目录>
 
 ### 配置组
 
-配置组用于按 PMS 部门隔离媒体生成与大模型调用的密钥及上游视频网关 `model_id`（用户归组与定组规则见 [CONTEXT.md「配置组」](CONTEXT.md#配置组model-group)）。媒体生成组配置写在 `configs/config.yaml` 顶层 `model_groups` 段（环境变量名指向 `.env` 中的实际密钥），大模型密钥在网页后台「模型与供应商」中选组绑定：
+配置组用于按用户隔离媒体生成与大模型调用的密钥及上游视频网关 `model_id`（用户归组与定组规则见 [CONTEXT.md「配置组」](CONTEXT.md#配置组model-group)）。媒体生成组配置写在 `configs/config.yaml` 顶层 `model_groups` 段（环境变量名指向 `.env` 中的实际密钥），大模型密钥在网页后台「模型与供应商」中选组绑定，用户归哪个组由 `root` 在网页设置里选：
 
 ```yaml
 model_groups:
   mkt:                                              # 组名：小写字母开头，仅含小写字母、数字和下划线
-    departments: [101, 102]                         # 用户直属部门 PMS 数字 ID，允许为空列表 []
     video_api_key_env: VIDEO_API_KEY_MKT            # 该组视频密钥环境变量名（必填）
     subtitle_api_key_env: QWEN_SUBTITLE_API_KEY_MKT # 开启字幕识别时必填
     music_api_key_env: QWEN_MUSIC_API_KEY_MKT       # 开启生成背景音乐时必填
@@ -221,15 +220,15 @@ model_groups:
       video-enhance: <该组的 model_id>              # 键取 media_generation.video.enhance.model；仅开启高清版时填写
 ```
 
-- **启动期严格校验**：不配置 `model_groups` 段则全员走默认组。配置后若组名格式非法、同一部门跨组重复、`video_models` 键集合与 `allowed_models`（含已开启的 `enhance.model`）不完全一致、或已开启功能的组密钥环境变量缺失/为空，后端均在启动时直接报错退出。
-- **平滑上线三步法**（首次启用配置组或新增组，防止组内成员因后台尚未绑定大模型密钥而被拦截发消息）：
-  1. 在 `config.yaml` 新增组并将 `departments` 暂设为空 `[]`，在 `.env` 填入该组各媒体密钥，执行 `docker compose up -d`；
+- **启动期严格校验**：不配置 `model_groups` 段则没有可选的组，全员走默认组。配置后若组名格式非法、`video_models` 键集合与 `allowed_models`（含已开启的 `enhance.model`）不完全一致、或已开启功能的组密钥环境变量缺失/为空，后端均在启动时直接报错退出。
+- **上线新组三步**（先绑好大模型密钥再放人进组，防止组内成员因后台尚未绑定密钥而被拦截发消息）：
+  1. 在 `config.yaml` 新增组，在 `.env` 填入该组各媒体密钥，执行 `docker compose up -d`；
   2. 使用 `root` 登录网页后台「模型与供应商」，为该组需用到的各供应商添加密钥并选定该配置组；
-  3. 在 `config.yaml` 填入该组的 `departments` 部门 ID 列表，再次执行 `docker compose up -d` 正式切流。
+  3. 使用 `root` 在网页设置里给用户选这个组，即时生效，无需重启。
 - **日常变更与安全删组**：
   - **换密钥**：换媒体密钥直接改 `.env` 变量值并 `docker compose up -d`（在途轮询即用新密钥）；换大模型密钥直接在网页后台编辑对应密钥，无需重启。
-  - **删组**：先将该组 `departments` 清空并 `docker compose up -d` 切回默认组 → 待在途任务归零（`SELECT count(*) FROM iclip.generation_jobs WHERE model_group = '<组名>' AND status IN ('pending', 'submitting', 'submitted');` 返回 `0`）→ 再从 `config.yaml` 与 `.env` 移除该组并执行 `docker compose up -d`。
-  - **排查未归组部门**：在 `iclip.video_generation_report` 中查询分组上线后 `model_group IS NULL` 的记录，结合 `GET /users` 查看对应用户的 `departments[].id` 补入配置。
+  - **删组**：先在网页设置里把该组的人改到别的组或清空（回默认组）→ 待在途任务归零（`SELECT count(*) FROM iclip.generation_jobs WHERE model_group = '<组名>' AND status IN ('pending', 'submitting', 'submitted');` 返回 `0`）→ 再从 `config.yaml` 与 `.env` 移除该组并执行 `docker compose up -d`。漏改的人所在组已不在配置里，发消息、出片会报错并提示联系管理员（不回退默认组），给他重新选组即可。
+  - **按用户查组**：`SELECT email, username, model_group FROM iclip.users WHERE model_group IS NOT NULL ORDER BY model_group;` 列出已选组的用户（不在结果里的都在默认组）；`GET /users` 的 `modelGroup` 字段同样给出每个人的组。
 
 ### 换密钥加密钥匙
 

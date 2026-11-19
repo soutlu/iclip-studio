@@ -5,22 +5,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 from iclip.common.errors import NotFound
-from iclip.domains.identity.models import ApiKeyRecord, PmsDepartment, Principal, UserAccount
-
-
-def department(department_id: int, *, parent_id: int | None = None) -> PmsDepartment:
-    return PmsDepartment(
-        id=department_id,
-        uid=f"dept-{department_id}",
-        name=f"部门 {department_id}",
-        parent_id=parent_id,
-        parent_uid="" if parent_id is None else f"dept-{parent_id}",
-        leader_user_id=None,
-        leader_user_uid="",
-        source="pms",
-        type="department",
-        order=None,
-    )
+from iclip.domains.identity.models import ApiKeyRecord, Principal, UserAccount
 
 
 def make_account(
@@ -31,7 +16,7 @@ def make_account(
     is_active: bool = True,
     username: str | None = "logan",
     email: str = "logan@example.com",
-    departments: tuple[PmsDepartment, ...] = (),
+    model_group: str | None = None,
 ) -> UserAccount:
     return UserAccount(
         id=user_id or uuid.uuid4(),
@@ -44,9 +29,10 @@ def make_account(
         is_active=is_active,
         city="",
         job_title="",
-        departments=departments,
+        departments=(),
         created_at=datetime.now(UTC),
         last_login_at=None,
+        model_group=model_group,
     )
 
 
@@ -95,6 +81,15 @@ class InMemoryUserRepository:
             account = replace(account, is_active=is_active)
         self.accounts[user_id] = account
         return account
+
+    async def set_model_group(
+        self, user_id: uuid.UUID, model_group: str | None
+    ) -> UserAccount | None:
+        account = self.accounts.get(user_id)
+        if account is None:
+            return None
+        self.accounts[user_id] = replace(account, model_group=model_group)
+        return self.accounts[user_id]
 
     async def ensure_role(self, user_id: uuid.UUID, role: str) -> None:
         account = self.accounts.get(user_id)

@@ -42,12 +42,14 @@ class ModelGroups:
         self._group_of = group_of
 
     async def group_of(self, owner: uuid.UUID) -> str | None:
-        """属主所在配置组的组名，默认组答 ``None``。"""
+        """属主所在配置组的组名，默认组答 ``None``；组已不在配置里时由注入的「用户 → 组」查询抛错。"""
         if self._group_of is None:
             return None
         name = await self._group_of(owner)
         if name is not None and name not in self._groups:
-            raise RuntimeError(f"用户分到了配置组 {name}，媒体生成里却没有这个组")
+            raise RuntimeError(
+                f"配置组 {name} 不在媒体生成的组里：两边应取自同一份 model_groups，组合根接错了"
+            )
         return name
 
     async def video_model_of(self, owner: uuid.UUID, model: str) -> tuple[str | None, str | None]:
