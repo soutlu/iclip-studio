@@ -1,3 +1,5 @@
+import { STUDIO_PREVIEW_FPS } from './vendor/hyperframes-studio/player/lib/time'
+
 /** 屏幕上的一个矩形（像素）。 */
 export type Box = { left: number; top: number; width: number; height: number }
 
@@ -50,8 +52,19 @@ export const movingWith = (selected: ReadonlySet<string>, id: string): ReadonlyS
   selected.size > 1 && selected.has(id) ? selected : new Set([id])
 
 /**
+ * 从 `startMs` 开始的片段在预览和导出里出现的第一帧的时刻（毫秒，向上取整）：开头恰在帧边界上就是它自己，
+ * 否则是下一个帧边界。「跳到某样东西的开头」都定位到这里；直接定位到开头的话，预览取离它最近的那一帧，
+ * 开头落在一帧的前半段时停在它还没出现的上一帧。
+ */
+export const firstFrameMs = (startMs: number): number => {
+  // 减去一点容差：浮点乘出来的 114.00000000000001 仍算第 114 帧
+  const frame = Math.ceil((startMs * STUDIO_PREVIEW_FPS) / 1000 - 1e-6)
+  return Math.ceil((frame * 1000) / STUDIO_PREVIEW_FPS)
+}
+
+/**
  * 在时间线上点一下选中 `clip` 以后播放头去哪（毫秒，照原型）：本来就在片段里（含两端）时不动，答 null；在外面时
- * 挪到离开头 0.8 秒处，片段不到 1.6 秒时挪到正中，都不超过结尾前 0.05 秒（也不早于开头）。取到 10 毫秒。
+ * 挪到离开头 0.8 秒处，片段不到 1.6 秒时挪到正中，都不超过结尾前 0.05 秒（也不早于它出现的第一帧）。取到 10 毫秒。
  */
 export const playheadInto = (
   playheadMs: number,
@@ -60,7 +73,7 @@ export const playheadInto = (
   const end = clip.start + clip.duration
   if (playheadMs >= clip.start && playheadMs <= end) return null
   const into = Math.min(end - 50, clip.start + Math.min(800, clip.duration / 2))
-  return Math.max(clip.start, Math.round(into / 10) * 10)
+  return Math.max(firstFrameMs(clip.start), Math.round(into / 10) * 10)
 }
 
 /**

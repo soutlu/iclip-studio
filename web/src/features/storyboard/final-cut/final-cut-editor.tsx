@@ -145,7 +145,7 @@ import {
 } from './preview-player'
 import type { PreviewFilm } from './preview-sync'
 import { PreviewTransport } from './preview-transport'
-import { aroundPlayhead } from './selection'
+import { aroundPlayhead, firstFrameMs } from './selection'
 import {
   DETACH_LABEL,
   MERGE_LABEL,
@@ -1649,7 +1649,7 @@ function EditorBody({
                 hosts: hostsWithText,
                 catalog,
                 onPick: (clip, jump) => {
-                  if (jump) seek(clip.start)
+                  if (jump) seek(firstFrameMs(clip.start))
                   selectOnly(clip.id)
                 },
               }}
@@ -1659,7 +1659,7 @@ function EditorBody({
               narration={narration}
               onAdd={addCaption}
               onPick={(caption) => {
-                seek(caption.start)
+                seek(firstFrameMs(caption.start))
                 selectOnly(caption.id)
               }}
               onRecognize={recognize}
