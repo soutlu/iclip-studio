@@ -1012,6 +1012,14 @@ h1 {
   --color-state-dragged: color-mix(in srgb, var(--color-on-surface) calc(var(--state-dragged) * 100%), transparent);
   --color-disabled-text: color-mix(in srgb, var(--color-on-surface) calc(var(--state-disabled-content) * 100%), transparent);
   --color-disabled-container: color-mix(in srgb, var(--color-on-surface) calc(var(--state-disabled-container) * 100%), transparent);
+  --color-final-cut-shot: var(--color-tone-slate);
+  --color-final-cut-overlay: var(--color-tone-copper);
+  --color-final-cut-music: var(--color-primary);
+  --color-final-cut-caption: var(--color-tone-teal);
+  --color-final-cut-voice: var(--color-tone-umber);
+  --color-final-cut-original-wave: var(--color-tone-slate);
+  --color-final-cut-dub-wave: var(--color-tone-umber);
+  --color-final-cut-music-wave: var(--color-tone-teal);
 }
 
 @media (max-width: 1100px) {
