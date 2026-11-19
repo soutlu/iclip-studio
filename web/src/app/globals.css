@@ -59,11 +59,6 @@
   --text-display--line-height: 64px;
 }
 
-/* final-cut 时间线上音频片段 13px 高的标题条：比全站最小字号小一档，只用在这里。 */
-@theme {
-  --text-final-cut-clip-label: 9.5px;
-}
-
 /* inline 使工具类直接引用 token，reference 避免重复输出变量；新增 token 需在此登记工具类。 */
 @theme inline reference {
   --color-primary: var(--color-primary);
@@ -213,35 +208,6 @@
   --color-code-string: var(--color-code-string);
   --color-code-literal: var(--color-code-literal);
   --color-code-guide: var(--color-code-guide);
-  --color-final-cut-well: var(--color-final-cut-well);
-  --color-final-cut-raised: var(--color-final-cut-raised);
-  --color-final-cut-line: var(--color-final-cut-line);
-  --color-final-cut-line-strong: var(--color-final-cut-line-strong);
-  --color-final-cut-tick: var(--color-final-cut-tick);
-  --color-final-cut-on-control: var(--color-final-cut-on-control);
-  --color-final-cut-control-soft: var(--color-final-cut-control-soft);
-  --color-final-cut-control-ring: var(--color-final-cut-control-ring);
-  --color-final-cut-knob: var(--color-final-cut-knob);
-  --color-final-cut-shot: var(--color-final-cut-shot);
-  --color-final-cut-overlay: var(--color-final-cut-overlay);
-  --color-final-cut-scene: var(--color-final-cut-scene);
-  --color-final-cut-music: var(--color-final-cut-music);
-  --color-final-cut-caption: var(--color-final-cut-caption);
-  --color-final-cut-voice: var(--color-final-cut-voice);
-  --color-final-cut-props: var(--color-final-cut-props);
-  --color-final-cut-led: var(--color-final-cut-led);
-  --color-final-cut-original-wave: var(--color-final-cut-original-wave);
-  --color-final-cut-original-ink: var(--color-final-cut-original-ink);
-  --color-final-cut-dub-wave: var(--color-final-cut-dub-wave);
-  --color-final-cut-dub-ink: var(--color-final-cut-dub-ink);
-  --color-final-cut-music-wave: var(--color-final-cut-music-wave);
-  --color-final-cut-music-ink: var(--color-final-cut-music-ink);
-  --color-final-cut-duck: var(--color-final-cut-duck);
-  --color-final-cut-clip-video: var(--color-final-cut-clip-video);
-  --color-final-cut-on-clip-caption: var(--color-final-cut-on-clip-caption);
-  --color-final-cut-clip-edge: var(--color-final-cut-clip-edge);
-  --color-final-cut-clip-label: var(--color-final-cut-clip-label);
-  --color-final-cut-clip-label-line: var(--color-final-cut-clip-label-line);
   --color-dashboard-bg: var(--color-dashboard-bg);
   --color-dashboard-card: var(--color-dashboard-card);
   --color-dashboard-card-edge: var(--color-dashboard-card-edge);
