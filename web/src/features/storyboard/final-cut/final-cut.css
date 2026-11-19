@@ -2,12 +2,13 @@
    字幕 / 属性），下面是剪辑工具与时间线；保存状态和「导出」在工作台顶栏右边。 */
 
 /* final-cut 自己的取值，只在本文件用。声明在 :root 上而不是编辑器根上，因为浮层（菜单、「生成音乐」卡片、
-   歌曲详情）挂在 body 上，不在编辑器根下 */
+   歌曲详情）挂在 body 上，不在编辑器根下。
+   能用语义角色表达的都用语义角色；没有对应角色的才直接取原始色阶，本文件只有这一块这样做 */
 :root {
   /* 线与中性控件：line 是浮起面外圈的细线，tick 是滑杆的零点刻度；control 一族是中性实心控件
      （滑杆走过的那段、选中的音色小块）上的浅底与描边，knob 是滑杆拇指和开关圆钮 */
-  --wf-line: color-mix(in srgb, var(--n10) 9%, transparent);
-  --wf-line-strong: color-mix(in srgb, var(--n10) 15%, transparent);
+  --wf-line: color-mix(in srgb, var(--color-on-surface) 9%, transparent);
+  --wf-line-strong: color-mix(in srgb, var(--color-on-surface) 15%, transparent);
   --wf-tick: var(--n70);
   --wf-control-soft: color-mix(in srgb, var(--n10) 7%, transparent);
   --wf-control-ring: color-mix(in srgb, var(--n10) 18%, transparent);
@@ -22,7 +23,7 @@
   --wf-music-ink: var(--p20);
   --wf-clip-video: var(--color-storyboard-stage);
   --wf-on-clip-caption: var(--t20);
-  --wf-clip-edge: color-mix(in srgb, var(--n10) 12%, transparent);
+  --wf-clip-edge: color-mix(in srgb, var(--color-on-surface) 12%, transparent);
   --wf-clip-label: color-mix(in srgb, var(--n10) 3%, transparent);
   --wf-clip-label-line: color-mix(in srgb, var(--n10) 6%, transparent);
   --wf-clip-component: linear-gradient(180deg, var(--n20) 0%, var(--n12) 100%);
@@ -49,19 +50,18 @@
 }
 
 .dark {
-  --wf-line: color-mix(in srgb, var(--n90) 8%, transparent);
-  --wf-line-strong: color-mix(in srgb, var(--n90) 15%, transparent);
+  --wf-line: color-mix(in srgb, var(--color-on-surface) 8%, transparent);
   --wf-tick: var(--n40);
   --wf-control-soft: color-mix(in srgb, var(--n100) 9%, transparent);
   --wf-control-ring: color-mix(in srgb, var(--n100) 20%, transparent);
   --wf-props: var(--p70);
   --wf-led: var(--p40);
-  --wf-original-ink: var(--n90);
+  --wf-original-ink: var(--color-on-surface);
   --wf-dub-ink: var(--t90);
   --wf-music-ink: var(--p80);
   --wf-clip-video: var(--n12);
   --wf-on-clip-caption: var(--t90);
-  --wf-clip-edge: color-mix(in srgb, var(--n90) 10%, transparent);
+  --wf-clip-edge: color-mix(in srgb, var(--color-on-surface) 10%, transparent);
   --wf-clip-label: color-mix(in srgb, var(--n100) 3%, transparent);
   --wf-clip-label-line: color-mix(in srgb, var(--n100) 6%, transparent);
   --wf-clip-component: linear-gradient(180deg, var(--n17) 0%, var(--n12) 100%);
@@ -368,7 +368,7 @@
     0 0 0 4px var(--wf-control-soft);
 }
 
-/* 开关：关着是凹槽，开着用品牌绿（稿子把开关的开启态列为品牌绿的用处之一），圆钮两套主题都是白色。
+/* 开关：关着是凹槽、白圆钮；开着和全站开关一样，墨色轨道配页面底色的圆钮（深色下轨道是浅灰，白圆钮会看不见）。
    挂点见 shared/ui/switch；两个类压过它自带的尺寸和底色 */
 .wf-editor .switch-root {
   width: 34px;
@@ -379,7 +379,7 @@
 }
 
 .wf-editor .switch-root[aria-checked='true'] {
-  background: var(--color-primary);
+  background: var(--color-on-surface);
   box-shadow: none;
 }
 
@@ -392,6 +392,7 @@
 
 .wf-editor .switch-root[aria-checked='true'] .switch-thumb {
   translate: 15px 0;
+  background: var(--color-background);
 }
 
 /* ---- 外框：凹底上三块浮起面板，左上预览舞台、右上右栏、下面整宽的时间线，块与块之间是可拖的分隔条 ----
@@ -3059,10 +3060,10 @@
   color: var(--color-on-scrim);
 }
 
-/* 开着的循环播放：舞台不随外观变，用同样不随外观变的浅品牌色 */
+/* 开着的循环播放：舞台不随外观变，用不随外观变的白字加一层淡白底，和关着时的淡白字拉开 */
 .wf-transport .wf-tool.is-pressed {
-  background: color-mix(in srgb, var(--color-primary-fixed-dim) 16%, transparent);
-  color: var(--color-primary-fixed-dim);
+  background: color-mix(in srgb, var(--color-on-scrim) 16%, transparent);
+  color: var(--color-on-scrim);
 }
 
 /* 半透明的白色播放圆钮，顶上一道高光 */
@@ -3609,14 +3610,9 @@
   color: var(--color-on-surface-variant);
 }
 
-/* 开关类按钮用少量强调色区分开启状态。 */
+/* 开关类按钮关着时用淡色；开着的样子见剪辑工具条和播放条各自的规则 */
 .wf-tool[aria-pressed='false'] {
   color: var(--color-on-surface-muted);
-}
-
-.wf-tool.is-pressed {
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  color: var(--color-primary);
 }
 
 .wf-tool[aria-disabled='true'] {
