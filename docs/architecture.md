@@ -93,7 +93,7 @@
 
 ### 身份与模块协作
 
-- **中间件洋葱圈顺序**：最外层 [app/preview_host.py](../server/src/iclip/app/preview_host.py) 按请求 `Host` 隔离应用域名与 `final-cut` 预览域名（见 [conventions「预览域名」](../contract/conventions.md#final-cut-工程与预览域名)）→ 紧内层 `WriteOriginCheck` 在路由与鉴权前校验写请求 `Origin`（见 [conventions §2](../contract/conventions.md#2-双主体认证-dual-principals)）→ CORS → `PrincipalMiddleware` 统一解析登录 Cookie 或 API Key（`/internal/runtime/` 与 `/final-cut/preview/` 除外）。支持 `users:act_as` 的 8 个写接口在解析请求体后调用 [identity/acting.py](../server/src/iclip/domains/identity/acting.py) 的 `ActAs` 切换数据归属。
+- **中间件洋葱圈顺序**：最外层 [app/preview_host.py](../server/src/iclip/app/preview_host.py) 按请求 `Host` 隔离应用域名与 `final-cut` 预览域名（见 [conventions「预览域名」](../contract/conventions.md#final-cut-工程与预览域名)）→ 紧内层 `WriteOriginCheck` 在路由与鉴权前校验写请求 `Origin`（见 [conventions §2](../contract/conventions.md#2-双主体认证-dual-principals)）→ CORS → `PrincipalMiddleware` 统一解析登录 Cookie 或 API Key（`/internal/runtime/` 与 `/final-cut/preview/` 除外）。支持 `users:act_as` 的 13 个写接口在解析请求体后调用 [identity/acting.py](../server/src/iclip/domains/identity/acting.py) 的 `ActAs` 切换数据归属。
 - **模块间协议解耦**：`domains/` 下各业务模块互不直接导入内部实现，跨模块协作（如附件自动转存上传、查询分叉祖先记录、做同款复制文件、生成任务校验参考资产）一律由模块声明 `Protocol`，在 `app/` 组合根注入适配器连接。
 - **出网下载与地址校验**：组合根维护只连公网的出网下载器与客户端。外部图片附件转存及制作页图片地址校验（[app/conversation_film.py](../server/src/iclip/app/conversation_film.py)）均经出网下载器发起；抽帧拼板（[app/shot_media.py](../server/src/iclip/app/shot_media.py)）与参考视频拆解拉取视频时，本系统 OSS 对象走内网地址与普通客户端，其余外部地址走公网隔离客户端先下载到本地再交由 `ffprobe` 探测（避免 `ffprobe` 自行跟随重定向）。
 

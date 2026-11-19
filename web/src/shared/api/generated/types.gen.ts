@@ -5,6 +5,21 @@ export type ClientOptions = {
 }
 
 /**
+ * ActAsIn
+ *
+ * 停止、插话、审批、重新生成的请求体都可以带 ``user_name``：替谁操作。
+ *
+ * 带 ``users:act_as`` 的 API Key 填对话属主的用户名，才能操作替属主开的对话。浏览器会话只能填
+ * 自己。这个字段只在本服务用，转给运行时前去掉。
+ */
+export type ActAsIn = {
+  /**
+   * User Name
+   */
+  user_name?: string | null
+}
+
+/**
  * ActiveVersionOut
  *
  * 当前版本的摘要。
@@ -790,13 +805,17 @@ export type AppendOp = {
 }
 
 /**
- * ApprovalRequest
+ * ApprovalIn
  */
-export type ApprovalRequest = {
+export type ApprovalIn = {
   /**
    * Approved
    */
   approved: boolean
+  /**
+   * User Name
+   */
+  user_name?: string | null
 }
 
 /**
@@ -5268,14 +5287,14 @@ export type ReferenceVideosOut = {
 }
 
 /**
- * RegenerateBody
+ * RegenerateIn
  *
- * ``POST /turns/{turn_id}:regenerate`` 的请求体。两个字段都可省，整个体也可以不带。
+ * 重新生成的请求体，三个字段都可省，整个体也可以不带。
  *
  * ``content`` 给了就是「改了内容再重跑」，不给照原样重跑。``prompt_id`` 给了就与发消息同一套
- * 幂等：重发同一个 id 退回已有那条，不会再截一轮。
+ * 幂等：重发同一个 id 退回已有那条，不会再截一轮。``user_name`` 见 ``ActAsIn``。
  */
-export type RegenerateBody = {
+export type RegenerateIn = {
   /**
    * Content
    */
@@ -5284,6 +5303,10 @@ export type RegenerateBody = {
    * Prompt Id
    */
   prompt_id?: string | null
+  /**
+   * User Name
+   */
+  user_name?: string | null
 }
 
 /**
@@ -5814,13 +5837,17 @@ export type SsoAuthorizeOut = {
 }
 
 /**
- * SteerRequest
+ * SteerIn
  */
-export type SteerRequest = {
+export type SteerIn = {
   /**
    * Prompt Ids
    */
   prompt_ids: Array<string>
+  /**
+   * User Name
+   */
+  user_name?: string | null
 }
 
 /**
@@ -9781,7 +9808,7 @@ export type TranslateFinalCutTextsConversationsConversationIdFinalCutTranslation
   TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostResponses[keyof TranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostResponses]
 
 export type ApproveConversationsConversationIdInteractionsInteractionIdPostData = {
-  body: ApprovalRequest
+  body: ApprovalIn
   path: {
     /**
      * Interaction Id
@@ -9881,7 +9908,10 @@ export type SubmitConversationsConversationIdPromptsPostResponse =
   SubmitConversationsConversationIdPromptsPostResponses[keyof SubmitConversationsConversationIdPromptsPostResponses]
 
 export type AbortConversationsConversationIdPromptsPromptIdAbortPostData = {
-  body?: never
+  /**
+   * Body
+   */
+  body?: ActAsIn | null
   path: {
     /**
      * Prompt Id
@@ -9917,7 +9947,7 @@ export type AbortConversationsConversationIdPromptsPromptIdAbortPostResponse =
   AbortConversationsConversationIdPromptsPromptIdAbortPostResponses[keyof AbortConversationsConversationIdPromptsPromptIdAbortPostResponses]
 
 export type SteerConversationsConversationIdPromptsSteerPostData = {
-  body: SteerRequest
+  body: SteerIn
   path: {
     /**
      * Conversation Id
@@ -10110,7 +10140,7 @@ export type RegenerateConversationsConversationIdTurnsTurnIdRegeneratePostData =
   /**
    * Body
    */
-  body?: RegenerateBody | null
+  body?: RegenerateIn | null
   path: {
     /**
      * Turn Id
@@ -10396,7 +10426,10 @@ export type ListConversationFilesConversationsConversationIdWorkspaceFilesGetRes
   ListConversationFilesConversationsConversationIdWorkspaceFilesGetResponses[keyof ListConversationFilesConversationsConversationIdWorkspaceFilesGetResponses]
 
 export type AbortConversationConversationsConversationIdAbortPostData = {
-  body?: never
+  /**
+   * Body
+   */
+  body?: ActAsIn | null
   path: {
     /**
      * Conversation Id

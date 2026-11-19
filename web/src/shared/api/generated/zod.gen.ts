@@ -3,6 +3,18 @@
 import * as z from 'zod'
 
 /**
+ * ActAsIn
+ *
+ * 停止、插话、审批、重新生成的请求体都可以带 ``user_name``：替谁操作。
+ *
+ * 带 ``users:act_as`` 的 API Key 填对话属主的用户名，才能操作替属主开的对话。浏览器会话只能填
+ * 自己。这个字段只在本服务用，转给运行时前去掉。
+ */
+export const zActAsIn = z.object({
+  user_name: z.string().nullish(),
+})
+
+/**
  * ActiveVersionOut
  *
  * 当前版本的摘要。
@@ -289,10 +301,11 @@ export const zApiKeysEnvelope = z.object({
 })
 
 /**
- * ApprovalRequest
+ * ApprovalIn
  */
-export const zApprovalRequest = z.object({
+export const zApprovalIn = z.object({
   approved: z.boolean(),
+  user_name: z.string().nullish(),
 })
 
 /**
@@ -2461,10 +2474,11 @@ export const zSsoAuthorizeOut = z.object({
 })
 
 /**
- * SteerRequest
+ * SteerIn
  */
-export const zSteerRequest = z.object({
+export const zSteerIn = z.object({
   prompt_ids: z.array(z.string()).min(1),
+  user_name: z.string().nullish(),
 })
 
 /**
@@ -3554,14 +3568,14 @@ export const zPromptUpsertOp = z.object({
 })
 
 /**
- * RegenerateBody
+ * RegenerateIn
  *
- * ``POST /turns/{turn_id}:regenerate`` 的请求体。两个字段都可省，整个体也可以不带。
+ * 重新生成的请求体，三个字段都可省，整个体也可以不带。
  *
  * ``content`` 给了就是「改了内容再重跑」，不给照原样重跑。``prompt_id`` 给了就与发消息同一套
- * 幂等：重发同一个 id 退回已有那条，不会再截一轮。
+ * 幂等：重发同一个 id 退回已有那条，不会再截一轮。``user_name`` 见 ``ActAsIn``。
  */
-export const zRegenerateBody = z.object({
+export const zRegenerateIn = z.object({
   content: z
     .array(z.union([zTextContent, zImageContent, zVideoContent]))
     .min(1)
@@ -3572,6 +3586,7 @@ export const zRegenerateBody = z.object({
     .max(128)
     .regex(/^[A-Za-z0-9._-]+$/)
     .nullish(),
+  user_name: z.string().nullish(),
 })
 
 /**
@@ -4538,7 +4553,7 @@ export const zTranslateFinalCutTextsConversationsConversationIdFinalCutTranslati
 export const zTranslateFinalCutTextsConversationsConversationIdFinalCutTranslationsPostResponse =
   zFinalCutTranslationsOut
 
-export const zApproveConversationsConversationIdInteractionsInteractionIdPostBody = zApprovalRequest
+export const zApproveConversationsConversationIdInteractionsInteractionIdPostBody = zApprovalIn
 
 export const zApproveConversationsConversationIdInteractionsInteractionIdPostPath = z.object({
   interaction_id: z.string().regex(/^[A-Za-z0-9._-]{1,128}$/),
@@ -4570,6 +4585,11 @@ export const zSubmitConversationsConversationIdPromptsPostPath = z.object({
  */
 export const zSubmitConversationsConversationIdPromptsPostResponse = zPrompt
 
+/**
+ * Body
+ */
+export const zAbortConversationsConversationIdPromptsPromptIdAbortPostBody = zActAsIn.nullable()
+
 export const zAbortConversationsConversationIdPromptsPromptIdAbortPostPath = z.object({
   prompt_id: z.string().regex(/^[A-Za-z0-9._-]{1,128}$/),
   conversation_id: z.uuid(),
@@ -4580,7 +4600,7 @@ export const zAbortConversationsConversationIdPromptsPromptIdAbortPostPath = z.o
  */
 export const zAbortConversationsConversationIdPromptsPromptIdAbortPostResponse = z.void()
 
-export const zSteerConversationsConversationIdPromptsSteerPostBody = zSteerRequest
+export const zSteerConversationsConversationIdPromptsSteerPostBody = zSteerIn
 
 export const zSteerConversationsConversationIdPromptsSteerPostPath = z.object({
   conversation_id: z.uuid(),
@@ -4654,7 +4674,7 @@ export const zCatchupConversationsConversationIdTranscriptOpsGetResponse = zOpsC
  * Body
  */
 export const zRegenerateConversationsConversationIdTurnsTurnIdRegeneratePostBody =
-  zRegenerateBody.nullable()
+  zRegenerateIn.nullable()
 
 export const zRegenerateConversationsConversationIdTurnsTurnIdRegeneratePostPath = z.object({
   turn_id: z.string().regex(/^[A-Za-z0-9._-]{1,128}$/),
@@ -4756,6 +4776,11 @@ export const zListConversationFilesConversationsConversationIdWorkspaceFilesGetP
  */
 export const zListConversationFilesConversationsConversationIdWorkspaceFilesGetResponse =
   zConversationFilesOut
+
+/**
+ * Body
+ */
+export const zAbortConversationConversationsConversationIdAbortPostBody = zActAsIn.nullable()
 
 export const zAbortConversationConversationsConversationIdAbortPostPath = z.object({
   conversation_id: z.uuid(),

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import httpx
 import pytest
+from agent_runtime.plugins.base import PluginRegistry
 from fastapi import FastAPI
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.tools import Tool
 from sqlalchemy import text
 
 from iclip.platform.db.engine import build_engine
@@ -12,6 +16,7 @@ from tests.helpers.agents import CONVERSABLE_SEEDS, SEEDER, AgentSeed, seed_agen
 from tests.helpers.app import make_client, settled
 from tests.helpers.auth import register_and_login, set_roles_in_db
 from tests.helpers.pg import connected
+from tests.helpers.plugins import FixedPlugin
 from tests.helpers.runtime_backed import config_services_of
 from tests.helpers.tasks import INPUTS
 
@@ -171,6 +176,96 @@ async def test_act_as_key_writes_a_workspace_file_only_as_the_conversation_owner
             written = await gateway.put(url, json={**edit, "userName": "Sara.Hong"})
             assert written.status_code == 200, written.text
             assert written.json()["file"] == {"path": "提纲.md", "content": "四幕", "version": 2}
+
+
+async def prompt_for_sara(gateway: httpx.AsyncClient) -> str:
+    opened = await gateway.post(
+        "/conversations", json={"agentId": "storyboard", "userName": "Sara.Hong"}
+    )
+    assert opened.status_code == 201, opened.text
+    conversation_id = opened.json()["conversation"]["id"]
+    sent = await gateway.post(
+        f"/conversations/{conversation_id}/prompts",
+        json={
+            "prompt_id": "prm_act_as_1",
+            "content": [{"type": "text", "text": "你是谁"}],
+            "user_name": "Sara.Hong",
+        },
+    )
+    assert sent.status_code == 200, sent.text
+    return conversation_id
+
+
+async def test_act_as_key_controls_the_run_only_as_the_conversation_owner(
+    app: FastAPI, migrated_pg: str
+) -> None:
+    async with make_client(app) as root:
+        _, token = await issue_key(root, migrated_pg, ACT_AS_GRANTS)
+        async with machine(app, token) as gateway:
+            conversation_id = await prompt_for_sara(gateway)
+            await settled(gateway, conversation_id)
+            base = f"/conversations/{conversation_id}"
+            sara = {"user_name": "Sara.Hong"}
+            steer = {"prompt_ids": ["prm_act_as_1"]}
+
+            assert (await gateway.post(f"{base}:abort")).status_code == 404
+            stranger = await gateway.post(f"{base}:abort", json={"user_name": "Kim.Lee"})
+            assert stranger.status_code == 404, "报的不是属主也停不了"
+            assert (await gateway.post(f"{base}:abort", json=sara)).status_code == 204
+
+            # 报了属主才进到运行时：这条已经跑完，停不了也插不进去，是运行时答的 409
+            prompt_abort = f"{base}/prompts/prm_act_as_1:abort"
+            assert (await gateway.post(prompt_abort)).status_code == 404
+            assert (await gateway.post(prompt_abort, json=sara)).status_code == 409
+            assert (await gateway.post(f"{base}/prompts:steer", json=steer)).status_code == 404
+            steered = await gateway.post(f"{base}/prompts:steer", json={**steer, **sara})
+            assert steered.status_code == 409
+
+            assert (await gateway.post(f"{base}/turns/t1:regenerate")).status_code == 404
+            replayed = await gateway.post(f"{base}/turns/t1:regenerate", json=sara)
+            assert replayed.status_code == 200, replayed.text
+            await settled(gateway, conversation_id)
+
+
+class TestActAsAnswersAnApproval:
+    @pytest.fixture
+    def agent_seeds(self) -> tuple[AgentSeed, ...]:
+        return (AgentSeed("storyboard", plugins=("approval",)),)
+
+    @pytest.fixture
+    def runtime_plugins(self) -> PluginRegistry:
+        def approved_action() -> str:
+            return "已执行"
+
+        capability = Capability[Any](
+            id="approval", tools=[Tool(approved_action, requires_approval=True)]
+        )
+        return {"approval": FixedPlugin.bind(name="approval", capabilities=(capability,))}
+
+    async def test_only_the_named_owner_can_answer_it(self, app: FastAPI, migrated_pg: str) -> None:
+        async with make_client(app) as root:
+            _, token = await issue_key(root, migrated_pg, ACT_AS_GRANTS)
+            async with machine(app, token) as gateway:
+                conversation_id = await prompt_for_sara(gateway)
+                pending = await pending_interactions(gateway, conversation_id)
+                url = f"/conversations/{conversation_id}/interactions/{pending[0]}"
+
+                unnamed = await gateway.post(url, json={"approved": True})
+                assert unnamed.status_code == 404
+                answered = await gateway.post(
+                    url, json={"approved": True, "user_name": "Sara.Hong"}
+                )
+                assert answered.status_code == 204, answered.text
+                await settled(gateway, conversation_id)
+
+
+async def pending_interactions(client: httpx.AsyncClient, conversation_id: str) -> list[str]:
+    for _ in range(200):
+        page = (await client.get(f"/conversations/{conversation_id}/transcript")).json()
+        if page["pending_interactions"]:
+            return page["pending_interactions"]
+        await asyncio.sleep(0.02)
+    raise AssertionError("一直没等到审批")
 
 
 async def job_owner(pg_url: str, conversation_id: str) -> str:
