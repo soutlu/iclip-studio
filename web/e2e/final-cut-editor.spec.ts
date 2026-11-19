@@ -1422,6 +1422,23 @@ const selectedClip = async (page: Page, editor: Locator) => {
   return clip
 }
 
+/**
+ * 把「镜头组 2」第一条原作整条（6 秒）作为一个视频片段放进 final-cut：加入镜头 1，在时间线上把它的结尾拉到素材
+ * 末尾，再取消选中。「镜头」页签里跨镜头的选区加入时一个镜头一个片段，拼不出一整条。返回拉满以后保存主文件的请求。
+ */
+const addWholeTake = async (page: Page, editor: Locator) => {
+  await selectedClip(page, editor)
+  const whole = mainSavedWith(page, (html) => savedVideoTimings(html)[0]?.duration === 6)
+  await editor
+    .getByRole('group', { name: '画面 1', exact: true })
+    .getByRole('slider', { name: '裁剪结尾' })
+    .focus()
+  for (let second = 0; second < 6; second += 1) await page.keyboard.press('Shift+ArrowRight')
+  const saved = await whole
+  await page.keyboard.press('Escape')
+  return saved
+}
+
 /** 接下来 `ms` 毫秒里工程主文件存过几次。 */
 const savesWithin = async (page: Page, ms: number) => {
   let saves = 0
@@ -2247,16 +2264,8 @@ test('字幕的改动直接打进预览：改一句的字、挪一句都不换�
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await openFinalCut(panel)
   const toolbar = editor.getByRole('toolbar', { name: '剪辑工具' })
-  const group = editor
-    .getByRole('region', { name: '视频素材区' })
-    .getByRole('group', { name: '镜头组 2' })
-  await group.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
   // 整条素材放进 final-cut：字幕在它里面挪，总长不变
-  await group.getByRole('slider', { name: '裁剪结尾' }).focus()
-  for (let second = 0; second < 6; second += 1) await page.keyboard.press('Shift+ArrowRight')
-  const added = mainSaved(page, 1)
-  await page.keyboard.press('Enter')
-  await added
+  await addWholeTake(page, editor)
 
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
@@ -2427,16 +2436,9 @@ test('识别字幕：点「识别字幕」发起一次识别，识别完写进�
   // 这段对话里还没有字幕识别记录：点了会真的发起识别（模拟环境里几秒后识别出两句）
   const panel = await openConversation(page, '工具过程展示')
   const editor = await openFinalCut(panel)
-  const group = editor
-    .getByRole('region', { name: '视频素材区' })
-    .getByRole('group', { name: '镜头组 2' })
-  await group.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
-  // 选中范围的结尾拉到素材末尾：整条素材放进 final-cut，两句话都在里面
-  await group.getByRole('slider', { name: '裁剪结尾' }).focus()
-  for (let second = 0; second < 6; second += 1) await page.keyboard.press('Shift+ArrowRight')
-  const added = mainSaved(page, 1)
-  await page.keyboard.press('Enter')
-  const videoId = /<video [^>]*id="([^"]+)"/.exec(htmlOf(await added))?.[1]
+  // 整条素材放进 final-cut，两句话都在里面
+  const added = await addWholeTake(page, editor)
+  const videoId = /<video [^>]*id="([^"]+)"/.exec(htmlOf(added))?.[1]
   expect(videoId).toBeDefined()
 
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
@@ -2889,15 +2891,7 @@ test('AI 配音：English 下点音色「原声」，配音行出现和字幕对
   // 这段对话里还没有字幕识别记录：先识别出两句，配音按它们配
   const panel = await openConversation(page, '工具过程展示')
   const editor = await openFinalCut(panel)
-  const group = editor
-    .getByRole('region', { name: '视频素材区' })
-    .getByRole('group', { name: '镜头组 2' })
-  await group.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
-  await group.getByRole('slider', { name: '裁剪结尾' }).focus()
-  for (let second = 0; second < 6; second += 1) await page.keyboard.press('Shift+ArrowRight')
-  const added = mainSaved(page, 1)
-  await page.keyboard.press('Enter')
-  await added
+  await addWholeTake(page, editor)
 
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
@@ -3036,15 +3030,7 @@ test('配音片段调音直接打进预览：English 下 AI 配音，给一个�
   // 和上一条一样：加一段镜头、识别出两句、加 English 翻好，用「原声」配好
   const panel = await openConversation(page, '工具过程展示')
   const editor = await openFinalCut(panel)
-  const group = editor
-    .getByRole('region', { name: '视频素材区' })
-    .getByRole('group', { name: '镜头组 2' })
-  await group.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
-  await group.getByRole('slider', { name: '裁剪结尾' }).focus()
-  for (let second = 0; second < 6; second += 1) await page.keyboard.press('Shift+ArrowRight')
-  const added = mainSaved(page, 1)
-  await page.keyboard.press('Enter')
-  await added
+  await addWholeTake(page, editor)
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
@@ -3127,15 +3113,7 @@ test('逐句配音：English 下给第二句选资料库的音色，只发这一
   // 和上一条一样：加一段镜头、识别出两句、加 English 翻好，用「原声」配好
   const panel = await openConversation(page, '工具过程展示')
   const editor = await openFinalCut(panel)
-  const group = editor
-    .getByRole('region', { name: '视频素材区' })
-    .getByRole('group', { name: '镜头组 2' })
-  await group.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
-  await group.getByRole('slider', { name: '裁剪结尾' }).focus()
-  for (let second = 0; second < 6; second += 1) await page.keyboard.press('Shift+ArrowRight')
-  const added = mainSaved(page, 1)
-  await page.keyboard.press('Enter')
-  await added
+  await addWholeTake(page, editor)
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
@@ -3305,15 +3283,7 @@ test('素材片的句子配音不压到后面的旁白上：English 下「重新
   // 加一段 6 秒的镜头、识别出两句，再在后面插一句旁白（还在这个视频片段里）
   const panel = await openConversation(page, '工具过程展示')
   const editor = await openFinalCut(panel)
-  const group = editor
-    .getByRole('region', { name: '视频素材区' })
-    .getByRole('group', { name: '镜头组 2' })
-  await group.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
-  await group.getByRole('slider', { name: '裁剪结尾' }).focus()
-  for (let second = 0; second < 6; second += 1) await page.keyboard.press('Shift+ArrowRight')
-  const added = mainSaved(page, 1)
-  await page.keyboard.press('Enter')
-  await added
+  await addWholeTake(page, editor)
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
@@ -4259,15 +4229,7 @@ const openWithCaptions = async (page: Page) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await openFinalCut(panel)
-  const group = editor
-    .getByRole('region', { name: '视频素材区' })
-    .getByRole('group', { name: '镜头组 2' })
-  await group.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
-  await group.getByRole('slider', { name: '裁剪结尾' }).focus()
-  for (let second = 0; second < 6; second += 1) await page.keyboard.press('Shift+ArrowRight')
-  const added = mainSaved(page, 1)
-  await page.keyboard.press('Enter')
-  await added
+  await addWholeTake(page, editor)
 
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
