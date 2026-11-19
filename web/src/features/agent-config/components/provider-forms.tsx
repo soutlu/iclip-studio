@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { ApiError, errorMessageOf } from '@/shared/api/client'
+import { useModelGroups } from '@/shared/api/model-groups'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
@@ -13,7 +14,6 @@ import {
   useAddModel,
   useCreateCredential,
   useCreateProvider,
-  useModelGroups,
   useUpdateCredential,
   useUpdateModel,
   type Declaration,

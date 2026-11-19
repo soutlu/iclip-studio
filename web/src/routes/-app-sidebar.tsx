@@ -7,6 +7,7 @@ import {
   SIDEBAR_ROW_CLASS,
   useLiveConversations,
 } from '@/features/conversations'
+import { SettingsDialog } from '@/features/settings'
 import { canAuditAll, hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
@@ -49,6 +50,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
     if (compact) onCollapsedChange(true)
   }, [compact, onCollapsedChange, pathname])
   const [searchOpen, setSearchOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const session = useUser()
   const { data: user } = session
   const requireLogin = useLoginPrompt()
@@ -58,6 +60,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
   const canReadLibrary = hasPermission(user, PERMISSION.generationRead)
   const canGovern = canAuditAll(user)
   const canManageAgents = hasPermission(user, PERMISSION.agentManage)
+  const canManageModels = hasPermission(user, PERMISSION.modelManage)
   const governLabelId = useId()
   useLiveConversations(canRead)
 
@@ -319,7 +322,11 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
           <div className="shrink-0 px-2 pb-2">
             <div aria-hidden className="mx-1.5 mb-2 h-px bg-hairline" />
             {user ? (
-              <CueUserMenu align="top-start" compact={rail} />
+              <CueUserMenu
+                align="top-start"
+                compact={rail}
+                onOpenSettings={() => setSettingsOpen(true)}
+              />
             ) : (
               <button
                 aria-label="登录"
@@ -345,6 +352,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
         </div>
       </aside>
       {searchDialog}
+      <SettingsDialog onOpenChange={setSettingsOpen} open={settingsOpen && canManageModels} />
     </>
   )
 }

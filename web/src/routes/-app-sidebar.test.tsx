@@ -313,6 +313,27 @@ describe('AppSidebar', () => {
         .map((button) => button.textContent),
     ).toEqual(['全部任务', '审计', 'Agent 配置'])
   })
+
+  it('用户菜单里的「设置」只给带 model:manage 的账号，点开是「设置」弹窗的「用户」分区', async () => {
+    loginAs(mockAuthUser)
+    const user = userEvent.setup()
+    const plain = await renderSidebar()
+    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
+    await user.click(await screen.findByRole('button', { name: '用户菜单' }))
+    expect(await screen.findByRole('menuitem', { name: '退出登录' })).toBeVisible()
+    expect(screen.queryByRole('menuitem', { name: '设置' })).not.toBeInTheDocument()
+    plain.unmount()
+
+    loginAs(mockGovernor)
+    await renderSidebar()
+    await user.click(screen.getByRole('button', { name: '展开侧边栏' }))
+    await user.click(await screen.findByRole('button', { name: '用户菜单' }))
+    await user.click(await screen.findByRole('menuitem', { name: '设置' }))
+
+    const dialog = await screen.findByRole('dialog', { name: '设置' })
+    expect(within(dialog).getByRole('region', { name: '用户' })).toBeVisible()
+    expect(await within(dialog).findByRole('list', { name: '用户列表' })).toBeVisible()
+  })
 })
 
 describe('AppSidebar 对话区', () => {

@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { useLogout, userDisplayName, useUser } from '@/shared/auth'
+import { hasPermission, PERMISSION, useLogout, userDisplayName, useUser } from '@/shared/auth'
 import { Icon, type IconName } from '@/shared/icons'
 import {
   setThemePreference,
@@ -17,6 +17,7 @@ import {
   MenuSurface,
   MenuTrigger,
 } from '@/shared/ui/menu'
+import { UserAvatar } from '@/shared/ui/user-avatar'
 
 type CueUserMenuAlign = 'bottom-end' | 'bottom-start' | 'top-end' | 'top-start'
 
@@ -24,6 +25,8 @@ type CueUserMenuProps = {
   align?: CueUserMenuAlign
   className?: string
   compact?: boolean
+  /** 点「设置」时调用；「设置」只对有 `model:manage` 的账号显示。 */
+  onOpenSettings: () => void
 }
 
 const ALIGN_PLACEMENT: Record<
@@ -45,13 +48,11 @@ const APPEARANCE: Record<ThemePreference, { icon: IconName; label: string }> = {
   system: { icon: 'theme-system', label: '跟随系统' },
 }
 
-const USER_AVATAR_CLASS =
-  'grid size-8 shrink-0 place-items-center overflow-hidden rounded-full text-label font-semibold'
-
 export function CueUserMenu({
   align = 'bottom-end',
   className = '',
   compact = false,
+  onOpenSettings,
 }: CueUserMenuProps) {
   const { data: user } = useUser()
   const logoutMutation = useLogout()
@@ -70,8 +71,7 @@ export function CueUserMenu({
   const secondaryLabel = user?.username && user.username !== userLabel ? user.username : ''
   const departments = user?.departments ?? []
   const hasProfileDetails = Boolean(user?.jobTitle || user?.city || departments.length)
-  const avatarUrl = user?.avatarUrl.trim() ?? ''
-  const avatarInitial = user ? userLabel.trim().charAt(0).toUpperCase() : ''
+  const canOpenSettings = hasPermission(user, PERMISSION.modelManage)
 
   return (
     <MenuRoot>
@@ -86,23 +86,7 @@ export function CueUserMenu({
             className,
           )}
         >
-          <span
-            aria-hidden="true"
-            className={cn(
-              USER_AVATAR_CLASS,
-              avatarUrl
-                ? 'border border-border bg-top-layer text-on-surface'
-                : 'bg-surface-container-high text-on-surface-variant',
-            )}
-          >
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
-            ) : avatarInitial ? (
-              avatarInitial
-            ) : (
-              <CueUserAvatarIcon />
-            )}
-          </span>
+          <UserAvatar avatarUrl={user?.avatarUrl ?? ''} name={user ? userLabel : ''} />
           {!compact && (
             <>
               <span aria-hidden="true" className="flex min-w-0 flex-1 flex-col text-left">
@@ -196,12 +180,11 @@ export function CueUserMenu({
             ))}
           </MenuRadioGroup>
         </div>
-        <MenuItem disabled icon="settings">
-          <span className="flex items-center justify-between gap-2">
+        {canOpenSettings ? (
+          <MenuItem icon="settings" onSelect={onOpenSettings}>
             设置
-            <span className="text-caption text-on-surface-faint">即将上线</span>
-          </span>
-        </MenuItem>
+          </MenuItem>
+        ) : null}
         <MenuSeparator />
         <MenuItem
           icon="logout"
@@ -216,28 +199,5 @@ export function CueUserMenu({
         </MenuItem>
       </MenuSurface>
     </MenuRoot>
-  )
-}
-
-function CueUserAvatarIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="shrink-0"
-      data-cue-user-avatar-icon="true"
-      fill="none"
-      height="18"
-      viewBox="0 0 24 24"
-      width="18"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <circle cx="12" cy="8.25" r="3.25" stroke="currentColor" strokeWidth="1.75" />
-      <path
-        d="M5.75 19.25c.78-3.08 3.07-5 6.25-5s5.47 1.92 6.25 5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.75"
-      />
-    </svg>
   )
 }

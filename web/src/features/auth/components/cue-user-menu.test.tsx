@@ -11,7 +11,7 @@ async function renderMenu(compact = false) {
   loginAs(mockAuthUser)
   await renderWithProviders(
     <>
-      <CueUserMenu compact={compact} />
+      <CueUserMenu compact={compact} onOpenSettings={() => {}} />
       <button type="button">页面后续控件</button>
     </>,
   )

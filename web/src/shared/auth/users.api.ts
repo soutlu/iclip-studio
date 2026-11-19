@@ -5,7 +5,10 @@ import { zUsersPageOut } from '@/shared/api/generated/zod.gen'
 import { drainPages } from '@/shared/api/paging'
 import type { PickerSource } from '@/shared/ui/search-picker'
 
-const USERS_DIRECTORY_KEY = ['users', 'directory'] as const
+/** 所有缓存 `/users` 的查询共用的键前缀；改了用户就按它整体失效。 */
+export const USERS_QUERY_KEY_ROOT = 'users'
+
+const USERS_DIRECTORY_KEY = [USERS_QUERY_KEY_ROOT, 'directory'] as const
 
 const PAGE_SIZE = 200
 
