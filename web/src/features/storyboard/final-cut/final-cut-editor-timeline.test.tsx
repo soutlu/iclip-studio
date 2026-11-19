@@ -636,12 +636,12 @@ describe('final-cut 编辑器 · 时间线', () => {
     expect(within(music).getByText('已静音')).toBeVisible()
   })
 
-  it('双击时间线上的片段：选中它，停在「字幕·配音」时也切到「属性」', async () => {
+  it('双击时间线上的片段：选中它，停在「字幕」时也切到「属性」', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     const user = userEvent.setup()
     await openEditor()
     const side = screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-    await user.click(within(side).getByRole('tab', { name: '字幕·配音' }))
+    await user.click(within(side).getByRole('tab', { name: '字幕' }))
     await user.dblClick(clip(/2\.0 秒$/))
     expect(clip(/2\.0 秒$/)).toHaveAttribute('aria-pressed', 'true')
     expect(within(side).getByRole('tab', { name: '属性' })).toHaveAttribute('aria-selected', 'true')

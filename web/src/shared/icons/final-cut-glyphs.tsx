@@ -18,6 +18,9 @@ const SPEAKER =
 const EYE = 'M2.6 12s3.4-6 9.4-6 9.4 6 9.4 6-3.4 6-9.4 6-9.4-6-9.4-6Z'
 const NOTE_STEM = 'M10.3 17.2V6.6l7.2-1.8v4.8'
 const TRAY = 'M4.5 16h15v2.2a2.3 2.3 0 0 1-2.3 2.3H6.8a2.3 2.3 0 0 1-2.3-2.3V16Z'
+const PANEL_SIDE = 'M15 4.25h3.25a3 3 0 0 1 3 3v9.5a3 3 0 0 1-3 3H15V4.25Z'
+const CLOUD =
+  'M7.2 18.5h10.2a4.1 4.1 0 0 0 .7-8.14A5.75 5.75 0 0 0 6.8 9.2 4.65 4.65 0 0 0 7.2 18.5Z'
 const TRAY_EDGE = 'M4.2 15.8v2.4a2.3 2.3 0 0 0 2.3 2.3h11a2.3 2.3 0 0 0 2.3-2.3v-2.4'
 const MIC = (
   <>
@@ -149,6 +152,31 @@ export const FINAL_CUT_GLYPHS = {
       <circle className={FILL} cx={12} cy={12} r={8.5} />
       <circle cx={12} cy={12} r={8.6} />
       <path d="M12 7.4v4.8l3.2 2" />
+    </>,
+  ),
+  // 右栏收起成图标轨 / 展开
+  'final-cut-panel-close': glyph(
+    <>
+      <path className={FILL} d={PANEL_SIDE} />
+      <rect height={15.5} rx={3.2} width={18.5} x={2.75} y={4.25} />
+      <path d="M14.75 4.25v15.5" />
+      <path d="m8.2 9.5 2.5 2.5-2.5 2.5" />
+    </>,
+  ),
+  'final-cut-panel-open': glyph(
+    <>
+      <path className={FILL} d={PANEL_SIDE} />
+      <rect height={15.5} rx={3.2} width={18.5} x={2.75} y={4.25} />
+      <path d="M14.75 4.25v15.5" />
+      <path d="m10.7 9.5-2.5 2.5 2.5 2.5" />
+    </>,
+  ),
+  // 工作台顶栏：已自动保存
+  'final-cut-saved': glyph(
+    <>
+      <path className={FILL} d={CLOUD} />
+      <path d={CLOUD} />
+      <path d="m9.5 13.6 1.85 1.85 3.65-3.8" />
     </>,
   ),
 

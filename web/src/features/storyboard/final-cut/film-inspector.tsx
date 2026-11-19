@@ -97,7 +97,7 @@ type Props = {
   onTextEditing: (editing: boolean) => void
   /** 选中的是一个有声片段时它的「智能调音」；别的时候是 undefined。 */
   smartMix: SmartMix | undefined
-  /** 点「内容与样式」标题右边的语言小块：打开「字幕·配音」页签。 */
+  /** 点「内容与样式」标题右边的语言小块：打开「字幕」页签。 */
   onOpenCaptions: () => void
 }
 

@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { use, useEffect, useMemo, useRef } from 'react'
+import { use, useEffect, useMemo, useRef, useState } from 'react'
 import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
 import { useConversationReadOnly } from '@/shared/transcript/use-conversation-read-only'
 import { useTranscript } from '@/shared/transcript/use-transcript'
@@ -14,6 +14,7 @@ import { useArtifactSearch, useOpenArtifact } from './artifact-search'
 import { composeArtifacts, isStanding, pickArtifact, type ArtifactRegistry } from './registry'
 import { useWorkbenchRegistry } from './use-workbench-registry'
 import { useWorkbenchOpenRequest } from './use-workbench-open-request'
+import { WorkbenchHeaderSlotContext } from './workbench-header-slot-context'
 import { WorkbenchLayoutContext } from './workbench-layout-context'
 import { useWorkspaceFiles, workspaceQueryKeys } from './workspace.api'
 
@@ -107,6 +108,8 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
     selectedId: undefined,
     token: openToken,
   })
+  // 顶栏右侧给当前页签放控件的地方（见 WorkbenchHeaderActions）
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null)
 
   useEffect(() => {
     if (connection === null) return undefined
@@ -220,15 +223,18 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
                 </TabsTrigger>
               ))}
             </TabsList>
+            <div className="flex shrink-0 items-center" ref={setHeaderSlot} />
             {actions}
           </div>
           <TabsContent className="flex min-h-0 flex-1 flex-col" value={selected.id}>
-            <Renderer
-              artifact={selected}
-              conversationId={conversationId}
-              key={selected.id}
-              readOnly={readOnly}
-            />
+            <WorkbenchHeaderSlotContext value={headerSlot}>
+              <Renderer
+                artifact={selected}
+                conversationId={conversationId}
+                key={selected.id}
+                readOnly={readOnly}
+              />
+            </WorkbenchHeaderSlotContext>
           </TabsContent>
         </TabsRoot>
       )}

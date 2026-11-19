@@ -57,7 +57,7 @@ const SHORTCUTS: readonly { keys: readonly string[]; action: string }[] = [
   { keys: ['F'], action: '全屏或退出全屏' },
 ]
 
-/** 预览下面的播放条：进度条一行；时间、播放键，右边是试听和看的设置。 */
+/** 预览下面的播放条：进度条一行；下面左边是播放键和时间，右边是试听和看的设置、快捷键。 */
 export function PreviewTransport({
   playheadMs,
   totalMs,
@@ -115,24 +115,26 @@ export function PreviewTransport({
         />
       </Slider.Root>
       <div className="wf-transport-row">
-        <span className="wf-clock">
-          {timeLabel(time)} <span>/ {timeLabel(total)}</span>
-        </span>
-        <Tool
-          blocked={playBlocked}
-          className="wf-play"
-          icon={playing ? 'final-cut-pause' : 'final-cut-play'}
-          label={playLabel}
-          onClick={onPlay}
-          shortcuts="Space"
-          tip={
-            <>
-              {playLabel}
-              <Keys>空格</Keys>
-            </>
-          }
-          tipContainer={layer}
-        />
+        <div className="wf-transport-play">
+          <Tool
+            blocked={playBlocked}
+            className="wf-play"
+            icon={playing ? 'final-cut-pause' : 'final-cut-play'}
+            label={playLabel}
+            onClick={onPlay}
+            shortcuts="Space"
+            tip={
+              <>
+                {playLabel}
+                <Keys>空格</Keys>
+              </>
+            }
+            tipContainer={layer}
+          />
+          <span className="wf-clock">
+            {timeLabel(time)} <span>/ {timeLabel(total)}</span>
+          </span>
+        </div>
         <div className="wf-transport-tools">
           <Tool
             icon={playback.muted ? 'final-cut-sound-off' : 'final-cut-sound-on'}

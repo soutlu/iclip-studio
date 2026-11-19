@@ -93,9 +93,10 @@ test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销、导出
   const toolbar = editor.getByRole('toolbar', { name: '剪辑工具' })
   const transport = editor.getByRole('group', { name: '播放控制' })
   await expect(editor.getByText('final-cut 暂无内容，加入内容后可在此预览')).toBeVisible()
-  // 「导出」在剪辑工具条的最后；编辑器是工作台的一个页签，排在「文件」前面，没有标题栏和关闭按钮
-  const exportButton = toolbar.getByRole('button', { name: '导出', exact: true })
-  await expect(toolbar.getByRole('button').last()).toHaveAccessibleName('导出')
+  // 「导出」在工作台顶栏右边，不在编辑器里；编辑器是工作台的一个页签，排在「文件」前面，没有标题栏和关闭按钮
+  const exportButton = panel.getByRole('button', { name: '导出', exact: true })
+  await expect(exportButton).toBeVisible()
+  await expect(editor.getByRole('button', { name: '导出', exact: true })).toHaveCount(0)
   // final-cut 是空的：「导出」置灰，点了只说明原因（aria-disabled 的按钮 Playwright 认作不可点，照样点一下）
   await expect(exportButton).toHaveAttribute('aria-disabled', 'true')
   await exportButton.click({ force: true })
@@ -231,8 +232,8 @@ test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销、导出
     (response) => response.url().includes(`/generations/${exportId}/enhancements`),
     { timeout: 20_000 },
   )
-  await expect(editor.getByRole('status').filter({ hasText: /排队中|正在渲染/ })).toBeVisible()
-  const download = editor.getByRole('button', { name: '下载成片' })
+  await expect(panel.getByRole('status').filter({ hasText: /排队中|正在渲染/ })).toBeVisible()
+  const download = panel.getByRole('button', { name: '下载成片' })
   await expect(download).toBeVisible({ timeout: 15_000 })
   await tiers
   const tracked = page.waitForRequest(
@@ -248,7 +249,7 @@ test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销、导出
   await panel.getByRole('tab', { name: '分镜' }).click()
   await expect(editor).toBeHidden()
   const reopened = await openFinalCut(panel)
-  await expect(reopened.getByRole('button', { name: '下载成片' })).toBeVisible()
+  await expect(panel.getByRole('button', { name: '下载成片' })).toBeVisible()
   const reopenedToolbar = reopened.getByRole('toolbar', { name: '剪辑工具' })
   await expect(
     reopened.getByRole('group', { name: '播放控制' }).locator('.wf-clock span'),
@@ -1361,22 +1362,21 @@ test('编辑区变窄时只裁不换行：工具条和侧栏页签都排一行�
   const zoomIn = await boxOf(toolbar.getByRole('button', { name: '放大时间线' }))
   expect(zoomIn.y).toBe(undo.y)
   expect((await boxOf(toolbar)).height).toBeLessThanOrEqual(32)
-  // 「导出」排在工具条最后，超出编辑区右边的部分被时间线卡片裁掉
-  const exporting = await boxOf(toolbar.getByRole('button', { name: '导出', exact: true }))
-  expect(exporting.x + exporting.width).toBeGreaterThan(workspace.x + workspace.width)
+  // 工具条最后的按钮超出编辑区右边，被时间线卡片裁掉
+  const last = toolbar.getByRole('button').last()
+  const clipped = await boxOf(last)
+  expect(clipped.x + clipped.width).toBeGreaterThan(workspace.x + workspace.width)
 
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   const firstTab = await boxOf(side.getByRole('tab', { name: '镜头' }))
   const propsTab = await boxOf(side.getByRole('tab', { name: '属性' }))
   expect(propsTab.y).toBe(firstTab.y)
 
-  // 裁掉的部分滚不出来：横向滚动、把焦点挪到被裁掉的「导出」上，工具条都不挪
+  // 裁掉的部分滚不出来：横向滚动、把焦点挪到被裁掉的按钮上，工具条都不挪
   await page.mouse.move(undo.x + 100, undo.y + undo.height / 2)
   await page.mouse.wheel(300, 0)
-  await toolbar
-    .getByRole('button', { name: '导出', exact: true })
-    .evaluate((button: HTMLElement) => button.focus())
-  await expect(toolbar.getByRole('button', { name: '导出', exact: true })).toBeFocused()
+  await last.evaluate((button: HTMLElement) => button.focus())
+  await expect(last).toBeFocused()
   expect((await boxOf(toolbar.getByRole('button', { name: '撤销' }))).x).toBe(undo.x)
   expect((await boxOf(editor)).x).toBe(workspace.x)
 })
@@ -1884,8 +1884,8 @@ test('焦点在对话框里时空格、Delete、Esc 都不碰剪辑；点编辑�
   await expect(transport.getByRole('button', { name: '播放', exact: true })).toBeVisible()
   await expect(input).toBeFocused()
 
-  // 点在预览的空白处（画面外面的角上）：焦点落在编辑器的根节点上，快捷键照常
-  await editor.getByRole('region', { name: '预览' }).click({ position: { x: 4, y: 4 } })
+  // 点在预览的空白处（画面外面的角上，躲开舞台的圆角）：焦点落在编辑器的根节点上，快捷键照常
+  await editor.getByRole('region', { name: '预览' }).click({ position: { x: 12, y: 12 } })
   await expect(editor).toBeFocused()
   await page.keyboard.press(' ')
   await expect(transport.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
@@ -2692,8 +2692,7 @@ test('按语言导出：切到 English 点「导出」，提示写导出 English
     'true',
   )
 
-  const toolbar = editor.getByRole('toolbar', { name: '剪辑工具' })
-  const exportButton = toolbar.getByRole('button', { name: '导出', exact: true })
+  const exportButton = panel.getByRole('button', { name: '导出', exact: true })
   await exportButton.hover()
   await expect(page.getByRole('tooltip', { name: '导出 English 版' })).toBeVisible()
   const started = page.waitForRequest(
@@ -2701,7 +2700,7 @@ test('按语言导出：切到 English 点「导出」，提示写导出 English
   )
   await exportButton.click()
   expect((await started).postDataJSON()).toEqual({ locale: 'en' })
-  await expect(editor.getByRole('status').filter({ hasText: /English 版/ })).toBeVisible()
+  await expect(panel.getByRole('status').filter({ hasText: /English 版/ })).toBeVisible()
 })
 
 /** 存出的主文件里一个属性的值（双引号里、`&quot;` 换回引号）；`tag` 是元素的开始标签。 */
@@ -2876,8 +2875,8 @@ test('AI 配音：English 下点音色「原声」，配音行出现和字幕对
   await added
 
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-  await side.getByRole('tab', { name: '字幕·配音' }).click()
-  const tab = side.getByRole('tabpanel', { name: '字幕·配音' })
+  await side.getByRole('tab', { name: '字幕' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕' })
   const recognized = page.waitForRequest(
     (request) =>
       (savedFileOf(request, CAPTIONS_FILE)?.match(/data-caption-of/g) ?? []).length === 2,
@@ -3022,8 +3021,8 @@ test('配音片段调音直接打进预览：English 下 AI 配音，给一个�
   await page.keyboard.press('Enter')
   await added
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-  await side.getByRole('tab', { name: '字幕·配音' }).click()
-  const tab = side.getByRole('tabpanel', { name: '字幕·配音' })
+  await side.getByRole('tab', { name: '字幕' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕' })
   const recognized = page.waitForRequest(
     (request) =>
       (savedFileOf(request, CAPTIONS_FILE)?.match(/data-caption-of/g) ?? []).length === 2,
@@ -3054,7 +3053,7 @@ test('配音片段调音直接打进预览：English 下 AI 配音，给一个�
     .getByRole('button', { name: /^选中：配音 · \[EN\] / })
     .first()
     .click()
-  // 选中配音片段时侧栏停在「字幕·配音」
+  // 选中配音片段时侧栏停在「字幕」
   await side.getByRole('tab', { name: '属性' }).click()
   const inspector = editor.getByRole('tabpanel', { name: '属性' })
   await expect(inspector.getByRole('heading', { name: '智能调音' })).toBeVisible()
@@ -3113,8 +3112,8 @@ test('逐句配音：English 下给第二句选资料库的音色，只发这一
   await page.keyboard.press('Enter')
   await added
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-  await side.getByRole('tab', { name: '字幕·配音' }).click()
-  const tab = side.getByRole('tabpanel', { name: '字幕·配音' })
+  await side.getByRole('tab', { name: '字幕' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕' })
   const recognized = page.waitForRequest(
     (request) =>
       (savedFileOf(request, CAPTIONS_FILE)?.match(/data-caption-of/g) ?? []).length === 2,
@@ -3232,8 +3231,8 @@ test('旁白配音：原文下输入文案、选资料库的音色插入，按�
   await page.keyboard.press('Enter')
   await added
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-  await side.getByRole('tab', { name: '字幕·配音' }).click()
-  const tab = side.getByRole('tabpanel', { name: '字幕·配音' })
+  await side.getByRole('tab', { name: '字幕' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕' })
 
   await tab.getByRole('button', { name: '旁白配音' }).click()
   const narration = tab.getByRole('group', { name: '旁白配音' })
@@ -3291,8 +3290,8 @@ test('素材片的句子配音不压到后面的旁白上：English 下「重新
   await page.keyboard.press('Enter')
   await added
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-  await side.getByRole('tab', { name: '字幕·配音' }).click()
-  const tab = side.getByRole('tabpanel', { name: '字幕·配音' })
+  await side.getByRole('tab', { name: '字幕' }).click()
+  const tab = side.getByRole('tabpanel', { name: '字幕' })
   const recognized = page.waitForRequest(
     (request) =>
       (savedFileOf(request, CAPTIONS_FILE)?.match(/data-caption-of/g) ?? []).length === 2,

@@ -108,7 +108,7 @@ describe('属性 · 片段种类', () => {
 })
 
 describe('属性 · 「内容与样式」的语言小块', () => {
-  it('贴片：标题右边写着显示着的语言，点它打开「字幕·配音」', async () => {
+  it('贴片：标题右边写着显示着的语言，点它打开「字幕」', async () => {
     const user = userEvent.setup()
     const onOpenCaptions = vi.fn()
     await renderWithProviders(
@@ -126,7 +126,7 @@ describe('属性 · 「内容与样式」的语言小块', () => {
     expect(onOpenCaptions).toHaveBeenCalledOnce()
   })
 
-  it('字幕：原文下写「原文」，点它打开「字幕·配音」', async () => {
+  it('字幕：原文下写「原文」，点它打开「字幕」', async () => {
     const user = userEvent.setup()
     const onOpenCaptions = vi.fn()
     await renderWithProviders(

@@ -6,8 +6,10 @@ import {
   type CSSProperties,
   type RefObject,
 } from 'react'
+import { Icon } from '@/shared/icons'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { MediaBuffering } from '@/shared/ui/media-buffering'
+import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { StageBackdrop } from '../components/stage-backdrop'
 import { framePosition } from '../editing/frame-seek'
 import type { Edge } from '../editing/timeline-drag'
@@ -28,10 +30,14 @@ type MaterialPreviewProps = {
   controlRef: RefObject<MaterialPreviewControl | null>
   url: string
   view: MaterialView
-  /** 这块区域的无障碍名称：放的是哪条素材的哪几个镜头。 */
+  /** 放的是哪条素材的哪几个镜头：写在左上角的提示块里，也是这块区域的无障碍名称。 */
   label: string
   rate: number
   muted: boolean
+  /** 点提示块上的「回到 final-cut」。 */
+  onLeave: () => void
+  /** 提示挂到哪个元素里；全屏时是全屏的元素，不然是 `null`（挂到 body）。 */
+  layer: HTMLElement | null
   onTime: (ms: number) => void
   onPlaying: (playing: boolean) => void
   onNotice: (message: string) => void
@@ -44,6 +50,8 @@ export function MaterialPreview({
   label,
   rate,
   muted,
+  onLeave,
+  layer,
   onTime,
   onPlaying,
   onNotice,
@@ -160,6 +168,25 @@ export function MaterialPreview({
             } as CSSProperties
           }
         />
+      </div>
+      <div className="wf-source-pill">
+        <i aria-hidden="true" className="wf-source-pill-dot" />
+        <span className="wf-source-pill-text">{label}</span>
+        <TooltipRoot>
+          <TooltipTrigger asChild>
+            <button
+              aria-label="回到 final-cut"
+              className="ui-focus"
+              onClick={onLeave}
+              type="button"
+            >
+              <Icon decorative name="final-cut-close" size="sm" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent container={layer} side="bottom">
+            回到 final-cut
+          </TooltipContent>
+        </TooltipRoot>
       </div>
       {waiting ? <MediaBuffering /> : null}
     </div>

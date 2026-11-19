@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
   type RefObject,
 } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -16,9 +17,13 @@ import type { TimeSpan } from '@/shared/lib/time-spans'
 import { cn } from '@/shared/lib/utils'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MediaBuffering } from '@/shared/ui/media-buffering'
-import { TabsContent, TabsList, TabsRoot, TabsTrigger } from '@/shared/ui/tabs'
+import { TabsContent, TabsRoot } from '@/shared/ui/tabs'
 import { toast } from '@/shared/ui/toast'
-import { useWorkbenchCollapsed, type ArtifactRendererProps } from '@/shared/workbench'
+import {
+  useWorkbenchCollapsed,
+  WorkbenchHeaderActions,
+  type ArtifactRendererProps,
+} from '@/shared/workbench'
 import { groupConversationVideos } from '../conversation-videos/video-groups'
 import { keyframeRanges } from '../editing/keyframe-segments'
 import { useAudioPeaks } from '../editing/media-analysis'
@@ -83,7 +88,6 @@ import { ExportControl } from './export-control'
 import { FilmInspector } from './film-inspector'
 import { FilmTimeline, type DropGhost, type TimelineHandle } from './film-timeline'
 import {
-  ITEM_KIND_LABEL,
   ITEM_KINDS,
   itemDurationMs,
   NO_FILTER,
@@ -145,7 +149,11 @@ import {
 } from './preview-player'
 import type { PreviewFilm } from './preview-sync'
 import { PreviewTransport } from './preview-transport'
+import { LayoutSplitter } from './layout-splitter'
+import { SaveStatus } from './save-status'
 import { aroundPlayhead } from './selection'
+import { SideNav } from './side-nav'
+import { CATALOG_TABS, type CatalogTab, type SideTab } from './side-tabs'
 import { resyncPlan, soundActionFor, type SoundAction, type SoundControls } from './sound-pair'
 import { rowMoveDirection } from './stacking'
 import { FIT_ZOOM, timelineScale, zoomScrollLeft, zoomToClips, type Zoom } from './timeline-scale'
@@ -157,6 +165,7 @@ import {
 } from './translation'
 import { useCaptionRecognition, type RecognitionOutcome } from './use-caption-recognition'
 import { useDubbing, type DubbingDone } from './use-dubbing'
+import { SIDE_WIDTH, TIMELINE_MIN_HEIGHT, useEditorLayout } from './use-editor-layout'
 import { useFilmSession, type NewAudio } from './use-film-session'
 import { useMusicBeats } from './use-music-beats'
 import { useSmartMix } from './use-smart-mix'
@@ -214,14 +223,6 @@ const previewCaptionsOf = (clips: readonly FilmClip[], locale: ShownLocale) =>
         : [],
     ),
   )
-
-/** 侧栏的目录页签：镜头、贴片、场景、配乐、字幕。 */
-type CatalogTab = 'shots' | ItemKind | 'audio' | 'captions'
-type SideTab = CatalogTab | 'props'
-const CATALOG_TABS: readonly CatalogTab[] = ['shots', ...ITEM_KINDS, 'audio', 'captions']
-// 侧栏页签：当前页签是浅底块，不用共用页签的下划线
-const SIDE_TAB_CLASS =
-  'rounded-sm py-1 text-label text-on-surface-muted after:hidden data-[state=active]:bg-state-active data-[state=active]:font-semibold'
 
 const watchFullscreen = (notify: () => void) => {
   document.addEventListener('fullscreenchange', notify)
@@ -484,7 +485,16 @@ function EditorBody({
     if (sideTab !== 'captions') setSideTab(selectionKey === '' ? catalogTab : 'props')
   }
   const selectOnly = (id: string) => setSelectedIds(new Set([id]))
+  const sideRef = useRef<HTMLElement | null>(null)
+  const timelinePanelRef = useRef<HTMLDivElement | null>(null)
+  // 右栏宽度、收起，时间线高度。选中片段时右栏收着就收着（「属性」上亮圆点），点页签或双击片段才展开
+  const { layout, setSideCollapsed, sideSplitter, timelineSplitter } = useEditorLayout(() => ({
+    stage,
+    side: sideRef.current,
+    timeline: timelinePanelRef.current,
+  }))
   const openSideTab = (value: string) => {
+    setSideCollapsed(false)
     if (value === 'props') {
       setSideTab('props')
       return
@@ -494,7 +504,6 @@ function EditorBody({
     setCatalogTab(tab)
     setSideTab(tab)
   }
-  const sideRef = useRef<HTMLElement | null>(null)
   // 切到「属性」时焦点可能还在刚藏起来的目录里（比如在卡片上按了 ]），浏览器随后把它丢到页面上，
   // 快捷键就收不到了：交还给编辑器的根节点
   useLayoutEffect(() => {
@@ -529,10 +538,10 @@ function EditorBody({
   }
   const selectAround = (side: 'left' | 'right') =>
     selectOnTimeline(new Set(aroundPlayhead(clips, playhead, side)))
-  /** 双击时间线上的片段：只选中它，侧栏切到「属性」（停在别的页签时也切）。 */
+  /** 双击时间线上的片段：只选中它，右栏切到「属性」（停在别的页签时也切，收着时展开）。 */
   const inspectClip = (id: string) => {
     selectOnTimeline(new Set([id]))
-    setSideTab('props')
+    openSideTab('props')
   }
   const split = (cuts: readonly Cut[]) => {
     if (cuts.length === 0) return
@@ -1357,7 +1366,7 @@ function EditorBody({
     },
   }
   const hostsWithText = textHosts(clips, catalog)
-  // 语言切换和添加：工具条上和「字幕·配音」页签顶部共用这一份
+  // 语言切换和添加：工具条上和「字幕」页签顶部共用这一份
   const localeControls: LocaleControls = {
     current: locale.code,
     present: film?.locales ?? [],
@@ -1437,12 +1446,48 @@ function EditorBody({
       </p>
     )
 
-  /** 切到「属性」时，切走前停的目录页签留在页面上（藏起来），回来时搜索词、分类、滚动位置都还在。 */
+  /**
+   * 切到「属性」或右栏收起时，切走前停的目录页签留在页面上（藏起来），回来时搜索词、分类、滚动位置都还在。
+   * 收起时「属性」也藏起来，不卸掉。
+   */
   const catalogPanel = (tab: CatalogTab) =>
-    tab === catalogTab ? { forceMount: true as const, hidden: sideTab !== tab } : {}
+    tab === catalogTab
+      ? { forceMount: true as const, hidden: sideTab !== tab || layout.sideCollapsed }
+      : {}
+
+  // 右栏收着时页签内容藏起来，和工作台折叠一样当作看不见：试听、播放跟着停
+  const sideShown = !collapsed && !layout.sideCollapsed
 
   return (
-    <div className="wf-workspace">
+    <div
+      className={cn(
+        'wf-workspace',
+        layout.sideCollapsed && 'is-side-collapsed',
+        layout.timelineHeight !== null && 'is-timeline-sized',
+      )}
+      style={
+        {
+          '--wf-side-width': `${layout.sideWidth}px`,
+          '--wf-timeline-height':
+            layout.timelineHeight === null ? undefined : `${layout.timelineHeight}px`,
+        } as CSSProperties
+      }
+    >
+      <WorkbenchHeaderActions>
+        <div className="wf-header-actions">
+          <SaveStatus save={session.save} />
+          <ExportControl
+            blocked={exportBlocked}
+            onCancel={() => void exporting.cancel()}
+            onStart={() => void exporting.start(locale.code)}
+            target={{
+              locale: locale.code,
+              untranslated: pending === undefined ? 0 : pending.entries.length + pending.tooLong,
+            }}
+            view={exporting.view}
+          />
+        </div>
+      </WorkbenchHeaderActions>
       <div className="wf-stage" ref={setStage}>
         <PreviewPlayer
           backdrop={shown === undefined ? undefined : videoSnapshotUrl(shown.src, 320)}
@@ -1470,6 +1515,8 @@ function EditorBody({
             controlRef={materialPreviewRef}
             label={materialLabel(viewedMaterial, materialView.range)}
             muted={playback.muted}
+            layer={fullscreen ? stage : null}
+            onLeave={leaveMaterial}
             onNotice={notice}
             onPlaying={setMaterialPlaying}
             onTime={setMaterialMs}
@@ -1491,37 +1538,33 @@ function EditorBody({
           playback={playback}
         />
       </div>
+      {layout.sideCollapsed ? null : (
+        <LayoutSplitter
+          className="wf-side-splitter"
+          label="调整右栏宽度"
+          max={SIDE_WIDTH.max}
+          min={SIDE_WIDTH.min}
+          orientation="vertical"
+          value={layout.sideWidth}
+          {...sideSplitter}
+        />
+      )}
       <aside
         aria-label="镜头、贴片、场景、配乐、字幕和属性"
-        className="wf-panel wf-side"
+        className={cn('wf-panel wf-side', layout.sideCollapsed && 'is-collapsed')}
         ref={sideRef}
       >
-        <TabsRoot className="wf-side-panel" onValueChange={openSideTab} value={sideTab}>
-          <TabsList
-            aria-label="镜头、贴片、场景、配乐、字幕和属性页签"
-            className="wf-side-tabs items-center gap-0.5"
-          >
-            <TabsTrigger className={SIDE_TAB_CLASS} value="shots">
-              镜头
-            </TabsTrigger>
-            {ITEM_KINDS.map((kind) => (
-              <TabsTrigger className={SIDE_TAB_CLASS} key={kind} value={kind}>
-                {ITEM_KIND_LABEL[kind]}
-              </TabsTrigger>
-            ))}
-            <TabsTrigger className={SIDE_TAB_CLASS} value="audio">
-              配乐
-            </TabsTrigger>
-            <TabsTrigger className={SIDE_TAB_CLASS} value="captions">
-              字幕·配音
-            </TabsTrigger>
-            <TabsTrigger className={cn(SIDE_TAB_CLASS, 'wf-side-tab-props')} value="props">
-              属性
-              {selected.size > 0 ? (
-                <i aria-hidden="true" className="wf-side-dot" data-testid="selection-dot" />
-              ) : null}
-            </TabsTrigger>
-          </TabsList>
+        <TabsRoot
+          className="wf-side-panel"
+          onValueChange={openSideTab}
+          orientation={layout.sideCollapsed ? 'vertical' : 'horizontal'}
+          value={sideTab}
+        >
+          <SideNav
+            collapsed={layout.sideCollapsed}
+            onCollapsedChange={setSideCollapsed}
+            selection={selected.size > 0}
+          />
           <TabsContent className="wf-side-body" value="shots" {...catalogPanel('shots')}>
             <MaterialArea
               groups={materials.groups}
@@ -1609,7 +1652,7 @@ function EditorBody({
           ))}
           <TabsContent className="wf-side-body is-audio" value="audio" {...catalogPanel('audio')}>
             <AudioTab
-              active={sideTab === 'audio' && !collapsed}
+              active={sideTab === 'audio' && sideShown}
               clips={clips}
               conversationId={conversationId}
               onAdd={(audio) =>
@@ -1637,7 +1680,7 @@ function EditorBody({
             {...catalogPanel('captions')}
           >
             <CaptionsTab
-              active={sideTab === 'captions' && !collapsed}
+              active={sideTab === 'captions' && sideShown}
               onNotice={notice}
               addBlocked={captionBlocked}
               captions={captions}
@@ -1681,7 +1724,11 @@ function EditorBody({
               }
             />
           </TabsContent>
-          <TabsContent className="wf-side-body is-props" value="props">
+          <TabsContent
+            className="wf-side-body is-props"
+            hidden={sideTab !== 'props' || layout.sideCollapsed}
+            value="props"
+          >
             <FilmInspector
               audioPeaks={audioPeaks}
               clips={clips}
@@ -1719,20 +1766,16 @@ function EditorBody({
           </TabsContent>
         </TabsRoot>
       </aside>
-      <div className="wf-panel wf-timeline">
+      <LayoutSplitter
+        className="wf-timeline-splitter"
+        label="调整时间线高度"
+        min={TIMELINE_MIN_HEIGHT}
+        orientation="horizontal"
+        value={layout.timelineHeight ?? undefined}
+        {...timelineSplitter}
+      />
+      <div className="wf-panel wf-timeline" ref={timelinePanelRef}>
         <EditorToolbar
-          actions={
-            <ExportControl
-              blocked={exportBlocked}
-              onCancel={() => void exporting.cancel()}
-              onStart={() => void exporting.start(locale.code)}
-              target={{
-                locale: locale.code,
-                untranslated: pending === undefined ? 0 : pending.entries.length + pending.tooLong,
-              }}
-              view={exporting.view}
-            />
-          }
           canRedo={history.canRedo}
           canUndo={history.canUndo}
           fitPps={scale.fitPps}
