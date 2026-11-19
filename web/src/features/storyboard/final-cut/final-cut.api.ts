@@ -334,7 +334,7 @@ export const useConversationMusic = (conversationId: string) =>
     refetchInterval: ({ state }) => generationsRefetchInterval(state.data ?? []),
   })
 
-/** 参考音频库里的全部音色，建立晚的在前：「字幕·配音」里选配音的音色用；`enabled` 为假时不读。 */
+/** 参考音频库里的全部音色，建立晚的在前：「字幕」页签里选配音的音色用；`enabled` 为假时不读。 */
 export const useLibraryVoices = (enabled: boolean) => useQuery({ ...voicesQuery(), enabled })
 
 /** 参考音频库里的配乐或音效，按 `q` 搜（匹配标题、备注），一页一页读：「配乐」页签的「音频库」用。 */

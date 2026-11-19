@@ -35,7 +35,7 @@ export type TextLocale = {
 }
 
 /**
- * 「内容与样式」的标题行：标题右边一个小块写着显示着的语言，点它打开「字幕·配音」页签（在那里切换、添加语言）。
+ * 「内容与样式」的标题行：标题右边一个小块写着显示着的语言，点它打开「字幕」页签（在那里切换、添加语言）。
  * 贴片、场景和字幕的「内容与样式」共用。
  */
 export function ContentTitle({ locale, onLocale }: { locale: Language; onLocale: () => void }) {
@@ -55,7 +55,7 @@ export function ContentTitle({ locale, onLocale }: { locale: Language; onLocale:
           </button>
         </TooltipTrigger>
         <TooltipContent className="wf-tip" side="top">
-          在「字幕·配音」中切换
+          在「字幕」中切换
         </TooltipContent>
       </TooltipRoot>
     </div>

@@ -52,7 +52,7 @@ describe('final-cut 编辑器 · 配音', () => {
   }
   const ORIGINAL_B = { kind: 'original', spans: [{ startMs: 900, endMs: 1_900 }] }
   const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
-  const panel = () => screen.getByRole('tabpanel', { name: '字幕·配音' })
+  const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
   const voiceRow = () => within(panel()).getByRole('group', { name: '人声设置' })
   /** 人声设置里的按钮：「保留原声」「重新生成」和音色小块（「原声」、资料库里的各个音色）。 */
   const voiceButton = (name: string) => within(panel()).getByRole('button', { name })
@@ -138,7 +138,7 @@ describe('final-cut 编辑器 · 配音', () => {
    * 工程：素材 A 切成两半（0–2 秒、2–4 秒，后半段从素材的第 2 秒起），素材 B 一段（4–5.5 秒，从素材的第 0.5 秒
    * 起、2 倍速）；字幕 a1、d4 属于前半段，b2 属于后半段，c3 属于 B，e5 是手动加的。English 的值表是 `english`
    * （默认翻了 a1、b2、c3、e5，没翻 d4）；`dubs` 是已有的配音片段，`modes` 是已有的人声设置。打开编辑器，切到
-   * 「字幕·配音」页签和 English。
+   * 「字幕」页签和 English。
    */
   const open = async (
     english: Record<string, string> = {
@@ -181,7 +181,7 @@ describe('final-cut 编辑器 · 配音', () => {
     await user.click(
       within(
         screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
-      ).getByRole('tab', { name: '字幕·配音' }),
+      ).getByRole('tab', { name: '字幕' }),
     )
     await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
     await waitFor(() => expect(voiceRow()).toBeVisible())
@@ -691,7 +691,7 @@ describe('final-cut 编辑器 · 配音', () => {
 describe('final-cut 编辑器 · 旁白配音', () => {
   const EN_FILE = 'final-cut/locales/en.json'
   const SPEECH_URL = 'https://media.test/speech.m4a'
-  const panel = () => screen.getByRole('tabpanel', { name: '字幕·配音' })
+  const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
   const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
   const narrationClips = () => screen.queryAllByRole('group', { name: /^旁白 · / })
 
@@ -748,7 +748,7 @@ describe('final-cut 编辑器 · 旁白配音', () => {
 
   /**
    * 工程：素材 A 一段（0–4 秒），字幕 a1（0–1 秒）属于它；给了 `voice` 时还有一句旁白 n1（2–3 秒，用这个音色）和它的
-   * 旁白片段，`dubbed` 时再加 n1 的 English 配音、English 是 AI 配音。打开编辑器，切到「字幕·配音」页签。
+   * 旁白片段，`dubbed` 时再加 n1 的 English 配音、English 是 AI 配音。打开编辑器，切到「字幕」页签。
    */
   const open = async ({ voice, dubbed = false }: { voice?: string; dubbed?: boolean } = {}) => {
     const lines = [sceneLine('a1', 0, 1_000, 'clip-1')]
@@ -781,7 +781,7 @@ describe('final-cut 编辑器 · 旁白配音', () => {
     await user.click(
       within(
         screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
-      ).getByRole('tab', { name: '字幕·配音' }),
+      ).getByRole('tab', { name: '字幕' }),
     )
     return user
   }

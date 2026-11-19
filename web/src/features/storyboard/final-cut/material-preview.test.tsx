@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { createRef, type ComponentProps } from 'react'
 import { expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@/shared/ui/tooltip'
 import { MaterialPreview, type MaterialPreviewControl, type MaterialView } from './material-preview'
 import type { MaterialRange } from './materials'
 
@@ -24,21 +25,28 @@ const setup = (view: MaterialView) => {
     label: '素材 · 镜头组 1 · 生成 A · 镜头 2',
     rate: 1,
     muted: false,
+    onLeave: vi.fn(),
+    layer: null,
     onTime: time,
     onPlaying: () => {},
     onNotice: () => {},
   }
-  const { container, rerender } = render(<MaterialPreview {...props} />)
+  const { container, rerender } = render(<MaterialPreview {...props} />, {
+    wrapper: TooltipProvider,
+  })
   const video = container.querySelector('video')
   if (video === null) throw new Error('没有素材视频')
   return { video, time, controlRef, props, rerender, play, pause }
 }
 
-it('画面上不放文字：放的是哪条素材的哪几个镜头写在区域的无障碍名称里', () => {
-  const { video } = setup({ range, show: 'start' })
+it('放的是哪条素材的哪几个镜头：写在左上角的提示块里，也是区域的无障碍名称；点「回到 final-cut」退出', () => {
+  const { video, props } = setup({ range, show: 'start' })
   const region = screen.getByRole('region', { name: '素材 · 镜头组 1 · 生成 A · 镜头 2' })
   expect(region).toContainElement(video)
-  expect(region.textContent).toBe('')
+  expect(region).toHaveTextContent(/^素材 · 镜头组 1 · 生成 A · 镜头 2$/)
+
+  fireEvent.click(screen.getByRole('button', { name: '回到 final-cut' }))
+  expect(props.onLeave).toHaveBeenCalledTimes(1)
 })
 
 it('跳转夹在选区里：范围以外停在最近的一端，媒体按那一端的偏移定位；不播放也不暂停', () => {

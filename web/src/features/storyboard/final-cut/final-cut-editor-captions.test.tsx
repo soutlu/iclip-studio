@@ -63,8 +63,8 @@ describe('final-cut 编辑器 · 字幕页签', () => {
   const side = () =>
     screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   const openCaptions = (user: ReturnType<typeof userEvent.setup>) =>
-    user.click(within(side()).getByRole('tab', { name: '字幕·配音' }))
-  const panel = () => screen.getByRole('tabpanel', { name: '字幕·配音' })
+    user.click(within(side()).getByRole('tab', { name: '字幕' }))
+  const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
   const addButton = () => within(panel()).getByRole('button', { name: '在播放头处加一句' })
   const savedScene = () =>
     mockWorkspaceFile(CONVERSATION, `final-cut/${CAPTIONS_PATH}`)?.content ?? ''
@@ -476,8 +476,8 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
   it('停在「字幕」页签时在时间线上选中片段（字幕、视频都一样）不切走，选中的字幕在列表里标成当前；在页签里点一句的时间：选中它、播放头到它的开始', async () => {
     const user = await open()
     const side = screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-    await user.click(within(side).getByRole('tab', { name: '字幕·配音' }))
-    const panel = () => screen.getByRole('tabpanel', { name: '字幕·配音' })
+    await user.click(within(side).getByRole('tab', { name: '字幕' }))
+    const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
     const current = () =>
       within(panel())
         .getAllByRole('listitem')
@@ -511,12 +511,12 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
     await user.click(
       within(
         screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
-      ).getByRole('tab', { name: '字幕·配音' }),
+      ).getByRole('tab', { name: '字幕' }),
     )
     await previewSettled()
 
     await user.click(
-      within(screen.getByRole('tabpanel', { name: '字幕·配音' })).getByRole('button', {
+      within(screen.getByRole('tabpanel', { name: '字幕' })).getByRole('button', {
         name: '00:03.01 – 00:04.00',
       }),
     )
@@ -590,9 +590,9 @@ describe('final-cut 编辑器 · 识别字幕', () => {
     await user.click(
       within(
         screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
-      ).getByRole('tab', { name: '字幕·配音' }),
+      ).getByRole('tab', { name: '字幕' }),
     )
-    return screen.getByRole('tabpanel', { name: '字幕·配音' })
+    return screen.getByRole('tabpanel', { name: '字幕' })
   }
   const recognizeButton = (panel: HTMLElement) =>
     within(panel).getByRole('button', { name: /^(识别字幕|识别中…)$/ })

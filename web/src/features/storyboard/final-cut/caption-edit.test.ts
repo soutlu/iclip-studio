@@ -381,7 +381,7 @@ describe('配音片段跟着它配的那句字幕走', () => {
   })
 })
 
-describe('选中的片段在「字幕·配音」里对应什么', () => {
+describe('选中的片段在「字幕」里对应什么', () => {
   const dubOf = (id: string, of: string, locale: string | null) =>
     audio({ id, dub: { locale, caption: of, trimmed: false, voice: null } })
   const texted = new Set(['title-1'])

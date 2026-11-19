@@ -436,7 +436,9 @@ test('预览素材时播放条是素材的：读数按整条原作算，点、�
     '8',
   )
   await expect(material).toHaveAccessibleName('素材 · 镜头组 1 · 生成 A · 镜头 2–4')
-  await expect(material).toHaveText('')
+  // 左上角的提示块写着同一句，带「回到 final-cut」
+  await expect(material).toHaveText('素材 · 镜头组 1 · 生成 A · 镜头 2–4')
+  await expect(material.getByRole('button', { name: '回到 final-cut' })).toBeVisible()
   await expect(progress).toHaveAttribute('aria-valuetext', '00:02.00 / 00:20.00')
 
   const bar = await transport.getByTestId('preview-seek').boundingBox()
