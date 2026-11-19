@@ -179,8 +179,8 @@ export type FilmView = {
   /** 组件或块的片段里随语言的文字字段（片段编号 → 字段到根变量），没有随语言字段的片段不在里面。 */
   bindings: ReadonlyMap<string, LocaleBindings>
   /**
-   * 画面上能编辑的层和组件或块的宿主（见 canvas-layers.ts）：主文件、字幕场景和打开着的组件文件里的，按它们
-   * 现在的内容（没存的改动也在里面）。
+   * 画面上能编辑的层和组件或块的宿主（见 canvas-layers.ts）：主文件和字幕场景里的，按它们现在的内容（没存的
+   * 改动也在里面）。
    */
   layers: readonly CanvasLayer[]
   canUndo: boolean
@@ -599,8 +599,7 @@ const viewOf = (
 }
 
 /**
- * 工作区里存着的各文件（路径相对工程根 → 文件，不存在的是 null）：主文件、字幕场景、各语言值表和组件或块的
- * 宿主挂载的文件。
+ * 工作区里存着的各文件（路径相对工程根 → 文件，不存在的是 null）：主文件、字幕场景和各语言值表。
  */
 const storedFilesOf = (stored: StoredProject | null): Map<string, StoredFile | null> =>
   new Map<string, StoredFile | null>(
@@ -610,7 +609,6 @@ const storedFilesOf = (stored: StoredProject | null): Map<string, StoredFile | n
           [PROJECT_MAIN, stored.main],
           [stored.captionsPath, stored.captions],
           ...[...stored.locales].map(([code, file]) => [localePath(code), file] as const),
-          ...stored.components,
         ],
   )
 
@@ -1104,16 +1102,9 @@ export function useFilmSession(
       const stored = await readProject(conversationId)
       await settled()
       const storedFiles = storedFilesOf(stored)
-      const project = projectRef.current
-      const files = project?.files
-      // 组件文件只在存着的主文件还挂着它时才比：宿主删掉以后它不在读到的工程里，不算别处删了它
-      const mounted = (path: string) =>
-        path === PROJECT_MAIN ||
-        path === project?.captionsPath ||
-        localeOfPath(path) !== undefined ||
-        storedFiles.has(path)
+      const files = projectRef.current?.files
       const paths = new Set([
-        ...[...(files?.keys() ?? [PROJECT_MAIN])].filter(mounted),
+        ...(files?.keys() ?? [PROJECT_MAIN]),
         ...[...storedFiles.keys()].filter((path) => localeOfPath(path) !== undefined),
       ])
       const external = [...paths].some((path) => {
@@ -1190,25 +1181,6 @@ export function useFilmSession(
   )
 
   useEffect(() => () => disposeAll(projectRef.current), [])
-
-  /**
-   * 把宿主挂载的文件 `path`（相对工程根）打开进工程（画面上改里面的层要写它），不进撤销；已经打开着、工作区里
-   * 没有时不动。打开时按 SDK 存出的样子记成已存，不改就不重写。
-   */
-  const openMounted = useCallback(
-    async (project: Project, path: string) => {
-      if (project.files.has(path)) return
-      const stored = await readProjectFile(conversationId, path)
-      if (stored === null || project.files.has(path)) return
-      const doc = await openDoc(path, stored.content, collect)
-      if (projectRef.current !== project || project.files.has(path)) {
-        docOps(doc).dispose()
-        return
-      }
-      project.files.set(path, { doc, version: stored.version, saved: docOps(doc).serialize() })
-    },
-    [collect, conversationId],
-  )
 
   /** 还没有工程时按 `canvas` 用模板建一份；连着加两次也只建一份，后一次等前一次建好。 */
   const projectFor = useCallback(
@@ -1308,12 +1280,6 @@ export function useFilmSession(
         return false
       }
       const project = await projectFor(canvas)
-      try {
-        await openMounted(project, item.src)
-      } catch (error) {
-        noticeRef.current(errorMessageOf(error, '贴片和场景读取失败'))
-        return false
-      }
       const engine = mainOf(project)
       const root = rootOf(engine)
       if (root === undefined) return false
@@ -1353,7 +1319,7 @@ export function useFilmSession(
       show()
       return true
     },
-    [catalog, conversationId, openMounted, projectFor, perform, show],
+    [catalog, conversationId, projectFor, perform, show],
   )
 
   /**

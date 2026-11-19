@@ -418,6 +418,29 @@ describe('useFilmSession · 文件变化的通知', () => {
     expect(reads.count).toBe(0)
     expect(result.current.film?.clips).toEqual([video()])
   })
+
+  it('贴片的组件文件在别处改了：预览要重新加载，工程不重读、不提示，没存的改动和撤销都还在', async () => {
+    const conversation = crypto.randomUUID()
+    const path = 'final-cut/compositions/fixtures/fixture-fields.html'
+    const component = itemFileContent('compositions/fixtures/fixture-fields.html')
+    putMockWorkspaceFile(conversation, path, component)
+    const { result, onNotice, notify } = await open(
+      putMockProjectMain(conversation, mainFile([host()], CANVAS)),
+      60_000,
+      conversation,
+    )
+    await add(result, piece({ mediaStart: 3_000 }))
+    const clips = result.current.film?.clips
+    const reads = countMainReads()
+    putMockWorkspaceFile(conversation, path, `${component}<!-- 别处改过 -->\n`)
+    notify(path)
+    expect(result.current.filesRevision).toBe(1)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(reads.count).toBe(0)
+    expect(onNotice).not.toHaveBeenCalled()
+    expect(result.current.film?.canUndo).toBe(true)
+    expect(result.current.film?.clips).toEqual(clips)
+  })
 })
 
 describe('useFilmSession · 编辑', () => {
@@ -1029,7 +1052,7 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
     audio({ id: 'm', duration: 8_000 }),
   ]
 
-  it('画面上改贴片整个：挪、缩放、转写在主文件里宿主自己的行内样式上，不写 data-x，一步撤销；组件文件打开着也不改', async () => {
+  it('画面上改贴片整个：挪、缩放、转写在主文件里宿主自己的行内样式上，不写 data-x，一步撤销；组件文件不改', async () => {
     const conversation = crypto.randomUUID()
     const path = 'final-cut/compositions/fixtures/fixture-fields.html'
     const component = `<!doctype html>
@@ -1047,8 +1070,7 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
     const layer = result.current.film?.layers.find((each) => each.host)
     if (layer === undefined) throw new Error('没有认出贴片的宿主')
     expect(layer).toMatchObject({ file: 'index.html', clip: 'title-1', scope: null })
-    // 组件文件打开着，里面的元素不是层
-    expect(result.current.contentOf('compositions/fixtures/fixture-fields.html')).toBeDefined()
+    // 组件文件里的元素不是层
     expect(result.current.film?.layers.filter((each) => each.scope === 'title-1')).toEqual([])
     const hostTag = (html: string | undefined) =>
       /<div [^>]*data-composition-src[^>]*>/.exec(html ?? '')?.[0] ?? ''
@@ -1063,7 +1085,7 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
         },
       ]),
     )
-    // 这一步只改了主文件：预览照常直接打补丁，不因为组件文件整份重新加载
+    // 这一步只改了主文件：预览照常直接打补丁，不整份重新加载
     expect(result.current.film?.step?.map((change) => change.file)).toEqual(['index.html'])
     await waitFor(() => expect(saves.length).toBeGreaterThan(0))
     expect(mockWorkspaceFile(conversation, path)?.content).toBe(component)

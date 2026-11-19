@@ -179,10 +179,6 @@ export type StoredProject = {
   captions: StoredFile | null
   hosted: boolean
   locales: ReadonlyMap<LocaleCode, StoredFile>
-  /**
-   * 主文件里组件或块的宿主挂载的文件（路径相对工程根 → 文件），画面上改里面的层要写它们；工作区里没有的不在里面。
-   */
-  components: ReadonlyMap<string, StoredFile>
 }
 
 /** 工程里有值表的语言：`final-cut/locales/` 下认识的语言的值表，按 `LOCALES` 的先后。 */
@@ -211,17 +207,18 @@ export const readLocaleFile = async (
   return file
 }
 
-/** 主文件根下挂载着文件的宿主：挂载的文件，是不是字幕宿主。 */
-const mountedSources = (html: string) => {
+/** 主文件根下第一个字幕宿主挂载的文件，没有字幕宿主时是 undefined。 */
+const captionsSource = (html: string): string | undefined => {
   const page = new DOMParser().parseFromString(html, 'text/html')
   const root = page.querySelector('[data-composition-id]')
-  return [...(root?.children ?? [])].flatMap((child) => {
+  for (const child of root?.children ?? []) {
     const src = child.getAttribute('data-composition-src')
     const attributes = Object.fromEntries(
       [...child.attributes].map((attribute) => [attribute.name, attribute.value]),
     )
-    return src === null ? [] : [{ src, captions: isCaptionsHost(attributes) }]
-  })
+    if (src !== null && isCaptionsHost(attributes)) return src
+  }
+  return undefined
 }
 
 /**
@@ -235,19 +232,12 @@ export const readProject = async (
 ): Promise<StoredProject | null> => {
   const main = await readProjectFile(conversationId, PROJECT_MAIN, signal)
   if (main === null) return null
-  const mounted = mountedSources(main.content)
-  const source = mounted.find((mount) => mount.captions)?.src
+  const source = captionsSource(main.content)
   const captionsPath = source ?? CAPTIONS_PATH
   const locales = new Map<LocaleCode, StoredFile>()
   for (const code of await storedLocales(conversationId, signal)) {
     const file = await readLocaleFile(conversationId, code, signal)
     if (file !== null) locales.set(code, file)
-  }
-  const components = new Map<string, StoredFile>()
-  for (const { src } of mounted.filter((mount) => !mount.captions)) {
-    if (components.has(src)) continue
-    const file = await readProjectFile(conversationId, src, signal)
-    if (file !== null) components.set(src, file)
   }
   return {
     main,
@@ -255,7 +245,6 @@ export const readProject = async (
     captions: await readProjectFile(conversationId, captionsPath, signal),
     hosted: source !== undefined,
     locales,
-    components,
   }
 }
 
