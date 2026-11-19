@@ -141,6 +141,38 @@ async def test_act_as_key_can_prompt_the_conversation_it_opened_for_someone(
         )
 
 
+async def test_act_as_key_writes_a_workspace_file_only_as_the_conversation_owner(
+    app: FastAPI, migrated_pg: str
+) -> None:
+    async with make_client(app) as root:
+        _, token = await issue_key(root, migrated_pg, ACT_AS_GRANTS)
+        async with machine(app, token) as gateway:
+            opened = await gateway.post(
+                "/conversations", json={"agentId": "storyboard", "userName": "Sara.Hong"}
+            )
+            conversation = opened.json()["conversation"]
+            async with connected(migrated_pg) as conn:
+                await conn.execute(
+                    text(
+                        "INSERT INTO agent_runtime.workspace_files "
+                        "(namespace, path, content, version, created_at, updated_at) "
+                        "VALUES (:ns, '提纲.md', '三幕', 1, now(), now())"
+                    ),
+                    {"ns": f"{conversation['ownerUserId']}/{conversation['id']}"},
+                )
+            url = f"/conversations/{conversation['id']}/workspace/file"
+            edit = {"path": "提纲.md", "content": "四幕", "expectedVersion": 1}
+
+            unnamed = await gateway.put(url, json=edit)
+            assert unnamed.status_code == 403, "不报名字就是钥匙属主本人，不是这段对话的属主"
+            stranger = await gateway.put(url, json={**edit, "userName": "Kim.Lee"})
+            assert stranger.status_code == 403, "报的不是属主也写不进去"
+
+            written = await gateway.put(url, json={**edit, "userName": "Sara.Hong"})
+            assert written.status_code == 200, written.text
+            assert written.json()["file"] == {"path": "提纲.md", "content": "四幕", "version": 2}
+
+
 async def job_owner(pg_url: str, conversation_id: str) -> str:
     async with connected(pg_url) as conn:
         row = await conn.execute(

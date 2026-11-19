@@ -19,10 +19,11 @@
 - **请求来源检查**：`POST`、`PUT`、`PATCH`、`DELETE` 请求与 WebSocket 握手携带 `Origin` 头时，其主机和端口必须等于请求的 `Host`，或命中配置 `security.cors_allow_origins`；否则写请求在所有路由之前直接返回 `403`（`{ detail }`），WebSocket 握手以 `1008` 关闭。`Origin: null` 与同站其他子域名（含预览域名）均不放行；不带 `Origin` 的非浏览器请求（如 API Key 调用方与运行时内部回调）不受影响。
 - **接口权限声明**：每个接口所需权限以 `openapi.json` 的 `security` 字段为准（数组各项之间为「或」关系，内部 scopes 为必须同时具备的权限名；空数组代表只需登录；无 `security` 代表公开接口；`POST /auth/logout` 仅限浏览器 Cookie 调用）。
 - **修改用户时的防越权检查**：调用 `PATCH /users/{id}` 修改他人账号（含启停账号）时，若对方现有权限或修改后权限包含当前操作者自身没有的权限，返回 `403`；尝试修改自身权限或停用自己返回 `400`。
-- **代指定用户操作（`users:act_as`）**：持有 `users:act_as` 权限的 API Key，在调用以下 7 个写接口时传入目标用户名，即可将数据直接记在该用户名下：
+- **代指定用户操作（`users:act_as`）**：持有 `users:act_as` 权限的 API Key，在调用以下 8 个写接口时传入目标用户名，即可以该用户的身份操作：新建的数据直接记在该用户名下；往已有对话发消息、改工作区文件时须填对话属主：
   - `POST /conversations`（`userName`）
   - `POST /tasks`（`userName`）
   - `POST /conversations/{id}/prompts`（`user_name`）
+  - `PUT /conversations/{id}/workspace/file`（`userName`）
   - `POST /generations/*`（`user_name` 或 `userName`）
   - `POST /references/videos/{id}/test-generations`（`userName`）
   - `POST /references/audios`（`userName`）

@@ -2102,7 +2102,7 @@
       },
       "ConversationFileWriteIn": {
         "additionalProperties": false,
-        "description": "整份覆盖工作区里的一个文件。\n\n``expectedVersion`` 是读到那一份的版本号：agent 与用户会同时写同一份文件，对不上\n就是 409，让调用方重读再决定，而不是把别人刚写的盖掉。",
+        "description": "整份覆盖工作区里的一个文件。\n\n``expectedVersion`` 是读到那一份的版本号：agent 与用户会同时写同一份文件，对不上\n就是 409，让调用方重读再决定，而不是把别人刚写的盖掉。\n\n``userName`` 是替谁写：带 ``users:act_as`` 的 API Key 填对话属主的用户名才写得进去。",
         "properties": {
           "content": {
             "title": "Content",
@@ -2116,6 +2116,17 @@
             "minLength": 1,
             "title": "Path",
             "type": "string"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
           }
         },
         "required": [
@@ -19673,7 +19684,7 @@
         ]
       },
       "put": {
-        "description": "整份覆盖一个工作区文件。路径在体里，与读那一侧的查询串是同一个字符串。\n\n版本对不上 409，文件本身不合它那条路径的规矩 422（消息原样给出来）。",
+        "description": "整份覆盖一个工作区文件。路径在体里，与读那一侧的查询串是同一个字符串。\n\n版本对不上 409，文件本身不合它那条路径的规矩 422（消息原样给出来），不是属主 403。",
         "operationId": "write_conversation_file_conversations__conversation_id__workspace_file_put",
         "parameters": [
           {

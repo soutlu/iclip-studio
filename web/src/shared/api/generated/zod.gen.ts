@@ -520,11 +520,14 @@ export const zConversationFileOut = z.object({
  *
  * ``expectedVersion`` 是读到那一份的版本号：agent 与用户会同时写同一份文件，对不上
  * 就是 409，让调用方重读再决定，而不是把别人刚写的盖掉。
+ *
+ * ``userName`` 是替谁写：带 ``users:act_as`` 的 API Key 填对话属主的用户名才写得进去。
  */
 export const zConversationFileWriteIn = z.object({
   content: z.string(),
   expectedVersion: z.int(),
   path: z.string().min(1),
+  userName: z.string().nullish(),
 })
 
 /**
