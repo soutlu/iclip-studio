@@ -3690,8 +3690,9 @@ test('其它语言下画面上挪贴片：存下之前预览里已经挪过去�
   await expect(layer.getByRole('img', { name: '选中：测试可填项' })).toBeVisible()
   const cardSaves = countCardSaves(page)
 
-  // 存不下去：预览里也已经挪过去了
+  // 存不下去：预览里也已经挪过去了。保存请求在预览挪好之前就可能发出（只是收不到答复），按键前就开始等它
   await pauseMockResponses(page, '/workspace/file')
+  const nudged = mainSavedWith(page, (html) => cardOffset(savedCard(html)).x === -10)
   await page.keyboard.press('Shift+ArrowLeft')
   const canvas = await boxOf(layer)
   const shift = async () =>
@@ -3700,7 +3701,6 @@ test('其它语言下画面上挪贴片：存下之前预览里已经挪过去�
   const shown = await shift()
 
   // 存下以后：主文件里宿主挪了 10 像素，预览里还在那里
-  const nudged = mainSavedWith(page, (html) => cardOffset(savedCard(html)).x === -10)
   await releaseMockResponses(page, '/workspace/file')
   await nudged
   await readyPlayer(editor)
