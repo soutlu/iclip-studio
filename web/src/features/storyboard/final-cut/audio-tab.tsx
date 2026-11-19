@@ -13,7 +13,7 @@ import { MEDIA_AUDIO_ACCEPT, uploadMediaFile } from '@/shared/api/media-upload'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { useAudition } from '@/shared/ui/audition'
-import { Button, IconButton } from '@/shared/ui/button'
+import { IconButton } from '@/shared/ui/button'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { Composer, type ComposerHandle } from '@/shared/ui/composer'
 import { Input } from '@/shared/ui/field'
@@ -37,6 +37,7 @@ import { AudioLibrary } from './audio-library'
 import type { CarryPoint } from './items-tab'
 import type { FilmClip } from './composition/film'
 import { useEditorEscape } from './editor-keys'
+import { EmptyNote } from './empty-note'
 import type { NewAudio } from './use-film-session'
 import {
   refreshConversationMusic,
@@ -47,8 +48,28 @@ import {
 
 const MAX_PROMPT_CHARS = 3000
 
-/** final-cut 里用着的那一行行尾写的字。 */
+/** final-cut 里用着的那一行：行尾那个勾的无障碍名，也接在整行按钮的名字后面。 */
 const USED_LABEL = '使用中'
+
+// 名字下面那条迷你波形的竖条高度（视框 14 高）：只是一个「这是音频」的装饰，每行一样，不是这条音频真实的波形
+const WAVE_STEP = 4
+const WAVE_BARS = [
+  5, 9, 12, 7, 4, 8, 13, 10, 6, 3, 7, 11, 13, 8, 5, 9, 12, 6, 4, 8, 11, 7, 5, 3,
+].map((height, index) => ({ x: index * WAVE_STEP, height }))
+
+function SongWave() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="wf-song-wave"
+      viewBox={`0 0 ${WAVE_BARS.length * WAVE_STEP} 14`}
+    >
+      {WAVE_BARS.map(({ x, height }) => (
+        <rect height={height} key={x} rx={1} width={2} x={x} y={(14 - height) / 2} />
+      ))}
+    </svg>
+  )
+}
 
 type AudioTabProps = {
   conversationId: string
@@ -81,7 +102,11 @@ function MusicStatus({ status }: { status: GenerationJob['status'] }) {
   return (
     <span
       aria-label={statusLabel(status)}
-      className={cn('wf-music-status', running && 'is-running', status === 'failed' && 'is-failed')}
+      className={cn(
+        'wf-song-disc wf-music-status',
+        running && 'is-running',
+        status === 'failed' && 'is-failed',
+      )}
       role="img"
     >
       {running ? (
@@ -207,7 +232,7 @@ export function AudioTab({
       placeholder="搜索音频"
       type="search"
       value={query}
-      wrapperClassName="wf-field wf-search"
+      wrapperClassName="wf-field wf-search wf-audio-search"
     />
   )
   const views = (
@@ -232,7 +257,6 @@ export function AudioTab({
   if (view === 'library')
     return (
       <div className="wf-audio">
-        {search}
         {views}
         <AudioLibrary
           active={active}
@@ -245,36 +269,29 @@ export function AudioTab({
               audition,
             )
           }
+          search={search}
         />
       </div>
     )
 
   return (
     <div className={cn('wf-audio', drop.dragOver && 'is-over')} {...drop.dragHandlers}>
-      {search}
       {views}
-      <div className="wf-audio-actions">
+      <div className="wf-audio-tools">
         <GenerateMusic conversationId={conversationId} onNotice={onNotice}>
-          <Button
-            className="wf-audio-action"
-            leadingIcon="final-cut-generate"
-            size="md"
-            variant="primary"
-          >
+          <button className="wf-chip-btn is-soft ui-state ui-focus" type="button">
+            <Icon decorative name="final-cut-generate" size="sm" />
             生成音乐
-          </Button>
+          </button>
         </GenerateMusic>
-        <Button
-          className="wf-audio-action is-import"
+        <IconButton
+          className="wf-audio-import"
           disabled={uploading}
-          leadingIcon="final-cut-upload"
-          loading={uploading}
+          label="导入音频"
+          name={uploading ? 'loading' : 'final-cut-upload'}
           onClick={() => fileRef.current?.click()}
-          size="md"
-          variant="outlined"
-        >
-          导入音频
-        </Button>
+          size="sm"
+        />
         <input
           accept={MEDIA_AUDIO_ACCEPT}
           aria-label="选择音频文件"
@@ -290,27 +307,22 @@ export function AudioTab({
           type="file"
         />
       </div>
+      {search}
       {music.isError ? (
-        <div className="wf-audio-note">
+        <div className="wf-audio-alert">
           <InlineAlert
             action={{ label: '重试', onClick: () => void music.refetch() }}
             message={errorMessageOf(music.error, '读取音频失败')}
           />
         </div>
       ) : music.isPending ? (
-        <p className="wf-audio-note" role="status">
-          正在读取音频…
-        </p>
+        <EmptyNote icon="final-cut-music">正在读取音频…</EmptyNote>
       ) : items.length === 0 ? (
-        <p className="wf-audio-note" role="status">
-          暂无音频，请点击「生成音乐」或「导入音频」
-        </p>
+        <EmptyNote icon="final-cut-music">暂无音频，请点击「生成音乐」或「导入音频」</EmptyNote>
       ) : shown.length === 0 ? (
-        <p className="wf-audio-note" role="status">
-          暂无符合条件的音频，请更换关键词
-        </p>
+        <EmptyNote icon="final-cut-music">暂无符合条件的音频，请更换关键词</EmptyNote>
       ) : (
-        <ul aria-label="音频" className="wf-audio-list">
+        <ul aria-label="音频" className="wf-tab-list wf-audio-list">
           {shown.map((item) =>
             rowFor(item, addable(item), {
               playing: playing === item.id,
@@ -407,7 +419,7 @@ function AudioRow({
   // 还加不了的行点了什么都不做，按 Enter、右键时才说明原因
   const addsOnClick = typeof addable !== 'string'
   return (
-    <li className={cn('wf-song', used && 'is-used', lifting && 'is-lifting')}>
+    <li className={cn('wf-song wf-card', playing && 'is-playing', lifting && 'is-lifting')}>
       <ContextMenuRoot>
         <ContextMenuTrigger asChild>
           <button
@@ -438,7 +450,7 @@ function AudioRow({
       {ready ? (
         <IconButton
           aria-pressed={playing}
-          className="wf-song-play"
+          className="wf-song-disc"
           label={playing ? `暂停试听：${title}` : `试听：${title}`}
           name={playing ? 'final-cut-pause' : 'final-cut-play'}
           onClick={onToggle}
@@ -452,11 +464,16 @@ function AudioRow({
           {title}
         </span>
         {ready && durationMs !== null ? (
-          <span className="wf-song-meta">{durationLabel(durationMs)}</span>
+          <span className="wf-song-meta">
+            <SongWave />
+            {durationLabel(durationMs)}
+          </span>
         ) : null}
       </span>
       {used ? (
-        <span className="wf-song-used">{USED_LABEL}</span>
+        <span aria-label={USED_LABEL} className="wf-song-used" role="img">
+          <Icon decorative name="final-cut-in-use" size="sm" />
+        </span>
       ) : addsOnClick ? (
         // 整行已能用 Enter 加入，「+」不再占一个 Tab 停靠点
         <IconButton
@@ -597,8 +614,9 @@ export function GenerateMusic({
       <PopupTrigger asChild ref={setTrigger}>
         {children}
       </PopupTrigger>
+      {/* 触发的「生成音乐」「重新生成」都在右边，输入卡和它们右对齐 */}
       <PopupSurface
-        align="start"
+        align="end"
         aria-describedby={hintId}
         aria-label="生成音乐"
         className="wf-generate"

@@ -187,19 +187,18 @@ export type LocaleControls = {
 
 const localeButtonName = ({ name, tag }: { name: string; tag: string }) => `${name}（${tag}）`
 
-/** 语言切换里的一个按钮：切到哪种语言，按钮上的字（工具条上写代码、侧栏里写名字）、无障碍名和提示。 */
-type LocaleButton = { code: Language; tag: string; name: string; label: string; tip: string }
+/** 语言切换里的一个按钮：切到哪种语言，按钮上的字、无障碍名和提示。 */
+type LocaleButton = { code: Language; tag: string; label: string; tip: string }
 
 const SOURCE_BUTTON: LocaleButton = {
   code: SOURCE_LOCALE,
   tag: SOURCE_NAME,
-  name: SOURCE_NAME,
   label: SOURCE_NAME,
   tip: `切换到${SOURCE_NAME}：预览和字幕显示${SOURCE_NAME}`,
 }
 
 /**
- * 语言切换：原文和工程里有的语言各一个按钮（原文写「原文」，别的在工具条上写语言代码、在侧栏里写语言的名字），
+ * 语言切换：原文和工程里有的语言各一个按钮（原文写「原文」，别的写语言代码，无障碍名是语言的名字加代码），
  * 当前的高亮；最后的「+」点开列出还没加的语言，选一个加上并切过去，都加了时不显示，加不了时置灰。工具条上的
  * （`inPanel` 不给）菜单往上弹；「字幕·配音」页签顶部的（`inPanel`）是一排小块，菜单往下弹。两处切换、添加的是
  * 同一份 `LocaleControls`。
@@ -217,7 +216,6 @@ export function LocaleBar({
     ...LOCALES.filter(({ code }) => present.includes(code)).map((locale) => ({
       code: locale.code,
       tag: locale.tag,
-      name: locale.name,
       label: localeButtonName(locale),
       tip: `${phraseWith('切换到', locale.code, '：')}${phraseWith('预览和字幕显示', locale.code, '的字')}`,
     })),
@@ -241,7 +239,7 @@ export function LocaleBar({
               onClick={() => onSwitch(button.code)}
               type="button"
             >
-              {inPanel ? button.name : button.tag}
+              {button.tag}
             </button>
           </TooltipTrigger>
           <TooltipContent className="wf-tip" side={side}>

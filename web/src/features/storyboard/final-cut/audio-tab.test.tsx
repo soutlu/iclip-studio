@@ -149,7 +149,7 @@ describe('音频栏 · 列表', () => {
     expect(within(rowOf('轻快原声吉他')).getByText('00:30')).toBeInTheDocument()
     expect(within(rowOf('城市夜景氛围')).getByText('02:48')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '试听：轻快原声吉他' })).toBeInTheDocument()
-    expect(screen.queryByText('使用中')).toBeNull()
+    expect(screen.queryByRole('img', { name: '使用中' })).toBeNull()
 
     const search = screen.getByRole('searchbox', { name: '搜索音频' })
     expect(search).toHaveAttribute('placeholder', '搜索音频')
@@ -290,19 +290,19 @@ describe('音频栏 · 试听', () => {
 })
 
 describe('音频栏 · 使用中', () => {
-  it('final-cut 里用着的那条行尾写「使用中」、没有「+」；点这一行选中它最早的那个片段，不再加一个', async () => {
+  it('final-cut 里用着的那条行尾一个「使用中」的勾、没有「+」；点这一行选中它最早的那个片段，不再加一个', async () => {
     const user = userEvent.setup()
     const clips = [
       audio({ id: 'late', src: GUITAR_URL, start: 8000 }),
       audio({ id: 'early', src: GUITAR_URL, start: 1000, track: 1 }),
     ]
     const { onReveal, onAdd } = await openTab([guitar, night], clips)
-    expect(within(rowOf('轻快原声吉他')).getByText('使用中')).toBeInTheDocument()
+    expect(within(rowOf('轻快原声吉他')).getByRole('img', { name: '使用中' })).toBeInTheDocument()
     expect(within(rowOf('轻快原声吉他')).getByText('00:30')).toBeInTheDocument()
     expect(
       within(rowOf('轻快原声吉他')).queryByRole('button', { name: /^放入配乐行：/ }),
     ).toBeNull()
-    expect(within(rowOf('城市夜景氛围')).queryByText('使用中')).toBeNull()
+    expect(within(rowOf('城市夜景氛围')).queryByRole('img', { name: '使用中' })).toBeNull()
 
     await user.click(rowButton('轻快原声吉他，使用中'))
     expect(onReveal).toHaveBeenCalledExactlyOnceWith('early')
@@ -423,7 +423,7 @@ describe('音频栏 · 导入', () => {
     await user.upload(screen.getByLabelText('选择音频文件'), wav())
     await waitFor(() => expect(within(list()).getAllByRole('listitem')).toHaveLength(2))
     expect(confirms).toEqual([{ conversationId: conversation.id }])
-    expect(screen.getByRole('button', { name: '导入音频' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '导入音频' })).not.toHaveAttribute('aria-disabled')
   })
 
   it('文件拖到音频栏上也导入', async () => {

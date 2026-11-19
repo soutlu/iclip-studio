@@ -5,6 +5,7 @@ import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { LoadMoreFooter } from '@/shared/ui/list-state'
 import { libraryAudio, type LibraryAudio } from './audio'
+import { EmptyNote } from './empty-note'
 import { useLibraryAudios } from './final-cut.api'
 
 const SEARCH_DEBOUNCE_MS = 300
@@ -21,6 +22,8 @@ type AudioLibraryProps = {
   active: boolean
   /** 搜索框里的字：停下来一会儿后按它搜音频库（匹配标题、备注）。 */
   query: string
+  /** 搜索框本身：排在「配乐 / 音效」切换和列表之间。 */
+  search: ReactNode
   onNotice: (message: string) => void
   /** 画出一行：这条音频和它的试听状态。加进 final-cut、拖动和「使用中」都由画行的那边管。 */
   renderRow: (
@@ -30,10 +33,10 @@ type AudioLibraryProps = {
 }
 
 /**
- * 「配乐」页签里的「音频库」：参考音频库里的配乐或音效（上面切换），按搜索框的字搜，建立晚的在前，一页一页往下读。
- * 每行能试听（同一时间只放一条，这一块藏起来或卸掉时停下）。
+ * 「配乐」页签里的「音频库」：参考音频库里的配乐或音效（顶行右边切换），按搜索框的字搜，建立晚的在前，一页一页往下读。
+ * 每行能试听（同一时间只放一条，这一块藏起来或卸掉时停下）。画出来的几块直接排进页签的网格（见 `.wf-audio`）。
  */
-export function AudioLibrary({ active, query, onNotice, renderRow }: AudioLibraryProps) {
+export function AudioLibrary({ active, query, search, onNotice, renderRow }: AudioLibraryProps) {
   const [kind, setKind] = useState<LibraryKind>('bgm')
   const [keyword, setKeyword] = useState(query.trim())
   useEffect(() => {
@@ -54,7 +57,7 @@ export function AudioLibrary({ active, query, onNotice, renderRow }: AudioLibrar
     <>
       <ChipGroup
         aria-label="音频库分类"
-        className="wf-audio-kinds"
+        className="wf-filters wf-audio-kinds"
         onValueChange={(value) => {
           const next = KINDS.find((each) => each.value === value)
           if (next !== undefined) setKind(next.value)
@@ -63,30 +66,29 @@ export function AudioLibrary({ active, query, onNotice, renderRow }: AudioLibrar
         value={kind}
       >
         {KINDS.map((each) => (
-          <FilterChip key={each.value} value={each.value}>
+          <FilterChip className="wf-filter" key={each.value} value={each.value}>
             {each.label}
           </FilterChip>
         ))}
       </ChipGroup>
+      {search}
       {readFailed ? (
-        <div className="wf-audio-note">
+        <div className="wf-audio-alert">
           <InlineAlert
             action={{ label: '重试', onClick: () => void library.refetch() }}
             message={errorMessageOf(library.error, '读取音频库失败')}
           />
         </div>
       ) : library.isPending ? (
-        <p className="wf-audio-note" role="status">
-          正在读取音频库…
-        </p>
+        <EmptyNote icon="final-cut-music">正在读取音频库…</EmptyNote>
       ) : items.length === 0 ? (
-        <p className="wf-audio-note" role="status">
+        <EmptyNote icon="final-cut-music">
           {keyword === ''
             ? `音频库里暂无${kindLabel}，可在资料库的「音频库」中添加`
             : '暂无符合条件的音频，请更换关键词'}
-        </p>
+        </EmptyNote>
       ) : (
-        <ul aria-label="音频库" className="wf-audio-list">
+        <ul aria-label="音频库" className="wf-tab-list wf-audio-list">
           {items.map((item) =>
             renderRow(item, {
               playing: playing === item.id,

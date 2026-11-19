@@ -479,7 +479,8 @@ test('块页签搜到块点一下卡片加入、组件页签拖一个组件到�
   await expect(cards).toHaveCount(1)
   const scene = cards.first()
   await expect(scene).toHaveAccessibleName('测试画面，6 秒')
-  // 封面右下角的「+」不用悬停也在
+  // 指针停在卡片上时封面右下角出「+」
+  await scene.hover()
   await expect(scene.getByRole('button', { name: '加到播放头' })).toBeVisible()
 
   // 点一下卡片（不是「+」）就加入。播放头在 0：第一行这时有视频片段，块放进它下面新开的一行
@@ -770,7 +771,7 @@ test('音频栏：试听只播一条，点一下没用过的一行加到播放�
   const soundRow = editor.getByRole('group', { name: '配乐', exact: true })
   const music = soundRow.getByRole('group', { name: '轻快原声吉他，适合秋季穿搭，30.0 秒' })
   await expect(music).toBeVisible()
-  await expect(guitar).toContainText('使用中')
+  await expect(guitar.getByRole('img', { name: '使用中' })).toBeVisible()
   await expect(guitar.getByRole('button', { name: /^放入配乐行：/ })).toHaveCount(0)
   await expect(progress).toHaveAttribute('aria-valuetext', '00:01.00 / 00:31.00')
   expect(videoSeconds).toBeLessThan(31)
