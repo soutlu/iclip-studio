@@ -2490,6 +2490,11 @@
   pointer-events: none;
 }
 
+/* 整条素材的波形是上下对称的淡灰竖条。共用波形在自己身上定了颜色（深色主题下是 .dark 加一个类），这里三个条件压过它 */
+.wf-slip .wf-slip-source > .timeline-wave {
+  --timeline-wave-color: color-mix(in srgb, var(--color-on-surface-muted) 30%, transparent);
+}
+
 /* 片段用掉的那一段：墨色描边，框外压暗（一圈很宽的投影），两头按淡入、淡出画斜坡 */
 .wf-slip-window {
   position: absolute;
@@ -4209,12 +4214,6 @@
   flex: 1;
   overflow: hidden;
   padding-left: 2.5px;
-}
-
-/* 片段上的波形贴底往上长。共用的波形以中线上下对称画：这里把它画成两倍高、中线落在底边，下半截被裁掉 */
-:is(.wf-clip-sound, .wf-clip-wave) .timeline-wave svg {
-  top: 0;
-  height: 200%;
 }
 
 @container (width < 56px) {

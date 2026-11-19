@@ -454,7 +454,7 @@ function ClipContent({
           ) : null}
         </span>
         <span className={cn('wf-clip-sound', waveClass)} ref={waveRef}>
-          <Wave level={wave.level} part={part} state={peaks} />
+          <Wave bars="bottom" level={wave.level} part={part} state={peaks} />
         </span>
       </>
     )
@@ -466,7 +466,7 @@ function ClipContent({
       </span>
       {withSound && peaks.kind === 'ready' ? (
         <span className={cn('wf-clip-wave', waveClass)} ref={waveRef}>
-          <Wave level={wave.level} part={part} state={peaks} />
+          <Wave bars="bottom" level={wave.level} part={part} state={peaks} />
         </span>
       ) : null}
       {badge === undefined ? null : <ClipBadge badge={badge} />}

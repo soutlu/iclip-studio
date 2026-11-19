@@ -191,6 +191,7 @@ export function SourceTrim({
                     <Frames part={{ mediaUrl: clip.src, start: 0, end: total / 1000 }} />
                   ) : (
                     <Wave
+                      bars="center"
                       part={{ mediaUrl: clip.src, start: 0, end: total / 1000 }}
                       state={peaks}
                     />

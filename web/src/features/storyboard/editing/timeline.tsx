@@ -15,6 +15,7 @@ import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import type { TimeSpan } from '@/shared/lib/time-spans'
 import { useElementSize } from '@/shared/lib/use-element-size'
 import { cn } from '@/shared/lib/utils'
+import type { AudioPeaks } from './audio-peaks'
 import { bubbleAlign } from './bubble-align'
 import type { PeaksState } from './media-analysis'
 import type { PlaySegment } from './play-layout'
@@ -365,19 +366,68 @@ function Frame({ src, style }: { src: string; style: CSSProperties }) {
   )
 }
 
+/** 竖条波形：每根多宽、根与根之间空多少、圆角（px）。 */
+const BAR = { width: 3, gap: 3, radius: 1 } as const
+/** 竖条最矮多高；贴底时顶上留多少不画；居中时最高占多少。 */
+const BAR_MIN = 2
+const BAR_TOP_GAP = 2
+const BAR_CENTER_REACH = 0.7
+
+/**
+ * 竖条波形的每一根：按素材里的绝对时间分组（裁入点时竖条跟着平移，不会整排重新分组），每根取这段时间里最响的那个
+ * 峰值。`width`、`height` 是画布的像素大小。
+ */
+const waveBars = (
+  part: PlaySegment,
+  { rate, peaks }: AudioPeaks,
+  bars: WaveBars,
+  { width, height }: { width: number; height: number },
+  level: ((fraction: number) => number) | undefined,
+) => {
+  const length = part.end - part.start
+  if (width <= 0 || height <= 0 || length <= 0) return []
+  const pitch = BAR.width + BAR.gap
+  const step = (pitch / width) * length
+  const reach = bars === 'bottom' ? height - BAR_TOP_GAP : height * BAR_CENTER_REACH
+  const result: { x: number; y: number; height: number }[] = []
+  for (let index = Math.floor(part.start / step); index * step < part.end; index += 1) {
+    const from = index * step
+    let loudest = 0
+    const last = Math.max(Math.floor(from * rate), Math.ceil((from + step) * rate) - 1)
+    for (let at = Math.floor(from * rate); at <= last; at += 1)
+      loudest = Math.max(loudest, peaks[at] ?? 0)
+    const middle = Math.min(1, Math.max(0, (from + step / 2 - part.start) / length))
+    const tall = Math.max(BAR_MIN, Math.min(1, loudest * (level?.(middle) ?? 1)) * reach)
+    result.push({
+      x: ((from - part.start) / length) * width,
+      y: bars === 'bottom' ? height - tall : (height - tall) / 2,
+      height: tall,
+    })
+  }
+  return result
+}
+
+/** 波形画成一根根竖条时的摆法：`bottom` 贴底往上长，`center` 以中线上下对称。 */
+type WaveBars = 'bottom' | 'center'
+
 /**
  * 一段素材的波形。`level` 给了时，每一处的高低再乘上它在那里的值（参数是这一处在这段里的位置，0 到 1），用来让
- * 波形跟着音量、淡入淡出变高变矮；不给时按素材原样画。
+ * 波形跟着音量、淡入淡出变高变矮；不给时按素材原样画。`bars` 给了时画成按时间分组、有间隔的竖条（见 `WaveBars`），
+ * 不给时是以中线上下对称的连续细线。
  */
 export function Wave({
   part,
   state,
   level,
+  bars,
 }: {
   part: PlaySegment
   state: PeaksState
   level?: (fraction: number) => number
+  bars?: WaveBars
 }) {
+  // 竖条要按像素排间隔，量出画布多大；连续细线随画布拉伸，不用量
+  const [measureRef, size] = useElementSize<HTMLSpanElement>()
   const body = (() => {
     switch (state.kind) {
       case 'loading':
@@ -387,6 +437,25 @@ export function Wave({
       case 'failed':
         return <span className="timeline-wave-note">原声读取失败</span>
       case 'ready': {
+        if (bars !== undefined)
+          return (
+            <svg
+              className="timeline-wave-bars"
+              data-testid="timeline-wave"
+              viewBox={`0 0 ${size.width} ${size.height}`}
+            >
+              {waveBars(part, state.peaks, bars, size, level).map((bar) => (
+                <rect
+                  height={bar.height}
+                  key={bar.x}
+                  rx={BAR.radius}
+                  width={BAR.width}
+                  x={bar.x}
+                  y={bar.y}
+                />
+              ))}
+            </svg>
+          )
         const { rate, peaks } = state.peaks
         const from = Math.floor(part.start * rate)
         const count = Math.max(1, Math.ceil(part.end * rate) - from)
@@ -404,7 +473,11 @@ export function Wave({
       }
     }
   })()
-  return <span className="timeline-wave">{body}</span>
+  return (
+    <span className="timeline-wave" ref={bars === undefined ? undefined : measureRef}>
+      {body}
+    </span>
+  )
 }
 
 type TrimHandleProps = {
