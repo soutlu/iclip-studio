@@ -4,6 +4,7 @@ import {
   elementCornerPoints,
   individualRotateDegrees,
   isCompositionHost,
+  isElementVisibleThroughAncestors,
   pointerTargets,
   snapCandidates,
 } from '@hyperframes/core/runtime/editing-port'
@@ -90,9 +91,14 @@ export const refOf = (page: Document, element: Laid): LayerRef | null => {
   return index < 0 ? null : { scope, selector, index }
 }
 
-/** 画面里的一个元素挂着的宿主元素；在主文件里时是 null。 */
-export const ownerOf = (element: Element): Laid | null => {
-  const host = element.parentElement?.closest('[data-composition-src]') ?? null
+/**
+ * 画面里的一个元素（含它自己）最外层的宿主：主文件根下挂载着文件的那个元素；不在宿主里时是 null。组件里再挂的
+ * 宿主不算，算到主文件里挂着它的那一个。
+ */
+const outermostHostOf = (element: Element): Laid | null => {
+  let host: Element | null = null
+  for (let node: Element | null = element; node !== null; node = node.parentElement)
+    if (node.hasAttribute('data-composition-src')) host = node
   return isLaid(host) ? host : null
 }
 
@@ -248,13 +254,9 @@ const parentLinear = (page: Document, element: Laid): Linear => {
 
 /**
  * 量表里的一层：在画布上的样子、布局宽高、父元素的线性变换、自己的 `rotate`、变换里有没有位移、是不是行内元素、
- * 父元素的弹性方向，和三样能不能改（见 layer-abilities.ts；`inSource` 是表里有它、画面里的匹配数也对上）。
+ * 父元素的弹性方向，和三样能不能改（见 layer-abilities.ts）。
  */
-export const measureLayer = (
-  page: Document,
-  element: Laid,
-  inSource: boolean,
-): LayerMeasure | null => {
+export const measureLayer = (page: Document, element: Laid): LayerMeasure | null => {
   const view = page.defaultView as
     (Window & { __timelines?: Record<string, RuntimeTimeline> }) | null
   const frame = frameOfElement(page, element)
@@ -266,13 +268,10 @@ export const measureLayer = (
   const parentStyle =
     element.parentElement === null ? null : view.getComputedStyle(element.parentElement)
   const flexParent = parentStyle?.display === 'flex' || parentStyle?.display === 'inline-flex'
-  const host = isCompositionHost(element)
   const abilities = layerAbilities({
     tag: element.localName,
-    host,
-    root: !host && element.hasAttribute('data-composition-id'),
+    root: !isCompositionHost(element) && element.hasAttribute('data-composition-id'),
     locked: element.closest('[data-timeline-locked]') !== null,
-    inSource,
     animated: {
       move: gsapOwns(element, view.__timelines, 'move'),
       resize: gsapOwns(element, view.__timelines, 'resize'),
@@ -320,10 +319,15 @@ const snapRectOf = (view: Window, origin: DOMRect, element: Laid): Rect => {
 }
 
 /**
- * 挪 `moving` 这几个元素时吸附用的矩形（见 canvas-snap.ts）：它们合起来的框，和能吸过去的别的元素的框（运行库的
- * `snapCandidates`：从 final-cut 根往下，跳过宿主和它里面的、挪的这几个和它们里面的、没显示的）。一个都没有时是 null。
+ * 挪 `moving` 这几个元素时吸附用的矩形（见 canvas-snap.ts）：它们合起来的框，和能吸过去的别的元素的框：运行库的
+ * `snapCandidates`（从 final-cut 根往下，跳过宿主和它里面的、挪的这几个和它们里面的、没显示的），加上 `hosts`
+ * 里显示着的、不在挪的贴片、场景宿主（宿主里面的不算）。一个都没有时是 null。
  */
-export const snapRectsOf = (page: Document, moving: readonly Laid[]): SnapRects | null => {
+export const snapRectsOf = (
+  page: Document,
+  moving: readonly Laid[],
+  hosts: readonly Laid[],
+): SnapRects | null => {
   const view = page.defaultView
   const root = pageRoot(page)
   if (view === null || root === null || moving.length === 0) return null
@@ -333,9 +337,14 @@ export const snapRectsOf = (page: Document, moving: readonly Laid[]): SnapRects 
   const top = Math.min(...boxes.map((box) => box.y))
   const right = Math.max(...boxes.map((box) => box.x + box.width))
   const bottom = Math.max(...boxes.map((box) => box.y + box.height))
-  const targets = snapCandidates(root, new Set<HTMLElement>(moving))
-    .filter(isLaid)
-    .map((element) => snapRectOf(view, origin, element))
+  const visible = new Map<HTMLElement, boolean>()
+  const others = hosts.filter(
+    (host) => !moving.includes(host) && isElementVisibleThroughAncestors(host, visible),
+  )
+  const targets = [
+    ...snapCandidates(root, new Set<HTMLElement>(moving)).filter(isLaid),
+    ...others,
+  ].map((element) => snapRectOf(view, origin, element))
   return { moving: { x: left, y: top, width: right - left, height: bottom - top }, targets }
 }
 
@@ -397,8 +406,19 @@ const withPickableRoots = <T>(
   }
 }
 
-/** 画布上 `point` 处从上往下能选中的元素：运行库的 `pointerTargets`（跳过宿主、铺满画面的容器、空容器……）。 */
-export const elementsAt = (page: Document, point: Point): Laid[] => {
+/** 画布上一处能选中的一个：选中的元素 `unit`，和指针下它里面最上面的那个元素 `target`（不在宿主里时就是它自己）。 */
+export type PointerUnit = { unit: Laid; target: Laid }
+
+/**
+ * 画布上 `point` 处从上往下能选中的元素，每个只出现一次。先照运行库的 `pointerTargets` 找指针下的元素（跳过宿主、
+ * 铺满画面的容器、空容器、不画东西的标签、作者写了不接收指针的），在 `isHost` 认的宿主里的再算成这个宿主：贴片、
+ * 场景整个是一个，点中它画出来的东西才算点中它，透明的、只有铺满的底的地方点到下面。字幕宿主里的每一句各算各的。
+ */
+export const unitsAt = (
+  page: Document,
+  point: Point,
+  isHost: (element: Laid) => boolean,
+): PointerUnit[] => {
   const root = pageRoot(page)
   const width = Number(root?.getAttribute('data-width'))
   const height = Number(root?.getAttribute('data-height'))
@@ -406,31 +426,43 @@ export const elementsAt = (page: Document, point: Point): Laid[] => {
   const at = compositionPoint(page, point.x / width, point.y / height)
   if (at === null) return []
   const { result, passThrough } = withPickableRoots(page, () => pointerTargets(page, at))
-  return result.filter((element) => !passThrough.has(element))
+  const units: PointerUnit[] = []
+  for (const target of result) {
+    if (passThrough.has(target) || !isLaid(target)) continue
+    const host = outermostHostOf(target)
+    const unit = host !== null && isHost(host) ? host : target
+    if (!units.some((each) => each.unit === unit)) units.push({ unit, target })
+  }
+  return units
 }
 
 /**
- * 拖动中的一层：元素、开始时生效的位移（拖动从它算起）和行内写的位移（摆回去用，空串是没写）、改过的那几项行内
- * 样式原来的写法、开始时在画布上的中心。
+ * 拖动中的一层：元素、是不是贴片、场景的宿主、开始时生效的位移（拖动从它算起）和行内写的位移（摆回去用，空串是
+ * 没写）、改过的那几项行内样式原来的写法、开始时在画布上的中心。
  */
 export type Drafting = {
   element: Laid
+  host: boolean
   translate: string
   inlineTranslate: string
   styles: Map<string, string>
   center: Point | null
 }
 
-/** 开始拖一层：记下它现在的位移和中心。 */
-export const startDraft = (page: Document, element: Laid): Drafting => {
+/** 开始拖一层（`host` 是贴片、场景的宿主）：记下它现在的位移和中心。 */
+export const startDraft = (page: Document, element: Laid, host: boolean): Drafting => {
   // 先让页面上的 GSAP 解析一遍这层的变换（运行库写位移前也这么做）：不然它之后头一次解析时把拖动写的
-  // `translate` 折进自己的变换，位移就算了两遍
-  const view = page.defaultView as
-    (Window & { gsap?: { getProperty?: (target: Element, property: string) => unknown } }) | null
-  view?.gsap?.getProperty?.(element, 'x')
+  // `translate` 折进自己的变换，位移就算了两遍。宿主不解析：动画不动宿主，解析一遍反而把它行内的
+  // `translate`、`scale`、`rotate` 折进 `transform`，之后写的 `scale` 就叠了两遍（见 layer-edits.ts）
+  if (!host) {
+    const view = page.defaultView as
+      (Window & { gsap?: { getProperty?: (target: Element, property: string) => unknown } }) | null
+    view?.gsap?.getProperty?.(element, 'x')
+  }
   const frame = frameOfElement(page, element)
   return {
     element,
+    host,
     translate: readCurrentTranslate(element),
     inlineTranslate: element.style.getPropertyValue('translate'),
     styles: new Map(),
@@ -479,29 +511,18 @@ export const drawDraft = (
 
 /**
  * 拖动结束。`keep` 时留着摆好的样子，并记下位移原来的写法（运行库按 `data-x` / `data-y` 摆它时从这里算起，见
- * SDK 的 `moveElement`）；不然摆回开始时的样子。
+ * SDK 的 `moveElement`）；不然摆回开始时的样子。宿主的位移直接写在它的 `translate` 上，不记：运行库见到这个标记
+ * 而没有 `data-x` / `data-y` 时，当成挪过又撤销，把位移摆回去。
  */
 export const endDraft = (draft: Drafting, keep: boolean) => {
   const { element } = draft
   if (keep) {
-    if (!element.hasAttribute(EDIT_ORIGINAL_TRANSLATE_ATTR))
+    if (!draft.host && !element.hasAttribute(EDIT_ORIGINAL_TRANSLATE_ATTR))
       element.setAttribute(EDIT_ORIGINAL_TRANSLATE_ATTR, draft.translate)
     return
   }
   for (const [name, value] of draft.styles) setStyle(element, name, value)
   setStyle(element, 'translate', draft.inlineTranslate)
-}
-
-/** 把一层的行内样式、属性改成这样（null 是去掉），用于组件文件里改了的层（见预览协议 `patch` 的 `layers`）。 */
-export const writeLayer = (
-  element: Laid,
-  styles: Readonly<Record<string, string | null>>,
-  attributes: Readonly<Record<string, string | null>>,
-) => {
-  for (const [name, value] of Object.entries(styles)) setStyle(element, name, value)
-  for (const [name, value] of Object.entries(attributes))
-    if (value === null) element.removeAttribute(name)
-    else element.setAttribute(name, value)
 }
 
 /** 在画布上要改的一段文字：元素、它是 `fields` 里的第几个、框和画布上的字号。 */

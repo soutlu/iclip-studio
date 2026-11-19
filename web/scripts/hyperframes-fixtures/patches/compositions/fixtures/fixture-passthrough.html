@@ -1,9 +1,10 @@
 <!doctype html>
 <!--
-  测试组件库：4 秒的组件（component），铺满所在位置。组件根写着 pointer-events: none（组件库里常见的写法，
-  播放时让画面点穿），里面左上方一块绿色徽标（.fp-badge），位置固定、没有动画。用来测画面上能点中、拖动这种
-  组件里的层。右下方一扇裁切窗（.fp-window，overflow: hidden），里面一块比窗大得多的琥珀色底（.fp-wide），
-  只露出窗里那一块：用来测悬停框、选中框只画看得见的部分。
+  测试组件库：4 秒的组件（component），没写尺寸、铺满所在位置。组件根写着 pointer-events: none（组件库里常见的
+  写法，播放时让画面点穿），里面左上方一块绿色徽标（.fp-badge），位置固定、没有动画。用来测组件根不接收指针时，
+  画面上点它里面照样选中整个贴片、拖得动、缩放时中心不动。右下方一扇裁切窗（.fp-window，overflow: hidden），
+  里面一块比窗大得多的琥珀色底（.fp-wide），只露出窗里那一块。左下方空着：用来测点贴片里什么都没画的地方
+  点到下面的画面。
 -->
 <html lang="zh-CN" data-composition-id="fixture-passthrough" data-composition-duration="4">
   <head>

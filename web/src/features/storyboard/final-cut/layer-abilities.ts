@@ -2,32 +2,30 @@ import { resolveEditingAffordances } from '@hyperframes/core/editing'
 
 /**
  * 画面上一层能不能挪、缩放、转。先按引擎的能力判断（core `editing/affordances.ts` 的
- * `resolveEditingAffordances`：锁定的组件、脚本生成的、合成的根、宿主都不能改，里面的层能改），再拦掉动画脚本
- * 驱动的：我们不改动画脚本，脚本在动的那一样就不在画面上改（判断照工作台的 `editsPlainCss`，见 `gsapOwns`）。
- * 预览页按画面上的元素量出这些事实算好，回报给编辑器的只有结果。
+ * `resolveEditingAffordances`：锁定的组件、合成的根不能改），再拦掉动画脚本驱动的：我们不改动画脚本，脚本在动的
+ * 那一样就不在画面上改（判断照工作台的 `editsPlainCss`，见 `gsapOwns`）。引擎还拦宿主（要人选里面的层），我们
+ * 不照它：画面上贴片、场景整个当一层，挪、缩放、转的是主文件里的宿主（写法见 layer-edits.ts）。画面上认的层都在
+ * 源文件里（预览页只报层表里有的），也不按「源文件里没有」拦。预览页按画面上的元素量出这些事实算好，回报给编辑器
+ * 的只有结果。
  */
 
 /** 不能改的原因，按引擎判断的先后；0 是能改。 */
 export const LayerRefusal = {
   none: 0,
   locked: 1,
-  generated: 2,
-  root: 3,
-  host: 4,
-  animated: 5,
+  root: 2,
+  animated: 3,
 } as const
 export type LayerRefusal = (typeof LayerRefusal)[keyof typeof LayerRefusal]
 
 /** 画面上的三种改法。 */
 export type Gesture = 'move' | 'resize' | 'rotate'
 
-/** 一层的事实：是不是宿主、合成的根，在不在锁定的组件里，源文件里有没有它，动画脚本在动它的哪几样。 */
+/** 一层的事实：是不是合成的根（宿主不算），在不在锁定的组件里，动画脚本在动它的哪几样。 */
 export type LayerFacts = {
   tag: string
-  host: boolean
   root: boolean
   locked: boolean
-  inSource: boolean
   animated: Readonly<Record<Gesture, boolean>>
 }
 
@@ -42,11 +40,11 @@ export function layerAbilities(facts: LayerFacts): LayerAbilities {
     hasStableTarget: true,
     tag: facts.tag,
     inlineStyles: {},
-    isCompositionHost: facts.host,
+    isCompositionHost: false,
     isCompositionRoot: facts.root,
     isInsideLockedComposition: facts.locked,
     isMasterView: false,
-    existsInSource: facts.inSource,
+    existsInSource: true,
     hasEditableText: false,
     hasTimingStart: false,
     animationCount: 0,
@@ -59,13 +57,9 @@ export function layerAbilities(facts: LayerFacts): LayerAbilities {
   // 引擎拦下时的原因：照它判断的先后
   const engineRefusal: LayerRefusal = facts.locked
     ? LayerRefusal.locked
-    : !facts.inSource
-      ? LayerRefusal.generated
-      : facts.root
-        ? LayerRefusal.root
-        : facts.host
-          ? LayerRefusal.host
-          : LayerRefusal.none
+    : facts.root
+      ? LayerRefusal.root
+      : LayerRefusal.none
   const abilities = {
     move: engine.move && !facts.animated.move,
     resize: engine.resize && !facts.animated.resize,
@@ -86,9 +80,7 @@ export function layerAbilities(facts: LayerFacts): LayerAbilities {
 /** 给人看的原因。 */
 export const REFUSAL_TEXT: Record<Exclude<LayerRefusal, 0>, string> = {
   [LayerRefusal.locked]: '这一层属于锁定的组件，不能在画面上调整',
-  [LayerRefusal.generated]: '这一层由组件的脚本生成，不能在画面上调整',
   [LayerRefusal.root]: '这是合成的根，决定画面范围，不能在画面上调整',
-  [LayerRefusal.host]: '请在画面上选中里面的层再调整',
   [LayerRefusal.animated]: '这一层的位置、大小或角度由动画脚本驱动，不能在画面上调整',
 }
 

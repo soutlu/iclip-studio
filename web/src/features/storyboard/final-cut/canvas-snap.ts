@@ -51,16 +51,16 @@ type SnapInput = {
 }
 
 /**
- * 挪的这一下吸附以后实际挪多少（画布像素），和要画的参考线（没有时 null）。照工作台：没有别的层可吸时连画布也
- * 不吸；拖过 `snapEngagedForTravel` 的距离以前不吸（好几层一起挪时这时也不画间距）；只挪一层、转过
- * `ROTATED_SNAP_BYPASS_DEGREES` 时不吸。
+ * 挪的这一下吸附以后实际挪多少（画布像素），和要画的参考线（没有时 null）。没有别的层可吸时也吸画布的边、中线
+ * （工作台这时连画布也不吸；画面上常常只有一个贴片，要能把它摆到正中）。照工作台：拖过 `snapEngagedForTravel` 的
+ * 距离以前不吸（好几层一起挪时这时也不画间距）；只挪一层、转过 `ROTATED_SNAP_BYPASS_DEGREES` 时不吸。
  */
 export function snapDrag({ delta, zoom, rects, canvas, alt, angle }: SnapInput): {
   delta: Point
   guides: SnapGuides | null
 } {
   const unsnapped = { delta, guides: null }
-  if (rects === null || rects.targets.length === 0 || !(zoom > 0)) return unsnapped
+  if (rects === null || !(zoom > 0)) return unsnapped
   if (angle !== null && Math.abs(angle) >= ROTATED_SNAP_BYPASS_DEGREES) return unsnapped
   const toScreen = (rect: Rect): ScreenRect => ({
     left: rect.x * zoom,

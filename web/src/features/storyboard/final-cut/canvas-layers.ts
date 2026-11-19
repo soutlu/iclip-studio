@@ -34,11 +34,12 @@ export type SourceElement = {
 }
 
 /**
- * 画面上的一层，或者一个宿主（`host`，只画框，不能改）。
+ * 画面上的一层，或者一个贴片、场景的宿主（`host`）。画面上点选、挪、缩放、转的是宿主整个（见 canvas-overlay.tsx），
+ * 宿主里面的不是层。
  *
  * - `scope`：它挂在主文件里哪个宿主下（宿主的 `data-hf-id`）；主文件里的元素是 null。
  * - `selector`、`index`：在这个宿主挂载的那份内容里，第几个匹配这个选择器的元素；`count` 是文件里一共几个匹配，
- *   预览里数出来不一样（脚本加了同样的元素）时这一层只能选中、不能改。
+ *   预览里数出来不一样（脚本加了同样的元素）时预览里找不到这一层。
  * - `file`：它写在工程里哪个文件（相对工程根）；`clip`：它属于时间线上的哪个片段（宿主、字幕、视频片段）。
  * - `locked`：它或文件里它的祖先带 `data-timeline-locked`。
  */
@@ -149,12 +150,12 @@ export const layerKey = (scope: string | null, selector: string, index: number):
 export type Mount = { host: string; file: string; captions: boolean }
 
 /**
- * 工程里画面上能编辑的层和宿主：主文件根下的元素（视频片段这些，属于它自己那个片段）、每个宿主挂载的文件里的
- * 元素（属于这个宿主；字幕场景里的属于它所在的那句字幕），和每个组件或块的宿主自己（`host`，只画框）。
+ * 工程里画面上能编辑的层和宿主：主文件根下的元素（视频片段这些，属于它自己那个片段）、每个组件或块的宿主自己
+ * （`host`），和字幕场景里的元素（属于它所在的那句字幕）。组件文件里的元素不列：贴片、场景整个是一层。
  *
  * @param main 主文件现在的内容
  * @param mounts 主文件根下挂载着文件的宿主，按文件里的先后
- * @param contents 工程里打开着的文件（路径 → 内容）；挂载的文件没打开时那个宿主下没有层
+ * @param contents 工程里打开着的文件（路径 → 内容）；字幕场景没打开时字幕宿主下没有层
  */
 export function canvasLayersOf(
   main: string,
@@ -173,12 +174,14 @@ export function canvasLayersOf(
     hosts,
   )
   for (const mount of mounts) {
-    const content = contents.get(mount.file)
+    const content = mount.captions ? contents.get(mount.file) : undefined
     if (content === undefined) continue
-    const part = mountedPart(content)
     layers.push(
-      ...layersIn(part, mount.file, mount.host, (top) =>
-        mount.captions ? (top.getAttribute('data-hf-id') ?? undefined) : mount.host,
+      ...layersIn(
+        mountedPart(content),
+        mount.file,
+        mount.host,
+        (top) => top.getAttribute('data-hf-id') ?? undefined,
       ),
     )
   }

@@ -14,10 +14,10 @@ import { Icon } from '@/shared/icons'
 import { hoverOf, hoverProbe, type HoverProbe } from './canvas-hover'
 import type { CanvasLayer } from './canvas-layers'
 import {
-  frameContains,
   nudgeOf,
   pickAt,
   resizedSize,
+  resizeRatio,
   rotatedAngle,
   type CanvasPick,
   type Frame,
@@ -35,10 +35,13 @@ import { LayerRefusal, REFUSAL_TEXT, type Gesture as Ability } from './layer-abi
 import {
   authoredTransform,
   cssStyles,
+  inlineStyleOf,
   layoutSize,
   movedTo,
+  movedTranslate,
   rotationStyles,
   rotationTarget,
+  scaledStyles,
   sizeStyles,
   toLocal,
   type RotationTarget,
@@ -71,6 +74,7 @@ type Shown = { at: number; layer: CanvasLayer; measure: LayerMeasure }
  * - `press`：在等预览页答复按下处有哪些层（`stack` 答复后才有），`last` 是指针最后到的地方；
  * - `move`：挪选中的层（`targets` 是要挪的、按下时的样子），`blocked` 时不挪（已经说过原因）；
  * - `resize`、`rotate`：拖一层的把手；缩放松手后（`released`）还要等预览页答复最后一次把中心挪回原处的位移。
+ *   缩放贴片、场景的宿主时 `scale` 是它现在行内写着的 `scale`（别的层是 null）。
  */
 type Gesture =
   | {
@@ -102,6 +106,7 @@ type Gesture =
       start: Point
       target: Shown
       size: { width: number; height: number }
+      scale: string | null
       released: boolean
     }
   | { kind: 'rotate'; start: Point; target: Shown; rotation: RotationTarget }
@@ -172,23 +177,14 @@ const refusalOf = (measure: LayerMeasure, ability: Ability): string | undefined 
 const det = ({ a, b, c, d }: LayerMeasure['parent']) => a * d - b * c
 
 /**
- * 这一层叫什么：视频片段、字幕、宿主用片段的名字；组件里的层是「片段名 · id 或 class」，同名的第几个大于 1 时带上。
- */
-const layerName = (layer: CanvasLayer, clip: FilmClip | undefined): string => {
-  const label = clip?.label ?? layer.clip
-  if (layer.host || layer.element.hfId === layer.clip) return label
-  const name = layer.selector.replace(/^[#.]/, '').replace(/^\[[^=]+="(.*)"\]$/, '$1')
-  return `${label} · ${layer.index > 0 ? `${name} ${layer.index + 1}` : name}`
-}
-
-/**
- * 盖在预览画面上的编辑层。点中的规则照运行库（见预览页的 `pick`）：宿主、铺满画面的容器、空容器、不接收指针的
- * 都跳过，点到的是里面的层（视频片段、字幕的每一句、组件或块里的层），选中它所在的片段（和时间线上的选中是同一个）；
- * 同一处很快再点一下换成下面一层，按住 Shift 点是加选。选中的层拖着挪、拖四个角以中心等比缩放、拖旋转把手转（按住
- * Shift 吸到 15° 的整数倍），焦点在画面上时方向键挪 1 像素（Shift 10）；写法见 layer-edits.ts，写进这一层所在的
- * 文件。时间线上选中组件或块的片段时画面上框住宿主、没有把手，宿主本身不能改；锁定的、脚本生成的、动画脚本驱动的层
- * 也不能改，拖的时候说明原因。双击贴片、场景里的文字或字幕原地改。拖动中预览先跟着摆，松手写进去，算一步撤销。
- * 停着时指针移到一层上，在它周围画一圈细框（点下去选中的就是它），能原地改字的层光标是输入光标。
+ * 盖在预览画面上的编辑层。画面上每个片段是一层（见预览页的 `pick`）：视频片段、字幕的每一句，贴片、场景整个是它的
+ * 宿主（点中它里面画出来的东西都算，透明的、只有铺满的底的地方点到下面）。点一层选中它所在的片段（和时间线上的
+ * 选中是同一个）；同一处很快再点一下换成下面一层，
+ * 按住 Shift 点是加选。选中的层拖着挪、拖四个角以中心等比缩放、拖旋转把手转（按住 Shift 吸到 15° 的整数倍），焦点
+ * 在画面上时方向键挪 1 像素（Shift 10）；写法见 layer-edits.ts，写进这一层所在的文件（宿主写在主文件里它自己身上，
+ * 组件文件不动）。锁定的、动画脚本驱动的层不能改，拖的时候说明原因。双击贴片、场景里的文字或字幕原地改。拖动中
+ * 预览先跟着摆，松手写进去，算一步撤销。停着时指针移到一层上，在它周围画一圈细框（点下去选中的就是它），能原地
+ * 改字的地方（字幕、贴片和场景里绑着文字可填项的元素）光标是输入光标。
  */
 export function CanvasOverlay({
   canvas,
@@ -235,34 +231,8 @@ export function CanvasOverlay({
   /** 缩放时最近一次拖动的答复记进 `draftRef` 以后才完。 */
   const pinRef = useRef<Promise<void>>(Promise.resolve())
   const lastPickRef = useRef<CanvasPick | null>(null)
-  // 在画面上点中的层：片段 → 层（表里的 key），和点中时的选中；点中的是脚本生成的层（表里没有）时只框住它。
-  // 选中换成别的（时间线上点的）以后不再算数，画回片段自己（视频、字幕）或它的宿主
-  const [pickedState, setPickedState] = useState<{
-    selection: string
-    layers: ReadonlyMap<string, string>
-    generated: { clip: string; measure: LayerMeasure } | null
-  }>(() => ({ selection: '', layers: new Map(), generated: null }))
-  const selectionKey = (ids: ReadonlySet<string>) => [...ids].toSorted().join('\n')
-  const selectedKey = selectionKey(selected)
-  const current = pickedState.selection === selectedKey
-  const picked = current ? pickedState.layers : new Map<string, string>()
-  const generated = current ? pickedState.generated : null
-  /** 在画面上选中 `next`：点中了 `clip` 的 `layer`（脚本生成的层是 `generated`）。 */
-  const select = (
-    next: ReadonlySet<string>,
-    choice:
-      | { clip: string; layer: string }
-      | { generated: { clip: string; measure: LayerMeasure } }
-      | null,
-  ) => {
-    setPickedState({
-      selection: selectionKey(next),
-      layers:
-        choice !== null && 'layer' in choice
-          ? new Map(picked).set(choice.clip, choice.layer)
-          : picked,
-      generated: choice !== null && 'generated' in choice ? choice.generated : null,
-    })
+  /** 在画面上选中 `next`。 */
+  const select = (next: ReadonlySet<string>) => {
     if (next !== selected) onSelect(next)
   }
 
@@ -278,11 +248,8 @@ export function CanvasOverlay({
     )
   }
 
-  /** 选中的片段画哪一层：点中过的那一层；不然是片段自己（视频、字幕）或它的宿主。 */
+  /** 选中的片段画哪一层：片段自己（视频、字幕的一句）或它的宿主。 */
   const watchedOf = (clipId: string): number | undefined => {
-    const key = picked.get(clipId)
-    const chosen = key === undefined ? undefined : indexOf.get(key)
-    if (chosen !== undefined) return chosen
     const own = layers.findIndex(
       (layer) => layer.clip === clipId && (layer.host || layer.element.hfId === clipId),
     )
@@ -305,8 +272,6 @@ export function CanvasOverlay({
       ? []
       : [{ at, layer, measure }]
   })
-  const generatedShown =
-    generated !== null && selected.has(generated.clip) && shownAt(generated.clip) ? generated : null
 
   const toCanvas = (event: { clientX: number; clientY: number }): Point => {
     const rect = layerRef.current?.getBoundingClientRect()
@@ -351,16 +316,15 @@ export function CanvasOverlay({
   /** 字幕的一句自己那一层：在最上面时点一下就选中它（见 `clicked`）。 */
   const isCaption = (layer: CanvasLayer) =>
     clipOf.get(layer.clip)?.kind === 'caption' && layer.element.hfId === layer.clip
-  /** 能原地改字的层：字幕这一句，或者贴片、场景里绑着文字可填项的元素。 */
-  const isText = (layer: CanvasLayer) => {
+  /** 指针下能原地改字：字幕的一句，或者贴片、场景里绑着文字可填项（`field`）的元素。 */
+  const isText = (layer: CanvasLayer, field: string | null) => {
     if (isCaption(layer)) return true
     const clip = clipOf.get(layer.clip)
-    const field = layer.element.attributes['data-var-text']
-    if (clip?.kind !== 'host' || field === undefined) return false
+    if (clip?.kind !== 'host' || !layer.host || field === null) return false
     const item = itemNamed(catalog, clip.item)
     return item !== undefined && textFields(item).some((each) => each.id === field)
   }
-  const hovered =
+  const hover =
     hovering === null ||
     hovering.stamp !== stamp ||
     playing ||
@@ -371,11 +335,22 @@ export function CanvasOverlay({
           isText,
           winsOnTop: isCaption,
         })
-  // 选中着的脚本生成的层已经框着
-  const hover =
-    hovered !== null && !(hovered.generated && generatedShown?.clip === hovered.clip)
-      ? hovered
-      : null
+
+  /** 一层所在的文件里它行内写着的 `property`（CSS 的写法）；没写时是空串。 */
+  const inlineOf = (layer: CanvasLayer, property: string) =>
+    inlineStyleOf(contentOf(layer.file) ?? '', layer.element.hfId, property)
+
+  /**
+   * 一层挪了父元素里的 `delta` 写什么：宿主写它行内的 `translate`，别的层照 SDK `moveElement` 写 `data-x` /
+   * `data-y`（见 layer-edits.ts）。
+   */
+  const movedEdit = (
+    layer: CanvasLayer,
+    delta: Point,
+  ): Pick<LayerEdit, 'move'> & { styles?: Record<string, string> } =>
+    layer.host
+      ? { styles: { translate: movedTranslate(inlineOf(layer, 'translate'), delta) } }
+      : { move: movedTo(layer.element.attributes, delta) }
 
   const showDraft = (next: Draft | null) => {
     draftRef.current = next
@@ -413,7 +388,7 @@ export function CanvasOverlay({
     if (!live && press.released === null) return
     const known = stack.flatMap((item) => {
       const layer = layers[item.layer]
-      return item.layer < 0 || layer === undefined || layer.host ? [] : [{ ...item, layer }]
+      return layer === undefined ? [] : [{ ...item, layer }]
     })
     const hits = known.map((item) => item.layer.key)
     const selectedKeys = new Set(shown.map((each) => each.layer.key))
@@ -421,64 +396,19 @@ export function CanvasOverlay({
       ? (hits[0] ?? null)
       : pickAt(hits, selectedKeys, null, press.start, 0, 0)
     const hit = known.find((item) => item.layer.key === key)
-    const [top] = stack
-    const owner = top === undefined ? undefined : layers[top.owner]
-    // 最上面是脚本生成的层（指针下没有选中着的层时）：框住它，选中它所在的片段；拖的时候说明不能改
-    if (
-      top !== undefined &&
-      top.layer < 0 &&
-      owner !== undefined &&
-      !hits.some((each) => selectedKeys.has(each))
-    ) {
-      select(new Set([owner.clip]), { generated: { clip: owner.clip, measure: top.measure } })
-      const move: Extract<Gesture, { kind: 'move' }> = {
-        kind: 'move',
-        start: press.start,
-        targets: [{ at: -1, layer: owner, measure: top.measure }],
-        moved: false,
-        blocked: false,
-        hits: [],
-        picked: '',
-        shift: press.shift,
-        last: press.last,
-        alt: press.alt,
-        snap: null,
-      }
-      return move
-    }
-    // 按在框着的宿主上、没按中它里面的层：拖的时候说明要选里面的层；没拖是一次点选，照常选中指针下的层
-    const host = shown.find(
-      (each) => each.layer.host && frameContains(each.measure.frame, press.start),
-    )
-    if (host !== undefined && hit?.layer.clip !== host.layer.clip) {
-      const move: Extract<Gesture, { kind: 'move' }> = {
-        kind: 'move',
-        start: press.start,
-        targets: [host],
-        moved: false,
-        blocked: false,
-        hits,
-        picked: host.layer.key,
-        shift: press.shift,
-        last: press.last,
-        alt: press.alt,
-        snap: null,
-      }
-      return move
-    }
     if (hit === undefined) {
       if (live) gestureRef.current = null
       lastPickRef.current = null
-      if (!press.shift && selected.size > 0) select(new Set(), null)
+      if (!press.shift && selected.size > 0) select(new Set())
       return undefined
     }
     const { clip } = hit.layer
     const next = press.shift
       ? new Set([...selected, clip])
-      : selected.has(clip) && picked.get(clip) === hit.layer.key
+      : selected.has(clip)
         ? selected
         : new Set([clip])
-    select(next, { clip, layer: hit.layer.key })
+    select(next)
     // 一起挪的：选中的别的片段画着的层，和点中的这一层
     const others = shown.filter((each) => next.has(each.layer.clip) && each.layer.clip !== clip)
     const targets = [
@@ -557,7 +487,7 @@ export function CanvasOverlay({
     if (key === chosen || shift) return
     const layer = layers[indexOf.get(key) ?? -1]
     if (layer === undefined) return
-    select(new Set([layer.clip]), { clip: layer.clip, layer: key })
+    select(new Set([layer.clip]))
   }
 
   /** 挪的这一下拖到 `point`；`alt` 是按着 Alt（不吸附）。 */
@@ -629,6 +559,7 @@ export function CanvasOverlay({
         start,
         target: at,
         size: { width: at.measure.width, height: at.measure.height },
+        scale: at.layer.host ? inlineOf(at.layer, 'scale') : null,
         released: false,
       }
     } else {
@@ -671,6 +602,30 @@ export function CanvasOverlay({
       return
     }
     const { at, measure } = gesture.target
+    if (gesture.kind === 'resize' && gesture.scale !== null) {
+      // 宿主：写 `scale`，绕中心缩，中心不用挪回去
+      if (gesture.released) return
+      const ratio = resizeRatio(measure.frame, gesture.size, gesture.start, point)
+      const styles = scaledStyles(gesture.scale, ratio)
+      showDraft({
+        kind: 'resize',
+        frames: new Map([
+          [
+            at,
+            {
+              ...measure.frame,
+              width: measure.frame.width * ratio,
+              height: measure.frame.height * ratio,
+            },
+          ],
+        ]),
+        moves: new Map(),
+        styles,
+        guides: null,
+      })
+      void controlRef.current?.draft(at, { x: 0, y: 0 }, cssStyles(styles), false)
+      return
+    }
     if (gesture.kind === 'resize') {
       if (gesture.released) return
       const size = layoutSize(resizedSize(measure.frame, gesture.size, gesture.start, point))
@@ -711,21 +666,20 @@ export function CanvasOverlay({
     })
   }
 
-  /** 把这次拖动写进去：挪的位移照 SDK `moveElement` 写，缩放、转写行内样式。 */
+  /** 把这次拖动写进去：缩放、转写行内样式，挪见 `movedEdit`。 */
   const commit = (last: Draft, targets: readonly Shown[]) => {
     const edits = targets.flatMap(({ at, layer }): LayerEdit[] => {
       const move = last.moves.get(at)
       const moved =
-        move === undefined || (move.x === 0 && move.y === 0)
-          ? undefined
-          : movedTo(layer.element.attributes, move)
-      if (moved === undefined && last.styles === null) return []
+        move === undefined || (move.x === 0 && move.y === 0) ? null : movedEdit(layer, move)
+      const styles = { ...last.styles, ...moved?.styles }
+      if (moved?.move === undefined && Object.keys(styles).length === 0) return []
       return [
         {
           file: layer.file,
           element: layer.element.hfId,
-          ...(moved === undefined ? {} : { move: moved }),
-          ...(last.styles === null ? {} : { styles: last.styles }),
+          ...(moved?.move === undefined ? {} : { move: moved.move }),
+          ...(Object.keys(styles).length === 0 ? {} : { styles }),
         },
       ]
     })
@@ -812,7 +766,7 @@ export function CanvasOverlay({
         shown.map(({ layer, measure }) => ({
           file: layer.file,
           element: layer.element.hfId,
-          move: movedTo(layer.element.attributes, toLocal(measure.parent, step)),
+          ...movedEdit(layer, toLocal(measure.parent, step)),
         })),
       )
       return true
@@ -825,23 +779,22 @@ export function CanvasOverlay({
   const onDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
     const point = toCanvas(event)
     void controlRef.current?.pick(point).then(([top]) => {
-      if (top === undefined) return
-      const layer = layers[top.layer]
-      const owner = layers[top.owner]
-      const caption = layer === undefined ? undefined : clipOf.get(layer.clip)
-      if (caption?.kind === 'caption' && caption.id === layer?.element.hfId) {
-        select(new Set([caption.id]), null)
-        controlRef.current?.editText(caption.id, point, [caption.variable])
+      const layer = top === undefined ? undefined : layers[top.layer]
+      if (layer === undefined) return
+      const clip = clipOf.get(layer.clip)
+      if (clip?.kind === 'caption' && clip.id === layer.element.hfId) {
+        select(new Set([clip.id]))
+        controlRef.current?.editText(clip.id, point, [clip.variable])
         return
       }
-      const host = owner === undefined ? undefined : clipOf.get(owner.clip)
-      if (host?.kind !== 'host') return
-      const item = itemNamed(catalog, host.item)
+      // 贴片、场景：在宿主里找指针下的文字字段
+      if (clip?.kind !== 'host' || !layer.host) return
+      const item = itemNamed(catalog, clip.item)
       const fields = item === undefined ? [] : textFields(item)
       if (fields.length === 0) return
-      select(new Set([host.id]), null)
+      select(new Set([clip.id]))
       controlRef.current?.editText(
-        host.id,
+        clip.id,
         point,
         fields.map((field) => field.id),
       )
@@ -853,8 +806,8 @@ export function CanvasOverlay({
     onTextClose()
   }
 
-  // 只选中一层、它不是宿主时才有把手；不能缩放、不能转的不出那个把手
-  const single = shown.length === 1 && shown[0]?.layer.host === false ? shown[0] : undefined
+  // 只选中一层时才有把手；不能缩放、不能转的不出那个把手
+  const single = shown.length === 1 ? shown[0] : undefined
   const textEdit =
     textTarget === null
       ? undefined
@@ -915,9 +868,8 @@ export function CanvasOverlay({
         const below = (frame.cy + frame.height / 2) * zoom + ROTATE_ROOM
         return (
           <div
-            aria-label={`选中：${layerName(layer, clipOf.get(layer.clip))}`}
+            aria-label={`选中：${clipOf.get(layer.clip)?.label ?? layer.clip}`}
             className="wf-canvas-frame"
-            data-host={layer.host ? '' : undefined}
             key={layer.key}
             role="img"
             style={frameStyle(frame)}
@@ -955,14 +907,6 @@ export function CanvasOverlay({
           </div>
         )
       })}
-      {generatedShown === null ? null : (
-        <div
-          aria-label="选中：脚本生成的层"
-          className="wf-canvas-frame"
-          role="img"
-          style={frameStyle(drawnFrame(generatedShown.measure))}
-        />
-      )}
       {draft === null || draft.guides === null ? null : <CanvasGuides guides={draft.guides} />}
       {textTarget !== null && textEdit !== undefined ? (
         <CanvasText

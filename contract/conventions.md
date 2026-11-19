@@ -176,7 +176,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 | 配音与旁白（`<audio>`） | 携带 `data-dub-of="<字幕id>"` 即为配音片段：带 `data-locale="<locale>"` 为对应外语配音；不带 `data-locale` 为原文旁白（额外带 `data-dub-voice="<参考音频id>"` 记录克隆音色）；生成截尾时带 `data-dub-trimmed` |
 | 组件宿主（贴片 / 场景） | 携带 `data-composition-id`、`data-composition-src`、`data-playback-start` 与 `data-variable-values`（JSON 对象，保存原文取值）；行内样式写入尺寸缩放与 `--font-display` / `--font-body`。随语言文字字段由 `data-locale-bindings='{"<字段id>":"<根变量id>"}'` 映射到主文件根变量 |
 | 字幕宿主与单句元素 | `#film` 下 `data-track-kind="captions"` 宿主挂载 `compositions/captions.html`（整轨隐藏写宿主 `data-hidden`）。场景内单句元素带 `data-caption-of="<视频片段id>"` 标识识别归属；单句自定义样式写行内 `color`、`font-family`（须在组件库 `fonts` 中声明，否则导出报 `font-missing`）、`font-size` 及配套描边投影 |
-| 画布内层编辑 | 变换直接写入目标层所属文件（位移写 `data-x` / `data-y` 及基线 `data-hf-edit-base-x/y`，缩放写行内宽高，旋转写 `rotate` 或 `transform`），组件宿主自身不写画布变换 |
+| 画布编辑 | 视频片段与单句字幕写入所属文件（位移写 `data-x` / `data-y` 及基线 `data-hf-edit-base-x/y`，缩放写行内宽高，旋转写 `rotate` 或 `transform`）；贴片/场景整体编辑，只写主文件里宿主的行内 `translate`（在居中用的百分比上加像素）、`scale`、`rotate`，不写 `data-x` / `data-y` 与宽高，不改组件文件 |
 
 3. **多语言文字与人声合并规则（预览与 `render/` 导出共用）**：
    - **人声切换 `data-voice-modes`**：位于 `#film` 上，结构为 `{ "<locale>": { "mode": "dub" | "original", "voice": "<参考音频id>" | null, "lines"?: { "<字幕id>": { "voice": "<参考音频id>" | null } | { "dub": false } } } }`（缺省或格式非法均按 `original`、`voice: null` 处理）。预览与导出统一通过 [voices.ts](../web/src/features/storyboard/final-cut/composition/voices.ts) 的 `localizedVoices` 重写主文件副本：`dub` 模式仅保留当前语言配音，移除分离原声与原文旁白并将视频置为 `muted`；原文及 `original` 模式移除所有外语配音，保留原声与原文旁白。

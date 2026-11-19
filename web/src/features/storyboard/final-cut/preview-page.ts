@@ -15,24 +15,23 @@ import { FONT_BLOCK_START } from './composition/film'
 import {
   drawDraft,
   elementOf,
-  elementsAt,
   endDraft,
   hideText,
   layerElement,
   measureLayer,
-  ownerOf,
   refOf,
   showText,
   snapRectsOf,
   startDraft,
   textSpotAt,
-  writeLayer,
+  unitsAt,
   type Drafting,
   type HiddenText,
 } from './preview-canvas'
 import { withPreviewMediaPatches } from './preview-media'
 import {
   zPreviewCommand,
+  type LayerEntry,
   type LayerRef,
   type PreviewCommand,
   type PreviewEvent,
@@ -325,7 +324,7 @@ export const createPreviewPage = (
   let replica: Replica | null = null
   let disposed = false
   // 编辑器给的层表（`layers` 命令），按「宿主、选择器、第几个」查它在表里的位置
-  let table: (LayerRef & { count: number })[] = []
+  let table: LayerEntry[] = []
   let tableIndex = new Map<string, number>()
   // 编辑器要量的层（`watch` 命令）和上一次报出去的结果
   let watched: { seq: number; layers: readonly number[]; reported: string } | null = null
@@ -348,7 +347,7 @@ export const createPreviewPage = (
     if (watched === null || page === null) return
     const items = watched.layers.map((at) => {
       const element = layerAt(page, at)
-      return element === null ? null : measureLayer(page, element, true)
+      return element === null ? null : measureLayer(page, element)
     })
     const reported = JSON.stringify(items)
     if (reported === watched.reported) return
@@ -356,42 +355,38 @@ export const createPreviewPage = (
     send({ type: 'measured', seq: watched.seq, items })
   }
 
-  /** 画布上 (`x`, `y`) 处从上往下能选中的层，按表认（表里没有、数不对的是 -1）。 */
+  /** 画面里的元素 `element` 在表里的位置；表里没有、数不对（脚本加了同样的元素）时是 undefined。 */
+  const tableAt = (page: Document, element: HTMLElement): number | undefined => {
+    const ref = refOf(page, element)
+    const at = ref === null ? undefined : tableIndex.get(refKey(ref))
+    return at !== undefined && layerAt(page, at) === element ? at : undefined
+  }
+
+  /** 表里贴片、场景的宿主在正在播的那一份里的元素。 */
+  const hostsIn = (page: Document) =>
+    table.flatMap((entry, at) => (entry.host ? (layerAt(page, at) ?? []) : []))
+
+  /**
+   * 画布上 (`x`, `y`) 处从上往下能选中的层（贴片、场景整个是一层，见 `unitsAt`），只报表里有的，带上指针下它里面
+   * 最上面那个元素绑着的可填项。
+   */
   const pickAt = (seq: number, x: number, y: number) => {
     const page = active?.iframeElement.contentDocument ?? null
+    const isHost = (element: HTMLElement) => {
+      const at = page === null ? undefined : tableAt(page, element)
+      return at !== undefined && table[at]?.host === true
+    }
     const stack =
       page === null
         ? []
-        : elementsAt(page, { x, y }).flatMap((element) => {
-            const ref = refOf(page, element)
-            const at = ref === null ? undefined : tableIndex.get(refKey(ref))
-            const known = at !== undefined && layerAt(page, at) === element ? at : -1
-            const measure = measureLayer(page, element, known >= 0)
-            if (measure === null) return []
-            const owner = ownerOf(element)
-            const ownerRef = owner === null ? null : refOf(page, owner)
-            return [
-              {
-                layer: known,
-                owner: ownerRef === null ? -1 : (tableIndex.get(refKey(ownerRef)) ?? -1),
-                measure,
-              },
-            ]
+        : unitsAt(page, { x, y }, isHost).flatMap(({ unit, target }) => {
+            const layer = tableAt(page, unit)
+            const measure = layer === undefined ? null : measureLayer(page, unit)
+            return layer === undefined || measure === null
+              ? []
+              : [{ layer, field: target.getAttribute('data-var-text'), measure }]
           })
     send({ type: 'picked', seq, stack })
-  }
-
-  /** 组件文件里改了的层直接改，之后按 `data-x` / `data-y` 重新摆一遍（撤销到没挪过时也摆回原处）。 */
-  const writeLayers = (
-    page: Document,
-    layers: Extract<PreviewCommand, { type: 'patch' }>['layers'],
-  ) => {
-    for (const { ref, styles, attributes } of layers ?? []) {
-      const at = tableIndex.get(refKey(ref))
-      const element = at === undefined ? null : layerAt(page, at)
-      if (element !== null) writeLayer(element, styles, attributes)
-    }
-    applyPositionEdits(page, { force: true })
   }
 
   const dropReplica = () => {
@@ -588,7 +583,6 @@ export const createPreviewPage = (
     patches: readonly JsonPatchOp[],
     captions: readonly JsonPatchOp[],
     fonts: string | undefined,
-    layers: Extract<PreviewCommand, { type: 'patch' }>['layers'],
   ) => {
     const player = active
     const page = player?.iframeElement.contentDocument ?? null
@@ -612,7 +606,8 @@ export const createPreviewPage = (
       extendRuntime(player, patches)
       current.comp.applyPatches(withPreviewMediaPatches(patches))
       if (captions.length > 0) current.captions?.applyPatches(captions)
-      writeLayers(page, layers)
+      // 按 `data-x` / `data-y` 重新摆一遍（撤销到没挪过时也摆回原处）
+      applyPositionEdits(page, { force: true })
     } catch (error) {
       console.error('预览页打补丁失败，整份重新加载', error)
       dropReplica()
@@ -641,7 +636,7 @@ export const createPreviewPage = (
         return
       }
       case 'patch':
-        patch(command.seq, command.patches, command.captions ?? [], command.fonts, command.layers)
+        patch(command.seq, command.patches, command.captions ?? [], command.fonts)
         return
       case 'unload':
         cancelPending()
@@ -698,6 +693,7 @@ export const createPreviewPage = (
             : snapRectsOf(
                 page,
                 command.layers.flatMap((at) => layerAt(page, at) ?? []),
+                hostsIn(page),
               )
         send({
           type: 'snapRects',
@@ -713,7 +709,7 @@ export const createPreviewPage = (
         if (page !== null && draft === undefined) {
           const element = layerAt(page, command.layer)
           if (element !== null) {
-            draft = startDraft(page, element)
+            draft = startDraft(page, element, table[command.layer]?.host === true)
             drafts.set(command.layer, draft)
           }
         }

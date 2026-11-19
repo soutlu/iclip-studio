@@ -4,42 +4,41 @@ import { drawnFrame } from './canvas-visible'
 import type { PickedLayer } from './preview-player'
 
 /**
- * 指针停着的地方框哪一层：它画出来的框（看得见的那一块，见 canvas-visible.ts）、属于哪个片段，是不是脚本生成的层（表里没有），能不能原地改字。
+ * 指针停着的地方框哪一层：它画出来的框（看得见的那一块，见 canvas-visible.ts）、属于哪个片段，指针下能不能原地
+ * 改字。
  */
-export type Hover = { frame: Frame; clip: string; generated: boolean; text: boolean }
-
-type Judge = (layer: CanvasLayer) => boolean
+export type Hover = { frame: Frame; clip: string; text: boolean }
 
 /**
- * 指针停在画面上这一处时框哪一层，就是点下去会选中的那一层（规则同点选时）：`stack` 是预览页答复的指针下的层，
- * 从上往下；宿主跳过。最上面一层是 `winsOnTop` 的（字幕的一句）、它还没框着时，点一下选中的是它，框它；不然指针下
- * 有已经框着的层（`selected`，表里的 key）时点下去还是它，不再框；最上面是脚本生成的层时框它；不然框最上面那一层。
- * 指针下没有能选中的层时是 null。`isText` 判断一层能不能原地改字。
+ * 指针停在画面上这一处时框哪一层，就是点下去会选中的那一层（规则同点选时）：`stack` 是预览页答复的指针下的层
+ * （贴片、场景整个是一层），从上往下。最上面一层是 `winsOnTop` 的（字幕的一句）、它还没框着时，点一下选中的是它，
+ * 框它；不然指针下有已经框着的层（`selected`，表里的 key）时点下去还是它，不再框；不然框最上面那一层。指针下没有
+ * 能选中的层时是 null。`isText` 按这一层和指针下它里面绑着的可填项（`field`）判断能不能原地改字。
  */
 export function hoverOf(
   stack: readonly PickedLayer[],
   layers: readonly CanvasLayer[],
   selected: ReadonlySet<string>,
-  { isText, winsOnTop }: { isText: Judge; winsOnTop: Judge },
+  {
+    isText,
+    winsOnTop,
+  }: {
+    isText: (layer: CanvasLayer, field: string | null) => boolean
+    winsOnTop: (layer: CanvasLayer) => boolean
+  },
 ): Hover | null {
   const known = stack.flatMap((item) => {
     const layer = layers[item.layer]
-    return item.layer < 0 || layer === undefined || layer.host ? [] : [{ ...item, layer }]
+    return layer === undefined ? [] : [{ ...item, layer }]
   })
-  const [first] = known
-  const onTop = first !== undefined && winsOnTop(first.layer) && !selected.has(first.layer.key)
-  if (!onTop && known.some(({ layer }) => selected.has(layer.key))) return null
-  const [top] = stack
-  const owner = top === undefined ? undefined : layers[top.owner]
-  if (top !== undefined && top.layer < 0 && owner !== undefined)
-    return { frame: drawnFrame(top.measure), clip: owner.clip, generated: true, text: false }
   const [hit] = known
   if (hit === undefined) return null
+  const onTop = winsOnTop(hit.layer) && !selected.has(hit.layer.key)
+  if (!onTop && known.some(({ layer }) => selected.has(layer.key))) return null
   return {
     frame: drawnFrame(hit.measure),
     clip: hit.layer.clip,
-    generated: false,
-    text: isText(hit.layer),
+    text: isText(hit.layer, hit.field),
   }
 }
 
