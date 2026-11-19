@@ -1183,19 +1183,6 @@
   gap: 8px;
 }
 
-.wf-text-line {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 6px;
-}
-
-.wf-text-line > input {
-  min-width: 0;
-  flex: 1 1 0;
-}
-
 /* 两个类压过输入框自带的高度、内边距和字号（样子见 wf-field） */
 .wf-caption .wf-text-input {
   height: 32px;
@@ -1203,7 +1190,7 @@
   font-size: var(--text-label);
 }
 
-:is(.wf-text-line, .wf-text-row) > input:read-only {
+.wf-text-row > input:read-only {
   color: var(--color-on-surface-muted);
 }
 
@@ -4828,23 +4815,6 @@ button.wf-take-version:hover {
   font-size: var(--text-label);
   font-weight: 600;
   white-space: nowrap;
-}
-
-/* 「原片截取」的选中框（见 source-trim.tsx）：外围一圈选区外框，同画面轨与编辑视频 */
-.wf-range {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  z-index: var(--z-local-2);
-  border-radius: var(--radius-xs);
-  box-shadow: inset 0 0 0 1.5px var(--color-on-surface);
-  cursor: grab;
-  touch-action: none;
-}
-
-/* 两端抓手的点按区收到 18px 宽：用掉的段很短时，框中间还按得到 */
-.wf-range .timeline-handle::before {
-  width: 18px;
 }
 
 /* 预览在放选区时，选区里走的播放头 */
