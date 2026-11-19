@@ -37,6 +37,8 @@ class UserAccount:
     departments: tuple[PmsDepartment, ...]
     created_at: datetime | None
     last_login_at: datetime | None
+    model_group: str | None
+    """root 给他选的配置组名，``None`` 即默认组。"""
 
 
 @dataclass(frozen=True, slots=True)

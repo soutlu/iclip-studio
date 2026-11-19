@@ -7287,6 +7287,16 @@ export type UserEnvelope = {
 }
 
 /**
+ * UserModelGroupIn
+ */
+export type UserModelGroupIn = {
+  /**
+   * Modelgroup
+   */
+  modelGroup: string | null
+}
+
+/**
  * UserOut
  */
 export type UserOut = {
@@ -7334,6 +7344,10 @@ export type UserOut = {
    * Lastloginat
    */
   lastLoginAt: string | null
+  /**
+   * Modelgroup
+   */
+  modelGroup: string | null
   /**
    * Permissions
    */
@@ -13915,3 +13929,36 @@ export type PatchUserUsersUserIdPatchResponses = {
 
 export type PatchUserUsersUserIdPatchResponse =
   PatchUserUsersUserIdPatchResponses[keyof PatchUserUsersUserIdPatchResponses]
+
+export type PutUserModelGroupUsersUserIdModelGroupPutData = {
+  body: UserModelGroupIn
+  path: {
+    /**
+     * User Id
+     */
+    user_id: string
+  }
+  query?: never
+  url: '/users/{user_id}/model-group'
+}
+
+export type PutUserModelGroupUsersUserIdModelGroupPutErrors = {
+  /**
+   * 没有这个用户
+   */
+  404: unknown
+  /**
+   * 组名不在部署配置里，说明里列出可选的组
+   */
+  422: unknown
+}
+
+export type PutUserModelGroupUsersUserIdModelGroupPutResponses = {
+  /**
+   * Successful Response
+   */
+  200: UserEnvelope
+}
+
+export type PutUserModelGroupUsersUserIdModelGroupPutResponse =
+  PutUserModelGroupUsersUserIdModelGroupPutResponses[keyof PutUserModelGroupUsersUserIdModelGroupPutResponses]

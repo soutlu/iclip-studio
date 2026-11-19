@@ -13,7 +13,7 @@ from fastapi_users_db_sqlalchemy import (
     SQLAlchemyBaseUserTableUUID,
 )
 from fastapi_users_db_sqlalchemy.generics import GUID
-from sqlalchemy import DateTime, ForeignKey, MetaData, String, func, select
+from sqlalchemy import DateTime, ForeignKey, MetaData, String, Text, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -48,6 +48,7 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    model_group: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     oauth_accounts: Mapped[list[OAuthAccount]] = relationship(lazy="joined")
 
@@ -132,6 +133,7 @@ def account_from_row(row: User) -> UserAccount:
         departments=tuple(_department_from_json(item) for item in row.departments),
         created_at=row.created_at,
         last_login_at=row.last_login_at,
+        model_group=row.model_group,
     )
 
 
@@ -212,6 +214,17 @@ class SqlUserRepository:
                 row.direct_permissions = sorted(direct_permissions)
             if is_active is not None:
                 row.is_active = is_active
+            await session.flush()
+            return account_from_row(row)
+
+    async def set_model_group(
+        self, user_id: uuid.UUID, model_group: str | None
+    ) -> UserAccount | None:
+        async with self._sessions() as session, session.begin():
+            row = await session.get(User, user_id)
+            if row is None:
+                return None
+            row.model_group = model_group
             await session.flush()
             return account_from_row(row)
 

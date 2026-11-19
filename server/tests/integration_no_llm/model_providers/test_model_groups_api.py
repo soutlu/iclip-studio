@@ -19,7 +19,7 @@ from tests.helpers.runtime_backed import build_backed_app
 
 @pytest.fixture
 def app(base_env: None, engine: AsyncEngine) -> FastAPI:
-    config = with_model_groups(make_runtime_config(), {"mkt": [101], "ecom": [102]})
+    config = with_model_groups(make_runtime_config(), ["mkt", "ecom"])
     return build_backed_app(config, engine=engine, credential_probe=KeyCheckingProbe({GOOD_KEY}))
 
 

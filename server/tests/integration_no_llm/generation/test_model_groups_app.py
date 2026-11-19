@@ -1,65 +1,46 @@
 from __future__ import annotations
 
-import json
 import uuid
-from collections.abc import AsyncGenerator
 
 import pytest
 from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.app.bootstrap import build_app
 from iclip.config import ModelGroupSection
-from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.app import make_client
-from tests.helpers.auth import login_as_editor
+from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media
-from tests.helpers.pg import connected, reset_database
+from tests.helpers.model_groups import MKT, set_model_group_in_db
+from tests.helpers.pg import connected
 
 VIDEO_BODY = {"model": "seedance", "prompt": "一只猫跳上窗台", "aspect_ratio": "16:9", "seconds": 5}
 
 
 @pytest.fixture
-async def grouped_app(
-    base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch
-) -> AsyncGenerator[FastAPI]:
+def grouped_app(base_env: None, engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
     for name, value in MEDIA_ENVS.items():
         monkeypatch.setenv(name, value)
     monkeypatch.setenv("VIDEO_API_KEY_MKT", "vk-mkt")
-    async with connected(migrated_pg) as conn:
-        await reset_database(conn)
     config = config_with_media().model_copy(
         update={
             "model_groups": {
-                "mkt": ModelGroupSection(
-                    departments=(101,),
-                    video_api_key_env="VIDEO_API_KEY_MKT",
-                    video_models={"seedance": "mkt-seedance"},
+                MKT: ModelGroupSection(
+                    video_api_key_env="VIDEO_API_KEY_MKT", video_models={"seedance": "mkt-seedance"}
                 )
             }
         }
     )
-    engine = build_engine(migrated_pg)
-    try:
-        yield build_app(
-            config,
-            engine=engine,
-            object_store=MemoryObjectStore(),
-            queue_connector=InMemoryConnector(),
-            media_codec=SOFTWARE,
-        )
-    finally:
-        await engine.dispose()
-
-
-async def _set_departments(pg_url: str, user_id: str, departments: list[int]) -> None:
-    async with connected(pg_url) as conn:
-        await conn.execute(
-            text("UPDATE iclip.users SET departments = CAST(:departments AS jsonb) WHERE id = :id"),
-            {"departments": json.dumps([{"id": d} for d in departments]), "id": user_id},
-        )
+    return build_app(
+        config,
+        engine=engine,
+        object_store=MemoryObjectStore(),
+        queue_connector=InMemoryConnector(),
+        media_codec=SOFTWARE,
+    )
 
 
 async def _recorded_group(pg_url: str, job_id: str) -> tuple[str | None, str | None]:
@@ -76,23 +57,45 @@ async def _recorded_group(pg_url: str, job_id: str) -> tuple[str | None, str | N
 
 
 @pytest.mark.parametrize(
-    ("departments", "expected"),
-    [([101], ("mkt", "mkt-seedance")), ([], (None, None))],
-    ids=["in_mkt", "no_department"],
+    ("group", "expected"),
+    [(MKT, (MKT, "mkt-seedance")), (None, (None, None))],
+    ids=["in_mkt", "default_group"],
 )
-async def test_the_assembled_app_records_the_group_of_the_users_synced_departments(
+async def test_a_group_root_picks_applies_to_the_users_next_video_without_a_restart(
     grouped_app: FastAPI,
     pg_url: str,
-    departments: list[int],
+    group: str | None,
     expected: tuple[str | None, str | None],
+) -> None:
+    async with make_client(grouped_app) as root, make_client(grouped_app) as user:
+        await register_and_login(root, username="root", email="root@example.com")
+        await set_roles_in_db(pg_url, "root@example.com", ["root"])
+        user_id = await login_as_editor(user, pg_url, username="logan")
+
+        picked = await root.put(f"/users/{user_id}/model-group", json={"modelGroup": group})
+        assert picked.status_code == 200, picked.text
+        assert picked.json()["user"]["modelGroup"] == group
+
+        response = await user.post("/generations/video", json={**VIDEO_BODY, "user_name": "logan"})
+
+    assert response.status_code == 202, response.text
+    assert await _recorded_group(pg_url, response.json()["task_id"]) == expected
+
+
+async def test_a_user_whose_group_left_the_config_cannot_make_videos(
+    grouped_app: FastAPI, pg_url: str
 ) -> None:
     async with make_client(grouped_app) as client:
         user_id = await login_as_editor(client, pg_url, username="logan")
-        await _set_departments(pg_url, user_id, departments)
+        await set_model_group_in_db(pg_url, user_id, "retired")
 
         response = await client.post(
             "/generations/video", json={**VIDEO_BODY, "user_name": "logan"}
         )
 
-    assert response.status_code == 202, response.text
-    assert await _recorded_group(pg_url, response.json()["task_id"]) == expected
+    assert response.status_code == 409, response.text
+    assert response.json()["code"] == "model_group_unavailable"
+    assert "retired" in response.json()["detail"]
+    async with connected(pg_url) as conn:
+        jobs = (await conn.execute(text("SELECT count(*) FROM iclip.generation_jobs"))).scalar()
+    assert jobs == 0, "不悄悄按默认组受理"

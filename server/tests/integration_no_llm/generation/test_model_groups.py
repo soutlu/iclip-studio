@@ -30,7 +30,7 @@ from iclip.domains.generation.subtitles import SUBTITLE_MODEL
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.models import Principal, UserAccount
-from iclip.domains.identity.public import DepartmentGroup, ModelGroupResolver
+from iclip.domains.identity.public import ModelGroupAssignments
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.fetch_url import as_is
@@ -42,7 +42,7 @@ from tests.helpers.generation import (
     MemoryObjectStore,
     video_request,
 )
-from tests.helpers.identity import InMemoryUserRepository, department, make_account
+from tests.helpers.identity import InMemoryUserRepository, make_account
 from tests.helpers.media import synthesize_padded_music, synthesize_video
 
 pytestmark = [
@@ -78,11 +78,6 @@ GROUPS = (
         subtitle_api_key="asr-ecom",
         music_api_key="music-ecom",
     ),
-)
-
-DEPARTMENTS = (
-    DepartmentGroup(name="mkt", departments=frozenset({101, 102})),
-    DepartmentGroup(name="ecom", departments=frozenset({201})),
 )
 
 
@@ -198,7 +193,10 @@ def _module(
             endpoint=QwenEndpoint(url=MUSIC_URL, api_key="music-default", timeout_seconds=30),
             concurrency=1,
         ),
-        model_groups=ModelGroups(GROUPS, group_of=ModelGroupResolver(users, DEPARTMENTS).group_of),
+        model_groups=ModelGroups(
+            GROUPS,
+            group_of=ModelGroupAssignments(users, [group.name for group in GROUPS]).group_of,
+        ),
         video_transport=transport,
         subtitle_transport=transport,
         music_transport=transport,
@@ -257,17 +255,16 @@ async def _make_everything(
 
 
 @pytest.mark.parametrize(
-    ("departments", "group", "video_key", "video_model", "enhance_model", "asr_key", "music_key"),
+    ("group", "video_key", "video_model", "enhance_model", "asr_key", "music_key"),
     [
-        ((102,), "mkt", "vk-mkt", "mkt-seedance", "mkt-enhance", "asr-mkt", "music-mkt"),
-        ((201,), "ecom", "vk-ecom", "ecom-seedance", "ecom-enhance", "asr-ecom", "music-ecom"),
-        ((), None, "vk-default", MODEL, ENHANCE_MODEL, "asr-default", "music-default"),
+        ("mkt", "vk-mkt", "mkt-seedance", "mkt-enhance", "asr-mkt", "music-mkt"),
+        ("ecom", "vk-ecom", "ecom-seedance", "ecom-enhance", "asr-ecom", "music-ecom"),
+        (None, "vk-default", MODEL, ENHANCE_MODEL, "asr-default", "music-default"),
     ],
-    ids=["mkt", "ecom", "no_department"],
+    ids=["mkt", "ecom", "default_group"],
 )
 async def test_each_user_reaches_upstream_with_their_groups_key_and_model_id(
     media: tuple[bytes, bytes],
-    departments: tuple[int, ...],
     group: str | None,
     video_key: str,
     video_model: str,
@@ -275,7 +272,7 @@ async def test_each_user_reaches_upstream_with_their_groups_key_and_model_id(
     asr_key: str,
     music_key: str,
 ) -> None:
-    account = make_account(departments=tuple(department(d) for d in departments))
+    account = make_account(model_group=group)
     users = InMemoryUserRepository([account])
     repo = InMemoryGenerationRepository()
     upstream = Upstream(*media)

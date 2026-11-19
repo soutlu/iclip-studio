@@ -24,6 +24,7 @@ from iclip.domains.identity.accounts import (
 from iclip.domains.identity.commands import CreateApiKey, UpdateUser
 from iclip.domains.identity.infra_sql import OAuthAccount, SessionFactory, User
 from iclip.domains.identity.middleware import require_authenticated, require_permission
+from iclip.domains.identity.model_groups import ModelGroupAssignments
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.pms import PmsUnavailable, PmsUserClient
 from iclip.domains.identity.rbac import MANAGE_PERMISSION, ROOT_ROLE
@@ -35,6 +36,7 @@ from iclip.domains.identity.schemas import (
     ApiKeysEnvelope,
     SsoAuthorizeOut,
     UserEnvelope,
+    UserModelGroupIn,
     UserPatchIn,
     UsersPageOut,
     api_key_out,
@@ -76,7 +78,7 @@ def create_account_routers(
     return (auth_router,)
 
 
-def create_users_router(service: IdentityService) -> APIRouter:
+def create_users_router(service: IdentityService, model_groups: ModelGroupAssignments) -> APIRouter:
     router = APIRouter()
 
     @router.get("/users/me", response_model=UserEnvelope)
@@ -129,6 +131,27 @@ def create_users_router(service: IdentityService) -> APIRouter:
             )
         except SelfManagementForbidden as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return UserEnvelope(user=user_out(account))
+
+    @router.put(
+        "/users/{user_id}/model-group",
+        response_model=UserEnvelope,
+        responses={
+            404: {"description": "没有这个用户"},
+            422: {"description": "组名不在部署配置里，说明里列出可选的组"},
+        },
+    )
+    async def put_user_model_group(
+        user_id: uuid.UUID,
+        body: UserModelGroupIn,
+        _: Annotated[Principal, require_permission("model:manage")],
+    ) -> UserEnvelope:
+        """给用户选配置组，``null`` 放回默认组；即时生效，他下一次发消息、出片就按新组。
+
+        组名取自 ``GET /model-providers/groups``。
+        """
+
+        account = await model_groups.assign(user_id, body.model_group)
         return UserEnvelope(user=user_out(account))
 
     return router
@@ -232,7 +255,7 @@ def create_sso_router(
             user.id,
             display_name=session.name,
             avatar_url=session.avatar_url,
-            roles=("editor",) if is_new_account else None,
+            roles=("viewer",) if is_new_account else None,
             city=profile.city if profile is not None else None,
             job_title=profile.job_title if profile is not None else None,
             departments=profile.departments if profile is not None else None,

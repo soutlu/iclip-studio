@@ -647,7 +647,6 @@ def test_the_breakdown_model_is_no_longer_configured(tmp_path: Path) -> None:
 GROUPS = """
 model_groups:
   mkt:
-    departments: [101, 102]
     video_api_key_env: VIDEO_API_KEY_MKT
     subtitle_api_key_env: QWEN_SUBTITLE_API_KEY_MKT
     music_api_key_env: QWEN_MUSIC_API_KEY_MKT
@@ -656,7 +655,6 @@ model_groups:
       seedance: mkt-seedance
       seedance-other: mkt-seedance-other
   ecom:
-    departments: []
     video_api_key_env: VIDEO_API_KEY_ECOM
     video_models:
       seedance: ecom-seedance
@@ -686,10 +684,7 @@ def test_model_groups_resolve_in_config_order_with_their_keys(
 
     settings = resolve_settings(config)
 
-    assert [(group.name, group.departments) for group in settings.model_groups] == [
-        ("mkt", (101, 102)),
-        ("ecom", ()),
-    ]
+    assert settings.model_groups == ("mkt", "ecom")
     assert settings.media_generation is not None
     mkt, ecom = settings.media_generation.model_groups
     assert (mkt.name, mkt.video_api_key, dict(mkt.video_models)) == (
@@ -726,7 +721,7 @@ def test_group_keys_are_not_checked_while_media_generation_is_off(
     settings = resolve_settings(config)
 
     assert settings.media_generation is None
-    assert [group.name for group in settings.model_groups] == ["mkt", "ecom"]
+    assert settings.model_groups == ("mkt", "ecom")
 
 
 @pytest.mark.parametrize(
@@ -735,11 +730,10 @@ def test_group_keys_are_not_checked_while_media_generation_is_off(
         (("  mkt:\n", "  Mkt:\n"), "Mkt"),
         (("  mkt:\n", "  1mkt:\n"), "1mkt"),
         (("  mkt:\n", "  mkt-a:\n"), "mkt-a"),
-        (("departments: []", "departments: [102]"), "部门 102"),
         (("seedance: ecom-seedance\n", "seedance: ''\n"), "seedance"),
         (("    video_api_key_env: VIDEO_API_KEY_ECOM\n", ""), "video_api_key_env"),
     ],
-    ids=["upper_case", "leading_digit", "dash", "shared_department", "empty_model", "no_video_key"],
+    ids=["upper_case", "leading_digit", "dash", "empty_model", "no_video_key"],
 )
 def test_malformed_model_groups_are_refused_naming_what_is_wrong(
     tmp_path: Path, change: tuple[str, str], message: str

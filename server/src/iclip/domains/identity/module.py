@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,6 +23,7 @@ from iclip.domains.identity.infra_sql import (
     account_from_row,
 )
 from iclip.domains.identity.middleware import PrincipalResolver, session_cookie_name
+from iclip.domains.identity.model_groups import ModelGroupAssignments
 from iclip.domains.identity.models import UserAccount
 from iclip.domains.identity.pms import PmsUserClient
 from iclip.domains.identity.service import IdentityService
@@ -46,6 +48,7 @@ class IdentityModule:
     users: SqlUserRepository
     api_keys: SqlApiKeyRepository
     act_as: ActAs
+    model_groups: ModelGroupAssignments
 
 
 def build_identity_module(
@@ -53,12 +56,15 @@ def build_identity_module(
     auth: CookieAuthSettings,
     sso: SsoRuntime | None,
     *,
+    model_groups: Sequence[str],
     sso_verifier: SsoVerifier | None = None,
     pms_client: PmsUserClient | None = None,
 ) -> IdentityModule:
+    """``model_groups`` 是部署配置里的配置组名，按配置里的先后。"""
     users = SqlUserRepository(sessions)
     api_keys = SqlApiKeyRepository(sessions)
     service = IdentityService(users, api_keys)
+    assignments = ModelGroupAssignments(users, model_groups)
     user_manager_ctx = make_user_manager_context(sessions, secret=auth.secret)
     session_strategy = build_jwt_strategy(auth)
 
@@ -77,7 +83,7 @@ def build_identity_module(
 
     routers: list[Any] = [
         *create_account_routers(sessions, auth),
-        create_users_router(service),
+        create_users_router(service, assignments),
         create_api_keys_router(service),
     ]
     if sso is not None:
@@ -108,6 +114,7 @@ def build_identity_module(
         users=users,
         api_keys=api_keys,
         act_as=ActAs(users),
+        model_groups=assignments,
     )
 
 

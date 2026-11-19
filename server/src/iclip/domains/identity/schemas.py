@@ -44,6 +44,7 @@ class UserOut(CamelModel):
     departments: list[DepartmentOut]
     created_at: datetime | None
     last_login_at: datetime | None
+    model_group: str | None
 
 
 class UserEnvelope(CamelModel):
@@ -61,6 +62,10 @@ class UserPatchIn(CamelModel):
     roles: list[str] | None = None
     direct_permissions: list[Permission] | None = None
     is_active: bool | None = None
+
+
+class UserModelGroupIn(CamelModel):
+    model_group: str | None
 
 
 class ApiKeyCreateIn(CamelModel):
@@ -132,6 +137,7 @@ def user_out(account: UserAccount, *, permissions: frozenset[str] | None = None)
         departments=[_department_out(d) for d in account.departments],
         created_at=account.created_at,
         last_login_at=account.last_login_at,
+        model_group=account.model_group,
     )
 
 
@@ -162,6 +168,7 @@ __all__ = [
     "DepartmentOut",
     "SsoAuthorizeOut",
     "UserEnvelope",
+    "UserModelGroupIn",
     "UserOut",
     "UserPatchIn",
     "UsersPageOut",

@@ -1,18 +1,15 @@
 from __future__ import annotations
 
-import json
 import uuid
 from collections.abc import Mapping, Sequence
 from typing import Final
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.config import ModelGroupSection, RuntimeConfig
+from tests.helpers.pg import connected
 
 MKT: Final = "mkt"
-
-MKT_DEPARTMENT: Final = 101
 
 
 class GroupBook:
@@ -25,29 +22,29 @@ class GroupBook:
         return self.groups.get(user_id)
 
 
-def with_model_groups(config: RuntimeConfig, groups: Mapping[str, Sequence[int]]) -> RuntimeConfig:
-    """给配置加上 ``model_groups``，按 ``groups`` 的先后，每组写上它的部门；没开媒体生成时不查 key。"""
+def with_model_groups(config: RuntimeConfig, names: Sequence[str]) -> RuntimeConfig:
+    """给配置加上 ``model_groups``，按 ``names`` 的先后；没开媒体生成时不查 key。"""
 
     return config.model_copy(
         update={
             "model_groups": {
                 name: ModelGroupSection(
-                    departments=tuple(departments),
-                    video_api_key_env=f"VIDEO_API_KEY_{name.upper()}",
-                    video_models={},
+                    video_api_key_env=f"VIDEO_API_KEY_{name.upper()}", video_models={}
                 )
-                for name, departments in groups.items()
+                for name in names
             }
         }
     )
 
 
-async def set_departments(engine: AsyncEngine, user_id: str, departments: Sequence[int]) -> None:
-    async with engine.begin() as conn:
+async def set_model_group_in_db(pg_url: str, user_id: str, group: str | None) -> None:
+    """直接改库里用户的组；接口不收配置里没有的组名，测组失效时只能这样写。"""
+
+    async with connected(pg_url) as conn:
         await conn.execute(
-            text("UPDATE iclip.users SET departments = CAST(:departments AS jsonb) WHERE id = :id"),
-            {"departments": json.dumps([{"id": d} for d in departments]), "id": uuid.UUID(user_id)},
+            text("UPDATE iclip.users SET model_group = :group WHERE id = :id"),
+            {"group": group, "id": uuid.UUID(user_id)},
         )
 
 
-__all__ = ["MKT", "MKT_DEPARTMENT", "GroupBook", "set_departments", "with_model_groups"]
+__all__ = ["MKT", "GroupBook", "set_model_group_in_db", "with_model_groups"]

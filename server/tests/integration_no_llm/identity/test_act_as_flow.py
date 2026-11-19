@@ -341,7 +341,7 @@ class TestSsoAdoptsThePlaceholder:
             me = (await sara.get("/users/me")).json()["user"]
             assert me["username"] == "Sara.Hong"
             assert me["email"] == "sara.hong@corp.test"
-            assert me["roles"] == ["editor"]
+            assert me["roles"] == ["viewer"]
             listed = (await sara.get("/conversations/search")).json()["items"]
         assert [item["title"] for item in listed] == ["替他开的"]
 

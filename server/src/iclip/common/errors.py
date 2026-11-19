@@ -36,6 +36,12 @@ class ModelUnavailable(Conflict):
     code = "model_unavailable"
 
 
+class ModelGroupUnavailable(Conflict):
+    """用户存的配置组已不在部署配置里；不回退默认组，等管理员改组。"""
+
+    code = "model_group_unavailable"
+
+
 _REQUEST_PARTS: Final = frozenset({"body", "query", "path", "header", "cookie"})
 
 _PYDANTIC_PREFIX: Final = "Value error, "
@@ -74,6 +80,7 @@ __all__ = [
     "AuthenticationFailed",
     "Conflict",
     "DomainError",
+    "ModelGroupUnavailable",
     "ModelUnavailable",
     "NotFound",
     "PermissionDenied",

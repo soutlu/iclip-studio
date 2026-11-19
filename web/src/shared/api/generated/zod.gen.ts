@@ -3386,6 +3386,13 @@ export const zUserCreate = z.object({
 })
 
 /**
+ * UserModelGroupIn
+ */
+export const zUserModelGroupIn = z.object({
+  modelGroup: z.string().nullable(),
+})
+
+/**
  * UserOut
  */
 export const zUserOut = z.object({
@@ -3400,6 +3407,7 @@ export const zUserOut = z.object({
   isActive: z.boolean(),
   jobTitle: z.string(),
   lastLoginAt: z.iso.datetime().nullable(),
+  modelGroup: z.string().nullable(),
   permissions: z.array(z.string()),
   roles: z.array(z.string()),
   username: z.string().nullable(),
@@ -5821,3 +5829,14 @@ export const zPatchUserUsersUserIdPatchPath = z.object({
  * Successful Response
  */
 export const zPatchUserUsersUserIdPatchResponse = zUserEnvelope
+
+export const zPutUserModelGroupUsersUserIdModelGroupPutBody = zUserModelGroupIn
+
+export const zPutUserModelGroupUsersUserIdModelGroupPutPath = z.object({
+  user_id: z.uuid(),
+})
+
+/**
+ * Successful Response
+ */
+export const zPutUserModelGroupUsersUserIdModelGroupPutResponse = zUserEnvelope

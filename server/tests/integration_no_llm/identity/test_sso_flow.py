@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 from tests.helpers.app import make_client
 from tests.helpers.auth import register_and_login, set_roles_in_db
+from tests.helpers.model_groups import set_model_group_in_db
 from tests.helpers.pg import connected
 
 SSO_OK = {
@@ -68,7 +69,7 @@ async def test_authorize_exposes_issue_url(sso_app: FastAPI) -> None:
     assert "_fromApp=iclip" in url
 
 
-async def test_first_login_creates_editor_with_pms_profile(sso_app: FastAPI) -> None:
+async def test_first_login_creates_a_read_only_viewer_with_pms_profile(sso_app: FastAPI) -> None:
     async with make_client(sso_app) as client:
         callback = await client.get("/auth/sso/callback", params={"jwt": "sso-jwt"})
         assert callback.status_code == 204, callback.text
@@ -77,7 +78,8 @@ async def test_first_login_creates_editor_with_pms_profile(sso_app: FastAPI) -> 
         me = await client.get("/users/me")
     assert me.status_code == 200
     user = me.json()["user"]
-    assert user["roles"] == ["editor"]
+    assert user["roles"] == ["viewer"]
+    assert user["modelGroup"] is None
     assert user["displayName"] == "Logan W"
     assert user["username"] == "Logan W"
     assert user["email"] == "logan@corp.test"
@@ -86,18 +88,21 @@ async def test_first_login_creates_editor_with_pms_profile(sso_app: FastAPI) -> 
     assert [d["name"] for d in user["departments"]] == ["市场部"]
 
 
-async def test_second_login_reuses_account_and_keeps_roles(
+async def test_second_login_reuses_account_and_keeps_roles_and_model_group(
     sso_app: FastAPI, migrated_pg: str
 ) -> None:
     async with make_client(sso_app) as client:
         assert (await client.get("/auth/sso/callback", params={"jwt": "j1"})).status_code == 204
+        user_id = (await client.get("/users/me")).json()["user"]["id"]
     await set_roles_in_db(migrated_pg, "logan@corp.test", ["root", "editor"])
+    await set_model_group_in_db(migrated_pg, user_id, "mkt")
 
     async with make_client(sso_app) as client:
         assert (await client.get("/auth/sso/callback", params={"jwt": "j2"})).status_code == 204
         me = await client.get("/users/me")
     user = me.json()["user"]
     assert user["roles"] == ["root", "editor"]
+    assert user["modelGroup"] == "mkt", "登录同步不碰配置组"
 
 
 class TestBindingToExistingAccount:
@@ -210,7 +215,7 @@ class TestRootBootstrap:
             assert (await client.get("/auth/sso/callback", params={"jwt": "j"})).status_code == 204
             me = await client.get("/users/me")
         user = me.json()["user"]
-        assert set(user["roles"]) == {"editor", "root"}
+        assert set(user["roles"]) == {"viewer", "root"}
         assert "api_keys:issue" in user["permissions"]
 
 
