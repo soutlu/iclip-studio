@@ -8,6 +8,7 @@ const twMerge = extendTailwindMerge({
         'text-caption',
         'text-label',
         'text-body-sm',
+        'text-ui',
         'text-body',
         'text-title',
         'text-title-lg',

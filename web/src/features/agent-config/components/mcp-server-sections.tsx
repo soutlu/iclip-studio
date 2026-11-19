@@ -146,7 +146,7 @@ export function IdentityForm({
   onChange: (changes: Partial<Values>, connection: boolean) => void
 }) {
   return (
-    <div className="flex flex-col gap-4 rounded-card bg-surface-container-low p-4">
+    <div className="flex flex-col gap-4 rounded-md bg-surface-container-low p-4">
       <div className="grid grid-cols-1 gap-4 @min-[440px]:grid-cols-2">
         <Field htmlFor={`${baseId}-name`} label="服务名称">
           <Input
@@ -409,7 +409,7 @@ export function ClientCard({
 }) {
   const { copied, copy } = useCopyFeedback()
   return (
-    <div className="mt-3 flex flex-col gap-4 rounded-card bg-surface-container-low p-4">
+    <div className="mt-3 flex flex-col gap-4 rounded-md bg-surface-container-low p-4">
       <h4 className="text-body font-semibold text-on-surface">客户端</h4>
       {required ? (
         <p className="text-body-sm text-error" role="alert">

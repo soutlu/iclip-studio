@@ -2,11 +2,9 @@
 const displayedTones = ["0", "10", "20", "30", "40", "50", "60", "70", "80", "90", "95", "99", "100"];
 const palettes = [
   { name: "Primary", prefix: "P", cssPrefix: "p" },
-  { name: "Secondary", prefix: "S", cssPrefix: "s" },
   { name: "Tertiary", prefix: "T", cssPrefix: "t" },
   { name: "Error", prefix: "E", cssPrefix: "e" },
   { name: "Neutral", prefix: "N", cssPrefix: "n" },
-  { name: "Neutral Variant", prefix: "NV", cssPrefix: "nv" },
 ];
 
 const tokenSource = document.querySelector("style").textContent;
@@ -28,7 +26,7 @@ const tokenValue = (name, theme) =>
 const referenceLabel = (name, theme) => {
   const value = tokenValue(name, theme);
   if (!value) return "—";
-  const tone = value.match(/^var\(--(p|s|t|e|nv|n)(\d+)\)$/);
+  const tone = value.match(/^var\(--(p|t|e|n)(\d+)\)$/);
   if (tone) return `${tone[1].toUpperCase()}${tone[2]}`;
   const alias = value.match(/^var\(--color-([\w-]+)\)$/);
   if (alias) return `= ${alias[1]}`;
@@ -52,7 +50,7 @@ const semanticGroups = [
   {
     id: "core",
     title: "Core color roles",
-    description: "品牌、状态与容器关系",
+    description: "品牌、中性次级、状态与容器关系",
     columns: ["Default", "On", "Container", "On container"],
     families: [
       family("Primary", "primary"),
@@ -63,14 +61,42 @@ const semanticGroups = [
     ],
   },
   {
-    id: "primary-extended",
-    title: "Primary extensions",
-    description: "主色的悬停色",
-    columns: ["Hover"],
+    id: "actions",
+    title: "Actions & workbench materials",
+    description: "主色悬停、墨色次主按钮、统一浮起卡片与凹陷控件槽",
     families: [
       {
-        name: "Primary",
-        items: [["Primary Hover", "primary-hover", "on-primary"]],
+        name: "Actions",
+        items: [
+          ["Primary Hover", "primary-hover", "on-primary"],
+          ["Action Neutral", "action-neutral", "on-action-neutral"],
+          ["On Action Neutral", "on-action-neutral", "action-neutral"],
+        ],
+      },
+      {
+        name: "Materials",
+        items: [
+          ["Card", "card", "on-surface"],
+          ["Card Edge", "card-edge", "on-surface"],
+          ["Control Well", "control-well", "on-surface"],
+        ],
+      },
+    ],
+  },
+  {
+    id: "tones",
+    title: "Categorical & media tones",
+    description: "低饱和分类/媒体语义色（明暗成对换档，深浅均 ≥ AA；轨道、图标、图表、资产卡共用）",
+    families: [
+      {
+        name: "5 Tones",
+        items: [
+          ["Slate · 镜头/原声", "tone-slate", "on-scrim"],
+          ["Teal · 配乐/字幕", "tone-teal", "on-scrim"],
+          ["Umber · 人声/稿件", "tone-umber", "on-scrim"],
+          ["Copper · 贴片/指向", "tone-copper", "on-scrim"],
+          ["Ochre · 场景/包络", "tone-ochre", "on-scrim"],
+        ],
       },
     ],
   },
@@ -156,7 +182,7 @@ const semanticGroups = [
           ["Pressed", "state-pressed", "on-surface"],
           ["Dragged", "state-dragged", "on-surface"],
           ["Disabled Container", "disabled-container", "disabled-text"],
-          ["Focus Ring", "focus-ring", "on-primary"],
+          ["Focus Ring", "focus-ring", "surface"],
         ],
       },
     ],
@@ -191,7 +217,11 @@ const readableText = (hex) => {
 };
 
 const copyValue = async (value, message) => {
-  await navigator.clipboard.writeText(value);
+  try {
+    await navigator.clipboard.writeText(value);
+  } catch {
+    // 离线 file:// 剪贴板权限受限时仍弹出提示
+  }
   toast.textContent = message;
   toast.classList.add("show");
   window.clearTimeout(toastTimer);
@@ -237,7 +267,8 @@ const makeTokenCell = ([label, role, foreground], theme) => {
     `复制语义 token ${semanticToken}，${theme === "light" ? "浅色" : "深色"}映射 ${referenceLabel(`color-${role}`, theme)}`,
   );
   cell.style.setProperty("--cell-bg", `var(${semanticToken})`);
-  cell.style.setProperty("--cell-fg", `var(--color-${foreground})`);
+  const fgRole = theme === "dark" && role.startsWith("tone-") ? "on-primary" : foreground;
+  cell.style.setProperty("--cell-fg", `var(--color-${fgRole})`);
   cell.innerHTML = `
     <strong>${label}</strong>
     <code>${semanticToken}</code>
@@ -313,5 +344,30 @@ themeButtons.forEach((button, index) => {
     selectTheme(themeButtons[nextIndex].dataset.theme);
   });
 });
+
+// 渲染图标 5 档真实像素尺寸预览
+document.querySelectorAll("[data-icon-px]").forEach((box) => {
+  const px = box.dataset.iconPx;
+  box.innerHTML = `<svg width="${px}" height="${px}" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="3" y="5" width="18" height="14" rx="2.5" stroke="currentColor" stroke-width="1.7"/>
+    <path d="M10 9.5l5 2.5-5 2.5v-5Z" fill="currentColor"/>
+  </svg>`;
+});
+
+// 动效时值实时播放演示
+const playMotionBtn = document.querySelector("#play-motion");
+if (playMotionBtn) {
+  const motionTracks = [...document.querySelectorAll("#motion-demo .motion-track")];
+  let motionResetTimer;
+  playMotionBtn.addEventListener("click", () => {
+    window.clearTimeout(motionResetTimer);
+    motionTracks.forEach((t) => t.classList.remove("is-running"));
+    void playMotionBtn.offsetWidth;
+    motionTracks.forEach((t) => t.classList.add("is-running"));
+    motionResetTimer = window.setTimeout(() => {
+      motionTracks.forEach((t) => t.classList.remove("is-running"));
+    }, 720);
+  });
+}
 
 selectTheme("light");

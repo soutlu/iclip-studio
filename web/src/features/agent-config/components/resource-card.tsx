@@ -7,10 +7,10 @@ import { TooltipContent, TooltipRoot, TooltipTrigger, useTabTooltip } from '@/sh
 export const DIRECTORY_GRID = 'grid grid-cols-1 gap-3.5 @min-[480px]:grid-cols-2'
 
 export const DIRECTORY_CARD =
-  'relative isolate flex min-w-0 items-center gap-3.5 rounded-card border border-border px-4 py-3.5 text-left text-body text-on-surface shadow-[var(--shadow-xs)]'
+  'relative isolate flex min-w-0 items-center gap-3.5 rounded-md border border-border px-4 py-3.5 text-left text-body text-on-surface shadow-[var(--shadow-xs)]'
 
 // 开关的点击区铺满整张卡片（点卡片任意处都切换）；卡片里的 AlertGlyph 因此抬高一层，悬停仍能看到原因。
-export const CARD_SWITCH_HIT = 'after:absolute after:inset-0 after:rounded-card'
+export const CARD_SWITCH_HIT = 'after:absolute after:inset-0 after:rounded-md'
 
 const RESOURCE_GLYPHS: Partial<Record<IconName, IconName>> = {
   agent: 'resource-agent',
@@ -194,7 +194,7 @@ export function AddCard({
       <TooltipTrigger asChild {...triggerProps}>
         <button
           aria-disabled={blockedReason === undefined ? undefined : true}
-          className="flex min-w-0 ui-state cursor-pointer items-center gap-3.5 rounded-card border border-border px-4 py-3.5 text-left text-body text-on-surface-variant ui-focus"
+          className="flex min-w-0 ui-state cursor-pointer items-center gap-3.5 rounded-md border border-border px-4 py-3.5 text-left text-body text-on-surface-variant ui-focus"
           onClick={() => {
             if (blockedReason === undefined) onClick()
           }}

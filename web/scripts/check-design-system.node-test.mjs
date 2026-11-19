@@ -18,8 +18,8 @@ test('真实规范与运行时逐名逐值一致', () => {
 
 test('浅色色值被改动即报「值不同」', () => {
   const drifted = runtimeCss.replace(
-    '--color-canvas-label-text: var(--nv50)',
-    '--color-canvas-label-text: var(--nv40)',
+    '--color-canvas-label-text: var(--n50)',
+    '--color-canvas-label-text: var(--n40)',
   )
   assert.notEqual(drifted, runtimeCss, '注入漂移失败：目标声明没找到')
   const { problems } = check({ specHtml, runtimeCss: drifted })
@@ -50,6 +50,7 @@ const merge = (classes) => cn(classes)
 
 test('cn() 不把字阶类与颜色类当冲突', () => {
   assert.equal(merge('text-body text-on-surface'), 'text-body text-on-surface')
+  assert.equal(merge('text-ui text-on-surface'), 'text-ui text-on-surface')
   assert.equal(
     merge('text-canvas-label text-canvas-label-text'),
     'text-canvas-label text-canvas-label-text',

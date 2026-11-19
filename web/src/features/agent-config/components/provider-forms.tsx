@@ -98,7 +98,7 @@ function InlineForm({
   return (
     <form
       aria-label={title}
-      className="mt-3 flex flex-col gap-4 rounded-card bg-surface-container-low p-4"
+      className="mt-3 flex flex-col gap-4 rounded-md bg-surface-container-low p-4"
       noValidate
       ref={formRef}
       onSubmit={(event) => {
