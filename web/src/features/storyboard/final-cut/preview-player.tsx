@@ -24,23 +24,20 @@ import {
 } from './preview-protocol'
 import { previewSync, type PreviewFilm } from './preview-sync'
 
-/** 画布上一处从上往下能选中的一层（见预览协议的 `picked`）。 */
+/** 画布单点命中的可选中图层项（对应预览协议 `picked` 事件）。 */
 export type PickedLayer = { layer: number; field: string | null; measure: LayerMeasure }
 
 export type PreviewControl = {
   play: () => void
   pause: () => void
   seek: (ms: number) => void
-  /** 画布上 `point` 处从上往下能选中的层（`layers` 表里的位置）；预览页换了、没答时是空的。 */
+  /** 查询画布坐标 `point` 处从上到下的可选中图层栈（按 `layers` 表下标标识；预览页切换或未响应时返回空数组）。 */
   pick: (point: Point) => Promise<readonly PickedLayer[]>
-  /**
-   * 开始挪 `layers`（`layers` 表里的位置）时吸附用的矩形（见预览协议的 `snap`）；要在这一下的第一个 `draft` 之前
-   * 问。都找不到、预览页换了、没答时是 null。
-   */
+  /** 在首次 `draft` 前测量待移动图层（`layers` 表下标）的吸附矩形（见预览协议 `snap`；未命中或预览页切换时返回 `null`）。 */
   snapRects: (layers: readonly number[]) => Promise<SnapRects | null>
   /**
-   * 拖动中先在预览里摆一层（`layers` 表里的位置，见预览协议的 `draft`）；答复它的位移最后加了多少（父元素里的
-   * 像素，`pin` 时含挪回中心的那一下），预览页换了、没答时是 null。
+   * 拖拽期间实时更新预览页中的目标图层草稿（见预览协议 `draft`）；
+   * 返回最终局部像素偏移（`pin` 为真时含中心回位补偿；预览页切换或未响应时返回 `null`）。
    */
   draft: (
     layer: number,
@@ -48,18 +45,15 @@ export type PreviewControl = {
     styles: Readonly<Record<string, string | null>>,
     pin: boolean,
   ) => Promise<Point | null>
-  /** 拖动结束：`keep` 时留着摆好的样子（接着提交），不然摆回去。 */
+  /** 结束拖拽草稿：`keep` 为真时保留当前 DOM 状态等待正式提交，为假时还原至起拖前样式。 */
   draftEnd: (layer: number, keep: boolean) => void
-  /**
-   * 在片段 `id` 里找画布上 `point` 处的文字字段（`fields` 里的一个；字幕给它自己的编号和变量），结果报给
-   * `onTextTarget`。
-   */
+  /** 在片段 `id` 内定位画布坐标 `point` 处匹配 `fields` 的文字字段，结果通过 `onTextTarget` 回调。 */
   editText: (id: string, point: Point, fields: readonly string[]) => void
-  /** 改完字，藏起来的文字显示回来；`text` 不是 null 时先换成它。 */
+  /** 结束原地改字并恢复原文字显示；传入非空 `text` 时先行更新节点文本。 */
   endText: (text: string | null) => void
 }
 
-/** 原地改字找到的文字：片段 `id` 的文字字段 `field`，在画布上的框和字号（像素）。 */
+/** 原地改字定位结果：目标片段 `id`、文字字段 `field`，以及画布像素外框与字号。 */
 export type TextTarget = { id: string; field: string; rect: Rect; fontSize: number }
 
 /** 编辑时怎么听、怎么放：只管预览，不写进主文件。 */

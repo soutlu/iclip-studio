@@ -21,24 +21,24 @@ import { toLocal, type Linear } from './layer-edits'
 import type { LayerFrame, LayerMeasure, LayerRef } from './preview-protocol'
 import { hugRectForClipPath } from './vendor/hyperframes-studio/components/editor/domEditOverlayCrop'
 
-/** 画布上的一个矩形（像素）。 */
+/** 画布像素矩形。 */
 export type Rect = { x: number; y: number; width: number; height: number }
 
-// 预览页这边的画面编辑：认层、量层、拖动中摆层、找要改的文字。都在播放器里的 final-cut 页面上做，
-// 这个页面在另一个文档里，元素不是本页的 HTMLElement，按特性判断。
+// 预览页内的画布编辑支撑：图层定位、几何测量、拖拽草稿渲染与原地改字定位。
+// 操作对象位于播放器内部 iframe 文档，跨文档不共享 HTMLElement 构造器，统一通过属性特征判断。
 
 type Laid = HTMLElement
 
 const isLaid = (element: Element | null): element is Laid =>
   element !== null && 'offsetWidth' in element && 'style' in element
 
-/** final-cut 页面里编号是 `id` 的元素；没有时是 null。 */
+/** 在 final-cut 文档中查找 `data-hf-id` 为 `id` 的布局元素；不存在时返回 `null`。 */
 export const elementOf = (page: Document, id: string): Laid | null => {
   const element = page.querySelector(`[data-hf-id="${CSS.escape(id)}"]`)
   return isLaid(element) ? element : null
 }
 
-/** 最外层的 final-cut 根（带 `data-composition-id`）。 */
+/** 向上查找最外层的 final-cut 合成根（带 `data-composition-id`）。 */
 const filmRoot = (element: Element): Element | null => {
   let root: Element | null = null
   for (let node: Element | null = element.parentElement; node !== null; node = node.parentElement)
@@ -46,17 +46,17 @@ const filmRoot = (element: Element): Element | null => {
   return root
 }
 
-/** final-cut 页面里最外层的根（带 `data-composition-id`）；没有时是 null。 */
+/** 获取文档最外层的合成根元素（带 `data-composition-id`）；不存在时返回 `null`。 */
 const pageRoot = (page: Document): Laid | null => {
   const root = page.querySelector('[data-composition-id]')
   return isLaid(root) ? root : null
 }
 
-/** 元素挂在哪个宿主下：最近的带 `data-composition-src` 的祖先的 `data-hf-id`；在主文件里时是 null。 */
+/** 查找元素所属的最近挂载宿主 `data-hf-id`（带 `data-composition-src` 的最近祖先；位于主文件顶层时为 `null`）。 */
 const scopeOf = (element: Element): string | null =>
   element.parentElement?.closest('[data-composition-src]')?.getAttribute('data-hf-id') ?? null
 
-/** 一层在画面里的样子：表里的这一层在 `page` 里找到的元素，和画面里一共几个匹配。 */
+/** 在指定作用域内查找与 `ref` 选择器匹配且直接归属该作用域的全部布局元素。 */
 const matchesOf = (page: Document, ref: LayerRef): Laid[] => {
   const base =
     ref.scope === null
@@ -76,13 +76,13 @@ const matchesOf = (page: Document, ref: LayerRef): Laid[] => {
   )
 }
 
-/** 表里的一层在画面里是哪个元素：找不到、画面里的匹配数和源文件里的不一样（脚本加了）时是 null。 */
+/** 按图层表引用定位预览 DOM 元素；未找到或页面同名匹配数与源文件 `count` 不一致（脚本动态增删）时返回 `null`。 */
 export const layerElement = (page: Document, ref: LayerRef & { count: number }): Laid | null => {
   const matches = matchesOf(page, ref)
   return matches.length === ref.count ? (matches[ref.index] ?? null) : null
 }
 
-/** 画面里的一个元素按表认成的那一层（`scope`、选择器、第几个匹配）；取不到选择器时是 null。 */
+/** 反查预览 DOM 元素对应的图层定位标识（`scope`、`selector`、`index`）；无法生成稳定选择器时返回 `null`。 */
 export const refOf = (page: Document, element: Laid): LayerRef | null => {
   const selector = buildStableSelector(element)
   if (selector === undefined) return null
@@ -92,8 +92,7 @@ export const refOf = (page: Document, element: Laid): LayerRef | null => {
 }
 
 /**
- * 画面里的一个元素（含它自己）最外层的宿主：主文件根下挂载着文件的那个元素；不在宿主里时是 null。组件里再挂的
- * 宿主不算，算到主文件里挂着它的那一个。
+ * 查找元素（含自身）所属的主文件最外层挂载宿主（忽略组件内部嵌套挂载的子宿主）；不在任何宿主下时返回 `null`。
  */
 const outermostHostOf = (element: Element): Laid | null => {
   let host: Element | null = null
@@ -104,7 +103,7 @@ const outermostHostOf = (element: Element): Laid | null => {
 
 const IDENTITY: Linear = { a: 1, b: 0, c: 0, d: 1 }
 
-/** 计算样式里的 `scale`（`none`、`sx`、`sx sy`、`sx sy sz`）在平面里的两个倍数；认不出时是 null。 */
+/** 解析计算样式中的独立 `scale`（`none`、`sx`、`sx sy`、`sx sy sz`）为平面缩放因子；无法解析时返回 `null`。 */
 const individualScale = (value: string): { x: number; y: number } | null => {
   if (value === '' || value === 'none') return { x: 1, y: 1 }
   const [x, y] = value.trim().split(/\s+/).map(Number)
@@ -114,9 +113,9 @@ const individualScale = (value: string): { x: number; y: number } | null => {
 }
 
 /**
- * 元素画出来时的线性变换：它和所有祖先的 `rotate`、`scale`、`transform`，一直合到文档。运行库的
- * `readElementTransformSnapshot` 只合到最近的合成根、也不算单独写的 `scale`，而贴片宿主正是用 `scale` 缩进画面的，
- * 所以这里自己合。认不出的变换时是 null。
+ * 累乘元素及其全部祖先的 `rotate`、`scale`、`transform` 得到完整的 2D 变换矩阵。
+ * 运行库自带的 `readElementTransformSnapshot` 仅向上合成到最近合成根且忽略独立 `scale` 属性，
+ * 而贴片宿主依赖独立 `scale` 适配画幅，因此在此从文档根完整合成；遇到无法解析的变换时返回 `null`。
  */
 const paintedMatrix = (view: Window, element: Laid): DOMMatrix | null => {
   const chain: Element[] = []
@@ -127,7 +126,7 @@ const paintedMatrix = (view: Window, element: Laid): DOMMatrix | null => {
     const style = view.getComputedStyle(node)
     const scale = individualScale(style.scale)
     if (scale === null) return null
-    // 同一个元素上 CSS 先 rotate、再 scale、再 transform
+    // CSS 规范顺序：同一元素依次应用独立 rotate → scale → transform
     matrix = matrix
       .rotate(individualRotateDegrees(style.rotate))
       .scale(scale.x, scale.y)
@@ -143,8 +142,8 @@ const paintedMatrix = (view: Window, element: Laid): DOMMatrix | null => {
 type Corners = { nw: Point; ne: Point; se: Point; sw: Point }
 
 /**
- * 元素边框盒的四个角在画布上的位置（相对根 `origin`）：经它和祖先的变换（运行库 `elementCornerPoints`）；认不出
- * 变换时按它的外框。
+ * 计算元素边框盒四角在画布坐标系下的位置（相对于合成根 `origin`）：
+ * 优先使用累积变换矩阵经运行库 `elementCornerPoints` 精确投影，无法解析变换时回退取 `getBoundingClientRect()`。
  */
 const cornersOf = (view: Window, origin: DOMRect, element: Laid): Corners => {
   const matrix = paintedMatrix(view, element)
@@ -164,7 +163,7 @@ const cornersOf = (view: Window, origin: DOMRect, element: Laid): Corners => {
   }
 }
 
-/** 元素在画布上的样子：四个角经它和祖先的变换（运行库 `elementCornerPoints`），换成相对根的画布像素。 */
+/** 测量元素在画布上的完整旋转框（中心坐标、宽高与旋转角，画布像素）。 */
 export const frameOfElement = (page: Document, element: Laid): LayerFrame | null => {
   const view = page.defaultView
   const root = pageRoot(page)
@@ -179,14 +178,14 @@ export const frameOfElement = (page: Document, element: Laid): LayerFrame | null
   }
 }
 
-/** 元素自己的 `clip-path`：先看行内写的，没有时看算出来的（照工作台 `readElementClipPath`）。 */
+/** 读取元素自身的 `clip-path`（优先行内样式，回退计算样式，对齐上游 Studio `readElementClipPath`）。 */
 const ownClipPath = (view: Window, element: Laid): string =>
   element.style.getPropertyValue('clip-path').trim() ||
   view.getComputedStyle(element).clipPath.trim()
 
 /**
- * 元素裁掉里面内容的框：`overflow-x`、`overflow-y` 不是 `visible` 的方向上，内边距盒（边框以内）在画布上的四个角；
- * 两个方向都不裁、行内元素（`overflow` 管不到）时是 null。
+ * 提取元素的溢出裁剪框：在 `overflow-x` / `overflow-y` 非 `visible` 的轴向上计算内边距盒（padding box）四角画布坐标；
+ * 双向均不裁剪，或为 `overflow` 不生效的 `inline` / `contents` 元素时返回 `null`。
  */
 const clipBoxOf = (view: Window, origin: DOMRect, element: Laid): ClipBox | null => {
   const style = view.getComputedStyle(element)
@@ -196,7 +195,7 @@ const clipBoxOf = (view: Window, origin: DOMRect, element: Laid): ClipBox | null
   const { nw, ne, sw } = cornersOf(view, origin, element)
   const width = element.offsetWidth
   const height = element.offsetHeight
-  // 元素里 (u, v) 处在画布上的位置：边框盒四个角之间按比例取
+  // 在边框盒四角之间按局部比例线性插值求画布坐标
   const at = (u: number, v: number): Point => {
     const ru = width > 0 ? u / width : 0
     const rv = height > 0 ? v / height : 0
@@ -213,8 +212,7 @@ const clipBoxOf = (view: Window, origin: DOMRect, element: Laid): ClipBox | null
 }
 
 /**
- * 一层看得见的那一块（见 canvas-visible.ts）：它自己的 `inset()` 裁切，往上到 final-cut 根（含）每个 `overflow`
- * 不是 `visible` 的祖先的内边距盒，和画布。`frame` 是量出来的它在画布上的样子。
+ * 计算图层的可见区域框（见 canvas-visible.ts）：综合自身 `inset()` 裁切、向上至合成根（含）的溢出裁剪祖先内边距盒及画布边界。
  */
 const visibleOf = (
   view: Window,
@@ -243,7 +241,7 @@ const visibleOf = (
   )
 }
 
-/** 父元素里一像素在画布上的样子（父元素和祖先的变换的线性部分）。 */
+/** 提取父容器累积变换矩阵的 2×2 线性部分（将父元素局部像素映射至画布像素）。 */
 const parentLinear = (page: Document, element: Laid): Linear => {
   const view = page.defaultView
   const parent = element.parentElement
@@ -252,10 +250,7 @@ const parentLinear = (page: Document, element: Laid): Linear => {
   return matrix === null ? IDENTITY : { a: matrix.a, b: matrix.b, c: matrix.c, d: matrix.d }
 }
 
-/**
- * 量表里的一层：在画布上的样子、布局宽高、父元素的线性变换、自己的 `rotate`、变换里有没有位移、是不是行内元素、
- * 父元素的弹性方向，和三样能不能改（见 layer-abilities.ts）。
- */
+/** 测量单个图层的完整几何属性、布局特征及移动/缩放/旋转可编辑状态（见 layer-abilities.ts）。 */
 export const measureLayer = (page: Document, element: Laid): LayerMeasure | null => {
   const view = page.defaultView as
     (Window & { __timelines?: Record<string, RuntimeTimeline> }) | null
@@ -296,8 +291,7 @@ export const measureLayer = (page: Document, element: Laid): LayerMeasure | null
 }
 
 /**
- * 吸附用的一个元素的框（画布像素）：外框按它自己的 `inset()` 裁切收窄（照工作台 `toVisibleOverlayRect`），裁切的
- * 像素按它画在画布上的缩放换算。
+ * 计算单个元素供吸附使用的轴对齐矩形（画布像素）：将屏幕外框按元素自身 `inset()` 裁切收窄（对齐上游 Studio `toVisibleOverlayRect`）。
  */
 const snapRectOf = (view: Window, origin: DOMRect, element: Laid): Rect => {
   const box = element.getBoundingClientRect()
@@ -319,9 +313,8 @@ const snapRectOf = (view: Window, origin: DOMRect, element: Laid): Rect => {
 }
 
 /**
- * 挪 `moving` 这几个元素时吸附用的矩形（见 canvas-snap.ts）：它们合起来的框，和能吸过去的别的元素的框：运行库的
- * `snapCandidates`（从 final-cut 根往下，跳过宿主和它里面的、挪的这几个和它们里面的、没显示的），加上 `hosts`
- * 里显示着的、不在挪的贴片、场景宿主（宿主里面的不算）。一个都没有时是 null。
+ * 收集移动 `moving` 元素时的吸附输入矩形（见 canvas-snap.ts）：
+ * `moving` 为被移元素的联合外框；`targets` 由运行库 `snapCandidates`（排除组件宿主子树、被移元素与隐藏元素）加上其余可见贴片/场景宿主（`hosts`）组成。
  */
 export const snapRectsOf = (
   page: Document,
@@ -348,13 +341,13 @@ export const snapRectsOf = (
   return { moving: { x: left, y: top, width: right - left, height: bottom - top }, targets }
 }
 
-// 组件根上的 `pointer-events: none`（挂载时落到它的内层根上）是给播放用的，却会传给整棵子树。照运行库取元素时的
-// 做法（runtime/picker.ts）：只在点中判断的那一刻让内层根和页面最外层的根接收指针，判断完马上撤掉；宿主自己的
-// none 不动，那是外层作者让它点穿。放在 `hf-picker` 层里的 !important 压过作者所有普通规则和不分层的 !important。
+// 组件根常见的 `pointer-events: none`（挂载后落在 `[data-hf-inner-root]` 上）用于播放期点穿，但会连带屏蔽子树命中检测。
+// 对齐运行库 `runtime/picker.ts`：仅在执行点击拾取瞬间通过 `@layer hf-picker` 临时开启内层根与顶层合成根的指针接收，
+// 拾取完毕立即移除（保留宿主自身的 `none` 透传语义）。
 const PICKABLE_ROOTS = '[data-hf-inner-root],[data-composition-id]:not([data-composition-id] *)'
 const PICKABLE_ROOTS_RULE = `${PICKABLE_ROOTS}{pointer-events:auto!important}`
 
-/** 页面的那份放开规则的样式表；页面不支持 adoptedStyleSheets 时是 null。 */
+/** 缓存每个文档对应的临时拾取样式表（不支持 `adoptedStyleSheets` 时记为 `null`）。 */
 const pickableSheets = new WeakMap<Document, CSSStyleSheet | null>()
 
 const pickableSheetOf = (page: Document): CSSStyleSheet | null => {
@@ -371,8 +364,8 @@ const pickableSheetOf = (page: Document): CSSStyleSheet | null => {
 }
 
 /**
- * 让组件的内层根和最外层的根临时接收指针，跑完 `run` 马上恢复；答复 `run` 的结果和原本不接收指针的那几个根
- * （它们里面的层能点中，它们自己不算）。没有要放开的根时不改样式。
+ * 临时放开内层根与顶层合成根的 `pointer-events` 执行 `run` 并立即还原；
+ * 返回 `run` 的执行结果及原本为 `none` 的根节点集合（用于从命中结果中剔除根自身）。
  */
 const withPickableRoots = <T>(
   page: Document,
@@ -388,7 +381,7 @@ const withPickableRoots = <T>(
   const sheet = pickableSheetOf(page)
   let release: () => void
   if (sheet !== null) {
-    // 采用的样式表不是 DOM 节点，不会惊动运行库盯着 DOM 的观察者
+    // 优先使用 adoptedStyleSheets，避免增删 DOM 节点触发运行库的 MutationObserver
     page.adoptedStyleSheets = [...page.adoptedStyleSheets, sheet]
     release = () => {
       page.adoptedStyleSheets = page.adoptedStyleSheets.filter((each) => each !== sheet)
@@ -406,13 +399,13 @@ const withPickableRoots = <T>(
   }
 }
 
-/** 画布上一处能选中的一个：选中的元素 `unit`，和指针下它里面最上面的那个元素 `target`（不在宿主里时就是它自己）。 */
+/** 画布单点拾取单元：`unit` 为应选中的可编辑单元（如宿主或独立层），`target` 为指针下实际命中的最顶层内部元素。 */
 export type PointerUnit = { unit: Laid; target: Laid }
 
 /**
- * 画布上 `point` 处从上往下能选中的元素，每个只出现一次。先照运行库的 `pointerTargets` 找指针下的元素（跳过宿主、
- * 铺满画面的容器、空容器、不画东西的标签、作者写了不接收指针的），在 `isHost` 认的宿主里的再算成这个宿主：贴片、
- * 场景整个是一个，点中它画出来的东西才算点中它，透明的、只有铺满的底的地方点到下面。字幕宿主里的每一句各算各的。
+ * 获取画布坐标 `point` 处从上到下不重复的可选中单元列表：
+ * 先通过运行库 `pointerTargets` 拾取可视元素（自动跳过宿主外壳、全屏空容器、非可视标签及显式 `pointer-events: none` 元素），
+ * 若命中元素归属 `isHost` 认定的贴片/场景宿主，则收敛为该宿主整体（透明空白区域自然点穿至下方图层）；字幕宿主内的单句元素仍各自独立。
  */
 export const unitsAt = (
   page: Document,
@@ -437,8 +430,7 @@ export const unitsAt = (
 }
 
 /**
- * 拖动中的一层：元素、是不是贴片、场景的宿主、开始时生效的位移（拖动从它算起）和行内写的位移（摆回去用，空串是
- * 没写）、改过的那几项行内样式原来的写法、开始时在画布上的中心。
+ * 拖拽草稿上下文：记录目标元素、是否为贴片/场景宿主、起拖时的生效位移与原始行内 `translate`、已改行内样式备份及初始画布中心。
  */
 export type Drafting = {
   element: Laid
@@ -449,11 +441,10 @@ export type Drafting = {
   center: Point | null
 }
 
-/** 开始拖一层（`host` 是贴片、场景的宿主）：记下它现在的位移和中心。 */
+/** 开启图层拖拽草稿并快照初始位移与画布中心。 */
 export const startDraft = (page: Document, element: Laid, host: boolean): Drafting => {
-  // 先让页面上的 GSAP 解析一遍这层的变换（运行库写位移前也这么做）：不然它之后头一次解析时把拖动写的
-  // `translate` 折进自己的变换，位移就算了两遍。宿主不解析：动画不动宿主，解析一遍反而把它行内的
-  // `translate`、`scale`、`rotate` 折进 `transform`，之后写的 `scale` 就叠了两遍（见 layer-edits.ts）
+  // 普通图层改写 `translate` 前先触发 GSAP 初始化变换缓存（与运行库一致），防止后续首次解析把草稿 `translate` 重复折算；
+  // 贴片/场景宿主不受动画驱动，不能触发 GSAP 解析，否则其原有的 `translate / scale / rotate` 会被折入 `transform` 导致后续缩放翻倍（见 layer-edits.ts）。
   if (!host) {
     const view = page.defaultView as
       (Window & { gsap?: { getProperty?: (target: Element, property: string) => unknown } }) | null
@@ -476,8 +467,7 @@ const setStyle = (element: Laid, name: string, value: string | null) => {
 }
 
 /**
- * 拖动中摆一层：行内样式改成 `styles`，位移在开始时的上面加 `move`；`pin` 时再挪一下让中心回到开始时的地方。
- * 答复最后加的位移（父元素里的像素）。
+ * 应用拖拽草稿：写入行内 `styles` 并在初始位移上叠加 `move`；`pin` 为真时额外补偿使图层中心回到起拖位置，返回最终局部像素位移。
  */
 export const drawDraft = (
   page: Document,
@@ -510,9 +500,9 @@ export const drawDraft = (
 }
 
 /**
- * 拖动结束。`keep` 时留着摆好的样子，并记下位移原来的写法（运行库按 `data-x` / `data-y` 摆它时从这里算起，见
- * SDK 的 `moveElement`）；不然摆回开始时的样子。宿主的位移直接写在它的 `translate` 上，不记：运行库见到这个标记
- * 而没有 `data-x` / `data-y` 时，当成挪过又撤销，把位移摆回去。
+ * 结束拖拽草稿：
+ * - `keep` 为真时保留当前 DOM 样式；对普通图层记录原始 `translate` 基线属性供运行库后续按 `data-x/y` 计算（宿主直接改 `translate`，不写该基线属性，避免运行库因未见 `data-x/y` 而误将宿主还原）。
+ * - `keep` 为假时还原全部修改过的行内样式。
  */
 export const endDraft = (draft: Drafting, keep: boolean) => {
   const { element } = draft
@@ -525,12 +515,12 @@ export const endDraft = (draft: Drafting, keep: boolean) => {
   setStyle(element, 'translate', draft.inlineTranslate)
 }
 
-/** 在画布上要改的一段文字：元素、它是 `fields` 里的第几个、框和画布上的字号。 */
+/** 画布原地改字目标：文字 DOM 元素、`fields` 下标、画布外框与缩放后字号。 */
 export type TextSpot = { element: Laid; field: number; rect: Rect; fontSize: number }
 
 /**
- * 片段 `host` 里画布上 `point` 处的文字字段（`data-var-text` 是 `fields` 里的一个、显示着的；一句字幕自己就是
- * 这样的字段）；那里没有时，片段里只有一个这样的字段就是它，不然是 null。
+ * 在片段 `host` 内定位坐标 `point` 处匹配 `fields` 的可见 `[data-var-text]` 文字元素（单句字幕元素本身即带 `data-var-text`）；
+ * 若点击坐标未直接落入某文字框但片段内仅有唯一候选文字，则回退命中该唯一项，否则返回 `null`。
  */
 export const textSpotAt = (
   host: Laid,
@@ -556,7 +546,7 @@ export const textSpotAt = (
     const declared = Number.parseFloat(
       element.ownerDocument.defaultView?.getComputedStyle(element).fontSize ?? '',
     )
-    // 画布上的字号算上宿主和组件里的缩放：框的高比布局高
+    // 按实际渲染高度与布局高度之比折算宿主与组件缩放后的画布字号
     const zoom = element.offsetHeight > 0 ? bounds.height / element.offsetHeight : 1
     const fontSize = Number.isFinite(declared) ? declared * zoom : bounds.height
     return [{ element, field, rect, fontSize }]
@@ -571,12 +561,11 @@ export const textSpotAt = (
   return inside ?? (spots.length === 1 ? (spots[0] ?? null) : null)
 }
 
-/** 原地改字时藏起来的那段文字：藏的时候改的样式 `property`，和它原来的行内写法 `value`。 */
+/** 原地改字期间被临时隐藏的文字节点及原行内样式备份。 */
 export type HiddenText = { element: Laid; property: 'visibility' | 'opacity'; value: string }
 
 /**
- * 藏起一段文字。一句字幕自己是带时间的片段，运行库按时间改它行内的 `visibility`，所以它用 `opacity` 藏；
- * 组件里的文字用 `visibility`。
+ * 临时隐藏预览中的原文字：带 `data-start` 的单句字幕由运行库按时间线控制 `visibility`，改用 `opacity: 0` 隐藏；组件内文字使用 `visibility: hidden`。
  */
 export const hideText = (element: Laid): HiddenText => {
   const property = element.hasAttribute('data-start') ? 'opacity' : 'visibility'
@@ -585,7 +574,7 @@ export const hideText = (element: Laid): HiddenText => {
   return hidden
 }
 
-/** 显示回来；`text` 不是 null 时先换上这段字。 */
+/** 恢复被隐藏的文字节点；传入非空 `text` 时同步写入新文本内容。 */
 export const showText = ({ element, property, value }: HiddenText, text: string | null) => {
   if (text !== null) element.textContent = text
   if (value === '') element.style.removeProperty(property)

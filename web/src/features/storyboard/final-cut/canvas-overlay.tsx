@@ -51,30 +51,30 @@ import type { PickedLayer, PreviewControl, TextTarget } from './preview-player'
 import type { LayerMeasure } from './preview-protocol'
 import type { LayerEdit } from './use-film-session'
 
-/** 指针按下后挪过这么多屏幕像素才算拖动，不然只是点选。 */
+/** 指针按下后超过该屏幕像素阈值才视为拖拽，否则作为点击处理。 */
 const DRAG_SLOP = 3
 
-/** 同一处再点一次换下一层时，两次离得多近（屏幕像素）算同一处。 */
+/** 连续点击循环切换下层图层时，判定为同一点击位置的屏幕像素容差。 */
 const SAME_SPOT = 4
 
-/** 指针在画面上挪动时，最多隔这么久（毫秒）问一次预览页指针下是哪一层。 */
+/** 指针移动时向预览页查询悬停命中图层的最小间隔（毫秒）。 */
 const HOVER_INTERVAL = 80
 
-/** 旋转把手离选中框底边的空间（屏幕像素）：画面下面放不下时放到框上面。 */
+/** 旋转控制柄距选中框底边的预留空间（屏幕像素）；下方空间不足时翻至选中框上方。 */
 const ROTATE_ROOM = 32
 
-/** 转的时候元素的变换写在样式表里、又找不到时说的话。 */
-export const ROTATE_UNRESOLVED_TEXT = '这一层的变换写在组件的样式里，暂时不能在画面上转'
+/** 元素平移变换定义在外部样式表且无法内联解析时的提示文案。 */
+export const ROTATE_UNRESOLVED_TEXT = '该片段的变换定义在外部样式中，无法在画面上旋转'
 
-/** 画面上显示着的一层：表里的位置和这一层，量出来的样子。 */
+/** 当前时间点可见并已完成测量的选中图层。 */
 type Shown = { at: number; layer: CanvasLayer; measure: LayerMeasure }
 
 /**
- * 按下以后的这一下：
- * - `press`：在等预览页答复按下处有哪些层（`stack` 答复后才有），`last` 是指针最后到的地方；
- * - `move`：挪选中的层（`targets` 是要挪的、按下时的样子），`blocked` 时不挪（已经说过原因）；
- * - `resize`、`rotate`：拖一层的把手；缩放松手后（`released`）还要等预览页答复最后一次把中心挪回原处的位移。
- *   缩放贴片、场景的宿主时 `scale` 是它现在行内写着的 `scale`（别的层是 null）。
+ * 画布指针手势状态机：
+ * - `press`：等待预览页返回按下处的命中图层栈（`last` 记录最新指针坐标）；
+ * - `move`：拖拽移动选中图层（`blocked` 表示已被可编辑性规则拦截并提示原因）；
+ * - `resize` / `rotate`：拖拽单选图层的四角缩放或旋转控制柄；普通图层缩放松手后（`released`）需等待末次中心回位偏移返回后再提交，
+ *   贴片/场景宿主缩放时 `scale` 保存其当前行内 `scale`（普通图层为 `null`）。
  */
 type Gesture =
   | {
@@ -82,7 +82,7 @@ type Gesture =
       start: Point
       last: Point
       shift: boolean
-      /** 指针最后一次动时按着 Alt（不吸附）。 */
+      /** 最新指针事件是否按住 Alt（禁用吸附）。 */
       alt: boolean
       released: number | null
     }
@@ -95,10 +95,10 @@ type Gesture =
       hits: readonly string[]
       picked: string
       shift: boolean
-      /** 指针最后到的地方、那时按没按着 Alt：吸附用的矩形回来时按它重新摆一次。 */
+      /** 最新指针位置与 Alt 状态，供吸附矩形异步返回后立即重算对齐位置。 */
       last: Point
       alt: boolean
-      /** 吸附用的矩形（见 canvas-snap.ts）：开始挪时问预览页，回来之前、量不到时是 null。 */
+      /** 拖拽吸附矩形（见 canvas-snap.ts）；起拖时向预览页请求，返回前或无法测量时为 `null`。 */
       snap: SnapRects | null
     }
   | {
@@ -111,10 +111,7 @@ type Gesture =
     }
   | { kind: 'rotate'; start: Point; target: Shown; rotation: RotationTarget }
 
-/**
- * 拖动中的样子：各层（表里的位置）现在的画面样子；挪、缩放时还有要提交的位移、样式；挪的时候吸附画的参考线
- * （没有时 null）。
- */
+/** 拖拽期间的实时草稿：各图层当前线框、待提交位移与行内样式，以及移动吸附参考线。 */
 type Draft = {
   kind: 'move' | 'resize' | 'rotate'
   frames: ReadonlyMap<number, Frame>
@@ -125,47 +122,47 @@ type Draft = {
 
 type CanvasOverlayProps = {
   canvas: Canvas
-  /** final-cut 的片段，按文件里的先后。 */
+  /** 当前工程时间线片段列表（按源码顺序）。 */
   clips: readonly FilmClip[]
-  /** 画面上的层和宿主（见 canvas-layers.ts），和交给预览的那张表一样。 */
+  /** 画布可编辑图层与宿主表（见 canvas-layers.ts），与同步给预览页的表一致。 */
   layers: readonly CanvasLayer[]
-  /** 预览量出来的层（表里的位置 → 量出来的样子），只有 `onWatch` 要过的。 */
+  /** 预览页回传的已订阅图层测量表（表下标 → 测量结果）。 */
   measures: ReadonlyMap<number, LayerMeasure>
-  /** 编辑层要预览量哪几层（表里的位置）。 */
+  /** 更新需要预览页测量的图层下标列表。 */
   onWatch: (layers: readonly number[]) => void
-  /** 工程里一个文件现在的内容（相对工程根）；没打开着时是 undefined。 */
+  /** 读取已打开工程文件的当前内容（相对工程根路径；未打开时返回 `undefined`）。 */
   contentOf: (file: string) => string | undefined
-  /** 画面停在第几毫秒（显示着哪些片段按它算）。 */
+  /** 当前画面停留毫秒数（据此判断片段是否在场）。 */
   frameMs: number
-  /** 正在播放：这时指针移上去不框层。 */
+  /** 是否正在播放（播放期间暂停悬停预选框探测）。 */
   playing: boolean
-  /** final-cut 换了一份时变；拖到一半换了就取消这次拖动。 */
+  /** 工程修订号；外部变更导致修订号推进时自动中止在途拖拽。 */
   revision: number
   selected: ReadonlySet<string>
   controlRef: RefObject<PreviewControl | null>
   onSelect: (ids: ReadonlySet<string>) => void
-  /** 松手、按方向键时把改动写进各层所在的文件（一步撤销）。 */
+  /** 松手或按方向键微调时将图层变更写入所属文件（合并为单步撤销）。 */
   onEdit: (edits: readonly LayerEdit[]) => void
-  /** 拖动、原地改字进行中：这时编辑器的快捷键和 Esc 先让开。 */
+  /** 通知外层编辑器画布拖拽或原地改字是否进行中，以便临时让出全局快捷键与 Esc。 */
   onGesture: (active: boolean) => void
-  /** 预览找到的、要原地改的文字；没有在改时是 null。 */
+  /** 预览页定位到的原地改字目标；未处于改字状态时为 `null`。 */
   textTarget: TextTarget | null
   onTextClose: () => void
   catalog: ComponentCatalog
   locale: ShownLocale
   bindings: ReadonlyMap<string, LocaleBindings>
   onText: ItemTextChange
-  /** 原地改了一句字幕的字（改的是显示着的这种语言的）。 */
+  /** 提交单句字幕文本修改（作用于当前展示语言）。 */
   onCaptionText: CaptionTextChange
   onNotice: (message: string) => void
-  /** 编辑层放进这里一个处理方向键的函数：挪了选中的层时答 true（这一下用掉了）。 */
+  /** 注册画布方向键微调处理器（已消费按键时返回 `true`）。 */
   nudgeRef: RefObject<CanvasNudge | null>
 }
 
-/** 焦点在画面上时按的一个键；挪了画面上选中的层时答 true。 */
+/** 焦点位于画布叠层时的按键回调；成功微调选中图层时返回 `true`。 */
 export type CanvasNudge = (event: { key: string; shiftKey: boolean; altKey: boolean }) => boolean
 
-/** 一层能不能这样改；不能时给人看的原因。 */
+/** 检查图层是否允许执行指定手势；不允许时返回面向用户的拒绝提示。 */
 const refusalOf = (measure: LayerMeasure, ability: Ability): string | undefined => {
   const allowed =
     ability === 'move' ? measure.move : ability === 'resize' ? measure.resize : measure.turn
@@ -177,14 +174,12 @@ const refusalOf = (measure: LayerMeasure, ability: Ability): string | undefined 
 const det = ({ a, b, c, d }: LayerMeasure['parent']) => a * d - b * c
 
 /**
- * 盖在预览画面上的编辑层。画面上每个片段是一层（见预览页的 `pick`）：视频片段、字幕的每一句，贴片、场景整个是它的
- * 宿主（点中它里面画出来的东西都算，透明的、只有铺满的底的地方点到下面）。点一层选中它所在的片段（和时间线上的
- * 选中是同一个）；同一处很快再点一下换成下面一层，
- * 按住 Shift 点是加选。选中的层拖着挪、拖四个角以中心等比缩放、拖旋转把手转（按住 Shift 吸到 15° 的整数倍），焦点
- * 在画面上时方向键挪 1 像素（Shift 10）；写法见 layer-edits.ts，写进这一层所在的文件（宿主写在主文件里它自己身上，
- * 组件文件不动）。锁定的、动画脚本驱动的层不能改，拖的时候说明原因。双击贴片、场景里的文字或字幕原地改。拖动中
- * 预览先跟着摆，松手写进去，算一步撤销。停着时指针移到一层上，在它周围画一圈细框（点下去选中的就是它），能原地
- * 改字的地方（字幕、贴片和场景里绑着文字可填项的元素）光标是输入光标。
+ * 覆盖在预览画面上方的交互编辑叠层：
+ * - 点选与循环换层：视频片段、单句字幕各自为一层，贴片与场景整体映射为其主文件宿主（仅命中内部可视内容时触发，透明空白区透传至下方）；
+ *   点击即与时间线同步选中状态，同位置快速连点切换下层，Shift 点击加选。
+ * - 拖拽、缩放、旋转与微调：支持拖拽移动（带对齐吸附与参考线）、四角中心等比缩放、旋转（Shift 按 15° 吸附）及画布焦点下方向键 1px / 10px 微调；
+ *   拖拽期间实时驱动预览草稿，松手按 layer-edits.ts 规则一次提交并记为单步撤销；锁定或动画脚本驱动的属性在操作时给出提示。
+ * - 悬停与原地改字：静止时悬停绘制可见裁剪预选框，落在字幕或绑定文字可填项的元素上时切换输入光标，双击原位编辑当前语言文本。
  */
 export function CanvasOverlay({
   canvas,
@@ -248,7 +243,7 @@ export function CanvasOverlay({
     )
   }
 
-  /** 选中的片段画哪一层：片段自己（视频、字幕的一句）或它的宿主。 */
+  /** 查找选中片段在图层表中的下标：视频/单句字幕取自身元素，贴片/场景取其宿主。 */
   const watchedOf = (clipId: string): number | undefined => {
     const own = layers.findIndex(
       (layer) => layer.clip === clipId && (layer.host || layer.element.hfId === clipId),
@@ -282,7 +277,7 @@ export function CanvasOverlay({
     }
   }
 
-  // 悬停：预览页答复的指针下的层，和问的时候画面停在哪一刻、是哪一份 final-cut（变了就不算数，等指针再动）
+  // 悬停状态绑定请求发起时的帧时刻与工程修订号，发生跳帧或工程变更后旧结果自动失效
   const stamp = `${frameMs}/${revision}`
   const stampRef = useRef(stamp)
   useLayoutEffect(() => {
@@ -313,10 +308,10 @@ export function CanvasOverlay({
     probeRef.current?.stop()
     setHovering(null)
   }
-  /** 字幕的一句自己那一层：在最上面时点一下就选中它（见 `clicked`）。 */
+  /** 判断是否为单句字幕自身图层（位于最上层时单击直接优先选中，见 `clicked`）。 */
   const isCaption = (layer: CanvasLayer) =>
     clipOf.get(layer.clip)?.kind === 'caption' && layer.element.hfId === layer.clip
-  /** 指针下能原地改字：字幕的一句，或者贴片、场景里绑着文字可填项（`field`）的元素。 */
+  /** 判断当前位置是否支持原地改字：单句字幕，或贴片/场景内绑定了文字可填项（`field`）的元素。 */
   const isText = (layer: CanvasLayer, field: string | null) => {
     if (isCaption(layer)) return true
     const clip = clipOf.get(layer.clip)
@@ -336,14 +331,11 @@ export function CanvasOverlay({
           winsOnTop: isCaption,
         })
 
-  /** 一层所在的文件里它行内写着的 `property`（CSS 的写法）；没写时是空串。 */
+  /** 读取图层所属文件中该元素的行内 CSS 属性值（未声明时返回空串）。 */
   const inlineOf = (layer: CanvasLayer, property: string) =>
     inlineStyleOf(contentOf(layer.file) ?? '', layer.element.hfId, property)
 
-  /**
-   * 一层挪了父元素里的 `delta` 写什么：宿主写它行内的 `translate`，别的层照 SDK `moveElement` 写 `data-x` /
-   * `data-y`（见 layer-edits.ts）。
-   */
+  /** 构造图层局部像素位移 `delta` 的写入载荷：宿主写行内 `translate`，普通图层走 SDK `moveElement` 写 `data-x/y`。 */
   const movedEdit = (
     layer: CanvasLayer,
     delta: Point,
@@ -363,13 +355,13 @@ export function CanvasOverlay({
     onGesture(false)
   }
 
-  /** 取消这次拖动：预览里摆回拖动开始时的样子。 */
+  /** 取消在途拖拽并通知预览页还原 DOM 样式。 */
   const cancel = () => {
     for (const at of draftRef.current?.frames.keys() ?? []) controlRef.current?.draftEnd(at, false)
     finish()
   }
 
-  // final-cut 被换掉（撤销、别处改了……）时这次拖动是按换之前算的，作废
+  // 外部撤销或编辑推进工程修订号时，基于旧状态起算的在途拖拽立即作废
   const cancelStale = useEffectEvent(() => {
     if (gestureRef.current !== null) cancel()
   })
@@ -379,7 +371,7 @@ export function CanvasOverlay({
 
   useEditorEscape(draft !== null, cancel)
 
-  /** 按下处的层答复回来：选中，答复接着要走的这一下（见 `proceed`）；不用再走时是 undefined。 */
+  /** 处理按下位置的异步拾取响应：更新选中片段并构造后续 `move` 手势状态（无需继续时返回 `undefined`）。 */
   const pressed = (
     press: Extract<Gesture, { kind: 'press' }>,
     stack: readonly PickedLayer[],
@@ -409,7 +401,7 @@ export function CanvasOverlay({
         ? selected
         : new Set([clip])
     select(next)
-    // 一起挪的：选中的别的片段画着的层，和点中的这一层
+    // 合并多选中的其余可见图层与当前命中的图层，作为共同拖拽目标
     const others = shown.filter((each) => next.has(each.layer.clip) && each.layer.clip !== clip)
     const targets = [
       ...others,
@@ -430,18 +422,18 @@ export function CanvasOverlay({
     }
     return move
   }
-  /** 答复是异步回来的：照最新一次渲染的选中算（见下面的 effect）。 */
+  /** 拾取响应异步到达时始终基于最新渲染态处理选中关系。 */
   const pressedRef = useRef<
     ((press: Extract<Gesture, { kind: 'press' }>, stack: readonly PickedLayer[]) => void) | null
   >(null)
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     const current = gestureRef.current
-    // 前一下已经松开、还在等答复时可以再按（很快连点）
+    // 前一次快速点击已松开但仍在等待拾取回执时，允许紧接着按下触发连续换层
     const waiting = current?.kind === 'press' && current.released !== null
     if (event.button !== 0 || (current !== null && !waiting)) return
     unhover()
-    // 按在把手上（只有一层选中时才有）
+    // 命中单选控制柄时进入缩放或旋转手势
     const handle =
       event.target instanceof Element
         ? event.target.closest('[data-handle]')?.getAttribute('data-handle')
@@ -471,8 +463,8 @@ export function CanvasOverlay({
   }
 
   /**
-   * 没拖动就松手：是一次点选。同一处很快再点一次时换成下一层（见 `pickAt`）。字幕在最上面时点一下就选中它，不让压在
-   * 下面、选中着的层留着（按下时留着它，是为了按住能拖）。
+   * 未发生拖拽即松手时结算点击：同位置快速连点按 `pickAt` 切换下层；
+   * 若最顶层为单句字幕且未触发连点换层，单击直接切换选中该字幕（按下阶段保留底层已选片段仅用于支持按住直拖）。
    */
   const clicked = (gesture: Extract<Gesture, { kind: 'move' }>, now: number) => {
     const { hits, picked: chosen, start, shift } = gesture
@@ -490,7 +482,7 @@ export function CanvasOverlay({
     select(new Set([layer.clip]))
   }
 
-  /** 挪的这一下拖到 `point`；`alt` 是按着 Alt（不吸附）。 */
+  /** 更新移动拖拽草稿至 `point`（`alt` 为真时禁用对齐吸附）。 */
   const dragTo = (gesture: Extract<Gesture, { kind: 'move' }>, point: Point, alt: boolean) => {
     gesture.last = point
     gesture.alt = alt
@@ -507,7 +499,7 @@ export function CanvasOverlay({
         gesture.blocked = true
         onNotice(refusal)
       } else {
-        // 在这一下的第一个草稿之前问，量的是它们还在原处的样子；回来以后按指针最后到的地方重新摆一次
+        // 在发送首个移动草稿前请求初始位置的吸附矩形，返回后按最新指针坐标重算对齐位置
         void controlRef.current
           ?.snapRects(gesture.targets.map((target) => target.at))
           .then((rects) => {
@@ -576,7 +568,7 @@ export function CanvasOverlay({
       }
       gestureRef.current = { kind, start, target: at, rotation }
     }
-    // 指针交给编辑层，拖出把手以后照样收得到
+    // 将指针捕获在画布叠层根节点上，确保移出控制柄后仍可持续接收移动事件
     layerRef.current?.setPointerCapture(event.pointerId)
     onGesture(true)
   }
@@ -584,7 +576,7 @@ export function CanvasOverlay({
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
     const gesture = gestureRef.current
     if (gesture === null) {
-      // 在把手上时框选中着的那一层的把手，不问下面是哪一层
+      // 悬停在控制柄上时不触发底层图层拾取
       const onHandle =
         event.target instanceof Element && event.target.closest('[data-handle]') !== null
       if (playing || event.pointerType === 'touch' || onHandle) unhover()
@@ -603,7 +595,7 @@ export function CanvasOverlay({
     }
     const { at, measure } = gesture.target
     if (gesture.kind === 'resize' && gesture.scale !== null) {
-      // 宿主：写 `scale`，绕中心缩，中心不用挪回去
+      // 贴片/场景宿主直接写 `scale` 围绕中心等比缩放，无需额外补偿中心偏移
       if (gesture.released) return
       const ratio = resizeRatio(measure.frame, gesture.size, gesture.start, point)
       const styles = scaledStyles(gesture.scale, ratio)
@@ -645,7 +637,6 @@ export function CanvasOverlay({
       showDraft(next)
       const reply = controlRef.current?.draft(at, { x: 0, y: 0 }, cssStyles(styles), true)
       pinRef.current = (reply ?? Promise.resolve(null)).then((moved) => {
-        // 只记这一次拖动里最新的那份
         if (moved !== null && draftRef.current === next)
           draftRef.current = { ...next, moves: new Map([[at, moved]]) }
       })
@@ -666,7 +657,7 @@ export function CanvasOverlay({
     })
   }
 
-  /** 把这次拖动写进去：缩放、转写行内样式，挪见 `movedEdit`。 */
+  /** 将最终草稿提交至工程会话（缩放与旋转写行内样式，位移按 `movedEdit` 分发）。 */
   const commit = (last: Draft, targets: readonly Shown[]) => {
     const edits = targets.flatMap(({ at, layer }): LayerEdit[] => {
       const move = last.moves.get(at)
@@ -688,8 +679,8 @@ export function CanvasOverlay({
   }
 
   /**
-   * 按下的这一下照 `move` 接着走：还按着就开始挪；答复回来前已经松开了，拖过了照拖完提交，没拖是一次点选。
-   * `live` 是它还是眼下这一下（松开后又按了一下时，前一下只算点选）。
+   * 拾取回执到达后推进手势：若仍处于按下态则补放积压指针位移；
+   * 若回执到达前已松手，则按是否发生过有效拖拽分别提交变更或结算为单击。
    */
   const proceed = (
     press: Extract<Gesture, { kind: 'press' }>,
@@ -924,10 +915,7 @@ export function CanvasOverlay({
   )
 }
 
-/**
- * 挪的时候吸附画的参考线（见 canvas-snap.ts）：贯穿画面的对齐线，和标着间距（画布像素）的等距标记。只是看的，
- * 不接收指针。
- */
+/** 渲染拖拽对齐参考线与等距间距标记（见 canvas-snap.ts，纯视觉层不拦截指针）。 */
 function CanvasGuides({ guides }: { guides: SnapGuides }) {
   return (
     <div aria-hidden="true" className="wf-canvas-guides">
@@ -959,9 +947,7 @@ function CanvasGuides({ guides }: { guides: SnapGuides }) {
   )
 }
 
-/**
- * 原地改的一段字：叫什么、一开始的字、不能改时的原因（其它语言下固定的字段），能不能换行（字幕），怎么写进去。
- */
+/** 原地改字编辑配置：字段名称、初始文本、不可改提示（外语模式下未开启「随语言」时）、是否多行及保存回调。 */
 type TextEdit = {
   label: string
   initial: string
@@ -971,8 +957,8 @@ type TextEdit = {
 }
 
 /**
- * 预览找到的那段字要怎么改：贴片、场景的文字字段和「属性」里改是同一个写法；字幕和「字幕」页签里改是同一个写法，
- * 一开始是显示着的字（其它语言下没翻的是原文）。都是改这种语言的字。片段、字段不在了时是 undefined。
+ * 构建原地改字编辑模型：贴片/场景文字字段与「属性」面板共用同一保存通道，字幕与「字幕·配音」页签共用同一保存通道；
+ * 均作用于当前展示语言（未翻译项初始值回退为原文），目标片段或字段不存在时返回 `undefined`。
  */
 function textEditOf(
   target: TextTarget,

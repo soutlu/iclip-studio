@@ -3,17 +3,16 @@ import type { CanvasLayer } from './canvas-layers'
 import { drawnFrame } from './canvas-visible'
 import type { PickedLayer } from './preview-player'
 
-/**
- * 指针停着的地方框哪一层：它画出来的框（看得见的那一块，见 canvas-visible.ts）、属于哪个片段，指针下能不能原地
- * 改字。
- */
+/** 指针悬停命中结果：可见裁剪框（见 canvas-visible.ts）、所属片段 ID 以及当前位置是否支持双击原地改字。 */
 export type Hover = { frame: Frame; clip: string; text: boolean }
 
 /**
- * 指针停在画面上这一处时框哪一层，就是点下去会选中的那一层（规则同点选时）：`stack` 是预览页答复的指针下的层
- * （贴片、场景整个是一层），从上往下。最上面一层是 `winsOnTop` 的（字幕的一句）、它还没框着时，点一下选中的是它，
- * 框它；不然指针下有已经框着的层（`selected`，表里的 key）时点下去还是它，不再框；不然框最上面那一层。指针下没有
- * 能选中的层时是 null。`isText` 按这一层和指针下它里面绑着的可填项（`field`）判断能不能原地改字。
+ * 计算指针悬停处应展示的预选框（与按下时的命中规则一致）：
+ * `stack` 为预览页返回的从上到下命中栈（贴片与场景整体作为一层）。
+ * - 若最顶层满足 `winsOnTop`（单句字幕）且尚未选中，优先高亮该层；
+ * - 否则若命中栈中已包含选中图层（`selected`），按下时仍保持原选中，不重复绘制悬停框；
+ * - 否则高亮最顶层命中项（无有效命中时返回 `null`）。
+ * `isText` 根据命中图层与指针下绑定的可填项标识（`field`）判断是否切换为文本输入光标。
  */
 export function hoverOf(
   stack: readonly PickedLayer[],
@@ -42,12 +41,12 @@ export function hoverOf(
   }
 }
 
-/** 悬停时问预览页的那个问题：`move` 报指针挪到的点，`stop` 不再问、还没回来的答复也不要。 */
+/** 悬停命中探测器：`move` 上报最新指针坐标，`stop` 取消待发探测并丢弃在途响应。 */
 export type HoverProbe = { move: (point: Point) => void; stop: () => void }
 
 /**
- * 悬停时问预览页「这一点下面是哪一层」，不每次挪动都问：每 `interval` 毫秒最多问一次，这中间挪到的点只问最后
- * 一个。答复回来交给 `answer`；比已经交出去的答复问得早的、`stop` 以前问的，都不要。
+ * 节流向预览页查询指针下的命中图层：每 `interval` 毫秒最多发起一次请求，窗口期内多次移动仅查询最后一次位置；
+ * 乱序晚到的旧响应及 `stop` 调用前发出的在途响应一律丢弃。
  */
 export function hoverProbe<T>(
   ask: (point: Point) => Promise<T>,

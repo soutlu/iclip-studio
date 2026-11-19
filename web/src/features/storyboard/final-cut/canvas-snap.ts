@@ -12,48 +12,49 @@ import {
 } from './vendor/hyperframes-studio/components/editor/snapEngine'
 
 /**
- * 画面上拖着挪层时的吸附，照工作台：拖的层的边、中线靠近别的层或画布的边、中线（屏幕上 `SNAP_THRESHOLD_PX` 以内）
- * 时吸过去，画出对齐线；和左右（上下）相邻的层间距相等时标出间距（只标不吸）。吸附引擎按屏幕像素算，这里把画布
- * 像素换过去、算完换回来。只在挪的时候吸，缩放、转、方向键都不吸。
+ * 画布拖拽移动时的对齐吸附与参考线计算（对齐上游 Studio）：
+ * - 当被拖图层的四边或中心线靠近其他图层或画布边界/中线（屏幕距离在 `SNAP_THRESHOLD_PX` 内）时吸附并绘制对齐线；
+ * - 与左右/上下相邻图层间距相等时仅标注等距参考线（不额外吸附）。
+ * 底层吸附引擎工作在屏幕像素空间，本模块负责画布像素与屏幕像素的双向换算。仅用于鼠标拖拽移动（缩放、旋转与方向键微调不触发）。
  */
 
-/** 挪的时候吸附用的矩形（画布像素）：要挪的那几层合起来的框，和能吸过去的别的层（不含画布）。 */
+/** 拖拽吸附输入矩形（画布像素）：`moving` 为被拖图层的联合外框，`targets` 为其他可吸附图层外框（不含画布自身）。 */
 export type SnapRects = { moving: Rect; targets: readonly Rect[] }
 
-/** 编辑层上的一个框（屏幕像素，相对画布左上角），`key` 是它在这一刻的参考线里的身份。 */
+/** 叠层参考线矩形（屏幕像素，相对画布左上角），`key` 为渲染稳定标识。 */
 type Box = { key: string; left: number; top: number; width: number; height: number }
 
-/** 拖动中画的参考线：对齐线，和标着间距（画布像素）的等距标记。 */
+/** 拖拽期间展示的参考线：对齐实线（`lines`）与标注画布像素间距的等距指示（`spacings`）。 */
 export type SnapGuides = {
   lines: readonly Box[]
   spacings: readonly (Box & { axis: 'x' | 'y'; gap: number })[]
 }
 
-/** 最多画几条对齐线、几个等距标记（工作台 `SnapGuideOverlay`）。 */
+/** 对齐线与等距标记的最大展示条数（对齐上游 Studio `SnapGuideOverlay`）。 */
 const MAX_GUIDES = 6
 const MAX_SPACING_GUIDES = 4
 
-/** 只挪一层、它转过这么多度（及以上）时不吸（工作台 `ROTATED_SNAP_BYPASS_DEGREES`）：吸的是横平竖直的框。 */
+/** 单图层旋转角度达到该阈值（度）时跳过轴向矩形吸附（对齐上游 Studio `ROTATED_SNAP_BYPASS_DEGREES`）。 */
 const ROTATED_SNAP_BYPASS_DEGREES = 0.5
 
 type SnapInput = {
-  /** 指针拖过的距离（画布像素）。 */
+  /** 指针累计拖拽位移（画布像素）。 */
   delta: Point
-  /** 画布一像素在屏幕上多宽。 */
+  /** 画布 1 像素对应的屏幕像素宽度。 */
   zoom: number
-  /** 预览页量回来的矩形；还没回来、量不到时是 null。 */
+  /** 预览页实测的吸附矩形；尚未返回或无法测量时为 `null`。 */
   rects: SnapRects | null
   canvas: { width: number; height: number }
-  /** 按住 Alt：不吸，也不画参考线。 */
+  /** 按住 Alt 时临时禁用吸附与参考线。 */
   alt: boolean
-  /** 只挪一层时它在画面上的角度；挪好几层时是 null（不看角度）。 */
+  /** 单选拖拽时的图层角度；多选拖拽为 `null`（不按角度跳过）。 */
   angle: number | null
 }
 
 /**
- * 挪的这一下吸附以后实际挪多少（画布像素），和要画的参考线（没有时 null）。没有别的层可吸时也吸画布的边、中线
- * （工作台这时连画布也不吸；画面上常常只有一个贴片，要能把它摆到正中）。照工作台：拖过 `snapEngagedForTravel` 的
- * 距离以前不吸（好几层一起挪时这时也不画间距）；只挪一层、转过 `ROTATED_SNAP_BYPASS_DEGREES` 时不吸。
+ * 计算单次拖拽经吸附修正后的实际位移（画布像素）及参考线（无参考线时为 `null`）。
+ * 即使画布中无其他目标图层，仍支持向画布四边与中心线吸附（上游 Studio 在无其他图层时会一并跳过画布吸附，此处保留以便单贴片居中对齐）。
+ * 拖拽行程未达 `snapEngagedForTravel` 前不触发吸附（多选时亦不显示等距线）；单图层旋转达 `ROTATED_SNAP_BYPASS_DEGREES` 时跳过吸附。
  */
 export function snapDrag({ delta, zoom, rects, canvas, alt, angle }: SnapInput): {
   delta: Point
@@ -100,7 +101,7 @@ export function snapDrag({ delta, zoom, rects, canvas, alt, angle }: SnapInput):
         targets,
         threshold: SNAP_THRESHOLD_PX,
       })
-  // 引擎对同一条线只报一次；同一个间距可能在相邻的两组里各报一次，画一个
+  // 对齐线由引擎去重；同一段等距间隙可能在相邻配对中重复出现，按坐标键去重
   const shownSpacings = new Map(
     spacings
       .slice(0, MAX_SPACING_GUIDES)
@@ -130,12 +131,12 @@ export function snapDrag({ delta, zoom, rects, canvas, alt, angle }: SnapInput):
             width: spacing.to - spacing.from,
             height: spacing.size,
           }),
-      // 标的是画布像素（工作台标的是屏幕像素）
+      // 间距数值按画布像素展示（而非屏幕缩放后的像素）
       gap: Math.round(spacing.size / zoom),
     })),
   }
   return {
-    // 没吸的方向照指针走，不经两次换算
+    // 未触发吸附的轴直接使用原始画布位移，避免乘除缩放引入浮点误差
     delta: {
       x: snap.dx === proposedDx ? delta.x : snap.dx / zoom,
       y: snap.dy === proposedDy ? delta.y : snap.dy / zoom,

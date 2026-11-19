@@ -146,8 +146,6 @@
 ## 4. 日志
 
 视频后端（[app/logging.py](../server/src/iclip/app/logging.py)）与运行时服务（运行时项目的 `src/agent_runtime/http/logging.py`）采用一致的 `structlog` 配置：
-- 本地开发（Console 格式）打印本地时间并标明服务名（「后端」或「运行时」）；线上环境（JSON 格式）输出 ISO UTC 时间戳。
-- 两种格式都屏蔽正常的 `/healthz` 健康检查日志和 WebSocket 重复连接日志，并通过 `QUIET_LOGGERS` 压低第三方库噪音。
-- Console 格式只给本地开发用，另外不显示 uvicorn 启动与退出的例行提示（保留 `Application startup complete`，重载后靠它确认服务已起好）和例行的访问日志：后端只显示写请求与 `4xx`、`5xx` 响应，运行时只显示 `5xx` 响应。线上要完整的访问日志，两个服务都使用 JSON 格式。
-- 后端的访问日志在两种格式下都把 `final-cut` 预览地址里的令牌写成 `***`。
+- 本地开发（Console 格式）打印本地时间并标明服务名（「后端」或「运行时」），仅输出写请求与 `4xx` / `5xx` 访问日志（运行时仅输出 `5xx`），并省略 uvicorn 启停例行提示（仅保留 `Application startup complete` 供热重载确认）；线上环境（JSON 格式）输出 ISO UTC 时间戳与完整访问日志。
+- 两种格式均屏蔽正常的 `/healthz` 健康检查日志和 WebSocket 重复连接日志，将后端访问日志中 `final-cut` 预览路径的签名令牌脱敏为 `***`，并通过 `QUIET_LOGGERS` 压低第三方库噪音。
 - 后端每个请求的 `request_id` 和当前登录身份 `principal` 通过 `contextvars` 自动绑定，业务代码打日志只需写固定中文短句和关键变量（见 [AGENTS.md](../AGENTS.md)）。

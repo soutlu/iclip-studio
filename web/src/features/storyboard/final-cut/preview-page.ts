@@ -323,25 +323,25 @@ export const createPreviewPage = (
   // 换上来的播放器的副本会话；打补丁出过错、收到新的一份时作废，到下一份换上来之前都是 null
   let replica: Replica | null = null
   let disposed = false
-  // 编辑器给的层表（`layers` 命令），按「宿主、选择器、第几个」查它在表里的位置
+  // 编辑器下发的图层表（`layers` 命令），按「宿主 + 选择器 + 同名序号」反查表下标
   let table: LayerEntry[] = []
   let tableIndex = new Map<string, number>()
-  // 编辑器要量的层（`watch` 命令）和上一次报出去的结果
+  // 当前订阅测量的图层（`watch` 命令）及上次上报的序列化快照
   let watched: { seq: number; layers: readonly number[]; reported: string } | null = null
-  // 拖动中的层（表里的位置 → 开始时的样子）
+  // 在途拖拽草稿（表下标 → 起拖快照）
   const drafts = new Map<number, Drafting>()
-  // 原地改字时藏起来的文字
+  // 原地改字期间临时隐藏的文字节点
   let hiddenText: HiddenText | null = null
 
   const refKey = (ref: LayerRef) => `${ref.scope ?? ''}\n${ref.selector}\n${ref.index}`
 
-  /** 表里第 `at` 层在正在播的那一份里的元素；没有时是 null。 */
+  /** 按图层表下标 `at` 定位当前播放文档中的目标元素；未命中时返回 `null`。 */
   const layerAt = (page: Document, at: number) => {
     const ref = table[at]
     return ref === undefined ? null : layerElement(page, ref)
   }
 
-  /** 量编辑器要的层，和上一次报的不一样时报出去。 */
+  /** 测量已订阅图层并在结果变化时上报 `measured` 事件。 */
   const reportLayout = () => {
     const page = active?.iframeElement.contentDocument ?? null
     if (watched === null || page === null) return
@@ -355,21 +355,18 @@ export const createPreviewPage = (
     send({ type: 'measured', seq: watched.seq, items })
   }
 
-  /** 画面里的元素 `element` 在表里的位置；表里没有、数不对（脚本加了同样的元素）时是 undefined。 */
+  /** 反查预览 DOM 元素在图层表中的下标；不在表中或同名匹配数失配时返回 `undefined`。 */
   const tableAt = (page: Document, element: HTMLElement): number | undefined => {
     const ref = refOf(page, element)
     const at = ref === null ? undefined : tableIndex.get(refKey(ref))
     return at !== undefined && layerAt(page, at) === element ? at : undefined
   }
 
-  /** 表里贴片、场景的宿主在正在播的那一份里的元素。 */
+  /** 获取当前播放文档中已登记的全部贴片/场景宿主元素。 */
   const hostsIn = (page: Document) =>
     table.flatMap((entry, at) => (entry.host ? (layerAt(page, at) ?? []) : []))
 
-  /**
-   * 画布上 (`x`, `y`) 处从上往下能选中的层（贴片、场景整个是一层，见 `unitsAt`），只报表里有的，带上指针下它里面
-   * 最上面那个元素绑着的可填项。
-   */
+  /** 查询画布坐标 (`x`, `y`) 处从上到下的已登记图层栈（贴片与场景收敛为宿主，见 `unitsAt`），附带内部命中的文字可填项。 */
   const pickAt = (seq: number, x: number, y: number) => {
     const page = active?.iframeElement.contentDocument ?? null
     const isHost = (element: HTMLElement) => {
