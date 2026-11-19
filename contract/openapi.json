@@ -1,6 +1,25 @@
 {
   "components": {
     "schemas": {
+      "ActAsIn": {
+        "additionalProperties": false,
+        "description": "停止、插话、审批、重新生成的请求体都可以带 ``user_name``：替谁操作。\n\n带 ``users:act_as`` 的 API Key 填对话属主的用户名，才能操作替属主开的对话。浏览器会话只能填\n自己。这个字段只在本服务用，转给运行时前去掉。",
+        "properties": {
+          "user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Name"
+          }
+        },
+        "title": "ActAsIn",
+        "type": "object"
+      },
       "ActiveVersionOut": {
         "additionalProperties": false,
         "description": "当前版本的摘要。",
@@ -1436,18 +1455,29 @@
         "title": "AppendOp",
         "type": "object"
       },
-      "ApprovalRequest": {
+      "ApprovalIn": {
         "additionalProperties": false,
         "properties": {
           "approved": {
             "title": "Approved",
             "type": "boolean"
+          },
+          "user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Name"
           }
         },
         "required": [
           "approved"
         ],
-        "title": "ApprovalRequest",
+        "title": "ApprovalIn",
         "type": "object"
       },
       "AttachmentSource": {
@@ -9811,9 +9841,9 @@
         "title": "ReferenceVideosOut",
         "type": "object"
       },
-      "RegenerateBody": {
+      "RegenerateIn": {
         "additionalProperties": false,
-        "description": "``POST /turns/{turn_id}:regenerate`` 的请求体。两个字段都可省，整个体也可以不带。\n\n``content`` 给了就是「改了内容再重跑」，不给照原样重跑。``prompt_id`` 给了就与发消息同一套\n幂等：重发同一个 id 退回已有那条，不会再截一轮。",
+        "description": "重新生成的请求体，三个字段都可省，整个体也可以不带。\n\n``content`` 给了就是「改了内容再重跑」，不给照原样重跑。``prompt_id`` 给了就与发消息同一套\n幂等：重发同一个 id 退回已有那条，不会再截一轮。``user_name`` 见 ``ActAsIn``。",
         "properties": {
           "content": {
             "anyOf": [
@@ -9861,9 +9891,20 @@
               }
             ],
             "title": "Prompt Id"
+          },
+          "user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Name"
           }
         },
-        "title": "RegenerateBody",
+        "title": "RegenerateIn",
         "type": "object"
       },
       "RunStatusOut": {
@@ -10778,7 +10819,7 @@
         "title": "SsoAuthorizeOut",
         "type": "object"
       },
-      "SteerRequest": {
+      "SteerIn": {
         "additionalProperties": false,
         "properties": {
           "prompt_ids": {
@@ -10788,12 +10829,23 @@
             "minItems": 1,
             "title": "Prompt Ids",
             "type": "array"
+          },
+          "user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Name"
           }
         },
         "required": [
           "prompt_ids"
         ],
-        "title": "SteerRequest",
+        "title": "SteerIn",
         "type": "object"
       },
       "StepHeader": {
@@ -18630,7 +18682,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ApprovalRequest"
+                "$ref": "#/components/schemas/ApprovalIn"
               }
             }
           },
@@ -18793,7 +18845,7 @@
     },
     "/conversations/{conversation_id}/prompts/{prompt_id}:abort": {
       "post": {
-        "description": "停掉一条消息。排队的直接撤，在跑的发第一方取消让它自己收尾。",
+        "description": "停掉一条消息。排队的直接撤，在跑的发第一方取消让它自己收尾。请求体可以不带。",
         "operationId": "abort_conversations__conversation_id__prompts__prompt_id__abort_post",
         "parameters": [
           {
@@ -18817,6 +18869,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ActAsIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "204": {
             "description": "Successful Response"
@@ -18871,7 +18940,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SteerRequest"
+                "$ref": "#/components/schemas/SteerIn"
               }
             }
           },
@@ -19272,7 +19341,7 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/RegenerateBody"
+                    "$ref": "#/components/schemas/RegenerateIn"
                   },
                   {
                     "type": "null"
@@ -19805,7 +19874,7 @@
     },
     "/conversations/{conversation_id}:abort": {
       "post": {
-        "description": "停掉整段对话：排着的全撤，在跑的发第一方取消。\n\n没有在跑的、也没有排着的照样是 204：「停止」是用户按一次的动作，不该因为刚好停在\n什么都没有的那一刻而报错。",
+        "description": "停掉整段对话：排着的全撤，在跑的发第一方取消。请求体可以不带。\n\n没有在跑的、也没有排着的照样是 204：「停止」是用户按一次的动作，不该因为刚好停在\n什么都没有的那一刻而报错。",
         "operationId": "abort_conversation_conversations__conversation_id__abort_post",
         "parameters": [
           {
@@ -19819,6 +19888,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ActAsIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "204": {
             "description": "Successful Response"

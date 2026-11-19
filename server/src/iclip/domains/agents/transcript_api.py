@@ -54,6 +54,7 @@ from iclip.platform.runtime_api.live.frames import (
 from iclip.platform.runtime_api.transcript.ops import MAIN_AGENT_ID, Prompt, PromptContent
 from iclip.platform.runtime_api.transcript.wire import (
     ApprovalRequest,
+    Envelope,
     OpsCatchup,
     PromptQueueOut,
     PromptSubmission,
@@ -90,6 +91,32 @@ class TranscriptPage(SessionTranscriptPage):
     deleted_at: str | None = None
     forked_from: str | None = None
     fork_turn: int | None = None
+
+
+class ActAsIn(Envelope):
+    """停止、插话、审批、重新生成的请求体都可以带 ``user_name``：替谁操作。
+
+    带 ``users:act_as`` 的 API Key 填对话属主的用户名，才能操作替属主开的对话。浏览器会话只能填
+    自己。这个字段只在本服务用，转给运行时前去掉。
+    """
+
+    user_name: str | None = None
+
+
+class RegenerateIn(RegenerateBody, ActAsIn):
+    """重新生成的请求体，三个字段都可省，整个体也可以不带。
+
+    ``content`` 给了就是「改了内容再重跑」，不给照原样重跑。``prompt_id`` 给了就与发消息同一套
+    幂等：重发同一个 id 退回已有那条，不会再截一轮。``user_name`` 见 ``ActAsIn``。
+    """
+
+
+class SteerIn(SteerRequest, ActAsIn):
+    pass
+
+
+class ApprovalIn(ApprovalRequest, ActAsIn):
+    pass
 
 
 class ImportAttachments(Protocol):
@@ -334,9 +361,11 @@ def create_transcript_router(
         conversation_id: ConversationId,
         prompt_id: ProtocolId,
         principal: Annotated[Principal, require_permission("agent:run")],
+        body: ActAsIn | None = None,
     ) -> None:
-        """停掉一条消息。排队的直接撤，在跑的发第一方取消让它自己收尾。"""
+        """停掉一条消息。排队的直接撤，在跑的发第一方取消让它自己收尾。请求体可以不带。"""
 
+        principal = await act_as(principal, None if body is None else body.user_name)
         await _writable(principal, conversation_id)
         await runtime.abort_prompt(uuid.UUID(conversation_id), prompt_id)
 
@@ -345,7 +374,7 @@ def create_transcript_router(
         conversation_id: ConversationId,
         turn_id: ProtocolId,
         principal: Annotated[Principal, require_permission("agent:run")],
-        body: RegenerateBody | None = None,
+        body: RegenerateIn | None = None,
     ) -> Prompt:
         """重新生成最后一轮：把它从历史里抹掉重跑一次，答复是重跑那条的记录。
 
@@ -354,23 +383,29 @@ def create_transcript_router(
         与发消息一样先转存。
         """
 
+        principal = await act_as(principal, None if body is None else body.user_name)
         await _writable(principal, conversation_id)
-        if body is not None and body.content is not None:
-            content = await _imported(principal, conversation_id, body.prompt_id, body.content)
-            body = body.model_copy(update={"content": content})
-        return await runtime.regenerate(uuid.UUID(conversation_id), turn_id, body)
+        forwarded = None
+        if body is not None:
+            content = body.content
+            if content is not None:
+                content = await _imported(principal, conversation_id, body.prompt_id, content)
+            forwarded = RegenerateBody(prompt_id=body.prompt_id, content=content)
+        return await runtime.regenerate(uuid.UUID(conversation_id), turn_id, forwarded)
 
     @outer.post("/conversations/{conversation_id}:abort", status_code=204)
     async def abort_conversation(
         conversation_id: ConversationId,
         principal: Annotated[Principal, require_permission("agent:run")],
+        body: ActAsIn | None = None,
     ) -> None:
-        """停掉整段对话：排着的全撤，在跑的发第一方取消。
+        """停掉整段对话：排着的全撤，在跑的发第一方取消。请求体可以不带。
 
         没有在跑的、也没有排着的照样是 204：「停止」是用户按一次的动作，不该因为刚好停在
         什么都没有的那一刻而报错。
         """
 
+        principal = await act_as(principal, None if body is None else body.user_name)
         await _writable(principal, conversation_id)
         await runtime.abort_session(uuid.UUID(conversation_id))
 
@@ -378,19 +413,20 @@ def create_transcript_router(
     async def steer(
         conversation_id: ConversationId,
         principal: Annotated[Principal, require_permission("agent:run")],
-        body: SteerRequest,
+        body: SteerIn,
     ) -> None:
         """把排队中的几条插进正在跑的那一轮，不必等它跑完。"""
 
+        principal = await act_as(principal, body.user_name)
         await _writable(principal, conversation_id)
-        await runtime.steer(uuid.UUID(conversation_id), body)
+        await runtime.steer(uuid.UUID(conversation_id), SteerRequest(prompt_ids=body.prompt_ids))
 
     @router.post("/interactions/{interaction_id}", status_code=204)
     async def approve(
         conversation_id: ConversationId,
         interaction_id: ProtocolId,
         principal: Annotated[Principal, require_permission("agent:run")],
-        body: ApprovalRequest,
+        body: ApprovalIn,
     ) -> None:
         """对一张审批卡点同意或拒绝。
 
@@ -398,8 +434,11 @@ def create_transcript_router(
         重复点同一个决定照样 204；改主意是 409；卡不在等回应的那几张里是 404。
         """
 
+        principal = await act_as(principal, body.user_name)
         await _writable(principal, conversation_id)
-        await runtime.approve(uuid.UUID(conversation_id), interaction_id, body)
+        await runtime.approve(
+            uuid.UUID(conversation_id), interaction_id, ApprovalRequest(approved=body.approved)
+        )
 
     @router.get("/transcript", response_model=TranscriptPage)
     async def page(
