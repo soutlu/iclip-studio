@@ -1292,7 +1292,12 @@ describe('final-cut 编辑器 · 属性', () => {
         ]),
       )
       expect(toggle()).toHaveAttribute('aria-checked', 'true')
-      expect(screen.getByRole('group', { name: /^A · 镜头 1，/ })).toHaveTextContent('关键帧')
+      // 视频片段上不写字：时间线上看得到的是选中片段上那条能拖的曲线
+      expect(
+        within(screen.getByRole('group', { name: /^A · 镜头 1，/ })).getByRole('group', {
+          name: '音量关键帧',
+        }),
+      ).toBeVisible()
       expect(within(inspector()).getByRole('button', { name: /^精细调音/ })).toHaveTextContent(
         '关键帧',
       )

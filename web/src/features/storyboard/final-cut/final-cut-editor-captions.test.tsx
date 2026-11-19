@@ -212,7 +212,7 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
     fireEvent.pointerUp(target, { pointerId: 1, clientX: 10 + dx, clientY: 50 })
   }
 
-  it('「字幕」一行在画面区和声音区之间，行头是名字和眼睛；每句是一个片段，写着这句的字', async () => {
+  it('「字幕」一行在画面区和声音区之间，行头是字幕图标（名字在无障碍名称里）和眼睛；每句是一个片段，写着这句的字', async () => {
     await open()
     const rows = screen
       .getAllByRole('group')
@@ -225,9 +225,9 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
         .map((clip) => clip.getAttribute('aria-label')),
     ).toEqual(['第一句，1.0 秒', '第二句，1.0 秒', '第三句，1.0 秒'])
     expect(within(clipOf('第二句')).getByText('第二句')).toBeVisible()
-    expect(screen.getByRole('button', { name: '隐藏字幕' }).parentElement).toHaveTextContent(
-      /^字幕$/,
-    )
+    const head = screen.getByRole('button', { name: '隐藏字幕' }).parentElement
+    if (head === null) throw new Error('开关不在行头里')
+    expect(within(head).getByRole('img', { name: '字幕' })).toBeVisible()
   })
 
   it('拖着挪一句：碰到后一句就停；把手上按方向键裁结尾，不压到后一句；都写进字幕场景，各一步撤销', async () => {

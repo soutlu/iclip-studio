@@ -194,22 +194,23 @@ test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销、导出
   await expect(transport.locator('.wf-clock')).toContainText('00:00.00 /')
   await expect.poll(playerTime).toBeLessThan(0.1)
 
-  // 缩放：放大一档片段变宽一倍，读数从「适应」变成百分比；点「适应宽度」回去
+  // 缩放：滑杆往右拖片段变宽，读数从「适应」变成百分比；点「适应宽度」回去
   const clip = editor
     .getByRole('group', { name: '画面 1', exact: true })
     .locator('[data-clip-id]')
     .first()
   const widthOf = async () => (await clip.boundingBox())?.width ?? 0
   const fitted = await widthOf()
-  await expect(toolbar.getByText('适应', { exact: true })).toBeVisible()
-  await toolbar.getByRole('button', { name: '放大时间线' }).click()
-  await expect(toolbar.getByText('200%')).toBeVisible()
-  expect((await widthOf()) / fitted).toBeGreaterThan(1.9)
-  await toolbar.getByRole('slider', { name: '时间线缩放' }).focus()
+  const zoom = toolbar.getByRole('slider', { name: '时间线缩放' })
+  await expect(zoom).toHaveAttribute('aria-valuetext', '适应')
+  await zoom.focus()
+  await page.keyboard.press('PageUp')
+  await expect(zoom).toHaveAttribute('aria-valuetext', /^\d+%$/)
+  expect((await widthOf()) / fitted).toBeGreaterThan(1.5)
   await page.keyboard.press('Home')
-  await expect(toolbar.getByText('10%')).toBeVisible()
+  await expect(zoom).toHaveAttribute('aria-valuetext', '10%')
   await toolbar.getByRole('button', { name: '适应宽度' }).click()
-  await expect(toolbar.getByText('适应', { exact: true })).toBeVisible()
+  await expect(zoom).toHaveAttribute('aria-valuetext', '适应')
   expect(Math.abs((await widthOf()) - fitted)).toBeLessThan(1)
 
   // 片段上一直画着画面，没有关掉缩略图的开关
@@ -684,8 +685,8 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
   )
   // 缩小时间线让片段后面空出来，点空白处取消选中
   const toolbar = editor.getByRole('toolbar', { name: '剪辑工具' })
-  await toolbar.getByRole('button', { name: '缩小时间线' }).click()
-  await toolbar.getByRole('button', { name: '缩小时间线' }).click()
+  await toolbar.getByRole('slider', { name: '时间线缩放' }).focus()
+  await page.keyboard.press('Home')
   const lane = await row.boundingBox()
   if (lane === null) throw new Error('时间线尚未布局')
   await page.mouse.click(lane.x + lane.width - 6, lane.y + lane.height / 2)
@@ -1359,9 +1360,9 @@ test('编辑区变窄时只裁不换行：工具条和侧栏页签都排一行�
 
   const toolbar = editor.getByRole('toolbar', { name: '剪辑工具' })
   const undo = await boxOf(toolbar.getByRole('button', { name: '撤销' }))
-  const zoomIn = await boxOf(toolbar.getByRole('button', { name: '放大时间线' }))
-  expect(zoomIn.y).toBe(undo.y)
-  expect((await boxOf(toolbar)).height).toBeLessThanOrEqual(32)
+  const fit = await boxOf(toolbar.getByRole('button', { name: '适应宽度' }))
+  expect(fit.y).toBe(undo.y)
+  expect((await boxOf(toolbar)).height).toBeLessThanOrEqual(44)
   // 工具条最后的按钮超出编辑区右边，被时间线卡片裁掉
   const last = toolbar.getByRole('button').last()
   const clipped = await boxOf(last)
@@ -1462,7 +1463,7 @@ test('切开：选中视频片段、把播放头放进去按 S，存下来多了
   await expect(
     editor
       .getByRole('toolbar', { name: '剪辑工具' })
-      .getByRole('button', { name: '选择工具：切开' }),
+      .getByRole('button', { name: '切开工具', pressed: true }),
   ).toBeVisible()
   const back = row.getByRole('group').last()
   const box = await back.boundingBox()
