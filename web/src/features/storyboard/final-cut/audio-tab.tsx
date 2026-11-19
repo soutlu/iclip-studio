@@ -91,7 +91,7 @@ function MusicStatus({ status }: { status: GenerationJob['status'] }) {
           <i />
         </span>
       ) : (
-        <Icon decorative name={status === 'pending' ? 'duration' : 'alert'} size="sm" />
+        <Icon decorative name={status === 'pending' ? 'final-cut-duration' : 'alert'} size="sm" />
       )}
     </span>
   )
@@ -202,18 +202,18 @@ export function AudioTab({
   const search = (
     <Input
       aria-label="搜索音频"
-      leadingIcon="search"
+      leadingIcon="final-cut-search"
       onChange={(event) => setQuery(event.currentTarget.value)}
       placeholder="搜索音频"
       type="search"
       value={query}
-      wrapperClassName="wf-audio-search"
+      wrapperClassName="wf-field wf-search"
     />
   )
   const views = (
     <ChipGroup
       aria-label="音频来源"
-      className="wf-audio-views"
+      className="wf-seg wf-audio-views"
       onValueChange={(value) => {
         if (value === 'conversation' || value === 'library') setView(value)
       }}
@@ -221,10 +221,10 @@ export function AudioTab({
       value={view}
       variant="segmented"
     >
-      <FilterChip value="conversation" variant="segmented">
+      <FilterChip className="wf-seg-item" value="conversation" variant="segmented">
         本对话
       </FilterChip>
-      <FilterChip value="library" variant="segmented">
+      <FilterChip className="wf-seg-item" value="library" variant="segmented">
         音频库
       </FilterChip>
     </ChipGroup>
@@ -255,14 +255,19 @@ export function AudioTab({
       {views}
       <div className="wf-audio-actions">
         <GenerateMusic conversationId={conversationId} onNotice={onNotice}>
-          <Button className="wf-audio-action" leadingIcon="sparkles" size="md" variant="primary">
+          <Button
+            className="wf-audio-action"
+            leadingIcon="final-cut-generate"
+            size="md"
+            variant="primary"
+          >
             生成音乐
           </Button>
         </GenerateMusic>
         <Button
           className="wf-audio-action is-import"
           disabled={uploading}
-          leadingIcon="upload"
+          leadingIcon="final-cut-upload"
           loading={uploading}
           onClick={() => fileRef.current?.click()}
           size="md"
@@ -426,7 +431,7 @@ function AudioRow({
             type="button"
           />
         </ContextMenuTrigger>
-        <ContextMenuSurface aria-label={title}>
+        <ContextMenuSurface aria-label={title} className="wf-menu">
           <ContextMenuItem onSelect={onAdd}>加到播放头</ContextMenuItem>
         </ContextMenuSurface>
       </ContextMenuRoot>
@@ -435,7 +440,7 @@ function AudioRow({
           aria-pressed={playing}
           className="wf-song-play"
           label={playing ? `暂停试听：${title}` : `试听：${title}`}
-          name={playing ? 'pause' : 'play'}
+          name={playing ? 'final-cut-pause' : 'final-cut-play'}
           onClick={onToggle}
           size="sm"
         />
@@ -457,7 +462,7 @@ function AudioRow({
         <IconButton
           className="wf-song-add"
           label={`放入配乐行：${title}`}
-          name="add"
+          name="final-cut-add"
           onClick={onAdd}
           size="xs"
           tabIndex={-1}
@@ -477,7 +482,7 @@ function AudioRow({
           ) : null}
           <PopupRoot>
             <PopupTrigger asChild>
-              <IconButton label={`查看失败原因：${title}`} name="more" size="xs" />
+              <IconButton label={`查看失败原因：${title}`} name="final-cut-more" size="xs" />
             </PopupTrigger>
             <PopupSurface
               align="end"
@@ -643,7 +648,7 @@ export function GenerateMusic({
           submitAction={{
             disabled: reason !== undefined,
             emphasis: 'primary',
-            icon: 'music',
+            icon: 'final-cut-music',
             label: '生成音乐',
             pendingLabel: '正在提交',
             size: 'sm',

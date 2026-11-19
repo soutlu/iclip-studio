@@ -35,11 +35,10 @@ import { MediaMix, RateRow } from './media-mix'
 import { SmartMixSection } from './smart-mix-section'
 import type { AttributeChanges } from './original-sound'
 import {
-  DETACH_LABEL,
-  MERGE_LABEL,
   mergeBlocked,
   offsetText,
   resyncPlan,
+  SOUND_ACTION_LOOK,
   soundActionFor,
   type SoundAction,
   type SoundControls,
@@ -191,11 +190,11 @@ function ClipInspector({
   const hideLabel = sound ? (clip.hidden ? '取消静音' : '静音') : clip.hidden ? '显示' : '隐藏'
   const hideIcon = sound
     ? clip.hidden
-      ? 'audio-off'
-      : 'audio'
+      ? 'final-cut-sound-off'
+      : 'final-cut-sound-on'
     : clip.hidden
-      ? 'excluded'
-      : 'included'
+      ? 'final-cut-hidden'
+      : 'final-cut-visible'
   const action = soundActionFor([clip], clips, silentSource)
   const pair = action.kind === 'merge' ? action.pair : undefined
   return (
@@ -217,7 +216,7 @@ function ClipInspector({
             />
           )}
           <Tool
-            icon="delete"
+            icon="final-cut-delete"
             label="删除"
             onClick={onRemove}
             shortcuts="Delete"
@@ -357,7 +356,7 @@ function CaptionContent({
           <div>
             <CaptionTextField
               caption={clip}
-              className="wf-prop-textarea"
+              className="wf-field wf-prop-textarea"
               id={textId}
               key={locale.code}
               locale={locale}
@@ -471,7 +470,7 @@ function PropAction({
     <BlockedReason reason={blocked}>
       <button
         aria-disabled={blocked === undefined ? undefined : true}
-        className={cn('wf-prop-action ui-state ui-focus', tone === 'warning' && 'is-warning')}
+        className={cn('wf-chip-btn ui-state ui-focus', tone === 'warning' && 'is-warning')}
         onClick={() => {
           if (blocked === undefined) onClick()
         }}
@@ -493,8 +492,8 @@ function SoundButton({
 }) {
   return (
     <PropAction blocked={action.blocked} onClick={() => controls.run(action)}>
-      <Icon decorative name="waveform" size="xs" />
-      {action.kind === 'detach' ? DETACH_LABEL : MERGE_LABEL}
+      <Icon decorative name={SOUND_ACTION_LOOK[action.kind].icon} size="xs" />
+      {SOUND_ACTION_LOOK[action.kind].label}
     </PropAction>
   )
 }
@@ -575,7 +574,7 @@ function DetachedCard({
   const blocked = mergeBlocked(pair)
   return (
     <section className="wf-prop-section">
-      <div className="wf-sound-card">
+      <div className="wf-card">
         <div className="wf-prop-title-row">
           <i
             aria-hidden="true"
@@ -708,7 +707,7 @@ function DisplayDuration({
         >
           −
         </button>
-        <span className="wf-prop-seconds">
+        <span className="wf-field wf-prop-seconds">
           <Input
             autoComplete="off"
             className="wf-prop-seconds-input"

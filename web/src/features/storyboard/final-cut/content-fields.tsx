@@ -203,14 +203,14 @@ function TextRow({
         {texts.locale.values === null ? (
           <Input
             autoComplete="off"
-            className="wf-prop-input"
+            className="wf-field wf-prop-input"
             id={id}
             onChange={(event) => onChange(event.target.value)}
             value={current}
           />
         ) : (
           <HostTextField
-            className="wf-prop-input"
+            className="wf-field wf-prop-input"
             clip={clip}
             field={variable}
             id={id}
@@ -315,15 +315,15 @@ export function Dropdown({
       <MenuTrigger asChild>
         <button
           aria-label={`${label}：${shown}`}
-          className="wf-prop-select ui-state ui-focus"
+          className="wf-select wf-prop-select ui-state ui-focus"
           id={id}
           type="button"
         >
           <span className="wf-prop-select-text">{shown}</span>
-          <Icon decorative name="expand" size="xs" />
+          <Icon decorative name="final-cut-expand" size="xs" />
         </button>
       </MenuTrigger>
-      <MenuSurface align="start" className="min-w-(--radix-dropdown-menu-trigger-width)">
+      <MenuSurface align="start" className="wf-menu min-w-(--radix-dropdown-menu-trigger-width)">
         <MenuRadioGroup onValueChange={onChange} value={value}>
           {options.map((option) => (
             <MenuRadioItem key={option.value} value={option.value}>
@@ -363,7 +363,7 @@ export function ColorField({
   // design-allow -- 取色板的值只能是十六进制写法，没法引用颜色变量
   const color = HEX_COLOR.test(shown) ? shown : '#000000'
   return (
-    <span className="wf-prop-color">
+    <span className="wf-field wf-prop-color">
       <ColorPicker
         onChange={(to) => setDragged({ from: current, to })}
         onCommit={(hex) => {
@@ -378,7 +378,7 @@ export function ColorField({
           type="button"
         >
           <span className="wf-prop-swatch-chip" style={{ backgroundColor: color }} />
-          <Icon decorative name="expand" size="xs" />
+          <Icon decorative name="final-cut-expand" size="xs" />
         </button>
       </ColorPicker>
       <span aria-hidden="true" className="wf-prop-color-divider" />
@@ -448,7 +448,7 @@ function NumberControl({
   return (
     <span className="wf-prop-number">
       <Input
-        className="wf-prop-input"
+        className="wf-field wf-prop-input"
         id={id}
         onBlur={() => setDraft(null)}
         onChange={(event) => {

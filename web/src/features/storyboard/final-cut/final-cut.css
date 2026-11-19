@@ -2,6 +2,10 @@
    下面是剪辑工具与时间线。 */
 
 .wf-editor {
+  /* 浮起面板的圆角；胶囊按钮、下拉、输入框、分段切换的圆角（稿子在 sm 与 md 之间取 9px） */
+  --wf-radius-panel: 18px;
+  --wf-radius-control: 9px;
+  --slider-thumb-size: 14px;
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -19,6 +23,262 @@
   color: var(--color-on-surface-muted);
   font-size: var(--text-body-sm);
   line-height: var(--text-body-sm--line-height);
+}
+
+/* ---- 通用控件：编辑器里各处共用的一套样子。浮层菜单挂在 body 上不在编辑器根下，另带 wf-menu ---- */
+
+/* 双色图标的填充层：悬停加深一档，按下、选中再加深一档（变量见 shared/icons 的 final-cut-glyphs.css） */
+:where(.wf-editor, .wf-menu) :where(.ui-state:hover) {
+  --icon-fill-opacity: 0.25;
+}
+
+:where(.wf-editor, .wf-menu)
+  :where(
+    [aria-pressed='true'],
+    [aria-checked='true'],
+    [aria-selected='true'],
+    [data-state='on'],
+    [data-state='checked'],
+    .is-active
+  ) {
+  --icon-fill-opacity: 0.3;
+}
+
+/* 浮起面板：侧栏、时间线这样的大块 */
+.wf-panel {
+  border-radius: var(--wf-radius-panel);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-final-cut-panel), var(--shadow-final-cut-specular);
+}
+
+/* 面板里的白色分组卡 */
+.wf-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-card);
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-card), var(--shadow-final-cut-specular);
+}
+
+/* 小胶囊按钮：带字（或图标加字）的次要操作；is-active / aria-pressed 是开着的开关，is-warning 是要处理的提示 */
+.wf-chip-btn {
+  display: inline-flex;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-radius: var(--wf-radius-control);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.wf-chip-btn:hover {
+  color: var(--color-on-surface);
+}
+
+.wf-chip-btn:is(.is-active, [aria-pressed='true']) {
+  background: var(--color-final-cut-control-soft);
+  box-shadow: inset 0 0 0 1px var(--color-final-cut-control-ring);
+  color: var(--color-on-surface);
+  font-weight: 600;
+}
+
+.wf-chip-btn.is-warning:not([aria-disabled='true']) {
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  color: var(--color-warning);
+}
+
+.wf-chip-btn[aria-disabled='true']:not([aria-pressed='true']) {
+  color: var(--color-on-surface-faint);
+}
+
+/* 下拉的触发钮：浅底细框，右边一个小箭头，展开时箭头朝上 */
+.wf-select {
+  display: flex;
+  height: 28px;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 10px;
+  border-radius: var(--wf-radius-control);
+  background: var(--color-surface-container-low);
+  box-shadow: inset 0 0 0 1px var(--color-final-cut-line);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.wf-select > svg {
+  flex: none;
+  color: var(--color-on-surface-faint);
+  transition: rotate var(--dur-s) var(--ease);
+}
+
+.wf-select[data-state='open'] > svg {
+  rotate: 180deg;
+}
+
+/* 两段 / 多段切换：一条凹槽，当前那段是浮起的白块 */
+.wf-editor .wf-seg {
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--wf-radius-control);
+  background: var(--color-surface-container-high);
+  box-shadow: var(--shadow-final-cut-well);
+}
+
+.wf-editor .wf-seg-item {
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 11px;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.wf-editor .wf-seg-item:hover {
+  color: var(--color-on-surface);
+}
+
+/* 三个条件压过分段切换自带的选中底色和阴影（它的选中态是「类 + 属性」两个条件） */
+.wf-editor .wf-seg-item:is([aria-pressed='true'], [data-state='on']) {
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-pill), var(--shadow-final-cut-specular);
+  color: var(--color-on-surface);
+  font-weight: 600;
+}
+
+/* 输入框、文字框和装着输入框的条：凹进去的浅底，聚焦时浮起成白底。焦点框仍用设计系统输入框的 1px 墨色框
+   （稿子是一圈 18% 的淡框，对比度不够做焦点指示）。
+   两个类压过输入框自带的边框、圆角和底色：构建后工具类与这里同层，单个类比不过加载顺序 */
+.wf-editor .wf-field {
+  border: 1px solid transparent;
+  border-radius: var(--wf-radius-control);
+  background: var(--color-surface-container-low);
+  box-shadow:
+    var(--shadow-final-cut-well),
+    inset 0 0 0 1px var(--color-final-cut-line);
+}
+
+.wf-editor .wf-field:is(:focus, :focus-within) {
+  border-color: var(--color-on-surface);
+  background: var(--color-final-cut-raised);
+}
+
+.wf-editor .wf-field:is([aria-invalid='true'], :has([aria-invalid='true'])) {
+  box-shadow: 0 0 0 1.5px var(--color-error);
+}
+
+/* 侧栏页签顶上的搜索条 */
+.wf-editor .wf-search {
+  width: auto;
+  height: 30px;
+  flex: none;
+  gap: 6px;
+  margin: 10px 12px 0;
+  padding: 0 9px;
+}
+
+.wf-search svg {
+  width: 14px;
+  height: 14px;
+  color: var(--color-on-surface-faint);
+}
+
+.wf-search input {
+  font-size: var(--text-label);
+}
+
+/* 浮层菜单：白底大圆角，浮起的阴影加顶部高光；选中的那项是中性浅底。
+   菜单挂在 body 上，靠 wf-menu 认；两个条件压过浮层自带的边框、底色和阴影 */
+.wf-menu[data-state] {
+  padding: 6px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-float), var(--shadow-final-cut-specular);
+  backdrop-filter: none;
+}
+
+.wf-menu [role^='menuitem'] {
+  font-size: var(--text-label);
+}
+
+.wf-menu [role^='menuitem'][data-state='checked'] {
+  background: var(--color-final-cut-control-soft);
+}
+
+/* 滑杆：走过的那段用控件墨色实时填上，轨道是凹槽，零点刻度是一道短竖线，拇指是白底描边的圆钮。
+   挂点见 shared/ui/slider；两个类压过它自带的轨道、刻度和圆点 */
+.wf-editor .slider-track {
+  height: 3.5px;
+  background: var(--color-surface-container-high);
+  box-shadow: var(--shadow-final-cut-well);
+}
+
+.wf-editor .slider-range {
+  background: var(--color-on-surface);
+}
+
+.wf-editor .slider-mark {
+  width: 2px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-final-cut-tick);
+}
+
+.wf-editor .slider-thumb {
+  border: 1.75px solid var(--color-on-surface);
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-knob);
+  transition:
+    scale var(--dur-s) var(--ease),
+    box-shadow var(--dur-s) var(--ease);
+}
+
+.wf-editor .slider-root:not([data-disabled]):hover .slider-thumb {
+  scale: 1.1;
+  box-shadow:
+    var(--shadow-final-cut-knob),
+    0 0 0 4px var(--color-final-cut-control-soft);
+}
+
+/* 开关：关着是凹槽，开着用品牌绿（稿子把开关的开启态列为品牌绿的用处之一），圆钮两套主题都是白色。
+   挂点见 shared/ui/switch；两个类压过它自带的尺寸和底色 */
+.wf-editor .switch-root {
+  width: 34px;
+  height: 19px;
+  padding: 2px;
+  background: var(--color-surface-container-high);
+  box-shadow: var(--shadow-final-cut-well);
+}
+
+.wf-editor .switch-root[aria-checked='true'] {
+  background: var(--color-primary);
+  box-shadow: none;
+}
+
+.wf-editor .switch-thumb {
+  width: 15px;
+  height: 15px;
+  background: var(--color-final-cut-knob);
+  box-shadow: var(--shadow-final-cut-knob);
+}
+
+.wf-editor .switch-root[aria-checked='true'] .switch-thumb {
+  translate: 15px 0;
 }
 
 /* 任何宽度都是这一种摆法，不做小屏适配：放不下的内容由所在的卡片裁掉，不换行、不横向滚动。
@@ -49,9 +309,6 @@
   flex-direction: column;
   grid-area: side;
   overflow: clip;
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-container-low);
 }
 
 .wf-side-panel {
@@ -115,30 +372,6 @@
 
 .wf-audio.is-over {
   background: var(--color-state-hover);
-}
-
-/* 两个类压过输入框自带的高度、圆角和底色：构建后工具类与这里同层，单个类比不过加载顺序 */
-.wf-audio .wf-audio-search {
-  height: 30px;
-  flex: none;
-  gap: 6px;
-  width: auto;
-  margin: 10px 12px 0;
-  padding: 0 9px;
-  border-color: transparent;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-  font-size: var(--text-label);
-}
-
-.wf-audio .wf-audio-search svg {
-  width: 14px;
-  height: 14px;
-  color: var(--color-on-surface-faint);
-}
-
-.wf-audio .wf-audio-search input {
-  font-size: var(--text-label);
 }
 
 /* 「本对话 / 音频库」两块切换，音频库里「配乐 / 音效」两类 */
@@ -396,34 +629,12 @@
   text-overflow: ellipsis;
 }
 
-/* 「字幕 / 组件文字」两段切换：一条浅底槽，当前那段是浮起的白块 */
+/* 「字幕 / 组件文字」两段切换（样子见 wf-seg），两段等宽 */
 .wf-captions-views {
   display: grid;
   flex: none;
   grid-template-columns: 1fr 1fr;
-  gap: 2px;
   margin: 10px 12px 0;
-  padding: 2px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-}
-
-.wf-captions-view {
-  display: inline-flex;
-  height: 26px;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border-radius: var(--radius-xs);
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-label);
-}
-
-.wf-captions-view[aria-pressed='true'] {
-  background: var(--color-surface);
-  box-shadow: var(--shadow-1);
-  color: var(--color-on-surface);
-  font-weight: 600;
 }
 
 .wf-captions-count {
@@ -454,33 +665,8 @@
   font-size: var(--text-caption);
 }
 
-.wf-captions-voice-mode,
-.wf-captions-voice-redo {
-  display: inline-flex;
-  height: 24px;
-  flex: none;
-  align-items: center;
-  padding: 0 10px;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-caption);
-  white-space: nowrap;
-}
-
-.wf-captions-voice-mode[aria-pressed='true'] {
-  background: var(--color-on-surface);
-  color: var(--color-surface);
-  font-weight: 600;
-}
-
 .wf-captions-voice-redo {
   margin-left: auto;
-}
-
-.wf-captions-voice-mode[aria-disabled='true']:not([aria-pressed='true']),
-.wf-captions-voice-redo[aria-disabled='true'] {
-  color: var(--state-disabled-content);
 }
 
 /* AI 配音的音色小块：一行排开，放不下时左右滑动（不显示滚动条） */
@@ -704,28 +890,6 @@
   font-size: var(--text-caption);
   line-height: var(--text-caption--line-height);
   overflow-wrap: anywhere;
-}
-
-/* 「固定」是灰底细框，「随语言」是主色淡底 */
-.wf-follow {
-  display: inline-flex;
-  height: 24px;
-  flex: none;
-  align-items: center;
-  padding: 0 8px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-  box-shadow: inset 0 0 0 0.5px var(--color-outline-variant);
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-caption);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.wf-follow.is-follow {
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 30%, transparent);
-  color: var(--color-primary);
 }
 
 .wf-song {
@@ -1203,57 +1367,10 @@
   font-size: var(--text-caption);
 }
 
-/* 带字的小按钮：头部的「分离音频」「合并回视频」，原声去处、同步栏里的定位、对齐、合并 */
-.wf-prop-action {
-  display: inline-flex;
-  height: 24px;
-  flex: none;
-  align-items: center;
-  gap: 4px;
-  padding: 0 8px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface);
-  font-size: var(--text-caption);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.wf-prop-action[aria-disabled='true'] {
-  color: var(--color-on-surface-faint);
-}
-
-/* 错开时的对齐：提示色 */
-.wf-prop-action.is-warning:not([aria-disabled='true']) {
-  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
-  color: var(--color-warning);
-}
-
-/* 分离过原声的视频片段：原声去处的一块，浅底圆角 */
-.wf-sound-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border-radius: var(--radius-md);
-  background: var(--color-surface-container);
-  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
-}
-
-/* 「智能调音」：标题行右边的角色按钮，主开关的一块（浅底圆角），下面另一项的一行 */
+/* 「智能调音」：标题行右边的角色下拉（样子见 wf-select），主开关的一块，下面另一项的一行 */
 .wf-mix-role {
-  display: inline-flex;
-  height: 22px;
   flex: none;
-  align-items: center;
-  gap: 2px;
   margin-left: auto;
-  padding: 0 6px 0 8px;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface);
-  font-size: var(--text-caption);
-  font-weight: 500;
 }
 
 .wf-mix-role-name {
@@ -1272,16 +1389,6 @@
   color: var(--color-on-surface-muted);
   font-size: var(--text-caption);
   white-space: normal;
-}
-
-.wf-mix-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  border-radius: var(--radius-md);
-  background: var(--color-surface-container);
-  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
 }
 
 .wf-mix-card-title {
@@ -1320,22 +1427,6 @@
   font-size: var(--text-caption);
 }
 
-.wf-mix-more,
-.wf-mix-link {
-  display: inline-flex;
-  height: 20px;
-  align-items: center;
-  gap: 2px;
-  padding: 0 6px;
-  border-radius: var(--radius-xs);
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-caption);
-}
-
-.wf-mix-link {
-  margin-left: auto;
-}
-
 /* 「三段均衡与升降调」标题行右边：频响小图，有调整时后面跟「归零」 */
 .wf-eq-head {
   display: flex;
@@ -1343,10 +1434,6 @@
   align-items: center;
   gap: 8px;
   margin-left: auto;
-}
-
-.wf-eq-head .wf-mix-link {
-  margin-left: 0;
 }
 
 .wf-eq-curve {
@@ -1472,18 +1559,7 @@
 }
 
 .wf-mix-add {
-  display: inline-flex;
-  height: 22px;
-  flex: none;
-  align-items: center;
-  gap: 2px;
   margin-left: auto;
-  padding: 0 6px 0 8px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface);
-  font-size: var(--text-caption);
-  font-weight: 500;
 }
 
 /* 一个效果：开关、名字、移除一行，下面是参数；关掉时整块变淡 */
@@ -1548,7 +1624,7 @@
   white-space: nowrap;
 }
 
-.wf-sound-card .wf-sound-status {
+.wf-prop-title-row > .wf-sound-status {
   margin-left: auto;
 }
 
@@ -1603,31 +1679,19 @@
   white-space: nowrap;
 }
 
-/* 两个类压过输入框自带的高度、圆角、边框和底色：构建后工具类与这里同层，单个类比不过加载顺序 */
+/* 两个类压过输入框自带的高度和字号（样子见 wf-field）：构建后工具类与这里同层，单个类比不过加载顺序 */
 .wf-inspector .wf-prop-input {
   width: 100%;
   height: 28px;
   min-width: 0;
   padding: 0 10px;
-  border-color: transparent;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
   font-size: var(--text-label);
 }
 
-/* 聚焦时 1px 边框转墨色，同设计系统的输入框 */
-.wf-inspector .wf-prop-input:focus,
-.wf-inspector .wf-prop-textarea:focus {
-  border-color: var(--color-on-surface);
-}
-
-/* 字幕「内容」的多行文字框：和输入框一样的浅底，回车换行 */
+/* 字幕「内容」的多行文字框：和输入框一样的样子，回车换行 */
 .wf-inspector .wf-prop-textarea {
   min-height: 0;
   padding: 5px 10px;
-  border-color: transparent;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
   resize: none;
@@ -1663,20 +1727,9 @@
   font-size: var(--text-caption);
 }
 
-/* 下拉的触发钮：和输入框同高的浅底条，右边一个小箭头 */
+/* 属性里的下拉（样子见 wf-select）占满一行 */
 .wf-prop-select {
-  display: flex;
   width: 100%;
-  height: 28px;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  padding: 0 8px 0 10px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface);
-  font-size: var(--text-label);
-  text-align: left;
 }
 
 .wf-prop-select-text {
@@ -1684,20 +1737,14 @@
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.wf-prop-select > svg,
 .wf-prop-swatch > svg {
   flex: none;
   color: var(--color-on-surface-faint);
 }
 
-.wf-prop-select[data-state='open'] > svg {
-  rotate: 180deg;
-}
-
-/* 颜色：浅底条，左边色块加小箭头（点开取色板），一道竖线，右边十六进制 */
+/* 颜色（样子见 wf-field）：左边色块加小箭头（点开取色板），一道竖线，右边十六进制 */
 .wf-prop-color {
   display: flex;
   height: 28px;
@@ -1705,13 +1752,6 @@
   align-items: center;
   gap: 8px;
   padding: 0 10px 0 4px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-}
-
-.wf-prop-color:focus-within {
-  border-color: var(--color-on-surface);
 }
 
 .wf-prop-swatch {
@@ -1773,21 +1813,15 @@
   opacity: var(--state-disabled-content);
 }
 
+/* 秒数框（样子见 wf-field） */
 .wf-prop-seconds {
   display: flex;
   height: 26px;
   align-items: center;
   gap: 4px;
   padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
   color: var(--color-on-surface-muted);
   font-size: var(--text-caption);
-}
-
-.wf-prop-seconds:focus-within {
-  border-color: var(--color-on-surface);
 }
 
 .wf-inspector .wf-prop-seconds-input {
@@ -2436,30 +2470,6 @@
   flex-direction: column;
 }
 
-/* 两个类压过输入框自带的高度、圆角和底色：构建后工具类与这里同层，单个类比不过加载顺序 */
-.wf-items .wf-item-search {
-  height: 30px;
-  flex: none;
-  gap: 6px;
-  width: auto;
-  margin: 10px 12px 0;
-  padding: 0 9px;
-  border-color: transparent;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-  font-size: var(--text-label);
-}
-
-.wf-items .wf-item-search svg {
-  width: 14px;
-  height: 14px;
-  color: var(--color-on-surface-faint);
-}
-
-.wf-items .wf-item-search input {
-  font-size: var(--text-label);
-}
-
 /* 两个类压过 ChipGroup 自带的 flex-wrap：构建后工具类与这里同层，单个类比不过加载顺序 */
 .wf-items .wf-chips {
   flex: none;
@@ -2720,9 +2730,6 @@
   grid-area: timeline;
   overflow: clip;
   padding: 8px 12px 10px;
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-container-low);
 }
 
 /* 面板放不下时只压缩轨道区，工具条和提示保持原高 */

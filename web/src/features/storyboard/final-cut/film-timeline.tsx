@@ -412,7 +412,7 @@ function ClipContent({
   if (clip.kind === 'audio')
     return (
       <>
-        <Icon className="wf-clip-icon" decorative name="music" size="xs" />
+        <Icon className="wf-clip-icon" decorative name="final-cut-music" size="xs" />
         {name}
         <span className={cn('wf-clip-sound', waveClass)} ref={waveRef}>
           <Wave level={wave.level} part={part} state={peaks} />
@@ -844,6 +844,7 @@ function TimelineClip({
       </ContextMenuTrigger>
       <ContextMenuSurface
         aria-label={clip.label}
+        className="wf-menu"
         onCloseAutoFocus={(event) => {
           // 菜单里删掉了这个片段：焦点要回去的地方没了，交还编辑器的根节点，快捷键照常
           if (rootRef.current !== null) return
@@ -885,7 +886,15 @@ function RowToggle({
     >
       <Icon
         decorative
-        name={sound ? (hidden ? 'audio-off' : 'audio') : hidden ? 'excluded' : 'included'}
+        name={
+          sound
+            ? hidden
+              ? 'final-cut-sound-off'
+              : 'final-cut-sound-on'
+            : hidden
+              ? 'final-cut-hidden'
+              : 'final-cut-visible'
+        }
         size="sm"
       />
     </button>
@@ -1505,7 +1514,7 @@ export function FilmTimeline({
                       ) : null}
                     </div>
                   </ContextMenuTrigger>
-                  <ContextMenuSurface aria-label="空档">
+                  <ContextMenuSurface aria-label="空档" className="wf-menu">
                     <ContextMenuItem
                       disabled={closing === undefined || closing.one.size === 0}
                       onSelect={() => {

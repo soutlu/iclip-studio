@@ -193,7 +193,7 @@ export function CaptionsTab({
             <Button
               aria-disabled={translate.blocked === undefined ? undefined : true}
               className="wf-captions-action"
-              leadingIcon="sparkles"
+              leadingIcon="final-cut-translate"
               onClick={() => {
                 if (translate.blocked === undefined) translate.onTranslate()
               }}
@@ -205,11 +205,11 @@ export function CaptionsTab({
           </BlockedReason>
         </div>
       )}
-      <div aria-label="字幕或组件文字" className="wf-captions-views" role="group">
+      <div aria-label="字幕或组件文字" className="wf-seg wf-captions-views" role="group">
         {views.map((each) => (
           <button
             aria-pressed={view === each.value}
-            className="wf-captions-view ui-state ui-focus"
+            className="wf-seg-item ui-state ui-focus"
             key={each.value}
             onClick={() => setView(each.value)}
             type="button"
@@ -299,7 +299,7 @@ function VoiceRow({
         <span className="wf-captions-voice-label">人声</span>
         <button
           aria-pressed={mode === 'original'}
-          className="wf-captions-voice-mode ui-state ui-focus"
+          className="wf-chip-btn ui-state ui-focus"
           onClick={() => onMode('original')}
           type="button"
         >
@@ -309,7 +309,7 @@ function VoiceRow({
           <BlockedReason reason={redoBlocked}>
             <button
               aria-disabled={redoBlocked === undefined ? undefined : true}
-              className="wf-captions-voice-redo ui-state ui-focus"
+              className="wf-chip-btn wf-captions-voice-redo ui-state ui-focus"
               onClick={() => {
                 if (redoBlocked === undefined) onRedo()
               }}
@@ -373,7 +373,7 @@ function VoiceChip({ name, picked, blocked, onPick, audition }: VoiceChipProps) 
           aria-pressed={audition.playing}
           className="wf-captions-voice-play"
           label={audition.playing ? `暂停试听：${name}` : `试听：${name}`}
-          name={audition.playing ? 'pause' : 'play'}
+          name={audition.playing ? 'final-cut-pause' : 'final-cut-play'}
           onClick={audition.onToggle}
           size="xs"
         />
@@ -451,7 +451,7 @@ function LineVoiceChip({ caption, voice }: { caption: string; voice: VoiceContro
       type="button"
     >
       <span className="wf-line-voice-name">{name}</span>
-      <Icon decorative name="expand" size="xs" />
+      <Icon decorative name="final-cut-expand" size="xs" />
     </button>
   )
   if (blocked !== undefined) return <BlockedReason reason={blocked}>{chip}</BlockedReason>
@@ -473,7 +473,7 @@ function LineVoiceChip({ caption, voice }: { caption: string; voice: VoiceContro
           切换本句配音音色或不配音
         </TooltipContent>
       </TooltipRoot>
-      <MenuSurface align="end">
+      <MenuSurface align="end" className="wf-menu">
         <MenuRadioGroup
           onValueChange={(value) => {
             if (value !== picked) voice.onLine(caption, lineVoiceOfValue(value))
@@ -531,7 +531,7 @@ function CaptionsView({
           <Button
             aria-disabled={recognizeBlocked === undefined ? undefined : true}
             className="wf-captions-action wf-captions-recognize"
-            leadingIcon="waveform"
+            leadingIcon="final-cut-voice"
             onClick={() => {
               if (recognizeBlocked === undefined) onRecognize()
             }}
@@ -545,7 +545,7 @@ function CaptionsView({
           <Button
             aria-disabled={addBlocked === undefined ? undefined : true}
             className="wf-captions-action"
-            leadingIcon="add"
+            leadingIcon="final-cut-add"
             onClick={() => void add()}
             size="md"
             variant="outlined"
@@ -557,7 +557,7 @@ function CaptionsView({
           <Button
             aria-expanded={narration.open}
             className="wf-captions-action"
-            {...(narration.open ? {} : { leadingIcon: 'add' as const })}
+            {...(narration.open ? {} : { leadingIcon: 'final-cut-narration' as const })}
             onClick={() => narration.onOpen(!narration.open)}
             size="md"
             variant="outlined"
@@ -738,7 +738,12 @@ function CaptionRow({
           {range}
         </button>
         {voice === undefined ? null : <LineVoiceChip caption={caption.id} voice={voice} />}
-        <IconButton label={`删除 ${range} 的字幕`} name="delete" onClick={onRemove} size="xs" />
+        <IconButton
+          label={`删除 ${range} 的字幕`}
+          name="final-cut-delete"
+          onClick={onRemove}
+          size="xs"
+        />
       </div>
       <CaptionTextField
         aria-label={`字幕文字 ${range}`}

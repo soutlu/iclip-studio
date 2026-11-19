@@ -80,15 +80,15 @@ export function SmartMixSection({
           <MenuTrigger asChild>
             <button
               aria-label={`角色：${roleLabel ?? ''}`}
-              className="wf-mix-role ui-state ui-focus"
+              className="wf-select wf-mix-role ui-state ui-focus"
               type="button"
             >
               <span className="wf-mix-role-name">角色：</span>
               {roleLabel}
-              <Icon decorative name="expand" size="sm" />
+              <Icon decorative name="final-cut-expand" size="xs" />
             </button>
           </MenuTrigger>
-          <MenuSurface align="end" aria-label="声音角色" className="w-56">
+          <MenuSurface align="end" aria-label="声音角色" className="wf-menu w-56">
             <MenuRadioGroup
               onValueChange={(value) => {
                 if (isAudioRole(value)) mix.setRole(value)
@@ -157,7 +157,7 @@ function MixCard({
 }) {
   const titleId = useId()
   return (
-    <div className="wf-mix-card">
+    <div className="wf-card">
       <div className="wf-prop-title-row">
         <span className="wf-mix-card-title" id={titleId}>
           {title}

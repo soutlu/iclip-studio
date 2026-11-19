@@ -127,7 +127,7 @@ function Readout({
       aria-invalid={typing.invalid || undefined}
       aria-label={label}
       autoComplete="off"
-      className="wf-prop-input wf-prop-readout-input"
+      className="wf-field wf-prop-readout-input"
       onBlur={() => {
         onEditing(false)
         const typed = typedRef.current

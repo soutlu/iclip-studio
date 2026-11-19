@@ -11,6 +11,7 @@ type SwitchProps = Omit<
   blockedReason?: string | undefined
 }
 
+/** 开关。`switch-root`、`switch-thumb` 是给所在页面改样子的挂点。 */
 export function Switch({
   blockedReason,
   checked,
@@ -29,7 +30,7 @@ export function Switch({
           aria-checked={checked}
           aria-disabled={blocked ? true : undefined}
           className={cn(
-            'inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full p-0.5 ui-focus transition-colors ui-motion-s',
+            'switch-root inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full p-0.5 ui-focus transition-colors ui-motion-s',
             checked ? 'bg-on-surface' : 'bg-outline-variant',
             'disabled:cursor-not-allowed disabled:opacity-(--state-disabled-content) aria-disabled:cursor-not-allowed',
             className,
@@ -47,7 +48,7 @@ export function Switch({
           <span
             aria-hidden
             className={cn(
-              'size-4 rounded-full bg-background transition-transform ui-motion-s',
+              'switch-thumb size-4 rounded-full bg-background transition-transform ui-motion-s',
               checked && 'translate-x-4',
             )}
           />
