@@ -27,7 +27,7 @@ jobs:
 
   server:
     runs-on: ubuntu-latest
-    # 没有能用的 ffmpeg 安装包缓存、又分到软件源慢的 runner 时，现场下载要十几分钟；中途超时缓存就存不下来。
+    # 冷启动未命中 ffmpeg 缓存且分配到慢速软件源 runner 时，下载约需十余分钟，放宽超时确保缓存完整写入。
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7

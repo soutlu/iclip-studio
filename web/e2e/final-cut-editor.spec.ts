@@ -3446,12 +3446,12 @@ const canvasSpot = async (layer: Locator, player: Locator, selector: string) => 
   }
 }
 
-// 贴片「测试可填项」的宿主（按 1920×1080 设计，缩进画面、居中），和它里面的一行字
+// 贴片「测试可填项」宿主（1920×1080 设计尺寸，按画幅缩放居中）及其内部文字节点
 const CARD = '#film > .component'
 const TEXT = `${CARD} #ff-text`
 const CARD_FILE = 'compositions/fixtures/fixture-fields.html'
 
-/** 存出的文件里 id 是 `id` 的元素的属性；没有这个元素时是 null。 */
+/** 解析落盘 HTML 中指定 `id` 元素的属性表；未找到时返回 `null`。 */
 const savedElement = (content: string, id: string): Record<string, string> | null => {
   const tag = new RegExp(`<[a-z]+ [^>]*\\bid="${id}"[^>]*>`).exec(content)?.[0]
   if (tag === undefined) return null
@@ -3463,7 +3463,7 @@ const savedElement = (content: string, id: string): Record<string, string> | nul
   )
 }
 
-/** 一个元素的行内样式，按属性名拆开。 */
+/** 将元素的行内 `style` 属性拆解为属性名到值的映射。 */
 const styleOf = (attributes: Record<string, string> | null): Record<string, string> =>
   Object.fromEntries(
     (attributes?.['style'] ?? '').split(';').flatMap((declaration) => {
@@ -3472,7 +3472,7 @@ const styleOf = (attributes: Record<string, string> | null): Record<string, stri
     }),
   )
 
-/** 画布一像素在页面上多宽。 */
+/** 计算画布 1 像素对应的页面屏幕像素宽度。 */
 const canvasZoom = async (layer: Locator, player: Locator) => {
   const width = await player.evaluate((element: PreviewPlayer) =>
     Number(element.iframeElement.contentDocument?.getElementById('film')?.dataset['width']),
@@ -3480,7 +3480,7 @@ const canvasZoom = async (layer: Locator, player: Locator) => {
   return (await boxOf(layer)).width / width
 }
 
-/** 画出来的框 `drawn` 和页面上的框 `shown` 对齐（屏幕像素，差不到 1.5）。 */
+/** 断言叠层绘制框 `drawn` 与页面可见框 `shown` 对齐（屏幕像素误差小于 1.5）。 */
 const alignsWith = (
   drawn: { x: number; y: number; width: number; height: number },
   shown: { x: number; y: number; width: number; height: number },
@@ -3491,7 +3491,7 @@ const alignsWith = (
   expect(Math.abs(drawn.height - shown.height)).toBeLessThan(1.5)
 }
 
-/** 预览里 `selector` 那个元素在页面上的框，裁到画面里（看得见的那一块）。 */
+/** 计算预览内 `selector` 元素裁剪到画布范围后的页面屏幕矩形。 */
 const shownOnPage = async (layer: Locator, player: Locator, selector: string) => {
   const canvas = await boxOf(layer)
   const rect = await previewRect(player, selector)
@@ -3567,17 +3567,17 @@ test('画面上点选：点贴片里画出来的字、色底都选中整个贴�
   await expect(layer.getByRole('img')).toHaveCount(0)
 })
 
-/** 存出的主文件里贴片「测试可填项」宿主的属性；没有这个宿主时是 null。 */
+/** 读取落盘主文件中贴片「测试可填项」宿主的属性；未找到时返回 `null`。 */
 const savedCard = (html: string) => savedElement(html, savedItem(html, '测试可填项')?.id ?? '')
 
-/** 宿主 `translate` 的一个方向在居中用的 -50% 以外挪了多少像素（`-50%`、`calc(-50% ± Npx)`）；认不出时 NaN。 */
+/** 解析宿主单轴 `translate` 在 `-50%` 居中基准上叠加的像素偏移（`-50%` 或 `calc(-50% ± Npx)`，无法解析时返回 `NaN`）。 */
 const centredOffset = (axis: string | undefined) => {
   if (axis === '-50%') return 0
   const calc = /^calc\(-50% ([+-]) ([\d.]+)px\)$/.exec(axis ?? '')
   return calc === null ? Number.NaN : (calc[1] === '-' ? -1 : 1) * Number(calc[2])
 }
 
-/** 宿主 `translate` 两个方向各挪了多少像素（见 `centredOffset`）。 */
+/** 解析宿主 `translate` 在两个轴向上的居中像素偏移（见 `centredOffset`）。 */
 const cardOffset = (attributes: Record<string, string> | null) => {
   const [x, y] =
     /^(calc\([^)]*\)|\S+) (calc\([^)]*\)|\S+)$/
@@ -3586,7 +3586,7 @@ const cardOffset = (attributes: Record<string, string> | null) => {
   return { x: centredOffset(x), y: centredOffset(y) }
 }
 
-/** 预览里贴片宿主行内的 `transform`（预览里没让动画库解析它时是空串）。 */
+/** 读取预览 DOM 中贴片宿主的行内 `transform`（未经 GSAP 解析改写时应为空串）。 */
 const previewCardTransform = (editor: Locator) =>
   finalCutPreviewPlayer(editor).evaluate(
     (element: PreviewPlayer, query) =>
@@ -3594,7 +3594,7 @@ const previewCardTransform = (editor: Locator) =>
     CARD,
   )
 
-/** 记下存了几次贴片的组件文件。 */
+/** 统计贴片组件文件的落盘保存次数。 */
 const countCardSaves = (page: Page, file = CARD_FILE) => {
   const saves = { count: 0 }
   page.on('request', (request) => {
@@ -3690,7 +3690,7 @@ test('其它语言下画面上挪贴片：存下之前预览里已经挪过去�
   await expect(layer.getByRole('img', { name: '选中：测试可填项' })).toBeVisible()
   const cardSaves = countCardSaves(page)
 
-  // 存不下去：预览里也已经挪过去了。保存请求在预览挪好之前就可能发出（只是收不到答复），按键前就开始等它
+  // 阻塞保存响应验证实时预览已先行到位；保存请求可能在预览渲染完成前已发出，须在按键前开始监听请求
   await pauseMockResponses(page, '/workspace/file')
   const nudged = mainSavedWith(page, (html) => cardOffset(savedCard(html)).x === -10)
   await page.keyboard.press('Shift+ArrowLeft')
@@ -3708,7 +3708,7 @@ test('其它语言下画面上挪贴片：存下之前预览里已经挪过去�
   expect(cardSaves.count).toBe(0)
 })
 
-/** 预览里 `selector` 那个元素的中心（画布像素）。 */
+/** 计算预览内 `selector` 元素的画布像素中心坐标。 */
 const centreOf = async (
   player: Locator,
   selector: string,
@@ -3721,7 +3721,7 @@ const centreOf = async (
   }
 }
 
-/** 预览里 final-cut 画布的尺寸（画布像素）。 */
+/** 读取预览内 final-cut 合成根的画布宽高（画布像素）。 */
 const canvasSizeOf = (player: Locator) =>
   player.evaluate((element: PreviewPlayer) => {
     const film = element.iframeElement.contentDocument?.getElementById('film')

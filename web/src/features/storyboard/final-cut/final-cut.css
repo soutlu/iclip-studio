@@ -2043,7 +2043,7 @@
   pointer-events: none;
 }
 
-/* 指针停着的那一层（点下去会选中它）：比选中框淡、细；能原地改字的层是输入光标 */
+/* 悬停预选框（点击即将选中的目标层）：线条比正式选中框更细更浅；支持原地改字时切换文本光标 */
 .wf-canvas-hover {
   position: absolute;
   border-radius: var(--radius-xs);
@@ -2113,13 +2113,13 @@
   cursor: grabbing;
 }
 
-/* 画面下面放不下时放到框上面 */
+/* 画布底部空间不足时将旋转控制柄翻至选中框上方 */
 .wf-canvas-rotate[data-above] {
   top: auto;
   bottom: calc(100% + 10px);
 }
 
-/* 转的时候框下面写着角度 */
+/* 旋转过程中在选中框下方展示实时度数 */
 .wf-canvas-angle {
   position: absolute;
   top: calc(100% + 34px);
@@ -2136,7 +2136,7 @@
   white-space: nowrap;
 }
 
-/* 挪的时候吸附画的参考线：贯穿画面的对齐线和等距标记（标着画布像素的间距），只是看的；用琥珀色和白色的选中框分开 */
+/* 拖拽移动时的对齐参考线与画布像素等距标记（纯展示层，采用琥珀色与白色选中框区分） */
 .wf-canvas-guides {
   position: absolute;
   inset: 0;

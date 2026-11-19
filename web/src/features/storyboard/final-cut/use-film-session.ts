@@ -178,10 +178,7 @@ export type FilmView = {
   locales: readonly LocaleCode[]
   /** 组件或块的片段里随语言的文字字段（片段编号 → 字段到根变量），没有随语言字段的片段不在里面。 */
   bindings: ReadonlyMap<string, LocaleBindings>
-  /**
-   * 画面上能编辑的层和组件或块的宿主（见 canvas-layers.ts）：主文件和字幕场景里的，按它们现在的内容（没存的
-   * 改动也在里面）。
-   */
+  /** 画布可编辑图层与贴片/场景宿主表（见 canvas-layers.ts），按主文件与字幕场景当前内存内容派生。 */
   layers: readonly CanvasLayer[]
   canUndo: boolean
   canRedo: boolean
@@ -195,8 +192,8 @@ export type FilmView = {
 }
 
 /**
- * 在画面上改一层：它写在哪个文件（相对工程根）、文件里的编号（`data-hf-id`）；`move` 是 SDK `moveElement` 写的
- * `data-x` / `data-y`，`styles` 是要改的行内样式（SDK 的属性名，null 是去掉）。
+ * 画布图层变更项：指定目标文件相对路径与元素 `data-hf-id`；
+ * `move` 为 SDK `moveElement` 写入的 `data-x` / `data-y`，`styles` 为待更新的行内样式（SDK 驼峰属性名，`null` 表示移除）。
  */
 export type LayerEdit = {
   file: string

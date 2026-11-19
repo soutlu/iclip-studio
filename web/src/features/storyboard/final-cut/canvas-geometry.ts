@@ -1,35 +1,35 @@
 /**
- * 预览画面上的编辑（点选、拖动、缩放、旋转）用的几何换算，坐标都是 final-cut 画布的像素。一层在画面上的样子由
- * 预览页量出来（见 preview-canvas.ts），拖动中编辑器按它和指针算草稿。
+ * 预览画布编辑（点选、拖拽、缩放、旋转）的纯几何计算，坐标单位均为 final-cut 画布像素。
+ * 图层初始边界由预览页实测返回（见 preview-canvas.ts），拖拽期间由编辑器结合指针位置实时计算草稿框。
  */
 
 export type Point = { x: number; y: number }
 
-/** 画面上一个转了角度的矩形：中心、宽高和角度（度，顺时针）。 */
+/** 画布上的旋转矩形：中心坐标、宽高与顺时针旋转角度（度）。 */
 export type Frame = { cx: number; cy: number; width: number; height: number; angle: number }
 
 const radians = (degrees: number) => (degrees * Math.PI) / 180
 
-/** 向量 (`x`, `y`) 顺时针转 `degrees` 度。 */
+/** 将向量 (`x`, `y`) 顺时针旋转 `degrees` 度。 */
 export const rotated = ({ x, y }: Point, degrees: number): Point => {
   const cos = Math.cos(radians(degrees))
   const sin = Math.sin(radians(degrees))
   return { x: x * cos - y * sin, y: x * sin + y * cos }
 }
 
-/** 上一次在画面上点选：点在哪、什么时候（毫秒）、选中了谁。 */
+/** 上一次画布点选记录：点击坐标、时间戳（毫秒）与命中的图层键。 */
 export type CanvasPick = { point: Point; at: number; id: string }
 
-/** 同一处在这么久以内再点一次，换成下面一层，照参照的工作台。 */
+/** 同位置连续点击循环切换下层图层的时间窗口（毫秒，对齐上游 Studio）。 */
 export const CYCLE_MS = 600
 
 /**
- * 在画面上点选时选中哪一层。`hits` 是指针下的层（贴片、场景整个是一层，见预览页的 `pick`），从最上面一层往下排；
- * `last` 是上一次点选（按下时不换层，给 null）。
+ * 计算画布点击应选中的图层：
+ * `hits` 为指针下从上到下排列的命中图层列表（贴片与场景整体作为一层，见预览页 `pick`）；`last` 为上次点选记录（按下阶段不触发换层，传 `null`）。
  *
- * - 同一处（离上一次不超过 `tolerance`）`CYCLE_MS` 以内再点：换成上一次选中的下面一层，到底了回到最上面；
- * - 指针下有已经选中的层：还是它（按住就能拖，不会被盖在上面的层抢走）；
- * - 不然是最上面一层。指针下没有层时是 null。
+ * - 在 `CYCLE_MS` 内于原位置 `tolerance` 范围内再次点击：切换到上次命中图层的下一层，到底后回绕至顶层；
+ * - 指针下包含已选中图层：保持选中该层（便于直接按住拖拽，避免被上方图层抢占）；
+ * - 其余情况选中最顶层（无命中时返回 `null`）。
  */
 export function pickAt(
   hits: readonly string[],
@@ -52,13 +52,13 @@ export function pickAt(
   return hits.find((id) => selected.has(id)) ?? top
 }
 
-/** 缩到最短的一边是这么多布局像素就不再缩（工作台 `MIN_RESIZE_LOCAL_PX`）。 */
+/** 缩放时短边保留的最小布局像素（对齐上游 Studio `MIN_RESIZE_LOCAL_PX`）。 */
 export const MIN_EDGE = 1
 
 /**
- * 拖角上的把手缩放的倍数：以中心为准等比缩放，倍数是指针现在离中心的距离比按下时离中心的距离，哪个角、转没转
- * 都一样（照工作台 `domEditResizeLocal.ts` 的 `resolveCenterResizeSize`）。`frame` 是按下时这一层的样子，`size`
- * 是它那时的布局宽高。按在中心上时是 1，缩到最短的一边是 `MIN_EDGE` 个布局像素就不再缩。
+ * 拖拽四角控制柄时的中心等比缩放倍率：按当前指针与按下位置到图层中心的距离比计算，与拖拽角及旋转角度无关
+ * （对齐上游 Studio `domEditResizeLocal.ts` 的 `resolveCenterResizeSize`）。
+ * 按在中心点附近时返回 `1`，短边缩至 `MIN_EDGE` 布局像素时封底。
  */
 export function resizeRatio(
   frame: Frame,
@@ -72,7 +72,7 @@ export function resizeRatio(
   return Math.max(least, Math.hypot(pointer.x - frame.cx, pointer.y - frame.cy) / from)
 }
 
-/** 拖角上的把手缩放以后的布局宽高（没取整），倍数见 `resizeRatio`。 */
+/** 拖拽四角控制柄缩放后的布局宽高（未取整，倍率见 `resizeRatio`）。 */
 export function resizedSize(
   frame: Frame,
   size: { width: number; height: number },
@@ -85,7 +85,7 @@ export function resizedSize(
   return { width: width * ratio, height: height * ratio }
 }
 
-/** 按住 Shift 转时吸到的角度间隔。 */
+/** 按住 Shift 旋转时的角度吸附步长（度）。 */
 export const ROTATION_SNAP_DEGREES = 15
 
 const round3 = (value: number) => {
@@ -97,8 +97,8 @@ const degreesTo = (center: Point, point: Point) =>
   (Math.atan2(point.y - center.y, point.x - center.x) * 180) / Math.PI
 
 /**
- * 拖旋转把手：转过的角度是指针绕中心转过的角度，加到按下时的角度 `angle` 上；`snap`（按住 Shift）时吸到
- * `ROTATION_SNAP_DEGREES` 的整数倍，不吸时留三位小数（照工作台 `resolveDomEditRotationGesture`）。
+ * 拖拽旋转控制柄后的目标角度：在初始角度 `angle` 上叠加指针绕中心转过的角度差；
+ * `snap`（按住 Shift）时吸附到 `ROTATION_SNAP_DEGREES` 的整数倍，否则保留三位小数（对齐上游 Studio `resolveDomEditRotationGesture`）。
  */
 export function rotatedAngle(
   center: Point,
@@ -115,10 +115,10 @@ export function rotatedAngle(
     : round3(next)
 }
 
-/** 方向键挪一下的像素：按住 Shift 是 10。 */
+/** 方向键单次微调步长（像素）：按住 Shift 为 `10`，否则为 `1`。 */
 export const nudgeStep = (shift: boolean): number => (shift ? 10 : 1)
 
-/** 方向键对应的挪动方向；别的键是 null。 */
+/** 将方向键映射为位移向量；非方向键返回 `null`。 */
 export function nudgeOf(key: string, shift: boolean): Point | null {
   const step = nudgeStep(shift)
   switch (key) {

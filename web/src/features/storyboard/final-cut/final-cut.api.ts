@@ -207,7 +207,7 @@ export const readLocaleFile = async (
   return file
 }
 
-/** 主文件根下第一个字幕宿主挂载的文件，没有字幕宿主时是 undefined。 */
+/** 提取主文件根下首个字幕宿主挂载的文件路径；无字幕宿主时返回 `undefined`。 */
 const captionsSource = (html: string): string | undefined => {
   const page = new DOMParser().parseFromString(html, 'text/html')
   const root = page.querySelector('[data-composition-id]')

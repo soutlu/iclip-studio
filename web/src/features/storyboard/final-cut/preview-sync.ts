@@ -82,16 +82,16 @@ const escapePointer = (segment: string) => segment.replaceAll('~', '~0').replace
 /** `/elements/<编号>` 和它下面一层的 `/<种类>/<名字>`（改字是 `/text`，没有名字）。 */
 const ELEMENT = /^\/elements\/([^/]+)(?:\/([^/]+)(?:\/(.+))?)?$/
 
-// 画面上挪、缩放、转一层写的（见 layer-edits.ts）：挪是 SDK `moveElement` 的这几个属性，打完预览页按它们重新摆
+// 画布编辑写入的属性（见 layer-edits.ts）：普通图层位移通过 SDK `moveElement` 写这四个属性，补丁应用后由预览页重算位置
 const POSITION_ATTRIBUTES = ['data-x', 'data-y', EDIT_BASE_X_ATTR, EDIT_BASE_Y_ATTR]
-// 缩放、转写的行内样式，和贴片、场景宿主挪、缩放写的（SDK 的属性名）：浏览器直接按行内样式画
+// 画布缩放、旋转及贴片/场景宿主变换写入的行内样式（SDK 驼峰属性名），浏览器可实时生效无需重载
 const GEOMETRY_STYLES = [
   ...['width', 'height', 'boxSizing', 'minWidth', 'minHeight', 'maxWidth', 'maxHeight'],
   ...['flexBasis', 'flexGrow', 'flexShrink', 'display', 'rotate', 'transform'],
   ...['translate', 'scale'],
 ]
 
-// 实测过打进去和重新加载效果一样的几种改动；别的（贴片、场景宿主的值、脚本……）运行库只在加载时读
+// 经验证可直接增量打补丁且与整份重载等价的改动范围（其余如宿主变量值、脚本等仅在运行库初始加载时读取）
 const LIVE_TIMING = new Set(['start', 'duration', 'trackIndex'])
 const LIVE_ATTRIBUTES = new Set([
   ...['data-hidden', 'data-media-start', 'data-volume', 'muted'],

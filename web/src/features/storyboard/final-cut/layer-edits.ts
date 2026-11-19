@@ -1,26 +1,22 @@
 /**
- * 画面上挪、缩放、转一层时写进它所在文件的东西，写法都是引擎在预览和导出里认的：
+ * 画布移动、缩放、旋转的落盘序列化规则（预览与 `render/` 导出均由引擎直接消费）：
  *
- * - 挪：SDK 的 `moveElement`（元素上的 `data-x` / `data-y`，第一次挪时 SDK 记下原来的值），运行库渲染时把差值
- *   写成元素的 `translate`，和动画、样式里原有的位移叠加。
- * - 缩放：照工作台，四角以中心等比缩放，写元素行内的 `width` / `height`（px）和让它们说了算的那几项（
- *   `box-sizing`、最小最大宽高，父元素是弹性布局时的 `flex-*`，行内元素改成行内块），中心挪回原处的那一下照挪写。
- *   不写 `scale`。
- * - 转：照工作台，写元素行内的 `rotate`；元素自己的 `transform` 以位移开头（常见的 `translate(-50%, -50%)` 居中）
- *   时，`rotate()` 插在那段位移后面，绕它在画面上的中心转。
+ * 1. 普通图层（视频片段、单句字幕，写入所属文件）：
+ *    - 移动：通过 SDK `moveElement` 写入 `data-x` / `data-y`（首次移动自动记录基线 `data-hf-edit-base-x/y`），运行库渲染时将差值合成为 `translate` 并与原有位移叠加。
+ *    - 缩放：对齐上游 Studio，四角围绕中心等比缩放，写入行内 `width` / `height`（px）及尺寸锁定配套样式（`box-sizing`、放开最小最大宽高、弹性子项 `flex-*`、行内元素转 `inline-block`），中心回位偏移按移动写入，不写 `scale`。
+ *    - 旋转：对齐上游 Studio，默认写行内 `rotate`；若元素 `transform` 以平移开头（如 `translate(-50%, -50%)` 居中），则将 `rotate()` 插入前导平移之后以保持绕视觉中心旋转。
  *
- * 贴片、场景的宿主整个当一层改，写法不同（都写在主文件里宿主自己的行内样式上）：挪写它的 `translate`（见
- * `movedTranslate`），缩放写 `scale`（见 `scaledStyles`），转写 `rotate`。不写 `data-x` / `data-y`：运行库摆它们
- * 之前先让动画库解析一遍元素的变换，动画库第一次解析时把元素的 `translate`、`scale`、`rotate` 折进 `transform`，
- * 宿主居中用的 `translate: -50% -50%` 就算了两遍（导出时整块挪出画面）。也不写宽高：宿主的尺寸是组件的设计尺寸，
- * 改了是裁切，不是缩放。
+ * 2. 贴片与场景宿主（整体作为一层，仅修改主文件宿主自身行内样式，不改动组件文件）：
+ *    - 移动写行内 `translate`（见 `movedTranslate`），缩放写 `scale`（见 `scaledStyles`），旋转写 `rotate`。
+ *    - 不写 `data-x` / `data-y`：运行库应用 `data-x/y` 前会触发 GSAP 首次解析变换，GSAP 会将宿主原有的 `translate: -50% -50%` 折入 `transform`，导致居中百分比在导出时被重复叠加而偏移出画面。
+ *    - 不改 `width` / `height`：宿主宽高代表组件的设计画布尺寸，修改宽高会裁切内部内容而非整体缩放。
  *
- * 工作台另外写的 `data-hf-studio-*` 标记只给它自己的复原、面板用，引擎不读，这里不写。
+ * 上游 Studio 私有的 `data-hf-studio-*` 辅助属性引擎不消费，此处不写入。
  */
 
 import type { Point } from './canvas-geometry'
 
-/** 2×2 线性变换（`DOMMatrix` 的 a、b、c、d）：把一层父元素里的像素换成画布像素。 */
+/** 2×2 线性变换矩阵（对应 `DOMMatrix` 的 `a / b / c / d`），将父元素局部坐标映射至画布像素坐标。 */
 export type Linear = { a: number; b: number; c: number; d: number }
 
 const round3 = (value: number) => {
@@ -28,7 +24,7 @@ const round3 = (value: number) => {
   return rounded === 0 ? 0 : rounded
 }
 
-/** 画布上挪了 `delta`，换成父元素里的像素（`linear` 的逆）；`linear` 退化时不挪。 */
+/** 将画布像素位移 `delta` 逆变换为父元素局部像素位移；矩阵奇异退化时返回零向量。 */
 export function toLocal(linear: Linear, delta: Point): Point {
   const { a, b, c, d } = linear
   const det = a * d - b * c
@@ -41,7 +37,7 @@ const numberOr = (value: string | undefined) => {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-/** 挪了父元素里的 `delta` 以后 `moveElement` 要写的 `data-x` / `data-y`：在元素现在写着的上面加。 */
+/** 在元素现有 `data-x` / `data-y` 属性值基础上累加局部像素位移 `delta`，供 `moveElement` 写入。 */
 export function movedTo(attributes: Readonly<Record<string, string>>, delta: Point): Point {
   return {
     x: round3(numberOr(attributes['data-x']) + delta.x),
@@ -49,12 +45,12 @@ export function movedTo(attributes: Readonly<Record<string, string>>, delta: Poi
   }
 }
 
-// 一个方向上的位移：`P%`、`Npx`、`0`，或者 `calc(P% + Npx)` / `calc(P% - Npx)`（两项先后不限）
+// 单轴位移表达式：`P%`、`Npx`、`0`，或二元 `calc(P% ± Npx)`（两项顺序不限）
 const PERCENT = /^(-?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?)%$/i
 const PIXELS = /^(-?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?)px$/i
 const CALC = /^calc\(\s*(\S+)\s*([+-])\s*(\S+)\s*\)$/i
 
-/** 一个方向上的位移拆成百分比和像素两项；认不出时是 null。 */
+/** 将单轴 CSS 位移拆解为百分比与像素分量；无法归约时返回 `null`。 */
 const lengthParts = (value: string): { percent: number; px: number } | null => {
   const part = (text: string) => {
     if (text === '0') return { percent: 0, px: 0 }
@@ -72,7 +68,7 @@ const lengthParts = (value: string): { percent: number; px: number } | null => {
   return { percent: first.percent + sign * second.percent, px: first.px + sign * second.px }
 }
 
-/** 百分比和像素两项写回一个方向上的位移：只有一项时不写 `calc()`。 */
+/** 将百分比与像素分量合并回单轴位移字符串（单一非零项时省略 `calc()`）。 */
 const lengthOf = ({ percent, px }: { percent: number; px: number }): string => {
   const pixels = round3(px)
   if (percent === 0) return `${pixels}px`
@@ -81,9 +77,8 @@ const lengthOf = ({ percent, px }: { percent: number; px: number }): string => {
 }
 
 /**
- * 宿主挪了父元素里的 `delta` 以后它行内的 `translate`：在 `current`（宿主现在行内写着的，空串、`none` 是没写）
- * 上加。每个方向写成「百分比 + 像素」，挪几次都不套娃；认不出的写法在外面再包一层 `calc()` 加上去。第三个值
- * （z）原样留着。
+ * 在宿主当前行内 `translate`（空串或 `none` 视作 `0`）上叠加局部像素位移 `delta`。
+ * 常规百分比与像素组合归约为单层「百分比 ± 像素」，多次移动不会嵌套 `calc()`；非常规单位外包一层 `calc()`，Z 轴分量原样保留。
  */
 export function movedTranslate(current: string, delta: Point): string {
   const value = current.trim()
@@ -97,12 +92,12 @@ export function movedTranslate(current: string, delta: Point): string {
   return [moved(x, delta.x), moved(y, delta.y), ...(z === undefined ? [] : [z])].join(' ')
 }
 
-/** 缩放的倍数留到小数点后四位。 */
+/** 缩放倍率保留四位小数。 */
 const round4 = (value: number) => Math.round(value * 10_000) / 10_000
 
 /**
- * 宿主以中心等比缩放 `ratio` 倍以后写的行内样式（SDK 的属性名）：`scale` 是 `current`（宿主现在行内写着的
- * `scale`，空串、`none` 是 1）乘上 `ratio`，横竖两个倍数不一样时各自乘。`scale` 绕元素中心缩，中心不动。
+ * 计算宿主围绕中心等比缩放 `ratio` 倍后的行内样式（SDK 驼峰属性名）：
+ * 将当前行内 `scale`（空串或 `none` 按 `1` 计，非等比双值分别相乘）乘上 `ratio`。
  */
 export function scaledStyles(current: string, ratio: number): Record<string, string> {
   const value = current.trim()
@@ -112,19 +107,18 @@ export function scaledStyles(current: string, ratio: number): Record<string, str
   return { scale: sx === sy ? String(sx) : `${sx} ${sy}` }
 }
 
-/** 布局像素取整，最小 1（工作台 `roundToLayoutSize`）。 */
+/** 布局尺寸四舍五入取整，下限为 `1`（对齐上游 Studio `roundToLayoutSize`）。 */
 export const layoutSize = (size: { width: number; height: number }) => ({
   width: Math.max(1, Math.round(size.width)),
   height: Math.max(1, Math.round(size.height)),
 })
 
-/** 父元素的弹性方向：0 不是弹性布局，1 横排，2 竖排。 */
+/** 父容器弹性布局主轴方向：`0` 非弹性布局，`1` 横向，`2` 纵向。 */
 export type FlexDirection = 0 | 1 | 2
 
 /**
- * 缩放写的行内样式（SDK 的属性名）：宽高写成 `size`（已取整），`box-sizing` 是 `border-box`，最小最大宽高放开；
- * 父元素是弹性布局时把主轴方向的 `flex-basis` 定成这个长度、不伸不缩；行内元素改成行内块（行内元素没有宽高）。
- * 照工作台 `manualEditsDom.ts` 的 `applyStudioBoxSizeDimensions`。
+ * 生成普通图层缩放后的行内样式（SDK 驼峰属性名，对齐上游 Studio `manualEditsDom.ts` 的 `applyStudioBoxSizeDimensions`）：
+ * 写入取整后的像素宽高与 `border-box`，解除最小最大尺寸限制；弹性子项固定主轴 `flex-basis` 并禁止伸缩；行内元素转为 `inline-block`。
  */
 export function sizeStyles(
   size: { width: number; height: number },
@@ -150,8 +144,8 @@ export function sizeStyles(
 }
 
 /**
- * 转的时候写在哪：元素自己的 `rotate`（`property: 'rotate'`），或者元素的 `transform`（写在位移 `before` 后面、
- * 其余 `after` 前面）。`turn` 是它现在自己转了多少度（`rotate` 上的，或插在位移后面的那个 `rotate()`）。
+ * 旋转写入目标：直接写独立 `rotate` 属性，或写入 `transform` 中前导平移 `before` 与后续变换 `after` 之间。
+ * `turn` 为元素当前的自身旋转角度（度）。
  */
 export type RotationTarget =
   | { property: 'rotate'; turn: number }
@@ -160,7 +154,7 @@ export type RotationTarget =
 const TRANSLATE = /^translate(?:3d|X|Y|Z)?\(/i
 const OWN_TURN = /^rotate\(\s*(-?[\d.]+(?:e[+-]?\d+)?)deg\s*\)$/i
 
-/** 按最外层的空白拆开（括号里的不拆），照工作台 `splitTopLevelWhitespace`。 */
+/** 按括号外层的顶层空白切分 CSS 属性值（对齐上游 Studio `splitTopLevelWhitespace`）。 */
 export function splitTopLevel(value: string): string[] {
   const parts: string[] = []
   let depth = 0
@@ -178,9 +172,8 @@ export function splitTopLevel(value: string): string[] {
 }
 
 /**
- * 转的时候写在哪（照工作台 `rotationDraft.ts` 的 `readCssRotationTarget`）。`translating` 是元素的变换里有没有
- * 位移；有时要用它写着的 `transform`（`authored`，行内的或样式表里最后一条匹配的规则），拿不到时是 null，
- * 这一层就不在画面上转。`rotate` 是元素自己的 `rotate` 现在的度数。
+ * 解析旋转应写入的样式目标（对齐上游 Studio `rotationDraft.ts` 的 `readCssRotationTarget`）：
+ * `translating` 为假时直接写 `rotate`；为真时需解析源码中的 `transform`（行内或同文件 `<style>` 末条匹配规则），无法获取时返回 `null` 拒绝画布旋转。
  */
 export function rotationTarget(
   translating: boolean,
@@ -203,7 +196,7 @@ export function rotationTarget(
   }
 }
 
-/** 转到自己 `turn` 度时写的行内样式（SDK 的属性名）；行内元素改成行内块（行内元素不转）。 */
+/** 生成旋转至 `turn` 度时的行内样式（SDK 驼峰属性名；行内元素自动转为 `inline-block` 以使变换生效）。 */
 export function rotationStyles(
   target: RotationTarget,
   turn: number,
@@ -220,21 +213,17 @@ export function rotationStyles(
   return styles
 }
 
-/** SDK 的属性名换成 CSS 的写法（`boxSizing` → `box-sizing`，自定义属性不变），给预览页直接摆。 */
+/** 将 SDK 驼峰样式名转换为短横线 CSS 属性名（保留 `--` 自定义属性），供预览页直接写入 DOM。 */
 export const cssName = (name: string): string =>
   name.startsWith('--') ? name : name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
 
-/** 一组 SDK 属性名的样式换成 CSS 的写法。 */
+/** 批量将 SDK 驼峰样式名转换为 CSS 属性名。 */
 export const cssStyles = (
   styles: Readonly<Record<string, string | null>>,
 ): Record<string, string | null> =>
   Object.fromEntries(Object.entries(styles).map(([name, value]) => [cssName(name), value]))
 
-/**
- * 样式表 `css` 里匹配 `element` 的最后一条规则写的 `transform`（照工作台 `rotationDraft.ts` 的 `lastRuleTransform`：
- * 只按先后，不比较优先级、`!important` 和 `@media`）；没有时是 undefined。
- */
-/** 元素匹不匹配选择器；选择器写法这个浏览器不认时算不匹配。 */
+/** 安全执行 `element.matches(selector)`，不支持的选择器语法按不匹配处理。 */
 const matchesSelector = (element: Element, selector: string): boolean => {
   try {
     return element.matches(selector)
@@ -243,6 +232,10 @@ const matchesSelector = (element: Element, selector: string): boolean => {
   }
 }
 
+/**
+ * 读取样式表 `css` 中匹配 `element` 的最后一条规则声明的 `transform`（对齐上游 Studio `lastRuleTransform`：
+ * 按源码顺序取末条，不计算选择器优先级、`!important` 或 `@media`）；无匹配时返回 `undefined`。
+ */
 function lastRuleTransform(element: Element, css: string): string | undefined {
   let found: string | undefined
   let sheet: CSSStyleSheet
@@ -260,7 +253,7 @@ function lastRuleTransform(element: Element, css: string): string | undefined {
   return found
 }
 
-/** 文件内容 `content` 里编号是 `hfId` 的元素（找不到时 undefined），和找它时看过的几处（文件本身和各个模板）。 */
+/** 在 HTML 文本 `content`（含顶层文档与各 `<template>` 内容）中查找 `data-hf-id` 为 `hfId` 的元素及全部搜索作用域。 */
 function elementIn(
   content: string,
   hfId: string,
@@ -276,13 +269,12 @@ function elementIn(
   return { element, scopes }
 }
 
-/** 文件内容 `content` 里编号是 `hfId` 的元素行内写着的 `property`（CSS 的写法）；没写、找不到时是空串。 */
+/** 读取文件 `content` 中指定 `hfId` 元素的行内 CSS 属性值；未声明或未找到元素时返回空串。 */
 export const inlineStyleOf = (content: string, hfId: string, property: string): string =>
   elementIn(content, hfId).element?.style.getPropertyValue(property) ?? ''
 
 /**
- * 文件内容 `content` 里编号是 `hfId` 的元素写着的 `transform`：行内的，没有时取文件里样式表最后一条匹配它的规则
- * 写的；都没有时是 undefined。
+ * 读取文件 `content` 中指定 `hfId` 元素声明的 `transform`：优先取行内样式，否则回退读取同文件 `<style>` 中最后一条匹配规则。
  */
 export function authoredTransform(content: string, hfId: string): string | undefined {
   const { element, scopes } = elementIn(content, hfId)

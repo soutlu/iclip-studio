@@ -1,15 +1,14 @@
 import { resolveEditingAffordances } from '@hyperframes/core/editing'
 
 /**
- * 画面上一层能不能挪、缩放、转。先按引擎的能力判断（core `editing/affordances.ts` 的
- * `resolveEditingAffordances`：锁定的组件、合成的根不能改），再拦掉动画脚本驱动的：我们不改动画脚本，脚本在动的
- * 那一样就不在画面上改（判断照工作台的 `editsPlainCss`，见 `gsapOwns`）。引擎还拦宿主（要人选里面的层），我们
- * 不照它：画面上贴片、场景整个当一层，挪、缩放、转的是主文件里的宿主（写法见 layer-edits.ts）。画面上认的层都在
- * 源文件里（预览页只报层表里有的），也不按「源文件里没有」拦。预览页按画面上的元素量出这些事实算好，回报给编辑器
- * 的只有结果。
+ * 画布图层可编辑性判定：
+ * 1. 基础能力复用引擎 `@hyperframes/core/editing` 的 `resolveEditingAffordances`（拦截锁定组件与合成根节点）；
+ *    贴片与场景在画布上整体作为一层直接编辑主文件宿主（见 layer-edits.ts），因此不传 `isCompositionHost` 拦截；
+ * 2. 额外拦截由 GSAP 动画脚本驱动的维度（对齐上游 Studio `editsPlainCss`，见 `gsapOwns`）：不反向修改脚本代码，脚本控制的属性禁止画布手改。
+ * 预览页基于实时 DOM 与时间线实例完成判定，仅将布尔结果与拒绝码回传给编辑器。
  */
 
-/** 不能改的原因，按引擎判断的先后；0 是能改。 */
+/** 拒绝画布编辑的原因码（按引擎判定优先级排列，`0` 表示允许）。 */
 export const LayerRefusal = {
   none: 0,
   locked: 1,
@@ -18,10 +17,10 @@ export const LayerRefusal = {
 } as const
 export type LayerRefusal = (typeof LayerRefusal)[keyof typeof LayerRefusal]
 
-/** 画面上的三种改法。 */
+/** 画布几何编辑动作类型。 */
 export type Gesture = 'move' | 'resize' | 'rotate'
 
-/** 一层的事实：是不是合成的根（宿主不算），在不在锁定的组件里，动画脚本在动它的哪几样。 */
+/** 图层实时判定依据：是否为合成根节点（不含宿主）、是否位于锁定组件内，以及各维度是否受动画脚本驱动。 */
 export type LayerFacts = {
   tag: string
   root: boolean
@@ -30,11 +29,11 @@ export type LayerFacts = {
 }
 
 export type LayerAbilities = Readonly<Record<Gesture, boolean>> & {
-  /** 三样里有不能改的时第一个原因（按引擎判断的先后，动画最后），都能改时是 `none`。 */
+  /** 存在不可编辑维度时的首个拒绝原因（锁定 > 合成根 > 动画驱动）；全部可编辑时为 `none`。 */
   refusal: LayerRefusal
 }
 
-/** 按 `facts` 答这一层三样能不能改。 */
+/** 根据图层实时事实判定移动、缩放、旋转三项能力及拒绝原因。 */
 export function layerAbilities(facts: LayerFacts): LayerAbilities {
   const { capabilities } = resolveEditingAffordances({
     hasStableTarget: true,
@@ -54,7 +53,6 @@ export function layerAbilities(facts: LayerFacts): LayerAbilities {
     resize: capabilities.canApplyManualSize,
     rotate: capabilities.canApplyManualRotation,
   }
-  // 引擎拦下时的原因：照它判断的先后
   const engineRefusal: LayerRefusal = facts.locked
     ? LayerRefusal.locked
     : facts.root
@@ -77,23 +75,23 @@ export function layerAbilities(facts: LayerFacts): LayerAbilities {
   }
 }
 
-/** 给人看的原因。 */
+/** 面向用户的画布不可编辑提示文案。 */
 export const REFUSAL_TEXT: Record<Exclude<LayerRefusal, 0>, string> = {
-  [LayerRefusal.locked]: '这一层属于锁定的组件，不能在画面上调整',
-  [LayerRefusal.root]: '这是合成的根，决定画面范围，不能在画面上调整',
-  [LayerRefusal.animated]: '这一层的位置、大小或角度由动画脚本驱动，不能在画面上调整',
+  [LayerRefusal.locked]: '该片段已锁定，无法在画面上调整',
+  [LayerRefusal.root]: '此元素为合成根，决定画面范围，无法在画面上调整',
+  [LayerRefusal.animated]: '该片段的位置、大小或角度由动画脚本驱动，无法在画面上调整',
 }
 
-/** 动画库运行时的一段补间：它动哪些元素、写哪些属性。 */
+/** GSAP 运行时补间实例的最小读取接口：目标元素列表与驱动属性表。 */
 export type RuntimeTween = {
   targets?: () => readonly unknown[]
   vars?: Readonly<Record<string, unknown>>
 }
 
-/** 动画库运行时的一条时间线（`window.__timelines` 里的）。 */
+/** GSAP 运行时时间线实例（来自 `window.__timelines`）。 */
 export type RuntimeTimeline = { getChildren?: (deep: boolean) => readonly RuntimeTween[] }
 
-// 动画库写位置、角度、盒子用的属性名，照工作台 `hooks/gsapRuntimeKeyframes.ts`
+// GSAP 驱动位移、旋转与盒尺寸的属性集合（对齐上游 Studio `hooks/gsapRuntimeKeyframes.ts`）
 const POSITION = ['x', 'y', 'xPercent', 'yPercent', 'left', 'top', 'translateX', 'translateY']
 const MOVE = [...POSITION, 'motionPath']
 const ROTATION = [
@@ -111,7 +109,7 @@ const CHANNELS: Record<Gesture, readonly string[]> = {
   rotate: ROTATION,
 }
 
-/** 补间的属性（含关键帧里的）写不写 `channels` 里的哪一个。 */
+/** 检查补间 `vars`（含 `keyframes` 子步）是否写入了 `channels` 中的任意属性。 */
 const writesAny = (vars: Readonly<Record<string, unknown>>, channels: readonly string[]) => {
   if (channels.some((channel) => channel in vars)) return true
   const keyframes = vars['keyframes']
@@ -128,10 +126,9 @@ const writesAny = (vars: Readonly<Record<string, unknown>>, channels: readonly s
 }
 
 /**
- * 运行时各时间线 `timelines` 里有没有补间（含零时长的 `set`）在写 `element` 的这一样：位置（`move`），位置或盒子
- * （`resize`），角度（`rotate`）。照工作台的 `editsPlainCss` 判断，只看补间：工作台还把动画库已经接管了变换
- * （元素上缓存了 `renderTransform`）算进去，运行库摆放挪过的层时也会让动画库读一次变换、留下这个缓存，挪过一次
- * 就会被误当成动画在动它。
+ * 判断运行时时间线 `timelines` 中是否存在补间（含零时长 `set`）控制 `element` 对应手势的属性。
+ * 注意：仅检查活动补间，不检查元素上的 GSAP `renderTransform` 缓存——运行库应用手动位移时也会触发 GSAP 读取变换并留下该缓存，
+ * 若将其计入会导致手动移动一次后即被误判为受动画驱动。
  */
 export function gsapOwns(
   element: unknown,

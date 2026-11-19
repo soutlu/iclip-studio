@@ -1,12 +1,12 @@
 import { z } from 'zod'
 
 /**
- * 编辑器和预览页之间的消息。预览页在预览域名下，final-cut 在它里面运行；两边只靠 `postMessage` 通信，
- * 收到的每条消息都先按这里校验，不合规的丢掉。final-cut 里的脚本和预览页同源、能伪造预览页的消息，
- * 所以编辑器收到的消息里只有数字和布尔值，只当数据用。
+ * 编辑器与独立预览页之间的跨源 `postMessage` 协议。
+ * 预览页运行在独立预览域名沙箱中，双方接收的每条消息均须先通过本文件 Schema 校验，不合规则丢弃；
+ * 由于工程内的不可信脚本与预览页同源、可伪造上行消息，预览页发往编辑器的事件仅包含数值、布尔与受检字段名，一律只作纯数据消费。
  */
 
-/** 预览页在预览域名下的路径；令牌写在 `#` 后面，不进请求和来源页地址。 */
+/** 预览页静态路径；签名令牌放在 URL `#` 片段中传递，避免进入服务端请求日志或 `Referer` 头。 */
 export const PREVIEW_PAGE_PATH = '/final-cut-preview.html'
 
 export const previewPageUrl = (origin: string, token: string): string =>
@@ -16,7 +16,7 @@ const zSeconds = z.number().nonnegative()
 
 const zSeq = z.number().int().nonnegative()
 
-/** 画布上的一个矩形（像素）。 */
+/** 画布像素矩形。 */
 const zRect = z.strictObject({
   x: z.number(),
   y: z.number(),
@@ -24,20 +24,17 @@ const zRect = z.strictObject({
   height: z.number().nonnegative(),
 })
 
-/**
- * 画面上的一层在哪（见 canvas-layers.ts 的 `CanvasLayer`）：挂在哪个宿主下（宿主的 `data-hf-id`，主文件里的是
- * null）、选择器、第几个匹配。
- */
+/** 图层定位标识（对应 canvas-layers.ts 的 `CanvasLayer`）：所属宿主的 `data-hf-id`（主文件顶层为 `null`）、稳定选择器与同名序号。 */
 const zLayerRef = z.strictObject({
   scope: z.string().nullable(),
   selector: z.string(),
   index: z.number().int().nonnegative(),
 })
 
-/** 行内样式（CSS 的写法）或属性：null 是去掉。 */
+/** CSS 行内样式或属性键值表（`null` 表示移除该项）。 */
 const zValues = z.record(z.string(), z.string().nullable())
 
-/** 一层在画布上的样子：中心、宽高（像素）和角度（度，顺时针）。 */
+/** 画布上的图层旋转框：中心坐标、宽高（画布像素）与顺时针旋转角度（度）。 */
 const zFrame = z.strictObject({
   cx: z.number(),
   cy: z.number(),
@@ -47,11 +44,11 @@ const zFrame = z.strictObject({
 })
 
 /**
- * 量出来的一层：画布上的样子 `frame`；看得见的那一块 `visible`（它自己的 `inset()` 裁切、裁掉它的祖先和画布都算上，
- * 和 `frame` 同一个角度，见 canvas-visible.ts；什么都看不见时是 null）；布局宽高 `width`、`height`（不算变换）；父元素里一像素在画布上的样子
- * `parent`（2×2 线性变换）；它自己的 `rotate`（度）；变换里有没有位移 `translating`；是不是行内元素
- * `inline`；父元素的弹性方向 `flex`（0 不是弹性布局、1 横排、2 竖排）；三样能不能改，和不能改时的原因
- * `refusal`（见 layer-abilities.ts）。
+ * 图层实测几何与可编辑状态：
+ * - `frame`：完整图层框；`visible`：叠加自身 `inset()`、溢出祖先与画布裁剪后的可见同角框（完全不可见时为 `null`，见 canvas-visible.ts）；
+ * - `width` / `height`：未含变换的布局宽高；`parent`：父容器到画布的 2×2 线性变换；
+ * - `rotate`：独立 `rotate` 角度；`translating`：`transform` 是否含平移分量；`inline`：是否为行内元素；`flex`：父容器弹性主轴（`0` 非弹性、`1` 横向、`2` 纵向）；
+ * - `move` / `resize` / `turn` 与 `refusal`：三项手势可编辑标记及拒绝码（见 layer-abilities.ts）。
  */
 const zMeasure = z.strictObject({
   frame: zFrame,
@@ -69,19 +66,18 @@ const zMeasure = z.strictObject({
   refusal: z.number().int().min(0).max(3),
 })
 
-/** 引擎的一条补丁（JSON Patch 的 add、remove、replace）。 */
+/** 引擎 JSON Patch 单步操作（`add / remove / replace`）。 */
 const zPatchOp = z.strictObject({
   op: z.enum(['add', 'remove', 'replace']),
   path: z.string(),
   value: z.unknown().optional(),
 })
 
-/** 编辑器发给预览页的命令。 */
+/** 编辑器下发给预览页的控制命令。 */
 export const zPreviewCommand = z.discriminatedUnion('type', [
   /**
-   * 换上一份 final-cut：`html` 是整份预览文档，`runtimeSrc` 是预览域名下的运行库地址，`captions` 是放进文档里的
-   * 字幕场景文件（没有字幕场景时不给）。`seq` 和 `patch` 的共用一个计数，是这是编辑器发给这个预览页的第几份
-   * final-cut。
+   * 整份加载工程：`html` 为组装后的预览文档，`runtimeSrc` 为同源运行库地址，`captions` 为内联字幕场景内容（无字幕时省略）；
+   * `seq` 与 `patch` 共享递增序号。
    */
   z.strictObject({
     type: z.literal('load'),
@@ -91,9 +87,8 @@ export const zPreviewCommand = z.discriminatedUnion('type', [
     seq: zSeq,
   }),
   /**
-   * 把一步编辑的补丁直接打进正在播的那一份：`patches` 是主文件的，`captions` 是字幕场景的（没有时不给），先打
-   * 主文件的；`fonts` 是字体块里新的中文字体规则（`<style>` 的内容，没变时不给），打补丁之前先换上。`seq` 要正好
-   * 是预览页上一份的下一个，对不上或打不进去时预览页报 `needsLoad`。
+   * 增量热打补丁：`patches` 作用于主文件，`captions` 作用于字幕场景，`fonts` 为更新后的中文字体子集 `<style>` 文本（先行替换）；
+   * `seq` 必须严格等于预览页当前序号加 1，否则或应用失败时预览页回传 `needsLoad` 触发整份重载。
    */
   z.strictObject({
     type: z.literal('patch'),
@@ -102,11 +97,11 @@ export const zPreviewCommand = z.discriminatedUnion('type', [
     captions: z.array(zPatchOp).optional(),
     fonts: z.string().optional(),
   }),
-  /** final-cut 没有内容了：停下，正在加载的那份不再换上来。 */
+  /** 工程清空：暂停播放并丢弃后台正在加载的待切换播放器。 */
   z.strictObject({ type: z.literal('unload') }),
   z.strictObject({ type: z.literal('play') }),
   z.strictObject({ type: z.literal('pause') }),
-  /** 停下并跳到 final-cut 的第 `ms` 毫秒；`seq` 是这是编辑器发给这个预览页的第几次跳转。 */
+  /** 暂停并定位至第 `ms` 毫秒；`seq` 为递增跳转序号。 */
   z.strictObject({ type: z.literal('seek'), ms: z.number().nonnegative(), seq: zSeq }),
   z.strictObject({
     type: z.literal('playback'),
@@ -114,18 +109,17 @@ export const zPreviewCommand = z.discriminatedUnion('type', [
     muted: z.boolean(),
     loop: z.boolean(),
   }),
-  /** final-cut 画布的尺寸。 */
+  /** 更新画布宽高尺寸。 */
   z.strictObject({
     type: z.literal('size'),
     width: z.number().positive(),
     height: z.number().positive(),
   }),
-  /** 重新加载播放头所在、加载失败的那段视频。 */
+  /** 重新加载当前播放头处加载失败的视频片段。 */
   z.strictObject({ type: z.literal('retry') }),
   /**
-   * 画面上的层（见 canvas-layers.ts）：之后的 `watch`、`pick`、`draft` 按它在这张表里的位置说是哪一层。`count` 是
-   * 源文件里这个选择器一共几个匹配，画面里数出来不一样时这一层找不到（脚本加了同样的元素）。`host` 是贴片、场景的
-   * 宿主：画面上点中它里面画出来的东西都算点中它，拖动中按宿主的写法摆（见 layer-edits.ts）。
+   * 同步可编辑图层表（见 canvas-layers.ts）：后续 `watch`、`pick`、`snap`、`draft` 均按表下标引用图层。
+   * `count` 用于核对预览 DOM 同名匹配数一致；`host` 标识贴片/场景宿主（命中内部可视元素即归属整个宿主，拖拽草稿按宿主规则更新）。
    */
   z.strictObject({
     type: z.literal('layers'),
@@ -133,25 +127,15 @@ export const zPreviewCommand = z.discriminatedUnion('type', [
       zLayerRef.extend({ count: z.number().int().nonnegative(), host: z.boolean() }),
     ),
   }),
-  /**
-   * 要量的层（`layers` 表里的位置）：预览页量出它们报 `measured`，之后换了一份、打了补丁、播到别处、字体加载好
-   * 以后变了时带着这个 `seq` 再报。
-   */
+  /** 订阅指定图层（表下标）的几何测量，结果及后续变更携带 `seq` 通过 `measured` 上报。 */
   z.strictObject({ type: z.literal('watch'), seq: zSeq, layers: z.array(zSeq) }),
-  /**
-   * 画布上 (`x`, `y`) 处从上往下能选中的层，报 `picked`：照运行库的 `pointerTargets` 找，贴片、场景的宿主里面的
-   * 算成宿主（见 preview-canvas.ts 的 `unitsAt`）。
-   */
+  /** 查询画布坐标 (`x`, `y`) 处从上到下的可选中图层栈（见 preview-canvas.ts `unitsAt`），结果通过 `picked` 上报。 */
   z.strictObject({ type: z.literal('pick'), seq: zSeq, x: z.number(), y: z.number() }),
-  /**
-   * 开始挪 `layers`（`layers` 表里的位置）：量出挪的时候吸附用的矩形，报 `snapRects`。在这一下的第一个 `draft`
-   * 之前发，量的是它们还在原处的样子。
-   */
+  /** 在首次 `draft` 前测量待移动图层（表下标）的初始联合外框及周围可吸附目标框，结果通过 `snapRects` 上报。 */
   z.strictObject({ type: z.literal('snap'), seq: zSeq, layers: z.array(zSeq) }),
   /**
-   * 拖动中先把正在播的那一份里的一层（`layers` 表里的位置）摆成这样，不经副本会话：行内样式改成 `styles`，
-   * 位移在拖动开始时的上面加 `move`（父元素里的像素）。`pin` 时再挪一下让它的中心回到拖动开始时的地方（缩放），
-   * 报 `drafted`。
+   * 拖拽期间直接更新运行中 DOM 的实时草稿（不经 SDK 副本会话）：覆盖行内 `styles` 并在初始位移上叠加局部偏移 `move`；
+   * `pin` 为真时（普通图层缩放）额外补偿中心漂移并通过 `drafted` 回传最终偏移。
    */
   z.strictObject({
     type: z.literal('draft'),
@@ -161,13 +145,10 @@ export const zPreviewCommand = z.discriminatedUnion('type', [
     styles: zValues,
     pin: z.boolean(),
   }),
-  /**
-   * 拖动结束：`keep` 时留着摆好的样子（接着提交，补丁写的是同样的值），不然摆回拖动开始时的样子。
-   */
+  /** 结束拖拽草稿：`keep` 为真时保留当前 DOM 状态等待正式补丁落位，为假时还原至拖拽前样式。 */
   z.strictObject({ type: z.literal('draftEnd'), layer: zSeq, keep: z.boolean() }),
   /**
-   * 原地改字：在片段 `id` 里找画布上 (`x`, `y`) 处的文字字段（`data-var-text` 是 `fields` 里的一个；一句字幕自己就是
-   * 这样的字段），找到了先藏起来（编辑器在上面放自己的输入框），报 `textTarget`。
+   * 启动画布原地改字：在片段 `id` 内定位 (`x`, `y`) 处匹配 `fields` 的文字节点，隐藏原文字并通过 `textTarget` 回传位置与缩放后字号。
    */
   z.strictObject({
     type: z.literal('editText'),
@@ -177,56 +158,54 @@ export const zPreviewCommand = z.discriminatedUnion('type', [
     y: z.number(),
     fields: z.array(z.string()),
   }),
-  /** 改完字：藏起来的文字显示回来；`text` 不是 null 时先换成它，等新的一份换上来之前不闪回旧字。 */
+  /** 结束原地改字并恢复原文字显示；传入非空 `text` 时先行更新节点文本，避免新文档生效前闪回旧字。 */
   z.strictObject({ type: z.literal('endText'), text: z.string().nullable() }),
 ])
 
 export type PreviewCommand = z.infer<typeof zPreviewCommand>
 
 export type LayerRef = z.infer<typeof zLayerRef>
-/** 层表里的一条（见 `layers` 命令）。 */
+/** 图层表条目（见 `layers` 命令）。 */
 export type LayerEntry = Extract<PreviewCommand, { type: 'layers' }>['entries'][number]
 export type LayerFrame = z.infer<typeof zFrame>
 export type LayerMeasure = z.infer<typeof zMeasure>
 
-/** 预览页发给编辑器的消息。 */
+/** 预览页上报给编辑器的事件。 */
 export const zPreviewEvent = z.discriminatedUnion('type', [
-  /** 预览页确认了应用的来源，开始收命令。 */
+  /** 预览页完成应用来源核验，准备接收控制命令。 */
   z.strictObject({ type: z.literal('ready') }),
-  /** 第 `seq` 份 final-cut 加载好、换了上来；`duration` 是它的秒数。 */
+  /** 第 `seq` 版工程完成整份加载并切换上线，`duration` 为总时长（秒）。 */
   z.strictObject({ type: z.literal('loaded'), duration: zSeconds, seq: zSeq }),
-  /** 第 `seq` 份的补丁打进了正在播的那一份；`duration` 是打完以后的秒数。 */
+  /** 第 `seq` 版增量补丁已应用，`duration` 为更新后总时长（秒）。 */
   z.strictObject({ type: z.literal('patched'), duration: zSeconds, seq: zSeq }),
-  /** 第 `seq` 份的补丁没有打（序号对不上、要改的元素不在、打的时候出错），要整份重新加载。 */
+  /** 第 `seq` 版增量补丁无法应用（序号失步、目标缺失或执行报错），请求编辑器整份重载。 */
   z.strictObject({ type: z.literal('needsLoad'), seq: zSeq }),
   /**
-   * 播放到 final-cut 的第 `ms` 毫秒；`seq` 是报这个时刻时预览页处理到的那次跳转。编辑器跳转时自己先把播放头
-   * 放过去，跳转之前报出、还在路上的时刻要丢掉，不然播放头会先跳回去再过来。跳转以后到再次播放（或换上新的
-   * 播放器）之前不报，这期间播放头由编辑器定。
+   * 上报当前播放进度 `ms`（毫秒）及最后处理的跳转序号 `seq`。
+   * 编辑器发起跳转后立即更新本地播放头并丢弃旧 `seq` 的在途时间帧；预览页在跳转后至下次开播（或切换播放器）前暂停上报，避免异步回执拉回播放头。
    */
   z.strictObject({
     type: z.literal('time'),
     ms: z.number().int().nonnegative(),
     seq: zSeq,
   }),
-  /** 是否算在播放：等数据时也算；暂停、跳转、播完都是 false。 */
+  /** 播放状态（缓冲等待期间仍为 `true`；暂停、跳转与播完为 `false`）。 */
   z.strictObject({ type: z.literal('playing'), playing: z.boolean() }),
-  /** 播放头所在的视频片段数据不够，正在等。 */
+  /** 当前播放头处视频片段是否正在缓冲等待数据。 */
   z.strictObject({ type: z.literal('buffering'), buffering: z.boolean() }),
-  /** 各视频片段已缓冲的部分，换算成 final-cut 里的秒数。 */
+  /** 各视频片段已缓冲区间在主时间线上的并集（秒）。 */
   z.strictObject({
     type: z.literal('buffered'),
     spans: z.array(z.strictObject({ start: zSeconds, end: zSeconds })),
   }),
-  /** final-cut 里的视频都停止了下载。 */
+  /** 工程内全部视频元素均已结束网络加载。 */
   z.strictObject({ type: z.literal('mediaSettled') }),
-  /** 播放头所在的那段视频是否加载失败。 */
+  /** 当前播放头处的视频片段是否加载报错。 */
   z.strictObject({ type: z.literal('clipFailed'), failed: z.boolean() }),
-  /** 第 `seq` 次 `watch` 要量的各层，和它的 `layers` 一一对应；画面里找不到、没显示的是 null。 */
+  /** 对应第 `seq` 次 `watch` 订阅各图层的测量结果（未找到或未显示时对应项为 `null`）。 */
   z.strictObject({ type: z.literal('measured'), seq: zSeq, items: z.array(zMeasure.nullable()) }),
   /**
-   * 第 `seq` 次 `pick` 那一处从上往下能选中的层：`layer` 是它在 `layers` 表里的位置（表里没有的不报），`field`
-   * 是指针下它里面最上面那个元素绑着的可填项（`data-var-text`，没绑时 null），`measure` 是量出来的它。
+   * 对应第 `seq` 次 `pick` 的从上到下命中图层栈：`layer` 为图层表下标，`field` 为指针下绑定的可填项名（`data-var-text`，未绑定为 `null`）。
    */
   z.strictObject({
     type: z.literal('picked'),
@@ -236,9 +215,8 @@ export const zPreviewEvent = z.discriminatedUnion('type', [
     ),
   }),
   /**
-   * 第 `seq` 次 `snap` 的矩形（画布像素）：`moving` 是要挪的那几层合起来的框（都找不到时是 null），`targets` 是能
-   * 吸过去的别的层（运行库的 `snapCandidates`，加上显示着的别的贴片、场景宿主；宿主里面的不算）。每个框都按那个
-   * 元素自己的 `inset()` 裁切收窄。
+   * 对应第 `seq` 次 `snap` 的吸附矩形（画布像素，均已按自身 `inset()` 收窄）：
+   * `moving` 为待移图层的联合外框（均未找到时为 `null`），`targets` 为其他候选图层与可见贴片/场景宿主外框。
    */
   z.strictObject({
     type: z.literal('snapRects'),
@@ -246,12 +224,9 @@ export const zPreviewEvent = z.discriminatedUnion('type', [
     moving: zRect.nullable(),
     targets: z.array(zRect),
   }),
-  /** 第 `seq` 次 `draft` 以后这一层的位移在拖动开始时的上面加了多少（父元素里的像素，含挪回中心的那一下）。 */
+  /** 对应第 `seq` 次 `draft` 应用后的最终局部像素偏移（含中心锚定补偿）。 */
   z.strictObject({ type: z.literal('drafted'), seq: zSeq, x: z.number(), y: z.number() }),
-  /**
-   * 第 `seq` 次 `editText` 找到的文字：`field` 是它在 `fields` 里的第几个（找不到是 -1），框是它在画布上的位置，
-   * `fontSize` 是它在画布上的字号（像素，算上了缩放）。
-   */
+  /** 对应第 `seq` 次 `editText` 的定位结果：`field` 为 `fields` 下标（未命中为 `-1`），附带画布边框与缩放后字号。 */
   z.strictObject({
     type: z.literal('textTarget'),
     seq: zSeq,

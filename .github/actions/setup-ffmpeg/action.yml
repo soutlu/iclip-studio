@@ -10,9 +10,8 @@ runs:
       run: |
         printf 'platform=%s-%s\n' "${ImageOS:?}" "$(dpkg --print-architecture)" >> "$GITHUB_OUTPUT"
         printf 'version=%s\n' "${ImageVersion:?}" >> "$GITHUB_OUTPUT"
-    # 要哪些依赖包取决于镜像里预装的系统库，所以缓存按镜像版本存。同一系统的各个镜像版本要的包通常一样：
-    # 没有本镜像版本的那份时，先拿别的版本存下的来装，装不上再现场下载。有的 runner 连的软件源很慢，
-    # 现场下载要十几分钟。
+    # ffmpeg 依赖集取决于 runner 预装系统库，缓存键按镜像版本区分；未精确命中时回退复用同平台其他镜像版本的 deb 缓存离线安装，
+    # 离线安装失败再回退现场下载（部分 runner 软件源较慢，下载约需十余分钟）。
     - uses: actions/cache/restore@v4
       id: packages
       with:
@@ -34,15 +33,15 @@ runs:
           echo "downloaded=false" >> "$GITHUB_OUTPUT"
           exit 0
         fi
-        echo "::notice::没有能直接装上的 ffmpeg 安装包缓存，改为现场下载"
+        echo "::notice::未命中可直接安装的 ffmpeg 缓存，回退现场下载"
         rm -f "$archives"/*.deb
-        # 不带 -qq：下载慢的时候从日志里看得出慢在哪、多快
+        # 现场下载保留标准输出，便于在软件源缓慢时观察进度与速率
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends --download-only \
           -o Dir::Cache::archives="$archives" ffmpeg
         install_cached
         echo "downloaded=true" >> "$GITHUB_OUTPUT"
-    # 只有现场下载过才存：用别的镜像版本的那份装上了，就不再存一份一样的
+    # 仅在触发了现场下载时写入新缓存（跨镜像版本回退安装成功时无需重复保存相同 deb 包）
     - uses: actions/cache/save@v4
       if: steps.install.outputs.downloaded == 'true'
       with:
