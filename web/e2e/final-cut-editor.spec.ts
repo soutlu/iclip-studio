@@ -3711,9 +3711,10 @@ test('其它语言下画面上挪贴片：存下之前预览里已经挪过去�
   await pauseMockResponses(page, '/workspace/file')
   const nudged = mainSavedWith(page, (html) => cardOffset(savedCard(html)).x === -10)
   await page.keyboard.press('Shift+ArrowLeft')
-  const canvas = await boxOf(layer)
+  // 按画布像素量（Shift+方向键挪 10 画布像素）：屏幕上的距离随预览缩放变，竖版 1080 宽时不到 3 像素
+  const size = await canvasSizeOf(player)
   const shift = async () =>
-    ((await previewRect(finalCutPreviewPlayer(editor), CARD)).x - before.x) * canvas.width
+    ((await previewRect(finalCutPreviewPlayer(editor), CARD)).x - before.x) * size.width
   await settles(async () => expect(await shift()).toBeLessThan(-5))
   const shown = await shift()
 
