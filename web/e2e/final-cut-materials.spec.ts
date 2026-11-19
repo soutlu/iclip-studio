@@ -1269,17 +1269,22 @@ test('行多了只有轨道区上下滚：行头跟着各行走，看不见的�
   const range = groupOf(materials, 1).getByRole('group', { name: /^选中的范围/ })
   const from = await centerOf(range)
   const toolbar = await boxOf(editor.getByRole('toolbar', { name: '剪辑工具' }))
-  const over = { x: tracksBox.x + tracksBox.width / 2, y: toolbar.y + toolbar.height / 2 }
-  // 拖到的地方底下确实压着一条卷上去的行
-  const behind = await tracks.locator('[data-track]').evaluateAll(
-    (lanes, y) =>
-      lanes.some((lane) => {
+  // 拖到工具条上、底下压着一条卷上去的行的地方：行与行之间有空隙，工具条正中可能正好落在空隙里，
+  // 所以取工具条和某一条卷上去的行重叠那段的中间
+  const behindY = await tracks.locator('[data-track]').evaluateAll(
+    (lanes, band) => {
+      for (const lane of lanes) {
         const { top, bottom } = lane.getBoundingClientRect()
-        return y >= top && y <= bottom
-      }),
-    over.y,
+        const from = Math.max(top, band.top)
+        const to = Math.min(bottom, band.bottom)
+        if (to - from >= 4) return (from + to) / 2
+      }
+      return null
+    },
+    { top: toolbar.y, bottom: toolbar.y + toolbar.height },
   )
-  expect(behind).toBe(true)
+  if (behindY === null) throw new Error('工具条底下没有卷上去的行')
+  const over = { x: tracksBox.x + tracksBox.width / 2, y: behindY }
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
   await page.mouse.move(over.x, over.y, { steps: 8 })
