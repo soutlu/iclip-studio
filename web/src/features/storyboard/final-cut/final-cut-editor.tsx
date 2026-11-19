@@ -111,6 +111,7 @@ import { hostTextIn } from './host-text'
 import { MaterialArea } from './material-area'
 import {
   takeDurationMs,
+  takeShots,
   useKeyframeIndexes,
   useVideoAudio,
   useVideoSize,
@@ -123,12 +124,19 @@ import { snapDropToBeats } from './music-beats'
 import type { AttributeChanges } from './original-sound'
 import {
   materialCatalog,
-  rangePieces,
+  NO_PICKS,
+  orderedPicks,
+  picksSummary,
   shotAt,
+  spanPieces,
   usedSpans,
+  withTakePicks,
   type Material,
-  type MaterialRange,
+  type MaterialPicks,
   type MaterialTake,
+  type MediaSpan,
+  type PickedSpan,
+  type TakePicks,
 } from './materials'
 import {
   landingOn,
@@ -188,6 +196,7 @@ const EMPTY_TEXT = 'final-cut 暂无内容，加入内容后可在此预览'
 const PICK_FIRST_TEXT = '尚未选中镜头，无法加入 final-cut；请先在「镜头」页签中选中镜头范围'
 const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏，无法进入全屏'
 const ADDING_ITEM_TEXT = '上一个贴片或场景正在加入 final-cut，请稍后再试'
+const ADDING_PICKS_TEXT = '选中的镜头正在加入 final-cut，请稍后再试'
 const ADDING_AUDIO_TEXT = '上一条音频正在加入 final-cut，请稍后再试'
 const EMPTY_EXPORT_TEXT = 'final-cut 暂无内容，无法导出；请先加入内容'
 const NO_FILM_CAPTION_TEXT = 'final-cut 暂无内容，无法加字幕；请先加入镜头'
@@ -281,12 +290,25 @@ const shotNumberOf = (ms: number, url: string, keyframes: KeyframeStates) => {
   return state?.kind === 'ready' ? shotAt(keyframeRanges(state.index), ms / 1000) : undefined
 }
 
-const shotsLabelOf = (range: MaterialRange, url: string, keyframes: KeyframeStates) => {
-  const [first] = range.shots
-  const last = range.shots.at(-1)
+/** 选区里的一段加入 final-cut 时拆成的片段，各带素材地址和名字（「A · 镜头 2」）。 */
+const piecesOf = ({ material, span }: PickedSpan, keyframes: KeyframeStates) =>
+  spanPieces(span, takeShots(keyframes.get(material.url))).map((piece) => {
+    const shot = shotNumberOf(piece.mediaStart, material.url, keyframes)
+    return {
+      ...piece,
+      src: material.url,
+      label: `${material.takeLetter} · ${shot === undefined ? material.version : `镜头 ${shot}`}`,
+    }
+  })
+
+/** 素材预览放的这一段跨了哪几个镜头，按加入 final-cut 时拆成的片段算。 */
+const shotsLabelOf = (span: MediaSpan, url: string, keyframes: KeyframeStates) => {
+  const pieces = spanPieces(span, takeShots(keyframes.get(url)))
+  const first = pieces[0]
+  const last = pieces.at(-1)
   if (first === undefined || last === undefined) return ''
-  const from = shotNumberOf((first.startMs + first.endMs) / 2, url, keyframes)
-  const to = shotNumberOf((last.startMs + last.endMs) / 2, url, keyframes)
+  const from = shotNumberOf(first.mediaStart, url, keyframes)
+  const to = shotNumberOf(last.mediaStart, url, keyframes)
   if (from === undefined || to === undefined) return ''
   return from === to ? ` · 镜头 ${from}` : ` · 镜头 ${from}–${to}`
 }
@@ -402,7 +424,7 @@ function EditorBody({
   const previewRef = useRef<PreviewControl | null>(null)
   // 画面编辑层处理方向键的函数（见 CanvasOverlay）
   const canvasNudgeRef = useRef<CanvasNudge | null>(null)
-  const [range, setRange] = useState<MaterialRange | null>(null)
+  const [picks, setPicks] = useState<MaterialPicks>(NO_PICKS)
   const [playback, setPlayback] = useState<PlaybackSettings>({ rate: 1, muted: false, loop: false })
   const toggleMute = () => setPlayback((current) => ({ ...current, muted: !current.muted }))
   const toggleLoop = () => setPlayback((current) => ({ ...current, loop: !current.loop }))
@@ -458,9 +480,10 @@ function EditorBody({
     else previewRef.current?.play()
   }
 
-  const rangeMaterial = range === null ? undefined : materials.byJob.get(range.jobId)
-  const sizeUrl = film === null ? rangeMaterial?.url : undefined
-  const size = useVideoSize(sizeUrl)
+  const picked = orderedPicks(materials.groups, picks)
+  // 还没有 final-cut 时按第一段素材的画幅新建：先读好，加入时不用再等
+  const sizeUrl = film === null ? picked[0]?.material.url : undefined
+  useVideoSize(sizeUrl)
   const queryClient = useQueryClient()
 
   const [viewportWidth, setViewportWidth] = useState(0)
@@ -517,17 +540,19 @@ function EditorBody({
   const [textEditing, setTextEditing] = useState(false)
   // 时间线上点下去做什么：B 在切开和选择之间来回换，V、A 回到选择，Esc 取消选中以后也回到选择
   const [tool, setTool] = useState<EditTool>('select')
-  // Esc 先退全屏（浏览器多半自己退，按键还是传到页面时才轮到这里），再退出素材预览，再取消选中，再回到选择工具；
-  // 都没有时不用掉这一下
+  // Esc 先退全屏（浏览器多半自己退，按键还是传到页面时才轮到这里），再退出素材预览，再取消选中，再清空「镜头」里的选区，
+  // 再回到选择工具；都没有时不用掉这一下
   useEditorEscape(
     fullscreen ||
       textEditing ||
-      (!gesturing && (materialView !== null || selected.size > 0 || tool === 'razor')),
+      (!gesturing &&
+        (materialView !== null || selected.size > 0 || picks.size > 0 || tool === 'razor')),
     () => {
       if (fullscreen) exitFullscreen()
       else if (textEditing) return
       else if (materialView !== null) leaveMaterial()
       else if (selected.size > 0) clearSelection()
+      else if (picks.size > 0) setPicks(NO_PICKS)
       else setTool('select')
     },
   )
@@ -711,47 +736,62 @@ function EditorBody({
           movedId,
         )
 
-  /** 把素材里的一段放进 final-cut：给了 `at` 放在那里，没给就接在主轨的末尾。 */
-  const place = (chosen: MaterialRange, at?: { row: RowTarget; start: number }) => {
-    const material = materials.byJob.get(chosen.jobId)
-    if (material === undefined) return
+  // 选区加完才清空：上一次还没加完时不接下一次，免得连点两下把同一组加两遍
+  const addingPicksRef = useRef(false)
+  /**
+   * 把选区里的各段一次放进 final-cut（一步撤销），按 `chosen` 的先后首尾相接：给了 `at` 从那里放起，
+   * 没给就接在主轨的末尾。放进去以后清空选区。
+   */
+  const place = (chosen: readonly PickedSpan[], at?: { row: RowTarget; start: number }) => {
+    const first = chosen[0]
+    if (first === undefined) return
+    if (addingPicksRef.current) {
+      notice(ADDING_PICKS_TEXT)
+      return
+    }
     // 照参照的工作台：确认素材有声音才写成有声音，没有声音、读不出来都按静音写。
     // 素材区读镜头时已经一起读过，这里多半直接拿到
-    const audible = queryClient.fetchQuery(videoAudioQuery(material.url)).then(
-      (found) => found,
-      () => false,
+    const audible = new Map(
+      [...new Set(chosen.map(({ material }) => material.url))].map((url) => [
+        url,
+        queryClient.fetchQuery(videoAudioQuery(url)).then(
+          (found) => found,
+          () => false,
+        ),
+      ]),
     )
-    const pieces = rangePieces(chosen).map((piece) => {
-      const shot = shotNumberOf(piece.mediaStart, material.url, keyframes)
-      return {
-        ...piece,
-        src: material.url,
-        label: `${material.takeLetter} · ${shot === undefined ? material.version : `镜头 ${shot}`}`,
-      }
-    })
+    const pieces = chosen.flatMap((each) => piecesOf(each, keyframes))
     const add = async (canvas: Canvas) => {
-      const muted = !(await audible)
+      const sounding = new Set<string>()
+      for (const [url, found] of audible) if (await found) sounding.add(url)
       const spot = at === undefined ? undefined : trackFor(at.row)
       const added = await session.addVideos(
         canvas,
-        pieces.map((piece) => ({ ...piece, muted })),
+        pieces.map((piece) => ({ ...piece, muted: !sounding.has(piece.src) })),
         spot === undefined || at === undefined ? undefined : { track: spot.track, start: at.start },
         spot?.renumber,
       )
-      if (added) leaveMaterial()
+      if (!added) return
+      setPicks(NO_PICKS)
+      leaveMaterial()
     }
-    if (film !== null) void add(film.canvas)
-    else if (size.data !== undefined) void add(size.data)
-    else
-      void queryClient
-        .fetchQuery(videoSizeQuery(material.url))
-        .then(add, (error: unknown) =>
-          notice(errorMessageOf(error, '画面尺寸读取失败，无法加入 final-cut')),
-        )
+    addingPicksRef.current = true
+    // 还没有 final-cut 时按第一段素材的画幅新建（见 sizeUrl）
+    const adding =
+      film !== null
+        ? add(film.canvas)
+        : queryClient
+            .fetchQuery(videoSizeQuery(first.material.url))
+            .then(add, (error: unknown) =>
+              notice(errorMessageOf(error, '画面尺寸读取失败，无法加入 final-cut')),
+            )
+    void adding.finally(() => {
+      addingPicksRef.current = false
+    })
   }
   const insert = () => {
-    if (range === null || rangeMaterial === undefined) notice(PICK_FIRST_TEXT)
-    else place(range)
+    if (picked.length === 0) notice(PICK_FIRST_TEXT)
+    else place(picked)
   }
 
   // 照参照的工作台：上一个条目还没加完时不接下一个，免得两次都按加之前的样子算落点
@@ -1381,14 +1421,16 @@ function EditorBody({
     },
   }
 
-  const viewedMaterial =
-    materialView === null ? undefined : materials.byJob.get(materialView.range.jobId)
-  const materialLabel = (material: Material, viewed: MaterialRange) =>
+  const viewedMaterial = materialView === null ? undefined : materials.byJob.get(materialView.jobId)
+  const materialLabel = (material: Material, viewed: MediaSpan) =>
     `素材 · ${material.groupLabel} · ${material.takeLabel}${shotsLabelOf(viewed, material.url, keyframes)}`
-  const showMaterial = (viewed: MaterialRange, show: MaterialView['show']) => {
-    previewRef.current?.pause()
-    setRange(viewed)
-    setMaterialView({ range: viewed, show })
+  /** 「镜头」页签里一条原作的选区改了：`view` 放进素材预览，去掉了预览着的那条原作上的一段时回到 final-cut 的预览。 */
+  const changePicks = (takeId: string, next: TakePicks, view: MaterialView | null) => {
+    setPicks((current) => withTakePicks(current, takeId, next))
+    if (view !== null) {
+      previewRef.current?.pause()
+      setMaterialView(view)
+    } else if (materialView?.jobId === next.jobId) leaveMaterial()
   }
   // 素材预览显示着时播放条换成素材的：时间和进度按整条原作算（还没读到时长先用选中范围的结尾），
   // 拖进度条在素材里跳
@@ -1400,7 +1442,7 @@ function EditorBody({
           totalMs:
             takeDurationMs(
               viewedMaterial === undefined ? undefined : keyframes.get(viewedMaterial.url),
-            ) ?? materialView.range.endMs,
+            ) ?? materialView.span.endMs,
           buffered: [],
           playBlocked: undefined,
           playing: materialPlaying,
@@ -1513,7 +1555,7 @@ function EditorBody({
         {viewedMaterial === undefined || materialView === null ? null : (
           <MaterialPreview
             controlRef={materialPreviewRef}
-            label={materialLabel(viewedMaterial, materialView.range)}
+            label={materialLabel(viewedMaterial, materialView.span)}
             muted={playback.muted}
             layer={fullscreen ? stage : null}
             onLeave={leaveMaterial}
@@ -1565,41 +1607,34 @@ function EditorBody({
             onCollapsedChange={setSideCollapsed}
             selection={selected.size > 0}
           />
-          <TabsContent className="wf-side-body" value="shots" {...catalogPanel('shots')}>
+          <TabsContent className="wf-side-body is-shots" value="shots" {...catalogPanel('shots')}>
             <MaterialArea
               groups={materials.groups}
               keyframes={keyframes}
-              onCarry={(carry) =>
+              onCarry={(point, carried) =>
                 setGhost(
-                  carry === null
+                  point === null
                     ? null
-                    : landingAt(
-                        carry.clientX,
-                        carry.clientY,
-                        carry.range.endMs - carry.range.startMs,
-                      ),
+                    : landingAt(point.clientX, point.clientY, picksSummary(carried).durationMs),
                 )
               }
-              onDrop={(clientX, clientY, dropped) => {
-                const at = landingAt(clientX, clientY, dropped.endMs - dropped.startMs)
+              onClear={() => {
+                setPicks(NO_PICKS)
+                leaveMaterial()
+              }}
+              onDrop={(point, dropped) => {
+                const at = landingAt(point.clientX, point.clientY, picksSummary(dropped).durationMs)
                 setGhost(null)
-                if (at === null) return false
-                place(dropped, { row: at.row, start: at.start })
-                return true
+                if (at !== null)
+                  place(orderedPicks(materials.groups, dropped), { row: at.row, start: at.start })
               }}
               onInsert={insert}
-              onClear={() => {
-                setRange(null)
-                leaveMaterial()
-              }}
-              onPick={(picked) => showMaterial(picked, 'start')}
-              onSelect={setRange}
-              onTrim={showMaterial}
+              onPicks={changePicks}
               onVersion={(takeId, jobId) => {
                 setPickedVersions((current) => ({ ...current, [takeId]: jobId }))
-                if (range?.takeId !== takeId) return
-                setRange(null)
-                leaveMaterial()
+                const had = picks.get(takeId)
+                if (had === undefined) return
+                changePicks(takeId, { jobId: had.jobId, spans: [] }, null)
               }}
               placeholder={
                 videos.isError ? (
@@ -1613,10 +1648,11 @@ function EditorBody({
                   </p>
                 ) : undefined
               }
+              picks={picks}
               playingMs={materialPlaying ? materialMs : undefined}
-              range={range}
               used={usedSpans(videoClips)}
               versionOf={versionOf}
+              view={materialView}
             />
           </TabsContent>
           {ITEM_KINDS.map((kind) => (

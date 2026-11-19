@@ -1,7 +1,8 @@
 import { queryOptions, skipToken, useQueries, useQuery } from '@tanstack/react-query'
 import { errorMessageOf, UserFacingError } from '@/shared/api/client'
 import { keyframeQuery } from '../editing/media-analysis'
-import type { KeyframeIndex } from '../editing/keyframe-segments'
+import { keyframeRanges, type KeyframeIndex } from '../editing/keyframe-segments'
+import type { MediaSpan } from './materials'
 
 const loadReader = () => import('../editing/media-file')
 
@@ -70,6 +71,15 @@ export type KeyframeStates = ReadonlyMap<string, KeyframeState>
 /** 原作的总长（毫秒），镜头读好了才有。 */
 export const takeDurationMs = (state: KeyframeState | undefined): number | undefined =>
   state?.kind === 'ready' ? Math.round(state.index.duration * 1000) : undefined
+
+/** 原作的各个镜头（毫秒），镜头读好了才有。 */
+export const takeShots = (state: KeyframeState | undefined): MediaSpan[] =>
+  state?.kind === 'ready'
+    ? keyframeRanges(state.index).map((shot) => ({
+        startMs: Math.round(shot.start * 1000),
+        endMs: Math.round(shot.end * 1000),
+      }))
+    : []
 
 export const useKeyframeIndexes = (urls: readonly string[]): KeyframeStates =>
   useQueries({
