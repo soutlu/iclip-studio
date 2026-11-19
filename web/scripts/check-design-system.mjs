@@ -85,7 +85,7 @@ export function collectRuntimeTokens(css) {
   return { light, dark, registered }
 }
 
-const NEEDS_UTILITY = /^--(?:color-[\w-]+|shadow-[123])$/
+const NEEDS_UTILITY = /^--(?:color-[\w-]+|shadow-(?:[123]|card|control-well))$/
 
 export function diffTokens(spec, runtime) {
   const problems = []

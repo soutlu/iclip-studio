@@ -454,7 +454,7 @@ function BrandMark({ className }: { className?: string }) {
     <span
       aria-hidden
       className={cn(
-        'grid size-7.5 shrink-0 place-items-center rounded-sm bg-inverse-surface font-home-display text-title font-bold text-inverse-on-surface italic',
+        'grid size-7.5 shrink-0 place-items-center rounded-sm bg-inverse-surface font-home-display text-title font-semibold text-inverse-on-surface italic',
         className,
       )}
     >

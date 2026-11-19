@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="iClip 基础 token：颜色与主题、排版与尺度的 token 定义，与运行时逐值对账。"
+      content="iClip 设计系统规范：颜色与主题、排版与等宽数字、空间与控件尺度、海拔动效及界面文字口径，与运行时 CSS 逐值对账。"
     />
     <title>iClip Design System</title>
     <!--
@@ -21,31 +21,30 @@
         --pg-canvas: var(--n95);
         --pg-sheet: var(--n98);
         --pg-ink: var(--n10);
-        --pg-ink-secondary: var(--nv40);
-        --pg-ink-tertiary: var(--nv40);
+        --pg-ink-secondary: var(--n40);
+        --pg-ink-tertiary: var(--n40);
         --pg-line: var(--n90);
-        --pg-line-strong: var(--nv80);
+        --pg-line-strong: var(--n80);
 
         /* ===== 字体 ===== */
         --font-cue-ui: 'MiSans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
         --font-home-display: 'Source Serif 4', Georgia, 'Times New Roman', serif;
         --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 
-        /* ===== ① Primitives（6 族色板；组件禁止直接引用） ===== */
+        /* ===== ① Primitives（4 族精简色板；组件禁止直接引用） ===== */
+        /* Primary · 品牌松石绿 */
         --p0:#000000; --p10:#002111; --p20:#003920; --p30:#085231; --p40:#006d42; --p50:#008954;
         --p60:#00a667; --p70:#42ba79; --p80:#92d5ab; --p90:#aef2c6; --p95:#c1ffd5; --p99:#f5fff4; --p100:#ffffff;
-        --s0:#000000; --s10:#1c1c1c; --s20:#313131; --s30:#464646; --s40:#5e5e5e; --s50:#777777;
-        --s60:#909090; --s70:#ababab; --s80:#c6c6c6; --s90:#e2e2e2; --s95:#f1f1f1; --s99:#fcfcfc; --s100:#ffffff;
+        /* Tertiary · 琥珀暖金 */
         --t0:#000000; --t10:#261a00; --t20:#402d00; --t30:#5b4300; --t40:#795900; --t50:#987100;
         --t60:#b58a21; --t70:#d2a53b; --t80:#f0c053; --t90:#ffdf9f; --t95:#ffefd4; --t99:#fffbff; --t100:#ffffff;
-        /* Neutral 含深色 surface 档 4/6/12/17/22 与浅色 surface 档 92/94/96/98 */
+        /* Error · 警示红 */
+        --e0:#000000; --e10:#410002; --e20:#690005; --e30:#93000a; --e40:#ba1a1a; --e50:#de3730;
+        --e60:#ff5449; --e70:#ff897d; --e80:#ffb4ab; --e90:#ffdad6; --e95:#ffedea; --e99:#fffbff; --e100:#ffffff;
+        /* Neutral · 唯一纯中性灰阶（含深色 4/6/12/17/22 与浅色 92/94/96/98） */
         --n0:#000000; --n4:#0e0e0e; --n6:#141414; --n10:#1c1c1c; --n12:#202020; --n17:#2a2a2a; --n20:#303030; --n22:#353535;
         --n30:#464646; --n40:#5e5e5e; --n50:#777777; --n60:#909090; --n70:#ababab; --n80:#c6c6c6; --n90:#e2e2e2;
         --n92:#e8e8e8; --n94:#ededed; --n95:#f1f1f1; --n96:#f3f3f3; --n98:#f9f9f9; --n99:#fcfcfc; --n100:#ffffff;
-        --nv0:#000000; --nv10:#1b1b1b; --nv20:#303030; --nv30:#474747; --nv40:#5e5e5e; --nv50:#777777;
-        --nv60:#919191; --nv70:#ababab; --nv80:#c6c6c6; --nv90:#e2e2e2; --nv95:#f0f0f0; --nv99:#fcfcfc; --nv100:#ffffff;
-        --e0:#000000; --e10:#410002; --e20:#690005; --e30:#93000a; --e40:#ba1a1a; --e50:#de3730;
-        --e60:#ff5449; --e70:#ff897d; --e80:#ffb4ab; --e90:#ffdad6; --e95:#ffedea; --e99:#fffbff; --e100:#ffffff;
 
         /* ===== ② Semantic roles · 浅色（深色见 .dark，同名换档） ===== */
         --color-primary: var(--p40);
@@ -53,10 +52,11 @@
         --color-on-primary: var(--p100);
         --color-primary-container: var(--p90);
         --color-on-primary-container: var(--p10);
-        --color-secondary: var(--s40);
-        --color-on-secondary: var(--s100);
-        --color-secondary-container: var(--s90);
-        --color-on-secondary-container: var(--s10);
+        /* Secondary 保持无色相纯中性，直接映射 Neutral */
+        --color-secondary: var(--n40);
+        --color-on-secondary: var(--n100);
+        --color-secondary-container: var(--n90);
+        --color-on-secondary-container: var(--n10);
         --color-tertiary: var(--t40);
         --color-on-tertiary: var(--t100);
         --color-tertiary-container: var(--t90);
@@ -65,20 +65,31 @@
         --color-on-error: var(--e100);
         --color-error-container: var(--e90);
         --color-on-error-container: var(--e10);
+        /* 中性实心主动作：高优确认（如「加入 final-cut」「生成音乐」），与全页唯一品牌绿主交付拉开层级 */
+        --color-action-neutral: var(--n10);
+        --color-on-action-neutral: var(--n100);
+        /* 表面层级与文字 */
         --color-surface: var(--n98);
         --color-on-surface: var(--n10);
-        --color-surface-variant: var(--nv90);
-        --color-on-surface-variant: var(--nv30);
-        --color-on-surface-muted: var(--nv40);
+        --color-surface-variant: var(--n90);
+        --color-on-surface-variant: var(--n30);
+        --color-on-surface-muted: var(--n40);
         --color-on-surface-faint: color-mix(in srgb, var(--color-on-surface) 62%, transparent);
-        --color-outline: var(--nv50);
-        --color-outline-variant: var(--nv80);
+        --color-outline: var(--n50);
+        --color-outline-variant: var(--n80);
         --color-hairline: color-mix(in srgb, var(--color-on-surface) 13%, transparent);
         --color-surface-container-lowest: var(--n100);
         --color-surface-container-low: var(--n96);
         --color-surface-container: var(--n94);
         --color-surface-container-high: var(--n92);
         --color-surface-container-highest: var(--n90);
+        /* 通用工作台材质：浮起卡片（浅色白底轻影，深色抬档细边）与凹陷控件槽（浅略深，深更暗） */
+        --color-card: var(--n100);
+        --color-card-edge: transparent;
+        --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
+        --color-control-well: var(--n94);
+        --shadow-control-well: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+        /* 反色与遮罩 */
         --color-inverse-surface: var(--n20);
         --color-inverse-on-surface: var(--n95);
         --color-inverse-primary: var(--p80);
@@ -86,17 +97,24 @@
         --color-shadow: var(--n0);
         --color-primary-fixed: var(--p90);
         --color-primary-fixed-dim: var(--p80);
-        --color-secondary-fixed: var(--s90);
-        --color-secondary-fixed-dim: var(--s80);
+        --color-secondary-fixed: var(--n90);
+        --color-secondary-fixed-dim: var(--n80);
         --color-tertiary-fixed: var(--t90);
         --color-tertiary-fixed-dim: var(--t80);
         --color-on-primary-fixed: var(--p10);
         --color-on-primary-fixed-variant: var(--p30);
-        --color-on-secondary-fixed: var(--s10);
-        --color-on-secondary-fixed-variant: var(--s30);
+        --color-on-secondary-fixed: var(--n10);
+        --color-on-secondary-fixed-variant: var(--n30);
         --color-on-tertiary-fixed: var(--t10);
         --color-on-tertiary-fixed-variant: var(--t30);
-        /* 状态层：透明度是契约，颜色由透明度派生（明暗自动跟随 on-surface） */
+        /* 低饱和分类/媒体语义色（明暗成对换档，在卡片与凹槽底上均达标 WCAG AA；轨道波形、双色图标与图表序列共用） */
+        --color-tone-slate: #375971;   /* 石板蓝：镜头 / 原声波形 / 图表次序列 */
+        --color-tone-teal: #2b6f60;    /* 松烟青：配乐波形 / 字幕 / 音频韵律 */
+        --color-tone-umber: #7e5c3e;   /* 陶土棕：旁白人声 / 暖调稿件 */
+        --color-tone-copper: #a6481c;  /* 赤陶橘：贴片图形 / 视觉指向 */
+        --color-tone-ochre: var(--color-tertiary); /* 琥珀金：场景 / 避让包络线 / 吸附 / 警告 */
+        --color-on-tone: var(--n100);  /* 分类实底徽标配字（纯中性） */
+        /* 状态层：透明度是契约，颜色随 on-surface 自动适配明暗 */
         --state-hover: 0.05;
         --state-hover-subtle: 0.03;
         --state-focus: 0.12;
@@ -113,18 +131,18 @@
         --color-disabled-text: color-mix(in srgb, var(--color-on-surface) calc(var(--state-disabled-content) * 100%), transparent);
         --color-disabled-container: color-mix(in srgb, var(--color-on-surface) calc(var(--state-disabled-container) * 100%), transparent);
         --color-focus-ring: var(--color-on-surface);
-        /* Warning = tertiary 族别名 */
+        /* Warning = tertiary 别名 */
         --color-warning: var(--color-tertiary);
         --color-on-warning: var(--color-on-tertiary);
         --color-warning-container: var(--color-tertiary-container);
         --color-on-warning-container: var(--color-on-tertiary-container);
 
-        /* ===== ③ 领域别名 · 随主题（引用 ② 层的自动跟随；直接取色板/字面值的在 .dark 另给值） ===== */
-        --color-background: var(--n100); /* 页面底与主区；应用侧栏用 surface-container-low 浅灰底，与主区以分隔线分界 */
+        /* ===== ③ 领域别名 · 随主题（优先转发至 ② 层通用语义，避免跨页面重复定义） ===== */
+        --color-background: var(--n100);
         --color-on-background: var(--color-on-surface);
         --color-top-layer: var(--n100);
         --color-state-active: color-mix(in srgb, var(--color-on-surface) 6%, transparent);
-        --color-glass-base: var(--n100); /* 玻璃面基色：所有半透明白面由它派生，深色换成 n17 */
+        --color-glass-base: var(--n100);
         --color-glass-surface: color-mix(in srgb, var(--color-glass-base) 76%, transparent);
         --color-control-bg: color-mix(in srgb, var(--color-glass-base) 64%, transparent);
         --color-btn-hover: var(--color-state-hover);
@@ -135,8 +153,8 @@
         --color-chip-bg-glass: color-mix(in srgb, var(--color-glass-base) 52%, transparent);
         --color-input-bg: color-mix(in srgb, var(--color-glass-base) 76%, transparent);
         --color-input-border: var(--color-outline);
-        --color-dot: color-mix(in srgb, var(--nv70) 28%, transparent);
-        --color-dot-pattern: color-mix(in srgb, var(--nv70) 12%, transparent);
+        --color-dot: color-mix(in srgb, var(--n70) 28%, transparent);
+        --color-dot-pattern: color-mix(in srgb, var(--n70) 12%, transparent);
         --color-border: var(--color-hairline);
         --color-header-divider: var(--color-hairline);
         --color-border-hover: color-mix(in srgb, var(--color-on-surface) 48%, transparent);
@@ -147,77 +165,46 @@
         --color-chip-border: var(--color-hairline);
         --color-thumb-fallback: var(--n80);
         --color-badge-border: var(--color-hairline);
-        --color-header-btn-bg: var(--n90);
-        --color-agent-log-bg: var(--n90);
-        --color-suggestion-bg: color-mix(in srgb, var(--color-on-surface) 5%, transparent);
-        --color-suggestion-border: var(--color-hairline);
-        --color-suggestion-badge: color-mix(in srgb, var(--color-on-surface) 20%, transparent);
-        /* 聊天 */
-        --color-chat-panel-bg: var(--color-surface);
-        --color-chat-panel-bg-start: var(--n100);
-        --color-chat-panel-bg-end: var(--n95);
-        --color-chat-panel-border: var(--color-hairline);
+
+        /* 聊天（软卡片转发至 --color-card / --shadow-card） */
         --color-chat-card-bg: var(--color-surface-container-lowest);
-        /* 聊天活动卡：无描边的柔和卡片，浅色白底加轻影，深色抬一档底色加极淡边 */
-        --color-chat-soft-card: var(--n100);
-        --color-chat-soft-card-edge: transparent;
-        --shadow-chat-soft-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
+        --color-chat-soft-card: var(--color-card);
+        --color-chat-soft-card-edge: var(--color-card-edge);
+        --shadow-chat-soft-card: var(--shadow-card);
         --color-chat-message-text: var(--color-on-surface);
         --color-chat-secondary-text: var(--color-on-surface-variant);
         --color-chat-muted-text: var(--color-on-surface-faint);
         --color-chat-user-bg: var(--color-surface-container-low);
-        --color-chat-inline-bg: color-mix(in srgb, var(--nv70) 10%, transparent);
-        --color-chat-inline-border: var(--color-hairline);
-        --color-chat-chip-bg: color-mix(in srgb, var(--nv70) 9%, transparent);
-        --color-chat-chip-border: var(--color-hairline);
-        --color-chat-code-bg: color-mix(in srgb, var(--nv70) 9%, transparent);
+        --color-chat-inline-bg: color-mix(in srgb, var(--n70) 10%, transparent);
+        --color-chat-chip-bg: color-mix(in srgb, var(--n70) 9%, transparent);
+        --color-chat-code-bg: color-mix(in srgb, var(--n70) 9%, transparent);
         --color-chat-code-block-bg: var(--n95);
-        --color-chat-code-border: var(--color-hairline);
         --color-chat-link-text: var(--color-primary);
         --color-chat-link-border: color-mix(in srgb, var(--color-primary) 34%, transparent);
         --color-chat-status-success: var(--color-primary);
         --color-chat-status-error: var(--color-error);
         --color-chat-status-running: var(--color-primary);
-        /* 发丝边框与滚动条：透明度随 on-surface 适配主题 */
         --color-chat-hairline: var(--color-hairline);
         --color-chat-scrollbar-thumb: color-mix(in srgb, var(--color-on-surface) 12%, transparent);
-        --shadow-chat-panel: 0 20px 48px rgba(0, 0, 0, 0.18);
         --shadow-hairline-bottom: inset 0 -1px 0 var(--color-hairline);
-        /* 画布与故事板工作台 */
-        --color-canvas-card-bg: var(--color-surface-container-lowest);
-        --color-canvas-card-text: var(--color-on-surface);
-        --color-canvas-label-text: var(--nv50);
+
+        /* 故事板与放映舞台（浅深皆为暗场舞台，画面是视觉重心） */
         --color-storyboard-stage: #161616;
         --color-storyboard-stage-line: color-mix(in srgb, var(--n100) 6%, transparent);
-        --shadow-storyboard-media: 0 1px 2px rgba(0, 0, 0, 0.07), 0 10px 22px -12px rgba(0, 0, 0, 0.2);
-        --shadow-storyboard-hero: 0 2px 4px rgba(0, 0, 0, 0.08), 0 18px 34px -14px rgba(0, 0, 0, 0.28);
-        --shadow-storyboard-sidebar-left: 12px 0 24px -18px color-mix(in srgb, var(--color-on-surface) 28%, transparent);
-        --shadow-storyboard-sidebar-right: -12px 0 24px -18px color-mix(in srgb, var(--color-on-surface) 28%, transparent);
-        --storyboard-node-shadow: 0 35px 96px rgba(0, 0, 0, 0.22);
-        --storyboard-node-surface: var(--n99);
-        --storyboard-node-selected-surface: var(--n95);
-        --storyboard-node-border: var(--storyboard-node-surface);
-        --storyboard-node-cover-bg: var(--storyboard-node-surface);
-        --storyboard-node-preview-bg: var(--storyboard-node-surface);
-        --storyboard-node-screen-empty: var(--storyboard-node-surface);
-        --storyboard-node-script-surface: var(--storyboard-node-surface);
-        --storyboard-node-tool-surface: var(--storyboard-node-surface);
-        --storyboard-node-panel-divider: #e4eae3;
-        --storyboard-node-ink: #0a0f0c;
-        --storyboard-node-muted: rgba(42, 50, 44, 0.4);
-        --storyboard-node-muted-strong: rgba(42, 50, 44, 0.5);
-        --storyboard-node-preview-tool-text: rgba(10, 15, 12, 0.72);
-        /* 数据看板：内容区铺浅灰、卡片纯白不描边，靠一层淡影分层；深色下影子看不见，改用一圈极淡的边 */
+
+        /* 数据看板与图表（卡片转发至 --color-card / --shadow-card；分类色转发至 --color-tone-*） */
         --color-dashboard-bg: var(--n96);
-        --color-dashboard-card: var(--n100);
-        --color-dashboard-card-edge: transparent;
-        --shadow-dashboard-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
-        /* 图表辅助色：网格线、非活跃日灰底、量大价低不该抢眼的中性分项、30 日均线一类的淡灰参照线 */
+        --color-dashboard-card: var(--color-card);
+        --color-dashboard-card-edge: var(--color-card-edge);
+        --shadow-dashboard-card: var(--shadow-card);
+        --color-chart-1: var(--color-primary);
+        --color-chart-2: var(--color-tone-slate);
+        --color-chart-3: var(--color-tone-ochre);
+        --color-chart-4: var(--color-tone-teal);
         --color-chart-grid: color-mix(in srgb, var(--color-on-surface) 7%, transparent);
         --color-chart-inactive: color-mix(in srgb, var(--color-on-surface) 4%, transparent);
         --color-chart-neutral: var(--n80);
         --color-chart-ghost: var(--n70);
-        /* 图表有序色阶（如出片 1 / 2 / 3 / 4 / 5 次及以上）：单色相由浅到深，深色下反过来越多越亮；段内字色与底色配对 */
         --color-chart-ord-1: #6ac495;
         --color-chart-ord-2: #2fab6c;
         --color-chart-ord-3: #008c55;
@@ -228,7 +215,8 @@
         --color-on-chart-ord-3: var(--n100);
         --color-on-chart-ord-4: var(--n100);
         --color-on-chart-ord-5: var(--n100);
-        /* 镜头点缀色：只表达镜头身份（时间轴色段与镜头列表的短色签同色），按镜头序号循环取色；只画实色的小面积线条，不做浅色底 */
+
+        /* 镜头点缀色：仅用于按镜头序号循环标识身份（时间轴色段与短色签同色） */
         --color-accent-1: #ee5d3f;
         --color-accent-2: #f39a2b;
         --color-accent-3: #d9b02a;
@@ -237,7 +225,8 @@
         --color-accent-6: #e35d8c;
         --color-accent-7: #2a9fb0;
         --color-accent-8: #5c6bd6;
-        /* 代码着色：只用于 JSON 等代码正文的键、字符串、数字与 true / false / null，标点仍用 on-surface-faint；不表达状态，不做底色。三色相避开品牌绿、错误红与警告琥珀；guide 画缩进参考线 */
+
+        /* 代码着色：仅用于 JSON 与代码正文，避开品牌绿、错误红与警告琥珀 */
         --color-code-key: #2e5aa6;
         --color-code-string: #8a4a8f;
         --color-code-literal: #1d6f7d;
@@ -249,26 +238,26 @@
         --color-final-cut-raised: var(--n100);
         --color-final-cut-line: color-mix(in srgb, var(--n10) 9%, transparent);
         --color-final-cut-line-strong: color-mix(in srgb, var(--n10) 15%, transparent);
-        --color-final-cut-tick: var(--nv70);
+        --color-final-cut-tick: var(--n70);
         --color-final-cut-on-control: var(--n100);
         --color-final-cut-control-soft: color-mix(in srgb, var(--n10) 7%, transparent);
         --color-final-cut-control-ring: color-mix(in srgb, var(--n10) 18%, transparent);
         --color-final-cut-knob: var(--n100);
-        /* final-cut 语义图标色：导航和轨道头双色图标的内填充与选中态，按媒体种类取色；led 是深色实心按钮上图标的指示光 */
-        --color-final-cut-shot: var(--color-chart-2);
-        --color-final-cut-overlay: var(--color-reference-arrow);
+        /* final-cut 语义图标色：导航和轨道头双色图标的内填充与选中态，按媒体种类取 --color-tone-*；led 是深色实心按钮上图标的指示光 */
+        --color-final-cut-shot: var(--color-tone-slate);
+        --color-final-cut-overlay: var(--color-tone-copper);
         --color-final-cut-scene: var(--t60);
         --color-final-cut-music: var(--color-primary);
-        --color-final-cut-caption: var(--color-reference-frame);
-        --color-final-cut-voice: var(--color-artifact-storyboard);
+        --color-final-cut-caption: var(--color-tone-teal);
+        --color-final-cut-voice: var(--color-tone-umber);
         --color-final-cut-props: var(--p40);
         --color-final-cut-led: var(--t80);
         /* final-cut 片段：wave 是音频片段的波形和左缘细边，ink 是片段标题；duck 画压低曲线；edge 是字幕胶囊和音频卡的描边，label 是音频卡顶上的标题条和它的分隔线 */
-        --color-final-cut-original-wave: var(--color-chart-2);
-        --color-final-cut-original-ink: var(--color-chart-2);
-        --color-final-cut-dub-wave: var(--color-artifact-storyboard);
+        --color-final-cut-original-wave: var(--color-tone-slate);
+        --color-final-cut-original-ink: var(--color-tone-slate);
+        --color-final-cut-dub-wave: var(--color-tone-umber);
         --color-final-cut-dub-ink: var(--t30);
-        --color-final-cut-music-wave: var(--color-reference-frame);
+        --color-final-cut-music-wave: var(--color-tone-teal);
         --color-final-cut-music-ink: var(--p20);
         --color-final-cut-duck: var(--t60);
         --color-final-cut-clip-video: var(--color-storyboard-stage);
@@ -290,88 +279,18 @@
         --shadow-final-cut-specular: inset 0 1px 0 color-mix(in srgb, var(--n100) 92%, transparent);
         --shadow-final-cut-knob: 0 1px 3px color-mix(in srgb, var(--n0) 20%, transparent);
 
-        /* ===== ③ 领域别名 · 主题中立（内容身份色、纸面材质、压在媒体上的遮罩；明暗不变） ===== */
-        --color-reference-image: #8a8a84;
-        --color-reference-video: #5b6bc0;
-        --color-reference-audio: var(--color-primary);
-        --color-reference-note: #d9a13b;
-        --color-reference-arrow: #c05b2b;
-        --color-reference-brush: #9368b7;
-        --color-reference-frame: #3e8e7e;
-        --color-on-reference: var(--color-on-primary);
-        --color-chart-1: #00a667;
-        --color-chart-2: #375971;
-        --color-chart-3: #e0a800;
-        --color-chart-4: #2fc6be;
-        --color-artifact-brief: #bda669;
-        --color-artifact-image-analysis: #638fa7;
-        --color-artifact-markdown: #9291b6;
-        --color-artifact-storyboard: #ab8f6e;
-        --color-artifact-ui-card: #9d86a0;
-        --color-artifact-video-prompt: #6fa2a6;
-        --color-artifact-rail-bg: #101318;
-        --color-brief-surface: #f7f1e8;
-        --color-brief-surface-bright: #fffdf8;
-        --color-brief-surface-muted: rgba(255, 255, 255, 0.66);
-        --color-brief-border: rgba(124, 112, 95, 0.18);
-        --color-brief-ink: #1f2522;
-        --color-brief-ink-secondary: #4c5550;
-        --color-brief-ink-soft: #5d655f;
-        --color-brief-amber: #6b4e16;
-        --color-brief-amber-soft: rgba(248, 224, 168, 0.28);
-        --color-brief-sage: #29543a;
-        --color-brief-sage-soft: rgba(74, 124, 89, 0.12);
-        --color-brief-danger: #8f2f2c;
-        --color-brief-danger-soft: rgba(184, 50, 48, 0.1);
-        --color-brief-board-1: #f3a8b8;
-        --color-brief-board-2: #eee8d2;
-        --color-brief-board-3: #92b88e;
-        --color-brief-board-4: #f8f0c4;
-        --color-brief-board-5: #ffcd00;
-        --color-brief-board-white: var(--n100);
-        --color-sb-table-background: #faf6f0;
-        --color-sb-table-surface: #f5f1ea;
-        --color-sb-table-prompt-surface: rgba(255, 255, 255, 0.82);
-        --color-sb-table-line: rgba(116, 121, 110, 0.2);
-        --color-sb-table-badge-border: rgba(116, 121, 110, 0.16);
-        --color-sb-table-text: #121614;
-        --color-sb-table-text-secondary: #1f2522;
-        --color-sb-table-tertiary: #4a3818;
-        --color-sb-table-tertiary-soft: rgba(112, 92, 48, 0.12);
-        --color-sb-table-danger: #8f2f2c;
-        --color-sb-table-danger-soft: rgba(184, 50, 48, 0.12);
-        --color-sb-table-stage-hook-bg: rgba(112, 92, 48, 0.14);
-        --color-sb-table-stage-hook-text: #3d2c11;
-        --color-sb-table-stage-proof-bg: rgba(37, 82, 145, 0.12);
-        --color-sb-table-stage-proof-text: #183a64;
-        --color-sb-table-stage-demo-bg: rgba(74, 124, 89, 0.14);
-        --color-sb-table-stage-demo-text: #1f462b;
-        --color-sb-table-stage-closure-bg: rgba(31, 37, 34, 0.08);
-        --color-sb-table-stage-closure-text: #1f2522;
-        --color-sb-table-stage-neutral-bg: rgba(74, 124, 89, 0.1);
-        --color-sb-table-stage-neutral-text: #254332;
-        --storyboards-monitor-bg: rgba(21, 24, 29, 0.96);
-        --storyboards-monitor-border: rgba(216, 177, 106, 0.28);
-        --storyboards-monitor-gold: #d8b16a;
-        --storyboards-monitor-complete: #3ecf8e;
-        --storyboards-monitor-running: #2dd4bf;
-        --storyboards-monitor-line: #363c48;
-        --storyboards-monitor-muted: #9aa0ab;
-        --storyboards-monitor-text: #f0ede4;
-        --storyboard-node-timeline-badge: rgba(10, 15, 12, 0.68);
-        --storyboard-node-empty-preview-bg: var(--n0);
+        /* ===== ③ 媒体遮罩（压在影像画面上，明暗不变） ===== */
         --color-on-scrim: var(--n100);
         --media-scrim-cover: linear-gradient(180deg, rgba(0, 0, 0, 0.16) 0%, rgba(0, 0, 0, 0.52) 100%);
         --media-scrim-photo: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.72) 100%);
         --media-scrim-photo-strong: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.24) 28%, rgba(0, 0, 0, 0.82) 100%);
-        --media-vignette: radial-gradient(circle at center, rgba(255, 255, 255, 0.18) 0%, rgba(0, 0, 0, 0.02) 36%, rgba(0, 0, 0, 0.26) 100%);
-        --media-gloss: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(0, 0, 0, 0.16) 100%);
 
         /* ===== ④ 尺度 ===== */
-        /* 字阶（Tailwind @theme 同名；-line 为存量 CSS 别名） */
+        /* 字阶（--text-ui 13/18 覆盖高密度工作台与属性面板） */
         --text-caption: 11px; --text-caption--line-height: 16px;
         --text-label: 12px; --text-label--line-height: 16px;
         --text-body-sm: 12px; --text-body-sm--line-height: 16px;
+        --text-ui: 13px; --text-ui--line-height: 18px;
         --text-body: 14px; --text-body--line-height: 20px;
         --text-title: 16px; --text-title--line-height: 24px;
         --text-title-lg: 22px; --text-title-lg--line-height: 28px;
@@ -379,44 +298,35 @@
         --text-headline-lg: 32px; --text-headline-lg--line-height: 40px;
         --text-display-sm: 45px; --text-display-sm--line-height: 52px;
         --text-display: 57px; --text-display--line-height: 64px;
-        --text-canvas-label: 18px; --text-canvas-body: 20px; --text-canvas-body-lg: 22px;
-        --text-canvas-title-sm: 24px; --text-canvas-title: 26px; --text-canvas-title-lg: 28px;
         /* final-cut 时间线上音频片段 13px 高的标题条：比全站最小字号小一档，只用在这里 */
         --text-final-cut-clip-label: 9.5px;
-        --text-display-line: var(--text-display--line-height, 64px);
-        --text-headline-line: var(--text-headline--line-height, 36px);
-        --text-title-line: var(--text-title--line-height, 24px);
-        --text-body-line: var(--text-body--line-height, 20px);
-        --text-body-sm-line: var(--text-body-sm--line-height, 16px);
-        --text-label-line: var(--text-label--line-height, 16px);
-        --text-caption-line: var(--text-caption--line-height, 16px);
-        /* 圆角 */
+        /* 圆角（严守 4px 同心嵌套步进） */
         --radius-none:0; --radius-xs:4px; --radius-sm:8px; --radius-md:12px; --radius-lg:16px;
         --radius-xl:20px; --radius-2xl:28px; --radius-3xl:32px; --radius-4xl:48px; --radius-full:9999px;
-        --radius-card: 14px; /* 目录卡片（Agent 配置的资源卡与选择面板卡） */
         /* 断点（M3 窗口分级） */
         --breakpoint-sm: 600px;
         --breakpoint-md: 840px;
         --breakpoint-lg: 1280px;
         /* 海拔（深色见 .dark） */
+        --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
         --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.05);
         --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.03), 0 3px 9px rgba(0, 0, 0, 0.04), 0 1px 1px rgba(0, 0, 0, 0.04);
         --shadow-3: 0 20px 56px rgba(0, 0, 0, 0.14), 0 6px 16px rgba(0, 0, 0, 0.08);
-        --shadow-input: 0 5px 16px -4px rgba(0, 0, 0, 0.07); /* 输入卡常驻浮影（照 kimi composer，focus 不抬升） */
-        --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04); /* 代码块等嵌套小件 */
-        --shadow-send: 0 7px 16px -13px rgba(0, 0, 0, 0.38), 0 1px 2px rgba(0, 0, 0, 0.07); /* 发送钮浮起 */
+        --shadow-input: 0 5px 16px -4px rgba(0, 0, 0, 0.07);
+        --shadow-send: 0 7px 16px -13px rgba(0, 0, 0, 0.38), 0 1px 2px rgba(0, 0, 0, 0.07);
         /* 动效 */
         --dur-s: 150ms; --dur-m: 250ms; --dur-l: 400ms;
         --ease: cubic-bezier(0.2, 0, 0, 1);
         --ease-decel: cubic-bezier(0, 0, 0, 1);
         --ease-accel: cubic-bezier(0.3, 0, 1, 1);
-        /* 控件尺寸与图标尺寸 */
-        --control-height-xs: 24px;  /* 小标签；可点尺寸下限 */
-        --control-height-sm: 34px;  /* Chip 胶囊、菜单项、图标按钮 sm */
-        --control-height-md: 36px;  /* 紧凑按钮、图标按钮 md */
-        --control-height-lg: 40px;  /* 按钮、图标按钮 */
-        --control-height-xl: 44px;  /* 输入框 */
-        --control-hit-area: 48px;   /* 可点热区 */
+        /* 控件高度与图标尺寸 */
+        --control-height-xs: 24px;
+        --control-height-compact: 28px;
+        --control-height-sm: 34px;
+        --control-height-md: 36px;
+        --control-height-lg: 40px;
+        --control-height-xl: 44px;
+        --control-hit-area: 48px;
         --icon-xs: 12px; --icon-sm: 14px; --icon-md: 16px; --icon-lg: 20px; --icon-xl: 24px;
         /* 层级 */
         --z-base: 0; --z-canvas: 2; --z-content: 5; --z-panel: 10; --z-sidebar: 40;
@@ -429,7 +339,6 @@
         --layout-app-sidebar-collapsed-width: 56px;
         --layout-app-content-rail-width: 40px;
         --layout-app-resize-handle-width: 8px;
-        --layout-app-right-panel-width: 460px;
         --layout-app-workbench-width: 820px;
         --layout-app-workbench-min-width: 560px;
         --layout-app-chat-min-width: 400px;
@@ -437,33 +346,20 @@
         --layout-list-page-gutter: clamp(32px, calc(7.8571vw - 81.143px), 120px);
         --layout-list-page-max: 2400px;
         --layout-dialog-header-height: 52px;
-        --layout-project-header-height: 72px;
-        --layout-project-header-inline-start: 24px;
-        --layout-project-header-inline-end: 24px;
-        --layout-project-stage-padding: 20px;
-        --layout-project-composer-max: 582px;
-        --layout-project-composer-min: 0px;
-        --layout-project-composer-fluid: calc(100vw - 32px);
-        --layout-project-header-max-left: 375px;
-        --layout-project-agent-log-width: 280px;
-        --layout-project-agent-log-viewport-height: clamp(220px, 40vh, 320px);
-        --layout-project-composer-panel-reserve: 180px;
-        --layout-project-chat-panel-bottom-safe-area: calc(var(--layout-project-stage-padding) + var(--layout-project-composer-panel-reserve) + var(--layout-project-stage-padding));
-        --layout-project-chat-panel-height-offset: calc(var(--layout-project-header-height) + var(--layout-project-stage-padding) + var(--layout-project-chat-panel-bottom-safe-area));
         font-family: var(--font-cue-ui);
       }
 
       .dark {
-        /* 深色主色使用 60 档，兼顾按钮填色与前景文字对比度。 */
+        /* 核心语义换档 */
         --color-primary: var(--p60);
         --color-primary-hover: var(--p70);
         --color-on-primary: var(--p10);
         --color-primary-container: var(--p30);
         --color-on-primary-container: var(--p90);
-        --color-secondary: var(--s60);
-        --color-on-secondary: var(--s10);
-        --color-secondary-container: var(--s30);
-        --color-on-secondary-container: var(--s90);
+        --color-secondary: var(--n60);
+        --color-on-secondary: var(--n10);
+        --color-secondary-container: var(--n30);
+        --color-on-secondary-container: var(--n90);
         --color-tertiary: var(--t60);
         --color-on-tertiary: var(--t10);
         --color-tertiary-container: var(--t30);
@@ -472,19 +368,37 @@
         --color-on-error: var(--e10);
         --color-error-container: var(--e30);
         --color-on-error-container: var(--e90);
+        /* 中性实心主动作 */
+        --color-action-neutral: var(--n90);
+        --color-on-action-neutral: var(--n10);
+        /* 表面与文字 */
         --color-surface: var(--n6);
         --color-on-surface: var(--n90);
-        --color-surface-variant: var(--nv30);
-        --color-on-surface-variant: var(--nv80);
-        --color-on-surface-muted: var(--nv70);
+        --color-surface-variant: var(--n30);
+        --color-on-surface-variant: var(--n80);
+        --color-on-surface-muted: var(--n70);
         --color-on-surface-faint: color-mix(in srgb, var(--color-on-surface) 54%, transparent);
-        --color-outline: var(--nv60);
-        --color-outline-variant: var(--nv30);
+        --color-outline: var(--n60);
+        --color-outline-variant: var(--n30);
         --color-surface-container-lowest: var(--n4);
         --color-surface-container-low: var(--n10);
         --color-surface-container: var(--n12);
         --color-surface-container-high: var(--n17);
         --color-surface-container-highest: var(--n22);
+        /* 通用工作台材质（卡片转 7% 细边；凹槽下陷至 n4） */
+        --color-card: var(--n10);
+        --color-card-edge: color-mix(in srgb, var(--color-on-surface) 7%, transparent);
+        --shadow-card: none;
+        --color-control-well: var(--n4);
+        --shadow-control-well: inset 0 1px 3px rgba(0, 0, 0, 0.45);
+        /* 低饱和分类/媒体语义色（深色卡面 #202020 上全员 ≥ 5.4:1，配字转纯中性深墨 n10） */
+        --color-tone-slate: #6d9ab8;
+        --color-tone-teal: #56b39f;
+        --color-tone-umber: #c49c78;
+        --color-tone-copper: #e28658;
+        --color-tone-ochre: var(--t70);
+        --color-on-tone: var(--n10);
+        /* 反色与通用领域换档 */
         --color-inverse-surface: var(--n90);
         --color-inverse-on-surface: var(--n20);
         --color-inverse-primary: var(--p40);
@@ -494,36 +408,12 @@
         --color-danger-border: var(--e60);
         --color-danger-text: var(--e80);
         --color-thumb-fallback: var(--n30);
-        --color-header-btn-bg: var(--n22);
-        --color-agent-log-bg: var(--n22);
-        --color-chat-panel-bg-start: var(--n12);
-        --color-chat-panel-bg-end: var(--n6);
         --color-chat-muted-text: var(--color-on-surface-faint);
         --color-chat-user-bg: var(--color-surface-container-high);
         --color-chat-code-block-bg: var(--n12);
-        --color-chat-soft-card: var(--n10);
-        --color-chat-soft-card-edge: color-mix(in srgb, var(--color-on-surface) 7%, transparent);
-        --shadow-chat-soft-card: none;
-        --shadow-chat-panel: 0 20px 48px rgba(0, 0, 0, 0.5);
-        --color-canvas-label-text: var(--nv60);
         --color-storyboard-stage: #0a0a0a;
         --color-storyboard-stage-line: color-mix(in srgb, var(--n100) 8%, transparent);
-        --shadow-storyboard-media: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 22px -12px rgba(0, 0, 0, 0.6);
-        --shadow-storyboard-hero: 0 2px 4px rgba(0, 0, 0, 0.3), 0 18px 34px -14px rgba(0, 0, 0, 0.7);
-        --shadow-storyboard-sidebar-left: 12px 0 24px -18px rgba(0, 0, 0, 0.6);
-        --shadow-storyboard-sidebar-right: -12px 0 24px -18px rgba(0, 0, 0, 0.6);
-        --storyboard-node-shadow: 0 35px 96px rgba(0, 0, 0, 0.6);
-        --storyboard-node-surface: var(--n12);
-        --storyboard-node-selected-surface: var(--n17);
-        --storyboard-node-panel-divider: var(--nv20);
-        --storyboard-node-ink: #eaefe8;
-        --storyboard-node-muted: rgba(197, 199, 195, 0.45);
-        --storyboard-node-muted-strong: rgba(197, 199, 195, 0.6);
-        --storyboard-node-preview-tool-text: rgba(234, 239, 232, 0.75);
         --color-dashboard-bg: var(--n6);
-        --color-dashboard-card: var(--n10);
-        --color-dashboard-card-edge: color-mix(in srgb, var(--color-on-surface) 7%, transparent);
-        --shadow-dashboard-card: none;
         --color-chart-neutral: var(--n40);
         --color-chart-ghost: var(--n50);
         --color-chart-ord-1: #1e5a40;
@@ -551,16 +441,13 @@
         --color-final-cut-raised: var(--n12);
         --color-final-cut-line: color-mix(in srgb, var(--n90) 8%, transparent);
         --color-final-cut-line-strong: color-mix(in srgb, var(--n90) 15%, transparent);
-        --color-final-cut-tick: var(--nv40);
+        --color-final-cut-tick: var(--n40);
         --color-final-cut-on-control: var(--n10);
         --color-final-cut-control-soft: color-mix(in srgb, var(--n100) 9%, transparent);
         --color-final-cut-control-ring: color-mix(in srgb, var(--n100) 20%, transparent);
-        --color-final-cut-shot: var(--color-artifact-image-analysis);
         --color-final-cut-scene: var(--t80);
-        --color-final-cut-caption: var(--color-artifact-video-prompt);
         --color-final-cut-props: var(--p70);
         --color-final-cut-led: var(--p40);
-        --color-final-cut-original-wave: var(--color-artifact-image-analysis);
         --color-final-cut-original-ink: var(--n90);
         --color-final-cut-dub-ink: var(--t90);
         --color-final-cut-music-ink: var(--p80);
@@ -579,11 +466,11 @@
         --shadow-final-cut-float: 0 12px 42px color-mix(in srgb, var(--n0) 68%, transparent), 0 0 0 1px var(--color-final-cut-line-strong);
         --shadow-final-cut-well: inset 0 1px 3px color-mix(in srgb, var(--n0) 35%, transparent);
         --shadow-final-cut-specular: inset 0 1px 0 color-mix(in srgb, var(--n100) 6%, transparent);
+        --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
         --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.18);
         --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24), 0 1px 1px rgba(0, 0, 0, 0.24);
         --shadow-3: 0 20px 56px rgba(0, 0, 0, 0.42), 0 6px 16px rgba(0, 0, 0, 0.32);
         --shadow-input: 0 5px 16px -4px rgba(0, 0, 0, 0.4);
-        --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
         --shadow-send: 0 7px 16px -13px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.35);
       }
     </style>
@@ -592,48 +479,53 @@
   <body>
     <main class="sheet">
       <header class="masthead">
-        <p class="wordmark" aria-hidden="true">CUE</p>
+        <p class="wordmark" aria-hidden="true">iClip</p>
         <div>
           <h1>Design System</h1>
           <p class="lead">
-            基础 token 定义；运行时 CSS 按这里逐值对账。
+            iClip 全站视觉语言的单一事实源。上方第一个 <code>&lt;style&gt;</code> 定义全部基础 Token，运行时由 <code>web/src/app/globals.css</code> 与 <code>base.css</code> 镜像并通过 <code>pnpm lint:design</code> 双向对账。界面保持纯中性克制，将视觉重心留给影像作品本身。
           </p>
         </div>
-        <div class="token-map" aria-label="token 范围">
-          <div class="token-layer">
+        <nav class="token-map" aria-label="规范目录">
+          <a class="token-layer" href="#color">
             <span>01 · Color</span>
-            <strong>颜色角色</strong>
-            <code>--color-primary</code>
-          </div>
-          <div class="token-layer">
-            <span>02 · Type</span>
-            <strong>文字层级</strong>
-            <code>--text-body · --text-title</code>
-          </div>
-          <div class="token-layer">
-            <span>03 · Scale</span>
-            <strong>尺度基准</strong>
-            <code>--radius-md · --dur-s · --z-popup</code>
-          </div>
-        </div>
+            <strong>颜色、分类色与材质</strong>
+            <code>4 族色阶 · 5 槽 tone-* · card &amp; well</code>
+          </a>
+          <a class="token-layer" href="#type">
+            <span>02 · Typography</span>
+            <strong>排版字阶与等宽数字</strong>
+            <code>MiSans · Serif · Mono · 400 / 500 / 600</code>
+          </a>
+          <a class="token-layer" href="#scale">
+            <span>03 · Scale &amp; Motion</span>
+            <strong>尺度、控件、图标与动效</strong>
+            <code>4px 栅格 · 同心圆角 · 控件高度 · 海拔层级</code>
+          </a>
+          <a class="token-layer" href="#rules">
+            <span>04 · Guidelines</span>
+            <strong>交互与界面文字规范</strong>
+            <code>焦点无障碍 · 书面语口径 · 契约准入</code>
+          </a>
+        </nav>
       </header>
 
       <section class="section" id="color" aria-labelledby="color-title">
         <header class="section-heading">
           <div>
-            <span class="eyebrow">Color guidance</span>
-            <h2 id="color-title">颜色规范</h2>
+            <span class="eyebrow">01 · Color &amp; Materials</span>
+            <h2 id="color-title">颜色与表面材质</h2>
           </div>
           <p>
-            点击原始色阶复制解析后的 HEX；点击语义单元复制可直接使用的 token。组件不直接引用色阶。
+            点击色块复制解析后的 HEX；点击语义格复制 Token 名。业务代码只消费语义角色，禁止直接引用原始色阶。
           </p>
         </header>
 
         <div class="color-layout">
           <div class="palette-column">
             <div class="column-title">
-              <h3>Tonal Palettes</h3>
-              <span>0 — 100 · Neutral 另含 4 / 6 / 12 / 17 / 22 与 92 / 94 / 96 / 98</span>
+              <h3>Tonal Palettes（4 族）</h3>
+              <span>0 — 100 · Neutral 为唯一灰阶，含深色 4/6/12/17/22 与浅色 92/94/96/98</span>
             </div>
             <div class="palette-stack" id="palette-stack"></div>
           </div>
@@ -646,7 +538,7 @@
             <header class="semantic-toolbar">
               <div>
                 <h3 id="semantic-title">Semantic Tokens</h3>
-                <p>role → semantic token → reference token</p>
+                <p>role → semantic token → reference（切换 Light / Dark 实时检验明暗换档）</p>
               </div>
               <div class="theme-switch" role="tablist" aria-label="主题模式">
                 <button
@@ -676,50 +568,82 @@
               role="tabpanel"
               aria-labelledby="theme-tab-light"
             ></div>
+
+            <div class="token-group">
+              <header class="token-group__header">
+                <div>
+                  <h4>Workbench materials</h4>
+                  <p>浮起卡片、凹陷控件槽与三层按钮优先级在当前主题下的真实效果</p>
+                </div>
+              </header>
+              <div class="material-preview">
+                <div class="mp-card">
+                  <div class="mp-title">浮起卡片（--color-card）</div>
+                  <div class="mp-desc">
+                    浅色纯白配柔影，深色抬至 n10 并改用 7% 极细描边；聊天卡、看板卡与属性卡共用。
+                  </div>
+                </div>
+                <div class="mp-card">
+                  <div class="mp-title">凹陷控件槽（--color-control-well）</div>
+                  <div class="mp-well">
+                    <span class="is-on">原片截取</span>
+                    <span>智能调音</span>
+                  </div>
+                </div>
+                <div class="mp-card">
+                  <div class="mp-title">三层动作优先级</div>
+                  <div class="mp-actions">
+                    <span class="mp-btn mp-btn-p">导出成片</span>
+                    <span class="mp-btn mp-btn-n">+ 加入 final-cut</span>
+                    <span class="mp-btn mp-btn-g">更多风格</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </section>
         </div>
 
         <div class="color-rules">
           <div class="column-title">
-            <h3>Usage rules</h3>
-            <span>颜色只用在承载信息的地方</span>
+            <h3>颜色与材质守则</h3>
+            <span>颜色只用于承载语义与引导视觉层级</span>
           </div>
           <ul class="rule-list">
             <li>
-              <strong>表面保持中性</strong>
-              页面、侧栏、卡片与控件只用中性灰阶；层次靠海拔（<code>--shadow-*</code>）、发丝线与缩略图区分，不铺浅色调容器底做装饰。
+              <strong>表面纯中性，画面做主角</strong>
+              页面、侧栏、卡片与表单只使用唯一 <code>Neutral</code> 灰阶，避免界面色偏干扰审片与调色判断；层次靠浮起卡片（<code>--color-card</code>）、凹陷槽（<code>--color-control-well</code>）与发丝线建立。
             </li>
             <li>
-              <strong>品牌绿</strong>
-              <code>primary</code> 只给主操作「生成」、链接与品牌标识、运行中与成功状态；其余按钮与选中态用墨色或中性灰。
+              <strong>三层主动作纪律</strong>
+              品牌绿 <code>primary</code> 全页仅留给唯一核心交付（如「生成」「导出」）、正文链接与运行/成功态；高优确认动作统一用 <code>action-neutral</code> 墨色实心；常规操作使用描边或透明态。
             </li>
             <li>
-              <strong>焦点与选中</strong>
-              键盘焦点只在 <code>:focus-visible</code> 时出现，默认用 2px 墨色描边（<code>--color-focus-ring</code> 即 <code>on-surface</code>，宽度 <code>--state-focus-ring</code>）；账户菜单入口展开时用中性状态背景，键盘聚焦时用 <code>inverse-surface</code> 与 <code>inverse-on-surface</code> 表示焦点，不叠加描边，系统强制颜色模式保留焦点轮廓；输入框聚焦时 1px 边框转墨色，不再外加焦点环；深色媒体面上改用 <code>on-scrim</code>。选中、当前项与拖放目标同样用墨色或中性状态层，不用绿色描边、绿色光环或浅绿铺底。
+              <strong>分类与媒体语义色（tone-*）</strong>
+              凡落在 UI 表面的时间线波形、工作台双色图标、片段标签与图表分组，统一消费明暗成对的 5 槽 <code>--color-tone-*</code>（<code>slate / teal / umber / copper / ochre</code>），在卡片与凹陷槽底色上均满足 WCAG AA；主要用于线条、波形与双色图标内填充，不做大面积浅色铺底，小尺寸实底徽标统一配纯中性 <code>--color-on-tone</code>；禁止为单一新页面另造私有色表。
             </li>
             <li>
-              <strong>Secondary 是中性灰</strong>
-              <code>secondary</code> 刻意不带色相，承担 tonal 按钮、实色标签等不需要色相的强调。
+              <strong>镜头点缀色（accent-1…8）</strong>
+              仅用于按镜头序号循环标识身份（时间轴色段与镜头序号旁短色签同色），面积小且固定；序号文字仍保持中性色，不铺浅色底块，不用于导航、按钮或状态。
+            </li>
+            <li>
+              <strong>焦点与选中态</strong>
+              键盘焦点仅在 <code>:focus-visible</code> 显露，统一使用 2px <code>--color-focus-ring</code>（即 <code>on-surface</code>）；输入框聚焦时 1px 边框转墨色；深色媒体面改用 <code>on-scrim</code>。选中与拖放目标采用中性态，不使用绿色光环或浅绿铺底。
+            </li>
+            <li>
+              <strong>图标着色边界</strong>
+              通用操作与配置资源图标使用单色 <code>on-surface</code>（24px 网格）；复杂创作工作台（如 final-cut 编辑器）的媒体导航与轨道头允许以双色（Duotone）内填充绑定 <code>--color-tone-*</code>，描边仍保持克制。
             </li>
             <li>
               <strong>状态色</strong>
-              警告用 tertiary 琥珀（<code>warning</code> 是其别名），错误与危险操作用 <code>error</code> 红；运行中与成功同用品牌绿。
+              警告与吸附提示用 <code>tertiary</code> 琥珀（<code>warning</code> 为其别名），错误与不可逆危险操作用 <code>error</code> 红；运行中与成功共用品牌绿。
             </li>
             <li>
-              <strong>镜头点缀色</strong>
-              <code>accent-1…8</code> 只表达镜头身份：同一镜头的时间轴色段与镜头列表序号旁的短色签同色，按镜头序号循环取色；不用于导航、按钮、背景或状态。
-            </li>
-            <li>
-              <strong>点缀色的用法</strong>
-              色段与短色签都用 <code>accent-N</code> 实色，面积小且固定；序号本身用中性字色。不做浅色底块或彩色徽标，也不画随正文变长的整条色带。
+              <strong>契约准入原则</strong>
+              全局 <code>design-system.html</code> 只收编跨模块复用的通用语义；单页特化纸面或独立实验浮窗留在模块局部样式，不污染全局契约。
             </li>
             <li>
               <strong>final-cut 媒体色</strong>
-              <code>final-cut-*</code> 只在 final-cut 编辑器里用，全部是已有色阶与领域色的别名：语义图标色只点亮导航和轨道头双色图标的内填充与选中态，音频身份色只画波形、片段左缘细边和片段标题；大面积的面板、卡片与控件仍用中性灰阶。
-            </li>
-            <li>
-              <strong>配置资源图标</strong>
-              单色 SVG 直接绘制在卡片或面板的底色上，使用 <code>on-surface</code> 随浅色和深色主题切换。SVG 使用 24px 画布，显示尺寸为图标槽边长的 80%。
+              <code>final-cut-*</code> 只在 final-cut 编辑器里用，全部是 <code>--color-tone-*</code> 与基础色阶的别名，不另起色值：语义图标色只点亮导航和轨道头双色图标的内填充与选中态，音频身份色只画波形、片段左缘细边和片段标题；大面积的面板、卡片与控件仍用中性灰阶。
             </li>
           </ul>
         </div>
@@ -728,183 +652,311 @@
       <section class="section" id="type" aria-labelledby="type-title">
         <header class="section-heading">
           <div>
-            <span class="eyebrow">Typography &amp; scale</span>
-            <h2 id="type-title">排版与尺度</h2>
+            <span class="eyebrow">02 · Typography</span>
+            <h2 id="type-title">排版与字阶</h2>
           </div>
+          <p>
+            界面正文用自托管 <code>MiSans</code>，展示大字用 <code>Source Serif 4</code>，时间码与数值统一用 <code>JetBrains Mono</code> 并启用等宽数字。
+          </p>
         </header>
 
         <div class="type-list">
-            <article class="type-family-row">
-              <header class="type-family-name">
-                <strong>Display</strong>
-                <code>--text-display-*</code>
-              </header>
-              <div class="type-styles" data-columns="2">
-                <div class="type-style" style="--sample-size: var(--text-display); --sample-line: var(--text-display--line-height); --sample-tracking: -0.04em; font-family: var(--font-home-display); font-style: italic;">
-                  <strong>创作</strong>
-                  <div><code>display · 57 / 64</code><span>展示文字（serif）</span></div>
-                </div>
-                <div class="type-style" style="--sample-size: var(--text-display-sm); --sample-line: 1.1; --sample-tracking: -0.035em; font-family: var(--font-home-display); font-style: italic;">
-                  <strong>创作</strong>
-                  <div><code>display-sm · 45</code><span>紧凑展示文字</span></div>
-                </div>
+          <article class="type-family-row">
+            <header class="type-family-name">
+              <strong>Display</strong>
+              <code>--text-display-*</code>
+            </header>
+            <div class="type-styles" data-columns="2">
+              <div class="type-style" style="--sample-size: var(--text-display); --sample-line: var(--text-display--line-height); --sample-tracking: -0.04em; --sample-weight: 600; font-family: var(--font-home-display); font-style: italic;">
+                <strong>iClip</strong>
+                <div><code>display · 57 / 64 · 600</code><span>首页与品牌展示标题（Serif Italic）</span></div>
               </div>
-            </article>
-
-            <article class="type-family-row">
-              <header class="type-family-name">
-                <strong>Headline</strong>
-                <code>--text-headline-*</code>
-              </header>
-              <div class="type-styles" data-columns="2">
-                <div class="type-style" style="--sample-size: var(--text-headline-lg); --sample-line: 1.2; --sample-tracking: -0.025em;">
-                  <strong>页面标题</strong>
-                  <div><code>headline-lg · 32</code><span>大标题</span></div>
-                </div>
-                <div class="type-style" style="--sample-size: var(--text-headline); --sample-line: var(--text-headline--line-height); --sample-tracking: -0.02em;">
-                  <strong>页面标题</strong>
-                  <div><code>headline · 28 / 36</code><span>页面内主区标题</span></div>
-                </div>
+              <div class="type-style" style="--sample-size: var(--text-display-sm); --sample-line: var(--text-display-sm--line-height); --sample-tracking: -0.035em; --sample-weight: 600; font-family: var(--font-home-display); font-style: italic;">
+                <strong>iClip</strong>
+                <div><code>display-sm · 45 / 52 · 600</code><span>紧凑展示标题</span></div>
               </div>
-            </article>
+            </div>
+          </article>
 
-            <article class="type-family-row">
-              <header class="type-family-name">
-                <strong>Title</strong>
-                <code>--text-title-*</code>
-              </header>
-              <div class="type-styles" data-columns="2">
-                <div class="type-style" style="--sample-size: var(--text-title-lg); --sample-line: var(--text-title-lg--line-height); --sample-weight: 650;">
-                  <strong>区域标题</strong>
-                  <div><code>title-lg · 22 / 28</code><span>对话框头、分区标题</span></div>
-                </div>
-                <div class="type-style" style="--sample-size: var(--text-title); --sample-line: var(--text-title--line-height); --sample-weight: 650;">
-                  <strong>区域标题</strong>
-                  <div><code>title · 16 / 24</code><span>卡片与面板标题</span></div>
-                </div>
+          <article class="type-family-row">
+            <header class="type-family-name">
+              <strong>Headline</strong>
+              <code>--text-headline-*</code>
+            </header>
+            <div class="type-styles" data-columns="2">
+              <div class="type-style" style="--sample-size: var(--text-headline-lg); --sample-line: var(--text-headline-lg--line-height); --sample-tracking: -0.025em; --sample-weight: 600;">
+                <strong>页面主标题</strong>
+                <div><code>headline-lg · 32 / 40 · 600</code><span>列表页与专题页顶栏大标题</span></div>
               </div>
-            </article>
-
-            <article class="type-family-row">
-              <header class="type-family-name">
-                <strong>Body</strong>
-                <code>--text-body-*</code>
-              </header>
-              <div class="type-styles" data-columns="2">
-                <div class="type-style" style="--sample-size: var(--text-body); --sample-line: var(--text-body--line-height);">
-                  <strong>正文与说明内容</strong>
-                  <div><code>body · 14 / 20 · 基准</code><span>默认正文</span></div>
-                </div>
-                <div class="type-style" style="--sample-size: var(--text-body-sm); --sample-line: var(--text-body-sm--line-height);">
-                  <strong>正文与说明内容</strong>
-                  <div><code>body-sm · 12 / 16</code><span>紧凑正文、次要段落</span></div>
-                </div>
+              <div class="type-style" style="--sample-size: var(--text-headline); --sample-line: var(--text-headline--line-height); --sample-tracking: -0.02em; --sample-weight: 600;">
+                <strong>页面分区标题</strong>
+                <div><code>headline · 28 / 36 · 600</code><span>页面内主内容区标题</span></div>
               </div>
-            </article>
+            </div>
+          </article>
 
-            <article class="type-family-row">
-              <header class="type-family-name">
-                <strong>Label</strong>
-                <code>--text-label · --text-caption</code>
-              </header>
-              <div class="type-styles" data-columns="2">
-                <div class="type-style" style="--sample-size: var(--text-label); --sample-line: var(--text-label--line-height); --sample-weight: 650;">
-                  <strong>标签与元信息</strong>
-                  <div><code>label · 12 / 16</code><span>标签、日期、小标签文字</span></div>
-                </div>
-                <div class="type-style" style="--sample-size: var(--text-caption); --sample-line: var(--text-caption--line-height); --sample-weight: 650;">
-                  <strong>标签与元信息</strong>
-                  <div><code>caption · 11 / 16 · 下限</code><span>辅助信息</span></div>
-                </div>
+          <article class="type-family-row">
+            <header class="type-family-name">
+              <strong>Title</strong>
+              <code>--text-title-*</code>
+            </header>
+            <div class="type-styles" data-columns="2">
+              <div class="type-style" style="--sample-size: var(--text-title-lg); --sample-line: var(--text-title-lg--line-height); --sample-weight: 600;">
+                <strong>弹窗与分区标题</strong>
+                <div><code>title-lg · 22 / 28 · 600</code><span>对话框头部、二级分区 h2</span></div>
               </div>
-            </article>
+              <div class="type-style" style="--sample-size: var(--text-title); --sample-line: var(--text-title--line-height); --sample-weight: 600;">
+                <strong>卡片与面板标题</strong>
+                <div><code>title · 16 / 24 · 600</code><span>卡片标题、侧栏标题</span></div>
+              </div>
+            </div>
+          </article>
 
-            <p class="type-source-note">
-              正文用 <code>--font-cue-ui</code>（MiSans，随前端自托管；界面字重只用 400 / 500 / 600），展示文字用 <code>--font-home-display</code>。
-            </p>
+          <article class="type-family-row">
+            <header class="type-family-name">
+              <strong>Body &amp; UI</strong>
+              <code>--text-body · --text-ui · --text-body-sm</code>
+            </header>
+            <div class="type-styles">
+              <div class="type-style" style="--sample-size: var(--text-body); --sample-line: var(--text-body--line-height);">
+                <strong>阅读正文与对话消息</strong>
+                <div><code>body · 14 / 20 · 400</code><span>默认正文、聊天消息、常规表单</span></div>
+              </div>
+              <div class="type-style" style="--sample-size: var(--text-ui); --sample-line: var(--text-ui--line-height); --sample-weight: 500;">
+                <strong>工作台控件与属性项</strong>
+                <div><code>ui · 13 / 18 · 500</code><span>工具栏、剪辑属性栏、紧凑选项</span></div>
+              </div>
+              <div class="type-style" style="--sample-size: var(--text-body-sm); --sample-line: var(--text-body-sm--line-height);">
+                <strong>次要说明与辅助段落</strong>
+                <div><code>body-sm · 12 / 16 · 400</code><span>提示说明、卡片副文（常规字重）</span></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="type-family-row">
+            <header class="type-family-name">
+              <strong>Label &amp; Caption</strong>
+              <code>--text-label · --text-caption</code>
+            </header>
+            <div class="type-styles" data-columns="2">
+              <div class="type-style" style="--sample-size: var(--text-label); --sample-line: var(--text-label--line-height); --sample-weight: 600;">
+                <strong>分组标签与元信息</strong>
+                <div><code>label · 12 / 16 · 600</code><span>表头、页签、字段名（与 body-sm 以字重区分）</span></div>
+              </div>
+              <div class="type-style" style="--sample-size: var(--text-caption); --sample-line: var(--text-caption--line-height); --sample-weight: 600;">
+                <strong>最小可读字号下限</strong>
+                <div><code>caption · 11 / 16 · 600</code><span>刻度、角标、微提示（全站严禁小于 11px）</span></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="type-family-row">
+            <header class="type-family-name">
+              <strong>Mono &amp; Tabular</strong>
+              <code>--font-mono · tabular-nums</code>
+            </header>
+            <div class="type-styles" data-columns="2">
+              <div class="type-style" style="--sample-size: var(--text-ui); --sample-line: var(--text-ui--line-height); --sample-weight: 500;">
+                <strong class="is-tabular">00:14.28 / 01:02.00</strong>
+                <div><code>mono · 13 / 18 · tabular-nums</code><span>播放时间码、片段时长、帧率（防跳动）</span></div>
+              </div>
+              <div class="type-style" style="--sample-size: var(--text-caption); --sample-line: var(--text-caption--line-height); --sample-weight: 500;">
+                <strong class="is-tabular">-6.0 dB · 72% · 1920×1080</strong>
+                <div><code>mono · 11 / 16 · tabular-nums</code><span>音量分贝、滑块读数、分辨率与代码片段</span></div>
+              </div>
+            </div>
+          </article>
+
+          <p class="type-source-note">
+            界面字重严格限定为 <code>400</code>（正文）、<code>500</code>（控件与交互项）、<code>600</code>（标题、标签与展示衬线体），不使用 <code>650</code> 或 <code>700+</code>，由 <code>pnpm lint:design</code> 自动门禁检查。
+          </p>
+        </div>
+      </section>
+
+      <section class="section" id="scale" aria-labelledby="scale-title">
+        <header class="section-heading">
+          <div>
+            <span class="eyebrow">03 · Scale, Controls &amp; Motion</span>
+            <h2 id="scale-title">空间、控件、图标与动效尺度</h2>
+          </div>
+          <p>
+            所有间距、圆角、控件高度、图标尺寸、海拔投影与层级均在有限刻度内取值，避免手写任意像素值。
+          </p>
+        </header>
+
+        <div class="scale-grid">
+          <div class="scale-group">
+            <div class="scale-group-head">
+              <h3>Spacing · 4px 栅格</h3>
+            </div>
+            <div class="space-row"><code>gap-1</code><i class="space-line" style="--space: 4px"></i><b>4px</b></div>
+            <div class="space-row"><code>gap-2</code><i class="space-line" style="--space: 8px"></i><b>8px</b></div>
+            <div class="space-row"><code>gap-3</code><i class="space-line" style="--space: 12px"></i><b>12px</b></div>
+            <div class="space-row"><code>gap-4</code><i class="space-line" style="--space: 16px"></i><b>16px</b></div>
+            <div class="space-row"><code>gap-5</code><i class="space-line" style="--space: 20px"></i><b>20px</b></div>
+            <div class="space-row"><code>gap-6</code><i class="space-line" style="--space: 24px"></i><b>24px</b></div>
+            <div class="space-row"><code>gap-8</code><i class="space-line" style="--space: 32px"></i><b>32px</b></div>
+            <div class="space-row"><code>gap-10</code><i class="space-line" style="--space: 40px"></i><b>40px</b></div>
+            <div class="space-row"><code>gap-12</code><i class="space-line" style="--space: 48px"></i><b>48px</b></div>
+            <p class="type-source-note">内边距与元素间距遵循 4px 步进；<code>[Npx]</code> 仅限轨道、舞台等布局几何。</p>
           </div>
 
-          <div class="scale-grid">
-            <div class="scale-group">
-              <h3>Spacing · 4px</h3>
-              <div class="space-row"><code>gap-1</code><i class="space-line" style="--space: 4px"></i><b>4px</b></div>
-              <div class="space-row"><code>gap-2</code><i class="space-line" style="--space: 8px"></i><b>8px</b></div>
-              <div class="space-row"><code>gap-3</code><i class="space-line" style="--space: 12px"></i><b>12px</b></div>
-              <div class="space-row"><code>gap-4</code><i class="space-line" style="--space: 16px"></i><b>16px</b></div>
-              <div class="space-row"><code>gap-5</code><i class="space-line" style="--space: 20px"></i><b>20px</b></div>
-              <div class="space-row"><code>gap-6</code><i class="space-line" style="--space: 24px"></i><b>24px</b></div>
-              <div class="space-row"><code>gap-8</code><i class="space-line" style="--space: 32px"></i><b>32px</b></div>
-              <div class="space-row"><code>gap-10</code><i class="space-line" style="--space: 40px"></i><b>40px</b></div>
-              <div class="space-row"><code>gap-12</code><i class="space-line" style="--space: 48px"></i><b>48px</b></div>
-              <p class="type-source-note">间距用 Tailwind 刻度；<code>[Npx]</code> 仅限布局几何。</p>
+          <div class="scale-group">
+            <div class="scale-group-head">
+              <h3>Radius · 4px 同心步进</h3>
             </div>
-
-            <div class="scale-group">
-              <h3>Radius tokens</h3>
-              <div class="radius-table">
-                <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-xs)"></i><span>4px</span><code>--radius-xs</code></div></div>
-                <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-sm)"></i><span>8px</span><code>--radius-sm</code></div></div>
-                <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-md)"></i><span>12px</span><code>--radius-md</code></div></div>
-                <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-lg)"></i><span>16px</span><code>--radius-lg</code></div></div>
-                <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-xl)"></i><span>20px</span><code>--radius-xl</code></div></div>
-                <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-2xl)"></i><span>28px</span><code>--radius-2xl</code></div></div>
-                <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-3xl)"></i><span>32px</span><code>--radius-3xl</code></div></div>
-                <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-4xl)"></i><span>48px</span><code>--radius-4xl</code></div></div>
-                <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-full)"></i><span>full</span><code>--radius-full</code></div></div>
-                <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-card)"></i><span>14px · 目录卡片</span><code>--radius-card</code></div></div>
-              </div>
+            <div class="radius-table">
+              <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-xs)"></i><span>4px · 微标</span><code>--radius-xs</code></div></div>
+              <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-sm)"></i><span>8px · 控件</span><code>--radius-sm</code></div></div>
+              <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-md)"></i><span>12px · 卡片</span><code>--radius-md</code></div></div>
+              <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-lg)"></i><span>16px · 面板</span><code>--radius-lg</code></div></div>
+              <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-xl)"></i><span>20px · 弹窗</span><code>--radius-xl</code></div></div>
+              <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-2xl)"></i><span>28px</span><code>--radius-2xl</code></div></div>
+              <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-3xl)"></i><span>32px</span><code>--radius-3xl</code></div></div>
+              <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-4xl)"></i><span>48px</span><code>--radius-4xl</code></div></div>
+              <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-full)"></i><span>full · 胶囊</span><code>--radius-full</code></div></div>
             </div>
-
-            <div class="scale-group">
-              <h3>Motion tokens</h3>
-              <div class="motion-list">
-                <div class="motion-row"><code>--dur-s · 微交互</code><i class="motion-track" style="--motion-width: 38%"></i><b>150ms</b></div>
-                <div class="motion-row"><code>--dur-m · 面板开合</code><i class="motion-track" style="--motion-width: 62%"></i><b>250ms</b></div>
-                <div class="motion-row"><code>--dur-l · 入场</code><i class="motion-track" style="--motion-width: 100%"></i><b>400ms</b></div>
-                <div class="motion-row"><code>--ease · 原地变化</code><span>cubic-bezier(0.2, 0, 0, 1)</span><b>standard</b></div>
-                <div class="motion-row"><code>--ease-decel · 进场</code><span>cubic-bezier(0, 0, 0, 1)</span><b>decel</b></div>
-                <div class="motion-row"><code>--ease-accel · 退场</code><span>cubic-bezier(0.3, 0, 1, 1)</span><b>accel</b></div>
-              </div>
-            </div>
-            <div class="scale-group">
-              <h3>Elevation tokens</h3>
-              <div class="motion-list">
-                <div class="motion-row"><code>静态表面</code><i class="elevation-swatch flat"></i><b>0</b></div>
-                <div class="motion-row"><code>--shadow-1 · 悬浮小件</code><i class="elevation-swatch" style="box-shadow: var(--shadow-1)"></i><b>1</b></div>
-                <div class="motion-row"><code>--shadow-2 · 菜单 / 浮层</code><i class="elevation-swatch" style="box-shadow: var(--shadow-2)"></i><b>2</b></div>
-                <div class="motion-row"><code>--shadow-3 · 弹窗 / toast</code><i class="elevation-swatch" style="box-shadow: var(--shadow-3)"></i><b>3</b></div>
-              </div>
-            </div>
-
-            <div class="scale-group">
-              <h3>Layer tokens</h3>
-              <div class="motion-list">
-                <div class="motion-row"><code>--z-base</code><span>页面基面</span><b>0</b></div>
-                <div class="motion-row"><code>--z-canvas</code><span>画布</span><b>2</b></div>
-                <div class="motion-row"><code>--z-content</code><span>内容</span><b>5</b></div>
-                <div class="motion-row"><code>--z-panel</code><span>面板</span><b>10</b></div>
-                <div class="motion-row"><code>--z-sidebar</code><span>侧栏；--z-canvas-overlay 同层</span><b>40</b></div>
-                <div class="motion-row"><code>--z-header</code><span>顶栏</span><b>50</b></div>
-                <div class="motion-row"><code>--z-overlay</code><span>scrim</span><b>90</b></div>
-                <div class="motion-row"><code>--z-popup</code><span>菜单 / 弹窗 / toast</span><b>100</b></div>
-              </div>
-              <p class="type-source-note">使用 <code>layer-*</code>；<code>--z-local-1..3</code> 仅限 isolate 容器内。</p>
-            </div>
-
-            <div class="scale-group">
-              <h3>Breakpoints</h3>
-              <div class="motion-list">
-                <div class="motion-row"><code>--breakpoint-sm</code><span>紧凑 → 中等</span><b>600px</b></div>
-                <div class="motion-row"><code>--breakpoint-md</code><span>中等 → 展开</span><b>840px</b></div>
-                <div class="motion-row"><code>--breakpoint-lg</code><span>宽屏</span><b>1280px</b></div>
-              </div>
-            </div>
+            <p class="type-source-note">嵌套遵循同心递减：面板 <code>16</code> → 卡片 <code>12</code> → 按钮/凹槽 <code>8</code> → 标签 <code>4</code>。</p>
           </div>
+
+          <div class="scale-group">
+            <div class="scale-group-head">
+              <h3>Control Heights · 控件高度</h3>
+            </div>
+            <div class="ctrl-height-row"><code>xs</code><span class="ctrl-pill-bar" style="--ch: var(--control-height-xs)">微标签 · 可点下限</span><b>24px</b></div>
+            <div class="ctrl-height-row"><code>compact</code><span class="ctrl-pill-bar" style="--ch: var(--control-height-compact)">工作台工具栏 · 分段选项</span><b>28px</b></div>
+            <div class="ctrl-height-row"><code>sm</code><span class="ctrl-pill-bar" style="--ch: var(--control-height-sm)">胶囊 · 菜单项 · 小图标钮</span><b>34px</b></div>
+            <div class="ctrl-height-row"><code>md</code><span class="ctrl-pill-bar" style="--ch: var(--control-height-md)">紧凑按钮 · 常规工具栏</span><b>36px</b></div>
+            <div class="ctrl-height-row"><code>lg</code><span class="ctrl-pill-bar" style="--ch: var(--control-height-lg)">标准主按钮</span><b>40px</b></div>
+            <div class="ctrl-height-row"><code>xl</code><span class="ctrl-pill-bar" style="--ch: var(--control-height-xl)">单行输入框</span><b>44px</b></div>
+            <p class="type-source-note">视觉尺寸允许低至 <code>24px</code>，触屏核心交互可通过伪元素扩充至 <code>--control-hit-area (48px)</code>。</p>
+          </div>
+
+          <div class="scale-group">
+            <div class="scale-group-head">
+              <h3>Icon Scale · 图标尺度</h3>
+            </div>
+            <div class="icon-scale-row"><code>--icon-xs</code><span class="icon-box" data-icon-px="12"></span><span>微角标、内联箭头</span><b>12px</b></div>
+            <div class="icon-scale-row"><code>--icon-sm</code><span class="icon-box" data-icon-px="14"></span><span>紧凑标签、输入前缀</span><b>14px</b></div>
+            <div class="icon-scale-row"><code>--icon-md</code><span class="icon-box" data-icon-px="16"></span><span>默认按钮、菜单、工具栏</span><b>16px</b></div>
+            <div class="icon-scale-row"><code>--icon-lg</code><span class="icon-box" data-icon-px="20"></span><span>侧栏导航、卡片主图标</span><b>20px</b></div>
+            <div class="icon-scale-row"><code>--icon-xl</code><span class="icon-box" data-icon-px="24"></span><span>空状态、资源目录大图标</span><b>24px</b></div>
+            <p class="type-source-note">全站图标统一基于 <code>24×24</code> 光学网格绘制，从 <code>@/shared/icons</code> 引入；纯图标按钮必配 <code>aria-label</code>。</p>
+          </div>
+
+          <div class="scale-group">
+            <div class="scale-group-head">
+              <h3>Elevation · 海拔与降影</h3>
+            </div>
+            <div class="motion-list">
+              <div class="motion-row"><code>静态表面</code><i class="elevation-swatch flat"></i><b>0</b></div>
+              <div class="motion-row"><code>--shadow-control-well</code><i class="elevation-swatch well"></i><b>凹槽</b></div>
+              <div class="motion-row"><code>--shadow-xs · 嵌套件</code><i class="elevation-swatch" style="box-shadow: var(--shadow-xs)"></i><b>xs</b></div>
+              <div class="motion-row"><code>--shadow-card · 卡片</code><i class="elevation-swatch" style="box-shadow: var(--shadow-card)"></i><b>card</b></div>
+              <div class="motion-row"><code>--shadow-1 · 悬浮小件</code><i class="elevation-swatch" style="box-shadow: var(--shadow-1)"></i><b>1</b></div>
+              <div class="motion-row"><code>--shadow-2 · 菜单浮层</code><i class="elevation-swatch" style="box-shadow: var(--shadow-2)"></i><b>2</b></div>
+              <div class="motion-row"><code>--shadow-3 · 弹窗</code><i class="elevation-swatch" style="box-shadow: var(--shadow-3)"></i><b>3</b></div>
+            </div>
+            <p class="type-source-note">深色下卡片取消投影并转为 <code>7%</code> 极细边，仅浮层菜单与弹窗保留投影。</p>
+          </div>
+
+          <div class="scale-group">
+            <div class="scale-group-head">
+              <h3>Motion · 动效与缓动</h3>
+              <button type="button" class="play-motion-btn" id="play-motion">播放示例</button>
+            </div>
+            <div class="motion-list" id="motion-demo">
+              <div class="motion-row">
+                <code>--dur-s · 原地微交互</code>
+                <span class="motion-track" style="--mdur: var(--dur-s); --mease: var(--ease)"><i class="motion-dot"></i></span>
+                <b>150ms</b>
+              </div>
+              <div class="motion-row">
+                <code>--dur-m · 菜单/面板</code>
+                <span class="motion-track" style="--mdur: var(--dur-m); --mease: var(--ease-decel)"><i class="motion-dot"></i></span>
+                <b>250ms</b>
+              </div>
+              <div class="motion-row">
+                <code>--dur-l · 整区入场</code>
+                <span class="motion-track" style="--mdur: var(--dur-l); --mease: var(--ease-decel)"><i class="motion-dot"></i></span>
+                <b>400ms</b>
+              </div>
+              <div class="motion-row"><code>--ease · 原地变化</code><span>cubic-bezier(0.2, 0, 0, 1)</span><b>standard</b></div>
+              <div class="motion-row"><code>--ease-decel · 进场</code><span>cubic-bezier(0, 0, 0, 1)</span><b>decel</b></div>
+              <div class="motion-row"><code>--ease-accel · 退场</code><span>cubic-bezier(0.3, 0, 1, 1)</span><b>accel</b></div>
+            </div>
+            <p class="type-source-note">进场减速落定，退场加速离开且时长约为进场一半；自动响应 <code>prefers-reduced-motion</code>。</p>
+          </div>
+
+          <div class="scale-group">
+            <div class="scale-group-head">
+              <h3>Layers · 全局层级</h3>
+            </div>
+            <div class="motion-list">
+              <div class="motion-row"><code>--z-base</code><span>页面基面</span><b>0</b></div>
+              <div class="motion-row"><code>--z-canvas</code><span>交互画布</span><b>2</b></div>
+              <div class="motion-row"><code>--z-content</code><span>正文内容</span><b>5</b></div>
+              <div class="motion-row"><code>--z-panel</code><span>侧边功能面板</span><b>10</b></div>
+              <div class="motion-row"><code>--z-sidebar</code><span>应用侧栏 / canvas-overlay</span><b>40</b></div>
+              <div class="motion-row"><code>--z-header</code><span>页面顶栏</span><b>50</b></div>
+              <div class="motion-row"><code>--z-overlay</code><span>遮罩层 scrim</span><b>90</b></div>
+              <div class="motion-row"><code>--z-popup</code><span>菜单 / 弹窗 / Toast</span><b>100</b></div>
+            </div>
+            <p class="type-source-note">组件内兄弟排序使用 <code>--z-local-1..3</code>（须配合 <code>isolate</code>），禁止裸写 <code>z-[999]</code>。</p>
+          </div>
+
+          <div class="scale-group">
+            <div class="scale-group-head">
+              <h3>Breakpoints &amp; Layout</h3>
+            </div>
+            <div class="motion-list">
+              <div class="motion-row"><code>--breakpoint-sm</code><span>紧凑 → 中等窗口</span><b>600px</b></div>
+              <div class="motion-row"><code>--breakpoint-md</code><span>中等 → 展开窗口</span><b>840px</b></div>
+              <div class="motion-row"><code>--breakpoint-lg</code><span>宽屏工作台</span><b>1280px</b></div>
+              <div class="motion-row"><code>app-sidebar</code><span>展开 264 / 收起 56</span><b>200–400</b></div>
+              <div class="motion-row"><code>app-workbench</code><span>工作台默认 820 / 下限 560</span><b>chat ≥400</b></div>
+              <div class="motion-row"><code>dialog-header</code><span>标准弹窗顶栏高度</span><b>52px</b></div>
+              <div class="motion-row"><code>home-read-max</code><span>阅读区最大行宽</span><b>760px</b></div>
+            </div>
+            <p class="type-source-note">列表页左右边距随视口平滑插值（32px–120px）；<code>final-cut</code> 编辑器保持桌面固定布局，不做窄屏折行。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="rules" aria-labelledby="rules-title">
+        <header class="section-heading">
+          <div>
+            <span class="eyebrow">04 · Interaction &amp; Copy</span>
+            <h2 id="rules-title">交互体验与界面文字规范</h2>
+          </div>
+          <p>
+            统一的交互习惯与克制的书面语口径，确保多模块协作时体感一致，不向用户暴露工程内部实现。
+          </p>
+        </header>
+
+        <ul class="rule-list">
+          <li>
+            <strong>通用操作用图标，领域概念配短词</strong>
+            播放、静音、撤销、删除、关闭、全屏等高频通用动作可只用清晰图标配即时悬停提示；涉及业务概念与 AI 能力的入口（如「镜头」「贴片」「生成音乐」「对齐口型」）必须配 2–4 字中文短词，不让用户猜图标。
+          </li>
+          <li>
+            <strong>键盘、触屏与加载防抖</strong>
+            所有核心交互同时支持鼠标、键盘与触屏：悬停才露出的控件需以 <code>touch:</code> 在触屏设备常驻；加载态按钮保持原尺寸不跳动，并阻止重复提交；弹窗打开后接管焦点，关闭后归还焦点。
+          </li>
+          <li>
+            <strong>不暴露底层内部标识</strong>
+            界面统一使用中文（固定功能名 <code>final-cut</code> 除外，与中文相邻两侧各留一个空格）；严禁向用户展示原始工具函数名、内部 ID、文件路径或 JSON 字段。
+          </li>
+          <li>
+            <strong>书面语与标点口径（单一事实源）</strong>
+            保持冷静、直接、可执行的书面语，不使用感叹号、颜文字或空泛安抚；数量与限制写具体数字，引用界面按钮原名用直角引号「」；单句提示末尾不加句号，原因与操作建议之间用分号隔开。六类提示标准句式详见 <a href="./web/docs/frontend-implementation.md">前端实现规范 · 界面文字</a> 与 <a href="./docs/adr/0001-ui-copy-formal-register.md">ADR-0001</a>。
+          </li>
+        </ul>
       </section>
 
       <footer class="footer">
         <span>iClip Design System</span>
-        <span>基础 token · 与运行时逐值对账 · pnpm lint:design</span>
+        <span>基础 Token · 与运行时逐值对账 · pnpm lint:design</span>
       </footer>
     </main>
 

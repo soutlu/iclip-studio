@@ -24,21 +24,33 @@ const RULES = [
   },
   {
     id: 'tailwind-palette-class',
-    desc: 'Tailwind 原色板类（本设计系统只有 6 族语义色，不用 slate/blue/… 调色板）',
+    desc: 'Tailwind 原色板类（本设计系统使用 4 族基础色阶与 5 槽低饱和分类色，不用 slate/blue/… 调色板）',
     ext: ['.ts', '.tsx'],
     re: /(?:^|[\s'"`])(?:bg|text|border|fill|stroke|ring|outline|from|to|via)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d+/g,
   },
   {
     id: 'tailwind-default-text-size',
-    desc: 'Tailwind 默认字号档（字阶已清空重建，应使用 text-caption/label/body*/title*/headline*/display*）',
+    desc: 'Tailwind 默认字号档（字阶已清空重建，应使用 text-caption/label/body-sm/ui/body/title*/headline*/display*）',
     ext: ['.ts', '.tsx'],
     re: /(?:^|[\s'"`])text-(?:xs|sm|base|lg|xl|\dxl)\b/g,
   },
   {
     id: 'tailwind-default-shadow',
-    desc: 'Tailwind 默认阴影档（海拔只有 shadow-1 / 2 / 3 三档）',
+    desc: 'Tailwind 默认阴影档（应使用 shadow-1 / 2 / 3 / card / control-well 或 shadow-[var(--shadow-xs)]）',
     ext: ['.ts', '.tsx'],
     re: /(?:^|[\s'"`])shadow-(?:xs|sm|md|lg|xl|2xl)\b/g,
+  },
+  {
+    id: 'disallowed-font-weight-tsx',
+    desc: '超规字重（界面只用 400 font-normal / 500 font-medium / 600 font-semibold，禁用 650 与 700+）',
+    ext: ['.ts', '.tsx'],
+    re: /(?:^|[\s'"`:])font-(?:bold|extrabold|black|\[(?:650|[789]\d\d)\])\b/g,
+  },
+  {
+    id: 'disallowed-font-weight-css',
+    desc: 'CSS 超规字重（界面只用 400 / 500 / 600，禁用 bold / 650 / 700+）',
+    ext: ['.css'],
+    re: /font-weight:\s*(?:bold|bolder|650|[789]00)\b/g,
   },
   {
     id: 'tailwind-default-motion',
@@ -90,7 +102,7 @@ const RULES = [
   },
   {
     id: 'arbitrary-text-size',
-    desc: '任意值字号（应使用 text-caption/label*/body*/title/headline/display）',
+    desc: '任意值字号（应使用 text-caption/label/body-sm/ui/body/title*/headline*/display*）',
     ext: ['.ts', '.tsx'],
     re: /text-\[[\d.]+px\]/g,
   },

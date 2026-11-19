@@ -62,7 +62,7 @@
   flex-direction: column;
   gap: 8px;
   padding: 10px 12px;
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-md);
   background: var(--color-final-cut-raised);
   box-shadow: var(--shadow-final-cut-card), var(--shadow-final-cut-specular);
 }
@@ -645,7 +645,7 @@
   gap: 8px;
   margin: 6px var(--wf-tab-inset) 0;
   padding: 20px 16px;
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-md);
   background: var(--color-surface-container-low);
   box-shadow: inset 0 0 0 1px var(--color-final-cut-line);
   color: var(--color-on-surface-muted);
@@ -1460,7 +1460,7 @@
    两个条件压过浮层自带的边框、底色和阴影 */
 :is(.wf-generate, .wf-song-details)[data-state] {
   border: 0;
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-md);
   background: var(--color-final-cut-raised);
   box-shadow: var(--shadow-final-cut-float), var(--shadow-final-cut-specular);
   backdrop-filter: none;
@@ -2180,7 +2180,7 @@
   color: var(--color-on-surface-muted);
   font-family: var(--font-mono);
   font-size: var(--text-caption);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .wf-mix-effect:not([data-off]) .wf-mix-effect-index {
@@ -2242,7 +2242,7 @@
   flex-direction: column;
   gap: 6px;
   padding: 10px 12px 10px 14px;
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--color-primary) 8%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 26%, transparent);
 }
@@ -4523,7 +4523,7 @@
 .wf-take {
   position: relative;
   padding: 7px 7px 6px;
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-md);
   background: var(--color-final-cut-raised);
   box-shadow: var(--shadow-final-cut-card), var(--shadow-final-cut-specular);
   transition: box-shadow var(--dur-s) var(--ease);

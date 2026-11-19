@@ -4,6 +4,8 @@
   "tailwind-palette-class": 0,
   "tailwind-default-text-size": 0,
   "tailwind-default-shadow": 0,
+  "disallowed-font-weight-tsx": 0,
+  "disallowed-font-weight-css": 0,
   "tailwind-default-motion": 0,
   "inline-style-color": 0,
   "svg-literal-fill": 0,
