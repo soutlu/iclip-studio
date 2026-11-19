@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import {
+  createFinalCut,
   finalCutPreviewPlayer,
   isMarkedFinalCutPreviewPlayer,
   markFinalCutPreviewPlayer,
@@ -102,7 +103,7 @@ const openWith = async (
   const panel = await openConversation(page, CONVERSATION)
   await addTakes(page, shots)
   if (silentShots.length > 0) await addTakes(page, silentShots, { sound: false })
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const materials = editor.getByRole('region', { name: '视频素材区' })
   await expect(materials.getByRole('button', { name: /镜头 1，/ }).first()).toBeVisible()
   return { editor, materials, panel }
@@ -236,7 +237,7 @@ test('镜头条比卡片宽时横着滚：滚过以后点选、在选区上单�
   const panel = await openConversation(page, CONVERSATION)
   // 20 秒的片每 2 秒一个镜头，镜头条比卡片宽
   await addTakes(page, [1], { seconds: 20 })
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const materials = editor.getByRole('region', { name: '视频素材区' })
   const shot = (index: number) => shotOf(materials, 1, 'A', index)
   await expect(shot(1)).toBeInViewport()
@@ -415,7 +416,7 @@ test('预览素材时播放条是素材的：读数按整条原作算，点、�
   const panel = await openConversation(page, CONVERSATION)
   // 20 秒的片每 2 秒一个镜头
   await addTakes(page, [1], { seconds: 20 })
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const materials = editor.getByRole('region', { name: '视频素材区' })
   const transport = editor.getByRole('group', { name: '播放控制' })
   const progress = transport.getByRole('slider', { name: '播放进度' })
@@ -737,7 +738,7 @@ test('每条原作可以换版本；换了之后这条轨上的选区收起', as
   const [take] = await addTakes(page, [1])
   if (take === undefined) throw new Error('没有出片')
   await composeVersion(page, take)
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const materials = editor.getByRole('region', { name: '视频素材区' })
 
   const picker = materials.getByRole('button', { name: /^生成 A的版本：/ })

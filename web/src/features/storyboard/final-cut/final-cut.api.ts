@@ -98,16 +98,20 @@ export const readProjectFile = async (
   }
 }
 
-/** 在工程里新建一个文件（`path` 相对工程根），答复工作区里的版本号；已经有这个文件时是 409。 */
+/**
+ * 在工程里新建一个文件（`path` 相对工程根），答复工作区里的版本号；已经有这个文件时是 409。
+ * `failureText` 是失败时说明的开头（服务端给了原因时接在它后面），缺省是保存失败。
+ */
 export const createProjectFile = async (
   conversationId: string,
   path: string,
   content: string,
+  failureText = SAVE_FAILED,
 ): Promise<number> =>
   (
     await apiFetch(`${conversationPath(conversationId)}/final-cut/files`, zFinalCutFileCreatedOut, {
       body: { path, content },
-      fallbackErrorMessage: SAVE_FAILED,
+      fallbackErrorMessage: failureText,
       method: 'POST',
     })
   ).version
@@ -222,9 +226,9 @@ const captionsSource = (html: string): string | undefined => {
 }
 
 /**
- * 读工作区里的工程，还没有工程（没有主文件）时是 null。字幕场景文件按主文件里字幕宿主挂载的路径读；没有宿主
- * 时也读编辑器新建它的位置（加了又撤销会留下空的场景文件）。语言值表按工作区的文件列表找，不认识的语言不读；
- * 值表写法不对时说明原因。
+ * 读工作区里的工程，还没有工程（没有主文件）时是 null，编辑器这时只给「新建 final-cut」。字幕场景文件按
+ * 主文件里字幕宿主挂载的路径读；没有宿主时也读编辑器新建它的位置（加了又撤销会留下空的场景文件）。语言值表
+ * 按工作区的文件列表找，不认识的语言不读；值表写法不对时说明原因。
  */
 export const readProject = async (
   conversationId: string,

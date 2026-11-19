@@ -108,6 +108,17 @@
   line-height: var(--text-body-sm--line-height);
 }
 
+/* 还没有工程：说明、「新建 final-cut」和失败提示在页签正中排成一列 */
+.wf-state.is-new {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+}
+
 /* ---- 通用控件：编辑器里各处共用的一套样子。浮层菜单挂在 body 上不在编辑器根下，另带 wf-menu ---- */
 
 /* 双色图标的填充层：悬停加深一档，按下、选中再加深一档（变量见 shared/icons 的 final-cut-glyphs.css） */

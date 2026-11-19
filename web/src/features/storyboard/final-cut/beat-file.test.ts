@@ -76,7 +76,7 @@ describe('节拍文件的名字', () => {
 
 describe('读或算一首配乐的节拍', () => {
   const PATH = 'beats/iclip/agent/generated-music/3f0c.mp3.json'
-  const storeWith = (files: Map<string, { content: string; version: number }>, writable = true) => {
+  const storeWith = (files: Map<string, { content: string; version: number }>) => {
     const store = {
       read: vi.fn((path: string) => Promise.resolve(files.get(path) ?? null)),
       create: vi.fn((path: string, content: string) => {
@@ -88,7 +88,6 @@ describe('读或算一首配乐的节拍', () => {
         files.set(path, { content, version: version + 1 })
         return Promise.resolve(version + 1)
       }),
-      writable: () => writable,
     } satisfies BeatFileStore
     return store
   }
@@ -121,12 +120,9 @@ describe('读或算一首配乐的节拍', () => {
     expect(files.get(PATH)?.version).toBe(5)
   })
 
-  it('没有稳定的节拍时不写文件；工程不能写时也不写', async () => {
+  it('没有稳定的节拍时不写文件', async () => {
     const files = new Map<string, { content: string; version: number }>()
     expect(await projectBeats(SRC, () => Promise.resolve(null), storeWith(files))).toBeNull()
-    expect(
-      await projectBeats(SRC, () => Promise.resolve(grid), storeWith(files, false)),
-    ).not.toBeNull()
     expect(files.size).toBe(0)
   })
 

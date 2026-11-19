@@ -20,6 +20,7 @@ import {
   captionVariable,
 } from './composition/captions'
 import {
+  emptyProject,
   FONT_BLOCK_END,
   FONT_BLOCK_START,
   type AudioClip,
@@ -39,8 +40,8 @@ const CREATE = '*/api/conversations/:conversationId/final-cut/files'
 const READ = '*/api/conversations/:conversationId/workspace/file'
 const CANVAS = { width: 720, height: 1280 }
 
-/** 一次保存：第一次走新建（`expectedVersion` 是 null），之后按版本号写主文件。 */
-type Save = { html: string; expectedVersion: number | null }
+/** 一次保存主文件：按版本号写。 */
+type Save = { html: string; expectedVersion: number }
 
 const recordSaves = (slow = 0) => {
   const saves: Save[] = []
@@ -53,12 +54,6 @@ const recordSaves = (slow = 0) => {
       }
       if (body.path === MAIN_PATH)
         saves.push({ html: body.content, expectedVersion: body.expectedVersion })
-      if (slow > 0) await delay(slow)
-      return undefined
-    }),
-    http.post(CREATE, async ({ request }) => {
-      const body = (await request.clone().json()) as { path: string; content: string }
-      if (body.path === 'index.html') saves.push({ html: body.content, expectedVersion: null })
       if (slow > 0) await delay(slow)
       return undefined
     }),
@@ -106,28 +101,31 @@ const fakeConnection = () => {
 }
 
 /**
- * 打开工程：`stored` 是编辑器读到的主文件（null 是还没有工程；工作区里可能已经有更新的一版），字幕场景文件
- * 和语言值表和编辑器一样经 `readProject` 读。
+ * 打开工程：`stored` 是编辑器读到的主文件（工作区里可能已经有更新的一版；不给时先在工作区里放一份按模版建的
+ * 空工程），字幕场景文件和语言值表和编辑器一样经 `readProject` 读。
  */
 const open = async (
-  stored: StoredFile | null = null,
+  stored?: StoredFile,
   debounceMs = 10,
   conversation = CONVERSATION,
   catalog = fixtureCatalog,
 ) => {
-  const read = stored === null ? null : await readProject(conversation)
-  const initial = stored === null || read === null ? null : { ...read, main: stored }
+  const main = stored ?? putMockProjectMain(conversation, emptyProject(CANVAS, catalog))
+  const read = await readProject(conversation)
+  if (read === null) throw new Error('工作区里没有工程主文件')
+  const initial = { ...read, main }
   const onNotice = vi.fn<(message: string) => void>()
+  const onMissing = vi.fn<() => void>()
   const { connection, notify } = fakeConnection()
   const hook = renderHook(
-    () => useFilmSession(conversation, initial, catalog, { debounceMs, onNotice }),
+    () => useFilmSession(conversation, initial, catalog, { debounceMs, onNotice, onMissing }),
     {
       wrapper: ({ children }: { children: ReactNode }) => (
         <TranscriptConnectionContext value={connection}>{children}</TranscriptConnectionContext>
       ),
     },
   )
-  await waitFor(() => expect(hook.result.current.opening).toBe(false))
+  await waitFor(() => expect(hook.result.current.film).not.toBeNull())
   return { ...hook, onNotice, notify }
 }
 
@@ -142,8 +140,7 @@ const piece = (overrides: Partial<NewVideo> = {}): NewVideo => ({
   ...overrides,
 })
 
-const add = (result: Session, ...videos: NewVideo[]) =>
-  act(() => result.current.addVideos(CANVAS, videos))
+const add = (result: Session, ...videos: NewVideo[]) => act(() => result.current.addVideos(videos))
 
 /** 工程里的视频片段，按它们在文件里的先后。 */
 const videosOf = (result: Session): VideoClip[] =>
@@ -170,14 +167,6 @@ const openWith = (clips: FilmClip[], extra = '') => {
 }
 
 describe('useFilmSession · 读存', () => {
-  it('还没有工程时没有文件，打开不保存', async () => {
-    const saves = recordSaves()
-    const { result } = await open()
-    expect(result.current.film).toBeNull()
-    await new Promise((resolve) => setTimeout(resolve, 50))
-    expect(saves).toEqual([])
-  })
-
   it('打开工程主文件：读出视频片段和画幅，不改就不保存', async () => {
     const saves = recordSaves()
     const second = video({ id: 'clip-2', src: OTHER_SRC, start: 2_000, mediaStart: 500 })
@@ -194,7 +183,7 @@ describe('useFilmSession · 读存', () => {
     expect(saves).toEqual([])
   })
 
-  it('第一次加素材时用模板建主文件，素材接在末尾；停下后第一次保存走新建，之后带版本号写', async () => {
+  it('空的模版工程里加素材：接在末尾；停下后按读到的版本号写，之后接着按新的版本号写', async () => {
     const saves = recordSaves()
     const { result } = await open()
     await add(result, piece(), piece({ mediaStart: 3_000, duration: 1_500 }))
@@ -204,19 +193,19 @@ describe('useFilmSession · 读存', () => {
     ])
     expect(result.current.film).toMatchObject({ canvas: CANVAS, durationMs: 3_500 })
     await waitFor(() => expect(saves).toHaveLength(1))
-    expect(saves[0]?.expectedVersion).toBeNull()
+    expect(saves[0]?.expectedVersion).toBe(1)
     expect(saves[0]?.html).toMatch(/id="film"[^>]*data-duration="3.5"/)
     expect(saves[0]?.html).toContain('<script src="vendor/npm/gsap@3.14.2/dist/gsap.min.js">')
     expect(saves[0]?.html).toContain(FONT_BLOCK_START)
     await settled(result)
-    expect(mockProjectMain(CONVERSATION)).toEqual({ content: saves[0]?.html, version: 1 })
+    expect(mockProjectMain(CONVERSATION)).toEqual({ content: saves[0]?.html, version: 2 })
 
     await add(result, piece({ src: OTHER_SRC }))
     expect(spans(result).at(-1)).toEqual([OTHER_SRC, 3_500, 2_000])
     await waitFor(() => expect(saves).toHaveLength(2))
-    expect(saves[1]?.expectedVersion).toBe(1)
+    expect(saves[1]?.expectedVersion).toBe(2)
     await settled(result)
-    expect(mockProjectMain(CONVERSATION)?.version).toBe(2)
+    expect(mockProjectMain(CONVERSATION)?.version).toBe(3)
   })
 
   it('静音的素材写 muted、不写有声音的标记，有声音的反过来；地址只写在 src 上', async () => {
@@ -242,7 +231,7 @@ describe('useFilmSession · 读存', () => {
     await add(result, piece({ mediaStart: 2_000 }))
     await add(result, piece({ mediaStart: 4_000 }))
     await waitFor(() => expect(saves).toHaveLength(2))
-    expect(saves[1]?.expectedVersion).toBe(1)
+    expect(saves[1]?.expectedVersion).toBe(2)
     expect(saves[1]?.html.match(/<video /g)).toHaveLength(3)
     await settled(result)
     expect(saves).toHaveLength(2)
@@ -262,7 +251,7 @@ describe('useFilmSession · 读存', () => {
     expect(stored).toBe(true)
     await settled(result)
     expect(saves).toHaveLength(2)
-    expect(saves[1]?.expectedVersion).toBe(1)
+    expect(saves[1]?.expectedVersion).toBe(2)
     expect(saves[1]?.html.match(/<video /g)).toHaveLength(2)
     expect(onNotice).not.toHaveBeenCalled()
   })
@@ -282,21 +271,9 @@ describe('useFilmSession · 读存', () => {
     expect(mockProjectMain(CONVERSATION)?.version).toBe(2)
   })
 
-  it('第一次保存时工程已经被别处建好了（新建 409）：同样换成那一份并提示', async () => {
-    const { result, onNotice } = await open()
-    putMockProjectMain(CONVERSATION, mainFile([video({ id: 'theirs' })], CANVAS))
-    await add(result, piece({ mediaStart: 6_000 }))
-    await waitFor(() => expect(videosOf(result).map((clip) => clip.id)).toEqual(['theirs']))
-    expect(onNotice).toHaveBeenCalledWith(
-      'final-cut 已在别处修改，已切换到最新版本；未保存的改动已放弃',
-    )
-    await settled(result)
-    expect(mockProjectMain(CONVERSATION)?.version).toBe(1)
-  })
-
   it('保存失败时说明原因，重新保存后恢复', async () => {
     server.use(
-      http.post(CREATE, () => HttpResponse.json({ detail: '工作区写不进去' }, { status: 503 }), {
+      http.put(WRITE, () => HttpResponse.json({ detail: '工作区写不进去' }, { status: 503 }), {
         once: true,
       }),
     )
@@ -310,7 +287,7 @@ describe('useFilmSession · 读存', () => {
     )
     act(() => result.current.flush())
     await settled(result)
-    expect(mockProjectMain(CONVERSATION)?.version).toBe(1)
+    expect(mockProjectMain(CONVERSATION)?.version).toBe(2)
   })
 
   it('<head> 里手写的注释、样式、脚本：编辑、保存以后原样还在，只有字体块按片段重算', async () => {
@@ -329,7 +306,6 @@ describe('useFilmSession · 读存', () => {
     expect(result.current.film?.canvas).toEqual(CANVAS)
     await act(() =>
       result.current.addItem(
-        CANVAS,
         fixtureItem('fixture-fields'),
         { text: '新品' },
         { track: 1, start: 0 },
@@ -385,22 +361,6 @@ describe('useFilmSession · 文件变化的通知', () => {
     expect(onNotice).toHaveBeenCalledExactlyOnceWith(
       'final-cut 已在别处修改，已切换到最新版本；未保存的改动已放弃',
     )
-  })
-
-  it('工程主文件被删掉：回到还没有工程的样子', async () => {
-    const conversation = crypto.randomUUID()
-    const { result, notify } = await open(
-      putMockProjectMain(conversation, mainFile([video()], CANVAS)),
-      10,
-      conversation,
-    )
-    server.use(
-      http.get(READ, () => HttpResponse.json({ detail: '文件不存在' }, { status: 404 }), {
-        once: true,
-      }),
-    )
-    notify(MAIN_PATH)
-    await waitFor(() => expect(result.current.film).toBeNull())
   })
 
   it('工程里别的文件变了：预览要重新加载，主文件不重读', async () => {
@@ -469,7 +429,6 @@ describe('useFilmSession · 编辑', () => {
     const { result } = await openWith([video({ duration: 2_000 })])
     await act(() =>
       result.current.addVideos(
-        CANVAS,
         [piece({ src: OTHER_SRC, duration: 1_000 }), piece({ src: OTHER_SRC, duration: 500 })],
         { track: 0, start: 4_000 },
       ),
@@ -678,7 +637,7 @@ describe('useFilmSession · 编辑', () => {
       audio(),
     ])
     await act(() =>
-      result.current.addVideos(CANVAS, [piece({ duration: 1_000 }), piece({ duration: 500 })], {
+      result.current.addVideos([piece({ duration: 1_000 }), piece({ duration: 500 })], {
         track: 2,
         start: 500,
       }),
@@ -697,7 +656,7 @@ describe('useFilmSession · 编辑', () => {
   it('同一行里横着挪不改叠放顺序和文件里的先后', async () => {
     const { result } = await openThree()
     await act(() =>
-      result.current.addVideos(CANVAS, [piece({ duration: 1_000 })], { track: 1, start: 6_000 }),
+      result.current.addVideos([piece({ duration: 1_000 })], { track: 1, start: 6_000 }),
     )
     const added = videosOf(result).find((clip) => clip.track === 1)
     if (added === undefined) throw new Error('镜头没有加进去')
@@ -832,7 +791,7 @@ describe('useFilmSession · 编辑', () => {
     act(() => result.current.moveClip('c', { track: 1, start: 0 }, 'down'))
     act(() => result.current.setHidden(['c'], true))
     await act(() =>
-      result.current.addVideos(CANVAS, [piece({ duration: 1_000 })], { track: 1, start: 5_000 }),
+      result.current.addVideos([piece({ duration: 1_000 })], { track: 1, start: 5_000 }),
     )
     const added = videosOf(result).find((clip) => clip.start === 5_000)
     expect(added?.hidden).toBe(false)
@@ -951,7 +910,6 @@ describe('useFilmSession · 编辑', () => {
     ])
     await act(() =>
       result.current.addVideos(
-        CANVAS,
         [piece({ duration: 1_000 })],
         { track: 1, start: 500 },
         new Map([['low', 2]]),
@@ -992,24 +950,6 @@ describe('useFilmSession · 编辑', () => {
     expect(result.current.film?.durationMs).toBe(124_000)
     expect(onNotice).not.toHaveBeenCalled()
     await waitFor(() => expect(saves).toHaveLength(2))
-    await settled(result)
-  })
-
-  it('还没有工程时连着加两次：只建一份主文件，两次加的都在', async () => {
-    const saves = recordSaves()
-    const { result } = await open()
-    await act(async () => {
-      await Promise.all([
-        result.current.addVideos(CANVAS, [piece()]),
-        result.current.addVideos(CANVAS, [piece({ mediaStart: 3_000 })]),
-      ])
-    })
-    expect(spans(result)).toEqual([
-      [video().src, 0, 2_000],
-      [video().src, 2_000, 2_000],
-    ])
-    await waitFor(() => expect(saves.at(-1)?.html.match(/<video /g)).toHaveLength(2))
-    expect(saves.filter((save) => save.expectedVersion === null)).toHaveLength(1)
     await settled(result)
   })
 })
@@ -1124,7 +1064,6 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
     )
     await act(() =>
       result.current.addItem(
-        CANVAS,
         catalogItem('fixture-fields'),
         { text: '新品上市' },
         { track: 2, start: 7_000 },
@@ -1176,7 +1115,7 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
       conversation,
     )
     const sidecar = catalogItem('fixture-sidecar')
-    await act(() => result.current.addItem(CANVAS, sidecar, {}, { track: 1, start: 0 }))
+    await act(() => result.current.addItem(sidecar, {}, { track: 1, start: 0 }))
     expect(
       mockWorkspaceFile(conversation, 'final-cut/compositions/fixture-sidecar/fixture-sidecar.html')
         ?.content,
@@ -1200,7 +1139,7 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
     let added: boolean | undefined
     await act(async () => {
       const at = { track: 1, start: 0 }
-      added = await result.current.addItem(CANVAS, catalogItem('fixture-fields'), {}, at)
+      added = await result.current.addItem(catalogItem('fixture-fields'), {}, at)
     })
     expect(added).toBe(false)
     expect(onNotice).toHaveBeenCalledWith('final-cut 保存失败：工作区写不进去')
@@ -1210,12 +1149,12 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
   it('组件库的条目没写时长：取 10 秒和工程现有总长里大的那个', async () => {
     const { result } = await openWith(stacked())
     const caption = catalogItem('default-caption')
-    await act(() => result.current.addItem(CANVAS, caption, {}, { track: 2, start: 0 }))
+    await act(() => result.current.addItem(caption, {}, { track: 2, start: 0 }))
     expect(result.current.film?.clips[0]?.duration).toBe(10_000)
     act(() =>
       result.current.retime(new Map([['m', { start: 0, duration: 15_000, mediaStart: 0 }]])),
     )
-    await act(() => result.current.addItem(CANVAS, caption, {}, { track: 3, start: 0 }))
+    await act(() => result.current.addItem(caption, {}, { track: 3, start: 0 }))
     expect(result.current.film?.clips[0]?.duration).toBe(15_000)
   })
 
@@ -1223,7 +1162,7 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
     const saves = recordSaves()
     const { result } = await openWith(stacked())
     await act(() =>
-      result.current.addAudio(CANVAS, sound({ mediaStart: 1_000 }), { track: 1, start: 7_000 }),
+      result.current.addAudio(sound({ mediaStart: 1_000 }), { track: 1, start: 7_000 }),
     )
     const [added] = result.current.film?.clips ?? []
     expect(added).toEqual({
@@ -2921,7 +2860,7 @@ describe('useFilmSession · 字幕', () => {
       const { result } = await openTexts([video()])
       const fields = fixtureItem('fixture-fields')
       const addAt = async (values: Record<string, string>, start: number) => {
-        await act(() => result.current.addItem(CANVAS, fields, values, { track: 1, start }))
+        await act(() => result.current.addItem(fields, values, { track: 1, start }))
         return result.current.film?.clips.find(
           (clip) => clip.kind === 'host' && clip.start === start,
         )?.id

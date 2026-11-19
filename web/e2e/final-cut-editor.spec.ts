@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page, type Request } from '@playwright/test'
 import {
+  createFinalCut,
   finalCutPreviewPlayer,
   isMarkedFinalCutPreviewPlayer,
   markFinalCutPreviewPlayer,
@@ -10,8 +11,8 @@ import {
 } from './helpers'
 
 /**
- * 保存工程里文件 `path`（相对工程根）的请求里写的内容：第一次走「新建工程文件」，之后按版本写工作区文件；
- * 不是保存这个文件的请求时是 null。
+ * 写工程里文件 `path`（相对工程根）的请求里写的内容：新建工程文件（「新建 final-cut」建的主文件、拷进来的
+ * 条目文件、字幕场景这些），或按版本写工作区文件；不是写这个文件的请求时是 null。
  */
 const savedFileOf = (request: Request, path: string): string | null => {
   const url = request.url()
@@ -89,7 +90,19 @@ test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销、导出
     page.waitForRequest((request) => new URL(request.url()).pathname.endsWith(RUNTIME_FILE))
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  // 还没有工程：页签里只有说明和「新建 final-cut」，点了按默认模版（竖版 1080×1920 的空工程）新建主文件
+  await panel.getByRole('tab', { name: 'final-cut', exact: true }).click()
+  await expect(panel.getByText('暂无 final-cut，请先新建')).toBeVisible()
+  await expect(panel.getByRole('toolbar', { name: '剪辑工具' })).toHaveCount(0)
+  const created = page.waitForRequest(
+    (request) => savedHtmlOf(request) !== null && request.method() === 'POST',
+  )
+  const editor = await createFinalCut(panel)
+  const template = htmlOf(await created)
+  expect(template).toContain('data-no-timeline')
+  expect(template).toContain('data-width="1080" data-height="1920"')
+  expect(template).toMatch(/<script src="vendor\/npm\/gsap@[^"]+">/)
+  expect(template).not.toContain('<video ')
   const toolbar = editor.getByRole('toolbar', { name: '剪辑工具' })
   const transport = editor.getByRole('group', { name: '播放控制' })
   await expect(editor.getByText('final-cut 暂无内容，加入内容后可在此预览')).toBeVisible()
@@ -119,11 +132,12 @@ test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销、导出
   const previewRuntime = runtimeRequested()
   await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
   await page.keyboard.press('Enter')
-  // 第一次保存新建工程主文件：模板的根、动画库，视频的 src 直接写素材地址
+  // 加进来以后按新建时的版本写主文件：模板的根、画幅不变，视频的 src 直接写素材地址
   const html = htmlOf(await first)
-  expect((await first).method()).toBe('POST')
+  expect((await first).method()).toBe('PUT')
+  expect((await first).postDataJSON()).toMatchObject({ expectedVersion: 1 })
   expect(html).toContain('data-no-timeline')
-  expect(html).toMatch(/<script src="vendor\/npm\/gsap@[^"]+">/)
+  expect(html).toContain('data-width="1080" data-height="1920"')
   expect(html).toMatch(/<video [^>]*src="[^"]*sample-video[^"]*"/)
   expect(html).not.toContain('data-var-src')
 
@@ -283,7 +297,7 @@ test('播放条：倍速和静音对素材、final-cut 都生效且换播放器�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const transport = editor.getByRole('group', { name: '播放控制' })
   const materials = editor
     .getByRole('region', { name: '视频素材区' })
@@ -413,7 +427,7 @@ test('预览素材时在时间线上点选片段：素材预览收起，回到 f
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const materials = editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
@@ -462,7 +476,7 @@ test('块页签搜到块点一下卡片加入、组件页签拖一个组件到�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const first = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
@@ -566,7 +580,7 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const inspector = editor.getByRole('tabpanel', { name: '属性' })
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await expect(side.getByRole('tab', { name: '镜头' })).toHaveAttribute('aria-selected', 'true')
@@ -728,7 +742,7 @@ test('音频栏：试听只播一条，点一下没用过的一行加到播放�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const first = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
@@ -849,7 +863,7 @@ test('属性：音频片段拉满音量、打开循环播放写进文件；视�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const inspector = editor.getByRole('tabpanel', { name: '属性' })
   const first = mainSaved(page, 1)
   const materials = editor
@@ -971,7 +985,7 @@ test('智能调音：把配乐的角色改成人声、打开自动平稳音量�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const inspector = editor.getByRole('tabpanel', { name: '属性' })
   const first = mainSaved(page, 1)
   await editor
@@ -1037,7 +1051,7 @@ test('音色风格与精细调音：给配乐选一个预设、调一段均衡�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const inspector = editor.getByRole('tabpanel', { name: '属性' })
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '配乐' }).click()
@@ -1111,7 +1125,7 @@ test('调音直接打进预览：给配乐选一个音色风格，预览不换�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const inspector = editor.getByRole('tabpanel', { name: '属性' })
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '配乐' }).click()
@@ -1154,7 +1168,7 @@ test('波形音量关键帧：打开后在配乐的波形线上按下加一个�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const inspector = editor.getByRole('tabpanel', { name: '属性' })
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '配乐' }).click()
@@ -1249,7 +1263,7 @@ test('音量关键帧跟着裁剪走：配乐上加一个点，在时间线上�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const inspector = editor.getByRole('tabpanel', { name: '属性' })
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '配乐' }).click()
@@ -1311,7 +1325,7 @@ test('在贴片卡片上按 ] 选中片段：侧栏切到「属性」，焦点�
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const first = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
@@ -1346,7 +1360,7 @@ test('编辑区变窄时只裁不换行：工具条和侧栏页签都排一行�
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   const sideSplitter = editor.getByRole('button', { name: '调整右栏宽度' })
   const preview = editor.getByRole('region', { name: '预览' })
@@ -1468,7 +1482,7 @@ test('切开：选中视频片段、把播放头放进去按 S，存下来多了
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const added = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
@@ -1546,7 +1560,7 @@ test('默认缩放下选中 1 秒的片段：按在正中拖是挪动、不是�
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const added = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
@@ -1590,7 +1604,7 @@ test('节拍吸附：加一首配乐，片段上画出算出来的节拍；把�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const added = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
@@ -1659,7 +1673,7 @@ test('节拍：从素材栏拖一个镜头到一拍旁边松手，开头落在�
     page.evaluate(() => (window as unknown as { audioDecodes: number }).audioDecodes)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const takes = editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
@@ -1734,7 +1748,7 @@ test('按住播放头的竖线拖到片段结尾旁边：吸到结尾、亮吸�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const added = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
@@ -1775,7 +1789,7 @@ test('分离音频：存下来多一个原声片段、两段属性对；联动�
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const toolbar = editor.getByRole('toolbar', { name: '剪辑工具' })
   const inspector = editor.getByRole('tabpanel', { name: '属性' })
   const added = mainSaved(page, 1)
@@ -1891,8 +1905,9 @@ test('地址带着 ?artifact=final-cut 时直接打开编辑器；正在对话�
     window.history.pushState(null, '', url)
     window.dispatchEvent(new PopStateEvent('popstate'))
   })
+  // 这段对话里还没有工程：页签里是「新建 final-cut」
   const editor = panel.getByRole('group', { name: 'final-cut 编辑器', exact: true })
-  await expect(editor.getByRole('toolbar', { name: '剪辑工具' })).toBeVisible()
+  await expect(editor.getByRole('button', { name: '新建 final-cut', exact: true })).toBeVisible()
   await expect(panel.getByRole('tab', { name: 'final-cut' })).toHaveAttribute(
     'aria-selected',
     'true',
@@ -1907,7 +1922,7 @@ test('焦点在对话框里时空格、Delete、Esc 都不碰剪辑；点编辑�
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const clip = await selectedClip(page, editor)
   const transport = editor.getByRole('group', { name: '播放控制' })
 
@@ -1940,7 +1955,7 @@ test('焦点在对话框里时空格、Delete、Esc 都不碰剪辑；点编辑�
 test('编辑器里选中着片段时，侧边栏改名框里的 Esc 照常放弃改名，片段仍选中', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const clip = await selectedClip(page, editor)
 
   const row = page.getByRole('link', { name: '夜景延时素材生成', exact: true })
@@ -1958,7 +1973,7 @@ test('编辑器里选中着片段时，侧边栏改名框里的 Esc 照常放弃
 test('文件拖到编辑器上不收，也不落进对话的输入框', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const dataTransfer = await page.evaluateHandle(() => {
     const transfer = new DataTransfer()
     transfer.items.add(new File(['素材'], '拖进编辑器.png', { type: 'image/png' }))
@@ -1981,7 +1996,7 @@ test('文件拖到编辑器上不收，也不落进对话的输入框', async ({
 test('预览正在播放时折叠工作台：播放停下，展开后停在原处', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const shots = editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
@@ -2020,7 +2035,7 @@ test('预览正在播放时折叠工作台：播放停下，展开后停在原�
 test('改完马上切到别的页签再切回来：改动还在，接着改照常保存', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const materials = editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
@@ -2061,7 +2076,14 @@ test('新建工程、加镜头和一个贴片：条目文件拷进工程，刷�
       createdFiles.push((request.postDataJSON() as { path: string }).path)
   })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  // 「新建 final-cut」按 1080×1920 的空模版建主文件，之后加的东西都按版本写进它
+  const created = page.waitForRequest(
+    (request) => savedHtmlOf(request) !== null && request.method() === 'POST',
+  )
+  const editor = await createFinalCut(panel)
+  const template = htmlOf(await created)
+  expect(template).toContain('data-width="1080" data-height="1920"')
+  expect(template).not.toContain('<video ')
   const first = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
@@ -2069,7 +2091,8 @@ test('新建工程、加镜头和一个贴片：条目文件拷进工程，刷�
     .getByRole('button', { name: /^生成 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
-  await first
+  expect((await first).method()).toBe('PUT')
+  expect((await first).postDataJSON()).toMatchObject({ expectedVersion: 1 })
 
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '贴片' }).click()
@@ -2135,7 +2158,7 @@ test('字幕：在「字幕」页签加一句、改字，字幕文件和主文�
   await page.setViewportSize({ width: 1440, height: 900 })
   await serveSavedCaptions(page)
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const first = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
@@ -2262,7 +2285,7 @@ test('字幕的改动直接打进预览：改一句的字、挪一句都不换�
     if (request.url().includes(`/files/${CAPTIONS_FILE}`)) sceneFetched.push(request.url())
   })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const toolbar = editor.getByRole('toolbar', { name: '剪辑工具' })
   // 整条素材放进 final-cut：字幕在它里面挪，总长不变
   await addWholeTake(page, editor)
@@ -2335,7 +2358,7 @@ test('字幕行：拖一句挪位置、拖结尾裁短，存下来的字幕场�
   await page.setViewportSize({ width: 1440, height: 900 })
   await serveSavedCaptions(page)
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const added = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
@@ -2435,7 +2458,7 @@ test('识别字幕：点「识别字幕」发起一次识别，识别完写进�
   await page.setViewportSize({ width: 1440, height: 900 })
   // 这段对话里还没有字幕识别记录：点了会真的发起识别（模拟环境里几秒后识别出两句）
   const panel = await openConversation(page, '工具过程展示')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   // 整条素材放进 final-cut，两句话都在里面
   const added = await addWholeTake(page, editor)
   const videoId = /<video [^>]*id="([^"]+)"/.exec(htmlOf(added))?.[1]
@@ -2497,7 +2520,7 @@ test('语言：加上 English 切过去，给一句字幕写英文，存下的 E
   await page.setViewportSize({ width: 1440, height: 900 })
   await serveSavedCaptions(page)
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const added = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
@@ -2569,7 +2592,7 @@ test('其它语言下改一句的译文直接打进预览：不换播放器，�
   await page.setViewportSize({ width: 1440, height: 900 })
   await serveSavedCaptions(page)
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const added = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
@@ -2701,7 +2724,7 @@ test('按语言导出：切到 English 点「导出」，提示写导出 English
   test.setTimeout(90_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const added = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
@@ -2742,7 +2765,7 @@ test('贴片的文字随语言：加上 English 时主文件里宿主记着根�
   test.setTimeout(90_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const first = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
@@ -2812,7 +2835,7 @@ test('翻译：加上 English 后点「翻译」，字幕和贴片里随语言�
   await page.setViewportSize({ width: 1440, height: 900 })
   await serveSavedCaptions(page)
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const first = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
@@ -2890,7 +2913,7 @@ test('AI 配音：English 下点音色「原声」，配音行出现和字幕对
   })
   // 这段对话里还没有字幕识别记录：先识别出两句，配音按它们配
   const panel = await openConversation(page, '工具过程展示')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   await addWholeTake(page, editor)
 
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
@@ -3029,7 +3052,7 @@ test('配音片段调音直接打进预览：English 下 AI 配音，给一个�
   await serveSavedCaptions(page)
   // 和上一条一样：加一段镜头、识别出两句、加 English 翻好，用「原声」配好
   const panel = await openConversation(page, '工具过程展示')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   await addWholeTake(page, editor)
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
@@ -3112,7 +3135,7 @@ test('逐句配音：English 下给第二句选资料库的音色，只发这一
   await serveSavedCaptions(page)
   // 和上一条一样：加一段镜头、识别出两句、加 English 翻好，用「原声」配好
   const panel = await openConversation(page, '工具过程展示')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   await addWholeTake(page, editor)
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
@@ -3224,7 +3247,7 @@ test('旁白配音：原文下输入文案、选资料库的音色插入，按�
   await page.setViewportSize({ width: 1440, height: 900 })
   await serveSavedCaptions(page)
   const panel = await openConversation(page, '工具过程展示')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const added = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
@@ -3282,7 +3305,7 @@ test('素材片的句子配音不压到后面的旁白上：English 下「重新
   await serveSavedCaptions(page)
   // 加一段 6 秒的镜头、识别出两句，再在后面插一句旁白（还在这个视频片段里）
   const panel = await openConversation(page, '工具过程展示')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   await addWholeTake(page, editor)
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
@@ -3368,7 +3391,7 @@ const openWithCard = async (
   test.setTimeout(60_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   const first = mainSaved(page, 1)
   await editor
     .getByRole('region', { name: '视频素材区' })
@@ -3688,9 +3711,10 @@ test('其它语言下画面上挪贴片：存下之前预览里已经挪过去�
   await pauseMockResponses(page, '/workspace/file')
   const nudged = mainSavedWith(page, (html) => cardOffset(savedCard(html)).x === -10)
   await page.keyboard.press('Shift+ArrowLeft')
-  const canvas = await boxOf(layer)
+  // 按画布像素量（Shift+方向键挪 10 画布像素）：屏幕上的距离随预览缩放变，竖版 1080 宽时不到 3 像素
+  const size = await canvasSizeOf(player)
   const shift = async () =>
-    ((await previewRect(finalCutPreviewPlayer(editor), CARD)).x - before.x) * canvas.width
+    ((await previewRect(finalCutPreviewPlayer(editor), CARD)).x - before.x) * size.width
   await settles(async () => expect(await shift()).toBeLessThan(-5))
   const shown = await shift()
 
@@ -4228,7 +4252,7 @@ const openWithCaptions = async (page: Page) => {
   test.setTimeout(90_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  const editor = await openFinalCut(panel)
+  const editor = await createFinalCut(panel)
   await addWholeTake(page, editor)
 
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })

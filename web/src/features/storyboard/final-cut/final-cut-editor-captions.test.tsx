@@ -78,17 +78,6 @@ describe('final-cut 编辑器 · 字幕页签', () => {
       ) as { default: unknown }[]
     ).map((declaration) => declaration.default)
 
-  it('还没有工程时「在播放头处加一句」置灰并说明原因', async () => {
-    const user = userEvent.setup()
-    await openEditor()
-    await openCaptions(user)
-    expect(addButton()).toHaveAttribute('aria-disabled', 'true')
-    await user.click(addButton())
-    expect(
-      (await screen.findAllByText('final-cut 暂无内容，无法加字幕；请先加入镜头')).length,
-    ).toBeGreaterThan(0)
-  })
-
   it('加一句：列表里出现、焦点进文字框；同一处再加置灰；改字存进主文件的变量和字幕文件；删掉回到空的', async () => {
     const user = userEvent.setup()
     putMockProjectMain(CONVERSATION, twoVideos())

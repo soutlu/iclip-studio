@@ -1,4 +1,5 @@
 import {
+  use,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -10,11 +11,13 @@ import {
   type CSSProperties,
   type RefObject,
 } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { errorMessageOf } from '@/shared/api/client'
+import { useMutation, useQueryClient, type RefetchOptions } from '@tanstack/react-query'
+import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import type { TimeSpan } from '@/shared/lib/time-spans'
 import { cn } from '@/shared/lib/utils'
+import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
+import { Button } from '@/shared/ui/button'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MediaBuffering } from '@/shared/ui/media-buffering'
 import { TabsContent, TabsRoot } from '@/shared/ui/tabs'
@@ -60,7 +63,14 @@ import {
 } from './clip-edit'
 import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
 import type { CatalogItem } from './composition/catalog'
-import { isDubClip, type Canvas, type CaptionClip, type FilmClip } from './composition/film'
+import {
+  DEFAULT_CANVAS,
+  emptyProject,
+  isDubClip,
+  PROJECT_MAIN,
+  type CaptionClip,
+  type FilmClip,
+} from './composition/film'
 import { textHosts, type LocaleBindings } from './composition/locale-text'
 import {
   voiceOfLine,
@@ -114,9 +124,7 @@ import {
   takeShots,
   useKeyframeIndexes,
   useVideoAudio,
-  useVideoSize,
   videoAudioQuery,
-  videoSizeQuery,
   type KeyframeStates,
 } from './material-media'
 import { MaterialPreview, type MaterialPreviewControl, type MaterialView } from './material-preview'
@@ -182,11 +190,14 @@ import { useWholeFilmExport } from './use-whole-film-export'
 import { withVolumePoints } from './volume-envelope'
 import {
   createProjectFile,
+  PROJECT_DIR,
+  PROJECT_MAIN_PATH,
   projectFilesBase,
   readProjectFile,
   useFinalCutPreviewTokens,
   useLibraryVoices,
   useProjectQuery,
+  wholeFilmQueryKeys,
   writeProjectFile,
   type StoredProject,
 } from './final-cut.api'
@@ -197,20 +208,16 @@ const PICK_FIRST_TEXT = '尚未选中镜头，无法加入 final-cut；请先在
 const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏，无法进入全屏'
 const ADDING_ITEM_TEXT = '上一个贴片或场景正在加入 final-cut，请稍后再试'
 const ADDING_PICKS_TEXT = '选中的镜头正在加入 final-cut，请稍后再试'
-const ADDING_AUDIO_TEXT = '上一条音频正在加入 final-cut，请稍后再试'
 const EMPTY_EXPORT_TEXT = 'final-cut 暂无内容，无法导出；请先加入内容'
-const NO_FILM_CAPTION_TEXT = 'final-cut 暂无内容，无法加字幕；请先加入镜头'
-const NO_FILM_LOCALE_TEXT = 'final-cut 暂无内容，无法添加语言；请先加入内容'
 const READING_TAKES_TEXT = '正在读取素材片，请稍后再识别字幕'
 const RECOGNIZING_TEXT = '正在识别字幕，请等待识别完成'
 const READING_TAKES_DUBBING_TEXT = '正在读取素材片，请稍后再生成配音'
 const NO_TAKES_DUBBING_TEXT = '找不到视频片段用的素材片记录，无法生成配音'
 const ALL_UNVOICED_TEXT = '每句都选了「不配音」，无需重新生成'
-const NO_FILM_NARRATION_TEXT = 'final-cut 暂无内容，无法插入旁白配音；请先加入镜头'
 const DUBBING_BUSY_TEXT = '正在生成配音，请等待生成完成'
 const NARRATION_UNREADABLE_TEXT = '旁白配音生成失败，请重试'
-// 还没有 final-cut 时先放组件或块：和 #41 之前的编辑器一样按竖版建
-const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
+// 和读取、保存失败一样只写哪一步失败：服务端给了原因时接在后面，再试就是再点一次按钮
+const CREATE_FAILED_TEXT = 'final-cut 新建失败'
 const NO_LINKS: Links = new Map()
 const NO_BINDINGS: ReadonlyMap<string, LocaleBindings> = new Map()
 const NO_LINE_VOICES: LineVoices = {}
@@ -241,7 +248,8 @@ const watchFullscreen = (notify: () => void) => {
 const fullscreenElementOf = () => document.fullscreenElement ?? null
 
 /**
- * 工作台「final-cut」页签编辑器（填满页签内容区）。
+ * 工作台「final-cut」页签编辑器（填满页签内容区）。工作区里还没有工程时只给「新建 final-cut」（见
+ * `NewFinalCut`），有了才打开编辑器；编辑中主文件在别处被删掉时回到新建。
  * `saveDelayMs` 控制停手后自动保存的防抖毫秒数（缺省使用 `useFilmSession` 默认值，测试中可传入短延迟加速验证）。
  */
 export function FinalCutEditor({
@@ -250,7 +258,9 @@ export function FinalCutEditor({
 }: Pick<ArtifactRendererProps, 'conversationId'> & { saveDelayMs?: number }) {
   const projectQuery = useProjectQuery(conversationId)
   const catalogQuery = useComponentCatalog()
+  const queryClient = useQueryClient()
   const keysRef = useRef<((event: KeyboardEvent) => void) | null>(null)
+  const stored = projectQuery.data
   const failed = projectQuery.isError
     ? projectQuery
     : catalogQuery.isError
@@ -258,12 +268,19 @@ export function FinalCutEditor({
       : undefined
   return (
     <EditorRoot onKeyDown={(event) => keysRef.current?.(event)}>
-      {projectQuery.data !== undefined && catalogQuery.data !== undefined ? (
+      {stored !== undefined && stored !== null && catalogQuery.data !== undefined ? (
         <EditorBody
           catalog={catalogQuery.data}
           conversationId={conversationId}
-          initial={projectQuery.data}
+          initial={stored}
           keysRef={keysRef}
+          // 会话刚读到主文件没了，不用再读一次
+          onMissing={() =>
+            queryClient.setQueryData<StoredProject | null>(
+              wholeFilmQueryKeys.project(conversationId),
+              null,
+            )
+          }
           saveDelayMs={saveDelayMs}
         />
       ) : failed !== undefined ? (
@@ -276,12 +293,86 @@ export function FinalCutEditor({
             )}
           />
         </div>
+      ) : stored === null ? (
+        <NewFinalCut
+          catalog={catalogQuery.data}
+          conversationId={conversationId}
+          reload={projectQuery.refetch}
+        />
       ) : (
         <p className="wf-state" role="status">
           正在读取 final-cut…
         </p>
       )}
     </EditorRoot>
+  )
+}
+
+/**
+ * 工作区里还没有 final-cut 工程时页签里的内容：一句说明和「新建 final-cut」，点了按默认模版（见
+ * `DEFAULT_CANVAS`）建主文件；建好、或别处刚建好（409）时用 `reload` 重新读工程，读到了编辑器随之打开。
+ * 等着的时候别处建了主文件（比如 agent 写的）也重新读：盯着工作区里的主文件，断线重连后也读一次。
+ * `catalog` 还没读到时按钮不可点。
+ */
+function NewFinalCut({
+  conversationId,
+  catalog,
+  reload,
+}: {
+  conversationId: string
+  catalog: ComponentCatalog | undefined
+  reload: (options?: RefetchOptions) => Promise<unknown>
+}) {
+  const create = useMutation({
+    mutationFn: async (from: ComponentCatalog) => {
+      try {
+        await createProjectFile(
+          conversationId,
+          PROJECT_MAIN,
+          emptyProject(DEFAULT_CANVAS, from),
+          CREATE_FAILED_TEXT,
+        )
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 409) throw error
+      }
+      // 读完才算建好：读的这段时间按钮还是「正在新建…」
+      await reload()
+    },
+  })
+  // 正在读时不打断：新建自己的那次读已经包含这次通知的改动（通知在写完之后才发）
+  const reloadOnChange = useEffectEvent(() => void reload({ cancelRefetch: false }))
+  const connection = use(TranscriptConnectionContext)
+  useEffect(() => {
+    if (connection === null) return undefined
+    const unwatchFiles = connection.watchFs(conversationId, [PROJECT_DIR], (changes) => {
+      if (changes.some((change) => change.path === PROJECT_MAIN_PATH)) reloadOnChange()
+    })
+    // 断线期间的通知收不到：重连后再读一次
+    const unwatchSessions = connection.watchSessions((update) => {
+      if (update.kind === 'reconnected') reloadOnChange()
+    })
+    return () => {
+      unwatchFiles()
+      unwatchSessions()
+    }
+  }, [connection, conversationId])
+  return (
+    <div className="wf-state is-new">
+      <p>暂无 final-cut，请先新建</p>
+      <Button
+        disabled={catalog === undefined || create.isPending}
+        onClick={() => {
+          if (catalog !== undefined) create.mutate(catalog)
+        }}
+        size="md"
+        variant="outlined"
+      >
+        {create.isPending ? '正在新建…' : '新建 final-cut'}
+      </Button>
+      {create.isError ? (
+        <InlineAlert message={errorMessageOf(create.error, CREATE_FAILED_TEXT)} />
+      ) : null}
+    </div>
   )
 }
 
@@ -318,12 +409,14 @@ function EditorBody({
   initial,
   catalog,
   keysRef,
+  onMissing,
   saveDelayMs,
 }: {
   conversationId: string
-  initial: StoredProject | null
+  initial: StoredProject
   catalog: ComponentCatalog
   keysRef: RefObject<((event: KeyboardEvent) => void) | null>
+  onMissing: () => void
   saveDelayMs: number | undefined
 }) {
   const root = useEditorRoot()
@@ -331,6 +424,7 @@ function EditorBody({
   const session = useFilmSession(conversationId, initial, catalog, {
     debounceMs: saveDelayMs,
     onNotice: notice,
+    onMissing,
   })
   const { film } = session
   // 字幕也在时间线上（单独一行）：选中、吸附、切开这些都算它们，各种片段怎么处理由各自的计算管；
@@ -481,9 +575,6 @@ function EditorBody({
   }
 
   const picked = orderedPicks(materials.groups, picks)
-  // 还没有 final-cut 时按第一段素材的画幅新建：先读好，加入时不用再等
-  const sizeUrl = film === null ? picked[0]?.material.url : undefined
-  useVideoSize(sizeUrl)
   const queryClient = useQueryClient()
 
   const [viewportWidth, setViewportWidth] = useState(0)
@@ -628,16 +719,14 @@ function EditorBody({
   // 智能调音和算配乐节拍读同一份声音：同一个地址只读一次。工程里存着节拍文件的配乐不读声音，
   // 只有智能调音真要分析时才读
   const [decodeAudio] = useState(() => cachedDecode(decodeForCarve))
-  const { hasStoredProject } = session
   const readBeats = useCallback(
     (src: string) =>
       projectBeats(src, async (each) => analyseBeats(await decodeAudio(each), CARVE_SAMPLE_RATE), {
         read: (path) => readProjectFile(conversationId, path),
         create: (path, content) => createProjectFile(conversationId, path, content),
         write: (path, content, version) => writeProjectFile(conversationId, path, content, version),
-        writable: hasStoredProject,
       }),
-    [conversationId, decodeAudio, hasStoredProject],
+    [conversationId, decodeAudio],
   )
   const musicBeats = useMusicBeats(clips, readBeats, sourceMs)
   const smartMix = useSmartMix({
@@ -743,8 +832,7 @@ function EditorBody({
    * 没给就接在主轨的末尾。放进去以后清空选区。
    */
   const place = (chosen: readonly PickedSpan[], at?: { row: RowTarget; start: number }) => {
-    const first = chosen[0]
-    if (first === undefined) return
+    if (chosen.length === 0) return
     if (addingPicksRef.current) {
       notice(ADDING_PICKS_TEXT)
       return
@@ -761,12 +849,11 @@ function EditorBody({
       ]),
     )
     const pieces = chosen.flatMap((each) => piecesOf(each, keyframes))
-    const add = async (canvas: Canvas) => {
+    const add = async () => {
       const sounding = new Set<string>()
       for (const [url, found] of audible) if (await found) sounding.add(url)
       const spot = at === undefined ? undefined : trackFor(at.row)
-      const added = await session.addVideos(
-        canvas,
+      const added = session.addVideos(
         pieces.map((piece) => ({ ...piece, muted: !sounding.has(piece.src) })),
         spot === undefined || at === undefined ? undefined : { track: spot.track, start: at.start },
         spot?.renumber,
@@ -776,16 +863,7 @@ function EditorBody({
       leaveMaterial()
     }
     addingPicksRef.current = true
-    // 还没有 final-cut 时按第一段素材的画幅新建（见 sizeUrl）
-    const adding =
-      film !== null
-        ? add(film.canvas)
-        : queryClient
-            .fetchQuery(videoSizeQuery(first.material.url))
-            .then(add, (error: unknown) =>
-              notice(errorMessageOf(error, '画面尺寸读取失败，无法加入 final-cut')),
-            )
-    void adding.finally(() => {
+    void add().finally(() => {
       addingPicksRef.current = false
     })
   }
@@ -796,7 +874,7 @@ function EditorBody({
 
   // 照参照的工作台：上一个条目还没加完时不接下一个，免得两次都按加之前的样子算落点
   const addingItemRef = useRef(false)
-  /** 把组件库的一个条目放进 final-cut 的 `at`；还没有 final-cut 时按默认画布建一份。 */
+  /** 把组件库的一个条目放进 final-cut 的 `at`。 */
   const placeItem = (item: CatalogItem, at: { row: RowTarget; start: number }) => {
     if (addingItemRef.current) {
       notice(ADDING_ITEM_TEXT)
@@ -805,13 +883,7 @@ function EditorBody({
     addingItemRef.current = true
     const spot = trackFor(at.row)
     void session
-      .addItem(
-        film?.canvas ?? DEFAULT_CANVAS,
-        item,
-        {},
-        { track: spot.track, start: at.start },
-        spot.renumber,
-      )
+      .addItem(item, {}, { track: spot.track, start: at.start }, spot.renumber)
       .then((added) => {
         if (added) leaveMaterial()
       })
@@ -822,29 +894,11 @@ function EditorBody({
   const addAtPlayhead = (item: CatalogItem) =>
     placeItem(item, playheadSpot(clips, item, playhead, itemDurationMs(item, clips)))
 
-  // 和组件、块一样：上一条音频还没加完时不接下一条
-  const addingAudioRef = useRef(false)
-  /** 把一整条音频放进 final-cut 的 `at`；还没有 final-cut 时按默认画布建一份。 */
+  /** 把一整条音频放进 final-cut 的 `at`。 */
   const placeAudio = (audio: NewAudio, at: { row: RowTarget; start: number }) => {
-    if (addingAudioRef.current) {
-      notice(ADDING_AUDIO_TEXT)
-      return
-    }
-    addingAudioRef.current = true
     const spot = trackFor(at.row)
-    void session
-      .addAudio(
-        film?.canvas ?? DEFAULT_CANVAS,
-        audio,
-        { track: spot.track, start: at.start },
-        spot.renumber,
-      )
-      .then((added) => {
-        if (added) leaveMaterial()
-      })
-      .finally(() => {
-        addingAudioRef.current = false
-      })
+    if (session.addAudio(audio, { track: spot.track, start: at.start }, spot.renumber))
+      leaveMaterial()
   }
   const history = {
     canUndo: film?.canUndo ?? false,
@@ -1014,13 +1068,11 @@ function EditorBody({
   // 「字幕」页签里在播放头处加一句：从播放头起 2 秒，碰到后面的字幕时缩短
   const captionAt = captionSpot(captions, playhead)
   const captionBlocked =
-    film === null
-      ? NO_FILM_CAPTION_TEXT
-      : locale.values !== null
-        ? phraseWith('当前语言是', locale.code, `，无法加字幕；请先切换到「${SOURCE_NAME}」`)
-        : 'refusal' in captionAt
-          ? CAPTION_REFUSAL_TEXT[captionAt.refusal]
-          : undefined
+    locale.values !== null
+      ? phraseWith('当前语言是', locale.code, `，无法加字幕；请先切换到「${SOURCE_NAME}」`)
+      : 'refusal' in captionAt
+        ? CAPTION_REFUSAL_TEXT[captionAt.refusal]
+        : undefined
   // 加上的那一句就是选中的这一句
   const addCaption = async () => {
     if ('refusal' in captionAt) return undefined
@@ -1081,13 +1133,11 @@ function EditorBody({
   const recognizeBlocked =
     recognition.recognizing > 0
       ? RECOGNIZING_TEXT
-      : film === null
-        ? RECOGNITION_REFUSAL_TEXT.empty
-        : videos.isPending
-          ? READING_TAKES_TEXT
-          : 'refusal' in recognizable
-            ? RECOGNITION_REFUSAL_TEXT[recognizable.refusal]
-            : undefined
+      : videos.isPending
+        ? READING_TAKES_TEXT
+        : 'refusal' in recognizable
+          ? RECOGNITION_REFUSAL_TEXT[recognizable.refusal]
+          : undefined
   const recognize = () => {
     if (recognizeBlocked === undefined && 'targets' in recognizable)
       void recognition.start(recognizable.targets)
@@ -1309,8 +1359,7 @@ function EditorBody({
           })),
           voicesProblem,
           generating: dubbingBusy,
-          blocked:
-            film === null ? NO_FILM_NARRATION_TEXT : dubbingBusy ? DUBBING_BUSY_TEXT : undefined,
+          blocked: dubbingBusy ? DUBBING_BUSY_TEXT : undefined,
           onInsert: (text: string, voice: string) =>
             void dubbing.start(
               SOURCE_LOCALE,
@@ -1410,7 +1459,6 @@ function EditorBody({
   const localeControls: LocaleControls = {
     current: locale.code,
     present: film?.locales ?? [],
-    addBlocked: film === null ? NO_FILM_LOCALE_TEXT : undefined,
     onSwitch: (code) => {
       leaveMaterial()
       session.setLocale(code)
@@ -1481,7 +1529,8 @@ function EditorBody({
       />
     )
 
-  if (session.opening)
+  // 会话还在打开工程
+  if (film === null)
     return (
       <p className="wf-state" role="status">
         正在打开 final-cut…
@@ -1535,7 +1584,7 @@ function EditorBody({
           backdrop={shown === undefined ? undefined : videoSnapshotUrl(shown.src, 320)}
           controlRef={previewRef}
           film={previewFilm}
-          height={film?.canvas.height ?? DEFAULT_CANVAS.height}
+          height={film.canvas.height}
           layers={layerTable}
           message={playBlocked}
           onBuffered={setBuffered}
@@ -1548,7 +1597,7 @@ function EditorBody({
           page={previewPage}
           playback={playback}
           watch={watchedLayers}
-          width={film?.canvas.width ?? DEFAULT_CANVAS.width}
+          width={film.canvas.width}
         >
           {buffering ? <MediaBuffering /> : null}
         </PreviewPlayer>
@@ -1745,7 +1794,7 @@ function EditorBody({
                 session.removeClips([id], false)
               }}
               onText={setCaptionText}
-              problem={film?.captionsProblem}
+              problem={film.captionsProblem}
               recognizeBlocked={recognizeBlocked}
               recognizing={recognition.recognizing}
               selected={selected}
@@ -1770,7 +1819,7 @@ function EditorBody({
               audioPeaks={audioPeaks}
               clips={clips}
               catalog={catalog}
-              canvas={film?.canvas ?? DEFAULT_CANVAS}
+              canvas={film.canvas}
               keyframes={keyframes}
               onGesture={setGesturing}
               onHide={hideClip}

@@ -32,7 +32,6 @@ import { levellerAttributes, type LevellerMeasurement } from './leveller'
 import { fxEditAttributes, type ChainChange } from './mix-fx'
 import {
   CAPTION_OWNER,
-  CAPTIONS_PATH,
   captionElement,
   captionLabel,
   captionOf,
@@ -52,7 +51,6 @@ import type {
 import {
   audioElement,
   clipOf,
-  emptyProject,
   hostElement,
   itemFonts,
   itemNamed,
@@ -292,10 +290,10 @@ const openDoc = async (
 }
 
 /**
- * 会话打开着的一个工程文件：`version` 是工作区里的版本号（新建工程还没存过的主文件是 null，第一次保存走新建），
- * `saved` 是最近一次存下或读到的内容（还没存过时是 null）。
+ * 会话打开着的一个工程文件：`version` 是工作区里的版本号（打开的文件都已在工作区里，保存都按它写），
+ * `saved` 是最近一次存下或读到的内容（刚打开、还没对上时是 null）。
  */
-type OpenFile = { doc: FileDoc; version: number | null; saved: string | null }
+type OpenFile = { doc: FileDoc; version: number; saved: string | null }
 
 /**
  * 会话打开着的工程：`files` 是路径（相对工程根）到文件，主文件在 `PROJECT_MAIN`。`captionsPath` 是字幕场景
@@ -872,30 +870,30 @@ function splitHalves(
 type Options = {
   debounceMs?: number | undefined
   onNotice: (message: string) => void
+  /** 工作区里的主文件没了（别处删掉了）：会话已放下工程、不再保存，由调用方回到没有工程的样子。 */
+  onMissing: () => void
 }
 
 /**
  * 编辑对话工作区里的 final-cut 工程：打开读到的主文件 `final-cut/index.html`、它的字幕场景文件和各语言的值表
- * （有时；`initial` 见 `readProject`，是 null 时还没有工程），改动停下 `debounceMs` 毫秒后把改了的文件整份保存
- * （主文件第一次新建、之后按版本号写；别的文件先存，主文件最后存）。打开着的文件有一个在别处被改了、或保存时
- * 版本对不上，就都换上工作区里的那一份、放弃本地没存的改动；工程里主文件、字幕场景和值表以外的文件变了时
- * `filesRevision` 加 1，预览据此重新加载。当前显示的语言打开时是原文。
+ * （`initial` 见 `readProject`），改动停下 `debounceMs` 毫秒后把改了的文件按版本号整份保存（别的文件先存，
+ * 主文件最后存）。`film` 是 null 时还在打开。打开着的文件有一个在别处被改了、或保存时版本对不上，就都换上
+ * 工作区里的那一份、放弃本地没存的改动；那时主文件已经没了就交给 `onMissing`。工程里主文件、字幕场景和值表
+ * 以外的文件变了时 `filesRevision` 加 1，预览据此重新加载。当前显示的语言打开时是原文。
  */
 export function useFilmSession(
   conversationId: string,
-  initial: StoredProject | null,
+  initial: StoredProject,
   catalog: ComponentCatalog,
-  { debounceMs = 800, onNotice }: Options,
+  { debounceMs = 800, onNotice, onMissing }: Options,
 ) {
   const [film, setFilm] = useState<FilmView | null>(null)
-  const [opening, setOpening] = useState(initial !== null)
   const [save, setSave] = useState<SaveState>({ kind: 'idle' })
   const [filesRevision, setFilesRevision] = useState(0)
   const projectRef = useRef<Project | null>(null)
   const [history] = useState(createUndoHistory)
   // 正在做的编辑动作里引擎报的改动，做完记成一步撤销
   const stepRef = useRef<PatchChange[] | null>(null)
-  const creatingRef = useRef<Promise<Project> | null>(null)
   const creatingCaptionsRef = useRef<Promise<Composition | undefined> | null>(null)
   // 正在加的语言：建好值表文件、放进工程之前，检查别处的改动要等它
   const addingLocaleRef = useRef<Promise<void> | null>(null)
@@ -905,8 +903,10 @@ export function useFilmSession(
   const presentRef = useRef<ReadonlyMap<string, string>>(new Map())
   const inFlightRef = useRef<Promise<void> | null>(null)
   const noticeRef = useRef(onNotice)
+  const missingRef = useRef(onMissing)
   useLayoutEffect(() => {
     noticeRef.current = onNotice
+    missingRef.current = onMissing
   })
   const revisionRef = useRef(0)
   // 上次读过以后做完的编辑（编辑动作、撤销、重做）里的改动，下次读的那一份带着（见 `FilmView.step`）
@@ -959,32 +959,31 @@ export function useFilmSession(
   )
 
   /**
-   * 换上一份工程（null 是还没有工程），撤销记录清空；`stored` 为真时各文件现在的内容就是工作区里存着的那一份。
+   * 换上一份工程，撤销记录清空；`stored` 为真时各文件现在的内容就是工作区里存着的那一份。
    * 当前语言的值表不在新的工程里时回到原文。
    */
   const install = useCallback(
-    (project: Project | null, stored: boolean) => {
+    (project: Project, stored: boolean) => {
       disposeAll(projectRef.current)
       history.clear()
       doneRef.current = null
       projectRef.current = project
       const locale = localeRef.current
-      if (project === null || (locale !== SOURCE_LOCALE && !tablesOf(project).has(locale)))
+      if (locale !== SOURCE_LOCALE && !tablesOf(project).has(locale))
         localeRef.current = SOURCE_LOCALE
       show()
-      if (stored && project !== null)
+      if (stored)
         for (const [path, file] of project.files) file.saved = presentRef.current.get(path) ?? null
     },
     [history, show],
   )
 
   /**
-   * 打开工作区里存着的工程 `stored`（null 是还没有工程，见 `readProject`）：主文件、字幕场景文件和各语言的值表。
+   * 打开工作区里存着的工程 `stored`（见 `readProject`）：主文件、字幕场景文件和各语言的值表。
    * 有字幕宿主但场景文件不存在时按没有字幕打开，提示一句。
    */
   const openStored = useCallback(
-    async (stored: StoredProject | null): Promise<Project | null> => {
-      if (stored === null) return null
+    async (stored: StoredProject): Promise<Project> => {
       if (stored.captions === null && stored.hosted) noticeRef.current(CAPTIONS_MISSING_TEXT)
       const files = new Map<string, OpenFile>()
       for (const [path, file] of storedFilesOf(stored))
@@ -1001,7 +1000,6 @@ export function useFilmSession(
 
   const [initialProject] = useState(initial)
   useEffect(() => {
-    if (initialProject === null) return
     let cancelled = false
     void openStored(initialProject).then((project) => {
       if (cancelled) {
@@ -1009,7 +1007,6 @@ export function useFilmSession(
         return
       }
       install(project, true)
-      setOpening(false)
     })
     return () => {
       cancelled = true
@@ -1022,19 +1019,23 @@ export function useFilmSession(
       await (inFlightRef.current ?? addingLocaleRef.current)
   }, [])
 
-  /** 工作区里已经有这份工程（主文件存过了）：编辑器自己往工程里加的旁挂文件（比如节拍文件）这时才写。 */
-  const hasStoredProject = useCallback(
-    () => (projectRef.current?.files.get(PROJECT_MAIN)?.version ?? null) !== null,
-    [],
-  )
-
-  /** 换上工作区里现在的那一份 `stored`，放弃本地没存的改动并提示。 */
+  /**
+   * 换上工作区里现在的那一份 `stored`，放弃本地没存的改动并提示。主文件已经没了（`stored` 是 null）时放下工程
+   * （之后不再保存，卸载时也不补存），交给 `onMissing`。
+   */
   const adoptStored = useCallback(
     async (stored: StoredProject | null) => {
+      if (stored === null) {
+        disposeAll(projectRef.current)
+        projectRef.current = null
+        history.clear()
+        missingRef.current()
+        return
+      }
       install(await openStored(stored), true)
       noticeRef.current(STALE_NOTICE)
     },
-    [install, openStored],
+    [history, install, openStored],
   )
 
   const saveNow = useCallback(async (): Promise<'saved' | 'clean' | 'reloaded' | 'failed'> => {
@@ -1057,10 +1058,7 @@ export function useFilmSession(
       setSave({ kind: 'saving' })
       try {
         for (const { path, file, content } of writes) {
-          file.version =
-            file.version === null
-              ? await createProjectFile(conversationId, path, content)
-              : await writeProjectFile(conversationId, path, content, file.version)
+          file.version = await writeProjectFile(conversationId, path, content, file.version)
           file.saved = content
         }
         setSave({ kind: 'idle' })
@@ -1089,7 +1087,7 @@ export function useFilmSession(
   }, [adoptStored, conversationId, settled])
 
   /**
-   * 打开着的文件（没有工程时是主文件）或语言值表变了：通知不带版本号，自己的保存也会通知。等在途的保存结束再读，
+   * 打开着的文件（还没打开时算主文件）或语言值表变了：通知不带版本号，自己的保存也会通知。等在途的保存结束再读，
    * 读回来以后再等一次（读的时候可能又存了一版），有一个文件在工作区里的版本比自己知道的新（或文件出现、
    * 消失了，含别处加的语言）才算别处改的。
    */
@@ -1179,40 +1177,19 @@ export function useFilmSession(
 
   useEffect(() => () => disposeAll(projectRef.current), [])
 
-  /** 还没有工程时按 `canvas` 用模板建一份；连着加两次也只建一份，后一次等前一次建好。 */
-  const projectFor = useCallback(
-    async (canvas: Canvas): Promise<Project> => {
-      if (projectRef.current !== null) return projectRef.current
-      creatingRef.current ??= openDoc(PROJECT_MAIN, emptyProject(canvas, catalog), collect)
-        .then((doc) => {
-          const project: Project = {
-            files: new Map([[PROJECT_MAIN, { doc, version: null, saved: null }]]),
-            captionsPath: CAPTIONS_PATH,
-          }
-          install(project, false)
-          return project
-        })
-        .finally(() => {
-          creatingRef.current = null
-        })
-      return creatingRef.current
-    },
-    [catalog, collect, install],
-  )
-
   /**
    * 把几段素材一段接一段放进画面区：给了 `at` 就从那一行的那个时间放起（调用方保证那里空着），
    * 没给就接在主轨（画面区最上面那一行）的末尾。`renumber` 是为它新开一行时别的片段要换成的行号。
-   * 每段都叠在最上面，写在根下第一个。还没有工程时先按 `canvas` 建一份。放不下时不动工程。
+   * 每段都叠在最上面，写在根下第一个。工程还没打开、放不下时不动工程。
    */
   const addVideos = useCallback(
-    async (
-      canvas: Canvas,
+    (
       videos: readonly NewVideo[],
       at?: Landing,
       renumber: Renumbering = NO_RENUMBERING,
-    ): Promise<boolean> => {
-      const project = await projectFor(canvas)
+    ): boolean => {
+      const project = projectRef.current
+      if (project === null) return false
       const engine = mainOf(project)
       const root = rootOf(engine)
       if (root === undefined) return false
@@ -1253,18 +1230,17 @@ export function useFilmSession(
       show()
       return true
     },
-    [catalog, projectFor, perform, show],
+    [catalog, perform, show],
   )
 
   /**
    * 把组件库的一个条目放进工程：先把条目的文件拷进工程，再从 `at` 那一行的那个时间放起（调用方保证那里空着），
-   * 可填项取 `values`，时长取条目的时长。工程里加了语言时，文字字段都随语言（见 `followingByDefault`）。
-   * `renumber` 同 `addVideos`。
-   * 叠在最上面，写在根下第一个。还没有工程时先按 `canvas` 建一份。文件拷不进来时提示原因，不动工程。
+   * 可填项取 `values`，时长取条目的时长，尺寸按工程的画面。工程里加了语言时，文字字段都随语言（见
+   * `followingByDefault`）。`renumber` 同 `addVideos`。
+   * 叠在最上面，写在根下第一个。文件拷不进来时提示原因，不动工程；工程还没打开时也不动。
    */
   const addItem = useCallback(
     async (
-      canvas: Canvas,
       item: CatalogItem,
       values: Readonly<Record<string, VariableValue>>,
       at: Landing,
@@ -1276,16 +1252,14 @@ export function useFilmSession(
         noticeRef.current(errorMessageOf(error, '贴片和场景读取失败'))
         return false
       }
-      const project = await projectFor(canvas)
+      const project = projectRef.current
+      if (project === null) return false
       const engine = mainOf(project)
       const root = rootOf(engine)
       if (root === undefined) return false
       const existing = clipsOf(engine, catalog)
       const duration = itemDurationMs(item, existing)
-      const size = {
-        width: Number(root.attributes['data-width'] ?? canvas.width),
-        height: Number(root.attributes['data-height'] ?? canvas.height),
-      }
+      const size = canvasOf(engine)
       const id = newClipId()
       perform(project, () => {
         for (const [other, next] of renumber) engine.setTiming(other, { trackIndex: next })
@@ -1316,21 +1290,17 @@ export function useFilmSession(
       show()
       return true
     },
-    [catalog, conversationId, projectFor, perform, show],
+    [catalog, conversationId, perform, show],
   )
 
   /**
    * 把一段音频放进声音区：从 `at` 那一行的那个时间放起（调用方保证那里空着）。
-   * 写在根下第一个，不带叠放顺序。`renumber` 同 `addVideos`。还没有工程时先按 `canvas` 建一份。
+   * 写在根下第一个，不带叠放顺序。`renumber` 同 `addVideos`。工程还没打开时不动工程。
    */
   const addAudio = useCallback(
-    async (
-      canvas: Canvas,
-      audio: NewAudio,
-      at: Landing,
-      renumber: Renumbering = NO_RENUMBERING,
-    ): Promise<boolean> => {
-      const project = await projectFor(canvas)
+    (audio: NewAudio, at: Landing, renumber: Renumbering = NO_RENUMBERING): boolean => {
+      const project = projectRef.current
+      if (project === null) return false
       const engine = mainOf(project)
       const root = rootOf(engine)
       if (root === undefined) return false
@@ -1360,14 +1330,14 @@ export function useFilmSession(
       show()
       return true
     },
-    [projectFor, perform, show],
+    [perform, show],
   )
 
   /**
    * 改工程里已有的东西：`change` 拿到主文件、字幕场景（没有时是 undefined）和各语言的值表，里面的几步和工程总长
    * 一起算一步撤销。字幕在同一步里跟着挪了的视频片段、配音片段走（见 `followClips`）；跟着挪做不到时整步
    * 不做，提示原因。挪了、裁了开头、改了入点或速度的有声片段，曲线在同一步里跟着改（见 `curvesFollowing`）。
-   * 答复这一步做了没有：没有工程、整步不做时是 false。
+   * 答复这一步做了没有：工程还没打开、整步不做时是 false。
    */
   const edit = useCallback(
     (
@@ -1941,7 +1911,7 @@ export function useFilmSession(
    * 用 `captionsFor` 算出要加的句子，场景里各按开始时间排进它的元素，主文件根上各声明一个变量；主文件里还没有
    * 字幕宿主时加在根下最后。给了 `narration` 时每句再加一个和它对齐的旁白片段（原文下的配音片段，地址、名字、
    * 音色是给的），放进「配音」行（见 `addDubElements`），同一步撤销。答复新字幕的编号（按 `captionsFor` 给的先后；
-   * 一句都没有时是空的、不动工程）；还没有工程、场景文件建不了时不动工程（建不了时提示原因），答复 undefined。
+   * 一句都没有时是空的、不动工程）；工程还没打开、场景文件建不了时不动工程（建不了时提示原因），答复 undefined。
    */
   const addCaptions = useCallback(
     async (
@@ -2258,7 +2228,6 @@ export function useFilmSession(
 
   return {
     film,
-    opening,
     filesRevision,
     addVideos,
     addItem,
@@ -2295,7 +2264,6 @@ export function useFilmSession(
     undo: () => step('undo'),
     redo: () => step('redo'),
     save,
-    hasStoredProject,
     flush: () => void saveNow(),
     /** 等没存的改动存完；存好了（或本来就没有要存的）答 true，存失败或换成了别处改的那一份答 false。 */
     settle: async () => {

@@ -72,7 +72,6 @@ const renderTab = async () => {
   const locales = {
     current: null,
     present: ['en'],
-    addBlocked: undefined,
     onSwitch: vi.fn<LocaleControls['onSwitch']>(),
     onAdd: vi.fn<LocaleControls['onAdd']>(),
   } satisfies LocaleControls

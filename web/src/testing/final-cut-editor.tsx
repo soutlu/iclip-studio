@@ -8,7 +8,12 @@ import {
   captionsScene,
   captionVariable,
 } from '@/features/storyboard/final-cut/composition/captions'
-import type { CaptionClip, FilmClip } from '@/features/storyboard/final-cut/composition/film'
+import {
+  DEFAULT_CANVAS,
+  emptyProject,
+  type CaptionClip,
+  type FilmClip,
+} from '@/features/storyboard/final-cut/composition/film'
 import { FinalCutEditor } from '@/features/storyboard/final-cut/final-cut-editor'
 import type { GenerationJob } from '@/features/storyboard/storyboard.api'
 import { Toaster } from '@/shared/ui/toast'
@@ -100,7 +105,8 @@ export const keepRealSaveDelay = () => {
   saveDelay = {}
 }
 
-export const openEditor = async (records: GenerationJob[] = takes) => {
+/** 挂上编辑器，不等它打开：工作区里还没有工程时看到的是「新建 final-cut」。 */
+export const renderEditor = async (records: GenerationJob[] = takes) => {
   serveGenerations(records)
   const editor = (
     <>
@@ -111,13 +117,24 @@ export const openEditor = async (records: GenerationJob[] = takes) => {
     </>
   )
   const rendered = await renderWithProviders(editor)
-  await screen.findByRole('toolbar', { name: '剪辑工具' })
   return {
     close: () => rendered.rerender(<Toaster />),
     reopen: () => rendered.rerender(editor),
     queryClient: rendered.queryClient,
     socket: rendered.socket,
   }
+}
+
+/**
+ * 打开编辑器，等它打开。工作区里还没有工程时先放一份按默认模版建的空工程（版本 1），和点过「新建 final-cut」
+ * 以后一样；点按钮新建本身见 `final-cut-editor-create.test.tsx`。
+ */
+export const openEditor = async (records: GenerationJob[] = takes) => {
+  if (mockProjectMain(CONVERSATION) === undefined)
+    putMockProjectMain(CONVERSATION, emptyProject(DEFAULT_CANVAS, fixtureCatalog))
+  const opened = await renderEditor(records)
+  await screen.findByRole('toolbar', { name: '剪辑工具' })
+  return opened
 }
 
 /** 编辑器的根节点：点在编辑器的空白处时焦点落在它上面。 */

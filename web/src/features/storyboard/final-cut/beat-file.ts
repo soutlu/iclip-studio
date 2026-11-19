@@ -61,13 +61,11 @@ export type BeatFileStore = {
   create: (path: string, content: string) => Promise<unknown>
   /** 按读到的版本覆盖一个文件。 */
   write: (path: string, content: string, version: number) => Promise<unknown>
-  /** 现在能不能往工程里写（比如工程还没存进工作区时不能）；要写的那一刻才问。 */
-  writable: () => boolean
 }
 
 /**
  * 音频 `src` 的节拍：工程里有能用的节拍文件就直接用它，不读声音；没有（或读不出、版本不对）时用 `analyse` 算，
- * 算出来了而且 `store` 能写时写成节拍文件（新建，或覆盖读不出的那一份）。没有稳定的节拍时是 null，不写文件。
+ * 算出来了就写成节拍文件（新建，或覆盖读不出的那一份）。没有稳定的节拍时是 null，不写文件。
  * 读文件、写文件失败只记到控制台，照样用算出来的；别处先建好了这个文件（409）不算失败。
  */
 export async function projectBeats(
@@ -89,7 +87,7 @@ export async function projectBeats(
   const found = await analyse(src)
   if (found === null) return null
   const grid = rounded(found)
-  if (path === null || !store.writable()) return grid
+  if (path === null) return grid
   const content = beatFileContent(src, grid)
   try {
     if (stored === null) await store.create(path, content)
