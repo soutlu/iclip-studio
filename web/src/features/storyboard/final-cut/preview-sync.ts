@@ -91,7 +91,8 @@ const GEOMETRY_STYLES = [
   ...['translate', 'scale'],
 ]
 
-// 经验证可直接增量打补丁且与整份重载等价的改动范围（其余如宿主变量值、脚本等仅在运行库初始加载时读取）
+// 经验证可直接增量打补丁且与整份重载等价的改动范围（其余如宿主变量值、脚本等仅在运行库初始加载时读取）。
+// 宿主的时长除外：运行库加载时把它挪进自己记的属性、删掉 data-duration，之后再写的被它删掉、不认（0.9.59 实测）
 const LIVE_TIMING = new Set(['start', 'duration', 'trackIndex'])
 const LIVE_ATTRIBUTES = new Set([
   ...['data-hidden', 'data-media-start', 'data-volume', 'muted'],
@@ -126,6 +127,16 @@ const htmlOf = (value: unknown) =>
 
 const isMediaElement = (value: unknown) => /^\s*<(video|audio)[\s>]/i.test(htmlOf(value) ?? '')
 
+/** 预览文档 `html` 里贴片、场景和字幕宿主（带 `data-composition-src` 的元素）的编号。 */
+const hostIdsOf = (html: string): ReadonlySet<string> =>
+  new Set(
+    [
+      ...new DOMParser()
+        .parseFromString(html, 'text/html')
+        .querySelectorAll('[data-composition-src][data-hf-id]'),
+    ].map((element) => element.getAttribute('data-hf-id') ?? ''),
+  )
+
 /** 补丁改的根变量：变量的声明、默认值，或根上同名的 CSS 变量（SDK 改变量时一起写）；都不是时是 undefined。 */
 const variableOf = (path: string): string | undefined => {
   const matched =
@@ -137,8 +148,8 @@ const variableOf = (path: string): string | undefined => {
 /**
  * 主文件的这条补丁能不能直接打。字幕的根变量能：各句的字由场景里它自己的字显示，运行库加载以后不再读根变量，
  * 打进去只为副本会话和编辑器对得上。调音的属性能，只要片段在预览的那一份（`preview`）里：别的语言的配音片段、
- * 隐藏的片段不在。总长没变（`totalKept`）时能：编辑器每步都重写一次总长，没变的这条什么都不改。原文以外的
- * 语言下别的都不行（套语言改过发出去的那一份，不是引擎补丁）。
+ * 隐藏的片段不在。总长没变（`totalKept`）时能：编辑器每步都重写一次总长，没变的这条什么都不改。宿主
+ * （`isHost`）的时长不能。原文以外的语言下别的都不行（套语言改过发出去的那一份，不是引擎补丁）。
  */
 const isLiveMain = (
   patch: JsonPatchOp,
@@ -146,6 +157,7 @@ const isLiveMain = (
   captionVariables: ReadonlySet<string>,
   preview: string,
   totalKept: boolean,
+  isHost: (id: string) => boolean,
 ) => {
   const variable = variableOf(patch.path)
   if (variable !== undefined) return captionVariables.has(variable)
@@ -155,13 +167,13 @@ const isLiveMain = (
   if (foreign) return false
   const element = ELEMENT.exec(patch.path)
   if (element === null) return false
-  const [, , kind, name = ''] = element
+  const [, id = '', kind, name = ''] = element
   switch (kind) {
     // 加、删片段本身：删哪种都行，加的只能是视频、音频（宿主要运行库挂载）
     case undefined:
       return patch.op === 'remove' || isMediaElement(patch.value)
     case 'timing':
-      return LIVE_TIMING.has(name)
+      return LIVE_TIMING.has(name) && !(name === 'duration' && isHost(unescapePointer(id)))
     case 'attributes':
       return LIVE_ATTRIBUTES.has(name)
     case 'inlineStyles':
@@ -287,6 +299,9 @@ export function previewSync(shown: PreviewFilm | null, next: PreviewFilm): Previ
   const captionVariables = new Set(
     [...variablesOf(shown.captions), ...variablesOf(next.captions)].filter((id) => id !== ''),
   )
+  // 只在有改时长的补丁时才解析一次预览文档
+  let hosts: ReadonlySet<string> | undefined
+  const isHost = (id: string) => (hosts ??= hostIdsOf(next.html)).has(id)
   const patches: JsonPatchOp[] = []
   const captions: JsonPatchOp[] = []
   for (const change of step) {
@@ -295,7 +310,7 @@ export function previewSync(shown: PreviewFilm | null, next: PreviewFilm): Previ
       if (
         shortens(change) ||
         !change.patches.every((patch) =>
-          isLiveMain(patch, foreign, captionVariables, next.html, kept),
+          isLiveMain(patch, foreign, captionVariables, next.html, kept, isHost),
         )
       )
         return RELOAD

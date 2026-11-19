@@ -150,6 +150,22 @@ describe('要整份重新加载的', () => {
     ).toEqual({ kind: 'reload' })
   })
 
+  it('改贴片、场景的时长（运行库只认加载时的时长）；挪、换行照打', () => {
+    const withHost = (...changes: PatchChange[]): PreviewFilm => {
+      const film = next(...changes)
+      return { ...film, html: film.html.replace('</div></body>', `${HOST.html}</div></body>`) }
+    }
+    const timing = (name: string, value: number): JsonPatchOp => ({
+      op: 'replace',
+      path: `/elements/h9/timing/${name}`,
+      value,
+    })
+    expect(previewSync(SHOWN, withHost(main(timing('duration', 2))))).toEqual({ kind: 'reload' })
+    expect(
+      previewSync(SHOWN, withHost(main(timing('start', 1), timing('trackIndex', 2)))),
+    ).toMatchObject({ kind: 'live' })
+  })
+
   it('这一步改了不认识的文件，或者还没有字幕场景时改了它', () => {
     const scene: PatchChange = { ...movement, file: 'compositions/captions.html' }
     const other: PatchChange = { ...movement, file: 'compositions/title.html' }
