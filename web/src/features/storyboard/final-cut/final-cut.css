@@ -4201,11 +4201,22 @@
   padding: 0 7px 0 9px;
   background: var(--color-final-cut-clip-label);
   box-shadow: inset 0 -1px 0 var(--color-final-cut-clip-label-line);
+  font-size: var(--text-final-cut-clip-label);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1;
+}
+
+/* 选中时两端是墨色的裁剪把手，标题往里让开 */
+.wf-clip.is-selected .wf-clip-label {
+  padding: 0 10px;
 }
 
 .wf-clip-label .wf-clip-name {
   margin-right: auto;
-  line-height: 1;
+  font-size: inherit;
+  line-height: inherit;
+  opacity: 0.88;
 }
 
 .wf-clip-sound {
@@ -4239,7 +4250,8 @@
 .wf-clip-label .wf-clip-badge {
   padding: 0;
   background: none;
-  line-height: 1;
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .wf-clip-badge[data-tone='offset'] {
