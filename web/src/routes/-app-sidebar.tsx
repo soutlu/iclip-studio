@@ -8,7 +8,7 @@ import {
   useLiveConversations,
 } from '@/features/conversations'
 import { SettingsDialog } from '@/features/settings'
-import { canAuditAll, hasPermission, PERMISSION, useUser } from '@/shared/auth'
+import { canAuditAll, canManageMembers, hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { useShellChrome } from '@/shared/shell'
@@ -60,7 +60,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
   const canReadLibrary = hasPermission(user, PERMISSION.generationRead)
   const canGovern = canAuditAll(user)
   const canManageAgents = hasPermission(user, PERMISSION.agentManage)
-  const canManageModels = hasPermission(user, PERMISSION.modelManage)
+  const canOpenSettings = canManageMembers(user)
   const governLabelId = useId()
   useLiveConversations(canRead)
 
@@ -352,7 +352,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
         </div>
       </aside>
       {searchDialog}
-      <SettingsDialog onOpenChange={setSettingsOpen} open={settingsOpen && canManageModels} />
+      <SettingsDialog onOpenChange={setSettingsOpen} open={settingsOpen && canOpenSettings} />
     </>
   )
 }

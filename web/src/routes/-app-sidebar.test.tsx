@@ -314,7 +314,7 @@ describe('AppSidebar', () => {
     ).toEqual(['全部任务', '审计', 'Agent 配置'])
   })
 
-  it('用户菜单里的「设置」只给带 model:manage 的账号，点开是「设置」弹窗的「用户」分区', async () => {
+  it('用户菜单里的「设置」只给同时有 users:manage 和 model:manage 的账号，点开是「设置」弹窗的「用户」分区', async () => {
     loginAs(mockAuthUser)
     const user = userEvent.setup()
     const plain = await renderSidebar()

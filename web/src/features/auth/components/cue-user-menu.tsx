@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { hasPermission, PERMISSION, useLogout, userDisplayName, useUser } from '@/shared/auth'
+import { canManageMembers, useLogout, userDisplayName, useUser } from '@/shared/auth'
 import { Icon, type IconName } from '@/shared/icons'
 import {
   setThemePreference,
@@ -25,7 +25,7 @@ type CueUserMenuProps = {
   align?: CueUserMenuAlign
   className?: string
   compact?: boolean
-  /** 点「设置」时调用；「设置」只对有 `model:manage` 的账号显示。 */
+  /** 点「设置」时调用；「设置」只对 `canManageMembers` 的账号显示。 */
   onOpenSettings: () => void
 }
 
@@ -71,7 +71,7 @@ export function CueUserMenu({
   const secondaryLabel = user?.username && user.username !== userLabel ? user.username : ''
   const departments = user?.departments ?? []
   const hasProfileDetails = Boolean(user?.jobTitle || user?.city || departments.length)
-  const canOpenSettings = hasPermission(user, PERMISSION.modelManage)
+  const canOpenSettings = canManageMembers(user)
 
   return (
     <MenuRoot>

@@ -1,5 +1,5 @@
 export { sanitizeCueAuthNextPath } from './cue-auth-navigation'
-export { canAuditAll, hasPermission, PERMISSION } from './permissions'
+export { canAuditAll, canManageMembers, hasPermission, PERMISSION } from './permissions'
 export {
   AUTH_QUERY_KEY_ROOT,
   consumeSsoNextPath,
