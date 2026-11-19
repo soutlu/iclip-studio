@@ -13,6 +13,7 @@ import type { ArtifactEntry, ArtifactRendererProps } from './artifact'
 import { useOpenArtifact } from './artifact-search'
 import { ArtifactRegistry } from './registry'
 import { useWorkbenchOpenRequest } from './use-workbench-open-request'
+import { WorkbenchHeaderActions } from './workbench-header-actions'
 import { WorkbenchHost } from './workbench-host'
 import type { WorkbenchLayout } from './workbench-layout-context'
 import { WorkbenchLayoutProvider } from './workbench-layout-provider'
@@ -22,6 +23,15 @@ const CONVERSATION_ID = 'ff2c1c0e-6c4f-4f0e-9a2b-0f2f3a4b5c6d'
 const OTHER_USER_ID = '7d3e2f1a-0b9c-4d8e-8f7a-6b5c4d3e2f1a'
 
 const Painted = ({ artifact }: ArtifactRendererProps) => <p>画着{artifact.title}</p>
+
+const WithHeaderAction = (props: ArtifactRendererProps) => (
+  <>
+    <Painted {...props} />
+    <WorkbenchHeaderActions>
+      <button type="button">页签自己的操作</button>
+    </WorkbenchHeaderActions>
+  </>
+)
 
 const shotsEntry: ArtifactEntry = {
   autoOpen: true,
@@ -453,6 +463,40 @@ describe('WorkbenchHost 展开态', () => {
 
     expect(screen.getByText('画着分镜')).toBe(painted)
     expect(painted).toBeVisible()
+  })
+
+  it.each([
+    ['并排', ROOMY, '折叠工作台'],
+    ['二选一', { compact: false, sideBySide: false }, '回到对话'],
+  ])(
+    '%s布局：页签放进顶栏右侧的控件和页签同在顶栏、一直显示，不跟着顶栏自己的按钮藏起来',
+    async (_, layout, ownButton) => {
+      serveFiles(['video_shot.json'])
+      await renderHost(layout, registryWith({ ...shotsEntry, component: WithHeaderAction }))
+
+      const action = await screen.findByRole('button', { name: '页签自己的操作' })
+      expect(action).toBeVisible()
+      expect(screen.getByRole('tablist', { name: '面板内容' }).parentElement).toContainElement(
+        action,
+      )
+      expect(screen.getByText('画着分镜')).not.toContainElement(action)
+      // 并排时顶栏自己的按钮那一组悬停才显示
+      expect(screen.getByRole('button', { name: ownButton }).parentElement).not.toContainElement(
+        action,
+      )
+    },
+  )
+
+  it('紧凑布局：顶栏没有交换、折叠按钮，页签放进顶栏右侧的控件照样显示', async () => {
+    serveFiles(['video_shot.json'])
+    await renderHost(
+      { compact: true, sideBySide: false },
+      registryWith({ ...shotsEntry, component: WithHeaderAction }),
+    )
+    await userEvent.click(screen.getByRole('button', { name: '从对话查看分镜' }))
+
+    expect(await screen.findByRole('button', { name: '页签自己的操作' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: '折叠工作台' })).toBeNull()
   })
 
   it('紧凑屏显式查看可以展开，折叠后查看同一产物也重新展开', async () => {

@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
   type RefObject,
 } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -16,9 +17,13 @@ import type { TimeSpan } from '@/shared/lib/time-spans'
 import { cn } from '@/shared/lib/utils'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MediaBuffering } from '@/shared/ui/media-buffering'
-import { TabsContent, TabsList, TabsRoot, TabsTrigger } from '@/shared/ui/tabs'
+import { TabsContent, TabsRoot } from '@/shared/ui/tabs'
 import { toast } from '@/shared/ui/toast'
-import { useWorkbenchCollapsed, type ArtifactRendererProps } from '@/shared/workbench'
+import {
+  useWorkbenchCollapsed,
+  WorkbenchHeaderActions,
+  type ArtifactRendererProps,
+} from '@/shared/workbench'
 import { groupConversationVideos } from '../conversation-videos/video-groups'
 import { keyframeRanges } from '../editing/keyframe-segments'
 import { useAudioPeaks } from '../editing/media-analysis'
@@ -83,7 +88,6 @@ import { ExportControl } from './export-control'
 import { FilmInspector } from './film-inspector'
 import { FilmTimeline, type DropGhost, type TimelineHandle } from './film-timeline'
 import {
-  ITEM_KIND_LABEL,
   ITEM_KINDS,
   itemDurationMs,
   NO_FILTER,
@@ -107,6 +111,7 @@ import { hostTextIn } from './host-text'
 import { MaterialArea } from './material-area'
 import {
   takeDurationMs,
+  takeShots,
   useKeyframeIndexes,
   useVideoAudio,
   useVideoSize,
@@ -119,12 +124,19 @@ import { snapDropToBeats } from './music-beats'
 import type { AttributeChanges } from './original-sound'
 import {
   materialCatalog,
-  rangePieces,
+  NO_PICKS,
+  orderedPicks,
+  picksSummary,
   shotAt,
+  spanPieces,
   usedSpans,
+  withTakePicks,
   type Material,
-  type MaterialRange,
+  type MaterialPicks,
   type MaterialTake,
+  type MediaSpan,
+  type PickedSpan,
+  type TakePicks,
 } from './materials'
 import {
   landingOn,
@@ -145,7 +157,11 @@ import {
 } from './preview-player'
 import type { PreviewFilm } from './preview-sync'
 import { PreviewTransport } from './preview-transport'
+import { LayoutSplitter } from './layout-splitter'
+import { SaveStatus } from './save-status'
 import { aroundPlayhead, firstFrameMs } from './selection'
+import { SideNav } from './side-nav'
+import { CATALOG_TABS, type CatalogTab, type SideTab } from './side-tabs'
 import { resyncPlan, soundActionFor, type SoundAction, type SoundControls } from './sound-pair'
 import { rowMoveDirection } from './stacking'
 import { FIT_ZOOM, timelineScale, zoomScrollLeft, zoomToClips, type Zoom } from './timeline-scale'
@@ -157,6 +173,7 @@ import {
 } from './translation'
 import { useCaptionRecognition, type RecognitionOutcome } from './use-caption-recognition'
 import { useDubbing, type DubbingDone } from './use-dubbing'
+import { SIDE_WIDTH, TIMELINE_MIN_HEIGHT, useEditorLayout } from './use-editor-layout'
 import { useFilmSession, type NewAudio } from './use-film-session'
 import { useMusicBeats } from './use-music-beats'
 import { useSmartMix } from './use-smart-mix'
@@ -179,6 +196,7 @@ const EMPTY_TEXT = 'final-cut 暂无内容，加入内容后可在此预览'
 const PICK_FIRST_TEXT = '尚未选中镜头，无法加入 final-cut；请先在「镜头」页签中选中镜头范围'
 const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏，无法进入全屏'
 const ADDING_ITEM_TEXT = '上一个贴片或场景正在加入 final-cut，请稍后再试'
+const ADDING_PICKS_TEXT = '选中的镜头正在加入 final-cut，请稍后再试'
 const ADDING_AUDIO_TEXT = '上一条音频正在加入 final-cut，请稍后再试'
 const EMPTY_EXPORT_TEXT = 'final-cut 暂无内容，无法导出；请先加入内容'
 const NO_FILM_CAPTION_TEXT = 'final-cut 暂无内容，无法加字幕；请先加入镜头'
@@ -214,14 +232,6 @@ const previewCaptionsOf = (clips: readonly FilmClip[], locale: ShownLocale) =>
         : [],
     ),
   )
-
-/** 侧栏的目录页签：镜头、贴片、场景、配乐、字幕。 */
-type CatalogTab = 'shots' | ItemKind | 'audio' | 'captions'
-type SideTab = CatalogTab | 'props'
-const CATALOG_TABS: readonly CatalogTab[] = ['shots', ...ITEM_KINDS, 'audio', 'captions']
-// 侧栏页签：当前页签是浅底块，不用共用页签的下划线
-const SIDE_TAB_CLASS =
-  'rounded-sm py-1 text-label text-on-surface-muted after:hidden data-[state=active]:bg-state-active data-[state=active]:font-semibold'
 
 const watchFullscreen = (notify: () => void) => {
   document.addEventListener('fullscreenchange', notify)
@@ -280,12 +290,25 @@ const shotNumberOf = (ms: number, url: string, keyframes: KeyframeStates) => {
   return state?.kind === 'ready' ? shotAt(keyframeRanges(state.index), ms / 1000) : undefined
 }
 
-const shotsLabelOf = (range: MaterialRange, url: string, keyframes: KeyframeStates) => {
-  const [first] = range.shots
-  const last = range.shots.at(-1)
+/** 选区里的一段加入 final-cut 时拆成的片段，各带素材地址和名字（「A · 镜头 2」）。 */
+const piecesOf = ({ material, span }: PickedSpan, keyframes: KeyframeStates) =>
+  spanPieces(span, takeShots(keyframes.get(material.url))).map((piece) => {
+    const shot = shotNumberOf(piece.mediaStart, material.url, keyframes)
+    return {
+      ...piece,
+      src: material.url,
+      label: `${material.takeLetter} · ${shot === undefined ? material.version : `镜头 ${shot}`}`,
+    }
+  })
+
+/** 素材预览放的这一段跨了哪几个镜头，按加入 final-cut 时拆成的片段算。 */
+const shotsLabelOf = (span: MediaSpan, url: string, keyframes: KeyframeStates) => {
+  const pieces = spanPieces(span, takeShots(keyframes.get(url)))
+  const first = pieces[0]
+  const last = pieces.at(-1)
   if (first === undefined || last === undefined) return ''
-  const from = shotNumberOf((first.startMs + first.endMs) / 2, url, keyframes)
-  const to = shotNumberOf((last.startMs + last.endMs) / 2, url, keyframes)
+  const from = shotNumberOf(first.mediaStart, url, keyframes)
+  const to = shotNumberOf(last.mediaStart, url, keyframes)
   if (from === undefined || to === undefined) return ''
   return from === to ? ` · 镜头 ${from}` : ` · 镜头 ${from}–${to}`
 }
@@ -401,7 +424,7 @@ function EditorBody({
   const previewRef = useRef<PreviewControl | null>(null)
   // 画面编辑层处理方向键的函数（见 CanvasOverlay）
   const canvasNudgeRef = useRef<CanvasNudge | null>(null)
-  const [range, setRange] = useState<MaterialRange | null>(null)
+  const [picks, setPicks] = useState<MaterialPicks>(NO_PICKS)
   const [playback, setPlayback] = useState<PlaybackSettings>({ rate: 1, muted: false, loop: false })
   const toggleMute = () => setPlayback((current) => ({ ...current, muted: !current.muted }))
   const toggleLoop = () => setPlayback((current) => ({ ...current, loop: !current.loop }))
@@ -457,9 +480,10 @@ function EditorBody({
     else previewRef.current?.play()
   }
 
-  const rangeMaterial = range === null ? undefined : materials.byJob.get(range.jobId)
-  const sizeUrl = film === null ? rangeMaterial?.url : undefined
-  const size = useVideoSize(sizeUrl)
+  const picked = orderedPicks(materials.groups, picks)
+  // 还没有 final-cut 时按第一段素材的画幅新建：先读好，加入时不用再等
+  const sizeUrl = film === null ? picked[0]?.material.url : undefined
+  useVideoSize(sizeUrl)
   const queryClient = useQueryClient()
 
   const [viewportWidth, setViewportWidth] = useState(0)
@@ -484,7 +508,16 @@ function EditorBody({
     if (sideTab !== 'captions') setSideTab(selectionKey === '' ? catalogTab : 'props')
   }
   const selectOnly = (id: string) => setSelectedIds(new Set([id]))
+  const sideRef = useRef<HTMLElement | null>(null)
+  const timelinePanelRef = useRef<HTMLDivElement | null>(null)
+  // 右栏宽度、收起，时间线高度。选中片段时右栏收着就收着（「属性」上亮圆点），点页签或双击片段才展开
+  const { layout, setSideCollapsed, sideSplitter, timelineSplitter } = useEditorLayout(() => ({
+    stage,
+    side: sideRef.current,
+    timeline: timelinePanelRef.current,
+  }))
   const openSideTab = (value: string) => {
+    setSideCollapsed(false)
     if (value === 'props') {
       setSideTab('props')
       return
@@ -494,7 +527,6 @@ function EditorBody({
     setCatalogTab(tab)
     setSideTab(tab)
   }
-  const sideRef = useRef<HTMLElement | null>(null)
   // 切到「属性」时焦点可能还在刚藏起来的目录里（比如在卡片上按了 ]），浏览器随后把它丢到页面上，
   // 快捷键就收不到了：交还给编辑器的根节点
   useLayoutEffect(() => {
@@ -508,17 +540,19 @@ function EditorBody({
   const [textEditing, setTextEditing] = useState(false)
   // 时间线上点下去做什么：B 在切开和选择之间来回换，V、A 回到选择，Esc 取消选中以后也回到选择
   const [tool, setTool] = useState<EditTool>('select')
-  // Esc 先退全屏（浏览器多半自己退，按键还是传到页面时才轮到这里），再退出素材预览，再取消选中，再回到选择工具；
-  // 都没有时不用掉这一下
+  // Esc 先退全屏（浏览器多半自己退，按键还是传到页面时才轮到这里），再退出素材预览，再取消选中，再清空「镜头」里的选区，
+  // 再回到选择工具；都没有时不用掉这一下
   useEditorEscape(
     fullscreen ||
       textEditing ||
-      (!gesturing && (materialView !== null || selected.size > 0 || tool === 'razor')),
+      (!gesturing &&
+        (materialView !== null || selected.size > 0 || picks.size > 0 || tool === 'razor')),
     () => {
       if (fullscreen) exitFullscreen()
       else if (textEditing) return
       else if (materialView !== null) leaveMaterial()
       else if (selected.size > 0) clearSelection()
+      else if (picks.size > 0) setPicks(NO_PICKS)
       else setTool('select')
     },
   )
@@ -529,10 +563,10 @@ function EditorBody({
   }
   const selectAround = (side: 'left' | 'right') =>
     selectOnTimeline(new Set(aroundPlayhead(clips, playhead, side)))
-  /** 双击时间线上的片段：只选中它，侧栏切到「属性」（停在别的页签时也切）。 */
+  /** 双击时间线上的片段：只选中它，右栏切到「属性」（停在别的页签时也切，收着时展开）。 */
   const inspectClip = (id: string) => {
     selectOnTimeline(new Set([id]))
-    setSideTab('props')
+    openSideTab('props')
   }
   const split = (cuts: readonly Cut[]) => {
     if (cuts.length === 0) return
@@ -702,47 +736,62 @@ function EditorBody({
           movedId,
         )
 
-  /** 把素材里的一段放进 final-cut：给了 `at` 放在那里，没给就接在主轨的末尾。 */
-  const place = (chosen: MaterialRange, at?: { row: RowTarget; start: number }) => {
-    const material = materials.byJob.get(chosen.jobId)
-    if (material === undefined) return
+  // 选区加完才清空：上一次还没加完时不接下一次，免得连点两下把同一组加两遍
+  const addingPicksRef = useRef(false)
+  /**
+   * 把选区里的各段一次放进 final-cut（一步撤销），按 `chosen` 的先后首尾相接：给了 `at` 从那里放起，
+   * 没给就接在主轨的末尾。放进去以后清空选区。
+   */
+  const place = (chosen: readonly PickedSpan[], at?: { row: RowTarget; start: number }) => {
+    const first = chosen[0]
+    if (first === undefined) return
+    if (addingPicksRef.current) {
+      notice(ADDING_PICKS_TEXT)
+      return
+    }
     // 照参照的工作台：确认素材有声音才写成有声音，没有声音、读不出来都按静音写。
     // 素材区读镜头时已经一起读过，这里多半直接拿到
-    const audible = queryClient.fetchQuery(videoAudioQuery(material.url)).then(
-      (found) => found,
-      () => false,
+    const audible = new Map(
+      [...new Set(chosen.map(({ material }) => material.url))].map((url) => [
+        url,
+        queryClient.fetchQuery(videoAudioQuery(url)).then(
+          (found) => found,
+          () => false,
+        ),
+      ]),
     )
-    const pieces = rangePieces(chosen).map((piece) => {
-      const shot = shotNumberOf(piece.mediaStart, material.url, keyframes)
-      return {
-        ...piece,
-        src: material.url,
-        label: `${material.takeLetter} · ${shot === undefined ? material.version : `镜头 ${shot}`}`,
-      }
-    })
+    const pieces = chosen.flatMap((each) => piecesOf(each, keyframes))
     const add = async (canvas: Canvas) => {
-      const muted = !(await audible)
+      const sounding = new Set<string>()
+      for (const [url, found] of audible) if (await found) sounding.add(url)
       const spot = at === undefined ? undefined : trackFor(at.row)
       const added = await session.addVideos(
         canvas,
-        pieces.map((piece) => ({ ...piece, muted })),
+        pieces.map((piece) => ({ ...piece, muted: !sounding.has(piece.src) })),
         spot === undefined || at === undefined ? undefined : { track: spot.track, start: at.start },
         spot?.renumber,
       )
-      if (added) leaveMaterial()
+      if (!added) return
+      setPicks(NO_PICKS)
+      leaveMaterial()
     }
-    if (film !== null) void add(film.canvas)
-    else if (size.data !== undefined) void add(size.data)
-    else
-      void queryClient
-        .fetchQuery(videoSizeQuery(material.url))
-        .then(add, (error: unknown) =>
-          notice(errorMessageOf(error, '画面尺寸读取失败，无法加入 final-cut')),
-        )
+    addingPicksRef.current = true
+    // 还没有 final-cut 时按第一段素材的画幅新建（见 sizeUrl）
+    const adding =
+      film !== null
+        ? add(film.canvas)
+        : queryClient
+            .fetchQuery(videoSizeQuery(first.material.url))
+            .then(add, (error: unknown) =>
+              notice(errorMessageOf(error, '画面尺寸读取失败，无法加入 final-cut')),
+            )
+    void adding.finally(() => {
+      addingPicksRef.current = false
+    })
   }
   const insert = () => {
-    if (range === null || rangeMaterial === undefined) notice(PICK_FIRST_TEXT)
-    else place(range)
+    if (picked.length === 0) notice(PICK_FIRST_TEXT)
+    else place(picked)
   }
 
   // 照参照的工作台：上一个条目还没加完时不接下一个，免得两次都按加之前的样子算落点
@@ -1357,7 +1406,7 @@ function EditorBody({
     },
   }
   const hostsWithText = textHosts(clips, catalog)
-  // 语言切换和添加：工具条上和「字幕·配音」页签顶部共用这一份
+  // 语言切换和添加：工具条上和「字幕」页签顶部共用这一份
   const localeControls: LocaleControls = {
     current: locale.code,
     present: film?.locales ?? [],
@@ -1372,14 +1421,16 @@ function EditorBody({
     },
   }
 
-  const viewedMaterial =
-    materialView === null ? undefined : materials.byJob.get(materialView.range.jobId)
-  const materialLabel = (material: Material, viewed: MaterialRange) =>
+  const viewedMaterial = materialView === null ? undefined : materials.byJob.get(materialView.jobId)
+  const materialLabel = (material: Material, viewed: MediaSpan) =>
     `素材 · ${material.groupLabel} · ${material.takeLabel}${shotsLabelOf(viewed, material.url, keyframes)}`
-  const showMaterial = (viewed: MaterialRange, show: MaterialView['show']) => {
-    previewRef.current?.pause()
-    setRange(viewed)
-    setMaterialView({ range: viewed, show })
+  /** 「镜头」页签里一条原作的选区改了：`view` 放进素材预览，去掉了预览着的那条原作上的一段时回到 final-cut 的预览。 */
+  const changePicks = (takeId: string, next: TakePicks, view: MaterialView | null) => {
+    setPicks((current) => withTakePicks(current, takeId, next))
+    if (view !== null) {
+      previewRef.current?.pause()
+      setMaterialView(view)
+    } else if (materialView?.jobId === next.jobId) leaveMaterial()
   }
   // 素材预览显示着时播放条换成素材的：时间和进度按整条原作算（还没读到时长先用选中范围的结尾），
   // 拖进度条在素材里跳
@@ -1391,7 +1442,7 @@ function EditorBody({
           totalMs:
             takeDurationMs(
               viewedMaterial === undefined ? undefined : keyframes.get(viewedMaterial.url),
-            ) ?? materialView.range.endMs,
+            ) ?? materialView.span.endMs,
           buffered: [],
           playBlocked: undefined,
           playing: materialPlaying,
@@ -1437,12 +1488,48 @@ function EditorBody({
       </p>
     )
 
-  /** 切到「属性」时，切走前停的目录页签留在页面上（藏起来），回来时搜索词、分类、滚动位置都还在。 */
+  /**
+   * 切到「属性」或右栏收起时，切走前停的目录页签留在页面上（藏起来），回来时搜索词、分类、滚动位置都还在。
+   * 收起时「属性」也藏起来，不卸掉。
+   */
   const catalogPanel = (tab: CatalogTab) =>
-    tab === catalogTab ? { forceMount: true as const, hidden: sideTab !== tab } : {}
+    tab === catalogTab
+      ? { forceMount: true as const, hidden: sideTab !== tab || layout.sideCollapsed }
+      : {}
+
+  // 右栏收着时页签内容藏起来，和工作台折叠一样当作看不见：试听、播放跟着停
+  const sideShown = !collapsed && !layout.sideCollapsed
 
   return (
-    <div className="wf-workspace">
+    <div
+      className={cn(
+        'wf-workspace',
+        layout.sideCollapsed && 'is-side-collapsed',
+        layout.timelineHeight !== null && 'is-timeline-sized',
+      )}
+      style={
+        {
+          '--wf-side-width': `${layout.sideWidth}px`,
+          '--wf-timeline-height':
+            layout.timelineHeight === null ? undefined : `${layout.timelineHeight}px`,
+        } as CSSProperties
+      }
+    >
+      <WorkbenchHeaderActions>
+        <div className="wf-header-actions">
+          <SaveStatus save={session.save} />
+          <ExportControl
+            blocked={exportBlocked}
+            onCancel={() => void exporting.cancel()}
+            onStart={() => void exporting.start(locale.code)}
+            target={{
+              locale: locale.code,
+              untranslated: pending === undefined ? 0 : pending.entries.length + pending.tooLong,
+            }}
+            view={exporting.view}
+          />
+        </div>
+      </WorkbenchHeaderActions>
       <div className="wf-stage" ref={setStage}>
         <PreviewPlayer
           backdrop={shown === undefined ? undefined : videoSnapshotUrl(shown.src, 320)}
@@ -1468,8 +1555,10 @@ function EditorBody({
         {viewedMaterial === undefined || materialView === null ? null : (
           <MaterialPreview
             controlRef={materialPreviewRef}
-            label={materialLabel(viewedMaterial, materialView.range)}
+            label={materialLabel(viewedMaterial, materialView.span)}
             muted={playback.muted}
+            layer={fullscreen ? stage : null}
+            onLeave={leaveMaterial}
             onNotice={notice}
             onPlaying={setMaterialPlaying}
             onTime={setMaterialMs}
@@ -1491,72 +1580,62 @@ function EditorBody({
           playback={playback}
         />
       </div>
+      {layout.sideCollapsed ? null : (
+        <LayoutSplitter
+          className="wf-side-splitter"
+          label="调整右栏宽度"
+          max={SIDE_WIDTH.max}
+          min={SIDE_WIDTH.min}
+          orientation="vertical"
+          panelRef={sideRef}
+          sized
+          {...sideSplitter}
+        />
+      )}
       <aside
         aria-label="镜头、贴片、场景、配乐、字幕和属性"
-        className="wf-panel wf-side"
+        className={cn('wf-panel wf-side', layout.sideCollapsed && 'is-collapsed')}
         ref={sideRef}
       >
-        <TabsRoot className="wf-side-panel" onValueChange={openSideTab} value={sideTab}>
-          <TabsList
-            aria-label="镜头、贴片、场景、配乐、字幕和属性页签"
-            className="wf-side-tabs items-center gap-0.5"
-          >
-            <TabsTrigger className={SIDE_TAB_CLASS} value="shots">
-              镜头
-            </TabsTrigger>
-            {ITEM_KINDS.map((kind) => (
-              <TabsTrigger className={SIDE_TAB_CLASS} key={kind} value={kind}>
-                {ITEM_KIND_LABEL[kind]}
-              </TabsTrigger>
-            ))}
-            <TabsTrigger className={SIDE_TAB_CLASS} value="audio">
-              配乐
-            </TabsTrigger>
-            <TabsTrigger className={SIDE_TAB_CLASS} value="captions">
-              字幕·配音
-            </TabsTrigger>
-            <TabsTrigger className={cn(SIDE_TAB_CLASS, 'wf-side-tab-props')} value="props">
-              属性
-              {selected.size > 0 ? (
-                <i aria-hidden="true" className="wf-side-dot" data-testid="selection-dot" />
-              ) : null}
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent className="wf-side-body" value="shots" {...catalogPanel('shots')}>
+        <TabsRoot
+          className="wf-side-panel"
+          onValueChange={openSideTab}
+          orientation={layout.sideCollapsed ? 'vertical' : 'horizontal'}
+          value={sideTab}
+        >
+          <SideNav
+            collapsed={layout.sideCollapsed}
+            onCollapsedChange={setSideCollapsed}
+            selection={selected.size > 0}
+          />
+          <TabsContent className="wf-side-body is-shots" value="shots" {...catalogPanel('shots')}>
             <MaterialArea
               groups={materials.groups}
               keyframes={keyframes}
-              onCarry={(carry) =>
+              onCarry={(point, carried) =>
                 setGhost(
-                  carry === null
+                  point === null
                     ? null
-                    : landingAt(
-                        carry.clientX,
-                        carry.clientY,
-                        carry.range.endMs - carry.range.startMs,
-                      ),
+                    : landingAt(point.clientX, point.clientY, picksSummary(carried).durationMs),
                 )
               }
-              onDrop={(clientX, clientY, dropped) => {
-                const at = landingAt(clientX, clientY, dropped.endMs - dropped.startMs)
+              onClear={() => {
+                setPicks(NO_PICKS)
+                leaveMaterial()
+              }}
+              onDrop={(point, dropped) => {
+                const at = landingAt(point.clientX, point.clientY, picksSummary(dropped).durationMs)
                 setGhost(null)
-                if (at === null) return false
-                place(dropped, { row: at.row, start: at.start })
-                return true
+                if (at !== null)
+                  place(orderedPicks(materials.groups, dropped), { row: at.row, start: at.start })
               }}
               onInsert={insert}
-              onClear={() => {
-                setRange(null)
-                leaveMaterial()
-              }}
-              onPick={(picked) => showMaterial(picked, 'start')}
-              onSelect={setRange}
-              onTrim={showMaterial}
+              onPicks={changePicks}
               onVersion={(takeId, jobId) => {
                 setPickedVersions((current) => ({ ...current, [takeId]: jobId }))
-                if (range?.takeId !== takeId) return
-                setRange(null)
-                leaveMaterial()
+                const had = picks.get(takeId)
+                if (had === undefined) return
+                changePicks(takeId, { jobId: had.jobId, spans: [] }, null)
               }}
               placeholder={
                 videos.isError ? (
@@ -1570,10 +1649,11 @@ function EditorBody({
                   </p>
                 ) : undefined
               }
+              picks={picks}
               playingMs={materialPlaying ? materialMs : undefined}
-              range={range}
               used={usedSpans(videoClips)}
               versionOf={versionOf}
+              view={materialView}
             />
           </TabsContent>
           {ITEM_KINDS.map((kind) => (
@@ -1609,7 +1689,7 @@ function EditorBody({
           ))}
           <TabsContent className="wf-side-body is-audio" value="audio" {...catalogPanel('audio')}>
             <AudioTab
-              active={sideTab === 'audio' && !collapsed}
+              active={sideTab === 'audio' && sideShown}
               clips={clips}
               conversationId={conversationId}
               onAdd={(audio) =>
@@ -1637,7 +1717,7 @@ function EditorBody({
             {...catalogPanel('captions')}
           >
             <CaptionsTab
-              active={sideTab === 'captions' && !collapsed}
+              active={sideTab === 'captions' && sideShown}
               onNotice={notice}
               addBlocked={captionBlocked}
               captions={captions}
@@ -1681,7 +1761,11 @@ function EditorBody({
               }
             />
           </TabsContent>
-          <TabsContent className="wf-side-body is-props" value="props">
+          <TabsContent
+            className="wf-side-body is-props"
+            hidden={sideTab !== 'props' || layout.sideCollapsed}
+            value="props"
+          >
             <FilmInspector
               audioPeaks={audioPeaks}
               clips={clips}
@@ -1719,20 +1803,17 @@ function EditorBody({
           </TabsContent>
         </TabsRoot>
       </aside>
-      <div className="wf-panel wf-timeline">
+      <LayoutSplitter
+        className="wf-timeline-splitter"
+        label="调整时间线高度"
+        min={TIMELINE_MIN_HEIGHT}
+        orientation="horizontal"
+        panelRef={timelinePanelRef}
+        sized={layout.timelineHeight !== null}
+        {...timelineSplitter}
+      />
+      <div className="wf-panel wf-timeline" ref={timelinePanelRef}>
         <EditorToolbar
-          actions={
-            <ExportControl
-              blocked={exportBlocked}
-              onCancel={() => void exporting.cancel()}
-              onStart={() => void exporting.start(locale.code)}
-              target={{
-                locale: locale.code,
-                untranslated: pending === undefined ? 0 : pending.entries.length + pending.tooLong,
-              }}
-              view={exporting.view}
-            />
-          }
           canRedo={history.canRedo}
           canUndo={history.canUndo}
           fitPps={scale.fitPps}

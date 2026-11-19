@@ -68,6 +68,11 @@
   --text-canvas-title-lg: 28px;
 }
 
+/* final-cut 时间线上音频片段 13px 高的标题条：比全站最小字号小一档，只用在这里。 */
+@theme {
+  --text-final-cut-clip-label: 9.5px;
+}
+
 /* inline 使工具类直接引用 token，reference 避免重复输出变量；新增 token 需在此登记工具类。 */
 @theme inline reference {
   --color-primary: var(--color-primary);

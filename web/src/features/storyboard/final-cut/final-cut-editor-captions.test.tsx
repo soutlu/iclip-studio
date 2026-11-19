@@ -63,8 +63,8 @@ describe('final-cut 编辑器 · 字幕页签', () => {
   const side = () =>
     screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   const openCaptions = (user: ReturnType<typeof userEvent.setup>) =>
-    user.click(within(side()).getByRole('tab', { name: '字幕·配音' }))
-  const panel = () => screen.getByRole('tabpanel', { name: '字幕·配音' })
+    user.click(within(side()).getByRole('tab', { name: '字幕' }))
+  const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
   const addButton = () => within(panel()).getByRole('button', { name: '在播放头处加一句' })
   const savedScene = () =>
     mockWorkspaceFile(CONVERSATION, `final-cut/${CAPTIONS_PATH}`)?.content ?? ''
@@ -212,7 +212,7 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
     fireEvent.pointerUp(target, { pointerId: 1, clientX: 10 + dx, clientY: 50 })
   }
 
-  it('「字幕」一行在画面区和声音区之间，行头是名字和眼睛；每句是一个片段，写着这句的字', async () => {
+  it('「字幕」一行在画面区和声音区之间，行头是字幕图标（名字在无障碍名称里）和眼睛；每句是一个片段，写着这句的字', async () => {
     await open()
     const rows = screen
       .getAllByRole('group')
@@ -225,9 +225,9 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
         .map((clip) => clip.getAttribute('aria-label')),
     ).toEqual(['第一句，1.0 秒', '第二句，1.0 秒', '第三句，1.0 秒'])
     expect(within(clipOf('第二句')).getByText('第二句')).toBeVisible()
-    expect(screen.getByRole('button', { name: '隐藏字幕' }).parentElement).toHaveTextContent(
-      /^字幕$/,
-    )
+    const head = screen.getByRole('button', { name: '隐藏字幕' }).parentElement
+    if (head === null) throw new Error('开关不在行头里')
+    expect(within(head).getByRole('img', { name: '字幕' })).toBeVisible()
   })
 
   it('拖着挪一句：碰到后一句就停；把手上按方向键裁结尾，不压到后一句；都写进字幕场景，各一步撤销', async () => {
@@ -334,13 +334,13 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
     ])
   })
 
-  it('选中一句时的「属性」：头部是字、「字幕」、时长和删除，没有隐藏；改字停下才写进去、改时长按「+」，各一步撤销', async () => {
+  it('选中一句时的「属性」：头部是字、「字幕」、起止时间和删除，没有隐藏；改字停下才写进去、改时长按「+」，各一步撤销', async () => {
     const user = await open()
     await user.click(bodyOf('第一句'))
     const inspector = screen.getByRole('tabpanel', { name: '属性' })
     expect(within(inspector).getByRole('heading', { name: '第一句' })).toBeVisible()
     expect(within(inspector).getByText('字幕')).toBeVisible()
-    expect(within(inspector).getByText('1.00s')).toBeVisible()
+    expect(within(inspector).getByText('0.00 – 1.00s')).toBeVisible()
     expect(within(inspector).getByRole('button', { name: '删除' })).toBeVisible()
     expect(within(inspector).queryByRole('button', { name: '隐藏' })).toBeNull()
 
@@ -476,8 +476,8 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
   it('停在「字幕」页签时在时间线上选中片段（字幕、视频都一样）不切走，选中的字幕在列表里标成当前；在页签里点一句的时间：选中它、播放头到它的开始', async () => {
     const user = await open()
     const side = screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-    await user.click(within(side).getByRole('tab', { name: '字幕·配音' }))
-    const panel = () => screen.getByRole('tabpanel', { name: '字幕·配音' })
+    await user.click(within(side).getByRole('tab', { name: '字幕' }))
+    const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
     const current = () =>
       within(panel())
         .getAllByRole('listitem')
@@ -511,12 +511,12 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
     await user.click(
       within(
         screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
-      ).getByRole('tab', { name: '字幕·配音' }),
+      ).getByRole('tab', { name: '字幕' }),
     )
     await previewSettled()
 
     await user.click(
-      within(screen.getByRole('tabpanel', { name: '字幕·配音' })).getByRole('button', {
+      within(screen.getByRole('tabpanel', { name: '字幕' })).getByRole('button', {
         name: '00:03.01 – 00:04.00',
       }),
     )
@@ -590,9 +590,9 @@ describe('final-cut 编辑器 · 识别字幕', () => {
     await user.click(
       within(
         screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
-      ).getByRole('tab', { name: '字幕·配音' }),
+      ).getByRole('tab', { name: '字幕' }),
     )
-    return screen.getByRole('tabpanel', { name: '字幕·配音' })
+    return screen.getByRole('tabpanel', { name: '字幕' })
   }
   const recognizeButton = (panel: HTMLElement) =>
     within(panel).getByRole('button', { name: /^(识别字幕|识别中…)$/ })

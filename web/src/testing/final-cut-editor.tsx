@@ -21,6 +21,7 @@ import { mockProjectMain, putMockProjectMain } from './mocks/whole-film'
 import { mockWorkspaceFile, putMockWorkspaceFile } from './mocks/workspace'
 import { servePreviewPages } from './preview-page'
 import { renderWithProviders } from './render'
+import { WithHeaderSlot } from './workbench-header-slot'
 
 // final-cut 编辑器各组用例（final-cut-editor-*.test.tsx）共用的准备。每个用例文件自己写
 // `vi.mock('mediabunny', ...)`、`vi.setConfig`，并把 `setUpEditorCase` / `tearDownEditorCase`
@@ -103,7 +104,9 @@ export const openEditor = async (records: GenerationJob[] = takes) => {
   serveGenerations(records)
   const editor = (
     <>
-      <FinalCutEditor conversationId={CONVERSATION} {...saveDelay} />
+      <WithHeaderSlot>
+        <FinalCutEditor conversationId={CONVERSATION} {...saveDelay} />
+      </WithHeaderSlot>
       <Toaster />
     </>
   )

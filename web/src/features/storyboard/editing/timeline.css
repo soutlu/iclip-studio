@@ -105,6 +105,16 @@
   vector-effect: non-scaling-stroke;
 }
 
+/* 竖条波形按像素排好了上下位置，画布铺满不留边 */
+.timeline-wave .timeline-wave-bars {
+  inset: 0;
+  height: 100%;
+}
+
+.timeline-wave-bars rect {
+  fill: var(--timeline-wave-color);
+}
+
 .timeline-wave-loading {
   width: calc(100% - 16px);
   height: 2px;

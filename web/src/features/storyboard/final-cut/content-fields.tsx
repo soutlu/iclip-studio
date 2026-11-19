@@ -35,7 +35,7 @@ export type TextLocale = {
 }
 
 /**
- * 「内容与样式」的标题行：标题右边一个小块写着显示着的语言，点它打开「字幕·配音」页签（在那里切换、添加语言）。
+ * 「内容与样式」的标题行：标题右边一个小块写着显示着的语言，点它打开「字幕」页签（在那里切换、添加语言）。
  * 贴片、场景和字幕的「内容与样式」共用。
  */
 export function ContentTitle({ locale, onLocale }: { locale: Language; onLocale: () => void }) {
@@ -55,7 +55,7 @@ export function ContentTitle({ locale, onLocale }: { locale: Language; onLocale:
           </button>
         </TooltipTrigger>
         <TooltipContent className="wf-tip" side="top">
-          在「字幕·配音」中切换
+          在「字幕」中切换
         </TooltipContent>
       </TooltipRoot>
     </div>
@@ -122,13 +122,13 @@ export function ContentFields({
   }
 
   return (
-    <section className="wf-prop-section">
+    <section className="wf-card wf-prop-card">
       <ContentTitle locale={texts.locale.code} onLocale={onLocale} />
       {variables.length === 0 ? (
         <p className="wf-inspector-note">暂无可填项</p>
       ) : (
         <div
-          className="wf-prop-rows"
+          className="wf-prop-fields"
           // 焦点从这里的菜单、取色板回到下拉、色块上时不算离开
           onBlur={(event) => {
             const next = event.relatedTarget
@@ -176,8 +176,8 @@ type ControlProps = {
 }
 
 /**
- * 文字可填项：原文下是输入框，和别的可填项一起写；其它语言下换成这种语言的文字框。加了语言时右边是「固定 /
- * 随语言」。
+ * 文字可填项：名字一行（加了语言时右边是「固定 / 随语言」），下面原文下是输入框，和别的可填项一起写；其它语言下
+ * 换成这种语言的文字框。
  */
 function TextRow({
   clip,
@@ -195,31 +195,11 @@ function TextRow({
   const id = useId()
   const bound = texts.bindings[variable.id]
   return (
-    <div className="wf-prop-row is-content is-text">
-      <label className="wf-prop-label" htmlFor={id} title={variable.label}>
-        {variable.label}
-      </label>
-      <div className="wf-text-line">
-        {texts.locale.values === null ? (
-          <Input
-            autoComplete="off"
-            className="wf-field wf-prop-input"
-            id={id}
-            onChange={(event) => onChange(event.target.value)}
-            value={current}
-          />
-        ) : (
-          <HostTextField
-            className="wf-field wf-prop-input"
-            clip={clip}
-            field={variable}
-            id={id}
-            key={texts.locale.code}
-            locale={texts.locale}
-            onText={texts.onText}
-            variable={bound}
-          />
-        )}
+    <div className="wf-prop-field is-stacked">
+      <div className="wf-prop-field-head">
+        <label className="wf-prop-label" htmlFor={id} title={variable.label}>
+          {variable.label}
+        </label>
         {texts.multilingual ? (
           <FollowToggle
             follows={bound !== undefined}
@@ -228,24 +208,56 @@ function TextRow({
           />
         ) : null}
       </div>
+      {texts.locale.values === null ? (
+        <Input
+          autoComplete="off"
+          className="wf-field wf-prop-input"
+          id={id}
+          onChange={(event) => onChange(event.target.value)}
+          value={current}
+        />
+      ) : (
+        <HostTextField
+          className="wf-field wf-prop-input"
+          clip={clip}
+          field={variable}
+          id={id}
+          key={texts.locale.code}
+          locale={texts.locale}
+          onText={texts.onText}
+          variable={bound}
+        />
+      )}
     </div>
   )
 }
 
-/** 一项可填项：名字在左，按类型用不同的控件。 */
+/** 一项可填项：有上下限的数字是一条滑杆（名字在它上面），别的是名字在左、控件在右的一行。 */
 function VariableRow(props: Omit<ControlProps, 'id'>) {
   const id = useId()
+  const { variable, current, onChange, onEditing } = props
+  if (variable.type === 'number' && variable.min !== undefined && variable.max !== undefined)
+    return (
+      <NumberSlider
+        current={current}
+        max={variable.max}
+        min={variable.min}
+        onChange={onChange}
+        onEditing={onEditing}
+        variable={variable}
+      />
+    )
   return (
-    <div className="wf-prop-row is-content">
-      <label className="wf-prop-label" htmlFor={id} title={props.variable.label}>
-        {props.variable.label}
+    <div className="wf-prop-field">
+      <label className="wf-prop-label" htmlFor={id} title={variable.label}>
+        {variable.label}
       </label>
       <VariableControl id={id} {...props} />
     </div>
   )
 }
 
-function VariableControl({ id, variable, current, fonts, onChange, onEditing }: ControlProps) {
+function VariableControl({ id, variable, current, fonts, onChange }: ControlProps) {
   switch (variable.type) {
     case 'boolean':
       return <Switch checked={current === true} id={id} onCheckedChange={onChange} />
@@ -278,15 +290,8 @@ function VariableControl({ id, variable, current, fonts, onChange, onEditing }: 
         <ColorField current={String(current)} id={id} label={variable.label} onChange={onChange} />
       )
     case 'number':
-      return (
-        <NumberControl
-          current={current}
-          id={id}
-          onChange={onChange}
-          onEditing={onEditing}
-          variable={variable}
-        />
-      )
+      // 有上下限的数字是滑杆，由 VariableRow 管
+      return <NumberField current={current} id={id} onChange={onChange} variable={variable} />
     case 'image':
       return <span className="wf-inspector-note">暂不支持在此修改图片</span>
     case 'string':
@@ -337,7 +342,7 @@ export function Dropdown({
 }
 
 /**
- * 颜色：浅底条，左边是色块加小箭头（点开取色板），右边是能直接输入的十六进制。
+ * 颜色：能直接输入的十六进制小框，右边是现在颜色的圆色块，点它打开取色板。
  * 取色板拖动中只动这里的色块和文字，松手才算改了。给了 `complete` 时输入框里只有写完整的值才算改了，
  * 没写完的留在框里，失焦时显示回现在的取值。
  */
@@ -363,28 +368,10 @@ export function ColorField({
   // design-allow -- 取色板的值只能是十六进制写法，没法引用颜色变量
   const color = HEX_COLOR.test(shown) ? shown : '#000000'
   return (
-    <span className="wf-field wf-prop-color">
-      <ColorPicker
-        onChange={(to) => setDragged({ from: current, to })}
-        onCommit={(hex) => {
-          setDragged(null)
-          onChange(hex)
-        }}
-        value={color}
-      >
-        <button
-          aria-label={`${label}取色`}
-          className="wf-prop-swatch ui-state ui-focus"
-          type="button"
-        >
-          <span className="wf-prop-swatch-chip" style={{ backgroundColor: color }} />
-          <Icon decorative name="final-cut-expand" size="xs" />
-        </button>
-      </ColorPicker>
-      <span aria-hidden="true" className="wf-prop-color-divider" />
+    <span className="wf-prop-color">
       <input
         autoComplete="off"
-        className="wf-prop-hex"
+        className="wf-field wf-prop-hex"
         id={id}
         onBlur={() => setTyped(null)}
         onChange={(event) => {
@@ -399,52 +386,84 @@ export function ColorField({
         spellCheck={false}
         value={typed !== null && typed.from === current ? typed.text : shown}
       />
+      <ColorPicker
+        onChange={(to) => setDragged({ from: current, to })}
+        onCommit={(hex) => {
+          setDragged(null)
+          onChange(hex)
+        }}
+        value={color}
+      >
+        <button
+          aria-label={`${label}取色`}
+          className="wf-prop-swatch ui-focus"
+          style={{ backgroundColor: color }}
+          type="button"
+        />
+      </ColorPicker>
     </span>
   )
 }
 
-/**
- * 数字：有上下限时是滑杆加数值（点数值可以直接输入，超出时收进上下限），否则是数字框，后面写单位；
- * 框里清空或不是数字时先不提交。
- */
-function NumberControl({
+const numberOf = (current: VariableValue) =>
+  typeof current === 'number' ? current : Number(current) || 0
+
+/** 有上下限的数字：滑杆加数值，点数值可以直接输入，超出时收进上下限。 */
+function NumberSlider({
+  variable,
+  min,
+  max,
+  current,
+  onChange,
+  onEditing,
+}: {
+  variable: CatalogVariable
+  min: number
+  max: number
+  current: VariableValue
+  onChange: (value: VariableValue) => void
+  onEditing: (editing: boolean) => void
+}) {
+  const value = numberOf(current)
+  const { step, unit } = variable
+  const text = (number: number) => (unit === undefined ? String(number) : `${number} ${unit}`)
+  return (
+    <SliderControl
+      format={text}
+      label={variable.label}
+      max={max}
+      min={min}
+      onCommit={onChange}
+      onEditing={onEditing}
+      onText={(typed) => {
+        const number = Number(unit === undefined ? typed : typed.replace(unit, '').trim())
+        if (typed === '' || !Number.isFinite(number)) return false
+        onChange(Math.min(max, Math.max(min, number)))
+        return true
+      }}
+      position={value}
+      step={step ?? 1}
+      text={text(value)}
+    />
+  )
+}
+
+/** 没有上下限的数字：数字框，后面写单位；框里清空或不是数字时先不提交。 */
+function NumberField({
   id,
   variable,
   current,
   onChange,
-  onEditing,
 }: {
   id: string
   variable: CatalogVariable
   current: VariableValue
   onChange: (value: VariableValue) => void
-  onEditing: (editing: boolean) => void
 }) {
-  const value = typeof current === 'number' ? current : Number(current) || 0
+  const value = numberOf(current)
   // 框里正在输入的字，连同当时的取值；取值被撤销改掉以后框里换成新的取值
   const [draft, setDraft] = useState<{ text: string; value: number } | null>(null)
-  const { min, max, step, unit } = variable
-  const text = (number: number) => (unit === undefined ? String(number) : `${number} ${unit}`)
-  if (min !== undefined && max !== undefined)
-    return (
-      <SliderControl
-        format={text}
-        label={variable.label}
-        max={max}
-        min={min}
-        onCommit={onChange}
-        onEditing={onEditing}
-        onText={(typed) => {
-          const number = Number(unit === undefined ? typed : typed.replace(unit, '').trim())
-          if (typed === '' || !Number.isFinite(number)) return false
-          onChange(Math.min(max, Math.max(min, number)))
-          return true
-        }}
-        position={value}
-        step={step ?? 1}
-        text={text(value)}
-      />
-    )
+  const { step, unit } = variable
   return (
     <span className="wf-prop-number">
       <Input

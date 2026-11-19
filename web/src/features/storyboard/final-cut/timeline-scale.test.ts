@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   FIT_ZOOM,
-  nextZoom,
   sliderToZoom,
   snapMs,
   snapSpanStartMs,
@@ -29,8 +28,8 @@ describe('时间线缩放', () => {
 
   it('适应宽度时读数写「适应」，手动缩放后写相对适应宽度的百分比', () => {
     expect(zoomLabel(FIT_ZOOM, FIT_PPS)).toBe('适应')
-    expect(zoomLabel(nextZoom('in', FIT_ZOOM, FIT_PPS), FIT_PPS)).toBe('200%')
-    expect(zoomLabel(nextZoom('out', FIT_ZOOM, FIT_PPS), FIT_PPS)).toBe('50%')
+    expect(zoomLabel({ mode: 'manual', percent: 200 }, FIT_PPS)).toBe('200%')
+    expect(zoomLabel({ mode: 'manual', percent: 50 }, FIT_PPS)).toBe('50%')
   })
 
   it('一屏看得见多长的时间：适应宽度时是整条，放大四倍就只剩四分之一；还没量到宽度时按整条算', () => {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
-import { Icon } from '@/shared/icons'
+import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { IconButton } from '@/shared/ui/button'
@@ -8,6 +8,7 @@ import { DRAG_THRESHOLD, releasePointer, useClickAfterDrag } from '../editing/ti
 import { thumbnailUrl } from './component-catalog'
 import type { CatalogItem, ComponentCatalog } from './composition/catalog'
 import { useEditorEscape } from './editor-keys'
+import { EmptyNote } from './empty-note'
 import { hoverPreviewOf } from './hover-preview'
 import { ItemHoverPreview } from './item-hover-preview'
 import { previewRuntimeSrc } from './preview-document'
@@ -24,6 +25,12 @@ import {
 export const HOVER_PREVIEW_DELAY_MS = 300
 
 export type CarryPoint = { clientX: number; clientY: number }
+
+/** 两种条目页签的图标，和侧栏导航上的一样。 */
+const KIND_ICON: Record<ItemKind, IconName> = {
+  component: 'final-cut-overlays',
+  block: 'final-cut-scenes',
+}
 
 type ItemsTabProps = {
   /** 列哪一种条目。 */
@@ -73,36 +80,36 @@ export function ItemsTab({
 
   return (
     <div className="wf-items">
-      <Input
-        aria-label={`搜索${label}`}
-        leadingIcon="final-cut-search"
-        onChange={(event) => onFilterChange({ ...filter, query: event.currentTarget.value })}
-        placeholder="搜索名称或分类"
-        type="search"
-        value={filter.query}
-        wrapperClassName="wf-field wf-search"
-      />
-      <ChipGroup
-        aria-label={`${label}分类`}
-        className="wf-chips"
-        onValueChange={(value) => {
-          if (value !== '') onFilterChange({ ...filter, chip: value })
-        }}
-        type="single"
-        value={chip?.value ?? ''}
-      >
-        {chips.map((item) => (
-          <FilterChip className="wf-chip" key={item.value} value={item.value}>
-            {item.label}
-          </FilterChip>
-        ))}
-      </ChipGroup>
+      <div className="wf-tab-head">
+        <Input
+          aria-label={`搜索${label}`}
+          leadingIcon="final-cut-search"
+          onChange={(event) => onFilterChange({ ...filter, query: event.currentTarget.value })}
+          placeholder="搜索名称或分类"
+          type="search"
+          value={filter.query}
+          wrapperClassName="wf-field wf-search"
+        />
+        <ChipGroup
+          aria-label={`${label}分类`}
+          className="wf-filters"
+          onValueChange={(value) => {
+            if (value !== '') onFilterChange({ ...filter, chip: value })
+          }}
+          type="single"
+          value={chip?.value ?? ''}
+        >
+          {chips.map((item) => (
+            <FilterChip className="wf-filter" key={item.value} value={item.value}>
+              {item.label}
+            </FilterChip>
+          ))}
+        </ChipGroup>
+      </div>
       {items.length === 0 ? (
-        <p className="wf-items-empty" role="status">
-          暂无符合条件的{label}，请更换关键词或分类
-        </p>
+        <EmptyNote icon={KIND_ICON[kind]}>暂无符合条件的{label}，请更换关键词或分类</EmptyNote>
       ) : (
-        <ul aria-label={label} className="wf-item-grid">
+        <ul aria-label={label} className="wf-tab-list wf-item-grid">
           {items.map((item) => (
             <li key={item.name}>
               <ItemCard
@@ -206,7 +213,7 @@ function ItemCard({
   return (
     <div
       aria-label={name}
-      className={cn('wf-item', lifting && 'is-lifting')}
+      className={cn('wf-item wf-card', lifting && 'is-lifting')}
       onPointerEnter={(event) => {
         if (event.pointerType === 'mouse') onHoverStart()
       }}
@@ -232,21 +239,15 @@ function ItemCard({
         onPointerUp={release}
         type="button"
       />
-      <span className="wf-item-frame">
-        <span className="wf-item-thumb">
-          {thumbnail === null ? (
-            <Icon decorative name="grid" size="md" />
-          ) : (
-            <img alt="" draggable={false} loading="lazy" src={thumbnail} />
-          )}
-        </span>
+      {/* 封面上不压字：时长写在下面名字的右边 */}
+      <span className="wf-item-thumb">
+        {thumbnail === null ? (
+          <Icon decorative name="grid" size="md" />
+        ) : (
+          <img alt="" draggable={false} loading="lazy" src={thumbnail} />
+        )}
         {preview === undefined ? null : (
           <ItemHoverPreview runtimeSrc={runtimeSrc} srcdoc={preview} />
-        )}
-        {item.duration === null ? null : (
-          <span aria-hidden="true" className="wf-item-duration">
-            {durationText(item.duration)}
-          </span>
         )}
         {/* 整张卡已能用 Enter 加入，「+」不再占一个 Tab 停靠点 */}
         <IconButton
@@ -258,8 +259,15 @@ function ItemCard({
           tabIndex={-1}
         />
       </span>
-      <span className="wf-item-name">{item.title}</span>
-      <span className="wf-item-meta">{categoryLabel(catalog, item)}</span>
+      <span className="wf-item-meta">
+        <span className="wf-item-name">{item.title}</span>
+        {item.duration === null ? null : (
+          <span aria-hidden="true" className="wf-item-duration">
+            {durationText(item.duration)}
+          </span>
+        )}
+        <span className="wf-item-category">{categoryLabel(catalog, item)}</span>
+      </span>
     </div>
   )
 }

@@ -109,7 +109,7 @@ describe('final-cut 编辑器 · 播放', () => {
     // 素材 A 一共 6 秒，镜头 2 是 2–4.5 秒
     await user.click(await shot(/^生成 A 镜头 2，/))
     const material = screen.getByRole('region', { name: '素材 · 镜头组 1 · 生成 A · 镜头 2' })
-    expect(material.textContent).toBe('')
+    expect(material).toHaveTextContent(/^素材 · 镜头组 1 · 生成 A · 镜头 2$/)
     expect(within(transport()).getByText('00:02.00')).toBeVisible()
     expect(within(transport()).getByText('/ 00:06.00')).toBeVisible()
     expect(progress()).toHaveAttribute('aria-valuetext', '00:02.00 / 00:06.00')
@@ -438,10 +438,13 @@ describe('final-cut 编辑器 · 导出', () => {
   const DONE = { status: 'done', progress: 1, downloadUrl: DOWNLOAD_URL }
   const RENDERING = { status: 'rendering', progress: 0.4 }
 
-  it('「导出」在剪辑工具条里；编辑器没有标题栏，也没有关闭按钮', async () => {
+  it('「导出」和保存状态放进工作台顶栏，不在编辑器里；编辑器没有标题栏，也没有关闭按钮', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     await openEditor()
-    expect(within(toolbar()).getByRole('button', { name: '导出' })).toBeVisible()
+    const exportButton = screen.getByRole('button', { name: '导出' })
+    expect(exportButton).toBeVisible()
+    expect(editorRoot()).not.toContainElement(exportButton)
+    expect(screen.getByRole('status', { name: '已自动保存' })).toBeVisible()
     expect(within(editorRoot()).queryByRole('banner')).toBeNull()
     expect(within(editorRoot()).queryByRole('button', { name: /关闭/ })).toBeNull()
   })
@@ -525,7 +528,7 @@ describe('final-cut 编辑器 · 导出', () => {
     await openEditor()
     await user.click(await shot(/^生成 A 镜头 1，/))
     await user.keyboard('{Enter}')
-    await user.click(await within(toolbar()).findByRole('button', { name: '导出' }))
+    await user.click(await screen.findByRole('button', { name: '导出' }))
     expect(await screen.findByRole('button', { name: '下载成片' })).toBeInTheDocument()
     expect(mainAtStart).toHaveLength(1)
     expect(mainAtStart[0]?.match(/<video [^>]*>/g)).toHaveLength(1)
@@ -537,7 +540,7 @@ describe('final-cut 编辑器 · 导出', () => {
     serveLatest(DONE)
     putMockProjectMain(CONVERSATION, twoVideos())
     await openEditor()
-    await user.click(await within(toolbar()).findByRole('button', { name: '重新导出' }))
+    await user.click(await screen.findByRole('button', { name: '重新导出' }))
     await waitFor(() => expect(mainAtStart).toEqual([twoVideos()]))
   })
 
@@ -555,7 +558,7 @@ describe('final-cut 编辑器 · 导出', () => {
     const { close } = await openEditor()
     await user.click(await shot(/^生成 A 镜头 1，/))
     await user.keyboard('{Enter}')
-    await user.click(await within(toolbar()).findByRole('button', { name: '导出' }))
+    await user.click(await screen.findByRole('button', { name: '导出' }))
     expect(await screen.findByText(/工作区暂时写不进去$/)).toBeVisible()
     await new Promise((resolve) => setTimeout(resolve, 100))
     expect(mainAtStart).toEqual([])
@@ -646,14 +649,14 @@ describe('final-cut 编辑器 · 组件、块页签', () => {
   const previewHtml = () => previewPlayer().getAttribute('srcdoc') ?? ''
   const playerUp = previewSettled
 
-  it('侧栏六个页签：镜头、贴片、场景、配乐、字幕·配音、属性；贴片、场景各记着自己的搜索词和分类，切走再回来还在', async () => {
+  it('侧栏六个页签：镜头、贴片、场景、配乐、字幕、属性；贴片、场景各记着自己的搜索词和分类，切走再回来还在', async () => {
     const user = userEvent.setup()
     await openEditor()
     expect(
       within(side())
         .getAllByRole('tab')
         .map((tab) => tab.textContent),
-    ).toEqual(['镜头', '贴片', '场景', '配乐', '字幕·配音', '属性'])
+    ).toEqual(['镜头', '贴片', '场景', '配乐', '字幕', '属性'])
     await openTab(user, '贴片')
     expect(within(side()).getByRole('list', { name: '贴片' })).toBeVisible()
     await user.type(within(side()).getByRole('searchbox', { name: '搜索贴片' }), '圆环')

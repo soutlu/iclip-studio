@@ -84,6 +84,21 @@ describe('行名', () => {
     expect(names(rowsOf(mixed))).toEqual(['画面 1', '画面 2', '配乐 1', '配乐 2'])
   })
 
+  it('行头的种类和编号：同种不止一行时才有编号，只有一行的「画面 1」不标', () => {
+    const heads = (rows: readonly Row[]) =>
+      namedRows(rows).map(({ kind, ordinal }) => ({ kind, ordinal }))
+    expect(heads(rowsOf([first, music]))).toEqual([
+      { kind: 'visual', ordinal: null },
+      { kind: 'music', ordinal: null },
+    ])
+    expect(heads(rowsOf(mixed))).toEqual([
+      { kind: 'visual', ordinal: 1 },
+      { kind: 'visual', ordinal: 2 },
+      { kind: 'music', ordinal: 1 },
+      { kind: 'music', ordinal: 2 },
+    ])
+  })
+
   it('只有声音区：一行叫「配乐」', () => {
     expect(names(rowsOf([music]))).toEqual(['配乐'])
   })
@@ -248,7 +263,14 @@ describe('行名', () => {
 
   it('行名跟着行走，行本身原样带着', () => {
     const [row] = namedRows(rowsOf([first]))
-    expect(row).toEqual({ zone: 'visual', track: 0, clips: [first], name: '画面 1' })
+    expect(row).toEqual({
+      zone: 'visual',
+      track: 0,
+      clips: [first],
+      name: '画面 1',
+      kind: 'visual',
+      ordinal: null,
+    })
   })
 })
 

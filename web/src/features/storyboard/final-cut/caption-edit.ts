@@ -79,11 +79,11 @@ const overlaps = (left: Span, right: Span) => left.start < endOf(right) && right
 
 const isCaption = (clip: FilmClip): clip is CaptionClip => clip.kind === 'caption'
 
-/** 「字幕·配音」页签里的两段：「字幕」和「组件文字」。 */
+/** 「字幕」页签里的两段：「字幕」和「组件文字」。 */
 export type CaptionsView = 'captions' | 'texts'
 
 /**
- * 选中的片段在「字幕·配音」里对应什么：`lines` 是列表里要标成当前的字幕（选中的字幕，和选中的配音片段配的那句，
+ * 选中的片段在「字幕」里对应什么：`lines` 是列表里要标成当前的字幕（选中的字幕，和选中的配音片段配的那句，
  * 旁白也算）；`view` 是该切到哪一段：选中了字幕或配音片段时是「字幕」，不然选中了有文字字段的贴片、场景（编号在
  * `textHosts` 里）时是「组件文字」，都没有时是 undefined、不切。
  */

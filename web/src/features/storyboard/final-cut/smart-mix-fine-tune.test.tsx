@@ -22,7 +22,7 @@ function Harness() {
 }
 
 describe('精细调音 · 三段均衡的频响小图', () => {
-  it('标题行右边画着频响小图，读屏读不到；调低频滑杆后小图的线变了', async () => {
+  it('画着频响图，读屏读不到；调低频滑杆后图里的线变了', async () => {
     const user = userEvent.setup()
     await renderWithProviders(<Harness />)
     await user.click(screen.getByRole('button', { name: /^精细调音/ }))
