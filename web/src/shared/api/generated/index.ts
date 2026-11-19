@@ -708,6 +708,7 @@ export type {
   PublishTaskTasksTaskIdPublishPostResponse,
   PublishTaskTasksTaskIdPublishPostResponses,
   PutUserModelGroupUsersUserIdModelGroupPutData,
+  PutUserModelGroupUsersUserIdModelGroupPutError,
   PutUserModelGroupUsersUserIdModelGroupPutErrors,
   PutUserModelGroupUsersUserIdModelGroupPutResponse,
   PutUserModelGroupUsersUserIdModelGroupPutResponses,

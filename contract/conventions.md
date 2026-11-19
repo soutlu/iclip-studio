@@ -19,6 +19,7 @@
 - **请求来源检查**：`POST`、`PUT`、`PATCH`、`DELETE` 请求与 WebSocket 握手携带 `Origin` 头时，其主机和端口必须等于请求的 `Host`，或命中配置 `security.cors_allow_origins`；否则写请求在所有路由之前直接返回 `403`（`{ detail }`），WebSocket 握手以 `1008` 关闭。`Origin: null` 与同站其他子域名（含预览域名）均不放行；不带 `Origin` 的非浏览器请求（如 API Key 调用方与运行时内部回调）不受影响。
 - **接口权限声明**：每个接口所需权限以 `openapi.json` 的 `security` 字段为准（数组各项之间为「或」关系，内部 scopes 为必须同时具备的权限名；空数组代表只需登录；无 `security` 代表公开接口；`POST /auth/logout` 仅限浏览器 Cookie 调用）。
 - **修改用户时的防越权检查**：调用 `PATCH /users/{id}` 修改他人账号（含启停账号）时，若对方现有权限或修改后权限包含当前操作者自身没有的权限，返回 `403`；尝试修改自身权限或停用自己返回 `400`。
+- **给用户选配置组**：`PUT /users/{id}/model-group` 的 `modelGroup` 传 `null` 放回默认组，改组即时生效；可选组名取自 `GET /model-providers/groups`。`UserOut.modelGroup` 为 `null` 即默认组。
 - **代指定用户操作（`users:act_as`）**：持有 `users:act_as` 权限的 API Key，在调用以下 13 个写接口时传入目标用户名，即可以该用户的身份操作：新建的数据直接记在该用户名下；操作已有对话（发消息、运行控制、改工作区文件）时须填对话属主：
   - `POST /conversations`（`userName`）
   - `POST /tasks`（`userName`）
@@ -46,7 +47,7 @@
 | `AuthenticationFailed` | `401` | 未登录、会话已过期或 API Key 无效 |
 | `PermissionDenied` | `403` | 看得见该资源，但没有操作权限（如治理者尝试修改他人对话、管理员越权修改用户） |
 | `NotFound` | `404` | 资源不存在，**或者该资源属于他人、对当前用户不可见**（不对外暴露资源是否存在） |
-| `Conflict` | `409` | 与当前状态冲突：如乐观锁版本号过期、状态机不允许当前操作、资源正在被引用无法删除。当对话绑定的 Agent 版本无法装配时，额外附带 `code: "agent_unavailable"`；用户所在的配置组已不在部署配置里时（见[配置组](#配置组)），额外附带 `code: "model_group_unavailable"` |
+| `Conflict` | `409` | 与当前状态冲突：如乐观锁版本号过期、状态机不允许当前操作、资源正在被引用无法删除。当对话绑定的 Agent 版本无法装配时，额外附带 `code: "agent_unavailable"`；用户所在的配置组已不在部署配置里时（发消息、媒体生成受理、`final-cut` 翻译等按他定组的接口，见 [CONTEXT.md「配置组」](../docs/CONTEXT.md#配置组model-group)），额外附带 `code: "model_group_unavailable"` |
 | `ValidationFailed` | `422` | 请求参数校验不通过（格式为 `<字段路径>: <原因>`，单次返回首个错误）。发布 Agent 编译检查不通过时，额外附带字段级错误列表 `problems: [{ path, message }]` |
 
 - **网关与下游错误**：取消成片导出时若渲染服务不可达，返回 `502`；`final-cut` 文字翻译调用模型失败（含途经的运行时不可达）返回附带 `code` 的 `502`（见[预览域名与工程接口](#final-cut-工程与预览域名)）；其余情况下 Agent 运行时服务不可达或报错时，统一返回 `503`。
@@ -380,9 +381,6 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 运行时服务接口（`/v1/*`）仅供业务后端在服务端调用，不对浏览器开放。接口定义以运行时项目的 `openapi.json` 为准，鉴权、模型调用、实时流与回调协议见运行时项目的 `docs/protocol.md`。
 
 ### 配置组
-
-- **给用户选组**：`PUT /users/{id}/model-group` 的 `modelGroup` 传 `null` 放回默认组，改组即时生效；可选组名取自 `GET /model-providers/groups`。`UserOut.modelGroup` 为 `null` 即默认组。
-- **组失效**：用户存的组已不在部署配置里时，要按他定组的接口（发消息、媒体生成受理、`final-cut` 翻译等）返回 `409`（`code: "model_group_unavailable"`），不回退默认组。
 
 后端在以下三处向运行时透传按 [CONTEXT.md「配置组」](../docs/CONTEXT.md#配置组model-group) 算出的 `model_group`（默认组传 `null` 或省略；视频插件在运行期内直接读取 `AgentRunDeps.model_group`）：
 - **发消息** `POST /v1/sessions/{id}/prompts`：传对话属主（测试预览为预览创建者）的配置组；重新生成不传，由运行时沿用原消息的组。

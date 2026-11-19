@@ -13948,10 +13948,13 @@ export type PutUserModelGroupUsersUserIdModelGroupPutErrors = {
    */
   404: unknown
   /**
-   * 组名不在部署配置里，说明里列出可选的组
+   * Validation Error
    */
-  422: unknown
+  422: HttpValidationError
 }
+
+export type PutUserModelGroupUsersUserIdModelGroupPutError =
+  PutUserModelGroupUsersUserIdModelGroupPutErrors[keyof PutUserModelGroupUsersUserIdModelGroupPutErrors]
 
 export type PutUserModelGroupUsersUserIdModelGroupPutResponses = {
   /**

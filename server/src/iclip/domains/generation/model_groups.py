@@ -42,7 +42,7 @@ class ModelGroups:
         self._group_of = group_of
 
     async def group_of(self, owner: uuid.UUID) -> str | None:
-        """属主所在配置组的组名，默认组答 ``None``。组已不在配置里时由 ``group_of`` 抛错。"""
+        """属主所在配置组的组名，默认组答 ``None``；组已不在配置里时由注入的「用户 → 组」查询抛错。"""
         if self._group_of is None:
             return None
         name = await self._group_of(owner)

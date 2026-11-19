@@ -136,10 +136,7 @@ def create_users_router(service: IdentityService, model_groups: ModelGroupAssign
     @router.put(
         "/users/{user_id}/model-group",
         response_model=UserEnvelope,
-        responses={
-            404: {"description": "没有这个用户"},
-            422: {"description": "组名不在部署配置里，说明里列出可选的组"},
-        },
+        responses={404: {"description": "没有这个用户"}},
     )
     async def put_user_model_group(
         user_id: uuid.UUID,
@@ -148,7 +145,7 @@ def create_users_router(service: IdentityService, model_groups: ModelGroupAssign
     ) -> UserEnvelope:
         """给用户选配置组，``null`` 放回默认组；即时生效，他下一次发消息、出片就按新组。
 
-        组名取自 ``GET /model-providers/groups``。
+        组名取自 ``GET /model-providers/groups``，不在部署配置里 422，说明里列出可选的组。
         """
 
         account = await model_groups.assign(user_id, body.model_group)
