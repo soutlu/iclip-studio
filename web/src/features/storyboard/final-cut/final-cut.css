@@ -160,10 +160,11 @@
   font-weight: 600;
 }
 
-/* 输入框、文字框和装着输入框的条：凹进去的浅底，聚焦时浮起成白底。焦点框仍用设计系统输入框的 1px 墨色框
-   （稿子是一圈 18% 的淡框，对比度不够做焦点指示）。
-   两个类压过输入框自带的边框、圆角和底色：构建后工具类与这里同层，单个类比不过加载顺序 */
+/* 输入框、文字框和装着输入框的条：凹进去的浅底，聚焦时浮起成白底、外面一圈 1.5px 淡框（照稿子）。
+   焦点只画这圈淡框：边框不转墨色，设计系统的焦点环宽度置 0，不再叠一圈墨色框。
+   两个类压过输入框自带的边框、圆角、底色和焦点环宽度：构建后工具类与这里同层，单个类比不过加载顺序 */
 .wf-editor .wf-field {
+  --state-focus-ring: 0px;
   border: 1px solid transparent;
   border-radius: var(--wf-radius-control);
   background: var(--color-surface-container-low);
@@ -173,8 +174,9 @@
 }
 
 .wf-editor .wf-field:is(:focus, :focus-within) {
-  border-color: var(--color-on-surface);
+  border-color: transparent;
   background: var(--color-final-cut-raised);
+  box-shadow: 0 0 0 1.5px var(--color-final-cut-control-ring);
 }
 
 .wf-editor .wf-field:is([aria-invalid='true'], :has([aria-invalid='true'])) {
