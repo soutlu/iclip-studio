@@ -21,7 +21,7 @@ const DUB = audio({
 })
 const CLIPS: readonly FilmClip[] = [FIRST, SECOND, TITLE, DUB]
 
-/** 和编辑器一样：选中由外面记着，「字幕·配音」按选中的片段算该标哪句、该切到哪一段。 */
+/** 和编辑器一样：选中由外面记着，「字幕」按选中的片段算该标哪句、该切到哪一段。 */
 function Harness({ locales }: { locales: LocaleControls }) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set())
   const hosts = textHosts(CLIPS, fixtureCatalog)
@@ -86,11 +86,11 @@ const view = (name: RegExp) =>
 const pick = (user: ReturnType<typeof userEvent.setup>, id: string) =>
   user.click(screen.getByRole('button', { name: `时间线上选中 ${id}` }))
 
-describe('「字幕·配音」顶部的语言', () => {
-  it('原文和加了的语言各一个小块，写语言的名字，当前的高亮；点一个切过去', async () => {
+describe('「字幕」顶部的语言', () => {
+  it('原文和加了的语言各一个小块，写语言代码，当前的高亮；点一个切过去', async () => {
     const { user, onSwitch } = await renderTab()
     const chips = within(languages()).getAllByRole('button')
-    expect(chips.map((chip) => chip.textContent)).toEqual(['原文', 'English', ''])
+    expect(chips.map((chip) => chip.textContent)).toEqual(['原文', 'EN', ''])
     expect(within(languages()).getByRole('button', { name: '原文' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -113,7 +113,7 @@ describe('「字幕·配音」顶部的语言', () => {
   })
 })
 
-describe('「字幕·配音」跟着选中走', () => {
+describe('「字幕」跟着选中走', () => {
   it('时间线上选中有文字的贴片：切到「组件文字」', async () => {
     const { user } = await renderTab()
     expect(view(/^字幕/)).toHaveAttribute('aria-pressed', 'true')

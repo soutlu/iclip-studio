@@ -3,8 +3,8 @@ import { Input } from '@/shared/ui/field'
 import { Slider } from '@/shared/ui/slider'
 
 /**
- * 「属性」里的滑杆加右边的数值：滑杆按格走（`position` 是格数），拖的时候数值跟着变，松手（或按一下方向键）
- * 才交给 `onCommit`。点数值可以直接输入，见 `Readout`。
+ * 「属性」里的一条滑杆：上面一行名字在左、数值在右，下面是滑杆。滑杆按格走（`position` 是格数），拖的时候数值
+ * 跟着变，松手（或按一下方向键）才交给 `onCommit`。点数值可以直接输入，见 `Readout`。
  */
 export function SliderControl({
   label,
@@ -46,9 +46,18 @@ export function SliderControl({
   const draft = dragged !== null && dragged.from === position ? dragged.to : null
   const shown = draft === null ? text : format(draft)
   return (
-    <span className="wf-prop-slider">
+    <div className="wf-prop-slider" data-disabled={disabled || undefined}>
+      <div className="wf-prop-slider-top">
+        <span className="wf-prop-label">{label}</span>
+        <Readout
+          disabled={disabled}
+          label={label}
+          onEditing={onEditing}
+          onText={onText}
+          text={shown}
+        />
+      </div>
       <Slider
-        className="min-w-0 flex-1"
         disabled={disabled}
         label={label}
         mark={mark}
@@ -67,14 +76,7 @@ export function SliderControl({
         value={draft ?? Math.min(max, Math.max(min, position))}
         valueText={shown}
       />
-      <Readout
-        disabled={disabled}
-        label={label}
-        onEditing={onEditing}
-        onText={onText}
-        text={shown}
-      />
-    </span>
+    </div>
   )
 }
 
@@ -127,7 +129,7 @@ function Readout({
       aria-invalid={typing.invalid || undefined}
       aria-label={label}
       autoComplete="off"
-      className="wf-prop-input wf-prop-readout-input"
+      className="wf-field wf-prop-readout-input"
       onBlur={() => {
         onEditing(false)
         const typed = typedRef.current

@@ -2,10 +2,9 @@ import { versionNameOf, type ConversationVideoGroup } from '../conversation-vide
 import type { SecondsRange } from '../editing/clip'
 import { versionLabel } from '../editing/version-lineage'
 import type { Edge } from '../editing/timeline-drag'
-import { shiftSelect } from '../editing/range-select'
 import { MIN_CLIP_MS, type VideoClip } from './composition/film'
 
-/** 选中范围里的一段：从素材的哪里开始放、放多长（毫秒）。一个镜头一段。 */
+/** 选区加入 final-cut 时拆成的一个片段：从素材的哪里开始放、放多长（毫秒）。一个镜头一个。 */
 export type MaterialPiece = { mediaStart: number; duration: number }
 
 export type Material = {
@@ -37,82 +36,173 @@ export type MaterialGroup = {
   takes: readonly MaterialTake[]
 }
 
-export type ShotSpan = { startMs: number; endMs: number }
+/** 素材里的一段（毫秒）：一个镜头，或选区里的一段。 */
+export type MediaSpan = { startMs: number; endMs: number }
 
-export type MaterialRange = {
-  jobId: string
-  takeId: string
-  startMs: number
-  endMs: number
-  shots: readonly ShotSpan[]
+/** 选区里的一段。`id` 只用来在界面上认出它：平移、裁剪时起止在变，并段时留下靠前那段的。 */
+export type PickSpan = MediaSpan & { id: string }
+
+/** 一条原作上选中的几段：选在哪个版本上；各段按时间排、互不重叠，相邻两段之间至少空出 `PICK_GAP_MS`。 */
+export type TakePicks = { jobId: string; spans: readonly PickSpan[] }
+
+/** 「镜头」页签里的选区：可以同时选在几条原作上，按原作 id 分。 */
+export type MaterialPicks = ReadonlyMap<string, TakePicks>
+
+export const NO_PICKS: MaterialPicks = new Map()
+
+/** 两段之间空出不到一个最短片段时并成一段：那么短的空档放不出片段，分开也没有用。 */
+const PICK_GAP_MS = MIN_CLIP_MS
+
+/** 换掉 `takeId` 这条原作上的选区；一段都不剩时这条原作不再记着。 */
+export const withTakePicks = (
+  picks: MaterialPicks,
+  takeId: string,
+  next: TakePicks,
+): MaterialPicks => {
+  const updated = new Map(picks)
+  if (next.spans.length === 0) updated.delete(takeId)
+  else updated.set(takeId, next)
+  return updated
 }
 
-export const shotRange = (jobId: string, takeId: string, shot: ShotSpan): MaterialRange => ({
-  jobId,
-  takeId,
-  startMs: shot.startMs,
-  endMs: shot.endMs,
-  shots: [shot],
-})
+/** 把 `added` 并进选区：和已有的段重叠、或空档不到 `PICK_GAP_MS` 的连成一段。 */
+export const addSpan = <T extends MediaSpan>(spans: readonly T[], added: T): T[] => {
+  const merged: T[] = []
+  for (const span of [...spans, added].toSorted((left, right) => left.startMs - right.startMs)) {
+    const last = merged.at(-1)
+    if (last !== undefined && span.startMs < last.endMs + PICK_GAP_MS)
+      merged[merged.length - 1] = { ...last, endMs: Math.max(last.endMs, span.endMs) }
+    else merged.push(span)
+  }
+  return merged
+}
 
-const cutsOf = (range: MaterialRange): number[] => range.shots.slice(1).map((shot) => shot.startMs)
+/** Shift 点一个镜头：从这条原作上最靠后的一段连到这个镜头（照稿子），没有选区时只选它。 */
+export const extendToShot = <T extends MediaSpan>(spans: readonly T[], shot: T): T[] => {
+  const last = spans.at(-1)
+  return addSpan(
+    spans,
+    last === undefined
+      ? shot
+      : {
+          ...last,
+          startMs: Math.min(last.startMs, shot.startMs),
+          endMs: Math.max(last.endMs, shot.endMs),
+        },
+  )
+}
 
-export const trimLimits = (
-  range: MaterialRange,
+/** 盖着 `ms` 这一刻的那一段是第几段；没有时是 undefined。 */
+export const spanIndexAt = (spans: readonly MediaSpan[], ms: number): number | undefined => {
+  const index = spans.findIndex((span) => span.startMs <= ms && ms < span.endMs)
+  return index < 0 ? undefined : index
+}
+
+export const removeSpan = <T extends MediaSpan>(spans: readonly T[], index: number): T[] =>
+  spans.filter((_, at) => at !== index)
+
+/** 第 `index` 段能伸到哪里：不出素材的头尾，和相邻的段之间留着 `PICK_GAP_MS`。 */
+const roomOf = (spans: readonly MediaSpan[], index: number, durationMs: number) => {
+  const before = spans[index - 1]
+  const after = spans[index + 1]
+  return {
+    min: before === undefined ? 0 : before.endMs + PICK_GAP_MS,
+    max: after === undefined ? durationMs : after.startMs - PICK_GAP_MS,
+  }
+}
+
+/** 第 `index` 段的 `edge` 这一端能挪到哪里：可以越过镜头切口，不压到相邻的段，两端之间至少留一个最短片段。 */
+export const edgeLimits = (
+  spans: readonly MediaSpan[],
+  index: number,
   edge: Edge,
   durationMs: number,
 ): { min: number; max: number } => {
-  const cuts = cutsOf(range)
+  const span = spans[index]
+  const room = roomOf(spans, index, durationMs)
+  if (span === undefined) return room
   return edge === 'start'
-    ? { min: 0, max: (cuts[0] ?? range.endMs) - MIN_CLIP_MS }
-    : { min: (cuts.at(-1) ?? range.startMs) + MIN_CLIP_MS, max: durationMs }
+    ? { min: room.min, max: span.endMs - MIN_CLIP_MS }
+    : { min: span.startMs + MIN_CLIP_MS, max: room.max }
 }
 
-export const trimRange = (
-  range: MaterialRange,
+const clamp = (value: number, { min, max }: { min: number; max: number }) =>
+  Math.min(max, Math.max(min, value))
+
+/** 把第 `index` 段的 `edge` 这一端挪 `deltaMs`，挪不过去时停在能到的地方。 */
+export const trimSpan = <T extends MediaSpan>(
+  spans: readonly T[],
+  index: number,
   edge: Edge,
   deltaMs: number,
   durationMs: number,
-): MaterialRange => {
-  const { min, max } = trimLimits(range, edge, durationMs)
-  const key = edge === 'start' ? 'startMs' : 'endMs'
-  return { ...range, [key]: Math.min(max, Math.max(min, range[key] + deltaMs)) }
+): readonly T[] => {
+  const span = spans[index]
+  if (span === undefined) return spans
+  const limits = edgeLimits(spans, index, edge, durationMs)
+  return spans.with(
+    index,
+    edge === 'start'
+      ? { ...span, startMs: clamp(span.startMs + deltaMs, limits) }
+      : { ...span, endMs: clamp(span.endMs + deltaMs, limits) },
+  )
 }
 
-export const rangePieces = (range: MaterialRange): MaterialPiece[] =>
-  range.shots.map((shot, at) => {
-    const start = at === 0 ? range.startMs : shot.startMs
-    const end = at === range.shots.length - 1 ? range.endMs : shot.endMs
+/** 把第 `index` 段整段平移 `deltaMs`，长短不变；碰到相邻的段或素材的头尾就停下。 */
+export const slideSpan = <T extends MediaSpan>(
+  spans: readonly T[],
+  index: number,
+  deltaMs: number,
+  durationMs: number,
+): readonly T[] => {
+  const span = spans[index]
+  if (span === undefined) return spans
+  const length = span.endMs - span.startMs
+  const room = roomOf(spans, index, durationMs)
+  const startMs = clamp(span.startMs + deltaMs, { min: room.min, max: room.max - length })
+  return spans.with(index, { ...span, startMs, endMs: startMs + length })
+}
+
+/**
+ * 加入 final-cut 时一段拆成的片段：在段里的镜头切口处切开，一个镜头一个片段。
+ * 离一端或上一个切口不到一个最短片段的切口不切，那一小截并进旁边的片段。
+ */
+export const spanPieces = (span: MediaSpan, shots: readonly MediaSpan[]): MaterialPiece[] => {
+  const edges = [span.startMs]
+  for (const { startMs: cut } of shots) {
+    const last = edges.at(-1) ?? span.startMs
+    if (cut - last >= MIN_CLIP_MS && span.endMs - cut >= MIN_CLIP_MS) edges.push(cut)
+  }
+  edges.push(span.endMs)
+  return edges.slice(1).map((end, at) => {
+    const start = edges[at] ?? span.startMs
     return { mediaStart: start, duration: end - start }
   })
+}
 
-export const shiftShot = (
-  range: MaterialRange | null,
-  clicked: MaterialRange,
-  shots: readonly ShotSpan[],
-): MaterialRange | null => {
-  if (range === null || range.jobId !== clicked.jobId) return clicked
-  const keys = shots.map((shot) => shot.startMs)
-  const picked = shiftSelect(
-    keys,
-    range.shots.map((shot) => shot.startMs),
-    clicked.startMs,
-  ).flatMap((key) => shots.filter((shot) => shot.startMs === key))
-  const first = picked[0]
-  const last = picked.at(-1)
-  if (first === undefined || last === undefined) return null
-  const next = { ...range, shots: picked }
-  const cuts = cutsOf(next)
+export type PickedSpan = { material: Material; span: MediaSpan }
+
+/** 选区里的各段，按加入 final-cut 的先后排：原作按在「镜头」页签里的顺序，同一条原作里按时间。 */
+export const orderedPicks = (
+  groups: readonly MaterialGroup[],
+  picks: MaterialPicks,
+): PickedSpan[] =>
+  groups.flatMap((group) =>
+    group.takes.flatMap((take) => {
+      const picked = picks.get(take.id)
+      const material = take.versions.find((item) => item.jobId === picked?.jobId)
+      return picked === undefined || material === undefined
+        ? []
+        : picked.spans.map((span) => ({ material, span }))
+    }),
+  )
+
+/** 选区一共几段、多长（毫秒）。 */
+export const picksSummary = (picks: MaterialPicks): { count: number; durationMs: number } => {
+  const spans = [...picks.values()].flatMap((picked) => picked.spans)
   return {
-    ...next,
-    startMs: Math.min(
-      first.startMs === range.shots[0]?.startMs ? range.startMs : first.startMs,
-      (cuts[0] ?? Infinity) - MIN_CLIP_MS,
-    ),
-    endMs: Math.max(
-      last.endMs === range.shots.at(-1)?.endMs ? range.endMs : last.endMs,
-      (cuts.at(-1) ?? -Infinity) + MIN_CLIP_MS,
-    ),
+    count: spans.length,
+    durationMs: spans.reduce((total, span) => total + span.endMs - span.startMs, 0),
   }
 }
 

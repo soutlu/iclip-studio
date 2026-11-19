@@ -1,15 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import {
-  MenuItem,
-  MenuRadioGroup,
-  MenuRadioItem,
-  MenuRoot,
-  MenuSeparator,
-  MenuSurface,
-  MenuTrigger,
-} from '@/shared/ui/menu'
+import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { Slider } from '@/shared/ui/slider'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import {
@@ -20,14 +12,8 @@ import {
   type Language,
   type LocaleCode,
 } from './locales'
-import {
-  FIT_ZOOM,
-  nextZoom,
-  sliderToZoom,
-  zoomLabel,
-  zoomToSlider,
-  type Zoom,
-} from './timeline-scale'
+import { SOUND_ACTION_LOOK } from './sound-pair'
+import { FIT_ZOOM, sliderToZoom, zoomLabel, zoomToSlider, type Zoom } from './timeline-scale'
 
 type ToolProps = {
   icon: IconName
@@ -91,23 +77,44 @@ export const Keys = ({ children }: { children: string }) => <kbd className="wf-k
 /** 时间线上点下去做什么：选择（选中、拖动、裁剪）或切开（剃刀）。 */
 export type EditTool = 'select' | 'razor'
 
-const TOOLS: Readonly<Record<EditTool, { name: string; icon: IconName }>> = {
-  select: { name: '选择', icon: 'select-tool' },
-  razor: { name: '切开', icon: 'split' },
+const TOOLS: Readonly<
+  Record<EditTool, { name: string; icon: IconName; keys: string; className: string }>
+> = {
+  select: { name: '选择工具', icon: 'final-cut-select', keys: 'V', className: 'wf-tool-select' },
+  razor: { name: '切开工具', icon: 'final-cut-split', keys: 'B', className: 'wf-tool-razor' },
 }
 
-const isEditTool = (value: string): value is EditTool => value in TOOLS
+/** 选择、切开两个工具排成一条分段，当前的那段浮起。 */
+function ToolSwitch({ tool, onTool }: Pick<EditorToolbarProps, 'tool' | 'onTool'>) {
+  return (
+    <div aria-label="编辑工具" className="wf-seg" role="group">
+      {(['select', 'razor'] as const).map((each) => (
+        <Tool
+          className={cn('wf-seg-item', TOOLS[each].className)}
+          icon={TOOLS[each].icon}
+          key={each}
+          label={TOOLS[each].name}
+          onClick={() => onTool(each)}
+          pressed={tool === each}
+          shortcuts={TOOLS[each].keys}
+          tip={
+            <>
+              {TOOLS[each].name}
+              <Keys>{TOOLS[each].keys}</Keys>
+            </>
+          }
+        />
+      ))}
+    </div>
+  )
+}
 
-type ToolPickerProps = Pick<
-  EditorToolbarProps,
-  'tool' | 'onTool' | 'onSelectAround' | 'splitBlocked' | 'onSplit'
->
+type CommandsProps = Pick<EditorToolbarProps, 'onSelectAround' | 'splitBlocked' | 'onSplit'>
 
-/** 选择工具的下拉：上面是两个工具；下面三项是一次性的命令，点完工具不变。 */
-function ToolPicker({ tool, onTool, onSelectAround, splitBlocked, onSplit }: ToolPickerProps) {
+/** 分段右边的小箭头：三条一次性的命令（在播放头处切开、选中播放头左边或右边的片段），点完工具不变。 */
+function EditCommands({ onSelectAround, splitBlocked, onSplit }: CommandsProps) {
   const [open, setOpen] = useState(false)
   const [hint, setHint] = useState(false)
-  const current = TOOLS[tool]
   return (
     <MenuRoot
       onOpenChange={(next) => {
@@ -121,30 +128,19 @@ function ToolPicker({ tool, onTool, onSelectAround, splitBlocked, onSplit }: Too
         <MenuTrigger asChild>
           <TooltipTrigger asChild>
             <button
-              aria-label={`选择工具：${current.name}`}
-              className="wf-tool wf-tool-picker ui-state ui-focus"
+              aria-label={COMMANDS_LABEL}
+              className="wf-tool wf-tool-commands ui-state ui-focus"
               type="button"
             >
-              <Icon decorative name={current.icon} size="sm" />
-              <Icon decorative name="expand" size="xs" />
+              <Icon decorative name="final-cut-expand" size="xs" />
             </button>
           </TooltipTrigger>
         </MenuTrigger>
         <TooltipContent className="wf-tip" side="top">
-          选择工具
+          {COMMANDS_LABEL}
         </TooltipContent>
       </TooltipRoot>
-      <MenuSurface align="start" side="top">
-        <MenuRadioGroup
-          onValueChange={(value) => {
-            if (isEditTool(value)) onTool(value)
-          }}
-          value={tool}
-        >
-          <MenuRadioItem value="select">{TOOLS.select.name}</MenuRadioItem>
-          <MenuRadioItem value="razor">{TOOLS.razor.name}</MenuRadioItem>
-        </MenuRadioGroup>
-        <MenuSeparator />
+      <MenuSurface align="start" className="wf-menu" side="top">
         {splitBlocked === undefined ? (
           <MenuItem onSelect={onSplit} shortcut={['S']}>
             {SPLIT_LABEL}
@@ -170,6 +166,8 @@ function ToolPicker({ tool, onTool, onSelectAround, splitBlocked, onSplit }: Too
   )
 }
 
+const COMMANDS_LABEL = '更多剪辑命令'
+
 /** 切开的命令在下拉和片段右键菜单里都叫这个。 */
 export const SPLIT_LABEL = '在播放头处切开'
 
@@ -186,21 +184,20 @@ export type LocaleControls = {
 
 const localeButtonName = ({ name, tag }: { name: string; tag: string }) => `${name}（${tag}）`
 
-/** 语言切换里的一个按钮：切到哪种语言，按钮上的字（工具条上写代码、侧栏里写名字）、无障碍名和提示。 */
-type LocaleButton = { code: Language; tag: string; name: string; label: string; tip: string }
+/** 语言切换里的一个按钮：切到哪种语言，按钮上的字、无障碍名和提示。 */
+type LocaleButton = { code: Language; tag: string; label: string; tip: string }
 
 const SOURCE_BUTTON: LocaleButton = {
   code: SOURCE_LOCALE,
   tag: SOURCE_NAME,
-  name: SOURCE_NAME,
   label: SOURCE_NAME,
   tip: `切换到${SOURCE_NAME}：预览和字幕显示${SOURCE_NAME}`,
 }
 
 /**
- * 语言切换：原文和工程里有的语言各一个按钮（原文写「原文」，别的在工具条上写语言代码、在侧栏里写语言的名字），
+ * 语言切换：原文和工程里有的语言各一个按钮（原文写「原文」，别的写语言代码，无障碍名是语言的名字加代码），
  * 当前的高亮；最后的「+」点开列出还没加的语言，选一个加上并切过去，都加了时不显示，加不了时置灰。工具条上的
- * （`inPanel` 不给）菜单往上弹；「字幕·配音」页签顶部的（`inPanel`）是一排小块，菜单往下弹。两处切换、添加的是
+ * （`inPanel` 不给）菜单往上弹；「字幕」页签顶部的（`inPanel`）是一排小块，菜单往下弹。两处切换、添加的是
  * 同一份 `LocaleControls`。
  */
 export function LocaleBar({
@@ -216,7 +213,6 @@ export function LocaleBar({
     ...LOCALES.filter(({ code }) => present.includes(code)).map((locale) => ({
       code: locale.code,
       tag: locale.tag,
-      name: locale.name,
       label: localeButtonName(locale),
       tip: `${phraseWith('切换到', locale.code, '：')}${phraseWith('预览和字幕显示', locale.code, '的字')}`,
     })),
@@ -240,7 +236,7 @@ export function LocaleBar({
               onClick={() => onSwitch(button.code)}
               type="button"
             >
-              {inPanel ? button.name : button.tag}
+              {button.tag}
             </button>
           </TooltipTrigger>
           <TooltipContent className="wf-tip" side={side}>
@@ -278,7 +274,7 @@ function BlockedAddLocale({ reason, side }: { reason: string; side: PopSide }) {
           className="wf-locale-add ui-state ui-focus"
           type="button"
         >
-          <Icon decorative name="add" size="xs" />
+          <Icon decorative name="final-cut-add" size="xs" />
         </button>
       </TooltipTrigger>
       <TooltipContent className="wf-tip" side={side}>
@@ -312,7 +308,7 @@ function AddLocale({
         <MenuTrigger asChild>
           <TooltipTrigger asChild>
             <button aria-label="添加语言" className="wf-locale-add ui-state ui-focus" type="button">
-              <Icon decorative name="add" size="xs" />
+              <Icon decorative name="final-cut-add" size="xs" />
             </button>
           </TooltipTrigger>
         </MenuTrigger>
@@ -320,7 +316,7 @@ function AddLocale({
           添加语言
         </TooltipContent>
       </TooltipRoot>
-      <MenuSurface align="start" side={side}>
+      <MenuSurface align="start" className="wf-menu" side={side}>
         {addable.map((locale) => (
           <MenuItem key={locale.code} onSelect={() => onAdd(locale.code)}>
             {localeButtonName(locale)}
@@ -349,7 +345,7 @@ type EditorToolbarProps = {
   /** 删掉选中的片段，和按 Delete 一样。 */
   onRemove: () => void
   /** 「删除」右边的分离音频钮：分离或合并回视频，和按 ⇧⌘B 一样。 */
-  sound: { label: string; blocked: string | undefined; onClick: () => void }
+  sound: { kind: 'detach' | 'merge'; blocked: string | undefined; onClick: () => void }
   onZoomToSelection: () => void
   snap: boolean
   onSnap: () => void
@@ -359,14 +355,11 @@ type EditorToolbarProps = {
   /** 「适应宽度」时一秒画多少像素，缩放的档位和滑杆都以它为准。 */
   fitPps: number
   onZoom: (zoom: Zoom) => void
-  /** 语言切换，排在吸附、波纹编辑后面。 */
+  /** 语言切换，排在右边那组的最前面。 */
   locales: LocaleControls
-  /** 排在右边那组最后的控件（导出）。 */
-  actions: ReactNode
 }
 
 export function EditorToolbar({
-  actions,
   canUndo,
   canRedo,
   onUndo,
@@ -394,7 +387,7 @@ export function EditorToolbar({
       <div className="wf-toolbar-group">
         <Tool
           blocked={canUndo ? undefined : '暂无可撤销的操作'}
-          icon="undo"
+          icon="final-cut-undo"
           label="撤销"
           onClick={onUndo}
           shortcuts="Meta+Z"
@@ -407,7 +400,7 @@ export function EditorToolbar({
         />
         <Tool
           blocked={canRedo ? undefined : '暂无可重做的操作'}
-          icon="redo"
+          icon="final-cut-redo"
           label="重做"
           onClick={onRedo}
           shortcuts="Shift+Meta+Z"
@@ -419,16 +412,16 @@ export function EditorToolbar({
           }
         />
         <span aria-hidden="true" className="wf-divider" />
-        <ToolPicker
+        <ToolSwitch onTool={onTool} tool={tool} />
+        <EditCommands
           onSelectAround={onSelectAround}
           onSplit={onSplit}
-          onTool={onTool}
           splitBlocked={splitBlocked}
-          tool={tool}
         />
         <Tool
           blocked={hasSelection ? undefined : '尚未选中片段，无法删除；请先选中片段'}
-          icon="delete"
+          className="is-danger"
+          icon="final-cut-delete"
           label="删除"
           onClick={onRemove}
           shortcuts="Delete"
@@ -439,22 +432,24 @@ export function EditorToolbar({
             </>
           }
         />
+        <span aria-hidden="true" className="wf-divider" />
         <Tool
           blocked={sound.blocked}
-          icon="waveform"
-          label={sound.label}
+          className="wf-tool-detach"
+          icon={SOUND_ACTION_LOOK[sound.kind].icon}
+          label={SOUND_ACTION_LOOK[sound.kind].label}
           onClick={sound.onClick}
           shortcuts="Shift+Meta+B"
           tip={
             <>
-              {sound.label}
+              {SOUND_ACTION_LOOK[sound.kind].label}
               <Keys>⇧⌘B</Keys>
             </>
           }
         />
-        <span aria-hidden="true" className="wf-divider" />
         <Tool
-          icon="snap"
+          className="wf-tool-snap"
+          icon="final-cut-snap"
           label="吸附"
           onClick={onSnap}
           pressed={snap}
@@ -465,7 +460,8 @@ export function EditorToolbar({
           }
         />
         <Tool
-          icon="ripple"
+          className="wf-tool-ripple"
+          icon="final-cut-ripple"
           label="波纹编辑"
           onClick={onRipple}
           pressed={ripple}
@@ -475,10 +471,10 @@ export function EditorToolbar({
               : '波纹编辑已关闭：删除片段后保留空档'
           }
         />
-        <span aria-hidden="true" className="wf-divider" />
-        <LocaleBar {...locales} />
       </div>
       <div className="wf-toolbar-group">
+        <LocaleBar {...locales} />
+        <span aria-hidden="true" className="wf-divider" />
         <Tool
           blocked={hasSelection ? undefined : '尚未选中片段，无法缩放；请先选中一个片段'}
           icon="zoom-selection"
@@ -492,16 +488,14 @@ export function EditorToolbar({
             </>
           }
         />
-        <Tool icon="fit" label="适应宽度" onClick={() => onZoom(FIT_ZOOM)} tip="适应宽度" />
-        <span aria-hidden="true" className="wf-divider" />
         <Tool
-          icon="zoom-out"
-          label="缩小时间线"
-          onClick={() => onZoom(nextZoom('out', zoom, fitPps))}
-          tip="缩小时间线"
+          icon="final-cut-fit"
+          label="适应宽度"
+          onClick={() => onZoom(FIT_ZOOM)}
+          tip="适应宽度：整条时间线排满"
         />
         <Slider
-          className="mx-1 w-17 flex-none"
+          className="mx-1 w-19.5 flex-none"
           label="时间线缩放"
           max={100}
           min={0}
@@ -509,14 +503,6 @@ export function EditorToolbar({
           value={zoomToSlider(zoom, fitPps)}
           valueText={zoomLabel(zoom, fitPps)}
         />
-        <Tool
-          icon="zoom"
-          label="放大时间线"
-          onClick={() => onZoom(nextZoom('in', zoom, fitPps))}
-          tip="放大时间线"
-        />
-        <span className="wf-zoom-readout">{zoomLabel(zoom, fitPps)}</span>
-        {actions}
       </div>
     </div>
   )

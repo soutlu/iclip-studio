@@ -9,13 +9,16 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type PointerEvent,
+  type ReactElement,
   type ReactNode,
   type RefObject,
 } from 'react'
-import { Icon } from '@/shared/icons'
+import { Icon, type IconName } from '@/shared/icons'
 import type { TimeSpan } from '@/shared/lib/time-spans'
 import { cn } from '@/shared/lib/utils'
+import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { useAudioPeaks, type PeaksState } from '../editing/media-analysis'
+import { timeLabel } from '../editing/time-label'
 import { Frames, TimelinePlayhead, TimelineRuler, TrimHandle, Wave } from '../editing/timeline'
 import {
   arrowStep,
@@ -51,7 +54,14 @@ import { canCarve, carveOf } from './carve'
 import { ClipEnvelope } from './clip-envelope'
 import { ClipMenuItems } from './clip-menu'
 import { thumbnailUrl, type ComponentCatalog } from './component-catalog'
-import { isDubClip, isMediaClip, type FilmClip, type MediaClip } from './composition/film'
+import {
+  isDetachedAudio,
+  isDubClip,
+  isMediaClip,
+  type AudioClip,
+  type FilmClip,
+  type MediaClip,
+} from './composition/film'
 import { useEditorEscape, useEditorRoot } from './editor-keys'
 import type { EditTool } from './editor-toolbar'
 import { SOURCE_NAME } from './locales'
@@ -66,11 +76,18 @@ import {
   type Aim,
   type Row,
   type RowKey,
+  type RowKind,
   type RowTarget,
   type Zone,
 } from './placement'
 import { boxBetween, marqueeMode, marqueeSelection, playheadInto, type Box } from './selection'
-import { soundActionFor, soundBadgeOf, type SoundBadge, type SoundControls } from './sound-pair'
+import {
+  soundActionFor,
+  soundBadgeOf,
+  soundPairOf,
+  type SoundBadge,
+  type SoundControls,
+} from './sound-pair'
 import { BeatMarks } from './beat-marks'
 import {
   beatsToSnap,
@@ -109,7 +126,7 @@ type FilmTimelineProps = {
   clips: readonly FilmClip[]
   /** 显示着其它语言时还没翻的字幕：片段上写的是原文，右边标一个「原文」。 */
   untranslated: ReadonlySet<string>
-  /** 组件或块的片段在显示着的语言下的文字，片段上写成「名字 · 文字」；没有文字的不在里面。 */
+  /** 组件或块的片段在显示着的语言下的文字，悬停提示里写成「名字 · 文字」；没有文字的不在里面。 */
   hostTexts: ReadonlyMap<string, string>
   /** 片段的链接名：链接的片段一起切。 */
   links: Links
@@ -120,7 +137,7 @@ type FilmTimelineProps = {
   tool: EditTool
   /** 切开几个片段（剃刀，或右键菜单里的「在播放头处切开」）。 */
   onSplit: (cuts: readonly Cut[]) => void
-  /** 组件库：组件或块的片段上的小封面取自它。 */
+  /** 组件库：组件或块的片段上铺的封面取自它。 */
   catalog: ComponentCatalog
   totalMs: number
   playheadMs: number
@@ -193,11 +210,12 @@ const mutedBadgeOf = (clip: FilmClip): SoundBadge | undefined =>
 const dubBadgeOf = (clip: FilmClip): SoundBadge | undefined =>
   isDubClip(clip) && clip.dub.trimmed ? { text: '截短', tone: 'offset' } : undefined
 
+/** 开着自动压低的小标：片段上画成压低图标，文字只进无障碍名称。 */
+const CARVE_BADGE: SoundBadge = { text: '自动压低', tone: 'linked' }
+
 /** 开着自动压低的有声片段的小标；静音（隐藏）的不出声，不标。 */
 const carveBadgeOf = (clip: FilmClip): SoundBadge | undefined =>
-  canCarve(clip) && !clip.hidden && carveOf(clip)?.enabled === true
-    ? { text: '自动压低', tone: 'linked' }
-    : undefined
+  canCarve(clip) && !clip.hidden && carveOf(clip)?.enabled === true ? CARVE_BADGE : undefined
 
 // 指针离一条空行（待新开的那一行）的上下边这么近也算在它上面
 const ROW_REACH_PX = 3
@@ -361,15 +379,29 @@ const movePlan = (
   }
 }
 
+/** 片段上的一个小标：分离出来的原声、静音、截短、其它语言里还没翻的字幕写字；自动压低画成压低图标。 */
+function ClipBadge({ badge }: { badge: SoundBadge }) {
+  return badge === CARVE_BADGE ? (
+    <Icon className="wf-clip-duck" decorative name="final-cut-duck" size="xs" />
+  ) : (
+    <span aria-hidden="true" className="wf-clip-badge" data-tone={badge.tone}>
+      {badge.text}
+    </span>
+  )
+}
+
 /**
- * 片段里画什么：视频片段是铺满的画面，读出原声后底部叠一条波形；组件或块的片段是小封面和「名字 · 文字」
- * （没有文字时只有名字）；字幕是文字记号和名字（就是这句的字）；音频片段是音符、名字和整段波形；「其他」片段只有名字。
+ * 片段里画什么。画面类的片段上不写字：视频片段是铺满的画面，没分离原声的底部叠一条细原声波形；组件或块的片段是
+ * 封面排成的小帧条（名字和文字在悬停提示里）。字幕是一枚写着这句的字的胶囊；音频片段顶上一条小标题（名字、小标），
+ * 下面是贴底往上长的波形；「其他」片段只有名字。自动压低在视频片段的右上角、音频片段的标题条右端画成图标。
  */
 function ClipContent({
   clip,
   timing,
   cover,
-  text,
+  badge,
+  keyframes,
+  withSound,
   peaks,
   wave,
   waveRef,
@@ -377,7 +409,11 @@ function ClipContent({
   clip: FilmClip
   timing: Timing
   cover: string | null
-  text: string | undefined
+  badge: SoundBadge | undefined
+  /** 有音量关键帧：音频片段的标题条上标出来（视频片段上只看曲线）。 */
+  keyframes: boolean
+  /** 视频片段的原声还在它自己身上（没分离出去）：底部叠原声波形。 */
+  withSound: boolean
   peaks: PeaksState
   /** 有声片段的波形：高低乘多少、是不是不出声（画灰），有没有音量曲线。 */
   wave: ClipWave
@@ -389,18 +425,14 @@ function ClipContent({
   if (clip.kind === 'caption')
     return (
       <>
-        <Icon className="wf-clip-icon" decorative name="type" size="xs" />
         {name}
+        {badge === undefined ? null : <ClipBadge badge={badge} />}
       </>
     )
   if (clip.kind === 'host')
-    return (
-      <>
-        {cover === null ? null : <img alt="" className="wf-clip-cover" src={cover} />}
-        <span className="wf-clip-name">
-          {text === undefined ? clip.label : `${clip.label} · ${text}`}
-        </span>
-      </>
+    return cover === null ? null : (
+      // 封面横着铺满片段，宽度随缩放变，所以用背景图重复而不是数张数
+      <span className="wf-clip-strip" style={{ backgroundImage: `url("${cover}")` }} />
     )
   // 片段上画的是它用掉的那段素材：final-cut 里的时长 × 速度
   const part = {
@@ -412,24 +444,32 @@ function ClipContent({
   if (clip.kind === 'audio')
     return (
       <>
-        <Icon className="wf-clip-icon" decorative name="music" size="xs" />
-        {name}
+        <span className="wf-clip-label">
+          {name}
+          {badge === undefined ? null : <ClipBadge badge={badge} />}
+          {keyframes ? (
+            <span aria-hidden="true" className="wf-clip-badge wf-clip-keyframes">
+              关键帧
+            </span>
+          ) : null}
+        </span>
         <span className={cn('wf-clip-sound', waveClass)} ref={waveRef}>
-          <Wave level={wave.level} part={part} state={peaks} />
+          <Wave bars="bottom" level={wave.level} part={part} state={peaks} />
         </span>
       </>
     )
-  // 波形条只有画面的三分之一高，放不下「无声」「原声读取失败」这类说明，只在读出波形后叠上去
+  // 波形条只有 7px 高，放不下「无声」「原声读取失败」这类说明，只在读出波形后叠上去
   return (
     <>
       <span className="wf-clip-frames">
         <Frames part={part} />
       </span>
-      {peaks.kind === 'ready' ? (
+      {withSound && peaks.kind === 'ready' ? (
         <span className={cn('wf-clip-wave', waveClass)} ref={waveRef}>
-          <Wave level={wave.level} part={part} state={peaks} />
+          <Wave bars="bottom" level={wave.level} part={part} state={peaks} />
         </span>
       ) : null}
+      {badge === undefined ? null : <ClipBadge badge={badge} />}
     </>
   )
 }
@@ -438,6 +478,32 @@ type ClipWave = {
   level: (fraction: number) => number
   silent: boolean
   envelope: boolean
+}
+
+/** 音频片段的声音从哪来，决定卡片左缘细边、标题和波形的颜色：分离出来的原声、配音，别的算配乐。 */
+const soundSourceOf = (clip: AudioClip): 'original' | 'dub' | 'music' =>
+  isDetachedAudio(clip) ? 'original' : isDubClip(clip) ? 'dub' : 'music'
+
+/** 给片段的身体套上悬停提示；`tip` 是 undefined 时不套。拖动、框选、裁剪中（`quiet`）不出。 */
+function ClipTip({
+  tip,
+  quiet,
+  children,
+}: {
+  tip: string | undefined
+  quiet: boolean
+  children: ReactElement
+}) {
+  const [open, setOpen] = useState(false)
+  if (tip === undefined) return children
+  return (
+    <TooltipRoot onOpenChange={setOpen} open={open && !quiet}>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent className="wf-tip" side="top">
+        {tip}
+      </TooltipContent>
+    </TooltipRoot>
+  )
 }
 
 // 不出声的片段的波形照原型画矮
@@ -458,7 +524,7 @@ type TimelineClipProps = {
   trimmable: boolean
   /** 拖这个片段挪动或裁 `kind` 这一端时一起动的片段，含它自己和跟着动的联动伙伴。 */
   groupFor: (kind: Gesture['kind']) => ReadonlySet<string>
-  /** 分离出来的原声、配音片段、开着压低的配乐、其它语言里还没翻的字幕右边的小标；没有时是 undefined。 */
+  /** 分离出来的原声、配音片段、开着压低的片段、其它语言里还没翻的字幕的小标（见 `ClipBadge`）；没有时是 undefined。 */
   badge: SoundBadge | undefined
   /** 别的片段正带着一组片段拖动时，跟着动的片段的样子；没有时是 null。 */
   following: Following | null
@@ -485,10 +551,12 @@ type TimelineClipProps = {
     edge: Edge,
     edgeMs: number,
   ) => ReadonlyMap<string, Timing>
-  /** 组件或块的片段上的小封面；没有时是 null。 */
+  /** 组件或块的片段上铺的封面；没有时是 null。 */
   cover: string | null
-  /** 组件或块的片段接在名字后面的文字；没有时是 undefined。 */
+  /** 组件或块的片段在悬停提示里接在名字后面的文字；没有时是 undefined。 */
   text: string | undefined
+  /** 视频片段的原声还在它自己身上（没分离出去）。 */
+  withSound: boolean
   peaks: PeaksState
   snap: boolean
   /** 这个片段是配乐、算出了节拍时它那首的节拍，画在片段上；别的片段是 undefined。 */
@@ -542,6 +610,7 @@ function TimelineClip({
   trimTo,
   cover,
   text,
+  withSound,
   peaks,
   snap,
   beatGrid,
@@ -752,6 +821,7 @@ function TimelineClip({
             preview?.kind === 'move' && 'is-lifted',
           )}
           data-clip-id={clip.id}
+          data-source={clip.kind === 'audio' ? soundSourceOf(clip) : undefined}
           onContextMenu={(event) => {
             if (gesturing) event.preventDefault()
             else if (!selected) onSelect(clip.id, false, false)
@@ -763,41 +833,44 @@ function TimelineClip({
             width: Math.max(2, msToPx(timing.duration, pps) - 2),
           }}
         >
-          <button
-            aria-label={`选中：${name}`}
-            aria-pressed={selected}
-            className="wf-clip-body ui-focus"
-            onClick={(event) => {
-              if (!clickAfterDrag.take()) onSelect(clip.id, togglesSelection(event), true)
-            }}
-            // 切开工具下不能裁剪（`trimmable` 为假），点击归剃刀，双击也不打开「属性」
-            onDoubleClick={trimmable ? () => onInspect(clip.id) : undefined}
-            onPointerCancel={finish}
-            onPointerDown={(event) => press(event, 'move')}
-            onPointerMove={drag}
-            onPointerUp={release}
-            type="button"
+          <ClipTip
+            quiet={gesturing || preview !== undefined}
+            tip={
+              clip.kind !== 'host'
+                ? undefined
+                : text === undefined
+                  ? clip.label
+                  : `${clip.label} · ${text}`
+            }
           >
-            <ClipContent
-              clip={clip}
-              cover={cover}
-              text={text}
-              peaks={peaks}
-              timing={timing}
-              wave={wave}
-              waveRef={waveRef}
-            />
-            {badge === undefined ? null : (
-              <span aria-hidden="true" className="wf-clip-badge" data-tone={badge.tone}>
-                {badge.text}
-              </span>
-            )}
-            {saved === null || silent ? null : (
-              <span aria-hidden="true" className="wf-clip-badge wf-clip-keyframes">
-                关键帧
-              </span>
-            )}
-          </button>
+            <button
+              aria-label={`选中：${name}`}
+              aria-pressed={selected}
+              className="wf-clip-body ui-focus"
+              onClick={(event) => {
+                if (!clickAfterDrag.take()) onSelect(clip.id, togglesSelection(event), true)
+              }}
+              // 切开工具下不能裁剪（`trimmable` 为假），点击归剃刀，双击也不打开「属性」
+              onDoubleClick={trimmable ? () => onInspect(clip.id) : undefined}
+              onPointerCancel={finish}
+              onPointerDown={(event) => press(event, 'move')}
+              onPointerMove={drag}
+              onPointerUp={release}
+              type="button"
+            >
+              <ClipContent
+                badge={badge}
+                clip={clip}
+                cover={cover}
+                keyframes={saved !== null && !silent}
+                peaks={peaks}
+                timing={timing}
+                wave={wave}
+                waveRef={waveRef}
+                withSound={withSound}
+              />
+            </button>
+          </ClipTip>
           {media === null || envelopePoints === null ? null : (
             <ClipEnvelope
               clipRef={rootRef}
@@ -844,6 +917,7 @@ function TimelineClip({
       </ContextMenuTrigger>
       <ContextMenuSurface
         aria-label={clip.label}
+        className="wf-menu"
         onCloseAutoFocus={(event) => {
           // 菜单里删掉了这个片段：焦点要回去的地方没了，交还编辑器的根节点，快捷键照常
           if (rootRef.current !== null) return
@@ -885,10 +959,46 @@ function RowToggle({
     >
       <Icon
         decorative
-        name={sound ? (hidden ? 'audio-off' : 'audio') : hidden ? 'excluded' : 'included'}
+        name={
+          sound
+            ? hidden
+              ? 'final-cut-sound-off'
+              : 'final-cut-sound-on'
+            : hidden
+              ? 'final-cut-hidden'
+              : 'final-cut-visible'
+        }
         size="sm"
       />
     </button>
+  )
+}
+
+/** 行头上画的图标：按行的种类，配音和原声都是人声。颜色由样式表按 `data-kind` 给。 */
+const ROW_ICONS: Readonly<Record<RowKind, IconName>> = {
+  visual: 'final-cut-shots',
+  caption: 'final-cut-captions',
+  dub: 'final-cut-voice',
+  original: 'final-cut-voice',
+  music: 'final-cut-music',
+}
+
+/**
+ * 行头上的行名：只画这种行的图标，同种的行不止一行时旁边带一个小编号；行名（`name`）在无障碍名称和悬停提示里。
+ */
+function RowSign({ kind, name, ordinal }: { kind: RowKind; name: string; ordinal: number | null }) {
+  return (
+    <TooltipRoot>
+      <TooltipTrigger asChild>
+        <span aria-label={name} className="wf-head-sign" role="img">
+          <Icon decorative name={ROW_ICONS[kind]} size="md" />
+          {ordinal === null ? null : <span className="wf-head-ordinal">{ordinal}</span>}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="wf-tip" side="right">
+        {name}
+      </TooltipContent>
+    </TooltipRoot>
   )
 }
 
@@ -1358,14 +1468,17 @@ export function FilmTimeline({
     <div className="wf-tracks" ref={scrollRef}>
       <div className="wf-track-inner">
         <div className="wf-track-heads" ref={headsRef}>
-          <span aria-hidden="true" className="wf-track-corner" />
+          <span className="wf-track-corner">
+            <span className="sr-only">总时长 </span>
+            {timeLabel(totalMs / 1000)}
+          </span>
           {shown.map((row, at) => (
             <Fragment key={keyOf(row)}>
               {openedAt === at ? (
                 <span aria-hidden="true" className="wf-track-head is-opening" />
               ) : null}
-              <span className="wf-track-head">
-                <span className="wf-head-name">{row.name}</span>
+              <span className="wf-track-head" data-kind={row.kind} data-zone={row.zone}>
+                <RowSign kind={row.kind} name={row.name} ordinal={row.ordinal} />
                 {row.clips.length > 0 ? (
                   <RowToggle
                     hidden={rowHidden(clips, row)}
@@ -1446,6 +1559,9 @@ export function FilmTimeline({
                           contentRef={contentRef}
                           cover={clip.kind === 'host' ? thumbnailUrl(catalog, clip.item) : null}
                           text={hostTexts.get(clip.id)}
+                          withSound={
+                            clip.kind === 'video' && soundPairOf(clip, clips) === undefined
+                          }
                           following={following}
                           groupFor={(kind) => editGroup(clip, selected, clips, kind)}
                           badge={
@@ -1505,7 +1621,7 @@ export function FilmTimeline({
                       ) : null}
                     </div>
                   </ContextMenuTrigger>
-                  <ContextMenuSurface aria-label="空档">
+                  <ContextMenuSurface aria-label="空档" className="wf-menu">
                     <ContextMenuItem
                       disabled={closing === undefined || closing.one.size === 0}
                       onSelect={() => {

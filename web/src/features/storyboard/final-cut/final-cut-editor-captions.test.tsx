@@ -19,6 +19,8 @@ import {
   URL_SILENT,
   editorRoot,
   openEditor,
+  previewPlayer,
+  previewSettled,
   progress,
   putFilm,
   quietTakes,
@@ -61,8 +63,8 @@ describe('final-cut 编辑器 · 字幕页签', () => {
   const side = () =>
     screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   const openCaptions = (user: ReturnType<typeof userEvent.setup>) =>
-    user.click(within(side()).getByRole('tab', { name: '字幕·配音' }))
-  const panel = () => screen.getByRole('tabpanel', { name: '字幕·配音' })
+    user.click(within(side()).getByRole('tab', { name: '字幕' }))
+  const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
   const addButton = () => within(panel()).getByRole('button', { name: '在播放头处加一句' })
   const savedScene = () =>
     mockWorkspaceFile(CONVERSATION, `final-cut/${CAPTIONS_PATH}`)?.content ?? ''
@@ -164,11 +166,11 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
   const others = [video({ src: URL_A, duration: 2_000 }), audio({ duration: 4_000 })]
 
   /** 工作区里放一份带字幕的工程（照编辑器用 SDK 写的样子），打开编辑器。 */
-  const open = async () => {
+  const open = async (captions = lines) => {
     const main = await openComposition(mainFile(others, CANVAS))
     main.addElement('film', 99, captionsHostElement(CANVAS, 4_000))
-    for (const each of lines) main.declareVariable(captionVariable(each))
-    putMockWorkspaceFile(CONVERSATION, SCENE, captionsScene(CANVAS, fixtureCatalog, lines))
+    for (const each of captions) main.declareVariable(captionVariable(each))
+    putMockWorkspaceFile(CONVERSATION, SCENE, captionsScene(CANVAS, fixtureCatalog, captions))
     putMockProjectMain(CONVERSATION, main.serialize())
     const user = userEvent.setup()
     await openEditor()
@@ -210,7 +212,7 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
     fireEvent.pointerUp(target, { pointerId: 1, clientX: 10 + dx, clientY: 50 })
   }
 
-  it('「字幕」一行在画面区和声音区之间，行头是名字和眼睛；每句是一个片段，写着这句的字', async () => {
+  it('「字幕」一行在画面区和声音区之间，行头是字幕图标（名字在无障碍名称里）和眼睛；每句是一个片段，写着这句的字', async () => {
     await open()
     const rows = screen
       .getAllByRole('group')
@@ -223,9 +225,9 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
         .map((clip) => clip.getAttribute('aria-label')),
     ).toEqual(['第一句，1.0 秒', '第二句，1.0 秒', '第三句，1.0 秒'])
     expect(within(clipOf('第二句')).getByText('第二句')).toBeVisible()
-    expect(screen.getByRole('button', { name: '隐藏字幕' }).parentElement).toHaveTextContent(
-      /^字幕$/,
-    )
+    const head = screen.getByRole('button', { name: '隐藏字幕' }).parentElement
+    if (head === null) throw new Error('开关不在行头里')
+    expect(within(head).getByRole('img', { name: '字幕' })).toBeVisible()
   })
 
   it('拖着挪一句：碰到后一句就停；把手上按方向键裁结尾，不压到后一句；都写进字幕场景，各一步撤销', async () => {
@@ -332,13 +334,13 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
     ])
   })
 
-  it('选中一句时的「属性」：头部是字、「字幕」、时长和删除，没有隐藏；改字停下才写进去、改时长按「+」，各一步撤销', async () => {
+  it('选中一句时的「属性」：头部是字、「字幕」、起止时间和删除，没有隐藏；改字停下才写进去、改时长按「+」，各一步撤销', async () => {
     const user = await open()
     await user.click(bodyOf('第一句'))
     const inspector = screen.getByRole('tabpanel', { name: '属性' })
     expect(within(inspector).getByRole('heading', { name: '第一句' })).toBeVisible()
     expect(within(inspector).getByText('字幕')).toBeVisible()
-    expect(within(inspector).getByText('1.00s')).toBeVisible()
+    expect(within(inspector).getByText('0.00 – 1.00s')).toBeVisible()
     expect(within(inspector).getByRole('button', { name: '删除' })).toBeVisible()
     expect(within(inspector).queryByRole('button', { name: '隐藏' })).toBeNull()
 
@@ -474,8 +476,8 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
   it('停在「字幕」页签时在时间线上选中片段（字幕、视频都一样）不切走，选中的字幕在列表里标成当前；在页签里点一句的时间：选中它、播放头到它的开始', async () => {
     const user = await open()
     const side = screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-    await user.click(within(side).getByRole('tab', { name: '字幕·配音' }))
-    const panel = () => screen.getByRole('tabpanel', { name: '字幕·配音' })
+    await user.click(within(side).getByRole('tab', { name: '字幕' }))
+    const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
     const current = () =>
       within(panel())
         .getAllByRole('listitem')
@@ -494,6 +496,35 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
     expect(current()).toEqual(['字幕文字 00:03.00 – 00:04.00'])
     expect(progress()).toHaveAttribute('aria-valuetext', '00:03.00 / 00:04.00')
     expect(panel()).toBeVisible()
+  })
+
+  it('点一句的时间：这句的开头不在帧边界上，预览也停在看得到这句的时刻', async () => {
+    // 3.01 秒落在 30 帧每秒的第 90 帧（3.000 秒起）里，这句从第 91 帧才出现
+    const late = caption({
+      id: 'cap-c3',
+      variable: 'cap_c3',
+      start: 3_010,
+      duration: 990,
+      text: '第三句',
+    })
+    const user = await open([...lines.slice(0, 2), late])
+    await user.click(
+      within(
+        screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
+      ).getByRole('tab', { name: '字幕' }),
+    )
+    await previewSettled()
+
+    await user.click(
+      within(screen.getByRole('tabpanel', { name: '字幕' })).getByRole('button', {
+        name: '00:03.01 – 00:04.00',
+      }),
+    )
+    await waitFor(() => {
+      const at = previewPlayer().currentTime
+      expect(at).toBeGreaterThanOrEqual(3.01)
+      expect(at).toBeLessThan(4)
+    })
   })
 
   it('停在别的页签时在时间线上选中字幕：照常切到「属性」', async () => {
@@ -559,9 +590,9 @@ describe('final-cut 编辑器 · 识别字幕', () => {
     await user.click(
       within(
         screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
-      ).getByRole('tab', { name: '字幕·配音' }),
+      ).getByRole('tab', { name: '字幕' }),
     )
-    return screen.getByRole('tabpanel', { name: '字幕·配音' })
+    return screen.getByRole('tabpanel', { name: '字幕' })
   }
   const recognizeButton = (panel: HTMLElement) =>
     within(panel).getByRole('button', { name: /^(识别字幕|识别中…)$/ })

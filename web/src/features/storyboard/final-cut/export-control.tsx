@@ -164,7 +164,7 @@ export function ExportControl({ view, target, blocked, onStart, onCancel }: Expo
           <Button
             aria-disabled={startable ? undefined : true}
             className="editor-compose"
-            leadingIcon="download"
+            leadingIcon="final-cut-export"
             loading={view.kind === 'starting'}
             onClick={startIfAllowed}
             size="md"

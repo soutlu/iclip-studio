@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type ComponentProps, type Ref } fro
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { useAudition } from '@/shared/ui/audition'
-import { Button, IconButton } from '@/shared/ui/button'
+import { IconButton } from '@/shared/ui/button'
 import { Textarea } from '@/shared/ui/field'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
@@ -14,6 +14,7 @@ import type { CaptionClip } from './composition/film'
 import type { LineVoice, LineVoices, VoiceMode } from './composition/voices'
 import { NARRATION_TEXT_LIMIT } from './dubbing'
 import { LocaleBar, type LocaleControls } from './editor-toolbar'
+import { EmptyNote } from './empty-note'
 import {
   captionIn,
   phraseWith,
@@ -133,11 +134,12 @@ type CaptionsTabProps = {
 }
 
 /**
- * 「字幕·配音」页签：最上面一排语言小块（见 `LocaleBar`），下面在「字幕」和「组件文字」（见 `ComponentTexts`）两段之间
- * 切换，各写着有几个。「字幕」是识别字幕、在播放头处加一句，原文下还有「旁白配音」（见 `NarrationPanel`），下面是按
- * 开始时间排的字幕列表，每句能直接改字、删掉，点时间选中它、跳到它的开始。编辑器里选中的字幕、选中的配音片段配的
- * 那句标成当前这一句；刚加的那一句焦点进它的文字框。识别中写着在识别几个片段。其它语言下改的是这种语言的字，多一个
- * 「翻译」，两段里还没翻的一起翻；「字幕」里多一行人声设置（见 `VoiceRow`）。
+ * 「字幕」页签。顶行左边是语言小块（见 `LocaleBar`），右边在「字幕」和「组件文字」（见 `ComponentTexts`）两段之间
+ * 切换，各写着有几个。下一行是动作：其它语言下的「翻译」（两段里还没翻的一起翻），「字幕」段里还有识别字幕、原文下的
+ * 「旁白配音」（展开见 `NarrationPanel`）和最右边在播放头处加一句的「+」。「字幕」段下面是按开始时间排的字幕卡片，
+ * 每句能直接改字、删掉，点时间选中它、跳到它的开始。编辑器里选中的字幕、选中的配音片段配的那句标成当前这一句；
+ * 刚加的那一句焦点进它的文字框。识别中写着在识别几个片段。其它语言下改的是这种语言的字，「字幕」段上面多一块人声
+ * 设置（见 `VoiceCard`）。
  *
  * 两段跟着选中走：选中变了的那一下，选中字幕或配音片段时切到「字幕」，选中有文字的贴片、场景时切到「组件文字」；
  * 之后用户自己切了另一段就听用户的，等下一次选中变了再切。
@@ -181,53 +183,84 @@ export function CaptionsTab({
     { value: 'captions', label: '字幕', count: captions.length },
     { value: 'texts', label: '组件文字', count: texts.hosts.length },
   ] as const
+  const onCaptions = view === 'captions'
   return (
     <div className="wf-captions">
-      <LocaleBar {...locales} inPanel />
+      <div className="wf-tab-head wf-captions-head">
+        <div className="wf-captions-top">
+          <LocaleBar {...locales} inPanel />
+          <div aria-label="字幕或组件文字" className="wf-seg wf-captions-views" role="group">
+            {views.map((each) => (
+              <button
+                aria-pressed={view === each.value}
+                className="wf-seg-item ui-state ui-focus"
+                key={each.value}
+                onClick={() => setView(each.value)}
+                type="button"
+              >
+                {each.label} <span className="wf-captions-count">{each.count}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        {translate === undefined && !onCaptions ? null : (
+          <div className="wf-captions-actions">
+            {translate === undefined ? null : (
+              <BlockedReason reason={translate.blocked}>
+                <button
+                  aria-disabled={translate.blocked === undefined ? undefined : true}
+                  className="wf-chip-btn is-soft ui-state ui-focus"
+                  onClick={() => {
+                    if (translate.blocked === undefined) translate.onTranslate()
+                  }}
+                  type="button"
+                >
+                  <Icon decorative name="final-cut-translate" size="sm" />
+                  {translate.translating ? '翻译中…' : TRANSLATE_LABEL}
+                </button>
+              </BlockedReason>
+            )}
+            {onCaptions ? (
+              <>
+                <BlockedReason reason={recognizeBlocked}>
+                  <button
+                    aria-disabled={recognizeBlocked === undefined ? undefined : true}
+                    className="wf-chip-btn ui-state ui-focus"
+                    onClick={() => {
+                      if (recognizeBlocked === undefined) onRecognize()
+                    }}
+                    type="button"
+                  >
+                    <Icon decorative name="final-cut-voice" size="sm" />
+                    {recognizing > 0 ? '识别中…' : RECOGNIZE_LABEL}
+                  </button>
+                </BlockedReason>
+                {narration === undefined ? null : (
+                  <button
+                    aria-expanded={narration.open}
+                    className={cn('wf-chip-btn ui-state ui-focus', narration.open && 'is-active')}
+                    onClick={() => narration.onOpen(!narration.open)}
+                    type="button"
+                  >
+                    <Icon decorative name="final-cut-narration" size="sm" />
+                    {narration.open ? '收起' : NARRATION_LABEL}
+                  </button>
+                )}
+                <AddLineButton blocked={addBlocked} onAdd={() => void add()} />
+              </>
+            ) : null}
+          </div>
+        )}
+      </div>
       {problem === undefined ? null : (
         <InlineAlert className="wf-captions-alert" message={problem} />
       )}
-      {translate === undefined ? null : (
-        <div className="wf-captions-actions wf-captions-translate">
-          <BlockedReason reason={translate.blocked}>
-            <Button
-              aria-disabled={translate.blocked === undefined ? undefined : true}
-              className="wf-captions-action"
-              leadingIcon="sparkles"
-              onClick={() => {
-                if (translate.blocked === undefined) translate.onTranslate()
-              }}
-              size="md"
-              variant="outlined"
-            >
-              {translate.translating ? '翻译中…' : TRANSLATE_LABEL}
-            </Button>
-          </BlockedReason>
-        </div>
-      )}
-      <div aria-label="字幕或组件文字" className="wf-captions-views" role="group">
-        {views.map((each) => (
-          <button
-            aria-pressed={view === each.value}
-            className="wf-captions-view ui-state ui-focus"
-            key={each.value}
-            onClick={() => setView(each.value)}
-            type="button"
-          >
-            {each.label} <span className="wf-captions-count">{each.count}</span>
-          </button>
-        ))}
-      </div>
-      {view === 'captions' && voice !== undefined ? (
-        <VoiceRow active={active} onNotice={onNotice} voice={voice} />
+      {onCaptions && voice !== undefined ? (
+        <VoiceCard active={active} onNotice={onNotice} voice={voice} />
       ) : null}
-      {view === 'texts' ? (
-        <ComponentTexts {...texts} locale={locale} selected={selected} />
-      ) : (
+      {onCaptions ? (
         <CaptionsView
           active={active}
-          add={add}
-          addBlocked={addBlocked}
           captions={captions}
           focusing={focusing}
           lines={focus.lines}
@@ -236,15 +269,50 @@ export function CaptionsTab({
           onFocused={() => setFocusing(null)}
           onNotice={onNotice}
           onPick={onPick}
-          onRecognize={onRecognize}
           onRemove={onRemove}
           onText={onText}
-          recognizeBlocked={recognizeBlocked}
           recognizing={recognizing}
           voice={voice}
         />
+      ) : (
+        <ComponentTexts {...texts} locale={locale} selected={selected} />
       )}
     </div>
+  )
+}
+
+/**
+ * 字幕操作一行最右边的「+」：在播放头处加一句。悬停提示写这个名字；加不了时置灰，提示和点击都说明原因
+ * （和工具条上加不了语言的「+」一样，见 `editor-toolbar.tsx` 的 `BlockedAddLocale`）。
+ */
+function AddLineButton({ blocked, onAdd }: { blocked: string | undefined; onAdd: () => void }) {
+  const [hint, setHint] = useState(false)
+  return (
+    <TooltipRoot onOpenChange={setHint} open={hint}>
+      <TooltipTrigger
+        asChild
+        onClick={(event) => {
+          if (blocked === undefined) return
+          event.preventDefault()
+          setHint(true)
+        }}
+      >
+        <button
+          aria-disabled={blocked === undefined ? undefined : true}
+          aria-label={ADD_LABEL}
+          className="wf-captions-add ui-state ui-focus"
+          onClick={() => {
+            if (blocked === undefined) onAdd()
+          }}
+          type="button"
+        >
+          <Icon decorative name="final-cut-add" size="md" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="wf-tip" side="top">
+        {blocked ?? ADD_LABEL}
+      </TooltipContent>
+    </TooltipRoot>
   )
 }
 
@@ -257,12 +325,12 @@ const busyOf = ({ generating, narrating }: Pick<VoiceControl, 'generating' | 'na
   generating + narrating > 0 ? GENERATING_TEXT : undefined
 
 /**
- * 其它语言下的人声设置：第一行是「保留原声」，有配音时右边多一个「重新生成」（要配音的句子各用各的音色）；第二行是
- * AI 配音的音色小块：「原声」（从素材片的原声里取）在前，后面是资料库里的音色（能试听）。保留原声和选中的音色二选一，
- * 当前的高亮。点一个音色：这种语言已有用它配好的配音时只切过去，不然把它当这种语言的音色、重配跟着它的句子（生成完
- * 自动用上，已有配音时换掉）。生成中写着在给几条素材片、几句旁白配音。
+ * 其它语言下的人声设置，一张卡片：标题行是「人声」、「保留原声」，有配音时右边多一个「重新生成」（要配音的句子各用
+ * 各的音色）；下面是 AI 配音的音色小块：「原声」（从素材片的原声里取）在前，后面是资料库里的音色（能试听）。保留原声
+ * 和选中的音色二选一，当前的高亮。点一个音色：这种语言已有用它配好的配音时只切过去，不然把它当这种语言的音色、重配
+ * 跟着它的句子（生成完自动用上，已有配音时换掉）。生成中写着在给几条素材片、几句旁白配音。
  */
-function VoiceRow({
+function VoiceCard({
   voice,
   active,
   onNotice,
@@ -294,12 +362,15 @@ function VoiceRow({
     }
   }
   return (
-    <>
-      <div aria-label="人声设置" className="wf-captions-voice" role="group">
-        <span className="wf-captions-voice-label">人声</span>
+    <div aria-label="人声设置" className="wf-card wf-voice-card" role="group">
+      <div className="wf-voice-head">
+        <span className="wf-voice-title">
+          <Icon decorative name="final-cut-voice" size="sm" />
+          人声
+        </span>
         <button
           aria-pressed={mode === 'original'}
-          className="wf-captions-voice-mode ui-state ui-focus"
+          className="wf-chip-btn ui-state ui-focus"
           onClick={() => onMode('original')}
           type="button"
         >
@@ -309,7 +380,7 @@ function VoiceRow({
           <BlockedReason reason={redoBlocked}>
             <button
               aria-disabled={redoBlocked === undefined ? undefined : true}
-              className="wf-captions-voice-redo ui-state ui-focus"
+              className="wf-chip-btn ui-state ui-focus"
               onClick={() => {
                 if (redoBlocked === undefined) onRedo()
               }}
@@ -320,7 +391,7 @@ function VoiceRow({
           </BlockedReason>
         ) : null}
       </div>
-      <div aria-label="AI 配音音色" className="wf-captions-voices" role="group">
+      <div aria-label="AI 配音音色" className="wf-voice-list" role="group">
         <VoiceChip {...chipOf(null, ORIGINAL_VOICE)} />
         {voices.map((each) => (
           <VoiceChip
@@ -336,12 +407,11 @@ function VoiceRow({
       {voicesProblem === undefined ? null : (
         <InlineAlert
           action={{ label: '重试', onClick: voicesProblem.onRetry }}
-          className="wf-captions-voices-alert"
           message={voicesProblem.message}
         />
       )}
       {generating + narrating > 0 ? (
-        <p className="wf-captions-note" role="status">
+        <p className="wf-voice-note" role="status">
           {`正在为 ${[
             generating > 0 ? `${generating} 条素材片` : '',
             narrating > 0 ? `${narrating} 句旁白` : '',
@@ -350,7 +420,7 @@ function VoiceRow({
             .join('、')}生成配音，可继续编辑`}
         </p>
       ) : null}
-    </>
+    </div>
   )
 }
 
@@ -367,13 +437,13 @@ type VoiceChipProps = {
 /** 一个音色小块：前面是试听钮（有的话），后面是音色的名字，点名字选它。 */
 function VoiceChip({ name, picked, blocked, onPick, audition }: VoiceChipProps) {
   return (
-    <span className={cn('wf-captions-voice-chip', picked && 'is-picked')}>
+    <span className={cn('wf-voice-chip', picked && 'is-picked')}>
       {audition === undefined ? null : (
         <IconButton
           aria-pressed={audition.playing}
-          className="wf-captions-voice-play"
+          className="wf-voice-play"
           label={audition.playing ? `暂停试听：${name}` : `试听：${name}`}
-          name={audition.playing ? 'pause' : 'play'}
+          name={audition.playing ? 'final-cut-pause' : 'final-cut-play'}
           onClick={audition.onToggle}
           size="xs"
         />
@@ -382,7 +452,7 @@ function VoiceChip({ name, picked, blocked, onPick, audition }: VoiceChipProps) 
         <button
           aria-disabled={blocked === undefined ? undefined : true}
           aria-pressed={picked}
-          className="wf-captions-voice-pick ui-state ui-focus"
+          className="wf-voice-pick ui-state ui-focus"
           onClick={onPick}
           title={name}
           type="button"
@@ -451,7 +521,7 @@ function LineVoiceChip({ caption, voice }: { caption: string; voice: VoiceContro
       type="button"
     >
       <span className="wf-line-voice-name">{name}</span>
-      <Icon decorative name="expand" size="xs" />
+      <Icon decorative name="final-cut-expand" size="xs" />
     </button>
   )
   if (blocked !== undefined) return <BlockedReason reason={blocked}>{chip}</BlockedReason>
@@ -473,7 +543,7 @@ function LineVoiceChip({ caption, voice }: { caption: string; voice: VoiceContro
           切换本句配音音色或不配音
         </TooltipContent>
       </TooltipRoot>
-      <MenuSurface align="end">
+      <MenuSurface align="end" className="wf-menu">
         <MenuRadioGroup
           onValueChange={(value) => {
             if (value !== picked) voice.onLine(caption, lineVoiceOfValue(value))
@@ -494,18 +564,14 @@ function LineVoiceChip({ caption, voice }: { caption: string; voice: VoiceContro
   )
 }
 
-/** 「字幕」那一段：识别、加一句、原文下的「旁白配音」的按钮（展开时下面是 `NarrationPanel`）和字幕列表。 */
+/** 「字幕」那一段：原文下展开的「旁白配音」（见 `NarrationPanel`）、识别中的说明和字幕列表。 */
 function CaptionsView({
   active,
   onNotice,
   captions,
   locale,
   lines,
-  addBlocked,
   recognizing,
-  recognizeBlocked,
-  onRecognize,
-  add,
   focusing,
   onFocused,
   onText,
@@ -513,11 +579,19 @@ function CaptionsView({
   onPick,
   voice,
   narration,
-}: Omit<
+}: Pick<
   CaptionsTabProps,
-  'texts' | 'problem' | 'onAdd' | 'translate' | 'locales' | 'selected' | 'focus'
+  | 'active'
+  | 'onNotice'
+  | 'captions'
+  | 'locale'
+  | 'recognizing'
+  | 'onText'
+  | 'onRemove'
+  | 'onPick'
+  | 'voice'
+  | 'narration'
 > & {
-  add: () => Promise<void>
   /** 标成当前的那几句。 */
   lines: ReadonlySet<string>
   /** 焦点要进的那一句（刚加的）。 */
@@ -526,46 +600,6 @@ function CaptionsView({
 }) {
   return (
     <>
-      <div className="wf-captions-actions">
-        <BlockedReason reason={recognizeBlocked}>
-          <Button
-            aria-disabled={recognizeBlocked === undefined ? undefined : true}
-            className="wf-captions-action wf-captions-recognize"
-            leadingIcon="waveform"
-            onClick={() => {
-              if (recognizeBlocked === undefined) onRecognize()
-            }}
-            size="md"
-            variant="inverted"
-          >
-            {recognizing > 0 ? '识别中…' : RECOGNIZE_LABEL}
-          </Button>
-        </BlockedReason>
-        <BlockedReason reason={addBlocked}>
-          <Button
-            aria-disabled={addBlocked === undefined ? undefined : true}
-            className="wf-captions-action"
-            leadingIcon="add"
-            onClick={() => void add()}
-            size="md"
-            variant="outlined"
-          >
-            {ADD_LABEL}
-          </Button>
-        </BlockedReason>
-        {narration === undefined ? null : (
-          <Button
-            aria-expanded={narration.open}
-            className="wf-captions-action"
-            {...(narration.open ? {} : { leadingIcon: 'add' as const })}
-            onClick={() => narration.onOpen(!narration.open)}
-            size="md"
-            variant="outlined"
-          >
-            {narration.open ? '收起' : NARRATION_LABEL}
-          </Button>
-        )}
-      </div>
       {narration?.open === true ? (
         <NarrationPanel active={active} narration={narration} onNotice={onNotice} />
       ) : null}
@@ -576,12 +610,12 @@ function CaptionsView({
       ) : null}
       {captions.length === 0 ? (
         recognizing > 0 ? null : (
-          <p className="wf-captions-note" role="status">
+          <EmptyNote icon="final-cut-captions">
             暂无字幕，请点击「{RECOGNIZE_LABEL}」或「{ADD_LABEL}」
-          </p>
+          </EmptyNote>
         )
       ) : (
-        <ol aria-label="字幕" className="wf-caption-list">
+        <ol aria-label="字幕" className="wf-tab-list wf-caption-list">
           {captionsInOrder(captions).map((caption) => (
             <CaptionRow
               caption={caption}
@@ -637,17 +671,17 @@ function NarrationPanel({
           ? `旁白文案超过 ${NARRATION_TEXT_LIMIT} 字，无法插入旁白配音；请删减`
           : undefined)
   return (
-    <div aria-label={NARRATION_LABEL} className="wf-narration" role="group">
+    <div aria-label={NARRATION_LABEL} className="wf-card wf-voice-card" role="group">
       <Textarea
         aria-label="旁白文案"
-        className="wf-narration-text"
+        className="wf-field wf-narration-text"
         onChange={(event) => setText(event.target.value)}
         placeholder="输入旁白文案…"
         rows={2}
         value={text}
       />
       {narration.voices === undefined || voices.length > 0 ? (
-        <div aria-label="旁白音色" className="wf-narration-voices" role="group">
+        <div aria-label="旁白音色" className="wf-voice-list" role="group">
           {voices.map((each) => (
             <VoiceChip
               audition={{
@@ -663,7 +697,7 @@ function NarrationPanel({
           ))}
         </div>
       ) : (
-        <p className="wf-narration-note" role="status">
+        <p className="wf-voice-note" role="status">
           {NO_VOICES_TEXT}
         </p>
       )}
@@ -676,17 +710,16 @@ function NarrationPanel({
       <div className="wf-narration-foot">
         <span className="wf-narration-voice">{voice?.name}</span>
         <BlockedReason reason={blocked}>
-          <Button
+          <button
             aria-disabled={blocked === undefined ? undefined : true}
-            className="wf-narration-insert"
+            className="wf-chip-btn is-soft ui-state ui-focus"
             onClick={() => {
               if (blocked === undefined && voice !== undefined) narration.onInsert(draft, voice.id)
             }}
-            size="md"
-            variant="primary"
+            type="button"
           >
             {narration.generating ? '合成中…' : INSERT_NARRATION_LABEL}
-          </Button>
+          </button>
         </BlockedReason>
       </div>
     </div>
@@ -731,14 +764,21 @@ function CaptionRow({
   return (
     <li
       aria-current={current ? 'true' : undefined}
-      className={cn('wf-caption', current && 'is-current')}
+      className={cn('wf-caption wf-card', current && 'is-current')}
     >
       <div className="wf-caption-head">
-        <button className="wf-caption-time" onClick={onSeek} type="button">
+        <button className="wf-caption-time ui-focus" onClick={onSeek} type="button">
+          <Icon decorative name="final-cut-play" size="xs" />
           {range}
         </button>
         {voice === undefined ? null : <LineVoiceChip caption={caption.id} voice={voice} />}
-        <IconButton label={`删除 ${range} 的字幕`} name="delete" onClick={onRemove} size="xs" />
+        <IconButton
+          className="wf-caption-remove"
+          label={`删除 ${range} 的字幕`}
+          name="final-cut-delete"
+          onClick={onRemove}
+          size="xs"
+        />
       </div>
       <CaptionTextField
         aria-label={`字幕文字 ${range}`}

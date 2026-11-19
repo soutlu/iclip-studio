@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { cn } from '@/shared/lib/utils'
+import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import type { PeaksState } from '../editing/media-analysis'
 import { Frames, TrimHandle, Wave } from '../editing/timeline'
 import { arrowStep, releasePointer, type Edge } from '../editing/timeline-drag'
@@ -32,8 +33,8 @@ type Drag = {
 }
 
 /**
- * 「原片截取」：一条画着整条素材的条，框出片段用掉的那一段（从入点起，长 时长 × 速度），框里两头按淡入、
- * 淡出压暗。拖两端的抓手改入点、出点，在条上按下或拖动框换一截素材（规则见 `slipped`）；抓手按方向键微调。
+ * 「原片截取」：一条画着整条素材的条，框出片段用掉的那一段（从入点起，长 时长 × 速度），框外压暗，框里两头按淡入、
+ * 淡出画斜坡。拖两端的抓手改入点、出点，在条上按下或拖动框换一截素材（规则见 `slipped`）；抓手按方向键微调。
  * 拖动中只动这里，松手才写进 final-cut，一次算一步撤销；拖动中按 Esc 什么都不写。
  * 素材总长还不知道时不画框、不能拖。
  */
@@ -156,7 +157,7 @@ export function SourceTrim({
   })
 
   return (
-    <section className="wf-prop-section">
+    <section className="wf-card wf-prop-card">
       <div className="wf-prop-title-row">
         <h4 className="wf-prop-title">原片截取</h4>
         <span className="wf-prop-subtitle" title={name}>
@@ -169,68 +170,108 @@ export function SourceTrim({
           </span>
         ) : null}
       </div>
-      <div
-        aria-label="原片截取条"
-        className={cn('wf-slip', known && 'is-ready')}
-        onPointerCancel={cancel}
-        onPointerDown={(event) => press(event, 'body')}
-        onPointerMove={move}
-        onPointerUp={release}
-        ref={stripRef}
-        role="group"
-      >
-        {!known ? (
-          <span className="wf-slip-note">{pendingNote(clip, keyframe, peaks)}</span>
-        ) : (
-          <>
-            <span aria-hidden="true" className="wf-slip-source">
-              {clip.kind === 'video' ? (
-                <Frames part={{ mediaUrl: clip.src, start: 0, end: total / 1000 }} />
-              ) : (
-                <Wave part={{ mediaUrl: clip.src, start: 0, end: total / 1000 }} state={peaks} />
-              )}
-            </span>
-            <div
-              className="wf-range wf-slip-window"
-              data-testid="slip-window"
-              style={{
-                left: percent(inPoint, total),
-                width: percent(Math.min(total - inPoint, outPoint - inPoint), total),
-              }}
-            >
-              <span
-                aria-hidden="true"
-                className="wf-slip-fade is-in"
-                style={{ width: `${Math.min(50, (clip.fadeIn / timing.duration) * 100)}%` }}
-              />
-              <span
-                aria-hidden="true"
-                className="wf-slip-fade is-out"
-                style={{ width: `${Math.min(50, (clip.fadeOut / timing.duration) * 100)}%` }}
-              />
-              {(['start', 'end'] as const).map((edge) => {
-                const at = pointOf(edge, timing)
-                return (
-                  <TrimHandle
-                    bounds={reach(edge)}
-                    edge={edge}
-                    key={edge}
-                    onKeyDown={(event) => nudge(event, edge)}
-                    onPointerCancel={cancel}
-                    onPointerDown={(event) => press(event, edge)}
-                    onPointerMove={move}
-                    onPointerUp={release}
-                    pressed={dragged?.grip === edge}
-                    style={edge === 'start' ? { left: 0 } : { left: '100%' }}
-                    value={at / 1000}
-                    valueText={`${edge === 'start' ? '入点' : '出点'} ${seconds(at)} 秒`}
+      <TooltipRoot>
+        <TooltipTrigger asChild>
+          <div
+            aria-label="原片截取条"
+            className={cn('wf-slip', known && 'is-ready')}
+            onPointerCancel={cancel}
+            onPointerDown={(event) => press(event, 'body')}
+            onPointerMove={move}
+            onPointerUp={release}
+            ref={stripRef}
+            role="group"
+          >
+            {!known ? (
+              <span className="wf-slip-note">{pendingNote(clip, keyframe, peaks)}</span>
+            ) : (
+              <>
+                <span aria-hidden="true" className="wf-slip-source">
+                  {clip.kind === 'video' ? (
+                    <Frames part={{ mediaUrl: clip.src, start: 0, end: total / 1000 }} />
+                  ) : (
+                    <Wave
+                      bars="center"
+                      part={{ mediaUrl: clip.src, start: 0, end: total / 1000 }}
+                      state={peaks}
+                    />
+                  )}
+                </span>
+                <div
+                  className="wf-slip-window"
+                  data-testid="slip-window"
+                  style={{
+                    left: percent(inPoint, total),
+                    width: percent(Math.min(total - inPoint, outPoint - inPoint), total),
+                  }}
+                >
+                  <FadeRamps
+                    fadeIn={clip.fadeIn / timing.duration}
+                    fadeOut={clip.fadeOut / timing.duration}
                   />
-                )
-              })}
-            </div>
-          </>
-        )}
-      </div>
+                  {(['start', 'end'] as const).map((edge) => {
+                    const at = pointOf(edge, timing)
+                    return (
+                      <TrimHandle
+                        bounds={reach(edge)}
+                        edge={edge}
+                        key={edge}
+                        onKeyDown={(event) => nudge(event, edge)}
+                        onPointerCancel={cancel}
+                        onPointerDown={(event) => press(event, edge)}
+                        onPointerMove={move}
+                        onPointerUp={release}
+                        pressed={dragged?.grip === edge}
+                        style={edge === 'start' ? { left: 0 } : { left: '100%' }}
+                        value={at / 1000}
+                        valueText={`${edge === 'start' ? '入点' : '出点'} ${seconds(at)} 秒`}
+                      />
+                    )
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        </TooltipTrigger>
+        {known ? (
+          <TooltipContent className="wf-tip" side="top">
+            左右拖动微调入出点
+          </TooltipContent>
+        ) : null}
+      </TooltipRoot>
     </section>
+  )
+}
+
+// 斜坡最多占用掉那段的一半：淡入淡出各从一头画起，不会交叉
+const RAMP_MAX = 0.5
+
+/**
+ * 用掉那段两头的淡入、淡出：斜坡下面一层浅底，从角上斜到另一头的一条线。`fadeIn`、`fadeOut` 是占用掉那段的比例，
+ * 0 时不画；纯装饰，读屏不读。
+ */
+function FadeRamps({ fadeIn, fadeOut }: { fadeIn: number; fadeOut: number }) {
+  const into = Math.min(RAMP_MAX, fadeIn) * 100
+  const outFrom = 100 - Math.min(RAMP_MAX, fadeOut) * 100
+  return (
+    <svg
+      aria-hidden="true"
+      className="wf-slip-ramps"
+      preserveAspectRatio="none"
+      viewBox="0 0 100 100"
+    >
+      {into > 0 ? (
+        <>
+          <polygon className="wf-slip-ramp" points={`0,0 ${into},0 0,100`} />
+          <line className="wf-slip-ramp-line" x1={0} x2={into} y1={100} y2={0} />
+        </>
+      ) : null}
+      {outFrom < 100 ? (
+        <>
+          <polygon className="wf-slip-ramp" points={`${outFrom},0 100,0 100,100`} />
+          <line className="wf-slip-ramp-line" x1={outFrom} x2={100} y1={0} y2={100} />
+        </>
+      ) : null}
+    </svg>
   )
 }

@@ -11,7 +11,6 @@ import {
   type TimelineSnapTarget,
 } from './vendor/hyperframes-studio/player/components/timelineSnapping'
 import {
-  getNextTimelineZoomPercent,
   getTimelinePixelsPerSecond,
   getTimelineZoomPercent,
   TIMELINE_RANGE_MARGIN_PX,
@@ -59,11 +58,6 @@ export const timelineScale = (
     viewSeconds: viewportWidth > 0 && pps > 0 ? viewportWidth / pps : seconds,
   }
 }
-
-export const nextZoom = (direction: 'in' | 'out', zoom: Zoom, fitPps: number): Zoom => ({
-  mode: 'manual',
-  percent: getNextTimelineZoomPercent(direction, zoom.mode, zoom.percent, fitPps),
-})
 
 /** 现在的缩放在滑杆上的位置（0–100）。滑杆按对数走，小的那一头不会挤成一小截。 */
 export const zoomToSlider = (zoom: Zoom, fitPps: number): number =>

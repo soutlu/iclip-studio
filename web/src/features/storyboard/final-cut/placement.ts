@@ -86,7 +86,7 @@ export const isMusicRow = (row: RowContent): boolean =>
   row.zone === 'audio' && !isDubRow(row) && !isOriginalRow(row)
 
 /** 行的种类，同种的行一起编号。行名按声音从哪来起，不猜内容。 */
-type RowKind = 'visual' | 'caption' | 'dub' | 'original' | 'music'
+export type RowKind = 'visual' | 'caption' | 'dub' | 'original' | 'music'
 
 /** 各种行在行头上叫什么；`numberedAlone` 为假时，这种行只有一行就不带编号。 */
 const ROW_NAMING: Record<RowKind, { label: string; numberedAlone: boolean }> = {
@@ -109,16 +109,24 @@ const kindOf = (row: Row): RowKind =>
 /**
  * 给时间线上从上往下排的各行带上行名，同种的行从上往下编号：画面区是「画面 1」「画面 2」；字幕那一行叫「字幕」；
  * 声音区里「配音」行（见 `isDubRow`）、「原声」行（见 `isOriginalRow`）和别的「配乐」行，只有一行时不带编号，
- * 不止一行时是「配音 1」「配音 2」这样。
+ * 不止一行时是「配音 1」「配音 2」这样。`kind` 是行的种类；`ordinal` 是同种的行不止一行时这一行的编号，
+ * 只有一行时是 null（行头只在分得清几行时标编号）。
  */
-export const namedRows = <T extends Row>(rows: readonly T[]): (T & { name: string })[] => {
+export const namedRows = <T extends Row>(
+  rows: readonly T[],
+): (T & { name: string; kind: RowKind; ordinal: number | null })[] => {
   const kinds = rows.map(kindOf)
   return rows.map((row, at) => {
     const kind = kinds[at] ?? 'visual'
     const { label, numberedAlone } = ROW_NAMING[kind]
     const count = kinds.filter((other) => other === kind).length
     const number = kinds.slice(0, at + 1).filter((other) => other === kind).length
-    return { ...row, name: count === 1 && !numberedAlone ? label : `${label} ${number}` }
+    return {
+      ...row,
+      name: count === 1 && !numberedAlone ? label : `${label} ${number}`,
+      kind,
+      ordinal: count === 1 ? null : number,
+    }
   })
 }
 

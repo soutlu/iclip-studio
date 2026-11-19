@@ -1,4 +1,5 @@
 import { moveIntoSyncStart, syncOffsetFrames, type SyncTiming } from '@hyperframes/core/media-link'
+import type { IconName } from '@/shared/icons'
 import { linkedWith } from './clip-edit'
 import {
   isDetachedAudio,
@@ -134,8 +135,16 @@ export const mergedVideoChanges = (
   'data-sync-origin': null,
 })
 
-export const DETACH_LABEL = '分离音频'
+const DETACH_LABEL = '分离音频'
 export const MERGE_LABEL = '合并回视频'
+
+/** 分离音频 / 合并回视频按钮的字和图标，工具条和「属性」头部共用。 */
+export const SOUND_ACTION_LOOK: Readonly<
+  Record<'detach' | 'merge', { label: string; icon: IconName }>
+> = {
+  detach: { label: DETACH_LABEL, icon: 'final-cut-detach-audio' },
+  merge: { label: MERGE_LABEL, icon: 'final-cut-merge-audio' },
+}
 
 /**
  * 「分离音频」钮（工具条、⇧⌘B、「属性」头部、右键菜单）对选中的片段做什么：视频片段是分离，已分离的一对

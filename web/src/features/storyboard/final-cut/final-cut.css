@@ -1,7 +1,16 @@
-/* final-cut 编辑器：工作台「final-cut」页签的内容。上面是预览和侧栏（镜头 / 贴片 / 场景 / 配乐 / 属性），
-   下面是剪辑工具与时间线。 */
+/* final-cut 编辑器：工作台「final-cut」页签的内容。左上是预览舞台，右上是右栏（镜头 / 贴片 / 场景 / 配乐 /
+   字幕 / 属性），下面是剪辑工具与时间线；保存状态和「导出」在工作台顶栏右边。 */
+
+/* 胶囊按钮、下拉、输入框、分段切换的圆角（稿子在 sm 与 md 之间取 9px）；放进工作台顶栏的那组控件不在编辑器里，一起给 */
+.wf-editor,
+.wf-header-actions {
+  --wf-radius-control: 9px;
+}
 
 .wf-editor {
+  /* 浮起面板的圆角 */
+  --wf-radius-panel: 18px;
+  --slider-thumb-size: 14px;
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -21,26 +30,391 @@
   line-height: var(--text-body-sm--line-height);
 }
 
-/* 任何宽度都是这一种摆法，不做小屏适配：放不下的内容由所在的卡片裁掉，不换行、不横向滚动。
-   编辑区和各卡片用 clip 不用 hidden：hidden 仍能滚动，滚轮或聚焦被裁掉的控件会把内容带偏 */
+/* ---- 通用控件：编辑器里各处共用的一套样子。浮层菜单挂在 body 上不在编辑器根下，另带 wf-menu ---- */
+
+/* 双色图标的填充层：悬停加深一档，按下、选中再加深一档（变量见 shared/icons 的 final-cut-glyphs.css） */
+:where(.wf-editor, .wf-menu) :where(.ui-state:hover) {
+  --icon-fill-opacity: 0.25;
+}
+
+:where(.wf-editor, .wf-menu)
+  :where(
+    [aria-pressed='true'],
+    [aria-checked='true'],
+    [aria-selected='true'],
+    [data-state='on'],
+    [data-state='checked'],
+    .is-active
+  ) {
+  --icon-fill-opacity: 0.3;
+}
+
+/* 浮起面板：侧栏、时间线这样的大块 */
+.wf-panel {
+  border-radius: var(--wf-radius-panel);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-final-cut-panel), var(--shadow-final-cut-specular);
+}
+
+/* 面板里的白色分组卡 */
+.wf-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-card), var(--shadow-final-cut-specular);
+}
+
+/* 小胶囊按钮：带字（或图标加字）的次要操作；is-active / aria-pressed 是开着的开关，is-warning 是要处理的提示，
+   is-soft 是建议先做的那一步（深色实底） */
+.wf-chip-btn {
+  display: inline-flex;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-radius: var(--wf-radius-control);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.wf-chip-btn:hover {
+  color: var(--color-on-surface);
+}
+
+.wf-chip-btn:is(.is-active, [aria-pressed='true']) {
+  background: var(--color-final-cut-control-soft);
+  box-shadow: inset 0 0 0 1px var(--color-final-cut-control-ring);
+  color: var(--color-on-surface);
+  font-weight: 600;
+}
+
+.wf-chip-btn.is-warning:not([aria-disabled='true']) {
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  color: var(--color-warning);
+}
+
+.wf-chip-btn[aria-disabled='true']:not([aria-pressed='true']) {
+  color: var(--color-on-surface-faint);
+}
+
+/* 深色实心的胶囊：一块里最主要的那个动作（生成音乐、翻译、插入配音），图标点一点暖色指示光 */
+.wf-chip-btn.is-soft {
+  --icon-fill-color: var(--color-final-cut-led);
+  --icon-fill-opacity: 0.32;
+  background-color: var(--color-on-surface);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-scrim) 14%, transparent);
+  color: var(--color-final-cut-on-control);
+  font-weight: 600;
+}
+
+.wf-chip-btn.is-soft:hover {
+  color: var(--color-final-cut-on-control);
+}
+
+.wf-chip-btn.is-soft > svg {
+  color: var(--color-final-cut-led);
+}
+
+/* 置灰时底色也换成置灰的：不然深底上的灰字看不见 */
+.wf-chip-btn.is-soft[aria-disabled='true'] {
+  background-color: var(--color-disabled-container);
+  box-shadow: none;
+}
+
+.wf-chip-btn.is-soft[aria-disabled='true'] > svg {
+  color: inherit;
+}
+
+/* 下拉的触发钮：浅底细框，右边一个小箭头，展开时箭头朝上 */
+.wf-select {
+  display: flex;
+  height: 28px;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 10px;
+  border-radius: var(--wf-radius-control);
+  background: var(--color-surface-container-low);
+  box-shadow: inset 0 0 0 1px var(--color-final-cut-line);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.wf-select > svg {
+  flex: none;
+  color: var(--color-on-surface-faint);
+  transition: rotate var(--dur-s) var(--ease);
+}
+
+.wf-select[data-state='open'] > svg {
+  rotate: 180deg;
+}
+
+/* 两段 / 多段切换：一条凹槽，当前那段是浮起的白块 */
+.wf-editor .wf-seg {
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--wf-radius-control);
+  background: var(--color-surface-container-high);
+  box-shadow: var(--shadow-final-cut-well);
+}
+
+.wf-editor .wf-seg-item {
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 11px;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.wf-editor .wf-seg-item:hover {
+  color: var(--color-on-surface);
+}
+
+/* 三个条件压过分段切换自带的选中底色和阴影（它的选中态是「类 + 属性」两个条件） */
+.wf-editor .wf-seg-item:is([aria-pressed='true'], [data-state='on']) {
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-pill), var(--shadow-final-cut-specular);
+  color: var(--color-on-surface);
+  font-weight: 600;
+}
+
+/* 输入框、文字框和装着输入框的条：凹进去的浅底，聚焦时浮起成白底、外面一圈 1.5px 淡框（照稿子）。
+   焦点只画这圈淡框：边框不转墨色，设计系统的焦点环宽度置 0，不再叠一圈墨色框。
+   两个类压过输入框自带的边框、圆角、底色和焦点环宽度：构建后工具类与这里同层，单个类比不过加载顺序 */
+.wf-editor .wf-field {
+  --state-focus-ring: 0px;
+  border: 1px solid transparent;
+  border-radius: var(--wf-radius-control);
+  background: var(--color-surface-container-low);
+  box-shadow:
+    var(--shadow-final-cut-well),
+    inset 0 0 0 1px var(--color-final-cut-line);
+}
+
+.wf-editor .wf-field:is(:focus, :focus-within) {
+  border-color: transparent;
+  background: var(--color-final-cut-raised);
+  box-shadow: 0 0 0 1.5px var(--color-final-cut-control-ring);
+}
+
+.wf-editor .wf-field:is([aria-invalid='true'], :has([aria-invalid='true'])) {
+  box-shadow: 0 0 0 1.5px var(--color-error);
+}
+
+/* 侧栏页签顶上的搜索条；四周的空隙由所在的页签头决定 */
+.wf-editor .wf-search {
+  width: auto;
+  height: 30px;
+  flex: none;
+  gap: 6px;
+  padding: 0 9px;
+}
+
+.wf-search svg {
+  width: 14px;
+  height: 14px;
+  color: var(--color-on-surface-faint);
+}
+
+.wf-search input {
+  font-size: var(--text-label);
+}
+
+/* 浮层菜单：白底大圆角，浮起的阴影加顶部高光；选中的那项是中性浅底。
+   菜单挂在 body 上，靠 wf-menu 认；两个条件压过浮层自带的边框、底色和阴影 */
+.wf-menu[data-state] {
+  padding: 6px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-float), var(--shadow-final-cut-specular);
+  backdrop-filter: none;
+}
+
+.wf-menu [role^='menuitem'] {
+  font-size: var(--text-label);
+}
+
+.wf-menu [role^='menuitem'][data-state='checked'] {
+  background: var(--color-final-cut-control-soft);
+}
+
+/* 滑杆：走过的那段用控件墨色实时填上，轨道是凹槽，零点刻度是一道短竖线，拇指是白底描边的圆钮。
+   挂点见 shared/ui/slider；两个类压过它自带的轨道、刻度和圆点 */
+.wf-editor .slider-track {
+  height: 3.5px;
+  background: var(--color-surface-container-high);
+  box-shadow: var(--shadow-final-cut-well);
+}
+
+.wf-editor .slider-range {
+  background: var(--color-on-surface);
+}
+
+.wf-editor .slider-mark {
+  width: 2px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-final-cut-tick);
+}
+
+.wf-editor .slider-thumb {
+  border: 1.75px solid var(--color-on-surface);
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-knob);
+  transition:
+    scale var(--dur-s) var(--ease),
+    box-shadow var(--dur-s) var(--ease);
+}
+
+.wf-editor .slider-root:not([data-disabled]):hover .slider-thumb {
+  scale: 1.1;
+  box-shadow:
+    var(--shadow-final-cut-knob),
+    0 0 0 4px var(--color-final-cut-control-soft);
+}
+
+/* 开关：关着是凹槽，开着用品牌绿（稿子把开关的开启态列为品牌绿的用处之一），圆钮两套主题都是白色。
+   挂点见 shared/ui/switch；两个类压过它自带的尺寸和底色 */
+.wf-editor .switch-root {
+  width: 34px;
+  height: 19px;
+  padding: 2px;
+  background: var(--color-surface-container-high);
+  box-shadow: var(--shadow-final-cut-well);
+}
+
+.wf-editor .switch-root[aria-checked='true'] {
+  background: var(--color-primary);
+  box-shadow: none;
+}
+
+.wf-editor .switch-thumb {
+  width: 15px;
+  height: 15px;
+  background: var(--color-final-cut-knob);
+  box-shadow: var(--shadow-final-cut-knob);
+}
+
+.wf-editor .switch-root[aria-checked='true'] .switch-thumb {
+  translate: 15px 0;
+}
+
+/* ---- 外框：凹底上三块浮起面板，左上预览舞台、右上右栏、下面整宽的时间线，块与块之间是可拖的分隔条 ----
+   任何宽度都是这一种摆法，不做小屏适配：放不下的内容由所在的卡片裁掉，不换行、不横向滚动。
+   编辑区和各卡片用 clip 不用 hidden：hidden 仍能滚动，滚轮或聚焦被裁掉的控件会把内容带偏。
+   夹值和 use-editor-layout.ts 里的一致：右栏 376–520，舞台至少留 360 宽（播放条刚好排开一行）、200 高，
+   时间线至少 186 高；工作台窄到放不下时先保右栏的最窄 */
 .wf-workspace {
+  --wf-splitter: 10px;
+
   display: grid;
   min-height: 0;
   flex: 1;
   grid-template-areas:
-    'preview side'
-    'timeline timeline';
-  grid-template-columns: minmax(300px, 51fr) minmax(390px, 49fr);
-  /* 时间线卡片按内容高，最多占内容区（连四周的 8 一起算）的 46%，放不下时只压缩轨道区 */
-  grid-template-rows: minmax(0, 1fr) fit-content(calc(0.46 * (100% + 16px)));
-  gap: 8px;
-  padding: 8px;
+    'preview side-splitter side'
+    'timeline-splitter timeline-splitter timeline-splitter'
+    'timeline timeline timeline';
+  /* 右栏按拖定的宽度，给舞台留 360；再窄时右栏最窄 376。工作台很窄时舞台优先：至少留 300 给舞台和播放条，
+     右栏再让宽，放不下的内容由卡片裁掉 */
+  grid-template-columns:
+    minmax(0, 1fr) var(--wf-splitter)
+    min(
+      max(376px, min(var(--wf-side-width), 100% - 360px - var(--wf-splitter))),
+      100% - 300px - var(--wf-splitter)
+    );
+  /* 没拖过时时间线按内容高、最多占一小半，放不下时只压缩轨道区 */
+  grid-template-rows: minmax(0, 1fr) var(--wf-splitter) fit-content(46%);
+  padding: 10px 12px 12px;
   overflow: clip;
+  background: var(--color-final-cut-well);
   color: var(--color-on-surface);
   font-size: var(--text-body);
 }
 
-/* ---- 侧栏：镜头 / 贴片 / 场景 / 配乐，最右边是属性 ---- */
+.wf-workspace.is-side-collapsed {
+  grid-template-columns: minmax(0, 1fr) var(--wf-splitter) 50px;
+}
+
+.wf-workspace.is-timeline-sized {
+  grid-template-rows:
+    minmax(0, 1fr) var(--wf-splitter)
+    max(186px, min(var(--wf-timeline-height), 100% - 200px - var(--wf-splitter)));
+}
+
+/* 拖高以后轨道区撑满多出来的高度（没拖过时按内容高，见「下半」一节） */
+.wf-workspace.is-timeline-sized > .wf-timeline > .wf-tracks {
+  flex-grow: 1;
+}
+
+/* 分隔条：占着块与块之间的缝，悬停、拖动、聚焦时中间亮出一道短把手 */
+.wf-splitter {
+  display: grid;
+  place-items: center;
+  touch-action: none;
+  user-select: none;
+}
+
+.wf-splitter::after {
+  border-radius: var(--radius-full);
+  background: transparent;
+  content: '';
+  transition:
+    background var(--dur-s) var(--ease),
+    width var(--dur-s) var(--ease),
+    height var(--dur-s) var(--ease);
+}
+
+.wf-splitter:is(:hover, :focus-visible, .is-dragging)::after {
+  background: var(--color-on-surface-muted);
+}
+
+.wf-side-splitter {
+  grid-area: side-splitter;
+  cursor: col-resize;
+}
+
+.wf-side-splitter::after {
+  width: 3px;
+  height: 34px;
+}
+
+.wf-side-splitter:is(:hover, :focus-visible, .is-dragging)::after {
+  height: 52px;
+}
+
+.wf-timeline-splitter {
+  grid-area: timeline-splitter;
+  cursor: row-resize;
+}
+
+.wf-timeline-splitter::after {
+  width: 44px;
+  height: 3px;
+}
+
+.wf-timeline-splitter:is(:hover, :focus-visible, .is-dragging)::after {
+  width: 68px;
+}
+
+/* ---- 右栏：顶上一排导航（镜头 / 贴片 / 场景 / 配乐 / 字幕，竖线后是属性，最右收起），下面是页签内容；
+   收起时整栏缩成一条竖的图标轨 ---- */
 
 .wf-side {
   display: flex;
@@ -49,9 +423,6 @@
   flex-direction: column;
   grid-area: side;
   overflow: clip;
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-container-low);
 }
 
 .wf-side-panel {
@@ -61,26 +432,165 @@
   flex-direction: column;
 }
 
+.wf-side-nav {
+  display: flex;
+  height: 58px;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  padding: 0 9px 0 10px;
+  border-bottom: 1px solid var(--color-final-cut-line);
+}
+
+/* 窄工作台里右栏让给舞台，排不下的页签在收起按钮前面裁掉。只裁横向；两边各让出 4px 给选中块的细圈和投影，
+   负外边距抵掉，排法不变 */
 .wf-side-tabs {
-  height: 36px;
-  flex-shrink: 0;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--color-hairline);
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 3px;
+  margin: 0 -4px;
+  padding: 0 4px;
+  overflow-x: clip;
 }
 
-.wf-side-tabs > .wf-side-tab-props {
-  margin-left: auto;
+/* 一个导航项：图标在上、短词在下；按页签的语义色给图标着色（填充层浓淡比通用控件深一档）。
+   两个类压过共用页签自带的内边距、圆角、字号和字色 */
+.wf-side-nav .wf-side-tab {
+  --icon-fill-opacity: 0.24;
+
+  height: 44px;
+  min-width: 48px;
+  flex: none;
+  justify-content: center;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  font-weight: 500;
 }
 
-/* 有片段选中时「属性」后面的圆点 */
+.wf-side-tab > span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.wf-side-tab-label {
+  line-height: 12px;
+}
+
+.wf-side-tab[data-tab='shots'] {
+  --icon-fill-color: var(--color-final-cut-shot);
+  --wf-nav-accent: var(--color-final-cut-shot);
+}
+
+.wf-side-tab[data-tab='component'] {
+  --icon-fill-color: var(--color-final-cut-overlay);
+  --wf-nav-accent: var(--color-final-cut-overlay);
+}
+
+.wf-side-tab[data-tab='block'] {
+  --icon-fill-color: var(--color-final-cut-scene);
+  --wf-nav-accent: var(--color-final-cut-scene);
+}
+
+.wf-side-tab[data-tab='audio'] {
+  --icon-fill-color: var(--color-final-cut-music);
+  --wf-nav-accent: var(--color-final-cut-music);
+}
+
+.wf-side-tab[data-tab='captions'] {
+  --icon-fill-color: var(--color-final-cut-caption);
+  --wf-nav-accent: var(--color-final-cut-caption);
+}
+
+.wf-side-tab[data-tab='props'] {
+  --icon-fill-color: var(--color-final-cut-props);
+  --wf-nav-accent: var(--color-final-cut-props);
+}
+
+.wf-side-nav .wf-side-tab:hover {
+  color: var(--wf-nav-accent);
+}
+
+/* 当前页签浮起成白块，图标用语义色，短词用正文色。认 aria-selected：页签上叠着提示，data-state 归提示用 */
+.wf-side-nav .wf-side-tab[aria-selected='true'] {
+  --icon-fill-opacity: 0.34;
+
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-pill), var(--shadow-final-cut-specular);
+  color: var(--wf-nav-accent);
+}
+
+.wf-side-tab[aria-selected='true'] .wf-side-tab-label {
+  color: var(--color-on-surface);
+  font-weight: 600;
+}
+
+/* 目录页签和「属性」之间的竖线，「属性」靠右 */
+.wf-side-sep {
+  width: 1px;
+  height: 22px;
+  flex: none;
+  margin: 0 3px 0 auto;
+  background: linear-gradient(transparent, var(--color-final-cut-line-strong), transparent);
+}
+
+/* 有片段选中时「属性」右上角的圆点，描一圈底色和图标分开 */
 .wf-side-dot {
-  display: inline-block;
+  position: absolute;
+  top: 5px;
+  right: 9px;
   width: 6px;
   height: 6px;
-  margin-left: 6px;
   border-radius: var(--radius-full);
   background: var(--color-primary);
-  vertical-align: middle;
+  box-shadow: 0 0 0 2px var(--color-surface);
+}
+
+.wf-side-tab[aria-selected='true'] .wf-side-dot {
+  box-shadow: 0 0 0 2px var(--color-final-cut-raised);
+}
+
+.wf-side-toggle {
+  flex: none;
+}
+
+/* 收起：竖排，展开按钮在最上面，「属性」沉到底（页签内容由编辑器藏起来、不卸掉） */
+.wf-side.is-collapsed .wf-side-nav {
+  height: 100%;
+  flex-direction: column;
+  padding: 8px 0;
+  border-bottom: 0;
+}
+
+.wf-side.is-collapsed .wf-side-toggle {
+  order: -1;
+}
+
+.wf-side.is-collapsed .wf-side-tabs {
+  flex-direction: column;
+}
+
+.wf-side.is-collapsed .wf-side-tab {
+  width: 36px;
+  height: 36px;
+  min-width: 0;
+  padding: 0;
+}
+
+.wf-side.is-collapsed .wf-side-sep {
+  width: 22px;
+  height: 1px;
+  margin: auto 0 3px;
+  background: var(--color-final-cut-line-strong);
+}
+
+.wf-side.is-collapsed .wf-side-dot {
+  top: 4px;
+  right: 4px;
 }
 
 .wf-side-body {
@@ -98,117 +608,162 @@
   line-height: var(--text-body-sm--line-height);
 }
 
-/* ---- 配乐栏：搜索、生成音乐和导入音频两个按钮、音频列表 ---- */
+/* ---- 贴片、场景、配乐、字幕四个页签共用：页签头、列表区、空状态、分类小块 ---- */
 
-.wf-side-body.is-audio {
+.wf-side-body:is(.is-items, .is-audio, .is-captions) {
+  /* 页签内容左右留的边：页签头、列表、卡片都按它对齐 */
+  --wf-tab-inset: 14px;
   display: flex;
   flex-direction: column;
   padding: 0;
 }
 
-.wf-audio {
+/* 页签头：搜索、切换、动作一行一行往下排，不跟着列表滚 */
+.wf-tab-head {
   display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px var(--wf-tab-inset) 6px;
+}
+
+/* 页签里滚动的列表区：上下各留一点，滚动条贴着面板右边 */
+.wf-tab-list {
   min-height: 0;
   flex: 1;
+  overflow-y: auto;
+  padding: 6px var(--wf-tab-inset) 16px;
+  scrollbar-width: thin;
+}
+
+/* 列表空着、正在读或筛不出东西：一块浅底，页签图标在上、说明在下 */
+.wf-empty {
+  display: flex;
+  flex: none;
   flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 6px var(--wf-tab-inset) 0;
+  padding: 20px 16px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container-low);
+  box-shadow: inset 0 0 0 1px var(--color-final-cut-line);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  text-align: center;
+}
+
+.wf-empty > svg {
+  color: var(--color-on-surface-faint);
+}
+
+/* 分类小块：一排平铺，放不下时左右滑动；选中的那块浮起成白底。
+   两个类压过 ChipGroup、FilterChip 自带的换行、边框、底色和高度 */
+:is(.wf-tab-head, .wf-audio) > .wf-filters {
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.wf-filters .wf-filter {
+  height: 25px;
+  flex: none;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background-color: transparent;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.wf-filters .wf-filter:hover {
+  color: var(--color-on-surface);
+}
+
+.wf-filters .wf-filter[data-state='on'] {
+  background-color: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-pill);
+  color: var(--color-on-surface);
+  font-weight: 600;
+}
+
+/* ---- 配乐栏：顶行左边「本对话 / 音频库」，右边生成、导入（音频库里是「配乐 / 音效」）；下面搜索、音频列表 ---- */
+
+/* AudioLibrary 画出来的几块直接排进这张网格，「配乐 / 音效」落在顶行右边 */
+.wf-audio {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns:
+    var(--wf-tab-inset) minmax(0, max-content) minmax(0, 1fr)
+    var(--wf-tab-inset);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  align-items: center;
+  row-gap: 9px;
+  padding-top: 11px;
 }
 
 .wf-audio.is-over {
   background: var(--color-state-hover);
 }
 
-/* 两个类压过输入框自带的高度、圆角和底色：构建后工具类与这里同层，单个类比不过加载顺序 */
-.wf-audio .wf-audio-search {
-  height: 30px;
-  flex: none;
-  gap: 6px;
-  width: auto;
-  margin: 10px 12px 0;
-  padding: 0 9px;
-  border-color: transparent;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-  font-size: var(--text-label);
+.wf-audio-views {
+  grid-column: 2;
 }
 
-.wf-audio .wf-audio-search svg {
-  width: 14px;
-  height: 14px;
-  color: var(--color-on-surface-faint);
-}
-
-.wf-audio .wf-audio-search input {
-  font-size: var(--text-label);
-}
-
-/* 「本对话 / 音频库」两块切换，音频库里「配乐 / 音效」两类 */
-.wf-audio-views,
+.wf-audio-tools,
 .wf-audio-kinds {
-  flex: none;
-  margin: 10px 12px 0;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  grid-column: 3;
+  margin-left: 8px;
 }
 
-.wf-audio-kinds {
-  margin-bottom: 8px;
+.wf-audio-search {
+  grid-column: 2 / 4;
+}
+
+/* 列表、说明占满最后一行；列表自己滚 */
+.wf-audio > :is(.wf-audio-list, .wf-empty, .wf-audio-alert) {
+  grid-column: 1 / -1;
+  align-self: start;
+}
+
+.wf-audio > .wf-audio-list {
+  align-self: stretch;
+}
+
+.wf-audio-alert {
+  margin: 6px var(--wf-tab-inset) 0;
+}
+
+.wf-audio-import > svg {
+  color: var(--color-on-surface-variant);
+}
+
+/* 导入中按钮置灰，图标换成转圈（同按钮的加载态） */
+.wf-audio-import[aria-disabled='true'] > svg {
+  animation: var(--animate-spin);
+}
+
+.wf-audio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .wf-audio-more {
   list-style: none;
 }
 
-.wf-audio-actions {
-  display: grid;
-  flex: none;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin: 10px 12px 8px;
-}
-
-/* 两个类压过按钮自带的高度、内边距和字号 */
-.wf-audio-actions .wf-audio-action {
-  height: 30px;
-  gap: 6px;
-  padding: 0 8px;
-  font-size: var(--text-label);
-}
-
-.wf-audio-actions .wf-audio-action svg {
-  width: 14px;
-  height: 14px;
-}
-
-.wf-audio-actions .wf-audio-action.is-import {
-  border: 0;
-  background: var(--color-top-layer);
-  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
-  font-weight: 400;
-}
-
-.wf-audio-note {
-  padding: 4px 14px;
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-label);
-  line-height: var(--text-label--line-height);
-}
-
-.wf-audio-list {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  overflow-y: auto;
-  padding: 0 8px 10px;
-  scrollbar-width: thin;
-}
-
-/* ---- 字幕栏：加一句的按钮、按开始时间排的字幕列表 ---- */
-
-.wf-side-body.is-captions {
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-}
+/* ---- 字幕栏：页签头两行（语言和「字幕 / 组件文字」、动作），下面人声卡片、旁白卡片和字幕卡片 ---- */
 
 .wf-captions {
   display: flex;
@@ -217,41 +772,51 @@
   flex-direction: column;
 }
 
+/* 页签头下面一条细线和列表分开 */
+.wf-captions-head {
+  border-bottom: 1px solid var(--color-final-cut-line);
+}
+
+.wf-captions-top,
+.wf-captions-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.wf-captions-top {
+  justify-content: space-between;
+}
+
+.wf-captions-actions {
+  gap: 4px;
+}
+
+/* 动作一行最右边的「+」 */
+.wf-captions-add {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  place-items: center;
+  margin-left: auto;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface-variant);
+}
+
+.wf-captions-alert,
+.wf-captions-note {
+  flex: none;
+  margin: 10px var(--wf-tab-inset) 0;
+}
+
 .wf-captions-alert {
-  margin: 10px 12px 0;
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
 }
 
-.wf-captions-actions {
-  display: flex;
-  flex: none;
-  gap: 6px;
-  margin: 10px 12px 8px;
-}
-
-/* 两个类压过按钮自带的高度、内边距和字号；两个按钮按字的长短分一行 */
-.wf-captions-actions .wf-captions-action {
-  min-width: 0;
-  height: 30px;
-  flex: 1 1 auto;
-  gap: 6px;
-  padding: 0 8px;
-  font-size: var(--text-label);
-}
-
-/* 实底的「识别字幕」置灰时底色也换成置灰的：不然深色下浅底上的灰字看不见 */
-.wf-captions-actions .wf-captions-recognize[aria-disabled='true'] {
-  background-color: var(--color-disabled-container);
-}
-
-.wf-captions-actions .wf-captions-action svg {
-  width: 14px;
-  height: 14px;
-}
-
 .wf-captions-note {
-  padding: 4px 14px;
   color: var(--color-on-surface-muted);
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
@@ -259,40 +824,53 @@
 
 .wf-caption-list {
   display: flex;
-  min-height: 0;
-  flex: 1;
   flex-direction: column;
-  gap: 6px;
-  overflow-y: auto;
-  padding: 0 12px 10px;
-  scrollbar-width: thin;
+  gap: 9px;
+  padding-top: 12px;
 }
 
+/* 一句字幕（「组件文字」的一块也是它）：白色卡片，当前这一句左边一条墨色细条、外圈描深一档（照稿子） */
 .wf-caption {
-  display: flex;
+  position: relative;
   flex: none;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container);
-  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+  overflow: hidden;
+  padding: 11px 13px;
 }
 
-/* 当前这一句只加一圈描边：底色不变，文字框和底色才分得开（深色下文字框的底和高一层的底一样） */
+.wf-caption::before {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 2px;
+  border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
+  content: '';
+}
+
 .wf-caption.is-current {
-  box-shadow: inset 0 0 0 1px var(--color-outline-variant);
+  box-shadow:
+    var(--shadow-final-cut-card),
+    0 0 0 1px var(--color-final-cut-control-ring),
+    var(--shadow-final-cut-specular);
+}
+
+.wf-caption.is-current::before {
+  background: var(--color-on-surface);
 }
 
 .wf-caption-head {
   display: flex;
+  min-height: 22px;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
 }
 
+/* 起止时间：前面一个小三角，悬停和当前这一句用主色 */
 .wf-caption-time {
-  padding: 0 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border-radius: var(--radius-xs);
   color: var(--color-on-surface-muted);
   font-family: var(--font-mono);
@@ -301,29 +879,49 @@
   cursor: pointer;
 }
 
-.wf-caption-time:hover {
-  color: var(--color-on-surface);
+.wf-caption-time > svg {
+  width: 9px;
+  height: 9px;
 }
 
-.wf-caption-time:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--color-focus-ring);
+.wf-caption-time:hover,
+.wf-caption.is-current .wf-caption-time {
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
-/* 两个类压过文字框自带的圆角、内边距和字号 */
+/* 删除钮平时藏着，悬停、当前这一句、焦点在卡片里时出来 */
+.wf-caption-remove {
+  opacity: 0;
+  transition: opacity var(--dur-s) var(--ease);
+}
+
+.wf-caption:is(:hover, :focus-within, .is-current) .wf-caption-remove {
+  opacity: 1;
+}
+
+.wf-caption .wf-caption-remove:hover {
+  color: var(--color-error);
+}
+
+/* 文字直接写在卡片上，聚焦时只换成浅底、不画焦点框（照稿子）；两个类压过文字框自带的边框、圆角、内边距和字号 */
 .wf-caption .wf-caption-text {
+  --state-focus-ring: 0px;
   min-height: 0;
-  padding: 5px 9px;
+  margin: 2px -6px 0;
+  width: calc(100% + 12px);
+  padding: 4px 6px;
   border-color: transparent;
   border-radius: var(--radius-sm);
-  background: var(--color-top-layer);
-  font-size: var(--text-label);
-  line-height: var(--text-label--line-height);
+  background: transparent;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
   resize: none;
 }
 
 .wf-caption .wf-caption-text:focus {
-  border-color: var(--color-on-surface);
+  border-color: transparent;
+  background: var(--color-surface-container-low);
 }
 
 /* 其它语言下文字框下面的原文：小号淡色，前面一个「原文」小标 */
@@ -343,6 +941,12 @@
   padding: 0 4px;
   border-radius: var(--radius-xs);
   background: var(--color-surface-container-high);
+}
+
+/* 字幕卡片里的原文和译文之间隔一道虚线 */
+.wf-caption .wf-caption-source {
+  padding-top: 7px;
+  border-top: 1px dashed var(--color-final-cut-line-strong);
 }
 
 /* 其它语言下每句右上的配音小块：保留原声时是淡色「原声」标签；AI 配音时出声的句子用强调色浅底，自己选过音色的
@@ -387,7 +991,7 @@
 .wf-line-voice[aria-disabled='true'] {
   background: var(--color-surface-container-high);
   box-shadow: none;
-  color: var(--state-disabled-content);
+  color: var(--color-disabled-text);
 }
 
 .wf-line-voice-name {
@@ -396,34 +1000,15 @@
   text-overflow: ellipsis;
 }
 
-/* 「字幕 / 组件文字」两段切换：一条浅底槽，当前那段是浮起的白块 */
+/* 「字幕 / 组件文字」两段切换（样子见 wf-seg）：比通用的矮一档 */
 .wf-captions-views {
-  display: grid;
-  flex: none;
-  grid-template-columns: 1fr 1fr;
-  gap: 2px;
-  margin: 10px 12px 0;
-  padding: 2px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-}
-
-.wf-captions-view {
   display: inline-flex;
-  height: 26px;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border-radius: var(--radius-xs);
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-label);
+  flex: none;
 }
 
-.wf-captions-view[aria-pressed='true'] {
-  background: var(--color-surface);
-  box-shadow: var(--shadow-1);
-  color: var(--color-on-surface);
-  font-weight: 600;
+.wf-editor .wf-captions-views .wf-seg-item {
+  height: 24px;
+  padding: 0 10px;
 }
 
 .wf-captions-count {
@@ -434,172 +1019,102 @@
   font-variant-numeric: tabular-nums;
 }
 
-.wf-captions-translate + .wf-captions-views {
-  margin-top: 0;
+/* 其它语言下的人声卡片、原文下展开的旁白卡片：排在页签头下面，不跟着字幕列表滚 */
+.wf-voice-card {
+  flex: none;
+  gap: 10px;
+  margin: 10px var(--wf-tab-inset) 0;
+  padding: 12px 13px;
 }
 
-/* 其它语言下的「人声」一行：名字在左，「保留原声」胶囊，有配音时右边是「重新生成」 */
-.wf-captions-voice {
+/* 人声卡片的标题行：「人声」在左，「保留原声」，有配音时最右是「重新生成」 */
+.wf-voice-head {
   display: flex;
-  flex: none;
   align-items: center;
   gap: 4px;
-  margin: 8px 12px 0;
 }
 
-.wf-captions-voice-label {
-  flex: none;
-  margin-right: 2px;
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-}
-
-.wf-captions-voice-mode,
-.wf-captions-voice-redo {
+.wf-voice-title {
   display: inline-flex;
-  height: 24px;
-  flex: none;
+  flex: 1;
   align-items: center;
-  padding: 0 10px;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-caption);
-  white-space: nowrap;
-}
-
-.wf-captions-voice-mode[aria-pressed='true'] {
-  background: var(--color-on-surface);
-  color: var(--color-surface);
-  font-weight: 600;
-}
-
-.wf-captions-voice-redo {
-  margin-left: auto;
-}
-
-.wf-captions-voice-mode[aria-disabled='true']:not([aria-pressed='true']),
-.wf-captions-voice-redo[aria-disabled='true'] {
-  color: var(--state-disabled-content);
-}
-
-/* AI 配音的音色小块：一行排开，放不下时左右滑动（不显示滚动条） */
-.wf-captions-voices {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 4px;
-  margin: 6px 12px 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.wf-captions-voice-chip {
-  display: inline-flex;
-  height: 24px;
-  max-width: 160px;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-caption);
-}
-
-.wf-captions-voice-chip.is-picked {
-  background: var(--color-on-surface);
-  color: var(--color-surface);
-  font-weight: 600;
-}
-
-.wf-captions-voice-play {
-  flex: none;
-  margin-left: 2px;
-  color: inherit;
-}
-
-.wf-captions-voice-pick {
-  overflow: hidden;
-  height: 100%;
-  min-width: 0;
-  padding: 0 10px;
-  border-radius: var(--radius-full);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.wf-captions-voice-play + .wf-captions-voice-pick {
-  padding-left: 2px;
-}
-
-.wf-captions-voice-chip:not(.is-picked) .wf-captions-voice-pick[aria-disabled='true'] {
-  color: var(--state-disabled-content);
-}
-
-.wf-captions-voices-alert {
-  flex: none;
-  margin: 4px 12px 0;
-}
-
-.wf-captions-voice + .wf-captions-actions,
-.wf-captions-voice + .wf-captions-note,
-.wf-captions-voices + .wf-captions-actions,
-.wf-captions-voices + .wf-captions-note,
-.wf-captions-voices-alert + .wf-captions-actions,
-.wf-captions-voices-alert + .wf-captions-note {
-  margin-top: 8px;
-}
-
-.wf-captions-views + .wf-captions-actions,
-.wf-captions-views + .wf-captions-note,
-.wf-captions-views + .wf-caption-list {
-  margin-top: 8px;
-}
-
-/* 原文下「旁白配音」展开的一块：文案框、音色小块，最下面一行音色名在左、「插入配音与字幕」在右 */
-.wf-narration {
-  display: flex;
-  flex: none;
-  flex-direction: column;
   gap: 6px;
-  margin: 0 12px 8px;
-  padding: 8px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container);
-  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
-}
-
-/* 两个类压过文字框自带的圆角、内边距和字号，和字幕列表里的文字框一样 */
-.wf-narration .wf-narration-text {
-  min-height: 0;
-  padding: 4px 8px;
-  border-color: transparent;
-  border-radius: var(--radius-xs);
-  background: var(--color-top-layer);
+  color: var(--color-on-surface);
   font-size: var(--text-label);
-  line-height: var(--text-label--line-height);
-  resize: none;
+  font-weight: 600;
 }
 
-.wf-narration .wf-narration-text:focus {
-  border-color: var(--color-on-surface);
+.wf-voice-title > svg {
+  --icon-fill-color: var(--color-final-cut-voice);
+  color: var(--color-final-cut-voice);
 }
 
-.wf-narration-voices {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.wf-narration-note {
+.wf-voice-note {
   color: var(--color-on-surface-muted);
   font-size: var(--text-caption);
   line-height: var(--text-caption--line-height);
 }
 
+/* 音色小块：放不下时换行；选中的那块是深色实心，试听钮的图标点一点暖色指示光 */
+.wf-voice-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wf-voice-chip {
+  display: inline-flex;
+  height: 28px;
+  max-width: 160px;
+  flex: none;
+  align-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-low);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+  font-weight: 500;
+}
+
+.wf-voice-chip.is-picked {
+  background: var(--color-on-surface);
+  color: var(--color-final-cut-on-control);
+  font-weight: 600;
+}
+
+.wf-voice-chip.is-picked .wf-voice-play > svg {
+  color: var(--color-final-cut-led);
+}
+
+.wf-voice-chip .wf-voice-play {
+  flex: none;
+  margin-left: 2px;
+  color: inherit;
+}
+
+.wf-voice-pick {
+  overflow: hidden;
+  height: 100%;
+  min-width: 0;
+  padding: 0 10px;
+  border-radius: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-voice-play + .wf-voice-pick {
+  padding-left: 2px;
+}
+
+/* 两个类压过文字框自带的高度、内边距和字号（样子见 wf-field） */
+.wf-voice-card .wf-narration-text {
+  min-height: 0;
+  padding: 8px 11px;
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  resize: none;
+}
+
+/* 旁白卡片最下面：选着的音色名在左、「插入配音与字幕」在右 */
 .wf-narration-foot {
   display: flex;
   align-items: center;
@@ -616,81 +1131,69 @@
   white-space: nowrap;
 }
 
-/* 两个类压过按钮自带的高度、内边距和字号 */
-.wf-narration-foot .wf-narration-insert {
-  height: 24px;
-  flex: none;
-  padding: 0 10px;
-  font-size: var(--text-caption);
-  font-weight: 600;
-}
-
-/* 「组件文字」一块的头：名字在左、开始时间在右，点了选中、跳到它的开始 */
-.wf-caption-time.wf-text-head {
+/* 「组件文字」一张卡片的标题行：名字在左、开始时间在右，点了选中、跳到它的开始 */
+.wf-text-head {
   display: flex;
   min-width: 0;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
+  border-radius: var(--radius-xs);
   text-align: left;
+  cursor: pointer;
 }
 
 .wf-text-name {
   overflow: hidden;
   color: var(--color-on-surface);
-  font-family: var(--font-cue-ui);
   font-size: var(--text-label);
-  font-weight: 500;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* 一个文字字段：名字一列，文字框和「固定 / 随语言」一行，其它语言下的说明排在下面 */
+.wf-text-start {
+  flex: none;
+  color: var(--color-on-surface-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.wf-text-head:hover .wf-text-start,
+.wf-caption.is-current .wf-text-start {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* 一个文字字段：名字一行（加了语言时右边是「固定 / 随语言」），下面文字框，其它语言下再下面是说明 */
 .wf-text-row {
-  display: grid;
-  align-items: start;
-  column-gap: 8px;
-  grid-template-columns: 44px minmax(0, 1fr);
-}
-
-.wf-text-row > .wf-prop-label,
-.wf-prop-row.is-text > .wf-prop-label {
-  line-height: 28px;
-}
-
-/* 「属性」里的文字字段：其它语言下框下面有说明，名字和框顶对齐 */
-.wf-prop-row.is-text {
-  align-items: start;
-}
-
-.wf-text-line {
   display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 竖排时各块按内容高：说明的 flex-basis: 100% 是给「属性」里横排换行用的，这里不能让它把文字框挤矮 */
+.wf-text-row > * {
+  flex: none;
+}
+
+.wf-text-label {
+  display: flex;
+  min-height: 24px;
   align-items: center;
-  gap: 4px 6px;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.wf-text-line > input {
-  min-width: 0;
-  flex: 1 1 0;
-}
-
-/* 两个类压过输入框自带的高度、圆角、边框和字号：和字幕的文字框一样 */
+/* 两个类压过输入框自带的高度、内边距和字号（样子见 wf-field） */
 .wf-caption .wf-text-input {
-  height: 28px;
-  padding: 0 9px;
-  border-color: transparent;
-  border-radius: var(--radius-sm);
-  background: var(--color-top-layer);
+  height: 32px;
+  padding: 0 11px;
   font-size: var(--text-label);
 }
 
-.wf-caption .wf-text-input:focus {
-  border-color: var(--color-on-surface);
-}
-
-.wf-text-line > input:read-only {
+.wf-text-row > input:read-only {
   color: var(--color-on-surface-muted);
 }
 
@@ -706,41 +1209,28 @@
   overflow-wrap: anywhere;
 }
 
-/* 「固定」是灰底细框，「随语言」是主色淡底 */
-.wf-follow {
-  display: inline-flex;
-  height: 24px;
-  flex: none;
-  align-items: center;
-  padding: 0 8px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-  box-shadow: inset 0 0 0 0.5px var(--color-outline-variant);
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-caption);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.wf-follow.is-follow {
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 30%, transparent);
-  color: var(--color-primary);
-}
-
+/* 一条音频：白色卡片，左边带试听键的色块，中间名字、迷你波形和时长，右边用着的勾或悬停出来的「+」。
+   悬停只加深阴影、不位移：「重新生成」的输入卡挂在行里，位移会让行变成它的定位参照、跟着跳 */
 .wf-song {
   position: relative;
-  display: flex;
-  min-height: 44px;
   flex: none;
+  flex-direction: row;
   align-items: center;
-  gap: 8px;
-  padding: 0 8px;
-  border-radius: var(--radius-sm);
+  gap: 11px;
+  padding: 9px 11px;
+  transition: box-shadow var(--dur-s) var(--ease);
 }
 
-.wf-song.is-used {
-  background: var(--color-surface-container-high);
+.wf-song:hover:not(.is-lifting) {
+  box-shadow: var(--shadow-final-cut-float);
+}
+
+/* 正在试听的那条描一圈控件墨色，波形也深一档 */
+.wf-song.is-playing,
+.wf-song.is-playing:hover {
+  box-shadow:
+    inset 0 0 0 1.5px var(--color-on-surface),
+    var(--shadow-final-cut-card);
 }
 
 .wf-song.is-lifting {
@@ -767,17 +1257,12 @@
   cursor: grabbing;
 }
 
-.wf-song-select:hover,
 .wf-song-select:focus-visible {
-  outline: none;
-  background: var(--color-state-hover);
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
 }
 
-.wf-song-select:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--color-focus-ring);
-}
-
-.wf-song-play,
+.wf-song-disc,
 .wf-song-text,
 .wf-song-actions,
 .wf-song-used,
@@ -785,58 +1270,26 @@
   position: relative;
 }
 
-/* 用着的那一行行尾：主色浅底的「使用中」 */
-.wf-song-used {
+/* 左边的色块：配乐的色相由浅到深，白色图标；试听键、生成中和失败的状态都画在它上面 */
+.wf-song .wf-song-disc {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
   flex: none;
-  padding: 1px 8px;
-  border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  color: var(--color-primary);
-  font-size: var(--text-caption);
-  font-weight: 500;
-  line-height: var(--text-caption--line-height);
-  pointer-events: none;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    135deg,
+    var(--color-final-cut-music-wave),
+    color-mix(in srgb, var(--color-final-cut-music-wave) 45%, var(--color-scrim))
+  );
+  box-shadow: var(--shadow-final-cut-knob);
+  color: var(--color-on-scrim);
 }
 
-/* 没用过的那一行行尾的「+」：平时浅灰圆钮，指针停在这一行上时反色，停在它自己上时换成主色 */
-.wf-song .wf-song-add {
-  width: 24px;
-  height: 24px;
-  flex: none;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-container-high);
-  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
-  color: var(--color-on-surface-variant);
-  transition:
-    background-color var(--dur-s) var(--ease),
-    color var(--dur-s) var(--ease),
-    transform var(--dur-s) var(--ease);
-}
-
-.wf-song:hover .wf-song-add {
-  background: var(--color-on-surface);
-  box-shadow: none;
-  color: var(--color-surface);
-}
-
-.wf-song .wf-song-add:hover {
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  transform: scale(1.1);
-}
-
-.wf-song .wf-song-play {
-  width: 26px;
-  height: 26px;
-  flex: none;
-  border-radius: var(--radius-full);
-  background: var(--color-top-layer);
-  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
-}
-
-.wf-song .wf-song-play svg {
-  width: 12px;
-  height: 12px;
+.wf-song .wf-song-disc svg {
+  width: 14px;
+  height: 14px;
 }
 
 .wf-song-text {
@@ -844,22 +1297,81 @@
   min-width: 0;
   flex: 1;
   flex-direction: column;
+  gap: 4px;
   pointer-events: none;
 }
 
 .wf-song-title {
   overflow: hidden;
   font-size: var(--text-label);
+  font-weight: 600;
   line-height: var(--text-label--line-height);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .wf-song-meta {
-  color: var(--color-on-surface-faint);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-on-surface-muted);
+  font-family: var(--font-mono);
   font-size: var(--text-caption);
   line-height: var(--text-caption--line-height);
   font-variant-numeric: tabular-nums;
+}
+
+.wf-song-wave {
+  width: 96px;
+  height: 14px;
+  flex: none;
+  fill: currentColor;
+  opacity: 0.48;
+}
+
+.wf-song.is-playing .wf-song-wave {
+  color: var(--color-on-surface);
+  opacity: 0.88;
+}
+
+/* 用着的那一行行尾：主色浅底圆块里一个勾 */
+.wf-song-used {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  color: var(--color-primary);
+  pointer-events: none;
+}
+
+/* 没用过的那一行行尾的「+」：指针停在这一行上（或焦点在这一行里）才出来，停在它自己上时换成主色 */
+.wf-song .wf-song-add {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-low);
+  color: var(--color-on-surface-variant);
+  opacity: 0;
+  scale: 0.9;
+  transition:
+    background-color var(--dur-s) var(--ease),
+    color var(--dur-s) var(--ease),
+    opacity var(--dur-s) var(--ease),
+    scale var(--dur-s) var(--ease);
+}
+
+.wf-song:is(:hover, :focus-within) .wf-song-add {
+  opacity: 1;
+  scale: 1;
+}
+
+.wf-song .wf-song-add:hover {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
 }
 
 .wf-song-actions {
@@ -869,6 +1381,7 @@
   gap: 2px;
 }
 
+/* 失败原因的小卡片，材质同生成音乐的输入卡（见 .wf-generate） */
 .wf-song-details {
   display: grid;
   width: 280px;
@@ -889,26 +1402,20 @@
   color: var(--color-error);
 }
 
-/* 还没生成完、生成失败的音频在试听键的位置显示状态，大小同试听键 */
+/* 还没生成完、生成失败的音频在色块上显示状态（色块见 wf-song-disc）：生成中是跳动的竖条，排队中换成中性的浅底，
+   失败换成错误色的浅底 */
 .wf-music-status {
-  position: relative;
-  display: inline-flex;
-  width: 26px;
-  height: 26px;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface-muted);
   pointer-events: none;
 }
 
-.wf-music-status.is-running {
-  color: var(--color-primary);
+.wf-song .wf-music-status:not(.is-running) {
+  background: var(--color-surface-container-high);
+  box-shadow: none;
+  color: var(--color-on-surface-muted);
 }
 
-.wf-music-status.is-failed {
+.wf-song .wf-music-status.is-failed {
+  background: color-mix(in srgb, var(--color-error) 9%, transparent);
   color: var(--color-error);
 }
 
@@ -949,33 +1456,35 @@
   }
 }
 
-/* 生成音乐的输入卡，与 AI 改段卡一致：不透明底，不用共用浮层的毛玻璃。
-   挂在音频栏的按钮旁边，按钮的字号、不换行与字色在这里改回正文 */
-.wf-generate {
-  width: 400px;
-  max-width: calc(100vw - 32px);
-  padding: 0;
+/* 配乐栏里弹出的小卡片（生成音乐的输入卡、失败原因）：白色浮起卡片，不用共用浮层的毛玻璃。
+   两个条件压过浮层自带的边框、底色和阴影 */
+:is(.wf-generate, .wf-song-details)[data-state] {
   border: 0;
-  border-radius: var(--radius-xl);
-  background: var(--color-top-layer);
-  box-shadow:
-    0 0 0 0.5px var(--color-hairline),
-    var(--shadow-3);
+  border-radius: var(--radius-md);
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-float), var(--shadow-final-cut-specular);
+  backdrop-filter: none;
+}
+
+/* 生成音乐的输入卡，里面的描述框是凹下去的浅底。挂在音频栏的按钮旁边，按钮的字号、不换行与字色在这里改回正文 */
+.wf-generate {
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  padding: 12px;
   color: var(--color-on-surface);
   font-size: var(--text-body);
   line-height: var(--text-body--line-height);
   white-space: normal;
-  backdrop-filter: none;
 }
 
 .wf-generate-head {
-  padding: 12px 16px 0;
+  padding: 0 2px 10px;
 }
 
 .wf-generate-title {
-  font-size: var(--text-body);
-  font-weight: 500;
-  line-height: var(--text-body--line-height);
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: var(--text-label--line-height);
 }
 
 .wf-generate-hint {
@@ -989,44 +1498,56 @@
   color: var(--color-on-surface-variant);
 }
 
+/* 输入框整块是凹下去的浅底（样子同 wf-field），聚焦时浮起成白底、外面一圈淡框，不画墨色焦点框 */
 .wf-generate .wf-generate-composer {
   border: 0;
-  background: transparent;
-  box-shadow: none;
+  border-radius: var(--wf-radius-control);
+  background: var(--color-surface-container-low);
+  box-shadow:
+    var(--shadow-final-cut-well),
+    inset 0 0 0 1px var(--color-final-cut-line);
+}
+
+.wf-generate .wf-generate-composer:focus-within {
+  background: var(--color-final-cut-raised);
+  box-shadow: 0 0 0 1.5px var(--color-final-cut-control-ring);
 }
 
 .wf-generate .composer-editor {
-  min-height: 52px;
+  min-height: 54px;
   max-height: 160px;
-  padding-top: 10px;
+  padding-top: 8px;
+  font-size: var(--text-label);
 }
 
 .wf-generate .composer-placeholder-overlay {
-  top: 10px;
+  top: 8px;
+  font-size: var(--text-label);
 }
 
 /* 描述框下面、生成键左边的快捷描述，放不下时横向滚动 */
 .wf-generate-presets {
   display: flex;
   min-width: 0;
-  gap: 4px;
+  gap: 5px;
   overflow-x: auto;
-  padding-left: 6px;
+  padding-left: 4px;
   scrollbar-width: none;
 }
 
 .wf-generate-preset {
   display: inline-flex;
-  height: 24px;
+  height: 23px;
   flex: none;
   align-items: center;
-  padding: 0 10px;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-container-high);
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-final-cut-control-soft);
   color: var(--color-on-surface-variant);
   cursor: pointer;
-  font-size: var(--text-label);
-  line-height: var(--text-label--line-height);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: var(--text-caption--line-height);
   white-space: nowrap;
 }
 
@@ -1034,7 +1555,7 @@
   color: var(--color-on-surface);
 }
 
-/* ---- 属性：选中的片段的名字、种类、时长；下面平铺几段，段间一条细线，头部不动，几段在自己的滚动区里滚 ---- */
+/* ---- 属性：头部是选中片段的种类图标、名字、种类和时长，下面一张白卡一件事；头部不动，卡片在自己的滚动区里滚 ---- */
 
 .wf-side-body.is-props {
   display: flex;
@@ -1053,78 +1574,144 @@
 
 .wf-inspector-head {
   display: flex;
-  height: 38px;
+  min-width: 0;
   flex: none;
   align-items: center;
-  gap: 6px;
-  padding: 0 8px 0 14px;
-  border-bottom: 1px solid var(--color-hairline);
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-final-cut-line);
+}
+
+/* 种类图标方块：底色（--wf-emblem）按片段的种类，左上提亮一点、往右下压暗，深色外观下也和面板分得开；
+   图标两套外观都是白色 */
+.wf-emblem {
+  display: grid;
+  width: 35px;
+  height: 35px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--wf-emblem) 88%, var(--color-on-scrim)),
+    color-mix(in srgb, var(--wf-emblem) 55%, var(--color-scrim))
+  );
+  box-shadow:
+    0 4px 12px -2px color-mix(in srgb, var(--color-scrim) 20%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--color-on-scrim) 28%, transparent);
+  color: var(--color-on-scrim);
+  --icon-fill-opacity: 0.24;
+}
+
+.wf-emblem.is-dark {
+  --wf-emblem: var(--color-final-cut-clip-video);
+}
+
+.wf-emblem.is-music {
+  --wf-emblem: var(--color-final-cut-music-wave);
+}
+
+.wf-emblem.is-original {
+  --wf-emblem: var(--color-final-cut-original-wave);
+}
+
+.wf-emblem.is-dub {
+  --wf-emblem: var(--color-final-cut-dub-wave);
+}
+
+/* 字幕的棕色：final-cut 的字幕图标色在浅色外观下和配乐的波形色是同一个，这里用第三色（同压低曲线一族） */
+.wf-emblem.is-caption {
+  --wf-emblem: var(--color-tertiary);
+}
+
+.wf-inspector-id {
+  min-width: 0;
+  flex: 1;
 }
 
 .wf-inspector-name {
   min-width: 0;
   overflow: hidden;
-  font-size: var(--text-label);
+  color: var(--color-on-surface);
+  font-size: var(--text-body);
   font-weight: 600;
+  line-height: var(--text-body--line-height);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* 种类小标：浅底的小块 */
-.wf-inspector-kind {
-  flex: none;
-  padding: 0 6px;
-  border-radius: var(--radius-xs);
-  background: var(--color-surface-container-high);
+.wf-inspector-sub {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
   color: var(--color-on-surface-muted);
   font-size: var(--text-caption);
   line-height: var(--text-caption--line-height);
 }
 
-.wf-inspector-duration {
+.wf-inspector-kind {
   flex: none;
-  color: var(--color-on-surface-muted);
-  font-family: var(--font-mono);
+  color: var(--color-on-surface-variant);
   font-size: var(--text-caption);
+  font-weight: 500;
+}
+
+.wf-inspector-duration {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wf-inspector-actions {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 2px;
-  margin-left: auto;
+  gap: 4px;
+}
+
+/* 「属性」里的图标按钮（样子见 wf-tool）比工具条上的小一档 */
+.wf-inspector .wf-tool {
+  width: 28px;
+  height: 28px;
+}
+
+.wf-inspector .wf-tool.is-danger:hover {
+  background: color-mix(in srgb, var(--color-error) 9%, transparent);
+  color: var(--color-error);
 }
 
 .wf-inspector-body {
+  display: flex;
   min-height: 0;
   flex: 1;
+  flex-direction: column;
+  gap: 11px;
   overflow-y: auto;
+  padding: 12px 14px 26px;
   scrollbar-width: thin;
 }
 
-/* 一段：左右 14px，标题一行，下面的行 */
-.wf-prop-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--color-hairline);
+.wf-inspector-body > * {
+  flex: none;
 }
 
-/* 「显示时长」只有一行：标题在左，加减在右 */
-.wf-prop-section.is-inline {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
+/* 一张卡（样子见 wf-card）：内边距和行距照稿子的属性卡，比通用的白卡松一些 */
+.wf-prop-card {
+  gap: 13px;
+  padding: 14px 15px;
 }
 
+/* 卡片的标题行：标题在左，右边一组控件（wf-prop-title-end） */
 .wf-prop-title-row {
   display: flex;
   min-width: 0;
+  min-height: 26px;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .wf-prop-title {
@@ -1134,7 +1721,26 @@
   font-weight: 600;
 }
 
-/* 「内容与样式」标题右边：显示着的语言，主色浅底，点它打开「字幕·配音」 */
+/* 带图标的标题：图标用次一级的字色 */
+.wf-prop-title.is-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.wf-prop-title.is-icon > svg {
+  color: var(--color-on-surface-variant);
+}
+
+.wf-prop-title-end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+/* 「内容与样式」标题右边：显示着的语言，主色浅底，点它打开「字幕」 */
 .wf-prop-locale {
   display: inline-flex;
   height: 20px;
@@ -1160,105 +1766,110 @@
   white-space: nowrap;
 }
 
-.wf-prop-rows {
+/* 一项：名字在左、控件在右的一行；is-stacked 是名字一行、控件（文字框）在下面 */
+.wf-prop-fields {
   display: flex;
   flex-direction: column;
+  gap: 13px;
+}
+
+.wf-prop-field {
+  display: flex;
+  min-width: 0;
+  min-height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wf-prop-field.is-stacked {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
   gap: 6px;
 }
 
-/* 一行：名字一列，控件占满剩下的；「音量与变速」的名字列 44px，「内容与样式」的 56px */
-.wf-prop-row {
-  display: grid;
-  min-height: 28px;
+.wf-prop-field-head {
+  display: flex;
+  min-width: 0;
+  min-height: 24px;
   align-items: center;
-  column-gap: 10px;
-  grid-template-columns: 44px minmax(0, 1fr);
-}
-
-.wf-prop-row.is-content {
-  grid-template-columns: 56px minmax(0, 1fr);
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .wf-prop-label {
+  min-width: 0;
   overflow: hidden;
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* 关闭原声后：名字、数值跟着滑杆变淡 */
-.wf-prop-row[data-disabled] > .wf-prop-label,
-.wf-prop-row[data-disabled] .wf-prop-readout {
-  opacity: var(--state-disabled-content);
+/* 两条滑杆并排：淡入淡出、均衡和升降调 */
+.wf-prop-pair {
+  display: grid;
+  gap: 11px 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-/* 标题行右边的开关和它的名字 */
+/* 开关和它的名字 */
 .wf-prop-switch {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
   color: var(--color-on-surface-variant);
   font-size: var(--text-caption);
-}
-
-/* 带字的小按钮：头部的「分离音频」「合并回视频」，原声去处、同步栏里的定位、对齐、合并 */
-.wf-prop-action {
-  display: inline-flex;
-  height: 24px;
-  flex: none;
-  align-items: center;
-  gap: 4px;
-  padding: 0 8px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface);
-  font-size: var(--text-caption);
-  font-weight: 500;
   white-space: nowrap;
 }
 
-.wf-prop-action[aria-disabled='true'] {
-  color: var(--color-on-surface-faint);
-}
-
-/* 错开时的对齐：提示色 */
-.wf-prop-action.is-warning:not([aria-disabled='true']) {
-  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
-  color: var(--color-warning);
-}
-
-/* 分离过原声的视频片段：原声去处的一块，浅底圆角 */
-.wf-sound-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border-radius: var(--radius-md);
-  background: var(--color-surface-container);
-  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
-}
-
-/* 「智能调音」：标题行右边的角色按钮，主开关的一块（浅底圆角），下面另一项的一行 */
-.wf-mix-role {
-  display: inline-flex;
-  height: 22px;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
-  padding: 0 6px 0 8px;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-container-high);
+/* 「声音与节奏」标题行里的图标开关（样子见 wf-tool）：开着时浅底细框，循环用配乐色，静音、关闭原声用警示色 */
+.wf-mix-toggle[aria-checked='true'] {
+  background: var(--color-final-cut-control-soft);
+  box-shadow: inset 0 0 0 1px var(--color-final-cut-control-ring);
   color: var(--color-on-surface);
-  font-size: var(--text-caption);
-  font-weight: 500;
 }
 
-.wf-mix-role-name {
-  color: var(--color-on-surface-muted);
-  font-weight: 400;
+.wf-mix-toggle.is-loop[aria-checked='true'] {
+  color: var(--color-final-cut-music);
+  --icon-fill-color: var(--color-final-cut-music);
+}
+
+.wf-mix-toggle.is-mute[aria-checked='true'] {
+  background: color-mix(in srgb, var(--color-error) 9%, transparent);
+  box-shadow: none;
+  color: var(--color-error);
+}
+
+.wf-mix-toggle[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: var(--state-disabled-content);
+}
+
+/* 标题行里的倍速：写着现在倍速的小下拉（样子见 wf-select），点开是倍速滑杆 */
+.wf-rate-picker {
+  height: 26px;
+  padding: 0 6px 0 8px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.wf-rate-popup {
+  width: 220px;
+}
+
+.wf-rate-popup > .wf-prop-slider {
+  padding: 4px 6px 2px;
+}
+
+/* 「智能调音」：标题行右边的角色下拉（样子见 wf-select），主开关的一块，下面另一项的一行 */
+.wf-mix-role {
+  height: 26px;
+  flex: none;
+  margin-left: auto;
 }
 
 .wf-mix-role-option {
@@ -1274,127 +1885,147 @@
   white-space: normal;
 }
 
-.wf-mix-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  border-radius: var(--radius-md);
-  background: var(--color-surface-container);
-  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
-}
-
-.wf-mix-card-title {
+/* 主开关的一块、精细调音里各张小卡的标题 */
+.wf-mix-heading {
+  min-width: 0;
   color: var(--color-on-surface);
   font-size: var(--text-label);
-  font-weight: 500;
+  font-weight: 600;
+}
+
+/* 主开关的一块：浅底细框；开着时细框深一档、顶上一道高光 */
+.wf-mix-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 13px 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container-low);
+  box-shadow: inset 0 0 0 1px var(--color-final-cut-line);
+  transition: box-shadow var(--dur-m) var(--ease);
+}
+
+.wf-mix-hero.is-on {
+  box-shadow:
+    inset 0 0 0 1px var(--color-final-cut-line-strong),
+    var(--shadow-final-cut-specular);
 }
 
 .wf-mix-extra {
   display: flex;
-  min-height: 28px;
+  min-height: 24px;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 10px;
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-caption);
+  padding: 0 2px;
 }
 
-/* 「音色风格」：小标题一行（右边「全部预设」），下面三列快捷小块 */
+/* 压低示意：白底凹槽里灰柱是人声，墨色折线是配乐的电平，线下浅浅铺一层 */
+.wf-duck {
+  display: block;
+  width: 100%;
+  height: 54px;
+  border-radius: var(--wf-radius-control);
+  background: var(--color-final-cut-raised);
+  box-shadow:
+    var(--shadow-final-cut-well),
+    inset 0 0 0 1px var(--color-final-cut-line);
+  clip-path: inset(0 round var(--wf-radius-control));
+}
+
+.wf-duck-voice {
+  fill: var(--color-on-surface-muted);
+  fill-opacity: 0.22;
+}
+
+.wf-duck-fade-top {
+  stop-color: var(--color-on-surface);
+  stop-opacity: 0.09;
+}
+
+.wf-duck-fade-bottom {
+  stop-color: var(--color-on-surface);
+  stop-opacity: 0;
+}
+
+.wf-duck-line {
+  fill: none;
+  stroke: var(--color-on-surface);
+  stroke-linecap: round;
+  stroke-width: 1.9;
+  vector-effect: non-scaling-stroke;
+}
+
+/* 「音色风格」：小标题一行（右边「更多风格」），下面三列快捷小块 */
 .wf-mix-block {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-
-.wf-mix-block-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: 8px;
 }
 
-.wf-mix-block-label {
+.wf-mix-more {
+  height: 24px;
+  margin-left: auto;
+  padding: 0 7px;
   color: var(--color-on-surface-muted);
   font-size: var(--text-caption);
 }
 
-.wf-mix-more,
-.wf-mix-link {
-  display: inline-flex;
-  height: 20px;
-  align-items: center;
-  gap: 2px;
-  padding: 0 6px;
-  border-radius: var(--radius-xs);
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-caption);
-}
-
-.wf-mix-link {
-  margin-left: auto;
-}
-
-/* 「三段均衡与升降调」标题行右边：频响小图，有调整时后面跟「归零」 */
-.wf-eq-head {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.wf-eq-head .wf-mix-link {
-  margin-left: 0;
-}
-
-.wf-eq-curve {
-  flex: none;
-  border-radius: var(--radius-xs);
-  background: var(--color-surface-container-highest);
-}
-
-.wf-eq-curve-zero {
-  stroke: var(--color-outline-variant);
-  stroke-width: 1;
-}
-
-.wf-eq-curve-line {
-  fill: none;
-  stroke: var(--color-primary);
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.5;
-}
-
 .wf-mix-tiles {
   display: grid;
-  gap: 6px;
+  gap: 7px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+/* 一个快捷小块：图标在上、名字在下；选中的是深色实底，图标换成指示光的颜色 */
 .wf-mix-tile {
-  height: 26px;
+  display: flex;
+  height: 48px;
   min-width: 0;
-  overflow: hidden;
-  padding: 0 8px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container-low);
+  box-shadow: inset 0 0 0 1px var(--color-final-cut-line);
   color: var(--color-on-surface-variant);
+  transition:
+    translate var(--dur-s) var(--ease),
+    background-color var(--dur-s) var(--ease);
+}
+
+.wf-mix-tile:hover {
+  translate: 0 -1px;
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface);
+}
+
+.wf-mix-tile-name {
+  max-width: 100%;
+  overflow: hidden;
   font-size: var(--text-caption);
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .wf-mix-tile.is-active {
-  background: var(--color-state-active);
-  box-shadow: inset 0 0 0 1px var(--color-outline);
-  color: var(--color-on-surface);
-  font-weight: 500;
+  background: var(--color-on-surface);
+  box-shadow:
+    0 3px 10px -2px color-mix(in srgb, var(--color-scrim) 18%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--color-on-scrim) 14%, transparent);
+  color: var(--color-final-cut-on-control);
+  --icon-fill-opacity: 0.34;
 }
 
-/* 「全部预设」「添加效果」的浮层：两行一项，太长时在里面滚动 */
+.wf-mix-tile.is-active > svg {
+  color: var(--color-final-cut-led);
+  --icon-fill-color: var(--color-final-cut-led);
+}
+
+/* 「更多风格」「添加效果」的浮层：两行一项，太长时在里面滚动 */
 .wf-mix-menu {
   width: 248px;
   max-height: min(320px, var(--radix-dropdown-menu-content-available-height));
@@ -1409,28 +2040,33 @@
   font-weight: 600;
 }
 
-/* 「精细调音」抽屉：一条细线隔开，标题行右边是摘要 */
+/* 「精细调音」抽屉：一块浅底，标题行右边是摘要小块；展开后下面是几张白色小卡 */
 .wf-mix-fine {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 8px;
-  border-top: 1px solid var(--color-hairline);
+  overflow: clip;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container-low);
+  box-shadow: inset 0 0 0 1px var(--color-final-cut-line);
 }
 
 .wf-mix-fine-toggle {
   display: flex;
-  min-height: 24px;
+  width: 100%;
+  height: 36px;
   align-items: center;
-  gap: 6px;
-  border-radius: var(--radius-sm);
+  gap: 7px;
+  padding: 0 11px;
   color: var(--color-on-surface-variant);
-  font-size: var(--text-caption);
+  font-size: var(--text-label);
+  font-weight: 500;
   text-align: left;
 }
 
+.wf-mix-fine-toggle:hover {
+  color: var(--color-on-surface);
+}
+
 .wf-mix-fine-icon {
-  color: var(--color-on-surface-faint);
+  flex: none;
   transition: rotate var(--dur-s) var(--ease);
 }
 
@@ -1439,30 +2075,68 @@
 }
 
 .wf-mix-fine-summary {
+  min-width: 0;
   margin-left: auto;
-  color: var(--color-on-surface-faint);
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  background: var(--color-final-cut-raised);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  line-height: var(--text-caption--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wf-mix-fine-summary.is-tuned {
+  background: var(--color-final-cut-control-soft);
   color: var(--color-on-surface);
 }
 
 .wf-mix-fine-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  padding: 2px 11px 12px;
 }
 
-/* 均衡、升降调一行：名字一列 62px（「低频 200Hz」） */
-.wf-prop-row.is-tone {
-  grid-template-columns: 62px minmax(0, 1fr);
+.wf-mix-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: var(--wf-radius-control);
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-card);
 }
 
-.wf-mix-pitch {
-  padding-top: 6px;
-  border-top: 1px solid var(--color-hairline);
+/* 三段均衡的频响图：铺满卡片宽的凹槽，正中一道 0 dB 虚线；拉伸画，线宽不跟着拉 */
+.wf-eq-curve {
+  display: block;
+  width: 100%;
+  height: 60px;
+  padding: 4px;
+  border-radius: var(--wf-radius-control);
+  background: var(--color-surface-container-low);
+  box-shadow:
+    var(--shadow-final-cut-well),
+    inset 0 0 0 1px var(--color-final-cut-line);
+}
+
+.wf-eq-curve-zero {
+  stroke: var(--color-final-cut-line-strong);
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.wf-eq-curve-line {
+  fill: none;
+  stroke: var(--color-on-surface);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+  vector-effect: non-scaling-stroke;
 }
 
 .wf-mix-count {
@@ -1472,39 +2146,46 @@
 }
 
 .wf-mix-add {
-  display: inline-flex;
-  height: 22px;
-  flex: none;
-  align-items: center;
-  gap: 2px;
   margin-left: auto;
-  padding: 0 6px 0 8px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface);
-  font-size: var(--text-caption);
-  font-weight: 500;
 }
 
-/* 一个效果：开关、名字、移除一行，下面是参数；关掉时整块变淡 */
+/* 一个效果：序号、名字、开关、移除一行，下面是参数；开着时序号是深色实底，关掉时参数变淡 */
 .wf-mix-effect {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: var(--wf-radius-control);
+  background: var(--color-surface-container-low);
 }
 
-.wf-mix-effect[data-off] > .wf-prop-row {
+.wf-mix-effect[data-off] > :not(.wf-mix-effect-head) {
   opacity: var(--state-disabled-content);
 }
 
 .wf-mix-effect-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
+}
+
+.wf-mix-effect-index {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-xs);
+  background: var(--color-final-cut-raised);
+  color: var(--color-on-surface-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+
+.wf-mix-effect:not([data-off]) .wf-mix-effect-index {
+  background: var(--color-on-surface);
+  color: var(--color-final-cut-on-control);
 }
 
 .wf-mix-effect-name {
@@ -1512,8 +2193,8 @@
   flex: 1;
   overflow: hidden;
   color: var(--color-on-surface);
-  font-size: var(--text-caption);
-  font-weight: 500;
+  font-size: var(--text-label);
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1524,119 +2205,111 @@
   gap: 6px;
 }
 
-/* 同步状态前面的小圆点：同步时是主色，错开时是提示色 */
-.wf-sound-dot {
-  width: 6px;
-  height: 6px;
-  flex: none;
-  border-radius: var(--radius-full);
-  background: var(--color-primary);
-}
-
-.wf-sound-dot.is-warning {
-  background: var(--color-warning);
-}
-
+/* 同步状态：同步时主色，错开时提示色，前面一个同色的小圆点 */
 .wf-sound-status {
   min-width: 0;
   overflow: hidden;
-  color: var(--color-on-surface-variant);
-  font-family: var(--font-mono);
-  font-size: var(--text-caption);
-  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+  font-size: var(--text-label);
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.wf-sound-card .wf-sound-status {
-  margin-left: auto;
-}
-
 .wf-sound-status.is-warning {
   color: var(--color-warning);
-  font-weight: 500;
 }
 
-/* 分离出来的原声最上面的同步栏：左边状态和对齐，右边定位画面和联动开关 */
-.wf-sound-bar {
-  display: flex;
-  min-width: 0;
-  min-height: 40px;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-bottom: 1px solid var(--color-hairline);
-  background: var(--color-surface-container);
+.wf-sound-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+  vertical-align: 1px;
 }
 
-.wf-sound-bar-end {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 8px;
+/* 标题后面的同步状态（原声去处的卡片）靠右 */
+.wf-prop-title + .wf-sound-status {
   margin-left: auto;
 }
 
-.wf-sound-bar-end .wf-prop-switch {
-  margin-left: 0;
+/* 分离出来的原声最上面的同步卡：同步时主色浅底，错开时提示色浅底 */
+.wf-sync-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 10px 14px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 26%, transparent);
 }
 
-/* 滑杆加右边的数值；点数值就地变成输入框 */
+.wf-sync-card.is-warning {
+  background: color-mix(in srgb, var(--color-warning) 11%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-warning) 28%, transparent);
+}
+
+/* 一条滑杆：上面一行名字在左、数值在右（点数值就地变成输入框），下面是滑杆；不能操作时名字、数值跟着变淡 */
 .wf-prop-slider {
   display: flex;
   min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wf-prop-slider-top {
+  display: flex;
+  min-width: 0;
+  min-height: 22px;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
 
+.wf-prop-slider[data-disabled] > .wf-prop-slider-top {
+  opacity: var(--state-disabled-content);
+}
+
 .wf-prop-readout {
-  width: 58px;
   height: 22px;
   flex: none;
+  margin-right: -4px;
   padding: 0 4px;
   border-radius: var(--radius-xs);
   color: var(--color-on-surface);
   font-family: var(--font-mono);
   font-size: var(--text-caption);
   font-variant-numeric: tabular-nums;
-  text-align: right;
+  font-weight: 500;
   white-space: nowrap;
 }
 
-/* 两个类压过输入框自带的高度、圆角、边框和底色：构建后工具类与这里同层，单个类比不过加载顺序 */
+/* 两个类压过输入框自带的高度和字号（样子见 wf-field）：构建后工具类与这里同层，单个类比不过加载顺序 */
 .wf-inspector .wf-prop-input {
   width: 100%;
-  height: 28px;
+  height: 34px;
   min-width: 0;
-  padding: 0 10px;
-  border-color: transparent;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
+  padding: 0 11px;
   font-size: var(--text-label);
 }
 
-/* 聚焦时 1px 边框转墨色，同设计系统的输入框 */
-.wf-inspector .wf-prop-input:focus,
-.wf-inspector .wf-prop-textarea:focus {
-  border-color: var(--color-on-surface);
-}
-
-/* 字幕「内容」的多行文字框：和输入框一样的浅底，回车换行 */
+/* 字幕「内容」的多行文字框：和输入框一样的样子，回车换行 */
 .wf-inspector .wf-prop-textarea {
   min-height: 0;
-  padding: 5px 10px;
-  border-color: transparent;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
+  padding: 8px 11px;
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
   resize: none;
 }
 
 .wf-inspector .wf-prop-readout-input {
-  width: 58px;
+  width: 72px;
   height: 22px;
   flex: none;
+  margin-right: -4px;
   padding: 0 4px;
   font-family: var(--font-mono);
   font-size: var(--text-caption);
@@ -1663,20 +2336,9 @@
   font-size: var(--text-caption);
 }
 
-/* 下拉的触发钮：和输入框同高的浅底条，右边一个小箭头 */
+/* 名字右边的下拉（样子见 wf-select）：按内容宽，最多占一行的六成 */
 .wf-prop-select {
-  display: flex;
-  width: 100%;
-  height: 28px;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  padding: 0 8px 0 10px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface);
-  font-size: var(--text-label);
-  text-align: left;
+  max-width: 60%;
 }
 
 .wf-prop-select-text {
@@ -1684,121 +2346,94 @@
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.wf-prop-select > svg,
-.wf-prop-swatch > svg {
-  flex: none;
-  color: var(--color-on-surface-faint);
-}
-
-.wf-prop-select[data-state='open'] > svg {
-  rotate: 180deg;
-}
-
-/* 颜色：浅底条，左边色块加小箭头（点开取色板），一道竖线，右边十六进制 */
+/* 颜色：十六进制小框（样子见 wf-field），右边现在颜色的圆色块，点它打开取色板 */
 .wf-prop-color {
   display: flex;
-  height: 28px;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px 0 4px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-}
-
-.wf-prop-color:focus-within {
-  border-color: var(--color-on-surface);
-}
-
-.wf-prop-swatch {
-  display: flex;
-  height: 20px;
   flex: none;
   align-items: center;
-  gap: 4px;
-  padding: 0 4px;
-  border-radius: var(--radius-xs);
+  gap: 10px;
 }
 
-.wf-prop-swatch-chip {
-  width: 14px;
-  height: 14px;
-  border-radius: var(--radius-xs);
-  box-shadow: inset 0 0 0 1px var(--color-outline-variant);
-}
-
-.wf-prop-color-divider {
-  width: 1px;
-  height: 14px;
-  flex: none;
-  background: var(--color-hairline);
-}
-
-/* 焦点框画在整条上（:focus-within） */
 .wf-prop-hex {
-  min-width: 0;
-  flex: 1;
-  background: transparent;
+  width: 84px;
+  height: 26px;
+  padding: 0 8px;
   color: var(--color-on-surface);
   font-family: var(--font-mono);
-  font-size: var(--text-label);
+  font-size: var(--text-caption);
   font-variant-numeric: tabular-nums;
   outline: none;
 }
 
-/* 「显示时长」：「−」、秒数框、「+」 */
-.wf-prop-stepper {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.wf-prop-swatch {
+  width: 21px;
+  height: 21px;
+  flex: none;
+  border-radius: var(--radius-full);
+  box-shadow:
+    inset 0 0 0 1px var(--color-final-cut-clip-edge),
+    0 0 0 2px var(--color-final-cut-raised),
+    0 0 0 3.5px var(--color-primary);
+  transition: scale var(--dur-s) var(--ease);
 }
 
-.wf-prop-step {
+.wf-prop-swatch:hover {
+  scale: 1.08;
+}
+
+/* 「显示时长」的加减：一条输入条（样子和聚焦时的样子见 wf-field），「−」「+」平时透明、悬停浮起成白块，
+   中间是秒数框 */
+.wf-stepper {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  margin-left: auto;
+  padding: 1px;
+}
+
+.wf-stepper-step {
   display: grid;
-  width: 26px;
-  height: 26px;
+  width: 25px;
+  height: 24px;
   place-items: center;
   border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
   color: var(--color-on-surface-variant);
   font-size: var(--text-label);
 }
 
-.wf-prop-step:disabled {
+.wf-stepper-step:not(:disabled):hover {
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-pill);
+  color: var(--color-on-surface);
+}
+
+.wf-stepper-step:disabled {
   cursor: default;
   opacity: var(--state-disabled-content);
 }
 
-.wf-prop-seconds {
+.wf-stepper-value {
   display: flex;
-  height: 26px;
+  min-width: 52px;
   align-items: center;
-  gap: 4px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-}
-
-.wf-prop-seconds:focus-within {
-  border-color: var(--color-on-surface);
-}
-
-.wf-inspector .wf-prop-seconds-input {
-  width: 42px;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
+  justify-content: center;
   color: var(--color-on-surface);
   font-family: var(--font-mono);
   font-size: var(--text-label);
+  font-weight: 600;
+}
+
+/* 两个类压过输入框自带的边框、底色和高度 */
+.wf-inspector .wf-stepper-input {
+  width: 36px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   font-variant-numeric: tabular-nums;
   outline: none;
   text-align: right;
@@ -1819,15 +2454,18 @@
   color: var(--color-on-surface-faint);
 }
 
-/* 整条素材：26px 高，左右各让出 4px 露出框两端的抓手 */
+/* 整条素材：50px 高的凹槽，帧条、波形铺满；框外压暗的那圈投影被它裁掉 */
 .wf-slip {
   position: relative;
   display: flex;
-  height: 26px;
+  height: 50px;
   align-items: center;
-  margin: 0 4px;
-  border-radius: var(--radius-xs);
-  background: color-mix(in srgb, var(--color-on-surface) 3%, transparent);
+  overflow: clip;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container-low);
+  box-shadow:
+    var(--shadow-final-cut-well),
+    inset 0 0 0 1px var(--color-final-cut-line);
   touch-action: none;
   user-select: none;
 }
@@ -1837,52 +2475,93 @@
 }
 
 .wf-slip-note {
-  padding-left: 8px;
+  padding-left: 12px;
   color: var(--color-on-surface-muted);
   font-size: var(--text-caption);
 }
 
-/* 帧条、波形铺满整条，压淡一些 */
 .wf-slip-source {
   position: absolute;
   inset: 0;
   display: flex;
-  overflow: hidden;
-  border-radius: var(--radius-xs);
-  opacity: var(--state-disabled-content);
   pointer-events: none;
 }
 
-/* 片段用掉的那一段：选中描边同「镜头」页签的选区（.wf-range），两头按淡入、淡出压暗 */
-.wf-slip-window {
-  overflow: visible;
+/* 整条素材的波形是上下对称的淡灰竖条。共用波形在自己身上定了颜色（深色主题下是 .dark 加一个类），这里三个条件压过它 */
+.wf-slip .wf-slip-source > .timeline-wave {
+  --timeline-wave-color: color-mix(in srgb, var(--color-on-surface-muted) 30%, transparent);
 }
 
-.wf-slip-fade {
+/* 片段用掉的那一段：墨色描边，框外压暗（一圈很宽的投影），两头按淡入、淡出画斜坡 */
+.wf-slip-window {
   position: absolute;
   top: 0;
   bottom: 0;
+  border: 1.8px solid var(--color-on-surface);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 999px color-mix(in srgb, var(--color-scrim) 28%, transparent);
+}
+
+.wf-slip-ramps {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
 }
 
-.wf-slip-fade.is-in {
-  left: 0;
-  border-radius: var(--radius-xs) 0 0 var(--radius-xs);
-  background: linear-gradient(
-    to right,
-    color-mix(in srgb, var(--color-scrim) 45%, transparent),
-    transparent
-  );
+.wf-slip-ramp {
+  fill: var(--color-on-surface);
+  fill-opacity: 0.14;
 }
 
-.wf-slip-fade.is-out {
+.wf-slip-ramp-line {
+  stroke: var(--color-on-surface);
+  stroke-width: 1.35;
+  vector-effect: non-scaling-stroke;
+}
+
+/* 抓手收进框里：透明的一条，中间一道细竖条；点按区往框外伸，框很窄时两头仍各按得到。
+   两个类压过共用抓手（editing/timeline.css）的边框、底色和大小 */
+.wf-slip-window > .timeline-handle {
+  width: 10px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.wf-slip-window > .timeline-handle.is-start {
+  translate: 0 -50%;
+}
+
+.wf-slip-window > .timeline-handle.is-end {
+  translate: -100% -50%;
+}
+
+.wf-slip-window > .timeline-handle::after {
+  width: 2.5px;
+  height: 16px;
+}
+
+.wf-slip-window > .timeline-handle::before {
+  width: 18px;
+  translate: 0 -50%;
+}
+
+.wf-slip-window > .timeline-handle.is-start::before {
   right: 0;
-  border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
-  background: linear-gradient(
-    to left,
-    color-mix(in srgb, var(--color-scrim) 45%, transparent),
-    transparent
-  );
+  left: auto;
+}
+
+.wf-slip-window > .timeline-handle.is-end::before {
+  left: 0;
+}
+
+/* 拖着、聚焦时（共用抓手的反色）带圆角 */
+.wf-slip-window > .timeline-handle:is(:focus-visible, :active, .is-pressed) {
+  border-radius: var(--radius-xs);
+  background: var(--color-on-surface);
 }
 
 .wf-inspector-note {
@@ -1891,60 +2570,47 @@
   line-height: var(--text-label--line-height);
 }
 
-/* 没有选中：一句说明，在页签里居中 */
+/* 没有选中：一块浮起的属性图标，下面一句说明，在页签里居中 */
 .wf-inspector-empty {
   display: flex;
   flex: 1;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 24px 28px;
-  color: var(--color-on-surface-muted);
+  gap: 10px;
+  padding: 28px;
+  color: var(--color-on-surface);
   font-size: var(--text-label);
+  font-weight: 600;
   text-align: center;
 }
 
-/* 选中了几个片段：标题、片段的名字，不显示字段 */
-.wf-inspector-multi {
-  display: flex;
-  min-height: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 8px;
-  overflow-y: auto;
-  padding: 10px 14px;
-  scrollbar-width: thin;
+.wf-inspector-empty-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: var(--radius-lg);
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-card), var(--shadow-final-cut-specular);
+  color: var(--color-on-surface-muted);
 }
 
-/* 标题和单选时头部的名字同一档 */
-.wf-inspector-multi-head {
-  display: flex;
-  min-height: 18px;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--text-label);
-  font-weight: 600;
-}
-
-.wf-inspector-multi-head > svg {
-  flex: none;
-  color: var(--color-on-surface-faint);
-}
-
+/* 选中了几个片段：片段的名字和种类一行一个 */
 .wf-inspector-multi-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-/* 一行和属性栏的输入框同高 */
 .wf-inspector-multi-list > li {
   display: flex;
-  min-height: 28px;
+  min-height: 30px;
   align-items: center;
   gap: 8px;
   padding: 0 10px;
   border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
+  background: var(--color-surface-container-low);
   font-size: var(--text-label);
 }
 
@@ -1956,10 +2622,12 @@
   white-space: nowrap;
 }
 
-/* ---- 预览：照制作页的舞台，浅深两种外观都是深色放映底加一圈内缘细线；
+/* ---- 预览：影院舞台，浅深两种外观都是深色放映底；圆角浮起面板，画面四周透出当前镜头的一层淡淡溢光。
    舞台上的文字和控件一律按深底配色（on-scrim），浮层（倍速菜单、快捷键面板）仍跟着外观走 ---- */
 
-.wf-preview {
+/* final-cut 预览和素材预览叠在舞台的同一格里，各自铺满 */
+.wf-preview,
+.wf-material-preview {
   position: relative;
   display: grid;
   min-width: 0;
@@ -1967,32 +2635,30 @@
   grid-area: preview;
   place-items: center;
   overflow: hidden;
-  border-radius: var(--radius-md);
-  background: var(--color-storyboard-stage);
-  /* outline 画在模糊铺底上面；内阴影会被铺底盖住 */
-  outline: 1px solid var(--color-storyboard-stage-line);
-  outline-offset: -1px;
 }
 
-/* 模糊铺底压的那一层也不随外观变浅：上浅下深，舞台始终读作深色。
+/* 溢光：模糊铺底只透出一点颜色，舞台始终读作深色（稿子的氛围光约 14%）。
    三个类才压得过共用样式里深色外观的那一条 */
-.wf-stage .stage-backdrop > .stage-backdrop-veil {
-  background: linear-gradient(
-    color-mix(in srgb, var(--color-scrim) 45%, transparent),
-    color-mix(in srgb, var(--color-scrim) 40%, transparent) 50%,
-    color-mix(in srgb, var(--color-scrim) 72%, transparent)
-  );
+.wf-stage .stage-backdrop > .stage-backdrop-image {
+  opacity: 0.35;
+  filter: blur(64px) saturate(1.2);
 }
 
-/* 画面：四周左右留 20、上留 12，下面让出播放条再留 4；圆角小一些，深底上的描边换成浅色细线，投影照旧 */
+.wf-stage .stage-backdrop > .stage-backdrop-veil {
+  background: color-mix(in srgb, var(--color-storyboard-stage) 55%, transparent);
+}
+
+/* 画面：上留 20、左右留 24，下面让出播放条再留 10；投影压在深底上，描边换成浅色细线 */
 .wf-preview > .editor-hero-wrap,
 .wf-material-preview > .editor-hero-wrap {
-  inset: 12px 20px 55px;
+  inset: 20px 24px 82px;
 }
 
 .wf-stage .stage-picture {
-  border-radius: var(--radius-sm);
-  outline: 1px solid color-mix(in srgb, var(--color-on-scrim) 15%, transparent);
+  border-radius: var(--radius-md);
+  box-shadow:
+    0 24px 60px color-mix(in srgb, var(--color-scrim) 65%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--color-on-scrim) 10%, transparent);
 }
 
 .wf-player-host[hidden] {
@@ -2198,11 +2864,12 @@
   resize: none;
 }
 
-/* ---- 播放条：贴在预览底部，final-cut 和素材两种预览共用 ---- */
+/* ---- 播放条：贴在预览底部，final-cut 和素材两种预览共用。上面一条白色进度条，
+   下面左边是播放圆钮和时间，右边是静音、倍速、循环、全屏、快捷键 ---- */
 
 .wf-transport {
   /* 压在深色舞台上：悬停、按下的叠色和焦点环都从 on-scrim 派生，同制作页舞台 */
-  --color-state-hover: color-mix(in srgb, var(--color-on-scrim) 12%, transparent);
+  --color-state-hover: color-mix(in srgb, var(--color-on-scrim) 11%, transparent);
   --color-state-pressed: color-mix(in srgb, var(--color-on-scrim) 18%, transparent);
   --color-state-active: color-mix(in srgb, var(--color-on-scrim) 16%, transparent);
   --color-focus-ring: var(--color-on-scrim);
@@ -2212,15 +2879,16 @@
   min-width: 0;
   flex-direction: column;
   align-self: end;
+  gap: 7px;
   grid-area: preview;
-  padding: 0 14px 8px;
+  padding: 4px 18px 13px;
   color: var(--color-on-scrim);
 }
 
 .wf-seek {
   position: relative;
   display: flex;
-  height: 16px;
+  height: 14px;
   align-items: center;
   cursor: pointer;
   touch-action: none;
@@ -2233,71 +2901,84 @@
 
 .wf-seek-track {
   position: relative;
-  height: 3px;
+  height: 3.5px;
   flex: 1;
   overflow: hidden;
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-on-scrim) 15%, transparent);
+  background: color-mix(in srgb, var(--color-on-scrim) 14%, transparent);
   transition: height var(--dur-s) var(--ease);
 }
 
 .wf-seek:not([data-disabled]):hover .wf-seek-track {
-  height: 4px;
+  height: 5px;
 }
 
 .wf-seek-buffered {
   position: absolute;
   height: 100%;
-  background: color-mix(in srgb, var(--color-on-scrim) 25%, transparent);
+  background: color-mix(in srgb, var(--color-on-scrim) 15%, transparent);
 }
 
 .wf-seek-range {
   position: absolute;
   height: 100%;
-  background: var(--color-on-scrim);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-on-scrim) 92%, transparent);
 }
 
 .wf-seek-thumb {
   --state-focus-offset: 2px;
 
   display: block;
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
   border-radius: var(--radius-full);
   background: var(--color-on-scrim);
+  box-shadow: 0 1px 5px color-mix(in srgb, var(--color-scrim) 55%, transparent);
+  scale: 0.84;
+  transition: scale var(--dur-s) var(--ease);
+}
+
+.wf-seek:not([data-disabled]):hover .wf-seek-thumb {
+  scale: 1.05;
 }
 
 .wf-seek[data-disabled] .wf-seek-thumb {
   display: none;
 }
 
+/* 不压缩：放不下时右边那组往右超出，由舞台裁掉，不和左边的播放键、时间叠在一起 */
 .wf-transport-row {
-  display: grid;
-  align-items: center;
-  grid-template-columns: 1fr auto 1fr;
-}
-
-.wf-transport-row > .wf-clock {
-  padding-left: 4px;
-  justify-self: start;
-}
-
-/* 不压缩：放不下时整行往右超出，由预览卡片裁掉，不和左边的时间、播放键叠在一起 */
-.wf-transport-tools {
   display: flex;
   align-items: center;
-  justify-self: end;
-  gap: 2px;
+  justify-content: space-between;
+  gap: 8px;
 }
 
+.wf-transport-play,
+.wf-transport-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.wf-transport .wf-tool {
+  width: auto;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 7px;
+  border-radius: var(--wf-radius-control);
+}
+
+/* 关着的开关（工具条上是淡色）在舞台上也照常亮 */
 .wf-transport .wf-tool,
 .wf-transport .wf-tool[aria-pressed='false'] {
-  color: color-mix(in srgb, var(--color-on-scrim) 82%, transparent);
+  color: color-mix(in srgb, var(--color-on-scrim) 88%, transparent);
 }
 
-.wf-transport-tools .wf-tool {
-  width: 24px;
-  height: 24px;
+.wf-transport .wf-tool:hover {
+  color: var(--color-on-scrim);
 }
 
 /* 开着的循环播放：舞台不随外观变，用同样不随外观变的浅品牌色 */
@@ -2306,17 +2987,39 @@
   color: var(--color-primary-fixed-dim);
 }
 
-/* 白色的播放圆钮 */
+/* 半透明的白色播放圆钮，顶上一道高光 */
 .wf-transport .wf-tool.wf-play {
-  width: 27px;
-  height: 27px;
-  background: var(--color-on-scrim);
-  color: var(--color-scrim);
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-on-scrim) 15%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-on-scrim) 20%, transparent);
+  color: var(--color-on-scrim);
+}
+
+.wf-transport .wf-tool.wf-play:hover {
+  background: color-mix(in srgb, var(--color-on-scrim) 26%, transparent);
+}
+
+/* 时间读数，等宽字：当前时间亮，总长淡 */
+.wf-clock {
+  padding-left: 7px;
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: var(--text-label--line-height);
+  white-space: nowrap;
+}
+
+.wf-clock span {
+  color: color-mix(in srgb, var(--color-on-scrim) 60%, transparent);
+  font-weight: 400;
 }
 
 /* 倍速按钮写着当前倍速，宽度按最长的「0.25×」留，换档时旁边的按钮不挪 */
-.wf-tool.wf-rate {
-  width: auto;
+.wf-transport .wf-tool.wf-rate {
   min-width: 44px;
   padding: 0 6px;
   font-size: var(--text-label);
@@ -2328,8 +3031,10 @@
   background: var(--color-state-active);
 }
 
-/* 预览和播放条包在一起，全屏时整块进全屏；里面仍按 preview 这一格叠放。放不下的播放条在这里裁掉 */
+/* 舞台：深色放映底的浮起面板，包着预览和播放条，全屏时整块进全屏；里面仍按 preview 这一格叠放。
+   放不下的播放条在这里裁掉 */
 .wf-stage {
+  container: wf-stage / inline-size;
   display: grid;
   min-width: 0;
   min-height: 0;
@@ -2338,15 +3043,107 @@
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   overflow: clip;
+  border-radius: var(--wf-radius-panel);
+  background: var(--color-storyboard-stage);
+  box-shadow: var(--shadow-final-cut-panel);
+  /* outline 画在模糊铺底上面；内阴影会被铺底盖住 */
+  outline: 1px solid var(--color-storyboard-stage-line);
+  outline-offset: -1px;
 }
 
 .wf-stage:fullscreen {
-  background: var(--color-storyboard-stage);
+  border-radius: var(--radius-none);
 }
 
-.wf-stage:fullscreen > .wf-preview,
-.wf-stage:fullscreen > .wf-material-preview {
-  border-radius: var(--radius-none);
+/* 舞台窄（并排时工作台约 780 宽，舞台只剩 360 上下）：播放条收紧一档，仍排一行，画面跟着少让一点 */
+@container wf-stage (width < 440px) {
+  .wf-preview > .editor-hero-wrap,
+  .wf-material-preview > .editor-hero-wrap {
+    inset: 16px 16px 72px;
+  }
+
+  .wf-transport {
+    gap: 5px;
+    padding: 2px 12px 10px;
+  }
+
+  .wf-transport-play,
+  .wf-transport-tools {
+    gap: 2px;
+  }
+
+  .wf-transport .wf-tool {
+    height: 28px;
+    min-width: 26px;
+    padding: 0 5px;
+  }
+
+  .wf-transport .wf-tool.wf-play {
+    width: 30px;
+    height: 30px;
+  }
+
+  .wf-transport .wf-tool.wf-rate {
+    min-width: 40px;
+    padding: 0 4px;
+  }
+
+  .wf-clock {
+    padding-left: 4px;
+    font-size: var(--text-caption);
+  }
+}
+
+/* 素材预览左上角的提示块：琥珀色小点、放的是哪条素材，最右「回到 final-cut」。磨砂深底，不随外观变 */
+.wf-source-pill {
+  position: absolute;
+  z-index: var(--z-local-1);
+  top: 14px;
+  left: 16px;
+  display: flex;
+  max-width: calc(100% - 32px);
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px 5px 12px;
+  border: 1px solid color-mix(in srgb, var(--color-on-scrim) 14%, transparent);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-scrim) 78%, transparent);
+  backdrop-filter: blur(14px);
+  color: var(--color-on-scrim);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+
+.wf-source-pill-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: var(--radius-full);
+  background: var(--color-tertiary-fixed-dim);
+}
+
+.wf-source-pill-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-source-pill button {
+  --color-focus-ring: var(--color-on-scrim);
+
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-on-scrim) 14%, transparent);
+  transition: background var(--dur-s) var(--ease);
+}
+
+.wf-source-pill button:hover {
+  background: color-mix(in srgb, var(--color-on-scrim) 26%, transparent);
 }
 
 /* 快捷键面板：说明在左，按键在右 */
@@ -2421,13 +3218,7 @@
   box-shadow: 0 0 0 0.5px var(--color-hairline);
 }
 
-/* ---- 组件栏、块栏 ---- */
-
-.wf-side-body.is-items {
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-}
+/* ---- 贴片栏、场景栏：搜索、分类小块，下面两列卡片 ---- */
 
 .wf-items {
   display: flex;
@@ -2436,84 +3227,37 @@
   flex-direction: column;
 }
 
-/* 两个类压过输入框自带的高度、圆角和底色：构建后工具类与这里同层，单个类比不过加载顺序 */
-.wf-items .wf-item-search {
-  height: 30px;
-  flex: none;
-  gap: 6px;
-  width: auto;
-  margin: 10px 12px 0;
-  padding: 0 9px;
-  border-color: transparent;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-high);
-  font-size: var(--text-label);
-}
-
-.wf-items .wf-item-search svg {
-  width: 14px;
-  height: 14px;
-  color: var(--color-on-surface-faint);
-}
-
-.wf-items .wf-item-search input {
-  font-size: var(--text-label);
-}
-
-/* 两个类压过 ChipGroup 自带的 flex-wrap：构建后工具类与这里同层，单个类比不过加载顺序 */
-.wf-items .wf-chips {
-  flex: none;
-  flex-wrap: nowrap;
-  gap: 4px;
-  overflow-x: auto;
-  padding: 8px 12px 6px;
-  scrollbar-width: none;
-}
-
-.wf-chips .wf-chip {
-  height: 26px;
-  flex: none;
-  gap: 4px;
-  padding: 0 10px;
-  font-size: var(--text-label);
-}
-
-/* 选中的分类反色，和设计稿一致 */
-.wf-chips .wf-chip[data-state='on'] {
-  background: var(--color-on-surface);
-  color: var(--color-top-layer);
-}
-
-.wf-items-empty {
-  padding: 12px 14px;
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-label);
-  line-height: var(--text-label--line-height);
-}
-
-/* 两列卡片：封面、右上角时长、名字、分类 */
+/* 两列卡片：上面封面（不压字），下面名字、时长一行，再下面分类 */
 .wf-item-grid {
   display: grid;
-  min-height: 0;
-  flex: 1;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: start;
-  gap: 12px 10px;
-  overflow-y: auto;
-  padding: 4px 12px 12px;
-  scrollbar-width: thin;
+  gap: 11px;
 }
 
+/* 卡片材质见 wf-card；指针停上去时浮起一点 */
 .wf-item {
   position: relative;
-  display: flex;
-  width: 100%;
   min-width: 0;
-  flex-direction: column;
-  gap: 5px;
-  border-radius: var(--radius-xs);
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
   text-align: left;
   user-select: none;
+  transition:
+    translate var(--dur-s) var(--ease),
+    box-shadow var(--dur-s) var(--ease);
+}
+
+.wf-item:hover:not(.is-lifting) {
+  translate: 0 -2px;
+  box-shadow: var(--shadow-final-cut-float);
+}
+
+/* 焦点框画在整张卡片外面：选择按钮被封面盖着，它自己的焦点框看不见 */
+.wf-item:has(> .wf-item-select:focus-visible) {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
 }
 
 .wf-item.is-lifting {
@@ -2537,30 +3281,23 @@
 
 .wf-item-select:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--color-focus-ring);
 }
 
-.wf-item-frame,
-.wf-item-name,
+.wf-item-thumb,
 .wf-item-meta {
   pointer-events: none;
 }
 
-.wf-item-frame {
-  position: relative;
-  display: block;
-}
-
+/* 封面：深色底（同时间线上贴片、场景片段的卡底），预览图铺满 */
 .wf-item-thumb {
+  position: relative;
   display: grid;
   width: 100%;
   aspect-ratio: 16 / 9;
   place-items: center;
   overflow: hidden;
-  border-radius: var(--radius-xs);
-  background: var(--color-surface-container-high);
-  box-shadow: 0 0 0 0.5px var(--color-hairline);
-  color: var(--color-on-surface-faint);
+  background: var(--final-cut-clip-component);
+  color: color-mix(in srgb, var(--color-on-scrim) 40%, transparent);
 }
 
 .wf-item-thumb img {
@@ -2569,12 +3306,11 @@
   object-fit: cover;
 }
 
-/* 悬停预览盖在预览图上，大小、圆角同预览图；不接指针，点按、拖动、悬停提示照旧落在卡片上 */
+/* 悬停预览盖在封面上，大小同封面；不接指针，点按、拖动、悬停提示照旧落在卡片上 */
 .wf-hover-slot {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  border-radius: var(--radius-xs);
   pointer-events: none;
 }
 
@@ -2589,107 +3325,138 @@
   opacity: 0;
 }
 
-.wf-item:hover:not(.is-lifting) .wf-item-thumb {
-  box-shadow: 0 0 0 1.5px var(--color-on-surface-faint);
-}
-
-.wf-item-duration {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  padding: 0 5px;
-  border-radius: var(--radius-xs);
-  background: color-mix(in srgb, var(--color-scrim) 55%, transparent);
-  color: var(--color-on-scrim);
-  font-size: var(--text-caption);
-  font-variant-numeric: tabular-nums;
-  line-height: 16px;
-  pointer-events: none;
-}
-
-/* 封面右下角的「+」：平时是封面上一枚半透明的深色圆钮，指针停在卡片上时变成实底，停在它自己上时换成主色 */
+/* 封面右下角的「+」：指针停在卡片上时才出来，白底深色加号（封面不分深浅色，它也不随主题换），停在它自己上时
+   换成主色 */
 .wf-item .wf-item-add {
   position: absolute;
-  right: 4px;
-  bottom: 4px;
-  width: 22px;
-  height: 22px;
+  right: 8px;
+  bottom: 8px;
+  width: 28px;
+  height: 28px;
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-scrim) 45%, transparent);
-  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--color-on-scrim) 20%, transparent);
-  color: var(--color-on-scrim);
+  background: color-mix(in srgb, var(--color-on-scrim) 94%, transparent);
+  box-shadow: var(--shadow-2);
+  color: var(--color-scrim);
+  opacity: 0;
   pointer-events: auto;
-  backdrop-filter: blur(8px);
+  scale: 0.86;
   transition:
     background-color var(--dur-s) var(--ease),
     color var(--dur-s) var(--ease),
-    transform var(--dur-s) var(--ease);
+    opacity var(--dur-s) var(--ease),
+    scale var(--dur-s) var(--ease);
 }
 
-/* 封面不分深浅色，悬停的实底也不随主题换：一直是白底深色加号 */
 .wf-item:hover:not(.is-lifting) .wf-item-add {
-  background: var(--color-on-scrim);
-  box-shadow: var(--shadow-2);
-  color: var(--color-scrim);
+  opacity: 1;
+  scale: 1;
 }
 
 .wf-item .wf-item-add:hover {
   background: var(--color-primary);
   color: var(--color-on-primary);
-  transform: scale(1.1);
+}
+
+/* 封面下面：名字在左、时长在右，下一行是分类 */
+.wf-item-meta {
+  display: grid;
+  align-items: baseline;
+  column-gap: 6px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 8px 10px 9px;
 }
 
 .wf-item-name {
   overflow: hidden;
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-caption);
-  line-height: 15px;
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: var(--text-label--line-height);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.wf-item-meta {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: -3px;
-  color: var(--color-on-surface-faint);
+.wf-item-duration {
+  color: var(--color-on-surface-muted);
+  font-family: var(--font-mono);
   font-size: var(--text-caption);
-  line-height: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
-.wf-item-meta::before {
-  width: 5px;
-  height: 5px;
+.wf-item-category {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- 工作台顶栏右边：保存状态和导出。经挂点放进顶栏，不在 .wf-editor 里（圆角变量见文件开头） ---- */
+
+.wf-header-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 保存状态只是一个图标：已保存是品牌色的云，保存中转圈，失败是错误色 */
+.wf-save-status {
+  --icon-fill-opacity: 0.2;
+
+  display: grid;
+  width: 28px;
+  height: 28px;
   flex: none;
-  border-radius: var(--radius-full);
-  background: currentcolor;
-  content: '';
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-primary);
 }
 
-/* ---- 导出 ---- */
+.wf-save-status[data-save='saving'] {
+  color: var(--color-on-surface-muted);
+}
+
+.wf-save-status[data-save='failed'] {
+  color: var(--color-error);
+}
 
 .wf-export {
   display: flex;
+  min-width: 0;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  padding-left: 8px;
+  border-left: 1px solid var(--color-final-cut-line-strong);
 }
 
-/* 导出一组的按钮和工具条一样矮：「导出」「下载成片」是品牌色的胶囊，取消、重新导出同高 */
+/* 导出一组的按钮同高：「导出」「下载成片」是品牌色的胶囊，取消、重新导出同高 */
 .wf-export button {
-  height: 26px;
+  height: 32px;
+  flex: none;
   gap: 6px;
-  padding: 0 12px;
+  padding: 0 15px;
+  border-radius: var(--wf-radius-control);
   font-size: var(--text-label);
+  font-weight: 600;
 }
 
 .wf-export button svg {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
+}
+
+/* 品牌色的主按钮压一道柔光和顶部高光 */
+.wf-export button.editor-compose:not([aria-disabled='true']) {
+  box-shadow:
+    0 3px 12px -2px color-mix(in srgb, var(--color-primary) 28%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--color-on-primary) 24%, transparent);
 }
 
 .wf-export-status {
-  max-width: 320px;
+  max-width: 240px;
   overflow: hidden;
   color: var(--color-on-surface-variant);
   font-size: var(--text-body-sm);
@@ -2711,21 +3478,22 @@
 
 /* ---- 下半：工具条、轨道 ---- */
 
+/* 工具条和轨道区贴着面板的边，中间一道细线 */
 .wf-timeline {
+  /* 琥珀色的浅底：开着的吸附、关着的行的开关 */
+  --wf-amber-soft: color-mix(in srgb, var(--color-tertiary) 11%, transparent);
+  /* 压在画面上的深色半透明底：视频片段的原声波形条、压低图标 */
+  --wf-on-frame: color-mix(in srgb, var(--color-scrim) 56%, transparent);
+
   display: flex;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  gap: 4px;
   grid-area: timeline;
   overflow: clip;
-  padding: 8px 12px 10px;
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-container-low);
 }
 
-/* 面板放不下时只压缩轨道区，工具条和提示保持原高 */
+/* 面板放不下时只压缩轨道区，工具条保持原高 */
 .wf-timeline > * {
   flex: none;
 }
@@ -2737,17 +3505,19 @@
 /* 工具条只排一行：两组都不压缩，放不下时右边的被卡片裁掉 */
 .wf-toolbar {
   display: flex;
-  min-height: 28px;
+  height: 44px;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--color-final-cut-line);
 }
 
 .wf-toolbar-group {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 
 .wf-tool {
@@ -2761,11 +3531,6 @@
   color: var(--color-on-surface-variant);
 }
 
-.wf-toolbar .wf-tool {
-  width: 26px;
-  height: 26px;
-}
-
 /* 开关类按钮用少量强调色区分开启状态。 */
 .wf-tool[aria-pressed='false'] {
   color: var(--color-on-surface-muted);
@@ -2776,101 +3541,162 @@
   color: var(--color-primary);
 }
 
-/* 语言切换：一条胶囊里排着语言代码，当前的反色高亮；最后是「+」 */
+.wf-tool[aria-disabled='true'] {
+  opacity: var(--state-disabled-content);
+  cursor: default;
+}
+
+/* 工具条上的图标按钮：方圆角，开着的开关是浅底加一圈细框；吸附开着是琥珀色，波纹编辑、切开工具是镜头的青蓝，
+   分离音频的图标填配乐的颜色，删除悬停时变红 */
+.wf-toolbar .wf-tool {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface-variant);
+}
+
+.wf-toolbar .wf-tool:not([aria-disabled='true'], .is-pressed):hover {
+  color: var(--color-on-surface);
+}
+
+.wf-toolbar .wf-tool.is-pressed {
+  background: var(--color-final-cut-control-soft);
+  box-shadow: inset 0 0 0 1px var(--color-final-cut-control-ring);
+  color: var(--color-on-surface);
+}
+
+.wf-toolbar .wf-tool-snap.is-pressed {
+  --icon-fill-color: var(--color-final-cut-duck);
+  --icon-fill-opacity: 0.32;
+
+  background: var(--wf-amber-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-tertiary) 28%, transparent);
+  color: var(--color-tertiary);
+}
+
+.wf-toolbar .wf-tool-ripple.is-pressed {
+  --icon-fill-color: var(--color-final-cut-shot);
+
+  color: var(--color-final-cut-shot);
+}
+
+.wf-toolbar .wf-tool-detach {
+  --icon-fill-color: var(--color-final-cut-music);
+}
+
+.wf-toolbar .wf-tool-detach:not([aria-disabled='true']):hover {
+  color: var(--color-final-cut-music);
+}
+
+.wf-toolbar .wf-tool.is-danger:not([aria-disabled='true']):hover {
+  background-color: color-mix(in srgb, var(--color-error) 9%, transparent);
+  color: var(--color-error);
+}
+
+/* 选择、切开两个工具的分段（样子见 wf-seg）：当前工具浮起，选择是品牌色、切开是青蓝 */
+.wf-toolbar .wf-seg {
+  display: inline-flex;
+  flex: none;
+}
+
+.wf-toolbar .wf-seg .wf-tool {
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  color: var(--color-on-surface-muted);
+}
+
+.wf-toolbar .wf-seg .wf-tool.is-pressed {
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-pill), var(--shadow-final-cut-specular);
+}
+
+.wf-toolbar .wf-seg .wf-tool-select.is-pressed {
+  color: var(--color-primary);
+}
+
+.wf-toolbar .wf-seg .wf-tool-razor.is-pressed {
+  --icon-fill-color: var(--color-final-cut-shot);
+
+  color: var(--color-final-cut-shot);
+}
+
+/* 分段右边的小箭头，点开三条剪辑命令 */
+.wf-toolbar .wf-tool.wf-tool-commands {
+  width: 16px;
+  color: var(--color-on-surface-muted);
+}
+
+.wf-toolbar .wf-tool.wf-tool-commands[data-state='open'] {
+  background: var(--color-state-active);
+}
+
+/* 语言切换：一排语言代码，当前的反色；最后是「+」 */
 .wf-locales {
   display: inline-flex;
-  height: 24px;
   flex: none;
   align-items: center;
   gap: 2px;
-  padding: 2px;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-container-low);
-  box-shadow: inset 0 0 0 1px var(--color-hairline);
 }
 
 .wf-locale,
 .wf-locale-add {
   display: inline-flex;
-  height: 20px;
+  height: 24px;
   flex: none;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-full);
-  color: var(--color-on-surface-variant);
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface-muted);
 }
 
 .wf-locale {
-  padding: 0 8px;
-  font-family: var(--font-mono);
+  padding: 0 7px;
   font-size: var(--text-caption);
+  font-weight: 500;
   line-height: var(--text-caption--line-height);
+  white-space: nowrap;
+}
+
+.wf-toolbar .wf-locale:not([aria-pressed='true']):hover {
+  color: var(--color-on-surface);
 }
 
 .wf-locale[aria-pressed='true'] {
   background: var(--color-on-surface);
-  color: var(--color-surface);
+  color: var(--color-final-cut-on-control);
   font-weight: 600;
 }
 
 .wf-locale-add {
-  width: 20px;
-  color: var(--color-on-surface-muted);
+  width: 24px;
 }
 
 .wf-locale-add[data-state='open'] {
   background: var(--color-state-active);
 }
 
-/* 「字幕·配音」页签顶部的语言：一排小块，写语言的名字，样子同下面的人声小块；放不下时左右滑动 */
+/* 「字幕」页签顶行左边的语言：样子同工具条上的语言小块（不带底，当前的深色实心），字大一号；放不下时左右滑动 */
 .wf-locales.is-panel {
   display: flex;
-  height: auto;
-  gap: 4px;
-  margin: 10px 12px 0;
-  padding: 0;
+  min-width: 0;
+  flex: 0 1 auto;
   overflow-x: auto;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
   scrollbar-width: none;
 }
 
 .wf-locales.is-panel .wf-locale,
 .wf-locales.is-panel .wf-locale-add {
-  height: 24px;
-  background: var(--color-surface-container-high);
+  height: 25px;
 }
 
 .wf-locales.is-panel .wf-locale {
-  padding: 0 10px;
-  font-family: inherit;
-  white-space: nowrap;
-}
-
-.wf-locales.is-panel .wf-locale[aria-pressed='true'] {
-  background: var(--color-on-surface);
-  color: var(--color-surface);
+  padding: 0 8px;
+  font-size: var(--text-label);
 }
 
 .wf-locales.is-panel .wf-locale-add {
-  width: 24px;
-}
-
-/* 选择工具：当前工具的图标后面跟一个小箭头，点开是下拉菜单 */
-.wf-tool.wf-tool-picker {
-  width: auto;
-  gap: 2px;
-  padding: 0 6px 0 8px;
-}
-
-.wf-tool.wf-tool-picker[data-state='open'] {
-  background: var(--color-state-active);
-}
-
-.wf-tool[aria-disabled='true'] {
-  opacity: var(--state-disabled-content);
-  cursor: default;
+  width: 25px;
 }
 
 /* 工具栏提示里的快捷键 */
@@ -2893,47 +3719,28 @@
   line-height: 16px;
 }
 
-/* 播放条上的时间读数，等宽字 */
-.wf-clock {
-  padding: 0 6px 0 10px;
-  font-family: var(--font-mono);
-  font-size: var(--text-label);
-  line-height: var(--text-label--line-height);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.wf-clock span {
-  color: color-mix(in srgb, var(--color-on-scrim) 60%, transparent);
-}
-
+/* 工具条上分组之间的竖线 */
 .wf-divider {
   width: 1px;
   height: 16px;
-  margin: 0 8px;
-  background: var(--color-hairline);
-}
-
-/* 时间线缩放的读数 */
-.wf-zoom-readout {
-  min-width: 40px;
-  padding: 0 4px;
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  white-space: nowrap;
+  flex: none;
+  margin: 0 6px;
+  background: var(--color-final-cut-line-strong);
 }
 
 /* ---- 时间线 ---- */
 
 .wf-tracks {
-  --timeline-ruler-height: 18px;
-  --timeline-playhead-top: 18px;
+  --timeline-ruler-height: 24px;
+  --timeline-playhead-top: 24px;
   --timeline-playhead-bottom: 0;
-  /* 每一行同高，不随里面放的是什么变 */
-  --wf-film-height: 28px;
-  --wf-head-width: 84px;
+  /* 各区的行高，行头和行共用：画面区放得下帧条，声音区放得下标题条和波形，字幕一行放一枚胶囊。
+     可以新开一行的空行（最下面那条、拖动中让出来的那条）和视频片段一样高：拖进去的片段不压到下一行 */
+  --wf-row-visual: 42px;
+  --wf-row-caption: 26px;
+  --wf-row-audio: 40px;
+  --wf-row-new: 36px;
+  --wf-head-width: 76px;
 
   /* 行头和各行在同一个滚动容器里，上下一起滚 */
   overflow: auto;
@@ -2945,7 +3752,21 @@
 
 /* 放不下所有行时，至少露出时间尺、第一行和最下面那条空行 */
 .wf-tracks:has(.wf-lane.is-new) {
-  min-height: calc(var(--timeline-ruler-height) + 4px + var(--wf-film-height) + 4px + 24px + 2px);
+  min-height: calc(
+    var(--timeline-ruler-height) + 4px + var(--wf-row-visual) + 4px + var(--wf-row-new) + 2px
+  );
+}
+
+:is(.wf-track-head, .wf-lane)[data-zone='visual'] {
+  height: var(--wf-row-visual);
+}
+
+:is(.wf-track-head, .wf-lane)[data-zone='caption'] {
+  height: var(--wf-row-caption);
+}
+
+:is(.wf-track-head, .wf-lane)[data-zone='audio'] {
+  height: var(--wf-row-audio);
 }
 
 /* 和内容一样宽：吸在左边的行头一直横向滚到底都不会被带走 */
@@ -2956,7 +3777,7 @@
   isolation: isolate;
 }
 
-/* 行头那一列吸在左边，横向滚动时片段从它底下过去 */
+/* 行头那一列吸在左边，横向滚动时片段从它底下过去；右边一道细线隔开各行 */
 .wf-track-heads {
   position: sticky;
   left: 0;
@@ -2965,18 +3786,30 @@
   width: var(--wf-head-width);
   flex: none;
   flex-direction: column;
-  background: var(--color-surface-container-low);
+  background: var(--color-surface);
+  box-shadow: inset -1px 0 0 var(--color-final-cut-line);
 }
 
-/* 左上角吸在顶上，盖住往上滚的行头；与各行之间同样隔 4px */
+/* 左上角吸在顶上，盖住往上滚的行头，写着 final-cut 的总时长；与各行之间同样隔 4px */
 .wf-track-corner {
   position: sticky;
   top: 0;
   z-index: var(--z-local-1);
+  display: flex;
   height: var(--timeline-ruler-height);
   flex: none;
+  align-items: center;
   margin-bottom: 4px;
+  padding: 0 10px;
   background: var(--color-surface-container-low);
+  box-shadow:
+    inset -1px 0 0 var(--color-final-cut-line),
+    inset 0 -1px 0 var(--color-final-cut-line);
+  color: var(--color-on-surface-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* 行头之间的空同各行之间的空 */
@@ -2984,13 +3817,52 @@
   margin-top: 4px;
 }
 
-.wf-head-name {
+/* 行头：行的图标（同种不止一行时带编号），最右边是这一行的开关；图标按行的种类着色 */
+.wf-track-head {
+  --wf-head-color: var(--color-final-cut-shot);
+
+  display: flex;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  height: var(--wf-row-new);
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 0 6px 0 12px;
 }
 
-/* 行头最右边的开关：隐藏或显示这一行（声音区是静音） */
+.wf-track-head[data-kind='caption'] {
+  --wf-head-color: var(--color-final-cut-caption);
+}
+
+.wf-track-head:is([data-kind='dub'], [data-kind='original']) {
+  --wf-head-color: var(--color-final-cut-voice);
+}
+
+.wf-track-head[data-kind='music'] {
+  --wf-head-color: var(--color-final-cut-music);
+}
+
+.wf-head-sign {
+  --icon-fill-color: var(--wf-head-color);
+  --icon-fill-opacity: 0.28;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--wf-head-color);
+}
+
+.wf-head-ordinal {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* 行头最右边的开关：隐藏或显示这一行（声音区是静音）。平时收起，指针停在行头上、键盘聚焦或这一行关着时露出；
+   关着时用琥珀色标出来 */
 .wf-head-eye {
   display: inline-flex;
   width: 22px;
@@ -2998,29 +3870,27 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  margin-left: auto;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-sm);
   color: var(--color-on-surface-muted);
+  opacity: 0;
+  transition: opacity var(--dur-s) var(--ease);
 }
 
-/* 隐藏的片段留在时间线上，内容画淡一些；选中框和把手不变淡 */
+.wf-track-head:hover .wf-head-eye,
+.wf-head-eye:focus-visible,
+.wf-head-eye[aria-pressed='false'] {
+  opacity: 1;
+}
+
+.wf-head-eye[aria-pressed='false'] {
+  background: var(--wf-amber-soft);
+  color: var(--color-tertiary);
+}
+
+/* 隐藏的片段留在时间线上，内容画淡、去掉颜色；选中框和把手不变淡 */
 .wf-clip.is-hidden > .wf-clip-body {
-  opacity: 0.4;
-}
-
-/* 行头：行名，最右边是这一行的开关 */
-.wf-track-head {
-  display: flex;
-  min-width: 0;
-  height: var(--wf-film-height);
-  flex: none;
-  align-items: center;
-  gap: 4px;
-  padding: 0 2px 0 6px;
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-caption);
-  font-weight: 500;
-  white-space: nowrap;
+  opacity: 0.3;
+  filter: saturate(0.2);
 }
 
 /* 左右留的空由 film-timeline.tsx 的 INSET 写在行内样式上 */
@@ -3033,7 +3903,8 @@
   isolation: isolate;
 }
 
-/* 时间尺吸在顶上，各行从它底下滚过去。播放头和悬停线跟时间尺放在一起：头留在顶上，线往下伸过露出来的各行 */
+/* 时间尺吸在顶上，各行从它底下滚过去，底边一道细线。播放头和悬停线跟时间尺放在一起：头留在顶上，
+   线往下伸过露出来的各行 */
 .wf-track-top {
   --timeline-playhead-bottom: -100vh;
 
@@ -3042,10 +3913,16 @@
   z-index: var(--z-local-3);
   height: var(--timeline-ruler-height);
   background: var(--color-surface-container-low);
-  /* 片段两端的把手伸出时间区，滚上来时两边留的空也要盖住 */
+  /* 时间区两边留的空也要盖住：滚上来的片段不从那里露出来 */
   box-shadow:
+    inset 0 -1px 0 var(--color-final-cut-line),
     -8px 0 0 var(--color-surface-container-low),
     8px 0 0 var(--color-surface-container-low);
+}
+
+/* 刻度字离时间尺上沿留一点空，和左上角的总时长读数对齐 */
+.wf-track-top .timeline-tick {
+  top: 5px;
 }
 
 /* 片段的叠放只在各行里比，拖起来的片段也压不过吸在顶上的时间尺和播放头 */
@@ -3057,18 +3934,21 @@
   isolation: isolate;
 }
 
-/* 最下面那条空行：把片段或镜头拖进来就新开一行；比放着片段的行矮，虚线框。拖到两行之间时它挪到那里去。
-   框用 outline 往里画，不占位置：拖进来的落点和提示文字照常按行的边算 */
-.wf-lane.is-new {
-  height: 24px;
-  background: transparent;
-  outline: 1px dashed var(--color-hairline);
-  outline-offset: -1px;
+/* 每一行是一条浅底的带子，行与行之间露出面板底色当分隔；行高按区（见上面的 data-zone） */
+.wf-lane {
+  position: relative;
+  height: var(--wf-row-new);
+  min-width: 0;
+  background: var(--color-surface-container-low);
 }
 
-/* 空行挪到两行之间时，行头那一列在同一处空出一样高的一格，下面的行头才对得齐 */
-.wf-track-head.is-opening {
-  height: 24px;
+/* 最下面那条空行：把片段或镜头拖进来就新开一行；比放着片段的行矮，不铺底，只一圈虚线。拖到两行之间时它挪到
+   那里去（行头那一列同一处空出一样高的一格，下面的行头才对得齐）。
+   框用 outline 往里画，不占位置：拖进来的落点和提示文字照常按行的边算 */
+.wf-lane.is-new {
+  background: transparent;
+  outline: 1px dashed var(--color-final-cut-line-strong);
+  outline-offset: -1px;
 }
 
 /* 拖到别的行去的片段浮在各行上面 */
@@ -3079,20 +3959,12 @@
 /* 拖着的素材会落在这里 */
 .wf-drop-ghost {
   position: absolute;
-  top: 2px;
-  bottom: 2px;
+  top: 3px;
+  bottom: 3px;
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--color-on-surface) 10%, transparent);
-  box-shadow: inset 0 0 0 1.5px var(--color-on-surface);
+  background: var(--color-final-cut-control-soft);
+  box-shadow: inset 0 0 0 1.6px var(--color-on-surface);
   pointer-events: none;
-}
-
-.wf-lane {
-  position: relative;
-  height: var(--wf-film-height);
-  min-width: 0;
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--color-on-surface) 3%, transparent);
 }
 
 .wf-lane > * {
@@ -3111,34 +3983,64 @@
 }
 
 .wf-clip {
-  --timeline-handle-top: 50%;
-
   position: absolute;
-  top: 2px;
-  height: calc(var(--wf-film-height) - 4px);
-  border-radius: var(--radius-xs);
-  background: var(--color-surface-container-high);
+  top: 3px;
+  bottom: 3px;
+  border-radius: var(--radius-sm);
   /* 两端把手按片段的宽算点按区（cqw） */
   container-type: inline-size;
 }
 
-/* 片段上的裁剪把手：整个落在片段里面（开头的贴着左边、结尾的贴着右边往里），点按区最多 14px、
-   不超过片段宽的三分之一。时间线至少排 20 秒，1 秒的片段只有 30px 上下：两端都留着、正中按得住拖动，
-   也不盖住紧挨着的片段 */
+/* 选中：一圈炭黑的聚焦框加一点投影，压在别的片段上面 */
+.wf-clip.is-selected {
+  z-index: var(--z-local-2);
+  box-shadow:
+    0 0 0 1.6px var(--color-on-surface),
+    0 4px 12px -4px color-mix(in srgb, var(--color-scrim) 22%, transparent);
+}
+
+/* 裁剪把手（选中时才有）：贴着两端的一条 5.5px 墨色竖条，中间一道浅色刻痕，和细的播放头分得开。
+   点按区最多 14px、不超过片段宽的三分之一。时间线至少排 20 秒，1 秒的片段只有 30px 上下：两端都留着、
+   正中按得住拖动，也不盖住紧挨着的片段。共用把手是悬浮的小方块，这里两个类压过它的位置、大小和底色 */
 .wf-clip > .timeline-handle {
-  width: min(8px, 100cqw / 3);
+  top: 0;
+  bottom: 0;
+  width: min(5.5px, 100cqw / 3);
+  height: auto;
+  translate: none;
+  border: none;
+  background: var(--color-on-surface);
+  box-shadow: none;
 }
 
 .wf-clip > .timeline-handle.is-start {
-  translate: 0 -50%;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
 }
 
 .wf-clip > .timeline-handle.is-end {
-  translate: -100% -50%;
+  translate: -100% 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.wf-clip > .timeline-handle:hover {
+  background: var(--color-on-surface);
+}
+
+.wf-clip > .timeline-handle::after {
+  width: 1.5px;
+  height: 44%;
+  background: color-mix(in srgb, var(--color-final-cut-on-control) 85%, transparent);
+}
+
+/* 把手平时就是墨色，聚焦另画一圈焦点框 */
+.wf-clip > .timeline-handle:focus-visible {
+  outline: var(--state-focus-ring) solid var(--color-focus-ring);
+  outline-offset: 1px;
 }
 
 .wf-clip > .timeline-handle::before {
   width: min(14px, 100cqw / 3);
+  height: 100%;
 }
 
 .wf-clip > .timeline-handle.is-start::before {
@@ -3152,17 +4054,6 @@
   translate: 0 -50%;
 }
 
-/* 选中的框画在片段的内容上面，不被画面和波形盖住 */
-.wf-clip.is-selected::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: var(--z-local-1);
-  border-radius: inherit;
-  box-shadow: inset 0 0 0 1.5px var(--color-on-surface);
-  pointer-events: none;
-}
-
 .wf-clip-body {
   position: absolute;
   inset: 0;
@@ -3170,70 +4061,96 @@
   align-items: center;
   gap: 6px;
   overflow: hidden;
-  padding: 0 6px;
+  padding: 0 9px;
   border-radius: inherit;
-  cursor: grab;
+  cursor: pointer;
   text-align: left;
   touch-action: none;
 }
 
-.wf-clip .wf-clip-body {
-  cursor: pointer;
+/* 视频片段：画面铺满整个片段（深色卡底），没分离原声的底部叠一条 7px 的半透明原声波形；
+   视频和组件或块的片段外缘一圈浅色细线，盖在画面上面 */
+.wf-clip.is-video > .wf-clip-body {
+  padding: 0;
+  background: var(--color-final-cut-clip-video);
 }
 
-.wf-clip.is-selected {
-  z-index: var(--z-local-2);
+.wf-clip:is(.is-video, .is-host) > .wf-clip-body::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-local-1);
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-on-scrim) 12%, transparent);
+  pointer-events: none;
 }
 
-/* 视频片段：画面铺满整个片段，原声波形叠在底部的一条浅底上 */
 .wf-clip-frames {
   position: absolute;
   inset: 0;
   display: flex;
   overflow: hidden;
+  color: color-mix(in srgb, var(--color-on-scrim) 55%, transparent);
 }
 
 .wf-clip-wave {
-  /* 带单位：波形的高度按 calc(100% - 2 * 它) 算，不带单位的 0 会让整条式子失效 */
-  --timeline-wave-inset: 1px;
-
   position: absolute;
   right: 0;
   bottom: 0;
   left: 0;
+  z-index: var(--z-local-1);
   display: flex;
-  height: 8px;
-  background: color-mix(in srgb, var(--color-surface-container) 72%, transparent);
+  height: 7px;
+  overflow: hidden;
+  background: var(--wf-on-frame);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-on-scrim) 8%, transparent);
 }
 
-/* 组件或块的片段、字幕、音频片段和「其他」片段：浅底细边，一行排下来。组件或块的片段是小封面和名字，
-   字幕是文字记号和这句的字，音频片段是音符、名字和整段波形，「其他」片段只有名字 */
-.wf-clip.is-host > .wf-clip-body,
-.wf-clip.is-caption > .wf-clip-body,
-.wf-clip.is-audio > .wf-clip-body,
-.wf-clip.is-other > .wf-clip-body {
-  background: color-mix(in srgb, var(--color-on-surface) 9%, var(--color-top-layer));
-  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
-}
-
-.wf-clip-cover {
-  width: 28px;
-  height: 16px;
-  flex: none;
+/* 自动压低在视频片段上画成右上角的一枚小图标，压在画面上的深色小底上 */
+.wf-clip.is-video .wf-clip-duck {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  z-index: var(--z-local-1);
+  padding: 1px;
   border-radius: var(--radius-xs);
-  object-fit: cover;
+  background: var(--wf-on-frame);
+  color: var(--color-on-scrim);
+}
+
+/* 组件或块的片段：深色卡底上横着铺满封面，像一条小帧条 */
+.wf-clip.is-host > .wf-clip-body {
+  padding: 0;
+  background: var(--final-cut-clip-component);
+}
+
+.wf-clip-strip {
+  position: absolute;
+  inset: 4px 0;
+  background-position: left center;
+  background-repeat: repeat-x;
+  background-size: auto 100%;
   pointer-events: none;
 }
 
-.wf-clip-icon {
-  flex: none;
-  color: var(--color-on-surface-faint);
+/* 字幕：暖色胶囊，写着这句的字；「其他」片段同音频卡的中性底，只有名字 */
+.wf-clip.is-caption > .wf-clip-body {
+  padding: 0 10px;
+  background: var(--final-cut-clip-caption);
+  box-shadow: inset 0 0 0 1px var(--color-final-cut-clip-edge);
+  color: var(--color-final-cut-on-clip-caption);
+}
+
+.wf-clip.is-other > .wf-clip-body {
+  background: var(--final-cut-clip-audio);
+  box-shadow: inset 0 0 0 1px var(--color-final-cut-clip-edge);
+  color: var(--color-on-surface);
 }
 
 .wf-clip-name {
   min-width: 0;
   overflow: hidden;
-  color: var(--color-on-surface);
+  color: inherit;
   font-size: var(--text-caption);
   font-weight: 500;
   line-height: var(--text-caption--line-height);
@@ -3241,22 +4158,84 @@
   white-space: nowrap;
 }
 
-/* 波形至少留 32px：片段不够宽时先截断名字 */
-.wf-clip-sound {
-  --timeline-wave-inset: 3px;
-
-  display: flex;
-  min-width: 32px;
-  height: 100%;
-  flex: 1;
+/* 音频片段：中性卡底，左缘一道 2.5px 的身份色细边；顶上 13px 的标题条写名字和小标，下面是贴底往上长的波形。
+   身份色按声音从哪来：分离出来的原声、配音、配乐 */
+.wf-clip[data-source='original'] {
+  --wf-sound-wave: var(--color-final-cut-original-wave);
+  --wf-sound-ink: var(--color-final-cut-original-ink);
 }
 
-/* 分离出来的原声右边的小标：静音、错开（提示色）、联动 */
+.wf-clip[data-source='dub'] {
+  --wf-sound-wave: var(--color-final-cut-dub-wave);
+  --wf-sound-ink: var(--color-final-cut-dub-ink);
+}
+
+.wf-clip[data-source='music'] {
+  --wf-sound-wave: var(--color-final-cut-music-wave);
+  --wf-sound-ink: var(--color-final-cut-music-ink);
+}
+
+.wf-clip.is-audio > .wf-clip-body {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  background: var(--final-cut-clip-audio);
+  box-shadow:
+    inset 2.5px 0 0 var(--wf-sound-wave),
+    inset 0 0 0 1px var(--color-final-cut-clip-edge);
+  color: var(--wf-sound-ink);
+  /* 窄得放不下标题条时只画波形，按片段身体的宽算 */
+  container-type: inline-size;
+}
+
+.wf-clip-label {
+  display: flex;
+  height: 13px;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px 0 9px;
+  background: var(--color-final-cut-clip-label);
+  box-shadow: inset 0 -1px 0 var(--color-final-cut-clip-label-line);
+  font-size: var(--text-final-cut-clip-label);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1;
+}
+
+/* 选中时两端是墨色的裁剪把手，标题往里让开 */
+.wf-clip.is-selected .wf-clip-label {
+  padding: 0 10px;
+}
+
+.wf-clip-label .wf-clip-name {
+  margin-right: auto;
+  font-size: inherit;
+  line-height: inherit;
+  opacity: 0.88;
+}
+
+.wf-clip-sound {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  padding-left: 2.5px;
+}
+
+@container (width < 56px) {
+  .wf-clip-label {
+    display: none;
+  }
+}
+
+/* 片段上的小标：分离出来的原声的静音、错开（提示色）、联动，配音截短，其它语言里还没翻的字幕写「原文」 */
 .wf-clip-badge {
   flex: none;
   padding: 0 4px;
   border-radius: var(--radius-xs);
-  background: var(--color-surface-container-high);
+  background: var(--color-final-cut-control-soft);
   color: var(--color-on-surface-muted);
   font-size: var(--text-caption);
   font-variant-numeric: tabular-nums;
@@ -3264,20 +4243,31 @@
   white-space: nowrap;
 }
 
+/* 标题条只有 13px 高：小标不铺底，只换字色 */
+.wf-clip-label .wf-clip-badge {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+  line-height: inherit;
+}
+
 .wf-clip-badge[data-tone='offset'] {
-  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
   color: var(--color-warning);
   font-weight: 500;
 }
 
 .wf-clip-badge[data-tone='linked'] {
-  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
   color: var(--color-primary);
 }
 
-/* 波形音量关键帧：片段上的小标、波形上的曲线都用琥珀色（设计系统的 tertiary 一族） */
+/* 开着自动压低：标题条右端的压低图标 */
+.wf-clip-duck {
+  flex: none;
+  color: var(--color-primary);
+}
+
+/* 波形音量关键帧：标题条上的小标、波形上的曲线都用琥珀色（设计系统的 tertiary 一族） */
 .wf-clip-keyframes {
-  background: color-mix(in srgb, var(--color-tertiary) 16%, transparent);
   color: var(--color-tertiary);
   font-weight: 500;
 }
@@ -3288,10 +4278,22 @@
   }
 }
 
-/* 不出声的片段（静音、关了原声）：波形画灰（高低由波形自己压矮） */
-.wf-clip-sound.is-silent .timeline-wave,
-.wf-clip-wave.is-silent .timeline-wave {
+/* 波形的颜色：音频片段用身份色，视频片段底部那条用画面上的浅色；不出声的片段（静音、关了原声）画灰（高低由
+   波形自己压矮）。共用波形在自己身上定了颜色（深色主题下是 .dark 加一个类），这里三个条件压过它 */
+.wf-clip .wf-clip-sound > .timeline-wave {
+  --timeline-wave-color: color-mix(in srgb, var(--wf-sound-wave) 62%, transparent);
+}
+
+.wf-clip .wf-clip-wave > .timeline-wave {
+  --timeline-wave-color: color-mix(in srgb, var(--color-on-scrim) 68%, transparent);
+}
+
+.wf-clip .wf-clip-sound.is-silent > .timeline-wave {
   --timeline-wave-color: color-mix(in srgb, var(--color-on-surface) 16%, transparent);
+}
+
+.wf-clip .wf-clip-wave.is-silent > .timeline-wave {
+  --timeline-wave-color: color-mix(in srgb, var(--color-on-scrim) 24%, transparent);
 }
 
 /* 有音量曲线时波形两边让出裁剪把手的点按区，两头的点不被把手盖住；视频片段的波形条加高，线有地方上下，
@@ -3302,7 +4304,7 @@
 }
 
 .wf-clip-wave.has-envelope {
-  height: 10px;
+  height: 12px;
 }
 
 /* 曲线一层叠在波形上，自己不接指针：只有选中时的线和点接，别处按到片段上 */
@@ -3327,9 +4329,9 @@
 
 .wf-envelope-line {
   fill: none;
-  stroke: var(--color-tertiary);
+  stroke: var(--color-final-cut-duck);
   stroke-linejoin: round;
-  stroke-width: 1.4;
+  stroke-width: 1.45;
   vector-effect: non-scaling-stroke;
 }
 
@@ -3349,7 +4351,7 @@
   height: 6px;
   translate: -50% -50%;
   border-radius: var(--radius-full);
-  background: var(--color-tertiary);
+  background: var(--color-final-cut-duck);
   box-shadow: 0 0 0 1px var(--color-surface-container-lowest);
 }
 
@@ -3389,23 +4391,7 @@
   white-space: nowrap;
 }
 
-/* 音频片段窄得放不下音符、名字和波形时只画波形（名字仍在无障碍名称和「属性」里） */
-.wf-clip.is-audio > .wf-clip-body {
-  container-type: inline-size;
-}
-
-@container (width < 96px) {
-  .wf-clip.is-audio .wf-clip-icon,
-  .wf-clip.is-audio .wf-clip-name {
-    display: none;
-  }
-
-  .wf-clip.is-audio .wf-clip-sound {
-    min-width: 0;
-  }
-}
-
-/* 配乐片段上的节拍：贴着底边一排细竖线，强拍更高更实；不挡拖动和点选 */
+/* 配乐片段上的节拍：贴着底边一排细竖线，用片段的波形色，强拍更高更实；不挡拖动和点选 */
 .wf-beat-marks {
   position: absolute;
   inset: 0;
@@ -3418,17 +4404,17 @@
   position: absolute;
   bottom: 0;
   width: 0;
-  height: 5px;
+  height: 3px;
   translate: -0.5px 0;
-  border-left: 1px solid color-mix(in srgb, var(--color-on-surface) 40%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--wf-sound-wave) 45%, transparent);
 }
 
 .wf-beat.is-strong {
-  height: 10px;
-  border-left-color: var(--color-on-surface);
+  height: 6px;
+  border-left-color: var(--wf-sound-wave);
 }
 
-/* 吸附时的对齐线 */
+/* 吸附时的对齐线：琥珀色，同开着的「吸附」 */
 .wf-snap-guide {
   position: absolute;
   top: var(--timeline-ruler-height);
@@ -3436,7 +4422,7 @@
   z-index: var(--z-local-2);
   width: 0;
   translate: -0.5px 0;
-  border-left: 1px solid var(--color-on-surface);
+  border-left: 1px solid var(--color-tertiary);
   pointer-events: none;
 }
 
@@ -3446,7 +4432,7 @@
   cursor: ew-resize;
 }
 
-/* 剃刀：各行上是十字光标，一条竖线跟着指针贯穿所有行 */
+/* 剃刀：各行上是十字光标，一条竖线跟着指针贯穿所有行，青蓝色同开着的切开工具 */
 .wf-lanes.is-razor,
 .wf-lanes.is-razor * {
   cursor: crosshair;
@@ -3459,16 +4445,16 @@
   z-index: var(--z-local-2);
   width: 0;
   translate: -0.5px 0;
-  border-left: 1px solid var(--color-on-surface);
+  border-left: 1px solid var(--color-final-cut-shot);
   pointer-events: none;
 }
 
-/* 框选时拖出来的框：盖在各行上面、压不过吸在顶上的时间尺 */
+/* 框选时拖出来的框：盖在各行上面、压不过吸在顶上的时间尺；浅底加一圈细框，同开着的开关 */
 .wf-marquee {
   position: absolute;
   z-index: var(--z-local-2);
-  border-radius: var(--radius-xs);
-  background: color-mix(in srgb, var(--color-on-surface) 6%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--color-final-cut-control-soft);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-on-surface) 48%, transparent);
   pointer-events: none;
 }
@@ -3479,149 +4465,359 @@
   box-shadow: none;
 }
 
-/* ---- 「镜头」页签：按原作分组的视频素材，每条原作一行 ---- */
+/* ---- 「镜头」页签：顶上一行提示，按镜头组排的原作卡片在中间滚，有选区时底下浮一条操作条 ---- */
 
-.wf-materials,
-.wf-material-group {
+.wf-side-body.is-shots {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  padding: 0;
+}
+
+.wf-materials {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.wf-materials-hint {
+  flex: none;
+  padding: 9px 15px 0;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+}
+
+.wf-materials-list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+  padding: 12px 14px 26px;
+  scrollbar-width: thin;
 }
 
 .wf-materials-empty {
-  padding: 16px 4px;
   color: var(--color-on-surface-muted);
   font-size: var(--text-body-sm);
 }
 
-/* 五列：组名、原作字母、版本、镜头条、时长 */
-.wf-take {
-  display: grid;
-  height: 30px;
-  align-items: center;
-  grid-template-columns: 54px 18px 44px minmax(0, 1fr) 36px;
-  column-gap: 8px;
+.wf-material-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-/* 组名只写在组里第一条原作那一行 */
-.wf-group-label {
-  overflow: hidden;
+/* 组头：组名（数据里只有「镜头组 N」，不另加序号块，免得两个数字对不上） */
+.wf-material-group-head {
+  padding: 0 2px;
   color: var(--color-on-surface);
   font-size: var(--text-label);
   font-weight: 600;
-  line-height: 16px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: var(--text-label--line-height);
 }
 
-.wf-take-letter {
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  font-weight: 500;
-  text-align: center;
+/* 一条原作一张白卡：顶行版本和总长，下面是镜头条和已用细轨；素材预览放着它时描一圈墨色 */
+.wf-take {
+  position: relative;
+  padding: 7px 7px 6px;
+  border-radius: var(--radius-md);
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-card), var(--shadow-final-cut-specular);
+  transition: box-shadow var(--dur-s) var(--ease);
 }
 
-.wf-version-label,
-.wf-version-switch {
+.wf-take:hover {
+  box-shadow:
+    var(--shadow-final-cut-card),
+    0 0 0 1px var(--color-final-cut-line-strong),
+    var(--shadow-final-cut-specular);
+}
+
+.wf-take.is-previewing {
+  box-shadow:
+    0 0 0 1.5px var(--color-on-surface),
+    var(--shadow-final-cut-card);
+}
+
+.wf-take-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px 6px;
+}
+
+/* 「A · V2」：原作字母和版本号；有几个版本时是按钮，点开选版本 */
+.wf-take-version {
   display: inline-flex;
-  width: 44px;
   height: 20px;
+  flex: none;
   align-items: center;
   gap: 2px;
-  padding: 0 8px;
-  border-radius: var(--radius-full);
+  padding: 0 7px;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-low);
+  box-shadow: inset 0 0 0 1px var(--color-final-cut-line);
+  color: var(--color-on-surface-variant);
   font-size: var(--text-caption);
+  font-weight: 600;
   white-space: nowrap;
 }
 
-.wf-version-label {
-  background: var(--color-surface-container);
-  color: var(--color-on-surface-muted);
-}
-
-.wf-version-switch {
-  justify-content: space-between;
+button.wf-take-version {
   padding-right: 4px;
-  background: var(--color-surface-container-lowest);
-  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
-  color: var(--color-on-surface-variant);
 }
 
-/* 镜头条比这一格宽时在格子里横着滚，不显示滚动条；左右各留 5px 露出选区两端的抓手 */
+button.wf-take-version:hover {
+  background: var(--color-surface-container-high);
+  box-shadow: inset 0 0 0 1px var(--color-final-cut-line-strong);
+  color: var(--color-on-surface);
+}
+
+.wf-take-duration {
+  flex: none;
+  color: var(--color-on-surface-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 素材很长、镜头条比卡片宽时在卡片里横着滚（最小宽度由组件按秒数给），不显示滚动条；
+   四周多让出一圈，露出贴着两头的选区抓手和镜头的焦点框 */
 .wf-take-scroll {
+  margin: -3px -5px;
   overflow: auto hidden;
   padding: 3px 5px;
   scrollbar-width: none;
 }
 
-/* 最小宽度按素材秒数算（由组件给），里面的镜头按时长比例排。
+/* 镜头条和它正下方的已用细轨一起滚，两条按同一个宽度 1:1 对齐 */
+.wf-take-track {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* 镜头之间露出一道深色细切缝（--wf-shot-gap，由组件从每个镜头的宽度里扣掉）。
    和 .wf-tracks 一样不让选文字：Shift 点镜头会把文本选区扩进来，之后按下选区拖动会变成浏览器原生拖拽 */
 .wf-take-strip {
+  --wf-shot-gap: 1.5px;
+
   position: relative;
-  height: 24px;
-  border-radius: var(--radius-xs);
-  background: color-mix(in srgb, var(--color-on-surface) 3%, transparent);
+  height: 62px;
+  border-radius: var(--radius-sm);
+  background: var(--color-scrim);
   user-select: none;
 }
 
-.wf-take-duration {
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  white-space: nowrap;
-}
-
 .wf-take-note {
-  padding-left: 8px;
-  color: var(--color-on-surface-muted);
+  display: flex;
+  height: 100%;
+  align-items: center;
+  padding-left: 10px;
+  color: color-mix(in srgb, var(--color-on-scrim) 62%, transparent);
   font-size: var(--text-caption);
-  line-height: 24px;
 }
 
-/* 镜头只放画面，不写镜头号和起止 */
+/* 镜头只放画面，不写镜头号和起止；头尾两个镜头跟着镜头条的圆角 */
 .wf-shot {
   position: absolute;
   top: 0;
+  bottom: 0;
   display: flex;
-  height: 24px;
   overflow: hidden;
   padding: 0;
-  border-radius: var(--radius-xs);
-  background: var(--color-surface-container-high);
-  cursor: pointer;
+  background: var(--color-final-cut-clip-video);
+  cursor: crosshair;
   touch-action: none;
 }
 
-.wf-shot > .timeline-frames {
-  width: 100%;
+.wf-shot:first-of-type {
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
 }
 
-/* 画面轨上已经用了的段：轨道底边一道 */
-.wf-used {
+.wf-shot:last-of-type {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.wf-shot:hover::after {
+  content: '';
   position: absolute;
-  bottom: 1px;
-  height: 2.5px;
-  border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-on-surface) 62%, transparent);
+  inset: 0;
+  background: color-mix(in srgb, var(--color-on-scrim) 8%, transparent);
   pointer-events: none;
 }
 
-/* 选中的范围：外围一圈选区外框，同画面轨与编辑视频 */
-.wf-range {
+/* 还没有帧图时的占位图标压在深色镜头上，用浅色 */
+.wf-shot > .timeline-frames {
+  width: 100%;
+  color: color-mix(in srgb, var(--color-on-scrim) 45%, transparent);
+}
+
+/* 有选区时选区以外的部分压暗 */
+.wf-take-dim {
+  position: absolute;
+  z-index: var(--z-local-1);
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.wf-take-dim > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--color-scrim) 56%, transparent);
+}
+
+/* 选区：暖金色框，拖中间平移，两端是金色把手；正在划出来的那段同样子、不接指针 */
+.wf-pick {
   position: absolute;
   top: 0;
   bottom: 0;
   z-index: var(--z-local-2);
+  border: 2px solid var(--color-tertiary-fixed-dim);
   border-radius: var(--radius-xs);
-  box-shadow: inset 0 0 0 1.5px var(--color-on-surface);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--color-scrim) 35%, transparent);
   cursor: grab;
   touch-action: none;
 }
 
-/* 镜头条上 1 秒的镜头不到 30px：两端抓手的点按区收到 18px 宽，选区中间和紧挨着的镜头还按得到 */
-.wf-range .timeline-handle::before {
+.wf-pick.is-draft {
+  pointer-events: none;
+}
+
+.wf-pick.is-lifting {
+  background: color-mix(in srgb, var(--color-tertiary-fixed-dim) 18%, transparent);
+  cursor: grabbing;
+}
+
+/* 两个类压过共用把手的白底小方块：这里只是一道金色竖条，悬停、按下、聚焦时变亮变长。
+   点按区收到 18px 宽，1 秒的镜头不到 30px 时选区中间和紧挨着的镜头还按得到 */
+.wf-pick .timeline-handle {
+  width: 13px;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.wf-pick .timeline-handle::before {
   width: 18px;
+}
+
+.wf-pick .timeline-handle::after {
+  width: 3px;
+  height: 18px;
+  background: var(--color-tertiary-fixed-dim);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--color-scrim) 45%, transparent);
+  transition:
+    height var(--dur-s) var(--ease),
+    background var(--dur-s) var(--ease);
+}
+
+.wf-pick .timeline-handle:is(:hover, :focus-visible, :active, .is-pressed) {
+  background: none;
+}
+
+.wf-pick .timeline-handle:is(:hover, :active, .is-pressed)::after {
+  height: 24px;
+  background: var(--color-tertiary-fixed);
+}
+
+/* 键盘聚焦：竖条换成白色，和悬停分得开 */
+.wf-pick .timeline-handle:focus-visible::after {
+  height: 24px;
+  background: var(--color-on-scrim);
+}
+
+/* 帧条正下方的已用细轨：final-cut 里已经用了的段 */
+.wf-take-used {
+  position: relative;
+  height: 2.5px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-high);
+}
+
+.wf-take-used > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+}
+
+/* 拖动时在卡片顶上跟着指针的「起 – 止 · 时长」，样子同提示气泡 */
+.wf-take-tip {
+  position: absolute;
+  top: 2px;
+  z-index: var(--z-local-3);
+  translate: -50% 0;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--color-inverse-surface);
+  box-shadow: var(--shadow-2);
+  color: var(--color-inverse-on-surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 底部浮着的操作条：已选几段、多长，清空，加入 final-cut */
+.wf-pick-dock {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  margin: 0 12px 12px;
+  padding: 8px 10px 8px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-float), var(--shadow-final-cut-specular);
+}
+
+.wf-pick-dock-info {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-on-surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.wf-pick-dock-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-full);
+  background: var(--color-tertiary-fixed-dim);
+}
+
+/* 深色实心的主操作 */
+.wf-pick-dock-insert {
+  display: inline-flex;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 11px;
+  border-radius: var(--radius-sm);
+  background: var(--color-on-surface);
+  color: var(--color-final-cut-on-control);
+  font-size: var(--text-label);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 /* 预览在放选区时，选区里走的播放头 */
@@ -3638,28 +4834,13 @@
   pointer-events: none;
 }
 
-/* 预览切到素材：盖在 final-cut 预览上，回到 final-cut 时卸掉 */
+/* 预览切到素材：盖在 final-cut 预览上（同一格，样子见「预览」一节），回到 final-cut 时卸掉 */
 .wf-material-preview {
-  position: relative;
   isolation: isolate;
-  display: grid;
-  min-width: 0;
-  min-height: 0;
-  grid-area: preview;
-  place-items: center;
-  overflow: hidden;
-  border-radius: var(--radius-md);
   background: var(--color-storyboard-stage);
-  outline: 1px solid var(--color-storyboard-stage-line);
-  outline-offset: -1px;
 }
 
 .wf-material-video {
   height: auto;
   object-fit: contain;
-}
-
-.wf-range.is-lifting {
-  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
-  cursor: grabbing;
 }

@@ -1,10 +1,12 @@
 import { useId } from 'react'
+import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Input } from '@/shared/ui/field'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { captionClock } from './caption-edit'
 import type { CatalogVariable, ComponentCatalog } from './composition/catalog'
 import { itemNamed, type HostClip } from './composition/film'
+import { EmptyNote } from './empty-note'
 import { fieldText, textFields, type LocaleBindings } from './composition/locale-text'
 import {
   phraseWith,
@@ -26,7 +28,7 @@ const NO_BINDINGS: LocaleBindings = {}
 
 const PINNED_NOTE = `固定${SOURCE_NAME}，所有语言共用；点击「随语言」可分别修改`
 
-/** 文字字段右边的「固定 / 随语言」：写着现在是哪种，点一下换成另一种。 */
+/** 文字字段旁边的「固定 / 随语言」：图标加字写着现在是哪种，点一下换成另一种。 */
 export function FollowToggle({
   label,
   follows,
@@ -42,10 +44,15 @@ export function FollowToggle({
       <TooltipTrigger asChild>
         <button
           aria-label={`${label}：${state}`}
-          className={cn('wf-follow ui-state ui-focus', follows && 'is-follow')}
+          className={cn('wf-chip-btn ui-state ui-focus', follows && 'is-active')}
           onClick={() => onToggle(!follows)}
           type="button"
         >
+          <Icon
+            decorative
+            name={follows ? 'final-cut-follow-locale' : 'final-cut-fixed'}
+            size="sm"
+          />
           {state}
         </button>
       </TooltipTrigger>
@@ -139,8 +146,8 @@ type ComponentTextsProps = {
 }
 
 /**
- * 「字幕」页签的「组件文字」：每个有文字字段的贴片、场景一块（名字、开始时间），每个文字字段一行（名字、文字框，
- * 加了语言时右边是「固定 / 随语言」）。焦点进一块时选中那个片段，点名字还让播放头跳到它的开始。
+ * 「字幕」页签的「组件文字」：每个有文字字段的贴片、场景一张卡片（标题行是名字、开始时间），每个文字字段一段（名字，
+ * 加了语言时同一行右边是「固定 / 随语言」；下面是文字框）。焦点进一张卡片时选中那个片段，点标题行还让播放头跳到它的开始。
  */
 export function ComponentTexts({
   hosts,
@@ -155,12 +162,12 @@ export function ComponentTexts({
 }: ComponentTextsProps) {
   if (hosts.length === 0)
     return (
-      <p className="wf-captions-note" role="status">
+      <EmptyNote icon="final-cut-overlays">
         暂无带文字的贴片或场景，请先在「贴片」「场景」页签中加入
-      </p>
+      </EmptyNote>
     )
   return (
-    <ol aria-label="组件文字" className="wf-caption-list">
+    <ol aria-label="组件文字" className="wf-tab-list wf-caption-list">
       {hosts.map((clip) => {
         const item = itemNamed(catalog, clip.item)
         const fields = item === undefined ? [] : textFields(item)
@@ -169,19 +176,19 @@ export function ComponentTexts({
         return (
           <li
             aria-current={current ? 'true' : undefined}
-            className={cn('wf-caption', current && 'is-current')}
+            className={cn('wf-caption wf-card', current && 'is-current')}
             key={clip.id}
             onFocus={() => {
               if (!current) onPick(clip, false)
             }}
           >
             <button
-              className="wf-caption-time wf-text-head"
+              className="wf-text-head ui-focus"
               onClick={() => onPick(clip, true)}
               type="button"
             >
               <span className="wf-text-name">{clip.label}</span>
-              <span>{captionClock(clip.start)}</span>
+              <span className="wf-text-start">{captionClock(clip.start)}</span>
             </button>
             {fields.map((field) => (
               <TextRow
@@ -223,21 +230,10 @@ function TextRow({
   const variable = bound[field.id]
   return (
     <div className="wf-text-row">
-      <label className="wf-prop-label" htmlFor={id} title={field.label}>
-        {field.label}
-      </label>
-      <div className="wf-text-line">
-        <HostTextField
-          aria-label={`${clip.label} ${field.label}`}
-          className="wf-text-input"
-          clip={clip}
-          field={field}
-          id={id}
-          key={locale.code}
-          locale={locale}
-          onText={onText}
-          variable={variable}
-        />
+      <div className="wf-text-label">
+        <label className="wf-prop-label" htmlFor={id} title={field.label}>
+          {field.label}
+        </label>
         {multilingual ? (
           <FollowToggle
             follows={variable !== undefined}
@@ -246,6 +242,17 @@ function TextRow({
           />
         ) : null}
       </div>
+      <HostTextField
+        aria-label={`${clip.label} ${field.label}`}
+        className="wf-field wf-text-input"
+        clip={clip}
+        field={field}
+        id={id}
+        key={locale.code}
+        locale={locale}
+        onText={onText}
+        variable={variable}
+      />
     </div>
   )
 }

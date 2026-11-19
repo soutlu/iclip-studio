@@ -95,13 +95,8 @@ import {
   VolumeOff,
   X,
   ZoomIn,
-  ZoomOut,
-  Magnet,
-  FoldHorizontal,
-  MoveHorizontal,
   Sparkles,
   Blend,
-  Type,
   Film,
   Layers,
   RotateCw,
@@ -122,14 +117,13 @@ import {
   List,
   ListOrdered,
   ListTree,
-  Maximize,
   Minimize,
   Keyboard,
-  MousePointer2,
   Scan,
 } from 'lucide-react'
 import type { LucideProps } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
+import { FINAL_CUT_GLYPHS } from './final-cut-glyphs'
 import {
   ResourceAgentGlyph,
   ResourceFrameGlyph,
@@ -303,7 +297,6 @@ const ICONS = {
   'send-up': ArrowUp,
   settings: Settings,
   spinner: LoaderCircle,
-  split: Scissors,
   stop: Square,
   stopped: CircleStop,
   success: CircleCheck,
@@ -324,13 +317,8 @@ const ICONS = {
   warning: TriangleAlert,
   waveform: AudioLines,
   zoom: ZoomIn,
-  'zoom-out': ZoomOut,
-  snap: Magnet,
-  ripple: FoldHorizontal,
-  fit: MoveHorizontal,
   sparkles: Sparkles,
   blend: Blend,
-  type: Type,
   film: Film,
   layers: Layers,
   rotate: RotateCw,
@@ -354,12 +342,10 @@ const ICONS = {
   italic: Italic,
   'bullet-list': List,
   'ordered-list': ListOrdered,
-  loop: Repeat,
-  fullscreen: Maximize,
   'exit-fullscreen': Minimize,
   shortcuts: Keyboard,
-  'select-tool': MousePointer2,
   'zoom-selection': Scan,
+  ...FINAL_CUT_GLYPHS,
 } as const
 
 export type IconName = keyof typeof ICONS

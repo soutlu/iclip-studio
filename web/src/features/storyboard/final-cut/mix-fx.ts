@@ -19,7 +19,10 @@ import {
 import {
   activeAudioFxPresetIds,
   audioFxPresetNodes,
+  audioFxPresetsByFamily,
   getAudioFxPreset,
+  HF_AUDIO_FX_PRESET_FAMILIES,
+  type HfAudioFxPresetFamily,
 } from '@hyperframes/core/audio-fx-presets'
 import { applyAudioFxProfile, getAudioFxProfile } from '@hyperframes/core/audio-fx-profiles'
 import type { AudioRole } from './audio-role'
@@ -87,6 +90,23 @@ export function quickPresets(role: AudioRole, active: string | null): string[] {
   const ids = [...QUICK_PRESETS[role]]
   if (active !== null && !ids.includes(active)) ids[ids.length - 1] = active
   return ids
+}
+
+/**
+ * 「更多风格」里列的预设：按 core 的四类排，去掉快捷小块里已经有的（`quickPresets(role, active)`）；去完空了的
+ * 类不列。
+ */
+export function morePresets(
+  role: AudioRole,
+  active: string | null,
+): { family: HfAudioFxPresetFamily; ids: string[] }[] {
+  const shown = new Set(quickPresets(role, active))
+  return HF_AUDIO_FX_PRESET_FAMILIES.map((family) => ({
+    family,
+    ids: audioFxPresetsByFamily(family)
+      .map((preset) => preset.id)
+      .filter((id) => !shown.has(id)),
+  })).filter(({ ids }) => ids.length > 0)
 }
 
 /** 三段均衡现在的样子（低、中、高）：没加过时是 core 的三段、都是 0。 */
