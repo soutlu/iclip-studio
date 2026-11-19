@@ -23,6 +23,12 @@ const RULES = [
     re: /rgba?\(\s*\d|hsla?\(|oklch\(/g,
   },
   {
+    id: 'primitive-palette-ref',
+    desc: '直接引用原始色阶 --n* / --p* / --t* / --e*（应引用语义 token；没有对应语义角色的取值只放在模块开头的变量块里）',
+    ext: ['.css', '.ts', '.tsx'],
+    re: /var\(--[npte]\d+\)/g,
+  },
+  {
     id: 'tailwind-palette-class',
     desc: 'Tailwind 原色板类（本设计系统使用 4 族基础色阶与 5 槽低饱和分类色，不用 slate/blue/… 调色板）',
     ext: ['.ts', '.tsx'],
