@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+  type RefObject,
+} from 'react'
 import { cn } from '@/shared/lib/utils'
 import type { SplitterHandlers } from './use-editor-layout'
 
@@ -9,8 +16,10 @@ type LayoutSplitterProps = SplitterHandlers & {
   /** `vertical` 是两栏之间的竖条（左右拖），`horizontal` 是上下两块之间的横条（上下拖）。 */
   orientation: 'vertical' | 'horizontal'
   label: string
-  /** 分出来的那块现在多大（px），写在说明里；没定过（按内容高）时不给。 */
-  value: number | undefined
+  /** 这条分隔条调的那一块：说明里写它实际排出来多宽（竖条）或多高（横条）。 */
+  panelRef: RefObject<HTMLElement | null>
+  /** 那一块的尺寸是拖定的；没定过（按内容高）时说明里不写当前尺寸。 */
+  sized: boolean
   min: number
   /** 最大能拉到多大；要看编辑器有多大时不给。 */
   max?: number
@@ -25,7 +34,8 @@ type LayoutSplitterProps = SplitterHandlers & {
 export function LayoutSplitter({
   orientation,
   label,
-  value,
+  panelRef,
+  sized,
   min,
   max,
   className,
@@ -38,6 +48,18 @@ export function LayoutSplitter({
   const [dragging, setDragging] = useState(false)
   const detachRef = useRef<(() => void) | null>(null)
   useEffect(() => () => detachRef.current?.(), [])
+  // 记着的尺寸会被样式按编辑器大小夹住（窄工作台里右栏让给舞台），说明里写实际排出来的尺寸
+  const [actual, setActual] = useState<number | null>(null)
+  useEffect(() => {
+    const panel = panelRef.current
+    if (panel === null) return
+    const observer = new ResizeObserver(() => {
+      const box = panel.getBoundingClientRect()
+      setActual(Math.round(orientation === 'vertical' ? box.width : box.height))
+    })
+    observer.observe(panel)
+    return () => observer.disconnect()
+  }, [panelRef, orientation])
   const along = (event: { clientX: number; clientY: number }) =>
     orientation === 'vertical' ? event.clientX : event.clientY
 
@@ -94,7 +116,7 @@ export function LayoutSplitter({
   }
 
   const detail = [
-    value === undefined ? undefined : `当前 ${value}px`,
+    sized && actual !== null ? `当前 ${actual}px` : undefined,
     max === undefined ? `至少 ${min}px` : `可在 ${min}–${max}px 之间调整`,
     '双击恢复默认',
   ]

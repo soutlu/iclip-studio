@@ -24,8 +24,17 @@ describe('final-cut 编辑器 · 外框', () => {
     screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   const sideSplitter = () => screen.getByRole('button', { name: '调整右栏宽度' })
   const timelineSplitter = () => screen.getByRole('button', { name: '调整时间线高度' })
-  /** 分隔条说明里写着的当前尺寸；没定过时是 undefined。 */
-  const sizeOf = (splitter: HTMLElement) => /当前 (\d+)px/.exec(splitter.title)?.[1]
+  /**
+   * 记着的右栏宽度、时间线高度（交给样式去排的那个值，没定过时是空串）。jsdom 不排版，分隔条说明里写的实际尺寸
+   * 在端到端测试里看。
+   */
+  const remembered = (name: '--wf-side-width' | '--wf-timeline-height') => {
+    const workspace = side().closest<HTMLElement>('.wf-workspace')
+    if (workspace === null) throw new Error('找不到编辑区')
+    return workspace.style.getPropertyValue(name)
+  }
+  const sideWidth = () => remembered('--wf-side-width')
+  const timelineHeight = () => remembered('--wf-timeline-height')
 
   /** jsdom 不排版：给预览舞台、右栏、时间线面板按下分隔条时量到的尺寸。 */
   const sizeParts = (sizes: { stage: number; side: number; timeline: number }) => {
@@ -41,16 +50,16 @@ describe('final-cut 编辑器 · 外框', () => {
 
   it('右栏默认 432 宽；按住左缘往左拖变宽，最宽 520', async () => {
     await openEditor()
-    expect(sizeOf(sideSplitter())).toBe('432')
+    expect(sideWidth()).toBe('432px')
     sizeParts({ stage: 600, side: 432, timeline: 240 })
 
     fireEvent.pointerDown(sideSplitter(), { button: 0, clientX: 500, clientY: 300 })
     fireEvent.pointerMove(window, { clientX: 440, clientY: 300 })
-    expect(sizeOf(sideSplitter())).toBe('492')
+    expect(sideWidth()).toBe('492px')
     fireEvent.pointerMove(window, { clientX: 300, clientY: 300 })
     fireEvent.pointerUp(window)
 
-    expect(sizeOf(sideSplitter())).toBe('520')
+    expect(sideWidth()).toBe('520px')
   })
 
   it('拖右栏时预览舞台至少留 360 宽', async () => {
@@ -61,7 +70,7 @@ describe('final-cut 编辑器 · 外框', () => {
     fireEvent.pointerMove(window, { clientX: 400, clientY: 300 })
     fireEvent.pointerUp(window)
 
-    expect(sizeOf(sideSplitter())).toBe('472')
+    expect(sideWidth()).toBe('472px')
   })
 
   it('拖到一半按 Esc：右栏退回按下前的宽度', async () => {
@@ -72,27 +81,27 @@ describe('final-cut 编辑器 · 外框', () => {
     fireEvent.pointerMove(window, { clientX: 440, clientY: 300 })
     fireEvent.keyDown(window, { key: 'Escape' })
 
-    expect(sizeOf(sideSplitter())).toBe('432')
+    expect(sideWidth()).toBe('432px')
   })
 
   it('时间线上缘往上拖变高，按方向键一下 16px；双击回到按内容高', async () => {
     const user = userEvent.setup()
     await openEditor()
-    expect(sizeOf(timelineSplitter())).toBeUndefined()
+    expect(timelineHeight()).toBe('')
     sizeParts({ stage: 500, side: 432, timeline: 240 })
 
     fireEvent.pointerDown(timelineSplitter(), { button: 0, clientX: 300, clientY: 600 })
     fireEvent.pointerMove(window, { clientX: 300, clientY: 560 })
     fireEvent.pointerUp(window)
-    expect(sizeOf(timelineSplitter())).toBe('280')
+    expect(timelineHeight()).toBe('280px')
 
     sizeParts({ stage: 460, side: 432, timeline: 280 })
     timelineSplitter().focus()
     await user.keyboard('{ArrowUp}')
-    expect(sizeOf(timelineSplitter())).toBe('296')
+    expect(timelineHeight()).toBe('296px')
 
     await user.dblClick(timelineSplitter())
-    expect(sizeOf(timelineSplitter())).toBeUndefined()
+    expect(timelineHeight()).toBe('')
   })
 
   it('拖过的宽度记在浏览器里：重新打开编辑器还是那么宽', async () => {
@@ -101,12 +110,13 @@ describe('final-cut 编辑器 · 外框', () => {
     sizeParts({ stage: 600, side: 432, timeline: 240 })
     sideSplitter().focus()
     await user.keyboard('{ArrowLeft}')
-    expect(sizeOf(sideSplitter())).toBe('448')
+    expect(sideWidth()).toBe('448px')
 
     close()
     reopen()
 
-    expect(sizeOf(await screen.findByRole('button', { name: '调整右栏宽度' }))).toBe('448')
+    await screen.findByRole('button', { name: '调整右栏宽度' })
+    expect(sideWidth()).toBe('448px')
   })
 
   it('收起右栏：只剩导航图标，页签内容藏起来，分隔条也没了', async () => {

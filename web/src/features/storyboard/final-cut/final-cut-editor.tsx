@@ -1587,7 +1587,8 @@ function EditorBody({
           max={SIDE_WIDTH.max}
           min={SIDE_WIDTH.min}
           orientation="vertical"
-          value={layout.sideWidth}
+          panelRef={sideRef}
+          sized
           {...sideSplitter}
         />
       )}
@@ -1807,7 +1808,8 @@ function EditorBody({
         label="调整时间线高度"
         min={TIMELINE_MIN_HEIGHT}
         orientation="horizontal"
-        value={layout.timelineHeight ?? undefined}
+        panelRef={timelinePanelRef}
+        sized={layout.timelineHeight !== null}
         {...timelineSplitter}
       />
       <div className="wf-panel wf-timeline" ref={timelinePanelRef}>

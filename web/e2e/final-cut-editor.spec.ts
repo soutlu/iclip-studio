@@ -1348,9 +1348,17 @@ test('编辑区变窄时只裁不换行：工具条和侧栏页签都排一行�
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await openFinalCut(panel)
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const sideSplitter = editor.getByRole('button', { name: '调整右栏宽度' })
   const preview = editor.getByRole('region', { name: '预览' })
+  /** 右栏分隔条的提示写的是右栏实际排出来的宽度（记着的 432 会被编辑区夹窄）。 */
+  const splitterTellsSideWidth = async () =>
+    expect(sideSplitter).toHaveAttribute(
+      'title',
+      new RegExp(`当前 ${Math.round((await boxOf(side)).width)}px`),
+    )
   // 默认布局：舞台照常留 360
   expect((await boxOf(preview)).width).toBeGreaterThanOrEqual(360)
+  await splitterTellsSideWidth()
   // 把工作台拖到最窄（560），编辑器跟着变窄。正好拖到 560：再往右拖工作台会被收进去一截
   const handle = await boxOf(page.getByRole('button', { name: '调整工作台宽度' }))
   const narrowBy = (await boxOf(panel)).width - 560
@@ -1379,6 +1387,7 @@ test('编辑区变窄时只裁不换行：工具条和侧栏页签都排一行�
   expect(stage.width).toBeGreaterThanOrEqual(300)
   const controls = await boxOf(editor.getByRole('group', { name: '播放控制' }))
   expect(controls.x + controls.width).toBeLessThanOrEqual(stage.x + stage.width)
+  await splitterTellsSideWidth()
 
   const firstTab = await boxOf(side.getByRole('tab', { name: '镜头' }))
   const propsTab = await boxOf(side.getByRole('tab', { name: '属性' }))
