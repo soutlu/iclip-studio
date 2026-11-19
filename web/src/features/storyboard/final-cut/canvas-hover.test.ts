@@ -33,52 +33,48 @@ const measure = (cx: number): LayerMeasure => ({
   refusal: 0,
 })
 
-// 表：0 是贴片的宿主，1、2 是贴片里的两层，3 是视频片段
-const LAYERS = [
-  layer('host', 'item', true),
-  layer('title', 'item'),
-  layer('badge', 'item'),
-  layer('video', 'video'),
-]
-const picked = (at: number, cx: number, owner = -1): PickedLayer => ({
+// 表：0 是贴片的宿主，1 是字幕的一句，2 是视频片段
+const LAYERS = [layer('host', 'item', true), layer('line', 'line'), layer('video', 'video')]
+const picked = (at: number, cx: number, field: string | null = null): PickedLayer => ({
   layer: at,
-  owner,
+  field,
   measure: measure(cx),
 })
-const never = () => false
-const PLAIN = { isText: never, winsOnTop: never }
+const isCaption = (each: CanvasLayer) => each.key === 'line'
+// 贴片的文字可填项是 text
+const JUDGES = {
+  isText: (each: CanvasLayer, field: string | null) =>
+    isCaption(each) || (each.host && field === 'text'),
+  winsOnTop: isCaption,
+}
 
 describe('悬停框哪一层', () => {
-  it('框最上面那一层，宿主跳过', () => {
-    const hover = hoverOf([picked(0, 1), picked(1, 2, 0), picked(3, 3)], LAYERS, new Set(), PLAIN)
-    expect(hover).toEqual({ frame: measure(2).frame, clip: 'item', generated: false, text: false })
+  it('框最上面那一层：贴片是它的宿主，算在贴片的片段上', () => {
+    const hover = hoverOf([picked(0, 1), picked(2, 3)], LAYERS, new Set(), JUDGES)
+    expect(hover).toEqual({ frame: measure(1).frame, clip: 'item', text: false })
+  })
+
+  it('指针下是贴片里绑着文字可填项的元素：框还是整个宿主，能原地改字', () => {
+    const hover = hoverOf([picked(0, 1, 'text'), picked(2, 3)], LAYERS, new Set(), JUDGES)
+    expect(hover).toEqual({ frame: measure(1).frame, clip: 'item', text: true })
   })
 
   it('指针下有已经框着的层：点下去还是它，不框', () => {
-    expect(hoverOf([picked(1, 2, 0), picked(3, 3)], LAYERS, new Set(['video']), PLAIN)).toBeNull()
+    expect(hoverOf([picked(0, 1), picked(2, 3)], LAYERS, new Set(['video']), JUDGES)).toBeNull()
   })
 
-  it('最上面是点一下就选中它的层（字幕）：下面有框着的层也框它；它自己框着时不框', () => {
-    const judges = { isText: never, winsOnTop: (each: CanvasLayer) => each.key === 'title' }
-    const stack = [picked(1, 2, 0), picked(3, 3)]
-    expect(hoverOf(stack, LAYERS, new Set(['video']), judges)?.frame).toEqual(measure(2).frame)
-    expect(hoverOf(stack, LAYERS, new Set(['title']), judges)).toBeNull()
-  })
-
-  it('最上面是脚本生成的层：框它，算在挂着它的宿主的片段上', () => {
-    expect(hoverOf([picked(-1, 7, 0), picked(3, 3)], LAYERS, new Set(), PLAIN)).toEqual({
-      frame: measure(7).frame,
-      clip: 'item',
-      generated: true,
-      text: false,
+  it('最上面是字幕的一句：下面有框着的层也框它，能原地改字；它自己框着时不框', () => {
+    const stack = [picked(1, 2), picked(2, 3)]
+    expect(hoverOf(stack, LAYERS, new Set(['video']), JUDGES)).toEqual({
+      frame: measure(2).frame,
+      clip: 'line',
+      text: true,
     })
+    expect(hoverOf(stack, LAYERS, new Set(['line']), JUDGES)).toBeNull()
   })
 
-  it('能原地改字的层标出来；指针下没有层时不框', () => {
-    const judges = { isText: (each: CanvasLayer) => each.key === 'title', winsOnTop: never }
-    expect(hoverOf([picked(1, 2, 0)], LAYERS, new Set(), judges)?.text).toBe(true)
-    expect(hoverOf([picked(2, 2, 0)], LAYERS, new Set(), judges)?.text).toBe(false)
-    expect(hoverOf([], LAYERS, new Set(), judges)).toBeNull()
+  it('指针下没有层时不框', () => {
+    expect(hoverOf([], LAYERS, new Set(), JUDGES)).toBeNull()
   })
 })
 

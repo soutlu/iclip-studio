@@ -66,7 +66,7 @@ const zMeasure = z.strictObject({
   move: z.boolean(),
   resize: z.boolean(),
   turn: z.boolean(),
-  refusal: z.number().int().min(0).max(5),
+  refusal: z.number().int().min(0).max(3),
 })
 
 /** 引擎的一条补丁（JSON Patch 的 add、remove、replace）。 */
@@ -101,14 +101,6 @@ export const zPreviewCommand = z.discriminatedUnion('type', [
     patches: z.array(zPatchOp),
     captions: z.array(zPatchOp).optional(),
     fonts: z.string().optional(),
-    /**
-     * 组件文件里改了的层：预览里这份组件是从工程里取的（不经副本会话），直接把这一层的行内样式、属性改成这样
-     * （null 是去掉）。在主文件、字幕场景的补丁之后改；改完按 `data-x` / `data-y` 重新摆一次（见 SDK 的
-     * `moveElement`）。
-     */
-    layers: z
-      .array(z.strictObject({ ref: zLayerRef, styles: zValues, attributes: zValues }))
-      .optional(),
   }),
   /** final-cut 没有内容了：停下，正在加载的那份不再换上来。 */
   z.strictObject({ type: z.literal('unload') }),
@@ -132,18 +124,24 @@ export const zPreviewCommand = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('retry') }),
   /**
    * 画面上的层（见 canvas-layers.ts）：之后的 `watch`、`pick`、`draft` 按它在这张表里的位置说是哪一层。`count` 是
-   * 源文件里这个选择器一共几个匹配，画面里数出来不一样时这一层当成脚本生成的。
+   * 源文件里这个选择器一共几个匹配，画面里数出来不一样时这一层找不到（脚本加了同样的元素）。`host` 是贴片、场景的
+   * 宿主：画面上点中它里面画出来的东西都算点中它，拖动中按宿主的写法摆（见 layer-edits.ts）。
    */
   z.strictObject({
     type: z.literal('layers'),
-    entries: z.array(zLayerRef.extend({ count: z.number().int().nonnegative() })),
+    entries: z.array(
+      zLayerRef.extend({ count: z.number().int().nonnegative(), host: z.boolean() }),
+    ),
   }),
   /**
    * 要量的层（`layers` 表里的位置）：预览页量出它们报 `measured`，之后换了一份、打了补丁、播到别处、字体加载好
    * 以后变了时带着这个 `seq` 再报。
    */
   z.strictObject({ type: z.literal('watch'), seq: zSeq, layers: z.array(zSeq) }),
-  /** 画布上 (`x`, `y`) 处从上往下能选中的层（规则见运行库的 `pointerTargets`），报 `picked`。 */
+  /**
+   * 画布上 (`x`, `y`) 处从上往下能选中的层，报 `picked`：照运行库的 `pointerTargets` 找，贴片、场景的宿主里面的
+   * 算成宿主（见 preview-canvas.ts 的 `unitsAt`）。
+   */
   z.strictObject({ type: z.literal('pick'), seq: zSeq, x: z.number(), y: z.number() }),
   /**
    * 开始挪 `layers`（`layers` 表里的位置）：量出挪的时候吸附用的矩形，报 `snapRects`。在这一下的第一个 `draft`
@@ -186,6 +184,8 @@ export const zPreviewCommand = z.discriminatedUnion('type', [
 export type PreviewCommand = z.infer<typeof zPreviewCommand>
 
 export type LayerRef = z.infer<typeof zLayerRef>
+/** 层表里的一条（见 `layers` 命令）。 */
+export type LayerEntry = Extract<PreviewCommand, { type: 'layers' }>['entries'][number]
 export type LayerFrame = z.infer<typeof zFrame>
 export type LayerMeasure = z.infer<typeof zMeasure>
 
@@ -225,23 +225,20 @@ export const zPreviewEvent = z.discriminatedUnion('type', [
   /** 第 `seq` 次 `watch` 要量的各层，和它的 `layers` 一一对应；画面里找不到、没显示的是 null。 */
   z.strictObject({ type: z.literal('measured'), seq: zSeq, items: z.array(zMeasure.nullable()) }),
   /**
-   * 第 `seq` 次 `pick` 那一处从上往下能选中的层：`layer` 是它在 `layers` 表里的位置（表里没有、或者数不对，是
-   * 脚本生成的，-1），`owner` 是挂着它的宿主在表里的位置（主文件里的、没有时 -1），`measure` 是量出来的它。
+   * 第 `seq` 次 `pick` 那一处从上往下能选中的层：`layer` 是它在 `layers` 表里的位置（表里没有的不报），`field`
+   * 是指针下它里面最上面那个元素绑着的可填项（`data-var-text`，没绑时 null），`measure` 是量出来的它。
    */
   z.strictObject({
     type: z.literal('picked'),
     seq: zSeq,
     stack: z.array(
-      z.strictObject({
-        layer: z.number().int().min(-1),
-        owner: z.number().int().min(-1),
-        measure: zMeasure,
-      }),
+      z.strictObject({ layer: zSeq, field: z.string().nullable(), measure: zMeasure }),
     ),
   }),
   /**
    * 第 `seq` 次 `snap` 的矩形（画布像素）：`moving` 是要挪的那几层合起来的框（都找不到时是 null），`targets` 是能
-   * 吸过去的别的层（运行库的 `snapCandidates`，宿主和它里面的不算）。每个框都按那个元素自己的 `inset()` 裁切收窄。
+   * 吸过去的别的层（运行库的 `snapCandidates`，加上显示着的别的贴片、场景宿主；宿主里面的不算）。每个框都按那个
+   * 元素自己的 `inset()` 裁切收窄。
    */
   z.strictObject({
     type: z.literal('snapRects'),

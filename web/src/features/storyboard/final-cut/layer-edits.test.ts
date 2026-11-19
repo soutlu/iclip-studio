@@ -2,12 +2,50 @@ import { describe, expect, it } from 'vitest'
 import {
   authoredTransform,
   cssStyles,
+  inlineStyleOf,
   movedTo,
+  movedTranslate,
   rotationStyles,
   rotationTarget,
+  scaledStyles,
   sizeStyles,
   toLocal,
 } from './layer-edits'
+
+describe('贴片、场景的宿主', () => {
+  it('挪写它的 translate：在居中用的百分比上加像素，挪几次都还是一层 calc()', () => {
+    const once = movedTranslate('-50% -50%', { x: 30, y: -100 })
+    expect(once).toBe('calc(-50% + 30px) calc(-50% - 100px)')
+    expect(movedTranslate(once, { x: -30, y: 0.5 })).toBe('-50% calc(-50% - 99.5px)')
+  })
+
+  it('没写过 translate 时从 0 加；像素、0 照加；z 原样留着', () => {
+    expect(movedTranslate('', { x: 12.34567, y: -3 })).toBe('12.346px -3px')
+    expect(movedTranslate('none', { x: 0, y: 4 })).toBe('0px 4px')
+    expect(movedTranslate('10px', { x: -10, y: 2 })).toBe('0px 2px')
+    expect(movedTranslate('5px 0 7px', { x: 1, y: 1 })).toBe('6px 1px 7px')
+  })
+
+  it('认不出的写法在外面包一层 calc() 加上去，没挪的方向不动', () => {
+    expect(movedTranslate('1em -50%', { x: 4, y: 0 })).toBe('calc(1em + 4px) -50%')
+  })
+
+  it('缩放写 scale：现在的倍数乘上比例，没写过算 1，横竖不一样时各自乘', () => {
+    expect(scaledStyles('0.25', 1.2)).toEqual({ scale: '0.3' })
+    expect(scaledStyles('', 0.5)).toEqual({ scale: '0.5' })
+    expect(scaledStyles('none', 2)).toEqual({ scale: '2' })
+    expect(scaledStyles('0.5 0.25', 2)).toEqual({ scale: '1 0.5' })
+  })
+
+  it('读文件里宿主行内写着的样式；没写、找不到时是空串', () => {
+    const content =
+      '<div id="film" data-composition-id="film"><div data-hf-id="h" style="translate: -50% -50%; scale: 0.25"></div></div>'
+    expect(inlineStyleOf(content, 'h', 'translate')).toBe('-50% -50%')
+    expect(inlineStyleOf(content, 'h', 'scale')).toBe('0.25')
+    expect(inlineStyleOf(content, 'h', 'rotate')).toBe('')
+    expect(inlineStyleOf(content, 'missing', 'scale')).toBe('')
+  })
+})
 
 describe('挪', () => {
   it('画布上挪的距离换成父元素里的像素：父元素缩小一半、转 90° 时都按它算回去', () => {

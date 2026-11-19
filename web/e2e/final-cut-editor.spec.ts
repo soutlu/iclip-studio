@@ -3446,10 +3446,9 @@ const canvasSpot = async (layer: Locator, player: Locator, selector: string) => 
   }
 }
 
+// 贴片「测试可填项」的宿主（按 1920×1080 设计，缩进画面、居中），和它里面的一行字
 const CARD = '#film > .component'
-// 「测试可填项」里的层：一块色底，里面一行字。色底由动画脚本从左滑入，字不动
 const TEXT = `${CARD} #ff-text`
-const PANEL = `${CARD} #ff-panel`
 const CARD_FILE = 'compositions/fixtures/fixture-fields.html'
 
 /** 存出的文件里 id 是 `id` 的元素的属性；没有这个元素时是 null。 */
@@ -3473,40 +3472,6 @@ const styleOf = (attributes: Record<string, string> | null): Record<string, stri
     }),
   )
 
-/** 等一次保存贴片组件文件、存下的 `#id` 那一层满足 `check`；答复存下的组件文件。 */
-const cardSavedWith = (
-  page: Page,
-  id: string,
-  check: (layer: Record<string, string> | null) => boolean,
-) =>
-  page
-    .waitForRequest((request) => {
-      const content = savedFileOf(request, CARD_FILE)
-      return content !== null && check(savedElement(content, id))
-    })
-    .then((request) => savedFileOf(request, CARD_FILE) ?? '')
-
-/**
- * mock 的预览域名把工程文件转到组件库里的同名文件：贴片组件文件照后端，答复编辑器最近存下的那一份（还没存过时
- * 照旧转到组件库）。
- */
-const serveSavedCard = async (page: Page, file = CARD_FILE) => {
-  let stored: string | null = null
-  page.on('request', (request) => {
-    stored = savedFileOf(request, file) ?? stored
-  })
-  await page.route(`**/api/final-cut/preview/*/files/${file}`, (route) =>
-    stored === null
-      ? route.fallback()
-      : route.fulfill({
-          status: 200,
-          contentType: 'text/html; charset=utf-8',
-          headers: { 'Cache-Control': 'no-store' },
-          body: stored,
-        }),
-  )
-}
-
 /** 画布一像素在页面上多宽。 */
 const canvasZoom = async (layer: Locator, player: Locator) => {
   const width = await player.evaluate((element: PreviewPlayer) =>
@@ -3515,7 +3480,34 @@ const canvasZoom = async (layer: Locator, player: Locator) => {
   return (await boxOf(layer)).width / width
 }
 
-test('画面上点选：点贴片的字选中里面这一层、时间线上选中贴片，框和预览里的字对齐、带把手；同一处再点一下换成下面的色底，再点换成视频；时间线上选中贴片时框住宿主、没有把手，拖它说明要选里面的层；点空白处取消', async ({
+/** 画出来的框 `drawn` 和页面上的框 `shown` 对齐（屏幕像素，差不到 1.5）。 */
+const alignsWith = (
+  drawn: { x: number; y: number; width: number; height: number },
+  shown: { x: number; y: number; width: number; height: number },
+) => {
+  expect(Math.abs(drawn.x - shown.x)).toBeLessThan(1.5)
+  expect(Math.abs(drawn.y - shown.y)).toBeLessThan(1.5)
+  expect(Math.abs(drawn.width - shown.width)).toBeLessThan(1.5)
+  expect(Math.abs(drawn.height - shown.height)).toBeLessThan(1.5)
+}
+
+/** 预览里 `selector` 那个元素在页面上的框，裁到画面里（看得见的那一块）。 */
+const shownOnPage = async (layer: Locator, player: Locator, selector: string) => {
+  const canvas = await boxOf(layer)
+  const rect = await previewRect(player, selector)
+  const left = Math.max(0, rect.x)
+  const top = Math.max(0, rect.y)
+  const right = Math.min(1, rect.x + rect.width)
+  const bottom = Math.min(1, rect.y + rect.height)
+  return {
+    x: canvas.x + left * canvas.width,
+    y: canvas.y + top * canvas.height,
+    width: (right - left) * canvas.width,
+    height: (bottom - top) * canvas.height,
+  }
+}
+
+test('画面上点选：点贴片里画出来的字、色底都选中整个贴片，框就是宿主、带把手，透明的地方点到下面的视频；同一处再点一下换成压在下面的视频，再点回到贴片；时间线上选中贴片时也框住宿主、带把手；点空白处取消', async ({
   page,
 }) => {
   const { editor, layer, player } = await openWithCard(page)
@@ -3525,122 +3517,146 @@ test('画面上点选：点贴片的字选中里面这一层、时间线上选�
   await page.mouse.click(spot.x, spot.y)
   await expect(card).toHaveAttribute('aria-pressed', 'true')
   await expect(video).toHaveAttribute('aria-pressed', 'false')
-  const frame = layer.getByRole('img', { name: '选中：测试可填项 · ff-text' })
+  const frame = layer.getByRole('img', { name: '选中：测试可填项' })
   await expect(frame).toBeVisible()
-  const canvas = await boxOf(layer)
-  const shown = await previewRect(player, TEXT)
-  const drawn = await boxOf(frame)
-  expect(Math.abs(drawn.x - (canvas.x + shown.x * canvas.width))).toBeLessThan(1.5)
-  expect(Math.abs(drawn.y - (canvas.y + shown.y * canvas.height))).toBeLessThan(1.5)
-  expect(Math.abs(drawn.width - shown.width * canvas.width)).toBeLessThan(1.5)
-  expect(Math.abs(drawn.height - shown.height * canvas.height)).toBeLessThan(1.5)
+  alignsWith(await boxOf(frame), await shownOnPage(layer, player, CARD))
   await expect(frame.locator('.wf-canvas-handle')).toHaveCount(4)
   await expect(layer.getByRole('button', { name: '旋转' })).toBeVisible()
 
-  // 隔过 600 毫秒再在同一处很快连点：换成下面的色底，再换成压在下面的视频
+  // 贴片里透明的地方（宿主框里，没有字、没有色底）点到下面的视频
+  await page.keyboard.press('Escape')
+  await expect(card).toHaveAttribute('aria-pressed', 'false')
+  const band = await shownOnPage(layer, player, CARD)
+  await page.mouse.click(band.x + band.width * 0.8, band.y + band.height * 0.2)
+  await expect(video).toHaveAttribute('aria-pressed', 'true')
+  await expect(card).toHaveAttribute('aria-pressed', 'false')
+
+  // 色底上没有字的地方也是整个贴片
+  await page.keyboard.press('Escape')
+  await expect(video).toHaveAttribute('aria-pressed', 'false')
+  const panel = await shownOnPage(layer, player, `${CARD} #ff-panel`)
+  await page.mouse.click(panel.x + panel.width * 0.9, panel.y + panel.height / 2)
+  await expect(card).toHaveAttribute('aria-pressed', 'true')
+  await expect(frame).toBeVisible()
+
+  // 隔过 600 毫秒再在同一处很快连点：换成压在下面的视频，再点回到贴片（贴片里的层不轮到）
   await page.waitForTimeout(700)
   await page.mouse.click(spot.x, spot.y)
-  await page.mouse.click(spot.x, spot.y)
-  await expect(layer.getByRole('img', { name: '选中：测试可填项 · ff-panel' })).toBeVisible()
-  await expect(card).toHaveAttribute('aria-pressed', 'true')
   await page.mouse.click(spot.x, spot.y)
   await expect(video).toHaveAttribute('aria-pressed', 'true')
   await expect(card).toHaveAttribute('aria-pressed', 'false')
   await expect(layer.getByRole('img', { name: '选中：A · 镜头 1' })).toBeVisible()
-
-  // 时间线上选中贴片：框住宿主，没有把手；在它里面没有层的地方拖，说明要选里面的层
-  await card.click()
-  const host = layer.getByRole('img', { name: '选中：测试可填项' })
-  await expect(host).toBeVisible()
-  await expect(layer.locator('.wf-canvas-handle')).toHaveCount(0)
-  await expect(layer.getByRole('button', { name: '旋转' })).toHaveCount(0)
-  const box = await boxOf(host)
-  const empty = { x: box.x + box.width * 0.75, y: box.y + box.height * 0.2 }
-  await page.mouse.move(empty.x, empty.y)
-  await page.mouse.down()
-  await page.mouse.move(empty.x + 30, empty.y + 10, { steps: 4 })
-  await page.mouse.up()
-  await expect(page.getByText('请在画面上选中里面的层再调整')).toBeVisible()
+  await page.mouse.click(spot.x, spot.y)
   await expect(card).toHaveAttribute('aria-pressed', 'true')
+  await expect(frame).toBeVisible()
 
-  // 播放头挪到 1.5 秒（视频已经结束），点画面上没有层的地方：取消选中
+  // 时间线上选中贴片：同样框住宿主、带把手
+  await video.click()
   await card.click()
+  await expect(frame).toBeVisible()
+  alignsWith(await boxOf(frame), await shownOnPage(layer, player, CARD))
+  await expect(frame.locator('.wf-canvas-handle')).toHaveCount(4)
+  await expect(layer.getByRole('button', { name: '旋转' })).toBeVisible()
+
+  // 播放头挪到 1.5 秒（视频已经结束），点画面上贴片外面没有层的地方：取消选中
   await stepPlayhead(page, editor, 5, 10)
   await expect(card).toHaveAttribute('aria-pressed', 'true')
+  const canvas = await boxOf(layer)
   await page.mouse.click(canvas.x + canvas.width / 2, canvas.y + 4)
   await expect(card).toHaveAttribute('aria-pressed', 'false')
   await expect(layer.getByRole('img')).toHaveCount(0)
 })
 
-/** 贴片按原比例缩进画面：组件里一像素在画布上是这么多（itemLayout 写的缩放）。 */
-const cardScale = (html: string) => {
-  const host = /<div [^>]*class="clip component"[^>]*>/.exec(html)?.[0] ?? ''
-  return Number(/style="[^"]*\bscale: ([\d.]+)/.exec(host)?.[1])
+/** 存出的主文件里贴片「测试可填项」宿主的属性；没有这个宿主时是 null。 */
+const savedCard = (html: string) => savedElement(html, savedItem(html, '测试可填项')?.id ?? '')
+
+/** 宿主 `translate` 的一个方向在居中用的 -50% 以外挪了多少像素（`-50%`、`calc(-50% ± Npx)`）；认不出时 NaN。 */
+const centredOffset = (axis: string | undefined) => {
+  if (axis === '-50%') return 0
+  const calc = /^calc\(-50% ([+-]) ([\d.]+)px\)$/.exec(axis ?? '')
+  return calc === null ? Number.NaN : (calc[1] === '-' ? -1 : 1) * Number(calc[2])
 }
 
-test('画面上拖动贴片里的字：拖动中预览跟着动，松手写进组件文件里这一层（data-x / data-y），主文件不动；方向键挪 1 像素、Shift 10 像素；撤销回到原来的位置', async ({
+/** 宿主 `translate` 两个方向各挪了多少像素（见 `centredOffset`）。 */
+const cardOffset = (attributes: Record<string, string> | null) => {
+  const [x, y] =
+    /^(calc\([^)]*\)|\S+) (calc\([^)]*\)|\S+)$/
+      .exec(styleOf(attributes)['translate'] ?? '')
+      ?.slice(1) ?? []
+  return { x: centredOffset(x), y: centredOffset(y) }
+}
+
+/** 预览里贴片宿主行内的 `transform`（预览里没让动画库解析它时是空串）。 */
+const previewCardTransform = (editor: Locator) =>
+  finalCutPreviewPlayer(editor).evaluate(
+    (element: PreviewPlayer, query) =>
+      element.iframeElement.contentDocument?.querySelector<HTMLElement>(query)?.style.transform,
+    CARD,
+  )
+
+/** 记下存了几次贴片的组件文件。 */
+const countCardSaves = (page: Page, file = CARD_FILE) => {
+  const saves = { count: 0 }
+  page.on('request', (request) => {
+    if (savedFileOf(request, file) !== null) saves.count += 1
+  })
+  return saves
+}
+
+test('画面上拖动贴片：拖动中预览跟着动，松手写进主文件里宿主的 translate（不写 data-x），组件文件不动；方向键挪 1 像素、Shift 10 像素；撤销回到原来的位置', async ({
   page,
 }) => {
-  await serveSavedCard(page)
   const { editor, layer, player, html } = await openWithCard(page)
+  const original = savedCard(html)
+  expect(styleOf(original)['translate']).toBe('-50% -50%')
   const zoom = await canvasZoom(layer, player)
-  const scale = cardScale(html)
-  const before = await previewRect(player, TEXT)
+  const before = await previewRect(player, CARD)
   const spot = await canvasSpot(layer, player, TEXT)
   await page.mouse.click(spot.x, spot.y)
-  await expect(layer.getByRole('img', { name: '选中：测试可填项 · ff-text' })).toBeVisible()
+  await expect(layer.getByRole('img', { name: '选中：测试可填项' })).toBeVisible()
 
-  let mainSaves = 0
-  page.on('request', (request) => {
-    if (savedHtmlOf(request) !== null) mainSaves += 1
-  })
-  const moved = cardSavedWith(page, 'ff-text', (saved) => saved?.['data-x'] !== undefined)
+  const cardSaves = countCardSaves(page)
+  const moved = mainSavedWith(
+    page,
+    (saved) =>
+      !Number.isNaN(cardOffset(savedCard(saved)).x) && cardOffset(savedCard(saved)).x !== 0,
+  )
   await page.mouse.move(spot.x, spot.y)
   await page.mouse.down()
   await page.mouse.move(spot.x + 20, spot.y + 10, { steps: 4 })
   await page.mouse.move(spot.x + 40, spot.y + 20, { steps: 4 })
-  // 还没松手：预览里已经挪过去了
+  // 还没松手：预览里整块已经挪过去了
   const canvas = await boxOf(layer)
   await settles(async () =>
-    expect(((await previewRect(player, TEXT)).x - before.x) * canvas.width).toBeCloseTo(40, 0),
+    expect(((await previewRect(player, CARD)).x - before.x) * canvas.width).toBeCloseTo(40, 0),
   )
   await page.mouse.up()
-  // 拖的距离（画布像素）换成组件里的像素
-  const saved = savedElement(await moved, 'ff-text')
-  const x = Number(saved?.['data-x'])
-  const y = Number(saved?.['data-y'])
-  expect(Math.abs(x - 40 / zoom / scale)).toBeLessThan(0.5)
-  expect(Math.abs(y - 20 / zoom / scale)).toBeLessThan(0.5)
-  expect(saved).toMatchObject({ 'data-hf-edit-base-x': '0', 'data-hf-edit-base-y': '0' })
-  expect(styleOf(saved)).toEqual({})
-  expect(mainSaves).toBe(0)
-  // 存下以后预览重新取组件文件：还在挪过去的地方
+  // 拖的距离换成画布像素，加在居中用的 -50% 上；宿主上没有挪的属性
+  const saved = savedCard(htmlOf(await moved))
+  const offset = cardOffset(saved)
+  expect(Math.abs(offset.x - 40 / zoom)).toBeLessThan(0.5)
+  expect(Math.abs(offset.y - 20 / zoom)).toBeLessThan(0.5)
+  expect(Object.keys(saved ?? {}).filter((name) => /^data-(x|y|hf-edit)/.test(name))).toEqual([])
+  expect(styleOf(saved)).toMatchObject({ scale: styleOf(original)['scale'] })
   await settles(async () =>
     expect(
-      ((await previewRect(finalCutPreviewPlayer(editor), TEXT)).x - before.x) * canvas.width,
+      ((await previewRect(finalCutPreviewPlayer(editor), CARD)).x - before.x) * canvas.width,
     ).toBeCloseTo(40, 0),
   )
+  expect(await previewCardTransform(editor)).toBe('')
 
-  // 焦点在画面上：方向键挪选中的这一层（画布上 1 像素），不挪播放头
-  const step = 1 / scale
-  const nudged = cardSavedWith(
-    page,
-    'ff-text',
-    (layerNow) =>
-      Math.abs(Number(layerNow?.['data-x']) - (x - step)) < 0.01 &&
-      Math.abs(Number(layerNow?.['data-y']) - (y + 10 * step)) < 0.01,
-  )
+  // 焦点在画面上：方向键挪选中的贴片（画布上 1 像素），不挪播放头
+  const nudged = mainSavedWith(page, (now) => {
+    const at = cardOffset(savedCard(now))
+    return Math.abs(at.x - (offset.x - 1)) < 0.01 && Math.abs(at.y - (offset.y + 10)) < 0.01
+  })
   await page.keyboard.press('ArrowLeft')
   await page.keyboard.press('Shift+ArrowDown')
   await nudged
   await expect(editor.getByRole('group', { name: '播放控制' })).toContainText('00:00.50 /')
 
-  // 撤销三步：组件文件里这一层回到没挪过的样子，预览里也回去
-  const undone = cardSavedWith(
-    page,
-    'ff-text',
-    (layerNow) => layerNow !== null && layerNow['data-x'] === undefined,
-  )
+  // 撤销三步：宿主回到居中的写法，预览里也回去
+  const undone = mainSavedWith(page, (now) => styleOf(savedCard(now))['translate'] === '-50% -50%')
   const undo = editor
     .getByRole('toolbar', { name: '剪辑工具' })
     .getByRole('button', { name: '撤销' })
@@ -3649,17 +3665,17 @@ test('画面上拖动贴片里的字：拖动中预览跟着动，松手写进�
   await settles(async () =>
     expect(
       Math.abs(
-        ((await previewRect(finalCutPreviewPlayer(editor), TEXT)).x - before.x) * canvas.width,
+        ((await previewRect(finalCutPreviewPlayer(editor), CARD)).x - before.x) * canvas.width,
       ),
     ).toBeLessThan(0.5),
   )
-  expect(mainSaves).toBe(0)
+  // 组件文件一次都没存过
+  expect(cardSaves.count).toBe(0)
 })
 
-test('其它语言下画面上挪贴片里的一层直接打进预览：存下之前不换播放器、预览里已经挪过去；存下以后整份重新加载，还在挪过去的地方', async ({
+test('其它语言下画面上挪贴片：存下之前预览里已经挪过去，存下以后还在挪过去的地方，组件文件不动', async ({
   page,
 }) => {
-  await serveSavedCard(page)
   const { editor, layer } = await openWithCard(page)
   const languages = editor.getByRole('group', { name: '语言' })
   // 加第一种语言时文字字段改成随语言，主文件变了，预览整份重新加载一次：等存下、新的播放器换上来、没有在加载的
@@ -3668,46 +3684,58 @@ test('其它语言下画面上挪贴片里的一层直接打进预览：存下�
   await page.getByRole('menuitem', { name: 'English（EN）' }).click()
   await bound
   const player = await settledPlayer(editor)
-  const before = await previewRect(player, TEXT)
+  const before = await previewRect(player, CARD)
   const spot = await canvasSpot(layer, player, TEXT)
   await page.mouse.click(spot.x, spot.y)
-  await expect(layer.getByRole('img', { name: '选中：测试可填项 · ff-text' })).toBeVisible()
-  await markFinalCutPreviewPlayer(editor)
+  await expect(layer.getByRole('img', { name: '选中：测试可填项' })).toBeVisible()
+  const cardSaves = countCardSaves(page)
 
-  // 存不下去：预览里看到的只能是直接打进去的
+  // 存不下去：预览里也已经挪过去了
   await pauseMockResponses(page, '/workspace/file')
   await page.keyboard.press('Shift+ArrowLeft')
   const canvas = await boxOf(layer)
   const shift = async () =>
-    ((await previewRect(finalCutPreviewPlayer(editor), TEXT)).x - before.x) * canvas.width
+    ((await previewRect(finalCutPreviewPlayer(editor), CARD)).x - before.x) * canvas.width
   await settles(async () => expect(await shift()).toBeLessThan(-5))
-  const live = await shift()
-  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
+  const shown = await shift()
 
-  // 存下以后预览重新取组件文件、整份重新加载：和直接打进去的一样
-  const nudged = cardSavedWith(page, 'ff-text', (saved) => saved?.['data-x'] !== undefined)
+  // 存下以后：主文件里宿主挪了 10 像素，预览里还在那里
+  const nudged = mainSavedWith(page, (html) => cardOffset(savedCard(html)).x === -10)
   await releaseMockResponses(page, '/workspace/file')
   await nudged
-  await expect.poll(() => isMarkedFinalCutPreviewPlayer(editor)).toBe(false)
   await readyPlayer(editor)
-  await expect.poll(shift).toBeCloseTo(live, 0)
+  await expect.poll(shift).toBeCloseTo(shown, 0)
+  expect(cardSaves.count).toBe(0)
 })
 
-/** 预览里 `selector` 那个元素的布局宽高（不算变换）。 */
-const layoutSizeOf = (player: Locator, selector: string) =>
-  player.evaluate((element: PreviewPlayer, query) => {
-    const target = element.iframeElement.contentDocument?.querySelector<HTMLElement>(query)
-    return { width: target?.offsetWidth ?? 0, height: target?.offsetHeight ?? 0 }
-  }, selector)
+/** 预览里 `selector` 那个元素的中心（画布像素）。 */
+const centreOf = async (
+  player: Locator,
+  selector: string,
+  canvas: { width: number; height: number },
+) => {
+  const rect = await previewRect(player, selector)
+  return {
+    x: (rect.x + rect.width / 2) * canvas.width,
+    y: (rect.y + rect.height / 2) * canvas.height,
+  }
+}
 
-test('画面上缩放贴片里的字：拖右下角的把手往外，以中心等比放大，组件文件里这一层写宽高（px）、不写 scale，中心不动', async ({
+/** 预览里 final-cut 画布的尺寸（画布像素）。 */
+const canvasSizeOf = (player: Locator) =>
+  player.evaluate((element: PreviewPlayer) => {
+    const film = element.iframeElement.contentDocument?.getElementById('film')
+    return { width: Number(film?.dataset['width']), height: Number(film?.dataset['height']) }
+  })
+
+test('画面上缩放贴片：拖右下角的把手往外，整块以中心等比放大，主文件里宿主写 scale（不写宽高、不写挪的属性），中心不动', async ({
   page,
 }) => {
-  await serveSavedCard(page)
-  const { editor, layer, player } = await openWithCard(page)
+  const { editor, layer, player, html } = await openWithCard(page)
+  const original = styleOf(savedCard(html))
   const spot = await canvasSpot(layer, player, TEXT)
   await page.mouse.click(spot.x, spot.y)
-  const frame = layer.getByRole('img', { name: '选中：测试可填项 · ff-text' })
+  const frame = layer.getByRole('img', { name: '选中：测试可填项' })
   await expect(frame).toBeVisible()
   const box = await boxOf(frame)
   const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
@@ -3716,98 +3744,109 @@ test('画面上缩放贴片里的字：拖右下角的把手往外，以中心�
   const ratio =
     Math.hypot(to.x - center.x, to.y - center.y) /
     Math.hypot(corner.x - center.x, corner.y - center.y)
-  const before = await previewRect(player, TEXT)
-  const size = await layoutSizeOf(player, TEXT)
+  const size = await canvasSizeOf(player)
+  const before = await centreOf(player, CARD, size)
+  const beforeRect = await previewRect(player, CARD)
 
-  const resized = cardSavedWith(page, 'ff-text', (saved) => styleOf(saved)['width'] !== undefined)
+  const cardSaves = countCardSaves(page)
+  const resized = mainSavedWith(
+    page,
+    (saved) => styleOf(savedCard(saved))['scale'] !== original['scale'],
+  )
   await page.mouse.move(corner.x, corner.y)
   await page.mouse.down()
   await page.mouse.move(to.x, to.y, { steps: 6 })
   await page.mouse.up()
-  const saved = savedElement(await resized, 'ff-text')
-  expect(styleOf(saved)).toMatchObject({
-    'box-sizing': 'border-box',
-    width: `${Math.round(size.width * ratio)}px`,
-    height: `${Math.round(size.height * ratio)}px`,
+  const saved = savedCard(htmlOf(await resized))
+  const styles = styleOf(saved)
+  expect(Number(styles['scale'])).toBeCloseTo(Number(original['scale']) * ratio, 2)
+  expect(styles).toMatchObject({
+    width: original['width'],
+    height: original['height'],
+    translate: original['translate'],
   })
-  expect(styleOf(saved)['scale']).toBeUndefined()
-  // 布局从左上角长大，中心挪回原处的那一下照挪写
-  expect(Number(saved?.['data-x'])).toBeLessThan(0)
+  expect(styles['min-width']).toBeUndefined()
+  expect(styles['box-sizing']).toBeUndefined()
+  expect(Object.keys(saved ?? {}).filter((name) => /^data-(x|y|hf-edit)/.test(name))).toEqual([])
   await settles(async () =>
     expect(
-      (await previewRect(finalCutPreviewPlayer(editor), TEXT)).width / before.width,
-    ).toBeCloseTo(ratio, 1),
+      (await previewRect(finalCutPreviewPlayer(editor), CARD)).width / beforeRect.width,
+    ).toBeCloseTo(ratio, 2),
   )
-  const after = await previewRect(finalCutPreviewPlayer(editor), TEXT)
-  const canvas = await boxOf(layer)
-  expect(
-    Math.abs((after.x + after.width / 2 - (before.x + before.width / 2)) * canvas.width),
-  ).toBeLessThan(1.5)
-  expect(
-    Math.abs((after.y + after.height / 2 - (before.y + before.height / 2)) * canvas.height),
-  ).toBeLessThan(1.5)
+  const after = await centreOf(finalCutPreviewPlayer(editor), CARD, size)
+  expect(Math.abs(after.x - before.x)).toBeLessThan(1)
+  expect(Math.abs(after.y - before.y)).toBeLessThan(1)
+  expect(await previewCardTransform(editor)).toBe('')
+  expect(cardSaves.count).toBe(0)
 })
 
-test('画面上旋转贴片里的字：按住 Shift 拖旋转把手吸到 15° 的整数倍，组件文件里这一层写 rotate；预览里跟着转，撤销回去', async ({
+test('画面上旋转贴片：按住 Shift 拖旋转把手吸到 15° 的整数倍，主文件里宿主写 rotate；预览里整块跟着转，撤销回去', async ({
   page,
 }) => {
-  await serveSavedCard(page)
   const { editor, layer, player } = await openWithCard(page)
   const spot = await canvasSpot(layer, player, TEXT)
   await page.mouse.click(spot.x, spot.y)
-  const frame = layer.getByRole('img', { name: '选中：测试可填项 · ff-text' })
+  const frame = layer.getByRole('img', { name: '选中：测试可填项' })
   const box = await boxOf(frame)
   const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
   const handle = await boxOf(layer.getByRole('button', { name: '旋转' }))
   const from = { x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 }
 
   // 把手在框下面（正下方 90°），拖到中心左边偏下一点（约 172°）：转了约 82°，吸到 75°
-  const rotated = cardSavedWith(page, 'ff-text', (saved) => styleOf(saved)['rotate'] !== undefined)
+  const cardSaves = countCardSaves(page)
+  const rotated = mainSavedWith(page, (saved) => styleOf(savedCard(saved))['rotate'] !== undefined)
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
   await page.keyboard.down('Shift')
   await page.mouse.move(center.x - 100, center.y + 14, { steps: 8 })
   await page.mouse.up()
   await page.keyboard.up('Shift')
-  expect(styleOf(savedElement(await rotated, 'ff-text'))['rotate']).toBe('75deg')
+  const saved = savedCard(htmlOf(await rotated))
+  expect(styleOf(saved)['rotate']).toBe('75deg')
+  expect(Object.keys(saved ?? {}).filter((name) => /^data-(x|y|hf-edit)/.test(name))).toEqual([])
   await expect
     .poll(() =>
       finalCutPreviewPlayer(editor).evaluate(
         (element: PreviewPlayer, query) =>
           element.iframeElement.contentDocument?.querySelector<HTMLElement>(query)?.style.rotate,
-        TEXT,
+        CARD,
       ),
     )
     .toBe('75deg')
+  expect(await previewCardTransform(editor)).toBe('')
 
-  const undone = cardSavedWith(
-    page,
-    'ff-text',
-    (saved) => saved !== null && styleOf(saved)['rotate'] === undefined,
-  )
+  const undone = mainSavedWith(page, (now) => {
+    const host = savedCard(now)
+    return host !== null && styleOf(host)['rotate'] === undefined
+  })
   await editor
     .getByRole('toolbar', { name: '剪辑工具' })
     .getByRole('button', { name: '撤销' })
     .click()
   await undone
+  expect(cardSaves.count).toBe(0)
 })
 
-test('组件根不接收指针时里面的层照样点得中、拖得动：选中徽标、拖动写进组件文件里这一层，点完组件根还是不接收指针', async ({
+test('组件根不接收指针、宿主没写尺寸（铺满画面）时：点它里面照样选中整个贴片，框是整个画面；拖动写宿主的 translate，往里拖角缩小写 scale、中心不动；组件文件不动，点完组件根还是不接收指针', async ({
   page,
 }) => {
   const PASS_FILE = 'compositions/fixtures/fixture-passthrough.html'
   const BADGE = `${CARD} .fp-badge`
-  await serveSavedCard(page, PASS_FILE)
-  const { editor, layer, player } = await openWithCard(page, {
+  const { editor, layer, player, html } = await openWithCard(page, {
     search: '点穿',
     title: '测试点穿',
     seconds: 4,
   })
+  const hostOf = (content: string) =>
+    savedElement(content, savedItem(content, '测试点穿')?.id ?? '')
+  expect(styleOf(hostOf(html))['translate']).toBeUndefined()
   const before = await previewRect(player, BADGE)
   const spot = await canvasSpot(layer, player, BADGE)
   await page.mouse.click(spot.x, spot.y)
   await expect(clipButton(editor, 2, '测试点穿')).toHaveAttribute('aria-pressed', 'true')
-  await expect(layer.getByRole('img', { name: '选中：测试点穿 · fp-badge' })).toBeVisible()
+  const frame = layer.getByRole('img', { name: '选中：测试点穿' })
+  await expect(frame).toBeVisible()
+  alignsWith(await boxOf(frame), await boxOf(layer))
   // 点中判断完就撤掉：组件根还是不接收指针，页面上没有多出样式
   expect(
     await player.evaluate((element: PreviewPlayer) => {
@@ -3820,93 +3859,155 @@ test('组件根不接收指针时里面的层照样点得中、拖得动：选�
     }),
   ).toEqual(['none', 0])
 
-  let mainSaves = 0
-  page.on('request', (request) => {
-    if (savedHtmlOf(request) !== null) mainSaves += 1
-  })
-  const badgeOf = (content: string) => /<div [^>]*class="fp-badge"[^>]*>/.exec(content)?.[0] ?? null
-  const moved = page.waitForRequest((request) => {
-    const content = savedFileOf(request, PASS_FILE)
-    return content !== null && badgeOf(content)?.includes('data-x=') === true
-  })
+  const cardSaves = countCardSaves(page, PASS_FILE)
+  const moved = mainSavedWith(
+    page,
+    (content) => styleOf(hostOf(content))['translate'] !== undefined,
+  )
   const zoom = await canvasZoom(layer, player)
   await page.mouse.move(spot.x, spot.y)
   await page.mouse.down()
   await page.mouse.move(spot.x + 20, spot.y + 10, { steps: 4 })
   await page.mouse.move(spot.x + 40, spot.y + 20, { steps: 4 })
   await page.mouse.up()
-  const badge = badgeOf(savedFileOf(await moved, PASS_FILE) ?? '') ?? ''
-  expect(Math.abs(Number(/data-x="([^"]+)"/.exec(badge)?.[1]) - 40 / zoom)).toBeLessThan(0.5)
-  expect(Math.abs(Number(/data-y="([^"]+)"/.exec(badge)?.[1]) - 20 / zoom)).toBeLessThan(0.5)
-  expect(mainSaves).toBe(0)
+  const host = hostOf(htmlOf(await moved))
+  const [x, y] = (styleOf(host)['translate'] ?? '')
+    .split(' ')
+    .map((part) => Number.parseFloat(part))
+  expect(Math.abs((x ?? Number.NaN) - 40 / zoom)).toBeLessThan(0.5)
+  expect(Math.abs((y ?? Number.NaN) - 20 / zoom)).toBeLessThan(0.5)
+  expect(Object.keys(host ?? {}).filter((name) => /^data-(x|y|hf-edit)/.test(name))).toEqual([])
   const canvas = await boxOf(layer)
   await settles(async () =>
     expect(
       ((await previewRect(finalCutPreviewPlayer(editor), BADGE)).x - before.x) * canvas.width,
     ).toBeCloseTo(40, 0),
   )
+
+  // 右下角的把手往里拖：整块以中心缩小，写 scale，中心不动
+  const size = await canvasSizeOf(player)
+  const centre = await centreOf(finalCutPreviewPlayer(editor), CARD, size)
+  // 以整块的中心算（框只画看得见的那一块，挪过以后伸出画面的部分不画）
+  const middle = { x: canvas.x + centre.x * zoom, y: canvas.y + centre.y * zoom }
+  const corner = await boxOf(frame.locator('[data-corner="se"]'))
+  const from = { x: corner.x + corner.width / 2, y: corner.y + corner.height / 2 }
+  const to = { x: from.x - 60, y: from.y - 40 }
+  const ratio =
+    Math.hypot(to.x - middle.x, to.y - middle.y) / Math.hypot(from.x - middle.x, from.y - middle.y)
+  const scaled = mainSavedWith(page, (content) => styleOf(hostOf(content))['scale'] !== undefined)
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(to.x, to.y, { steps: 6 })
+  await page.mouse.up()
+  const resized = styleOf(hostOf(htmlOf(await scaled)))
+  expect(Number(resized['scale'])).toBeCloseTo(ratio, 2)
+  expect(resized['width']).toBeUndefined()
+  await settles(async () => {
+    const after = await centreOf(finalCutPreviewPlayer(editor), CARD, size)
+    expect(Math.abs(after.x - centre.x)).toBeLessThan(1)
+    expect(Math.abs(after.y - centre.y)).toBeLessThan(1)
+    expect((await previewRect(finalCutPreviewPlayer(editor), CARD)).width).toBeCloseTo(ratio, 2)
+  })
+  expect(cardSaves.count).toBe(0)
 })
 
-test('画面上拖贴片里的字靠近画面中线：拖动中画出贯穿画面的对齐线，松手正好落在中线上、线消失；按住 Alt 拖不吸、不画线', async ({
+test('铺满画面的贴片盖在视频上：点贴片里空着的地方（没有徽标、裁切窗）选中下面的视频，不选中贴片', async ({
   page,
 }) => {
-  await serveSavedCard(page)
+  const { editor, layer } = await openWithCard(page, {
+    search: '点穿',
+    title: '测试点穿',
+    seconds: 4,
+  })
+  const card = clipButton(editor, 2, '测试点穿')
+  const video = clipButton(editor, 1, 'A · 镜头 1')
+  // 左下角：贴片在这里什么都没画
+  const canvas = await boxOf(layer)
+  await page.mouse.click(canvas.x + canvas.width * 0.2, canvas.y + canvas.height * 0.8)
+  await expect(video).toHaveAttribute('aria-pressed', 'true')
+  await expect(card).toHaveAttribute('aria-pressed', 'false')
+  await expect(layer.getByRole('img', { name: '选中：A · 镜头 1' })).toBeVisible()
+  await expect(layer.getByRole('img', { name: '选中：测试点穿' })).toHaveCount(0)
+})
+
+test('画面上拖贴片靠近画面中线（播放头处没有视频，只有画布可吸）：拖动中画出贯穿画面的对齐线，松手正好落在中线上、线消失；按住 Alt 拖不吸、不画线', async ({
+  page,
+}) => {
   const { editor, layer, player } = await openWithCard(page)
-  const width = await player.evaluate((element: PreviewPlayer) =>
-    Number(element.iframeElement.contentDocument?.getElementById('film')?.dataset['width']),
+  // 播放头挪到 1.5 秒：视频已经结束，画面上只有贴片
+  await clipButton(editor, 2, '测试可填项').click()
+  await stepPlayhead(page, editor, 5, 10)
+  await page.keyboard.press('Escape')
+  const height = await player.evaluate((element: PreviewPlayer) =>
+    Number(element.iframeElement.contentDocument?.getElementById('film')?.dataset['height']),
   )
   const canvas = await boxOf(layer)
-  const zoom = canvas.width / width
-  const middle = canvas.x + canvas.width / 2
-  /** 字的中心在中线右边多少（画布像素）。 */
+  const zoom = canvas.height / height
+  // 贴片和画面差不多一样宽（左右边贴着画面的边），上下拖：只有中心靠得上画面的横中线
+  const middle = canvas.y + canvas.height / 2
+  /** 贴片的中心在横中线下面多少（画布像素）。 */
   const offCentre = async () => {
-    const rect = await previewRect(finalCutPreviewPlayer(editor), TEXT)
-    return (rect.x + rect.width / 2 - 0.5) * width
+    const rect = await previewRect(finalCutPreviewPlayer(editor), CARD)
+    return (rect.y + rect.height / 2 - 0.5) * height
   }
-  const frame = layer.getByRole('img', { name: '选中：测试可填项 · ff-text' })
+  const frame = layer.getByRole('img', { name: '选中：测试可填项' })
   const frameCentre = async () => {
     const box = await boxOf(frame)
-    return box.x + box.width / 2
+    return box.y + box.height / 2
   }
   const guides = layer.getByTestId('canvas-guide')
   const spot = await canvasSpot(layer, player, TEXT)
   await page.mouse.click(spot.x, spot.y)
   await expect(frame).toBeVisible()
+  expect(Math.abs(await offCentre())).toBeLessThan(0.01)
 
-  // 中心拖到中线右边 2 个屏幕像素：拖动中有一条贯穿画面的竖线在中线上，框已经吸到正中
-  const snapped = cardSavedWith(page, 'ff-text', (saved) => saved?.['data-x'] !== undefined)
+  // 贴片本来就在正中：先按住 Alt 往下拖开 40 个屏幕像素
+  const away = mainSavedWith(page, (saved) => cardOffset(savedCard(saved)).y > 0)
+  await page.keyboard.down('Alt')
   await page.mouse.move(spot.x, spot.y)
   await page.mouse.down()
-  await page.mouse.move(middle + 2, spot.y, { steps: 8 })
+  await page.mouse.move(spot.x, spot.y + 40, { steps: 4 })
+  await page.mouse.up()
+  await page.keyboard.up('Alt')
+  await away
+  await settles(async () => expect(Math.abs((await offCentre()) - 40 / zoom)).toBeLessThan(0.5))
+
+  // 中心拖到横中线下面 2 个屏幕像素：拖动中有一条贯穿画面的横线在中线上，框已经吸到正中
+  const grab = { x: spot.x, y: spot.y + 40 }
+  const snapped = mainSavedWith(page, (saved) => cardOffset(savedCard(saved)).y < 20)
+  await page.mouse.move(grab.x, grab.y)
+  await page.mouse.down()
+  await page.mouse.move(grab.x, grab.y - 38, { steps: 8 })
   await expect(guides.first()).toBeVisible()
   const lines = await guides.evaluateAll((elements) =>
     elements.map((element) => {
-      const { x, width: lineWidth, height } = element.getBoundingClientRect()
-      return { x, width: lineWidth, height }
+      const { y, width, height: lineHeight } = element.getBoundingClientRect()
+      return { y, width, height: lineHeight }
     }),
   )
   expect(
     lines.some(
       (line) =>
-        Math.abs(line.x - middle) < 1 &&
-        line.width <= 1.5 &&
-        Math.abs(line.height - canvas.height) < 1,
+        Math.abs(line.y - middle) < 1 &&
+        line.height <= 1.5 &&
+        Math.abs(line.width - canvas.width) < 1,
     ),
   ).toBe(true)
   await expect.poll(frameCentre).toBeCloseTo(middle, 0)
   await page.mouse.up()
-  const centred = Number(savedElement(await snapped, 'ff-text')?.['data-x'])
+  // 存下的宿主竖着正好回到居中的写法
+  expect(cardOffset(savedCard(htmlOf(await snapped))).y).toBe(0)
   await expect(guides).toHaveCount(0)
   await settles(async () => expect(Math.abs(await offCentre())).toBeLessThan(0.01))
 
-  // 按住 Alt 从正中拖开再拖回中线右边 3 个屏幕像素：不吸，没有线，松手就停在那里
+  // 按住 Alt 从正中拖开再拖回横中线下面 3 个屏幕像素：不吸，没有线，松手就停在那里
   const from = await canvasSpot(layer, finalCutPreviewPlayer(editor), TEXT)
-  const loose = cardSavedWith(page, 'ff-text', (saved) => Number(saved?.['data-x']) !== centred)
+  const loose = mainSavedWith(page, (saved) => cardOffset(savedCard(saved)).y > 0)
   await page.keyboard.down('Alt')
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
-  await page.mouse.move(from.x + 40, from.y, { steps: 4 })
-  await page.mouse.move(from.x + 3, from.y, { steps: 4 })
+  await page.mouse.move(from.x, from.y + 40, { steps: 4 })
+  await page.mouse.move(from.x, from.y + 3, { steps: 4 })
   await expect.poll(frameCentre).toBeCloseTo(middle + 3, 0)
   await expect(guides).toHaveCount(0)
   await page.mouse.up()
@@ -3915,84 +4016,137 @@ test('画面上拖贴片里的字靠近画面中线：拖动中画出贯穿画�
   await settles(async () => expect(Math.abs((await offCentre()) - 3 / zoom)).toBeLessThan(0.5))
 })
 
-test('画面上被外面一层裁掉的层：悬停框、选中框只框看得见的那一块（裁切窗里），不伸出窗外和画面', async ({
+test('画面上拖贴片靠近另一个贴片的边：吸到那条边上，拖动中在那条边上画出参考线，松手正好落在那里', async ({
   page,
 }) => {
-  const { layer, player } = await openWithCard(page, {
-    search: '点穿',
-    title: '测试点穿',
-    seconds: 4,
-  })
-  const canvas = await boxOf(layer)
-  const onPage = async (selector: string) => {
-    const rect = await previewRect(player, selector)
-    return {
-      x: canvas.x + rect.x * canvas.width,
-      y: canvas.y + rect.y * canvas.height,
-      width: rect.width * canvas.width,
-      height: rect.height * canvas.height,
-    }
-  }
-  const shown = await onPage(`${CARD} .fp-window`)
-  const whole = await onPage(`${CARD} .fp-wide`)
-  // 琥珀色底比窗大得多：整块的框伸出窗外
-  expect(whole.width).toBeGreaterThan(shown.width * 1.5)
-  expect(whole.height).toBeGreaterThan(shown.height * 1.5)
-  /** 画出来的框就是窗：不伸出窗外，也不伸出画面。 */
-  const fitsWindow = (box: { x: number; y: number; width: number; height: number }) => {
-    expect(Math.abs(box.x - shown.x)).toBeLessThan(1.5)
-    expect(Math.abs(box.y - shown.y)).toBeLessThan(1.5)
-    expect(Math.abs(box.width - shown.width)).toBeLessThan(1.5)
-    expect(Math.abs(box.height - shown.height)).toBeLessThan(1.5)
-    expect(box.x).toBeGreaterThanOrEqual(canvas.x - 0.5)
-    expect(box.y).toBeGreaterThanOrEqual(canvas.y - 0.5)
-    expect(box.x + box.width).toBeLessThanOrEqual(canvas.x + canvas.width + 0.5)
-    expect(box.y + box.height).toBeLessThanOrEqual(canvas.y + canvas.height + 0.5)
-  }
-  const spot = { x: shown.x + shown.width / 2, y: shown.y + shown.height / 2 }
-
-  await page.mouse.move(spot.x, spot.y)
-  const hover = layer.getByTestId('canvas-hover')
-  await expect(hover).toBeVisible()
-  fitsWindow(await boxOf(hover))
-
+  const { editor, layer, player } = await openWithCard(page)
+  // 「测试可填项」先往下挪 60 像素：它的上边离开画面的边和中线
+  const spot = await canvasSpot(layer, player, TEXT)
   await page.mouse.click(spot.x, spot.y)
-  const frame = layer.getByRole('img', { name: '选中：测试点穿 · fp-wide' })
+  await expect(layer.getByRole('img', { name: '选中：测试可填项' })).toBeVisible()
+  const lowered = mainSavedWith(page, (saved) => cardOffset(savedCard(saved)).y === 60)
+  for (let step = 0; step < 6; step += 1) await page.keyboard.press('Shift+ArrowDown')
+  await lowered
+
+  // 再在播放头处加一个铺满画面的「测试点穿」
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '贴片' }).click()
+  await side.getByRole('searchbox', { name: '搜索贴片' }).fill('点穿')
+  const item = side.getByRole('group', { name: '测试点穿，4 秒' })
+  const added = mainSavedWith(page, (html) => savedItem(html, '测试点穿') !== null)
+  await item.hover()
+  await item.getByRole('button', { name: '加到播放头' }).click()
+  const html = htmlOf(await added)
+  await readyPlayer(editor)
+  const card = `#film > #${savedItem(html, '测试可填项')?.id ?? ''}`
+  const pass = `#film > #${savedItem(html, '测试点穿')?.id ?? ''}`
+  const passOf = (content: string) =>
+    savedElement(content, savedItem(content, '测试点穿')?.id ?? '')
+
+  // 播放头挪到 1.5 秒：视频已经结束，画面上只有这两个贴片
+  await editor.getByRole('button', { name: /^选中：测试可填项，/ }).click()
+  await stepPlayhead(page, editor, 5, 10)
+  await page.keyboard.press('Escape')
+  const shown = await settledPlayer(editor)
+  const canvas = await boxOf(layer)
+  const { height } = await canvasSizeOf(shown)
+  const zoom = canvas.height / height
+  const target = await previewRect(shown, card)
+  const before = await previewRect(shown, pass)
+  // 「测试点穿」的上边要吸到「测试可填项」的上边：画面上隔着多少屏幕像素
+  const gap = (target.y - before.y) * canvas.height
+  const edge = canvas.y + target.y * canvas.height
+  expect(gap).toBeGreaterThan(20)
+
+  const badge = await canvasSpot(layer, shown, `${pass} .fp-badge`)
+  await page.mouse.click(badge.x, badge.y)
+  const frame = layer.getByRole('img', { name: '选中：测试点穿' })
   await expect(frame).toBeVisible()
-  fitsWindow(await boxOf(frame))
+  const snapped = mainSavedWith(page, (saved) => styleOf(passOf(saved))['translate'] !== undefined)
+  // 拖到上边离那条边还差 3 个屏幕像素：拖动中框已经吸过去，那条边上有一条横的参考线
+  await page.mouse.move(badge.x, badge.y)
+  await page.mouse.down()
+  await page.mouse.move(badge.x, badge.y + gap - 3, { steps: 10 })
+  const guides = layer.getByTestId('canvas-guide')
+  await expect(guides.first()).toBeVisible()
+  const lines = await guides.evaluateAll((elements) =>
+    elements.map((element) => {
+      const { y, height: lineHeight } = element.getBoundingClientRect()
+      return { y, height: lineHeight }
+    }),
+  )
+  expect(lines.some((line) => Math.abs(line.y - edge) < 1 && line.height <= 1.5)).toBe(true)
+  await expect.poll(async () => (await boxOf(frame)).y).toBeCloseTo(edge, 0)
+  await page.mouse.up()
+
+  // 存下的宿主竖着正好挪了两条上边之间的距离
+  const [, y] = (styleOf(passOf(htmlOf(await snapped)))['translate'] ?? '')
+    .split(' ')
+    .map((part) => Number.parseFloat(part))
+  expect(Math.abs((y ?? Number.NaN) - (target.y - before.y) * height)).toBeLessThan(0.1)
+  // 不吸时松手停在差 3 个屏幕像素的地方
+  expect(Math.abs((y ?? Number.NaN) - (gap - 3) / zoom)).toBeGreaterThan(2 / zoom)
+  await expect(guides).toHaveCount(0)
 })
 
-test('动画脚本驱动的层拖不了：点贴片的色底选中它、没有缩放把手，拖它说明原因、什么都不写', async ({
-  page,
-}) => {
-  const { layer, player } = await openWithCard(page)
-  // 色底上、字的右边
-  const panel = await previewRect(player, PANEL)
+test('贴片挪得伸出画面：悬停框、选中框只框画面里看得见的那一块，不伸出画面', async ({ page }) => {
+  const { editor, layer, player } = await openWithCard(page)
   const canvas = await boxOf(layer)
-  const spot = {
-    x: canvas.x + (panel.x + panel.width * 0.92) * canvas.width,
-    y: canvas.y + (panel.y + panel.height / 2) * canvas.height,
-  }
+  const spot = await canvasSpot(layer, player, TEXT)
   await page.mouse.click(spot.x, spot.y)
-  const frame = layer.getByRole('img', { name: '选中：测试可填项 · ff-panel' })
+  const frame = layer.getByRole('img', { name: '选中：测试可填项' })
   await expect(frame).toBeVisible()
-  await expect(frame.locator('.wf-canvas-handle')).toHaveCount(0)
-
+  // 往右拖半个画面宽：右边一截伸出画面
+  const moved = mainSavedWith(page, (saved) => cardOffset(savedCard(saved)).x > 0)
   await page.mouse.move(spot.x, spot.y)
   await page.mouse.down()
-  await page.mouse.move(spot.x - 30, spot.y - 20, { steps: 5 })
+  await page.mouse.move(spot.x + canvas.width / 2, spot.y, { steps: 8 })
   await page.mouse.up()
-  await expect(
-    page.getByText('这一层的位置、大小或角度由动画脚本驱动，不能在画面上调整'),
-  ).toBeVisible()
-  expect(await savesWithin(page, 1_000)).toBe(0)
+  await moved
+  const whole = async () => {
+    const rect = await previewRect(finalCutPreviewPlayer(editor), CARD)
+    return { x: canvas.x + rect.x * canvas.width, width: rect.width * canvas.width }
+  }
+  await settles(async () =>
+    expect((await whole()).x + (await whole()).width).toBeGreaterThan(canvas.x + canvas.width + 20),
+  )
+  const shown = await shownOnPage(layer, finalCutPreviewPlayer(editor), CARD)
+  /** 画出来的框是宿主在画面里的那一块：右边到画面边上为止。 */
+  const fitsCanvas = (box: { x: number; y: number; width: number; height: number }) => {
+    alignsWith(box, shown)
+    expect(box.x + box.width).toBeLessThanOrEqual(canvas.x + canvas.width + 0.5)
+  }
+  await expect
+    .poll(async () => (await boxOf(frame)).x + (await boxOf(frame)).width)
+    .toBeLessThanOrEqual(canvas.x + canvas.width + 0.5)
+  fitsCanvas(await boxOf(frame))
+
+  // 取消选中再悬停在色底上：悬停框也只框画面里的那一块
+  await page.keyboard.press('Escape')
+  await expect(layer.getByRole('img')).toHaveCount(0)
+  const panel = await shownOnPage(layer, finalCutPreviewPlayer(editor), `${CARD} #ff-panel`)
+  await page.mouse.move(panel.x + panel.width / 2, panel.y + panel.height / 2)
+  const hover = layer.getByTestId('canvas-hover')
+  await expect(hover).toBeVisible()
+  fitsCanvas(await boxOf(hover))
 })
 
-test('画面上双击贴片的文字原地改：回车写进可填项的值，预览里换成新的字；Esc 放弃不写', async ({
+test('画面上双击贴片的文字原地改：悬停在字上是输入光标、色底上不是，框都是整个贴片；回车写进可填项的值，预览里换成新的字；Esc 放弃不写', async ({
   page,
 }) => {
   const { editor, layer, player } = await openWithCard(page)
   const text = await canvasSpot(layer, player, `${CARD} [data-var-text="text"]`)
+  const hover = layer.getByTestId('canvas-hover')
+  const whole = await shownOnPage(layer, player, CARD)
+  const panel = await shownOnPage(layer, player, `${CARD} #ff-panel`)
+  await page.mouse.move(panel.x + panel.width * 0.9, panel.y + panel.height / 2)
+  await expect(hover).toBeVisible()
+  alignsWith(await boxOf(hover), whole)
+  await expect(layer).not.toHaveCSS('cursor', 'text')
+  await page.mouse.move(text.x, text.y)
+  await expect(layer).toHaveCSS('cursor', 'text')
+  alignsWith(await boxOf(hover), whole)
+
   await page.mouse.dblclick(text.x, text.y)
   await expect(clipButton(editor, 2, '测试可填项')).toHaveAttribute('aria-pressed', 'true')
   const input = layer.getByRole('textbox', { name: '文字' })
@@ -4064,7 +4218,7 @@ test('画面上正显示着字幕时点贴片：选中的还是贴片，铺满�
   const spot = await canvasSpot(layer, player, TEXT)
   await page.mouse.click(spot.x, spot.y)
   await expect(clipButton(editor, 2, '测试可填项')).toHaveAttribute('aria-pressed', 'true')
-  await expect(layer.getByRole('img', { name: '选中：测试可填项 · ff-text' })).toBeVisible()
+  await expect(layer.getByRole('img', { name: '选中：测试可填项' })).toBeVisible()
   await expect(layer.getByRole('img', { name: '选中：新字幕' })).toHaveCount(0)
 })
 

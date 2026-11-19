@@ -944,7 +944,6 @@ function EditorBody({
               scene: scene.content,
               captions: previewCaptionsOf(film.clips, film.locale),
             },
-      layers: film.layers,
     }
   }, [film, catalog, tokens, filesRevision])
   const playBlocked = empty ? EMPTY_TEXT : undefined
@@ -952,11 +951,12 @@ function EditorBody({
   // 画面上的编辑：预览按层表认层（见 canvas-layers.ts），编辑层要量的层由它自己定
   const layerTable = useMemo(
     () =>
-      (film?.layers ?? []).map(({ scope, selector, index, count }) => ({
+      (film?.layers ?? []).map(({ scope, selector, index, count, host }) => ({
         scope,
         selector,
         index,
         count,
+        host,
       })),
     [film?.layers],
   )

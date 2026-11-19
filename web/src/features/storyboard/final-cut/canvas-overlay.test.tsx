@@ -22,7 +22,7 @@ const LAYER: CanvasLayer = {
 }
 const UNDER_POINTER: PickedLayer = {
   layer: 0,
-  owner: -1,
+  field: null,
   measure: {
     frame: { cx: 360, cy: 640, width: 720, height: 1280, angle: 0 },
     visible: { cx: 360, cy: 640, width: 720, height: 1280, angle: 0 },

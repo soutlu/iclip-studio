@@ -64,8 +64,10 @@ describe('画面上挪层时的吸附', () => {
     expect(drag({ delta: { x: 93, y: 7 }, angle: null }).delta.x).toBe(90)
   })
 
-  it('没有别的层可吸时连画布也不吸；矩形还没量回来时不吸', () => {
-    expect(drag({ delta: { x: 93, y: 7 }, rects: { ...RECTS, targets: [] } }).delta.x).toBe(93)
+  it('没有别的层可吸时照样吸画布的中线、画线；矩形还没量回来时不吸', () => {
+    const alone = drag({ delta: { x: 93, y: 7 }, rects: { ...RECTS, targets: [] } })
+    expect(alone.delta).toEqual({ x: 90, y: 7 })
+    expect(alone.guides?.lines).toEqual([{ key: 'x120', left: 120, top: 0, width: 1, height: 427 }])
     expect(drag({ delta: { x: 93, y: 7 }, rects: null }).delta.x).toBe(93)
   })
 

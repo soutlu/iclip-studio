@@ -11,10 +11,8 @@ import {
 const still = { move: false, resize: false, rotate: false }
 const inner: LayerFacts = {
   tag: 'div',
-  host: false,
   root: false,
   locked: false,
-  inSource: true,
   animated: still,
 }
 
@@ -24,11 +22,11 @@ const engine = (facts: LayerFacts) => {
     hasStableTarget: true,
     tag: facts.tag,
     inlineStyles: {},
-    isCompositionHost: facts.host,
+    isCompositionHost: false,
     isCompositionRoot: facts.root,
     isInsideLockedComposition: facts.locked,
     isMasterView: false,
-    existsInSource: facts.inSource,
+    existsInSource: true,
     hasEditableText: false,
     hasTimingStart: false,
     animationCount: 0,
@@ -43,11 +41,9 @@ const engine = (facts: LayerFacts) => {
 describe('一层能不能在画面上改', () => {
   it.each<[string, Partial<LayerFacts>, LayerRefusal]>([
     ['锁定的组件里的', { locked: true }, LayerRefusal.locked],
-    ['脚本生成、源文件里没有的', { inSource: false }, LayerRefusal.generated],
     ['合成的根', { root: true }, LayerRefusal.root],
-    ['宿主', { host: true }, LayerRefusal.host],
-    // 先后照引擎：锁定比宿主先说
-    ['锁定组件的宿主', { host: true, locked: true }, LayerRefusal.locked],
+    // 先后照引擎：锁定比根先说
+    ['锁定组件里的根', { root: true, locked: true }, LayerRefusal.locked],
   ])('%s：三样都不能改，原因和引擎的判断一致', (_name, facts, refusal) => {
     const abilities = layerAbilities({ ...inner, ...facts })
     expect([abilities.move, abilities.resize, abilities.rotate]).toEqual(
@@ -56,7 +52,7 @@ describe('一层能不能在画面上改', () => {
     expect(abilities).toEqual({ move: false, resize: false, rotate: false, refusal })
   })
 
-  it('里面的层：三样都能改', () => {
+  it('别的层（视频、字幕的一句、贴片和场景的宿主）：三样都能改', () => {
     expect(layerAbilities(inner)).toEqual({
       move: true,
       resize: true,

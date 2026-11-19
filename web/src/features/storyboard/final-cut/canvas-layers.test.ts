@@ -10,7 +10,7 @@ const main = `<!doctype html><html><head></head><body>
 <div id="captions" data-hf-id="captions" data-track-kind="captions" data-composition-id="captions" data-composition-src="compositions/captions.html"></div>
 </div></body></html>`
 
-// 完整网页写法的组件：根下一个面板，里面两个同 class 的字、一个没有 id 和 class 的装饰；一块锁定的区域；一段脚本
+// 完整网页写法的组件：根下一个面板，里面有字、装饰、锁定的区域和脚本，都不是画面上的层
 const card = `<!doctype html><html><head><style>.x{}</style></head><body>
 <div id="root" data-hf-id="hf-root" data-composition-id="card">
   <div id="panel" data-hf-id="hf-panel">
@@ -71,22 +71,19 @@ describe('画面上的层', () => {
     ])
   })
 
-  it('组件文件里的层属于它的宿主，写进组件文件；同一个 class 按文件里的先后数第几个；锁定区域里的都锁定', () => {
-    expect(under('clip-h')).toEqual([
-      ['#panel', 0, 1, CARD, 'clip-h', false, false, 'hf-panel'],
-      ['.word', 0, 2, CARD, 'clip-h', false, false, 'hf-w1'],
-      ['.word', 1, 2, CARD, 'clip-h', false, false, 'hf-w2'],
-      ['.locked-area', 0, 1, CARD, 'clip-h', false, true, 'hf-lock'],
-      ['.inside', 0, 1, CARD, 'clip-h', false, true, 'hf-in'],
-    ])
+  it('组件、块挂载的文件里的元素不是层（贴片、场景整个是一层），文件打开着也不列', () => {
+    expect(layers.filter((layer) => layer.file === CARD)).toEqual([])
+    expect(under('clip-h')).toEqual([])
   })
 
-  it('字幕场景里每一句是一层，属于这一句；挂载的文件没打开时那个宿主下没有层', () => {
+  it('字幕场景里每一句是一层，属于这一句；场景文件没打开时没有层', () => {
     expect(under('captions')).toEqual([
       ['#cap-1', 0, 1, SCENE, 'cap-1', false, false, 'cap-1'],
       ['#cap-2', 0, 1, SCENE, 'cap-2', false, false, 'cap-2'],
     ])
-    expect(under('clip-g')).toEqual([])
+    expect(canvasLayersOf(main, mounts, new Map()).filter((layer) => layer.scope !== null)).toEqual(
+      [],
+    )
   })
 
   it('每一层的名字由宿主、选择器和第几个连起来，各不相同', () => {

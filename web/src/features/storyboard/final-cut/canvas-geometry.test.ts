@@ -1,23 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import {
-  CYCLE_MS,
-  frameContains,
-  nudgeOf,
-  pickAt,
-  resizedSize,
-  rotatedAngle,
-} from './canvas-geometry'
+import { CYCLE_MS, nudgeOf, pickAt, resizedSize, rotatedAngle } from './canvas-geometry'
 
 describe('点选', () => {
   const point = { x: 100, y: 100 }
-
-  it('点在不在框里按转过的框算', () => {
-    const frame = { cx: 0, cy: 0, width: 200, height: 20, angle: 90 }
-    expect(frameContains(frame, { x: 0, y: 90 })).toBe(true)
-    expect(frameContains(frame, { x: 90, y: 0 })).toBe(false)
-    expect(frameContains(frame, { x: 5, y: -99 })).toBe(true)
-    expect(frameContains(frame, { x: 15, y: -99 })).toBe(false)
-  })
 
   it('点到的是最上面一层；没点到层是 null', () => {
     expect(pickAt(['top', 'below'], new Set(), null, point, 0, 4)).toBe('top')

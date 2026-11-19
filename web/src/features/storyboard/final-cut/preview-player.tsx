@@ -19,13 +19,13 @@ import {
   previewPageUrl,
   zPreviewEvent,
   type LayerMeasure,
-  type LayerRef,
+  type LayerEntry,
   type PreviewCommand,
 } from './preview-protocol'
 import { previewSync, type PreviewFilm } from './preview-sync'
 
 /** 画布上一处从上往下能选中的一层（见预览协议的 `picked`）。 */
-export type PickedLayer = { layer: number; owner: number; measure: LayerMeasure }
+export type PickedLayer = { layer: number; field: string | null; measure: LayerMeasure }
 
 export type PreviewControl = {
   play: () => void
@@ -92,7 +92,7 @@ type PreviewPlayerProps = {
   onBuffering?: ((buffering: boolean) => void) | undefined
   onBuffered?: ((spans: readonly TimeSpan[]) => void) | undefined
   /** 画面上的层（见 canvas-layers.ts）：`watch`、`pick`、`draft` 按它在这张表里的位置说是哪一层。 */
-  layers?: readonly (LayerRef & { count: number })[] | undefined
+  layers?: readonly LayerEntry[] | undefined
   /** 要量的层（`layers` 里的位置）：预览量出来报给 `onMeasured`（只有量得到的）。 */
   watch?: readonly number[] | undefined
   onMeasured?: ((items: ReadonlyMap<number, LayerMeasure>) => void) | undefined
@@ -236,7 +236,6 @@ export function PreviewPlayer({
         patches: [...how.patches],
         ...(how.captions.length === 0 ? {} : { captions: [...how.captions] }),
         ...(how.fonts === undefined ? {} : { fonts: how.fonts }),
-        ...(how.layers === undefined ? {} : { layers: [...how.layers] }),
       })
     },
     [load, post],
@@ -381,7 +380,7 @@ export function PreviewPlayer({
   const tableKey = layers === undefined ? undefined : JSON.stringify(layers)
   useEffect(() => {
     if (link === null || tableKey === undefined) return
-    const entries = JSON.parse(tableKey) as (LayerRef & { count: number })[]
+    const entries = JSON.parse(tableKey) as LayerEntry[]
     post({ type: 'layers', entries })
   }, [link, tableKey, post])
   const watchKey = watch?.join(',')

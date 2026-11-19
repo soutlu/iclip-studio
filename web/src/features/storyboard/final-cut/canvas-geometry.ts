@@ -17,12 +17,6 @@ export const rotated = ({ x, y }: Point, degrees: number): Point => {
   return { x: x * cos - y * sin, y: x * sin + y * cos }
 }
 
-/** 点 `point` 在不在 `frame` 里（边上也算）。 */
-export function frameContains(frame: Frame, point: Point): boolean {
-  const local = rotated({ x: point.x - frame.cx, y: point.y - frame.cy }, -frame.angle)
-  return Math.abs(local.x) <= frame.width / 2 && Math.abs(local.y) <= frame.height / 2
-}
-
 /** 上一次在画面上点选：点在哪、什么时候（毫秒）、选中了谁。 */
 export type CanvasPick = { point: Point; at: number; id: string }
 
@@ -30,8 +24,8 @@ export type CanvasPick = { point: Point; at: number; id: string }
 export const CYCLE_MS = 600
 
 /**
- * 在画面上点选时选中哪一层。`hits` 是指针下的层，从最上面一层往下排；`last` 是上一次点选（按下时不换层，
- * 给 null）。
+ * 在画面上点选时选中哪一层。`hits` 是指针下的层（贴片、场景整个是一层，见预览页的 `pick`），从最上面一层往下排；
+ * `last` 是上一次点选（按下时不换层，给 null）。
  *
  * - 同一处（离上一次不超过 `tolerance`）`CYCLE_MS` 以内再点：换成上一次选中的下面一层，到底了回到最上面；
  * - 指针下有已经选中的层：还是它（按住就能拖，不会被盖在上面的层抢走）；
@@ -62,10 +56,23 @@ export function pickAt(
 export const MIN_EDGE = 1
 
 /**
- * 拖角上的把手缩放：以中心为准等比缩放，倍数是指针现在离中心的距离比按下时离中心的距离，哪个角、转没转都一样
- * （照工作台 `domEditResizeLocal.ts` 的 `resolveCenterResizeSize`）。`frame` 是按下时这一层的样子，`size` 是它
- * 那时的布局宽高；答复新的布局宽高（没取整）。按在中心上时不缩，缩到最短的一边是 `MIN_EDGE` 就不再缩。
+ * 拖角上的把手缩放的倍数：以中心为准等比缩放，倍数是指针现在离中心的距离比按下时离中心的距离，哪个角、转没转
+ * 都一样（照工作台 `domEditResizeLocal.ts` 的 `resolveCenterResizeSize`）。`frame` 是按下时这一层的样子，`size`
+ * 是它那时的布局宽高。按在中心上时是 1，缩到最短的一边是 `MIN_EDGE` 个布局像素就不再缩。
  */
+export function resizeRatio(
+  frame: Frame,
+  size: { width: number; height: number },
+  pointerStart: Point,
+  pointer: Point,
+): number {
+  const from = Math.hypot(pointerStart.x - frame.cx, pointerStart.y - frame.cy)
+  if (!Number.isFinite(from) || from < 0.5) return 1
+  const least = MIN_EDGE / Math.min(Math.max(size.width, MIN_EDGE), Math.max(size.height, MIN_EDGE))
+  return Math.max(least, Math.hypot(pointer.x - frame.cx, pointer.y - frame.cy) / from)
+}
+
+/** 拖角上的把手缩放以后的布局宽高（没取整），倍数见 `resizeRatio`。 */
 export function resizedSize(
   frame: Frame,
   size: { width: number; height: number },
@@ -74,10 +81,7 @@ export function resizedSize(
 ): { width: number; height: number } {
   const width = Math.max(size.width, MIN_EDGE)
   const height = Math.max(size.height, MIN_EDGE)
-  const from = Math.hypot(pointerStart.x - frame.cx, pointerStart.y - frame.cy)
-  if (!Number.isFinite(from) || from < 0.5) return { width, height }
-  const least = MIN_EDGE / Math.min(width, height)
-  const ratio = Math.max(least, Math.hypot(pointer.x - frame.cx, pointer.y - frame.cy) / from)
+  const ratio = resizeRatio(frame, size, pointerStart, pointer)
   return { width: width * ratio, height: height * ratio }
 }
 
