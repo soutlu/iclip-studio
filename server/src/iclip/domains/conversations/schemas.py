@@ -239,11 +239,14 @@ class ConversationFileWriteIn(CamelModel):
 
     ``expectedVersion`` 是读到那一份的版本号：agent 与用户会同时写同一份文件，对不上
     就是 409，让调用方重读再决定，而不是把别人刚写的盖掉。
+
+    ``userName`` 是替谁写：带 ``users:act_as`` 的 API Key 填对话属主的用户名才写得进去。
     """
 
     path: Annotated[str, Field(min_length=1)]
     content: str
     expected_version: int
+    user_name: str | None = None
 
 
 class ConversationFileEnvelope(CamelModel):

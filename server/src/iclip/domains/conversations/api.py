@@ -360,9 +360,10 @@ def create_conversations_router(
     ) -> ConversationFileEnvelope:
         """整份覆盖一个工作区文件。路径在体里，与读那一侧的查询串是同一个字符串。
 
-        版本对不上 409，文件本身不合它那条路径的规矩 422（消息原样给出来）。
+        版本对不上 409，文件本身不合它那条路径的规矩 422（消息原样给出来），不是属主 403。
         """
 
+        principal = await act_as(principal, body.user_name)
         written = await service.write_file(
             principal,
             conversation_id,
