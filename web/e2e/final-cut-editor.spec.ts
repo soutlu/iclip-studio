@@ -1347,6 +1347,10 @@ test('编辑区变窄时只裁不换行：工具条和侧栏页签都排一行�
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await openFinalCut(panel)
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const preview = editor.getByRole('region', { name: '预览' })
+  // 默认布局：舞台照常留 360
+  expect((await boxOf(preview)).width).toBeGreaterThanOrEqual(360)
   // 把工作台拖到最窄（560），编辑器跟着变窄。正好拖到 560：再往右拖工作台会被收进去一截
   const handle = await boxOf(page.getByRole('button', { name: '调整工作台宽度' }))
   const narrowBy = (await boxOf(panel)).width - 560
@@ -1365,20 +1369,25 @@ test('编辑区变窄时只裁不换行：工具条和侧栏页签都排一行�
   const fit = await boxOf(toolbar.getByRole('button', { name: '适应宽度' }))
   expect(fit.y).toBe(undo.y)
   expect((await boxOf(toolbar)).height).toBeLessThanOrEqual(44)
-  // 工具条最后的按钮超出编辑区右边，被时间线卡片裁掉
-  const last = toolbar.getByRole('button').last()
-  const clipped = await boxOf(last)
-  expect(clipped.x + clipped.width).toBeGreaterThan(workspace.x + workspace.width)
+  // 纯图标的工具条在最窄时也排得下：最后的缩放滑杆还在编辑区里
+  const last = toolbar.getByRole('slider', { name: '时间线缩放' })
+  const lastBox = await boxOf(last)
+  expect(lastBox.x + lastBox.width).toBeLessThanOrEqual(workspace.x + workspace.width)
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  // 舞台优先：至少留 300 宽，播放条整条排得下；右栏让宽
+  const stage = await boxOf(preview)
+  expect(stage.width).toBeGreaterThanOrEqual(300)
+  const controls = await boxOf(editor.getByRole('group', { name: '播放控制' }))
+  expect(controls.x + controls.width).toBeLessThanOrEqual(stage.x + stage.width)
+
   const firstTab = await boxOf(side.getByRole('tab', { name: '镜头' }))
   const propsTab = await boxOf(side.getByRole('tab', { name: '属性' }))
   expect(propsTab.y).toBe(firstTab.y)
 
-  // 裁掉的部分滚不出来：横向滚动、把焦点挪到被裁掉的按钮上，工具条都不挪
+  // 工具条不横向滚：横向滚动、把焦点挪到最后的滑杆上，工具条都不挪
   await page.mouse.move(undo.x + 100, undo.y + undo.height / 2)
   await page.mouse.wheel(300, 0)
-  await last.evaluate((button: HTMLElement) => button.focus())
+  await last.evaluate((slider: HTMLElement) => slider.focus())
   await expect(last).toBeFocused()
   expect((await boxOf(toolbar.getByRole('button', { name: '撤销' }))).x).toBe(undo.x)
   expect((await boxOf(editor)).x).toBe(workspace.x)

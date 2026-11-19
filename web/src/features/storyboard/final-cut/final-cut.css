@@ -331,9 +331,14 @@
     'preview side-splitter side'
     'timeline-splitter timeline-splitter timeline-splitter'
     'timeline timeline timeline';
+  /* 右栏按拖定的宽度，给舞台留 360；再窄时右栏最窄 376。工作台很窄时舞台优先：至少留 300 给舞台和播放条，
+     右栏再让宽，放不下的内容由卡片裁掉 */
   grid-template-columns:
     minmax(0, 1fr) var(--wf-splitter)
-    max(376px, min(var(--wf-side-width), 100% - 360px - var(--wf-splitter)));
+    min(
+      max(376px, min(var(--wf-side-width), 100% - 360px - var(--wf-splitter))),
+      100% - 300px - var(--wf-splitter)
+    );
   /* 没拖过时时间线按内容高、最多占一小半，放不下时只压缩轨道区 */
   grid-template-rows: minmax(0, 1fr) var(--wf-splitter) fit-content(46%);
   padding: 10px 12px 12px;
@@ -437,11 +442,13 @@
   border-bottom: 1px solid var(--color-final-cut-line);
 }
 
+/* 窄工作台里右栏让给舞台，排不下的页签在收起按钮前面裁掉（只裁横向，选中块的投影照常露出） */
 .wf-side-tabs {
   min-width: 0;
   flex: 1;
   align-items: center;
   gap: 3px;
+  overflow-x: clip;
 }
 
 /* 一个导航项：图标在上、短词在下；按页签的语义色给图标着色（填充层浓淡比通用控件深一档）。
