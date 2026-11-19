@@ -145,7 +145,7 @@ import {
 } from './preview-player'
 import type { PreviewFilm } from './preview-sync'
 import { PreviewTransport } from './preview-transport'
-import { aroundPlayhead } from './selection'
+import { aroundPlayhead, firstFrameMs } from './selection'
 import { resyncPlan, soundActionFor, type SoundAction, type SoundControls } from './sound-pair'
 import { rowMoveDirection } from './stacking'
 import { FIT_ZOOM, timelineScale, zoomScrollLeft, zoomToClips, type Zoom } from './timeline-scale'
@@ -1646,7 +1646,7 @@ function EditorBody({
                 hosts: hostsWithText,
                 catalog,
                 onPick: (clip, jump) => {
-                  if (jump) seek(clip.start)
+                  if (jump) seek(firstFrameMs(clip.start))
                   selectOnly(clip.id)
                 },
               }}
@@ -1656,7 +1656,7 @@ function EditorBody({
               narration={narration}
               onAdd={addCaption}
               onPick={(caption) => {
-                seek(caption.start)
+                seek(firstFrameMs(caption.start))
                 selectOnly(caption.id)
               }}
               onRecognize={recognize}

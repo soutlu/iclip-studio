@@ -133,6 +133,7 @@ export const setUpEditorCase = () => {
 export const tearDownEditorCase = () => previewPages.stop()
 
 type PreviewPlayerElement = HTMLElement & {
+  readonly currentTime: number
   playbackRate: number
   muted: boolean
   loop: boolean

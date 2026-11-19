@@ -19,6 +19,8 @@ import {
   URL_SILENT,
   editorRoot,
   openEditor,
+  previewPlayer,
+  previewSettled,
   progress,
   putFilm,
   quietTakes,
@@ -164,11 +166,11 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
   const others = [video({ src: URL_A, duration: 2_000 }), audio({ duration: 4_000 })]
 
   /** 工作区里放一份带字幕的工程（照编辑器用 SDK 写的样子），打开编辑器。 */
-  const open = async () => {
+  const open = async (captions = lines) => {
     const main = await openComposition(mainFile(others, CANVAS))
     main.addElement('film', 99, captionsHostElement(CANVAS, 4_000))
-    for (const each of lines) main.declareVariable(captionVariable(each))
-    putMockWorkspaceFile(CONVERSATION, SCENE, captionsScene(CANVAS, fixtureCatalog, lines))
+    for (const each of captions) main.declareVariable(captionVariable(each))
+    putMockWorkspaceFile(CONVERSATION, SCENE, captionsScene(CANVAS, fixtureCatalog, captions))
     putMockProjectMain(CONVERSATION, main.serialize())
     const user = userEvent.setup()
     await openEditor()
@@ -494,6 +496,35 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
     expect(current()).toEqual(['字幕文字 00:03.00 – 00:04.00'])
     expect(progress()).toHaveAttribute('aria-valuetext', '00:03.00 / 00:04.00')
     expect(panel()).toBeVisible()
+  })
+
+  it('点一句的时间：这句的开头不在帧边界上，预览也停在看得到这句的时刻', async () => {
+    // 3.01 秒落在 30 帧每秒的第 90 帧（3.000 秒起）里，这句从第 91 帧才出现
+    const late = caption({
+      id: 'cap-c3',
+      variable: 'cap_c3',
+      start: 3_010,
+      duration: 990,
+      text: '第三句',
+    })
+    const user = await open([...lines.slice(0, 2), late])
+    await user.click(
+      within(
+        screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
+      ).getByRole('tab', { name: '字幕·配音' }),
+    )
+    await previewSettled()
+
+    await user.click(
+      within(screen.getByRole('tabpanel', { name: '字幕·配音' })).getByRole('button', {
+        name: '00:03.01 – 00:04.00',
+      }),
+    )
+    await waitFor(() => {
+      const at = previewPlayer().currentTime
+      expect(at).toBeGreaterThanOrEqual(3.01)
+      expect(at).toBeLessThan(4)
+    })
   })
 
   it('停在别的页签时在时间线上选中字幕：照常切到「属性」', async () => {
