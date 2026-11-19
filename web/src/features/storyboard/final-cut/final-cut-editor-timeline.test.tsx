@@ -5,13 +5,12 @@ import { http, HttpResponse } from 'msw'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
 import { server } from '@/testing/mocks/server'
-import { mockProjectMain, putMockProjectMain } from '@/testing/mocks/whole-film'
+import { putMockProjectMain } from '@/testing/mocks/whole-film'
 import { mockWorkspaceFile, putMockWorkspaceFile } from '@/testing/mocks/workspace'
 import { renderWithProviders } from '@/testing/render'
 import { audio, host, mainFile, video } from '@/testing/final-cut'
 import {
   CONVERSATION,
-  CREATE_URL,
   URL_A,
   URL_B,
   URL_SILENT,
@@ -50,7 +49,7 @@ beforeEach(setUpEditorCase)
 afterEach(tearDownEditorCase)
 
 describe('final-cut 编辑器 · 加入素材', () => {
-  it('还没有工程：播放、进度条、导出置灰并说明原因，没选镜头时按 Enter 提示先选，打开不保存', async () => {
+  it('空的 final-cut：播放、进度条、导出置灰并说明原因，没选镜头时按 Enter 提示先选，打开不保存', async () => {
     const user = userEvent.setup()
     await openEditor()
     expect(screen.getByText('final-cut 暂无内容，加入内容后可在此预览')).toBeVisible()
@@ -72,22 +71,22 @@ describe('final-cut 编辑器 · 加入素材', () => {
       (await screen.findAllByText('final-cut 暂无内容，无法导出；请先加入内容')).length,
     ).toBeGreaterThan(0)
     await new Promise((resolve) => setTimeout(resolve, 100))
-    expect(mockProjectMain(CONVERSATION)).toBeUndefined()
+    expect(savedVersion()).toBe(1)
   })
 
-  it('选一个镜头按 Enter：按素材的画幅新建工程主文件，片段的 src 直接写素材片的地址', async () => {
+  it('选一个镜头按 Enter：按版本写进主文件，画幅不变，片段的 src 直接写素材片的地址', async () => {
     const user = userEvent.setup()
     await openEditor()
     await user.click(await shot(/^生成 A 镜头 2，/))
     await user.keyboard('{Enter}')
 
     await waitSaved(() => expect(savedClips()).toHaveLength(1))
-    expect(savedFilm()).toContain('data-width="720" data-height="1280"')
+    expect(savedFilm()).toContain('data-width="1080" data-height="1920"')
     const [clip] = savedClips()
     expect(clip).toContain(`src="${URL_A}"`)
     expect(clip).not.toContain('data-var-src')
     expect(clip).toMatch(/data-start="0" data-duration="2.5"[^>]* data-media-start="2"/)
-    expect(savedVersion()).toBe(1)
+    expect(savedVersion()).toBe(2)
     expect(clip).toContain('data-label="A · 镜头 2"')
     expect(within(transport()).getByText('/ 00:02.50')).toBeVisible()
   })
@@ -186,8 +185,8 @@ describe('final-cut 编辑器 · 加入素材', () => {
   it('保存被拒：说明原因，可以重新保存', async () => {
     const user = userEvent.setup()
     server.use(
-      http.post(
-        CREATE_URL,
+      http.put(
+        WRITE_URL,
         () => HttpResponse.json({ detail: '工作区暂时写不进去' }, { status: 503 }),
         { once: true },
       ),
@@ -202,6 +201,7 @@ describe('final-cut 编辑器 · 加入素材', () => {
 
   it('工程主文件读取失败：说明原因，重试后打开', async () => {
     const user = userEvent.setup()
+    putMockProjectMain(CONVERSATION, twoVideos())
     server.use(
       http.get(WRITE_URL, () => HttpResponse.json({ detail: '服务暂时不可用' }, { status: 503 }), {
         once: true,
@@ -228,7 +228,7 @@ describe('final-cut 编辑器 · 时间线', () => {
     )
   })
 
-  it('还没有 final-cut：留一行空的，提示把镜头拖进来', async () => {
+  it('空的 final-cut：留一行空的，提示把镜头拖进来', async () => {
     await openEditor()
     expect(
       within(timeline()).getByText('将「镜头」页签里的镜头拖到此处可加入 final-cut'),

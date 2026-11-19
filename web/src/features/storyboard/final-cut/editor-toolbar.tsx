@@ -176,8 +176,6 @@ export type LocaleControls = {
   current: Language
   present: readonly LocaleCode[]
   onSwitch: (code: Language) => void
-  /** 加不了语言时的原因（还没有工程）；能加时是 undefined。 */
-  addBlocked: string | undefined
   /** 加一种语言并切过去。 */
   onAdd: (code: LocaleCode) => void
 }
@@ -196,7 +194,7 @@ const SOURCE_BUTTON: LocaleButton = {
 
 /**
  * 语言切换：原文和工程里有的语言各一个按钮（原文写「原文」，别的写语言代码，无障碍名是语言的名字加代码），
- * 当前的高亮；最后的「+」点开列出还没加的语言，选一个加上并切过去，都加了时不显示，加不了时置灰。工具条上的
+ * 当前的高亮；最后的「+」点开列出还没加的语言，选一个加上并切过去，都加了时不显示。工具条上的
  * （`inPanel` 不给）菜单往上弹；「字幕」页签顶部的（`inPanel`）是一排小块，菜单往下弹。两处切换、添加的是
  * 同一份 `LocaleControls`。
  */
@@ -204,7 +202,6 @@ export function LocaleBar({
   current,
   present,
   onSwitch,
-  addBlocked,
   onAdd,
   inPanel = false,
 }: LocaleControls & { inPanel?: boolean }) {
@@ -244,45 +241,13 @@ export function LocaleBar({
           </TooltipContent>
         </TooltipRoot>
       ))}
-      {addBlocked !== undefined ? (
-        <BlockedAddLocale reason={addBlocked} side={side} />
-      ) : addable.length === 0 ? null : (
-        <AddLocale addable={addable} onAdd={onAdd} side={side} />
-      )}
+      {addable.length === 0 ? null : <AddLocale addable={addable} onAdd={onAdd} side={side} />}
     </div>
   )
 }
 
 /** 菜单和提示往哪边弹。 */
 type PopSide = 'top' | 'bottom'
-
-/** 加不了语言时的「+」：置灰，点了只说明原因（和 `Tool` 置灰时一样）。 */
-function BlockedAddLocale({ reason, side }: { reason: string; side: PopSide }) {
-  const [hint, setHint] = useState(false)
-  return (
-    <TooltipRoot onOpenChange={setHint} open={hint}>
-      <TooltipTrigger
-        asChild
-        onClick={(event) => {
-          event.preventDefault()
-          setHint(true)
-        }}
-      >
-        <button
-          aria-disabled
-          aria-label="添加语言"
-          className="wf-locale-add ui-state ui-focus"
-          type="button"
-        >
-          <Icon decorative name="final-cut-add" size="xs" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent className="wf-tip" side={side}>
-        {reason}
-      </TooltipContent>
-    </TooltipRoot>
-  )
-}
 
 function AddLocale({
   addable,

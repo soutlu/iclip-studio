@@ -1,36 +1,10 @@
-import { queryOptions, skipToken, useQueries, useQuery } from '@tanstack/react-query'
-import { errorMessageOf, UserFacingError } from '@/shared/api/client'
+import { queryOptions, useQueries } from '@tanstack/react-query'
+import { errorMessageOf } from '@/shared/api/client'
 import { keyframeQuery } from '../editing/media-analysis'
 import { keyframeRanges, type KeyframeIndex } from '../editing/keyframe-segments'
 import type { MediaSpan } from './materials'
 
 const loadReader = () => import('../editing/media-file')
-
-export const videoSizeQuery = (url: string | undefined) =>
-  queryOptions({
-    queryKey: ['whole-film', 'video-size', url],
-    queryFn:
-      url === undefined
-        ? skipToken
-        : async () => {
-            const input = (await loadReader()).openInput(url)
-            try {
-              const track = await input.getPrimaryVideoTrack()
-              if (track === null) throw new UserFacingError('该视频没有画面，无法加入 final-cut')
-              return {
-                width: await track.getDisplayWidth(),
-                height: await track.getDisplayHeight(),
-              }
-            } finally {
-              input.dispose()
-            }
-          },
-    staleTime: Infinity,
-    gcTime: Infinity,
-    retry: false,
-  })
-
-export const useVideoSize = (url: string | undefined) => useQuery(videoSizeQuery(url))
 
 /** 这个地址的视频有没有音轨。读不出来时查询失败，当作不知道。 */
 export const videoAudioQuery = (url: string) =>

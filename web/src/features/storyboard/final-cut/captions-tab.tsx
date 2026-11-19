@@ -283,7 +283,7 @@ export function CaptionsTab({
 
 /**
  * 字幕操作一行最右边的「+」：在播放头处加一句。悬停提示写这个名字；加不了时置灰，提示和点击都说明原因
- * （和工具条上加不了语言的「+」一样，见 `editor-toolbar.tsx` 的 `BlockedAddLocale`）。
+ * （和工具条上置灰的按钮一样，见 `editor-toolbar.tsx` 的 `Tool`）。
  */
 function AddLineButton({ blocked, onAdd }: { blocked: string | undefined; onAdd: () => void }) {
   const [hint, setHint] = useState(false)

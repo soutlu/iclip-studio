@@ -19,6 +19,16 @@ export const openFinalCut = async (panel: Locator) => {
   return editor
 }
 
+/**
+ * 对话里还没有 final-cut 工程时：点「final-cut」页签，再点「新建 final-cut」按默认模版新建，等编辑器打开；
+ * 返回编辑器的根节点。
+ */
+export const createFinalCut = async (panel: Locator) => {
+  await panel.getByRole('tab', { name: 'final-cut', exact: true }).click()
+  await panel.getByRole('button', { name: '新建 final-cut', exact: true }).click()
+  return openFinalCut(panel)
+}
+
 const CHAT_MIN = 400
 
 const widthOf = async (locator: Locator) => (await locator.boundingBox())?.width ?? Number.NaN

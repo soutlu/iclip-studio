@@ -9,7 +9,6 @@ import { mockWorkspaceFile } from '@/testing/mocks/workspace'
 import { mainFile, video } from '@/testing/final-cut'
 import {
   CONVERSATION,
-  CREATE_URL,
   URL_A,
   URL_B,
   WRITE_URL,
@@ -131,7 +130,7 @@ describe('final-cut 编辑器 · 播放', () => {
     expect(progress()).toHaveAttribute('aria-valuetext', '00:00.30 / 00:03.50')
   })
 
-  it('还没有工程时预览素材：进度条按素材可以拖，取消选中后又置灰', async () => {
+  it('空的 final-cut 里预览素材：进度条按素材可以拖，取消选中后又置灰', async () => {
     const user = userEvent.setup()
     await openEditor()
     expect(progress()).toHaveAttribute('data-disabled')
@@ -550,7 +549,7 @@ describe('final-cut 编辑器 · 导出', () => {
     const mainAtStart = trackStarts()
     let attempts = 0
     server.use(
-      http.post(CREATE_URL, () => {
+      http.put(WRITE_URL, () => {
         attempts += 1
         return HttpResponse.json({ detail: '工作区暂时写不进去' }, { status: 503 })
       }),
@@ -726,16 +725,6 @@ describe('final-cut 编辑器 · 组件、块页签', () => {
     await user.click(within(toolbar()).getByRole('button', { name: '撤销' }))
     await waitSaved(() => expect(savedItems()).toHaveLength(0))
     expect(savedClips()).toHaveLength(2)
-  })
-
-  it('还没有 final-cut 时加组件：按竖版 1080×1920 建一份', async () => {
-    const user = userEvent.setup()
-    await openEditor()
-    await openTab(user, '贴片')
-    await addAtPlayhead(user, /^测试叠加/)
-    await waitSaved(() => expect(savedItems()).toHaveLength(1))
-    expect(savedFilm()).toContain('data-width="1080" data-height="1920"')
-    expect(savedItems()[0]).toContain('data-start="0" data-duration="4" data-track-index="0"')
   })
 
   it('上一个还没加完又点「加到播放头」：只加一个，提示稍后再加', async () => {

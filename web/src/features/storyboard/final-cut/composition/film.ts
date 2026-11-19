@@ -530,6 +530,9 @@ export function withFontBlock(
 
 export const FILM_ID = 'film'
 
+/** 「新建 final-cut」按默认模版建工程时的画面尺寸：竖版。 */
+export const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
+
 /**
  * 新建工程时的主文件：根上的属性照空的 final-cut 写，`<head>` 里带动画库、摆放片段的样式和空的字体块。
  * `children` 是根下面一开始就有的元素，`durationMs` 是根上写的总长。
