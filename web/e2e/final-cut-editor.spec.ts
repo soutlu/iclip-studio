@@ -2606,6 +2606,8 @@ test('其它语言下挪一句、裁一句、改一句的字色直接打进预�
     .getByRole('button', { name: '翻译', exact: true })
     .click()
   await translated
+  const translatedNotice = page.getByText('已翻译 2 条')
+  await expect(translatedNotice).toBeVisible()
   /** 预览里第二句的字、字色和起止（播放头不在它里面时也读得到）；换播放器的那一刻是 null。 */
   const shownSecond = () =>
     finalCutPreviewPlayer(editor).evaluateAll((elements, id) => {
@@ -2635,6 +2637,8 @@ test('其它语言下挪一句、裁一句、改一句的字色直接打进预�
     savedCaptionTimings(scene).find((timing) => timing.start >= 2) ?? { start: 0, duration: 0 }
   const clip = row.getByRole('group', { name: /第二句，/ })
   const moved = sceneSavedWith((scene) => timingOf(scene).start > 2)
+  // 翻译完的提示条（4 秒后消失）盖在时间线的字幕行上，按下去会按在提示条上：等它消失再拖
+  await expect(translatedNotice).toBeHidden({ timeout: 10_000 })
   await dragClip(page, clip.getByRole('button', { name: /^选中：/ }), 30)
   const after = timingOf(savedFileOf(await moved, CAPTIONS_FILE) ?? '')
   const trimmed = sceneSavedWith((scene) => timingOf(scene).duration < 2)
