@@ -231,53 +231,6 @@
         --color-code-string: #8a4a8f;
         --color-code-literal: #1d6f7d;
         --color-code-guide: color-mix(in srgb, var(--color-on-surface) 9%, transparent);
-        /* final-cut 编辑器：全部是已有色阶与领域色的别名，不另起色值。
-           表面与线：well 是编辑器底，raised 是浮起的白块（选中的分段、浮层菜单、卡片），line 是浮起面外圈的细线，tick 是滑杆的零点刻度；
-           control 一族是中性的实心控件（滑杆走过的那段、选中的音色小块）上的字色、浅底与描边 */
-        --color-final-cut-well: var(--n94);
-        --color-final-cut-raised: var(--n100);
-        --color-final-cut-line: color-mix(in srgb, var(--n10) 9%, transparent);
-        --color-final-cut-line-strong: color-mix(in srgb, var(--n10) 15%, transparent);
-        --color-final-cut-tick: var(--n70);
-        --color-final-cut-on-control: var(--n100);
-        --color-final-cut-control-soft: color-mix(in srgb, var(--n10) 7%, transparent);
-        --color-final-cut-control-ring: color-mix(in srgb, var(--n10) 18%, transparent);
-        --color-final-cut-knob: var(--n100);
-        /* final-cut 语义图标色：导航和轨道头双色图标的内填充与选中态，按媒体种类取 --color-tone-*；led 是深色实心按钮上图标的指示光 */
-        --color-final-cut-shot: var(--color-tone-slate);
-        --color-final-cut-overlay: var(--color-tone-copper);
-        --color-final-cut-scene: var(--t60);
-        --color-final-cut-music: var(--color-primary);
-        --color-final-cut-caption: var(--color-tone-teal);
-        --color-final-cut-voice: var(--color-tone-umber);
-        --color-final-cut-props: var(--p40);
-        --color-final-cut-led: var(--t80);
-        /* final-cut 片段：wave 是音频片段的波形和左缘细边，ink 是片段标题；duck 画压低曲线；edge 是字幕胶囊和音频卡的描边，label 是音频卡顶上的标题条和它的分隔线 */
-        --color-final-cut-original-wave: var(--color-tone-slate);
-        --color-final-cut-original-ink: var(--color-tone-slate);
-        --color-final-cut-dub-wave: var(--color-tone-umber);
-        --color-final-cut-dub-ink: var(--t30);
-        --color-final-cut-music-wave: var(--color-tone-teal);
-        --color-final-cut-music-ink: var(--p20);
-        --color-final-cut-duck: var(--t60);
-        --color-final-cut-clip-video: var(--color-storyboard-stage);
-        --color-final-cut-on-clip-caption: var(--t20);
-        --color-final-cut-clip-edge: color-mix(in srgb, var(--n10) 12%, transparent);
-        --color-final-cut-clip-label: color-mix(in srgb, var(--n10) 3%, transparent);
-        --color-final-cut-clip-label-line: color-mix(in srgb, var(--n10) 6%, transparent);
-        /* final-cut 片段卡底的竖向渐变：贴片 / 场景、字幕胶囊、音频卡 */
-        --final-cut-clip-component: linear-gradient(180deg, var(--n20) 0%, var(--n12) 100%);
-        --final-cut-clip-caption: linear-gradient(180deg, var(--n99) 0%, var(--n96) 100%);
-        --final-cut-clip-audio: linear-gradient(180deg, var(--n100) 0%, var(--n98) 100%);
-        /* final-cut 材质：panel 是 18px 圆角的浮起面板，card 是面板里的白色分组卡，pill 是分段切换里选中的那一格，float 是浮层菜单；
-           well 是凹进去的底（滑杆轨道、开关、输入框），specular 是浮起面的顶部 1px 高光，knob 是滑杆拇指和开关圆钮的投影 */
-        --shadow-final-cut-panel: 0 1px 2px color-mix(in srgb, var(--n0) 4%, transparent), 0 8px 24px -10px color-mix(in srgb, var(--n0) 8%, transparent), 0 0 0 1px var(--color-final-cut-line);
-        --shadow-final-cut-card: 0 1px 2px color-mix(in srgb, var(--n0) 3%, transparent), 0 3px 10px -4px color-mix(in srgb, var(--n0) 5%, transparent), 0 0 0 1px var(--color-final-cut-line);
-        --shadow-final-cut-pill: 0 1px 3px color-mix(in srgb, var(--n0) 7%, transparent), 0 0 0 1px color-mix(in srgb, var(--n10) 7%, transparent);
-        --shadow-final-cut-float: 0 4px 12px color-mix(in srgb, var(--n0) 8%, transparent), 0 18px 40px -8px color-mix(in srgb, var(--n0) 16%, transparent), 0 0 0 1px var(--color-final-cut-line-strong);
-        --shadow-final-cut-well: inset 0 1px 2px color-mix(in srgb, var(--n10) 5%, transparent);
-        --shadow-final-cut-specular: inset 0 1px 0 color-mix(in srgb, var(--n100) 92%, transparent);
-        --shadow-final-cut-knob: 0 1px 3px color-mix(in srgb, var(--n0) 20%, transparent);
 
         /* ===== ③ 媒体遮罩（压在影像画面上，明暗不变） ===== */
         --color-on-scrim: var(--n100);
@@ -298,8 +251,6 @@
         --text-headline-lg: 32px; --text-headline-lg--line-height: 40px;
         --text-display-sm: 45px; --text-display-sm--line-height: 52px;
         --text-display: 57px; --text-display--line-height: 64px;
-        /* final-cut 时间线上音频片段 13px 高的标题条：比全站最小字号小一档，只用在这里 */
-        --text-final-cut-clip-label: 9.5px;
         /* 圆角（严守 4px 同心嵌套步进） */
         --radius-none:0; --radius-xs:4px; --radius-sm:8px; --radius-md:12px; --radius-lg:16px;
         --radius-xl:20px; --radius-2xl:28px; --radius-3xl:32px; --radius-4xl:48px; --radius-full:9999px;
@@ -437,35 +388,6 @@
         --color-code-key: #8fb3ef;
         --color-code-string: #d4a2d7;
         --color-code-literal: #62c3d3;
-        --color-final-cut-well: var(--n4);
-        --color-final-cut-raised: var(--n12);
-        --color-final-cut-line: color-mix(in srgb, var(--n90) 8%, transparent);
-        --color-final-cut-line-strong: color-mix(in srgb, var(--n90) 15%, transparent);
-        --color-final-cut-tick: var(--n40);
-        --color-final-cut-on-control: var(--n10);
-        --color-final-cut-control-soft: color-mix(in srgb, var(--n100) 9%, transparent);
-        --color-final-cut-control-ring: color-mix(in srgb, var(--n100) 20%, transparent);
-        --color-final-cut-scene: var(--t80);
-        --color-final-cut-props: var(--p70);
-        --color-final-cut-led: var(--p40);
-        --color-final-cut-original-ink: var(--n90);
-        --color-final-cut-dub-ink: var(--t90);
-        --color-final-cut-music-ink: var(--p80);
-        --color-final-cut-duck: var(--t80);
-        --color-final-cut-clip-video: var(--n12);
-        --color-final-cut-on-clip-caption: var(--t90);
-        --color-final-cut-clip-edge: color-mix(in srgb, var(--n90) 10%, transparent);
-        --color-final-cut-clip-label: color-mix(in srgb, var(--n100) 3%, transparent);
-        --color-final-cut-clip-label-line: color-mix(in srgb, var(--n100) 6%, transparent);
-        --final-cut-clip-component: linear-gradient(180deg, var(--n17) 0%, var(--n12) 100%);
-        --final-cut-clip-caption: linear-gradient(180deg, var(--n17) 0%, var(--n12) 100%);
-        --final-cut-clip-audio: linear-gradient(180deg, var(--n17) 0%, var(--n12) 100%);
-        --shadow-final-cut-panel: 0 2px 12px color-mix(in srgb, var(--n0) 42%, transparent), 0 0 0 1px var(--color-final-cut-line);
-        --shadow-final-cut-card: 0 2px 6px color-mix(in srgb, var(--n0) 30%, transparent), 0 0 0 1px var(--color-final-cut-line);
-        --shadow-final-cut-pill: 0 2px 6px color-mix(in srgb, var(--n0) 36%, transparent), 0 0 0 1px color-mix(in srgb, var(--n100) 8%, transparent);
-        --shadow-final-cut-float: 0 12px 42px color-mix(in srgb, var(--n0) 68%, transparent), 0 0 0 1px var(--color-final-cut-line-strong);
-        --shadow-final-cut-well: inset 0 1px 3px color-mix(in srgb, var(--n0) 35%, transparent);
-        --shadow-final-cut-specular: inset 0 1px 0 color-mix(in srgb, var(--n100) 6%, transparent);
         --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.2);
         --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 0, 0, 0.18);
         --shadow-2: 0 6px 18px rgba(0, 0, 0, 0.2), 0 3px 9px rgba(0, 0, 0, 0.24), 0 1px 1px rgba(0, 0, 0, 0.24);
@@ -640,10 +562,6 @@
             <li>
               <strong>契约准入原则</strong>
               全局 <code>design-system.html</code> 只收编跨模块复用的通用语义；单页特化纸面或独立实验浮窗留在模块局部样式，不污染全局契约。
-            </li>
-            <li>
-              <strong>final-cut 媒体色</strong>
-              <code>final-cut-*</code> 只在 final-cut 编辑器里用，全部是 <code>--color-tone-*</code> 与基础色阶的别名，不另起色值：语义图标色只点亮导航和轨道头双色图标的内填充与选中态，音频身份色只画波形、片段左缘细边和片段标题；大面积的面板、卡片与控件仍用中性灰阶。
             </li>
           </ul>
         </div>

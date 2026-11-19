@@ -134,50 +134,6 @@ const semanticGroups = [
     ],
   },
   {
-    id: "final-cut",
-    title: "final-cut media",
-    description: "只在 final-cut 编辑器里用，全部是 --color-tone-* 与基础色阶的别名",
-    families: [
-      {
-        name: "Surface",
-        items: [
-          ["Well", "final-cut-well", "on-surface"],
-          ["Raised", "final-cut-raised", "on-surface"],
-          ["Line", "final-cut-line", "on-surface"],
-          ["Line Strong", "final-cut-line-strong", "on-surface"],
-          ["Tick", "final-cut-tick", "on-surface"],
-          ["On Control", "final-cut-on-control", "on-surface"],
-          ["Control Soft", "final-cut-control-soft", "on-surface"],
-          ["Control Ring", "final-cut-control-ring", "on-surface"],
-          ["Knob", "final-cut-knob", "on-surface"],
-        ],
-      },
-      {
-        name: "Icon",
-        items: ["shot", "overlay", "scene", "music", "caption", "voice", "props", "led"].map(
-          (kind) => [kind[0].toUpperCase() + kind.slice(1), `final-cut-${kind}`, "on-scrim"],
-        ),
-      },
-      {
-        name: "Clip",
-        items: [
-          ["Original Wave", "final-cut-original-wave", "on-scrim"],
-          ["Original Ink", "final-cut-original-ink", "on-scrim"],
-          ["Dub Wave", "final-cut-dub-wave", "on-scrim"],
-          ["Dub Ink", "final-cut-dub-ink", "on-scrim"],
-          ["Music Wave", "final-cut-music-wave", "on-scrim"],
-          ["Music Ink", "final-cut-music-ink", "on-scrim"],
-          ["Duck", "final-cut-duck", "on-scrim"],
-          ["Video", "final-cut-clip-video", "on-scrim"],
-          ["On Caption", "final-cut-on-clip-caption", "on-scrim"],
-          ["Edge", "final-cut-clip-edge", "on-surface"],
-          ["Label", "final-cut-clip-label", "on-surface"],
-          ["Label Line", "final-cut-clip-label-line", "on-surface"],
-        ],
-      },
-    ],
-  },
-  {
     id: "surface",
     title: "Surface hierarchy",
     description: "背景层级、内容、描边与反色",
