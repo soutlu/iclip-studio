@@ -3486,135 +3486,362 @@
   box-shadow: none;
 }
 
-/* ---- 「镜头」页签：按原作分组的视频素材，每条原作一行 ---- */
+/* ---- 「镜头」页签：顶上一行提示，按镜头组排的原作卡片在中间滚，有选区时底下浮一条操作条 ---- */
 
-.wf-materials,
-.wf-material-group {
+.wf-side-body.is-shots {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  padding: 0;
+}
+
+.wf-materials {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.wf-materials-hint {
+  flex: none;
+  padding: 9px 15px 0;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+}
+
+.wf-materials-list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+  padding: 12px 14px 26px;
+  scrollbar-width: thin;
 }
 
 .wf-materials-empty {
-  padding: 16px 4px;
   color: var(--color-on-surface-muted);
   font-size: var(--text-body-sm);
 }
 
-/* 五列：组名、原作字母、版本、镜头条、时长 */
-.wf-take {
-  display: grid;
-  height: 30px;
-  align-items: center;
-  grid-template-columns: 54px 18px 44px minmax(0, 1fr) 36px;
-  column-gap: 8px;
+.wf-material-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-/* 组名只写在组里第一条原作那一行 */
-.wf-group-label {
-  overflow: hidden;
+/* 组头：组名（数据里只有「镜头组 N」，不另加序号块，免得两个数字对不上） */
+.wf-material-group-head {
+  padding: 0 2px;
   color: var(--color-on-surface);
   font-size: var(--text-label);
   font-weight: 600;
-  line-height: 16px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: var(--text-label--line-height);
 }
 
-.wf-take-letter {
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  font-weight: 500;
-  text-align: center;
+/* 一条原作一张白卡：顶行版本和总长，下面是镜头条和已用细轨；素材预览放着它时描一圈墨色 */
+.wf-take {
+  position: relative;
+  padding: 7px 7px 6px;
+  border-radius: var(--radius-card);
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-card), var(--shadow-final-cut-specular);
+  transition: box-shadow var(--dur-s) var(--ease);
 }
 
-.wf-version-label,
-.wf-version-switch {
+.wf-take:hover {
+  box-shadow:
+    var(--shadow-final-cut-card),
+    0 0 0 1px var(--color-final-cut-line-strong),
+    var(--shadow-final-cut-specular);
+}
+
+.wf-take.is-previewing {
+  box-shadow:
+    0 0 0 1.5px var(--color-on-surface),
+    var(--shadow-final-cut-card);
+}
+
+.wf-take-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2px 6px;
+}
+
+/* 「A · V2」：原作字母和版本号；有几个版本时是按钮，点开选版本 */
+.wf-take-version {
   display: inline-flex;
-  width: 44px;
   height: 20px;
+  flex: none;
   align-items: center;
   gap: 2px;
-  padding: 0 8px;
-  border-radius: var(--radius-full);
+  padding: 0 7px;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-low);
+  box-shadow: inset 0 0 0 1px var(--color-final-cut-line);
+  color: var(--color-on-surface-variant);
   font-size: var(--text-caption);
+  font-weight: 600;
   white-space: nowrap;
 }
 
-.wf-version-label {
-  background: var(--color-surface-container);
-  color: var(--color-on-surface-muted);
-}
-
-.wf-version-switch {
-  justify-content: space-between;
+button.wf-take-version {
   padding-right: 4px;
-  background: var(--color-surface-container-lowest);
-  box-shadow: inset 0 0 0 0.5px var(--color-hairline);
-  color: var(--color-on-surface-variant);
 }
 
-/* 镜头条比这一格宽时在格子里横着滚，不显示滚动条；左右各留 5px 露出选区两端的抓手 */
+button.wf-take-version:hover {
+  background: var(--color-surface-container-high);
+  box-shadow: inset 0 0 0 1px var(--color-final-cut-line-strong);
+  color: var(--color-on-surface);
+}
+
+.wf-take-duration {
+  flex: none;
+  color: var(--color-on-surface-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 素材很长、镜头条比卡片宽时在卡片里横着滚（最小宽度由组件按秒数给），不显示滚动条；
+   四周多让出一圈，露出贴着两头的选区抓手和镜头的焦点框 */
 .wf-take-scroll {
+  margin: -3px -5px;
   overflow: auto hidden;
   padding: 3px 5px;
   scrollbar-width: none;
 }
 
-/* 最小宽度按素材秒数算（由组件给），里面的镜头按时长比例排。
+/* 镜头条和它正下方的已用细轨一起滚，两条按同一个宽度 1:1 对齐 */
+.wf-take-track {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* 镜头之间露出一道深色细切缝（--wf-shot-gap，由组件从每个镜头的宽度里扣掉）。
    和 .wf-tracks 一样不让选文字：Shift 点镜头会把文本选区扩进来，之后按下选区拖动会变成浏览器原生拖拽 */
 .wf-take-strip {
+  --wf-shot-gap: 1.5px;
+
   position: relative;
-  height: 24px;
-  border-radius: var(--radius-xs);
-  background: color-mix(in srgb, var(--color-on-surface) 3%, transparent);
+  height: 62px;
+  border-radius: var(--radius-sm);
+  background: var(--color-scrim);
   user-select: none;
 }
 
-.wf-take-duration {
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  white-space: nowrap;
-}
-
 .wf-take-note {
-  padding-left: 8px;
-  color: var(--color-on-surface-muted);
+  display: flex;
+  height: 100%;
+  align-items: center;
+  padding-left: 10px;
+  color: color-mix(in srgb, var(--color-on-scrim) 62%, transparent);
   font-size: var(--text-caption);
-  line-height: 24px;
 }
 
-/* 镜头只放画面，不写镜头号和起止 */
+/* 镜头只放画面，不写镜头号和起止；头尾两个镜头跟着镜头条的圆角 */
 .wf-shot {
   position: absolute;
   top: 0;
+  bottom: 0;
   display: flex;
-  height: 24px;
   overflow: hidden;
   padding: 0;
-  border-radius: var(--radius-xs);
-  background: var(--color-surface-container-high);
-  cursor: pointer;
+  background: var(--color-final-cut-clip-video);
+  cursor: crosshair;
   touch-action: none;
 }
 
-.wf-shot > .timeline-frames {
-  width: 100%;
+.wf-shot:first-of-type {
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
 }
 
-/* 画面轨上已经用了的段：轨道底边一道 */
-.wf-used {
+.wf-shot:last-of-type {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.wf-shot:hover::after {
+  content: '';
   position: absolute;
-  bottom: 1px;
-  height: 2.5px;
-  border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-on-surface) 62%, transparent);
+  inset: 0;
+  background: color-mix(in srgb, var(--color-on-scrim) 8%, transparent);
   pointer-events: none;
 }
 
-/* 选中的范围：外围一圈选区外框，同画面轨与编辑视频 */
+/* 还没有帧图时的占位图标压在深色镜头上，用浅色 */
+.wf-shot > .timeline-frames {
+  width: 100%;
+  color: color-mix(in srgb, var(--color-on-scrim) 45%, transparent);
+}
+
+/* 有选区时选区以外的部分压暗 */
+.wf-take-dim {
+  position: absolute;
+  z-index: var(--z-local-1);
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.wf-take-dim > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--color-scrim) 56%, transparent);
+}
+
+/* 选区：暖金色框，拖中间平移，两端是金色把手；正在划出来的那段同样子、不接指针 */
+.wf-pick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: var(--z-local-2);
+  border: 2px solid var(--color-tertiary-fixed-dim);
+  border-radius: var(--radius-xs);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--color-scrim) 35%, transparent);
+  cursor: grab;
+  touch-action: none;
+}
+
+.wf-pick.is-draft {
+  pointer-events: none;
+}
+
+.wf-pick.is-lifting {
+  background: color-mix(in srgb, var(--color-tertiary-fixed-dim) 18%, transparent);
+  cursor: grabbing;
+}
+
+/* 两个类压过共用把手的白底小方块：这里只是一道金色竖条，悬停、按下、聚焦时变亮变长。
+   点按区收到 18px 宽，1 秒的镜头不到 30px 时选区中间和紧挨着的镜头还按得到 */
+.wf-pick .timeline-handle {
+  width: 13px;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.wf-pick .timeline-handle::before {
+  width: 18px;
+}
+
+.wf-pick .timeline-handle::after {
+  width: 3px;
+  height: 18px;
+  background: var(--color-tertiary-fixed-dim);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--color-scrim) 45%, transparent);
+  transition:
+    height var(--dur-s) var(--ease),
+    background var(--dur-s) var(--ease);
+}
+
+.wf-pick .timeline-handle:is(:hover, :focus-visible, :active, .is-pressed) {
+  background: none;
+}
+
+.wf-pick .timeline-handle:is(:hover, :active, .is-pressed)::after {
+  height: 24px;
+  background: var(--color-tertiary-fixed);
+}
+
+/* 键盘聚焦：竖条换成白色，和悬停分得开 */
+.wf-pick .timeline-handle:focus-visible::after {
+  height: 24px;
+  background: var(--color-on-scrim);
+}
+
+/* 帧条正下方的已用细轨：final-cut 里已经用了的段 */
+.wf-take-used {
+  position: relative;
+  height: 2.5px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-high);
+}
+
+.wf-take-used > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+}
+
+/* 拖动时在卡片顶上跟着指针的「起 – 止 · 时长」，样子同提示气泡 */
+.wf-take-tip {
+  position: absolute;
+  top: 2px;
+  z-index: var(--z-local-3);
+  translate: -50% 0;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--color-inverse-surface);
+  box-shadow: var(--shadow-2);
+  color: var(--color-inverse-on-surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 底部浮着的操作条：已选几段、多长，清空，加入 final-cut */
+.wf-pick-dock {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  margin: 0 12px 12px;
+  padding: 8px 10px 8px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-final-cut-raised);
+  box-shadow: var(--shadow-final-cut-float), var(--shadow-final-cut-specular);
+}
+
+.wf-pick-dock-info {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-on-surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.wf-pick-dock-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-full);
+  background: var(--color-tertiary-fixed-dim);
+}
+
+/* 深色实心的主操作 */
+.wf-pick-dock-insert {
+  display: inline-flex;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 11px;
+  border-radius: var(--radius-sm);
+  background: var(--color-on-surface);
+  color: var(--color-final-cut-on-control);
+  font-size: var(--text-label);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 「原片截取」的选中框（见 source-trim.tsx）：外围一圈选区外框，同画面轨与编辑视频 */
 .wf-range {
   position: absolute;
   top: 0;
@@ -3626,7 +3853,7 @@
   touch-action: none;
 }
 
-/* 镜头条上 1 秒的镜头不到 30px：两端抓手的点按区收到 18px 宽，选区中间和紧挨着的镜头还按得到 */
+/* 两端抓手的点按区收到 18px 宽：用掉的段很短时，框中间还按得到 */
 .wf-range .timeline-handle::before {
   width: 18px;
 }
@@ -3664,9 +3891,4 @@
 .wf-material-video {
   height: auto;
   object-fit: contain;
-}
-
-.wf-range.is-lifting {
-  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
-  cursor: grabbing;
 }

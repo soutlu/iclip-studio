@@ -218,7 +218,8 @@ test('「镜头」页签上下滚动后能选择后面的镜头组与末尾镜�
   const last = shotOf(materials, 7, 'A', 6)
   await expect(last).not.toBeInViewport()
   await materials.hover()
-  await page.mouse.wheel(0, 800)
+  // 一条原作一张卡片，十几张卡片要滚两千多像素：一次滚到底
+  await page.mouse.wheel(0, 3000)
   await expect(last).toBeInViewport()
   await last.click()
   const end = groupOf(materials, 7).getByRole('slider', { name: '裁剪结尾' })
@@ -228,18 +229,18 @@ test('「镜头」页签上下滚动后能选择后面的镜头组与末尾镜�
   await expect(end).toHaveAttribute('aria-valuenow', '5.9')
 })
 
-test('镜头条比格子宽时横着滚：滚过以后点选、在选区上单击、拖抓手裁剪、拖进时间线都落在对的镜头和位置', async ({
+test('镜头条比卡片宽时横着滚：滚过以后点选、在选区上单击、拖抓手裁剪、拖进时间线都落在对的镜头和位置', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1449, height: 982 })
   const panel = await openConversation(page, CONVERSATION)
-  // 20 秒的片每 2 秒一个镜头，镜头条比「镜头」页签里那一格宽
+  // 20 秒的片每 2 秒一个镜头，镜头条比卡片宽
   await addTakes(page, [1], { seconds: 20 })
   const editor = await openFinalCut(panel)
   const materials = editor.getByRole('region', { name: '视频素材区' })
   const shot = (index: number) => shotOf(materials, 1, 'A', index)
   await expect(shot(1)).toBeInViewport()
-  await expect(shot(5)).not.toBeInViewport()
+  await expect(shot(8)).not.toBeInViewport()
 
   // 每个镜头 56 像素宽：滚过 260 像素以后，第 6、7 个镜头整个露出来，第 1 个卷走
   const first = await centerOf(shot(1))
@@ -263,10 +264,11 @@ test('镜头条比格子宽时横着滚：滚过以后点选、在选区上单�
   await shot(7).click({ modifiers: ['Shift'] })
   const range = groupOf(materials, 1).getByRole('group', { name: /^选中的范围/ })
   await expect(range).toHaveAccessibleName(/^选中的范围 10\.0–14\.0 秒，2 个镜头/)
-  // 在选区上单击：按指针落在镜头条上的位置认出是哪个镜头
+  // 在选区上单击：去掉这一段
   const sixth = await centerOf(shot(6))
   await page.mouse.click(sixth.x, sixth.y)
-  await expect(range).toHaveAccessibleName(/^选中的范围 10\.0–12\.0 秒，1 个镜头/)
+  await expect(range).toHaveCount(0)
+  await shot(6).click()
   await shot(7).click({ modifiers: ['Shift'] })
   await expect(range).toHaveAccessibleName(/^选中的范围 10\.0–14\.0 秒，2 个镜头/)
 
@@ -290,11 +292,13 @@ test('镜头条比格子宽时横着滚：滚过以后点选、在选区上单�
   await page.mouse.move(dropX, lane.y + lane.height / 2, { steps: 8 })
   await expect(row.getByTestId('drop-ghost')).toBeVisible()
   await page.mouse.up()
+  // 拉过镜头切口的那一截在切口处切开，一个镜头一个片段
   await expect
     .poll(() => savedClips(page))
     .toEqual([
       expect.stringMatching(/^A · 镜头 6，[\d.]+ 秒起，2 秒$/),
-      expect.stringMatching(/^A · 镜头 7，[\d.]+ 秒起，3\.5 秒$/),
+      expect.stringMatching(/^A · 镜头 7，[\d.]+ 秒起，2 秒$/),
+      expect.stringMatching(/^A · 镜头 8，[\d.]+ 秒起，1\.5 秒$/),
     ])
   const placed = await row.locator('[data-clip-id]').first().boundingBox()
   if (placed === null) throw new Error('片段尚未布局')
@@ -344,12 +348,14 @@ test('点镜头只选中、预览停在开头不播放；素材暂停续播与�
   await page.keyboard.press('Shift+ArrowRight')
   await page.keyboard.press('Enter')
   await expect(video).toHaveCount(0)
-  await expect.poll(() => savedClips(page)).toEqual(['A · 镜头 2，0 秒起，3 秒'])
+  await expect
+    .poll(() => savedClips(page))
+    .toEqual(['A · 镜头 2，0 秒起，1 秒', 'A · 镜头 3，1 秒起，1 秒', 'A · 镜头 4，2 秒起，1 秒'])
   await readyPlayer(editor)
+  // 加入以后选区清空
+  await expect(groupOf(materials, 1).getByRole('group', { name: /^选中的范围/ })).toHaveCount(0)
 
-  await groupOf(materials, 1)
-    .getByRole('group', { name: /^选中的范围 1.0–4.0 秒/ })
-    .click()
+  await shotOf(materials, 1, 'A', 3).click()
   await expect(
     groupOf(materials, 1).getByRole('group', { name: /^选中的范围 2\.0–3\.0 秒，1 个镜头/ }),
   ).toBeVisible()
@@ -511,19 +517,13 @@ test('选区里的播放头只在素材播放时出现：点镜头、暂停、�
   await expect(playhead).toHaveCount(0)
 })
 
-test('Shift 选连着的几个镜头：不播放；在选区上单击只选那个镜头、Shift 点去掉一端；两端抓手不越过镜头边界，加入 final-cut 时一个镜头一个片段', async ({
+test('Shift 连到点的镜头：不播放；在选区上单击去掉这一段；两端抓手越过镜头切口、不压到相邻的选区，加入 final-cut 时一个镜头一个片段、选区清空', async ({
   page,
 }) => {
   const { editor, materials } = await openWith(page, [1])
   const group = groupOf(materials, 1)
   const range = group.getByRole('group', { name: /^选中的范围/ })
   const transport = editor.getByRole('group', { name: '播放控制' })
-  const clickAt = async (locator: Locator, shift = false) => {
-    const { x, y } = await centerOf(locator)
-    if (shift) await page.keyboard.down('Shift')
-    await page.mouse.click(x, y)
-    if (shift) await page.keyboard.up('Shift')
-  }
 
   await shotOf(materials, 1, 'A', 2).click()
   await shotOf(materials, 1, 'A', 3).click({ modifiers: ['Shift'] })
@@ -532,40 +532,112 @@ test('Shift 选连着的几个镜头：不播放；在选区上单击只选那�
   await expect.poll(() => previewVideo(editor)).toEqual({ paused: true, time: 1 })
   await expect(transport.getByRole('button', { name: '播放', exact: true })).toBeVisible()
 
-  await clickAt(shotOf(materials, 1, 'A', 3))
-  await expect(range).toHaveAccessibleName(/^选中的范围 2\.0–3\.0 秒，1 个镜头/)
-  await expect.poll(() => previewVideo(editor)).toEqual({ paused: true, time: 2 })
-  await shotOf(materials, 1, 'A', 2).click({ modifiers: ['Shift'] })
-  await shotOf(materials, 1, 'A', 4).click({ modifiers: ['Shift'] })
-  await expect(range).toHaveAccessibleName(/^选中的范围 1\.0–4\.0 秒，3 个镜头/)
+  const third = await centerOf(shotOf(materials, 1, 'A', 3))
+  await page.mouse.click(third.x, third.y)
+  await expect(range).toHaveCount(0)
+  await expect(editor.getByRole('region', { name: /^素材 · / })).toHaveCount(0)
 
-  await clickAt(shotOf(materials, 1, 'A', 4), true)
-  await expect(range).toHaveAccessibleName(/^选中的范围 1\.0–3\.0 秒，2 个镜头/)
-  await expect(shotOf(materials, 1, 'A', 4)).toHaveAttribute('aria-pressed', 'false')
+  // 不挨着的两个镜头是两段；Shift 点从最后一段连过来
+  await shotOf(materials, 1, 'A', 2).click()
+  await shotOf(materials, 1, 'A', 5).click()
   await shotOf(materials, 1, 'A', 4).click({ modifiers: ['Shift'] })
-  await expect(range).toHaveAccessibleName(/^选中的范围 1\.0–4\.0 秒，3 个镜头/)
+  await expect(range).toHaveCount(2)
+  await expect(range.first()).toHaveAccessibleName(/^选中的范围 1\.0–2\.0 秒，1 个镜头/)
+  await expect(range.nth(1)).toHaveAccessibleName(/^选中的范围 3\.0–5\.0 秒，2 个镜头/)
 
-  const start = group.getByRole('slider', { name: '裁剪开头' })
-  const end = group.getByRole('slider', { name: '裁剪结尾' })
-  await start.focus()
-  await page.keyboard.press('Shift+ArrowRight')
-  await expect(start).toHaveAttribute('aria-valuenow', '1.9')
-  await page.keyboard.press('Shift+ArrowLeft')
-  await expect(start).toHaveAttribute('aria-valuenow', '0.9')
+  const start = range.first().getByRole('slider', { name: '裁剪开头' })
+  const end = range.first().getByRole('slider', { name: '裁剪结尾' })
   await end.focus()
+  await page.keyboard.press('Shift+ArrowRight')
+  await expect(end).toHaveAttribute('aria-valuenow', '2.9')
+  await page.keyboard.press('ArrowRight')
+  await expect(end).toHaveAttribute('aria-valuenow', '2.9')
+  await start.focus()
   await page.keyboard.press('Shift+ArrowLeft')
-  await expect(end).toHaveAttribute('aria-valuenow', '3.1')
-  for (let step = 0; step < 4; step += 1) await page.keyboard.press('ArrowRight')
-  await expect(end).toHaveAttribute('aria-valuenow', '3.5')
+  await expect(start).toHaveAttribute('aria-valuenow', '0')
 
   await page.keyboard.press('Enter')
   await expect
     .poll(() => savedClips(page))
     .toEqual([
-      'A · 镜头 1，0 秒起，1.1 秒',
-      'A · 镜头 3，1.1 秒起，1 秒',
-      'A · 镜头 4，2.1 秒起，0.5 秒',
+      'A · 镜头 1，0 秒起，1 秒',
+      'A · 镜头 2，1 秒起，1 秒',
+      'A · 镜头 3，2 秒起，0.9 秒',
+      'A · 镜头 4，2.9 秒起，1 秒',
+      'A · 镜头 5，3.9 秒起，1 秒',
     ])
+  await expect(range).toHaveCount(0)
+})
+
+test('跨镜头划出两段：底下显示已选 2 段，点「加入 final-cut」一次加进去；再划一段拖进时间线', async ({
+  page,
+}) => {
+  const { editor, materials } = await openWith(page, [1, 1])
+  const row = editor.getByRole('group', { name: '画面 1', exact: true })
+  const ranges = groupOf(materials, 1).getByRole('group', { name: /^选中的范围/ })
+  /** 在 `take` 这条原作上从镜头 `from` 的正中按住，划到镜头 `to` 的正中松手。 */
+  const drawBetween = async (take: string, from: number, to: number) => {
+    const start = await centerOf(shotOf(materials, 1, take, from))
+    const end = await centerOf(shotOf(materials, 1, take, to))
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(end.x, end.y, { steps: 8 })
+    await page.mouse.up()
+  }
+
+  await drawBetween('A', 2, 3)
+  await drawBetween('B', 4, 6)
+  await expect(ranges).toHaveCount(2)
+  await expect(ranges.first()).toHaveAccessibleName(/^选中的范围 1\.5–2\.5 秒，2 个镜头/)
+  await expect(ranges.nth(1)).toHaveAccessibleName(/^选中的范围 3\.5–5\.5 秒，3 个镜头/)
+  await expect(editor.getByText('已选 2 段 · 3.0s')).toBeVisible()
+
+  // 划出的起止按指针算，不一定正好在整百毫秒上：只核对加进去的片段和先后
+  const names = async () => (await savedClips(page)).map((saved) => saved.split('，')[0])
+  await editor.getByRole('button', { name: '加入 final-cut' }).click()
+  await expect
+    .poll(names)
+    .toEqual(['A · 镜头 2', 'A · 镜头 3', 'B · 镜头 4', 'B · 镜头 5', 'B · 镜头 6'])
+  await expect(ranges).toHaveCount(0)
+  await expect(editor.getByText(/^已选/)).toHaveCount(0)
+
+  // 两条原作上各划一段，拖其中一段：整组一起进时间线，按面板里的先后排
+  await drawBetween('B', 1, 2)
+  await drawBetween('A', 5, 6)
+  // 按住选区中间横着拖：整段往前挪一个镜头那么长，长短不变
+  const perSecond =
+    (await centerOf(shotOf(materials, 1, 'A', 6))).x -
+    (await centerOf(shotOf(materials, 1, 'A', 5))).x
+  const sliding = await centerOf(ranges.first())
+  await page.mouse.move(sliding.x, sliding.y)
+  await page.mouse.down()
+  await page.mouse.move(sliding.x - perSecond, sliding.y, { steps: 6 })
+  await page.mouse.up()
+  await expect(ranges.first()).toHaveAccessibleName(/^选中的范围 3\.5–4\.5 秒，2 个镜头/)
+  const lane = await row.boundingBox()
+  if (lane === null) throw new Error('时间线尚未布局')
+  const from = await centerOf(ranges.last())
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 10, from.y - 10, { steps: 3 })
+  await page.mouse.move(lane.x + lane.width * 0.8, lane.y + lane.height / 2, { steps: 8 })
+  await expect(row.getByTestId('drop-ghost')).toBeVisible()
+  await page.mouse.up()
+  // 松手处压在已有的片段上：拖进来的几段挪到它们后面
+  await expect
+    .poll(names)
+    .toEqual([
+      'A · 镜头 2',
+      'A · 镜头 3',
+      'B · 镜头 4',
+      'B · 镜头 5',
+      'B · 镜头 6',
+      'A · 镜头 4',
+      'A · 镜头 5',
+      'B · 镜头 1',
+      'B · 镜头 2',
+    ])
+  await expect(ranges).toHaveCount(0)
 })
 
 test('撤销、重做也是 final-cut 编辑：预览回到 final-cut', async ({ page }) => {
@@ -587,8 +659,9 @@ test('撤销、重做也是 final-cut 编辑：预览回到 final-cut', async ({
   await expect(material).toHaveCount(0)
   await expect.poll(() => savedClips(page)).toHaveLength(1)
 
-  await shotOf(materials, 1, 'B', 3).click()
-  await expect(material).toHaveAccessibleName('素材 · 镜头组 1 · 生成 B · 镜头 3')
+  // 撤销、重做不动「镜头」里的选区：再点的镜头和前面选的不挨着，单独成一段
+  await shotOf(materials, 1, 'B', 6).click()
+  await expect(material).toHaveAccessibleName('素材 · 镜头组 1 · 生成 B · 镜头 6')
   await page.keyboard.press('ControlOrMeta+z')
   await expect(material).toHaveCount(0)
   await expect.poll(() => savedClips(page)).toHaveLength(0)
@@ -618,6 +691,8 @@ test('Enter 把选区接在 final-cut 末尾：焦点在镜头、选区两端或
     .poll(() => savedClips(page))
     .toEqual(['A · 镜头 1，0 秒起，1 秒', 'B · 镜头 4，1 秒起，1 秒'])
 
+  // 加入以后选区清空，再选一个镜头
+  await shotOf(materials, 1, 'B', 5).click()
   await editor.evaluate((element: HTMLElement) => element.focus())
   await page.keyboard.press('Enter')
   await expect.poll(() => savedClips(page)).toHaveLength(3)
@@ -670,8 +745,8 @@ test('每条原作可以换版本；换了之后这条轨上的选区收起', as
   await picker.click()
   await page.getByRole('menuitemradio', { name: 'V1 原片' }).click()
   await expect(picker).toHaveAccessibleName('生成 A的版本：V1 原片')
-  // 胶囊里只写版本号
-  await expect(picker).toHaveText('V1')
+  // 胶囊里只写原作字母和版本号
+  await expect(picker).toHaveText('A · V1')
   await expect(groupOf(materials, 1).getByRole('slider')).toHaveCount(0)
 })
 
@@ -696,10 +771,6 @@ test('把镜头拖进时间线：落在指针的位置；压在别的片段上�
     return box
   }
 
-  // 默认宽度下 1 秒的镜头不到 30 像素：选中一个以后，紧挨着的镜头正中、选区正中都不在两端抓手底下
-  await shotOf(materials, 1, 'A', 2).click()
-  await shotOf(materials, 1, 'A', 3).click()
-  await expect(range).toHaveAccessibleName(/^选中的范围 2\.0–3\.0 秒，1 个镜头/)
   await shotOf(materials, 1, 'A', 2).click()
   await expect(range).toHaveAccessibleName(/^选中的范围 1\.0–2\.0 秒，1 个镜头/)
   const dropX = lane.x + lane.width * 0.3

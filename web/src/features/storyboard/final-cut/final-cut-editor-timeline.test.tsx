@@ -108,6 +108,44 @@ describe('final-cut 编辑器 · 加入素材', () => {
     expect(fourth).toMatch(/data-start="5.5" data-duration="2.5"[^>]* data-media-start="2"/)
   })
 
+  it('在两条原作上各点一个镜头：底下显示已选 2 段，点「加入 final-cut」按面板里的先后首尾相接，加完选区清空', async () => {
+    const user = userEvent.setup()
+    await openEditor()
+    await user.click(await shot(/^生成 B 镜头 1，/))
+    await user.click(await shot(/^生成 A 镜头 2，/))
+    expect(screen.getByText('已选 2 段 · 4.0s')).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: '加入 final-cut' }))
+    await waitSaved(() => expect(savedClips()).toHaveLength(2))
+    // 新加的片段写在根下第一个：后加的在前面
+    const [second, first] = savedClips()
+    expect(first).toContain(`src="${URL_A}"`)
+    expect(first).toMatch(/data-start="0" data-duration="2.5"[^>]* data-media-start="2"/)
+    expect(second).toContain(`src="${URL_B}"`)
+    expect(second).toMatch(/data-start="2.5" data-duration="1.5"[^>]* data-media-start="0"/)
+    expect(screen.queryByText(/^已选/)).toBeNull()
+    expect(await shot(/^生成 A 镜头 2，/)).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('「清空」去掉所有选区；Esc 先退出素材预览，再按一下清空选区', async () => {
+    const user = userEvent.setup()
+    await openEditor()
+    await user.click(await shot(/^生成 B 镜头 1，/))
+    await user.click(await shot(/^生成 A 镜头 2，/))
+    await user.click(screen.getByRole('button', { name: '清空' }))
+    expect(screen.queryByText(/^已选/)).toBeNull()
+    expect(screen.queryByRole('region', { name: /^素材 · / })).toBeNull()
+
+    await user.click(await shot(/^生成 A 镜头 2，/))
+    expect(screen.getByRole('region', { name: /^素材 · / })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('region', { name: /^素材 · / })).toBeNull()
+    expect(screen.getByText('已选 1 段 · 2.5s')).toBeVisible()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByText(/^已选/)).toBeNull()
+    expect(await shot(/^生成 A 镜头 2，/)).toHaveAttribute('aria-pressed', 'false')
+  })
+
   it('素材确认有声音才写成有声音：没有音轨、读不出有没有音轨时都写成静音', async () => {
     const user = userEvent.setup()
     await openEditor([...takes, ...quietTakes])

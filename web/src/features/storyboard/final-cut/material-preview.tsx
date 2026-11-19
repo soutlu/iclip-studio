@@ -11,10 +11,12 @@ import { MediaBuffering } from '@/shared/ui/media-buffering'
 import { StageBackdrop } from '../components/stage-backdrop'
 import { framePosition } from '../editing/frame-seek'
 import type { Edge } from '../editing/timeline-drag'
-import type { MaterialRange } from './materials'
+import type { MediaSpan } from './materials'
 
+/** 素材预览放的是哪一版素材里的哪一段，先停在哪一端。 */
 export type MaterialView = {
-  range: MaterialRange
+  jobId: string
+  span: MediaSpan
   show: Edge
 }
 
@@ -66,9 +68,9 @@ export function MaterialPreview({
   useEffect(() => {
     const video = videoRef.current
     if (video === null) return
-    const { range, show } = view
-    const start = range.startMs / 1000
-    const end = range.endMs / 1000
+    const { span, show } = view
+    const start = span.startMs / 1000
+    const end = span.endMs / 1000
     let cancelled = false
     let frame = 0
     let atEnd = false
@@ -83,21 +85,21 @@ export function MaterialPreview({
     const tick = () => {
       if (video.paused) return
       const now = Math.round(video.currentTime * 1000)
-      if (now >= range.endMs) {
+      if (now >= span.endMs) {
         pause()
         seekTo('end')
-        report(range.endMs)
+        report(span.endMs)
         return
       }
-      report(Math.max(range.startMs, now))
+      report(Math.max(span.startMs, now))
       frame = requestAnimationFrame(tick)
     }
     const play = () => {
       if (
         atEnd ||
         video.ended ||
-        video.currentTime * 1000 >= range.endMs ||
-        video.currentTime * 1000 < range.startMs
+        video.currentTime * 1000 >= span.endMs ||
+        video.currentTime * 1000 < span.startMs
       ) {
         seekTo('start')
       }
@@ -114,14 +116,14 @@ export function MaterialPreview({
       )
     }
     const seek = (ms: number) => {
-      const at = Math.min(range.endMs, Math.max(range.startMs, ms))
-      atEnd = at === range.endMs
+      const at = Math.min(span.endMs, Math.max(span.startMs, ms))
+      atEnd = at === span.endMs
       video.currentTime = framePosition(at / 1000, atEnd ? 'end' : 'start', start, end)
       report(at)
     }
     controlRef.current = { toggle: () => (video.paused ? play() : pause()), seek }
     seekTo(show)
-    report(show === 'end' ? range.endMs : range.startMs)
+    report(show === 'end' ? span.endMs : span.startMs)
     pause()
     return () => {
       cancelled = true
