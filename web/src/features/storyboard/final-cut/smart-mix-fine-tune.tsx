@@ -65,7 +65,7 @@ export function MixFineTune({
         <Icon
           className={cn('wf-mix-fine-icon', open && 'is-open')}
           decorative
-          name="disclosure"
+          name="final-cut-disclosure"
           size="xs"
         />
         <span>精细调音</span>
@@ -99,14 +99,14 @@ function MixEnvelope({
 }) {
   const titleId = useId()
   return (
-    <div className="wf-mix-card">
+    <div className="wf-card">
       <div className="wf-prop-title-row">
         <span className="wf-mix-card-title" id={titleId}>
           波形音量关键帧
         </span>
         <span className="wf-prop-switch">
           {on ? (
-            <button className="wf-mix-link ui-state ui-focus" onClick={onReset} type="button">
+            <button className="wf-chip-btn ui-state ui-focus" onClick={onReset} type="button">
               重置
             </button>
           ) : null}
@@ -177,14 +177,14 @@ function MixTone({
       : band,
   )
   return (
-    <div className="wf-mix-card">
+    <div className="wf-card">
       <div className="wf-prop-title-row">
         <span className="wf-mix-card-title">三段均衡与升降调</span>
         <span className="wf-eq-head">
           <EqCurve bands={drawn} />
           {tuned ? (
             <button
-              className="wf-mix-link ui-state ui-focus"
+              className="wf-chip-btn ui-state ui-focus"
               onClick={() => onChange(withoutTone)}
               type="button"
             >

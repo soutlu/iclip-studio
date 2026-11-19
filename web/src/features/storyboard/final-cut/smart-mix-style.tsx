@@ -46,12 +46,12 @@ export function MixStyle({
         </span>
         <MenuRoot>
           <MenuTrigger asChild>
-            <button className="wf-mix-more ui-state ui-focus" type="button">
+            <button className="wf-chip-btn ui-state ui-focus" type="button">
               全部预设 ({HF_AUDIO_FX_PRESETS.length})
-              <Icon decorative name="expand" size="xs" />
+              <Icon decorative name="final-cut-expand" size="xs" />
             </button>
           </MenuTrigger>
-          <MenuSurface align="end" aria-label="全部预设" className="wf-mix-menu">
+          <MenuSurface align="end" aria-label="全部预设" className="wf-menu wf-mix-menu">
             <MenuRadioGroup
               onValueChange={(value) => onPick(value === ORIGINAL ? null : value)}
               value={active ?? ORIGINAL}

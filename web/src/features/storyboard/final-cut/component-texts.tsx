@@ -42,7 +42,7 @@ export function FollowToggle({
       <TooltipTrigger asChild>
         <button
           aria-label={`${label}：${state}`}
-          className={cn('wf-follow ui-state ui-focus', follows && 'is-follow')}
+          className={cn('wf-chip-btn ui-state ui-focus', follows && 'is-active')}
           onClick={() => onToggle(!follows)}
           type="button"
         >

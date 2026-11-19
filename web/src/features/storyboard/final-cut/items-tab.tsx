@@ -75,12 +75,12 @@ export function ItemsTab({
     <div className="wf-items">
       <Input
         aria-label={`搜索${label}`}
-        leadingIcon="search"
+        leadingIcon="final-cut-search"
         onChange={(event) => onFilterChange({ ...filter, query: event.currentTarget.value })}
         placeholder="搜索名称或分类"
         type="search"
         value={filter.query}
-        wrapperClassName="wf-item-search"
+        wrapperClassName="wf-field wf-search"
       />
       <ChipGroup
         aria-label={`${label}分类`}
@@ -252,7 +252,7 @@ function ItemCard({
         <IconButton
           className="wf-item-add"
           label="加到播放头"
-          name="add"
+          name="final-cut-add"
           onClick={onAdd}
           size="xs"
           tabIndex={-1}

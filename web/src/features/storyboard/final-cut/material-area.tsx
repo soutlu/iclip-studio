@@ -290,10 +290,10 @@ function TakeRow({
               type="button"
             >
               {version.versionNumber}
-              <Icon decorative name="expand" size="xs" />
+              <Icon decorative name="final-cut-expand" size="xs" />
             </button>
           </MenuTrigger>
-          <MenuSurface align="start">
+          <MenuSurface align="start" className="wf-menu">
             <MenuRadioGroup
               onValueChange={(jobId) => onVersion(take.id, jobId)}
               value={version.jobId}

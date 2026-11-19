@@ -43,19 +43,19 @@ export function MixEffects({
 }) {
   const effects = ownEffects(chain)
   return (
-    <div className="wf-mix-card">
+    <div className="wf-card">
       <div className="wf-prop-title-row">
         <span className="wf-mix-card-title">
           串联效果器链 <span className="wf-mix-count">({effects.length})</span>
         </span>
         <MenuRoot>
           <MenuTrigger asChild>
-            <button className="wf-mix-add ui-state ui-focus" type="button">
+            <button className="wf-chip-btn wf-mix-add ui-state ui-focus" type="button">
               + 添加效果
-              <Icon decorative name="expand" size="xs" />
+              <Icon decorative name="final-cut-expand" size="xs" />
             </button>
           </MenuTrigger>
-          <MenuSurface align="end" aria-label="添加效果" className="wf-mix-menu">
+          <MenuSurface align="end" aria-label="添加效果" className="wf-menu wf-mix-menu">
             {ADDABLE_EFFECTS.map((type) => (
               <MenuItem
                 className="h-auto py-1.5"
@@ -94,7 +94,7 @@ export function MixEffects({
               <span className="wf-mix-effect-name">{name}</span>
               <IconButton
                 label={`移除效果：${name}`}
-                name="close"
+                name="final-cut-close"
                 onClick={() => onChange((current) => withoutEffect(current, index))}
                 size="xs"
               />

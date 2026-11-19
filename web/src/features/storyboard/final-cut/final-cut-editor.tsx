@@ -146,14 +146,7 @@ import {
 import type { PreviewFilm } from './preview-sync'
 import { PreviewTransport } from './preview-transport'
 import { aroundPlayhead, firstFrameMs } from './selection'
-import {
-  DETACH_LABEL,
-  MERGE_LABEL,
-  resyncPlan,
-  soundActionFor,
-  type SoundAction,
-  type SoundControls,
-} from './sound-pair'
+import { resyncPlan, soundActionFor, type SoundAction, type SoundControls } from './sound-pair'
 import { rowMoveDirection } from './stacking'
 import { FIT_ZOOM, timelineScale, zoomScrollLeft, zoomToClips, type Zoom } from './timeline-scale'
 import {
@@ -1498,7 +1491,11 @@ function EditorBody({
           playback={playback}
         />
       </div>
-      <aside aria-label="镜头、贴片、场景、配乐、字幕和属性" className="wf-side" ref={sideRef}>
+      <aside
+        aria-label="镜头、贴片、场景、配乐、字幕和属性"
+        className="wf-panel wf-side"
+        ref={sideRef}
+      >
         <TabsRoot className="wf-side-panel" onValueChange={openSideTab} value={sideTab}>
           <TabsList
             aria-label="镜头、贴片、场景、配乐、字幕和属性页签"
@@ -1722,7 +1719,7 @@ function EditorBody({
           </TabsContent>
         </TabsRoot>
       </aside>
-      <div className="wf-timeline">
+      <div className="wf-panel wf-timeline">
         <EditorToolbar
           actions={
             <ExportControl
@@ -1750,7 +1747,7 @@ function EditorBody({
           hasSelection={selected.size > 0}
           onRemove={removeSelected}
           sound={{
-            label: soundAction.kind === 'merge' ? MERGE_LABEL : DETACH_LABEL,
+            kind: soundAction.kind === 'merge' ? 'merge' : 'detach',
             blocked: soundAction.blocked,
             onClick: () => soundControls.run(soundAction),
           }}

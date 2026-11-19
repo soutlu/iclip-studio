@@ -1,0 +1,8 @@
+/* final-cut 双色图标的填充层：默认跟字色、19% 浓度；调用处用两个变量改颜色和浓淡（悬停、选中时加深），
+   变量写在按钮这类祖先元素上即可，挂到 body 的浮层菜单里也照样生效。 */
+.final-cut-glyph-fill {
+  fill: var(--icon-fill-color, currentColor);
+  fill-opacity: var(--icon-fill-opacity, 0.19);
+  stroke: none;
+  transition: fill-opacity var(--dur-s) var(--ease);
+}

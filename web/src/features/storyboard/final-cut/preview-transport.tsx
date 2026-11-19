@@ -121,7 +121,7 @@ export function PreviewTransport({
         <Tool
           blocked={playBlocked}
           className="wf-play"
-          icon={playing ? 'pause' : 'play'}
+          icon={playing ? 'final-cut-pause' : 'final-cut-play'}
           label={playLabel}
           onClick={onPlay}
           shortcuts="Space"
@@ -135,7 +135,7 @@ export function PreviewTransport({
         />
         <div className="wf-transport-tools">
           <Tool
-            icon={playback.muted ? 'audio-off' : 'audio'}
+            icon={playback.muted ? 'final-cut-sound-off' : 'final-cut-sound-on'}
             label={muteLabel}
             onClick={onMute}
             shortcuts="M"
@@ -149,7 +149,7 @@ export function PreviewTransport({
           />
           <RateMenu layer={layer} onRate={onRate} rate={playback.rate} />
           <Tool
-            icon="loop"
+            icon="final-cut-loop"
             label="循环播放"
             onClick={onLoop}
             pressed={playback.loop}
@@ -166,7 +166,7 @@ export function PreviewTransport({
           />
           <Tool
             blocked={fullscreenBlocked}
-            icon={fullscreen ? 'exit-fullscreen' : 'fullscreen'}
+            icon={fullscreen ? 'exit-fullscreen' : 'final-cut-fullscreen'}
             label={fullscreenLabel}
             onClick={onFullscreen}
             shortcuts="F"
@@ -221,7 +221,7 @@ function RateMenu({
           播放速度
         </TooltipContent>
       </TooltipRoot>
-      <MenuSurface align="end" className="min-w-24" container={layer} side="top">
+      <MenuSurface align="end" className="wf-menu min-w-24" container={layer} side="top">
         <MenuRadioGroup onValueChange={(value) => onRate(Number(value))} value={String(rate)}>
           {RATES.map((option) => (
             <MenuRadioItem key={option} value={String(option)}>

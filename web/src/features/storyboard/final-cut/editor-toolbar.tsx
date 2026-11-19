@@ -20,6 +20,7 @@ import {
   type Language,
   type LocaleCode,
 } from './locales'
+import { SOUND_ACTION_LOOK } from './sound-pair'
 import {
   FIT_ZOOM,
   nextZoom,
@@ -92,8 +93,8 @@ export const Keys = ({ children }: { children: string }) => <kbd className="wf-k
 export type EditTool = 'select' | 'razor'
 
 const TOOLS: Readonly<Record<EditTool, { name: string; icon: IconName }>> = {
-  select: { name: '选择', icon: 'select-tool' },
-  razor: { name: '切开', icon: 'split' },
+  select: { name: '选择', icon: 'final-cut-select' },
+  razor: { name: '切开', icon: 'final-cut-split' },
 }
 
 const isEditTool = (value: string): value is EditTool => value in TOOLS
@@ -126,7 +127,7 @@ function ToolPicker({ tool, onTool, onSelectAround, splitBlocked, onSplit }: Too
               type="button"
             >
               <Icon decorative name={current.icon} size="sm" />
-              <Icon decorative name="expand" size="xs" />
+              <Icon decorative name="final-cut-expand" size="xs" />
             </button>
           </TooltipTrigger>
         </MenuTrigger>
@@ -134,7 +135,7 @@ function ToolPicker({ tool, onTool, onSelectAround, splitBlocked, onSplit }: Too
           选择工具
         </TooltipContent>
       </TooltipRoot>
-      <MenuSurface align="start" side="top">
+      <MenuSurface align="start" className="wf-menu" side="top">
         <MenuRadioGroup
           onValueChange={(value) => {
             if (isEditTool(value)) onTool(value)
@@ -278,7 +279,7 @@ function BlockedAddLocale({ reason, side }: { reason: string; side: PopSide }) {
           className="wf-locale-add ui-state ui-focus"
           type="button"
         >
-          <Icon decorative name="add" size="xs" />
+          <Icon decorative name="final-cut-add" size="xs" />
         </button>
       </TooltipTrigger>
       <TooltipContent className="wf-tip" side={side}>
@@ -312,7 +313,7 @@ function AddLocale({
         <MenuTrigger asChild>
           <TooltipTrigger asChild>
             <button aria-label="添加语言" className="wf-locale-add ui-state ui-focus" type="button">
-              <Icon decorative name="add" size="xs" />
+              <Icon decorative name="final-cut-add" size="xs" />
             </button>
           </TooltipTrigger>
         </MenuTrigger>
@@ -320,7 +321,7 @@ function AddLocale({
           添加语言
         </TooltipContent>
       </TooltipRoot>
-      <MenuSurface align="start" side={side}>
+      <MenuSurface align="start" className="wf-menu" side={side}>
         {addable.map((locale) => (
           <MenuItem key={locale.code} onSelect={() => onAdd(locale.code)}>
             {localeButtonName(locale)}
@@ -349,7 +350,7 @@ type EditorToolbarProps = {
   /** 删掉选中的片段，和按 Delete 一样。 */
   onRemove: () => void
   /** 「删除」右边的分离音频钮：分离或合并回视频，和按 ⇧⌘B 一样。 */
-  sound: { label: string; blocked: string | undefined; onClick: () => void }
+  sound: { kind: 'detach' | 'merge'; blocked: string | undefined; onClick: () => void }
   onZoomToSelection: () => void
   snap: boolean
   onSnap: () => void
@@ -394,7 +395,7 @@ export function EditorToolbar({
       <div className="wf-toolbar-group">
         <Tool
           blocked={canUndo ? undefined : '暂无可撤销的操作'}
-          icon="undo"
+          icon="final-cut-undo"
           label="撤销"
           onClick={onUndo}
           shortcuts="Meta+Z"
@@ -407,7 +408,7 @@ export function EditorToolbar({
         />
         <Tool
           blocked={canRedo ? undefined : '暂无可重做的操作'}
-          icon="redo"
+          icon="final-cut-redo"
           label="重做"
           onClick={onRedo}
           shortcuts="Shift+Meta+Z"
@@ -428,7 +429,7 @@ export function EditorToolbar({
         />
         <Tool
           blocked={hasSelection ? undefined : '尚未选中片段，无法删除；请先选中片段'}
-          icon="delete"
+          icon="final-cut-delete"
           label="删除"
           onClick={onRemove}
           shortcuts="Delete"
@@ -441,20 +442,20 @@ export function EditorToolbar({
         />
         <Tool
           blocked={sound.blocked}
-          icon="waveform"
-          label={sound.label}
+          icon={SOUND_ACTION_LOOK[sound.kind].icon}
+          label={SOUND_ACTION_LOOK[sound.kind].label}
           onClick={sound.onClick}
           shortcuts="Shift+Meta+B"
           tip={
             <>
-              {sound.label}
+              {SOUND_ACTION_LOOK[sound.kind].label}
               <Keys>⇧⌘B</Keys>
             </>
           }
         />
         <span aria-hidden="true" className="wf-divider" />
         <Tool
-          icon="snap"
+          icon="final-cut-snap"
           label="吸附"
           onClick={onSnap}
           pressed={snap}
@@ -465,7 +466,7 @@ export function EditorToolbar({
           }
         />
         <Tool
-          icon="ripple"
+          icon="final-cut-ripple"
           label="波纹编辑"
           onClick={onRipple}
           pressed={ripple}
@@ -492,7 +493,12 @@ export function EditorToolbar({
             </>
           }
         />
-        <Tool icon="fit" label="适应宽度" onClick={() => onZoom(FIT_ZOOM)} tip="适应宽度" />
+        <Tool
+          icon="final-cut-fit"
+          label="适应宽度"
+          onClick={() => onZoom(FIT_ZOOM)}
+          tip="适应宽度"
+        />
         <span aria-hidden="true" className="wf-divider" />
         <Tool
           icon="zoom-out"
