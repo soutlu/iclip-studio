@@ -41,6 +41,7 @@ import {
   captionStyles,
   captionVariable,
   isCaptionsHost,
+  withCaptionDefaults,
 } from './composition/captions'
 import type {
   CatalogItem,
@@ -387,8 +388,8 @@ const resizeRoot = (engine: Composition, canvas: Canvas) => {
 
 /**
  * 在一批操作里把画面尺寸改成 `canvas`，只改画面本身：主文件和字幕场景的根改成新的宽高（见 `resizeRoot`；主文件
- * `<head>` 里写死的尺寸存出时跟着根重算，见 `viewOf`）。时间线上已有的内容（贴片和场景宿主的摆放、字幕的字号和
- * 统一样式）一律不换算，各自写着的值不变。
+ * `<head>` 里写死的尺寸、字幕场景统一样式里的默认字号存出时跟着根重算，见 `viewOf`）。时间线上已有的内容（贴片和
+ * 场景宿主的摆放、一句单独设过的字号）一律不换算，各自写着的值不变。
  *
  * 字幕宿主上写的宽高不改：SDK 不让改宿主的 `data-width` / `data-height`（保留属性），运行库挂载字幕场景时按场景根的
  * 宽高重写宿主，宿主本身铺满画面。
@@ -555,7 +556,8 @@ const writeTotal = (main: Composition, scene: Composition | undefined) => {
 /**
  * 工程现在的样子（显示语言 `locale` 的字），和各文件现在的内容（路径 → 内容）：主文件只重算 `<head>` 里的
  * 字体块和写死的画面尺寸（SDK 改不了 `<head>`）。字体块的字按原文和所有值表里的字一起算，存出的内容和显示哪种语言
- * 无关；画面尺寸按根上的算，撤销根的改动时跟着回去。别的文件照各自存出的写。`change` 是这一份的序号和从上一份来的
+ * 无关；画面尺寸按根上的算，撤销根的改动时跟着回去。字幕场景统一样式里的默认字号也按根上的画面尺寸重算（见
+ * `withCaptionDefaults`）。别的文件照各自存出的写。`change` 是这一份的序号和从上一份来的
  * 那一步（见 `FilmView`）。
  */
 const viewOf = (
@@ -581,7 +583,11 @@ const viewOf = (
   const present = new Map(
     [...project.files].map(([path, file]) => [
       path,
-      path === PROJECT_MAIN ? html : docOps(file.doc).serialize(),
+      path === PROJECT_MAIN
+        ? html
+        : path === project.captionsPath
+          ? withCaptionDefaults(docOps(file.doc).serialize(), canvas)
+          : docOps(file.doc).serialize(),
     ]),
   )
   const table = locale === SOURCE_LOCALE ? undefined : tables.get(locale)

@@ -3246,7 +3246,7 @@ describe('useFilmSession · 画面尺寸', () => {
 
   const headOf = (html: string) => html.slice(0, html.indexOf('</head>'))
 
-  it('720×1280 换成横屏：只改画面，两个文件的根是新尺寸，<head> 里没有旧尺寸；挪过、缩放过的贴片和设过字号的字幕各自写着的样式不变，字幕的统一样式也不变；撤销、重做逐字回去', async () => {
+  it('720×1280 换成横屏：只改画面，两个文件的根是新尺寸，<head> 里没有旧尺寸；挪过、缩放过的贴片和设过字号的字幕各自写着的样式不变，没单独设过字号的字幕跟着新画面的默认字号；撤销、重做逐字回去', async () => {
     const { result, conversation } = await openFilm([video(), host()], CANVAS)
     // 用户在画面上把贴片往右下挪了一点、放大了一些
     act(() =>
@@ -3275,7 +3275,10 @@ describe('useFilmSession · 画面尺寸', () => {
     expect(inlineOf(after.main, 'title-1')).toEqual(inlineOf(before.main, 'title-1'))
     expect(inlineOf(after.scene, 'cap-a1')).toEqual(inlineOf(before.scene, 'cap-a1'))
     expect(inlineOf(after.scene, 'cap-a1')).toMatchObject({ 'font-size': '40px' })
-    expect(after.scene).toContain('font-size: 37px')
+    // 统一样式（没单独设过字号的字幕用它）换成 1920 宽的默认字号 100px，描边、投影跟着字号
+    expect(after.scene).toContain('font-size: 100px;')
+    expect(after.scene).toContain('-webkit-text-stroke: 20px #000000;')
+    expect(after.scene).not.toContain('font-size: 37px')
     expect(result.current.film?.clips.find((clip) => clip.id === 'cap-a1')).toMatchObject({
       fontSize: 40,
     })
