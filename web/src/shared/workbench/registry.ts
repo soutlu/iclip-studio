@@ -4,6 +4,7 @@ import {
   WORKSPACE_ARTIFACT_ID,
   type Artifact,
   type ArtifactEntry,
+  type CreatableEntry,
   type FrameArtifactSource,
   type WorkbenchFile,
   type WorkbenchFrame,
@@ -63,12 +64,47 @@ export class ArtifactRegistry {
     return this.entries.filter(isStanding)
   }
 
+  /** 登记了 `create`、用户能新建的类型，按登记顺序。 */
+  creatable(): CreatableEntry[] {
+    return this.entries.filter((entry): entry is CreatableEntry => entry.create !== undefined)
+  }
+
+  /**
+   * 工作区里路径是 `path` 的文件归哪件产物（不看它在不在、只读时显不显示）：确切路径、模式、`anyPath` 依次认，
+   * 都不认时是 undefined。
+   */
+  ownerOf(path: string): Pick<Artifact, 'id' | 'title' | 'type'> | undefined {
+    const file = this.fileEntryOf(path)
+    if (file !== undefined) {
+      return {
+        id: fileArtifactId(path),
+        title: file.title({ kind: 'file', path, version: 0 }),
+        type: file.type,
+      }
+    }
+    const listed = this.entries.find(
+      (entry) => 'anyPath' in entry.match && entry.match.anyPath.includes(path),
+    )
+    return listed === undefined
+      ? undefined
+      : {
+          id: listed.type,
+          title: listed.title({ kind: 'paths', paths: [path] }),
+          type: listed.type,
+        }
+  }
+
+  private fileEntryOf(path: string): ArtifactEntry | undefined {
+    return (
+      this.entries.find(
+        (candidate) => 'path' in candidate.match && candidate.match.path === path,
+      ) ?? this.patterns.find(({ regex }) => regex.test(path))?.entry
+    )
+  }
+
   matchFiles(files: readonly WorkbenchFile[]): Artifact[] {
     return files.flatMap((file) => {
-      const entry =
-        this.entries.find(
-          (candidate) => 'path' in candidate.match && candidate.match.path === file.path,
-        ) ?? this.patterns.find(({ regex }) => regex.test(file.path))?.entry
+      const entry = this.fileEntryOf(file.path)
       if (entry === undefined) return []
       const source = { kind: 'file', path: file.path, version: file.version } as const
       return [

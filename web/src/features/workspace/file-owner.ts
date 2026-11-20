@@ -13,7 +13,7 @@ export type FileOwner = {
 }
 
 /**
- * 这份文件归哪个页签（按登记的路径认领），用来给「打开 X」直达按钮和目录树里的色调。
+ * 这份文件归哪个页签（见 `ArtifactRegistry.ownerOf`），用来给「打开 X」直达按钮和目录树里的色调。
  * 只读对话里不出现的页签不算。
  */
 export const fileOwnerOf = (
@@ -21,14 +21,14 @@ export const fileOwnerOf = (
   path: string,
   readOnly: boolean,
 ): FileOwner | undefined => {
-  const artifact = registry.matchFiles([{ path, version: 0 }])[0]
-  if (artifact === undefined) return undefined
-  const entry = registry.resolve(artifact.type)
+  const owner = registry.ownerOf(path)
+  if (owner === undefined) return undefined
+  const entry = registry.resolve(owner.type)
   if (entry === undefined || (readOnly && entry.hiddenWhenReadOnly === true)) return undefined
   return {
-    artifactId: artifact.id,
+    artifactId: owner.id,
     icon: entry.icon,
-    title: artifact.title,
-    tone: TAB_TONES[artifact.type],
+    title: owner.title,
+    tone: TAB_TONES[owner.type],
   }
 }

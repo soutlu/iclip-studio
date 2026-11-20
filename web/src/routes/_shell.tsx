@@ -50,6 +50,7 @@ function AppShell() {
   const [viewport, setViewport] = useState(() => window.innerWidth)
   const [mobileSidebarCollapsed, setMobileSidebarCollapsed] = useState(true)
   const [composerFocusPending, setComposerFocusPending] = useState(false)
+  const [workbenchRail, setWorkbenchRail] = useState<HTMLElement | null>(null)
   const requestComposerFocus = useCallback(() => setComposerFocusPending(true), [])
   const consumeComposerFocus = useCallback(() => setComposerFocusPending(false), [])
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
@@ -127,6 +128,7 @@ function AppShell() {
     onCollapsedChange: (collapsed: boolean) =>
       collapsed ? collapsePane('workbench') : expandPane('workbench'),
     onOpen: openWorkbench,
+    railSlot: workbenchRail,
   }
   const chrome = {
     sidebarOverlay: compact,
@@ -222,7 +224,9 @@ function AppShell() {
                   alignEnd={pane !== state.firstPane}
                   collapsed={pane === 'chat' ? mode === 'workbench' : mode === 'chat'}
                   canReorder={hasWorkbench && !compact}
+                  resizable={hasWorkbench && sideBySide}
                   onReveal={() => update((current) => ({ ...current, contentClip: null }))}
+                  {...(pane === 'workbench' ? { railSlotRef: setWorkbenchRail } : {})}
                   onExpand={() => {
                     focusRequestRef.current = { pane, collapsed: false }
                     expandPane(pane)

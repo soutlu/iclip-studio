@@ -3,7 +3,7 @@ import type { ComponentCatalog } from './composition/catalog'
 
 export type { ComponentCatalog }
 
-const catalogQuery = queryOptions({
+export const catalogQuery = queryOptions({
   queryKey: ['whole-film', 'component-catalog'],
   queryFn: async ({ signal }) => {
     const response = await fetch('/hyperframes/catalog.json', { signal })

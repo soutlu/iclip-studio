@@ -42,7 +42,7 @@
 
 ## final-cut 编辑器与组件库
 
-- **工作台面板与沙箱隔离**：编辑器作为工作台的「final-cut」页签运行（仅在可写对话且工作区存在分镜或工程文件时显示），保持固定桌面布局、不做窄屏折行或折叠适配。全局快捷键与 `Esc` 仅在焦点位于编辑器内部时生效，不在 `window` 上抢占（[editor-keys.ts](../src/features/storyboard/final-cut/editor-keys.ts)）。预览播放器与工程脚本统一运行在独立预览域名的沙箱页（[preview-page.ts](../src/features/storyboard/final-cut/preview-page.ts)）中，编辑器仅通过经协议校验的 `postMessage` 与之通信（见[跨端合同 §6](../../contract/conventions.md#final-cut-工程与预览域名)、[ADR-0008](../../docs/adr/0008-final-cut-workspace-project.md)）。
+- **工作台面板与沙箱隔离**：编辑器作为工作台的「final-cut」页签运行（仅在可写对话且工作区存在主文件 `final-cut/index.html` 时显示；没有时在工作台的「+」里新建），保持固定桌面布局、不做窄屏折行或折叠适配。全局快捷键与 `Esc` 仅在焦点位于编辑器内部时生效，不在 `window` 上抢占（[editor-keys.ts](../src/features/storyboard/final-cut/editor-keys.ts)）。预览播放器与工程脚本统一运行在独立预览域名的沙箱页（[preview-page.ts](../src/features/storyboard/final-cut/preview-page.ts)）中，编辑器仅通过经协议校验的 `postMessage` 与之通信（见[跨端合同 §6](../../contract/conventions.md#final-cut-工程与预览域名)、[ADR-0008](../../docs/adr/0008-final-cut-workspace-project.md)）。
 - **组件库与按需中文字体分片**：组件目录结构见 [catalog.ts](../src/features/storyboard/final-cut/composition/catalog.ts)，打包规则见[组装脚本](../scripts/hyperframes-registry.mjs)（组件内部标题与正文分别读取 `var(--font-display)` 与 `var(--font-body)`，使用该变量的组件在打包时自动补齐 `font` 可填项；组件专有目录仅允许包含文本文件）。由于播放运行时会等待主文件声明的全部字体加载完毕后才启动脚本，主文件 `<head>` 字体块仅按工程实际出现的字符声明 Noto Sans SC 子集分片（[fonts.ts](../src/features/storyboard/final-cut/composition/fonts.ts)），组件源码内禁止直接引入整包中文字体样式。
 
 ## 测试

@@ -90,9 +90,8 @@ test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销、导出
     page.waitForRequest((request) => new URL(request.url()).pathname.endsWith(RUNTIME_FILE))
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
-  // 还没有工程：页签里只有说明和「新建 final-cut」，点了按默认模版（竖版 1080×1920 的空工程）新建主文件
-  await panel.getByRole('tab', { name: 'final-cut', exact: true }).click()
-  await expect(panel.getByText('暂无 final-cut，请先新建')).toBeVisible()
+  // 还没有工程：没有 final-cut 页签，「+」里新建按默认模版（竖版 1080×1920 的空工程）建主文件
+  await expect(panel.getByRole('tab', { name: 'final-cut', exact: true })).toHaveCount(0)
   await expect(panel.getByRole('toolbar', { name: '剪辑工具' })).toHaveCount(0)
   const created = page.waitForRequest(
     (request) => savedHtmlOf(request) !== null && request.method() === 'POST',
@@ -1895,6 +1894,10 @@ test('地址带着 ?artifact=final-cut 时直接打开编辑器；正在对话�
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
+  // 先有工程（页签只在有主文件时才有），再回到分镜
+  const editor = await createFinalCut(panel)
+  await panel.getByRole('tab', { name: '分镜', exact: true }).click()
+  await expect(editor).toBeHidden()
   const input = page.getByLabel('输入消息')
   await input.click()
   await page.keyboard.type('先剪')
@@ -1905,9 +1908,7 @@ test('地址带着 ?artifact=final-cut 时直接打开编辑器；正在对话�
     window.history.pushState(null, '', url)
     window.dispatchEvent(new PopStateEvent('popstate'))
   })
-  // 这段对话里还没有工程：页签里是「新建 final-cut」
-  const editor = panel.getByRole('group', { name: 'final-cut 编辑器', exact: true })
-  await expect(editor.getByRole('button', { name: '新建 final-cut', exact: true })).toBeVisible()
+  await expect(editor.getByRole('toolbar', { name: '剪辑工具' })).toBeVisible()
   await expect(panel.getByRole('tab', { name: 'final-cut' })).toHaveAttribute(
     'aria-selected',
     'true',

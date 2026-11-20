@@ -105,8 +105,8 @@ export const keepRealSaveDelay = () => {
   saveDelay = {}
 }
 
-/** 挂上编辑器，不等它打开：工作区里还没有工程时看到的是「新建 final-cut」。 */
-export const renderEditor = async (records: GenerationJob[] = takes) => {
+/** 挂上编辑器，不等它打开。 */
+const renderEditor = async (records: GenerationJob[] = takes) => {
   serveGenerations(records)
   const editor = (
     <>
@@ -126,8 +126,8 @@ export const renderEditor = async (records: GenerationJob[] = takes) => {
 }
 
 /**
- * 打开编辑器，等它打开。工作区里还没有工程时先放一份按默认模版建的空工程（版本 1），和点过「新建 final-cut」
- * 以后一样；点按钮新建本身见 `final-cut-editor-create.test.tsx`。
+ * 打开编辑器，等它打开。工作区里还没有工程时先放一份按默认模版建的空工程（版本 1），和在工作台里新建过
+ * final-cut 以后一样；新建本身见 `create-final-cut.test.ts`。
  */
 export const openEditor = async (records: GenerationJob[] = takes) => {
   if (mockProjectMain(CONVERSATION) === undefined)
@@ -185,7 +185,6 @@ export const shot = (name: RegExp) => within(materials()).findByRole('button', {
 export const savedFilm = () => mockProjectMain(CONVERSATION)?.content ?? ''
 export const savedVersion = () => mockProjectMain(CONVERSATION)?.version
 export const WRITE_URL = '*/api/conversations/:conversationId/workspace/file'
-export const CREATE_URL = '*/api/conversations/:conversationId/final-cut/files'
 export const savedClips = () => savedFilm().match(/<video [^>]*>/g) ?? []
 
 export const waitSaved = (check: () => void) => waitFor(check, { timeout: 4000 })
