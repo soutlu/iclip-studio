@@ -51,6 +51,36 @@
   color: var(--color-on-surface-faint);
 }
 
+/* 只读查看器：小一号等宽字，左边行号与折叠标记，不要光标 */
+.source-viewer .cm-editor .cm-scroller {
+  font-size: var(--text-label);
+  line-height: 20px;
+}
+.source-viewer .cm-editor .cm-content {
+  padding: 12px 16px 12px 0;
+  caret-color: transparent;
+}
+.source-viewer .cm-editor .cm-gutters {
+  border: 0;
+  background: transparent;
+  color: var(--color-on-surface-faint);
+}
+.source-viewer .cm-editor .cm-gutters .cm-gutterElement {
+  padding: 0 2px 0 10px;
+}
+.source-viewer .cm-editor .cm-foldGutter .cm-gutterElement {
+  padding: 0 6px 0 2px;
+  cursor: pointer;
+}
+.source-viewer .cm-editor .cm-foldPlaceholder {
+  margin: 0 2px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: var(--color-state-active);
+  color: var(--color-on-surface-variant);
+}
+
 /* 搜索面板（Mod-F），在编辑器顶部 */
 .source-editor .cm-editor .cm-panels {
   background: var(--color-background);
