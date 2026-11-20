@@ -553,7 +553,7 @@ describe('final-cut 编辑器 · 属性', () => {
 
     it('标题行写入点 – 出点 / 素材总长；抓手按方向键微调入点、出点，碰到后面的片段就停', async () => {
       const user = await openWith(twoClips())
-      await shot(/^生成 A 镜头 1，/)
+      await shot(/^出片 A 镜头 1，/)
       await pick(user, 'A · 镜头 1')
       expect(within(inspector()).getByText('· 镜头组 1 · A · V1')).toBeVisible()
       await waitFor(() => expect(summary()).toHaveTextContent('1.00 – 3.00s / 6.0s'))
@@ -578,7 +578,7 @@ describe('final-cut 编辑器 · 属性', () => {
 
     it('在条上按下、拖动：拖动中只动面板，松手写进 final-cut 一次，一步撤销回去', async () => {
       const user = await openWith(twoClips())
-      await shot(/^生成 A 镜头 1，/)
+      await shot(/^出片 A 镜头 1，/)
       await pick(user, 'A · 镜头 1')
       await waitFor(() => expect(summary()).toHaveTextContent('1.00 – 3.00s / 6.0s'))
       // jsdom 不排版：条宽 600px，1px 是素材的 10 毫秒
@@ -750,7 +750,7 @@ describe('final-cut 编辑器 · 属性', () => {
 
     it('倍速：滑杆按对数走，正中 1 倍、两头 0.1 倍和 10 倍；1 倍时不写，双击回到 1 倍；片段的时长不变，用掉的素材跟着变', async () => {
       const user = await openWith([video({ src: URL_A, duration: 2_000 })])
-      await shot(/^生成 A 镜头 1，/)
+      await shot(/^出片 A 镜头 1，/)
       await pick(user, 'A · 镜头 1')
       await user.click(within(inspector()).getByRole('button', { name: '倍速：1x' }))
       expect(slider('倍速')).toHaveAttribute('aria-valuenow', '500')
@@ -885,7 +885,7 @@ describe('final-cut 编辑器 · 属性', () => {
 
   it('原片截取、声音与节奏的滑杆上按 Delete、M 不动时间线，按方向键只改这一项', async () => {
     const user = await openWith([video({ src: URL_A, duration: 2_000 })])
-    await shot(/^生成 A 镜头 1，/)
+    await shot(/^出片 A 镜头 1，/)
     await pick(user, 'A · 镜头 1')
     const panel = within(inspector())
     const clipButton = () => within(row()).queryByRole('button', { name: /^选中：A · 镜头 1，/ })
@@ -1475,7 +1475,7 @@ describe('final-cut 编辑器 · 属性', () => {
 
       it('改成 2 倍速：音量关键帧按比例压到一半的时间', async () => {
         const user = await openWith([video({ src: URL_A, duration: 2_000, automation: dipped })])
-        await shot(/^生成 A 镜头 1，/)
+        await shot(/^出片 A 镜头 1，/)
         await pick(user, 'A · 镜头 1')
         await user.click(within(inspector()).getByRole('button', { name: '倍速：1x' }))
         await user.click(within(inspector()).getByRole('button', { name: /^倍速 1x，/ }))
@@ -1528,7 +1528,7 @@ describe('final-cut 编辑器 · 属性', () => {
             automation: levelled,
           }),
         ])
-        await shot(/^生成 A 镜头 1，/)
+        await shot(/^出片 A 镜头 1，/)
         await pick(user, 'A · 镜头 1')
         expect(control('自动平稳人声音量')).toHaveAttribute('aria-checked', 'true')
         await waitFor(() =>

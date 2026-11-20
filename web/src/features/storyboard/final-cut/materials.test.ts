@@ -130,7 +130,7 @@ describe('slideSpan：拖选区中间整段平移', () => {
   })
 })
 
-describe('spanPieces：加入 final-cut 时一段拆成的片段', () => {
+describe('spanPieces：加入轨道时一段拆成的片段', () => {
   it('在段里的镜头切口处切开，一个镜头一个片段，头尾带着划选的位置', () => {
     expect(spanPieces(span(1_200, 3_400), SHOTS)).toEqual([
       { mediaStart: 1_200, duration: 800 },
@@ -156,7 +156,7 @@ const material = (jobId: string, takeId: string): Material => ({
   groupLabel: '镜头组 1',
   takeId,
   takeLetter: takeId.toUpperCase(),
-  takeLabel: `生成 ${takeId.toUpperCase()}`,
+  takeLabel: `出片 ${takeId.toUpperCase()}`,
   version: 'V1 原片',
   versionNumber: 'V1',
 })

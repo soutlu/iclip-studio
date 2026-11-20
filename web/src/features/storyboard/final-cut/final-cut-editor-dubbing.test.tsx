@@ -177,7 +177,7 @@ describe('final-cut 编辑器 · 配音', () => {
     await openEditor()
     await previewSettled()
     // 素材片读完了才知道片段对不对得上素材
-    await shot(/^生成 A 镜头 1，/)
+    await shot(/^出片 A 镜头 1，/)
     await user.click(
       within(
         screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
@@ -777,7 +777,7 @@ describe('final-cut 编辑器 · 旁白配音', () => {
     const user = userEvent.setup()
     await openEditor()
     await previewSettled()
-    await shot(/^生成 A 镜头 1，/)
+    await shot(/^出片 A 镜头 1，/)
     await user.click(
       within(
         screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),

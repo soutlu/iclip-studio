@@ -153,16 +153,16 @@ export function AudioTab({
   const addable = (item: ConversationAudio): NewAudio | string => {
     if (!isReady(item))
       return item.status === 'failed'
-        ? '音乐生成失败，无法加入 final-cut；请重新生成'
-        : '音乐尚未生成完成，无法加入 final-cut；请等待生成完成'
+        ? '音乐生成失败，无法加入轨道；请重新生成'
+        : '音乐尚未生成完成，无法加入轨道；请等待生成完成'
     const state = item.durationMs === null ? peaks.get(item.url) : undefined
     const duration =
       item.durationMs ??
       (state?.kind === 'ready' ? Math.round(state.peaks.duration * 1000) : undefined)
     if (duration === undefined)
       return state === undefined || state.kind === 'loading'
-        ? '正在读取音频时长，请稍后加入 final-cut'
-        : '音频时长读取失败，无法加入 final-cut'
+        ? '正在读取音频时长，请稍后加入轨道'
+        : '音频时长读取失败，无法加入轨道'
     return { label: item.title, src: item.url, mediaStart: 0, duration }
   }
 

@@ -20,7 +20,7 @@ const setup = (show: Edge) => {
     controlRef,
     url: 'https://example.com/take.mp4',
     view: viewAt(show),
-    label: '素材 · 镜头组 1 · 生成 A · 镜头 2',
+    label: '素材 · 镜头组 1 · 出片 A · 镜头 2',
     rate: 1,
     muted: false,
     onLeave: vi.fn(),
@@ -39,9 +39,9 @@ const setup = (show: Edge) => {
 
 it('放的是哪条素材的哪几个镜头：写在左上角的提示块里，也是区域的无障碍名称；点「回到 final-cut」退出', () => {
   const { video, props } = setup('start')
-  const region = screen.getByRole('region', { name: '素材 · 镜头组 1 · 生成 A · 镜头 2' })
+  const region = screen.getByRole('region', { name: '素材 · 镜头组 1 · 出片 A · 镜头 2' })
   expect(region).toContainElement(video)
-  expect(region).toHaveTextContent(/^素材 · 镜头组 1 · 生成 A · 镜头 2$/)
+  expect(region).toHaveTextContent(/^素材 · 镜头组 1 · 出片 A · 镜头 2$/)
 
   fireEvent.click(screen.getByRole('button', { name: '回到 final-cut' }))
   expect(props.onLeave).toHaveBeenCalledTimes(1)
