@@ -392,6 +392,8 @@ export const useComposerEditor = ({
         ...(mount.clipboardTextParser === undefined
           ? {}
           : { clipboardTextParser: mount.clipboardTextParser }),
+        // 一行一段，复制成纯文字时段落之间只隔一个换行（ProseMirror 默认隔一个空行）。
+        clipboardTextSerializer: (slice) => slice.content.textBetween(0, slice.content.size, '\n'),
         dispatchTransaction(tr) {
           const next = view.state.apply(tr)
           view.updateState(next)

@@ -138,6 +138,21 @@ describe('Composer', () => {
     expect(editorLines()).toEqual(['', '第二行', ''])
   })
 
+  it('复制成纯文字：每行之间只隔一个换行，空行照样保留', async () => {
+    await renderWithProviders(<Composer onSubmit={vi.fn()} />)
+
+    act(() => editor().focus())
+    pasteTextIntoComposer(editor(), '第一行\n第二行')
+    fireEvent.keyDown(editor(), { key: 'Enter', shiftKey: true })
+    fireEvent.keyDown(editor(), { key: 'Enter', shiftKey: true })
+    pasteTextIntoComposer(editor(), '第四行')
+    await userEvent.keyboard('{Control>}a{/Control}')
+    const setData = vi.fn()
+    fireEvent.copy(editor(), { clipboardData: { clearData: vi.fn(), setData } })
+
+    expect(setData).toHaveBeenCalledWith('text/plain', '第一行\n第二行\n\n第四行')
+  })
+
   it('多行内容提交后原样回填：每行一段，图片留在原来那一行', async () => {
     const onSubmit = vi.fn()
     const ref = createRef<ComposerHandle>()
