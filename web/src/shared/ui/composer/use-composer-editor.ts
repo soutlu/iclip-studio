@@ -1,7 +1,7 @@
-import { baseKeymap } from 'prosemirror-commands'
+import { baseKeymap, splitBlock } from 'prosemirror-commands'
 import { closeHistory, history, redo, undo } from 'prosemirror-history'
 import { keymap } from 'prosemirror-keymap'
-import type { Node as PMNode, Schema, Slice } from 'prosemirror-model'
+import { Fragment, Slice, type Node as PMNode, type Schema } from 'prosemirror-model'
 import { EditorState, NodeSelection, Plugin, Selection, type Transaction } from 'prosemirror-state'
 import { EditorView } from 'prosemirror-view'
 import {
@@ -152,20 +152,38 @@ export const useComposerEditor = ({
     return type
   }
 
-  const nodesOf = (parts: readonly AnyPart[]): PMNode[] =>
-    parts.flatMap((part) => {
-      if (part.kind === 'text') return part.text === '' ? [] : [schema.text(part.text)]
-      if (part.kind === 'media') {
-        return [
-          nodeType('attachment').create({
-            attId: part.media.attId,
-            kind: part.media.kind,
-            name: part.media.name,
-          }),
-        ]
+  const inlineNodeOf = (part: Exclude<AnyPart, { kind: 'text' }>): PMNode =>
+    part.kind === 'media'
+      ? nodeType('attachment').create({
+          attId: part.media.attId,
+          kind: part.media.kind,
+          name: part.media.name,
+        })
+      : nodeType(part.node.name).create(part.node.attrs)
+
+  // 一行一段，文字节点里不放换行符：ProseMirror 读回浏览器的原生编辑（打字、删字）时，
+  // 会把段落里的换行符改成空格，删一个字整段就塌成一行。
+  const paragraphsOf = (parts: readonly AnyPart[]): PMNode[] => {
+    let line: PMNode[] = []
+    const lines = [line]
+    for (const part of parts) {
+      if (part.kind !== 'text') {
+        line.push(inlineNodeOf(part))
+        continue
       }
-      return [nodeType(part.node.name).create(part.node.attrs)]
-    })
+      for (const [index, text] of part.text.split(/\r\n?|\n/).entries()) {
+        if (index > 0) {
+          line = []
+          lines.push(line)
+        }
+        if (text !== '') line.push(schema.text(text))
+      }
+    }
+    return lines.map((children) => nodeType('paragraph').create(null, children))
+  }
+
+  // 两侧开放：首行接进插入点所在的段落，末行接上插入点后面的内容。
+  const sliceOf = (parts: readonly AnyPart[]) => new Slice(Fragment.from(paragraphsOf(parts)), 1, 1)
 
   const mediaOf = (parts: readonly AnyPart[]) =>
     parts.flatMap((part) => (part.kind === 'media' ? [part.media] : []))
@@ -203,11 +221,11 @@ export const useComposerEditor = ({
   const insertParts = (parts: readonly AnyPart[], position: 'selection' | 'end' = 'selection') => {
     const view = viewRef.current
     if (view === null) return
-    const content = nodesOf(parts)
-    if (content.length === 0) return
+    const slice = sliceOf(parts)
+    if (slice.size === 0) return
     latestRef.current.attachments.restoreEntries(mediaOf(parts))
     const insert = (from: number, to: number) => {
-      const tr = view.state.tr.replaceWith(from, to, content)
+      const tr = view.state.tr.replace(from, to, slice)
       tr.setSelection(Selection.near(tr.doc.resolve(tr.mapping.map(to)))).scrollIntoView()
       view.dispatch(position === 'end' ? closeHistory(tr) : tr)
     }
@@ -243,11 +261,7 @@ export const useComposerEditor = ({
     latestRef.current.attachments.restoreEntries(mediaOf(parts))
     view.dispatch(
       view.state.tr
-        .replaceWith(
-          0,
-          view.state.doc.content.size,
-          nodeType('paragraph').create(null, nodesOf(parts)),
-        )
+        .replaceWith(0, view.state.doc.content.size, paragraphsOf(parts))
         .setMeta(RESTORE_META, true),
     )
   }
@@ -278,7 +292,7 @@ export const useComposerEditor = ({
     const pos = attachmentPosition(attId)
     if (view === null || pos === undefined) return undefined
     latestRef.current.attachments.restoreEntries(mediaOf(parts))
-    return view.state.tr.replaceWith(pos, pos + 1, nodesOf(parts)).setMeta('addToHistory', false)
+    return view.state.tr.replace(pos, pos + 1, sliceOf(parts)).setMeta('addToHistory', false)
   }
 
   const removeAttachment = (attId: string) => {
@@ -339,7 +353,7 @@ export const useComposerEditor = ({
             const mode = latestRef.current.enter
             if (mode.kind === 'paragraph') return false
             if (event.shiftKey) {
-              view.dispatch(view.state.tr.insertText('\n').scrollIntoView())
+              splitBlock(view.state, (tr) => view.dispatch(tr.scrollIntoView()))
               return true
             }
             if (mode.canSend()) mode.onSubmit()

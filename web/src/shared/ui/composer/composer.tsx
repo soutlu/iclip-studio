@@ -292,7 +292,7 @@ export function Composer<N extends ComposerNode = never, Item = never>({
       >
         <div className="relative">
           <div ref={mountEditor} />
-          {editor.empty ? (
+          {editor.empty && docState.doc.childCount === 1 ? (
             <div aria-hidden className="composer-placeholder-overlay">
               {placeholder}
             </div>
