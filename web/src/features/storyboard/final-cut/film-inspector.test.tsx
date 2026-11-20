@@ -45,6 +45,7 @@ function Harness({
       keyframes={new Map()}
       locale={locale}
       onAttributes={noop}
+      onCanvas={noop}
       onCaptionStyle={noop}
       onCaptionText={noop}
       onGesture={noop}

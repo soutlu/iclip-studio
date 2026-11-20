@@ -2686,6 +2686,23 @@
   color: var(--color-on-surface-muted);
 }
 
+/* 没有选中时说明上面的整片设置（画面尺寸）：内边距照属性卡片的列表 */
+.wf-inspector-film {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  padding: 12px 14px 0;
+}
+
+/* 「画面尺寸」两段切换（样子见 wf-seg）：占满卡片宽，两段一样宽 */
+.wf-canvas-sizes {
+  display: flex;
+}
+
+.wf-canvas-sizes > .wf-seg-item {
+  flex: 1;
+}
+
 /* 选中了几个片段：片段的名字和种类一行一个 */
 .wf-inspector-multi-list {
   display: flex;
