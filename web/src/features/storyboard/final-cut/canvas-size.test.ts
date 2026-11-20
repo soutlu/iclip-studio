@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { canvasForVideo } from './canvas-size'
+import { canvasForVideo, canvasLabel } from './canvas-size'
+
+describe('canvasLabel', () => {
+  it.each([
+    [1080, 1920, '9:16'],
+    [2520, 1080, '21:9'],
+    [720, 1280, '9:16'],
+    [1280, 800, '8:5'],
+    [1080, 1350, '4:5'],
+    [1080, 1514, '1080×1514'],
+  ])('%i×%i 写成 %s', (width, height, label) => {
+    expect(canvasLabel({ width, height })).toBe(label)
+  })
+})
 
 describe('canvasForVideo', () => {
   it.each([

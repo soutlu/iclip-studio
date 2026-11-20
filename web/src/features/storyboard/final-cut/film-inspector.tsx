@@ -5,7 +5,6 @@ import { Input } from '@/shared/ui/field'
 import { Switch } from '@/shared/ui/switch'
 import { BlockedReason } from '../components/blocked-reason'
 import type { PeaksState } from '../editing/media-analysis'
-import { CANVAS_SIZES } from './canvas-size'
 import { sourceTrimmed, trimBounds, trimmed, type SourceLength, type Timing } from './clip-edit'
 import type { ComponentCatalog, VariableValue } from './composition/catalog'
 import { CaptionTextField, type CaptionTextChange } from './captions-tab'
@@ -61,10 +60,8 @@ type Props = {
   /** final-cut 里所有的片段：改时间时按它们算落在哪。 */
   clips: readonly FilmClip[]
   catalog: ComponentCatalog
-  /** 画面尺寸：没选中片段时在「画面尺寸」里选，字幕的默认字号和能设的范围按它算。 */
+  /** 画面尺寸：字幕的默认字号和能设的范围按它算。 */
   canvas: Canvas
-  /** 把画面尺寸改成 `canvas`，算一步撤销。 */
-  onCanvas: (canvas: Canvas) => void
   sourceMs: SourceLength
   /** 视频素材的镜头读取状态：「原片截取」在素材总长读到之前写它读到哪了。 */
   keyframes: KeyframeStates
@@ -77,6 +74,8 @@ type Props = {
   onHide: (id: string, hidden: boolean) => void
   /** 删掉选中的片段，和按 Delete 一样。 */
   onRemove: () => void
+  /** 取消选中，和按 Esc、点时间线空白处一样。 */
+  onDeselect: () => void
   onRetime: (timings: ReadonlyMap<string, Timing>) => void
   /** 「原片截取」开始或结束拖动：拖动中的 Esc 归它（只取消这一次拖动），快捷键先不接。 */
   onGesture: (active: boolean) => void
@@ -161,145 +160,11 @@ const seconds = (ms: number) => (ms / 1000).toFixed(2)
 const NO_PEAKS: PeaksState = { kind: 'loading' }
 const NO_BINDINGS: LocaleBindings = {}
 
-/** 画面每边能写的像素数。 */
-const SIDE_RANGE = { min: 240, max: 4096 } as const
-const SIDE_RANGE_TEXT = `宽高要在 ${SIDE_RANGE.min}–${SIDE_RANGE.max} 之间`
-
-/** 框里写的边长：整数，奇数减 1（视频编码要偶数宽高）；不是整数、不在范围里时是 null。 */
-const sideOf = (text: string): number | null => {
-  const typed = text.trim()
-  if (!/^\d+$/.test(typed)) return null
-  const value = Number(typed)
-  return value < SIDE_RANGE.min || value > SIDE_RANGE.max ? null : value - (value % 2)
-}
-
-type Side = 'width' | 'height'
-
-/**
- * 没选中片段时的「画面尺寸」：一排比例按钮，宽高正好是哪一种时它按下；下面宽、高两个数字框一直写着现在的值，回车
- * 或失焦生效，奇数减 1，不是整数、不在范围里时框下面一句提示、框回到原来的值。随时能改，各算一步撤销。
- */
-function CanvasSize({
-  canvas,
-  onCanvas,
-  onTextEditing,
-}: Pick<Props, 'canvas' | 'onCanvas' | 'onTextEditing'>) {
-  // 刚才没写对的那一边：提示一直留到下一次改成功
-  const [invalid, setInvalid] = useState<Side | null>(null)
-  const errorId = useId()
-  const resize = (next: Canvas) => {
-    setInvalid(null)
-    onCanvas(next)
-  }
-  const side = (key: Side, label: string) => (
-    <SideField
-      describedBy={invalid === null ? undefined : errorId}
-      invalid={invalid === key}
-      label={label}
-      onCommit={(text) => {
-        const value = sideOf(text)
-        if (value === null) setInvalid(key)
-        else resize({ ...canvas, [key]: value })
-      }}
-      onEditing={onTextEditing}
-      value={canvas[key]}
-    />
-  )
-  return (
-    <div className="wf-card wf-prop-card">
-      <div className="wf-prop-title-row">
-        <h4 className="wf-prop-title">画面尺寸</h4>
-      </div>
-      <div aria-label="画面比例" className="wf-seg wf-canvas-sizes" role="group">
-        {CANVAS_SIZES.map((each) => (
-          <button
-            aria-pressed={
-              each.canvas.width === canvas.width && each.canvas.height === canvas.height
-            }
-            className="wf-seg-item ui-state ui-focus"
-            key={each.label}
-            onClick={() => resize(each.canvas)}
-            type="button"
-          >
-            {each.label}
-          </button>
-        ))}
-      </div>
-      <div className="wf-canvas-pixels">
-        {side('width', '宽')}
-        <span aria-hidden="true">×</span>
-        {side('height', '高')}
-      </div>
-      {invalid === null ? null : (
-        <p className="wf-canvas-error" id={errorId} role="alert">
-          {SIDE_RANGE_TEXT}
-        </p>
-      )}
-    </div>
-  )
-}
-
-/**
- * 「画面尺寸」里宽或高的数字框：没在输入时写着 `value`。回车或失焦把输入的字交给 `onCommit`，Esc 放弃；交完框里
- * 回到 `value`（改成功时就是新的值）。
- */
-function SideField({
-  label,
-  value,
-  invalid,
-  describedBy,
-  onCommit,
-  onEditing,
-}: {
-  label: string
-  value: number
-  invalid: boolean
-  describedBy: string | undefined
-  onCommit: (text: string) => void
-  onEditing: (editing: boolean) => void
-}) {
-  const [draft, setDraft] = useState<string | null>(null)
-  // 按 Esc 时先放弃再失焦，失焦的处理读这里，不等重新渲染
-  const draftRef = useRef<string | null>(null)
-  const edit = (next: string | null) => {
-    draftRef.current = next
-    setDraft(next)
-  }
-  // 框还聚焦着就被卸掉（选中了片段）时收不到失焦，这里补一下
-  useEffect(() => () => onEditing(false), [onEditing])
-  return (
-    <Input
-      aria-describedby={describedBy}
-      aria-invalid={invalid || undefined}
-      aria-label={label}
-      autoComplete="off"
-      className="wf-field wf-prop-input"
-      inputMode="numeric"
-      onBlur={() => {
-        onEditing(false)
-        const typed = draftRef.current
-        edit(null)
-        if (typed !== null) onCommit(typed)
-      }}
-      onChange={(event) => edit(event.target.value)}
-      onFocus={() => onEditing(true)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') event.currentTarget.blur()
-        else if (event.key === 'Escape') {
-          edit(null)
-          event.currentTarget.blur()
-        }
-      }}
-      value={draft ?? String(value)}
-    />
-  )
-}
-
 /**
  * 侧栏「属性」页签的内容：选中一个片段时显示它的名字、种类和可以改的几张卡片；选中多个时有一块说明；没选中时是
- * 「画面尺寸」和一块说明。
+ * 一句怎么用的说明。
  */
-export function FilmInspector({ selected, onCanvas, ...rest }: Props) {
+export function FilmInspector({ selected, ...rest }: Props) {
   const [only] = selected
   // 倍速浮层挂在这里：浮层里按的键和「属性」里别的控件一样不当快捷键
   const [root, setRoot] = useState<HTMLDivElement | null>(null)
@@ -307,21 +172,12 @@ export function FilmInspector({ selected, onCanvas, ...rest }: Props) {
     // data-inspector：编辑器按它认出「属性」里的控件，那里按的键不当快捷键
     <div className="wf-inspector" data-inspector ref={setRoot}>
       {only === undefined ? (
-        <>
-          <div className="wf-inspector-film">
-            <CanvasSize
-              canvas={rest.canvas}
-              onCanvas={onCanvas}
-              onTextEditing={rest.onTextEditing}
-            />
-          </div>
-          <div className="wf-inspector-empty">
-            <span aria-hidden="true" className="wf-inspector-empty-icon">
-              <Icon decorative name="final-cut-properties" size="md" />
-            </span>
-            <p>选中时间线上的片段后，可在此调整</p>
-          </div>
-        </>
+        <div className="wf-inspector-empty">
+          <span aria-hidden="true" className="wf-inspector-empty-icon">
+            <Icon decorative name="final-cut-cursor-select" size="md" />
+          </span>
+          <p>点选时间线上的片段，调整画面、声音或字幕</p>
+        </div>
       ) : selected.length > 1 ? (
         <>
           <div className="wf-inspector-head">
@@ -350,8 +206,8 @@ export function FilmInspector({ selected, onCanvas, ...rest }: Props) {
 }
 
 /**
- * 选中一个片段：头部是种类图标、名字、种类和时长（字幕写起止），右边隐藏、删除，视频片段还有「分离音频」，分离出来的
- * 原声有「合并回视频」；字幕没有隐藏（只能在行头上整行隐藏）。下面一张卡一件事。视频片段、音频片段是「原片截取」
+ * 选中一个片段：头部是种类图标、名字、种类和时长（字幕写起止），右边隐藏、删除、取消选中，视频片段还有「分离音频」，
+ * 分离出来的原声有「合并回视频」；字幕没有隐藏（只能在行头上整行隐藏）。下面一张卡一件事。视频片段、音频片段是「原片截取」
  * 和「声音与节奏」，组件或块的片段是「显示时长」和「内容与样式」，字幕是「显示时长」和「内容与样式」，「其他」片段
  * 只有「显示时长」。分离过原声的视频片段把「声音与节奏」换成「画面变速」和原声去处的一张，分离出来的原声最上面多
  * 一张同步卡。有声片段最下面是「智能调音」。
@@ -368,6 +224,7 @@ function ClipInspector({
   sourceName,
   onHide,
   onRemove,
+  onDeselect,
   onRetime,
   onGesture,
   onValues,
@@ -381,7 +238,7 @@ function ClipInspector({
   smartMix,
   onOpenCaptions,
   popupContainer,
-}: Omit<Props, 'selected' | 'onCanvas'> & { clip: FilmClip; popupContainer: HTMLElement | null }) {
+}: Omit<Props, 'selected'> & { clip: FilmClip; popupContainer: HTMLElement | null }) {
   const fonts = Object.keys(catalog.fonts).toSorted()
   const sound = clip.kind === 'audio'
   const hideLabel = sound ? (clip.hidden ? '取消静音' : '静音') : clip.hidden ? '显示' : '隐藏'
@@ -431,6 +288,18 @@ function ClipInspector({
               <>
                 删除
                 <Keys>Delete</Keys>
+              </>
+            }
+          />
+          <Tool
+            icon="final-cut-close"
+            label="取消选中"
+            onClick={onDeselect}
+            shortcuts="Escape"
+            tip={
+              <>
+                取消选中
+                <Keys>Esc</Keys>
               </>
             }
           />

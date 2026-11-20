@@ -114,6 +114,23 @@ export const FINAL_CUT_GLYPHS = {
   'final-cut-close': glyph(<path d="M17.5 6.5 6.5 17.5M6.5 6.5l11 11" />),
   'final-cut-add': glyph(<path d="M12 5.2v13.6M5.2 12h13.6" />),
   'final-cut-expand': glyph(<path d="m6.5 9.2 5.5 5.6 5.5-5.6" />),
+  // 「属性」没选中片段时：点选一个片段
+  'final-cut-cursor-select': glyph(
+    <>
+      <rect className={FILL} height={9} rx={2.4} width={14} x={3.5} y={5.5} />
+      <path d="M10.5 14.5H6a2.5 2.5 0 0 1-2.5-2.5V8A2.5 2.5 0 0 1 6 5.5h9A2.5 2.5 0 0 1 17.5 8v2.5" />
+      <path d="m13.5 12.5 2.4 7.3 1.4-2.8 2.9-1.3-6.7-3.2Z" />
+    </>,
+  ),
+  // 画面上的参考线（构图网格、安全区）
+  'final-cut-guides': glyph(
+    <>
+      <path d="M3.75 8.7h16.5M3.75 15.3h16.5M8.7 3.75v16.5M15.3 3.75v16.5" strokeWidth={THIN} />
+      <rect height={17.4} rx={3.3} width={17.4} x={3.3} y={3.3} />
+    </>,
+  ),
+  // 互换宽高
+  'final-cut-swap': glyph(<path d="M4.8 9h14.4l-3.45-3.45M19.2 15H4.8l3.45 3.45" />),
   'final-cut-disclosure': glyph(<path d="m9.2 6.5 5.6 5.5-5.6 5.5" />),
   'final-cut-more': glyph(
     <g fill="currentColor" stroke="none">

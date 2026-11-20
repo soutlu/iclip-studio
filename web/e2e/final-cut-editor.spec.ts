@@ -2130,15 +2130,16 @@ test('新建工程、加镜头和一个贴片：条目文件拷进工程，刷�
     .toBe(true)
 })
 
-test('新建工程后在「属性」里把画面尺寸改成横屏：存下的主文件根上是 1920×1080，刷新页面后仍是横屏', async ({
+test('新建工程后在画面右上角把画面尺寸改成横屏：存下的主文件根上是 1920×1080，刷新页面后仍是横屏', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await createFinalCut(panel)
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-  await side.getByRole('tab', { name: '属性' }).click()
-  const sizes = side.getByRole('group', { name: '画面比例' })
+  await editor.getByRole('button', { name: '画面尺寸 9:16', exact: true }).click()
+  const sizes = editor
+    .getByRole('dialog', { name: '画面设置' })
+    .getByRole('group', { name: '画面比例' })
   await expect(sizes.getByRole('button', { name: '9:16', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
@@ -2155,11 +2156,10 @@ test('新建工程后在「属性」里把画面尺寸改成横屏：存下的�
   await (await saved).response()
   await page.reload()
   const reloaded = await openFinalCut(await openConversation(page, '夜景延时素材生成'))
-  const reloadedSide = reloaded.getByRole('complementary', {
-    name: '镜头、贴片、场景、配乐、字幕和属性',
-  })
-  await reloadedSide.getByRole('tab', { name: '属性' }).click()
-  const reloadedSizes = reloadedSide.getByRole('group', { name: '画面比例' })
+  await reloaded.getByRole('button', { name: '画面尺寸 16:9', exact: true }).click()
+  const reloadedSizes = reloaded
+    .getByRole('dialog', { name: '画面设置' })
+    .getByRole('group', { name: '画面比例' })
   await expect(reloadedSizes.getByRole('button', { name: '16:9', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',

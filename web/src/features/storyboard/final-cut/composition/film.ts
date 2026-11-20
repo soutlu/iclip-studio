@@ -4,8 +4,8 @@ import { escapeAttribute, seconds } from './html'
 
 /**
  * final-cut 工程的主文件 `index.html`：工程目录里唯一的主时间线。根下面每个带时间的元素是时间线上的一个片段；
- * 文件可以由编辑器写，也可以手写。编辑器只改片段、根上的总长和画面尺寸、`<html>` 上声明的字幕变量，`<head>` 里
- * 只重算带标记的字体块（见 `withFontBlock`）和写死的画面尺寸（见 `withCanvasSize`），别的内容原样留着。
+ * 文件可以由编辑器写，也可以手写。编辑器只改片段、根上的总长、画面尺寸和底色、`<html>` 上声明的字幕变量，
+ * `<head>` 里只重算带标记的字体块（见 `withFontBlock`）和写死的画面尺寸（见 `withCanvasSize`），别的内容原样留着。
  */
 export interface Canvas {
   width: number
@@ -559,6 +559,17 @@ export function withCanvasSize(html: string, canvas: Canvas): string {
     .replace(VIEWPORT, () => viewportOf(canvas))
     .replace(FILLING, (_, rule: string) => `${rule}${fillingOf(canvas)}`)
   return `${head}${html.slice(headEnd)}`
+}
+
+const FILM_BACKGROUND = new RegExp(`\\n#${FILM_ID}\\{[^}\\n]*?background:([^;}\\n]+)`)
+
+/**
+ * 主文件 `<head>` 里给根写的底色（`emptyProject` 写的是 black）；写法和 `emptyProject` 不一样、没写时是 null。
+ * 编辑器选的底色写在根的行内样式上，盖过这一条。
+ */
+export function headBackground(html: string): string | null {
+  const headEnd = html.search(/<\/head\s*>/i)
+  return FILM_BACKGROUND.exec(headEnd < 0 ? '' : html.slice(0, headEnd))?.[1]?.trim() ?? null
 }
 
 /**

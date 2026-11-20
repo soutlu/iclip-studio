@@ -52,6 +52,7 @@ import type {
 import {
   audioElement,
   clipOf,
+  headBackground,
   hostElement,
   itemFonts,
   itemNamed,
@@ -145,6 +146,8 @@ export type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'failed'
 export type FilmView = {
   html: string
   canvas: Canvas
+  /** 画面底色：根上行内写的；没写时是 `<head>` 里给根写的（见 `headBackground`），也读不出时是 null。 */
+  background: string | null
   /**
    * 主文件根下所有带时间的元素（字幕宿主除外），按它们在文件里的先后；后面跟着字幕场景里的各句字幕，
    * 按它们在场景里的先后。配音片段只有当前显示的语言 AI 配音时这种语言的，和原文下、保留原声时的旁白（见
@@ -601,6 +604,7 @@ const viewOf = (
   const view: FilmView = {
     html,
     canvas,
+    background: rootOf(main)?.inlineStyles['backgroundColor'] ?? headBackground(html),
     clips: clips.filter(shownHere).map((clip) =>
       shown.values !== null && clip.kind === 'caption'
         ? {
@@ -1538,6 +1542,20 @@ export function useFilmSession(
     [edit],
   )
 
+  /**
+   * 把画面底色改成 `color`，算一步撤销：写在主文件根的行内样式上，盖过 `<head>` 里的底色，预览和导出都按它。
+   * 总是写上、不去掉：去掉的行内样式撤销时排到最后，文件回不到原样。根上写着的就是它、工程还没打开时不动工程。
+   */
+  const setBackground = useCallback(
+    (color: string) => {
+      const project = projectRef.current
+      const root = project === null ? undefined : rootOf(mainOf(project))
+      if (root === undefined || root.inlineStyles['backgroundColor'] === color) return
+      edit((main) => main.setStyle(root.id, { backgroundColor: color }))
+    },
+    [edit],
+  )
+
   /** 工程里文件 `path`（相对工程根）现在的内容（没存的改动也在里面）；没打开着时是 undefined。 */
   const contentOf = useCallback((path: string) => presentRef.current.get(path), [])
 
@@ -2294,6 +2312,7 @@ export function useFilmSession(
     setHidden,
     editLayers,
     resize,
+    setBackground,
     contentOf,
     setValues,
     setAttributes,

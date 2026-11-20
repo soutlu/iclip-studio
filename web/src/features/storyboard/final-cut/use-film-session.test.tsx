@@ -3296,3 +3296,43 @@ describe('useFilmSession · 画面尺寸', () => {
     expect(contents(result)).toEqual(after)
   })
 })
+
+describe('useFilmSession · 画面底色', () => {
+  const main = (result: Session) => result.current.contentOf('index.html') ?? ''
+  const rootTag = (html: string) => /<div [^>]*id="film"[^>]*>/.exec(html)?.[0] ?? ''
+
+  it('按模版建的工程读出 <head> 里的黑底；改成白色写在根的行内样式上、存下来，一步撤销逐字回去；再选现在的颜色不算一步', async () => {
+    const conversation = crypto.randomUUID()
+    const { result } = await open(
+      putMockProjectMain(conversation, mainFile([video()], CANVAS)),
+      10,
+      conversation,
+    )
+    expect(result.current.film?.background).toBe('black')
+    const before = main(result)
+
+    act(() => result.current.setBackground('#ffffff'))
+    expect(result.current.film?.background).toBe('#ffffff')
+    expect(rootTag(main(result))).toContain('style="background-color: #ffffff"')
+    await act(async () => {
+      await result.current.settle()
+    })
+    expect(mockProjectMain(conversation)?.content).toBe(main(result))
+
+    act(() => result.current.setBackground('#ffffff'))
+    act(() => result.current.undo())
+    expect(main(result)).toBe(before)
+    expect(result.current.film?.background).toBe('black')
+    expect(result.current.film?.canUndo).toBe(false)
+  })
+
+  it('手写的 <head> 没给根写底色时读不出来', async () => {
+    const conversation = crypto.randomUUID()
+    const written = mainFile([video()], CANVAS).replace(
+      /(\n#film\{[^}\n]*?);background:black/,
+      '$1',
+    )
+    const { result } = await open(putMockProjectMain(conversation, written), 10, conversation)
+    expect(result.current.film?.background).toBeNull()
+  })
+})

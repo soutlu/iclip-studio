@@ -25,8 +25,9 @@ const listVariants = cva('flex min-w-0', {
   variants: {
     variant: {
       underline: 'items-stretch gap-1',
+      // 深色下槽底压得更深，选中格才浮得起来
       segmented:
-        'h-8 items-center gap-0.5 rounded-control bg-surface-container-high p-0.75 shadow-[var(--shadow-control-well),inset_0_0_0_1px_var(--color-panel-line)]',
+        'h-8 items-center gap-0.5 rounded-control bg-surface-container-high p-0.75 shadow-[var(--shadow-control-well),inset_0_0_0_1px_var(--color-panel-line)] dark:bg-surface',
     },
   },
 })
@@ -55,7 +56,7 @@ const triggerVariants = cva(
         ],
         // 圆角比外槽小一圈：外槽圆角减去外槽内边距 3px，两层弧线同心
         segmented:
-          'h-6.5 rounded-[calc(var(--radius-control)-3px)] px-3 text-label font-medium text-on-surface-muted transition-[color,background-color,box-shadow] data-[state=active]:bg-card data-[state=active]:font-semibold data-[state=active]:shadow-[var(--shadow-pill),var(--shadow-specular)]',
+          'h-6.5 rounded-[calc(var(--radius-control)-3px)] px-3 text-label font-medium text-on-surface-muted transition-[color,background-color,box-shadow] data-[state=active]:bg-card data-[state=active]:font-semibold data-[state=active]:shadow-[var(--shadow-pill),var(--shadow-specular)] dark:data-[state=active]:bg-surface-container-high',
       },
     },
   },
