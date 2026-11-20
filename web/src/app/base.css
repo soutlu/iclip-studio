@@ -382,7 +382,6 @@
   --z-local-1: 1;
   --z-local-2: 2;
   --z-local-3: 3;
-  --z-canvas-overlay: 40; /* focused artifact 遮画布、低于 header(50) */
 
   /* 尺寸、阴影与动效 */
 
@@ -421,12 +420,9 @@
   --icon-xl: 24px;
 
   /* Z-index Layer System */
-  --z-base: 0;
-  --z-canvas: 2;
   --z-content: 5;
   --z-panel: 10;
   --z-sidebar: 40;
-  --z-header: 50;
   --z-overlay: 90;
   --z-popup: 100;
 
