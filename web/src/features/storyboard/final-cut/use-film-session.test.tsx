@@ -3234,13 +3234,12 @@ describe('useFilmSession · 画面尺寸', () => {
     scene: result.current.contentOf(CAPTIONS_PATH) ?? '',
   })
 
-  /** 主文件里编号 `id` 的元素的行内样式，属性名 → 值。 */
+  /** 文件里编号 `id` 的元素的行内样式，属性名 → 值；字幕场景的元素在 `<template>` 里。 */
   const inlineOf = (html: string, id: string): Record<string, string> => {
-    const style =
-      new DOMParser()
-        .parseFromString(html, 'text/html')
-        .getElementById(id)
-        ?.getAttribute('style') ?? ''
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const element =
+      doc.getElementById(id) ?? doc.querySelector('template')?.content.getElementById(id)
+    const style = element?.getAttribute('style') ?? ''
     return Object.fromEntries(
       style
         .split(';')
@@ -3255,7 +3254,7 @@ describe('useFilmSession · 画面尺寸', () => {
 
   const headOf = (html: string) => html.slice(0, html.indexOf('</head>'))
 
-  it('720×1280 换成横屏：两个文件的根是新尺寸，<head> 里没有旧尺寸；挪过、缩放过的贴片位置和大小跟着换算；撤销、重做逐字回去', async () => {
+  it('720×1280 换成横屏：两个文件的根是新尺寸，<head> 里没有旧尺寸；挪过、缩放过的贴片位置和大小跟着换算；字幕默认字号和设过的字号跟着画面宽度换；撤销、重做逐字回去', async () => {
     const { result, conversation } = await openFilm([video(), host()], CANVAS)
     // 用户在画面上把贴片往右下挪了一点、放大到 1.2 倍（画面 720 宽时贴片的适配倍数是 0.375）
     act(() =>
@@ -3267,7 +3266,10 @@ describe('useFilmSession · 画面尺寸', () => {
         },
       ]),
     )
+    // 720 宽时字幕默认 37px，这句设成 40px
+    act(() => result.current.setCaptionStyle('cap-a1', { fontSize: 40 }))
     const before = contents(result)
+    expect(before.scene).toContain('font-size: 37px')
 
     act(() => result.current.resize(LANDSCAPE))
     expect(result.current.film?.canvas).toEqual(LANDSCAPE)
@@ -3277,6 +3279,16 @@ describe('useFilmSession · 画面尺寸', () => {
     expect(headOf(after.main)).toContain('<meta name="viewport" content="width=1920, height=1080">')
     expect(after.scene).toMatch(/<div [^>]*id="root"[^>]*data-width="1920" data-height="1080"/)
     expect(after.scene).not.toMatch(/data-(width|height)="(720|1280)"/)
+    // 1920 宽时默认 100px；设过的 40px 按 100 / 37 换算成 108px，描边、投影跟着字号
+    expect(after.scene).toContain('font-size: 100px')
+    expect(after.scene).not.toContain('font-size: 37px')
+    expect(inlineOf(after.scene, 'cap-a1')).toMatchObject({
+      'font-size': '108px',
+      '-webkit-text-stroke': '22px #000000',
+    })
+    expect(result.current.film?.clips.find((clip) => clip.id === 'cap-a1')).toMatchObject({
+      fontSize: 108,
+    })
     // 适配倍数从 0.375 变成 1：缩放倍数、像素偏移都乘上 1 / 0.375
     expect(inlineOf(after.main, 'title-1')).toMatchObject({
       width: '1920px',

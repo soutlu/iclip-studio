@@ -41,6 +41,8 @@ import {
   captionStyles,
   captionVariable,
   isCaptionsHost,
+  refittedCaptionSize,
+  withCaptionDefaults,
 } from './composition/captions'
 import type {
   CatalogItem,
@@ -543,8 +545,8 @@ const writeTotal = (main: Composition, scene: Composition | undefined) => {
 /**
  * 工程现在的样子（显示语言 `locale` 的字），和各文件现在的内容（路径 → 内容）：主文件只重算 `<head>` 里的
  * 字体块和写死的画面尺寸（SDK 改不了 `<head>`）。字体块的字按原文和所有值表里的字一起算，存出的内容和显示哪种语言
- * 无关；画面尺寸按根上的算，撤销根的改动时跟着回去。别的文件照各自存出的写。`change` 是这一份的序号和从上一份来的
- * 那一步（见 `FilmView`）。
+ * 无关；画面尺寸按根上的算，撤销根的改动时跟着回去。字幕场景同理只重算统一样式里跟着画面宽度走的默认字号（见
+ * `withCaptionDefaults`）。别的文件照各自存出的写。`change` 是这一份的序号和从上一份来的那一步（见 `FilmView`）。
  */
 const viewOf = (
   project: Project,
@@ -569,7 +571,11 @@ const viewOf = (
   const present = new Map(
     [...project.files].map(([path, file]) => [
       path,
-      path === PROJECT_MAIN ? html : docOps(file.doc).serialize(),
+      path === PROJECT_MAIN
+        ? html
+        : path === project.captionsPath
+          ? withCaptionDefaults(docOps(file.doc).serialize(), canvas)
+          : docOps(file.doc).serialize(),
     ]),
   )
   const table = locale === SOURCE_LOCALE ? undefined : tables.get(locale)
@@ -1506,7 +1512,8 @@ export function useFilmSession(
   /**
    * 把画面尺寸改成 `canvas`，算一步撤销：主文件和字幕场景的根改成新的宽高（见 `resizeRoot`；主文件 `<head>` 里写死的
    * 尺寸存出时跟着根重算，见 `viewOf`），贴片和场景的宿主按新画面重摆（见 `refittedHostStyles`）。视频不用动：画面
-   * 等比放、留黑边。和现在一样、工程还没打开时不动工程。
+   * 等比放、留黑边。字幕的默认字号按画面宽度算：场景里统一样式的字号存出时跟着重算（见 `viewOf`），一句设过的
+   * 字号按比例换算（见 `refittedCaptionSize`）。和现在一样、工程还没打开时不动工程。
    *
    * 字幕宿主上写的宽高不改：SDK 不让改宿主的 `data-width` / `data-height`（保留属性），运行库挂载字幕场景时按场景根的
    * 宽高重写宿主，宿主本身铺满画面。
@@ -1519,7 +1526,19 @@ export function useFilmSession(
       if (before.width === canvas.width && before.height === canvas.height) return
       edit((main, scene) => {
         resizeRoot(main, canvas)
-        if (scene !== undefined) resizeRoot(scene, canvas)
+        if (scene !== undefined) {
+          resizeRoot(scene, canvas)
+          for (const { id, fontSize } of captionsIn(scene, main))
+            if (fontSize !== null)
+              scene.setStyle(
+                id,
+                captionStyles(
+                  { fontSize: refittedCaptionSize(fontSize, before, canvas) },
+                  catalog,
+                  canvas,
+                ),
+              )
+        }
         for (const { host, captions } of mountsOf(main)) {
           const inline = main.getElement(host)?.inlineStyles
           if (!captions && inline !== undefined)
@@ -1527,7 +1546,7 @@ export function useFilmSession(
         }
       })
     },
-    [edit],
+    [catalog, edit],
   )
 
   /** 工程里文件 `path`（相对工程根）现在的内容（没存的改动也在里面）；没打开着时是 undefined。 */

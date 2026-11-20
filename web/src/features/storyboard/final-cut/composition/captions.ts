@@ -96,13 +96,50 @@ const strokeOf = (size: number) => `${Math.round(size * 0.2)}px ${STROKE_COLOR}`
 const shadowOf = (size: number) =>
   `0 ${Math.max(1, Math.round(size * 0.03))}px ${Math.round(size * 0.08)}px ${SHADOW_COLOR}`
 
+const CAPTION_RULE = `[data-composition-id="${CAPTIONS_ID}"] .caption`
+const CAPTION_RULE_BODY = new RegExp(
+  `(${CAPTION_RULE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{)([^}]*)\\}`,
+)
+
+/**
+ * 字幕场景文件 `scene` 里统一样式（见 `captionStyle`）的字号、描边、投影换成画面 `canvas` 的默认值（见
+ * `captionFontSize`）。默认字号以画面宽度为准，存出时按它重算，画面尺寸改了、撤销了都跟着走；统一样式里没写的项
+ * 不补，没有这条样式（手写的、写法不一样的场景）时原样返回。
+ */
+export function withCaptionDefaults(scene: string, canvas: Canvas): string {
+  const size = captionFontSize(canvas)
+  const defaults: [string, string][] = [
+    ['font-size', `${size}px`],
+    ['-webkit-text-stroke', strokeOf(size)],
+    ['text-shadow', shadowOf(size)],
+  ]
+  return scene.replace(CAPTION_RULE_BODY, (_, open: string, body: string) => {
+    const next = defaults.reduce(
+      (text, [property, value]) =>
+        text.replace(new RegExp(`(^|[\\s;])${property}\\s*:[^;]*;`), `$1${property}: ${value};`),
+      body,
+    )
+    return `${open}${next}}`
+  })
+}
+
+/**
+ * 画面尺寸从 `before` 换成 `after` 时，一句设过的字号 `size` 换成多少：按新旧默认字号之比换算、取整，落在新画面
+ * 能设的范围里（见 `captionFontSizeRange`）。
+ */
+export function refittedCaptionSize(size: number, before: Canvas, after: Canvas): number {
+  const { min, max } = captionFontSizeRange(after)
+  const scaled = Math.round((size * captionFontSize(after)) / captionFontSize(before))
+  return Math.min(max, Math.max(min, scaled))
+}
+
 /**
  * 字幕的样子：白色粗体、黑色描边（描边画在字后面）、居中，在画面 86.5% 高处，最宽 90%，字号见
  * `captionFontSize`。字体用组件库的中文字体：主文件的字体块按字幕的字声明了它，没声明的字体导出时会去外网取。
  */
 function captionStyle(canvas: Canvas, catalog: ComponentCatalog): string {
   const size = captionFontSize(canvas)
-  return `[data-composition-id="${CAPTIONS_ID}"] .caption {
+  return `${CAPTION_RULE} {
   position: absolute;
   left: 5%;
   width: 90%;
