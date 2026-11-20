@@ -38,7 +38,7 @@ const widePanel = () => {
 
 afterEach(() => vi.restoreAllMocks())
 
-const renderPanel = (initialPath = `/c/${CONVERSATION_ID}`) => {
+const renderPanel = (initialPath = `/c/${CONVERSATION_ID}`, { readOnly = false } = {}) => {
   const registry = new ArtifactRegistry()
   registry.register({
     autoOpen: true,
@@ -49,9 +49,23 @@ const renderPanel = (initialPath = `/c/${CONVERSATION_ID}`) => {
     title: () => '分镜',
     type: 'storyboard',
   })
+  registry.register({
+    autoOpen: false,
+    component: () => null,
+    hiddenWhenReadOnly: true,
+    icon: 'film',
+    label: 'final-cut',
+    match: { anyPath: ['final-cut/index.html'] },
+    title: () => 'final-cut',
+    type: 'final-cut',
+  })
   return renderWithProviders(
     <WorkbenchRegistryProvider registry={registry}>
-      <WorkspaceFilesPanel artifact={artifact} conversationId={CONVERSATION_ID} readOnly={false} />
+      <WorkspaceFilesPanel
+        artifact={artifact}
+        conversationId={CONVERSATION_ID}
+        readOnly={readOnly}
+      />
     </WorkbenchRegistryProvider>,
     { initialPath },
   )
@@ -197,6 +211,22 @@ describe('WorkspaceFilesPanel 宽屏：左树右预览', () => {
     await user.click(await screen.findByRole('button', { name: '打开分镜' }))
 
     expect(router.state.location.search).toMatchObject({ artifact: 'file:video_shot.json' })
+  })
+
+  it('final-cut 主文件给「打开 final-cut」；只读对话里 final-cut 页签不出现，也就没有这个按钮', async () => {
+    const user = userEvent.setup()
+    widePanel()
+    seedMockWorkspace(CONVERSATION_ID)
+    putMockWorkspaceFile(CONVERSATION_ID, 'final-cut/index.html', '<!doctype html>')
+    const { router, unmount } = await renderPanel(`/c/${CONVERSATION_ID}?file=final-cut/index.html`)
+
+    await user.click(await screen.findByRole('button', { name: '打开 final-cut' }))
+    expect(router.state.location.search).toMatchObject({ artifact: 'final-cut' })
+    unmount()
+
+    await renderPanel(`/c/${CONVERSATION_ID}?file=final-cut/index.html`, { readOnly: true })
+    expect(await screen.findByRole('heading', { name: 'final-cut/index.html' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: '打开 final-cut' })).not.toBeInTheDocument()
   })
 
   it('agent 增删文件后目录树跟着变；正看着的文件被删就说明白', async () => {
