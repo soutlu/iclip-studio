@@ -3,8 +3,11 @@ import { json } from '@codemirror/lang-json'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import {
   bracketMatching,
+  foldGutter,
+  foldKeymap,
   HighlightStyle,
   indentOnInput,
+  LanguageDescription,
   syntaxHighlighting,
 } from '@codemirror/language'
 import { languages } from '@codemirror/language-data'
@@ -18,6 +21,7 @@ import {
   EditorView,
   highlightSpecialChars,
   keymap,
+  lineNumbers,
   rectangularSelection,
   type Command,
 } from '@codemirror/view'
@@ -73,23 +77,38 @@ const PHRASES = EditorState.phrases.of({
   'replaced match on line $': '已替换第 $ 行的匹配项',
 })
 
-export const BASE: Extension = [
+// 编辑器和只读查看器都要的：高亮、选中、查找、折行与中文提示
+const READING: Extension = [
   highlightSpecialChars(),
-  history(),
   drawSelection(),
+  highlightSelectionMatches(),
+  search({ top: true }),
+  EditorView.lineWrapping,
+  syntaxHighlighting(codeStyle),
+  PHRASES,
+  EditorView.contentAttributes.of({ spellcheck: 'false' }),
+]
+
+export const BASE: Extension = [
+  READING,
+  history(),
   dropCursor(),
   EditorState.allowMultipleSelections.of(true),
   indentOnInput(),
   bracketMatching(),
   rectangularSelection(),
   crosshairCursor(),
-  highlightSelectionMatches(),
-  search({ top: true }),
   keymap.of([...defaultKeymap, ...searchKeymap, ...historyKeymap]),
-  EditorView.lineWrapping,
-  syntaxHighlighting(codeStyle),
-  PHRASES,
-  EditorView.contentAttributes.of({ spellcheck: 'false' }),
+]
+
+/** 只读查看：可聚焦、可选中复制、可查找，带行号与折叠；不改内容，也不做写法检查。 */
+export const VIEWER: Extension = [
+  READING,
+  EditorState.readOnly.of(true),
+  lineNumbers(),
+  foldGutter(),
+  bracketMatching(),
+  keymap.of([...defaultKeymap, ...searchKeymap, ...foldKeymap]),
 ]
 
 const wrapWith =
@@ -136,3 +155,13 @@ const LANGUAGES: Record<FileKind, Extension> = {
 }
 
 export const languageFor = (kind: FileKind): Extension => LANGUAGES[kind]
+
+/**
+ * 只读查看用的语言：JSON 直接给（不带写法检查），其余按文件名在语言表里找，多数语言要异步加载。
+ * 找不到时返回 `null`，按纯文本显示。
+ */
+export const viewerLanguageFor = (
+  kind: FileKind,
+  fileName: string,
+): Extension | LanguageDescription | null =>
+  kind === 'json' ? json() : LanguageDescription.matchFilename(languages, fileName)

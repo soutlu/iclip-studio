@@ -43,13 +43,9 @@ import {
   Eye,
   EyeOff,
   Feather,
-  File,
   FileBraces,
-  FileImage,
-  FilePlay,
   FilePlus2,
   FileText,
-  FileType,
   FlaskConical,
   Folder,
   FolderClosed,
@@ -123,6 +119,7 @@ import {
 } from 'lucide-react'
 import type { LucideProps } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
+import { FILE_GLYPHS } from './file-glyphs'
 import { FINAL_CUT_GLYPHS } from './final-cut-glyphs'
 import {
   ResourceAgentGlyph,
@@ -259,11 +256,7 @@ const ICONS = {
   external: ExternalLink,
   failed: CircleX,
   file: FileText,
-  'file-image': FileImage,
   'file-json': FileBraces,
-  'file-other': File,
-  'file-plain': FileType,
-  'file-video': FilePlay,
   filter: ListFilter,
   folder: Folder,
   fork: Split,
@@ -346,6 +339,7 @@ const ICONS = {
   shortcuts: Keyboard,
   'zoom-selection': Scan,
   ...FINAL_CUT_GLYPHS,
+  ...FILE_GLYPHS,
 } as const
 
 export type IconName = keyof typeof ICONS

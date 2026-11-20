@@ -1,28 +1,39 @@
 import type { IconName } from '@/shared/icons'
 import { extensionOf } from '@/shared/lib/file-kind'
 
-const FILE_ICONS: Partial<Record<string, IconName>> = {
-  md: 'file',
-  markdown: 'file',
-  mdx: 'file',
-  json: 'file-json',
-  jsonc: 'file-json',
-  json5: 'file-json',
-  txt: 'file-plain',
-  avif: 'file-image',
-  gif: 'file-image',
-  jpeg: 'file-image',
-  jpg: 'file-image',
-  png: 'file-image',
-  svg: 'file-image',
-  webp: 'file-image',
-  m4v: 'file-video',
-  mov: 'file-video',
-  mp4: 'file-video',
-  webm: 'file-video',
+/** 文件页的分类色调，对应 `--color-tone-*`。 */
+export type Tone = 'copper' | 'ochre' | 'teal' | 'umber' | 'slate'
+
+/** `foldable`：原文按语法分得出段落，查看时能整段收起。 */
+export type FileLook = { icon: IconName; tone: Tone; foldable: boolean }
+
+const DOC: FileLook = { foldable: false, icon: 'file-doc', tone: 'umber' }
+const MARKDOWN: FileLook = { foldable: false, icon: 'file-doc', tone: 'teal' }
+const DATA: FileLook = { foldable: true, icon: 'file-data', tone: 'ochre' }
+const CODE: FileLook = { foldable: true, icon: 'file-code', tone: 'copper' }
+
+const LOOKS: Partial<Record<string, FileLook>> = {
+  md: MARKDOWN,
+  markdown: MARKDOWN,
+  mdx: MARKDOWN,
+  json: DATA,
+  jsonc: DATA,
+  json5: DATA,
+  html: CODE,
+  htm: CODE,
+  css: CODE,
+  js: CODE,
+  mjs: CODE,
+  cjs: CODE,
+  ts: CODE,
+  tsx: CODE,
+  jsx: CODE,
+  svg: CODE,
+  xml: CODE,
 }
 
-export const fileIconOf = (path: string): IconName => FILE_ICONS[extensionOf(path)] ?? 'file-other'
+/** 按扩展名给图标和色调：HTML / 代码 copper，JSON ochre，Markdown teal，其余按纯文本 umber。 */
+export const fileLookOf = (path: string): FileLook => LOOKS[extensionOf(path)] ?? DOC
 
 export const dirName = (path: string): string => {
   const slash = path.lastIndexOf('/')
@@ -35,27 +46,6 @@ export const splitFileName = (name: string): { head: string; tail: string } => {
   const cut = name.lastIndexOf('.') - KEPT_STEM_TAIL
   if (cut <= 0) return { head: name, tail: '' }
   return { head: name.slice(0, cut), tail: name.slice(cut) }
-}
-
-export type FileGroup<T extends { path: string }> = {
-  dir: string
-  files: T[]
-}
-
-export const groupByDirectory = <T extends { path: string }>(
-  files: readonly T[],
-): FileGroup<T>[] => {
-  const groups = new Map<string, T[]>()
-  for (const file of files) {
-    const dir = dirName(file.path)
-    groups.set(dir, [...(groups.get(dir) ?? []), file])
-  }
-  return [...groups.entries()]
-    .sort(([left], [right]) => (left === '' ? -1 : right === '' ? 1 : left.localeCompare(right)))
-    .map(([dir, members]) => ({
-      dir,
-      files: [...members].sort((left, right) => left.path.localeCompare(right.path)),
-    }))
 }
 
 export const formatBytes = (bytes: number): string => {

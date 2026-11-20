@@ -1,0 +1,36 @@
+/* 目录树按层缩进：每深一层 21px，每层在上一层图标中线下（13px 处）画一道竖线。
+   行与行之间的 1px 空隙也算在行里，竖线才能连成一条。层数由行上的 --tree-depth 给。 */
+.files-tree-row {
+  --tree-indent: 21px;
+  padding-bottom: 1px;
+  padding-left: calc(var(--tree-depth) * var(--tree-indent));
+  background: repeating-linear-gradient(
+      to right,
+      transparent 0 13px,
+      var(--color-panel-line-strong) 13px 14px,
+      transparent 14px var(--tree-indent)
+    )
+    0 0 / calc(var(--tree-depth) * var(--tree-indent)) 100% no-repeat;
+}
+
+/* 图标的淡填充层跟着行的色调（见 shared/icons/final-cut-glyphs.css） */
+.files-tone {
+  --icon-fill-opacity: 0.26;
+  --icon-fill-color: var(--files-tone);
+  color: var(--files-tone);
+}
+.files-tone[data-tone='copper'] {
+  --files-tone: var(--color-tone-copper);
+}
+.files-tone[data-tone='ochre'] {
+  --files-tone: var(--color-tone-ochre);
+}
+.files-tone[data-tone='teal'] {
+  --files-tone: var(--color-tone-teal);
+}
+.files-tone[data-tone='umber'] {
+  --files-tone: var(--color-tone-umber);
+}
+.files-tone[data-tone='slate'] {
+  --files-tone: var(--color-tone-slate);
+}
