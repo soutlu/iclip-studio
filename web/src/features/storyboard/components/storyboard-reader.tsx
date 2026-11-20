@@ -145,80 +145,83 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
   return (
     <>
       <div className="storyboard-workbench" ref={setRoot}>
-        <StoryboardToolbar
-          copy={{ done: '已复制完整提示词', label: '复制完整提示词', text: formatShotPrompt(shot) }}
-          groups={shots.map((item) => shotGroupSummary(item, document.aspect_ratio))}
-          onGoShot={goShot}
-          position={position}
-          status={
-            <SaveStatus
-              state={draft.state}
-              hasUnsavedChanges={draft.hasUnsavedChanges}
-              appliedUpload={draft.hasUnsavedUpload}
-              onRetry={() => void draft.saveNow()}
+        <ReaderPage
+          editingDisabled={editingDisabled}
+          aspect_ratio={document.aspect_ratio}
+          onUpdateShot={(updater) => draft.updateShot(shot.index, updater)}
+          onReplaceFrame={(frame, previousUrl, url) => {
+            draft.replaceFrame(shot.index, frame, previousUrl, url)
+            draft.recordUpload(shot.index, frame, url)
+          }}
+          onUploaded={(content, frame, url, follow) => {
+            draft.recordUpload(shot.index, frame, url)
+            if (follow) go({ content, frame })
+          }}
+          onUploadingChange={gate.onUploadingChange}
+          onEditFrame={(frame, open) => {
+            setImageEdit({
+              target: { conversationId, shotIndex: shot.index, frameNumber: frame },
+              ...(open.kind === 'result' ? { initialKey: open.jobId } : {}),
+              trigger:
+                window.document.activeElement instanceof HTMLElement
+                  ? window.document.activeElement
+                  : null,
+            })
+          }}
+          content={search.content}
+          frame={search.frame}
+          frameBadges={frameBadges(shot, latestFrameJob, seenFrameJobs)}
+          onSelect={(content, frame) => {
+            stage.selectContent()
+            go({ content, frame })
+          }}
+          onPreview={setMedia}
+          shot={shot}
+          take={
+            selectedTake === undefined
+              ? undefined
+              : {
+                  actions: takeActionsOf(selectedTake, { readOnly }),
+                  onEditVideo: () => go({ video: selectedTake.job.id }),
+                  onRefill: () => {
+                    if (selectedTake.history !== undefined) refill(selectedTake.history)
+                  },
+                  take: selectedTake,
+                }
+          }
+          takes={
+            <TakesTray
+              error={
+                generations.isError
+                  ? errorMessageOf(generations.error, '读取视频记录失败')
+                  : undefined
+              }
+              onSelect={stage.selectTake}
+              selectedId={selectedTake?.job.id}
+              takes={takes}
+            />
+          }
+          toolbar={
+            <StoryboardToolbar
+              copy={{
+                done: '已复制完整提示词',
+                label: '复制完整提示词',
+                text: formatShotPrompt(shot),
+              }}
+              groups={shots.map((item) => shotGroupSummary(item, document.aspect_ratio))}
+              onGoShot={goShot}
+              position={position}
+              status={
+                <SaveStatus
+                  state={draft.state}
+                  hasUnsavedChanges={draft.hasUnsavedChanges}
+                  appliedUpload={draft.hasUnsavedUpload}
+                  onRetry={() => void draft.saveNow()}
+                />
+              }
             />
           }
         />
-        <div className="flex min-h-0 w-full min-w-0 flex-1 overflow-hidden">
-          <ReaderPage
-            editingDisabled={editingDisabled}
-            aspect_ratio={document.aspect_ratio}
-            onUpdateShot={(updater) => draft.updateShot(shot.index, updater)}
-            onReplaceFrame={(frame, previousUrl, url) => {
-              draft.replaceFrame(shot.index, frame, previousUrl, url)
-              draft.recordUpload(shot.index, frame, url)
-            }}
-            onUploaded={(content, frame, url, follow) => {
-              draft.recordUpload(shot.index, frame, url)
-              if (follow) go({ content, frame })
-            }}
-            onUploadingChange={gate.onUploadingChange}
-            onEditFrame={(frame, open) => {
-              setImageEdit({
-                target: { conversationId, shotIndex: shot.index, frameNumber: frame },
-                ...(open.kind === 'result' ? { initialKey: open.jobId } : {}),
-                trigger:
-                  window.document.activeElement instanceof HTMLElement
-                    ? window.document.activeElement
-                    : null,
-              })
-            }}
-            content={search.content}
-            frame={search.frame}
-            frameBadges={frameBadges(shot, latestFrameJob, seenFrameJobs)}
-            key={shot.index}
-            onSelect={(content, frame) => {
-              stage.selectContent()
-              go({ content, frame })
-            }}
-            onPreview={setMedia}
-            shot={shot}
-            take={
-              selectedTake === undefined
-                ? undefined
-                : {
-                    actions: takeActionsOf(selectedTake, { readOnly }),
-                    onEditVideo: () => go({ video: selectedTake.job.id }),
-                    onRefill: () => {
-                      if (selectedTake.history !== undefined) refill(selectedTake.history)
-                    },
-                    take: selectedTake,
-                  }
-            }
-            takes={
-              <TakesTray
-                error={
-                  generations.isError
-                    ? errorMessageOf(generations.error, '读取视频记录失败')
-                    : undefined
-                }
-                onSelect={stage.selectTake}
-                selectedId={selectedTake?.job.id}
-                takes={takes}
-              />
-            }
-          />
-        </div>
         <VideoGenerationBar
           aspect={{
             description: '画幅写回分镜，不是生成参数',

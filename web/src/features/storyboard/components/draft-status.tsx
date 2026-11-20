@@ -12,7 +12,7 @@ import type { SaveState } from '../use-shots-draft'
 
 export function ReaderNotice({ text }: { text: string }) {
   return (
-    <div className="flex min-h-0 flex-1 items-center justify-center gap-2 px-6 text-center">
+    <div className="storyboard-notice">
       <p className="text-body-sm text-on-surface-variant">{text}</p>
     </div>
   )

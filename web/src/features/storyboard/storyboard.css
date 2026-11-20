@@ -83,18 +83,23 @@
   outline-offset: 1px;
 }
 /* ===== 分镜工作台布局：断点与列宽只在这一节定义 =====
-   结构只有一种：左边舞台、右边文案列。唯一的断点是工作台窄于 640 时上下排；
+   结构只有一种：左边舞台、右边浮起的脚本面板，底下一条浮起的出片栏，三块都落在工作台的凹陷底色上，
+   四周留 0 12px 12px、块与块之间留 --storyboard-gap，顶边贴着工作台顶栏。唯一的断点是工作台窄于 640 时上下排；
    断点量的是工作台根（容器查询），它能拖宽、聊天栏能收起，视口宽度说明不了什么。
    主体与舞台自己也是容器，查工作台宽度一律按名字 storyboard-workbench 查，免得查到里层。
    左右排时舞台列宽 = 舞台高 × 分镜画幅（--storyboard-ar，挂在舞台列上），舞台高由主体高度推出，所以主体是
-   两个方向都量的容器；剩下的宽度都给文案列，文案列至少保留 clamp(320px, 40%, 480px)，不够时舞台列让。
-   两列之间是一条贯穿主体高度的发丝分隔线，两侧各留 --storyboard-column-gap；上下排时没有分隔线。 */
+   两个方向都量的容器；剩下的宽度都给脚本面板，面板至少保留 clamp(300px, 42%, 460px)，不够时舞台列让。 */
 .storyboard-workbench {
   /* 压在画面与深色舞台上的深色玻璃：舞台上的 @N、箭头、帧计数、工具按钮与素材片卡角标共用，不随主题换。
      只模糊不加饱和度、底色够密：压在高饱和的画面上（如彩条测试卡）也读作中性深色，不被染成彩色按钮。 */
   --storyboard-glass: color-mix(in srgb, var(--color-scrim) 64%, transparent);
   --storyboard-glass-hover: color-mix(in srgb, var(--color-scrim) 78%, transparent);
   --storyboard-glass-line: color-mix(in srgb, var(--color-on-scrim) 14%, transparent);
+  /* 深色舞台比浮起面板沉一些：投影更长更重，浅深主题同一套。 */
+  --storyboard-stage-shadow: 0 12px 32px -12px
+    color-mix(in srgb, var(--color-shadow) 32%, transparent);
+  --storyboard-gap: 10px;
+  --storyboard-toolbar-height: 48px;
   container: storyboard-workbench / inline-size;
   /* 舞台、素材片区等叠层的局部 z-index 只在工作台里排序，不越过工作台与壳上的兄弟层；镜头组列表等浮层挂在 body 上，不受影响。 */
   isolation: isolate;
@@ -104,33 +109,50 @@
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  gap: var(--storyboard-gap);
+  padding: 0 12px 12px;
   overflow: hidden;
 }
+/* 浮起面板：脚本面板、出片栏和读取提示共用一种材质。 */
+.storyboard-script,
+.storyboard-bar,
+.storyboard-notice {
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-panel), var(--shadow-specular);
+}
+/* 读取中、读取失败、分镜有问题时整块只放一段居中的提示。 */
+.storyboard-notice {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0 12px 12px;
+  padding: 0 24px;
+  text-align: center;
+}
+/* 脚本面板头部的工具行：保存状态、镜头组切换、复制提示词。 */
 .storyboard-toolbar {
   display: flex;
   min-width: 0;
-  min-height: 52px;
+  min-height: var(--storyboard-toolbar-height);
   flex: none;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
+  padding: 6px 12px 6px 14px;
+  border-bottom: 1px solid var(--color-panel-line);
 }
 .storyboard-body {
-  --storyboard-column-gap: 24px;
   container: storyboard-body / size;
   display: flex;
   min-width: 0;
   min-height: 0;
   flex: 1;
-  padding: 0 16px 8px;
-  overflow: hidden;
-}
-.storyboard-divider {
-  width: 1px;
-  flex: none;
-  margin: 0 var(--storyboard-column-gap);
-  background: var(--color-hairline);
+  gap: var(--storyboard-gap);
 }
 /* 舞台列：只有舞台，撑满主体高度（一直延伸到出片栏），宽度按舞台高 × 画幅。操作都叠在舞台上，下面不再另起一行。 */
 .storyboard-stage-column {
@@ -153,9 +175,11 @@
   flex: 1;
   place-items: center;
   overflow: clip;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-panel);
   background: var(--color-storyboard-stage);
-  box-shadow: inset 0 0 0 1px var(--color-storyboard-stage-line);
+  box-shadow:
+    var(--storyboard-stage-shadow),
+    inset 0 0 0 1px var(--color-storyboard-stage-line);
   container: storyboard-stage / size;
 }
 /* 舞台内容的一层包装：换了显示的东西就重挂，淡入由元素上的 animate-in 给。
@@ -190,20 +214,24 @@
   position: absolute;
   inset: 0;
 }
-/* 文案列：占舞台列以外的宽度；正文区占满剩下的高度、自己竖向滚；列底留给素材片区。 */
+/* 脚本面板：占舞台列以外的宽度；头部是工具行，正文区占满剩下的高度、自己竖向滚；面板底留给素材片区。
+   裁切用 clip：素材片区横滑出血到面板右缘、在圆角里切开，又不让面板变成可滚动的容器。
+   面板自成层叠上下文：左轨、色签等局部叠层只在面板里排序，上下排滚动时不会盖到吸顶的舞台上。 */
 .storyboard-script {
+  isolation: isolate;
   display: flex;
-  min-width: clamp(320px, 40%, 480px);
+  min-width: clamp(300px, 42%, 460px);
   min-height: 0;
   flex: 1 1 0;
   flex-direction: column;
-  gap: 12px;
+  overflow: clip;
 }
 .storyboard-prose {
   display: flex;
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  padding: 0 14px;
 }
 .storyboard-script-list {
   min-height: 0;
@@ -214,35 +242,46 @@
   scrollbar-width: thin;
 }
 @container storyboard-workbench (width < 640px) {
-  /* 上下排：舞台在上限高、占满宽，文案在下，主体整体竖向滚动。 */
+  /* 上下排：舞台在上限高、占满宽，脚本面板在下，主体整体竖向滚动。主体左右伸到工作台边缘再垫回同样的内距，
+     面板的投影不被滚动容器切掉。 */
   .storyboard-body {
+    --storyboard-stacked-stage: 45vh;
     flex-direction: column;
-    gap: 16px;
+    gap: 0;
+    margin: 0 -12px;
+    padding: 0 12px 4px;
     overflow-y: auto;
     overscroll-behavior-y: contain;
-    padding-bottom: 4px;
-    /* 聚焦滚动（点素材片卡、Tab 进正文）把目标停在吸顶的舞台下面，不被它盖住：舞台 45vh + 余量。 */
-    scroll-padding-top: calc(45vh + 12px);
+    /* 聚焦滚动（点素材片卡、Tab 进正文）把目标停在吸顶的舞台与工具行下面，不被它们盖住。 */
+    scroll-padding-top: calc(
+      var(--storyboard-stacked-stage) + var(--storyboard-gap) + var(--storyboard-toolbar-height) +
+        8px
+    );
   }
-  /* 舞台吸顶：往下读文案时画面和叠在上面的操作一直在；垫一层页面底色，滚过去的正文不透出来。 */
+  /* 舞台吸顶：往下读文案时画面和叠在上面的操作一直在；连同下面的间隔垫一层工作台底色，滚过去的正文不透出来。 */
   .storyboard-stage-column {
     position: sticky;
     z-index: var(--z-local-1);
     top: 0;
     width: 100%;
     flex: none;
-    background: var(--color-background);
+    padding-bottom: var(--storyboard-gap);
+    background: var(--color-control-well);
   }
   .storyboard-stage {
-    height: 45vh;
+    height: var(--storyboard-stacked-stage);
     flex: none;
-  }
-  .storyboard-divider {
-    display: none;
   }
   .storyboard-script {
     min-width: 0;
     flex: none;
+  }
+  /* 工具行吸在舞台下面：往下读文案时换组、复制一直够得着；压在面板里左轨、图片叠放等一层叠层之上。 */
+  .storyboard-toolbar {
+    position: sticky;
+    z-index: var(--z-local-2);
+    top: calc(var(--storyboard-stacked-stage) + var(--storyboard-gap));
+    background: var(--color-surface);
   }
   .storyboard-prose,
   .storyboard-script-list {
@@ -634,7 +673,7 @@
   margin-left: -6px;
   padding: 0;
   overflow: hidden;
-  border: 2px solid var(--color-background);
+  border: 2px solid var(--color-surface);
   border-radius: var(--radius-sm);
   background: var(--color-surface-container);
   cursor: pointer;
@@ -667,16 +706,22 @@
 /* ===== 出片栏 =====
    参数始终一行、不换行：放不下时先截断模型 id（至少留 96px），再不够就横向滚、两端渐隐。
    宽屏参数在左、主按钮在右；窄于 480（手机）分两行，主按钮占满第二行。
-   参数控件一套规格：34px 高、sm 圆角、发丝线描边、卡面白底，字与图标中性；画幅在最左，竖线隔开后是生成设置。
+   参数控件一套规格，尺寸与材质由 --storyboard-control-* 给：出片栏是浮起面板，用工作台控件的 32px 高、
+   工作台控件圆角、面板细线描边、卡面白底、紧凑字号；弹窗里共用的模型、分辨率控件不在出片栏里，按缺省的
+   34px 高、sm 圆角、发丝线描边、白底、正文字号。字与图标中性；画幅在最左，竖线隔开后是生成设置。
    选中与展开用中性灰，主色只留给出片按钮；画幅不被模型支持时画幅按钮换错误态。模型与画幅的菜单向上弹，挂在 portal 里。
    控件上方的状态行有话才出现：置灰原因用次级字色，错误用错误色。 */
 .storyboard-bar {
+  --storyboard-control-height: 32px;
+  --storyboard-control-radius: var(--radius-control);
+  --storyboard-control-line: var(--color-panel-line);
+  --storyboard-control-fill: var(--color-card);
+  --storyboard-control-text: var(--text-ui);
   display: flex;
   flex: none;
   flex-direction: column;
   gap: 8px;
-  margin: 4px 16px 16px;
-  padding: 8px 8px 8px 10px;
+  padding: 8px 10px 8px 12px;
 }
 .storyboard-bar-row {
   display: flex;
@@ -726,11 +771,11 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  height: var(--control-height-sm);
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-sm);
-  background-color: var(--color-surface-container-lowest);
-  font-size: var(--text-body);
+  height: var(--storyboard-control-height, var(--control-height-sm));
+  border: 1px solid var(--storyboard-control-line, var(--color-hairline));
+  border-radius: var(--storyboard-control-radius, var(--radius-sm));
+  background-color: var(--storyboard-control-fill, var(--color-surface-container-lowest));
+  font-size: var(--storyboard-control-text, var(--text-body));
 }
 /* 颜色与指针只管可用态，禁用态的淡色与指针交给 ui-state。 */
 .storyboard-bar-control:enabled {
@@ -785,7 +830,7 @@
   color: inherit;
 }
 .storyboard-bar-audio {
-  width: var(--control-height-sm);
+  width: var(--storyboard-control-height, var(--control-height-sm));
 }
 /* 音频关着：图标换成静音并变淡。 */
 .storyboard-bar-audio[aria-pressed='false']:enabled {
@@ -793,16 +838,16 @@
 }
 /* 分辨率分段：外框与其余控件同高、同描边、同底，选中项是一块中性灰底，不浮起。 */
 .storyboard-bar-segmented {
-  height: var(--control-height-sm);
+  height: var(--storyboard-control-height, var(--control-height-sm));
   padding: 2px;
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-sm);
-  background-color: var(--color-surface-container-lowest);
+  border: 1px solid var(--storyboard-control-line, var(--color-hairline));
+  border-radius: var(--storyboard-control-radius, var(--radius-sm));
+  background-color: var(--storyboard-control-fill, var(--color-surface-container-lowest));
 }
 .storyboard-bar-segment {
   padding: 0 8px;
   border-radius: var(--radius-xs);
-  font-size: var(--text-body);
+  font-size: var(--storyboard-control-text, var(--text-body));
   font-variant-numeric: tabular-nums;
 }
 /* 共享分段的选中项是浮起的白块，出片栏控件本身就是白底，这里换成灰底、去掉投影。 */
@@ -893,15 +938,16 @@
 }
 
 /* ===== 素材片区 =====
-   文案列底部一行横滑的出片卡。左右排时左边贴齐文案列起点、右边出血到工作台右边缘（抵掉主体的 16px 内距），
-   卡片在工作台边缘被切开，正文区自己滚、素材片区钉在列底常驻可见；上下排时两侧都出血，排在正文之后随主体滚动。
+   脚本面板底部一行横滑的出片卡，上面一条面板细线和正文隔开。左边贴齐正文起点、右边出血到面板右缘，
+   卡片在面板边缘被切开；左右排时正文区自己滚、素材片区钉在面板底常驻可见，上下排时排在正文之后随主体滚动。
    行高 176，卡宽由 takeCardSize 算好写在元素上，同一行底边对齐；箭头只在放不下时出现。
-   整张卡是按钮，选中那张套一圈中性描边；滚动行四周留 4px 给描边，负边距抵掉，卡的起点仍贴齐文案列。 */
+   整张卡是按钮，选中那张套一圈中性描边；滚动行四周留 4px 给描边，负边距抵掉，卡的起点仍贴齐正文。 */
 .storyboard-takes {
   --storyboard-fade: 40px;
   min-width: 0;
   flex: none;
-  margin-right: -16px;
+  padding: 10px 0 12px 14px;
+  border-top: 1px solid var(--color-panel-line);
 }
 .storyboard-takes-head {
   display: flex;
@@ -909,7 +955,7 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
-  padding-right: 16px;
+  padding-right: 12px;
   color: var(--color-on-surface-muted);
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
@@ -927,7 +973,7 @@
   margin: -4px 0 0 -4px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  scroll-padding-inline: 4px 16px;
+  scroll-padding-inline: 4px 14px;
   scrollbar-width: none;
 }
 .storyboard-takes-list {
@@ -935,7 +981,7 @@
   width: max-content;
   align-items: flex-end;
   gap: 12px;
-  padding: 4px 16px 4px 4px;
+  padding: 4px 14px 4px 4px;
 }
 .storyboard-take-item {
   display: flex;
@@ -967,10 +1013,10 @@
   background: var(--color-surface-container-high);
   box-shadow: none;
 }
-/* 选中：页面底色隔 2px，再一圈 2px 正文色；中性，不用主色。 */
+/* 选中：面板底色隔 2px，再一圈 2px 正文色；中性，不用主色。 */
 .storyboard-take[aria-pressed='true'] {
   box-shadow:
-    0 0 0 2px var(--color-background),
+    0 0 0 2px var(--color-surface),
     0 0 0 4px var(--color-on-surface);
 }
 .storyboard-take-veil {
@@ -1040,22 +1086,6 @@
 .storyboard-take-duration {
   right: 8px;
   bottom: 8px;
-}
-@container storyboard-workbench (width < 640px) {
-  /* 上下排：两侧出血，排在正文之后跟着主体一起滚；舞台已吸顶，再钉住素材片区正文就没地方了。 */
-  .storyboard-takes {
-    margin: 0 -16px;
-  }
-  .storyboard-takes-head {
-    padding: 0 16px;
-  }
-  .storyboard-takes-rail {
-    margin-left: 0;
-    scroll-padding-inline: 16px;
-  }
-  .storyboard-takes-list {
-    padding: 4px 16px;
-  }
 }
 
 /* ===== 舞台上的内容 =====
