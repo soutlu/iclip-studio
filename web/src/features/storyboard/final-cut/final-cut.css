@@ -238,6 +238,15 @@
   font-weight: 600;
 }
 
+/* 深色下槽底压得更深、当前那段用浅一档的面，才浮得起来（同工作台顶部的分段页签） */
+.dark .wf-editor .wf-seg {
+  background: var(--color-control-well);
+}
+
+.dark .wf-editor .wf-seg-item:is([aria-pressed='true'], [data-state='on']) {
+  background: var(--color-surface-container-high);
+}
+
 /* 输入框、文字框和装着输入框的条：凹进去的浅底，聚焦时浮起成白底、外面一圈 1.5px 淡框（照稿子）。
    焦点只画这圈淡框：边框不转墨色，设计系统的焦点环宽度置 0，不再叠一圈墨色框。
    两个类压过输入框自带的边框、圆角、底色和焦点环宽度：构建后工具类与这里同层，单个类比不过加载顺序 */
