@@ -2,6 +2,7 @@ import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { useCallback, type ReactNode } from 'react'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
+import { WORKBENCH_BUTTON_CLASS } from '@/shared/workbench'
 import type { ContentPane } from './-app-shell-layout'
 import { revealClippedFocus } from './-reveal-clipped-focus'
 
@@ -99,7 +100,7 @@ export function AppContentPane({
           data-pane-drag-handle
         >
           <IconButton
-            className="size-7.5 shrink-0 rounded-control text-on-surface-muted"
+            className={WORKBENCH_BUTTON_CLASS}
             data-pane-restore
             label="展开工作台"
             name="final-cut-panel-open"

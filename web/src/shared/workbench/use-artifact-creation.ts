@@ -95,7 +95,8 @@ export const useArtifactCreation = ({
         .creatable()
         .filter((entry) => !artifacts.some((artifact) => artifact.type === entry.type))
   return {
-    arrived: (id: string) => initialIds !== null && !initialIds.has(id),
+    arrived: (id: string) =>
+      initialIds !== null && !initialIds.has(id) && present.some((artifact) => artifact.id === id),
     creatable,
     create: (entry: CreatableEntry) => {
       if (!mutation.isPending) mutation.mutate(entry)

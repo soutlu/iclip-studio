@@ -718,7 +718,7 @@ describe('WorkbenchHost · 新建', () => {
     expect(await screen.findByRole('button', { name: '新建' })).toBeVisible()
   })
 
-  it('只读查看别人的对话：没有「+」，选择页里也没有新建', async () => {
+  it('只读查看别人的对话：没有「+」', async () => {
     addMockConversation('别人的对话', undefined, OTHER_USER_ID, CONVERSATION_ID)
     serveFiles(['video_shot.json'])
     await renderHost(ROOMY, withCreatable(), `/c/${CONVERSATION_ID}`)

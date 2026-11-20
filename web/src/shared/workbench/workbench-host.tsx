@@ -14,6 +14,7 @@ import type { Artifact, ArtifactEntry, WorkbenchFrame } from './artifact'
 import { useArtifactSearch, useOpenArtifact } from './artifact-search'
 import { composeArtifacts, isStanding, pickArtifact, type ArtifactRegistry } from './registry'
 import { useArtifactCreation } from './use-artifact-creation'
+import { WORKBENCH_BUTTON_CLASS } from './workbench-button'
 import { useWorkbenchRegistry } from './use-workbench-registry'
 import { useWorkbenchOpenRequest } from './use-workbench-open-request'
 import { Chooser, type ChooserRow } from './workbench-chooser'
@@ -76,9 +77,6 @@ const chooserRows = (registry: ArtifactRegistry, artifacts: readonly Artifact[])
   })
   return [...standing, ...fromFrames]
 }
-
-// 顶栏右边和竖条里的图标按钮：30×30
-const BAR_BUTTON_CLASS = 'size-7.5 rounded-control text-on-surface-muted'
 
 /** 工作台顶栏：48 高、没有底线，左边页签（或标题），右边 `end`。 */
 function WorkbenchBar({ children, end }: { children: ReactNode; end: ReactNode }) {
@@ -186,7 +184,7 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
 
   const actions = compact ? null : !sideBySide ? (
     <IconButton
-      className={BAR_BUTTON_CLASS}
+      className={WORKBENCH_BUTTON_CLASS}
       label="回到对话"
       name="back"
       onClick={() => onCollapsedChange(true)}
@@ -196,7 +194,7 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
     <>
       {chrome.onSwapPanes === undefined ? null : (
         <IconButton
-          className={BAR_BUTTON_CLASS}
+          className={WORKBENCH_BUTTON_CLASS}
           label="交换对话与工作台"
           name="swap-panes"
           onClick={chrome.onSwapPanes}
@@ -204,7 +202,7 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
         />
       )}
       <IconButton
-        className={BAR_BUTTON_CLASS}
+        className={WORKBENCH_BUTTON_CLASS}
         label="折叠工作台"
         name="final-cut-panel-close"
         onClick={() => onCollapsedChange(true)}

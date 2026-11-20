@@ -2,9 +2,8 @@ import type { IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import type { CreatableEntry } from './artifact'
+import { WORKBENCH_BUTTON_CLASS } from './workbench-button'
 import { CreatingMark } from './workbench-create'
-
-const RAIL_BUTTON_CLASS = 'size-7.5 shrink-0 rounded-control text-on-surface-muted'
 
 type RailItem = { id: string; title: string; icon: IconName }
 
@@ -32,7 +31,7 @@ export function WorkbenchRail({
       <span aria-hidden className="my-0.75 h-px w-4.5 shrink-0 bg-panel-line-strong" />
       {items.map((item) => (
         <IconButton
-          className={RAIL_BUTTON_CLASS}
+          className={WORKBENCH_BUTTON_CLASS}
           key={item.id}
           label={item.title}
           name={item.icon}
@@ -49,7 +48,7 @@ export function WorkbenchRail({
           />
         ) : (
           <IconButton
-            className={cn(RAIL_BUTTON_CLASS, index === 0 && 'mt-auto')}
+            className={cn(WORKBENCH_BUTTON_CLASS, index === 0 && 'mt-auto')}
             disabled={creating !== undefined}
             key={entry.type}
             label={`新建 ${entry.label}`}
