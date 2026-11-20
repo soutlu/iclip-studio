@@ -4,7 +4,7 @@ import { versionLabel } from '../editing/version-lineage'
 import type { Edge } from '../editing/timeline-drag'
 import { MIN_CLIP_MS, type VideoClip } from './composition/film'
 
-/** 选区加入 final-cut 时拆成的一个片段：从素材的哪里开始放、放多长（毫秒）。一个镜头一个。 */
+/** 选区加入轨道时拆成的一个片段：从素材的哪里开始放、放多长（毫秒）。一个镜头一个。 */
 export type MaterialPiece = { mediaStart: number; duration: number }
 
 export type Material = {
@@ -164,7 +164,7 @@ export const slideSpan = <T extends MediaSpan>(
 }
 
 /**
- * 加入 final-cut 时一段拆成的片段：在段里的镜头切口处切开，一个镜头一个片段。
+ * 加入轨道时一段拆成的片段：在段里的镜头切口处切开，一个镜头一个片段。
  * 离一端或上一个切口不到一个最短片段的切口不切，那一小截并进旁边的片段。
  */
 export const spanPieces = (span: MediaSpan, shots: readonly MediaSpan[]): MaterialPiece[] => {
@@ -182,7 +182,7 @@ export const spanPieces = (span: MediaSpan, shots: readonly MediaSpan[]): Materi
 
 export type PickedSpan = { material: Material; span: MediaSpan }
 
-/** 选区里的各段，按加入 final-cut 的先后排：原作按在「镜头」页签里的顺序，同一条原作里按时间。 */
+/** 选区里的各段，按加入轨道的先后排：原作按在「镜头」页签里的顺序，同一条原作里按时间。 */
 export const orderedPicks = (
   groups: readonly MaterialGroup[],
   picks: MaterialPicks,
@@ -224,6 +224,29 @@ export const usedSpans = (
   return used
 }
 
+/** 一条原作算不算已入轨：只要有一个版本被时间线上的视频片段用着。`used` 见 `usedSpans`。 */
+export const takeInTrack = (
+  take: MaterialTake,
+  used: ReadonlyMap<string, readonly UsedSpan[]>,
+): boolean => take.versions.some((item) => used.has(item.url))
+
+/** 「镜头」页签按入轨筛选：全部、未入轨、已入轨。 */
+export type TakeFilter = 'all' | 'unused' | 'used'
+
+/** 按 `filter` 筛出各组的原作；一条都不剩的组不要。 */
+export const filterTakes = (
+  groups: readonly MaterialGroup[],
+  filter: TakeFilter,
+  used: ReadonlyMap<string, readonly UsedSpan[]>,
+): MaterialGroup[] =>
+  groups.flatMap((group) => {
+    const takes =
+      filter === 'all'
+        ? group.takes
+        : group.takes.filter((take) => takeInTrack(take, used) === (filter === 'used'))
+    return takes.length === 0 ? [] : [{ ...group, takes }]
+  })
+
 export const shotAt = (shots: readonly SecondsRange[], seconds: number): number | undefined => {
   const index = shots.findIndex((shot) => seconds >= shot.start - 0.001 && seconds < shot.end)
   return index < 0 ? undefined : index + 1
@@ -252,7 +275,7 @@ export const materialCatalog = (groups: readonly ConversationVideoGroup[]): Mate
     }
     const takes = [...byTake].flatMap(([takeId, videos], index): MaterialTake[] => {
       const letter = takeLetter(index)
-      const takeLabel = `生成 ${letter}`
+      const takeLabel = `出片 ${letter}`
       const versions = videos.map((video) => ({
         jobId: video.id,
         url: video.outputUrl,

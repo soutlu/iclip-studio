@@ -1,8 +1,6 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
-import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { mintUuid } from '@/shared/lib/uuid'
-import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { Frames, TrimHandle } from '../editing/timeline'
 import {
   arrowStep,
@@ -30,6 +28,7 @@ import {
   type PickSpan,
   type UsedSpan,
 } from './materials'
+import { TakeHead } from './take-head'
 
 export type CarryPoint = { clientX: number; clientY: number }
 
@@ -42,12 +41,15 @@ type TakeCardProps = {
   spans: readonly PickSpan[]
   /** 素材预览正放着这一版里的一段。 */
   previewing: boolean
-  used: readonly UsedSpan[]
+  /** 时间线上用掉的素材段，按素材地址分（见 `usedSpans`）。 */
+  used: ReadonlyMap<string, readonly UsedSpan[]>
   /** 素材预览在播时播到哪里（毫秒）；只在预览放着这一版时给。 */
   playingMs: number | undefined
   /** 选区改了；`view` 是改完要在素材预览里放的那一段，去掉一段时是 null。 */
   onChange: (spans: readonly PickSpan[], view: MaterialView | null) => void
   onInsert: () => void
+  /** 「+」：把显示着的版本从头到尾整条加入轨道。 */
+  onInsertWhole: (span: MediaSpan) => void
   onVersion: (takeId: string, jobId: string) => void
   /** 选区被拖出镜头条：带着这条原作上的选区跟着指针走；null 是取消了。 */
   onCarry: (point: CarryPoint | null, spans: readonly PickSpan[]) => void
@@ -75,6 +77,9 @@ const picked = (span: MediaSpan): PickSpan => ({ ...span, id: mintUuid() })
 /** 素材很长时镜头条至少这么宽（每秒像素），放不下就在卡片里横着滚，镜头不会挤成一条缝。 */
 const STRIP_PX_PER_SECOND = 28
 
+/** 选区至少这么长才在左上角写秒数（照稿子）：按上面的最小宽度，写得下「0.0s」。 */
+const PICK_TIME_MIN_MS = 1_800
+
 /** 拖动提示气泡宽度的一半左右：气泡跟着指针走，但不伸出卡片。 */
 const TIP_HALF_WIDTH = 64
 
@@ -101,7 +106,7 @@ const dimmedOf = (spans: readonly MediaSpan[], durationMs: number): MediaSpan[] 
   return gaps
 }
 
-/** 「镜头」页签里的一条原作：版本、总长，下面是满宽的镜头条和已经用了的段，选区直接画在镜头条上。 */
+/** 「镜头」页签里的一条原作：顶行见 `TakeHead`，下面是满宽的镜头条，入了轨的段和选区都画在镜头条上。 */
 export function TakeCard({
   take,
   version,
@@ -112,6 +117,7 @@ export function TakeCard({
   playingMs,
   onChange,
   onInsert,
+  onInsertWhole,
   onVersion,
   onCarry,
   onDrop,
@@ -263,99 +269,108 @@ export function TakeCard({
   useEditorEscape(lifting, cancel)
 
   const handlers = { onPointerCancel: cancel, onPointerMove: drag, onPointerUp: release }
-  const label = `${version.takeLetter} · ${version.versionNumber}`
   const dimmed: readonly MediaSpan[] = draft === null ? spans : addSpan<MediaSpan>(spans, draft)
+  // 已用段按选区的并段规则（addSpan）连起来画：整条加入时一个镜头一个片段，不连起来会断成一截一截
+  const usedHere = (used.get(version.url) ?? []).reduce<UsedSpan[]>(addSpan, [])
 
   return (
-    <div className={cn('wf-take', previewing && 'is-previewing')} ref={cardRef}>
-      <div className="wf-take-head">
-        {take.versions.length > 1 ? (
-          <MenuRoot>
-            <MenuTrigger asChild>
-              <button
-                aria-label={`${take.label}的版本：${version.version}`}
-                className="wf-take-version ui-state ui-focus"
-                type="button"
-              >
-                {label}
-                <Icon decorative name="final-cut-expand" size="xs" />
-              </button>
-            </MenuTrigger>
-            <MenuSurface align="start" className="wf-menu">
-              <MenuRadioGroup
-                onValueChange={(jobId) => onVersion(take.id, jobId)}
-                value={version.jobId}
-              >
-                {take.versions.map((item) => (
-                  <MenuRadioItem key={item.jobId} value={item.jobId}>
-                    {item.version}
-                  </MenuRadioItem>
-                ))}
-              </MenuRadioGroup>
-            </MenuSurface>
-          </MenuRoot>
-        ) : (
-          <span className="wf-take-version">{label}</span>
-        )}
-        <span className="wf-take-duration">
-          {durationMs === undefined ? null : `${seconds(durationMs)}s`}
-        </span>
-      </div>
+    <article
+      aria-label={take.label}
+      className={cn('wf-take', previewing && 'is-previewing')}
+      ref={cardRef}
+    >
+      <TakeHead
+        blocked={
+          keyframe?.kind === 'failed'
+            ? '镜头读取失败，无法加入轨道'
+            : durationMs === undefined
+              ? '正在读取镜头，请稍后加入轨道'
+              : undefined
+        }
+        durationMs={durationMs}
+        onInsertWhole={() => {
+          if (durationMs !== undefined) onInsertWhole({ startMs: 0, endMs: durationMs })
+        }}
+        onVersion={onVersion}
+        shotCount={durationMs === undefined ? undefined : shots.length}
+        take={take}
+        used={used}
+        version={version}
+      />
       <div className="wf-take-scroll">
         <div
-          className="wf-take-track"
+          className="wf-take-strip"
+          ref={stripRef}
           style={
             durationMs === undefined
               ? undefined
               : { minWidth: (durationMs / 1000) * STRIP_PX_PER_SECOND }
           }
         >
-          <div className="wf-take-strip" ref={stripRef}>
-            {keyframe === undefined || keyframe.kind === 'loading' ? (
-              <span className="wf-take-note">正在读取镜头…</span>
-            ) : keyframe.kind === 'failed' ? (
-              <span className="wf-take-note">{keyframe.message}</span>
-            ) : durationMs === undefined ? null : (
-              <>
-                {shots.map((shot, at) => (
-                  <button
-                    aria-keyshortcuts="Enter"
-                    aria-label={`${take.label} 镜头 ${at + 1}，${seconds(shot.startMs)}–${seconds(shot.endMs)} 秒`}
-                    aria-pressed={spanIndexAt(spans, (shot.startMs + shot.endMs) / 2) !== undefined}
-                    className="wf-shot ui-focus"
+          {keyframe === undefined || keyframe.kind === 'loading' ? (
+            <span className="wf-take-note">正在读取镜头…</span>
+          ) : keyframe.kind === 'failed' ? (
+            <span className="wf-take-note">{keyframe.message}</span>
+          ) : durationMs === undefined ? null : (
+            <>
+              {shots.map((shot, at) => (
+                <button
+                  aria-keyshortcuts="Enter"
+                  aria-label={`${take.label} 镜头 ${at + 1}，${seconds(shot.startMs)}–${seconds(shot.endMs)} 秒`}
+                  aria-pressed={spanIndexAt(spans, (shot.startMs + shot.endMs) / 2) !== undefined}
+                  className="wf-shot ui-focus"
+                  key={shot.startMs}
+                  onClick={(event) => {
+                    if (!clickAfterDrag.take()) pickShot(shot, event.shiftKey)
+                  }}
+                  onKeyDown={(event) => insertOnEnter(event, onInsert)}
+                  onPointerDown={(event) =>
+                    press(event, {
+                      kind: 'draw',
+                      anchorMs: Math.round(msAt(event.clientX)),
+                      shot,
+                      drawn: null,
+                    })
+                  }
+                  {...handlers}
+                  style={{
+                    left: percent(shot.startMs, durationMs),
+                    width: percent(shot.endMs - shot.startMs, durationMs),
+                  }}
+                  type="button"
+                >
+                  <Frames
+                    part={{
+                      mediaUrl: version.url,
+                      start: shot.startMs / 1000,
+                      end: shot.endMs / 1000,
+                    }}
+                  />
+                </button>
+              ))}
+              <span aria-hidden="true" className="wf-take-marks">
+                {shots.slice(1).map((shot) => (
+                  <span
+                    className="wf-take-cut"
                     key={shot.startMs}
-                    onClick={(event) => {
-                      if (!clickAfterDrag.take()) pickShot(shot, event.shiftKey)
-                    }}
-                    onKeyDown={(event) => insertOnEnter(event, onInsert)}
-                    onPointerDown={(event) =>
-                      press(event, {
-                        kind: 'draw',
-                        anchorMs: Math.round(msAt(event.clientX)),
-                        shot,
-                        drawn: null,
-                      })
-                    }
-                    {...handlers}
-                    style={{
-                      left: percent(shot.startMs, durationMs),
-                      width: `calc(${percent(shot.endMs - shot.startMs, durationMs)} - var(--wf-shot-gap))`,
-                    }}
-                    type="button"
-                  >
-                    <Frames
-                      part={{
-                        mediaUrl: version.url,
-                        start: shot.startMs / 1000,
-                        end: shot.endMs / 1000,
-                      }}
-                    />
-                  </button>
+                    style={{ left: percent(shot.startMs, durationMs) }}
+                  />
                 ))}
-                {dimmed.length === 0 ? null : (
-                  <span aria-hidden="true" className="wf-take-dim">
-                    {dimmedOf(dimmed, durationMs).map((gap) => (
+                {usedHere.map((span) => (
+                  <span
+                    className="wf-take-used"
+                    key={span.clipId}
+                    style={{
+                      left: percent(span.startMs, durationMs),
+                      right: percent(durationMs - span.endMs, durationMs),
+                    }}
+                  />
+                ))}
+                {dimmed.length === 0
+                  ? null
+                  : dimmedOf(dimmed, durationMs).map((gap) => (
                       <span
+                        className="wf-take-dim"
                         key={gap.startMs}
                         style={{
                           left: percent(gap.startMs, durationMs),
@@ -363,89 +378,79 @@ export function TakeCard({
                         }}
                       />
                     ))}
-                  </span>
-                )}
-                {spans.map((span, index) => (
-                  <div
-                    aria-label={`选中的范围 ${seconds(span.startMs)}–${seconds(span.endMs)} 秒，${spanPieces(span, shots).length} 个镜头，按 Enter 可加入 final-cut`}
-                    className={cn('wf-pick', lifting && 'is-lifting')}
-                    key={span.id}
-                    onPointerDown={(event) => press(event, { kind: 'slide', index })}
-                    {...handlers}
-                    role="group"
-                    style={{
-                      left: percent(span.startMs, durationMs),
-                      width: percent(span.endMs - span.startMs, durationMs),
-                    }}
-                  >
-                    {(['start', 'end'] as const).map((edge) => {
-                      const limits = edgeLimits(spans, index, edge, durationMs)
-                      const value = edge === 'start' ? span.startMs : span.endMs
-                      return (
-                        <TrimHandle
-                          bounds={{ min: limits.min / 1000, max: limits.max / 1000 }}
-                          edge={edge}
-                          key={edge}
-                          onKeyDown={(event) => {
-                            if (insertOnEnter(event, onInsert)) return
-                            const step = arrowStep(event)
-                            if (step === undefined) return
-                            event.preventDefault()
-                            const next = trimSpan(
-                              spans,
-                              index,
-                              edge,
-                              Math.round(step * 1000),
-                              durationMs,
-                            )
-                            const trimmed = next[index]
-                            if (trimmed !== undefined)
-                              onChange(next, { jobId: version.jobId, span: trimmed, show: edge })
-                          }}
-                          onPointerDown={(event) => press(event, { kind: 'trim', index, edge })}
-                          {...handlers}
-                          pressed={false}
-                          style={edge === 'start' ? { left: 0 } : { left: '100%' }}
-                          value={value / 1000}
-                          valueText={`${seconds(value)} 秒`}
-                        />
-                      )
-                    })}
-                  </div>
-                ))}
-                {draft === null ? null : (
-                  <span
-                    aria-hidden="true"
-                    className="wf-pick is-draft"
-                    style={{
-                      left: percent(draft.startMs, durationMs),
-                      width: percent(draft.endMs - draft.startMs, durationMs),
-                    }}
-                  />
-                )}
-                {previewing && playingMs !== undefined ? (
-                  <span
-                    aria-hidden="true"
-                    className="wf-material-playhead"
-                    data-testid="material-playhead"
-                    style={{ left: percent(playingMs, durationMs) }}
-                  />
-                ) : null}
-              </>
-            )}
-          </div>
-          {durationMs === undefined || used.length === 0 ? null : (
-            <div aria-hidden="true" className="wf-take-used">
-              {used.map((span) => (
-                <span
-                  key={span.clipId}
+              </span>
+              {spans.map((span, index) => (
+                <div
+                  aria-label={`选中的范围 ${seconds(span.startMs)}–${seconds(span.endMs)} 秒，${spanPieces(span, shots).length} 个镜头，按 Enter 可加入轨道`}
+                  className={cn('wf-pick', lifting && 'is-lifting')}
+                  key={span.id}
+                  onPointerDown={(event) => press(event, { kind: 'slide', index })}
+                  {...handlers}
+                  role="group"
                   style={{
                     left: percent(span.startMs, durationMs),
                     width: percent(span.endMs - span.startMs, durationMs),
                   }}
-                />
+                >
+                  {span.endMs - span.startMs >= PICK_TIME_MIN_MS ? (
+                    <span aria-hidden="true" className="wf-pick-time">
+                      {seconds(span.endMs - span.startMs)}s
+                    </span>
+                  ) : null}
+                  {(['start', 'end'] as const).map((edge) => {
+                    const limits = edgeLimits(spans, index, edge, durationMs)
+                    const value = edge === 'start' ? span.startMs : span.endMs
+                    return (
+                      <TrimHandle
+                        bounds={{ min: limits.min / 1000, max: limits.max / 1000 }}
+                        edge={edge}
+                        key={edge}
+                        onKeyDown={(event) => {
+                          if (insertOnEnter(event, onInsert)) return
+                          const step = arrowStep(event)
+                          if (step === undefined) return
+                          event.preventDefault()
+                          const next = trimSpan(
+                            spans,
+                            index,
+                            edge,
+                            Math.round(step * 1000),
+                            durationMs,
+                          )
+                          const trimmed = next[index]
+                          if (trimmed !== undefined)
+                            onChange(next, { jobId: version.jobId, span: trimmed, show: edge })
+                        }}
+                        onPointerDown={(event) => press(event, { kind: 'trim', index, edge })}
+                        {...handlers}
+                        pressed={false}
+                        style={edge === 'start' ? { left: 0 } : { left: '100%' }}
+                        value={value / 1000}
+                        valueText={`${seconds(value)} 秒`}
+                      />
+                    )
+                  })}
+                </div>
               ))}
-            </div>
+              {draft === null ? null : (
+                <span
+                  aria-hidden="true"
+                  className="wf-pick is-draft"
+                  style={{
+                    left: percent(draft.startMs, durationMs),
+                    width: percent(draft.endMs - draft.startMs, durationMs),
+                  }}
+                />
+              )}
+              {previewing && playingMs !== undefined ? (
+                <span
+                  aria-hidden="true"
+                  className="wf-material-playhead"
+                  data-testid="material-playhead"
+                  style={{ left: percent(playingMs, durationMs) }}
+                />
+              ) : null}
+            </>
           )}
         </div>
       </div>
@@ -454,6 +459,6 @@ export function TakeCard({
           {tip.text}
         </span>
       )}
-    </div>
+    </article>
   )
 }

@@ -28,6 +28,7 @@ import {
   serveGenerations,
   setUpEditorCase,
   shot,
+  TAKE_A,
   takes,
   tearDownEditorCase,
   toolbar,
@@ -58,11 +59,11 @@ describe('final-cut 编辑器 · 加入素材', () => {
       'true',
     )
     expect(progress()).toHaveAttribute('data-disabled')
-    expect(within(toolbar()).queryByRole('button', { name: '加入 final-cut' })).toBeNull()
+    expect(within(toolbar()).queryByRole('button', { name: '加入轨道' })).toBeNull()
     editorRoot().focus()
     await user.keyboard('{Enter}')
     expect(
-      await screen.findByText('尚未选中镜头，无法加入 final-cut；请先在「镜头」页签中选中镜头范围'),
+      await screen.findByText('尚未选中镜头，无法加入轨道；请先在「镜头」页签中选中镜头范围'),
     ).toBeVisible()
     const exportButton = screen.getByRole('button', { name: '导出' })
     expect(exportButton).toHaveAttribute('aria-disabled', 'true')
@@ -77,7 +78,7 @@ describe('final-cut 编辑器 · 加入素材', () => {
   it('选一个镜头按 Enter：按版本写进主文件，画幅不变，片段的 src 直接写素材片的地址', async () => {
     const user = userEvent.setup()
     await openEditor()
-    await user.click(await shot(/^生成 A 镜头 2，/))
+    await user.click(await shot(/^出片 A 镜头 2，/))
     await user.keyboard('{Enter}')
 
     await waitSaved(() => expect(savedClips()).toHaveLength(1))
@@ -95,9 +96,9 @@ describe('final-cut 编辑器 · 加入素材', () => {
     const user = userEvent.setup()
     putMockProjectMain(CONVERSATION, twoVideos())
     await openEditor()
-    await user.click(await shot(/^生成 A 镜头 1，/))
+    await user.click(await shot(/^出片 A 镜头 1，/))
     await user.keyboard('{Shift>}')
-    await user.click(await shot(/^生成 A 镜头 2，/))
+    await user.click(await shot(/^出片 A 镜头 2，/))
     await user.keyboard('{/Shift}{Enter}')
 
     await waitSaved(() => expect(savedClips()).toHaveLength(4))
@@ -107,14 +108,15 @@ describe('final-cut 编辑器 · 加入素材', () => {
     expect(fourth).toMatch(/data-start="5.5" data-duration="2.5"[^>]* data-media-start="2"/)
   })
 
-  it('在两条原作上各点一个镜头：底下显示已选 2 段，点「加入 final-cut」按面板里的先后首尾相接，加完选区清空', async () => {
+  it('在两条原作上各点一个镜头：底下显示已选 2 段，点「加入轨道」按面板里的先后首尾相接，加完选区清空', async () => {
     const user = userEvent.setup()
     await openEditor()
-    await user.click(await shot(/^生成 B 镜头 1，/))
-    await user.click(await shot(/^生成 A 镜头 2，/))
-    expect(screen.getByText('已选 2 段 · 4.0s')).toBeVisible()
+    await user.click(await shot(/^出片 B 镜头 1，/))
+    await user.click(await shot(/^出片 A 镜头 2，/))
+    const dock = screen.getByRole('group', { name: '已选 2 段 · 4.0s' })
+    expect(dock).toHaveTextContent(/^已选 2 段 · 4\.0s清空加入轨道$/)
 
-    await user.click(screen.getByRole('button', { name: '加入 final-cut' }))
+    await user.click(within(dock).getByRole('button', { name: '加入轨道' }))
     await waitSaved(() => expect(savedClips()).toHaveLength(2))
     // 新加的片段写在根下第一个：后加的在前面
     const [second, first] = savedClips()
@@ -122,27 +124,27 @@ describe('final-cut 编辑器 · 加入素材', () => {
     expect(first).toMatch(/data-start="0" data-duration="2.5"[^>]* data-media-start="2"/)
     expect(second).toContain(`src="${URL_B}"`)
     expect(second).toMatch(/data-start="2.5" data-duration="1.5"[^>]* data-media-start="0"/)
-    expect(screen.queryByText(/^已选/)).toBeNull()
-    expect(await shot(/^生成 A 镜头 2，/)).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByRole('group', { name: /^已选/ })).toBeNull()
+    expect(await shot(/^出片 A 镜头 2，/)).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('「清空」去掉所有选区；Esc 先退出素材预览，再按一下清空选区', async () => {
     const user = userEvent.setup()
     await openEditor()
-    await user.click(await shot(/^生成 B 镜头 1，/))
-    await user.click(await shot(/^生成 A 镜头 2，/))
+    await user.click(await shot(/^出片 B 镜头 1，/))
+    await user.click(await shot(/^出片 A 镜头 2，/))
     await user.click(screen.getByRole('button', { name: '清空' }))
-    expect(screen.queryByText(/^已选/)).toBeNull()
+    expect(screen.queryByRole('group', { name: /^已选/ })).toBeNull()
     expect(screen.queryByRole('region', { name: /^素材 · / })).toBeNull()
 
-    await user.click(await shot(/^生成 A 镜头 2，/))
+    await user.click(await shot(/^出片 A 镜头 2，/))
     expect(screen.getByRole('region', { name: /^素材 · / })).toBeInTheDocument()
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('region', { name: /^素材 · / })).toBeNull()
-    expect(screen.getByText('已选 1 段 · 2.5s')).toBeVisible()
+    expect(screen.getByRole('group', { name: '已选 1 段 · 2.5s' })).toBeVisible()
     await user.keyboard('{Escape}')
-    expect(screen.queryByText(/^已选/)).toBeNull()
-    expect(await shot(/^生成 A 镜头 2，/)).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByRole('group', { name: /^已选/ })).toBeNull()
+    expect(await shot(/^出片 A 镜头 2，/)).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('素材确认有声音才写成有声音：没有音轨、读不出有没有音轨时都写成静音', async () => {
@@ -153,7 +155,7 @@ describe('final-cut 编辑器 · 加入素材', () => {
       [2, 'C'],
       [3, 'D'],
     ] as const) {
-      await user.click(await shot(new RegExp(`^生成 ${take} 镜头 1，`)))
+      await user.click(await shot(new RegExp(`^出片 ${take} 镜头 1，`)))
       await user.keyboard('{Enter}')
       await waitSaved(() => expect(savedClips()).toHaveLength(count))
     }
@@ -170,7 +172,7 @@ describe('final-cut 编辑器 · 加入素材', () => {
     const user = userEvent.setup()
     putMockProjectMain(CONVERSATION, twoVideos())
     await openEditor()
-    await user.click(await shot(/^生成 B 镜头 1，/))
+    await user.click(await shot(/^出片 B 镜头 1，/))
     await user.keyboard('{Enter}')
     await waitSaved(() => expect(savedClips()).toHaveLength(3))
 
@@ -192,7 +194,7 @@ describe('final-cut 编辑器 · 加入素材', () => {
       ),
     )
     await openEditor()
-    await user.click(await shot(/^生成 A 镜头 1，/))
+    await user.click(await shot(/^出片 A 镜头 1，/))
     await user.keyboard('{Enter}')
     expect(await screen.findByText(/工作区暂时写不进去$/)).toBeVisible()
     await user.click(screen.getByRole('button', { name: '重新保存' }))
@@ -215,6 +217,136 @@ describe('final-cut 编辑器 · 加入素材', () => {
   })
 })
 
+describe('final-cut 编辑器 · 「镜头」页签', () => {
+  // 镜头组 1：出片 A 有原片（V1）和合成的一版（V3，最新、默认显示），出片 B 只有原片（V2）；镜头组 2：出片 A 只有原片
+  const URL_A_EDIT = 'https://media.test/take-a-edit.mp4'
+  const URL_C = 'https://media.test/take-c.mp4'
+  files.set(URL_A_EDIT, { keyframes: [0, 1.5], duration: 3 })
+  files.set(URL_C, { keyframes: [0, 1], duration: 2 })
+  const records = [
+    ...takes,
+    makeGenerationJob({
+      operation: 'compose',
+      createdAt: '2026-09-01T10:10:00Z',
+      outputUrl: URL_A_EDIT,
+      shotIndex: 1,
+      rootJobId: TAKE_A,
+      sourceJobId: TAKE_A,
+      durationMs: 3000,
+    }),
+    makeGenerationJob({
+      createdAt: '2026-09-01T10:15:00Z',
+      outputUrl: URL_C,
+      shotIndex: 2,
+      durationMs: 2000,
+    }),
+  ]
+  const group = (index: number) => screen.getByRole('group', { name: `镜头组 ${index}` })
+  const card = (index: number, take: string) =>
+    within(group(index)).getByRole('article', { name: `出片 ${take}` })
+  const filterButton = (name: string) =>
+    within(screen.getByRole('group', { name: '素材筛选' })).getByRole('button', { name })
+  const takesIn = (index: number) =>
+    within(group(index))
+      .getAllByRole('article')
+      .map((each) => each.getAttribute('aria-label'))
+  // 镜头组 1 出片 A 的原片（没在显示的那版）放在时间线上
+  const openWithOriginalInTrack = async () => {
+    putMockProjectMain(CONVERSATION, mainFile([video({ src: URL_A, duration: 2_000 })]))
+    await openEditor(records)
+    await shot(/^出片 A 镜头 1，0\.0–1\.5 秒/)
+  }
+
+  it('顶上写全部的组数和条数；入了轨的出片按「全部 / 未入轨 / 已入轨」筛，一条不剩的组不显示', async () => {
+    const user = userEvent.setup()
+    await openWithOriginalInTrack()
+    expect(screen.getByText('2 组 · 3 条')).toBeVisible()
+    expect(filterButton('全部')).toHaveAttribute('aria-pressed', 'true')
+    expect(takesIn(1)).toEqual(['出片 A', '出片 B'])
+    expect(takesIn(2)).toEqual(['出片 A'])
+
+    await user.click(filterButton('未入轨'))
+    expect(filterButton('未入轨')).toHaveAttribute('aria-pressed', 'true')
+    expect(takesIn(1)).toEqual(['出片 B'])
+    expect(takesIn(2)).toEqual(['出片 A'])
+
+    await user.click(filterButton('已入轨'))
+    expect(takesIn(1)).toEqual(['出片 A'])
+    expect(screen.queryByRole('group', { name: '镜头组 2' })).toBeNull()
+    // 总数照旧写全部的
+    expect(screen.getByText('2 组 · 3 条')).toBeVisible()
+  })
+
+  it('没有一条入了轨时，「已入轨」下说明暂无', async () => {
+    const user = userEvent.setup()
+    await openEditor(records)
+    await user.click(filterButton('已入轨'))
+    expect(screen.getByText('暂无已入轨的出片')).toBeVisible()
+    expect(screen.queryByRole('group', { name: /^镜头组/ })).toBeNull()
+  })
+
+  it('点组头收起这组的出片，收起时写有几条已入轨；再点展开', async () => {
+    const user = userEvent.setup()
+    await openWithOriginalInTrack()
+    const head = within(group(1)).getByRole('button', { name: /^镜头组 1/ })
+    expect(head).toHaveAttribute('aria-expanded', 'true')
+    expect(head).toHaveTextContent(/^镜头组 12 条出片$/)
+
+    await user.click(head)
+    expect(head).toHaveAttribute('aria-expanded', 'false')
+    expect(head).toHaveTextContent(/^镜头组 1已用 12 条出片$/)
+    expect(within(group(1)).queryByRole('article')).toBeNull()
+    expect(within(group(2)).getByRole('article', { name: '出片 A' })).toBeVisible()
+
+    await user.click(head)
+    expect(head).toHaveAttribute('aria-expanded', 'true')
+    expect(within(group(1)).getAllByRole('article')).toHaveLength(2)
+  })
+
+  it('有几个版本时是一排分段，点一下直接切：没在看的版本入了轨时标着，看的这版入了轨时写「已入轨」', async () => {
+    const user = userEvent.setup()
+    await openWithOriginalInTrack()
+    const versions = within(card(1, 'A')).getByRole('group', { name: '出片 A的版本' })
+    const original = within(versions).getByRole('button', { name: 'V1 原片，已入轨' })
+    const edited = within(versions).getByRole('button', { name: 'V3' })
+    expect(edited).toHaveAttribute('aria-pressed', 'true')
+    expect(original).toHaveAttribute('aria-pressed', 'false')
+    expect(within(card(1, 'A')).queryByText('已入轨')).toBeNull()
+    expect(card(1, 'A')).toHaveTextContent(/2 镜3\.0s/)
+
+    await user.click(original)
+    expect(original).toHaveAttribute('aria-pressed', 'true')
+    expect(edited).toHaveAttribute('aria-pressed', 'false')
+    expect(within(card(1, 'A')).getByText('已入轨')).toBeVisible()
+    expect(card(1, 'A')).toHaveTextContent(/3 镜6\.0s/)
+    expect(await shot(/^出片 A 镜头 3，4\.5–6\.0 秒/)).toBeVisible()
+
+    // 只有一个版本时只写版本号，不是分段
+    expect(within(card(1, 'B')).queryByRole('group')).toBeNull()
+    expect(within(card(1, 'B')).getByText('V2')).toBeVisible()
+    expect(within(card(1, 'B')).queryByText('已入轨')).toBeNull()
+  })
+
+  it('卡片上的「+」把显示着的版本整条接在末尾、一个镜头一个片段，别的出片上的选区不动', async () => {
+    const user = userEvent.setup()
+    await openWithOriginalInTrack()
+    await user.click(await shot(/^出片 A 镜头 1，0\.0–1\.5 秒/))
+    await user.click(within(card(1, 'B')).getByRole('button', { name: '整条加入轨道' }))
+
+    await waitSaved(() => expect(savedClips()).toHaveLength(3))
+    const added = savedClips().filter((clip) => clip.includes(`src="${URL_B}"`))
+    expect(added).toHaveLength(2)
+    expect(added.find((clip) => clip.includes('data-label="B · 镜头 1"'))).toMatch(
+      /data-start="2" data-duration="1.5"[^>]* data-media-start="0"/,
+    )
+    expect(added.find((clip) => clip.includes('data-label="B · 镜头 2"'))).toMatch(
+      /data-start="3.5" data-duration="1.5"[^>]* data-media-start="1.5"/,
+    )
+    expect(within(card(1, 'B')).getByText('已入轨')).toBeVisible()
+    expect(screen.getByRole('group', { name: '已选 1 段 · 1.5s' })).toBeVisible()
+  })
+})
+
 describe('final-cut 编辑器 · 时间线', () => {
   const timeline = () => screen.getByRole('group', { name: '画面 1' })
 
@@ -230,9 +362,7 @@ describe('final-cut 编辑器 · 时间线', () => {
 
   it('空的 final-cut：留一行空的，提示把镜头拖进来', async () => {
     await openEditor()
-    expect(
-      within(timeline()).getByText('将「镜头」页签里的镜头拖到此处可加入 final-cut'),
-    ).toBeVisible()
+    expect(within(timeline()).getByText('将「镜头」页签里的镜头拖到此处可加入轨道')).toBeVisible()
     expect(screen.queryByRole('group', { name: '画面 2' })).toBeNull()
   })
 
@@ -692,13 +822,13 @@ describe('final-cut 编辑器 · 时间线', () => {
   })
 
   const materialPreview = () =>
-    screen.queryByRole('region', { name: '素材 · 镜头组 1 · 生成 A · 镜头 2' })
+    screen.queryByRole('region', { name: '素材 · 镜头组 1 · 出片 A · 镜头 2' })
 
   it('预览素材时在时间线上选中片段：回到 final-cut 的预览', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     const user = userEvent.setup()
     await openEditor()
-    await user.click(await shot(/^生成 A 镜头 2，/))
+    await user.click(await shot(/^出片 A 镜头 2，/))
     expect(materialPreview()).toBeInTheDocument()
     await user.click(clip(/1\.5 秒$/))
     expect(materialPreview()).toBeNull()
@@ -708,7 +838,7 @@ describe('final-cut 编辑器 · 时间线', () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     const user = userEvent.setup()
     await openEditor()
-    await user.click(await shot(/^生成 A 镜头 2，/))
+    await user.click(await shot(/^出片 A 镜头 2，/))
     expect(materialPreview()).toBeInTheDocument()
     await user.keyboard('{Escape}')
     expect(materialPreview()).toBeNull()
@@ -1164,7 +1294,7 @@ describe('final-cut 编辑器 · 从素材栏拖进来吸节拍', () => {
 
   /** 把素材片的第一个镜头拖到时间线视频那一行的第 `ms` 毫秒处松手。 */
   const dropShotAt = async (ms: number) => {
-    const button = await shot(/^生成 A 镜头 1，/)
+    const button = await shot(/^出片 A 镜头 1，/)
     const y = layOutTimeline()
     const x = ms / 10
     fireEvent.pointerDown(button, { button: 0, pointerId: 1, clientX: 0, clientY: 0 })

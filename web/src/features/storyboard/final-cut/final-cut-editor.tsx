@@ -134,6 +134,7 @@ import {
   type MaterialTake,
   type MediaSpan,
   type PickedSpan,
+  type TakeFilter,
   type TakePicks,
 } from './materials'
 import {
@@ -192,10 +193,10 @@ import {
 import './final-cut.css'
 
 const EMPTY_TEXT = 'final-cut 暂无内容，加入内容后可在此预览'
-const PICK_FIRST_TEXT = '尚未选中镜头，无法加入 final-cut；请先在「镜头」页签中选中镜头范围'
+const PICK_FIRST_TEXT = '尚未选中镜头，无法加入轨道；请先在「镜头」页签中选中镜头范围'
 const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏，无法进入全屏'
-const ADDING_ITEM_TEXT = '上一个贴片或场景正在加入 final-cut，请稍后再试'
-const ADDING_PICKS_TEXT = '选中的镜头正在加入 final-cut，请稍后再试'
+const ADDING_ITEM_TEXT = '上一个贴片或场景正在加入轨道，请稍后再试'
+const ADDING_PICKS_TEXT = '选中的镜头正在加入轨道，请稍后再试'
 const EMPTY_EXPORT_TEXT = 'final-cut 暂无内容，无法导出；请先加入内容'
 const READING_TAKES_TEXT = '正在读取素材片，请稍后再识别字幕'
 const RECOGNIZING_TEXT = '正在识别字幕，请等待识别完成'
@@ -293,7 +294,7 @@ const shotNumberOf = (ms: number, url: string, keyframes: KeyframeStates) => {
   return state?.kind === 'ready' ? shotAt(keyframeRanges(state.index), ms / 1000) : undefined
 }
 
-/** 选区里的一段加入 final-cut 时拆成的片段，各带素材地址和名字（「A · 镜头 2」）。 */
+/** 选区里的一段加入轨道时拆成的片段，各带素材地址和名字（「A · 镜头 2」）。 */
 const piecesOf = ({ material, span }: PickedSpan, keyframes: KeyframeStates) =>
   spanPieces(span, takeShots(keyframes.get(material.url))).map((piece) => {
     const shot = shotNumberOf(piece.mediaStart, material.url, keyframes)
@@ -304,7 +305,7 @@ const piecesOf = ({ material, span }: PickedSpan, keyframes: KeyframeStates) =>
     }
   })
 
-/** 素材预览放的这一段跨了哪几个镜头，按加入 final-cut 时拆成的片段算。 */
+/** 素材预览放的这一段跨了哪几个镜头，按加入轨道时拆成的片段算。 */
 const shotsLabelOf = (span: MediaSpan, url: string, keyframes: KeyframeStates) => {
   const pieces = spanPieces(span, takeShots(keyframes.get(url)))
   const first = pieces[0]
@@ -408,6 +409,9 @@ function EditorBody({
     return found
   }, [materials])
   const [pickedVersions, setPickedVersions] = useState<Readonly<Record<string, string>>>({})
+  // 「镜头」页签的筛选和收起的组：同 itemFilters 记在这里，切去别的页签再回来还在
+  const [takeFilter, setTakeFilter] = useState<TakeFilter>('all')
+  const [closedGroups, setClosedGroups] = useState<ReadonlySet<string>>(() => new Set())
   const versionOf = (take: MaterialTake): Material =>
     take.versions.find((item) => item.jobId === pickedVersions[take.id]) ?? take.latest
   // 「镜头」页签里显示着的版本，加上 final-cut 里视频片段用的素材（可能是没显示着的旧版本）：镜头、总长、
@@ -737,17 +741,20 @@ function EditorBody({
           movedId,
         )
 
-  // 选区加完才清空：上一次还没加完时不接下一次，免得连点两下把同一组加两遍
+  // 上一次还没加完时不接下一次，免得连点两下把同一组加两遍
   const addingPicksRef = useRef(false)
   /**
-   * 把选区里的各段一次放进 final-cut（一步撤销），按 `chosen` 的先后首尾相接：给了 `at` 从那里放起，
-   * 没给就接在主轨的末尾。放进去以后清空选区。
+   * 把素材里的各段一次放进 final-cut（一步撤销），按 `chosen` 的先后首尾相接：给了 `at` 从那里放起，
+   * 没给就接在主轨的末尾。答复放进去了没有。
    */
-  const place = (chosen: readonly PickedSpan[], at?: { row: RowTarget; start: number }) => {
-    if (chosen.length === 0) return
+  const place = (
+    chosen: readonly PickedSpan[],
+    at?: { row: RowTarget; start: number },
+  ): Promise<boolean> => {
+    if (chosen.length === 0) return Promise.resolve(false)
     if (addingPicksRef.current) {
       notice(ADDING_PICKS_TEXT)
-      return
+      return Promise.resolve(false)
     }
     // 照参照的工作台：确认素材有声音才写成有声音，没有声音、读不出来都按静音写。
     // 素材区读镜头时已经一起读过，这里多半直接拿到
@@ -770,18 +777,22 @@ function EditorBody({
         spot === undefined || at === undefined ? undefined : { track: spot.track, start: at.start },
         spot?.renumber,
       )
-      if (!added) return
-      setPicks(NO_PICKS)
-      leaveMaterial()
+      if (added) leaveMaterial()
+      return added
     }
     addingPicksRef.current = true
-    void add().finally(() => {
+    return add().finally(() => {
       addingPicksRef.current = false
     })
   }
+  /** 把选区放进 final-cut（`at` 同 `place`），放进去以后清空选区。 */
+  const placePicks = (chosen: readonly PickedSpan[], at?: { row: RowTarget; start: number }) =>
+    void place(chosen, at).then((added) => {
+      if (added) setPicks(NO_PICKS)
+    })
   const insert = () => {
     if (picked.length === 0) notice(PICK_FIRST_TEXT)
-    else place(picked)
+    else placePicks(picked)
   }
 
   // 照参照的工作台：上一个条目还没加完时不接下一个，免得两次都按加之前的样子算落点
@@ -1571,6 +1582,8 @@ function EditorBody({
           />
           <TabsContent className="wf-side-body is-shots" value="shots" {...catalogPanel('shots')}>
             <MaterialArea
+              closedGroups={closedGroups}
+              filter={takeFilter}
               groups={materials.groups}
               keyframes={keyframes}
               onCarry={(point, carried) =>
@@ -1588,10 +1601,22 @@ function EditorBody({
                 const at = landingAt(point.clientX, point.clientY, picksSummary(dropped).durationMs)
                 setGhost(null)
                 if (at !== null)
-                  place(orderedPicks(materials.groups, dropped), { row: at.row, start: at.start })
+                  placePicks(orderedPicks(materials.groups, dropped), {
+                    row: at.row,
+                    start: at.start,
+                  })
               }}
+              onFilter={setTakeFilter}
               onInsert={insert}
+              onInsertWhole={(whole) => void place([whole])}
               onPicks={changePicks}
+              onToggleGroup={(groupId) =>
+                setClosedGroups((current) => {
+                  const next = new Set(current)
+                  if (!next.delete(groupId)) next.add(groupId)
+                  return next
+                })
+              }
               onVersion={(takeId, jobId) => {
                 setPickedVersions((current) => ({ ...current, [takeId]: jobId }))
                 const had = picks.get(takeId)

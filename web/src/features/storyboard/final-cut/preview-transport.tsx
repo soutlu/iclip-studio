@@ -50,7 +50,7 @@ const SHORTCUTS: readonly { keys: readonly string[]; action: string }[] = [
   { keys: ['⇧⌘B'], action: '分离选中视频的音频，或合并回视频' },
   { keys: ['V', 'A'], action: '回到选择工具' },
   { keys: ['Z'], action: '缩放到选中的片段' },
-  { keys: ['Enter'], action: '将选中的镜头加入 final-cut' },
+  { keys: ['Enter'], action: '将选中的镜头加入轨道' },
   { keys: ['Esc'], action: '退出全屏、取消选中、回到选择工具' },
   { keys: ['M'], action: '静音或开启声音' },
   { keys: ['⇧L'], action: '开启或关闭循环播放' },

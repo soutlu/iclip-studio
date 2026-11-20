@@ -66,7 +66,7 @@ describe('final-cut 编辑器 · 播放', () => {
     expect(within(transport()).getByText('00:01.20')).toBeVisible()
     expect(progress()).toHaveAttribute('aria-valuetext', '00:01.20 / 00:03.50')
 
-    await user.click(await shot(/^生成 B 镜头 1，/))
+    await user.click(await shot(/^出片 B 镜头 1，/))
     await user.keyboard('{Enter}')
     await waitSaved(() => expect(savedClips()).toHaveLength(3))
     expect(within(transport()).getByText('00:01.20')).toBeVisible()
@@ -106,9 +106,9 @@ describe('final-cut 编辑器 · 播放', () => {
     expect(progress()).toHaveAttribute('aria-valuetext', '00:00.30 / 00:03.50')
 
     // 素材 A 一共 6 秒，镜头 2 是 2–4.5 秒
-    await user.click(await shot(/^生成 A 镜头 2，/))
-    const material = screen.getByRole('region', { name: '素材 · 镜头组 1 · 生成 A · 镜头 2' })
-    expect(material).toHaveTextContent(/^素材 · 镜头组 1 · 生成 A · 镜头 2$/)
+    await user.click(await shot(/^出片 A 镜头 2，/))
+    const material = screen.getByRole('region', { name: '素材 · 镜头组 1 · 出片 A · 镜头 2' })
+    expect(material).toHaveTextContent(/^素材 · 镜头组 1 · 出片 A · 镜头 2$/)
     expect(within(transport()).getByText('00:02.00')).toBeVisible()
     expect(within(transport()).getByText('/ 00:06.00')).toBeVisible()
     expect(progress()).toHaveAttribute('aria-valuetext', '00:02.00 / 00:06.00')
@@ -124,7 +124,7 @@ describe('final-cut 编辑器 · 播放', () => {
     expect(material.querySelector('video')?.currentTime).toBeCloseTo(2.001, 6)
 
     await user.keyboard('{Shift>}')
-    await user.click(await shot(/^生成 A 镜头 2，/))
+    await user.click(await shot(/^出片 A 镜头 2，/))
     await user.keyboard('{/Shift}')
     expect(material).not.toBeInTheDocument()
     expect(progress()).toHaveAttribute('aria-valuetext', '00:00.30 / 00:03.50')
@@ -135,7 +135,7 @@ describe('final-cut 编辑器 · 播放', () => {
     await openEditor()
     expect(progress()).toHaveAttribute('data-disabled')
 
-    await user.click(await shot(/^生成 B 镜头 2，/))
+    await user.click(await shot(/^出片 B 镜头 2，/))
     expect(progress()).not.toHaveAttribute('data-disabled')
     expect(progress()).toHaveAttribute('aria-valuetext', '00:01.50 / 00:03.00')
     progress().focus()
@@ -143,7 +143,7 @@ describe('final-cut 编辑器 · 播放', () => {
     expect(progress()).toHaveAttribute('aria-valuetext', '00:01.60 / 00:03.00')
 
     await user.keyboard('{Shift>}')
-    await user.click(await shot(/^生成 B 镜头 2，/))
+    await user.click(await shot(/^出片 B 镜头 2，/))
     await user.keyboard('{/Shift}')
     expect(progress()).toHaveAttribute('data-disabled')
   })
@@ -185,7 +185,7 @@ describe('final-cut 编辑器 · 播放', () => {
     expect(lastLoad().html).not.toContain('/hyperframes/test-fixtures/"')
 
     // 加的片段直接打进预览里正在播的那一份
-    await user.click(await shot(/^生成 B 镜头 1，/))
+    await user.click(await shot(/^出片 B 镜头 1，/))
     await user.keyboard('{Enter}')
     await waitFor(() =>
       expect(
@@ -318,7 +318,7 @@ describe('final-cut 编辑器 · 播放条设置', () => {
     await waitFor(() => expect(player().playbackRate).toBe(2))
 
     // 播放器的片段都在 iframe 里，页面上的 video 只有素材预览这一个
-    await user.click(await shot(/^生成 B 镜头 1，/))
+    await user.click(await shot(/^出片 B 镜头 1，/))
     expect(document.querySelector('video')?.playbackRate).toBe(2)
     const old = player()
     await user.keyboard('{Enter}')
@@ -525,7 +525,7 @@ describe('final-cut 编辑器 · 导出', () => {
     const mainAtStart = trackStarts()
     serveLatest(null, DONE)
     await openEditor()
-    await user.click(await shot(/^生成 A 镜头 1，/))
+    await user.click(await shot(/^出片 A 镜头 1，/))
     await user.keyboard('{Enter}')
     await user.click(await screen.findByRole('button', { name: '导出' }))
     expect(await screen.findByRole('button', { name: '下载成片' })).toBeInTheDocument()
@@ -555,7 +555,7 @@ describe('final-cut 编辑器 · 导出', () => {
       }),
     )
     const { close } = await openEditor()
-    await user.click(await shot(/^生成 A 镜头 1，/))
+    await user.click(await shot(/^出片 A 镜头 1，/))
     await user.keyboard('{Enter}')
     await user.click(await screen.findByRole('button', { name: '导出' }))
     expect(await screen.findByText(/工作区暂时写不进去$/)).toBeVisible()
@@ -736,7 +736,7 @@ describe('final-cut 编辑器 · 组件、块页签', () => {
     await waitSaved(() => expect(savedItems()).toHaveLength(1))
     await new Promise((resolve) => setTimeout(resolve, 1000))
     expect(savedItems()).toHaveLength(1)
-    expect(screen.getByText('上一个贴片或场景正在加入 final-cut，请稍后再试')).toBeVisible()
+    expect(screen.getByText('上一个贴片或场景正在加入轨道，请稍后再试')).toBeVisible()
   })
 })
 
@@ -765,7 +765,7 @@ describe('final-cut 编辑器 · 侧栏页签', () => {
     expect(tab('镜头')).toHaveAttribute('aria-selected', 'true')
     expect(within(shotsPanel()).getByRole('region', { name: '视频素材区' })).toBeVisible()
     expect(screen.getAllByRole('region', { name: '视频素材区' })).toHaveLength(1)
-    await user.click(await within(shotsPanel()).findByRole('button', { name: /^生成 A 镜头 2，/ }))
+    await user.click(await within(shotsPanel()).findByRole('button', { name: /^出片 A 镜头 2，/ }))
     const range = () =>
       within(shotsPanel()).getByRole('group', { name: /^选中的范围 2\.0–4\.5 秒/ })
     expect(range()).toBeVisible()
@@ -983,7 +983,7 @@ describe('final-cut 编辑器 · 切走再切回', () => {
     await screen.findByRole('toolbar', { name: '剪辑工具' })
     expect(labels()).toEqual(['乙'])
 
-    await user.click(await shot(/^生成 A 镜头 1，/))
+    await user.click(await shot(/^出片 A 镜头 1，/))
     await user.keyboard('{Enter}')
     await waitSaved(() => expect(savedClips()).toHaveLength(2))
     expect(labels()).toEqual(['乙', 'A · 镜头 1'])
@@ -1008,7 +1008,7 @@ describe('final-cut 编辑器 · 切走再切回', () => {
     await user.click(within(row()).getByRole('button', { name: /^选中：甲，/ }))
     await user.keyboard('{Delete}')
     await waitFor(() => expect(saves.held()).toBe(1), { timeout: 4000 })
-    await user.click(await shot(/^生成 A 镜头 1，/))
+    await user.click(await shot(/^出片 A 镜头 1，/))
     await user.keyboard('{Enter}')
     await waitFor(() => expect(labels()).toEqual(['乙', 'A · 镜头 1']))
 

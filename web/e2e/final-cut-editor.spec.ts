@@ -77,7 +77,7 @@ const runtimeScripts = (player: Locator) =>
     RUNTIME_FILE,
   )
 
-test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销、导出下载，切走再切回 final-cut 还在', async ({
+test('final-cut 编辑器：选镜头加入轨道、播放、撤销、导出下载，切走再切回 final-cut 还在', async ({
   page,
 }) => {
   test.setTimeout(60_000)
@@ -129,7 +129,7 @@ test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销、导出
     .getByRole('group', { name: '镜头组 2' })
   const first = mainSaved(page, 1)
   const previewRuntime = runtimeRequested()
-  await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
+  await materials.getByRole('button', { name: /^出片 A 镜头 1，/ }).click()
   await page.keyboard.press('Enter')
   // 加进来以后按新建时的版本写主文件：模板的根、画幅不变，视频的 src 直接写素材地址
   const html = htmlOf(await first)
@@ -181,7 +181,7 @@ test('final-cut 编辑器：选镜头加入 final-cut、播放、撤销、导出
 
   const second = mainSaved(page, 2)
   await side.getByRole('tab', { name: '镜头' }).click()
-  await materials.getByRole('button', { name: /^生成 A 镜头 3，/ }).click()
+  await materials.getByRole('button', { name: /^出片 A 镜头 3，/ }).click()
   await page.keyboard.press('Enter')
   await second
   await readyPlayer(editor)
@@ -303,7 +303,7 @@ test('播放条：倍速和静音对素材、final-cut 都生效且换播放器�
     .getByRole('group', { name: '镜头组 2' })
 
   // 素材预览：选 2×、按 M 静音
-  await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
+  await materials.getByRole('button', { name: /^出片 A 镜头 1，/ }).click()
   // 菜单打开时编辑器对读屏隐藏，按钮的位置先量好
   const rate = transport.getByRole('button', { name: '播放速度 1×' })
   const rateTop = (await boxOf(rate)).y
@@ -320,9 +320,9 @@ test('播放条：倍速和静音对素材、final-cut 都生效且换播放器�
     await material.evaluate((video: HTMLVideoElement) => [video.playbackRate, video.muted]),
   ).toEqual([2, true])
 
-  // 加入 final-cut：final-cut 预览也是 2×、静音
+  // 加入轨道：final-cut 预览也是 2×、静音
   const first = mainSaved(page, 1)
-  await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).focus()
+  await materials.getByRole('button', { name: /^出片 A 镜头 1，/ }).focus()
   await page.keyboard.press('Enter')
   await first
   const player = await readyPlayer(editor)
@@ -346,7 +346,7 @@ test('播放条：倍速和静音对素材、final-cut 都生效且换播放器�
 
   // 再加一段（直接打进正在播的预览）：倍速、静音、循环都还在，加进来的片段也静音
   const second = mainSaved(page, 2)
-  await materials.getByRole('button', { name: /^生成 A 镜头 3，/ }).click()
+  await materials.getByRole('button', { name: /^出片 A 镜头 3，/ }).click()
   await page.keyboard.press('Enter')
   await second
   await expect.poll(settings).toEqual({ rate: 2, muted: true, loop: true, clips: 2 })
@@ -431,13 +431,13 @@ test('预览素材时在时间线上点选片段：素材预览收起，回到 f
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
   const added = mainSaved(page, 1)
-  await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
+  await materials.getByRole('button', { name: /^出片 A 镜头 1，/ }).click()
   await page.keyboard.press('Enter')
   await added
   await readyPlayer(editor)
 
   const material = editor.getByRole('region', { name: /^素材 · / })
-  await materials.getByRole('button', { name: /^生成 A 镜头 2，/ }).click()
+  await materials.getByRole('button', { name: /^出片 A 镜头 2，/ }).click()
   await expect(material).toBeVisible()
   await expect(editor.getByRole('group', { name: '预览画面' })).toHaveCount(0)
 
@@ -480,7 +480,7 @@ test('块页签搜到块点一下卡片加入、组件页签拖一个组件到�
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   const withVideo = htmlOf(await first)
@@ -746,7 +746,7 @@ test('音频栏：试听只播一条，点一下没用过的一行加到播放�
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   const withVideo = htmlOf(await first)
@@ -868,7 +868,7 @@ test('属性：音频片段拉满音量、打开循环播放写进文件；视�
   const materials = editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-  await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
+  await materials.getByRole('button', { name: /^出片 A 镜头 1，/ }).click()
   await page.keyboard.press('Enter')
   await first
 
@@ -990,7 +990,7 @@ test('智能调音：把配乐的角色改成人声、打开自动平稳音量�
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   await first
@@ -1329,7 +1329,7 @@ test('在贴片卡片上按 ] 选中片段：侧栏切到「属性」，焦点�
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   await first
@@ -1423,7 +1423,7 @@ const selectedClip = async (page: Page, editor: Locator) => {
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   await saved
@@ -1486,7 +1486,7 @@ test('切开：选中视频片段、把播放头放进去按 S，存下来多了
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   const [whole] = savedVideoTimings(htmlOf(await added))
@@ -1564,7 +1564,7 @@ test('默认缩放下选中 1 秒的片段：按在正中拖是挪动、不是�
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   const [whole] = savedVideoTimings(htmlOf(await added))
@@ -1608,7 +1608,7 @@ test('节拍吸附：加一首配乐，片段上画出算出来的节拍；把�
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   await added
@@ -1677,7 +1677,7 @@ test('节拍：从素材栏拖一个镜头到一拍旁边松手，开头落在�
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
   const added = mainSaved(page, 1)
-  await takes.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
+  await takes.getByRole('button', { name: /^出片 A 镜头 1，/ }).click()
   await page.keyboard.press('Enter')
   await added
 
@@ -1712,7 +1712,7 @@ test('节拍：从素材栏拖一个镜头到一拍旁边松手，开头落在�
   const row = editor.getByRole('group', { name: '画面 1', exact: true })
   const first = await row.getByRole('group').first().boundingBox()
   const lane = await row.boundingBox()
-  const from = await takes.getByRole('button', { name: /^生成 A 镜头 2，/ }).boundingBox()
+  const from = await takes.getByRole('button', { name: /^出片 A 镜头 2，/ }).boundingBox()
   if (first === null || lane === null || from === null) throw new Error('尚未布局')
   const beatXs = await marks
     .locator('span')
@@ -1752,7 +1752,7 @@ test('按住播放头的竖线拖到片段结尾旁边：吸到结尾、亮吸�
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   await added
@@ -1795,7 +1795,7 @@ test('分离音频：存下来多一个原声片段、两段属性对；联动�
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   const original = savedElementAttributes(htmlOf(await added), 'video')
@@ -2003,7 +2003,7 @@ test('预览正在播放时折叠工作台：播放停下，展开后停在原�
     .getByRole('group', { name: '镜头组 2' })
   for (const shot of [1, 2, 3]) {
     const saved = mainSaved(page, shot)
-    await shots.getByRole('button', { name: new RegExp(`^生成 A 镜头 ${shot}，`) }).click()
+    await shots.getByRole('button', { name: new RegExp(`^出片 A 镜头 ${shot}，`) }).click()
     await page.keyboard.press('Enter')
     await saved
   }
@@ -2042,7 +2042,7 @@ test('改完马上切到别的页签再切回来：改动还在，接着改照�
     .getByRole('group', { name: '镜头组 2' })
   // 加进去以后不等停下来保存就切走：切走时存，切回来等它存完再读
   const first = mainSaved(page, 1)
-  await materials.getByRole('button', { name: /^生成 A 镜头 1，/ }).click()
+  await materials.getByRole('button', { name: /^出片 A 镜头 1，/ }).click()
   await page.keyboard.press('Enter')
   const row = editor.getByRole('group', { name: '画面 1', exact: true })
   await expect(row.getByRole('button', { name: /^选中：/ })).toHaveCount(1)
@@ -2059,7 +2059,7 @@ test('改完马上切到别的页签再切回来：改动还在，接着改照�
   await back
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 3，/ })
+    .getByRole('button', { name: /^出片 A 镜头 3，/ })
     .click()
   await page.keyboard.press('Enter')
   await second
@@ -2089,7 +2089,7 @@ test('新建工程、加镜头和一个贴片：条目文件拷进工程，刷�
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   expect((await first).method()).toBe('PUT')
@@ -2204,7 +2204,7 @@ test('字幕：在「字幕」页签加一句、改字，字幕文件和主文�
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   await first
@@ -2404,7 +2404,7 @@ test('字幕行：拖一句挪位置、拖结尾裁短，存下来的字幕场�
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   await added
@@ -2566,7 +2566,7 @@ test('语言：加上 English 切过去，给一句字幕写英文，存下的 E
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   await added
@@ -2638,7 +2638,7 @@ test('其它语言下改一句的译文直接打进预览：不换播放器，�
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   await added
@@ -2770,7 +2770,7 @@ test('按语言导出：切到 English 点「导出」，提示写导出 English
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   await added
@@ -2811,7 +2811,7 @@ test('贴片的文字随语言：加上 English 时主文件里宿主记着根�
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   await first
@@ -2881,7 +2881,7 @@ test('翻译：加上 English 后点「翻译」，字幕和贴片里随语言�
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   await first
@@ -3293,7 +3293,7 @@ test('旁白配音：原文下输入文案、选资料库的音色插入，按�
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   await added
@@ -3437,7 +3437,7 @@ const openWithCard = async (
   await editor
     .getByRole('region', { name: '视频素材区' })
     .getByRole('group', { name: '镜头组 2' })
-    .getByRole('button', { name: /^生成 A 镜头 1，/ })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
     .click()
   await page.keyboard.press('Enter')
   await first

@@ -114,7 +114,7 @@ const groupOf = (materials: Locator, index: number) =>
 
 const shotOf = (materials: Locator, group: number, take: string, shot: number) =>
   groupOf(materials, group).getByRole('button', {
-    name: new RegExp(`^生成 ${take} 镜头 ${shot}，`),
+    name: new RegExp(`^出片 ${take} 镜头 ${shot}，`),
   })
 
 /** 存下来的主文件里的视频片段，按起点排，写成「名字，从几秒起，多长」。 */
@@ -306,7 +306,7 @@ test('镜头条比卡片宽时横着滚：滚过以后点选、在选区上单�
   expect(Math.abs(placed.x - dropX)).toBeLessThan(3)
 })
 
-test('点镜头只选中、预览停在开头不播放；素材暂停续播与段尾重播；加入 final-cut 后预览换成 final-cut', async ({
+test('点镜头只选中、预览停在开头不播放；素材暂停续播与段尾重播；加入轨道后预览换成 final-cut', async ({
   page,
 }) => {
   const { editor, materials } = await openWith(page, [1])
@@ -442,9 +442,9 @@ test('预览素材时播放条是素材的：读数按整条原作算，点、�
     'aria-valuenow',
     '8',
   )
-  await expect(material).toHaveAccessibleName('素材 · 镜头组 1 · 生成 A · 镜头 2–4')
+  await expect(material).toHaveAccessibleName('素材 · 镜头组 1 · 出片 A · 镜头 2–4')
   // 左上角的提示块写着同一句，带「回到 final-cut」
-  await expect(material).toHaveText('素材 · 镜头组 1 · 生成 A · 镜头 2–4')
+  await expect(material).toHaveText('素材 · 镜头组 1 · 出片 A · 镜头 2–4')
   await expect(material.getByRole('button', { name: '回到 final-cut' })).toBeVisible()
   await expect(progress).toHaveAttribute('aria-valuetext', '00:02.00 / 00:20.00')
 
@@ -520,7 +520,7 @@ test('选区里的播放头只在素材播放时出现：点镜头、暂停、�
   await expect(playhead).toHaveCount(0)
 })
 
-test('Shift 连到点的镜头：不播放；在选区上单击去掉这一段；两端抓手越过镜头切口、不压到相邻的选区，加入 final-cut 时一个镜头一个片段、选区清空', async ({
+test('Shift 连到点的镜头：不播放；在选区上单击去掉这一段；两端抓手越过镜头切口、不压到相邻的选区，加入轨道时一个镜头一个片段、选区清空', async ({
   page,
 }) => {
   const { editor, materials } = await openWith(page, [1])
@@ -572,7 +572,7 @@ test('Shift 连到点的镜头：不播放；在选区上单击去掉这一段�
   await expect(range).toHaveCount(0)
 })
 
-test('跨镜头划出两段：底下显示已选 2 段，点「加入 final-cut」一次加进去；再划一段拖进时间线', async ({
+test('跨镜头划出两段：底下显示已选 2 段，点「加入轨道」一次加进去；再划一段拖进时间线', async ({
   page,
 }) => {
   const { editor, materials } = await openWith(page, [1, 1])
@@ -593,16 +593,17 @@ test('跨镜头划出两段：底下显示已选 2 段，点「加入 final-cut�
   await expect(ranges).toHaveCount(2)
   await expect(ranges.first()).toHaveAccessibleName(/^选中的范围 1\.5–2\.5 秒，2 个镜头/)
   await expect(ranges.nth(1)).toHaveAccessibleName(/^选中的范围 3\.5–5\.5 秒，3 个镜头/)
-  await expect(editor.getByText('已选 2 段 · 3.0s')).toBeVisible()
+  const dock = editor.getByRole('group', { name: '已选 2 段 · 3.0s' })
+  await expect(dock).toBeVisible()
 
   // 划出的起止按指针算，不一定正好在整百毫秒上：只核对加进去的片段和先后
   const names = async () => (await savedClips(page)).map((saved) => saved.split('，')[0])
-  await editor.getByRole('button', { name: '加入 final-cut' }).click()
+  await dock.getByRole('button', { name: '加入轨道' }).click()
   await expect
     .poll(names)
     .toEqual(['A · 镜头 2', 'A · 镜头 3', 'B · 镜头 4', 'B · 镜头 5', 'B · 镜头 6'])
   await expect(ranges).toHaveCount(0)
-  await expect(editor.getByText(/^已选/)).toHaveCount(0)
+  await expect(editor.getByRole('group', { name: /^已选/ })).toHaveCount(0)
 
   // 两条原作上各划一段，拖其中一段：整组一起进时间线，按面板里的先后排
   await drawBetween('B', 1, 2)
@@ -651,20 +652,20 @@ test('撤销、重做也是 final-cut 编辑：预览回到 final-cut', async ({
   await expect.poll(() => savedClips(page)).toHaveLength(1)
 
   await shotOf(materials, 1, 'B', 2).click()
-  await expect(material).toHaveAccessibleName('素材 · 镜头组 1 · 生成 B · 镜头 2')
+  await expect(material).toHaveAccessibleName('素材 · 镜头组 1 · 出片 B · 镜头 2')
   await editor.getByRole('button', { name: '撤销' }).click()
   await expect(material).toHaveCount(0)
   await expect.poll(() => savedClips(page)).toHaveLength(0)
 
   await shotOf(materials, 1, 'B', 4).click()
-  await expect(material).toHaveAccessibleName('素材 · 镜头组 1 · 生成 B · 镜头 4')
+  await expect(material).toHaveAccessibleName('素材 · 镜头组 1 · 出片 B · 镜头 4')
   await editor.getByRole('button', { name: '重做' }).click()
   await expect(material).toHaveCount(0)
   await expect.poll(() => savedClips(page)).toHaveLength(1)
 
   // 撤销、重做不动「镜头」里的选区：再点的镜头和前面选的不挨着，单独成一段
   await shotOf(materials, 1, 'B', 6).click()
-  await expect(material).toHaveAccessibleName('素材 · 镜头组 1 · 生成 B · 镜头 6')
+  await expect(material).toHaveAccessibleName('素材 · 镜头组 1 · 出片 B · 镜头 6')
   await page.keyboard.press('ControlOrMeta+z')
   await expect(material).toHaveCount(0)
   await expect.poll(() => savedClips(page)).toHaveLength(0)
@@ -678,7 +679,7 @@ test('Enter 把选区接在 final-cut 末尾：焦点在镜头、选区两端或
   await shotOf(materials, 1, 'A', 1).focus()
   await page.keyboard.press('Enter')
   await expect(
-    page.getByText('尚未选中镜头，无法加入 final-cut；请先在「镜头」页签中选中镜头范围'),
+    page.getByText('尚未选中镜头，无法加入轨道；请先在「镜头」页签中选中镜头范围'),
   ).toBeVisible()
   expect(await savedClips(page)).toEqual([])
 
@@ -732,7 +733,7 @@ test('没有音轨的素材片接进 final-cut 写成静音，有音轨的标着
   })
 })
 
-test('每条原作可以换版本；换了之后这条轨上的选区收起', async ({ page }) => {
+test('每条原作可以换版本：点版本分段直接切；换了之后这条轨上的选区收起', async ({ page }) => {
   await page.setViewportSize({ width: 1449, height: 982 })
   const panel = await openConversation(page, CONVERSATION)
   const [take] = await addTakes(page, [1])
@@ -741,15 +742,16 @@ test('每条原作可以换版本；换了之后这条轨上的选区收起', as
   const editor = await createFinalCut(panel)
   const materials = editor.getByRole('region', { name: '视频素材区' })
 
-  const picker = materials.getByRole('button', { name: /^生成 A的版本：/ })
-  await expect(picker).toHaveAccessibleName('生成 A的版本：V2')
+  const versions = materials.getByRole('group', { name: '出片 A的版本' })
+  const original = versions.getByRole('button', { name: 'V1 原片' })
+  await expect(versions.getByRole('button', { name: 'V2' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(original).toHaveAttribute('aria-pressed', 'false')
   await shotOf(materials, 1, 'A', 2).click()
   await expect(groupOf(materials, 1).getByRole('slider')).toHaveCount(2)
-  await picker.click()
-  await page.getByRole('menuitemradio', { name: 'V1 原片' }).click()
-  await expect(picker).toHaveAccessibleName('生成 A的版本：V1 原片')
-  // 胶囊里只写原作字母和版本号
-  await expect(picker).toHaveText('A · V1')
+  await original.click()
+  await expect(original).toHaveAttribute('aria-pressed', 'true')
+  // 分段里只写版本号
+  await expect(original).toHaveText('V1')
   await expect(groupOf(materials, 1).getByRole('slider')).toHaveCount(0)
 })
 

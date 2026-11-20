@@ -38,7 +38,7 @@ describe('final-cut 编辑器 · 主文件被删', () => {
     )
     const user = userEvent.setup()
     const { socket } = await openEditor()
-    await user.click(await shot(/^生成 A 镜头 1，/))
+    await user.click(await shot(/^出片 A 镜头 1，/))
     await user.keyboard('{Enter}')
     await waitFor(() =>
       expect(

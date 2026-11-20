@@ -109,7 +109,7 @@
   --color-error-container: var(--e90); /* #FFDAD6 13.26:1 */
   --color-on-error-container: var(--e10);
 
-  /* 中性实心主动作：高优确认（如「加入 final-cut」「生成音乐」），与全页唯一品牌绿主交付拉开层级 */
+  /* 中性实心主动作：高优确认（如「加入轨道」「生成音乐」），与全页唯一品牌绿主交付拉开层级 */
   --color-action-neutral: var(--n10);
   --color-on-action-neutral: var(--n100);
 

@@ -764,7 +764,7 @@ describe('final-cut 编辑器 · 识别字幕', () => {
     const user = userEvent.setup()
     await openEditor()
     // 素材片读完了才知道片段对不对得上素材
-    await shot(/^生成 A 镜头 1，/)
+    await shot(/^出片 A 镜头 1，/)
     const panel = await openCaptions(user)
     expect(recognizeButton(panel)).toHaveAttribute('aria-disabled', 'true')
     await user.click(recognizeButton(panel))
