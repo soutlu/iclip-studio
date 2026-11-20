@@ -2874,9 +2874,11 @@
   white-space: nowrap;
 }
 
-/* 拖拽移动时的对齐参考线与画布像素等距标记（纯展示层，采用琥珀色与白色选中框区分） */
+/* 拖拽移动时的对齐参考线与画布像素等距标记（纯展示层，采用琥珀色与白色选中框区分）。
+   和选中框同一层（见 wf-canvas-frame），写在它后面，照旧盖在框上 */
 .wf-canvas-guides {
   position: absolute;
+  z-index: var(--z-local-2);
   inset: 0;
   pointer-events: none;
 }
@@ -2930,13 +2932,27 @@
   box-shadow: 0 0 1px color-mix(in srgb, var(--color-scrim) 45%, transparent);
 }
 
+.wf-framing-line[data-at='third'] {
+  --wf-framing-at: 33.333%;
+}
+
+.wf-framing-line[data-at='half'] {
+  --wf-framing-at: 50%;
+}
+
+.wf-framing-line[data-at='two-thirds'] {
+  --wf-framing-at: 66.667%;
+}
+
 .wf-framing-line[data-axis='x'] {
   top: 0;
   bottom: 0;
+  left: var(--wf-framing-at);
   width: 1px;
 }
 
 .wf-framing-line[data-axis='y'] {
+  top: var(--wf-framing-at);
   right: 0;
   left: 0;
   height: 1px;
@@ -3220,9 +3236,11 @@
   font-size: var(--text-caption);
 }
 
-/* 原地改字：盖在藏起来的那段文字上，照稿子的白框、浅黑底 */
+/* 原地改字：盖在藏起来的那段文字上，照稿子的白框、浅黑底。和选中框同一层（见 wf-canvas-frame），写在它后面，
+   照旧盖在框上 */
 .wf-canvas-text {
   position: absolute;
+  z-index: var(--z-local-2);
   padding: 0 4px;
   border: 0;
   border-radius: var(--radius-xs);

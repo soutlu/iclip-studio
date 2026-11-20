@@ -325,6 +325,13 @@ function SideField({
 // 宽 / 高不超过这个比例时算竖的或方的画面（安全区按竖屏短视频的样子画）
 const UPRIGHT_MAX_RATIO = 1.05
 
+/** 构图网格每个方向上的线画在哪（位置见 final-cut.css 的 wf-framing-line）。 */
+const GRID_LINES: Record<FramingGrid, readonly string[]> = {
+  off: [],
+  thirds: ['third', 'two-thirds'],
+  cross: ['half'],
+}
+
 /**
  * 盖在预览画面上的参考线（和画面一样大，见 `PreviewPlayer` 的 `overlay`）：构图网格的线，和短视频平台会被界面挡住
  * 的地方。竖的或方的画面是右侧互动区和底部信息区，横的是底部播控区。只画在编辑器里，不接指针。
@@ -332,16 +339,13 @@ const UPRIGHT_MAX_RATIO = 1.05
 export function FramingGuides({ canvas, framing }: { canvas: Canvas; framing: Framing }) {
   if (framing.grid === 'off' && !framing.safeArea) return null
   const upright = canvas.width / canvas.height <= UPRIGHT_MAX_RATIO
-  const lines =
-    framing.grid === 'thirds' ? ['33.333%', '66.667%'] : framing.grid === 'cross' ? ['50%'] : []
   return (
     <div aria-hidden="true" className="wf-framing" data-testid="framing-guides">
-      {lines.map((at) => (
-        <i className="wf-framing-line" data-axis="x" key={`x${at}`} style={{ left: at }} />
-      ))}
-      {lines.map((at) => (
-        <i className="wf-framing-line" data-axis="y" key={`y${at}`} style={{ top: at }} />
-      ))}
+      {GRID_LINES[framing.grid].flatMap((at) =>
+        (['x', 'y'] as const).map((axis) => (
+          <i className="wf-framing-line" data-at={at} data-axis={axis} key={`${axis}-${at}`} />
+        )),
+      )}
       {framing.safeArea ? (
         upright ? (
           <>
