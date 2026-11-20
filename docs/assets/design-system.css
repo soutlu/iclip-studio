@@ -1005,6 +1005,7 @@ h1 {
   --color-background: var(--color-surface);
   --color-on-background: var(--color-on-surface);
   --color-focus-ring: var(--color-on-surface);
+  --color-panel-line-strong: color-mix(in srgb, var(--color-on-surface) 15%, transparent);
   --color-hairline: color-mix(in srgb, var(--color-on-surface) 13%, transparent);
   --color-state-hover: color-mix(in srgb, var(--color-on-surface) calc(var(--state-hover) * 100%), transparent);
   --color-state-focus: color-mix(in srgb, var(--color-on-surface) calc(var(--state-focus) * 100%), transparent);

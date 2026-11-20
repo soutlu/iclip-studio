@@ -3,6 +3,7 @@ import { extendTailwindMerge } from 'tailwind-merge'
 
 const twMerge = extendTailwindMerge({
   extend: {
+    theme: { radius: ['panel', 'control'] },
     classGroups: {
       'font-size': [
         'text-caption',
@@ -17,7 +18,18 @@ const twMerge = extendTailwindMerge({
         'text-display-sm',
         'text-display',
       ],
-      shadow: ['shadow-1', 'shadow-2', 'shadow-3', 'shadow-card', 'shadow-control-well'],
+      shadow: [
+        'shadow-1',
+        'shadow-2',
+        'shadow-3',
+        'shadow-card',
+        'shadow-control-well',
+        'shadow-panel',
+        'shadow-panel-card',
+        'shadow-pill',
+        'shadow-float',
+        'shadow-specular',
+      ],
     },
   },
 })

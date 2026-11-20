@@ -89,6 +89,24 @@
         --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
         --color-control-well: var(--n94);
         --shadow-control-well: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+        /* 浮起面板（工作台各页签共用）：panel-line 是浮起面外圈与分隔细线，-strong 是较重的一档；
+           shadow-panel 浮起面板，panel-card 面板里的白色分组卡，pill 分段切换选中格与选中的树节点，
+           float 菜单与弹出层，specular 浮起面顶部 1px 高光 */
+        --color-panel-line: color-mix(in srgb, var(--color-on-surface) 9%, transparent);
+        --color-panel-line-strong: color-mix(in srgb, var(--color-on-surface) 15%, transparent);
+        --shadow-panel:
+          0 1px 2px color-mix(in srgb, var(--n0) 4%, transparent),
+          0 8px 24px -10px color-mix(in srgb, var(--n0) 8%, transparent), 0 0 0 1px var(--color-panel-line);
+        --shadow-panel-card:
+          0 1px 2px color-mix(in srgb, var(--n0) 3%, transparent),
+          0 3px 10px -4px color-mix(in srgb, var(--n0) 5%, transparent), 0 0 0 1px var(--color-panel-line);
+        --shadow-pill:
+          0 1px 3px color-mix(in srgb, var(--n0) 7%, transparent),
+          0 0 0 1px color-mix(in srgb, var(--n10) 7%, transparent);
+        --shadow-float:
+          0 4px 12px color-mix(in srgb, var(--n0) 8%, transparent),
+          0 18px 40px -8px color-mix(in srgb, var(--n0) 16%, transparent), 0 0 0 1px var(--color-panel-line-strong);
+        --shadow-specular: inset 0 1px 0 color-mix(in srgb, var(--n100) 92%, transparent);
         /* 反色与遮罩 */
         --color-inverse-surface: var(--n20);
         --color-inverse-on-surface: var(--n95);
@@ -254,6 +272,9 @@
         /* 圆角（严守 4px 同心嵌套步进） */
         --radius-none:0; --radius-xs:4px; --radius-sm:8px; --radius-md:12px; --radius-lg:16px;
         --radius-xl:20px; --radius-2xl:28px; --radius-3xl:32px; --radius-4xl:48px; --radius-full:9999px;
+        /* 工作台浮起面板与其中控件专用；18 / 9 不在 4px 步进上，是设计稿定的取值 */
+        --radius-panel: 18px;
+        --radius-control: 9px;
         /* 断点（M3 窗口分级） */
         --breakpoint-sm: 600px;
         --breakpoint-md: 840px;
@@ -342,6 +363,18 @@
         --shadow-card: none;
         --color-control-well: var(--n4);
         --shadow-control-well: inset 0 1px 3px rgba(0, 0, 0, 0.45);
+        /* 浮起面板（细线降到 8%，投影加深） */
+        --color-panel-line: color-mix(in srgb, var(--color-on-surface) 8%, transparent);
+        --shadow-panel:
+          0 2px 12px color-mix(in srgb, var(--n0) 42%, transparent), 0 0 0 1px var(--color-panel-line);
+        --shadow-panel-card:
+          0 2px 6px color-mix(in srgb, var(--n0) 30%, transparent), 0 0 0 1px var(--color-panel-line);
+        --shadow-pill:
+          0 2px 6px color-mix(in srgb, var(--n0) 36%, transparent),
+          0 0 0 1px color-mix(in srgb, var(--n100) 8%, transparent);
+        --shadow-float:
+          0 12px 42px color-mix(in srgb, var(--n0) 68%, transparent), 0 0 0 1px var(--color-panel-line-strong);
+        --shadow-specular: inset 0 1px 0 color-mix(in srgb, var(--n100) 6%, transparent);
         /* 低饱和分类/媒体语义色（深色卡面 #202020 上全员 ≥ 5.4:1，配字转纯中性深墨 n10） */
         --color-tone-slate: #6d9ab8;
         --color-tone-teal: #56b39f;
@@ -733,8 +766,10 @@
               <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-3xl)"></i><span>32px</span><code>--radius-3xl</code></div></div>
               <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-4xl)"></i><span>48px</span><code>--radius-4xl</code></div></div>
               <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-full)"></i><span>full · 胶囊</span><code>--radius-full</code></div></div>
+              <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-panel)"></i><span>18px · 浮起面板</span><code>--radius-panel</code></div></div>
+              <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-control)"></i><span>9px · 工作台控件</span><code>--radius-control</code></div></div>
             </div>
-            <p class="type-source-note">嵌套遵循同心递减：面板 <code>16</code> → 卡片 <code>12</code> → 按钮/凹槽 <code>8</code> → 标签 <code>4</code>。</p>
+            <p class="type-source-note">嵌套遵循同心递减：面板 <code>16</code> → 卡片 <code>12</code> → 按钮/凹槽 <code>8</code> → 标签 <code>4</code>。工作台浮起面板 <code>panel</code> 与其中控件 <code>control</code> 是设计稿定的专用取值，不在 4px 步进上，只用在工作台。</p>
           </div>
 
           <div class="scale-group">
@@ -774,8 +809,12 @@
               <div class="motion-row"><code>--shadow-1 · 悬浮小件</code><i class="elevation-swatch" style="box-shadow: var(--shadow-1)"></i><b>1</b></div>
               <div class="motion-row"><code>--shadow-2 · 菜单浮层</code><i class="elevation-swatch" style="box-shadow: var(--shadow-2)"></i><b>2</b></div>
               <div class="motion-row"><code>--shadow-3 · 弹窗</code><i class="elevation-swatch" style="box-shadow: var(--shadow-3)"></i><b>3</b></div>
+              <div class="motion-row"><code>--shadow-panel</code><i class="elevation-swatch" style="box-shadow: var(--shadow-panel), var(--shadow-specular)"></i><b>面板</b></div>
+              <div class="motion-row"><code>--shadow-panel-card</code><i class="elevation-swatch" style="box-shadow: var(--shadow-panel-card)"></i><b>分组卡</b></div>
+              <div class="motion-row"><code>--shadow-pill</code><i class="elevation-swatch" style="box-shadow: var(--shadow-pill), var(--shadow-specular)"></i><b>选中格</b></div>
+              <div class="motion-row"><code>--shadow-float</code><i class="elevation-swatch" style="box-shadow: var(--shadow-float)"></i><b>浮层</b></div>
             </div>
-            <p class="type-source-note">深色下卡片取消投影并转为 <code>7%</code> 极细边，仅浮层菜单与弹窗保留投影。</p>
+            <p class="type-source-note">深色下卡片取消投影并转为 <code>7%</code> 极细边，仅浮层菜单与弹窗保留投影。<code>panel</code> 到 <code>float</code> 四档是工作台浮起面板材质，自带一圈 <code>--color-panel-line</code> 细线，深色下也保留投影。</p>
           </div>
 
           <div class="scale-group">

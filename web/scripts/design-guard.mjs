@@ -42,7 +42,7 @@ const RULES = [
   },
   {
     id: 'tailwind-default-shadow',
-    desc: 'Tailwind 默认阴影档（应使用 shadow-1 / 2 / 3 / card / control-well 或 shadow-[var(--shadow-xs)]）',
+    desc: 'Tailwind 默认阴影档（应使用 shadow-1 / 2 / 3 / card / control-well、工作台的 shadow-panel / panel-card / pill / float / specular 或 shadow-[var(--shadow-xs)]）',
     ext: ['.ts', '.tsx'],
     re: /(?:^|[\s'"`])shadow-(?:xs|sm|md|lg|xl|2xl)\b/g,
   },

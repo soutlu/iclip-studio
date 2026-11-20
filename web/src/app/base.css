@@ -137,6 +137,30 @@
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
   --color-control-well: var(--n94);
   --shadow-control-well: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  /* 浮起面板（工作台各页签共用）：panel-line 是浮起面外圈与分隔细线，-strong 是较重的一档；
+     shadow-panel 浮起面板，panel-card 面板里的白色分组卡，pill 分段切换选中格与选中的树节点，
+     float 菜单与弹出层，specular 浮起面顶部 1px 高光 */
+  --color-panel-line: color-mix(in srgb, var(--color-on-surface) 9%, transparent);
+  --color-panel-line-strong: color-mix(in srgb, var(--color-on-surface) 15%, transparent);
+  --shadow-panel:
+    0 1px 2px color-mix(in srgb, var(--n0) 4%, transparent),
+    0 8px 24px -10px color-mix(in srgb, var(--n0) 8%, transparent),
+    0 0 0 1px var(--color-panel-line);
+  --shadow-panel-card:
+    0 1px 2px color-mix(in srgb, var(--n0) 3%, transparent),
+    0 3px 10px -4px color-mix(in srgb, var(--n0) 5%, transparent), 0 0 0 1px var(--color-panel-line);
+  --shadow-pill:
+    0 1px 3px color-mix(in srgb, var(--n0) 7%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--n10) 7%, transparent);
+  --shadow-float:
+    0 4px 12px color-mix(in srgb, var(--n0) 8%, transparent),
+    0 18px 40px -8px color-mix(in srgb, var(--n0) 16%, transparent),
+    0 0 0 1px var(--color-panel-line-strong);
+  --shadow-specular: inset 0 1px 0 color-mix(in srgb, var(--n100) 92%, transparent);
+  /* 工作台浮起面板与其中控件的圆角。不放进 globals.css 的圆角标尺：那里没被工具类用到的值（如 --radius-3xl）
+     运行时取不到，这两个目前主要在样式表里用 var() 引用，放在这里保证一直有值 */
+  --radius-panel: 18px;
+  --radius-control: 9px;
 
   /* 反色与辅助 */
   --color-inverse-surface: var(--n20); /* #303030 深色按钮/toast */
@@ -464,6 +488,18 @@
   --shadow-card: none;
   --color-control-well: var(--n4);
   --shadow-control-well: inset 0 1px 3px rgba(0, 0, 0, 0.45);
+  --color-panel-line: color-mix(in srgb, var(--color-on-surface) 8%, transparent);
+  --shadow-panel:
+    0 2px 12px color-mix(in srgb, var(--n0) 42%, transparent), 0 0 0 1px var(--color-panel-line);
+  --shadow-panel-card:
+    0 2px 6px color-mix(in srgb, var(--n0) 30%, transparent), 0 0 0 1px var(--color-panel-line);
+  --shadow-pill:
+    0 2px 6px color-mix(in srgb, var(--n0) 36%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--n100) 8%, transparent);
+  --shadow-float:
+    0 12px 42px color-mix(in srgb, var(--n0) 68%, transparent),
+    0 0 0 1px var(--color-panel-line-strong);
+  --shadow-specular: inset 0 1px 0 color-mix(in srgb, var(--n100) 6%, transparent);
   --color-tone-slate: #6d9ab8;
   --color-tone-teal: #56b39f;
   --color-tone-umber: #c49c78;

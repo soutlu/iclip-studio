@@ -79,6 +79,8 @@ const semanticGroups = [
           ["Card", "card", "on-surface"],
           ["Card Edge", "card-edge", "on-surface"],
           ["Control Well", "control-well", "on-surface"],
+          ["Panel Line", "panel-line", "on-surface"],
+          ["Panel Line Strong", "panel-line-strong", "on-surface"],
         ],
       },
     ],
