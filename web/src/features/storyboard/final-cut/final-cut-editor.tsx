@@ -45,6 +45,8 @@ import {
 } from './caption-edit'
 import type { LayerMeasure } from './preview-protocol'
 import { CanvasOverlay, type CanvasNudge } from './canvas-overlay'
+import { CanvasSettings, FramingGuides, type Framing } from './canvas-settings'
+import { canvasForVideo } from './canvas-size'
 import { CaptionsTab } from './captions-tab'
 import { analyseBeats } from './beat-analysis'
 import { projectBeats } from './beat-file'
@@ -115,6 +117,7 @@ import {
   useKeyframeIndexes,
   useVideoAudio,
   videoAudioQuery,
+  videoSizeQuery,
   type KeyframeStates,
 } from './material-media'
 import { MaterialPreview, type MaterialPreviewControl, type MaterialView } from './material-preview'
@@ -436,6 +439,8 @@ function EditorBody({
   const canvasNudgeRef = useRef<CanvasNudge | null>(null)
   const [picks, setPicks] = useState<MaterialPicks>(NO_PICKS)
   const [playback, setPlayback] = useState<PlaybackSettings>({ rate: 1, muted: false, loop: false })
+  // 画面上的参考线：只管这次编辑时看，一开始都关着
+  const [framing, setFraming] = useState<Framing>({ grid: 'off', safeArea: false })
   const toggleMute = () => setPlayback((current) => ({ ...current, muted: !current.muted }))
   const toggleLoop = () => setPlayback((current) => ({ ...current, loop: !current.loop }))
   // 工作台折叠起来时编辑器还挂着，正在播的 final-cut 和素材不会自己停：停下，免得看不见还听得见
@@ -767,6 +772,15 @@ function EditorBody({
         ),
       ]),
     )
+    // 时间线上还没有视频片段（隐藏的也算有）时，画面尺寸改成跟放进去的第一段一致；读不出它的宽高时不改
+    const first = chosen[0]?.material.url
+    const canvas =
+      first === undefined || clips.some((clip) => clip.kind === 'video')
+        ? undefined
+        : queryClient.fetchQuery(videoSizeQuery(first)).then(
+            (size) => (size === null ? undefined : canvasForVideo(size)),
+            () => undefined,
+          )
     const pieces = chosen.flatMap((each) => piecesOf(each, keyframes))
     const add = async () => {
       const sounding = new Set<string>()
@@ -776,6 +790,7 @@ function EditorBody({
         pieces.map((piece) => ({ ...piece, muted: !sounding.has(piece.src) })),
         spot === undefined || at === undefined ? undefined : { track: spot.track, start: at.start },
         spot?.renumber,
+        await canvas,
       )
       if (added) leaveMaterial()
       return added
@@ -1422,34 +1437,37 @@ function EditorBody({
 
   const canvasOverlay =
     film === null || materialView !== null ? null : (
-      <CanvasOverlay
-        bindings={film.bindings}
-        canvas={film.canvas}
-        catalog={catalog}
-        clips={clips}
-        contentOf={session.contentOf}
-        controlRef={previewRef}
-        frameMs={frameMs}
-        layers={film.layers}
-        locale={locale}
-        measures={layerMeasures}
-        nudgeRef={canvasNudgeRef}
-        onCaptionText={setCaptionText}
-        onEdit={(edits) => {
-          leaveMaterial()
-          session.editLayers(edits)
-        }}
-        onGesture={setGesturing}
-        onNotice={notice}
-        onSelect={setSelectedIds}
-        onText={itemTexts.onText}
-        onTextClose={() => setTextTarget(null)}
-        onWatch={setWatchedLayers}
-        playing={playing}
-        revision={film.revision}
-        selected={selected}
-        textTarget={textTarget}
-      />
+      <>
+        <FramingGuides canvas={film.canvas} framing={framing} />
+        <CanvasOverlay
+          bindings={film.bindings}
+          canvas={film.canvas}
+          catalog={catalog}
+          clips={clips}
+          contentOf={session.contentOf}
+          controlRef={previewRef}
+          frameMs={frameMs}
+          layers={film.layers}
+          locale={locale}
+          measures={layerMeasures}
+          nudgeRef={canvasNudgeRef}
+          onCaptionText={setCaptionText}
+          onEdit={(edits) => {
+            leaveMaterial()
+            session.editLayers(edits)
+          }}
+          onGesture={setGesturing}
+          onNotice={notice}
+          onSelect={setSelectedIds}
+          onText={itemTexts.onText}
+          onTextClose={() => setTextTarget(null)}
+          onWatch={setWatchedLayers}
+          playing={playing}
+          revision={film.revision}
+          selected={selected}
+          textTarget={textTarget}
+        />
+      </>
     )
 
   // 会话还在打开工程
@@ -1524,6 +1542,17 @@ function EditorBody({
         >
           {buffering ? <MediaBuffering /> : null}
         </PreviewPlayer>
+        {materialView === null ? (
+          <CanvasSettings
+            background={film.background}
+            canvas={film.canvas}
+            framing={framing}
+            layer={fullscreen ? stage : root}
+            onBackground={session.setBackground}
+            onCanvas={session.resize}
+            onFraming={setFraming}
+          />
+        ) : null}
         {viewedMaterial === undefined || materialView === null ? null : (
           <MaterialPreview
             controlRef={materialPreviewRef}
@@ -1758,7 +1787,7 @@ function EditorBody({
               catalog={catalog}
               canvas={film.canvas}
               keyframes={keyframes}
-              onCanvas={session.resize}
+              onDeselect={clearSelection}
               onGesture={setGesturing}
               onHide={hideClip}
               onRemove={removeSelected}

@@ -45,13 +45,13 @@ function Harness({
       keyframes={new Map()}
       locale={locale}
       onAttributes={noop}
-      onCanvas={noop}
       onCaptionStyle={noop}
       onCaptionText={noop}
       onGesture={noop}
       onHide={(id, hidden) =>
         setClips((current) => current.map((clip) => (clip.id === id ? { ...clip, hidden } : clip)))
       }
+      onDeselect={noop}
       onOpenCaptions={onOpenCaptions}
       onRemove={noop}
       onRetime={noop}

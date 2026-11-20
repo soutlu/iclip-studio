@@ -90,8 +90,12 @@ describe('final-cut 编辑器 · 属性', () => {
       start: 5_000,
     })
 
-  const openWith = async (clips: Parameters<typeof mainFile>[0], extra = '') => {
-    putMockProjectMain(CONVERSATION, mainFile(clips, { width: 720, height: 1280 }, extra))
+  const openWith = async (
+    clips: Parameters<typeof mainFile>[0],
+    extra = '',
+    canvas = { width: 720, height: 1280 },
+  ) => {
+    putMockProjectMain(CONVERSATION, mainFile(clips, canvas, extra))
     const user = userEvent.setup()
     await openEditor()
     return user
@@ -104,7 +108,7 @@ describe('final-cut 编辑器 · 属性', () => {
     ])
     expect(screen.queryByRole('tabpanel', { name: '属性' })).toBeNull()
     await user.click(sideTab('属性'))
-    expect(within(inspector()).getByText('选中时间线上的片段后，可在此调整')).toBeVisible()
+    expect(within(inspector()).getByText('点选时间线上的片段，调整画面、声音或字幕')).toBeVisible()
 
     await pick(user, '测试可填项')
     await user.keyboard('{Shift>}')
@@ -125,32 +129,15 @@ describe('final-cut 编辑器 · 属性', () => {
     expect(screen.queryByRole('tabpanel', { name: '属性' })).toBeNull()
   })
 
-  it('没选中时「属性」里有「画面尺寸」：720×1280 的工程两种都不按下、写着现在的尺寸；点横屏后预览变成横的，横屏按下', async () => {
+  it('点「属性」的空白处焦点落到编辑器根上、不停在页签内容区上，空格照常播放', async () => {
     const user = await openWith([video()])
+    await previewSettled()
     await user.click(sideTab('属性'))
-    const sizes = within(inspector()).getByRole('group', { name: '画面尺寸' })
-    const portrait = within(sizes).getByRole('button', { name: '竖屏 9:16' })
-    const landscape = within(sizes).getByRole('button', { name: '横屏 16:9' })
-    expect(portrait).toHaveAttribute('aria-pressed', 'false')
-    expect(landscape).toHaveAttribute('aria-pressed', 'false')
-    expect(within(inspector()).getByText('720×1280')).toBeVisible()
-    const previewSize = () =>
-      previewPages.latest().commands.findLast((command) => command.type === 'size')
-    await waitFor(() => expect(previewSize()).toMatchObject({ width: 720, height: 1280 }))
-
-    await user.click(landscape)
-    expect(landscape).toHaveAttribute('aria-pressed', 'true')
-    expect(portrait).toHaveAttribute('aria-pressed', 'false')
-    expect(within(inspector()).queryByText('720×1280')).toBeNull()
-    await waitFor(() => expect(previewSize()).toMatchObject({ width: 1920, height: 1080 }))
-    await waitSaved(() =>
-      expect(savedFilm()).toMatch(/<div [^>]*id="film"[^>]*data-width="1920" data-height="1080"/),
-    )
-
-    await user.click(portrait)
-    expect(portrait).toHaveAttribute('aria-pressed', 'true')
-    expect(landscape).toHaveAttribute('aria-pressed', 'false')
-    await waitFor(() => expect(previewSize()).toMatchObject({ width: 1080, height: 1920 }))
+    expect(inspector()).not.toHaveAttribute('tabindex')
+    await user.click(inspector())
+    expect(editorRoot()).toHaveFocus()
+    await user.keyboard(' ')
+    expect(await within(transport()).findByRole('button', { name: '暂停' })).toBeVisible()
   })
 
   it('组件或块的片段：头部是名字、种类和时长，下面平铺「显示时长」「内容与样式」，没有手风琴', async () => {
@@ -233,6 +220,18 @@ describe('final-cut 编辑器 · 属性', () => {
     await waitSaved(() => expect(savedClips()).toHaveLength(1))
     expect(savedTag('clip-2')).toContain('data-start="0"')
     expect(within(row()).getByRole('button', { name: /^选中：B · 镜头 1，/ })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    expect(sideTab('镜头')).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByRole('tabpanel', { name: '属性' })).toBeNull()
+  })
+
+  it('头部最后的「取消选中」和按 Esc 一样：时间线上不再选中，右栏回到切走之前的页签', async () => {
+    const user = await openWith([video()])
+    await pick(user, 'A · 镜头 1')
+    await user.click(within(inspector()).getByRole('button', { name: '取消选中' }))
+    expect(within(row()).getByRole('button', { name: /^选中：A · 镜头 1，/ })).toHaveAttribute(
       'aria-pressed',
       'false',
     )

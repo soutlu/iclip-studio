@@ -4,8 +4,8 @@ import { escapeAttribute, seconds } from './html'
 
 /**
  * final-cut 工程的主文件 `index.html`：工程目录里唯一的主时间线。根下面每个带时间的元素是时间线上的一个片段；
- * 文件可以由编辑器写，也可以手写。编辑器只改片段、根上的总长和画面尺寸、`<html>` 上声明的字幕变量，`<head>` 里
- * 只重算带标记的字体块（见 `withFontBlock`）和写死的画面尺寸（见 `withCanvasSize`），别的内容原样留着。
+ * 文件可以由编辑器写，也可以手写。编辑器只改片段、根上的总长、画面尺寸和底色、`<html>` 上声明的字幕变量，
+ * `<head>` 里只重算带标记的字体块（见 `withFontBlock`）和写死的画面尺寸（见 `withCanvasSize`），别的内容原样留着。
  */
 export interface Canvas {
   width: number
@@ -376,10 +376,6 @@ export function audioElement(clip: Omit<AudioClip, 'kind'>): string {
 
 const round4 = (value: number) => String(Math.round(value * 10_000) / 10_000)
 
-/** 尺寸是 `size` 的东西按原比例缩到放得下画面 `canvas` 的倍数。 */
-export const fitScale = (size: Canvas, canvas: Canvas): number =>
-  Math.min(canvas.width / size.width, canvas.height / size.height)
-
 /**
  * 条目在画面里怎么摆：没写尺寸或和画面一样大时铺满（由主文件里 `.component` 的样式管，这里不写）；
  * 写了别的尺寸时按原比例缩到放得下、居中。
@@ -387,7 +383,7 @@ export const fitScale = (size: Canvas, canvas: Canvas): number =>
 export function itemLayout(item: CatalogItem, canvas: Canvas): Record<string, string> {
   const { size } = item
   if (size === null || (size.width === canvas.width && size.height === canvas.height)) return {}
-  const scale = fitScale(size, canvas)
+  const scale = Math.min(canvas.width / size.width, canvas.height / size.height)
   return {
     left: '50%',
     top: '50%',
@@ -563,6 +559,17 @@ export function withCanvasSize(html: string, canvas: Canvas): string {
     .replace(VIEWPORT, () => viewportOf(canvas))
     .replace(FILLING, (_, rule: string) => `${rule}${fillingOf(canvas)}`)
   return `${head}${html.slice(headEnd)}`
+}
+
+const FILM_BACKGROUND = new RegExp(`\\n#${FILM_ID}\\{[^}\\n]*?background:([^;}\\n]+)`)
+
+/**
+ * 主文件 `<head>` 里给根写的底色（`emptyProject` 写的是 black）；写法和 `emptyProject` 不一样、没写时是 null。
+ * 编辑器选的底色写在根的行内样式上，盖过这一条。
+ */
+export function headBackground(html: string): string | null {
+  const headEnd = html.search(/<\/head\s*>/i)
+  return FILM_BACKGROUND.exec(headEnd < 0 ? '' : html.slice(0, headEnd))?.[1]?.trim() ?? null
 }
 
 /**

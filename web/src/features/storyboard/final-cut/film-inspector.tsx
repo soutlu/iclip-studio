@@ -60,10 +60,8 @@ type Props = {
   /** final-cut 里所有的片段：改时间时按它们算落在哪。 */
   clips: readonly FilmClip[]
   catalog: ComponentCatalog
-  /** 画面尺寸：没选中片段时在「画面尺寸」里选，字幕的默认字号和能设的范围按它算。 */
+  /** 画面尺寸：字幕的默认字号和能设的范围按它算。 */
   canvas: Canvas
-  /** 把画面尺寸改成 `canvas`，算一步撤销。 */
-  onCanvas: (canvas: Canvas) => void
   sourceMs: SourceLength
   /** 视频素材的镜头读取状态：「原片截取」在素材总长读到之前写它读到哪了。 */
   keyframes: KeyframeStates
@@ -76,6 +74,8 @@ type Props = {
   onHide: (id: string, hidden: boolean) => void
   /** 删掉选中的片段，和按 Delete 一样。 */
   onRemove: () => void
+  /** 取消选中，和按 Esc、点时间线空白处一样。 */
+  onDeselect: () => void
   onRetime: (timings: ReadonlyMap<string, Timing>) => void
   /** 「原片截取」开始或结束拖动：拖动中的 Esc 归它（只取消这一次拖动），快捷键先不接。 */
   onGesture: (active: boolean) => void
@@ -160,51 +160,11 @@ const seconds = (ms: number) => (ms / 1000).toFixed(2)
 const NO_PEAKS: PeaksState = { kind: 'loading' }
 const NO_BINDINGS: LocaleBindings = {}
 
-/** 「画面尺寸」能选的两种。 */
-const CANVAS_SIZES = [
-  { label: '竖屏 9:16', canvas: { width: 1080, height: 1920 } },
-  { label: '横屏 16:9', canvas: { width: 1920, height: 1080 } },
-] as const
-
-/**
- * 没选中片段时的「画面尺寸」：两种尺寸一直排着，现在的那种按下；工程的尺寸两种都不是时（按第一段素材建的老工程）
- * 都不按下，旁边写现在的宽×高。点另一种就改。
- */
-function CanvasSize({ canvas, onCanvas }: Pick<Props, 'canvas' | 'onCanvas'>) {
-  const isCurrent = (size: Canvas) => size.width === canvas.width && size.height === canvas.height
-  const other = !CANVAS_SIZES.some((each) => isCurrent(each.canvas))
-  return (
-    <div className="wf-card wf-prop-card">
-      <div className="wf-prop-title-row">
-        <h4 className="wf-prop-title">画面尺寸</h4>
-        {other ? (
-          <span className="wf-prop-subtitle">
-            {canvas.width}×{canvas.height}
-          </span>
-        ) : null}
-      </div>
-      <div aria-label="画面尺寸" className="wf-seg wf-canvas-sizes" role="group">
-        {CANVAS_SIZES.map((each) => (
-          <button
-            aria-pressed={isCurrent(each.canvas)}
-            className="wf-seg-item ui-state ui-focus"
-            key={each.label}
-            onClick={() => onCanvas(each.canvas)}
-            type="button"
-          >
-            {each.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 /**
  * 侧栏「属性」页签的内容：选中一个片段时显示它的名字、种类和可以改的几张卡片；选中多个时有一块说明；没选中时是
- * 「画面尺寸」和一块说明。
+ * 一句怎么用的说明。
  */
-export function FilmInspector({ selected, onCanvas, ...rest }: Props) {
+export function FilmInspector({ selected, ...rest }: Props) {
   const [only] = selected
   // 倍速浮层挂在这里：浮层里按的键和「属性」里别的控件一样不当快捷键
   const [root, setRoot] = useState<HTMLDivElement | null>(null)
@@ -212,17 +172,12 @@ export function FilmInspector({ selected, onCanvas, ...rest }: Props) {
     // data-inspector：编辑器按它认出「属性」里的控件，那里按的键不当快捷键
     <div className="wf-inspector" data-inspector ref={setRoot}>
       {only === undefined ? (
-        <>
-          <div className="wf-inspector-film">
-            <CanvasSize canvas={rest.canvas} onCanvas={onCanvas} />
-          </div>
-          <div className="wf-inspector-empty">
-            <span aria-hidden="true" className="wf-inspector-empty-icon">
-              <Icon decorative name="final-cut-properties" size="md" />
-            </span>
-            <p>选中时间线上的片段后，可在此调整</p>
-          </div>
-        </>
+        <div className="wf-inspector-empty">
+          <span aria-hidden="true" className="wf-inspector-empty-icon">
+            <Icon decorative name="final-cut-cursor-select" size="md" />
+          </span>
+          <p>点选时间线上的片段，调整画面、声音或字幕</p>
+        </div>
       ) : selected.length > 1 ? (
         <>
           <div className="wf-inspector-head">
@@ -251,8 +206,8 @@ export function FilmInspector({ selected, onCanvas, ...rest }: Props) {
 }
 
 /**
- * 选中一个片段：头部是种类图标、名字、种类和时长（字幕写起止），右边隐藏、删除，视频片段还有「分离音频」，分离出来的
- * 原声有「合并回视频」；字幕没有隐藏（只能在行头上整行隐藏）。下面一张卡一件事。视频片段、音频片段是「原片截取」
+ * 选中一个片段：头部是种类图标、名字、种类和时长（字幕写起止），右边隐藏、删除、取消选中，视频片段还有「分离音频」，
+ * 分离出来的原声有「合并回视频」；字幕没有隐藏（只能在行头上整行隐藏）。下面一张卡一件事。视频片段、音频片段是「原片截取」
  * 和「声音与节奏」，组件或块的片段是「显示时长」和「内容与样式」，字幕是「显示时长」和「内容与样式」，「其他」片段
  * 只有「显示时长」。分离过原声的视频片段把「声音与节奏」换成「画面变速」和原声去处的一张，分离出来的原声最上面多
  * 一张同步卡。有声片段最下面是「智能调音」。
@@ -269,6 +224,7 @@ function ClipInspector({
   sourceName,
   onHide,
   onRemove,
+  onDeselect,
   onRetime,
   onGesture,
   onValues,
@@ -282,7 +238,7 @@ function ClipInspector({
   smartMix,
   onOpenCaptions,
   popupContainer,
-}: Omit<Props, 'selected' | 'onCanvas'> & { clip: FilmClip; popupContainer: HTMLElement | null }) {
+}: Omit<Props, 'selected'> & { clip: FilmClip; popupContainer: HTMLElement | null }) {
   const fonts = Object.keys(catalog.fonts).toSorted()
   const sound = clip.kind === 'audio'
   const hideLabel = sound ? (clip.hidden ? '取消静音' : '静音') : clip.hidden ? '显示' : '隐藏'
@@ -332,6 +288,18 @@ function ClipInspector({
               <>
                 删除
                 <Keys>Delete</Keys>
+              </>
+            }
+          />
+          <Tool
+            icon="final-cut-close"
+            label="取消选中"
+            onClick={onDeselect}
+            shortcuts="Escape"
+            tip={
+              <>
+                取消选中
+                <Keys>Esc</Keys>
               </>
             }
           />

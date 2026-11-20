@@ -2,6 +2,7 @@ import { queryOptions, useQueries } from '@tanstack/react-query'
 import { errorMessageOf } from '@/shared/api/client'
 import { keyframeQuery } from '../editing/media-analysis'
 import { keyframeRanges, type KeyframeIndex } from '../editing/keyframe-segments'
+import type { Canvas } from './composition/film'
 import type { MediaSpan } from './materials'
 
 const loadReader = () => import('../editing/media-file')
@@ -14,6 +15,29 @@ export const videoAudioQuery = (url: string) =>
       const input = (await loadReader()).openInput(url)
       try {
         return (await input.getPrimaryAudioTrack()) !== null
+      } finally {
+        input.dispose()
+      }
+    },
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+  })
+
+/** 这个地址的视频画面的宽高；没有画面、宽高不是正数时是 null，读不出来时查询失败。 */
+export const videoSizeQuery = (url: string) =>
+  queryOptions({
+    queryKey: ['whole-film', 'video-size', url],
+    queryFn: async (): Promise<Canvas | null> => {
+      const input = (await loadReader()).openInput(url)
+      try {
+        const track = await input.getPrimaryVideoTrack()
+        if (track === null) return null
+        const size = {
+          width: await track.getDisplayWidth(),
+          height: await track.getDisplayHeight(),
+        }
+        return size.width > 0 && size.height > 0 ? size : null
       } finally {
         input.dispose()
       }

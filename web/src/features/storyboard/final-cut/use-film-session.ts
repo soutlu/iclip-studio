@@ -41,7 +41,6 @@ import {
   captionStyles,
   captionVariable,
   isCaptionsHost,
-  refittedCaptionSize,
   withCaptionDefaults,
 } from './composition/captions'
 import type {
@@ -53,6 +52,7 @@ import type {
 import {
   audioElement,
   clipOf,
+  headBackground,
   hostElement,
   itemFonts,
   itemNamed,
@@ -105,7 +105,6 @@ import {
   type StoredProject,
 } from './final-cut.api'
 import { itemDurationMs } from './items'
-import { refittedHostStyles } from './layer-edits'
 import {
   LOCALES,
   localeOfPath,
@@ -147,6 +146,8 @@ export type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'failed'
 export type FilmView = {
   html: string
   canvas: Canvas
+  /** 画面底色：根上行内写的；没写时是 `<head>` 里给根写的（见 `headBackground`），也读不出时是 null。 */
+  background: string | null
   /**
    * 主文件根下所有带时间的元素（字幕宿主除外），按它们在文件里的先后；后面跟着字幕场景里的各句字幕，
    * 按它们在场景里的先后。配音片段只有当前显示的语言 AI 配音时这种语言的，和原文下、保留原声时的旁白（见
@@ -389,6 +390,19 @@ const resizeRoot = (engine: Composition, canvas: Canvas) => {
 }
 
 /**
+ * 在一批操作里把画面尺寸改成 `canvas`，只改画面本身：主文件和字幕场景的根改成新的宽高（见 `resizeRoot`；主文件
+ * `<head>` 里写死的尺寸、字幕场景统一样式里的默认字号存出时跟着根重算，见 `viewOf`）。时间线上已有的内容（贴片和
+ * 场景宿主的摆放、一句单独设过的字号）一律不换算，各自写着的值不变。
+ *
+ * 字幕宿主上写的宽高不改：SDK 不让改宿主的 `data-width` / `data-height`（保留属性），运行库挂载字幕场景时按场景根的
+ * 宽高重写宿主，宿主本身铺满画面。
+ */
+const resizeCanvas = (main: Composition, scene: Composition | undefined, canvas: Canvas) => {
+  resizeRoot(main, canvas)
+  if (scene !== undefined) resizeRoot(scene, canvas)
+}
+
+/**
  * 主文件根下所有带时间的元素（字幕宿主除外）读成的片段，按它们在文件里的先后。不存出文件，一批操作中间也能用。
  */
 const clipsOf = (main: Composition, catalog: ComponentCatalog): FilmClip[] => {
@@ -545,8 +559,9 @@ const writeTotal = (main: Composition, scene: Composition | undefined) => {
 /**
  * 工程现在的样子（显示语言 `locale` 的字），和各文件现在的内容（路径 → 内容）：主文件只重算 `<head>` 里的
  * 字体块和写死的画面尺寸（SDK 改不了 `<head>`）。字体块的字按原文和所有值表里的字一起算，存出的内容和显示哪种语言
- * 无关；画面尺寸按根上的算，撤销根的改动时跟着回去。字幕场景同理只重算统一样式里跟着画面宽度走的默认字号（见
- * `withCaptionDefaults`）。别的文件照各自存出的写。`change` 是这一份的序号和从上一份来的那一步（见 `FilmView`）。
+ * 无关；画面尺寸按根上的算，撤销根的改动时跟着回去。字幕场景统一样式里的默认字号也按根上的画面尺寸重算（见
+ * `withCaptionDefaults`）。别的文件照各自存出的写。`change` 是这一份的序号和从上一份来的
+ * 那一步（见 `FilmView`）。
  */
 const viewOf = (
   project: Project,
@@ -589,6 +604,7 @@ const viewOf = (
   const view: FilmView = {
     html,
     canvas,
+    background: rootOf(main)?.inlineStyles['backgroundColor'] ?? headBackground(html),
     clips: clips.filter(shownHere).map((clip) =>
       shown.values !== null && clip.kind === 'caption'
         ? {
@@ -1207,13 +1223,15 @@ export function useFilmSession(
   /**
    * 把几段素材一段接一段放进画面区：给了 `at` 就从那一行的那个时间放起（调用方保证那里空着），
    * 没给就接在主轨（画面区最上面那一行）的末尾。`renumber` 是为它新开一行时别的片段要换成的行号。
-   * 每段都叠在最上面，写在根下第一个。工程还没打开、放不下时不动工程。
+   * 每段都叠在最上面，写在根下第一个。给了 `canvas` 时画面尺寸同一步改成它（只改画面本身，见 `resizeCanvas`），
+   * 一次撤销片段和尺寸一起回去。工程还没打开、放不下时不动工程。
    */
   const addVideos = useCallback(
     (
       videos: readonly NewVideo[],
       at?: Landing,
       renumber: Renumbering = NO_RENUMBERING,
+      canvas?: Canvas,
     ): boolean => {
       const project = projectRef.current
       if (project === null) return false
@@ -1230,6 +1248,7 @@ export function useFilmSession(
       const row = others.filter((clip) => onRow(clip, { zone: 'visual', track }))
       let end = at?.start ?? Math.max(0, ...row.map((clip) => clip.start + clip.duration))
       perform(project, () => {
+        if (canvas !== undefined) resizeCanvas(engine, sceneOf(project), canvas)
         for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
         for (const [placed, video] of videos.entries()) {
           const element = videoElement({
@@ -1510,13 +1529,7 @@ export function useFilmSession(
   )
 
   /**
-   * 把画面尺寸改成 `canvas`，算一步撤销：主文件和字幕场景的根改成新的宽高（见 `resizeRoot`；主文件 `<head>` 里写死的
-   * 尺寸存出时跟着根重算，见 `viewOf`），贴片和场景的宿主按新画面重摆（见 `refittedHostStyles`）。视频不用动：画面
-   * 等比放、留黑边。字幕的默认字号按画面宽度算：场景里统一样式的字号存出时跟着重算（见 `viewOf`），一句设过的
-   * 字号按比例换算（见 `refittedCaptionSize`）。和现在一样、工程还没打开时不动工程。
-   *
-   * 字幕宿主上写的宽高不改：SDK 不让改宿主的 `data-width` / `data-height`（保留属性），运行库挂载字幕场景时按场景根的
-   * 宽高重写宿主，宿主本身铺满画面。
+   * 把画面尺寸改成 `canvas`，算一步撤销，只改画面本身（见 `resizeCanvas`）。和现在一样、工程还没打开时不动工程。
    */
   const resize = useCallback(
     (canvas: Canvas) => {
@@ -1524,29 +1537,24 @@ export function useFilmSession(
       if (project === null) return
       const before = canvasOf(mainOf(project))
       if (before.width === canvas.width && before.height === canvas.height) return
-      edit((main, scene) => {
-        resizeRoot(main, canvas)
-        if (scene !== undefined) {
-          resizeRoot(scene, canvas)
-          for (const { id, fontSize } of captionsIn(scene, main))
-            if (fontSize !== null)
-              scene.setStyle(
-                id,
-                captionStyles(
-                  { fontSize: refittedCaptionSize(fontSize, before, canvas) },
-                  catalog,
-                  canvas,
-                ),
-              )
-        }
-        for (const { host, captions } of mountsOf(main)) {
-          const inline = main.getElement(host)?.inlineStyles
-          if (!captions && inline !== undefined)
-            main.setStyle(host, refittedHostStyles(inline, before, canvas))
-        }
-      })
+      edit((main, scene) => resizeCanvas(main, scene, canvas))
     },
-    [catalog, edit],
+    [edit],
+  )
+
+  /**
+   * 把画面底色改成 `color`，算一步撤销：写在主文件根的行内样式上，盖过 `<head>` 里的底色（预览、导出读的都是这份
+   * 主文件）。
+   * 总是写上、不去掉：去掉的行内样式撤销时排到最后，文件回不到原样。根上写着的就是它、工程还没打开时不动工程。
+   */
+  const setBackground = useCallback(
+    (color: string) => {
+      const project = projectRef.current
+      const root = project === null ? undefined : rootOf(mainOf(project))
+      if (root === undefined || root.inlineStyles['backgroundColor'] === color) return
+      edit((main) => main.setStyle(root.id, { backgroundColor: color }))
+    },
+    [edit],
   )
 
   /** 工程里文件 `path`（相对工程根）现在的内容（没存的改动也在里面）；没打开着时是 undefined。 */
@@ -2305,6 +2313,7 @@ export function useFilmSession(
     setHidden,
     editLayers,
     resize,
+    setBackground,
     contentOf,
     setValues,
     setAttributes,
