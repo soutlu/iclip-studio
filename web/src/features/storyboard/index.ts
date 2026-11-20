@@ -4,4 +4,6 @@ export { StoryboardReader as StoryboardPanel } from './components/storyboard-rea
 export { FILM_PATH } from './film/film.api'
 export { FilmReader as FilmPanel } from './film/film-reader'
 export { FinalCutEditor as FinalCutPanel } from './final-cut/final-cut-editor'
+export { createFinalCut } from './final-cut/create-final-cut'
+export { PROJECT_MAIN_PATH as FINAL_CUT_PATH } from './final-cut/final-cut.api'
 export { ConversationVideos } from './conversation-videos/conversation-videos'

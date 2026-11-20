@@ -261,6 +261,38 @@ describe('ArtifactRegistry', () => {
     expect(registry.standing().map((entry) => entry.type)).toEqual(['canvas', 'workspace'])
   })
 
+  it('按路径查归属：确切路径、模式、任一路径依次认，id 和产物的一样；都不认时没有', () => {
+    const registry = registryWith(
+      editingEntry,
+      patternEntry('**/*.json', 'json-view'),
+      shotsEntry,
+      workspaceEntry,
+    )
+
+    expect(registry.ownerOf('video_shot.json')).toEqual({
+      id: 'file:video_shot.json',
+      title: '分镜',
+      type: 'storyboard',
+    })
+    expect(registry.ownerOf('frames/a.json')).toEqual({
+      id: 'file:frames/a.json',
+      title: 'frames/a.json',
+      type: 'json-view',
+    })
+    expect(registry.ownerOf('film.icml')).toEqual({ id: 'editing', title: '剪辑', type: 'editing' })
+    expect(registry.ownerOf('notes.md')).toBeUndefined()
+  })
+
+  it('能新建的类型是登记了 create 的那些，按登记顺序给', () => {
+    const create = { agentCreatedNotice: '', run: () => Promise.resolve('') }
+    const registry = registryWith(shotsEntry, { ...editingEntry, create }, workspaceEntry, {
+      ...patternEntry('canvas/*.json'),
+      create,
+    })
+
+    expect(registry.creatable().map((entry) => entry.type)).toEqual(['editing', 'canvas'])
+  })
+
   it('没登记过的类型解析不出渲染器', () => {
     expect(registryWith(shotsEntry).resolve('media-grid')).toBeUndefined()
   })

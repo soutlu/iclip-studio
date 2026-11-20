@@ -1,15 +1,17 @@
 import { MOCK_STREAM_EPOCH } from '@/testing/mocks/transcript'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useCallback, useState } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { addMockConversation } from '@/testing/mocks/conversations'
 import { loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
+import { ApiError } from '@/shared/api/client'
 import { ShellChromeContext } from '@/shared/shell'
-import type { ArtifactEntry, ArtifactRendererProps } from './artifact'
+import { toast, Toaster } from '@/shared/ui/toast'
+import type { ArtifactCreate, ArtifactEntry, ArtifactRendererProps } from './artifact'
 import { useOpenArtifact } from './artifact-search'
 import { ArtifactRegistry } from './registry'
 import { useWorkbenchOpenRequest } from './use-workbench-open-request'
@@ -36,7 +38,7 @@ const WithHeaderAction = (props: ArtifactRendererProps) => (
 const shotsEntry: ArtifactEntry = {
   autoOpen: true,
   component: Painted,
-  empty: '暂无分镜，agent 交付后显示',
+  empty: '暂无',
   icon: 'grid',
   label: '分镜',
   match: { path: 'video_shot.json' },
@@ -47,13 +49,36 @@ const shotsEntry: ArtifactEntry = {
 const workspaceEntry: ArtifactEntry = {
   autoOpen: false,
   component: Painted,
-  empty: '还没有文件',
+  empty: '暂无',
   icon: 'folder',
   label: '文件',
   match: { workspace: true },
   title: () => '文件',
   type: 'workspace',
 }
+
+const EDIT_MAIN = 'edit/index.html'
+
+/** 能新建的类型：主文件在时才有；`run` 缺省时照服务端那样把主文件加进工作区，答复它的路径。 */
+const creatableEntry = (run?: ArtifactCreate['run']): ArtifactEntry => ({
+  autoOpen: false,
+  component: Painted,
+  create: {
+    agentCreatedNotice: 'agent 已创建剪辑目录',
+    run:
+      run ??
+      (() => {
+        addFile(EDIT_MAIN)
+        return Promise.resolve(EDIT_MAIN)
+      }),
+  },
+  hiddenWhenReadOnly: true,
+  icon: 'film',
+  label: '剪辑',
+  match: { anyPath: [EDIT_MAIN] },
+  title: () => '剪辑',
+  type: 'editing',
+})
 
 const agentEntry: ArtifactEntry = {
   autoOpen: false,
@@ -92,11 +117,15 @@ const registryWith = (...entries: ArtifactEntry[]) => {
   return registry
 }
 
+// 工作区里现在的文件：每个用例开头用 serveFiles 换一份
+let served: string[] = []
+
 const serveFiles = (paths: string[]) => {
+  served = paths
   server.use(
     http.get('*/api/conversations/:conversationId/workspace/files', () =>
       HttpResponse.json({
-        files: paths.map((path) => ({
+        files: served.map((path) => ({
           path,
           sizeBytes: 10,
           updatedAt: '2026-09-01T10:00:00Z',
@@ -105,6 +134,10 @@ const serveFiles = (paths: string[]) => {
       }),
     ),
   )
+}
+
+const addFile = (path: string) => {
+  served = [...served, path]
 }
 
 type LayoutSize = Pick<WorkbenchLayout, 'compact' | 'sideBySide'>
@@ -119,6 +152,8 @@ function ControlledHost({
   onOpenRequest?: WorkbenchLayout['onOpen']
 }) {
   const [collapsed, setCollapsed] = useState(true)
+  // 外框收起工作台时给的竖条插槽（应用里在 AppContentPane 的竖条里）
+  const [railSlot, setRailSlot] = useState<HTMLElement | null>(null)
   const onOpen = useCallback<WorkbenchLayout['onOpen']>(
     (reason) => {
       onOpenRequest?.(reason)
@@ -135,6 +170,7 @@ function ControlledHost({
         collapsed,
         onCollapsedChange: setCollapsed,
         onOpen,
+        railSlot,
       }}
     >
       <button
@@ -147,9 +183,12 @@ function ControlledHost({
         从对话查看分镜
       </button>
       {collapsed ? (
-        <button onClick={() => onOpen('explicit')} type="button">
-          展开工作台
-        </button>
+        <section aria-label="收起的工作台">
+          <button onClick={() => onOpen('explicit')} type="button">
+            展开工作台
+          </button>
+          {layout.compact ? null : <div ref={setRailSlot} />}
+        </section>
       ) : layout.compact ? (
         <button onClick={() => setCollapsed(true)} type="button">
           回到对话
@@ -158,6 +197,7 @@ function ControlledHost({
       <div hidden={collapsed}>
         <WorkbenchHost conversationId={CONVERSATION_ID} />
       </div>
+      <Toaster />
     </WorkbenchLayoutProvider>
   )
 }
@@ -231,7 +271,7 @@ const delegationReset = (state: 'running' | 'done') => ({
 })
 
 describe('WorkbenchHost 收起态', () => {
-  it('一份文件都没有时收着；点开是选择页，常驻的两行都灰着，各带一句为什么', async () => {
+  it('一份文件都没有时收着；点开是选择页，顶栏写「工作台」，常驻的两行都灰着、写「暂无」', async () => {
     serveFiles([])
     await renderHost()
 
@@ -240,10 +280,11 @@ describe('WorkbenchHost 收起态', () => {
     const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
     const shots = within(chooser).getByRole('button', { name: /分镜/ })
     expect(shots).toHaveAttribute('aria-disabled', 'true')
-    expect(shots).toHaveTextContent('暂无分镜，agent 交付后显示')
+    expect(shots).toHaveTextContent('分镜暂无')
     const files = within(chooser).getByRole('button', { name: /文件/ })
     expect(files).toHaveAttribute('aria-disabled', 'true')
-    expect(files).toHaveTextContent('还没有文件')
+    expect(files).toHaveTextContent('文件暂无')
+    expect(screen.getByText('工作台')).toBeVisible()
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
   })
 
@@ -279,10 +320,10 @@ describe('WorkbenchHost 收起态', () => {
   })
 
   it.each([
-    { files: ['video/a.md'], rows: ['分镜暂无分镜，agent 交付后显示', '文件'] },
+    { files: ['video/a.md'], rows: ['分镜暂无', '文件'] },
     {
       files: ['video/a.md', 'script.md'],
-      rows: ['分镜暂无分镜，agent 交付后显示', '剧本', '文件'],
+      rows: ['分镜暂无', '剧本', '文件'],
     },
   ])('没登记灰着原因的常驻类型等有了文件才列出：$files', async ({ files, rows }) => {
     serveFiles(files)
@@ -327,12 +368,7 @@ describe('WorkbenchHost 收起态', () => {
         within(chooser)
           .getAllByRole('button')
           .map((row) => row.textContent),
-      ).toEqual([
-        '分镜暂无分镜，agent 交付后显示',
-        '画布 canvas/a.canvas.json',
-        '画布 canvas/b.canvas.json',
-        '文件',
-      ]),
+      ).toEqual(['分镜暂无', '画布 canvas/a.canvas.json', '画布 canvas/b.canvas.json', '文件']),
     )
 
     await userEvent.click(
@@ -469,21 +505,15 @@ describe('WorkbenchHost 展开态', () => {
     ['并排', ROOMY, '折叠工作台'],
     ['二选一', { compact: false, sideBySide: false }, '回到对话'],
   ])(
-    '%s布局：页签放进顶栏右侧的控件和页签同在顶栏、一直显示，不跟着顶栏自己的按钮藏起来',
+    '%s布局：页签放进顶栏右侧的控件在页签内容外面，和顶栏自己的按钮一起显示',
     async (_, layout, ownButton) => {
       serveFiles(['video_shot.json'])
       await renderHost(layout, registryWith({ ...shotsEntry, component: WithHeaderAction }))
 
       const action = await screen.findByRole('button', { name: '页签自己的操作' })
       expect(action).toBeVisible()
-      expect(screen.getByRole('tablist', { name: '面板内容' }).parentElement).toContainElement(
-        action,
-      )
-      expect(screen.getByText('画着分镜')).not.toContainElement(action)
-      // 并排时顶栏自己的按钮那一组悬停才显示
-      expect(screen.getByRole('button', { name: ownButton }).parentElement).not.toContainElement(
-        action,
-      )
+      expect(screen.getByRole('tabpanel')).not.toContainElement(action)
+      expect(screen.getByRole('button', { name: ownButton })).toBeVisible()
     },
   )
 
@@ -587,7 +617,7 @@ describe('WorkbenchHost · 只读时不显示的页签', () => {
         within(chooser)
           .getAllByRole('button')
           .map((row) => row.textContent),
-      ).toEqual(['分镜暂无分镜，agent 交付后显示', '文件']),
+      ).toEqual(['分镜暂无', '文件']),
     )
   })
 
@@ -608,5 +638,226 @@ describe('WorkbenchHost · 只读时不显示的页签', () => {
     expect(await screen.findByText('画着分镜（只读）')).toBeVisible()
     expect(tabNames()).toEqual(['分镜', '制作', '文件'])
     expect(screen.queryByText(/^画着剪辑/)).not.toBeInTheDocument()
+  })
+})
+
+describe('WorkbenchHost · 新建', () => {
+  beforeEach(() => {
+    loginAs(mockAuthUser)
+  })
+
+  // 提示挂在全局：上一条用例的提示别留到下一条
+  afterEach(() => {
+    act(() => {
+      toast.dismiss()
+    })
+  })
+
+  const withCreatable = (run?: ArtifactCreate['run']) =>
+    registryWith(shotsEntry, creatableEntry(run), workspaceEntry)
+
+  const openCreateMenu = async () => {
+    await userEvent.click(await screen.findByRole('button', { name: '新建' }))
+    return screen.findByRole('menuitem', { name: '新建 剪辑' })
+  }
+
+  it('主文件不在时没有它的页签；「+」里点「新建 剪辑」：建好后直接切过去，不提示，「+」不再出现', async () => {
+    serveFiles(['video_shot.json'])
+    const { router } = await renderHost(ROOMY, withCreatable(), `/c/${CONVERSATION_ID}`)
+    expect(await screen.findByText('画着分镜')).toBeVisible()
+    expect(screen.queryByRole('tab', { name: '剪辑' })).not.toBeInTheDocument()
+
+    await userEvent.click(await openCreateMenu())
+
+    expect(await screen.findByText('画着剪辑')).toBeVisible()
+    expect(screen.getByRole('tab', { name: '剪辑', selected: true })).toBeVisible()
+    expect(router.state.location.search).toMatchObject({ artifact: 'editing' })
+    expect(screen.queryByText('agent 已创建剪辑目录')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '新建' })).not.toBeInTheDocument()
+  })
+
+  it('正在建时「+」换成转圈、不能再点', async () => {
+    serveFiles(['video_shot.json'])
+    let finish = () => {}
+    const run = () =>
+      new Promise<string>((resolve) => {
+        finish = () => {
+          addFile(EDIT_MAIN)
+          resolve(EDIT_MAIN)
+        }
+      })
+    await renderHost(ROOMY, withCreatable(run), `/c/${CONVERSATION_ID}`)
+
+    await userEvent.click(await openCreateMenu())
+
+    expect(await screen.findByRole('status', { name: '正在新建 剪辑' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: '新建' })).not.toBeInTheDocument()
+    finish()
+    expect(await screen.findByRole('tab', { name: '剪辑', selected: true })).toBeVisible()
+  })
+
+  it.each([
+    [
+      '服务端给了原因',
+      new ApiError(503, '剪辑 新建失败：服务暂不可用'),
+      '剪辑 新建失败：服务暂不可用',
+    ],
+    ['没给原因', new Error('boom'), '剪辑 新建失败'],
+  ])('新建失败（%s）：提示失败，还在原来的页签，「+」能再点', async (_, error, text) => {
+    serveFiles(['video_shot.json'])
+    await renderHost(
+      ROOMY,
+      withCreatable(() => Promise.reject(error)),
+      `/c/${CONVERSATION_ID}`,
+    )
+
+    await userEvent.click(await openCreateMenu())
+
+    expect(await screen.findByText(text)).toBeVisible()
+    expect(screen.getByRole('tab', { name: '分镜', selected: true })).toBeVisible()
+    expect(await screen.findByRole('button', { name: '新建' })).toBeVisible()
+  })
+
+  it('只读查看别人的对话：没有「+」，选择页里也没有新建', async () => {
+    addMockConversation('别人的对话', undefined, OTHER_USER_ID, CONVERSATION_ID)
+    serveFiles(['video_shot.json'])
+    await renderHost(ROOMY, withCreatable(), `/c/${CONVERSATION_ID}`)
+
+    expect(await screen.findByText('画着分镜')).toBeVisible()
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: '新建' })).not.toBeInTheDocument(),
+    )
+  })
+
+  it('对话开着时 agent 写了主文件：切到它的页签，提示 agent 建好了', async () => {
+    serveFiles(['video_shot.json'])
+    const { router, socket } = await renderHost(ROOMY, withCreatable(), `/c/${CONVERSATION_ID}`)
+    expect(await screen.findByText('画着分镜')).toBeVisible()
+
+    addFile(EDIT_MAIN)
+    socket.deliver(fsChanged(EDIT_MAIN, 'created'))
+
+    expect(await screen.findByText('画着剪辑')).toBeVisible()
+    expect(screen.getByRole('tab', { name: '剪辑', selected: true })).toBeVisible()
+    expect(router.state.location.search).toMatchObject({ artifact: 'editing' })
+    expect(await screen.findByText('agent 已创建剪辑目录')).toBeVisible()
+  })
+
+  it('打开对话时主文件已经在：页签照常排着，不切过去也不提示', async () => {
+    serveFiles(['video_shot.json', EDIT_MAIN])
+    await renderHost(ROOMY, withCreatable(), `/c/${CONVERSATION_ID}`)
+
+    expect(await screen.findByText('画着分镜')).toBeVisible()
+    expect(await screen.findByRole('tab', { name: '剪辑', selected: false })).toBeVisible()
+    expect(screen.queryByText('agent 已创建剪辑目录')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '新建' })).not.toBeInTheDocument()
+  })
+
+  it('开着它时主文件被删：页签消失，回到默认页签，「+」又能新建', async () => {
+    serveFiles(['video_shot.json', EDIT_MAIN])
+    const { socket } = await renderHost(
+      ROOMY,
+      withCreatable(),
+      `/c/${CONVERSATION_ID}?artifact=editing`,
+    )
+    expect(await screen.findByText('画着剪辑')).toBeVisible()
+
+    serveFiles(['video_shot.json'])
+    socket.deliver(fsChanged(EDIT_MAIN, 'deleted'))
+
+    expect(await screen.findByText('画着分镜')).toBeVisible()
+    expect(screen.getByRole('tab', { name: '分镜', selected: true })).toBeVisible()
+    expect(screen.queryByRole('tab', { name: '剪辑' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '新建' })).toBeVisible()
+  })
+
+  it('选择页：分隔线下是能新建的类型，点了建好并打开它', async () => {
+    serveFiles([])
+    await renderHost(ROOMY, withCreatable(), `/c/${CONVERSATION_ID}`)
+
+    await userEvent.click(await screen.findByRole('button', { name: '展开工作台' }))
+    const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
+    await userEvent.click(within(chooser).getByRole('button', { name: '新建 剪辑' }))
+
+    expect(await screen.findByText('画着剪辑')).toBeVisible()
+    expect(screen.getByRole('tab', { name: '剪辑', selected: true })).toBeVisible()
+  })
+
+  it('收起成竖条：竖条里是常驻页签的图标和「+」；点图标展开并打开它，点「+」建好后展开并打开', async () => {
+    serveFiles(['video_shot.json', 'video/a.md'])
+    await renderHost(ROOMY, withCreatable(), `/c/${CONVERSATION_ID}`)
+    await screen.findByText('画着分镜')
+    await userEvent.click(screen.getByRole('button', { name: '折叠工作台' }))
+
+    const rail = screen.getByRole('region', { name: '收起的工作台' })
+    expect(
+      within(rail)
+        .getAllByRole('button')
+        .map((button) => button.getAttribute('aria-label') ?? button.textContent),
+    ).toEqual(['展开工作台', '分镜', '文件', '新建 剪辑'])
+
+    await userEvent.click(within(rail).getByRole('button', { name: '文件' }))
+    expect(await screen.findByText('画着文件')).toBeVisible()
+    expect(screen.getByRole('tab', { name: '文件', selected: true })).toBeVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: '折叠工作台' }))
+    await userEvent.click(
+      within(screen.getByRole('region', { name: '收起的工作台' })).getByRole('button', {
+        name: '新建 剪辑',
+      }),
+    )
+    expect(await screen.findByText('画着剪辑')).toBeVisible()
+    expect(screen.getByRole('tab', { name: '剪辑', selected: true })).toBeVisible()
+  })
+})
+
+describe('WorkbenchHost · 委派任务页签', () => {
+  const DELEGATE = `/c/${CONVERSATION_ID}?artifact=frame:call_t2_delegate`
+
+  it('按 Delete 关掉，回到默认页签，焦点落在它上面', async () => {
+    serveFiles(['video_shot.json'])
+    const { router } = await renderHost(
+      ROOMY,
+      registryWith(shotsEntry, workspaceEntry, agentEntry),
+      DELEGATE,
+    )
+    const tab = await screen.findByRole('tab', { name: '委派任务 · 拆解', selected: true })
+
+    tab.focus()
+    await userEvent.keyboard('{Delete}')
+
+    expect(await screen.findByText('画着分镜')).toBeVisible()
+    expect(screen.queryByRole('tab', { name: '委派任务 · 拆解' })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '分镜', selected: true })).toHaveFocus()
+    expect(router.state.location.search).not.toHaveProperty('artifact', 'frame:call_t2_delegate')
+  })
+
+  it('点名字后面的 × 关掉；常驻页签没有 ×、按 Delete 不关', async () => {
+    serveFiles(['video_shot.json'])
+    await renderHost(ROOMY, registryWith(shotsEntry, workspaceEntry, agentEntry), DELEGATE)
+    const tab = await screen.findByRole('tab', { name: '委派任务 · 拆解', selected: true })
+
+    // × 只给鼠标点，不在无障碍树里
+    const close = tab.querySelector('[aria-hidden="true"]:has(svg)')
+    if (!(close instanceof HTMLElement)) throw new Error('页签上没有 ×')
+    await userEvent.click(close)
+
+    expect(await screen.findByText('画着分镜')).toBeVisible()
+    const shots = screen.getByRole('tab', { name: '分镜', selected: true })
+    expect(shots.querySelector('svg')).toBeNull()
+    shots.focus()
+    await userEvent.keyboard('{Delete}')
+    expect(screen.getByRole('tab', { name: '分镜', selected: true })).toBeVisible()
+  })
+
+  it('没有自动打开的产物时关掉回到选择页', async () => {
+    serveFiles(['video/a.md'])
+    await renderHost(ROOMY, registryWith(shotsEntry, workspaceEntry, agentEntry), DELEGATE)
+    const tab = await screen.findByRole('tab', { name: '委派任务 · 拆解', selected: true })
+
+    tab.focus()
+    await userEvent.keyboard('{Delete}')
+
+    expect(await screen.findByRole('navigation', { name: '能打开的产物' })).toBeVisible()
   })
 })

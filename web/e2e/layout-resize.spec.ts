@@ -342,7 +342,7 @@ test('Tab 进入裁切的对话按钮后恢复可见宽度并保留焦点', asyn
   await expectContainedFocus(chat.getByRole('button', { name: '交换对话与工作台' }), chat)
 })
 
-test('Shift+Tab 进入裁切的工作台标签后恢复可见宽度并保留焦点', async ({ page }) => {
+test('Shift+Tab 进入裁切的工作台顶栏左侧后恢复可见宽度并保留焦点', async ({ page }) => {
   await openSettledConversation(page)
   const workbench = page.getByTestId('pane-workbench')
   await dragBy(
@@ -355,7 +355,11 @@ test('Shift+Tab 进入裁切的工作台标签后恢复可见宽度并保留焦�
   await workbench.getByRole('button', { name: '交换对话与工作台' }).focus()
   await page.keyboard.press('Shift+Tab')
 
-  await expectContainedFocus(workbench.getByRole('tab', { name: '分镜' }), workbench)
+  // 交换按钮前面是页签右边的「+」（这段对话还没有 final-cut）
+  await expectContainedFocus(
+    workbench.getByRole('button', { name: '新建', exact: true }),
+    workbench,
+  )
 })
 
 test('Shift+Tab 进入裁切的侧边栏用户菜单后恢复可见宽度并保留焦点', async ({ page }) => {

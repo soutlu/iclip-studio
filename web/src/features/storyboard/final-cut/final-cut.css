@@ -74,17 +74,6 @@
   line-height: var(--text-body-sm--line-height);
 }
 
-/* 还没有工程：说明、「新建 final-cut」和失败提示在页签正中排成一列 */
-.wf-state.is-new {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  text-align: center;
-}
-
 /* ---- 通用控件：编辑器里各处共用的一套样子。浮层菜单挂在 body 上不在编辑器根下，另带 wf-menu ---- */
 
 /* 双色图标的填充层：悬停加深一档，按下、选中再加深一档（变量见 shared/icons 的 final-cut-glyphs.css） */
@@ -397,7 +386,8 @@
     );
   /* 没拖过时时间线按内容高、最多占一小半，放不下时只压缩轨道区 */
   grid-template-rows: minmax(0, 1fr) var(--wf-splitter) fit-content(46%);
-  padding: 10px 12px 12px;
+  /* 上边紧贴工作台 48 高的顶栏 */
+  padding: 0 12px 12px;
   overflow: clip;
   background: var(--color-control-well);
   color: var(--color-on-surface);
@@ -3501,13 +3491,12 @@
   min-width: 0;
   align-items: center;
   gap: 6px;
-  padding-left: 8px;
-  border-left: 1px solid var(--color-panel-line-strong);
+  padding-left: 4px;
 }
 
 /* 导出一组的按钮同高：「导出」「下载成片」是品牌色的胶囊，取消、重新导出同高 */
 .wf-export button {
-  height: 32px;
+  height: 29px;
   flex: none;
   gap: 6px;
   padding: 0 15px;

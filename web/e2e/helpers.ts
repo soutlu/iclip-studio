@@ -20,12 +20,13 @@ export const openFinalCut = async (panel: Locator) => {
 }
 
 /**
- * 对话里还没有 final-cut 工程时：点「final-cut」页签，再点「新建 final-cut」按默认模版新建，等编辑器打开；
+ * 对话里还没有 final-cut 工程时：点页签右边的「+」，再点「新建 final-cut」按默认模版新建，等编辑器打开；
  * 返回编辑器的根节点。
  */
 export const createFinalCut = async (panel: Locator) => {
-  await panel.getByRole('tab', { name: 'final-cut', exact: true }).click()
-  await panel.getByRole('button', { name: '新建 final-cut', exact: true }).click()
+  await panel.getByRole('button', { name: '新建', exact: true }).click()
+  // 菜单挂在页面根上，不在工作台里
+  await panel.page().getByRole('menuitem', { name: '新建 final-cut', exact: true }).click()
   return openFinalCut(panel)
 }
 

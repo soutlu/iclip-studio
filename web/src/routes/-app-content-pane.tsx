@@ -12,8 +12,12 @@ type AppContentPaneProps = {
   alignEnd: boolean
   collapsed: boolean
   canReorder: boolean
+  /** 两栏之间有没有调宽把手（把手画着分隔线）。 */
+  resizable: boolean
   onExpand: () => void
   onReveal: () => void
+  /** 工作台收起成竖条时，竖条里交给工作台放内容的元素（见 `WorkbenchLayout.railSlot`）。 */
+  railSlotRef?: (node: HTMLElement | null) => void
   children: ReactNode
 }
 
@@ -24,8 +28,10 @@ export function AppContentPane({
   alignEnd,
   collapsed,
   canReorder,
+  resizable,
   onExpand,
   onReveal,
+  railSlotRef,
   children,
 }: AppContentPaneProps) {
   const {
@@ -72,17 +78,37 @@ export function AppContentPane({
       ref={setNodeRef}
       style={{ width }}
     >
-      {collapsed && width > 0 ? (
+      {!collapsed || width === 0 ? null : pane === 'chat' ? (
         <div className="flex h-13 items-center justify-center" data-pane-drag-handle>
           <IconButton
             data-pane-restore
-            label={pane === 'chat' ? '展开对话' : '展开工作台'}
-            name={pane === 'chat' ? 'message' : 'grid'}
+            label="展开对话"
+            name="message"
             onClick={onExpand}
             size="sm"
           />
         </div>
-      ) : null}
+      ) : (
+        // 工作台的竖条：「展开工作台」下面是工作台自己放进来的页签图标和「+」（见 WorkbenchRail）。
+        // 并排时两栏之间的分隔线由调宽把手画，二选一时没有把手，竖条自己在朝内的一边画一道
+        <div
+          className={cn(
+            'flex h-full flex-col items-center gap-1.25 bg-surface py-2.5',
+            !resizable && (alignEnd ? 'border-l border-panel-line' : 'border-r border-panel-line'),
+          )}
+          data-pane-drag-handle
+        >
+          <IconButton
+            className="size-7.5 shrink-0 rounded-control text-on-surface-muted"
+            data-pane-restore
+            label="展开工作台"
+            name="final-cut-panel-open"
+            onClick={onExpand}
+            size="sm"
+          />
+          <div className="contents" ref={railSlotRef} />
+        </div>
+      )}
       <div
         aria-hidden={collapsed}
         className={cn('flex h-full min-h-0 min-w-0 flex-col ui-focus', collapsed && 'hidden')}

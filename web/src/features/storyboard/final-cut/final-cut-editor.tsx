@@ -1,5 +1,4 @@
 import {
-  use,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -11,13 +10,11 @@ import {
   type CSSProperties,
   type RefObject,
 } from 'react'
-import { useMutation, useQueryClient, type RefetchOptions } from '@tanstack/react-query'
-import { ApiError, errorMessageOf } from '@/shared/api/client'
+import { useQueryClient } from '@tanstack/react-query'
+import { errorMessageOf } from '@/shared/api/client'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import type { TimeSpan } from '@/shared/lib/time-spans'
 import { cn } from '@/shared/lib/utils'
-import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
-import { Button } from '@/shared/ui/button'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MediaBuffering } from '@/shared/ui/media-buffering'
 import { TabsContent, TabsRoot } from '@/shared/ui/tabs'
@@ -63,14 +60,7 @@ import {
 } from './clip-edit'
 import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
 import type { CatalogItem } from './composition/catalog'
-import {
-  DEFAULT_CANVAS,
-  emptyProject,
-  isDubClip,
-  PROJECT_MAIN,
-  type CaptionClip,
-  type FilmClip,
-} from './composition/film'
+import { isDubClip, type CaptionClip, type FilmClip } from './composition/film'
 import { textHosts, type LocaleBindings } from './composition/locale-text'
 import {
   voiceOfLine,
@@ -190,8 +180,6 @@ import { useWholeFilmExport } from './use-whole-film-export'
 import { withVolumePoints } from './volume-envelope'
 import {
   createProjectFile,
-  PROJECT_DIR,
-  PROJECT_MAIN_PATH,
   projectFilesBase,
   readProjectFile,
   useFinalCutPreviewTokens,
@@ -216,8 +204,6 @@ const NO_TAKES_DUBBING_TEXT = '找不到视频片段用的素材片记录，无�
 const ALL_UNVOICED_TEXT = '每句都选了「不配音」，无需重新生成'
 const DUBBING_BUSY_TEXT = '正在生成配音，请等待生成完成'
 const NARRATION_UNREADABLE_TEXT = '旁白配音生成失败，请重试'
-// 和读取、保存失败一样只写哪一步失败：服务端给了原因时接在后面，再试就是再点一次按钮
-const CREATE_FAILED_TEXT = 'final-cut 新建失败'
 const NO_LINKS: Links = new Map()
 const NO_BINDINGS: ReadonlyMap<string, LocaleBindings> = new Map()
 const NO_LINE_VOICES: LineVoices = {}
@@ -248,8 +234,8 @@ const watchFullscreen = (notify: () => void) => {
 const fullscreenElementOf = () => document.fullscreenElement ?? null
 
 /**
- * 工作台「final-cut」页签编辑器（填满页签内容区）。工作区里还没有工程时只给「新建 final-cut」（见
- * `NewFinalCut`），有了才打开编辑器；编辑中主文件在别处被删掉时回到新建。
+ * 工作台「final-cut」页签编辑器（填满页签内容区）。页签只在工作区里有主文件时才有（新建在工作台的「+」里），
+ * 编辑中主文件在别处被删掉时放下工程、说明已删除，工作台随后按文件列表去掉页签。
  * `saveDelayMs` 控制停手后自动保存的防抖毫秒数（缺省使用 `useFilmSession` 默认值，测试中可传入短延迟加速验证）。
  */
 export function FinalCutEditor({
@@ -274,7 +260,7 @@ export function FinalCutEditor({
           conversationId={conversationId}
           initial={stored}
           keysRef={keysRef}
-          // 会话刚读到主文件没了，不用再读一次
+          // 会话刚读到主文件没了，不用再读一次。页签由工作台按工作区文件列表去掉（它也盯着工作区的变动）
           onMissing={() =>
             queryClient.setQueryData<StoredProject | null>(
               wholeFilmQueryKeys.project(conversationId),
@@ -293,86 +279,12 @@ export function FinalCutEditor({
             )}
           />
         </div>
-      ) : stored === null ? (
-        <NewFinalCut
-          catalog={catalogQuery.data}
-          conversationId={conversationId}
-          reload={projectQuery.refetch}
-        />
       ) : (
         <p className="wf-state" role="status">
-          正在读取 final-cut…
+          {stored === null ? 'final-cut 已删除' : '正在读取 final-cut…'}
         </p>
       )}
     </EditorRoot>
-  )
-}
-
-/**
- * 工作区里还没有 final-cut 工程时页签里的内容：一句说明和「新建 final-cut」，点了按默认模版（见
- * `DEFAULT_CANVAS`）建主文件；建好、或别处刚建好（409）时用 `reload` 重新读工程，读到了编辑器随之打开。
- * 等着的时候别处建了主文件（比如 agent 写的）也重新读：盯着工作区里的主文件，断线重连后也读一次。
- * `catalog` 还没读到时按钮不可点。
- */
-function NewFinalCut({
-  conversationId,
-  catalog,
-  reload,
-}: {
-  conversationId: string
-  catalog: ComponentCatalog | undefined
-  reload: (options?: RefetchOptions) => Promise<unknown>
-}) {
-  const create = useMutation({
-    mutationFn: async (from: ComponentCatalog) => {
-      try {
-        await createProjectFile(
-          conversationId,
-          PROJECT_MAIN,
-          emptyProject(DEFAULT_CANVAS, from),
-          CREATE_FAILED_TEXT,
-        )
-      } catch (error) {
-        if (!(error instanceof ApiError) || error.status !== 409) throw error
-      }
-      // 读完才算建好：读的这段时间按钮还是「正在新建…」
-      await reload()
-    },
-  })
-  // 正在读时不打断：新建自己的那次读已经包含这次通知的改动（通知在写完之后才发）
-  const reloadOnChange = useEffectEvent(() => void reload({ cancelRefetch: false }))
-  const connection = use(TranscriptConnectionContext)
-  useEffect(() => {
-    if (connection === null) return undefined
-    const unwatchFiles = connection.watchFs(conversationId, [PROJECT_DIR], (changes) => {
-      if (changes.some((change) => change.path === PROJECT_MAIN_PATH)) reloadOnChange()
-    })
-    // 断线期间的通知收不到：重连后再读一次
-    const unwatchSessions = connection.watchSessions((update) => {
-      if (update.kind === 'reconnected') reloadOnChange()
-    })
-    return () => {
-      unwatchFiles()
-      unwatchSessions()
-    }
-  }, [connection, conversationId])
-  return (
-    <div className="wf-state is-new">
-      <p>暂无 final-cut，请先新建</p>
-      <Button
-        disabled={catalog === undefined || create.isPending}
-        onClick={() => {
-          if (catalog !== undefined) create.mutate(catalog)
-        }}
-        size="md"
-        variant="outlined"
-      >
-        {create.isPending ? '正在新建…' : '新建 final-cut'}
-      </Button>
-      {create.isError ? (
-        <InlineAlert message={errorMessageOf(create.error, CREATE_FAILED_TEXT)} />
-      ) : null}
-    </div>
   )
 }
 

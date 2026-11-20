@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { use, useEffect, useMemo, useRef, useState } from 'react'
+import { use, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { TranscriptConnectionContext } from '@/shared/transcript/transcript-context'
 import { useConversationReadOnly } from '@/shared/transcript/use-conversation-read-only'
 import { useTranscript } from '@/shared/transcript/use-transcript'
@@ -12,10 +13,14 @@ import { TabsContent, TabsList, TabsRoot, TabsTrigger } from '@/shared/ui/tabs'
 import type { Artifact, ArtifactEntry, WorkbenchFrame } from './artifact'
 import { useArtifactSearch, useOpenArtifact } from './artifact-search'
 import { composeArtifacts, isStanding, pickArtifact, type ArtifactRegistry } from './registry'
+import { useArtifactCreation } from './use-artifact-creation'
 import { useWorkbenchRegistry } from './use-workbench-registry'
 import { useWorkbenchOpenRequest } from './use-workbench-open-request'
+import { Chooser, type ChooserRow } from './workbench-chooser'
+import { CreateMenu } from './workbench-create'
 import { WorkbenchHeaderSlotContext } from './workbench-header-slot-context'
 import { WorkbenchLayoutContext } from './workbench-layout-context'
+import { WorkbenchRail } from './workbench-rail'
 import { useWorkspaceFiles, workspaceQueryKeys } from './workspace.api'
 
 const toolFrames = (items: readonly TranscriptItem[]): WorkbenchFrame[] =>
@@ -39,22 +44,9 @@ const toolFrames = (items: readonly TranscriptItem[]): WorkbenchFrame[] =>
         ),
   )
 
-const tabArtifacts = (
-  registry: ArtifactRegistry,
-  artifacts: readonly Artifact[],
-  selected: Artifact,
-): Artifact[] =>
-  artifacts.filter((artifact) => {
-    const entry = registry.resolve(artifact.type)
-    return (entry !== undefined && isStanding(entry)) || artifact.id === selected.id
-  })
-
-type ChooserRow = {
-  key: string
-  label: string
-  icon: ArtifactEntry['icon']
-  artifactId?: string
-  detail?: string
+const isStandingType = (registry: ArtifactRegistry, type: string): boolean => {
+  const entry = registry.resolve(type)
+  return entry !== undefined && isStanding(entry)
 }
 
 const artifactRow = (entry: ArtifactEntry, artifact: Artifact): ChooserRow => {
@@ -85,6 +77,26 @@ const chooserRows = (registry: ArtifactRegistry, artifacts: readonly Artifact[])
   return [...standing, ...fromFrames]
 }
 
+// 顶栏右边和竖条里的图标按钮：30×30
+const BAR_BUTTON_CLASS = 'size-7.5 rounded-control text-on-surface-muted'
+
+/** 工作台顶栏：48 高、没有底线，左边页签（或标题），右边 `end`。 */
+function WorkbenchBar({ children, end }: { children: ReactNode; end: ReactNode }) {
+  const chrome = useShellChrome()
+  return (
+    <div
+      className={cn(
+        'flex h-12 shrink-0 items-center justify-between gap-2.5 px-3',
+        chrome.sidebarOverlay && 'px-14',
+      )}
+      data-pane-drag-handle
+    >
+      <div className="flex min-w-0 items-center gap-1.5">{children}</div>
+      <div className="flex shrink-0 items-center gap-1.5">{end}</div>
+    </div>
+  )
+}
+
 type WorkbenchHostProps = {
   conversationId: string
 }
@@ -100,16 +112,19 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
   const { view } = useTranscript(conversationId)
   const readOnly = useConversationReadOnly(view)
   const frames = useMemo(() => toolFrames(view.items), [view.items])
-  const { openToken } = useWorkbenchOpenRequest()
+  const { openToken, requestOpen } = useWorkbenchOpenRequest()
   const layout = use(WorkbenchLayoutContext)
   if (layout === null) throw new Error('WorkbenchHost 要在 WorkbenchLayoutProvider 里用')
-  const { compact, onCollapsedChange, onOpen, sideBySide } = layout
+  const { compact, onCollapsedChange, onOpen, railSlot, sideBySide } = layout
   const previousOpenRef = useRef<{ selectedId: string | undefined; token: number }>({
     selectedId: undefined,
     token: openToken,
   })
   // 顶栏右侧给当前页签放控件的地方（见 WorkbenchHeaderActions）
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null)
+  const asideRef = useRef<HTMLElement>(null)
+  // 用键盘关掉页签后，焦点落到接着选中的页签上
+  const refocusTabRef = useRef(false)
 
   useEffect(() => {
     if (connection === null) return undefined
@@ -137,6 +152,12 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
   }, [connection, conversationId, queryClient])
 
   const artifacts = composeArtifacts(registry, files.data?.files ?? [], frames, readOnly)
+  const creation = useArtifactCreation({
+    artifacts,
+    conversationId,
+    filesLoaded: files.data !== undefined,
+    readOnly,
+  })
   const selected = pickArtifact(registry, artifacts, artifactId)
   const entry = selected === undefined ? undefined : registry.resolve(selected.type)
   const selectedId = selected?.id
@@ -149,143 +170,202 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
       onOpen('automatic')
     }
   }, [compact, onOpen, openToken, selectedId])
+  useLayoutEffect(() => {
+    if (!refocusTabRef.current) return
+    refocusTabRef.current = false
+    asideRef.current?.querySelector<HTMLElement>('[role="tab"][data-state="active"]')?.focus()
+  }, [selectedId])
 
-  const open = (id: string) => {
+  const open = (id: string | undefined) => {
     void openArtifact(id)
   }
+  const closeTab = (byKeyboard: boolean) => {
+    refocusTabRef.current = byKeyboard
+    open(pickArtifact(registry, artifacts, undefined)?.id)
+  }
 
-  const actions = compact ? null : (
-    <div
-      className={cn(
-        'flex shrink-0 items-center gap-1',
-        sideBySide &&
-          'opacity-0 group-focus-within/pane-header:opacity-100 group-hover/pane-header:opacity-100',
-      )}
-    >
-      {!sideBySide ? (
+  const actions = compact ? null : !sideBySide ? (
+    <IconButton
+      className={BAR_BUTTON_CLASS}
+      label="回到对话"
+      name="back"
+      onClick={() => onCollapsedChange(true)}
+      size="sm"
+    />
+  ) : (
+    <>
+      {chrome.onSwapPanes === undefined ? null : (
         <IconButton
-          label="回到对话"
-          name="back"
-          onClick={() => onCollapsedChange(true)}
-          size="md"
+          className={BAR_BUTTON_CLASS}
+          label="交换对话与工作台"
+          name="swap-panes"
+          onClick={chrome.onSwapPanes}
+          size="sm"
         />
-      ) : (
-        <>
-          {chrome.onSwapPanes === undefined ? null : (
-            <IconButton
-              label="交换对话与工作台"
-              name="swap-panes"
-              onClick={chrome.onSwapPanes}
-              size="sm"
-            />
-          )}
-          <IconButton
-            label="折叠工作台"
-            name="panel-right"
-            onClick={() => onCollapsedChange(true)}
-            size="sm"
-          />
-        </>
       )}
-    </div>
+      <IconButton
+        className={BAR_BUTTON_CLASS}
+        label="折叠工作台"
+        name="final-cut-panel-close"
+        onClick={() => onCollapsedChange(true)}
+        size="sm"
+      />
+    </>
   )
+
+  const rail =
+    railSlot === null
+      ? null
+      : createPortal(
+          <WorkbenchRail
+            creatable={creation.creatable}
+            creating={creation.creating}
+            items={artifacts.flatMap((artifact) => {
+              const own = registry.resolve(artifact.type)
+              return own !== undefined && isStanding(own)
+                ? [{ icon: own.icon, id: artifact.id, title: artifact.title }]
+                : []
+            })}
+            onCreate={creation.create}
+            onOpen={(id) => {
+              requestOpen()
+              open(id)
+            }}
+          />,
+          railSlot,
+        )
 
   const Renderer = entry?.component
 
+  if (selected === undefined || entry === undefined || Renderer === undefined) {
+    return (
+      <aside aria-label="工作台" className="flex h-full min-h-0 min-w-0 flex-col bg-control-well">
+        <WorkbenchBar end={actions}>
+          <span className="pl-1 text-ui font-semibold text-on-surface-muted">工作台</span>
+        </WorkbenchBar>
+        <Chooser
+          creatable={creation.creatable}
+          creating={creation.creating}
+          onCreate={creation.create}
+          onPick={open}
+          rows={chooserRows(registry, artifacts)}
+        />
+        {rail}
+      </aside>
+    )
+  }
+
+  const renderer = (
+    <WorkbenchHeaderSlotContext value={headerSlot}>
+      <Renderer
+        artifact={selected}
+        conversationId={conversationId}
+        key={selected.id}
+        readOnly={readOnly}
+      />
+    </WorkbenchHeaderSlotContext>
+  )
+
   return (
-    <aside aria-label="工作台" className="flex h-full min-h-0 min-w-0 flex-col bg-background">
-      {selected === undefined || Renderer === undefined ? (
-        <>
-          <div
-            className={cn(
-              'group/pane-header flex h-13 shrink-0 items-center justify-end pr-2',
-              chrome.sidebarOverlay && 'pr-14 pl-14',
-            )}
-            data-pane-drag-handle
-          >
-            {actions}
-          </div>
-          <Chooser onPick={open} rows={chooserRows(registry, artifacts)} />
-        </>
-      ) : (
-        <TabsRoot className="flex min-h-0 flex-1 flex-col" onValueChange={open} value={selected.id}>
-          <div
-            className={cn(
-              'group/pane-header flex h-13 shrink-0 items-stretch gap-2 border-b-[0.5px] border-chat-hairline pr-2 pl-3',
-              chrome.sidebarOverlay && 'pr-14 pl-14',
-            )}
-            data-pane-drag-handle
-          >
-            <TabsList aria-label="面板内容" className="min-w-0 flex-1">
-              {tabArtifacts(registry, artifacts, selected).map((artifact) => (
-                <TabsTrigger className="max-w-64" key={artifact.id} value={artifact.id}>
-                  {artifact.title}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            <div className="flex shrink-0 items-center" ref={setHeaderSlot} />
-            {actions}
-          </div>
-          <TabsContent className="flex min-h-0 flex-1 flex-col" value={selected.id}>
-            <WorkbenchHeaderSlotContext value={headerSlot}>
-              <Renderer
-                artifact={selected}
-                conversationId={conversationId}
-                key={selected.id}
-                readOnly={readOnly}
+    <aside
+      aria-label="工作台"
+      className="flex h-full min-h-0 min-w-0 flex-col bg-control-well"
+      ref={asideRef}
+    >
+      <TabsRoot className="flex min-h-0 flex-1 flex-col" onValueChange={open} value={selected.id}>
+        <WorkbenchBar
+          end={
+            <>
+              <div
+                className={cn(
+                  'flex shrink-0 items-center gap-1.5 empty:hidden',
+                  // 页签放了控件时和后面的交换、折叠之间隔一道淡出两头的细线
+                  actions !== null &&
+                    'after:mx-0.5 after:h-4 after:w-px after:bg-linear-to-b after:from-transparent after:via-panel-line-strong after:to-transparent',
+                )}
+                ref={setHeaderSlot}
               />
-            </WorkbenchHeaderSlotContext>
-          </TabsContent>
-        </TabsRoot>
-      )}
+              {actions}
+            </>
+          }
+        >
+          <TabsList aria-label="面板内容" variant="segmented">
+            {artifacts
+              .filter(
+                (artifact) =>
+                  artifact.id === selected.id || isStandingType(registry, artifact.type),
+              )
+              .map((artifact) => {
+                // 不常驻的（委派任务）只在被选中时占着页签，可以关
+                const closable = !isStandingType(registry, artifact.type)
+                return (
+                  <TabsTrigger
+                    aria-keyshortcuts={closable ? 'Delete' : undefined}
+                    className={cn(
+                      'max-w-64 gap-1.25',
+                      creation.arrived(artifact.id) &&
+                        'motion-safe:animate-in motion-safe:duration-(--dur-m) motion-safe:ease-(--ease-decel) motion-safe:fade-in motion-safe:zoom-in-92',
+                    )}
+                    key={artifact.id}
+                    onKeyDown={
+                      closable
+                        ? (event) => {
+                            if (event.key !== 'Delete') return
+                            event.preventDefault()
+                            closeTab(true)
+                          }
+                        : undefined
+                    }
+                    trailing={closable ? <CloseMark onClose={() => closeTab(false)} /> : null}
+                    value={artifact.id}
+                  >
+                    {artifact.title}
+                  </TabsTrigger>
+                )
+              })}
+          </TabsList>
+          {creation.creatable.length === 0 ? null : (
+            <CreateMenu
+              creating={creation.creating}
+              entries={creation.creatable}
+              onCreate={creation.create}
+            />
+          )}
+        </WorkbenchBar>
+        <TabsContent
+          className={cn('flex min-h-0 flex-1 flex-col', !entry.frameless && 'px-3 pb-3')}
+          value={selected.id}
+        >
+          {entry.frameless ? (
+            renderer
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-panel bg-surface shadow-[var(--shadow-panel),var(--shadow-specular)]">
+              {renderer}
+            </div>
+          )}
+        </TabsContent>
+      </TabsRoot>
+      {rail}
     </aside>
   )
 }
 
-function Chooser({ onPick, rows }: { onPick: (id: string) => void; rows: readonly ChooserRow[] }) {
+/**
+ * 能关的页签名字后面的 ×：只给鼠标点，读屏和键盘走页签上的 Delete 键（WAI-ARIA 页签模式的做法），
+ * 所以不进无障碍树、不单独占焦点。页签按下鼠标就会选中，这里拦住不让它冒上去。
+ */
+function CloseMark({ onClose }: { onClose: () => void }) {
   return (
-    <nav
-      aria-label="能打开的产物"
-      className="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto px-8 py-6"
+    <span
+      aria-hidden
+      className="-mr-1 grid size-3.75 shrink-0 place-items-center rounded-xs text-on-surface-faint hover:bg-state-hover hover:text-on-surface"
+      onClick={(event) => {
+        event.stopPropagation()
+        onClose()
+      }}
+      onMouseDown={(event) => event.stopPropagation()}
     >
-      <ul className="mx-auto flex w-full max-w-md flex-col gap-1">
-        {rows.map((row) => {
-          const enabled = row.artifactId !== undefined
-          return (
-            <li key={row.key}>
-              <button
-                aria-disabled={enabled ? undefined : true}
-                className={cn(
-                  'flex h-11 w-full items-center gap-3 rounded-sm px-3 text-left text-body ui-focus',
-                  enabled
-                    ? 'ui-state cursor-pointer text-on-surface'
-                    : 'cursor-default text-on-surface-faint',
-                )}
-                onClick={() => {
-                  if (row.artifactId !== undefined) onPick(row.artifactId)
-                }}
-                type="button"
-              >
-                <Icon
-                  className={cn(
-                    'shrink-0',
-                    enabled ? 'text-on-surface-variant' : 'text-on-surface-faint',
-                  )}
-                  decorative
-                  name={row.icon}
-                  size="md"
-                />
-                <span className="min-w-0 flex-1 truncate">{row.label}</span>
-                {row.detail === undefined ? null : (
-                  <span className="shrink-0 rounded-full bg-chip-bg px-2 py-0.5 text-label text-on-surface-faint">
-                    {row.detail}
-                  </span>
-                )}
-              </button>
-            </li>
-          )
-        })}
-      </ul>
-    </nav>
+      <Icon decorative name="close" size="xs" />
+    </span>
   )
 }

@@ -1,6 +1,6 @@
 import { cva } from 'class-variance-authority'
 import { Tabs } from 'radix-ui'
-import { createContext, use, type ComponentPropsWithoutRef } from 'react'
+import { createContext, use, type ComponentPropsWithoutRef, type ReactNode } from 'react'
 import { cn } from '@/shared/lib/utils'
 
 export const TabsRoot = Tabs.Root
@@ -52,15 +52,18 @@ const triggerVariants = cva(
   },
 )
 
+/** `trailing` 排在名字后面、不随名字截断（比如页签上的关闭 ×）。 */
 export function TabsTrigger({
   children,
   className,
+  trailing,
   ...props
-}: ComponentPropsWithoutRef<typeof Tabs.Trigger>) {
+}: ComponentPropsWithoutRef<typeof Tabs.Trigger> & { trailing?: ReactNode }) {
   const variant = use(TabsVariantContext)
   return (
     <Tabs.Trigger className={cn(triggerVariants({ variant }), className)} {...props}>
       <span className="min-w-0 truncate">{children}</span>
+      {trailing}
     </Tabs.Trigger>
   )
 }

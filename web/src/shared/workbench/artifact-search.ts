@@ -11,9 +11,10 @@ export const useArtifactSearch = (): string | undefined => {
   return search[ARTIFACT_SEARCH_KEY]
 }
 
+/** 在地址里选中产物 `artifactId`；给 undefined 时去掉选中，工作台回到默认的那一个。 */
 export const useOpenArtifact = () => {
   const navigate = useNavigate()
-  return (artifactId: string) =>
+  return (artifactId: string | undefined) =>
     navigate({
       search: (previous) => ({ ...previous, [ARTIFACT_SEARCH_KEY]: artifactId }),
       to: '.',
