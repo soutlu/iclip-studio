@@ -960,7 +960,7 @@ test('镜头提示词：在工具条里往上弹，生成卡让到它左边；�
   const append = prompts.getByRole('button', { name: '复制镜头 1 到输入框' })
   await append.click()
   await append.click()
-  await expect(requestBox(dialog)).toHaveText(`保留手动要求\n${text}\n${text}`)
+  await expect(requestBox(dialog).getByRole('paragraph')).toHaveText(['保留手动要求', text, text])
   await expect(prompts).toBeVisible()
   expect(await preview.boundingBox()).toEqual(before)
   await prompts.getByRole('button', { name: '关闭镜头提示词' }).click()

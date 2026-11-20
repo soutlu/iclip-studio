@@ -21,6 +21,18 @@ const imageFile = (name = '截图.png', type = 'image/png') =>
   new File(['fake-png-bytes'], name, { type })
 const videoFile = (name = '样片.mp4') => new File(['fake-mp4-bytes'], name, { type: 'video/mp4' })
 
+// 每段一行；图片标签记成 [文件名]，文字原样保留（含换行符）。
+const editorLines = () =>
+  [...editor().querySelectorAll('p')].map((paragraph) =>
+    [...paragraph.childNodes]
+      .map((node) => {
+        if (!(node instanceof HTMLElement)) return node.textContent ?? ''
+        const name = node.dataset['attachmentName']
+        return name === undefined ? '' : `[${name}]`
+      })
+      .join(''),
+  )
+
 const pillHost = (name: string): HTMLElement => {
   const host = within(editor()).getByText(name).parentElement
   if (host === null) throw new Error(`没找到 ${name} 的 pill`)
@@ -110,15 +122,46 @@ describe('Composer', () => {
     expect(onStop).not.toHaveBeenCalled()
   })
 
-  it('Shift+Enter 换行不提交', async () => {
+  it('Shift+Enter 新起一段、不提交；空输入框换行后不再显示占位提示', async () => {
     const onSubmit = vi.fn()
     await renderWithProviders(<Composer onSubmit={onSubmit} />)
 
-    pasteTextIntoComposer(editor(), '第一行')
+    expect(screen.getByText('输入消息，开始创作…')).toBeInTheDocument()
+    fireEvent.keyDown(editor(), { key: 'Enter', shiftKey: true })
+    expect(screen.queryByText('输入消息，开始创作…')).toBeNull()
+    expect(sendButton()).toBeDisabled()
+
+    pasteTextIntoComposer(editor(), '第二行')
     fireEvent.keyDown(editor(), { key: 'Enter', shiftKey: true })
 
     expect(onSubmit).not.toHaveBeenCalled()
-    expect(editor().textContent).toContain('\n')
+    expect(editorLines()).toEqual(['', '第二行', ''])
+  })
+
+  it('多行内容提交后原样回填：每行一段，图片留在原来那一行', async () => {
+    const onSubmit = vi.fn()
+    const ref = createRef<ComposerHandle>()
+    await renderWithProviders(<Composer attachmentsEnabled onSubmit={onSubmit} ref={ref} />)
+
+    act(() => editor().focus())
+    pasteTextIntoComposer(editor(), '产品鞋参考')
+    pasteFilesIntoComposer(editor(), [imageFile()])
+    pasteTextIntoComposer(editor(), '外侧面')
+    fireEvent.keyDown(editor(), { key: 'Enter', shiftKey: true })
+    fireEvent.keyDown(editor(), { key: 'Enter', shiftKey: true })
+    pasteTextIntoComposer(editor(), '第三行')
+    await waitFor(() => expect(sendButton()).toBeEnabled())
+    const written = editorLines()
+    expect(written).toEqual(['产品鞋参考[截图.png]外侧面', '', '第三行'])
+
+    fireEvent.keyDown(editor(), { key: 'Enter' })
+    const submission = onSubmit.mock.lastCall?.[0] as ComposerSubmission | undefined
+    if (submission === undefined) throw new Error('应当提交了一次')
+    expect(submission.text).toBe('产品鞋参考外侧面\n\n第三行')
+    act(() => ref.current?.clear())
+    act(() => ref.current?.restore(submission))
+
+    expect(editorLines()).toEqual(written)
   })
 
   it('粘贴图片落成内联 pill，传完才能发，发送带上公网地址', async () => {
