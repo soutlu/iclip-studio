@@ -87,7 +87,7 @@ describe('final-cut 编辑器 · 画面设置', () => {
     const user = await openWith([host()], { width: 1920, height: 1080 })
     const hostTag = () => /<[a-z]+ [^>]*\bid="title-1"[^>]*>/.exec(savedFilm())?.[0] ?? ''
     const hostBefore = hostTag()
-    await user.click(await shot(/^生成 A 镜头 1，/))
+    await user.click(await shot(/^出片 A 镜头 1，/))
     await user.keyboard('{Enter}')
     await waitSaved(() => expect(savedClips()).toHaveLength(1))
     expect(savedCanvas()).toBe('1080×1920')
@@ -100,7 +100,7 @@ describe('final-cut 编辑器 · 画面设置', () => {
 
   it('已经有视频片段时再放视频：画面尺寸不变', async () => {
     const user = await openWith([video()])
-    await user.click(await shot(/^生成 A 镜头 1，/))
+    await user.click(await shot(/^出片 A 镜头 1，/))
     await user.keyboard('{Enter}')
     await waitSaved(() => expect(savedClips()).toHaveLength(2))
     expect(savedCanvas()).toBe('720×1280')
@@ -145,7 +145,7 @@ describe('final-cut 编辑器 · 画面设置', () => {
     expect(within(transport()).getByRole('button', { name: '播放' })).toBeVisible()
     expect(clipButton()).toHaveAttribute('aria-pressed', 'true')
     expect(
-      screen.queryByText('尚未选中镜头，无法加入 final-cut；请先在「镜头」页签中选中镜头范围'),
+      screen.queryByText('尚未选中镜头，无法加入轨道；请先在「镜头」页签中选中镜头范围'),
     ).toBeNull()
     expect(savedClips()).toHaveLength(1)
 
