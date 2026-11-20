@@ -45,6 +45,7 @@ import {
 } from './caption-edit'
 import type { LayerMeasure } from './preview-protocol'
 import { CanvasOverlay, type CanvasNudge } from './canvas-overlay'
+import { canvasForVideo } from './canvas-size'
 import { CaptionsTab } from './captions-tab'
 import { analyseBeats } from './beat-analysis'
 import { projectBeats } from './beat-file'
@@ -115,6 +116,7 @@ import {
   useKeyframeIndexes,
   useVideoAudio,
   videoAudioQuery,
+  videoSizeQuery,
   type KeyframeStates,
 } from './material-media'
 import { MaterialPreview, type MaterialPreviewControl, type MaterialView } from './material-preview'
@@ -767,6 +769,15 @@ function EditorBody({
         ),
       ]),
     )
+    // 时间线上还没有视频片段（隐藏的也算有）时，画面尺寸改成跟放进去的第一段一致；读不出它的宽高时不改
+    const first = chosen[0]?.material.url
+    const canvas =
+      first === undefined || clips.some((clip) => clip.kind === 'video')
+        ? undefined
+        : queryClient.fetchQuery(videoSizeQuery(first)).then(
+            (size) => (size === null ? undefined : canvasForVideo(size)),
+            () => undefined,
+          )
     const pieces = chosen.flatMap((each) => piecesOf(each, keyframes))
     const add = async () => {
       const sounding = new Set<string>()
@@ -776,6 +787,7 @@ function EditorBody({
         pieces.map((piece) => ({ ...piece, muted: !sounding.has(piece.src) })),
         spot === undefined || at === undefined ? undefined : { track: spot.track, start: at.start },
         spot?.renumber,
+        await canvas,
       )
       if (added) leaveMaterial()
       return added

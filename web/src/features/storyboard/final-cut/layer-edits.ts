@@ -10,13 +10,11 @@
  *    - 移动写行内 `translate`（见 `movedTranslate`），缩放写 `scale`（见 `scaledStyles`），旋转写 `rotate`。
  *    - 不写 `data-x` / `data-y`：运行库应用 `data-x/y` 前会触发 GSAP 首次解析变换，GSAP 会将宿主原有的 `translate: -50% -50%` 折入 `transform`，导致居中百分比在导出时被重复叠加而偏移出画面。
  *    - 不改 `width` / `height`：宿主宽高代表组件的设计画布尺寸，修改宽高会裁切内部内容而非整体缩放。
- *    - 换画面尺寸时按新画面重摆（见 `refittedHostStyles`）。
  *
  * 上游 Studio 私有的 `data-hf-studio-*` 辅助属性引擎不消费，此处不写入。
  */
 
 import type { Point } from './canvas-geometry'
-import { fitScale, type Canvas } from './composition/film'
 
 /** 2×2 线性变换矩阵（对应 `DOMMatrix` 的 `a / b / c / d`），将父元素局部坐标映射至画布像素坐标。 */
 export type Linear = { a: number; b: number; c: number; d: number }
@@ -107,49 +105,6 @@ export function scaledStyles(current: string, ratio: number): Record<string, str
   const sx = round4((Number.isFinite(x) ? x : 1) * ratio)
   const sy = round4((Number.isFinite(y) ? y : 1) * ratio)
   return { scale: sx === sy ? String(sx) : `${sx} ${sy}` }
-}
-
-const PIXEL_SIZE = /^(\d+(?:\.\d+)?)px$/
-
-/** 行内宽高写成的像素尺寸；有一个没写、不是像素时是 null。 */
-const pixelSizeOf = (width: string | undefined, height: string | undefined): Canvas | null => {
-  const w = PIXEL_SIZE.exec(width?.trim() ?? '')
-  const h = PIXEL_SIZE.exec(height?.trim() ?? '')
-  return w === null || h === null ? null : { width: Number(w[1]), height: Number(h[1]) }
-}
-
-/**
- * 画面尺寸从 `before` 换成 `after` 时贴片、场景宿主要写的行内样式（SDK 驼峰属性名），`inline` 是它现在的行内样式。
- * 摆放等同按新画面新加进来（见 `itemLayout`）：宿主行内写着像素宽高时它就是条目的尺寸；没写（铺满画面）时按旧画面的
- * 尺寸算，写上居中摆放，不跟着拉成新画面的宽高。用户在画面上挪过、缩放过的保留相对画面的位置和大小：缩放倍数乘上
- * 新旧适配倍数之比，`translate` 里的像素偏移也乘上这个比，百分比不动。
- *
- * 只改写或补上属性、不去掉：去掉的属性撤销时排到行内样式的最后，文件回不到原样。所以条目和新画面一样大时也写居中
- * 摆放、缩放倍数 1，不回到铺满的写法，样子一样。
- */
-export function refittedHostStyles(
-  inline: Readonly<Record<string, string>>,
-  before: Canvas,
-  after: Canvas,
-): Record<string, string> {
-  const placed = pixelSizeOf(inline['width'], inline['height'])
-  const size = placed ?? before
-  const ratio = fitScale(size, after) / fitScale(size, before)
-  const current = inline['translate']?.trim() ?? ''
-  const [x = '0', y = '0', z] = current === '' || current === 'none' ? [] : splitTopLevel(current)
-  const refitted = (axis: string) => {
-    const parts = lengthParts(axis)
-    if (parts === null) return axis
-    // 铺满画面的宿主改成居中摆放：补上居中的 -50%
-    return lengthOf({ percent: parts.percent - (placed === null ? 50 : 0), px: parts.px * ratio })
-  }
-  return {
-    ...(placed === null
-      ? { left: '50%', top: '50%', width: `${size.width}px`, height: `${size.height}px` }
-      : {}),
-    translate: [refitted(x), refitted(y), ...(z === undefined ? [] : [z])].join(' '),
-    ...scaledStyles(inline['scale'] ?? '', ratio),
-  }
 }
 
 /** 布局尺寸四舍五入取整，下限为 `1`（对齐上游 Studio `roundToLayoutSize`）。 */

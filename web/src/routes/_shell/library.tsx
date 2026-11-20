@@ -103,7 +103,7 @@ function LibraryPage() {
 
   return (
     <TabsRoot className={TAB_CONTENT_CLASS} onValueChange={setTab} value={tabFromSearch(search)}>
-      <TabsContent className={TAB_CONTENT_CLASS} tabIndex={-1} value="videos">
+      <TabsContent className={TAB_CONTENT_CLASS} value="videos">
         <LibraryRoute
           myUserName={myUserName}
           onScopeChange={setScope}
@@ -115,7 +115,7 @@ function LibraryPage() {
           videoId={search.video ?? null}
         />
       </TabsContent>
-      <TabsContent className={TAB_CONTENT_CLASS} tabIndex={-1} value="references">
+      <TabsContent className={TAB_CONTENT_CLASS} value="references">
         <ReferencesRoute
           myUserName={myUserName}
           onReferenceChange={setDetail('reference')}
@@ -125,14 +125,14 @@ function LibraryPage() {
           tabs={<LibraryTabsList />}
         />
       </TabsContent>
-      <TabsContent className={TAB_CONTENT_CLASS} tabIndex={-1} value="audios">
+      <TabsContent className={TAB_CONTENT_CLASS} value="audios">
         <ReferenceAudiosRoute
           onScopeChange={setReferenceAudioScope}
           scope={referenceAudioScopeFromSearch(search)}
           tabs={<LibraryTabsList />}
         />
       </TabsContent>
-      <TabsContent className={TAB_CONTENT_CLASS} tabIndex={-1} value="hit-cases">
+      <TabsContent className={TAB_CONTENT_CLASS} value="hit-cases">
         <HitCasesRoute
           cardId={search.video ?? null}
           onHitCaseChange={setHitCase}
@@ -143,7 +143,7 @@ function LibraryPage() {
           versionId={search.version ?? null}
         />
       </TabsContent>
-      <TabsContent className={TAB_CONTENT_CLASS} tabIndex={-1} value="whole-films">
+      <TabsContent className={TAB_CONTENT_CLASS} value="whole-films">
         <WholeFilmsRoute
           filmId={search.film ?? null}
           myUserName={myUserName}

@@ -5,6 +5,7 @@ import { Input } from '@/shared/ui/field'
 import { Switch } from '@/shared/ui/switch'
 import { BlockedReason } from '../components/blocked-reason'
 import type { PeaksState } from '../editing/media-analysis'
+import { CANVAS_SIZES } from './canvas-size'
 import { sourceTrimmed, trimBounds, trimmed, type SourceLength, type Timing } from './clip-edit'
 import type { ComponentCatalog, VariableValue } from './composition/catalog'
 import { CaptionTextField, type CaptionTextChange } from './captions-tab'
@@ -160,43 +161,137 @@ const seconds = (ms: number) => (ms / 1000).toFixed(2)
 const NO_PEAKS: PeaksState = { kind: 'loading' }
 const NO_BINDINGS: LocaleBindings = {}
 
-/** 「画面尺寸」能选的两种。 */
-const CANVAS_SIZES = [
-  { label: '竖屏 9:16', canvas: { width: 1080, height: 1920 } },
-  { label: '横屏 16:9', canvas: { width: 1920, height: 1080 } },
-] as const
+/** 画面每边能写的像素数。 */
+const SIDE_RANGE = { min: 240, max: 4096 } as const
+const SIDE_RANGE_TEXT = `宽高要在 ${SIDE_RANGE.min}–${SIDE_RANGE.max} 之间`
+
+/** 框里写的边长：整数，奇数减 1（视频编码要偶数宽高）；不是整数、不在范围里时是 null。 */
+const sideOf = (text: string): number | null => {
+  const typed = text.trim()
+  if (!/^\d+$/.test(typed)) return null
+  const value = Number(typed)
+  return value < SIDE_RANGE.min || value > SIDE_RANGE.max ? null : value - (value % 2)
+}
+
+type Side = 'width' | 'height'
 
 /**
- * 没选中片段时的「画面尺寸」：两种尺寸一直排着，现在的那种按下；工程的尺寸两种都不是时（按第一段素材建的老工程）
- * 都不按下，旁边写现在的宽×高。点另一种就改。
+ * 没选中片段时的「画面尺寸」：一排比例按钮，宽高正好是哪一种时它按下；下面宽、高两个数字框一直写着现在的值，回车
+ * 或失焦生效，奇数减 1，不是整数、不在范围里时框下面一句提示、框回到原来的值。随时能改，各算一步撤销。
  */
-function CanvasSize({ canvas, onCanvas }: Pick<Props, 'canvas' | 'onCanvas'>) {
-  const isCurrent = (size: Canvas) => size.width === canvas.width && size.height === canvas.height
-  const other = !CANVAS_SIZES.some((each) => isCurrent(each.canvas))
+function CanvasSize({
+  canvas,
+  onCanvas,
+  onTextEditing,
+}: Pick<Props, 'canvas' | 'onCanvas' | 'onTextEditing'>) {
+  // 刚才没写对的那一边：提示一直留到下一次改成功
+  const [invalid, setInvalid] = useState<Side | null>(null)
+  const errorId = useId()
+  const resize = (next: Canvas) => {
+    setInvalid(null)
+    onCanvas(next)
+  }
+  const side = (key: Side, label: string) => (
+    <SideField
+      describedBy={invalid === null ? undefined : errorId}
+      invalid={invalid === key}
+      label={label}
+      onCommit={(text) => {
+        const value = sideOf(text)
+        if (value === null) setInvalid(key)
+        else resize({ ...canvas, [key]: value })
+      }}
+      onEditing={onTextEditing}
+      value={canvas[key]}
+    />
+  )
   return (
     <div className="wf-card wf-prop-card">
       <div className="wf-prop-title-row">
         <h4 className="wf-prop-title">画面尺寸</h4>
-        {other ? (
-          <span className="wf-prop-subtitle">
-            {canvas.width}×{canvas.height}
-          </span>
-        ) : null}
       </div>
-      <div aria-label="画面尺寸" className="wf-seg wf-canvas-sizes" role="group">
+      <div aria-label="画面比例" className="wf-seg wf-canvas-sizes" role="group">
         {CANVAS_SIZES.map((each) => (
           <button
-            aria-pressed={isCurrent(each.canvas)}
+            aria-pressed={
+              each.canvas.width === canvas.width && each.canvas.height === canvas.height
+            }
             className="wf-seg-item ui-state ui-focus"
             key={each.label}
-            onClick={() => onCanvas(each.canvas)}
+            onClick={() => resize(each.canvas)}
             type="button"
           >
             {each.label}
           </button>
         ))}
       </div>
+      <div className="wf-canvas-pixels">
+        {side('width', '宽')}
+        <span aria-hidden="true">×</span>
+        {side('height', '高')}
+      </div>
+      {invalid === null ? null : (
+        <p className="wf-canvas-error" id={errorId} role="alert">
+          {SIDE_RANGE_TEXT}
+        </p>
+      )}
     </div>
+  )
+}
+
+/**
+ * 「画面尺寸」里宽或高的数字框：没在输入时写着 `value`。回车或失焦把输入的字交给 `onCommit`，Esc 放弃；交完框里
+ * 回到 `value`（改成功时就是新的值）。
+ */
+function SideField({
+  label,
+  value,
+  invalid,
+  describedBy,
+  onCommit,
+  onEditing,
+}: {
+  label: string
+  value: number
+  invalid: boolean
+  describedBy: string | undefined
+  onCommit: (text: string) => void
+  onEditing: (editing: boolean) => void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  // 按 Esc 时先放弃再失焦，失焦的处理读这里，不等重新渲染
+  const draftRef = useRef<string | null>(null)
+  const edit = (next: string | null) => {
+    draftRef.current = next
+    setDraft(next)
+  }
+  // 框还聚焦着就被卸掉（选中了片段）时收不到失焦，这里补一下
+  useEffect(() => () => onEditing(false), [onEditing])
+  return (
+    <Input
+      aria-describedby={describedBy}
+      aria-invalid={invalid || undefined}
+      aria-label={label}
+      autoComplete="off"
+      className="wf-field wf-prop-input"
+      inputMode="numeric"
+      onBlur={() => {
+        onEditing(false)
+        const typed = draftRef.current
+        edit(null)
+        if (typed !== null) onCommit(typed)
+      }}
+      onChange={(event) => edit(event.target.value)}
+      onFocus={() => onEditing(true)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+        else if (event.key === 'Escape') {
+          edit(null)
+          event.currentTarget.blur()
+        }
+      }}
+      value={draft ?? String(value)}
+    />
   )
 }
 
@@ -214,7 +309,11 @@ export function FilmInspector({ selected, onCanvas, ...rest }: Props) {
       {only === undefined ? (
         <>
           <div className="wf-inspector-film">
-            <CanvasSize canvas={rest.canvas} onCanvas={onCanvas} />
+            <CanvasSize
+              canvas={rest.canvas}
+              onCanvas={onCanvas}
+              onTextEditing={rest.onTextEditing}
+            />
           </div>
           <div className="wf-inspector-empty">
             <span aria-hidden="true" className="wf-inspector-empty-icon">

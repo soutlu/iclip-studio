@@ -4,7 +4,16 @@ import { createContext, use, type ComponentPropsWithoutRef, type ReactNode } fro
 import { cn } from '@/shared/lib/utils'
 
 export const TabsRoot = Tabs.Root
-export const TabsContent = Tabs.Content
+
+/**
+ * 页签的内容区。内容区本身不是焦点目标（不要 Radix 默认的 tabindex=0）：键盘从页签按 Tab 直接进到里面的第一个
+ * 控件；鼠标点内容区空白处时焦点不停在内容区上，之后按键也不会给整块内容区画焦点框。
+ */
+export function TabsContent(
+  props: Omit<ComponentPropsWithoutRef<typeof Tabs.Content>, 'tabIndex'>,
+) {
+  return <Tabs.Content {...props} tabIndex={undefined} />
+}
 
 /** underline：选中格下面一道横线（默认）；segmented：凹槽里的分段胶囊，选中格浮起成白色小卡。 */
 type TabsVariant = 'underline' | 'segmented'

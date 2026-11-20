@@ -90,8 +90,12 @@ describe('final-cut 编辑器 · 属性', () => {
       start: 5_000,
     })
 
-  const openWith = async (clips: Parameters<typeof mainFile>[0], extra = '') => {
-    putMockProjectMain(CONVERSATION, mainFile(clips, { width: 720, height: 1280 }, extra))
+  const openWith = async (
+    clips: Parameters<typeof mainFile>[0],
+    extra = '',
+    canvas = { width: 720, height: 1280 },
+  ) => {
+    putMockProjectMain(CONVERSATION, mainFile(clips, canvas, extra))
     const user = userEvent.setup()
     await openEditor()
     return user
@@ -125,32 +129,63 @@ describe('final-cut 编辑器 · 属性', () => {
     expect(screen.queryByRole('tabpanel', { name: '属性' })).toBeNull()
   })
 
-  it('没选中时「属性」里有「画面尺寸」：720×1280 的工程两种都不按下、写着现在的尺寸；点横屏后预览变成横的，横屏按下', async () => {
+  /** 存下的主文件里根上写的画面尺寸。 */
+  const savedCanvas = () => {
+    const root = /<div [^>]*id="film"[^>]*data-width="(\d+)" data-height="(\d+)"/.exec(savedFilm())
+    return root === null ? null : `${root[1]}×${root[2]}`
+  }
+
+  it('时间线上有视频片段时也能在「属性」里改画面尺寸：点 16:9 后预览变横、存下来是 1920×1080；一次撤销回到原尺寸', async () => {
     const user = await openWith([video()])
     await user.click(sideTab('属性'))
-    const sizes = within(inspector()).getByRole('group', { name: '画面尺寸' })
-    const portrait = within(sizes).getByRole('button', { name: '竖屏 9:16' })
-    const landscape = within(sizes).getByRole('button', { name: '横屏 16:9' })
-    expect(portrait).toHaveAttribute('aria-pressed', 'false')
+    const ratios = within(inspector()).getByRole('group', { name: '画面比例' })
+    const landscape = within(ratios).getByRole('button', { name: '16:9' })
     expect(landscape).toHaveAttribute('aria-pressed', 'false')
-    expect(within(inspector()).getByText('720×1280')).toBeVisible()
     const previewSize = () =>
       previewPages.latest().commands.findLast((command) => command.type === 'size')
     await waitFor(() => expect(previewSize()).toMatchObject({ width: 720, height: 1280 }))
 
     await user.click(landscape)
     expect(landscape).toHaveAttribute('aria-pressed', 'true')
-    expect(portrait).toHaveAttribute('aria-pressed', 'false')
-    expect(within(inspector()).queryByText('720×1280')).toBeNull()
     await waitFor(() => expect(previewSize()).toMatchObject({ width: 1920, height: 1080 }))
-    await waitSaved(() =>
-      expect(savedFilm()).toMatch(/<div [^>]*id="film"[^>]*data-width="1920" data-height="1080"/),
-    )
+    await waitSaved(() => expect(savedCanvas()).toBe('1920×1080'))
 
-    await user.click(portrait)
-    expect(portrait).toHaveAttribute('aria-pressed', 'true')
-    expect(landscape).toHaveAttribute('aria-pressed', 'false')
-    await waitFor(() => expect(previewSize()).toMatchObject({ width: 1080, height: 1920 }))
+    await user.click(undoButton())
+    await waitSaved(() => expect(savedCanvas()).toBe('720×1280'))
+    expect(within(inspector()).getByRole('textbox', { name: '宽' })).toHaveValue('720')
+  })
+
+  it('还没有视频片段时放进第一段视频：画面尺寸改成跟它一致（720×1280 的素材 → 1080×1920），已有贴片的行内样式不变；一次撤销尺寸和片段一起回去', async () => {
+    const user = await openWith([host()], undefined, { width: 1920, height: 1080 })
+    const hostBefore = savedTag('title-1')
+    await user.click(await shot(/^生成 A 镜头 1，/))
+    await user.keyboard('{Enter}')
+    await waitSaved(() => expect(savedClips()).toHaveLength(1))
+    expect(savedCanvas()).toBe('1080×1920')
+    expect(savedTag('title-1')).toBe(hostBefore)
+
+    await user.click(undoButton())
+    await waitSaved(() => expect(savedClips()).toHaveLength(0))
+    expect(savedCanvas()).toBe('1920×1080')
+  })
+
+  it('已经有视频片段时再放视频：画面尺寸不变', async () => {
+    const user = await openWith([video()])
+    await user.click(await shot(/^生成 A 镜头 1，/))
+    await user.keyboard('{Enter}')
+    await waitSaved(() => expect(savedClips()).toHaveLength(2))
+    expect(savedCanvas()).toBe('720×1280')
+  })
+
+  it('点「属性」的空白处焦点落到编辑器根上、不停在页签内容区上，空格照常播放', async () => {
+    const user = await openWith([video()])
+    await previewSettled()
+    await user.click(sideTab('属性'))
+    expect(inspector()).not.toHaveAttribute('tabindex')
+    await user.click(inspector())
+    expect(editorRoot()).toHaveFocus()
+    await user.keyboard(' ')
+    expect(await within(transport()).findByRole('button', { name: '暂停' })).toBeVisible()
   })
 
   it('组件或块的片段：头部是名字、种类和时长，下面平铺「显示时长」「内容与样式」，没有手风琴', async () => {

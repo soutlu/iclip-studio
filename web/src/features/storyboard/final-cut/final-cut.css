@@ -2659,13 +2659,28 @@
   padding: 12px 14px 0;
 }
 
-/* 「画面尺寸」两段切换（样子见 wf-seg）：占满卡片宽，两段一样宽 */
+/* 「画面尺寸」的比例按钮（样子见 wf-seg）：占满卡片宽，各段一样宽；六段排一行，去掉段内的左右内边距才放得下 */
 .wf-canvas-sizes {
   display: flex;
 }
 
 .wf-canvas-sizes > .wf-seg-item {
+  min-width: 0;
   flex: 1;
+  padding: 0;
+}
+
+/* 宽 × 高两个数字框（样子见 wf-prop-input），中间的 × 用弱一级的字色 */
+.wf-canvas-pixels {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-on-surface-muted);
+}
+
+.wf-canvas-error {
+  color: var(--color-error);
+  font-size: var(--text-caption);
 }
 
 /* 选中了几个片段：片段的名字和种类一行一个 */

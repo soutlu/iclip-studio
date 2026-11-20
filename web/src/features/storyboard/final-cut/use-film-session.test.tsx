@@ -23,7 +23,6 @@ import {
   emptyProject,
   FONT_BLOCK_END,
   FONT_BLOCK_START,
-  itemLayout,
   type AudioClip,
   type Canvas,
   type CaptionClip,
@@ -3204,13 +3203,6 @@ describe('useFilmSession · 智能调音', () => {
 
 describe('useFilmSession · 画面尺寸', () => {
   const LANDSCAPE = { width: 1920, height: 1080 }
-  const PORTRAIT = { width: 1080, height: 1920 }
-  const OVERLAY = host({
-    id: 'overlay-1',
-    label: '测试叠加',
-    item: 'fixture-overlay',
-    src: 'compositions/fixtures/fixture-overlay.html',
-  })
 
   /** 工作区里放一份画面是 `canvas` 的工程并打开：主文件按 `clips` 写，根下最后是字幕宿主，字幕场景里一句字幕。 */
   const openFilm = async (clips: FilmClip[], canvas: Canvas) => {
@@ -3254,9 +3246,9 @@ describe('useFilmSession · 画面尺寸', () => {
 
   const headOf = (html: string) => html.slice(0, html.indexOf('</head>'))
 
-  it('720×1280 换成横屏：两个文件的根是新尺寸，<head> 里没有旧尺寸；挪过、缩放过的贴片位置和大小跟着换算；字幕默认字号和设过的字号跟着画面宽度换；撤销、重做逐字回去', async () => {
+  it('720×1280 换成横屏：只改画面，两个文件的根是新尺寸，<head> 里没有旧尺寸；挪过、缩放过的贴片和设过字号的字幕各自写着的样式不变，字幕的统一样式也不变；撤销、重做逐字回去', async () => {
     const { result, conversation } = await openFilm([video(), host()], CANVAS)
-    // 用户在画面上把贴片往右下挪了一点、放大到 1.2 倍（画面 720 宽时贴片的适配倍数是 0.375）
+    // 用户在画面上把贴片往右下挪了一点、放大了一些
     act(() =>
       result.current.editLayers([
         {
@@ -3279,22 +3271,13 @@ describe('useFilmSession · 画面尺寸', () => {
     expect(headOf(after.main)).toContain('<meta name="viewport" content="width=1920, height=1080">')
     expect(after.scene).toMatch(/<div [^>]*id="root"[^>]*data-width="1920" data-height="1080"/)
     expect(after.scene).not.toMatch(/data-(width|height)="(720|1280)"/)
-    // 1920 宽时默认 100px；设过的 40px 按 100 / 37 换算成 108px，描边、投影跟着字号
-    expect(after.scene).toContain('font-size: 100px')
-    expect(after.scene).not.toContain('font-size: 37px')
-    expect(inlineOf(after.scene, 'cap-a1')).toMatchObject({
-      'font-size': '108px',
-      '-webkit-text-stroke': '22px #000000',
-    })
+    // 时间线上已有的内容不换算
+    expect(inlineOf(after.main, 'title-1')).toEqual(inlineOf(before.main, 'title-1'))
+    expect(inlineOf(after.scene, 'cap-a1')).toEqual(inlineOf(before.scene, 'cap-a1'))
+    expect(inlineOf(after.scene, 'cap-a1')).toMatchObject({ 'font-size': '40px' })
+    expect(after.scene).toContain('font-size: 37px')
     expect(result.current.film?.clips.find((clip) => clip.id === 'cap-a1')).toMatchObject({
-      fontSize: 108,
-    })
-    // 适配倍数从 0.375 变成 1：缩放倍数、像素偏移都乘上 1 / 0.375
-    expect(inlineOf(after.main, 'title-1')).toMatchObject({
-      width: '1920px',
-      height: '1080px',
-      translate: 'calc(-50% + 80px) calc(-50% - 32px)',
-      scale: '1.2',
+      fontSize: 40,
     })
 
     await act(async () => {
@@ -3308,30 +3291,5 @@ describe('useFilmSession · 画面尺寸', () => {
     expect(result.current.film?.canvas).toEqual(CANVAS)
     act(() => result.current.redo())
     expect(contents(result)).toEqual(after)
-  })
-
-  it('横屏换竖屏：和横屏一样大的贴片、没写尺寸的贴片原来铺满画面，换完按旧画面的尺寸缩到放得下、居中；撤销逐字回去', async () => {
-    const { result } = await openFilm([host(), { ...OVERLAY, z: 2 }], LANDSCAPE)
-    const before = contents(result)
-    expect(inlineOf(before.main, 'title-1')).toEqual({})
-
-    act(() => result.current.resize(PORTRAIT))
-    const { main } = contents(result)
-    const fields = fixtureCatalog.items.find((item) => item.name === 'fixture-fields')
-    if (fields === undefined) throw new Error('测试组件库里没有 fixture-fields')
-    // 等同按竖屏新加进来
-    expect(inlineOf(main, 'title-1')).toEqual(itemLayout(fields, PORTRAIT))
-    expect(inlineOf(main, 'overlay-1')).toEqual({
-      'z-index': '2',
-      left: '50%',
-      top: '50%',
-      width: '1920px',
-      height: '1080px',
-      translate: '-50% -50%',
-      scale: '0.5625',
-    })
-
-    act(() => result.current.undo())
-    expect(contents(result)).toEqual(before)
   })
 })

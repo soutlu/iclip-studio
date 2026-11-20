@@ -91,14 +91,14 @@ function AuditPage() {
             </TabsList>
           </header>
 
-          <TabsContent className="flex flex-col ui-focus" value="overview">
+          <TabsContent className="flex flex-col" value="overview">
             <OverviewPanel
               nameOf={nameOf}
               onRangeChange={(next) => navigateWith({ range: next })}
               range={range}
             />
           </TabsContent>
-          <TabsContent className="flex flex-col ui-focus" value="details">
+          <TabsContent className="flex flex-col" value="details">
             <DetailsPanel
               getScrollElement={getScrollElement}
               nameOf={nameOf}

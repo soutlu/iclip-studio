@@ -376,10 +376,6 @@ export function audioElement(clip: Omit<AudioClip, 'kind'>): string {
 
 const round4 = (value: number) => String(Math.round(value * 10_000) / 10_000)
 
-/** 尺寸是 `size` 的东西按原比例缩到放得下画面 `canvas` 的倍数。 */
-export const fitScale = (size: Canvas, canvas: Canvas): number =>
-  Math.min(canvas.width / size.width, canvas.height / size.height)
-
 /**
  * 条目在画面里怎么摆：没写尺寸或和画面一样大时铺满（由主文件里 `.component` 的样式管，这里不写）；
  * 写了别的尺寸时按原比例缩到放得下、居中。
@@ -387,7 +383,7 @@ export const fitScale = (size: Canvas, canvas: Canvas): number =>
 export function itemLayout(item: CatalogItem, canvas: Canvas): Record<string, string> {
   const { size } = item
   if (size === null || (size.width === canvas.width && size.height === canvas.height)) return {}
-  const scale = fitScale(size, canvas)
+  const scale = Math.min(canvas.width / size.width, canvas.height / size.height)
   return {
     left: '50%',
     top: '50%',
