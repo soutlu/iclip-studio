@@ -97,6 +97,8 @@
   --color-card: var(--color-card);
   --color-card-edge: var(--color-card-edge);
   --color-control-well: var(--color-control-well);
+  --color-panel-line: var(--color-panel-line);
+  --color-panel-line-strong: var(--color-panel-line-strong);
   --color-inverse-surface: var(--color-inverse-surface);
   --color-inverse-on-surface: var(--color-inverse-on-surface);
   --color-inverse-primary: var(--color-inverse-primary);
@@ -214,9 +216,16 @@
   --color-on-scrim: var(--color-on-scrim);
   --shadow-card: var(--shadow-card);
   --shadow-control-well: var(--shadow-control-well);
+  --shadow-panel: var(--shadow-panel);
+  --shadow-panel-card: var(--shadow-panel-card);
+  --shadow-pill: var(--shadow-pill);
+  --shadow-float: var(--shadow-float);
+  --shadow-specular: var(--shadow-specular);
   --shadow-1: var(--shadow-1);
   --shadow-2: var(--shadow-2);
   --shadow-3: var(--shadow-3);
+  --radius-panel: var(--radius-panel);
+  --radius-control: var(--radius-control);
 }
 
 /* 登记 font-home-display 与 font-mono 工具类；字体链定义在 base.css。 */
