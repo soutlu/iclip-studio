@@ -1,21 +1,9 @@
 /* ===== Z-index Layer Classes ===== */
-.layer-base {
-  z-index: var(--z-base);
-}
-.layer-canvas {
-  z-index: var(--z-canvas);
-} /* position set by component */
-.layer-panel {
-  z-index: var(--z-panel);
-}
 .layer-content {
   z-index: var(--z-content);
 }
 .layer-sidebar {
   z-index: var(--z-sidebar);
-} /* position set by component */
-.layer-header {
-  z-index: var(--z-header);
 } /* position set by component */
 .layer-overlay {
   z-index: var(--z-overlay);
@@ -31,12 +19,6 @@
 .layer-local-2 {
   z-index: var(--z-local-2);
 }
-.layer-local-3 {
-  z-index: var(--z-local-3);
-}
-.layer-canvas-overlay {
-  z-index: var(--z-canvas-overlay);
-} /* focused artifact 遮画布、低于 header */
 
 /* 全局交互动效 */
 :where(header, button, input, textarea) {
