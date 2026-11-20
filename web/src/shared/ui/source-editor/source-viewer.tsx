@@ -1,4 +1,10 @@
-import { foldAll, foldedRanges, LanguageDescription, unfoldAll } from '@codemirror/language'
+import {
+  foldable,
+  foldedRanges,
+  foldEffect,
+  LanguageDescription,
+  unfoldAll,
+} from '@codemirror/language'
 import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { useCallback, useImperativeHandle, useLayoutEffect, useRef, type Ref } from 'react'
@@ -22,6 +28,36 @@ type SourceViewerProps = {
   onFoldedChange?: (folded: boolean) => void
   ref?: Ref<SourceViewerHandle>
   className?: string
+}
+
+type Range = { from: number; to: number }
+
+/** `[from, to)` 里最外层的可折叠段落，按先后（和 CodeMirror 的 `foldAll` 找法一样，只是限在这一段里）。 */
+const outerRanges = (state: EditorState, from: number, to: number): Range[] => {
+  const ranges: Range[] = []
+  for (let pos = from; pos < to;) {
+    const line = state.doc.lineAt(pos)
+    const range = foldable(state, line.from, line.to)
+    const inside = range !== null && range.to <= to
+    if (inside) ranges.push(range)
+    pos = (inside ? state.doc.lineAt(range.to) : line).to + 1
+  }
+  return ranges
+}
+
+/**
+ * 全部收起：收起每一段最外层的段落；整篇只有一段最外层时（JSON 的根、HTML 的 `<html>`）留着它、收它下一层，
+ * 不然整篇只剩一行。
+ */
+const foldOutline = (view: EditorView) => {
+  const { state } = view
+  const outer = outerRanges(state, 0, state.doc.length)
+  const [root] = outer
+  const targets =
+    outer.length === 1 && root !== undefined
+      ? outerRanges(state, state.doc.lineAt(root.from).to + 1, root.to)
+      : outer
+  if (targets.length > 0) view.dispatch({ effects: targets.map((range) => foldEffect.of(range)) })
 }
 
 /**
@@ -49,7 +85,7 @@ export function SourceViewer({
     ref,
     () => ({
       foldAll: () => {
-        if (viewRef.current !== null) foldAll(viewRef.current)
+        if (viewRef.current !== null) foldOutline(viewRef.current)
       },
       unfoldAll: () => {
         if (viewRef.current !== null) unfoldAll(viewRef.current)

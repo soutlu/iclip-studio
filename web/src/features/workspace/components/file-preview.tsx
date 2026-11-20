@@ -47,8 +47,9 @@ export function FilePreview({ conversationId, entry, onBack, path, readOnly }: F
   )
   const look = fileLookOf(path)
   const owner = fileOwnerOf(registry, path, readOnly)
-  const showsSource = content !== undefined && !empty && kind !== 'markdown'
-  const foldable = showsSource && (kind === 'json' || look.foldable)
+  // 纯文本（口播文案之类）照正文排，不带行号；代码和 JSON 用原文查看器
+  const prose = kind === 'text' && !look.foldable
+  const foldable = content !== undefined && !empty && kind !== 'markdown' && !prose
   const dir = dirName(path)
   const name = splitFileName(baseName(path))
 
@@ -149,6 +150,10 @@ export function FilePreview({ conversationId, entry, onBack, path, readOnly }: F
               <article className="px-5.5 pt-4.5 pb-5">
                 <Markdown text={file.data.file.content} />
               </article>
+            ) : prose ? (
+              <p className="px-5.5 pt-4.5 pb-5 text-body leading-relaxed wrap-anywhere whitespace-pre-wrap text-on-surface select-text">
+                {file.data.file.content}
+              </p>
             ) : (
               <>
                 {kind === 'json' && formatted === undefined ? (

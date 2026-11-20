@@ -157,9 +157,9 @@ describe('WorkspaceFilesPanel 宽屏：左树右预览', () => {
     await user.click(await row('口播文案.txt'))
 
     expect(await within(preview).findByRole('heading', { name: '口播文案.txt' })).toBeVisible()
-    expect(await within(preview).findByRole('textbox', { name: '文件内容' })).toHaveTextContent(
-      '开场：周末的早上，不想背太重的包。',
-    )
+    // 纯文本照正文排，不进原文查看器
+    expect(await within(preview).findByText(/开场：周末的早上，不想背太重的包。/)).toBeVisible()
+    expect(within(preview).queryByRole('textbox', { name: '文件内容' })).not.toBeInTheDocument()
     expect(router.state.location.search).toMatchObject({ file: '口播文案.txt' })
     expect(await row('口播文案.txt')).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('button', { name: '返回文件列表' })).not.toBeInTheDocument()
@@ -222,14 +222,14 @@ describe('WorkspaceFilesPanel 宽屏：左树右预览', () => {
     widePanel()
     seedMockWorkspace(CONVERSATION_ID)
     await renderPanel(`/c/${CONVERSATION_ID}?file=口播文案.txt`)
-    await screen.findByRole('textbox', { name: '文件内容' })
+    await screen.findByText(/开场：周末的早上/)
 
     await user.click(screen.getByRole('button', { name: '复制原文' }))
 
     await expect(navigator.clipboard.readText()).resolves.toMatch(/^开场：周末的早上/)
   })
 
-  it('JSON 排成两格缩进再显示；「全部收起」后折起来，按钮换成「全部展开」', async () => {
+  it('JSON 排成两格缩进再显示；「全部收起」收起根下面的每一段、根留着，按钮换成「全部展开」', async () => {
     const user = userEvent.setup()
     widePanel()
     seedMockWorkspace(CONVERSATION_ID)
@@ -245,6 +245,8 @@ describe('WorkspaceFilesPanel 宽屏：左树右预览', () => {
     await user.click(screen.getByRole('button', { name: '全部收起' }))
 
     expect(source).not.toHaveTextContent('"id": "s1"')
+    // 根对象不收：它的直接字段还看得见
+    expect(source).toHaveTextContent('"fps": 5')
     expect(await screen.findByRole('button', { name: '全部展开' })).toBeVisible()
 
     await user.click(screen.getByRole('button', { name: '全部展开' }))
