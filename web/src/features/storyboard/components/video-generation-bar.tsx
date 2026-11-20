@@ -61,11 +61,7 @@ export function VideoGenerationBar({
   const { hiddenReason, line: status } = generationStatusOf(blocker, notice)
 
   return (
-    <div
-      aria-label="出片工具栏"
-      className="storyboard-bar rounded-xl border-[0.5px] border-hairline bg-surface-container-lowest shadow-[var(--shadow-2)]"
-      role="group"
-    >
+    <div aria-label="出片工具栏" className="storyboard-bar" role="group">
       {status === undefined ? null : <BarStatusLine id={statusId} status={status} />}
       {hiddenReason === undefined ? null : (
         <span className="sr-only" id={hiddenReasonId}>

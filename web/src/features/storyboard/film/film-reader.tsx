@@ -15,6 +15,7 @@ import { MediaLightbox, type LightboxMedia } from '@/shared/ui/media-lightbox'
 import { toast } from '@/shared/ui/toast'
 import type { ArtifactRendererProps } from '@/shared/workbench'
 import { ReaderNotice, SaveStatus } from '../components/draft-status'
+import { ReaderLayout } from '../components/reader-layout'
 import { StoryboardToolbar } from '../components/storyboard-toolbar'
 import { TakesTray } from '../components/takes-tray'
 import { VideoGenerationBar } from '../components/video-generation-bar'
@@ -327,31 +328,26 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
   return (
     <>
       <div className="storyboard-workbench" ref={setRoot}>
-        <StoryboardToolbar
-          copy={{
-            blocked: copyBlocked,
-            done: '已复制完整提示词',
-            label: '复制完整提示词',
-            text: group.prompt,
-          }}
-          groups={groups.map(filmGroupSummary)}
-          onGoShot={goShot}
-          position={position}
-          status={
-            <SaveStatus
-              hasUnsavedChanges={draft.hasUnsavedChanges}
-              onRetry={() => void draft.saveNow()}
-              state={draft.state}
+        <ReaderLayout
+          group={group.index}
+          script={
+            <FilmScript
+              copyBlocked={copyBlocked}
+              frame={selectedTake === undefined ? selection.frame : undefined}
+              group={group}
+              onEdit={draft.update}
+              onPickFrame={(position) =>
+                select(contentOfFrame(group, selection.contentId, position), position)
+              }
+              onPreview={(image) => setMedia({ kind: 'image', ...image })}
+              onSelect={select}
+              onUploadingChange={onTextUploading}
+              readOnly={readOnly}
+              selectedId={selectedTake === undefined ? selection.contentId : undefined}
+              uploads={uploads}
             />
           }
-        />
-        <div className="flex min-h-0 w-full min-w-0 flex-1 overflow-hidden">
-          <section
-            aria-label={`镜头组 ${group.index}`}
-            className="storyboard-body"
-            key={group.index}
-            tabIndex={-1}
-          >
+          stage={
             <FilmStage
               edit={{
                 badge:
@@ -407,36 +403,40 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
                     }
               }
             />
-            <div aria-hidden className="storyboard-divider" />
-            <div className="storyboard-script">
-              <FilmScript
-                copyBlocked={copyBlocked}
-                frame={selectedTake === undefined ? selection.frame : undefined}
-                group={group}
-                onEdit={draft.update}
-                onPickFrame={(position) =>
-                  select(contentOfFrame(group, selection.contentId, position), position)
-                }
-                onPreview={(image) => setMedia({ kind: 'image', ...image })}
-                onSelect={select}
-                onUploadingChange={onTextUploading}
-                readOnly={readOnly}
-                selectedId={selectedTake === undefined ? selection.contentId : undefined}
-                uploads={uploads}
-              />
-              <TakesTray
-                error={
-                  generations.isError
-                    ? errorMessageOf(generations.error, '读取视频记录失败')
-                    : undefined
-                }
-                onSelect={stage.selectTake}
-                selectedId={selectedTake?.job.id}
-                takes={takes}
-              />
-            </div>
-          </section>
-        </div>
+          }
+          takes={
+            <TakesTray
+              error={
+                generations.isError
+                  ? errorMessageOf(generations.error, '读取视频记录失败')
+                  : undefined
+              }
+              onSelect={stage.selectTake}
+              selectedId={selectedTake?.job.id}
+              takes={takes}
+            />
+          }
+          toolbar={
+            <StoryboardToolbar
+              copy={{
+                blocked: copyBlocked,
+                done: '已复制完整提示词',
+                label: '复制完整提示词',
+                text: group.prompt,
+              }}
+              groups={groups.map(filmGroupSummary)}
+              onGoShot={goShot}
+              position={position}
+              status={
+                <SaveStatus
+                  hasUnsavedChanges={draft.hasUnsavedChanges}
+                  onRetry={() => void draft.saveNow()}
+                  state={draft.state}
+                />
+              }
+            />
+          }
+        />
         <VideoGenerationBar
           aspect={{
             description: FILM_ASPECT_DESCRIPTION,
@@ -496,7 +496,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
 
 function FilmProblems({ count }: { count: number }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
+    <div className="storyboard-notice">
       <p className="text-body font-semibold text-on-surface">
         分镜有 {count} 处问题，需要 AI 导演修改
       </p>
