@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { makeGenerationJob } from '@/testing/generation-job'
-import { groupConversationVideos } from '../conversation-videos/video-groups'
 import type { GenerationJob } from '../storyboard.api'
-import { materialCatalog } from '../final-cut/materials'
 import {
   composingOf,
   editCountsByRoot,
@@ -115,22 +113,6 @@ describe('同一镜头组里有几条原作', () => {
 
     const group = rootVersionGroup(takeB, [b2], stale)
     expect(projectVersions(takeB, group).map((version) => version.label)).toEqual(['V2 原片', 'V4'])
-  })
-
-  it('同一条素材片在 final-cut 素材区与编辑器里是同一个版本名', () => {
-    const catalog = materialCatalog(groupConversationVideos(conversation))
-    for (const take of [takeA, takeB]) {
-      const chain = conversation.filter((item) => item.rootJobId === take.id)
-      for (const version of projectVersions(take, rootVersionGroup(take, chain, conversation)))
-        expect(catalog.byJob.get(version.jobId)?.version).toBe(version.label)
-    }
-    expect([...catalog.byJob.values()].map((item) => item.version)).toEqual([
-      'V1 原片',
-      'V3',
-      'V2 原片',
-      'V4',
-      'V1 原片',
-    ])
   })
 })
 

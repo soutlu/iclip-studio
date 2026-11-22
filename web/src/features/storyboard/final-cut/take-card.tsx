@@ -87,6 +87,19 @@ const seconds = (ms: number) => (ms / 1000).toFixed(1)
 
 const percent = (ms: number, durationMs: number) => `${(ms / durationMs) * 100}%`
 
+/** 选区两端把手的位置：贴着框的左右两边。 */
+const handleAt = (edge: Edge) => ({ left: edge === 'start' ? 0 : '100%' })
+
+/** 选区够长时左上角写的时长；选好的和正在划的都写。 */
+function PickTime({ span }: { span: MediaSpan }) {
+  const length = span.endMs - span.startMs
+  return length < PICK_TIME_MIN_MS ? null : (
+    <span aria-hidden="true" className="wf-pick-time">
+      {seconds(length)}s
+    </span>
+  )
+}
+
 const insertOnEnter = (event: KeyboardEvent<HTMLElement>, onInsert: () => void) => {
   if (event.key !== 'Enter') return false
   event.preventDefault()
@@ -392,11 +405,7 @@ export function TakeCard({
                     width: percent(span.endMs - span.startMs, durationMs),
                   }}
                 >
-                  {span.endMs - span.startMs >= PICK_TIME_MIN_MS ? (
-                    <span aria-hidden="true" className="wf-pick-time">
-                      {seconds(span.endMs - span.startMs)}s
-                    </span>
-                  ) : null}
+                  <PickTime span={span} />
                   {(['start', 'end'] as const).map((edge) => {
                     const limits = edgeLimits(spans, index, edge, durationMs)
                     const value = edge === 'start' ? span.startMs : span.endMs
@@ -424,7 +433,7 @@ export function TakeCard({
                         onPointerDown={(event) => press(event, { kind: 'trim', index, edge })}
                         {...handlers}
                         pressed={false}
-                        style={edge === 'start' ? { left: 0 } : { left: '100%' }}
+                        style={handleAt(edge)}
                         value={value / 1000}
                         valueText={`${seconds(value)} 秒`}
                       />
@@ -436,11 +445,23 @@ export function TakeCard({
                 <span
                   aria-hidden="true"
                   className="wf-pick is-draft"
+                  data-testid="pick-draft"
                   style={{
                     left: percent(draft.startMs, durationMs),
                     width: percent(draft.endMs - draft.startMs, durationMs),
                   }}
-                />
+                >
+                  <PickTime span={draft} />
+                  {/* 只是和选区一样的样子：松手前不能拖、不进焦点，所以不用裁剪把手 */}
+                  {(['start', 'end'] as const).map((edge) => (
+                    <span
+                      className={`timeline-handle is-${edge}`}
+                      data-testid="pick-draft-handle"
+                      key={edge}
+                      style={handleAt(edge)}
+                    />
+                  ))}
+                </span>
               )}
               {previewing && playingMs !== undefined ? (
                 <span

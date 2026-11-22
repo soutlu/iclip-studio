@@ -38,7 +38,7 @@ export const projectVersions = (
     .filter((video) => video.id === root.id || video.rootJobId === root.id)
     .map((video) => ({
       jobId: video.id,
-      label: versionNameOf(video),
+      label: versionNameOf(video, video.version),
       mediaUrl: video.outputUrl,
     }))
 

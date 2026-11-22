@@ -86,7 +86,7 @@ function TakeVersions({
   return (
     <div
       aria-label={`${take.label}的版本`}
-      className="wf-seg wf-take-versions"
+      className="wf-seg is-compact wf-take-versions"
       ref={listRef}
       role="group"
     >

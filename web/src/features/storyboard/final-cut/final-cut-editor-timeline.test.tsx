@@ -218,7 +218,8 @@ describe('final-cut 编辑器 · 加入素材', () => {
 })
 
 describe('final-cut 编辑器 · 「镜头」页签', () => {
-  // 镜头组 1：出片 A 有原片（V1）和合成的一版（V3，最新、默认显示），出片 B 只有原片（V2）；镜头组 2：出片 A 只有原片
+  // 镜头组 1：出片 A 有原片（V1）和合成的一版（V2，最新、默认显示），出片 B 只有原片（V1，版本号按出片各自排）；
+  // 镜头组 2：出片 A 只有原片
   const URL_A_EDIT = 'https://media.test/take-a-edit.mp4'
   const URL_C = 'https://media.test/take-c.mp4'
   files.set(URL_A_EDIT, { keyframes: [0, 1.5], duration: 3 })
@@ -308,7 +309,7 @@ describe('final-cut 编辑器 · 「镜头」页签', () => {
     await openWithOriginalInTrack()
     const versions = within(card(1, 'A')).getByRole('group', { name: '出片 A的版本' })
     const original = within(versions).getByRole('button', { name: 'V1 原片，已入轨' })
-    const edited = within(versions).getByRole('button', { name: 'V3' })
+    const edited = within(versions).getByRole('button', { name: 'V2' })
     expect(edited).toHaveAttribute('aria-pressed', 'true')
     expect(original).toHaveAttribute('aria-pressed', 'false')
     expect(within(card(1, 'A')).queryByText('已入轨')).toBeNull()
@@ -323,7 +324,7 @@ describe('final-cut 编辑器 · 「镜头」页签', () => {
 
     // 只有一个版本时只写版本号，不是分段
     expect(within(card(1, 'B')).queryByRole('group')).toBeNull()
-    expect(within(card(1, 'B')).getByText('V2')).toBeVisible()
+    expect(within(card(1, 'B')).getByText('V1')).toBeVisible()
     expect(within(card(1, 'B')).queryByText('已入轨')).toBeNull()
   })
 
