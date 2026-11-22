@@ -22,6 +22,7 @@ from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.fetch_url import as_is
 from tests.helpers.generation import make_job, make_subtitle
 from tests.helpers.media import synthesize_video
+from tests.helpers.model_groups import default_only
 
 pytestmark = [
     pytest.mark.anyio,
@@ -79,8 +80,9 @@ def _video(*, audio: bool) -> bytes:
 
 def _provider(services: FakeServices) -> QwenSubtitleProvider:
     return QwenSubtitleProvider(
-        QwenEndpoint(url=ASR_URL, api_key="sk-test", timeout_seconds=30),
+        QwenEndpoint(url=ASR_URL, timeout_seconds=30),
         fetch_url=as_is,
+        model_groups=default_only(subtitle_api_key="sk-test"),
         transport=services.transport(),
     )
 

@@ -42,12 +42,13 @@ from tests.helpers.generation import (
     video_shot,
     whole_film_request,
 )
+from tests.helpers.model_groups import default_only
 
 VIDEO_SETTINGS = VideoProviderSettings(
     submit_url="https://video.test/generate",
     status_base_url="https://video.test/tasks",
-    api_key="secret-key",
 )
+VIDEO_GROUPS = default_only(video_api_key="secret-key")
 IMAGE_API_BASE = "https://image.test/nano-banana-pro"
 IMAGE_TEXT_TO_IMAGE_URL = f"{IMAGE_API_BASE}/text-to-image"
 IMAGE_EDIT_URL = f"{IMAGE_API_BASE}/image-edit"
@@ -101,6 +102,7 @@ def seedream_ok(request: httpx.Request) -> httpx.Response:
 def video_provider(handler: Handler) -> HttpVideoProvider:
     return HttpVideoProvider(
         VIDEO_SETTINGS,
+        model_groups=VIDEO_GROUPS,
         transport=httpx.MockTransport(handler),
     )
 
@@ -662,7 +664,9 @@ ENHANCE_SETTINGS = replace(VIDEO_SETTINGS, enhance_submit_url=ENHANCE_URL)
 def enhance_provider(
     handler: Handler, *, settings: VideoProviderSettings = ENHANCE_SETTINGS
 ) -> HttpVideoProvider:
-    return HttpVideoProvider(settings, transport=httpx.MockTransport(handler))
+    return HttpVideoProvider(
+        settings, model_groups=VIDEO_GROUPS, transport=httpx.MockTransport(handler)
+    )
 
 
 def finished_take() -> GenerationJob:

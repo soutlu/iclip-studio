@@ -15,6 +15,7 @@ from iclip.domains.generation.qwen import QwenEndpoint
 from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.generation import MUSIC_PROMPT, make_music
 from tests.helpers.media import duration_ms_of, synthesize_padded_music
+from tests.helpers.model_groups import default_only
 from tests.helpers.uploads import FakeBucket
 
 pytestmark = [
@@ -69,8 +70,9 @@ def _padded_music() -> bytes:
 
 def _provider(services: FakeServices, bucket: FakeBucket) -> QwenMusicProvider:
     return QwenMusicProvider(
-        QwenEndpoint(url=MUSIC_URL, api_key="sk-test", timeout_seconds=30),
+        QwenEndpoint(url=MUSIC_URL, timeout_seconds=30),
         object_store=bucket,
+        model_groups=default_only(music_api_key="sk-test"),
         transport=services.transport(),
     )
 

@@ -25,12 +25,14 @@ def grouped_app(base_env: None, engine: AsyncEngine, monkeypatch: pytest.MonkeyP
     for name, value in MEDIA_ENVS.items():
         monkeypatch.setenv(name, value)
     monkeypatch.setenv("VIDEO_API_KEY_MKT", "vk-mkt")
-    config = config_with_media().model_copy(
+    config = config_with_media()
+    config = config.model_copy(
         update={
             "model_groups": {
+                **(config.model_groups or {}),
                 MKT: ModelGroupSection(
                     video_api_key_env="VIDEO_API_KEY_MKT", video_models={"seedance": "mkt-seedance"}
-                )
+                ),
             }
         }
     )
@@ -58,7 +60,7 @@ async def _recorded_group(pg_url: str, job_id: str) -> tuple[str | None, str | N
 
 @pytest.mark.parametrize(
     ("group", "expected"),
-    [(MKT, (MKT, "mkt-seedance")), (None, (None, None))],
+    [(MKT, (MKT, "mkt-seedance")), (None, (None, "seedance"))],
     ids=["in_mkt", "default_group"],
 )
 async def test_a_group_root_picks_applies_to_the_users_next_video_without_a_restart(

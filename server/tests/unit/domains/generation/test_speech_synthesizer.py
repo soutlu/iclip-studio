@@ -56,7 +56,7 @@ class FakeServices:
 
 def _synthesizer(services: FakeServices) -> QwenSpeechSynthesizer:
     return QwenSpeechSynthesizer(
-        QwenEndpoint(url=SPEECH_URL, api_key="sk-test", timeout_seconds=30),
+        QwenEndpoint(url=SPEECH_URL, timeout_seconds=30),
         transport=services.transport(),
     )
 
@@ -64,7 +64,7 @@ def _synthesizer(services: FakeServices) -> QwenSpeechSynthesizer:
 async def _synthesize_and_fail(services: FakeServices) -> ProviderError:
     with pytest.raises(ProviderError) as raised:
         await _synthesizer(services).synthesize(
-            "Hello", reference=REFERENCE, locale="en", api_key=None
+            "Hello", reference=REFERENCE, locale="en", api_key="sk-test"
         )
     assert SIGNATURE not in str(raised.value), "模型给的签名地址不进错误信息"
     assert len(services.syntheses) == 1, "只发一次，不自己重试"
@@ -81,7 +81,7 @@ async def test_speaks_the_line_in_the_reference_voice_and_returns_the_downloaded
     services = FakeServices(httpx.Response(200, json=_generated()), SPOKEN)
 
     audio = await _synthesizer(services).synthesize(
-        "Bonjour à tous", reference=REFERENCE, locale=locale, api_key=None
+        "Bonjour à tous", reference=REFERENCE, locale=locale, api_key="sk-test"
     )
 
     assert audio == SPOKEN
@@ -106,7 +106,7 @@ async def test_without_a_locale_the_prompt_names_no_language() -> None:
     services = FakeServices(httpx.Response(200, json=_generated()), SPOKEN)
 
     await _synthesizer(services).synthesize(
-        "欢迎来到新品发布会", reference=REFERENCE, locale=None, api_key=None
+        "欢迎来到新品发布会", reference=REFERENCE, locale=None, api_key="sk-test"
     )
 
     (sent,) = services.syntheses
@@ -115,17 +115,6 @@ async def test_without_a_locale_the_prompt_names_no_language() -> None:
     assert "“欢迎来到新品发布会”" in prompt
     assert not any(language in prompt for language in ("中文", "英语", "德语", "西班牙语", "法语"))
     assert "用" not in prompt
-
-
-async def test_a_group_key_replaces_the_default_one() -> None:
-    services = FakeServices(httpx.Response(200, json=_generated()), SPOKEN)
-
-    await _synthesizer(services).synthesize(
-        "Hello", reference=REFERENCE, locale="en", api_key="dub-mkt"
-    )
-
-    (sent,) = services.syntheses
-    assert sent.headers["Authorization"] == "Bearer dub-mkt"
 
 
 @pytest.mark.parametrize(

@@ -10,7 +10,7 @@ import httpx
 import structlog
 
 from iclip.common.urls import is_http_url
-from iclip.domains.generation.model_groups import UNGROUPED, ModelGroups
+from iclip.domains.generation.model_groups import ModelGroups
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.provider import (
     ProviderError,
@@ -44,7 +44,6 @@ _MAX_DURATION_MS: Final = 2**31 - 1
 class VideoProviderSettings:
     submit_url: str
     status_base_url: str
-    api_key: str
     enhance_submit_url: str | None = None
 
 
@@ -53,7 +52,7 @@ class HttpVideoProvider:
         self,
         settings: VideoProviderSettings,
         *,
-        model_groups: ModelGroups = UNGROUPED,
+        model_groups: ModelGroups,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._settings = settings
@@ -64,28 +63,17 @@ class HttpVideoProvider:
     def name(self) -> str:
         return PROVIDER_NAME
 
-    def _api_key(self, job: GenerationJob) -> str:
+    async def submit(self, job: GenerationJob) -> ProviderSubmission:
+        request = request_of(job, _REQUESTS, provider=PROVIDER_NAME)
+        user_name_of(request)
         group = self._model_groups.of(job)
-        return self._settings.api_key if group is None else group.video_api_key
-
-    def _upstream_model(self, job: GenerationJob) -> str | None:
-        """有组时发给网关的 model_id；默认组答 ``None``，即照发请求里的产品模型名。"""
-        group = self._model_groups.of(job)
-        if group is None:
-            return None
-        if job.upstream_model is None:
+        upstream_model = job.upstream_model
+        if upstream_model is None and job.model_group is not None:
             raise ProviderError(
                 f"配置组 {group.name} 的这条记录没有记下发给网关的 model_id",
                 code="MODEL_GROUP_UPSTREAM_MODEL_MISSING",
                 retryable=False,
             )
-        return job.upstream_model
-
-    async def submit(self, job: GenerationJob) -> ProviderSubmission:
-        request = request_of(job, _REQUESTS, provider=PROVIDER_NAME)
-        user_name_of(request)
-        api_key = self._api_key(job)
-        upstream_model = self._upstream_model(job)
         if isinstance(request, VideoEnhanceRequest):
             if self._settings.enhance_submit_url is None:
                 raise ProviderError(
@@ -103,7 +91,7 @@ class HttpVideoProvider:
         body = await self._request(
             "POST",
             url,
-            api_key=api_key,
+            api_key=group.video_api_key,
             json=payload,
             timeout=_SUBMIT_TIMEOUT_SECONDS,
             result_unknown_on_transport_error=True,
@@ -130,7 +118,7 @@ class HttpVideoProvider:
         body = await self._request(
             "GET",
             url,
-            api_key=self._api_key(job),
+            api_key=self._model_groups.of(job).video_api_key,
             params={"user_name": user_name_of(request)},
             timeout=_POLL_TIMEOUT_SECONDS,
         )

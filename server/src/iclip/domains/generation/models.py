@@ -63,7 +63,7 @@ class GenerationJob:
     shot_index: int | None = None
     root_job_id: uuid.UUID | None = None
     source_job_id: uuid.UUID | None = None
-    # 受理时按属主定下的配置组与发给视频网关的 model_id；默认组两者都为空，见 model_groups.py。
+    # 受理时按属主定下的配置组与发给视频网关的 model_id；默认组的组名为空，见 model_groups.py。
     model_group: str | None = None
     upstream_model: str | None = None
 

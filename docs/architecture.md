@@ -133,7 +133,7 @@
    - **视频生成（出片、参考视频试生成、局部编辑段、超分高清版）**：异步提交上游视频网关并轮询结果（试生成与出片共用通道与配置组规则，记为 `operation=trial`）；各模型族参数拼装集中在 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py)。
    - **视频剪辑合成（`compose`）**：本地调用 ffmpeg 裁剪、重编码拼接后上传 OSS。
    - **字幕识别（`subtitle`）与背景音乐生成（`audio`）**：各自独立通道。字幕识别仅在调用 `POST /generations/subtitles` 时入队（抽取音频调千问 ASR `qwen-audio-3.1-asr-flash`）；背景音乐调千问 TTS `qwen-audio-3.1-tts-next`，经 ffmpeg 切除首尾静音、统一响度后转存 m4a。
-   - **配音（`dubbing`）与合成语音（`speech`）**：共用独立通道与 `SpeechSynthesizer` 协议（[generation/dubbing.py](../server/src/iclip/domains/generation/dubbing.py)、[generation/speech.py](../server/src/iclip/domains/generation/speech.py)）。参考音频截取、逐句变速/截尾与等长音轨拼接均在本地由 ffmpeg 完成；逐句语音合成调用千问 TTS `qwen-audio-3.1-tts-next`（参考音频以 data URI 传入并在提示词中以 `@voice1` 引用，音色台词仅落库不发上游；未配置 `media_generation.speech` 或 `QWEN_SPEECH_API_KEY` 时提交接口返回 `422`）。
+   - **配音（`dubbing`）与合成语音（`speech`）**：共用独立通道与 `SpeechSynthesizer` 协议（[generation/dubbing.py](../server/src/iclip/domains/generation/dubbing.py)、[generation/speech.py](../server/src/iclip/domains/generation/speech.py)）。参考音频截取、逐句变速/截尾与等长音轨拼接均在本地由 ffmpeg 完成；逐句语音合成调用千问 TTS `qwen-audio-3.1-tts-next`（参考音频以 data URI 传入并在提示词中以 `@voice1` 引用，音色台词仅落库不发上游；未配置 `media_generation.speech` 时提交接口返回 `422`）。
    - **成片导出（`whole_film`）**：独立通道，转发给[成片渲染服务](#成片渲染服务)处理。
 2. **参考视频拆解队列（`domains/references/`，队列名 `references`）**：
    - 调用 `BreakdownRunner`（≤ 60 秒视频本地按 10 fps 抽帧并提音轨，> 60 秒直接传 URL），经运行时 `/v1/model-calls/responses` 调用火山方舟模型生成拆解报告，成功后自动排入 AI 打标任务。

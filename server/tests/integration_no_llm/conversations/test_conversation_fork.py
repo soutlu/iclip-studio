@@ -18,7 +18,6 @@ from sqlalchemy import text
 
 from iclip.app.conversation_same_style import SAME_STYLE
 from iclip.common.errors import Conflict, NotFound
-from iclip.config import VideoGenerationSection
 from iclip.domains.conversations.infra_sql import (
     SqlAgentPreviewStore,
     SqlConversationRepository,
@@ -482,21 +481,7 @@ async def media_app(
         monkeypatch.setenv(name, value)
     async with connected(migrated_pg) as conn:
         await reset_database(conn)
-    config = config_with_media()
-    media_generation = config.media_generation
-    assert media_generation is not None
-    config = config.model_copy(
-        update={
-            "media_generation": media_generation.model_copy(
-                update={
-                    "video": VideoGenerationSection(
-                        model="vendor-a-seedance-2-5",
-                        allowed_models=("vendor-a-seedance-2-5",),
-                    )
-                }
-            )
-        }
-    )
+    config = config_with_media(("vendor-a-seedance-2-5",))
     engine = build_engine(migrated_pg)
     try:
         built = build_backed_app(

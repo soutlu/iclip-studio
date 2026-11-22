@@ -15,6 +15,7 @@ from iclip.config import (
     ImageGenerationSection,
     ImageModelSection,
     MediaGenerationSection,
+    ModelGroupSection,
     RuntimeConfig,
     VideoGenerationSection,
 )
@@ -79,6 +80,7 @@ from iclip.platform.object_store.store import StoredObject
 from tests.helpers.app import make_runtime_config
 from tests.helpers.fetch_url import as_is
 from tests.helpers.identity import InMemoryUserRepository
+from tests.helpers.model_groups import default_only
 
 FAKE_VIDEO_PROVIDER = "video_fake"
 FAKE_IMAGE_PROVIDER = "image_fake"
@@ -688,11 +690,22 @@ MEDIA_ENVS = {
 }
 
 
-def config_with_media() -> RuntimeConfig:
+def config_with_media(video_models: Sequence[str] = ("seedance",)) -> RuntimeConfig:
+    """开着媒体生成的配置：``video_models`` 是允许的出片模型，第一个是默认；``default`` 组用
+    ``VIDEO_API_KEY``，产品模型名原样作 model_id。"""
+
     return make_runtime_config().model_copy(
         update={
+            "model_groups": {
+                "default": ModelGroupSection(
+                    video_api_key_env="VIDEO_API_KEY",
+                    video_models={model: model for model in video_models},
+                )
+            },
             "media_generation": MediaGenerationSection(
-                video=VideoGenerationSection(model="seedance", allowed_models=("seedance",)),
+                video=VideoGenerationSection(
+                    model=video_models[0], allowed_models=tuple(video_models)
+                ),
                 image=ImageGenerationSection(
                     env="test",
                     text_to_image_task="text-to-image",
@@ -726,7 +739,6 @@ def film_image_service(
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",
-            api_key="secret-key",
         ),
         video_default_model="vendor-a-seedance-2-5",
         video_allowed_models=("vendor-a-seedance-2-5",),
@@ -742,6 +754,7 @@ def film_image_service(
         queue_connector=InMemoryConnector(),
         media_codec=SOFTWARE,
         fetch_url=as_is,
+        model_groups=default_only(("vendor-a-seedance-2-5",)),
     ).service
 
 

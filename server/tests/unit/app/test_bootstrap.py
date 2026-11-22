@@ -16,6 +16,7 @@ from iclip.config import (
     ImageGenerationSection,
     ImageModelSection,
     MediaGenerationSection,
+    ModelGroupSection,
     MusicSection,
     OpsSection,
     RuntimeConfig,
@@ -75,6 +76,15 @@ MEDIA_ENVS = {
 def config_with_media() -> RuntimeConfig:
     return minimal_config().model_copy(
         update={
+            "model_groups": {
+                "default": ModelGroupSection(
+                    video_api_key_env="VIDEO_API_KEY",
+                    subtitle_api_key_env="QWEN_SUBTITLE_API_KEY",
+                    music_api_key_env="QWEN_MUSIC_API_KEY",
+                    speech_api_key_env="QWEN_SPEECH_API_KEY",
+                    video_models={"seedance": "seedance"},
+                )
+            },
             "media_generation": MediaGenerationSection(
                 video=VideoGenerationSection(model="seedance", allowed_models=("seedance",)),
                 image=ImageGenerationSection(
