@@ -94,11 +94,15 @@ export function ResizeHandle({
       title={`${label}（当前 ${value}px，拖动可在 ${min}–${max}px 之间调整，双击可恢复默认）`}
       type="button"
     >
+      <span aria-hidden className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border" />
+      {/* 悬停、聚焦、拖动时中间亮出一道短握把，和 final-cut 编辑器里的分隔条同一个样 */}
       <span
         aria-hidden
         className={cn(
-          'absolute inset-y-0 left-1/2 w-px -translate-x-1/2 ui-motion-s',
-          dragging ? 'bg-border-hover' : 'bg-border group-hover:bg-border-hover',
+          'absolute top-1/2 left-1/2 w-0.75 -translate-x-1/2 -translate-y-1/2 rounded-full transition-[height,background-color] duration-(--dur-s) ease-(--ease)',
+          dragging
+            ? 'h-13 bg-on-surface-muted'
+            : 'h-8.5 group-hover:h-13 group-hover:bg-on-surface-muted group-focus-visible:h-13 group-focus-visible:bg-on-surface-muted',
         )}
       />
     </button>
