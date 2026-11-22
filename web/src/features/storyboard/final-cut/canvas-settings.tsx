@@ -63,7 +63,12 @@ const sideOf = (text: string): number | null => {
 
 type Side = 'width' | 'height'
 
-const ratioOf = ({ width, height }: Canvas) => `${width}:${height}`
+/** 画面比例的小框，放在固定宽的格里：胶囊和六种比例里，后面的字都从同一条竖线起排。 */
+const RatioGlyph = ({ canvas: { width, height } }: { canvas: Canvas }) => (
+  <span className="wf-ratio-glyph">
+    <AspectGlyph longSide={12} ratio={`${width}:${height}`} />
+  </span>
+)
 
 const sizeText = ({ width, height }: Canvas) => `${width}×${height}`
 
@@ -117,7 +122,7 @@ export function CanvasSettings({ framing, onFraming, layer, ...settings }: Canva
                 className="wf-stage-hud-size ui-state ui-focus"
                 type="button"
               >
-                <AspectGlyph longSide={12} ratio={ratioOf(canvas)} />
+                <RatioGlyph canvas={canvas} />
                 {label}
                 {detail === label ? null : <span className="wf-stage-hud-tier">· {detail}</span>}
                 <Icon decorative name="final-cut-expand" size="xs" />
@@ -209,7 +214,7 @@ function SettingsPanel({
             onClick={() => resize(each.canvas)}
             type="button"
           >
-            <AspectGlyph longSide={12} ratio={ratioOf(each.canvas)} />
+            <RatioGlyph canvas={each.canvas} />
             {each.label}
           </button>
         ))}
@@ -342,7 +347,7 @@ function SideField({
     setDraft(next)
   }
   return (
-    <label className="wf-field wf-canvas-side">
+    <label className="wf-field is-outline wf-canvas-side">
       <span aria-hidden="true">{label}</span>
       <Input
         aria-describedby={describedBy}

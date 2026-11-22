@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import { IconButton } from '@/shared/ui/button'
 import { TabsList, TabsTrigger } from '@/shared/ui/tabs'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
+import { Tool } from './editor-toolbar'
 import { CATALOG_NAV, type SideTab } from './side-tabs'
 
 type SideNavProps = {
@@ -42,13 +42,12 @@ export function SideNav({ collapsed, onCollapsedChange, selection }: SideNavProp
           tab="props"
         />
       </TabsList>
-      <IconButton
+      <Tool
         className="wf-side-toggle"
+        icon={collapsed ? 'final-cut-panel-open' : 'final-cut-panel-close'}
         label={collapsed ? '展开右栏' : '收起右栏'}
-        name={collapsed ? 'final-cut-panel-open' : 'final-cut-panel-close'}
         onClick={() => onCollapsedChange(!collapsed)}
-        size="sm"
-        tooltip={collapsed ? '展开右栏' : '收起右栏，预览更大'}
+        tip={collapsed ? '展开右栏' : '收起右栏，预览更大'}
       />
     </div>
   )
@@ -81,7 +80,7 @@ function NavTab({
           onClick={collapsed ? onExpand : undefined}
           value={tab}
         >
-          <Icon decorative name={icon} size="lg" />
+          <Icon decorative name={icon} size="md" />
           <span className={cn('wf-side-tab-label', collapsed && 'sr-only')}>{label}</span>
           {selection ? (
             <i aria-hidden="true" className="wf-side-dot" data-testid="selection-dot" />
