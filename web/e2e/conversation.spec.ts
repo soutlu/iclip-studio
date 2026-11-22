@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator } from '@playwright/test'
 import { openConversation } from './helpers'
 import { login } from './login'
 
@@ -40,27 +40,28 @@ test('点派活卡的「查看」：右侧打开子代理的过程，地址记�
   await expect(page).toHaveURL(/artifact=frame(%3A|:)call_t2_delegate/)
 })
 
-test('工作台变窄时页签不缩窄：整排放不下的部分在胶囊里裁掉', async ({ page }) => {
+test('工作台变窄、整排页签放不下时：常驻页签不缩窄，只有委派任务页签缩、名字省略', async ({
+  page,
+}) => {
   const panel = await openConversation(page, '夜景延时素材生成')
   await page.getByRole('button', { name: '查看子代理过程' }).first().click()
   const list = panel.getByRole('tablist', { name: '面板内容' })
-  await expect(list.getByRole('tab', { name: '委派任务 · shot-writer' })).toBeVisible()
-  const widths = () =>
-    list
-      .getByRole('tab')
-      .evaluateAll((tabs) => tabs.map((tab) => Math.round(tab.getBoundingClientRect().width)))
-  const roomy = await widths()
+  const delegate = list.getByRole('tab', { name: '委派任务 · shot-writer' })
+  await expect(delegate).toBeVisible()
+  const widthOf = (tab: Locator) =>
+    tab.evaluate((element) => Math.round(element.getBoundingClientRect().width))
+  const standing = [
+    list.getByRole('tab', { name: '分镜', exact: true }),
+    list.getByRole('tab', { name: '文件', exact: true }),
+  ]
+  const roomy = await Promise.all(standing.map(widthOf))
+  const roomyDelegate = await widthOf(delegate)
 
   await page.setViewportSize({ height: 844, width: 390 })
   await expect(list).toBeVisible()
-  const [box, last] = await Promise.all([
-    list.boundingBox(),
-    list.getByRole('tab').last().boundingBox(),
-  ])
-  if (box === null || last === null) throw new Error('页签必须有可见布局')
-  // 前提：整排确实放不下
-  expect(last.x + last.width).toBeGreaterThan(box.x + box.width)
-  expect(await widths()).toEqual(roomy)
+  // 前提：整排确实放不下，委派任务页签被压窄了
+  await expect.poll(() => widthOf(delegate)).toBeLessThan(roomyDelegate)
+  expect(await Promise.all(standing.map(widthOf))).toEqual(roomy)
 })
 
 test('长对话可以滚动，鼠标离开后正文位置与宽度保持稳定', async ({ page }) => {
