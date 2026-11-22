@@ -148,6 +148,26 @@ describe('final-cut 编辑器 · 播放', () => {
     expect(within(transport()).getByRole('button', { name: '暂停' })).toBeVisible()
   })
 
+  it('在放时按方向键从竖线所在的时刻走一步，不按落后的播放头位置', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await previewSettled()
+    await user.click(within(transport()).getByRole('button', { name: '播放' }))
+    await waitFor(() => expect(previewPlayer()).toHaveProperty('paused', false))
+
+    // 0.4 秒那条跟进了播放头位置；紧接着的 0.43 秒不到 0.1 秒，只有竖线跟上
+    await act(() => new Promise((resolve) => setTimeout(resolve, 150)))
+    previewPlayer().runtimeTime = 0.4
+    await waitFor(() => expect(rulerText()).toBe('00:00.40'))
+    previewPlayer().runtimeTime = 0.43
+    await waitFor(() => expectPlayheadShown(430, '00:00.43'))
+
+    editorRoot().focus()
+    await user.keyboard('{ArrowRight}')
+    expectPlayheadShown(530, '00:00.53')
+  })
+
   it('本地跳转马上挪到三处，不等预览报回来', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     const user = userEvent.setup()

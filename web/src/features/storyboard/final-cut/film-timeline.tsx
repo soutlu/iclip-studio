@@ -141,7 +141,7 @@ type FilmTimelineProps = {
   /** 组件库：组件或块的片段上铺的封面取自它。 */
   catalog: ComponentCatalog
   totalMs: number
-  /** 播放头的位置（在播时最多约 0.1 秒更新一次）：吸附、点选挪进片段、切开、时间尺按它算。 */
+  /** 播放头的位置（在播时最多约 0.1 秒更新一次）：吸附、片段上的切开提示、时间尺按它算。 */
   playheadMs: number
   /** 播放头的实时时刻：竖线直接订阅它，播放时每帧挪，不带着整条时间线重画。 */
   clock: PlayheadClock
@@ -1251,7 +1251,8 @@ export function FilmTimeline({
     if (!toggle) {
       onSelect(new Set([id]))
       const clip = clips.find((each) => each.id === id)
-      const into = clicked && clip !== undefined ? playheadInto(playheadMs, clip) : null
+      // 按点下那一刻竖线所在的时刻判断（在播时 playheadMs 最多落后约 0.1 秒）
+      const into = clicked && clip !== undefined ? playheadInto(clock.get(), clip) : null
       if (into !== null) onJump(into)
       return
     }
