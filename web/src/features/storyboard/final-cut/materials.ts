@@ -276,7 +276,9 @@ export const materialCatalog = (groups: readonly ConversationVideoGroup[]): Mate
     const takes = [...byTake].flatMap(([takeId, videos], index): MaterialTake[] => {
       const letter = takeLetter(index)
       const takeLabel = `出片 ${letter}`
-      const versions = videos.map((video) => ({
+      // 版本号按出片各自排（组里按完成时间排好，原片在前）：V1 是原片，合成接着 V2、V3…；
+      // 和版本组按整个镜头组编的号不是一回事
+      const versions = videos.map((video, index) => ({
         jobId: video.id,
         url: video.outputUrl,
         durationMs: video.durationMs,
@@ -285,8 +287,8 @@ export const materialCatalog = (groups: readonly ConversationVideoGroup[]): Mate
         takeId,
         takeLetter: letter,
         takeLabel,
-        version: versionNameOf(video),
-        versionNumber: versionLabel(video.version),
+        version: versionNameOf(video, index + 1),
+        versionNumber: versionLabel(index + 1),
       }))
       const latest = versions.at(-1)
       return latest === undefined ? [] : [{ id: takeId, label: takeLabel, versions, latest }]

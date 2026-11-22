@@ -55,5 +55,6 @@ export const groupConversationVideos = (
   ]
 }
 
-export const versionNameOf = (video: ConversationVideo): string =>
-  isTake(video) ? `${versionLabel(video.version)} ${ORIGINAL_LABEL}` : versionLabel(video.version)
+/** 第 `ordinal` 版的全名：原片写「V1 原片」，合成只写版本号。 */
+export const versionNameOf = (video: GenerationJob, ordinal: number): string =>
+  isTake(video) ? `${versionLabel(ordinal)} ${ORIGINAL_LABEL}` : versionLabel(ordinal)

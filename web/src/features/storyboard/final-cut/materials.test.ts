@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { video } from '@/testing/final-cut'
+import { makeGenerationJob } from '@/testing/generation-job'
+import { groupConversationVideos } from '../conversation-videos/video-groups'
 import {
   addSpan,
   edgeLimits,
   extendToShot,
+  materialCatalog,
   orderedPicks,
   picksSummary,
   removeSpan,
@@ -225,6 +228,49 @@ describe('usedSpans：final-cut 里每版素材片用了哪些段', () => {
 
   it('final-cut 里没有画面时什么都没用', () => {
     expect(usedSpans([]).size).toBe(0)
+  })
+})
+
+describe('materialCatalog：「镜头」页签里的出片和版本', () => {
+  const finished = (minute: string) => `2026-09-15T10:${minute}:00Z`
+  const take = (id: string, minute: string) =>
+    makeGenerationJob({ id, outputUrl: `${id}.mp4`, shotIndex: 1, finishedAt: finished(minute) })
+  const composite = (id: string, root: string, minute: string) =>
+    makeGenerationJob({
+      id,
+      operation: 'compose',
+      outputUrl: `${id}.mp4`,
+      shotIndex: 1,
+      rootJobId: root,
+      sourceJobId: root,
+      finishedAt: finished(minute),
+    })
+
+  it('每条出片的版本各自从 V1 排：V1 是原片，合成按完成时间接着排', () => {
+    // 镜头组 1 里先出了 A，再出了 B，B 之后合成了两版：按整个镜头组排的话 B 是 V2 原片、V3、V4
+    const jobs = [
+      composite('b3', 'b', '05'),
+      take('a', '01'),
+      composite('b2', 'b', '03'),
+      take('b', '02'),
+    ]
+    const [group] = materialCatalog(groupConversationVideos(jobs)).groups
+    expect(
+      group?.takes.map((each) => [
+        each.label,
+        each.versions.map((item) => [item.versionNumber, item.version]),
+      ]),
+    ).toEqual([
+      ['出片 A', [['V1', 'V1 原片']]],
+      [
+        '出片 B',
+        [
+          ['V1', 'V1 原片'],
+          ['V2', 'V2'],
+          ['V3', 'V3'],
+        ],
+      ],
+    ])
   })
 })
 

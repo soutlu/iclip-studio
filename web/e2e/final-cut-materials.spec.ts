@@ -578,18 +578,29 @@ test('跨镜头划出两段：底下显示已选 2 段，点「加入轨道」�
   const { editor, materials } = await openWith(page, [1, 1])
   const row = editor.getByRole('group', { name: '画面 1', exact: true })
   const ranges = groupOf(materials, 1).getByRole('group', { name: /^选中的范围/ })
-  /** 在 `take` 这条原作上从镜头 `from` 的正中按住，划到镜头 `to` 的正中松手。 */
-  const drawBetween = async (take: string, from: number, to: number) => {
+  /** 在 `take` 这条原作上从镜头 `from` 的正中按住，划到镜头 `to` 的正中，`holding` 做完再松手。 */
+  const drawBetween = async (
+    take: string,
+    from: number,
+    to: number,
+    holding: () => Promise<void> = async () => {},
+  ) => {
     const start = await centerOf(shotOf(materials, 1, take, from))
     const end = await centerOf(shotOf(materials, 1, take, to))
     await page.mouse.move(start.x, start.y)
     await page.mouse.down()
     await page.mouse.move(end.x, end.y, { steps: 8 })
+    await holding()
     await page.mouse.up()
   }
 
   await drawBetween('A', 2, 3)
-  await drawBetween('B', 4, 6)
+  // 还没松手：正在划的那段和选好的一样，两头有把手、写着时长
+  await drawBetween('B', 4, 6, async () => {
+    const drawing = groupOf(materials, 1).getByTestId('pick-draft')
+    await expect(drawing).toHaveText('2.0s')
+    await expect(drawing.getByTestId('pick-draft-handle')).toHaveCount(2)
+  })
   await expect(ranges).toHaveCount(2)
   await expect(ranges.first()).toHaveAccessibleName(/^选中的范围 1\.5–2\.5 秒，2 个镜头/)
   await expect(ranges.nth(1)).toHaveAccessibleName(/^选中的范围 3\.5–5\.5 秒，3 个镜头/)

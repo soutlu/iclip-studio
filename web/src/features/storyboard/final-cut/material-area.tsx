@@ -162,12 +162,8 @@ export function MaterialArea({
           <button className="wf-chip-btn ui-state ui-focus" onClick={onClear} type="button">
             清空
           </button>
-          <button
-            className="wf-pick-dock-insert ui-state ui-focus"
-            onClick={onInsert}
-            type="button"
-          >
-            <Icon decorative name="final-cut-add" size="xs" />
+          <button className="wf-pick-dock-insert ui-focus" onClick={onInsert} type="button">
+            <Icon decorative name="final-cut-add" size="sm" />
             加入轨道
           </button>
         </div>

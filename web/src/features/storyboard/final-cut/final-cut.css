@@ -13,6 +13,23 @@
   --wf-knob: var(--n100);
   /* led 是深色实心按钮上图标的指示光 */
   --wf-led: var(--t80);
+  /* 中性实心的主操作（「加入轨道」）：上浅下深的一点渐变，上沿一道高光；深色模式下是浅底 */
+  --wf-action-fill: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-action-neutral) 94%, var(--color-on-scrim)) 0%,
+    var(--color-action-neutral) 100%
+  );
+  --wf-shadow-action:
+    0 1px 3px color-mix(in srgb, var(--color-shadow) 20%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--color-on-scrim) 16%, transparent);
+  /* 很淡的一层墨色底：只有一个版本时的「V1」小块 */
+  --wf-wash: color-mix(in srgb, var(--color-on-surface) 4.5%, transparent);
+  /* 紧凑分段的槽和与它并排的「V1」小块的圆角：里面格子的圆角加槽的内边距，四角同心 */
+  --wf-radius-seg-compact: calc(var(--radius-xs) + 2px);
+  /* 「镜头」页签底部操作条的外圆角：里面按钮的圆角加 6px 内边距，四角同心 */
+  --wf-radius-dock: calc(var(--radius-sm) + 6px);
+  /* 镜头条上的已入轨条：镜头条深浅色下都是黑底，用不随主题换的鲜绿 */
+  --wf-in-track: var(--p70);
   /* 片段：ink 是音频片段的标题；edge 是字幕胶囊和音频卡的描边，label 是音频卡顶上的标题条和它的分隔线；
      三条渐变依次是贴片 / 场景、字幕胶囊、音频卡的卡底 */
   --wf-original-ink: var(--color-tone-slate);
@@ -38,6 +55,14 @@
   --wf-control-soft: color-mix(in srgb, var(--n100) 9%, transparent);
   --wf-control-ring: color-mix(in srgb, var(--n100) 20%, transparent);
   --wf-led: var(--p40);
+  --wf-action-fill: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-action-neutral) 40%, var(--color-on-scrim)) 0%,
+    var(--color-action-neutral) 100%
+  );
+  --wf-shadow-action:
+    0 1px 3px color-mix(in srgb, var(--color-shadow) 42%, transparent),
+    inset 0 1px 0 var(--color-on-scrim);
   --wf-original-ink: var(--color-on-surface);
   --wf-dub-ink: var(--t90);
   --wf-music-ink: var(--p80);
@@ -73,6 +98,12 @@
 }
 
 /* ---- 通用控件：编辑器里各处共用的一套样子。浮层菜单挂在 body 上不在编辑器根下，另带 wf-menu ---- */
+
+/* 能点的按钮是手型（同 shared/ui 的按钮），置灰的不是。零特异性：控件自己写的光标（裁剪把手、镜头的十字、
+   拖动中的 grabbing 等）照旧生效 */
+:where(.wf-editor, .wf-menu) :where(button:not(:disabled, [aria-disabled='true'])) {
+  cursor: pointer;
+}
 
 /* 双色图标的填充层：悬停加深一档，按下、选中再加深一档（变量见 shared/icons 的 final-cut-glyphs.css） */
 :where(.wf-editor, .wf-menu) :where(.ui-state:hover) {
@@ -201,16 +232,23 @@
   rotate: 180deg;
 }
 
-/* 两段 / 多段切换：一条凹槽，当前那段是浮起的白块 */
+/* 两段 / 多段切换：一条带细线的凹槽（同工作台顶栏的分段页签），当前那段是浮起的白块；
+   is-compact 是矮的一档，和旁边 20 高的小块并排时用 */
 .wf-editor .wf-seg {
   gap: 2px;
   padding: 2px;
   border-radius: var(--radius-control);
   background: var(--color-surface-container-high);
-  box-shadow: var(--shadow-control-well);
+  box-shadow:
+    var(--shadow-control-well),
+    inset 0 0 0 1px var(--color-panel-line);
 }
 
+/* 悬停只把字变深：交互态叠层（ui-state）的颜色置成透明，只留它的过渡 */
 .wf-editor .wf-seg-item {
+  --color-state-hover: transparent;
+  --color-state-pressed: transparent;
+
   display: inline-flex;
   height: 26px;
   align-items: center;
@@ -243,6 +281,19 @@
 
 .dark .wf-editor .wf-seg-item:is([aria-pressed='true'], [data-state='on']) {
   background: var(--color-surface-container-high);
+}
+
+.wf-editor .wf-seg.is-compact {
+  gap: 1px;
+  border-radius: var(--wf-radius-seg-compact);
+}
+
+.wf-editor .wf-seg.is-compact .wf-seg-item {
+  height: 16px;
+  gap: 3px;
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-caption);
 }
 
 /* 输入框、文字框和装着输入框的条：凹进去的浅底，聚焦时浮起成白底、外面一圈 1.5px 淡框（照稿子）。
@@ -968,7 +1019,6 @@
   font-family: var(--font-mono);
   font-size: var(--text-caption);
   font-variant-numeric: tabular-nums;
-  cursor: pointer;
 }
 
 .wf-caption-time > svg {
@@ -1092,15 +1142,10 @@
   text-overflow: ellipsis;
 }
 
-/* 「字幕 / 组件文字」两段切换（样子见 wf-seg）：比通用的矮一档 */
+/* 「字幕 / 组件文字」两段切换（样子见 wf-seg） */
 .wf-captions-views {
   display: inline-flex;
   flex: none;
-}
-
-.wf-editor .wf-captions-views .wf-seg-item {
-  height: 24px;
-  padding: 0 10px;
 }
 
 .wf-captions-count {
@@ -1232,7 +1277,6 @@
   gap: 8px;
   border-radius: var(--radius-xs);
   text-align: left;
-  cursor: pointer;
 }
 
 .wf-text-name {
@@ -1336,7 +1380,6 @@
   border: 0;
   border-radius: inherit;
   background: transparent;
-  cursor: pointer;
   touch-action: none;
   user-select: none;
 }
@@ -1636,7 +1679,6 @@
   border-radius: var(--radius-sm);
   background: var(--wf-control-soft);
   color: var(--color-on-surface-variant);
-  cursor: pointer;
   font-size: var(--text-caption);
   font-weight: 500;
   line-height: var(--text-caption--line-height);
@@ -3707,7 +3749,6 @@
   border: 0;
   border-radius: inherit;
   background: transparent;
-  cursor: pointer;
   touch-action: none;
 }
 
@@ -4493,7 +4534,6 @@
   overflow: hidden;
   padding: 0 9px;
   border-radius: inherit;
-  cursor: pointer;
   text-align: left;
   touch-action: none;
 }
@@ -4920,15 +4960,9 @@
   padding: 10px 14px 4px;
 }
 
+/* 「全部 / 未入轨 / 已入轨」（样子见 wf-seg） */
 .wf-materials-filter {
   display: inline-flex;
-}
-
-/* 「全部 / 未入轨 / 已入轨」（样子见 wf-seg）：比通用的矮一档、字小一号 */
-.wf-editor .wf-materials-filter .wf-seg-item {
-  height: 24px;
-  padding: 0 9px;
-  font-size: var(--text-caption);
 }
 
 .wf-materials-count {
@@ -5046,47 +5080,36 @@
   flex: none;
 }
 
+/* 「出片 A」至少占一样宽：各卡片的版本从同一条竖线开始 */
 .wf-take-name {
+  min-width: 40px;
   color: var(--color-on-surface);
   font-size: var(--text-label);
   font-weight: 600;
 }
 
-/* 只有一个版本时的「V1」 */
+/* 只有一个版本时的「V1」：和紧凑的分段一样高、一样的圆角，一层很淡的墨色底 */
 .wf-take-version {
   display: inline-flex;
   height: 20px;
   align-items: center;
   padding: 0 6px;
-  border-radius: var(--radius-xs);
-  background: var(--color-surface-container-high);
+  border-radius: var(--wf-radius-seg-compact);
+  background: var(--wf-wash);
   color: var(--color-on-surface-muted);
   font-family: var(--font-mono);
   font-size: var(--text-caption);
   font-weight: 500;
 }
 
-/* 两个及以上版本的分段（样子见 wf-seg）：和「V1」一样高，选中那段浮起 */
-.wf-editor .wf-take-versions {
+/* 两个及以上版本的分段（紧凑的 wf-seg）：版本多到放不下时只有它缩、自己横着滚 */
+.wf-take-versions {
   display: flex;
-  height: 20px;
   min-width: 0;
   flex: 0 1 auto;
-  gap: 1px;
   overflow-x: auto;
-  padding: 2px;
-  border-radius: var(--radius-xs);
-  scrollbar-width: none;
-}
-
-.wf-editor .wf-take-versions .wf-seg-item {
-  height: 16px;
-  flex: none;
-  gap: 3px;
-  padding: 0 5px;
-  border-radius: var(--radius-xs);
   font-family: var(--font-mono);
-  font-size: var(--text-caption);
+  scrollbar-width: none;
 }
 
 /* 入了轨的小绿点：「● 已入轨」、没在看的已入轨版本、收起的组头 */
@@ -5116,14 +5139,17 @@
   font-size: var(--text-caption);
 }
 
+/* 按「00.0s」五个等宽字留宽、靠右：各卡片的「+」上下对齐 */
 .wf-take-duration {
+  min-width: 5ch;
   color: var(--color-on-surface-muted);
   font-family: var(--font-mono);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
-/* 「+」（Tool）：压过工具条图标按钮的 30px 圆形，缩成卡片顶行里的小方块 */
+/* 「+」（Tool）：压过工具条图标按钮的 30px 圆形，缩成卡片顶行里的小方块；按下时缩一下 */
 .wf-take-add {
   width: 20px;
   height: 20px;
@@ -5135,6 +5161,10 @@
 
 .wf-take-add:hover {
   color: var(--color-on-surface);
+}
+
+.wf-take-add:active:not([aria-disabled='true']) {
+  scale: 0.92;
 }
 
 /* 素材很长、镜头条比卡片宽时在卡片里横着滚（最小宽度由组件按秒数给），不显示滚动条；
@@ -5187,12 +5217,21 @@
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 
-.wf-shot:hover::after {
+/* 悬停的镜头提亮一层。镜头不是层叠上下文，这层和 wf-take-marks 比层级：压在暗角和压暗之上；
+   和选区同一层、排在选区前面，仍在选区之下 */
+.wf-shot::after {
   content: '';
   position: absolute;
+  z-index: var(--z-local-2);
   inset: 0;
-  background: color-mix(in srgb, var(--color-on-scrim) 8%, transparent);
+  background: color-mix(in srgb, var(--color-on-scrim) 10%, transparent);
+  opacity: 0;
   pointer-events: none;
+  transition: opacity var(--dur-s) var(--ease);
+}
+
+.wf-shot:hover::after {
+  opacity: 1;
 }
 
 /* 还没有帧图时的占位图标压在深色镜头上，用浅色 */
@@ -5202,7 +5241,7 @@
 }
 
 /* 盖在镜头上、按镜头条圆角裁切的一层：镜头切口线、底沿的已入轨条、有选区时选区以外的压暗（按这个先后叠）。
-   内阴影是一圈细亮边和底沿的暗角，压在三者下面，好让已入轨条在亮画面上也看得清 */
+   内阴影是上沿一道 1px 高光和底沿的暗角，压在三者下面，好让已入轨条在亮画面上也看得清 */
 .wf-take-marks {
   position: absolute;
   z-index: var(--z-local-1);
@@ -5210,12 +5249,12 @@
   overflow: hidden;
   border-radius: inherit;
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--color-on-scrim) 10%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--color-on-scrim) 14%, transparent),
     inset 0 -16px 20px -12px color-mix(in srgb, var(--color-scrim) 52%, transparent);
   pointer-events: none;
 }
 
-/* 镜头切口：一道 1px 亮线，上下两头各一个小刻度 */
+/* 镜头切口：一道 1px 亮线，上下两头各一个方角小刻度 */
 .wf-take-cut {
   position: absolute;
   top: 0;
@@ -5232,7 +5271,6 @@
   left: -1.5px;
   width: 4px;
   height: 3px;
-  border-radius: var(--radius-xs);
   background: color-mix(in srgb, var(--color-on-scrim) 78%, transparent);
 }
 
@@ -5251,7 +5289,7 @@
   height: 3px;
   margin-inline: 4px;
   border-radius: var(--radius-full);
-  background: var(--color-primary-fixed-dim);
+  background: var(--wf-in-track);
   box-shadow: 0 1px 3px color-mix(in srgb, var(--color-scrim) 65%, transparent);
 }
 
@@ -5263,7 +5301,8 @@
   backdrop-filter: saturate(0.75);
 }
 
-/* 选区：暖金色框，拖中间平移，两端是金色胶囊把手；正在划出来的那段同样子、不接指针 */
+/* 选区：暖金色框，拖中间平移（按住时抓紧的手），两端是金色胶囊把手；正在划出来的那段同样子（把手、时长都有）、
+   不接指针 */
 .wf-pick {
   position: absolute;
   top: 0;
@@ -5299,9 +5338,12 @@
   pointer-events: none;
 }
 
+.wf-pick:is(:active, .is-lifting) {
+  cursor: grabbing;
+}
+
 .wf-pick.is-lifting {
   background: color-mix(in srgb, var(--color-tertiary-fixed-dim) 18%, transparent);
-  cursor: grabbing;
 }
 
 /* 两个类压过共用把手的白底小方块：这里是一颗金色胶囊，中间一道深色握痕，悬停、按下时变亮变长。
@@ -5372,8 +5414,8 @@
   align-items: center;
   gap: 4px;
   margin: 0 14px 12px;
-  padding: 4px 4px 4px 12px;
-  border-radius: var(--radius-md);
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--wf-radius-dock);
   background: var(--color-card);
   box-shadow: var(--shadow-float), var(--shadow-specular);
 }
@@ -5406,14 +5448,16 @@
   background: var(--color-tertiary-fixed-dim);
 }
 
-/* 「清空」：小胶囊按钮（wf-chip-btn）和旁边的主操作一样高、一样大的字 */
-.wf-pick-dock > .wf-chip-btn {
+/* 「清空」：小胶囊按钮（wf-chip-btn）和旁边的主操作一样高、一样大的字，字色淡一级。
+   :where 把特异性降到和 wf-chip-btn 一样，悬停照旧变深 */
+.wf-pick-dock > :where(.wf-chip-btn) {
   height: 28px;
   border-radius: var(--radius-sm);
+  color: var(--color-on-surface-muted);
   font-size: var(--text-label);
 }
 
-/* 深色实心的主操作 */
+/* 中性实心的主操作（渐变和投影见 --wf-action-*）：悬停提亮，按下缩一下。不挂 ui-state：它的悬停叠层会换掉渐变 */
 .wf-pick-dock-insert {
   display: inline-flex;
   height: 28px;
@@ -5422,14 +5466,19 @@
   gap: 4px;
   padding: 0 11px 0 9px;
   border-radius: var(--radius-sm);
-  background-color: var(--color-action-neutral);
-  box-shadow:
-    0 1px 3px color-mix(in srgb, var(--color-scrim) 20%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--color-on-scrim) 16%, transparent);
+  background: var(--wf-action-fill);
+  box-shadow: var(--wf-shadow-action);
   color: var(--color-on-action-neutral);
   font-size: var(--text-label);
   font-weight: 600;
   white-space: nowrap;
+  transition:
+    filter var(--dur-s) var(--ease),
+    scale var(--dur-s) var(--ease);
+}
+
+.wf-pick-dock-insert:hover {
+  filter: brightness(1.08);
 }
 
 .wf-pick-dock-insert:active {
