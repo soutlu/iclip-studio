@@ -23,7 +23,7 @@ media_generation:
       - vendor-b-seedance-2-0
       - vendor-b-seedance-2-5
       - wan3.0-video-prime
-    # 写出这一段并设 VIDEO_ENHANCE_SUBMIT_URL 即开通高清版（超分）；查询地址与 key 同出片。
+    # 写出这一段并设 VIDEO_ENHANCE_SUBMIT_URL 即开通高清版（超分）；查询地址同出片，key 与 model_id 取自各配置组。
     enhance:
       model: video-enhance
       resolutions: [1080p, 720p] # 能提到的档，从高到低；上游只收 720p 与 1080p
@@ -54,20 +54,34 @@ media_generation:
   # 本地合成每个进程的并发；不写时按启动探测选中的编解码取：硬件 4，软件 2
   # compose_concurrency: 4
   subtitle:
-    # 写出这一段并设千问AI平台的字幕识别 API Key（QWEN_SUBTITLE_API_KEY）即开通素材片字幕识别；模型固定 qwen-audio-3.1-asr-flash，不在这里配。
+    # 写出这一段即开通素材片字幕识别，每个配置组都要写 subtitle_api_key_env；模型固定 qwen-audio-3.1-asr-flash，不在这里配。
     url: https://placeholder.invalid/api/v1/services/aigc/multimodal-generation/generation
     concurrency: 4 # 识别队列每个进程同时跑几条
     timeout_seconds: 120 # 一次识别请求等结果的上限
   music:
-    # 写出这一段并设千问AI平台的配乐 API Key（QWEN_MUSIC_API_KEY）即开通生成背景音乐；模型固定 qwen-audio-3.1-tts-next，不在这里配。
+    # 写出这一段即开通生成背景音乐，每个配置组都要写 music_api_key_env；模型固定 qwen-audio-3.1-tts-next，不在这里配。
     url: https://placeholder.invalid/api/v1/services/audio/tts/SpeechSynthesizer
     concurrency: 2 # 生成队列每个进程同时跑几条
     timeout_seconds: 300 # 一次生成请求等结果的上限
   speech:
-    # 写出这一段并设千问AI平台的配音 API Key（QWEN_SPEECH_API_KEY）即开通 final-cut 配音；模型固定 qwen-audio-3.1-tts-next，不在这里配。
+    # 写出这一段即开通 final-cut 配音，每个配置组都要写 speech_api_key_env；模型固定 qwen-audio-3.1-tts-next，不在这里配。
     url: https://placeholder.invalid/api/v1/services/audio/tts/SpeechSynthesizer
     concurrency: 2 # 配音队列每个进程同时跑几条
     timeout_seconds: 120 # 一句合成请求等结果的上限
+
+# 媒体生成的 key（写环境变量名）与「产品模型名 → 网关 model_id」，按组分。default 是没选组的人用的那一组，
+# 开了媒体生成就必须有；video_models 的键恰好是 allowed_models，开了高清版再加 enhance.model。
+model_groups:
+  default:
+    video_api_key_env: VIDEO_API_KEY
+    subtitle_api_key_env: QWEN_SUBTITLE_API_KEY
+    music_api_key_env: QWEN_MUSIC_API_KEY
+    speech_api_key_env: QWEN_SPEECH_API_KEY
+    video_models:
+      vendor-b-seedance-2-0: vendor-b-seedance-2-0
+      vendor-b-seedance-2-5: vendor-b-seedance-2-5
+      wan3.0-video-prime: wan3.0-video-prime
+      video-enhance: video-enhance
 
 # 写出这一段即启用视频拆解（video_breakdown 与参考视频的后台拆解）与资料库打标；须在 PATH 上有 ffmpeg。模型写定在代码里，
 # 经运行时调，配置页的火山方舟里要启用它。

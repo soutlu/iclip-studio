@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
 
 from iclip.domains.generation.api import create_generations_router
-from iclip.domains.generation.model_groups import UNGROUPED, ModelGroup, ModelGroups
+from iclip.domains.generation.model_groups import ModelGroup, ModelGroups
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     GenerationJob,
@@ -56,6 +56,7 @@ from tests.helpers.generation import (
     video_request,
 )
 from tests.helpers.identity import InMemoryUserRepository
+from tests.helpers.model_groups import default_only
 
 TAKE_URL = "https://cdn.example.test/iclip/agent/video-masters/take.mp4"
 TAKE_MS = 8_000
@@ -96,7 +97,7 @@ def build_world(
     references: FakeReferenceAssets | None = None,
     submission: ProviderSubmission | None = None,
     durations: dict[str, int] | None = None,
-    model_groups: ModelGroups = UNGROUPED,
+    model_groups: ModelGroups | None = None,
     lineage: FixedLineage | None = None,
 ) -> World:
     store = InMemoryGenerationRepository(jobs)
@@ -132,7 +133,7 @@ def build_world(
         media_probe=probe,
         references=references or FakeReferenceAssets(),
         dubbing_provider=dubbing,
-        model_groups=model_groups,
+        model_groups=model_groups or default_only(),
     )
     return World(store, queue, connector, service, probe)
 
@@ -232,7 +233,9 @@ async def test_a_dubbing_records_the_owners_model_group_on_acceptance(group: str
         return group if user_id == me else None
 
     groups = ModelGroups(
-        (ModelGroup(name="mkt", video_api_key="vk-mkt", video_models={}),), group_of=group_of
+        ModelGroup(name="default", video_api_key="vk-default", video_models={}),
+        (ModelGroup(name="mkt", video_api_key="vk-mkt", video_models={}),),
+        group_of=group_of,
     )
     world = build_world([take], model_groups=groups)
 

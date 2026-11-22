@@ -55,6 +55,7 @@ from tests.helpers.generation import (
     video_shot,
 )
 from tests.helpers.identity import InMemoryUserRepository
+from tests.helpers.model_groups import default_only
 
 VIDEO_MODELS = ("vendor-a-seedance-2-0", "vendor-a-seedance-2-5", "wan3.0-video")
 
@@ -158,6 +159,7 @@ def build_test_app(
         lineage=lineage or FixedLineage(),
         media_probe=probe,
         references=FakeReferenceAssets(clips, listed=listed),
+        model_groups=default_only(video_models),
     )
     app.include_router(
         create_generations_router(service, act_as=ActAs(users or InMemoryUserRepository()))

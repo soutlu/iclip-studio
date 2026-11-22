@@ -74,8 +74,8 @@ CREATE DATABASE iclip OWNER iclip;
   - **重要提醒**：请将 `CREDENTIAL_ENCRYPTION_KEYS` 与数据库备份分开妥善保管；一旦丢失，数据库里已保存的所有模型 API Key 和 MCP 配置都将无法解密，只能重新录入。
   - 若服务器是与 OSS 同地域的阿里云 ECS，建议配置 `OSS_INTERNAL_ENDPOINT` 走内网高速读写；
   - 开启视频超分（高清版）：配置 `VIDEO_ENHANCE_SUBMIT_URL` 及 `config.yaml` 的 `media_generation.video.enhance`；
-  - 按需开启千问音频能力（三项独立开关，配置对应环境变量与 `config.yaml` 子段即启用）：素材片字幕识别配 `QWEN_SUBTITLE_API_KEY` + `media_generation.subtitle`；生成背景音乐配 `QWEN_MUSIC_API_KEY` + `media_generation.music`；`final-cut` 配音与旁白配 `QWEN_SPEECH_API_KEY` + `media_generation.speech`（`url` 填 `https://maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer`，`concurrency` 与 `timeout_seconds` 可省）；
-  - 按用户区分媒体生成与大模型密钥：见[配置组](#配置组)；
+  - 媒体生成各项服务的 API Key 与视频网关 `model_id` 按组写在 `config.yaml` 的 `model_groups` 段（`.env` 里只放 key 的值），开启媒体生成必须写 `default` 组：见[配置组](#配置组)；
+  - 按需开启千问音频能力（三项独立开关，写出 `config.yaml` 子段即启用，各组的 key 见[配置组](#配置组)）：素材片字幕识别写 `media_generation.subtitle`；生成背景音乐写 `media_generation.music`；`final-cut` 配音与旁白写 `media_generation.speech`（`url` 填 `https://maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer`，`concurrency` 与 `timeout_seconds` 可省）；
   - 开启成片导出：配置 `FINAL_CUT_RENDER_URL=http://render:8080` 及 `RENDER_ALLOWED_MEDIA_HOSTS`（填入本系统 OSS 域名和上游视频生成域名，多个域名用逗号分隔）；
   - 开启 `final-cut` 预览沙箱：配置 `FINAL_CUT_PREVIEW_ORIGIN=https://<预览子域名>`（未配置则编辑器预览无法加载）。预览子域名的 DNS 解析与 HTTPS 证书须与主应用域名一样指向 `web` 容器，由同一套 Nginx 托管前端页面并将 `/api/` 原样保留 `Host` 转发给后端。
 - `configs/config.yaml` 与 `configs/runtime.yaml`：从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制生成 `runtime.yaml`，回调地址保持 `http://server:7788`（插件启用条件见[内部接口与视频插件包](architecture.md#内部接口与视频插件包)，接入其他系统见运行时项目的 `docs/apps.md`）。两份配置的 `ops.log_format` 都设为 `json`：默认的 Console 格式会省略例行的访问日志（见[日志](architecture.md#4-日志)）。
@@ -204,10 +204,20 @@ scripts/publish-components.sh <私有组件库本地路径> <本机输出目录>
 
 ### 配置组
 
-配置组用于按用户隔离媒体生成与大模型调用的密钥及上游视频网关 `model_id`（用户归组与定组规则见 [CONTEXT.md「配置组」](CONTEXT.md#配置组model-group)）。媒体生成组配置写在 `configs/config.yaml` 顶层 `model_groups` 段（环境变量名指向 `.env` 中的实际密钥），大模型密钥在网页后台「模型与供应商」中选组绑定，用户归哪个组由 `root` 在网页设置里选：
+配置组用于按用户隔离媒体生成与大模型调用的密钥及上游视频网关 `model_id`（用户归组与定组规则见 [CONTEXT.md「配置组」](CONTEXT.md#配置组model-group)）。媒体生成组配置写在 `configs/config.yaml` 顶层 `model_groups` 段（环境变量名指向 `.env` 中的实际密钥），大模型密钥在网页后台「模型与供应商」中选组绑定，用户归哪个组由 `root` 在网页设置里选。`default` 是保留组名，即默认组在媒体生成里用的那一组，写法与校验和其他组相同，但不出现在网页的可选组里，大模型密钥也不能绑到它：
 
 ```yaml
 model_groups:
+  default:                                          # 没选组的人用这一组；开启媒体生成时必填
+    video_api_key_env: VIDEO_API_KEY
+    subtitle_api_key_env: QWEN_SUBTITLE_API_KEY
+    music_api_key_env: QWEN_MUSIC_API_KEY
+    speech_api_key_env: QWEN_SPEECH_API_KEY
+    video_models:
+      vendor-b-seedance-2-0: <默认的 model_id>
+      vendor-b-seedance-2-5: <默认的 model_id>
+      wan3.0-video-prime: <默认的 model_id>
+      video-enhance: <默认的 model_id>
   mkt:                                              # 组名：小写字母开头，仅含小写字母、数字和下划线
     video_api_key_env: VIDEO_API_KEY_MKT            # 该组视频密钥环境变量名（必填）
     subtitle_api_key_env: QWEN_SUBTITLE_API_KEY_MKT # 开启字幕识别时必填
@@ -220,7 +230,7 @@ model_groups:
       video-enhance: <该组的 model_id>              # 键取 media_generation.video.enhance.model；仅开启高清版时填写
 ```
 
-- **启动期严格校验**：不配置 `model_groups` 段则没有可选的组，全员走默认组。配置后若组名格式非法、`video_models` 键集合与 `allowed_models`（含已开启的 `enhance.model`）不完全一致、或已开启功能的组密钥环境变量缺失/为空，后端均在启动时直接报错退出。
+- **启动期严格校验**：组名格式非法时后端启动即报错退出。开启媒体生成后，缺 `default` 组，或任一组（含 `default`）的 `video_models` 键集合与 `allowed_models`（含已开启的 `enhance.model`）不完全一致、已开启功能（视频必开，字幕、配乐、配音看 `media_generation` 里有没有对应子段）的 `*_api_key_env` 没写或所指环境变量为空，同样启动即报错退出；未开启媒体生成时不校验各组的 key 与 `video_models`。只写 `default` 时没有可选的组，全员在默认组。
 - **上线新组三步**（先绑好大模型密钥再放人进组，防止组内成员因后台尚未绑定密钥而被拦截发消息）：
   1. 在 `config.yaml` 新增组，在 `.env` 填入该组各媒体密钥，执行 `docker compose up -d`；
   2. 使用 `root` 登录网页后台「模型与供应商」，为该组需用到的各供应商添加密钥并选定该配置组；

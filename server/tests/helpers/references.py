@@ -13,7 +13,7 @@ from iclip.app.final_cut_translation import ArkFinalCutTranslator, build_final_c
 from iclip.app.library_tagging import ArkTagger, build_library_tagger
 from iclip.app.reference_breakdown import ArkVideoBreakdowns
 from iclip.app.reference_test_video import TEST_VIDEO_MODEL
-from iclip.config import RuntimeConfig, VideoGenerationSection
+from iclip.config import RuntimeConfig
 from iclip.config.models import IclipStudioSection
 from iclip.domains.identity.public import Principal
 from iclip.domains.references.models import ReferenceKind, TestVideoJob
@@ -43,14 +43,8 @@ STUDIO_MEDIA_ENVS = STUDIO_ENVS | MEDIA_ENVS
 
 
 def config_with_studio_and_media() -> RuntimeConfig:
-    media = config_with_media()
-    assert media.media_generation is not None
-    video = VideoGenerationSection(model="seedance", allowed_models=("seedance", TEST_VIDEO_MODEL))
-    return media.model_copy(
-        update={
-            "iclip_studio": IclipStudioSection(),
-            "media_generation": media.media_generation.model_copy(update={"video": video}),
-        }
+    return config_with_media(("seedance", TEST_VIDEO_MODEL)).model_copy(
+        update={"iclip_studio": IclipStudioSection()}
     )
 
 

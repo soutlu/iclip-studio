@@ -42,6 +42,7 @@ from tests.helpers.generation import (
     make_music,
 )
 from tests.helpers.identity import InMemoryUserRepository
+from tests.helpers.model_groups import default_only
 
 MODEL = "qwen-audio-3.1-tts-next"
 MUSIC = ProviderTarget(provider=FAKE_MUSIC_PROVIDER, model=MODEL)
@@ -117,6 +118,7 @@ def build_world(
         references=FakeReferenceAssets(),
         subtitles=ProviderTarget(provider=FAKE_SUBTITLE_PROVIDER, model="qwen-audio-3.1-asr-flash"),
         music=music,
+        model_groups=default_only(),
     )
     return World(store, queue, connector, service, composer, cleared)
 

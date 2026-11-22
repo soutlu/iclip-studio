@@ -58,11 +58,9 @@ from iclip.app.shot_media import CutRecordsAdapter, FrameBoardsAdapter, GridCuts
 from iclip.app.whole_film_exports import WholeFilmExportAdapter, final_cut_reader
 from iclip.common.errors import NotFound
 from iclip.config import (
-    QWEN_MUSIC_API_KEY_ENV,
-    QWEN_SPEECH_API_KEY_ENV,
-    QWEN_SUBTITLE_API_KEY_ENV,
     ObjectStoreEnv,
     ResolvedMediaGeneration,
+    ResolvedMediaModelGroup,
     ResolvedProductCatalog,
     ResolvedQwenService,
     RuntimeConfig,
@@ -249,10 +247,19 @@ def _qwen_service(resolved: ResolvedQwenService | None) -> QwenServiceConfig | N
     if resolved is None:
         return None
     return QwenServiceConfig(
-        endpoint=QwenEndpoint(
-            url=resolved.url, api_key=resolved.api_key, timeout_seconds=resolved.timeout_seconds
-        ),
+        endpoint=QwenEndpoint(url=resolved.url, timeout_seconds=resolved.timeout_seconds),
         concurrency=resolved.concurrency,
+    )
+
+
+def _model_group(resolved: ResolvedMediaModelGroup) -> ModelGroup:
+    return ModelGroup(
+        name=resolved.name,
+        video_api_key=resolved.video_api_key,
+        video_models=resolved.video_models,
+        subtitle_api_key=resolved.subtitle_api_key,
+        music_api_key=resolved.music_api_key,
+        speech_api_key=resolved.speech_api_key,
     )
 
 
@@ -292,7 +299,6 @@ def _generation_module(
         video=VideoProviderSettings(
             submit_url=settings.video_submit_url,
             status_base_url=settings.video_status_base_url,
-            api_key=settings.video_api_key,
             enhance_submit_url=None if enhance is None else enhance.submit_url,
         ),
         video_enhance=None
@@ -330,17 +336,8 @@ def _generation_module(
         music=_qwen_service(settings.music),
         render=render,
         model_groups=ModelGroups(
-            tuple(
-                ModelGroup(
-                    name=group.name,
-                    video_api_key=group.video_api_key,
-                    video_models=group.video_models,
-                    subtitle_api_key=group.subtitle_api_key,
-                    music_api_key=group.music_api_key,
-                    speech_api_key=group.speech_api_key,
-                )
-                for group in settings.model_groups
-            ),
+            _model_group(settings.default_model_group),
+            tuple(_model_group(group) for group in settings.model_groups),
             group_of=model_group_of,
         ),
     )
@@ -441,19 +438,19 @@ def build_app(
         _logger.warning(
             "字幕识别未启用",
             media_generation=settings.media_generation is not None,
-            requires=f"media_generation.subtitle 段与千问AI平台的 API Key {QWEN_SUBTITLE_API_KEY_ENV}",
+            requires="media_generation.subtitle 段，每个配置组写上 subtitle_api_key_env",
         )
     if settings.media_generation is None or settings.media_generation.music is None:
         _logger.warning(
             "音乐生成未启用",
             media_generation=settings.media_generation is not None,
-            requires=f"media_generation.music 段与千问AI平台的 API Key {QWEN_MUSIC_API_KEY_ENV}",
+            requires="media_generation.music 段，每个配置组写上 music_api_key_env",
         )
     if settings.media_generation is None or settings.media_generation.speech is None:
         _logger.warning(
             "配音未启用",
             media_generation=settings.media_generation is not None,
-            requires=f"media_generation.speech 段与千问AI平台的 API Key {QWEN_SPEECH_API_KEY_ENV}",
+            requires="media_generation.speech 段，每个配置组写上 speech_api_key_env",
         )
     http_client = httpx.AsyncClient(follow_redirects=True)
     public_http_client = public_client(timeout=TOTAL_TIMEOUT_SECONDS)

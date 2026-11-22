@@ -35,6 +35,7 @@ from tests.helpers.generation import (
     video_request,
 )
 from tests.helpers.identity import InMemoryUserRepository
+from tests.helpers.model_groups import default_only
 
 GATEWAY = "https://image.test"
 
@@ -62,8 +63,9 @@ async def _keep_completion(_conversation_id: uuid.UUID, _owner: uuid.UUID) -> No
 VIDEO = VideoProviderSettings(
     submit_url="https://video.test/generate",
     status_base_url="https://video.test/tasks",
-    api_key="secret-key",
 )
+
+GROUPS = default_only(("vendor-a-seedance-2-5", "video-enhance"), subtitle_api_key="sk-test")
 
 
 def build(
@@ -101,6 +103,7 @@ def build(
         media_codec=SOFTWARE,
         fetch_url=as_is,
         image_transport=transport,
+        model_groups=GROUPS,
     )
 
 
@@ -149,11 +152,7 @@ async def test_a_model_can_declare_its_own_task_routes() -> None:
         clear_completion=_keep_completion,
         lineage=FixedLineage(),
         references=FakeReferenceAssets(),
-        video=VideoProviderSettings(
-            submit_url="https://video.test/generate",
-            status_base_url="https://video.test/tasks",
-            api_key="secret-key",
-        ),
+        video=VIDEO,
         video_default_model="vendor-a-seedance-2-5",
         video_allowed_models=("vendor-a-seedance-2-5",),
         image_models=[
@@ -175,6 +174,7 @@ async def test_a_model_can_declare_its_own_task_routes() -> None:
         media_codec=SOFTWARE,
         fetch_url=as_is,
         image_transport=httpx.MockTransport(handler),
+        model_groups=GROUPS,
     )
 
     for model, references in (
@@ -263,7 +263,7 @@ async def test_an_enhancement_runs_through_the_video_lane_to_both_addresses() ->
 
 
 SUBTITLES = QwenServiceConfig(
-    endpoint=QwenEndpoint(url="https://asr.test/generation", api_key="sk-test", timeout_seconds=30),
+    endpoint=QwenEndpoint(url="https://asr.test/generation", timeout_seconds=30),
     concurrency=1,
 )
 

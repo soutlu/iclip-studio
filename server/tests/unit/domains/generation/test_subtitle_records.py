@@ -46,6 +46,7 @@ from tests.helpers.generation import (
     video_request,
 )
 from tests.helpers.identity import InMemoryUserRepository
+from tests.helpers.model_groups import default_only
 
 TAKE_URL = "https://cdn.test/video/take.mp4"
 TAKE_WATERMARK_URL = "https://cdn.test/video/take-wm.mp4"
@@ -133,6 +134,7 @@ def build_world(
         media_probe=FakeMediaProbe(),
         references=FakeReferenceAssets(),
         subtitles=subtitles,
+        model_groups=default_only(),
     )
     return World(store, queue, connector, service, asr, cleared)
 

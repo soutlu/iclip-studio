@@ -44,6 +44,7 @@ from tests.helpers.generation import (
     whole_film_request,
 )
 from tests.helpers.identity import InMemoryUserRepository
+from tests.helpers.model_groups import default_only
 
 ENHANCE = VideoEnhanceSpec(model="video-enhance", resolutions=("1080p", "720p"), fps=30)
 URL = "/generations/video-enhancements"
@@ -110,6 +111,7 @@ def build_app(
         media_probe=FakeMediaProbe(),
         references=FakeReferenceAssets(),
         enhance=enhance,
+        model_groups=default_only(("vendor-a-seedance-2-5", ENHANCE.model)),
     )
     app.include_router(
         create_generations_router(service, act_as=ActAs(users or InMemoryUserRepository()))

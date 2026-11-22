@@ -14,7 +14,6 @@ from iclip.domains.generation.upstream import post_json
 @dataclass(frozen=True, slots=True)
 class QwenEndpoint:
     url: str
-    api_key: str
     timeout_seconds: float
 
 
@@ -22,6 +21,7 @@ async def post_to_qwen(
     endpoint: QwenEndpoint,
     payload: dict[str, Any],
     *,
+    api_key: str,
     label: str,
     transport: httpx.AsyncBaseTransport | None,
     headers: Mapping[str, str] | None = None,
@@ -32,7 +32,7 @@ async def post_to_qwen(
         label=label,
         timeout=endpoint.timeout_seconds,
         transport=transport,
-        headers={"Authorization": f"Bearer {endpoint.api_key}", **(headers or {})},
+        headers={"Authorization": f"Bearer {api_key}", **(headers or {})},
     )
 
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Final
@@ -37,12 +36,12 @@ class QwenSpeechSynthesizer:
         self._transport = transport
 
     async def synthesize(
-        self, text: str, *, reference: bytes, locale: TargetLocale | None, api_key: str | None
+        self, text: str, *, reference: bytes, locale: TargetLocale | None, api_key: str
     ) -> bytes:
-        endpoint = self._endpoint if api_key is None else replace(self._endpoint, api_key=api_key)
         body = await post_to_qwen(
-            endpoint,
+            self._endpoint,
             _payload(text, reference=reference, locale=locale),
+            api_key=api_key,
             label=_LABEL,
             transport=self._transport,
         )

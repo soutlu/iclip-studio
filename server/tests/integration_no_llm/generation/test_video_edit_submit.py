@@ -57,6 +57,7 @@ from tests.helpers.generation import (
 from tests.helpers.identity import InMemoryUserRepository
 from tests.helpers.media import synthesize_video
 from tests.helpers.media_server import serving
+from tests.helpers.model_groups import default_only
 from tests.helpers.uploads import FakeBucket
 
 pytestmark = [
@@ -101,7 +102,6 @@ def _edit_module(
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",
-            api_key="secret-key",
         ),
         video_default_model=MODEL,
         video_allowed_models=(MODEL,),
@@ -116,6 +116,7 @@ def _edit_module(
         queue_connector=InMemoryConnector(),
         media_codec=SOFTWARE,
         fetch_url=fetch_url,
+        model_groups=default_only((MODEL,)),
         video_transport=httpx.MockTransport(upstream),
     )
 

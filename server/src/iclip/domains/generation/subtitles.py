@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Callable, Mapping
-from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Final, TypeIs
@@ -10,7 +9,7 @@ from typing import Any, Final, TypeIs
 import httpx
 import structlog
 
-from iclip.domains.generation.model_groups import UNGROUPED, ModelGroups, group_key
+from iclip.domains.generation.model_groups import ModelGroups, group_key
 from iclip.domains.generation.models import GenerationJob
 from iclip.domains.generation.provider import (
     ProviderError,
@@ -44,7 +43,7 @@ class QwenSubtitleProvider:
         endpoint: QwenEndpoint,
         *,
         fetch_url: Callable[[str], str],
-        model_groups: ModelGroups = UNGROUPED,
+        model_groups: ModelGroups,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._endpoint = endpoint
@@ -56,17 +55,10 @@ class QwenSubtitleProvider:
     def name(self) -> str:
         return PROVIDER_NAME
 
-    def _endpoint_for(self, job: GenerationJob) -> QwenEndpoint:
-        group = self._model_groups.of(job)
-        if group is None:
-            return self._endpoint
-        return replace(
-            self._endpoint, api_key=group_key(group, group.subtitle_api_key, what=_LABEL)
-        )
-
     async def submit(self, job: GenerationJob) -> ProviderSubmission:
         request = request_of(job, SubtitleRequest, provider=PROVIDER_NAME)
-        endpoint = self._endpoint_for(job)
+        group = self._model_groups.of(job)
+        api_key = group_key(group, group.subtitle_api_key, what=_LABEL)
         audio = await self._speech_audio(request.video_url)
         if audio is None:
             _logger.info("素材片没有音轨，字幕记为没有口播", job_id=job.id)
@@ -80,7 +72,7 @@ class QwenSubtitleProvider:
                 code="SUBTITLE_AUDIO_TOO_LARGE",
                 retryable=False,
             )
-        return await self._recognize(endpoint, _payload(request, data))
+        return await self._recognize(api_key, _payload(request, data))
 
     async def poll(self, job: GenerationJob) -> ProviderProgress:
         raise ProviderError(
@@ -115,13 +107,12 @@ class QwenSubtitleProvider:
                 ) from exc
             return dest.read_bytes()
 
-    async def _recognize(
-        self, endpoint: QwenEndpoint, payload: dict[str, Any]
-    ) -> ProviderSubmission:
+    async def _recognize(self, api_key: str, payload: dict[str, Any]) -> ProviderSubmission:
         try:
             body = await post_to_qwen(
-                endpoint,
+                self._endpoint,
                 payload,
+                api_key=api_key,
                 label=_LABEL,
                 transport=self._transport,
                 headers={"X-DashScope-SSE": "disable"},

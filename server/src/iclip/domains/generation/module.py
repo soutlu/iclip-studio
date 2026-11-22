@@ -16,7 +16,7 @@ from iclip.domains.generation.image_upstream import (
     GatewayImageProvider,
     GatewayImageSettings,
 )
-from iclip.domains.generation.model_groups import UNGROUPED, ModelGroups
+from iclip.domains.generation.model_groups import ModelGroups
 from iclip.domains.generation.models import STATUS_SUBMITTING
 from iclip.domains.generation.music import MUSIC_MODEL, QwenMusicProvider
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
@@ -108,7 +108,7 @@ def build_generation_module(
     music: QwenServiceConfig | None = None,
     render: RenderSetup | None = None,
     video_enhance: VideoEnhanceSpec | None = None,
-    model_groups: ModelGroups = UNGROUPED,
+    model_groups: ModelGroups,
     video_transport: httpx.AsyncBaseTransport | None = None,
     image_transport: httpx.AsyncBaseTransport | None = None,
     subtitle_transport: httpx.AsyncBaseTransport | None = None,

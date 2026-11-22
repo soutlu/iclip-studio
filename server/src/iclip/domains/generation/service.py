@@ -12,7 +12,7 @@ from iclip_video.shot_prompt import format_seconds
 
 from iclip.common.errors import Conflict, NotFound, ValidationFailed
 from iclip.domains.generation.clip_models import UpstreamMode, clip_model
-from iclip.domains.generation.model_groups import UNGROUPED, ModelGroups
+from iclip.domains.generation.model_groups import ModelGroups
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_FAILED,
@@ -135,7 +135,7 @@ class GenerationService:
         music: ProviderTarget | None = None,
         render: RenderClient | None = None,
         enhance: VideoEnhanceSpec | None = None,
-        model_groups: ModelGroups = UNGROUPED,
+        model_groups: ModelGroups,
     ) -> None:
         self._repo = repo
         self._model_groups = model_groups

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import replace
 
@@ -12,6 +13,7 @@ from iclip.domains.generation.model_groups import ModelGroup, ModelGroups
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_FAILED,
+    STATUS_SUBMITTED,
     GenerationJob,
     GenerationOutput,
 )
@@ -30,6 +32,7 @@ from iclip.domains.generation.subtitles import PROVIDER_NAME as SUBTITLE_PROVIDE
 from iclip.domains.generation.video import PROVIDER_NAME as VIDEO_PROVIDER
 from iclip.domains.generation.video import VideoProviderSettings
 from iclip.domains.identity.acting import ActAs
+from iclip.domains.identity.models import Principal
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.fetch_url import as_is
 from tests.helpers.generation import (
@@ -46,6 +49,15 @@ from tests.helpers.generation import (
 from tests.helpers.identity import InMemoryUserRepository
 
 MODEL = "vendor-a-seedance-2-5"
+
+DEFAULT = ModelGroup(
+    name="default",
+    video_api_key="vk-default",
+    video_models={MODEL: "default-seedance"},
+    subtitle_api_key="asr-default",
+    music_api_key="music-default",
+    speech_api_key="dub-default",
+)
 
 MKT = ModelGroup(name="mkt", video_api_key="vk-mkt", video_models={MODEL: "mkt-seedance"})
 
@@ -65,7 +77,7 @@ def _module(repo: InMemoryGenerationRepository, sent: list[httpx.Request]) -> Ge
 
     transport = httpx.MockTransport(upstream)
     qwen = QwenServiceConfig(
-        endpoint=QwenEndpoint(url="https://qwen.test", api_key="sk-default", timeout_seconds=30),
+        endpoint=QwenEndpoint(url="https://qwen.test", timeout_seconds=30),
         concurrency=1,
     )
     return build_generation_module(
@@ -77,7 +89,6 @@ def _module(repo: InMemoryGenerationRepository, sent: list[httpx.Request]) -> Ge
         video=VideoProviderSettings(
             submit_url="https://video.test/generate",
             status_base_url="https://video.test/tasks",
-            api_key="vk-default",
         ),
         video_default_model=MODEL,
         video_allowed_models=(MODEL,),
@@ -98,7 +109,7 @@ def _module(repo: InMemoryGenerationRepository, sent: list[httpx.Request]) -> Ge
             synthesizer=QwenSpeechSynthesizer(qwen.endpoint, transport=transport),
             concurrency=1,
         ),
-        model_groups=ModelGroups((MKT,), group_of=_nobody_is_grouped),
+        model_groups=ModelGroups(DEFAULT, (MKT,), group_of=_nobody_is_grouped),
         video_transport=transport,
         subtitle_transport=transport,
         music_transport=transport,
@@ -165,3 +176,39 @@ async def test_a_grouped_record_that_cannot_be_served_fails_without_calling_upst
     assert (failed.status, failed.error_code) == (STATUS_FAILED, code)
     assert failed.error_message is not None and names in failed.error_message
     assert sent == [], "缺什么都不拿别的 key 或原模型名兜底"
+
+
+async def test_an_ungrouped_take_records_and_sends_the_default_groups_model_id() -> None:
+    repo = InMemoryGenerationRepository()
+    sent: list[httpx.Request] = []
+    module = _module(repo, sent)
+    principal = Principal(
+        kind="user",
+        user_id=uuid.uuid4(),
+        permissions=frozenset({"generation:submit"}),
+        audit_label="logan",
+        username="logan",
+    )
+
+    take = await module.service.submit_video(principal, video_request())
+    await module.queue.run_submit(str(take.id))
+
+    recorded = repo.jobs[take.id]
+    assert (recorded.model_group, recorded.upstream_model) == (None, "default-seedance")
+    (request,) = sent
+    assert request.headers["X-API-Key"] == "vk-default"
+    assert json.loads(request.content)["model"] == "default-seedance"
+
+
+async def test_a_take_recorded_without_group_or_model_id_goes_out_as_requested() -> None:
+    job = _take()
+    assert (job.model_group, job.upstream_model) == (None, None)
+    repo = InMemoryGenerationRepository([job])
+    sent: list[httpx.Request] = []
+
+    await _module(repo, sent).queue.run_submit(str(job.id))
+
+    assert repo.jobs[job.id].status == STATUS_SUBMITTED
+    (request,) = sent
+    assert request.headers["X-API-Key"] == "vk-default"
+    assert json.loads(request.content)["model"] == MODEL

@@ -63,6 +63,14 @@ GENERATED_MUSIC_URL = "https://result.test/generated.wav"
 
 CONVERSATION = uuid.uuid4()
 
+DEFAULT = ModelGroup(
+    name="default",
+    video_api_key="vk-default",
+    video_models={MODEL: "default-seedance", ENHANCE_MODEL: "default-enhance"},
+    subtitle_api_key="asr-default",
+    music_api_key="music-default",
+)
+
 GROUPS = (
     ModelGroup(
         name="mkt",
@@ -168,7 +176,6 @@ def _module(
         video=VideoProviderSettings(
             submit_url=VIDEO_SUBMIT_URL,
             status_base_url=VIDEO_STATUS_URL,
-            api_key="vk-default",
             enhance_submit_url=ENHANCE_URL,
         ),
         video_enhance=VideoEnhanceSpec(model=ENHANCE_MODEL, resolutions=("1080p",), fps=None),
@@ -186,14 +193,15 @@ def _module(
         media_codec=SOFTWARE,
         fetch_url=as_is,
         subtitles=QwenServiceConfig(
-            endpoint=QwenEndpoint(url=ASR_URL, api_key="asr-default", timeout_seconds=30),
+            endpoint=QwenEndpoint(url=ASR_URL, timeout_seconds=30),
             concurrency=1,
         ),
         music=QwenServiceConfig(
-            endpoint=QwenEndpoint(url=MUSIC_URL, api_key="music-default", timeout_seconds=30),
+            endpoint=QwenEndpoint(url=MUSIC_URL, timeout_seconds=30),
             concurrency=1,
         ),
         model_groups=ModelGroups(
+            DEFAULT,
             GROUPS,
             group_of=ModelGroupAssignments(users, [group.name for group in GROUPS]).group_of,
         ),
@@ -259,7 +267,7 @@ async def _make_everything(
     [
         ("mkt", "vk-mkt", "mkt-seedance", "mkt-enhance", "asr-mkt", "music-mkt"),
         ("ecom", "vk-ecom", "ecom-seedance", "ecom-enhance", "asr-ecom", "music-ecom"),
-        (None, "vk-default", MODEL, ENHANCE_MODEL, "asr-default", "music-default"),
+        (None, "vk-default", "default-seedance", "default-enhance", "asr-default", "music-default"),
     ],
     ids=["mkt", "ecom", "default_group"],
 )
@@ -296,12 +304,10 @@ async def test_each_user_reaches_upstream_with_their_groups_key_and_model_id(
         Sent(ASR_URL, f"Bearer {asr_key}", SUBTITLE_MODEL),
         Sent(MUSIC_URL, f"Bearer {music_key}", MUSIC_MODEL),
     ]
-    upstream_model = None if group is None else video_model
-    upstream_enhance = None if group is None else enhance_model
     assert [(job.model_group, job.upstream_model) for job in (take, edit, enhance)] == [
-        (group, upstream_model),
-        (group, upstream_model),
-        (group, upstream_enhance),
+        (group, video_model),
+        (group, video_model),
+        (group, enhance_model),
     ]
     assert [(job.model_group, job.upstream_model) for job in (subtitle, music)] == [
         (group, None),
