@@ -3351,9 +3351,11 @@
     0 0 0 2.75px var(--color-on-surface);
 }
 
-/* 导出分辨率、构图网格的分段：三段一样宽，比通用的分段矮一档 */
-.wf-canvas-seg {
+/* 导出分辨率、构图网格的分段：三段一样宽，比通用的分段矮一档；浮层是白底，凹槽不描通用分段的那圈细线
+   （两个条件、写在通用分段后面，才压得过它的阴影） */
+.wf-editor .wf-canvas-seg {
   display: grid;
+  box-shadow: var(--shadow-control-well);
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
