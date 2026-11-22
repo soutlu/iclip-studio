@@ -1,4 +1,5 @@
 import '@hyperframes/player'
+import type { HYPERFRAME_RUNTIME_GLOBALS } from '@hyperframes/core'
 import { HF_AUDIO_AUTOMATION_ATTR } from '@hyperframes/core/audio-automation'
 import { HF_AUDIO_FX_ATTR } from '@hyperframes/core/audio-fx'
 import {
@@ -61,6 +62,26 @@ type PlayerElement = HTMLElement & {
   muted: boolean
   loop: boolean
   readonly _media: { _createEntry: () => null }
+}
+
+// 运行库挂在播放器页面上的播放对象的全局名。按值引入根入口会把整包（约 70 KB）打进预览页，这里只借类型校验名字
+const RUNTIME_PLAYER: (typeof HYPERFRAME_RUNTIME_GLOBALS)['player'] = '__player'
+
+/** 播放器页面里运行库的播放对象，这里只用到它的时钟。 */
+type RuntimeClock = { getTime: () => number }
+
+const isRuntimeClock = (value: unknown): value is RuntimeClock =>
+  typeof value === 'object' &&
+  value !== null &&
+  'getTime' in value &&
+  typeof value.getTime === 'function'
+
+/** `player` 里运行库时钟的当前时刻（毫秒，不小于 0）；运行库还没起来、读不到或读出的不是数时是 null。 */
+const runtimeMsOf = (player: PlayerElement) => {
+  const page = player.iframeElement.contentWindow
+  const runtime: unknown = page === null ? undefined : Reflect.get(page, RUNTIME_PLAYER)
+  const seconds = isRuntimeClock(runtime) ? runtime.getTime() : Number.NaN
+  return Number.isFinite(seconds) ? Math.max(0, Math.round(seconds * 1000)) : null
 }
 
 const applyPlayback = (player: PlayerElement, { rate, muted, loop }: PlaybackSettings) => {
@@ -457,9 +478,41 @@ export const createPreviewPage = (
         send({ type: 'buffered', spans })
       }
     }
+    const running = () => wantsPlay && !player.paused
+    // 在放时逐帧读运行库的时钟报时刻：timeupdate 最多 0.1 秒一次，播放头跟着它一跳一跳地走
+    let frame: number | null = null
+    let lastMs: number | null = null
+    let clockMissing = false
+    const tick = () => {
+      frame = requestAnimationFrame(tick)
+      if (!running() || seekHeld) return
+      const ms = runtimeMsOf(player)
+      if (ms === null) {
+        // 不退回去读播放器的 currentTime（一秒只变约 30 次），读不到就报错，把问题露出来
+        if (!clockMissing) console.error('预览页读不到播放器里运行库的时钟，播放中报不出时刻')
+        clockMissing = true
+        return
+      }
+      if (ms === lastMs) return
+      lastMs = ms
+      send({ type: 'time', ms, seq: seekSeq })
+    }
+    /** 想放时让逐帧报时刻跑着，不想放时停掉。 */
+    const followClock = () => {
+      if (wantsPlay && frame === null) {
+        // 重新跑起来的第一帧总要报：跳转后编辑器已按新序号丢掉之前的时刻
+        lastMs = null
+        frame = requestAnimationFrame(tick)
+      } else if (!wantsPlay && frame !== null) {
+        cancelAnimationFrame(frame)
+        frame = null
+      }
+    }
     const onTimeUpdate = (event: Event) => {
       const seconds = (event as CustomEvent<{ currentTime: number }>).detail.currentTime
-      if (!seekHeld) send({ type: 'time', ms: Math.round(seconds * 1000), seq: seekSeq })
+      // 在放时由逐帧读时钟报；timeupdate 带的是播放器缓存的旧值，再报会把播放头往回拉
+      if (!seekHeld && !running())
+        send({ type: 'time', ms: Math.round(seconds * 1000), seq: seekSeq })
       syncMedia()
       reportFailure()
       // 播到别处时片段可能显示出来或藏起来
@@ -475,8 +528,13 @@ export const createPreviewPage = (
     // 字幕的框按字量：换了字体、新字形下载好以后字的宽窄才定下来（jsdom 里没有 document.fonts）
     const fonts = 'fonts' in page ? page.fonts : null
     fonts?.addEventListener('loadingdone', reportLayout)
-    syncActive = syncMedia
+    syncActive = () => {
+      syncMedia()
+      followClock()
+    }
     detachActive = () => {
+      if (frame !== null) cancelAnimationFrame(frame)
+      frame = null
       if (buffering) send({ type: 'buffering', buffering: false })
       player.removeEventListener('timeupdate', onTimeUpdate)
       player.removeEventListener('ended', onEnded)
@@ -490,6 +548,7 @@ export const createPreviewPage = (
     }
     // 换上来之前的媒体事件已经错过，小文件这时不会再有事件
     syncMedia()
+    followClock()
   }
 
   const activate = (next: PlayerElement, nextReplica: Replica | null, seq: number) => {

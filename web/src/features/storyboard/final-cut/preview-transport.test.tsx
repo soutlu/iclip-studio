@@ -3,10 +3,17 @@ import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/testing/render'
+import { createPlayheadClock } from './playhead-clock'
 import { PreviewTransport } from './preview-transport'
 
+const clockAt = (ms: number) => {
+  const clock = createPlayheadClock()
+  clock.set(ms)
+  return clock
+}
+
 const base = (): ComponentProps<typeof PreviewTransport> => ({
-  playheadMs: 1_000,
+  clock: clockAt(1_000),
   totalMs: 4_000,
   buffered: [],
   playBlocked: undefined,

@@ -80,6 +80,7 @@ import {
   type RowTarget,
   type Zone,
 } from './placement'
+import { usePlayheadClock, type PlayheadClock } from './playhead-clock'
 import { boxBetween, marqueeMode, marqueeSelection, playheadInto, type Box } from './selection'
 import {
   soundActionFor,
@@ -140,7 +141,10 @@ type FilmTimelineProps = {
   /** 组件库：组件或块的片段上铺的封面取自它。 */
   catalog: ComponentCatalog
   totalMs: number
+  /** 播放头的位置（在播时最多约 0.1 秒更新一次）：吸附、点选挪进片段、切开、时间尺按它算。 */
   playheadMs: number
+  /** 播放头的实时时刻：竖线直接订阅它，播放时每帧挪，不带着整条时间线重画。 */
+  clock: PlayheadClock
   buffered: readonly TimeSpan[]
   scale: TimelineScale
   ghost: DropGhost | null
@@ -1004,6 +1008,24 @@ function RowSign({ kind, name, ordinal }: { kind: RowKind; name: string; ordinal
 
 const keyOf = (row: RowKey) => `${row.zone}-${row.track}`
 
+/** 播放头竖线：订阅播放头的时钟，播放时每帧挪，只重画自己。 */
+function FilmPlayhead({
+  clock,
+  totalMs,
+  pps,
+  dragging,
+}: {
+  clock: PlayheadClock
+  totalMs: number
+  pps: number
+  dragging: boolean
+}) {
+  const ms = usePlayheadClock(clock)
+  return (
+    <TimelinePlayhead dragging={dragging} style={{ left: msToPx(Math.min(ms, totalMs), pps) }} />
+  )
+}
+
 /**
  * 时间线：final-cut 里的片段按行排开，画面区的行在上、有字幕时中间一行「字幕」、声音区的行在下，最下面是一条
  * 可以新开一行的空行。
@@ -1019,6 +1041,7 @@ export function FilmTimeline({
   catalog,
   totalMs,
   playheadMs,
+  clock,
   buffered,
   scale,
   ghost,
@@ -1512,10 +1535,7 @@ export function FilmTimeline({
               total={totalMs / 1000}
               viewportRef={scrollRef}
             />
-            <TimelinePlayhead
-              dragging={scrubbing}
-              style={{ left: msToPx(Math.min(playheadMs, totalMs), pps) }}
-            />
+            <FilmPlayhead clock={clock} dragging={scrubbing} pps={pps} totalMs={totalMs} />
           </div>
           <div
             className={cn('wf-lanes', razor && 'is-razor')}

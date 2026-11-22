@@ -158,6 +158,8 @@ type PreviewPlayerElement = HTMLElement & {
   muted: boolean
   loop: boolean
   iframeElement: HTMLIFrameElement
+  /** 播放器页面里运行库时钟的时刻（秒），改它模拟在放时的时钟（见 `hyperframes-player.ts`）。 */
+  runtimeTime: number
 }
 
 /** 获取当前已就绪的预览播放器（排除仍在后台加载的 `.is-pending` 实例）。 */
