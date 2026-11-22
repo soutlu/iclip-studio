@@ -319,6 +319,13 @@
   box-shadow: 0 0 0 1.5px var(--color-error);
 }
 
+/* 框里再套一个输入框时（宽高框、「显示时长」），悬停、按下的叠色和焦点框只看外面的框，里面的输入框不自己画 */
+.wf-editor .wf-field input {
+  --color-state-hover: transparent;
+  --color-state-pressed: transparent;
+  --state-focus-ring: 0px;
+}
+
 /* 细边一档：和所在的面同底，只有一圈细边；悬停边略深，聚焦边更深，报错边变红 */
 .wf-editor .wf-field.is-outline {
   border-color: var(--color-hairline);
@@ -2589,7 +2596,6 @@
   color: inherit;
   font: inherit;
   font-variant-numeric: tabular-nums;
-  outline: none;
   text-align: right;
 }
 
@@ -3248,6 +3254,10 @@
   white-space: nowrap;
 }
 
+.wf-canvas-ratio:hover {
+  color: var(--color-on-surface);
+}
+
 .wf-canvas-ratio[aria-pressed='true'] {
   background: var(--color-surface-container-high);
   color: var(--color-on-surface);
@@ -3278,11 +3288,8 @@
   cursor: text;
 }
 
-/* 两个类压过输入框自带的边框、底色、内边距和高度；悬停、按下的叠色和焦点框也不要，这些都看外面框的边色 */
+/* 两个类压过输入框自带的边框、底色、内边距和高度 */
 .wf-canvas-side .wf-canvas-side-input {
-  --color-state-hover: transparent;
-  --color-state-pressed: transparent;
-  --state-focus-ring: 0px;
   width: 100%;
   height: auto;
   min-width: 0;
