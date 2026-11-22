@@ -72,6 +72,7 @@ from tests.helpers.file_store import FakeFileStore
 from tests.helpers.runtime import (
     AGENT_ID,
     approval_runner,
+    approval_shown,
     awaits,
     build_runner,
     calls_then_says,
@@ -643,9 +644,20 @@ def _outcomes(messages: list[ModelMessage]) -> list[BackgroundOutcome]:
         for message in messages
         if isinstance(message, ModelRequest)
         for part in message.parts
-        if isinstance(part, UserPromptPart)
         if (outcome := parse_outcome(part)) is not None
     ]
+
+
+def _shown(messages: list[ModelMessage], text: str) -> int:
+    """模型看到的消息里有几个用户块带着 ``text``。
+
+    后台结果块只在存下的历史里；交给模型时渲染成用户块，``parse_outcome`` 认不出，只能按正文认。
+    """
+    return sum(
+        isinstance(part, UserPromptPart) and text in str(part.content)
+        for message in messages
+        for part in message.parts
+    )
 
 
 def _breakdown_call(tool_call_id: str = BREAKDOWN_CALL) -> DeltaToolCall:
@@ -681,7 +693,7 @@ def waits_for_breakdown(
             yield calls
         elif isinstance(last, ModelRequest) and texts([last]) == ["继续"]:
             yield "好，接着来。"
-        elif _outcomes(messages):
+        elif _shown(messages, BREAKDOWN_DONE):
             yield "拆解好了，接着写分镜。"
         else:
             yield "简报写好了，等拆解。"
@@ -919,16 +931,29 @@ def breaks_down_and_writes(reply: str) -> FunctionModel:
     return FunctionModel(stream_function=stream)
 
 
-async def test_an_approval_pause_closes_the_background_card_and_keeps_the_approval_open(
+def _assert_breakdown_completed(page: TranscriptPage, messages: list[ModelMessage]) -> None:
+    assert [(item.tool_call_id, item.state, item.text) for item in _outcomes(messages)] == [
+        (BREAKDOWN_CALL, "done", BREAKDOWN_DONE)
+    ]
+    _assert_settled_by_receipt(_breakdown_card(page), _receipt(messages))
+    task = _breakdown_task(page)
+    assert (task.state, task.result_summary, task.error) == ("completed", BREAKDOWN_DONE, None)
+    assert task.ended_at is not None
+    assert [(frame.text, frame.task_id) for frame in _user_frames(page)] == [
+        (f"已{BREAKDOWN_TITLE}", BREAKDOWN_CALL)
+    ]
+
+
+async def test_an_approval_pause_waits_for_the_background_breakdown_and_keeps_the_approval_open(
     engine: AsyncEngine,
 ) -> None:
-    never = asyncio.Event()
+    release = asyncio.Event()
     store = TranscriptStore()
     runner, step_store, queue = build_runner(
         engine,
         breaks_down_and_writes("改完了"),
         store=store,
-        tools=[slow_breakdown(never), Tool(wrote, name="write_file", requires_approval=True)],
+        tools=[slow_breakdown(release), Tool(wrote, name="write_file", requires_approval=True)],
         capabilities=[BackgroundTools()],
         display=DISPLAYS,
         context_limits={},
@@ -936,11 +961,21 @@ async def test_an_approval_pause_closes_the_background_card_and_keeps_the_approv
     conversation_id = new_conversation_id()
 
     prompt_id = await submit_text(runner, queue, conversation_id, "拆一下视频，再改文件")
+    await approval_shown(store, conversation_id, "apr_call_1")
+    running = await queue.get(prompt_id)
+    assert running is not None
+    assert running.status == "running", "拆解没跑完，运行还不能停在审批上"
+    view = store.subscribe_view(conversation_id, MAIN_AGENT_ID)
+    assert [(task.task_id, task.state) for task in view.snapshot.tasks] == [
+        (BREAKDOWN_CALL, "running")
+    ]
+
+    release.set()
     await awaits(queue, prompt_id)
     live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
     assert live.items[0].state == "running"
-    _assert_interrupted(_breakdown_card(live), _breakdown_task(live), "killed")
+    _assert_breakdown_completed(live, await _history(step_store, conversation_id))
     approval = _breakdown_card(live, "call_1")
     assert (approval.state, approval.approval_id) == ("running", "apr_call_1")
 
@@ -951,7 +986,7 @@ async def test_an_approval_pause_closes_the_background_card_and_keeps_the_approv
 
     assert live.items[0].state == "completed"
     assert [step.step_id for step in live.items[0].steps] == ["t1.1", "t1.2"]
-    _assert_interrupted(_breakdown_card(live), _breakdown_task(live), "killed")
+    _assert_breakdown_completed(live, await _history(step_store, conversation_id))
     approval = _breakdown_card(live, "call_1")
     assert (approval.state, approval.approval_id) == ("done", "apr_call_1")
     assert frames_of(live, "t1", "t1.2")[0].text == "改完了"
@@ -1064,11 +1099,11 @@ async def test_a_retryable_breakdown_failure_reaches_the_model_and_errors_the_ca
         messages: list[ModelMessage], _info: AgentInfo
     ) -> AsyncIterator[str | DeltaToolCalls]:
         seen.append(list(messages))
-        failed = [item for item in _outcomes(messages) if item.state == "error"]
-        last_is_outcome = isinstance(messages[-1], ModelRequest) and _outcomes([messages[-1]])
+        failed = _shown(messages, CALL_AGAIN)
+        last_is_outcome = _shown(messages[-1:], CALL_AGAIN) > 0
         if len(messages) == 1:
             yield {0: _breakdown_call("call_bd1")}
-        elif last_is_outcome and len(failed) == 1:
+        elif last_is_outcome and failed == 1:
             yield {0: _breakdown_call("call_bd2")}
         elif last_is_outcome:
             yield "拆解没成，请稍后再试。"
@@ -1103,12 +1138,13 @@ async def test_a_retryable_breakdown_failure_reaches_the_model_and_errors_the_ca
     await runner.shutdown()
     live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
-    assert [(item.tool_call_id, item.state, item.text) for item in _outcomes(seen[-1])] == [
+    messages = await _history(step_store, conversation_id)
+    assert [(item.tool_call_id, item.state, item.text) for item in _outcomes(messages)] == [
         ("call_bd1", "error", CALL_AGAIN),
         ("call_bd2", "error", CALL_AGAIN),
     ]
+    assert _shown(seen[-1], CALL_AGAIN) == 2, "两次失败都送到了模型"
     assert breakdowns.calls == 2, "每次再调都重新排一次拆解"
-    messages = await _history(step_store, conversation_id)
     for tool_call_id in ("call_bd1", "call_bd2"):
         _assert_settled_by_receipt(
             _breakdown_card(live, tool_call_id), _receipt(messages, tool_call_id)

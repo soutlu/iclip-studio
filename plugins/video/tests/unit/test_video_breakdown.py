@@ -13,6 +13,7 @@ from agent_runtime.run_deps import AgentRunDeps
 from pydantic_ai import Agent, ModelRetry, ToolFailed
 from pydantic_ai.messages import (
     ModelMessage,
+    ModelRequest,
     ModelResponse,
     TextPart,
     ToolCallPart,
@@ -199,24 +200,32 @@ async def test_in_the_background_the_retry_budget_still_ends_in_a_final_failure(
     files: FakeFileStore,
 ) -> None:
     breakdowns = FakeBreakdowns(FailedBreakdown(reason="model_call_failed"))
-    outcomes: list[tuple[str, str]] = []
 
     def script(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
-        last = messages[-1].parts[-1]
         if len(messages) == 1:
             return call_breakdown(messages)
-        if isinstance(last, UserPromptPart) and (outcome := parse_outcome(last)) is not None:
-            outcomes.append((outcome.state, outcome.text))
-            if outcome.text == CALL_AGAIN:
-                return call_breakdown(messages)
+        # 模型看到的是后台结果渲染成的用户块，只能按正文认；结果块本身只在存下的历史里
+        if any(
+            isinstance(part, UserPromptPart) and CALL_AGAIN in str(part.content)
+            for part in messages[-1].parts
+        ):
+            return call_breakdown(messages)
         return ModelResponse(parts=[TextPart("本轮结束。")])
 
     result = await Agent(FunctionModel(script), capabilities=[plugin_for(files, breakdowns)]).run(
         "拆解参考视频。", deps=make_deps()
     )
 
+    messages = result.all_messages()
+    outcomes = [
+        (outcome.state, outcome.text)
+        for message in messages
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if (outcome := parse_outcome(part)) is not None
+    ]
     assert len(breakdowns.calls) == 1 + BREAKDOWN_RETRIES
-    assert all(is_receipt(part) for part in tool_returns(result.all_messages()))
+    assert all(is_receipt(part) for part in tool_returns(messages))
     assert outcomes == [("error", CALL_AGAIN)] * BREAKDOWN_RETRIES + [("error", TRY_LATER)]
     assert result.output == "本轮结束。"
 
