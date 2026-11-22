@@ -232,16 +232,14 @@
   rotate: 180deg;
 }
 
-/* 两段 / 多段切换：一条带细线的凹槽（同工作台顶栏的分段页签），当前那段是浮起的白块；
+/* 两段 / 多段切换：一条凹槽，当前那段是浮起的白块（「镜头」页签里的多一圈细线，见 wf-materials）；
    is-compact 是矮的一档，和旁边 20 高的小块并排时用 */
 .wf-editor .wf-seg {
   gap: 2px;
   padding: 2px;
   border-radius: var(--radius-control);
   background: var(--color-surface-container-high);
-  box-shadow:
-    var(--shadow-control-well),
-    inset 0 0 0 1px var(--color-panel-line);
+  box-shadow: var(--shadow-control-well);
 }
 
 /* 悬停只把字变深：交互态叠层（ui-state）的颜色置成透明，只留它的过渡 */
@@ -317,6 +315,13 @@
 
 .wf-editor .wf-field:is([aria-invalid='true'], :has([aria-invalid='true'])) {
   box-shadow: 0 0 0 1.5px var(--color-error);
+}
+
+/* 框里再套一个输入框时（宽高框、「显示时长」），悬停、按下的叠色和焦点框只看外面的框，里面的输入框不自己画 */
+.wf-editor .wf-field input {
+  --color-state-hover: transparent;
+  --color-state-pressed: transparent;
+  --state-focus-ring: 0px;
 }
 
 /* 细边一档：和所在的面同底，只有一圈细边；悬停边略深，聚焦边更深，报错边变红 */
@@ -2589,7 +2594,6 @@
   color: inherit;
   font: inherit;
   font-variant-numeric: tabular-nums;
-  outline: none;
   text-align: right;
 }
 
@@ -3248,6 +3252,10 @@
   white-space: nowrap;
 }
 
+.wf-canvas-ratio:hover {
+  color: var(--color-on-surface);
+}
+
 .wf-canvas-ratio[aria-pressed='true'] {
   background: var(--color-surface-container-high);
   color: var(--color-on-surface);
@@ -3278,11 +3286,8 @@
   cursor: text;
 }
 
-/* 两个类压过输入框自带的边框、底色、内边距和高度；悬停、按下的叠色和焦点框也不要，这些都看外面框的边色 */
+/* 两个类压过输入框自带的边框、底色、内边距和高度 */
 .wf-canvas-side .wf-canvas-side-input {
-  --color-state-hover: transparent;
-  --color-state-pressed: transparent;
-  --state-focus-ring: 0px;
   width: 100%;
   height: auto;
   min-width: 0;
@@ -5002,6 +5007,14 @@
   justify-content: space-between;
   gap: 8px;
   padding: 10px 14px 4px;
+}
+
+/* 「镜头」页签里的分段（筛选、版本）比通用的多一圈细线，同工作台顶栏的分段页签
+   （和通用分段同样两个条件，写在它后面才压得过它的阴影） */
+.wf-materials .wf-seg {
+  box-shadow:
+    var(--shadow-control-well),
+    inset 0 0 0 1px var(--color-panel-line);
 }
 
 /* 「全部 / 未入轨 / 已入轨」（样子见 wf-seg） */
