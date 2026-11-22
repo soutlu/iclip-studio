@@ -96,6 +96,90 @@ describe('final-cut 编辑器 · 播放', () => {
     expect(progress()).toHaveAttribute('aria-valuetext', '00:00.30 / 00:03.50')
   })
 
+  /** 时间线上的播放头竖线、播放条的时间读数和进度条都停在 `label`（00:00.00 的写法）。 */
+  const expectPlayheadShown = (ms: number, label: string) => {
+    // 测试里时间线一秒画 100 像素
+    expect(screen.getByTestId('timeline-playhead')).toHaveStyle({ left: `${ms / 10}px` })
+    expect(within(transport()).getByText(label)).toBeVisible()
+    expect(progress()).toHaveAttribute('aria-valuetext', `${label} / 00:03.50`)
+  }
+  /** 时间线上播放位置的读数：时间尺按编辑器的播放头位置（不是逐帧的时钟）。 */
+  const rulerText = () =>
+    screen.getByRole('slider', { name: '时间线播放位置' }).getAttribute('aria-valuetext')
+
+  it('在放时播放头竖线、时间读数、进度条跟着预览报来的每一条时刻走；暂停后三处和时间尺都停在最后的时刻', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await previewSettled()
+    await user.click(within(transport()).getByRole('button', { name: '播放' }))
+    await waitFor(() => expect(previewPlayer()).toHaveProperty('paused', false))
+
+    // 每条间隔一帧左右，远不到 0.1 秒
+    for (const [ms, label] of [
+      [400, '00:00.40'],
+      [430, '00:00.43'],
+      [460, '00:00.46'],
+    ] as const) {
+      previewPlayer().runtimeTime = ms / 1000
+      await waitFor(() => expectPlayheadShown(ms, label))
+    }
+
+    await user.click(within(transport()).getByRole('button', { name: '暂停' }))
+    await waitFor(() => expect(rulerText()).toBe('00:00.46'))
+    expectPlayheadShown(460, '00:00.46')
+  })
+
+  it('在放时按播放头位置算的功能（时间尺）也跟着走，最多约 0.1 秒跟一次', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await previewSettled()
+    await user.click(within(transport()).getByRole('button', { name: '播放' }))
+    await waitFor(() => expect(previewPlayer()).toHaveProperty('paused', false))
+
+    // 刚开播的那一帧报的时刻已经跟过一次：等过 0.1 秒再让时钟走
+    await act(() => new Promise((resolve) => setTimeout(resolve, 150)))
+    previewPlayer().runtimeTime = 0.4
+    await waitFor(() => expect(rulerText()).toBe('00:00.40'))
+    await act(() => new Promise((resolve) => setTimeout(resolve, 150)))
+    previewPlayer().runtimeTime = 1.2
+    await waitFor(() => expect(rulerText()).toBe('00:01.20'))
+    expect(within(transport()).getByRole('button', { name: '暂停' })).toBeVisible()
+  })
+
+  it('在放时按方向键从竖线所在的时刻走一步，不按落后的播放头位置', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await previewSettled()
+    await user.click(within(transport()).getByRole('button', { name: '播放' }))
+    await waitFor(() => expect(previewPlayer()).toHaveProperty('paused', false))
+
+    // 0.4 秒那条跟进了播放头位置；紧接着的 0.43 秒不到 0.1 秒，只有竖线跟上
+    await act(() => new Promise((resolve) => setTimeout(resolve, 150)))
+    previewPlayer().runtimeTime = 0.4
+    await waitFor(() => expect(rulerText()).toBe('00:00.40'))
+    previewPlayer().runtimeTime = 0.43
+    await waitFor(() => expectPlayheadShown(430, '00:00.43'))
+
+    editorRoot().focus()
+    await user.keyboard('{ArrowRight}')
+    expectPlayheadShown(530, '00:00.53')
+  })
+
+  it('本地跳转马上挪到三处，不等预览报回来', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await previewSettled()
+
+    editorRoot().focus()
+    await user.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}')
+    expectPlayheadShown(300, '00:00.30')
+    expect(rulerText()).toBe('00:00.30')
+  })
+
   it('预览素材时播放条显示素材的时间和原作总长，在进度条上跳转夹在选区里、不离开素材；取消选中后回到 final-cut 的时间', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     const user = userEvent.setup()

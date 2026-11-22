@@ -42,6 +42,7 @@ type Player = HTMLElement & {
   iframeElement: HTMLIFrameElement
   _media: FakeParentMedia
   loadedRuntimeSrc: string | null
+  runtimeTime: number
 }
 
 const mounts: HTMLElement[] = []
@@ -180,8 +181,9 @@ describe('时钟跟着画面走', () => {
     expect(of('time')).toHaveLength(reported)
 
     send({ type: 'play' })
-    playerOf().seek(1.2)
-    expect(of('time').at(-1)).toEqual({ type: 'time', ms: 1200, seq: 3 })
+    // 在放时由逐帧读运行库的时钟报
+    playerOf().runtimeTime = 1.2
+    await waitFor(() => expect(of('time').at(-1)).toEqual({ type: 'time', ms: 1200, seq: 3 }))
   })
 
   it('跳转以后换上新的播放器：新播放器停在哪照常报出去（总长变短时收在结尾）', async () => {
@@ -345,6 +347,177 @@ describe('时钟跟着画面走', () => {
     send({ type: 'play' })
     expect(player.currentTime).toBe(0)
     expect(player.paused).toBe(false)
+  })
+})
+
+/**
+ * 接管 requestAnimationFrame：排着的回调由 `step` 一帧一帧地跑，取消了的不跑。要在 final-cut 装好以后再接管
+ * （换播放器时要等几帧）。
+ */
+const takeOverFrames = () => {
+  const queued = new Map<number, FrameRequestCallback>()
+  let handle = 0
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    handle += 1
+    queued.set(handle, callback)
+    return handle
+  })
+  vi.stubGlobal('cancelAnimationFrame', (at: number) => queued.delete(at))
+  return {
+    /** 跑一帧：跑掉现在排着的回调（回调里新排的留到下一帧）。 */
+    step: () => {
+      const due = [...queued.values()]
+      queued.clear()
+      for (const callback of due) callback(performance.now())
+    },
+    /** 排着等下一帧的回调有几个。 */
+    queued: () => queued.size,
+  }
+}
+
+describe('在放时逐帧报运行库的时钟', () => {
+  it('每帧读一次运行库的时钟，变了才报，带着处理到的那次跳转；循环回到开头也照报', async () => {
+    const { of, playerOf, send } = await openPage()
+    const frames = takeOverFrames()
+    send({ type: 'seek', ms: 0, seq: 2 })
+    send({ type: 'play' })
+    const player = playerOf()
+    const reported = of('time').length
+
+    player.runtimeTime = 0.016
+    frames.step()
+    player.runtimeTime = 0.033
+    frames.step()
+    expect(of('time').slice(reported)).toEqual([
+      { type: 'time', ms: 16, seq: 2 },
+      { type: 'time', ms: 33, seq: 2 },
+    ])
+
+    frames.step()
+    expect(of('time')).toHaveLength(reported + 2)
+
+    player.runtimeTime = 0.01
+    frames.step()
+    expect(of('time').at(-1)).toEqual({ type: 'time', ms: 10, seq: 2 })
+  })
+
+  it('在放时播放器的 timeupdate 不报（带的是旧值）；停着时照常报', async () => {
+    const { of, playerOf, send } = await openPage()
+    const frames = takeOverFrames()
+    send({ type: 'play' })
+    const player = playerOf()
+    player.runtimeTime = 1.25
+    frames.step()
+    const reported = of('time').length
+
+    player.dispatchEvent(new CustomEvent('timeupdate', { detail: { currentTime: 1.2 } }))
+    expect(of('time')).toHaveLength(reported)
+
+    send({ type: 'pause' })
+    player.dispatchEvent(new CustomEvent('timeupdate', { detail: { currentTime: 1.3 } }))
+    expect(of('time').at(-1)).toEqual({ type: 'time', ms: 1300, seq: 0 })
+  })
+
+  it('想放但在等数据（播放器停着）：不逐帧报，timeupdate 照常报', async () => {
+    const { of, playerOf, send } = await openPage()
+    const frames = takeOverFrames()
+    starvedVideos.add(FIRST)
+    send({ type: 'play' })
+    const player = playerOf()
+    expect(player.paused).toBe(true)
+    const reported = of('time').length
+
+    player.runtimeTime = 0.5
+    frames.step()
+    expect(of('time')).toHaveLength(reported)
+
+    player.dispatchEvent(new CustomEvent('timeupdate', { detail: { currentTime: 0.4 } }))
+    expect(of('time').at(-1)).toEqual({ type: 'time', ms: 400, seq: 0 })
+  })
+
+  it('跳转以后到再次播放之前不逐帧报；再放时第一帧就报，带着这次跳转的序号', async () => {
+    const { of, playerOf, send } = await openPage()
+    const frames = takeOverFrames()
+    send({ type: 'play' })
+    const player = playerOf()
+    player.runtimeTime = 0.5
+    frames.step()
+
+    send({ type: 'seek', ms: 1000, seq: 4 })
+    const reported = of('time').length
+    expect(frames.queued()).toBe(0)
+    player.runtimeTime = 0.6
+    frames.step()
+    expect(of('time')).toHaveLength(reported)
+
+    player.runtimeTime = 1
+    send({ type: 'play' })
+    frames.step()
+    player.runtimeTime = 1.05
+    frames.step()
+    expect(of('time').slice(reported)).toEqual([
+      { type: 'time', ms: 1000, seq: 4 },
+      { type: 'time', ms: 1050, seq: 4 },
+    ])
+  })
+
+  it('暂停、放到结尾以后不再逐帧报', async () => {
+    const { of, playerOf, send } = await openPage()
+    const frames = takeOverFrames()
+    send({ type: 'play' })
+    const player = playerOf()
+    player.runtimeTime = 0.5
+    frames.step()
+
+    send({ type: 'pause' })
+    const reported = of('time').length
+    expect(frames.queued()).toBe(0)
+    player.runtimeTime = 0.6
+    frames.step()
+    expect(of('time')).toHaveLength(reported)
+
+    send({ type: 'play' })
+    frames.step()
+    expect(of('time')).toHaveLength(reported + 1)
+    player.dispatchEvent(new Event('ended'))
+    expect(frames.queued()).toBe(0)
+  })
+
+  it('换上新的播放器以后只报新播放器的时钟，旧的不再报', async () => {
+    const { load, of, playerOf, send } = await openPage()
+    const frames = takeOverFrames()
+    send({ type: 'play' })
+    const old = playerOf()
+    load(film('<p></p>'))
+    await waitFor(() => {
+      frames.step()
+      expect(of('loaded')).toHaveLength(2)
+    })
+    const next = playerOf()
+    expect(next).not.toBe(old)
+    await waitFor(() => expect(next.paused).toBe(false))
+    const reported = of('time').length
+
+    old.runtimeTime = 3
+    next.runtimeTime = 0.5
+    frames.step()
+    frames.step()
+    expect(of('time').slice(reported)).toEqual([{ type: 'time', ms: 500, seq: 0 }])
+  })
+
+  it('在放时读不到运行库的时钟：不报时刻，每个播放器只报一次错', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { of, playerOf, send } = await openPage()
+    const frames = takeOverFrames()
+    const view = playerOf().iframeElement.contentWindow
+    if (view === null) throw new Error('播放器里没有页面')
+    Reflect.deleteProperty(view, '__player')
+    send({ type: 'play' })
+    const reported = of('time').length
+    frames.step()
+    frames.step()
+    expect(of('time')).toHaveLength(reported)
+    expect(error).toHaveBeenCalledTimes(1)
   })
 })
 

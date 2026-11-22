@@ -1,3 +1,5 @@
+import { HYPERFRAME_RUNTIME_GLOBALS } from '@hyperframes/core'
+
 const FPS = 30
 const NETWORK_LOADING = 2
 
@@ -61,6 +63,11 @@ class FakeHyperframesPlayer extends HTMLElement {
   loop = false
   /** 收到 srcdoc 那一刻的 `runtime-src`：真播放器这时按它把运行库写进预览页。 */
   loadedRuntimeSrc: string | null = null
+  /**
+   * 页面里运行库时钟的时刻（秒）：真播放器在放时它每帧都在走，这里由用例改它来模拟；跳转时跟着挪。
+   * 页面加载好时才挂到页面的全局上（和运行库一样），用例删掉那个全局就是读不到时钟。
+   */
+  runtimeTime = 0
 
   connectedCallback() {
     this.append(this.iframeElement)
@@ -74,6 +81,9 @@ class FakeHyperframesPlayer extends HTMLElement {
     queueMicrotask(() => {
       const page = this.iframeElement.contentDocument
       if (page !== null) this._media.setupFromIframe(page)
+      const view = this.iframeElement.contentWindow
+      if (view !== null)
+        Reflect.set(view, HYPERFRAME_RUNTIME_GLOBALS.player, { getTime: () => this.runtimeTime })
       this.dispatchEvent(new CustomEvent('ready', { detail: {} }))
       this.painted = true
       this.dispatchEvent(new Event('painted'))
@@ -114,7 +124,10 @@ class FakeHyperframesPlayer extends HTMLElement {
   }
 
   play() {
-    if (this.currentTime >= this.duration) this.currentTime = 0
+    if (this.currentTime >= this.duration) {
+      this.currentTime = 0
+      this.runtimeTime = 0
+    }
     this.paused = false
     this.dispatchEvent(new Event('play'))
   }
@@ -126,6 +139,7 @@ class FakeHyperframesPlayer extends HTMLElement {
 
   seek(seconds: number) {
     this.currentTime = Math.floor(seconds * FPS) / FPS
+    this.runtimeTime = this.currentTime
     this.dispatchEvent(new CustomEvent('timeupdate', { detail: { currentTime: this.currentTime } }))
   }
 }

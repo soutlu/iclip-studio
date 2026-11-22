@@ -7,10 +7,12 @@ import { PopupRoot, PopupSurface, PopupTrigger } from '@/shared/ui/popup'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { timeLabel } from '../editing/time-label'
 import { Keys, Tool } from './editor-toolbar'
+import { usePlayheadClock, type PlayheadClock } from './playhead-clock'
 import type { PlaybackSettings } from './preview-player'
 
 type PreviewTransportProps = {
-  playheadMs: number
+  /** 播放头的实时时刻：进度条和时间读数直接订阅它，播放时每帧走，不带着整个播放条重画。 */
+  clock: PlayheadClock
   totalMs: number
   buffered: readonly TimeSpan[]
   playBlocked: string | undefined
@@ -59,7 +61,7 @@ const SHORTCUTS: readonly { keys: readonly string[]; action: string }[] = [
 
 /** 预览下面的播放条：进度条一行；下面左边是播放键和时间，右边是试听和看的设置、快捷键。 */
 export function PreviewTransport({
-  playheadMs,
+  clock,
   totalMs,
   buffered,
   playBlocked,
@@ -75,45 +77,12 @@ export function PreviewTransport({
   onFullscreen,
   layer,
 }: PreviewTransportProps) {
-  const total = totalMs / 1000
-  const time = Math.min(playheadMs, totalMs) / 1000
-  const percent = (seconds: number) => `${(seconds / total) * 100}%`
   const playLabel = playing ? '暂停' : '播放'
   const muteLabel = playback.muted ? '开启声音' : '静音'
   const fullscreenLabel = fullscreen ? '退出全屏' : '全屏'
   return (
     <div aria-label="播放控制" className="wf-transport" role="group">
-      <Slider.Root
-        className="wf-seek"
-        data-testid="preview-seek"
-        disabled={total <= 0}
-        max={total > 0 ? total : 1}
-        onValueChange={([at]) => {
-          if (at !== undefined) onSeek(Math.round(at * 1000))
-        }}
-        step={STEP_SECONDS}
-        value={[time]}
-      >
-        <Slider.Track className="wf-seek-track">
-          {total > 0
-            ? buffered.map(({ start, end }) => (
-                <span
-                  aria-hidden="true"
-                  className="wf-seek-buffered"
-                  data-testid="preview-buffered"
-                  key={start}
-                  style={{ left: percent(start), width: percent(Math.min(end, total) - start) }}
-                />
-              ))
-            : null}
-          <Slider.Range className="wf-seek-range" />
-        </Slider.Track>
-        <Slider.Thumb
-          aria-label="播放进度"
-          aria-valuetext={`${timeLabel(time)} / ${timeLabel(total)}`}
-          className="wf-seek-thumb ui-focus"
-        />
-      </Slider.Root>
+      <SeekBar buffered={buffered} clock={clock} onSeek={onSeek} totalMs={totalMs} />
       <div className="wf-transport-row">
         <div className="wf-transport-play">
           <Tool
@@ -131,9 +100,7 @@ export function PreviewTransport({
             }
             tipContainer={layer}
           />
-          <span className="wf-clock">
-            {timeLabel(time)} <span>/ {timeLabel(total)}</span>
-          </span>
+          <ClockReading clock={clock} totalMs={totalMs} />
         </div>
         <div className="wf-transport-tools">
           <Tool
@@ -184,6 +151,63 @@ export function PreviewTransport({
         </div>
       </div>
     </div>
+  )
+}
+
+type ClockProps = { clock: PlayheadClock; totalMs: number }
+
+/** 进度条：订阅播放头的时钟，播放时每帧挪。 */
+function SeekBar({
+  clock,
+  totalMs,
+  buffered,
+  onSeek,
+}: ClockProps & { buffered: readonly TimeSpan[]; onSeek: (ms: number) => void }) {
+  const total = totalMs / 1000
+  const time = Math.min(usePlayheadClock(clock), totalMs) / 1000
+  const percent = (seconds: number) => `${(seconds / total) * 100}%`
+  return (
+    <Slider.Root
+      className="wf-seek"
+      data-testid="preview-seek"
+      disabled={total <= 0}
+      max={total > 0 ? total : 1}
+      onValueChange={([at]) => {
+        if (at !== undefined) onSeek(Math.round(at * 1000))
+      }}
+      step={STEP_SECONDS}
+      value={[time]}
+    >
+      <Slider.Track className="wf-seek-track">
+        {total > 0
+          ? buffered.map(({ start, end }) => (
+              <span
+                aria-hidden="true"
+                className="wf-seek-buffered"
+                data-testid="preview-buffered"
+                key={start}
+                style={{ left: percent(start), width: percent(Math.min(end, total) - start) }}
+              />
+            ))
+          : null}
+        <Slider.Range className="wf-seek-range" />
+      </Slider.Track>
+      <Slider.Thumb
+        aria-label="播放进度"
+        aria-valuetext={`${timeLabel(time)} / ${timeLabel(total)}`}
+        className="wf-seek-thumb ui-focus"
+      />
+    </Slider.Root>
+  )
+}
+
+/** 播放键旁边的时间读数：订阅播放头的时钟，播放时每帧走。 */
+function ClockReading({ clock, totalMs }: ClockProps) {
+  const time = Math.min(usePlayheadClock(clock), totalMs) / 1000
+  return (
+    <span className="wf-clock">
+      {timeLabel(time)} <span>/ {timeLabel(totalMs / 1000)}</span>
+    </span>
   )
 }
 

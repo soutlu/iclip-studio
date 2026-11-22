@@ -149,6 +149,7 @@ import {
   type RowTarget,
   type Zone,
 } from './placement'
+import { createPlayheadClock } from './playhead-clock'
 import { previewDocument, previewRuntimeSrc } from './preview-document'
 import {
   PreviewPlayer,
@@ -211,6 +212,8 @@ const NARRATION_UNREADABLE_TEXT = '旁白配音生成失败，请重试'
 const NO_LINKS: Links = new Map()
 const NO_BINDINGS: ReadonlyMap<string, LocaleBindings> = new Map()
 const NO_LINE_VOICES: LineVoices = {}
+// 在播时播放头的 state 最多这么久跟一次时钟：按播放头算的功能这么快就够用，编辑器不用每帧整个重画
+const PLAYING_COMMIT_MS = 100
 
 /** 预览里的各句字幕（见 `PreviewCaptions`）：显示的字是 `locale` 值表里的字，没翻的是原文。 */
 const previewCaptionsOf = (clips: readonly FilmClip[], locale: ShownLocale) =>
@@ -381,6 +384,12 @@ function EditorBody({
   })
   const [materialView, setMaterialView] = useState<MaterialView | null>(null)
   const [materialMs, setMaterialMs] = useState(0)
+  // 素材预览时播放条订阅的时钟，和 materialMs 一起写，频率照素材预览报时刻的频率
+  const [materialClock] = useState(createPlayheadClock)
+  const followMaterial = (ms: number) => {
+    setMaterialMs(ms)
+    materialClock.set(ms)
+  }
   const [materialPlaying, setMaterialPlaying] = useState(false)
   const materialPreviewRef = useRef<MaterialPreviewControl | null>(null)
   const leaveMaterial = () => {
@@ -430,8 +439,26 @@ function EditorBody({
   const keyframes = useKeyframeIndexes(videoUrls)
   const audioTracks = useVideoAudio(videoUrls)
 
+  // 播放头只有一个来源：`clock` 每条时刻都跟，时间线竖线、播放条读数和进度条订阅它；`playheadMs` 给其余按播放头
+  // 算的功能用，在播时最多约每 PLAYING_COMMIT_MS 跟一次，免得整个编辑器每帧重画，停下时跟上时钟最后的值
+  const [clock] = useState(createPlayheadClock)
   const [playheadMs, setPlayheadMs] = useState(0)
   const [playing, setPlaying] = useState(false)
+  // 预览报来的消息按到达先后处理，「在不在播」要用最新的，不等重画
+  const playingRef = useRef(false)
+  const committedAtRef = useRef(Number.NEGATIVE_INFINITY)
+  const followPreviewTime = (ms: number) => {
+    clock.set(ms)
+    const now = performance.now()
+    if (playingRef.current && now - committedAtRef.current < PLAYING_COMMIT_MS) return
+    committedAtRef.current = now
+    setPlayheadMs(ms)
+  }
+  const followPlaying = (next: boolean) => {
+    playingRef.current = next
+    setPlaying(next)
+    if (!next) setPlayheadMs(clock.get())
+  }
   const [buffering, setBuffering] = useState(false)
   const [buffered, setBuffered] = useState<readonly TimeSpan[]>([])
   const previewRef = useRef<PreviewControl | null>(null)
@@ -470,6 +497,8 @@ function EditorBody({
 
   const total = film?.durationMs ?? 0
   const playhead = Math.min(playheadMs, total)
+  // 按键、点按钮那一刻竖线所在的时刻：在播时 `playhead` 最多落后约 0.1 秒，按它算会落在竖线左边
+  const playheadNow = () => Math.min(clock.get(), total)
   const frameMs = Math.min(playhead, Math.max(0, total - 1))
   // 垫在预览后面的那一帧取最上面显示着的片段：文件里写在后面的在上面
   const shown = videoClips.findLast(
@@ -477,6 +506,7 @@ function EditorBody({
   )
   const seek = (ms: number) => {
     leaveMaterial()
+    clock.set(ms)
     setPlayheadMs(ms)
     previewRef.current?.seek(ms)
   }
@@ -574,7 +604,7 @@ function EditorBody({
     setSelectedIds(ids)
   }
   const selectAround = (side: 'left' | 'right') =>
-    selectOnTimeline(new Set(aroundPlayhead(clips, playhead, side)))
+    selectOnTimeline(new Set(aroundPlayhead(clips, playheadNow(), side)))
   /** 双击时间线上的片段：只选中它，右栏切到「属性」（停在别的页签时也切，收着时展开）。 */
   const inspectClip = (id: string) => {
     selectOnTimeline(new Set([id]))
@@ -588,8 +618,9 @@ function EditorBody({
   // 在播放头处切开选中的片段：S、工具条的下拉都按它
   const playheadCut = playheadSplit(selectedClips, playhead, clips, links)
   const splitAtPlayhead = () => {
-    if ('cuts' in playheadCut) split(playheadCut.cuts)
-    else if (playheadCut.refusal === 'many') notice(SPLIT_REFUSAL_TEXT.many)
+    const cut = playheadSplit(selectedClips, playheadNow(), clips, links)
+    if ('cuts' in cut) split(cut.cuts)
+    else if (cut.refusal === 'many') notice(SPLIT_REFUSAL_TEXT.many)
   }
   const [scrollRequest, setScrollRequest] = useState<{ left: number } | null>(null)
   // 工具条上的缩放：播放头留在屏幕上原来的地方，看不见它时把它放到中间
@@ -597,7 +628,7 @@ function EditorBody({
     const left = timelineRef.current?.scrollLeft() ?? 0
     const { pps } = timelineScale(viewportWidth, total, next)
     setZoom(next)
-    setScrollRequest({ left: zoomScrollLeft(playhead, left, scale.pps, pps, viewportWidth) })
+    setScrollRequest({ left: zoomScrollLeft(playheadNow(), left, scale.pps, pps, viewportWidth) })
   }
   const zoomToSelection = () => {
     const target = zoomToClips(selectedClips, viewportWidth, scale.fitPps)
@@ -830,7 +861,7 @@ function EditorBody({
       })
   }
   const addAtPlayhead = (item: CatalogItem) =>
-    placeItem(item, playheadSpot(clips, item, playhead, itemDurationMs(item, clips)))
+    placeItem(item, playheadSpot(clips, item, playheadNow(), itemDurationMs(item, clips)))
 
   /** 把一整条音频放进 final-cut 的 `at`。 */
   const placeAudio = (audio: NewAudio, at: { row: RowTarget; start: number }) => {
@@ -921,7 +952,7 @@ function EditorBody({
     if (event.target instanceof HTMLInputElement) return
     event.preventDefault()
     const stepMs = (key === 'ArrowLeft' ? -1 : 1) * (event.shiftKey ? 1_000 : 100)
-    seek(Math.min(total, Math.max(0, playhead + stepMs)))
+    seek(Math.min(total, Math.max(0, playheadNow() + stepMs)))
   }
   useEffect(() => {
     keysRef.current = (event) => {
@@ -1422,9 +1453,9 @@ function EditorBody({
   // 拖进度条在素材里跳
   const transportSource =
     materialView === null
-      ? { playheadMs: playhead, totalMs: total, buffered, playBlocked, playing, onSeek: seek }
+      ? { clock, totalMs: total, buffered, playBlocked, playing, onSeek: seek }
       : {
-          playheadMs: materialMs,
+          clock: materialClock,
           totalMs:
             takeDurationMs(
               viewedMaterial === undefined ? undefined : keyframes.get(viewedMaterial.url),
@@ -1531,9 +1562,9 @@ function EditorBody({
           onBuffered={setBuffered}
           onBuffering={setBuffering}
           onMeasured={setLayerMeasures}
-          onPlaying={setPlaying}
+          onPlaying={followPlaying}
           onTextTarget={setTextTarget}
-          onTime={setPlayheadMs}
+          onTime={followPreviewTime}
           overlay={canvasOverlay}
           page={previewPage}
           playback={playback}
@@ -1562,7 +1593,7 @@ function EditorBody({
             onLeave={leaveMaterial}
             onNotice={notice}
             onPlaying={setMaterialPlaying}
-            onTime={setMaterialMs}
+            onTime={followMaterial}
             rate={playback.rate}
             url={viewedMaterial.url}
             view={materialView}
@@ -1708,7 +1739,7 @@ function EditorBody({
               clips={clips}
               conversationId={conversationId}
               onAdd={(audio) =>
-                placeAudio(audio, audioPlayheadSpot(clips, playhead, audio.duration))
+                placeAudio(audio, audioPlayheadSpot(clips, playheadNow(), audio.duration))
               }
               onCarry={(audio, point) =>
                 setGhost(
@@ -1899,6 +1930,7 @@ function EditorBody({
           onSelect={selectOnTimeline}
           onViewportWidth={setViewportWidth}
           playheadMs={playhead}
+          clock={clock}
           scale={scale}
           onMove={(id, row, start, starts) => {
             const { track, renumber } = trackFor(row, id)
