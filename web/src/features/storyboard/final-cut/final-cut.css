@@ -319,6 +319,25 @@
   box-shadow: 0 0 0 1.5px var(--color-error);
 }
 
+/* 细边一档：和所在的面同底，只有一圈细边；悬停边略深，聚焦边更深，报错边变红 */
+.wf-editor .wf-field.is-outline {
+  border-color: var(--color-hairline);
+  background: transparent;
+  box-shadow: none;
+}
+
+.wf-editor .wf-field.is-outline:hover {
+  border-color: var(--color-outline-variant);
+}
+
+.wf-editor .wf-field.is-outline:is(:focus, :focus-within) {
+  border-color: var(--color-border-hover);
+}
+
+.wf-editor .wf-field.is-outline:is([aria-invalid='true'], :has([aria-invalid='true'])) {
+  border-color: var(--color-error);
+}
+
 /* 侧栏页签顶上的搜索条；四周的空隙由所在的页签头决定 */
 .wf-editor .wf-search {
   width: auto;
@@ -565,8 +584,8 @@
   overflow-x: clip;
 }
 
-/* 裁口右端渐隐。324 是六个页签、竖线和收起按钮排满一行要的宽（右栏 341 宽时），在浏览器里量的 */
-@container wf-side-nav (width < 324px) {
+/* 裁口右端渐隐。318 是六个页签、竖线和收起按钮排满一行要的宽（右栏 335 宽时），在浏览器里量的 */
+@container wf-side-nav (width < 318px) {
   .wf-side-tabs {
     mask-image: linear-gradient(to left, transparent, black 16px);
   }
@@ -683,10 +702,6 @@
 
 .dark .wf-side-tab[aria-selected='true'] .wf-side-dot {
   box-shadow: 0 0 0 1.5px var(--color-surface-container-high);
-}
-
-.wf-side-toggle {
-  flex: none;
 }
 
 /* 收起：竖排，展开按钮在最上面，「属性」沉到底（页签内容由编辑器藏起来、不卸掉） */
@@ -1807,10 +1822,15 @@
   gap: 4px;
 }
 
-/* 「属性」里的图标按钮（样子见 wf-tool）比工具条上的小一档 */
-.wf-inspector .wf-tool {
+/* 「属性」里和右栏顶导上的图标按钮（样子见 wf-tool）比工具条上的小一档；属性头部的操作和右栏的收起按钮
+   悬停时图标变深 */
+:is(.wf-inspector, .wf-side-nav) .wf-tool {
   width: 28px;
   height: 28px;
+}
+
+:is(.wf-inspector-actions, .wf-side-nav) .wf-tool:not([aria-disabled='true']):hover {
+  color: var(--color-on-surface);
 }
 
 .wf-inspector .wf-tool.is-danger:hover {
@@ -3112,21 +3132,42 @@
 
 .wf-stage-hud-size[data-state='open'] {
   background: var(--color-state-hover);
+}
+
+/* 尺寸按钮悬停、展开时和关着的参考线开关悬停时，字和图标转纯白；开着的参考线保持琥珀色 */
+.wf-stage-hud
+  :is(
+    .wf-stage-hud-size:is(:hover, [data-state='open']),
+    .wf-tool:not([aria-pressed='true']):hover
+  ) {
   color: var(--color-on-scrim);
 }
 
-/* 比例小框（见 AspectGlyph）：圆角收小一半，竖的 9:16 才不像个椭圆 */
-:is(.wf-stage-hud-size, .wf-canvas-ratio) > .storyboard-bar-glyph {
-  border-radius: calc(var(--radius-xs) / 2);
+/* 比例小框（见 AspectGlyph）放在固定 14px 的方格里居中，长短不同的框后面的字从同一条竖线起排 */
+.wf-ratio-glyph {
+  display: inline-grid;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  place-items: center;
   opacity: 0.78;
+}
+
+/* 圆角收小一半，竖的 9:16 才不像个椭圆 */
+.wf-ratio-glyph > .storyboard-bar-glyph {
+  border-radius: calc(var(--radius-xs) / 2);
 }
 
 .wf-stage-hud-size > svg {
   opacity: 0.62;
-  transition: rotate var(--dur-s) var(--ease);
+  transition:
+    rotate var(--dur-s) var(--ease),
+    opacity var(--dur-s) var(--ease);
 }
 
+/* 展开时 ⌄ 转过来，和字一样亮 */
 .wf-stage-hud-size[data-state='open'] > svg {
+  opacity: 1;
   rotate: 180deg;
 }
 
@@ -3213,7 +3254,7 @@
   font-weight: 600;
 }
 
-.wf-canvas-ratio[aria-pressed='true'] > .storyboard-bar-glyph {
+.wf-canvas-ratio[aria-pressed='true'] > .wf-ratio-glyph {
   opacity: 1;
 }
 
@@ -3223,7 +3264,7 @@
   gap: 3px;
 }
 
-/* 宽或高的框（样子见 wf-field）：左边一个小字「宽」「高」，数字靠右 */
+/* 宽或高的框（样子见 wf-field 的细边一档）：左边一个小字「宽」「高」，数字靠右 */
 .wf-canvas-side {
   display: inline-flex;
   height: 25px;
@@ -3237,8 +3278,11 @@
   cursor: text;
 }
 
-/* 两个类压过输入框自带的边框、底色、内边距和高度 */
+/* 两个类压过输入框自带的边框、底色、内边距和高度；悬停、按下的叠色和焦点框也不要，这些都看外面框的边色 */
 .wf-canvas-side .wf-canvas-side-input {
+  --color-state-hover: transparent;
+  --color-state-pressed: transparent;
+  --state-focus-ring: 0px;
   width: 100%;
   height: auto;
   min-width: 0;
