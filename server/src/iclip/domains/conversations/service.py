@@ -12,7 +12,13 @@ import structlog
 from iclip_video.film_view import FilmImagePrompt, FilmTextEdit, FilmView
 
 from iclip.common.errors import NotFound, PermissionDenied, ValidationFailed
-from iclip.common.final_cut import MAIN_FILE, PROJECT_DIR, TargetLocale, locale_path
+from iclip.common.final_cut import (
+    MAIN_FILE,
+    PROJECT_DIR,
+    ExportResolution,
+    TargetLocale,
+    locale_path,
+)
 from iclip.domains.conversations.models import (
     IDLE_ACTIVITY,
     AgentPreview,
@@ -247,8 +253,10 @@ class WholeFilmExports(Protocol):
         conversation_id: uuid.UUID,
         main_file: str,
         locale: TargetLocale | None,
+        resolution: ExportResolution | None,
     ) -> uuid.UUID:
-        """按 final-cut 主文件记一条导出排队，答复导出 id。``locale`` 是导出哪种语言，None 是原文。"""
+        """按 final-cut 主文件记一条导出排队，答复导出 id。``locale`` 是导出哪种语言，None 是原文；
+        ``resolution`` 是导出分辨率档位，None 按画面尺寸导出。"""
         ...
 
     async def latest(
@@ -586,9 +594,15 @@ class ConversationService:
         )
 
     async def export_whole_film(
-        self, principal: Principal, conversation_id: uuid.UUID, *, locale: TargetLocale | None
+        self,
+        principal: Principal,
+        conversation_id: uuid.UUID,
+        *,
+        locale: TargetLocale | None,
+        resolution: ExportResolution | None,
     ) -> uuid.UUID:
-        """按 final-cut 主文件记一条导出排队，答复导出 id；``locale`` 是导出哪种语言，None 是原文。
+        """按 final-cut 主文件记一条导出排队，答复导出 id；``locale`` 是导出哪种语言，None 是原文；
+        ``resolution`` 是导出分辨率档位，None 按画面尺寸导出，不在这里判断画面能不能导这一档。
         还没有主文件、工程里没有这种语言的值表都抛 ``ValidationFailed``。"""
 
         conversation = await self._workspace_writable(principal, conversation_id)
@@ -606,7 +620,11 @@ class ConversationService:
         ):
             raise ValidationFailed(_NO_LOCALE_TABLE)
         return await exports.start(
-            principal, conversation_id=conversation.id, main_file=main.content, locale=locale
+            principal,
+            conversation_id=conversation.id,
+            main_file=main.content,
+            locale=locale,
+            resolution=resolution,
         )
 
     async def latest_whole_film_export(

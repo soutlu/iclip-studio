@@ -303,6 +303,7 @@ async def test_an_export_hands_the_project_as_it_is_to_the_render_service_and_is
     assert await latest(client, mine) == {
         "id": export_id,
         "locale": None,
+        "resolution": None,
         "status": "queued",
         "progress": None,
         "queuePosition": None,
@@ -325,6 +326,8 @@ async def test_an_export_hands_the_project_as_it_is_to_the_render_service_and_is
         UNKNOWN_MUSIC_URL: {"url": UNKNOWN_MUSIC_URL},
     }, "主文件里每个素材地址都有下载地址：本桶对象换成内网地址，别处的原样"
     assert payload["locale"] is None, "没有请求体导出原文"
+    assert "resolution" in payload, "按画面尺寸导出也带上这个键，写 null"
+    assert payload["resolution"] is None
     upload = urlsplit(payload["upload"]["url"])
     assert (upload.netloc, upload.path) == (INTERNAL_HOST, f"/{key}")
     expires = datetime.fromtimestamp(int(parse_qs(upload.query)["Expires"][0]), UTC)
@@ -337,6 +340,7 @@ async def test_an_export_hands_the_project_as_it_is_to_the_render_service_and_is
     assert await latest(client, mine) == {
         "id": export_id,
         "locale": None,
+        "resolution": None,
         "status": "rendering",
         "progress": 0.4,
         "queuePosition": None,
@@ -355,6 +359,7 @@ async def test_an_export_hands_the_project_as_it_is_to_the_render_service_and_is
     assert await latest(client, mine) == {
         "id": export_id,
         "locale": None,
+        "resolution": None,
         "status": "done",
         "progress": None,
         "queuePosition": None,
@@ -473,6 +478,49 @@ async def test_a_locale_without_its_table_or_that_is_not_supported_is_refused(
     shown = await latest(client, mine)
     assert shown is not None
     assert shown["locale"] is None
+    assert render.submitted == []
+
+
+async def test_an_export_resolution_is_recorded_answered_and_handed_over_as_is(
+    client: httpx.AsyncClient,
+    pg_url: str,
+    generations: SqlGenerationRepository,
+    render: StubRender,
+    queue: GenerationQueue,
+) -> None:
+    await login_as_editor(client, pg_url)
+    mine = await new_conversation(client)
+    await put_project_file(client, mine, "index.html", main_file())
+
+    started = await client.post(exports_url(mine), json={"resolution": "720p"})
+
+    assert started.status_code == 202, started.text
+    export_id = started.json()["exportId"]
+    pending = await record(generations, export_id)
+    assert isinstance(pending.request, WholeFilmRequest)
+    assert (pending.request.locale, pending.request.resolution) == (None, "720p")
+    shown = await latest(client, mine)
+    assert shown is not None
+    assert (shown["id"], shown["locale"], shown["resolution"]) == (export_id, None, "720p")
+
+    await queue.run_submit(export_id)
+
+    (payload,) = render.submitted
+    assert payload["resolution"] == "720p", "后端不判断画面能不能导这一档，原样交给渲染服务"
+
+
+@pytest.mark.parametrize("resolution", ["720P", "4k", "portrait-720p", 720])
+async def test_a_resolution_that_is_not_one_of_the_three_tiers_is_refused(
+    client: httpx.AsyncClient, pg_url: str, render: StubRender, resolution: object
+) -> None:
+    await login_as_editor(client, pg_url)
+    mine = await new_conversation(client)
+    await put_project_file(client, mine, "index.html", main_file())
+
+    refused = await client.post(exports_url(mine), json={"resolution": resolution})
+
+    assert refused.status_code == 422
+    assert await latest(client, mine) is None, "被拒的不留记录"
     assert render.submitted == []
 
 

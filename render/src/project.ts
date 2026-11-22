@@ -65,6 +65,12 @@ export function* elementsOf(node: Node): Generator<Element> {
   if (isElement(node) && 'content' in node) yield* elementsOf(node.content)
 }
 
+/** `node` 下的根：第一个带 `data-composition-id` 的元素。 */
+export const compositionRootOf = (node: Node): Element | undefined =>
+  [...elementsOf(node)].find((element) =>
+    element.attrs.some((attr) => attr.name === 'data-composition-id'),
+  )
+
 function* mediaElements(node: Node): Generator<Element> {
   for (const element of elementsOf(node))
     if (element.tagName === 'video' || element.tagName === 'audio') yield element

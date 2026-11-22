@@ -175,7 +175,8 @@ class RenderProvider:
 
     async def submit(self, job: GenerationJob) -> ProviderSubmission:
         """把这段对话 final-cut 工程此刻的样子交给渲染服务：全部文件、主文件里每个素材地址的下载
-        地址、导出哪种语言（``locale``，原文是 null）和成片的上传签名。"""
+        地址、导出哪种语言（``locale``，原文是 null）、导出分辨率档位（``resolution``，按画面尺寸导出是
+        null）和成片的上传签名。"""
 
         request = request_of(job, WholeFilmRequest, provider=PROVIDER_NAME)
         if job.conversation_id is None:
@@ -205,6 +206,7 @@ class RenderProvider:
                 for address in media_addresses(main)
             },
             "locale": request.locale,
+            "resolution": request.resolution,
             "upload": {"url": upload.url, "headers": dict(upload.headers)},
         }
         try:

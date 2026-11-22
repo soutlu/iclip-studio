@@ -20,6 +20,7 @@ import {
   captionVariable,
 } from '../../web/src/features/storyboard/final-cut/composition/captions'
 import type { ComponentCatalog } from '../../web/src/features/storyboard/final-cut/composition/catalog'
+import type { ExportTier } from '../../web/src/features/storyboard/final-cut/composition/export-resolution'
 import {
   clipOf,
   itemNamed,
@@ -355,15 +356,16 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
   const workerIn = (workDir: string, logger = memoryLogger().logger) =>
     createProducerWorker({ workDir, chromePath: guard.chromePath, gpuEncode: false, logger })
 
-  /** 渲染一份工程；`media` 是主文件里的素材地址，下载地址和它一样。 */
+  /** 渲染一份工程；`media` 是主文件里的素材地址，下载地址和它一样；`resolution` 是导出分辨率档位。 */
   const renderProject = (
     id: string,
     files: ProjectFile[],
     media: readonly string[] = [],
     logger = memoryLogger().logger,
+    resolution: ExportTier | null = null,
   ) =>
     workerIn(join(dir, 'work'), logger).render(
-      { id, files, media: mediaOf(media), variables: null, vendorDir: VENDOR_DIR },
+      { id, files, media: mediaOf(media), variables: null, resolution, vendorDir: VENDOR_DIR },
       { signal: new AbortController().signal, onProgress: () => {} },
     )
 
@@ -446,6 +448,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
         files: project([video({ src: clip, duration: 1000 })]),
         media: mediaOf([clip]),
         variables: null,
+        resolution: null,
         vendorDir: VENDOR_DIR,
       },
       { signal: new AbortController().signal, onProgress: () => {} },
@@ -460,12 +463,66 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
           files: project([video({ src: `${origin}/missing.mp4`, duration: 1000 })]),
           media: mediaOf([`${origin}/missing.mp4`]),
           variables: null,
+          resolution: null,
           vendorDir: VENDOR_DIR,
         },
         { signal: new AbortController().signal, onProgress: () => {} },
       ),
     ).rejects.toMatchObject({ code: 'media-unreachable' })
     expect(await readdir(workDir)).toEqual([])
+  }, 300_000)
+
+  it('1080×1920 的画面按 720P 导出：成片 720×1280，时长不变，画面整体缩小而不是裁掉一块', async () => {
+    const clip = `${origin}/clip.mp4`
+    const canvas = { width: 1080, height: 1920 }
+    const files = project([video({ src: clip, duration: 2000 })], canvas)
+    const native = await renderProject('resolution-native', files, [clip])
+    const smaller = await renderProject('resolution-720p', files, [clip], undefined, '720p')
+    try {
+      const { stdout } = await run('ffprobe', [
+        '-v',
+        'error',
+        '-select_streams',
+        'v:0',
+        '-show_entries',
+        'stream=width,height',
+        '-of',
+        'json',
+        smaller.file,
+      ])
+      expect((JSON.parse(stdout) as { streams: unknown[] }).streams[0]).toEqual({
+        width: 720,
+        height: 1280,
+      })
+      expect(await durationOf(smaller.file)).toBeCloseTo(await durationOf(native.file), 1)
+      // 原尺寸那一帧缩到 720×1280 后和按 720P 出的那一帧差不多：构图一样
+      const area = { x: 0, y: 0, width: 720, height: 1280 }
+      const scaled = await run(
+        'ffmpeg',
+        [
+          '-v',
+          'error',
+          '-ss',
+          '1',
+          '-i',
+          native.file,
+          '-vf',
+          'scale=720:1280',
+          '-frames:v',
+          '1',
+          '-f',
+          'rawvideo',
+          '-pix_fmt',
+          'rgb24',
+          '-',
+        ],
+        { encoding: 'buffer', maxBuffer: 720 * 1280 * 3 * 2 },
+      )
+      expect(meanDifference(scaled.stdout, await frameAt(smaller.file, 1, area))).toBeLessThan(8)
+    } finally {
+      await native.cleanup()
+      await smaller.cleanup()
+    }
   }, 300_000)
 
   it('工程文件的路径跳出工程目录时不写、不渲染', async () => {
@@ -480,6 +537,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
           ],
           media: new Map(),
           variables: null,
+          resolution: null,
           vendorDir: VENDOR_DIR,
         },
         { signal: new AbortController().signal, onProgress: () => {} },
@@ -651,6 +709,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
           files: files.slice(0, 1),
           media: new Map(),
           variables: null,
+          resolution: null,
           vendorDir: VENDOR_DIR,
         },
         { signal: new AbortController().signal, onProgress: () => {} },
@@ -1263,7 +1322,14 @@ peer.createOffer().then((offer) => peer.setLocalDescription(offer)).catch(() => 
     const before = requests.length
     await expect(
       workerIn(workDir).render(
-        { id: 'lint-error', files, media, variables: null, vendorDir: VENDOR_DIR },
+        {
+          id: 'lint-error',
+          files,
+          media,
+          variables: null,
+          resolution: null,
+          vendorDir: VENDOR_DIR,
+        },
         { signal: new AbortController().signal, onProgress: () => {} },
       ),
     ).rejects.toMatchObject({
@@ -1296,6 +1362,7 @@ peer.createOffer().then((offer) => peer.setLocalDescription(offer)).catch(() => 
           files,
           media: new Map([[clip, clip]]),
           variables: null,
+          resolution: null,
           vendorDir: VENDOR_DIR,
         },
         { signal: new AbortController().signal, onProgress: () => {} },

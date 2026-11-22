@@ -54,6 +54,7 @@
     "@headless-tree/core": "^1.8.0",
     "@headless-tree/react": "^1.8.0",
     "@hyperframes/core": "0.9.59",
+    "@hyperframes/parsers": "0.9.59",
     "@hyperframes/player": "0.9.59",
     "@hyperframes/sdk": "0.9.59",
     "@lezer/highlight": "^1.2.5",

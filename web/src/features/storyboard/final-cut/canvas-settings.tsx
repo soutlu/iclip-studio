@@ -5,9 +5,17 @@ import { PopupRoot, PopupSurface, PopupTrigger } from '@/shared/ui/popup'
 import { Switch } from '@/shared/ui/switch'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { AspectGlyph } from '../components/aspect-glyph'
+import { BlockedReason } from '../components/blocked-reason'
 import { CANVAS_SIZES, canvasLabel, presetOf } from './canvas-size'
+import {
+  EXPORT_TIERS,
+  tierLabel,
+  tierUnsupportedText,
+  type ExportTier,
+} from './composition/export-resolution'
 import type { Canvas } from './composition/film'
 import { Tool } from './editor-toolbar'
+import { exportOutput } from './export-tier'
 
 /** 构图网格：关闭、九宫格、十字。 */
 type FramingGrid = 'off' | 'thirds' | 'cross'
@@ -57,10 +65,16 @@ type Side = 'width' | 'height'
 
 const ratioOf = ({ width, height }: Canvas) => `${width}:${height}`
 
+const sizeText = ({ width, height }: Canvas) => `${width}×${height}`
+
 type CanvasSettingsProps = {
   canvas: Canvas
   /** 把画面尺寸改成 `canvas`，算一步撤销；和现在一样时不算。 */
   onCanvas: (canvas: Canvas) => void
+  /** 亮着的导出分辨率档位（见 `exportTierOf`）；都不亮时是 undefined。 */
+  tier: ExportTier | undefined
+  /** 选导出分辨率档位：不改画面尺寸、不进撤销。 */
+  onTier: (tier: ExportTier) => void
   /** 画面底色；读不出来时是 null（哪个颜色都不按下）。 */
   background: string | null
   /** 把画面底色改成 `color`，算一步撤销。 */
@@ -74,14 +88,17 @@ type CanvasSettingsProps = {
 }
 
 /**
- * 预览舞台右上角的一枚胶囊：左边是画面尺寸（比例小框、简称、⌄），点开是画面设置浮层；右边是参考线的快捷开关，
- * 有参考线开着时全关，全关着时打开九宫格和安全区。
+ * 预览舞台右上角的一枚胶囊：左边是画面尺寸（比例小框、简称、· 导出档位、⌄），点开是画面设置浮层；右边是参考线的
+ * 快捷开关，有参考线开着时全关，全关着时打开九宫格和安全区。没有档位亮着时简称后面写宽×高（简称已经是宽×高时不重复）。
  */
 export function CanvasSettings({ framing, onFraming, layer, ...settings }: CanvasSettingsProps) {
-  const { canvas } = settings
+  const { canvas, tier } = settings
   const [open, setOpen] = useState(false)
   const [hint, setHint] = useState(false)
   const label = canvasLabel(canvas)
+  const detail = tier !== undefined ? tierLabel(tier) : sizeText(canvas)
+  const shown = detail === label ? label : `${label} · ${detail}`
+  const output = tier === undefined ? undefined : exportOutput(canvas, tier)
   const guided = framing.grid !== 'off' || framing.safeArea
   return (
     <div className="wf-stage-hud">
@@ -96,18 +113,20 @@ export function CanvasSettings({ framing, onFraming, layer, ...settings }: Canva
           <PopupTrigger asChild>
             <TooltipTrigger asChild>
               <button
-                aria-label={`画面尺寸 ${label}`}
+                aria-label={`画面尺寸 ${shown}`}
                 className="wf-stage-hud-size ui-state ui-focus"
                 type="button"
               >
                 <AspectGlyph longSide={12} ratio={ratioOf(canvas)} />
                 {label}
+                {detail === label ? null : <span className="wf-stage-hud-tier">· {detail}</span>}
                 <Icon decorative name="final-cut-expand" size="xs" />
               </button>
             </TooltipTrigger>
           </PopupTrigger>
           <TooltipContent className="wf-tip" container={layer} side="bottom">
-            画面尺寸 {canvas.width}×{canvas.height}
+            画面尺寸 {sizeText(canvas)}
+            {output?.kind === 'preset' ? `，导出 ${sizeText(output.size)}` : null}
           </TooltipContent>
         </TooltipRoot>
         <PopupSurface
@@ -141,12 +160,15 @@ export function CanvasSettings({ framing, onFraming, layer, ...settings }: Canva
 }
 
 /**
- * 画面设置浮层：六种比例（宽高正好是哪一种时它按下）、宽高数字框和互换宽高、画布底色、构图网格、短视频安全区。
- * 数字框回车或失焦生效，奇数减 1，不是整数、不在范围里时框下面一句提示、框回到原来的值。改尺寸、改底色各算一步撤销。
+ * 画面设置浮层：六种比例（宽高正好是哪一种时它按下）、导出分辨率、宽高数字框和互换宽高、画布底色、构图网格、
+ * 短视频安全区。数字框回车或失焦生效，奇数减 1，不是整数、不在范围里时框下面一句提示、框回到原来的值。改尺寸、
+ * 改底色各算一步撤销。这个画面导不出的档位置灰，悬停或点击说明一句。
  */
 function SettingsPanel({
   canvas,
   onCanvas,
+  tier,
+  onTier,
   background,
   onBackground,
   framing,
@@ -194,6 +216,36 @@ function SettingsPanel({
       </div>
       <hr className="wf-canvas-settings-sep" />
       <div className="wf-prop-field">
+        <span className="wf-prop-label">导出分辨率</span>
+        <div
+          aria-label="导出分辨率"
+          className="wf-seg wf-canvas-control wf-canvas-seg"
+          role="group"
+        >
+          {EXPORT_TIERS.map((each) => {
+            const blocked =
+              exportOutput(canvas, each).kind === 'unsupported'
+                ? tierUnsupportedText(each)
+                : undefined
+            return (
+              <BlockedReason container={layer} key={each} reason={blocked}>
+                <button
+                  aria-disabled={blocked === undefined ? undefined : true}
+                  aria-pressed={each === tier}
+                  className="wf-seg-item ui-state ui-focus"
+                  onClick={() => {
+                    if (blocked === undefined) onTier(each)
+                  }}
+                  type="button"
+                >
+                  {tierLabel(each)}
+                </button>
+              </BlockedReason>
+            )
+          })}
+        </div>
+      </div>
+      <div className="wf-prop-field">
         <span className="wf-prop-label">像素尺寸</span>
         <div aria-label="像素尺寸" className="wf-canvas-control wf-canvas-pixels" role="group">
           {side('width', '宽')}
@@ -237,11 +289,7 @@ function SettingsPanel({
       <hr className="wf-canvas-settings-sep" />
       <div className="wf-prop-field">
         <span className="wf-prop-label">构图网格</span>
-        <div
-          aria-label="构图网格"
-          className="wf-seg wf-canvas-control wf-canvas-grids"
-          role="group"
-        >
+        <div aria-label="构图网格" className="wf-seg wf-canvas-control wf-canvas-seg" role="group">
           {GRIDS.map(({ grid, label }) => (
             <button
               aria-pressed={framing.grid === grid}

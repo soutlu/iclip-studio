@@ -1,3 +1,4 @@
+import type { ExportTier } from '../../web/src/features/storyboard/final-cut/composition/export-resolution'
 import type { Logger } from './log'
 import type { ProjectFile } from './project'
 
@@ -10,6 +11,7 @@ export type FailureCode =
   | 'upload-failed'
   | 'media-unreachable'
   | 'media-mismatch'
+  | 'resolution-unsupported'
   | 'timeout'
 
 export class ExportFailure extends Error {
@@ -40,6 +42,8 @@ export interface RenderJobInput {
   media: ReadonlyMap<string, string>
   /** 交给渲染器的变量值：按语言导出时是那种语言校验过的值表，原文时是 null。 */
   variables: Readonly<Record<string, unknown>> | null
+  /** 导出分辨率档位；按画面尺寸导出时是 null。 */
+  resolution: ExportTier | null
   /** 公共目录：工程里的 `vendor` 指向它。 */
   vendorDir: string
 }
@@ -206,6 +210,7 @@ export class ExportQueue {
           files: input.files,
           media: input.media,
           variables: input.variables,
+          resolution: input.resolution,
           vendorDir: input.vendorDir,
         },
         {

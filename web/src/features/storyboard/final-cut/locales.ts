@@ -36,14 +36,20 @@ export const languageName = (code: Language): string =>
 const HAN = /\p{Script=Han}/u
 
 /**
- * 把语言名接进中文句子：西文的名字和挨着的汉字之间留一个空格，挨着标点、句首句尾不留；中文的名字不留。例如
- * `phraseWith('导出', 'en', '版')` 是「导出 English 版」，`phraseWith('导出', 'zh', '版')` 是「导出中文版」。
+ * 把一个词接进中文句子：西文、数字的词和挨着的汉字之间留一个空格，挨着标点、句首句尾不留；中文的词不留。例如
+ * `phraseAround('正在提交', '720P', '导出…')` 是「正在提交 720P 导出…」。
  */
-export function phraseWith(before: string, code: LocaleCode, after: string): string {
-  const { name } = localeNamed(code)
-  const gap = (neighbor: string) => (!HAN.test(name) && HAN.test(neighbor) ? ' ' : '')
-  return `${before}${gap(before.slice(-1))}${name}${gap(after.slice(0, 1))}${after}`
+export function phraseAround(before: string, word: string, after: string): string {
+  const gap = (neighbor: string) => (!HAN.test(word) && HAN.test(neighbor) ? ' ' : '')
+  return `${before}${gap(before.slice(-1))}${word}${gap(after.slice(0, 1))}${after}`
 }
+
+/**
+ * 把语言名接进中文句子（空格规则见 `phraseAround`）。例如 `phraseWith('导出', 'en', '版')` 是「导出 English 版」，
+ * `phraseWith('导出', 'zh', '版')` 是「导出中文版」。
+ */
+export const phraseWith = (before: string, code: LocaleCode, after: string): string =>
+  phraseAround(before, localeNamed(code).name, after)
 
 /** 语言值表在工程里的路径（相对工程根）。 */
 export const localePath = (code: LocaleCode) => `locales/${code}.json`

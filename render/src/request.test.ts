@@ -7,6 +7,20 @@ describe('导出请求', () => {
     expect(parseRequest(zExportRequest, exportRequest()).ok).toBe(true)
   })
 
+  it('导出分辨率可以不带、写 null 或三档之一，别的写法不通过', () => {
+    const parsed = (resolution: unknown) =>
+      parseRequest(zExportRequest, { ...exportRequest(), resolution })
+    expect(parsed(undefined)).toMatchObject({ ok: true, request: { resolution: undefined } })
+    expect(parsed(null)).toMatchObject({ ok: true, request: { resolution: null } })
+    for (const tier of ['480p', '720p', '1080p'])
+      expect(parsed(tier)).toMatchObject({ ok: true, request: { resolution: tier } })
+    for (const wrong of ['720P', '4k', 'portrait-720p', 720])
+      expect(parsed(wrong)).toMatchObject({
+        ok: false,
+        message: expect.stringMatching(/^resolution/),
+      })
+  })
+
   it.each<[string, (body: Record<string, unknown>) => void, string]>([
     ['缺少工程文件', (body) => delete body['files'], 'files'],
     [

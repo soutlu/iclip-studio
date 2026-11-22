@@ -25,6 +25,12 @@ LANGUAGE_NAMES: Final[Mapping[TargetLocale, str]] = {
 """每种能加的语言的中文名，写进给模型的提示词（翻译、配音）里。"""
 
 
+ExportResolution = Literal["480p", "720p", "1080p"]
+"""成片导出能选的分辨率档位，同前端与渲染服务共用的 ``EXPORT_TIERS``
+（``web/src/features/storyboard/final-cut/composition/export-resolution.ts``）。是每次导出的请求参数，不写进
+工程；这个画面能不能导这一档由渲染服务判断。"""
+
+
 def locale_path(locale: TargetLocale) -> str:
     """一种语言的值表在工程里的路径（相对工程根）。"""
 
@@ -72,6 +78,7 @@ __all__ = [
     "LANGUAGE_NAMES",
     "MAIN_FILE",
     "PROJECT_DIR",
+    "ExportResolution",
     "MediaAddress",
     "MediaKind",
     "TargetLocale",

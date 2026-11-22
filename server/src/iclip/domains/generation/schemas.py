@@ -26,7 +26,7 @@ from pydantic import (
 )
 from pydantic.alias_generators import to_camel
 
-from iclip.common.final_cut import TargetLocale
+from iclip.common.final_cut import ExportResolution, TargetLocale
 from iclip.common.generation_vocab import (
     GenerationKind,
     GenerationOperation,
@@ -700,8 +700,8 @@ class WholeFilmAudioSource(CamelModel):
 
 class WholeFilmRequest(CamelModel):
     """一条成片导出记录的请求：发起导出时 final-cut 主文件里对上了来源的素材（``<video>`` 对生成记录，
-    ``<audio>`` 依次对本对话的生成记录、本对话的上传、参考音频库），和导出哪种语言的版本（``locale``，
-    None 是原文）。
+    ``<audio>`` 依次对本对话的生成记录、本对话的上传、参考音频库），导出哪种语言的版本（``locale``，
+    None 是原文）和导出分辨率档位（``resolution``，None 按画面尺寸导出；之前的记录没有这个字段，读出来是 None）。
     工程本身不存在这里，交给渲染服务时才从工作区读。"""
 
     kind: ClassVar[GenerationKind] = KIND_WHOLE_FILM
@@ -710,6 +710,7 @@ class WholeFilmRequest(CamelModel):
     videos: list[WholeFilmVideoSource]
     audios: list[WholeFilmAudioSource]
     locale: TargetLocale | None = None
+    resolution: ExportResolution | None = None
 
 
 class VideoEnhanceIn(CamelModel):

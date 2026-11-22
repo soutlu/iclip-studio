@@ -1,4 +1,5 @@
 import { http, HttpResponse } from 'msw'
+import type { WholeFilmExportIn } from '@/shared/api/generated/types.gen'
 import { mockPreviewOrigin, mockPreviewToken } from './preview-token'
 import { mockWorkspaceFile, putMockWorkspaceFile } from './workspace'
 
@@ -9,6 +10,8 @@ type MockExport = {
   id: string
   /** 导出的语言，原文是 null。 */
   locale: string | null
+  /** 导出分辨率档位，按画面尺寸导出是 null。 */
+  resolution: string | null
   reads: number
   cancelled: boolean
 }
@@ -32,6 +35,7 @@ const exportOut = (found: MockExport) => {
   const base = {
     id: found.id,
     locale: found.locale,
+    resolution: found.resolution,
     error: null,
     downloadUrl: null,
   }
@@ -82,10 +86,11 @@ export const wholeFilmHandlers = [
       const conversationId = String(params['conversationId'])
       if (mockProjectMain(conversationId) === undefined)
         return HttpResponse.json({ detail: 'final-cut 暂无内容，无法导出' }, { status: 422 })
-      // 请求体可以不带，不带和 locale 为 null 都是中文
+      // 请求体可以不带，不带和 locale 为 null 都是中文；不带 resolution 和它为 null 都按画面尺寸导出
       const raw = await request.text()
-      const locale =
-        raw === '' ? null : ((JSON.parse(raw) as { locale?: string | null }).locale ?? null)
+      const body = raw === '' ? {} : (JSON.parse(raw) as WholeFilmExportIn)
+      const locale = body.locale ?? null
+      const resolution = body.resolution ?? null
       if (
         locale !== null &&
         mockWorkspaceFile(conversationId, `final-cut/locales/${locale}.json`) === undefined
@@ -95,7 +100,13 @@ export const wholeFilmHandlers = [
           { status: 422 },
         )
       const exportId = crypto.randomUUID()
-      latestExports.set(conversationId, { id: exportId, locale, reads: 0, cancelled: false })
+      latestExports.set(conversationId, {
+        id: exportId,
+        locale,
+        resolution,
+        reads: 0,
+        cancelled: false,
+      })
       return HttpResponse.json({ exportId }, { status: 202 })
     },
   ),

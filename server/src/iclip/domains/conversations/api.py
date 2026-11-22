@@ -488,11 +488,16 @@ def create_conversations_router(
     ) -> WholeFilmExportStartedOut:
         """按 final-cut 导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；
         还没有主文件 ``final-cut/index.html``、要导的语言没有值表 ``final-cut/locales/<语言>.json``、
-        没开通都是 422。没有请求体或 ``locale`` 为 null 时导出原文。主文件里的素材按输出地址对上
-        生成记录的记进导出记录，对不上的不记、也不拒绝。导出的是交给渲染服务那一刻的工程。"""
+        没开通都是 422。没有请求体或 ``locale`` 为 null 时导出原文。``resolution`` 是导出分辨率档位，
+        不带或 null 按画面尺寸导出，记进导出记录原样交给渲染服务，这个画面能不能导这一档由渲染服务判断。
+        主文件里的素材按输出地址对上生成记录的记进导出记录，对不上的不记、也不拒绝。导出的是交给渲染服务
+        那一刻的工程。"""
 
         export_id = await service.export_whole_film(
-            principal, conversation_id, locale=None if body is None else body.locale
+            principal,
+            conversation_id,
+            locale=None if body is None else body.locale,
+            resolution=None if body is None else body.resolution,
         )
         return WholeFilmExportStartedOut(export_id=export_id)
 

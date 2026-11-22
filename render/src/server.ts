@@ -121,6 +121,7 @@ async function createExport(req: IncomingMessage, res: ServerResponse, context: 
     files,
     media: downloads,
     variables,
+    resolution: request.resolution ?? null,
     vendorDir: context.vendorDir,
     upload: request.upload,
   })

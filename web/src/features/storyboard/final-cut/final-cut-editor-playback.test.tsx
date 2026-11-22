@@ -488,6 +488,7 @@ describe('final-cut 编辑器 · 导出', () => {
   const exportOf = (state: object) => ({
     id: EXPORT_ID,
     locale: null,
+    resolution: null,
     status: 'queued',
     progress: null,
     queuePosition: null,
@@ -520,6 +521,9 @@ describe('final-cut 编辑器 · 导出', () => {
 
   const DONE = { status: 'done', progress: 1, downloadUrl: DOWNLOAD_URL }
   const RENDERING = { status: 'rendering', progress: 0.4 }
+
+  // 选的导出档位按对话记在浏览器里，不带到别的用例
+  afterEach(() => window.localStorage.clear())
 
   it('「导出」和保存状态放进工作台顶栏，不在编辑器里；编辑器没有标题栏，也没有关闭按钮', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
@@ -701,6 +705,44 @@ describe('final-cut 编辑器 · 导出', () => {
       ),
     ).toHaveAttribute('role', 'status')
     expect(screen.getByRole('button', { name: '导出' })).not.toHaveAttribute('aria-disabled')
+  })
+
+  it('画面设置里选了和画面不同的档：发起导出时带上它，状态写接口答的这次导出的档位', async () => {
+    const user = userEvent.setup()
+    const bodies: unknown[] = []
+    server.use(
+      http.post(EXPORTS_URL, async ({ request }) => {
+        bodies.push(await request.json())
+        return HttpResponse.json({ exportId: EXPORT_ID }, { status: 202 })
+      }),
+    )
+    serveLatest(null, { ...RENDERING, resolution: '480p' })
+    // 720×1280：画面档是 720P，480P 能导，1080P 放大不是整数倍
+    putMockProjectMain(CONVERSATION, twoVideos())
+    await openEditor()
+    await user.click(screen.getByRole('button', { name: /^画面尺寸/ }))
+    const tiers = within(screen.getByRole('group', { name: '导出分辨率' }))
+    expect(tiers.getByRole('button', { name: '1080P' })).toHaveAttribute('aria-disabled', 'true')
+    await user.click(tiers.getByRole('button', { name: '480P' }))
+    await user.keyboard('{Escape}')
+
+    await user.click(screen.getByRole('button', { name: '导出' }))
+    await waitFor(() => expect(bodies).toEqual([{ locale: null, resolution: '480p' }]))
+    expect(await screen.findByText('正在渲染 480P 40%')).toHaveAttribute('role', 'status')
+  })
+
+  it('画面导不出选的档：说出是哪一档', async () => {
+    serveLatest({
+      status: 'failed',
+      resolution: '720p',
+      error: { code: 'resolution-unsupported', message: '当前画面尺寸不支持按 720P 导出' },
+    })
+    putMockProjectMain(CONVERSATION, twoVideos())
+    await openEditor()
+    expect(await screen.findByText('当前画面尺寸不支持按 720P 导出')).toHaveAttribute(
+      'role',
+      'status',
+    )
   })
 
   it('渲染服务不收这份 final-cut：显示它给的原因', async () => {

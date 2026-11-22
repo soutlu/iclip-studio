@@ -8,6 +8,7 @@ const input = (id: string): ExportInput => ({
   files: [{ path: 'index.html', content: '<html></html>' }],
   media: new Map([['https://media.test/a.mp4', 'https://oss.example.com/a.mp4']]),
   variables: null,
+  resolution: null,
   vendorDir: '/registry/vendor',
   upload: { url: 'https://upload.example.com/a.mp4', headers: {} },
 })

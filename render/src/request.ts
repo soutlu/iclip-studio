@@ -1,4 +1,5 @@
 import * as z from 'zod'
+import { EXPORT_TIERS } from '../../web/src/features/storyboard/final-cut/composition/export-resolution'
 
 const zHttpUrl = z.url({ protocol: /^https?$/ })
 
@@ -23,6 +24,8 @@ export const zExportRequest = z.object({
   media: z.record(z.string(), z.object({ url: zHttpUrl })),
   /** 导出哪种语言的版本，规则见 locale.ts；null 或不带是原文。 */
   locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullish(),
+  /** 导出分辨率档位，规则见 resolution.ts；null 或不带是按画面尺寸导出。 */
+  resolution: z.enum(EXPORT_TIERS).nullish(),
   upload: z.object({ url: zHttpUrl, headers: z.record(z.string(), z.string()) }),
 })
 

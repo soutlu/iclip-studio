@@ -2218,7 +2218,7 @@ test('新建工程后在画面右上角把画面尺寸改成横屏：存下的�
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await createFinalCut(panel)
-  await editor.getByRole('button', { name: '画面尺寸 9:16', exact: true }).click()
+  await editor.getByRole('button', { name: '画面尺寸 9:16 · 1080P', exact: true }).click()
   const sizes = editor
     .getByRole('dialog', { name: '画面设置' })
     .getByRole('group', { name: '画面比例' })
@@ -2238,7 +2238,7 @@ test('新建工程后在画面右上角把画面尺寸改成横屏：存下的�
   await (await saved).response()
   await page.reload()
   const reloaded = await openFinalCut(await openConversation(page, '夜景延时素材生成'))
-  await reloaded.getByRole('button', { name: '画面尺寸 16:9', exact: true }).click()
+  await reloaded.getByRole('button', { name: '画面尺寸 16:9 · 1080P', exact: true }).click()
   const reloadedSizes = reloaded
     .getByRole('dialog', { name: '画面设置' })
     .getByRole('group', { name: '画面比例' })
@@ -2250,6 +2250,84 @@ test('新建工程后在画面右上角把画面尺寸改成横屏：存下的�
     'aria-pressed',
     'false',
   )
+})
+
+test('导出分辨率：选 720P 后胶囊写「· 720P」、像素尺寸不变，导出带 720p，刷新后还是 720P；改成 3:4 后 480P、720P 置灰、1080P 亮，导出不带档位', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await createFinalCut(panel)
+  const added = mainSaved(page, 1)
+  await editor
+    .getByRole('region', { name: '视频素材区' })
+    .getByRole('group', { name: '镜头组 2' })
+    .getByRole('button', { name: /^出片 A 镜头 1，/ })
+    .click()
+  await page.keyboard.press('Enter')
+  await added
+
+  const pill = editor.getByRole('button', { name: /^画面尺寸/ })
+  const settings = editor.getByRole('dialog', { name: '画面设置' })
+  await pill.click()
+  // 第一段视频进来时画面跟着视频改过尺寸，先定成 1080×1920
+  await settings
+    .getByRole('group', { name: '画面比例' })
+    .getByRole('button', { name: '9:16', exact: true })
+    .click()
+  const tiers = settings.getByRole('group', { name: '导出分辨率' })
+  await tiers.getByRole('button', { name: '720P', exact: true }).click()
+  await expect(tiers.getByRole('button', { name: '720P', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await expect(pill).toHaveAccessibleName('画面尺寸 9:16 · 720P')
+  await expect(settings.getByRole('textbox', { name: '宽' })).toHaveValue('1080')
+  await expect(settings.getByRole('textbox', { name: '高' })).toHaveValue('1920')
+  await page.keyboard.press('Escape')
+
+  const started = page.waitForRequest(
+    (request) => request.url().endsWith('/whole-film/exports') && request.method() === 'POST',
+  )
+  await panel.getByRole('button', { name: '导出', exact: true }).click()
+  expect((await started).postDataJSON()).toEqual({ locale: null, resolution: '720p' })
+  await expect(panel.getByRole('status').filter({ hasText: /720P/ })).toBeVisible()
+
+  // 选的档位记在浏览器里（mock 的导出记录刷新后就没了，按钮回到「导出」）
+  await page.reload()
+  const reopenedPanel = await openConversation(page, '夜景延时素材生成')
+  const reopened = await openFinalCut(reopenedPanel)
+  const reopenedPill = reopened.getByRole('button', { name: /^画面尺寸/ })
+  await expect(reopenedPill).toHaveAccessibleName('画面尺寸 9:16 · 720P')
+
+  await reopenedPill.click()
+  const reopenedSettings = reopened.getByRole('dialog', { name: '画面设置' })
+  const resized = mainSavedWith(page, (html) =>
+    /<div [^>]*id="film"[^>]*data-width="1080" data-height="1440"/.test(html),
+  )
+  await reopenedSettings
+    .getByRole('group', { name: '画面比例' })
+    .getByRole('button', { name: '3:4', exact: true })
+    .click()
+  await resized
+  const reopenedTiers = reopenedSettings.getByRole('group', { name: '导出分辨率' })
+  for (const name of ['480P', '720P'])
+    await expect(reopenedTiers.getByRole('button', { name, exact: true })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+  await expect(reopenedTiers.getByRole('button', { name: '1080P', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await page.keyboard.press('Escape')
+
+  const restarted = page.waitForRequest(
+    (request) => request.url().endsWith('/whole-film/exports') && request.method() === 'POST',
+  )
+  await reopenedPanel.getByRole('button', { name: '导出', exact: true }).click()
+  expect((await restarted).postDataJSON()).toEqual({ locale: null })
 })
 
 const CAPTIONS_FILE = 'compositions/captions.html'

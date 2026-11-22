@@ -8,7 +8,7 @@ import structlog
 
 from iclip.app.runtime_workspace import WorkspaceFiles
 from iclip.common.errors import NotFound
-from iclip.common.final_cut import PROJECT_DIR, TargetLocale, media_addresses
+from iclip.common.final_cut import PROJECT_DIR, ExportResolution, TargetLocale, media_addresses
 from iclip.domains.conversations.models import (
     WholeFilmExport,
     WholeFilmExportError,
@@ -105,10 +105,12 @@ class WholeFilmExportAdapter:
         conversation_id: uuid.UUID,
         main_file: str,
         locale: TargetLocale | None,
+        resolution: ExportResolution | None,
     ) -> uuid.UUID:
-        """记一条成片记录排队，导出哪种语言（``locale``，None 是原文）也记进去。主文件里的素材按地址
-        对来源，对不上的不记：``<video>`` 对生成记录；``<audio>`` 依次对本对话（含分叉继承）的生成记录、
-        本对话（含分叉继承）的上传、参考音频库，先对上的算。"""
+        """记一条成片记录排队，导出哪种语言（``locale``，None 是原文）和分辨率档位（``resolution``，None
+        按画面尺寸导出）也记进去。主文件里的素材按地址对来源，对不上的不记：``<video>`` 对生成记录；
+        ``<audio>`` 依次对本对话（含分叉继承）的生成记录、本对话（含分叉继承）的上传、参考音频库，先对上
+        的算。"""
 
         addresses = media_addresses(main_file)
         records = await self._generations.earliest_by_outputs(
@@ -151,7 +153,9 @@ class WholeFilmExportAdapter:
         job = await self._generation.submit_whole_film(
             principal,
             conversation_id=conversation_id,
-            request=WholeFilmRequest(videos=videos, audios=audios, locale=locale),
+            request=WholeFilmRequest(
+                videos=videos, audios=audios, locale=locale, resolution=resolution
+            ),
         )
         return job.id
 
@@ -208,6 +212,7 @@ class WholeFilmExportAdapter:
         return WholeFilmExport(
             id=job.id,
             locale=request.locale,
+            resolution=request.resolution,
             status=status,
             progress=progress,
             queue_position=queue_position,

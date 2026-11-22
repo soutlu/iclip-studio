@@ -1,18 +1,23 @@
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/testing/render'
 import { CanvasSettings, FramingGuides, type Framing } from './canvas-settings'
 import type { Canvas } from './composition/film'
+import { exportTierOf, useChosenTier } from './export-tier'
 
-/** 和编辑器一样：画面尺寸、底色、参考线由外面记着，浮层里改的是外面这一份。 */
+const CONVERSATION = '0f1e2d3c-4b5a-4968-8776-655443322110'
+
+/** 和编辑器一样：画面尺寸、底色、参考线由外面记着，浮层里改的是外面这一份；导出档位按对话记在浏览器里。 */
 function Harness({
+  conversationId,
   initialCanvas,
   initialBackground,
   onCanvas,
   onBackground,
 }: {
+  conversationId: string
   initialCanvas: Canvas
   initialBackground: string | null
   onCanvas: (canvas: Canvas) => void
@@ -21,6 +26,7 @@ function Harness({
   const [canvas, setCanvas] = useState(initialCanvas)
   const [background, setBackground] = useState(initialBackground)
   const [framing, setFraming] = useState<Framing>({ grid: 'off', safeArea: false })
+  const [chosenTier, chooseTier] = useChosenTier(conversationId)
   return (
     <>
       <CanvasSettings
@@ -28,6 +34,8 @@ function Harness({
         canvas={canvas}
         framing={framing}
         layer={null}
+        onTier={chooseTier}
+        tier={exportTierOf(canvas, chosenTier).tier}
         onBackground={(color) => {
           onBackground(color)
           setBackground(color)
@@ -46,20 +54,24 @@ function Harness({
 const renderHud = async ({
   canvas = { width: 720, height: 1280 },
   background = 'black',
-}: { canvas?: Canvas; background?: string | null } = {}) => {
+  conversationId = CONVERSATION,
+}: { canvas?: Canvas; background?: string | null; conversationId?: string } = {}) => {
   const onCanvas = vi.fn()
   const onBackground = vi.fn()
   const user = userEvent.setup()
-  await renderWithProviders(
+  const { unmount } = await renderWithProviders(
     <Harness
+      conversationId={conversationId}
       initialBackground={background}
       initialCanvas={canvas}
       onBackground={onBackground}
       onCanvas={onCanvas}
     />,
   )
-  return { user, onCanvas, onBackground }
+  return { user, onCanvas, onBackground, unmount }
 }
+
+afterEach(() => window.localStorage.clear())
 
 const trigger = () => screen.getByRole('button', { name: /^画面尺寸/ })
 const panel = () => within(screen.getByRole('dialog', { name: '画面设置' }))
@@ -76,7 +88,7 @@ const RANGE_TEXT = '宽高要在 240–4096 之间'
 describe('画面设置 · 画面尺寸', () => {
   it('触发条写现在的比例；六个比例按钮，宽高正好等于哪一种时它按下，都不是时都不按下；点一下改成它', async () => {
     const { user, onCanvas } = await renderHud()
-    expect(trigger()).toHaveAccessibleName('画面尺寸 9:16')
+    expect(trigger()).toHaveAccessibleName('画面尺寸 9:16 · 720P')
     await user.click(trigger())
     expect(
       ratios()
@@ -92,7 +104,7 @@ describe('画面设置 · 画面尺寸', () => {
     expect(pressedIn('画面比例')).toEqual(['21:9'])
     expect(width()).toHaveValue('2520')
     expect(height()).toHaveValue('1080')
-    expect(trigger()).toHaveAccessibleName('画面尺寸 21:9')
+    expect(trigger()).toHaveAccessibleName('画面尺寸 21:9 · 1080P')
   })
 
   it('数字框回车或失焦生效，奇数减 1；改成预设的宽高时那个比例按下', async () => {
@@ -147,6 +159,100 @@ describe('画面设置 · 画面尺寸', () => {
     await user.click(panel().getByRole('button', { name: '互换宽高' }))
     expect(onCanvas).toHaveBeenLastCalledWith({ width: 1920, height: 1080 })
     expect(pressedIn('画面比例')).toEqual(['16:9'])
+  })
+})
+
+describe('画面设置 · 导出分辨率', () => {
+  const tiers = () => within(panel().getByRole('group', { name: '导出分辨率' }))
+  const tierButton = (name: string) => tiers().getByRole('button', { name })
+  const disabledTiers = () =>
+    tiers()
+      .getAllByRole('button')
+      .filter((button) => button.getAttribute('aria-disabled') === 'true')
+      .map((button) => button.textContent)
+
+  it('1080×1920：1080P 亮，480P、720P 能选；选 720P 胶囊写「· 720P」，画面尺寸不变、不改主文件，提示写导出尺寸', async () => {
+    const { user, onCanvas } = await renderHud({ canvas: { width: 1080, height: 1920 } })
+    expect(trigger()).toHaveAccessibleName('画面尺寸 9:16 · 1080P')
+    await user.click(trigger())
+    expect(
+      tiers()
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['480P', '720P', '1080P'])
+    expect(pressedIn('导出分辨率')).toEqual(['1080P'])
+    expect(disabledTiers()).toEqual([])
+
+    await user.click(tierButton('720P'))
+    expect(pressedIn('导出分辨率')).toEqual(['720P'])
+    expect(trigger()).toHaveAccessibleName('画面尺寸 9:16 · 720P')
+    expect(width()).toHaveValue('1080')
+    expect(height()).toHaveValue('1920')
+    expect(onCanvas).not.toHaveBeenCalled()
+
+    await user.keyboard('{Escape}')
+    await user.hover(trigger())
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      /^画面尺寸 1080×1920，导出 720×1280$/,
+    )
+  })
+
+  it('3:4 的 1080×1440：1080P 亮，480P、720P 置灰，点了说明一句、不选上', async () => {
+    const { user } = await renderHud({ canvas: { width: 1080, height: 1440 } })
+    await user.click(trigger())
+    expect(pressedIn('导出分辨率')).toEqual(['1080P'])
+    expect(disabledTiers()).toEqual(['480P', '720P'])
+
+    await user.click(tierButton('720P'))
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(/^当前画面尺寸不支持按 720P 导出$/)
+    expect(pressedIn('导出分辨率')).toEqual(['1080P'])
+  })
+
+  it('1280×800：三档都不亮、都置灰，胶囊在简称后面写宽×高；480×854 只亮 480P，放大的两档置灰', async () => {
+    const { user, unmount } = await renderHud({ canvas: { width: 1280, height: 800 } })
+    expect(trigger()).toHaveAccessibleName('画面尺寸 8:5 · 1280×800')
+    await user.click(trigger())
+    expect(pressedIn('导出分辨率')).toEqual([])
+    expect(disabledTiers()).toEqual(['480P', '720P', '1080P'])
+    unmount()
+
+    const small = await renderHud({ canvas: { width: 480, height: 854 } })
+    await small.user.click(trigger())
+    expect(pressedIn('导出分辨率')).toEqual(['480P'])
+    expect(disabledTiers()).toEqual(['720P', '1080P'])
+  })
+
+  it('简称本身就是宽×高时不重复写', async () => {
+    await renderHud({ canvas: { width: 1234, height: 802 } })
+    expect(trigger()).toHaveAccessibleName('画面尺寸 1234×802')
+  })
+
+  it('换成不能按选的档导出的比例时回到画面档；换回来选的档又亮', async () => {
+    const { user } = await renderHud({ canvas: { width: 1080, height: 1920 } })
+    await user.click(trigger())
+    await user.click(tierButton('720P'))
+
+    await user.click(ratios().getByRole('button', { name: '3:4' }))
+    expect(pressedIn('导出分辨率')).toEqual(['1080P'])
+    expect(trigger()).toHaveAccessibleName('画面尺寸 3:4 · 1080P')
+
+    await user.click(ratios().getByRole('button', { name: '9:16' }))
+    expect(pressedIn('导出分辨率')).toEqual(['720P'])
+  })
+
+  it('选的档按对话记在浏览器里：重新打开还在，别的对话不受影响', async () => {
+    const canvas = { width: 1080, height: 1920 }
+    const { user, unmount } = await renderHud({ canvas })
+    await user.click(trigger())
+    await user.click(tierButton('480P'))
+    unmount()
+
+    const reopened = await renderHud({ canvas })
+    expect(trigger()).toHaveAccessibleName('画面尺寸 9:16 · 480P')
+    reopened.unmount()
+
+    await renderHud({ canvas, conversationId: '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d' })
+    expect(trigger()).toHaveAccessibleName('画面尺寸 9:16 · 1080P')
   })
 })
 

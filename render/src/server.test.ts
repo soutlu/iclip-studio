@@ -95,10 +95,21 @@ describe('渲染服务接口', () => {
     const files = withMain(mainFile([video(), host({ track: 1 })]), [component])
     expect((await post(exportRequest({ files }))).status).toBe(202)
     await flush()
-    expect(renders[0]).toMatchObject({ files, variables: null, vendorDir: VENDOR_DIR })
+    expect(renders[0]).toMatchObject({
+      files,
+      variables: null,
+      resolution: null,
+      vendorDir: VENDOR_DIR,
+    })
     expect(renders[0]?.media).toEqual(
       new Map([[CLIP_URL, 'https://oss.example.com/clip.mp4?sig=1']]),
     )
+  })
+
+  it('带导出分辨率时原样交给渲染', async () => {
+    expect((await post({ ...exportRequest(), resolution: '720p' })).status).toBe(202)
+    await flush()
+    expect(renders[0]).toMatchObject({ resolution: '720p' })
   })
 
   it('原文（locale 是 null 或不带）：工程原样交给渲染，不给变量值，有值表也不读', async () => {
