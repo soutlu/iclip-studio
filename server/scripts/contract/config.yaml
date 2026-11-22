@@ -1,4 +1,5 @@
 # 合同导出（scripts/dump_openapi.py）用的占位配置：各可选段全开，路由才齐；真实配置不进仓库。
+# 地址、名字与功能开关都写在这里，写出一段（或一个字段）即开对应功能；.env 只放密钥的值。
 app:
   name: iclip-studio
 
@@ -10,31 +11,47 @@ security:
   cookie_secure: false
   cors_allow_origins: []
 
+# 写出这一段即挂载 /auth/sso/*。
 sso:
-  # SSO_BASE_URL 为空时不挂载 /auth/sso/*。
   app_name: iclip
+  base_url: https://placeholder.invalid/sso
+  redirect_url: https://placeholder.invalid/auth/sso/callback
+  pms_base_url: https://placeholder.invalid/pms # 可省；写了才在 SSO 登录时从 PMS 取城市、职位与部门
+  root_email: root@placeholder.invalid # 可省；这个邮箱首次 SSO 登录即得 root
+  oauth_name: sso # 可省，缺省 sso
 
+# 写出这一段即开对象存储；.env 里要有 OSS_ACCESS_KEY_ID 与 OSS_ACCESS_KEY_SECRET。
+object_store:
+  bucket: placeholder
+  endpoint: https://placeholder.invalid
+  public_url_base: https://placeholder.invalid/public
+  internal_endpoint: https://placeholder-internal.invalid # 可省；同地域内网读写用，只写 scheme 与 host
+
+# 写出这一段即开生成路由与后台队列；须同时写 object_store 段与 model_groups.default。
 media_generation:
-  # VIDEO_SUBMIT_URL 为空时关闭生成路由与后台队列；启用后须提供生成接口与对象存储凭证。
   video:
+    submit_url: https://placeholder.invalid/video/submit
+    status_base_url: https://placeholder.invalid/video/status
     model: vendor-b-seedance-2-5 # 默认模型，显式指定 vendor-b 前缀以固定供应商
     # 只是允许表。哪个模型能做视频编辑、怎么触发，前端按模型名自己认，这里不声明。
     allowed_models:
       - vendor-b-seedance-2-0
       - vendor-b-seedance-2-5
       - wan3.0-video-prime
-    # 写出这一段并设 VIDEO_ENHANCE_SUBMIT_URL 即开通高清版（超分）；查询地址同出片，key 与 model_id 取自各配置组。
+    # 写出这一段即开通高清版（超分）；查询地址同出片，key 与 model_id 取自各配置组。
     enhance:
+      submit_url: https://placeholder.invalid/video/enhance
       model: video-enhance
       resolutions: [1080p, 720p] # 能提到的档，从高到低；上游只收 720p 与 1080p
       fps: 30 # 目标帧率 15–60；不写就不插帧
   image:
+    api_base: https://placeholder.invalid/image
     env: prod # 网关按调用方标识与这一项一起判这次调用合不合法
     # 两条任务路由拼在每家的地址后面：无参考图打文生图，有参考图打图像编辑。
     text_to_image_task: text-to-image
     image_edit_task: image-edit
     default: nano_banana_pro # 请求省略 model 时用哪家
-    # 键名即落库的 provider 名；route 拼在 IMAGE_API_BASE 后面。
+    # 键名即落库的 provider 名；route 拼在 api_base 后面。
     # concurrency 是这家同时最多挂几个提交，一家一条队列，互不占用。
     models:
       nano_banana_pro:
@@ -92,6 +109,19 @@ iclip_studio: {}
 # 写出这一段即给运行时的 shot_video 插件挂取帧与出图的内部接口；须同时启用媒体生成与对象存储，并在 PATH 上有
 # ffmpeg。出图的重试策略在运行时配置的 plugins.config.shot_video。
 shot_video: {}
+
+# 写出这一段即开产品资料查询（爆款视频按款号降级）；.env 里要有 PRODUCT_CATALOG_DATABASE_URL（只读连接串）。
+product_catalog: {}
+
+final_cut:
+  # 写了即开成片导出：交给这个地址的渲染服务；须同时写 object_store 与 media_generation 段。
+  render_url: https://placeholder.invalid/render
+  # 写了才有 final-cut 预览域名，格式 http(s)://主机[:端口]，不带路径；不写则编辑器预览无法加载。
+  preview_origin: https://preview.placeholder.invalid
+
+# 运行时服务的地址（必写）；访问它的密钥是 .env 里的 RUNTIME_APP_KEY。
+runtime:
+  url: https://placeholder.invalid/runtime
 
 ops:
   log_level: INFO

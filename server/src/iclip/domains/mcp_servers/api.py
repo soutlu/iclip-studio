@@ -207,7 +207,7 @@ def create_mcp_connections_router(
 
         if callback_url is None:
             raise McpCallbackUnconfigured(
-                "没有配置 SSO_REDIRECT_URL，不能连接按用户登录的 MCP 服务"
+                "没有配置 sso.redirect_url，不能连接按用户登录的 MCP 服务"
             )
         started = await runtime.authorize_mcp(
             server_id, McpAuthorizeIn(redirect_uri=callback_url), user=principal.user_id

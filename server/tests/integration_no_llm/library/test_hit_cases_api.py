@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
-from tests.helpers.app import make_client
+from tests.helpers.app import OBJECT_STORE_KEYS, make_client
 from tests.helpers.auth import set_roles_in_db
 from tests.helpers.generation import MemoryObjectStore
 from tests.helpers.hit_cases import (
@@ -25,7 +25,7 @@ from tests.helpers.hit_cases import (
     plant_material,
 )
 from tests.helpers.pg import reset_database
-from tests.helpers.references import STUDIO_ENVS, FakeArk, ark_pipeline, config_with_studio
+from tests.helpers.references import FakeArk, ark_pipeline, config_with_studio
 from tests.helpers.references import plant_user as plant_named_user
 from tests.helpers.runtime_backed import build_backed_app
 from tests.helpers.tagging import tag_id
@@ -46,9 +46,8 @@ async def studio_app(
     monkeypatch: pytest.MonkeyPatch,
     connector: InMemoryConnector,
 ) -> AsyncGenerator[FastAPI]:
-    for name, value in STUDIO_ENVS.items():
+    for name, value in OBJECT_STORE_KEYS.items():
         monkeypatch.setenv(name, value)
-    monkeypatch.delenv("VIDEO_SUBMIT_URL", raising=False)
     engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await reset_database(conn)

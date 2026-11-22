@@ -23,23 +23,16 @@ from iclip.platform.runtime_api.client import RuntimeClient
 from iclip.platform.video_breakdown.model import BREAKDOWN_MODEL, ArkBreakdownModel
 from iclip.platform.video_breakdown.ports import SampledVideo
 from iclip.platform.video_breakdown.service import BreakdownRunner
-from tests.helpers.app import make_runtime_config
-from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media
-
-STUDIO_ENVS = {
-    "OSS_BUCKET": "iclip-test",
-    "OSS_ENDPOINT": "oss-ap-southeast-1.aliyuncs.com",
-    "OSS_ACCESS_KEY_ID": "ak",
-    "OSS_ACCESS_KEY_SECRET": "sk",
-    "OSS_PUBLIC_URL_BASE": "https://cdn.example.test",
-}
+from tests.helpers.app import TEST_OBJECT_STORE, make_runtime_config
+from tests.helpers.generation import MemoryObjectStore, config_with_media
 
 
 def config_with_studio() -> RuntimeConfig:
-    return make_runtime_config().model_copy(update={"iclip_studio": IclipStudioSection()})
+    """开着对象存储与 ``iclip_studio`` 的配置；对象存储的密钥见 ``OBJECT_STORE_KEYS``。"""
 
-
-STUDIO_MEDIA_ENVS = STUDIO_ENVS | MEDIA_ENVS
+    return make_runtime_config(object_store=TEST_OBJECT_STORE).model_copy(
+        update={"iclip_studio": IclipStudioSection()}
+    )
 
 
 def config_with_studio_and_media() -> RuntimeConfig:
@@ -310,8 +303,6 @@ async def reference_row(engine: AsyncEngine, reference_id: uuid.UUID) -> dict[st
 __all__ = [
     "DEFAULT_TAGS",
     "DOCUMENT",
-    "STUDIO_ENVS",
-    "STUDIO_MEDIA_ENVS",
     "VIDEO",
     "FakeArk",
     "FakeSampler",

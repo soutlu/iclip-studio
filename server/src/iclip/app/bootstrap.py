@@ -58,9 +58,9 @@ from iclip.app.shot_media import CutRecordsAdapter, FrameBoardsAdapter, GridCuts
 from iclip.app.whole_film_exports import WholeFilmExportAdapter, final_cut_reader
 from iclip.common.errors import NotFound
 from iclip.config import (
-    ObjectStoreEnv,
     ResolvedMediaGeneration,
     ResolvedMediaModelGroup,
+    ResolvedObjectStore,
     ResolvedProductCatalog,
     ResolvedQwenService,
     RuntimeConfig,
@@ -177,7 +177,7 @@ _logger = structlog.stdlib.get_logger(__name__)
 
 
 def _object_store(
-    settings: ObjectStoreEnv | None,
+    settings: ResolvedObjectStore | None,
     injected: PublicBucket | None,
 ) -> tuple[
     PublicBucket | None, Callable[[str], str], Callable[[str], bool], ServerUploadSigner | None
@@ -192,7 +192,9 @@ def _object_store(
         access_key_id=settings.access_key_id,
         access_key_secret=settings.access_key_secret,
         public_url_base=validate_public_url_base(settings.public_url_base),
-        internal_endpoint=validate_internal_endpoint(settings.internal_endpoint),
+        internal_endpoint=None
+        if settings.internal_endpoint is None
+        else validate_internal_endpoint(settings.internal_endpoint),
     )
     store = OssObjectStore(oss)
     return store, oss_fetch_url(oss), oss_owns_url(oss), store

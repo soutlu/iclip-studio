@@ -37,10 +37,8 @@ from iclip.app import bootstrap
 from iclip.app.bootstrap import VIDEO_APP_ID
 from iclip.app.runtime_internal import RUNTIME_INTERNAL_PREFIX
 from iclip.config import RuntimeConfig
-from tests.helpers.app import TEST_CREDENTIAL_KEY
+from tests.helpers.app import RUNTIME_SERVICE_URL, TEST_CREDENTIAL_KEY
 from tests.helpers.media_probe import ScriptedProbe
-
-RUNTIME_URL = "http://runtime.test"
 
 RUNTIME_APP_KEY = "runtime-video-app-key-0123456789-abcdef"
 
@@ -195,7 +193,7 @@ def agent_runtime_of(app: FastAPI) -> AgentRuntime:
 async def runtime_admin(app: FastAPI, *, end_user: str) -> AsyncGenerator[httpx.AsyncClient]:
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app.state.runtime_service),
-        base_url=f"{RUNTIME_URL}/v1/admin",
+        base_url=f"{RUNTIME_SERVICE_URL}/v1/admin",
         headers={"Authorization": f"Bearer {RUNTIME_APP_KEY}", "X-End-User": end_user},
     ) as client:
         yield client
@@ -204,7 +202,6 @@ async def runtime_admin(app: FastAPI, *, end_user: str) -> AsyncGenerator[httpx.
 __all__ = [
     "RUNTIME_APP_KEY",
     "RUNTIME_INTERNAL_TOKEN",
-    "RUNTIME_URL",
     "SERVER_URL",
     "LateASGITransport",
     "OneUpgradeAtATime",

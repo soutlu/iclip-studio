@@ -195,7 +195,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 ### final-cut 工程与预览域名
 
-由于 `final-cut` 工程允许包含不可信脚本，浏览器预览固定在独立的预览子域名（`FINAL_CUT_PREVIEW_ORIGIN`，见 [deploy.md](../docs/deploy.md#本地启动) 与 [ADR-0008](../docs/adr/0008-final-cut-workspace-project.md)）中运行；预览域名无法读取主应用的登录 Cookie，完全凭限时签名令牌拉取工程文件：
+由于 `final-cut` 工程允许包含不可信脚本，浏览器预览固定在独立的预览子域名（后端配置 `final_cut.preview_origin`，见 [deploy.md](../docs/deploy.md#本地启动) 与 [ADR-0008](../docs/adr/0008-final-cut-workspace-project.md)）中运行；预览域名无法读取主应用的登录 Cookie，完全凭限时签名令牌拉取工程文件：
 - **按主机名严格隔离**：后端在路由前按请求 `Host` 切分域名。`Host` 为预览域名时仅开放下方两个预览读取接口，其余路径（含登录）一律返回 `404` 且拒绝 WebSocket 握手；`Host` 为其他主机或后端未配置预览域名时，预览接口一律返回 `404`。
 - **签发与续期预览令牌** `POST /conversations/{id}/final-cut/preview`（应用域名，登录态）：可见范围与读取工作区文件一致（治理者亦可签发，不可见返回 `404`；未配置预览域名或缺少合法 `Origin` 请求头返回 `422`；来源未放行先返回 `403`）。返回 1 小时有效的无状态签名令牌 `{ origin, token, expiresAt }`（签入对话属主、对话 ID、过期时间与请求 `Origin`，到期前不可吊销）。编辑器每 50 分钟续取新令牌更新预览文档的 `<base>`，不重载预览页。
 - **预览读取接口**（预览域名，免登录 Cookie，令牌无效或过期返回 `403`）：
@@ -423,7 +423,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 - **查询连接状态** `GET /mcp-connections`：返回已启用的 `per_user` 服务及当前用户的连接状态 `state`（`connected | invalid | none`）。不传参数返回全部；传入以下任一参数（互斥，混传返回 `422`）时，仅返回该目标及其子 Agent 当前版本实际向模型暴露了工具的服务（全关或子 Agent 仅含审批工具的不计）：
   - `conversationId`：按已有对话（或本人仍具 `agent:manage` 的测试预览）锁定的版本计算；仅限本人可发消息的未删除对话，他人只读对话亦返回 `404`；版本无法装配返回 `409 agent_unavailable`。
   - `agentId`（可选配 `draft=true`，需 `agent:manage`，否则 `403`）：按该 Agent 当前版本或草稿计算（不存在返回 `404`）。
-- **发起与完成授权**：`POST /mcp-connections/{serverId}/authorize` 返回 5 分钟有效的 `{ authorizationUrl }`（回调地址固定由后端按 `SSO_REDIRECT_URL` 源拼出 `/mcp/callback`）；授权服务器回调前端 `/mcp/callback` 后，前端将 `state`、`code`（及可选 `iss`）原样提交 `POST /mcp-connections/complete`，返回 `{ serverId, name, account }` 并覆盖旧连接。
+- **发起与完成授权**：`POST /mcp-connections/{serverId}/authorize` 返回 5 分钟有效的 `{ authorizationUrl }`（回调地址固定由后端按配置 `sso.redirect_url` 的源拼出 `/mcp/callback`）；授权服务器回调前端 `/mcp/callback` 后，前端将 `state`、`code`（及可选 `iss`）原样提交 `POST /mcp-connections/complete`，返回 `{ serverId, name, account }` 并覆盖旧连接。
 - **断开连接** `DELETE /mcp-connections/{serverId}`：幂等返回 `204`。
 - **OAuth 与连接错误码（HTTP `409`，按 `code` 区分）**：
 

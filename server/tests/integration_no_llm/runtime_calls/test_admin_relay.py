@@ -6,8 +6,9 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
+from tests.helpers.app import RUNTIME_SERVICE_URL
 from tests.helpers.auth import register_and_login, set_roles_in_db
-from tests.helpers.runtime_backed import RUNTIME_APP_KEY, RUNTIME_URL
+from tests.helpers.runtime_backed import RUNTIME_APP_KEY
 
 
 @pytest.fixture
@@ -21,7 +22,7 @@ async def root(client: httpx.AsyncClient, migrated_pg: str) -> str:
 async def direct(app: FastAPI, root: str) -> AsyncGenerator[httpx.AsyncClient]:
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app.state.runtime_service),
-        base_url=f"{RUNTIME_URL}/v1/admin",
+        base_url=f"{RUNTIME_SERVICE_URL}/v1/admin",
         headers={"Authorization": f"Bearer {RUNTIME_APP_KEY}", "X-End-User": root},
     ) as client:
         yield client

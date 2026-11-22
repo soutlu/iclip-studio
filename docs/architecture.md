@@ -53,6 +53,7 @@
 ### 后端的配置与装配
 
 - 服务启动时通过 `--config`（或环境变量 `CONFIG_FILE`）读取 `config.yaml`，结合环境变量由 `resolve_settings()` 一次性完成校验；业务模块内部不再直接读取环境变量。
+- **`config.yaml` 与环境变量的分工**：地址、名字与功能开关都写在 `config.yaml`，功能开不开只看 `config.yaml` 里有没有写对应的段或字段；环境变量（`.env`）只放密钥的值。只有一把的密钥变量名固定在[配置模型](../server/src/iclip/config/models.py)里，配置组的 key 由 `model_groups` 的 `*_api_key_env` 指名。
 - **启动期自动探测硬件编码器（[platform/media/codec.py](../server/src/iclip/platform/media/codec.py)）**：只要开启了需要本地处理视频的功能（抽帧出图、视频剪辑合成、参考视频拆解），后端在启动时自动按 `Apple VideoToolbox → NVIDIA NVENC → 软件 libx264` 顺序实际试编一小段视频，选出可用的最快编码器注入各模块；未手动指定并发数时，硬件加速默认并发为 4，纯软件编码默认为 2。
 
 ### 客户端库
@@ -63,7 +64,7 @@
 
 ### 调运行时
 
-后端在组合根维护全局 `RuntimeClient`（凭 `RUNTIME_URL` 和 `RUNTIME_APP_KEY` 标识为应用 `video`）：
+后端在组合根维护全局 `RuntimeClient`（凭 `config.yaml` 的 `runtime.url` 和密钥 `RUNTIME_APP_KEY` 标识为应用 `video`）：
 - **转发管理后台接口**：技能库、模型供应商、MCP 服务与 Agent 配置四组路由验权后，由 `platform/runtime_admin.py` 转发至运行时 `/v1/admin`；对含 `createdBy` / `updatedBy` 的响应，后端批量查询用户表补齐显示名后返回前端。
 - **对话与工作区操作**：通过 `app/runtime_ports.py` 和 `app/runtime_workspace.py` 调用会话与文件接口，请求头 `X-End-User` 传对话所属用户 ID。新建对话严格遵守**「先在运行时建好会话，再在后端落对话记录」**的顺序，防止产生无底层会话的空壳对话。
 - **管理测试预览**：后端在 `iclip.agent_previews` 表记录每位管理员在各 Agent 下的当前预览会话 ID，并在 `ConversationService` 集中验权（限创建者本人且仍持 `agent:manage`）。预览中调用工具生成的图片自动清空业务对话归属，不污染正式列表。
@@ -100,7 +101,7 @@
 ### 成片渲染服务
 
 - **工程透传与沙箱边界**：编辑器直接读写工作区 `final-cut/` 目录，后端不解析或清洗工程脚本，仅按签名令牌向预览域名提供文件，并在导出时将工程原样交给渲染服务（[ADR-0008](adr/0008-final-cut-workspace-project.md)）。
-- **后端排队与调度（[app/whole_film_exports.py](../server/src/iclip/app/whole_film_exports.py)、[generation/render.py](../server/src/iclip/domains/generation/render.py)）**：发起导出时，后端提取主文件素材地址匹配血缘来源（`<video>` 匹配生成记录；`<audio>` 依次匹配本对话含分叉继承的生成记录、本对话含继承的上传、参考音频库未移除记录）创建 `whole_film` 生成任务入队。队列执行时才通过组合根回调读取实时 `final-cut/` 全目录，连同素材下载地址映射与预签名 OSS 上传地址经内网 HTTP（`FINAL_CUT_RENDER_URL`）提交渲染服务并轮询进度（总超时与签名有效期均为 6 小时）。
+- **后端排队与调度（[app/whole_film_exports.py](../server/src/iclip/app/whole_film_exports.py)、[generation/render.py](../server/src/iclip/domains/generation/render.py)）**：发起导出时，后端提取主文件素材地址匹配血缘来源（`<video>` 匹配生成记录；`<audio>` 依次匹配本对话含分叉继承的生成记录、本对话含继承的上传、参考音频库未移除记录）创建 `whole_film` 生成任务入队。队列执行时才通过组合根回调读取实时 `final-cut/` 全目录，连同素材下载地址映射与预签名 OSS 上传地址经内网 HTTP（`final_cut.render_url`）提交渲染服务并轮询进度（总超时与签名有效期均为 6 小时）。
 - **独立 Node 渲染服务（[render/](../render/package.json)）**：运行于内网（无鉴权），只读挂载共享组件库目录（`RENDER_REGISTRY_ROOT`）：
   1. **入队前校验**：`POST /exports` 仅接收 `Content-Type: application/json`（其余返回 `415` 触发浏览器跨源预检拦截，防止渲染页内脚本访问回环端口伪造导出请求）；校验工程路径规范、主文件存在性、多语言值表合法性（复用前端 [composition/](../web/src/features/storyboard/final-cut/composition/film.ts) 的 `localizedHostValues` 与 `localizedVoices` 生成目标语言主文件）及素材域名白名单（`RENDER_ALLOWED_MEDIA_HOSTS`），不合规返回 `400`。
   2. **单任务渲染流水线**：内存队列先进先出执行——按请求里的导出分辨率档位和主文件根上的画面宽高求渲染器预设（复用前端 [export-resolution.ts](../web/src/features/storyboard/final-cut/composition/export-resolution.ts) 的 `tierOutput`，判断交给导出库；画面导不出这一档报 `resolution-unsupported`）→ 写出临时工程并拷入 `vendor/` 公共目录 → 扫描未声明 `@font-face` 的字体族（复用 [font-families.ts](../web/src/features/storyboard/final-cut/composition/font-families.ts)，缺失即报 `font-missing` 列出字体名，防止渲染器外联拉取或静默替换字体）→ 调用 `@hyperframes/core/lint` 的 `lintProject`（`studio` 规则）检查工程（有 error 报 `lint-failed`，仅 warning 记日志放行）→ 下载目标语言实际引用的素材并替换为本地路径 → 启动无头 Chrome 按 30 fps 渲染 MP4（选了和画面不同的档位时把预设交给渲染器，按预设尺寸直接出片，画面本身的宽高不变）并上传 OSS，完成后清理临时目录。

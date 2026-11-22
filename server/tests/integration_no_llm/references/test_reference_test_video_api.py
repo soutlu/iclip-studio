@@ -17,11 +17,10 @@ from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.app import make_client
 from tests.helpers.auth import set_roles_in_db
-from tests.helpers.generation import MemoryObjectStore
+from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore
 from tests.helpers.pg import connected, reset_database
 from tests.helpers.references import (
     DOCUMENT,
-    STUDIO_MEDIA_ENVS,
     FakeArk,
     ark_pipeline,
     config_with_studio_and_media,
@@ -73,7 +72,7 @@ FULL = """\
 async def media_app(
     base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch
 ) -> AsyncGenerator[FastAPI]:
-    for name, value in STUDIO_MEDIA_ENVS.items():
+    for name, value in MEDIA_ENVS.items():
         monkeypatch.setenv(name, value)
     engine = build_engine(migrated_pg)
     async with engine.begin() as conn:

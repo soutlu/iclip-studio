@@ -355,7 +355,7 @@ async def test_find_object_refuses_an_ambiguous_prefix() -> None:
 @pytest.mark.parametrize("bad_base", ["", "cdn.test", "ftp://cdn.test", "   "])
 def test_public_url_base_must_be_http(bad_base: str) -> None:
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"object_store\.public_url_base"):
         validate_public_url_base(bad_base)
 
 
@@ -373,7 +373,7 @@ INTERNAL = replace(SETTINGS, internal_endpoint="https://oss-cn-shenzhen-internal
     ],
 )
 def test_an_internal_endpoint_must_be_a_bare_http_origin(bad: str) -> None:
-    with pytest.raises(ValueError, match="OSS_INTERNAL_ENDPOINT"):
+    with pytest.raises(ValueError, match=r"object_store\.internal_endpoint"):
         validate_internal_endpoint(bad)
 
 

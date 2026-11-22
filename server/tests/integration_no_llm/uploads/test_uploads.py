@@ -20,20 +20,17 @@ from iclip.domains.uploads.models import MediaUpload
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
 from tests.helpers.agents import CONVERSABLE_SEEDS, seed_agents
-from tests.helpers.app import make_client, make_runtime_config
+from tests.helpers.app import (
+    OBJECT_STORE_KEYS,
+    TEST_OBJECT_STORE,
+    make_client,
+    make_runtime_config,
+)
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
 from tests.helpers.generation import MEDIA_ENVS, MemoryObjectStore, config_with_media, make_music
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected
 from tests.helpers.runtime_backed import build_backed_app, config_services_of
-
-OSS_ENVS = {
-    "OSS_BUCKET": "iclip-test",
-    "OSS_ENDPOINT": "oss-ap-southeast-1.aliyuncs.com",
-    "OSS_ACCESS_KEY_ID": "ak",
-    "OSS_ACCESS_KEY_SECRET": "sk",
-    "OSS_PUBLIC_URL_BASE": "https://cdn.example.test",
-}
 
 
 @pytest.fixture
@@ -48,10 +45,10 @@ async def uploads_app(
     monkeypatch: pytest.MonkeyPatch,
     bucket: MemoryObjectStore,
 ) -> FastAPI:
-    for name, value in OSS_ENVS.items():
+    for name, value in OBJECT_STORE_KEYS.items():
         monkeypatch.setenv(name, value)
     built = build_backed_app(
-        make_runtime_config(),
+        make_runtime_config(object_store=TEST_OBJECT_STORE),
         engine=engine,
         object_store=bucket,
         credential_probe=KeyCheckingProbe({GOOD_KEY}),

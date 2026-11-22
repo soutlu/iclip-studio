@@ -13,20 +13,24 @@
   ```
 
 ### 2. 配置环境变量（`.env`）与配置文件（`server/configs/`）
-- 在仓库根目录创建 `.env` 文件（所有配置项说明见[配置模型](../server/src/iclip/config/models.py)与[后端的配置与装配](architecture.md#后端的配置与装配)，缺少必填项时服务启动会直接报错并列出缺失的变量名）：
+- 在仓库根目录创建 `.env` 文件，只放密钥的值（与 `config.yaml` 的分工见[后端的配置与装配](architecture.md#后端的配置与装配)；缺少必填项时服务启动会直接报错并列出缺失的变量名）：
 
   | 环境变量名 | 是否必填 | 用途与填写说明 |
   |---|---|---|
   | `DATABASE_URL` | 必填 | 本地开发数据库连接串（例如 `postgresql+asyncpg://...`） |
+  | `AUTH_SECRET` | 必填 | 登录会话签名密钥（不少于 32 个字符） |
   | `CREDENTIAL_ENCRYPTION_KEYS` | 必填 | 运行时用来加密模型 API Key 和 MCP 请求头的 Fernet 密钥。生成命令：<br>`uv run --project runtime python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
-  | `RUNTIME_URL` | 必填 | 运行时服务地址，本地开发填 `http://localhost:7790`（见[调运行时](architecture.md#调运行时)） |
   | `RUNTIME_APP_KEY` | 必填 | 视频后端访问运行时的密钥（不少于 32 个字符，与 `runtime.yaml` 中 `apps.video.key_env` 对应） |
   | `RUNTIME_INTERNAL_TOKEN` | 必填 | 运行时回调后端、以及视频插件调用后端内部接口共用的令牌（不少于 32 个字符） |
-  | `FINAL_CUT_RENDER_URL` | 可选 | 本地需要调试成片导出时，设为 `http://localhost:8080` |
-  | `FINAL_CUT_PREVIEW_ORIGIN` | 可选 | `final-cut` 预览沙箱源地址，格式为 `http(s)://主机[:端口]`（不带路径，规则见 [conventions「预览域名」](../contract/conventions.md#final-cut-工程与预览域名)，未配置则编辑器预览无法加载）。本地开发填与主应用不同的另一回环主机名（同端口）：如用 `http://localhost:3013` 打开应用则填 `http://127.0.0.1:3013`，反之亦然 |
+  | `OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET` | 写了 `object_store` 段时必填 | 对象存储凭证 |
+  | `PRODUCT_CATALOG_DATABASE_URL` | 写了 `product_catalog` 段时必填 | 产品资料库只读连接串 |
+  | 各配置组的媒体 key | 开启媒体生成时必填 | 变量名由 `config.yaml` 的 `model_groups` 指定，见[配置组](#配置组) |
 
 - 准备两份本地配置文件（均不入 Git 仓库，修改后需重启服务）：
-  1. `server/configs/config.yaml`：视频后端运行配置。
+  1. `server/configs/config.yaml`：视频后端运行配置。写法照占位配置 [server/scripts/contract/config.yaml](../server/scripts/contract/config.yaml)（各可选段全开的完整样例）与[配置模型](../server/src/iclip/config/models.py)，用不到的功能删掉对应段或字段即可。本地开发时：
+     - `runtime.url` 填 `http://localhost:7790`（见[调运行时](architecture.md#调运行时)）；
+     - 需要调试成片导出时写 `final_cut.render_url: http://localhost:8080`；
+     - `final_cut.preview_origin` 是 `final-cut` 预览沙箱源地址，格式为 `http(s)://主机[:端口]`（不带路径，规则见 [conventions「预览域名」](../contract/conventions.md#final-cut-工程与预览域名)，不写则编辑器预览无法加载）。本地填与主应用不同的另一回环主机名（同端口）：如用 `http://localhost:3013` 打开应用则填 `http://127.0.0.1:3013`，反之亦然。
   2. `server/configs/runtime.yaml`：从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制一份，将里面的 `http://server:7788` 全部替换成 `http://localhost:7788`，并按需开启要用到的插件配置段。
 
 ### 3. 执行数据库迁移并启动后端服务
@@ -70,15 +74,17 @@ CREATE DATABASE iclip OWNER iclip;
 ### 3. 准备服务器部署目录
 在服务器上新建部署目录，放入以下文件与子目录：
 - `compose.yaml` 与 `upgrade.sh`：从仓库 `deploy/compose.yaml` 与 [deploy/upgrade.sh](../deploy/upgrade.sh) 复制，保留 `upgrade.sh` 可执行权限供[升级](#升级)使用。
-- `.env`：配置镜像版本号 `IMAGE_TAG` 与 `RUNTIME_IMAGE_TAG`（见[升级](#升级)）、对外端口、`DATABASE_URL`、OSS 凭证以及运行时所需的四个核心变量（`RUNTIME_URL=http://runtime:7790`、`RUNTIME_APP_KEY`、`RUNTIME_INTERNAL_TOKEN`、`CREDENTIAL_ENCRYPTION_KEYS`）。
+- `.env`：只放 compose 用的变量与密钥的值——镜像版本号 `IMAGE_TAG` 与 `RUNTIME_IMAGE_TAG`（见[升级](#升级)）、对外端口、`RENDER_ALLOWED_MEDIA_HOSTS`（开启成片导出时填本系统 OSS 域名和上游视频生成域名，多个域名用逗号分隔）、`DATABASE_URL`、`AUTH_SECRET`、OSS 凭证、各配置组的媒体 key（见[配置组](#配置组)），以及运行时所需的 `RUNTIME_APP_KEY`、`RUNTIME_INTERNAL_TOKEN`、`CREDENTIAL_ENCRYPTION_KEYS`。
   - **重要提醒**：请将 `CREDENTIAL_ENCRYPTION_KEYS` 与数据库备份分开妥善保管；一旦丢失，数据库里已保存的所有模型 API Key 和 MCP 配置都将无法解密，只能重新录入。
-  - 若服务器是与 OSS 同地域的阿里云 ECS，建议配置 `OSS_INTERNAL_ENDPOINT` 走内网高速读写；
-  - 开启视频超分（高清版）：配置 `VIDEO_ENHANCE_SUBMIT_URL` 及 `config.yaml` 的 `media_generation.video.enhance`；
-  - 媒体生成各项服务的 API Key 与视频网关 `model_id` 按组写在 `config.yaml` 的 `model_groups` 段（`.env` 里只放 key 的值），开启媒体生成必须写 `default` 组：见[配置组](#配置组)；
-  - 按需开启千问音频能力（三项独立开关，写出 `config.yaml` 子段即启用，各组的 key 见[配置组](#配置组)）：素材片字幕识别写 `media_generation.subtitle`；生成背景音乐写 `media_generation.music`；`final-cut` 配音与旁白写 `media_generation.speech`（`url` 填 `https://maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer`，`concurrency` 与 `timeout_seconds` 可省）；
-  - 开启成片导出：配置 `FINAL_CUT_RENDER_URL=http://render:8080` 及 `RENDER_ALLOWED_MEDIA_HOSTS`（填入本系统 OSS 域名和上游视频生成域名，多个域名用逗号分隔）；
-  - 开启 `final-cut` 预览沙箱：配置 `FINAL_CUT_PREVIEW_ORIGIN=https://<预览子域名>`（未配置则编辑器预览无法加载）。预览子域名的 DNS 解析与 HTTPS 证书须与主应用域名一样指向 `web` 容器，由同一套 Nginx 托管前端页面并将 `/api/` 原样保留 `Host` 转发给后端。
-- `configs/config.yaml` 与 `configs/runtime.yaml`：从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制生成 `runtime.yaml`，回调地址保持 `http://server:7788`（插件启用条件见[内部接口与视频插件包](architecture.md#内部接口与视频插件包)，接入其他系统见运行时项目的 `docs/apps.md`）。两份配置的 `ops.log_format` 都设为 `json`：默认的 Console 格式会省略例行的访问日志（见[日志](architecture.md#4-日志)）。
+- `configs/config.yaml`：写法照 [server/scripts/contract/config.yaml](../server/scripts/contract/config.yaml) 与[配置模型](../server/src/iclip/config/models.py)。部署时注意：
+  - `runtime.url` 填 `http://runtime:7790`；
+  - 若服务器是与 OSS 同地域的阿里云 ECS，建议写 `object_store.internal_endpoint` 走内网高速读写；
+  - 媒体生成各项服务的 key 与视频网关 `model_id` 按组写在 `model_groups` 段，开启媒体生成必须写 `default` 组：见[配置组](#配置组)；
+  - 按需开启高清版（写 `media_generation.video.enhance` 段）与千问音频能力（三项独立开关，写出子段即启用）：素材片字幕识别写 `media_generation.subtitle`；生成背景音乐写 `media_generation.music`；`final-cut` 配音与旁白写 `media_generation.speech`（`url` 填 `https://maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer`，`concurrency` 与 `timeout_seconds` 可省）；
+  - 开启成片导出：写 `final_cut.render_url: http://render:8080`，`.env` 里同时配好 `RENDER_ALLOWED_MEDIA_HOSTS`；
+  - 开启 `final-cut` 预览沙箱：写 `final_cut.preview_origin: https://<预览子域名>`（不写则编辑器预览无法加载）。预览子域名的 DNS 解析与 HTTPS 证书须与主应用域名一样指向 `web` 容器，由同一套 Nginx 托管前端页面并将 `/api/` 原样保留 `Host` 转发给后端。
+- `configs/runtime.yaml`：从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制生成，回调地址保持 `http://server:7788`（插件启用条件见[内部接口与视频插件包](architecture.md#内部接口与视频插件包)，接入其他系统见运行时项目的 `docs/apps.md`）。
+- 两份配置的 `ops.log_format` 都设为 `json`：默认的 Console 格式会省略例行的访问日志（见[日志](architecture.md#4-日志)）。
 - `components/`：外置组件库挂载目录（镜像内不包含组件库，按下方[发布组件库](#发布组件库)上传）。
 
 ### 4. 执行数据库迁移并启动容器
@@ -93,7 +99,7 @@ curl http://localhost/api/healthz
 运行时的迁移命令须加 `--no-deps`（`compose.yaml` 中 `runtime` 依赖 `server` 健康，不加会提前拉起后端）。
 
 ### 5. 设置首个 root 与管理员账号
-- **方式一（SSO 自动授权）**：在 `.env` 中设置 `ROOT_EMAIL=<管理员邮箱>`，该邮箱首次通过 SSO 登录时自动获得 `root` 角色。
+- **方式一（SSO 自动授权）**：在 `config.yaml` 的 `sso` 段写 `root_email: <管理员邮箱>`，该邮箱首次通过 SSO 登录时自动获得 `root` 角色。
 - **方式二（命令行手动授权）**：
   ```bash
   # 授予最高管理员（包含 Agent 与模型供应商配置权限）：
@@ -200,7 +206,8 @@ scripts/publish-components.sh <私有组件库本地路径> <本机输出目录>
 ### 修改线上配置
 
 - **修改模型、Agent、技能库与 MCP 服务**：直接在网页后台修改并保存/发布，下一次对话运行自动加载最新配置，无需重启容器（已有对话锁定的 Agent 版本不受影响）。
-- **修改 `configs/*.yaml` 或 `.env`**：必须执行 `docker compose up -d` 重建容器才能生效（单纯 `docker compose restart` 不会重新读取 `.env`）。
+- **只修改 `configs/*.yaml`**：执行 `docker compose restart server`（改的是 `runtime.yaml` 则 `restart runtime`）。配置文件是挂载进容器的，`docker compose up -d` 认为容器没变、不会重启它，进程读不到新内容。
+- **修改 `.env`**（无论是否同时改了 `configs/*.yaml`）：执行 `docker compose up -d` 重建容器才能生效（`docker compose restart` 不会重新读取 `.env`）。
 
 ### 配置组
 

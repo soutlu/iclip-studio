@@ -35,8 +35,8 @@ from iclip.platform.runtime_api.app_wire import (
     UsageStatsOut,
 )
 from iclip.platform.runtime_api.client import RuntimeClient
-from tests.helpers.app import make_runtime_config
-from tests.helpers.runtime_backed import RUNTIME_APP_KEY, RUNTIME_URL, runtime_settings
+from tests.helpers.app import RUNTIME_SERVICE_URL, make_runtime_config
+from tests.helpers.runtime_backed import RUNTIME_APP_KEY, runtime_settings
 
 EVER: Final = datetime(2000, 1, 1, tzinfo=UTC)
 
@@ -76,7 +76,7 @@ async def audit_runtime_client(engine: AsyncEngine) -> AsyncGenerator[CountingRu
         runtime_settings(make_runtime_config(), engine, hooks=False), plugins={}, engine=engine
     )
     async with CountingRuntimeClient(
-        RUNTIME_URL, RUNTIME_APP_KEY, transport=httpx.ASGITransport(app=runtime)
+        RUNTIME_SERVICE_URL, RUNTIME_APP_KEY, transport=httpx.ASGITransport(app=runtime)
     ) as client:
         yield client
 

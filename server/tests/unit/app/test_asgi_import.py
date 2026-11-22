@@ -15,7 +15,7 @@ MINIMAL_CONFIG = """\
 app: {name: iclip-test}
 db: {schema: iclip}
 security: {}
-sso: {app_name: iclip}
+runtime: {url: "https://runtime.example.test"}
 """
 
 
@@ -25,7 +25,6 @@ def _run_after_importing_the_app(tmp_path: Path, code: str) -> subprocess.Comple
     env = {
         **{name: value for name, value in os.environ.items() if name not in PLACEHOLDER_ENV},
         "AUTH_SECRET": PLACEHOLDER_ENV["AUTH_SECRET"],
-        "RUNTIME_URL": PLACEHOLDER_ENV["RUNTIME_URL"],
         "RUNTIME_APP_KEY": PLACEHOLDER_ENV["RUNTIME_APP_KEY"],
         "RUNTIME_INTERNAL_TOKEN": PLACEHOLDER_ENV["RUNTIME_INTERNAL_TOKEN"],
         "DATABASE_URL": UNREACHABLE_DATABASE,

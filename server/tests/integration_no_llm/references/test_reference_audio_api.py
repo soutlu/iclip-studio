@@ -11,10 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob, GenerationOutput
-from tests.helpers.app import make_client, make_runtime_config
+from tests.helpers.app import (
+    OBJECT_STORE_KEYS,
+    TEST_OBJECT_STORE,
+    make_client,
+    make_runtime_config,
+)
 from tests.helpers.auth import set_roles_in_db
 from tests.helpers.generation import MemoryObjectStore, make_job, make_music, video_request
-from tests.helpers.references import STUDIO_ENVS, FixedDurations, upload_audio
+from tests.helpers.references import FixedDurations, upload_audio
 from tests.helpers.runtime_backed import build_backed_app
 
 PASSWORD = "password-123"
@@ -40,10 +45,13 @@ async def http(
     bucket: MemoryObjectStore,
     durations: FixedDurations,
 ) -> AsyncGenerator[httpx.AsyncClient]:
-    for name, value in STUDIO_ENVS.items():
+    for name, value in OBJECT_STORE_KEYS.items():
         monkeypatch.setenv(name, value)
     app: FastAPI = build_backed_app(
-        make_runtime_config(), engine=engine, object_store=bucket, reference_duration=durations
+        make_runtime_config(object_store=TEST_OBJECT_STORE),
+        engine=engine,
+        object_store=bucket,
+        reference_duration=durations,
     )
     async with make_client(app) as client:
         yield client

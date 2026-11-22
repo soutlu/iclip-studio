@@ -12,24 +12,32 @@ from iclip.config import (
 
 DB_URL = "postgresql+asyncpg://x"
 
+MOVED_TO_CONFIG = {
+    "SSO_BASE_URL": "sso.base_url",
+    "SSO_REDIRECT_URL": "sso.redirect_url",
+    "PMS_BASE_URL": "sso.pms_base_url",
+    "ROOT_EMAIL": "sso.root_email",
+    "SSO_OAUTH_NAME": "sso.oauth_name",
+    "OSS_BUCKET": "object_store.bucket",
+    "OSS_ENDPOINT": "object_store.endpoint",
+    "OSS_PUBLIC_URL_BASE": "object_store.public_url_base",
+    "OSS_INTERNAL_ENDPOINT": "object_store.internal_endpoint",
+    "VIDEO_SUBMIT_URL": "media_generation.video.submit_url",
+    "VIDEO_STATUS_BASE_URL": "media_generation.video.status_base_url",
+    "VIDEO_ENHANCE_SUBMIT_URL": "media_generation.video.enhance.submit_url",
+    "IMAGE_API_BASE": "media_generation.image.api_base",
+    "FINAL_CUT_RENDER_URL": "final_cut.render_url",
+    "FINAL_CUT_PREVIEW_ORIGIN": "final_cut.preview_origin",
+    "RUNTIME_URL": "runtime.url",
+}
+
 MANIFEST = (
+    *MOVED_TO_CONFIG,
     "DATABASE_URL",
     "AUTH_SECRET",
-    "SSO_BASE_URL",
-    "SSO_REDIRECT_URL",
-    "PMS_BASE_URL",
-    "ROOT_EMAIL",
-    "VIDEO_SUBMIT_URL",
-    "VIDEO_ENHANCE_SUBMIT_URL",
-    "VIDEO_STATUS_BASE_URL",
     "VIDEO_API_KEY",
-    "IMAGE_API_BASE",
-    "OSS_BUCKET",
-    "OSS_ENDPOINT",
     "OSS_ACCESS_KEY_ID",
     "OSS_ACCESS_KEY_SECRET",
-    "OSS_PUBLIC_URL_BASE",
-    "OSS_INTERNAL_ENDPOINT",
     "PRODUCT_CATALOG_DATABASE_URL",
     "QWEN_SUBTITLE_API_KEY",
     "QWEN_MUSIC_API_KEY",
@@ -43,10 +51,7 @@ MANIFEST = (
     "QWEN_MUSIC_API_KEY_MKT",
     "QWEN_SPEECH_API_KEY_MKT",
     "VIDEO_API_KEY_ECOM",
-    "FINAL_CUT_RENDER_URL",
-    "FINAL_CUT_PREVIEW_ORIGIN",
     "RUNTIME_INTERNAL_TOKEN",
-    "RUNTIME_URL",
     "RUNTIME_APP_KEY",
 )
 
@@ -61,7 +66,7 @@ VALID = """
 app: {name: t}
 db: {schema: iclip}
 security: {}
-sso: {app_name: iclip}
+runtime: {url: "http://runtime:7790"}
 ops: {log_level: INFO}
 """
 
@@ -72,18 +77,16 @@ def write(tmp_path: Path, content: str) -> Path:
     return path
 
 
+RUNTIME_KEY = "runtime-app-key-for-config-tests-0123"
+INTERNAL_TOKEN = "runtime-internal-token-for-config-0123"
+
+
 def _core(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setenv("DATABASE_URL", DB_URL)
     monkeypatch.setenv("AUTH_SECRET", "s" * 32)
-    monkeypatch.setenv("RUNTIME_URL", RUNTIME_URL)
     monkeypatch.setenv("RUNTIME_APP_KEY", RUNTIME_KEY)
     monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", INTERNAL_TOKEN)
-
-
-RUNTIME_URL = "http://runtime:7790"
-RUNTIME_KEY = "runtime-app-key-for-config-tests-0123"
-INTERNAL_TOKEN = "runtime-internal-token-for-config-0123"
 
 
 @pytest.mark.parametrize(
@@ -144,33 +147,8 @@ def test_blank_value_counts_as_missing(tmp_path: Path, monkeypatch: pytest.Monke
         resolve_settings(config)
 
 
-def test_a_missing_runtime_internal_token_fails_startup_naming_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = load_runtime_config(write(tmp_path, VALID))
-    _core(monkeypatch)
-    monkeypatch.delenv("RUNTIME_INTERNAL_TOKEN")
-
-    with pytest.raises(ValidationError, match="RUNTIME_INTERNAL_TOKEN"):
-        resolve_settings(config)
-
-
-def test_a_short_runtime_internal_token_fails_startup_without_echoing_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = load_runtime_config(write(tmp_path, VALID))
-    _core(monkeypatch)
-    monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", "too-short-internal")
-
-    with pytest.raises(ValidationError, match="RUNTIME_INTERNAL_TOKEN") as caught:
-        resolve_settings(config)
-
-    assert "32" in str(caught.value)
-    assert "too-short-internal" not in str(caught.value)
-
-
-@pytest.mark.parametrize("missing", ["RUNTIME_URL", "RUNTIME_APP_KEY"])
-def test_startup_fails_naming_a_missing_runtime_service_variable(
+@pytest.mark.parametrize("missing", ["RUNTIME_APP_KEY", "RUNTIME_INTERNAL_TOKEN"])
+def test_startup_fails_naming_a_missing_runtime_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: str
 ) -> None:
     config = load_runtime_config(write(tmp_path, VALID))
@@ -181,66 +159,61 @@ def test_startup_fails_naming_a_missing_runtime_service_variable(
         resolve_settings(config)
 
 
-@pytest.mark.parametrize(
-    ("name", "written", "reason"),
-    [
-        ("RUNTIME_APP_KEY", "short-runtime-app-key", "32"),
-        ("RUNTIME_URL", "runtime-without-scheme:7790", "http"),
-    ],
-    ids=["short-key", "not-http"],
-)
-def test_a_malformed_runtime_service_variable_fails_startup_without_echoing_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, written: str, reason: str
+@pytest.mark.parametrize("name", ["RUNTIME_APP_KEY", "RUNTIME_INTERNAL_TOKEN"])
+def test_a_short_runtime_key_fails_startup_without_echoing_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str
 ) -> None:
     config = load_runtime_config(write(tmp_path, VALID))
     _core(monkeypatch)
-    monkeypatch.setenv(name, written)
+    monkeypatch.setenv(name, "too-short-runtime-key")
 
     with pytest.raises(ValidationError, match=name) as caught:
         resolve_settings(config)
 
-    assert reason in str(caught.value)
-    assert written not in str(caught.value)
+    assert "32" in str(caught.value)
+    assert "too-short-runtime-key" not in str(caught.value)
 
 
-def test_optional_services_are_off_when_env_empty(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_the_runtime_section_is_required(tmp_path: Path) -> None:
+    content = VALID.replace('runtime: {url: "http://runtime:7790"}\n', "")
 
-    config = load_runtime_config(write(tmp_path, VALID))
-    _core(monkeypatch)
-    settings = resolve_settings(config)
-    assert settings.sso is None
-    assert settings.media_generation is None
-    assert settings.object_store is None
-    assert settings.iclip_studio is None
-    assert settings.product_catalog is None
-    assert settings.final_cut_render is None
-    assert not settings.shot_tools_enabled
-    assert not settings.ffmpeg_required
+    with pytest.raises(ValidationError, match="runtime"):
+        load_runtime_config(write(tmp_path, content))
 
 
-def test_sso_on_requires_redirect(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    config = load_runtime_config(write(tmp_path, VALID))
-    _core(monkeypatch)
-    monkeypatch.setenv("SSO_BASE_URL", "https://sso.test")
-    with pytest.raises(ValidationError, match="SSO_REDIRECT_URL"):
-        resolve_settings(config)
+@pytest.mark.parametrize("bad", ["runtime-without-scheme:7790", "ftp://runtime", "http://", "''"])
+def test_the_runtime_url_must_be_http(tmp_path: Path, bad: str) -> None:
+    content = VALID.replace('"http://runtime:7790"', bad)
 
-    monkeypatch.setenv("SSO_REDIRECT_URL", "https://app.test/auth/sso/landing")
-    monkeypatch.setenv("PMS_BASE_URL", "https://pms.test")
-    resolved = resolve_settings(config)
-    assert resolved.sso is not None
-    assert resolved.sso.pms_base_url == "https://pms.test"
-    assert resolved.sso.app_name == "iclip", "应用名来自 YAML，不是环境变量"
+    with pytest.raises(ValidationError, match=r"runtime\.url"):
+        load_runtime_config(write(tmp_path, content))
 
+
+SSO = """
+sso:
+  app_name: iclip
+  base_url: https://sso.example.test
+  redirect_url: https://app.example.test/auth/sso/landing
+"""
+
+OBJECT_STORE = """
+object_store:
+  bucket: iclip
+  endpoint: https://oss.example.test
+  public_url_base: https://cdn.example.test
+"""
+
+OBJECT_STORE_KEYS = {"OSS_ACCESS_KEY_ID": "ak-test", "OSS_ACCESS_KEY_SECRET": "sk-test"}
 
 MEDIA = """
 media_generation:
   video:
+    submit_url: https://video.example.test/generate
+    status_base_url: https://video.example.test/tasks
     model: seedance
     allowed_models: [seedance, seedance-other]
   image:
+    api_base: https://image.example.test/gateway
     env: test
     text_to_image_task: text-to-image
     image_edit_task: image-edit
@@ -292,17 +265,168 @@ DEFAULT = groups(DEFAULT_GROUP)
 
 GROUPS = groups(DEFAULT_GROUP, MKT_GROUP, ECOM_GROUP)
 
-MEDIA_ENV = {
-    "VIDEO_SUBMIT_URL": "https://video.test/generate",
-    "VIDEO_STATUS_BASE_URL": "https://video.test/tasks",
-    "VIDEO_API_KEY_DEFAULT": "vk-default",
-    "IMAGE_API_BASE": "https://image.test/gateway",
-    "OSS_BUCKET": "iclip",
-    "OSS_ENDPOINT": "https://oss.test",
-    "OSS_ACCESS_KEY_ID": "ak",
-    "OSS_ACCESS_KEY_SECRET": "sk",
-    "OSS_PUBLIC_URL_BASE": "https://cdn.test",
-}
+MEDIA_ON = VALID + OBJECT_STORE + MEDIA
+
+MEDIA_KEYS = {**OBJECT_STORE_KEYS, "VIDEO_API_KEY_DEFAULT": "vk-default"}
+
+
+def _media_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    _core(monkeypatch)
+    for name, value in MEDIA_KEYS.items():
+        monkeypatch.setenv(name, value)
+
+
+FULL = (
+    VALID.replace('"http://runtime:7790"', '"http://runtime:7790/"')
+    + SSO
+    + """  pms_base_url: https://pms.example.test
+  root_email: root@example.test
+  oauth_name: corp_sso
+"""
+    + OBJECT_STORE
+    + "  internal_endpoint: https://oss-internal.example.test\n"
+    + MEDIA.replace(
+        "allowed_models: [seedance, seedance-other]",
+        """allowed_models: [seedance, seedance-other]
+    enhance:
+      submit_url: https://video.example.test/enhance
+      model: video-enhance
+      resolutions: [1080p]""",
+    )
+    + groups(
+        DEFAULT_GROUP.replace(
+            "seedance-other: default-seedance-other\n",
+            "seedance-other: default-seedance-other\n      video-enhance: default-enhance\n",
+        )
+    )
+    + """
+final_cut:
+  render_url: http://render:8080/
+  preview_origin: https://preview.example.test/
+"""
+)
+
+
+def test_every_address_and_name_is_read_from_the_config_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, FULL))
+    _media_env(monkeypatch)
+
+    settings = resolve_settings(config)
+
+    sso = settings.sso
+    assert sso is not None
+    assert (
+        sso.base_url,
+        sso.redirect_url,
+        sso.pms_base_url,
+        sso.root_email,
+        sso.oauth_name,
+    ) == (
+        "https://sso.example.test",
+        "https://app.example.test/auth/sso/landing",
+        "https://pms.example.test",
+        "root@example.test",
+        "corp_sso",
+    )
+    store = settings.object_store
+    assert store is not None
+    assert (store.bucket, store.endpoint, store.public_url_base, store.internal_endpoint) == (
+        "iclip",
+        "https://oss.example.test",
+        "https://cdn.example.test",
+        "https://oss-internal.example.test",
+    )
+    assert (store.access_key_id, store.access_key_secret) == ("ak-test", "sk-test")
+    media = settings.media_generation
+    assert media is not None
+    assert (media.video_submit_url, media.video_status_base_url) == (
+        "https://video.example.test/generate",
+        "https://video.example.test/tasks",
+    )
+    assert media.video_enhance is not None
+    assert media.video_enhance.submit_url == "https://video.example.test/enhance"
+    assert [model.api_base for model in media.image_models] == [
+        "https://image.example.test/gateway/nano-banana-pro",
+        "https://image.example.test/gateway/openai/gpt-image-2.5-flare-developer",
+    ]
+    assert settings.final_cut_render is not None
+    assert settings.final_cut_render.url == "http://render:8080"
+    assert settings.final_cut_preview_origin == "https://preview.example.test"
+    assert settings.runtime_service.url == "http://runtime:7790"
+    assert settings.runtime_service.app_key == RUNTIME_KEY
+
+
+def test_optional_features_are_off_when_their_sections_are_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+
+    config = load_runtime_config(write(tmp_path, VALID))
+    _core(monkeypatch)
+    settings = resolve_settings(config)
+    assert settings.sso is None
+    assert settings.media_generation is None
+    assert settings.object_store is None
+    assert settings.iclip_studio is None
+    assert settings.product_catalog is None
+    assert settings.final_cut_render is None
+    assert settings.final_cut_preview_origin is None
+    assert not settings.shot_tools_enabled
+    assert not settings.ffmpeg_required
+
+
+def test_the_sso_section_alone_turns_sso_on_with_defaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + SSO))
+    _core(monkeypatch)
+
+    sso = resolve_settings(config).sso
+
+    assert sso is not None
+    assert (sso.app_name, sso.pms_base_url, sso.root_email, sso.oauth_name) == (
+        "iclip",
+        None,
+        None,
+        "sso",
+    )
+
+
+@pytest.mark.parametrize("field", ["app_name", "base_url", "redirect_url"])
+def test_an_sso_section_without_a_required_field_is_refused(tmp_path: Path, field: str) -> None:
+    section = "\n".join(line for line in SSO.splitlines() if not line.startswith(f"  {field}:"))
+
+    with pytest.raises(ValidationError, match=field):
+        load_runtime_config(write(tmp_path, VALID + section + "\n"))
+
+
+def test_the_object_store_section_turns_it_on_and_needs_both_keys(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, VALID + OBJECT_STORE))
+    _core(monkeypatch)
+    with pytest.raises(ValidationError) as caught:
+        resolve_settings(config)
+    assert "OSS_ACCESS_KEY_ID" in str(caught.value)
+    assert "OSS_ACCESS_KEY_SECRET" in str(caught.value)
+
+    for name, value in OBJECT_STORE_KEYS.items():
+        monkeypatch.setenv(name, value)
+    store = resolve_settings(config).object_store
+    assert store is not None and store.internal_endpoint is None
+
+
+@pytest.mark.parametrize("field", ["bucket", "endpoint", "public_url_base"])
+def test_an_object_store_section_without_a_required_field_is_refused(
+    tmp_path: Path, field: str
+) -> None:
+    section = "\n".join(
+        line for line in OBJECT_STORE.splitlines() if not line.startswith(f"  {field}:")
+    )
+
+    with pytest.raises(ValidationError, match=field):
+        load_runtime_config(write(tmp_path, VALID + section + "\n"))
 
 
 @pytest.mark.parametrize("allowed", ["[]", "[other]", "[seedance, '   ']"])
@@ -312,68 +436,54 @@ def test_video_model_selection_rejects_invalid_configuration(tmp_path: Path, all
         load_runtime_config(write(tmp_path, VALID + media))
 
 
-def _media_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    _core(monkeypatch)
-    for name, value in MEDIA_ENV.items():
-        monkeypatch.setenv(name, value)
+@pytest.mark.parametrize(
+    "line",
+    [
+        "    submit_url: https://video.example.test/generate\n",
+        "    status_base_url: https://video.example.test/tasks\n",
+        "    api_base: https://image.example.test/gateway\n",
+    ],
+    ids=["submit_url", "status_base_url", "api_base"],
+)
+def test_a_media_generation_section_without_an_address_is_refused(
+    tmp_path: Path, line: str
+) -> None:
+    with pytest.raises(ValidationError, match=line.split(":")[0].strip()):
+        load_runtime_config(write(tmp_path, VALID + OBJECT_STORE + MEDIA.replace(line, "")))
 
 
-def test_media_generation_off_when_submit_url_empty(
+def test_media_generation_without_an_object_store_fails_loudly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA))
-    _media_env(monkeypatch)
-    monkeypatch.delenv("VIDEO_SUBMIT_URL")
-
-    assert resolve_settings(config).media_generation is None
-
-
-@pytest.mark.parametrize("missing", ["VIDEO_STATUS_BASE_URL", "IMAGE_API_BASE"])
-def test_media_generation_half_configured_fails_loudly(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: str
-) -> None:
-
     config = load_runtime_config(write(tmp_path, VALID + MEDIA + DEFAULT))
     _media_env(monkeypatch)
-    monkeypatch.delenv(missing)
-    with pytest.raises(ValidationError, match=missing):
+    with pytest.raises(RuntimeError, match="object_store"):
         resolve_settings(config)
 
 
 ENHANCE = """
     enhance:
+      submit_url: https://video.example.test/enhance
       model: video-enhance
       resolutions: [1080p, 720p]
       fps: 30"""
 
 
 def _with_enhance(enhance: str = ENHANCE) -> str:
-    return VALID + MEDIA.replace(
+    return MEDIA_ON.replace(
         "allowed_models: [seedance, seedance-other]",
         "allowed_models: [seedance, seedance-other]" + enhance,
     )
 
 
-def test_enhance_is_off_without_its_address(
+def test_enhance_is_off_without_its_section(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = load_runtime_config(write(tmp_path, _with_enhance() + DEFAULT))
+    config = load_runtime_config(write(tmp_path, MEDIA_ON + DEFAULT))
     _media_env(monkeypatch)
     media = resolve_settings(config).media_generation
 
     assert media is not None and media.video_enhance is None
-
-
-def test_enhance_address_without_its_section_fails_loudly(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + DEFAULT))
-    _media_env(monkeypatch)
-    monkeypatch.setenv("VIDEO_ENHANCE_SUBMIT_URL", "https://video.test/videos/enhance/async")
-
-    with pytest.raises(RuntimeError, match="VIDEO_ENHANCE_SUBMIT_URL"):
-        resolve_settings(config)
 
 
 @pytest.mark.parametrize(
@@ -392,14 +502,21 @@ def test_enhance_section_rejects_what_upstream_would(tmp_path: Path, enhance: st
         load_runtime_config(write(tmp_path, _with_enhance(enhance)))
 
 
+def test_an_enhance_section_without_its_address_names_it(tmp_path: Path) -> None:
+    enhance = ENHANCE.replace("      submit_url: https://video.example.test/enhance\n", "")
+
+    with pytest.raises(ValidationError, match="submit_url"):
+        load_runtime_config(write(tmp_path, _with_enhance(enhance)))
+
+
 SUBTITLE = """  subtitle:
-    url: https://asr.test/api/v1/services/aigc/multimodal-generation/generation
+    url: https://asr.example.test/api/v1/services/aigc/multimodal-generation/generation
 """
 MUSIC = """  music:
-    url: https://music.test/api/v1/services/audio/tts/SpeechSynthesizer
+    url: https://music.example.test/api/v1/services/audio/tts/SpeechSynthesizer
 """
 SPEECH = """  speech:
-    url: https://tts.test/api/v1/services/audio/tts/SpeechSynthesizer
+    url: https://tts.example.test/api/v1/services/audio/tts/SpeechSynthesizer
 """
 
 
@@ -427,7 +544,7 @@ def test_subtitles_music_and_speech_each_turn_on_with_their_section(
     sections: str,
     expected: tuple[str | None, str | None, str | None],
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + sections + DEFAULT))
+    config = load_runtime_config(write(tmp_path, MEDIA_ON + sections + DEFAULT))
     _media_env(monkeypatch)
     for name, value in DEFAULT_QWEN_KEYS.items():
         monkeypatch.setenv(name, value)
@@ -444,7 +561,7 @@ def test_subtitles_music_and_speech_each_turn_on_with_their_section(
 def test_the_speech_section_needs_only_its_address(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SPEECH + DEFAULT))
+    config = load_runtime_config(write(tmp_path, MEDIA_ON + SPEECH + DEFAULT))
     _media_env(monkeypatch)
     monkeypatch.setenv("SPEECH_KEY_DEFAULT", "dub-default")
     media = resolve_settings(config).media_generation
@@ -454,7 +571,7 @@ def test_the_speech_section_needs_only_its_address(
         media.speech.url,
         media.speech.concurrency,
         media.speech.timeout_seconds,
-    ) == ("https://tts.test/api/v1/services/audio/tts/SpeechSynthesizer", 2, 120.0)
+    ) == ("https://tts.example.test/api/v1/services/audio/tts/SpeechSynthesizer", 2, 120.0)
 
 
 @pytest.mark.parametrize(
@@ -469,74 +586,48 @@ def test_the_speech_section_needs_only_its_address(
 )
 def test_the_speech_section_rejects_unusable_values(tmp_path: Path, section: str) -> None:
     with pytest.raises(ValidationError):
-        load_runtime_config(write(tmp_path, VALID + MEDIA + section))
+        load_runtime_config(write(tmp_path, MEDIA_ON + section))
 
 
-@pytest.mark.parametrize("missing", ["OSS_ENDPOINT", "OSS_ACCESS_KEY_ID", "OSS_PUBLIC_URL_BASE"])
-def test_object_store_half_configured_fails_loudly(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: str
-) -> None:
-    config = load_runtime_config(write(tmp_path, VALID))
-    _media_env(monkeypatch)
-    monkeypatch.delenv("VIDEO_SUBMIT_URL")
-    monkeypatch.delenv(missing)
-    with pytest.raises(ValidationError, match=missing):
-        resolve_settings(config)
+FINAL_CUT_RENDER = """
+final_cut:
+  render_url: http://render:8080
+"""
 
 
-def test_media_generation_without_a_bucket_fails_loudly(
+def test_final_cut_render_is_off_until_its_url_is_written(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA))
     _media_env(monkeypatch)
-    monkeypatch.delenv("OSS_BUCKET")
-    with pytest.raises(RuntimeError, match="OSS_BUCKET"):
-        resolve_settings(config)
-
-
-def _bucket_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name, value in MEDIA_ENV.items():
-        if name.startswith("OSS_"):
-            monkeypatch.setenv(name, value)
-
-
-def test_final_cut_render_is_off_until_its_url_is_set(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + DEFAULT))
-    _media_env(monkeypatch)
+    config = load_runtime_config(write(tmp_path, MEDIA_ON + DEFAULT))
     assert resolve_settings(config).final_cut_render is None
 
-    monkeypatch.setenv("FINAL_CUT_RENDER_URL", " http://render:8080/ ")
+    config = load_runtime_config(write(tmp_path, MEDIA_ON + DEFAULT + FINAL_CUT_RENDER))
     render = resolve_settings(config).final_cut_render
     assert render is not None and render.url == "http://render:8080"
 
 
-def test_final_cut_render_without_a_bucket_or_media_generation_fails_loudly(
+def test_final_cut_render_without_an_object_store_or_media_generation_fails_loudly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID))
-    _core(monkeypatch)
-    monkeypatch.setenv("FINAL_CUT_RENDER_URL", "http://render:8080")
-    with pytest.raises(RuntimeError, match="OSS_BUCKET") as neither:
+    _media_env(monkeypatch)
+    config = load_runtime_config(write(tmp_path, VALID + FINAL_CUT_RENDER))
+    with pytest.raises(RuntimeError, match="object_store") as neither:
         resolve_settings(config)
     assert "media_generation" in str(neither.value)
 
-    _bucket_env(monkeypatch)
+    config = load_runtime_config(write(tmp_path, VALID + OBJECT_STORE + FINAL_CUT_RENDER))
     with pytest.raises(RuntimeError, match="media_generation") as no_media:
         resolve_settings(config)
-    assert "OSS_BUCKET" not in str(no_media.value)
+    assert "object_store" not in str(no_media.value)
 
 
 @pytest.mark.parametrize("bad", ["render:8080", "ftp://render", "http://"])
-def test_final_cut_render_url_must_be_http(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad: str
-) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + DEFAULT))
-    _media_env(monkeypatch)
-    monkeypatch.setenv("FINAL_CUT_RENDER_URL", bad)
-    with pytest.raises(ValidationError, match="FINAL_CUT_RENDER_URL"):
-        resolve_settings(config)
+def test_final_cut_render_url_must_be_http(tmp_path: Path, bad: str) -> None:
+    content = VALID + FINAL_CUT_RENDER.replace("http://render:8080", bad)
+
+    with pytest.raises(ValidationError, match=r"final_cut\.render_url"):
+        load_runtime_config(write(tmp_path, content))
 
 
 @pytest.mark.parametrize(
@@ -549,11 +640,10 @@ def test_final_cut_render_url_must_be_http(
 def test_final_cut_preview_origin_is_read_as_a_bare_origin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, given: str, resolved: str
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID))
     _core(monkeypatch)
-    assert resolve_settings(config).final_cut_preview_origin is None
+    content = VALID + f'final_cut:\n  preview_origin: "{given}"\n'
+    config = load_runtime_config(write(tmp_path, content))
 
-    monkeypatch.setenv("FINAL_CUT_PREVIEW_ORIGIN", given)
     assert resolve_settings(config).final_cut_preview_origin == resolved
 
 
@@ -569,14 +659,85 @@ def test_final_cut_preview_origin_is_read_as_a_bare_origin(
         "null",
     ],
 )
-def test_final_cut_preview_origin_must_be_http_host_and_port_only(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad: str
+def test_final_cut_preview_origin_must_be_http_host_and_port_only(tmp_path: Path, bad: str) -> None:
+    content = VALID + f'final_cut:\n  preview_origin: "{bad}"\n'
+
+    with pytest.raises(ValidationError, match=r"final_cut\.preview_origin"):
+        load_runtime_config(write(tmp_path, content))
+
+
+PRODUCT_CATALOG = """
+product_catalog: {}
+"""
+
+
+def test_the_product_catalog_section_turns_it_on_and_needs_its_database_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID))
     _core(monkeypatch)
-    monkeypatch.setenv("FINAL_CUT_PREVIEW_ORIGIN", bad)
-    with pytest.raises(ValidationError, match="FINAL_CUT_PREVIEW_ORIGIN"):
+    config = load_runtime_config(write(tmp_path, VALID + PRODUCT_CATALOG))
+    with pytest.raises(ValidationError, match="PRODUCT_CATALOG_DATABASE_URL"):
         resolve_settings(config)
+
+    monkeypatch.setenv("PRODUCT_CATALOG_DATABASE_URL", "postgresql+asyncpg://pdm.example.test/pdm")
+    catalog = resolve_settings(config).product_catalog
+    assert catalog is not None
+    assert catalog.database_url == "postgresql+asyncpg://pdm.example.test/pdm"
+
+
+def test_a_product_catalog_url_without_its_section_fails_startup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _core(monkeypatch)
+    monkeypatch.setenv("PRODUCT_CATALOG_DATABASE_URL", "postgresql+asyncpg://pdm.example.test/pdm")
+    config = load_runtime_config(write(tmp_path, VALID))
+
+    with pytest.raises(RuntimeError, match=r"PRODUCT_CATALOG_DATABASE_URL.*product_catalog: \{\}"):
+        resolve_settings(config)
+
+
+@pytest.mark.parametrize(("name", "path"), MOVED_TO_CONFIG.items())
+def test_a_variable_moved_into_the_config_file_fails_startup_naming_its_new_place(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, path: str
+) -> None:
+    _core(monkeypatch)
+    monkeypatch.setenv(name, "https://left-over.example.test")
+    config = load_runtime_config(write(tmp_path, VALID))
+
+    with pytest.raises(RuntimeError) as caught:
+        resolve_settings(config)
+
+    (line,) = str(caught.value).splitlines()
+    assert name in line and path in line
+
+
+def test_every_variable_moved_into_the_config_file_is_listed_at_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _core(monkeypatch)
+    for name in MOVED_TO_CONFIG:
+        monkeypatch.setenv(name, "https://left-over.example.test")
+    config = load_runtime_config(write(tmp_path, VALID))
+
+    with pytest.raises(RuntimeError) as caught:
+        resolve_settings(config)
+
+    lines = str(caught.value).splitlines()
+    assert len(lines) == len(MOVED_TO_CONFIG)
+    for line, (name, path) in zip(lines, MOVED_TO_CONFIG.items(), strict=True):
+        assert name in line and path in line
+
+
+@pytest.mark.parametrize("value", ["", "  "], ids=["empty", "blank"])
+def test_an_empty_moved_variable_is_ignored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    _core(monkeypatch)
+    for name in MOVED_TO_CONFIG:
+        monkeypatch.setenv(name, value)
+    config = load_runtime_config(write(tmp_path, VALID))
+
+    assert resolve_settings(config).runtime_service.url == "http://runtime:7790"
 
 
 SHOT_VIDEO = """
@@ -587,21 +748,20 @@ shot_video: {}
 def test_shot_video_without_media_generation_names_what_it_lacks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + SHOT_VIDEO))
+    config = load_runtime_config(write(tmp_path, VALID + OBJECT_STORE + SHOT_VIDEO))
     _media_env(monkeypatch)
-    monkeypatch.delenv("VIDEO_SUBMIT_URL")
     settings = resolve_settings(config)
 
     assert settings.media_generation is None
     assert settings.shot_video
-    assert settings.shot_tools_missing == ("VIDEO_SUBMIT_URL",)
+    assert settings.shot_tools_missing == ("media_generation",)
     assert not settings.shot_tools_enabled
 
 
 def test_shot_video_section_absent_means_off(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + DEFAULT))
+    config = load_runtime_config(write(tmp_path, MEDIA_ON + DEFAULT))
     _media_env(monkeypatch)
     settings = resolve_settings(config)
 
@@ -659,7 +819,7 @@ def _group_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_model_groups_resolve_in_config_order_with_their_keys(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + GROUPS))
+    config = load_runtime_config(write(tmp_path, MEDIA_ON + GROUPS))
     _group_env(monkeypatch)
 
     settings = resolve_settings(config)
@@ -688,7 +848,7 @@ def test_model_groups_resolve_in_config_order_with_their_keys(
 def test_the_default_group_is_left_out_of_the_choosable_groups_wherever_it_is_written(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    content = VALID + MEDIA + groups(MKT_GROUP, DEFAULT_GROUP, ECOM_GROUP)
+    content = MEDIA_ON + groups(MKT_GROUP, DEFAULT_GROUP, ECOM_GROUP)
     config = load_runtime_config(write(tmp_path, content))
     _group_env(monkeypatch)
 
@@ -702,7 +862,7 @@ def test_the_default_group_is_left_out_of_the_choosable_groups_wherever_it_is_wr
 def test_only_the_default_group_leaves_nothing_to_choose(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + DEFAULT))
+    config = load_runtime_config(write(tmp_path, MEDIA_ON + DEFAULT))
     _media_env(monkeypatch)
 
     settings = resolve_settings(config)
@@ -720,7 +880,7 @@ def test_only_the_default_group_leaves_nothing_to_choose(
 def test_media_generation_without_the_default_group_fails_at_startup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, written: str
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + written))
+    config = load_runtime_config(write(tmp_path, MEDIA_ON + written))
     _group_env(monkeypatch)
 
     with pytest.raises(RuntimeError, match="model_groups 里没有 default"):
@@ -730,10 +890,8 @@ def test_media_generation_without_the_default_group_fails_at_startup(
 def test_group_keys_are_not_checked_while_media_generation_is_off(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + GROUPS))
-    _media_env(monkeypatch)
-    monkeypatch.delenv("VIDEO_SUBMIT_URL")
-    monkeypatch.delenv("VIDEO_API_KEY_DEFAULT")
+    config = load_runtime_config(write(tmp_path, VALID + GROUPS))
+    _core(monkeypatch)
 
     settings = resolve_settings(config)
 
@@ -755,7 +913,7 @@ def test_group_keys_are_not_checked_while_media_generation_is_off(
 def test_malformed_model_groups_are_refused_naming_what_is_wrong(
     tmp_path: Path, change: tuple[str, str], message: str
 ) -> None:
-    content = VALID + MEDIA + GROUPS.replace(*change)
+    content = MEDIA_ON + GROUPS.replace(*change)
 
     with pytest.raises(ValidationError, match=message):
         load_runtime_config(write(tmp_path, content))
@@ -786,7 +944,7 @@ def test_malformed_model_groups_are_refused_naming_what_is_wrong(
 def test_video_models_must_cover_exactly_the_allowed_models(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: tuple[str, str], message: str
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + GROUPS.replace(*change)))
+    config = load_runtime_config(write(tmp_path, MEDIA_ON + GROUPS.replace(*change)))
     _group_env(monkeypatch)
 
     with pytest.raises(RuntimeError, match=message):
@@ -796,11 +954,11 @@ def test_video_models_must_cover_exactly_the_allowed_models(
 def test_video_models_must_also_name_the_enhance_model_once_enhance_is_on(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = load_runtime_config(write(tmp_path, _with_enhance() + GROUPS))
     _group_env(monkeypatch)
+    config = load_runtime_config(write(tmp_path, MEDIA_ON + GROUPS))
     assert resolve_settings(config).media_generation is not None, "高清版没开，不要求"
 
-    monkeypatch.setenv("VIDEO_ENHANCE_SUBMIT_URL", "https://video.test/videos/enhance/async")
+    config = load_runtime_config(write(tmp_path, _with_enhance() + GROUPS))
     with pytest.raises(RuntimeError, match=r"model_groups\.default\.video_models 缺 video-enhance"):
         resolve_settings(config)
 
@@ -835,7 +993,7 @@ def test_video_models_must_also_name_the_enhance_model_once_enhance_is_on(
 def test_a_group_video_key_must_have_a_value(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, group: str, env: str, value: str | None
 ) -> None:
-    config = load_runtime_config(write(tmp_path, VALID + MEDIA + GROUPS))
+    config = load_runtime_config(write(tmp_path, MEDIA_ON + GROUPS))
     _group_env(monkeypatch)
     monkeypatch.delenv(env)
     if value is not None:
@@ -863,7 +1021,7 @@ def test_once_a_qwen_service_is_on_every_group_needs_its_key(
     group_env: str,
 ) -> None:
     _group_env(monkeypatch)
-    media_on = VALID + MEDIA + section
+    media_on = MEDIA_ON + section
 
     no_default_key = DEFAULT_GROUP.replace(f"    {field}: {default_env}\n", "")
     config = load_runtime_config(write(tmp_path, media_on + groups(no_default_key)))

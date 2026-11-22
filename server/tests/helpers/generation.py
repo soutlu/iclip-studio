@@ -77,7 +77,7 @@ from iclip.domains.identity.public import Principal
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.errors import MediaError
 from iclip.platform.object_store.store import StoredObject
-from tests.helpers.app import make_runtime_config
+from tests.helpers.app import OBJECT_STORE_KEYS, TEST_OBJECT_STORE, make_runtime_config
 from tests.helpers.fetch_url import as_is
 from tests.helpers.identity import InMemoryUserRepository
 from tests.helpers.model_groups import default_only
@@ -677,24 +677,15 @@ def build_queue(
     return queue, connector
 
 
-MEDIA_ENVS = {
-    "OSS_BUCKET": "iclip-test",
-    "OSS_ENDPOINT": "oss-ap-southeast-1.aliyuncs.com",
-    "OSS_ACCESS_KEY_ID": "ak",
-    "OSS_ACCESS_KEY_SECRET": "sk",
-    "OSS_PUBLIC_URL_BASE": "https://cdn.example.test",
-    "VIDEO_SUBMIT_URL": "https://video.test/submit",
-    "VIDEO_STATUS_BASE_URL": "https://video.test/status",
-    "VIDEO_API_KEY": "vk",
-    "IMAGE_API_BASE": "https://image.test/gateway",
-}
+MEDIA_ENVS = {**OBJECT_STORE_KEYS, "VIDEO_API_KEY": "vk"}
+"""``config_with_media`` 要的密钥：对象存储的两把与 ``default`` 组的视频 key。"""
 
 
 def config_with_media(video_models: Sequence[str] = ("seedance",)) -> RuntimeConfig:
-    """开着媒体生成的配置：``video_models`` 是允许的出片模型，第一个是默认；``default`` 组用
-    ``VIDEO_API_KEY``，产品模型名原样作 model_id。"""
+    """开着对象存储与媒体生成的配置：``video_models`` 是允许的出片模型，第一个是默认；``default``
+    组用 ``VIDEO_API_KEY``，产品模型名原样作 model_id。"""
 
-    return make_runtime_config().model_copy(
+    return make_runtime_config(object_store=TEST_OBJECT_STORE).model_copy(
         update={
             "model_groups": {
                 "default": ModelGroupSection(
@@ -704,9 +695,13 @@ def config_with_media(video_models: Sequence[str] = ("seedance",)) -> RuntimeCon
             },
             "media_generation": MediaGenerationSection(
                 video=VideoGenerationSection(
-                    model=video_models[0], allowed_models=tuple(video_models)
+                    submit_url="https://video.test/submit",
+                    status_base_url="https://video.test/status",
+                    model=video_models[0],
+                    allowed_models=tuple(video_models),
                 ),
                 image=ImageGenerationSection(
+                    api_base="https://image.test/gateway",
                     env="test",
                     text_to_image_task="text-to-image",
                     image_edit_task="image-edit",
