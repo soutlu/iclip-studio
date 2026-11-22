@@ -56,7 +56,7 @@ describe('final-cut 编辑器 · 画面设置', () => {
 
   it('时间线上有视频片段时也能在画面右上角改画面尺寸：点 16:9 后预览变横、存下来是 1920×1080；一次撤销回到原尺寸', async () => {
     const user = await openWith([video()])
-    expect(trigger()).toHaveAccessibleName('画面尺寸 9:16')
+    expect(trigger()).toHaveAccessibleName('画面尺寸 9:16 · 720P')
     const previewSize = () =>
       previewPages.latest().commands.findLast((command) => command.type === 'size')
     await waitFor(() => expect(previewSize()).toMatchObject({ width: 720, height: 1280 }))
@@ -65,7 +65,7 @@ describe('final-cut 编辑器 · 画面设置', () => {
     expect(landscape).toHaveAttribute('aria-pressed', 'false')
     await user.click(landscape)
     expect(landscape).toHaveAttribute('aria-pressed', 'true')
-    expect(trigger()).toHaveAccessibleName('画面尺寸 16:9')
+    expect(trigger()).toHaveAccessibleName('画面尺寸 16:9 · 1080P')
     await waitFor(() => expect(previewSize()).toMatchObject({ width: 1920, height: 1080 }))
     await waitSaved(() => expect(savedCanvas()).toBe('1920×1080'))
 

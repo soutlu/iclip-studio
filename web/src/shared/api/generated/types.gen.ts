@@ -7965,13 +7965,18 @@ export type WholeFilmExportErrorOut = {
 /**
  * WholeFilmExportIn
  *
- * 发起导出：``locale`` 是导出哪种语言的版本，不带或 null 导出原文。
+ * 发起导出：``locale`` 是导出哪种语言的版本，不带或 null 导出原文；``resolution`` 是导出分辨率档位，
+ * 不带或 null 按画面尺寸导出。
  */
 export type WholeFilmExportIn = {
   /**
    * Locale
    */
   locale?: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
+  /**
+   * Resolution
+   */
+  resolution?: '480p' | '720p' | '1080p' | null
 }
 
 /**
@@ -7986,8 +7991,8 @@ export type WholeFilmExportLatestOut = {
 /**
  * WholeFilmExportOut
  *
- * 一次导出现在的样子。``locale`` 是导出的哪种语言的版本，原文时是 null。``downloadUrl`` 只在
- * ``done`` 时有，``error`` 只在 ``failed`` 时有。
+ * 一次导出现在的样子。``locale`` 是导出的哪种语言的版本，原文时是 null；``resolution`` 是导出分辨率
+ * 档位，按画面尺寸导出时是 null。``downloadUrl`` 只在 ``done`` 时有，``error`` 只在 ``failed`` 时有。
  */
 export type WholeFilmExportOut = {
   /**
@@ -8011,6 +8016,10 @@ export type WholeFilmExportOut = {
    * Queueposition
    */
   queuePosition: number | null
+  /**
+   * Resolution
+   */
+  resolution: '480p' | '720p' | '1080p' | null
   /**
    * Status
    */

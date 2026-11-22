@@ -15,6 +15,7 @@ import { declareLinkedFonts, undeclaredProjectFonts } from './fonts'
 import { ExportFailure, type ExportWorker, type RenderedFile } from './jobs'
 import { producerLogger, type Logger } from './log'
 import { MAIN_FILE, VENDOR_DIR, withLocalMedia, type ProjectFile } from './project'
+import { outputResolutionFor } from './resolution'
 import { uploadFile } from './upload'
 
 export interface RendererOptions {
@@ -152,6 +153,8 @@ export function createProducerWorker(options: RendererOptions): ExportWorker {
       const cleanup = () => rm(dir, { recursive: true, force: true })
       const log = options.logger.child({ exportId: job.id })
       try {
+        const main = job.files.find((file) => file.path === MAIN_FILE)?.content ?? ''
+        const outputResolution = outputResolutionFor(main, job.resolution)
         const project = join(dir, 'project')
         await writeProject(project, job.files, job.vendorDir)
         // 先查字体：工程检查对一部分缺字体的情况也报错，但只给出规则名，这里能说出是哪些字体
@@ -174,7 +177,6 @@ export function createProducerWorker(options: RendererOptions): ExportWorker {
             return name === undefined ? [] : [[address, `${basename(mediaDir)}/${name}`] as const]
           }),
         )
-        const main = job.files.find((file) => file.path === MAIN_FILE)?.content ?? ''
         await writeFile(
           join(project, MAIN_FILE),
           await declareLinkedFonts(withLocalMedia(main, local), project),
@@ -186,6 +188,8 @@ export function createProducerWorker(options: RendererOptions): ExportWorker {
           format: 'mp4',
           useGpu: options.gpuEncode,
           ...(job.variables === null ? {} : { variables: { ...job.variables } }),
+          // 渲染器按预设的尺寸直接出片（调设备像素比），画面本身的宽高不变
+          ...(outputResolution === undefined ? {} : { outputResolution }),
           producerConfig,
           logger: producerLogger(log),
         })

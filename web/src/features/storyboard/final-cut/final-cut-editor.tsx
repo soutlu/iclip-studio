@@ -87,6 +87,7 @@ import { isEditorKeyTarget, onCanvasLayer, useEditorEscape, useEditorRoot } from
 import { EditorRoot } from './editor-root'
 import { EditorToolbar, type EditTool, type LocaleControls } from './editor-toolbar'
 import { ExportControl } from './export-control'
+import { exportTierOf, useChosenTier } from './export-tier'
 import { FilmInspector } from './film-inspector'
 import { FilmTimeline, type DropGhost, type TimelineHandle } from './film-timeline'
 import {
@@ -1032,6 +1033,7 @@ function EditorBody({
   const [textTarget, setTextTarget] = useState<TextTarget | null>(null)
 
   const exporting = useWholeFilmExport(conversationId, session.settle)
+  const [chosenTier, chooseTier] = useChosenTier(conversationId)
   const exportBlocked = empty ? EMPTY_EXPORT_TEXT : film.captionsProblem
 
   // 「字幕」页签里在播放头处加一句：从播放头起 2 秒，碰到后面的字幕时缩短
@@ -1509,6 +1511,8 @@ function EditorBody({
       </p>
     )
 
+  const exportTier = exportTierOf(film.canvas, chosenTier)
+
   /**
    * 切到「属性」或右栏收起时，切走前停的目录页签留在页面上（藏起来），回来时搜索词、分类、滚动位置都还在。
    * 收起时「属性」也藏起来，不卸掉。
@@ -1542,10 +1546,11 @@ function EditorBody({
           <ExportControl
             blocked={exportBlocked}
             onCancel={() => void exporting.cancel()}
-            onStart={() => void exporting.start(locale.code)}
+            onStart={() => void exporting.start(locale.code, exportTier.resolution)}
             target={{
               locale: locale.code,
               untranslated: pending === undefined ? 0 : pending.entries.length + pending.tooLong,
+              resolution: exportTier.resolution,
             }}
             view={exporting.view}
           />
@@ -1582,6 +1587,8 @@ function EditorBody({
             onBackground={session.setBackground}
             onCanvas={session.resize}
             onFraming={setFraming}
+            onTier={chooseTier}
+            tier={exportTier.tier}
           />
         ) : null}
         {viewedMaterial === undefined || materialView === null ? null : (

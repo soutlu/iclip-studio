@@ -168,6 +168,7 @@ describe('final-cut 编辑器 · 语言', () => {
               : {
                   id: exportId,
                   locale: 'en',
+                  resolution: null,
                   status: 'rendering',
                   progress: 0.4,
                   queuePosition: null,

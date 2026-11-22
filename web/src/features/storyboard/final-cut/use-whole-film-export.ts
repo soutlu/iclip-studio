@@ -9,6 +9,7 @@ import {
   startWholeFilmExport,
   wholeFilmQueryKeys,
 } from './final-cut.api'
+import type { ExportTier } from './composition/export-resolution'
 import type { Language } from './locales'
 
 const POLL_MS = 1_500
@@ -26,20 +27,20 @@ const FAILURE_TEXT: Record<string, string> = {
   'lint-failed': 'final-cut 未通过导出前检查，无法导出',
 }
 
-/** 一次导出的是哪种语言的版本，原文是 null。 */
-export type ExportLocale = WholeFilmExportOut['locale']
+/** 一次导出的语言（`locale`）和分辨率档位（`resolution`，按画面尺寸导出是 null）。 */
+export type ExportVersion = Pick<WholeFilmExportOut, 'locale' | 'resolution'>
 
 /**
- * 导出现在的样子。提交中、进行中和完成的带着这次导出的语言（`locale`）：提交中的是点「导出」那一刻编辑器显示的
- * 语言，之后的取接口答的，导出后切了语言也不变。
+ * 导出现在的样子。提交中、进行中和完成的带着这次导出的语言和档位（见 `ExportVersion`）：提交中的是点「导出」那一刻
+ * 编辑器显示的语言和亮着的档位，之后的取接口答的，导出后切了语言、换了档位也不变。
  */
 export type ExportView =
   | { kind: 'idle' }
-  | { kind: 'starting'; locale: ExportLocale }
-  | { kind: 'queued'; ahead: number | null; locale: ExportLocale }
-  | { kind: 'rendering'; progress: number | null; locale: ExportLocale }
-  | { kind: 'uploading'; locale: ExportLocale }
-  | { kind: 'done'; exportId: string; downloadUrl: string; locale: ExportLocale }
+  | ({ kind: 'starting' } & ExportVersion)
+  | ({ kind: 'queued'; ahead: number | null } & ExportVersion)
+  | ({ kind: 'rendering'; progress: number | null } & ExportVersion)
+  | ({ kind: 'uploading' } & ExportVersion)
+  | ({ kind: 'done'; exportId: string; downloadUrl: string } & ExportVersion)
   | { kind: 'failed'; message: string }
   | { kind: 'cancelled' }
 
@@ -51,26 +52,24 @@ const failureText = (error: WholeFilmExportOut['error']) => {
   // 渲染服务给的 message 是缺的字体名，用「、」连接
   if (error?.code === 'font-missing')
     return `用到的字体 ${error.message} 不在可选字体里，无法导出；请换成可选字体后重新导出`
+  // 渲染服务给的 message 就是给人看的那句（见 composition/export-resolution.ts 的 tierUnsupportedText）
+  if (error?.code === 'resolution-unsupported') return error.message
   return FAILURE_TEXT[error?.code ?? ''] ?? '成片导出失败，请重新导出'
 }
 
 const viewOf = (state: WholeFilmExportOut): ExportView => {
+  const version: ExportVersion = { locale: state.locale, resolution: state.resolution }
   switch (state.status) {
     case 'queued':
-      return { kind: 'queued', ahead: state.queuePosition, locale: state.locale }
+      return { kind: 'queued', ahead: state.queuePosition, ...version }
     case 'rendering':
-      return { kind: 'rendering', progress: state.progress, locale: state.locale }
+      return { kind: 'rendering', progress: state.progress, ...version }
     case 'uploading':
-      return { kind: 'uploading', locale: state.locale }
+      return { kind: 'uploading', ...version }
     case 'done':
       return state.downloadUrl === null
         ? { kind: 'failed', message: '导出已完成，但未获取到下载地址；请重新导出' }
-        : {
-            kind: 'done',
-            exportId: state.id,
-            downloadUrl: state.downloadUrl,
-            locale: state.locale,
-          }
+        : { kind: 'done', exportId: state.id, downloadUrl: state.downloadUrl, ...version }
     case 'failed':
       return { kind: 'failed', message: failureText(state.error) }
     case 'cancelled':
@@ -79,8 +78,8 @@ const viewOf = (state: WholeFilmExportOut): ExportView => {
 }
 
 /**
- * 这段对话最近一次导出的样子，发起和取消导出。发起时给出导出哪种语言（编辑器当前显示的）；发起前先等 `settle`
- * 把没存的改动存完，它答 false（没存成）就不发起。
+ * 这段对话最近一次导出的样子，发起和取消导出。发起时给出导出哪种语言（编辑器当前显示的）和分辨率档位（按画面尺寸
+ * 导出是 null）；发起前先等 `settle` 把没存的改动存完，它答 false（没存成）就不发起。
  */
 export function useWholeFilmExport(conversationId: string, settle: () => Promise<boolean>) {
   const [local, setLocal] = useState<ExportView | null>(null)
@@ -107,14 +106,14 @@ export function useWholeFilmExport(conversationId: string, settle: () => Promise
         ? { kind: 'idle' }
         : viewOf(current))
 
-  const start = async (locale: Language) => {
-    setLocal({ kind: 'starting', locale })
+  const start = async (locale: Language, resolution: ExportTier | null) => {
+    setLocal({ kind: 'starting', locale, resolution })
     if (!(await settle())) {
       setLocal(null)
       return
     }
     try {
-      await startWholeFilmExport(conversationId, locale)
+      await startWholeFilmExport(conversationId, locale, resolution)
       await latest.refetch()
       setLocal(null)
     } catch (error) {

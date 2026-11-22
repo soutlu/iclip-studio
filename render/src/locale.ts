@@ -19,6 +19,7 @@ import {
 import {
   applyEdits,
   attributeText,
+  compositionRootOf,
   elementsOf,
   MAIN_FILE,
   type ProjectFile,
@@ -178,9 +179,7 @@ const withLeadingSpace = (html: string, from: number, to: number) => {
  * 配音片段去掉，AI 配音时原声和原文的旁白关掉。只改要改的元素，别的字一个不动。
  */
 export function withLocalizedVoices(html: string, locale: ExportLocale | null): string {
-  const root = [...elementsOf(parse(html, { sourceCodeLocationInfo: true }))].find((element) =>
-    element.attrs.some((attr) => attr.name === 'data-composition-id'),
-  )
+  const root = compositionRootOf(parse(html, { sourceCodeLocationInfo: true }))
   if (root === undefined) return html
   const children = root.childNodes.filter((node): node is Element => 'tagName' in node)
   const changes = localizedVoices(

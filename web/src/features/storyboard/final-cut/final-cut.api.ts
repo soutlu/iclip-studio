@@ -35,6 +35,7 @@ import {
 import { conversationAudio, generatedAudio, type ConversationAudio } from './audio'
 import { CAPTIONS_PATH, isCaptionsHost } from './composition/captions'
 import type { CatalogItem, ComponentCatalog } from './composition/catalog'
+import type { ExportTier } from './composition/export-resolution'
 import { PROJECT_MAIN } from './composition/film'
 import {
   LOCALES,
@@ -300,9 +301,16 @@ export const projectFilesBase = (origin: string, token: string): string =>
 const exportsPath = (conversationId: string) =>
   `${conversationPath(conversationId)}/whole-film/exports`
 
-/** 按工作区里现在的 final-cut 发起一次导出，导出 `locale` 这种语言（原文是 null）的版本，答复导出 id。 */
-export const startWholeFilmExport = (conversationId: string, locale: Language) => {
-  const body: WholeFilmExportIn = { locale }
+/**
+ * 按工作区里现在的 final-cut 发起一次导出，导出 `locale` 这种语言（原文是 null）的版本，答复导出 id。`resolution`
+ * 是导出分辨率档位，按画面尺寸导出时是 null，请求里不带这个键。
+ */
+export const startWholeFilmExport = (
+  conversationId: string,
+  locale: Language,
+  resolution: ExportTier | null,
+) => {
+  const body: WholeFilmExportIn = resolution === null ? { locale } : { locale, resolution }
   return apiFetch(exportsPath(conversationId), zWholeFilmExportStartedOut, {
     body,
     fallbackErrorMessage: '成片导出失败',

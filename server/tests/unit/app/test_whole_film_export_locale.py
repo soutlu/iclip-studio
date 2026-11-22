@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from iclip.app.whole_film_exports import WholeFilmExportAdapter
 from iclip.common.errors import NotFound, ValidationFailed
-from iclip.common.final_cut import TargetLocale
+from iclip.common.final_cut import ExportResolution, TargetLocale
 from iclip.domains.conversations.models import Conversation
 from iclip.domains.conversations.repository import AgentPreviewStore, ConversationRepository
 from iclip.domains.conversations.service import (
@@ -84,6 +84,7 @@ class RecordingExports:
         conversation_id: uuid.UUID,
         main_file: str,
         locale: TargetLocale | None,
+        resolution: ExportResolution | None,
     ) -> uuid.UUID:
         self.started.append((main_file, locale))
         return uuid.uuid4()
@@ -169,9 +170,9 @@ async def test_a_locale_export_starts_when_the_project_has_that_locales_table() 
         exports,
     )
 
-    await service.export_whole_film(OWNER, LIVE.id, locale="en")
-    await service.export_whole_film(OWNER, LIVE.id, locale="zh")
-    await service.export_whole_film(OWNER, LIVE.id, locale=None)
+    await service.export_whole_film(OWNER, LIVE.id, locale="en", resolution=None)
+    await service.export_whole_film(OWNER, LIVE.id, locale="zh", resolution=None)
+    await service.export_whole_film(OWNER, LIVE.id, locale=None, resolution=None)
 
     assert exports.started == [(MAIN, "en"), (MAIN, "zh"), (MAIN, None)]
 
@@ -183,7 +184,7 @@ async def test_a_locale_export_without_that_locales_table_is_refused_before_reco
     )
 
     with pytest.raises(ValidationFailed) as refused:
-        await service.export_whole_film(OWNER, LIVE.id, locale="de")
+        await service.export_whole_film(OWNER, LIVE.id, locale="de", resolution=None)
 
     assert str(refused.value) == "final-cut 里没有这种语言的语言文件，无法导出这种语言的版本"
     assert exports.started == []
@@ -247,7 +248,7 @@ async def test_the_record_keeps_the_locale_and_the_latest_export_answers_with_it
     generation = RecordingGeneration()
 
     await adapter(generation, Generations()).start(
-        OWNER, conversation_id=LIVE.id, main_file=MAIN, locale=locale
+        OWNER, conversation_id=LIVE.id, main_file=MAIN, locale=locale, resolution=None
     )
     (request,) = generation.requests
     assert request.locale == locale

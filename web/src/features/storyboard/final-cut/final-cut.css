@@ -3059,6 +3059,13 @@
   font-size: var(--text-caption);
   font-variant-numeric: tabular-nums;
   font-weight: 500;
+  white-space: nowrap;
+}
+
+/* 简称后面的「· 导出档位」（或宽×高）：比简称淡一级，和 ⌄ 同一档 */
+.wf-stage-hud-tier {
+  color: color-mix(in srgb, var(--color-on-scrim) 62%, transparent);
+  font-weight: 400;
 }
 
 .wf-stage-hud-size[data-state='open'] {
@@ -3105,8 +3112,9 @@
   color: var(--color-tertiary-fixed);
 }
 
-/* 画面设置浮层（白底大圆角见 wf-menu）：上面六种比例，下面一行一项，右边的控件对齐在同一条竖线上 */
-.wf-canvas-settings {
+/* 画面设置浮层（白底大圆角见 wf-menu）：上面六种比例，下面一行一项，右边的控件对齐在同一条竖线上。
+   两个条件、写在 wf-menu 后面，内边距才压得过它的 6px */
+.wf-canvas-settings[data-state] {
   display: flex;
   width: 256px;
   flex-direction: column;
@@ -3250,16 +3258,21 @@
     0 0 0 2.75px var(--color-on-surface);
 }
 
-/* 构图网格三段一样宽，比通用的分段矮一档 */
-.wf-canvas-grids {
+/* 导出分辨率、构图网格的分段：三段一样宽，比通用的分段矮一档 */
+.wf-canvas-seg {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.wf-canvas-grids > .wf-seg-item {
+.wf-canvas-seg > .wf-seg-item {
   height: 21px;
   padding: 0 5px;
   font-size: var(--text-caption);
+}
+
+/* 这个画面导不出的档位：字压成禁用色，悬停也不变深（压过 wf-seg-item 的悬停字色：同样三个条件，写在后面） */
+.wf-canvas-seg > .wf-seg-item[aria-disabled='true'] {
+  color: var(--color-disabled-text);
 }
 
 /* 原地改字：盖在藏起来的那段文字上，照稿子的白框、浅黑底。和选中框同一层（见 wf-canvas-frame），写在它后面，
